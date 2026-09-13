@@ -58,6 +58,19 @@ pub fn parse_comma_list(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// 解析并校验工具的参数 Schema（`parameters`）
+///
+/// 校验规则单点在 common `validate_tool_parameters_schema`（与后端 create_tool /
+/// update_tool 写入口共用）：不合法的 schema 会让持有该工具的 Agent **每一轮**
+/// 模型调用都被整包拒绝，且报错指不出是哪个工具 —— 所以在提交前就挡住。
+pub fn parse_parameters_schema(text: &str) -> Result<Option<serde_json::Value>, String> {
+    let parsed = parse_optional_json(text, "参数 Schema")?;
+    if let Some(schema) = parsed.as_ref() {
+        common::models::validate_tool_parameters_schema(schema)?;
+    }
+    Ok(parsed)
+}
+
 /// 解析可选 u64 数字输入
 pub fn parse_optional_u64(text: &str, field: &str) -> Result<Option<u64>, String> {
     let trimmed = text.trim();
@@ -160,7 +173,7 @@ pub fn build_http_create_request(
     let timeout_ms = parse_optional_u64(&form.timeout_ms, "超时时间")?;
     let response_max_bytes = parse_optional_u64(&form.response_max_bytes, "响应上限字节数")?;
     let allowed_status_codes = parse_status_codes(&form.allowed_status_codes)?;
-    let parameters_schema = parse_optional_json(&basics.parameters_schema, "参数 Schema")?;
+    let parameters_schema = parse_parameters_schema(&basics.parameters_schema)?;
 
     // 凭据需求预校验（规范化后执行；HTTP 工具恒 HttpTool scope：仅 Header/Query）
     let requirements = normalize_requirements(form.credential_requirements.clone());

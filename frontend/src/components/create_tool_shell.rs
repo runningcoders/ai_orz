@@ -65,10 +65,8 @@ pub fn build_shell_create_request(
         }
     };
     let timeout_ms = parse_optional_u64(&form.timeout_ms, "超时时间")?;
-    let parameters_schema = crate::components::create_tool_http::parse_optional_json(
-        &basics.parameters_schema,
-        "参数 Schema",
-    )?;
+    let parameters_schema =
+        crate::components::create_tool_http::parse_parameters_schema(&basics.parameters_schema)?;
     let tags = crate::components::create_tool_http::parse_comma_list(&basics.tags);
 
     let config = serde_json::json!({

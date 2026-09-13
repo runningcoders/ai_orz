@@ -129,6 +129,46 @@ for line in sys.stdin:
     file
 }
 
+/// 生成一个把 `tools/list` 固定为给定 `tools` 数组的 stdio MCP server 脚本
+/// （用于构造「同一个 server 混合返回安全/不安全工具」的场景）。
+fn write_mcp_server_script_with_tools(tools: &serde_json::Value) -> tempfile::NamedTempFile {
+    let script = format!(
+        r#"
+import json
+import sys
+
+TOOLS = {tools}
+
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message.get("method")
+    request_id = message.get("id")
+    if method == "initialize":
+        response = {{
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {{
+                "protocolVersion": "2025-11-25",
+                "capabilities": {{"tools": {{}}}},
+                "serverInfo": {{"name": "fixture-server", "version": "1.0.0"}},
+            }},
+        }}
+        print(json.dumps(response), flush=True)
+    elif method == "notifications/initialized":
+        continue
+    elif method == "tools/list":
+        response = {{"jsonrpc": "2.0", "id": request_id, "result": {{"tools": TOOLS}}}}
+        print(json.dumps(response), flush=True)
+"#,
+        tools = serde_json::to_string(tools).expect("fixture tools should serialize")
+    );
+
+    let mut file = tempfile::NamedTempFile::new().expect("temp MCP script should be created");
+    std::io::Write::write_all(&mut file, script.as_bytes())
+        .expect("temp MCP script should be written");
+    file
+}
+
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn McpToolDal + Send + Sync>, RequestContext) {
     // 共享测试 ToolCallLogger（指向进程级测试 base data 目录，幂等）
     crate::pkg::request_context_test_support::ensure_test_tool_call_logger();
@@ -209,6 +249,70 @@ async fn mcp_tool_dal_syncs_stdio_server_tools_into_tool_records(pool: SqlitePoo
     assert!(persisted.tags.contains(&"mcp".to_string()));
     assert!(persisted.tags.contains(&"echo-server".to_string()));
     assert!(persisted.tags.contains(&"echo".to_string()));
+    Ok(())
+}
+
+/// ⚠️ MCP 服务器是**外部不可信来源**：其 `inputSchema` 会原样进出站 `tools` 数组。
+/// 不合法的 schema 必须**跳过该工具**（同一 server 的其余工具照常同步），
+/// 否则一个「毒工具」会让持有它的 Agent 每一轮模型调用都被整包 400，
+/// 且报错指不出是哪个工具（规则依据见 `common::models::validate_tool_parameters_schema`）。
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_skips_remote_tool_with_unsafe_schema(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_mcp_server_script_with_tools(&json!([
+        {
+            "name": "good_echo",
+            "description": "schema 合规，应正常同步",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "bad_tuple",
+            "description": "元组 items，必须被跳过",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "env": {
+                        "type": "array",
+                        "items": [{"type": "string"}, {"type": "string"}],
+                        "minItems": 2,
+                        "maxItems": 2
+                    }
+                }
+            }
+        }
+    ]));
+    let server = mcp_server_with_command(
+        "mixed-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let synced = dal.sync_from_server(ctx.clone(), &server.id).await?;
+    assert_eq!(synced, 1, "只应同步 schema 合规的那个工具");
+
+    let tool_dao = tool::new_tool_dao();
+    assert!(
+        tool_dao
+            .get_by_id(ctx.clone(), "mcp.mixed-server.good_echo".to_string())
+            .await?
+            .is_some(),
+        "合规工具应正常落库"
+    );
+    assert!(
+        tool_dao
+            .get_by_id(ctx.clone(), "mcp.mixed-server.bad_tuple".to_string())
+            .await?
+            .is_none(),
+        "含元组 schema 的 MCP 工具必须被跳过，绝不能落库"
+    );
     Ok(())
 }
 

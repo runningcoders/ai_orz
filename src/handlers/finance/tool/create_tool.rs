@@ -7,7 +7,7 @@ use common::enums::ToolProtocol;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use common::error::{Result, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// Create a new custom tool (HTTP/MCP/Shell). Built-in tools cannot be created via this API.
 #[register_handler_tool(
@@ -31,6 +31,12 @@ pub async fn create_tool(
             InvalidRequest,
             "内置 Tool 由系统同步，不允许通过管理接口创建"
         );
+    }
+    // 用户自填 schema 的网关安全门（规则本体单点在 common，与前端表单提交前校验共用）：
+    // 一个不合法的工具 schema 会让持有它的 Agent 每一轮模型调用都被整包拒绝
+    if let Some(schema) = params.parameters_schema.as_ref() {
+        common::models::validate_tool_parameters_schema(schema)
+            .map_err(|msg| err!(InvalidRequest, "{}", msg))?;
     }
 
     let tags = params.tags.clone().unwrap_or_default();

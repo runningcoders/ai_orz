@@ -114,6 +114,23 @@ impl McpToolDal for McpToolDalImpl {
         let mut synced = 0;
 
         for remote_tool in &remote_tools {
+            // MCP 服务器是**外部不可信来源**：其 inputSchema 会原样进出站 tools 数组，
+            // 不合法的 schema 会毒死持有该工具的 Agent 的每一轮模型调用（详见
+            // common::models::validate_tool_parameters_schema 的规则与依据）。
+            // 处理方式：跳过该工具 + 告警，同一 server 的其余工具不受影响。
+            if let Err(reason) =
+                common::models::validate_tool_parameters_schema(&remote_tool.input_schema)
+            {
+                log_warn!(
+                    ctx,
+                    "mcp_tool_sync",
+                    server_id = %server.id,
+                    tool_name = %remote_tool.name,
+                    reason = %reason,
+                    "MCP 工具的 inputSchema 不符合跨 provider 安全子集，已跳过该工具"
+                );
+                continue;
+            }
             let mut po = build_synced_tool_po(&server, remote_tool, ctx.user_id.clone());
             if let Some(existing) = self.tool_dao.get_by_id(ctx.clone(), po.id.clone()).await? {
                 ensure_sync_target_matches(&existing, &po)?;

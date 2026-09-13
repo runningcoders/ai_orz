@@ -39,8 +39,18 @@ pub struct CreateExternalAgentRequest {
     /// 工作目录（绝对路径）
     #[serde(default)]
     pub work_dir: Option<String>,
-    /// 环境变量
+    /// 环境变量，形如 `[["KEY", "VALUE"], ...]`
+    ///
+    /// ⚠️ schema 必须用 `Vec<Vec<String>>` 表达，不能让它按真实类型 `Vec<(String, String)>` 生成：
+    /// schemars 对元组会产出 `"items": [ {...}, {...} ], "minItems": 2, "maxItems": 2`
+    /// 这种 draft-07 元组校验写法，而 OpenAI 兼容网关（火山方舟/豆包等）只接受
+    /// `items` 为**对象**的 JSON Schema。一旦某个工具的 `parameters` 里出现数组形式的 `items`，
+    /// 网关会对**整个 chat/completions 请求**报 `400 InvalidParameter` —— 即「毒工具」：
+    /// 只要该工具在册，持有它的 Agent 的**每一轮**模型调用都会失败，且错误信息完全指不出是哪个工具。
+    /// `Vec<Vec<String>>` 与 `Vec<(String, String)>` 的 wire format 同构（都是 `[["K","V"]]`），
+    /// 故只影响 schema 生成、不影响反序列化与线上契约。
     #[serde(default)]
+    #[schemars(with = "Option<Vec<Vec<String>>>")]
     pub env: Option<Vec<(String, String)>>,
     /// 超时时间（秒），默认 300
     #[serde(default)]

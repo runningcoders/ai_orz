@@ -63,6 +63,9 @@ pub async fn update_tool(
         tool.po.config = config;
     }
     if let Some(parameters_schema) = params.parameters_schema {
+        // 网关安全门：规则本体单点在 common（与 create_tool、前端表单提交前校验共用）
+        common::models::validate_tool_parameters_schema(&parameters_schema)
+            .map_err(|msg| err!(InvalidRequest, "{}", msg))?;
         tool.po.parameters_schema = Some(parameters_schema);
     }
     if let Some(tags) = params.tags {

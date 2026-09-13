@@ -1200,6 +1200,76 @@ fn test_handler_macro_po_fields_convention() {
     assert!(schema.get("properties").is_some());
 }
 
+/// 工具参数 schema 的「跨 provider 安全」不变量。
+///
+/// 背景（2026-09-13 实测）：schemars 对元组类型（如 `Vec<(String, String)>`）会生成
+/// draft-07 的元组校验写法 `"items": [ {...}, {...} ], "minItems": 2, "maxItems": 2`。
+/// OpenAI 兼容网关（火山方舟/豆包等）只接受 `items` 为**对象**的 schema，
+/// 一旦某个工具的 `parameters` 里出现数组形式的 `items`，网关会对**整个
+/// chat/completions 请求**返回 `400 InvalidParameter` —— 即「毒工具」：
+/// 只要该工具在册，持有它的 Agent 的**每一轮**模型调用都会失败，
+/// 且错误信息完全指不出是哪个工具（`create_external_agent` 曾因此让
+/// `TEMPLATE_HR_AGENT` 整轮唤醒全挂）。
+///
+/// 适用面不止元组：所有会让网关整包拒绝或静默忽略的写法（根部 type、数组缺 items、
+/// `prefixItems`、`type: null` 等）都归 `common::models::validate_tool_parameters_schema`
+/// 统一管 —— 本测试与用户自填 schema 的写入口共用该单点，两侧规则不允许各自漂移。
+///
+/// 约定：元组类字段必须用同构的非元组类型生成 schema，
+/// 例如 `#[schemars(with = "Option<Vec<Vec<String>>>")]`。
+#[test]
+fn test_builtin_tool_schemas_stay_within_provider_safe_subset() {
+    let registry = get_registry();
+    let ids = registry.list_builtin_ids();
+    // 防空跑：宏注册的 handler 工具靠 ctor 进驻全局注册表，若 ctor 未生效此处会变成「零工具全绿」
+    assert!(
+        ids.len() > 50,
+        "全局注册表里工具数异常（{}），宏 ctor 可能未生效，本断言将失去意义",
+        ids.len()
+    );
+    assert!(
+        ids.iter().any(|id| id == "create_external_agent"),
+        "回归靶点 create_external_agent（env 元组 schema）不在注册表中，测试无法覆盖已知场景"
+    );
+
+    // 与用户自填 schema 复用**同一个**校验器（common 单点）：内置 schema 也必须落在
+    // 跨 provider 安全子集内，规则本体与报错文案不允许两侧各写一套
+    let mut offenders: Vec<String> = Vec::new();
+    for id in ids {
+        let Some(factory) = registry.get_builtin_factory(&id) else {
+            continue;
+        };
+        let Some(schema) = factory.create_po().parameters_schema else {
+            continue;
+        };
+        if let Err(message) = common::models::validate_tool_parameters_schema(&schema) {
+            offenders.push(format!("  - {id} -> {message}"));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "内置工具 parameters_schema 不符合跨 provider 安全子集：\n{}",
+        offenders.join("\n")
+    );
+
+    // 靶点定向断言：env 必须稳定为 array<array<string>>。
+    // 上面的通用扫描只保证「没有元组」，若该字段被改成别的类型/删掉，通用扫描仍会全绿，
+    // 故此处对已知回归点再锁一次。
+    let target = registry
+        .get_builtin_factory("create_external_agent")
+        .expect("工厂应已注册")
+        .create_po()
+        .parameters_schema
+        .expect("create_external_agent 应有 parameters_schema");
+    let env = &target["properties"]["env"];
+    assert_eq!(
+        env["items"]["type"], "array",
+        "env 的 items 必须是对象（array<array<string>>），退回元组写法会毒死整个 Agent: {env}"
+    );
+    assert_eq!(env["items"]["items"]["type"], "string");
+}
+
 /// 每次启动 sync 的不变量：config 绝不写入（运维现场保留），
 /// parameters_schema 以代码为准写入
 #[sqlx::test]
