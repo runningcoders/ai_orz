@@ -43,9 +43,9 @@ source_files:
 
 ## §1 概述
 
-**本卡角色**：任务状态机与项目聚合的业务领域知识卡。覆盖 `TaskStatus` 四态枚举（禁止数字大小比较，用 match 分支）+ `progress` 自动联动 status 规则、`TaskPo.execution_plan / execution_result` 两字段 JSON 结构化存储规范（后端 patch 合并，不允许前端整字段覆盖）、`Project.progress_summary` 按任务子状态实时百分比计算算法、以及 `task_graph.rs` 基于 `dependencies` 前置任务数组构建的 Mermaid DAG 可视化链路。**定位：写任务推进代码、前端进度条 UI、项目详情聚合查询、排查状态流转错乱时读。**
+**本卡角色**：任务状态机与项目聚合的业务领域知识卡。覆盖 `TaskStatus` 五态枚举（Cancelled/Pending/InProgress/Completed/Archived；PendingReview 已废弃并入 Pending）（禁止数字大小比较，用 match 分支）+ `progress` 自动联动 status 规则、`TaskPo.execution_plan / execution_result` 两字段 JSON 结构化存储规范（后端 patch 合并，不允许前端整字段覆盖）、`Project.progress_summary` 按任务子状态实时百分比计算算法、以及 `task_graph.rs` 基于 `dependencies` 前置任务数组构建的 Mermaid DAG 可视化链路。**定位：写任务推进代码、前端进度条 UI、项目详情聚合查询、排查状态流转错乱时读。**
 
-- **四态状态机（硬顺序）**：`Pending(1)` → `InProgress(2)` → `Completed(3)`；任意状态可跳 `Cancelled(0)`（软删除）。禁止逆向跳转（Completed→InProgress 的"重新打开"应新建任务而非回退，保证历史审计链完整）。`progress` 字段联动规则：写入 progress 时 Domain 自动 → 0=Pending、1-99=InProgress、100=Completed。如果同时传 status + progress → 以 status 为准，progress 裁剪（防止 status=Completed 但 progress=80 的冲突状态进库）。
+- **四态状态机（硬顺序）**：`Pending(2)` → `InProgress(3)` → `Completed(4)`；任意状态可跳 `Cancelled(0)`（软删除）。禁止逆向跳转（Completed→InProgress 的"重新打开"应新建任务而非回退，保证历史审计链完整）。`progress` 字段联动规则：写入 progress 时 Domain 自动 → 0=Pending、1-99=InProgress、100=Completed。如果同时传 status + progress → 以 status 为准，progress 裁剪（防止 status=Completed 但 progress=80 的冲突状态进库）。
 - **execution_plan / result 结构化 + patch 增量**：`execution_plan` JSON Schema 固定结构：`{ steps: [{ description, estimated_minutes, risk: "低|中|高" }], total_estimated_minutes, notes }`。`execution_result`：`{ completed_steps: [{ description, actual_minutes, output_summary, artifacts: [path] }], risks_mitigated, issues_found, next_actions }`。接口绝不允许整字段 PUT 覆盖——前端通过 `execution_plan_delta / execution_result_delta` 传增量，Domain `patch_execution_json()` 合并原 JSON 并校验 Schema，非法直接 400。
 - **Project 聚合按需注入五字段**：`Project` 业务实体有 5 个 `Option<_>` 字段，不是每次查询都全量拉。Domain 提供 5 个明确方法按需调用（性能 + 最小惊讶）：① `inject_stats` → stats；② `inject_model_call_stats` → model_call_stats；③ `inject_task_graph` → task_graph mermaid；④ `inject_artifacts` → artifacts；⑤ `compute_progress_summary` → progress_summary。项目详情页 5 Tab 各调 1-2 个对应注入，列表页只取 PO 不注入，避免 5+ N+1。
 
@@ -55,7 +55,7 @@ source_files:
 
 | 文件 | 角色 | 内容摘要 | 源码锚点 |
 |------|------|---------|---------|
-| common/enums/task.rs | TaskStatus 枚举 | 0=Cancelled 1=Pending 2=InProgress 3=Completed；#[repr(i32)] + sqlx::Type + From<i64>；禁止数字比较，用 match | 见 enum 定义 |
+| common/enums/task.rs | TaskStatus 枚举 | 0=Cancelled 2=Pending 3=InProgress 4=Completed 5=Archived（1 已废弃，读回映射为 Pending）；#[repr(i32)] + sqlx::Type + From<i64>；禁止数字比较，用 match | 见 enum 定义 |
 | models/task.rs PO | 任务持久化对象 | 24 字段，重点：status(TaskStatus)/progress(0-100)/dependencies(JSON 前置 ID 数组)/execution_plan(Option<String> JSON)/execution_result(Option<String> JSON) | `:L16-L63` |
 | models/task.rs Task 实体 | 业务聚合容器 | po + 5 个 Option 注入槽位（search_match/stats/model_call_stats/artifacts） | `:L65-L93` |
 | models/project.rs PO | 项目持久化对象 | owner_agent_id(可选 PMO)/last_followup_at/plan+result 同步字段；progress_summary 不落库 | `:L15-L58` |

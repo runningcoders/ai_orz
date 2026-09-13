@@ -10,7 +10,7 @@ scope:
   - src/handlers/project/**/*.rs
   - src/pkg/git_workspace.rs
 source_files:
-  - src/service/domain/project/service.rs#L21-L476
+  - src/service/domain/project/service.rs（create 写入 start_at + transition_status 白名单 InProgress⇄Completed）
   - src/service/domain/project/task_graph.rs#L17-L66
   - src/service/domain/project/artifact.rs#L26-L531
   - src/models/project.rs#L16-L358
@@ -34,8 +34,8 @@ source_files:
 
 | 文件 | 角色 | 核心入口/约束 |
 |------|------|---------------|
-| [project/service.rs](src/service/domain/project/service.rs) | ProjectManage 核心业务 | `create/get_project/list_by_user/start/complete/archive/transition_status` 六能力；状态流转合法性校验矩阵（§382-475 行）；`get_project` 按需注入 task_graph/artifacts/progress_summary |
-| [project/task_graph.rs](src/service/domain/project/task_graph.rs) | 任务 DAG 图构建 | `build_task_graph_mermaid` 入口；dependencies 字段建边方向：前置→当前；TaskStatus→category 映射（Cancelled/Pending/PendingReview/InProgress/Completed/Archived → 6 类样式） |
+| [project/service.rs](src/service/domain/project/service.rs) | ProjectManage 核心业务 | `create/get_project/list_by_user/complete/archive/transition_status` 五能力（创建即 InProgress，自动写入 start_at）；状态流转白名单仅 InProgress⇄Completed（重启）+ 归档；`get_project` 按需注入 task_graph/artifacts/progress_summary |
+| [project/task_graph.rs](src/service/domain/project/task_graph.rs) | 任务 DAG 图构建 | `build_task_graph_mermaid` 入口；dependencies 字段建边方向：前置→当前；TaskStatus→category 映射（Cancelled/Pending/InProgress/Completed/Archived → 5 类样式） |
 | [project/artifact.rs](src/service/domain/project/artifact.rs) | ArtifactManage 产物管理 | 创建三入口（attachment/project-level/task-level）；双关联校验：`validate_project_and_task` 强制 task.project_id == project_id；generated_content 乐观锁 expected_updated_at 冲突 409 |
 | [models/project.rs](src/models/project.rs) | Project 业务实体聚合 | PO 单向持有 + 7 个 Option 按需字段（search_match/stats/model_call_stats/task_graph/artifacts/progress_summary）；`progress_summary_from_tasks` 实时聚合；`to_prompt_summary` 对话上下文摘要 |
 | [dal/project.rs](src/service/dal/project.rs) | ProjectDal 数据业务层 | ProjectFetchOptions 三选项 with_task_graph/with_artifacts/with_progress_summary；纯 PO↔实体转换，Domain 层注入聚合 |
@@ -49,7 +49,7 @@ source_files:
 Handler (参数透传 + Response 映射)
     ↓ 仅调用 ProjectDomain Trait
 Project Domain (六大子管理入口)
-  ├─ ProjectManage: create/get/list/start/complete/archive + transition_status
+  ├─ ProjectManage: create（即 InProgress + start_at）/get/list/complete/archive + transition_status
   ├─ TaskManage:    CRUD + 依赖 DAG 编排
   ├─ ArtifactManage: attachment/generated_content 双来源 + 项目级/任务级双关联
   ├─ 按需注入区:    get_project → with_task_graph / with_artifacts / with_progress_summary
@@ -62,7 +62,7 @@ DAO 层 (SQLite sqlx + STRICT)
 
 **核心机制要点：**
 
-1. **ProjectManage 六能力 + 统一状态流转**：create/get/list_by_user/start/complete/archive 六个独立语义入口，`transition_status` 作为通用入口承载合法性矩阵校验（Active→PendingReview→InProgress→Completed→Archived），禁止 Deleted 通过状态接口删除。
+1. **ProjectManage 五能力 + 创建即启动**：create 即 InProgress（自动 start_at）+ get/list_by_user/complete/archive 五语义入口，`transition_status` 作为通用入口承载合法性矩阵校验（InProgress⇄Completed（重启）→ Archived），禁止 Deleted 通过状态接口删除。
 2. **TaskGraph DAG 依赖编排**：Task.dependencies 存储"前置任务 ID 列表"，图上方向为 前置→当前（执行流向）；TaskStatus→6 类 category（done/doing/todo/cancelled/pending_review/archived），MermaidRenderer 输出 class 语法绑定前端 CSS；跨项目依赖边自动补 external 节点不丢边。
 3. **Artifact 双关联 + 三来源**：project_id 必选（权限校验+存储路径），task_id 可选（None=项目级，Some=任务级）；来源三枚举 attachment（引用 Finance 资产，不搬运文件）/generated_content（Agent 写入自有文本 + 乐观锁）/remote_url（预留）；`validate_project_and_task` 强制校验归属一致性。
 4. **按需返回 FetchOptions 模式**：get_project 三选项 with_task_graph/with_artifacts/with_progress_summary 独立控制，Option<T> + skip_serializing_if，未请求时不查询、不序列化，旧调用不传参数时响应字节级不变。
@@ -75,8 +75,8 @@ DAO 层 (SQLite sqlx + STRICT)
 3. **按需返回 Option 字段约定**：task_graph/artifacts/progress_summary 所有新增大字段一律 `Option<T>` + `skip_serializing_if = "Option::is_none"`，不传 with_* 参数时零查询零序列化。
 4. **Artifact 跨域归属校验**：任何 Artifact 操作必须通过 `validate_project_and_task` 校验 task.project_id == project_id，禁止绕过创建未归属产物。
 5. **软删除默认过滤**：所有 find_by_id/list_by_*/count_* 查询默认添加 `AND "status" != 0`，Task Cancelled(0)、Project Deleted(0) 均视为软删除。
-6. **状态流转合法性矩阵**：transition_status 禁止 Active→Completed 跳级、禁止通过状态接口删除（status=0），非法流转统一返回 InvalidRequest。
+6. **状态流转合法性矩阵**：transition_status 禁止非法跳级（仅 InProgress→Completed→Archived + Completed→InProgress 重启 + 相同状态 no-op）、禁止通过状态接口删除（status=0），非法流转统一返回 InvalidRequest。
 7. **对话上下文最小化**：to_prompt_summary 禁止将 execution_plan/execution_result 大字段默认注入，空 workflow/guidance 跳过换行。
-8. **状态着色 category 固定命名**：done/doing/todo/cancelled/pending_review/archived 6 类名称不可变更，前端 CSS 强依赖。
+8. **状态着色 category 固定命名**：done/doing/todo/cancelled/archived 5 类名称不可变更，前端 CSS 强依赖。
 9. **Artifact generated_content 乐观锁**：PUT 更新必须携带 expected_updated_at，冲突返回 409，防止多人编辑覆盖。
 10. **跨项目依赖边不丢不 panic**：MermaidRenderer 遇到边指向外部节点 ID 时自动补 `(external) <id>` 节点，禁止 panic 或静默丢弃边。
