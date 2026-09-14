@@ -2,6 +2,7 @@
 
 pub mod aop_gauge;
 pub mod artifact_meta_modal;
+pub mod avatar_bubble;
 pub mod button;
 pub mod canvas_scene;
 pub mod chart_scene;

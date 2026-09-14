@@ -23,9 +23,10 @@ use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
-    agent_lifecycle_badge, agent_lifecycle_text, agent_runtime_badge, format_file_size,
-    format_timestamp_opt as format_timestamp, priority_badge, progress_tone, project_status_badge,
-    project_status_text, tag_chip, task_status_badge, task_status_text,
+    agent_lifecycle_badge, agent_lifecycle_text, agent_runtime_badge, agent_runtime_text,
+    avatar_status_ring, format_file_size, format_timestamp_opt as format_timestamp, priority_badge,
+    progress_tone, project_status_badge, project_status_text, tag_chip, task_status_badge,
+    task_status_text,
 };
 use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
@@ -43,16 +44,6 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
         ArtifactSourceType::Attachment => "附件",
         ArtifactSourceType::GeneratedContent => "生成内容",
         ArtifactSourceType::RemoteUrl => "远程链接",
-    }
-}
-
-/// Agent 运行时状态中文文案
-fn agent_runtime_text(state: i32) -> &'static str {
-    match state {
-        0 => "空闲",
-        1 => "休息中",
-        2 => "忙碌",
-        _ => "未知",
     }
 }
 
@@ -765,7 +756,7 @@ fn AgentInfoTab(
     rsx! {
         div { class: "space-y-4",
             div { class: "flex items-center gap-2",
-                div { class: "w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold",
+                div { class: "w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold {avatar_status_ring(a.status)}",
                     "{a.name.chars().next().unwrap_or('A')}"
                 }
                 div { class: "flex-1 min-w-0",

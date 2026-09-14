@@ -1,6 +1,7 @@
 //! 任务/项目/Agent/工具调用 状态映射
 
 use common::api::ToolCallStatusDto;
+use common::enums::AgentStatus;
 use common::enums::skill::SkillAuthorType;
 
 /// Agent 生命周期状态中文文案（0=已删除, 1=面试中, 2=待入职, 3=已入职, 4=已离职,
@@ -33,6 +34,44 @@ pub fn agent_lifecycle_badge(status: i32) -> &'static str {
         5 => "badge hud-badge badge-sm badge-ghost",
         _ => "badge hud-badge badge-sm badge-ghost",
     }
+}
+
+/// Agent 头像状态警示环 class（单一事实源）。
+///
+/// 生命周期语义着色：待离职(5)=黄环（交接期警示） / 已离职(4)=红环（生命周期终止），
+/// 其余状态无环。配合 `agent_lifecycle_text` 让头像一眼可辨在役状态。
+pub fn avatar_status_ring(status: i32) -> &'static str {
+    match status {
+        5 => "ring-2 ring-warning ring-offset-2 ring-offset-base-100",
+        4 => "ring-2 ring-error ring-offset-2 ring-offset-base-100",
+        _ => "",
+    }
+}
+
+/// Agent 状态选项（列表筛选下拉 / 详情页切换器共用，单一事实源）。
+///
+/// 排除 0=已删除：删除走删除按钮（受 [`agent_deletable`] 门禁约束），
+/// 不作为可切换/可筛选目标，避免状态切换器成为绕过门禁的直删入口。
+pub fn agent_status_options() -> &'static [(i32, &'static str)] {
+    &[
+        (1, "面试中"),
+        (2, "待入职"),
+        (3, "已入职"),
+        (4, "已离职"),
+        (5, "待离职"),
+        (6, "初创"),
+    ]
+}
+
+/// Agent 当前状态是否允许删除（与后端 delete_agent 门禁对齐）。
+///
+/// 在役（已入职）/ 交接中（待离职）必须先完成离职流转
+/// （已入职 → 待离职 → 已离职），其余状态均可软删除。
+pub fn agent_deletable(status: i32) -> bool {
+    !matches!(
+        AgentStatus::from(status),
+        AgentStatus::Onboarded | AgentStatus::PendingOffboard
+    )
 }
 
 /// 任务状态文本（0=已取消, 2=待处理, 3=进行中, 4=已完成, 5=已归档；
@@ -74,29 +113,24 @@ pub fn progress_tone(progress: i32) -> &'static str {
     }
 }
 
-/// 项目状态文本（0=已删除, 3=进行中, 4=已完成, 5=已归档；
-/// 1/2 为历史值 Active/PendingReview，已并入进行中）
+/// 项目状态文本（0=已删除, 1=进行中, 2=已完成, 3=已归档）
 pub fn project_status_text(status: i32) -> &'static str {
     match status {
         0 => "已删除",
         1 => "进行中",
-        2 => "进行中",
-        3 => "进行中",
-        4 => "已完成",
-        5 => "已归档",
+        2 => "已完成",
+        3 => "已归档",
         _ => "未知",
     }
 }
 
-/// 项目状态徽章 class（0=error, 3=primary, 4=success, 5=neutral）
+/// 项目状态徽章 class（0=error, 1=primary, 2=success, 3=neutral）
 pub fn project_status_badge(status: i32) -> &'static str {
     match status {
         0 => "badge hud-badge badge-sm badge-error",
         1 => "badge hud-badge badge-sm badge-primary",
-        2 => "badge hud-badge badge-sm badge-primary",
-        3 => "badge hud-badge badge-sm badge-primary",
-        4 => "badge hud-badge badge-sm badge-success",
-        5 => "badge hud-badge badge-sm badge-neutral",
+        2 => "badge hud-badge badge-sm badge-success",
+        3 => "badge hud-badge badge-sm badge-neutral",
         _ => "badge hud-badge badge-sm badge-neutral",
     }
 }
@@ -163,6 +197,18 @@ pub fn agent_runtime_badge(state: i32) -> &'static str {
         1 => "badge hud-badge badge-sm badge-neutral",
         2 => "badge hud-badge badge-sm badge-warning",
         _ => "badge hud-badge badge-sm badge-ghost",
+    }
+}
+
+/// Agent 运行时状态中文文案（0=空闲, 1=休息中, 2=忙碌）。
+///
+/// 单一事实源：原先散落在聊天侧栏的私有映射，随头像气泡组件一起上收。
+pub fn agent_runtime_text(state: i32) -> &'static str {
+    match state {
+        0 => "空闲",
+        1 => "休息中",
+        2 => "忙碌",
+        _ => "未知",
     }
 }
 

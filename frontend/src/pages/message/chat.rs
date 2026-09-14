@@ -5,6 +5,7 @@ use crate::api::finance::upload_attachment;
 use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, list_projects};
+use crate::components::avatar_bubble::{AvatarBubble, AvatarTone};
 use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::mention_picker::{
@@ -943,6 +944,17 @@ pub fn MessageChat() -> Element {
             ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
         }
         let sender_name = directory().sender_name(&msg_clone);
+        // 头像气泡形态：用户头像弹用户卡（右对齐），Agent 头像弹 Agent 卡（左对齐，点击时懒加载）
+        let (bubble_agent_id, bubble_user_id, bubble_align) = if is_user {
+            (None, Some(msg_clone.from_id.clone()), "dropdown-end")
+        } else {
+            (Some(msg_clone.from_id.clone()), None, "dropdown-start")
+        };
+        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询 target_agent_info）
+        let target_status = target_agent_info()
+            .as_ref()
+            .filter(|a| a.id == msg_clone.from_id)
+            .map(|a| a.status);
         // 「发给谁」：项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，
         // Agent 之间也会互相说话 —— 头部拼出接收方（复用正文 @ 提及的 chip 写法，
         // 同样的 @名 形态 + 同样的配色），一眼看清谁在跟谁聊。
@@ -987,10 +999,24 @@ pub fn MessageChat() -> Element {
                                                         span { class: "message-receiver", dangerous_inner_html: "{html}" }
                                                     }
                                                 }
-                                                div { class: "chat-image avatar",
-                                                    div {
-                                                        class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
-                                                        "{avatar_initials(&sender_name)}"
+                                                if is_system {
+                                                    div { class: "chat-image avatar",
+                                                        div { class: "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
+                                                            "{avatar_initials(&sender_name)}"
+                                                        }
+                                                    }
+                                                } else {
+                                                    // 宿主只提供 `.chat-image`：`.avatar` 由 AvatarBubble 自己贴在
+                                                    // 触发层（详见组件内的结构约束注释）
+                                                    div { class: "chat-image",
+                                                        AvatarBubble {
+                                                            name: sender_name.clone(),
+                                                            tone: if is_user { AvatarTone::User } else { AvatarTone::Agent },
+                                                            agent_id: bubble_agent_id,
+                                                            user_id: bubble_user_id,
+                                                            status: if is_user { None } else { target_status },
+                                                            align: bubble_align,
+                                                        }
                                                     }
                                                 }
                                                 {
@@ -1016,8 +1042,20 @@ pub fn MessageChat() -> Element {
                         if let Some(status) = agent_status_line(is_typing(), agent_state()) {
                             div { class: "chat chat-start",
                                 div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
-                                div { class: "chat-image avatar",
-                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "{avatar_initials(&status_sender_name)}" }
+                                div { class: "chat-image",
+                                    {
+                                        // 置底气泡头像即当前会话目标 Agent，id/status 直接取自轮询缓存
+                                        let ti = target_agent_info();
+                                        rsx! {
+                                            AvatarBubble {
+                                                name: status_sender_name.clone(),
+                                                tone: AvatarTone::Agent,
+                                                agent_id: ti.as_ref().map(|a| a.id.clone()),
+                                                status: ti.as_ref().map(|a| a.status),
+                                                align: "dropdown-start",
+                                            }
+                                        }
+                                    }
                                 }
                                 div { class: "chat-bubble chat-bubble-neutral",
                                     div { class: "flex items-center gap-2",
@@ -1168,6 +1206,17 @@ pub fn MessageChat() -> Element {
             ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
         }
         let sender_name = directory().sender_name(&msg_clone);
+        // 头像气泡形态：用户头像弹用户卡（右对齐），Agent 头像弹 Agent 卡（左对齐，点击时懒加载）
+        let (bubble_agent_id, bubble_user_id, bubble_align) = if is_user {
+            (None, Some(msg_clone.from_id.clone()), "dropdown-end")
+        } else {
+            (Some(msg_clone.from_id.clone()), None, "dropdown-start")
+        };
+        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询 target_agent_info）
+        let target_status = target_agent_info()
+            .as_ref()
+            .filter(|a| a.id == msg_clone.from_id)
+            .map(|a| a.status);
         // 「发给谁」：项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，
         // Agent 之间也会互相说话 —— 头部拼出接收方（复用正文 @ 提及的 chip 写法，
         // 同样的 @名 形态 + 同样的配色），一眼看清谁在跟谁聊。
@@ -1212,10 +1261,24 @@ pub fn MessageChat() -> Element {
                                                         span { class: "message-receiver", dangerous_inner_html: "{html}" }
                                                     }
                                                 }
-                                                div { class: "chat-image avatar",
-                                                    div {
-                                                        class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
-                                                        "{avatar_initials(&sender_name)}"
+                                                if is_system {
+                                                    div { class: "chat-image avatar",
+                                                        div { class: "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
+                                                            "{avatar_initials(&sender_name)}"
+                                                        }
+                                                    }
+                                                } else {
+                                                    // 宿主只提供 `.chat-image`：`.avatar` 由 AvatarBubble 自己贴在
+                                                    // 触发层（详见组件内的结构约束注释）
+                                                    div { class: "chat-image",
+                                                        AvatarBubble {
+                                                            name: sender_name.clone(),
+                                                            tone: if is_user { AvatarTone::User } else { AvatarTone::Agent },
+                                                            agent_id: bubble_agent_id,
+                                                            user_id: bubble_user_id,
+                                                            status: if is_user { None } else { target_status },
+                                                            align: bubble_align,
+                                                        }
                                                     }
                                                 }
                                                 {
@@ -1241,8 +1304,20 @@ pub fn MessageChat() -> Element {
                         if let Some(status) = agent_status_line(is_typing(), agent_state()) {
                             div { class: "chat chat-start",
                                 div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
-                                div { class: "chat-image avatar",
-                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "{avatar_initials(&status_sender_name)}" }
+                                div { class: "chat-image",
+                                    {
+                                        // 置底气泡头像即当前会话目标 Agent，id/status 直接取自轮询缓存
+                                        let ti = target_agent_info();
+                                        rsx! {
+                                            AvatarBubble {
+                                                name: status_sender_name.clone(),
+                                                tone: AvatarTone::Agent,
+                                                agent_id: ti.as_ref().map(|a| a.id.clone()),
+                                                status: ti.as_ref().map(|a| a.status),
+                                                align: "dropdown-start",
+                                            }
+                                        }
+                                    }
                                 }
                                 div { class: "chat-bubble chat-bubble-neutral",
                                     div { class: "flex items-center gap-2",
