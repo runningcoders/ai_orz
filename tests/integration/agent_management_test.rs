@@ -279,6 +279,196 @@ async fn test_agent_lifecycle_invalid_transition_rejected(pool: SqlitePool) {
     );
 }
 
+/// 在役 Agent 不允许直接删除（delete_agent 状态门禁）。
+///
+/// - Onboarded (3) / PendingOffboard (5) 删除应被拒绝（InvalidRequest → 400），
+///   引导用户先走完离职流转（已入职 → 待离职 → 已离职）
+/// - 直删边已从状态机移除：`update status → Deleted` 的流转请求同样被拒绝
+/// - 走完离职流转后（Offboarded, 4）删除成功，详情查询随软删除转为 404
+#[sqlx::test]
+async fn test_agent_delete_gated_by_status(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("DeleteGateAgent-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    // 逐级走到 Onboarded (3)：Incubating → Interviewing → PendingOnboard → Onboarded
+    for target in ["Interviewing", "PendingOnboard", "Onboarded"] {
+        let (status, body) = app
+            .put_with_jwt(
+                &format!("/api/v1/hr/agents/{}/status", agent_id),
+                &json!({"id": agent_id, "status": target}),
+                &jwt,
+            )
+            .await;
+        crate::common::assert_api_ok(status, &body);
+    }
+
+    // Onboarded (3) 删除 → 被门禁拒绝
+    let (status, body) = app
+        .delete_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
+
+    // 状态机直删边已移除：update status → Deleted 同样被拒绝
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("/api/v1/hr/agents/{}/status", agent_id),
+            &json!({"id": agent_id, "status": "Deleted"}),
+            &jwt,
+        )
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
+
+    // Onboarded (3) → PendingOffboard (5)：交接中仍不可删
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("/api/v1/hr/agents/{}/status", agent_id),
+            &json!({"id": agent_id, "status": "PendingOffboard"}),
+            &jwt,
+        )
+        .await;
+    crate::common::assert_api_ok(status, &body);
+    let (status, body) = app
+        .delete_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
+
+    // PendingOffboard (5) → Offboarded (4)：走完离职流转后删除成功
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("/api/v1/hr/agents/{}/status", agent_id),
+            &json!({"id": agent_id, "status": "Offboarded"}),
+            &jwt,
+        )
+        .await;
+    crate::common::assert_api_ok(status, &body);
+    let (status, body) = app
+        .delete_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    crate::common::assert_api_ok(status, &body);
+
+    // 软删除后详情查询转为 404（find_by_id 过滤 status <> 0）
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::NOT_FOUND);
+}
+
+/// 两段式离职流程（语义化端点，对标入职流程的独立 handler 入口）。
+///
+/// - POST /hr/agents/{id}/offboard/start    (Onboarded → PendingOffboard，进入交接期)
+/// - POST /hr/agents/{id}/offboard/complete (PendingOffboard → Offboarded，业务交接后下线)
+///
+/// 验证：
+/// - start / complete 按状态机逐段流转（3 → 5 → 4）
+/// - 非 Onboarded 状态直接发起 start 被拒绝
+/// - 未经过交接期直接 complete（Onboarded → Offboarded）被拒绝
+/// - 交接期（PendingOffboard）删除仍被门禁拦截；离职完成后删除成功
+#[sqlx::test]
+async fn test_agent_offboard_flow(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("OffboardFlowAgent-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    // 1) Incubating (6) 直接发起离职 → 状态机拒绝（仅 Onboarded 可进入交接期）
+    let (status, body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/offboard/start", agent_id),
+            &json!({"id": agent_id}),
+            &jwt,
+        )
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
+
+    // 2) 逐级走到 Onboarded (3)：Incubating → Interviewing → PendingOnboard → Onboarded
+    for target in ["Interviewing", "PendingOnboard", "Onboarded"] {
+        let (status, body) = app
+            .put_with_jwt(
+                &format!("/api/v1/hr/agents/{}/status", agent_id),
+                &json!({"id": agent_id, "status": target}),
+                &jwt,
+            )
+            .await;
+        crate::common::assert_api_ok(status, &body);
+    }
+
+    // 3) 未经过交接期直接完成离职（Onboarded → Offboarded）→ 状态机拒绝
+    let (status, body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/offboard/complete", agent_id),
+            &json!({"id": agent_id}),
+            &jwt,
+        )
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
+
+    // 4) start：Onboarded (3) → PendingOffboard (5)，进入交接期
+    let (status, body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/offboard/start", agent_id),
+            &json!({"id": agent_id}),
+            &jwt,
+        )
+        .await;
+    crate::common::assert_api_ok(status, &body);
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("status").and_then(|v| v.as_i64()),
+        Some(5),
+        "start offboard should move agent to PendingOffboard (5)"
+    );
+
+    // 5) 交接期（PendingOffboard）删除 → 仍被 delete 门禁拦截
+    let (status, body) = app
+        .delete_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
+
+    // 6) complete：PendingOffboard (5) → Offboarded (4)，业务交接后正式下线
+    let (status, body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/offboard/complete", agent_id),
+            &json!({"id": agent_id}),
+            &jwt,
+        )
+        .await;
+    crate::common::assert_api_ok(status, &body);
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("status").and_then(|v| v.as_i64()),
+        Some(4),
+        "complete offboard should move agent to Offboarded (4)"
+    );
+
+    // 7) 离职完成后删除成功
+    let (status, body) = app
+        .delete_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    crate::common::assert_api_ok(status, &body);
+}
+
 /// Create an external CLI agent via POST /hr/agents/external.
 ///
 /// Verifies:

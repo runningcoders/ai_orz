@@ -3,6 +3,7 @@
 
 pub mod association;
 pub mod cancel_thinking;
+pub mod complete_agent_offboard;
 pub mod create_agent;
 pub mod create_external_agent;
 pub mod create_memory;
@@ -27,6 +28,7 @@ pub mod search_agents;
 pub mod search_memory;
 pub mod select_agent_career;
 pub mod settle_memory;
+pub mod start_agent_offboard;
 pub mod train_agent;
 pub mod uninstall_skill_pack;
 pub mod uninstall_tool_pack;
@@ -35,6 +37,7 @@ pub mod update_agent_status;
 pub mod update_memory;
 
 pub use cancel_thinking::cancel_thinking_handler;
+pub use complete_agent_offboard::complete_agent_offboard_handler;
 pub use create_agent::create_agent_handler;
 pub use create_external_agent::create_external_agent_handler;
 pub use create_memory::create_memory_handler;
@@ -59,6 +62,7 @@ pub use search_agents::search_agents_handler;
 pub use search_memory::search_memory_handler;
 pub use select_agent_career::select_agent_career_handler;
 pub use settle_memory::settle_memory_handler;
+pub use start_agent_offboard::start_agent_offboard_handler;
 pub use train_agent::train_agent_handler;
 pub use uninstall_skill_pack::uninstall_skill_pack_handler;
 pub use uninstall_tool_pack::uninstall_tool_pack_handler;

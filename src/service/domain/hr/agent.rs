@@ -168,6 +168,25 @@ impl HrDomainImpl {
 
         self.bind_packs(ctx, agent_id, requests).await
     }
+
+    /// 【边：PendingOffboard → Offboarded】业务交接（占位）
+    ///
+    /// 设计思路：把该 Agent 名下仍在运行的业务（进行中的任务/项目）移交给
+    /// 其他在役 Agent。具体移交策略（按角色匹配 / 按负载均衡 / 人工指定）
+    /// 尚未定稿，本方法先作为交接的统一入口占位：
+    /// - 返回 `Ok(())`：交接完成（当前无实际动作）；
+    /// - 失败不阻断状态落库 —— `transition_status` 侧以 log_warn 容错，
+    ///   待离职 Agent 仍会正式下线（在途业务本就要求先跑完）。
+    async fn handover_business(&self, ctx: RequestContext, agent_id: &str) -> Result<()> {
+        // 占位：交接策略定稿后在此填充（候选：按能力匹配在役 Agent → 逐任务改派 → 记录交接轨迹）
+        log_info!(
+            ctx,
+            "complete_agent_offboard",
+            "业务交接占位执行: agent_id={}（暂无可移交业务，交接流程待设计定稿）",
+            agent_id
+        );
+        Ok(())
+    }
 }
 
 /// 单个包的绑定意图（`bind_packs` 的输入）
@@ -630,16 +649,21 @@ impl AgentManage for HrDomainImpl {
                 // 过滤 internal 标签工具：内部系统工具不可暴露给 Agent
                 // （如 request_tool_call / send_tool_call_message 仅由 ToolDal 内部转发）
                 let mut seen_ids = std::collections::HashSet::new();
-                let all_tools: Vec<Tool> = bound_tools
+                let mut all_tools: Vec<Tool> = bound_tools
                     .into_iter()
                     .chain(tag_tools.items)
                     .filter(|t| seen_ids.insert(t.po.id.clone()))
                     .filter(|t| !t.po.get_tags().iter().any(|tag| tag == "internal"))
                     .collect();
+                // 按 name 排序：两条来源链（关联表 / 标签查询）返回顺序不稳定，
+                // name 全局唯一故排序结果完全确定 —— 同一 Agent 每次装配出一致的
+                // tools 数组，上游 LLM 请求的 tools 前缀缓存才能稳定命中
+                all_tools.sort_by(|a, b| a.po.name.cmp(&b.po.name));
                 agent.set_tools(all_tools);
             }
             if with_skills {
-                // 优先 Agent 自身副本；副本缺失的神经技能用种子兜底（见 resolve_agent_skills）
+                // 仅加载 Agent 自身已安装的技能副本（含神经技能），加载侧无种子兜底：
+                // 神经技能副本由 create_agent / train_agent 预装（见 BASE_AGENT_PACKS 与 resolve_agent_skills）
                 let skills = self.resolve_agent_skills(ctx.clone(), id).await?;
                 agent.set_skills(skills);
             }
@@ -698,8 +722,22 @@ impl AgentManage for HrDomainImpl {
 
     /// 删除 Agent
     ///
-    /// 基础操作：软删除 Agent（标记为已删除）
+    /// 基础操作：软删除 Agent（标记为已删除）。
+    ///
+    /// 门禁：在役（已入职）/ 交接中（待离职）的 Agent 不允许直接删除 ——
+    /// 必须先走完离职流转（已入职 → 待离职 → 已离职），确保数据交接不被跳过。
+    /// 状态机的直删边已移除，本方法是删除的唯一入口。
     async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
+        if matches!(
+            agent.po.status,
+            AgentStatus::Onboarded | AgentStatus::PendingOffboard
+        ) {
+            bail_err!(
+                InvalidRequest,
+                "Agent 处于在役/交接中状态（{:?}），请先完成离职流转（已入职 → 待离职 → 已离职）后再删除",
+                agent.po.status
+            );
+        }
         let ctx = enrich_ctx!(&ctx, agent);
         self.agent_dal.delete(ctx, agent).await
     }
@@ -711,9 +749,12 @@ impl AgentManage for HrDomainImpl {
     /// 副作用只挂在「边」上（状态本身只是结果）：
     /// - `Incubating → Interviewing`：职业生涯选择（按 roles/capabilities 个人匹配）
     /// - `PendingOnboard → Onboarded`：入职（安装组织要求的包，packs 为 None 时回退组织配置）
+    /// - `PendingOffboard → Offboarded`：业务交接（占位，移交策略待设计定稿）
     /// - 其余边：无副作用（如 `Interviewing → PendingOnboard`，预留给后续扩展）
     ///
     /// `packs` 只在入职这条边上被读取，其余状态忽略。
+    ///
+    /// 注意：删除不走状态机（直删边已移除），统一经 [`Self::delete_agent`] 的门禁软删。
     async fn transition_status(
         &self,
         ctx: RequestContext,
@@ -738,8 +779,6 @@ impl AgentManage for HrDomainImpl {
             (AgentStatus::Onboarded, AgentStatus::PendingOffboard) => true,
             // 待离职 → 已离职
             (AgentStatus::PendingOffboard, AgentStatus::Offboarded) => true,
-            // 任意状态 → 已删除
-            (_, AgentStatus::Deleted) => true,
             // 同状态跳转：允许幂等
             (a, b) if a == b => true,
             // 其他情况：非法
@@ -815,6 +854,22 @@ impl AgentManage for HrDomainImpl {
                         ctx,
                         "onboard_agent",
                         "入职绑定失败（忽略，状态已流转）: {e}"
+                    ),
+                }
+            }
+            // 待离职 → 已离职：业务交接（占位，移交策略定稿后填充）
+            (AgentStatus::PendingOffboard, AgentStatus::Offboarded) => {
+                match self.handover_business(ctx.clone(), &agent.po.id).await {
+                    Ok(()) => log_info!(
+                        ctx,
+                        "complete_agent_offboard",
+                        "业务交接完成: agent_id={}",
+                        agent.po.id
+                    ),
+                    Err(e) => log_warn!(
+                        ctx,
+                        "complete_agent_offboard",
+                        "业务交接失败（忽略，状态已流转）: {e}"
                     ),
                 }
             }

@@ -325,6 +325,28 @@ pub struct OnboardAgentRequest {
     pub packs: Option<AgentPackSelection>,
 }
 
+/// 发起离职请求（已入职 → 待离职）
+///
+/// 语义化动作：Agent 进入交接期 —— 不再接受新业务（候选路由只匹配 Onboarded），
+/// 已在运行的业务继续执行直至完成，随后由「完成离职」收尾。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct StartAgentOffboardRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 完成离职请求（待离职 → 已离职）
+///
+/// 语义化动作：执行业务交接后正式下线。交接策略尚未定稿，
+/// 先以占位入口保留（见 `HrDomainImpl::handover_business`）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct CompleteAgentOffboardRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
 /// 删除 Agent 请求
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteAgentRequest {

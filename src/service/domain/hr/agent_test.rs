@@ -1353,7 +1353,7 @@ async fn test_resolve_agent_progressive_role_tiers(pool: SqlitePool) {
 
     // 全匹配为空（无 reception 精确命中）时，应靠子串层级命中 feishu_reception，
     // 而不是回退到完全无关的 worker（tier3 > 0 分 fallback）
-    let full_agent = domain
+    let mut full_agent = domain
         .agent_manage()
         .get_agent(
             ctx.clone(),
@@ -1363,6 +1363,22 @@ async fn test_resolve_agent_progressive_role_tiers(pool: SqlitePool) {
         .await
         .unwrap()
         .expect("全匹配 agent 应存在");
+    // 在役 Agent 不可直接删除：先完成离职流转（已入职 → 待离职 → 已离职）再软删
+    domain
+        .agent_manage()
+        .transition_status(
+            ctx.clone(),
+            &mut full_agent,
+            AgentStatus::PendingOffboard,
+            None,
+        )
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut full_agent, AgentStatus::Offboarded, None)
+        .await
+        .unwrap();
     domain
         .agent_manage()
         .delete_agent(ctx.clone(), &full_agent)
@@ -1631,6 +1647,69 @@ async fn test_agent_tool_list_ids_unique(pool: SqlitePool) {
         unique.len(),
         ids.len(),
         "扁平工具列表必须按 id 去重（命中多个包也不重复）"
+    );
+}
+
+/// 验证 get_agent(with_tools) 装配出的工具面按 name 升序稳定排序。
+///
+/// 背景：绑定工具（关联表查询）与 tag 包工具（标签查询）两条来源链的返回顺序
+/// 都不稳定，装配侧必须显式排序 —— name 全局唯一，排序结果完全确定，
+/// 同一 Agent 每次装配产出一致的 tools 数组（上游 LLM 请求的 tools 前缀缓存依赖它）。
+#[sqlx::test]
+async fn test_agent_tools_assembly_sorted_by_name(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool.clone());
+    let finance = init_finance_env(pool.clone());
+
+    let agent = create_test_agent("SortedToolsAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // 三个来源混合：ZebraBound 直接绑定，AlphaPack/MangoPack 走 alpha 包，
+    // NeuralZebra 走 neural（tag_filter 固定注入 neural，无需显式装包）
+    let t_zebra = create_enabled_tool("ZebraBound", vec!["zebra"]);
+    let t_alpha = create_enabled_tool("AlphaPack", vec!["alpha"]);
+    let t_mango = create_enabled_tool("MangoPack", vec!["alpha"]);
+    let t_neural = create_enabled_tool("NeuralZebra", vec!["neural", "zebra"]);
+    for t in [&t_zebra, &t_alpha, &t_mango, &t_neural] {
+        finance
+            .tool_provider_manage()
+            .create_tool(ctx.clone(), t)
+            .await
+            .unwrap();
+    }
+    finance
+        .tool_provider_manage()
+        .bind_tool_to_agent(ctx.clone(), agent.id(), &t_zebra.po.id)
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "alpha")
+        .await
+        .unwrap();
+
+    let loaded = domain
+        .agent_manage()
+        .get_agent(
+            ctx,
+            agent.id(),
+            crate::service::dal::agent::AgentFetchOptions {
+                with_tools: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .expect("agent 应存在");
+
+    let names: Vec<&str> = loaded.tools().iter().map(|t| t.po.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["AlphaPack", "MangoPack", "NeuralZebra", "ZebraBound"],
+        "装配出的工具面必须按 name 升序（绑定来源与 tag 来源合并后统一排序）"
     );
 }
 

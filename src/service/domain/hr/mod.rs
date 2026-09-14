@@ -141,6 +141,8 @@ impl HrDomainImpl {
         //    与本函数 ANY-matches（只要有一个交集就加分）不符，
         //    所以全量候选先拉回来，在内存里做打分更稳妥。
         let limit = criteria.candidate_limit.unwrap_or(DEFAULT_CANDIDATE_LIMIT);
+        // 仅在役（Onboarded）Agent 接新业务：待离职（交接期）/已离职不参与候选路由，
+        // 这是「离职 = 停止接受新业务，在途业务跑完为止」语义的路由侧落点。
         let query = AgentQuery {
             status: Some(AgentStatus::Onboarded),
             pagination: common::api::PaginationParams {
@@ -236,6 +238,7 @@ impl HrDomainImpl {
                     crate::service::dao::agent::AgentSearch {
                         keyword: Some(semantic_keyword),
                         filters: AgentQuery {
+                            // 语义兜底同样只在役（Onboarded）候选，与主候选集口径一致
                             status: Some(AgentStatus::Onboarded),
                             pagination: common::api::PaginationParams {
                                 limit: Some(5),

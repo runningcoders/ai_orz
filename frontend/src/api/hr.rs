@@ -2,19 +2,21 @@
 
 use common::api::{
     AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CancelThinkingRequest,
-    CancelThinkingResponse, CreateAgentRequest, CreateAgentResponse, CreateExternalAgentRequest,
-    CreateExternalAgentResponse, CreateSkillRequest, CreateSkillResponse, DeleteSkillResponse,
-    GetAgentRequest, GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
-    GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
+    CancelThinkingResponse, CompleteAgentOffboardRequest, CreateAgentRequest, CreateAgentResponse,
+    CreateExternalAgentRequest, CreateExternalAgentResponse, CreateSkillRequest,
+    CreateSkillResponse, DeleteSkillResponse, GetAgentRequest, GetAgentResponse,
+    GetReceptionAgentResponse, GetSkillFileContentRequest, GetSkillResponse,
+    InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
     ListInstalledToolPacksResponse, OnboardAgentRequest, PagedResult, QueryMemoryParams,
     QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
     RestoreSkillResponse, RuntimeListRequest, RuntimeListResponse, RuntimeStatusRequest,
     RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
     SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem, SkillQueryRequest,
-    UnbindToolFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
-    UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest, UpdateAgentStatusResponse,
-    UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
+    StartAgentOffboardRequest, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
+    UpdateAgentStatusResponse, UpdateSkillFileContentRequest, UpdateSkillRequest,
+    UpdateSkillResponse,
 };
 
 use super::{
@@ -99,6 +101,29 @@ pub async fn onboard_agent(
     req: OnboardAgentRequest,
 ) -> Result<UpdateAgentStatusResponse, ApiError> {
     api_post(&format!("/api/v1/hr/agents/{}/onboard", req.id), &req).await
+}
+
+/// 发起离职（已入职 → 待离职）：进入交接期，不再接受新业务，
+/// 已在运行的业务仍需完成
+pub async fn start_agent_offboard(
+    req: StartAgentOffboardRequest,
+) -> Result<UpdateAgentStatusResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/hr/agents/{}/offboard/start", req.id),
+        &req,
+    )
+    .await
+}
+
+/// 完成离职（待离职 → 已离职）：业务交接后正式下线
+pub async fn complete_agent_offboard(
+    req: CompleteAgentOffboardRequest,
+) -> Result<UpdateAgentStatusResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/hr/agents/{}/offboard/complete", req.id),
+        &req,
+    )
+    .await
 }
 
 pub async fn delete_agent(id: &str) -> Result<(), ApiError> {

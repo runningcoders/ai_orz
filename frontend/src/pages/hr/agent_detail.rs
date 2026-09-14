@@ -22,19 +22,20 @@ use crate::store::toast::use_toast;
 use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
     status::{
-        agent_lifecycle_badge, agent_lifecycle_text, short_id, skill_author_type_badge,
-        skill_author_type_text, tag_chip,
+        agent_lifecycle_badge, agent_lifecycle_text, agent_status_options, short_id,
+        skill_author_type_badge, skill_author_type_text, tag_chip,
     },
 };
 use common::api::{
-    AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
-    InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
+    AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, CompleteAgentOffboardRequest,
+    GetAgentRequest, InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
     ListExpiredAgentSkillsRequest, ListMessagesRequest, ListModelProvidersResponseItem,
     MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, RestoreSkillRequest,
     RuntimeReady, SelectAgentCareerRequest, SendMessageToAgentParams, SkillListItem,
-    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
-    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
+    SkillQueryRequest, StartAgentOffboardRequest, TaskListItem, TaskQueryRequest, ToolListItem,
+    ToolQueryRequest, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
+    UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType, SkillStatus};
 use dioxus::dioxus_core::{Runtime, current_scope_id};
@@ -306,22 +307,14 @@ fn kind_label(kind: &str) -> String {
     }
 }
 
-const STATUS_OPTIONS: &[(i32, &str)] = &[
-    (0, "已删除"),
-    (1, "面试中"),
-    (2, "待入职"),
-    (3, "已入职"),
-    (4, "已离职"),
-    (5, "待离职"),
-    (6, "初创"),
-];
-
 /// 生命周期引导：按当前状态给出「下一步该做什么」
 ///
 /// 状态只是结果，动作发生在边上：
 /// - 初创 → 面试中 = 职业选择（按职业/能力匹配个人能力）
 /// - 面试中 → 待入职 = 通过面试（无副作用，预留扩展）
 /// - 待入职 → 已入职 = 入职（安装组织要求的包，走弹窗选包）
+/// - 已入职 → 待离职 = 办理离职（发起交接，不可逆，走确认弹窗）
+/// - 待离职 → 已离职 = 完成离职（交接完成正式下线，此后可安全删除）
 const LIFECYCLE_STEPS: &[(i32, &str, &str)] = &[
     (
         6,
@@ -334,6 +327,8 @@ const LIFECYCLE_STEPS: &[(i32, &str, &str)] = &[
         "🚀 入职",
         "安装组织要求的工具包/技能包，正式对外提供服务",
     ),
+    (3, "📵 办理离职", "发起离职进入交接期，此步不可逆"),
+    (5, "✅ 完成离职", "交接完成 Agent 正式下线，此后可安全删除"),
 ];
 
 /// 消息流单页条数（双向查询各取 PAGE_SIZE，合并去重后取最新的 PAGE_SIZE 条）
@@ -454,6 +449,9 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut show_edit_modal = use_signal(|| false);
     // 入职弹窗（选包）：仅「待入职」状态可打开
     let mut show_onboard_modal = use_signal(|| false);
+    // 离职确认弹窗：记录发起离职操作时的当前状态（3=已入职 / 5=待离职）——
+    // 离职两步不可逆（状态机无回边），先确认再执行
+    let mut offboard_confirm = use_signal(|| None::<i32>);
     let mut edit_name = use_signal(String::new);
     let mut edit_roles = use_signal(Vec::<String>::new);
     let mut edit_roles_input = use_signal(String::new);
@@ -1328,14 +1326,29 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 show_onboard_modal.set(true);
                                                                 return;
                                                             }
+                                                            // 离职两步不可逆（状态机无回边）→ 先弹确认再执行
+                                                            if matches!(
+                                                                AgentStatus::from(from_status_val),
+                                                                AgentStatus::Onboarded | AgentStatus::PendingOffboard
+                                                            ) {
+                                                                offboard_confirm.set(Some(from_status_val));
+                                                                return;
+                                                            }
                                                             let result = if from_status_val == AgentStatus::Incubating as i32 {
                                                                 select_agent_career(SelectAgentCareerRequest { id: aid.clone() })
                                                                     .await
                                                                     .map(|_| ())
                                                             } else {
+                                                                // 目标状态按「边」计算：面试中→待入职
+                                                                // （离职两步已在上方被确认弹窗拦截，不走这里）
+                                                                let target = match AgentStatus::from(from_status_val) {
+                                                                    AgentStatus::Onboarded => AgentStatus::PendingOffboard,
+                                                                    AgentStatus::PendingOffboard => AgentStatus::Offboarded,
+                                                                    _ => AgentStatus::PendingOnboard,
+                                                                };
                                                                 update_agent_status(UpdateAgentStatusRequest {
                                                                     id: aid.clone(),
-                                                                    status: AgentStatus::PendingOnboard,
+                                                                    status: target,
                                                                     packs: None,
                                                                 })
                                                                 .await
@@ -1365,7 +1378,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
                                     div { class: "flex flex-wrap gap-2",
-                                        for (status, label) in STATUS_OPTIONS {
+                                        for (status, label) in agent_status_options() {
                                             {
                                                 let is_current = a.status == *status;
                                                 let btn_class = if is_current { "btn hud-btn btn-primary btn-sm" } else { "btn hud-btn btn-ghost btn-sm" };
@@ -1378,6 +1391,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         class: "{btn_class}",
                                                         disabled: is_current,
                                                         onclick: move |_| {
+                                                            // 离职两步不可逆 → 与生命周期引导一致，先确认再执行
+                                                            // （其余非法跳转由后端状态机拒绝并提示）
+                                                            if matches!(
+                                                                (AgentStatus::from(a.status), AgentStatus::from_i32(target_status_val)),
+                                                                (AgentStatus::Onboarded, AgentStatus::PendingOffboard)
+                                                                    | (AgentStatus::PendingOffboard, AgentStatus::Offboarded)
+                                                            ) {
+                                                                offboard_confirm.set(Some(a.status));
+                                                                return;
+                                                            }
                                                             let agent_id = aid.clone();
                                                             let label_clone = label_for_closure.clone();
                                                             spawn(async move {
@@ -2076,6 +2099,63 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 agent_id: agent_id_signal(),
                                 on_close: close_onboard_modal,
                             }
+                        }
+
+                        // 离职确认弹窗：两段式离职均不可逆，需用户明确确认。
+                        // 待离职一步额外提示「是否还有正在进行的业务」——在途业务不会被
+                        // 强制终止，可先「暂不离职」等业务跑完再回来确认。
+                        ConfirmDialog {
+                            show: offboard_confirm().is_some(),
+                            title: "确认离职操作".to_string(),
+                            message: match offboard_confirm() {
+                                Some(s) if AgentStatus::from(s) == AgentStatus::Onboarded => {
+                                    "该 Agent 已入职，办理离职后将进入交接期：不再接受新业务，已在运行的业务仍会执行完成。是否办理离职？".to_string()
+                                }
+                                _ => {
+                                    "该 Agent 处于待离职（交接中）。是否还有正在进行的业务？在途业务不会被强制终止，可先暂不离职等待业务完成；确认离职后业务交接即完成，Agent 正式下线，此操作不可回退。".to_string()
+                                }
+                            },
+                            confirm_text: Some(match offboard_confirm() {
+                                Some(s) if AgentStatus::from(s) == AgentStatus::Onboarded => {
+                                    "办理离职".to_string()
+                                }
+                                _ => "确认离职".to_string(),
+                            }),
+                            cancel_text: Some("暂不离职".to_string()),
+                            on_confirm: move |_| {
+                                let Some(s) = offboard_confirm() else { return };
+                                offboard_confirm.set(None);
+                                let aid = agent_id_signal();
+                                let is_start = AgentStatus::from(s) == AgentStatus::Onboarded;
+                                spawn(async move {
+                                    let result = if is_start {
+                                        start_agent_offboard(StartAgentOffboardRequest {
+                                            id: aid.clone(),
+                                        })
+                                        .await
+                                    } else {
+                                        complete_agent_offboard(CompleteAgentOffboardRequest {
+                                            id: aid.clone(),
+                                        })
+                                        .await
+                                    };
+                                    match result {
+                                        Ok(_) => {
+                                            toast.success(if is_start {
+                                                "已发起离职，进入交接期（不再接受新业务，在途业务继续完成）"
+                                            } else {
+                                                "离职流程已完成，业务交接完毕，Agent 已正式下线"
+                                            });
+                                            match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
+                                                Ok(a) => agent_res.set(Some(Ok(a))),
+                                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                            }
+                                        }
+                                        Err(e) => toast.error(format!("离职操作失败: {}", e)),
+                                    }
+                                });
+                            },
+                            on_cancel: move |_| offboard_confirm.set(None),
                         }
 
                         Modal {

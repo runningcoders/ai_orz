@@ -6,8 +6,8 @@ use dioxus::prelude::*;
 
 use crate::api::finance::list_model_providers;
 use crate::api::hr::{
-    create_external_agent, delete_agent, list_agents, query_agents, search_agents,
-    select_agent_career, update_agent_status,
+    complete_agent_offboard, create_external_agent, delete_agent, list_agents, query_agents,
+    search_agents, select_agent_career, start_agent_offboard, update_agent_status,
 };
 use crate::api::seed::{get_task_progress, preview_preset_agents, sync_preset_agents};
 use crate::components::confirm_dialog::ConfirmDialog;
@@ -18,14 +18,17 @@ use crate::pages::hr::bind_model_modal::BindModelModal;
 use crate::pages::hr::create_agent_modal::CreateAgentModal;
 use crate::pages::hr::onboard_modal::OnboardModal;
 use crate::store::toast::use_toast;
-use crate::utils::status::{agent_lifecycle_badge, agent_lifecycle_text};
+use crate::utils::status::{
+    agent_deletable, agent_lifecycle_badge, agent_lifecycle_text, agent_status_options,
+};
 use common::api::seed::{
     PresetAgentSyncStrategy, SyncPresetAgentsRequest, SyncPresetAgentsResponse,
 };
 use common::api::{
-    AgentQueryRequest, CreateExternalAgentRequest, ListAgentsRequest, ListAgentsResponseItem,
-    ListModelProvidersResponseItem, PreviewPresetAgentsResponse, SearchAgentsRequest,
-    SelectAgentCareerRequest, UpdateAgentStatusRequest,
+    AgentQueryRequest, CompleteAgentOffboardRequest, CreateExternalAgentRequest, ListAgentsRequest,
+    ListAgentsResponseItem, ListModelProvidersResponseItem, PreviewPresetAgentsResponse,
+    SearchAgentsRequest, SelectAgentCareerRequest, StartAgentOffboardRequest,
+    UpdateAgentStatusRequest,
 };
 use common::enums::AgentStatus;
 use dioxus_router::Link;
@@ -55,13 +58,16 @@ fn kind_label(kind: &str) -> String {
 
 /// 生命周期「下一步」动作文案（状态只是结果，动作发生在边上）。
 ///
-/// 返回 `None` 表示无需引导的终态（已入职 / 已离职等）。与
-/// [`handle_onboard`] 的分支一一对应：初创→职业选择、面试中→通过面试、待入职→入职选包。
+/// 返回 `None` 表示无需引导的状态（已删除等）。与
+/// [`handle_onboard`] 的分支一一对应：初创→职业选择、面试中→通过面试、待入职→入职选包、
+/// 已入职→办理离职、待离职→完成离职。
 fn next_action_label(status: i32) -> Option<&'static str> {
     match AgentStatus::from(status) {
         AgentStatus::Incubating => Some("选择职业"),
         AgentStatus::Interviewing => Some("通过面试"),
         AgentStatus::PendingOnboard => Some("办理入职"),
+        AgentStatus::Onboarded => Some("办理离职"),
+        AgentStatus::PendingOffboard => Some("完成离职"),
         _ => None,
     }
 }
@@ -114,6 +120,9 @@ pub fn HrAgents() -> Element {
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
     let mut pending_delete_id = use_signal(String::new);
+    // 离职确认弹窗：记录 (Agent ID, 当前状态) —— 离职两步（办理离职/完成离职）
+    // 不可逆（状态机无回边），点击引导按钮后先弹确认再执行
+    let mut offboard_confirm = use_signal(|| None::<(String, i32)>);
 
     // 加载数据（三场景切换：list / query / search）
     let load_data = move || {
@@ -190,6 +199,7 @@ pub fn HrAgents() -> Element {
     // 初创 → 职业选择（按职业/能力匹配个人能力）
     // 面试中 → 通过面试（转入待入职，无副作用）
     // 待入职 → 入职（弹窗选包，安装组织要求的包）
+    // 已入职/待离职 → 离职两步（不可逆，先弹确认再执行）
     let handle_onboard = move |id: String, status: i32| {
         let status = AgentStatus::from(status);
         spawn(async move {
@@ -221,6 +231,10 @@ pub fn HrAgents() -> Element {
                 AgentStatus::PendingOnboard => {
                     // 入职需要选包 → 交给弹窗，不在这里直接提交
                     onboard_agent_id.set(Some(id));
+                }
+                AgentStatus::Onboarded | AgentStatus::PendingOffboard => {
+                    // 离职两步不可逆（状态机无回边）→ 交给确认弹窗执行
+                    offboard_confirm.set(Some((id, status as i32)));
                 }
                 _ => {}
             }
@@ -486,12 +500,9 @@ pub fn HrAgents() -> Element {
                                     load_data();
                                 },
                                 option { value: "-1", "全部" }
-                                option { value: "1", "面试中" }
-                                option { value: "2", "待入职" }
-                                option { value: "3", "已入职" }
-                                option { value: "4", "已离职" }
-                                option { value: "5", "待离职" }
-                                option { value: "6", "初创" }
+                                for (v, label) in agent_status_options() {
+                                    option { value: "{v}", "{label}" }
+                                }
                             }
                         }
                         div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
@@ -548,6 +559,7 @@ pub fn HrAgents() -> Element {
                                         let id_delete = id.clone();
                                         let id_onboard = id.clone();
                                         let id_bind = id.clone();
+                                        let id_offboard = id.clone();
                                         let bind_name = aname.clone();
                                         // local 类型必须绑定对话模型才能推进生命周期；cli/remote 不需要
                                         let needs_model = akind == "local" && amp.is_empty();
@@ -618,12 +630,22 @@ pub fn HrAgents() -> Element {
                                                     }
                                                 }
                                                 td { "data-label": "操作",
-                                                    button { class: "btn hud-btn btn-error btn-sm",
-                                                        onclick: move |_| {
-                                                            pending_delete_id.set(id_delete.clone());
-                                                            show_delete_confirm.set(true);
-                                                        },
-                                                        "删除"
+                                                    // 删除按钮按状态渲染：入职前（未产生业务交互）可删；
+                                                    // 已入职（在役/交接中）后删除不再适用，按钮切换为「离职」，
+                                                    // 引导走两段式离职流转（与后端 delete_agent 门禁对齐）
+                                                    if agent_deletable(astatus) {
+                                                        button { class: "btn hud-btn btn-error btn-sm",
+                                                            onclick: move |_| {
+                                                                pending_delete_id.set(id_delete.clone());
+                                                                show_delete_confirm.set(true);
+                                                            },
+                                                            "删除"
+                                                        }
+                                                    } else {
+                                                        button { class: "btn hud-btn btn-warning btn-sm",
+                                                            onclick: move |_| offboard_confirm.set(Some((id_offboard.clone(), astatus))),
+                                                            "离职"
+                                                        }
                                                     }
                                                 }
                                             }
@@ -949,7 +971,7 @@ pub fn HrAgents() -> Element {
         ConfirmDialog {
             show: show_delete_confirm(),
             title: "确认删除".to_string(),
-            message: "确定删除此 Agent？此操作不可撤销。".to_string(),
+            message: "确定删除此 Agent？删除为软删除（数据保留在库，预置 Agent 可通过「同步预置」恢复）。".to_string(),
             on_confirm: move |_| {
                 let id = pending_delete_id();
                 show_delete_confirm.set(false);
@@ -963,6 +985,57 @@ pub fn HrAgents() -> Element {
             },
             on_cancel: move |_| {
                 show_delete_confirm.set(false);
+            }
+        }
+
+        // 离职确认弹窗：两段式离职均不可逆，需用户明确确认。
+        // 待离职一步额外提示「是否还有正在进行的业务」——在途业务不会被强制终止，
+        // 可先「暂不离职」等业务跑完再回来确认。
+        ConfirmDialog {
+            show: offboard_confirm().is_some(),
+            title: "确认离职操作".to_string(),
+            message: match offboard_confirm() {
+                Some((_, s)) if AgentStatus::from(s) == AgentStatus::Onboarded => {
+                    "该 Agent 已入职，办理离职后将进入交接期：不再接受新业务，已在运行的业务仍会执行完成。是否办理离职？".to_string()
+                }
+                _ => {
+                    "该 Agent 处于待离职（交接中）。是否还有正在进行的业务？在途业务不会被强制终止，可先暂不离职等待业务完成；确认离职后业务交接即完成，Agent 正式下线，此操作不可回退。".to_string()
+                }
+            },
+            confirm_text: Some(match offboard_confirm() {
+                Some((_, s)) if AgentStatus::from(s) == AgentStatus::Onboarded => {
+                    "办理离职".to_string()
+                }
+                _ => "确认离职".to_string(),
+            }),
+            cancel_text: Some("暂不离职".to_string()),
+            on_confirm: move |_| {
+                if let Some((id, s)) = offboard_confirm() {
+                    offboard_confirm.set(None);
+                    let is_start = AgentStatus::from(s) == AgentStatus::Onboarded;
+                    spawn(async move {
+                        let result = if is_start {
+                            start_agent_offboard(StartAgentOffboardRequest { id: id.clone() }).await
+                        } else {
+                            complete_agent_offboard(CompleteAgentOffboardRequest { id: id.clone() })
+                                .await
+                        };
+                        match result {
+                            Ok(_) => {
+                                toast.success(if is_start {
+                                    "已发起离职，进入交接期（不再接受新业务，在途业务继续完成）"
+                                } else {
+                                    "离职流程已完成，业务交接完毕，Agent 已正式下线"
+                                });
+                                load_data();
+                            }
+                            Err(e) => toast.error(format!("离职操作失败: {}", e)),
+                        }
+                    });
+                }
+            },
+            on_cancel: move |_| {
+                offboard_confirm.set(None);
             }
         }
 

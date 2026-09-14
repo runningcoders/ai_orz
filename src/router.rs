@@ -618,6 +618,16 @@ fn hr_routes() -> Router {
             "/agents/{id}/onboard",
             post(handlers::hr::agent::onboard_agent_handler),
         )
+        // 语义化动作：发起离职（已入职 → 待离职，进入交接期不再接新业务）
+        .route(
+            "/agents/{id}/offboard/start",
+            post(handlers::hr::agent::start_agent_offboard_handler),
+        )
+        // 语义化动作：完成离职（待离职 → 已离职，业务交接后正式下线）
+        .route(
+            "/agents/{id}/offboard/complete",
+            post(handlers::hr::agent::complete_agent_offboard_handler),
+        )
         .route(
             "/agents/{id}",
             delete(handlers::hr::agent::delete_agent_handler),
