@@ -11,7 +11,8 @@ use common::error::Result;
     id = "get_organization",
     name = "Get Organization Details",
     description = "Get an organization's info by explicit ID: name, description, base URL, status, timestamps, and org-level config. Returns the organization info. Use get_current_organization when you want the caller's own organization. Fails with not found if the ID does not exist.",
-    params = "common::api::GetOrganizationRequest"
+    params = "common::api::GetOrganizationRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn get_organization(

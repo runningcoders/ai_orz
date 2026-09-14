@@ -13,7 +13,8 @@ use common::error::{Result, bail_err, err};
     id = "get_artifact_content",
     name = "Read Artifact Content",
     description = "Read the full UTF-8 text content of a generated-content artifact. Returns the artifact detail plus the content, encoding, byte size, and updated time. Fails for attachment-sourced artifacts, and with not found if the artifact does not exist.",
-    params = "common::api::GetArtifactContentRequest"
+    params = "common::api::GetArtifactContentRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn get_artifact_content(

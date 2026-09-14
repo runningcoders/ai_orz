@@ -14,7 +14,8 @@ use common::error::{Result, err};
     id = "update_mcp_server_status",
     name = "Toggle MCP Server Status",
     description = "Toggle an MCP Server between Enabled and Disabled. It cannot mark a server Deleted here; soft deletion goes through delete_mcp_server. Returns the updated server detail; fails if not found.",
-    params = "common::api::UpdateMcpServerStatusRequest"
+    params = "common::api::UpdateMcpServerStatusRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn update_mcp_server_status(

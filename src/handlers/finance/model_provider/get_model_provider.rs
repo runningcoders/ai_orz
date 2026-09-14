@@ -13,7 +13,8 @@ use common::models::StatsInterval;
     id = "get_model_provider",
     name = "Get Provider Details",
     description = "Get one model provider's full configuration by id (type, capability, model name, base_url, status), optionally with model-call statistics over a time range at hourly or daily interval. Fails if the provider does not exist.",
-    params = "common::api::GetModelProviderRequest"
+    params = "common::api::GetModelProviderRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn get_model_provider(

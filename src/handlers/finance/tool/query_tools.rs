@@ -18,7 +18,6 @@ use super::response::{probe_runtime_ready, to_list_item};
     name = "Query Tools (Advanced)",
     description = "Filter tools by structured criteria (ids, keyword, agent_id, tags, protocol) with pagination. Best when you know exact field values; use search_tools for free-form keyword/semantic search, or list_tools to browse all.",
     params = "common::api::ToolQueryRequest",
-    neural,
     tags = "tool_management"
 )]
 #[generate_http_handler]

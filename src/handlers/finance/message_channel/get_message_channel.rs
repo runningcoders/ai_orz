@@ -13,7 +13,8 @@ use common::error::{Result, bail_err, err};
     id = "get_message_channel",
     name = "Get Channel Details",
     description = "Get one message channel's detail by ID, including its type, config, and credential references. Only your own channels are visible — any other ID returns NotFound.",
-    params = "common::api::GetMessageChannelRequest"
+    params = "common::api::GetMessageChannelRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn get_message_channel(

@@ -13,7 +13,8 @@ use common::error::{Result, bail_err, err};
     id = "update_message_channel_status",
     name = "Toggle Channel Status",
     description = "Enable or disable a message channel; disabled channels stop receiving message deliveries. Invalid status transitions are rejected. Returns the updated channel detail.",
-    params = "common::api::UpdateMessageChannelStatusRequest"
+    params = "common::api::UpdateMessageChannelStatusRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn update_message_channel_status(

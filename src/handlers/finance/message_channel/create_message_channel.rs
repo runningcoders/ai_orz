@@ -151,7 +151,8 @@ fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
     id = "create_message_channel",
     name = "Add Message Channel",
     description = "Register an outbound notification channel (Lark, WeChat, Email, Slack, or Webhook) that messages can be delivered through, optionally bound to an agent. Returns the channel detail. Lark channels must reference an existing LarkApp credential via lark_credential_id; WeChat channels must reference a WechatIlink credential; Email channels must reference an EmailBot credential plus a recipient to_address.",
-    params = "common::api::CreateMessageChannelRequest"
+    params = "common::api::CreateMessageChannelRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn create_message_channel(

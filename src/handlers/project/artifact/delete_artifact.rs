@@ -11,7 +11,8 @@ use common::error::Result;
     id = "delete_artifact",
     name = "Delete Artifact",
     description = "Soft-delete a project artifact by ID: the record is marked deleted (excluded from later listings) while stored content is kept. Returns success: true. Fails with not found if the artifact does not exist.",
-    params = "common::api::DeleteArtifactRequest"
+    params = "common::api::DeleteArtifactRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn delete_artifact(

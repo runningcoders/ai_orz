@@ -15,7 +15,8 @@ use std::sync::Arc;
     id = "create_model_provider",
     name = "Add Model Provider",
     description = "Register a model provider (type, capability, model name, api_key, base_url, context lengths) for AI inference and return its id and status. max_context_length is REQUIRED for chat (non-embedding) models: it is the basis of the context-compaction threshold, and omitting it makes the agent never compact its context. An embedding provider may come back Disabled when another embedding provider is already active.",
-    params = "common::api::CreateModelProviderRequest"
+    params = "common::api::CreateModelProviderRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn create_model_provider(

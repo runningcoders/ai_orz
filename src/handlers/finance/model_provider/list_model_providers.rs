@@ -11,7 +11,8 @@ use common::error::Result;
     id = "list_model_providers",
     name = "List Model Providers",
     description = "List all configured model providers with basic info (type, capability, model name, status), no pagination. Use query_model_providers to filter by type, capability, or status when you need a subset.",
-    params = "common::api::ListModelProvidersRequest"
+    params = "common::api::ListModelProvidersRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn list_model_providers(

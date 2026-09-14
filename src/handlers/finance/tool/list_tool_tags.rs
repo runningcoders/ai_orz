@@ -14,8 +14,7 @@ use common::error::Result;
     name = "List Tool Tags",
     description = "List the distinct tags across all enabled tools, sorted alphabetically, for discovering available tool categories. Returns a plain list of tag strings; combine with the tag filter in query_tools.",
     params = "common::api::ListToolTagsRequest",
-    tags = "tool_management",
-    neural
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn list_tool_tags(

@@ -17,7 +17,8 @@ use crate::enrich_ctx;
     id = "update_model_provider",
     name = "Update Provider Config",
     description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. For chat (non-embedding) models max_context_length cannot be cleared (it backs the context-compaction threshold). Returns the updated provider, plus rebuild_task_id when an active embedding provider's config changed and a vector rebuild was scheduled. Fails if not found.",
-    params = "common::api::UpdateModelProviderRequest"
+    params = "common::api::UpdateModelProviderRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn update_model_provider(

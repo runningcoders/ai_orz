@@ -16,7 +16,8 @@ use super::response::{to_detail, to_model_config, to_model_transport};
     id = "create_mcp_server",
     name = "Add MCP Server",
     description = "Register an MCP Server (name, transport, connection config) as a source of MCP tools. Returns the created server detail with credentials redacted; fails if the credential requirements are invalid for the chosen transport.",
-    params = "common::api::CreateMcpServerRequest"
+    params = "common::api::CreateMcpServerRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn create_mcp_server(

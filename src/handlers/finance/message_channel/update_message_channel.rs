@@ -17,7 +17,8 @@ use common::error::{Result, bail_err, err};
     id = "update_message_channel",
     name = "Update Channel Config",
     description = "Partially update a message channel: name, bindings (user_id, agent_id), type, webhook_url, tokens, or type-specific config; omitted fields are preserved. Returns the updated channel detail. Fails if a Lark channel is left without a valid LarkApp credential.",
-    params = "common::api::UpdateMessageChannelRequest"
+    params = "common::api::UpdateMessageChannelRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn update_message_channel(

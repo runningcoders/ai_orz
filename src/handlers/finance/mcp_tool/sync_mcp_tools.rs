@@ -11,7 +11,8 @@ use common::error::Result;
     id = "sync_mcp_tools",
     name = "Sync MCP Server Tools",
     description = "Pull the tool list from a remote MCP Server and upsert it into local Tool records: new tools are created, existing ones refreshed, and tools no longer offered are marked Stale. Returns the number of tools synced; fails if the server_id does not exist or the server is unreachable.",
-    params = "common::api::SyncMcpToolsRequest"
+    params = "common::api::SyncMcpToolsRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn sync_mcp_tools(

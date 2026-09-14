@@ -16,7 +16,7 @@ use common::error::{Result, bail_err, err};
     name = "Update Tool",
     description = "Update a custom tool's name, description, config, parameters schema, tags, or enabled state; only provided fields change. Built-in tools accept config edits only. Returns the updated tool detail; fails if the tool does not exist.",
     params = "common::api::UpdateToolRequest",
-    tags = "tool_management"
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn update_tool(

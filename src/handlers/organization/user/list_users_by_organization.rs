@@ -11,7 +11,8 @@ use common::error::Result;
     id = "list_users_by_organization",
     name = "List Org Users",
     description = "List all users belonging to an explicitly given organization ID; each item carries user ID, username, display name, email, role, status, and creation time. Returns the list plus a total count, unpaginated. Use list_users_by_current_organization to list the caller's own organization.",
-    params = "common::api::ListUsersByOrganizationRequest"
+    params = "common::api::ListUsersByOrganizationRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn list_users_by_organization(

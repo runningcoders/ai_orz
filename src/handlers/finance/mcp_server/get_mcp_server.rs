@@ -14,7 +14,8 @@ use super::response::to_detail;
     id = "get_mcp_server",
     name = "Get MCP Server Details",
     description = "Get one MCP Server's management-safe detail by id, including transport, config, and status with credentials redacted. Fails with not found if the server does not exist. Use list_mcp_servers first if you need to find the id.",
-    params = "common::api::GetMcpServerRequest"
+    params = "common::api::GetMcpServerRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn get_mcp_server(

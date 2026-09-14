@@ -14,7 +14,8 @@ const DEFAULT_MAX_LIMIT: usize = 100;
     id = "list_artifacts",
     name = "List Artifacts",
     description = "Browse all artifacts under a specific project with pagination (limit capped at 100, default 100), optionally filtered by task_id, file type, or source type. Returns a paged list of artifact details. For cross-project filtering use query_artifacts.",
-    params = "common::api::ListArtifactsRequest"
+    params = "common::api::ListArtifactsRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn list_artifacts(

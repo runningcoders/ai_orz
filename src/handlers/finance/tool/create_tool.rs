@@ -15,7 +15,7 @@ use common::error::{Result, bail_err, err};
     name = "Create Custom Tool",
     description = "Create a custom HTTP or MCP tool with a name, description, config, parameters schema, and tags. Returns the new tool's id and metadata. Built-in tools cannot be created via this API.",
     params = "common::api::CreateToolRequest",
-    tags = "tool_management"
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn create_tool(

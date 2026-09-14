@@ -15,7 +15,8 @@ use super::response::{to_list_item, to_model_status, to_model_transport};
     id = "list_mcp_servers",
     name = "List MCP Servers",
     description = "List MCP Servers with optional filters (id, name, transport, status) and pagination; returns {servers, total} with credentials redacted. Use get_mcp_server when you already know the id.",
-    params = "common::api::ListMcpServersRequest"
+    params = "common::api::ListMcpServersRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn list_mcp_servers(

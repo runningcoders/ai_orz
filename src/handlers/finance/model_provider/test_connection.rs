@@ -13,7 +13,8 @@ use crate::enrich_ctx;
     id = "test_model_provider_connection",
     name = "Test Provider Connection",
     description = "Verify a model provider's connectivity and authentication by sending a sample prompt (default 'Hello!'). Returns {success, response, error} and never fails on upstream errors, which are reported in the error field. Fails only if the provider id does not exist.",
-    params = "common::api::TestModelProviderConnectionRequest"
+    params = "common::api::TestModelProviderConnectionRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn test_model_provider_connection(

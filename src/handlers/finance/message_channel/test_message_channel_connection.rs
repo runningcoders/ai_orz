@@ -11,7 +11,8 @@ use common::error::{Result, bail_err, err};
     id = "test_message_channel_connection",
     name = "Test Channel Connection",
     description = "Verify a channel's connectivity by sending a test notification through it. Never errors out: returns success=true on delivery, or success=false with an error message describing the failure.",
-    params = "common::api::TestMessageChannelConnectionRequest"
+    params = "common::api::TestMessageChannelConnectionRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn test_message_channel_connection(

@@ -13,7 +13,8 @@ use super::super::tool::response::{probe_runtime_ready, to_list_item};
     id = "list_mcp_tools_by_server",
     name = "List Server's MCP Tools",
     description = "List the local Tool records synced from one MCP Server, with optional keyword and status filters and pagination; returns {tools, total}. If the server's toolset may have changed, run sync_mcp_tools first.",
-    params = "common::api::ListMcpToolsByServerRequest"
+    params = "common::api::ListMcpToolsByServerRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn list_mcp_tools_by_server(

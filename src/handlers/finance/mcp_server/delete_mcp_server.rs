@@ -12,7 +12,8 @@ use common::error::Result;
     id = "delete_mcp_server",
     name = "Remove MCP Server",
     description = "Soft-delete an MCP Server by marking its status Deleted (the row is kept) and invalidating its cached runtime connection. Returns success:true; fails if the server does not exist.",
-    params = "common::api::DeleteMcpServerRequest"
+    params = "common::api::DeleteMcpServerRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn delete_mcp_server(

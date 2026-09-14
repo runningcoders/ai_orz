@@ -15,7 +15,8 @@ use common::error::{Error, Result};
     id = "update_organization",
     name = "Update Organization",
     description = "Update an organization by ID: name, description, base URL, and status; org-level config changes additionally require the SuperAdmin role. Returns the updated organization info including config. Use update_current_organization to modify the caller's own organization without specifying an ID.",
-    params = "common::api::UpdateOrganizationRequest"
+    params = "common::api::UpdateOrganizationRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn update_organization(

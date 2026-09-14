@@ -12,7 +12,8 @@ use common::error::Result;
     id = "get_artifact",
     name = "Get Artifact Details",
     description = "Get an artifact's metadata by ID: name, description, file type, MIME type, source type, storage path, and timestamps. Returns the artifact detail without file content. Use get_artifact_content to read the text body of a generated-content artifact.",
-    params = "common::api::GetArtifactRequest"
+    params = "common::api::GetArtifactRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn get_artifact(

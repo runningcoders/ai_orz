@@ -13,7 +13,8 @@ use common::error::{Result, bail_err, err};
     id = "list_message_channels",
     name = "List All Channels",
     description = "Browse message channels with pagination, optionally filtered by agent_id, channel_type, or only_enabled. Defaults to the current user's channels. Use query_message_channels for exact field filtering.",
-    params = "common::api::ListMessageChannelsRequest"
+    params = "common::api::ListMessageChannelsRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn list_message_channels(

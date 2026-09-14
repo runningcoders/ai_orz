@@ -12,7 +12,7 @@ use common::error::Result;
     name = "Delete Tool",
     description = "Permanently remove a custom tool record; this is a hard delete, not recoverable. Built-in tools cannot be deleted. Returns success:true; fails if the tool does not exist.",
     params = "common::api::DeleteToolRequest",
-    tags = "tool_management"
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn delete_tool(

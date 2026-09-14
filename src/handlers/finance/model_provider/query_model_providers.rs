@@ -16,7 +16,7 @@ use common::error::Result;
     name = "Query Providers (Advanced)",
     description = "Filter model providers by structured criteria (provider_type, capability, status) with pagination. Best when you know the exact type or capability; use list_model_providers to browse all.",
     params = "common::api::ModelProviderQueryRequest",
-    neural
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn query_model_providers(

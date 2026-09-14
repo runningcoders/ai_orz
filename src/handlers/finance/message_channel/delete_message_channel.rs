@@ -11,7 +11,8 @@ use common::error::{Result, bail_err, err};
     id = "delete_message_channel",
     name = "Remove Channel",
     description = "Soft-delete a message channel by ID: it stops delivering immediately, while the record is kept for audit. Only your own channels can be deleted — any other ID returns NotFound. Returns an empty confirmation.",
-    params = "common::api::DeleteMessageChannelRequest"
+    params = "common::api::DeleteMessageChannelRequest",
+    tags = "admin"
 )]
 #[generate_http_handler]
 pub async fn delete_message_channel(
