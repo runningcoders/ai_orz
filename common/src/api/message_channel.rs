@@ -46,17 +46,16 @@ pub struct WechatChannelConfig {
 }
 
 /// 邮件渠道配置（非敏感展示字段，用于响应 DTO）
+///
+/// SMTP/IMAP 连接参数与密码/授权码全部收敛进 EmailBot 凭证 detail
+/// （platform = 邮箱提供商），渠道只存引用 + 对端地址（对齐 Lark/Wechat 引用模式）。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct EmailChannelConfig {
-    /// SMTP 服务器地址
-    pub smtp_host: Option<String>,
-    /// SMTP 端口
-    pub smtp_port: Option<u16>,
-    /// 用户名
-    pub username: Option<String>,
-    /// 发件地址
-    pub from_address: Option<String>,
-    /// 收件地址
+    /// 凭证引用 ID（指向 user_credentials，kind=EmailBot）
+    pub credential_id: Option<String>,
+    /// 凭证名称（反查凭据表，未找到为 None）
+    pub credential_name: Option<String>,
+    /// 对端收件邮箱（用户对话框邮箱，出站推送目标）
     pub to_address: Option<String>,
 }
 
@@ -123,20 +122,12 @@ pub struct CreateWechatChannelConfig {
     pub listen_inbound: Option<bool>,
 }
 
-/// 创建/更新请求 - 邮件配置（含敏感字段）
+/// 创建/更新请求 - 邮件配置（引用模式）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct CreateEmailChannelConfig {
-    /// SMTP 服务器地址
-    pub smtp_host: Option<String>,
-    /// SMTP 端口
-    pub smtp_port: Option<u16>,
-    /// 用户名
-    pub username: Option<String>,
-    /// 密码（敏感字段）
-    pub password: Option<String>,
-    /// 发件地址
-    pub from_address: Option<String>,
-    /// 收件地址
+    /// 凭证引用 ID（指向 user_credentials，kind=EmailBot；SMTP 参数与密码全在凭证里）
+    pub credential_id: Option<String>,
+    /// 对端收件邮箱（用户对话框邮箱，出站推送目标）
     pub to_address: Option<String>,
 }
 

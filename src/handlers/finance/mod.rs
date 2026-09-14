@@ -4,6 +4,7 @@
 //! - Model Provider - 大语言模型提供商管理
 
 pub mod attachment;
+pub mod email_integration;
 pub mod generic_token_integration;
 pub mod github_integration;
 pub mod lark_integration;

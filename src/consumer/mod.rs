@@ -1,6 +1,7 @@
 pub mod agent_loop_consumer;
 pub mod aop_stats_collector;
 pub mod aop_stats_hook;
+pub mod email_inbound;
 pub mod federation_directory;
 pub mod federation_inbound_task;
 pub mod federation_ws_outbound;
@@ -29,6 +30,9 @@ pub async fn init() -> Result<()> {
 
     // 微信入站消息（iLink 长轮询事件）：同上
     aop::registry().register_consumer(Arc::new(wechat_inbound::WechatInboundConsumer::new()))?;
+
+    // 邮件入站消息（IMAP 受管轮询事件，轮询单元 = 邮箱凭证）：同上
+    aop::registry().register_consumer(Arc::new(email_inbound::EmailInboundConsumer::new()))?;
 
     aop::registry().register_consumer(Arc::new(scheduler::CronTriggerConsumer::new()))?;
 

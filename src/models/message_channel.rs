@@ -232,19 +232,18 @@ pub struct ChannelConfig {
     /// 首次入站自动回填，无需手填）
     pub wechat_peer_id: Option<String>,
 
-    // 邮件配置
-    /// SMTP 服务器地址
-    pub email_smtp_host: Option<String>,
-    /// SMTP 服务器端口
-    pub email_smtp_port: Option<u16>,
-    /// 邮箱用户名
-    pub email_username: Option<String>,
-    /// 邮箱密码
-    pub email_password: Option<String>,
-    /// 发件人邮箱
-    pub email_from_address: Option<String>,
-    /// 收件人邮箱
+    // 邮件配置（引用模式：SMTP/IMAP 参数与密码全部收敛进 EmailBot 凭证 detail）
+    /// 邮箱机器人凭证引用 ID（指向 user_credentials 表凭证行，kind=EmailBot）
+    ///
+    /// 渠道仅存引用 + 对端地址，运行时按 ID 从凭据表解析 SMTP 连接参数
+    /// （对齐 lark_credential_id / wechat_credential_id 引用模式）
+    pub email_credential_id: Option<String>,
+    /// 对端收件邮箱（用户对话框邮箱，出站推送目标 + 入站二维路由匹配键）
     pub email_to_address: Option<String>,
+    /// 是否监听该渠道的邮件入站（缺省 true，对齐 lark/wechat listen_inbound）
+    ///
+    /// 关闭后渠道仅用于出站推送；共享同一代理邮箱的其他渠道入站不受影响。
+    pub email_listen_inbound: Option<bool>,
 
     // Slack 配置
     /// Slack Bot Token

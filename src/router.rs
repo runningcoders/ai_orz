@@ -382,6 +382,28 @@ fn generic_token_integration_routes() -> Router {
         )
 }
 
+fn email_integration_routes() -> Router {
+    use crate::handlers::finance::email_integration as em;
+    Router::new()
+        .route("/status", get(em::get_status::get_status_handler))
+        .route(
+            "/credentials",
+            post(em::create_credential::create_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            patch(em::update_credential::update_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            delete(em::delete_credential::delete_credential_handler),
+        )
+        .route(
+            "/credentials/default",
+            post(em::set_default_credential::set_default_credential_handler),
+        )
+}
+
 fn project_routes() -> Router {
     Router::new()
         .route(
@@ -724,6 +746,7 @@ fn finance_routes() -> Router {
         .nest("/identity/github", github_integration_routes())
         .nest("/identity/wechat", wechat_integration_routes())
         .nest("/identity/generic-token", generic_token_integration_routes())
+        .nest("/identity/email", email_integration_routes())
         .route(
             "/attachments/upload",
             post(handlers::finance::attachment::upload_attachment),

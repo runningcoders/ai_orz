@@ -1,6 +1,7 @@
 pub mod attachment_detail;
 pub mod attachments;
 pub mod identity;
+pub mod identity_email;
 pub mod identity_generic_token;
 pub mod identity_github;
 pub mod identity_wechat;

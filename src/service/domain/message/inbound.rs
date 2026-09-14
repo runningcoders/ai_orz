@@ -8,7 +8,7 @@
 //! 适配**不做 Agent 路由**：返回的 `AdaptedMessage.to_agent_id` 由渠道绑定
 //! 决定，未绑定时为 `None`，路由档位链（组装层职责）在投递回调中完成。
 
-use crate::models::events::{LarkInboundEvent, WechatInboundEvent};
+use crate::models::events::{EmailInboundEvent, LarkInboundEvent, WechatInboundEvent};
 use crate::pkg::RequestContext;
 use crate::pkg::adapter::AdaptedMessage;
 use common::error::Result;
@@ -27,6 +27,8 @@ pub enum InboundSource {
     Lark(Box<LarkInboundEvent>),
     /// 微信 iLink 长轮询事件
     Wechat(Box<WechatInboundEvent>),
+    /// 邮件 IMAP 轮询事件（轮询单元 = 邮箱凭证，渠道匹配由 adapt_email 二维路由）
+    Email(Box<EmailInboundEvent>),
 }
 
 // ==================== 门面 trait ====================
@@ -61,6 +63,7 @@ impl MessageInboundAdapt for MessageDomainImpl {
                     .await
             }
             InboundSource::Wechat(event) => self.wechat_dal.adapt_wechat(ctx, &event).await,
+            InboundSource::Email(event) => self.email_dal.adapt_email(ctx, &event).await,
         }
     }
 }

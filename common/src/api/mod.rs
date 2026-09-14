@@ -97,6 +97,7 @@ mod attachment_test;
 pub mod auth;
 pub mod background_task;
 pub mod cron_trigger;
+pub mod email_integration;
 pub mod external_agent;
 pub mod generic_token_integration;
 pub mod github_integration;
@@ -142,6 +143,7 @@ pub use background_task::{
     ListBackgroundTasksResponse, TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType,
 };
 pub use cron_trigger::*;
+pub use email_integration::*;
 pub use external_agent::*;
 pub use generic_token_integration::*;
 pub use github_integration::*;

@@ -149,6 +149,23 @@ pub(crate) fn decrypt_detail(detail: CredentialDetail) -> Result<CredentialDetai
             user_id,
             base_url,
         },
+        CredentialDetail::EmailBot {
+            email_address,
+            smtp_host,
+            smtp_port,
+            imap_host,
+            imap_port,
+            username,
+            password,
+        } => CredentialDetail::EmailBot {
+            email_address,
+            smtp_host,
+            smtp_port,
+            imap_host,
+            imap_port,
+            username,
+            password: decrypt(password.as_str())?,
+        },
     })
 }
 

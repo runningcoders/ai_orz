@@ -88,6 +88,14 @@ futures = "0.3.32"
 cron = "0.15"
 chrono-tz = "0.10"
 
+# 邮件渠道 SMTP 出站（lettre；TLS 栈对齐 sqlx/tungstenite 的 native-tls）
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-native-tls"] }
+
+# 邮件渠道 IMAP 入站轮询（async-imap）+ MIME 解析（mailparse）；TLS 由调用方经 tokio-native-tls 包装（栈对齐 native-tls）
+async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+tokio-native-tls = "0.3"
+mailparse = "0.16"
+
 # 进程管理原语（Unix 下探活/终止子进程）
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

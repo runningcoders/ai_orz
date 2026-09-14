@@ -69,7 +69,7 @@ fn build_message_channel_config(
     MessageChannelConfig {
         lark: build_lark_config(config, credentials),
         wechat: build_wechat_config(config, credentials),
-        email: build_email_config(config),
+        email: build_email_config(config, credentials),
         slack: build_slack_config(config),
         webhook: build_webhook_config(config),
     }
@@ -147,27 +147,21 @@ fn wechat_bot_id(
     }
 }
 
-fn build_email_config(config: &ChannelConfig) -> Option<EmailChannelConfig> {
-    let smtp_host = non_empty_clone(config.email_smtp_host.as_deref());
-    let smtp_port = config.email_smtp_port;
-    let username = non_empty_clone(config.email_username.as_deref());
-    let from_address = non_empty_clone(config.email_from_address.as_deref());
+fn build_email_config(
+    config: &ChannelConfig,
+    credentials: Option<&[UserCredential]>,
+) -> Option<EmailChannelConfig> {
+    let credential_id = non_empty_clone(config.email_credential_id.as_deref());
+    let credential_name = credential_name(config.email_credential_id.as_deref(), credentials);
     let to_address = non_empty_clone(config.email_to_address.as_deref());
 
-    if smtp_host.is_none()
-        && smtp_port.is_none()
-        && username.is_none()
-        && from_address.is_none()
-        && to_address.is_none()
-    {
+    if credential_id.is_none() && credential_name.is_none() && to_address.is_none() {
         return None;
     }
 
     Some(EmailChannelConfig {
-        smtp_host,
-        smtp_port,
-        username,
-        from_address,
+        credential_id,
+        credential_name,
         to_address,
     })
 }
@@ -217,6 +211,6 @@ fn credential_name(
 }
 
 fn has_config_secret(config: &ChannelConfig) -> bool {
-    // 微信 iLink 与飞书同走「渠道仅存凭证引用」模式，config_json 里无敏感字段
-    has_value(&config.email_password) || has_value(&config.slack_bot_token)
+    // 微信 iLink / 飞书 / 邮箱机器人同走「渠道仅存凭证引用」模式，config_json 里无敏感字段
+    has_value(&config.slack_bot_token)
 }

@@ -5,12 +5,16 @@
 //! - 无凭证时展示引导条跳转身份凭证页绑定；有凭证时下拉选择（传 lark_credential_id）
 //! - 身份模式下拉（自动/应用身份/用户身份，缺省 auto）
 //! - 入站监听 toggle 默认开，关闭后仅用于出站推送与 lark_cli 工具身份
+//!
+//! 邮箱渠道同走凭证引用模式：创建时必须选择「邮箱机器人」凭证（platform = 邮箱提供商）
+//! + 填写对端收件地址；SMTP/IMAP 参数在凭证中维护，渠道不重复存储。
 
 use crate::components::hud::PageHeader;
 use crate::components::hud::{HudCallout, HudPanel};
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
+use crate::api::email_integration::get_email_integration_status;
 use crate::api::finance::{
     create_message_channel, delete_message_channel, list_message_channels, test_message_channel,
     update_message_channel_status,
@@ -26,20 +30,23 @@ use crate::store::toast::use_toast;
 use common::api::{
     AgentListItem, CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateMessageChannelRequest, CreateSlackChannelConfig, CreateWebhookChannelConfig,
-    CreateWechatChannelConfig, LarkCredentialSnapshot, ListAgentsRequest, MessageChannelListItem,
-    UpdateMessageChannelStatusRequest, WechatCredentialSnapshot,
+    CreateWechatChannelConfig, EmailBotCredentialSnapshot, LarkCredentialSnapshot,
+    ListAgentsRequest, MessageChannelListItem, UpdateMessageChannelStatusRequest,
+    WechatCredentialSnapshot,
 };
 use common::enums::{ChannelStatus, ChannelType};
 
 /// 创建表单提交前校验（纯函数，可单测）
 ///
-/// 规则：名称非空；飞书 / 微信类型下必须选择已绑定的应用凭证（两种渠道都只存凭证引用）。
+/// 规则：名称非空；飞书 / 微信 / 邮箱类型下必须选择已绑定的凭证（三种渠道都只存凭证引用）。
 pub fn validate_create_channel_form(
     name: &str,
     is_lark: bool,
     lark_credential_id: &str,
     is_wechat: bool,
     wechat_credential_id: &str,
+    is_email: bool,
+    email_credential_id: &str,
 ) -> Result<(), &'static str> {
     if name.trim().is_empty() {
         return Err("渠道名称不能为空");
@@ -49,6 +56,9 @@ pub fn validate_create_channel_form(
     }
     if is_wechat && wechat_credential_id.trim().is_empty() {
         return Err("微信渠道必须选择 iLink 凭证（请先到身份凭证页扫码授权）");
+    }
+    if is_email && email_credential_id.trim().is_empty() {
+        return Err("邮箱渠道必须选择邮箱机器人凭证（请先到身份凭证页添加）");
     }
     Ok(())
 }
@@ -83,12 +93,8 @@ pub fn FinanceMessageChannels() -> Element {
     let mut new_wechat_credential_id = use_signal(String::new);
     let mut new_wechat_peer_id = use_signal(String::new);
     let mut new_wechat_listen_inbound = use_signal(|| true);
-    // 邮件
-    let mut new_email_smtp_host = use_signal(String::new);
-    let mut new_email_smtp_port = use_signal(String::new);
-    let mut new_email_username = use_signal(String::new);
-    let mut new_email_password = use_signal(String::new);
-    let mut new_email_from = use_signal(String::new);
+    // 邮件（凭证引用模式：只存凭证引用 + 对端地址）
+    let mut new_email_credential_id = use_signal(String::new);
     let mut new_email_to = use_signal(String::new);
     // Slack
     let mut new_slack_bot_token = use_signal(String::new);
@@ -104,6 +110,8 @@ pub fn FinanceMessageChannels() -> Element {
     let mut lark_credentials = use_signal(Vec::<LarkCredentialSnapshot>::new);
     // 微信 iLink 凭证下拉数据（聚合端点）
     let mut wechat_credentials = use_signal(Vec::<WechatCredentialSnapshot>::new);
+    // 邮箱机器人凭证下拉数据（聚合端点，platform 留空取全部提供商）
+    let mut email_credentials = use_signal(Vec::<EmailBotCredentialSnapshot>::new);
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
@@ -136,25 +144,33 @@ pub fn FinanceMessageChannels() -> Element {
                 wechat_credentials.set(status.credentials);
             }
         });
+        // 邮箱机器人凭证下拉（邮箱渠道创建必选，platform 留空取全部提供商）
+        spawn(async move {
+            if let Ok(status) = get_email_integration_status("").await {
+                email_credentials.set(status.credentials);
+            }
+        });
     });
 
     let handle_create = move |_| {
         spawn(async move {
             let is_lark = new_type() == "0";
             let is_wechat = new_type() == "1";
+            let is_email = new_type() == "3";
             if let Err(msg) = validate_create_channel_form(
                 &new_name(),
                 is_lark,
                 &new_lark_credential_id(),
                 is_wechat,
                 &new_wechat_credential_id(),
+                is_email,
+                &new_email_credential_id(),
             ) {
                 toast.error(msg);
                 return;
             }
             creating.set(true);
             let channel_type = ChannelType::from_i32(new_type().parse::<i32>().unwrap_or(0));
-            let email_port: Option<u16> = new_email_smtp_port().parse().ok();
             let req = CreateMessageChannelRequest {
                 user_id: None,
                 agent_id: none_if_empty(new_agent_id()),
@@ -186,11 +202,7 @@ pub fn FinanceMessageChannels() -> Element {
                     },
                     email: if channel_type == ChannelType::Email {
                         Some(CreateEmailChannelConfig {
-                            smtp_host: none_if_empty(new_email_smtp_host()),
-                            smtp_port: email_port,
-                            username: none_if_empty(new_email_username()),
-                            password: none_if_empty(new_email_password()),
-                            from_address: none_if_empty(new_email_from()),
+                            credential_id: none_if_empty(new_email_credential_id()),
                             to_address: none_if_empty(new_email_to()),
                         })
                     } else {
@@ -231,11 +243,7 @@ pub fn FinanceMessageChannels() -> Element {
                     new_wechat_credential_id.set(String::new());
                     new_wechat_peer_id.set(String::new());
                     new_wechat_listen_inbound.set(true);
-                    new_email_smtp_host.set(String::new());
-                    new_email_smtp_port.set(String::new());
-                    new_email_username.set(String::new());
-                    new_email_password.set(String::new());
-                    new_email_from.set(String::new());
+                    new_email_credential_id.set(String::new());
                     new_email_to.set(String::new());
                     new_slack_bot_token.set(String::new());
                     new_slack_channel_id.set(String::new());
@@ -266,8 +274,11 @@ pub fn FinanceMessageChannels() -> Element {
     let no_credentials = is_lark_type && credentials_list.is_empty();
     let wechat_credentials_list = wechat_credentials.read().clone();
     let no_wechat_credentials = is_wechat_type && wechat_credentials_list.is_empty();
+    let email_credentials_list = email_credentials.read().clone();
+    let no_email_credentials = is_email_type && email_credentials_list.is_empty();
     let credential_value = new_lark_credential_id();
     let wechat_credential_value = new_wechat_credential_id();
+    let email_credential_value = new_email_credential_id();
     let wechat_listen_inbound_value = new_wechat_listen_inbound();
     let identity_mode_value = new_lark_identity_mode();
     let listen_inbound_value = new_listen_inbound();
@@ -405,7 +416,7 @@ pub fn FinanceMessageChannels() -> Element {
                 on_close: move |_| show_add_modal.set(false),
                 footer: rsx! {
                     button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                    button { class: "btn hud-btn btn-primary", disabled: creating() || no_credentials || no_wechat_credentials, onclick: handle_create,
+                    button { class: "btn hud-btn btn-primary", disabled: creating() || no_credentials || no_wechat_credentials || no_email_credentials, onclick: handle_create,
                         if creating() { "创建中..." } else { "创建" }
                     }
                 },
@@ -572,44 +583,46 @@ pub fn FinanceMessageChannels() -> Element {
                         }
                     }
 
-                    // ===== 邮件配置 =====
+                    // ===== 邮箱配置（凭证引用模式：SMTP/IMAP 参数在邮箱机器人凭证中维护） =====
                     if is_email_type {
-                        div { class: "hud-divider divider text-sm font-medium m-0", "邮件 SMTP 配置" }
-                        div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "SMTP Host *" } }
-                            input { class: "input input-bordered hud-input w-full", value: "{new_email_smtp_host}",
-                                oninput: move |e| new_email_smtp_host.set(e.value()),
-                                placeholder: "smtp.example.com" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "邮箱机器人凭证 *" }
+                        if no_email_credentials {
+                            HudCallout { tone: Some("warning".to_string()),
+                                span { "尚未添加邮箱机器人凭证，请先前往「身份凭证」页完成添加" }
+                                Link { class: "btn hud-btn btn-sm btn-primary", to: crate::pages::Route::FinanceIdentity {}, "前往添加" }
+                            }
+                        } else {
+                            div { class: "form-control w-full",
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "选择凭证 *" }
+                                }
+                                select { class: "select select-bordered hud-input w-full", value: "{email_credential_value}",
+                                    onchange: move |e| new_email_credential_id.set(e.value()),
+                                    option { value: "", "请选择已添加的邮箱机器人凭证" }
+                                    for cred in email_credentials_list.iter() {
+                                        {
+                                            let cid = cred.credential_id.clone();
+                                            let cname = cred.name.clone();
+                                            let caddr = cred.email_address.clone();
+                                            rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{caddr}）" } }
+                                        }
+                                    }
+                                }
+                                label { class: "label",
+                                    span { class: "label-text-alt", "凭证在「财务管理 → 身份凭证」添加（含 SMTP/IMAP 参数），一个凭证可建多条渠道" }
+                                }
+                            }
                         }
                         div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "SMTP Port" } }
-                            input { class: "input input-bordered hud-input w-full", value: "{new_email_smtp_port}",
-                                oninput: move |e| new_email_smtp_port.set(e.value()),
-                                placeholder: "465（SSL）/ 587（STARTTLS）" }
-                        }
-                        div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "用户名 *" } }
-                            input { class: "input input-bordered hud-input w-full", value: "{new_email_username}",
-                                oninput: move |e| new_email_username.set(e.value()),
-                                placeholder: "邮箱账号" }
-                        }
-                        div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "密码 *" } }
-                            input { class: "input input-bordered hud-input w-full", r#type: "password", value: "{new_email_password}",
-                                oninput: move |e| new_email_password.set(e.value()),
-                                placeholder: "邮箱密码或授权码" }
-                        }
-                        div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "发件地址 *" } }
-                            input { class: "input input-bordered hud-input w-full", value: "{new_email_from}",
-                                oninput: move |e| new_email_from.set(e.value()),
-                                placeholder: "noreply@example.com" }
-                        }
-                        div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "收件地址 *" } }
-                            input { class: "input input-bordered hud-input w-full", value: "{new_email_to}",
+                            label { class: "label",
+                                span { class: "label-text", "对端收件地址" }
+                            }
+                            input { class: "input input-bordered hud-input w-full font-mono", value: "{new_email_to}",
                                 oninput: move |e| new_email_to.set(e.value()),
-                                placeholder: "接收通知的邮箱" }
+                                placeholder: "接收推送的邮箱，如 user@example.com" }
+                            label { class: "label",
+                                span { class: "label-text-alt", "代理邮箱将向该地址推送全文消息；一期仅出站，入站监听为二期能力" }
+                            }
                         }
                     }
 
@@ -709,18 +722,20 @@ mod tests {
 
     #[test]
     fn test_validate_empty_name_rejected() {
-        let result = validate_create_channel_form("  ", false, "", false, "");
+        let result = validate_create_channel_form("  ", false, "", false, "", false, "");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_non_lark_requires_name_only() {
-        assert!(validate_create_channel_form("webhook渠道", false, "", false, "").is_ok());
+        assert!(
+            validate_create_channel_form("webhook渠道", false, "", false, "", false, "").is_ok()
+        );
     }
 
     #[test]
     fn test_validate_lark_requires_credential() {
-        let result = validate_create_channel_form("飞书渠道", true, "  ", false, "");
+        let result = validate_create_channel_form("飞书渠道", true, "  ", false, "", false, "");
         assert_eq!(
             result.err(),
             Some("飞书渠道必须选择应用凭证（请先到设置页绑定飞书应用）")
@@ -729,12 +744,14 @@ mod tests {
 
     #[test]
     fn test_validate_lark_ok_with_credential() {
-        assert!(validate_create_channel_form("飞书渠道", true, "cred-1", false, "").is_ok());
+        assert!(
+            validate_create_channel_form("飞书渠道", true, "cred-1", false, "", false, "").is_ok()
+        );
     }
 
     #[test]
     fn test_validate_wechat_requires_credential() {
-        let result = validate_create_channel_form("微信渠道", false, "", true, "  ");
+        let result = validate_create_channel_form("微信渠道", false, "", true, "  ", false, "");
         assert_eq!(
             result.err(),
             Some("微信渠道必须选择 iLink 凭证（请先到身份凭证页扫码授权）")
@@ -743,7 +760,25 @@ mod tests {
 
     #[test]
     fn test_validate_wechat_ok_with_credential() {
-        assert!(validate_create_channel_form("微信渠道", false, "", true, "cred-wx").is_ok());
+        assert!(
+            validate_create_channel_form("微信渠道", false, "", true, "cred-wx", false, "").is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_email_requires_credential() {
+        let result = validate_create_channel_form("邮箱渠道", false, "", false, "", true, "  ");
+        assert_eq!(
+            result.err(),
+            Some("邮箱渠道必须选择邮箱机器人凭证（请先到身份凭证页添加）")
+        );
+    }
+
+    #[test]
+    fn test_validate_email_ok_with_credential() {
+        assert!(
+            validate_create_channel_form("邮箱渠道", false, "", false, "", true, "cred-em").is_ok()
+        );
     }
 
     #[test]

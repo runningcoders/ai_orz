@@ -1,0 +1,25 @@
+//! Handler: DELETE /api/v1/finance/identity/email/credentials/{id} - 删除邮箱机器人凭证
+
+use crate::pkg::RequestContext;
+use crate::service::domain::finance::domain;
+use ai_orz_macros::generate_http_handler;
+use common::api::{DeleteEmailBotCredentialRequest, DeleteEmailBotCredentialResponse};
+use common::error::{Result, bail_err};
+
+#[generate_http_handler]
+pub async fn delete_credential(
+    ctx: RequestContext,
+    params: DeleteEmailBotCredentialRequest,
+) -> Result<DeleteEmailBotCredentialResponse> {
+    let user_id = ctx.uid();
+    if user_id.is_empty() {
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    }
+
+    domain()
+        .identity_credential_manage()
+        .delete_credential(ctx, &user_id, &params.id)
+        .await?;
+
+    Ok(DeleteEmailBotCredentialResponse { success: true })
+}

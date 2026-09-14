@@ -137,6 +137,13 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
         crate::service::dao::wechat::dao(),
         crate::service::dao::user_credential::dao(),
     );
+    // 邮件入站适配 DAL（构造独立实例，不依赖单例 init 顺序）
+    let email_dal = crate::service::dal::email::new_with_dao(
+        message_channel_dal.clone(),
+        crate::service::dao::email::dao(),
+        crate::service::dao::user_credential::dao(),
+        crate::service::dao::message::dao(),
+    );
     let domain = crate::service::domain::message::new(
         message_dal,
         message_channel_dal,
@@ -144,6 +151,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
         attachment_dal,
         lark_dal,
         wechat_dal,
+        email_dal,
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx)

@@ -10,7 +10,7 @@ use common::enums::ChannelType;
 use common::error::Result;
 
 impl FinanceDomainImpl {
-    /// 渠道落库成功后联动渠道监听（飞书 WS / 微信 iLink 长轮询）
+    /// 渠道落库成功后联动渠道监听（飞书 WS / 微信 iLink 长轮询 / 邮件 IMAP 轮询）
     ///
     /// 建停规则与告警收敛在各渠道 DAL 的 `sync_listener_for_channel`，
     /// Domain 只负责类型判断与触发时机。
@@ -26,11 +26,16 @@ impl FinanceDomainImpl {
                     dal.sync_listener_for_channel(ctx.clone(), channel).await;
                 }
             }
+            ChannelType::Email => {
+                if let Some(dal) = &self.email_channel_dal {
+                    dal.sync_listener_for_channel(ctx.clone(), channel).await;
+                }
+            }
             _ => {}
         }
     }
 
-    /// 渠道删除后释放渠道监听（飞书该 app 无其他引用时才真正停连；微信按 channel 停轮询）
+    /// 渠道删除后释放渠道监听（飞书该 app 无其他引用时才真正停连；微信/邮件按引用检查停轮询）
     async fn release_channel_listener_after_delete(
         &self,
         ctx: &RequestContext,
@@ -44,6 +49,11 @@ impl FinanceDomainImpl {
             }
             ChannelType::Wechat => {
                 if let Some(dal) = &self.wechat_channel_dal {
+                    dal.release_listener_for_channel(ctx.clone(), channel).await;
+                }
+            }
+            ChannelType::Email => {
+                if let Some(dal) = &self.email_channel_dal {
                     dal.release_listener_for_channel(ctx.clone(), channel).await;
                 }
             }

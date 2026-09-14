@@ -192,6 +192,15 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 )
                 .await;
         }
+        // EmailBot：SMTP/IMAP 参数或授权码变化 → 引用该凭证的渠道 IMAP 轮询停旧重建
+        //（ensure 凭证指纹幂等；失败仅告警）
+        if kind == CredentialKind::EmailBot
+            && let Some(email_dal) = &self.email_channel_dal
+        {
+            email_dal
+                .rebuild_listeners_for_credential(ctx, &cmd.credential_id)
+                .await;
+        }
         // GithubToken：token 轮换无需显式清登录态（gh_cli marker 指纹机制自动重登录）
         Ok(())
     }
@@ -248,6 +257,33 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                             channels.len()
                         );
                     }
+                }
+                false
+            }
+            // 邮箱机器人凭据：渠道侧通过 email_credential_id 引用，与 WechatIlink 同理，
+            // 被引用即拦截删除（先删除或更换引用渠道）
+            CredentialKind::EmailBot => {
+                let query = crate::service::dao::message_channel::MessageChannelQuery {
+                    channel_type: Some(common::enums::ChannelType::Email),
+                    ..Default::default()
+                };
+                let page = self
+                    .message_channel_dal
+                    .query_channels(ctx.clone(), query)
+                    .await?;
+                let referenced = page
+                    .items
+                    .into_iter()
+                    // 已删除渠道不再计入引用（软删除：status=Deleted）
+                    .filter(|c| !matches!(c.po.status, common::enums::ChannelStatus::Deleted))
+                    .filter(|c| c.config().email_credential_id.as_deref() == Some(credential_id))
+                    .count();
+                if referenced > 0 {
+                    bail_err!(
+                        Conflict,
+                        "凭证被 {} 个渠道引用，请先删除或更换引用渠道",
+                        referenced
+                    );
                 }
                 false
             }
@@ -444,6 +480,70 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             });
         }
         Ok(common::api::GenericTokenIntegrationStatusResponse { credentials })
+    }
+
+    /// 邮箱机器人集成状态聚合（platform = 邮箱提供商，返回该用户绑定的凭证快照）
+    async fn email_bot_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        platform: &str,
+    ) -> Result<common::api::EmailIntegrationStatusResponse> {
+        let platform = platform.trim();
+        let user_dal = self.user_dal()?.clone();
+        let mut query = Self::owned_credential_query(user_id);
+        query.kind = Some(CredentialKind::EmailBot);
+        // platform 可选过滤：空串 = 返回全部提供商（渠道创建下拉需要跨平台拉取）
+        if !platform.is_empty() {
+            query.platform = Some(platform.to_string());
+        }
+        let page = user_dal.query_credentials(ctx, query).await?;
+        let mut credentials = Vec::new();
+        for credential in page.items {
+            // 再做一次内存兜底：platform 精确匹配（DAO 查询已按 platform 过滤）
+            if !platform.is_empty() && credential.po.platform.as_deref() != Some(platform) {
+                continue;
+            }
+            let common::models::CredentialDetail::EmailBot {
+                email_address,
+                smtp_host,
+                smtp_port,
+                imap_host,
+                imap_port,
+                username,
+                password,
+            } = credential.detail()
+            else {
+                continue;
+            };
+            // 密码/授权码尾号（解密失败按空串处理，不阻断状态聚合）
+            let password_tail = crate::pkg::crypto::decrypt_channel_secret(password)
+                .map(|plain| {
+                    plain
+                        .chars()
+                        .rev()
+                        .take(4)
+                        .collect::<String>()
+                        .chars()
+                        .rev()
+                        .collect()
+                })
+                .unwrap_or_default();
+            credentials.push(common::api::EmailBotCredentialSnapshot {
+                credential_id: credential.id().to_string(),
+                name: credential.name().to_string(),
+                platform: credential.po.platform.clone().unwrap_or_default(),
+                email_address: email_address.clone(),
+                smtp_host: smtp_host.clone(),
+                smtp_port: *smtp_port,
+                imap_host: imap_host.clone(),
+                imap_port: *imap_port,
+                username: username.clone(),
+                password_tail,
+                is_default: credential.po.is_default,
+            });
+        }
+        Ok(common::api::EmailIntegrationStatusResponse { credentials })
     }
 
     // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================

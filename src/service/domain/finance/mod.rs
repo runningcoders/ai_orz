@@ -112,6 +112,7 @@ pub fn init() {
     )
     .with_lark_channel_dal(crate::service::dal::lark::dal())
     .with_wechat_channel_dal(crate::service::dal::wechat::dal())
+    .with_email_channel_dal(crate::service::dal::email::dal())
     .with_user_dal(crate::service::dal::user::dal());
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
 }
@@ -389,6 +390,14 @@ pub trait IdentityCredentialManage: Send + Sync {
         user_id: &str,
         platform: &str,
     ) -> Result<common::api::GenericTokenIntegrationStatusResponse>;
+
+    /// 邮箱机器人集成状态聚合（platform = 邮箱提供商过滤，空串返回全部提供商的凭证快照）
+    async fn email_bot_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        platform: &str,
+    ) -> Result<common::api::EmailIntegrationStatusResponse>;
 
     // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================
 
@@ -720,6 +729,8 @@ pub struct FinanceDomainImpl {
     pub lark_channel_dal: Option<Arc<dyn crate::service::dal::lark::LarkDal>>,
     /// 微信 DAL 总 trait（iLink 长轮询生命周期 + 凭证变更/删除联动；测试实例可为 None）
     pub wechat_channel_dal: Option<Arc<dyn crate::service::dal::wechat::WechatDal>>,
+    /// 邮件 DAL 总 trait（IMAP 轮询生命周期 + 凭证变更/删除联动；测试实例可为 None）
+    pub email_channel_dal: Option<Arc<dyn crate::service::dal::email::EmailDal>>,
     /// 用户 DAL（身份凭证资产读写；测试实例可为 None）
     pub user_dal: Option<Arc<dyn crate::service::dal::user::UserDal + Send + Sync>>,
 }
@@ -745,6 +756,7 @@ impl FinanceDomainImpl {
             attachment_dal,
             lark_channel_dal: None,
             wechat_channel_dal: None,
+            email_channel_dal: None,
             user_dal: None,
         }
     }
@@ -764,6 +776,15 @@ impl FinanceDomainImpl {
         wechat_channel_dal: Arc<dyn crate::service::dal::wechat::WechatDal>,
     ) -> Self {
         self.wechat_channel_dal = Some(wechat_channel_dal);
+        self
+    }
+
+    /// 注入邮件 DAL（IMAP 轮询生命周期 + 凭证变更/删除联动）
+    pub fn with_email_channel_dal(
+        mut self,
+        email_channel_dal: Arc<dyn crate::service::dal::email::EmailDal>,
+    ) -> Self {
+        self.email_channel_dal = Some(email_channel_dal);
         self
     }
 

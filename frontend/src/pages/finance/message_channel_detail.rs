@@ -2,12 +2,15 @@
 //!
 //! 二期凭证引用模式：飞书渠道只存凭证引用（lark_credential_id），
 //! 凭证本身在身份凭证页（/finance/identity）飞书区块管理；详情页展示集成状态卡（凭证名 + 用户授权徽标 + 身份模式 + 跳身份凭证页）。
+//!
+//! 邮箱渠道同走凭证引用模式：只存邮箱机器人凭证引用（email_credential_id）+ 对端收件地址。
 
 use crate::components::hud::HudPanel;
 use crate::utils::status::*;
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
+use crate::api::email_integration::get_email_integration_status;
 use crate::api::finance::{
     delete_message_channel, get_message_channel, test_message_channel, update_message_channel,
     update_message_channel_status,
@@ -22,8 +25,8 @@ use crate::store::toast::use_toast;
 use common::api::{
     CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateSlackChannelConfig, CreateWebhookChannelConfig, CreateWechatChannelConfig,
-    LarkCredentialSnapshot, LarkUserAuthSnapshot, UpdateMessageChannelRequest,
-    UpdateMessageChannelStatusRequest, WechatCredentialSnapshot,
+    EmailBotCredentialSnapshot, LarkCredentialSnapshot, LarkUserAuthSnapshot,
+    UpdateMessageChannelRequest, UpdateMessageChannelStatusRequest, WechatCredentialSnapshot,
 };
 use common::enums::{ChannelStatus, ChannelType};
 
@@ -62,11 +65,8 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut edit_wechat_credential_id = use_signal(String::new);
     let mut edit_wechat_peer_id = use_signal(String::new);
     let mut edit_wechat_listen_inbound = use_signal(|| true);
-    // Email
-    let mut edit_email_smtp_host = use_signal(String::new);
-    let mut edit_email_smtp_port = use_signal(|| 587u16);
-    let mut edit_email_username = use_signal(String::new);
-    let mut edit_email_from_address = use_signal(String::new);
+    // Email（凭证引用模式：只存凭证引用 + 对端地址）
+    let mut edit_email_credential_id = use_signal(String::new);
     let mut edit_email_to_address = use_signal(String::new);
     // Slack
     let mut edit_slack_channel_id = use_signal(String::new);
@@ -81,6 +81,15 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     use_effect(move || {
         if let Some(Ok(status)) = wechat_res.read().as_ref() {
             wechat_credentials.set(status.credentials.clone());
+        }
+    });
+
+    // ===== 邮箱机器人凭证下拉（聚合端点，独立 resource；platform 留空取全部提供商） =====
+    let mut email_credentials = use_signal(Vec::<EmailBotCredentialSnapshot>::new);
+    let email_res = use_resource(move || async { get_email_integration_status("").await });
+    use_effect(move || {
+        if let Some(Ok(status)) = email_res.read().as_ref() {
+            email_credentials.set(status.credentials.clone());
         }
     });
 
@@ -218,24 +227,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         .map(|w| w.listen_inbound)
                         .unwrap_or(true),
                 );
-                edit_email_smtp_host.set(
+                edit_email_credential_id.set(
                     cfg.and_then(|c| c.email.as_ref())
-                        .and_then(|e| e.smtp_host.clone())
-                        .unwrap_or_default(),
-                );
-                edit_email_smtp_port.set(
-                    cfg.and_then(|c| c.email.as_ref())
-                        .and_then(|e| e.smtp_port)
-                        .unwrap_or(587),
-                );
-                edit_email_username.set(
-                    cfg.and_then(|c| c.email.as_ref())
-                        .and_then(|e| e.username.clone())
-                        .unwrap_or_default(),
-                );
-                edit_email_from_address.set(
-                    cfg.and_then(|c| c.email.as_ref())
-                        .and_then(|e| e.from_address.clone())
+                        .and_then(|e| e.credential_id.clone())
                         .unwrap_or_default(),
                 );
                 edit_email_to_address.set(
@@ -291,10 +285,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                 let user_name = edit_user_name();
                 let wechat_credential_id = edit_wechat_credential_id();
                 let wechat_peer_id = edit_wechat_peer_id();
-                let email_smtp_host = edit_email_smtp_host();
-                let email_smtp_port = edit_email_smtp_port();
-                let email_username = edit_email_username();
-                let email_from_address = edit_email_from_address();
+                let email_credential_id = edit_email_credential_id();
                 let email_to_address = edit_email_to_address();
                 let slack_channel_id = edit_slack_channel_id();
                 let webhook_method = edit_webhook_method();
@@ -360,22 +351,10 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         },
                         email: if channel_type == ChannelType::Email {
                             Some(CreateEmailChannelConfig {
-                                smtp_host: if email_smtp_host.trim().is_empty() {
+                                credential_id: if email_credential_id.trim().is_empty() {
                                     None
                                 } else {
-                                    Some(email_smtp_host)
-                                },
-                                smtp_port: Some(email_smtp_port),
-                                username: if email_username.trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(email_username)
-                                },
-                                password: None,
-                                from_address: if email_from_address.trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(email_from_address)
+                                    Some(email_credential_id)
                                 },
                                 to_address: if email_to_address.trim().is_empty() {
                                     None
@@ -445,9 +424,11 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         .map(|e| format!("加载失败: {}", e));
     let credentials_list = lark_credentials.read().clone();
     let wechat_credentials_list = wechat_credentials.read().clone();
+    let email_credentials_list = email_credentials.read().clone();
     let user_auth = lark_user_auth.read().clone();
     let edit_credential_value = edit_credential_id();
     let edit_wechat_credential_value = edit_wechat_credential_id();
+    let edit_email_credential_value = edit_email_credential_id();
     let edit_mode_value = edit_identity_mode();
     let user_auth_suffix = user_auth
         .user_name
@@ -613,33 +594,22 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if c.channel_type == ChannelType::Email {
-                                div {
-                                    div { class: "text-sm text-base-content/60", "SMTP 服务器" }
-                                    {
-                                        let smtp = match (email_cfg.and_then(|e| e.smtp_host.as_ref()), email_cfg.and_then(|e| e.smtp_port)) {
-                                            (Some(h), Some(p)) => format!("{h}:{p}"),
-                                            (Some(h), None) => h.clone(),
-                                            _ => "未配置".to_string(),
-                                        };
-                                        rsx! { div { class: "font-mono", "{smtp}" } }
-                                    }
-                                }
-                                div {
-                                    div { class: "text-sm text-base-content/60", "用户名" }
-                                    div { class: "font-mono",
-                                        if let Some(u) = email_cfg.and_then(|e| e.username.as_ref()) { "{u}" } else { "未配置" }
-                                    }
-                                }
-                                div {
-                                    div { class: "text-sm text-base-content/60", "发件地址" }
-                                    div { class: "font-mono",
-                                        if let Some(a) = email_cfg.and_then(|e| e.from_address.as_ref()) { "{a}" } else { "未配置" }
-                                    }
-                                }
-                                div {
-                                    div { class: "text-sm text-base-content/60", "收件地址" }
-                                    div { class: "font-mono",
-                                        if let Some(a) = email_cfg.and_then(|e| e.to_address.as_ref()) { "{a}" } else { "未配置" }
+                                div { class: "md:col-span-2",
+                                    div { class: "flex items-center justify-between gap-2 flex-wrap",
+                                        div {
+                                            div { class: "text-sm text-base-content/60", "邮箱机器人凭证" }
+                                            div { class: "font-mono",
+                                                if let Some(name) = email_cfg.and_then(|e| e.credential_name.as_deref()) { "{name}" } else { "未绑定" }
+                                            }
+                                            div { class: "text-sm text-base-content/60 mt-1", "对端收件地址" }
+                                            div { class: "font-mono",
+                                                if let Some(to) = email_cfg.and_then(|e| e.to_address.as_ref()) { "{to}" } else { "未配置" }
+                                            }
+                                        }
+                                        div { class: "flex items-center gap-2 flex-wrap",
+                                            span { class: "badge hud-badge badge-sm badge-ghost", "一期仅出站推送" }
+                                            Link { class: "btn hud-btn btn-ghost btn-sm", to: crate::pages::Route::FinanceIdentity {}, "管理邮箱凭证 →" }
+                                        }
                                     }
                                 }
                             }
@@ -854,43 +824,34 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if ct == ChannelType::Email {
-                                div { class: "hud-divider divider", "邮件专属配置" }
+                                div { class: "hud-divider divider", "邮箱渠道专属配置" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
-                                        span { class: "label-text font-medium", "SMTP 服务器 *" }
+                                        span { class: "label-text font-medium", "邮箱机器人凭证 *" }
                                     }
-                                    input { class: "input input-bordered hud-input w-full", value: "{edit_email_smtp_host}",
-                                        oninput: move |e| edit_email_smtp_host.set(e.value()), placeholder: "smtp.example.com" }
+                                    select { class: "select select-bordered hud-input w-full", value: "{edit_email_credential_value}",
+                                        onchange: move |e| edit_email_credential_id.set(e.value()),
+                                        option { value: "", "请选择已添加的邮箱机器人凭证" }
+                                        for cred in email_credentials_list.iter() {
+                                            {
+                                                let cid = cred.credential_id.clone();
+                                                let cname = cred.name.clone();
+                                                let caddr = cred.email_address.clone();
+                                                rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{caddr}）" } }
+                                            }
+                                        }
+                                    }
+                                    label { class: "label",
+                                        span { class: "label-text-alt", "凭证在「财务管理 → 身份凭证」添加（含 SMTP/IMAP 参数）；更换凭证立即生效" }
+                                    }
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
-                                        span { class: "label-text font-medium", "SMTP 端口 *" }
-                                    }
-                                    input { class: "input input-bordered hud-input w-full", value: "{edit_email_smtp_port.to_string()}",
-                                        oninput: move |e| {
-                                            if let Ok(v) = e.value().parse::<u16>() { edit_email_smtp_port.set(v); }
-                                        }, placeholder: "587" }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "label",
-                                        span { class: "label-text", "用户名" }
-                                    }
-                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_email_username}",
-                                        oninput: move |e| edit_email_username.set(e.value()), placeholder: "user@example.com" }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "label",
-                                        span { class: "label-text", "发件地址" }
-                                    }
-                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_email_from_address}",
-                                        oninput: move |e| edit_email_from_address.set(e.value()), placeholder: "from@example.com" }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "label",
-                                        span { class: "label-text", "收件地址" }
+                                        span { class: "label-text", "对端收件地址" }
                                     }
                                     input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_email_to_address}",
-                                        oninput: move |e| edit_email_to_address.set(e.value()), placeholder: "to@example.com" }
+                                        oninput: move |e| edit_email_to_address.set(e.value()),
+                                        placeholder: "接收推送的邮箱，如 user@example.com" }
                                 }
                             }
                             if ct == ChannelType::Slack {

@@ -131,20 +131,8 @@ fn merge_channel_config(target: &mut ChannelConfig, source: &Option<CreateMessag
     }
 
     if let Some(email) = &config.email {
-        if let Some(v) = &email.smtp_host {
-            target.email_smtp_host = Some(v.clone());
-        }
-        if let Some(v) = email.smtp_port {
-            target.email_smtp_port = Some(v);
-        }
-        if let Some(v) = &email.username {
-            target.email_username = Some(v.clone());
-        }
-        if let Some(v) = &email.password {
-            target.email_password = Some(v.clone());
-        }
-        if let Some(v) = &email.from_address {
-            target.email_from_address = Some(v.clone());
+        if let Some(v) = &email.credential_id {
+            target.email_credential_id = Some(v.clone());
         }
         if let Some(v) = &email.to_address {
             target.email_to_address = Some(v.clone());
@@ -215,22 +203,14 @@ mod tests {
             lark: None,
             wechat: None,
             email: Some(CreateEmailChannelConfig {
-                smtp_host: Some("smtp.test.com".to_string()),
-                smtp_port: Some(587),
-                username: Some("user".to_string()),
-                password: Some("pass".to_string()),
-                from_address: Some("from@test.com".to_string()),
+                credential_id: Some("cred-em".to_string()),
                 to_address: Some("to@test.com".to_string()),
             }),
             slack: None,
             webhook: None,
         });
         merge_channel_config(&mut config, &source);
-        assert_eq!(config.email_smtp_host.as_deref(), Some("smtp.test.com"));
-        assert_eq!(config.email_smtp_port, Some(587));
-        assert_eq!(config.email_username.as_deref(), Some("user"));
-        assert_eq!(config.email_password.as_deref(), Some("pass"));
-        assert_eq!(config.email_from_address.as_deref(), Some("from@test.com"));
+        assert_eq!(config.email_credential_id.as_deref(), Some("cred-em"));
         assert_eq!(config.email_to_address.as_deref(), Some("to@test.com"));
     }
 
@@ -238,7 +218,7 @@ mod tests {
     fn merge_config_preserves_existing_when_not_specified() {
         let mut config = ChannelConfig {
             lark_credential_id: Some("old-cred".to_string()),
-            email_smtp_host: Some("old.host".to_string()),
+            email_credential_id: Some("old-em".to_string()),
             ..Default::default()
         };
         let source = Some(CreateMessageChannelConfig {
@@ -257,6 +237,6 @@ mod tests {
         merge_channel_config(&mut config, &source);
         // Existing preserved since no Some values were provided
         assert_eq!(config.lark_credential_id.as_deref(), Some("old-cred"));
-        assert_eq!(config.email_smtp_host.as_deref(), Some("old.host"));
+        assert_eq!(config.email_credential_id.as_deref(), Some("old-em"));
     }
 }

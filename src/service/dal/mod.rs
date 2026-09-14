@@ -43,6 +43,7 @@ pub mod attachment;
 pub mod backup;
 pub mod brain;
 pub mod cron_trigger;
+pub mod email;
 pub mod lark;
 pub mod log_query;
 pub mod mcp_server;
@@ -84,6 +85,8 @@ pub fn init_all() {
     lark::init();
     // wechat dal 同理（依赖 message_channel dal + wechat dao + user_credential dao）
     wechat::init();
+    // email dal 同理（依赖 message_channel dal + email dao + user_credential dao + message dao）
+    email::init();
 }
 
 #[cfg(test)]

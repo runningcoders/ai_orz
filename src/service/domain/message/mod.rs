@@ -49,6 +49,7 @@ pub fn new(
     attachment_dal: Arc<dyn AttachmentDal>,
     lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
     wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
+    email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
 ) -> Arc<dyn MessageDomain> {
     let domain = MessageDomainImpl::new(
         message_dal,
@@ -57,6 +58,7 @@ pub fn new(
         attachment_dal,
         lark_dal,
         wechat_dal,
+        email_dal,
     );
     Arc::new(domain)
 }
@@ -70,6 +72,7 @@ pub fn init() {
         crate::service::dal::attachment::dal(),
         crate::service::dal::lark::dal(),
         crate::service::dal::wechat::dal(),
+        crate::service::dal::email::dal(),
     );
     let _ = MESSAGE_DOMAIN.set(Arc::new(message_domain));
 }
@@ -89,6 +92,8 @@ struct MessageDomainImpl {
     lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
     /// 微信渠道 DAL（入站适配：iLink 轮询事件 → AdaptedMessage）
     wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
+    /// 邮件渠道 DAL（入站适配：IMAP 轮询事件 → AdaptedMessage）
+    email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
 }
 
 impl MessageDomainImpl {
@@ -100,6 +105,7 @@ impl MessageDomainImpl {
         attachment_dal: Arc<dyn AttachmentDal>,
         lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
         wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
+        email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
     ) -> Self {
         Self {
             message_dal,
@@ -108,6 +114,7 @@ impl MessageDomainImpl {
             attachment_dal,
             lark_dal,
             wechat_dal,
+            email_dal,
         }
     }
 }

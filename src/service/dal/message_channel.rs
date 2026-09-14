@@ -18,6 +18,7 @@ use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::dao::a2a_callback::A2aCallbackDao;
 use crate::service::dao::email::EmailDao;
+use crate::service::dao::email::smtp::{EmailSmtpCredentials, resolve_email_credentials};
 use crate::service::dao::lark::{LarkAppCredentials, LarkDao, resolve_lark_credentials};
 use crate::service::dao::message::MessageDao;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
@@ -239,7 +240,15 @@ impl MessageChannelDal for MessageChannelDalImpl {
                 self.wechat_dao.test_connection(ctx, &credentials).await
             }
             ChannelType::Slack => self.slack_dao.test_connection(ctx, &channel).await,
-            ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
+            ChannelType::Email => {
+                let credentials = self
+                    .resolve_email_credentials(ctx.clone(), &channel)
+                    .await
+                    .map_err(|e| err!(ChannelPushFailed, "push failed: {e}"))?;
+                self.email_dao
+                    .test_connection(ctx, &channel, &credentials)
+                    .await
+            }
             ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
             ChannelType::A2aCallback => {
                 // 探活走与正式推送相同的组装链路（空触发消息，项目取自渠道 scope）
@@ -394,6 +403,42 @@ impl MessageChannelDalImpl {
         resolve_ilink_credentials(&credential, channel)
     }
 
+    /// 解析渠道引用的邮箱机器人凭证（凭证行主键查询，轻量直查）
+    ///
+    /// 渠道 `email_credential_id` → `UserCredentialDao::find_by_id` 凭证行 →
+    /// 纯函数校验 kind + 解密授权码；凭证缺失返回引导性错误。
+    async fn resolve_email_credentials(
+        &self,
+        ctx: RequestContext,
+        channel: &MessageChannel,
+    ) -> Result<EmailSmtpCredentials> {
+        let credential_id = channel
+            .config()
+            .email_credential_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "邮件渠道缺少凭证引用 email_credential_id channel_id={}，请先在身份凭证页添加邮箱机器人凭证并绑定",
+                    channel.po.id
+                )
+            })?;
+        let credential = self
+            .credential_dao
+            .find_by_id(ctx, credential_id)
+            .await?
+            .ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "邮件渠道引用的凭证不存在 channel_id={} credential_id={}，请重新绑定邮箱机器人凭证",
+                    channel.po.id,
+                    credential_id
+                )
+            })?;
+        resolve_email_credentials(&credential, channel)
+    }
+
     /// 🎯 核心分发逻辑（内部私有，不对外暴露）
     ///
     /// 纯 match 分发到各渠道 DAO，无 trait，无工厂，无注册表。
@@ -453,7 +498,13 @@ impl MessageChannelDalImpl {
                     .await
             }
             ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
-            ChannelType::Email => self.email_dao.push(ctx, message, channel).await,
+            ChannelType::Email => {
+                // 凭证解析在 DAL 层完成（同飞书/微信引用模式），DAO 只接收已解析凭证
+                let credentials = self.resolve_email_credentials(ctx.clone(), channel).await?;
+                self.email_dao
+                    .push(ctx, message, channel, &credentials)
+                    .await
+            }
             ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel).await,
             ChannelType::A2aCallback => {
                 // A2A 协议要求 webhook 载荷为全量任务快照（状态 + 消息历史），

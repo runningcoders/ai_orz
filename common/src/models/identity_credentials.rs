@@ -36,12 +36,19 @@ pub enum CredentialKind {
     UserPassword,
     /// 微信 iLink（ClawBot）扫码凭据：confirmed 一次性产出，整组轮换
     WechatIlink,
+    /// 邮箱机器人（用户自建代理邮箱）：platform = 邮箱提供商（qq/163…），
+    /// 匹配键含 platform 维度（展示与默认隔离），连接参数以 detail 为准
+    EmailBot,
 }
 
 impl CredentialKind {
-    /// generic 类 kind：匹配键含 platform 维度（(kind, platform) 二元组）
+    /// 匹配键含 platform 维度（(kind, platform) 二元组）：generic 类 kind
+    /// （platform = 外部平台标识）与多提供商专用 kind（EmailBot 的 platform = 邮箱提供商）
     pub fn requires_platform(&self) -> bool {
-        matches!(self, Self::GenericToken | Self::OAuth | Self::UserPassword)
+        matches!(
+            self,
+            Self::GenericToken | Self::OAuth | Self::UserPassword | Self::EmailBot
+        )
     }
 
     /// 稳定字符串名（snake_case，与 serde/DB 值空间一致；引导文案与展示用）
@@ -53,6 +60,7 @@ impl CredentialKind {
             Self::OAuth => "oauth",
             Self::UserPassword => "user_password",
             Self::WechatIlink => "wechat_ilink",
+            Self::EmailBot => "email_bot",
         }
     }
 }
@@ -152,6 +160,24 @@ pub enum CredentialDetail {
         /// 接入域（以登录响应为准，不硬编码）
         base_url: String,
     },
+    /// 邮箱机器人凭据（用户自建代理邮箱；platform = 邮箱提供商如 qq/163，
+    /// 仅作展示/默认隔离维度，SMTP/IMAP 连接参数以本 detail 为准）
+    EmailBot {
+        /// 代理邮箱地址（对外主标识，如 bot@example.com）
+        email_address: String,
+        /// SMTP 主机（如 smtp.qq.com）
+        smtp_host: String,
+        /// SMTP 端口（如 465）
+        smtp_port: u16,
+        /// IMAP 主机（如 imap.qq.com，二期入站使用）
+        imap_host: String,
+        /// IMAP 端口（如 993）
+        imap_port: u16,
+        /// 登录账号（多数提供商与邮箱地址相同）
+        username: String,
+        /// 登录密码 / 授权码（落库前经 encrypt_channel_secret 加密）
+        password: String,
+    },
 }
 
 /// 凭证详情补丁（Domain 更新命令组件，明文输入；非 API DTO，无需 serde）
@@ -212,6 +238,23 @@ pub enum CredentialDetailPatch {
         /// 接入域（None/空白保持不变）
         base_url: Option<String>,
     },
+    /// 邮箱机器人凭据补丁（None/空白保持不变；端口 None/0 保持不变）
+    EmailBot {
+        /// 代理邮箱地址（None/空白保持不变）
+        email_address: Option<String>,
+        /// SMTP 主机（None/空白保持不变）
+        smtp_host: Option<String>,
+        /// SMTP 端口（None/0 保持不变）
+        smtp_port: Option<u16>,
+        /// IMAP 主机（None/空白保持不变）
+        imap_host: Option<String>,
+        /// IMAP 端口（None/0 保持不变）
+        imap_port: Option<u16>,
+        /// 登录账号（None/空白保持不变）
+        username: Option<String>,
+        /// 登录密码 / 授权码（None/空白保持不变；提供时以明文传入，内部加密写入）
+        password: Option<String>,
+    },
 }
 
 /// detail 变更影响摘要（Domain 据此决定联动动作，无需感知字段细节）
@@ -231,14 +274,16 @@ impl CredentialDetail {
             Self::OAuth { .. } => CredentialKind::OAuth,
             Self::UserPassword { .. } => CredentialKind::UserPassword,
             Self::WechatIlink { .. } => CredentialKind::WechatIlink,
+            Self::EmailBot { .. } => CredentialKind::EmailBot,
         }
     }
 
-    /// 外部主标识（lark app_id；无概念的类型返回 None，供渠道移交对比）
+    /// 外部主标识（lark app_id / 邮箱机器人邮箱地址；无概念的类型返回 None，供渠道移交对比）
     pub fn primary_id(&self) -> Option<&str> {
         match self {
             Self::LarkApp { app_id, .. } => Some(app_id.as_str()),
             Self::WechatIlink { bot_id, .. } => Some(bot_id.as_str()),
+            Self::EmailBot { email_address, .. } => Some(email_address.as_str()),
             Self::GithubToken { .. }
             | Self::GenericToken { .. }
             | Self::OAuth { .. }
@@ -254,6 +299,7 @@ impl CredentialDetail {
             Self::OAuth { refresh_token, .. } => refresh_token,
             Self::UserPassword { password, .. } => password,
             Self::WechatIlink { bot_token, .. } => bot_token,
+            Self::EmailBot { password, .. } => password,
         }
     }
 
@@ -312,6 +358,23 @@ impl CredentialDetail {
                     .map(|v| v.trim().to_string())
                     .filter(|s| !s.is_empty()),
                 base_url: base_url.trim().trim_end_matches('/').to_string(),
+            },
+            Self::EmailBot {
+                email_address,
+                smtp_host,
+                smtp_port,
+                imap_host,
+                imap_port,
+                username,
+                password,
+            } => Self::EmailBot {
+                email_address: email_address.trim().to_string(),
+                smtp_host: smtp_host.trim().to_string(),
+                smtp_port,
+                imap_host: imap_host.trim().to_string(),
+                imap_port,
+                username: username.trim().to_string(),
+                password: password.trim().to_string(),
             },
         }
     }
@@ -372,6 +435,36 @@ impl CredentialDetail {
                     bail_err!(InvalidRequest, "微信 iLink 的 base_url 必须是 https 地址");
                 }
             }
+            Self::EmailBot {
+                email_address,
+                smtp_host,
+                smtp_port,
+                imap_host,
+                imap_port,
+                username,
+                password,
+            } => {
+                if email_address.is_empty()
+                    || smtp_host.is_empty()
+                    || imap_host.is_empty()
+                    || username.is_empty()
+                    || password.is_empty()
+                {
+                    bail_err!(
+                        InvalidRequest,
+                        "邮箱机器人凭据的邮箱地址 / SMTP / IMAP / 账号 / 密码均不能为空"
+                    );
+                }
+                if !email_address.contains('@') {
+                    bail_err!(InvalidRequest, "邮箱机器人凭据的邮箱地址格式不正确");
+                }
+                if *smtp_port == 0 || *imap_port == 0 {
+                    bail_err!(
+                        InvalidRequest,
+                        "邮箱机器人凭据的 SMTP / IMAP 端口必须大于 0"
+                    );
+                }
+            }
         }
         Ok(())
     }
@@ -430,6 +523,23 @@ impl CredentialDetail {
                 bot_id,
                 user_id,
                 base_url,
+            }),
+            Self::EmailBot {
+                email_address,
+                smtp_host,
+                smtp_port,
+                imap_host,
+                imap_port,
+                username,
+                password,
+            } => Ok(Self::EmailBot {
+                email_address,
+                smtp_host,
+                smtp_port,
+                imap_host,
+                imap_port,
+                username,
+                password: encrypt(&password)?,
             }),
         }
     }
@@ -638,6 +748,68 @@ impl CredentialDetail {
                     .filter(|s| !s.is_empty())
                 {
                     *base_url_slot = v;
+                }
+            }
+            CredentialDetailPatch::EmailBot {
+                email_address,
+                smtp_host,
+                smtp_port,
+                imap_host,
+                imap_port,
+                username,
+                password,
+            } => {
+                let Self::EmailBot {
+                    email_address: email_slot,
+                    smtp_host: smtp_host_slot,
+                    smtp_port: smtp_port_slot,
+                    imap_host: imap_host_slot,
+                    imap_port: imap_port_slot,
+                    username: username_slot,
+                    password: password_slot,
+                } = self
+                else {
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用邮箱机器人凭证补丁"
+                    );
+                };
+                if let Some(v) = email_address
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *email_slot = v;
+                }
+                if let Some(v) = smtp_host
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *smtp_host_slot = v;
+                }
+                if let Some(v) = smtp_port.filter(|p| *p > 0) {
+                    *smtp_port_slot = v;
+                }
+                if let Some(v) = imap_host
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *imap_host_slot = v;
+                }
+                if let Some(v) = imap_port.filter(|p| *p > 0) {
+                    *imap_port_slot = v;
+                }
+                if let Some(v) = username
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *username_slot = v;
+                }
+                if let Some(v) = password
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *password_slot = encrypt(&v)?;
+                    impact.secret_changed = true;
                 }
             }
         }
@@ -1432,6 +1604,157 @@ mod tests {
                     bot_id: None,
                     user_id: None,
                     base_url: None,
+                },
+                |s| Ok(s.to_string()),
+            )
+            .is_err()
+        );
+    }
+
+    // ==================== EmailBot ====================
+
+    #[test]
+    fn test_email_bot_serde_and_accessors() {
+        let detail = CredentialDetail::EmailBot {
+            email_address: "bot@qq.com".to_string(),
+            smtp_host: "smtp.qq.com".to_string(),
+            smtp_port: 465,
+            imap_host: "imap.qq.com".to_string(),
+            imap_port: 993,
+            username: "bot@qq.com".to_string(),
+            password: "enc:v1:authcode".to_string(),
+        };
+        let json = serde_json::to_value(&detail).unwrap();
+        assert_eq!(json["type"], "email_bot");
+        assert_eq!(json["email_address"], "bot@qq.com");
+        assert_eq!(json["smtp_port"], 465);
+        // 往返一致
+        let parsed: CredentialDetail = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed, detail);
+        // kind / as_str / serde 值空间一致
+        assert_eq!(detail.kind(), CredentialKind::EmailBot);
+        assert_eq!(CredentialKind::EmailBot.as_str(), "email_bot");
+        assert_eq!(
+            serde_json::to_value(CredentialKind::EmailBot).unwrap(),
+            "email_bot"
+        );
+        // primary_id = 邮箱地址（同 lark app_id 地位）；primary_secret = 密码/授权码
+        assert_eq!(detail.primary_id(), Some("bot@qq.com"));
+        assert_eq!(detail.primary_secret(), "enc:v1:authcode");
+        // 多提供商专用 kind：platform 必填（提供商维度）
+        assert!(CredentialKind::EmailBot.requires_platform());
+    }
+
+    #[test]
+    fn test_email_bot_normalized_and_validate() {
+        let detail = CredentialDetail::EmailBot {
+            email_address: " bot@qq.com ".to_string(),
+            smtp_host: " smtp.qq.com ".to_string(),
+            smtp_port: 465,
+            imap_host: " imap.qq.com ".to_string(),
+            imap_port: 993,
+            username: " bot@qq.com ".to_string(),
+            password: " authcode ".to_string(),
+        };
+        let normalized = detail.normalized();
+        assert!(
+            matches!(&normalized, CredentialDetail::EmailBot { email_address, smtp_host, imap_host, username, password, .. }
+                if email_address == "bot@qq.com" && smtp_host == "smtp.qq.com" && imap_host == "imap.qq.com" && username == "bot@qq.com" && password == "authcode")
+        );
+        assert!(normalized.validate().is_ok());
+        // 缺邮箱地址
+        let bad = CredentialDetail::EmailBot {
+            email_address: String::new(),
+            smtp_host: "smtp.qq.com".into(),
+            smtp_port: 465,
+            imap_host: "imap.qq.com".into(),
+            imap_port: 993,
+            username: "bot@qq.com".into(),
+            password: "authcode".into(),
+        };
+        assert!(bad.validate().is_err());
+        // 邮箱地址缺 @
+        let no_at = CredentialDetail::EmailBot {
+            email_address: "bot.qq.com".into(),
+            smtp_host: "smtp.qq.com".into(),
+            smtp_port: 465,
+            imap_host: "imap.qq.com".into(),
+            imap_port: 993,
+            username: "bot@qq.com".into(),
+            password: "authcode".into(),
+        };
+        assert!(no_at.validate().is_err());
+        // 端口为 0
+        let zero_port = CredentialDetail::EmailBot {
+            email_address: "bot@qq.com".into(),
+            smtp_host: "smtp.qq.com".into(),
+            smtp_port: 0,
+            imap_host: "imap.qq.com".into(),
+            imap_port: 993,
+            username: "bot@qq.com".into(),
+            password: "authcode".into(),
+        };
+        assert!(zero_port.validate().is_err());
+    }
+
+    #[test]
+    fn test_email_bot_encrypt_and_patch() {
+        // 只加密 password，其余字段不动
+        let enc = CredentialDetail::EmailBot {
+            email_address: "bot@qq.com".into(),
+            smtp_host: "smtp.qq.com".into(),
+            smtp_port: 465,
+            imap_host: "imap.qq.com".into(),
+            imap_port: 993,
+            username: "bot@qq.com".into(),
+            password: "authcode".into(),
+        }
+        .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
+        .unwrap();
+        assert!(
+            matches!(&enc, CredentialDetail::EmailBot { email_address, password, .. }
+                if email_address == "bot@qq.com" && password == "enc:authcode")
+        );
+
+        // 补丁：授权码轮换计为 secret_changed；端口 0 视为未提供
+        let mut mutable = enc;
+        let impact = mutable
+            .apply_patch(
+                CredentialDetailPatch::EmailBot {
+                    email_address: None,
+                    smtp_host: Some("smtp.163.com".into()),
+                    smtp_port: Some(0),
+                    imap_host: None,
+                    imap_port: Some(994),
+                    username: None,
+                    password: Some("new-code".into()),
+                },
+                |s| Ok(format!("enc:{}", s)),
+            )
+            .unwrap();
+        assert!(impact.secret_changed);
+        assert!(
+            matches!(&mutable, CredentialDetail::EmailBot { smtp_host, smtp_port, imap_port, password, .. }
+                if smtp_host == "smtp.163.com" && *smtp_port == 465 && *imap_port == 994 && password == "enc:new-code")
+        );
+
+        // 补丁类型不匹配被拒
+        let mut lark = CredentialDetail::LarkApp {
+            app_id: "a".into(),
+            app_secret: "s".into(),
+            encrypt_key: None,
+            verification_token: None,
+        };
+        assert!(
+            lark.apply_patch(
+                CredentialDetailPatch::EmailBot {
+                    email_address: None,
+                    smtp_host: None,
+                    smtp_port: None,
+                    imap_host: None,
+                    imap_port: None,
+                    username: None,
+                    password: None,
                 },
                 |s| Ok(s.to_string()),
             )

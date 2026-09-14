@@ -96,6 +96,22 @@ pub fn validate_wechat_credential_ref(
     )
 }
 
+/// 邮箱渠道凭证引用校验（EmailBot）
+pub fn validate_email_credential_ref(
+    channel_type: common::enums::ChannelType,
+    email_credential_id: Option<&str>,
+    credentials: &[UserCredential],
+) -> Result<()> {
+    validate_channel_credential_ref(
+        channel_type,
+        email_credential_id,
+        common::enums::ChannelType::Email,
+        CredentialKind::EmailBot,
+        "邮箱",
+        credentials,
+    )
+}
+
 /// Extract ChannelConfig from CreateMessageChannelRequest
 fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
     let mut config = ChannelConfig::default();
@@ -114,11 +130,7 @@ fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
             config.wechat_listen_inbound = wechat.listen_inbound;
         }
         if let Some(email) = &channel_config.email {
-            config.email_smtp_host = email.smtp_host.clone();
-            config.email_smtp_port = email.smtp_port;
-            config.email_username = email.username.clone();
-            config.email_password = email.password.clone();
-            config.email_from_address = email.from_address.clone();
+            config.email_credential_id = email.credential_id.clone();
             config.email_to_address = email.to_address.clone();
         }
         if let Some(slack) = &channel_config.slack {
@@ -138,7 +150,7 @@ fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
 #[register_handler_tool(
     id = "create_message_channel",
     name = "Add Message Channel",
-    description = "Register an outbound notification channel (Lark, WeChat, Email, Slack, or Webhook) that messages can be delivered through, optionally bound to an agent. Returns the channel detail. Lark channels must reference an existing LarkApp credential via lark_credential_id.",
+    description = "Register an outbound notification channel (Lark, WeChat, Email, Slack, or Webhook) that messages can be delivered through, optionally bound to an agent. Returns the channel detail. Lark channels must reference an existing LarkApp credential via lark_credential_id; WeChat channels must reference a WechatIlink credential; Email channels must reference an EmailBot credential plus a recipient to_address.",
     params = "common::api::CreateMessageChannelRequest"
 )]
 #[generate_http_handler]
@@ -171,6 +183,11 @@ pub async fn create_message_channel(
     validate_wechat_credential_ref(
         params.channel_type,
         channel_config.wechat_credential_id.as_deref(),
+        &credentials,
+    )?;
+    validate_email_credential_ref(
+        params.channel_type,
+        channel_config.email_credential_id.as_deref(),
         &credentials,
     )?;
 
@@ -268,7 +285,7 @@ mod tests {
         let config = extract_channel_config(&req);
         assert!(config.lark_credential_id.is_none());
         assert!(config.wechat_credential_id.is_none());
-        assert!(config.email_smtp_host.is_none());
+        assert!(config.email_credential_id.is_none());
     }
 
     #[test]
@@ -379,5 +396,84 @@ mod tests {
         assert_eq!(config.wechat_credential_id.as_deref(), Some("cred-wx"));
         assert_eq!(config.wechat_peer_id.as_deref(), Some("wxid_abc"));
         assert_eq!(config.wechat_listen_inbound, Some(false));
+    }
+
+    fn email_credentials(credential_id: &str) -> Vec<UserCredential> {
+        vec![UserCredential::from_po(UserCredentialPo::new(
+            credential_id.to_string(),
+            "org-1".to_string(),
+            "user-1".to_string(),
+            CredentialKind::EmailBot,
+            "QQ 代理邮箱".to_string(),
+            CredentialDetail::EmailBot {
+                email_address: "bot@qq.com".to_string(),
+                smtp_host: "smtp.qq.com".to_string(),
+                smtp_port: 465,
+                imap_host: "imap.qq.com".to_string(),
+                imap_port: 993,
+                username: "bot@qq.com".to_string(),
+                password: "enc:v1:code".to_string(),
+            },
+            CredentialVisibility::Private,
+            "user-1".to_string(),
+        ))]
+    }
+
+    #[test]
+    fn email_credential_ref_required_for_email_type() {
+        let credentials = email_credentials("cred-em");
+        // 未选凭证 / 空白 / 引用不存在
+        assert!(validate_email_credential_ref(ChannelType::Email, None, &credentials).is_err());
+        assert!(
+            validate_email_credential_ref(ChannelType::Email, Some(" "), &credentials).is_err()
+        );
+        assert!(
+            validate_email_credential_ref(ChannelType::Email, Some("missing"), &credentials)
+                .is_err()
+        );
+        // 引用存在的 EmailBot 凭证
+        assert!(
+            validate_email_credential_ref(ChannelType::Email, Some("cred-em"), &credentials)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn email_ref_must_match_kind() {
+        // 拿飞书凭证当邮箱凭证用 → 拒绝
+        let credentials = lark_credentials("cred-1");
+        assert!(
+            validate_email_credential_ref(ChannelType::Email, Some("cred-1"), &credentials)
+                .is_err()
+        );
+        // 反之：邮箱类型下飞书校验不生效
+        let email = email_credentials("cred-em");
+        assert!(validate_lark_credential_ref(ChannelType::Email, None, &email).is_ok());
+    }
+
+    #[test]
+    fn extract_config_extracts_email_fields() {
+        let req = CreateMessageChannelRequest {
+            user_id: None,
+            agent_id: None,
+            channel_type: ChannelType::Email,
+            channel_name: "test".to_string(),
+            webhook_url: None,
+            access_token: None,
+            secret: None,
+            config: Some(CreateMessageChannelConfig {
+                lark: None,
+                wechat: None,
+                email: Some(common::api::CreateEmailChannelConfig {
+                    credential_id: Some("cred-em".to_string()),
+                    to_address: Some("me@163.com".to_string()),
+                }),
+                slack: None,
+                webhook: None,
+            }),
+        };
+        let config = extract_channel_config(&req);
+        assert_eq!(config.email_credential_id.as_deref(), Some("cred-em"));
+        assert_eq!(config.email_to_address.as_deref(), Some("me@163.com"));
     }
 }
