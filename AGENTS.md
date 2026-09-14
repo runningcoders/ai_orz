@@ -12,7 +12,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **质量**：1124 测试 100% 通过 · clippy `-D warnings` 双端零容忍 · cargo-llvm-cov 38%/45% 门槛
+- **质量**：全量测试 100% 通过 · clippy `-D warnings` 双端零容忍 · cargo-llvm-cov 38%/45% 门槛
 
 ### 核心能力域
 
@@ -23,7 +23,7 @@
 | 🧠 记忆 | 四层记忆 + 休息沉淀 + 知识图谱 + 种子推荐 |
 | 💬 对话消息 | SSE 实时推送 + 多渠道入站（飞书 WS）+ 5 类出站骨架 |
 | 📋 任务项目 | 任务状态机 + 进度追踪 + TaskGraph DAG + 项目聚合上下文 |
-| 🛠️ 工具技能 | 三层调用架构 + 5 份预置技能 + MCP 集成 |
+| 🛠️ 工具技能 | 三层调用架构 + 10 份预置技能（6 个神经技能常驻）+ 技能副本自我进化 + MCP 集成 |
 | 🔌 外部 Agent | A2A 协议 Client/Server + 异步回调 |
 | 🔎 搜索 | FTS5 + 向量 + 图谱三位一体混合搜索 |
 | 📊 统计监控 | DuckDB 五维统计 + 运行时观测 + 系统健康仪表盘 |

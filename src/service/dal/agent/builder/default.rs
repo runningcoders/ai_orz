@@ -117,7 +117,10 @@ impl DefaultPromptBuilder {
         if skills.is_empty() {
             return String::new();
         }
-        let mut s = format!("【{}】\n", title);
+        let mut s = format!(
+            "【{}】（以下是技能索引摘要，需要某技能的完整内容时，用 get_skill 工具传入对应 id 即可读取全文；更新自己的副本用 update_skill）\n",
+            title
+        );
         for skill in skills {
             s.push_str(&skill.to_prompt_summary());
             s.push('\n');

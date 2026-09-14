@@ -16,7 +16,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "create_skill",
     name = "Create Skill",
-    description = "Create a new skill owned by the current user, with optional content sourced from inline text (stored as skill.md), an HTTPS URL, or previously uploaded attachments. Returns the created skill detail. Fails if the name is empty or a referenced attachment does not exist.",
+    description = "Create a new skill with optional content sourced from inline text (stored as skill.md), an HTTPS URL, or previously uploaded attachments. Owned by the calling agent when invoked in an agent context (agent-private skill, stored under the agent's skill directory), otherwise owned by the current user. Returns the created skill detail. Fails if the name is empty or a referenced attachment does not exist.",
     params = "common::api::CreateSkillRequest",
     tags = "skill_management"
 )]
@@ -34,6 +34,21 @@ pub async fn create_skill(
     }
 
     let skill_id = uuid::Uuid::now_v7().to_string();
+    // Agent 上下文（工具调用）：技能归属调用 Agent 本身，content_path 与
+    // DAL install_to_agent 的副本路径约定（agents/{agent_id}/skills/{id}）保持一致；
+    // 用户上下文（HTTP API）：归属当前用户，路径沿用 skills/{id}。
+    let (author_id, author_type, content_path) = match ctx.agent_id() {
+        Some(agent_id) => (
+            agent_id.clone(),
+            SkillAuthorType::Agent,
+            format!("agents/{}/skills/{}", agent_id, skill_id),
+        ),
+        None => (
+            user_id,
+            SkillAuthorType::User,
+            format!("skills/{}", skill_id),
+        ),
+    };
     let mut skill_po = SkillPo::new(
         skill_id.clone(),
         params.name,
@@ -44,9 +59,9 @@ pub async fn create_skill(
             .filter(|category| !category.trim().is_empty())
             .unwrap_or_else(|| "uncategorized".to_string()),
         String::new(),
-        user_id,
-        SkillAuthorType::User,
-        format!("skills/{}", skill_id),
+        author_id,
+        author_type,
+        content_path,
     );
     if let Some(status) = params.status {
         skill_po.status = status;

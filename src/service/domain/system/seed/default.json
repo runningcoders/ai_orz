@@ -85,7 +85,7 @@
     {
       "id": "TEMPLATE_TOOL_MANAGEMENT",
       "name": "工具管理",
-      "description": "Auto/Manual 工具分类、工具包标签组织、4 个查询工具、同步/异步调用模式、ToolCallTraceRef 追溯与调用历史查询的完整指南",
+      "description": "不确定该用哪个工具、怎么调用或要追溯调用历史时必读全文：Auto（LLM 原生直调）与 Manual（提示词转发）双模式的判定标准、工具包标签组织、4 个查询工具、同步/异步调用模式与 ToolCallTraceRef 调用追溯",
       "tags": ["neural", "tool_management"],
       "category": "system",
       "parent_skill_id": "",
@@ -103,7 +103,7 @@
     {
       "id": "TEMPLATE_SKILL_MANAGEMENT",
       "name": "技能管理",
-      "description": "技能状态、安装优先+标签匹配双层加载机制、match_keys 匹配规则、查询搜索安装卸载更新工具、成长性能力管理循环",
+      "description": "找不到想要的技能、或要安装/更新副本/创建新技能时必读全文：技能状态流转、安装优先+标签匹配双层加载机制、match_keys 匹配规则、查询/搜索/安装/卸载/更新工具用法与成长性能力管理循环",
       "tags": ["neural", "skill_management"],
       "category": "system",
       "parent_skill_id": "",
@@ -121,7 +121,7 @@
     {
       "id": "TEMPLATE_MEMORY_COGNITION",
       "name": "记忆认知",
-      "description": "从 Soul 出发的四层记忆模型、实时归纳、知识图谱（图谱是活的/节点粒度自主/关系多维共存/tags是桥梁/局部树状全域网状/新老知识交替六种模式/记抽象不记细节/references双向价值/图谱遗忘机制/蜂巢知识共享published标签/沉淀工作模式/用户偏好沉淀组织级共享）、三种搜索模式与遍历策略的认知指南",
+      "description": "写记忆、建图谱或检索记忆前必读全文：Soul 出发的四层记忆模型与实时归纳；知识图谱核心模式（记抽象不记细节、节点粒度自主、tags 是桥梁、局部树状全域网状、新老知识六种交替模式、references 双向价值）、图谱遗忘机制、蜂巢知识共享（published 标签）、沉淀工作模式与用户偏好组织级共享、三种搜索模式与遍历策略",
       "tags": ["neural", "memory"],
       "category": "system",
       "parent_skill_id": "",
@@ -139,7 +139,7 @@
     {
       "id": "TEMPLATE_COMMUNICATION",
       "name": "协作沟通",
-      "description": "沟通工具调用方向（neural/collaboration 区分）、send_message/send_task_assignment_message/list_messages 三个 Agent 可用工具的完整参数与双向分页机制、send_message_to_agent 路由兜底澄清、Agent 查询工具能力差异与协作场景",
+      "description": "要给其他 Agent 发消息、委派任务或查沟通历史前必读全文：neural/collaboration 工具调用方向区分、send_message/send_task_assignment_message/list_messages 三个工具的完整参数与双向分页机制、send_message_to_agent 路由兜底澄清、Agent 查询工具能力差异与协作场景",
       "tags": ["neural", "messaging", "collaboration"],
       "category": "system",
       "parent_skill_id": "",
@@ -223,6 +223,42 @@
         {
           "path": "skill.md",
           "ref_path": "skills/TEMPLATE_USER_RECEPTION/skill.md"
+        }
+      ]
+    },
+    {
+      "id": "TEMPLATE_SELF_EVOLUTION",
+      "name": "自我进化",
+      "description": "出现重复踩坑、任务复盘、被用户纠正、例行沉淀、技能与现实不符五种信号时必读全文：进化分流矩阵（认知/图谱知识/方法论副本/新领域能力/soul 五级对象与工具路径）、经验晋升链五步（短期记忆→图谱节点→技能副本→create_skill 新技能→soul）、安全铁律（只进化自己/有据进化/克制进化/Published 克制/人机边界）与进化回顾自检",
+      "tags": ["neural", "self_evolution"],
+      "category": "system",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/TEMPLATE_SELF_EVOLUTION",
+      "files": [
+        {
+          "path": "skill.md",
+          "ref_path": "skills/TEMPLATE_SELF_EVOLUTION/skill.md"
+        }
+      ]
+    },
+    {
+      "id": "TEMPLATE_PROJECT_CONTEXT_COGNITION",
+      "name": "项目上下文认知",
+      "description": "首次接触项目、发现 AGENTS.md/CLAUDE.md/README 等引导文件或现有认知与现实不符时必读全文：引导文件发现时机与阅读优先级、认知地图四要素（背景/领域概念/架构目录/关键工作流）、双轨提炼（规范轨免验证入库/经验轨待验证晋升）、分层沉淀（项目约定-{项目}-{主题} 具体层 + 经验模式-{主题} 抽象层）、五级冲突仲裁与过期校验；进化内容统一引导至自我进化技能",
+      "tags": ["neural", "project_context"],
+      "category": "system",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION",
+      "files": [
+        {
+          "path": "skill.md",
+          "ref_path": "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md"
         }
       ]
     }

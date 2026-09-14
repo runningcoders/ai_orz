@@ -16,7 +16,7 @@
 
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
-![Tests](https://img.shields.io/badge/tests-1101%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 ![Clippy](https://img.shields.io/badge/clippy--D%20warnings-zero-success)
 ![Coverage](https://img.shields.io/badge/coverage-PR%2038%25%2C%20main%2045%25%20threshold%20(llvm--cov)-yellow)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
@@ -47,16 +47,16 @@
 | **后端** | Rust + Axum + SQLite + 原生 CortexDao（OpenAI 兼容），单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，41 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖；启动分两阶段（单例注册 + 基础数据注入） |
-| **测试** | 1101 个测试，100% 通过（后端 961 = 875 单元 + 86 集成 + 前端 82 + common 58） |
+| **测试** | 全量测试 100% 通过（后端单元/集成 + 前端 + common） |
 | **CI 质量** | clippy `-D warnings` 零容忍（后端 + 前端 wasm32） + cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%） + E2E Playwright 仅本地 |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：
 
-- 🤖 **Agent 全生命周期**：创建、入职（自动安装工具包）、绑定工具、唤醒执行；多回合循环控制与任务完成检测
+- 🤖 **Agent 全生命周期**：创建、入职（自动补装基础技能/工具包）、绑定工具、唤醒执行；多回合循环控制与任务完成检测
 - 🔌 **A2A 协议完整支持**：作为 Client 注册外部 Agent（CLI/Remote）委派任务；作为 Server 对外暴露协议端点；异步结果回传（Push 回调 + 30 秒轮询兜底）
 - 🧠 **四层记忆**：Core / Working / Short-term / Long-term（含知识图谱），FTS5 + 向量混合搜索；定时沉淀（agent_rest）自动将短期记忆整理入长期图谱
-- 🛠️ **统一工具调用架构**：Auto（LLM 原生）/ Manual（提示词转发）双模式，同步/异步调用 + 调用追踪
+- 🛠️ **工具与技能体系**：Auto（LLM 原生）/ Manual（提示词转发）双模式 + 调用追踪；10 份预置技能（6 个神经技能常驻 Prompt），技能摘要 + id 常驻、全文 get_skill 按需加载；实践沉淀可更新技能副本 / 创建新技能（自我进化）
 - 📨 **消息渠道系统**：飞书 P2P 私信已上线（WebSocket 长连接 + 出站推送 + 退避重连），多渠道适配器架构就绪（微信/Slack/Webhook/邮件待实现）
 - 🔑 **用户身份凭证**：用户级凭证中枢（加密存储），渠道仅存凭证引用；前端身份凭证管理页（飞书为首个凭证类型：应用绑定/OAuth 设备流/自动绑定）
 - 📋 **任务协作 + 进度追踪**：项目 + 任务 + Agent 间任务分配，状态机、执行计划/执行结果显式记录、DAG 依赖、实时进度汇总，支持委派给外部 A2A Agent
@@ -66,7 +66,7 @@
 - 📊 **多维统计与监控**：Agent / Project / Task / Tool / ModelProvider 五维度统计、AOP 队列监控、系统健康仪表盘
 - 🛠️ **系统管理**：数据备份与恢复、日志在线查询、基于角色的权限控制、后台进程管理
 - 📡 **AOP 事件中心**：统一生产-消费事件框架，同步/异步消费模式，Producer/Consumer 完全解耦
-- 🧪 **质量工程**：86 个集成测试覆盖 Auth/SysInit + CRUD + 消息投递 + 向量降级 + A2A + 飞书集成全链路；E2E Playwright 仅本地
+- 🧪 **质量工程**：集成测试覆盖 Auth/SysInit + CRUD + 消息投递 + 向量降级 + A2A + 飞书集成全链路；E2E Playwright 仅本地
 
 > 功能现状以 [docs/wiki/](./docs/wiki/) 为准，开发规范见 [AGENTS.md](./AGENTS.md)
 

@@ -45,6 +45,14 @@ static EMBEDDED_SKILL_FILES: &[(&str, &str)] = &[
         "skills/TEMPLATE_USER_RECEPTION/skill.md",
         include_str!("skills/TEMPLATE_USER_RECEPTION/skill.md"),
     ),
+    (
+        "skills/TEMPLATE_SELF_EVOLUTION/skill.md",
+        include_str!("skills/TEMPLATE_SELF_EVOLUTION/skill.md"),
+    ),
+    (
+        "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md",
+        include_str!("skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md"),
+    ),
 ];
 
 /// 读取编译期内嵌的文件内容
@@ -131,6 +139,19 @@ mod tests {
     }
 
     #[test]
+    fn test_read_embedded_file_self_evolution() {
+        let content = read_embedded_file("skills/TEMPLATE_SELF_EVOLUTION/skill.md").unwrap();
+        assert!(content.contains("自我进化"));
+    }
+
+    #[test]
+    fn test_read_embedded_file_project_context_cognition() {
+        let content =
+            read_embedded_file("skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md").unwrap();
+        assert!(content.contains("项目上下文认知"));
+    }
+
+    #[test]
     fn test_read_embedded_file_not_found() {
         let result = read_embedded_file("skills/nonexistent/skill.md");
         assert!(result.is_err());
@@ -140,7 +161,7 @@ mod tests {
     #[test]
     fn test_list_embedded_skill_files_count() {
         let files = list_embedded_skill_files();
-        assert_eq!(files.len(), 8);
+        assert_eq!(files.len(), 10);
         assert!(files.contains(&"skills/TEMPLATE_TOOL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_SKILL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_MEMORY_COGNITION/skill.md".to_string()));
@@ -149,5 +170,7 @@ mod tests {
         assert!(files.contains(&"skills/GIT_BRANCH_WORKFLOW/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_AGENT_RECRUITMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_USER_RECEPTION/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_SELF_EVOLUTION/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md".to_string()));
     }
 }

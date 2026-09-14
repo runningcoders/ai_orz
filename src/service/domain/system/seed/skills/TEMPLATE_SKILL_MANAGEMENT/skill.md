@@ -47,13 +47,17 @@
 
 ## `update_skill`（更新技能内容）
 
-参数全部可选按需传：`skill_id`（路径）、`name` / `description` / `tags` / `category` / `status` / `content`（新的 skill.md 主文件）/ `files`（附加文件）。场景：Draft 技能发布为 Published、调整 tags 改变匹配范围、**更新自己技能副本里的方法论（把实践沉淀为技能）**。
+参数全部可选按需传：`skill_id`（路径）、`name` / `description` / `tags` / `category` / `status` / `content`（新的 skill.md 主文件）/ `files`（附加文件）。场景：Draft 技能发布为 Published、调整 tags 改变匹配范围、**更新自己技能副本里的方法论（把实践沉淀为技能）**。何时该更新副本、进化如何分流晋升，统一参见**自我进化技能**（进化知识的唯一权威来源），本技能不重复展开。
+
+## `create_skill`（创建自己的技能）
+
+参数：`name`、`description`、`tags`，可选 `category`（默认 uncategorized）/ `status`（默认 Draft）/ `content_input`（正文文本 / URL / 已上传附件）。Agent 上下文调用时技能自动归属于你（author_id = 你的 agent_id，Draft 私有），存放在你自己的技能目录下。典型场景：总结出的新领域能力已超出已有副本的范畴 → 封装为新技能。何时建新技能、与更新副本如何取舍，统一参见**自我进化技能**（进化知识的唯一权威来源）。
 
 ## 能力成长闭环（简要）
 
 三段合并为一个循环：
 1. **接新任务先搜技能**：`search_skill(keyword=任务领域)` → 发现可用 → 单个装（`install_skill_to_agent`）或整领域包（`install_skill_pack`）
-2. **用技能做事 + 沉淀经验**：实践中总结新方法 → `update_skill(content=...)` 更新自己副本里的 skill.md；同时短期经验 `save_short_term_memory`（记忆认知技能）
+2. **用技能做事 + 沉淀经验**：实践中总结新方法 → 按**自我进化技能**的分流矩阵沉淀（记忆节点 / 更新副本 / 建新技能）；短期经验照旧 `save_short_term_memory`（记忆认知技能）
 3. **定期清理**：`list_agent_skills` 自查 → 过时/冗余 → `uninstall_skill_from_agent` / `uninstall_skill_pack` 精简；`list_skill_tags` 发现新分类 → 按需装包扩展
 
 ## 最佳实践
@@ -61,4 +65,4 @@
 1. **先搜后装、按需安装**：安装前先 `search_skill` 了解内容；只装当前任务需要的，避免 Prompt 过载，完成后卸载保持精简
 2. **理解 match_keys**：非 neural 技能装了仍没出现在 Prompt → 检查 tags 与你的 roles/installed_tags 是否有交集；或直接用 `get_skill_file_content` 读
 3. **技能包是能力包**：`install_skill_pack(tag=领域)` 一次装齐并让该领域技能自动必加载，省事
-4. **副本独立于源，用 update_skill 沉淀**：装的副本不会跟着源技能自动更新；把实践中的新方法 `update_skill(content=...)` 写进自己的副本，长期形成个人能力
+4. **副本独立于源，用 update_skill 沉淀**：装的副本不会跟着源技能自动更新；把实践中的新方法写进自己的副本属于自我进化行为，时机与分流统一参见**自我进化技能**，长期形成个人能力

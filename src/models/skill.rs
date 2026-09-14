@@ -86,9 +86,12 @@ impl SkillPo {
     }
 
     /// 格式化技能摘要用于 Prompt 注入
-    /// 只输出名称和描述，不包含完整 skill.md 内容，避免 Token 膨胀
+    /// 只输出名称、id 和描述，不包含完整 skill.md 内容，避免 Token 膨胀。
+    /// id 必须注入：Agent 副本 id 是安装时生成的 UUID，无法从名称推知，
+    /// 缺失时 Agent 每次读全文都需先 search_skill / list_skills 多绕一轮；
+    /// 有了 id 可直接 get_skill(skill_id) 一步按需读取全文（读自身副本无条件放行）。
     pub fn to_prompt_summary(&self) -> String {
-        format!("- {}：{}", self.name, self.description)
+        format!("- {}（id: {}）：{}", self.name, self.id, self.description)
     }
 
     /// 获取标签列表

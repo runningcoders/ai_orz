@@ -14,6 +14,16 @@ use common::enums::skill::SkillAuthorType;
 use common::error::{Result, bail_err, ensure_err, err};
 use std::path::{Component, Path};
 
+/// Skill 访问意图：读（文件列表 / 文件内容） vs 写（元数据更新 / 文件写入 / 删除 / 恢复）。
+///
+/// 仅在本文件内部用于 `ensure_skill_access` 的 Agent 上下文分支：
+/// Agent 写操作严格限定自己的记录；Agent 读操作放行 Published 共享技能。
+#[derive(Clone, Copy)]
+enum SkillAccessIntent {
+    Read,
+    Write,
+}
+
 #[async_trait::async_trait]
 impl SkillManage for HrDomainImpl {
     // A. 技能基础管理（CRUD）
@@ -39,8 +49,9 @@ impl SkillManage for HrDomainImpl {
     }
 
     async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<()> {
-        // 资源级权限校验（管理员 / 作者 / Agent 创建者）
-        self.ensure_skill_access(&ctx, &params.skill.po).await?;
+        // 资源级权限校验（管理员 / 作者 / Agent 创建者 / Agent 上下文仅限自身记录）
+        self.ensure_skill_access(&ctx, &params.skill.po, SkillAccessIntent::Write)
+            .await?;
 
         // 1. 更新元数据
         self.skill_dal.update(ctx.clone(), params.skill).await?;
@@ -69,7 +80,8 @@ impl SkillManage for HrDomainImpl {
             .get_po_by_id(ctx.clone(), id.to_string())
             .await?
         {
-            self.ensure_skill_access(&ctx, &po).await?;
+            self.ensure_skill_access(&ctx, &po, SkillAccessIntent::Write)
+                .await?;
         }
         self.skill_dal.delete(ctx, id).await
     }
@@ -256,7 +268,8 @@ impl SkillManage for HrDomainImpl {
             skill.po.status
         );
 
-        self.ensure_skill_access(&ctx, &skill.po).await?;
+        self.ensure_skill_access(&ctx, &skill.po, SkillAccessIntent::Write)
+            .await?;
 
         skill.po.status = SkillStatus::Draft;
         skill.po.modifier_id = ctx.uid().to_string();
@@ -279,8 +292,10 @@ impl SkillManage for HrDomainImpl {
             return Ok(None);
         };
 
-        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）
-        self.ensure_skill_access(&ctx, &po).await?;
+        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）；
+        // Agent 上下文额外放行 Published 共享技能（只读）
+        self.ensure_skill_access(&ctx, &po, SkillAccessIntent::Read)
+            .await?;
 
         let files = self.skill_dal.list_files(&po)?;
         Ok(Some(files))
@@ -300,8 +315,10 @@ impl SkillManage for HrDomainImpl {
             return Ok(None);
         };
 
-        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）
-        self.ensure_skill_access(&ctx, &po).await?;
+        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）；
+        // Agent 上下文额外放行 Published 共享技能（只读）
+        self.ensure_skill_access(&ctx, &po, SkillAccessIntent::Read)
+            .await?;
 
         let content = self.skill_dal.read_file(&po, filename)?;
         Ok(Some(content))
@@ -323,8 +340,10 @@ impl SkillManage for HrDomainImpl {
             bail_err!(NotFound, "Skill not found: {}", skill_id);
         };
 
-        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）
-        self.ensure_skill_access(&ctx, &po).await?;
+        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）；
+        // Agent 上下文写操作仅限自身记录
+        self.ensure_skill_access(&ctx, &po, SkillAccessIntent::Write)
+            .await?;
 
         // 乐观锁校验
         if let Some(expected) = expected_updated_at
@@ -366,6 +385,12 @@ impl HrDomainImpl {
     /// Skill 资源访问权限判定（文件内容读写 / 元数据更新 / 删除统一入口）。
     ///
     /// **放行条件（满足任一即 Return Ok）：**
+    /// 0. Agent 上下文（ctx.agent_id 存在，工具调用）：
+    ///    - Write：仅允许操作 author_id == agent_id 的记录（自己的技能副本 / 自建技能），
+    ///      不参与下方用户侧条件（含 Admin bypass）——Agent 只能进化自己，不得借宿主身份
+    ///      触达同创建者的其他 Agent 副本或改写 Published 源；
+    ///    - Read：自己的记录，或 Published 共享技能（与 search_skill 的暴露面一致，
+    ///      保障「隐藏技能按需读」能力）。
     /// 1. 用户角色 ≥ Admin（SuperAdmin(0) / Admin(1)，并查集 Admin owns Member）
     /// 2. 请求用户就是技能作者（po.author_id == uid）
     /// 3. 技能作者类型是 Agent，且请求用户是该 Agent 的创建者（Agent.created_by == uid）
@@ -374,8 +399,37 @@ impl HrDomainImpl {
     ///
     /// Context 补充原则符合性：Agent 查询仅在"不是管理员+不是作者"时才执行，
     /// 属于"下游明确需要，且当前上下文未包含"的场景下才专门查询。
-    async fn ensure_skill_access(&self, ctx: &RequestContext, po: &SkillPo) -> Result<()> {
+    async fn ensure_skill_access(
+        &self,
+        ctx: &RequestContext,
+        po: &SkillPo,
+        intent: SkillAccessIntent,
+    ) -> Result<()> {
         let uid = ctx.uid();
+
+        // ---- ⓪ Agent 上下文收紧（独立短路，不走用户侧条件） ----
+        if let Some(agent_id) = ctx.agent_id() {
+            if po.author_id == *agent_id {
+                return Ok(());
+            }
+            if matches!(intent, SkillAccessIntent::Read) && po.status == SkillStatus::Published {
+                return Ok(());
+            }
+            bail_err!(
+                Forbidden,
+                "Agent {} 无权{} Skill {}（作者={}，状态={:?}）。\
+                 Agent 上下文下写操作仅限 author_id 为自身的记录，读操作仅限自身记录或 Published 技能",
+                agent_id,
+                if matches!(intent, SkillAccessIntent::Write) {
+                    "修改"
+                } else {
+                    "访问"
+                },
+                po.id,
+                po.author_id,
+                po.status,
+            );
+        }
 
         // ---- ① Admin Bypass ----
         if let Some(role) = ctx.user_role() {

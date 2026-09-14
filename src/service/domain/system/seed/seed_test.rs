@@ -280,9 +280,9 @@ mod tests {
         assert_eq!(snapshot.users.len(), 1);
         assert_eq!(snapshot.model_providers.len(), 2);
         assert_eq!(snapshot.agents.len(), 2);
-        // 预置 8 个技能（4 个 neural + 1 个 project_management + 1 个 git_branch_workflow
+        // 预置 10 个技能（6 个 neural + 1 个 project_management + 1 个 git_branch_workflow
         // + 1 个 agent_recruitment + 1 个 user_reception）
-        assert_eq!(snapshot.skills.len(), 8);
+        assert_eq!(snapshot.skills.len(), 10);
         assert_eq!(
             snapshot.agents[0].model_provider_id,
             "TEMPLATE_CHAT_PROVIDER"
@@ -333,12 +333,14 @@ mod tests {
         assert!(ids.contains(&"TEMPLATE_COMMUNICATION"));
         assert!(ids.contains(&"TEMPLATE_PROJECT_MANAGEMENT"));
 
-        // 前 4 个神经技能必须包含 neural tag
+        // 全部 6 个神经技能必须包含 neural tag（含自我进化 / 项目上下文两个新技能）
         let neural_ids = [
             "TEMPLATE_TOOL_MANAGEMENT",
             "TEMPLATE_SKILL_MANAGEMENT",
             "TEMPLATE_MEMORY_COGNITION",
             "TEMPLATE_COMMUNICATION",
+            "TEMPLATE_SELF_EVOLUTION",
+            "TEMPLATE_PROJECT_CONTEXT_COGNITION",
         ];
         for skill in &snapshot.skills {
             if neural_ids.contains(&skill.id.as_str()) {

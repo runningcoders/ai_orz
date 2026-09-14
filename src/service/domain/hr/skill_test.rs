@@ -540,3 +540,275 @@ async fn test_skill_access_allows_agent_creator(pool: SqlitePool) -> common::err
 
     Ok(())
 }
+
+/// Agent 上下文权限收紧回归测试（ensure_skill_access ⓪ 分支）：
+/// - 写操作（update）：仅限 author_id == 自己的记录，Admin bypass / 创建者身份均不适用
+/// - 读操作（list_files / get_file_content）：自己的记录 + Published 共享技能放行
+/// - 关闭越权面：同创建者兄弟 Agent 副本、宿主用户的 Draft 源技能
+#[sqlx::test]
+async fn test_skill_access_agent_context_restriction(
+    pool: SqlitePool,
+) -> common::error::Result<()> {
+    use common::constants::utils::current_timestamp_ms;
+    use common::enums::{AgentKind, AgentStatus};
+
+    let (domain, ctx_admin, _temp_dir) = init_test_env(pool.clone());
+
+    // ====== 1. 派生身份：alice / bob 两个 Member + 各自的 Agent + Agent 上下文 ctx ======
+    let ctx_alice = ctx_admin
+        .to_builder()
+        .user_id("user_alice".to_string())
+        .user_role(2) // Member
+        .build();
+    let ctx_agent_alice = ctx_alice.to_builder().agent_id("agent_alice_owned").build();
+
+    let now_ms = current_timestamp_ms();
+    let insert_agent_sql = r#"
+        INSERT INTO agents
+            (id, name, role, description, soul, capabilities, runtime_config,
+             model_provider_id, status, kind, created_by, modified_by, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    "#;
+    for (agent_id, created_by) in [
+        ("agent_alice_owned", "user_alice"),
+        ("agent_bob_owned", "user_bob"),
+    ] {
+        sqlx::query(insert_agent_sql)
+            .bind(agent_id)
+            .bind(agent_id)
+            .bind("[]")
+            .bind("")
+            .bind("")
+            .bind("[]")
+            .bind("{}")
+            .bind("prov_placeholder")
+            .bind(AgentStatus::Onboarded.to_i32())
+            .bind(AgentKind::Local.to_i32())
+            .bind(created_by)
+            .bind("admin")
+            .bind(now_ms)
+            .bind(now_ms)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    // ====== 2. 插入技能：alice 的 Agent 副本 / bob 的 Agent 副本 / alice 的 Draft 源 / bob 的 Published 源 ======
+    // 用嵌套 async fn（生命周期显式统一）而非 async 闭包：闭包返回的 future 会携带
+    // 参数引用与局部变量借用的推导冲突，async fn 内直接 await 则无此问题。
+    async fn mk_skill(
+        pool: &SqlitePool,
+        now_ms: i64,
+        id: &str,
+        author_id: &str,
+        author_type: i32,
+        status: i32,
+        parent: &str,
+    ) -> Result<(), sqlx::Error> {
+        let insert_skill_sql = r#"
+        INSERT INTO skills
+            (id, name, description, tags, category, parent_skill_id,
+             author_id, author_type, modifier_id, status, created_at, updated_at, content_path)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    "#;
+        let content_path = if author_type == SkillAuthorType::Agent.to_i32() {
+            format!("agents/{author_id}/skills/{id}")
+        } else {
+            format!("skills/{id}")
+        };
+        sqlx::query(insert_skill_sql)
+            .bind(id)
+            .bind(id)
+            .bind("")
+            .bind("[]")
+            .bind("")
+            .bind(parent)
+            .bind(author_id)
+            .bind(author_type)
+            .bind(author_id)
+            .bind(status)
+            .bind(now_ms)
+            .bind(now_ms)
+            .bind(&content_path)
+            .execute(pool)
+            .await
+            .map(|_| ())
+    }
+    mk_skill(
+        &pool,
+        now_ms,
+        "alice_agent_copy",
+        "agent_alice_owned",
+        SkillAuthorType::Agent.to_i32(),
+        SkillStatus::Draft.to_i32(),
+        "src_placeholder",
+    )
+    .await
+    .unwrap();
+    mk_skill(
+        &pool,
+        now_ms,
+        "bob_agent_copy",
+        "agent_bob_owned",
+        SkillAuthorType::Agent.to_i32(),
+        SkillStatus::Draft.to_i32(),
+        "src_placeholder",
+    )
+    .await
+    .unwrap();
+    mk_skill(
+        &pool,
+        now_ms,
+        "alice_draft_source",
+        "user_alice",
+        SkillAuthorType::User.to_i32(),
+        SkillStatus::Draft.to_i32(),
+        "",
+    )
+    .await
+    .unwrap();
+    mk_skill(
+        &pool,
+        now_ms,
+        "bob_published_skill",
+        "user_bob",
+        SkillAuthorType::User.to_i32(),
+        SkillStatus::Published.to_i32(),
+        "",
+    )
+    .await
+    .unwrap();
+
+    // ====== 3. 写操作：只能动自己的记录 ======
+    // 3a. alice 的 Agent 更新自己的副本 → 放行
+    let mut own = domain
+        .skill_manage()
+        .get_skill(ctx_agent_alice.clone(), "alice_agent_copy")
+        .await?
+        .expect("自己的副本应存在");
+    own.po.description = "evolved by agent".to_string();
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx_agent_alice.clone(),
+            UpdateSkillParams {
+                skill: &own,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect("Agent 更新自己的技能副本应放行");
+
+    // 3b. 借宿主身份改写宿主用户的 Draft 源技能 → 拒绝（原逻辑条件②会放行）
+    let mut host_source = domain
+        .skill_manage()
+        .get_skill(ctx_agent_alice.clone(), "alice_draft_source")
+        .await?
+        .expect("宿主用户的源技能应存在");
+    host_source.po.description = "hijacked".to_string();
+    let err = domain
+        .skill_manage()
+        .update_skill(
+            ctx_agent_alice.clone(),
+            UpdateSkillParams {
+                skill: &host_source,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{err:?}").contains("Forbidden"),
+        "Agent 改写宿主用户技能应 Forbidden，实际: {err:?}"
+    );
+
+    // 3c. 改写同创建者兄弟 Agent 的副本 → 拒绝（原逻辑条件③会放行）
+    let mut sibling = domain
+        .skill_manage()
+        .get_skill(ctx_agent_alice.clone(), "bob_agent_copy")
+        .await?
+        .expect("兄弟 Agent 副本应存在");
+    sibling.po.description = "hijacked".to_string();
+    let err = domain
+        .skill_manage()
+        .update_skill(
+            ctx_agent_alice.clone(),
+            UpdateSkillParams {
+                skill: &sibling,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{err:?}").contains("Forbidden"),
+        "Agent 改写兄弟 Agent 副本应 Forbidden，实际: {err:?}"
+    );
+
+    // 3d. 即使宿主是 SuperAdmin，Agent 上下文也不享受 Admin bypass → 拒绝
+    let ctx_agent_admin_host = ctx_admin
+        .to_builder()
+        .user_role(0) // SuperAdmin
+        .agent_id("agent_alice_owned")
+        .build();
+    host_source.po.description = "hijacked by admin host agent".to_string();
+    let err = domain
+        .skill_manage()
+        .update_skill(
+            ctx_agent_admin_host,
+            UpdateSkillParams {
+                skill: &host_source,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{err:?}").contains("Forbidden"),
+        "Admin 宿主的 Agent 上下文也不应绕过自身记录限定，实际: {err:?}"
+    );
+
+    // ====== 4. 读操作：自己的记录 + Published 共享技能放行，他人 Draft 拒绝 ======
+    // 4a. 读 Published 共享技能（作者是 bob，与 alice 的 Agent 无关）→ 放行（隐藏技能按需读）
+    let published = domain
+        .skill_manage()
+        .list_skill_files(ctx_agent_alice.clone(), "bob_published_skill")
+        .await;
+    assert!(
+        published.is_ok(),
+        "Agent 读 Published 共享技能应放行（search_skill 暴露面一致），实际: {:?}",
+        published.err()
+    );
+
+    // 4b. 读宿主用户的 Draft 源技能 → 拒绝
+    let err = domain
+        .skill_manage()
+        .list_skill_files(ctx_agent_alice.clone(), "alice_draft_source")
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{err:?}").contains("Forbidden"),
+        "Agent 读宿主用户 Draft 技能应 Forbidden，实际: {err:?}"
+    );
+
+    // 4c. 用户上下文（无 agent_id）不受收紧影响：alice 仍能读自己的 Draft 源
+    let own_source_files = domain
+        .skill_manage()
+        .list_skill_files(ctx_alice.clone(), "alice_draft_source")
+        .await;
+    assert!(
+        own_source_files.is_ok(),
+        "用户上下文读自己的技能不应受 Agent 收紧影响，实际: {:?}",
+        own_source_files.err()
+    );
+
+    Ok(())
+}
