@@ -233,12 +233,11 @@ pub fn OrganizationInfo() -> Element {
                                 }
                             }
                             div { class: "flex items-center justify-between gap-4",
-                                div { class: "flex-1",
+                                div { class: "flex-1 min-w-0",
                                     div { class: "font-medium", "消息向量索引" }
-                                    label { class: "label",
-                                        span { class: "label-text-alt",
-                                            "开启后，普通消息会构建语义向量以支持语义检索；默认关闭以避免无意义的 Embedding 开销。配置仅对当前组织生效。"
-                                        }
+                                    // 长描述不能用 DaisyUI `.label`（v5 带 white-space:nowrap，会撑破面板）
+                                    p { class: "text-sm text-base-content/60 mt-1",
+                                        "开启后，普通消息会构建语义向量以支持语义检索；默认关闭以避免无意义的 Embedding 开销。配置仅对当前组织生效。"
                                     }
                                 }
                                 // 统一 HUD 开关：.hud-switch（状态由 .is-on 控制，禁用态降透明度）
@@ -264,11 +263,10 @@ pub fn OrganizationInfo() -> Element {
                             // ===== Agent 入职配置：本组织要求每个 Agent 会哪些包 =====
                             div { class: "space-y-3",
                                 div { class: "font-medium", "Agent 入职包（组织要求）" }
-                                label { class: "label pt-0",
-                                    span { class: "label-text-alt",
-                                        "Agent 入职时自动安装这里配置的包：工具包负责工具授权，技能包负责把技能副本放进 Agent 池子。"
-                                        "「同名双重身份」的包（如 project_management）两侧都要配 —— 少配一侧会导致工具被拒或技能不进 Prompt。"
-                                    }
+                                // 长描述不能用 DaisyUI `.label`（v5 带 white-space:nowrap，会撑破面板）
+                                p { class: "text-sm text-base-content/60 mt-1",
+                                    "Agent 入职时自动安装这里配置的包：工具包负责工具授权，技能包负责把技能副本放进 Agent 池子。"
+                                    "「同名双重身份」的包（如 project_management）两侧都要配 —— 少配一侧会导致工具被拒或技能不进 Prompt。"
                                 }
                                 PackTagEditor {
                                     title: "工具包 tags",
