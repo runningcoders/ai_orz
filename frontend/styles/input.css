@@ -676,8 +676,14 @@
   border-left: 3px solid var(--color-info);
   box-shadow: 0 6px 20px -10px color-mix(in oklab, var(--color-info) 50%, transparent);
 }
-/* 头像 HUD 细环：与气泡玻璃质感呼应 */
-.chat .chat-image > div {
+/* 头像 HUD 细环：与气泡玻璃质感呼应。
+   ⚠️ 必须精确命中「圆」本身，两种头像结构都要覆盖（2026-09-14 无头实测）：
+   - 系统提示头像：`.chat-image.avatar > 圆`（avatar 就是宿主）
+   - AvatarBubble 头像：`.chat-image > .dropdown > .avatar > 圆`（中间多一层 dropdown 包装）
+   只写 `.chat .chat-image > div` 会在气泡结构下命中 `.dropdown` 包装层（40×40 方框），
+   细环变成方角描边而不是描在圆上。 */
+.chat .chat-image.avatar > div,
+.chat .chat-image .avatar > div {
   border: 1px solid color-mix(in oklab, var(--color-base-content) 15%, transparent);
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-base-content) 6%, transparent);
 }
