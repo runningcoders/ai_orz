@@ -67,9 +67,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 /// Project 状态标签
 fn project_status_label(status: i32) -> &'static str {
     match status {
-        3 => "进行中",
-        4 => "已完成",
-        5 => "已归档",
+        1 => "进行中",
+        2 => "已完成",
+        3 => "已归档",
         _ => "未知",
     }
 }

@@ -125,7 +125,7 @@ async fn test_project_status_transitions(pool: SqlitePool) {
     let project_name = format!("TestProject-{}", uuid::Uuid::now_v7());
     let project_id = crate::common::factories::create_test_project(&app, &jwt, &project_name).await;
 
-    // Get project — verify initial state (创建即 InProgress = 3)
+    // Get project — verify initial state (创建即 InProgress = 1)
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/projects/{}", project_id), &jwt)
         .await;
@@ -139,8 +139,8 @@ async fn test_project_status_transitions(pool: SqlitePool) {
         .and_then(|v| v.as_i64())
         .expect("project status field should be present");
     assert_eq!(
-        initial_status, 3,
-        "newly created project should be InProgress (3, 创建即启动)"
+        initial_status, 1,
+        "newly created project should be InProgress (1, 创建即启动)"
     );
 
     // Update project status: InProgress → Completed (PUT, not POST)
@@ -172,8 +172,8 @@ async fn test_project_status_transitions(pool: SqlitePool) {
         .and_then(|v| v.as_i64())
         .expect("project status should be present after update");
     assert_eq!(
-        updated_status, 4,
-        "project status should be Completed (4) after transition"
+        updated_status, 2,
+        "project status should be Completed (2) after transition"
     );
 
     // Archive the project: Completed → Archived (替代 DELETE，因为项目无删除路由)
@@ -195,7 +195,7 @@ async fn test_project_status_transitions(pool: SqlitePool) {
         body
     );
 
-    // Verify final status is Archived (5)
+    // Verify final status is Archived (3)
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/projects/{}", project_id), &jwt)
         .await;
@@ -205,8 +205,8 @@ async fn test_project_status_transitions(pool: SqlitePool) {
         .and_then(|v| v.as_i64())
         .expect("project status should be present after archive");
     assert_eq!(
-        final_status, 5,
-        "project status should be Archived (5) after archive transition"
+        final_status, 3,
+        "project status should be Archived (3) after archive transition"
     );
 }
 

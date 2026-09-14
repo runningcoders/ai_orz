@@ -156,9 +156,9 @@ pub fn ProjectList() -> Element {
                                 reload_projects();
                             },
                             option { value: "", "全部状态" }
-                            option { value: "3", "InProgress" }
-                            option { value: "4", "Completed" }
-                            option { value: "5", "Archived" }
+                            option { value: "1", "InProgress" }
+                            option { value: "2", "Completed" }
+                            option { value: "3", "Archived" }
                         }
                     }
                     div { class: "flex flex-col gap-1 min-w-[140px] flex-1",

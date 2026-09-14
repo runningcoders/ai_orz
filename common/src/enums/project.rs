@@ -15,22 +15,20 @@ pub enum ProjectStatus {
     Deleted = 0,
     /// InProgress (work is ongoing; creation means started, start_at auto-written)
     #[default]
-    InProgress = 3,
+    InProgress = 1,
     /// Completed (work is done)
-    Completed = 4,
+    Completed = 2,
     /// Archived (archived to history)
-    Archived = 5,
+    Archived = 3,
 }
 
 impl From<i32> for ProjectStatus {
     fn from(v: i32) -> Self {
         match v {
             0 => ProjectStatus::Deleted,
-            // 1/2 为历史值（Active/PendingReview 已并入 InProgress）：读回时统一视为进行中
-            1 | 2 => ProjectStatus::InProgress,
-            3 => ProjectStatus::InProgress,
-            4 => ProjectStatus::Completed,
-            5 => ProjectStatus::Archived,
+            1 => ProjectStatus::InProgress,
+            2 => ProjectStatus::Completed,
+            3 => ProjectStatus::Archived,
             _ => ProjectStatus::default(),
         }
     }
