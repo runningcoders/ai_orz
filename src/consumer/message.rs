@@ -464,15 +464,18 @@ impl MessageConsumer {
         if let Some(task) = cached_task {
             thinking_options = thinking_options.with_task(task);
         }
-        // 注入消息发送者的用户画像（基础信息 + 自述偏好），构建 awaken 【用户画像】区块
-        // 仅 User 发送的消息才查询；查询失败仅记日志不阻塞唤醒
-        if message.from_role() == MessageRole::User
-            && let Ok(Some(sender)) = crate::service::domain::organization::domain()
-                .user_manage()
-                .get_user_by_id(ctx.clone(), &message.po.from_id)
-                .await
+        // 注入【用户画像】（基础信息 + 自述偏好），构建 awaken 【用户画像】区块。
+        // 取值规则见 resolve_profile_user_id；查询失败或用户不存在仅跳过，不阻塞唤醒
+        if let Some(profile_user_id) = resolve_profile_user_id(
+            message.from_role(),
+            &message.po.from_id,
+            work_root_user_id.as_deref(),
+        ) && let Ok(Some(user)) = crate::service::domain::organization::domain()
+            .user_manage()
+            .get_user_by_id(ctx.clone(), &profile_user_id)
+            .await
         {
-            thinking_options = thinking_options.with_user_profile(sender);
+            thinking_options = thinking_options.with_user_profile(user);
         }
 
         // 注入推导出的用户上下文（任务/项目 root_user_id），保证凭据链路按归属用户解析
@@ -613,17 +616,58 @@ impl MessageConsumer {
                     .map(|_| ()),
 
                 MessageRole::System => {
-                    // 系统触发（cron/取消/内部控制命令等）：
-                    // 没有对等回复目标，Final 文本如需落地请走 send_message 工具
-                    // 在 think_loop 里按业务语义指定明确的 to_user_id / to_agent_id。
-                    log_debug!(
-                        &ctx,
-                        "handle_agent_message",
-                        "skip auto-reply for system-originated message (from_id={}), final len={}",
-                        message.po.from_id,
-                        raw_output.len()
-                    );
-                    Ok(())
+                    // 系统触发（任务分配 / 任务调度 / 取消 / 定时巡检等）没有「对等回复对象」，
+                    // 但其中「后台唤醒」类消息的 Final 通常是 Agent 面向用户的成果汇报
+                    // （完成了什么、下一步是什么），有价值 —— 由逻辑层按场景兜底投递，
+                    // 而不是丢弃、也不再依赖提示词教会模型自己判断「何时该通知用户」。
+                    //
+                    // 投递目标 = 本消息所属任务/项目的归属用户（work_root_user_id 在唤醒前已推导）。
+                    // 场景白名单见 should_deliver_system_final。
+                    if !should_deliver_system_final(message.po.message_type) {
+                        log_debug!(
+                            &ctx,
+                            "handle_agent_message",
+                            "skip auto-reply for system-originated message (from_id={}, type={:?}), final len={}",
+                            message.po.from_id,
+                            message.po.message_type,
+                            raw_output.len()
+                        );
+                        return Ok(());
+                    }
+
+                    match work_root_user_id.as_deref().filter(|id| !id.is_empty()) {
+                        Some(user_id) => self
+                            .message_domain
+                            .delivery()
+                            .send_to_user(
+                                ctx.clone(),
+                                SendToUserCommand {
+                                    from_agent_id: agent_id,
+                                    to_user_id: user_id,
+                                    content: raw_output,
+                                    project_id,
+                                    task_id,
+                                    reply_to_id,
+                                },
+                            )
+                            .await
+                            .map(|_| ()),
+
+                        // 解析不出归属用户（无 project/task 上下文，或 root_user_id 为空）：
+                        // 没有可投递对象，保持原「静默丢弃」语义，但升级为 warn 便于排查
+                        None => {
+                            log_warn!(
+                                &ctx,
+                                "handle_agent_message",
+                                "系统消息无法解析归属用户，Final 文本丢弃 (type={:?}, msg={}, agent={}, final len={})",
+                                message.po.message_type,
+                                message.po.id,
+                                agent_id,
+                                raw_output.len()
+                            );
+                            Ok(())
+                        }
+                    }
                 }
             };
 
@@ -958,4 +1002,117 @@ fn parse_tool_call_request(message: &Message) -> Result<ToolCallMessage> {
 
 fn tool_error_message(err: &Error) -> String {
     err.msg.clone()
+}
+
+/// 判断「系统来源消息」本轮产出的 Final 文本是否要兜底投递给归属用户
+///
+/// 后台唤醒的消息没有对等回复对象，此前 Final 一律静默丢弃；但其中由业务事件驱动的
+/// 唤醒，其 Final 通常是 Agent 面向用户的汇报（产出、阻塞、收口），丢弃等于用户永远
+/// 收不到后台工作的结果。这里按**消息类型**收敛投递场景——把「如何触达用户」的判断
+/// 留在逻辑层，而不是写进提示词让模型自己权衡。
+///
+/// | 消息类型 | 兜底投递 | 理由 |
+/// |---------|---------|------|
+/// | `TaskAssignment`（任务分配） | ✅ | 任务派发后的执行反馈，归属用户关心 |
+/// | `TaskDispatchNotification`（任务调度） | ✅ | 任务状态变更驱动，里程碑 / 阻塞 / 项目收口都在这里 |
+/// | `ProjectFollowupNotification`（项目巡检） | ❌ | 每小时定时触发，「无异常」类收尾会变成周期性噪音；确有结论时 Agent 按技能要求用 `send_message` 主动上报（通知正文已告知） |
+/// | 其他（工具结果 / 确认 / 取消等） | ❌ | Final 不是面向用户的汇报，投递会污染用户收件箱 |
+fn should_deliver_system_final(message_type: MessageType) -> bool {
+    matches!(
+        message_type,
+        MessageType::TaskAssignment | MessageType::TaskDispatchNotification
+    )
+}
+
+/// 推导本次唤醒【用户画像】区块应注入哪个用户
+///
+/// 画像里带【用户 ID】/【显示名称】/【用户偏好】，直接决定 Agent「在跟谁打交道」的
+/// 认知与回复风格；`send_message` 的目标 id 也从这里对齐。取值优先级：
+///
+/// 1. `from_role == User` → **消息发送者本人**：对话中"正在跟我说话的人"，语义最准确；
+/// 2. 其他来源（`System` 后台唤醒 / `Agent` 间协作）→ **本次工作归属用户**
+///    （任务 / 项目的 `root_user_id`）。
+///
+/// 第 2 条是兜底：这两类消息由系统或别的 Agent 构造，提示词里原本不含任何用户信息，
+/// Agent 既不知道"这件事为谁负责"，也无从对齐偏好——而它们恰恰是 Agent 需要主动
+/// `send_message` 汇报的主力场景（见 `should_deliver_system_final`）。
+///
+/// 返回 `None` 表示不注入（例如 A2A 等无归属用户的项目，`root_user_id` 为空）。
+fn resolve_profile_user_id(
+    from_role: MessageRole,
+    from_id: &str,
+    work_root_user_id: Option<&str>,
+) -> Option<String> {
+    if from_role == MessageRole::User {
+        return Some(from_id.to_string());
+    }
+    work_root_user_id
+        .filter(|id| !id.is_empty())
+        .map(|id| id.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 后台唤醒（任务分配 / 任务调度）的 Final 必须兜底投递
+    #[test]
+    fn system_final_delivered_for_background_wakeups() {
+        assert!(should_deliver_system_final(MessageType::TaskAssignment));
+        assert!(should_deliver_system_final(
+            MessageType::TaskDispatchNotification
+        ));
+    }
+
+    /// 定时巡检与内部消息不投递，避免周期性噪音 / 污染收件箱
+    #[test]
+    fn system_final_suppressed_for_followup_and_internal() {
+        assert!(!should_deliver_system_final(
+            MessageType::ProjectFollowupNotification
+        ));
+        assert!(!should_deliver_system_final(MessageType::ToolCallResult));
+        assert!(!should_deliver_system_final(MessageType::ConfirmRequest));
+        assert!(!should_deliver_system_final(MessageType::Text));
+    }
+
+    /// 画像取值：User 消息恒用发送者本人
+    #[test]
+    fn profile_user_id_prefers_message_sender() {
+        assert_eq!(
+            resolve_profile_user_id(MessageRole::User, "user-sender", Some("user-owner"))
+                .as_deref(),
+            Some("user-sender")
+        );
+        // 发送者即归属用户时也走同一条路（不依赖 work_root_user_id）
+        assert_eq!(
+            resolve_profile_user_id(MessageRole::User, "user-1", None).as_deref(),
+            Some("user-1")
+        );
+    }
+
+    /// 画像取值：后台唤醒 / Agent 协作回退到工作归属用户，使主动通知有对象、有偏好可对齐
+    #[test]
+    fn profile_user_id_falls_back_to_work_owner() {
+        assert_eq!(
+            resolve_profile_user_id(MessageRole::System, "task-1", Some("user-owner")).as_deref(),
+            Some("user-owner")
+        );
+        assert_eq!(
+            resolve_profile_user_id(MessageRole::Agent, "agent-1", Some("user-owner")).as_deref(),
+            Some("user-owner")
+        );
+    }
+
+    /// 无归属用户（如 A2A 项目 root_user_id 为空）→ 不注入画像
+    #[test]
+    fn profile_user_id_absent_without_work_owner() {
+        assert_eq!(
+            resolve_profile_user_id(MessageRole::System, "task-1", None),
+            None
+        );
+        assert_eq!(
+            resolve_profile_user_id(MessageRole::System, "task-1", Some("")),
+            None
+        );
+    }
 }

@@ -22,7 +22,9 @@ pub fn build_task_dispatch_content(
             - 检查是否有后续任务的依赖已满足（前置任务已完成）\n\
             - 如有，通过 send_to_agent 通知对应 Agent 开始执行\n\
             - 如无后续任务，检查是否所有任务已完成 → 更新项目状态为 Completed\n\
-         4. **通知用户**（仅在必要时）：阶段性里程碑达成、发现阻塞风险需要用户决策",
+         4. **面向用户的收尾**：你的最终回复会自动送达项目归属用户，**无需**再调用 send_message 重复通知；\n\
+            请在最终回复中写清：本次调度做了什么、项目当前状态与进度、下一步计划；\n\
+            如存在需要用户决策的事项（阻塞风险 / 计划变更），明确指出需要用户做什么",
         task_title,
         task_status_label(new_status),
         progress,
@@ -41,10 +43,13 @@ pub fn build_project_followup_content(project_name: &str) -> String {
             - 检查 Pending 任务是否因依赖阻塞无法启动\n\
          3. **对比计划**：对照 execution_plan，判断当前阶段是否正常推进\n\
          4. **采取行动**：\n\
+            - 任务 / 项目状态有明确变化（任务完成 / 阻塞 / 取消、进度或状态流转、里程碑达成）→ **必须** send_message 通知项目归属用户，写清「变化内容 + 下一步」\n\
             - 阻塞任务 → 分析原因，调整分配或通知用户\n\
-            - 全部完成 → 更新项目状态为 Completed\n\
-            - 进展正常 → 如有阶段性进展，通知用户\n\
-            - 需要调整计划 → 更新 execution_plan",
+            - 全部完成 → 更新项目状态为 Completed，并按上一条通知用户\n\
+            - 需要调整计划 → 更新 execution_plan\n\
+            - 无状态变化、进展正常 → 不必通知（避免每小时重复打扰）\n\n\
+         注意：本次唤醒的 Final 文本不会自动送达用户（定时巡检每小时触发，避免打扰）。\n\
+         需要向用户同步进展或请求决策时，请调用 send_message，目标用户见【项目上下文】的项目归属用户。",
         project_name,
     )
 }
@@ -70,6 +75,9 @@ mod tests {
         assert!(content.contains("搭建脚手架"));
         assert!(content.contains("已完成"));
         assert!(content.contains("get_project"));
+        // 该场景 Final 由消费者兜底投递，正文需说明「最终回复即送达」以免重复 send_message
+        assert!(content.contains("自动送达"));
+        assert!(content.contains("无需"));
     }
 
     #[test]
@@ -78,5 +86,13 @@ mod tests {
         assert!(content.contains("项目进度定期检查"));
         assert!(content.contains("AI 助手开发"));
         assert!(content.contains("识别阻塞"));
+        // 巡检场景不兜底投递 Final，必须显式告知 Agent 走 send_message
+        assert!(content.contains("send_message"));
+        assert!(content.contains("不会自动送达用户"));
+        // 状态有明确变化 = 确定性通知条件（软要求改硬）
+        assert!(content.contains("必须"));
+        assert!(content.contains("状态有明确变化"));
+        // 无变化则不通知，避免每小时噪音
+        assert!(content.contains("无状态变化"));
     }
 }

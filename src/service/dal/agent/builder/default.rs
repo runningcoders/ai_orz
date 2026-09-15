@@ -689,7 +689,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s.push_str("§1. 何时直接输出 Final 文本（需要用户回复的场景必须走这里）：\n");
         s.push_str("   - 当你有足够信息回答当前用户的问题/消息时，**直接输出 Final 文本回复即可，不要调用任何工具**。\n");
         s.push_str(
-            "   - 你的 Final 文本会自动发送给当前对话中的用户，**不需要**调用 send_message 工具。\n",
+            "   - 你的 Final 文本会自动送达本次消息的**来源方**（用户 / 协作 Agent），**不需要**调用 send_message 工具；\n",
+        );
+        s.push_str(
+            "     若本次唤醒由系统后台触发（如定时巡检、任务调度通知，没有来源方），投递规则见【当前消息】正文的说明。\n",
         );
         s.push_str(
             "   - 信息不足需要用户提供输入时（指代不明、需求边界不清、需要用户选择/决策、\n",

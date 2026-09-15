@@ -45,6 +45,52 @@ fn make_simple_message(content: &str) -> Message {
     )
 }
 
+/// 按「行首区块头」定位区块，返回该 header 作为**区块头**首次出现的下标。
+///
+/// 为什么不能直接 `prompt.find("【当前消息】")`：System 的回复指引、消息链区块说明等
+/// 处会**行文引用**这些标签（如「投递规则见【当前消息】正文的说明」），而 System 排在
+/// User 之前，`find` 命中的是引用而非真正的区块头，区块顺序断言就此失效（假通过）。
+/// 判定标准：**行首**——前一个字符是换行，或本身就是整段文本开头。
+/// 只用行首作判据、**不要求后缀换行**：区块头行可能带尾注
+/// （如 `## 【输入理解结果 · 仅供参考】 ⚠️`），要求后缀换行会被漏掉。
+fn find_block(prompt: &str, header: &str) -> Option<usize> {
+    if prompt.starts_with(header) {
+        return Some(0);
+    }
+    prompt.find(&format!("\n{header}")).map(|idx| idx + 1)
+}
+
+/// 定位器自测：行文引用不能被当成区块头
+#[test]
+fn find_block_skips_inline_references() {
+    let prompt = "……投递规则见【当前消息】正文的说明。\n\n【当前消息】\n正文内容";
+    let idx = find_block(prompt, "【当前消息】").expect("应找到行首区块头");
+    // 命中的必须是后面那个真正的区块头，而不是前面的行文引用
+    assert!(
+        idx > prompt
+            .find("投递规则见【当前消息】")
+            .expect("引用本身应存在"),
+        "应跳过行文引用，命中真正的区块头"
+    );
+    // 命中位置在行首：前一个字符是换行，或本身即文本开头
+    assert!(
+        idx == 0 || prompt.as_bytes()[idx - 1] == b'\n',
+        "区块头必须位于行首"
+    );
+    assert_eq!(&prompt[idx..idx + "【当前消息】".len()], "【当前消息】");
+    // 不存在区块头时应返回 None（行文引用不算）
+    assert!(find_block("正文里提到【当前消息】但不作为区块头", "【当前消息】").is_none());
+    // 区块头行带尾注也要命中（输入理解区块的 ⚠️ 变体行就是这么渲染的）
+    assert!(
+        find_block(
+            "\n## 【输入理解结果 · 仅供参考】 ⚠️\n正文",
+            "## 【输入理解结果 · 仅供参考】"
+        )
+        .is_some(),
+        "带尾注的区块头行不应漏判"
+    );
+}
+
 #[test]
 fn build_intent_analyze_prompt_contains_sop_and_schema() {
     let agent = make_simple_agent();
@@ -216,12 +262,10 @@ fn build_prompt_contains_input_understanding_before_current_message() {
     let prompt_with_ia = builder_with_ia.build();
 
     // 断言：理解区块 + 当前消息两者都出现
-    let idx_understanding = prompt_with_ia
-        .find("【输入理解结果")
-        .expect("Prompt 应包含【输入理解结果】区块");
-    let idx_current_msg = prompt_with_ia
-        .find("【当前消息】")
-        .expect("Prompt 应包含【当前消息】区块");
+    let idx_understanding = find_block(&prompt_with_ia, "## 【输入理解结果 · 仅供参考】")
+        .expect("Prompt 应包含【输入理解结果】区块头");
+    let idx_current_msg =
+        find_block(&prompt_with_ia, "【当前消息】").expect("Prompt 应包含【当前消息】区块头");
 
     // 关键断言：理解区块索引 < 当前消息索引
     assert!(
@@ -244,13 +288,13 @@ fn build_prompt_contains_input_understanding_before_current_message() {
 
     // 断言：不包含理解区块
     assert!(
-        !prompt_none_ia.contains("【输入理解结果"),
+        find_block(&prompt_none_ia, "## 【输入理解结果 · 仅供参考】").is_none(),
         "intent_analysis=None 时不应渲染理解区块"
     );
     // 断言：仍然包含当前消息（输出未被破坏）
     assert!(
-        prompt_none_ia.contains("【当前消息】"),
-        "None 分支输出应包含当前消息区块"
+        find_block(&prompt_none_ia, "【当前消息】").is_some(),
+        "None 分支输出应包含【当前消息】区块头"
     );
     assert!(
         prompt_none_ia.len() > 50,
@@ -308,8 +352,8 @@ fn intent_analyze_phase1_failure_graceful_degrade() {
         "降级分支下 Prompt 仍应含 Trace ID 区块"
     );
     assert!(
-        prompt.contains("【当前消息】"),
-        "降级分支下 Prompt 仍应含当前消息区块"
+        find_block(&prompt, "【当前消息】").is_some(),
+        "降级分支下 Prompt 仍应含【当前消息】区块头"
     );
 }
 
@@ -479,7 +523,7 @@ fn flat_builder_produces_single_user_message_with_system() {
     );
     // 用户消息同样在
     assert!(content.contains("帮我查下订单"));
-    assert!(content.contains("【当前消息】"));
+    assert!(find_block(content, "【当前消息】").is_some());
     assert!(content.contains("trace-flat"));
 }
 
@@ -534,7 +578,7 @@ fn flat_builder_applies_system_and_user_placeholders() {
     assert!(content.contains("测试助手"));
     // user 段落在 input 内
     let input_part = content.split("<input>").nth(1).unwrap_or("");
-    assert!(input_part.contains("【当前消息】"));
+    assert!(find_block(input_part, "【当前消息】").is_some());
     assert!(
         !input_part.contains("测试助手"),
         "{{user}} 不应含 System 内容"
@@ -651,10 +695,9 @@ fn awaken_prompt_injects_compacted_context() {
 
     let prompt = builder.build();
 
-    let idx_summary = prompt
-        .find("【上一轮工作压缩结果】")
-        .expect("应包含压缩结果区块");
-    let idx_msg = prompt.find("【当前消息】").expect("应包含当前消息");
+    let idx_summary =
+        find_block(&prompt, "【上一轮工作压缩结果】").expect("应包含【上一轮工作压缩结果】区块头");
+    let idx_msg = find_block(&prompt, "【当前消息】").expect("应包含【当前消息】区块头");
 
     // 压缩结果排在原始诉求之前，且原始诉求必须保留
     assert!(idx_summary < idx_msg, "压缩结果应排在【当前消息】之前");
@@ -664,8 +707,11 @@ fn awaken_prompt_injects_compacted_context() {
     assert!(prompt.contains("上一轮思考中完成的工作"));
     assert!(prompt.contains("search_memory"));
     // 未装配 history，不应出现历史区块。
-    // 注意按「行首区块头」匹配：System 的回复指引里也提到过【历史对话】这个词。
-    assert!(!prompt.contains("\n【历史对话】\n"));
+    // 按「行首区块头」判定：System 的回复指引里也提到过【历史对话】这个词。
+    assert!(
+        find_block(&prompt, "【历史对话】").is_none(),
+        "未装配 history 却渲染了【历史对话】区块头"
+    );
 }
 
 /// 压缩后补的「更早的记忆」必须明确标注是过去的、非当前工作
@@ -682,13 +728,11 @@ fn awaken_prompt_past_memories_marked_as_historical() {
 
     let prompt = builder.build();
 
-    let idx_summary = prompt
-        .find("【上一轮工作压缩结果】")
-        .expect("应包含压缩结果");
-    let idx_past = prompt
-        .find("【更早的记忆（仅供参考，非当前工作）】")
-        .expect("应包含更早记忆区块");
-    let idx_msg = prompt.find("【当前消息】").expect("应包含当前消息");
+    let idx_summary =
+        find_block(&prompt, "【上一轮工作压缩结果】").expect("应包含【上一轮工作压缩结果】区块头");
+    let idx_past = find_block(&prompt, "【更早的记忆（仅供参考，非当前工作）】")
+        .expect("应包含【更早的记忆】区块头");
+    let idx_msg = find_block(&prompt, "【当前消息】").expect("应包含【当前消息】区块头");
 
     // 顺序：压缩结果 → 更早记忆 → 当前消息
     assert!(idx_summary < idx_past, "压缩结果应排在更早记忆之前");
@@ -714,9 +758,15 @@ fn awaken_prompt_omits_past_memories_when_absent() {
     builder.history(&[make_short_term_memory("之前聊过退款政策")]);
     let prompt = builder.build();
 
-    assert!(!prompt.contains("【更早的记忆"));
+    assert!(
+        find_block(&prompt, "【更早的记忆（仅供参考，非当前工作）】").is_none(),
+        "未压缩不应渲染【更早的记忆】区块头"
+    );
     // 按行首区块头匹配，避免命中 System 指引里的同名措辞
-    assert!(prompt.contains("\n【历史对话】\n"));
+    assert!(
+        find_block(&prompt, "【历史对话】").is_some(),
+        "常规路径应渲染【历史对话】区块头"
+    );
 }
 
 /// 未压缩时不渲染该区块（走常规【历史对话】路径）
@@ -729,9 +779,15 @@ fn awaken_prompt_omits_compacted_context_when_absent() {
     builder.history(&[make_short_term_memory("之前聊过退款政策")]);
     let prompt = builder.build();
 
-    assert!(!prompt.contains("【上一轮工作压缩结果】"));
+    assert!(
+        find_block(&prompt, "【上一轮工作压缩结果】").is_none(),
+        "未压缩不应渲染【上一轮工作压缩结果】区块头"
+    );
     // 按行首区块头匹配，避免命中 System 指引里的同名措辞
-    assert!(prompt.contains("\n【历史对话】\n"));
+    assert!(
+        find_block(&prompt, "【历史对话】").is_some(),
+        "常规路径应渲染【历史对话】区块头"
+    );
 }
 
 /// 参考区块缺省不渲染

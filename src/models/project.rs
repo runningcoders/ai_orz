@@ -191,6 +191,14 @@ impl Project {
         if let Some(owner_agent_id) = &self.po.owner_agent_id {
             s.push_str(&format!("- 负责Agent: {}\n", owner_agent_id));
         }
+        // 归属用户是 Agent 主动上报（send_message）时的目标对象，必须给出 id，
+        // 否则后台唤醒场景下 Agent 无从填写 to_user_id（详见 consumer::message 的兜底投递）。
+        if !self.po.root_user_id.is_empty() {
+            s.push_str(&format!(
+                "- 项目归属用户: {}（send_message 的 to_user_id）\n",
+                self.po.root_user_id
+            ));
+        }
         if let Some(start_at) = self.po.start_at {
             s.push_str(&format!("- 启动时长: {}\n", relative_duration(start_at)));
         }
