@@ -18,8 +18,8 @@ use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
 use crate::store::toast::use_toast;
 use crate::utils::task_status_color;
 use crate::utils::{
-    progress_tone, project_status_badge, project_status_text, tag_chip, task_status_badge,
-    task_status_text,
+    format_datetime, format_file_size, progress_tone, project_status_badge, project_status_text,
+    tag_chip, task_status_badge, task_status_text,
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectRequest,
@@ -38,7 +38,8 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
 
 /// 给 GetProjectRequest 注入统计参数（详情页时间筛选器产出，毫秒闭区间）。
 ///
-/// 聚合粒度随窗口跨度自动选择（≤2 天按小时 / 否则按天），避免 1 小时窗口只出 1 个点。
+/// 聚合粒度随窗口跨度自动选择（≤3 小时按分钟 / ≤2 天按小时 / 否则按天），
+/// 避免「窄窗口配粗粒度」只出 1 个点。
 fn with_stats_range(mut req: GetProjectRequest, range: TimeRange) -> GetProjectRequest {
     req.with_stats = Some(true);
     req.with_model_call_stats = Some(true);
@@ -389,7 +390,7 @@ pub fn ProjectDetail(id: String) -> Element {
                             }
                             div {
                                 label { class: "form-label", "创建时间" }
-                                span { class: "font-mono text-base-content/70", "{p.created_at}" }
+                                span { class: "font-mono text-base-content/70", "{format_datetime(p.created_at)}" }
                             }
                         }
                     }
@@ -654,8 +655,8 @@ pub fn ProjectDetail(id: String) -> Element {
                                                             }
                                                         }
                                                         td { "data-label": "来源类型", span { class: "badge orz-tag badge-sm", "{artifact_source_type_text(artifact_source_type)}" } }
-                                                        td { "data-label": "文件大小", "{artifact_file_size}" }
-                                                        td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{artifact_created_at}" } }
+                                                        td { "data-label": "文件大小", "{format_file_size(artifact_file_size)}" }
+                                                        td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{format_datetime(artifact_created_at)}" } }
                                                         td { "data-label": "操作",
                                                             div { class: "flex gap-1",
                                                                 Link {

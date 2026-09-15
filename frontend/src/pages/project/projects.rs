@@ -11,7 +11,9 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use crate::utils::{project_status_badge as status_badge, project_status_text as status_text};
+use crate::utils::{
+    format_datetime, project_status_badge as status_badge, project_status_text as status_text,
+};
 use common::api::{
     CreateProjectRequest, ListProjectsRequest, ListProjectsResponseItem, ProjectQueryRequest,
     SearchProjectsRequest,
@@ -236,7 +238,7 @@ pub fn ProjectList() -> Element {
                                                         "-"
                                                     }
                                                 }
-                                                td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{pcreated}" }
+                                                td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{format_datetime(pcreated)}" }
                                             }
                                         }
                                     }

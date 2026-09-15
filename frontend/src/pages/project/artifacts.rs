@@ -9,7 +9,7 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use crate::utils::format_file_size;
+use crate::utils::{format_datetime, format_file_size};
 use common::api::{
     ArtifactDetail, CreateArtifactRequest, ListProjectsRequest, ListProjectsResponseItem,
 };
@@ -191,7 +191,7 @@ pub fn ProjectArtifacts() -> Element {
                                                 }
                                                 td { "data-label": "来源类型", span { class: "badge orz-tag badge-sm", "{source_type_text(source_type)}" } }
                                                 td { class: "font-mono text-base-content/70", "data-label": "文件大小", "{format_file_size(file_size)}" }
-                                                td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{created_at}" }
+                                                td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{format_datetime(created_at)}" }
                                                 td { "data-label": "操作",
                                                     div { class: "flex gap-1",
                                                         Link {
