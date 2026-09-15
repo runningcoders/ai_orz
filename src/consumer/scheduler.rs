@@ -236,10 +236,26 @@ impl CronTriggerConsumer {
             // 3. 构建消息内容（意图指令嵌入消息本体）
             let content = build_project_followup_content(&project.po.name);
 
-            // 4. 发送消息（填充 project_id 上下文，MessageConsumer 会自动补充 project 信息）
+            // 4. 补齐组织上下文（系统触发链路 ctx 无组织绑定，见 mod.rs helper 说明）
+            let ctx =
+                crate::consumer::enrich_org_from_project_user(&ctx, &project.po.root_user_id).await;
+
+            // 5. 发送消息（填充 project_id 上下文，MessageConsumer 会自动补充 project 信息）
+            //
+            // 【身份分层模型】触发器按「被触达事项的归属」选择发送方身份：
+            // - 项目归属用户非空 → **以用户身份中继**（from_role=User）：巡检的是用户
+            //   发起的项目，检查结论用户需要感知；Agent 的 Final 自动回复会回到该用户
+            //   （消息链自然路由，无需白名单特判），也不涉及伪造——这是上下文中继。
+            // - 无归属用户（如 A2A 项目）→ 万不得已落 System：Final 无人可投递自然丢弃。
+            //   二者都不会把回复路由回 Agent 自身 → 无自唤醒循环。
+            let (from_id, from_role) = if project.po.root_user_id.is_empty() {
+                ("system", MessageRole::System)
+            } else {
+                (project.po.root_user_id.as_str(), MessageRole::User)
+            };
             let cmd = SendToAgentCommand {
-                from_id: "system",
-                from_role: MessageRole::System,
+                from_id,
+                from_role,
                 to_agent_id: owner_agent_id,
                 content: &content,
                 project_id: Some(&project.po.id),

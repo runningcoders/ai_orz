@@ -17,7 +17,35 @@ pub mod wechat_inbound;
 use common::error::Result;
 use std::sync::Arc;
 
+use crate::pkg::RequestContext;
 use crate::pkg::aop;
+
+/// 从项目归属用户补齐组织上下文（组织维度的唯一源头是 `UserPo.organization_id`）
+///
+/// 系统触发链路（Cron 触发器 / 事件消费者）的 ctx 无组织绑定，发出的消息若不落
+/// organization_id，消费侧 `rebuild_context` 还原的 ctx 同样缺组织，Agent 后续的
+/// 工具调用（如 `list_messages` 按组织过滤）会报「当前请求缺少组织上下文」。
+/// 这里以项目 `root_user_id` 的组织回退补齐；ctx 已有组织、项目无归属用户或查询
+/// 失败时原样返回，不阻塞主流程。
+pub(crate) async fn enrich_org_from_project_user(
+    ctx: &RequestContext,
+    root_user_id: &str,
+) -> RequestContext {
+    if ctx.organization_id.is_some() || root_user_id.is_empty() {
+        return ctx.clone();
+    }
+    match crate::service::domain::organization::domain()
+        .user_manage()
+        .get_user_by_id(ctx.clone(), root_user_id)
+        .await
+    {
+        Ok(Some(user)) if !user.organization_id.is_empty() => ctx
+            .to_builder()
+            .organization_id(user.organization_id.clone())
+            .build(),
+        _ => ctx.clone(),
+    }
+}
 
 pub async fn init() -> Result<()> {
     sys_info!("registering business consumers to AOP event center...");

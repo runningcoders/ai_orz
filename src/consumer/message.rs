@@ -465,17 +465,48 @@ impl MessageConsumer {
             thinking_options = thinking_options.with_task(task);
         }
         // 注入【用户画像】（基础信息 + 自述偏好），构建 awaken 【用户画像】区块。
-        // 取值规则见 resolve_profile_user_id；查询失败或用户不存在仅跳过，不阻塞唤醒
+        // 取值规则见 resolve_profile_user_id；查询失败或用户不存在仅跳过，不阻塞唤醒。
+        // 顺带兜底补齐组织上下文：历史遗留 / 部分系统触发链路落库的消息可能没有
+        // organization_id，rebuild_context 还原的 ctx 缺组织绑定，Agent 工具调用
+        // （如 list_messages 按组织过滤）会报「当前请求缺少组织上下文」——归属用户
+        // 的组织是组织维度的唯一源头（仅 UserPo 持有 organization_id）。
         if let Some(profile_user_id) = resolve_profile_user_id(
             message.from_role(),
             &message.po.from_id,
             work_root_user_id.as_deref(),
-        ) && let Ok(Some(user)) = crate::service::domain::organization::domain()
-            .user_manage()
-            .get_user_by_id(ctx.clone(), &profile_user_id)
-            .await
-        {
-            thinking_options = thinking_options.with_user_profile(user);
+        ) {
+            match crate::service::domain::organization::domain()
+                .user_manage()
+                .get_user_by_id(ctx.clone(), &profile_user_id)
+                .await
+            {
+                Ok(Some(user)) => {
+                    if ctx.organization_id.is_none() && !user.organization_id.is_empty() {
+                        ctx = ctx
+                            .to_builder()
+                            .organization_id(user.organization_id.clone())
+                            .build();
+                    }
+                    thinking_options = thinking_options.with_user_profile(user);
+                }
+                Ok(None) => {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "画像用户 {} 不存在，跳过画像注入",
+                        profile_user_id
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "查询画像用户 {} 失败，跳过画像注入: {}",
+                        profile_user_id,
+                        e
+                    );
+                }
+            }
         }
 
         // 注入推导出的用户上下文（任务/项目 root_user_id），保证凭据链路按归属用户解析
@@ -546,23 +577,23 @@ impl MessageConsumer {
         // 造成 to_user_id 推导失败 + "必须走工具才算完成任务"的 365 轮死循环。
         // 本段改为 Framework 层按入口消息的来源角色，路由到对应的落库通道。
         //
-        // 三路分发规则：
-        //   ┌──────────────┬───────────────────────────────────────────────┐
-        //   │ from_role=   │ 回复行为                                      │
-        //   ├──────────────┼───────────────────────────────────────────────┤
-        //   │ User         │ send_to_user(to = message.from_id)            │
-        //   │              │ → 正常用户↔Agent 对话，99% 主流场景           │
-        //   ├──────────────┼───────────────────────────────────────────────┤
-        //   │ Agent        │ send_to_agent(from=本Agent, to=message.from)  │
-        //   │              │ → 跨 Agent 协作消息的回复链路，避免把 Agent   │
-        //   │              │   ID 硬塞到 to_user_id 里导致投递失败         │
-        //   ├──────────────┼───────────────────────────────────────────────┤
-        //   │ System       │ 跳过 auto-reply（只记 debug 日志）            │
-        //   │              │ → 系统消息通常来自 cron / 取消 / 内部控制，   │
-        //   │              │   没有"对等回复对象"；通知用户/Agent 由 Agent │
-        //   │              │   在 think_loop 内部按业务语义通过 send_message│
-        //   │              │   工具主动选择目标对象                        │
-        //   └──────────────┴───────────────────────────────────────────────┘
+        // 三路分发规则（System 兜底分支的判定收敛于 routes_to_system_fallback）：
+        //   ┌──────────────────────┬───────────────────────────────────────────────┐
+        //   │ 来源                 │ 回复行为                                      │
+        //   ├──────────────────────┼───────────────────────────────────────────────┤
+        //   │ from_role=User       │ send_to_user(to = message.from_id)            │
+        //   │                      │ → 正常用户↔Agent 对话，99% 主流场景           │
+        //   ├──────────────────────┼───────────────────────────────────────────────┤
+        //   │ from_role=Agent      │ send_to_agent(from=本Agent, to=message.from)  │
+        //   │ （且 from≠to）       │ → 跨 Agent 协作消息的回复链路，避免把 Agent   │
+        //   │                      │   ID 硬塞到 to_user_id 里导致投递失败         │
+        //   ├──────────────────────┼───────────────────────────────────────────────┤
+        //   │ from_role=System     │ Final 丢弃（debug 日志）                      │
+        //   │ 或 Agent 自触发      │ → 系统触发 / 自触发没有"对等回复对象"，       │
+        //   │ （from==to）         │   回给自己会无限自唤醒循环；归属用户需要      │
+        //   │                      │   感知的通知由发送侧以用户身份中继（走上面    │
+        //   │                      │   User 分支），不依赖这里兜底                 │
+        //   └──────────────────────┴───────────────────────────────────────────────┘
         //
         // 边界（同上一版）：
         //   - raw_output 为空（Cancel / 纯工具执行任务）不发消息；
@@ -575,6 +606,12 @@ impl MessageConsumer {
             let project_id = message.po.project_id.as_deref();
             let task_id = message.po.task_id.as_deref();
             let reply_to_id = Some(message.po.id.as_str());
+
+            // 分支判定收敛在 routes_to_system_fallback（单一扩展点）：
+            // 存量 System 来源 + Agent 自触发（from==to）都落入 System 兜底分支，
+            // 其余按来源角色走对等回复
+            let system_fallback =
+                routes_to_system_fallback(message.from_role(), &message.po.from_id, agent_id);
 
             let send_result: Result<()> = match message.from_role() {
                 MessageRole::User => self
@@ -594,7 +631,7 @@ impl MessageConsumer {
                     .await
                     .map(|_| ()),
 
-                MessageRole::Agent => self
+                MessageRole::Agent if !system_fallback => self
                     .message_domain
                     .delivery()
                     .send_to_agent(
@@ -615,59 +652,22 @@ impl MessageConsumer {
                     .await
                     .map(|_| ()),
 
-                MessageRole::System => {
-                    // 系统触发（任务分配 / 任务调度 / 取消 / 定时巡检等）没有「对等回复对象」，
-                    // 但其中「后台唤醒」类消息的 Final 通常是 Agent 面向用户的成果汇报
-                    // （完成了什么、下一步是什么），有价值 —— 由逻辑层按场景兜底投递，
-                    // 而不是丢弃、也不再依赖提示词教会模型自己判断「何时该通知用户」。
-                    //
-                    // 投递目标 = 本消息所属任务/项目的归属用户（work_root_user_id 在唤醒前已推导）。
-                    // 场景白名单见 should_deliver_system_final。
-                    if !should_deliver_system_final(message.po.message_type) {
-                        log_debug!(
-                            &ctx,
-                            "handle_agent_message",
-                            "skip auto-reply for system-originated message (from_id={}, type={:?}), final len={}",
-                            message.po.from_id,
-                            message.po.message_type,
-                            raw_output.len()
-                        );
-                        return Ok(());
-                    }
-
-                    match work_root_user_id.as_deref().filter(|id| !id.is_empty()) {
-                        Some(user_id) => self
-                            .message_domain
-                            .delivery()
-                            .send_to_user(
-                                ctx.clone(),
-                                SendToUserCommand {
-                                    from_agent_id: agent_id,
-                                    to_user_id: user_id,
-                                    content: raw_output,
-                                    project_id,
-                                    task_id,
-                                    reply_to_id,
-                                },
-                            )
-                            .await
-                            .map(|_| ()),
-
-                        // 解析不出归属用户（无 project/task 上下文，或 root_user_id 为空）：
-                        // 没有可投递对象，保持原「静默丢弃」语义，但升级为 warn 便于排查
-                        None => {
-                            log_warn!(
-                                &ctx,
-                                "handle_agent_message",
-                                "系统消息无法解析归属用户，Final 文本丢弃 (type={:?}, msg={}, agent={}, final len={})",
-                                message.po.message_type,
-                                message.po.id,
-                                agent_id,
-                                raw_output.len()
-                            );
-                            Ok(())
-                        }
-                    }
+                // System 兜底分支（routes_to_system_fallback 命中：System 来源 /
+                // Agent 自触发 from==to）——没有「对等回复对象」，Final 丢弃。
+                // 归属用户需要感知的通知（任务调度 / 项目巡检 / 任务分配等）由发送侧
+                // 以**用户身份中继**（from_role=User），Final 经 User 分支自然送达；
+                // 真正落到这里的只有纯系统指令（取消 / 内部控制）和无归属用户的
+                // A2A 触达，Final 不是面向用户的汇报，投递只会污染收件箱。
+                MessageRole::System | MessageRole::Agent => {
+                    log_debug!(
+                        &ctx,
+                        "handle_agent_message",
+                        "skip auto-reply for system-originated / self-triggered message (from_id={}, type={:?}), final len={}",
+                        message.po.from_id,
+                        message.po.message_type,
+                        raw_output.len()
+                    );
+                    Ok(())
                 }
             };
 
@@ -1004,24 +1004,22 @@ fn tool_error_message(err: &Error) -> String {
     err.msg.clone()
 }
 
-/// 判断「系统来源消息」本轮产出的 Final 文本是否要兜底投递给归属用户
+/// 判断消息的 Final 回复是否应走「System 兜底分支」而非对等回复
 ///
-/// 后台唤醒的消息没有对等回复对象，此前 Final 一律静默丢弃；但其中由业务事件驱动的
-/// 唤醒，其 Final 通常是 Agent 面向用户的汇报（产出、阻塞、收口），丢弃等于用户永远
-/// 收不到后台工作的结果。这里按**消息类型**收敛投递场景——把「如何触达用户」的判断
-/// 留在逻辑层，而不是写进提示词让模型自己权衡。
+/// **单一扩展点**：所有「没有对等回复对象 / 回复会造成自唤醒」的场景都在这里判定，
+/// 新增场景只改本函数，不动 `handle_agent_message` 里的 match 结构。命中后 Final
+/// 直接丢弃（归属用户需要感知的通知由发送侧以用户身份中继，走 User 分支自然送达）。
 ///
-/// | 消息类型 | 兜底投递 | 理由 |
-/// |---------|---------|------|
-/// | `TaskAssignment`（任务分配） | ✅ | 任务派发后的执行反馈，归属用户关心 |
-/// | `TaskDispatchNotification`（任务调度） | ✅ | 任务状态变更驱动，里程碑 / 阻塞 / 项目收口都在这里 |
-/// | `ProjectFollowupNotification`（项目巡检） | ❌ | 每小时定时触发，「无异常」类收尾会变成周期性噪音；确有结论时 Agent 按技能要求用 `send_message` 主动上报（通知正文已告知） |
-/// | 其他（工具结果 / 确认 / 取消等） | ❌ | Final 不是面向用户的汇报，投递会污染用户收件箱 |
-fn should_deliver_system_final(message_type: MessageType) -> bool {
-    matches!(
-        message_type,
-        MessageType::TaskAssignment | MessageType::TaskDispatchNotification
-    )
+/// | 场景 | 判定 | 理由 |
+/// |------|------|------|
+/// | System 来源消息 | `from_role == System` | 触发器消息（纯系统指令、无归属用户的 A2A 触达）没有对等回复对象 |
+/// | Agent 自触发 | `from_role == Agent && from_id == agent_id` | 触发器以 Owner Agent 名义发给自己的消息，回给自己会无限自唤醒循环 |
+fn routes_to_system_fallback(from_role: MessageRole, from_id: &str, agent_id: &str) -> bool {
+    match from_role {
+        MessageRole::System => true,
+        MessageRole::Agent => from_id == agent_id,
+        MessageRole::User => false,
+    }
 }
 
 /// 推导本次唤醒【用户画像】区块应注入哪个用户
@@ -1035,7 +1033,8 @@ fn should_deliver_system_final(message_type: MessageType) -> bool {
 ///
 /// 第 2 条是兜底：这两类消息由系统或别的 Agent 构造，提示词里原本不含任何用户信息，
 /// Agent 既不知道"这件事为谁负责"，也无从对齐偏好——而它们恰恰是 Agent 需要主动
-/// `send_message` 汇报的主力场景（见 `should_deliver_system_final`）。
+/// `send_message` 汇报的主力场景（通知类消息的正文 / Final 送达路径见
+/// `routes_to_system_fallback` 与 scheduler 的用户身份中继）。
 ///
 /// 返回 `None` 表示不注入（例如 A2A 等无归属用户的项目，`root_user_id` 为空）。
 fn resolve_profile_user_id(
@@ -1055,24 +1054,45 @@ fn resolve_profile_user_id(
 mod tests {
     use super::*;
 
-    /// 后台唤醒（任务分配 / 任务调度）的 Final 必须兜底投递
+    /// System 来源消息恒走兜底分支（无对等回复对象）
     #[test]
-    fn system_final_delivered_for_background_wakeups() {
-        assert!(should_deliver_system_final(MessageType::TaskAssignment));
-        assert!(should_deliver_system_final(
-            MessageType::TaskDispatchNotification
+    fn system_fallback_for_system_origin() {
+        assert!(routes_to_system_fallback(
+            MessageRole::System,
+            "task-1",
+            "agent-1"
+        ));
+        assert!(routes_to_system_fallback(
+            MessageRole::System,
+            "scheduler",
+            "agent-1"
         ));
     }
 
-    /// 定时巡检与内部消息不投递，避免周期性噪音 / 污染收件箱
+    /// Agent 自触发守卫：from == to 回给自己会无限自唤醒，必须并入兜底分支
     #[test]
-    fn system_final_suppressed_for_followup_and_internal() {
-        assert!(!should_deliver_system_final(
-            MessageType::ProjectFollowupNotification
+    fn system_fallback_for_agent_self_trigger() {
+        assert!(routes_to_system_fallback(
+            MessageRole::Agent,
+            "agent-1",
+            "agent-1"
         ));
-        assert!(!should_deliver_system_final(MessageType::ToolCallResult));
-        assert!(!should_deliver_system_final(MessageType::ConfirmRequest));
-        assert!(!should_deliver_system_final(MessageType::Text));
+        // 跨 Agent 协作（from != to）走对等回复，不受守卫影响
+        assert!(!routes_to_system_fallback(
+            MessageRole::Agent,
+            "agent-2",
+            "agent-1"
+        ));
+    }
+
+    /// 用户消息恒走对等回复（用户身份中继后 Final 自然回到该用户）
+    #[test]
+    fn system_fallback_never_for_user() {
+        assert!(!routes_to_system_fallback(
+            MessageRole::User,
+            "user-1",
+            "agent-1"
+        ));
     }
 
     /// 画像取值：User 消息恒用发送者本人

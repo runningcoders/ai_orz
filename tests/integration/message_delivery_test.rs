@@ -235,16 +235,11 @@ async fn test_send_message_to_user_via_tool_persists_and_listable(pool: SqlitePo
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
     let user_id = bs.user_id.clone();
 
-    // We need an agent id as the sender. send_message reads `ctx.caller_id_or_system()`
-    // (the neural tool path normally runs in an agent call context). For debug-call
-    // the ctx caller is the admin user, so we rely on the fallback: caller_id_or_system
-    // returns "system" when caller_type is User. To get a realistic from=agent we
-    // create an agent and temporarily force ctx fields by injecting via the tool's
-    // internal logic. Simpler approach: use the domain layer to create a
-    // send_to_user call directly for persistence verification. We instead test
-    // via a real agent by creating one and running through the tool call with
-    // caller_type workaround: set agent_id and caller_type via a separate
-    // domain call path to get realistic from_agent_id behavior.
+    // We need an agent id as the sender. The neural tool path resolves the sender via
+    // `ctx.message_sender_id()` (agent_id 优先). For a debug/HTTP call the ctx caller is the
+    // admin user and carries no agent_id, so the sender would resolve to that user id —
+    // not a realistic "from agent" record. Simpler approach: use the domain layer to create
+    // a send_to_user call directly for persistence verification.
     //
     // For robustness this test uses the domain send_to_user call directly with
     // a known agent sender (because debug-call without an agent-id-bearing ctx

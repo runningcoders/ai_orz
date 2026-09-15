@@ -505,9 +505,44 @@ impl RequestContext {
         }
     }
 
-    /// 获取调用方 ID，System 场景回退为 "system"（用于消息发送 from_id 等场景）
+    /// 获取调用方 ID，System 场景回退为 "system"（用于审计字段 created_by / modified_by 等）
+    ///
+    /// ⚠️ 消息发送的发送方请用 [`Self::message_sender_id`]：后台唤醒场景
+    /// `caller_type` 是 System 但**确实有**执行者（被唤醒的 Agent），本方法会丢掉它。
     pub fn caller_id_or_system(&self) -> String {
         self.caller_id().unwrap_or_else(|| "system".to_string())
+    }
+
+    /// 消息发送方 ID（用于 `MessagePo.from_id`）
+    ///
+    /// 取值优先 `agent_id`：消息唤醒的消费侧 `rebuild_context` 会把**被唤醒的
+    /// Agent**（`to_id`，即项目 / 任务的 owner Agent）写进 `agent_id`——无论触发
+    /// 消息来自用户中继、协作 Agent 还是系统——而 `caller_type` 未必是 Agent
+    /// （System 来源的存量消息、后台触发场景）。若走 `caller_id()`，System 分支
+    /// 会拿到 `None`，消息 `from_id` 落成字面量 `"system"`（一个不存在的 Agent），
+    /// 用户侧会看到「来自 system 的消息」。
+    ///
+    /// 其余场景回退顺序不变：User → `user_id`（前端直调），确实无 Agent / 用户
+    /// 上下文（纯定时任务）才回退 `"system"`。
+    pub fn message_sender_id(&self) -> String {
+        self.agent_id
+            .clone()
+            .or_else(|| self.caller_id())
+            .unwrap_or_else(|| "system".to_string())
+    }
+
+    /// 消息发送方角色（用于 `MessagePo.from_role`），与 [`Self::message_sender_id`] 配套
+    ///
+    /// 规则与 `message_sender_id` 对齐：`agent_id` 有值即视为 Agent 发送（后台唤醒
+    /// 场景 `caller_type` 是 System 但执行者是被唤醒的 Agent，from_id 已是真实
+    /// Agent，from_role 若仍落 System 会出现「Agent ID + System 角色」的错位记录）。
+    /// 无 `agent_id` 时回退 `caller_role()`（User / System 原样）。
+    pub fn message_sender_role(&self) -> MessageRole {
+        if self.agent_id.is_some() {
+            MessageRole::Agent
+        } else {
+            self.caller_role()
+        }
     }
 
     /// 调用方类型映射为 MessageRole（用于消息发送 from_role 场景）
@@ -851,5 +886,73 @@ mod caller_org_tests {
             restored.caller_organization_id(),
             Some(&"org-caller-1".to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod sender_id_tests {
+    use super::*;
+
+    /// `builder().build()` 依赖全局 storage，测试需先初始化
+    async fn init() {
+        crate::pkg::storage::test_support::init_for_test().await;
+    }
+
+    /// 后台唤醒：caller_type=System 但执行者是被唤醒的 Agent
+    /// （消费侧 rebuild_context 会写入 message.po.to_id）
+    /// → 消息发送方取 agent_id，角色落 Agent，不能落成字面量 "system" / System 角色
+    #[tokio::test]
+    async fn message_sender_id_uses_agent_for_background_wakeup() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::System)
+            .agent_id("agt-owner-1")
+            .build();
+        assert_eq!(ctx.message_sender_id(), "agt-owner-1");
+        assert_eq!(ctx.message_sender_role(), MessageRole::Agent);
+        // 对照组：审计字段用的 caller_id_or_system 仍按「系统触发」记录，行为不变
+        assert_eq!(ctx.caller_id_or_system(), "system");
+    }
+
+    /// Agent 直接执行（HTTP / 工具直调）→ agent_id
+    #[tokio::test]
+    async fn message_sender_id_uses_agent_id_for_agent_caller() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::Agent)
+            .agent_id("agt-2")
+            .build();
+        assert_eq!(ctx.message_sender_id(), "agt-2");
+    }
+
+    /// 前端直调（User 调用方，无 agent_id）→ user_id
+    #[tokio::test]
+    async fn message_sender_id_falls_back_to_user_id() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::User)
+            .user_id("user-3")
+            .build();
+        assert_eq!(ctx.message_sender_id(), "user-3");
+    }
+
+    /// 确实无 Agent / 用户上下文（纯定时任务）才回退 "system"
+    #[tokio::test]
+    async fn message_sender_id_falls_back_to_system() {
+        init().await;
+        let ctx = RequestContext::new_system();
+        assert_eq!(ctx.message_sender_id(), "system");
+        assert_eq!(ctx.message_sender_role(), MessageRole::System);
+    }
+
+    /// User 直调（无 agent_id）→ 角色回退 caller_role()，落 User
+    #[tokio::test]
+    async fn message_sender_role_falls_back_to_caller_role() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::User)
+            .user_id("user-3")
+            .build();
+        assert_eq!(ctx.message_sender_role(), MessageRole::User);
     }
 }

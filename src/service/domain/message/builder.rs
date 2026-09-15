@@ -32,24 +32,28 @@ pub fn build_task_dispatch_content(
 }
 
 /// 构建项目跟进通知消息内容（场景 3：定时补偿触发）
+///
+/// 触发器以**项目归属用户身份中继**本通知（from_role=User），Agent 的 Final
+/// 自动回复会送达该用户——因此正文把「通知用户」收敛为「最终回复的写法要求」，
+/// 不再要求调 send_message（那会造成双重通知）。
 pub fn build_project_followup_content(project_name: &str) -> String {
     format!(
         "📊 项目进度定期检查\n\
          项目：「{}」\n\n\
-         系统定时触发了项目跟进检查，请执行以下检查：\n\n\
+         系统定时触发了项目跟进检查（以项目归属用户名义转发给你），请执行以下检查：\n\n\
          1. **获取进度**：调用 get_project(with_progress_summary=true) 获取整体进度\n\
          2. **识别阻塞**：\n\
             - 检查 InProgress 任务是否有长时间无更新的（可能卡住了）\n\
             - 检查 Pending 任务是否因依赖阻塞无法启动\n\
          3. **对比计划**：对照 execution_plan，判断当前阶段是否正常推进\n\
          4. **采取行动**：\n\
-            - 任务 / 项目状态有明确变化（任务完成 / 阻塞 / 取消、进度或状态流转、里程碑达成）→ **必须** send_message 通知项目归属用户，写清「变化内容 + 下一步」\n\
-            - 阻塞任务 → 分析原因，调整分配或通知用户\n\
-            - 全部完成 → 更新项目状态为 Completed，并按上一条通知用户\n\
+            - 任务 / 项目状态有明确变化（任务完成 / 阻塞 / 取消、进度或状态流转、里程碑达成）→ 在最终回复中写清「变化内容 + 下一步」（会自动送达项目归属用户）\n\
+            - 阻塞任务 → 分析原因，调整分配或在最终回复中指出\n\
+            - 全部完成 → 更新项目状态为 Completed，并在最终回复中说明\n\
             - 需要调整计划 → 更新 execution_plan\n\
-            - 无状态变化、进展正常 → 不必通知（避免每小时重复打扰）\n\n\
-         注意：本次唤醒的 Final 文本不会自动送达用户（定时巡检每小时触发，避免打扰）。\n\
-         需要向用户同步进展或请求决策时，请调用 send_message，目标用户见【项目上下文】的项目归属用户。",
+            - 无状态变化、进展正常 → 最终回复仅写一行简短确认（巡检每小时触发，避免重复打扰）\n\n\
+         注意：你的最终回复会自动送达项目归属用户，**无需**调用 send_message 重复通知；\n\
+         send_message 仅用于通知其他用户 / Agent 的场景。",
         project_name,
     )
 }
@@ -86,13 +90,12 @@ mod tests {
         assert!(content.contains("项目进度定期检查"));
         assert!(content.contains("AI 助手开发"));
         assert!(content.contains("识别阻塞"));
-        // 巡检场景不兜底投递 Final，必须显式告知 Agent 走 send_message
-        assert!(content.contains("send_message"));
-        assert!(content.contains("不会自动送达用户"));
-        // 状态有明确变化 = 确定性通知条件（软要求改硬）
-        assert!(content.contains("必须"));
+        // 巡检以归属用户身份中继，Final 自动送达 → 无需（也不该）再 send_message
+        assert!(content.contains("自动送达"));
+        assert!(content.contains("无需"));
+        // 状态有明确变化 → 最终回复写清变化与下一步（确定性要求）
         assert!(content.contains("状态有明确变化"));
-        // 无变化则不通知，避免每小时噪音
-        assert!(content.contains("无状态变化"));
+        // 无变化则只回一行确认，避免每小时噪音
+        assert!(content.contains("一行简短确认"));
     }
 }

@@ -244,7 +244,7 @@ H-->>Client : "CreateMcpServerResponse"
 - 参数绑定与响应
   - 发送消息使用 SendMessageParams；响应包含 message_id。
 - 典型流程
-  - 发送消息：从 ctx 获取 from_agent_id_or_system，构造 SendToUserCommand，调用 message::domain().delivery().send_to_user(ctx, cmd)。
+  - 发送消息：从 ctx 获取发送方 ID 与角色（`message_sender_id()`：agent_id 优先，后台唤醒场景取被唤醒的 Agent 而非字面量 "system"；`message_sender_role()`：与 from_id 配套，agent_id 有值即落 Agent，避免「Agent ID + System 角色」错位），构造 SendToUserCommand，调用 message::domain().delivery().send_to_user(ctx, cmd)。
 
 ```mermaid
 sequenceDiagram
@@ -252,7 +252,7 @@ participant Client as "客户端"
 participant H as "send_message"
 participant Msg as "message : : domain().delivery()"
 Client->>H : "POST /finance/messages"
-H->>H : "解析ctx.caller_id_or_system()"
+H->>H : "解析ctx.message_sender_id()"
 H->>Msg : "send_to_user(ctx, cmd)"
 Msg-->>H : "Message"
 H-->>Client : "SendMessageResponse{message_id}"

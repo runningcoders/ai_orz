@@ -23,9 +23,12 @@ pub async fn send_task_assignment_message(
     ctx: RequestContext,
     params: SendTaskAssignmentMessageParams,
 ) -> Result<SendTaskAssignmentMessageResponse> {
-    // 调用方身份由 ctx 封装方法统一提供
-    let from_id = ctx.caller_id_or_system();
-    let from_role = ctx.caller_role();
+    // 发送方 = 消息的发送者本人：后台唤醒场景 ctx 的 caller_type 是 System，
+    // 但执行者是被唤醒的 Agent（项目 / 任务 owner Agent），见 message_sender_id /
+    // message_sender_role（from_id 落 Agent 时 from_role 必须同为 Agent，避免
+    // 「Agent ID + System 角色」的错位记录）
+    let from_id = ctx.message_sender_id();
+    let from_role = ctx.message_sender_role();
 
     let cmd = SendTaskAssignmentCommand {
         task_id: &params.task_id,

@@ -34,9 +34,12 @@ pub async fn send_message_to_agent(
     ctx: RequestContext,
     params: SendMessageToAgentParams,
 ) -> Result<SendMessageToAgentResponse> {
-    // 调用方身份由 ctx 封装方法统一提供
-    let from_id = ctx.caller_id_or_system();
-    let from_role = ctx.caller_role();
+    // 发送方 = 消息的发送者本人：后台唤醒场景 ctx 的 caller_type 是 System，
+    // 但执行者是被唤醒的 Agent（项目 / 任务 owner Agent），见 message_sender_id /
+    // message_sender_role（from_id 落 Agent 时 from_role 必须同为 Agent，避免
+    // 「Agent ID + System 角色」的错位记录）
+    let from_id = ctx.message_sender_id();
+    let from_role = ctx.message_sender_role();
 
     // 写路径归一化：默认会话哨兵（`__default__`）折叠回 None。否则它会被当成真实
     // project id 送去查项目（直接 404），或原样落库污染 `messages.project_id`。

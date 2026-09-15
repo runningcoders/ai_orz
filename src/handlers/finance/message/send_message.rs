@@ -21,8 +21,9 @@ pub async fn send_message(
     ctx: RequestContext,
     params: SendMessageParams,
 ) -> Result<SendMessageResponse> {
-    // 调用方身份由 ctx 封装方法统一提供
-    let from_agent_id = ctx.caller_id_or_system();
+    // 发送方 = 消息的发送者本人：后台唤醒场景 ctx 的 caller_type 是 System，
+    // 但执行者是被唤醒的 Agent（项目 / 任务 owner Agent），见 message_sender_id
+    let from_agent_id = ctx.message_sender_id();
     let reply_to_id = auto_reply_to_id(&ctx, params.reply_to_id.as_deref());
 
     let cmd = SendToUserCommand {
