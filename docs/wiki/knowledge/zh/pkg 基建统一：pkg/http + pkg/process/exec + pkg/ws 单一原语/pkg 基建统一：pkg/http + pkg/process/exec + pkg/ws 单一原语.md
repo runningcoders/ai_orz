@@ -16,7 +16,7 @@ source_files:
   - src/pkg/http/mod.rs#L1-L34 (HTTP 出站基建模块入口：pub mod client + presets + ssrf；分层职责：client 统一构建入口 / presets 业务预设 / ssrf SSRF 防护 + 响应大小 + 敏感头脱敏；硬约束：默认必带超时)
   - src/pkg/http/client.rs#L1-L200 (HttpClientOptions 声明式选项 + build_client 单一构建函数；DEFAULT_TIMEOUT_MS=30_000 + MAX_TIMEOUT_MS=600_000(10min 硬上限) + USER_AGENT=ai-orz/<CARGO_PKG_VERSION> + RedirectPolicy(Default/None/Limit(n)/Permanent)；禁止业务层再调 reqwest::Client::new()/builder())
   - src/pkg/http/ssrf.rs#L1-L230 (SSRF 防护：is_local_network_host(localhost + 内网 IP 段 127/10/172/192/169.254) + is_private_network_ip；DEFAULT_RESPONSE_MAX_BYTES=1MB + HARD_RESPONSE_MAX_BYTES=10MB；敏感头脱敏：authorization/cookie/x-api-key 替换为 [REDACTED])
-  - src/pkg/http/presets.rs#L1-L119 (业务预设：outbound(30s 一般出站) + llm(120s LLM 推理) + ssrf_guarded(30s + 本地 IP 阻断 + 1MB 响应限制) + with_timeout/with_timeout_ms(自定义超时叠加)；FEDERATION_TIMEOUT_MS=30_000 联邦出站专用)
+  - src/pkg/http/presets.rs#L1-L135 (业务预设：outbound(30s 一般出站) + llm(120s LLM 推理) + ssrf_guarded(30s + 本地 IP 阻断 + 1MB 响应限制) + with_timeout/with_timeout_ms(自定义超时叠加)；FEDERATION_TIMEOUT_MS=30_000 联邦出站专用；LLM_STREAM_IDLE_TIMEOUT=60s 流式空闲超时 + LLM_STREAM_TOTAL_TIMEOUT=MAX_TIMEOUT(10min) 流式总时长硬上限（两层判定）)
   - src/pkg/process/mod.rs#L1-L278 (统一子进程基建：exec 执行原语(生产端) + registry 注册中心(管理端)；ProcessStatus Running/Exited + ProcessEntry{pid, cmd, agent_id, call_id, started_at}；v1 接受 pid 复用风险，entry 带 started_at 人工甄别)
   - src/pkg/process/exec.rs#L1-L321 (exec 单一原语：spawn + wait_with_output(并发读管道防 64KB 死锁) + 超时必终止(kill_on_drop) + ExecOptions{timeout, stdin, env, cwd} + ExecOutput{stdout/stderr/exit_code}；DEFAULT_EXEC_TIMEOUT=60s + MAX_EXEC_TIMEOUT=600s)
   - src/pkg/ws/mod.rs#L1-L635 (通用 WebSocket 客户端管理器：WsClientAdapter trait + supervisor 指数退避重连 + 心跳(应用层 adapter.heartbeat_frame() 返回自定义文本帧 / 协议级默认 WS Ping) + 读循环 + 优雅关闭 + 连接状态快照 conn_state_snapshot；**不含任何业务语义**——帧解析全权交给 adapter)
@@ -51,7 +51,7 @@ pkg 层基建重构从"散落在各 DAO 里直调 reqwest::Client::new()/builder
 | pkg/http/mod.rs | HTTP 基建模块入口 | client + presets + ssrf 三层；默认必带超时硬约束；业务层禁裸 reqwest | `:L1-L34` |
 | pkg/http/client.rs HttpClientOptions + build_client | 客户端统一构建 | DEFAULT_TIMEOUT_MS=30_000 + MAX_TIMEOUT_MS=600_000 + USER_AGENT + RedirectPolicy | `:L1-L200` |
 | pkg/http/ssrf.rs | SSRF 防护 + 安全 | is_local_network_host(localhost+内网IP段+169.254) + DEFAULT_RESPONSE_MAX_BYTES=1MB + 敏感头脱敏 | `:L1-L230` |
-| pkg/http/presets.rs | 业务预设 | outbound(30s) + llm(120s) + ssrf_guarded(30s+本地阻断+1MB) + FEDERATION_TIMEOUT_MS | `:L1-L119` |
+| pkg/http/presets.rs | 业务预设 | outbound(30s) + llm(120s) + ssrf_guarded(30s+本地阻断+1MB) + FEDERATION_TIMEOUT_MS + LLM_STREAM_IDLE_TIMEOUT(60s 流式空闲) + LLM_STREAM_TOTAL_TIMEOUT(MAX_TIMEOUT 总时长硬上限) | `:L1-L135` |
 | pkg/process/exec.rs | 子进程执行原语 | exec(spawn + wait_with_output + 超时 kill_on_drop) + ExecOptions{timeout, stdin, env, cwd} + DEFAULT_EXEC_TIMEOUT=60s | `:L1-L321` |
 | pkg/process/mod.rs | 进程注册中心 | ProcessStatus Running/Exited + ProcessEntry{pid, cmd, agent_id, call_id, started_at} + 内存注册表 | `:L1-L278` |
 | pkg/ws/mod.rs | WS client 管理器 | WsClientAdapter trait + supervisor 指数退避重连 + 心跳 + 读循环 + 优雅关闭 + conn_state_snapshot；**不含业务语义** | `:L1-L635` |
@@ -103,6 +103,14 @@ C4 --> P1
 C5 --> W1
 C6 --> W1
 ```
+
+### LLM 流式超时分层（2026-09-15 新增）
+
+流式 SSE 模式下不能用一次性 120s 总时长——长生成（工具调用循环、多轮推理）会被误杀。拆成两层：
+
+- **空闲超时** `LLM_STREAM_IDLE_TIMEOUT=60s`：相邻 chunk 超过 60s 无数据才判定流中断；只要 token 持续产出就视为正常（长回答安全）
+- **总时长硬上限** `LLM_STREAM_TOTAL_TIMEOUT=MAX_TIMEOUT=10min`：请求构建处 `.timeout()` 兜底，防服务端异常（如无限心跳）导致请求永不结束
+- 调用侧必须同时设置两层——idle 由消费循环内 `tokio::time::timeout` 逐 chunk 计时，total 由 reqwest Client 层 timeout 统一拦截
 
 ---
 

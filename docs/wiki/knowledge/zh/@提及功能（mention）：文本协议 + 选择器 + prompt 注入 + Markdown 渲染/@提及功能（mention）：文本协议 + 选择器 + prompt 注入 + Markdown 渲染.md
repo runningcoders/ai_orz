@@ -29,13 +29,15 @@ source_files:
 
 AI Orz 的消息 @ 提及功能采用**标准 CommonMark 链接语法**承载，dest 为 `type:id`：`[@张伟](agent:agt_7f3)` / `[@数据清洗](task:tsk_a91)` / `[@客户数据平台](project:prj_2c8)`。核心价值：(a) 降级安全——未被提及渲染器识别时退化为普通链接而非暴露原始 `agent:agt_7f3` 串；(b) 消息体自包含——复制/转发/导入导出都不丢提及信息，零存储 migration；(c) 前后端协议单一事实源在 `common/src/mention.rs`，前端渲染（`frontend/src/utils/mention.rs`）和后端 prompt 注入（agent prompt builder）走同一套解析。
 
+**2026-09-15 增量**：候选选择器上限压缩到 12（按可浏览性而非数据量定），前端改为**两级加载** + 收窄拉取量。AvatarBubble 组件从 onclick 改挂 onfocus（DaisyUI dropdown 展开时 DaisyUI 会给触发层压 pointer-events:none，click 事件永远不触发——JSDoc 头部新增了完整事件序列注释）。
+
 ## §2 关键文件表
 
 | 文件 | 职责 |
 |------|------|
 | `common/src/mention.rs` | **协议核心**：`MentionKind` 三类型枚举（Agent/Task/Project）、`MentionRef`（kind+id 协议层结构）、`ResolvedMention`（含 name+summary 的后端消费结构）、`parse_mention_dest`（dest → MentionRef）、`format_mention`（生成语法 + 名字转义）、`detect_mention_query`（光标处 @ 查询检测）、`apply_mention_pick`（插入替换 + 光标恢复）、`extract_mentions[_with_text]`（后端 prompt 注入提取）、`resolve_display_name`（实时名优先，快照名回退） |
 | `frontend/src/utils/mention.rs` | **前端渲染层**：`transform_mentions`（pulldown-cmark 事件流拦截，把提及链接替换为 chip inline HTML）、`render_mention_chip`（chip HTML 生成 + XSS 转义）。`pub use common::mention::*` 把协议 API 原样转发 |
-| `frontend/src/components/mention_picker.rs` | **@ 选择器 UI**：`MentionPicker` 多级菜单组件（All/Agent/Task/Project Tab + 候选搜索 + 键盘导航）、`MentionState` 外置状态（Signal + use_effect 候选加载 + req 序号丢弃过期响应）、`MentionPickedBar` 已提及胶囊条 |
+| `frontend/src/components/mention_picker.rs` | **@ 选择器 UI**：`MentionPicker` 多级菜单组件（All/Agent/Task/Project Tab + 候选搜索 + 键盘导航）、`MentionState` 外置状态（Signal + use_effect 候选加载 + req 序号丢弃过期响应）、`MentionPickedBar` 已提及胶囊条。**候选上限压缩到 12**（按可浏览性定，不再按数据量拉），改为**两级加载** + 收窄拉取量 |
 | `src/service/dal/agent/builder/default.rs` | **后端 prompt 注入**：从消息正文提取 `extract_mentions_with_text`，解析出 Agent/Task/Project 实体后注入到 prompt 上下文 |
 | `frontend/src/components/markdown.rs` | **Markdown 渲染**：接入 `transform_mentions` 把提及链接转为 chip |
 

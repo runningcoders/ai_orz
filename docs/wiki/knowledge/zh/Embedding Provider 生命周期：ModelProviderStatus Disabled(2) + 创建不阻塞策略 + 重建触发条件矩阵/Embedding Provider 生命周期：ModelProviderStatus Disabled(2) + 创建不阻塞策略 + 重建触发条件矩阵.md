@@ -50,6 +50,10 @@ source_files:
   - src/service/dao/cortex/native/http.rs#L110 (call_chat_completions 调用 validate_provider_for_request 前置拦截)
   - src/service/dao/cortex/native/http.rs#L224 (call_embeddings 调用 validate_provider_for_request 前置拦截)
   - src/service/dao/cortex/native/http.rs#L273 (call_embeddings_multimodal 调用 validate_provider_for_request 前置拦截)
+  - src/service/dao/cortex/native/http.rs (v1.3 增量：call_chat_completions 改 SSE 流式) StreamAccumulator + consume_think_stream + parse_sse_line + finish_think_result + transport_error + error_root_cause；请求侧 stream: true + stream_options: { include_usage: true }；超时两层 LLM_STREAM_IDLE_TIMEOUT=60s + LLM_STREAM_TOTAL_TIMEOUT=MAX_TIMEOUT
+  - src/service/dao/cortex/native/http/tests.rs (v1.3 增量：流式解析/聚合单测) SseEvent::Done/Chunk 解析 + StreamAccumulator 跨 chunk 累加 content + 按 index 合并 tool_calls + 最后 chunk 取 usage
+  - src/pkg/http/presets.rs (v1.3 增量) LLM_STREAM_IDLE_TIMEOUT = Duration::from_secs(60) + LLM_STREAM_TOTAL_TIMEOUT = MAX_TIMEOUT
+  - src/pkg/http/mod.rs (v1.3 增量) 导出 LLM_STREAM_IDLE_TIMEOUT / LLM_STREAM_TOTAL_TIMEOUT
 
   - src/service/dao/model_provider/sqlite.rs#L215-L234 (find_enabled_embedding_provider：limit=100 + 选第一个 api_key 非空的 provider)
   - src/service/dao/model_provider/sqlite.rs#L188-L213 (get_default_embedding_provider：同模式，limit=100 + api_key 过滤)
@@ -92,6 +96,8 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 - **api_key 空校验前置拦截**：HTTP DAO 层 `validate_provider_for_request` 函数在 `call_chat_completions` / `call_embeddings` / `call_embeddings_multimodal` 三个入口统一校验 `api_key.trim().is_empty()` → 返回 `ConfigInvalid`，避免无意义网络往返与超时挂起；DAO 查询层 `find_enabled_embedding_provider` / `get_default_embedding_provider` 采用 `limit=100 + 选第一个 api_key 非空的` 过滤策略，避免选到空 key provider 导致下游向量化时才报错
 - **对话模型 context_length 必填**（2026-09-11 增量）：`common/src/api/model_provider.rs` 新增 `context_length: Option<u32>` 字段。创建对话模型 Provider 时（`CreateModelProviderRequest.context_kind == Chat`）必须填写 `context_length`，缺失返回 400 `context_length_required`；Embedding Provider 可空（上下文长度仅对话模型需要）；更新时可选（partial update 三态：Some 更新 / None 保持不变 / Some(0) 重置）。种子导入 diff 校验同样要求对话模型带 context_length。**原因**：Agent 运行时需要此字段计算 Token 占比上下文阈值（`agent_runtime_state.context_threshold`），前端 RingProgress 环形进度组件展示占比
 
+- **Cortex Native DAO SSE 流式消费 + 超时分层**（2026-09-15 增量）：`src/service/dao/cortex/native/http.rs` 的 `call_chat_completions` 从**一次性非流式**（`stream: false` + `.json()`）重构为 **SSE 流式消费**（`stream: true` + `stream_options: { include_usage: true }`），超时判定从「请求总时长 120s」改为**两层分层**：`LLM_STREAM_IDLE_TIMEOUT=60s`（相邻 chunk 空闲超时——只要 token 持续产出即视为正常，彻底消除「长请求被一刀切超时杀掉」的痛点）+ `LLM_STREAM_TOTAL_TIMEOUT=MAX_TIMEOUT`（总时长硬上限兜底，防服务端无限心跳）。新增 `StreamAccumulator` 聚合器：content 按 delta 跨 chunk 累加、tool_calls 用 `BTreeMap<usize, AccumToolCall>` 按 index 逐字段合并（流式 tool_calls 是分片下发的：id 在第一个 chunk、name 在第二个 chunk、arguments 在 N 个 chunk）、usage 从最后一个 chunk 读取；`consume_think_stream` 用 `tokio::time::timeout(idle_timeout, stream.next())` 逐 next 计时；`transport_error(kind, e)` 沿 `error.source()` 链取根因文本并结构化分类，日志不再只见 URL 不见真实原因。新增 `SseEvent` 枚举（Done / Chunk 两种）和 `parse_sse_line` 解析器。
+
 本卡与「向量存储抽象 VectorStore + embed_entity」卡构成互补视角：该卡聚焦向量存储基础设施，本卡聚焦 Embedding Provider 业务生命周期与重建触发条件。
 
 ## §2 关键文件路径表格（读代码直接跳）
@@ -110,7 +116,10 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 | [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs) | 初始化 Handler | 动态步骤数 `3 + chat + embedding`；条件化创建 provider；入口边界校验 |
 | [frontend/src/pages/finance/model_providers.rs](frontend/src/pages/finance/model_providers.rs) | 前端模型管理页 | 创建 Modal capability 选择(Agent/Embedding)；禁用按钮发 status=2；删除 Embedding 警示文案 |
 | [frontend/src/pages/reception.rs](frontend/src/pages/reception.rs) | 前端初始化页 | 2 步表单：基础信息→模型配置；对话/向量模型可选+跳过后果提示 |
-| [src/service/dao/cortex/native/http.rs](src/service/dao/cortex/native/http.rs) | HTTP DAO + api_key 校验 | `validate_provider_for_request(provider)` 校验 api_key 非空；`call_chat_completions` / `call_embeddings` / `call_embeddings_multimodal` 三处统一前置调用 |
+| [src/service/dao/cortex/native/http.rs](src/service/dao/cortex/native/http.rs) | HTTP DAO + SSE 流式聚合 | `validate_provider_for_request(provider)` 校验 api_key 非空；`call_chat_completions` 改 SSE 流式（`StreamAccumulator` + `consume_think_stream` + `parse_sse_line` + `finish_think_result` + `transport_error` + `error_root_cause`）；`call_embeddings` / `call_embeddings_multimodal` 保留非流式；请求侧 `stream: true` + `stream_options: { include_usage: true }`；超时两层 `LLM_STREAM_IDLE_TIMEOUT=60s` + `LLM_STREAM_TOTAL_TIMEOUT=MAX_TIMEOUT` |
+| [src/service/dao/cortex/native/http/tests.rs](src/service/dao/cortex/native/http/tests.rs) | SSE 流式解析/聚合单测 | `SseEvent::Done`/`Chunk` 解析 + `StreamAccumulator` 跨 chunk 累加 content + 按 index 合并 tool_calls + 最后 chunk 取 usage |
+| [src/pkg/http/presets.rs](src/pkg/http/presets.rs) | HTTP 预设常量（v1.3 增量） | `LLM_STREAM_IDLE_TIMEOUT = Duration::from_secs(60)`（相邻 SSE chunk 空闲超时）+ `LLM_STREAM_TOTAL_TIMEOUT = MAX_TIMEOUT`（总时长硬上限） |
+| [src/pkg/http/mod.rs](src/pkg/http/mod.rs) | HTTP 模块导出（v1.3 增量） | 导出 `LLM_STREAM_IDLE_TIMEOUT` / `LLM_STREAM_TOTAL_TIMEOUT` |
 | [src/service/dao/model_provider/sqlite.rs](src/service/dao/model_provider/sqlite.rs) | Provider 查询 DAO | `find_enabled_embedding_provider` / `get_default_embedding_provider`：limit=100 + 选第一个 api_key 非空的 provider |
 | [common/src/api/model_provider.rs](common/src/api/model_provider.rs) (v1.2 增量) | DTO 扩展 | `CreateModelProviderRequest.context_length: Option<u32>` 新增；对话模型创建时校验 Some |
 | [src/handlers/finance/model_provider/create_model_provider.rs](src/handlers/finance/model_provider/create_model_provider.rs) (v1.2 增量) | 创建 Handler 扩展 | ContextKind::Chat 创建时强制校验 context_length.is_some()；缺失返回 400 |
@@ -167,6 +176,10 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 8. ✅ **前端禁用按钮必须发 status=2**：不得复用 status=0(软删除)；违反 = 条目从列表消失，与「禁用」语义矛盾。
 9. ✅ **api_key 空校验必须前置**：`validate_provider_for_request` 必须在三个 HTTP 调用入口开头统一调用，`find_enabled_embedding_provider` / `get_default_embedding_provider` 必须用 limit=100 + api_key 非空过滤；违反 = 空 key provider 被选中后下游向量化才报错，或发起无意义网络请求导致超时挂起。
 10. ✅ **对话模型 context_length 必填**（v1.2 新增）：创建对话模型 Provider 时 `context_kind == Chat` 必须带 `context_length`，缺失返回 400；Embedding Provider 可空。种子导入 diff 校验同样要求对话模型带 context_length。违反 = Agent 运行时 context_threshold 为 None → 前端 RingProgress 无法渲染 + Agent 思考无法判断上下文是否接近溢出
+11. ❌ **禁止将 SSE 流当作普通 HTTP 响应用 `.json()` 一次性解析**（v1.3 新增）：`call_chat_completions` 必须用 `parse_sse_line` 逐行解析 SSE → `SseEvent::Done`/`Chunk`，配合 `StreamAccumulator` 聚合；禁止退回到 `stream: false` + `.json()` 模式，否则 tool_calls 分片丢失 + usage 不可取
+12. ❌ **StreamAccumulator.tool_calls 禁止只看最后一个 chunk**（v1.3 新增）：流式 tool_calls 是分片下发的（id 在第一个 chunk、name 在第二个 chunk、arguments 在 N 个 chunk），必须用 `BTreeMap<usize, AccumToolCall>` 按 index 逐字段累加合并；违反 = 调用工具时 id 或 arguments 为空 → 工具调用静默失败
+13. ❌ **usage 禁止从流式响应非标准位置解析**（v1.3 新增）：usage 必须从 `stream_options: { include_usage: true }` 请求下的最后一个 chunk（`SseEvent::Done` 之前的最后一条 `message` 事件）读取；禁止从首 chunk 或中间 chunk 提取 usage（那些位置通常为 null）
+14. ❌ **禁止把 idle_timeout 当作请求总超时**（v1.3 新增）：`LLM_STREAM_IDLE_TIMEOUT` 逐 chunk 计时——chunk 持续产出即视为正常（即使单次推理 5 分钟也不会被砍），仅在相邻 chunk 间隔超过 60s 时才判定服务端卡死；总超时由 `LLM_STREAM_TOTAL_TIMEOUT`（=MAX_TIMEOUT）兜底
 
 ## §5 历史演进
 
@@ -175,5 +188,6 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 | v1.0（初始） | Embedding Provider 生命周期：创建不阻塞策略 + Normal/Disabled/Deleted 三态 + 切换全量重建 | model_provider Domain/Handler + switch_embedding + rebuild_vectors_task |
 | v1.1（api_key 校验引入） | HTTP DAO 层新增 `validate_provider_for_request(provider)` 统一校验 `api_key.trim().is_empty()` → 返回 `ConfigInvalid`；DAO 查询层 `find_enabled_embedding_provider` / `get_default_embedding_provider` 从 limit=1 改为 limit=100 + 选第一个 api_key 非空的 | `cortex/native/http.rs` 三处调用点 + `model_provider/sqlite.rs` 两个查询方法 |
 | v1.2（对话模型 context_length 必填） | `common/src/api/model_provider.rs` 新增 `context_length: Option<u32>` 字段；`create_model_provider.rs` 对话模型创建时强制校验必填（Embedding 可空）；种子导入 diff 校验同步要求；更新时可选（partial update 三态） | `model_provider.rs` DTO + `create_model_provider.rs` + `update_model_provider.rs` + `seed/diff.rs` |
+| v1.3（SSE 流式消费 + 超时分层） | `call_chat_completions` 从非流式 `.json()` 重构为 SSE 流式（`stream: true` + `stream_options: { include_usage: true }`），新增 `StreamAccumulator` 聚合器 / `consume_think_stream` 逐 chunk 计时 / `parse_sse_line` 解析器 / `finish_think_result` 结果统一 / `transport_error` 根因分类；超时从单一层改为两层：`LLM_STREAM_IDLE_TIMEOUT=60s` + `LLM_STREAM_TOTAL_TIMEOUT=MAX_TIMEOUT` | `cortex/native/http.rs` + `cortex/native/http/tests.rs` + `pkg/http/presets.rs` + `pkg/http/mod.rs` |
 
 **引入原因**：未配置 api_key 的 Normal Provider 会被查询层随机选中，向量化任务执行时才发现空 key → 触发无意义 HTTP 请求（可能超时 30s+），导致重建任务卡挂。前置拦截将错误前移到调用入口，DAO 查询层过滤确保不会选到空 key provider。v1.2 引入原因：Agent 运行时（`agent_runtime_state.context_threshold`）需要 context_length 字段计算 Token 占比上下文阈值，前端 RingProgress 环形进度组件展示占比；缺失会导致 Agent 思考无法判断上下文是否接近溢出。

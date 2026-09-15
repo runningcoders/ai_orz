@@ -42,8 +42,9 @@ source_files:
   - src/handlers/finance/tool/runtime_stats.rs (2026-09-14 新增：组织级工具运行时统计 Handler)
   - common/src/api/tool.rs ToolRuntimeStatsRequest + ToolRuntimeStatsResponse (2026-09-14 新增：统计查询 DTO)
   - common/src/models/stats.rs (2026-09-14 增量：统计响应类型扩展)
-  - frontend/src/utils/number.rs (2026-09-14 新增：数字格式化工具)
+  - frontend/src/utils/number.rs (2026-09-14 新增：数字格式化工具；2026-09-15 扩展：轴刻度 format_compact_axis)
   - frontend/src/utils/status.rs (2026-09-14 新增：状态环/徽章 SSOT)
+  - frontend/src/components/charts/line_chart.rs (2026-09-15 增量：轴刻度自适应——Y 轴 format_compact_axis，X 轴 x_axis_time_format + 画布宽度反推标签个数)
   - frontend/src/pages/workspace.rs (2026-09-14 增量：顶栏统计图换数字读数 + 组织级统计)
 ---
 
@@ -58,6 +59,8 @@ source_files:
 **TimeRangePicker 通用时间区间筛选组件**（2026-09-11 新增）：`frontend/src/components/time_range_picker.rs` 通用日期范围筛选，props: `start/end` + 预设快捷按钮（近 1h / 6h / 24h / 7d / 30d）；所有统计看板统一引入——AOP 系统页、ModelProvider Token 时序、用户页统计。
 
 **2026-09-14 增量**：Workspace 顶栏统计图升级为**数字读数模式**——从图表可视化切换为数字统计卡（工具总数 / 今日调用次数 / 成功率 / 平均耗时），配套 `frontend/src/utils/number.rs` 大数格式化工具（千分位 + compact 缩写）。后端新增组织级工具运行时统计接口 `GET /api/v1/finance/tools/runtime-stats`（DuckDB tool_call_events 表按 organization_id 过滤聚合），补全了"组织整体工具"维度的查询能力。`frontend/src/utils/status.rs` 统一 Agent 状态环、项目状态徽章等视觉组件的 SSOT。
+
+**2026-09-15 增量**：前端统计图**轴刻度自适应**——`line_chart.rs` 的 Y 轴走 `format_compact_axis`（K/M/B 三级进位，字符数恒 ≤5），X 轴标签格式由桶宽决定、标签个数由画布可用宽度反推。数字格式化进一步收敛到 `frontend/src/utils/number.rs` 单一入口，禁止各处组件硬编码千分位/缩写逻辑。
 
 ## §2 关键文件表
 
@@ -84,6 +87,7 @@ source_files:
 | [frontend/src/utils/number.rs](frontend/src/utils/number.rs) (v1.3 新增) | 数字格式化工具 | 千分位 + compact 大数缩写（1.5K / 2.3M）+ 小数精度控制；顶栏统计卡复用 |
 | [frontend/src/utils/status.rs](frontend/src/utils/status.rs) (v1.3 新增) | 状态 SSOT | Agent 状态环、项目/任务状态徽章的颜色、图标、文案统一出口；避免前端各处散落硬编码 |
 | [frontend/src/pages/workspace.rs](frontend/src/pages/workspace.rs) (v1.3 增量) | 工作空间顶栏 | 统计图换数字读数卡；引入 number.rs 格式化 + status.rs 状态组件 |
+| [frontend/src/components/charts/line_chart.rs](frontend/src/components/charts/line_chart.rs) (v1.4 增量) | 折线图组件 | Y 轴 `format_compact_axis`（K/M/B 三级进位，字符数 ≤5）；X 轴 `x_axis_time_format` 按桶宽决定格式，标签个数由画布可用宽度反推 |
 
 ## §3 架构与约定
 
