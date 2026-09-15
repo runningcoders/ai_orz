@@ -550,35 +550,35 @@ pub fn TaskDetail(id: String) -> Element {
                 eyebrow: "STATUS".to_string(),
                 div { class: "detail-card-body",
                     div { class: "detail-action-row",
-                        if t.status != 2 {
+                        if t.status != 1 {
                             button {
                                 class: "btn hud-btn btn-info",
                                 onclick: on_pending,
                                 "待处理"
                             }
                         }
-                        if t.status != 3 {
+                        if t.status != 2 {
                             button {
                                 class: "btn hud-btn btn-primary",
                                 onclick: on_start,
                                 "开始"
                             }
                         }
-                        if t.status != 4 {
+                        if t.status != 3 {
                             button {
                                 class: "btn hud-btn btn-primary",
                                 onclick: on_complete,
                                 "完成"
                             }
                         }
-                        if t.status != 0 && t.status != 5 {
+                        if t.status != 0 && t.status != 4 {
                             button {
                                 class: "btn hud-btn btn-error",
                                 onclick: on_cancel,
                                 "取消"
                             }
                         }
-                        if t.status != 5 {
+                        if t.status != 4 {
                             button {
                                 class: "btn hud-btn btn-outline",
                                 onclick: on_archive,

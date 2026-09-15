@@ -15,13 +15,13 @@ pub enum TaskStatus {
     Cancelled = 0,
     /// Pending, not started yet (waiting for DAG prerequisites / owner pickup)
     #[default]
-    Pending = 2,
+    Pending = 1,
     /// In progress
-    InProgress = 3,
+    InProgress = 2,
     /// Completed
-    Completed = 4,
+    Completed = 3,
     /// Archived (archived to history after summary)
-    Archived = 5,
+    Archived = 4,
 }
 
 impl TaskStatus {
@@ -29,12 +29,10 @@ impl TaskStatus {
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Cancelled,
-            // 1 为历史值（PendingReview 已并入 Pending）：读回时统一视为待启动
             1 => Self::Pending,
-            2 => Self::Pending,
-            3 => Self::InProgress,
-            4 => Self::Completed,
-            5 => Self::Archived,
+            2 => Self::InProgress,
+            3 => Self::Completed,
+            4 => Self::Archived,
             _ => Self::default(),
         }
     }

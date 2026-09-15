@@ -133,12 +133,12 @@ pub fn TaskList() -> Element {
 
     // 统计数据
     let total = tasks_list.len();
-    let completed = tasks_list.iter().filter(|t| t.status == 4).count();
-    let in_progress = tasks_list.iter().filter(|t| t.status == 3).count();
-    let pending = tasks_list.iter().filter(|t| t.status == 2).count();
+    let completed = tasks_list.iter().filter(|t| t.status == 3).count();
+    let in_progress = tasks_list.iter().filter(|t| t.status == 2).count();
+    let pending = tasks_list.iter().filter(|t| t.status == 1).count();
 
     // 看板数据分组
-    let board_groups = [(2, "待处理"), (3, "进行中"), (4, "已完成"), (5, "已归档")];
+    let board_groups = [(1, "待处理"), (2, "进行中"), (3, "已完成"), (4, "已归档")];
 
     let filtered_tasks_by_status = |status: i32| {
         tasks_list
@@ -216,10 +216,10 @@ pub fn TaskList() -> Element {
                             load_data();
                         },
                         option { value: "-1", "全部状态" }
-                        option { value: "2", "待处理" }
-                        option { value: "3", "进行中" }
-                        option { value: "4", "已完成" }
-                        option { value: "5", "已归档" }
+                        option { value: "1", "待处理" }
+                        option { value: "2", "进行中" }
+                        option { value: "3", "已完成" }
+                        option { value: "4", "已归档" }
                     }
                 }
                 div { class: "flex flex-col gap-1 min-w-[140px] flex-1",

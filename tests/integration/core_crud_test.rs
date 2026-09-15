@@ -216,7 +216,7 @@ async fn test_project_status_transitions(pool: SqlitePool) {
 /// - CreateTaskRequest 的 `assignee_id` 是必填字段，需要先创建 Agent 作为分配对象
 /// - 路由中无 `/tasks/{id}/mark-done` 端点（handler 存在但未注册），
 ///   改用 `PUT /tasks/{id}/status` + status="Completed" 完成状态流转
-/// - Task 状态流转规则：Pending(2) → InProgress(3) → Completed(4)
+/// - Task 状态流转规则：Pending(1) → InProgress(2) → Completed(3)
 #[sqlx::test]
 async fn test_task_progress_and_completion(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -256,14 +256,14 @@ async fn test_task_progress_and_completion(pool: SqlitePool) {
         .expect("missing task id in create response")
         .to_string();
 
-    // 验证初始状态为 Pending (2)
+    // 验证初始状态为 Pending (1)
     let initial_status = task_data
         .get("status")
         .and_then(|v| v.as_i64())
         .expect("task status should be present");
     assert_eq!(
-        initial_status, 2,
-        "newly created task should be Pending (2)"
+        initial_status, 1,
+        "newly created task should be Pending (1)"
     );
 
     // 4. 更新 task 进度为 50%（PUT /tasks/{id}/progress，不是 POST）
@@ -320,7 +320,7 @@ async fn test_task_progress_and_completion(pool: SqlitePool) {
         "transition to Completed should succeed"
     );
 
-    // 7. 重新获取 task，验证最终状态为 Completed (4)
+    // 7. 重新获取 task，验证最终状态为 Completed (3)
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/tasks/{}", task_id), &jwt)
         .await;
@@ -330,7 +330,7 @@ async fn test_task_progress_and_completion(pool: SqlitePool) {
         .and_then(|v| v.as_i64())
         .expect("task status field should be present after completion");
     assert_eq!(
-        final_status, 4,
-        "task status should be Completed (4) after mark-done transition"
+        final_status, 3,
+        "task status should be Completed (3) after mark-done transition"
     );
 }
