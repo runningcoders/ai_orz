@@ -42,7 +42,7 @@ pub fn UserProfile() -> Element {
                 with_model_call_stats: Some(true),
                 stats_time_start: Some(range.start_ms),
                 stats_time_end: Some(range.end_ms),
-                // 粒度随窗口跨度自适应（≤2 天按小时 / 否则按天）
+                // 粒度随窗口跨度自适应（≤3 小时按分钟 / ≤2 天按小时 / 否则按天）
                 stats_interval: Some(range.suggested_interval().to_string()),
             })
             .await

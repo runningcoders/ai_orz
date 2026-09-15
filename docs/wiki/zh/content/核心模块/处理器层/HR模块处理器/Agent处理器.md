@@ -194,7 +194,7 @@ H-->>C : "CreateAgentResponse"
   - with_stats：是否加载唤醒次数汇总
   - with_model_call_stats：是否加载模型调用统计
   - stats_time_start/stats_time_end：统计时间范围
-  - stats_interval：hourly/daily
+  - stats_interval：minutely/hourly/daily（窄窗口如「最近 60 分钟」必须用 minutely，否则整段只有 1 个点）
 - 业务调用：构建 AgentFetchOptions → 调用 get_agent → 读取 runtime_info → 查询工具绑定列表。
 - 响应：GetAgentResponse（含 external_config、runtime_state、current_message_id、tools、stats、model_call_stats）。
 
@@ -344,7 +344,8 @@ M["uninstall_skill_pack.rs"] --> B
 - 常见错误
   - 缺少用户上下文：创建处理器会校验 ctx.uid()，为空则返回 InvalidRequest。
   - 资源不存在：更新/删除/状态切换前均会读取 Agent，不存在返回未找到。
-  - 统计参数非法：get_agent 中 stats_interval 非 hourly/daily 将被忽略。
+  - 统计参数非法：get_agent 中 stats_interval 非 minutely/hourly/daily 将被忽略（静默退回 daily）。
+  - 图表只有一个点：多为「窄窗口配粗粒度」，或窗口内本身只有一次调用；粒度对窗口过细的场景由后端护栏自动收敛，不会再产出超量桶。
 - 定位建议
   - 检查请求路径与查询参数是否与 DTO 定义一致。
   - 查看 Domain 层返回的错误类型，结合日志定位具体失败点。

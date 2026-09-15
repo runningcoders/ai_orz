@@ -8,3 +8,6 @@ pub use identity_credentials::*;
 pub use inbound_state::*;
 pub use stats::*;
 pub use tool::*;
+
+#[cfg(test)]
+mod stats_test;

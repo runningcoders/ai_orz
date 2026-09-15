@@ -28,7 +28,14 @@ use crate::utils::time::{
 
 const HOUR_MS: i64 = 3_600_000;
 const DAY_MS: i64 = 86_400_000;
-/// 跨度超过该阈值建议按天聚合，否则按小时（避免「1 小时区间只出 1 个点」）
+/// 跨度不超过该阈值建议按分钟聚合
+///
+/// 取 3 小时（最多 180 个桶）：既覆盖「最近 1 小时」这个主用例，也覆盖手选的
+/// 1~3 小时自定义区间；再往上分钟桶就只剩密集噪声了。后端另有一道**独立**的桶数
+/// 护栏（`common::models::STATS_MAX_BUCKETS`）兜住手写 query 的超限请求 ——
+/// 前端这道只是启发式，不能替代后端自兜底。
+const MINUTELY_MAX_SPAN_MS: i64 = 3 * HOUR_MS;
+/// 跨度超过该阈值建议按天聚合，否则按小时（避免「宽窗口配细粒度」只出密集噪声）
 const HOURLY_MAX_SPAN_MS: i64 = 2 * DAY_MS;
 
 /// 时间区间预设
@@ -131,9 +138,16 @@ impl TimeRange {
         (self.end_ms - self.start_ms).max(0)
     }
 
-    /// 建议聚合粒度（后端 `stats_interval` 取值：`hourly` / `daily`）
+    /// 建议聚合粒度（后端 `stats_interval` 取值：`minutely` / `hourly` / `daily`）
+    ///
+    /// 三档与后端白名单一一对应：≤3h 分钟桶 / ≤2d 小时桶 / 否则天桶。
+    /// 跨度落在档位边界附近时宁可选粗 —— 后端按桶数上限收敛只会更粗，
+    /// 前端选细反而会拿到一张与预期不符的图（数据点被静默抽稀）。
     pub fn suggested_interval(&self) -> &'static str {
-        if self.span_ms() <= HOURLY_MAX_SPAN_MS {
+        let span = self.span_ms();
+        if span <= MINUTELY_MAX_SPAN_MS {
+            "minutely"
+        } else if span <= HOURLY_MAX_SPAN_MS {
             "hourly"
         } else {
             "daily"
@@ -279,6 +293,98 @@ pub fn TimeRangePicker(props: TimeRangePickerProps) -> Element {
             if !props.hide_label {
                 span { class: "hud-eyebrow", "{props.value.label()}" }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::models::{StatsInterval, clamp_interval_to_span};
+
+    // ⚠️ 本模块在 host（native）上运行：**不可调用 `now_ms()` 及其下游**。
+    // 它最终落到 `js_sys::Date::now()`，非 wasm 目标会直接 panic
+    // （"cannot call wasm-bindgen imported functions on non-wasm targets"）。
+    // 因此 `TimeRange::from_preset` 在本模块里不可用，只能用下面的
+    // `range_of_span` 按「预设对应的跨度」构造区间（见 `from_preset`：
+    // 1 小时 / 1 天 / 7 天 / 30 天）。
+
+    /// 造一个指定跨度的区间（固定基准时间，避免测试依赖真实时钟）
+    fn range_of_span(span_ms: i64) -> TimeRange {
+        let end_ms = 1_700_000_000_000;
+        TimeRange {
+            start_ms: end_ms - span_ms,
+            end_ms,
+            preset: TimeRangePreset::Custom,
+        }
+    }
+
+    /// 前端粒度字符串 → 枚举（顺带校验取值确实落在后端白名单内）
+    fn as_interval(name: &str) -> StatsInterval {
+        match name {
+            "minutely" => StatsInterval::Minutely,
+            "hourly" => StatsInterval::Hourly,
+            "daily" => StatsInterval::Daily,
+            other => panic!("suggested_interval 返回了白名单外的取值: {other}"),
+        }
+    }
+
+    /// 各预设跨度对应的档位（跨度取 `from_preset` 的口径：1 小时 / 1 天 / 7 天 / 30 天）
+    ///
+    /// 「最近 1 小时」是本次改造的主用例：1 小时窗口若用小时桶，整段只剩 1 个点、画不出线。
+    #[test]
+    fn preset_spans_map_to_expected_tier() {
+        assert_eq!(range_of_span(HOUR_MS).suggested_interval(), "minutely");
+        assert_eq!(range_of_span(DAY_MS).suggested_interval(), "hourly");
+        assert_eq!(range_of_span(7 * DAY_MS).suggested_interval(), "daily");
+        assert_eq!(range_of_span(30 * DAY_MS).suggested_interval(), "daily");
+    }
+
+    #[test]
+    fn tier_boundaries_are_inclusive() {
+        assert_eq!(
+            range_of_span(MINUTELY_MAX_SPAN_MS).suggested_interval(),
+            "minutely"
+        );
+        assert_eq!(
+            range_of_span(MINUTELY_MAX_SPAN_MS + 1).suggested_interval(),
+            "hourly"
+        );
+        assert_eq!(
+            range_of_span(HOURLY_MAX_SPAN_MS).suggested_interval(),
+            "hourly"
+        );
+        assert_eq!(
+            range_of_span(HOURLY_MAX_SPAN_MS + 1).suggested_interval(),
+            "daily"
+        );
+    }
+
+    /// 前端选出的粒度不应被后端桶数护栏改写
+    ///
+    /// 一旦被改写，界面拿到的是一张分辨率与预期不符、且看不出原因的图
+    /// （后端只会留一条 debug 日志）。这条测试把两半契约钉在一起：
+    /// 前端调档时若超出后端预算，这里会先红。
+    #[test]
+    fn suggested_tier_survives_backend_bucket_guard() {
+        // 四个预设跨度 + 两个档位边界 + 一个自定义上限（29 天）
+        let spans = [
+            HOUR_MS,
+            DAY_MS,
+            7 * DAY_MS,
+            30 * DAY_MS,
+            MINUTELY_MAX_SPAN_MS,
+            HOURLY_MAX_SPAN_MS,
+            29 * DAY_MS,
+        ];
+        for span in spans {
+            let range = range_of_span(span);
+            let requested = as_interval(range.suggested_interval());
+            assert_eq!(
+                clamp_interval_to_span(requested, range.span_ms()),
+                requested,
+                "跨度 {span}ms 的粒度会被后端护栏改写"
+            );
         }
     }
 }

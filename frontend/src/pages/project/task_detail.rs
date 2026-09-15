@@ -28,7 +28,8 @@ use common::enums::TaskStatus;
 
 /// 给 GetTaskRequest 注入统计参数（详情页时间筛选器产出，毫秒闭区间）。
 ///
-/// 聚合粒度随窗口跨度自动选择（≤2 天按小时 / 否则按天），避免 1 小时窗口只出 1 个点。
+/// 聚合粒度随窗口跨度自动选择（≤3 小时按分钟 / ≤2 天按小时 / 否则按天），
+/// 避免「窄窗口配粗粒度」只出 1 个点。
 fn with_stats_range(mut req: GetTaskRequest, range: TimeRange) -> GetTaskRequest {
     req.with_stats = Some(true);
     req.with_model_call_stats = Some(true);

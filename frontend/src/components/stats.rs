@@ -219,6 +219,13 @@ pub fn AgentStatsPanelCompact(
     context_length_threshold: Option<u64>,
     // 模型供应商 ID：仅用于阈值缺失时给出「去配置」入口
     model_provider_id: Option<String>,
+    /// 统计时间窗口的可读描述（如「最近 60 分钟」）
+    ///
+    /// 窗口由调用方的请求参数决定，组件无从推断，而同一套读数在不同窗口下含义完全不同
+    /// （「唤醒次数 3」在 7 天窗口是累计、在 60 分钟窗口是当前活跃度）。不标注就会被误读，
+    /// 故由调用方传入；缺省不渲染。
+    #[props(default)]
+    window_label: Option<String>,
 ) -> Element {
     let has_runtime = stats.as_ref().is_some_and(|s| s.call_summary.is_some());
     let has_model = model_call_stats
@@ -236,7 +243,12 @@ pub fn AgentStatsPanelCompact(
         .and_then(|m| m.token_summary.as_ref());
     rsx! {
         div { class: "mt-4 pt-3 border-t border-base-300",
-            h3 { class: "text-sm font-semibold mb-2", "📊 运行统计" }
+            div { class: "flex items-baseline justify-between mb-2",
+                h3 { class: "text-sm font-semibold", "📊 运行统计" }
+                if let Some(w) = window_label.clone() {
+                    span { class: "text-xs text-base-content/50", "{w}" }
+                }
+            }
             if has_data {
                 div { class: "space-y-3",
                     div { class: "grid grid-cols-2 gap-x-3",

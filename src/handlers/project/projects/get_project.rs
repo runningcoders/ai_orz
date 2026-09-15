@@ -31,6 +31,8 @@ pub async fn get_project(
         },
         stats_interval: params.stats_interval.as_deref().and_then(|s| {
             match s.to_lowercase().as_str() {
+                // 窄窗口（详情页「最近 1 小时」）必须用分钟桶，否则整段只有 1 个点
+                "minutely" => Some(StatsInterval::Minutely),
                 "hourly" => Some(StatsInterval::Hourly),
                 "daily" => Some(StatsInterval::Daily),
                 _ => None,

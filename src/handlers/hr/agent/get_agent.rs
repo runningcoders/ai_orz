@@ -46,6 +46,8 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         },
         stats_interval: params.stats_interval.as_deref().and_then(|s| {
             match s.to_lowercase().as_str() {
+                // 窄窗口（如侧栏的最近 60 分钟运行时读数）必须用分钟桶，否则整段只有 1 个点
+                "minutely" => Some(StatsInterval::Minutely),
                 "hourly" => Some(StatsInterval::Hourly),
                 "daily" => Some(StatsInterval::Daily),
                 _ => None,

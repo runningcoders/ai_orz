@@ -320,7 +320,7 @@ AOP["AOP 实时统计"] --> Mon["监控面板"]
 - 统计查询要点
   - 过滤：按 model_provider_id、timestamp 范围、组织/用户/任务等标签
   - 聚合：count/sum/avg 任意组合，支持 group by 多字段
-  - 时序：Hourly/Daily 两种粒度，返回 TimeSeriesPoint
+  - 时序：Minutely/Hourly/Daily 三种粒度，返回 TimeSeriesPoint（超桶数上限自动收敛）
 
 章节来源
 - [common/src/api/model_provider.rs:82-133](common/src/api/model_provider.rs#L82-L133)

@@ -26,6 +26,8 @@ pub async fn get_model_provider(
         with_model_call_stats: params.with_model_call_stats,
         stats_time_range: params.stats_start_time.zip(params.stats_end_time),
         stats_interval: params.stats_interval.and_then(|s| match s.as_str() {
+            // 窄窗口（详情页「最近 1 小时」）必须用分钟桶，否则整段只有 1 个点
+            "Minutely" | "minutely" => Some(StatsInterval::Minutely),
             "Hourly" | "hourly" => Some(StatsInterval::Hourly),
             "Daily" | "daily" => Some(StatsInterval::Daily),
             _ => None,

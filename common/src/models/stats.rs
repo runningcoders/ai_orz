@@ -16,6 +16,70 @@ pub enum StatsInterval {
     Daily,
 }
 
+/// 时序查询返回桶数的上限（策略护栏）
+///
+/// 「窗口跨度 × 聚合粒度」由请求侧自由组合，若不设上限，`Minutely` 配 30 天窗口
+/// 会产出 43200 行结果：既浪费聚合与序列化开销，前端也画不出可读的折线。
+/// 这里统一按**桶数**收敛，超过上限时逐级回退到更粗的粒度
+/// （配合 [`clamp_interval_to_span`]）。
+///
+/// 取值依据：约为单张折线图可读点数的量级上界；对现有正常请求零影响
+/// （侧栏 60 个分钟桶、详情页 30 个天桶都远低于它）。
+pub const STATS_MAX_BUCKETS: i64 = 512;
+
+impl StatsInterval {
+    /// 单桶时长（毫秒）
+    pub const fn bucket_ms(self) -> i64 {
+        match self {
+            Self::Minutely => 60_000,
+            Self::Hourly => 3_600_000,
+            Self::Daily => 86_400_000,
+        }
+    }
+
+    /// 窗口 `span_ms` 在该粒度下的桶数上界（`span_ms <= 0` 时记 0，表示无法判定）
+    pub const fn bucket_count(self, span_ms: i64) -> i64 {
+        if span_ms <= 0 {
+            0
+        } else {
+            span_ms / self.bucket_ms()
+        }
+    }
+}
+
+/// 粒度阶梯：由细到粗，收敛时只会沿这个方向回退
+const INTERVAL_LADDER: [StatsInterval; 3] = [
+    StatsInterval::Minutely,
+    StatsInterval::Hourly,
+    StatsInterval::Daily,
+];
+
+/// 按窗口跨度收敛聚合粒度，保证桶数不超过 [`STATS_MAX_BUCKETS`]
+///
+/// 返回**最细但不超限**的粒度：请求粒度本身不超限时原样返回，否则沿粒度阶梯
+/// 逐级向粗档回退（`Minutely` → `Hourly` → `Daily`，`Daily` 为最终兜底）。
+///
+/// `span_ms <= 0`（窗口缺失或非法）时不干预 —— 代价无从判断，交回调用方
+/// 既有的默认窗口兜底。
+///
+/// 这是服务端护栏，与前端「按跨度挑粒度」的启发式互为独立的两道防线：
+/// 前端可以不发超限请求，但无法阻止手写 query 的调用方，故后端必须自兜底。
+pub fn clamp_interval_to_span(interval: StatsInterval, span_ms: i64) -> StatsInterval {
+    if span_ms <= 0 {
+        return interval;
+    }
+    let requested = INTERVAL_LADDER
+        .iter()
+        .position(|tier| *tier == interval)
+        .unwrap_or(INTERVAL_LADDER.len() - 1);
+    // Daily 兜底档在任何有限窗口下都满足上限，`find` 不会落空
+    let affordable = INTERVAL_LADDER
+        .iter()
+        .position(|tier| tier.bucket_count(span_ms) <= STATS_MAX_BUCKETS)
+        .unwrap_or(INTERVAL_LADDER.len() - 1);
+    INTERVAL_LADDER[requested.max(affordable)]
+}
+
 /// Time series data point
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct TimeSeriesPoint {

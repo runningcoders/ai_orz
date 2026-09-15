@@ -95,7 +95,10 @@ pub struct GetAgentRequest {
     /// 统计时间范围结束（毫秒时间戳）
     #[param(source = "query")]
     pub stats_time_end: Option<i64>,
-    /// 时序查询粒度：hourly / daily
+    /// 时序查询粒度：minutely / hourly / daily
+    ///
+    /// 须与 `stats_time_*` 的窗口匹配：窄窗口配粗粒度只会得到 1 个点
+    /// （如最近 60 分钟配 `daily`）。取值不在白名单内会被静默忽略并退回 `daily`。
     #[param(source = "query")]
     pub stats_interval: Option<String>,
     /// 是否装配工具扁平列表（去重后的工具实体全集，按 id 唯一）

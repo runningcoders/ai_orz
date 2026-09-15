@@ -171,7 +171,7 @@ Assemble --> End
   - with_stats：是否加载项目统计（call_summary）
   - with_model_call_stats：是否加载模型调用统计（token、时序）
   - stats_time_start/stats_time_end：统计时间范围（毫秒）
-  - stats_interval：时序粒度（hourly/daily）
+  - stats_interval：时序粒度（minutely/hourly/daily）；粒度对窗口过细时后端按桶数上限自动收敛
   - with_task_graph/with_artifacts/with_progress_summary：按需加载任务图、产物、进度汇总
 - 响应结构
   - stats：ProjectStats（call_summary）

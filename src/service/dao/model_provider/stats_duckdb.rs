@@ -4,6 +4,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::stats::{ModelCallEvent, StatAggregation, StatFilter, StatsInterval};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use common::error::Result;
+use common::models::clamp_interval_to_span;
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
@@ -89,12 +90,31 @@ impl ModelProviderStatsDaoDuckDbImpl {
         table_name: Option<String>,
     ) -> Result<Vec<JsonValue>> {
         if query.interval.is_some() {
-            let interval = query.interval.unwrap_or(StatsInterval::Daily);
+            let requested_interval = query.interval.unwrap_or(StatsInterval::Daily);
             // time_range=None 兜底为「最近 7 天」（与 get-agent handler 的默认窗口一致）：
             // 绝大多数看板只关心近期数据，全历史扫描既慢也无必要；需要更大范围的
             // 调用方由前端显式指定时间区间。此前此处直接 bad_request，导致用户页统计整体失败。
             let now = chrono::Utc::now().timestamp_millis();
             let time_range = query.time_range.unwrap_or((now - 7 * 86_400_000, now));
+
+            // 策略护栏：粒度与窗口跨度由请求侧自由组合，若不加约束，`minutely` 配 30 天窗口
+            // 会产出 43200 行。收敛点刻意放在**这里**而不是 handler 白名单：只有此处同时
+            // 拿得到「最终生效的粒度」与「兜底后的窗口」——尤其是 time_range=None 被兜底成
+            // 7 天的情况，handler 侧根本看不到窗口，无从判断代价。
+            // 本分支是全项目时序查询的唯一入口（见 ModelProviderStatsDao 的调用方），
+            // 因此这一道护栏无法被绕过。
+            let span_ms = time_range.1 - time_range.0;
+            let interval = clamp_interval_to_span(requested_interval, span_ms);
+            if interval != requested_interval {
+                log_debug!(
+                    &ctx,
+                    "query_model_calls",
+                    requested = ?requested_interval,
+                    effective = ?interval,
+                    span_ms,
+                    "时序粒度超出桶数上限，已自动收敛"
+                );
+            }
 
             let points = ctx
                 .stats()

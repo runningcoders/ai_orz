@@ -102,7 +102,11 @@ pub struct GetModelProviderRequest {
     /// 统计时间范围结束（毫秒），需与 start_time 配对使用
     #[param(source = "query")]
     pub stats_end_time: Option<i64>,
-    /// 统计时序查询粒度：Hourly / Daily
+    /// 统计时序查询粒度：Minutely / Hourly / Daily（大小写不敏感）
+    ///
+    /// 须与 `stats_start_time` / `stats_end_time` 的窗口匹配：窄窗口配粗粒度只会得到
+    /// 1 个点（如最近 60 分钟配 `Daily`）。取值不在白名单内会被静默忽略并退回 `Daily`；
+    /// 粒度对窗口而言过细时，后端会按桶数上限自动收敛到更粗的档位。
     #[param(source = "query")]
     pub stats_interval: Option<String>,
 }

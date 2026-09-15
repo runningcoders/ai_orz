@@ -151,6 +151,44 @@ async fn test_query_model_call_time_series_without_time_range() -> Result<()> {
     Ok(())
 }
 
+/// 策略护栏接线验证：宽窗口 + 细粒度必须在 DAO 内被收敛到粗档。
+///
+/// 断言用「桶起始是否按天对齐」判断**实际生效的粒度**，而不是数桶个数 ——
+/// 测试数据都挤在几秒内，`minutely` 与 `daily` 都只会产出一个桶，数个数区分不出来。
+/// 反向（未被收敛时保持分钟对齐）由 `common::models::stats_test` 的纯函数用例覆盖，
+/// 且 `interval_start % 60000 == 0` 对天桶同样成立，在这里做反向断言没有鉴别力。
+#[tokio::test]
+async fn test_time_series_interval_is_clamped_for_wide_window() -> Result<()> {
+    let model_provider_id = "provider-ts-clamp-test";
+    let (ctx, dao) = setup_test_env(model_provider_id, 3).await?;
+
+    let now = Utc::now().timestamp_millis();
+    let query = ModelProviderStatsQuery {
+        model_provider_id: Some(model_provider_id.to_string()),
+        // 30 天窗口配分钟桶 = 43200 桶，远超 STATS_MAX_BUCKETS(512) → 直落天桶
+        // （小时桶 720 桶仍超限）
+        time_range: Some((now - 30 * 86_400_000, now)),
+        interval: Some(StatsInterval::Minutely),
+        ..Default::default()
+    };
+
+    let points = dao.query_model_call_time_series(ctx, query).await?;
+
+    assert!(!points.is_empty());
+    for p in &points {
+        assert_eq!(
+            p.interval_start % 86_400_000,
+            0,
+            "宽窗口的 minutely 未被收敛到 daily（桶起始未按天对齐）: {}",
+            p.interval_start
+        );
+    }
+    let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
+    assert_eq!(total_calls, 3, "收敛粒度不应丢数据");
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_query_model_call_aggregation_with_group_by() -> Result<()> {
     let model_provider_id = "provider-agg-test";

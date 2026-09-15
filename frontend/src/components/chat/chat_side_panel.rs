@@ -23,6 +23,7 @@ use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
+use crate::utils::time::now_ms;
 use crate::utils::{
     avatar_initials, avatar_status_ring, format_file_size,
     format_timestamp_opt as format_timestamp, priority_badge, progress_tone, project_status_badge,
@@ -37,6 +38,14 @@ use common::models::{AgentStats, ModelCallStats};
 
 /// SSE 消息触发的防抖刷新等待时长（毫秒）
 const REFRESH_DEBOUNCE_MS: u64 = 2000;
+
+/// 运行统计的时间窗口（分钟）
+///
+/// 与工作台顶栏 `RUNTIME_METRICS_WINDOW_MINUTES` 同口径：侧栏这一栏是**运行时**读数，
+/// 回答的是「此刻这个 Agent 在不在干活」，因此只看最近 60 分钟。
+/// 粒度随之取分钟桶（`stats_interval = minutely`）：60 分钟窗口若用天桶只会得到 1 个点，
+/// 用小时桶也只有 1~2 个点，都画不出曲线来。
+const RUNTIME_WINDOW_MINUTES: i64 = 60;
 
 /// 产物来源类型中文文案
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -700,12 +709,18 @@ fn AgentInfoTab(
                     return;
                 }
             }
+            // 运行统计窗口 = 最近 60 分钟（与工作台顶栏同口径），粒度取分钟桶。
+            // ⚠️ `stats_interval` 是**白名单字符串**：后端只认 `minutely` / `hourly` / `daily`，
+            // 其余取值会被静默忽略并退回 daily（`StatsFetchOptions::interval` 的兜底），
+            // 于是又画出一排日期标签 —— 改这个值时要同步核对 `handlers/hr/agent/get_agent.rs`。
+            let end_ms = now_ms();
             let req = GetAgentRequest {
                 id,
                 with_stats: Some(true),
                 with_model_call_stats: Some(true),
-                // 与 Agent 详情页 build_agent_stats_request 同口径
-                stats_interval: Some("daily".to_string()),
+                stats_time_start: Some(end_ms - RUNTIME_WINDOW_MINUTES * 60_000),
+                stats_time_end: Some(end_ms),
+                stats_interval: Some("minutely".to_string()),
                 ..Default::default()
             };
             let pair = match get_agent(req).await {
@@ -782,6 +797,8 @@ fn AgentInfoTab(
                     context_length_threshold,
                     // 阈值缺失时面板需要给出「去配置」入口，指向本条消息所属 Agent 的供应商
                     model_provider_id: a.model_provider_id.clone(),
+                    // 读数口径与上方请求窗口同源，避免被读成历史累计
+                    window_label: Some(format!("最近 {RUNTIME_WINDOW_MINUTES} 分钟")),
                 }
             }
             if let Some(d) = desc {
