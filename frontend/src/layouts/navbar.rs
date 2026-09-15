@@ -47,6 +47,19 @@ fn avatar_color(seed: &str) -> &'static str {
 /// 导航链接通用样式。扁平文本，无按钮圆角背景，hover 仅轻微反色。
 const NAV_LINK_BASE: &str = "navbar-link";
 
+/// 导航下拉面板通用样式（5 处下拉共用，改一次即可）。
+///
+/// 视觉（6px 圆角 + 11px 切角 + 渐变发丝边 + 浮起阴影）与层叠档统一交给浮层原语
+/// `.orz-popover`，因此这里不再自带 `bg-base-100` / `rounded-box` / `shadow`
+/// （原生 card 无切角，违反 ui_design_system §8）。
+///
+/// ⚠️ 也不要再写 `z-[…]`：`.navbar` 自身是 `sticky z-50`，**即层叠上下文**，
+/// 内部下拉的 z-index 无论 30 还是 200，对外表现完全一致（实测：与 z-40 抽屉
+/// 重叠时下拉在上、与 z-50 抽屉重叠时抽屉在上，三种档位结果相同）。
+/// 写了反而与 `.orz-popover` 的 `z-index:30`（`@layer` 外裸规则）冲突并被压回 30。
+const NAV_DROPDOWN_CONTENT: &str =
+    "dropdown-content menu orz-popover min-w-[15rem] p-2 text-base-content whitespace-nowrap";
+
 #[component]
 pub fn Navbar() -> Element {
     let auth = use_auth_state();
@@ -105,7 +118,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
+                            class: "{NAV_DROPDOWN_CONTENT}",
                             li { class: "menu-title", span { "人力资源" } }
                             li { Link { to: Route::HrAgents {}, "Agent 管理" } }
                             li { Link { to: Route::HrSkills {}, "技能库" } }
@@ -125,7 +138,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
+                            class: "{NAV_DROPDOWN_CONTENT}",
                             li { class: "menu-title", span { "财务管理" } }
                             li { Link { to: Route::FinanceModelProviders {}, "模型提供商" } }
                             li { Link { to: Route::FinanceTools {}, "工具管理" } }
@@ -148,7 +161,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
+                            class: "{NAV_DROPDOWN_CONTENT}",
                             li { class: "menu-title", span { "项目管理" } }
                             li { Link { to: Route::ProjectList {}, "项目列表" } }
                             li { Link { to: Route::ProjectArtifacts {}, "项目产物" } }
@@ -166,7 +179,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
+                            class: "{NAV_DROPDOWN_CONTENT}",
                             li { class: "menu-title", span { "系统" } }
                             li { Link { to: Route::SystemTriggers {}, "定时触发器" } }
                             li { Link { to: Route::SystemHealth {}, "健康检查" } }
@@ -206,7 +219,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
+                            class: "{NAV_DROPDOWN_CONTENT}",
                             li { class: "menu-title", span { "账户" } }
                             li { Link { to: Route::UserProfile {}, "👤 个人信息" } }
                             if is_admin {

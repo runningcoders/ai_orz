@@ -384,21 +384,16 @@
 
 /* ========== @ 提及候选菜单（输入框上方浮层） ========== */
 /* 与 slash 菜单同一层叠策略：absolute 挂在输入区容器内，不脱离文档流，
-   因此跟随输入区一起滚动、不会被消息列表裁切。 */
+   因此跟随输入区一起滚动、不会被消息列表裁切。
+   视觉（切角 + 渐变发丝边 + 阴影）复用浮层原语 `.orz-popover`（见上文的规则组），
+   此处只保留定位与层叠档。 */
 .mention-menu {
   position: absolute;
   bottom: 100%;
   left: 0.75rem;
   right: 0.75rem;
   margin-bottom: 0.25rem;
-  z-index: 10;
   overflow: hidden;
-  border-radius: 0.5rem;
-  border: 1px solid var(--color-base-300);
-  background: var(--color-base-100);
-  box-shadow:
-    0 10px 15px -3px rgb(0 0 0 / 0.1),
-    0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 .mention-menu-tabs {
   display: flex;
@@ -676,15 +671,25 @@
   border-left: 3px solid var(--color-info);
   box-shadow: 0 6px 20px -10px color-mix(in oklab, var(--color-info) 50%, transparent);
 }
-/* 头像 HUD 细环：与气泡玻璃质感呼应。
-   ⚠️ 必须精确命中「圆」本身，两种头像结构都要覆盖（2026-09-14 无头实测）：
-   - 系统提示头像：`.chat-image.avatar > 圆`（avatar 就是宿主）
-   - AvatarBubble 头像：`.chat-image > .dropdown > .avatar > 圆`（中间多一层 dropdown 包装）
-   只写 `.chat .chat-image > div` 会在气泡结构下命中 `.dropdown` 包装层（40×40 方框），
-   细环变成方角描边而不是描在圆上。 */
+/* 头像 HUD 细环：与气泡玻璃质感呼应。两条硬约束（2026-09-14 无头实测）：
+   ① 描边必须精确命中「圆」本身，两种头像结构都要覆盖：
+      - 系统提示头像：`.chat-image.avatar > 圆`（avatar 就是宿主）
+      - AvatarBubble 头像：`.chat-image > .dropdown > .avatar > 圆`
+      只写 `.chat .chat-image > div` 会在气泡结构下命中 `.dropdown` 包装层（40×40 方框），
+      细环变成方角描边而不是描在圆上。
+   ② **外圈光晕必须画在 `.avatar` 宿主上，绝不占用「圆」的 `box-shadow`**：
+      生命周期状态环（`utils/status.rs::avatar_status_ring`）走 Tailwind `ring-*`，
+      实现同样是 `box-shadow`；而本规则选择器权重 (0,3,1) 高于 `.ring-2` (0,1,0)，
+      一旦写在圆上就会把状态环整条 `box-shadow`（含 ring-offset 实色圈 + 彩色环）
+      覆盖掉 —— 症状是「状态环在聊天页完全不显示，却能在侧栏/卡片里显示」。
+      拆到宿主上后两者分属不同元素，互不争用（有状态环时 offset 实色圈自然压住光晕）。 */
 .chat .chat-image.avatar > div,
 .chat .chat-image .avatar > div {
   border: 1px solid color-mix(in oklab, var(--color-base-content) 15%, transparent);
+}
+.chat .chat-image.avatar,
+.chat .chat-image .avatar {
+  border-radius: 999px;
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-base-content) 6%, transparent);
 }
 
@@ -1678,6 +1683,44 @@
     animation: hud-signal-flow 3.2s linear infinite;
   }
   @keyframes hud-signal-flow { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  /* ===== 浮层原语 .orz-popover =====
+     SSOT：所有「页面内浮层」的视觉与层叠档 —— 头像信息气泡（AvatarBubble）、
+     @ 提及菜单（.mention-menu）等统一挂它，取代各自硬编码的
+     `rounded-box border-base-300 bg-base-100 shadow-xl`（原生 card 无切角，
+     违反 ui_design_system §8「面板用 DaisyUI 原生 card 无切角」红线）。
+
+     与 .hud-panel 同源（6px 圆角 + 11px 切角 + 1px 渐变发丝边），差异：
+     - 不叠内网格底纹（浮层尺寸小，22px 网格会显脏）
+     - 追加浮起阴影，与页面内容拉开层次
+     - 自带层叠档 z-index: 30 —— **全站浮层唯一档位**（页面内联 z-10 < 浮层 30 < 抽屉 40/50）。
+       navbar 的 5 处下拉同样用它，不必另设高档：`.navbar` 是 `sticky z-50`，
+       **自身即层叠上下文**，内部下拉的 z 档对外表现完全一致
+       （实测 200 与 30 完全相同：与 z-40 抽屉重叠时下拉在上、与 z-50 抽屉重叠时抽屉在上）。
+
+     ⚠️ 本类**不设 position**，定位由使用方给（`.absolute` 工具类 / inline `position:fixed`）。
+     手写裸规则在 `@layer` 之外，优先级高于 Tailwind utilities 层 —— 这里一旦写 `position`，
+     会把使用方的 `.absolute` / `.fixed` 整条盖掉（实测 slash 菜单被压成 `relative`、
+     脱离文档流失败）。
+
+     用法：`.orz-popover` + 定位（absolute / fixed + inset）+ 业务尺寸类（w-/p-）。 */
+  .orz-popover,
+  .mention-menu {
+    background:
+      linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+      linear-gradient(140deg,
+        color-mix(in oklab, var(--color-primary) 42%, var(--color-base-300)),
+        var(--color-base-300) 35%,
+        var(--color-base-300) 65%,
+        color-mix(in oklab, var(--color-accent) 32%, var(--color-base-300))) border-box;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    clip-path: polygon(0 11px, 11px 0, calc(100% - 11px) 0, 100% 11px,
+                       100% calc(100% - 11px), calc(100% - 11px) 100%, 11px 100%, 0 calc(100% - 11px));
+    box-shadow: 0 12px 28px -10px color-mix(in oklab, var(--color-base-content) 38%, transparent);
+    /* 浮层标准层叠档：见上文说明 */
+    z-index: 30;
+  }
 
   /* 等宽大写 eyebrow 标签（数据/分区标题） */
   .hud-eyebrow {

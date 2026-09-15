@@ -5,7 +5,7 @@ use crate::api::finance::upload_attachment;
 use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, list_projects};
-use crate::components::avatar_bubble::{AvatarBubble, AvatarTone};
+use crate::components::avatar_bubble::{AvatarBubble, AvatarTone, BubbleAlign};
 use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::mention_picker::{
@@ -890,6 +890,8 @@ pub fn MessageChat() -> Element {
             div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
                 // 修复 M3：scroll 事件不冒泡，onscroll 必须挂在真正滚动的容器本体上
                 onscroll: move |_e| {
+                    // 浮层用 fixed + 点击瞬间的视口锚点（见 AvatarBubble）：滚动后锚点失效，先收起
+                    collapse_avatar_bubble();
                     if let Some(html_el) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
@@ -946,9 +948,9 @@ pub fn MessageChat() -> Element {
         let sender_name = directory().sender_name(&msg_clone);
         // 头像气泡形态：用户头像弹用户卡（右对齐），Agent 头像弹 Agent 卡（左对齐，点击时懒加载）
         let (bubble_agent_id, bubble_user_id, bubble_align) = if is_user {
-            (None, Some(msg_clone.from_id.clone()), "dropdown-end")
+            (None, Some(msg_clone.from_id.clone()), BubbleAlign::End)
         } else {
-            (Some(msg_clone.from_id.clone()), None, "dropdown-start")
+            (Some(msg_clone.from_id.clone()), None, BubbleAlign::Start)
         };
         // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询 target_agent_info）
         let target_status = target_agent_info()
@@ -1001,7 +1003,7 @@ pub fn MessageChat() -> Element {
                                                 }
                                                 if is_system {
                                                     div { class: "chat-image avatar",
-                                                        div { class: "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
+                                                        div { class: "w-10 h-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
                                                             "{avatar_initials(&sender_name)}"
                                                         }
                                                     }
@@ -1052,7 +1054,7 @@ pub fn MessageChat() -> Element {
                                                 tone: AvatarTone::Agent,
                                                 agent_id: ti.as_ref().map(|a| a.id.clone()),
                                                 status: ti.as_ref().map(|a| a.status),
-                                                align: "dropdown-start",
+                                                align: BubbleAlign::Start,
                                             }
                                         }
                                     }
@@ -1153,6 +1155,8 @@ pub fn MessageChat() -> Element {
             div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
                 // 修复 M3：scroll 事件不冒泡，onscroll 必须挂在真正滚动的容器本体上
                 onscroll: move |_e| {
+                    // 浮层用 fixed + 点击瞬间的视口锚点（见 AvatarBubble）：滚动后锚点失效，先收起
+                    collapse_avatar_bubble();
                     if let Some(html_el) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
@@ -1208,9 +1212,9 @@ pub fn MessageChat() -> Element {
         let sender_name = directory().sender_name(&msg_clone);
         // 头像气泡形态：用户头像弹用户卡（右对齐），Agent 头像弹 Agent 卡（左对齐，点击时懒加载）
         let (bubble_agent_id, bubble_user_id, bubble_align) = if is_user {
-            (None, Some(msg_clone.from_id.clone()), "dropdown-end")
+            (None, Some(msg_clone.from_id.clone()), BubbleAlign::End)
         } else {
-            (Some(msg_clone.from_id.clone()), None, "dropdown-start")
+            (Some(msg_clone.from_id.clone()), None, BubbleAlign::Start)
         };
         // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询 target_agent_info）
         let target_status = target_agent_info()
@@ -1263,7 +1267,7 @@ pub fn MessageChat() -> Element {
                                                 }
                                                 if is_system {
                                                     div { class: "chat-image avatar",
-                                                        div { class: "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
+                                                        div { class: "w-10 h-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
                                                             "{avatar_initials(&sender_name)}"
                                                         }
                                                     }
@@ -1314,7 +1318,7 @@ pub fn MessageChat() -> Element {
                                                 tone: AvatarTone::Agent,
                                                 agent_id: ti.as_ref().map(|a| a.id.clone()),
                                                 status: ti.as_ref().map(|a| a.status),
-                                                align: "dropdown-start",
+                                                align: BubbleAlign::Start,
                                             }
                                         }
                                     }
@@ -1630,6 +1634,22 @@ pub fn MessageChat() -> Element {
     }
 }
 
+/// 收起所有头像气泡浮层。
+///
+/// AvatarBubble 的浮层用 `position: fixed` + 展开瞬间的视口坐标锚定（点击或键盘聚焦，
+/// 以此脱离消息区 `overflow-y-auto` 的裁剪），一旦滚动锚点即失效；这里让带标记的触发元素失焦，
+/// DaisyUI 的 `:focus-within` 随之关闭浮层。
+fn collapse_avatar_bubble() {
+    if let Some(active) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.active_element())
+        && active.class_name().contains("avatar-bubble-trigger")
+        && let Ok(el) = active.dyn_into::<web_sys::HtmlElement>()
+    {
+        let _ = el.blur();
+    }
+}
+
 /// 输入框 DOM id：@ 提及需要读写光标位置，需要一个稳定标识
 ///
 /// 两个会话分支共用同一个 id，任一时刻 DOM 里只有一个，不会取错。
@@ -1703,7 +1723,7 @@ fn chat_input_area(
                         let show_slash_menu = show_slash_menu;
                         let selected_slash_index = selected_slash_index;
                         rsx! {
-                            div { class: "absolute bottom-full left-3 right-3 mb-1 bg-base-100 rounded-lg shadow-lg border border-base-300 overflow-hidden z-10",
+                            div { class: "absolute bottom-full left-3 right-3 mb-1 orz-popover overflow-hidden",
                                 for (i, (cmd, desc)) in filtered.iter().enumerate() {
                                     {
                                         let cmd = cmd.to_string();

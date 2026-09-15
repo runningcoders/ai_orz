@@ -1,5 +1,6 @@
 //! 基础 UI 组件库
 
+pub mod agent_summary;
 pub mod aop_gauge;
 pub mod artifact_meta_modal;
 pub mod avatar_bubble;

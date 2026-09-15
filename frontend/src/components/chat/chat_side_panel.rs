@@ -16,6 +16,7 @@ use dioxus_router::Link;
 use crate::api::hr::get_agent;
 use crate::api::organization::get_current_user_info;
 use crate::api::project::{get_project, get_task, list_project_tasks};
+use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
 use crate::components::chat::ToolCallsTab;
 use crate::components::hud::HudProgress;
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
@@ -23,10 +24,9 @@ use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
-    agent_lifecycle_badge, agent_lifecycle_text, agent_runtime_badge, agent_runtime_text,
-    avatar_status_ring, format_file_size, format_timestamp_opt as format_timestamp, priority_badge,
-    progress_tone, project_status_badge, project_status_text, tag_chip, task_status_badge,
-    task_status_text,
+    avatar_initials, avatar_status_ring, format_file_size,
+    format_timestamp_opt as format_timestamp, priority_badge, progress_tone, project_status_badge,
+    project_status_text, tag_chip, task_status_badge, task_status_text,
 };
 use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
@@ -750,29 +750,14 @@ fn AgentInfoTab(
     let desc = a.description.clone().filter(|s| !s.is_empty());
     let capabilities = a.capabilities.clone().unwrap_or_default();
     let aid = a.id.clone();
-    let kind = a.kind.clone();
     let (agent_stats, model_call_stats, context_length, context_length_threshold) =
         stats_pair().unwrap_or((None, None, None, None));
     rsx! {
         div { class: "space-y-4",
-            div { class: "flex items-center gap-2",
-                div { class: "w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold {avatar_status_ring(a.status)}",
-                    "{a.name.chars().next().unwrap_or('A')}"
-                }
-                div { class: "flex-1 min-w-0",
-                    div { class: "font-semibold truncate", "{a.name}" }
-                    div { class: "text-xs text-base-content/60", "类型：{kind}" }
-                }
-            }
-            div { class: "flex flex-wrap gap-1",
-                span { class: "{agent_lifecycle_badge(a.status)}", "{agent_lifecycle_text(a.status)}" }
-                span { class: "{agent_runtime_badge(a.runtime_state)}",
-                    "{agent_runtime_text(a.runtime_state)}"
-                }
-                for role in a.roles.iter() {
-                    span { key: "{role}", class: "{tag_chip()}", "{role}" }
-                }
-            }
+            // 身份行 / 徽章行与头像信息气泡（AvatarBubble）共用同一实现，
+            // 避免两处展示逐字复制后静默漂移（见 components/agent_summary.rs）
+            { agent_identity_row(&a, avatar_status_ring(a.status)) }
+            { agent_badge_row(&a) }
             // 运行统计：首次加载完成后渲染（无数据时面板内给出提示）
             if stats_loaded() {
                 AgentStatsPanelCompact {
@@ -834,7 +819,7 @@ fn UserInfoTab() -> Element {
         div { class: "space-y-4",
             div { class: "flex items-center gap-2",
                 div { class: "w-10 h-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold",
-                    "{display.chars().next().unwrap_or('U')}"
+                    "{avatar_initials(&display)}"
                 }
                 div { class: "flex-1 min-w-0",
                     div { class: "font-semibold truncate", "{display}" }
