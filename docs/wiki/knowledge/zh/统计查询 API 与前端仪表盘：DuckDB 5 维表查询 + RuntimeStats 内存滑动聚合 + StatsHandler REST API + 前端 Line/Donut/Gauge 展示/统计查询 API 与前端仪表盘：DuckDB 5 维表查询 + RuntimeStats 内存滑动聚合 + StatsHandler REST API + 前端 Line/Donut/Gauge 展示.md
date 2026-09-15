@@ -46,6 +46,7 @@ source_files:
   - frontend/src/utils/status.rs (2026-09-14 新增：状态环/徽章 SSOT)
   - frontend/src/components/charts/line_chart.rs (2026-09-15 增量：轴刻度自适应——Y 轴 format_compact_axis，X 轴 x_axis_time_format + 画布宽度反推标签个数)
   - frontend/src/pages/workspace.rs (2026-09-14 增量：顶栏统计图换数字读数 + 组织级统计)
+  - common/src/models/stats.rs (2026-09-15 增量：StatsInterval Minutely + STATS_MAX_BUCKETS=512 + clamp_interval_to_span + bucket_ms + bucket_count + INTERVAL_LADDER)
 ---
 
 ## §1 概述与定位
@@ -60,7 +61,9 @@ source_files:
 
 **2026-09-14 增量**：Workspace 顶栏统计图升级为**数字读数模式**——从图表可视化切换为数字统计卡（工具总数 / 今日调用次数 / 成功率 / 平均耗时），配套 `frontend/src/utils/number.rs` 大数格式化工具（千分位 + compact 缩写）。后端新增组织级工具运行时统计接口 `GET /api/v1/finance/tools/runtime-stats`（DuckDB tool_call_events 表按 organization_id 过滤聚合），补全了"组织整体工具"维度的查询能力。`frontend/src/utils/status.rs` 统一 Agent 状态环、项目状态徽章等视觉组件的 SSOT。
 
-**2026-09-15 增量**：前端统计图**轴刻度自适应**——`line_chart.rs` 的 Y 轴走 `format_compact_axis`（K/M/B 三级进位，字符数恒 ≤5），X 轴标签格式由桶宽决定、标签个数由画布可用宽度反推。数字格式化进一步收敛到 `frontend/src/utils/number.rs` 单一入口，禁止各处组件硬编码千分位/缩写逻辑。
+**2026-09-15 增量（commit 1f485e47）**：前端统计图**轴刻度自适应**——`line_chart.rs` 的 Y 轴走 `format_compact_axis`（K/M/B 三级进位，字符数恒 ≤5），X 轴标签格式由桶宽决定、标签个数由画布可用宽度反推。数字格式化进一步收敛到 `frontend/src/utils/number.rs` 单一入口，禁止各处组件硬编码千分位/缩写逻辑。
+
+**2026-09-15 增量（commit 53a95907）**：统计粒度新增 **Minutely 分钟档**（StatsInterval 三档齐全），配套 `STATS_MAX_BUCKETS=512` 桶数护栏 + `clamp_interval_to_span()` 服务端自动收敛（超限逐级回退 Minutely → Hourly → Daily）。Tool 侧 `stats_interval` DTO 删除——Tool 详情页只提供窗口内聚合值，不含时序曲线（时序查询走 DuckDB Stats DAO）。
 
 ## §2 关键文件表
 
@@ -78,6 +81,7 @@ source_files:
 | [src/service/domain/finance/model_provider.rs](src/service/domain/finance/model_provider.rs) | Domain 新方法 | `model_call_time_series(ctx, minutes)` + `get_model_call_stats_for_user(ctx, user_id, options)` | 见文件 |
 | [src/pkg/stats/collector.rs](src/pkg/stats/collector.rs) | 时间序列聚合 | StatsInterval::Minutely 新增 + StatParam send+sync 修复 + query_time_series 支持分钟截断 | 见文件 |
 | [common/src/models/stats.rs](common/src/models/stats.rs) | 新 models | StatsInterval.Minutely + TimeSeriesPoint + TokenSumResult | 见文件 |
+| [common/src/models/stats.rs](common/src/models/stats.rs) (v1.5 增量) | 服务端护栏 | STATS_MAX_BUCKETS=512 桶数硬上限 + clamp_interval_to_span() 超限逐级回退（Minutely→Hourly→Daily）+ bucket_ms()/bucket_count()/INTERVAL_LADDER | 见文件 |
 | [src/pkg/stats/default.rs](src/pkg/stats/default.rs) (v1.2 增量) | 周期落盘收口 | Stats::open() 时启动后台 flush task；批次刷盘定时器与 DuckDB 连接生命周期绑定；收口原来的独立调度器 | 见文件 |
 | [src/service/dao/model_provider/stats_duckdb.rs](src/service/dao/model_provider/stats_duckdb.rs) (v1.2 增量) | 可空 JSON 兼容 | `call_summary` / `token_summary` 字段 nullable；查询时用 `COALESCE(call_summary, '{}')` 兼容旧数据 | 见文件 |
 | [frontend/src/components/time_range_picker.rs](frontend/src/components/time_range_picker.rs) (v1.2 新增) | 通用时间筛选组件 | props: start/end + 预设快捷按钮（1h/6h/24h/7d/30d） | 见文件 |
@@ -142,3 +146,5 @@ Stats Handlers (3 端点)
 14. **统计空结果前端必须降级为空态**（v1.2 新增）：所有统计查询接口返回空结果时，前端必须显示「暂无数据」空态卡片/空态 SVG（如折线图只显示坐标轴 + 空坐标系），**禁止** error toast 或 crash。新用户首次访问 profile 页、新 Agent 还没产生任何调用等场景必然出现空数据。
 15. **组织级工具统计必须按 org_id 过滤 DuckDB 查询**（v1.3 新增）：runtime_stats Handler 的 DuckDB 查询必须带 `WHERE organization_id = ?` 条件，禁止跨组织聚合工具调用数据（多组织隔离红线）
 16. **数字格式化统一走 frontend/src/utils/number.rs**（v1.3 新增）：所有前端统计卡、图表 tooltip 的数字展示（含大数值缩写、千分位、小数精度）统一调用 number.rs 的函数，禁止组件内硬编码格式化逻辑
+17. **STATS_MAX_BUCKETS=512 是服务端强制护栏**（v1.5 新增）：禁止前端假设请求的粒度会原样执行；所有时序查询返回的桶数上限为 512
+18. **Tool 侧 stats_interval 已删除**（v1.5 新增）：ToolStats 只提供窗口内聚合值（调用次数/失败次数/平均耗时），时序曲线查询需单独走 DuckDB Stats DAO + TimeSeriesPoint API

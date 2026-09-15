@@ -25,9 +25,9 @@ source_files:
 - src/producer/cron_trigger.rs#L38-L80 (CronTriggerProducer AOP Producer：poll_interval_secs=60
   每分钟轮询；poll() 内 system().cron_manager().list_due(ctx, now, 100) → 每条 due → aop::publish(SchedulerTriggerFiredEvent{cron_trigger_id,
   kind, payload}) → UPDATE SET last_fired_at=now, next_fire_at=calc_next())
-- src/consumer/scheduler.rs#L1-L90 (SchedulerConsumer Sync 消费 SchedulerTriggerFiredEvent：match
-  kind：agent_rest → HR::agent_rest_all(ctx) 遍历所有在线 Agent 做 settle 沉淀；stats_collect
-  → DuckDB record_event 汇总 + RuntimeStatsCollector flush；backup 每日 → Finance::Backup.create)
+- src/consumer/scheduler.rs#L1-L120 (SchedulerConsumer Sync 消费 SchedulerTriggerFiredEvent：身份分层中继——查询项目归属 root_user_id，非空则 from_id=root_user_id/from_role=User，否则万不得已 from_role=System；match kind：agent_rest → HR::agent_rest_all(ctx) 遍历所有在线 Agent 做 settle 沉淀；stats_collect → DuckDB record_event 汇总 + RuntimeStatsCollector flush；backup 每日 → Finance::Backup.create；发送前调用 enrich_org_from_project_user 补齐组织上下文)
+- src/consumer/mod.rs (enrich_org_from_project_user helper：当系统触发链路 ctx 无 organization_id 绑定时，根据 root_user_id 查 UserPo.organization_id 回退补齐；CronTriggerConsumer + TaskEventConsumer 在中继消息前必须调用)
+- src/consumer/task_event_consumer.rs#L1-L100 (TaskEventConsumer：巡检/调度完成后向用户投递结论通知；同样按项目归属身份分层中继，非空 root_user_id 走 User 身份保证 Agent Final 能回到用户消息链)
 - src/lib.rs#L20-L70 (启动总顺序强制执行：pkg::init_all → service::init → producer::init → consumer::init
   → service::init_base_data().await【2 条系统 cron 注入于此】→ aop stats hook → aop::init_all()【AOP
   调度器启动，cron producer 开始 poll】→ HTTP 启动；红线：**init_base_data 绝对不能放 consumer::init /
@@ -62,6 +62,8 @@ source_files:
 - **两条系统默认 cron + init_base_data 幂等注入**（system/mod.rs ensure_system_cron_triggers）：① **agent_rest（每天 04:00）** cron="0 4 * * *"：低峰期遍历所有 status != Draft 的 Agent，逐个调用 HR::agent_rest → Working Memory 摘要写 ShortTerm + ShortTerm 7 天前 merge 入 LongTerm 知识图谱 → AgentRuntimeInfo 状态临时切 Resting（期间收到消息 AgentLoopConsumer 不唤醒，append pending_messages）。② **stats_collect（每 5 分钟）** cron="*/5 * * * *"：RuntimeStatsCollector（内存滑动窗口，例如 Agent 响应延迟 / AOP 队列积压数）flush 到 DuckDB 持久化表（record_event! 批量写）。注入幂等：先 `SELECT COUNT(*) FROM cron_triggers WHERE kind IN ("agent_rest","stats_collect")` → 结果为 2 就不 INSERT（重启不重复创建）。系统默认 kind 在 UI 上标记 readonly 不能被用户 DELETE。
 - **启动总顺序 6 步严格分离（AGENTS.md §4.10 强制执行）**（lib.rs run()）：**① pkg::init_all()**（最底层日志/JWT/工具 OnceLock，一次性）→ **② service::init()**（DAO→DAL→Domain 单例注册，纯内存不碰 DB）→ **③ producer::init() / consumer::init()**（AOP 订阅者注册，还没真正开始 poll/consume）→ **④ service::init_base_data().await**（DB IO 异步，ensure_system_cron_triggers 在此执行 2 条默认 INSERT）→ **⑤ aop::init_all()**（AOP 调度器启动，CronTriggerProducer 首次注册后等 poll_interval_secs=60s 才开始 poll，确保 init_base_data 已经完成写 DB）→ **⑥ HTTP serve**。**红线（核心）**：把 init_base_data 放到 aop::init_all 之后 = 灾难：首次 aop poll 时 cron_triggers 表还空 → agent_rest/stats_collect 永不触发 → 用户反馈「记忆不沉淀 + 统计图表没数据」，排查成本极高。
 
+**2026-09-15 增量**：CronTriggerConsumer + TaskEventConsumer **触发器身份分层中继**——原来统一 from_role=System，现在改为「按被触达事项的归属选身份」：项目归属用户非空时以 User 身份中继（Agent Final 自然回到用户消息链，巡检/调度结论用户可感知），无归属用户（A2A 项目）万不得已落 System。新增 `consumer::enrich_org_from_project_user(ctx, root_user_id)` 补齐组织上下文（系统触发链路 ctx 无组织绑定时从 UserPo.organization_id 回退补齐），防止 Agent 后续工具调用报「缺少组织上下文」。
+
 ---
 
 ## §2 关键文件与职责表
@@ -72,7 +74,9 @@ source_files:
 | dao/cron_trigger/sqlite.rs SQLite Impl | SQLite 实现 | 用 `cron::Schedule` 解析 5 字段表达式；`schedule.upcoming(Utc).next()` 拿下次 DateTime；CAS UPDATE：UPDATE ... WHERE last_fired_at = ?1 RETURNING id；返回受影响行数=1 则成功 | `:L1-L120` |
 | domain/system/mod.rs ensure_system_cron_triggers | 系统默认幂等注入 | init_base_data() 内 try/warn 包裹：COUNT kind IN (agent_rest, stats_collect) → 缺哪个 INSERT 哪个；失败只 sys_warn 不 panic（失败不影响主流程启动）；不重复创建 | `:L43-L90` |
 | producer/cron_trigger.rs CronTriggerProducer | AOP 轮询生产者 | impl Producer；poll_interval_secs=60；poll()：list_due → CAS UPDATE 每条 → publish SchedulerTriggerFiredEvent{cron_trigger_id, kind, payload_json}；失败记录 log，不 throw | `:L38-L80` |
-| consumer/scheduler.rs SchedulerConsumer | AOP 同步消费者 | impl Consumer Sync 模式；consume(ctx, SchedulerTriggerFiredEvent)：match kind；自定义 kind 走动态注册表（用户 cron handler）；Ack/Nack 自动写入 system_delivery_attempts 表 | `:L1-L90` |
+| consumer/scheduler.rs SchedulerConsumer | AOP 同步消费者 | impl Consumer Sync 模式；consume(ctx, SchedulerTriggerFiredEvent)：① 身份分层中继（查项目 root_user_id，非空 from_role=User，否则 System）；② 发送前调用 enrich_org_from_project_user 补齐组织；③ match kind 分派；④ 自定义 kind 走动态注册表；Ack/Nack 自动写入 system_delivery_attempts 表 | `:L1-L120` |
+| consumer/mod.rs enrich_org_from_project_user | 组织上下文补齐 helper | 系统触发链路 ctx 无 organization_id 绑定时，根据 root_user_id 查 UserPo.organization_id 回退写入 ctx；CronTriggerConsumer / TaskEventConsumer 在中继消息前必须调用，否则 Agent 后续工具调用（如 list_messages 按组织过滤）缺 org 报错 | 见 mod.rs |
+| consumer/task_event_consumer.rs TaskEventConsumer | 巡检结论投递消费者 | 项目巡检/任务调度完成后向用户投递通知；同样身份分层中继（root_user_id 非空走 User 身份），保证 Agent Final 能自然回到用户消息链 | `:L1-L100` |
 | handlers/system/cron_trigger/* | 用户 cron CRUD Handler | list_cron_triggers：分页 + 过滤 status/kind；create_cron_trigger：校验 cron 表达式 + 拒绝 < 1 分钟间隔 + payload JSON schema；系统默认 kind 返回 403 「readonly」 | 见 list/create Handler |
 | lib.rs run() 启动总顺序 | 6 步序列 | pkg::init → service::init → producer/consumer::init → service::init_base_data().await → aop::init_all → axum serve；每一步用 comment 标注顺序与 why（防止未来有人手贱调整） | `:L20-L70` |
 
@@ -136,7 +140,7 @@ source_files:
 
 ---
 
-## §4 硬约束与回归红线（8 条）
+## §4 硬约束与回归红线（10 条）
 
 1. **启动顺序必须严格保持：init_base_data → aop::init_all（cron producer 真正启动）**：lib.rs 代码写注释「DO NOT REORDER: init_base_data() 前 aop 启动会导致系统默认 cron 首次 poll 不到」；调整顺序 = fail；集成测试 system_cron_triggers_test 在 init_full_test_env 之后 COUNT 默认 cron=2 断言这条规则。
 2. **CronTriggerProducer CAS UPDATE 必须用 RETURNING id 判断成功，不能相信 UPDATE 返回的 Ok()**：UPDATE 0 行返回 Ok(0 rows) 但 Ok(()) 还是成功；必须 match sqlx::query_scalar::<Option<i64>>...fetch_one() → Some(_) 才 publish，None/Err 不 publish；否则两实例同时跑时每条 due 会触发两次（Agent 重复 settle 两次记忆）。
@@ -146,3 +150,5 @@ source_files:
 6. **系统默认 cron_triggers（agent_rest/stats_collect）在 Handler 中必须标记 readonly，禁止 DELETE**：DELETE /api/v1/system/cron/triggers/trigger_agent_rest → 403「系统默认触发器不可删除」；用户可临时 disabled=true（前端开关），不允许删除；disabled 时下次 poll 时 WHERE enabled=1 自动跳过。
 7. **SchedulerConsumer 必须是 sync 消费模式（不并发），禁止并发消费同 kind**：多个 SchedulerTriggerFiredEvent 同时到达时，顺序串行消费；否则 agent_rest 并发导致两个任务同时 settle 同一个 Agent → LongTerm 去重失败重复节点；用 AOP 的 ConsumeMode::Sync（不是 Concurrent(4)），消费顺序即 register 顺序。
 8. **立即触发接口不能修改 next_fire_at 和 last_fired_at**：管理员手动立即触发后不 UPDATE last_fired_at/next_fire_at，保持原定时节奏；例：04:00 正常 agent_rest，14:23 手动立即触发一次 → 明天 04:00 仍然正常触发，不会推迟到 14:23+24h；触发记录单独写到 system_manual_fire_logs 表审计，不影响 cron 主表。
+9. **Cron 触发器必须按归属中继身份：有 root_user_id 时 from_role=User，禁止统一 from_role=System 导致通知无人可投递**：原 CronTriggerConsumer + TaskEventConsumer 统一 from_id="system"/from_role=System → Agent Final 回复无处投递（System 角色消息无对等回复对象，Final 被丢弃）+ 用户侧收不到巡检/调度结论通知；必须查询项目归属用户，非空则以 User 身份中继，无归属用户（A2A 项目 root_user_id 为空）才万不得已落 System。
+10. **enrich_org_from_project_user 必须在发送消息前调用（consumer 新增 helper），系统触发 ctx 无组织绑定的补全是 Agent 工具调用的前置条件**：cron 事件来自纯 AOP 触发链路，ctx 天然无 organization_id 绑定；不补齐 → Agent 后续 list_messages 按组织过滤等工具调用会报「缺少组织上下文」错误；CronTriggerConsumer / TaskEventConsumer 在中继消息给 Agent 前必须调用 consumer::enrich_org_from_project_user(ctx, root_user_id) 从 UserPo.organization_id 回退补齐。

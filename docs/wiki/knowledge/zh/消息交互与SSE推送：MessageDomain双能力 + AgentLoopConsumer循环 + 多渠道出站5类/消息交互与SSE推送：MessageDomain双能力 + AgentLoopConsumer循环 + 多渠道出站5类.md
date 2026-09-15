@@ -62,6 +62,11 @@ source_files:
 - frontend/src/components/mention_picker.rs（2026-09-13 修复：@ mention picker 触发逻辑对齐后端协议）
 - frontend/src/components/chat/message_bubble.rs（2026-09-13 增量：气泡接收方 chip + 旁听消息弱化样式）
 - frontend/src/pages/message/chat.rs（2026-09-13 增量：默认会话哨兵 project_id — 区分「不过滤」与「只要默认会话」）
+- src/consumer/message.rs（2026-09-15 重构：routes_to_system_fallback + resolve_profile_user_id + handle_agent_message 三路分发重构）
+- src/consumer/scheduler.rs（2026-09-15 增量：CronTrigger 身份分层中继）
+- src/consumer/task_event_consumer.rs（2026-09-15 增量：TaskEvent 身份分层中继 + enrich_org_from_project_user）
+- src/consumer/mod.rs（2026-09-15 新增：enrich_org_from_project_user helper）
+- src/pkg/request_context.rs（2026-09-15 新增：message_sender_id / message_sender_role）
 
 ---
 
@@ -82,6 +87,8 @@ source_files:
 - **mention picker 修复**（`common/src/mention.rs` + `frontend/src/components/mention_picker.rs`）：① 放开 @ 触发的前缀判定——旧代码要求光标前紧接一个 `@` 才触发 picker，现改为允许 `@` 前有空格或行首；② 修正光标 UTF-16 vs 字节单位错配——Dioxus 前端 DOM selection range 用 UTF-16 code unit，Rust 字符串索引用字节，修复后 mention picker 光标定位不再偏移。
 - **消息气泡 UI 增强**（`frontend/src/components/chat/message_bubble.rs`）：气泡头部新增接收方 chip（显示对话对象头像+名称）；旁听消息（非直接发给当前用户/Agent 的消息）应用弱化样式（opacity 0.6 + 灰色边框），视觉上区分"我是参与者"vs"我是旁听者"。
 
+**2026-09-15 增量（commits 5ac0a99b + 440624b2）**：消息消费者重构 **三路分发规则**——原来的 User/Agent/System 三路 match 收敛为两个判定函数：`routes_to_system_fallback` 判定「是否无对等回复对象」（System 来源 + Agent 自触发 from==to 都走兜底）+ `resolve_profile_user_id` 推导用户画像（User 消息用发送者本人，后台唤醒回退到任务/项目的 root_user_id）。**Cron 触发器身份分层中继**——`CronTriggerConsumer` 和 `TaskEventConsumer` 原来统一 from_role=System，现在改为「按被触达事项的归属选身份」：项目归属用户非空时以 User 身份中继 Agent Final 自然回到用户，也不会自唤醒。新增 `consumer::enrich_org_from_project_user` 补齐组织上下文（系统触发 ctx 无组织绑定时从 root_user_id 查 UserPo.organization_id）。RequestContext 新增 `message_sender_id()` / `message_sender_role()` 专供消息发送使用（后台唤醒场景 caller_type=System 但执行者是被唤醒 Agent，必须把 agent_id 写进 from_id）。
+
 ---
 
 ## §2 关键文件与职责表
@@ -98,9 +105,13 @@ source_files:
 | awakening.rs Runtime 两阶段唤醒 | 注入 reply_to 上下文 | IntentAnalyze → Awaken 完成后，把入口消息的 reply_to 注入 Agent prompt，使 Agent 回复自动挂链 | 见 src/service/domain/runtime/awakening.rs |
 | dal/lark/impl.rs + dao/lark/http.rs 飞书双向映射 | external_key ↔ thread_id | 入站：飞书 thread_id → 存 messages.external_key；出站：external_key → 翻译为飞书 thread_id 发送（缺失映射降级为单条消息） | 见 src/service/dao/lark/http.rs |
 | domain/message/mod.rs MessageDomain 扩展 | 回复链能力 | MessageDelivery send_* 新增 reply_to + external_key 参数；落库时带链；SSE 事件 payload 追加 reply_to | 见 src/service/domain/message/mod.rs |
-| consumer/message.rs MessageConsumer | AOP 消费消息 | Sync ConsumeMode；message.created → 拉 channel_subscriptions → 循环 push；ack/nack 自动由 AOP Registry 调用；生产端携带 reply_to | `:L1-L80` |
+| consumer/message.rs MessageConsumer | AOP 消费消息 + Agent 回复三路分发 | Sync ConsumeMode；message.created → 拉 channel_subscriptions → 循环 push；**handle_agent_message 三路分发**（2026-09-15 重构）：`routes_to_system_fallback` 判定是否无对等回复对象（System 来源 + Agent 自触发 from==to 兜底）+ `resolve_profile_user_id` 推导用户画像（User 消息用发送者本人，后台唤醒回退 root_user_id）；ack/nack 自动由 AOP Registry 调用 | `:L1-L80` |
 | consumer/agent_loop.rs AgentLoopConsumer | AOP 消费消息 | MessageConsumer 之后的同级消费者（注册顺序在后）；message.to_id 是 agent_id → BusyGuard 查 state；Idle=AOP publish agent.wake 事件触发两阶段唤醒；Busy/Resting=把事件挂 agent.pending_message Vec，下次唤醒一次性消费 | `:L1-L100` |
 | middleware/sse.rs SSE 广播中间件 | Axum 订阅 | BroadcastChannel: Arc<RwLock HashMap<user_id, Vec<mpsc::Sender<Event>>>>；new_user 注册 handler；heartbeat 15s tokio spawn 独立 loop；last_event_id 补发查询 | 见 sse.rs |
+| consumer/scheduler.rs CronTriggerConsumer | Cron 定时触发器 | 身份分层中继（2026-09-15 增量）：原来统一 from_role=System，现在按被触达事项归属选身份——项目有 root_user_id 时 from_role=User / from_id=root_user_id（Agent Final 自然回到用户），A2A 项目无归属时才落 System | 见 src/consumer/scheduler.rs |
+| consumer/task_event_consumer.rs TaskEventConsumer | 任务事件触发器 | 与 CronTrigger 同样的身份分层中继逻辑 + `consumer::enrich_org_from_project_user` 补齐系统触发 ctx 的组织上下文 | 见 src/consumer/task_event_consumer.rs |
+| consumer/mod.rs | Consumer 公共 helper | `enrich_org_from_project_user(ctx, root_user_id)` 从项目归属用户补齐 ctx 组织上下文（系统触发链路 ctx 无组织绑定时，从 root_user_id 查 UserPo.organization_id 注入） | 见 src/consumer/mod.rs |
+| pkg/request_context.rs RequestContext | 请求上下文扩展 | 新增 `message_sender_id()` / `message_sender_role()`（2026-09-15）专供消息发送——后台唤醒场景 caller_type=System 但执行者是被唤醒 Agent，必须把 agent_id 写进 from_id；原 `caller_id_or_system()` 改仅用于审计字段 | 见 src/pkg/request_context.rs |
 
 **章节来源**
 - [message/delivery.rs:L1-L150](src/service/domain/message/delivery.rs#L1-L150)
@@ -154,3 +165,5 @@ Runtime 唤醒 Agent → Phase1 IntentAnalyze 解析用户意图 → Phase2 Awak
 7. **消息软删 = status=0 且前端过滤**：delete 接口只改 status=0；所有 query/list 接口默认 WHERE status != 0（common pagination 规范 §软删除约定）；前端不展示已删消息，只有管理员专用 query_all（带 include_deleted）才可以看到。
 8. **出站 external_key 存在则飞书/微信/Slack 自动映射线程 ID**：dao/lark/http.rs 等出站 DAO 必须先把 external_key 翻译为渠道线程 ID；缺失映射时降级为单条消息发送（不下沉到 thread 讨论区），同时打 log_warn 记录。
 9. **唤醒注入 reply_to 必须同 project**：awakening.rs 注入 reply_to 上下文前，必须校验 reply_to 指向的消息与当前入口消息属于同一 project；跨 project 引用必须返回 400 拒绝，防止 Agent 在 A 项目回复中挂 B 项目的消息链。
+10. **System 兜底分支判定必须收敛在 routes_to_system_fallback 单一扩展点**：新增"消息来源无对等回复对象"的场景（如 Agent 自触发 from==to、新的触发器类型），只改这个函数，不动 handle_agent_message 里的分发逻辑结构。禁止绕过 routes_to_system_fallback 直接在 handle_agent_message 里加新的 match 分支。
+11. **触发器身份必须按归属中继，禁止统一 from_role=System**：CronTriggerConsumer 和 TaskEventConsumer 构造入口消息时，项目有 root_user_id 必须设 from_role=User / from_id=root_user_id（Agent Final 自然回到用户，也不会触发 Agent 自唤醒循环）；只有 A2A 项目无归属用户时才万不得已落 System（Final 自然丢弃）。违反此条会导致用户侧看到"来自 system 的消息"且渠道通知无人可投递。
