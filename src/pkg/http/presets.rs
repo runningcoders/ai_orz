@@ -16,6 +16,16 @@ pub const LLM_TIMEOUT_MS: u64 = 120_000;
 /// LLM 推理调用超时
 pub const LLM_TIMEOUT: Duration = Duration::from_millis(LLM_TIMEOUT_MS);
 
+/// LLM 流式调用的**空闲超时**：相邻 SSE chunk 的最大间隔（60s）
+///
+/// 流式模式下超时判定不再按请求总时长，而是按 chunk 间隔：只要 token
+/// 持续产出即视为正常，超过该阈值无任何新数据才判定流中断。
+pub const LLM_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+/// LLM 流式调用的**总时长硬上限**：防服务端异常（如无限心跳）导致请求永不结束
+///
+/// 取全局最大超时 [`MAX_TIMEOUT`]，由调用方逐请求覆盖客户端超时生效。
+pub const LLM_STREAM_TOTAL_TIMEOUT: Duration = MAX_TIMEOUT;
+
 /// 联邦出站调用超时（毫秒）：30s
 pub const FEDERATION_TIMEOUT_MS: u64 = 30_000;
 /// 联邦出站调用超时
@@ -109,6 +119,12 @@ mod tests {
         assert!(with_timeout_ms(0).is_err());
         assert!(with_timeout_ms(MAX_TIMEOUT_MS + 1).is_err());
         assert!(with_timeout_ms(1).is_ok());
+    }
+
+    #[test]
+    fn llm_stream_timeouts_are_layered() {
+        assert!(LLM_STREAM_IDLE_TIMEOUT < LLM_STREAM_TOTAL_TIMEOUT);
+        assert_eq!(LLM_STREAM_TOTAL_TIMEOUT, MAX_TIMEOUT);
     }
 
     #[test]

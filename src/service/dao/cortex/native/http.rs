@@ -8,9 +8,13 @@ use crate::models::cortex_types::{
 };
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
+use crate::pkg::http::presets;
 use common::error::{Error, ErrorCode, Result, err};
+use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use std::time::Duration;
 
 /// 解析 base_url：provider 配置优先于默认值
 pub fn resolve_base_url(provider: &ModelProviderPo, default: &str) -> String {
@@ -97,9 +101,11 @@ fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
         .collect()
 }
 
-/// 调用 Chat Completions API
+/// 调用 Chat Completions API（流式）
 ///
-/// 所有 provider 统一走 /chat/completions endpoint
+/// 所有 provider 统一走 /chat/completions endpoint。请求侧启用 SSE 流式，
+/// 超时判定从「请求总时长」改为「chunk 间隔空闲检测 + 总时长硬上限兜底」，
+/// 流式聚合细节见 [`consume_think_stream`]。
 pub async fn call_chat_completions(
     ctx: RequestContext,
     client: &reqwest::Client,
@@ -111,11 +117,12 @@ pub async fn call_chat_completions(
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
-    // 构建请求体
+    // 构建请求体：启用 SSE 流式；include_usage 让 usage 随最后一个 chunk 下发
     let mut body = json!({
         "model": provider.model_name,
         "messages": messages_to_json(messages),
-        "stream": false,
+        "stream": true,
+        "stream_options": { "include_usage": true },
     });
 
     // 如果有工具，添加 tools 字段
@@ -149,10 +156,11 @@ pub async fn call_chat_completions(
     let resp = client
         .post(&url)
         .bearer_auth(&provider.api_key)
+        .timeout(presets::LLM_STREAM_TOTAL_TIMEOUT)
         .json(&body)
         .send()
         .await
-        .map_err(|e| err!(Internal, "chat completions request failed: {}", e))?;
+        .map_err(|e| transport_error("chat completions", e))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -163,56 +171,98 @@ pub async fn call_chat_completions(
         return Err(model_call_error("chat completions", status, &text));
     }
 
-    let resp_body: ChatCompletionResponse = resp
-        .json()
-        .await
-        .map_err(|e| err!(Internal, "chat completions response parse failed: {}", e))?;
+    let acc = consume_think_stream(resp.bytes_stream(), presets::LLM_STREAM_IDLE_TIMEOUT).await?;
+    Ok(finish_think_result(acc))
+}
 
-    // 提取 token usage
+/// 将流式聚合结果组装为上层 [`ThinkResult`]（与原非流式解析约定一致）。
+fn finish_think_result(acc: StreamAccumulator) -> ThinkResult {
     let usage = TokenUsage {
-        input_tokens: resp_body.usage.prompt_tokens.unwrap_or(0),
-        output_tokens: resp_body.usage.completion_tokens.unwrap_or(0),
-        total_tokens: resp_body.usage.total_tokens,
+        input_tokens: acc
+            .usage
+            .as_ref()
+            .and_then(|u| u.prompt_tokens)
+            .unwrap_or(0),
+        output_tokens: acc
+            .usage
+            .as_ref()
+            .and_then(|u| u.completion_tokens)
+            .unwrap_or(0),
+        total_tokens: acc.usage.as_ref().and_then(|u| u.total_tokens),
     };
 
-    // 解析 choices
-    let choice = resp_body
-        .choices
-        .into_iter()
-        .next()
-        .ok_or_else(|| err!(Internal, "chat completions: no choices in response"))?;
-
-    let message = choice.message;
-
-    // 判断是否有 tool_calls
-    if let Some(tool_calls) = message.tool_calls
-        && !tool_calls.is_empty()
-    {
-        let calls: Vec<ToolCallRequest> = tool_calls
-            .into_iter()
-            .map(|tc| {
-                let arguments: Value =
-                    serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);
-                ToolCallRequest {
-                    id: tc.id,
-                    name: tc.function.name,
-                    arguments,
-                }
+    if !acc.tool_calls.is_empty() {
+        let calls: Vec<ToolCallRequest> = acc
+            .tool_calls
+            .into_values()
+            .map(|tc| ToolCallRequest {
+                arguments: serde_json::from_str(&tc.arguments).unwrap_or(Value::Null),
+                id: tc.id,
+                name: tc.name,
             })
             .collect();
-
-        return Ok(ThinkResult::ToolCall {
-            content: message.content,
+        return ThinkResult::ToolCall {
+            content: acc.saw_content.then_some(acc.content),
             tool_calls: calls,
             usage,
-        });
+        };
     }
 
-    // 最终回答
-    Ok(ThinkResult::Final {
-        content: message.content.unwrap_or_default(),
+    ThinkResult::Final {
+        content: acc.content,
         usage,
-    })
+    }
+}
+
+/// 消费 SSE 响应流并聚合为 [`StreamAccumulator`]。
+///
+/// 超时判定（替代原「请求总时长」）：
+/// - **空闲超时**：相邻 chunk 的最大间隔超过 `idle_timeout`（tokio 层逐 next 计时），
+///   判定流中断返回错误。只要 token 持续产出即视为正常，长生成不再被总时长误杀。
+/// - **总时长硬上限**：由请求构建处的逐请求 `.timeout()` 兜底（见调用方），
+///   防服务端异常（如无限心跳）导致空闲判定永不触发。
+async fn consume_think_stream<S, B>(stream: S, idle_timeout: Duration) -> Result<StreamAccumulator>
+where
+    S: Stream<Item = reqwest::Result<B>>,
+    B: AsRef<[u8]>,
+{
+    let mut stream = Box::pin(stream);
+    let mut acc = StreamAccumulator::default();
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        let chunk = match tokio::time::timeout(idle_timeout, stream.next()).await {
+            Ok(None) => break,
+            Err(_) => {
+                return Err(err!(
+                    Internal,
+                    "chat completions stream idle timeout: no data for {idle_timeout:?}"
+                ));
+            }
+            Ok(Some(item)) => item.map_err(|e| transport_error("chat completions stream", e))?,
+        };
+        buf.extend_from_slice(chunk.as_ref());
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line_bytes);
+            if let Some(event) = parse_sse_line(&line)? {
+                match event {
+                    SseEvent::Done => return Ok(acc),
+                    SseEvent::Chunk(c) => acc.absorb(c),
+                }
+            }
+        }
+    }
+    // 容忍服务端未以换行收尾的最后一行
+    if !buf.is_empty() {
+        let line = String::from_utf8_lossy(&buf);
+        if let Some(event) = parse_sse_line(&line)? {
+            match event {
+                SseEvent::Done => {}
+                SseEvent::Chunk(c) => acc.absorb(c),
+            }
+        }
+    }
+    Ok(acc)
 }
 
 /// 调用标准 Embeddings API
@@ -236,7 +286,7 @@ pub async fn call_embeddings(
         .json(&body)
         .send()
         .await
-        .map_err(|e| err!(Internal, "embeddings request failed: {}", e))?;
+        .map_err(|e| transport_error("embeddings", e))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -287,7 +337,7 @@ pub async fn call_embeddings_multimodal(
             .json(&body)
             .send()
             .await
-            .map_err(|e| err!(Internal, "DoubaoVision embedding request failed: {}", e))?;
+            .map_err(|e| transport_error("DoubaoVision embedding", e))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -320,6 +370,37 @@ pub async fn call_embeddings_multimodal(
 }
 
 // ==================== 错误分类 ====================
+
+/// 传输阶段（发送请求 / 读取响应流）的错误分类与根因提取。
+///
+/// reqwest 顶层 Display 只有 "error sending request for url (...)" 这类笼统文案，
+/// 真实原因（超时 / 连接失败等）在 error source 链上；这里显式打标并追根，
+/// 避免日志只见 URL 不见原因。保持 Internal 错误码：传输失败是否可重试
+/// 仍由上层策略裁决，不在分类处改变语义。
+fn transport_error(kind: &str, e: reqwest::Error) -> Error {
+    let tag = if e.is_timeout() {
+        "timeout"
+    } else if e.is_connect() {
+        "connect"
+    } else {
+        "send"
+    };
+    let root = error_root_cause(&e);
+    let root = if root.is_empty() { "<no cause>" } else { &root };
+    err!(
+        Internal,
+        "{kind} request failed ({tag}): {e}; root cause: {root}"
+    )
+}
+
+/// 沿 error source 链走到最底层，取根因文本。
+fn error_root_cause(e: &reqwest::Error) -> String {
+    let mut current: &dyn std::error::Error = e;
+    while let Some(source) = current.source() {
+        current = source;
+    }
+    current.to_string()
+}
 
 /// 将模型 HTTP 调用的非成功状态码映射为具体的模型错误码。
 ///
@@ -358,40 +439,111 @@ fn is_content_filtered(text: &str) -> bool {
         || text.contains("\"type\":\"content_filter\"")
 }
 
-// ==================== 请求/响应结构 ====================
+// ==================== 流式聚合结构 ====================
 
-#[derive(Deserialize)]
-struct ChatCompletionResponse {
-    choices: Vec<Choice>,
-    usage: Usage,
+/// SSE 流的聚合态：content 按 delta 累加、tool_calls 按 index 跨 chunk 合并
+#[derive(Debug, Default)]
+struct StreamAccumulator {
+    content: String,
+    // 区分「无内容」与「空字符串」（ToolCall.content 的 None/"" 语义对齐非流式）
+    saw_content: bool,
+    tool_calls: BTreeMap<usize, AccumToolCall>,
+    usage: Option<Usage>,
 }
 
-#[derive(Deserialize)]
-struct Choice {
-    message: ResponseMessage,
-    #[allow(dead_code)]
-    finish_reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct ResponseMessage {
-    content: Option<String>,
-    tool_calls: Option<Vec<ToolCall>>,
-}
-
-#[derive(Deserialize)]
-struct ToolCall {
+#[derive(Debug, Default)]
+struct AccumToolCall {
     id: String,
-    function: ToolCallFunction,
-}
-
-#[derive(Deserialize)]
-struct ToolCallFunction {
     name: String,
     arguments: String,
 }
 
+impl StreamAccumulator {
+    fn absorb(&mut self, chunk: StreamChunk) {
+        if chunk.usage.is_some() {
+            self.usage = chunk.usage;
+        }
+        for choice in chunk.choices {
+            if let Some(c) = choice.delta.content {
+                self.saw_content = true;
+                self.content.push_str(&c);
+            }
+            for tc in choice.delta.tool_calls.into_iter().flatten() {
+                let entry = self.tool_calls.entry(tc.index).or_default();
+                if let Some(id) = tc.id {
+                    entry.id = id;
+                }
+                if let Some(func) = tc.function {
+                    if let Some(name) = func.name {
+                        entry.name.push_str(&name);
+                    }
+                    if let Some(args) = func.arguments {
+                        entry.arguments.push_str(&args);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 单条 SSE 行的解析结果：`[DONE]` 终止标记或一个流式 chunk
+enum SseEvent {
+    Done,
+    Chunk(StreamChunk),
+}
+
+/// 解析单条 SSE 行；非 `data:` 行（空行 / 注释 / event 字段）忽略
+fn parse_sse_line(line: &str) -> Result<Option<SseEvent>> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with(':') {
+        return Ok(None);
+    }
+    let Some(data) = line.strip_prefix("data:") else {
+        return Ok(None);
+    };
+    let data = data.trim();
+    if data == "[DONE]" {
+        return Ok(Some(SseEvent::Done));
+    }
+    serde_json::from_str::<StreamChunk>(data)
+        .map(|chunk| Some(SseEvent::Chunk(chunk)))
+        .map_err(|e| err!(Internal, "chat completions sse chunk parse failed: {e}"))
+}
+
 #[derive(Deserialize)]
+struct StreamChunk {
+    #[serde(default)]
+    choices: Vec<StreamChoice>,
+    usage: Option<Usage>,
+}
+
+#[derive(Deserialize, Default)]
+struct StreamChoice {
+    #[serde(default)]
+    delta: StreamDelta,
+}
+
+#[derive(Deserialize, Default)]
+struct StreamDelta {
+    content: Option<String>,
+    tool_calls: Option<Vec<DeltaToolCall>>,
+}
+
+#[derive(Deserialize)]
+struct DeltaToolCall {
+    #[serde(default)]
+    index: usize,
+    id: Option<String>,
+    function: Option<DeltaToolFunction>,
+}
+
+#[derive(Deserialize)]
+struct DeltaToolFunction {
+    name: Option<String>,
+    arguments: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct Usage {
     prompt_tokens: Option<u64>,
     completion_tokens: Option<u64>,

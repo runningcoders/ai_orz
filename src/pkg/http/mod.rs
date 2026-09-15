@@ -26,7 +26,10 @@ pub use client::{
     DEFAULT_TIMEOUT, DEFAULT_TIMEOUT_MS, HttpClientOptions, MAX_TIMEOUT, MAX_TIMEOUT_MS,
     RedirectPolicy, USER_AGENT, build_client,
 };
-pub use presets::{LLM_TIMEOUT_MS, llm, outbound, ssrf_guarded, with_timeout, with_timeout_ms};
+pub use presets::{
+    LLM_STREAM_IDLE_TIMEOUT, LLM_STREAM_TOTAL_TIMEOUT, LLM_TIMEOUT_MS, llm, outbound, ssrf_guarded,
+    with_timeout, with_timeout_ms,
+};
 pub use ssrf::{
     DEFAULT_RESPONSE_MAX_BYTES, HARD_RESPONSE_MAX_BYTES, domain_matches, is_local_network_host,
     is_local_network_ip, is_sensitive_header, normalize_domain, read_limited_response_body,
