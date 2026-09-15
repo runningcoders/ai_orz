@@ -6,7 +6,6 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolRequest, GetToolResponse};
 use common::error::Result;
-use common::models::StatsInterval;
 
 use super::response::to_detail;
 
@@ -14,7 +13,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "get_tool",
     name = "Get Tool Details",
-    description = "Get one tool's full details by id: protocol, config, parameters schema, and tags; optionally include call statistics for a time range with hourly or daily interval (with_stats). Fails if the tool does not exist.",
+    description = "Get one tool's full details by id: protocol, config, parameters schema, and tags; optionally include call statistics for a time range (with_stats). Fails if the tool does not exist.",
     params = "common::api::GetToolRequest",
     tags = "tool_management"
 )]
@@ -27,13 +26,6 @@ pub async fn get_tool(ctx: RequestContext, params: GetToolRequest) -> Result<Get
             (Some(start), Some(end)) => Some((start, end)),
             _ => None,
         },
-        stats_interval: params
-            .stats_interval
-            .and_then(|s| match s.to_lowercase().as_str() {
-                "hourly" => Some(StatsInterval::Hourly),
-                "daily" => Some(StatsInterval::Daily),
-                _ => None,
-            }),
     };
 
     let tool = domain()

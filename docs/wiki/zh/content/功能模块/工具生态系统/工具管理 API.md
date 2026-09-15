@@ -122,7 +122,7 @@ H-->>C : "JSON 响应"
 
 - 获取工具详情
   - 路径与方法：GET /api/v1/tools/{id}
-  - 查询参数：with_stats、stats_time_start、stats_time_end、stats_interval（hourly/daily）
+  - 查询参数：with_stats、stats_time_start、stats_time_end
   - 响应：GetToolResponse（包含协议、控制模式、配置、参数 Schema、标签、启用状态、状态、创建/更新时间、可选统计）
   - 章节来源
     - [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L47)
@@ -244,7 +244,7 @@ H --> I["SQLite/DuckDB/LanceDB"]
 ## 性能与扩展性
 - 搜索优化：search 接口使用 FTS5 + 向量语义混合检索，适合关键词与语义相关性场景；query 接口侧重条件过滤。
 - 分页：所有列表/搜索接口支持 limit/offset 分页，避免一次性加载大量数据。
-- 统计：get 接口支持按需加载统计信息（调用次数、失败次数）并可指定时间范围与粒度（hourly/daily）。
+- 统计：get 接口支持按需加载统计信息（调用次数、失败次数、平均耗时），可指定时间范围；工具统计只有窗口内聚合值、不含时序曲线，因此没有粒度参数。
 - 扩展点：Domain 层可扩展模板校验、批量任务、异步导入导出、缓存策略等。
 
 [本节为通用指导，不直接分析具体文件]
@@ -300,7 +300,7 @@ H --> I["SQLite/DuckDB/LanceDB"]
     - [common/src/api/tool.rs:9-43](common/src/api/tool.rs#L9-L43)
 
 - 获取工具详情
-  - GET /api/v1/tools/{id}?with_stats=true&stats_interval=hourly
+  - GET /api/v1/tools/{id}?with_stats=true
   - 参考：GetToolRequest
   - 章节来源
     - [common/src/api/tool.rs:45-63](common/src/api/tool.rs#L45-L63)

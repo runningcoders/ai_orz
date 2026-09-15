@@ -57,9 +57,6 @@ pub struct GetToolRequest {
     /// 统计时间范围结束（毫秒时间戳）
     #[param(source = "query")]
     pub stats_time_end: Option<i64>,
-    /// 时序查询粒度：hourly / daily
-    #[param(source = "query")]
-    pub stats_interval: Option<String>,
 }
 
 /// Get tool response (alias for tool detail)

@@ -22,15 +22,15 @@ use dioxus_router::{Link, use_navigator};
 
 /// 构造带统计信息的 GetToolRequest
 ///
-/// `range` 为统计时间窗口（详情页时间筛选器产出，毫秒闭区间）；聚合粒度随窗口跨度
-/// 自动选择（≤2 天按小时 / 否则按天），避免 1 小时窗口只出 1 个点。
+/// `range` 为统计时间窗口（详情页时间筛选器产出，毫秒闭区间）。
+/// 工具统计只有窗口内聚合值（调用次数 / 失败次数 / 平均耗时），不含时序曲线，
+/// 因此没有 `stats_interval` 粒度参数 —— 工具详情页也没有趋势图。
 fn build_tool_stats_request(id: String, range: TimeRange) -> GetToolRequest {
     GetToolRequest {
         id,
         with_stats: Some(true),
         stats_time_start: Some(range.start_ms),
         stats_time_end: Some(range.end_ms),
-        stats_interval: Some(range.suggested_interval().to_string()),
     }
 }
 

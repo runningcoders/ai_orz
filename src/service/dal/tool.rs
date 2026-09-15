@@ -17,7 +17,7 @@ use crate::service::dao::tool_call::{self, ToolCallDao};
 use common::api::PaginationParams;
 use common::enums::ToolStatus;
 use common::error::{Result, bail_err};
-use common::models::{StatsFetchOptions, StatsInterval, ToolStats};
+use common::models::{StatsFetchOptions, ToolStats};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -65,14 +65,15 @@ pub fn new(
 // ==================== DAL 接口 ====================
 
 /// Tool 附带信息获取选项
+///
+/// 工具统计只提供窗口内聚合值（调用次数 / 失败次数 / 平均耗时），
+/// 不含时序曲线（见 `ToolStats`），因此没有 `stats_interval` 粒度字段。
 #[derive(Debug, Clone, Default)]
 pub struct ToolFetchOptions {
     /// 是否加载统计信息（ToolStats: 调用次数 + 失败次数 + 平均耗时）
     pub with_stats: Option<bool>,
     /// 统计时间范围（毫秒），None 表示全部历史
     pub stats_time_range: Option<(i64, i64)>,
-    /// 时序查询粒度，None 时默认 Daily
-    pub stats_interval: Option<StatsInterval>,
 }
 
 // ==================== DAL 接口 ====================

@@ -150,7 +150,6 @@ pub async fn get_tool(req: GetToolRequest) -> Result<GetToolResponse, ApiError> 
             req.stats_time_start.map(|v| v.to_string()),
         ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
-        ("stats_interval", req.stats_interval.clone()),
     ]);
     api_get(&format!("/api/v1/finance/tools/{}{}", req.id, qs)).await
 }
