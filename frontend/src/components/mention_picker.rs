@@ -51,15 +51,20 @@ use common::api::{
     ProjectListItem, SearchAgentsRequest, SearchProjectsRequest, SearchTasksRequest, TaskListItem,
 };
 
-/// 候选展示上限（既是单类型上限，也是菜单一屏的展示上限）
-const CANDIDATE_LIMIT: usize = 20;
+/// 候选展示上限：单类型上限，同时是 search 路径的召回上限
+///
+/// 取值按**可浏览性**定，不按数据量：`.mention-menu-body` 是 `max-height: 14rem`
+/// （224px），一条 `.mention-menu-item`（`padding: 0.375rem` ×2 + `0.875rem` 字号）
+/// 约占 32px —— 一屏实际只露得出 6–7 行，再多也全靠划。首屏没找到时用户的自然动作
+/// 是**继续打字**（≥ [`MIN_SEARCH_CHARS`] 转 search，语义召回覆盖全量），而不是在
+/// 浮层里翻页，所以给一屏半的余量即可。
+const CANDIDATE_LIMIT: usize = 12;
 
 /// 本地过滤的候选池大小：list 路径**带关键词**时的拉取量
 ///
-/// 只给 1–2 字符的本地包含匹配留一点余量（2× 展示上限），刻意不做大池：
-/// 菜单一屏放不下几条，拉回上百条既浪费带宽也不具可浏览性 —— 首屏没找到时用户的
-/// 自然动作是继续打字，≥ [`MIN_SEARCH_CHARS`] 即转 search 语义召回，覆盖全量。
-const FILTER_POOL: usize = 40;
+/// 2× 展示上限。本地过滤看不到「被截掉的那部分」，池子只能略大于展示量，
+/// 保证过滤后仍剩得下一屏；再大就是纯浪费（见 [`CANDIDATE_LIMIT`] 的可浏览性口径）。
+const FILTER_POOL: usize = CANDIDATE_LIMIT * 2;
 
 /// list 路径的拉取量：无关键词只需首屏展示的条数，有关键词才多取一些给本地过滤留余地
 fn fetch_limit(keyword: Option<&str>) -> usize {
