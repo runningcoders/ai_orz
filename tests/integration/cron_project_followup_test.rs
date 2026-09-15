@@ -10,12 +10,15 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+extern crate common as common_ext;
+
 use crate::common::TestApp;
 use ai_orz::consumer::scheduler::CronTriggerConsumer;
+use ai_orz::pkg::RequestContext;
 use ai_orz::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use ai_orz::pkg::aop::Consumer;
 use ai_orz::service::domain::message;
-use common::enums::{MessageRole, MessageType};
+use common_ext::enums::{MessageRole, MessageType};
 use serde_json::json;
 use sqlx::SqlitePool;
 
@@ -111,10 +114,10 @@ async fn test_cron_project_followup_sends_notification(pool: SqlitePool) {
         "created_at": now_ms,
     });
 
-    // Call CronTriggerConsumer::on_event
+    // Call CronTriggerConsumer::on_event（AOP 框架以 System ctx 调度触发器消费者）
     let consumer = CronTriggerConsumer::new();
     consumer
-        .on_event(event_value)
+        .on_event(RequestContext::new_system(), event_value)
         .await
         .expect("on_event project_followup should succeed");
 
@@ -147,8 +150,10 @@ async fn test_cron_project_followup_sends_notification(pool: SqlitePool) {
         "project_id should be filled on the followup message"
     );
     assert_eq!(followup.po.to_id, agent_id);
-    assert_eq!(followup.po.from_id, "system");
-    assert_eq!(followup.po.from_role, MessageRole::System);
+    // 身份分层模型：巡检以项目归属用户身份中继（from_role=User），Agent 的 Final
+    // 自动回复经 User 分支回到该用户；无归属用户的极端场景才落 System
+    assert_eq!(followup.po.from_id, bs.user_id);
+    assert_eq!(followup.po.from_role, MessageRole::User);
     assert_eq!(
         followup.po.message_type,
         MessageType::ProjectFollowupNotification
