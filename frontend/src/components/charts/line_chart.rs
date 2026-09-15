@@ -7,6 +7,11 @@
 //! - 数据点呼吸光晕（alpha 在 0.37~0.73 间摆动，2.4s 周期）
 //! - 折线流光（line_dash_offset 持续滚动）
 //! - 坐标轴刻度 + 数值标签
+//!
+//! 两处轴刻度都按**数据规模**自适应，不允许写死：
+//! - Y 轴数值走 [`format_compact_axis`]（K/M/B 三级进位），字符数恒在 5 以内；
+//! - X 轴标签格式由桶宽决定（见 [`x_axis_time_format`]），标签个数由画布
+//!   **可用宽度**反推（见 [`draw_x_labels`]）。
 
 use common::models::TimeSeriesPoint;
 use dioxus::prelude::*;
@@ -17,6 +22,7 @@ use wasm_bindgen::closure::Closure;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::hud_palette;
+use crate::utils::number::format_compact_axis;
 
 /// 折线图取值字段
 ///
@@ -420,39 +426,61 @@ fn draw_chart(
         pad_left,
         pad_top + plot_h,
         plot_w,
-        x_axis_format(data),
+        width,
+        x_axis_time_format(data),
     );
 }
 
-/// 选择 X 轴时间标签格式（按数据粒度）
+/// 一天的毫秒数（X 轴粒度判定用）
+const DAY_MS: i64 = 86_400_000;
+
+/// 选择 X 轴时间标签格式（按数据的**时间间隔**而非总跨度）
 ///
-/// 分钟级窗口（如最近 60 分钟的 Token QPS）内所有点都落在同一天，用「月-日」
-/// 会得到一串重复标签，故跨度 < 2 小时时改用「时:分」。
+/// 判据是桶宽（相邻 `interval_start` 的最小正间隔）—— 后端按 `stats_interval`
+/// 出桶（`minutely` / `hourly` / `daily`），只有桶宽才代表这批数据的时间分辨率。
+/// 按总跨度判定会让「最近 1 天」这类**同一天内的小时桶**落进日期分支，画出一排
+/// 完全相同的 `9-15`；反过来桶宽为天时又该只给日期，不然日桶会被写出
+/// UTC 零点对齐导致的假时刻（东八区渲染成 08:00）。
 ///
-/// ⚠️ 粒度只能由**多点**跨度推断：单点时首末跨度恒为 0，沿用跨度判定必然落进
-/// 「分钟内窗口」分支。而日桶 `interval_start` 由后端按
-/// `timestamp - (timestamp % 86400000)` 生成（UTC 零点对齐），东八区渲染出来
-/// 恰好是 08:00 —— 一个并不存在的「时刻」。所以单点一律退化为日期：
-/// 只有一天数据时，用户要读的是「哪一天」，而不是伪造的钟点。
-fn x_axis_format(data: &[TimeSeriesPoint]) -> TimestampFormat {
-    if data.len() < 2 {
+/// ⚠️ 单点没有间隔可测（首末跨度恒为 0），一律退化为日期：此时用户要读的是
+/// 「哪一天」，而不是伪造的钟点。
+fn x_axis_time_format(data: &[TimeSeriesPoint]) -> TimestampFormat {
+    let Some(step_ms) = min_step_ms(data) else {
+        return TimestampFormat::Date;
+    };
+    if step_ms >= DAY_MS {
         return TimestampFormat::Date;
     }
+    // 桶宽细于一天：只在这一天内 → 时分即可；跨天 → 必须带日期才不会混淆
     let span_ms = data[data.len() - 1].interval_start - data[0].interval_start;
-    if span_ms < 2 * 3_600_000 {
-        TimestampFormat::TimeOfDay
+    if span_ms >= DAY_MS {
+        TimestampFormat::DateTime
     } else {
-        TimestampFormat::Date
+        TimestampFormat::TimeOfDay
     }
+}
+
+/// 相邻数据点的最小正间隔（毫秒）
+///
+/// 取「最小正间隔」而非平均/中位数：后端只对**有数据**的桶出点，中间的空桶会被
+/// 跳过，平均间隔会被拉大而误判粒度；正常相邻点的间隔才是真实桶宽。
+/// 不足两点、或时间戳非严格递增时返回 `None`。
+fn min_step_ms(data: &[TimeSeriesPoint]) -> Option<i64> {
+    data.windows(2)
+        .map(|w| w[1].interval_start - w[0].interval_start)
+        .filter(|d| *d > 0)
+        .min()
 }
 
 /// X 轴时间标签格式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TimestampFormat {
-    /// 月-日（跨天窗口）
+    /// 月-日（日桶）
     Date,
-    /// 时:分（小时内窗口）
+    /// 时:分（分钟 / 小时桶，且落在一个自然日内）
     TimeOfDay,
+    /// 月-日 时:分（小时桶且跨天）
+    DateTime,
 }
 
 /// 绘制坐标轴
@@ -500,7 +528,7 @@ fn draw_axes(
         ctx.line_to(pad_left, y);
         ctx.stroke();
         // 数值标签
-        let _ = ctx.fill_text(&format_axis_value(value), pad_left - 6.0, y);
+        let _ = ctx.fill_text(&format_compact_axis(value), pad_left - 6.0, y);
     }
 
     // 值标签描述（左轴顶部）
@@ -531,7 +559,7 @@ fn draw_axes(
             ctx.move_to(x_right, y);
             ctx.line_to(x_right + 4.0, y);
             ctx.stroke();
-            let _ = ctx.fill_text(&format_axis_value(value), x_right + 6.0, y);
+            let _ = ctx.fill_text(&format_compact_axis(value), x_right + 6.0, y);
         }
 
         if let Some(label) = sec_label {
@@ -556,16 +584,11 @@ fn draw_legend(ctx: &CanvasRenderingContext2d, items: &[(&str, String)], center_
     const SWATCH_GAP: f64 = 5.0;
     const ITEM_GAP: f64 = 14.0;
 
-    ctx.set_font("10px sans-serif");
-    let text_w = |t: &str| -> f64 {
-        ctx.measure_text(t)
-            .map(|m| m.width())
-            .unwrap_or_else(|_| t.chars().count() as f64 * 6.0)
-    };
+    ctx.set_font(AXIS_FONT);
 
     let total: f64 = items
         .iter()
-        .map(|(_, t)| SWATCH_W + SWATCH_GAP + text_w(t))
+        .map(|(_, t)| SWATCH_W + SWATCH_GAP + text_width(ctx, t))
         .sum::<f64>()
         + ITEM_GAP * (items.len() - 1) as f64;
 
@@ -578,19 +601,7 @@ fn draw_legend(ctx: &CanvasRenderingContext2d, items: &[(&str, String)], center_
         x += SWATCH_W + SWATCH_GAP;
         ctx.set_fill_style_str("rgba(255, 255, 255, 0.55)");
         let _ = ctx.fill_text(text, x, y);
-        x += text_w(text) + ITEM_GAP;
-    }
-}
-
-/// 格式化坐标轴刻度数值
-fn format_axis_value(value: f64) -> String {
-    if value >= 1000.0 {
-        format!("{:.1}K", value / 1000.0)
-    } else if value >= 10.0 {
-        format!("{:.0}", value)
-    } else {
-        // 小数值（如 Token QPS）保留一位小数，避免刻度清一色显示 0
-        format!("{:.1}", value)
+        x += text_width(ctx, text) + ITEM_GAP;
     }
 }
 
@@ -657,47 +668,115 @@ fn draw_points(ctx: &CanvasRenderingContext2d, points: &[(f64, f64, f64)], now: 
     }
 }
 
+/// 轴标签字号（宽度测量与绘制必须用同一档，否则算出的槽位宽是错的）
+const AXIS_FONT: &str = "10px sans-serif";
+
+/// X 轴相邻标签之间保留的最小间隙（像素），防止贴太近读不清
+const LABEL_MIN_GAP: f64 = 14.0;
+
+/// X 轴最多尝试排布的标签数（再多也只是被宽度挤掉，白白多测几次文本）
+const LABEL_MAX: usize = 6;
+
+/// 测量文本宽度（Canvas 测量失败时按每字符 6px 估算，与图例同口径）
+fn text_width(ctx: &CanvasRenderingContext2d, text: &str) -> f64 {
+    ctx.measure_text(text)
+        .map(|m| m.width())
+        .unwrap_or_else(|_| text.chars().count() as f64 * 6.0)
+}
+
 /// 绘制 X 轴时间标签
+///
+/// 标签个数由**可用宽度反推**，不写死个数：窄容器（320px 宽，配右轴后绘图区
+/// 只剩约 234px）里 5 个 `9-15 08:00` 必然互相压字，宽容器（600px）里又白白
+/// 浪费刻度位。槽位宽取「最宽标签 + 最小间隙」，按最坏情况保证任意相邻两个
+/// 标签不重叠。首末标签另做一次贴边夹取，避免文字中心落在轴端后被画布裁掉半截。
+#[allow(clippy::too_many_arguments)]
 fn draw_x_labels(
     ctx: &CanvasRenderingContext2d,
     data: &[TimeSeriesPoint],
     pad_left: f64,
     y_base: f64,
     plot_w: f64,
+    canvas_w: f64,
     fmt: TimestampFormat,
 ) {
+    let n = data.len();
+    if n == 0 {
+        return;
+    }
     ctx.set_fill_style_str("rgba(255, 255, 255, 0.5)");
-    ctx.set_font("10px sans-serif");
+    ctx.set_font(AXIS_FONT);
     ctx.set_text_align("center");
     ctx.set_text_baseline("top");
 
-    // 数据点多时只显示首末和中间，避免重叠
-    let n = data.len();
-    let indices: Vec<usize> = if n <= 6 {
-        (0..n).collect()
-    } else {
-        vec![0, n / 4, n / 2, 3 * n / 4, n - 1]
+    let label_at = |i: usize| -> String {
+        match fmt {
+            TimestampFormat::Date => format_timestamp(data[i].interval_start),
+            TimestampFormat::TimeOfDay => format_timestamp_hm(data[i].interval_start),
+            TimestampFormat::DateTime => format_timestamp_md_hm(data[i].interval_start),
+        }
     };
 
-    for i in indices {
+    // 槽位宽：按最宽标签取值（抽样覆盖首/中/末，避免只按最短标签算导致重叠）
+    let widest = sample_indices(n, LABEL_MAX)
+        .iter()
+        .map(|i| text_width(ctx, &label_at(*i)))
+        .fold(0.0_f64, f64::max);
+    let max_labels = ((plot_w / (widest + LABEL_MIN_GAP)).floor() as usize).clamp(1, n);
+
+    for i in sample_indices(n, max_labels) {
         let x = if n > 1 {
             pad_left + (i as f64) * plot_w / (n - 1) as f64
         } else {
             pad_left + plot_w / 2.0
         };
-        // 将毫秒时间戳转为日期字符串（M-D 短日期 / HH:MM）
-        let label = match fmt {
-            TimestampFormat::Date => format_timestamp(data[i].interval_start),
-            TimestampFormat::TimeOfDay => format_timestamp_hm(data[i].interval_start),
-        };
+        let label = label_at(i);
+        let half = text_width(ctx, &label) / 2.0;
+        // 贴边夹取：文字中心不能越出画布，否则首末标签被裁掉半截
+        let hi = (canvas_w - half - 2.0).max(half + 2.0);
+        let x = x.clamp(half + 2.0, hi);
         let _ = ctx.fill_text(&label, x, y_base + 6.0);
     }
 }
 
-/// 将毫秒时间戳格式化为 HH:MM（用于分钟级时序的 X 轴标签）
+/// 在 `0..n` 上均匀取 `count` 个下标（含首末）
+///
+/// `count >= n` 时返回全部下标；`count <= 1` 时只取最后一个点（趋势图里
+/// 「最新时刻」比「最早时刻」有用）。
+fn sample_indices(n: usize, count: usize) -> Vec<usize> {
+    if n == 0 {
+        return Vec::new();
+    }
+    if count >= n {
+        return (0..n).collect();
+    }
+    if count <= 1 {
+        return vec![n - 1];
+    }
+    let step = (n - 1) as f64 / (count - 1) as f64;
+    let mut out: Vec<usize> = (0..count)
+        .map(|k| (k as f64 * step).round() as usize)
+        .collect();
+    out.dedup();
+    out
+}
+
+/// 将毫秒时间戳格式化为 HH:MM（用于分钟 / 小时级时序的 X 轴标签）
 fn format_timestamp_hm(ts_ms: i64) -> String {
     let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ts_ms as f64));
     format!("{:02}:{:02}", date.get_hours(), date.get_minutes())
+}
+
+/// 将毫秒时间戳格式化为「月-日 时:分」（小时桶跨天时的 X 轴标签）
+fn format_timestamp_md_hm(ts_ms: i64) -> String {
+    let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ts_ms as f64));
+    format!(
+        "{}-{} {:02}:{:02}",
+        date.get_month() + 1,
+        date.get_date(),
+        date.get_hours(),
+        date.get_minutes()
+    )
 }
 
 /// 将毫秒时间戳格式化为短日期字符串
@@ -748,36 +827,104 @@ mod tests {
         }
     }
 
+    /// 按固定桶宽构造 `count` 个连续数据点
+    fn series(start: i64, step: i64, count: usize) -> Vec<TimeSeriesPoint> {
+        (0..count).map(|i| point(start + i as i64 * step)).collect()
+    }
+
     #[test]
-    fn x_axis_format_single_point_uses_date() {
-        // 回归：单点跨度 0 曾被判成「分钟内窗口」，把 UTC 零点对齐的日桶
-        // 渲染成本地 08:00。单点必须退化为日期。
+    fn x_axis_time_format_single_point_uses_date() {
+        // 回归：单点跨度 0 无间隔可测，必须退化为日期 —— 日桶按 UTC 零点对齐，
+        // 东八区渲染出来是 08:00 这个并不存在的「时刻」。
         assert_eq!(
-            x_axis_format(&[point(1_755_000_000_000)]),
+            x_axis_time_format(&[point(1_755_000_000_000)]),
             TimestampFormat::Date
         );
     }
 
     #[test]
-    fn x_axis_format_empty_uses_date() {
-        assert_eq!(x_axis_format(&[]), TimestampFormat::Date);
+    fn x_axis_time_format_empty_uses_date() {
+        assert_eq!(x_axis_time_format(&[]), TimestampFormat::Date);
     }
 
     #[test]
-    fn x_axis_format_minute_window_uses_time_of_day() {
+    fn x_axis_time_format_minute_buckets_use_time_of_day() {
         let t = 1_755_000_000_000;
         assert_eq!(
-            x_axis_format(&[point(t), point(t + 60_000)]),
+            x_axis_time_format(&series(t, 60_000, 60)),
+            TimestampFormat::TimeOfDay
+        );
+    }
+
+    /// 回归（用户反馈）：最近 1 天 = 同一天内的 24 个小时桶，按总跨度（23h ≥ 2h）
+    /// 旧判据会落进日期分支，画出一排完全相同的 `9-15`。桶宽细于一天时只有
+    /// 不跨天才允许省掉日期。
+    #[test]
+    fn x_axis_time_format_hourly_within_one_day_uses_time_of_day() {
+        let t = 1_755_000_000_000;
+        assert_eq!(
+            x_axis_time_format(&series(t, 3_600_000, 24)),
             TimestampFormat::TimeOfDay
         );
     }
 
     #[test]
-    fn x_axis_format_daily_buckets_use_date() {
+    fn x_axis_time_format_hourly_across_days_uses_date_time() {
         let t = 1_755_000_000_000;
         assert_eq!(
-            x_axis_format(&[point(t), point(t + 86_400_000)]),
+            x_axis_time_format(&series(t, 3_600_000, 48)),
+            TimestampFormat::DateTime
+        );
+    }
+
+    #[test]
+    fn x_axis_time_format_daily_buckets_use_date() {
+        let t = 1_755_000_000_000;
+        assert_eq!(
+            x_axis_time_format(&series(t, 86_400_000, 7)),
             TimestampFormat::Date
         );
+    }
+
+    /// 桶宽取「最小正间隔」：中间空桶被后端跳过（间隔被拉大）时仍要认出桶宽
+    #[test]
+    fn x_axis_time_format_ignores_gaps_from_missing_buckets() {
+        let t = 1_755_000_000_000;
+        let data = vec![
+            point(t),
+            point(t + 3_600_000),
+            point(t + 3_600_000 + 5 * 3_600_000), // 中间 4 个空桶被跳过
+        ];
+        assert_eq!(x_axis_time_format(&data), TimestampFormat::TimeOfDay);
+    }
+
+    /// 时间戳非递增（重复点）时没有可用的间隔 → 退化为日期
+    #[test]
+    fn x_axis_time_format_non_increasing_uses_date() {
+        let t = 1_755_000_000_000;
+        assert_eq!(
+            x_axis_time_format(&[point(t), point(t), point(t)]),
+            TimestampFormat::Date
+        );
+    }
+
+    #[test]
+    fn sample_indices_returns_all_when_count_covers_len() {
+        assert_eq!(sample_indices(3, 5), vec![0, 1, 2]);
+        assert_eq!(sample_indices(3, 3), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn sample_indices_spreads_evenly_and_keeps_ends() {
+        assert_eq!(sample_indices(5, 3), vec![0, 2, 4]);
+        assert_eq!(sample_indices(24, 5), vec![0, 6, 12, 17, 23]);
+    }
+
+    #[test]
+    fn sample_indices_degrades_gracefully() {
+        assert!(sample_indices(0, 4).is_empty());
+        // 只容得下一个标签时给最新时刻（趋势图里比最早时刻有用）
+        assert_eq!(sample_indices(24, 1), vec![23]);
+        assert_eq!(sample_indices(1, 1), vec![0]);
     }
 }

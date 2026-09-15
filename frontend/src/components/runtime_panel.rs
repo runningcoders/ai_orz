@@ -11,6 +11,7 @@ use crate::api::hr::{cancel_thinking, get_runtime_status};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudPanel, HudProgress};
 use crate::store::toast::use_toast;
+use crate::utils::number::format_compact_count;
 use common::api::{CancelThinkingRequest, RuntimeStatusRequest, RuntimeStatusResponse};
 use dioxus::prelude::*;
 
@@ -205,9 +206,9 @@ fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
 
                 // 指标网格
                 div { class: "grid grid-cols-2 md:grid-cols-4 gap-2 text-xs",
-                    MetricItem { label: "输入 Token", value: format_token(think.tokens_input) }
-                    MetricItem { label: "输出 Token", value: format_token(think.tokens_output) }
-                    MetricItem { label: "总 Token", value: format_token(think.total_tokens) }
+                    MetricItem { label: "输入 Token", value: format_compact_count(think.tokens_input) }
+                    MetricItem { label: "输出 Token", value: format_compact_count(think.tokens_output) }
+                    MetricItem { label: "总 Token", value: format_compact_count(think.total_tokens) }
                     MetricItem { label: "工具调用", value: think.tool_call_count.to_string() }
                 }
 
@@ -261,14 +262,5 @@ fn runtime_state_badge(state: &str) -> &'static str {
         "busy" => "badge hud-badge badge-error",
         "resting" => "badge hud-badge badge-warning",
         _ => "badge hud-badge badge-ghost",
-    }
-}
-
-/// 格式化 token 数值（千分位）
-fn format_token(n: u64) -> String {
-    if n >= 1000 {
-        format!("{:.1}k", n as f64 / 1000.0)
-    } else {
-        n.to_string()
     }
 }

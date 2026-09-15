@@ -6,6 +6,7 @@ use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::{LineChart, LineChartValueField};
 use crate::components::hud::{HudPanel, StatGrid, StatReadout};
 use crate::components::ring_progress::RingProgress;
+use crate::utils::number::format_compact_count;
 
 /// 工具调用分布环形图调色板（循环使用，避免单一色调）
 const TOOL_PALETTE: &[&str] = &[
@@ -54,16 +55,6 @@ fn render_tool_call_distribution(stats: &Option<AgentStats>) -> Element {
     rsx! {}
 }
 
-fn format_token_count(count: u64) -> String {
-    if count >= 1_000_000 {
-        format!("{:.1}M", count as f64 / 1_000_000.0)
-    } else if count >= 1_000 {
-        format!("{:.1}K", count as f64 / 1_000.0)
-    } else {
-        count.to_string()
-    }
-}
-
 fn format_qps(qps: f64) -> String {
     format!("{:.2}", qps)
 }
@@ -89,8 +80,8 @@ pub fn UserStatsPanel(model_call_stats: Option<ModelCallStats>) -> Element {
                                 StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
                             }
                             if let Some(token) = &mcs.token_summary {
-                                StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                                StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                                StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input), subtitle: None }
+                                StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output), subtitle: None }
                             }
                         }
                     }
@@ -186,8 +177,8 @@ pub fn AgentStatsPanel(
                         StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
                     }
                     if let Some(token) = mcs.token_summary {
-                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input), subtitle: None }
+                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output), subtitle: None }
                     }
                 }
             }
@@ -265,8 +256,8 @@ pub fn AgentStatsPanelCompact(
                                             caption: Some("上下文".to_string()),
                                             title: Some(format!(
                                                 "上下文 {} / 压缩阈值 {} tokens",
-                                                format_token_count(len),
-                                                format_token_count(threshold),
+                                                format_compact_count(len),
+                                                format_compact_count(threshold),
                                             )),
                                             size: None,
                                         }
@@ -278,7 +269,7 @@ pub fn AgentStatsPanelCompact(
                                         div { class: "flex flex-wrap items-baseline gap-1.5",
                                             span { class: "text-lg leading-none opacity-80", "🧠" }
                                             span { class: "hud-stat hud-stat-sm",
-                                                "{format_token_count(len)}"
+                                                "{format_compact_count(len)}"
                                             }
                                         }
                                         div { class: "text-xs mt-1",
@@ -308,8 +299,8 @@ pub fn AgentStatsPanelCompact(
                                     CompactStat { label: "调用次数".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string() }
                                 }
                                 if let Some(token) = token_summary {
-                                    CompactStat { label: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input) }
-                                    CompactStat { label: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output) }
+                                    CompactStat { label: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input) }
+                                    CompactStat { label: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output) }
                                 }
                             }
                         }
@@ -361,8 +352,8 @@ pub fn ProjectStatsPanel(
                         StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
                     }
                     if let Some(token) = mcs.token_summary {
-                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input), subtitle: None }
+                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output), subtitle: None }
                     }
                 }
             }
@@ -393,8 +384,8 @@ pub fn TaskStatsPanel(
                         StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
                     }
                     if let Some(token) = mcs.token_summary {
-                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input), subtitle: None }
+                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output), subtitle: None }
                     }
                 }
             }
@@ -438,8 +429,8 @@ pub fn ModelProviderStatsPanel(stats: Option<ModelCallStats>) -> Element {
                         StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
                     }
                     if let Some(token) = s.token_summary {
-                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                        StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input), subtitle: None }
+                        StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output), subtitle: None }
                     }
                 }
             }

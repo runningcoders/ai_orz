@@ -49,4 +49,4 @@ _来源：eb09a60 → 46c56db 提交周期内记录的编码计划——内容�
 Agent 统计 Tab 的刷新驱动从"只靠 refresh_tick"升级为"refresh_tick + stats_poll_tick"：
 - **独立信号**：chat 页 3s 主轮询循环每 10 拍（30s）递增一次 `stats_poll_tick`（对齐后端 DuckDB 周期落盘节奏），单独成信号以便只命中 Agent 统计 Tab，不牵动项目总览/工具 Tab 的事件驱动语义
 - **静默期不再停摆**：之前 SSE 停了（对话静默期）→ refresh_tick 不再递增 → Agent 统计不再轮询 → Token 消耗面板停在旧数据。stats_poll_tick 独立于 SSE，静默期仍按 30s 周期刷新
-- **`x_axis_format` 单点修复配套**：LineChart 单点（只有今日一樽日桶数据）时 X 轴显示真实日期而非 UTC 零点对齐的伪 08:00（详见 Canvas HUD 可视化卡 §4 硬约束第 12 条）
+- **`x_axis_time_format` 按桶宽判定配套**：LineChart 单点（只有今日一樽日桶数据）时 X 轴显示真实日期而非 UTC 零点对齐的伪 08:00；多点时按桶宽给日/时/跨天三档标签（详见 Canvas HUD 可视化卡 §4 硬约束第 12 条）
