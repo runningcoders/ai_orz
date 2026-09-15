@@ -5,7 +5,7 @@ category: 业务模块 / 用户组织
 scope:
   - "common/src/enums/user_role.rs"
   - "src/service/domain/organization/**"
-  - "src/service/domain/hr/agent.rs (入职相关)"
+  - "src/service/domain/hr/agent.rs (入职 + 离职相关)"
   - "src/service/dal/organization.rs"
   - "src/service/dao/organization/**"
   - "src/service/dao/user/**"
@@ -17,6 +17,8 @@ scope:
   - "src/models/organization_link.rs"
   - "src/models/organization_pairing_code.rs"
   - "src/middleware/federation_identity.rs"
+  - "src/handlers/hr/agent/start_agent_offboard.rs"
+  - "src/handlers/hr/agent/complete_agent_offboard.rs"
 source_files:
   - common/src/enums/user_role.rs#L1-L60 (UserRole 枚举 + 并查集继承：Member=1 / Admin=2 / SuperAdmin=3；has_permission(need) 用 find_root；禁止 role >= 2 的数字大小比较)
   - src/service/domain/organization/mod.rs#L1-L40 (OrganizationDomain trait：OrganizationManage（CRUD）+ UserManage（CRUD+角色分配+偏好）两个子 trait；子模块 org.rs user.rs 分别 impl)
@@ -63,6 +65,10 @@ source_files:
   - frontend/styles/input.css#L1600-L1700 (入职弹窗相关 CSS：发丝边 + 聚焦态流动光带边框)
   - 【关联卡】docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md（Agent 生命周期全景装配）
   - 【关联卡】docs/wiki/knowledge/zh/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md（Seed 新增 Agent 招聘/用户接待模板）
+  - src/service/domain/hr/agent.rs#L649-L720 (delete_agent 删除门禁：Onboarded/PendingOffboard bail_err；handover_business 业务交接占位)
+  - src/service/domain/hr/agent.rs#L749-L857 (transition_status 状态机边校验移除任意→Deleted；PendingOffboard→Offboarded 边的副作用)
+  - src/handlers/hr/agent/start_agent_offboard.rs (开始离职 Handler：AgentStatus::Onboarded → PendingOffboard)
+  - src/handlers/hr/agent/complete_agent_offboard.rs (完成离职 Handler：PendingOffboard → Offboarded + handover_business 占位)
 ---
 
 ## §1 概述
@@ -70,6 +76,8 @@ source_files:
 **本卡角色**：组织权限与用户偏好的知识卡。覆盖 OrganizationDomain 的组织 + 用户双 trait、UserRole 三级并查集（Member→Admin→SuperAdmin 继承规则，has_permission 统一入口）、JWT Cookie+Bearer 双模式鉴权中间件、用户偏好双源沉淀（users.preferences 自报 + knowledge graph user_preference tag 推断，冲突自报优先）、Agent 入职五步流程（草稿→装技能→绑凭证→绑工具→Active）、Agent 生命周期**边驱动状态机**（AgentStatusEdge 枚举替代通用 update_status）、Incubating 进修状态、train_agent / select_agent_career / onboard_agent 语义化接口、**三阶段能力获取**（个人匹配 → 公司指定 → 默认模板优先级）。**定位：新增角色、排查用户 403 权限不足、调试 Agent 入职卡住某一步、理解偏好冲突优先级、追踪 Agent 状态流转、调试进修/择业/入职语义化接口时读。**
 
 **2026-09-12 增量**：Agent 生命周期从「状态枚举 + update_agent_status 通用接口」重构为**边驱动状态机**（common/src/enums/agent.rs 新增 AgentStatusEdge 状态转换边枚举），新增 **Incubating 进修状态**（流转路径 Idle → Incubating → Active），原入职五步被 train_agent（进修）、select_agent_career（择业）、onboard_agent（入职）三个**语义化 Handler** 替代；能力获取改为**三阶段模型**：个人匹配（Agent 自报）→ 公司指定（Organization config）→ 默认模板（Seed 内置），前者存在时覆盖后者；工具标签补齐 agent_management / hr_specialist / reception 三个角色标签；Seed 新增招聘官 Agent 种子 + TEMPLATE_AGENT_RECRUITMENT / TEMPLATE_USER_RECEPTION 预置技能模板。
+
+**2026-09-14 增量**：Agent 生命周期新增**离职两阶段**（PendingOffboard → Offboarded）+ **删除门禁**（在役/待离职不可直删）。AgentStatus 新增 PendingOffboard 状态（Onboarded → PendingOffboard 通过 start_agent_offboard Handler 开始交接；PendingOffboard → Offboarded 通过 complete_agent_offboard Handler 完成交接并正式下线）。删除 Agent 的唯一入口 delete_agent 增加门禁：Onboarded / PendingOffboard 状态 bail_err，强制走完状态机两阶段后才能删。状态机移除「任意状态 → Deleted」直删边，删除不再是状态机的一条边。
 
 - **UserRole 并查集继承规则（禁止 role >=2 数字比较，必须用 match + find_root）**（common/src/enums/user_role.rs）：`Member(1)` 基础角色（创建自己的消息/任务）；`Admin(2)` 组织级管理员（邀请成员/分配角色/删除组织内资源，继承 Member 所有权限）；`SuperAdmin(3)` 系统级超管（跨组织管理/备份/系统初始化，继承 Admin 所有权限）。`role.has_permission(UserRole::Admin)` 的实现：`find_root(self) >= find_root(Admin)`，不是简单 `self as i32 >= need as i32`（未来增加 SubAdmin = 1.5 中间层级时旧写法全 break）。AGENTS.md §4.3 强制枚举类型安全。
 - **JWT Cookie + Authorization Bearer 双模式**（pkg/jwt.rs + middleware/auth.rs）：鉴权中间件先查 Cookie: ai_orz_token（浏览器用户，防 XSS 用 `HttpOnly; Secure; SameSite=Lax`）→ 未发现再查 Header Authorization: Bearer <token>（API/脚本调用）；两者解析后得到同一个 Claims{ uid, uname, org_id, role, exp }。decode_token 时校验 exp（过期 5 分钟内可以容忍吗？= 不行，硬校验过期立即 401），校验 org_id 与请求的资源 org_id 是否一致（跨组织访问=403）。
@@ -171,3 +179,6 @@ HR 面板：填写 Agent 名 / 角色描述 / ModelProvider 选择 → 点「入
 14. **Incubating 进修状态单入口单出口硬约束**：Incubating 状态只能从 Idle 通过 train_agent 进入（禁止 Active / Draft 等非 Idle 状态直接跳转），离开 Incubating 也只能走 select_agent_career → onboard_agent 的择业-入职链路推进到 Active；任何试图跳过 Incubating 直接从 Idle → Active 的操作一律拒绝（状态机破环防护）。
 15. **三阶段能力获取优先级：个人匹配 > 公司指定 > 默认模板**：Agent 创建时能力来源按此顺序解析，前者存在时覆盖后者——个人匹配（Agent AgentStatus.career_profile 字段）→ 公司指定（OrganizationConfig.agent_capabilities_map）→ 默认模板（Seed default.json 预置模板）。任何阶段失败不阻断，按优先级降级到下一层即可。
 16. **onboard_modal 入职弹窗 UI 状态 SSOT 收敛**：前端入职弹窗（onboard_modal.rs）的 Agent 状态显示**必须**完全从后端 AgentStatus 枚举拉取，禁止前端硬编码状态文案或状态码映射；预置角色列表同步精简为与后端 AgentRole 枚举保持一致，禁止前端擅自增减角色选项。
+17. **Agent 删除必须走离职两阶段，禁止直删在役 Agent**：delete_agent 对 status ∈ {Onboarded, PendingOffboard} bail_err 返回引导性错误，强制 Onboarded → PendingOffboard → Offboarded 状态机流转；状态机 transition_status 已移除「任意状态 → Deleted」边，删除不再是状态机的一条边
+18. **start_agent_offboard / complete_agent_offboard 是离职唯一入口**：离职外部入口统一收敛到这两个语义化 Handler，底层通过 transition_status 的边校验保证状态合法性（禁止跳过 PendingOffboard 直接从 Onboarded → Offboarded）
+19. **handover_business 业务交接是占位不阻断离职**：PendingOffboard → Offboarded 边上的 handover_business 当前只打 log_info，未来填充按角色匹配交接策略；交接失败只 log_warn 不阻止状态流转（确保在途业务本就要求先跑完）

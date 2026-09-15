@@ -14,6 +14,10 @@
 - [ai-orz-macros/src/lib.rs](ai-orz-macros/src/lib.rs)
 - [ai-orz-macros/src/stats_event.rs](ai-orz-macros/src/stats_event.rs)
 - [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
+- [src/handlers/finance/tool/runtime_stats.rs](src/handlers/finance/tool/runtime_stats.rs) — 组织级工具运行时统计接口（2026-09-14 新增）
+- [common/src/api/tool.rs](common/src/api/tool.rs) — ToolRuntimeStatsRequest / ToolRuntimeStatsResponse DTO
+- [frontend/src/utils/number.rs](frontend/src/utils/number.rs) — 大数格式化（千分位 + compact 缩写）
+- [frontend/src/pages/workspace.rs](frontend/src/pages/workspace.rs) — Workspace 顶栏数字统计卡消费端
 - [DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表](docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md)
 </cite>
 
@@ -234,6 +238,19 @@ Build --> End(["返回 ToolStats"])
 章节来源
 - [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
 - [src/handlers/finance/tool/response.rs:27-46](src/handlers/finance/tool/response.rs#L27-L46)
+
+### 组织级工具运行时统计（2026-09-14 新增）
+
+- **端点**：GET /api/v1/finance/tools/runtime-stats
+- **DTO**：ToolRuntimeStatsRequest（可按 tool_id / time_range 过滤）→ ToolRuntimeStatsResponse
+- **数据源**：DuckDB tool_call_events 表，按 organization_id 自动过滤（多组织隔离）
+- **返回**：工具总数 / 今日调用数 / 成功率 / 平均耗时 + 按 tool_id 分项统计
+- **源码**：src/handlers/finance/tool/runtime_stats.rs + common/src/api/tool.rs
+- **前端消费**：frontend/src/pages/workspace.rs 顶栏数字统计卡
+
+章节来源
+- [src/handlers/finance/tool/runtime_stats.rs](src/handlers/finance/tool/runtime_stats.rs)
+- [common/src/api/tool.rs](common/src/api/tool.rs)
 
 ## 依赖关系分析
 - AOP 注册中心维护消费者与生产者数量、队列长度与统计，便于实时监控

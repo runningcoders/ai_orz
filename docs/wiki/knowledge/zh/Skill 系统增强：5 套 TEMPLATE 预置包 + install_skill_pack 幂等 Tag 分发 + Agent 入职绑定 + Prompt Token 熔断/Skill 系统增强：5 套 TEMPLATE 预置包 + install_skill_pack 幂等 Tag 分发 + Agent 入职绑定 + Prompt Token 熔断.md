@@ -57,10 +57,14 @@ source_files:
 - src/handlers/system/seed/sync_preset_skills.rs#L1-L266
 - common/src/api/seed.rs#L165-L237
 - docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md (2026-09-14 新增：项目上下文认知模板)
+- src/service/domain/system/seed/skills/TEMPLATE_SELF_EVOLUTION/skill.md (2026-09-14 新增：自我进化模板)
 
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）
+
+**2026-09-14 增量**：Skill 权限体系从「管理员/作者/Agent创建者」三级扩展为**Agent 上下文独立分支**——新增 `SkillAccessIntent::Read/Write` 双意图参数，`ensure_skill_access` 在 Agent 上下文下短路判定：Write 仅限 `author_id == agent_id`（自己的技能副本），Read 放行 Published 共享技能（跨 Agent 只读访问能力）。预置技能从 8 套扩展到 **10 套**（新增 TEMPLATE_PROJECT_CONTEXT_COGNITION 项目上下文认知 + TEMPLATE_SELF_EVOLUTION 自我进化模板）。Agent 工具绑定装配增加 **按 name 排序** 确保确定性（L151：`all_tools.sort_by(|a, b| a.po.name.cmp(&b.po.name))`），解决两条来源链（关联表 / 标签查询）返回顺序不稳定问题。
 
 **2026-09-12 增量**：`install_skill_pack` 的 tag 分发维度新增三个**工具角色标签**——agent_management（Agent 生命周期管理）、hr_specialist（招聘官/HR 专家）、reception（用户接待）。其中 reception 作为「同名双身份包」同时被 Seed 默认模板（TEMPLATE_USER_RECEPTION）和 HR 域 onboarding Handler 的默认技能包引用，保证 `find_by_tag(SkillTag::Reception)` 统一命中模板；embedded.rs 新增 TEMPLATE_AGENT_RECRUITMENT + TEMPLATE_USER_RECEPTION 两套编译期嵌入技能文件（EMBEDDED_SKILL_FILES 从 6 套扩展到 8 套）；install_default_skill_packs 顺序中追加 agent_management / hr_specialist / reception 三个角色技能包。
 
@@ -94,6 +98,8 @@ source_files:
 | [前端技能库管理页 skills.rs](frontend/src/pages/hr/skills.rs) | 技能库树形 + 分页展示 | 371 行重构：树形层级（agent tag 分组折叠）+ 分页（每页 20）+ 默认筛选已发布；skill 卡片支持按 agent 类型 tag 分组 |
 | [前端 API 层 hr.rs](frontend/src/api/hr.rs) | 技能列表 API | 新增 list_skills_paginated(status, tag, page, page_size)；调用后端分页查询接口 |
 | [navbar 路由注册](frontend/src/layouts/navbar.rs) | 技能管理页入口 | 导航栏新增技能管理菜单项，路由到 /hr/skills |
+| [ensure_skill_access Agent 上下文分支](src/service/domain/hr/skill.rs#L385-L450) (2026-09-14 增量) | Agent 自进化权限边界 | 新增 SkillAccessIntent::Read/Write；Agent 上下文 Write 仅限 author_id==agent_id；Read 放行 Published 共享技能；独立短路不走用户侧条件 |
+| [两个新 TEMPLATE 模板](src/service/domain/system/seed/skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md) + [TEMPLATE_SELF_EVOLUTION](src/service/domain/system/seed/skills/TEMPLATE_SELF_EVOLUTION/skill.md) (2026-09-14 新增) | 新增预置技能模板 | 项目上下文认知 + 自我进化；保持 6 字段结构（name/description/tags/prompt_template/system_constraints/usage_scenarios） |
 
 ---
 
@@ -156,11 +162,11 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 
 # §4 硬约束 / 必守红线 / 扩展入口
 
-**§4.1 必守红线（16 条，违反 = FAIL）**
+**§4.1 必守红线（19 条，违反 = FAIL）**
 
 | # | 红线 | 验证方式 | 代码锚点 |
 |---|------|---------|---------|
-| 1 | **5 套 TEMPLATE 名常量严格对齐**：`TEMPLATE_COMMUNICATION` / `TEMPLATE_MEMORY_COGNITION` / `TEMPLATE_PROJECT_MANAGEMENT` / `TEMPLATE_SKILL_MANAGEMENT` / `TEMPLATE_TOOL_MANAGEMENT` 5 个常量名必须等于对应目录名 + skill.md `name` 字段 + SkillTag 枚举名；任一处不一致按模板找不到 = 安装为空 | 集成测试 5 套常量名 = 目录名 = skill.md name 字段 = SkillTag 枚举名（4 处全等） | [system/seed/skills/mod.rs 常量定义](src/service/domain/system/seed/skills/mod.rs) + common/src/enums/tool_tag.rs SkillTag 枚举 |
+| 1 | **10 套 TEMPLATE 名常量严格对齐**：`TEMPLATE_COMMUNICATION` / `TEMPLATE_MEMORY_COGNITION` / `TEMPLATE_PROJECT_MANAGEMENT` / `TEMPLATE_PROJECT_CONTEXT_COGNITION` / `TEMPLATE_SELF_EVOLUTION` / `TEMPLATE_SKILL_MANAGEMENT` / `TEMPLATE_TOOL_MANAGEMENT` / `TEMPLATE_AGENT_RECRUITMENT` / `TEMPLATE_USER_RECEPTION` / `TEMPLATE_NEURAL_RECEPTION` 10 个常量名必须等于对应目录名 + skill.md `name` 字段 + SkillTag 枚举名；任一处不一致按模板找不到 = 安装为空 | 集成测试 10 套常量名 = 目录名 = skill.md name 字段 = SkillTag 枚举名（4 处全等） | [system/seed/skills/mod.rs 常量定义](src/service/domain/system/seed/skills/mod.rs) + common/src/enums/tool_tag.rs SkillTag 枚举 |
 | 2 | **install_skill_pack 幂等性**：同一 agent_id + tag 连续调用 N 次，installed_count 第 2 次起必须为 0；数据库 AgentSkill 总数不增长（不产生重复行） | 连续两次 install 断言第二次 installed=0 且 COUNT 无变化 | [domain/hr/agent.rs install_skill_pack 重名 skip 分支](src/service/domain/hr/agent.rs#L450-L470) |
 | 3 | **入职绑定失败不阻断入职**：5 套中任一套出错只打 log_warn + 记录缺失清单；Agent 必须成功创建 + 返回成功响应；onboard_agent 失败不返回 Err | 故意让某套安装抛错集成测试：Agent 仍创建成功 + 响应 200 + 日志含缺失清单 | [domain/hr/agent.rs onboard_agent install 包裹 catch_unwind](src/service/domain/hr/agent.rs#L470-L490) |
 | 4 | **System 技能发布红线**：is_system=true 预置技能禁止普通管理员 EDIT/DELETE；仅超级管理员可改；修改后 prompt_template 变 → Prompt Hash 变 → Agent 私有副本版本自动+1 重新发布时才升级 | 普通管理员账号调 update_skill is_system=true → 权限错误 | [domain/hr/skill.rs update_skill 权限分支](src/service/domain/hr/skill.rs#L35-L80) |
@@ -176,6 +182,9 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 | 14 | **TEMPLATE_ 前缀模板技能绝不允许硬删除**：即使过时也 SkillStatus=Expired 软标记，DELETE 会破坏历史 Draft 副本的 parent_skill_id FK 约束 | 单元测试对某 TEMPLATE 调 delete 应返回错误或降级为 Expired | [domain/hr/skill.rs update_skill 权限分支](src/service/domain/hr/skill.rs#L35-L80) Expired 分支 |
 | 15 | **Expired 技能独立查询 + 恢复 409 边界**：list_for_agent 必须 exclude Expired（保持「有效技能列表」语义）；restore_skill 把 Expired 改 Draft，若当前 status ≠ Expired 必须返回 Conflict 409；权限复用 ensure_skill_access（作者 / Admin / SuperAdmin / Agent 作者为创建者均可） | 对 Draft 技能调 restore → 409；Expired 恢复后能 list_for_agent 查到 | [domain/hr/skill.rs restore_skill](src/service/domain/hr/skill.rs#L203-L228) |
 | 16 | **sync_agent_packs 是 create_agent 包同步唯一入口**：create_agent 不再逐个 handler 调 install，拆为 2 显式步骤 → Step 2 直接调 sync_agent_packs(ctx, agent_id) 一次同步 BASE_AGENT_PACKS（neural/skill_management/tool_management）+ 已安装技能包增量补全；单个包失败 warn 不阻塞 | grep create_agent 不再包含逐次 install_skill_pack 调用；sync_packs.rs 为 HTTP 入口 + agent.rs 为 domain 实现 | [domain/hr/agent.rs create_agent](src/service/domain/hr/agent.rs#L94-L133) + [sync_agent_packs](src/service/domain/hr/agent.rs#L135-L290) |
+| 17 | **Agent 上下文写操作严格仅限自身 author_id**：`ensure_skill_access` 在 Agent 上下文（ctx.agent_id 存在）下短路判定，Write 操作 bail_err 禁止修改他人技能或 Published 技能，Agent 只能进化自己的技能副本 | Agent 调 update_skill 传入非自己 author_id 的技能 → 返回权限错误；调 update 自己的技能副本成功 | [domain/hr/skill.rs ensure_skill_access Agent 分支](src/service/domain/hr/skill.rs#L385-L450) |
+| 18 | **Agent 上下文读操作放行 Published 共享技能**：SkillAccessIntent::Read 在 Agent 上下文下额外允许访问 `status == Published` 的技能（跨 Agent 只读），保障「隐藏技能按需读」能力；但仍不可 Read 其他 Agent 的私有草稿 | Agent 调 read 他人 PrivateDraft 技能 → 403；调 read Published 技能 → 200 | [domain/hr/skill.rs ensure_skill_access Read 分支](src/service/domain/hr/skill.rs#L385-L450) |
+| 19 | **Agent 工具绑定装配必须按 name 排序**：`agent.rs` 中 `resolve_agent_tools` 装配后调用 `sort_by(|a, b| a.po.name.cmp(&b.po.name))`，确保两条来源链（关联表 / 标签查询）返回顺序稳定，LLM tools 前缀缓存才能命中 | 多次调用 resolve_agent_tools 返回的 tools Vec 顺序完全一致；断言 assert_eq!(first, second) | [domain/hr/agent.rs resolve_agent_tools L151](src/service/domain/hr/agent.rs#L84-L133) |
 
 **§4.2 扩展入口速查**
 

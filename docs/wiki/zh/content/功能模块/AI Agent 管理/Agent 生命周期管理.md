@@ -23,7 +23,17 @@
 - [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
 - [src/service/domain/hr/agent.rs#transition_status](src/service/domain/hr/agent.rs#L457-L485)
 - [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断.md) — TEMPLATE_MEMORY_COGNITION 指令式学习节 + 前端创建 Agent 表单独立组件（2026-09-04 新增）
+- [src/handlers/hr/agent/start_agent_offboard.rs](src/handlers/hr/agent/start_agent_offboard.rs) — 开始离职（Onboarded → PendingOffboard）
+- [src/handlers/hr/agent/complete_agent_offboard.rs](src/handlers/hr/agent/complete_agent_offboard.rs) — 完成离职（PendingOffboard → Offboarded + 业务交接占位）
+- [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs) — 删除 Agent（含状态门禁）
+- [src/service/domain/hr/agent.rs#delete_agent](src/service/domain/hr/agent.rs) — delete_agent 状态门禁 bail_err
+- [common/src/enums/agent.rs](common/src/enums/agent.rs) — AgentStatus 新增 PendingOffboard、Offboarded；transition_status 移除「任意状态 → Deleted」直删边
+- [组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步](docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步.md) — Agent 离职两阶段的 RAG 卡（2026-09-14 增量）
 </cite>
+
+### 更新摘要（2026-09-14）
+
+Agent 状态机新增 **离职两阶段**：`Onboarded → PendingOffboard → Offboarded`，通过 `start_agent_offboard`（开始交接）和 `complete_agent_offboard`（完成交接 + 业务交接占位）两个语义化 Handler 对外暴露入口。删除 Agent 增加**门禁**：在役（Onboarded）或待离职（PendingOffboard）状态禁止直接删除，必须先走完状态机两阶段。状态机移除「任意状态 → Deleted」直删边，删除不再是状态机的一条边。
 
 ### 更新摘要（2026-09-04）
 
@@ -142,6 +152,9 @@ Consumer-->>Client : 返回结果
 
 ### 状态机与生命周期
 - 持久化状态（AgentStatus）：面试中→待入职→已入职→待离职→已离职→已删除，用于 Agent 生命周期管理。
+  - `PendingOffboard`：待离职 / 交接中（Onboarded → PendingOffboard 通过 start_agent_offboard 进入；PendingOffboard → Offboarded 通过 complete_agent_offboard 完成交接后进入）
+  - `Offboarded`：已离职 / 正式下线（从 PendingOffboard 完成业务交接后流转至此；delete_agent 对 Offboarded 及以下状态放行）
+  - 删除门禁：Onboarded / PendingOffboard 状态禁止直接删除，必须走完离职两阶段；transition_status 已移除「任意状态 → Deleted」直删边
 - 运行时状态（AgentRuntimeState）：空闲（Idle）、休息（Resting）、忙碌（Busy），纯内存，服务重启重置。
 - 状态转换规则：
   - 收到消息且可用 → set_busy（或 try_set_busy 原子获取）
@@ -335,6 +348,9 @@ DL --> AOP
 - 上下文超限
   - 调整模型提供商的 recommended_context_length 或降低 max_rounds
   - 观察沉淀是否成功，必要时增加沉淀批次限制
+- Agent 处于 Onboarded/PendingOffboard 状态无法删除：这是预期行为，先调 start_agent_offboard → complete_agent_offboard 走完离职两阶段，或等 Agent 自然走完状态机
+- complete_agent_offboard 返回交接日志：handover_business 当前只打占位 log_info（交接策略待定），交接失败只 log_warn 不阻断状态流转，Agent 仍会正确下线
+- 状态机不允许跳过 PendingOffboard：禁止 Onboarded → Offboarded 直接跳转，transition_status 会拒绝
 
 章节来源
 - [src/consumer/message.rs:198-294](src/consumer/message.rs#L198-L294)

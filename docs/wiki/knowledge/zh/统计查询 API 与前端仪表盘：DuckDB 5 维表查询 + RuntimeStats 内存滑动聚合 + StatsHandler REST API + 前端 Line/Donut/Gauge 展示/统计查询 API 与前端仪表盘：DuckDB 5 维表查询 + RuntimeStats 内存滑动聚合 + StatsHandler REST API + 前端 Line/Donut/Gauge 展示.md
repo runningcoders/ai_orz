@@ -39,6 +39,12 @@ source_files:
   - docs/wiki/zh/content/基础设施/AOP 事件系统/统计与监控.md
   - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md
   - docs/wiki/zh/content/功能模块/系统管理/系统监控与健康检查.md
+  - src/handlers/finance/tool/runtime_stats.rs (2026-09-14 新增：组织级工具运行时统计 Handler)
+  - common/src/api/tool.rs ToolRuntimeStatsRequest + ToolRuntimeStatsResponse (2026-09-14 新增：统计查询 DTO)
+  - common/src/models/stats.rs (2026-09-14 增量：统计响应类型扩展)
+  - frontend/src/utils/number.rs (2026-09-14 新增：数字格式化工具)
+  - frontend/src/utils/status.rs (2026-09-14 新增：状态环/徽章 SSOT)
+  - frontend/src/pages/workspace.rs (2026-09-14 增量：顶栏统计图换数字读数 + 组织级统计)
 ---
 
 ## §1 概述与定位
@@ -50,6 +56,8 @@ source_files:
 **周期落盘收口 + 可空 JSON 兼容 + 用户页统计兜底**（2026-09-11 增量）：stats 周期落盘（batch flush timer）从原来的独立调度器（`pkg/stats/runtime` 内部定时器）收口到统计库自身初始化（`pkg/stats/default.rs`）——Stats::open() 时启动后台 flush task，stats 单例生命周期与 DuckDB 连接绑定；**可空 JSON 兼容**：`model_call_events` 表的 `call_summary` / `token_summary` 字段从 NOT NULL 改为 nullable，兼容旧数据（迁移前的事件无这些字段）；**用户页统计兜底**：`get_current_user` handler 统计查询返回空结果时，前端 profile 页显示「暂无数据」空态卡片而非 error toast，避免新用户首次访问看到红色报错。
 
 **TimeRangePicker 通用时间区间筛选组件**（2026-09-11 新增）：`frontend/src/components/time_range_picker.rs` 通用日期范围筛选，props: `start/end` + 预设快捷按钮（近 1h / 6h / 24h / 7d / 30d）；所有统计看板统一引入——AOP 系统页、ModelProvider Token 时序、用户页统计。
+
+**2026-09-14 增量**：Workspace 顶栏统计图升级为**数字读数模式**——从图表可视化切换为数字统计卡（工具总数 / 今日调用次数 / 成功率 / 平均耗时），配套 `frontend/src/utils/number.rs` 大数格式化工具（千分位 + compact 缩写）。后端新增组织级工具运行时统计接口 `GET /api/v1/finance/tools/runtime-stats`（DuckDB tool_call_events 表按 organization_id 过滤聚合），补全了"组织整体工具"维度的查询能力。`frontend/src/utils/status.rs` 统一 Agent 状态环、项目状态徽章等视觉组件的 SSOT。
 
 ## §2 关键文件表
 
@@ -72,6 +80,10 @@ source_files:
 | [frontend/src/components/time_range_picker.rs](frontend/src/components/time_range_picker.rs) (v1.2 新增) | 通用时间筛选组件 | props: start/end + 预设快捷按钮（1h/6h/24h/7d/30d） | 见文件 |
 | [frontend/src/pages/user/profile.rs](frontend/src/pages/user/profile.rs) (v1.2 增量) | 用户页统计兜底 | 统计查询返回空结果时显示空态卡片；不再 error toast | 见文件 |
 | 【平行卡】docs/wiki/knowledge/zh/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md | RingProgress + TimeRangePicker 上游组件 | HUD 卡定义了 RingProgress 和 TimeRangePicker 通用组件，本卡消费这些组件 |
+| [src/handlers/finance/tool/runtime_stats.rs](src/handlers/finance/tool/runtime_stats.rs) (v1.3 新增) | 组织级工具统计 Handler | GET /api/v1/finance/tools/runtime-stats；DuckDB tool_call_events 按 org_id 过滤聚合；返回 ToolRuntimeStatsResponse |
+| [frontend/src/utils/number.rs](frontend/src/utils/number.rs) (v1.3 新增) | 数字格式化工具 | 千分位 + compact 大数缩写（1.5K / 2.3M）+ 小数精度控制；顶栏统计卡复用 |
+| [frontend/src/utils/status.rs](frontend/src/utils/status.rs) (v1.3 新增) | 状态 SSOT | Agent 状态环、项目/任务状态徽章的颜色、图标、文案统一出口；避免前端各处散落硬编码 |
+| [frontend/src/pages/workspace.rs](frontend/src/pages/workspace.rs) (v1.3 增量) | 工作空间顶栏 | 统计图换数字读数卡；引入 number.rs 格式化 + status.rs 状态组件 |
 
 ## §3 架构与约定
 
@@ -124,3 +136,5 @@ Stats Handlers (3 端点)
 12. **周期落盘必须收口到 Stats::open() 初始化**（v1.2 新增）：stats 批次刷盘定时器在 `pkg/stats/default.rs:Stats::open()` 中启动，与 DuckDB 连接生命周期绑定；禁止在 RuntimeStatsCollector 或其他独立模块再启动 flush task——多定时器会导致双重 flush 竞争 + 刷盘间隔不一致。
 13. **可空 JSON 字段查询必须用 COALESCE 兜底**（v1.2 新增）：`model_call_events.call_summary` / `token_summary` 已改为 nullable（兼容旧数据），所有查询构建时必须用 `COALESCE(field, '{}')` 转换为有效 JSON 对象再 JSON 解析；禁止假设 NOT NULL 直接 `.json_extract()`——旧数据会返回 NULL 导致 json_extract 报错。
 14. **统计空结果前端必须降级为空态**（v1.2 新增）：所有统计查询接口返回空结果时，前端必须显示「暂无数据」空态卡片/空态 SVG（如折线图只显示坐标轴 + 空坐标系），**禁止** error toast 或 crash。新用户首次访问 profile 页、新 Agent 还没产生任何调用等场景必然出现空数据。
+15. **组织级工具统计必须按 org_id 过滤 DuckDB 查询**（v1.3 新增）：runtime_stats Handler 的 DuckDB 查询必须带 `WHERE organization_id = ?` 条件，禁止跨组织聚合工具调用数据（多组织隔离红线）
+16. **数字格式化统一走 frontend/src/utils/number.rs**（v1.3 新增）：所有前端统计卡、图表 tooltip 的数字展示（含大数值缩写、千分位、小数精度）统一调用 number.rs 的函数，禁止组件内硬编码格式化逻辑
