@@ -25,6 +25,7 @@ pub async fn get_token_stats(
         .await?;
 
     Ok(TokenStatsResponse {
+        total_calls: points.iter().map(|p| p.call_count).sum(),
         total_tokens_input: points.iter().map(|p| p.tokens_input).sum(),
         total_tokens_output: points.iter().map(|p| p.tokens_output).sum(),
         points,

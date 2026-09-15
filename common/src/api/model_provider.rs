@@ -404,6 +404,8 @@ pub struct GetTokenStatsRequest {
 pub struct TokenStatsResponse {
     /// 分钟级时序点（按 `interval_start` 升序）
     pub points: Vec<crate::models::TimeSeriesPoint>,
+    /// 窗口内模型调用总次数
+    pub total_calls: u64,
     /// 窗口内输入 Token 合计
     pub total_tokens_input: u64,
     /// 窗口内输出 Token 合计

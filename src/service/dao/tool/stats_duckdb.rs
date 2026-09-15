@@ -33,18 +33,21 @@ impl ToolStatsDao for ToolStatsDaoDuckDbImpl {
         ctx: RequestContext,
         mut query: ToolStatsQuery,
     ) -> Result<Vec<JsonValue>> {
-        let tool_filter = StatFilter::Equals {
-            key: "tool_id".to_string(),
-            value: JsonValue::String(query.tool_id.clone()),
-        };
-        query.filters.insert(0, tool_filter);
+        // 维度全部可选：`tool_id = None` 时不加工具谓词（组织级汇总读数）。
+        // filter 之间是 AND 连接（见 `Stats::append_filters`），顺序不影响语义，
+        // 统一 push 到调用方 filters 之后即可。
+        if let Some(tool_id) = &query.tool_id {
+            query.filters.push(StatFilter::Equals {
+                key: "tool_id".to_string(),
+                value: JsonValue::String(tool_id.clone()),
+            });
+        }
 
         if let Some(agent_id) = &query.agent_id {
-            let agent_filter = StatFilter::Equals {
+            query.filters.push(StatFilter::Equals {
                 key: "agent_id".to_string(),
                 value: JsonValue::String(agent_id.clone()),
-            };
-            query.filters.insert(1, agent_filter);
+            });
         }
 
         let stats = ctx.stats();

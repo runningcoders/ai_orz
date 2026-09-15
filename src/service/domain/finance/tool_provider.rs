@@ -155,6 +155,15 @@ impl ToolProviderManage for FinanceDomainImpl {
     ) -> Result<common::api::PagedResult<Tool>> {
         self.tool_dal.search(ctx.clone(), params).await
     }
+
+    /// 查询组织级工具调用汇总（工作台顶栏运行时读数用）
+    async fn tool_call_stats(
+        &self,
+        ctx: RequestContext,
+        minutes: u32,
+    ) -> Result<common::models::ToolStats> {
+        self.tool_dal.tool_call_stats(ctx.clone(), minutes).await
+    }
 }
 
 fn validate_tool_management_policy(tool: &Tool) -> Result<()> {

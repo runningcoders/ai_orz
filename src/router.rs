@@ -916,6 +916,11 @@ fn finance_routes() -> Router {
             "/tools/tags",
             get(handlers::finance::tool::list_tool_tags::list_tool_tags_handler),
         )
+        // Tool runtime stats route - 工作台顶栏工具调用读数（窗口内合计，组织隔离）
+        .route(
+            "/tools/runtime-stats",
+            get(handlers::finance::tool::runtime_stats::get_tool_runtime_stats_handler),
+        )
         .route(
             "/tool-call-entries",
             get(handlers::finance::tool::query_tool_call_entries_handler),

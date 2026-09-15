@@ -43,7 +43,7 @@ use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
 use async_trait::async_trait;
 use common::error::Result;
-use common::models::{ModelCallStats, StatsFetchOptions};
+use common::models::{ModelCallStats, StatsFetchOptions, ToolStats};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -709,6 +709,14 @@ pub trait ToolProviderManage: Send + Sync {
         ctx: RequestContext,
         params: crate::service::dao::tool::ToolSearch,
     ) -> Result<common::api::PagedResult<crate::models::tool::Tool>>;
+
+    // ==================== 统计查询 ====================
+
+    /// 查询组织级工具调用汇总（工作台顶栏运行时读数用）
+    ///
+    /// 与 `ModelProviderManage::model_call_time_series` 同一形态：不按工具收窄，
+    /// 组织隔离由 `ctx.organization_id` 决定；`minutes` 会被 clamp 到 `[1, 1440]`。
+    async fn tool_call_stats(&self, ctx: RequestContext, minutes: u32) -> Result<ToolStats>;
 }
 
 // ==================== 实现 ====================

@@ -64,10 +64,15 @@ pub struct ToolSearch {
 }
 
 /// 工具统计查询参数
+///
+/// 所有维度均可选，可组合使用——与 [`ModelProviderStatsQuery`] 保持同一形态：
+/// `tool_id = Some(id)` 收敛到单个工具，`None` 则不按工具收窄（组织级汇总读数）。
+///
+/// [`ModelProviderStatsQuery`]: crate::service::dao::model_provider::ModelProviderStatsQuery
 #[derive(Debug, Clone, Default)]
 pub struct ToolStatsQuery {
-    /// 工具 ID（必填）
-    pub tool_id: String,
+    /// 工具 ID（可选；None 表示不按工具收窄）
+    pub tool_id: Option<String>,
     /// Agent ID（可选过滤）
     pub agent_id: Option<String>,
     /// 额外过滤条件
@@ -126,6 +131,22 @@ pub trait ToolStatsDao: Send + Sync {
         Ok(rows[0].get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64)
     }
 
+    /// 工具平均调用耗时（毫秒）
+    ///
+    /// 与 [`ToolStatsDao::sum_calls`] 同形：按查询条件收敛单个指标；
+    /// 窗口内无调用时返回 0。
+    async fn avg_duration_ms(&self, ctx: RequestContext, mut query: ToolStatsQuery) -> Result<f64> {
+        query.aggregations = vec![StatAggregation::Avg("duration_ms".to_string())];
+        let rows = self.query_tool_calls(ctx, query).await?;
+        if rows.is_empty() {
+            return Ok(0.0);
+        }
+        Ok(rows[0]
+            .get("duration_ms")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0))
+    }
+
     /// 获取工具统计数据
     async fn get_stats(
         &self,
@@ -167,8 +188,13 @@ pub trait ToolStatsDao: Send + Sync {
                 instant_qps,
             });
 
-            let failed = self.sum_failed_calls(ctx, query).await?;
+            let failed = self.sum_failed_calls(ctx.clone(), query.clone()).await?;
             stats.failed_count = Some(failed);
+
+            // 无调用时不写 0：`0ms` 会被误读成「调用瞬时返回」，留 None 让调用方显示「无数据」
+            if total_calls > 0 {
+                stats.avg_duration_ms = Some(self.avg_duration_ms(ctx, query).await?);
+            }
         }
 
         Ok(stats)

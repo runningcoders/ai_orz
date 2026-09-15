@@ -462,3 +462,32 @@ pub struct ToolCallEntryDetail {
     /// Redacted additional trace metadata.
     pub metadata: serde_json::Value,
 }
+
+/// GET /api/v1/finance/tools/runtime-stats 请求
+///
+/// 工作台顶栏运行时读数用：查询当前组织最近 N 分钟的工具调用汇总。
+/// 与 `/finance/model-providers/token-stats` 同属「组织级统计读数」一族，
+/// 区别是本接口只给合计值、不返回时序点。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, Params)]
+pub struct GetToolRuntimeStatsRequest {
+    /// 时间窗口（分钟），默认 60，上限 1440（24 小时）
+    #[param(source = "query")]
+    pub minutes: Option<u32>,
+}
+
+/// GET /api/v1/finance/tools/runtime-stats 响应
+///
+/// 所有字段均为「窗口内合计」。窗口内无调用时：
+/// `total_calls` / `failed_calls` 为 0，`avg_duration_ms` 为 None（不是 0，避免把
+/// "没有调用" 误读成 "耗时 0ms"）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ToolRuntimeStatsResponse {
+    /// 实际生效的时间窗口（分钟），已按 [1, 1440] clamp
+    pub window_minutes: u32,
+    /// 工具调用总次数
+    pub total_calls: u64,
+    /// 工具调用失败次数（`status = failed`）
+    pub failed_calls: u64,
+    /// 平均调用耗时（毫秒），窗口内无调用时为 None
+    pub avg_duration_ms: Option<f64>,
+}

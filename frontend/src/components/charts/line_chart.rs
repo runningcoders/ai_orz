@@ -30,8 +30,6 @@ pub enum LineChartValueField {
     TokensInput,
     /// 输出 Token（单个时间桶内的 completion tokens）
     TokensOutput,
-    /// 每秒 Token（分钟桶数据 / 60，用于 QPS 曲线）
-    TokensPerSecond,
 }
 
 /// 按取值字段从数据点取出绘制值
@@ -40,7 +38,6 @@ fn point_value(p: &TimeSeriesPoint, field: LineChartValueField) -> f64 {
         LineChartValueField::CallCount => p.call_count as f64,
         LineChartValueField::TokensInput => p.tokens_input as f64,
         LineChartValueField::TokensOutput => p.tokens_output as f64,
-        LineChartValueField::TokensPerSecond => (p.tokens_input + p.tokens_output) as f64 / 60.0,
     }
 }
 

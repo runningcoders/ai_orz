@@ -32,14 +32,17 @@
 
 use dioxus::prelude::*;
 
-use common::api::GetTokenStatsRequest;
+use common::api::{
+    GetTokenStatsRequest, GetToolRuntimeStatsRequest, TokenStatsResponse, ToolRuntimeStatsResponse,
+};
 
-use crate::api::finance::get_token_stats;
+use crate::api::finance::{get_token_stats, get_tool_runtime_stats};
 use crate::api::hr::{list_runtime_agents, query_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
-use crate::components::charts::line_chart::{LineChart, LineChartValueField};
+use crate::api::system::get_health_metrics;
 use crate::components::chat::{MessageBubble, TypingIndicator};
+use crate::components::hud::StatReadout;
 use crate::components::mention_picker::{
     MentionCandidate, MentionPickedBar, MentionPicker, MentionState, mention_kinds_for,
     mention_tabs,
@@ -50,6 +53,7 @@ use crate::hooks::use_workspace_data::{WorkspaceData, use_workspace_data};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::mention::{MentionKind, read_caret, restore_caret};
+use crate::utils::number::{format_compact_count, format_decimal};
 use crate::utils::{
     HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, avatar_initials, build_optimistic_user_msg,
     in_project_context, replace_tmp_with_real, request_scope,
@@ -61,7 +65,6 @@ use common::api::{
     TaskListItem, TaskQueryRequest,
 };
 use common::enums::AssigneeType;
-use common::models::TimeSeriesPoint;
 use wasm_bindgen::{JsCast, closure::Closure};
 
 /// Project 状态标签
@@ -71,6 +74,30 @@ fn project_status_label(status: i32) -> &'static str {
         2 => "已完成",
         3 => "已归档",
         _ => "未知",
+    }
+}
+
+/// 顶栏运行时读数的时间窗口（分钟）
+///
+/// 模型侧与工具侧共用同一窗口，保证两项读数口径一致；也与后端
+/// `Get*RuntimeStatsRequest` / `GetTokenStatsRequest` 的默认值一致。
+const RUNTIME_METRICS_WINDOW_MINUTES: u32 = 60;
+
+/// 顶栏运行时指标单元（紧凑读数）。
+///
+/// 薄封装 [`StatReadout`]，避免在 RSX 里重复多遍同样的参数样板。
+/// 普通函数而非 `#[component]`：这里只在同一处渲染，无需独立属性类型。
+fn runtime_metric(label: &str, value: String, accent: Option<&str>) -> Element {
+    rsx! {
+        StatReadout {
+            label: label.to_string(),
+            value,
+            unit: None,
+            icon: None,
+            delta: None,
+            accent: accent.map(str::to_string),
+            compact: Some(true),
+        }
     }
 }
 
@@ -237,8 +264,14 @@ pub fn Workspace() -> Element {
     let mut project_unread = use_signal(std::collections::HashSet::<String>::new);
     let mut agent_unread = use_signal(std::collections::HashSet::<String>::new);
 
-    // 组织级分钟级 Token 消耗时序（后端 DuckDB 查询，30 秒轮询；顶栏 QPS 曲线用）
-    let token_series: Signal<Vec<TimeSeriesPoint>> = use_signal(Vec::new);
+    // 组织级运行时读数（后端 DuckDB 查询，30 秒轮询；顶栏数字指标用）
+    //
+    // - `token_stats`：模型侧——调用次数 + 输入/输出 Token 合计 + 分钟级时序
+    // - `tool_stats`：工具侧——调用次数 + 失败次数 + 平均耗时
+    let token_stats = use_signal(TokenStatsResponse::default);
+    let tool_stats = use_signal(ToolRuntimeStatsResponse::default);
+    // AOP 队列待处理数（系统侧；未取到时为 None，展示成「—」而不是 0）
+    let aop_queue_backlog = use_signal(|| None::<u64>);
 
     // 运行中 Agent 列表（轮询 runtime-list 接口）
     let runtime_agents = use_signal(RuntimeListResponse::default);
@@ -269,16 +302,27 @@ pub fn Workspace() -> Element {
         }
     });
 
-    // Token 消耗轮询：30 秒间隔，拉最近 60 分钟的分钟级时序（顶栏 QPS 曲线）
+    // 运行时读数轮询：30 秒间隔，拉最近 60 分钟的模型 / 工具统计（顶栏数字指标），
+    // 以及系统健康指标里的 AOP 队列待处理数。
     //
-    // 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，曲线末端偏低属预期。
+    // 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，读数偏低属预期。
     use_future(move || {
-        let mut token_series = token_series;
+        let mut token_stats = token_stats;
+        let mut tool_stats = tool_stats;
+        let mut aop_queue_backlog = aop_queue_backlog;
         async move {
             loop {
-                if let Ok(resp) = get_token_stats(GetTokenStatsRequest { minutes: Some(60) }).await
+                let minutes = Some(RUNTIME_METRICS_WINDOW_MINUTES);
+                if let Ok(resp) = get_token_stats(GetTokenStatsRequest { minutes }).await {
+                    token_stats.set(resp);
+                }
+                if let Ok(resp) =
+                    get_tool_runtime_stats(GetToolRuntimeStatsRequest { minutes }).await
                 {
-                    token_series.set(resp.points);
+                    tool_stats.set(resp);
+                }
+                if let Ok(resp) = get_health_metrics().await {
+                    aop_queue_backlog.set(Some(resp.aop_pending));
                 }
                 gloo_timers::future::TimeoutFuture::new(30_000).await;
             }
@@ -948,8 +992,25 @@ pub fn Workspace() -> Element {
                     let busy_n = ra.items.iter().filter(|i| i.state == "busy").count();
                     let rest_n = ra.items.iter().filter(|i| i.state == "resting").count();
 
-                    // Token QPS 迷你图数据（后端分钟级时序，最近 60 分钟）
-                    let points = token_series.read().clone();
+                    // 运行时读数（近 60 分钟窗口）：模型侧 + 工具侧
+                    //
+                    // 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，读数偏低属预期。
+                    let ts = token_stats.read();
+                    let tls = tool_stats.read();
+                    // 模型吞吐：窗口内 (输入 + 输出) Token / 窗口秒数
+                    let window_secs = RUNTIME_METRICS_WINDOW_MINUTES as f64 * 60.0;
+                    let model_throughput =
+                        (ts.total_tokens_input + ts.total_tokens_output) as f64 / window_secs;
+                    // 无调用时用「—」表示无数据，而不是误导性的 0ms
+                    let tool_duration_label = match tls.avg_duration_ms {
+                        Some(ms) => format!("{}ms", format_decimal(ms, 0)),
+                        None => "—".to_string(),
+                    };
+                    let queue_backlog = aop_queue_backlog();
+                    let queue_backlog_label = match queue_backlog {
+                        Some(n) => format_compact_count(n),
+                        None => "—".to_string(),
+                    };
 
                     rsx! {
                         div { class: "absolute top-3 left-3 right-3 z-10 hud-glass rounded-xl px-4 py-2 flex items-center gap-4 flex-wrap",
@@ -985,20 +1046,20 @@ pub fn Workspace() -> Element {
                                     span { class: "w-2 h-2 rounded-full bg-error" } "休息 {rest_n}"
                                 }
                             }
-                            // 流量迷你图
-                            div { class: "ml-auto h-12 flex items-center",
-                                if points.is_empty() {
-                                    span { class: "text-xs text-base-content/40", "暂无消耗" }
-                                } else {
-                                    LineChart {
-                                        data: points,
-                                        width: Some(160.0),
-                                        height: Some(48.0),
-                                        title: None,
-                                        value_label: Some("Token/s".to_string()),
-                                        value_field: Some(LineChartValueField::TokensPerSecond),
-                                    }
-                                }
+                            // 运行时读数（顶栏数字指标）
+                            //
+                            // 这里原来放的是 Token QPS 迷你折线图，但顶栏横条太窄，曲线看不出
+                            // 趋势，改成数字指标更直接。
+                            div { class: "ml-auto flex items-center gap-4 flex-wrap justify-end",
+                                span { class: "text-xs text-base-content/60 shrink-0", "近 60 分钟" }
+                                {runtime_metric("模型调用", format_compact_count(ts.total_calls), Some("primary"))}
+                                {runtime_metric("输入 Token", format_compact_count(ts.total_tokens_input), Some("info"))}
+                                {runtime_metric("输出 Token", format_compact_count(ts.total_tokens_output), Some("accent"))}
+                                {runtime_metric("吞吐 Token/s", format_decimal(model_throughput, 1), None)}
+                                {runtime_metric("工具调用", format_compact_count(tls.total_calls), Some("info"))}
+                                {runtime_metric("工具失败", format_compact_count(tls.failed_calls), Some("error"))}
+                                {runtime_metric("工具均耗时", tool_duration_label, Some("warning"))}
+                                {runtime_metric("队列积压", queue_backlog_label, queue_backlog.filter(|n| *n > 0).map(|_| "warning"))}
                             }
                         }
                     }

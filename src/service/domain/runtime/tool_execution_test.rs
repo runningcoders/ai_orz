@@ -666,6 +666,10 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
+        async fn tool_call_stats(&self, _ctx: RequestContext, _minutes: u32) -> Result<ToolStats> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
         async fn rebuild_vectors(
             &self,
             _ctx: RequestContext,

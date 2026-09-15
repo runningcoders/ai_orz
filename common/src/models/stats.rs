@@ -128,12 +128,18 @@ pub struct TaskStats {
 }
 
 /// 工具自身统计数据
+///
+/// 与 [`ModelCallStats`] 对位：同样是「领域通用统计结构体」，
+/// 既可挂在单个 Tool 上（`tool.stats`），也可用于组织级汇总读数
+/// （`ToolStatsQuery.tool_id = None`，不按工具收窄）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct ToolStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
     /// 失败次数
     pub failed_count: Option<u64>,
+    /// 平均调用耗时（毫秒），窗口内无调用时为 None
+    pub avg_duration_ms: Option<f64>,
 }
 
 /// 模型调用统计（通用，所有实体共用）

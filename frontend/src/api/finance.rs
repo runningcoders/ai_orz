@@ -5,13 +5,14 @@ use common::api::{
     CreateMcpServerResponse, CreateModelProviderRequest, CreateModelProviderResponse,
     CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolRequest,
     DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetTokenStatsRequest,
-    GetToolRequest, GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse,
-    ListToolsRequest, MessageChannelListItem, PagedResult, QueryToolCallEntriesRequest,
-    QueryToolCallEntriesResponse, SearchToolsRequest, SwitchEmbeddingProviderRequest,
-    SwitchEmbeddingProviderResponse, TestConnectionResponse, TestMessageChannelConnectionResponse,
-    TokenStatsResponse, ToolListItem, ToolQueryRequest, UpdateAttachmentContentRequest,
-    UpdateMcpServerStatusRequest, UpdateMessageChannelStatusRequest, UpdateModelProviderRequest,
-    UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
+    GetToolRequest, GetToolResponse, GetToolRuntimeStatsRequest, ListMcpServersResponse,
+    ListModelProvidersResponse, ListToolsRequest, MessageChannelListItem, PagedResult,
+    QueryToolCallEntriesRequest, QueryToolCallEntriesResponse, SearchToolsRequest,
+    SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
+    TestMessageChannelConnectionResponse, TokenStatsResponse, ToolListItem, ToolQueryRequest,
+    ToolRuntimeStatsResponse, UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
+    UpdateMessageChannelStatusRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
+    UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
 };
 use web_sys::FormData;
 
@@ -113,6 +114,17 @@ pub async fn get_token_stats(req: GetTokenStatsRequest) -> Result<TokenStatsResp
         qs
     ))
     .await
+}
+
+/// 获取组织级工具调用汇总（工作台顶栏运行时读数）
+///
+/// 与 `get_token_stats` 同一族：都是「组织级统计读数」，区别是本接口只给合计值、
+/// 不返回时序点。同样受批次刷盘影响，最近一段时间的调用可能尚未落库。
+pub async fn get_tool_runtime_stats(
+    req: GetToolRuntimeStatsRequest,
+) -> Result<ToolRuntimeStatsResponse, ApiError> {
+    let qs = super::build_query_string(&[("minutes", req.minutes.map(|m| m.to_string()))]);
+    api_get(&format!("/api/v1/finance/tools/runtime-stats{}", qs)).await
 }
 
 // ===== 工具管理 =====

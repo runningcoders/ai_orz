@@ -7,6 +7,7 @@ use crate::models::tool::{Tool, ToolExecutionRequest, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::background_task::TaskProgressCounter;
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::stats::StatFilter;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::cortex::CortexDao;
@@ -66,7 +67,7 @@ pub fn new(
 /// Tool 附带信息获取选项
 #[derive(Debug, Clone, Default)]
 pub struct ToolFetchOptions {
-    /// 是否加载统计信息（ToolStats: 调用次数 + 失败次数）
+    /// 是否加载统计信息（ToolStats: 调用次数 + 失败次数 + 平均耗时）
     pub with_stats: Option<bool>,
     /// 统计时间范围（毫秒），None 表示全部历史
     pub stats_time_range: Option<(i64, i64)>,
@@ -174,6 +175,14 @@ pub trait ToolDal: Send + Sync {
         tool_id: &str,
         options: StatsFetchOptions,
     ) -> Result<ToolStats>;
+
+    /// 查询组织级工具调用汇总（工作台顶栏运行时读数用）
+    ///
+    /// 与 `ModelProviderDal::model_call_time_series` 同一形态：语义化命名 + 组织隔离
+    /// 在本层注入。不按工具收窄（`ToolStatsQuery.tool_id = None`），
+    /// 组织隔离由 `ctx.organization_id` 注入 filter 实现；系统上下文（无组织）时统计全量。
+    /// `minutes` 会被 clamp 到 `[1, 1440]`（最长 24 小时）。
+    async fn tool_call_stats(&self, ctx: RequestContext, minutes: u32) -> Result<ToolStats>;
 
     /// 🔄 重建所有工具的向量索引
     ///
@@ -731,7 +740,33 @@ impl ToolDal for ToolDalImpl {
         options: StatsFetchOptions,
     ) -> Result<ToolStats> {
         let query = ToolStatsQuery {
-            tool_id: tool_id.to_string(),
+            tool_id: Some(tool_id.to_string()),
+            ..Default::default()
+        };
+        Ok(self.tool_stats_dao.get_stats(ctx, query, options).await?)
+    }
+
+    async fn tool_call_stats(&self, ctx: RequestContext, minutes: u32) -> Result<ToolStats> {
+        const MAX_MINUTES: u32 = 1440;
+        let minutes = minutes.clamp(1, MAX_MINUTES);
+        let now = chrono::Utc::now().timestamp_millis();
+        let start = now - i64::from(minutes) * 60_000;
+
+        let mut query = ToolStatsQuery {
+            time_range: Some((start, now)),
+            ..Default::default()
+        };
+        if let Some(org_id) = ctx.organization_id.clone() {
+            query.filters.push(StatFilter::Equals {
+                key: "organization_id".to_string(),
+                value: Value::String(org_id),
+            });
+        }
+
+        // time_range 同时喂给 options，让 call_summary 能算出窗口平均 QPS
+        let options = StatsFetchOptions {
+            with_call_summary: true,
+            time_range: Some((start, now)),
             ..Default::default()
         };
         Ok(self.tool_stats_dao.get_stats(ctx, query, options).await?)
