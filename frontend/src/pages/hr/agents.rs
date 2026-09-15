@@ -58,17 +58,25 @@ fn kind_label(kind: &str) -> String {
 
 /// 生命周期「下一步」动作文案（状态只是结果，动作发生在边上）。
 ///
-/// 返回 `None` 表示无需引导的状态（已删除等）。与
-/// [`handle_onboard`] 的分支一一对应：初创→职业选择、面试中→通过面试、待入职→入职选包、
-/// 已入职→办理离职、待离职→完成离职。
+/// 仅覆盖成长路径：初创→职业选择、面试中→通过面试、待入职→入职选包，与
+/// `handle_onboard` 的分支一一对应。在役后的退出动作（办理离职/完成离职）
+/// 统一收口到操作列（见 [`offboard_action_label`]），避免状态列与操作列出现重复入口。
 fn next_action_label(status: i32) -> Option<&'static str> {
     match AgentStatus::from(status) {
         AgentStatus::Incubating => Some("选择职业"),
         AgentStatus::Interviewing => Some("通过面试"),
         AgentStatus::PendingOnboard => Some("办理入职"),
-        AgentStatus::Onboarded => Some("办理离职"),
-        AgentStatus::PendingOffboard => Some("完成离职"),
         _ => None,
+    }
+}
+
+/// 操作列离职入口文案，按状态区分两段式流转（与后端状态机转移命名一致）：
+/// 已入职 → 办理离职（进入交接期）、待离职 → 完成离职（正式下线）。
+fn offboard_action_label(status: i32) -> &'static str {
+    if AgentStatus::from(status) == AgentStatus::PendingOffboard {
+        "完成离职"
+    } else {
+        "办理离职"
     }
 }
 
@@ -195,11 +203,11 @@ pub fn HrAgents() -> Element {
         });
     });
 
-    // ===== 生命周期推进：状态只是结果，动作发生在「边」上 =====
+    // ===== 成长路径推进（状态列引导按钮）：状态只是结果，动作发生在「边」上 =====
     // 初创 → 职业选择（按职业/能力匹配个人能力）
     // 面试中 → 通过面试（转入待入职，无副作用）
     // 待入职 → 入职（弹窗选包，安装组织要求的包）
-    // 已入职/待离职 → 离职两步（不可逆，先弹确认再执行）
+    // 在役后的离职流转不在本 handler：统一走操作列入口 → offboard_confirm 确认弹窗
     let handle_onboard = move |id: String, status: i32| {
         let status = AgentStatus::from(status);
         spawn(async move {
@@ -231,10 +239,6 @@ pub fn HrAgents() -> Element {
                 AgentStatus::PendingOnboard => {
                     // 入职需要选包 → 交给弹窗，不在这里直接提交
                     onboard_agent_id.set(Some(id));
-                }
-                AgentStatus::Onboarded | AgentStatus::PendingOffboard => {
-                    // 离职两步不可逆（状态机无回边）→ 交给确认弹窗执行
-                    offboard_confirm.set(Some((id, status as i32)));
                 }
                 _ => {}
             }
@@ -630,9 +634,9 @@ pub fn HrAgents() -> Element {
                                                     }
                                                 }
                                                 td { "data-label": "操作",
-                                                    // 删除按钮按状态渲染：入职前（未产生业务交互）可删；
-                                                    // 已入职（在役/交接中）后删除不再适用，按钮切换为「离职」，
-                                                    // 引导走两段式离职流转（与后端 delete_agent 门禁对齐）
+                                                    // 退出类动作唯一入口：入职前（未产生业务交互）可删；
+                                                    // 已入职（在役/交接中）后删除不再适用，按钮切换为离职流转，
+                                                    // 文案按状态区分两段式（与后端 delete_agent 门禁对齐）
                                                     if agent_deletable(astatus) {
                                                         button { class: "btn hud-btn btn-error btn-sm",
                                                             onclick: move |_| {
@@ -644,7 +648,7 @@ pub fn HrAgents() -> Element {
                                                     } else {
                                                         button { class: "btn hud-btn btn-warning btn-sm",
                                                             onclick: move |_| offboard_confirm.set(Some((id_offboard.clone(), astatus))),
-                                                            "离职"
+                                                            "{offboard_action_label(astatus)}"
                                                         }
                                                     }
                                                 }

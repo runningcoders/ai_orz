@@ -19,14 +19,16 @@ const BASE: &str = "/api/v1/finance/identity/email";
 // ===== 集成状态聚合 =====
 
 /// 获取当前用户邮箱机器人凭证快照（platform 空串返回全部提供商，渠道创建下拉使用）
+///
+/// ⚠️ `platform` **必须出现在 query 里**，空串也要写成 `?platform=`（`platform` 空 = 不过滤）。
+/// 后端 `EmailIntegrationStatusRequest.platform` 是必填 `String`（query 参数走
+/// `serde_json::from_value` 反序列化），**整段 query 缺失**会直接 400：
+/// `invalid_request: query 参数解析失败: missing field \`platform\``。
+/// 别为「空值」做「省略参数」的优化——那是把空串当成缺字段。
 pub async fn get_email_integration_status(
     platform: &str,
 ) -> Result<EmailIntegrationStatusResponse, ApiError> {
-    if platform.trim().is_empty() {
-        api_get_or_default(&format!("{}/status", BASE)).await
-    } else {
-        api_get_or_default(&format!("{}/status?platform={}", BASE, platform)).await
-    }
+    api_get_or_default(&format!("{}/status?platform={}", BASE, platform)).await
 }
 
 // ===== 凭证 CRUD =====

@@ -1,12 +1,15 @@
 //! 通用头像信息气泡（AvatarBubble）
 //!
 //! 点击头像弹出基础信息卡，Agent / 用户两用：
-//! - Agent 头像：点击时按需拉取 `get_agent`（组件内缓存，重复点击不重复请求），
+//! - Agent 头像：展开时按需拉取 `get_agent`（组件内缓存，重复展开不重复请求），
 //!   卡片内容与聊天侧栏 Agent Tab 共用 [`crate::components::agent_summary`] 的分组实现。
 //! - 用户头像：静态展示显示名与短 ID。
 //!
 //! 交互采用 DaisyUI dropdown 范式（tabindex + focus-within），点外自动收起，零额外 JS；
-//! 浮层位置在点击 / 键盘聚焦时按头像实时视口坐标计算（见 [`resolve_anchor`]）。
+//! 浮层位置与懒加载都挂在触发层的聚焦事件上（见 [`resolve_anchor`] 与 [`AvatarBubble`]）。
+//! ⚠️ 不要改回 `onclick`：浮层展开那一刻 DaisyUI 会给触发层加 `pointer-events: none`
+//! （`.dropdown:focus-within > [tabindex]:first-child`），mouseup / click 落到 `.dropdown`
+//! 包装层上 → 挂在触发层的 `onclick` 永不触发（实测见组件内 `onfocus` 处注释）。
 //! `status` 传入时按 [`avatar_status_ring`] 渲染生命周期警示环（待离职=黄 / 已离职=红）。
 //!
 //! ⚠️ **宿主契约**：调用方只需给一个定位容器（聊天页是 `.chat-image`，负责 grid 定位），
@@ -155,8 +158,8 @@ fn scroll_ancestor_rect(from: &web_sys::Element) -> Option<web_sys::DomRect> {
 
 /// 由头像盒的视口左上角推导浮层锚点。
 ///
-/// 点击与键盘聚焦两条路径共用同一套「向上优先 / 不够就翻向下 / 再不够就限高」规则，
-/// 避免其中一条路径退回 DaisyUI 默认定位后在消息区被裁。
+/// 鼠标点击与键盘 Tab 都会先触发触发层的 `onfocus`，故只有这一条展开路径，
+/// 规则统一为「向上优先 / 不够就翻向下 / 再不够就限高」。
 /// 可用的上/下边界取自 `bounds`（滚动祖先），取不到则退化为整个视口。
 fn resolve_anchor(
     box_left: f64,
@@ -194,7 +197,7 @@ fn resolve_anchor(
 
 /// 点击头像弹出基础信息气泡。
 ///
-/// - `agent_id` 有值 → Agent 卡（点击时懒加载 get_agent）
+/// - `agent_id` 有值 → Agent 卡（展开时懒加载 get_agent）
 /// - `user_id` 有值 → 用户卡（展示短 ID）
 /// - `status` 有值 → 按 [`avatar_status_ring`] 叠加生命周期警示环
 /// - `align` → 浮层水平对齐（见 [`BubbleAlign`]）
@@ -240,35 +243,37 @@ pub fn AvatarBubble(
                 tabindex: 0,
                 role: "button",
                 class: "avatar avatar-bubble-trigger cursor-pointer outline-none",
-                // 两条展开路径都必须先算锚点：漏掉的那条会退回 DaisyUI 的
-                // `position: absolute; bottom: 100%`，在 `overflow-y-auto` 的消息区里
-                // 被整块裁掉（键盘 Tab 聚焦即命中此坑，实测卡片 176px 仅露出 5px）。
-                // 键盘路径没有鼠标坐标，改用 activeElement（此刻即本触发层）的视口矩形。
+                // ⚠️⚠️ 展开路径**只有 focus 一条，不要改回 `onclick`**（2026-09-15 无头实测）：
+                // 浮层可见性由 `.dropdown:focus-within` 驱动，而 DaisyUI 同时给「展开中的触发层」
+                // 压了一条 `pointer-events: none` —— `:is(.dropdown:focus-within, …) >
+                // [tabindex]:first-child{pointer-events:none}`，本触发层正是 `.dropdown` 的
+                // 第一个 `[tabindex]` 子元素。
+                // 而焦点在 **mousedown 阶段**就已落地 → mousedown 之后触发层立刻变成
+                // `pointer-events: none`，`elementFromPoint(头像中心)` 从「圆」变成 `.dropdown`
+                // 包装层 ⇒ mouseup / click 的 target 都不再是触发层，挂在触发层上的 `onclick`
+                // 永不触发。实测事件序列：TRIGGER.mousedown → TRIGGER.focus →
+                // document.mouseup target=.dropdown → document.click target=.dropdown
+                //（触发层 click 缺席）。
+                // 症状：浮层正常展开（focus-within 生效）却停在初始态「加载中…」且从不发请求
+                //（后端 api_notice 日志里看不到任何点击引发的 get_agent）。
+                // 故锚点与懒加载都挂在 `onfocus`：它同时覆盖鼠标点击与键盘 Tab，
+                // 也恰好就是「浮层展开」这一个信号。
                 onfocus: move |_| {
-                    let Some(el) = focused_element() else {
-                        return;
-                    };
-                    let Some((vw, vh)) = viewport_size() else {
-                        return;
-                    };
-                    let r = el.get_bounding_client_rect();
-                    let bounds = scroll_ancestor_rect(&el);
-                    anchor.set(Some(resolve_anchor(r.left(), r.top(), vw, vh, align, bounds)));
-                },
-                onclick: move |evt: MouseEvent| {
-                    if let Some((vw, vh)) = viewport_size() {
-                        // 头像盒（= 事件 target）的视口左上角 = 鼠标视口坐标 − 鼠标相对盒的偏移
-                        let c = evt.client_coordinates();
-                        let o = evt.element_coordinates();
-                        // 焦点此刻已落在触发层上（tabindex=0 → mousedown 先于 click 完成聚焦），
-                        // 借它向上找滚动祖先，只用于取边界、不参与坐标计算
-                        let bounds = focused_element().and_then(|el| scroll_ancestor_rect(&el));
-                        anchor.set(Some(resolve_anchor(c.x - o.x, c.y - o.y, vw, vh, align, bounds)));
+                    // 锚点：聚焦瞬间 activeElement 就是本触发层，取其视口矩形
+                    //（键盘路径没有鼠标坐标，这条路径天然统一）
+                    if let Some(el) = focused_element()
+                        && let Some((vw, vh)) = viewport_size()
+                    {
+                        let r = el.get_bounding_client_rect();
+                        let bounds = scroll_ancestor_rect(&el);
+                        anchor.set(Some(resolve_anchor(r.left(), r.top(), vw, vh, align, bounds)));
                     }
                     let Some(aid) = open_agent_id.clone() else {
                         return;
                     };
-                    if agent_card().is_some() {
+                    // 已成功加载则跳过；未加载或上次失败都重新拉取
+                    //（否则一次 404 会让卡片永久停在「信息加载失败」，再展开也不重试）
+                    if matches!(agent_card(), Some(Ok(_))) {
                         return;
                     }
                     spawn(async move {
