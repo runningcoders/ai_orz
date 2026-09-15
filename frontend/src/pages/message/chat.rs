@@ -4,7 +4,7 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use crate::api::finance::upload_attachment;
 use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
-use crate::api::project::{create_project, list_projects};
+use crate::api::project::{create_project, get_project, list_projects};
 use crate::components::avatar_bubble::{AvatarBubble, AvatarTone, BubbleAlign};
 use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
@@ -27,7 +27,7 @@ use crate::utils::{
     replace_tmp_with_real, request_scope,
 };
 use common::api::{
-    AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse,
+    AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse, GetProjectRequest,
     GetReceptionAgentResponse, ListAgentsRequest, ListProjectsRequest, ListProjectsResponseItem,
     MessageListItem, SendMessageToAgentParams,
 };
@@ -188,6 +188,33 @@ pub fn MessageChat() -> Element {
     // 统计周期刷新计数器：由下方 3s 轮询循环每 10 拍（30s，对齐后端统计落盘节奏）递增一次，
     // 单独成信号以便只命中 Agent 统计 Tab，不牵动项目总览/工具 Tab 的事件驱动语义。
     let mut stats_poll_tick = use_signal(|| 0u64);
+
+    // 当前会话目标 Agent 的**唯一**解析入口：项目会话 = 项目 owner；默认对话 = 前台 Agent。
+    //
+    // ⚠️ 单一来源。此前 3s 轮询是从 `projects` 列表快照里找 owner、而右侧信息面板的
+    // Agent 页从 `get_project` 响应里取 owner —— 两处口径不同：项目不在列表里（列表未
+    // 刷新 / 分页未覆盖）时轮询目标会退化成 None，置底状态气泡归零、侧栏退回自身懒加载
+    // 而不再实时刷新。现在统一以 `get_project` 为事实源，`projects` 列表只负责左侧导航。
+    let mut target_agent_id = use_signal(|| Option::<String>::None);
+    use_effect(move || {
+        let Some(pid) = selected_project() else {
+            // 默认对话：前台 Agent（后端在无前台 Agent 时会回退 resolve_agent 兜底）
+            target_agent_id.set(reception_agent().map(|a| a.agent_id));
+            return;
+        };
+        spawn(async move {
+            let owner = get_project(GetProjectRequest {
+                id: pid,
+                ..Default::default()
+            })
+            .await
+            .ok()
+            .and_then(|p| p.owner_agent_id);
+            // 无需比较相等：本 effect 只读 selected_project / reception_agent，
+            // 不订阅 target_agent_id，写回不会自触发重跑构成循环
+            target_agent_id.set(owner);
+        });
+    });
 
     // 权限检查：先注册所有 hooks，再根据 auth 状态决定是否渲染
     // （Dioxus 要求 hooks 必须在每次 render 中按相同顺序注册，不能在条件分支中跳过）
@@ -476,7 +503,8 @@ pub fn MessageChat() -> Element {
     });
 
     // 轮询当前会话目标 Agent 的运行时状态（3s 周期），驱动置底状态气泡实时刷新。
-    // 目标解析：项目对话取 owner agent，默认对话取前台 Agent；无法定位时归零。
+    // 目标直接读 target_agent_id（项目对话 = 项目 owner，默认对话 = 前台 Agent），
+    // 与右侧信息面板 Agent 页同源；无法定位时归零。
     // spawn 的 future 绑定组件 scope，页面卸载时自动取消。
     use_effect(move || {
         spawn(async move {
@@ -484,15 +512,9 @@ pub fn MessageChat() -> Element {
             // Agent 统计 Tab 借既有 tick→防抖→load_stats 管道获得周期刷新，无需第二个循环
             let mut poll_count = 0u64;
             loop {
-                let target = if let Some(pid) = selected_project() {
-                    projects
-                        .read()
-                        .iter()
-                        .find(|p| p.id == pid)
-                        .and_then(|p| p.owner_agent_id.clone())
-                } else {
-                    reception_agent().map(|a| a.agent_id)
-                };
+                // 目标 Agent 统一由 target_agent_id 解析（项目 owner / 前台 Agent），
+                // 与右侧信息面板 Agent 页共用同一来源，两处不再各自解析
+                let target = target_agent_id();
                 match target {
                     Some(id) => {
                         if let Ok(resp) = get_agent(GetAgentRequest {
@@ -1550,6 +1572,7 @@ pub fn MessageChat() -> Element {
                     stats_poll_tick: stats_poll_tick(),
                     on_close: move |_| panel_open.set(false),
                     agent_info: target_agent_info,
+                    target_agent_id: target_agent_id,
                 }
             }
 

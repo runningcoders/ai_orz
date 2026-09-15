@@ -82,7 +82,11 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 /// - `project_id`：选中项目 ID（None 表示默认对话模式）。
 ///   必须以 Signal 传入：use_effect 依赖其变化触发项目数据加载，
 ///   普通 prop 非响应式，切换项目后 effect 不会重跑（面板会永远转圈）
-/// - `reception_agent_id`：前台 Agent ID（默认对话模式的 Agent Tab 数据源）
+/// - `reception_agent_id`：前台 Agent ID（现仅工具调用 Tab 使用；Agent Tab 改用
+///   `target_agent_id`，以便与主链路轮询同源）
+/// - `target_agent_id`：当前会话目标 Agent ID，由 chat 页统一解析（项目会话 = 项目
+///   owner，默认对话 = 前台 Agent）。两个模式的 Agent Tab 都由它定位
+/// - `agent_info`：主链路轮询共享的 Agent 详情，Agent Tab 优先消费（id 匹配时零请求）
 /// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据。
 ///   同样必须以 Signal 传入才能驱动 use_effect 重跑
 /// - `stats_poll_tick`：统计周期刷新计数器（chat 页 3s 轮询每 30s 递增），
@@ -98,6 +102,13 @@ pub fn ChatSidePanel(
     /// 主链路轮询共享的目标 Agent 详情（chat 页置底状态气泡与轮询同源），
     /// AgentInfoTab 优先消费，无值时保留自身懒加载兜底。
     agent_info: Signal<Option<GetAgentResponse>>,
+    /// 当前会话目标 Agent ID：chat 页的单一解析来源（项目会话 = 项目 owner，
+    /// 默认对话 = 前台 Agent）。
+    ///
+    /// Agent Tab 用它定位，不再自行从项目详情 / reception 里各取一份 ——
+    /// 「面板展示的 Agent」与「3s 轮询刷新的 Agent」必须是同一个，
+    /// 否则会出现展示 A 的身份、刷新 B 的状态这种错位。
+    target_agent_id: Signal<Option<String>>,
 ) -> Element {
     let toast = use_toast();
     let mut project = use_signal(|| None::<GetProjectResponse>);
@@ -226,11 +237,14 @@ pub fn ChatSidePanel(
                 toast,
             ),
             2 => artifacts_tab(project_data.as_ref(), &tasks_list),
-            3 => match project_data.as_ref().and_then(|p| p.owner_agent_id.clone()) {
-                Some(agent_id) => rsx! {
+            // 负责人由 target_agent_id 提供（与主链路轮询同源）。
+            // 项目详情未就绪时先走加载态，避免闪现「未指定负责人」再跳成 Agent 信息。
+            3 => match (project_data.as_ref(), target_agent_id()) {
+                (None, _) => loading_placeholder(),
+                (Some(_), Some(agent_id)) => rsx! {
                     AgentInfoTab { agent_id, shared_info: agent_info, refresh_tick: agent_stats_tick }
                 },
-                None => empty_hint("项目未指定负责人"),
+                (Some(_), None) => empty_hint("项目未指定负责人"),
             },
             4 => rsx! {
                 ToolCallsTab {
@@ -243,12 +257,13 @@ pub fn ChatSidePanel(
         }
     } else {
         match tab {
-            0 => match &reception_agent_id {
+            0 => match target_agent_id() {
                 Some(agent_id) => rsx! {
                     AgentInfoTab {
-                        agent_id: agent_id.clone(),
+                        agent_id,
                         shared_info: agent_info,
-                        refresh_tick: tool_tab_tick,
+                        // 与项目模式对齐：叠加 stats_poll_tick，静默期统计也按 30s 节奏刷新
+                        refresh_tick: agent_stats_tick,
                     }
                 },
                 None => empty_hint("暂无前台 Agent"),
