@@ -166,6 +166,9 @@ async fn save_user_message(
 
 fn message_event_json(m: &Message) -> serde_json::Value {
     serde_json::json!({
+        // 与 `Registry::publish` 注入的扁平封套对齐：`kind` 与 payload 字段同层。
+        // `MessageConsumer::on_event` 在反序列化前靠它分流，缺则判「缺少 kind 字段」。
+        "kind": "message.created",
         "message_id": m.po.id,
         "project_id": m.po.project_id,
         "task_id": m.po.task_id,

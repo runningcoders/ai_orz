@@ -273,6 +273,8 @@ async fn test_consumer_tool_call_request_chain(pool: SqlitePool) {
     // 6. 调用 Consumer 处理消息事件
     let consumer = MessageConsumer::new();
     let event = serde_json::json!({
+        // 队列信封是扁平的：`kind` 必须与 payload 字段同层，on_event 靠它分流
+        "kind": "message.created",
         "message_id": message_id,
         "project_id": null,
         "task_id": null,
@@ -754,6 +756,8 @@ async fn test_real_llm_auto_tool_call(pool: SqlitePool) {
     // 7. 调用 Consumer 触发 awaken（真实 LLM 调用）
     let consumer = MessageConsumer::new();
     let event = json!({
+        // 队列信封是扁平的：`kind` 必须与 payload 字段同层，on_event 靠它分流
+        "kind": "message.created",
         "message_id": message_id,
         "project_id": null,
         "task_id": null,

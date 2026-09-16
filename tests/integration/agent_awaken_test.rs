@@ -36,7 +36,12 @@ use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
 use uuid::Uuid;
 
-/// 构造 MessageCreatedEvent JSON
+/// 构造 `message.created` 的**队列信封** JSON
+///
+/// ⚠️ 必须带顶层 `kind`：`MessageConsumer::on_event` 在反序列化**之前**靠它分流，
+/// 而 `Registry::publish` 注入的封套是**扁平**的（payload 字段与 `kind`/`event_id`
+/// 同层，不是嵌套在 `payload` 下）。缺 `kind` 会直接判「缺少 kind 字段」而上抛
+/// `Err`，根本进不到业务逻辑——是真实队列形态的必然要求，不是测试脚手架。
 ///
 /// from_role: User=0, Agent=1, System=2
 /// message_type: Text=0
@@ -47,6 +52,7 @@ fn make_message_event(
     to_role: i32,
 ) -> serde_json::Value {
     json!({
+        "kind": "message.created",
         "message_id": message_id,
         "project_id": null,
         "task_id": null,
@@ -276,7 +282,9 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
     // 5. 调用 Consumer 处理消息事件
     let consumer = MessageConsumer::new();
     // Note: this event includes project_id and task_id
+    // `kind` 与 payload 字段同层（扁平信封），缺它会被 on_event 判为「缺少 kind 字段」
     let event = json!({
+        "kind": "message.created",
         "message_id": message_id,
         "project_id": project_id,
         "task_id": task_id,
