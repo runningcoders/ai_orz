@@ -471,6 +471,26 @@ pub enum RetryDecision {
    - 语义：**本事件被消费的累计次数**，首次失败即 `attempt == 1`。`ack` / `Discard` 后事件从队列消失，计数随之消亡，**无需持久化**。
    - 它是「退避 N 次后放弃」的必需信息，也是策略引擎的算子来源（见 §4.5）。
 
+**⚠️ 契约后果：无生产者 ⇒ `Err` 无限重投**（2026-09-16 review 补记）
+
+`finish_consumption` 反查不到生产者时走 `delivery_of`：`Ok → Ack`、`Err → Nack`。框架不设 `max_retry`，所以**无生产者的消费者上报 `Err` = 无限重投**。叠加 Step 5 的 per-event 退避后，形状从「每秒刷日志」变成「每 60s 静默重试、永不放弃」——**更隐蔽，也不再有日志风暴作信号**。
+
+当该 topic 同时是 `ordered` + 非空 `order_key` 时，后果升级为**永久饥饿**：失败事件一直占着门闩，同 key 的后续事件全部排队等待。于是有这条红线：
+
+> **红线：凡会上报 `Err` 的消费者，其 topic 必须有生产者（订阅声明 `notify_producer`）；生产者的 `on_failed` 必须用 `attempt` 兜底，不得无条件 `Retry`。**
+>
+> 注：「没有业务收尾可做」**不等于**「可以不声明 `notify_producer`」—— 后者同时放弃了终局判定权。
+
+按此红线补齐的三处（判定统一走 `inbound_retry::decide` = 永久性错误码 + `MAX_ATTEMPTS = 8` 兜底）：
+
+| topic | 补齐前 | 补齐后 |
+|---|---|---|
+| `agent.settle.requested` | 无生产者；`SettleAttempt::Busy` 主动返回 `Err` → 无限重投；与 `message.created` 共用 `agent_id` 门闩 → 该 Agent 消息流永久饥饿 | 新增 `producer/agent_settle.rs`（无业务收尾，只做次数兜底），消费端声明 `notify_producer()` |
+| `a2a.poll.requested` | 无生产者（原注释误以为"生产者无收尾 ⇒ 可不声明"）；ordered + `order_key = agent_id`，且每 30s 新增同 key 事件 → 队列只增不减、该 Agent 轮询实质停摆 | `A2aPollingProducer` 补 `on_consumed`（debug）/ `on_failed`（`decide`），消费端声明 `notify_producer()` |
+| `message.created` | 有生产者，但 `on_failed` 无条件 `Retry`、忽略传入的 `attempt` | 复用 `inbound_retry::is_permanent(err, attempt)`；放弃时**不**置回 `Pending`（否则启动恢复会把已放弃的消息再扫出来重投） |
+
+**门闩状态机的已验证坑**（同轮 review 发现并修复）：`ack` 曾先 `has_active_message.insert(key, true)`（后继上堆），紧接着又被 `if queue.is_empty()` 分支 `remove` 掉 —— **队列空了但后继还在堆里**。于是下一个同 key 事件判定「门闩空闲」直接上堆 → 同 key 两事件并存在堆里 → 并发 > 1 时并行消费、FIFO 也可能乱序。修法：两段**互斥**（pop 出后继即保持 `true`，只有 `pop()` 返回 `None` 才清理）。回归用例 `queue::in_memory::tests::latch_stays_held_when_ack_releases_last_successor`。
+
 ### 4.5 与策略引擎（`pkg/policy`）的对接
 
 `on_failed` 的决策逻辑不该是散落的 `if err.contains(..) { .. }`。项目已有通用判断框架 [pkg/policy/mod.rs](src/pkg/policy/mod.rs)：`Policy::evaluate(&Metrics) -> Vec<String>`（命中 id 列表，空 = 未命中）+ `Metrics`（`HashMap<String, Value>`，算子灵活扩展）+ `policy_set!` 宏（And/Or 组合）。

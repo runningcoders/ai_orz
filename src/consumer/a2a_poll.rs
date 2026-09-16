@@ -53,7 +53,15 @@ impl Consumer for A2aPollConsumer {
         // `.ordered()`：同一 Agent 的相邻两轮必须串行 —— 生产者「只认领」的前提。
         // 本消费者是 Async（默认并发 1），`ordered` 目前只在并发 > 1 时可观测；
         // 显式声明是为了把契约钉死，避免将来调高并发时静默失去串行保证。
-        vec![Subscription::new(EventTopic::A2aPollRequested).ordered()]
+        // `.notify_producer()`：消费者上报 Err 时若无生产者 → Nack 无限重投；
+        // 本 topic 是 ordered + `order_key = agent_id`，一条永久失败的事件会堵死该
+        // Agent 的轮询（且每 30s 还新增同 key 事件）。生产者侧无业务收尾，
+        // 只负责次数兜底（见 `producer/a2a_polling` 模块文档）。
+        vec![
+            Subscription::new(EventTopic::A2aPollRequested)
+                .ordered()
+                .notify_producer(),
+        ]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

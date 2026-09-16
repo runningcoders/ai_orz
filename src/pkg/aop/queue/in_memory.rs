@@ -309,12 +309,15 @@ impl EventQueue for InMemoryEventQueue {
             return Ok(());
         };
 
+        // ⚠️ 两段必须互斥：只要还 pop 出了后继（它已上堆、等待被消费），
+        // `has_active_message` 就**必须**保持 true —— 否则下一个同 key 事件入队时
+        // 会判定「门闩空闲」而直接上堆，与上一个后继同时在堆里 → 并发 > 1 时同 key
+        // 被并行消费，`order_key` 串行门闩静默失效（FIFO 也可能乱序）。
+        // 只有 pop 返回 None（该 key 确实无后继）才清理状态。
         if let Some(next_ref) = queue.pop() {
             global_heap.push(next_ref);
             has_active_message.insert(order_key.clone(), true);
-        }
-
-        if queue.is_empty() {
+        } else {
             queues.remove(&order_key);
             has_active_message.remove(&order_key);
         }
@@ -609,6 +612,49 @@ mod tests {
                 .await
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    /// 护栏：ack 放行「最后一个后继」后，门闩**仍被该后继占用**
+    ///
+    /// 回归来源：曾在 ack 里先 `has_active_message.insert(key, true)`（后继上堆），
+    /// 紧接着又被 `if queue.is_empty()` 分支 `remove` 掉 —— 队列空了但后继还在堆里。
+    /// 于是下一个同 key 事件判定「门闩空闲」直接上堆 → 同 key 两事件并存在堆里
+    /// → 并发 > 1 时被并行消费，串行门闩静默失效（且 FIFO 可能乱序）。
+    #[tokio::test]
+    async fn latch_stays_held_when_ack_releases_last_successor() {
+        let queue = new_queue().await;
+        let ctx = RequestContext::new_system();
+
+        for (id, created_at) in [("e1", 1), ("e2", 2)] {
+            queue
+                .enqueue(
+                    ctx.clone(),
+                    envelope(id, "message.created", "agent-1", created_at),
+                )
+                .await
+                .unwrap();
+        }
+
+        let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(first["event_id"], "e1");
+        // e1 结束 → e2 上堆（此时 key 队列已空，正是当初踩空的形状）
+        queue.ack(ctx.clone(), "e1").await.unwrap();
+
+        // e3 入队：e2 还在堆里未被消费 → e3 必须继续排在门闩后面
+        queue
+            .enqueue(ctx.clone(), envelope("e3", "message.created", "agent-1", 3))
+            .await
+            .unwrap();
+
+        let second = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(second["event_id"], "e2", "e2 应先出队");
+
+        let third = queue.dequeue_next(ctx.clone()).await.unwrap();
+        assert!(
+            third.is_none(),
+            "e2 未 ack 前 e3 不应出队（门闩应仍被 e2 占用），实际出队：{:?}",
+            third.map(|v| v["event_id"].clone())
         );
     }
 

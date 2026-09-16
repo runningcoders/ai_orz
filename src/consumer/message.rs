@@ -97,7 +97,15 @@ impl MessageConsumer {
             Subscription::new(EventTopic::MessageCreated)
                 .ordered()
                 .notify_producer(),
-            Subscription::new(EventTopic::AgentSettleRequested).ordered(),
+            // `.notify_producer()` 在这里**同样必需**（不只是 `message.created`）：
+            // 本 topic 若没有生产者，消费失败会走 `delivery_of` 兜底 → `Nack`
+            // **无限重投**；而它与 `message.created` 共用 `order_key = agent_id`
+            // 且声明了 `ordered` → 一条久失败（或长期 Busy）的沉淀请求会**永久占住
+            // 门闩**，该 Agent 的后续消息与结算全部饥饿。生产者（`agent_settle`）
+            // 没有业务状态要翻转，只负责回答「重试到第几次就放弃」。
+            Subscription::new(EventTopic::AgentSettleRequested)
+                .ordered()
+                .notify_producer(),
         ]
     }
 }
