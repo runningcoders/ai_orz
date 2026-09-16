@@ -9,8 +9,9 @@ use async_trait::async_trait;
 
 use crate::models::events::ThinkRoundEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::pkg::stats::{ModelCallEvent, global_stats};
+use common::enums::EventTopic;
 use common::error::Result;
 
 pub struct ThinkRoundStatsConsumer;
@@ -33,8 +34,8 @@ impl Consumer for ThinkRoundStatsConsumer {
         "think_round_stats"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("agent.think.round")]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::AgentThinkRound)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

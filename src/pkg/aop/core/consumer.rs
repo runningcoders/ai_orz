@@ -1,7 +1,7 @@
 use async_trait::async_trait;
+use common::enums::EventTopic;
 use common::error::Result;
 
-use super::EventKind;
 use crate::pkg::RequestContext;
 
 /// 消费模式
@@ -13,22 +13,64 @@ pub enum ConsumeMode {
     Async,
 }
 
+/// 消费者对某个 topic 的订阅声明
+///
+/// 取代原先的「感兴趣事件白名单」（`interested_events() -> Vec<EventKind>`）：
+/// 订阅不只是「关心哪个 topic」，还要表达**消费语义**——是否需要顺序消费、
+/// 消费完成后是否要回调通知生产者。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Subscription {
+    /// 订阅的事件主题（`common::enums::EventTopic`）
+    pub kind: EventTopic,
+    /// 顺序消费：同一 `order_key` 的事件在本消费者内必须串行。
+    ///
+    /// ⚠️ 仅 **Async 且 `concurrency() > 1`** 时可观测（并发 1 天然串行）；
+    /// Sync 消费者声明它是谎言（内联执行、无队列无门闩）→ 注册期直接拒。
+    pub ordered: bool,
+    /// 消费完成后是否回调通知该 topic 的生产者（`Producer::on_consumed` / `on_failed`）。
+    ///
+    /// 默认 false —— 消费本身是异步的，不需要业务收尾就别声明。
+    pub notify_producer: bool,
+}
+
+impl Subscription {
+    /// 订阅某 topic，不附加任何语义
+    pub const fn new(kind: EventTopic) -> Self {
+        Self {
+            kind,
+            ordered: false,
+            notify_producer: false,
+        }
+    }
+
+    /// 声明：同一 order_key 需在本消费者内串行
+    pub const fn ordered(mut self) -> Self {
+        self.ordered = true;
+        self
+    }
+
+    /// 声明：消费完成后回调该 topic 的生产者
+    pub const fn notify_producer(mut self) -> Self {
+        self.notify_producer = true;
+        self
+    }
+}
+
 /// AOP 消费者 trait
 ///
 /// 统一的事件消费接口，支持同步和异步两种消费模式：
 /// - **Sync**：事件发布时直接调用 `on_event`，适合轻量级处理
 /// - **Async**：事件入队，由 AOP 调度器从队列拉取后调用 `on_event`
 ///
-/// 异步消费者需要实现 `ack`/`nack` 以支持消息确认机制，
-/// 可通过 `concurrency` 控制并行 worker 数量，
+/// 异步消费者可通过 `concurrency` 控制并行 worker 数量，
 /// 通过 `empty_queue_sleep_ms`/`error_retry_sleep_ms` 控制轮询节奏。
 #[async_trait]
 pub trait Consumer: Send + Sync {
     /// 消费者名称（全局唯一，用于队列路由和日志追踪）
     fn name(&self) -> &str;
 
-    /// 感兴趣的事件类型列表
-    fn interested_events(&self) -> Vec<EventKind>;
+    /// 订阅声明列表（取代原 `interested_events()`）
+    fn subscriptions(&self) -> Vec<Subscription>;
 
     /// 事件过滤（默认全部通过）
     async fn should_consume(&self, _event: &serde_json::Value) -> bool {
@@ -48,10 +90,14 @@ pub trait Consumer: Send + Sync {
     async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()>;
 
     // ===== 以下仅 Async 模式消费者需要关注 =====
+    //
+    // ⚠️ 过渡期备注：`ack`/`nack` 即将随「业务收尾回流生产者」整体删除
+    // （`Producer::on_consumed` / `on_failed` 接管）。当前保留，是因为
+    // `message.created` 的业务收尾（messages 状态翻转）暂时还挂在这里。
 
     /// 确认事件处理成功（默认空实现，Sync 模式无需关注）
     ///
-    /// - `source`：事件的**真实源头**，即事件 kind（如 `message.created`）。
+    /// - `source`：事件的**真实源头**，即事件 topic 字符串（如 `message.created`）。
     ///   它由框架在 publish 时写入事件封套，worker 从封套读出后原样透传。
     ///   消费者据此判断「这件事在业务侧有没有可对账的持久化状态」——例如
     ///   `messages` 表的行只由 `message.created` 产生，其余事件

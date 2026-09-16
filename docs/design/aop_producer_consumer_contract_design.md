@@ -1,7 +1,7 @@
 # AOP 生产者-消费者契约重构设计
 
 > 🎯 **本文档定位**：AOP 事件中心「生产者-消费者」契约的重构设计——解除 ack 落点错位、以 topic 归属收敛生产者形态、以订阅声明表达「顺序消费 / 回调通知」；trait 细节以实际代码为准
-> 状态：草稿（2026-09-16，设计已拍板；**已落地一项**：删除死代码 `models/event.rs`（§8）；其余尚未落地）
+> 状态：草稿（2026-09-16，设计已拍板）。**已落地**：① 删除死代码 `models/event.rs`（§8）；② **Step 1 结构改造**（§7）—— `common::enums::EventTopic` 落库、`pkg::aop::EventKind` 全仓删除、`Subscription`/`subscriptions()` 取代 `interested_events()`、`finish_consumption` 单一收尾出口（`ack/nack` 按计划暂留）。**未落地**：Step 2+（`Producer` trait 改形 / DAL 实现 Producer / 删 `ack/nack` / `RetryDecision`），以及 §4.1 的 `ordered` 入队 wiring（有意延后，见 §4.1 注）。
 > 查阅场景：需要理解生产者为什么不再持有 Registry、ack/nack 为什么从消费者 trait 上消失、`ordered` / `notify_producer` 声明何时必填、失败后要不要重试由谁定（`RetryDecision`）、topic 枚举为什么放 `common`（§3.6）、生产者为什么就该是 DAL 对象本身（§5.2）、新增一个生产者/消费者该实现什么时打开
 >
 > 关联文档：
@@ -392,6 +392,8 @@ publish: { event_id, kind, order_key, priority, created_at, context_carrier, ...
 
 **队列本体零改动** —— 只是入队时多带一个 `ordered` 判定（`enqueue` 需要知道所属订阅是否 ordered；实现上由 publish 侧决定走哪个入队方法，或在封套里加一个 `_ordered` 标记，落地时二选一，倾向前者）。
 
+> ⚠️ **该 wiring 未随 Step 1 落地（有意为之）**：Step 1 的验收要求「行为严格等价」，而今天的入队门闩是**无条件**按 `order_key` 非空生效的。若 Step 1 就把判定改成「`ordered` ∧ `order_key` 非空」，则 8 个并发 1 的消费者会从「同 key FIFO（闸门队列）」变成「进 `global_heap` 按 `(priority, created_at)` 排序」—— 并发 1 时两者可观测行为基本一致，但**同 key 且 `created_at` 同秒**（时间戳粒度）时堆序不保证 FIFO，属未被要求的语义变更。故 Step 1 只把 `ordered` 作为**声明数据**引入（字段可读、注册期已硬校验 Sync 声明 ordered），wiring 与 §6.1-2 的运行期告警一起留到 Step 2。
+
 ### 4.2 消费收尾：两条路径收敛到同一个内部函数
 
 AOP 内部新增单一出口 `finish_consumption`，**Sync 内联路径与 Async worker 路径都调用它**，避免「又长出两条路径」。它同时负责两件事：触发生产者业务回调、**给出投递结论**（`Ack` / `Nack`），调用方只管把结论落到 `queue.ack` / `queue.nack`：
@@ -621,10 +623,17 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 
 | Step | 内容 | 验收 |
 |---|---|---|
-| 1 | **`common::enums::EventTopic` 落库 + 删除 `pkg::aop::EventKind`**（§3.6；全仓约 25 处机械替换，`as_str()` 保证线格式逐字不变）；`Subscription` 结构 + `subscriptions()` 取代 `interested_events()`；`finish_consumption` 骨架（此时无 producer 索引 → 回调恒落空、结论恒按 `Result`）。**`ack/nack` 暂留**：其唯一业务（`update_status`）此时无处可搬 | 全仓无 `EventKind` 残留；全部现有测试通过、行为**严格等价**；新增护栏单测（§6.1-3） |
+| 1 ✅ **已落地（2026-09-16）** | **`common::enums::EventTopic` 落库**（16 变体；`as_str()`/`parse()`/`ALL`/`Display`；**手写** `Serialize`/`Deserialize` 与 `JsonSchema` —— derive 生成的是变体名、与点分线格式不符）**+ 删除 `pkg::aop::EventKind`**（`Event::kind()` 返回枚举；全仓 25 处机械替换）；`Subscription { kind, ordered, notify_producer }` + `subscriptions()` 取代 `interested_events()`；注册期硬校验 **Sync 声明 ordered → Err**（§6.1-1）；`finish_consumption` 单一收尾出口（Sync 内联与 Async worker 共用，结论 = `DeliveryOutcome::{Ack,Nack}`；Step 1 无 producer 索引 → 不触发回调）。**`ack/nack` 按计划暂留**。请求侧 `GetStatsTimeSeriesRequest.event_kind: Option<EventTopic>`（严格）；响应侧 `event_kind` 保持 `String` | ✅ 全仓无 `EventKind` 残留（`git grep` 仅测试桩历史名）；`cargo clippy --workspace --exclude frontend --all-targets -- -D warnings` 绿（2m11s）；`cargo test -p common --lib` **223 过**、`cargo test -p ai_orz --lib` **1484 过 / 0 挂**（47s）；护栏单测 `awakening_declares_ordered_for_both_topics` + 集成侧 `test_awakening_consumer_owns_both_kinds`（已补两个订阅均 `ordered` 的断言）**6/6 过**；`clippy-fe`（wasm32）+ `dx check` + `docs-lint`（659 files, 0 violations）绿 |
 | 2 | `Producer` trait 改形（`topic()` / `on_consumed` / `on_failed(→RetryDecision)` / `start(sink)` / `stop`；删 `register` / `poll` / `poll_interval_secs`）；`RetryDecision` + `EventRef.attempt` 自增；`Registry.producers_by_topic` + **topic 占用校验（§6.7）** + **`register_producer` 改同步**（随 `register` 删除）+ **删 `self_ref`**（`start_all` 接收者仍是 `&Arc<Self>`）；`start_all` 删轮询段 + 校验（§6.2）+ 生命周期两契约（§6.5）；**`impl Producer for MessageDalImpl` 并在 `dal::init()` 里注册**（接管 `update_status`）→ **此时才删 `ack/nack`** | `producer/mod.rs` 能注册；`start_all` 校验（§6.2）；topic 冲突注册报 Err（§6.7）；`message.created` 状态翻转改由 DAL 的 `on_consumed` 完成 |
 | 3 | 逐个落地生产者：`CronTriggerProducer`（修 P3）→ `impl Producer for EmailDalImpl` + DAO 补「按 UID 推进游标」（修 P2）→ 微信 DAL 同形（修 P2 微信侧）→ `A2aPollingProducer` + `a2a_poll` 消费者；**P6**：三个入站消费者改为把适配失败上报 `Err`，由生产者 `on_failed` 判 `Discard` | 每个生产者各自带回调单测；`notify_producer` 声明逐个打开；P6 的 `Discard` 能在指标里看到 `on_consume_discarded` |
 | 4 | 清理：删除 `Producer::register` 遗留调用、`a2a_polling` 里的 domain 直调、更新 wiki 长文与 RAG 卡 | `make ci` 全绿 |
+
+### 7.1 Step 1 落地注记（实施时遇到的两处取舍）
+
+1. **`agent.awakening` 的订阅声明抽成关联函数 `MessageConsumer::declarations()`**，`Consumer::subscriptions()` 转发它。原因：护栏单测要断言「两个 topic 都声明 `ordered`」，而构造 `MessageConsumer` 会取 `runtime_domain::domain()` 等全局单例（`OnceLock` 在纯单测环境为 `None` → `unwrap()` panic）。订阅声明本身与实例状态无关，抽出后护栏单测回到纯 `#[test]`（无需拉起整个 domain 图）。集成测试 `test_awakening_consumer_owns_both_kinds` 仍对**真实实例**的 `subscriptions()` 断同一件事。
+2. **`EventTopic::A2aPollRequested` 已声明但暂无引用**（属 Step 3）；`notify_producer` 全库仍为 `false` —— 生产者索引要到 Step 2 才有，Step 2 注册 `MessageDalImpl` 时同步把 `message.created` 的订阅改成 `.notify_producer()`。
+3. **`ordered` 未接入入队判定**（§4.1 注）：Step 1 保持「门闩无条件按 `order_key` 生效」的原行为；`Subscription.ordered` 目前只被注册期校验读取。因此 §6.1-2 的运行期告警在 Step 1 **尚未生效**，随 Step 2 的 wiring 一起打开。
+4. **请求侧严格性已核实成立**：`(false, true)` 分支（无 path、纯 query）走**整结构** `serde_json::from_value`，失败即 `bad_request("query 参数解析失败: ..")` → 非法 `event_kind` 确实 400（不是被逐字段容错吞掉 —— 那是 `(true, true)` 混合分支的行为）。
 
 **测试清单**（新增/改造）：
 

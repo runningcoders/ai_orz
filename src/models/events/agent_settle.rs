@@ -13,11 +13,9 @@
 //!    才推进。旧实现是触发器里 `is_unavailable()` 判一下就静默跳过，而触发器已经把
 //!    `next_run_at` 推到下一个 cron 点（日触发 = 次日），一次跳过等于丢一天。
 
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
-
-/// 事件类型（AOP 路由 key）
-pub const AGENT_SETTLE_EVENT_KIND: &str = "agent.settle.requested";
 
 /// Agent 沉淀请求：睡眠沉淀的排队单元
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,8 +43,8 @@ impl AgentSettleEvent {
 }
 
 impl Event for AgentSettleEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new(AGENT_SETTLE_EVENT_KIND)
+    fn kind(&self) -> EventTopic {
+        EventTopic::AgentSettleRequested
     }
 
     fn id(&self) -> &str {
@@ -73,7 +71,7 @@ mod tests {
     #[test]
     fn test_order_key_is_agent_id() {
         let event = AgentSettleEvent::new("agent-001", 10, "系统默认-Agent 睡眠沉淀");
-        assert_eq!(event.kind().0, AGENT_SETTLE_EVENT_KIND);
+        assert_eq!(event.kind(), EventTopic::AgentSettleRequested);
         assert_eq!(event.order_key(), "agent-001");
         assert_eq!(event.id(), event.event_id.as_str());
         assert_eq!(event.settle_limit, 10);

@@ -165,7 +165,8 @@ async fn test_awakening_consumer_owns_both_kinds(pool: SqlitePool) {
         "消费者名是队列路由 key，改动会让运行中队列与面板统计断档"
     );
 
-    let kinds: Vec<&str> = consumer.interested_events().iter().map(|k| k.0).collect();
+    let subs = consumer.subscriptions();
+    let kinds: Vec<&str> = subs.iter().map(|s| s.kind.as_str()).collect();
     assert!(
         kinds.contains(&KIND_MESSAGE),
         "Agent 唤醒消费者必须订阅 message.created，实际 {:?}",
@@ -175,6 +176,13 @@ async fn test_awakening_consumer_owns_both_kinds(pool: SqlitePool) {
         kinds.contains(&KIND_SETTLE),
         "沉淀必须与消息同属一个消费者，否则 order_key 串行跨消费者失效，实际 {:?}",
         kinds
+    );
+    // 两个订阅都必须声明 ordered：本消费者是全项目唯一 concurrency() > 1 的地方，
+    // 也是唯一能观测 order_key 串行门闩的地方（漏声明 = 静默退回事故形态，不报错）。
+    assert!(
+        subs.iter().all(|s| s.ordered),
+        "agent.awakening 的两个订阅都必须声明 ordered，实际 {:?}",
+        subs
     );
 }
 

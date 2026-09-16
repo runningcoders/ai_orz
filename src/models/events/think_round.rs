@@ -1,4 +1,5 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
 
 /// 每轮 think 事件（记录轮次、耗时、是否触发工具调用、token 用量）
@@ -105,8 +106,8 @@ impl ThinkRoundEvent {
 }
 
 impl Event for ThinkRoundEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("agent.think.round")
+    fn kind(&self) -> EventTopic {
+        EventTopic::AgentThinkRound
     }
 
     fn id(&self) -> &str {

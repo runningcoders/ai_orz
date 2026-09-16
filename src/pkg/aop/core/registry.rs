@@ -7,13 +7,14 @@ use crate::pkg::request_context::{AOP_CONTEXT_CARRIER_KEY, ContextCarrier, Reque
 use common::error::{Result, err};
 
 use super::metrics_hook::{AopEventMeta, AopMetricsHook};
-use super::{ConsumeMode, Consumer, Event, EventKind, Producer};
+use super::{ConsumeMode, Consumer, Event, Producer};
 use crate::pkg::aop::queue::{EventQueue, InMemoryEventQueue};
+use common::enums::EventTopic;
 use tracing::Level;
 
 pub struct Registry {
     self_ref: RwLock<Option<Weak<Self>>>,
-    consumers: RwLock<HashMap<EventKind, Vec<Arc<dyn Consumer>>>>,
+    consumers: RwLock<HashMap<EventTopic, Vec<Arc<dyn Consumer>>>>,
     producers: RwLock<Vec<Arc<dyn Producer>>>,
     queues: RwLock<HashMap<String, Arc<dyn EventQueue>>>,
     started: RwLock<bool>,
@@ -54,8 +55,21 @@ impl Registry {
 
     pub fn register_consumer(&self, consumer: Arc<dyn Consumer>) -> Result<()> {
         let name = consumer.name().to_string();
+        let mode = consumer.consume_mode();
+        let subscriptions = consumer.subscriptions();
 
-        if consumer.consume_mode() == ConsumeMode::Async {
+        // 注册期硬校验：Sync 消费者内联执行、无队列无门闩，声明 ordered 是谎言。
+        // 「声明了却静默不生效」比「没有这个保证」更危险（会让人据此写出依赖串行的代码），
+        // 所以宁可注册失败。
+        if mode == ConsumeMode::Sync && subscriptions.iter().any(|s| s.ordered) {
+            return Err(err!(
+                InvalidRequest,
+                "sync consumer {} must not declare ordered subscription (no queue, no gate)",
+                name
+            ));
+        }
+
+        if mode == ConsumeMode::Async {
             let queue: Arc<dyn EventQueue> = Arc::new(InMemoryEventQueue::new());
             self.queues
                 .write()
@@ -68,9 +82,9 @@ impl Registry {
             .write()
             .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
-        for kind in consumer.interested_events() {
+        for subscription in subscriptions {
             consumers
-                .entry(kind)
+                .entry(subscription.kind)
                 .or_insert_with(Vec::new)
                 .push(consumer.clone());
         }
@@ -121,7 +135,7 @@ impl Registry {
 
         // 在序列化前提取元字段
         let event_id = event.id().to_string();
-        let event_kind = event.kind().0.to_string();
+        let event_kind = event.kind().as_str().to_string();
         let order_key = event.order_key().to_string();
         let priority = event.priority();
         let created_at = event.created_at();
@@ -181,12 +195,13 @@ impl Registry {
                     // 使消费者内部的所有日志（如 agent loop started/finished）自动携带。
                     let span = ctx.create_log_span(consumer.name(), Level::INFO);
                     let _span_guard = span.enter();
-                    match consumer.on_event(ctx, event_json.clone()).await {
+                    let outcome = match consumer.on_event(ctx, event_json.clone()).await {
                         Ok(()) => {
                             let duration_ms = start.elapsed().as_millis() as u64;
                             if let Some(hook) = self.metrics_hook() {
                                 hook.on_consume_success(consumer.name(), &meta, duration_ms);
                             }
+                            Ok(())
                         }
                         Err(e) => {
                             let duration_ms = start.elapsed().as_millis() as u64;
@@ -200,8 +215,13 @@ impl Registry {
                                     &err_str,
                                 );
                             }
+                            Err(err_str)
                         }
-                    }
+                    };
+                    // Sync 内联执行、无队列 → 「投递结论」没有重投驱动者，但仍经同一
+                    // 收尾出口，保证结论只有一个判定点（Step 2 起在这里反查生产者并
+                    // 触发 on_consumed / on_failed）。
+                    let _ = finish_consumption(outcome).await;
                 }
                 ConsumeMode::Async => {
                     let queue = {
@@ -399,7 +419,7 @@ impl Registry {
                                 // 使消费者内部的所有日志自动携带（与 HTTP 层 log_info! 同机制）。
                                 let span = ctx.create_log_span(&consumer_name, Level::INFO);
                                 let _span_guard = span.enter();
-                                match consumer.on_event(ctx, event_json).await {
+                                let outcome = match consumer.on_event(ctx, event_json).await {
                                     Ok(()) => {
                                         let duration_ms = start.elapsed().as_millis() as u64;
                                         // 埋点：on_consume_success
@@ -410,6 +430,34 @@ impl Registry {
                                                 duration_ms,
                                             );
                                         }
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        let duration_ms = start.elapsed().as_millis() as u64;
+                                        let err_str = format!("{:?}", e);
+                                        sys_error!(
+                                            "[{}] on_event error for {}: {}",
+                                            consumer_name,
+                                            event_id,
+                                            e
+                                        );
+                                        // 埋点：on_consume_failure
+                                        if let Some(hook) = registry_arc.metrics_hook() {
+                                            hook.on_consume_failure(
+                                                &consumer_name,
+                                                &meta,
+                                                duration_ms,
+                                                &err_str,
+                                            );
+                                        }
+                                        Err(err_str)
+                                    }
+                                };
+
+                                // 投递结论由 finish_consumption 单一判定（Step 2 起它还会
+                                // 触发生产者回调 / 把 RetryDecision 折算成 ack 或 nack）
+                                match finish_consumption(outcome).await {
+                                    DeliveryOutcome::Ack => {
                                         if let Err(e) =
                                             consumer.ack(&meta.event_kind, &event_id).await
                                         {
@@ -434,24 +482,7 @@ impl Registry {
                                             );
                                         }
                                     }
-                                    Err(e) => {
-                                        let duration_ms = start.elapsed().as_millis() as u64;
-                                        let err_str = format!("{:?}", e);
-                                        sys_error!(
-                                            "[{}] on_event error for {}: {}",
-                                            consumer_name,
-                                            event_id,
-                                            e
-                                        );
-                                        // 埋点：on_consume_failure
-                                        if let Some(hook) = registry_arc.metrics_hook() {
-                                            hook.on_consume_failure(
-                                                &consumer_name,
-                                                &meta,
-                                                duration_ms,
-                                                &err_str,
-                                            );
-                                        }
+                                    DeliveryOutcome::Nack => {
                                         if let Err(e) =
                                             consumer.nack(&meta.event_kind, &event_id).await
                                         {
@@ -659,9 +690,38 @@ impl Default for Registry {
     }
 }
 
+/// `on_event` 的投递结论（由 [`finish_consumption`] 判定，调用方负责落到队列上）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeliveryOutcome {
+    /// 消费成功 → 队列 `ack`，事件移除
+    Ack,
+    /// 消费失败 → 队列 `nack`，按既有退避重投
+    Nack,
+}
+
+/// 消费收尾 —— Sync 内联路径与 Async worker 路径的**唯一**收尾出口
+///
+/// 单一出口的意义：投递结论只在一个地方判定，避免「又长出两条路径」。
+///
+/// Step 1 阶段没有生产者索引（`producers_by_topic` 要到 Step 2 才建），因此这里
+/// 只做 `on_event` 的 Result → 投递结论的映射。Step 2 起在此基础上按 `event_kind`
+/// 反查生产者（落空 = ①类纯通知，跳过回调），触发
+/// `Producer::on_consumed` / `on_failed(-> RetryDecision)`：
+///
+/// - 成功 → `on_consumed` → `Ack`；
+/// - 失败 → `on_failed` 返回 `Retry` → `Nack`；返回 `Discard` → `Ack`，且仍回调 `on_consumed`；
+/// - 回调自身失败 → 只记 `sys_error!`，**不改变**投递结论。
+async fn finish_consumption(outcome: std::result::Result<(), String>) -> DeliveryOutcome {
+    match outcome {
+        Ok(()) => DeliveryOutcome::Ack,
+        Err(_) => DeliveryOutcome::Nack,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pkg::aop::Subscription;
     use async_trait::async_trait;
     use serde::{Deserialize, Serialize};
     use std::sync::atomic::AtomicUsize;
@@ -672,8 +732,8 @@ mod tests {
     }
 
     impl Event for ShutdownTestEvent {
-        fn kind(&self) -> EventKind {
-            EventKind("test.shutdown")
+        fn kind(&self) -> EventTopic {
+            EventTopic::AgentStateChanged
         }
         fn id(&self) -> &str {
             &self.id
@@ -689,8 +749,8 @@ mod tests {
         fn name(&self) -> &str {
             "shutdown_test_consumer"
         }
-        fn interested_events(&self) -> Vec<EventKind> {
-            vec![EventKind("test.shutdown")]
+        fn subscriptions(&self) -> Vec<Subscription> {
+            vec![Subscription::new(EventTopic::AgentStateChanged)]
         }
         fn consume_mode(&self) -> ConsumeMode {
             ConsumeMode::Async

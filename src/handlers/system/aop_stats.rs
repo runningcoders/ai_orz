@@ -37,7 +37,13 @@ pub async fn get_stats_time_series(
 ) -> Result<AopStatsTimeSeriesResponse> {
     let points = domain()
         .aop_stats()
-        .time_series(ctx, params.event_kind, params.consumer_name, params.status)
+        .time_series(
+            ctx,
+            // 请求侧是严格枚举（§3.6）；统计链路按线格式字符串过滤，转换收口在此
+            params.event_kind.map(|t| t.as_str().to_string()),
+            params.consumer_name,
+            params.status,
+        )
         .await?;
 
     let points: Vec<AopStatsTimeSeriesPoint> = points

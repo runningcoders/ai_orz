@@ -29,13 +29,11 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use crate::handlers::hr::agent::settle_memory::{SettleAttempt, settle_agent_exclusive};
-use crate::models::events::{
-    AgentSettleEvent, MessageCreatedEvent, agent_settle::AGENT_SETTLE_EVENT_KIND,
-};
+use crate::models::events::{AgentSettleEvent, MessageCreatedEvent};
 use crate::models::message::{Message, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::dal::message as message_dal;
 use crate::service::domain::hr::{self as hr_domain, HrDomain};
@@ -48,11 +46,9 @@ use crate::service::domain::project::{self as project_domain, ProjectDomain};
 use crate::service::domain::runtime::{
     self as runtime_domain, RuntimeDomain, awakening::ThinkingOptions,
 };
+use common::enums::EventTopic;
 
 // ==================== 消费者实现 ====================
-
-/// `message.created` 的事件 kind —— 同时是 ack/nack 的 `source` 值
-const KIND_MESSAGE_CREATED: &str = "message.created";
 
 /// Agent 唤醒消费者
 ///
@@ -82,6 +78,21 @@ impl MessageConsumer {
             organization_domain: organization_domain::domain(),
         }
     }
+
+    /// `agent.awakening` 的订阅声明（静态知识，与实例状态无关）
+    ///
+    /// 两类事件共用一条 `order_key = agent_id` 的队列（见模块文档）—— 这是全项目
+    /// **唯一** `concurrency() > 1` 的消费者，也是唯一能观测到 order_key 串行门闩的
+    /// 地方，所以必须显式声明 ordered；其余消费者并发 1、天然串行，声明与否无差异。
+    ///
+    /// 单独抽成关联函数的理由：构造 `MessageConsumer` 会拉起整个 domain 全局单例
+    /// （纯单测环境拿不到），而护栏单测只需断言订阅声明本身 → 声明与实例解耦。
+    pub fn declarations() -> Vec<Subscription> {
+        vec![
+            Subscription::new(EventTopic::MessageCreated).ordered(),
+            Subscription::new(EventTopic::AgentSettleRequested).ordered(),
+        ]
+    }
 }
 
 #[async_trait]
@@ -90,11 +101,8 @@ impl Consumer for MessageConsumer {
         "agent.awakening"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![
-            EventKind::new(KIND_MESSAGE_CREATED),
-            EventKind::new(AGENT_SETTLE_EVENT_KIND),
-        ]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        Self::declarations()
     }
 
     fn consume_mode(&self) -> ConsumeMode {
@@ -104,14 +112,23 @@ impl Consumer for MessageConsumer {
     async fn on_event(&self, ctx: RequestContext, event: Value) -> Result<()> {
         // 封套的 `kind` 由框架在 publish 时注入（见 `Registry::publish`），是队列里
         // 唯一能在反序列化**之前**区分事件类型的依据。
-        match event.get("kind").and_then(|v| v.as_str()) {
-            Some(KIND_MESSAGE_CREATED) => self.handle_message(ctx, event).await,
-            Some(AGENT_SETTLE_EVENT_KIND) => self.handle_settle_request(ctx, event).await,
-            other => Err(Error::internal(format!(
+        let raw_kind = event
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        match EventTopic::parse(&raw_kind) {
+            Some(EventTopic::MessageCreated) => self.handle_message(ctx, event).await,
+            Some(EventTopic::AgentSettleRequested) => self.handle_settle_request(ctx, event).await,
+            _ => Err(Error::internal(format!(
                 "agent.awakening 仅订阅 {} / {}，却收到 {}",
-                KIND_MESSAGE_CREATED,
-                AGENT_SETTLE_EVENT_KIND,
-                other.unwrap_or("<缺少 kind 字段>")
+                EventTopic::MessageCreated,
+                EventTopic::AgentSettleRequested,
+                if raw_kind.is_empty() {
+                    "<缺少 kind 字段>"
+                } else {
+                    raw_kind.as_str()
+                }
             ))),
         }
     }
@@ -123,7 +140,7 @@ impl Consumer for MessageConsumer {
     /// 空转无害，但它会把「传进来的 id 一定指向 messages 表」变成一个没说出口的前提，
     /// 将来给 `update_status` 加上行数校验就会静默变成重试死循环。所以按 source 显式分流。
     async fn ack(&self, source: &str, event_id: &str) -> Result<()> {
-        if source != KIND_MESSAGE_CREATED {
+        if source != EventTopic::MessageCreated.as_str() {
             return Ok(());
         }
         let ctx = RequestContext::new_system();
@@ -138,7 +155,7 @@ impl Consumer for MessageConsumer {
     /// （`message_dal` 按 `status = Pending` 扫出未处理消息重投），所以不能省。
     /// `source` 分流理由同 [`Consumer::ack`]。
     async fn nack(&self, source: &str, event_id: &str) -> Result<()> {
-        if source != KIND_MESSAGE_CREATED {
+        if source != EventTopic::MessageCreated.as_str() {
             return Ok(());
         }
         let ctx = RequestContext::new_system();
@@ -1180,6 +1197,37 @@ fn resolve_profile_user_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 护栏（§6.1-3）：`agent.awakening` 必须对两个 topic 都声明 `ordered`
+    ///
+    /// 它是全项目**唯一** `concurrency() > 1` 的消费者 —— 也是唯一能观测到
+    /// order_key 串行门闩的地方。漏声明 ordered 会静默退回「两个 kind 在同一
+    /// Agent 上并发执行」的形态（上一次事故的形状，且不报错、只有日志在飙）。
+    #[test]
+    fn awakening_declares_ordered_for_both_topics() {
+        let subs = MessageConsumer::declarations();
+        assert_eq!(
+            subs.len(),
+            2,
+            "agent.awakening 应恰好订阅 message.created + agent.settle.requested"
+        );
+        assert!(
+            subs.iter().any(|s| s.kind == EventTopic::MessageCreated),
+            "必须订阅 message.created"
+        );
+        assert!(
+            subs.iter()
+                .any(|s| s.kind == EventTopic::AgentSettleRequested),
+            "必须订阅 agent.settle.requested"
+        );
+        for sub in &subs {
+            assert!(
+                sub.ordered,
+                "{} 必须声明 ordered —— 否则 order_key 串行门闩静默失效",
+                sub.kind
+            );
+        }
+    }
 
     /// System 来源消息恒走兜底分支（无对等回复对象）
     #[test]

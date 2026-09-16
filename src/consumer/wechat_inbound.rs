@@ -12,8 +12,9 @@ use common::error::{Error, Result};
 
 use crate::models::events::WechatInboundEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::domain::message::{self as message_domain, InboundSource};
+use common::enums::EventTopic;
 
 #[derive(Default)]
 pub struct WechatInboundConsumer;
@@ -30,8 +31,8 @@ impl Consumer for WechatInboundConsumer {
         "wechat_inbound"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("wechat.inbound.message")]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::WechatInboundMessage)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

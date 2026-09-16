@@ -1,5 +1,6 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
 
 /// 工具执行完成事件（取代 ToolCallLoggingDecorator 的日志+统计职责）
@@ -45,8 +46,8 @@ impl ToolExecEvent {
 }
 
 impl Event for ToolExecEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("agent.tool.executed")
+    fn kind(&self) -> EventTopic {
+        EventTopic::AgentToolExecuted
     }
 
     fn id(&self) -> &str {

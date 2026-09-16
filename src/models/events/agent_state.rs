@@ -1,4 +1,5 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
 
 /// Agent 运行时状态变更事件（Idle/Busy/Resting 切换）
@@ -34,8 +35,8 @@ impl AgentStateEvent {
 }
 
 impl Event for AgentStateEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("agent.state.changed")
+    fn kind(&self) -> EventTopic {
+        EventTopic::AgentStateChanged
     }
 
     fn id(&self) -> &str {

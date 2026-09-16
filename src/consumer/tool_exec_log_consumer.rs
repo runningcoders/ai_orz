@@ -5,9 +5,10 @@
 
 use crate::models::events::ToolExecEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use async_trait::async_trait;
+use common::enums::EventTopic;
 use common::error::Result;
 
 pub struct ToolExecLogConsumer;
@@ -30,8 +31,8 @@ impl Consumer for ToolExecLogConsumer {
         "tool_exec_log"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("agent.tool.executed")]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::AgentToolExecuted)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

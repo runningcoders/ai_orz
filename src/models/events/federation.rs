@@ -14,7 +14,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 
 /// 命令名：A2A 委派（P8 最小闭环唯一命令）
 pub const FEDERATION_CMD_SEND_TASK: &str = "send_task";
@@ -74,22 +75,17 @@ pub struct FederationInboundEvent {
 }
 
 impl FederationInboundEvent {
-    /// send_task 命令的 EventKind（一种命令一个 kind + 一个 consumer）
-    pub const KIND_SEND_TASK: EventKind = EventKind::new("federation.inbound.send_task");
-    /// 未识别命令的兜底 kind（无 consumer 订阅，仅可观测）
-    pub const KIND_OTHER: EventKind = EventKind::new("federation.inbound.other");
-
-    /// 按帧内命令名映射 EventKind
-    fn kind_of(cmd: &str) -> EventKind {
+    /// 按帧内命令名映射 topic（一种命令一个 topic + 一个 consumer）
+    fn kind_of(cmd: &str) -> EventTopic {
         match cmd {
-            FEDERATION_CMD_SEND_TASK => Self::KIND_SEND_TASK,
-            _ => Self::KIND_OTHER,
+            FEDERATION_CMD_SEND_TASK => EventTopic::FederationInboundSendTask,
+            _ => EventTopic::FederationInboundOther,
         }
     }
 }
 
 impl Event for FederationInboundEvent {
-    fn kind(&self) -> EventKind {
+    fn kind(&self) -> EventTopic {
         Self::kind_of(&self.frame.kind)
     }
 
@@ -115,8 +111,8 @@ pub struct FederationOutboundEvent {
 }
 
 impl Event for FederationOutboundEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("federation.outbound")
+    fn kind(&self) -> EventTopic {
+        EventTopic::FederationOutbound
     }
 
     fn id(&self) -> &str {
@@ -161,14 +157,14 @@ mod tests {
                 Value::Null,
             ),
         };
-        assert_eq!(evt.kind(), FederationInboundEvent::KIND_SEND_TASK);
+        assert_eq!(evt.kind(), EventTopic::FederationInboundSendTask);
 
         let other = FederationInboundEvent {
             local_org: "org_b".to_string(),
             peer_org: "org_a".to_string(),
             frame: FederationFrame::command("future_cmd", "c2".to_string(), Value::Null),
         };
-        assert_eq!(other.kind(), FederationInboundEvent::KIND_OTHER);
+        assert_eq!(other.kind(), EventTopic::FederationInboundOther);
         assert_eq!(other.id(), "c2");
         assert_eq!(other.order_key(), "org_a");
     }
@@ -189,7 +185,7 @@ mod tests {
             peer_org: "org_b".to_string(),
             frame: FederationFrame::response("c1".to_string(), serde_json::json!({"id": "t1"})),
         };
-        assert_eq!(out.kind(), EventKind::new("federation.outbound"));
+        assert_eq!(out.kind(), EventTopic::FederationOutbound);
         let back: FederationOutboundEvent =
             serde_json::from_value(serde_json::to_value(&out).unwrap()).unwrap();
         assert_eq!(back.peer_org, "org_b");

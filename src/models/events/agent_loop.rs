@@ -1,4 +1,5 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
 
 /// Agent 循环生命周期事件（awaken/sleep_and_settle 的启动与完成）
@@ -60,8 +61,8 @@ impl AgentLoopEvent {
 }
 
 impl Event for AgentLoopEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("agent.loop")
+    fn kind(&self) -> EventTopic {
+        EventTopic::AgentLoop
     }
 
     fn id(&self) -> &str {

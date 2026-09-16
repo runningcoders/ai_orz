@@ -16,8 +16,9 @@ use common::error::Result;
 
 use crate::models::events::TaskStatusChangedEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::domain::message::SendToAgentCommand;
+use common::enums::EventTopic;
 use common::enums::message::{MessageRole, MessageType};
 use common::enums::task::TaskStatus;
 
@@ -41,8 +42,8 @@ impl Consumer for TaskEventConsumer {
         "task_event"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("task.status_changed")]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::TaskStatusChanged)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

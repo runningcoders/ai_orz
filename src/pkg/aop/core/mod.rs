@@ -5,8 +5,8 @@ mod producer;
 mod registry;
 mod scheduler;
 
-pub use consumer::{ConsumeMode, Consumer};
-pub use event::{Event, EventKind};
+pub use consumer::{ConsumeMode, Consumer, Subscription};
+pub use event::Event;
 pub use metrics_hook::{AopEventMeta, AopMetricsHook};
 pub use producer::Producer;
 pub use registry::Registry;

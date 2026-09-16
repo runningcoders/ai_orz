@@ -1,4 +1,5 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,8 +12,8 @@ pub struct CronTriggerEvent {
 }
 
 impl Event for CronTriggerEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("cron.trigger")
+    fn kind(&self) -> EventTopic {
+        EventTopic::CronTrigger
     }
 
     fn id(&self) -> &str {

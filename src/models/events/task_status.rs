@@ -1,4 +1,5 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use common::enums::task::TaskStatus;
 use serde::{Deserialize, Serialize};
 
@@ -47,8 +48,8 @@ impl TaskStatusChangedEvent {
 }
 
 impl Event for TaskStatusChangedEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("task.status_changed")
+    fn kind(&self) -> EventTopic {
+        EventTopic::TaskStatusChanged
     }
 
     fn id(&self) -> &str {

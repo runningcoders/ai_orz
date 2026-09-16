@@ -14,8 +14,9 @@ use serde_json::Value;
 use crate::models::events::{AgentSettleEvent, CronTriggerEvent};
 use crate::pkg::RequestContext;
 use crate::pkg::aop::Event;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::domain::runtime::domain as runtime_domain;
+use common::enums::EventTopic;
 use common::error::{Error, Result};
 
 // ==================== 消费者实现 ====================
@@ -44,8 +45,8 @@ impl Consumer for CronTriggerConsumer {
         "cron_trigger"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("cron.trigger")]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::CronTrigger)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

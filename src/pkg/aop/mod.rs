@@ -26,7 +26,7 @@ pub mod queue;
 
 // 重导出核心 API
 pub use core::{
-    AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, Event, EventKind, Producer, Registry,
+    AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, Event, Producer, Registry, Subscription,
 };
 pub use queue::EventQueue;
 

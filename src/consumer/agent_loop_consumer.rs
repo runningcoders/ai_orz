@@ -8,7 +8,8 @@ use common::error::Result;
 
 use crate::models::events::{AgentLoopEvent, ThinkRoundEvent};
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
+use common::enums::EventTopic;
 
 pub struct AgentLoopConsumer;
 
@@ -30,10 +31,10 @@ impl Consumer for AgentLoopConsumer {
         "agent_loop"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
+    fn subscriptions(&self) -> Vec<Subscription> {
         vec![
-            EventKind::new("agent.loop"),
-            EventKind::new("agent.think.round"),
+            Subscription::new(EventTopic::AgentLoop),
+            Subscription::new(EventTopic::AgentThinkRound),
         ]
     }
 

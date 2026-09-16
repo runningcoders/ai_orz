@@ -1,4 +1,5 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
 
 /// 组织目录元信息变更事件
@@ -32,8 +33,8 @@ impl OrganizationChangedEvent {
 }
 
 impl Event for OrganizationChangedEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("organization.changed")
+    fn kind(&self) -> EventTopic {
+        EventTopic::OrganizationChanged
     }
 
     fn id(&self) -> &str {

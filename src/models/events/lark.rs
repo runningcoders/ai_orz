@@ -120,8 +120,8 @@ pub struct LarkInboundEvent {
 }
 
 impl crate::pkg::aop::Event for LarkInboundEvent {
-    fn kind(&self) -> crate::pkg::aop::EventKind {
-        crate::pkg::aop::EventKind::new("lark.inbound.message")
+    fn kind(&self) -> common::enums::EventTopic {
+        common::enums::EventTopic::LarkInboundMessage
     }
 
     fn id(&self) -> &str {
@@ -238,7 +238,7 @@ mod tests {
         };
         assert_eq!(
             aop_event.kind(),
-            crate::pkg::aop::EventKind::new("lark.inbound.message")
+            common::enums::EventTopic::LarkInboundMessage
         );
         assert_eq!(aop_event.id(), "evt_xxx");
         assert_eq!(aop_event.order_key(), "cli_app");

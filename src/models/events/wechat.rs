@@ -114,8 +114,8 @@ pub struct WechatInboundEvent {
 }
 
 impl crate::pkg::aop::Event for WechatInboundEvent {
-    fn kind(&self) -> crate::pkg::aop::EventKind {
-        crate::pkg::aop::EventKind::new("wechat.inbound.message")
+    fn kind(&self) -> common::enums::EventTopic {
+        common::enums::EventTopic::WechatInboundMessage
     }
 
     fn id(&self) -> &str {
@@ -213,7 +213,7 @@ mod tests {
         };
         assert_eq!(
             event.kind(),
-            crate::pkg::aop::EventKind::new("wechat.inbound.message")
+            common::enums::EventTopic::WechatInboundMessage
         );
         assert_eq!(event.id(), "cid_1001");
         assert_eq!(event.order_key(), "bot_1");

@@ -10,8 +10,9 @@ use common::error::{Error, Result};
 
 use crate::models::events::FederationOutboundEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::dao::organization_link::ws;
+use common::enums::EventTopic;
 
 pub struct FederationWsOutboundConsumer;
 
@@ -33,8 +34,8 @@ impl Consumer for FederationWsOutboundConsumer {
         "federation_ws_outbound"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("federation.outbound")]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::FederationOutbound)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

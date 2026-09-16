@@ -177,7 +177,8 @@ pub async fn get_aop_stats_time_series(
     req: common::api::GetStatsTimeSeriesRequest,
 ) -> Result<AopStatsTimeSeriesResponse, ApiError> {
     let qs = super::build_query_string(&[
-        ("event_kind", req.event_kind.clone()),
+        // 请求侧是严格枚举（common::enums::EventTopic），按线格式字符串传参
+        ("event_kind", req.event_kind.map(|t| t.as_str().to_string())),
         ("consumer_name", req.consumer_name.clone()),
         ("status", req.status.clone()),
     ]);

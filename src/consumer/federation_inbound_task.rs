@@ -16,8 +16,9 @@ use serde_json::json;
 use crate::handlers::a2a::send_task::handle_send_task;
 use crate::models::events::{FederationFrame, FederationInboundEvent, FederationOutboundEvent};
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::domain::organization;
+use common::enums::EventTopic;
 
 pub struct FederationInboundTaskConsumer;
 
@@ -39,8 +40,8 @@ impl Consumer for FederationInboundTaskConsumer {
         "federation_inbound_task"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![FederationInboundEvent::KIND_SEND_TASK]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::FederationInboundSendTask)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

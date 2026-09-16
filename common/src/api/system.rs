@@ -1,5 +1,6 @@
 //! System 域共享 API DTO - 系统健康指标聚合
 
+use crate::enums::EventTopic;
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -129,9 +130,9 @@ pub struct GetStatsOverviewRequest {}
 /// AOP 实时统计时序查询参数
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetStatsTimeSeriesRequest {
-    /// 事件类型过滤
+    /// 事件类型过滤（严格：非法枚举值不会静默当成“无过滤”以外的语义）
     #[param(source = "query")]
-    pub event_kind: Option<String>,
+    pub event_kind: Option<EventTopic>,
     /// 消费者名称过滤
     #[param(source = "query")]
     pub consumer_name: Option<String>,

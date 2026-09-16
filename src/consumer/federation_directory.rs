@@ -12,8 +12,9 @@ use common::error::Result;
 
 use crate::models::events::OrganizationChangedEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::domain::organization;
+use common::enums::EventTopic;
 
 pub struct FederationDirectoryConsumer;
 
@@ -35,8 +36,8 @@ impl Consumer for FederationDirectoryConsumer {
         "federation_directory"
     }
 
-    fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("organization.changed")]
+    fn subscriptions(&self) -> Vec<Subscription> {
+        vec![Subscription::new(EventTopic::OrganizationChanged)]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

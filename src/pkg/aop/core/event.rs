@@ -1,16 +1,9 @@
+use common::enums::EventTopic;
 use serde::{Serialize, de::DeserializeOwned};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EventKind(pub &'static str);
-
-impl EventKind {
-    pub const fn new(name: &'static str) -> Self {
-        Self(name)
-    }
-}
-
 pub trait Event: Send + Sync + Clone + Serialize + DeserializeOwned + 'static {
-    fn kind(&self) -> EventKind;
+    /// 事件主题（`common::enums::EventTopic`）—— 路由与生产者归属反查的唯一依据
+    fn kind(&self) -> EventTopic;
     fn id(&self) -> &str;
     fn order_key(&self) -> &str {
         ""

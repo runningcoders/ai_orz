@@ -44,8 +44,8 @@ impl EmailInboundEvent {
 }
 
 impl crate::pkg::aop::Event for EmailInboundEvent {
-    fn kind(&self) -> crate::pkg::aop::EventKind {
-        crate::pkg::aop::EventKind::new("email.inbound.message")
+    fn kind(&self) -> common::enums::EventTopic {
+        common::enums::EventTopic::EmailInboundMessage
     }
 
     fn id(&self) -> &str {
@@ -79,10 +79,7 @@ mod tests {
     fn test_email_inbound_event_semantics() {
         use crate::pkg::aop::Event;
         let event = sample_event();
-        assert_eq!(
-            event.kind(),
-            crate::pkg::aop::EventKind::new("email.inbound.message")
-        );
+        assert_eq!(event.kind(), common::enums::EventTopic::EmailInboundMessage);
         assert_eq!(event.id(), "<2026091401@example.com>");
         assert_eq!(event.order_key(), "cred_email_1");
     }

@@ -1,4 +1,5 @@
-use crate::pkg::aop::{Event, EventKind};
+use crate::pkg::aop::Event;
+use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,8 +17,8 @@ pub struct MessageCreatedEvent {
 }
 
 impl Event for MessageCreatedEvent {
-    fn kind(&self) -> EventKind {
-        EventKind::new("message.created")
+    fn kind(&self) -> EventTopic {
+        EventTopic::MessageCreated
     }
 
     fn id(&self) -> &str {
