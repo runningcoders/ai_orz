@@ -15,8 +15,8 @@ source_files:
 - 'src/pkg/stats/runtime/mod.rs#L1-L80 '
 - 'src/pkg/stats/tool_call.rs '
 - 'src/pkg/stats/model_call.rs '
-- src/consumer/aop_stats_collector.rs (AopStatsCollector：基于 RuntimeStatsCollector<(EventKind,
-  &str)> 的 AOP 中心统计面板数据)
+- src/consumer/aop_stats_collector.rs (AopStatsCollector：基于 RuntimeStatsCollector<AopDimKey>
+  的 AOP 中心统计面板数据)
 - 'src/service/domain/system/aop_stats.rs#L1-L80 '
 - src/service/dao/model_provider/stats_duckdb.rs
 - common/src/models/stats.rs
@@ -58,7 +58,7 @@ source_files:
 | collector.rs | DuckDB 核心收集器 | Stats::open(path, batch_size) → register_table(impl StatTable) → record(ctx, table, event) 批量落盘；StatFilter 五维度 + StatAggregation GROUP BY | `:L1-L100` |
 | runtime/mod.rs | 内存泛型收集器 | RuntimeStatsCollector<K: Hash+Eq+Clone>：record(key, duration)；snapshot() 返回 RuntimeStatsSnapshot { total_counts, buckets[60 分钟桶] } | `:L1-L80` |
 | tool_call.rs | Tool 维度表 | ToolCallEvent 字段：agent_id、tool_name、success(bool)、error_kind、duration_ms、tokens；对应 StatTable schema_sql 声明字段类型 | 见独立文件 |
-| aop_stats_collector.rs (consumer) | AOP 内存统计对象 | 基于 RuntimeStatsCollector<(EventKind, &'static str)>，按「事件类别 + 动作」维度，AopStatsHook 每 publish 一次调用 collector.record | 见 consumer 目录 |
+| aop_stats_collector.rs (consumer) | AOP 内存统计对象 | 基于 RuntimeStatsCollector<AopDimKey>，按「事件类别 + 动作」维度，AopStatsHook 每 publish 一次调用 collector.record | 见 consumer 目录 |
 | aop_stats.rs (system domain) | 三段查询封装 | get_overview（总览：总事件数/消费速率/平均耗时/积压）→ get_distribution（按事件类型分布饼图）→ get_time_series（最近 60 分钟时序）对应前端 AOP 监控面板 3 区块 | `:L1-L80` |
 
 **章节来源**

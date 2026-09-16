@@ -29,6 +29,14 @@
 **④ RAG 原子知识卡**：
 - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85.md) — 8 Consumer 全能力映射到 AOP 监控面板的 5 指标卡片 + 事件分布饼图 + 时序折线
 
+## 更新摘要
+**变更内容**
+- AOP 生产者-消费者契约重构同步：`EventKind` → `EventTopic`；`Event::topic()` → `Event::kind()`
+- 订阅由 `interested_events()` 改为 `subscriptions() -> Vec<Subscription>`
+- 生产者改用 `Producer::start(EventSink)` / `ProducerLoop` / `EventSink`；删除 `poll` / `register`
+- 收尾由 `finish_consumption` 统一判定，回调生产者 `on_consumed` / `on_failed`，删除 `Consumer::ack/nack/source`
+- 依赖关系与 classDiagram 已对齐新 trait 形态
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -90,11 +98,11 @@ Q --> IMQ
 - [src/models/events/mod.rs:1-21](src/models/events/mod.rs#L1-L21)
 
 ## 核心组件
-- 事件 Event：统一的事件数据结构与元信息（kind/id/order_key/priority/created_at）。
-- 消费者 Consumer：支持同步/异步两种消费模式，具备过滤、确认/重试、并发控制等能力。
-- 生产者 Producer：外部渠道或定时任务将事件注入到 Registry。
-- 注册中心 Registry：负责消费者注册、事件分发、异步 worker 启动、指标 Hook 注入、队列管理。
-- 队列 EventQueue：抽象出 enqueue/dequeue/ack/nack/stats/query 等能力，当前默认实现为内存队列。
+- 事件 Event：统一的事件数据结构与元信息（kind/id/order_key/priority/created_at），`kind()` 返回 `EventTopic`（`common::enums::EventTopic`）用于路由与生产者归属反查。
+- 消费者 Consumer：支持同步/异步两种消费模式；通过 `subscriptions() -> Vec<Subscription>` 声明订阅的 topic（含 `ordered` / `notify_producer`），框架在 `finish_consumption` 统一判定投递结论并回流生产者。
+- 生产者 Producer：拥有某 topic 业务收尾能力的对象自身（`1 producer : 1 topic`），用 `Producer::start(EventSink)` 自管循环（`ProducerLoop`），注册中心只 `start`/`stop`。
+- 注册中心 Registry：负责消费者/生产者注册、事件分发、异步 worker 启动、启动期校验、指标 Hook 注入与队列管理；收尾在 `finish_consumption` 按 topic 反查生产者回调。
+- 队列 EventQueue：抽象出 enqueue/dequeue/ack/nack/stats/query 等能力（队列层仍保留 ack/nack），当前默认实现为内存队列。
 - 指标 Hook AopMetricsHook：零侵入采集 publish/consume_start/success/failure 等生命周期指标。
 
 章节来源
@@ -182,7 +190,7 @@ end
 - 消费模式：
   - 同步：直接 on_event，适合轻量操作。
   - 异步：入队后由 worker 拉取，支持 concurrency 并行度、empty_queue_sleep_ms/error_retry_sleep_ms 控制节奏。
-- 确认与重试：成功 ack，失败 nack 并重试；失败路径包含退避 sleep，避免紧密自旋。
+- 确认与重试：投递结论由框架在 `finish_consumption` 统一判定——成功回调生产者 `on_consumed` 并 `queue.ack`；失败由 `on_failed` 返回 `RetryDecision`（`Retry` 重投 / `Discard` 放弃），无需消费者自行 ack/nack。
 
 章节来源
 - [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
@@ -214,8 +222,8 @@ end
 
 ### 事件持久化、重放与补偿
 - 当前默认队列是内存实现，重启不保留事件；如需持久化，可实现新的 EventQueue 后端（如 SQLite/DuckDB/文件日志）并在 Registry 中注册。
-- 重放：可通过队列 query_events 获取待处理事件，结合 ack/nack 与自定义 re-enqueue 逻辑实现重放。
-- 补偿：利用 nack 与 error_retry_sleep_ms 实现指数退避或固定间隔重试；对于幂等业务，重复处理不会破坏一致性。
+- 重放：可通过队列 query_events 获取待处理事件，由 finish_consumption 的 Retry 重投或自定义 re-enqueue 逻辑实现重放。
+- 补偿：失败经 `finish_consumption` 折算为 `queue.nack`（Retry）按 `error_retry_sleep_ms` 退避重投，或生产者 `on_failed` 返回 `Discard` 放弃；幂等业务可安全重放。
 
 章节来源
 - [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
@@ -262,21 +270,22 @@ end
 ## 依赖关系分析
 - 单向依赖：AOP 框架不感知业务实体，业务消费者通过 consumer::init 注册；事件模型位于 models/events。
 - 组件耦合：
-  - Registry 依赖 Consumer/Producer/EventQueue/AopMetricsHook。
+  - Registry 依赖 Consumer/Producer/EventQueue/EventSink/AopMetricsHook。
   - InMemoryEventQueue 依赖 RequestContext 与 serde_json。
-  - 事件类型依赖 Event trait 与 EventKind。
+  - 事件类型依赖 Event trait 与 `EventTopic`（`common::enums::EventTopic`）。
 - 潜在风险：
   - order_key 设计不当可能导致串行瓶颈。
-  - 高并发 nack 路径需合理设置 error_retry_sleep_ms 避免自旋。
+  - 异步消费失败经 `finish_consumption` 折算成 `queue.nack`（Retry/Discard 由生产者 `on_failed` 决定），需合理设置 error_retry_sleep_ms 避免自旋。
   - 同步消费者阻塞发布线程，应谨慎使用。
 
 ```mermaid
 classDiagram
 class Registry {
-+register_consumer(consumer)
-+register_producer(producer)
-+publish(event)
++register_consumer(Arc<Consumer>)
++register_producer(Arc<Producer>)
++publish(ctx, event)
 +start_all()
++shutdown_all()
 +dequeue_for(name)
 +ack(name, id)
 +nack(name, id)
@@ -285,23 +294,25 @@ class Registry {
 }
 class Consumer {
 +name()
-+interested_events()
++subscriptions() : Vec<Subscription>
 +should_consume(event_json)
 +consume_mode()
-+on_event(event_json)
-+ack(id)
-+nack(id)
++on_event(ctx, event_json)
 +concurrency()
 +empty_queue_sleep_ms()
 +error_retry_sleep_ms()
 }
 class Producer {
 +name()
-+register(registry)
-+start()
++topic() : EventTopic
++on_consumed(ctx, event)
++on_failed(ctx, event, err, attempt) : RetryDecision
++start(sink : EventSink)
 +stop()
-+poll_interval_secs()
-+poll()
+}
+class EventSink {
++topic() : EventTopic
++emit(ctx, event)
 }
 class EventQueue {
 +enqueue(ctx, event)
@@ -314,15 +325,16 @@ class EventQueue {
 }
 class InMemoryEventQueue
 class Event {
-+kind()
++kind() : EventTopic
 +id()
 +order_key()
 +priority()
 +created_at()
 }
 Registry --> Consumer : "注册/分发"
-Registry --> Producer : "注册/轮询"
+Registry --> Producer : "注册/start"
 Registry --> EventQueue : "使用"
+Registry --> EventSink : "构造预绑定 topic"
 InMemoryEventQueue ..|> EventQueue
 Event <.. MessageCreatedEvent
 Event <.. AgentLoopEvent
@@ -393,7 +405,7 @@ AOP 事件系统在项目中提供了统一的事件分发与调度能力，支�
 - 消费者实现
   - 轻量逻辑使用同步模式；耗时逻辑使用异步模式。
   - 实现 should_consume 进行细粒度过滤，减少无效处理。
-  - 正确实现 ack/nack，确保事件状态一致。
+  - 收尾由框架统一在 `finish_consumption` 判定，业务只需实现生产者 `on_consumed` / `on_failed`，无需自行 ack/nack。
 - 队列与顺序
   - 避免过粗的 order_key 导致串行瓶颈。
   - 合理使用 priority 区分紧急与后台任务。

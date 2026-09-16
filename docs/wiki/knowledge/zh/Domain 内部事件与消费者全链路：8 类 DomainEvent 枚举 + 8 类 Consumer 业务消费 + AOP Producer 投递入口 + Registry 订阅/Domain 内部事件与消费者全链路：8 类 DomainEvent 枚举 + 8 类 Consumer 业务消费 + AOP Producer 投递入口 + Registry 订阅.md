@@ -3,7 +3,7 @@ kind: knowledge_card
 name: Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅
 category: 基础设施
 scope:
-  - src/models/event.rs
+  - common/src/enums/event_topic.rs
   - src/models/events/**/*.rs
   - src/consumer/**/*.rs
   - src/producer/**/*.rs
@@ -35,24 +35,24 @@ source_files:
   - src/consumer/agent_loop_consumer.rs (on_event 签名适配 _ctx: RequestContext)
 ---
 
-## §1 概述与定位
+## 1. 整体方案
 
-本知识卡描述 ai_orz 项目基于 AOP 事件中心的 Domain 内部事件全链路，覆盖 8 类业务消费者注册、4 类 Trait 核心抽象、8 步启动顺序、双模式消费（Sync/Async）、ack/nack 重试机制。触发读取场景：新增 Domain 事件类型或业务 Consumer、排查事件丢失/重试/并发控制、理解 AOP 框架与业务分层边界、理解启动初始化顺序时。AOP 框架层（pkg/aop/）严格零业务依赖，业务层（consumer/producer）只实现 Trait 接入，Domain/DAL/DAO 层完全不感知 AOP 存在。
+本知识卡描述 ai_orz 项目基于 AOP 事件中心的 Domain 内部事件全链路，覆盖 8 类业务消费者注册、4 类 Trait 核心抽象（Event/Consumer/Producer/EventSink）、启动顺序、双模式消费（Sync/Async）、以及「生产者归属 + `finish_consumption` 单一收尾」模型。触发读取场景：新增 Domain 事件类型或业务 Consumer、排查事件丢失/重试/并发控制、理解 AOP 框架与业务分层边界、理解启动初始化顺序时。AOP 框架层（pkg/aop/）严格零业务依赖，业务层（consumer/producer）只实现 Trait 接入，Domain/DAL/DAO 层完全不感知 AOP 存在。
 
-## §2 关键文件表
+## 2. 关键文件与位置
 
 | 文件 | 角色 | 核心入口/约束 |
 |------|------|---------------|
-| [pkg/aop/core/event.rs](src/pkg/aop/core/event.rs) | Event Trait + EventKind 抽象 | Event trait 五方法：kind/id/order_key/priority/created_at；EventKind(&'static str) 静态事件类型标识 |
-| [pkg/aop/core/consumer.rs](src/pkg/aop/core/consumer.rs) | Consumer Trait 双模式定义 | ConsumeMode::Sync（发布时立即调用）/Async（入队+Worker拉取）；Async 模式需实现 ack/nack + concurrency + 两个 sleep 参数 |
-| [pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs) | Registry 全局注册调度 | self_ref Weak 循环注入；register_consumer（Async 模式自动创建 InMemoryEventQueue）；register_producer（需 registry_arc）；publish 统一注入 event_id/kind/order_key/priority/created_at 到 JSON 顶层 |
-| [consumer/mod.rs](src/consumer/mod.rs) | 8 类消费者 init 注册 | consumer::init() 顺序注册 7 条 + 1 条 AopStatsCollector + 1 条 AopStatsHook；MessageConsumer / CronTriggerConsumer / ToolExecLogConsumer / ToolExecStatsConsumer / AgentLoopConsumer / ThinkRoundStatsConsumer / TaskEventConsumer |
-| [consumer/message.rs](src/consumer/message.rs) | 消息消费者 | Async 模式，concurrency=4；interested_events=message.created；on_event 反序列化→按 to_role 分发 Agent/User/System；ack 仅更新 DB status=Processed |
-| [consumer/scheduler.rs](src/consumer/scheduler.rs) | Cron 调度消费者 | Sync 模式；interested_events=cron.trigger；on_event 按 payload.action 分发 handler |
-| [producer/cron_trigger.rs](src/producer/cron_trigger.rs) | 定时轮询生产者 | poll_interval_secs=60；poll() → list_due_triggers → 逐个 publish CronTriggerEvent → mark_trigger_executed 更新 next_run_at |
-| [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) | 生产消费架构设计 | 两阶段初始化 + 事件总线前置原则；启动 8 步严格顺序；consumer::init() 禁写 DB 红线 |
-| [pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs) (publish context_carrier 注入) | context 贯穿机制 | publish 统一注入 ctx.to_carrier() 到事件 JSON 顶层 context_carrier 字段；carried_ctx(ctx) 从事件还原 RequestContext；Sync/Async 两条路径均传入还原后的 ctx 给 on_event | `:L148-L156`, `:L177-L179`, `:L229-L233`, `:L385-L387` |
-| [pkg/aop/core/metrics_hook.rs](src/pkg/aop/core/metrics_hook.rs) (AopEventMeta) | 元信息扩展 | AopEventMeta 新增 context_carrier: Option<ContextCarrier> 字段；from_json 同步解析事件顶层 | `:L18-L61` |
+| [pkg/aop/core/event.rs](src/pkg/aop/core/event.rs) | Event Trait + EventTopic 抽象 | Event trait：`kind()/id()/order_key()/priority()/created_at()`；`kind()` 返回 `EventTopic`（`common::enums::EventTopic`） |
+| [pkg/aop/core/consumer.rs](src/pkg/aop/core/consumer.rs) | Consumer Trait 双模式定义 | ConsumeMode::Sync（发布时立即调用）/Async（入队+Worker拉取）；`subscriptions() -> Vec<Subscription>` 声明 topic；投递结论由 `finish_consumption` 统一判定 |
+| [pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs) | Registry 全局注册调度 | `producers_by_topic` 索引反查归属；`register_consumer`/`register_producer`（同步）；`publish` 注入元字段；`finish_consumption` 单一收尾出口 |
+| [consumer/mod.rs](src/consumer/mod.rs) | 8 类消费者 init 注册 | consumer::init() 顺序注册各业务消费者；MessageConsumer / CronTriggerConsumer / ToolExecLogConsumer / ToolExecStatsConsumer / AgentLoopConsumer / ThinkRoundStatsConsumer / TaskEventConsumer |
+| [consumer/message.rs](src/consumer/message.rs) | 消息消费者 | Async 模式，concurrency=4；`subscriptions()` 含 message.created（`.ordered().notify_producer()`）；`on_consumed`（notify_producer 路径）更新 DB status=Processed |
+| [consumer/scheduler.rs](src/consumer/scheduler.rs) | Cron 调度消费者 | Sync 模式；`subscriptions()` 含 cron.trigger（`.notify_producer()`）；on_event 按 payload.action 分发 handler |
+| [producer/cron_trigger.rs](src/producer/cron_trigger.rs) | 定时轮询生产者 | `start(sink)` 自管 60s 循环（ProducerLoop）；`tick()` → list_due_triggers → `sink.emit(CronTriggerEvent)`；`on_consumed` 内 mark_trigger_executed 更新 next_run_at |
+| [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) | 生产消费架构设计 | 两阶段初始化 + 事件总线前置原则；启动严格顺序；consumer::init() 禁写 DB 红线 |
+| [pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs) (publish context_carrier 注入) | context 贯穿机制 | publish 统一注入 ctx.to_carrier() 到事件 JSON 顶层 context_carrier 字段；carried_ctx(ctx) 从事件还原 RequestContext；Sync/Async 两条路径均传入还原后的 ctx 给 on_event | `:L142-L271` |
+| [pkg/aop/core/metrics_hook.rs](src/pkg/aop/core/metrics_hook.rs) (AopEventMeta) | 元信息扩展 | AopEventMeta 含 context_carrier: Option<ContextCarrier> 字段；from_json 同步解析事件顶层 | `:L18-L61` |
 | [consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs) | 链路可观测日志 | AopStatsHook 四回调追加 `[aop] log_id={} event={} ...` sys_info! 日志；log_id_of(meta) 从 context_carrier 提取 log_id，缺失回退 "unknown" | `:L36-L120` |
 
 ## §3 架构与约定
@@ -61,9 +61,9 @@ source_files:
 pkg/aop/ (纯框架零业务)
 ├─ core/
 │   ├─ Event trait        — kind/id/order_key/priority/created_at
-│   ├─ Consumer trait     — Sync/Async 双模式 + ack/nack + concurrency
-│   ├─ Producer trait     — poll_interval_secs + poll() 轮询
-│   └─ Registry           — self_ref Arc 循环注入 + publish/register_* + queues
+│   ├─ Consumer trait     — Sync/Async 双模式 + subscriptions() 订阅声明 + concurrency
+│   ├─ Producer trait     — topic()/start(EventSink)/stop() + on_consumed/on_failed
+│   └─ Registry           — register_producer/consumer + start_all/finish_consumption + queues
 └─ queue/
     └─ InMemoryEventQueue — Async 模式每个 Consumer 独立队列
 

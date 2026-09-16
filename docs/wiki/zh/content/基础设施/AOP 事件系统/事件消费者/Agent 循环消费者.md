@@ -12,8 +12,14 @@
 - [busy_guard.rs（Busy RAII 清理）](src/service/domain/runtime/busy_guard.rs)
 - [agent_runtime_state.rs（状态管理与 try_set_busy）](src/pkg/agent_runtime_state.rs)
 - [message.rs（MessageConsumer 唤醒流程）](src/consumer/message.rs)
+- [common/src/enums/event_topic.rs](common/src/enums/event_topic.rs#L32-L65)
 - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 兴趣声明由 `interested_events()` / `EventKind` 改为 `subscriptions()` 声明 `agent.loop` / `agent.think.round`
+- 删除 `ack` / `nack` 与 `stateDiagram` 描述；收尾由 `finish_consumption` 统一判定，按 topic 反查生产者回调
 
 ## 目录
 1. [简介](#简介)
@@ -124,9 +130,8 @@ Producer->>State : set_idle(agent_id) via BusyGuard drop
   - agent.think.round：记录 round_number、duration_ms、tool_call_count
 
 ```mermaid
-flowchart TD
-Start(["on_event 入口"]) --> ReadKind["读取 event.kind"]
-ReadKind --> Loop{"kind == agent.loop?"}
+graph TB
+ReadKind["读取 event.kind"] --> Loop{"kind == agent.loop?"}
 Loop --> |是| ParseLoop["反序列化为 AgentLoopEvent"]
 ParseLoop --> Phase{"phase == started/finished?"}
 Phase --> |started| LogStarted["记录 agent_id/scene/trace_id"]
@@ -135,7 +140,7 @@ Phase --> |其他| Skip1["忽略"]
 Loop --> |否| Think{"kind == agent.think.round?"}
 Think --> |是| ParseThink["反序列化为 ThinkRoundEvent"]
 ParseThink --> LogThink["记录 round/duration/tool_calls"]
-Think --> |否| End(["返回 Ok"])
+Think --> |否| End["返回 Ok"]
 LogStarted --> End
 LogFinished --> End
 LogThink --> End
@@ -199,12 +204,11 @@ RT->>ST : set_idle(agent_id) via BusyGuard
 - 消息消费前检查：使用 try_set_busy 替代先 check 再 set 的模式，消除 TOCTOU 竞态
 
 ```mermaid
-stateDiagram-v2
-[*] --> Idle
-Idle --> Busy : "try_set_busy(message_id)"
-Busy --> Idle : "BusyGuard drop / set_idle"
-Idle --> Resting : "set_resting"
-Resting --> Idle : "set_idle"
+graph TB
+Idle["Idle"] --> Busy["Busy"]
+Busy --> Idle
+Idle --> Resting["Resting"]
+Resting --> Idle
 ```
 
 图表来源
@@ -269,7 +273,7 @@ ST --> REG
   - 确认 try_set_busy 使用正确，避免并发重复唤醒
 - 事件未消费：
   - 检查 Consumer 是否注册（consumer/mod.rs 中的 init）
-  - 检查 interested_events 是否匹配事件 kind
+  - 检查 subscriptions() 是否声明了目标 EventTopic
   - 检查 should_consume 是否误过滤
 - 重试风暴：
   - 调整 error_retry_sleep_ms 与 empty_queue_sleep_ms
@@ -290,7 +294,7 @@ AgentLoopConsumer 通过 AOP 框架订阅 Agent 循环的关键事件，提供�
 ## 附录：自定义事件处理最佳实践
 - 选择消费模式：
   - 轻量处理（如日志）：使用 Sync 模式
-  - 重处理（如 IO、外部调用）：使用 Async 模式，并实现 ack/nack
+  - 重处理（如 IO、外部调用）：使用 Async 模式，由 finish_consumption 统一收尾
 - 事件过滤：
   - 实现 should_consume 精确过滤，减少无效处理
 - 错误处理：

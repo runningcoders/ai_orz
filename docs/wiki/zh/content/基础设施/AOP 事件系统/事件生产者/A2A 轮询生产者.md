@@ -2,15 +2,24 @@
 
 <cite>
 **本文引用的文件**
-- [src/producer/a2a_polling.rs](src/producer/a2a_polling.rs)
+- [src/producer/a2a_polling.rs](src/producer/a2a_polling.rs#L53-L140)
+- [src/consumer/a2a_poll.rs](src/consumer/a2a_poll.rs#L32-L140)
+- [src/models/events/a2a_poll.rs](src/models/events/a2a_poll.rs#L22-L58)
+- [src/pkg/aop/core/producer.rs](src/pkg/aop/core/producer.rs#L13-L99)
+- [src/pkg/aop/core/event_sink.rs](src/pkg/aop/core/event_sink.rs#L20-L54)
+- [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs#L53-L123)
+- [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs#L734-L802)
+- [common/src/enums/event_topic.rs](common/src/enums/event_topic.rs#L32-L65)
 - [common/src/api/a2a.rs](common/src/api/a2a.rs)
-- [src/handlers/a2a/mod.rs](src/handlers/a2a/mod.rs)
-- [src/handlers/a2a/send_task.rs](src/handlers/a2a/send_task.rs)
-- [src/handlers/a2a/get_task.rs](src/handlers/a2a/get_task.rs)
 - [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
-- [src/models/events/a2a_task_update.rs](src/models/events/a2a_task_update.rs)
 - [src/service/dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 生产侧改为「只认领」语义：`tick()` → `claim(sink)`，只 `list_agents` + 过滤 remote + `sink.emit(A2aPollRequestedEvent)`，**不再直接做网络重活**
+- 真正的远端抓取 / 消息投递 / `a2a_synced_msgs` 标签推进 / `transition_status` 已搬到新消费者 `src/consumer/a2a_poll.rs`（Async + `.ordered()`，`order_key = agent_id`）
+- 新事件 `src/models/events/a2a_poll.rs::A2aPollRequestedEvent` 承载认领；`A2aPollingProducer` 只 emit、不声明 `notify_producer`
 
 ## 目录
 1. [简介](#简介)
@@ -25,280 +34,222 @@
 10. [附录](#附录)
 
 ## 简介
-本文件面向“轮询型 A2A 生产者”，聚焦于在 A2A（Agent-to-Agent）协议下，如何周期性拉取远程 Agent 的任务状态、增量同步消息并更新本地任务状态。文档覆盖：
-- A2A 协议规范与消息格式定义
-- 轮询策略配置、重试机制、错误处理与性能优化
-- 任务状态检查、结果获取与回调处理
-- 集成示例、监控指标与故障排除
+本文件面向「轮询型 A2A 生产者」，聚焦在 A2A（Agent-to-Agent）协议下，生产者如何**周期性认领**需要同步的远端 Agent，并把「拉取远端任务、增量同步消息、更新本地任务状态」这些重量级动作交给下游消费者执行。文档覆盖：
+- 生产者「只认领」语义与 `claim(sink)` 流程
+- `A2aPollRequestedEvent` 认领事件结构
+- 消费侧 `A2aPollConsumer` 如何承接远端抓取与投递（新路径）
+- A2A 协议/DAO/回调等底层能力的落点（见对应源码）
+- 监控指标与故障排除
 
 ## 项目结构
-围绕 A2A 轮询生产者的代码分布在以下层次：
-- Adapter 层（HTTP Handler / 公开回调 Handler / AOP Producer）
-  - A2A 协议 HTTP 端点：send_task、get_task、cancel_task、agent_card、jsonrpc 分发等
-  - A2A 轮询生产者：实现 AOP Producer 接口，按固定间隔轮询远程任务
-- Domain 层：业务实体与领域服务（任务、消息、项目、Agent 管理等）
-- DAL/DAO 层：数据访问与外部系统调用（如 A2A 运行时 DAO 通过 HTTP JSON-RPC 调用远端）
+围绕 A2A 轮询的代码分布在以下层次：
+- 生产者层（`src/producer/a2a_polling.rs`）：`A2aPollingProducer` 实现 `Producer`，由 `ProducerLoop` 每 30s 驱动一次 `claim(sink)`。
+- 消费层（`src/consumer/a2a_poll.rs`）：`A2aPollConsumer`（Async + `.ordered()`）消费 `a2a.poll.requested`，执行原 tick 的远端拉取/投递/状态推进。
+- 事件层（`src/models/events/a2a_poll.rs`）：`A2aPollRequestedEvent`（`order_key = agent_id`）。
+- 协议/DAO/回调层：`common/src/api/a2a.rs`、`src/service/dao/agent_runtime/a2a.rs`、`src/service/dao/a2a_callback/mod.rs`。
 
 ```mermaid
 graph TB
-subgraph "Adapter 层"
-H1["A2A 处理器<br/>send_task/get_task/cancel_task"]
-P1["A2A 轮询生产者<br/>Producer 实现"]
+subgraph "生产者层(只认领)"
+P1["A2aPollingProducer<br/>claim(sink)"]
 end
-subgraph "Domain 层"
-D1["项目管理/任务管理"]
-D2["消息投递"]
-D3["Agent 管理"]
+subgraph "AOP 框架"
+SINK["EventSink(预绑定 a2a.poll.requested)"]
+REG["Registry"]
+CONS["A2aPollConsumer<br/>(Async + ordered)"]
 end
-subgraph "DAL/DAO 层"
-L1["A2A 运行时 DAO<br/>HTTP JSON-RPC"]
-L2["A2A 回调 DAO<br/>推送通知"]
+subgraph "底层能力"
+API["common/src/api/a2a.rs"]
+DAO["A2A 运行时 DAO<br/>HTTP JSON-RPC"]
+CB["A2A 回调 DAO"]
 end
-H1 --> D1
-H1 --> D2
-H1 --> D3
-P1 --> D1
-P1 --> D2
-P1 --> L1
-D2 --> L2
+P1 --> SINK
+SINK --> REG
+REG --> CONS
+CONS --> API
+CONS --> DAO
+CONS --> CB
 ```
 
 图表来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
-- [src/producer/a2a_polling.rs:16-58](src/producer/a2a_polling.rs#L16-L58)
-- [src/service/dao/agent_runtime/a2a.rs:29-68](src/service/dao/agent_runtime/a2a.rs#L29-L68)
-- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
+- [src/models/events/a2a_poll.rs:22-58](src/models/events/a2a_poll.rs#L22-L58)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
 
 ## 核心组件
-- A2A 轮询生产者（A2aPollingProducer）
-  - 职责：定时轮询所有远程 Agent 的 InProgress 任务，拉取远程任务状态与消息，增量同步到本地用户，并同步任务状态。
-  - 关键行为：
-    - 每 30 秒执行一次 poll
-    - 查询远程 Agent 的 InProgress 任务列表
-    - 通过 A2A 运行时 DAO 调用 tasks/get 获取远程任务
-    - 增量同步 agent/assistant 消息到本地用户
-    - 根据远程任务状态转换本地任务状态
-- A2A 协议类型与消息格式
-  - 定义 Agent Card、JSON-RPC 2.0、Task、Message、Artifact、方法参数等
-- A2A 运行时 DAO
-  - 通过 HTTP JSON-RPC 调用远端 A2A 服务端，封装 tasks/send、tasks/get 等方法
-- A2A 回调 DAO
-  - 将消息变更以完整 A2A Task 形式推送到客户端注册的 notification_url
+- A2A 轮询生产者（`A2aPollingProducer`）
+  - 职责：**只认领**——每 30 秒列出全部远端 Agent，对每个 remote Agent 发一条 `A2aPollRequestedEvent`；不在此线程做网络/DB 重活。
+  - 归属：`topic() = EventTopic::A2aPollRequested`；经预绑定的 `EventSink` emit（发不出别的 topic）。
+  - 自管循环：`start(sink)` spawn 后**立即返回**，`ProducerLoop` 每 30s 调用一次 `claim`，`stop()` 置位并 `await` JoinHandle。
+- `A2aPollRequestedEvent`：认领事件，`order_key = agent_id`、`id = "{agent_id}-{tick_at}"`，由 `A2aPollConsumer` 按 Agent 串行处理。
+- A2A 轮询消费者（`A2aPollConsumer`）：Async + `.ordered()`，承接原生产者 tick 的内层逻辑（远端抓取、消息投递、`a2a_synced_msgs` 推进、`transition_status`）。
+- A2A 协议类型与 DAO：定义 Agent Card / JSON-RPC / Task / Message（`common/src/api/a2a.rs`），以及 HTTP JSON-RPC 运行时 DAO 与回调 DAO。
 
 章节来源
-- [src/producer/a2a_polling.rs:16-58](src/producer/a2a_polling.rs#L16-L58)
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
-- [src/service/dao/agent_runtime/a2a.rs:29-68](src/service/dao/agent_runtime/a2a.rs#L29-L68)
-- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
+- [src/models/events/a2a_poll.rs:22-58](src/models/events/a2a_poll.rs#L22-L58)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
+- [common/src/enums/event_topic.rs:32-65](common/src/enums/event_topic.rs#L32-L65)
 
 ## 架构总览
-轮询生产者作为 AOP Producer 被调度器周期触发，读取远程 Agent 的 InProgress 任务，通过 A2A 运行时 DAO 调用 tasks/get，将新消息推送到用户，并更新本地任务状态。同时，A2A 回调通道支持 PushNotifications，将任务状态变化推送到客户端。
+生产者被 `ProducerLoop` 周期触发，只做「认领」：列出远端 Agent、过滤 remote、向预绑定 topic emit 认领事件。真正的重活在 `A2aPollConsumer` 中执行——它在独立 worker 里拉取远端任务、增量同步消息到用户、更新本地任务状态，且失败降级为 warn+skip（下一轮重新认领即可）。
 
 ```mermaid
 sequenceDiagram
-participant Scheduler as "调度器"
-participant Producer as "A2A 轮询生产者"
-participant Domain as "领域服务"
-participant Dao as "A2A 运行时 DAO"
-participant Remote as "远程 A2A 服务端"
-Scheduler->>Producer : 定时触发 poll()
-Producer->>Domain : 查询远程 Agent 的 InProgress 任务
-loop 每个任务
-Producer->>Dao : fetch_task(remote_task_id)
-Dao->>Remote : POST /a2a (JSON-RPC tasks/get)
-Remote-->>Dao : A2aTask(状态+消息)
-Dao-->>Producer : A2aTask
-Producer->>Domain : 增量同步消息到用户
-Producer->>Domain : 更新本地任务状态
+participant Loop as "ProducerLoop(30s)"
+participant Prod as "A2aPollingProducer"
+participant Sink as "EventSink"
+participant Reg as "Registry"
+participant Cons as "A2aPollConsumer"
+participant DAO as "A2A 运行时 DAO"
+Loop->>Prod : claim(sink)
+Prod->>Prod : list_agents + 过滤 remote
+loop 每个 remote Agent
+Prod->>Sink : emit(A2aPollRequestedEvent)
+Sink->>Reg : publish
 end
+Reg->>Cons : on_event(A2aPollRequestedEvent)
+Cons->>DAO : fetch_task / 投递消息 / 状态推进
 ```
 
 图表来源
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
-- [src/service/dao/agent_runtime/a2a.rs:207-247](src/service/dao/agent_runtime/a2a.rs#L207-L247)
-- [common/src/api/a2a.rs:147-198](common/src/api/a2a.rs#L147-L198)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
+- [src/models/events/a2a_poll.rs:22-58](src/models/events/a2a_poll.rs#L22-L58)
 
 ## 详细组件分析
 
-### A2A 轮询生产者（A2aPollingProducer）
+### A2A 轮询生产者（A2aPollingProducer，只认领）
 - 角色与职责
-  - 实现 Producer 接口，提供 name、register、poll_interval_secs、poll
-  - 每 30 秒轮询一次，遍历远程 Agent 的 InProgress 任务
-- 关键流程
-  - 构建 RequestContext（System 调用者）
-  - 查询远程 Agent 列表并过滤出 kind=remote 的 Agent
-  - 对每个 Agent 查询其 InProgress 任务（最多 100）
-  - 从任务标签中解析 remote_task_id
-  - 调用 A2A 运行时 DAO 获取远程任务
-  - 增量同步 agent/assistant 消息到用户（基于 a2a_synced_msgs 计数）
-  - 根据远程任务状态映射为本地任务状态并执行状态迁移
-- 错误处理
-  - 网络或 JSON-RPC 错误：记录警告并跳过该任务
-  - 消息发送失败：记录警告但不中断后续任务
-  - 状态迁移失败：记录警告并继续
-- 性能特性
-  - 批量查询任务（limit=100）
-  - 增量同步避免重复推送
-  - 固定轮询间隔（30s），可通过扩展配置化
+  - 实现 `Producer` 接口，提供 `name` / `topic` / `on_consumed`(默认空) / `on_failed`(默认 Retry) / `start(sink)` / `stop`。
+  - **不声明 `notify_producer`**：只 emit，没有业务收尾，因此 `a2a.poll.requested` 的归属表为空（见生产者总览的 DAL-as-Producer 表）。
+- 关键流程（`claim(sink)`）
+  - 构建 system ctx，调用 `hr_domain.agent_manage().list_agents` 获取全部 Agent。
+  - 过滤 `kind.is_remote()` 的 Agent；为空直接返回。
+  - 取轮次时间戳 `tick_at`，逐 Agent `sink.emit(A2aPollRequestedEvent::new(&agent.po.id, tick_at))`（发布句柄只认本 topic，发不出去则 Err）。
+- 循环与生命周期
+  - `start(sink)`：`tokio::spawn` 后立即返回；loop 内调用 `claim` 后 `loop_ctl.sleep(30s)`，被 `stop()` 置位后下一片（≤250ms）返回 `false` 退出。
+  - 错误处理：`claim` 内任一 `emit` 失败即返回 Err；loop 捕获后仅记日志，下一轮继续认领（不拖累 30s 周期）。
 
 ```mermaid
-flowchart TD
-Start(["开始 poll"]) --> LoadAgents["加载远程 Agent 列表"]
-LoadAgents --> HasAgents{"是否存在远程 Agent?"}
-HasAgents -- 否 --> End(["结束"])
-HasAgents -- 是 --> ForEachAgent["遍历每个远程 Agent"]
-ForEachAgent --> QueryTasks["查询 InProgress 任务(<=100)"]
-QueryTasks --> HasTasks{"是否存在任务?"}
-HasTasks -- 否 --> NextAgent["下一个 Agent"]
-HasTasks -- 是 --> ForEachTask["遍历任务"]
-ForEachTask --> ExtractId["从标签提取 remote_task_id"]
-ExtractId --> FetchTask["调用 A2A 运行时 DAO 获取任务"]
-FetchTask --> SyncMsgs["增量同步新消息到用户"]
-SyncMsgs --> UpdateStatus["根据远程状态更新本地任务状态"]
-UpdateStatus --> NextTask["下一个任务"]
-NextTask --> |循环| ForEachTask
-NextAgent --> |循环| ForEachAgent
-ForEachAgent --> End
+graph TB
+Start["ProducerLoop 触发"] --> Claim["claim(sink)"]
+Claim --> List["list_agents"]
+List --> Filter["过滤 kind.is_remote"]
+Filter --> |空| Return["返回 Ok"]
+Filter --> |有| Tick["取 tick_at"]
+Tick --> Emit["逐 Agent sink.emit(A2aPollRequestedEvent)"]
+Emit --> Sleep["loop_ctl.sleep(30s)"]
+Sleep --> Start
 ```
 
 图表来源
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
 
 章节来源
-- [src/producer/a2a_polling.rs:16-270](src/producer/a2a_polling.rs#L16-L270)
+- [src/producer/a2a_polling.rs:40-140](src/producer/a2a_polling.rs#L40-L140)
 
-### A2A 协议与消息格式
-- Agent Card：组织级能力描述，包含名称、版本、URL、能力声明、技能列表、默认输入输出模式
-- JSON-RPC 2.0：请求/响应结构、标准错误码
-- Task：id、session_id、status、messages、artifacts、metadata
-- Message：role（user/agent/assistant）、parts（Text/File/Data）
-- Artifact：产物信息
-- 方法参数：SendTaskParams、GetTaskParams、CancelTaskParams
+### A2aPollRequestedEvent（认领事件）
+- `event_id = "{agent_id}-{tick_at}"`（带轮次时间戳，便于日志区分相邻两轮）。
+- `agent_id`：目标远端 Agent；`created_at = tick_at`。
+- `order_key = agent_id`：同一 Agent 相邻两轮 tick 落在同一队列串行，上一轮未消费完则下一轮排队等待，避免重叠处理同一批任务（重复轮次由 `a2a_synced_msgs` 计数幂等吸收）。
 
 章节来源
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
+- [src/models/events/a2a_poll.rs:22-58](src/models/events/a2a_poll.rs#L22-L58)
 
-### A2A 运行时 DAO（HTTP JSON-RPC）
-- 功能
-  - 构造 JSON-RPC 请求（含单调递增 id）
-  - 发送 HTTP POST 到远端 endpoint，携带 Authorization Bearer token（可选）
-  - 解析 JSON-RPC 响应，处理 error/result
-  - 暴露 fetch_task、execute_a2a_send 等方法
-- 错误处理
-  - HTTP 非成功状态：返回内部错误
-  - JSON 解析失败：返回内部错误
-  - JSON-RPC error：返回内部错误并附带 code/message
-- 文本提取
-  - 从 tasks/send 结果中提取 assistant/agent 的 text parts 拼接
+### A2A 轮询消费者（A2aPollConsumer，消费侧重活）
+- 订阅 `a2a.poll.requested`（`.ordered()`，`order_key = agent_id`），模式 Async。
+- `on_event` 反序列化出 `A2aPollRequestedEvent` 后调用 `poll_agent(ctx, &event.agent_id)`。
+- `poll_agent` 承接原生产者 tick 的内层逻辑：查询本地任务列表、拉取远端任务、增量同步消息到用户（`a2a_synced_msgs` 计数推进）、按远端状态 `transition_status`。
+- 失败语义：单点失败降级为 warn + skip（下一轮 tick 重新认领同一 Agent 重来，比 nack 重投更快收敛）；真正的「整轮失败」（如查本地任务列表报错）才上抛 `Err`。
+- 上下文：每 task ctx 用 `RequestContext::builder().caller_type(System).agent_id(..).task_id(..)`（有则加 `project_id`）。
 
 章节来源
-- [src/service/dao/agent_runtime/a2a.rs:29-68](src/service/dao/agent_runtime/a2a.rs#L29-L68)
-- [src/service/dao/agent_runtime/a2a.rs:86-148](src/service/dao/agent_runtime/a2a.rs#L86-L148)
-- [src/service/dao/agent_runtime/a2a.rs:150-205](src/service/dao/agent_runtime/a2a.rs#L150-L205)
-- [src/service/dao/agent_runtime/a2a.rs:207-247](src/service/dao/agent_runtime/a2a.rs#L207-L247)
-- [src/service/dao/agent_runtime/a2a.rs:249-275](src/service/dao/agent_runtime/a2a.rs#L249-L275)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
 
-### A2A 回调（PushNotifications）
-- 功能
-  - 当 send_task 提供了 notification_url，创建 A2aCallback 渠道（scope_project 绑定）
-  - 消息投递时按 scope_project 过滤并推送完整 A2A Task 到客户端
-- 接口
-  - push(ctx, message, channel)
-  - test_connection(ctx, channel)
+### 注册与装配
+- 生产者：`producer::init` 注册 `A2aPollingProducer`（DAL-as-Producer 表中 `a2a.poll.requested` 无生产者）。
+- 消费者：`consumer::init` 注册 `A2aPollConsumer`（见 `src/consumer/mod.rs`）。
+- 启动顺序：`dal::init_all()` → `producer::init()` → `consumer::init()` → `aop::init_all()`。
 
 章节来源
-- [src/handlers/a2a/send_task.rs:93-114](src/handlers/a2a/send_task.rs#L93-L114)
-- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/consumer/mod.rs](src/consumer/mod.rs)
+- [src/producer/mod.rs](src/producer/mod.rs)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
 
-### 任务状态映射与同步
-- 远程状态到本地状态的映射
-  - Completed → Completed
-  - Failed/Canceled → Cancelled
-  - Working/Submitted/InputRequired → Pending→InProgress
-- 同步标记
-  - 使用 a2a_task_id 标签关联远程任务
-  - 使用 a2a_synced_msgs 计数增量同步消息
+### 底层能力落点（协议 / DAO / 回调）
+- 协议类型：Agent Card、JSON-RPC 2.0、Task、Message、Artifact（`common/src/api/a2a.rs`）。
+- 运行时 DAO：`fetch_task` / `execute_a2a_send`（HTTP JSON-RPC 调用远端，`src/service/dao/agent_runtime/a2a.rs`）。
+- 回调 DAO：`push(ctx, message, channel)` / `test_connection`（按 scope_project 过滤推送完整 A2A Task，`src/service/dao/a2a_callback/mod.rs`）。
+- 任务状态映射：远端 Completed → 本地 Completed；Failed/Canceled → Cancelled；Working/Submitted/InputRequired → InProgress（在 `A2aPollConsumer::poll_agent` 内执行）。
 
 章节来源
-- [src/producer/a2a_polling.rs:218-259](src/producer/a2a_polling.rs#L218-L259)
-- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L36)
+- [common/src/api/a2a.rs](common/src/api/a2a.rs)
+- [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
+- [src/service/dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
 
 ## 依赖分析
-- 轮询生产者依赖
-  - Domain：agent_manage、task_manage、message delivery
-  - DAO：A2aRuntimeDao（HTTP JSON-RPC）
-  - 事件工具：a2a_task_id、synced_msg_count 标签处理
-- A2A 处理器依赖
-  - Domain：project_manage、message management、artifact_manage
-  - Mapper：构建 A2aTask
-- 回调 DAO 依赖
-  - 消息渠道：MessageChannel（A2aCallback 类型）
+- 生产者依赖
+  - Domain：`hr_domain.agent_manage`（`list_agents`）——仅用于列 Agent，不做远端拉取。
+  - AOP：`EventSink`（emit 认领事件）。
+- 消费者依赖
+  - Domain：task_manage、message delivery、agent_manage。
+  - DAO：A2A 运行时 DAO（HTTP JSON-RPC）、A2A 回调 DAO。
+- 协议/回调层依赖
+  - 消息渠道：MessageChannel（A2aCallback 类型）。
 
 ```mermaid
 graph LR
-P["A2A 轮询生产者"] --> D1["任务管理"]
-P --> D2["消息投递"]
-P --> D3["Agent 管理"]
-P --> R["A2A 运行时 DAO"]
-H["A2A 处理器"] --> D1
-H --> D2
-H --> D3
-D2 --> C["A2A 回调 DAO"]
+P["A2aPollingProducer"] --> HR["HR Domain(列 Agent)"]
+P --> SINK["EventSink"]
+CONS["A2aPollConsumer"] --> DM["任务管理"]
+CONS --> MD["消息投递"]
+CONS --> DAO["A2A 运行时 DAO"]
+CONS --> CB["A2A 回调 DAO"]
 ```
 
 图表来源
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
-- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
+- [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
 
 章节来源
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
-- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
 
 ## 性能考虑
-- 轮询频率
-  - 当前固定 30 秒；可根据负载调整
-- 批量查询
-  - 每次最多查询 100 个任务，减少数据库压力
-- 增量同步
-  - 基于 a2a_synced_msgs 计数，避免重复推送
-- 超时控制
-  - A2A 运行时 DAO 使用 http Client 超时（timeout_secs）
-- 并发与背压
-  - 建议在生产环境引入限流与退避策略（指数退避）
-- 日志与可观测性
-  - 关键路径记录 info/warn，便于定位问题
+- 轮询频率：当前固定 30 秒（由 `ProducerLoop` 的 `sleep` 控制）；认领动作极轻（只 emit 事件）。
+- 批量与并发：远端拉取/投递在消费者侧按 Agent 串行（`order_key = agent_id`）执行，避免同一 Agent 重叠处理；如需更高吞吐可调高 `A2aPollConsumer` 的 `concurrency`（注意 `ordered` 目前只在并发 >1 时可观测）。
+- 增量同步：`a2a_synced_msgs` 计数保证只推送新消息。
+- 超时控制：A2A 运行时 DAO 使用 http Client 超时（`timeout_secs`）。
+- 日志与可观测性：关键路径记录 info/warn；消费者失败降级为 warn+skip，不进入无限重投。
 
 [本节为通用指导，不直接分析具体文件]
 
 ## 故障排除指南
-- 无法获取远程任务
-  - 检查 A2A 运行时 DAO 的 endpoint、auth_token、timeout_secs 配置
-  - 查看 HTTP 状态码与 JSON-RPC error 信息
-- 消息未同步到用户
-  - 确认任务标签中存在 a2a_task_id
-  - 检查 a2a_synced_msgs 计数是否增长
-  - 查看消息投递错误日志
+- 生产者不 emit 认领事件
+  - 检查 `a2a_polling` 生产者是否在 `producer::init` 注册、`aop::init_all` 是否成功（查 `producer started (topic=a2a.poll.requested)` 日志）。
+  - 检查是否有 `kind.is_remote()` 的 Agent（否则 `claim` 直接返回，日志无 `claiming N remote agents`）。
+- 远端任务未同步到用户
+  - 确认 `A2aPollConsumer` 已注册且 `a2a.poll.requested` 队列有事件。
+  - 查看 `a2a_poll` 消费者日志：远端 fetch 失败 / 消息投递失败均为 warn+skip，下一轮重来。
 - 任务状态未更新
-  - 核对远程任务状态映射逻辑
-  - 检查状态迁移调用是否成功
+  - 核对 `A2aPollConsumer::poll_agent` 内的远端状态 → 本地状态映射与 `transition_status` 调用。
 - 回调推送失败
-  - 验证 notification_url 可达性与权限
-  - 使用回调 DAO 的 test_connection 进行连通性测试
+  - 验证 `notification_url` 可达性与权限；用回调 DAO 的 `test_connection` 做连通性测试。
 
 章节来源
-- [src/producer/a2a_polling.rs:114-128](src/producer/a2a_polling.rs#L114-L128)
-- [src/producer/a2a_polling.rs:165-180](src/producer/a2a_polling.rs#L165-L180)
-- [src/producer/a2a_polling.rs:234-259](src/producer/a2a_polling.rs#L234-L259)
-- [src/service/dao/agent_runtime/a2a.rs:116-148](src/service/dao/agent_runtime/a2a.rs#L116-L148)
-- [src/service/dao/a2a_callback/mod.rs:32-45](src/service/dao/a2a_callback/mod.rs#L32-L45)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
+- [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
+- [src/service/dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs)
 
 ## 结论
-A2A 轮询生产者通过稳定的轮询机制，实现了远程 Agent 任务的持续跟踪与结果回灌。结合 A2A 协议规范、JSON-RPC 通信、增量消息同步与状态映射，形成了可靠的跨 Agent 协作闭环。配合回调通道，可在需要时主动推送任务进展，提升用户体验。建议在部署环境中完善超时、重试与监控指标，确保高可用与可观测性。
+A2A 轮询生产者已从「生产者亲自拉取并投递」重构为「只认领」：每 30s 仅 `list_agents` + 过滤 remote + `emit(A2aPollRequestedEvent)`，把网络/DB 重活下沉到 `A2aPollConsumer`（Async + 按 Agent 串行）。这一拆分让 30s 周期不再被慢远端请求拖长，且认领事件天然进入 AOP 监控与失败指标；真正的远端抓取、消息投递与状态推进由消费者承接，单点失败降级为 warn+skip、下一轮重新认领即可收敛。建议在部署环境中完善超时、重试与监控指标，确保高可用与可观测性。
 
 [本节为总结性内容，不直接分析具体文件]
 
@@ -306,27 +257,25 @@ A2A 轮询生产者通过稳定的轮询机制，实现了远程 Agent 任务的
 
 ### A2A 协议规范摘要
 - 端点与方法
-  - tasks/send：异步提交任务，立即返回 working 状态
-  - tasks/get：查询任务状态与消息历史
-  - tasks/cancel：取消任务
-- 数据结构
-  - AgentCard、JsonRpcRequest/Response、A2aTask、A2aMessage、A2aArtifact
-- 认证
-  - 通过 Authorization: Bearer <token> 传递认证令牌
+  - `tasks/send`：异步提交任务，立即返回 working 状态。
+  - `tasks/get`：查询任务状态与消息历史。
+  - `tasks/cancel`：取消任务。
+- 数据结构：AgentCard、JsonRpcRequest/Response、A2aTask、A2aMessage、A2aArtifact。
+- 认证：通过 `Authorization: Bearer <token>` 传递认证令牌。
 
 章节来源
-- [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
-- [common/src/api/a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
-- [src/service/dao/agent_runtime/a2a.rs:102-108](src/service/dao/agent_runtime/a2a.rs#L102-L108)
+- [common/src/api/a2a.rs](common/src/api/a2a.rs)
 
 ### 集成示例（概念流程）
-- 客户端调用 tasks/send 提交任务
-- 服务端创建项目与消息，入队消费者唤醒 Agent
-- 轮询生产者定期拉取远程任务，增量同步消息到用户
-- 如需推送，客户端提供 notification_url，服务端通过回调 DAO 推送完整 A2A Task
+- 客户端调用 `tasks/send` 提交任务。
+- 服务端创建项目与消息，入队消费者唤醒 Agent。
+- 生产者每 30s 认领远端 Agent，emit `A2aPollRequestedEvent`。
+- `A2aPollConsumer` 拉取远端任务、增量同步消息到用户、按远端状态迁移本地任务。
+- 如需推送，客户端提供 `notification_url`，服务端通过回调 DAO 推送完整 A2A Task。
 
 章节来源
-- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
-- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/handlers/a2a/send_task.rs](src/handlers/a2a/send_task.rs)
+- [src/handlers/a2a/get_task.rs](src/handlers/a2a/get_task.rs)
+- [src/producer/a2a_polling.rs:53-140](src/producer/a2a_polling.rs#L53-L140)
+- [src/consumer/a2a_poll.rs:32-140](src/consumer/a2a_poll.rs#L32-L140)
+- [src/service/dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs)

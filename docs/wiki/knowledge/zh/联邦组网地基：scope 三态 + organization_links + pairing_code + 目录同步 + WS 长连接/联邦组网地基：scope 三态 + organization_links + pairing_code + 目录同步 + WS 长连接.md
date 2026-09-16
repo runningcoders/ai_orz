@@ -33,9 +33,9 @@ source_files:
   - src/service/dal/organization/link.rs#L1-L198 (OrganizationLinkDal trait + 实现：**全新子 DAL**——组合 OrganizationLinkDao(持久化) + FederationHttpClient(对端 HTTP 出站)；links CRUD：find_by_pair / insert / update / query / find_active_by_peer_token_hash；联邦出站 HTTP：verify_pairing_code / fetch_directory / push_directory / fetch_capabilities；Domain 层不再直捅 DAO/HTTP client)
   - src/service/dal/organization/pairing.rs#L1-L75 (OrganizationPairingDal trait + 实现：**全新子 DAL**——封装 OrganizationPairingDao；insert(签发配对码哈希入库) + consume(原子消费：哈希匹配+未消费+未过期+置 consumed_at+返回签发 org_id，任何不匹配返回 None 防枚举))
   - src/handlers/organization/links/mod.rs#L1-L27 (联邦 Handler 模块入口：8 个端点——issue_pairing_code / verify_pairing_code / create_link / list_links / revoke_link / get_directory / sync_directory / get_capabilities / federation_ws；generate_http_handler 宏标注，**不注册 register_handler_tool** 防 Agent 误触组网)
-  - src/consumer/federation_directory.rs#L1-L72 (FederationDirectoryConsumer：订阅 EventKind["organization.changed"] → push_directory_to_peers；best-effort 全量推送所有 Active 对端)
-  - src/consumer/federation_ws_outbound.rs#L1-L79 (FederationWsOutboundConsumer：订阅 EventKind["federation.outbound"] → ws::connection push 出站帧；无活连接时告警丢弃——命令发起方应先查注册表决定走 WS 还是回退 HTTP)
-  - src/consumer/federation_inbound_task.rs#L1-L132 (FederationInboundTaskConsumer：订阅 EventKind["federation.inbound.send_task"] → 复用 handle_send_task(ctx, params) 核心函数(HTTP/Domain 零改动) → publish FederationOutboundEvent 响应帧)
+  - src/consumer/federation_directory.rs#L1-L72 (FederationDirectoryConsumer：订阅 EventTopic::OrganizationChanged → push_directory_to_peers；best-effort 全量推送所有 Active 对端)
+  - src/consumer/federation_ws_outbound.rs#L1-L79 (FederationWsOutboundConsumer：订阅 EventTopic::FederationOutbound → ws::connection push 出站帧；无活连接时告警丢弃——命令发起方应先查注册表决定走 WS 还是回退 HTTP)
+  - src/consumer/federation_inbound_task.rs#L1-L132 (FederationInboundTaskConsumer：订阅 EventTopic::FederationInboundSendTask → 复用 handle_send_task(ctx, params) 核心函数(HTTP/Domain 零改动) → publish FederationOutboundEvent 响应帧)
   - src/models/events/federation.rs (FederationOutboundEvent / FederationInboundEvent / FederationFrame 事件类型定义；CALLER_AUDIT_KEY 审计字段)
   - migrations/20260904000001_add_group_name_to_org.sql (ALTER TABLE organizations ADD COLUMN group_name TEXT NOT NULL DEFAULT '' — 集团展示标签)
   - migrations/20260904000002_create_organization_links.sql (CREATE TABLE organization_links — 连接契约表)
@@ -62,7 +62,7 @@ source_files:
 - **连接契约与实体分离（ADR D4）**：organizations 表描述组织本身（高频被全系统 join）；organization_links 表承载点对点连接的 endpoint + 双向凭证（access_token 明文出站 + peer_token_hash SHA256 入站校验）+ capabilities 连接级能力白名单 JSON。凭证不进 organizations 表，防止放大泄漏面。唯一约束 `(local_org_id, peer_org_id)` 保证两个组织间只有一条有效连接。
 - **配对码协议（ADR D5，复用邀请码范式）**：签发（用户侧 JWT）→ verify + 凭证交换（机器侧，配对码鉴权）→ create_link（双向凭证落库 + shadow upsert 对端影子记录 + 目录拉取）。**配对码 24 字符去 0/O/1/I 字符集 + 10 分钟 TTL + 用后即焚**。`OrganizationPairingDal::consume` 单条 UPDATE 原子完成四判定（哈希匹配 + 未消费 + 未过期 + 置 consumed_at），任何不匹配返回 None——上层统一转 `Error::unauthorized`，**不区分原因防枚举探测**（评审稿 §6.3）。
 - **shadow upsert 静默写入（src/service/dal/organization/impl.rs）**：对端组织影子写入 organizations 表时走 `OrganizationDal::upsert_remote_shadow` / `upsert_linked_shadow`，**不发事件**——与普通组织创建（发 `organization.changed` 事件触发 FederationDirectoryConsumer）严格分离，防止影子记录无限触发推送。静默写入逻辑封装在 organization DAL 层，domain 调用时显式走静默路径。
-- **目录推拉结合同步**（src/consumer/federation_directory.rs + scheduler cron）：① **推送保证时效**——本地组织变更（创建/更新/删除）→ publish `organization.changed` → FederationDirectoryConsumer → `push_directory_to_peers` 全量推送所有 Active 对端（best-effort，推送失败不阻断主流程）；② **cron 定时对账保证最终一致**——SchedulerConsumer 每分钟触发 `directory_reconcile` → 查所有 Active 连接 → 双向 GET directory → 对比差异 → 差异方 pull 补齐。两条链路同源（最终调 OrganizationManage::push_directory_to_peers / reconcile_directories），推送快、对账稳。
+- **目录推拉结合同步**（src/consumer/federation_directory.rs + scheduler cron）：① **推送保证时效**——本地组织变更（创建/更新/删除）→ publish `organization.changed` → FederationDirectoryConsumer → `push_directory_to_peers` 全量推送所有 Active 对端（best-effort，推送失败不阻断主流程）；② **cron 定时对账保证最终一致**——CronTriggerConsumer 每分钟触发 `directory_reconcile` → 查所有 Active 连接 → 双向 GET directory → 对比差异 → 差异方 pull 补齐。两条链路同源（最终调 OrganizationManage::push_directory_to_peers / reconcile_directories），推送快、对账稳。
 - **WS 长连接架构（P8 落地）**：`pkg::ws` 通用管理器（client 侧 supervisor 指数退避重连 + 心跳 + 读循环；server 侧被动接受 + 心跳 + 优雅关闭）**不含任何业务语义**——帧解析与处置由 `WsClientAdapter` / `WsServerHandler` adapter 实现方全权解释。联邦 WS 出站 consumer 订阅 `federation.outbound` → ws::connection push 帧；入站 consumer 订阅 `federation.inbound.send_task` → 复用 HTTP send_task 核心函数。**命令发起方（call_peer facade）先查注册表决定走 WS 还是回退 HTTP**——无活连接时 WS consumer 告警丢弃不重试，避免自动 fallback 掩盖问题。**【增量 2026-09 签名升级】WS 长连接握手现在复用每请求签名链路（Ed25519 四头协议 + nonce 防重放 + timestamp ±300s 窗口），与 HTTP 鉴权同一套 federation_identity::resolve 函数，彻底避免漂移。**
 
 ---
@@ -82,9 +82,9 @@ source_files:
 | service/dal/organization/link.rs OrganizationLinkDal | **新** 子 DAL：连接持久化 + 联邦出站 HTTP | 组合 OrganizationLinkDao + FederationHttpClient；links CRUD(find_by_pair/insert/update/query/find_active_by_peer_token_hash) + 对端出站 HTTP(verify_pairing_code / fetch_directory / push_directory / fetch_capabilities)；Domain 不再直捅 DAO/HTTP | `:L1-L198` |
 | service/dal/organization/pairing.rs OrganizationPairingDal | **新** 子 DAL：配对码持久化 | 封装 OrganizationPairingDao；insert(哈希入库) + consume(原子消费四判定 + 不区分原因返回 None 防枚举) | `:L1-L75` |
 | handlers/organization/links/mod.rs 联邦 Handler 模块 | 8 端点 HTTP 接口 | 统一前缀 /api/v1/organization/links/*；generate_http_handler 宏标注，**不注册 register_handler_tool** | `:L1-L27` |
-| consumer/federation_directory.rs FederationDirectoryConsumer | 目录推送消费者 | 订阅 EventKind["organization.changed"] → push_directory_to_peers best-effort | `:L1-L72` |
-| consumer/federation_ws_outbound.rs FederationWsOutboundConsumer | WS 出站帧投递 | 订阅 EventKind["federation.outbound"] → ws::connection push；无活连接告警丢弃 | `:L1-L79` |
-| consumer/federation_inbound_task.rs FederationInboundTaskConsumer | WS 入站命令执行 | 订阅 EventKind["federation.inbound.send_task"] → 复用 handle_send_task → publish response 帧 | `:L1-L132` |
+| consumer/federation_directory.rs FederationDirectoryConsumer | 目录推送消费者 | 订阅 EventTopic::OrganizationChanged → push_directory_to_peers best-effort | `:L1-L72` |
+| consumer/federation_ws_outbound.rs FederationWsOutboundConsumer | WS 出站帧投递 | 订阅 EventTopic::FederationOutbound → ws::connection push；无活连接告警丢弃 | `:L1-L79` |
+| consumer/federation_inbound_task.rs FederationInboundTaskConsumer | WS 入站命令执行 | 订阅 EventTopic::FederationInboundSendTask → 复用 handle_send_task → publish response 帧 | `:L1-L132` |
 | pkg/ws/mod.rs 通用 WS 管理器 | WS 基建层 | client: supervisor 指数退避重连 + 心跳 + 读循环；server: 被动接受 + 心跳；adapter 模式业务解耦；**不含业务语义** | `:L1-L635` |
 | middleware/federation_identity.rs (增量) | WS 握手签名验签 | WS upgrade 握手阶段调用 federation_identity::resolve —— 复用 HTTP 鉴权的 Ed25519 四头验签链路（timestamp ±300s + nonce LRU + peer_did 匹配）；HTTP 和 WS 共用同一纯函数 | `:L1-L200` |
 | pkg/crypto/did.rs (增量) | Ed25519 did:key 签名原语 | WS 握手对端用此签名；build_signing_string / verify_signature 被 federation_identity::resolve 消费 | `:L1-L150` |
@@ -202,7 +202,7 @@ call_peer facade (发起方，domain/organization/org.rs)
     → 无活连接告警丢弃（发起方决定是否回退 HTTP）
 
 接收方 WS 读循环 (pkg::ws 通用管理器)
-  → adapter 解析帧 → EventKind["federation.inbound.send_task"]
+  → adapter 解析帧 → EventTopic::FederationInboundSendTask
     → FederationInboundTaskConsumer.consume
       → 复用 handle_send_task(ctx, params) (HTTP/Domain 零改动)
       → publish FederationOutboundEvent(response frame, event_id=请求方 event_id 配对)
