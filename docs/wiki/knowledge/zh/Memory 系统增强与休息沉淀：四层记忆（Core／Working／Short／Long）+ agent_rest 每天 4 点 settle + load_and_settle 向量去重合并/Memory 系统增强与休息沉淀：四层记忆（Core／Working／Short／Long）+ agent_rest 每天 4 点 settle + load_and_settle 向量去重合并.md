@@ -25,10 +25,12 @@ source_files:
 - src/consumer/scheduler.rs#L53-L131
 - src/consumer/scheduler.rs（2026-09-12 增量：agent_rest 系统级全局执行，遍历所有活跃组织）
 - src/consumer/scheduler.rs（2026-09-16 增量：agent_rest 改为只派发 AgentSettleEvent，不再同步沉淀）
-- src/consumer/agent_settle.rs#L1-L150（2026-09-16 增量：沉淀队列消费者，抢占失败即 nack 重排）
+- src/consumer/message.rs（2026-09-16 增量：agent.awakening 消费者增订 agent.settle.requested，与 message.created 同队列同 order_key）
 - src/models/events/agent_settle.rs#L1-L85（2026-09-16 增量：AgentSettleEvent，order_key = agent_id）
 - src/pkg/agent_runtime_state.rs#L353-L382（2026-09-16 增量：try_set_resting 原子抢占）
-- tests/integration/agent_settle_queue_test.rs#L1-L210（2026-09-16 增量：Busy 时不丢、消费者冲突重排、跑完释放）
+- src/pkg/aop/core/consumer.rs（2026-09-16 增量：ack/nack 加 source 参数 = 事件 kind）
+- src/pkg/aop/queue/in_memory.rs（2026-09-16 增量：同 order_key 串行单元测试）
+- tests/integration/agent_settle_queue_test.rs（2026-09-16 增量：Busy 时不丢、同消费者两 kind、按 kind 分流、跑完释放、ack 按 source 分流）
 - src/handlers/hr/agent/settle_memory.rs#L75-L600（2026-09-12 增量：支持全局模式 organization_id=None）
 - src/handlers/hr/agent/save_short_term_memory.rs#L19-L56
 - src/handlers/hr/agent/save_long_term_memory.rs#L21-L108
@@ -51,7 +53,8 @@ source_files:
 2. **缺自动沉淀**：短期记忆 Active 状态滚雪球，不自动消化为长期知识图谱，检索质量随时间指数下降
 3. **沉淀并发冲突**：沉淀中被重复唤醒导致的状态错乱，通过 BusyGuard RAII + Resting 状态 + current_message_id 占用三重防护
 
-**agent_rest 沉淀队列化修复（2026-09-16）**：修复「项目巡检跑了、睡眠沉淀没跑，且触发器显示最近执行时间 = 启动时刻」的静默丢一天问题。根因是链路不对称：消息链路忙时 `Err(conflict)` → 队列 nack 重投（能排队），而 `agent_rest` 在 Sync 消费者里直接同步调 `load_and_settle`，Agent 忙就 `Ok(0)` 跳过；紧接着 `CronTriggerProducer` 无条件 `mark_trigger_executed`，把日触发的 `next_run_at` 推到次日 04:00 —— 一次跳过等于丢一天的待沉淀量。触发条件很常见：启动补偿会把「每小时项目巡检」和「每日沉淀」排进同一轮 poll，巡检先给同一个 Owner Agent 发消息把它占成 Busy。修复后 `agent_rest` **只派发** `agent.settle.requested`（`consumer/agent_settle.rs` 异步消费、`concurrency = 2`），消费者用 `try_set_resting` 原子抢占，抢不到就抛冲突 → 队列退避重投，等 Agent 空闲自动补跑；同时沉淀不再占用 cron 轮询线程（旧实现实测一场沉淀阻塞轮询 7 分钟）。
+**agent_rest 沉淀队列化修复（2026-09-16）**：修复「项目巡检跑了、睡眠沉淀没跑，且触发器显示最近执行时间 = 启动时刻」的静默丢一天问题。根因是链路不对称：消息链路忙时 `Err(conflict)` → 队列 nack 重投（能排队），而 `agent_rest` 在 Sync 消费者里直接同步调 `load_and_settle`，Agent 忙就 `Ok(0)` 跳过；紧接着 `CronTriggerProducer` 无条件 `mark_trigger_executed`，把日触发的 `next_run_at` 推到次日 04:00 —— 一次跳过等于丢一天的待沉淀量。触发条件很常见：启动补偿会把「每小时项目巡检」和「每日沉淀」排进同一轮 poll，巡检先给同一个 Owner Agent 发消息把它占成 Busy。修复分两步：① `agent_rest` **只派发** `agent.settle.requested`，沉淀不再占用 cron 轮询线程（旧实现实测一场沉淀阻塞轮询 7 分钟）；② 该事件**并入 `agent.awakening` 消费者**（即原 `message` 消费者），与 `message.created` 共用同一条 `order_key = agent_id` 的队列 —— 于是同一 Agent 的沉淀与消息在**队列层**就串行：沉淀在跑时，发给该 Agent 的消息压根不出队（不失败、不重试、不刷日志），不需要任何「冲突重试」兜底。
+> ⚠️ **初版方案已整体回滚**：曾用 `NackMode::Defer`（冲突回队安静等待 + `set_idle` 唤醒）兜底抢占失败。回滚理由：抢占失败本就不该发生 —— AOP 的 `order_key` 闸门**按消费者隔离**（`registry.queues` 是 `HashMap<consumer_name, EventQueue>`），把沉淀拆成独立消费者会让串行保证**静默失效**，那才是根因；再加一层 nack 语义分层只是把「失败重试式串行」包装得更精致。
 
 **agent_rest 系统级全局执行修复（2026-09-12，Ref e9a93979）**：修复 agent_rest 定时沉淀「从未成功」的历史 bug——旧版 `CronTriggerConsumer` 的 `handle_agent_rest` 方法只对特定 `organization_id` 执行沉淀（trigger payload 里硬编码 org_id），导致多组织部署时大部分组织的沉淀永远不触发。重构后：① `consumer/scheduler.rs` 的 handle_agent_rest 新增**全局模式**（payload 无 org_id 或 org_id 为 None 时），遍历 DB 中所有活跃组织逐一执行沉淀；② `settle_memory.rs` 的 `load_and_settle` 支持 organization_id=None 的全局模式；③ 向后兼容——旧 trigger payload 带 org_id 时仍走组织级路径，新系统级 trigger 不带 org_id 时走全局遍历。这是一个 **fix 级别改动**：生产环境 agent_rest cron 一直在跑，但因为硬编码 org_id 导致 90% 的沉淀请求被跳过，用户感知不到但日志里会有大量 warn。
 > ⚠️ **该「按组织遍历」实现已被 2026-09-16 取代**：`handle_agent_rest` 现在不再遍历组织（`load_and_settle` 也已无 `organization_id` 参数），改为直接扫描全库 `Active` 短期记忆、按 `agent_id` 去重出目标列表后逐个派发 —— 见上文「agent_rest 沉淀队列化修复」。本段仅保留为历史脉络，**红线以 §4 第 18/19/20 条为准**。
@@ -64,7 +67,7 @@ source_files:
 |---------------------|------|-----------------|
 | [Handler settle_agent_exclusive 定时沉淀入口](src/handlers/hr/agent/settle_memory.rs#L232-L262) | 定时触发链路入口（抢占式） | `try_set_resting` 抢占 → 失败回 `SettleAttempt::Busy`（调用方重排）→ 成功则挂 BusyGuard 兜底释放 → 汇入 `settle_body` |
 | [Handler load_and_settle 神经工具入口](src/handlers/hr/agent/settle_memory.rs#L204-L231) | 神经工具 `settle_memory` 入口 | 保留「Agent 忙则 return 0」预检查（该路径上 Agent 天然 Busy，抢占式判定会永远失败）→ 汇入 `settle_body` |
-| [AgentSettleConsumer 沉淀队列消费者](src/consumer/agent_settle.rs#L1-L150) | Async 消费 agent.settle.requested | `order_key=agent_id` 同 Agent 串行；忙 → `Err(conflict)` → 队列 nack 重投（30s 退避）；`resource_not_found` → ack 作废；`concurrency=2` |
+| [agent.awakening 消费者（沉淀入口）](src/consumer/message.rs) | Async 消费 message.created **与** agent.settle.requested | 两类事件同队列同 `order_key=agent_id` → 同 Agent 串行（拆开消费者会让串行静默失效）；`handle_settle_request` 汇入 `settle_agent_exclusive`；`concurrency=4`；`ack/nack(source, event_id)` 按 source 分流，非 `message.created` 直接跳过 |
 | [AgentSettleEvent 事件定义](src/models/events/agent_settle.rs#L1-L85) | 沉淀排队单元 | kind=`agent.settle.requested`；**order_key 必须是 agent_id**（与 message.created 对 Agent 接收者同源，保证沉淀不与同 Agent 消息并发） |
 | [try_set_resting 原子抢占](src/pkg/agent_runtime_state.rs#L353-L382) | 状态机保护 | Idle → Resting 返回 true；Busy/Resting → false 且不改状态；与 `try_set_busy` 同构，禁止拆成「先查询、后设状态」 |
 | [DAL settle_short_term_to_long_term 核心沉淀](src/service/dal/memory.rs#L578-L652) | 短期 → 长期核心算法 | ① 向量搜索相似节点（冲突检测）→ ② 命中：更新已有节点 + 合并关系（去重）→ ③ 未命中：新建节点 + 关系 → ④ 更新短期记忆 status=Settled |
@@ -105,15 +108,23 @@ source_files:
        → 每个 Agent publish 一条 agent.settle.requested，立即返回
        → Producer 随后 mark_trigger_executed 推进 next_run_at
          （⚠️ 触发器的「已执行」与沉淀是否真的跑成无关：跳过不再可能，但也不要
-           从这里读「沉淀成功了」——看 agent_settle 消费者的日志）
+           从这里读「沉淀成功了」——看 agent.awakening 消费者的 handle_settle_request 日志）
 
-【排队期】AgentSettleConsumer（Async，order_key=agent_id，concurrency=2）
-  → try_set_resting 抢占失败 → Err(conflict) → 队列 nack 重投（30s 退避）→ 空闲后自动补跑
-  → 抢占成功 → BusyGuard 兜底 + settle_body
+【排队期】agent.awakening 消费者（Async，order_key=agent_id，concurrency=4）
+  ⚠️ 与 message.created 是**同一个消费者**（同一条队列）——这是串行生效的前提：
+     AOP 的 order_key 闸门按消费者隔离，拆成两个消费者时同一 agent_id 落在两条
+     互不知晓的队列里，串行保证会静默失效
+  → 同 Agent 的沉淀与消息在队列层串行：沉淀在跑/在排时，发给该 Agent 的消息**压根不出队**
+    （不失败、不重试、不刷日志）；沉淀 ack 后队列才推进下一条
+  → 抢占（try_set_resting）是**防御性不变量**：合并后本消费者是唯一把 Agent 置忙的链路
+    （awaken 的唯一生产调用方），所以正常路径抢不到不可达；真抢不到 → Err(conflict)
+    → 框架 nack 重投（不静默跳过，旧实现在这里 Ok(0) 丢一天）
+  → BusyGuard 兜底 + settle_body
   → 进程重启会丢内存队列里的事件：**当天已派发但未跑完的请求不会自动重建**（触发器已
      `mark_trigger_executed`，日触发的下个周期是次日）。残留窗口 = 「派发后、沉淀跑完前」
      进程被杀；比旧实现（忙就跳过一次丢一天）窄得多，当前按 YAGNI 未加启动期补扫
      —— 若要严格保证，可在启动时对「仍有 Active 短期记忆的 Agent」补发一轮沉淀请求
+  → `ack/nack` 带 `source`（= 事件 kind）：只有 message.created 才去改 messages 表
 
 【执行期】settle_body 主流程
   Step 1：短期记忆装载
@@ -181,7 +192,9 @@ source_files:
 | 17 | **沉淀期间 Agent 收到唤醒请求需排队或 429**：Resting 态 Handler 层做 429 兜底，与 BusyGuard 语义双重保证，禁止 Awake 和 Sleep 同时进入 | Resting 态下 awaken 请求应返回 429 「Agent 正休息」，或 MessageConsumer 重新入队不丢 | [consumer/message.rs](src/consumer/message.rs) try_set_busy 失败分支 |
 | 18 | **handle_agent_rest 的目标 Agent 解析**（2026-09-16 现状）：payload 带 `agent_id` → 只派发该 Agent；缺省 → 扫描全库 `MemoryStatus::Active` 短期记忆、按 `short_term_of(m).agent_id` 去重出 Agent 列表（上限 1000，防触达时下周期继续）。**禁止**在任何分支里「解析不出目标就静默 return 跳过」——那正是「沉淀从未成功 / 丢一天」的表现形式；解析不出应是**空列表**（真的无人待沉淀），而不是错误 | `tests/integration/agent_settle_queue_test.rs::test_agent_rest_dispatches_settle_request_when_agent_busy`（指定 agent_id 必须精确入队） | [consumer/scheduler.rs handle_agent_rest](src/consumer/scheduler.rs) |
 | 19 | **`CronTriggerPayload.extra` 必须具名字段，禁止 `#[serde(flatten)]`**（2026-09-16 新增）：真实 payload 形态是**带 `extra` 键的嵌套对象** —— 系统默认 seed 与「定时任务 API」文档都是 `{"action":"agent_rest","extra":{"settle_limit":10}}`。`flatten` 会把 `extra` 这个键名本身一起收进 `Value`，得到 `{"extra":{"settle_limit":10}}` 再传给动作层；`AgentRestPayload` 无 `deny_unknown_fields`，未知键被丢弃 → `agent_id` / `settle_limit` **全部静默降级为 `None` 且不报错**（后果：指定单 Agent 的沉淀退化成全局扫描、`settle_limit` 永远被忽略）。必须用具名字段 + `#[serde(default)]`，并由 `action_params()` 把缺省/`null` 归一为空对象 | `cargo test --lib consumer::scheduler`：`test_cron_trigger_payload_passes_extra_through` / `_tolerates_missing_extra` / `_ignores_unknown_fields` 三条契约测试；对照 `select payload from cron_triggers` 与解析结果 | [consumer/scheduler.rs CronTriggerPayload](src/consumer/scheduler.rs) |
-| 20 | **agent_rest 只派发，绝不在 cron 线程里沉淀**（2026-09-16 新增）：`handle_agent_rest` **禁止**改回同步调用 `load_and_settle`。`CronTriggerConsumer` 是 `ConsumeMode::Sync`，跑在 cron poll 线程里——一场沉淀是 LLM 往返（实测阻塞轮询 7 分钟），在此期间项目巡检 / 工具日志清理 / 目录对账全部干等；且 Agent 忙时同步路径只能「跳过」，而 `CronTriggerProducer` 随后无条件 `mark_trigger_executed` 把 `next_run_at` 推到下个 cron 点（日触发 = 次日）→ **一次跳过丢一天**。派发方也**不得**改动 Agent 运行状态：状态唯一写入方是消费者侧 `settle_agent_exclusive` 的抢占 | `tests/integration/agent_settle_queue_test.rs` 三条用例（Busy 时请求必须入队且派发不碰状态 / 消费者冲突上报 / 跑完回到 Idle） | [consumer/scheduler.rs](src/consumer/scheduler.rs) + [consumer/agent_settle.rs](src/consumer/agent_settle.rs) |
+| 20 | **agent_rest 只派发，绝不在 cron 线程里沉淀**（2026-09-16 新增）：`handle_agent_rest` **禁止**改回同步调用 `load_and_settle`。`CronTriggerConsumer` 是 `ConsumeMode::Sync`，跑在 cron poll 线程里——一场沉淀是 LLM 往返（实测阻塞轮询 7 分钟），在此期间项目巡检 / 工具日志清理 / 目录对账全部干等；且 Agent 忙时同步路径只能「跳过」，而 `CronTriggerProducer` 随后无条件 `mark_trigger_executed` 把 `next_run_at` 推到下个 cron 点（日触发 = 次日）→ **一次跳过丢一天**。派发方也**不得**改动 Agent 运行状态：状态唯一写入方是消费者侧 `settle_agent_exclusive` 的抢占 | `tests/integration/agent_settle_queue_test.rs::test_agent_rest_dispatches_settle_request_when_agent_busy`（Busy 时请求必须入队且派发不碰状态） | [consumer/scheduler.rs](src/consumer/scheduler.rs) |
+| 21 | **沉淀必须与 message 同属一个消费者**（2026-09-16 新增，勿拆分）：AOP 的 `order_key` 闸门**按消费者隔离**（`registry.queues: HashMap<consumer_name, EventQueue>`，`has_active_message` 是队列实例字段）。把 `agent.settle.requested` 拆成独立消费者后，同一个 `agent_id` 会落在两条互不知晓的队列里 → 「同 order_key 串行」**静默失效**，只能靠运行期 `try_set_busy` / `try_set_resting` 抢占失败兜底，而兜底 = 失败重试 → 日志与假失败指标被刷爆、worker 空转（这正是“改造完成后输入大量日志”的根因）。新增「会改变 Agent 运行状态」的事件类型时，要么并入 `agent.awakening`，要么它的 order_key 与 agent_id 无关 | `tests/integration/agent_settle_queue_test.rs::test_awakening_consumer_owns_both_kinds`（订阅两个 kind）；`src/pkg/aop/queue/in_memory.rs::tests::same_order_key_serializes_until_ack`（队列层串行不变量，实例隔离） | [consumer/message.rs](src/consumer/message.rs) + [pkg/aop/queue/in_memory.rs](src/pkg/aop/queue/in_memory.rs) |
+| 22 | **`Consumer::ack/nack` 必须按 `source` 分流**（2026-09-16 新增）：`source` = 事件 kind（框架从封套透传，worker 手里现成）。只有 `message.created` 的 `event_id` 是 messages 表主键；`agent.settle.requested` 等事件在 messages 表无行，不做判断就会白跑 `UPDATE ... WHERE id = <settle_event_id>`（命中 0 行、静默 Ok），把「传进来的 id 一定指向 messages 表」变成没说出口的前提 —— 将来给 `update_status` 加行数校验，沉淀链路立刻变成 nack → 重投 → 再失败的死循环 | `tests/integration/agent_settle_queue_test.rs::test_ack_by_source_does_not_touch_messages` | [pkg/aop/core/consumer.rs](src/pkg/aop/core/consumer.rs) |
 
 **§4.2 扩展入口速查**
 
