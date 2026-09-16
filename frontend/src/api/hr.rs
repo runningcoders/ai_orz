@@ -10,13 +10,12 @@ use common::api::{
     ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
     ListInstalledToolPacksResponse, OnboardAgentRequest, PagedResult, QueryMemoryParams,
     QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
-    RestoreSkillResponse, RuntimeListRequest, RuntimeListResponse, RuntimeStatusRequest,
-    RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
-    SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem, SkillQueryRequest,
-    StartAgentOffboardRequest, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
-    UpdateAgentStatusResponse, UpdateSkillFileContentRequest, UpdateSkillRequest,
-    UpdateSkillResponse,
+    RestoreSkillResponse, RuntimeStatusRequest, RuntimeStatusResponse, SearchAgentsRequest,
+    SearchMemoryParams, SearchMemoryResponse, SearchSkillsRequest, SelectAgentCareerRequest,
+    SkillListItem, SkillQueryRequest, StartAgentOffboardRequest, UnbindToolFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
+    UpdateAgentStatusRequest, UpdateAgentStatusResponse, UpdateSkillFileContentRequest,
+    UpdateSkillRequest, UpdateSkillResponse,
 };
 
 use super::{
@@ -399,17 +398,4 @@ pub async fn cancel_thinking(
         &(),
     )
     .await
-}
-
-/// 查询运行中 Agent 列表（支持按 state/task_id/project_id 过滤）
-/// GET /api/v1/hr/agents/runtime-list
-pub async fn list_runtime_agents(
-    req: &RuntimeListRequest,
-) -> Result<RuntimeListResponse, ApiError> {
-    let qs = super::build_query_string(&[
-        ("state", req.state.clone()),
-        ("task_id", req.task_id.clone()),
-        ("project_id", req.project_id.clone()),
-    ]);
-    api_get(&format!("/api/v1/hr/agents/runtime-list{}", qs)).await
 }

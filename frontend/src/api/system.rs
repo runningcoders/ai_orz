@@ -6,8 +6,9 @@
 pub use common::api::{
     AopStatsDistributionItem, AopStatsDistributionResponse, AopStatsOverviewResponse,
     AopStatsTimeSeriesPoint, AopStatsTimeSeriesResponse, BackupInfo, CleanupToolLogsRequest,
-    CleanupToolLogsResponse, EventDetailResponse, EventSummaryResponse, HealthMetricsResponse,
-    LogEntry, QueryLogsResponse, QueueStatsResponse, ToolLogStorageResponse,
+    CleanupToolLogsResponse, EventDetailResponse, EventSummaryResponse, GetWorkspaceMetricsRequest,
+    HealthMetricsResponse, LogEntry, QueryLogsResponse, QueueStatsResponse, ToolLogStorageResponse,
+    WorkspaceMetricsResponse,
 };
 
 use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};
@@ -199,6 +200,19 @@ pub async fn get_aop_stats_distribution(
 /// 获取系统健康指标（HUD 仪表盘墙用）
 pub async fn get_health_metrics() -> Result<HealthMetricsResponse, ApiError> {
     api_get("/api/v1/system/health/metrics").await
+}
+
+// ===== 工作台顶栏聚合指标 =====
+
+/// 获取工作台顶栏聚合指标（概览计数 + 运行态三色 + 窗口统计 + 队列积压）
+///
+/// 单一端点覆盖顶栏全部数字，30 秒轮询即可；注意统计事件是批次刷盘，
+/// 最近 1~2 分钟可能尚未落库，读数偏低属预期。
+pub async fn get_workspace_metrics(
+    req: GetWorkspaceMetricsRequest,
+) -> Result<WorkspaceMetricsResponse, ApiError> {
+    let qs = super::build_query_string(&[("minutes", req.minutes.map(|m| m.to_string()))]);
+    api_get(&format!("/api/v1/system/workspace/metrics{}", qs)).await
 }
 
 // ===== 工具日志存储监控与清理（① 运行时输出层治理） =====

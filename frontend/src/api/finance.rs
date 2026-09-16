@@ -4,13 +4,12 @@ use common::api::{
     AttachmentDetail, CallModelRequest, CallModelResponse, CreateMcpServerRequest,
     CreateMcpServerResponse, CreateModelProviderRequest, CreateModelProviderResponse,
     CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolRequest,
-    DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetTokenStatsRequest,
-    GetToolRequest, GetToolResponse, GetToolRuntimeStatsRequest, ListMcpServersResponse,
-    ListModelProvidersResponse, ListToolsRequest, MessageChannelListItem, PagedResult,
-    QueryToolCallEntriesRequest, QueryToolCallEntriesResponse, SearchToolsRequest,
-    SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
-    TestMessageChannelConnectionResponse, TokenStatsResponse, ToolListItem, ToolQueryRequest,
-    ToolRuntimeStatsResponse, UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
+    DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetToolRequest,
+    GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse, ListToolsRequest,
+    MessageChannelListItem, PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
+    SearchToolsRequest, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
+    TestConnectionResponse, TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
+    UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
     UpdateMessageChannelStatusRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
     UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
 };
@@ -102,29 +101,6 @@ pub async fn switch_embedding_provider(
         &req,
     )
     .await
-}
-
-/// 获取组织级分钟级 Token 消耗时序（工作台顶栏 QPS 曲线）
-///
-/// 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，曲线末端偏低属预期。
-pub async fn get_token_stats(req: GetTokenStatsRequest) -> Result<TokenStatsResponse, ApiError> {
-    let qs = super::build_query_string(&[("minutes", req.minutes.map(|m| m.to_string()))]);
-    api_get(&format!(
-        "/api/v1/finance/model-providers/token-stats{}",
-        qs
-    ))
-    .await
-}
-
-/// 获取组织级工具调用汇总（工作台顶栏运行时读数）
-///
-/// 与 `get_token_stats` 同一族：都是「组织级统计读数」，区别是本接口只给合计值、
-/// 不返回时序点。同样受批次刷盘影响，最近一段时间的调用可能尚未落库。
-pub async fn get_tool_runtime_stats(
-    req: GetToolRuntimeStatsRequest,
-) -> Result<ToolRuntimeStatsResponse, ApiError> {
-    let qs = super::build_query_string(&[("minutes", req.minutes.map(|m| m.to_string()))]);
-    api_get(&format!("/api/v1/finance/tools/runtime-stats{}", qs)).await
 }
 
 // ===== 工具管理 =====

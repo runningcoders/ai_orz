@@ -32,15 +32,12 @@
 
 use dioxus::prelude::*;
 
-use common::api::{
-    GetTokenStatsRequest, GetToolRuntimeStatsRequest, TokenStatsResponse, ToolRuntimeStatsResponse,
-};
+use common::api::{GetWorkspaceMetricsRequest, WorkspaceMetricsResponse};
 
-use crate::api::finance::{get_token_stats, get_tool_runtime_stats};
-use crate::api::hr::{list_runtime_agents, query_agents};
+use crate::api::hr::query_agents;
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
-use crate::api::system::get_health_metrics;
+use crate::api::system::get_workspace_metrics;
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::hud::StatReadout;
 use crate::components::mention_picker::{
@@ -61,8 +58,7 @@ use crate::utils::{
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem,
-    ProjectQueryRequest, RuntimeListRequest, RuntimeListResponse, SendMessageToAgentParams,
-    TaskListItem, TaskQueryRequest,
+    ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest,
 };
 use common::enums::AssigneeType;
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -77,10 +73,10 @@ fn project_status_label(status: i32) -> &'static str {
     }
 }
 
-/// 顶栏运行时读数的时间窗口（分钟）
+/// 顶栏聚合指标的时间窗口（分钟）
 ///
-/// 模型侧与工具侧共用同一窗口，保证两项读数口径一致；也与后端
-/// `Get*RuntimeStatsRequest` / `GetTokenStatsRequest` 的默认值一致。
+/// 请求聚合端点时随 query 传入；模型侧与工具侧共用同一窗口，保证两项读数口径一致；
+/// 也与后端 `GetWorkspaceMetricsRequest.minutes` 的默认值一致。
 const RUNTIME_METRICS_WINDOW_MINUTES: u32 = 60;
 
 /// 顶栏运行时指标单元（紧凑读数）。
@@ -264,17 +260,10 @@ pub fn Workspace() -> Element {
     let mut project_unread = use_signal(std::collections::HashSet::<String>::new);
     let mut agent_unread = use_signal(std::collections::HashSet::<String>::new);
 
-    // 组织级运行时读数（后端 DuckDB 查询，30 秒轮询；顶栏数字指标用）
+    // 顶栏聚合指标（单一端点，30 秒轮询；首帧到达前为 None，顶栏不渲染避免 0 闪现）
     //
-    // - `token_stats`：模型侧——调用次数 + 输入/输出 Token 合计 + 分钟级时序
-    // - `tool_stats`：工具侧——调用次数 + 失败次数 + 平均耗时
-    let token_stats = use_signal(TokenStatsResponse::default);
-    let tool_stats = use_signal(ToolRuntimeStatsResponse::default);
-    // AOP 队列待处理数（系统侧；未取到时为 None，展示成「—」而不是 0）
-    let aop_queue_backlog = use_signal(|| None::<u64>);
-
-    // 运行中 Agent 列表（轮询 runtime-list 接口）
-    let runtime_agents = use_signal(RuntimeListResponse::default);
+    // 概览计数 + 运行态三色 + 模型/工具窗口读数 + 队列积压，全部出自同一份后端快照。
+    let workspace_metrics = use_signal(|| Option::<WorkspaceMetricsResponse>::None);
     let mut runtime_filter = use_signal(|| None::<String>);
 
     // HUD 悬浮面板折叠状态
@@ -283,46 +272,18 @@ pub fn Workspace() -> Element {
 
     let sidebar = sidebar_signal.read().clone();
 
-    // 运行中 Agent 轮询：5 秒间隔，支持状态过滤
-    use_future(move || {
-        let mut runtime_agents = runtime_agents;
-        let runtime_filter = runtime_filter;
-        async move {
-            loop {
-                let req = RuntimeListRequest {
-                    state: runtime_filter(),
-                    task_id: None,
-                    project_id: None,
-                };
-                if let Ok(resp) = list_runtime_agents(&req).await {
-                    runtime_agents.set(resp);
-                }
-                gloo_timers::future::TimeoutFuture::new(5000).await;
-            }
-        }
-    });
-
-    // 运行时读数轮询：30 秒间隔，拉最近 60 分钟的模型 / 工具统计（顶栏数字指标），
-    // 以及系统健康指标里的 AOP 队列待处理数。
+    // 顶栏聚合指标轮询：30 秒间隔拉单一聚合端点，全部数字出自同一份快照。
     //
     // 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，读数偏低属预期。
     use_future(move || {
-        let mut token_stats = token_stats;
-        let mut tool_stats = tool_stats;
-        let mut aop_queue_backlog = aop_queue_backlog;
+        let mut workspace_metrics = workspace_metrics;
         async move {
             loop {
                 let minutes = Some(RUNTIME_METRICS_WINDOW_MINUTES);
-                if let Ok(resp) = get_token_stats(GetTokenStatsRequest { minutes }).await {
-                    token_stats.set(resp);
-                }
                 if let Ok(resp) =
-                    get_tool_runtime_stats(GetToolRuntimeStatsRequest { minutes }).await
+                    get_workspace_metrics(GetWorkspaceMetricsRequest { minutes }).await
                 {
-                    tool_stats.set(resp);
-                }
-                if let Ok(resp) = get_health_metrics().await {
-                    aop_queue_backlog.set(Some(resp.aop_pending));
+                    workspace_metrics.set(Some(resp));
                 }
                 gloo_timers::future::TimeoutFuture::new(30_000).await;
             }
@@ -980,37 +941,34 @@ pub fn Workspace() -> Element {
                 }
 
                 // === 顶部状态栏（玻璃，悬浮顶部） ===
-                {sidebar.as_ref().map(|d| {
-                    let project_count = d.projects.len();
-                    let agent_count = d.agents.len();
-                    let active_project_count = d.projects.iter().filter(|p| is_active_project(p.status)).count();
-                    let busy_agent_count = d.agents.iter().filter(|a| a.runtime_state == 2).count();
+                //
+                // 全部数字出自单一聚合接口快照（30 秒轮询）；首帧快照到达前顶栏
+                // 整体不渲染，避免 0 值闪现。
+                //
+                // 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，读数偏低属预期。
+                {workspace_metrics.read().as_ref().map(|m| {
+                    let project_count = m.project_count;
+                    let agent_count = m.agent_count;
+                    let active_project_count = m.active_project_count;
+                    let busy_agent_count = m.runtime.busy;
 
                     // 运行中 Agent 实时状态计数
-                    let ra = runtime_agents.read().clone();
-                    let idle_n = ra.items.iter().filter(|i| i.state == "idle").count();
-                    let busy_n = ra.items.iter().filter(|i| i.state == "busy").count();
-                    let rest_n = ra.items.iter().filter(|i| i.state == "resting").count();
+                    let idle_n = m.runtime.idle;
+                    let busy_n = m.runtime.busy;
+                    let rest_n = m.runtime.resting;
 
-                    // 运行时读数（近 60 分钟窗口）：模型侧 + 工具侧
-                    //
-                    // 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，读数偏低属预期。
-                    let ts = token_stats.read();
-                    let tls = tool_stats.read();
-                    // 模型吞吐：窗口内 (输入 + 输出) Token / 窗口秒数
-                    let window_secs = RUNTIME_METRICS_WINDOW_MINUTES as f64 * 60.0;
+                    // 运行时读数（近 N 分钟窗口）：模型侧 + 工具侧
+                    let window_minutes = m.window_minutes;
+                    let window_secs = window_minutes as f64 * 60.0;
                     let model_throughput =
-                        (ts.total_tokens_input + ts.total_tokens_output) as f64 / window_secs;
+                        (m.model.total_tokens_input + m.model.total_tokens_output) as f64 / window_secs;
                     // 无调用时用「—」表示无数据，而不是误导性的 0ms
-                    let tool_duration_label = match tls.avg_duration_ms {
+                    let tool_duration_label = match m.tool.avg_duration_ms {
                         Some(ms) => format!("{}ms", format_decimal(ms, 0)),
                         None => "—".to_string(),
                     };
-                    let queue_backlog = aop_queue_backlog();
-                    let queue_backlog_label = match queue_backlog {
-                        Some(n) => format_compact_count(n),
-                        None => "—".to_string(),
-                    };
+                    let queue_backlog = m.queue_backlog;
+                    let queue_backlog_label = format_compact_count(queue_backlog);
 
                     rsx! {
                         div { class: "absolute top-3 left-3 right-3 z-10 hud-glass rounded-xl px-4 py-2 flex items-center gap-4 flex-wrap",
@@ -1051,15 +1009,15 @@ pub fn Workspace() -> Element {
                             // 这里原来放的是 Token QPS 迷你折线图，但顶栏横条太窄，曲线看不出
                             // 趋势，改成数字指标更直接。
                             div { class: "ml-auto flex items-center gap-4 flex-wrap justify-end",
-                                span { class: "text-xs text-base-content/60 shrink-0", "近 60 分钟" }
-                                {runtime_metric("模型调用", format_compact_count(ts.total_calls), Some("primary"))}
-                                {runtime_metric("输入 Token", format_compact_count(ts.total_tokens_input), Some("info"))}
-                                {runtime_metric("输出 Token", format_compact_count(ts.total_tokens_output), Some("accent"))}
+                                span { class: "text-xs text-base-content/60 shrink-0", "近 {window_minutes} 分钟" }
+                                {runtime_metric("模型调用", format_compact_count(m.model.total_calls), Some("primary"))}
+                                {runtime_metric("输入 Token", format_compact_count(m.model.total_tokens_input), Some("info"))}
+                                {runtime_metric("输出 Token", format_compact_count(m.model.total_tokens_output), Some("accent"))}
                                 {runtime_metric("吞吐 Token/s", format_decimal(model_throughput, 1), None)}
-                                {runtime_metric("工具调用", format_compact_count(tls.total_calls), Some("info"))}
-                                {runtime_metric("工具失败", format_compact_count(tls.failed_calls), Some("error"))}
+                                {runtime_metric("工具调用", format_compact_count(m.tool.total_calls), Some("info"))}
+                                {runtime_metric("工具失败", format_compact_count(m.tool.failed_calls), Some("error"))}
                                 {runtime_metric("工具均耗时", tool_duration_label, Some("warning"))}
-                                {runtime_metric("队列积压", queue_backlog_label, queue_backlog.filter(|n| *n > 0).map(|_| "warning"))}
+                                {runtime_metric("队列积压", queue_backlog_label, (queue_backlog > 0).then_some("warning"))}
                             }
                         }
                     }

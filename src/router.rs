@@ -1046,6 +1046,11 @@ fn system_routes() -> Router {
             "/health/metrics",
             get(handlers::system::health_metrics::get_health_metrics_handler),
         )
+        // Workspace metrics aggregation route - 工作台顶栏聚合指标（30s 单轮询统一快照）
+        .route(
+            "/workspace/metrics",
+            get(handlers::system::workspace_metrics::get_workspace_metrics_handler),
+        )
         // Tool log storage routes - 工具日志存储监控与清理（① 运行时输出层治理）
         .route(
             "/storage/tool-logs",

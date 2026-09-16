@@ -477,3 +477,71 @@ pub struct CleanupToolLogsResponse {
     /// 因 Running 进程保护跳过的目录数
     pub skipped_dirs: u64,
 }
+
+// ==================== 工作台顶栏聚合指标 ====================
+
+/// 工作台顶栏聚合指标请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetWorkspaceMetricsRequest {
+    /// 模型/工具统计窗口（分钟），缺省 60，上限 1440
+    #[param(source = "query")]
+    pub minutes: Option<u32>,
+}
+
+/// 工作台顶栏聚合指标响应
+///
+/// 单一端点覆盖顶栏全部数字指标（项目/Agent 概览 + 运行态三色计数 +
+/// 模型/工具窗口读数 + AOP 队列积压），前端一个 30 秒轮询即可拿全量，
+/// 保证所有数字出自同一份快照；各维度独立降级为 0，单维度故障不影响整体。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct WorkspaceMetricsResponse {
+    /// 项目总数（DAO 默认排除 Deleted）
+    pub project_count: u64,
+    /// Agent 总数（排除 Deleted）
+    pub agent_count: u64,
+    /// 运行中项目数（status 1..=3，与前端 is_active_project 同口径）
+    pub active_project_count: u64,
+    /// 运行态 Agent 三色计数（内存实时，未注册运行的 Agent 不计入）
+    pub runtime: AgentRuntimeCounts,
+    /// 模型/工具统计窗口（分钟）
+    pub window_minutes: u32,
+    /// 模型调用读数（窗口内；批次刷盘，最近 1~2 分钟数据可能未落库）
+    pub model: ModelUsageMetrics,
+    /// 工具调用读数（窗口内；同上）
+    pub tool: ToolUsageMetrics,
+    /// AOP 队列总待处理数（所有消费者累加，内存实时）
+    pub queue_backlog: u64,
+}
+
+/// 运行态 Agent 三色计数
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct AgentRuntimeCounts {
+    /// 空闲
+    pub idle: u64,
+    /// 忙碌（顶栏「忙碌」概览卡与「思考」点同源口径）
+    pub busy: u64,
+    /// 休息
+    pub resting: u64,
+}
+
+/// 模型调用窗口读数
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ModelUsageMetrics {
+    /// 调用次数
+    pub total_calls: u64,
+    /// 输入 Token 合计
+    pub total_tokens_input: u64,
+    /// 输出 Token 合计
+    pub total_tokens_output: u64,
+}
+
+/// 工具调用窗口读数
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ToolUsageMetrics {
+    /// 调用次数
+    pub total_calls: u64,
+    /// 失败次数
+    pub failed_calls: u64,
+    /// 平均耗时（毫秒），窗口内无调用时为 None
+    pub avg_duration_ms: Option<f64>,
+}
