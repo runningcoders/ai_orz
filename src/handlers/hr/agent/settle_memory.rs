@@ -245,13 +245,18 @@ pub(crate) enum SettleAttempt {
     /// 已沉淀 N 条；N = 0 表示无待沉淀记忆（正常空跑）
     Settled(usize),
     /// Agent 正忙 / 休息中，本次未执行 —— 调用方应排期重试
+    ///
+    /// 合并消费者后此分支在正常路径**不可达**：`agent.settle.requested` 与
+    /// `message.created` 同队列同 `order_key = agent_id`，且本消费者是唯一会把 Agent
+    /// 置忙的链路。保留为「有人绕过队列把 Agent 置忙」的防御性不变量，不静默跳过。
     Busy,
 }
 
 /// 独占式沉淀：先原子抢占 Agent，抢不到即回 [`SettleAttempt::Busy`]（调用方排期重试）
 ///
-/// **定时触发链路专用**（`AgentSettleConsumer`）。与 [`load_and_settle`] 的差别：
-/// - 不「返回 0 了事」，而是把「Agent 正忙」如实告诉调用方 → 队列 nack 重投 → 空闲后补跑
+/// **定时触发链路专用**（`consumer/message.rs` 的 `agent.awakening` 消费者，
+/// 见其 `handle_settle_request`）。与 [`load_and_settle`] 的差别：
+/// - 不「返回 0 了事」，而是把「Agent 正忙」如实告诉调用方 → 上抛 nack 重投，不静默丢
 /// - 用 `try_set_resting` 原子抢占，避免「先查询、后设状态」之间被消息链路插入，
 ///   反过来覆盖一场正在跑的唤醒（与消息侧 `try_set_busy` 同构）
 ///

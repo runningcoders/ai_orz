@@ -50,12 +50,22 @@ pub trait Consumer: Send + Sync {
     // ===== 以下仅 Async 模式消费者需要关注 =====
 
     /// 确认事件处理成功（默认空实现，Sync 模式无需关注）
-    async fn ack(&self, _event_id: &str) -> Result<()> {
+    ///
+    /// - `source`：事件的**真实源头**，即事件 kind（如 `message.created`）。
+    ///   它由框架在 publish 时写入事件封套，worker 从封套读出后原样透传。
+    ///   消费者据此判断「这件事在业务侧有没有可对账的持久化状态」——例如
+    ///   `messages` 表的行只由 `message.created` 产生，其余事件
+    ///   （`agent.settle.requested` 等）没有对应行，不该白跑一次 UPDATE。
+    /// - `event_id`：事件 id。注意它**不一定是业务主键**：对 `message.created`
+    ///   恰好等于 message id（因为 `Event::id()` 取的就是它），换一个事件类型就不是了。
+    async fn ack(&self, _source: &str, _event_id: &str) -> Result<()> {
         Ok(())
     }
 
     /// 标记事件处理失败，等待重试（默认空实现，Sync 模式无需关注）
-    async fn nack(&self, _event_id: &str) -> Result<()> {
+    ///
+    /// `source` 语义同 [`Consumer::ack`]。
+    async fn nack(&self, _source: &str, _event_id: &str) -> Result<()> {
         Ok(())
     }
 

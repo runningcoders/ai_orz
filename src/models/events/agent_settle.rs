@@ -1,16 +1,16 @@
 //! Agent 沉淀请求事件（AOP 异步）
 //!
 //! 定时触发器（`cron.trigger` 的 `agent_rest`）**只负责派发**，真正的一次沉淀由本事件
-//! 的消费者 [`AgentSettleConsumer`](crate::consumer::agent_settle::AgentSettleConsumer)
-//! 逐个 Agent 执行。
+//! 的消费者承担 —— 即 `consumer/message.rs` 的 `agent.awakening` 消费者
+//! （与 `message.created` 同一个消费者，见该模块文档说明为何必须合并）。
 //!
 //! # 为什么要落成独立事件而不是在触发器里直接调
 //!
 //! 1. **不阻塞调度**：触发器消费者是 `ConsumeMode::Sync`，直接在 `poll` 线程里跑一场
 //!    沉淀（LLM 往返，实测数分钟）会把整个 cron 轮询堵住。
-//! 2. **不丢失**：`order_key = agent_id` 让同一 Agent 的沉淀在队列层串行；消费者用
-//!    `try_set_resting` 原子抢占，抢不到就返回冲突错误 → 队列 nack 重投 → 等 Agent
-//!    空闲自动补跑。旧实现是 `is_unavailable()` 判一下就静默跳过，而触发器已经把
+//! 2. **不丢失**：`order_key = agent_id` 让沉淀与发给同一 Agent 的消息落在同一条队列上
+//!    串行 —— 沉淀在跑时消息压根不出队（不失败、不重试、不刷日志），沉淀 `ack` 后队列
+//!    才推进。旧实现是触发器里 `is_unavailable()` 判一下就静默跳过，而触发器已经把
 //!    `next_run_at` 推到下一个 cron 点（日触发 = 次日），一次跳过等于丢一天。
 
 use crate::pkg::aop::{Event, EventKind};

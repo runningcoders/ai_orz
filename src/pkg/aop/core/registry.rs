@@ -410,7 +410,9 @@ impl Registry {
                                                 duration_ms,
                                             );
                                         }
-                                        if let Err(e) = consumer.ack(&event_id).await {
+                                        if let Err(e) =
+                                            consumer.ack(&meta.event_kind, &event_id).await
+                                        {
                                             sys_error!(
                                                 "[{}] ack error for {}: {}",
                                                 consumer_name,
@@ -450,7 +452,9 @@ impl Registry {
                                                 &err_str,
                                             );
                                         }
-                                        if let Err(e) = consumer.nack(&event_id).await {
+                                        if let Err(e) =
+                                            consumer.nack(&meta.event_kind, &event_id).await
+                                        {
                                             sys_error!(
                                                 "[{}] nack error for {}: {}",
                                                 consumer_name,

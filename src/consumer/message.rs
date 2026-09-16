@@ -1,20 +1,37 @@
-//! 消息消费者（业务层）
+//! Agent 唤醒消费者（业务层）
 //!
-//! 作为 AOP 事件中心的订阅者，消费 MESSAGE_CREATED 事件。
-//! 本模块只负责"订阅 + 调度"，业务逻辑通过调用 domain 层完成：
-//! - Agent 消息 → RuntimeDomain.awaken()
-//! - User 消息 → MessageDomain.deliver_message()
-//! - System 消息 → RuntimeDomain.tool_execution()
+//! 作为 AOP 事件中心的订阅者，消费两类事件：
+//! - `message.created` → 按 `to_role` 分发：Agent → `RuntimeDomain.awaken()`、
+//!   User → `MessageDomain.deliver_message()`、System → `RuntimeDomain.tool_execution()`
+//! - `agent.settle.requested` → 睡眠沉淀（`settle_agent_exclusive`）
 //!
-//! 与 AOP 框架解耦：AOP 只负责事件流转，本模块负责业务编排。
+//! 本模块只负责"订阅 + 调度"，业务逻辑通过调用 domain 层完成；与 AOP 框架解耦：
+//! AOP 只负责事件流转，本模块负责业务编排。
+//!
+//! # 为什么沉淀要并到这个消费者里
+//!
+//! 「唤醒 Agent」和「让 Agent 去睡觉沉淀」是**同一把锁的两端**：两者都会改变同一个
+//! Agent 的运行状态（Busy / Resting），因此必须串行。而 AOP 的 `order_key` 串行是
+//! **按消费者隔离**的（`registry.queues` 是 `HashMap<consumer_name, EventQueue>`），
+//! 拆成两个消费者时同一个 `agent_id` 会落在两条互不知晓的队列里——串行保证失效，
+//! 只能靠运行期 `try_set_busy` / `try_set_resting` 抢占失败来兜底，而兜底的代价是
+//! 失败重试：日志与失败指标被刷爆、worker 空转。
+//!
+//! 并成一个消费者后，两类事件共用一条 `order_key = agent_id` 的队列：沉淀在跑时，
+//! 发给同一 Agent 的消息**压根不出队**（不用失败、不用重试、不用退避），沉淀 `ack`
+//! 之后队列才推进下一条。串行点因此回到队列层——这正是
+//! `MessageCreatedEvent::order_key` 注释里早就写明的设计意图。
 
 use async_trait::async_trait;
 use common::enums::{CallerType, MessageRole, MessageStatus, MessageType};
-use common::error::{Error, Result};
+use common::error::{Error, ErrorCode, Result};
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::models::events::MessageCreatedEvent;
+use crate::handlers::hr::agent::settle_memory::{SettleAttempt, settle_agent_exclusive};
+use crate::models::events::{
+    AgentSettleEvent, MessageCreatedEvent, agent_settle::AGENT_SETTLE_EVENT_KIND,
+};
 use crate::models::message::{Message, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -34,10 +51,13 @@ use crate::service::domain::runtime::{
 
 // ==================== 消费者实现 ====================
 
+/// `message.created` 的事件 kind —— 同时是 ack/nack 的 `source` 值
+const KIND_MESSAGE_CREATED: &str = "message.created";
+
 /// Agent 唤醒消费者
 ///
-/// 订阅 MESSAGE_CREATED 事件，按 to_role 分发到不同 domain 处理。
-/// 作为 AOP 的 Async 消费者，由 Registry 调度器自动轮询拉取。
+/// 订阅 `message.created` 与 `agent.settle.requested`，两者共用一条按 `agent_id`
+/// 分片的队列（见模块文档）。作为 AOP 的 Async 消费者，由 Registry 调度器自动轮询拉取。
 pub struct MessageConsumer {
     runtime_domain: Arc<dyn RuntimeDomain>,
     message_domain: Arc<dyn MessageDomain>,
@@ -71,14 +91,86 @@ impl Consumer for MessageConsumer {
     }
 
     fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("message.created")]
+        vec![
+            EventKind::new(KIND_MESSAGE_CREATED),
+            EventKind::new(AGENT_SETTLE_EVENT_KIND),
+        ]
     }
 
     fn consume_mode(&self) -> ConsumeMode {
         ConsumeMode::Async
     }
 
-    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, ctx: RequestContext, event: Value) -> Result<()> {
+        // 封套的 `kind` 由框架在 publish 时注入（见 `Registry::publish`），是队列里
+        // 唯一能在反序列化**之前**区分事件类型的依据。
+        match event.get("kind").and_then(|v| v.as_str()) {
+            Some(KIND_MESSAGE_CREATED) => self.handle_message(ctx, event).await,
+            Some(AGENT_SETTLE_EVENT_KIND) => self.handle_settle_request(ctx, event).await,
+            other => Err(Error::internal(format!(
+                "agent.awakening 仅订阅 {} / {}，却收到 {}",
+                KIND_MESSAGE_CREATED,
+                AGENT_SETTLE_EVENT_KIND,
+                other.unwrap_or("<缺少 kind 字段>")
+            ))),
+        }
+    }
+
+    /// 只有 `message.created` 的 `event_id` 是 messages 表主键
+    /// （`MessageCreatedEvent::id()` 返回的正是 message_id）
+    ///
+    /// 其余事件（`agent.settle.requested`）在 messages 表里没有对应行：更新 0 行虽是
+    /// 空转无害，但它会把「传进来的 id 一定指向 messages 表」变成一个没说出口的前提，
+    /// 将来给 `update_status` 加上行数校验就会静默变成重试死循环。所以按 source 显式分流。
+    async fn ack(&self, source: &str, event_id: &str) -> Result<()> {
+        if source != KIND_MESSAGE_CREATED {
+            return Ok(());
+        }
+        let ctx = RequestContext::new_system();
+        message_dal::dal()
+            .update_status(ctx, event_id, MessageStatus::Processed)
+            .await?;
+        Ok(())
+    }
+
+    /// 把消息置回 Pending —— 它是**启动恢复的依据**
+    ///
+    /// （`message_dal` 按 `status = Pending` 扫出未处理消息重投），所以不能省。
+    /// `source` 分流理由同 [`Consumer::ack`]。
+    async fn nack(&self, source: &str, event_id: &str) -> Result<()> {
+        if source != KIND_MESSAGE_CREATED {
+            return Ok(());
+        }
+        let ctx = RequestContext::new_system();
+        message_dal::dal()
+            .update_status(ctx, event_id, MessageStatus::Pending)
+            .await?;
+        Ok(())
+    }
+
+    /// 并发 worker 数量
+    ///
+    /// 两类事件共用它：最多 4 个**不同 Agent** 并行被唤醒/沉淀
+    /// （同一 Agent 被 `order_key` 串行挡住）。
+    /// 沉淀是「一次完整 LLM 会话」，若模型侧出现限流，再给沉淀分支单独加信号量收口。
+    fn concurrency(&self) -> usize {
+        4
+    }
+
+    fn empty_queue_sleep_ms(&self) -> u64 {
+        100
+    }
+
+    fn error_retry_sleep_ms(&self) -> u64 {
+        1000
+    }
+}
+
+// ==================== 业务编排（调用 domain 层）====================
+
+impl MessageConsumer {
+    /// `message.created`：按 `to_role` 分发到对应 domain
+    async fn handle_message(&self, ctx: RequestContext, event: Value) -> Result<()> {
         let msg_event: MessageCreatedEvent = serde_json::from_value(event)?;
 
         // 从 DB 加载完整 Message
@@ -113,38 +205,73 @@ impl Consumer for MessageConsumer {
         Ok(())
     }
 
-    async fn ack(&self, event_id: &str) -> Result<()> {
-        let ctx = RequestContext::new_system();
-        message_dal::dal()
-            .update_status(ctx, event_id, MessageStatus::Processed)
-            .await?;
-        Ok(())
+    /// `agent.settle.requested`：对指定 Agent 执行一次睡眠沉淀
+    ///
+    /// 由定时触发器派发（`consumer/scheduler.rs::handle_agent_rest` 只 `publish`），
+    /// 因为一次沉淀是完整 LLM 往返（实测数分钟），绝不能在 cron `poll` 线程里同步跑。
+    async fn handle_settle_request(&self, ctx: RequestContext, event: Value) -> Result<()> {
+        let event: AgentSettleEvent = serde_json::from_value(event).map_err(|e| {
+            Error::internal(format!("failed to deserialize agent settle event: {}", e))
+        })?;
+
+        log_info!(
+            &ctx,
+            "handle_settle_request",
+            "agent_id={}, 开始沉淀（来源：{}）",
+            event.agent_id,
+            event.requested_by
+        );
+
+        match settle_agent_exclusive(ctx.clone(), &event.agent_id, event.settle_limit).await {
+            Ok(SettleAttempt::Settled(count)) => {
+                log_info!(
+                    &ctx,
+                    "handle_settle_request",
+                    "agent_id={}, 沉淀完成，处理 {} 条短期记忆（来源：{}）",
+                    event.agent_id,
+                    count,
+                    event.requested_by
+                );
+                Ok(())
+            }
+            Ok(SettleAttempt::Busy) => {
+                // 本消费者是**唯一**会把 Agent 置为 Busy / Resting 的链路（`awaken` 的唯一
+                // 生产调用方），且两类事件同队列同 order_key —— 所以正常路径下这里不可达。
+                // 真出现说明有人绕过了消息队列把 Agent 置忙：不静默跳过，上抛 Conflict
+                // 交给框架 nack 重投。
+                //
+                // 反面教训：旧实现在触发器里 `is_unavailable()` 判一下就 `Ok(0)` 跳过，
+                // 而触发器已经把 `next_run_at` 推到下一个 cron 点（日触发 = 次日）→
+                // 一次跳过等于丢一整天，且界面还显示「已执行」。
+                Err(Error::conflict(format!(
+                    "Agent {} 忙/休息中，沉淀请求排队等待（来源：{}）",
+                    event.agent_id, event.requested_by
+                )))
+            }
+            Err(e) if matches!(e.code_enum(), ErrorCode::ResourceNotFound) => {
+                // Agent 已不存在 → 重试不可能成功，ack 丢弃避免空转
+                log_warn!(
+                    &ctx,
+                    "handle_settle_request",
+                    "agent_id={}, Agent 不存在，沉淀请求作废（不再重试）: {}",
+                    event.agent_id,
+                    e
+                );
+                Ok(())
+            }
+            Err(e) => {
+                // 模型/DB 等临时错误：交给框架 nack 重投
+                log_warn!(
+                    &ctx,
+                    "handle_settle_request",
+                    "agent_id={}, 沉淀失败，等待重试: {}",
+                    event.agent_id,
+                    e
+                );
+                Err(e)
+            }
+        }
     }
-
-    async fn nack(&self, event_id: &str) -> Result<()> {
-        let ctx = RequestContext::new_system();
-        message_dal::dal()
-            .update_status(ctx, event_id, MessageStatus::Pending)
-            .await?;
-        Ok(())
-    }
-
-    fn concurrency(&self) -> usize {
-        4
-    }
-
-    fn empty_queue_sleep_ms(&self) -> u64 {
-        100
-    }
-
-    fn error_retry_sleep_ms(&self) -> u64 {
-        1000
-    }
-}
-
-// ==================== 业务编排（调用 domain 层）====================
-
-impl MessageConsumer {
     /// 跨组织提及直连路由（P4）
     ///
     /// 仅用户消息触发（Agent 回复中的 @ 对端提及不外呼，防调用环）：

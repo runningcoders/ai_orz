@@ -84,7 +84,9 @@ pub trait EventQueue: Send + Sync + std::fmt::Debug + 'static {
     ) -> Result<()>;
     async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<serde_json::Value>>;
     async fn ack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
+    /// 事件处理未成功：退回队列等待重投（退避由 worker 负责）
     async fn nack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
+
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
         self.len() == 0

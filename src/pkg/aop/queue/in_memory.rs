@@ -446,3 +446,166 @@ impl EventQueue for InMemoryEventQueue {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 构造最小事件封套（队列只读元字段，业务字段与队列无关）
+    fn envelope(event_id: &str, kind: &str, order_key: &str, created_at: i64) -> serde_json::Value {
+        json!({
+            "event_id": event_id,
+            "kind": kind,
+            "order_key": order_key,
+            "priority": 0,
+            "created_at": created_at,
+        })
+    }
+
+    /// 每个测试用**自己**的队列实例（不走全局 registry），互不干扰
+    async fn new_queue() -> InMemoryEventQueue {
+        crate::pkg::storage::test_support::init_for_test().await;
+        InMemoryEventQueue::new()
+    }
+
+    /// 同一 `order_key` 必须严格串行：前一条 ack 之前后继**不可出队**。
+    ///
+    /// 这是「同一 Agent 的沉淀与消息串行」的支点 —— 契约要求串行点落在**队列层**，
+    /// 而不是让业务层去抢占失败、靠 nack 重投兜底（那会把日志与失败指标刷爆）。
+    /// 回归场景：`message.created`（to_role = Agent 时 order_key = agent_id）与
+    /// `agent.settle.requested`（order_key = agent_id）落在同一条串行链上。
+    #[tokio::test]
+    async fn same_order_key_serializes_until_ack() {
+        let queue = new_queue().await;
+
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e1", "message.created", "agent-1", 1),
+            )
+            .await
+            .unwrap();
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e2", "agent.settle.requested", "agent-1", 2),
+            )
+            .await
+            .unwrap();
+
+        let first = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("队首应可出队");
+        assert_eq!(first["event_id"], "e1");
+
+        assert!(
+            queue
+                .dequeue_next(RequestContext::new_system())
+                .await
+                .unwrap()
+                .is_none(),
+            "同 order_key 的后继必须等前一条 ack —— 串行点必须在队列层，不能靠抢占失败重试"
+        );
+
+        queue.ack(RequestContext::new_system(), "e1").await.unwrap();
+        let second = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("ack 后后继应可出队");
+        assert_eq!(second["event_id"], "e2");
+
+        assert!(
+            queue
+                .dequeue_next(RequestContext::new_system())
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// 不同 `order_key` 互不阻塞：一个慢 Agent 不该拖住整条队列
+    #[tokio::test]
+    async fn different_order_keys_do_not_block_each_other() {
+        let queue = new_queue().await;
+
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e1", "message.created", "agent-1", 1),
+            )
+            .await
+            .unwrap();
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e2", "message.created", "agent-2", 2),
+            )
+            .await
+            .unwrap();
+
+        let mut ids = Vec::new();
+        while let Some(event) = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+        {
+            ids.push(event["event_id"].as_str().unwrap().to_string());
+        }
+        ids.sort();
+        assert_eq!(ids, vec!["e1", "e2"]);
+    }
+
+    /// nack 把事件放回可调度堆（重试而非丢弃），且不会把同 `order_key` 的后继锁死
+    #[tokio::test]
+    async fn nack_requeues_event_and_keeps_successor_blocked() {
+        let queue = new_queue().await;
+
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e1", "message.created", "agent-1", 1),
+            )
+            .await
+            .unwrap();
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e2", "message.created", "agent-1", 2),
+            )
+            .await
+            .unwrap();
+
+        let first = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first["event_id"], "e1");
+
+        queue
+            .nack(RequestContext::new_system(), "e1")
+            .await
+            .unwrap();
+
+        // 失败事件自己重投（后继仍被挡住）
+        let retried = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("nack 后事件应重新可调度");
+        assert_eq!(retried["event_id"], "e1");
+
+        // ack 之后才轮到后继
+        queue.ack(RequestContext::new_system(), "e1").await.unwrap();
+        let next = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("ack 后后继应可出队");
+        assert_eq!(next["event_id"], "e2");
+    }
+}

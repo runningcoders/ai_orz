@@ -2184,6 +2184,10 @@ awaken 循环
 
 > 📌 **本节定位**：修复「日触发 `agent_rest` 与其它定时任务撞同一个 Agent 时，沉淀被静默跳过一整天」
 > 的生产问题。入口与状态纪律见 §25.6，handler 拆分见 §25.8。
+>
+> 🔁 **同日二次修订**：初版给队列加了 `NackMode::{Defer,Retry}` + `set_idle` 主动唤醒来兜底
+> 「抢占失败」，该实现已**全部回滚** —— 抢占失败本就不该发生，根因是沉淀被拆成了独立消费者、
+> 导致 `order_key` 串行跨消费者失效。现方案是把沉淀并入 `agent.awakening` 消费者。
 
 **问题**：日触发 `agent_rest` 的消费者是 `ConsumeMode::Sync`，在 cron `poll` 线程里同步跑完整场
 沉淀（LLM 往返，实测 7 分钟），并且对每个待沉淀 Agent 先做 `is_unavailable()` 判定，
@@ -2195,24 +2199,49 @@ awaken 循环
 **巡检照常执行（消息链路忙时 nack 重投），沉淀被静默跳过一整天的量**，
 而触发器界面显示「已执行」——只留下 `last_run_at = 启动时刻` 这一条线索。
 
-**方案**：沉淀改走 AOP 队列，触发器只派发。
+**方案**：沉淀改走 AOP 队列，触发器只派发；并**与 `message.created` 合并到同一个消费者**
+（`agent.awakening`，即 `consumer/message.rs`）—— 串行点因此落在队列层。
 
 | 关注点 | 旧 | 新 |
 |--------|----|----|
-| 执行位置 | cron poll 线程内同步 | `agent_settle` 异步消费者（`concurrency = 2`） |
+| 执行位置 | cron poll 线程内同步 | `agent.awakening` 异步消费者（两类事件共用，`concurrency = 4`） |
 | 排队单元 | 无 | `agent.settle.requested` 事件，`order_key = agent_id` |
-| Agent 忙 | `Ok(0)` 静默跳过 | `try_set_resting` 抢占失败 → `Err(conflict)` → 队列 nack 重投（30s 退避） |
+| Agent 忙 | `Ok(0)` 静默跳过 | 同 Agent 的沉淀与消息**同队列同 order_key** → 沉淀跑不完，消息压根不出队（不失败、不重试、不刷日志） |
 | 阻塞其它触发器 | 是（整场沉淀期间轮询停摆） | 否（派发即返回） |
 | 单 Agent 失败影响 | 只 warn，其余继续但本轮已耗完 | 每 Agent 独立事件、独立重试 |
 | 状态泄漏风险 | — | 抢占后立刻挂 `BusyGuard`，任何 `?` 提前返回都会 `set_idle` |
 
+**为什么是「合并消费者」而不是给 `nack` 加一层语义分层（同日二次修订）**
+
+v3.10 的初版方案是给队列加 `NackMode::{Defer,Retry}`：`ErrorCode::Conflict` 视为「排队中」
+退回 order_key 队列安静等待，并由 `set_idle` 主动唤醒（`notify_order_key_ready`）。
+该实现**已全部回滚**，原因是它治标：冲突本来就不该发生。
+
+根因是 **AOP 的 `order_key` 闸门按消费者隔离** —— `registry.queues` 是
+`HashMap<consumer_name, EventQueue>`，`has_active_message` 是 `InMemoryEventQueue` 的实例字段。
+沉淀当初被拆成独立消费者 `agent_settle`，于是同一个 `agent_id` 在 message 队列和 settle 队列里
+各持一份互不知晓的闸门，串行保证跨消费者**静默失效**，只能靠运行期 `try_set_busy` /
+`try_set_resting` 抢占失败来兜底 —— 而兜底就是失败重试：日志与假失败指标被刷爆、worker 空转。
+
+并成一个消费者后，两类事件共用一条 `order_key = agent_id` 的队列，用的是**既有**的
+`enqueue`/`ack` 闸门逻辑（`was_empty && !has_active_message` 才推进队首），
+不需要任何新机制：沉淀在跑时消息留在队列里，沉淀 `ack` 后才推进。这正是
+`MessageCreatedEvent::order_key` 注释里早就写明的设计意图（「把串行点从『失败重试』
+提前到『队列层』」），当初只是漏了沉淀这个成员。
+
 **设计与约束**：
-- `order_key = agent_id` 与 `message.created`（接收者为 Agent 时）同源，使沉淀与发给同一 Agent
-  的消息在**队列层**就串行，不必依赖运行期抢占失败来兜底
+- 沉淀与消息**必须在同一个消费者里**。新增「会改变 Agent 运行状态」的事件类型时，
+  要么并入本消费者，要么它的 order_key 与 `agent_id` 无关，否则串行保证会静默失效
 - 抢占用 `AgentRuntimeStateManager::try_set_resting`（与消息侧 `try_set_busy` 同构），
-  **不要**改回「先查询再设状态」——两段之间会被消息链路插入，沉淀会覆盖正在跑的唤醒
+  **不要**改回「先查询再设状态」——两段之间会被消息链路插入，沉淀会覆盖正在跑的唤醒。
+  合并后本消费者是**唯一**会把 Agent 置为 Busy/Resting 的链路（`awaken` 的唯一生产
+  调用方），所以 `SettleAttempt::Busy` 在正常路径不可达，保留为防御性不变量：
+  真出现说明有人绕过队列把 Agent 置忙，此时上抛 `Err(conflict)` 让框架 nack 重投，不静默丢
 - `load_and_settle`（神经工具入口）保留原有「忙则跳过」语义：那条路径上 Agent 正在自己的
   思考中（天然 Busy），抢占式判定会让它永远失败
+- `Consumer::ack/nack` 带 `source` 参数（值 = 事件 kind，由框架从封套透传）：
+  只有 `message.created` 的 `event_id` 是 messages 表主键，其余事件必须显式跳过，
+  否则会把「传进来的 id 一定指向 messages 表」变成没说出口的前提
 - 事件只在内存队列，**有残留窗口**：派发后、沉淀跑完前进程被杀 → 当天该请求不再重建
   （触发器已 `mark_trigger_executed`，日触发的下个周期是次日）。比旧实现「忙就跳过一次丢一天」
   窄得多，当前按 YAGNI 未加启动期补扫；若要严格保证，启动时对「仍有 Active 短期记忆的 Agent」
@@ -2239,12 +2268,15 @@ awaken 循环
 把缺省/`null` 归一为空对象。三条单元测试锁定该契约
 （`test_cron_trigger_payload_passes_extra_through` / `_tolerates_missing_extra` / `_ignores_unknown_fields`）。
 
-**新增/改动文件**：`src/models/events/agent_settle.rs`（新）、`src/consumer/agent_settle.rs`（新）、
-`src/consumer/scheduler.rs`（`handle_agent_rest` 改为派发 + `extra` 具名化）、
-`src/handlers/hr/agent/settle_memory.rs`（拆出 `settle_body` / `settle_agent_exclusive`）、
-`src/pkg/agent_runtime_state.rs`（新增 `try_set_resting`）、
-`src/service/domain/runtime/mod.rs`（`busy_guard` 转 pub）；
-测试 `tests/integration/agent_settle_queue_test.rs`（新，3 个回归用例）。
+**新增/改动文件**：`src/models/events/agent_settle.rs`（新）、
+`src/consumer/message.rs`（`agent.awakening` 增订 `agent.settle.requested` + `handle_settle_request`
++ ack/nack 按 `source` 分流）、`src/consumer/scheduler.rs`（`handle_agent_rest` 改为派发 +
+`extra` 具名化）、`src/handlers/hr/agent/settle_memory.rs`（拆出 `settle_body` /
+`settle_agent_exclusive`）、`src/pkg/agent_runtime_state.rs`（新增 `try_set_resting`）、
+`src/service/domain/runtime/mod.rs`（`busy_guard` 转 pub）、
+`src/pkg/aop/core/consumer.rs`（`ack`/`nack` 加 `source` 参数）；
+测试 `tests/integration/agent_settle_queue_test.rs`（6 个用例）+ `src/pkg/aop/queue/in_memory.rs`
+单元测试（同 order_key 串行 / 异 key 不阻塞 / nack 重投，3 个用例）。
 
 ---
 

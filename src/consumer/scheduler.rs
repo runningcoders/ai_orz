@@ -116,12 +116,14 @@ impl CronTriggerConsumer {
     /// 作用域：payload 指定 `agent_id` 时只派发该 Agent；**缺省（系统默认触发器）
     /// 则扫描所有存在未沉淀短期记忆的 Agent 逐个派发**。
     ///
-    /// 执行交给 `AgentSettleConsumer`（见 `consumer/agent_settle.rs`），本消费者只做两件事：
-    /// 解析目标 Agent + publish 事件。**不要在这里改回同步调用 `load_and_settle`**：
+    /// 执行交给 `agent.awakening` 消费者（`consumer/message.rs::handle_settle_request`），
+    /// 本消费者只做两件事：解析目标 Agent + publish 事件。
+    /// **不要在这里改回同步调用 `load_and_settle`**：
     /// - 本消费者是 `ConsumeMode::Sync`，同步跑一场沉淀（LLM 往返，实测数分钟）会把整个
     ///   cron 轮询堵住，其它触发器（工具日志清理 / 目录对账）只能干等
     /// - Agent 忙时同步路径只能「跳过」，而触发器随后就会把 `next_run_at` 推到下一个
-    ///   cron 点（日触发 = 次日）→ 一次跳过丢一天；走队列则抢不到会退避重试
+    ///   cron 点（日触发 = 次日）→ 一次跳过丢一天。走队列则 `order_key = agent_id`
+    ///   使沉淀与发给同一 Agent 的消息落在同一条队列上串行，忙时不丢、也不刷重试日志
     async fn handle_agent_rest(&self, event: &CronTriggerEvent, extra: &Value) -> Result<()> {
         let payload: AgentRestPayload = serde_json::from_value(extra.clone()).map_err(|e| {
             Error::bad_request(format!(
@@ -179,7 +181,9 @@ impl CronTriggerConsumer {
             agent_ids
         );
 
-        // 逐个 Agent 派发沉淀请求（order_key = agent_id：同 Agent 与消息在队列层串行）
+        // 逐个 Agent 派发沉淀请求。order_key = agent_id 与 message.created（接收者为
+        // Agent 时）同源，且两者现在同属 agent.awakening 消费者的同一条队列 →
+        // 同 Agent 的沉淀与消息在**队列层**就串行，无需依赖运行期抢占失败来兜底。
         for agent_id in &agent_ids {
             crate::pkg::aop::publish(
                 &ctx,
@@ -189,7 +193,7 @@ impl CronTriggerConsumer {
         }
 
         sys_info!(
-            "agent_rest 完成: 已派发 {} 个 Agent 的沉淀请求（trigger_id: {}），执行与重试由 agent_settle 消费者承担",
+            "agent_rest 完成: 已派发 {} 个 Agent 的沉淀请求（trigger_id: {}），执行由 agent.awakening 消费者承担",
             agent_ids.len(),
             event.trigger_id
         );
