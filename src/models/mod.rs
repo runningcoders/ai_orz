@@ -4,7 +4,6 @@ pub mod attachment;
 pub mod brain;
 pub mod cortex_types;
 pub mod cron_trigger;
-pub mod event;
 pub mod events;
 pub mod federation_contract;
 pub mod file;

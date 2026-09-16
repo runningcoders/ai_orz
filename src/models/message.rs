@@ -6,7 +6,6 @@
 //! - Text 消息：content 直接存储文本内容，file_meta 为默认值
 //! - Image/File/Audio/Video 附件：content 存储文件相对路径，file_meta 存储元数据（路径、大小、MIME类型）
 
-use crate::models::event::{Event, EventTopic};
 use crate::models::file::FileMeta;
 use crate::models::tool::ToolCallTraceRef;
 use common::constants::utils;
@@ -17,7 +16,7 @@ use sqlx::types::Json;
 
 /// Message 业务实体
 ///
-/// 组合 MessagePo，作为业务层核心对象，实现 Event trait 可以放入事件总线
+/// 组合 MessagePo，作为业务层核心对象
 #[derive(Debug, Clone)]
 pub struct Message {
     /// 底层持久化对象
@@ -198,51 +197,6 @@ impl Message {
             None,
             created_by,
         )
-    }
-}
-
-/// Message 实现 Event trait，可以放入事件总线
-impl Event for Message {
-    fn clone_box(&self) -> Box<dyn Event> {
-        Box::new(self.clone())
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-
-    fn id(&self) -> &str {
-        self.id()
-    }
-
-    fn topic(&self) -> EventTopic {
-        EventTopic::Message
-    }
-
-    fn order_key(&self) -> &str {
-        // 默认按任务 ID 分组，同一个任务的消息保证顺序消费
-        // 如果没有任务，则按项目 ID 分组
-        // 如果也没有项目，则按消息自己的 ID 分组（单条消息消费）
-        if let Some(task_id) = self.task_id() {
-            task_id
-        } else if let Some(project_id) = self.project_id() {
-            project_id
-        } else {
-            self.id()
-        }
-    }
-
-    fn priority(&self) -> u8 {
-        // 默认优先级 5，可根据需求新增优先级字段覆盖
-        5
-    }
-
-    fn created_at(&self) -> i64 {
-        self.po.created_at
     }
 }
 
