@@ -57,6 +57,21 @@ pub trait WechatDao: Send + Sync {
 
     /// 指定渠道是否正在轮询
     async fn is_polling(&self, channel_id: &str) -> bool;
+
+    /// 推进入站游标（**消费确认后**调用，修 P2）
+    ///
+    /// 由 `WechatDalImpl` 的 AOP 生产者回调（`on_consumed`）触发：
+    /// 只有消费者确认处理完，游标才前进 —— 消费失败时游标不动，下一轮重拉同一批
+    /// （重复由 `message_key` 幂等去重吸收），因此「失败」不再等于「消息丢失」。
+    ///
+    /// `cursor_value` 为服务端返回的 **opaque** 值（只能原样回传，不可比较大小）；
+    /// 空值忽略（服务端未给出新位置 → 保持原位）。
+    async fn advance_inbound_cursor(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        cursor_value: &str,
+    ) -> std::result::Result<(), common::error::Error>;
 }
 
 pub mod http;

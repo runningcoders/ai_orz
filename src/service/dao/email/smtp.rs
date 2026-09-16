@@ -345,6 +345,27 @@ impl EmailDao for EmailDaoImpl {
     async fn is_polling(&self, credential_id: &str) -> bool {
         self.poll_loops.is_running(credential_id).await
     }
+
+    /// 消费确认后推进 UID 游标（P2）—— 详见 `imap::CONFIRMED_UIDS` 的说明
+    ///
+    /// ⚠️ **必须幂等**：回调先于 `queue.ack`，崩溃/重投时会重复触发 ——
+    /// `confirm_uid` 是 `max` 语义，同值重复写无副作用（§4.3-1）。
+    async fn advance_inbound_cursor(
+        &self,
+        ctx: RequestContext,
+        credential_id: &str,
+        uid: u32,
+    ) -> Result<()> {
+        super::imap::confirm_uid(credential_id, uid);
+        log_debug!(
+            &ctx,
+            "email_inbound",
+            "inbound cursor advanced (consumption confirmed): credential_id={} uid={}",
+            credential_id,
+            uid
+        );
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -486,5 +507,31 @@ mod tests {
             ..resolved.clone()
         };
         assert!(build_transport(&starttls).is_ok());
+    }
+
+    /// P2：已确认游标 —— 单调不减 / `0` 是"未确认"哨兵（忽略）/ credential 隔离
+    ///
+    /// ⚠️ `CONFIRMED_UIDS` 是**进程级静态**：这里用专属 credential_id，
+    /// 避免与其他用例串扰（这是选用静态的已知代价，见 `imap.rs` 的说明）。
+    #[test]
+    fn test_confirmed_uid_is_monotonic_and_scoped() {
+        use super::super::imap::{confirm_uid, confirmed_uid};
+
+        let cred = "cred_test_p2_cursor_a";
+        assert_eq!(confirmed_uid(cred), 0, "未确认时起点为 0");
+
+        confirm_uid(cred, 10);
+        assert_eq!(confirmed_uid(cred), 10);
+
+        // 单调不减：乱序回调（较小的 UID 后到）不得回退游标 —— 否则会重复拉取
+        confirm_uid(cred, 3);
+        assert_eq!(confirmed_uid(cred), 10);
+
+        // 0 = "未确认"哨兵（IMAP UID 从 1 起）→ 忽略
+        confirm_uid(cred, 0);
+        assert_eq!(confirmed_uid(cred), 10);
+
+        // credential 隔离：不同邮箱互不影响
+        assert_eq!(confirmed_uid("cred_test_p2_cursor_b"), 0);
     }
 }

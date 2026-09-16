@@ -1,13 +1,8 @@
-use crate::models::events::{
-    A2A_SYNCED_MSG_COUNT_PREFIX, extract_a2a_task_id, extract_text_from_parts,
-    get_synced_msg_count, make_synced_msg_tag,
-};
+use crate::models::events::A2aPollRequestedEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{EventSink, Producer, ProducerLoop};
 use crate::service::domain::hr as hr_domain;
-use crate::service::domain::message::{self as message_domain, SendToUserCommand};
-use crate::service::domain::project as project_domain;
-use common::enums::{AssigneeType, CallerType, EventTopic, TaskStatus};
+use common::enums::EventTopic;
 use common::error::Result;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,8 +12,20 @@ const POLL_INTERVAL_SECS: u64 = 30;
 
 /// A2A 远端任务轮询生产者
 ///
-/// 原 `poll()` 里的 `RwLock<Option<Arc<Registry>>>` 字段已删（它从来不用来 publish，
-/// 是 `Producer::register` 时代的纯冗余）；发布句柄改由 AOP 在 `start()` 时注入。
+/// 每 30s 做一次「认领」：列出全部远端 Agent，逐个 emit 一条
+/// [`A2aPollRequestedEvent`]；真正的远端拉取 / 新消息投递 / 本地状态推进
+/// 在 `a2a_poll` 消费者（Async）里执行。
+///
+/// 这是 Step 3 的形状变更：改造前 `poll()` 在轮询线程里**直接调 domain**
+/// 做完整业务（远端 HTTP 拉取 + 消息投递），既拖长轮询周期、也不经过事件中心
+/// （无归属、无回调、不进 AOP 监控）。搬进消费者后落回统一模型 ——
+/// 与 cron 触发器 `agent_rest` 的「只派发事件」形态一致。
+///
+/// 生命周期由 AOP 统一管 —— `start()` spawn 后立即返回（契约 1），
+/// `stop()` 置位并等 loop 退出（契约 2），停机自检交给 [`ProducerLoop`]。
+///
+/// ⚠️ 该 topic **不声明** `notify_producer`：进度账在 task tags 的
+/// `a2a_synced_msgs` 里（消费者自己推进），生产者侧无业务收尾可做。
 pub struct A2aPollingProducer {
     loop_ctl: Arc<ProducerLoop>,
     handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -37,6 +44,43 @@ impl A2aPollingProducer {
             handle: Mutex::new(None),
         }
     }
+
+    /// 一次认领：列出全部远端 Agent，逐个 emit 认领事件
+    ///
+    /// ⚠️ **不要在这里加回远端拉取 / 消息投递**：那是 `a2a_poll` 消费者的职责。
+    /// 在轮询线程里做完整业务会把 30s 周期拖长（远端 HTTP 慢时下一轮直接顺延），
+    /// 而且绕过事件中心 —— 无归属、无回调、不进 AOP 监控与失败指标。
+    async fn claim(sink: &EventSink) -> Result<()> {
+        let ctx = RequestContext::new_system();
+
+        let all_agents = hr_domain::domain()
+            .agent_manage()
+            .list_agents(ctx.clone())
+            .await?;
+
+        let remote_agents: Vec<_> = all_agents
+            .into_iter()
+            .filter(|a| a.po.kind.is_remote())
+            .collect();
+
+        if remote_agents.is_empty() {
+            return Ok(());
+        }
+
+        let tick_at = common::constants::utils::current_timestamp_ms();
+        log_debug!(
+            "a2a polling: claiming {} remote agents",
+            remote_agents.len()
+        );
+
+        for agent in &remote_agents {
+            // 发布句柄只能发本 producer 的 topic（`a2a.poll.requested`）
+            sink.emit(&ctx, A2aPollRequestedEvent::new(&agent.po.id, tick_at))
+                .await?;
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -45,25 +89,23 @@ impl Producer for A2aPollingProducer {
         "a2a_polling"
     }
 
-    /// 归属先声明出来：Step 3 会把「认领」搬进该 topic 的事件
-    /// （`order_key = agent_id` → 同一 Agent 的相邻两轮 tick 不重叠）。
-    /// 本轮 `start()` 仍直接跑原逻辑（严格行为等价）。
     fn topic(&self) -> EventTopic {
         EventTopic::A2aPollRequested
     }
 
     /// 契约 1：spawn 后**立即返回**，不阻塞 `start_all`
-    async fn start(&self, _sink: EventSink) -> Result<()> {
+    async fn start(&self, sink: EventSink) -> Result<()> {
         let loop_ctl = Arc::clone(&self.loop_ctl);
 
         let handle = tokio::spawn(async move {
             sys_info!("[a2a_polling] producer loop started");
 
             loop {
-                if let Err(e) = A2aPollingProducer::tick().await {
-                    sys_error!("[a2a_polling] tick error: {}", e);
+                if let Err(e) = A2aPollingProducer::claim(&sink).await {
+                    sys_error!("[a2a_polling] claim error: {}", e);
                 }
 
+                // 可中断休眠：stop() 后下一片（≤250ms）返回 false → 退出 loop
                 if !loop_ctl
                     .sleep(Duration::from_secs(POLL_INTERVAL_SECS))
                     .await
@@ -83,6 +125,7 @@ impl Producer for A2aPollingProducer {
     async fn stop(&self) -> Result<()> {
         self.loop_ctl.stop();
 
+        // guard 在 await 之前 drop（先 take 出来）—— 不跨 await 持有 std 锁
         let handle = self
             .handle
             .lock()
@@ -91,217 +134,6 @@ impl Producer for A2aPollingProducer {
 
         if let Some(handle) = handle {
             let _ = handle.await;
-        }
-
-        Ok(())
-    }
-}
-
-impl A2aPollingProducer {
-    /// 一次轮询（原 `poll()` 的实现，一行未改）
-    async fn tick() -> Result<()> {
-        let ctx = RequestContext::new_system();
-
-        let all_agents = hr_domain::domain()
-            .agent_manage()
-            .list_agents(ctx.clone())
-            .await?;
-
-        let remote_agents: Vec<_> = all_agents
-            .into_iter()
-            .filter(|a| a.po.kind.is_remote())
-            .collect();
-
-        if remote_agents.is_empty() {
-            return Ok(());
-        }
-
-        log_debug!("a2a polling: found {} remote agents", remote_agents.len());
-
-        let mut processed_count = 0usize;
-
-        for agent in &remote_agents {
-            let tasks = project_domain::domain()
-                .task_manage()
-                .list(
-                    ctx.clone(),
-                    None,
-                    Some(AssigneeType::Agent),
-                    Some(&agent.po.id),
-                    Some(TaskStatus::InProgress),
-                    Some(100),
-                )
-                .await?;
-
-            if tasks.is_empty() {
-                continue;
-            }
-
-            for task in &tasks {
-                let tags = task.po.get_tags();
-                let Some(remote_task_id) = extract_a2a_task_id(&tags) else {
-                    continue;
-                };
-
-                // 远端任务拉取走 hr domain（运行时配置解析在 DAL 内完成），
-                // 配置缺失/非法与网络失败统一在此降级为 warn + skip
-                let remote_task = match hr_domain::domain()
-                    .agent_manage()
-                    .fetch_remote_task(ctx.clone(), agent, &remote_task_id)
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        log_warn!(
-                            &ctx,
-                            "a2a_polling",
-                            "Failed to fetch remote task {} for local task {} (agent {}): {}",
-                            remote_task_id,
-                            task.po.id,
-                            agent.po.id,
-                            e
-                        );
-                        continue;
-                    }
-                };
-
-                let mut task_ctx_builder = RequestContext::builder();
-                task_ctx_builder = task_ctx_builder.caller_type(CallerType::System);
-                task_ctx_builder = task_ctx_builder.agent_id(agent.po.id.clone());
-                task_ctx_builder = task_ctx_builder.task_id(task.po.id.clone());
-                if let Some(pid) = &task.po.project_id {
-                    task_ctx_builder = task_ctx_builder.project_id(pid.clone());
-                }
-                let task_ctx = task_ctx_builder.build();
-
-                let already_synced = get_synced_msg_count(&tags);
-                let agent_messages: Vec<_> = remote_task
-                    .messages
-                    .iter()
-                    .filter(|msg| msg.role == "agent" || msg.role == "assistant")
-                    .collect();
-                let total_agent_msgs = agent_messages.len();
-                let mut new_sent = 0usize;
-
-                if total_agent_msgs > already_synced {
-                    let new_messages = &agent_messages[already_synced..];
-                    for msg in new_messages {
-                        let text = extract_text_from_parts(&msg.parts);
-                        if text.is_empty() {
-                            continue;
-                        }
-
-                        let cmd = SendToUserCommand {
-                            from_agent_id: &agent.po.id,
-                            to_user_id: &task.po.root_user_id,
-                            content: &text,
-                            project_id: task.po.project_id.as_deref(),
-                            task_id: Some(&task.po.id),
-                            reply_to_id: None,
-                        };
-
-                        if let Err(e) = message_domain::domain()
-                            .delivery()
-                            .send_to_user(task_ctx.clone(), cmd)
-                            .await
-                        {
-                            log_warn!(
-                                &task_ctx,
-                                "a2a_polling",
-                                "Failed to send message for task {}: {}",
-                                task.po.id,
-                                e
-                            );
-                        } else {
-                            new_sent += 1;
-                        }
-                    }
-                }
-
-                if new_sent > 0 {
-                    let new_total = already_synced + new_sent;
-                    let mut new_tags: Vec<String> = tags
-                        .iter()
-                        .filter(|t| !t.starts_with(A2A_SYNCED_MSG_COUNT_PREFIX))
-                        .cloned()
-                        .collect();
-                    new_tags.push(make_synced_msg_tag(new_total));
-
-                    if let Err(e) = project_domain::domain()
-                        .task_manage()
-                        .update_basic(
-                            task_ctx.clone(),
-                            &task.po.id,
-                            None,
-                            None,
-                            None,
-                            Some(new_tags),
-                            None,
-                            None,
-                            None,
-                            None,
-                        )
-                        .await
-                    {
-                        log_warn!(
-                            &task_ctx,
-                            "a2a_polling",
-                            "Failed to update synced msg count for task {}: {}",
-                            task.po.id,
-                            e
-                        );
-                    }
-                }
-
-                let mut local_task = task.clone();
-                let target_status = match remote_task.status.state {
-                    common::api::a2a::A2aTaskState::Completed => Some(TaskStatus::Completed),
-                    common::api::a2a::A2aTaskState::Failed => Some(TaskStatus::Cancelled),
-                    common::api::a2a::A2aTaskState::Canceled => Some(TaskStatus::Cancelled),
-                    common::api::a2a::A2aTaskState::Working
-                    | common::api::a2a::A2aTaskState::Submitted
-                    | common::api::a2a::A2aTaskState::InputRequired => {
-                        if local_task.po.status == TaskStatus::Pending {
-                            Some(TaskStatus::InProgress)
-                        } else {
-                            None
-                        }
-                    }
-                };
-
-                if let Some(target) = target_status
-                    && local_task.po.status != target
-                {
-                    if let Err(e) = project_domain::domain()
-                        .task_manage()
-                        .transition_status(task_ctx.clone(), &mut local_task, target)
-                        .await
-                    {
-                        log_warn!(
-                            &task_ctx,
-                            "a2a_polling",
-                            "Failed to transition task {} to {:?}: {}",
-                            task.po.id,
-                            target,
-                            e
-                        );
-                    } else {
-                        log_info!(
-                            &task_ctx,
-                            "a2a_polling",
-                            "Task {} transitioned to {:?}",
-                            task.po.id,
-                            target
-                        );
-                    }
-                }
-
-                processed_count += 1;
-            }
-        }
-
-        if processed_count > 0 {
-            log_info!("a2a polling processed {} tasks", processed_count);
         }
 
         Ok(())

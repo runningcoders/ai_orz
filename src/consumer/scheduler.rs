@@ -46,7 +46,13 @@ impl Consumer for CronTriggerConsumer {
     }
 
     fn subscriptions(&self) -> Vec<Subscription> {
-        vec![Subscription::new(EventTopic::CronTrigger)]
+        // `.notify_producer()` 是**必需**的：`mark_trigger_executed` 已从生产者的
+        // `tick()` 搬到 `CronTriggerProducer::on_consumed`（修 P3），不声明它就永不回调
+        // → 触发器再也推进不了 `next_run_at` → 每个 tick 都重复触发同一个触发器。
+        //
+        // ⚠️ **不能**再声明 `.ordered()`：本消费者是 `ConsumeMode::Sync`，注册期硬校验
+        // 会直接 `Err`（内联执行、无队列无门闩，声明 ordered 是谎言）。
+        vec![Subscription::new(EventTopic::CronTrigger).notify_producer()]
     }
 
     fn consume_mode(&self) -> ConsumeMode {

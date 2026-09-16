@@ -498,3 +498,57 @@ impl MessageInboundAdapter for EmailDalImpl {
         self.running.read().map(|r| *r).unwrap_or(false)
     }
 }
+
+// ==================== AOP Producer：入站收尾归属 ====================
+//
+// 邮件侧的「业务收尾」= **推进 UID 游标**（P2，机制见 `dao/email/imap.rs` 的
+// `CONFIRMED_UIDS`）：改造前这一步在轮询循环里 publish 之后无条件执行，
+// 消费失败的消息再也没机会重拉 → 确定性丢失。现在游标随事件带出
+// （`EmailInboundEvent.uid` 本就有），由消费者确认后才推进。
+//
+// ⚠️ 关键细节：**永久失败（`Discard`）时框架仍回调 `on_consumed`** ——
+// 靠这一步越过那封坏邮件，否则它会永远卡住收件箱（每轮重拉 + 每轮失败）。
+
+#[async_trait::async_trait]
+impl crate::pkg::aop::Producer for EmailDalImpl {
+    fn name(&self) -> &str {
+        "email_inbound"
+    }
+
+    fn topic(&self) -> common::enums::EventTopic {
+        common::enums::EventTopic::EmailInboundMessage
+    }
+
+    /// 消费成功（**或**事件被放弃）→ 按 `event.uid` 推进游标（`max` 语义）
+    ///
+    /// ⚠️ **必须幂等**：回调先于 `queue.ack`，崩溃/重投时会重复触发 ——
+    /// `confirm_uid` 单调不减，同值重复写无副作用（§4.3-1）。
+    async fn on_consumed(&self, ctx: &RequestContext, event: &serde_json::Value) -> Result<()> {
+        // 只取两个字段（封套里的 `content` 可能很大，不必整体反序列化）
+        let Some(credential_id) = event.get("credential_id").and_then(|v| v.as_str()) else {
+            log_warn!("[email_inbound] on_consumed 封套缺 credential_id（保持原游标）");
+            return Ok(());
+        };
+        let Some(uid) = event.get("uid").and_then(|v| v.as_u64()) else {
+            return Ok(());
+        };
+
+        self.email_dao
+            .advance_inbound_cursor(ctx.clone(), credential_id, uid as u32)
+            .await
+    }
+
+    /// P6：适配失败的终局判定 —— 永久性错误不再重投
+    ///
+    /// ⚠️ 内部**不要**打 warn/error：`on_event` 失败处框架已打过 `sys_error!`，
+    /// 这里再打一份就是重投风暴的第二份日志源（§4.3 日志纪律）。
+    async fn on_failed(
+        &self,
+        _ctx: &RequestContext,
+        _event: &serde_json::Value,
+        err: &str,
+        attempt: u32,
+    ) -> Result<crate::pkg::aop::RetryDecision> {
+        Ok(crate::service::dal::inbound_retry::decide(err, attempt))
+    }
+}

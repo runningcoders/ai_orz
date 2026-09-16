@@ -423,3 +423,60 @@ impl MessageInboundAdapter for WechatDalImpl {
         self.running.read().map(|r| *r).unwrap_or(false)
     }
 }
+
+// ==================== AOP Producer：入站收尾归属 ====================
+//
+// 微信侧的「业务收尾」= **推进 opaque 游标**（P2）：改造前这一步在 DAO 轮询循环里
+// `publish` 之后无条件执行，消费失败的消息再也没机会重拉 → 确定性丢失。
+// 现在游标随事件带出来（`WechatInboundEvent.cursor`），只有消费者确认后才推进。
+
+#[async_trait::async_trait]
+impl crate::pkg::aop::Producer for WechatDalImpl {
+    fn name(&self) -> &str {
+        "wechat_inbound"
+    }
+
+    fn topic(&self) -> common::enums::EventTopic {
+        common::enums::EventTopic::WechatInboundMessage
+    }
+
+    /// 消费成功（**或**事件被放弃）→ 推进游标
+    ///
+    /// ⚠️ **必须幂等**：回调先于 `queue.ack`，进程崩溃/事件重投时可能重复触发 ——
+    /// `CursorStore` 的语义是"后来的覆盖先前的"，同值重复写无副作用（§4.3-1）。
+    ///
+    /// 封套缺 `channel_id` / `cursor` 时**不是错误**（P2 上线前的在途事件没有该字段）：
+    /// 保持原游标不动即可 —— 下一轮重拉同一批，由 `message_key` 幂等去重吸收。
+    async fn on_consumed(&self, ctx: &RequestContext, event: &serde_json::Value) -> Result<()> {
+        // 只取两个字段：封套里的 `message` 可能很大，没必要整体反序列化
+        let Some(channel_id) = event.get("channel_id").and_then(|v| v.as_str()) else {
+            log_warn!("[wechat_inbound] on_consumed 封套缺 channel_id（保持原游标）");
+            return Ok(());
+        };
+        let Some(cursor) = event
+            .get("cursor")
+            .and_then(|v| v.as_str())
+            .filter(|c| !c.is_empty())
+        else {
+            return Ok(());
+        };
+
+        self.wechat_dao
+            .advance_inbound_cursor(ctx.clone(), channel_id, cursor)
+            .await
+    }
+
+    /// P6：适配失败的终局判定 —— 永久性错误不再重投
+    ///
+    /// ⚠️ 内部**不要**打 warn/error：`on_event` 失败处框架已打过 `sys_error!`，
+    /// 这里再打一份就是重投风暴的第二份日志源（§4.3 日志纪律）。
+    async fn on_failed(
+        &self,
+        _ctx: &RequestContext,
+        _event: &serde_json::Value,
+        err: &str,
+        attempt: u32,
+    ) -> Result<crate::pkg::aop::RetryDecision> {
+        Ok(crate::service::dal::inbound_retry::decide(err, attempt))
+    }
+}

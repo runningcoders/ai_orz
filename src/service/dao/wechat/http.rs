@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 use super::WechatDao;
 use super::ilink::{
-    IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry, send_text,
+    CursorStore, IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry, send_text,
 };
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -45,6 +45,8 @@ pub fn init() {
 pub struct WechatDaoHttpImpl {
     /// 受管长轮询 registry（channel_id 键控）
     poll_loops: PollLoopRegistry,
+    /// 已确认消费的入站游标（P2：轮询只读、消费确认才推进）
+    cursors: Arc<CursorStore>,
     /// 入站运行状态写回（init 时注入；测试实例为 None，循环仅内存维护）
     state_writer: Option<Arc<dyn super::ilink::InboundStateWriter>>,
     /// registry 操作锁（防 ensure/stop 并发交错）
@@ -55,6 +57,7 @@ impl WechatDaoHttpImpl {
     pub fn new(state_writer: Option<Arc<dyn super::ilink::InboundStateWriter>>) -> Self {
         Self {
             poll_loops: PollLoopRegistry::new(),
+            cursors: Arc::new(CursorStore::new()),
             state_writer,
             lifecycle: RwLock::new(()),
         }
@@ -170,7 +173,12 @@ impl WechatDao for WechatDaoHttpImpl {
         let _guard = self.lifecycle.write().await;
         // ensure 失败重建时，旧循环 abort 后给 tokio 一拍回收（join 句柄已 detach，无需等待）
         self.poll_loops
-            .ensure(channel, credentials, self.state_writer.clone())
+            .ensure(
+                channel,
+                credentials,
+                self.state_writer.clone(),
+                Arc::clone(&self.cursors),
+            )
             .await
     }
 
@@ -188,6 +196,26 @@ impl WechatDao for WechatDaoHttpImpl {
 
     async fn is_polling(&self, channel_id: &str) -> bool {
         self.poll_loops.is_running(channel_id).await
+    }
+
+    /// 消费确认后推进游标（P2）—— 详见 `ilink::CursorStore` 的说明。
+    ///
+    /// `cursor_value` 来自 [`WechatInboundEvent::cursor`]（服务端 opaque 值，原样回传）；
+    /// 空值忽略（服务端未给出新位置 → 保持原位）。
+    async fn advance_inbound_cursor(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        cursor_value: &str,
+    ) -> Result<()> {
+        self.cursors.set(channel_id, cursor_value).await;
+        log_debug!(
+            &ctx,
+            "wechat_inbound",
+            "inbound cursor advanced (consumption confirmed): channel_id={}",
+            channel_id
+        );
+        Ok(())
     }
 }
 

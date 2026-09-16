@@ -1,7 +1,7 @@
 # AOP 生产者-消费者契约重构设计
 
 > 🎯 **本文档定位**：AOP 事件中心「生产者-消费者」契约的重构设计——解除 ack 落点错位、以 topic 归属收敛生产者形态、以订阅声明表达「顺序消费 / 回调通知」；trait 细节以实际代码为准
-> 状态：草稿（2026-09-16，设计已拍板）。**已落地**：① 删除死代码 `models/event.rs`（§8）；② **Step 1 结构改造**（§7）—— `common::enums::EventTopic` 落库、`pkg::aop::EventKind` 全仓删除、`Subscription`/`subscriptions()` 取代 `interested_events()`、`finish_consumption` 单一收尾出口（`ack/nack` 按计划暂留）。**未落地**：Step 2+（`Producer` trait 改形 / DAL 实现 Producer / 删 `ack/nack` / `RetryDecision`），以及 §4.1 的 `ordered` 入队 wiring（有意延后，见 §4.1 注）。
+> 状态：**主体已落地**（2026-09-16，设计已拍板）。**已落地**：① 删除死代码 `models/event.rs`（§8）；② **Step 1/2/3 全部完成**（§7）—— topic 收敛为 `common::enums::EventTopic`、`Producer` 契约改形（DAL-as-Producer）、`EventSink`/`ProducerLoop`/`RetryDecision`/`finish_consumption` 单一收尾出口、删 `ack/nack`/`source`；**P2/P3/P6 三个既往缺陷随之修复**，A2A 拆成「生产者只认领 + `a2a_poll` 消费者执行」。**仍未落地（有意延后，见 §7 注）**：§4.1 的 `ordered` 入队 wiring（`ordered` 目前只被注册期校验读取）+ §6.1-2 运行期告警；重试时间策略（per-event 退避）用户明确延后（§8）。**Step 4（清理 + wiki/RAG 重生成）未做**。
 > 查阅场景：需要理解生产者为什么不再持有 Registry、ack/nack 为什么从消费者 trait 上消失、`ordered` / `notify_producer` 声明何时必填、失败后要不要重试由谁定（`RetryDecision`）、topic 枚举为什么放 `common`（§3.6）、生产者为什么就该是 DAL 对象本身（§5.2）、新增一个生产者/消费者该实现什么时打开
 >
 > 关联文档：
@@ -625,7 +625,7 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 |---|---|---|
 | 1 ✅ **已落地（2026-09-16）** | **`common::enums::EventTopic` 落库**（16 变体；`as_str()`/`parse()`/`ALL`/`Display`；**手写** `Serialize`/`Deserialize` 与 `JsonSchema` —— derive 生成的是变体名、与点分线格式不符）**+ 删除 `pkg::aop::EventKind`**（`Event::kind()` 返回枚举；全仓 25 处机械替换）；`Subscription { kind, ordered, notify_producer }` + `subscriptions()` 取代 `interested_events()`；注册期硬校验 **Sync 声明 ordered → Err**（§6.1-1）；`finish_consumption` 单一收尾出口（Sync 内联与 Async worker 共用，结论 = `DeliveryOutcome::{Ack,Nack}`；Step 1 无 producer 索引 → 不触发回调）。**`ack/nack` 按计划暂留**。请求侧 `GetStatsTimeSeriesRequest.event_kind: Option<EventTopic>`（严格）；响应侧 `event_kind` 保持 `String` | ✅ 全仓无 `EventKind` 残留（`git grep` 仅测试桩历史名）；`cargo clippy --workspace --exclude frontend --all-targets -- -D warnings` 绿（2m11s）；`cargo test -p common --lib` **223 过**、`cargo test -p ai_orz --lib` **1484 过 / 0 挂**（47s）；护栏单测 `awakening_declares_ordered_for_both_topics` + 集成侧 `test_awakening_consumer_owns_both_kinds`（已补两个订阅均 `ordered` 的断言）**6/6 过**；`clippy-fe`（wasm32）+ `dx check` + `docs-lint`（659 files, 0 violations）绿 |
 | 2 ✅ **已落地（2026-09-16）** | `Producer` trait 改形（`topic()` / `on_consumed` / `on_failed(→RetryDecision)` / `start(sink)` / `stop`；删 `register` / `poll_interval_secs` / `poll`）；`RetryDecision::{Retry,Discard}` + `EventRef.attempt` 自增（`nack` 时 `+1`、`ack` 后重新入队复位为 1；`dequeue_next` 把 `attempt` 注入事件封套）；`Registry.producers_by_topic` + **topic 占用校验（§6.7）** + **`register_producer` 改同步**（占位冲突返回 `err!(Conflict)`，不再靠 `register()` 注入 registry）+ **删 `self_ref`/`Weak` 导入**（worker 改用 `Arc::clone(self)`；`start_all` 接收者保持 `&Arc<Self>`）；`start_all` 删轮询段 + 校验（§6.2，早于 `started` 置位）+ 生命周期两契约（§6.5，逐个 `EventSink::new(self, producer.topic())` 后 `producer.start(sink)`）；**新增 `EventSink`（§3.3）与 `ProducerLoop`（§7.2-1）**；**`impl Producer for MessageDalImpl` 并在 `dal::init()` 里注册**（`on_consumed`→`update_status(Processed)` / `on_failed`→`update_status(Pending)`+`Retry`）→ **此时才删 `ack/nack`**（`Consumer` trait 与 `MessageConsumer` 的实现一并删除；`finish_consumption` 改为反查 topic→producer 并按「topic 归属」而非旧 `source` 参数分发）| ✅ `cargo clippy --workspace --exclude frontend --all-targets -- -D warnings` 绿；`cargo test -p common --lib` **223 过**；`cargo test -p ai_orz --lib` **1502 过 / 0 挂**（唯一挂 `lark_test::listener_lifecycle_is_safe_without_channel_reference` 系并行测试共享内存 DB 的**既有 flake**，单跑 5/5 过、与本次改动无关）；`pkg::aop` 单测 **17/17**（新增 11 条：§6.2 缺生产者启动失败 / §6.7 重复 topic 拒绝 / 回调先于 ack / `Retry`→nack / `Discard`→ack 且仍回调 / `on_failed` Err 回退 `Retry` / 未声明 `notify_producer` 跳过 / 无 producer 跳过 / `EventSink` 拒异 topic / `ProducerLoop` sleep 可中断 / Sync+ordered 注册拒绝）；`service::dal::message_test` **24/24**（新增 6 条：生产者占有 topic / `on_consumed` 置 Processed / `on_failed` 置 Pending 且 `Retry` / 回调幂等 / 缺 event_id 容错 / 无 kind 过滤为设计约定）；集成 `agent_settle_queue_test` **6/6**、`federation_ws_test` **3/3**；`clippy-fe`（wasm32）+ `dx check`（No issues found）+ `docs-lint`（659 files, 0 violations）+ `cargo fmt --all -- --check` 全绿 |
-| 3 | 逐个落地生产者：`CronTriggerProducer`（修 P3）→ `impl Producer for EmailDalImpl` + DAO 补「按 UID 推进游标」（修 P2）→ 微信 DAL 同形（修 P2 微信侧）→ `A2aPollingProducer` + `a2a_poll` 消费者；**P6**：三个入站消费者改为把适配失败上报 `Err`，由生产者 `on_failed` 判 `Discard` | 每个生产者各自带回调单测；`notify_producer` 声明逐个打开；P6 的 `Discard` 能在指标里看到 `on_consume_discarded` |
+| 3 ✅ **已落地（2026-09-16）** | 逐个落地生产者 + 修 P2/P3/P6：① **P3** `CronTriggerProducer::on_consumed` 接管 `mark_trigger_executed`（`executed_at` = 事件 `created_at`），`on_failed` 恒 `Retry`，`tick()` 内删除标记；② **P2 email** —— 新增 `EmailDao::advance_inbound_cursor`，`EmailDalImpl` 实现 Producer，游标改为随 `EmailInboundEvent.uid` 带出、确认后推进（进程级静态 `CONFIRMED_UIDS`，见 §7.3-4）；③ **P2 wechat** —— `WechatDao::advance_inbound_cursor` + `ilink.rs` 的 `CursorStore`（注入 `Arc<CursorStore>`），游标随 `WechatInboundEvent.cursor` 带出；④ **P6** —— 新增 `service/dal/inbound_retry.rs`（错误码前缀判永久 → `Discard`；`attempt >= 8` 兜底），三个入站消费者（[wechat](src/consumer/wechat_inbound.rs) / [lark](src/consumer/lark_inbound.rs) / [email](src/consumer/email_inbound.rs)）适配失败由 `Ok(())` 改上报 `Err`，`LarkDalImpl` 随之也注册 Producer（§7.3-3）；⑤ **A2A 拆分** —— `A2aPollingProducer` 缩为「只认领」（emit 新增的 [A2aPollRequestedEvent](src/models/events/a2a_poll.rs)，`order_key = agent_id`），抓取/投递整体迁入新增消费者 [consumer/a2a_poll.rs](src/consumer/a2a_poll.rs)（Async + `ordered`）；`notify_producer` 在 cron / email / wechat / lark 四处逐个打开 | ✅ `cargo clippy --workspace --exclude frontend --all-targets -- -D warnings` 绿；`cargo test -p ai_orz --lib` **1511 过 / 0 挂**（新增 9 条 vs Step 2 的 1502；唯一挂 `lark_test::listener_lifecycle_is_safe_without_channel_reference` 系并行测试共享内存 DB 的**既有 flake**，单跑 5/5 过、与本次改动无关）；集成 `agent_settle_queue_test` **6/6**、`federation_ws_test` **3/3**；`clippy-fe`（wasm32 ✔）+ `dx check`（No issues found）+ `docs-lint`（659 files, 0 violations）+ `cargo fmt --all -- --check` 全绿 |
 | 4 | 清理：删除 `Producer::register` 遗留调用、`a2a_polling` 里的 domain 直调、更新 wiki 长文与 RAG 卡 | `make ci` 全绿 |
 
 ### 7.1 Step 1 落地注记（实施时遇到的两处取舍）
@@ -656,6 +656,18 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 
 **与 Step 1 的衔接**：§7.1-2 预告的「Step 2 注册 `MessageDalImpl` 时同步把 `message.created` 订阅改成 `.notify_producer()`」**已兑现**（[message.rs](src/consumer/message.rs#L97-L99)）。**测试清单执行状态**：除「`ordered=false` 且带 order_key → 直接分发」（§6.1-2，见上注 3，未接线）外全部落地；`Discard` 用例只断言「走 ack 路径且仍回调 `on_consumed`」，「同 `order_key` 后继可继续」复用 `EventQueue` 既有 ack 语义、未另加例。
 
+### 7.3 Step 3 落地注记（实施时的五处取舍）
+
+1. **新增 [inbound_retry.rs](src/service/dal/inbound_retry.rs)：三个入站渠道共享的失败决策**（设计稿未提，实施时补）。§4.4 说「决策依据两类」，本步把**错误内容**落地为**错误码前缀匹配**（`Error` 的 `Display` 形如 `[invalid_request] msg`，见 [types.rs](common/src/error/types.rs) → 比散落的 `err.contains(..)` 稳定），把**尝试次数**落地为 `MAX_ATTEMPTS = 8` 的**兜底上限**：瞬时错误前 8 次一律 `Retry`，之后判永久。⚠️ 没有这条上限，一条「永远适配失败」的消息会以 `error_retry_sleep_ms` 的节奏无限重投 + 刷日志（正是 §4.3-2 要避免的形状）。这与「框架不设 `max_retry`」不冲突 —— 上限在**生产者里**，决策权仍在业务（§8 的口径）。
+2. **`A2aPollingProducer` 从「直接调 domain」改为「只认领」**（§5.3 落地）：`tick` 只列远端 Agent 并逐条 `emit` [A2aPollRequestedEvent](src/models/events/a2a_poll.rs)（`order_key = agent_id`）；拉取远端任务 / 投递新消息 / 推进 task tags 与本地状态整体搬进新增的 [a2a_poll](src/consumer/a2a_poll.rs) 消费者（Async + `ordered`）。生产者因此回到「轮询线程不碰网络重活」的统一形状（与 `cron_trigger` 的 `agent_rest` 只派发事件同构）。
+3. **飞书也注册了 Producer（不同于 §5.2 表里的「可先不声明」）**：P6 要求三个入站消费者都把适配失败上报 `Err`，而 [finish_consumption](src/pkg/aop/core/registry.rs) 在**反查不到 producer** 时走 `delivery_of` 兜底 → `Err → Nack` **无限重投**。若 lark 只上报不注册，一条坏消息就会刷成重投风暴（比原来的「静默 ack」更吵）。故给 [LarkDalImpl](src/service/dal/lark/impl.rs) 也注册 Producer：`on_consumed` 无游标可推进（只留 debug）、`on_failed` 复用 `inbound_retry`，`notify_producer` 一并打开。**这比「先不声明」更完整**，也让三个渠道行为一致。
+4. **email 的已确认游标用进程级静态 `CONFIRMED_UIDS`**（[imap.rs](src/service/dao/email/imap.rs)）：`PollCursor` 是轮询循环的**局部状态**，而消费回调跑在另一任务 → 必须有一个跨任务的共享位置。本步实现为 `LazyLock<RwLock<HashMap<credential_id, u32>>>` + `confirm_uid`/`confirmed_uid`，**不动 `ImapPollRegistry` 结构**（否则要连带改 `ensure` 签名）。代价：**同进程的测试用例必须用不同 `credential_id`**（单测里已注明）。微信侧因为 registry 就在同一函数域内，改用显式注入的 `Arc<CursorStore>`（更干净，不欠这个债）。
+5. **两类「没有事件可承载确认」的游标必须直接推进**（否则卡死）：
+   - email：**MIME 解析失败的单封** —— 本地永久无法处理，不越过就会每轮重拉 + 每轮 warn；
+   - wechat：**空消息轮次里服务端返回的新游标** —— 不推进则长轮询永远停在原位。
+
+   两者语义同 `Discard`：确定性放弃，但留下可审计的痕迹（warn / debug）。
+
 ---
 
 ## 八、YAGNI 不做清单（明确延后）
@@ -682,7 +694,7 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 |---|---|---|---|---|
 | `MessageCreated` | agent.awakening | Async(4) | **消息 DAL 单例自身**（§5.2） | ✅ |
 | `AgentSettleRequested` | agent.awakening | Async(4) | ❌（发布者是 consumer，非 Producer） | ❌ |
-| `CronTrigger` | cron_trigger | Sync | `CronTriggerProducer`（已有，改形） | ✅ |
+| `CronTrigger` | cron_trigger | Sync | `CronTriggerProducer`（沿用，已改形） | ✅（`mark_trigger_executed`，修 P3） |
 | `AgentLoop` | agent_loop | Sync | ❌ | ❌ |
 | `AgentThinkRound` | agent_loop + think_round_stats | Sync | ❌ | ❌ |
 | `AgentToolExecuted` | tool_exec_log + tool_exec_stats | Sync | ❌ | ❌ |
@@ -691,10 +703,10 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 | `FederationOutbound` | federation_ws_outbound | Async(1) | ❌ | ❌ |
 | `FederationInboundSendTask` | federation_inbound_task | Async(1) | 待定 | 待定 |
 | `FederationInboundOther` | **无** | — | ❌ | ❌ |
-| `LarkInboundMessage` | lark_inbound | Async(1) | 飞书 DAL（可先不声明） | ❌（无协议级 ack，§8） |
+| `LarkInboundMessage` | lark_inbound | Async(1) | **飞书 DAL 单例自身** | ✅（无游标可推进 → `on_consumed` 仅留痕；`on_failed` 判 `Discard`，修 P6。§7.3-3） |
 | `WechatInboundMessage` | wechat_inbound | Async(1) | **微信 DAL 单例自身** | ✅（推进 opaque 游标，修 P2） |
 | `EmailInboundMessage` | email_inbound | Async(1) | **邮件 DAL 单例自身** | ✅（推进 `last_uid`，修 P2） |
-| `A2aPollRequested` | a2a_poll（新增） | Async(1) | `A2aPollingProducer`（沿用，改形） | ❌ |
+| `A2aPollRequested` | **a2a_poll** | Async(1) | `A2aPollingProducer`（**只认领**，执行已搬进消费者；§7.3-2） | ❌ |
 | `AgentStateChanged` | **无** | — | ❌ | ❌ |
 
 > 表中变体与线格式字符串一一对应（`MessageCreated` ↔ `"message.created"`，见 §3.6）。

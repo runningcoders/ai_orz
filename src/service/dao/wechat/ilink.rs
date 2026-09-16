@@ -343,6 +343,55 @@ impl InboundStateWriter for MessageChannelStateWriter {
     }
 }
 
+// ==================== 已确认游标（P2 的落点）====================
+
+/// 已确认消费的入站游标（channel_id → 服务端 **opaque** 值）
+///
+/// **改造前**（P2 缺陷）：轮询循环在 `publish` 之后**无条件**推进游标
+/// （"服务端返回新值就覆盖"）—— 事件还没被消费，游标已经越过它。
+/// 一旦消费失败，同一批消息再也不会被重新拉到 → **消息确定性丢失**，
+/// 且因为不报错而极难察觉（去重 ≠ 重放）。
+///
+/// **现在**：
+/// - 轮询循环**只读**本表（用已确认值作为 `getupdates` 的请求游标）；
+/// - 服务端返回的新游标随事件带出（[`WechatInboundEvent::cursor`]）；
+/// - 消费侧确认（`WechatDalImpl` 的 `on_consumed` → `WechatDao::advance_inbound_cursor`）
+///   才把新值写入本表。
+///
+/// 于是「上一轮没消费完 → 游标不动 → 下一轮重拉同一批」：重复由 `message_key`
+/// 幂等去重吸收，代价是少量重复拉取，换来「失败不丢消息」。
+#[derive(Default)]
+pub(crate) struct CursorStore {
+    values: RwLock<HashMap<String, String>>,
+}
+
+impl CursorStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 已确认的游标（`None` = 从未确认过 → 从头拉，由幂等键兜底重复）
+    pub async fn get(&self, channel_id: &str) -> Option<String> {
+        self.values
+            .read()
+            .await
+            .get(channel_id)
+            .cloned()
+            .filter(|v| !v.is_empty())
+    }
+
+    /// 确认推进（仅由消费侧回调触发；opaque 值只能"后来的覆盖先前的"）
+    pub async fn set(&self, channel_id: &str, value: &str) {
+        if value.is_empty() {
+            return;
+        }
+        self.values
+            .write()
+            .await
+            .insert(channel_id.to_string(), value.to_string());
+    }
+}
+
 // ==================== 受管长轮询循环 ====================
 
 /// 轮询循环句柄：任务 + 启动时凭证指纹（ensure 幂等 / 凭证变化自动重建）
@@ -358,7 +407,11 @@ const FAIL_FAST_LIMIT: u32 = 5;
 /// 正常轮询间隙（长轮询本身 hold 35s，小幅间隔防紧密打转）
 const POLL_PAUSE_MS: u64 = 500;
 
-/// 长轮询循环体：收帧 publish 事件 + 刷会话 + 推进游标 + 一次写回
+/// 长轮询循环体：收帧 publish 事件（带本轮游标）+ 刷会话 + 一次写回
+///
+/// **游标不由本循环推进**（P2）：循环只读 [`CursorStore`] 的已确认值，
+/// 服务端返回的新游标随事件交出去，等消费侧确认后回调 `advance_inbound_cursor`
+/// 才前进 —— 上一轮没消费完时游标不动，下一轮重拉同一批（幂等键兜底）。
 ///
 /// 终止方式：registry 移除句柄时 `abort()`。单 writer 独占 `inbound_state`，
 /// abort 只可能损失"最后一轮"的状态写回，游标回退由事件幂等键兜底。
@@ -367,6 +420,7 @@ async fn poll_loop(
     credentials: IlinkChannelCredentials,
     mut state: InboundState,
     writer: Option<Arc<dyn InboundStateWriter>>,
+    cursors: Arc<CursorStore>,
 ) {
     log_info!(
         "ilink poll loop started: channel_id={} bot_id={} base_url={}",
@@ -376,11 +430,8 @@ async fn poll_loop(
     );
     let mut consecutive_failures: u32 = 0;
     loop {
-        let cursor = state
-            .cursor
-            .as_ref()
-            .map(|c| c.value.clone())
-            .filter(|v| !v.is_empty());
+        // 请求游标 = **已确认**消费的游标（P2）：上一轮没消费完则不动，下一轮重拉
+        let cursor = cursors.get(&channel_id).await;
         match get_updates(&credentials, cursor.as_deref()).await {
             Err(e) => {
                 consecutive_failures = consecutive_failures.saturating_add(1);
@@ -429,6 +480,8 @@ async fn poll_loop(
                         channel_id: channel_id.clone(),
                         bot_id: credentials.bot_id.clone(),
                         message_key,
+                        // 本轮游标随事件带出：消费确认后才由 `on_consumed` 推进（P2）
+                        cursor: new_cursor.clone(),
                         message,
                     };
                     crate::pkg::aop::registry()
@@ -436,20 +489,30 @@ async fn poll_loop(
                         .await;
                 }
 
-                // 推进游标：服务端返回新值才覆盖（Opaque：只能原样回传）
-                let has_new_cursor = new_cursor.is_some();
-                if let Some(cursor_value) = new_cursor {
+                // 无消息轮次：没有待确认的事件 → 游标可直接推进
+                // （否则服务端在空轮次里给出的新游标永远推不动，长轮询停在原位）
+                if message_count == 0
+                    && let Some(cv) = new_cursor.as_deref()
+                {
+                    cursors.set(&channel_id, cv).await;
+                }
+
+                // ⚠️ **有消息时不在本循环推进游标**（P2）：新游标已随事件交给消费侧，
+                // 由 `on_consumed` → `advance_inbound_cursor` 确认后才前进。
+                // 上一轮没消费完 → 游标不动 → 下一轮重拉同一批（幂等键吸收重复）。
+
+                // 落库前把已确认游标同步进 state（供下次启动基线；未推进则保持原值）
+                if let Some(confirmed) = cursors.get(&channel_id).await {
                     state.cursor = Some(common::models::inbound_state::InboundCursor::opaque(
-                        cursor_value,
-                        "ilink",
+                        confirmed, "ilink",
                     ));
                     if let Some(c) = state.cursor.as_mut() {
                         c.updated_at_ms = Some(now_ms);
                     }
                 }
 
-                // 一次写回：游标 + 会话合并；有实际变化才落库（空轮询零写入）
-                if (has_new_cursor || message_count > 0)
+                // 一次写回：会话合并（游标为已确认值）；空轮询零写入
+                if (message_count > 0 || new_cursor.is_some())
                     && let Some(writer) = &writer
                 {
                     writer.save(&channel_id, &state).await;
@@ -482,6 +545,7 @@ impl PollLoopRegistry {
         channel: &MessageChannel,
         credentials: &IlinkChannelCredentials,
         writer: Option<Arc<dyn InboundStateWriter>>,
+        cursors: Arc<CursorStore>,
     ) -> Result<()> {
         let fingerprint = credentials.fingerprint();
         {
@@ -505,7 +569,13 @@ impl PollLoopRegistry {
 
         let channel_id = channel.id().to_string();
         let credentials = credentials.clone();
-        let join = tokio::spawn(poll_loop(channel_id.clone(), credentials, state, writer));
+        let join = tokio::spawn(poll_loop(
+            channel_id.clone(),
+            credentials,
+            state,
+            writer,
+            cursors,
+        ));
         self.loops
             .write()
             .await
@@ -724,17 +794,26 @@ mod tests {
             base_url: "https://invalid.test".into(),
         };
 
-        registry.ensure(&ch, &creds, None).await.unwrap();
+        registry
+            .ensure(&ch, &creds, None, Arc::new(CursorStore::new()))
+            .await
+            .unwrap();
         assert!(registry.is_running("ch_wx_1").await);
 
         // 同指纹：幂等（不重建）
-        registry.ensure(&ch, &creds, None).await.unwrap();
+        registry
+            .ensure(&ch, &creds, None, Arc::new(CursorStore::new()))
+            .await
+            .unwrap();
         assert!(registry.is_running("ch_wx_1").await);
 
         // 指纹变化：重建（stop + start）
         let mut creds2 = creds.clone();
         creds2.bot_token = "tok2".into();
-        registry.ensure(&ch, &creds2, None).await.unwrap();
+        registry
+            .ensure(&ch, &creds2, None, Arc::new(CursorStore::new()))
+            .await
+            .unwrap();
         assert!(registry.is_running("ch_wx_1").await);
 
         // stop 幂等
@@ -744,6 +823,27 @@ mod tests {
 
         registry.stop_all().await;
         assert!(!registry.is_running("ch_wx_1").await);
+    }
+
+    /// P2：已确认游标存储 —— 覆盖语义（opaque 不可比较）/ 空值忽略 / channel 隔离
+    #[tokio::test]
+    async fn test_cursor_store_semantics() {
+        let store = CursorStore::new();
+        assert_eq!(store.get("ch_a").await, None);
+
+        store.set("ch_a", "cur_1").await;
+        assert_eq!(store.get("ch_a").await.as_deref(), Some("cur_1"));
+
+        // opaque 值只能"后来的覆盖先前的"（不可比较大小）
+        store.set("ch_a", "cur_2").await;
+        assert_eq!(store.get("ch_a").await.as_deref(), Some("cur_2"));
+
+        // 空值忽略：服务端未给出新位置 → 保持原位（否则会退回从头拉）
+        store.set("ch_a", "").await;
+        assert_eq!(store.get("ch_a").await.as_deref(), Some("cur_2"));
+
+        // channel 隔离
+        assert_eq!(store.get("ch_b").await, None);
     }
 
     /// 内存 InboundStateWriter：写回链路可注入

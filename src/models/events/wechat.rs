@@ -109,6 +109,14 @@ pub struct WechatInboundEvent {
     pub bot_id: String,
     /// 幂等键（DAO 构造时从 message 解析，缺省时生成占位 ID）
     pub message_key: String,
+    /// 本轮 `getupdates` 返回的新游标（服务端 **opaque** 值，只能原样回传）
+    ///
+    /// **P2 的载体**：轮询循环不再自己推进游标，而是把它随事件带出来；
+    /// 只有消费者确认成功（DAL 的 `on_consumed`）后才真正推进 ——
+    /// 上一轮没消费完时游标不动，下一轮会重拉同一批（`message_key` 幂等去重兜底），
+    /// 因此「消费失败」不再等于「消息确定性丢失」。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
     /// iLink 原始消息
     pub message: IlinkMessage,
 }
@@ -209,6 +217,7 @@ mod tests {
             channel_id: "ch_1".to_string(),
             bot_id: "bot_1".to_string(),
             message_key: msg.message_key(),
+            cursor: Some("opaque_cursor_1".to_string()),
             message: msg,
         };
         assert_eq!(
@@ -222,5 +231,16 @@ mod tests {
         let value = serde_json::to_value(&event).unwrap();
         let back: WechatInboundEvent = serde_json::from_value(value).unwrap();
         assert_eq!(back.message.text(), Some("你好，agent".to_string()));
+        assert_eq!(back.cursor.as_deref(), Some("opaque_cursor_1"));
+
+        // 旧封套（无 cursor 字段）仍可解析 —— P2 上线前的在途事件不被拦
+        let legacy = serde_json::json!({
+            "channel_id": "ch_1",
+            "bot_id": "bot_1",
+            "message_key": "cid_1001",
+            "message": {"from_user_id": "peer_wx_1"},
+        });
+        let legacy: WechatInboundEvent = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.cursor, None);
     }
 }

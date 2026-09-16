@@ -318,6 +318,48 @@ async fn connect_session(credentials: &EmailImapCredentials) -> Result<ImapSessi
         })
 }
 
+// ==================== 已确认消费的 UID（P2 的落点）====================
+
+/// 已确认消费的最大 UID（credential_id → uid）
+///
+/// **改造前**（P2 缺陷）：[`poll_with_session`] 在 publish 之后**无条件**推进
+/// `PollCursor::last_uid`（原注释自称"解析失败的单封也已消费，游标照常越过"）
+/// —— 事件还没被消费，游标已经越过它。一旦消费失败，同一封邮件再也不会被拉到
+/// → **消息确定性丢失**：外部键去重只能防重复投递，**不等于可重放**。
+///
+/// **现在**：轮询循环只**读**本表作为增量拉取起点；`EmailInboundEvent.uid`
+/// 已随事件带出，消费侧确认（`EmailDalImpl` 的 `on_consumed` →
+/// `EmailDao::advance_inbound_cursor`）才推进。于是「上一封没消费完 → 游标不动
+/// → 下一轮重拉」，重复由外部键 `email:<Message-ID>` 幂等去重吸收。
+///
+/// ⚠️ **用进程级静态**（而非 `PollCursor` 字段）的原因：轮询循环与消费回调分属
+/// 不同任务，而 `PollCursor` 是循环局部状态。静态换取"不动 registry 结构"，
+/// 代价是**同进程内的测试用例要用不同 `credential_id`** 才不互相串扰。
+static CONFIRMED_UIDS: std::sync::LazyLock<std::sync::RwLock<HashMap<String, u32>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
+
+/// 已确认消费的最大 UID（`0` = 从未确认 → 起点由首次基线化决定）
+pub(crate) fn confirmed_uid(credential_id: &str) -> u32 {
+    CONFIRMED_UIDS
+        .read()
+        .ok()
+        .and_then(|m| m.get(credential_id).copied())
+        .unwrap_or(0)
+}
+
+/// 推进已确认 UID（仅由首次基线化与消费侧回调调用；**单调不减**）
+///
+/// `uid == 0` 忽略（0 是"未确认"的哨兵值，IMAP UID 从 1 起）。
+pub(crate) fn confirm_uid(credential_id: &str, uid: u32) {
+    if uid == 0 {
+        return;
+    }
+    if let Ok(mut m) = CONFIRMED_UIDS.write() {
+        let entry = m.entry(credential_id.to_string()).or_insert(0);
+        *entry = (*entry).max(uid);
+    }
+}
+
 /// UID 游标（仅存内存，重启后随首连重新基线化）
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct PollCursor {
@@ -374,11 +416,16 @@ async fn poll_with_session(
             uid_validity: Some(validity),
             last_uid: max_uid,
         };
+        // 基线化 = "已确认到 max_uid"：历史邮件不产生事件（跳过），无待确认项 → 直接推进
+        confirm_uid(&credentials.credential_id, max_uid);
         return Ok(0);
     }
 
-    // 搜索新 UID：`n:*` 在无新邮件时仍会返回最后一封（IMAP 通配语义），需过滤 <= last_uid
-    let last = cursor.last_uid;
+    // 搜索新 UID：`n:*` 在无新邮件时仍会返回最后一封（IMAP 通配语义），需过滤 <= last
+    //
+    // ⚠️ 起点取**已确认消费**的最大 UID（P2），不是"已发布"的：上一封没消费完时
+    // 游标不动 → 下一轮重拉同一批（外部键 `email:<Message-ID>` 幂等去重吸收重复）
+    let last = confirmed_uid(&credentials.credential_id);
     let uids: Vec<u32> = session
         .uid_search(format!("UID {}:*", last.saturating_add(1)))
         .await
@@ -443,15 +490,18 @@ async fn poll_with_session(
                         uid,
                         e
                     );
+                    // 本地永久无法处理这封（MIME 结构异常）→ 直接确认越过它：
+                    // 不确认就会每轮重拉同一封、每轮刷一条 warn。
+                    // 语义同消费者侧的 `Discard`：确定性放弃，但留下可审计的 warn 痕迹。
+                    confirm_uid(&credentials.credential_id, *uid);
                 }
             }
         }
     }
 
-    // 推进游标（解析失败的单封也已消费，游标照常越过——重启基线由外部键去重兜底）
-    if let Some(&max_new) = uids.iter().max() {
-        cursor.last_uid = cursor.last_uid.max(max_new);
-    }
+    // ⚠️ **不在这里推进游标**（P2）：`published` 只代表"已入队"，不代表"已消费"。
+    // 推进由消费侧确认后经 `EmailDao::advance_inbound_cursor` 完成（见 CONFIRMED_UIDS）。
+    // 解析失败的单封已在上面单独确认（本地永久无法处理，不越过就会每轮重拉 + 刷日志）。
     Ok(published)
 }
 

@@ -69,6 +69,20 @@ pub trait EmailDao: Send + Sync {
 
     /// 指定邮箱凭证是否正在轮询
     async fn is_polling(&self, credential_id: &str) -> bool;
+
+    /// 推进 IMAP 入站游标（**消费确认后**调用，修 P2）
+    ///
+    /// 由 `EmailDalImpl` 的 AOP 生产者回调（`on_consumed`）触发：
+    /// 只有消费者确认处理完，`last_uid` 才前进 —— 消费失败时游标不动，下一轮重拉同一批
+    /// （重复由外部键 `email:<Message-ID>` 幂等去重吸收），因此「失败」不再等于「丢消息」。
+    ///
+    /// `uid` 为 IMAP UID；实现须保证**单调不减**（`max` 语义）。
+    async fn advance_inbound_cursor(
+        &self,
+        ctx: RequestContext,
+        credential_id: &str,
+        uid: u32,
+    ) -> std::result::Result<(), common::error::Error>;
 }
 
 pub mod imap;

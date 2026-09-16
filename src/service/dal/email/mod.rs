@@ -70,6 +70,13 @@ pub fn init() {
     if let Err(e) = crate::pkg::adapter::message::registry().register(instance.clone()) {
         log_warn!("email message adapter register skipped: {}", e);
     }
+    // 注册 AOP 生产者：`email.inbound.message` 的收尾归属（见 impl.rs 的 Producer impl ——
+    // 消费确认后推进 IMAP 游标，修 P2）。
+    // 冲突（topic 已被占用）不静默 —— `start_all` 的 §6.2 校验会在缺生产者时启动失败。
+    let as_producer: Arc<dyn crate::pkg::aop::Producer> = instance.clone();
+    if let Err(e) = crate::pkg::aop::registry().register_producer(as_producer) {
+        log_warn!("email inbound producer register skipped: {}", e);
+    }
     let _ = EMAIL_DAL.set(instance);
     sys_info!("email message adapter registered to adapter registry");
 }

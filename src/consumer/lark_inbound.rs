@@ -33,7 +33,11 @@ impl Consumer for LarkInboundConsumer {
     }
 
     fn subscriptions(&self) -> Vec<Subscription> {
-        vec![Subscription::new(EventTopic::LarkInboundMessage)]
+        // `.notify_producer()`：适配失败要由飞书 DAL（`LarkDalImpl` 的 Producer impl）
+        // 回答「还要不要重投」——
+        // 没有它，`Err` 在 `finish_consumption` 里只能落 `Err → Nack` 的默认分支（无回调），
+        // 一条永远适配失败的消息会无限重投并刷屏日志（P6）。
+        vec![Subscription::new(EventTopic::LarkInboundMessage).notify_producer()]
     }
 
     fn consume_mode(&self) -> ConsumeMode {
@@ -54,9 +58,13 @@ impl Consumer for LarkInboundConsumer {
         {
             Ok(adapted) => adapted,
             Err(e) => {
-                // 转换失败仅记录，不向事件管道传播（不 nack 重试）
+                // P6：适配失败**上报 Err**，不再当成功 ack。
+                // 改造前这里 `log_error!` 后 `return Ok(())` —— 事件被 ack、不进失败指标、
+                // 无任何审计痕迹（消息确定性丢失且不可观测）。
+                // 现在由飞书 DAL 的 `on_failed` 判永久/瞬时：永久 → `Discard`
+                // （框架记 `on_consume_discarded` 埋点 + error 日志），瞬时 → `Retry` 重投。
                 log_error!("lark inbound adapt failed: err={}", e);
-                return Ok(());
+                return Err(e);
             }
         };
 

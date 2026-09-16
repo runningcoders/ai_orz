@@ -1,3 +1,4 @@
+pub mod a2a_poll;
 pub mod agent_loop_consumer;
 pub mod aop_stats_collector;
 pub mod aop_stats_hook;
@@ -51,6 +52,10 @@ pub async fn init() -> Result<()> {
     sys_info!("registering business consumers to AOP event center...");
 
     aop::registry().register_consumer(Arc::new(message::MessageConsumer::new()))?;
+
+    // A2A 远端任务轮询执行：生产者只「认领」（每 30s emit 一次远端 Agent 列表），
+    // 真正的远端拉取 / 消息投递在 worker 线程执行（Async + ordered，order_key = agent_id）
+    aop::registry().register_consumer(Arc::new(a2a_poll::A2aPollConsumer::new()))?;
 
     // 飞书入站消息（iLink 之前的 WS 长连事件）：适配走 message domain 门面，
     // 投递回调经中台取用，consumer 不再持有渠道 DAL

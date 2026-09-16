@@ -681,3 +681,53 @@ impl MessageInboundAdapter for LarkDalImpl {
         self.running.read().map(|r| *r).unwrap_or(false)
     }
 }
+
+// ==================== AOP Producer：入站收尾归属 ====================
+//
+// 飞书侧**没有游标可推进**（`FrameAction::Continue` 是 WS 读循环控制，
+// 不是服务端确认 —— 设计稿 §8 已澄清）→ `on_consumed` 无事可做。
+// 但本实现**仍然注册**，因为 P6 需要一个能回答「还要不要重投」的归属方：
+// 消费者把适配失败上报 `Err` 后，无生产者时框架只能按 `Err → Nack` 无限重投
+// （`finish_consumption` 的 `delivery_of` 分支），一条坏消息就会刷成重投风暴。
+//
+// 判定与 email / wechat 两个渠道共用 `inbound_retry::decide`（永久 → `Discard`）。
+
+#[async_trait::async_trait]
+impl crate::pkg::aop::Producer for LarkDalImpl {
+    fn name(&self) -> &str {
+        "lark_inbound"
+    }
+
+    fn topic(&self) -> common::enums::EventTopic {
+        common::enums::EventTopic::LarkInboundMessage
+    }
+
+    /// 事件生命周期终结（成功消费 **或** 被放弃）时的收尾
+    ///
+    /// 飞书无游标/无判据可推进 —— 只留一条 debug 便于对账，不做任何写操作。
+    /// ⚠️ 本回调**必须幂等**：回调先于 `queue.ack`，进程崩溃/重投时可能重复触发。
+    async fn on_consumed(&self, _ctx: &RequestContext, event: &serde_json::Value) -> Result<()> {
+        log_debug!(
+            "[lark_inbound] event lifecycle ended: event_id={}",
+            event
+                .get("event_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<none>")
+        );
+        Ok(())
+    }
+
+    /// P6：把「适配失败」的终局判定交回业务 —— 永久性错误不再重投
+    ///
+    /// ⚠️ 内部**不要**打 warn/error：`on_event` 失败处框架已打过 `sys_error!`，
+    /// 这里再打一份就是重投风暴的第二份日志源（设计稿 §4.3 日志纪律）。
+    async fn on_failed(
+        &self,
+        _ctx: &RequestContext,
+        _event: &serde_json::Value,
+        err: &str,
+        attempt: u32,
+    ) -> Result<crate::pkg::aop::RetryDecision> {
+        Ok(crate::service::dal::inbound_retry::decide(err, attempt))
+    }
+}

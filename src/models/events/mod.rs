@@ -1,3 +1,4 @@
+pub mod a2a_poll;
 pub mod a2a_task_update;
 pub mod agent_loop;
 pub mod agent_settle;
@@ -13,6 +14,7 @@ pub mod think_round;
 pub mod tool_exec;
 pub mod wechat;
 
+pub use a2a_poll::A2aPollRequestedEvent;
 pub use a2a_task_update::{
     A2A_SYNCED_MSG_COUNT_PREFIX, A2A_TASK_ID_TAG_PREFIX, extract_a2a_task_id,
     extract_text_from_parts, get_synced_msg_count, make_a2a_task_tag, make_synced_msg_tag,

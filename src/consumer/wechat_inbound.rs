@@ -32,7 +32,10 @@ impl Consumer for WechatInboundConsumer {
     }
 
     fn subscriptions(&self) -> Vec<Subscription> {
-        vec![Subscription::new(EventTopic::WechatInboundMessage)]
+        // `.notify_producer()`：消费成功后由微信 DAL（`WechatDalImpl` 的 Producer impl）
+        // **推进 opaque 游标**（修 P2）——
+        // 不声明它就永不回调，游标只能靠轮询循环自己推进，等于回退到"消费失败也丢消息"。
+        vec![Subscription::new(EventTopic::WechatInboundMessage).notify_producer()]
     }
 
     fn consume_mode(&self) -> ConsumeMode {
@@ -55,14 +58,18 @@ impl Consumer for WechatInboundConsumer {
         {
             Ok(adapted) => adapted,
             Err(e) => {
-                // 转换失败仅记录，不向事件管道传播（与 lark 行为一致，不 nack 重试）
+                // P6：适配失败**上报 Err**，不再当成功 ack。
+                // 改造前这里 `log_error!` 后 `return Ok(())` —— 事件被 ack、不进失败指标、
+                // 无任何审计痕迹；叠加当时"游标已推进"（P2）= 消息确定性丢失。
+                // 现在由微信 DAL 的 `on_failed` 判永久/瞬时：永久 → `Discard`
+                // （框架记 `on_consume_discarded` 埋点），瞬时 → `Retry` 重投（游标不动）。
                 log_error!(
                     "wechat inbound adapt failed: channel_id={} message_key={} err={}",
                     channel_id,
                     message_key,
                     e
                 );
-                return Ok(());
+                return Err(e);
             }
         };
 
