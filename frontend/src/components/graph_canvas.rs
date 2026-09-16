@@ -18,10 +18,12 @@ use wasm_bindgen::JsValue;
 use web_sys::CanvasRenderingContext2d;
 
 use crate::components::canvas_scene::{
-    CanvasEdge, CanvasNode, CanvasRenderer, CanvasScene, measure_text_width,
+    CanvasEdge, CanvasNode, CanvasRenderer, CanvasScene, draw_hover_card, hover_card_size,
+    measure_text_width,
 };
 use crate::components::graph::{
-    GraphEdge, GraphNode, dynamic_node_radius, get_edge_color, get_node_fill, tag_color,
+    GraphEdge, GraphNode, dynamic_node_radius, get_edge_color, get_edge_dash, get_node_fill,
+    tag_color, type_label,
 };
 
 /// 辅助：将 f64 切片转为 JsValue 数组供 set_line_dash 使用
@@ -38,10 +40,34 @@ fn set_dash(ctx: &CanvasRenderingContext2d, values: &[f64]) {
     let _ = ctx.set_line_dash(&dash_array(values));
 }
 
+/// 绘制统一 hover 卡片并做画布内避让：默认锚点右侧垂直居中，
+/// 超出右缘放左侧，纵向夹在画布内（与 SVG 版行为对齐）
+fn draw_hover_card_anchored(
+    ctx: &CanvasRenderingContext2d,
+    lines: &[String],
+    accent: &str,
+    anchor_x: f64,
+    anchor_y: f64,
+    offset: f64,
+) {
+    let (w, h) = hover_card_size(ctx, lines);
+    // ctx 已按 DPR 缩放，逻辑坐标即 CSS px，可直接用 canvas 的 client 尺寸做边界
+    let (canvas_w, canvas_h) = ctx
+        .canvas()
+        .map(|c| (c.client_width() as f64, c.client_height() as f64))
+        .unwrap_or((f64::MAX, f64::MAX));
+    let mut bx = anchor_x + offset;
+    if bx + w > canvas_w - 8.0 {
+        bx = anchor_x - offset - w;
+    }
+    let bx = bx.max(8.0);
+    let by = (anchor_y - h / 2.0).clamp(8.0, (canvas_h - h - 8.0).max(8.0));
+    draw_hover_card(ctx, bx, by, lines, accent);
+}
+
 /// 节点扩展元数据（canvas 渲染需要但 CanvasNode 未携带的信息）
 #[derive(Clone, Default)]
 pub struct NodeMeta {
-    #[allow(dead_code)]
     node_type: String,
     tags: Vec<String>,
     summary: Option<String>,
@@ -62,6 +88,8 @@ pub struct KnowledgeGraphRenderer {
     node_meta: RefCell<HashMap<String, NodeMeta>>,
     /// 已渲染过的节点 ID（用于首次出现动画）
     appeared: RefCell<HashSet<String>>,
+    /// 边 hover 暂存：边卡需在节点绘制完成后置顶补绘（避免被节点遮挡）
+    pending_edge_card: RefCell<Option<(String, String)>>,
 }
 
 impl KnowledgeGraphRenderer {
@@ -72,6 +100,7 @@ impl KnowledgeGraphRenderer {
             edge_labels: RefCell::new(HashMap::new()),
             node_meta: RefCell::new(HashMap::new()),
             appeared: RefCell::new(HashSet::new()),
+            pending_edge_card: RefCell::new(None),
         }
     }
 
@@ -122,7 +151,7 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 let key = (edge.from_id.clone(), edge.to_id.clone());
                 let relation_type = edge_labels.get(&key).map(|s| s.as_str()).unwrap_or("");
                 let color = get_edge_color(relation_type);
-                let is_dashed = matches!(relation_type, "引用" | "依赖");
+                let is_dashed = get_edge_dash(relation_type) != "none";
 
                 // 选中节点的关联边流光加速
                 let is_connected_to_selected =
@@ -150,31 +179,31 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 ctx.line_to(to.x, to.y);
                 ctx.stroke();
 
-                // 边标签（关系类型）
+                // 边标签（关系类型）——与节点标签区分：小号浅字 + 关系色描边徽章，视觉降权
                 if !relation_type.is_empty() {
                     let mid_x = (from.x + to.x) / 2.0;
                     let mid_y = (from.y + to.y) / 2.0 - 8.0;
                     let label: String = relation_type.chars().take(10).collect();
-                    ctx.set_font("10px sans-serif");
-                    let label_w = measure_text_width(ctx, &label, 10.0) + 4.0;
+                    ctx.set_font("9px sans-serif");
+                    let label_w = measure_text_width(ctx, &label, 9.0) + 4.0;
 
                     ctx.set_shadow_blur(0.0);
-                    ctx.set_fill_style_str("rgba(255, 255, 255, 0.9)");
+                    ctx.set_fill_style_str("rgba(17, 24, 39, 0.82)");
                     ctx.begin_path();
                     let _ = ctx.round_rect_with_f64(
                         mid_x - label_w / 2.0,
-                        mid_y - 7.0,
+                        mid_y - 6.0,
                         label_w,
-                        14.0,
+                        12.0,
                         2.0,
                     );
                     ctx.fill();
-                    ctx.set_stroke_style_str("#e5e7eb");
+                    ctx.set_stroke_style_str(color);
                     ctx.set_line_width(1.0);
                     set_dash(ctx, &[]);
                     ctx.stroke();
 
-                    ctx.set_fill_style_str("#374151");
+                    ctx.set_fill_style_str("#d1d5db");
                     ctx.set_text_align("center");
                     ctx.set_text_baseline("middle");
                     let _ = ctx.fill_text(&label, mid_x, mid_y);
@@ -185,6 +214,19 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
             }
         }
         set_dash(ctx, &[]);
+    }
+
+    /// 带交互状态的连线渲染：绘制边后暂存 hover 目标，
+    /// 边卡延迟到节点绘制完成后置顶补绘（避免被节点遮挡）
+    fn draw_edges_with_state(
+        &self,
+        ctx: &CanvasRenderingContext2d,
+        edges: &[CanvasEdge],
+        nodes: &[CanvasNode],
+        hovered_edge: &Option<(String, String)>,
+    ) {
+        self.draw_edges(ctx, edges, nodes);
+        *self.pending_edge_card.borrow_mut() = hovered_edge.clone();
     }
 
     fn hit_test(&self, nodes: &[CanvasNode], x: f64, y: f64) -> Option<String> {
@@ -376,9 +418,9 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
             // === 节点标签 ===
             ctx.set_fill_style_str("white");
             ctx.set_font(if is_hovered {
-                "11px sans-serif"
+                "500 11px sans-serif"
             } else {
-                "10px sans-serif"
+                "500 10px sans-serif"
             });
             ctx.set_text_align("center");
             ctx.set_text_baseline("middle");
@@ -420,6 +462,56 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                     tx += w + 4.0;
                 }
             }
+        }
+
+        // === hover 详情卡片（节点卡与边卡统一结构，绘制在全部节点之上）===
+        // 节点卡：hover 命中且非拖拽中时展示（名称/类型/摘要/标签）
+        if let Some(hid) = hovered.as_ref()
+            && dragging.as_ref() != Some(hid)
+            && let Some(node) = nodes.iter().find(|n| &n.id == hid)
+        {
+            let meta = node_meta.get(hid).cloned().unwrap_or_default();
+            let mut lines = vec![
+                format!("名称: {}", node.label),
+                format!("类型: {}", type_label(&meta.node_type)),
+            ];
+            if let Some(summary) = &meta.summary
+                && !summary.is_empty()
+            {
+                lines.push(format!(
+                    "摘要: {}",
+                    summary.chars().take(30).collect::<String>()
+                ));
+            }
+            if !meta.tags.is_empty() {
+                lines.push(format!("标签: {}", meta.tags.join("、")));
+            }
+            draw_hover_card_anchored(ctx, &lines, &node.color, node.x, node.y, node.radius + 14.0);
+        }
+
+        // 边卡补绘：取 draw_edges_with_state 暂存的 hover 目标（此刻置顶于所有节点）
+        let pending = self.pending_edge_card.borrow().clone();
+        if let Some((sf, st)) = pending {
+            let relation = {
+                let edge_labels = self.edge_labels.borrow();
+                edge_labels
+                    .get(&(sf.clone(), st.clone()))
+                    .filter(|s| !s.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| "关联".to_string())
+            };
+            let from = nodes.iter().find(|n| n.id == sf);
+            let to = nodes.iter().find(|n| n.id == st);
+            if let (Some(from), Some(to)) = (from, to) {
+                let lines = vec![
+                    format!("关系: {relation}"),
+                    format!("端点: {} → {}", from.label, to.label),
+                ];
+                let mx = (from.x + to.x) / 2.0;
+                let my = (from.y + to.y) / 2.0;
+                draw_hover_card_anchored(ctx, &lines, get_edge_color(&relation), mx, my, 14.0);
+            }
+            *self.pending_edge_card.borrow_mut() = None;
         }
     }
 }

@@ -157,6 +157,31 @@ impl std::fmt::Display for KnowledgeRelationType {
     }
 }
 
+impl KnowledgeRelationType {
+    /// Display 字符串 → 中文显示名；未知值原样返回（兼容 Custom 关系存的自定义名称）
+    pub fn zh_label_from_display(raw: &str) -> &str {
+        match raw {
+            "related" => "相关",
+            "contains" => "包含",
+            "contained_by" => "属于",
+            "depends" => "依赖",
+            "depended_by" => "被依赖",
+            "prerequisite" => "前置",
+            "followup" => "后续",
+            "similar" => "相似",
+            "opposite" => "相反",
+            "causes" => "导致",
+            "caused_by" => "源于",
+            "instance_of" => "实例",
+            "category_of" => "分类",
+            "attribute_of" => "属性",
+            "value_of" => "取值",
+            "custom" => "自定义",
+            other => other,
+        }
+    }
+}
+
 impl From<String> for KnowledgeRelationType {
     fn from(s: String) -> Self {
         match s.as_str() {

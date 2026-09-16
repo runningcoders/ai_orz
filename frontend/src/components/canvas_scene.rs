@@ -161,6 +161,54 @@ fn nearest_edge(
     best.map(|(_, pair)| pair)
 }
 
+/// hover 卡片统一规格：内边距 / 行高 / 字号（节点卡与边卡共用）
+const HOVER_CARD_PADDING: f64 = 8.0;
+const HOVER_CARD_LINE_H: f64 = 16.0;
+const HOVER_CARD_FONT_PX: f64 = 11.0;
+
+/// 测量统一 hover 卡片尺寸（宽, 高），供调用方做左右避让定位
+pub fn hover_card_size(ctx: &CanvasRenderingContext2d, lines: &[String]) -> (f64, f64) {
+    ctx.set_font(&format!("{HOVER_CARD_FONT_PX}px sans-serif"));
+    // 精确测量文本宽度（web-sys TextMetrics 特性）
+    let max_w = lines
+        .iter()
+        .map(|l| measure_text_width(ctx, l, HOVER_CARD_FONT_PX))
+        .fold(0.0f64, f64::max);
+    (
+        max_w + HOVER_CARD_PADDING * 2.0,
+        lines.len() as f64 * HOVER_CARD_LINE_H + HOVER_CARD_PADDING * 2.0,
+    )
+}
+
+/// 统一 hover 详情卡片：深底 + 主色描边 + 行文本列表（节点卡与边卡共用绘制）
+pub fn draw_hover_card(
+    ctx: &CanvasRenderingContext2d,
+    bx: f64,
+    by: f64,
+    lines: &[String],
+    accent_color: &str,
+) {
+    let (box_w, box_h) = hover_card_size(ctx, lines);
+    // 背景
+    ctx.set_fill_style_str("rgba(17, 24, 39, 0.92)");
+    ctx.fill_rect(bx, by, box_w, box_h);
+    // 边框用主题色，强化归属
+    ctx.set_stroke_style_str(accent_color);
+    ctx.set_line_width(1.5);
+    ctx.stroke_rect(bx, by, box_w, box_h);
+    // 文本
+    ctx.set_fill_style_str("#f9fafb");
+    ctx.set_text_align("left");
+    ctx.set_text_baseline("top");
+    for (i, l) in lines.iter().enumerate() {
+        let _ = ctx.fill_text(
+            l,
+            bx + HOVER_CARD_PADDING,
+            by + HOVER_CARD_PADDING + i as f64 * HOVER_CARD_LINE_H,
+        );
+    }
+}
+
 /// 绘制边 hover 提示框（关系标签 + 描述）
 fn draw_edge_tooltip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, edge: &CanvasEdge) {
     let tag_label = match edge.tag.as_deref() {
@@ -175,36 +223,14 @@ fn draw_edge_tooltip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, edge: &Canv
     {
         lines.push(format!("说明: {}", desc));
     }
-    let padding = 8.0;
-    let line_h = 16.0;
-    let font_px = 11.0;
-    ctx.set_font(&format!("{font_px}px sans-serif"));
-    let max_w = lines
-        .iter()
-        .map(|l| measure_text_width(ctx, l, font_px))
-        .fold(0.0f64, f64::max);
-    let box_w = max_w + padding * 2.0;
-    let box_h = lines.len() as f64 * line_h + padding * 2.0;
-    let bx = x + 12.0;
-    let by = y - box_h / 2.0;
-    // 背景
-    ctx.set_fill_style_str("rgba(17, 24, 39, 0.92)");
-    ctx.fill_rect(bx, by, box_w, box_h);
+    let (_, box_h) = hover_card_size(ctx, &lines);
     // 边框按状态着色，强化语义
-    ctx.set_stroke_style_str(if edge.tag.as_deref() == Some("not_ready") {
+    let accent = if edge.tag.as_deref() == Some("not_ready") {
         "#f97316"
     } else {
         "#94a3b8"
-    });
-    ctx.set_line_width(1.5);
-    ctx.stroke_rect(bx, by, box_w, box_h);
-    // 文本
-    ctx.set_fill_style_str("#f9fafb");
-    ctx.set_text_align("left");
-    ctx.set_text_baseline("top");
-    for (i, l) in lines.iter().enumerate() {
-        let _ = ctx.fill_text(l, bx + padding, by + padding + i as f64 * line_h);
-    }
+    };
+    draw_hover_card(ctx, x + 12.0, y - box_h / 2.0, &lines, accent);
 }
 
 /// Canvas 渲染器 trait：业务场景实现此 trait 定义渲染逻辑
@@ -222,6 +248,18 @@ pub trait CanvasRenderer {
         edges: &[CanvasEdge],
         nodes: &[CanvasNode],
     );
+
+    /// 带交互状态的连线渲染（hover 边提示），默认委托给 draw_edges
+    fn draw_edges_with_state(
+        &self,
+        ctx: &CanvasRenderingContext2d,
+        edges: &[CanvasEdge],
+        nodes: &[CanvasNode],
+        hovered_edge: &Option<(String, String)>,
+    ) {
+        let _ = hovered_edge;
+        self.draw_edges(ctx, edges, nodes);
+    }
 
     /// 命中检测：给定画布坐标，返回命中的节点 ID（None 表示空白处）
     fn hit_test(&self, nodes: &[CanvasNode], x: f64, y: f64) -> Option<String>;
@@ -394,7 +432,7 @@ impl CanvasRenderer for DefaultRenderer {
 
 /// 绘制 hover 提示框（名称 / ID / 类型），自动避让节点所在半区
 fn draw_node_tooltip(ctx: &CanvasRenderingContext2d, node: &CanvasNode) {
-    let lines = [
+    let lines = vec![
         format!(
             "名称: {}",
             if node.label.is_empty() {
@@ -406,17 +444,7 @@ fn draw_node_tooltip(ctx: &CanvasRenderingContext2d, node: &CanvasNode) {
         format!("ID: {}", node.id),
         format!("类型: {}", node_kind_label(&node.node_type)),
     ];
-    let padding = 8.0;
-    let line_h = 16.0;
-    let font_px = 11.0;
-    ctx.set_font(&format!("{font_px}px sans-serif"));
-    // 精确测量文本宽度（web-sys TextMetrics 特性）
-    let max_w = lines
-        .iter()
-        .map(|l| measure_text_width(ctx, l, font_px))
-        .fold(0.0f64, f64::max);
-    let box_w = max_w + padding * 2.0;
-    let box_h = lines.len() as f64 * line_h + padding * 2.0;
+    let (box_w, box_h) = hover_card_size(ctx, &lines);
 
     // 根据节点位置选择提示框落在右侧还是左侧，避免超出画布
     let (bx, by) = if node.x >= 0.0 {
@@ -425,21 +453,7 @@ fn draw_node_tooltip(ctx: &CanvasRenderingContext2d, node: &CanvasNode) {
         (node.x - node.radius - 10.0 - box_w, node.y - box_h / 2.0)
     };
 
-    // 背景
-    ctx.set_fill_style_str("rgba(17, 24, 39, 0.92)");
-    ctx.fill_rect(bx, by, box_w, box_h);
-    // 边框用节点主色，强化归属
-    ctx.set_stroke_style_str(&node.color);
-    ctx.set_line_width(1.5);
-    ctx.stroke_rect(bx, by, box_w, box_h);
-
-    // 文本
-    ctx.set_fill_style_str("#f9fafb");
-    ctx.set_text_align("left");
-    ctx.set_text_baseline("top");
-    for (i, l) in lines.iter().enumerate() {
-        let _ = ctx.fill_text(l, bx + padding, by + padding + i as f64 * line_h);
-    }
+    draw_hover_card(ctx, bx, by, &lines, &node.color);
 }
 
 /// CanvasScene 组件 Props
@@ -604,15 +618,31 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let selected_id_c = selected_id;
     let hovered_edge_c = hovered_edge;
     let renderer_c = renderer;
-    // RAF 渲染循环资源：保存 running flag + Closure 供顶层 use_drop 清理
+    // RAF 渲染循环资源：保存 running flag + Closure + pending 帧句柄供顶层 use_drop 清理
     #[allow(clippy::type_complexity)]
     struct RafResource {
         running: std::sync::Arc<std::sync::atomic::AtomicBool>,
         callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>>,
+        // 当前「已注册未触发」的 rAF 帧句柄（0 表示无）。卸载时必须先 cancel 再释放
+        // Closure，否则浏览器下一帧会调用已 drop 的 Closure，抛出
+        // 「closure invoked recursively or after being dropped」
+        pending_frame: Rc<std::cell::Cell<i32>>,
     }
     let mut raf_resource = use_signal(|| Option::<RafResource>::None);
 
     use_effect(move || {
+        // 防御：effect 重跑时先停掉旧渲染循环（取消 pending 帧 + 释放旧 Closure），避免双循环
+        if let Some(old) = raf_resource.take() {
+            old.running
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            if let Some(window) = web_sys::window() {
+                let old_id = old.pending_frame.get();
+                if old_id > 0 {
+                    let _ = window.cancel_animation_frame(old_id);
+                }
+            }
+            *old.callback_ref.borrow_mut() = None;
+        }
         let Some(canvas) = canvas_ref.read().clone() else {
             return;
         };
@@ -661,6 +691,10 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
+        // 当前已注册未触发的 rAF 帧句柄：卸载时凭此 cancel，防止已 drop 的 Closure 仍被浏览器调用
+        let pending_frame = Rc::new(std::cell::Cell::new(0i32));
+        let pending_frame_inner = pending_frame.clone();
+
         let mut data_flow_c = data_flow;
         let mut glow_c = glow;
         let mut background_c = background;
@@ -671,6 +705,10 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         let enable_bd = props.enable_birth_death_particles;
 
         let closure = Closure::<dyn FnMut()>::new(move || {
+            // 组件卸载后仍可能被「已调度未取消」的帧触发一次：直接早退，不渲染不写信号
+            if !running_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
             // 力导向步进
             if enable_force && !*is_stable_c.read() {
                 let mut nodes = nodes_state_c.read().clone();
@@ -712,8 +750,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 background_c.read().draw(&ctx);
             }
 
-            // 2. 连线
-            renderer_c.draw_edges(&ctx, &edges_inner, &nodes);
+            // 2. 连线（携带边 hover 状态，供自定义渲染器绘制边详情卡片）
+            renderer_c.draw_edges_with_state(
+                &ctx,
+                &edges_inner,
+                &nodes,
+                &hovered_edge_c.read().clone(),
+            );
 
             // 3. 数据流粒子（在连线上方，节点下方）
             if enable_data_flow {
@@ -750,20 +793,24 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             if running_clone.load(std::sync::atomic::Ordering::SeqCst)
                 && let Some(cb) = cb_ref_inner.borrow().as_ref()
                 && let Some(window) = web_sys::window()
+                && let Ok(id) = window.request_animation_frame(cb.as_ref().unchecked_ref())
             {
-                let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
+                pending_frame_inner.set(id);
             }
         });
 
         // 初始注册第一帧
-        if let Some(window) = web_sys::window() {
-            let _ = window.request_animation_frame(closure.as_ref().unchecked_ref());
+        if let Some(window) = web_sys::window()
+            && let Ok(id) = window.request_animation_frame(closure.as_ref().unchecked_ref())
+        {
+            pending_frame.set(id);
         }
         *callback_ref.borrow_mut() = Some(closure);
 
         raf_resource.set(Some(RafResource {
             running,
             callback_ref,
+            pending_frame,
         }));
     });
 
@@ -771,6 +818,15 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         if let Some(res) = raf_resource.take() {
             res.running
                 .store(false, std::sync::atomic::Ordering::SeqCst);
+            // 关键：先取消「已注册未触发」的 rAF 帧，再释放 Closure。
+            // 否则浏览器下一帧调用已 drop 的 Closure，抛出
+            // 「closure invoked recursively or after being dropped」。
+            if let Some(window) = web_sys::window() {
+                let id = res.pending_frame.get();
+                if id > 0 {
+                    let _ = window.cancel_animation_frame(id);
+                }
+            }
             *res.callback_ref.borrow_mut() = None;
         }
     });

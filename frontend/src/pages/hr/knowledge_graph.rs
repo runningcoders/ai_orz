@@ -1,11 +1,13 @@
 use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::api::hr::{query_agents, recommend_seed_nodes, search_memory_with_traversal};
 use crate::components::SearchableSelect;
 use crate::components::button::Button;
-use crate::components::graph::{Graph, GraphEdge, GraphNode, calculate_layout, expand_layout};
+use crate::components::graph::{
+    Graph, GraphEdge, GraphNode, calculate_layout, expand_layout, type_label,
+};
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
@@ -15,6 +17,7 @@ use common::api::{
     AgentListItem, AgentQueryRequest, MemoryResult, RecommendSeedNodesParams, SearchMemoryParams,
     SeedNodeRecommendation,
 };
+use common::enums::KnowledgeRelationType;
 
 /// 渲染风格：svg（兜底）或 canvas（HUD 驾驶舱风格）
 #[derive(Clone, Copy, PartialEq)]
@@ -28,6 +31,19 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
     let mut seen_node_ids = HashSet::new();
+
+    // 第一遍：收集实体节点的名称映射（id → 内容摘要），
+    // 供关系边的端点节点复用真实名称，避免图上出现 UUID 或英文类型词
+    let mut name_by_id: HashMap<&str, String> = HashMap::new();
+    for item in results {
+        if matches!(
+            item.memory_type.as_str(),
+            "knowledge_node" | "short_term" | "trace"
+        ) {
+            let label = item.content.chars().take(20).collect::<String>();
+            name_by_id.entry(item.id.as_str()).or_insert(label);
+        }
+    }
 
     for item in results {
         match item.memory_type.as_str() {
@@ -46,16 +62,15 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
             }
             "relation" => {
                 if let (Some(src), Some(tgt)) = (&item.source_node_id, &item.target_node_id) {
-                    // 修复 L19：之前用 src.chars().take(8) 作 label（UUID 前 8 字符无意义），
-                    // 改用 relation_type 作 label 更有意义，无 relation_type 时回退到 "节点"
-                    let inferred_label = item
-                        .relation_type
-                        .clone()
-                        .unwrap_or_else(|| "节点".to_string());
+                    // 端点节点展示真实名称（查第一遍的名称映射）；
+                    // 同批记录查不到时用中性占位 —— id 不上图，点击节点可在详情面板查看
+                    let fallback = "知识节点".to_string();
+                    let src_label = name_by_id.get(src.as_str()).unwrap_or(&fallback).clone();
+                    let tgt_label = name_by_id.get(tgt.as_str()).unwrap_or(&fallback).clone();
                     if seen_node_ids.insert(src.clone()) {
                         nodes.push(GraphNode {
                             id: src.clone(),
-                            label: inferred_label.clone(),
+                            label: src_label,
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
@@ -66,7 +81,7 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
                     if seen_node_ids.insert(tgt.clone()) {
                         nodes.push(GraphNode {
                             id: tgt.clone(),
-                            label: inferred_label.clone(),
+                            label: tgt_label,
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
@@ -74,7 +89,13 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
                             summary: None,
                         });
                     }
-                    let label = item.relation_type.as_deref().unwrap_or("").to_string();
+                    // 边标签：关系类型中文化（related → 相关），无类型回退「关联」
+                    let label = item
+                        .relation_type
+                        .as_deref()
+                        .map(KnowledgeRelationType::zh_label_from_display)
+                        .unwrap_or("关联")
+                        .to_string();
                     edges.push(GraphEdge {
                         source: src.clone(),
                         target: tgt.clone(),
@@ -87,16 +108,6 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
     }
 
     (nodes, edges)
-}
-
-fn type_label(t: &str) -> &'static str {
-    match t {
-        "knowledge_node" => "知识节点",
-        "short_term" => "短期记忆",
-        "trace" => "调用记录",
-        "relation" => "关系",
-        _ => "未知",
-    }
 }
 
 fn type_badge_class(t: &str) -> &'static str {
@@ -290,6 +301,14 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                         let valid_ids: HashSet<String> =
                             nodes.read().iter().map(|n| n.id.clone()).collect();
                         map.retain(|id, _| valid_ids.contains(id));
+                    }
+                    // 展开完成后回填选中节点详情：点击时该节点可能尚未入 detail_map
+                    //（如被下方 200 条清理淘汰）；仅当用户仍选中该节点时回填，
+                    // 避免覆盖用户已关闭/切换的选择
+                    if selected_node_id.read().as_deref() == Some(seed_ids[0].as_str())
+                        && let Some(detail) = map.get(&seed_ids[0])
+                    {
+                        selected_node_data.set(Some(detail.clone()));
                     }
                     detail_map.set(map);
 
@@ -499,12 +518,28 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
             }
 
             // 图谱视图 + 节点详情
-            if loading() {
-                Loading {}
-            } else if current_nodes.is_empty() {
-                EmptyState { message: "开始搜索知识节点或点击推荐起点".to_string() }
+            // 加载态不再卸载图谱：首次搜索（尚无节点）时显示 Loading；
+            // 已有节点时保持图谱挂载，仅叠加遮罩 spinner，避免 CanvasScene
+            // 随整树卸载重挂载引发 RAF Closure 竞态与页面闪现
+            if current_nodes.is_empty() {
+                if loading() {
+                    Loading {}
+                } else {
+                    EmptyState { message: "开始搜索知识节点或点击推荐起点".to_string() }
+                }
             } else {
-                div { class: "flex flex-col lg:flex-row gap-4",
+                div { class: "relative flex flex-col lg:flex-row gap-4",
+                    // 展开节点期间的加载遮罩（图谱保持挂载，不中断 RAF 渲染循环）
+                    {if loading() {
+                        Some(rsx! {
+                            div { class: "absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-base-100/60 backdrop-blur-sm rounded-box",
+                                span { class: "loading loading-spinner loading-md text-primary" }
+                                span { class: "text-sm text-base-content/70", "正在加载关联数据..." }
+                            }
+                        })
+                    } else {
+                        None
+                    }}
                     div { class: "flex-1 min-h-[600px]",
                     HudPanel { signal: Some(true), extra_class: Some("h-full".to_string()),
                         div { class: "card-body",
@@ -590,6 +625,16 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                                 } else {
                                                     span { class: "text-base-content/70", "N/A" }
                                                 }
+                                            }
+                                        }
+
+                                        // id 不上图：点击节点后在详情面板查看
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "节点 ID" }
+                                            }
+                                            div { class: "p-2 bg-base-200 rounded-lg font-mono text-xs break-all text-base-content/70",
+                                                "{detail.id}"
                                             }
                                         }
 

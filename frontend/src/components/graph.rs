@@ -36,6 +36,103 @@ pub struct GraphEdge {
     pub label: String,
 }
 
+/// 图元素 hover 目标（节点 ID / 边端点对），驱动 hover 详情卡片
+#[derive(Debug, Clone, PartialEq)]
+enum HoverTarget {
+    Node(String),
+    Edge(String, String),
+}
+
+/// SVG hover 详情卡片渲染数据（锚点为屏幕坐标，卡片不随视图缩放）
+struct HoverCard {
+    lines: Vec<String>,
+    accent: String,
+    anchor_x: f64,
+    anchor_y: f64,
+    /// 卡片与锚点的最小间距（已含缩放）
+    offset: f64,
+}
+
+/// SVG hover 卡片行文本宽度估算（font-size 11：中文≈11px，ASCII≈6.6px）
+fn hover_line_width(s: &str) -> f64 {
+    s.chars()
+        .fold(0.0, |acc, c| acc + if c.is_ascii() { 6.6 } else { 11.0 })
+}
+
+/// SVG hover 卡片尺寸（宽, 高）——规格与 canvas 版 hover_card_size 对齐
+fn hover_card_box(lines: &[String]) -> (f64, f64) {
+    let w = lines
+        .iter()
+        .map(|l| hover_line_width(l))
+        .fold(0.0f64, f64::max)
+        + 16.0;
+    (w, lines.len() as f64 * 16.0 + 16.0)
+}
+
+/// 构建 hover 详情卡片数据（节点卡与边卡统一结构；锚点为元素屏幕坐标）
+fn build_hover_card(
+    target: &HoverTarget,
+    nodes: &[GraphNode],
+    edges: &[GraphEdge],
+    positions: &HashMap<String, (f64, f64)>,
+    scale: f64,
+    pan_x: f64,
+    pan_y: f64,
+) -> Option<HoverCard> {
+    match target {
+        HoverTarget::Node(id) => {
+            let node = nodes.iter().find(|n| &n.id == id)?;
+            let (gx, gy) = positions.get(id).copied().unwrap_or((node.x, node.y));
+            let mut lines = vec![
+                format!("名称: {}", node.label),
+                format!("类型: {}", type_label(&node.node_type)),
+            ];
+            if let Some(summary) = &node.summary
+                && !summary.is_empty()
+            {
+                lines.push(format!(
+                    "摘要: {}",
+                    summary.chars().take(30).collect::<String>()
+                ));
+            }
+            if !node.tags.is_empty() {
+                lines.push(format!("标签: {}", node.tags.join("、")));
+            }
+            Some(HoverCard {
+                lines,
+                accent: get_node_fill(&node.node_type).to_string(),
+                anchor_x: gx * scale + pan_x,
+                anchor_y: gy * scale + pan_y,
+                offset: 18.0,
+            })
+        }
+        HoverTarget::Edge(source, target_id) => {
+            let edge = edges
+                .iter()
+                .find(|e| &e.source == source && &e.target == target_id)?;
+            let from = nodes.iter().find(|n| &n.id == source)?;
+            let to = nodes.iter().find(|n| &n.id == target_id)?;
+            let (fx, fy) = positions.get(source).copied().unwrap_or((from.x, from.y));
+            let (gx, gy) = positions.get(target_id).copied().unwrap_or((to.x, to.y));
+            let rel: &str = if edge.label.is_empty() {
+                "关联"
+            } else {
+                edge.label.as_str()
+            };
+            Some(HoverCard {
+                lines: vec![
+                    format!("关系: {rel}"),
+                    format!("端点: {} → {}", from.label, to.label),
+                ],
+                accent: get_edge_color(rel).to_string(),
+                anchor_x: (fx + gx) / 2.0 * scale + pan_x,
+                anchor_y: (fy + gy) / 2.0 * scale + pan_y,
+                offset: 14.0,
+            })
+        }
+    }
+}
+
 #[derive(Props, Clone, PartialEq)]
 pub struct GraphProps {
     pub nodes: Vec<GraphNode>,
@@ -68,6 +165,17 @@ pub fn tag_color(tag: &str) -> &'static str {
         .bytes()
         .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
     TAG_COLORS[(hash as usize) % TAG_COLORS.len()]
+}
+
+/// 知识图谱节点类型中文名（hover 详情卡 / 详情面板共用映射）
+pub fn type_label(t: &str) -> &'static str {
+    match t {
+        "knowledge_node" => "知识节点",
+        "short_term" => "短期记忆",
+        "trace" => "调用记录",
+        "relation" => "关系",
+        _ => "未知",
+    }
 }
 
 /// 节点边框颜色（选中态）
@@ -154,30 +262,30 @@ fn tag_label_width(tag: &str) -> f64 {
         + 8.0 // padding
 }
 
-/// 边颜色（根据关系类型）
+/// 边颜色（按关系中文标签语义分组着色）
 pub fn get_edge_color(relation_type: &str) -> &'static str {
     match relation_type {
         "属于" => "#ef4444",
-        "引用" => "#3b82f6",
-        "包含" => "#10b981",
-        "关联" => "#f59e0b",
-        "派生" => "#8b5cf6",
-        "依赖" => "#ec4899",
+        "包含" | "实例" | "分类" | "属性" | "取值" => "#10b981",
+        "相关" | "相似" | "引用" => "#3b82f6",
+        "依赖" | "被依赖" | "前置" | "后续" => "#8b5cf6",
+        "导致" | "源于" | "相反" => "#ec4899",
+        "关联" | "派生" => "#f59e0b",
         _ => "#9ca3af",
     }
 }
 
-/// 边虚线样式（根据关系类型）
+/// 边虚线样式（依赖类关系用虚线弱化）
 pub fn get_edge_dash(relation_type: &str) -> &'static str {
     match relation_type {
-        "引用" | "依赖" => "5,5",
+        "引用" | "依赖" | "被依赖" | "前置" | "后续" => "5,5",
         _ => "none",
     }
 }
 
 /// 边是否使用流光动画（实线边都加流光，虚线边保持静态）
 fn edge_use_flow(relation_type: &str) -> bool {
-    !matches!(relation_type, "引用" | "依赖")
+    get_edge_dash(relation_type) == "none"
 }
 
 /// 计算两点间距离（用于 stroke-dasharray 估算）
@@ -232,6 +340,8 @@ pub fn Graph(props: GraphProps) -> Element {
     let mut view_transform = use_signal(|| (0.0, 0.0, 1.0));
     let mut is_panning = use_signal(|| false);
     let mut pan_start = use_signal(|| (0.0, 0.0));
+    // hover 详情卡片目标（区别于点击选中；拖拽/平移中隐藏）
+    let mut hovered = use_signal(|| None::<HoverTarget>);
 
     let svg_width = 800;
     let svg_height = 600;
@@ -309,6 +419,7 @@ pub fn Graph(props: GraphProps) -> Element {
         dragged_node_id.set(None);
         drag_moved.set(false);
         is_panning.set(false);
+        hovered.set(None);
     };
 
     let handle_wheel = move |e: WheelEvent| {
@@ -349,6 +460,23 @@ pub fn Graph(props: GraphProps) -> Element {
     // 修复 M8：on_click 已移到 handle_mouse_up，节点 mousedown 不再触发点击
     let reset_view = move |_| {
         view_transform.set((0.0, 0.0, 1.0));
+    };
+
+    // hover 详情卡片数据（拖拽/平移中隐藏；节点卡与边卡统一结构，锚点为屏幕坐标）
+    let hover_card_data = if *is_dragging.read() || *is_panning.read() {
+        None
+    } else {
+        hovered.read().as_ref().and_then(|target| {
+            build_hover_card(
+                target,
+                &props.nodes,
+                &props.edges,
+                &node_positions.read(),
+                scale,
+                tx,
+                ty,
+            )
+        })
     };
 
     rsx! {
@@ -408,6 +536,9 @@ pub fn Graph(props: GraphProps) -> Element {
                     } else {
                         None
                     };
+                    // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
+                    let hover_enter = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
+                    let hover_leave = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
                     rsx! {
                         line {
                             x1: "{sx}",
@@ -431,7 +562,7 @@ pub fn Graph(props: GraphProps) -> Element {
                                     height: "14",
                                     rx: "2",
                                     fill: "rgba(255, 255, 255, 0.9)",
-                                    stroke: "#e5e7eb",
+                                    stroke: "{edge_color}",
                                     stroke_width: "1",
                                 }
                                 text {
@@ -444,6 +575,26 @@ pub fn Graph(props: GraphProps) -> Element {
                                     "{label}"
                                 }
                             }
+                        }
+
+                        // 透明命中层：放宽边的 hover 命中区（视觉样式不变）
+                        line {
+                            x1: "{sx}",
+                            y1: "{sy}",
+                            x2: "{tx}",
+                            y2: "{ty}",
+                            stroke: "transparent",
+                            stroke_width: "12",
+                            style: "pointer-events: stroke; cursor: pointer;",
+                            onmouseenter: move |_| {
+                                hovered.set(Some(hover_enter.clone()));
+                            },
+                            onmouseleave: move |_| {
+                                // 仅清除仍停留在当前元素上的 hover，避免误清新进入的其他元素
+                                if hovered.read().as_ref() == Some(&hover_leave) {
+                                    hovered.set(None);
+                                }
+                            },
                         }
                     }
                 }
@@ -502,19 +653,33 @@ pub fn Graph(props: GraphProps) -> Element {
                     // HUD 节点组 class：出现动画 + hover 放大
                     let node_group_class = "kg-node-appear kg-node-group";
 
+                    // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
+                    let hover_enter = HoverTarget::Node(node.id.clone());
+                    let hover_leave = HoverTarget::Node(node.id.clone());
+                    let node_id_drag = node.id.clone();
+
                     rsx! {
                         g {
                             class: "{node_group_class}",
                             cursor: "move",
                             style: "{glow}",
                             opacity: "{opacity}",
+                            onmouseenter: move |_| {
+                                hovered.set(Some(hover_enter.clone()));
+                            },
+                            onmouseleave: move |_| {
+                                // 仅清除仍停留在当前元素上的 hover，避免误清新进入的其他元素
+                                if hovered.read().as_ref() == Some(&hover_leave) {
+                                    hovered.set(None);
+                                }
+                            },
                             onmousedown: move |e: MouseEvent| {
                                 // 修复 HIGH #7：节点 mousedown 事件冒泡到 svg 的 handle_pan_start，
                                 // 导致拖拽节点时 is_dragging 和 is_panning 同时为 true，
                                 // 节点位移 = 节点移动 + 视图平移，所有节点拖拽都错乱。
                                 // stop_propagation 阻止冒泡，确保拖拽节点时不平移画布。
                                 e.stop_propagation();
-                                handle_node_drag_start_with_event(e, node.id.clone());
+                                handle_node_drag_start_with_event(e, node_id_drag.clone());
                             },
 
                             // 选中态：向外扩散的扫描环波纹（雷达扫描效果）
@@ -644,6 +809,46 @@ pub fn Graph(props: GraphProps) -> Element {
                     }
                 }
             }
+            }
+
+            // hover 详情卡片（屏幕坐标，不随视图缩放；pointer-events 穿透避免命中抖动）
+            if let Some(card) = hover_card_data {
+                {
+                    let (card_w, card_h) = hover_card_box(&card.lines);
+                    // 避让：默认锚点右侧垂直居中，超出右缘放左侧，纵向夹在画布内
+                    let mut bx = card.anchor_x + card.offset;
+                    if bx + card_w > svg_width as f64 - 8.0 {
+                        bx = card.anchor_x - card.offset - card_w;
+                    }
+                    let bx = bx.max(8.0);
+                    let by = (card.anchor_y - card_h / 2.0)
+                        .max(8.0)
+                        .min((svg_height as f64 - card_h - 8.0).max(8.0));
+                    rsx! {
+                        g {
+                            style: "pointer-events: none;",
+                            rect {
+                                x: "{bx}",
+                                y: "{by}",
+                                width: "{card_w}",
+                                height: "{card_h}",
+                                rx: "6",
+                                fill: "rgba(17, 24, 39, 0.92)",
+                                stroke: "{card.accent}",
+                                stroke_width: "1.5",
+                            }
+                            for (i, line_text) in card.lines.iter().enumerate() {
+                                text {
+                                    x: "{bx + 8.0}",
+                                    y: "{by + 8.0 + i as f64 * 16.0 + 11.0}",
+                                    font_size: "11",
+                                    fill: "#f9fafb",
+                                    "{line_text}"
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         // 修复 L16：添加重置视图按钮（右上角，重置缩放和平移到初始状态）
