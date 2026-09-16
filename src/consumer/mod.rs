@@ -1,4 +1,5 @@
 pub mod agent_loop_consumer;
+pub mod agent_settle;
 pub mod aop_stats_collector;
 pub mod aop_stats_hook;
 pub mod email_inbound;
@@ -63,6 +64,10 @@ pub async fn init() -> Result<()> {
     aop::registry().register_consumer(Arc::new(email_inbound::EmailInboundConsumer::new()))?;
 
     aop::registry().register_consumer(Arc::new(scheduler::CronTriggerConsumer::new()))?;
+
+    // 睡眠沉淀执行者：由 CronTriggerConsumer 的 agent_rest 派发（见 consumer/agent_settle.rs）
+    // 必须与触发器同期注册 —— 否则 agent_rest 派发的 agent.settle.requested 无人消费
+    aop::registry().register_consumer(Arc::new(agent_settle::AgentSettleConsumer::new()))?;
 
     aop::registry()
         .register_consumer(Arc::new(tool_exec_log_consumer::ToolExecLogConsumer::new()))?;

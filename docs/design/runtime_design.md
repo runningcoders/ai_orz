@@ -1920,12 +1920,21 @@ pub trait RuntimeAwakening: Send + Sync {
 
 ### 25.6 sleep_and_settle 流程
 
+> 入口与状态纪律见 25.15（定时链路已队列化，不再在 cron 线程里同步沉淀）。
+
 ```
-settle_memory handler / awaken 上下文压缩 / awaken 正常完成
+入口（两条，汇入同一个 settle_body）
+    ├── 神经工具 settle_memory（Agent 在自己的思考里调用）
+    │     └── load_and_settle: 先判「空闲」——忙则 return 0（不重试）
+    └── 日触发 agent_rest（CronTrigger agent_rest 只派发）
+          └── AgentSettleConsumer → settle_agent_exclusive（try_set_resting 抢占）
+                └── 抢不到 → Err(conflict) → 队列 nack 重投 → 空闲后补跑
+
+settle_body
     │
     ├── build_pending_memories_summary: 查询未沉淀短期记忆，生成编号摘要
     │
-    └── load_and_settle: 加载 Agent（含 tools+skills）
+    └── 加载 Agent（含 tools+skills）
         │
         ├── wake_agent_brain(scene=Settle): 装配 Brain + 过滤 Auto 工具
         │
@@ -1973,7 +1982,7 @@ settle_memory handler / awaken 上下文压缩 / awaken 正常完成
 **v3.6 重构**：
 - `build_pending_memories_summary`：只生成待沉淀记忆的编号摘要，约束模板由 builder 注入
 - `load_and_settle`：调用 `wake_agent_brain(scene=Settle)` + `sleep_and_settle(options)`，与消息层解耦
-- 复用性：`load_and_settle` 供 settle_memory handler 和 CronTrigger agent_rest 共用
+- 见 25.15：定时链路已从 `load_and_settle` 拆出为 `settle_agent_exclusive`（抢占 + 排队重试）
 
 ### 25.9 代码清单
 
@@ -2170,6 +2179,72 @@ awaken 循环
 - 后端 84 个 runtime 相关测试全部通过（含 awakening 集成测试 6 个）
 - 后端 clippy `-D warnings` 零警告
 - 前端 build + clippy `-D warnings` 零警告
+
+### 25.15 定时沉淀队列化（v3.10 增量，2026-09-16）
+
+> 📌 **本节定位**：修复「日触发 `agent_rest` 与其它定时任务撞同一个 Agent 时，沉淀被静默跳过一整天」
+> 的生产问题。入口与状态纪律见 §25.6，handler 拆分见 §25.8。
+
+**问题**：日触发 `agent_rest` 的消费者是 `ConsumeMode::Sync`，在 cron `poll` 线程里同步跑完整场
+沉淀（LLM 往返，实测 7 分钟），并且对每个待沉淀 Agent 先做 `is_unavailable()` 判定，
+命中就 `Ok(0)` 静默跳过。而 `CronTriggerProducer` 在 `publish` 之后无条件
+`mark_trigger_executed` → `next_run_at` 推到下一个 cron 点（日触发 = 次日）。
+
+于是「同一时刻多个任务唤醒同一个 Agent」时（典型：启动补偿把每小时的项目巡检和每日沉淀
+排进同一轮 poll，巡检先给同一个 Owner Agent 发了消息 → 它变 Busy）：
+**巡检照常执行（消息链路忙时 nack 重投），沉淀被静默跳过一整天的量**，
+而触发器界面显示「已执行」——只留下 `last_run_at = 启动时刻` 这一条线索。
+
+**方案**：沉淀改走 AOP 队列，触发器只派发。
+
+| 关注点 | 旧 | 新 |
+|--------|----|----|
+| 执行位置 | cron poll 线程内同步 | `agent_settle` 异步消费者（`concurrency = 2`） |
+| 排队单元 | 无 | `agent.settle.requested` 事件，`order_key = agent_id` |
+| Agent 忙 | `Ok(0)` 静默跳过 | `try_set_resting` 抢占失败 → `Err(conflict)` → 队列 nack 重投（30s 退避） |
+| 阻塞其它触发器 | 是（整场沉淀期间轮询停摆） | 否（派发即返回） |
+| 单 Agent 失败影响 | 只 warn，其余继续但本轮已耗完 | 每 Agent 独立事件、独立重试 |
+| 状态泄漏风险 | — | 抢占后立刻挂 `BusyGuard`，任何 `?` 提前返回都会 `set_idle` |
+
+**设计与约束**：
+- `order_key = agent_id` 与 `message.created`（接收者为 Agent 时）同源，使沉淀与发给同一 Agent
+  的消息在**队列层**就串行，不必依赖运行期抢占失败来兜底
+- 抢占用 `AgentRuntimeStateManager::try_set_resting`（与消息侧 `try_set_busy` 同构），
+  **不要**改回「先查询再设状态」——两段之间会被消息链路插入，沉淀会覆盖正在跑的唤醒
+- `load_and_settle`（神经工具入口）保留原有「忙则跳过」语义：那条路径上 Agent 正在自己的
+  思考中（天然 Busy），抢占式判定会让它永远失败
+- 事件只在内存队列，**有残留窗口**：派发后、沉淀跑完前进程被杀 → 当天该请求不再重建
+  （触发器已 `mark_trigger_executed`，日触发的下个周期是次日）。比旧实现「忙就跳过一次丢一天」
+  窄得多，当前按 YAGNI 未加启动期补扫；若要严格保证，启动时对「仍有 Active 短期记忆的 Agent」
+  补发一轮沉淀请求即可（沉淀本身对无待沉淀 Agent 是空跑，幂等）
+- 派发方（`CronTriggerConsumer`）**不碰 Agent 运行状态**：状态的唯一写入方是消费者侧
+  `settle_agent_exclusive` 的抢占，派发只读 payload、只 publish
+
+**⚠️ 同批修复的存量坑：`CronTriggerPayload.extra` 不能 `#[serde(flatten)]`**
+
+排查本问题时发现 `CronTriggerPayload` 的 `extra` 字段曾是 `#[serde(flatten)] Value`。
+而真实 payload 形态是**带 `extra` 键的嵌套对象**（见 `.ai_orz/ai_orz.db::cron_triggers`
+与 `docs/wiki/.../定时任务 API.md`）：
+
+```json
+{"action":"agent_rest","extra":{"settle_limit":10}}
+```
+
+`flatten` 会把 `extra` 这个**键名本身**一起收进 `Value`，得到
+`{"extra":{"settle_limit":10}}` 再往下传给 `AgentRestPayload` —— 该结构体无
+`deny_unknown_fields`，未知键被丢弃，于是 `agent_id` / `settle_limit` 全部静默降级为 `None`。
+后果：**指定单个 Agent 的沉淀退化成全局扫描，`settle_limit` 永远被忽略，且不报错**。
+
+现在 `extra` 是具名字段（`#[serde(default)]`），并提供 `CronTriggerPayload::action_params()`
+把缺省/`null` 归一为空对象。三条单元测试锁定该契约
+（`test_cron_trigger_payload_passes_extra_through` / `_tolerates_missing_extra` / `_ignores_unknown_fields`）。
+
+**新增/改动文件**：`src/models/events/agent_settle.rs`（新）、`src/consumer/agent_settle.rs`（新）、
+`src/consumer/scheduler.rs`（`handle_agent_rest` 改为派发 + `extra` 具名化）、
+`src/handlers/hr/agent/settle_memory.rs`（拆出 `settle_body` / `settle_agent_exclusive`）、
+`src/pkg/agent_runtime_state.rs`（新增 `try_set_resting`）、
+`src/service/domain/runtime/mod.rs`（`busy_guard` 转 pub）；
+测试 `tests/integration/agent_settle_queue_test.rs`（新，3 个回归用例）。
 
 ---
 

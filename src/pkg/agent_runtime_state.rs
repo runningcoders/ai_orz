@@ -375,6 +375,35 @@ impl AgentRuntimeStateManager {
         true
     }
 
+    /// 原子地尝试进入休息状态（睡眠沉淀专用）
+    ///
+    /// 如果 Agent 当前是 Idle，设置为 Resting 并返回 true。
+    /// 如果 Agent 当前是 Busy 或 Resting，返回 false（未修改状态）。
+    ///
+    /// 与 [`set_resting`](Self::set_resting) 的差异：加了「空闲才可进入」的原子判定，
+    /// 且**保留 task_id / project_id**（与 `set_resting` 一致：沉淀仍属同一业务上下文）、
+    /// 不触碰 think_runtime（沉淀自己会挂新的思考运行时）。
+    ///
+    /// 设计意图：与 [`try_set_busy`](Self::try_set_busy) 对称，供定时触发链路
+    /// 「抢占 Agent → 失败即排队重试」使用。若像以前那样先 `is_unavailable()` 查询、
+    /// 再在别处 `set_resting`，两段之间会被消息链路插入，导致沉淀覆盖正在跑的唤醒。
+    pub fn try_set_resting(&self, agent_id: &str) -> bool {
+        let from_state;
+        {
+            let mut entry = self.states.entry(agent_id.to_string()).or_default();
+            if entry.state.is_unavailable() {
+                return false;
+            }
+            from_state = entry.state;
+            entry.state = AgentRuntimeState::Resting;
+            entry.current_message_id = None;
+            // 注意：task_id / project_id 保留不清空（与 set_resting 一致）
+            entry.state_started_at = common::constants::utils::current_timestamp_ms();
+        }
+        self.notify_state_change(agent_id, state_str(from_state), "resting", None);
+        true
+    }
+
     /// 获取 Agent 运行时信息
     pub fn get(&self, agent_id: &str) -> Option<AgentRuntimeInfo> {
         self.states.get(agent_id).map(|v| v.clone())
@@ -510,6 +539,44 @@ mod tests {
         let info = mgr.get("agent-1").unwrap();
         assert_eq!(info.task_id, Some("task-1".to_string()));
         assert_eq!(info.project_id, Some("proj-1".to_string()));
+    }
+
+    #[test]
+    fn test_try_set_resting_acquires_only_when_idle() {
+        let mgr = AgentRuntimeStateManager::new();
+
+        // Idle → 抢占成功
+        assert!(mgr.try_set_resting("agent-1"));
+        assert_eq!(mgr.get_state("agent-1"), AgentRuntimeState::Resting);
+
+        // 已在 Resting → 抢占失败，状态不变
+        assert!(!mgr.try_set_resting("agent-1"));
+        assert_eq!(mgr.get_state("agent-1"), AgentRuntimeState::Resting);
+
+        // Busy → 抢占失败，且不覆盖正在跑的唤醒
+        mgr.set_busy("agent-2", "msg-2", None, None);
+        assert!(!mgr.try_set_resting("agent-2"));
+        let info = mgr.get("agent-2").unwrap();
+        assert_eq!(info.state, AgentRuntimeState::Busy);
+        assert_eq!(info.current_message_id, Some("msg-2".to_string()));
+    }
+
+    /// 抢占后的可观测语义：状态为 Resting、current_message_id 清空。
+    ///
+    /// 不构造「Idle 且带 task/project」的 Agent —— `set_idle` 必清空二者，这种状态不可达；
+    /// `try_set_resting` 只是不去显式清空它们（与 `set_resting` 对齐）。
+    #[test]
+    fn test_try_set_resting_clears_message_id() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", Some("task-1"), Some("proj-1"));
+        mgr.set_idle("agent-1");
+
+        assert!(mgr.try_set_resting("agent-1"));
+        let info = mgr.get("agent-1").unwrap();
+        assert_eq!(info.state, AgentRuntimeState::Resting);
+        assert_eq!(info.current_message_id, None);
+        // 进入休息即被视为不可用：消息链路据此 nack 重投，不会与沉淀并发
+        assert!(mgr.is_unavailable("agent-1"));
     }
 
     #[test]

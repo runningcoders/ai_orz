@@ -1,7 +1,9 @@
 //! Cron 触发器消费者（业务层）
 //!
 //! 作为 AOP 事件中心的订阅者，消费 CRON_TRIGGER 事件。
-//! 业务逻辑通过调用 domain 层完成（如 RuntimeAwakening.sleep_and_settle）。
+//! 业务逻辑通过调用 domain 层完成；**重量级动作（如记忆沉淀）只派发事件**，
+//! 交给对应的 Async 消费者执行 —— 本消费者是 Sync，跑在 cron 轮询线程里，
+//! 在这里做长任务会把其它定时触发器全部堵住。
 //!
 //! 与 AOP 框架解耦：AOP 只负责事件流转，本模块负责业务编排。
 
@@ -9,8 +11,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::handlers::hr::agent::settle_memory::load_and_settle;
-use crate::models::events::CronTriggerEvent;
+use crate::models::events::{AgentSettleEvent, CronTriggerEvent};
 use crate::pkg::RequestContext;
 use crate::pkg::aop::Event;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
@@ -76,9 +77,11 @@ impl Consumer for CronTriggerConsumer {
             payload.action
         );
 
+        let params = payload.action_params();
+
         match payload.action.as_str() {
             "agent_rest" => {
-                if let Err(e) = self.handle_agent_rest(&event, &payload.extra).await {
+                if let Err(e) = self.handle_agent_rest(&event, &params).await {
                     // 单次触发失败只告警不上抛：避免 nack 重试风暴（下个周期会重新沉淀）
                     sys_error!(
                         "agent_rest action failed for trigger {} (id: {}): {}",
@@ -88,7 +91,7 @@ impl Consumer for CronTriggerConsumer {
                     );
                 }
             }
-            "project_followup" => self.handle_project_followup(&payload.extra).await?,
+            "project_followup" => self.handle_project_followup(&params).await?,
             "tool_log_cleanup" => self.handle_tool_log_cleanup().await?,
             "directory_reconcile" => self.handle_directory_reconcile().await?,
             _ => {
@@ -108,13 +111,17 @@ impl Consumer for CronTriggerConsumer {
 // ==================== 业务编排（调用 domain 层）====================
 
 impl CronTriggerConsumer {
-    /// agent_rest 动作：加载 Agent 并调用 sleep_and_settle 执行记忆沉淀
+    /// agent_rest 动作：**只派发沉淀请求**，不在此处执行沉淀
     ///
-    /// 复用 settle_memory handler 的 load_and_settle 公共函数，保证与神经工具触发的
-    /// 沉淀流程完全一致（查询短期记忆 → 拼装 prompt → 加载 Agent → 唤醒 Brain → sleep_and_settle）。
+    /// 作用域：payload 指定 `agent_id` 时只派发该 Agent；**缺省（系统默认触发器）
+    /// 则扫描所有存在未沉淀短期记忆的 Agent 逐个派发**。
     ///
-    /// 作用域：payload 指定 `agent_id` 时只沉淀该 Agent；**缺省（系统默认触发器）
-    /// 则扫描所有存在未沉淀短期记忆的 Agent 逐个沉淀**——单个 Agent 失败不阻断其余。
+    /// 执行交给 `AgentSettleConsumer`（见 `consumer/agent_settle.rs`），本消费者只做两件事：
+    /// 解析目标 Agent + publish 事件。**不要在这里改回同步调用 `load_and_settle`**：
+    /// - 本消费者是 `ConsumeMode::Sync`，同步跑一场沉淀（LLM 往返，实测数分钟）会把整个
+    ///   cron 轮询堵住，其它触发器（工具日志清理 / 目录对账）只能干等
+    /// - Agent 忙时同步路径只能「跳过」，而触发器随后就会把 `next_run_at` 推到下一个
+    ///   cron 点（日触发 = 次日）→ 一次跳过丢一天；走队列则抢不到会退避重试
     async fn handle_agent_rest(&self, event: &CronTriggerEvent, extra: &Value) -> Result<()> {
         let payload: AgentRestPayload = serde_json::from_value(extra.clone()).map_err(|e| {
             Error::bad_request(format!(
@@ -172,27 +179,19 @@ impl CronTriggerConsumer {
             agent_ids
         );
 
-        let mut total_settled = 0usize;
-        let mut ok_agents = 0usize;
+        // 逐个 Agent 派发沉淀请求（order_key = agent_id：同 Agent 与消息在队列层串行）
         for agent_id in &agent_ids {
-            match load_and_settle(ctx.clone(), agent_id, settle_limit).await {
-                Ok(0) => {}
-                Ok(n) => {
-                    total_settled += n;
-                    ok_agents += 1;
-                }
-                Err(e) => {
-                    // 单个 Agent 沉淀失败（如模型调用异常）不影响其余 Agent
-                    sys_warn!("agent_rest: Agent {} 沉淀失败，跳过: {}", agent_id, e);
-                }
-            }
+            crate::pkg::aop::publish(
+                &ctx,
+                AgentSettleEvent::new(agent_id, settle_limit, &event.trigger_name),
+            )
+            .await;
         }
 
         sys_info!(
-            "agent_rest 完成: 扫描 {} 个 Agent，{} 个成功沉淀，共沉淀 {} 条短期记忆",
+            "agent_rest 完成: 已派发 {} 个 Agent 的沉淀请求（trigger_id: {}），执行与重试由 agent_settle 消费者承担",
             agent_ids.len(),
-            ok_agents,
-            total_settled
+            event.trigger_id
         );
 
         Ok(())
@@ -331,11 +330,32 @@ impl CronTriggerConsumer {
 
 // ==================== 辅助类型 ====================
 
+/// Cron 触发器 payload 外框：`{"action":"<动作>","extra":{...}}`
+///
+/// ⚠️ `extra` 必须是**具名字段**，不能改回 `#[serde(flatten)]`：flatten 会把 `extra`
+/// 这个键名本身也收进 `Value`，得到 `{"extra":{"settle_limit":10}}` 再往下传，
+/// 于是 `AgentRestPayload` 解析时 `agent_id` / `settle_limit` 全部静默降级为 `None`
+/// —— 表现为「指定单个 Agent 的沉淀退化成全局扫描，且 settle_limit 永远被忽略」，
+/// 且**不报错**。存量 payload 形态见 `.ai_orz/ai_orz.db::cron_triggers` 与
+/// `docs/wiki/.../定时任务 API.md`（系统默认触发器 seed 见
+/// `service/domain/system/mod.rs::ensure_system_cron_triggers`）。
 #[derive(Debug, Serialize, Deserialize)]
 struct CronTriggerPayload {
     action: String,
-    #[serde(flatten)]
+    /// 动作参数；缺省（历史用户只写 `{"action":"x"}`）时为空对象语义
+    #[serde(default)]
     extra: Value,
+}
+
+impl CronTriggerPayload {
+    /// 动作参数（保证拿到的是对象，缺省/`null` 归一为空对象）
+    fn action_params(&self) -> Value {
+        if self.extra.is_object() {
+            self.extra.clone()
+        } else {
+            Value::Object(serde_json::Map::new())
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -366,5 +386,75 @@ mod tests {
                 .expect("指定 agent_id 的 payload 应可解析");
         assert_eq!(payload.agent_id.as_deref(), Some("agent-001"));
         assert_eq!(payload.settle_limit, Some(5));
+    }
+
+    /// 外框解析：`{"action":..,"extra":{..}}` 里的 `extra` 必须原样透传给动作层。
+    ///
+    /// 回归 `#[serde(flatten)] extra: Value` 那个坑：flatten 会把 `extra` 键名本身
+    /// 也收进 Value（`{"extra":{"settle_limit":10}}`），参数静默丢失、且不报错。
+    #[test]
+    fn test_cron_trigger_payload_passes_extra_through() {
+        // 与真实存量 payload（`.ai_orz/ai_orz.db::cron_triggers`）逐字一致
+        let payload: CronTriggerPayload =
+            serde_json::from_str(r#"{"action":"agent_rest","extra":{"settle_limit":10}}"#)
+                .expect("系统默认 agent_rest payload 应可解析");
+        assert_eq!(payload.action, "agent_rest");
+        assert_eq!(
+            payload.action_params(),
+            serde_json::json!({"settle_limit": 10})
+        );
+
+        // 透传到 AgentRestPayload 后参数仍在（旧实现这里 settle_limit 会丢成 None）
+        let rest: AgentRestPayload =
+            serde_json::from_value(payload.action_params()).expect("透传后应可解析");
+        assert_eq!(rest.settle_limit, Some(10));
+
+        // 指定单个 Agent 的写法同样必须透传（否则退化成全局扫描）
+        let payload: CronTriggerPayload = serde_json::from_str(
+            r#"{"action":"agent_rest","extra":{"agent_id":"agent-001","settle_limit":5}}"#,
+        )
+        .expect("指定 agent_id 的 payload 应可解析");
+        let rest: AgentRestPayload =
+            serde_json::from_value(payload.action_params()).expect("透传后应可解析");
+        assert_eq!(rest.agent_id.as_deref(), Some("agent-001"));
+        assert_eq!(rest.settle_limit, Some(5));
+    }
+
+    /// 缺省 / `null` 的 `extra` 归一为空对象，动作层解析不应因 `null` 报错
+    /// （避免又回到「解析失败 → 只打日志 → 沉淀静默不执行」的老路）。
+    #[test]
+    fn test_cron_trigger_payload_tolerates_missing_extra() {
+        for raw in [
+            r#"{"action":"tool_log_cleanup"}"#,
+            r#"{"action":"tool_log_cleanup","extra":null}"#,
+            r#"{"action":"project_followup","extra":{}}"#,
+        ] {
+            let payload: CronTriggerPayload =
+                serde_json::from_str(raw).unwrap_or_else(|e| panic!("{} 应可解析: {}", raw, e));
+            assert_eq!(
+                payload.action_params(),
+                serde_json::json!({}),
+                "raw={}",
+                raw
+            );
+        }
+
+        // 无 extra 的 agent_rest 必须仍能解析成「全局沉淀」语义
+        let payload: CronTriggerPayload =
+            serde_json::from_str(r#"{"action":"agent_rest"}"#).expect("应可解析");
+        let rest: AgentRestPayload = serde_json::from_value(payload.action_params())
+            .expect("空参数应解析成全局沉淀而不是报错");
+        assert_eq!(rest.agent_id, None);
+        assert_eq!(rest.settle_limit, None);
+    }
+
+    /// 未知字段不能影响外框解析（用户可能自行加注释字段）
+    #[test]
+    fn test_cron_trigger_payload_ignores_unknown_fields() {
+        let payload: CronTriggerPayload =
+            serde_json::from_str(r#"{"action":"agent_rest","note":"手写","extra":{}}"#)
+                .expect("应可解析");
+        assert_eq!(payload.action, "agent_rest");
+        assert_eq!(payload.action_params(), serde_json::json!({}));
     }
 }

@@ -322,7 +322,9 @@ pub trait RuntimeToolExecution: Send + Sync {
 // abort_summary 需要 pub(crate)：其中的 ABORT_NOTICE_FIELD 由 consumer 侧读取
 pub(crate) mod abort_summary;
 pub mod awakening;
-mod busy_guard;
+// busy_guard 需要 pub：消费侧（消息 / 沉淀消费者）在「自己抢占 Agent」后
+// 必须挂一个 RAII 兜底释放，否则中途 ? 提早返回会把 Agent 永久留在 Busy/Resting
+pub mod busy_guard;
 mod compaction;
 mod intent_analyze;
 mod memory;

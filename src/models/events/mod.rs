@@ -1,5 +1,6 @@
 pub mod a2a_task_update;
 pub mod agent_loop;
+pub mod agent_settle;
 pub mod agent_state;
 pub mod cron_trigger;
 pub mod email;
@@ -17,6 +18,7 @@ pub use a2a_task_update::{
     extract_text_from_parts, get_synced_msg_count, make_a2a_task_tag, make_synced_msg_tag,
 };
 pub use agent_loop::AgentLoopEvent;
+pub use agent_settle::AgentSettleEvent;
 pub use agent_state::AgentStateEvent;
 pub use cron_trigger::CronTriggerEvent;
 pub use email::EmailInboundEvent;

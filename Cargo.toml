@@ -223,6 +223,10 @@ path = "tests/integration/federation_ws_test.rs"
 name = "cron_project_followup_test"
 path = "tests/integration/cron_project_followup_test.rs"
 
+[[test]]
+name = "agent_settle_queue_test"
+path = "tests/integration/agent_settle_queue_test.rs"
+
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]

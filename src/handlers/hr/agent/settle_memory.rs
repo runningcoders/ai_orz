@@ -15,6 +15,7 @@ use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
 use crate::service::domain::hr::domain as hr_domain;
 use crate::service::domain::runtime::awakening::ThinkingOptions;
+use crate::service::domain::runtime::busy_guard::BusyGuard;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SettleMemoryParams, SettleMemoryResponse};
@@ -203,19 +204,25 @@ pub(crate) async fn build_pending_memories_summary(
 
 /// 加载 Agent（含 tools + skills）并唤醒 Brain，然后调用 sleep_and_settle 执行沉淀
 ///
-/// 供 settle_memory handler 和 CronTrigger agent_rest 复用。
+/// **神经工具路径入口**（Agent 在自己的思考里主动调 `settle_memory`）。
+/// 定时触发路径请用 [`settle_agent_exclusive`]（忙时不丢弃、交给队列重排）。
 ///
 /// 沉淀完成后会对本批记忆做一次**状态兜底**：仍处于 Active 的会被标记为 Settled，
 /// 避免 Agent 漏调 `update_memory` 导致同一批被反复处理（详见 `mark_pending_settled`）。
 ///
 /// # 返回
-/// 待沉淀的短期记忆数量（0 表示无待沉淀，已跳过）
+/// 待沉淀的短期记忆数量（0 表示无待沉淀，或被状态挡下已跳过）
 pub(crate) async fn load_and_settle(
     ctx: RequestContext,
     agent_id: &str,
     settle_limit: usize,
 ) -> Result<usize> {
     // 预检查：Agent 必须空闲才能进入睡眠，避免覆盖 Busy 状态
+    //
+    // ⚠️ 这条预检查只服务**神经工具路径**（Agent 在自己的思考里主动调 settle_memory）。
+    // 定时触发路径不要在这里「忙就跳过」——跳过即静默丢失（触发器已把 next_run_at 推到
+    // 下一个 cron 点，日触发 = 次日），那条链路走 [`settle_agent_exclusive`]，
+    // 由调用方（AOP 队列消费者）在抢占失败时排期重试。
     let state =
         crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().get_state(agent_id);
     if state.is_unavailable() {
@@ -229,6 +236,50 @@ pub(crate) async fn load_and_settle(
         return Ok(0);
     }
 
+    settle_body(ctx, agent_id, settle_limit).await
+}
+
+/// 沉淀尝试结果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SettleAttempt {
+    /// 已沉淀 N 条；N = 0 表示无待沉淀记忆（正常空跑）
+    Settled(usize),
+    /// Agent 正忙 / 休息中，本次未执行 —— 调用方应排期重试
+    Busy,
+}
+
+/// 独占式沉淀：先原子抢占 Agent，抢不到即回 [`SettleAttempt::Busy`]（调用方排期重试）
+///
+/// **定时触发链路专用**（`AgentSettleConsumer`）。与 [`load_and_settle`] 的差别：
+/// - 不「返回 0 了事」，而是把「Agent 正忙」如实告诉调用方 → 队列 nack 重投 → 空闲后补跑
+/// - 用 `try_set_resting` 原子抢占，避免「先查询、后设状态」之间被消息链路插入，
+///   反过来覆盖一场正在跑的唤醒（与消息侧 `try_set_busy` 同构）
+///
+/// 抢占成功后立刻挂 [`BusyGuard`]：从抢占点到 `sleep_and_settle` 自己 `set_resting`
+/// 之间的任何 `?` 提早返回（Agent 不存在 / Brain 装配失败 / 无待沉淀记忆）都必须把
+/// Agent 放回 Idle，否则它会永久卡在 Resting，后续消息全部 nack 重投。
+pub(crate) async fn settle_agent_exclusive(
+    ctx: RequestContext,
+    agent_id: &str,
+    settle_limit: usize,
+) -> Result<SettleAttempt> {
+    let acquired = crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
+        .try_set_resting(agent_id);
+    if !acquired {
+        return Ok(SettleAttempt::Busy);
+    }
+    let _guard = BusyGuard::new(agent_id.to_string());
+
+    Ok(SettleAttempt::Settled(
+        settle_body(ctx, agent_id, settle_limit).await?,
+    ))
+}
+
+/// 沉淀正文：加载 Agent → 生成待沉淀摘要 → sleep_and_settle → 兜底置状态
+///
+/// 调用方**必须已经持有** Agent 状态（唤醒中的 Busy，或抢占到的 Resting），
+/// 本函数内部不再做任何状态判定。
+async fn settle_body(ctx: RequestContext, agent_id: &str, settle_limit: usize) -> Result<usize> {
     // 1. 加载 Agent（含 tools + skills）
     let fetch_options = AgentFetchOptions {
         with_tools: Some(true),
@@ -366,6 +417,8 @@ mod tests {
         crate::service::dao::init_all();
         crate::service::dal::init_all();
         crate::service::domain::runtime::init();
+        // settle_agent_exclusive 走 hr domain 加载 Agent（旧测试只碰记忆，不需要）
+        crate::service::domain::hr::init();
 
         crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
     }
@@ -565,5 +618,52 @@ mod tests {
         // 无 brain → 兜底
         assert_eq!(pending_budget_chars(&agent), DEFAULT_PENDING_BUDGET_CHARS);
         assert!(pending_budget_chars(&agent) > 0);
+    }
+
+    /// 定时触发路径的核心契约：Agent 正忙时**不能**「返回 0 了事」（旧行为 = 静默丢一天），
+    /// 必须如实回 `Busy` 让调用方排期重试，且不得改写运行中的状态。
+    #[sqlx::test]
+    async fn settle_exclusive_reports_busy_and_keeps_busy_state(pool: sqlx::SqlitePool) {
+        let ctx = init_settle_test_env(pool);
+        let mgr = crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global();
+        let agent_id = "agent-settle-exclusive-busy";
+
+        // 模拟「同一时刻项目巡检正在唤醒这个 Agent」
+        mgr.set_busy(agent_id, "msg-patrol", Some("task-1"), Some("proj-1"));
+
+        let attempt = settle_agent_exclusive(ctx, agent_id, PENDING_MAX_ITEMS)
+            .await
+            .expect("抢占失败不应是错误，而是可重排的 Busy");
+        assert_eq!(attempt, SettleAttempt::Busy);
+
+        // 状态与业务上下文原样保留：沉淀没碰正在跑的巡检
+        let info = mgr.get(agent_id).unwrap();
+        assert_eq!(info.state, common::enums::AgentRuntimeState::Busy);
+        assert_eq!(info.current_message_id, Some("msg-patrol".to_string()));
+        assert_eq!(info.task_id, Some("task-1".to_string()));
+
+        mgr.set_idle(agent_id);
+    }
+
+    /// 抢占成功但沉淀主体提前失败（Agent 不存在 / Brain 装配失败）时，
+    /// BusyGuard 必须把 Agent 放回 Idle —— 否则它会永久卡在 Resting，
+    /// 之后发给它的所有消息都只能 nack 重投。
+    #[sqlx::test]
+    async fn settle_exclusive_releases_state_on_error(pool: sqlx::SqlitePool) {
+        let ctx = init_settle_test_env(pool);
+        let mgr = crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global();
+        let agent_id = "agent-settle-exclusive-missing";
+
+        mgr.set_idle(agent_id);
+        let err = settle_agent_exclusive(ctx, agent_id, PENDING_MAX_ITEMS)
+            .await
+            .expect_err("Agent 不存在应上抛资源未找到");
+        assert_eq!(err.code(), "resource_not_found");
+
+        assert_eq!(
+            mgr.get_state(agent_id),
+            common::enums::AgentRuntimeState::Idle,
+            "失败路径必须释放 Resting 抢占，不能把 Agent 留在不可用状态"
+        );
     }
 }
