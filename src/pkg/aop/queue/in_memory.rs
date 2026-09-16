@@ -16,6 +16,8 @@ struct EventRef {
     created_at: i64,
     /// 本事件被消费的**累计次数**：入队即 1，每次 `nack` 自增（`ack` 后随事件消亡，无需持久化）
     attempt: u32,
+    /// 最早可出队时刻（epoch 毫秒；`0` = 立即可取）。仅 `nack` 重投时设置（per-event 指数退避）。
+    not_before: i64,
 }
 
 impl PartialEq for EventRef {
@@ -40,7 +42,7 @@ impl Ord for EventRef {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct InMemoryEventQueue {
     events: UnsafeCell<HashMap<String, serde_json::Value>>,
     queues: UnsafeCell<HashMap<String, BinaryHeap<EventRef>>>,
@@ -48,13 +50,27 @@ pub struct InMemoryEventQueue {
     in_progress: UnsafeCell<HashMap<String, (EventRef, String)>>,
     has_active_message: UnsafeCell<HashMap<String, bool>>,
     lock: Mutex<()>,
+    /// 重试退避参数（生产默认 1s 起、60s 封顶；测试注入毫秒级以保持用例速度）
+    backoff_base_ms: i64,
+    backoff_max_ms: i64,
 }
 
 unsafe impl Send for InMemoryEventQueue {}
 unsafe impl Sync for InMemoryEventQueue {}
 
+impl Default for InMemoryEventQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryEventQueue {
     pub fn new() -> Self {
+        Self::with_backoff_policy(RETRY_BACKOFF_BASE_MS, RETRY_BACKOFF_MAX_MS)
+    }
+
+    /// 以自定义退避参数构造（仅测试用：毫秒级退避换取用例速度）
+    pub fn with_backoff_policy(base_ms: i64, max_ms: i64) -> Self {
         Self {
             events: UnsafeCell::new(HashMap::new()),
             queues: UnsafeCell::new(HashMap::new()),
@@ -62,7 +78,78 @@ impl InMemoryEventQueue {
             in_progress: UnsafeCell::new(HashMap::new()),
             has_active_message: UnsafeCell::new(HashMap::new()),
             lock: Mutex::new(()),
+            backoff_base_ms: base_ms,
+            backoff_max_ms: max_ms,
         }
+    }
+
+    /// 入队本体。`gated = true` 时事件带非空 `order_key` 即进「同 key FIFO 门闩队列」
+    /// （首条上堆、其余在 key 队列里等前一条 ack）；`gated = false` 时无视
+    /// `order_key` 直进堆，按 `(priority, created_at)` 排序 —— 供**未声明
+    /// `ordered`** 的订阅走（门闩是订阅者的 opt-in，见设计稿 §4.1）。
+    async fn do_enqueue(&self, event: serde_json::Value, gated: bool) -> Result<()> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
+
+        let events = unsafe { &mut *self.events.get() };
+        let queues = unsafe { &mut *self.queues.get() };
+        let global_heap = unsafe { &mut *self.global_heap.get() };
+        let has_active_message = unsafe { &mut *self.has_active_message.get() };
+
+        let event_id = event
+            .get("event_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let order_key = event
+            .get("order_key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let priority = event.get("priority").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+
+        let created_at = event
+            .get("created_at")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        let event_ref = EventRef {
+            event_id: event_id.clone(),
+            order_key: order_key.clone(),
+            priority,
+            created_at,
+            // 首次取出消费即 attempt == 1（`nack` 时自增）
+            attempt: 1,
+            not_before: 0,
+        };
+
+        if events.contains_key(&event_id) {
+            return Ok(());
+        }
+
+        events.insert(event_id.clone(), event);
+
+        if gated && !order_key.is_empty() {
+            let queue = queues.entry(order_key.clone()).or_default();
+            let was_empty = queue.is_empty();
+            queue.push(event_ref.clone());
+
+            if was_empty
+                && !has_active_message.get(&order_key).copied().unwrap_or(false)
+                && let Some(top_ref) = queue.pop()
+            {
+                global_heap.push(top_ref);
+                has_active_message.insert(order_key, true);
+            }
+        } else {
+            global_heap.push(event_ref);
+        }
+
+        Ok(())
     }
 
     /// 收集各 order_key 的待处理数量统计。
@@ -103,70 +190,35 @@ impl InMemoryEventQueue {
     }
 }
 
+/// per-event 重试退避：第 `attempt` 次消费失败重投前的静默时长（毫秒）
+///
+/// 指数递增：attempt 2→1s、3→2s、4→4s … 封顶 `max_ms`。
+/// `attempt` 由 `nack` 自增后传入（首次重投 attempt == 2 → base）。
+/// 次数上限**不在框架层**：是否继续重试由生产者 `on_failed` 的 `RetryDecision`
+/// 决定（入站消费者由 `inbound_retry::decide` 的 `attempt >= 8` 兜底）。
+const RETRY_BACKOFF_BASE_MS: i64 = 1_000;
+const RETRY_BACKOFF_MAX_MS: i64 = 60_000;
+
+fn retry_backoff_ms(base_ms: i64, max_ms: i64, attempt: u32) -> i64 {
+    let shift = attempt.saturating_sub(2).min(6);
+    (base_ms << shift).min(max_ms)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
 #[async_trait]
 impl EventQueue for InMemoryEventQueue {
     async fn enqueue(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
-        let _guard = self
-            .lock
-            .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
+        self.do_enqueue(event, /* gated */ true).await
+    }
 
-        let events = unsafe { &mut *self.events.get() };
-        let queues = unsafe { &mut *self.queues.get() };
-        let global_heap = unsafe { &mut *self.global_heap.get() };
-        let has_active_message = unsafe { &mut *self.has_active_message.get() };
-
-        let event_id = event
-            .get("event_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        let order_key = event
-            .get("order_key")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let priority = event.get("priority").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-
-        let created_at = event
-            .get("created_at")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        let event_ref = EventRef {
-            event_id: event_id.clone(),
-            order_key: order_key.clone(),
-            priority,
-            created_at,
-            // 首次取出消费即 attempt == 1（`nack` 时自增）
-            attempt: 1,
-        };
-
-        if events.contains_key(&event_id) {
-            return Ok(());
-        }
-
-        events.insert(event_id.clone(), event);
-
-        if order_key.is_empty() {
-            global_heap.push(event_ref);
-        } else {
-            let queue = queues.entry(order_key.clone()).or_default();
-            let was_empty = queue.is_empty();
-            queue.push(event_ref.clone());
-
-            if was_empty
-                && !has_active_message.get(&order_key).copied().unwrap_or(false)
-                && let Some(top_ref) = queue.pop()
-            {
-                global_heap.push(top_ref);
-                has_active_message.insert(order_key, true);
-            }
-        }
-
-        Ok(())
+    async fn enqueue_ungated(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        self.do_enqueue(event, /* gated */ false).await
     }
 
     async fn enqueue_batch(
@@ -190,15 +242,27 @@ impl EventQueue for InMemoryEventQueue {
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
 
+        let now = now_ms();
+        // 退避中（not_before 未到）的事件先摘出来，取完再放回——
+        // 它们不阻塞堆里已到期的后继事件。
+        let mut deferred: Vec<EventRef> = Vec::new();
+
         loop {
             let Some(event_ref) = global_heap.pop() else {
+                global_heap.extend(deferred);
                 return Ok(None);
             };
 
-            let event_id = &event_ref.event_id;
-            let order_key = &event_ref.order_key;
+            if event_ref.not_before > now {
+                deferred.push(event_ref);
+                continue;
+            }
 
-            let Some(event) = events.get(event_id) else {
+            let event_id = event_ref.event_id.clone();
+            let order_key = event_ref.order_key.clone();
+
+            let Some(event) = events.get(&event_id) else {
+                // 事件体已消失（ack 竞态窗口）：同旧实现——丢弃该 ref，继续扫堆
                 continue;
             };
 
@@ -212,8 +276,9 @@ impl EventQueue for InMemoryEventQueue {
                     serde_json::Value::from(event_ref.attempt),
                 );
             }
-            in_progress.insert(event_id.clone(), (event_ref.clone(), order_key.clone()));
+            in_progress.insert(event_id, (event_ref, order_key));
 
+            global_heap.extend(deferred);
             return Ok(Some(cloned_event));
         }
     }
@@ -273,6 +338,10 @@ impl EventQueue for InMemoryEventQueue {
 
         // 重投：累计消费次数自增 → 下次出队时封套里的 `attempt` 即新值
         event_ref.attempt = event_ref.attempt.saturating_add(1);
+        // per-event 指数退避：第 n 次重试前先静默 `retry_backoff_ms(attempt)`，
+        // 期间 `dequeue_next` 跳过它（不阻塞同堆其他事件）。
+        event_ref.not_before = now_ms()
+            + retry_backoff_ms(self.backoff_base_ms, self.backoff_max_ms, event_ref.attempt);
 
         global_heap.push(event_ref);
         if !order_key.is_empty() {
@@ -581,7 +650,7 @@ mod tests {
     /// 没有它，生产者只能凭错误内容猜，无法表达「重试太多次了，别再试了」。
     #[tokio::test]
     async fn attempt_increments_on_each_nack() {
-        let queue = new_queue().await;
+        let queue = new_queue_with_fast_backoff().await;
         let ctx = RequestContext::new_system();
 
         queue
@@ -597,10 +666,18 @@ mod tests {
         );
 
         queue.nack(ctx.clone(), "e1").await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(
+            (FAST_BACKOFF_MAX_MS + 30) as u64,
+        ))
+        .await;
         let second = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
         assert_eq!(second["attempt"].as_u64(), Some(2));
 
         queue.nack(ctx.clone(), "e1").await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(
+            (FAST_BACKOFF_MAX_MS + 30) as u64,
+        ))
+        .await;
         let third = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
         assert_eq!(
             third["attempt"].as_u64(),
@@ -612,7 +689,8 @@ mod tests {
     /// `ack` 后事件从队列消失、计数随之消亡（**无需持久化**）；同 id 重新入队从 1 重算
     #[tokio::test]
     async fn attempt_resets_when_event_is_reenqueued() {
-        let queue = new_queue().await;
+        // 毫秒级退避：nack 重投后需等退避窗口过去才能再次取出
+        let queue = new_queue_with_fast_backoff().await;
         let ctx = RequestContext::new_system();
 
         queue
@@ -621,6 +699,10 @@ mod tests {
             .unwrap();
         let _ = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
         queue.nack(ctx.clone(), "e1").await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(
+            (FAST_BACKOFF_MAX_MS + 30) as u64,
+        ))
+        .await;
 
         let _ = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
         queue.ack(ctx.clone(), "e1").await.unwrap();
@@ -637,7 +719,7 @@ mod tests {
     /// nack 把事件放回可调度堆（重试而非丢弃），且不会把同 `order_key` 的后继锁死
     #[tokio::test]
     async fn nack_requeues_event_and_keeps_successor_blocked() {
-        let queue = new_queue().await;
+        let queue = new_queue_with_fast_backoff().await;
 
         queue
             .enqueue(
@@ -665,6 +747,10 @@ mod tests {
             .nack(RequestContext::new_system(), "e1")
             .await
             .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(
+            (FAST_BACKOFF_MAX_MS + 30) as u64,
+        ))
+        .await;
 
         // 失败事件自己重投（后继仍被挡住）
         let retried = queue
@@ -682,5 +768,137 @@ mod tests {
             .unwrap()
             .expect("ack 后后继应可出队");
         assert_eq!(next["event_id"], "e2");
+    }
+
+    const FAST_BACKOFF_BASE_MS: i64 = 10;
+    const FAST_BACKOFF_MAX_MS: i64 = 50;
+
+    /// 毫秒级退避队列（退避用例专用；`new_queue()` 保持生产参数）
+    async fn new_queue_with_fast_backoff() -> InMemoryEventQueue {
+        crate::pkg::storage::test_support::init_for_test().await;
+        InMemoryEventQueue::with_backoff_policy(FAST_BACKOFF_BASE_MS, FAST_BACKOFF_MAX_MS)
+    }
+
+    /// 退避曲线：按 attempt 指数递增并封顶
+    #[test]
+    fn retry_backoff_grows_exponentially_and_caps() {
+        let base = 1_000;
+        let max = 60_000;
+        assert_eq!(
+            super::retry_backoff_ms(base, max, 1),
+            base,
+            "attempt=1 不会发生（重投前已自增），取 base 兜底"
+        );
+        assert_eq!(super::retry_backoff_ms(base, max, 2), 1_000);
+        assert_eq!(super::retry_backoff_ms(base, max, 3), 2_000);
+        assert_eq!(super::retry_backoff_ms(base, max, 4), 4_000);
+        assert_eq!(super::retry_backoff_ms(base, max, 8), 60_000.min(base << 6));
+        assert_eq!(super::retry_backoff_ms(base, max, 100), max, "封顶");
+    }
+
+    /// nack 后事件进入退避静默期：未到期不可出队，但**不阻塞**堆里已到期的其他事件
+    #[tokio::test]
+    async fn nack_backoff_defers_event_without_blocking_due_ones() {
+        let queue = new_queue_with_fast_backoff().await;
+
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e1", "message.created", "", 1),
+            )
+            .await
+            .unwrap();
+        queue
+            .enqueue(
+                RequestContext::new_system(),
+                envelope("e2", "message.created", "", 2),
+            )
+            .await
+            .unwrap();
+
+        let first = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first["event_id"], "e1");
+        queue
+            .nack(RequestContext::new_system(), "e1")
+            .await
+            .unwrap();
+
+        // 退避静默期内：e1 取不到，但 e2（已到期）不被阻塞
+        let due = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("退避中的 e1 不得阻塞已到期的 e2");
+        assert_eq!(due["event_id"], "e2");
+        queue.ack(RequestContext::new_system(), "e2").await.unwrap();
+
+        assert!(
+            queue
+                .dequeue_next(RequestContext::new_system())
+                .await
+                .unwrap()
+                .is_none(),
+            "静默期内 e1 不可出队"
+        );
+
+        // 退避窗口过后：e1 回来，且 attempt 已自增
+        tokio::time::sleep(std::time::Duration::from_millis(
+            (FAST_BACKOFF_MAX_MS + 30) as u64,
+        ))
+        .await;
+        let retried = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("退避结束后 e1 应可出队");
+        assert_eq!(retried["event_id"], "e1");
+        assert_eq!(retried["attempt"].as_u64(), Some(2));
+    }
+
+    /// §4.1 wiring：未声明 `ordered` 的订阅走 `enqueue_ungated`——
+    /// 事件即使带 `order_key` 也不进同 key 门闩队列，立即可出队
+    #[tokio::test]
+    async fn ungated_enqueue_bypasses_order_key_gate() {
+        let queue = new_queue().await;
+
+        queue
+            .enqueue_ungated(
+                RequestContext::new_system(),
+                envelope("e1", "stats.collected", "agent-1", 1),
+            )
+            .await
+            .unwrap();
+        // 同 key 第二条：门闩队列会把它锁到 e1 ack 之后；ungated 必须立即可取
+        queue
+            .enqueue_ungated(
+                RequestContext::new_system(),
+                envelope("e2", "stats.collected", "agent-1", 2),
+            )
+            .await
+            .unwrap();
+
+        let first = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("ungated 事件应立即可出队");
+        assert_eq!(first["event_id"], "e1");
+
+        let second = queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .expect("ungated 同 key 后继不受门闩约束");
+        assert_eq!(second["event_id"], "e2");
+
+        // 未进 key 队列 → order_key 统计应为空
+        assert!(
+            queue.stats().order_keys.is_empty(),
+            "ungated 事件不得出现在 order_key 门闩统计里"
+        );
     }
 }

@@ -502,7 +502,7 @@ impl MessageInboundAdapter for EmailDalImpl {
 // ==================== AOP Producer：入站收尾归属 ====================
 //
 // 邮件侧的「业务收尾」= **推进 UID 游标**（P2，机制见 `dao/email/imap.rs` 的
-// `CONFIRMED_UIDS`）：改造前这一步在轮询循环里 publish 之后无条件执行，
+// `UidCursorStore`）：改造前这一步在轮询循环里 publish 之后无条件执行，
 // 消费失败的消息再也没机会重拉 → 确定性丢失。现在游标随事件带出
 // （`EmailInboundEvent.uid` 本就有），由消费者确认后才推进。
 //
@@ -522,7 +522,7 @@ impl crate::pkg::aop::Producer for EmailDalImpl {
     /// 消费成功（**或**事件被放弃）→ 按 `event.uid` 推进游标（`max` 语义）
     ///
     /// ⚠️ **必须幂等**：回调先于 `queue.ack`，崩溃/重投时会重复触发 ——
-    /// `confirm_uid` 单调不减，同值重复写无副作用（§4.3-1）。
+    /// 游标 `confirm` 单调不减，同值重复写无副作用（§4.3-1）。
     async fn on_consumed(&self, ctx: &RequestContext, event: &serde_json::Value) -> Result<()> {
         // 只取两个字段（封套里的 `content` 可能很大，不必整体反序列化）
         let Some(credential_id) = event.get("credential_id").and_then(|v| v.as_str()) else {

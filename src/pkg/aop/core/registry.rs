@@ -260,8 +260,20 @@ impl Registry {
                     };
 
                     if let Some(queue) = queue {
+                        // 门闩（同 key FIFO）是订阅者的 opt-in：只有声明了 `ordered`
+                        // 的订阅才进同 key 门闩队列；未声明的直进堆（§4.1 wiring）。
+                        let wants_gate = consumer
+                            .subscriptions()
+                            .iter()
+                            .find(|s| s.kind == kind)
+                            .is_none_or(|s| s.ordered);
                         let ctx = RequestContext::new_system();
-                        if let Err(e) = queue.enqueue(ctx, event_json.clone()).await {
+                        let result = if wants_gate {
+                            queue.enqueue(ctx, event_json.clone()).await
+                        } else {
+                            queue.enqueue_ungated(ctx, event_json.clone()).await
+                        };
+                        if let Err(e) = result {
                             sys_error!("consumer {} enqueue error: {}", consumer.name(), e);
                         }
                     }

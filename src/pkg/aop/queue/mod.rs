@@ -77,6 +77,13 @@ impl Default for EventQueryFilter {
 #[async_trait]
 pub trait EventQueue: Send + Sync + std::fmt::Debug + 'static {
     async fn enqueue(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()>;
+    /// 不带门闩入队：即使事件带非空 `order_key` 也直接进堆（按 `(priority, created_at)` 排序）。
+    ///
+    /// 供**未声明 `ordered`** 的订阅走 —— 门闩（同 key FIFO）是订阅者的 opt-in，
+    /// 由 publish 侧按 `Subscription.ordered` 选路（设计稿 §4.1）。
+    async fn enqueue_ungated(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        self.enqueue(ctx, event).await
+    }
     async fn enqueue_batch(
         &self,
         ctx: RequestContext,
@@ -84,7 +91,7 @@ pub trait EventQueue: Send + Sync + std::fmt::Debug + 'static {
     ) -> Result<()>;
     async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<serde_json::Value>>;
     async fn ack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
-    /// 事件处理未成功：退回队列等待重投（退避由 worker 负责）
+    /// 事件处理未成功：退回队列等待重投（per-event 指数退避，见 `retry_backoff_ms`）
     async fn nack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
 
     fn len(&self) -> usize;

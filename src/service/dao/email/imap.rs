@@ -320,7 +320,7 @@ async fn connect_session(credentials: &EmailImapCredentials) -> Result<ImapSessi
 
 // ==================== 已确认消费的 UID（P2 的落点）====================
 
-/// 已确认消费的最大 UID（credential_id → uid）
+/// 已确认消费的 UID 游标（credential_id → 最大已确认 UID），**注入式共享存储**
 ///
 /// **改造前**（P2 缺陷）：[`poll_with_session`] 在 publish 之后**无条件**推进
 /// `PollCursor::last_uid`（原注释自称"解析失败的单封也已消费，游标照常越过"）
@@ -332,31 +332,40 @@ async fn connect_session(credentials: &EmailImapCredentials) -> Result<ImapSessi
 /// `EmailDao::advance_inbound_cursor`）才推进。于是「上一封没消费完 → 游标不动
 /// → 下一轮重拉」，重复由外部键 `email:<Message-ID>` 幂等去重吸收。
 ///
-/// ⚠️ **用进程级静态**（而非 `PollCursor` 字段）的原因：轮询循环与消费回调分属
-/// 不同任务，而 `PollCursor` 是循环局部状态。静态换取"不动 registry 结构"，
-/// 代价是**同进程内的测试用例要用不同 `credential_id`** 才不互相串扰。
-static CONFIRMED_UIDS: std::sync::LazyLock<std::sync::RwLock<HashMap<String, u32>>> =
-    std::sync::LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
-
-/// 已确认消费的最大 UID（`0` = 从未确认 → 起点由首次基线化决定）
-pub(crate) fn confirmed_uid(credential_id: &str) -> u32 {
-    CONFIRMED_UIDS
-        .read()
-        .ok()
-        .and_then(|m| m.get(credential_id).copied())
-        .unwrap_or(0)
+/// 持有方：[`ImapPollRegistry`] 创建并随轮询循环注入，[`super::smtp::EmailDaoImpl`]
+/// 经 [`ImapPollRegistry::cursors`] 拿到**同一份** `Arc` 供消费确认回调写入
+/// （与微信侧注入 `Arc<CursorStore>` 同构）。
+pub(crate) struct UidCursorStore {
+    confirmed: std::sync::RwLock<HashMap<String, u32>>,
 }
 
-/// 推进已确认 UID（仅由首次基线化与消费侧回调调用；**单调不减**）
-///
-/// `uid == 0` 忽略（0 是"未确认"的哨兵值，IMAP UID 从 1 起）。
-pub(crate) fn confirm_uid(credential_id: &str, uid: u32) {
-    if uid == 0 {
-        return;
+impl UidCursorStore {
+    pub(crate) fn new() -> Self {
+        Self {
+            confirmed: std::sync::RwLock::new(HashMap::new()),
+        }
     }
-    if let Ok(mut m) = CONFIRMED_UIDS.write() {
-        let entry = m.entry(credential_id.to_string()).or_insert(0);
-        *entry = (*entry).max(uid);
+
+    /// 已确认消费的最大 UID（`0` = 从未确认 → 起点由首次基线化决定）
+    pub(crate) fn confirmed(&self, credential_id: &str) -> u32 {
+        self.confirmed
+            .read()
+            .ok()
+            .and_then(|m| m.get(credential_id).copied())
+            .unwrap_or(0)
+    }
+
+    /// 推进已确认 UID（仅由首次基线化与消费侧回调调用；**单调不减**）
+    ///
+    /// `uid == 0` 忽略（0 是"未确认"的哨兵值，IMAP UID 从 1 起）。
+    pub(crate) fn confirm(&self, credential_id: &str, uid: u32) {
+        if uid == 0 {
+            return;
+        }
+        if let Ok(mut m) = self.confirmed.write() {
+            let entry = m.entry(credential_id.to_string()).or_insert(0);
+            *entry = (*entry).max(uid);
+        }
     }
 }
 
@@ -372,9 +381,13 @@ struct PollCursor {
 /// 单次轮询 tick：EXAMINE INBOX → 基线化/增量拉取 → publish → 优雅登出
 ///
 /// 返回本次 publish 的事件数；连接生命周期失败整体返回 Err（由循环重试）。
-async fn poll_once(credentials: &EmailImapCredentials, cursor: &mut PollCursor) -> Result<usize> {
+async fn poll_once(
+    credentials: &EmailImapCredentials,
+    cursor: &mut PollCursor,
+    cursors: &UidCursorStore,
+) -> Result<usize> {
     let mut session = connect_session(credentials).await?;
-    let result = poll_with_session(&mut session, credentials, cursor).await;
+    let result = poll_with_session(&mut session, credentials, cursor, cursors).await;
     let _ = session.logout().await;
     result
 }
@@ -383,6 +396,7 @@ async fn poll_with_session(
     session: &mut ImapSession,
     credentials: &EmailImapCredentials,
     cursor: &mut PollCursor,
+    cursors: &UidCursorStore,
 ) -> Result<usize> {
     let mailbox = session.examine("INBOX").await.map_err(|e| {
         err!(
@@ -417,7 +431,7 @@ async fn poll_with_session(
             last_uid: max_uid,
         };
         // 基线化 = "已确认到 max_uid"：历史邮件不产生事件（跳过），无待确认项 → 直接推进
-        confirm_uid(&credentials.credential_id, max_uid);
+        cursors.confirm(&credentials.credential_id, max_uid);
         return Ok(0);
     }
 
@@ -425,7 +439,7 @@ async fn poll_with_session(
     //
     // ⚠️ 起点取**已确认消费**的最大 UID（P2），不是"已发布"的：上一封没消费完时
     // 游标不动 → 下一轮重拉同一批（外部键 `email:<Message-ID>` 幂等去重吸收重复）
-    let last = confirmed_uid(&credentials.credential_id);
+    let last = cursors.confirmed(&credentials.credential_id);
     let uids: Vec<u32> = session
         .uid_search(format!("UID {}:*", last.saturating_add(1)))
         .await
@@ -493,14 +507,14 @@ async fn poll_with_session(
                     // 本地永久无法处理这封（MIME 结构异常）→ 直接确认越过它：
                     // 不确认就会每轮重拉同一封、每轮刷一条 warn。
                     // 语义同消费者侧的 `Discard`：确定性放弃，但留下可审计的 warn 痕迹。
-                    confirm_uid(&credentials.credential_id, *uid);
+                    cursors.confirm(&credentials.credential_id, *uid);
                 }
             }
         }
     }
 
     // ⚠️ **不在这里推进游标**（P2）：`published` 只代表"已入队"，不代表"已消费"。
-    // 推进由消费侧确认后经 `EmailDao::advance_inbound_cursor` 完成（见 CONFIRMED_UIDS）。
+    // 推进由消费侧确认后经 `EmailDao::advance_inbound_cursor` 完成（写 `UidCursorStore`）。
     // 解析失败的单封已在上面单独确认（本地永久无法处理，不越过就会每轮重拉 + 刷日志）。
     Ok(published)
 }
@@ -534,7 +548,11 @@ fn parse_inbound_event(
 }
 
 /// 轮询循环体：收邮件 publish 事件 + 推进内存游标；失败按节奏退避重试
-async fn poll_loop(credential_id: String, credentials: EmailImapCredentials) {
+async fn poll_loop(
+    credential_id: String,
+    credentials: EmailImapCredentials,
+    cursors: std::sync::Arc<UidCursorStore>,
+) {
     log_info!(
         "email imap poll loop started: credential_id={} email={} host={}:{}",
         credential_id,
@@ -545,7 +563,7 @@ async fn poll_loop(credential_id: String, credentials: EmailImapCredentials) {
     let mut cursor = PollCursor::default();
     let mut consecutive_failures: u32 = 0;
     loop {
-        match poll_once(&credentials, &mut cursor).await {
+        match poll_once(&credentials, &mut cursor, &cursors).await {
             Err(e) => {
                 consecutive_failures = consecutive_failures.saturating_add(1);
                 let delay = if consecutive_failures <= FAIL_FAST_LIMIT {
@@ -587,8 +605,12 @@ struct PollLoopHandle {
 }
 
 /// 受管轮询 registry：credential_id 键控（一个代理邮箱 = 一个轮询单元）
+///
+/// 持有本 registry 全部轮询单元共享的 [`UidCursorStore`]：轮询循环（读作拉取起点）
+/// 与消费确认回调（写，经 `EmailDao::advance_inbound_cursor`）操作**同一份**游标。
 pub(crate) struct ImapPollRegistry {
     loops: RwLock<HashMap<String, PollLoopHandle>>,
+    cursors: std::sync::Arc<UidCursorStore>,
 }
 
 impl Default for ImapPollRegistry {
@@ -601,7 +623,13 @@ impl ImapPollRegistry {
     pub fn new() -> Self {
         Self {
             loops: RwLock::new(HashMap::new()),
+            cursors: std::sync::Arc::new(UidCursorStore::new()),
         }
+    }
+
+    /// 游标存储句柄（与轮询循环共享同一份 `Arc`；供 DAO 的消费确认回调写入）
+    pub(crate) fn cursors(&self) -> std::sync::Arc<UidCursorStore> {
+        std::sync::Arc::clone(&self.cursors)
     }
 
     /// 确保邮箱凭证的轮询循环以指定凭证运行（幂等）
@@ -624,7 +652,8 @@ impl ImapPollRegistry {
 
         let credential_id = credentials.credential_id.clone();
         let credentials = credentials.clone();
-        let join = tokio::spawn(poll_loop(credential_id.clone(), credentials));
+        let cursors = std::sync::Arc::clone(&self.cursors);
+        let join = tokio::spawn(poll_loop(credential_id.clone(), credentials, cursors));
         self.loops
             .write()
             .await

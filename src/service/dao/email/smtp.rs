@@ -14,7 +14,7 @@
 //! 主题从正文派生（MessagePo 无标题字段，对齐飞书/微信全文推送语义）。
 
 use super::EmailDao;
-use super::imap::{EmailImapCredentials, ImapPollRegistry};
+use super::imap::{EmailImapCredentials, ImapPollRegistry, UidCursorStore};
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
@@ -218,12 +218,17 @@ fn build_transport(
 struct EmailDaoImpl {
     /// IMAP 入站轮询注册表（credential_id 键控，凭证指纹幂等启停）
     poll_loops: ImapPollRegistry,
+    /// 已确认 UID 游标（与 `poll_loops` 内部轮询循环共享同一份 `Arc`）
+    cursors: std::sync::Arc<UidCursorStore>,
 }
 
 impl EmailDaoImpl {
     fn new() -> Self {
+        let poll_loops = ImapPollRegistry::new();
+        let cursors = poll_loops.cursors();
         Self {
-            poll_loops: ImapPollRegistry::new(),
+            poll_loops,
+            cursors,
         }
     }
 }
@@ -346,17 +351,17 @@ impl EmailDao for EmailDaoImpl {
         self.poll_loops.is_running(credential_id).await
     }
 
-    /// 消费确认后推进 UID 游标（P2）—— 详见 `imap::CONFIRMED_UIDS` 的说明
+    /// 消费确认后推进 UID 游标（P2）—— 写入与轮询循环共享的 [`UidCursorStore`]
     ///
     /// ⚠️ **必须幂等**：回调先于 `queue.ack`，崩溃/重投时会重复触发 ——
-    /// `confirm_uid` 是 `max` 语义，同值重复写无副作用（§4.3-1）。
+    /// `confirm` 是 `max` 语义，同值重复写无副作用（§4.3-1）。
     async fn advance_inbound_cursor(
         &self,
         ctx: RequestContext,
         credential_id: &str,
         uid: u32,
     ) -> Result<()> {
-        super::imap::confirm_uid(credential_id, uid);
+        self.cursors.confirm(credential_id, uid);
         log_debug!(
             &ctx,
             "email_inbound",
@@ -511,27 +516,47 @@ mod tests {
 
     /// P2：已确认游标 —— 单调不减 / `0` 是"未确认"哨兵（忽略）/ credential 隔离
     ///
-    /// ⚠️ `CONFIRMED_UIDS` 是**进程级静态**：这里用专属 credential_id，
-    /// 避免与其他用例串扰（这是选用静态的已知代价，见 `imap.rs` 的说明）。
+    /// 游标是**注入式** [`UidCursorStore`]：每个用例自建实例，天然隔离、无跨用例串扰。
     #[test]
     fn test_confirmed_uid_is_monotonic_and_scoped() {
-        use super::super::imap::{confirm_uid, confirmed_uid};
+        let store = UidCursorStore::new();
 
-        let cred = "cred_test_p2_cursor_a";
-        assert_eq!(confirmed_uid(cred), 0, "未确认时起点为 0");
+        assert_eq!(
+            store.confirmed("cred_test_p2_cursor_a"),
+            0,
+            "未确认时起点为 0"
+        );
 
-        confirm_uid(cred, 10);
-        assert_eq!(confirmed_uid(cred), 10);
+        store.confirm("cred_test_p2_cursor_a", 10);
+        assert_eq!(store.confirmed("cred_test_p2_cursor_a"), 10);
 
         // 单调不减：乱序回调（较小的 UID 后到）不得回退游标 —— 否则会重复拉取
-        confirm_uid(cred, 3);
-        assert_eq!(confirmed_uid(cred), 10);
+        store.confirm("cred_test_p2_cursor_a", 3);
+        assert_eq!(store.confirmed("cred_test_p2_cursor_a"), 10);
 
         // 0 = "未确认"哨兵（IMAP UID 从 1 起）→ 忽略
-        confirm_uid(cred, 0);
-        assert_eq!(confirmed_uid(cred), 10);
+        store.confirm("cred_test_p2_cursor_a", 0);
+        assert_eq!(store.confirmed("cred_test_p2_cursor_a"), 10);
 
         // credential 隔离：不同邮箱互不影响
-        assert_eq!(confirmed_uid("cred_test_p2_cursor_b"), 0);
+        assert_eq!(store.confirmed("cred_test_p2_cursor_b"), 0);
+    }
+
+    /// P2：registry 与 DAO 共享**同一份**游标存储（轮询读 / 确认回调写同源）
+    #[test]
+    fn test_registry_and_dao_share_cursor_store() {
+        let registry = ImapPollRegistry::new();
+        let dao_cursors = registry.cursors();
+        dao_cursors.confirm("cred_shared", 7);
+        assert_eq!(
+            dao_cursors.confirmed("cred_shared"),
+            7,
+            "同一 Arc 内的写入对方立即可见"
+        );
+        assert_eq!(
+            registry.cursors().confirmed("cred_shared"),
+            7,
+            "registry 侧读取的是同一份游标"
+        );
     }
 }
