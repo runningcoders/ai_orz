@@ -14,6 +14,13 @@
 - [src/handlers/system/task_cleanup.rs](src/handlers/system/task_cleanup.rs)
 - [src/handlers/system/task_progress.rs](src/handlers/system/task_progress.rs)
 - [common/src/api/system.rs](common/src/api/system.rs)
+- [src/handlers/system/workspace_metrics.rs](src/handlers/system/workspace_metrics.rs)
+
+**本文关联的文档（四类互引闭环）**
+- 【① Design 决策快照】
+  - [workspace_topbar_metrics_design.md](docs/design/workspace_topbar_metrics_design.md) — 聚合端点放 system handler 域的决策 + 5s/30s 合并为单 30s 节奏的理由
+- 【④ RAG 原子知识卡】
+  - [工作台顶栏聚合指标：system handler 跨域编排 + 前端 30s 单轮询](docs/wiki/knowledge/zh/工作台顶栏聚合指标：system%20handler%20跨域编排%20+%20前端%2030s%20单轮询/工作台顶栏聚合指标：system%20handler%20跨域编排%20+%20前端%2030s%20单轮询.md)
 </cite>
 
 ## 目录
@@ -39,6 +46,7 @@
 - 种子数据：seed（导出/导入/差异对比/默认值应用）
 - AOP 监控：aop（队列统计、事件列表与详情）
 - 健康检查：health_metrics（聚合指标）
+- 工作台顶栏聚合：workspace_metrics（单一端点聚合项目/Agent/运行态/统计/队列全部顶栏数字）
 - 后台任务：task_list / task_progress / task_cleanup（任务列表、进度、清理）
 
 ```mermaid
@@ -402,3 +410,5 @@ DL --> DA["DAO"]
 3. 新增 `src/pkg/background_task/progress.rs` TaskProgressCounter（Arc<AtomicUsize> + Relaxed Ordering，跨 await 可克隆零拷贝）
 4. RebuildVectorsTask 携带 TaskProgressCounter 遍历 7 域 DAL，进度文案拼「(i/7) 正在重建 X 向量索引（已处理 N 条）」；互斥语义——已有 Running 时返回 409
 **涉及 RAG 卡**：向量存储抽象 VectorStore
+
+- 新增 `GET /api/v1/system/workspace/metrics` 端点，工作台顶栏单一聚合快照

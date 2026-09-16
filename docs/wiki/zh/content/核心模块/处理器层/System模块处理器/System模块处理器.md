@@ -20,6 +20,13 @@
 - [src/handlers/system/health_metrics.rs](src/handlers/system/health_metrics.rs)
 - [common/src/api/system.rs](common/src/api/system.rs)
 - [src/router.rs](src/router.rs)
+- [src/handlers/system/workspace_metrics.rs](src/handlers/system/workspace_metrics.rs)
+
+**本文关联的文档（四类互引闭环）**
+- 【① Design 决策快照】
+  - [workspace_topbar_metrics_design.md](docs/design/workspace_topbar_metrics_design.md) — 聚合端点放 system handler 域的决策 + 5s/30s 合并为单 30s 节奏的理由
+- 【④ RAG 原子知识卡】
+  - [工作台顶栏聚合指标：system handler 跨域编排 + 前端 30s 单轮询](docs/wiki/knowledge/zh/工作台顶栏聚合指标：system%20handler%20跨域编排%20+%20前端%2030s%20单轮询/工作台顶栏聚合指标：system%20handler%20跨域编排%20+%20前端%2030s%20单轮询.md)
 </cite>
 
 ## 更新摘要
@@ -28,6 +35,7 @@
 - 更新系统API结构，增加进程管理相关的请求和响应类型
 - 补充路由配置中进程管理端点的注册信息
 - 增强权限控制和Agent范围过滤说明
+- 新增工作台顶栏聚合 handler（`workspace_metrics.rs`），单一端点跨域编排 project/hr/runtime/finance/system 五域能力，前端 30s 单轮询即可拿到顶栏全部数字
 
 ## 目录
 1. [简介](#简介)
@@ -59,6 +67,7 @@ D["logs/*"]
 E["process/*"]
 F["seed/*"]
 G["aop.rs / aop_stats.rs"]
+W["workspace_metrics.rs<br/>工作台顶栏聚合"]
 H["health_metrics.rs"]
 end
 subgraph "领域服务层"
@@ -73,6 +82,7 @@ A --> D
 A --> E
 A --> F
 A --> G
+A --> W
 A --> H
 B --> I
 C --> I
@@ -80,6 +90,7 @@ D --> I
 E --> I
 F --> I
 G --> I
+W --> I
 H --> I
 B --> J
 C --> J
@@ -87,6 +98,7 @@ D --> J
 E --> J
 F --> J
 G --> J
+W --> J
 H --> J
 ```
 
@@ -106,6 +118,7 @@ H --> J
 - AOP 实时统计：概览、时序、分布三类内存统计接口。
 - 健康指标：聚合后端在线、AOP 队列积压、活跃 Agent/项目/任务数、运行时长等。
 - **新增** 进程管理：后台进程列表查询、状态监控、进程终止，支持Agent范围过滤和探活刷新。
+- 工作台顶栏聚合（workspace_metrics.rs）：单一响应覆盖项目/Agent 概览 + 运行态三色 + 模型/工具窗口读数 + AOP 积压；降级策略为单维度失败按 0 呈现
 
 章节来源
 - [src/handlers/system/backup/mod.rs:1-33](src/handlers/system/backup/mod.rs#L1-L33)
