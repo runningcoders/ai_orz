@@ -23,7 +23,7 @@
 //! `MessageCreatedEvent::order_key` 注释里早就写明的设计意图。
 
 use async_trait::async_trait;
-use common::enums::{CallerType, MessageRole, MessageStatus, MessageType};
+use common::enums::{CallerType, MessageRole, MessageType};
 use common::error::{Error, ErrorCode, Result};
 use serde_json::Value;
 use std::sync::Arc;
@@ -87,9 +87,16 @@ impl MessageConsumer {
     ///
     /// 单独抽成关联函数的理由：构造 `MessageConsumer` 会拉起整个 domain 全局单例
     /// （纯单测环境拿不到），而护栏单测只需断言订阅声明本身 → 声明与实例解耦。
+    ///
+    /// ⚠️ `message.created` 上的 `.notify_producer()` 是**必需**的：
+    /// `messages.status` 的翻转（业务收尾）已不在本消费者里做，而由拥有该 topic
+    /// 业务状态的对象（`impl Producer for MessageDalImpl`）在 `on_consumed` 里完成。
+    /// 漏声明它 = 状态**永不翻转**且不报错。
     pub fn declarations() -> Vec<Subscription> {
         vec![
-            Subscription::new(EventTopic::MessageCreated).ordered(),
+            Subscription::new(EventTopic::MessageCreated)
+                .ordered()
+                .notify_producer(),
             Subscription::new(EventTopic::AgentSettleRequested).ordered(),
         ]
     }
@@ -133,37 +140,11 @@ impl Consumer for MessageConsumer {
         }
     }
 
-    /// 只有 `message.created` 的 `event_id` 是 messages 表主键
-    /// （`MessageCreatedEvent::id()` 返回的正是 message_id）
-    ///
-    /// 其余事件（`agent.settle.requested`）在 messages 表里没有对应行：更新 0 行虽是
-    /// 空转无害，但它会把「传进来的 id 一定指向 messages 表」变成一个没说出口的前提，
-    /// 将来给 `update_status` 加上行数校验就会静默变成重试死循环。所以按 source 显式分流。
-    async fn ack(&self, source: &str, event_id: &str) -> Result<()> {
-        if source != EventTopic::MessageCreated.as_str() {
-            return Ok(());
-        }
-        let ctx = RequestContext::new_system();
-        message_dal::dal()
-            .update_status(ctx, event_id, MessageStatus::Processed)
-            .await?;
-        Ok(())
-    }
-
-    /// 把消息置回 Pending —— 它是**启动恢复的依据**
-    ///
-    /// （`message_dal` 按 `status = Pending` 扫出未处理消息重投），所以不能省。
-    /// `source` 分流理由同 [`Consumer::ack`]。
-    async fn nack(&self, source: &str, event_id: &str) -> Result<()> {
-        if source != EventTopic::MessageCreated.as_str() {
-            return Ok(());
-        }
-        let ctx = RequestContext::new_system();
-        message_dal::dal()
-            .update_status(ctx, event_id, MessageStatus::Pending)
-            .await?;
-        Ok(())
-    }
+    // ℹ️ 原先的 `ack` / `nack` 已整体删除：
+    // - `messages.status → Processed` 搬到了 `impl Producer for MessageDalImpl::on_consumed`；
+    // - `messages.status → Pending`（启动恢复的依据）搬到同一个对象的 `on_failed`；
+    // - 原先那个 `if source != "message.created" { return }` 的硬编码分流随之消失 ——
+    //   归属现在由 `EventTopic::MessageCreated → producer` 索引直接决定，不再靠字符串比较。
 
     /// 并发 worker 数量
     ///

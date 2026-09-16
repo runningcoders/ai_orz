@@ -7,7 +7,7 @@ use crate::models::events::MessageCreatedEvent;
 use crate::models::message::{Message, MessagePo};
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
-use crate::pkg::aop;
+use crate::pkg::aop::{self, Producer, RetryDecision};
 use crate::pkg::background_task::TaskProgressCounter;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::message::{
@@ -15,7 +15,7 @@ use crate::service::dao::message::{
 };
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::organization::OrganizationDao;
-use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::enums::{EventTopic, MessageRole, MessageStatus, MessageType};
 use common::error::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -26,14 +26,60 @@ pub fn dal() -> Arc<dyn MessageDal> {
     MESSAGE_DAL.get().cloned().unwrap()
 }
 
+/// 装配消息 DAL 单例，并把它**同时**注册为 `message.created` 的生产者
+///
+/// 同一个对象、两种身份（`Arc<MessageDalImpl>` 各 coerce 一次）：
+/// - `Arc<dyn MessageDal>`：业务读写的入口；
+/// - `Arc<dyn Producer>`：`message.created` 的**归属** —— 消费完成后由它做业务收尾
+///   （`messages.status` 翻转），即原先写在 `consumer/message.rs` 里的 `ack` / `nack`。
+///
+/// ⚠️ 必须在 `aop::init_all()`（即 `start_all`）**之前**调用：`start_all` 会校验
+/// 「声明了 `notify_producer` 的 topic 必须有生产者」，缺了它启动即失败。
+/// 实际启动顺序已满足：`service::init()` → `dal::init_all()` 早于 `aop::init_all()`。
 pub fn init() {
-    let _ = MESSAGE_DAL.set(new(
+    let dal = new_impl(
         message::dao(),
         message::vector_dao(),
         crate::service::dao::cortex::dao(),
         crate::service::dao::model_provider::dao(),
         crate::service::dao::organization::dao(),
-    ));
+    );
+
+    // 幂等：OnceLock 抢占失败 = 已初始化过（生产只调一次；测试里
+    // `init_service_for_test()` 会被反复调用）→ 直接返回，避免第二次
+    // `register_producer` 撞上 topic 占用校验
+    // 同一个底层分配，两次 coerce：先取强类型副本，再各自转 trait object
+    let concrete = Arc::clone(&dal);
+    let as_dal: Arc<dyn MessageDal> = concrete;
+    if MESSAGE_DAL.set(as_dal).is_err() {
+        return;
+    }
+
+    let as_producer: Arc<dyn Producer> = dal;
+    aop::registry()
+        .register_producer(as_producer)
+        .expect("register message.created producer (topic 占用冲突 = 装配错误)");
+}
+
+/// 构造具体的 `MessageDalImpl`
+///
+/// 存在的理由：注册生产者需要**具体类型的** `Arc<MessageDalImpl>`（才能各自 coerce
+/// 成 `Arc<dyn MessageDal>` 与 `Arc<dyn Producer>`）；而 [`new`] 的返回类型
+/// `Arc<dyn MessageDal>` 保持不动（测试在用）。
+pub(crate) fn new_impl(
+    message_dao: Arc<dyn MessageDao + Send + Sync>,
+    message_vector_dao: Arc<dyn MessageVectorDao + Send + Sync>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
+    organization_dao: Arc<dyn OrganizationDao + Send + Sync>,
+) -> Arc<MessageDalImpl> {
+    Arc::new(MessageDalImpl {
+        message_dao,
+        message_vector_dao,
+        cortex_dao,
+        model_provider_dao,
+        organization_dao,
+    })
 }
 
 pub fn new(
@@ -43,13 +89,13 @@ pub fn new(
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
     organization_dao: Arc<dyn OrganizationDao + Send + Sync>,
 ) -> Arc<dyn MessageDal> {
-    Arc::new(MessageDalImpl {
+    new_impl(
         message_dao,
         message_vector_dao,
         cortex_dao,
         model_provider_dao,
         organization_dao,
-    })
+    )
 }
 
 #[async_trait::async_trait]
@@ -135,7 +181,7 @@ pub trait MessageDal: Send + Sync {
     ) -> Result<()>;
 }
 
-struct MessageDalImpl {
+pub(crate) struct MessageDalImpl {
     message_dao: Arc<dyn MessageDao>,
     message_vector_dao: Arc<dyn MessageVectorDao>,
     cortex_dao: Arc<dyn CortexDao>,
@@ -694,4 +740,71 @@ fn enrich_ctx(ctx: &RequestContext, po: &MessagePo) -> RequestContext {
         .try_project_id(po.project_id.as_deref())
         .try_task_id(po.task_id.as_deref())
         .build()
+}
+
+impl MessageDalImpl {
+    /// 事件封套里的 `event_id` 就是 messages 表主键
+    ///
+    /// `MessageCreatedEvent::id()` 返回的正是 message_id，而 `Registry::publish` 会把
+    /// `event.id()` 注入封套顶层的 `event_id` —— 框架不感知业务主键，只搬运 `Event::id()`。
+    pub(crate) fn message_id_of(event: &serde_json::Value) -> Option<&str> {
+        event.get("event_id").and_then(|v| v.as_str())
+    }
+}
+
+/// `message.created` 的归属：业务收尾由**拥有这份状态的那个对象自身**完成
+///
+/// 这就是「生产者对象 = 拥有该 topic 业务收尾能力的对象本身」的一个实例 ——
+/// 不新建 `MessageCreatedProducer`，因为那只会把 DAL 已有的能力再包一层。
+///
+/// 搬进来的两个方法体原本是 `consumer/message.rs` 的 `Consumer::ack` / `nack`：
+/// 搬走后消费者只剩「把消息送到 Agent / 让 Agent 沉淀」，投递生命周期完全归
+/// 框架（判定 ack/nack）+ 生产者（业务持久化）。消费者的 `Arc<dyn MessageDal>`
+/// 依赖也从「写状态」缩回到「读消息」。
+#[async_trait::async_trait]
+impl Producer for MessageDalImpl {
+    fn name(&self) -> &str {
+        "message_dal"
+    }
+
+    fn topic(&self) -> EventTopic {
+        EventTopic::MessageCreated
+    }
+
+    /// 事件生命周期**终结**（成功消费 **或** 被放弃）→ 消息置为 `Processed`
+    ///
+    /// ⚠️ 框架在 `queue.ack` **之前**调用，且 `Discard` 后还会再回调一次
+    /// → 必须幂等（写同一个状态值，幂等成立）。
+    async fn on_consumed(&self, ctx: &RequestContext, event: &serde_json::Value) -> Result<()> {
+        let Some(message_id) = Self::message_id_of(event) else {
+            // 理论不可达（publish 必注入 event_id）。缺了便无从收尾，但「收尾失败」
+            // 不该影响投递结论（框架只记日志）→ 直接返回，让事件正常 ack。
+            return Ok(());
+        };
+
+        self.update_status(ctx.clone(), message_id, MessageStatus::Processed)
+            .await
+    }
+
+    /// 本次尝试失败 → 消息置回 `Pending`，并请求重投
+    ///
+    /// 置回 `Pending` **不可省**：它是**启动恢复的依据** —— `message_dal` 按
+    /// `status = Pending` 扫出未处理消息重投（等价于改造前 `Consumer::nack`）。
+    ///
+    /// 返回 `Retry`：数据库瞬时错误本就应该重投；框架侧已有统一的失败退避
+    /// （`Consumer::error_retry_sleep_ms`），生产者不需要再表达时机。
+    async fn on_failed(
+        &self,
+        ctx: &RequestContext,
+        event: &serde_json::Value,
+        _err: &str,
+        _attempt: u32,
+    ) -> Result<RetryDecision> {
+        if let Some(message_id) = Self::message_id_of(event) {
+            // 写失败 → 本方法返回 Err → 框架按「视为 Retry」处理（安全方向），正是期望行为
+            self.update_status(ctx.clone(), message_id, MessageStatus::Pending)
+                .await?;
+        }
+        Ok(RetryDecision::Retry)
+    }
 }

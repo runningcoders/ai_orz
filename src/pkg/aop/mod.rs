@@ -26,7 +26,8 @@ pub mod queue;
 
 // 重导出核心 API
 pub use core::{
-    AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, Event, Producer, Registry, Subscription,
+    AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, Event, EventSink, Producer, ProducerLoop,
+    Registry, RetryDecision, Subscription,
 };
 pub use queue::EventQueue;
 
@@ -35,11 +36,7 @@ use once_cell::sync::Lazy;
 use std::sync::Arc;
 
 /// 全局 Registry 单例（Arc 包装，允许 worker 协程持有引用）
-static REGISTRY: Lazy<Arc<Registry>> = Lazy::new(|| {
-    let registry = Arc::new(Registry::new());
-    registry.set_self_ref(registry.clone());
-    registry
-});
+static REGISTRY: Lazy<Arc<Registry>> = Lazy::new(|| Arc::new(Registry::new()));
 
 /// 获取全局 Registry
 pub fn registry() -> &'static Registry {
@@ -58,8 +55,12 @@ pub async fn publish<E: Event>(ctx: &RequestContext, event: E) {
 
 /// 启动 AOP 调度器
 ///
-/// 仅启动异步消费者的轮询 worker，**不负责注册业务消费者**。
-/// 业务消费者的注册由 `consumer::init` 完成。
+/// 启动异步消费者的 worker，并逐个 `Producer::start(sink)`（把发布句柄交给生产者），
+/// **不负责注册业务消费者/生产者**。业务侧的注册由 `consumer::init` / `producer::init`
+/// / 各 DAL 的 `init()` 完成。
+///
+/// 启动前会校验「声明了 `notify_producer` 的 topic 必须有对应生产者」，
+/// 缺失即返回 Err（把「忘注册生产者」从静默变成启动即失败）。
 pub async fn init_all() -> common::error::Result<()> {
     REGISTRY.start_all().await?;
     Ok(())
@@ -67,8 +68,9 @@ pub async fn init_all() -> common::error::Result<()> {
 
 /// 停机 AOP 调度器（优雅退出）
 ///
-/// 置位停机标志：异步消费者 worker 处理完当前事件后退出，
-/// 轮询 producer 最多 500ms 内退出；并逐个调用 producer.stop()。
+/// 置位停机标志：异步消费者 worker 处理完当前事件后退出；随后逐个调用
+/// `Producer::stop()` —— 由生产者置位自己的 loop 标志**并等 loop 真正退出**
+/// （见 [`Producer::stop`] 的契约 2）。
 pub async fn shutdown_all() -> common::error::Result<()> {
     REGISTRY.shutdown_all().await
 }

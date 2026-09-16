@@ -136,6 +136,7 @@ mod tests {
             order_key: "order-1".to_string(),
             priority: 5,
             created_at: 1234567890,
+            attempt: 1,
             context_carrier: None,
         };
 

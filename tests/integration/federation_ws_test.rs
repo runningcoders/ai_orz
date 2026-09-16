@@ -80,8 +80,9 @@ async fn test_federation_ws_command_roundtrip(pool: SqlitePool) {
     let _ = common::init_full_test_env(pool.clone()).await;
     // 启动 AOP 调度器（Async consumer worker）：真实运行由 aop::init_all 启动，
     // 测试 env 只注册不启动；本测试进程独立，启动不影响其他用例
-    ai_orz::pkg::aop::registry()
-        .start_all()
+    // 用 `aop::init_all()` 而非 `registry().start_all()`：后者需要 `Arc<Registry>`
+    // 接收者（构造 `EventSink` 要用），`registry()` 只给 `&Registry`。
+    ai_orz::pkg::aop::init_all()
         .await
         .expect("start aop workers");
     let app = common::TestApp::new(pool).await;

@@ -14,7 +14,10 @@
 //!    按消费者隔离，拆成两个消费者时同一个 agent_id 会落在两条互不知晓的队列里。
 //! 3. 消费者按封套 `kind` 分流，未订阅的 kind 显式报错，而不是被当成消息反序列化。
 //! 4. 沉淀结束把 Agent 放回 Idle；抢不到（防御分支）上抛 `conflict` 而非静默跳过。
-//! 5. `ack`/`nack` 按 `source` 分流：沉淀事件的 id 不是 message_id，不得去动 messages 表。
+//! 5. **归属反查取代了 `source` 分流**：`messages.status` 的翻转搬到了
+//!    `impl Producer for MessageDalImpl`，由框架按 `event_kind` 反查归属后才回调。
+//!    沉淀事件查不到生产者 → 根本不会回调 → 连「对 messages 表白跑一次 UPDATE」
+//!    的机会都没有（原先靠 `Consumer::ack/nack` 里硬编码字符串比较实现的闸门已删除）。
 //!
 //! 队列层「同 order_key 串行」这一不变量由 `src/pkg/aop/queue/in_memory.rs::tests`
 //! 用实例隔离的单元测试锁定（不走全局 registry、不受并发测试干扰），
@@ -279,14 +282,18 @@ async fn test_awakening_consumer_settles_and_releases_agent(pool: SqlitePool) {
     );
 }
 
-/// `ack`/`nack` 必须按 `source` 分流：沉淀事件的 event_id **不是** message_id
+/// 归属反查取代 `source` 分流：只有 `message.created` 有生产者
 ///
-/// 不设这道闸门的话，每个沉淀事件都会对 messages 表白跑一次
-/// `UPDATE ... WHERE id = <settle_event_id>`（命中 0 行、静默 Ok），把「传进来的 id
-/// 一定指向 messages 表」变成一个没说出口的前提 —— 将来给 `update_status` 加上行数
-/// 校验，沉淀链路就会开始 nack → 重投 → 再失败，变成死循环。
+/// 改造前靠 `Consumer::ack/nack` 里的 `if source != "message.created" { return }`
+/// 硬编码分流，避免沉淀事件对 messages 表白跑 `UPDATE ... WHERE id = <settle_event_id>`
+/// （命中 0 行、静默 Ok）—— 那会把「传进来的 id 一定指向 messages 表」变成
+/// 一个没说出口的前提，将来给 `update_status` 加上行数校验就会变成重投死循环。
+///
+/// 改造后那道闸门整体消失，改为**框架按 `event_kind` 反查归属**：查不到生产者就
+/// 不回调。本测试锁的就是这个反查结果 —— 一旦有人给沉淀事件也注册上生产者，
+/// 原来的隐患会原样回来。
 #[sqlx::test]
-async fn test_ack_by_source_does_not_touch_messages(pool: SqlitePool) {
+async fn test_only_message_created_has_a_producer(pool: SqlitePool) {
     let _ctx = crate::common::init_full_test_env(pool.clone()).await;
 
     // 造一条真实消息行（Pending），并用它的 id 冒充「沉淀事件 id」
@@ -308,36 +315,26 @@ async fn test_ack_by_source_does_not_touch_messages(pool: SqlitePool) {
     .await
     .expect("应能插入测试消息行");
 
-    let consumer = MessageConsumer::new();
+    let registry = ai_orz::pkg::aop::registry();
 
-    // ① source = 沉淀事件：不得借这个 id 去改 messages 表
-    consumer
-        .ack(KIND_SETTLE, &message_id)
-        .await
-        .expect("非消息事件的 ack 应为无操作");
-    consumer
-        .nack(KIND_SETTLE, &message_id)
-        .await
-        .expect("非消息事件的 nack 应为无操作");
+    // ① message.created 有归属 → 框架会回调生产者的 on_consumed / on_failed
+    assert!(
+        registry.has_producer(common_ext::enums::EventTopic::MessageCreated),
+        "message.created 必须注册生产者（= 消息 DAL 自身），否则 messages.status 永不翻转"
+    );
 
+    // ② agent.settle.requested 无归属 → ①类纯通知，框架不回调任何生产者
+    assert!(
+        !registry.has_producer(common_ext::enums::EventTopic::AgentSettleRequested),
+        "沉淀事件不得有生产者：否则会借它的 event_id 去动 messages 表"
+    );
+
+    // 行确实没被碰过（沉淀链路本测试未跑，这里锁的是「没有意外写库」的前提）
     let status = read_message_status(&message_id).await;
     assert_eq!(
         status, pending,
-        "沉淀事件的 ack/nack 不该改动 messages 表，实际 status={}",
+        "消息状态不该被改动，实际 status={}",
         status
-    );
-
-    // ② source = message.created：正常对账，状态真的要变
-    consumer
-        .ack(KIND_MESSAGE, &message_id)
-        .await
-        .expect("消息事件的 ack 应正常落库");
-
-    let status = read_message_status(&message_id).await;
-    assert_eq!(
-        status,
-        common_ext::enums::MessageStatus::Processed as i32,
-        "message.created 的 ack 必须把消息置为 Processed"
     );
 }
 

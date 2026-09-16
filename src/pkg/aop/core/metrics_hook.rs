@@ -3,11 +3,12 @@
 //! AOP 框架保持零业务依赖原则，统计采集逻辑通过 Hook 注入。
 //! 业务层实现此 trait，在 lib.rs 启动时通过 `registry().set_metrics_hook()` 注入。
 //!
-//! 4 个回调方法对应 AOP 事件生命周期的关键节点：
+//! 5 个回调方法对应 AOP 事件生命周期的关键节点：
 //! - on_publish: 事件被发布到 Registry（每个消费者触发一次）
 //! - on_consume_start: 消费者开始处理事件
 //! - on_consume_success: 消费者成功处理事件
 //! - on_consume_failure: 消费者处理事件失败
+//! - on_consume_discarded: 事件被生产者主动放弃（永久移除，**不计入失败率**）
 //!
 //! 所有方法提供默认空实现，未注入 hook 时零开销。
 
@@ -23,6 +24,8 @@ pub struct AopEventMeta {
     pub order_key: String,
     pub priority: u8,
     pub created_at: i64,
+    /// 本事件被消费的**累计次数**（首次消费即 1；由队列层在出队时注入封套）
+    pub attempt: u32,
     /// 随事件流转的可传输子 context（链路串联载体，可能为 None）
     pub context_carrier: Option<ContextCarrier>,
 }
@@ -54,6 +57,12 @@ impl AopEventMeta {
                 .get("created_at")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
+            // 缺省 1：队列层每次出队都会注入 `attempt`；Sync 路径不经队列，
+            // 没有 attempt 概念（首次消费即唯一一次消费）
+            attempt: event_json
+                .get("attempt")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1) as u32,
             context_carrier: event_json
                 .get(AOP_CONTEXT_CARRIER_KEY)
                 .and_then(|v| serde_json::from_value(v.clone()).ok()),
@@ -93,4 +102,11 @@ pub trait AopMetricsHook: Send + Sync {
         _error: &str,
     ) {
     }
+
+    /// 事件被生产者**主动放弃**时触发（`Producer::on_failed` 返回 `RetryDecision::Discard`）
+    ///
+    /// ⚠️ **必须与 `on_consume_failure` 分开统计，不得混入失败率** —— `Discard` 是
+    /// 有意的业务决策（如「永久无法解析的坏邮件」），而事件到此**永久移除、无死信存储**，
+    /// 这条埋点是它在系统里仅存的痕迹。混进失败率就会重演「假失败指标」刷屏。
+    fn on_consume_discarded(&self, _consumer_name: &str, _meta: &AopEventMeta, _error: &str) {}
 }

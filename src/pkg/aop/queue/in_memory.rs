@@ -14,6 +14,8 @@ struct EventRef {
     order_key: String,
     priority: u8,
     created_at: i64,
+    /// 本事件被消费的**累计次数**：入队即 1，每次 `nack` 自增（`ack` 后随事件消亡，无需持久化）
+    attempt: u32,
 }
 
 impl PartialEq for EventRef {
@@ -138,6 +140,8 @@ impl EventQueue for InMemoryEventQueue {
             order_key: order_key.clone(),
             priority,
             created_at,
+            // 首次取出消费即 attempt == 1（`nack` 时自增）
+            attempt: 1,
         };
 
         if events.contains_key(&event_id) {
@@ -198,7 +202,16 @@ impl EventQueue for InMemoryEventQueue {
                 continue;
             };
 
-            let cloned_event = event.clone();
+            // 把「第几次消费」注入封套顶层，供消费侧 `AopEventMeta::from_json` 读出：
+            // `Producer::on_failed` 据此实现「退避 N 次后放弃」。
+            // 只注入返回的副本，不改 `events` 里那份（监控页展示的是原始事件）。
+            let mut cloned_event = event.clone();
+            if let Some(obj) = cloned_event.as_object_mut() {
+                obj.insert(
+                    "attempt".to_string(),
+                    serde_json::Value::from(event_ref.attempt),
+                );
+            }
             in_progress.insert(event_id.clone(), (event_ref.clone(), order_key.clone()));
 
             return Ok(Some(cloned_event));
@@ -254,9 +267,12 @@ impl EventQueue for InMemoryEventQueue {
         let in_progress = unsafe { &mut *self.in_progress.get() };
         let has_active_message = unsafe { &mut *self.has_active_message.get() };
 
-        let Some((event_ref, order_key)) = in_progress.remove(event_id) else {
+        let Some((mut event_ref, order_key)) = in_progress.remove(event_id) else {
             return Ok(());
         };
+
+        // 重投：累计消费次数自增 → 下次出队时封套里的 `attempt` 即新值
+        event_ref.attempt = event_ref.attempt.saturating_add(1);
 
         global_heap.push(event_ref);
         if !order_key.is_empty() {
@@ -557,6 +573,65 @@ mod tests {
         }
         ids.sort();
         assert_eq!(ids, vec!["e1", "e2"]);
+    }
+
+    /// `attempt` = 本事件被消费的**累计次数**：入队即 1，每次 `nack` 自增
+    ///
+    /// 它是 `Producer::on_failed` 实现「退避 N 次后放弃」的唯一依据 ——
+    /// 没有它，生产者只能凭错误内容猜，无法表达「重试太多次了，别再试了」。
+    #[tokio::test]
+    async fn attempt_increments_on_each_nack() {
+        let queue = new_queue().await;
+        let ctx = RequestContext::new_system();
+
+        queue
+            .enqueue(ctx.clone(), envelope("e1", "message.created", "", 1))
+            .await
+            .unwrap();
+
+        let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(
+            first["attempt"].as_u64(),
+            Some(1),
+            "首次消费即 attempt == 1"
+        );
+
+        queue.nack(ctx.clone(), "e1").await.unwrap();
+        let second = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(second["attempt"].as_u64(), Some(2));
+
+        queue.nack(ctx.clone(), "e1").await.unwrap();
+        let third = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(
+            third["attempt"].as_u64(),
+            Some(3),
+            "连续 nack 两次后第 3 次取出应为 attempt == 3"
+        );
+    }
+
+    /// `ack` 后事件从队列消失、计数随之消亡（**无需持久化**）；同 id 重新入队从 1 重算
+    #[tokio::test]
+    async fn attempt_resets_when_event_is_reenqueued() {
+        let queue = new_queue().await;
+        let ctx = RequestContext::new_system();
+
+        queue
+            .enqueue(ctx.clone(), envelope("e1", "message.created", "", 1))
+            .await
+            .unwrap();
+        let _ = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        queue.nack(ctx.clone(), "e1").await.unwrap();
+
+        let _ = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        queue.ack(ctx.clone(), "e1").await.unwrap();
+
+        // 同一个 id 重新入队 = 新的生命周期 → 计数回到 1
+        queue
+            .enqueue(ctx.clone(), envelope("e1", "message.created", "", 1))
+            .await
+            .unwrap();
+        let again = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(again["attempt"].as_u64(), Some(1));
     }
 
     /// nack 把事件放回可调度堆（重试而非丢弃），且不会把同 `order_key` 的后继锁死

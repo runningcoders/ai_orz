@@ -6,12 +6,13 @@ use crate::models::message::Message;
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::vector::{MatchType, VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
+use crate::pkg::aop::{Producer, RetryDecision};
 use crate::service::dal::message::MessageDal;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::message;
 use crate::service::dao::message::{MessageQuery, MessageSearch};
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
-use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::enums::{EventTopic, MessageRole, MessageStatus, MessageType};
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -97,12 +98,24 @@ impl CortexDao for MockCortexDao {
 
 /// 初始化测试环境（使用 Mock Cortex/ModelProvider，跳过向量索引自动维护）
 async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDal + Send + Sync>, RequestContext) {
+    // `Arc<MessageDalImpl>` → `Arc<dyn MessageDal>`：同一份分配，coerce 而已
+    let (concrete, ctx) = init_test_env_impl(pool).await;
+    (concrete, ctx)
+}
+
+/// 具体类型版本：验证 `Producer` 回调（`on_consumed` / `on_failed`）时必须用具体类型
+async fn init_test_env_impl(
+    pool: SqlitePool,
+) -> (
+    Arc<crate::service::dal::message::MessageDalImpl>,
+    RequestContext,
+) {
     let message_dao = message::sqlite::new();
     let message_vector_dao = message::vector::new();
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
     crate::service::dao::organization::init();
-    let dal = crate::service::dal::message::new(
+    let dal = crate::service::dal::message::new_impl(
         message_dao,
         message_vector_dao,
         cortex_dao,
@@ -887,4 +900,132 @@ async fn test_search_with_filters(pool: SqlitePool) {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].task_id(), Some("task-A"));
+}
+
+// ========== Producer：`message.created` 的业务收尾 ==========
+//
+// 这一组测试守住的是「搬迁没搬丢」：原先 `consumer/message.rs::ack` / `nack` 对
+// `messages.status` 的写入，现在必须由 `impl Producer for MessageDalImpl` 完成。
+// 两者之间没有任何编译期联系（消费者删了方法照样编译通过）→ 只能靠测试钉住。
+
+/// 造一封「已落库」的消息，返回 (dal, ctx, message_id)
+async fn seed_message(
+    pool: SqlitePool,
+    status: MessageStatus,
+) -> (
+    Arc<crate::service::dal::message::MessageDalImpl>,
+    RequestContext,
+    String,
+) {
+    let (dal, ctx) = init_test_env_impl(pool).await;
+
+    let mut msg = create_test_message(
+        "task-1",
+        "user-1",
+        "agent-1",
+        MessageRole::User,
+        MessageRole::Agent,
+        "Hello".to_string(),
+    );
+    msg.po.status = status;
+    dal.save_message(ctx.clone(), &msg).await.unwrap();
+
+    let message_id = msg.id().to_string();
+    (dal, ctx, message_id)
+}
+
+/// 事件封套（publish 会用 `Event::id()` 注入 `event_id`，对 message.created 就是 message_id）
+fn envelope(message_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "event_id": message_id,
+        "kind": EventTopic::MessageCreated.as_str(),
+    })
+}
+
+/// 归属声明：`name()` / `topic()` 与 `message.created` 一一对应
+#[sqlx::test]
+async fn test_producer_owns_message_created_topic(pool: SqlitePool) {
+    let (dal, _ctx, _id) = seed_message(pool, MessageStatus::Pending).await;
+
+    assert_eq!(dal.name(), "message_dal");
+    assert_eq!(dal.topic(), EventTopic::MessageCreated);
+}
+
+/// `on_consumed` → 消息置为 `Processed`（等价于改造前 `Consumer::ack`）
+#[sqlx::test]
+async fn test_producer_on_consumed_marks_processed(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Pending).await;
+
+    dal.on_consumed(&ctx, &envelope(&message_id)).await.unwrap();
+
+    let found = dal.find_by_id(ctx, &message_id).await.unwrap().unwrap();
+    assert_eq!(found.po.status, MessageStatus::Processed);
+}
+
+/// `on_failed` → 消息置回 `Pending`，且返回 `Retry`（等价于改造前 `Consumer::nack`）
+///
+/// 置回 `Pending` **不可省**：它是启动恢复的依据（`message_dal` 按
+/// `status = Pending` 扫出未处理消息重投）。
+#[sqlx::test]
+async fn test_producer_on_failed_marks_pending_and_requests_retry(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Processed).await;
+
+    let decision = dal
+        .on_failed(&ctx, &envelope(&message_id), "db timeout", 1)
+        .await
+        .unwrap();
+
+    assert_eq!(decision, RetryDecision::Retry, "数据库瞬时错误本该重投");
+    let found = dal.find_by_id(ctx, &message_id).await.unwrap().unwrap();
+    assert_eq!(found.po.status, MessageStatus::Pending);
+}
+
+/// **幂等**：同一事件回调两次结果一致（框架在 `queue.ack` 前回调，崩溃会重投）
+#[sqlx::test]
+async fn test_producer_on_consumed_is_idempotent(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Pending).await;
+
+    dal.on_consumed(&ctx, &envelope(&message_id)).await.unwrap();
+    dal.on_consumed(&ctx, &envelope(&message_id)).await.unwrap();
+
+    let found = dal.find_by_id(ctx, &message_id).await.unwrap().unwrap();
+    assert_eq!(found.po.status, MessageStatus::Processed);
+}
+
+/// 封套缺 `event_id`（理论不可达）→ 回调变成无操作，且**不报错**
+///
+/// 回调失败不改变投递结论（框架只记日志）→ 此处必须是 `Ok`，否则会白白打 error 日志。
+#[sqlx::test]
+async fn test_producer_callbacks_tolerate_missing_event_id(pool: SqlitePool) {
+    let (dal, ctx, _id) = seed_message(pool, MessageStatus::Pending).await;
+    let broken = serde_json::json!({ "kind": EventTopic::MessageCreated.as_str() });
+
+    dal.on_consumed(&ctx, &broken).await.unwrap();
+    assert_eq!(
+        dal.on_failed(&ctx, &broken, "boom", 1).await.unwrap(),
+        RetryDecision::Retry
+    );
+}
+
+/// 反查归属：`agent.settle.requested` 的事件封套拿去喂消息 DAL 的收尾也**照样会写库**
+///
+/// 这是**故意**的：归属由框架按 kind 反查决定，回调一经触发就不再二次校验 kind
+/// （那道硬编码的 `if source != "message.created"` 分流已随 `ack`/`nack` 一起删除）。
+/// 所以本测试锁的是「框架**不会**把非本 topic 的事件交过来」这条前提 ——
+/// 若哪天有人绕过 `finish_consumption` 直接回调，这里会立刻红。
+#[sqlx::test]
+async fn test_producer_has_no_kind_filter_by_design(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Pending).await;
+
+    // 沉淀事件的 id 不是 message_id：拿它去写库只会命中 0 行、静默 Ok
+    let settle_envelope = serde_json::json!({
+        "event_id": message_id,
+        "kind": EventTopic::AgentSettleRequested.as_str(),
+    });
+
+    // 只有 `on_consumed` 的前置条件（封套有 event_id）成立，kind 不再参与判断
+    dal.on_consumed(&ctx, &settle_envelope).await.unwrap();
+
+    let found = dal.find_by_id(ctx, &message_id).await.unwrap().unwrap();
+    assert_eq!(found.po.status, MessageStatus::Processed);
 }

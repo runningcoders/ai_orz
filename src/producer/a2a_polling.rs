@@ -3,16 +3,25 @@ use crate::models::events::{
     get_synced_msg_count, make_synced_msg_tag,
 };
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{Producer, Registry};
+use crate::pkg::aop::{EventSink, Producer, ProducerLoop};
 use crate::service::domain::hr as hr_domain;
 use crate::service::domain::message::{self as message_domain, SendToUserCommand};
 use crate::service::domain::project as project_domain;
-use common::enums::{AssigneeType, CallerType, TaskStatus};
+use common::enums::{AssigneeType, CallerType, EventTopic, TaskStatus};
 use common::error::Result;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+/// 轮询间隔（秒）
+const POLL_INTERVAL_SECS: u64 = 30;
+
+/// A2A 远端任务轮询生产者
+///
+/// 原 `poll()` 里的 `RwLock<Option<Arc<Registry>>>` 字段已删（它从来不用来 publish，
+/// 是 `Producer::register` 时代的纯冗余）；发布句柄改由 AOP 在 `start()` 时注入。
 pub struct A2aPollingProducer {
-    registry: RwLock<Option<Arc<Registry>>>,
+    loop_ctl: Arc<ProducerLoop>,
+    handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Default for A2aPollingProducer {
@@ -24,7 +33,8 @@ impl Default for A2aPollingProducer {
 impl A2aPollingProducer {
     pub fn new() -> Self {
         Self {
-            registry: RwLock::new(None),
+            loop_ctl: Arc::new(ProducerLoop::new()),
+            handle: Mutex::new(None),
         }
     }
 }
@@ -35,17 +45,61 @@ impl Producer for A2aPollingProducer {
         "a2a_polling"
     }
 
-    async fn register(&self, registry: Arc<Registry>) -> Result<()> {
-        let mut reg = self.registry.write().unwrap();
-        *reg = Some(registry);
+    /// 归属先声明出来：Step 3 会把「认领」搬进该 topic 的事件
+    /// （`order_key = agent_id` → 同一 Agent 的相邻两轮 tick 不重叠）。
+    /// 本轮 `start()` 仍直接跑原逻辑（严格行为等价）。
+    fn topic(&self) -> EventTopic {
+        EventTopic::A2aPollRequested
+    }
+
+    /// 契约 1：spawn 后**立即返回**，不阻塞 `start_all`
+    async fn start(&self, _sink: EventSink) -> Result<()> {
+        let loop_ctl = Arc::clone(&self.loop_ctl);
+
+        let handle = tokio::spawn(async move {
+            sys_info!("[a2a_polling] producer loop started");
+
+            loop {
+                if let Err(e) = A2aPollingProducer::tick().await {
+                    sys_error!("[a2a_polling] tick error: {}", e);
+                }
+
+                if !loop_ctl
+                    .sleep(Duration::from_secs(POLL_INTERVAL_SECS))
+                    .await
+                {
+                    break;
+                }
+            }
+
+            sys_info!("[a2a_polling] producer loop exited");
+        });
+
+        *self.handle.lock().expect("a2a producer handle poisoned") = Some(handle);
         Ok(())
     }
 
-    fn poll_interval_secs(&self) -> u64 {
-        30
-    }
+    /// 契约 2：置位 **并等 loop 退出**
+    async fn stop(&self) -> Result<()> {
+        self.loop_ctl.stop();
 
-    async fn poll(&self) -> Result<()> {
+        let handle = self
+            .handle
+            .lock()
+            .expect("a2a producer handle poisoned")
+            .take();
+
+        if let Some(handle) = handle {
+            let _ = handle.await;
+        }
+
+        Ok(())
+    }
+}
+
+impl A2aPollingProducer {
+    /// 一次轮询（原 `poll()` 的实现，一行未改）
+    async fn tick() -> Result<()> {
         let ctx = RequestContext::new_system();
 
         let all_agents = hr_domain::domain()
