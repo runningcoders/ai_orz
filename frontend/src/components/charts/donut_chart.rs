@@ -58,11 +58,15 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
         data_cache.set(props_data.clone());
     });
 
-    // 渲染循环资源（RAF 回调 + running flag），供顶层 use_drop 清理
+    // 渲染循环资源（RAF 回调 + running flag + pending 帧句柄），供顶层 use_drop 清理
     #[allow(clippy::type_complexity)]
     struct RafResource {
         running: std::sync::Arc<std::sync::atomic::AtomicBool>,
         callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>>,
+        // 当前「已注册未触发」的 rAF 帧句柄（0 表示无）。卸载时必须先 cancel 再释放
+        // Closure，否则浏览器下一帧会调用已 drop 的 Closure，抛出
+        // 「closure invoked recursively or after being dropped」
+        pending_frame: Rc<std::cell::Cell<i32>>,
     }
     let mut raf_resource = use_signal(|| Option::<RafResource>::None);
 
@@ -104,7 +108,15 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
+        // 当前已注册未触发的 rAF 帧句柄：卸载时凭此 cancel，防止已 drop 的 Closure 仍被浏览器调用
+        let pending_frame = Rc::new(std::cell::Cell::new(0i32));
+        let pending_frame_inner = pending_frame.clone();
+
         let closure = Closure::<dyn FnMut()>::new(move || {
+            // 组件卸载后仍可能被「已调度未取消」的帧触发一次：直接早退，不渲染不写信号
+            if !running_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
             let data = data_cache_c.read().clone();
             let now = js_sys::Date::now() / 1000.0;
             draw_chart(
@@ -116,24 +128,28 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
                 center_label_inner.as_deref(),
             );
 
-            // 递归注册下一帧
+            // 递归注册下一帧（捕获句柄供卸载时 cancel）
             if running_clone.load(std::sync::atomic::Ordering::SeqCst)
                 && let Some(cb) = cb_ref_inner.borrow().as_ref()
                 && let Some(window) = web_sys::window()
+                && let Ok(id) = window.request_animation_frame(cb.as_ref().unchecked_ref())
             {
-                let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
+                pending_frame_inner.set(id);
             }
         });
 
-        // 初始注册第一帧
-        if let Some(window) = web_sys::window() {
-            let _ = window.request_animation_frame(closure.as_ref().unchecked_ref());
+        // 初始注册第一帧（捕获句柄供卸载时 cancel）
+        if let Some(window) = web_sys::window()
+            && let Ok(id) = window.request_animation_frame(closure.as_ref().unchecked_ref())
+        {
+            pending_frame.set(id);
         }
         *callback_ref.borrow_mut() = Some(closure);
 
         raf_resource.set(Some(RafResource {
             running,
             callback_ref,
+            pending_frame,
         }));
     });
 
@@ -141,6 +157,15 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
         if let Some(res) = raf_resource.take() {
             res.running
                 .store(false, std::sync::atomic::Ordering::SeqCst);
+            // 关键：先取消「已注册未触发」的 rAF 帧，再释放 Closure。
+            // 否则浏览器下一帧调用已 drop 的 Closure，抛出
+            // 「closure invoked recursively or after being dropped」。
+            if let Some(window) = web_sys::window() {
+                let id = res.pending_frame.get();
+                if id > 0 {
+                    let _ = window.cancel_animation_frame(id);
+                }
+            }
             *res.callback_ref.borrow_mut() = None;
         }
     });
