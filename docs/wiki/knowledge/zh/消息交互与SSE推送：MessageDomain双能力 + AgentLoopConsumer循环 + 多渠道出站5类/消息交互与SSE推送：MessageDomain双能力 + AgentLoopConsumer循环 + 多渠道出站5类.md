@@ -89,6 +89,8 @@ source_files:
 
 **2026-09-15 增量（commits 5ac0a99b + 440624b2）**：消息消费者重构 **三路分发规则**——原来的 User/Agent/System 三路 match 收敛为两个判定函数：`routes_to_system_fallback` 判定「是否无对等回复对象」（System 来源 + Agent 自触发 from==to 都走兜底）+ `resolve_profile_user_id` 推导用户画像（User 消息用发送者本人，后台唤醒回退到任务/项目的 root_user_id）。**Cron 触发器身份分层中继**——`CronTriggerConsumer` 和 `TaskEventConsumer` 原来统一 from_role=System，现在改为「按被触达事项的归属选身份」：项目归属用户非空时以 User 身份中继 Agent Final 自然回到用户，也不会自唤醒。新增 `consumer::enrich_org_from_project_user` 补齐组织上下文（系统触发 ctx 无组织绑定时从 root_user_id 查 UserPo.organization_id）。RequestContext 新增 `message_sender_id()` / `message_sender_role()` 专供消息发送使用（后台唤醒场景 caller_type=System 但执行者是被唤醒 Agent，必须把 agent_id 写进 from_id）。
 
+**440624b2 修复：System 兜底 Final 按类型白名单投递 + 正文与投递对齐**：原来 `consumer/message.rs` System 分支无脑丢弃 Agent Final（后台唤醒没有来源方，里程碑/阻塞/项目收口会静默消失）。新增 `should_deliver_system_final` 白名单：TaskAssignment / TaskDispatchNotification 投递，排除 ProjectFollowupNotification（每小时巡检噪音）。同时 `domain/message/builder.rs` 补「正文与投递一致」断言——dispatch 消息说"系统自动送达"、followup 消息说"必须 send_message 主动上报"，两者语义不能反。
+
 ---
 
 ## §2 关键文件与职责表
@@ -167,3 +169,5 @@ Runtime 唤醒 Agent → Phase1 IntentAnalyze 解析用户意图 → Phase2 Awak
 9. **唤醒注入 reply_to 必须同 project**：awakening.rs 注入 reply_to 上下文前，必须校验 reply_to 指向的消息与当前入口消息属于同一 project；跨 project 引用必须返回 400 拒绝，防止 Agent 在 A 项目回复中挂 B 项目的消息链。
 10. **System 兜底分支判定必须收敛在 routes_to_system_fallback 单一扩展点**：新增"消息来源无对等回复对象"的场景（如 Agent 自触发 from==to、新的触发器类型），只改这个函数，不动 handle_agent_message 里的分发逻辑结构。禁止绕过 routes_to_system_fallback 直接在 handle_agent_message 里加新的 match 分支。
 11. **触发器身份必须按归属中继，禁止统一 from_role=System**：CronTriggerConsumer 和 TaskEventConsumer 构造入口消息时，项目有 root_user_id 必须设 from_role=User / from_id=root_user_id（Agent Final 自然回到用户，也不会触发 Agent 自唤醒循环）；只有 A2A 项目无归属用户时才万不得已落 System（Final 自然丢弃）。违反此条会导致用户侧看到"来自 system 的消息"且渠道通知无人可投递。
+12. **System 分支 Final 投递必须走 `should_deliver_system_final` 白名单**：后台唤醒（dispatch / followup / 巡检）没有来源方，Agent Final 曾被 System 分支整体丢弃——里程碑/阻塞/项目收口会静默消失。白名单：TaskAssignment / TaskDispatchNotification 投递到任务/项目归属用户；**禁止自动投递 ProjectFollowupNotification**（每小时定时，"无异常"收尾变周期性噪音，确有结论时由 Agent 按技能要求 send_message 主动上报）。新增投递类型必须在此函数加条件，**禁止绕开它直接在 match System 分支写投递**。
+13. **MessageBuilder 正文与投递语义必须对齐**：系统 dispatch 消息正文声明"系统已自动送达"→ Agent 不能再调用 send_message（会重复）；followup 消息正文声明"需要 Agent send_message 主动上报"→ Agent 必须调用。`domain/message/builder.rs` 补断言钉住这条约束——若两者反了，投递行为与正文描述矛盾，用户体验炸。
