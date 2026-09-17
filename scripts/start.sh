@@ -186,6 +186,54 @@ wait_for_port() {
     return 0
 }
 
+# ===== 优雅停止：事件驱动等待 =====
+# 后端优雅退出链路（src/lib.rs）：信号 → HTTP drain（上限 10s，SSE/WS 排空）→
+# 渠道停服 → AOP worker 排空 → DuckDB 统计 flush 落盘 → 连接池关闭 → 打印终态日志
+# "Shutdown complete, goodbye"。固定 sleep 等待会在 flush 前强杀 → 丢统计数据。
+# 因此等待「事件」而非「固定时长」：
+#   硬信号  —— 进程退出（kill -0 失败），唯一可靠终态
+#   加速器  —— 日志出现终态标记（数据已安全落盘，进程只剩 runtime 收尾）
+#   兜底    —— 超时返回 1，由调用方决定强杀并出示日志尾部
+SHUTDOWN_DONE_MARKER="Shutdown complete, goodbye"
+
+# 进程存活判定（zombie 安全）
+# kill -0 对「已退出但未被 wait 收尸的自身子进程」（zombie）仍返回 0，
+# dev 模式下后端/前端是脚本子进程，用 kill -0 判存活会永远为真 → 白等满超时。
+# 用 ps 状态位排除：stat 以 Z 开头即为 zombie（已死）；进程不存在时 ps 非零退出。
+pid_alive() {
+    local stat
+    stat=$(ps -o stat= -p "$1" 2>/dev/null) || return 1
+    [ -n "$stat" ] || return 1
+    [ "${stat#Z}" = "$stat" ]
+}
+
+# 优雅停止等待（事件驱动）
+# 用法: wait_graceful_stop <pid> <超时秒> [日志文件] [日志基线行数]
+#   日志文件可选：只检查「基线行数之后」的新增行（基线必须在发信号前取，
+#   防止上次停止留下的旧标记被误判为本次完成）；跨天滚动时新文件无新增行，
+#   自动退化为纯进程退出等待，行为仍正确。
+# 返回: 0 = 进程已退出；1 = 超时仍存活
+wait_graceful_stop() {
+    local pid=$1 timeout=${2:-30} log_file=${3:-} log_base=${4:-0}
+    local half=0
+    local max_half=$((timeout * 2)) # 0.5s 一轮，半秒计数
+    local marker_seen=0
+    while pid_alive "$pid"; do
+        if [ "$half" -ge "$max_half" ]; then
+            return 1
+        fi
+        if [ "$marker_seen" = "0" ] && [ -n "$log_file" ] && [ -f "$log_file" ]; then
+            if tail -n +"$((log_base + 1))" "$log_file" 2>/dev/null | grep -q "$SHUTDOWN_DONE_MARKER"; then
+                marker_seen=1
+                echo "${GREEN}🧹 关停编排已完成（日志确认），等待进程退出...${NC}"
+            fi
+        fi
+        sleep 0.5
+        half=$((half + 1))
+    done
+    return 0
+}
+
 # 开发模式：同时启动后端 + 前端
 cmd_dev() {
     print_banner
@@ -205,8 +253,15 @@ cmd_dev() {
         echo "🛑 正在停止服务..."
         kill $BACKEND_PID 2>/dev/null || true
         kill $FRONTEND_PID 2>/dev/null || true
-        # 给进程 2 秒优雅退出时间，杀不掉再强杀
-        sleep 2
+        # 事件驱动等待（dev 无独立日志文件可监听，纯进程退出信号）：
+        # 后端优雅退出含 10s drain 窗口 + DuckDB flush 编排，2s 固定等待会在落盘前强杀；
+        # 全部退出立即继续，15s 仅兜底。前端 dx 通常 1-2s 先退，不拖整体时长。
+        local dev_waited=0
+        while [ "$dev_waited" -lt 30 ]; do
+            pid_alive "$BACKEND_PID" || pid_alive "$FRONTEND_PID" || break
+            sleep 0.5
+            dev_waited=$((dev_waited + 1))
+        done
         kill -9 $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
         wait $BACKEND_PID 2>/dev/null || true
         wait $FRONTEND_PID 2>/dev/null || true
@@ -363,15 +418,17 @@ cmd_prod_stop() {
         rm -f "$PROD_PID_FILE"
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
             echo "🛑 停止生产服务 PID=$pid ..."
+            # 日志基线必须在发信号前取（只认本次停止产生的新增日志）
+            local today_log="$REPO_ROOT/.ai_orz/logs/ai_orz.log.$(date +%F)"
+            local log_base=0
+            [ -f "$today_log" ] && log_base=$(wc -l < "$today_log" 2>/dev/null || echo 0)
             kill "$pid"
-            # 优雅退出最多等 5 秒（后端有 SIGTERM 优雅退出逻辑），超时强杀
-            local i=0
-            while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 5 ]; do
-                sleep 1
-                i=$((i + 1))
-            done
-            if kill -0 "$pid" 2>/dev/null; then
-                echo "💥 温和停止未生效，强杀 PID=$pid"
+            # 事件驱动等待：进程退出即走，日志终态标记加速；30s 兜底
+            # （后端 drain 窗口 10s + 关停编排含 DuckDB flush，5s 固定等待会在落盘前强杀）
+            if ! wait_graceful_stop "$pid" 30 "$today_log" "$log_base"; then
+                echo "${YELLOW}⏰ 温和停止 30s 未完成，最近业务日志（定位卡点）:${NC}"
+                tail -n 15 "$today_log" 2>/dev/null || true
+                echo "💥 强杀 PID=$pid"
                 kill -9 "$pid" 2>/dev/null || true
             fi
             echo "${GREEN}👋 生产服务已停止${NC}"
@@ -384,7 +441,16 @@ cmd_prod_stop() {
         pids=$(/bin/ps aux | /usr/bin/grep -E "target/release/ai_orz( |$)" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
         if [ -n "$(echo $pids | tr -d ' ')" ]; then
             echo "🛑 按进程名停止生产服务: PID=$pids"
+            local today_log="$REPO_ROOT/.ai_orz/logs/ai_orz.log.$(date +%F)"
+            local log_base=0
+            [ -f "$today_log" ] && log_base=$(wc -l < "$today_log" 2>/dev/null || echo 0)
             kill $pids 2>/dev/null || true
+            for pid in $pids; do
+                if ! wait_graceful_stop "$pid" 30 "$today_log" "$log_base"; then
+                    echo "💥 强杀 PID=$pid"
+                    kill -9 "$pid" 2>/dev/null || true
+                fi
+            done
         else
             echo "✓ 生产服务未在运行"
         fi
