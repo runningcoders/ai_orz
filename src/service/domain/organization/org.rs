@@ -96,6 +96,34 @@ pub(super) fn generate_user_id() -> String {
         .collect()
 }
 
+/// 加载 ctx 当前所属组织（邀请码签发/轮换等「只操作自己组织」场景共用）
+async fn load_current_org(
+    org_dal: &(dyn crate::service::dal::organization::OrganizationDal + Send + Sync),
+    ctx: &RequestContext,
+) -> Result<OrganizationPo> {
+    let org_id = ctx
+        .organization_id
+        .clone()
+        .ok_or_else(|| Error::bad_request("未找到组织信息".to_string()))?;
+    org_dal
+        .get_by_id(ctx.clone(), &org_id)
+        .await?
+        .ok_or_else(|| Error::not_found("组织不存在".to_string()))
+}
+
+/// 持久化邀请码变更：同步修改人/修改时间后整体更新组织行
+async fn persist_invite_code(
+    org_dal: &(dyn crate::service::dal::organization::OrganizationDal + Send + Sync),
+    ctx: &RequestContext,
+    org: &mut OrganizationPo,
+) -> Result<()> {
+    org.updated_at = common::constants::utils::current_timestamp_ms();
+    if let Some(modifier_id) = ctx.user_id.clone() {
+        org.modified_by = modifier_id;
+    }
+    org_dal.update(ctx.clone(), org).await
+}
+
 /// 生成本端联邦身份三列值（did / 公钥 / `encrypt_channel_secret` 加密后的私钥种子）
 ///
 /// 主密钥不可用（测试环境未初始化配置）时返回 None，调用方保持 NULL，
@@ -261,6 +289,25 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             return Ok(None);
         }
         self.org_dal.find_by_invite_code(ctx, &code).await
+    }
+
+    /// 获取当前组织邀请码（懒生成，重复查看幂等）
+    async fn get_or_create_invite_code(&self, ctx: RequestContext) -> Result<String> {
+        let mut org = load_current_org(self.org_dal.as_ref(), &ctx).await?;
+        if let Some(code) = org.invite_code.clone().filter(|c| !c.trim().is_empty()) {
+            return Ok(code);
+        }
+        let code = org.regenerate_invite_code();
+        persist_invite_code(self.org_dal.as_ref(), &ctx, &mut org).await?;
+        Ok(code)
+    }
+
+    /// 轮换当前组织邀请码（旧码立即失效）
+    async fn rotate_invite_code(&self, ctx: RequestContext) -> Result<String> {
+        let mut org = load_current_org(self.org_dal.as_ref(), &ctx).await?;
+        let code = org.regenerate_invite_code();
+        persist_invite_code(self.org_dal.as_ref(), &ctx, &mut org).await?;
+        Ok(code)
     }
 
     /// 更新组织信息

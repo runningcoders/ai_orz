@@ -236,6 +236,28 @@ pub struct UpdateCurrentOrganizationResponse {
     pub data: OrganizationInfoResponse,
 }
 
+/// 获取当前组织邀请码请求（管理员）
+///
+/// 无参数：组织从未签发邀请码时懒生成并持久化（首次查看即签发）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetInviteCodeRequest {}
+
+/// 重新生成（轮换）当前组织邀请码请求（管理员）
+///
+/// 无参数 body：旧码立即失效，注册页凭旧码无法再加入本组织。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RegenerateInviteCodeRequest {}
+
+/// 组织邀请码响应
+///
+/// 邀请码是组织级凭证（非一次性 token）：用户在登录页注册表单输入后
+/// 可自助注册为本组织普通成员（Member）。管理员可随时轮换。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InviteCodeResponse {
+    /// 当前有效邀请码（24 字符，去易混淆字符，全大写）
+    pub invite_code: String,
+}
+
 /// 获取组织信息请求
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetOrganizationRequest {

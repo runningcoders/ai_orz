@@ -10,6 +10,7 @@
 pub mod auth;
 pub mod contracts;
 pub mod initialize_system;
+pub mod invite;
 pub mod links;
 pub mod organization_me;
 pub mod organizations;

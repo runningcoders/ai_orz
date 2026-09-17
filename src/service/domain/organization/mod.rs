@@ -195,6 +195,17 @@ pub trait OrganizationManage: Send + Sync {
         invite_code: &str,
     ) -> Result<Option<OrganizationPo>>;
 
+    /// 获取当前组织邀请码（管理员签发入口）
+    ///
+    /// 懒生成语义：组织从未签发（`invite_code` 为 NULL/空）时生成 24 字符码
+    /// 并持久化后返回；已有有效码则原样返回（重复查看幂等，不轮换）。
+    async fn get_or_create_invite_code(&self, ctx: RequestContext) -> Result<String>;
+
+    /// 轮换当前组织邀请码（管理员）
+    ///
+    /// 无条件生成新码并持久化，旧码立即失效（公开注册按精确码匹配组织）。
+    async fn rotate_invite_code(&self, ctx: RequestContext) -> Result<String>;
+
     /// 读取组织级配置（透传 DAL → DAO，带缓存）
     async fn get_org_config(&self, ctx: RequestContext, org_id: &str)
     -> Result<OrganizationConfig>;

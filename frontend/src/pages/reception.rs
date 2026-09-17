@@ -172,6 +172,40 @@ pub fn Reception() -> Element {
         });
     });
 
+    // 邀请链接直达：/login?invite=CODE → 切到注册 Tab、预填邀请码并校验一次。
+    // 归一化与后端一致（trim + 大写）；邀请码字符集本身全大写，无需 percent-decode。
+    use_effect(move || {
+        spawn(async move {
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+            let Ok(search) = window.location().search() else {
+                return;
+            };
+            let code = search
+                .trim_start_matches('?')
+                .split('&')
+                .find_map(|pair| {
+                    pair.strip_prefix("invite=")
+                        .map(|v| v.trim().to_ascii_uppercase())
+                })
+                .unwrap_or_default();
+            if code.is_empty() {
+                return;
+            }
+            reg_invite_code.set(code.clone());
+            show_register.set(true);
+            match validate_invite_code(&code).await {
+                Ok(resp) => invite_valid.set(Some((
+                    resp.valid,
+                    resp.organization_name.unwrap_or_default(),
+                ))),
+                // 网络/服务异常保持「未校验」态，用户可继续输入或手动提交（后端权威校验）
+                Err(_) => invite_valid.set(None),
+            }
+        });
+    });
+
     // 登录提交
     let on_submit_login = move |_| {
         spawn(async move {

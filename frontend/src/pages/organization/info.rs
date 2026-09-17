@@ -15,7 +15,9 @@ use common::api::{
 use common::enums::UserRole;
 
 use crate::api::background_task::get_task_progress;
-use crate::api::organization::{get_current_organization, update_current_organization};
+use crate::api::organization::{
+    get_current_organization, get_invite_code, regenerate_invite_code, update_current_organization,
+};
 use crate::api::system::rebuild_vectors;
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudCallout, HudPanel};
@@ -50,6 +52,28 @@ pub fn OrganizationInfo() -> Element {
     // 向量库维护是平台级高危操作（全量重打 Embedding），仅 SuperAdmin 可见
     let is_super_admin =
         UserRole::has_permission(UserRole::from_i32(auth().role), UserRole::SuperAdmin);
+
+    // ===== 邀请码（仅 Admin 及以上加载/可见）=====
+    // None = 尚未加载或加载失败；Some(code) = 当前有效邀请码（后端懒签发）
+    let mut invite_code = use_signal(|| Option::<String>::None);
+    let mut invite_loading = use_signal(|| false);
+    let mut show_invite_confirm = use_signal(|| false);
+    let mut regenerating = use_signal(|| false);
+
+    let handle_regenerate = move |_| {
+        show_invite_confirm.set(false);
+        spawn(async move {
+            regenerating.set(true);
+            match regenerate_invite_code().await {
+                Ok(resp) => {
+                    invite_code.set(Some(resp.invite_code));
+                    toast.success("已生成新邀请码，旧码已失效");
+                }
+                Err(e) => toast.error(format!("重新生成失败: {}", e)),
+            }
+            regenerating.set(false);
+        });
+    };
 
     // ===== 向量库维护状态 =====
     let mut show_rebuild_confirm = use_signal(|| false);
@@ -128,6 +152,22 @@ pub fn OrganizationInfo() -> Element {
         });
     });
 
+    // 管理员进入页面时加载邀请码（GET 语义为懒签发：后端无码时自动生成并落库）。
+    // 普通成员无此面板，不发请求（后端对 Member 返回 403，徒增噪音日志）。
+    use_effect(move || {
+        if !can_edit {
+            return;
+        }
+        spawn(async move {
+            invite_loading.set(true);
+            match get_invite_code().await {
+                Ok(resp) => invite_code.set(Some(resp.invite_code)),
+                Err(e) => toast.error(format!("邀请码加载失败: {}", e)),
+            }
+            invite_loading.set(false);
+        });
+    });
+
     let handle_edit = move |_| {
         // 进入编辑态前先把工作副本同步为已落库值，避免残留上一次半截编辑
         name.set(saved_name());
@@ -171,6 +211,17 @@ pub fn OrganizationInfo() -> Element {
             }
             saving.set(false);
         });
+    };
+
+    // 注册链接：随邀请码一起变化，打开后直达登录页注册 Tab 并自动填入邀请码
+    let register_link = match invite_code() {
+        Some(code) => {
+            let origin = web_sys::window()
+                .and_then(|w| w.location().origin().ok())
+                .unwrap_or_default();
+            format!("{}/login?invite={}", origin.trim_end_matches('/'), code)
+        }
+        None => String::new(),
     };
 
     rsx! {
@@ -313,6 +364,94 @@ pub fn OrganizationInfo() -> Element {
             }
         }
 
+        // ===== 邀请注册（仅 Admin 及以上可见）=====
+        if can_edit {
+            HudPanel { signal: Some(true),
+                title: Some("邀请注册".to_string()),
+                actions: Some(rsx! {
+                    button {
+                        class: "btn hud-btn btn-ghost btn-sm",
+                        disabled: regenerating() || invite_loading(),
+                        onclick: move |_| show_invite_confirm.set(true),
+                        if regenerating() { "生成中..." } else { "重新生成" }
+                    }
+                }),
+                div { class: "card-body",
+                    p { class: "text-sm text-base-content/60",
+                        "把邀请码或注册链接发给要加入的成员：对方在登录页注册后即成为本组织普通成员（Member）。重新生成后旧码立即失效。"
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "邀请码" }
+                        }
+                        div { class: "flex items-stretch gap-2",
+                            input {
+                                class: "input input-bordered w-full font-mono",
+                                disabled: true,
+                                value: if invite_loading() {
+                                    "加载中…".to_string()
+                                } else {
+                                    invite_code().clone().unwrap_or_else(|| "—".to_string())
+                                }
+                            }
+                            button {
+                                class: "btn hud-btn btn-ghost shrink-0",
+                                disabled: invite_code().is_none(),
+                                onclick: move |_| {
+                                    if let Some(code) = invite_code() {
+                                        copy_to_clipboard(&code, toast);
+                                    }
+                                },
+                                "复制"
+                            }
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "注册链接" }
+                        }
+                        div { class: "flex items-stretch gap-2",
+                            input {
+                                class: "input input-bordered w-full font-mono text-sm",
+                                disabled: true,
+                                placeholder: "邀请码加载后生成",
+                                value: "{register_link}"
+                            }
+                            button {
+                                class: "btn hud-btn btn-ghost shrink-0",
+                                disabled: register_link.is_empty(),
+                                onclick: move |_| {
+                                    // 点击时从 signal 现算，避免把 register_link move 进闭包
+                                    // 与同节点 value/disabled 的借用冲突
+                                    if let Some(code) = invite_code() {
+                                        let origin = web_sys::window()
+                                            .and_then(|w| w.location().origin().ok())
+                                            .unwrap_or_default();
+                                        let link = format!(
+                                            "{}/login?invite={}",
+                                            origin.trim_end_matches('/'),
+                                            code
+                                        );
+                                        copy_to_clipboard(&link, toast);
+                                    }
+                                },
+                                "复制"
+                            }
+                        }
+                    }
+                }
+            }
+
+            ConfirmDialog {
+                show: show_invite_confirm(),
+                title: "确认重新生成邀请码".to_string(),
+                message: "新码生成后旧邀请码立即失效，已拿到旧码但尚未注册的人将无法加入本组织。确定继续？".to_string(),
+                confirm_class: Some("btn hud-btn btn-primary".to_string()),
+                on_confirm: handle_regenerate,
+                on_cancel: move |_| show_invite_confirm.set(false),
+            }
+        }
+
         // ===== 向量库维护（仅 SuperAdmin 可见）=====
         if is_super_admin {
             HudPanel { signal: Some(true),
@@ -433,5 +572,20 @@ fn PackTagEditor(
                 },
             }
         }
+    }
+}
+
+/// 复制文本到剪贴板并 toast 反馈（与系统备份页同一实现模式）
+fn copy_to_clipboard(content: &str, toast: crate::store::toast::ToastState) {
+    if let Some(window) = web_sys::window() {
+        let promise = window.navigator().clipboard().write_text(content);
+        wasm_bindgen_futures::spawn_local(async move {
+            match wasm_bindgen_futures::JsFuture::from(promise).await {
+                Ok(_) => toast.success("已复制到剪贴板"),
+                Err(_) => toast.error("复制失败"),
+            }
+        });
+    } else {
+        toast.error("剪贴板不可用");
     }
 }

@@ -504,6 +504,7 @@ fn artifact_routes() -> Router {
 fn organization_protected_routes() -> Router {
     // Each handler is in its own file in the subdirectory
     use crate::handlers::organization::contracts;
+    use crate::handlers::organization::invite;
     use crate::handlers::organization::links;
     use crate::handlers::organization::organization_me;
     use crate::handlers::organization::organizations;
@@ -544,6 +545,20 @@ fn organization_protected_routes() -> Router {
         .route(
             "/me",
             put(organization_me::update_current_organization_handler),
+        )
+        // 组织邀请码管理（仅 Admin 及以上；GET 首次查看懒签发，POST 轮换旧码立即失效）
+        // 路由层门控（require_role_middleware），与工具 debug-call 等管理端接口一致
+        .route(
+            "/me/invite-code",
+            get(invite::get_invite_code_handler).layer(axum::middleware::from_fn(|req, next| {
+                require_role_middleware(UserRole::Admin, req, next)
+            })),
+        )
+        .route(
+            "/me/invite-code/regenerate",
+            post(invite::regenerate_invite_code_handler).layer(axum::middleware::from_fn(
+                |req, next| require_role_middleware(UserRole::Admin, req, next),
+            )),
         )
         .route("/", get(organizations::list_organizations_handler))
         .route(

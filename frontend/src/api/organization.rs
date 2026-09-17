@@ -3,12 +3,13 @@
 use common::api::{
     CreateLinkRequest, CreateLinkResponse, CreateOrganizationUserRequest,
     CreateOrganizationUserResponse, GetCurrentOrganizationResponse, GetCurrentUserRequest,
-    GetCurrentUserResponse, IssuePairingCodeRequest, IssuePairingCodeResponse,
+    GetCurrentUserResponse, InviteCodeResponse, IssuePairingCodeRequest, IssuePairingCodeResponse,
     ListContractsResponse, ListFederationAgentsResponse, ListLinksResponse,
-    ListOrganizationsResponse, ListUsersResponse, TerminateContractResponse,
-    UpdateContractCapabilitiesRequest, UpdateContractCapabilitiesResponse,
-    UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest,
-    UpdateCurrentUserResponse, UpdateUserRequest, UpdateUserResponse,
+    ListOrganizationsResponse, ListUsersResponse, RegenerateInviteCodeRequest,
+    TerminateContractResponse, UpdateContractCapabilitiesRequest,
+    UpdateContractCapabilitiesResponse, UpdateCurrentOrganizationRequest,
+    UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest, UpdateCurrentUserResponse,
+    UpdateUserRequest, UpdateUserResponse,
 };
 
 use super::{
@@ -38,10 +39,13 @@ pub async fn list_users() -> Result<ListUsersResponse, ApiError> {
 }
 
 /// 创建用户
+///
+/// 路径不带尾斜杠：后端是两层 `.nest("/organization").nest("/user")` 挂的
+/// 根路由，axum 0.8 严格匹配——`/user/`（带斜杠）会 404，只有 `/user` 命中。
 pub async fn create_user(
     req: CreateOrganizationUserRequest,
 ) -> Result<CreateOrganizationUserResponse, ApiError> {
-    api_post("/api/v1/organization/user/", &req).await
+    api_post("/api/v1/organization/user", &req).await
 }
 
 /// 更新用户
@@ -83,6 +87,22 @@ pub async fn update_current_user(
     req: UpdateCurrentUserRequest,
 ) -> Result<UpdateCurrentUserResponse, ApiError> {
     api_put("/api/v1/user/me", &req).await
+}
+
+// ===== 组织邀请码（管理员签发/轮换，普通用户在登录页凭码注册）=====
+
+/// 获取当前组织邀请码（从未签发时后端懒生成，重复查看幂等）
+pub async fn get_invite_code() -> Result<InviteCodeResponse, ApiError> {
+    api_get("/api/v1/organization/me/invite-code").await
+}
+
+/// 轮换邀请码（旧码立即失效，返回新码）
+pub async fn regenerate_invite_code() -> Result<InviteCodeResponse, ApiError> {
+    api_post(
+        "/api/v1/organization/me/invite-code/regenerate",
+        &RegenerateInviteCodeRequest::default(),
+    )
+    .await
 }
 
 // ===== 组织组网（关联组织，评审稿 §4.2 用户侧端点）=====
