@@ -8,7 +8,7 @@
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate lint test test-be test-fe ci coverage e2e dev build build-fe prod prod-stop prod-status prod-log package serve run clean clean-slim clean-proc doctor hooks
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate lint test test-be test-fe ci coverage e2e dev build build-fe prod prod-stop stop prod-status prod-log package serve run clean clean-slim clean-proc doctor hooks
 
 # git hooks 目录指向仓库内 .githooks/
 #   - pre-commit：fmt-check（cargo fmt --all -- --check，秒级）
@@ -135,6 +135,9 @@ prod: ## 生产模式：编译 release 并后台运行生产二进制（0.0.0.0:
 
 prod-stop: ## 停止后台生产服务（仅 release 二进制，不影响开发态进程）
 	./scripts/start.sh prod-stop
+
+stop: ## 停止后台生产服务（prod-stop 的直觉别名，日常用这个）
+	$(MAKE) prod-stop
 
 prod-status: ## 查看后台生产服务状态（PID / 运行时长 / 资源占用）
 	./scripts/start.sh prod-status
