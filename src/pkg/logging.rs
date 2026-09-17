@@ -6,6 +6,9 @@
 //! - 支持 JSON 格式输出，便于日志分析
 //! - 支持日志自动清理（保留 N 天）
 //! - 日志路径从应用配置读取，支持自定义数据目录
+//! - `AI_ORZ_LOG_CONSOLE=0`：关闭控制台层（仅文件日志开启时生效），
+//!   供后台守护模式使用——文件日志已完整落盘，关闭后 stdout 静默，
+//!   进程可安全交给 nohup / 服务管理器而不会产生第二份膨胀日志
 
 use std::fs;
 use std::time::Duration;
@@ -26,6 +29,7 @@ static WORKER_GUARD: OnceCell<WorkerGuard> = OnceCell::new();
 /// - 自动按日期滚动，不会产生过大日志文件
 /// - 支持 JSON 格式输出
 /// - 支持日志自动清理（保留 N 天）
+/// - `AI_ORZ_LOG_CONSOLE=0` 可关闭控制台层（文件日志开启时生效）
 pub fn init(config: &AppConfig) {
     // 日志格式配置
     let is_json_format = config.logging.format.to_lowercase() == "json";
@@ -42,6 +46,12 @@ pub fn init(config: &AppConfig) {
                 .unwrap_or_else(|_| panic!("Failed to create logs directory at {:?}", logs_dir));
         }
 
+        // 控制台层开关：AI_ORZ_LOG_CONSOLE=0 关闭（后台守护模式用）。
+        // 仅在文件日志开启时生效——文件日志是唯一落盘通道时控制台必须保留。
+        let console_enabled = std::env::var("AI_ORZ_LOG_CONSOLE")
+            .map(|v| v != "0")
+            .unwrap_or(true);
+
         // 自动清理旧日志
         if config.logging.retention_days > 0 {
             let retention_period =
@@ -55,12 +65,14 @@ pub fn init(config: &AppConfig) {
 
         // 根据格式选择输出方式 - 独立构建 layer，避免类型不匹配
         if is_json_format {
-            // JSON 格式：控制台 + 文件
-            let console_layer = fmt::layer()
-                .json()
-                .with_target(true)
-                .with_file(true)
-                .with_line_number(true);
+            // JSON 格式：控制台（可关） + 文件
+            let console_layer = console_enabled.then(|| {
+                fmt::layer()
+                    .json()
+                    .with_target(true)
+                    .with_file(true)
+                    .with_line_number(true)
+            });
 
             let file_layer = fmt::layer()
                 .json()
@@ -75,11 +87,13 @@ pub fn init(config: &AppConfig) {
                 .with(file_layer)
                 .init();
         } else {
-            // 文本格式：控制台 + 文件
-            let console_layer = fmt::layer()
-                .with_target(true)
-                .with_file(true)
-                .with_line_number(true);
+            // 文本格式：控制台（可关） + 文件
+            let console_layer = console_enabled.then(|| {
+                fmt::layer()
+                    .with_target(true)
+                    .with_file(true)
+                    .with_line_number(true)
+            });
 
             let file_layer = fmt::layer()
                 .with_target(true)

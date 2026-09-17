@@ -51,9 +51,11 @@ source_files:
   - frontend/src/components/time_range_picker.rs (2026-09-11 新增：通用时间区间筛选组件，start/end + 预设快捷按钮)
   - frontend/src/components/chat/chat_side_panel.rs (2026-09-11 增量：引用块即时显示 + 宽度以本条消息为上限)
   - frontend/src/pages/message/chat.rs (2026-09-11 增量：引用块即时显示)
-  - frontend/src/components/graph.rs (2026-09-17 增量：矩形节点卡片几何/折行/截断 SSOT —— NODE_BOX_W=168 + node_box_height/node_title/node_body_lines/node_tag_chips/node_hover_lines；GraphNode 新增 description；圆形节点废弃)
-  - frontend/src/components/graph_canvas.rs (2026-09-17 增量：KnowledgeGraphRenderer 改画矩形信息卡，hit_test 矩形命中，hover 卡含 ID；node_meta 复制结构删除、直接存 GraphNode)
-  - frontend/src/components/canvas_scene.rs (2026-09-17 增量：props.edges 同步进 edges_state signal，RAF 循环每帧读取 —— 修复「展开节点后新边不渲染」；边 hover 阈值 6→10px)
+  - frontend/src/components/node_card.rs (2026-09-17 新增：矩形信息卡的几何/文案/配色 SSOT，中立无业务依赖 —— NODE_BOX_W=168 + box_width/box_height/wrap_text/tag_chips/hover_lines/type_label；graph.rs（SVG）与 canvas_scene.rs（Canvas）双端共用，此前几何散在 graph.rs 导致基础设施反向依赖业务组件)
+  - frontend/src/components/graph.rs (2026-09-17 增量：GraphNode 新增 description；卡片几何改为 node_card 的薄包装；SVG 卡片宽度改走 node_box_width（内容驱动收窄）)
+  - frontend/src/components/graph_canvas.rs (2026-09-17 增量：**删除 KnowledgeGraphRenderer 死代码**（565→145 行），降为纯适配层；关系类型进 CanvasEdge.tag；启用 ForceLayout + 四类粒子，对齐 Agent 关系图)
+  - frontend/src/components/canvas_scene.rs (2026-09-17 增量：props.edges 同步进 edges_state signal（修复「展开节点后新边不渲染」）；DefaultRenderer 升级双形态（圆形 / 矩形信息卡，由 CanvasNode::is_card 判定）+ 边 hover 橙色加粗 + hover 卡画布内避让；新增 selected_node_id 受控 prop；边 hover 阈值 6→10px)
+  - frontend/src/components/force_layout.rs (2026-09-17 增量：按等效半径的碰撞分离力 + 弹簧自然长度按两端半径放宽 + 边界留白取最大半径 —— 修复「卡片挤成一坨」)
   - common/src/api/neural_tools.rs (2026-09-17 增量：MemoryResult 新增 name 字段，知识节点 = node_name；content 仍是 node_description)
 
   - 【平行卡 3】docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md（TimeRangePicker 消费方：统计看板时间筛选）
@@ -152,5 +154,7 @@ HR 知识图谱页面加载：
 17. **Canvas 渲染顺序必须：边 → 节点 → 边 hover 卡片 → 节点 hover 卡片**（d248829a 新增）：Canvas 2D 无 z-index，最后画的在上层。边 hover 卡片若在边绘制完立即画，会被后续节点覆盖——必须用 `pending_edge_card` 暂存，全部节点画完后补绘边卡，节点 hover 卡最后画。违反此条 = 边 hover 卡片被节点遮挡看不见。
 18. **hover 事件层节点/边互斥防闪烁**（d248829a 新增）：同一帧内命中边后又命中节点（或反之）时，**只保留最后一个 hover 对象**的卡片——禁止两张卡片同时显示，也禁止用"取消第一张卡片 → 立即画第二张"这种逐帧重建。实现：`hover_card_data` 一个 Option，每次 hover 事件覆盖更新，渲染循环统一按当前值画一张。
 19. **type_label 必须是纯静态字符串映射，禁止返回临时值引用**（d248829a 新增）：`common::enums::memory::MemoryType::zh_label()` 曾返回 `format!("…")` 的临时 String 被 & 引用——Rust E0515。正确做法：`type_label(t: &str) -> &'static str`（graph.rs#L171）用 `match t { "fact" => "事实", ... }` 直接返回字符串字面量。**所有枚举"中文化 label"函数必须是纯映射、返回 `&'static str`**，禁止临时 String 引用。
-20. **知识图谱节点卡片几何/折行/截断必须共用 graph.rs 的 SSOT**（2026-09-17 新增）：Canvas（graph_canvas.rs）与 SVG（graph.rs）两条渲染路径都画矩形信息卡，卡片宽 `NODE_BOX_W=168`、高度 `node_box_height`、标题/正文折行 `wrap_text`、标签聚合 `node_tag_chips`、hover 行 `node_hover_lines` **只允许从 graph.rs 引用**——任何一边自算尺寸必然漂移（改了一边宽度忘改另一边折行 = 文字溢出卡片或命中区错位）。注意 `wrap_text` 用估算宽度（CJK=字号、ASCII=0.55×字号）而非 TextMetrics，因为 SVG 无法精确测量；两边必须同口径。
+20. **矩形信息卡的几何/文案 SSOT 在 `node_card.rs`，不在 `graph.rs`**（2026-09-17 修订）：`graph.rs` 是业务组件，而 `canvas_scene.rs`（基础设施）也要用同一套几何 —— 基础设施反向依赖业务组件是错的，故下沉到中立的 `node_card.rs`（纯几何、零业务依赖、可单测）。卡片宽 `NODE_BOX_W=168`（`box_width` 按内容在 104~168 收窄）、高度 `box_height`（按实际正文行数）、折行 `wrap_text`、标签 `tag_chips`、hover 行 `hover_lines` **只允许从 node_card.rs 引用**——任何一边自算尺寸必然漂移（改了一边宽度忘改另一边折行 = 文字溢出卡片或命中区错位）。注意 `wrap_text` 用估算宽度（CJK=字号、ASCII=0.55×字号）而非 TextMetrics，因为 SVG 无法精确测量；两边必须同口径。
 21. **CanvasScene 的边列表必须走 signal，禁止在 RAF 闭包里捕获 props.edges 快照**（2026-09-17 新增）：渲染循环闭包捕获的是「effect 当次运行时」的 edges——展开节点后新增的边不参与绘制，症状是「点击节点展开后新出来的节点没有连线」（节点走 signal 每帧刷新、边却停在挂载时，不报错、纯视觉缺失）。边与节点同构：`use_effect(use_reactive(&props.edges, …))` 同步进 `edges_state` signal，RAF 每帧 `read().clone()`。边 hover 命中阈值用 10px（1.5~2px 的细线配 6px 几乎点不中，用户会以为「连线不能 hover」）。
+22. **不要为图谱另写渲染器：`CanvasScene` 只认内置 `DefaultRenderer`**（2026-09-17 新增）：`graph_canvas.rs` 曾有 400+ 行 `KnowledgeGraphRenderer`，因 `canvas_scene.rs` 硬编码 `let renderer = DefaultRenderer` 而**从未执行**——注释写着「用自定义 HUD 效果避免视觉过载」，实际跑出来是默认圆圈 + 圆下完整 ID，用户看到的就是「只显示『知识节点』和一个 id」。节点形态差异一律用数据表达（`CanvasNode::is_card()`：有 `summary` / `description` / `tags` 即矩形卡片，否则圆形）。若将来真要支持多渲染器，必须先把注入通道做进 props 并有测试覆盖，否则等价于死代码。
+23. **力导向必须按节点等效半径做碰撞避让，卡片节点的 `radius` 要填外接圆半径**（2026-09-17 新增）：`1/d²` 点斥力在近距离压不住 168px 宽的卡片，结果是「节点挤成一坨、连线糊在底下」；`ForceLayout::step` 已加碰撞分离力（最小中心距 `(r_i + r_j) * 1.15`）、弹簧自然长度按两端半径 + 60px 放宽、边界留白取最大半径。⚠️ 适配层若把卡片节点的 `radius` 填成小圆半径，卡片照样互压（该字段同时是无正文端点节点圆形形态的绘制半径）。

@@ -109,6 +109,7 @@ fn build_global_view(
             color: project_status_color(p.status),
             node_type: Some("project".to_string()),
             layer: None,
+            ..Default::default()
         });
     }
 
@@ -123,6 +124,7 @@ fn build_global_view(
             color: agent_runtime_color(a.runtime_state),
             node_type: Some("agent".to_string()),
             layer: None,
+            ..Default::default()
         });
     }
 
@@ -182,6 +184,7 @@ fn build_project_detail_view(
         color: project_status_color(project.status),
         node_type: Some("project".to_string()),
         layer: Some(0),
+        ..Default::default()
     });
 
     // 该 Project 的 Task 节点
@@ -231,6 +234,7 @@ fn build_project_detail_view(
             color: task_status_color(t.status),
             node_type: Some("task".to_string()),
             layer: Some(layer + 1),
+            ..Default::default()
         });
         // Project → Task 边
         edges.push(CanvasEdge {
@@ -271,6 +275,7 @@ fn build_project_detail_view(
                 color: agent_runtime_color(a.runtime_state),
                 node_type: Some("agent".to_string()),
                 layer: None,
+                ..Default::default()
             });
         }
     }
@@ -311,6 +316,7 @@ fn build_agent_detail_view(
         color: agent_runtime_color(agent.runtime_state),
         node_type: Some("agent".to_string()),
         layer: None,
+        ..Default::default()
     });
 
     // 该 Agent 的 Task 节点
@@ -329,6 +335,7 @@ fn build_agent_detail_view(
             color: task_status_color(t.status),
             node_type: Some("task".to_string()),
             layer: None,
+            ..Default::default()
         });
         // Agent → Task 边
         edges.push(CanvasEdge {
@@ -355,6 +362,7 @@ fn build_agent_detail_view(
                 color: project_status_color(p.status),
                 node_type: Some("project".to_string()),
                 layer: None,
+                ..Default::default()
             });
         }
     }
@@ -402,6 +410,7 @@ fn build_task_detail_view(
         color: task_status_color(task.status),
         node_type: Some("task".to_string()),
         layer: Some(0),
+        ..Default::default()
     });
 
     // 关联 Project（layer=-1 顶部）
@@ -417,6 +426,7 @@ fn build_task_detail_view(
             color: project_status_color(p.status),
             node_type: Some("project".to_string()),
             layer: Some(-1),
+            ..Default::default()
         });
         edges.push(CanvasEdge {
             from_id: center_node_id.clone(),
@@ -438,6 +448,7 @@ fn build_task_detail_view(
             color: agent_runtime_color(a.runtime_state),
             node_type: Some("agent".to_string()),
             layer: Some(-1),
+            ..Default::default()
         });
         edges.push(CanvasEdge {
             from_id: center_node_id.clone(),
@@ -458,6 +469,7 @@ fn build_task_detail_view(
                 color: task_status_color(dep_task.status),
                 node_type: Some("task".to_string()),
                 layer: Some(1),
+                ..Default::default()
             });
             // 前置 Task → 当前 Task
             edges.push(CanvasEdge {
@@ -480,6 +492,7 @@ fn build_task_detail_view(
                 color: task_status_color(t.status),
                 node_type: Some("task".to_string()),
                 layer: Some(-1),
+                ..Default::default()
             });
             // 当前 Task → 后继 Task
             edges.push(CanvasEdge {

@@ -62,7 +62,7 @@ for arg in "$@"; do
         dev|frontend|backend|build|prod) MODE="$arg" ;;
         --fix) FIX=1 ;;
         *)
-            echo "未知参数: $arg（用法: $0 [dev|frontend|backend|build|prod] [--fix]）" >&2
+            echo "未知参数: ${arg}（用法: $0 [dev|frontend|backend|build|prod] [--fix]）" >&2
             exit 2
             ;;
     esac
@@ -139,7 +139,7 @@ if needs_frontend; then
         case "$DX_VER" in
             *" 0.7."*) ;;
             *)
-                echo "${YELLOW}⚠️  dx 版本与 frontend dioxus 0.7.x 不匹配（$DX_VER），可能出现 WASM 绑定/配置不兼容${NC}" >&2
+                echo "${YELLOW}⚠️  dx 版本与 frontend dioxus 0.7.x 不匹配（${DX_VER}），可能出现 WASM 绑定/配置不兼容${NC}" >&2
                 echo "   建议: cargo install dioxus-cli --version $DX_VERSION --locked" >&2
                 ;;
         esac
@@ -240,7 +240,7 @@ if [ "$FIX" = "1" ]; then
                 brew install protobuf && FIXED=$((FIXED + 1)) || echo "${RED}   失败，请手动执行: $install_cmd${NC}"
                 ;;
             *)
-                echo "→ 跳过 $name（无法安全自动安装，请手动执行上方命令）"
+                echo "→ 跳过 ${name}（无法安全自动安装，请手动执行上方命令）"
                 ;;
         esac
     done

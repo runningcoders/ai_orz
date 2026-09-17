@@ -19,9 +19,9 @@ use crate::api::project::{get_project, get_task, list_project_tasks};
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
 use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ToolCallsTab;
-use crate::components::hud::HudProgress;
+use crate::components::hud::{HudPanel, HudProgress};
 use crate::components::identity_chip::IdentityChip;
-use crate::components::markdown::MarkdownRenderer;
+use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
@@ -154,6 +154,7 @@ pub fn ChatSidePanel(
                 id: pid.clone(),
                 with_progress_summary: Some(true),
                 with_artifacts: Some(true),
+                with_task_graph: Some(true),
                 ..Default::default()
             };
             let proj_res = get_project(req).await;
@@ -241,6 +242,7 @@ pub fn ChatSidePanel(
             },
             1 => tasks_tab(
                 &tasks_list,
+                project_data.as_ref(),
                 expanded_task_id,
                 task_cache,
                 loading_task_id,
@@ -338,7 +340,7 @@ fn empty_hint(msg: &str) -> Element {
     }
 }
 
-/// Tab 总览：项目目标、进度汇总、执行计划/结果（任务依赖图已迁移至任务管理页）
+/// Tab 总览：项目目标、进度汇总、执行计划/结果
 fn overview_tab(p: &GetProjectResponse) -> Element {
     let desc = p.description.clone().filter(|s| !s.is_empty());
     let plan = p.execution_plan.clone().filter(|s| !s.is_empty());
@@ -398,18 +400,30 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
     }
 }
 
-/// Tab 任务：任务列表，点击单任务展开详情（懒加载 + 缓存）
+/// Tab 任务：任务依赖图（随项目详情顺带返回）+ 任务列表，点击单任务展开详情（懒加载 + 缓存）
 fn tasks_tab(
     tasks: &[TaskListItem],
+    project: Option<&GetProjectResponse>,
     mut expanded_task_id: Signal<Option<String>>,
     mut task_cache: Signal<HashMap<String, GetTaskResponse>>,
     mut loading_task_id: Signal<Option<String>>,
     toast: ToastState,
 ) -> Element {
+    let task_graph = project
+        .and_then(|p| p.task_graph.clone())
+        .filter(|g| !g.is_empty());
     if tasks.is_empty() {
         return empty_hint("暂无任务");
     }
     rsx! {
+        // 任务依赖图：位于任务列表上方（与任务管理页同款渲染）
+        if let Some(graph) = task_graph {
+            HudPanel {
+                title: "任务依赖图".to_string(),
+                eyebrow: "DEPENDENCIES".to_string(),
+                MermaidDiagram { code: graph }
+            }
+        }
         div { class: "space-y-2",
             for t in tasks.iter() {
                 {

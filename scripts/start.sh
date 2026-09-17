@@ -4,12 +4,15 @@
 #
 # Usage:
 #   ./scripts/start.sh dev      开发模式（后端 cargo run + 前端 dx serve）【默认】
-#   ./scripts/start.sh prod     生产模式（编译 + 运行 release 二进制）
+#   ./scripts/start.sh prod     生产模式（编译 + 后台运行 release 二进制）
+#   ./scripts/start.sh prod-stop    停止后台生产服务
+#   ./scripts/start.sh prod-status  查看后台生产服务状态
+#   ./scripts/start.sh prod-log     实时跟踪生产日志（tail -F，自动跟随按日滚动）
 #   ./scripts/start.sh build    仅编译（前端 release + 后端 release）
 #   ./scripts/start.sh backend  仅启动后端（cargo run）
 #   ./scripts/start.sh frontend 仅启动前端开发服务器（dx serve）
 #   ./scripts/start.sh help     显示帮助
-# 也可通过根目录 Makefile 路由：make dev / make prod / make build / make run / make serve
+# 也可通过根目录 Makefile 路由：make dev / make prod / make prod-stop / make prod-status / make prod-log / make build / make run / make serve
 
 set -e
 
@@ -61,8 +64,13 @@ ai_orz - 统一启动脚本
   dev       开发模式（默认）：同时启动后端 cargo run + 前端 dx serve
             后端: http://localhost:3000 | 前端: http://localhost:8080
 
-  prod      生产模式：编译 release 版本并运行生产二进制
+  prod      生产模式：编译 release 版本并后台运行生产二进制（不占据前台输出）
             服务监听 0.0.0.0:3000，前端静态文件从 dist/ 提供
+            业务日志自动落盘 .ai_orz/logs/（按天滚动 + 自动清理），配套命令：
+
+  prod-stop    停止后台生产服务（仅 release 二进制，不影响开发态进程）
+  prod-status  查看生产服务运行状态（PID / 运行时长 / 资源占用）
+  prod-log     实时跟踪生产日志（tail -F，自动跟随按日滚动）
 
   build     仅编译：编译前端 release + 后端 release，不启动服务
 
@@ -124,6 +132,14 @@ preflight_deps() {
 # 实现：启动 dx 前临时替换 Dioxus.toml 的 backend 行（备份 .dxbak），退出时恢复。
 DX_BAK="$REPO_ROOT/frontend/Dioxus.toml.dxbak"
 
+# 生产服务运行态文件（均在 .ai_orz/ 下，gitignore 已覆盖）
+#   - prod.pid     后台服务 PID（prod 写入 / prod-stop、prod-status 读取）
+#   - prod-boot.log 崩溃兜底日志：接住 panic 等绕过 tracing 的 stderr 输出，
+#     每次启动截断（业务日志由后端自身落盘 .ai_orz/logs/，按天滚动，见 prod 注释）
+PROD_PID_FILE="$REPO_ROOT/.ai_orz/prod.pid"
+PROD_BOOT_LOG="$REPO_ROOT/.ai_orz/logs/prod-boot.log"
+PROD_BIN="$REPO_ROOT/target/release/ai_orz"
+
 apply_dx_backend_override() {
     [ -n "${DX_BACKEND_URL:-}" ] || return 0
     if ! grep -q '^backend = ' "$REPO_ROOT/frontend/Dioxus.toml"; then
@@ -134,7 +150,7 @@ apply_dx_backend_override() {
     sed "s|^backend = \".*\"|backend = \"$DX_BACKEND_URL\"|" \
         "$REPO_ROOT/frontend/Dioxus.toml" > "$REPO_ROOT/frontend/Dioxus.toml.tmp" \
         && mv "$REPO_ROOT/frontend/Dioxus.toml.tmp" "$REPO_ROOT/frontend/Dioxus.toml"
-    echo "${YELLOW}🔀 DX proxy backend 已临时覆盖为: $DX_BACKEND_URL（退出时自动恢复）${NC}"
+    echo "${YELLOW}🔀 DX proxy backend 已临时覆盖为: ${DX_BACKEND_URL}（退出时自动恢复）${NC}"
 }
 
 restore_dx_backend_override() {
@@ -294,7 +310,14 @@ cmd_build() {
     echo "   前端静态文件: ${BLUE}./dist/${NC}"
 }
 
-# 生产模式：构建 + 运行
+# 生产模式：构建 + 后台运行（守护化，不占据前台输出）
+#
+# 日志双通道设计（不产生第二份膨胀日志）：
+#   - 业务日志：后端自身落盘 .ai_orz/logs/ai_orz.log.YYYY-MM-DD，
+#     按天滚动 + 启动时按 retention_days（默认 30 天）自动清理，永不无限膨胀
+#   - 脚本层：AI_ORZ_LOG_CONSOLE=0 关闭后端控制台层 → stdout 静默直接丢弃；
+#     仅用 prod-boot.log（每次启动截断）接住 panic 等绕过 tracing 的 stderr 崩溃输出
+# 重启语义 = 再跑一次 make prod（启动前 preflight_cleanup 已按进程名清掉旧实例）
 cmd_prod() {
     print_banner
 
@@ -302,13 +325,99 @@ cmd_prod() {
 
     preflight_cleanup
 
+    mkdir -p "$(dirname "$PROD_BOOT_LOG")"
+    : > "$PROD_BOOT_LOG"
+
     echo ""
-    echo "🚀 启动生产服务..."
+    echo "🚀 后台启动生产服务..."
     echo "   监听: ${BLUE}${AI_ORZ_LISTEN_ADDR:-0.0.0.0:3000}${NC}（AI_ORZ_LISTEN_ADDR 可覆盖）"
     echo ""
 
     cd "$REPO_ROOT"
-    ./target/release/ai_orz
+    # nohup + stdin/stdout 重定向三件套：脱离终端、不持有 make 的输出管道，
+    # 脚本退出后服务继续运行；nohup 会 exec 目标二进制，$! 即服务真实 PID
+    nohup env AI_ORZ_LOG_CONSOLE=0 "$PROD_BIN" </dev/null >/dev/null 2>"$PROD_BOOT_LOG" &
+    PROD_PID=$!
+
+    # 就绪探测端口与后端读 AI_ORZ_LISTEN_ADDR 的口径一致（取地址末段冒号后的端口）
+    local listen_spec="${AI_ORZ_LISTEN_ADDR:-0.0.0.0:3000}"
+    local listen_port="${listen_spec##*:}"
+
+    echo "⏳ 等待服务就绪（业务日志: ${BLUE}.ai_orz/logs/ai_orz.log.$(date +%F)${NC}）..."
+    if wait_for_port localhost "$listen_port" 60 "生产服务" "$PROD_PID"; then
+        echo "$PROD_PID" > "$PROD_PID_FILE"
+        echo "${GREEN}✅ 生产服务已就绪${NC}: ${BLUE}http://localhost:$listen_port${NC}（PID ${PROD_PID}）"
+        echo "   实时日志: ${BLUE}make prod-log${NC}   状态: ${BLUE}make prod-status${NC}   停止: ${BLUE}make prod-stop${NC}"
+    else
+        echo "${RED}❌ 生产服务未能就绪，崩溃输出尾部（完整见 ${PROD_BOOT_LOG}）:${NC}"
+        tail -n 20 "$PROD_BOOT_LOG" 2>/dev/null || true
+        exit 1
+    fi
+}
+
+# 停止后台生产服务（只针对 release 二进制，不影响开发态 debug 进程 / dx serve）
+cmd_prod_stop() {
+    if [ -f "$PROD_PID_FILE" ]; then
+        local pid
+        pid=$(cat "$PROD_PID_FILE" 2>/dev/null || true)
+        rm -f "$PROD_PID_FILE"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "🛑 停止生产服务 PID=$pid ..."
+            kill "$pid"
+            # 优雅退出最多等 5 秒（后端有 SIGTERM 优雅退出逻辑），超时强杀
+            local i=0
+            while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 5 ]; do
+                sleep 1
+                i=$((i + 1))
+            done
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "💥 温和停止未生效，强杀 PID=$pid"
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+            echo "${GREEN}👋 生产服务已停止${NC}"
+        else
+            echo "✓ 生产服务未在运行（已清理过期 PID 文件）"
+        fi
+    else
+        # 无 PID 文件（手动启动 / 文件丢失）：按进程名兜底，仅匹配 release 二进制
+        local pids
+        pids=$(/bin/ps aux | /usr/bin/grep -E "target/release/ai_orz( |$)" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
+        if [ -n "$(echo $pids | tr -d ' ')" ]; then
+            echo "🛑 按进程名停止生产服务: PID=$pids"
+            kill $pids 2>/dev/null || true
+        else
+            echo "✓ 生产服务未在运行"
+        fi
+    fi
+}
+
+# 查看后台生产服务状态
+cmd_prod_status() {
+    local pid=""
+    if [ -f "$PROD_PID_FILE" ]; then
+        pid=$(cat "$PROD_PID_FILE" 2>/dev/null || true)
+    fi
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "${GREEN}● 运行中${NC}（PID ${pid}）"
+        /bin/ps -p "$pid" -o pid,etime,%cpu,%mem,command
+    else
+        echo "○ 未运行（启动: make prod；如 PID 文件过期会由下次 prod/stop 自动清理）"
+    fi
+}
+
+# 实时跟踪生产日志（tail -F 自动跟随按日滚动，Ctrl+C 退出不影响服务）
+cmd_prod_log() {
+    local today
+    today=$(date +%F)
+    local log_file="$REPO_ROOT/.ai_orz/logs/ai_orz.log.$today"
+    if [ ! -f "$log_file" ]; then
+        echo "${YELLOW}今日日志文件尚不存在: $log_file${NC}"
+        echo "最近已有的日志文件:"
+        ls -t "$REPO_ROOT/.ai_orz/logs/"ai_orz.log.* 2>/dev/null | head -n 5 || echo "  （无）"
+        exit 1
+    fi
+    echo "📜 实时跟踪 ${log_file}（Ctrl+C 退出跟踪，不影响服务）"
+    tail -F "$log_file"
 }
 
 # 主逻辑
@@ -316,8 +425,13 @@ case "$MODE" in
     help|--help|-h)
         print_help
         ;;
+    # 运维管理命令（prod-stop/prod-status/prod-log）：不经过依赖预检——
+    # 管理的是「已在运行的服务」，此刻机器上工具链可能残缺，恰恰最需要这些命令可用
+    prod-stop) cmd_prod_stop ;;
+    prod-status) cmd_prod_status ;;
+    prod-log) cmd_prod_log ;;
     *)
-        # 依赖预检（help 之外的所有模式）：新机器上一次性提示缺什么、怎么装
+        # 依赖预检（构建/运行模式）：新机器上一次性提示缺什么、怎么装
         preflight_deps
         case "$MODE" in
             dev) cmd_dev ;;

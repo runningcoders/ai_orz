@@ -595,6 +595,7 @@ mod tests {
                 color: "#3b82f6".to_string(),
                 node_type: None,
                 layer: None,
+                ..Default::default()
             },
             CanvasNode {
                 id: "b".to_string(),
@@ -605,6 +606,7 @@ mod tests {
                 color: "#10b981".to_string(),
                 node_type: None,
                 layer: None,
+                ..Default::default()
             },
         ];
         let edges = vec![CanvasEdge {
@@ -644,6 +646,7 @@ mod tests {
                 color: "#3b82f6".to_string(),
                 node_type: None,
                 layer: None,
+                ..Default::default()
             },
             CanvasNode {
                 id: "b".to_string(),
@@ -654,6 +657,7 @@ mod tests {
                 color: "#10b981".to_string(),
                 node_type: None,
                 layer: None,
+                ..Default::default()
             },
         ];
         let edges = vec![CanvasEdge {
@@ -689,6 +693,7 @@ mod tests {
             color: "#3b82f6".to_string(),
             node_type: None,
             layer: None,
+            ..Default::default()
         };
 
         assert_eq!(system.count(), 0);
@@ -712,6 +717,7 @@ mod tests {
             color: "#fff".to_string(),
             node_type: None,
             layer: None,
+            ..Default::default()
         };
 
         system.trigger(&node);
@@ -736,6 +742,7 @@ mod tests {
             color: "#fff".to_string(),
             node_type: None,
             layer: None,
+            ..Default::default()
         };
         system.trigger(&node);
         assert!(system.count() > 0);
@@ -790,6 +797,7 @@ mod tests {
             color: "#3b82f6".to_string(),
             node_type: None,
             layer: None,
+            ..Default::default()
         };
         system.trigger_birth(&node);
         assert_eq!(system.count(), system.birth_count);
@@ -829,6 +837,7 @@ mod tests {
             color: "#fff".to_string(),
             node_type: None,
             layer: None,
+            ..Default::default()
         };
         system.trigger_birth(&node);
         assert!(system.count() > 0);

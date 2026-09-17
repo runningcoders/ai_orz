@@ -8,7 +8,7 @@
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate lint test test-be test-fe ci coverage e2e dev build build-fe prod package serve run clean clean-slim clean-proc doctor hooks
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate lint test test-be test-fe ci coverage e2e dev build build-fe prod prod-stop prod-status prod-log package serve run clean clean-slim clean-proc doctor hooks
 
 # git hooks 目录指向仓库内 .githooks/
 #   - pre-commit：fmt-check（cargo fmt --all -- --check，秒级）
@@ -130,8 +130,17 @@ build: ## 全量 release 编译：前端 dist/ + 后端二进制（= CI release 
 build-fe: ## 仅编译前端 release 并复制产物到 dist/（路由 scripts/build_frontend.sh）
 	./scripts/build_frontend.sh
 
-prod: ## 生产模式：编译 release 并运行生产二进制（0.0.0.0:3000）
+prod: ## 生产模式：编译 release 并后台运行生产二进制（0.0.0.0:3000，不占据前台）
 	./scripts/start.sh prod
+
+prod-stop: ## 停止后台生产服务（仅 release 二进制，不影响开发态进程）
+	./scripts/start.sh prod-stop
+
+prod-status: ## 查看后台生产服务状态（PID / 运行时长 / 资源占用）
+	./scripts/start.sh prod-status
+
+prod-log: ## 实时跟踪生产日志（tail -F，自动跟随按日滚动）
+	./scripts/start.sh prod-log
 
 package: ## 编译并打包正式发布物（tar.gz：二进制 + dist/ + start.sh 启动脚本 + README，可指定 VERSION）
 	./scripts/package.sh $(VERSION)

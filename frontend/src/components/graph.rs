@@ -91,8 +91,8 @@ fn build_hover_card(
                 accent: get_node_fill(&node.node_type).to_string(),
                 anchor_x: gx * scale + pan_x,
                 anchor_y: gy * scale + pan_y,
-                // 矩形卡片：锚点偏移用半宽（圆形时代是固定 18）
-                offset: NODE_BOX_W / 2.0 * scale + 12.0,
+                // 矩形卡片：锚点偏移用半宽（宽度按内容收窄，不能再用常量）
+                offset: node_box_width(node) / 2.0 * scale + 12.0,
             })
         }
         HoverTarget::Edge(source, target_id) => {
@@ -142,30 +142,11 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
     }
 }
 
-/// 预设 tag 色板（鲜艳且可区分）
-pub const TAG_COLORS: &[&str] = &[
-    "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#10b981", "#06b6d4", "#3b82f6",
-    "#8b5cf6", "#ec4899",
-];
+// 卡片几何 / 文案 / 配色的实现在 `components::node_card`（Canvas 与 SVG 共用一份；
+// 各画一套必然漂移：改了宽度忘改折行宽度 = 文字溢出卡片）。此处重导出保持调用点不变。
+use crate::components::node_card;
 
-/// 根据 tag 字符串 hash 稳定取色（同一 tag 始终同色）
-pub fn tag_color(tag: &str) -> &'static str {
-    let hash: u32 = tag
-        .bytes()
-        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
-    TAG_COLORS[(hash as usize) % TAG_COLORS.len()]
-}
-
-/// 知识图谱节点类型中文名（hover 详情卡 / 详情面板共用映射）
-pub fn type_label(t: &str) -> &'static str {
-    match t {
-        "knowledge_node" => "知识节点",
-        "short_term" => "短期记忆",
-        "trace" => "调用记录",
-        "relation" => "关系",
-        _ => "未知",
-    }
-}
+pub use crate::components::node_card::type_label;
 
 /// 节点边框颜色（选中态）
 pub fn get_node_stroke(is_selected: bool) -> &'static str {
@@ -199,147 +180,40 @@ pub fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
     }
 }
 
-// ==================== 矩形节点卡片几何（canvas / SVG 双端 SSOT） ====================
-//
-// 知识节点此前是圆形：只能塞下 10 个字 + 一个 ID，信息量几乎为零。
-// 改矩形卡片后画布上直接展示「名称 + 摘要/描述两行 + 标签」，ID 退到 hover 详情。
-// ⚠️ 卡片尺寸 / 折行 / 截断全部收敛在此：canvas 与 SVG 两条渲染路径都读这里，
-// 各画一套必然漂移（改了宽度忘了改折行宽度 = 文字溢出卡片）。
+// 卡片几何常量与折行/截断函数由上面的 `node_card` 提供，此处重导出保持调用点不变。
+// （宽度不再有常量版本：走 `node_box_width`，纯名称卡片会被收窄。）
+pub use crate::components::node_card::{
+    HOVER_FONT_PX, HOVER_TEXT_W, NODE_ACCENT_W, NODE_BODY_H, NODE_BODY_MAX_LINES, NODE_BODY_PX,
+    NODE_BOX_PAD, NODE_BOX_R, NODE_TAG_H, NODE_TITLE_H, NODE_TITLE_PX, truncate_chars, wrap_text,
+};
 
-/// 卡片固定宽度（高度按内容浮动，见 [`node_box_height`]）
-pub const NODE_BOX_W: f64 = 168.0;
-/// 卡片圆角
-pub const NODE_BOX_R: f64 = 6.0;
-/// 卡片内边距
-pub const NODE_BOX_PAD: f64 = 8.0;
-/// 左侧类型色竖条宽度（取代圆形的整体填充，保留类型辨识度）
-pub const NODE_ACCENT_W: f64 = 4.0;
-/// 标题字号 / 行高
-pub const NODE_TITLE_PX: f64 = 12.0;
-pub const NODE_TITLE_H: f64 = 15.0;
-/// 正文字号 / 行高 / 最大行数
-pub const NODE_BODY_PX: f64 = 10.0;
-pub const NODE_BODY_H: f64 = 13.0;
-pub const NODE_BODY_MAX_LINES: usize = 2;
-/// 标签胶囊高度
-pub const NODE_TAG_H: f64 = 14.0;
-/// 卡片内标签最多展示个数（超出聚合为 `+N`）
-pub const NODE_TAG_MAX: usize = 3;
-/// hover 详情卡正文折行宽度（与 canvas_scene 的 11px 卡片字号配套）
-pub const HOVER_TEXT_W: f64 = 280.0;
-pub const HOVER_FONT_PX: f64 = 11.0;
+// 以下皆是 `GraphNode` → `node_card` 的薄包装：几何与文案的实现在
+// `components::node_card`（Canvas 与 SVG 共用一份），这里只做「按 GraphNode
+// 取字段」的适配。两处各写一套必然漂移——卡片高度对不上，画出来一张高一张矮。
 
-/// 卡片内容区可用宽度（扣掉竖条与左右内边距）
-pub fn node_content_w() -> f64 {
-    NODE_BOX_W - NODE_ACCENT_W - NODE_BOX_PAD * 2.0
-}
-
-/// 文本渲染宽度估算：CJK≈字号，ASCII≈0.55×字号
-///
-/// canvas 侧有 `measure_text_width` 可用真实度量，但 SVG 只能估算；
-/// 两边共用这一套估算，卡片的折行结果才一致。
-pub fn text_width(s: &str, font_px: f64) -> f64 {
-    s.chars().fold(0.0, |acc, c| {
-        acc + if c.is_ascii() {
-            font_px * 0.55
-        } else {
-            font_px
-        }
-    })
-}
-
-/// 按像素宽度折行，最多 `max_lines` 行；超出时末行截断加省略号
-pub fn wrap_text(s: &str, max_width: f64, font_px: f64, max_lines: usize) -> Vec<String> {
-    // 正文常含换行/Markdown 换行，先摊平成单行再折，避免卡片里出现半截空行
-    let flat: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flat.is_empty() || max_lines == 0 {
-        return Vec::new();
-    }
-    let mut lines: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    for ch in flat.chars() {
-        let probe: String = cur.chars().chain(std::iter::once(ch)).collect();
-        if !cur.is_empty() && text_width(&probe, font_px) > max_width {
-            lines.push(std::mem::take(&mut cur));
-        }
-        cur.push(ch);
-    }
-    if !cur.is_empty() {
-        lines.push(cur);
-    }
-    if lines.len() > max_lines {
-        lines.truncate(max_lines);
-        if let Some(last) = lines.last_mut() {
-            let mut t = last.clone();
-            while !t.is_empty() && text_width(&format!("{t}…"), font_px) > max_width {
-                t.pop();
-            }
-            t.push('…');
-            *last = t;
-        }
-    }
-    lines
-}
-
-/// 截断到 `max` 个字符（超出加省略号）
-pub fn truncate_chars(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut t: String = s.chars().take(max - 1).collect();
-    t.push('…');
-    t
-}
-
-/// 卡片高度：标题行 + 正文两行（+ 标签行）
+/// 卡片高度：按实际正文行数（知识节点 = 高卡片，纯名称节点 = 矮卡片）
 pub fn node_box_height(node: &GraphNode) -> f64 {
-    let mut h = NODE_BOX_PAD * 2.0 + NODE_TITLE_H + NODE_BODY_H * NODE_BODY_MAX_LINES as f64;
-    if !node.tags.is_empty() {
-        h += NODE_TAG_H + 3.0;
-    }
-    h
+    node_card::box_height(node_body_lines(node).len(), !node.tags.is_empty())
+}
+
+/// 卡片宽度：按标题与正文的实际内容收窄（纯名称节点不占满 168px）
+pub fn node_box_width(node: &GraphNode) -> f64 {
+    node_card::box_width(&node.label, node_body_lines(node).len())
 }
 
 /// 卡片标题（展示名单行，超出省略）
 pub fn node_title(node: &GraphNode) -> String {
-    wrap_text(&node.label, node_content_w(), NODE_TITLE_PX, 1)
-        .pop()
-        .unwrap_or_default()
+    node_card::title(&node.label)
 }
 
 /// 卡片正文行：摘要优先，回退正文描述
 pub fn node_body_lines(node: &GraphNode) -> Vec<String> {
-    let summary = node.summary.as_deref().map(str::trim).unwrap_or("");
-    let text = if summary.is_empty() {
-        node.description.trim()
-    } else {
-        summary
-    };
-    if text.is_empty() {
-        return Vec::new();
-    }
-    wrap_text(text, node_content_w(), NODE_BODY_PX, NODE_BODY_MAX_LINES)
+    node_card::body_lines(node.summary.as_deref(), &node.description)
 }
 
 /// 卡片内标签胶囊（最多 `NODE_TAG_MAX` 个，超出聚合为 `+N`）
 pub fn node_tag_chips(node: &GraphNode) -> Vec<(String, &'static str)> {
-    if node.tags.is_empty() {
-        return Vec::new();
-    }
-    let mut chips: Vec<(String, &'static str)> = node
-        .tags
-        .iter()
-        .take(NODE_TAG_MAX)
-        .map(|t| (t.clone(), tag_color(t)))
-        .collect();
-    let rest = node.tags.len().saturating_sub(NODE_TAG_MAX);
-    if rest > 0 {
-        chips.push((format!("+{rest}"), "#4b5563"));
-    }
-    chips
+    node_card::tag_chips(&node.tags)
 }
 
 /// hover 详情行：名称 / 类型 / 标签 / 摘要 / 描述 / ID
@@ -741,8 +615,9 @@ pub fn Graph(props: GraphProps) -> Element {
                     let glow = get_node_glow(is_highlighted, is_selected);
 
                     // === 矩形卡片几何（与 canvas 渲染器共用 SSOT）===
+                    let box_w = node_box_width(&node);
                     let box_h = node_box_height(&node);
-                    let box_x = nx - NODE_BOX_W / 2.0;
+                    let box_x = nx - box_w / 2.0;
                     let box_y = ny - box_h / 2.0;
                     // 卡片内文字起始 x（竖条 + 左内边距）
                     let text_x = box_x + NODE_ACCENT_W + NODE_BOX_PAD;
@@ -794,7 +669,7 @@ pub fn Graph(props: GraphProps) -> Element {
                                     class: "kg-box-scan",
                                     x: "{box_x - 5.0}",
                                     y: "{box_y - 5.0}",
-                                    width: "{NODE_BOX_W + 10.0}",
+                                    width: "{box_w + 10.0}",
                                     height: "{box_h + 10.0}",
                                     rx: "10",
                                     fill: "none",
@@ -808,7 +683,7 @@ pub fn Graph(props: GraphProps) -> Element {
                                     class: "kg-box-pulse",
                                     x: "{box_x - 3.0}",
                                     y: "{box_y - 3.0}",
-                                    width: "{NODE_BOX_W + 6.0}",
+                                    width: "{box_w + 6.0}",
                                     height: "{box_h + 6.0}",
                                     rx: "9",
                                     fill: "none",
@@ -821,7 +696,7 @@ pub fn Graph(props: GraphProps) -> Element {
                             rect {
                                 x: "{box_x}",
                                 y: "{box_y}",
-                                width: "{NODE_BOX_W}",
+                                width: "{box_w}",
                                 height: "{box_h}",
                                 rx: "{NODE_BOX_R}",
                                 fill: "rgba(17, 24, 39, 0.94)",
@@ -1043,6 +918,7 @@ pub fn expand_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::node_card::{NODE_TAG_MAX, text_width};
 
     fn node(label: &str, summary: Option<&str>, desc: &str, tags: &[&str]) -> GraphNode {
         GraphNode {
@@ -1099,10 +975,12 @@ mod tests {
             node_box_height(&tagged) > node_box_height(&plain),
             "有标签时卡片要更高"
         );
-        // 无标签：上下内边距 + 标题行 + 正文两行
+        // 无标签、无正文 → 只有标题行（高度按实际内容行数算，不再固定撑两行）
+        assert_eq!(node_box_height(&plain), NODE_BOX_PAD * 2.0 + NODE_TITLE_H);
         assert_eq!(
-            node_box_height(&plain),
-            NODE_BOX_PAD * 2.0 + NODE_TITLE_H + NODE_BODY_H * 2.0
+            node_box_height(&tagged) - node_box_height(&plain),
+            NODE_TAG_H + 3.0,
+            "标签行只应多出标签高度 + 间距"
         );
     }
 

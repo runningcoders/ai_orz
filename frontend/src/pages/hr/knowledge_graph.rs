@@ -587,6 +587,11 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                 rsx! {
                                     HudSection { title: format!("图谱视图 ({} 节点, {} 关系)", current_nodes.len(), current_edges.len()),
                                         actions: Some(rsx!{
+                                            // 视口操作提示：滚轮/拖拽平移没有天然的视觉线索
+                                            // （右下角只显示缩放百分比），一句话说明最省事
+                                            span { class: "text-xs text-base-content/50 whitespace-nowrap hidden sm:inline",
+                                                "滚轮缩放 · 拖拽空白平移"
+                                            }
                                             // 风格切换按钮：Canvas（HUD）/ SVG（兜底）
                                             div { class: "join",
                                                 button {

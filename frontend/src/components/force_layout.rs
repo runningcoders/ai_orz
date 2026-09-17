@@ -2,11 +2,19 @@
 //!
 //! 模型：
 //! - 斥力：所有节点对互相排斥（库仑力，反比于距离平方）
+//! - 碰撞分离：节点有实际尺寸时按等效半径保持最小中心距（见下方常量注释）
 //! - 吸引力：有连线的节点对互相吸引（胡克定律，正比于距离）
 //! - 阻尼：每帧速度衰减，防止振荡
 //! - 边界：节点不超出画布范围
 
 use crate::components::canvas_scene::{CanvasEdge, CanvasNode};
+
+/// 碰撞分离强度：越接近 1 推得越硬，过大会在两节点间来回震荡
+const COLLISION_STRENGTH: f64 = 0.5;
+/// 碰撞最小中心距系数：`(r_i + r_j) * 该值` 为期望最小中心距，1.0 = 刚好不重叠
+const COLLISION_PADDING: f64 = 1.15;
+/// 连线两端节点的额外留白（仅当两端都有实际尺寸时参与理想长度计算）
+const SPRING_GAP: f64 = 60.0;
 
 /// 力导向布局参数
 #[derive(Debug, Clone, Copy)]
@@ -111,6 +119,20 @@ impl ForceLayout {
                 forces[i].1 += fy;
                 forces[j].0 -= fx;
                 forces[j].1 -= fy;
+
+                // 1.1 碰撞分离：节点有实际尺寸（矩形信息卡）时点斥力压不住 —— 1/d² 在
+                // 距离很近时才够强，结果是卡片叠成一坨、连线糊在底下。按各自等效半径
+                // 算最小中心距，破了就补一记线性强推。
+                let min_sep = (nodes[i].radius + nodes[j].radius) * COLLISION_PADDING;
+                if dist < min_sep {
+                    let push = (min_sep - dist) * COLLISION_STRENGTH;
+                    let px = push * dx / dist;
+                    let py = push * dy / dist;
+                    forces[i].0 += px;
+                    forces[i].1 += py;
+                    forces[j].0 -= px;
+                    forces[j].1 -= py;
+                }
             }
         }
 
@@ -125,7 +147,12 @@ impl ForceLayout {
                 let dx = nodes[j].x - nodes[i].x;
                 let dy = nodes[j].y - nodes[i].y;
                 let dist = (dx * dx + dy * dy).sqrt().max(0.01);
-                let displacement = dist - cfg.ideal_length;
+                // 理想长度按两端实际尺寸放宽：写死 120px 时，168px 宽的卡片连起来
+                // 必然互压（120 < 168）；只有带尺寸的节点参与放宽，圆点场景保持原值
+                let ideal = cfg
+                    .ideal_length
+                    .max(nodes[i].radius + nodes[j].radius + SPRING_GAP);
+                let displacement = dist - ideal;
                 let force = cfg.attraction * displacement;
                 let fx = force * dx / dist;
                 let fy = force * dy / dist;
@@ -147,7 +174,9 @@ impl ForceLayout {
 
         // 3. 应用力到速度，再应用速度到位置（带阻尼和限幅）
         let mut total_displacement = 0.0;
-        let margin = 30.0;
+        // 边界留白按最大等效半径走：写死 30px 时，卡片中心一贴边就等于半个卡片出画布
+        let max_radius = nodes.iter().map(|n| n.radius).fold(0.0f64, f64::max);
+        let margin = 30.0f64.max(max_radius);
         for i in 0..n {
             self.velocities[i].vx = (self.velocities[i].vx + forces[i].0) * cfg.damping;
             self.velocities[i].vy = (self.velocities[i].vy + forces[i].1) * cfg.damping;
@@ -210,6 +239,7 @@ mod tests {
             color: "#3b82f6".to_string(),
             node_type: None,
             layer: None,
+            ..Default::default()
         }
     }
 
@@ -321,5 +351,52 @@ mod tests {
             "单节点自环不应产生位移: {}",
             displacement
         );
+    }
+
+    /// 大尺寸节点（矩形信息卡）必须被碰撞分离推开。
+    ///
+    /// 回归「知识图谱挤成一坨」：只靠 1/d² 点斥力时，168px 宽的卡片在近距离
+    /// 压不住，会叠在同一点上；有了按等效半径的碰撞分离，中心距应达到
+    /// `(r1 + r2) * 1.15` 量级。
+    #[test]
+    fn test_collision_separates_large_cards() {
+        let mut a = make_node("a", 400.0, 300.0);
+        let mut b = make_node("b", 404.0, 300.0);
+        // 84 = 168px 宽卡片的半宽，即卡片节点的等效半径
+        a.radius = 84.0;
+        b.radius = 84.0;
+        let mut nodes = vec![a, b];
+        let edges: Vec<CanvasEdge> = vec![];
+        let mut layout = ForceLayout::new(ForceLayoutConfig::default());
+
+        for _ in 0..240 {
+            layout.step(&mut nodes, &edges, 900.0, 700.0);
+        }
+        let dist = ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
+        assert!(
+            dist > 170.0,
+            "168px 宽的卡片应被碰撞分离推开，实际中心距仅 {dist:.1}px"
+        );
+    }
+
+    /// 边界留白按最大等效半径走：写死 30px 时，卡片中心贴边就等于半张卡出画布
+    #[test]
+    fn test_boundary_margin_follows_largest_radius() {
+        let mut big = make_node("big", 400.0, 300.0);
+        big.radius = 84.0;
+        let mut nodes = vec![big, make_node("small", 60.0, 300.0)];
+        let edges: Vec<CanvasEdge> = vec![];
+        let mut layout = ForceLayout::new(ForceLayoutConfig::default());
+
+        for _ in 0..240 {
+            layout.step(&mut nodes, &edges, 800.0, 600.0);
+        }
+        for n in &nodes {
+            assert!(
+                n.x >= 84.0 - 1e-6 && n.x <= 800.0 - 84.0 + 1e-6,
+                "应按最大半径 84 留白，实际 x={}",
+                n.x
+            );
+        }
     }
 }

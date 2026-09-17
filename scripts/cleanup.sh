@@ -52,7 +52,7 @@ if [ -n "$(echo $ALL_HIT | /usr/bin/tr -d ' ')" ] && [ "$DRY_RUN" = "0" ]; then
     sleep 1
     for pid in $ALL_HIT; do
         if kill -0 "$pid" 2>/dev/null; then
-            echo "${YELLOW}  💥 强杀 PID=$pid（温和信号未生效）${NC}"
+            echo "${YELLOW}  💥 强杀 PID=${pid}（温和信号未生效）${NC}"
             kill -9 "$pid" 2>/dev/null || true
         fi
     done
