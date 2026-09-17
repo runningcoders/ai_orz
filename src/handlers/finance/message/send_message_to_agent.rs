@@ -90,6 +90,9 @@ pub async fn send_message_to_agent(
     };
 
     let reply_to_id = super::auto_reply_to_id(&ctx, params.reply_to_id.as_deref());
+    // 知会模式：发送方声明「无需回复来源方」，落 AgentNotify 类型，
+    // 接收方 Framework 侧据此跳过 Final 自动回发（防 Agent 间协作乒乓）
+    let notify_only = params.notify_only.unwrap_or(false);
     let cmd = SendToAgentCommand {
         from_id: &from_id,
         from_role,
@@ -100,7 +103,11 @@ pub async fn send_message_to_agent(
         reply_to_id: reply_to_id.as_deref(),
         external_key: None,
         attachment_ids: params.attachment_ids.as_deref(),
-        message_type: common::enums::MessageType::Text,
+        message_type: if notify_only {
+            common::enums::MessageType::AgentNotify
+        } else {
+            common::enums::MessageType::Text
+        },
     };
 
     let message = message::domain().delivery().send_to_agent(ctx, cmd).await?;

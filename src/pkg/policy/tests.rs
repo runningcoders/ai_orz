@@ -616,3 +616,55 @@ fn test_policy_builder_nested() {
         .with("max_rounds", 50u64);
     assert!(outer_or.is_triggered(&metrics));
 }
+
+#[test]
+fn test_threshold_policy_boundary_and_disabled() {
+    // 通用阈值策略：>= 命中、边界值、缺键按 0、threshold=0 未启用
+    let policy = ThresholdPolicy::new("t", "阈值", "depth", 5, "链深度", "");
+    assert_eq!(policy.condition_desc(), "链深度 >= 5");
+
+    assert_eq!(
+        policy.evaluate(&Metrics::new().with("depth", 4u64)),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        policy.evaluate(&Metrics::new().with("depth", 5u64)),
+        vec!["t".to_string()]
+    );
+    assert_eq!(
+        policy.evaluate(&Metrics::new().with("depth", 6u64)),
+        vec!["t".to_string()]
+    );
+    // 缺键按 0：低于正阈值不命中
+    assert_eq!(policy.evaluate(&Metrics::new()), Vec::<String>::new());
+
+    // threshold=0 → 未启用（恒不命中，防止误配成「0 条即触发」）
+    let disabled = ThresholdPolicy::new("t0", "阈值", "depth", 0, "链深度", "");
+    assert_eq!(
+        disabled.evaluate(&Metrics::new().with("depth", 100u64)),
+        Vec::<String>::new()
+    );
+    assert_eq!(disabled.condition_desc(), "链深度（未启用）");
+}
+
+#[test]
+fn test_field_equals_policy_exact_match_only() {
+    // 通用字段等值策略：get_str 全等才命中，缺键 / 部分包含不误伤
+    let policy = FieldEqualsPolicy::new("eq", "等值", "output", "NO_REPLY", "哨兵全等");
+
+    assert_eq!(
+        policy.evaluate(&Metrics::new().with("output", "NO_REPLY")),
+        vec!["eq".to_string()]
+    );
+    // 包含但不全等：不命中（trim 归一是调用方职责，策略本体不做归一）
+    assert_eq!(
+        policy.evaluate(&Metrics::new().with("output", "I will NO_REPLY if needed")),
+        Vec::<String>::new()
+    );
+    // 缺键：None != Some(expected)，不命中
+    assert_eq!(policy.evaluate(&Metrics::new()), Vec::<String>::new());
+
+    // 通用元信息
+    assert_eq!(policy.id(), "eq");
+    assert_eq!(policy.required_metrics(), vec!["output".to_string()]);
+}

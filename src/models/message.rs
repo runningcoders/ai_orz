@@ -283,6 +283,7 @@ impl MessagePo {
             MessageType::TaskAssignment => "任务分配通知",
             MessageType::TaskDispatchNotification => "任务调度通知",
             MessageType::ProjectFollowupNotification => "项目跟进通知",
+            MessageType::AgentNotify => "Agent 知会通知",
         };
 
         let content_label = match self.message_type {

@@ -712,6 +712,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                 task_id: None,
                 reply_to_id: None,
                 attachment_ids: None,
+                notify_only: None,
             };
 
             match send_message_to_agent(req).await {

@@ -11,23 +11,35 @@ pub struct SearchMemoryParams {
     pub query: String,
     /// 返回最大结果数。
     pub max_results: Option<i32>,
-    /// 记忆类型筛选。
+    /// 记忆类型筛选：`short_term` / `knowledge_node` / `trace` / `relation` / `all`
+    /// （等价写法 `KnowledgeNode`；`all` 与不传同义）。
+    ///
+    /// ⚠️ 词表外的值报 `invalid_request`，**不会**静默降级成搜全部。
     pub memory_type: Option<String>,
-    /// 图谱遍历深度，默认0=不遍历。
+    /// 图谱遍历深度，默认0=不遍历（`seed_node_ids` 非空时为 0 表示只看种子节点本身）。
     pub traversal_depth: Option<i32>,
-    /// 每层展开广度，默认0=不限制。
+    /// 每个节点最多展开的出边数，默认0=不限制。
     pub traversal_breadth: Option<i32>,
-    /// 遍历策略：breadth_first / depth_first。
+    /// 遍历策略：`breadth_first`（默认） / `depth_first`。
+    ///
+    /// ⚠️ 词表外的值报 `invalid_request`，**不会**静默退化成宽度优先
+    /// （策略决定节点集与边集的形状，静默换策略会让调用方拿到结构对不上的图）。
     pub traversal_strategy: Option<String>,
-    /// 种子节点ID列表，跳过语义搜索直接遍历。
+    /// 种子节点ID列表：跳过语义搜索直接沿图展开。
+    ///
+    /// ⚠️ 种子节点**一定会出现在结果里**（调用方点名的中心节点不该缺席），
+    /// 且展开不受 `agent_id` 约束（知识节点蜂巢共享）。
     pub seed_node_ids: Option<Vec<String>>,
     /// 标签过滤（OR 语义，命中任一 tag 即可）。
     pub tags: Option<Vec<String>>,
     /// 按任务 ID 过滤，聚焦到特定任务的记忆。
     /// 不传则不过滤（跨任务全局搜索）。
     pub task_id: Option<String>,
-    /// 指定查询的 Agent ID。
-    /// 不传则使用当前请求上下文的 agent_id。
+    /// 归属筛选：只看该 Agent 沉淀的记忆。**不是可见性门槛**。
+    ///
+    /// 知识节点是蜂巢共享资产，所有 Agent 都能读到全部知识节点；
+    /// 该参数只约束「从谁的节点起步」（关键词搜索/列表），不传 = 全域。
+    /// 不传则回退当前请求上下文的 agent_id。
     pub agent_id: Option<String>,
 }
 
@@ -103,9 +115,15 @@ pub struct MemorySearchMatch {
 /// 查询记忆请求参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct QueryMemoryParams {
-    /// Agent ID 筛选。
+    /// Agent ID 筛选（**归属筛选，不是权限门槛**）。
+    ///
+    /// 知识节点蜂巢共享，任何 Agent 都能查到全部知识节点；该字段只用于「只看某个
+    /// Agent 沉淀的记忆」。短期记忆是私有的，必须显式给出 agent_id 才会返回。
     pub agent_id: Option<String>,
-    /// 记忆类型筛选。
+    /// 记忆类型筛选：`short_term` / `knowledge_node` / `trace` / `relation` / `all`
+    /// （等价写法 `KnowledgeNode`；`all` 与不传同义）。
+    ///
+    /// ⚠️ 词表外的值报 `invalid_request`，**不会**静默降级成查全部。
     pub memory_type: Option<String>,
     /// 返回数量限制。
     pub limit: Option<i32>,
@@ -114,7 +132,9 @@ pub struct QueryMemoryParams {
     /// 按任务 ID 过滤，聚焦到特定任务的记忆。
     /// 不传则不过滤（跨任务全局查询）。
     pub task_id: Option<String>,
-    /// 按状态过滤（active/settled/forgotten）
+    /// 按状态过滤：`active` / `settled` / `forgotten`（也接受判别值 `"1"` / `"2"` / `"0"`）。
+    ///
+    /// ⚠️ 词表外的值报 `invalid_request`，**不会**静默降级成只查 active。
     pub status: Option<String>,
 }
 
@@ -158,7 +178,11 @@ pub struct UpdateMemoryParams {
     pub summary: Option<String>,
     /// 更新标签。
     pub tags: Option<Vec<String>>,
-    /// 新增：更新记忆状态（如把短期记忆标记为 Settled）
+    /// 更新记忆状态：`active` / `settled` / `forgotten`
+    /// （也接受判别值 `"1"` / `"2"` / `"0"`，如把短期记忆标记为 settled）。
+    ///
+    /// ⚠️ 词表外的值报 `invalid_request`，**不会**静默兜底成 active ——
+    /// 兜底会让「拼错状态」变成一次静默写入。
     pub status: Option<String>,
     /// 新增：更新知识节点的 tags（与 tags 字段区分，tags 用于 ShortTerm，node_tags 用于 KnowledgeNode）
     pub node_tags: Option<Vec<String>>,
@@ -190,7 +214,7 @@ pub struct DeleteMemoryResponse {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct RecommendSeedNodesParams {
     /// 指定 Agent ID。
-    /// 不传则跨 Agent 全局推荐（仅考虑 published 节点）。
+    /// 不传则跨 Agent 全局推荐（池子为全部知识节点；`published` 仅作连接度持平时的排序决胜）。
     pub agent_id: Option<String>,
     /// 返回推荐节点数量上限，默认 5。
     pub limit: Option<usize>,
@@ -272,6 +296,11 @@ pub struct SendMessageToAgentParams {
     /// 紧跟在文本消息之前（按数组顺序排列）。
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub attachment_ids: Option<Vec<String>>,
+    /// 知会模式（无需回复）。
+    /// 置 true 时消息类型为 AgentNotify，接收方处理后不会把最终输出自动回发给来源方；
+    /// 适用于「接下来的工作与来源 Agent 无关」的单向告知场景，避免 Agent 间乒乓。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify_only: Option<bool>,
 }
 
 /// 发送消息给 Agent 响应。
@@ -380,7 +409,17 @@ pub struct KnowledgeRelationParam {
     pub source_node_id: String,
     /// 目标节点 ID。
     pub target_node_id: String,
-    /// 关系类型。
+    /// 关系类型 —— **原样保存、原样展示**，不做归一化。
+    ///
+    /// 优先用规范词：`related` / `contains` / `contained_by` / `depends` /
+    /// `depended_by` / `prerequisite` / `followup` / `similar` / `opposite` /
+    /// `causes` / `caused_by` / `instance_of` / `category_of` / `attribute_of` /
+    /// `value_of`（图谱上显示为 相关 / 包含 / 属于 / 依赖 / 被依赖 / 前置 / 后续 /
+    /// 相似 / 相反 / 导致 / 源于 / 实例 / 分类 / 属性 / 取值）。
+    ///
+    /// 词表都不贴切时，**直接写你判断的关系名**（中文短词最好，如「实现」
+    /// 「被测试覆盖」「退化自」）：原样保存、原样展示，不会被替换成「自定义」。
+    /// 语义准确 > 用词规范 —— 别为了凑词表选一个不准的类型。
     pub relation_type: String,
     /// 关系强度（0.0~1.0）：
     /// 这条关联有多强/多确定，用于图谱边的粗细与浓淡，hover 时展示。

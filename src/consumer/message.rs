@@ -28,6 +28,11 @@ use common::error::{Error, ErrorCode, Result};
 use serde_json::Value;
 use std::sync::Arc;
 
+use super::message_route_policy::{
+    AutoReplyRoute, MAX_AGENT_REPLY_CHAIN, RouteInput, judge_chain_reply_route,
+    judge_static_reply_route,
+};
+
 use crate::handlers::hr::agent::settle_memory::{SettleAttempt, settle_agent_exclusive};
 use crate::models::events::{AgentSettleEvent, MessageCreatedEvent};
 use crate::models::message::{Message, ToolCallMessage};
@@ -706,23 +711,30 @@ impl MessageConsumer {
         // 造成 to_user_id 推导失败 + "必须走工具才算完成任务"的 365 轮死循环。
         // 本段改为 Framework 层按入口消息的来源角色，路由到对应的落库通道。
         //
-        // 三路分发规则（System 兜底分支的判定收敛于 routes_to_system_fallback）：
-        //   ┌──────────────────────┬───────────────────────────────────────────────┐
-        //   │ 来源                 │ 回复行为                                      │
-        //   ├──────────────────────┼───────────────────────────────────────────────┤
-        //   │ from_role=User       │ send_to_user(to = message.from_id)            │
-        //   │                      │ → 正常用户↔Agent 对话，99% 主流场景           │
-        //   ├──────────────────────┼───────────────────────────────────────────────┤
-        //   │ from_role=Agent      │ send_to_agent(from=本Agent, to=message.from)  │
-        //   │ （且 from≠to）       │ → 跨 Agent 协作消息的回复链路，避免把 Agent   │
-        //   │                      │   ID 硬塞到 to_user_id 里导致投递失败         │
-        //   ├──────────────────────┼───────────────────────────────────────────────┤
-        //   │ from_role=System     │ Final 丢弃（debug 日志）                      │
-        //   │ 或 Agent 自触发      │ → 系统触发 / 自触发没有"对等回复对象"，       │
-        //   │ （from==to）         │   回给自己会无限自唤醒循环；归属用户需要      │
-        //   │                      │   感知的通知由发送侧以用户身份中继（走上面    │
-        //   │                      │   User 分支），不依赖这里兜底                 │
-        //   └──────────────────────┴───────────────────────────────────────────────┘
+        // 路由判定收敛在 resolve_auto_reply_route（单一扩展点），四层防线：
+        //   ┌────────────────────────┬──────────────────────────────────────────────┐
+        //   │ 判定                   │ 路由                                         │
+        //   ├────────────────────────┼──────────────────────────────────────────────┤
+        //   │ from_role=User         │ Peer → send_to_user(to = message.from_id)，  │
+        //   │                        │   正常用户↔Agent 对话，99% 主流场景          │
+        //   ├────────────────────────┼──────────────────────────────────────────────┤
+        //   │ from_role=System       │ Discard → 系统触发 / 自触发（from==to）没有  │
+        //   │ / Agent 自触发         │   "对等回复对象"，回给自己会无限自唤醒循环；  │
+        //   │                        │   归属用户需要感知的通知由发送侧以用户身份    │
+        //   │                        │   中继（走 User 分支），不依赖这里兜底        │
+        //   ├────────────────────────┼──────────────────────────────────────────────┤
+        //   │ Agent 知会消息         │ Discard → 发送方经 send_message_to_agent     │
+        //   │ (AgentNotify)          │   notify_only=true 声明"无需回复"，处理结果  │
+        //   │                        │   不再回发来源方（防乒乓第一道防线）         │
+        //   ├────────────────────────┼──────────────────────────────────────────────┤
+        //   │ 跨 Agent 协作          │ ① Final 全等 NO_REPLY 哨兵 → Discard         │
+        //   │                        │   （Agent 自判"后续工作与来源方无关"）       │
+        //   │                        │ ② reply_to 链连续 Agent 消息达上限           │
+        //   │                        │   → EscalateToOwner 通知归属用户人工介入     │
+        //   │                        │ ③ 否则 Peer → send_to_agent(from=本Agent,    │
+        //   │                        │   to=message.from)，避免把 Agent ID 硬塞到   │
+        //   │                        │   to_user_id 里导致投递失败                  │
+        //   └────────────────────────┴──────────────────────────────────────────────┘
         //
         // 边界（同上一版）：
         //   - raw_output 为空（Cancel / 纯工具执行任务）不发消息；
@@ -736,67 +748,110 @@ impl MessageConsumer {
             let task_id = message.po.task_id.as_deref();
             let reply_to_id = Some(message.po.id.as_str());
 
-            // 分支判定收敛在 routes_to_system_fallback（单一扩展点）：
-            // 存量 System 来源 + Agent 自触发（from==to）都落入 System 兜底分支，
-            // 其余按来源角色走对等回复
-            let system_fallback =
-                routes_to_system_fallback(message.from_role(), &message.po.from_id, agent_id);
+            let route = self
+                .resolve_auto_reply_route(&ctx, message, agent_id, raw_output)
+                .await;
 
-            let send_result: Result<()> = match message.from_role() {
-                MessageRole::User => self
-                    .message_domain
-                    .delivery()
-                    .send_to_user(
-                        ctx.clone(),
-                        SendToUserCommand {
-                            from_agent_id: agent_id,
-                            to_user_id: &message.po.from_id,
-                            content: raw_output,
-                            project_id,
-                            task_id,
-                            reply_to_id,
-                        },
-                    )
-                    .await
-                    .map(|_| ()),
+            let send_result: Result<()> = match route {
+                AutoReplyRoute::Peer => match message.from_role() {
+                    MessageRole::User => self
+                        .message_domain
+                        .delivery()
+                        .send_to_user(
+                            ctx.clone(),
+                            SendToUserCommand {
+                                from_agent_id: agent_id,
+                                to_user_id: &message.po.from_id,
+                                content: raw_output,
+                                project_id,
+                                task_id,
+                                reply_to_id,
+                            },
+                        )
+                        .await
+                        .map(|_| ()),
 
-                MessageRole::Agent if !system_fallback => self
-                    .message_domain
-                    .delivery()
-                    .send_to_agent(
-                        ctx.clone(),
-                        SendToAgentCommand {
-                            from_id: agent_id,
-                            from_role: MessageRole::Agent,
-                            to_agent_id: &message.po.from_id,
-                            content: raw_output,
-                            project_id,
-                            task_id,
-                            reply_to_id,
-                            external_key: None,
-                            attachment_ids: None,
-                            message_type: MessageType::Text,
-                        },
-                    )
-                    .await
-                    .map(|_| ()),
+                    MessageRole::Agent => self
+                        .message_domain
+                        .delivery()
+                        .send_to_agent(
+                            ctx.clone(),
+                            SendToAgentCommand {
+                                from_id: agent_id,
+                                from_role: MessageRole::Agent,
+                                to_agent_id: &message.po.from_id,
+                                content: raw_output,
+                                project_id,
+                                task_id,
+                                reply_to_id,
+                                external_key: None,
+                                attachment_ids: None,
+                                message_type: MessageType::Text,
+                            },
+                        )
+                        .await
+                        .map(|_| ()),
 
-                // System 兜底分支（routes_to_system_fallback 命中：System 来源 /
-                // Agent 自触发 from==to）——没有「对等回复对象」，Final 丢弃。
-                // 归属用户需要感知的通知（任务调度 / 项目巡检 / 任务分配等）由发送侧
-                // 以**用户身份中继**（from_role=User），Final 经 User 分支自然送达；
-                // 真正落到这里的只有纯系统指令（取消 / 内部控制）和无归属用户的
-                // A2A 触达，Final 不是面向用户的汇报，投递只会污染收件箱。
-                MessageRole::System | MessageRole::Agent => {
+                    // resolve_auto_reply_route 对 System 来源恒返回 Discard，
+                    // 此分支不可达，仅为 match 穷尽性保留
+                    MessageRole::System => Ok(()),
+                },
+
+                AutoReplyRoute::Discard { reason } => {
                     log_debug!(
                         &ctx,
                         "handle_agent_message",
-                        "skip auto-reply for system-originated / self-triggered message (from_id={}, type={:?}), final len={}",
+                        "skip auto-reply ({}), from_id={}, type={:?}, final len={}",
+                        reason,
                         message.po.from_id,
                         message.po.message_type,
                         raw_output.len()
                     );
                     Ok(())
+                }
+
+                // 防乒乓机械兜底：reply_to 链上连续 Agent 消息已达上限，回发只会
+                // 继续推高链深度形成 A↔B 无限乒乓。终止回发并通知归属用户人工介入；
+                // 无归属用户（无 task/project root_user_id 的裸协作）时仅记日志。
+                AutoReplyRoute::EscalateToOwner { reason } => {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "auto-reply escalated to owner ({}), from_agent={}, final len={}",
+                        reason,
+                        message.po.from_id,
+                        raw_output.len()
+                    );
+                    match work_root_user_id.as_deref() {
+                        Some(owner_user_id) => self
+                            .message_domain
+                            .delivery()
+                            .send_to_user(
+                                ctx.clone(),
+                                SendToUserCommand {
+                                    from_agent_id: agent_id,
+                                    to_user_id: owner_user_id,
+                                    content: &format!(
+                                        "⚠️ Agent 间自动回复已达链路深度上限（{} 轮），为防止两个 Agent 无限互发已自动中止协作。Agent {} 的最新处理结果未回发，请人工介入确认后续安排。",
+                                        MAX_AGENT_REPLY_CHAIN,
+                                        message.po.from_id
+                                    ),
+                                    project_id,
+                                    task_id,
+                                    reply_to_id,
+                                },
+                            )
+                            .await
+                            .map(|_| ()),
+                        None => {
+                            log_warn!(
+                                &ctx,
+                                "handle_agent_message",
+                                "no owner user to escalate (no task/project root_user_id), agent reply chain stopped silently"
+                            );
+                            Ok(())
+                        }
+                    }
                 }
             };
 
@@ -945,6 +1000,72 @@ impl MessageConsumer {
             )
             .await?;
         Ok(())
+    }
+
+    /// 计算 Final 自动回发的最终路由（静态判定 + 回复链深度机械判定）
+    ///
+    /// 判定顺序：静态规则（用户/系统/自触发/知会/哨兵）短路在前，
+    /// 需要查库的链深度兜底只对「跨 Agent 对等回复候选」执行——
+    /// User 消息与 Discard 场景零额外查询，主流路径不增加任何成本。
+    async fn resolve_auto_reply_route(
+        &self,
+        ctx: &RequestContext,
+        message: &Message,
+        agent_id: &str,
+        raw_output: &str,
+    ) -> AutoReplyRoute {
+        if let Some(route) = judge_static_reply_route(RouteInput {
+            from_role: message.from_role(),
+            from_id: &message.po.from_id,
+            agent_id,
+            message_type: message.message_type(),
+            raw_output,
+        }) {
+            return route;
+        }
+        let chain_depth = self.agent_reply_chain_depth(ctx, message).await;
+        judge_chain_reply_route(chain_depth)
+    }
+
+    /// 统计入口消息沿 `reply_to_id` 向上连续 Agent 来源消息的条数（含入口自身）
+    ///
+    /// 链的形态（A↔B 协作）：A→B(1) ← B回复(2) ← A回复(3) ← …，每条自动回复的
+    /// reply_to_id 指向触发它的消息。遇到 User/System 来源消息或断链即停止——
+    /// 用户介入是链的自然终止点。查询失败按断链处理（宁少勿错：放行 Peer 后
+    /// 仍有模型侧哨兵与发送方知会声明继续兜底，不因存储抖动误伤正常协作）。
+    async fn agent_reply_chain_depth(&self, ctx: &RequestContext, message: &Message) -> usize {
+        let mut depth = usize::from(message.from_role() == MessageRole::Agent);
+        let mut cursor = message.po.reply_to_id.clone();
+        while depth < MAX_AGENT_REPLY_CHAIN {
+            let Some(prev_id) = cursor.as_deref() else {
+                break;
+            };
+            let prev = match self
+                .message_domain
+                .management()
+                .get_by_id(ctx.clone(), prev_id)
+                .await
+            {
+                Ok(Some(m)) => m,
+                Ok(None) => break,
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "reply chain traversal failed at message {} (treat as chain end): {}",
+                        prev_id,
+                        e
+                    );
+                    break;
+                }
+            };
+            if prev.from_role() != MessageRole::Agent {
+                break;
+            }
+            depth += 1;
+            cursor = prev.po.reply_to_id.clone();
+        }
+        depth
     }
 
     /// User 消息处理：调用 MessageDomain 推送给用户
@@ -1133,24 +1254,6 @@ fn tool_error_message(err: &Error) -> String {
     err.msg.clone()
 }
 
-/// 判断消息的 Final 回复是否应走「System 兜底分支」而非对等回复
-///
-/// **单一扩展点**：所有「没有对等回复对象 / 回复会造成自唤醒」的场景都在这里判定，
-/// 新增场景只改本函数，不动 `handle_agent_message` 里的 match 结构。命中后 Final
-/// 直接丢弃（归属用户需要感知的通知由发送侧以用户身份中继，走 User 分支自然送达）。
-///
-/// | 场景 | 判定 | 理由 |
-/// |------|------|------|
-/// | System 来源消息 | `from_role == System` | 触发器消息（纯系统指令、无归属用户的 A2A 触达）没有对等回复对象 |
-/// | Agent 自触发 | `from_role == Agent && from_id == agent_id` | 触发器以 Owner Agent 名义发给自己的消息，回给自己会无限自唤醒循环 |
-fn routes_to_system_fallback(from_role: MessageRole, from_id: &str, agent_id: &str) -> bool {
-    match from_role {
-        MessageRole::System => true,
-        MessageRole::Agent => from_id == agent_id,
-        MessageRole::User => false,
-    }
-}
-
 /// 推导本次唤醒【用户画像】区块应注入哪个用户
 ///
 /// 画像里带【用户 ID】/【显示名称】/【用户偏好】，直接决定 Agent「在跟谁打交道」的
@@ -1163,7 +1266,7 @@ fn routes_to_system_fallback(from_role: MessageRole, from_id: &str, agent_id: &s
 /// 第 2 条是兜底：这两类消息由系统或别的 Agent 构造，提示词里原本不含任何用户信息，
 /// Agent 既不知道"这件事为谁负责"，也无从对齐偏好——而它们恰恰是 Agent 需要主动
 /// `send_message` 汇报的主力场景（通知类消息的正文 / Final 送达路径见
-/// `routes_to_system_fallback` 与 scheduler 的用户身份中继）。
+/// `message_route_policy::judge_static_reply_route` 与 scheduler 的用户身份中继）。
 ///
 /// 返回 `None` 表示不注入（例如 A2A 等无归属用户的项目，`root_user_id` 为空）。
 fn resolve_profile_user_id(
@@ -1212,47 +1315,6 @@ mod tests {
                 sub.kind
             );
         }
-    }
-
-    /// System 来源消息恒走兜底分支（无对等回复对象）
-    #[test]
-    fn system_fallback_for_system_origin() {
-        assert!(routes_to_system_fallback(
-            MessageRole::System,
-            "task-1",
-            "agent-1"
-        ));
-        assert!(routes_to_system_fallback(
-            MessageRole::System,
-            "scheduler",
-            "agent-1"
-        ));
-    }
-
-    /// Agent 自触发守卫：from == to 回给自己会无限自唤醒，必须并入兜底分支
-    #[test]
-    fn system_fallback_for_agent_self_trigger() {
-        assert!(routes_to_system_fallback(
-            MessageRole::Agent,
-            "agent-1",
-            "agent-1"
-        ));
-        // 跨 Agent 协作（from != to）走对等回复，不受守卫影响
-        assert!(!routes_to_system_fallback(
-            MessageRole::Agent,
-            "agent-2",
-            "agent-1"
-        ));
-    }
-
-    /// 用户消息恒走对等回复（用户身份中继后 Final 自然回到该用户）
-    #[test]
-    fn system_fallback_never_for_user() {
-        assert!(!routes_to_system_fallback(
-            MessageRole::User,
-            "user-1",
-            "agent-1"
-        ));
     }
 
     /// 画像取值：User 消息恒用发送者本人

@@ -85,6 +85,8 @@ pub enum MessageType {
     TaskDispatchNotification = 10,
     /// 项目跟进通知（System→Agent，定时补偿触发）
     ProjectFollowupNotification = 11,
+    /// Agent 知会通知（Agent→Agent，声明无需回复来源方，防协作乒乓）
+    AgentNotify = 12,
 }
 
 impl From<i32> for MessageType {
@@ -102,6 +104,7 @@ impl From<i32> for MessageType {
             9 => MessageType::TaskAssignment,
             10 => MessageType::TaskDispatchNotification,
             11 => MessageType::ProjectFollowupNotification,
+            12 => MessageType::AgentNotify,
             _ => MessageType::default(),
         }
     }

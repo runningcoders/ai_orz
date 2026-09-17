@@ -655,6 +655,7 @@ pub fn MessageChat() -> Element {
                 task_id: None,
                 reply_to_id,
                 attachment_ids: attachment_ids_opt,
+                notify_only: None,
             };
 
             match send_message_to_agent(req).await {

@@ -8,6 +8,7 @@ pub mod federation_inbound_task;
 pub mod federation_ws_outbound;
 pub mod lark_inbound;
 pub mod message;
+pub mod message_route_policy;
 pub mod scheduler;
 pub mod task_event_consumer;
 pub mod think_round_stats_consumer;

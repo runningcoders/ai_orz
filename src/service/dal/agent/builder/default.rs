@@ -178,6 +178,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             common::enums::MessageType::ConfirmRequest => "【确认请求】",
             common::enums::MessageType::ConfirmResponse => "【确认回复】",
             common::enums::MessageType::TaskAssignment => "【任务分配通知】",
+            common::enums::MessageType::AgentNotify => "【Agent 知会通知】",
             _ => "【当前消息】",
         };
         let mut body = format!("{}\n{}", label, message.to_prompt());
@@ -698,13 +699,27 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             "   - 信息不足需要用户提供输入时（指代不明、需求边界不清、需要用户选择/决策、\n",
         );
         s.push_str("     需要用户提供资料/凭证）——**必须用 Final 文本输出完整澄清/询问**，\n");
-        s.push_str("     不要用 send_message，否则你不会停下来等用户答复。\n\n");
+        s.push_str("     不要用 send_message，否则你不会停下来等用户答复。\n");
+        s.push_str(
+            "   - 【Agent 间协作】若你判断「本次请求已处理完毕，接下来的工作与来源 Agent 无关、\n",
+        );
+        s.push_str(
+            "     无需它继续跟进」，让 Final 文本**恰好只包含** NO_REPLY（独占全文，不要附加其他文字），\n",
+        );
+        s.push_str(
+            "     Framework 检测到后将不再把回复转发给来源 Agent，避免两个 Agent 无限互发；\n",
+        );
+        s.push_str("     仅在处理 Agent 来源的消息时可用，回复用户时永远不要输出 NO_REPLY。\n\n");
 
         s.push_str("§2. send_message 的正确用途（与协作沟通技能 TEMPLATE_COMMUNICATION 对齐，发完不打断思考）：\n");
         s.push_str("   - ✅ 【当前对话中】用于：关键进展同步（已完成某里程碑、遇到重大阻塞但自己仍在推进、\n");
         s.push_str("     任务完成总结汇报）——用户看到后可以随时追问，你不需要停下来等回复\n");
         s.push_str("   - ✅ 【当前对话外】用于：向不在当前对话中的用户/Agent 发送异步通知（用户主动触发的任务完成提醒等）\n");
         s.push_str("   - ✅ 【跨 Agent】用于：跨 Agent 协作的消息通道（Task Agent → Owner 的完成/阻塞汇报走 send_task_assignment_message）\n");
+        s.push_str("   - ✅ 【跨 Agent 知会】单向告知、无需对方回复或跟进时（如进展同步后后续工作与对方无关），\n");
+        s.push_str(
+            "     用 send_message_to_agent 并置 notify_only=true，对方处理后不会把结果回发给你\n",
+        );
         s.push_str("   - ❌ 严禁：用 send_message 询问用户澄清/决策 → 必须走 Final 文本，否则不会等待用户回复\n");
         s.push_str("   - ❌ 有足够信息能直接给出简单答复时，直接 Final 文本——不要为了发一句话而调用 send_message\n\n");
 
@@ -985,8 +1000,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("   - 新知识 → save_long_term_memory 创建节点\n");
         result.push_str("   - 已有相似节点 → update_memory 更新节点内容\n");
         result.push_str("   - 过大且可拆分的旧节点 → 拆分为子节点 + 概述父节点 + contains 关系\n");
-        result.push_str("4. **建立关系**：用 save_long_term_memory 的 relations 参数建立节点间关系（related/contains/depends 等）；每条关系可带 weight（0~1）表示关联强度，知识图谱按它调边的粗细与浓淡，拿不准就省略、不要随手填一个中间值\n");
-        result.push_str("5. **评估共享**：判断哪些节点对蜂巢有共享价值，用 update_memory 的 node_tags 字段加 'published' 标签\n");
+        result.push_str("4. **建立关系**：用 save_long_term_memory 的 relations 参数建立节点间关系（related/contains/depends 等规范词优先；都不贴切就直接写你判断的关系名，会被原样保存与展示，不会被替换成「自定义」）；每条关系可带 weight（0~1）表示关联强度，知识图谱按它调边的粗细与浓淡，拿不准就省略、不要随手填一个中间值\n");
+        result.push_str("5. **评估重要性**：对「值得其他 Agent 优先参考」的通用方法论 / 模式 / 概念，用 update_memory 的 node_tags 字段加 'published' 标签——它标记的是**重要性/影响力**（用于图谱推荐起点的排序），**不是**可见性开关：知识节点在蜂巢内本就全局共享\n");
         // 状态闭环由框架负责：不再要求 Agent 自己改 status
         //
         // 背景：原步骤 6 要求 Agent 调 update_memory 把短期记忆 status 改为 settled，
@@ -1020,7 +1035,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
         result.push_str("- 新老知识交替不是覆盖是迭代，推翻时用 opposite 关系保留痕迹\n");
         result.push_str(
-            "- published 标签让节点全局共享，通过共享节点作为桥梁发现跨 Agent 的知识网络\n",
+            "- 知识节点在蜂巢内全局共享（无需标记即对所有 Agent 可见）；published 标签标记其中值得优先参考的高价值节点，以此为桥梁发现跨 Agent 的知识网络\n",
         );
         result.push_str("- 详见\"记忆认知\"技能的沉淀机制和新老知识交替章节\n\n");
         result.push_str("开始沉淀吧。");
