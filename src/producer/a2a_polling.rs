@@ -1,6 +1,6 @@
 use crate::models::events::A2aPollRequestedEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{EventSink, Producer, ProducerLoop, RetryDecision};
+use crate::pkg::aop::{EventSink, Producer, ProducerLoop};
 use crate::service::domain::hr as hr_domain;
 use common::enums::EventTopic;
 use common::error::Result;
@@ -25,11 +25,9 @@ const POLL_INTERVAL_SECS: u64 = 30;
 /// `stop()` 置位并等 loop 退出（契约 2），停机自检交给 [`ProducerLoop`]。
 ///
 /// ⚠️ 该 topic **没有业务收尾**（进度账在 task tags 的 `a2a_synced_msgs` 里，
-/// 由消费者自己推进），但**仍声明** `notify_producer` —— 因为消费者上报 `Err`
-/// 时若无生产者，框架会走 `delivery_of` 兜底 → `Nack` **无限重投**；本 topic 是
-/// `order_key = agent_id` 且 `ordered`，一条永久失败的事件（如反序列化失败）会
-/// 一直占着门闩，而轮询每 30s 又新增一条同 key 事件 → 队列只增不减、该 Agent 的
-/// 轮询实质停摆。所以生产者在这里的唯一职责是「重试到第几次就放弃」。
+/// 由消费者自己推进）→ 消费者**不声明** `notify_producer`，生产者不该回调。
+/// 「失败要不要重试」由消费者侧的 `Consumer::decide_retry` 默认策略回答，
+/// 与生产者是否存在无关 —— 所以这里也不需要为「次数兜底」保留任何代码。
 pub struct A2aPollingProducer {
     loop_ctl: Arc<ProducerLoop>,
     handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -97,41 +95,9 @@ impl Producer for A2aPollingProducer {
         EventTopic::A2aPollRequested
     }
 
-    /// 生命周期终结（成功消费 **或** 被放弃）→ 只留一条 debug
-    ///
-    /// 进度账在 task tags 的 `a2a_synced_msgs` 里，由消费者自己推进，这里无状态可写。
-    /// ⚠️ **必须幂等**：回调先于 `queue.ack`，崩溃/重投时可能重复触发。
-    async fn on_consumed(&self, _ctx: &RequestContext, event: &serde_json::Value) -> Result<()> {
-        log_debug!(
-            "[a2a_polling] event lifecycle ended: event_id={} agent_id={}",
-            event
-                .get("event_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("<none>"),
-            event
-                .get("agent_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("<none>")
-        );
-        Ok(())
-    }
-
-    /// 次数兜底：达到 `inbound_retry::MAX_ATTEMPTS` 或命中永久性错误 → `Discard`
-    ///
-    /// ⚠️ **绝不能无条件 `Retry`**：本 topic 是 ordered + `order_key = agent_id`，
-    /// 无限重投会让该 Agent 的轮询永久堵死（且每 30s 新认领事件继续堆积）。
-    /// 放弃不影响正确性：下一轮 tick 会重新认领该 Agent。
-    ///
-    /// ⚠️ 内部**不要**打 warn/error：`on_event` 失败处框架已打过 `sys_error!`。
-    async fn on_failed(
-        &self,
-        _ctx: &RequestContext,
-        _event: &serde_json::Value,
-        err: &str,
-        attempt: u32,
-    ) -> Result<RetryDecision> {
-        Ok(crate::service::dal::inbound_retry::decide(err, attempt))
-    }
+    // 两个收尾回调（`on_consumed` / `on_failed`）**都不实现**：本 topic 无状态要写
+    // —— 进度账在 task tags 的 `a2a_synced_msgs` 里，由消费者自己推进。
+    // 即便将来有人给它打开 `notify_producer`，trait 的默认实现（无操作）也是正确的。
 
     /// 契约 1：spawn 后**立即返回**，不阻塞 `start_all`
     async fn start(&self, sink: EventSink) -> Result<()> {

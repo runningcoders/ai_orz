@@ -1,6 +1,6 @@
 use crate::models::events::CronTriggerEvent;
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{EventSink, Producer, ProducerLoop, RetryDecision};
+use crate::pkg::aop::{EventSink, Producer, ProducerLoop};
 use crate::service::domain::system;
 use common::enums::EventTopic;
 use common::error::{Error, Result};
@@ -124,37 +124,10 @@ impl Producer for CronTriggerProducer {
         Ok(())
     }
 
-    /// 失败**不标记**已执行 → 触发器保持 due，下个 tick 自然重试
-    ///
-    /// 返回 `Retry` 是语义表达（"这次没成，下次再来"）：本消费者是 `ConsumeMode::Sync`，
-    /// 投递结论没有重投驱动者（见 `registry.rs` Sync 分支的 `let _ =`），所以 `Nack`
-    /// 在此**不会**立刻重投 —— 真正的重试驱动是「没 mark → 下个 tick 又被
-    /// `list_due_triggers` 捞到」。
-    ///
-    /// ⚠️ **绝不能返回 `Discard`**：那会走 ack 路径并**照常回调 `on_consumed`** → 反而
-    /// 把失败的那次标记成"已执行"（§4.4）。
-    async fn on_failed(
-        &self,
-        _ctx: &RequestContext,
-        event: &serde_json::Value,
-        err: &str,
-        attempt: u32,
-    ) -> Result<RetryDecision> {
-        // 只打 debug：失败本身框架已在 `on_event` 失败处打过 `sys_error!`，
-        // 这里再打一份就是重投风暴的第二份日志源（§4.4 日志纪律）
-        let trigger_id = fired_at_of(event)
-            .map(|(id, _)| id)
-            .unwrap_or_else(|_| "<unparsable>".to_string());
-
-        log_debug!(
-            "[cron_trigger] NOT marked executed (attempt {}): trigger_id={} err={}",
-            attempt,
-            trigger_id,
-            err
-        );
-
-        Ok(RetryDecision::Retry)
-    }
+    // ⚠️ **刻意不实现 `on_failed`**：本 topic 没有「失败后要改的底层数据」——
+    // 「失败 = 不 mark → 下个 tick 重来」完全由 `SchedulerConsumer::decide_retry`
+    // 恒返回 `Retry` 表达（它决定了框架**不会**走到 `Discard` → 不会回调 `on_consumed`
+    // → 不会把失败的那次标记成"已执行"）。这条语义保证在**消费者**那边，别在这边补刀。
 
     /// 契约 1：spawn 自己的 loop 后**立即返回**
     ///

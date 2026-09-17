@@ -17,6 +17,18 @@ struct EventRef {
     /// 本事件被消费的**累计次数**：入队即 1，每次 `nack` 自增（`ack` 后随事件消亡，无需持久化）
     attempt: u32,
     /// 最早可出队时刻（epoch 毫秒；`0` = 立即可取）。仅 `nack` 重投时设置（per-event 指数退避）。
+    /// 本事件是否走了「同 key 门闩」
+    ///
+    /// 由入队方法决定：`enqueue`（未下沉前 = 订阅声明了 `ordered`）为 true，
+    /// `enqueue_ungated` 为 false。
+    ///
+    /// ⚠️ **为什么必须记住**：`ack`/`nack` 只能看到「这个事件的 order_key 是什么」，
+    /// 看不到它进的是哪条路。而**一个消费者只有一个队列**，`order_key` 又是事件侧
+    /// 的值 —— 同一消费者下不同订阅的事件完全可能带同一个 key。若不区分，
+    /// ungated 事件的 ack 会去 pop gated 队列的后继并提前放行它（`ordered` 的
+    /// 串行保证被悄悄绕过），ungated 事件的 nack 则会给该 key 打上「门闩占用」
+    /// 却再无 gated 事件能解开它（该 key 永久饥饿）。
+    gated: bool,
     not_before: i64,
 }
 
@@ -117,6 +129,10 @@ impl InMemoryEventQueue {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
+        // 只有在真正进门闩时 `gated` 才成立：空 key 的事件即使在 gated 订阅下
+        // 也是直进堆（没有 key 就没有同串行的对象）。
+        let gate = gated && !order_key.is_empty();
+
         let event_ref = EventRef {
             event_id: event_id.clone(),
             order_key: order_key.clone(),
@@ -125,6 +141,7 @@ impl InMemoryEventQueue {
             // 首次取出消费即 attempt == 1（`nack` 时自增）
             attempt: 1,
             not_before: 0,
+            gated: gate,
         };
 
         if events.contains_key(&event_id) {
@@ -133,7 +150,7 @@ impl InMemoryEventQueue {
 
         events.insert(event_id.clone(), event);
 
-        if gated && !order_key.is_empty() {
+        if gate {
             let queue = queues.entry(order_key.clone()).or_default();
             let was_empty = queue.is_empty();
             queue.push(event_ref.clone());
@@ -194,8 +211,8 @@ impl InMemoryEventQueue {
 ///
 /// 指数递增：attempt 2→1s、3→2s、4→4s … 封顶 `max_ms`。
 /// `attempt` 由 `nack` 自增后传入（首次重投 attempt == 2 → base）。
-/// 次数上限**不在框架层**：是否继续重试由生产者 `on_failed` 的 `RetryDecision`
-/// 决定（入站消费者由 `inbound_retry::decide` 的 `attempt >= 8` 兜底）。
+/// 次数上限**不在队列层**：是否继续重试由消费者的 `decide_retry` 回答
+/// （默认：永久性错误码 → 放弃；累计 8 次 → 放弃）。
 const RETRY_BACKOFF_BASE_MS: i64 = 1_000;
 const RETRY_BACKOFF_MAX_MS: i64 = 60_000;
 
@@ -295,15 +312,18 @@ impl EventQueue for InMemoryEventQueue {
         let in_progress = unsafe { &mut *self.in_progress.get() };
         let has_active_message = unsafe { &mut *self.has_active_message.get() };
 
-        let Some((_event_ref, order_key)) = in_progress.remove(event_id) else {
+        let Some((event_ref, _order_key)) = in_progress.remove(event_id) else {
             return Ok(());
         };
 
         events.remove(event_id);
 
-        if order_key.is_empty() {
+        // ⚠️ 只有走门闩进来的事件碰门闩状态；ungated 事件即使带着同一个
+        // `order_key`，也与相邻小贴士/latch 无关（详见 `EventRef::gated`）。
+        if !event_ref.gated {
             return Ok(());
         }
+        let order_key = event_ref.order_key.clone();
 
         let Some(queue) = queues.get_mut(&order_key) else {
             return Ok(());
@@ -346,11 +366,16 @@ impl EventQueue for InMemoryEventQueue {
         event_ref.not_before = now_ms()
             + retry_backoff_ms(self.backoff_base_ms, self.backoff_max_ms, event_ref.attempt);
 
-        global_heap.push(event_ref);
-        if !order_key.is_empty() {
+        // gated 事件重投后仍然占着门闩 —— 这里是显式重申（幂等），不是状态迁移：
+        // 真正的释放只在 `ack` 里发生。
+        if event_ref.gated {
             has_active_message.insert(order_key, true);
         }
 
+        global_heap.push(event_ref);
+        // ⚠️ 同一 key 上的 ungated 事件**不写**这个标记：它不是从 key 队列出来的，
+        // 没有一个 gated 的 ack 能为它收尾 → 一旦写上就再没人解开，该 key 的
+        // gated 后继永远不会被放行（永久饥饿）。
         Ok(())
     }
 
@@ -656,6 +681,79 @@ mod tests {
             "e2 未 ack 前 e3 不应出队（门闩应仍被 e2 占用），实际出队：{:?}",
             third.map(|v| v["event_id"].clone())
         );
+    }
+
+    /// 混用陷阱 ①：同一消费者里，ungated 事件的 `ack` **不得**放行 gated 队列的后继
+    ///
+    /// 一个消费者只有**一个**队列，而 `order_key` 是**事件侧**的值 —— 同一消费者下
+    /// 「A 订阅声明 ordered、B 订阅没声明」而两者 key 都是 `agent-1` 时，就会一条进闸、
+    /// 一条绕闸。若 `ack` 不区分来路，只看 key 去 pop 后继，B 的 ack 会把 A 的串行保证
+    /// 悄悄吃掉（并发 > 1 时同 key 被并行消费）。
+    #[tokio::test]
+    async fn ungated_ack_does_not_release_gated_successor() {
+        let queue = new_queue().await;
+        let ctx = RequestContext::new_system();
+
+        queue
+            .enqueue(ctx.clone(), envelope("g1", "message.created", "agent-1", 1))
+            .await
+            .unwrap();
+        let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(first["event_id"], "g1");
+
+        // gated 后继排在门闩后面
+        queue
+            .enqueue(ctx.clone(), envelope("g2", "message.created", "agent-1", 2))
+            .await
+            .unwrap();
+        // 同 key 的 ungated 事件：绕开门闩直进堆，先于 g2 被消费
+        queue
+            .enqueue_ungated(ctx.clone(), envelope("u1", "agent_loop", "agent-1", 3))
+            .await
+            .unwrap();
+
+        let raced = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(raced["event_id"], "u1", "ungated 事件应当绕开门闩先出队");
+
+        // u1 成功 → 它的 ack 不得触碰 g2 所在的门闩队列
+        queue.ack(ctx.clone(), "u1").await.unwrap();
+        let leaked = queue.dequeue_next(ctx.clone()).await.unwrap();
+        assert!(
+            leaked.is_none(),
+            "g1 尚未 ack，g2 不得因 ungated 事件的 ack 被放行，实际出队：{:?}",
+            leaked.map(|v| v["event_id"].clone())
+        );
+    }
+
+    /// 混用陷阱 ②：ungated 事件的 `nack` **不得**给该 key 打上门闩占用
+    ///
+    /// 反过来的形状：重投 Ungated 事件时若也 `has_active_message[key] = true`，
+    /// 而它自己不是从 key 队列出来的 —— 没有哪个 gated 的 ack 会为它收尾，
+    /// 该标记永远解不开 → 同 key 的 gated 事件永久饥饿。
+    #[tokio::test]
+    async fn ungated_nack_does_not_hold_the_latch() {
+        let queue = new_queue().await;
+        let ctx = RequestContext::new_system();
+
+        queue
+            .enqueue_ungated(ctx.clone(), envelope("u1", "agent_loop", "agent-9", 1))
+            .await
+            .unwrap();
+        let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+        assert_eq!(first["event_id"], "u1");
+        queue.nack(ctx.clone(), "u1").await.unwrap();
+
+        // 同 key 的 gated 事件：**必须**能立刻进堆（门闩未被 u1 占用）
+        queue
+            .enqueue(ctx.clone(), envelope("g1", "message.created", "agent-9", 2))
+            .await
+            .unwrap();
+        let gated = queue
+            .dequeue_next(ctx.clone())
+            .await
+            .unwrap()
+            .expect("ungated 事件的重投不得占住同 key 的门闩");
+        assert_eq!(gated["event_id"], "g1");
     }
 
     /// 不同 `order_key` 互不阻塞：一个慢 Agent 不该拖住整条队列

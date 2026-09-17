@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::models::events::{AgentSettleEvent, CronTriggerEvent};
 use crate::pkg::RequestContext;
 use crate::pkg::aop::Event;
-use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
+use crate::pkg::aop::{ConsumeMode, Consumer, RetryDecision, Subscription};
 use crate::service::domain::runtime::domain as runtime_domain;
 use common::enums::EventTopic;
 use common::error::{Error, Result};
@@ -57,6 +57,19 @@ impl Consumer for CronTriggerConsumer {
 
     fn consume_mode(&self) -> ConsumeMode {
         ConsumeMode::Sync
+    }
+
+    /// **永不放弃**：一次执行失败**不能**被当成"这次就算执行过了"
+    ///
+    /// ⚠️ **必须**覆写默认的 `decide_retry`：默认策略会按「永久性错误码」判 `Discard`，
+    /// 而框架对 `Discard` 的处理是 ack + 照常回调 `on_consumed` → 于是失败的那一次
+    /// 会被 `mark_trigger_executed` 标记成"已执行"（触发器推进到下一个 cron 点）。
+    /// 一次瞬时 DB 抖动就能让一个日级触发器**丢掉一整天**。
+    ///
+    /// 返回 `Retry` 的语义是「交给下一次机会」：本消费者是 Sync，投递结论没有重投
+    /// 驱动者 —— 真正的重试驱动是「没 mark → 下个 tick 又被 `list_due_triggers` 捞到」。
+    fn decide_retry(&self, _err: &str, _attempt: u32) -> RetryDecision {
+        RetryDecision::Retry
     }
 
     async fn on_event(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {

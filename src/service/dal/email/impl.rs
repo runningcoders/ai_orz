@@ -537,18 +537,4 @@ impl crate::pkg::aop::Producer for EmailDalImpl {
             .advance_inbound_cursor(ctx.clone(), credential_id, uid as u32)
             .await
     }
-
-    /// P6：适配失败的终局判定 —— 永久性错误不再重投
-    ///
-    /// ⚠️ 内部**不要**打 warn/error：`on_event` 失败处框架已打过 `sys_error!`，
-    /// 这里再打一份就是重投风暴的第二份日志源（§4.3 日志纪律）。
-    async fn on_failed(
-        &self,
-        _ctx: &RequestContext,
-        _event: &serde_json::Value,
-        err: &str,
-        attempt: u32,
-    ) -> Result<crate::pkg::aop::RetryDecision> {
-        Ok(crate::service::dal::inbound_retry::decide(err, attempt))
-    }
 }

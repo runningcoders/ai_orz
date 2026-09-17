@@ -6,7 +6,7 @@ use crate::models::message::Message;
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::vector::{MatchType, VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
-use crate::pkg::aop::{Producer, RetryDecision};
+use crate::pkg::aop::{DEFAULT_MAX_ATTEMPTS, Producer, RetryDecision};
 use crate::service::dal::message::MessageDal;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::message;
@@ -962,22 +962,51 @@ async fn test_producer_on_consumed_marks_processed(pool: SqlitePool) {
     assert_eq!(found.po.status, MessageStatus::Processed);
 }
 
-/// `on_failed` → 消息置回 `Pending`，且返回 `Retry`（等价于改造前 `Consumer::nack`）
+/// `on_failed(Retry)` → 消息置回 `Pending`（等价于改造前 `Consumer::nack`）
 ///
 /// 置回 `Pending` **不可省**：它是启动恢复的依据（`message_dal` 按
 /// `status = Pending` 扫出未处理消息重投）。
 #[sqlx::test]
-async fn test_producer_on_failed_marks_pending_and_requests_retry(pool: SqlitePool) {
+async fn test_producer_on_failed_marks_pending_when_retried(pool: SqlitePool) {
     let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Processed).await;
 
-    let decision = dal
-        .on_failed(&ctx, &envelope(&message_id), "db timeout", 1)
-        .await
-        .unwrap();
+    dal.on_failed(
+        &ctx,
+        &envelope(&message_id),
+        "db timeout",
+        RetryDecision::Retry,
+        1,
+    )
+    .await
+    .unwrap();
 
-    assert_eq!(decision, RetryDecision::Retry, "数据库瞬时错误本该重投");
     let found = dal.find_by_id(ctx, &message_id).await.unwrap().unwrap();
     assert_eq!(found.po.status, MessageStatus::Pending);
+}
+
+/// `on_failed(Discard)` → **不**置回 `Pending`
+///
+/// 否则启动恢复会把这条已被放弃的消息再扫出来重投，等于把「放弃」变回「无限重试」。
+#[sqlx::test]
+async fn test_producer_on_failed_keeps_status_when_discarded(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Processed).await;
+
+    dal.on_failed(
+        &ctx,
+        &envelope(&message_id),
+        "[invalid_request] 报文非法",
+        RetryDecision::Discard,
+        DEFAULT_MAX_ATTEMPTS,
+    )
+    .await
+    .unwrap();
+
+    let found = dal.find_by_id(ctx, &message_id).await.unwrap().unwrap();
+    assert_eq!(
+        found.po.status,
+        MessageStatus::Processed,
+        "放弃时不得回退状态"
+    );
 }
 
 /// **幂等**：同一事件回调两次结果一致（框架在 `queue.ack` 前回调，崩溃会重投）
@@ -1001,10 +1030,13 @@ async fn test_producer_callbacks_tolerate_missing_event_id(pool: SqlitePool) {
     let broken = serde_json::json!({ "kind": EventTopic::MessageCreated.as_str() });
 
     dal.on_consumed(&ctx, &broken).await.unwrap();
-    assert_eq!(
-        dal.on_failed(&ctx, &broken, "boom", 1).await.unwrap(),
-        RetryDecision::Retry
-    );
+    // 两种结论都不报错（ Hook 无 event_id 可写 → 无操作即可）
+    dal.on_failed(&ctx, &broken, "boom", RetryDecision::Retry, 1)
+        .await
+        .unwrap();
+    dal.on_failed(&ctx, &broken, "boom", RetryDecision::Discard, 8)
+        .await
+        .unwrap();
 }
 
 /// 反查归属：`agent.settle.requested` 的事件封套拿去喂消息 DAL 的收尾也**照样会写库**

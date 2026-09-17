@@ -287,25 +287,23 @@ async fn test_awakening_consumer_settles_and_releases_agent(pool: SqlitePool) {
 /// 归属反查取代 `source` 分流：两个 topic 各有其生产者，且互不动对方的表
 ///
 /// 改造前靠 `Consumer::ack/nack` 里的 `if source != "message.created" { return }`
+/// 归属反查取代 `source` 分流：只有 `message.created` 有生产者
+///
+/// 改造前靠 `Consumer::ack/nack` 里的 `if source != "message.created" { return }`
 /// 硬编码分流，避免沉淀事件对 messages 表白跑 `UPDATE ... WHERE id = <settle_event_id>`
 /// （命中 0 行、静默 Ok）—— 那会把「传进来的 id 一定指向 messages 表」变成
 /// 一个没说出口的前提，将来给 `update_status` 加上行数校验就会变成重投死循环。
 ///
-/// 改造后那道闸门消失，改为**框架按 `event_kind` 反查归属**。这里锁两件事：
+/// 改造后那道闸门整体消失，改为**框架按 `event_kind` 反查归属**：查不到生产者就
+/// 不回调。本测试锁的就是这个反查结果 —— 一旦有人给沉淀事件也注册上生产者，
+/// 原来的隐患会原样回来。
 ///
-/// 1. `message.created` 有生产者（`MessageDalImpl` 自身）→ `messages.status` 会翻转；
-/// 2. `agent.settle.requested` **也必须有**生产者，但它的收尾**不得碰 messages 表**。
-///
-/// ⚠️ 第 2 条的前半段是 2026-09-16 review 后反转的：原先断言「沉淀事件不得有生产者」，
-/// 但「无生产者」意味着消费失败走 `delivery_of` → `Nack` **无限重投**；而沉淀事件与
-/// `message.created` 共用 `order_key = agent_id` 且 `ordered` → 一条久失败（或长期
-/// Busy）的沉淀请求会**永久占住门闩**，该 Agent 的消息流全部饥饿。
-///
-/// 所以保护点从「禁止注册生产者」换成「生产者的收尾不写库」——由「1 topic : 1
-/// producer」+ `AgentSettleProducer::on_consumed` 只打日志双重保证，这里直接拿一条
-/// 真实消息行的 id 冒充沉淀 event_id 调一次收尾，断言该行**没被改写**。
+/// ⚠️ 2026-09-17 反转一次又反转回来：中途曾为「沉淀事件失败后无限重投会占住
+/// `agent_id` 门闩」给它补过一个只为兜次数的 `AgentSettleProducer`，但那是把
+/// **重投终局判定**放在了生产者身上。判定权下沉给消费者（`Consumer::decide_retry`）
+/// 之后，「无生产者」不再等于「无限重投」→ 那个空生产者被删掉了，本断言恢复。
 #[sqlx::test]
-async fn test_producers_are_scoped_per_topic(pool: SqlitePool) {
+async fn test_only_message_created_has_a_producer(pool: SqlitePool) {
     let _ctx = crate::common::init_full_test_env(pool.clone()).await;
 
     // 造一条真实消息行（Pending），并用它的 id 冒充「沉淀事件 id」
@@ -335,32 +333,37 @@ async fn test_producers_are_scoped_per_topic(pool: SqlitePool) {
         "message.created 必须注册生产者（= 消息 DAL 自身），否则 messages.status 永不翻转"
     );
 
-    // ② agent.settle.requested **必须**有生产者：否则消费失败走 `delivery_of` 兜底
-    // → Nack 无限重投，而它与 message.created 共用 agent_id 门闩 → 该 Agent 永久饥饿
+    // ② agent.settle.requested 无归属 → ①类纯通知，框架不回调任何生产者
     assert!(
-        registry.has_producer(common_ext::enums::EventTopic::AgentSettleRequested),
-        "沉淀事件必须有生产者：否则失败后无限重投并永久占住 agent_id 门闩"
+        !registry.has_producer(common_ext::enums::EventTopic::AgentSettleRequested),
+        "沉淀事件不得有生产者：否则会借它的 event_id 去动 messages 表"
     );
 
-    // ③ 但它的收尾**不得**借 event_id 去动 messages 表 —— 旧实现那道
-    // `if source != "message.created"` 闸门要挡的就是这件事。
-    use ai_orz::pkg::aop::Producer;
+    // ③ 「无生产者 ≠ 无限重投」：终局判定在消费者侧，沉淀事件仍会到次数上限放弃。
+    //    这条是 2026-09-17 判定权下沉后新增的护栏 —— 正是它让那个兜次数的空生产者
+    //    变得不必要。
+    use ai_orz::pkg::aop::Consumer;
 
-    let settle_producer = ai_orz::producer::agent_settle::AgentSettleProducer::new();
-    let settle_event = serde_json::json!({
-        "event_id": message_id,
-        "kind": "agent.settle.requested",
-        "agent_id": "agent-1",
-    });
-    settle_producer
-        .on_consumed(&RequestContext::new_system(), &settle_event)
-        .await
-        .expect("沉淀生产者的收尾不应失败");
+    let consumer = MessageConsumer::new();
+    assert_eq!(
+        consumer.decide_retry("[conflict] Agent 忙", 1),
+        ai_orz::pkg::aop::RetryDecision::Retry,
+        "瞬时错误应重投"
+    );
+    assert_eq!(
+        consumer.decide_retry(
+            "[conflict] Agent 忙",
+            ai_orz::pkg::aop::DEFAULT_MAX_ATTEMPTS
+        ),
+        ai_orz::pkg::aop::RetryDecision::Discard,
+        "达到累计上限必须放弃：否则与其共用 agent_id 门闩的消息会被永久饿死"
+    );
 
+    // 行确实没被碰过（沉淀链路本测试未跑，这里锁的是「没有意外写库」的前提）
     let status = read_message_status(&message_id).await;
     assert_eq!(
         status, pending,
-        "沉淀事件的收尾不得改动 messages 表，实际 status={}",
+        "消息状态不该被改动，实际 status={}",
         status
     );
 }

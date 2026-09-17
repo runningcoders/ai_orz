@@ -690,7 +690,10 @@ impl MessageInboundAdapter for LarkDalImpl {
 // 消费者把适配失败上报 `Err` 后，无生产者时框架只能按 `Err → Nack` 无限重投
 // （`finish_consumption` 的 `delivery_of` 分支），一条坏消息就会刷成重投风暴。
 //
-// 判定与 email / wechat 两个渠道共用 `inbound_retry::decide`（永久 → `Discard`）。
+// 判定由消费者侧的 `Consumer::decide_retry` 默认策略完成（永久错误码 / 累计次数上限），
+// 生产者不再参与 —— 它只保留一件事：`on_consumed` 是不可有害的空实现。
+// 之所以**仍然注册**：飞书侧「成败与否都由这一个收尾出口表达」，
+// 将来加管理员告警或审计时有明确的落点。
 
 #[async_trait::async_trait]
 impl crate::pkg::aop::Producer for LarkDalImpl {
@@ -715,19 +718,5 @@ impl crate::pkg::aop::Producer for LarkDalImpl {
                 .unwrap_or("<none>")
         );
         Ok(())
-    }
-
-    /// P6：把「适配失败」的终局判定交回业务 —— 永久性错误不再重投
-    ///
-    /// ⚠️ 内部**不要**打 warn/error：`on_event` 失败处框架已打过 `sys_error!`，
-    /// 这里再打一份就是重投风暴的第二份日志源（设计稿 §4.3 日志纪律）。
-    async fn on_failed(
-        &self,
-        _ctx: &RequestContext,
-        _event: &serde_json::Value,
-        err: &str,
-        attempt: u32,
-    ) -> Result<crate::pkg::aop::RetryDecision> {
-        Ok(crate::service::dal::inbound_retry::decide(err, attempt))
     }
 }

@@ -33,10 +33,11 @@ impl Consumer for LarkInboundConsumer {
     }
 
     fn subscriptions(&self) -> Vec<Subscription> {
-        // `.notify_producer()`：适配失败要由飞书 DAL（`LarkDalImpl` 的 Producer impl）
-        // 回答「还要不要重投」——
-        // 没有它，`Err` 在 `finish_consumption` 里只能落 `Err → Nack` 的默认分支（无回调），
-        // 一条永远适配失败的消息会无限重投并刷屏日志（P6）。
+        // `.notify_producer()`：P6 —— 适配失败时（尤其是到次数上限被放弃时）需要回调
+        // 飞书 DAL 的生产者：框架对 `Discard` 的处理是 ack + 照常回调 `on_consumed`。
+        // ⚠️ 注意**不再是**让 DAL 回答「还要不要重投」—— 那是 `decide_retry` 的事（消费者）；
+        // 生产者只在 `on_failed` 里接收结论。飞书侧无游标可推进，`on_consumed` 是空操作，
+        // 保留它是为了给将来的告警 / 审计留一个明确的落点。
         vec![Subscription::new(EventTopic::LarkInboundMessage).notify_producer()]
     }
 

@@ -26,8 +26,8 @@ pub mod queue;
 
 // 重导出核心 API
 pub use core::{
-    AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, Event, EventSink, Producer, ProducerLoop,
-    Registry, RetryDecision, Subscription,
+    AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, DEFAULT_MAX_ATTEMPTS, Event, EventSink,
+    Producer, ProducerLoop, Registry, RetryDecision, Subscription,
 };
 pub use queue::EventQueue;
 

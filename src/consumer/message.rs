@@ -92,20 +92,16 @@ impl MessageConsumer {
     /// `messages.status` 的翻转（业务收尾）已不在本消费者里做，而由拥有该 topic
     /// 业务状态的对象（`impl Producer for MessageDalImpl`）在 `on_consumed` 里完成。
     /// 漏声明它 = 状态**永不翻转**且不报错。
+    ///
+    /// ⚠️ `agent.settle.requested` **不声明** `notify_producer`：它没有底层数据要收尾。
+    /// 「失败重投到第几次就放弃」由本消费者的 `decide_retry`（默认策略）回答，
+    /// 与生产者是否存在无关 —— 别为了次数兜底去造一个空生产者。
     pub fn declarations() -> Vec<Subscription> {
         vec![
             Subscription::new(EventTopic::MessageCreated)
                 .ordered()
                 .notify_producer(),
-            // `.notify_producer()` 在这里**同样必需**（不只是 `message.created`）：
-            // 本 topic 若没有生产者，消费失败会走 `delivery_of` 兜底 → `Nack`
-            // **无限重投**；而它与 `message.created` 共用 `order_key = agent_id`
-            // 且声明了 `ordered` → 一条久失败（或长期 Busy）的沉淀请求会**永久占住
-            // 门闩**，该 Agent 的后续消息与结算全部饥饿。生产者（`agent_settle`）
-            // 没有业务状态要翻转，只负责回答「重试到第几次就放弃」。
-            Subscription::new(EventTopic::AgentSettleRequested)
-                .ordered()
-                .notify_producer(),
+            Subscription::new(EventTopic::AgentSettleRequested).ordered(),
         ]
     }
 }

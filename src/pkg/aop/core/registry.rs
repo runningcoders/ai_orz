@@ -734,15 +734,14 @@ enum DeliveryOutcome {
 /// 单一出口的意义：投递结论只在一个地方判定，避免「又长出两条路径」。它同时负责
 /// 两件事：**触发生产者业务回调** + **给出投递结论**（调用方只管把结论落到队列上）。
 ///
-/// 反查规则：按事件封套的 `kind` 解析 topic（未知 = 无生产者 = ①类纯通知 → 跳过回调），
-/// 再要求**该消费者对本 kind 显式声明了 `notify_producer`** —— 两个条件都满足才回调。
-///
-/// 三条不变量（均已写进实现）：
-/// 1. **业务回调先于 `queue.ack`**（与改造前 `consumer.ack` 先于 `registry.ack` 一致）
-///    → 代价是回调必须幂等：回调成功、`queue.ack` 前崩溃 → 事件重投、回调再跑一次。
-/// 2. `on_failed` 的触发时机 = **每次尝试失败**（不是终态通知）；
-///    `Discard` 是生产者用它表达终态的方式。
-/// 3. **回调自身失败不改变投递结论**（业务收尾是生产者的责任，不能靠「卡住队列」来重试）。
+/// 归属职责分工（三条不变量，均已写进实现）：
+/// 1. **终局判定归消费者**：`Err` 后先问 `Consumer::decide_retry` —— 无论有没有生产者。
+///    （旧版由 `Producer::on_failed` 的返回值决定，于是「没有生产者的 topic」就
+///    退化成无限重投，还得为每个 topic 造一个只为兜次数的生产者。）
+/// 2. **状态变更归生产者**：结论传给 `Producer::on_failed`，它据此更新底层数据；
+///    `Discard` 时再回调一次 `on_consumed`（游标型生产者靠它跨过坏条目）。
+/// 3. **业务回调先于 `queue.ack`**，且**回调自身失败不改变投递结论**
+///    （错误只记日志：业务收尾是生产者的责任，不能靠「卡住队列」来重试）。
 async fn finish_consumption(
     registry: &Registry,
     consumer: &Arc<dyn Consumer>,
@@ -750,75 +749,106 @@ async fn finish_consumption(
     event_json: &serde_json::Value,
     outcome: std::result::Result<(), String>,
 ) -> DeliveryOutcome {
-    // 反查归属：source 不再是硬编码字符串比较 —— 归属由 kind → producer 索引直接决定
-    let producer = EventTopic::parse(&meta.event_kind)
-        .filter(|kind| declares_notify_producer(consumer, *kind))
-        .and_then(|kind| registry.producer_for(kind));
+    match outcome {
+        Ok(()) => {
+            if let Some(producer) = producer_for(registry, consumer, meta) {
+                // 回调需要一份 ctx：worker 里 `on_event(ctx, ..)` 是按值 move，到此 ctx 已被移走
+                // → 从封套还原同源 ctx（顺带修掉 P4：业务收尾不再跑在断链的 `new_system()` 上）
+                let ctx = Registry::carried_ctx(event_json);
+                callback_consumed(&*producer, &ctx, event_json, consumer).await;
+            }
+            DeliveryOutcome::Ack
+        }
+        Err(err) => finish_failure(registry, consumer, meta, event_json, &err).await,
+    }
+}
 
-    let Some(producer) = producer else {
-        return delivery_of(&outcome);
+/// 失败分支：先由**消费者**定终局，再把它交给生产者做数据收尾
+async fn finish_failure(
+    registry: &Registry,
+    consumer: &Arc<dyn Consumer>,
+    meta: &AopEventMeta,
+    event_json: &serde_json::Value,
+    err: &str,
+) -> DeliveryOutcome {
+    // ⚠️ 先问消费者，且**与有无生产者无关** —— 判定权不属于生产者。
+    let decision = consumer.decide_retry(err, meta.attempt);
+
+    let Some(producer) = producer_for(registry, consumer, meta) else {
+        // 没有生产者 = 没有底层数据要收尾；消费者给出的结论照常落到队列上
+        return delivery_of(decision, registry, consumer, meta, event_json, err).await;
     };
 
     // 回调需要一份 ctx：worker 里 `on_event(ctx, ..)` 是按值 move，到此 ctx 已被移走
     // → 从封套还原同源 ctx（顺带修掉 P4：业务收尾不再跑在断链的 `new_system()` 上）
     let ctx = Registry::carried_ctx(event_json);
+    if let Err(e) = producer
+        .on_failed(&ctx, event_json, err, decision, meta.attempt)
+        .await
+    {
+        // 收尾写失败 ≠ 判定失败：结论仍按消费者的判断走，这里只留日志
+        // （数据层面的不一致由启动恢复兜底，例如 messages 仍为 Pending 会被重投）
+        sys_error!(
+            "[{}] producer {} on_failed error (decision={:?} unchanged): {}",
+            consumer.name(),
+            producer.name(),
+            decision,
+            e
+        );
+    }
 
-    match outcome {
-        Ok(()) => {
-            callback_consumed(&*producer, &ctx, event_json, consumer).await;
-            DeliveryOutcome::Ack
-        }
-        Err(err) => {
-            let decision = match producer
-                .on_failed(&ctx, event_json, &err, meta.attempt)
-                .await
-            {
-                Ok(decision) => decision,
-                Err(e) => {
-                    // 决策本身失败 → 安全方向：视为 Retry（宁可重投，绝不静默丢弃）
-                    sys_error!(
-                        "[{}] producer {} on_failed error, fallback to Retry: {}",
-                        consumer.name(),
-                        producer.name(),
-                        e
-                    );
-                    RetryDecision::Retry
-                }
-            };
+    delivery_of(decision, registry, consumer, meta, event_json, err).await
+}
 
-            match decision {
-                RetryDecision::Retry => DeliveryOutcome::Nack,
-                RetryDecision::Discard => {
-                    // 本设计里**唯一不可逆**的动作：事件永久移除且无死信存储
-                    // → 必须留下 error 日志与独立埋点（不得混入失败率，见 on_consume_discarded）
-                    sys_error!(
-                        "event DISCARDED by producer {}: consumer={} event_id={} attempt={} err={}",
-                        producer.name(),
-                        consumer.name(),
-                        meta.event_id,
-                        meta.attempt,
-                        err
-                    );
-                    if let Some(hook) = registry.metrics_hook() {
-                        hook.on_consume_discarded(consumer.name(), meta, &err);
-                    }
-
-                    // ⚠️ Discard 后**仍要**回调 on_consumed：否则游标型生产者
-                    // （如 IMAP 游标）跨不过这条坏事件，下轮会重新拉到同一封，形成死循环。
-                    callback_consumed(&*producer, &ctx, event_json, consumer).await;
-                    DeliveryOutcome::Ack
-                }
+/// 把终局判定落到队列结论上；`Discard` 顺便完成日志 / 埋点 / `on_consumed` 收尾
+async fn delivery_of(
+    decision: RetryDecision,
+    registry: &Registry,
+    consumer: &Arc<dyn Consumer>,
+    meta: &AopEventMeta,
+    event_json: &serde_json::Value,
+    err: &str,
+) -> DeliveryOutcome {
+    match decision {
+        RetryDecision::Retry => DeliveryOutcome::Nack,
+        RetryDecision::Discard => {
+            // 本设计里**唯一不可逆**的动作：事件永久移除且无死信存储
+            // → 必须留下 error 日志与独立埋点（不得混入失败率，见 on_consume_discarded）
+            sys_error!(
+                "event DISCARDED: consumer={} event_id={} attempt={} err={}",
+                consumer.name(),
+                meta.event_id,
+                meta.attempt,
+                err
+            );
+            if let Some(hook) = registry.metrics_hook() {
+                hook.on_consume_discarded(consumer.name(), meta, err);
             }
+
+            // ⚠️ Discard 后**仍要**回调 on_consumed：否则游标型生产者
+            // （如 IMAP 游标）跨不过这条坏事件，下轮会重新拉到同一封，形成死循环。
+            if let Some(producer) = producer_for(registry, consumer, meta) {
+                let ctx = Registry::carried_ctx(event_json);
+                callback_consumed(&*producer, &ctx, event_json, consumer).await;
+            }
+            DeliveryOutcome::Ack
         }
     }
 }
 
-/// 由 `on_event` 的 Result 直接得出投递结论（无生产者回调时的分支）
-fn delivery_of(outcome: &std::result::Result<(), String>) -> DeliveryOutcome {
-    match outcome {
-        Ok(()) => DeliveryOutcome::Ack,
-        Err(_) => DeliveryOutcome::Nack,
-    }
+/// 反查本次消费该通知的生产者
+///
+/// 归属靠 kind → producer 索引反查，**不需要**在消费者里再写一遍 `if kind != ..` 判断：
+/// ①事件封套的 `kind` 必须解析成已知 topic；②该消费者**对本 kind 显式声明了
+/// `notify_producer`**。两条都满足才回调。
+fn producer_for(
+    registry: &Registry,
+    consumer: &Arc<dyn Consumer>,
+    meta: &AopEventMeta,
+) -> Option<Arc<dyn Producer>> {
+    EventTopic::parse(&meta.event_kind)
+        .filter(|kind| declares_notify_producer(consumer, *kind))
+        .and_then(|kind| registry.producer_for(kind))
 }
 
 /// 该消费者是否对某 topic 显式声明了 `notify_producer`
@@ -936,9 +966,14 @@ mod tests {
         }
     }
 
-    /// 声明了 `notify_producer` 的 Async 消费者；`fail` 控制 on_event 成败
+    /// 声明了 `notify_producer` 的 Async 消费者
+    ///
+    /// - `fail`：控制 `on_event` 成败；
+    /// - `decision`：失败后的终局判定 —— **消费者说了算**（这是 2026-09-17 判定权
+    ///   下沉后的新契约，生产者只接收结论）。
     struct ProbeConsumer {
         fail: bool,
+        decision: RetryDecision,
     }
 
     #[async_trait]
@@ -955,6 +990,9 @@ mod tests {
         fn empty_queue_sleep_ms(&self) -> u64 {
             10
         }
+        fn decide_retry(&self, _err: &str, _attempt: u32) -> RetryDecision {
+            self.decision
+        }
         async fn on_event(&self, _ctx: RequestContext, _event: serde_json::Value) -> Result<()> {
             if self.fail {
                 return Err(err!(Internal, "probe consumer intentional failure"));
@@ -964,13 +1002,15 @@ mod tests {
     }
 
     /// 记录回调事实的生产者：既可验证 ack/重投/Discard，也可验证「回调先于 queue.ack」
+    ///
+    /// `sees_decision` 记录 `on_failed` **收到的**结论 —— 它是消费者给的，不是生产者答的。
     struct ProbeProducer {
-        /// `on_failed` 的返回值
-        decision: RetryDecision,
-        /// `on_failed` 自身是否直接报错（验证「视为 Retry」）
+        /// `on_failed` 自身是否直接报错（验证「收尾失败不改投递结论」）
         fail_on_failed: bool,
         consumed_calls: Arc<AtomicUsize>,
         failed_calls: Arc<AtomicUsize>,
+        /// `on_failed` 收到的 RetryDecision（`None` = 未被回调）
+        sees_decision: Arc<std::sync::Mutex<Option<RetryDecision>>>,
         /// `on_consumed` 时刻队列里 in_progress 的事件数（应为 1 = 尚未 ack）
         in_progress_at_consumed: Arc<AtomicUsize>,
         registry: Arc<Registry>,
@@ -1006,16 +1046,18 @@ mod tests {
             _ctx: &RequestContext,
             _event: &serde_json::Value,
             _err: &str,
+            decision: RetryDecision,
             _attempt: u32,
-        ) -> Result<RetryDecision> {
+        ) -> Result<()> {
             self.failed_calls.fetch_add(1, Ordering::SeqCst);
+            *self.sees_decision.lock().expect("probe decision poisoned") = Some(decision);
             if self.fail_on_failed {
                 return Err(err!(
                     Internal,
                     "probe producer on_failed intentional failure"
                 ));
             }
-            Ok(self.decision)
+            Ok(())
         }
         async fn start(&self, _sink: EventSink) -> Result<()> {
             Ok(())
@@ -1060,16 +1102,12 @@ mod tests {
         })
     }
 
-    fn probe_producer(
-        registry: &Arc<Registry>,
-        decision: RetryDecision,
-        fail_on_failed: bool,
-    ) -> Arc<ProbeProducer> {
+    fn probe_producer(registry: &Arc<Registry>, fail_on_failed: bool) -> Arc<ProbeProducer> {
         Arc::new(ProbeProducer {
-            decision,
             fail_on_failed,
             consumed_calls: Arc::new(AtomicUsize::new(0)),
             failed_calls: Arc::new(AtomicUsize::new(0)),
+            sees_decision: Arc::new(std::sync::Mutex::new(None)),
             in_progress_at_consumed: Arc::new(AtomicUsize::new(0)),
             registry: Arc::clone(registry),
             consumer_name: "probe_consumer".to_string(),
@@ -1154,12 +1192,12 @@ mod tests {
         let registry = new_test_registry();
 
         registry
-            .register_producer(probe_producer(&registry, RetryDecision::Retry, false))
+            .register_producer(probe_producer(&registry, false))
             .unwrap();
 
         // 第二个生产者声明同一 topic（不同 name）→ 必须被拒
         let err = registry
-            .register_producer(probe_producer(&registry, RetryDecision::Retry, false))
+            .register_producer(probe_producer(&registry, false))
             .expect_err("duplicate topic must be rejected");
         assert!(
             err.to_string().contains("1 topic : 1 producer"),
@@ -1209,7 +1247,10 @@ mod tests {
 
         let registry = new_test_registry();
         registry
-            .register_consumer(Arc::new(ProbeConsumer { fail: false }))
+            .register_consumer(Arc::new(ProbeConsumer {
+                fail: false,
+                decision: RetryDecision::Retry,
+            }))
             .unwrap();
 
         let err = registry
@@ -1223,7 +1264,7 @@ mod tests {
 
         // 校验先于置位 started → 补上生产者后仍能正常启动（不会因 started 已置位而静默跳过）
         registry
-            .register_producer(probe_producer(&registry, RetryDecision::Retry, false))
+            .register_producer(probe_producer(&registry, false))
             .unwrap();
         registry.start_all().await.unwrap();
         registry.shutdown_all().await.unwrap();
@@ -1236,9 +1277,12 @@ mod tests {
 
         let registry = new_test_registry();
         registry
-            .register_consumer(Arc::new(ProbeConsumer { fail: false }))
+            .register_consumer(Arc::new(ProbeConsumer {
+                fail: false,
+                decision: RetryDecision::Retry,
+            }))
             .unwrap();
-        let producer = probe_producer(&registry, RetryDecision::Retry, false);
+        let producer = probe_producer(&registry, false);
         registry.register_producer(producer.clone()).unwrap();
         registry.start_all().await.unwrap();
 
@@ -1265,7 +1309,7 @@ mod tests {
         registry.shutdown_all().await.unwrap();
     }
 
-    /// 失败 + `Retry` → `Nack`（事件留在队列等待重投）
+    /// 失败 + 消费者判 `Retry` → `Nack`（事件留在队列等待重投）
     #[tokio::test]
     async fn retry_decision_returns_nack() {
         // `finish_consumption` 会用 `carried_ctx` 还原同源 ctx（封套无 carrier 时回退
@@ -1273,8 +1317,11 @@ mod tests {
         crate::pkg::storage::test_support::init_for_test().await;
 
         let registry = new_test_registry();
-        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer { fail: true });
-        let producer = probe_producer(&registry, RetryDecision::Retry, false);
+        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer {
+            fail: true,
+            decision: RetryDecision::Retry,
+        });
+        let producer = probe_producer(&registry, false);
         registry.register_producer(producer.clone()).unwrap();
 
         let outcome = finish_consumption(
@@ -1289,6 +1336,11 @@ mod tests {
         assert_eq!(outcome, DeliveryOutcome::Nack);
         assert_eq!(producer.failed_calls.load(Ordering::SeqCst), 1);
         assert_eq!(producer.consumed_calls.load(Ordering::SeqCst), 0);
+        // 生产者是**收到**结论的一方，不是给出结论的一方
+        assert_eq!(
+            *producer.sees_decision.lock().unwrap(),
+            Some(RetryDecision::Retry)
+        );
     }
 
     /// 失败 + `Discard` → `Ack`（走 queue.ack 路径移除事件），且**仍回调** `on_consumed`
@@ -1299,8 +1351,11 @@ mod tests {
         crate::pkg::storage::test_support::init_for_test().await;
 
         let registry = new_test_registry();
-        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer { fail: true });
-        let producer = probe_producer(&registry, RetryDecision::Discard, false);
+        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer {
+            fail: true,
+            decision: RetryDecision::Discard,
+        });
+        let producer = probe_producer(&registry, false);
         registry.register_producer(producer.clone()).unwrap();
 
         let outcome = finish_consumption(
@@ -1317,15 +1372,22 @@ mod tests {
         assert_eq!(producer.consumed_calls.load(Ordering::SeqCst), 1);
     }
 
-    /// `on_failed` 自身报错 → 视为 `Retry`（安全方向：宁可重投，绝不静默丢弃）
+    /// 生产者的收尾**写失败**不改变投递结论 —— 那是消费者的判定，不是生产者的
+    ///
+    /// 语义变更（2026-09-17）：判定权下沉前，`Producer::on_failed` 返回 `Err` 会被
+    /// 当成「无法决策」→ 退化为 `Retry`（安全方向）。现在结论由 `Consumer::decide_retry`
+    /// 给出，生产者写失败只记日志，数据层面的一致性问题交给启动恢复兜底。
     #[tokio::test]
-    async fn on_failed_error_falls_back_to_retry() {
+    async fn producer_settlement_error_does_not_change_decision() {
         crate::pkg::storage::test_support::init_for_test().await;
 
         let registry = new_test_registry();
-        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer { fail: true });
-        // 决策是 Discard，但 on_failed 会报错 → 必须退化为 Retry
-        let producer = probe_producer(&registry, RetryDecision::Discard, true);
+        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer {
+            fail: true,
+            decision: RetryDecision::Discard,
+        });
+        // 收尾回调自身报错
+        let producer = probe_producer(&registry, true);
         registry.register_producer(producer.clone()).unwrap();
 
         let outcome = finish_consumption(
@@ -1337,15 +1399,20 @@ mod tests {
         )
         .await;
 
-        assert_eq!(outcome, DeliveryOutcome::Nack);
-        assert_eq!(producer.consumed_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            outcome,
+            DeliveryOutcome::Ack,
+            "消费者判 Discard → 结论就是 Ack，不因生产者写失败而退回 Retry"
+        );
+        // 但仍然照常回调 on_consumed（游标型生产者靠它跨过坏条目）
+        assert_eq!(producer.consumed_calls.load(Ordering::SeqCst), 1);
     }
 
     /// 消费者的订阅**没声明** `notify_producer` → 不回调（①类纯通知保留零回调语义）
     #[tokio::test]
     async fn callback_skipped_without_notify_producer_declaration() {
         let registry = new_test_registry();
-        let producer = probe_producer(&registry, RetryDecision::Retry, false);
+        let producer = probe_producer(&registry, false);
         registry.register_producer(producer.clone()).unwrap();
 
         // CountingConsumer 订阅 AgentStateChanged 且未声明 notify_producer
@@ -1362,11 +1429,18 @@ mod tests {
         assert_eq!(producer.consumed_calls.load(Ordering::SeqCst), 0);
     }
 
-    /// 反查落空（无生产者的 topic）= ①类纯通知 → 跳过回调，结论仍按 Result 给出
+    /// 反查落空（无生产者的 topic）= ①类纯通知 → 跳过回调，但**消费者的终局判定照常生效**
+    ///
+    /// ⚠️ 这是 2026-09-17 判定权下沉的关键护栏：过去「没有生产者」就等于「`Err` 无限
+    /// 重投」，逼得每个会上报 Err 的 topic 都得配一个只为兜次数的空生产者。现在判定在
+    /// 消费者侧，无生产者的 topic 也能在达到上限时正常放弃。
     #[tokio::test]
-    async fn callback_skipped_when_topic_has_no_producer() {
+    async fn decision_applies_even_when_topic_has_no_producer() {
         let registry = new_test_registry();
-        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer { fail: true });
+        let consumer: Arc<dyn Consumer> = Arc::new(ProbeConsumer {
+            fail: true,
+            decision: RetryDecision::Discard,
+        });
 
         let outcome = finish_consumption(
             &registry,
@@ -1377,7 +1451,11 @@ mod tests {
         )
         .await;
 
-        assert_eq!(outcome, DeliveryOutcome::Nack);
+        assert_eq!(
+            outcome,
+            DeliveryOutcome::Ack,
+            "无生产者也必须按消费者的判定 ack，否则会无限重投"
+        );
     }
 
     /// `EventSink` 只能发自己 topic 的事件（「1 producer : 1 topic」的执行点）

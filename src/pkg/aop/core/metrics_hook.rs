@@ -103,7 +103,7 @@ pub trait AopMetricsHook: Send + Sync {
     ) {
     }
 
-    /// 事件被生产者**主动放弃**时触发（`Producer::on_failed` 返回 `RetryDecision::Discard`）
+    /// 事件被**判定放弃**时触发（`Consumer::decide_retry` 返回 `RetryDecision::Discard`）
     ///
     /// ⚠️ **必须与 `on_consume_failure` 分开统计，不得混入失败率** —— `Discard` 是
     /// 有意的业务决策（如「永久无法解析的坏邮件」），而事件到此**永久移除、无死信存储**，

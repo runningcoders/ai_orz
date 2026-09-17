@@ -6,23 +6,8 @@ use common::enums::EventTopic;
 use common::error::Result;
 
 use super::EventSink;
+use super::consumer::RetryDecision;
 use crate::pkg::RequestContext;
-
-/// `on_failed` 的返回值：告诉 AOP 这个事件还要不要再投
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RetryDecision {
-    /// 可恢复 → `queue.nack()`，按既有退避重投
-    ///
-    /// **默认值**，等价于改造前的「无限重投」行为。
-    Retry,
-    /// 不可恢复 / 已放弃 → `queue.ack()`，事件按已终结移除
-    ///
-    /// 走到这里意味着事件**永久移除且无死信存储**（本设计唯一不可逆的动作）：
-    /// 框架必定打 error 日志并记独立埋点 `on_consume_discarded`（**不得混入失败率**
-    /// —— 这是有意的业务决策而非失败），随后**仍回调 `on_consumed`** 做业务收尾
-    /// （否则「放弃这封坏邮件」的游标型生产者跨不过它，下轮会重新拉到同一封）。
-    Discard,
-}
 
 /// AOP 生产者 trait
 ///
@@ -49,30 +34,32 @@ pub trait Producer: Send + Sync {
         Ok(())
     }
 
-    /// 本次尝试失败时回调，返回值决定 AOP 是否重投
+    /// 本次尝试失败时回调，`decision` 是**消费者的终局判定**（不是生产者的答案）
     ///
-    /// - `Retry`（默认）= 现状行为：`queue.nack()` 按既有退避重投（框架侧**无**重试上限、无死信）；
-    /// - `Discard` = 由生产者宣告「不再重试」→ 框架走 `queue.ack()` 路径移除事件，
-    ///   再回调一次 `on_consumed`（见 [`RetryDecision::Discard`]）；
-    /// - 本方法自身返回 `Err` → **视为 `Retry`**（安全方向：宁可重投，绝不静默丢弃）。
+    /// 生产者在这里的职责只有一件事：**用这个信号决定底层数据怎么改**。例如
+    /// `MessageDalImpl` 在 `Retry` 时把消息置回 `Pending`（供启动恢复重投），
+    /// 在 `Discard` 时不动它（随后由 `on_consumed` 置 `Processed`）。
     ///
-    /// ⚠️ **Sync 消费者上返回值被忽略**：Sync 是发布线程内联执行、无队列 →
-    /// 没有重投的驱动者，`Retry` 在 Sync 下不会触发任何重试。
+    /// - ⚠️ **不要在本方法里做终局判定**：那是 `Consumer::decide_retry` 的事。
+    ///   生产者反过来决定重投＝让「拥有数据的一方」替「知道业务语义的一方」猜。
+    /// - ⚠️ 触发时机是**每次尝试失败**（不是终态通知）：Async 消费者每次重投失败都会再回调一次。
+    ///   框架已在 `on_event` 失败处打了 `sys_error!`，实现里**不要**再为每次失败打 warn
+    ///   （一次失败会被重投放大成 N 条日志）。
+    /// - ⚠️ **必须幂等**：回调先于 `queue.ack`，同一事件可能被重复回调。
+    /// - 本方法返回 `Err` → **只记日志，不改变投递结论**：既然不能改投递，
+    ///   返回 Err 表达的只是「我的数据没收好」，由日志与启动恢复兜底。
     ///
-    /// ⚠️ 触发时机是**每次尝试失败**（不是终态通知）：Async 消费者每次重投失败都会再回调一次。
-    /// 框架已在 `on_event` 失败处打了 `sys_error!`，实现里**不要**再为每次失败打 warn
-    /// （一次失败会被重投放大成 N 条日志）。
-    ///
-    /// - `err`：失败原因（用于判定「永久性错误 → `Discard`」）
+    /// - `decision`：消费者的判定结果（[`RetryDecision`]）
     /// - `attempt`：本事件被消费的**累计次数**，首次失败即 `1`
     async fn on_failed(
         &self,
         _ctx: &RequestContext,
         _event: &serde_json::Value,
         _err: &str,
+        _decision: RetryDecision,
         _attempt: u32,
-    ) -> Result<RetryDecision> {
-        Ok(RetryDecision::Retry)
+    ) -> Result<()> {
+        Ok(())
     }
 
     /// 启动自管 loop（**机制在生产者**）

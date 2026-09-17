@@ -20,7 +20,8 @@
 | 2 | **一个生产者只产出一个 topic**（1 producer : 1 topic） | 新增 `Producer::topic()`；`topic → producer` 反查索引。**这是让「按 kind 反查归属」成立的前提** |
 | 3 | **消费者可订阅多个 topic**；默认直接分发；仅当声明 `ordered` 且事件带 `order_key` 才进等待队列 | `Subscription { kind, ordered, notify_producer }`；队列门闩判定从「事件带 order_key」改为「**订阅声明 ordered** ∧ 事件带 order_key」 |
 | 4 | **消费者订阅时声明是否要回调生产者**，默认不通知 | `Subscription.notify_producer`；消费完成后由 AOP 回调 `Producer::on_consumed` / `on_failed` |
-| 4.1 | **重试决策由生产者给出，AOP 只负责执行** | `Producer::on_failed(ctx, event, err, attempt) -> RetryDecision { Retry, Discard }`；默认 `Retry`（= 现状行为）；`Discard` 复用 `ack` 路径；**框架不设 `max_retry`、不做死信**；决策可对接 `pkg/policy` 策略引擎（§4.5） |
+| 4.1 | **终局判定（还要不要投）由消费者给出，AOP 只负责执行，生产者只负责按结论改数据** | `Consumer::decide_retry(err, attempt) -> RetryDecision { Retry, Discard }`（默认：永久错误码 / 累计 8 次 → `Discard`，其余 `Retry`）；`Producer::on_failed(ctx, event, err, decision, attempt)` **只收结论**、不再回答；`Discard` 复用 `ack` 路径；**框架不设 `max_retry`、不做死信**；判定可对接 `pkg/policy` 策略引擎（§4.5） |
+| 4.2 | **判定与生产者是否存在无关** | 无生产者的 topic 也照常判定 —— 过去「没有生产者」=「`Err` 无限重投」，逼得每个会上报 Err 的 topic 都得配一个只为兜次数的空生产者；现在不需要了（§4.4） |
 | 5 | **ack 是 AOP 层面的事，业务收尾是生产者的事** | 删 `Consumer::ack/nack`；投递生命周期由 worker 内部收尾，业务持久化回流给生产者 |
 | 6 | **生产者提供开始/退出机制，AOP 统一管理时机** | `Producer::start(EventSink)` / `stop()` 全量走 AOP 的 `start_all` / `shutdown_all`；**框架侧不再托管轮询** |
 | 7 | **topic 是一组前后端共享的枚举，不是散落的字符串** | `common::enums::EventTopic` 为唯一 SSOT；`pkg::aop::EventKind` 整体删除；前端 AOP 监控页按枚举筛选取代手打 kind 字符串（§3.6） |
@@ -116,12 +117,12 @@ publish(ctx, event) ──────┤           收尾 = 埋点 ok/fail + sy
 
 | # | 缺陷 | 证据 | 修法 |
 |---|---|---|---|
-| P1 | Async 消费者失败后**无限重投、无死信**，"最终失败" 概念不存在 | [registry.rs](src/pkg/aop/core/registry.rs#L465-L483) nack 后 `sleep(error_retry_sleep_ms)` 重投，无重试上限 | 不引入框架侧 `max_retry`（见 §8）：**重试决策下沉给生产者** —— `on_failed` 返回 `RetryDecision`（§4.4），默认 `Retry`（= 现状无限重投） |
+| P1 | Async 消费者失败后**无限重投、无死信**，"最终失败" 概念不存在 | [registry.rs](src/pkg/aop/core/registry.rs#L465-L483) nack 后 `sleep(error_retry_sleep_ms)` 重投，无重试上限 | 不引入框架侧 `max_retry`（见 §8）：**终局判定下沉给消费者** —— `Consumer::decide_retry` 返回 `RetryDecision`（§4.4），默认策略按永久错误码 / 累计 8 次放弃。**注意**：2026-09-17 之前这一步放在 `Producer::on_failed` 上，后果是「没有生产者的 topic 就退化成无限重投」，已修正 |
 | P2 | **游标型入站源 publish 后无条件推进游标** → 消费失败即丢消息（去重 ≠ 重放）。**两个渠道同形**：IMAP、微信 ilink | IMAP：[imap.rs](src/service/dao/email/imap.rs#L451-L454)（注释自称"重启基线由外部键去重兜底"）；微信：[ilink.rs](src/service/dao/wechat/ilink.rs#L439-L449)（"服务端返回新值才覆盖"，随后 [#L452-L456](src/service/dao/wechat/ilink.rs#L452-L456) 落库） | 游标推进移入生产者的 `on_consumed`（业务键已在信封内：`EmailInboundEvent.uid`、`WechatInboundEvent.message_key`） |
 | P3 | cron 触发器「先 `publish` 再 `mark_trigger_executed`」→ 业务被吞掉的失败也算"已执行" | [cron_trigger.rs](src/producer/cron_trigger.rs#L75-L80) | `mark_trigger_executed` 移入生产者的 `on_consumed`；失败不 mark → 下个 tick 自然重试 |
 | P4 | 业务收尾跑在「现造 `RequestContext::new_system()`」的断链 ctx 上 | [message.rs](src/consumer/message.rs#L129) / [#L144](src/consumer/message.rs#L144) | 回调由 worker 传入**从事件封套还原的同源 ctx**（`carried_ctx`），log_id 全程贯通 |
 | P5 | `agent.state.changed` 无消费者，publish 静默丢弃 | [registry.rs](src/pkg/aop/core/registry.rs#L118-L120) | 独立议题（§8） |
-| P6 | **三个入站消费者都把「适配失败」当成功 ack**（`return Ok(())`，注释写明"不 nack 重试"）→ 叠加 P2 的"游标已推进" = **消息确定性丢失**，且不进失败指标、无任何重放可能 | [wechat_inbound.rs](src/consumer/wechat_inbound.rs#L56-L65)、[lark_inbound.rs](src/consumer/lark_inbound.rs#L54-L60)、[email_inbound.rs](src/consumer/email_inbound.rs#L57-L67) | 正是 §4.4 的正例：消费者改为把失败上报 `Err`，由生产者 `on_failed` 判 `Discard`（永久性错误）→ **框架记 `on_consume_discarded` 埋点**。同样是丢，但留下可审计痕迹（今天只 `log_error!`） |
+| P6 | **三个入站消费者都把「适配失败」当成功 ack**（`return Ok(())`，注释写明"不 nack 重试"）→ 叠加 P2 的"游标已推进" = **消息确定性丢失**，且不进失败指标、无任何重放可能 | [wechat_inbound.rs](src/consumer/wechat_inbound.rs#L56-L65)、[lark_inbound.rs](src/consumer/lark_inbound.rs#L54-L60)、[email_inbound.rs](src/consumer/email_inbound.rs#L57-L67) | 正是 §4.4 的正例：消费者改为把失败上报 `Err`，由**消费者自己的 `decide_retry`** 判 `Discard`（永久性错误码 / 到次数上限）→ **框架记 `on_consume_discarded` 埋点**。同样是丢，但留下可审计痕迹（今天只 `log_error!`） |
 
 ---
 
@@ -170,9 +171,10 @@ pub trait Producer: Send + Sync {
     // 业务收尾回调（默认空实现）
     // on_consumed：事件生命周期**终结**时的业务收尾（成功消费 **或** 被放弃，见 §4.4）
     async fn on_consumed(&self, ctx: &RequestContext, event: &Value) -> Result<()> { Ok(()) }
-    // on_failed：本次尝试失败时回调；返回值决定 AOP 是否重投（默认 Retry = 现状行为，见 §4.4）
+    // on_failed：本次尝试失败时回调；`decision` 是**消费者的判定**（§4.4），
+    // 生产者只用它决定底层数据怎么改，不参与判定（返回 Err 也只记日志）
     async fn on_failed(&self, ctx: &RequestContext, event: &Value, err: &str,
-                       attempt: u32) -> Result<RetryDecision> { Ok(RetryDecision::Retry) }
+                       decision: RetryDecision, attempt: u32) -> Result<()> { Ok(()) }
 
     // 生命周期：机制在生产者（自持退出标志 + 自己的 loop），时机由 AOP 统一调用
     async fn start(&self, sink: EventSink) -> Result<()> { Ok(()) }
@@ -185,7 +187,7 @@ pub trait Producer: Send + Sync {
 ```
 
 > 当前实现：[Producer trait](src/pkg/aop/core/producer.rs#L8-L35)（`register` 在 #L11，`poll_interval_secs` 在 #L25，`poll` 在 #L32）
-> `RetryDecision` 与 trait 同文件（`pkg/aop/core/producer.rs`），语义与三处写死的约定见 §4.4。
+> `RetryDecision` 定义在 **`pkg/aop/core/consumer.rs`**（判定归消费者），语义见 §4.4。
 
 **谁来实现这个 trait：优先就是「拥有该 topic 业务状态的那个对象」本身，不新建 `producer/` 类型**（理念 8）。以 `message.created` 为例，它的三件事今天散在三处、而三处其实指向同一个对象：
 
@@ -418,14 +420,14 @@ async fn finish_consumption(
 `finish_consumption` 内部：
 
 ```text
-producer = EventTopic::parse(&meta.event_kind)                // 未知 kind → None
-              .and_then(|t| producers_by_topic.get(&t))       // 落空 = ①类，跳过回调
-if producer.is_none() || !该消费者对应该 kind 声明了 notify_producer { return }
-outcome.Ok  → producer.on_consumed(ctx_cb, event_json)                  → 结论 = ack
-outcome.Err → decision = producer.on_failed(ctx_cb, event_json, err, attempt)
+// ① 终局判定：先问**消费者**（与有无生产者无关）
+outcome.Ok  → 有生产者则 on_consumed                                       → 结论 = ack
+outcome.Err → decision = consumer.decide_retry(err, meta.attempt)
+// ② 生产者只接收结论，据此改底层数据
+                → 有生产者则 on_failed(ctx, event, err, decision, attempt)
                 decision == Retry   → 结论 = nack（按退避重投）
-                decision == Discard → 结论 = ack，且再回调 on_consumed 做业务收尾
-回调自身失败 → 只记 sys_error!，不影响投递结论（队列照常 ack/nack）
+                decision == Discard → 结论 = ack + error 日志 + 埋点 + 再回调 on_consumed
+回调自身失败 → 只记 sys_error!，不改投递结论
 ```
 
 ⚠️ **ctx 传参的现状缺口**：worker 里 `consumer.on_event(ctx, event_json)` 是**按值 move**（[registry.rs](src/pkg/aop/core/registry.rs#L402)），到收尾那一刻 ctx 已被移走。所以收尾需要**另取一份** `Self::carried_ctx(&event_json)`（框架已有该函数，[registry.rs](src/pkg/aop/core/registry.rs#L240-L245)）——这顺带修掉 P4（今天业务收尾用的是 `RequestContext::new_system()` 断链 ctx）。
@@ -434,68 +436,77 @@ outcome.Err → decision = producer.on_failed(ctx_cb, event_json, err, attempt)
 
 1. **业务回调先于 `queue.ack`**（与今天 `consumer.ack` 先于 `registry.ack` 一致，[registry.rs](src/pkg/aop/core/registry.rs#L413-L435)）。代价：回调成功、`queue.ack` 前进程崩溃 → 事件重投 → **回调必须幂等**（`update_status` / `mark_trigger_executed` / `cursor.last_uid = max(...)` 本身幂等，达标）。
 2. **`on_failed` 的触发时机 = 每次尝试失败**。Sync 消费者 `on_event` 返回 `Err` 即触发（一次，无重投）；Async 消费者**每次重投失败都触发**（P1：无死信、无框架侧重试上限）。
-   - 它**不是**「终态通知」，但**可以用来表达终态** —— 返回 `RetryDecision::Discard` 即由生产者宣告「不再重试」（见 §4.4）。这是本设计解开「无限重投 vs 死信队列」死结的地方：框架不引入 `max_retry`，把决策权交给唯一知道业务语义的一方。
-   - 日志纪律：能返回 `Discard` 的位置**必须**由框架打 error（§6.4）；而 `on_failed` 内部**不要**为 async 消费者打 warn —— 框架已在 `on_event` 失败处打了 `sys_error!`（[registry.rs](src/pkg/aop/core/registry.rs#L440-L445)），生产者也打一遍就是重投风暴的第二份日志源。上一轮那次"日志刷屏"的教训就在这里。
-3. **回调失败不改变投递结论**：`on_consumed` 返回 `Err` 时，事件**仍然 ack**（业务收尾是生产者的责任，不能靠"卡住队列"来重试；生产者若需要对账，靠自身幂等 + 周期自检）。反之如果是 `on_event` 失败，即使 `on_failed` 返回 `Retry` 也仍然 nack。
+   - 它**不是**「终态通知」，也**不表达终态** —— 终态由消费者的 `decide_retry` 给出，生产者只在 `on_failed` 里**收到**它（§4.4）。
+   - 日志纪律：`Discard` 的判定处**必须**由框架打 error（§6.4）；而 `on_failed` 内部**不要**为 async 消费者打 warn —— 框架已在 `on_event` 失败处打了 `sys_error!`（[registry.rs](src/pkg/aop/core/registry.rs#L440-L445)），生产者也打一遍就是重投风暴的第二份日志源。上一轮那次"日志刷屏"的教训就在这里。
+3. **回调失败不改变投递结论**：`on_consumed` / `on_failed` 返回 `Err` 时只记日志，事件**照常按消费者的判定 ack/nack**（业务收尾是生产者的责任，不能靠"卡住队列"来重试；一致性问题靠自身幂等 + 启动恢复兜底）。
 
-### 4.4 `RetryDecision`：重试决策由生产者给出，执行由 AOP 统一收口
+### 4.4 `RetryDecision`：**终局判定由消费者给出**；执行由 AOP 收口，数据由生产者收口
+
+> ⚠️ **2026-09-17 变更（重要）**：判定权原在 `Producer::on_failed` 的返回值上。用户拍板「重试是消费者的事，生产者只是用这个信号来决定是否更新底层数据」。理由是：**只有消费者知道自己的失败意味着什么** —— 同样是 `Err`，「Agent 正忙」要重试、「Agent 已不存在」该放弃；而生产者只拥有那份数据，它对「这条业务还能不能重来」的判断是从错误码倒推的猜测。
 
 ```rust
-/// `on_failed` 的返回值：告诉 AOP 这个事件还要不要重投
+/// 定义在 `pkg/aop/core/consumer.rs` —— 归属：**消费者的答案**
 pub enum RetryDecision {
-    /// 可恢复 → `queue.nack()`，按既有退避重投（**默认**，= 今天的无限重投行为）
+    /// 可恢复 → `queue.nack()`，按 per-event 退避重投
     Retry,
     /// 不可恢复 / 已放弃 → `queue.ack()`，事件按已终结移除，并回调 `on_consumed` 做业务收尾
     Discard,
 }
+
+/// 消费者的终局判定（默认实现 = 绝大多数消费者的答案）
+fn decide_retry(&self, err: &str, attempt: u32) -> RetryDecision {
+    if attempt >= self.max_attempts() { return RetryDecision::Discard; }   // 默认 8
+    match error_code_of(err) {                                             // 必须是完整 `[code] msg`
+        Some(code) if PERMANENT_CODES.contains(&code) => RetryDecision::Discard,
+        _ => RetryDecision::Retry,                                         // 看不懂 → 安全方向
+    }
+}
 ```
 
-**为什么这条设计成立**：框架无法判断「这次失败能不能靠重投救回来」——那是业务知识（邮件解析永久失败 vs 数据库瞬时超时）。把它下沉给生产者，框架只负责执行；与「生产者提供退出机制、AOP 统一管理时机」（§3.2）是同一个形状：**业务提供决策，框架提供机制**。
+**职责分工（三者各管一段）**
 
-**精确语义（三处必须写死）**：
+| 环节 | 谁 | 做什么 |
+|---|---|---|
+| 判定 | **消费者** `decide_retry` | 「这个失败还能不能靠重投救回来」——业务知识在这边 |
+| 执行 | 框架 `finish_consumption` | `Retry → nack` + 退避；`Discard → ack` + error 日志 + `on_consume_discarded` 埋点 |
+| 数据 | **生产者** `on_failed(decision)` | 按结论改底层数据（如 `Retry` 置回 `Pending`，`Discard` 不动） |
+
+**为什么这样更成立**：框架无法判断「这次失败能不能靠重投救回来」，但**也不该由生产者代答** —— 生产者只拥有数据、不拥有这段业务语义。把判定交给消费者后，「生产者是否存在」不再影响终局，**无生产者的 topic 不再退化成无限重投**（见下），也就不需要为每个会上报 `Err` 的 topic 造一个只为兜次数的空生产者。
+
+**精确语义（三处必须写死）**
 
 | 项 | 约定 |
 |---|---|
-| `Discard` 走哪条路 | **复用 `queue.ack()`**（[in_memory.rs](src/pkg/aop/queue/in_memory.rs#L208-L245)：移除事件 + 清 `has_active_message` + 推进同 `order_key` 后继）→ **零新队列机制**，`Discard` 不引入任何新状态 |
-| `Discard` 后是否回调 | **仍回调 `on_consumed`** —— 否则「放弃这封坏邮件」的生产者（如 IMAP 游标）无从跨过它，下轮会重新拉到同一封，形成**无限循环**。故 `on_consumed` 的准确定义是「**事件生命周期终结**（成功消费 **或** 被放弃）时的业务收尾」，不是「成功消费后」 |
-| `on_failed` 自身返回 `Err` | **视为 `Retry`**（安全方向：宁可重投，绝不静默丢弃） |
+| `Discard` 走哪条路 | **复用 `queue.ack()`**（[in_memory.rs](src/pkg/aop/queue/in_memory.rs)：移除事件 + 清 `has_active_message` + 推进同 `order_key` 后继）→ **零新队列机制** |
+| `Discard` 后是否回调 | **仍回调 `on_consumed`** —— 否则「放弃这封坏邮件」的游标型生产者无从跨过它，下轮会重新拉到同一封形成**无限循环**。故 `on_consumed` 的准确定义是「**事件生命周期终结**（成功消费 **或** 被放弃）时的业务收尾」 |
+| `on_failed` 自身返回 `Err` | **只记日志，结论不变**（2026-09-17 变更：旧版退化为 `Retry`）。收尾写失败 ≠ 判定失败，一致性交给幂等 + 启动恢复兜底 |
 
-**Sync 消费者上返回值被忽略**：Sync 是内联执行、无队列 → 没有重投的驱动者，「决策」无处可施。返回值在 Sync 下只作表达，不改变行为（**必须写进 trait 文档**，否则会误以为 `Retry` 在 Sync 下能触发重试）。
+**Sync 消费者**：Sync 是内联执行、无队列 → 投递结论没有驱动者，但判定**仍然生效**：`Err` + `Discard` 会让框架回调 `on_consumed`。所以「永不言弃」的消费者**必须**覆写 —— 例如 `CronTriggerConsumer::decide_retry` 恒返回 `Retry`：**一次瞬时失败若被判 `Discard`，就会把那次失败标记成 `mark_trigger_executed`（日级触发器 = 丢一整天）**。
 
-**Discard 的审计要求（不可省）**：`Discard` = 事件**永久移除且无死信存储** → 框架**必须**打 error 日志并记独立埋点 `on_consume_discarded`（与 `on_consume_failure` 分开）。**不得混入失败率** —— 它是有意的业务决策而非失败；混进去就会重演上一轮那种「假失败指标」刷屏。这是本设计中**唯一不可逆**的动作，取舍点在这里。
+**Discard 的审计要求（不可省）**：`Discard` = 事件**永久移除且无死信存储** → 框架**必须**打 error 日志并记独立埋点 `on_consume_discarded`（与 `on_consume_failure` 分开）。**不得混入失败率** —— 它是有意的业务决策而非失败。这是本设计中**唯一不可逆**的动作。
 
-**决策依据（两类，均已纳入本轮）**：生产者作答可依据 ——
+**判定依据（两类）**：①错误内容（错误码 → 永久错误表）；②累计次数 `attempt`（`DEFAULT_MAX_ATTEMPTS = 8` 兜底）。两者都在消费者侧可见 —— `attempt` 由队列在 `nack` 时自增、随封套顶层 `attempt` 字段透出（无需持久化，ack/Discard 后随事件消亡）。
 
-1. **错误内容**（`err: &str`）：零成本立即可用，用于判定「永久性错误 → `Discard`」（邮件格式非法、`ResourceNotFound` 等）。
-2. **尝试次数**（`attempt: u32`，**已拍板：本轮带上**）：它**是新状态** —— 现状 `EventRef`（[in_memory.rs](src/pkg/aop/queue/in_memory.rs#L11-L17)）只有 `event_id / order_key / priority / created_at`，`nack` 也不自增（[#L247-L267](src/pkg/aop/queue/in_memory.rs#L247-L267)）。落地需三处小改：`EventRef` 加 `attempt: u32`、`nack` 时自增、`finish_consumption` 调用点透传（**无新表、无新队列**）。
-   - 语义：**本事件被消费的累计次数**，首次失败即 `attempt == 1`。`ack` / `Discard` 后事件从队列消失，计数随之消亡，**无需持久化**。
-   - 它是「退避 N 次后放弃」的必需信息，也是策略引擎的算子来源（见 §4.5）。
+**⚠️ 契约后果（2026-09-17 起作废）**：旧版「无生产者 ⇒ `Err` 无限重投」已经**不再成立** —— `decide_retry` 与生产者无关，无生产者的 topic 也会在达到上限时正常 ack + 记埋点。随之撤销两处补丁：
 
-**⚠️ 契约后果：无生产者 ⇒ `Err` 无限重投**（2026-09-16 review 补记）
-
-`finish_consumption` 反查不到生产者时走 `delivery_of`：`Ok → Ack`、`Err → Nack`。框架不设 `max_retry`，所以**无生产者的消费者上报 `Err` = 无限重投**。叠加 Step 5 的 per-event 退避后，形状从「每秒刷日志」变成「每 60s 静默重试、永不放弃」——**更隐蔽，也不再有日志风暴作信号**。
-
-当该 topic 同时是 `ordered` + 非空 `order_key` 时，后果升级为**永久饥饿**：失败事件一直占着门闩，同 key 的后续事件全部排队等待。于是有这条红线：
-
-> **红线：凡会上报 `Err` 的消费者，其 topic 必须有生产者（订阅声明 `notify_producer`）；生产者的 `on_failed` 必须用 `attempt` 兜底，不得无条件 `Retry`。**
->
-> 注：「没有业务收尾可做」**不等于**「可以不声明 `notify_producer`」—— 后者同时放弃了终局判定权。
-
-按此红线补齐的三处（判定统一走 `inbound_retry::decide` = 永久性错误码 + `MAX_ATTEMPTS = 8` 兜底）：
-
-| topic | 补齐前 | 补齐后 |
+| topic | 旧补丁（已删） | 现在的形态 |
 |---|---|---|
-| `agent.settle.requested` | 无生产者；`SettleAttempt::Busy` 主动返回 `Err` → 无限重投；与 `message.created` 共用 `agent_id` 门闩 → 该 Agent 消息流永久饥饿 | 新增 `producer/agent_settle.rs`（无业务收尾，只做次数兜底），消费端声明 `notify_producer()` |
-| `a2a.poll.requested` | 无生产者（原注释误以为"生产者无收尾 ⇒ 可不声明"）；ordered + `order_key = agent_id`，且每 30s 新增同 key 事件 → 队列只增不减、该 Agent 轮询实质停摆 | `A2aPollingProducer` 补 `on_consumed`（debug）/ `on_failed`（`decide`），消费端声明 `notify_producer()` |
-| `message.created` | 有生产者，但 `on_failed` 无条件 `Retry`、忽略传入的 `attempt` | 复用 `inbound_retry::is_permanent(err, attempt)`；放弃时**不**置回 `Pending`（否则启动恢复会把已放弃的消息再扫出来重投） |
+| `agent.settle.requested` | 新增 `producer/agent_settle.rs`，无业务收尾、只为次数兜底 | 删除整个文件；不声明 `notify_producer`；判定走默认策略（Busy = `conflict` → 瞬时 → 重投，8 次后放弃） |
+| `a2a.poll.requested` | 给 `A2aPollingProducer` 补 `on_consumed` / `on_failed` + 声明 `notify_producer` | 全部撤回；生产者只保留「只认领」职责 |
+
+现役红线改为：
+
+> **红线：要让「放弃」发生，靠的是消费者的 `decide_retry` 有次数/永久错误兜底 —— 不是靠给它配一个生产者。** 生产者只在该 topic 真的有底层数据要收尾时才需要（并声明 `notify_producer`）。
+>
+> ⚠️ 例外：cron 这类「一次失败不能算执行过」的消费者**必须**覆写 `decide_retry` 恒返回 `Retry`。
 
 **门闩状态机的已验证坑**（同轮 review 发现并修复）：`ack` 曾先 `has_active_message.insert(key, true)`（后继上堆），紧接着又被 `if queue.is_empty()` 分支 `remove` 掉 —— **队列空了但后继还在堆里**。于是下一个同 key 事件判定「门闩空闲」直接上堆 → 同 key 两事件并存在堆里 → 并发 > 1 时并行消费、FIFO 也可能乱序。修法：两段**互斥**（pop 出后继即保持 `true`，只有 `pop()` 返回 `None` 才清理）。回归用例 `queue::in_memory::tests::latch_stays_held_when_ack_releases_last_successor`。
 
 ### 4.5 与策略引擎（`pkg/policy`）的对接
 
-`on_failed` 的决策逻辑不该是散落的 `if err.contains(..) { .. }`。项目已有通用判断框架 [pkg/policy/mod.rs](src/pkg/policy/mod.rs)：`Policy::evaluate(&Metrics) -> Vec<String>`（命中 id 列表，空 = 未命中）+ `Metrics`（`HashMap<String, Value>`，算子灵活扩展）+ `policy_set!` 宏（And/Or 组合）。
+`decide_retry` 的判定逻辑不该是散落的 `if err.contains(..) { .. }`（默认实现已是「错误码表 + 次数上限」）。若某个消费者的判定复杂到需要策略引擎，就覆写 `decide_retry` 并接入项目已有的通用判断框架 [pkg/policy/mod.rs](src/pkg/policy/mod.rs)：`Policy::evaluate(&Metrics) -> Vec<String>`（命中 id 列表，空 = 未命中）+ `Metrics`（`HashMap<String, Value>`，算子灵活扩展）+ `policy_set!` 宏（And/Or 组合）。
 
-**对接方式（零改动策略引擎）**：生产者把失败现场装成 `Metrics`，交给策略引擎判定，再把命中 id 映射为 `RetryDecision`：
+**对接方式（零改动策略引擎）**：消费者把失败现场装成 `Metrics`，交给策略引擎判定，再把命中 id 映射为 `RetryDecision`：
 
 ```rust
 let metrics = Metrics::new()
@@ -503,18 +514,18 @@ let metrics = Metrics::new()
     .with("err", err)
     .with("attempt", attempt as u64);            // ← attempt 正是为此而带
 let hits = self.retry_policy.evaluate(&metrics); // 命中 id 列表；空 = 未命中
-if hits.is_empty() { return Ok(RetryDecision::Retry); }   // 未命中 → 默认重试
+if hits.is_empty() { return RetryDecision::Retry; }   // 未命中 → 默认重试
 // 业务侧按命中 id 映射（与 pkg/policy 既有约定一致：引擎只输出命中，语义由业务解释）
-Ok(if hits.iter().any(|id| id == "mail_parse_fatal") {
+if hits.iter().any(|id| id == "mail_parse_fatal") {
     RetryDecision::Discard
 } else {
     RetryDecision::Retry
-})
+}
 ```
 
 **为什么不动 `PolicyAction`**：它的三个变体（`Deny` / `Confirm` / `Audit`）是「**执行前拦截**」语义 —— [mod.rs](src/pkg/policy/mod.rs#L17-L29) 明确写着「引擎只认识这三个词，不感知具体业务语义」；而 `Retry` / `Discard` 是「**失败后处置**」语义，塞进去会迫使引擎认识 AOP 概念，违背它的定位。按既有约定「业务侧按命中 id 自行映射」即可，零改动。
 
-⚠️ **已补齐一半（2026-09-16 晚）**：`RetryDecision` 仍只表达「**要不要**重试」，但**「多久后」重试已在框架侧落地**——`EventRef` 增加 `not_before`（epoch ms），`nack` 重投时按 `attempt` 指数递增静默期（`retry_backoff_ms`：1s→2s→4s…60s 封顶），`dequeue_next` 用「摘出未到期 → 放回」的扫描跳过退避中的事件（**不阻塞**同堆已到期事件）。与原设想的差异：退避曲线是**框架统一策略**而非 `Retry { after }` 生产者自带——生产者签名零改动、且「重试次数上限」本就由生产者侧 `on_failed`（`inbound_retry::decide` 的 `attempt >= 8` 兜底）决定，框架层不做 max_retry（契约不变）。`Retry { after: Duration }`（per-producer 时间策略）仍按 YAGNI 延后。
+⚠️ **已补齐一半（2026-09-16 晚）**：`RetryDecision` 仍只表达「**要不要**重试」，但**「多久后」重试已在框架侧落地**——`EventRef` 增加 `not_before`（epoch ms），`nack` 重投时按 `attempt` 指数递增静默期（`retry_backoff_ms`：1s→2s→4s…60s 封顶），`dequeue_next` 用「摘出未到期 → 放回」的扫描跳过退避中的事件（**不阻塞**同堆已到期事件）。与原设想的差异：退避曲线是**框架统一策略**而非 `Retry { after }` 判定方自带；「重试次数上限」现在由**消费者侧** `decide_retry` 的默认策略回答（原为 `inbound_retry::decide` 的 `attempt >= 8`，文件已随判定权下沉并入 `consumer.rs` 并删除），框架层不做 max_retry（契约不变）。`Retry { after: Duration }`（per-event 时间策略）仍按 YAGNI 延后。
 
 ---
 
@@ -530,7 +541,7 @@ Ok(if hits.iter().any(|id| id == "mail_parse_fatal") {
 
 | topic | Producer 对象（= 拥有该业务收尾能力的对象本身） | `topic()` | 发布点 | 回调做什么 | 优先级 |
 |---|---|---|---|---|---|
-| `message.created` | **消息 DAL 单例自身**：`impl Producer for MessageDalImpl`（[dal/message.rs](src/service/dal/message.rs#L45-L55) 的 `new()` 里装配） | `EventTopic::MessageCreated` | DAL，[dal/message.rs](src/service/dal/message.rs#L163) | `on_consumed` → `self.update_status(ctx, id, Processed)`；`on_failed` → `Retry`（DB 瞬时错误本该重投）—— 今天写在 [consumer/message.rs](src/consumer/message.rs#L125-L149) | P0 |
+| `message.created` | **消息 DAL 单例自身**：`impl Producer for MessageDalImpl`（[dal/message.rs](src/service/dal/message.rs#L45-L55) 的 `new()` 里装配） | `EventTopic::MessageCreated` | DAL，[dal/message.rs](src/service/dal/message.rs#L163) | `on_consumed` → `self.update_status(ctx, id, Processed)`；`on_failed` 按收到的 `decision` 决定：`Retry` → 置回 `Pending`（供启动恢复重投）、`Discard` → 不动 | P0 |
 | `cron.trigger` | `CronTriggerProducer`（**沿用现有对象**，只改形状） | `EventTopic::CronTrigger` | 自身 loop | `on_consumed` → `mark_trigger_executed`（从 `poll()` 搬出，修 P3；该方法在 domain，[domain/system/mod.rs](src/service/domain/system/mod.rs#L153)） | P0 |
 | `email.inbound.message` | **邮件 DAL 单例自身**：`impl Producer for EmailDalImpl`（[dal/email/impl.rs](src/service/dal/email/impl.rs#L42-L53) 已持有 `email_dao`，即 IMAP 轮询 registry 的持有者） | `EventTopic::EmailInboundMessage` | DAO，[imap.rs](src/service/dao/email/imap.rs#L435) | `on_consumed` → 按 `event.uid` 推进 `cursor.last_uid = max(...)`（修 P2；需 DAO 补一个"按 UID 推进游标"的方法）；`on_failed` → 瞬时错误 `Retry`（游标不推进，下轮重拉）；**永久失败 `Discard`** → 仍回调 `on_consumed` 越过该 UID（否则同一封坏邮件永远卡住收件箱 —— §4.4「`Discard` 仍回调」的现实场景） | P1 |
 | `wechat.inbound.message` | **微信 DAL 单例自身**（`service/dal/wechat/`，与 email 同形） | `EventTopic::WechatInboundMessage` | DAO，[ilink.rs](src/service/dao/wechat/ilink.rs#L434-L436) | 同 email：`on_consumed` 推进 opaque 游标（修 P2 的微信一侧）；`on_failed` 同上 | P1（与 P6 一起） |
@@ -660,7 +671,8 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 - 注册期校验：Sync + `ordered=true` → Err；`notify_producer=true` 无 producer → `start_all` Err。
 - 回调顺序：`on_consumed` 在 `queue.ack` 之前（断言回调内可见事件仍 in_progress）。
 - 回调幂等：同一事件回调两次结果一致。
-- `RetryDecision`：`Retry` → 事件重新入队；`Discard` → 事件移除**且同 `order_key` 后继可继续**（证明走的是 `ack` 路径而非卡死门闩）；`on_failed` 返回 `Err` → 按 `Retry` 处理。
+- `RetryDecision`：`Retry` → 事件重新入队；`Discard` → 事件移除**且同 `order_key` 后继可继续**（证明走的是 `ack` 路径而非卡死门闩）；**无生产者的 topic 也照常按消费者的判定 ack/nack**（2026-09-17 新增，取代旧的「`on_failed` 返回 `Err` → 按 `Retry` 处理」）；生产者的收尾写失败**不改变**判定。
+- `decide_retry` 默认策略（`pkg::aop::core::consumer` 单测）：永久错误码首次即 `Discard`；瞬时错误 1..8 次 `Retry`、第 8 次 `Discard`；解析不出 `[code]`（含残缺前缀）按 `Retry`；`max_attempts` 可覆写。
 - `attempt` 自增：同一事件连续 `nack` 两次后第 3 次取出时 `attempt == 3`（队列层单测，独立实例）。
 - topic 占用：两个生产者声明同一 topic → 第二个 `register_producer` 返回 `Err`（§6.7）。
 - `agent.awakening` 订阅护栏单测（§6.1-3）。
@@ -678,8 +690,10 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 ### 7.3 Step 3 落地注记（实施时的五处取舍）
 
 1. **新增 [inbound_retry.rs](src/service/dal/inbound_retry.rs)：三个入站渠道共享的失败决策**（设计稿未提，实施时补）。§4.4 说「决策依据两类」，本步把**错误内容**落地为**错误码前缀匹配**（`Error` 的 `Display` 形如 `[invalid_request] msg`，见 [types.rs](common/src/error/types.rs) → 比散落的 `err.contains(..)` 稳定），把**尝试次数**落地为 `MAX_ATTEMPTS = 8` 的**兜底上限**：瞬时错误前 8 次一律 `Retry`，之后判永久。⚠️ 没有这条上限，一条「永远适配失败」的消息会以 `error_retry_sleep_ms` 的节奏无限重投 + 刷日志（正是 §4.3-2 要避免的形状）。这与「框架不设 `max_retry`」不冲突 —— 上限在**生产者里**，决策权仍在业务（§8 的口径）。
+   - **⚠️ 2026-09-17 后续：该文件已删除**，这套判定整体上移到 `pkg/aop/core/consumer.rs`（`Consumer::decide_retry` 默认实现 + `PERMANENT_CODES` + `DEFAULT_MAX_ATTEMPTS`）。判定权从生产者移到消费者后，它不再是「入站渠道专用」，所有消费者都能用；三个入站 DAL 的 `on_failed` 与 a2a / settle 两处兜底代码随之全部删除（见 §4.4 的「契约后果（已作废）」）。
 2. **`A2aPollingProducer` 从「直接调 domain」改为「只认领」**（§5.3 落地）：`tick` 只列远端 Agent 并逐条 `emit` [A2aPollRequestedEvent](src/models/events/a2a_poll.rs)（`order_key = agent_id`）；拉取远端任务 / 投递新消息 / 推进 task tags 与本地状态整体搬进新增的 [a2a_poll](src/consumer/a2a_poll.rs) 消费者（Async + `ordered`）。生产者因此回到「轮询线程不碰网络重活」的统一形状（与 `cron_trigger` 的 `agent_rest` 只派发事件同构）。
 3. **飞书也注册了 Producer（不同于 §5.2 表里的「可先不声明」）**：P6 要求三个入站消费者都把适配失败上报 `Err`，而 [finish_consumption](src/pkg/aop/core/registry.rs) 在**反查不到 producer** 时走 `delivery_of` 兜底 → `Err → Nack` **无限重投**。若 lark 只上报不注册，一条坏消息就会刷成重投风暴（比原来的「静默 ack」更吵）。故给 [LarkDalImpl](src/service/dal/lark/impl.rs) 也注册 Producer：`on_consumed` 无游标可推进（只留 debug）、`on_failed` 复用 `inbound_retry`，`notify_producer` 一并打开。**这比「先不声明」更完整**，也让三个渠道行为一致。
+   - **⚠️ 2026-09-17 后续**：「反查不到 producer → 无限重投」这个前提已随判定权下沉**作废**（`decide_retry` 与生产者无关），飞书的 `on_failed` 因此被删除；Producer 仍保留是因为「收尾出口」这个位置对将来的告警/审计有意义（§5.2 已改口径）。
 4. **email 的已确认游标用进程级静态 `CONFIRMED_UIDS`**（[imap.rs](src/service/dao/email/imap.rs)）：`PollCursor` 是轮询循环的**局部状态**，而消费回调跑在另一任务 → 必须有一个跨任务的共享位置。本步实现为 `LazyLock<RwLock<HashMap<credential_id, u32>>>` + `confirm_uid`/`confirmed_uid`，**不动 `ImapPollRegistry` 结构**（否则要连带改 `ensure` 签名）。代价：**同进程的测试用例必须用不同 `credential_id`**（单测里已注明）。微信侧因为 registry 就在同一函数域内，改用显式注入的 `Arc<CursorStore>`（更干净，不欠这个债）。
 5. **两类「没有事件可承载确认」的游标必须直接推进**（否则卡死）：
    - email：**MIME 解析失败的单封** —— 本地永久无法处理，不越过就会每轮重拉 + 每轮 warn；

@@ -786,35 +786,31 @@ impl Producer for MessageDalImpl {
             .await
     }
 
-    /// 本次尝试失败 → 消息置回 `Pending` 并请求重投；到上限则放弃（`Discard`）
+    /// 本次尝试失败：**按消费者给出的结论**决定底层数据怎么改
     ///
-    /// 置回 `Pending` **不可省**：它是**启动恢复的依据** —— `message_dal` 按
-    /// `status = Pending` 扫出未处理消息重投（等价于改造前 `Consumer::nack`）。
-    ///
-    /// ⚠️ `attempt` 兜底**不可省**：本 topic 是 `order_key = agent_id` 且 `ordered`，
-    /// 一条永久失败的消息若无限重投，会**一直占着门闩** → 该 Agent 的后续消息与
-    /// 结算全部饥饿。判定与入站三渠道共用 `inbound_retry`（永久性错误码 / 次数上限）。
-    ///
-    /// 返回 `Retry` 时**不表达时机**：框架侧已有 per-event 指数退避，生产者只回答
-    /// 「还要不要再试」。
+    /// 这里不做任何终局判定 —— 重试还是放弃由 `MessageConsumer::decide_retry`
+    /// 回答（默认策略：永久性错误码 / 累计 8 次），本方法只收结论：
+    /// - `Retry` → 消息置回 `Pending`：它是**启动恢复的依据** —— `message_dal` 按
+    ///   `status = Pending` 扫出未处理消息重投（等价于改造前 `Consumer::nack` 的副作用）；
+    ///   漏这一步，失败的消息会停在 `Processing` 上再也没人捞。
+    /// - `Discard` → **不**置回 `Pending`：否则启动恢复会把这条已放弃的消息再扫出来重投。
+    ///   框架随后回调 `on_consumed` → 消息置为 `Processed`，并留下 error 日志 + 独立埋点。
     async fn on_failed(
         &self,
         ctx: &RequestContext,
         event: &serde_json::Value,
-        err: &str,
-        attempt: u32,
-    ) -> Result<RetryDecision> {
-        if crate::service::dal::inbound_retry::is_permanent(err, attempt) {
-            // 放弃：**不**置回 Pending —— 否则启动恢复会把这条已放弃的消息再扫出来重投。
-            // 框架随后回调 `on_consumed` → 消息置为 Processed，并留下 error 日志 + 独立埋点。
-            return Ok(RetryDecision::Discard);
+        _err: &str,
+        decision: RetryDecision,
+        _attempt: u32,
+    ) -> Result<()> {
+        if decision == RetryDecision::Discard {
+            return Ok(());
         }
 
         if let Some(message_id) = Self::message_id_of(event) {
-            // 写失败 → 本方法返回 Err → 框架按「视为 Retry」处理（安全方向），正是期望行为
             self.update_status(ctx.clone(), message_id, MessageStatus::Pending)
                 .await?;
         }
-        Ok(RetryDecision::Retry)
+        Ok(())
     }
 }
