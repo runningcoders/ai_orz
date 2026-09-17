@@ -2404,9 +2404,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         class: "select select-bordered w-full",
                                         value: "{edit_model_provider_id}",
                                         onchange: move |e| edit_model_provider_id.set(e.value()),
-                                        option { value: "", "（不绑定）" }
+                                        // mount 时属性先于子节点应用，select.value 匹配不到尚未挂载的
+                                        // option 会回落第一项；选中态必须用 option 的原生 selected 表达
+                                        option { value: "", selected: edit_model_provider_id().is_empty(), "（不绑定）" }
                                         for p in model_providers.read().iter() {
-                                            option { value: "{p.id}", "{p.name}" }
+                                            option {
+                                                key: "{p.id}",
+                                                value: "{p.id}",
+                                                selected: edit_model_provider_id() == p.id,
+                                                "{p.name}"
+                                            }
                                         }
                                     }
                                 }

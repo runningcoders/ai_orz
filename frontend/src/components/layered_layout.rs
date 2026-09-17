@@ -4,8 +4,9 @@
 //! 1. 计算每个节点的入度（在 node_ids 中的前驱数量）
 //! 2. 入度为 0 的节点入队，layer = 0
 //! 3. BFS 取出节点，找其后继（依赖该节点 的节点），入度 -1，为 0 时入队 layer+1
+//!    （FIFO 出队按 layer 单调不减 ⇒ 节点 layer = max(前驱 layer) + 1，即最长路径分层）
 //! 4. 环检测：若处理后数量 < 总数，剩余节点（环上）强制放最底层
-//! 5. 同层节点水平均分
+//! 5. 同层节点水平均分；y 向自适应：深链压缩层距防越界，浅链垂直居中
 
 use std::collections::{HashMap, VecDeque};
 
@@ -14,8 +15,7 @@ use std::collections::{HashMap, VecDeque};
 pub struct LayeredLayoutConfig {
     /// 画布宽度
     pub width: f64,
-    /// 画布高度
-    #[allow(dead_code)]
+    /// 画布高度（用于 y 向自适应：深链压缩层距、浅链垂直居中）
     pub height: f64,
     /// 顶部留白
     pub top_margin: f64,
@@ -122,16 +122,26 @@ pub fn compute_layered_layout(
         }
     }
 
-    // 5. 同层水平均分
+    // 5. 同层水平均分；y 向自适应（max_layer 取 by_layer 实际最大值，含环沉底层）
     let mut by_layer: HashMap<i32, Vec<String>> = HashMap::new();
     for id in node_ids {
         if let Some((layer, _, _)) = result.get(id) {
             by_layer.entry(*layer).or_default().push(id.clone());
         }
     }
+    let max_layer = by_layer.keys().copied().max().unwrap_or(0);
+    let usable_height = (config.height - 2.0 * config.top_margin).max(1.0);
+    // 固定层距下深链 y 会越过画布底部（SVG 视口裁剪后节点不可见），故按层数压缩；
+    // 浅链不压缩，并将整体内容在可用区垂直居中，避免图挤在顶部
+    let layer_gap = if max_layer > 0 {
+        config.layer_height.min(usable_height / max_layer as f64)
+    } else {
+        config.layer_height
+    };
+    let v_offset = (usable_height - max_layer as f64 * layer_gap) / 2.0;
     for (layer, ids) in &by_layer {
         let count = ids.len();
-        let y = config.top_margin + (*layer as f64) * config.layer_height;
+        let y = config.top_margin + v_offset + (*layer as f64) * layer_gap;
         let usable_width = config.width - 2.0 * config.side_margin;
         for (i, id) in ids.iter().enumerate() {
             let x = if count == 1 {
@@ -178,7 +188,8 @@ mod tests {
         let (layer, x, y) = result["a"];
         assert_eq!(layer, 0);
         assert!((x - 300.0).abs() < 0.01, "单节点应居中: x={}", x);
-        assert!((y - 40.0).abs() < 0.01, "单节点 y 应为 top_margin: y={}", y);
+        // 单层无内容高度，垂直居中于可用区：(400 - 2*40)/2 + 40 = 200
+        assert!((y - 200.0).abs() < 0.01, "单节点 y 应垂直居中: y={}", y);
     }
 
     #[test]
@@ -264,5 +275,47 @@ mod tests {
         // a 和 b 都没有有效前驱，都在 layer 0
         assert_eq!(result["a"].0, 0);
         assert_eq!(result["b"].0, 0);
+    }
+
+    #[test]
+    fn test_deep_chain_layers_fit_within_canvas() {
+        // 7 节点链 a→b→…→g（layer 0..6）：固定层距 80 时 g 的 y = 40+480 = 520，
+        // 越出 400 高画布（SVG 视口裁剪后不可见），自适应后应压缩到安全区内
+        let ids: Vec<String> = "abcdefg".chars().map(String::from).collect();
+        let mut deps = HashMap::new();
+        for w in ids.windows(2) {
+            deps.insert(w[1].clone(), vec![w[0].clone()]);
+        }
+        let c = cfg();
+        let result = compute_layered_layout(&ids, &deps, &c);
+        for (id, &(_, _, y)) in result.iter() {
+            assert!(
+                y >= c.top_margin - 0.01 && y <= c.height - c.top_margin + 0.01,
+                "{id} 的 y={y} 越出画布纵向安全区 [{}, {}]",
+                c.top_margin,
+                c.height - c.top_margin
+            );
+        }
+        assert!(
+            result["g"].2 > result["a"].2,
+            "下游节点应在更下方: a={}, g={}",
+            result["a"].2,
+            result["g"].2
+        );
+    }
+
+    #[test]
+    fn test_shallow_chain_vertically_centered() {
+        // 2 层链不触发层距压缩，整体应在可用区垂直居中：
+        // offset = (400 - 80 - 80)/2 = 120 → y_a=160, y_b=240，中点 200 = 画布中线
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = HashMap::new();
+        deps.insert("b".to_string(), vec!["a".to_string()]);
+        let result = compute_layered_layout(&ids, &deps, &cfg());
+        let y_a = result["a"].2;
+        let y_b = result["b"].2;
+        assert!((y_a - 160.0).abs() < 0.01, "a y={}", y_a);
+        assert!((y_b - 240.0).abs() < 0.01, "b y={}", y_b);
+        assert!((y_a + y_b - 400.0).abs() < 0.01, "两层中点应落在画布中线");
     }
 }

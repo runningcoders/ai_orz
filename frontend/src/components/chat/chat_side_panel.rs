@@ -19,9 +19,12 @@ use crate::api::project::{get_project, get_task, list_project_tasks};
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
 use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ToolCallsTab;
+use crate::components::graph::{Graph, GraphEdge, GraphNode, task_status_node_type};
 use crate::components::hud::{HudPanel, HudProgress};
 use crate::components::identity_chip::IdentityChip;
-use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
+use crate::components::layered_layout::{LayeredLayoutConfig, compute_layered_layout};
+use crate::components::markdown::MarkdownRenderer;
+use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
@@ -48,6 +51,15 @@ const REFRESH_DEBOUNCE_MS: u64 = 2000;
 /// 粒度随之取分钟桶（`stats_interval = minutely`）：60 分钟窗口若用天桶只会得到 1 个点，
 /// 用小时桶也只有 1~2 个点，都画不出曲线来。
 const RUNTIME_WINDOW_MINUTES: i64 = 60;
+
+/// 侧栏缩略图画布尺寸（桌面 w-96 侧栏内容区约 336px 宽，移动 w-80 约 272px，
+/// 取 300 保证两端都不溢出）
+const TASK_GRAPH_W: f64 = 300.0;
+const TASK_GRAPH_H: f64 = 200.0;
+
+/// 放大弹窗画布尺寸（max-w-5xl 弹窗内容区，减去弹窗内边距）
+const TASK_GRAPH_ZOOM_W: f64 = 920.0;
+const TASK_GRAPH_ZOOM_H: f64 = 620.0;
 
 /// 产物来源类型中文文案
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -137,6 +149,9 @@ pub fn ChatSidePanel(
     let mut expanded_task_id = use_signal(|| None::<String>);
     let mut task_cache = use_signal(HashMap::<String, GetTaskResponse>::new);
     let loading_task_id = use_signal(|| None::<String>);
+    // 任务依赖图放大弹窗（缩略图右上按钮打开；状态必须放主组件 —— tasks_tab 是普通函数，
+    // Modal 需要挂在本组件返回的 rsx 里）
+    let mut graph_zoom_open = use_signal(|| false);
 
     // 加载项目数据：debounce=true 时先等待防抖窗口（SSE 触发），期间被更新的代际直接丢弃
     let mut do_load = move |pid: String, debounce: bool| {
@@ -154,7 +169,8 @@ pub fn ChatSidePanel(
                 id: pid.clone(),
                 with_progress_summary: Some(true),
                 with_artifacts: Some(true),
-                with_task_graph: Some(true),
+                // 依赖图已改由前端从任务列表自绘（build_task_graph_data），
+                // 不再向后端要 Mermaid task_graph（项目详情页仍需要，别处勿效仿删除）
                 ..Default::default()
             };
             let proj_res = get_project(req).await;
@@ -233,6 +249,15 @@ pub fn ChatSidePanel(
     let tasks_list = tasks.read().clone();
     let tab = active_tab();
 
+    // 放大弹窗的图数据：与缩略图共用同一份构建函数，仅画布尺寸不同。
+    // 弹窗关闭时不构建（空数据 + 不渲染），避免每次重渲染都白跑一遍布局。
+    let graph_zoom_open_now = graph_zoom_open();
+    let (zoom_nodes, zoom_edges) = if graph_zoom_open_now {
+        build_task_graph_data(&tasks_list, TASK_GRAPH_ZOOM_W, TASK_GRAPH_ZOOM_H)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+
     // Tab 内容分发（模式切换时 active_tab 已由 effect 重置）
     let content: Element = if is_project_mode {
         match tab {
@@ -242,10 +267,10 @@ pub fn ChatSidePanel(
             },
             1 => tasks_tab(
                 &tasks_list,
-                project_data.as_ref(),
                 expanded_task_id,
                 task_cache,
                 loading_task_id,
+                graph_zoom_open,
                 toast,
             ),
             2 => artifacts_tab(project_data.as_ref(), &tasks_list),
@@ -322,6 +347,22 @@ pub fn ChatSidePanel(
             }
         }
         div { class: "flex-1 overflow-y-auto p-3", {content} }
+        // 任务依赖图放大弹窗：top layer 渲染不受侧栏 overflow / 堆叠上下文裁剪
+        if graph_zoom_open_now {
+            Modal {
+                show: true,
+                title: "任务依赖图".to_string(),
+                on_close: move |_| graph_zoom_open.set(false),
+                width_class: Some("max-w-5xl".to_string()),
+                Graph {
+                    nodes: zoom_nodes,
+                    edges: zoom_edges,
+                    svg_width: Some(TASK_GRAPH_ZOOM_W as u32),
+                    svg_height: Some(TASK_GRAPH_ZOOM_H as u32),
+                    on_node_click: move |_id: String| {},
+                }
+            }
+        }
     }
 }
 
@@ -400,28 +441,112 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
     }
 }
 
-/// Tab 任务：任务依赖图（随项目详情顺带返回）+ 任务列表，点击单任务展开详情（懒加载 + 缓存）
+/// 任务列表 → 自有图引擎数据（缩略图与放大弹窗共用，含分层布局坐标）
+///
+/// 依赖方向：A.dependencies 含 B ⇒ B 是 A 的前置 ⇒ 画 B → A（前置在上、依赖在下）。
+/// 布局复用工作台拓扑同款 `compute_layered_layout`（Kahn 分层，环上节点沉底）；
+/// 悬挂依赖（前置任务不在列表内，如已删除）直接过滤，不产生缺失端点的边。
+fn build_task_graph_data(
+    tasks: &[TaskListItem],
+    width: f64,
+    height: f64,
+) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+    let ids: std::collections::HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    let task_ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
+    let mut deps_map: HashMap<String, Vec<String>> = HashMap::new();
+    for t in tasks {
+        let in_graph_deps: Vec<String> = t
+            .dependencies
+            .iter()
+            .filter(|d| ids.contains(d.as_str()))
+            .cloned()
+            .collect();
+        deps_map.insert(t.id.clone(), in_graph_deps);
+    }
+    // 层间距按画布高度取比例：缩略图 / 弹窗两档画布共用一套比例关系
+    let config = LayeredLayoutConfig {
+        width,
+        height,
+        top_margin: height * 0.11,
+        layer_height: height * 0.22,
+        side_margin: width * 0.09,
+    };
+    let positions = compute_layered_layout(&task_ids, &deps_map, &config);
+    let nodes = tasks
+        .iter()
+        .map(|t| {
+            // 布局缺失（理论上不会）兜底画布中心，不 panic
+            let (_, x, y) = positions
+                .get(&t.id)
+                .copied()
+                .unwrap_or((0, width / 2.0, height / 2.0));
+            GraphNode {
+                id: t.id.clone(),
+                label: t.title.clone(),
+                description: t.description.clone().unwrap_or_default(),
+                // 状态 → 语义化 token：着色与 hover 标签都按状态区分（见 graph.rs 配色映射）
+                node_type: task_status_node_type(t.status).to_string(),
+                x,
+                y,
+                tags: t.tags.clone(),
+                summary: Some(format!("进度 {}%", t.progress)),
+            }
+        })
+        .collect();
+    let edges = tasks
+        .iter()
+        .flat_map(|t| {
+            t.dependencies
+                .iter()
+                .filter(|d| ids.contains(d.as_str()))
+                .map(move |d| GraphEdge {
+                    source: d.clone(),
+                    target: t.id.clone(),
+                    label: "前置".to_string(),
+                    weight: None,
+                })
+        })
+        .collect();
+    (nodes, edges)
+}
+
+/// Tab 任务：任务依赖图（自有图引擎，hover 看节点详情 / 右上按钮放大）+ 任务列表，
+/// 点击单任务展开详情（懒加载 + 缓存）
 fn tasks_tab(
     tasks: &[TaskListItem],
-    project: Option<&GetProjectResponse>,
     mut expanded_task_id: Signal<Option<String>>,
     mut task_cache: Signal<HashMap<String, GetTaskResponse>>,
     mut loading_task_id: Signal<Option<String>>,
+    mut graph_zoom_open: Signal<bool>,
     toast: ToastState,
 ) -> Element {
-    let task_graph = project
-        .and_then(|p| p.task_graph.clone())
-        .filter(|g| !g.is_empty());
     if tasks.is_empty() {
         return empty_hint("暂无任务");
     }
+    // 缩略图与放大弹窗共用同一套图数据：仅画布尺寸不同
+    let (graph_nodes, raw_edges) = build_task_graph_data(tasks, TASK_GRAPH_W, TASK_GRAPH_H);
     rsx! {
-        // 任务依赖图：位于任务列表上方（与任务管理页同款渲染）
-        if let Some(graph) = task_graph {
-            HudPanel {
-                title: "任务依赖图".to_string(),
-                eyebrow: "DEPENDENCIES".to_string(),
-                MermaidDiagram { code: graph }
+        // 任务依赖图：位于任务列表上方
+        HudPanel {
+            title: "任务依赖图".to_string(),
+            eyebrow: "DEPENDENCIES".to_string(),
+            actions: Some(rsx! {
+                button {
+                    class: "btn hud-btn btn-ghost btn-xs",
+                    title: "放大查看",
+                    onclick: move |_| graph_zoom_open.set(true),
+                    "🔍"
+                }
+            }),
+            Graph {
+                nodes: graph_nodes,
+                edges: raw_edges,
+                svg_width: Some(TASK_GRAPH_W as u32),
+                svg_height: Some(TASK_GRAPH_H as u32),
+                // 点节点 = 展开任务列表中对应项的详情
+                on_node_click: move |id: String| {
+                    expanded_task_id.set(Some(id));
+                },
             }
         }
         div { class: "space-y-2",

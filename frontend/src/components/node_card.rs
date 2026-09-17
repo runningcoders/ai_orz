@@ -248,6 +248,12 @@ pub fn type_label(t: &str) -> &str {
         "pack_tool" => "工具包工具",
         "skill" | "neural_skill" => "技能",
         "project" => "项目",
+        // 任务依赖图（task_status_node_type 产出的状态 token）
+        "task_cancelled" => "任务（已取消）",
+        "task_pending" => "任务（待处理）",
+        "task_in_progress" => "任务（进行中）",
+        "task_completed" => "任务（已完成）",
+        "task_archived" => "任务（已归档）",
         "task" => "任务",
         "" => "未知",
         other => other,

@@ -140,17 +140,56 @@ pub struct GraphProps {
     pub edges: Vec<GraphEdge>,
     pub selected_node_id: Option<String>,
     pub highlighted_node_ids: Option<Vec<String>>,
+    /// SVG 画布宽度（默认 800）：缩略图 / 放大弹窗等不同容器按需传入
+    #[props(default = None)]
+    pub svg_width: Option<u32>,
+    /// SVG 画布高度（默认 600）
+    #[props(default = None)]
+    pub svg_height: Option<u32>,
     on_node_click: EventHandler<String>,
 }
 
-/// 节点填充颜色
+/// 词表外 / 未知节点的填充色（中性灰）。
+///
+/// ⚠️ 这是**纯视觉降级**：类型原文照旧经 `node_card::type_label` 展示，只是没有语义色可给。
+/// 新增 `MemoryType` 取值时必须同步补映射 —— 守卫测试
+/// `memory_type_values_all_have_node_colors` 会在漏配时直接失败。
+const NEUTRAL_NODE_FILL: &str = "#6b7280";
+
+/// 任务状态（`TaskListItem.status`）→ 图节点类型 token
+///
+/// 任务依赖图复用本引擎的颜色 / hover 体系：node_type 用 `task_<状态>` 语义化编码，
+/// 颜色走 `get_node_fill`、hover 类型行走 `type_label`（显示"任务 · 进行中"）。
+/// token → 色 / 标签两处映射漏配由守卫测试
+/// `task_status_node_types_all_have_semantic_colors` 兜底。
+pub fn task_status_node_type(status: i32) -> &'static str {
+    match status {
+        // TaskStatus：Cancelled=0 / Pending=1 / InProgress=2 / Completed=3 / Archived=4
+        0 => "task_cancelled",
+        1 => "task_pending",
+        2 => "task_in_progress",
+        3 => "task_completed",
+        4 => "task_archived",
+        _ => "task",
+    }
+}
+
+/// 节点填充颜色（key = `MemoryResult.memory_type` 的 snake_case 取值，或
+/// `task_status_node_type` 的任务状态 token）
 pub fn get_node_fill(node_type: &str) -> &'static str {
     match node_type {
         "knowledge_node" => "#3b82f6",
         "short_term" => "#10b981",
         "trace" => "#f59e0b",
         "relation" => "#8b5cf6",
-        _ => "#6b7280",
+        // 任务依赖图：色板与 utils::status 的 task_status_badge 同语义
+        "task_cancelled" => "#ef4444",
+        "task_pending" => "#3b82f6",
+        "task_in_progress" => "#f59e0b",
+        "task_completed" => "#10b981",
+        // 归档用 slate-400 与兜底灰（#6b7280）区分，守卫测试才能兜住漏配
+        "task_archived" => "#94a3b8",
+        _ => NEUTRAL_NODE_FILL,
     }
 }
 
@@ -275,7 +314,18 @@ fn tag_label_width(tag: &str) -> f64 {
         + 8.0 // padding
 }
 
+/// 词表外关系的边颜色（中性灰）。
+///
+/// ⚠️ 关系**原文照旧展示**（标签来自 `KnowledgeRelationType::zh_label_from_display`），
+/// 这里只是没有语义色可给 —— Agent 自由标注（如「实现」）走这条兜底，**不丢信息**。
+/// 新增规范关系词时必须同步补映射 —— 守卫测试
+/// `vocabulary_relation_labels_all_have_semantic_colors` 会在漏配时直接失败。
+const NEUTRAL_EDGE_COLOR: &str = "#9ca3af";
+
 /// 边颜色（按关系中文标签语义分组着色）
+///
+/// ⚠️ key 是**展示标签**（`zh_label_from_display` 的输出，如"导致"），不是落库原文
+/// （`causes`）—— 改词表映射时必须回来核对这张表，否则语义色会静默全部落到兜底灰。
 pub fn get_edge_color(relation_type: &str) -> &'static str {
     match relation_type {
         "属于" => "#ef4444",
@@ -284,7 +334,7 @@ pub fn get_edge_color(relation_type: &str) -> &'static str {
         "依赖" | "被依赖" | "前置" | "后续" => "#8b5cf6",
         "导致" | "源于" | "相反" => "#ec4899",
         "关联" | "派生" => "#f59e0b",
-        _ => "#9ca3af",
+        _ => NEUTRAL_EDGE_COLOR,
     }
 }
 
@@ -356,8 +406,8 @@ pub fn Graph(props: GraphProps) -> Element {
     // hover 详情卡片目标（区别于点击选中；拖拽/平移中隐藏）
     let mut hovered = use_signal(|| None::<HoverTarget>);
 
-    let svg_width = 800;
-    let svg_height = 600;
+    let svg_width = props.svg_width.unwrap_or(800).max(160);
+    let svg_height = props.svg_height.unwrap_or(600).max(120);
 
     #[allow(clippy::type_complexity)]
     let valid_edges: Vec<(GraphEdge, (f64, f64), (f64, f64))> = props
@@ -1030,5 +1080,80 @@ mod tests {
         // ID 只出现在 hover 详情里（画布卡片不再直出）
         assert!(joined.contains("ID: 01J8ZKQ7X4M2N5P6R8T0VWXYZ"), "{joined}");
         assert_eq!(lines.last().unwrap().split(": ").next().unwrap(), "ID");
+    }
+
+    // ==================== 类型/关系配色守卫 ====================
+    // 这三条测试的目的：**加词忘改颜色表时直接失败**。
+    // 否则新增的规范词/记忆类型会静默落到中性灰 —— 不报错、不 panic，只是界面悄悄失色。
+
+    /// 关系词表里每个规范词都必须有确定的语义色（`custom` 本身是兜底项，跳过）。
+    #[test]
+    fn vocabulary_relation_labels_all_have_semantic_colors() {
+        for key in common::enums::KnowledgeRelationType::VOCABULARY {
+            if key == "custom" {
+                continue;
+            }
+            let label = common::enums::KnowledgeRelationType::zh_label_from_display(key);
+            assert_ne!(label, key, "规范词 {key} 应当映射成中文标签");
+            assert_ne!(
+                get_edge_color(label),
+                NEUTRAL_EDGE_COLOR,
+                "规范词 {key}（标签 {label}）在 get_edge_color 里缺少语义色"
+            );
+        }
+    }
+
+    /// 词表外的关系原文 → 中性色（Agent 自由标注必须有确定的视觉归宿，不 panic）。
+    #[test]
+    fn unknown_relation_label_falls_back_to_neutral_edge_color() {
+        for raw in ["实现", "is_prerequisite_of", "父节点", ""] {
+            let label = common::enums::KnowledgeRelationType::zh_label_from_display(raw);
+            assert_eq!(
+                get_edge_color(label),
+                NEUTRAL_EDGE_COLOR,
+                "`{raw}` 应走中性色兜底"
+            );
+        }
+        // 关系类型缺失时的兜底标签「关联」有确定的语义色，不落中性 —— 否则存量空类型边会全灰
+        assert_ne!(get_edge_color("关联"), NEUTRAL_EDGE_COLOR);
+    }
+
+    /// `MemoryType` 的每个具体取值都必须有节点填充色（`all` 是查询侧伪类型，不参与着色）。
+    #[test]
+    fn memory_type_values_all_have_node_colors() {
+        for token in common::enums::MemoryType::ACCEPTED_VALUES.split(',') {
+            let token = token.trim();
+            if token == "all" {
+                continue;
+            }
+            assert_ne!(
+                get_node_fill(token),
+                NEUTRAL_NODE_FILL,
+                "MemoryType `{token}` 在 get_node_fill 里缺少配色"
+            );
+        }
+    }
+
+    /// 任务状态 0..=4 每个取值都必须命中专属 token 且有语义色
+    /// （新增 `TaskStatus` 枚举项时若漏改 `task_status_node_type` / `get_node_fill` 直接失败）。
+    #[test]
+    fn task_status_node_types_all_have_semantic_colors() {
+        for status in 0..=4i32 {
+            let token = task_status_node_type(status);
+            assert_ne!(token, "task", "任务状态 {status} 不应落兜底 token");
+            assert_ne!(
+                get_node_fill(token),
+                NEUTRAL_NODE_FILL,
+                "任务状态 {status}（token {token}）在 get_node_fill 里缺少语义色"
+            );
+            // hover 卡片标签不能直出英文 token
+            assert_ne!(
+                node_card::type_label(token),
+                token,
+                "任务状态 {status}（token {token}）在 type_label 里缺少中文标签"
+            );
+        }
+        // 超范围状态必须落 "task" 兜底（不 panic）
+        assert_eq!(task_status_node_type(99), "task");
     }
 }
