@@ -353,7 +353,8 @@ mod filter_tests {
         let all = store.search("t", &[1.0, 0.0], 10, None).await.unwrap();
         assert_eq!(all.len(), 3);
 
-        // agent-1 视角 + include_shared（OR is_published）
+        // OR 谓词（Any）是存储层的通用能力，这里只验证它能被正确下推
+        // （memory 域已不再用它表达「共享可见性」：知识节点是蜂巢全域共享的）
         let filter = VectorFilter::Any(vec![
             VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into())),
             VectorFilter::Eq(VectorField::IsPublished, FilterValue::Bool(true)),

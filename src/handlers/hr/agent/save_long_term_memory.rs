@@ -88,9 +88,9 @@ pub async fn save_long_term_memory(
                     id: relation_id,
                     source_node_id: r.source_node_id.clone(),
                     target_node_id: r.target_node_id.clone(),
-                    relation_type: common::enums::KnowledgeRelationType::from(
-                        r.relation_type.clone(),
-                    ),
+                    // 原文直落：词表外的标注（「实现」「implements」…）必须原样保留，
+                    // 过一遍枚举会被塌成 Custom、写入方的语义就永久丢了
+                    relation_type: r.relation_type.trim().to_string(),
                     // 强度归一化在 DTO 上：非有限值丢弃、越界夹紧到 0.0~1.0，
                     // 未给则 None（未标注 ≠ 0）
                     weight: r.normalized_weight(),

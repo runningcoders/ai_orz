@@ -153,27 +153,32 @@ CREATE INDEX IF NOT EXISTS idx_knr_type ON knowledge_node_relation(relation_type
 > 为什么不做「派生权重」：候选信号（共现证据数）依赖 `knowledge_reference`，
 > 而节点写入路径恒传 `references: vec![]`，该表实际为空 → 派生值恒 0。
 
-**预定义关系类型** (`KnowledgeRelationType` 枚举):
+**预定义关系类型**（`KnowledgeRelationType` 词表 —— 只用于**展示映射**，不是存储类型）:
 
-| 类型 | 说明 | 示例 |
+| 词表 key | 展示标签 | 语义 |
 |------|------|------|
-| `RelatedTo` | 相关关联 | A 与 B 相关 |
-| `Contains` / `BelongsTo` | 包含/属于 | A 包含 B / B 属于 A |
-| `ParentOf` / `ChildOf` | 父/子 | A 是 B 的父节点 |
-| `DependsOn` | 依赖 | A 依赖 B |
-| `Implies` | 蕴含 | A 蕴含 B |
-| `SimilarTo` | 相似 | A 与 B 相似 |
-| `OppositeOf` | 相反 | A 与 B 相反 |
-| `Causes` / `CausedBy` | 导致/由...导致 | A 导致 B |
-| `Instanceof` | 实例 | A 是 B 的一个实例 |
-| `PropertyOf` | 属性 | A 是 B 的属性 |
-| `HasProperty` | 拥有属性 | A 有属性 B |
-| `Custom` | 自定义 | 其他关系 |
+| `related` | 相关 | 相关关联（无明确层级时才用） |
+| `contains` / `contained_by` | 包含 / 属于 | A 包含 B / B 属于 A |
+| `depends` / `depended_by` | 依赖 / 被依赖 | A 依赖 B |
+| `prerequisite` / `followup` | 前置 / 后续 | 学习或执行的先后 |
+| `similar` / `opposite` | 相似 / 相反 | 可合并 / 相矛盾 |
+| `causes` / `caused_by` | 导致 / 源于 | 因果 |
+| `instance_of` / `category_of` | 实例 / 分类 | 实例化 / 归类 |
+| `attribute_of` / `value_of` | 属性 / 取值 | 属性与取值 |
+| `custom` | 自定义 | 兜底归类（写入侧不再自动落到这里） |
 
 **设计说明**：
 - 节点和关系分离存储，更灵活，便于维护
-- 关系类型使用枚举保证类型安全，支持自定义扩展
-- 未知类型默认转为 `Custom`，不会 panic
+- ⚠️ **`relation_type` 落库存原文，不存枚举** —— `knowledge_node_relation.relation_type`
+  是自由 TEXT：写入方（`save_long_term_memory` 的 `relations[].relation_type`）写什么就存什么。
+  早期版本在写入路径做 `KnowledgeRelationType::from()` 归一化，词表外的标注（「实现」
+  「被测试覆盖」…）会被塌成 `Custom`、**原文永久丢失**，图谱上只剩「自定义」——
+  写入方明明标了明确语义，却被抹掉了。
+- 上表词表只服务**展示期美化**（`zh_label_from_display`）：命中 → 中文短标签；
+  未命中 → **原样透出**。未知值**绝不**替换成「自定义」。
+- `KnowledgeRelationType::from()` 只作**归类**用途（查询/统计等需要判别值的场景），
+  **禁止用在写入路径**。
+- 前端边着色与虚实线按展示标签分组；未命中的自定义关系走中性灰、实线。
 
 ---
 
@@ -701,7 +706,7 @@ pub trait MemoryDal: Send + Sync {
 - `summary: String` — 摘要
 - `relations: Option<Vec<KnowledgeRelationParam>>` — 关系列表
   - `target_node_id: String` — 目标节点 ID
-  - `relation_type: String` — 关系类型
+  - `relation_type: String` — 关系类型**原文**（词表优先，词表外可自由描述；原样保存与展示）
 
 **特点**：
 - 支持一次创建节点 + 多个关系
@@ -747,18 +752,52 @@ Agent 的记忆搜索也应该支持这种能力。
 | `depth_first` | 深度优先，沿着一条关系深入到底 | 想沿着某个方向深挖 |
 | `hybrid` | 混合策略，先广后深 | 先概览再深入（默认） |
 
+#### 16.3.1 层级语义、蜂巢可见性与图批次不变式（2026-09-17 澄清）
+
+**层级是节点维度的概念**：
+- 第 0 层 = 种子节点（关键词命中的节点，或前端点击展开的起点）；每沿一条关系边走到一个新节点 = +1 层
+- `traversal_depth = N` ⇒ 节点集 = 与任一种子相距 ≤ N 跳的节点；`N = 0` ⇒ 只有种子节点，不返回任何边（不展开）
+- `traversal_breadth = B` ⇒ **每个节点**最多展开 B 条出边（不是节点数），与深度正交
+
+**不变量一：种子恒返回**。种子是调用方**点名**要的节点，取回时**不施加任何归属筛选**
+（仅受软删除 `status` 约束）：中心节点缺席的话，整张展开图就没有意义了。
+`has_seeds` 时一律走遍历分支——`traversal_depth = 0` 表示「只看种子」，不回退到关键词搜索。
+
+**不变量二：蜂巢可见性 —— 知识节点对全体 Agent 可见**。
+`published` **不是**可见性控制位，只是「重要性 / 影响力」标记（唯一用途：`recommend_seed_nodes`
+在连接度持平时作决胜项）。实践中：
+- `MemoryQuery::agent_id` 是**显式筛选**（空串与 `None` 同义），且**只有调用方显式传入才生效**：
+  handler **不得**回退 `ctx.agent_id()` 去收窄知识节点，否则 Agent 调 `search_memory` 会被静默
+  限成「只看自己沉淀的节点」，与「知识不重复不遗漏」相反
+- 私有资产（短期记忆）反向处理：作用域缺省时回退 ctx 自己的 Agent（`private_agent_scope`），
+  Agent 调 `search_memory` 天然只看自己的便签；若 ctx 里也没有归属（人类浏览全局页面），
+  **保持不过滤的既有行为**（收紧会让「记忆搜索」页不选 Agent 时查不到短期记忆，属独立决策）
+- 前端图谱页的 Agent 选择器因此退化为「起点筛选」：只影响关键词搜索 / 推荐起点的选取，
+  **不约束**沿图展开（展开是蜂巢全域的）
+
+**不变量三：边只随其两端节点一起返回**。边不是层级实体，只是连接两个「已在本批结果里的节点」的线：
+任一端点不在批内 → **整条边丢弃**，绝不让半条边进入结果。
+
+- 收敛点：`src/service/dal/memory.rs` 的 `drop_dangling_relations`，`search` 与 `traverse_knowledge_graph`
+  共用同一道闸；`search_relations_internal` 必然带出远端未命中的边，**不在它内部过滤**
+- 前端 `frontend/src/pages/hr/knowledge_graph.rs::build_graph_from_results` 是第二道防线：
+  不画端点缺失的边、**不给端点造占位节点**（旧的「未命名节点」占位已删除，仅兜底实体字段全空）
+- 根因回顾：旧实现有两条会「点丢、边留」的坑 —— ①traverse 用 `ctx.agent_id()` 做节点可见性过滤
+  （HTTP 场景恒为空，把目标 Agent 的节点全滤掉）而拉边不设限制；②全局视角只认 `is_published`
+  节点，私有节点多的库留空即空图。两者都会让前端只能画出一屏无名称/无正文的占位卡片。
+
 ### 16.4 搜索参数
 
 ```rust
 pub struct SearchMemoryParams {
     pub query: String,                    // 搜索关键词
     pub max_results: Option<i32>,         // 最大结果数
-    pub memory_type: Option<String>,      // 记忆类型过滤
+    pub memory_type: Option<String>,      // 记忆类型过滤：short_term/knowledge_node/trace/relation/all
 
     // === 新增：图谱遍历参数 ===
     pub traversal_depth: Option<i32>,     // 遍历深度，0=不遍历（默认）
     pub traversal_breadth: Option<i32>,   // 每层广度限制，0=不限制
-    pub traversal_strategy: Option<String>, // 遍历策略：breadth_first/depth_first/hybrid
+    pub traversal_strategy: Option<String>, // 遍历策略：breadth_first（默认）/depth_first
     pub seed_node_ids: Option<Vec<String>>, // 指定种子节点 ID（跳过语义搜索）
 
     // === 新增：标签过滤参数（2026-07-24） ===
@@ -766,6 +805,28 @@ pub struct SearchMemoryParams {
 }
 ```
 > 当前实现：[models/memory.rs](src/models/memory.rs)
+
+**⚠️ 枚举类查询参数的解析契约（2026-09-17 收紧）**
+
+`memory_type` / `status` / `traversal_strategy` 这三个字符串枚举字段**一律走枚举自带的
+`parse()`**（`MemoryType::parse` / `MemoryStatus::parse` / `TraversalStrategy::parse`），
+且**非法值报 `invalid_request`（400）**，错误信息里列出合法取值。
+
+历史行为是 `_ => 默认值` 静默兜底，已废弃 —— 兜底会让「参数写错」伪装成「查到了」：
+
+| 字段 | 旧兜底 | 兜底后的实际后果 |
+| --- | --- | --- |
+| `memory_type` | `MemoryType::All` | 拼错一个字母 → **静默返回全量结果**，看起来查询成功 |
+| `status` | `MemoryStatus::Active` | 拼错 → **静默只查 active**；在 `update_memory` 里更严重：变成一次**静默写入**（把记忆改成活跃） |
+| `traversal_strategy` | `TraversalStrategy::BreadthFirst` | 拼错 → 静默换成宽度优先，**图的结构换了一套却不报错** |
+
+解析归一化口径（两处必须一致）：
+`normalize_enum_key` = 去首尾空白 + 抹掉下划线 + 转小写 → 因此 snake_case（`knowledge_node`）
+与 `Display` 的 PascalCase（`KnowledgeNode`）等价；`all` 与不传同义。
+
+> 守卫测试：`MemoryType::ACCEPTED_VALUES` / `MemoryStatus::ACCEPTED_VALUES` /
+> `TraversalStrategy::ACCEPTED_VALUES` 必须与实际可解析集合一致（测试逐项断言），
+> 这样错误提示不会误导调用方。
 
 ### 16.5 标签过滤（2026-07-24 新增）
 
@@ -923,7 +984,7 @@ settle_memory handler / CronTrigger / awaken 上下文压缩
 2. 用 `search_memory` 查询已有图谱，避免重复节点
 3. 用 `save_long_term_memory` 创建新节点 / `update_memory` 更新旧节点
 4. 用 `save_long_term_memory` 的 relations 参数建立节点间关系
-5. 用 `update_memory` 的 `node_tags` 字段给有共享价值的节点加 `published` 标签
+5. 用 `update_memory` 的 `node_tags` 字段给「值得其他 Agent 优先参考」的节点加 `published` 标签（标记**重要性/影响力**，只影响图谱推荐起点的排序；知识节点本就蜂巢全局可见，它**不**改变可见性）
 6. 用 `update_memory` 的 `status` 字段把短期记忆标记为 `settled`
 7. **强制写入沉淀摘要**（v3.7 新增）：沉淀完成后必须调用 `save_short_term_memory` 将本次沉淀提炼的核心经验摘要写入短期记忆，`trace_ids` 字段填入 prompt 提供的本次沉淀依赖的 trace 列表，保证记忆可追溯
 
@@ -1080,6 +1141,9 @@ Agent 与用户交互的过程中会逐渐观察到用户的偏好（语言风�
 | 2026-08-04 | **task_id 记忆注意力机制**：MemoryQuery / SearchMemoryParams / QueryMemoryParams 新增 task_id 字段；query_short_term / search_short_term SQL 支持 task_id WHERE 过滤；PromptBuilder 在 task_context 有值时追加【记忆聚焦提示】引导 Agent 按需聚焦；默认 awaken 行为不变（跨任务全局取最近 20 条），project 过滤通过 task 关联实现不新增列 |  |
 | 2026-08-05 | **统一总结流程 + 强制记忆写入（v3.7）**：正常 Final 完成也触发 awaken_for_summary 总结流程；awaken 循环维护 pending_trace_ids 跟踪自上次压缩以来的 trace 列表；build_sleep_prompt / build_summary_prompt 新增 trace_ids 参数，prompt 模板强制要求 Agent 调用 save_short_term_memory 并填入 trace_ids；SaveShortTermMemoryParams 新增 trace_ids 字段；详见 runtime_design.md 25.12 |  |
 | 2026-08-13 | **用户偏好双源沉淀 + 种子节点推荐 + JSONL 存储**：新增 users.preferences（声明式自报）与图谱 user_preference tag（推断式观察）双源合并，统一 build_user_profile + 三级安全守卫注入 prompt；MemoryDal 新增 recommend_seed_nodes（冷启动种子推荐）与完善 traverse_knowledge_graph；原始记忆存储从按 agent markdown 改为按天 JSONL（memory_traces/{YYYYMMDD}.jsonl），更易解析与回溯；核心理念、数据库说明、文件存储说明同步更新 |  |
+| 2026-09-17 | **图谱层级语义拍板 + 图批次不变式**：`traversal_depth` 明确定义为节点维度跳数（第 0 层 = 种子，`N=0` 不返回边）；DAL 单点闸 `drop_dangling_relations` 保证「边只随其两端节点一起返回」，前端 `build_graph_from_results` 不再给缺失端点造占位节点；关系边新增 `weight` 强度字段 |  |
+| 2026-09-17 | **蜂巢可见性（用户拍板）+ 种子恒返回**：知识节点对全体 Agent 可见，`published` 降级为「重要性/影响力」标记（不再参与可见性判定，`MemoryQuery::include_shared` 与 `TraverseScope` 一并删除）；归属（`agent_id`）降为**显式筛选**——handler 不再回退 `ctx.agent_id()` 收窄知识节点，私有资产（短期记忆）反向回退 `private_agent_scope`；遍历**种子恒返回**且展开不施加归属筛选（`has_seeds` 即走遍历，`depth=0` 只看种子）；`recommend_seed_nodes` 全局池放宽为全部节点、`published` 作度数持平决胜 |  |
+| 2026-09-17 | **关系类型改为「原文落库 + 展示期映射」**：`KnowledgeNodeRelationPo.relation_type` 由枚举改为 `String`，落库保存写入方标注的原文；写入路径去掉 `KnowledgeRelationType::from()` 归一化（词表外的标注会被塌成 `Custom`、原文永久丢失，图谱上只剩「自定义」）；`zh_label_from_display` 改为「命中词表 → 中文短标签，未命中 → 原样透出且大小写不敏感」，`From<String>` 降为**归类专用**、禁用于写入路径；`find_relations_by_type` 参数改 `&str`；前端记忆面板改用同一映射（此前直接打印英文枚举名，与画布上中文不一致） |  |
 
 ---
 

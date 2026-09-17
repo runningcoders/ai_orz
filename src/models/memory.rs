@@ -246,8 +246,10 @@ pub struct LongTermKnowledgeNodePo {
     pub tags: String,
     /// 记忆状态
     pub status: common::enums::MemoryStatus,
-    /// 是否已发布到蜂巢（tags 含 "published" 时为 true）
-    /// 冗余字段，与 tags 中的 "published" 标签同步，用于加速查询
+    /// 是否被标记为**高价值/高影响力**（tags 含 "published" 时为 true）
+    ///
+    /// 冗余字段，与 tags 中的 "published" 标签同步，用于走索引排序。
+    /// ⚠️ 它**不是可见性控制位**：知识节点在蜂巢内对所有 Agent 可见，与是否 published 无关。
     pub is_published: bool,
     /// 创建时间戳
     pub created_at: i64,
@@ -307,8 +309,13 @@ pub struct KnowledgeNodeRelationPo {
     pub source_node_id: String,
     /// 目标节点 ID
     pub target_node_id: String,
-    /// 关系类型枚举
-    pub relation_type: common::enums::KnowledgeRelationType,
+    /// 关系类型**原文** —— 写入方标注的字符串，落库不做任何归一化
+    ///
+    /// ⚠️ 这里存 `String` 而不是枚举：枚举只有十几个变体，词表外的标注一旦
+    /// 走 `KnowledgeRelationType::from()` 就会被塌成 `Custom`，**原文永久丢失**
+    /// （图谱上只能显示「自定义」，Agent 明明标了具体的语义却看不出来）。
+    /// 中文/美化映射只发生在展示期，见 `KnowledgeRelationType::zh_label_from_display`。
+    pub relation_type: String,
     /// 关系强度（0.0~1.0，越大越强），`None` = 未标注
     ///
     /// 由写入方（`save_long_term_memory` 的 `relations[].weight`）声明，
@@ -511,14 +518,22 @@ impl Memory {
                 search_match,
             },
             MemoryPo::Relation(rel) => {
-                // 必须走 Display（snake_case）：前端关系标签词表以此为 key，
-                // 用 Debug 会得到 "Causes" 这类变体名而查不到中文
-                let relation_key = rel.relation_type.to_string();
+                // 原文落库、展示期映射：
+                // - `relation_type` 给**原文**（前端着色/词表以它为输入）
+                // - `name` / `content` 给映射后的展示标签（图谱连线与 hover 用）
+                // 空串归一成 `None`：画布只认非空 tag，空串会让 hover 直接失效
+                // （`tag: None` → tooltip 提前 return），回退「关联」才是对的。
+                let relation_key = rel.relation_type.trim().to_string();
+                // 展示标签：词表内 → 中文短标签，词表外 → 原文；空类型回退「关联」。
+                // 不给空标签 —— 画布只认非空 tag，空串会让连线 hover 直接失效。
                 let relation_label =
-                    KnowledgeRelationType::zh_label_from_display(&relation_key).to_string();
+                    match KnowledgeRelationType::zh_label_from_display(&relation_key) {
+                        "" => "关联".to_string(),
+                        label => label.to_string(),
+                    };
                 MemoryResult {
                     id: rel.id.clone(),
-                    // 关系边在数据层只有类型一个可用字段，把中文标签同时给
+                    // 关系边在数据层只有类型一个可用字段，把展示标签同时给
                     // name/content —— 详情与 hover 才不至于显示一串英文枚举名
                     name: Some(relation_label.clone()),
                     content: relation_label,
@@ -527,7 +542,7 @@ impl Memory {
                     summary: None,
                     source_node_id: Some(rel.source_node_id.clone()),
                     target_node_id: Some(rel.target_node_id.clone()),
-                    relation_type: Some(relation_key),
+                    relation_type: Some(relation_key).filter(|s| !s.is_empty()),
                     // 关系强度透传给图谱：线宽/浓淡据此派生，`None` = 未标注
                     weight: rel.weight,
                     tags: None,
@@ -587,7 +602,7 @@ pub struct SeedNodeRecommendation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::enums::{KnowledgeRelationType, MemoryStatus};
+    use common::enums::MemoryStatus;
 
     fn node(summary: &str) -> Memory {
         Memory::new(MemoryPo::KnowledgeNode(LongTermKnowledgeNodePo {
@@ -605,12 +620,12 @@ mod tests {
         }))
     }
 
-    fn relation(kind: KnowledgeRelationType) -> Memory {
+    fn relation(kind: &str) -> Memory {
         Memory::new(MemoryPo::Relation(KnowledgeNodeRelationPo {
             id: "kr_1".to_string(),
             source_node_id: "kn_a".to_string(),
             target_node_id: "kn_b".to_string(),
-            relation_type: kind,
+            relation_type: kind.to_string(),
             // 未标注示例：没有强度时不能写成 0.0（那是「明确很弱」）
             weight: None,
             created_at: 0,
@@ -618,20 +633,33 @@ mod tests {
         }))
     }
 
-    /// 关系类型必须走 `Display`（前端标签词表以此为 key）。
+    /// 关系类型：DTO 透出**原文**，展示走词表映射（词表外原样）。
     ///
-    /// 回归：`format!("{:?}")` 会输出 Rust 变体名 `"Causes"`，前端查不到中文
+    /// 回归 1：`format!("{:?}")` 会输出 Rust 变体名 `"Causes"`，前端查不到中文
     /// 而原样显示英文 —— 画布上所有连线标签、详情面板「内容」都是这串英文。
+    /// 回归 2：写入方标注的词表外原文（如「实现」）**必须**原样透出，不能因为
+    /// 匹配不上就归一成 `Custom` / 显示成「自定义」—— 那会把对方明确的语义抹掉。
     #[test]
-    fn relation_type_uses_display_not_debug() {
-        let dto = relation(KnowledgeRelationType::Causes).to_api_result();
+    fn relation_type_keeps_raw_text_and_maps_label() {
+        let dto = relation("causes").to_api_result();
         assert_eq!(dto.relation_type.as_deref(), Some("causes"));
         assert_eq!(dto.content, "导致", "关系边的内容应是人可读的中文标签");
         assert_eq!(dto.name.as_deref(), Some("导致"));
 
-        let dto = relation(KnowledgeRelationType::ContainedBy).to_api_result();
+        let dto = relation("contained_by").to_api_result();
         assert_eq!(dto.relation_type.as_deref(), Some("contained_by"));
         assert_eq!(dto.content, "属于");
+
+        // 词表外：原文与展示标签都必须保留
+        let dto = relation("实现").to_api_result();
+        assert_eq!(dto.relation_type.as_deref(), Some("实现"));
+        assert_eq!(dto.content, "实现");
+        assert_eq!(dto.name.as_deref(), Some("实现"));
+
+        // 空白类型：不给空标签（空 tag 会让画布 hover 失效），回退「关联」
+        let dto = relation("   ").to_api_result();
+        assert_eq!(dto.relation_type, None);
+        assert_eq!(dto.content, "关联");
     }
 
     /// 空摘要归一成 `None`：前端 `if let Some(summary)` 否则会渲染一个空块。
@@ -663,8 +691,8 @@ mod tests {
         );
     }
 
-    /// `published` 是可见性控制位（与 `is_published` 冗余字段同源），不是业务标签，
-    /// 回给前端会在卡片上多出一个没有意义的英文胶囊。
+    /// `published` 是「重要性/影响力」标记（与 `is_published` 冗余字段同源），不是业务标签，
+    /// 回给前端会在卡片上多出一个没有意义的英文胶囊。它不承载可见性语义（蜂巢全域可见）。
     #[test]
     fn published_control_tag_is_not_exposed_as_label() {
         let mut memory = node("");

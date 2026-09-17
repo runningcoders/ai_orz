@@ -10,6 +10,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
 use crate::utils::number::format_relevance;
 use common::api::{MemoryResult, QueryMemoryParams, SearchMemoryParams};
+use common::enums::KnowledgeRelationType;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum MemoryTab {
@@ -275,7 +276,15 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let mt = item.memory_type.clone();
                                 let src_node = item.source_node_id.clone().unwrap_or_default();
                                 let tgt_node = item.target_node_id.clone().unwrap_or_default();
-                                let rel_type = item.relation_type.clone().unwrap_or_default();
+                                // 与图谱画布共用同一套映射：词表内 → 中文短标签，
+                                // 词表外 → 原样透出。直接打印原文会在面板上露出
+                                // 英文枚举名（custom / causes），与画布上的中文不一致。
+                                let rel_type = item
+                                    .relation_type
+                                    .as_deref()
+                                    .map(KnowledgeRelationType::zh_label_from_display)
+                                    .unwrap_or("关联")
+                                    .to_string();
                                 let has_summary = independent_summary.is_some();
                                 let has_derived_summary = independent_summary.is_none();
                                 let has_score = item.score.is_some();

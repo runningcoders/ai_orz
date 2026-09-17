@@ -6,14 +6,14 @@ use crate::service::dao::memory::MemoryQuery;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{MemoryResult, QueryMemoryParams, QueryMemoryResponse};
-use common::enums::MemoryType;
-use common::error::{Result, bail_err};
+use common::enums::{MemoryStatus, MemoryType};
+use common::error::{Result, bail_err, err};
 
 /// Query memory entries by filter conditions
 #[register_handler_tool(
     id = "query_memory",
     name = "Query Agent Memory",
-    description = "Query memory entries by structured filters: agent_id, memory_type (short_term/knowledge_node/trace/relation), status (active/settled/forgotten), tags, and task_id. Querying another agent's memory yields only its published knowledge nodes. For relevance-ranked free-text lookup use search_memory.",
+    description = "Query memory entries by structured filters: agent_id, memory_type (short_term/knowledge_node/trace/relation/all), status (active/settled/forgotten), tags, and task_id. Values outside those lists are rejected with invalid_request rather than silently ignored. Knowledge nodes are hive-shared (any agent can read all of them), so agent_id is an optional ownership filter rather than a permission gate; short-term memory is scoped to the calling agent. For relevance-ranked free-text lookup use search_memory.",
     params = "common::api::QueryMemoryParams",
     neural
 )]
@@ -27,44 +27,46 @@ pub async fn query_memory(
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
-    let memory_type = params
-        .memory_type
-        .as_deref()
-        .map(|t| match t {
-            "short_term" | "ShortTerm" => MemoryType::ShortTerm,
-            "knowledge_node" | "KnowledgeNode" => MemoryType::KnowledgeNode,
-            "trace" | "Trace" => MemoryType::Trace,
-            "relation" | "Relation" => MemoryType::Relation,
-            _ => MemoryType::All,
-        })
-        .unwrap_or(MemoryType::All);
+    // 类型/状态统一走枚举自带的 SSOT 解析，非法值直接 400。
+    // ⚠️ 刻意**不**用 `_ =>` 兜底成 All / Active：静默降级会让调用方拼错一个词就拿到
+    // 全量（或「只 active」）的结果，而响应看起来完全成功 —— 最难察觉的一类参数错误。
+    let memory_type = match params.memory_type.as_deref() {
+        None => MemoryType::All,
+        Some(raw) => MemoryType::parse(raw).ok_or_else(|| {
+            err!(
+                InvalidRequest,
+                "不支持的 memory_type: `{}`，合法取值：{}",
+                raw,
+                MemoryType::ACCEPTED_VALUES
+            )
+        })?,
+    };
 
-    let status = params.status.as_deref().map(parse_memory_status);
+    let status = match params.status.as_deref() {
+        None => None,
+        Some(raw) => Some(MemoryStatus::parse(raw).ok_or_else(|| {
+            err!(
+                InvalidRequest,
+                "不支持的 status: `{}`，合法取值：{}",
+                raw,
+                MemoryStatus::ACCEPTED_VALUES
+            )
+        })?),
+    };
 
-    // 权限校验：获取 ctx 的 agent_id 和查询目标 agent_id
-    let ctx_agent_id = ctx.agent_id().cloned().unwrap_or_default();
-    let query_agent_id = params
-        .agent_id
-        .clone()
-        .unwrap_or_else(|| ctx_agent_id.clone());
-    // 查询其他 Agent 的记忆时，只能看到 published 节点
-    let is_querying_other = query_agent_id != ctx_agent_id && !ctx_agent_id.is_empty();
-
-    // 查询他人时，强制只返回 published 节点（通过 tags 过滤实现）
-    let mut tags = params.tags.clone().unwrap_or_default();
-    if is_querying_other && !tags.contains(&"published".to_string()) {
-        tags.push("published".to_string());
-    }
+    // 归属：可选筛选，不是权限门槛，且**只认显式传入的 `params.agent_id`**。
+    // ⚠️ 刻意不回退 `ctx.agent_id()`：知识节点蜂巢共享，回退会让 Agent 查询静默收窄成
+    // 「只看自己的节点」。短期记忆（私有）需要的归属回退在 DAL 内部完成
+    // （`private_agent_scope`：缺省回退 ctx 自己的 Agent，Agent 调用天然只看自己）。
+    let query_agent_id = params.agent_id.clone().filter(|s| !s.is_empty());
 
     let query = MemoryQuery {
-        agent_id: Some(query_agent_id),
+        agent_id: query_agent_id,
         memory_type: Some(memory_type),
         limit: params.limit.map(|l| l as usize),
-        tags: if tags.is_empty() { None } else { Some(tags) },
+        tags: params.tags.clone().filter(|t| !t.is_empty()),
         task_id: params.task_id.clone(),
         status,
-        // 查询自己时包含 published 共享节点；查询他人时不包含（仅返回该 agent 的 published 节点）
-        include_shared: !is_querying_other,
         ..Default::default()
     };
 
@@ -80,18 +82,71 @@ fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {
     memories.iter().map(Memory::to_api_result).collect()
 }
 
-/// 解析记忆状态字符串为 MemoryStatus 枚举。
-///
-/// 支持的输入（大小写不敏感）：
-/// - "active" / "1" → Active
-/// - "forgotten" / "0" → Forgotten
-/// - "settled" / "2" → Settled
-/// - 其他 → Active（兜底）
-fn parse_memory_status(s: &str) -> common::enums::MemoryStatus {
-    match s.to_lowercase().as_str() {
-        "active" | "1" => common::enums::MemoryStatus::Active,
-        "forgotten" | "0" => common::enums::MemoryStatus::Forgotten,
-        "settled" | "2" => common::enums::MemoryStatus::Settled,
-        _ => common::enums::MemoryStatus::Active,
+// （原地的 `parse_memory_status` 已删除：解析收敛到 `MemoryStatus::parse`，
+//   且非法值不再兜底成 Active，而是报 400。）
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
+        let _ = crate::config::init();
+        let base_path = crate::config::get().base_data_path();
+        crate::pkg::tool_tracing::logger::ToolCallLogger::init(base_path);
+        crate::service::dao::init_all();
+        crate::service::dal::init_all();
+        crate::service::domain::runtime::init();
+        crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
+    }
+
+    fn params(memory_type: Option<&str>, status: Option<&str>) -> QueryMemoryParams {
+        QueryMemoryParams {
+            agent_id: None,
+            memory_type: memory_type.map(|s| s.to_string()),
+            limit: Some(5),
+            tags: None,
+            task_id: None,
+            status: status.map(|s| s.to_string()),
+        }
+    }
+
+    /// 结构化过滤里的非法枚举值必须报 400。
+    ///
+    /// 回归背景：`memory_type` 曾 `_ => All`、`status` 曾 `_ => Active` 兜底 ——
+    /// 「参数写错」会伪装成「查到了」（只是结果集悄悄变成全量 / 只剩 active）。
+    #[sqlx::test]
+    async fn invalid_type_or_status_is_rejected_not_defaulted(pool: sqlx::SqlitePool) {
+        let ctx = init_env(pool);
+
+        let e = query_memory(ctx.clone(), params(Some("knowlege_node"), None))
+            .await
+            .expect_err("拼错的 memory_type 必须报错");
+        let msg = e.to_string();
+        assert!(msg.contains("invalid_request"), "错误码不对: {msg}");
+        assert!(msg.contains("memory_type"), "错误信息应指明字段: {msg}");
+        assert!(msg.contains("knowledge_node"), "应列出合法取值: {msg}");
+
+        let e = query_memory(ctx.clone(), params(None, Some("actived")))
+            .await
+            .expect_err("拼错的 status 必须报错");
+        let msg = e.to_string();
+        assert!(msg.contains("invalid_request"), "错误码不对: {msg}");
+        assert!(msg.contains("status"), "错误信息应指明字段: {msg}");
+
+        // 合法值照常放行：snake_case / PascalCase / 显式 all / 不传
+        for good in [
+            Some("knowledge_node"),
+            Some("KnowledgeNode"),
+            Some("all"),
+            None,
+        ] {
+            query_memory(ctx.clone(), params(good, Some("active")))
+                .await
+                .unwrap_or_else(|e| panic!("合法 memory_type {good:?} 不该报错: {e}"));
+        }
+        // 判别值字符串（历史调用方形式）仍然等价
+        query_memory(ctx.clone(), params(None, Some("2")))
+            .await
+            .expect("判别值 \"2\" 应等价于 settled");
     }
 }

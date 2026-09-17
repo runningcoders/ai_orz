@@ -629,7 +629,7 @@ async fn test_create_relations(pool: SqlitePool) -> Result<()> {
         id: "rel-test-001".to_string(),
         source_node_id: "kn-source-001".to_string(),
         target_node_id: "kn-target-001".to_string(),
-        relation_type: common::enums::KnowledgeRelationType::Related,
+        relation_type: "related".to_string(),
         weight: None,
         created_at: now,
         updated_at: now,
@@ -1271,7 +1271,7 @@ async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<()> {
         id: "rel-001".to_string(),
         source_node_id: "node-a".to_string(),
         target_node_id: "node-b".to_string(),
-        relation_type: common::enums::KnowledgeRelationType::Related,
+        relation_type: "related".to_string(),
         weight: None,
         created_at: now,
         updated_at: now,
@@ -1806,7 +1806,7 @@ async fn test_search_relations(pool: SqlitePool) -> Result<()> {
         id: "rel-search-001".to_string(),
         source_node_id: "kn-rel-001".to_string(),
         target_node_id: "kn-rel-002".to_string(),
-        relation_type: common::enums::KnowledgeRelationType::Related,
+        relation_type: "related".to_string(),
         weight: None,
         created_at: now,
         updated_at: now,
@@ -1903,7 +1903,7 @@ fn traverse_rel(id: &str, src: &str, tgt: &str, created_at: i64) -> KnowledgeNod
         id: id.to_string(),
         source_node_id: src.to_string(),
         target_node_id: tgt.to_string(),
-        relation_type: common::enums::KnowledgeRelationType::Related,
+        relation_type: "related".to_string(),
         weight: None,
         created_at,
         updated_at: created_at,
@@ -2173,4 +2173,43 @@ async fn test_traverse_wide_star_fetch_chunking(pool: SqlitePool) -> Result<()> 
     assert_eq!(rel_ids_of(&results).len(), leaf_count, "450 条边应全部收集");
 
     Ok(())
+}
+
+// ========== 纯函数：遍历策略字符串解析 ==========
+
+/// 遍历策略解析：兼容 snake_case / PascalCase，且**拒绝非法值**。
+///
+/// 回归背景：`search_memory` 曾用 `_ => BreadthFirst` 兜底 ——
+/// 调用方把 `depth_first` 拼错会**静默换成宽度优先**，图的结构换了一套却不报错。
+#[test]
+fn traversal_strategy_parse_accepts_both_spellings_and_rejects_garbage() {
+    use crate::service::dal::memory::TraversalStrategy;
+
+    // ACCEPTED_VALUES 必须与实际可解析集合一致，否则错误提示会误导调用方
+    for token in TraversalStrategy::ACCEPTED_VALUES.split(',') {
+        let token = token.trim();
+        assert!(
+            TraversalStrategy::parse(token).is_some(),
+            "ACCEPTED_VALUES 里的 `{token}` 必须可解析"
+        );
+    }
+    for raw in [" depth_first ", "DepthFirst", "DEPTH_FIRST"] {
+        assert_eq!(
+            TraversalStrategy::parse(raw),
+            Some(TraversalStrategy::DepthFirst),
+            "`{raw}` 应解析成 DepthFirst"
+        );
+    }
+    // 拼错必须返回 None（由 handler 报 400），绝不能悄悄退化成 BFS
+    for bad in ["depth", "dfs", "depth-first", ""] {
+        assert_eq!(
+            TraversalStrategy::parse(bad),
+            None,
+            "`{bad}` 是非法值，必须被拒绝而不是兜底"
+        );
+    }
+    assert_eq!(
+        TraversalStrategy::parse("breadth_first"),
+        Some(TraversalStrategy::DEFAULT)
+    );
 }

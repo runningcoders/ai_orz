@@ -16,7 +16,7 @@ use crate::pkg::paths;
 use crate::pkg::storage::escape_fts5_keyword;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
 use async_trait::async_trait;
-use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
+use common::enums::{MemoryStatus, MemoryType};
 use common::error::{Result, bail_err};
 use serde_json;
 use sqlx::{FromRow, SqlitePool};
@@ -155,12 +155,12 @@ WHERE source_node_id IN ("#,
             let id: String = row.get("id");
             let source_node_id: String = row.get("source_node_id");
             let target_node_id: String = row.get("target_node_id");
-            let relation_type_str: String = row.get("relation_type");
+            let relation_type: String = row.get("relation_type");
             // 动态 SQL 走 Row::get：显式取 f64 再收窄，避免依赖 f32 的 Decode 实现
             let weight: Option<f32> = row.get::<Option<f64>, _>("weight").map(|w| w as f32);
             let created_at: i64 = row.get("created_at");
             let updated_at: i64 = row.get("updated_at");
-            let relation_type = KnowledgeRelationType::from(relation_type_str);
+            // 关系类型原样带出（落库存的就是原文，读取侧不做任何枚举归一）
             result.push(KnowledgeNodeRelationPo {
                 id,
                 source_node_id,
@@ -775,17 +775,21 @@ WHERE id = ? AND status != 0
         node_type: Option<&str>,
         limit: usize,
     ) -> Result<Vec<LongTermKnowledgeNodePo>> {
+        // 与 API 侧同口径：非法类型值报错，不静默放行全量。
+        let memory_type = match node_type.map(MemoryType::parse) {
+            Some(Some(memory_type)) => Some(memory_type),
+            Some(None) => bail_err!(
+                InvalidRequest,
+                "invalid node_type: expected one of short_term/knowledge_node/trace/relation/all"
+            ),
+            None => None,
+        };
+
         self.query_knowledge_nodes(
             ctx,
             MemoryQuery {
                 agent_id: Some(agent_id.to_string()),
-                memory_type: node_type.map(|t| match t {
-                    "Trace" => MemoryType::Trace,
-                    "ShortTerm" => MemoryType::ShortTerm,
-                    "KnowledgeNode" => MemoryType::KnowledgeNode,
-                    "Relation" => MemoryType::Relation,
-                    _ => MemoryType::All,
-                }),
+                memory_type,
                 limit: Some(limit),
                 ..Default::default()
             },
@@ -815,23 +819,14 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             separated.push_unseparated(")");
         }
 
-        // 构造归属过滤条件：自己的节点 OR（include_shared 时）published 节点
+        // 归属筛选：**显式**指定才过滤（空串 = None = 不过滤）。
+        // ⚠️ 知识节点是蜂巢共享资产：默认不施加任何归属门槛，任何 Agent 都能读到全部节点，
+        // 否则「全局视图」在私有节点多的库上会退化成空图 / 只剩边没有节点。
+        // `published` 只是「重要性 / 影响力」标记，**不是**可见性控制位，查询侧不再读它。
         // 注意：sqlx QueryBuilder 的 push() 不会识别 ? 占位符，必须用 push_bind() 绑定参数
-        // 使用冗余字段 is_published 替代 json_each(tags) 加速查询（走部分索引 idx_ltkn_is_published）
-        let agent_id = query.agent_id.clone().unwrap_or_default();
-        let include_shared = query.include_shared;
-        builder.push(" AND ");
-        if include_shared && !agent_id.is_empty() {
-            builder.push("(agent_id = ");
+        if let Some(agent_id) = query.agent_id.clone().filter(|s| !s.is_empty()) {
+            builder.push(" AND agent_id = ");
             builder.push_bind(agent_id);
-            builder.push(" OR is_published = 1)");
-        } else if agent_id.is_empty() && include_shared {
-            builder.push("is_published = 1");
-        } else if !agent_id.is_empty() {
-            builder.push("agent_id = ");
-            builder.push_bind(agent_id);
-        } else {
-            builder.push("1=1");
         }
 
         if let Some(status) = &query.status {
@@ -905,8 +900,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         let pool = self.pool(ctx);
 
         // 从 MemorySearch 提取参数
-        let agent_id = search.filters.agent_id.unwrap_or_default();
-        let include_shared = search.filters.include_shared;
+        let agent_filter = search.filters.agent_id.clone().filter(|s| !s.is_empty());
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
         let tags = search.filters.tags.clone().unwrap_or_default();
@@ -930,22 +924,12 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             String::new()
         };
 
-        // 构造归属过滤条件：自己的节点 OR（include_shared 时）published 节点
-        // 使用冗余字段 is_published 替代 json_each(tags) 加速查询（走部分索引 idx_ltkn_is_published）
-        // agent_id 为空时（全局搜索）：include_shared 返回所有 published 节点，否则返回空集
-        let has_agent_filter = !agent_id.is_empty();
-        let (ownership_clause, need_bind_agent) = if has_agent_filter {
-            if include_shared {
-                ("(m.agent_id = ? OR m.is_published = 1)".to_string(), true)
-            } else {
-                ("m.agent_id = ?".to_string(), true)
-            }
-        } else if include_shared {
-            // 全局搜索：只返回 published 节点
-            ("m.is_published = 1".to_string(), false)
+        // 归属筛选：只有调用方**显式**指定 agent_id 才过滤（空串 = None）。
+        // ⚠️ 知识节点是蜂巢共享资产：默认全域可搜，`published` 不再是可见性门槛。
+        let ownership_clause = if agent_filter.is_some() {
+            "m.agent_id = ?"
         } else {
-            // 无 agent_id 且不包含共享：返回空集
-            ("1=0".to_string(), false)
+            "1=1"
         };
 
         let sql = format!(
@@ -965,8 +949,8 @@ LIMIT ?
 
         let mut query = sqlx::query_as::<_, KnowledgeNodeSearchRow>(&sql).bind(escaped_keyword);
 
-        // 绑定 agent_id 参数（如果归属条件需要）
-        if need_bind_agent {
+        // 绑定 agent 归属筛选参数（仅当调用方显式指定时）
+        if let Some(agent_id) = agent_filter {
             query = query.bind(agent_id);
         }
 
@@ -1112,7 +1096,6 @@ ORDER BY created_at ASC
         relation: &KnowledgeNodeRelationPo,
     ) -> Result<()> {
         let pool = self.pool(ctx);
-        let relation_type_str = relation.relation_type.to_string();
 
         sqlx::query!(
             r#"
@@ -1123,7 +1106,8 @@ INSERT INTO knowledge_node_relation (
             relation.id,
             relation.source_node_id,
             relation.target_node_id,
-            relation_type_str,
+            // 原文直落：不经过枚举，词表外的标注不会丢
+            relation.relation_type,
             relation.weight,
             relation.created_at,
             relation.updated_at,
@@ -1143,7 +1127,6 @@ INSERT INTO knowledge_node_relation (
         let mut tx = pool.begin().await?;
 
         for relation in relations {
-            let relation_type_str = relation.relation_type.to_string();
             sqlx::query!(
                 r#"
 INSERT INTO knowledge_node_relation (
@@ -1153,7 +1136,7 @@ INSERT INTO knowledge_node_relation (
                 relation.id,
                 relation.source_node_id,
                 relation.target_node_id,
-                relation_type_str,
+                relation.relation_type,
                 relation.weight,
                 relation.created_at,
                 relation.updated_at,
@@ -1172,7 +1155,6 @@ INSERT INTO knowledge_node_relation (
         relation: &KnowledgeNodeRelationPo,
     ) -> Result<()> {
         let pool = self.pool(ctx);
-        let relation_type_str = relation.relation_type.to_string();
 
         sqlx::query!(
             r#"
@@ -1189,7 +1171,7 @@ ON CONFLICT(id) DO UPDATE SET
             relation.id,
             relation.source_node_id,
             relation.target_node_id,
-            relation_type_str,
+            relation.relation_type,
             relation.weight,
             relation.created_at,
             relation.updated_at,
@@ -1206,7 +1188,6 @@ ON CONFLICT(id) DO UPDATE SET
         source_id: &str,
     ) -> Result<Vec<KnowledgeNodeRelationPo>> {
         let pool = self.pool(ctx);
-        // sqlx 不自动映射枚举，需要手动处理
         let rows = sqlx::query!(
             r#"
 SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
@@ -1221,12 +1202,12 @@ ORDER BY created_at ASC
 
         let mut result = Vec::new();
         for row in rows {
-            let relation_type = KnowledgeRelationType::from(row.relation_type);
             result.push(KnowledgeNodeRelationPo {
                 id: row.id,
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
-                relation_type,
+                // 关系类型原样带出：落库存的是原文，读取侧不做任何枚举归一
+                relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,
@@ -1257,12 +1238,12 @@ ORDER BY created_at ASC
 
         let mut result = Vec::new();
         for row in rows {
-            let relation_type = KnowledgeRelationType::from(row.relation_type);
             result.push(KnowledgeNodeRelationPo {
                 id: row.id,
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
-                relation_type,
+                // 关系类型原样带出：落库存的是原文，读取侧不做任何枚举归一
+                relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,
@@ -1294,12 +1275,12 @@ ORDER BY created_at ASC
 
         let mut result = Vec::new();
         for row in rows {
-            let relation_type = KnowledgeRelationType::from(row.relation_type);
             result.push(KnowledgeNodeRelationPo {
                 id: row.id,
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
-                relation_type,
+                // 关系类型原样带出：落库存的是原文，读取侧不做任何枚举归一
+                relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,
@@ -1380,10 +1361,9 @@ ORDER BY created_at ASC
         &self,
         ctx: RequestContext,
         source_id: &str,
-        relation_type: KnowledgeRelationType,
+        relation_type: &str,
     ) -> Result<Vec<KnowledgeNodeRelationPo>> {
         let pool = self.pool(ctx);
-        let relation_type_str = relation_type.to_string();
         let rows = sqlx::query!(
             r#"
 SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
@@ -1392,19 +1372,19 @@ WHERE source_node_id = ? AND relation_type = ?
 ORDER BY created_at ASC
 "#,
             source_id,
-            relation_type_str
+            relation_type
         )
         .fetch_all(&pool)
         .await?;
 
         let mut result = Vec::new();
         for row in rows {
-            let relation_type = KnowledgeRelationType::from(row.relation_type);
             result.push(KnowledgeNodeRelationPo {
                 id: row.id,
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
-                relation_type,
+                // 关系类型原样带出：落库存的是原文，读取侧不做任何枚举归一
+                relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,

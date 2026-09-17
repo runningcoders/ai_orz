@@ -104,8 +104,10 @@ TraverseKnowledgeGraphResponse { nodes, edges, ordered_levels }
 
 1. **红线 1**：**所有 `IN (?, ?, ...)` 列表必须走 IN_CHUNK_SIZE=400 分块**，不管你目测 IDs 有多短——代码评审里看到 ids.len() 小就不走分块的，一律打回。理由：上线后数据量一涨，那天刚好 ids 破 999，所有遍历全部报 "too many SQL variables" 炸库。
 2. **红线 2**：**traversal_depth > 5 必须强制 truncate**，哪怕调用方明确传了 depth=100。图谱里一个连通分量上万节点，深度 10 的 BFS 能一次性把内存拉爆。
-3. **红线 3**：**ordered_levels 里的节点必须同时在 nodes Vec 里出现**，前端按 levels 渲染时，按 level node_id 去 nodes 里找 node——找不到直接 panic。出口 `apply_visibility_filter` 会「先砍 nodes+edges，再同步从 ordered_levels 里删不可见节点」，不要绕过这个函数。
+3. **红线 3**：**层级里的节点必须同时在 nodes Vec 里出现**，前端按层级渲染时找不到节点只能画成占位卡。组装收敛在 `build_memories` / `build_graph_memories`（后者额外过 `drop_dangling_relations`），不要绕过它自己拼结果集。（历史实现叫 `apply_visibility_filter`，已随「蜂巢可见性」删除——归属不再是过滤维度。）
 4. **红线 4**：list_relations_batch / fetch_nodes_by_ids **分块后必须做全局去重 + created_at ASC 重排序**。否则前端每次刷新同一个 traverse 参数，返回的 edges 顺序会因为 SQLite IN 查出来顺序不稳定而抖动，画布上节点位置每次刷新都跳，体验极差。
+5. **红线 5**：**禁返回端点缺失的边**。层级（`traversal_depth`）是**节点维度**的概念——第 0 层 = 种子节点，沿一条边走到新节点算 +1 层；边只是连接两个「已在本批结果里的节点」的线，端点缺失的边没有意义（前端只能把缺失端点画成「未命名节点」：无名称/无正文/hover 无内容；LLM 拿到的只是「A → ?」的半条信息）。落地：DAL 单点闸 `drop_dangling_relations`，`search` 与 `traverse_knowledge_graph` 两条路径共用；前端 `build_graph_from_results` 是第二道防线（不画端点缺失的边，且**不给端点造占位节点**）。
+6. **红线 6**：**种子节点恒返回，且遍历不施加归属筛选**（2026-09-17 用户拍板）。①种子是调用方**点名**要的节点（前端点击展开的中心节点 / 关键词命中的起点），取回时不做任何归属过滤——中心节点缺席整张展开图就没意义；②知识节点是**蜂巢共享资产**，任何 Agent 都能看到全部知识节点，`published` 只是「重要性/影响力」标记，**不是可见性门槛**；③隔离属性只作用于**短期记忆**：作用域缺省回退 `ctx.agent_id()`（`private_agent_scope`），Agent 调用天然只看自己的便签；ctx 也没有归属（人类浏览）时保持不过滤的既有行为。**禁**在 handler 用 `ctx.agent_id()` 回退去收窄知识节点——那会让 Agent 的检索静默收窄成「只看自己」。
 
 ### 4.2 故障排查路径
 
@@ -113,6 +115,6 @@ TraverseKnowledgeGraphResponse { nodes, edges, ordered_levels }
 |------|---------|---------|
 | 图谱遍历偶尔报 "too many SQL variables (code 1 too many SQL variables)" | [memory.rs:L653-L804](src/service/dal/memory.rs#L653-L804) IN_CHUNK_SIZE 是否被改成 > 400 | 查调用方：是否有人绕过 list_relations_batch 直接写了 SQL？grep 整个 src/service/dao 下所有 `IN (` 后面接参数绑定的 SQL，统计每个 SQL 的 bind 数量 |
 | 小图（<50 节点）BFS 正常，大图（>5k 节点）DFS 慢到超时（>30s） | [memory.rs:L891-L990](src/service/dal/memory.rs#L891-L990) 检查 edge_cache 命中日志 | 确认「栈前沿批量预取」逻辑是否被误改回到每节点单查——典型：重构 DFS 时不小心删了 fetched_flag，导致每 pop 必触发一次批量预取（反向变成 worse） |
-| traverse 返回 nodes 数 = 0，明明 seed_node_ids 是正确的 | [memory.rs:L518-L577](src/service/dal/memory.rs#L518-L577) apply_visibility_filter 的过滤逻辑 | 场景：传入的 agent_id 错了（用了组织 ID 不是 Agent ID），导致所有节点都「不是我的 agent_id 也没 published」被全过滤了。调试方法：临时在 total nodes 前和后打日志，看 filter 前后数量差 |
+| traverse 返回 nodes 数 = 0，明明 seed_node_ids 是正确的 | 先查这些 id 在 `long_term_knowledge_node` 里是否存在且 `status != Forgotten`（软删除的节点按设计不返回，挂在它身上的边也会一起丢弃） | 旧坑已修：以前是 `apply_visibility_filter` 用错 agent_id / 只认 published 节点导致「节点全被过滤、只剩边」；现在遍历不做归属过滤，若仍为空就是数据本身不在 |
 | ordered_levels 的 level 0 有节点，但前端画出来点都挤在同一个角落 | 检查 TraverseKnowledgeGraphResponse.ordered_levels 是否正确填 | 典型：traverse_bfs 中 visited set 没与 level 同步推进，BFS 层序错乱，levels[0] 把所有节点都标成 level 0。前端按 level 布局时 y 坐标都一样，挤成一根线 |
 | traverse 10 次有 1 次返回重复节点（同一 node_id 在 nodes Vec 出现两次） | [memory.rs:L721-L804](src/service/dal/memory.rs#L721-L804) fetch_nodes_by_ids 分块后的拼接逻辑 | 是否漏了 `dedup_by(|a,b| a.id == b.id)`？多块执行同一节点如果跨两块边界（第 399 个和 401 个刚好同一个 node_id 出现两次），不去重就会出现重复 |

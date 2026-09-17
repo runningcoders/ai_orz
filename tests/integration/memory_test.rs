@@ -881,14 +881,17 @@ async fn test_memory_vector_search_prefilter_agent_isolation(pool: SqlitePool) {
     assert!(pos_near < pos_far, "命中结果应按距离升序排列");
 }
 
-/// pre-filter 共享可见性：include_shared 应看到他人 published 节点、排除 unpublished
+/// 归属筛选是**纯筛选**，不是可见性门槛；不指定归属 = 蜂巢全域可见。
 ///
 /// 数据布局（query=[1,0]，余弦距离）：
-/// - agent-2 unpublished：全局最近（distance=0），但对 agent-1 永不可见
-/// - agent-2 published：次近（≈0.019），include_shared=true 时可见
-/// - agent-1 own：稍远（0.2），任何视角均可见
+/// - agent-2 unpublished：全局最近（distance=0）
+/// - agent-2 published：次近（≈0.019）
+/// - agent-1 own：稍远（0.2）
+///
+/// 蜂巢语义：知识节点对所有 Agent 可见，`published` 只是「重要性/影响力」标记，
+/// **不参与可见性判定**。`agent_id` 只在调用方明确要求「只看某个 Agent 的记忆」时收窄。
 #[sqlx::test]
-async fn test_memory_vector_search_prefilter_shared_visibility(pool: SqlitePool) {
+async fn test_memory_vector_search_agent_filter_is_not_visibility_gate(pool: SqlitePool) {
     let ctx = crate::common::init_full_test_env(pool.clone()).await;
 
     let agent_1 = format!("sv-a1-{}", uuid::Uuid::now_v7());
@@ -927,73 +930,52 @@ async fn test_memory_vector_search_prefilter_shared_visibility(pool: SqlitePool)
 
     let dao = new_memory_vector_dao();
 
-    // 私有视角：只有自己的节点，他人节点（含 published）均不可见
-    let private_query = MemoryQuery {
+    // ① 显式归属筛选：只看 agent-1 沉淀的节点
+    let scoped_query = MemoryQuery {
         agent_id: Some(agent_1.clone()),
-        include_shared: false,
         ..Default::default()
     };
     let hits = dao
-        .search_knowledge_node_vector(ctx.clone(), &query_vector, 5, &private_query)
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 5, &scoped_query)
         .await
-        .expect("private search failed");
-    assert!(!hits.is_empty(), "私有视角应命中自己的节点");
+        .expect("scoped search failed");
+    assert!(!hits.is_empty(), "归属筛选应命中自己的节点");
     for hit in &hits {
         assert_eq!(
             hit.row.payload.agent_id.as_deref(),
             Some(agent_1.as_str()),
-            "私有视角：全部命中均应属于 agent-1"
+            "显式归属筛选：命中均应属于 agent-1"
         );
     }
     assert!(
         !hits
             .iter()
             .any(|h| h.row.id == other_published_id || h.row.id == other_unpublished_id),
-        "私有视角：agent-2 的任何节点（含 published）不应出现"
+        "显式归属筛选：agent-2 的节点不应出现（这正是「筛选」的含义）"
     );
 
-    // 共享视角：自己 + 他人 published 可见，他人 unpublished 被排除
-    let shared_query = MemoryQuery {
-        agent_id: Some(agent_1.clone()),
-        include_shared: true,
-        ..Default::default()
-    };
+    // ② 不指定归属 → 蜂巢全域：他人的（含未发布的）节点同样可召回
+    let hive_query = MemoryQuery::default();
     let hits = dao
-        .search_knowledge_node_vector(ctx.clone(), &query_vector, 5, &shared_query)
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 5, &hive_query)
         .await
-        .expect("shared search failed");
-    assert!(
-        hits.iter().any(|h| h.row.id == other_published_id),
-        "共享视角：他人 published 节点应可见"
-    );
-    assert!(
-        hits.iter().any(|h| h.row.id == own_id),
-        "共享视角：自己的节点应可见"
-    );
-    assert!(
-        !hits.iter().any(|h| h.row.id == other_unpublished_id),
-        "共享视角：他人 unpublished 节点不应出现"
-    );
-    // 共享视角下全部命中均满足可见性谓词：属于自己 OR 已发布
-    for hit in &hits {
-        let is_own = hit.row.payload.agent_id.as_deref() == Some(agent_1.as_str());
-        let is_published = hit.row.payload.is_published == Some(true);
+        .expect("hive search failed");
+    for id in [&other_unpublished_id, &other_published_id, &own_id] {
         assert!(
-            is_own || is_published,
-            "共享视角命中必须满足 agent_id=agent-1 OR is_published=true，实际 payload: {:?}",
-            hit.row.payload
+            hits.iter().any(|h| h.row.id == *id),
+            "蜂巢视角：节点 {id} 应可见（published 不再是可见性门槛）"
         );
     }
 
-    // 共享视角 top_k=1：最近的可见行是他人 published（而非全局最近但不可见的 unpublished）——
-    // 这是 OR 可见性谓词下推的最强断言
+    // ③ 蜂巢视角 top_k=1：最近的那条就是全局最近（他人 unpublished）——
+    //    这是「没有隐藏可见性谓词」的最强断言：旧语义下它会被 OR is_published 挡掉。
     let hits = dao
-        .search_knowledge_node_vector(ctx.clone(), &query_vector, 1, &shared_query)
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 1, &hive_query)
         .await
-        .expect("shared top-1 search failed");
+        .expect("hive top-1 search failed");
     assert_eq!(hits.len(), 1);
     assert_eq!(
-        hits[0].row.id, other_published_id,
-        "top-1 应命中最近的可见行（他人 published），而非全局最近但不可见的 unpublished"
+        hits[0].row.id, other_unpublished_id,
+        "top-1 应命中全局最近的节点，不该再被归属/发布状态过滤掉"
     );
 }

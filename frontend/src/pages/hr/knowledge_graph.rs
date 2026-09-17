@@ -42,8 +42,8 @@ enum GraphStyle {
 
 /// 节点展示名：**名称 → 摘要首行 → 正文首行 → 「未命名节点」**
 ///
-/// ⚠️ 关系端点在同批结果里查不到实体时用「未命名节点」占位，而不是把 ID 或
-/// 类型词（旧行为「知识节点」）当名字——那样一屏节点全是同一个词，等于没信息。
+/// 「未命名节点」只兜底「实体节点本身字段全空」这一种情况；**不给关系端点造占位**
+/// （端点缺失的边整条不画，见 `build_graph_from_results`）。
 /// ID 不进卡片，统一留给 hover 详情（见 `graph::node_hover_lines`）。
 fn node_display_name(item: &MemoryResult) -> String {
     let head = |s: &str| {
@@ -74,7 +74,13 @@ fn node_display_name(item: &MemoryResult) -> String {
     }
 }
 
-/// 从搜索结果构建图谱节点和边
+/// 从搜索结果构建图谱节点和边。
+///
+/// ⚠️ **图批次不变式：边只画两端节点都在本批结果里的那些**。层级（`traversal_depth`）
+/// 是**节点维度**的概念 —— 边不是层级实体，只是连接两个已在结果里的节点的线；
+/// 端点缺失的边没有意义（旧实现会给它造个占位节点，于是整屏「未命名节点」：
+/// 没有名称、没有正文、hover 也没内容）。后端 `drop_dangling_relations` 是第一道闸，
+/// 这里是第二道。
 fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
@@ -113,33 +119,12 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
             }
             "relation" => {
                 if let (Some(src), Some(tgt)) = (&item.source_node_id, &item.target_node_id) {
-                    // 端点节点展示真实名称（查第一遍的名称映射）
-                    let fallback = "未命名节点".to_string();
-                    let src_label = name_by_id.get(src.as_str()).unwrap_or(&fallback).clone();
-                    let tgt_label = name_by_id.get(tgt.as_str()).unwrap_or(&fallback).clone();
-                    if seen_node_ids.insert(src.clone()) {
-                        nodes.push(GraphNode {
-                            id: src.clone(),
-                            label: src_label,
-                            description: String::new(),
-                            node_type: "knowledge_node".to_string(),
-                            x: 0.0,
-                            y: 0.0,
-                            tags: Vec::new(),
-                            summary: None,
-                        });
-                    }
-                    if seen_node_ids.insert(tgt.clone()) {
-                        nodes.push(GraphNode {
-                            id: tgt.clone(),
-                            label: tgt_label,
-                            description: String::new(),
-                            node_type: "knowledge_node".to_string(),
-                            x: 0.0,
-                            y: 0.0,
-                            tags: Vec::new(),
-                            summary: None,
-                        });
+                    // 图批次不变式：两端节点都在本批结果里才画这条边。
+                    // 缺失端点**不造占位节点**，整条边直接不画。
+                    if !name_by_id.contains_key(src.as_str())
+                        || !name_by_id.contains_key(tgt.as_str())
+                    {
+                        continue;
                     }
                     // 边标签：关系类型中文化（related → 相关），无类型回退「关联」
                     let label = item
@@ -177,6 +162,8 @@ fn type_badge_class(t: &str) -> &'static str {
 #[component]
 pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     let mut keyword = use_signal(String::new);
+    // 关联展开层数（后端 traversal_depth）：搜索与「点击节点展开」共用
+    let mut traversal_depth = use_signal(|| 1i32);
     let mut tags_input = use_signal(String::new);
     let mut nodes = use_signal(Vec::<GraphNode>::new);
     let mut edges = use_signal(Vec::<GraphEdge>::new);
@@ -269,7 +256,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 query: kw,
                 max_results: Some(50),
                 memory_type: None,
-                traversal_depth: Some(1),
+                traversal_depth: Some(traversal_depth()),
                 traversal_breadth: Some(10),
                 traversal_strategy: Some("breadth_first".to_string()),
                 seed_node_ids: Some(Vec::new()),
@@ -329,7 +316,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 query: "".to_string(),
                 max_results: Some(50),
                 memory_type: None,
-                traversal_depth: Some(1),
+                traversal_depth: Some(traversal_depth()),
                 traversal_breadth: Some(10),
                 traversal_strategy: Some("breadth_first".to_string()),
                 seed_node_ids: Some(seed_ids.clone()),
@@ -518,6 +505,22 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                 onkeydown: move |evt| {
                                     if evt.key() == Key::Enter {
                                         handle_search(());
+                                    }
+                                }
+                            }
+                            // 关联展开层数：搜索命中的节点与「点击节点」共用同一个
+                            // traversal_depth，改这里两边同时生效
+                            div { class: "join self-center",
+                                for d in [1i32, 2, 3] {
+                                    button {
+                                        class: if traversal_depth() == d {
+                                            "btn hud-btn btn-sm join-item btn-primary"
+                                        } else {
+                                            "btn hud-btn btn-sm join-item btn-ghost"
+                                        },
+                                        title: "沿关系展开的层数（搜索命中节点 / 点击节点时生效）",
+                                        onclick: move |_| traversal_depth.set(d),
+                                        "{d} 跳"
                                     }
                                 }
                             }
@@ -915,7 +918,7 @@ pub fn HrKnowledgeGraph() -> Element {
                             span { class: "text-sm font-medium whitespace-nowrap", "Agent:" }
                             div { class: "flex-1 max-w-md",
                                 SearchableSelect {
-                                    placeholder: "选择 Agent（留空=全局知识图谱）...".to_string(),
+                                    placeholder: "选择 Agent（留空=全蜂巢知识图谱）...".to_string(),
                                     selected: None,
                                     options: agent_options,
                                     on_select: move |selection: String| handle_agent_select(selection),
@@ -933,11 +936,96 @@ pub fn HrKnowledgeGraph() -> Element {
                                 }
                             }
                         }
+                        // 语义说明：知识节点是蜂巢共享资产（所有 Agent 都能看到全部节点），
+                        // Agent 选择器只收窄「起点」，不改变可见性 —— 不写清楚的话，
+                        // 用户会以为选 Agent 等于「只看它的节点」而错过别的 Agent 的知识。
+                        p { class: "text-xs text-base-content/50 mt-1.5",
+                            "知识节点在蜂巢内全局共享（任何 Agent 都能检索到全部节点）；选择 Agent 只把关键词搜索的起点收窄到它，沿图展开不受限制。"
+                        }
                     }
                 }
 
                 KnowledgeGraph { agent_id: selected_agent_id() }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(id: &str, name: &str) -> MemoryResult {
+        MemoryResult {
+            id: id.to_string(),
+            name: Some(name.to_string()),
+            content: format!("{name}的正文"),
+            memory_type: "knowledge_node".to_string(),
+            score: None,
+            summary: None,
+            source_node_id: None,
+            target_node_id: None,
+            relation_type: None,
+            weight: None,
+            tags: None,
+            search_match: None,
+        }
+    }
+
+    fn edge(id: &str, src: &str, tgt: &str) -> MemoryResult {
+        MemoryResult {
+            id: id.to_string(),
+            name: Some("导致".to_string()),
+            content: "导致".to_string(),
+            memory_type: "relation".to_string(),
+            score: None,
+            summary: None,
+            source_node_id: Some(src.to_string()),
+            target_node_id: Some(tgt.to_string()),
+            relation_type: Some("causes".to_string()),
+            weight: Some(0.8),
+            tags: None,
+            search_match: None,
+        }
+    }
+
+    /// 图批次不变式（第二道防线）：端点缺失的边**整条不画**，也不为端点造占位节点。
+    ///
+    /// 旧实现会给缺失端点造「未命名节点」占位卡（没有名称 / 正文 / hover 内容），
+    /// 于是整屏「未命名节点」—— 这正是知识图谱页最初的问题形态。
+    #[test]
+    fn dangling_edges_are_dropped_without_placeholder_nodes() {
+        let results = vec![
+            node("kn_a", "订单状态机"),
+            edge("kr_1", "kn_a", "kn_b"), // kn_b 不在本批结果里
+        ];
+        let (nodes, edges) = build_graph_from_results(&results);
+        assert_eq!(nodes.len(), 1, "不该为缺失端点造占位节点: {nodes:?}");
+        assert_eq!(nodes[0].id, "kn_a");
+        assert!(edges.is_empty(), "端点缺失的边必须整条丢弃: {edges:?}");
+
+        // 两端都在 → 正常出边，且不重复造节点
+        let results = vec![
+            node("kn_a", "订单状态机"),
+            node("kn_b", "订单超时补偿"),
+            edge("kr_1", "kn_a", "kn_b"),
+        ];
+        let (nodes, edges) = build_graph_from_results(&results);
+        assert_eq!(nodes.len(), 2, "端点已是实体节点，不该再造占位: {nodes:?}");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].source, "kn_a");
+        assert_eq!(edges[0].target, "kn_b");
+        assert_eq!(edges[0].weight, Some(0.8));
+    }
+
+    /// 「未命名节点」只兜底「实体节点字段全空」，不是端点占位的产物。
+    #[test]
+    fn empty_entity_falls_back_to_unnamed_label() {
+        let mut blank = node("kn_z", "");
+        blank.name = None;
+        blank.content = String::new();
+        let (nodes, _) = build_graph_from_results(&[blank]);
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].label, "未命名节点");
     }
 }

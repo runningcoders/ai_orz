@@ -139,6 +139,9 @@ pub trait RuntimeMemory: Send + Sync {
     async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()>;
 
     /// 知识图谱遍历
+    ///
+    /// 蜂巢语义：知识与关系是全体 Agent 共享资产，遍历不施加归属门槛；
+    /// 种子节点（调用方点名的中心节点）**恒出现在结果里**。
     async fn traverse_graph(
         &self,
         ctx: RequestContext,

@@ -161,24 +161,20 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
 
 /// MemoryQuery → VectorFilter 白名单转译（转译下沉 DAO：哪些字段能下推只有本 DAO 知道）
 ///
-/// 白名单：agent_id / include_shared（OR is_published 可见性）/ task_id / node_type。
+/// 白名单：agent_id（**显式归属筛选**）/ task_id / node_type。
 /// 未覆盖字段（status / exclude_status / tags / keyword / ids / limit / order）由回业务表过滤兜底。
+///
+/// ⚠️ 知识节点的可见性**不在这里收窄**：蜂巢模式下所有 Agent 共享全部知识节点，
+/// 向量检索同样不能被归属门槛挡住（否则「全局 = 只看 published」会让语义检索大面积漏召回）。
+/// `agent_id` 只在调用方明确要求「只看某个 Agent 的记忆」时才下推，空串与 `None` 同义。
 pub(crate) fn translate_filters(query: &MemoryQuery) -> Option<VectorFilter> {
     let mut conditions: Vec<VectorFilter> = Vec::new();
 
-    if let Some(agent_id) = &query.agent_id {
-        if query.include_shared {
-            // 共享可见性：自己的节点 OR 已发布节点
-            conditions.push(VectorFilter::Any(vec![
-                VectorFilter::Eq(VectorField::AgentId, FilterValue::Str(agent_id.clone())),
-                VectorFilter::Eq(VectorField::IsPublished, FilterValue::Bool(true)),
-            ]));
-        } else {
-            conditions.push(VectorFilter::Eq(
-                VectorField::AgentId,
-                FilterValue::Str(agent_id.clone()),
-            ));
-        }
+    if let Some(agent_id) = query.agent_id.clone().filter(|s| !s.is_empty()) {
+        conditions.push(VectorFilter::Eq(
+            VectorField::AgentId,
+            FilterValue::Str(agent_id),
+        ));
     }
     if let Some(task_id) = &query.task_id {
         conditions.push(VectorFilter::Eq(
@@ -218,20 +214,35 @@ mod translate_tests {
         );
     }
 
+    /// 空串与 `None` 同义：都表示「不筛选归属」（蜂巢全域）。
+    /// 若把空串当值下推，向量检索会变成 `agent_id = ''` → 恒空，直接漏召回。
     #[test]
-    fn test_translate_include_shared_or() {
+    fn test_translate_empty_agent_means_global() {
+        for agent in [None, Some(String::new())] {
+            let q = MemoryQuery {
+                agent_id: agent.clone(),
+                ..Default::default()
+            };
+            assert!(
+                translate_filters(&q).is_none(),
+                "空归属不该下推任何谓词: {agent:?}"
+            );
+        }
+    }
+
+    /// 归属筛选是**纯 Eq**，不再叠加 `is_published` 的 OR 分支：
+    /// 知识节点蜂巢共享，published 只是重要性标记，不是可见性门槛。
+    #[test]
+    fn test_translate_agent_is_plain_eq_without_published_or() {
         let q = MemoryQuery {
             agent_id: Some("agent-1".into()),
-            include_shared: true,
             ..Default::default()
         };
         let f = translate_filters(&q).unwrap();
         assert_eq!(
             f,
-            VectorFilter::Any(vec![
-                VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into())),
-                VectorFilter::Eq(VectorField::IsPublished, FilterValue::Bool(true)),
-            ])
+            VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into())),
+            "不应再出现 Any[agent, is_published] 这种共享可见性谓词"
         );
     }
 

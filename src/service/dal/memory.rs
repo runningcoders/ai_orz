@@ -32,6 +32,39 @@ pub enum TraversalStrategy {
     DepthFirst,
 }
 
+impl TraversalStrategy {
+    /// 缺省策略：宽度优先（按跳数逐层展开，层级语义最直观）。
+    pub const DEFAULT: TraversalStrategy = TraversalStrategy::BreadthFirst;
+
+    /// API 侧的合法取值清单（供错误提示列出，让调用方能自我纠正）。
+    pub const ACCEPTED_VALUES: &'static str = "breadth_first, depth_first";
+
+    /// API 字符串 → 枚举；`None` 表示**非法值**。
+    ///
+    /// 与 `MemoryType::parse` 同口径：忽略首尾空白、大小写与下划线，
+    /// 因此 `breadth_first` / `BreadthFirst` 等价。
+    ///
+    /// ⚠️ 非法值必须由调用方报 **400**，**禁止静默降级**成
+    /// [`TraversalStrategy::BreadthFirst`]：遍历策略决定节点集与边集的形状，
+    /// 静默换策略会让调用方拿到一张结构对不上的图，却看不出参数写错了。
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().replace('_', "").to_ascii_lowercase().as_str() {
+            "breadthfirst" => Some(TraversalStrategy::BreadthFirst),
+            "depthfirst" => Some(TraversalStrategy::DepthFirst),
+            _ => None,
+        }
+    }
+}
+
+// ⚠️ 历史注记：这里曾经有一个 `TraverseScope { agent_id, include_shared }` 可见性作用域，已删除。
+// 原因是**知识节点是蜂巢共享资产**：任何 Agent 都能看到全部知识节点，遍历侧不存在
+// 「归属门槛」这个概念，也就不需要一个「由谁传进来的作用域」。
+//
+// 历史教训（写下来防止回退）：可见性过滤曾经用 `ctx.agent_id()` 兜底，而 HTTP 场景
+// （前端图谱页）的 ctx 里**没有** Agent 身份，取到空串会把目标 Agent 的私有节点全部滤掉、
+// 边却不受同一约束 → 「只剩边、节点全丢」→ 前端只能把端点画成「未命名节点」。
+// 现在归属只作为**显式筛选**（`MemoryQuery::agent_id`，空串 = 不过滤）存在，不再有隐式门槛。
+
 /// 遍历过程中的可变状态包：把 3 个 &mut 累积器打包成单个 struct，
 /// 用于 `traverse_bfs` / `traverse_dfs` 内部方法的参数瘦身。
 struct TraverseState<'a> {
@@ -82,6 +115,9 @@ pub trait MemoryDal: Send + Sync {
     /// - query_vector 存在 → 走向量语义搜索
     /// - 两者都有 → 混合搜索，合并结果
     /// - memory_type 过滤 → 只搜索指定类型
+    ///
+    /// ⚠️ 结果里的关系边保证**两端节点同在结果内**（见 `drop_dangling_relations`）：
+    /// 关系搜索会带出命中节点的全部入/出边，其中「远端没命中」的边没有意义，一律丢弃。
     async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>>;
 
     /// 📋 通用关系型查询（纯数据库查询，无向量）
@@ -96,8 +132,10 @@ pub trait MemoryDal: Send + Sync {
     ///
     /// # 参数
     /// - ctx: 请求上下文
-    /// - agent_id: 指定 Agent ID；None 时跨 Agent 全局推荐（仅 published 节点）
+    /// - agent_id: 归属筛选；`None`（或空串）= 蜂巢全域节点都进推荐池
     /// - limit: 返回数量上限，默认 5
+    ///
+    /// 排序：连接度倒序；度数持平时 `is_published`（重要性/影响力）优先。
     async fn recommend_seed_nodes(
         &self,
         ctx: RequestContext,
@@ -129,17 +167,33 @@ pub trait MemoryDal: Send + Sync {
 
     /// 🌐 知识图谱遍历
     ///
-    /// 从种子节点出发，按指定策略遍历知识图谱
+    /// 从种子节点出发，按指定策略遍历知识图谱。
     ///
     /// # 参数
     /// - ctx: 请求上下文
-    /// - seed_node_ids: 种子节点 ID 列表
-    /// - max_depth: 最大遍历深度（0=不遍历，直接返回种子节点）
-    /// - max_breadth: 每层最大展开数（0=不限制）
+    /// - seed_node_ids: 种子节点 ID 列表（**必返回**，见下）
+    /// - max_depth: 最大遍历深度（0 = 不展开，只返回种子节点）
+    /// - max_breadth: 每个节点最多展开的出边数（0=不限制）
     /// - strategy: 遍历策略
     ///
-    /// # 返回
-    /// - 遍历到的所有 Memory（KnowledgeNode 和 Relation）
+    /// # 层级语义（**节点维度**）
+    /// - 第 0 层 = 种子节点；每沿一条边走到一个新节点 = +1 层
+    /// - `max_depth = N` ⇒ 节点集 = 与任一种子相距 ≤ N 跳的节点；
+    ///   `N = 0` ⇒ 只有种子节点，不返回任何边（不展开）
+    /// - `max_breadth` = **每个节点**最多展开的出边数（不是节点数）
+    ///
+    /// # 不变量一：种子恒返回
+    /// 种子是调用方**点名**要的节点（前端点击展开的中心节点、关键词命中的起点），
+    /// 无论它归属哪个 Agent 都必须出现在结果里 —— 中心节点缺席，整张展开图就没意义了。
+    /// 因此取种子时不施加任何归属筛选（仅受软删除 `status` 约束）。
+    ///
+    /// # 不变量二：蜂巢可见性，遍历不过滤归属
+    /// 知识节点是全体 Agent 共享的资产（`published` 只是「重要性/影响力」标记，
+    /// 不是可见性控制位），遍历出来的邻居不因归属被丢弃。
+    ///
+    /// # 不变量三：边只随两端节点一起返回
+    /// 见 `drop_dangling_relations`：端点不在批内的边一律丢弃（层级是节点维度的概念，
+    /// 边不是层级实体，孤立在批外的边没有意义）。
     async fn traverse_knowledge_graph(
         &self,
         ctx: RequestContext,
@@ -219,8 +273,15 @@ impl MemoryDal for MemoryDalImpl {
 
         // 1. 搜索短期记忆
         if memory_type == MemoryType::All || memory_type == MemoryType::ShortTerm {
+            // 短期记忆按**归属**隔离：调用方没给作用域时回退到「请求上下文里自己的 Agent」，
+            // 这样 Agent 的检索天然只看到自己的便签。
+            // ⚠️ 知识节点**不做**这个回退：它是蜂巢共享资产，回退会让 Agent 只搜到自己的节点。
+            // ⚠️ 上下文里也没有归属时（人类在前端浏览），这里保持**不过滤**的既有行为，
+            // 不在本次改动里收紧 —— 见 `private_agent_scope` 的说明。
+            let mut short_term_search = search.clone();
+            short_term_search.filters = private_agent_scope(&ctx, search.filters.clone());
             let short_term_results = self
-                .search_short_term_internal(ctx.clone(), search.clone())
+                .search_short_term_internal(ctx.clone(), short_term_search)
                 .await?;
             results.extend(short_term_results);
         }
@@ -242,6 +303,12 @@ impl MemoryDal for MemoryDalImpl {
                 .await?;
             results.extend(relation_results);
         }
+
+        // 3.5 图批次不变式：边必须两端节点同在批内。
+        // `search_relations_internal` 会把命中节点的全部入/出边一并带出，
+        // 其中「远端节点没命中」的边必须在这里丢掉，否则前端只能把远端画成
+        // 「未命名节点」、LLM 拿到「A → ?」的半条信息。
+        drop_dangling_relations(&mut results);
 
         // 4. 统一排序：Hybrid 优先 → Vector 次之 → Keyword/None 最后
         //    组内排序：Hybrid/Vector 按向量距离升序，Keyword 按 fts_rank 升序（BM25 越小越相关）
@@ -306,10 +373,13 @@ impl MemoryDal for MemoryDalImpl {
         let mut results: Vec<Memory> = Vec::new();
 
         // 1. 查询短期记忆（用 DAO 的通用 query
+        //    短期记忆按归属隔离：作用域缺省时回退 ctx 自己的 Agent（Agent 调用天然只看自己）；
+        //    ctx 里也没有归属时（人类浏览全局页面）保持**不过滤**的既有行为。
+        //    知识节点的蜂巢共享**不**延伸到短期记忆。
         if memory_type == MemoryType::All || memory_type == MemoryType::ShortTerm {
             let pos = self
                 .memory_dao
-                .query_short_term(ctx.clone(), query.clone())
+                .query_short_term(ctx.clone(), private_agent_scope(&ctx, query.clone()))
                 .await?;
             results.extend(pos.into_iter().map(|po| Memory {
                 po: MemoryPo::ShortTerm(po),
@@ -347,14 +417,17 @@ impl MemoryDal for MemoryDalImpl {
         use crate::service::dao::memory::MemoryQuery;
         use common::enums::{MemoryStatus, MemoryType};
 
-        // 1. 拉取知识节点（agent_id 为空时走全局 published 路径）
+        // 1. 拉取知识节点
+        //
+        // ⚠️ 蜂巢语义：不选 Agent 时（`agent_id = None`）池子是**全部** Agent 的知识节点，
+        // 不再是「只挑 published」。`published` 降级为「重要性/影响力」信号，只在
+        // 连接度持平时作为决胜项（见下方排序），不再决定可见性/入池资格。
         let query = MemoryQuery {
             memory_type: Some(MemoryType::KnowledgeNode),
-            agent_id: agent_id.clone(),
+            agent_id: agent_id.clone().filter(|s| !s.is_empty()),
             status: Some(MemoryStatus::Active),
             exclude_status: Some(MemoryStatus::Forgotten),
-            limit: Some(500),     // 上限保护，避免节点过多拖慢统计
-            include_shared: true, // 全局推荐时包含 published 节点
+            limit: Some(500), // 上限保护，避免节点过多拖慢统计
             ..Default::default()
         };
         let nodes = self
@@ -380,7 +453,8 @@ impl MemoryDal for MemoryDalImpl {
             degree_map.entry(rel.target_node_id.clone()).or_default().0 += 1;
         }
 
-        // 4. 组装推荐列表并按度数倒序
+        // 4. 组装推荐列表：连接度倒序；度数持平用 `is_published`（重要性/影响力）决胜
+        //    —— 这是该标记在新语义下唯一的用途：不是门槛，只是「同等连接度时更值得当起点」。
         let mut recommendations: Vec<SeedNodeRecommendation> = nodes
             .into_iter()
             .map(|node| {
@@ -393,7 +467,12 @@ impl MemoryDal for MemoryDalImpl {
                 }
             })
             .collect();
-        recommendations.sort_by_key(|r| std::cmp::Reverse(r.degree));
+        recommendations.sort_by_key(|r| {
+            (
+                std::cmp::Reverse(r.degree),
+                std::cmp::Reverse(r.node.is_published),
+            )
+        });
 
         // 5. 截断到 limit
         recommendations.truncate(limit);
@@ -563,13 +642,14 @@ impl MemoryDal for MemoryDalImpl {
         let mut visited_relations: HashSet<String> = HashSet::new();
         let mut result_relations: Vec<KnowledgeNodeRelationPo> = Vec::new();
 
+        // 不变量一：种子是被点名的节点，先无条件放入（取回时不施加归属筛选）
         for id in seed_node_ids {
             visited_nodes.insert(id.clone());
         }
 
         if max_depth <= 0 {
             let nodes = self.fetch_nodes_by_ids(ctx.clone(), &visited_nodes).await?;
-            return Ok(self.build_memories(nodes, result_relations));
+            return Ok(self.build_graph_memories(nodes, result_relations));
         }
 
         match strategy {
@@ -604,7 +684,7 @@ impl MemoryDal for MemoryDalImpl {
         }
 
         let nodes = self.fetch_nodes_by_ids(ctx.clone(), &visited_nodes).await?;
-        Ok(self.build_memories(nodes, result_relations))
+        Ok(self.build_graph_memories(nodes, result_relations))
     }
 
     async fn mark_short_term_settled(
@@ -882,6 +962,59 @@ impl MemoryDal for MemoryDalImpl {
 
 // ==================== Internal Helper Methods ====================
 
+/// 私有资产（短期记忆）的作用域补全：调用方没显式给归属时，回退到「本次请求自己的 Agent」。
+///
+/// 为什么只有私有资产能回退、知识节点不能：
+/// - 短期记忆是 Agent 的工作便签，天然属于请求发起者。Agent 调 `search_memory` 时 ctx 里有
+///   自己的 Agent 身份 → 自动收窄成「只看自己的便签」，与改动前行为一致。
+/// - 知识节点是**蜂巢共享**资产。若也回退 ctx，Agent 调 `search_memory` 时会静默收窄成
+///   「只看自己沉淀的节点」，与「知识不重复不遗漏」的蜂巢语义正好相反。
+///
+/// ⚠️ 回退后仍为空（人类在前端浏览，ctx 里没有 Agent 身份）时**保持不过滤**——这是本次
+/// 改动之前就有的行为（`Some("")` 被 DAO 当作「不筛选」），刻意不在这次一起收紧：
+/// 收紧会让「记忆搜索」页在不选 Agent 时查不到任何短期记忆，属于另一条独立的产品决策。
+fn private_agent_scope(ctx: &RequestContext, mut query: MemoryQuery) -> MemoryQuery {
+    if query.agent_id.is_none() {
+        query.agent_id = ctx.agent_id().cloned().filter(|s| !s.is_empty());
+    }
+    query
+}
+
+/// 丢弃**端点缺失**的关系边 —— 「节点 + 边」批次的全局不变式。
+///
+/// ⚠️ 层级（`traversal_depth`）是**节点维度**的概念：第 0 层是种子节点，沿一条边走到
+/// 新节点算 +1 层。**边不是层级实体**，它只是连接两个「已经在本批结果里的节点」的线；
+/// 端点不在批内的边没有意义：
+/// - 前端只能把缺失端点画成「未命名节点」（没有名称、没有正文、hover 没内容的一屏卡片）；
+/// - LLM 拿到的也只是「A → ?」的半条信息。
+///
+/// 因此**任何**「节点 + 边同批返回」的路径（`search` / `traverse_knowledge_graph`）都要
+/// 过这道闸：宁可少一条边，也不返回半条。前端 `build_graph_from_results` 是同一不变式的
+/// 第二道防线（它同样不画端点缺失的边，且**不再**为缺失端点造占位节点）。
+fn drop_dangling_relations(memories: &mut Vec<Memory>) {
+    if !memories
+        .iter()
+        .any(|m| matches!(m.po, MemoryPo::Relation(_)))
+    {
+        return;
+    }
+    // 先收集端点集合再 retain：否则端点集合的借用会与 retain 的可变借用打架
+    let node_ids: HashSet<String> = memories
+        .iter()
+        .filter_map(|m| match &m.po {
+            MemoryPo::KnowledgeNode(n) => Some(n.id.clone()),
+            MemoryPo::ShortTerm(s) => Some(s.id.clone()),
+            _ => None,
+        })
+        .collect();
+    memories.retain(|m| match &m.po {
+        MemoryPo::Relation(r) => {
+            node_ids.contains(&r.source_node_id) && node_ids.contains(&r.target_node_id)
+        }
+        _ => true,
+    });
+}
+
 impl MemoryDalImpl {
     async fn traverse_bfs(
         &self,
@@ -1075,6 +1208,13 @@ impl MemoryDalImpl {
         Ok(())
     }
 
+    /// 按 ID 批量取回知识节点（遍历用）。
+    ///
+    /// ⚠️ **不施加归属筛选** —— 这是「种子恒返回 + 蜂巢可见性」两条不变量的落点：
+    /// - 种子是调用方点名的节点，无论归属哪个 Agent 都必须取回（否则点击展开缺中心节点）；
+    /// - 邻居也是共享知识，不因归属被丢弃。
+    ///
+    /// 仍然受软删除约束：DAO 默认排除 `status = Forgotten`（遗忘的节点不该再出现在图上）。
     async fn fetch_nodes_by_ids(
         &self,
         ctx: RequestContext,
@@ -1083,7 +1223,6 @@ impl MemoryDalImpl {
         if node_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let agent_id = ctx.agent_id().cloned().unwrap_or_default();
         let ids: Vec<String> = node_ids.iter().cloned().collect();
         // 分块：SQLite 绑定参数上限 999，遍历的 visited 集合可能很大
         let mut nodes: Vec<LongTermKnowledgeNodePo> = Vec::with_capacity(ids.len());
@@ -1098,14 +1237,7 @@ impl MemoryDalImpl {
                     .await?,
             );
         }
-        // 共享可见性过滤：只保留自己的节点或 published 节点
-        // 防止 traverse_graph 通过 id 跨 Agent 遍历私有节点
-        // 使用冗余字段 is_published 替代 tags.contains("\"published\"")，避免字符串扫描
-        let visible_nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|n| n.agent_id == agent_id || n.is_published)
-            .collect();
-        Ok(visible_nodes)
+        Ok(nodes)
     }
 
     fn build_memories(
@@ -1126,6 +1258,20 @@ impl MemoryDalImpl {
                 search_match: None,
             });
         }
+        memories
+    }
+
+    /// 组装图谱批次（遍历路径），保证**边随其两端节点一起返回**。
+    ///
+    /// 走的是与 `search` 路径同一道闸 `drop_dangling_relations`：端点没通过可见性过滤
+    /// （或没被遍历到）时整条边丢弃，绝不让半条边进入结果。
+    fn build_graph_memories(
+        &self,
+        nodes: Vec<LongTermKnowledgeNodePo>,
+        relations: Vec<KnowledgeNodeRelationPo>,
+    ) -> Vec<Memory> {
+        let mut memories = self.build_memories(nodes, relations);
+        drop_dangling_relations(&mut memories);
         memories
     }
 
@@ -1443,6 +1589,9 @@ impl MemoryDalImpl {
     ///
     /// 关系表无独立 FTS 索引，因此先搜索匹配的知识节点，
     /// 再查询这些节点关联的所有关系（出入边），一并返回。
+    ///
+    /// ⚠️ 这里必然会带出「远端节点没命中」的边，**不在这里过滤**：
+    /// 由调用方 `search` 统一过 `drop_dangling_relations`（图批次不变式）。
     async fn search_relations_internal(
         &self,
         ctx: RequestContext,

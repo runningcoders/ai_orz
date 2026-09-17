@@ -8,7 +8,7 @@ use crate::models::memory::{
     ShortTermMemoryIndexPo,
 };
 use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
-use common::enums::{KnowledgeRelationType, MemoryRole, MemoryStatus};
+use common::enums::{MemoryRole, MemoryStatus};
 use sqlx::{Row, SqlitePool};
 
 #[sqlx::test]
@@ -133,7 +133,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
         id: "rel-1".to_string(),
         source_node_id: "node-1".to_string(),
         target_node_id: "node-2".to_string(),
-        relation_type: KnowledgeRelationType::Related,
+        relation_type: "related".to_string(),
         weight: Some(0.75),
         created_at: 0,
         updated_at: 0,
@@ -674,7 +674,7 @@ async fn test_knowledge_relations(pool: SqlitePool) {
         id: "rel-rel-1-2".to_string(),
         source_node_id: "rel-1".to_string(),
         target_node_id: "rel-2".to_string(),
-        relation_type: KnowledgeRelationType::Related,
+        relation_type: "related".to_string(),
         weight: None,
         created_at: now,
         updated_at: now,
@@ -1363,7 +1363,7 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
             id: "chunk-rel-early".to_string(),
             source_node_id: ids[100].clone(),
             target_node_id: ids[200].clone(),
-            relation_type: KnowledgeRelationType::Related,
+            relation_type: "related".to_string(),
             weight: None,
             created_at: now,
             updated_at: now,
@@ -1378,7 +1378,7 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
             id: "chunk-rel-cross".to_string(),
             source_node_id: ids[0].clone(),
             target_node_id: ids[500].clone(),
-            relation_type: KnowledgeRelationType::Related,
+            relation_type: "related".to_string(),
             weight: None,
             created_at: now + 10,
             updated_at: now + 10,
@@ -1486,4 +1486,110 @@ fn sort_order_to_sql_is_stable() {
     );
     // 默认值必须是最近优先，保持历史行为不变
     assert_eq!(MemorySortOrder::default(), MemorySortOrder::RecentFirst);
+}
+
+/// 关系类型**原文**必须原样往返：词表外的标注不能被归一化成 `custom`。
+///
+/// 回归：写入路径曾做 `KnowledgeRelationType::from()`，词表外的值（如「实现」）
+/// 会被塌成 `Custom` 落库 —— 图谱上只剩「自定义」，写入方明确的语义永久丢失。
+#[sqlx::test]
+async fn relation_type_round_trips_verbatim(pool: SqlitePool) {
+    crate::config::init().unwrap();
+    let dao = MemoryDaoSqliteImpl::new();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
+
+    let now = chrono::Utc::now().timestamp();
+    let nodes = vec![
+        LongTermKnowledgeNodePo {
+            id: "rt-a".to_string(),
+            agent_id: "test-agent".to_string(),
+            node_name: "节点A".to_string(),
+            node_description: "节点A描述".to_string(),
+            node_type: "concept".to_string(),
+            summary: "节点A摘要".to_string(),
+            tags: "[]".to_string(),
+            status: MemoryStatus::Active,
+            is_published: false,
+            created_at: now,
+            updated_at: now,
+        },
+        LongTermKnowledgeNodePo {
+            id: "rt-b".to_string(),
+            agent_id: "test-agent".to_string(),
+            node_name: "节点B".to_string(),
+            node_description: "节点B描述".to_string(),
+            node_type: "concept".to_string(),
+            summary: "节点B摘要".to_string(),
+            tags: "[]".to_string(),
+            status: MemoryStatus::Active,
+            is_published: false,
+            created_at: now,
+            updated_at: now,
+        },
+    ];
+    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes)
+        .await
+        .unwrap();
+
+    // 词表外的标注：必须逐字落库
+    dao.add_knowledge_relation(
+        ctx.clone(),
+        &KnowledgeNodeRelationPo {
+            id: "rt-rel-custom-text".to_string(),
+            source_node_id: "rt-a".to_string(),
+            target_node_id: "rt-b".to_string(),
+            relation_type: "实现".to_string(),
+            weight: None,
+            created_at: now,
+            updated_at: now,
+        },
+    )
+    .await
+    .unwrap();
+
+    let stored = dao
+        .list_outgoing_relations(ctx.clone(), "rt-a")
+        .await
+        .unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(
+        stored[0].relation_type, "实现",
+        "词表外的关系原文必须原样落库，不能被塌成 custom"
+    );
+
+    // 按原文过滤能命中（比的是原文，不是枚举归类）
+    let by_raw = dao
+        .find_relations_by_type(ctx.clone(), "rt-a", "实现")
+        .await
+        .unwrap();
+    assert_eq!(by_raw.len(), 1, "按原文查询应命中");
+    let by_guessed = dao
+        .find_relations_by_type(ctx.clone(), "rt-a", "custom")
+        .await
+        .unwrap();
+    assert!(by_guessed.is_empty(), "不能把它当成 custom 存下来");
+
+    // 规范词同样原样保存（不做 Display 重写）
+    dao.add_knowledge_relation(
+        ctx.clone(),
+        &KnowledgeNodeRelationPo {
+            id: "rt-rel-depends".to_string(),
+            source_node_id: "rt-a".to_string(),
+            target_node_id: "rt-b".to_string(),
+            relation_type: "depends".to_string(),
+            weight: None,
+            created_at: now,
+            updated_at: now,
+        },
+    )
+    .await
+    .unwrap();
+
+    let all = dao
+        .list_outgoing_relations(ctx.clone(), "rt-a")
+        .await
+        .unwrap();
+    let kinds: Vec<&str> = all.iter().map(|r| r.relation_type.as_str()).collect();
+    assert!(kinds.contains(&"实现"));
+    assert!(kinds.contains(&"depends"));
 }

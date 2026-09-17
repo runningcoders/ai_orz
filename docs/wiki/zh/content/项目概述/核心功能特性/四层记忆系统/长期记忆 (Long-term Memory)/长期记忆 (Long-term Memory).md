@@ -93,7 +93,7 @@ O1 --> S2
 ## 核心组件
 - 模型与枚举
   - 短期记忆索引 PO、长期知识节点 PO、知识节点关系 PO、引用 PO、Memory 业务实体。
-  - 记忆状态（Active/Settled/Forgotten）、角色（System/User/Assistant/Summary）、关系类型（related/contains/depends/prerequisite/followup/similar/opposite/causes/instance_of/category_of/attribute_of/value_of/custom）。
+  - 记忆状态（Active/Settled/Forgotten）、角色（System/User/Assistant/Summary）、关系类型展示词表（related/contains/depends/prerequisite/followup/similar/opposite/causes/instance_of/category_of/attribute_of/value_of/custom —— **落库存原文，词表只做展示映射**）。
 - DAL 能力
   - 统一混合搜索（关键词 + 向量），通用查询，推荐种子节点，创建/更新/删除，知识图谱遍历（BFS/DFS），短期记忆沉淀为长期知识，向量索引重建。
 - Domain 门面
@@ -155,12 +155,13 @@ H-->>U : 响应
 - 节点类型
   - 短期记忆索引：用于聚合原始 trace，支持向量化与全文检索。
   - 长期知识节点：经过归纳总结的知识单元，支持 tags 与 published 标签，支持 FTS5 全文索引。
-  - 关系：源节点、目标节点与关系类型，独立表便于查询与维护。
+  - 关系：源节点、目标节点、关系类型（**原文**）与强度，独立表便于查询与维护。
   - 引用：记录知识节点对原始短期记忆的引用及位置信息，可追溯。
 - 关系类型
-  - related/contains/contained_by/depends/depended_by/prerequisite/followup/similar/opposite/causes/caused_by/instance_of/category_of/attribute_of/value_of/custom。
+  - 落库保存**写入方标注的原文**，不做归一化；映射只发生在展示期：命中词表 → 中文短标签，未命中 → 原样透出（**绝不**替换成「自定义」）。
+  - 词表（只影响展示）：related/contains/contained_by/depends/depended_by/prerequisite/followup/similar/opposite/causes/caused_by/instance_of/category_of/attribute_of/value_of/custom。
 - 图谱结构
-  - 以知识节点为顶点、关系为边，支持 BFS/DFS 遍历，支持按 agent_id/tags/status 过滤，支持 published 共享可见性。
+  - 以知识节点为顶点、关系为边，支持 BFS/DFS 遍历，支持按 agent_id/tags/status 过滤；知识节点蜂巢共享（全体 Agent 可见），`published` 只是重要性标记。
 
 ```mermaid
 classDiagram
@@ -227,9 +228,9 @@ KnowledgeReferencePo <.. Memory : "引用"
 ### 知识节点创建流程（AI 沉淀）
 - 触发方式
   - 直接调用 save_long_term_memory 创建节点与关系。
-  - 调用 settle_memory 进入沉淀模式，由 Agent 在 Resting 状态下自主完成归纳、建节点、建关系、加 published 标签、标记短期记忆为 Settled。
+  - 调用 settle_memory 进入沉淀模式，由 Agent 在 Resting 状态下自主完成归纳、建节点、建关系、给高价值节点加 published 标记、标记短期记忆为 Settled。
 - 沉淀约束
-  - 内循环只使用记忆工具，不发送消息；先检索再创建，优先更新旧节点；关系方向精确；及时纠错与拆分大节点；published 谨慎开放。
+  - 内循环只使用记忆工具，不发送消息；先检索再创建，优先更新旧节点；关系方向精确；及时纠错与拆分大节点；published 只标给值得他人优先参考的通用知识（它不控制可见性）。
 - 自动沉淀路径
   - DAL 的 settle_short_term_to_long_term：查询 Active 短期记忆 → 创建知识节点 → 标记为 Settled。
 
@@ -303,43 +304,51 @@ H-->>A : 响应
 - [memory.rs:96-182](common/src/enums/memory.rs#L96-L182)
 - [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
 
-### 发布机制（蜂巢共享、权限控制、版本管理）
-- 共享与权限
-  - 知识节点通过 tags 中的 "published" 标记表示可共享；is_published 冗余字段加速查询。
-  - 查询他人记忆时强制只返回 published 节点；查询自己时可包含 published 共享节点。
-  - 搜索时默认 include_shared=true（KnowledgeNode/All），短期记忆私有不可共享。
+### 发布机制（蜂巢共享、归属筛选与重要性标记）
+
+- **蜂巢共享（2026-09-17 拍板）**：知识节点是**全体 Agent 共享资产**，任何 Agent 都能读到全部知识节点（"知识不重复不遗漏"）。可见性**不再**由 `published` 决定。
+- **`published` = 重要性 / 影响力标记**：`tags` 含 `published` 时冗余字段 `is_published` 置位；唯一用途是 `recommend_seed_nodes` 在连接度持平时作决胜项，**不改变可见性、不进业务标签**。
+- **归属（`agent_id`）是显式筛选，不是权限门槛**：
+  - handler **只认调用方显式传入**的 `agent_id`，**不**回退 `ctx.agent_id()`（否则 Agent 调 `search_memory` 会被静默限成"只看自己"）；空串与 `None` 同义。
+  - **短期记忆按归属隔离**，反向处理：作用域缺省时由 DAL 回退 `ctx.agent_id()`（`private_agent_scope`），Agent 调用天然只看自己的便签；ctx 里也没有归属（人类浏览全局页面）时保持**不过滤**的既有行为。
+- **图谱遍历不变式**：①**种子恒返回**（点击展开的中心节点/关键词命中的起点必在结果里，`traversal_depth=0` 也只看种子）；②**边只随其两端节点一起返回**（DAL 单点闸 `drop_dangling_relations`）；③**层级是节点维度**（第 0 层 = 种子，`depth=N` ⇒ ≤N 跳的节点）。
+- 迁移历史：`include_shared` 与 `TraverseScope` 已随该语义变更删除；`is_published` 冗余列保留（走索引排序用）。
 - 版本管理
   - 当前批次不新增独立 version 字段，通过 name/description/tags 表达版本；必要时后续可扩展。
 
 ```mermaid
 flowchart TD
-QStart["查询开始"] --> Who{"查询谁的记忆?"}
-Who -- 自己 --> IncludeShared["include_shared=true"]
-Who -- 他人 --> ForcePublished["强制 tags 包含 'published'"]
-IncludeShared --> QueryExec["执行查询"]
-ForcePublished --> QueryExec
-QueryExec --> Return["返回结果含 published 或自身节点"]
+QStart["查询开始"] --> Kind{"查什么记忆?"}
+Kind -- "知识节点（蜂巢共享）" --> Hive["不过滤归属：全部 Agent 的节点都可见"]
+Kind -- "短期记忆（按归属隔离）" --> Private{"agent_id 明确?"}
+Private -- "显式传入" --> Scoped["只查该 Agent"]
+Private -- "缺省回退 ctx" --> Scoped2["查请求自己的 Agent（Agent 调用天然只看自己）"]
+Private -- "ctx 也没有归属" --> Unfiltered["保持不过滤的既有行为"]
+Hive --> QueryExec["执行查询"]
+Scoped --> QueryExec
+Scoped2 --> QueryExec
+Unfiltered --> QueryExec
+QueryExec --> Return["返回结果（published 只是标记，不参与筛选）"]
 ```
 
 图表来源
-- [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
-- [search_memory.rs:51-53](src/handlers/hr/agent/search_memory.rs#L51-L53)
+- [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
+- [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+- [memory.rs（DAL：private_agent_scope / drop_dangling_relations）](src/service/dal/memory.rs)
 - [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
-- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 章节来源
-- [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
-- [search_memory.rs:51-53](src/handlers/hr/agent/search_memory.rs#L51-L53)
-- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
-- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
+- [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
+- [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+- [memory.rs（DAL）](src/service/dal/memory.rs)
 
 ### 查询 API 使用示例
 - 节点查询
-  - 使用 query_memory 按 agent_id/memory_type/tags/status/task_id 过滤；他人查询仅返回 published。
+  - 使用 query_memory 按 agent_id/memory_type/tags/status/task_id 过滤；`agent_id` 是归属**筛选**（不传 = 蜂巢全域知识都可见），他人查询不再被强制收窄成 published。
 - 关系遍历
-  - 使用 search_memory 的 traversal_depth/breadth/strategy/seed_node_ids 进行图谱遍历，支持 BFS/DFS。
+  - 使用 search_memory 的 traversal_depth/breadth/strategy/seed_node_ids 进行图谱遍历，支持 BFS/DFS；**种子节点恒返回**，边只随两端节点一起返回。
 - 图谱分析
-  - 使用 recommend_seed_nodes 获取 Top N 高连接度节点作为图谱起点；前端可视化展示。
+  - 使用 recommend_seed_nodes 获取 Top N 高连接度节点作为图谱起点（`published` 节点在度数持平时优先）；前端可视化展示。
 
 ```mermaid
 sequenceDiagram
@@ -443,8 +452,8 @@ VDAO --> VS["向量存储"]
   - 更新/重建时若向量化失败，记录 warn 日志并继续主流程；检查 Embedding Provider 配置与可用性。
 - 沉淀异常
   - 检查是否存在未沉淀短期记忆；确认 Agent 状态空闲；查看沉淀 prompt 与工具可用范围。
-- 权限问题
-  - 查询他人记忆时仅返回 published；确认 tags 中是否包含 "published"；校验 include_shared 设置。
+- 可见性问题
+  - 知识节点蜂巢共享、不按归属拦截：若结果比预期少，检查是否**显式**传了 `agent_id`（它会作为归属筛选收窄结果）。`include_shared` 参数已删除，无需再校验。
 - 图谱遍历异常
   - 检查 seed_node_ids 是否为空；调整 traversal_depth/breadth；确认关系存在且方向正确。
 

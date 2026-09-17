@@ -160,8 +160,35 @@ pub enum TaskStatus {
 
 - 无 repr/sqlx 派生
 - 实现 `From<String>` 字符串匹配
+- ⚠️ `KnowledgeRelationType` 是**展示词表**，不是存储类型：`relation_type` 落库存写入方标注的**原文**，`From<String>` 只作归类（未知值落 `Custom`），**禁止用在写入路径** —— 词表外的原文会被塌成 `Custom` 而永久丢失
 
 参考实现：[memory.rs](../common/src/enums/memory.rs)
+
+### 5.2.1 API 字符串入参的解析契约（⚠️ 强制）
+
+只要接口入参是「闭集枚举」的字符串形式（`memory_type` / `status` /
+`traversal_strategy` 这类），必须满足三条：
+
+1. **解析收敛到枚举自带的 `parse()`**（`MemoryType::parse`、`MemoryStatus::parse`、
+   `TraversalStrategy::parse`），返回 `Option<Self>`；handler **不得**就地再写一份
+   `match`（历史上有两份逐字相同的 `parse_memory_status`，改一处必漏一处）。
+2. **非法值报 `invalid_request`（400），错误信息里列出合法取值**。
+   **禁止 `_ => 默认值` 静默兜底** —— 兜底会让「参数写错」伪装成「查到了」：
+   - 查询类：拼错 → 静默变成「查全部」或「只查 active」，响应看起来完全成功；
+   - 写入类（如 `update_memory.status`）：拼错 → 变成一次**静默写入**，把数据改坏还没痕迹；
+   - 策略类（如 `traversal_strategy`）：拼错 → 结果集形状换了一套却不报错。
+3. **配套一个 `ACCEPTED_VALUES: &'static str`**，错误提示直接引用它，
+   并由测试逐项断言「清单里的每个值都能解析」—— 否则清单会与实际解析集合漂移。
+
+归一化口径统一走 `common::enums::memory::normalize_enum_key`
+（去首尾空白 + 抹掉下划线 + 转小写），使 snake_case 与 `Display` 的 PascalCase 等价。
+
+**返回值形态**：响应侧的枚举字段恒为 `String`（前端共用的展示契约）；
+只有**请求侧**出现「闭集字符串 → 枚举」的解析。详见
+[memory_design.md §16.4](memory_design.md)。
+
+参考实现：[memory.rs](../common/src/enums/memory.rs)、
+[search_memory.rs](../src/handlers/hr/agent/search_memory.rs)
 
 ### 5.3 SQL 侧配合
 

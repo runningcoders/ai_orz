@@ -7,7 +7,7 @@ use crate::models::memory::{
 use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
-use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
+use common::enums::{MemoryStatus, MemoryType};
 use common::error::Result;
 
 // ==================== 查询参数结构体 ====================
@@ -50,7 +50,11 @@ impl MemorySortOrder {
 pub struct MemoryQuery {
     /// 按 ID 批量查询（向量搜索的核心过滤）
     pub ids: Option<Vec<String>>,
-    /// 按 Agent ID 过滤
+    /// 按 Agent ID 过滤（**显式归属筛选**：只看该 Agent 沉淀的记忆）
+    ///
+    /// ⚠️ 这是「筛什么」，不是「能看到什么」：知识节点是**蜂巢共享**的，任何 Agent 都
+    /// 能看到全部知识节点。`None` **或空串**都表示不过滤（空串是历史调用方表达
+    /// 「全局」的方式，必须与 `None` 同义，否则 `agent_id = ''` 会恒空）。
     pub agent_id: Option<String>,
     /// 按状态过滤
     pub status: Option<MemoryStatus>,
@@ -73,8 +77,6 @@ pub struct MemoryQuery {
     /// None = 不过滤（默认，取所有任务的最近记忆）
     /// Some(id) = 只取该 task 的记忆
     pub task_id: Option<String>,
-    /// 是否包含其他 Agent 共享的 published 节点（默认 false）
-    pub include_shared: bool,
     /// 新增：按知识节点类型过滤（summary/concept/fact/procedure）
     /// 注意：与 memory_type 不同——memory_type 是记忆大类型，node_type 是知识节点的子类型
     pub node_type: Option<String>,
@@ -516,14 +518,14 @@ pub trait MemoryDao: Send + Sync {
     /// # 参数
     /// - ctx: 请求上下文
     /// - source_id: 源节点 ID
-    /// - relation_type: 关系类型
+    /// - relation_type: 关系类型**原文**（与 `knowledge_node_relation.relation_type` 逐字比对）
     /// # 返回
     /// - 关系列表
     async fn find_relations_by_type(
         &self,
         ctx: RequestContext,
         source_id: &str,
-        relation_type: KnowledgeRelationType,
+        relation_type: &str,
     ) -> Result<Vec<KnowledgeNodeRelationPo>>;
 }
 

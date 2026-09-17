@@ -130,7 +130,7 @@ Handler->>DAL : 同上流程
 - 长期知识（KnowledgeNode）
   - 存储位置：SQLite 表，字段包括 node_name、node_description、node_type、summary、tags、is_published、时间戳
   - 向量化：实现 Vectorizable trait，集合名为 memory:knowledge_node
-  - 发布机制：tags 含 published 时 is_published=true，支持跨 Agent 共享
+  - 共享机制：蜂巢共享——全部知识节点对所有 Agent 可见；tags 含 published 时 is_published=true（**重要性标记**，仅影响推荐起点排序）
 - 关系与引用
   - KnowledgeNodeRelationPo：记录源节点到目标节点的有向关系
   - KnowledgeReferencePo：记录知识节点对原始短期记忆的引用（含 trace_id、日期路径、行号）
@@ -285,7 +285,7 @@ Loop->>State : set_idle()
 - 数据迁移策略
   - 沉淀流程：短期记忆 → 知识节点 + 引用关系 → 标记短期记忆为 Settled
   - 向量索引：短期记忆与知识节点分别维护向量集合，支持独立重建
-  - 发布机制：知识节点 tags 含 published 时 is_published=true，支持跨 Agent 共享
+  - 共享机制：知识节点蜂巢共享（全部 Agent 可见）；tags 含 published 时 is_published=true，作为重要性标记用于推荐起点排序
 
 章节来源
 - [src/models/memory.rs:158-320](src/models/memory.rs#L158-L320)
