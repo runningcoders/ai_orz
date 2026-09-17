@@ -2,12 +2,16 @@
 //!
 //! 基于 CanvasScene 基础设施，实现自定义 CanvasRenderer：
 //! - 深色径向渐变背景 + 淡橙色网格 + 四角 HUD 装饰
-//! - 节点：选中态扫描环 + 旋转刻度环；未选中态呼吸光晕
+//! - 节点：**矩形信息卡**（左侧类型色竖条 + 名称 + 摘要/描述两行 + 标签胶囊），
+//!   取代原先只能塞 10 个字的圆形；ID 不在卡片上出现，只进 hover 详情
 //! - 边：实线边流光（lineDashOffset 动画）+ drop-shadow 发光
-//! - 节点出现动画（首次渲染 scale 0→1）
+//! - 选中态：外扩扫描框 + 旋转虚线框；未选中态：呼吸框
 //!
 //! 与 SVG 版 Graph 组件功能对等，作为高级渲染模式。
 //! SVG 版保留作为兜底方案（节点数少或 canvas 不可用时）。
+//!
+//! ⚠️ 卡片几何（宽高/折行/截断）全部取自 [`crate::components::graph`] 的 SSOT：
+//! 本文件不得自算卡片尺寸，否则与 SVG 版漂移（改了一边另一边文字溢出/命中错位）。
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -22,8 +26,10 @@ use crate::components::canvas_scene::{
     measure_text_width,
 };
 use crate::components::graph::{
-    GraphEdge, GraphNode, dynamic_node_radius, get_edge_color, get_edge_dash, get_node_fill,
-    tag_color, type_label,
+    GraphEdge, GraphNode, NODE_ACCENT_W, NODE_BODY_H, NODE_BODY_MAX_LINES, NODE_BODY_PX,
+    NODE_BOX_PAD, NODE_BOX_R, NODE_BOX_W, NODE_TITLE_H, NODE_TITLE_PX, get_edge_color,
+    get_edge_dash, get_node_fill, node_body_lines, node_box_height, node_hover_lines,
+    node_tag_chips, node_title,
 };
 
 /// 辅助：将 f64 切片转为 JsValue 数组供 set_line_dash 使用
@@ -38,6 +44,12 @@ fn dash_array(values: &[f64]) -> JsValue {
 /// 辅助：设置虚线样式（set_line_dash 返回 Result，统一忽略）
 fn set_dash(ctx: &CanvasRenderingContext2d, values: &[f64]) {
     let _ = ctx.set_line_dash(&dash_array(values));
+}
+
+/// 辅助：圆角矩形路径（卡片本体 / 外扩 HUD 框共用，避免各处手写 round_rect）
+fn round_rect_path(ctx: &CanvasRenderingContext2d, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    ctx.begin_path();
+    let _ = ctx.round_rect_with_f64(x, y, w, h, r);
 }
 
 /// 绘制统一 hover 卡片并做画布内避让：默认锚点右侧垂直居中，
@@ -65,14 +77,6 @@ fn draw_hover_card_anchored(
     draw_hover_card(ctx, bx, by, lines, accent);
 }
 
-/// 节点扩展元数据（canvas 渲染需要但 CanvasNode 未携带的信息）
-#[derive(Clone, Default)]
-pub struct NodeMeta {
-    node_type: String,
-    tags: Vec<String>,
-    summary: Option<String>,
-}
-
 /// HUD 风格知识图谱渲染器
 ///
 /// 持有外部传入的高亮/选中状态和节点/边元数据，
@@ -84,10 +88,9 @@ pub struct KnowledgeGraphRenderer {
     selected: RefCell<Option<String>>,
     /// 边 label 映射：(from_id, to_id) -> relation_type
     edge_labels: RefCell<HashMap<(String, String), String>>,
-    /// 节点扩展元数据：id -> NodeMeta
-    node_meta: RefCell<HashMap<String, NodeMeta>>,
-    /// 已渲染过的节点 ID（用于首次出现动画）
-    appeared: RefCell<HashSet<String>>,
+    /// 节点全量数据：id -> GraphNode（卡片文案 + 几何都从这里取，
+    /// 不再复制一份 NodeMeta —— 复制结构必然与页面侧漂移）
+    node_index: RefCell<HashMap<String, GraphNode>>,
     /// 边 hover 暂存：边卡需在节点绘制完成后置顶补绘（避免被节点遮挡）
     pending_edge_card: RefCell<Option<(String, String)>>,
 }
@@ -98,8 +101,7 @@ impl KnowledgeGraphRenderer {
             highlighted: RefCell::new(HashSet::new()),
             selected: RefCell::new(None),
             edge_labels: RefCell::new(HashMap::new()),
-            node_meta: RefCell::new(HashMap::new()),
-            appeared: RefCell::new(HashSet::new()),
+            node_index: RefCell::new(HashMap::new()),
             pending_edge_card: RefCell::new(None),
         }
     }
@@ -110,17 +112,31 @@ impl KnowledgeGraphRenderer {
         highlighted: HashSet<String>,
         selected: Option<String>,
         edge_labels: HashMap<(String, String), String>,
-        node_meta: HashMap<String, NodeMeta>,
+        node_index: HashMap<String, GraphNode>,
     ) {
         *self.highlighted.borrow_mut() = highlighted;
         *self.selected.borrow_mut() = selected;
         *self.edge_labels.borrow_mut() = edge_labels;
-        *self.node_meta.borrow_mut() = node_meta;
+        *self.node_index.borrow_mut() = node_index;
+    }
+
+    /// 卡片尺寸（含兜底：拿不到节点数据时退化为以 radius 为边长的方块）
+    fn box_size(&self, node: &CanvasNode) -> (f64, f64) {
+        match self.node_index.borrow().get(&node.id) {
+            Some(gn) => (NODE_BOX_W, node_box_height(gn)),
+            None => (node.radius * 2.0, node.radius * 2.0),
+        }
     }
 
     /// 当前时间戳（秒），用于动画
     fn now_secs() -> f64 {
         js_sys::Date::now() / 1000.0
+    }
+}
+
+impl Default for KnowledgeGraphRenderer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -189,14 +205,7 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
 
                     ctx.set_shadow_blur(0.0);
                     ctx.set_fill_style_str("rgba(17, 24, 39, 0.82)");
-                    ctx.begin_path();
-                    let _ = ctx.round_rect_with_f64(
-                        mid_x - label_w / 2.0,
-                        mid_y - 6.0,
-                        label_w,
-                        12.0,
-                        2.0,
-                    );
+                    round_rect_path(ctx, mid_x - label_w / 2.0, mid_y - 6.0, label_w, 12.0, 2.0);
                     ctx.fill();
                     ctx.set_stroke_style_str(color);
                     ctx.set_line_width(1.0);
@@ -229,11 +238,12 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
         *self.pending_edge_card.borrow_mut() = hovered_edge.clone();
     }
 
+    /// 矩形卡片命中检测：圆形时代的「半径圆内」对矩形卡片会漏掉四角、
+    /// 又会在卡片外的空白误命中，必须与绘制几何同源
     fn hit_test(&self, nodes: &[CanvasNode], x: f64, y: f64) -> Option<String> {
         for node in nodes.iter().rev() {
-            let dx = x - node.x;
-            let dy = y - node.y;
-            if dx * dx + dy * dy <= node.radius * node.radius {
+            let (w, h) = self.box_size(node);
+            if (x - node.x).abs() <= w / 2.0 && (y - node.y).abs() <= h / 2.0 {
                 return Some(node.id.clone());
             }
         }
@@ -253,8 +263,7 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
         let external_selected = self.selected.borrow().clone();
         // 外部 selected 优先，否则用 CanvasScene 内部 selected
         let effective_selected = external_selected.or(selected.clone());
-        let node_meta = self.node_meta.borrow();
-        let mut appeared = self.appeared.borrow_mut();
+        let node_index = self.node_index.borrow();
 
         for node in nodes {
             let is_selected = effective_selected.as_deref() == Some(node.id.as_str());
@@ -262,231 +271,171 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
             let is_hovered = hovered.as_deref() == Some(node.id.as_str());
             let is_dragging = dragging.as_deref() == Some(node.id.as_str());
 
-            let meta = node_meta.get(&node.id).cloned().unwrap_or_default();
-            let base_radius = node.radius;
+            let (bw, bh) = self.box_size(node);
+            let bx = node.x - bw / 2.0;
+            let by = node.y - bh / 2.0;
+            let accent = node.color.as_str();
 
-            // 出现动画：首次渲染时 scale 0→1 弹性淡入
-            let is_new = appeared.insert(node.id.clone());
-            let appear_scale = if is_new {
-                // 新节点：刚出现，scale 从 0 开始
-                0.0
-            } else {
-                1.0
-            };
-            // 注：canvas 无法像 SVG 那样用 CSS 动画自动过渡，
-            // 这里用时间戳计算 scale（首次出现后 0.5s 内动画）
-            // 但 appeared 只在首次插入时为 true，后续帧 is_new=false，
-            // 所以无法用 appeared 跟踪动画进度。
-            // 简化：用节点 id hash + now 生成稳定的"出现时间"，但无法得知真实首次时间。
-            // 折中：不做出现动画（canvas 重绘频繁，CSS 动画不适用），保留呼吸/扫描即可。
-            let _ = (is_new, appear_scale);
-
-            let radius = if is_hovered || is_dragging {
-                base_radius * 1.1
-            } else {
-                base_radius
-            };
-
-            // === 选中态：扫描环 + 旋转刻度环 ===
+            // === 选中态：外扩扫描框 + 旋转虚线框（矩形版 HUD 环）===
             if is_selected {
-                // 扫描环波纹（雷达扫描）：向外扩散并淡出
                 let scan_period = 1.8;
                 let scan_t = (now % scan_period) / scan_period;
-                let scan_r = base_radius + 4.0 + scan_t * 18.0;
+                let inflate = 4.0 + scan_t * 14.0;
                 let scan_alpha = 0.9 * (1.0 - scan_t);
                 ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(
-                    &node.color,
-                    scan_alpha,
+                    "#f97316", scan_alpha,
                 ));
                 ctx.set_line_width(2.5);
                 set_dash(ctx, &[]);
-                ctx.begin_path();
-                let _ = ctx.arc(node.x, node.y, scan_r, 0.0, std::f64::consts::TAU);
+                round_rect_path(
+                    ctx,
+                    bx - inflate,
+                    by - inflate,
+                    bw + inflate * 2.0,
+                    bh + inflate * 2.0,
+                    NODE_BOX_R + 4.0,
+                );
                 ctx.stroke();
 
-                // HUD 外环刻度（瞄准镜风格）：旋转的虚线圆 + 四向小刻度
-                let ring_r = base_radius + 8.0;
-                let rotation = (now * 30.0_f64.to_radians()) % std::f64::consts::TAU;
-                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(
-                    &node.color,
-                    0.6,
-                ));
+                // 瞄准镜风格虚线框：dashoffset 随时间滚动
+                let rotation = now * 30.0;
+                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(accent, 0.6));
                 ctx.set_line_width(1.0);
-                set_dash(ctx, &[3.0, 6.0]);
-                ctx.set_line_dash_offset(-rotation * 6.0);
-                ctx.begin_path();
-                let _ = ctx.arc(node.x, node.y, ring_r, 0.0, std::f64::consts::TAU);
+                set_dash(ctx, &[6.0, 4.0]);
+                ctx.set_line_dash_offset(-rotation);
+                round_rect_path(
+                    ctx,
+                    bx - 6.0,
+                    by - 6.0,
+                    bw + 12.0,
+                    bh + 12.0,
+                    NODE_BOX_R + 5.0,
+                );
                 ctx.stroke();
                 set_dash(ctx, &[]);
-
-                // 四向小刻度线
-                ctx.set_line_width(1.5);
-                for i in 0..4 {
-                    let angle = rotation + (i as f64) * std::f64::consts::FRAC_PI_2;
-                    let x1 = node.x + (ring_r - 3.0) * angle.cos();
-                    let y1 = node.y + (ring_r - 3.0) * angle.sin();
-                    let x2 = node.x + (ring_r + 3.0) * angle.cos();
-                    let y2 = node.y + (ring_r + 3.0) * angle.sin();
-                    ctx.begin_path();
-                    ctx.move_to(x1, y1);
-                    ctx.line_to(x2, y2);
-                    ctx.stroke();
-                }
             } else {
-                // === 未选中态：呼吸光晕 ===
+                // === 未选中态：呼吸框 ===
                 let pulse_period = 2.4;
                 let pulse_t = (now % pulse_period) / pulse_period;
                 let phase = (pulse_t * std::f64::consts::TAU).sin();
                 let alpha = 0.55 + phase * 0.18;
                 ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(
-                    &node.color,
-                    alpha,
+                    accent, alpha,
                 ));
                 ctx.set_line_width(2.0);
                 set_dash(ctx, &[]);
-                ctx.begin_path();
-                let _ = ctx.arc(
-                    node.x,
-                    node.y,
-                    base_radius + 2.0,
-                    0.0,
-                    std::f64::consts::TAU,
+                round_rect_path(
+                    ctx,
+                    bx - 3.0,
+                    by - 3.0,
+                    bw + 6.0,
+                    bh + 6.0,
+                    NODE_BOX_R + 3.0,
                 );
                 ctx.stroke();
             }
 
-            // === 多色 tag 边框 arc 段 ===
-            if !meta.tags.is_empty() {
-                let border_r = base_radius + 3.0;
-                let n = meta.tags.len() as f64;
-                for (i, tag) in meta.tags.iter().enumerate() {
-                    let a1 = (i as f64 / n) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
-                    let a2 =
-                        ((i + 1) as f64 / n) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
-                    ctx.set_stroke_style_str(tag_color(tag));
-                    ctx.set_line_width(3.0);
-                    set_dash(ctx, &[]);
-                    ctx.begin_path();
-                    let _ = ctx.arc(node.x, node.y, border_r, a1, a2);
-                    ctx.stroke();
-                }
-            }
-
-            // === 节点主体 ===
-            // 选中/高亮发光
+            // === 卡片主体 ===
             if is_selected {
                 ctx.set_shadow_blur(8.0);
                 ctx.set_shadow_color("#f97316");
-            } else if is_highlighted {
+            } else if is_highlighted || is_hovered || is_dragging {
                 ctx.set_shadow_blur(6.0);
-                ctx.set_shadow_color(&node.color);
+                ctx.set_shadow_color(accent);
             } else {
                 ctx.set_shadow_blur(0.0);
             }
 
-            let opacity = if is_selected || is_highlighted {
+            let opacity = if is_selected || is_highlighted || is_hovered || is_dragging {
                 1.0
             } else {
-                0.85
+                0.92
             };
             ctx.set_global_alpha(opacity);
-            ctx.set_fill_style_str(&node.color);
-            ctx.begin_path();
-            let _ = ctx.arc(node.x, node.y, radius, 0.0, std::f64::consts::TAU);
+            ctx.set_fill_style_str("rgba(17, 24, 39, 0.94)");
+            round_rect_path(ctx, bx, by, bw, bh, NODE_BOX_R);
             ctx.fill();
 
-            // 选中边框
-            if is_selected {
-                ctx.set_shadow_blur(0.0);
-                ctx.set_stroke_style_str("#f97316");
-                ctx.set_line_width(3.0);
-                set_dash(ctx, &[]);
-                ctx.begin_path();
-                let _ = ctx.arc(node.x, node.y, radius, 0.0, std::f64::consts::TAU);
-                ctx.stroke();
+            let border_color = crate::components::hud_palette::hex_to_rgba(accent, 0.75);
+            ctx.set_stroke_style_str(if is_selected {
+                "#f97316"
             } else {
-                ctx.set_stroke_style_str("#ffffff");
-                ctx.set_line_width(2.0);
-                set_dash(ctx, &[]);
-                ctx.begin_path();
-                let _ = ctx.arc(node.x, node.y, radius, 0.0, std::f64::consts::TAU);
-                ctx.stroke();
-            }
+                &border_color
+            });
+            ctx.set_line_width(if is_selected { 3.0 } else { 1.5 });
+            set_dash(ctx, &[]);
+            round_rect_path(ctx, bx, by, bw, bh, NODE_BOX_R);
+            ctx.stroke();
             ctx.set_global_alpha(1.0);
             ctx.set_shadow_blur(0.0);
 
-            // === 节点标签 ===
-            ctx.set_fill_style_str("white");
-            ctx.set_font(if is_hovered {
-                "500 11px sans-serif"
-            } else {
-                "500 10px sans-serif"
-            });
-            ctx.set_text_align("center");
-            ctx.set_text_baseline("middle");
-            let label: String = node.label.chars().take(10).collect();
-            let _ = ctx.fill_text(&label, node.x, node.y);
+            // 左侧类型色竖条（取代圆形的整体填充）
+            ctx.set_fill_style_str(accent);
+            round_rect_path(ctx, bx, by, NODE_ACCENT_W, bh, 2.0);
+            ctx.fill();
 
-            // === 节点下方简介 ===
-            if let Some(summary) = &meta.summary {
-                let s: String = summary.chars().take(14).collect();
+            // === 卡片文案：名称 + 摘要/描述 + 标签 ===
+            let text_x = bx + NODE_ACCENT_W + NODE_BOX_PAD;
+            ctx.set_text_align("left");
+            ctx.set_text_baseline("top");
+
+            let gn = node_index.get(&node.id);
+            let title = match gn {
+                Some(gn) => node_title(gn),
+                None => crate::components::graph::truncate_chars(&node.label, 12),
+            };
+            ctx.set_font(&format!("600 {NODE_TITLE_PX}px sans-serif"));
+            ctx.set_fill_style_str("#f9fafb");
+            let _ = ctx.fill_text(&title, text_x, by + NODE_BOX_PAD);
+
+            if let Some(gn) = gn {
+                ctx.set_font(&format!("{NODE_BODY_PX}px sans-serif"));
                 ctx.set_fill_style_str("#9ca3af");
-                ctx.set_font("8px sans-serif");
-                let _ = ctx.fill_text(&s, node.x, node.y + radius + 11.0);
-            }
+                for (i, line) in node_body_lines(gn).iter().enumerate() {
+                    let _ = ctx.fill_text(
+                        line,
+                        text_x,
+                        by + NODE_BOX_PAD + NODE_TITLE_H + i as f64 * NODE_BODY_H,
+                    );
+                }
 
-            // === 节点上方 tag 标签（带颜色底色）===
-            if !meta.tags.is_empty() {
-                let tag_label_y = node.y - radius - 16.0;
-                ctx.set_font("8px sans-serif");
-                let tag_widths: Vec<(String, f64, &str)> = meta
-                    .tags
-                    .iter()
-                    .map(|t| {
-                        let w: f64 = measure_text_width(ctx, t, 8.0) + 8.0;
-                        (t.clone(), w, tag_color(t))
-                    })
-                    .collect();
-                let total_w: f64 = tag_widths.iter().map(|(_, w, _)| *w).sum::<f64>()
-                    + (tag_widths.len().saturating_sub(1) as f64) * 4.0;
-                let mut tx = node.x - total_w / 2.0;
-                for (tag_text, w, color) in &tag_widths {
-                    ctx.set_fill_style_str(color);
-                    ctx.begin_path();
-                    let _ = ctx.round_rect_with_f64(tx, tag_label_y, *w, 12.0, 6.0);
-                    ctx.fill();
-                    ctx.set_fill_style_str("white");
-                    ctx.set_text_align("center");
-                    ctx.set_text_baseline("middle");
-                    let _ = ctx.fill_text(tag_text, tx + w / 2.0, tag_label_y + 6.0);
-                    tx += w + 4.0;
+                // 标签胶囊（卡片底部一行，最多 3 个 + 聚合计数）
+                let chips = node_tag_chips(gn);
+                if !chips.is_empty() {
+                    ctx.set_font("8px sans-serif");
+                    let tag_y = by
+                        + NODE_BOX_PAD
+                        + NODE_TITLE_H
+                        + NODE_BODY_MAX_LINES as f64 * NODE_BODY_H
+                        + 3.0;
+                    let mut tx = text_x;
+                    for (text, color) in &chips {
+                        let w = measure_text_width(ctx, text, 8.0) + 8.0;
+                        ctx.set_fill_style_str(color);
+                        round_rect_path(ctx, tx, tag_y, w, 12.0, 6.0);
+                        ctx.fill();
+                        ctx.set_fill_style_str("#ffffff");
+                        ctx.set_text_align("center");
+                        let _ = ctx.fill_text(text, tx + w / 2.0, tag_y + 2.5);
+                        ctx.set_text_align("left");
+                        tx += w + 4.0;
+                    }
                 }
             }
         }
 
         // === hover 详情卡片（节点卡与边卡统一结构，绘制在全部节点之上）===
-        // 节点卡：hover 命中且非拖拽中时展示（名称/类型/摘要/标签）
+        // 节点卡：hover 命中且非拖拽中时展示（名称/类型/标签/摘要/描述/ID）
         if let Some(hid) = hovered.as_ref()
             && dragging.as_ref() != Some(hid)
             && let Some(node) = nodes.iter().find(|n| &n.id == hid)
         {
-            let meta = node_meta.get(hid).cloned().unwrap_or_default();
-            let mut lines = vec![
-                format!("名称: {}", node.label),
-                format!("类型: {}", type_label(&meta.node_type)),
-            ];
-            if let Some(summary) = &meta.summary
-                && !summary.is_empty()
-            {
-                lines.push(format!(
-                    "摘要: {}",
-                    summary.chars().take(30).collect::<String>()
-                ));
-            }
-            if !meta.tags.is_empty() {
-                lines.push(format!("标签: {}", meta.tags.join("、")));
-            }
-            draw_hover_card_anchored(ctx, &lines, &node.color, node.x, node.y, node.radius + 14.0);
+            let lines = match node_index.get(hid) {
+                Some(gn) => node_hover_lines(gn),
+                None => vec![format!("ID: {hid}")],
+            };
+            let (bw, _) = self.box_size(node);
+            draw_hover_card_anchored(ctx, &lines, &node.color, node.x, node.y, bw / 2.0 + 12.0);
         }
 
         // 边卡补绘：取 draw_edges_with_state 暂存的 hover 目标（此刻置顶于所有节点）
@@ -543,7 +492,7 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
     // 创建渲染器实例（仅首次渲染时创建，后续通过 sync_state 更新）
     let renderer: Rc<KnowledgeGraphRenderer> = use_hook(|| Rc::new(KnowledgeGraphRenderer::new()));
 
-    // 同步外部状态到渲染器（高亮、选中、边 label、节点元数据）
+    // 同步外部状态到渲染器（高亮、选中、边 label、节点全量数据）
     {
         let highlighted: HashSet<String> = props
             .highlighted_node_ids
@@ -556,21 +505,14 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
         for e in &props.edges {
             edge_labels.insert((e.source.clone(), e.target.clone()), e.label.clone());
         }
-        let mut node_meta: HashMap<String, NodeMeta> = HashMap::new();
+        let mut index: HashMap<String, GraphNode> = HashMap::new();
         for n in &props.nodes {
-            node_meta.insert(
-                n.id.clone(),
-                NodeMeta {
-                    node_type: n.node_type.clone(),
-                    tags: n.tags.clone(),
-                    summary: n.summary.clone(),
-                },
-            );
+            index.insert(n.id.clone(), n.clone());
         }
-        renderer.sync_state(highlighted, selected, edge_labels, node_meta);
-    }
+        renderer.sync_state(highlighted, selected, edge_labels, index);
+    };
 
-    // 转换 GraphNode -> CanvasNode
+    // 转换 GraphNode -> CanvasNode（矩形卡片用 node_index 取几何，radius 仅作兜底）
     let canvas_nodes: Vec<CanvasNode> = props
         .nodes
         .iter()
@@ -578,14 +520,13 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
             id: n.id.clone(),
             x: n.x,
             y: n.y,
-            radius: dynamic_node_radius(n),
+            radius: node_box_height(n) / 2.0,
             label: n.label.clone(),
             color: get_node_fill(&n.node_type).to_string(),
             node_type: Some(n.node_type.clone()),
             layer: None,
         })
         .collect();
-
     // 转换 GraphEdge -> CanvasEdge
     let canvas_edges: Vec<CanvasEdge> = props
         .edges

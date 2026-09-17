@@ -8,6 +8,8 @@ scope:
 source_files:
     - docs/wiki/zh/content/前端应用/页面模块/消息与工作区页面/聊天侧面板/聊天侧面板.md
     - frontend/src/components/chat/chat_side_panel.rs
+    - frontend/src/components/identity_chip.rs
+    - frontend/src/components/avatar_bubble.rs
     - frontend/src/components/charts/line_chart.rs
     - frontend/src/components/hud_palette.rs
     - frontend/src/components/stats.rs
@@ -50,3 +52,18 @@ Agent 统计 Tab 的刷新驱动从"只靠 refresh_tick"升级为"refresh_tick +
 - **独立信号**：chat 页 3s 主轮询循环每 10 拍（30s）递增一次 `stats_poll_tick`（对齐后端 DuckDB 周期落盘节奏），单独成信号以便只命中 Agent 统计 Tab，不牵动项目总览/工具 Tab 的事件驱动语义
 - **静默期不再停摆**：之前 SSE 停了（对话静默期）→ refresh_tick 不再递增 → Agent 统计不再轮询 → Token 消耗面板停在旧数据。stats_poll_tick 独立于 SSE，静默期仍按 30s 周期刷新
 - **`x_axis_time_format` 按桶宽判定配套**：LineChart 单点（只有今日一樽日桶数据）时 X 轴显示真实日期而非 UTC 零点对齐的伪 08:00；多点时按桶宽给日/时/跨天三档标签（详见 Canvas HUD 可视化卡 §4 硬约束第 12 条）
+
+## 后续迭代（2026-09-17：负责人展示改为身份 chip，复用聊天页头像气泡）
+
+侧栏「总览」「任务」两个 Tab 的负责人此前直接渲染 ID（`负责人：0a3f9c21…`）——
+DTO 只带 `owner_agent_id` / `assignee_id`，不带展示名。现抽出
+`IdentityChip`（`frontend/src/components/identity_chip.rs`）：头像 + 展示名，点头像展开
+`AvatarBubble` 信息卡（与聊天页消息气泡**同一实现**，不复制浮层/懒加载/卡片逻辑）。
+
+- 展示名来源 = 全局名称目录 `store::directory`（App 根部预载 Agent + 用户全量）；
+  未命中回退**短 ID**（前 6 后 4），不回退完整 ID
+- `AvatarBubble` 新增 `AvatarSize`（`Md` 40px 默认 / `Sm` 24px）与 `user_subtitle`：
+  尺寸档位同时决定圆盒类名与浮层锚点像素，避免两处漂移；
+  用户卡副标题在聊天气泡是「当前用户」、在侧栏/列表是「组织成员」
+- 归属判定收敛为 `AvatarTone::from(AssigneeType)`（0=用户 / 1=Agent）
+- 同一缺陷一并修掉：任务列表页「负责人」列、任务详情页「分配对象」

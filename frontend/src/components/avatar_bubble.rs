@@ -12,6 +12,9 @@
 //! 包装层上 → 挂在触发层的 `onclick` 永不触发（实测见组件内 `onfocus` 处注释）。
 //! `status` 传入时按 [`avatar_status_ring`] 渲染生命周期警示环（待离职=黄 / 已离职=红）。
 //!
+//! 头像圆盒尺寸由 [`AvatarSize`] 决定（聊天页消息气泡 40px；侧栏/列表里的紧凑身份
+//! chip 24px）—— 圆盒的 Tailwind 类与浮层锚点计算同源于该枚举，改尺寸只改一处。
+//!
 //! ⚠️ **宿主契约**：调用方只需给一个定位容器（聊天页是 `.chat-image`，负责 grid 定位），
 //! **不要**再叠加 `.avatar`——`.avatar` 由本组件贴在触发层上，紧邻圆形，
 //! 否则 DaisyUI 的 `.avatar > div`（aspect-ratio + overflow:hidden）会落到中间的
@@ -26,6 +29,7 @@ use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
 use crate::components::state::Loading;
 use crate::utils::{avatar_initials, avatar_status_ring};
 use common::api::{GetAgentRequest, GetAgentResponse};
+use common::enums::AssigneeType;
 
 /// 头像配色基调：Agent=secondary / User=primary（与聊天页原头像配色一致）
 #[derive(Clone, Copy, PartialEq)]
@@ -39,6 +43,52 @@ impl AvatarTone {
         match self {
             Self::Agent => "bg-secondary text-secondary-content",
             Self::User => "bg-primary text-primary-content",
+        }
+    }
+}
+
+/// 头像圆盒尺寸档位。
+///
+/// 圆盒的 Tailwind 类与 [`resolve_anchor`] 的锚点计算**同源于此**：
+/// 类名写死在这里、像素值也读这里，避免「改了 div 的 w-10 忘了改锚点常量」
+/// 那种浮层错位（两处漂移时卡片会整体偏掉一个身位）。
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum AvatarSize {
+    /// 24px（`w-6 h-6` + `text-xs`）：紧凑列表里的身份 chip
+    Sm,
+    /// 40px（`w-10 h-10`）：聊天页消息气泡 / 侧栏身份行的默认档
+    #[default]
+    Md,
+}
+
+impl AvatarSize {
+    /// 圆盒边长（px）：浮层锚点与翻转判定都要用，必须与 [`Self::avatar_class`] 同值
+    fn px(self) -> f64 {
+        match self {
+            Self::Sm => 24.0,
+            Self::Md => 40.0,
+        }
+    }
+
+    /// 圆盒尺寸类。⚠️ 必须是**字面量**：Tailwind v4 扫源码收集类名，
+    /// `format!("w-{n}")` 拼出来的类不会被生成，圆盒会静默塌掉。
+    fn avatar_class(self) -> &'static str {
+        match self {
+            Self::Sm => "w-6 h-6 text-xs",
+            Self::Md => "w-10 h-10",
+        }
+    }
+}
+
+/// 任务分配对象类型 → 头像基调/卡片形态。
+///
+/// 归属判定只此一处：`assignee_type` 既决定配色（用户 primary / Agent secondary），
+/// 也决定展开的卡片形态与名称目录，散在调用点各写一遍必然漂移。
+impl From<AssigneeType> for AvatarTone {
+    fn from(kind: AssigneeType) -> Self {
+        match kind {
+            AssigneeType::User => Self::User,
+            AssigneeType::Agent => Self::Agent,
         }
     }
 }
@@ -70,8 +120,6 @@ impl BubbleAlign {
     }
 }
 
-/// 头像盒边长（Tailwind `w-10` = 2.5rem = 40px）：水平锚点与翻转判定都要用
-const AVATAR_SIZE: f64 = 40.0;
 /// 浮层与头像之间的间距（对应原 DaisyUI 的 `mb-2`）
 const BUBBLE_GAP: f64 = 8.0;
 /// 浮层高度判定的经验上限：内容最满时（头像行 + 徽章行 + 3 行简介 + 能力 chips + 按钮）
@@ -161,11 +209,13 @@ fn scroll_ancestor_rect(from: &web_sys::Element) -> Option<web_sys::DomRect> {
 /// 鼠标点击与键盘 Tab 都会先触发触发层的 `onfocus`，故只有这一条展开路径，
 /// 规则统一为「向上优先 / 不够就翻向下 / 再不够就限高」。
 /// 可用的上/下边界取自 `bounds`（滚动祖先），取不到则退化为整个视口。
+/// `avatar_px` 由 [`AvatarSize::px`] 提供，参与「向左展开的偏移」与「下方剩余空间」计算。
 fn resolve_anchor(
     box_left: f64,
     box_top: f64,
     vw: f64,
     vh: f64,
+    avatar_px: f64,
     align: BubbleAlign,
     bounds: Option<web_sys::DomRect>,
 ) -> BubbleAnchor {
@@ -173,12 +223,12 @@ fn resolve_anchor(
     let top_edge = bounds.as_ref().map_or(0.0, |b| b.top().max(0.0));
     let bottom_edge = bounds.as_ref().map_or(vh, |b| b.bottom().min(vh));
     let space_above = (box_top - top_edge).max(0.0);
-    let space_below = (bottom_edge - box_top - AVATAR_SIZE).max(0.0);
+    let space_below = (bottom_edge - box_top - avatar_px).max(0.0);
     // 优先向上（既有视觉）；上方放不下整张卡且下方不更宽裕时才翻转
     let upward = space_above >= BUBBLE_MAX_H + BUBBLE_GAP || space_above >= space_below;
     let end = align.is_end();
     let horizontal = if end {
-        (vw - box_left - AVATAR_SIZE).max(0.0)
+        (vw - box_left - avatar_px).max(0.0)
     } else {
         box_left.max(0.0)
     };
@@ -188,7 +238,7 @@ fn resolve_anchor(
         vertical: if upward {
             vh - box_top + BUBBLE_GAP
         } else {
-            box_top + AVATAR_SIZE + BUBBLE_GAP
+            box_top + avatar_px + BUBBLE_GAP
         },
         upward,
         available: if upward { space_above } else { space_below },
@@ -201,6 +251,9 @@ fn resolve_anchor(
 /// - `user_id` 有值 → 用户卡（展示短 ID）
 /// - `status` 有值 → 按 [`avatar_status_ring`] 叠加生命周期警示环
 /// - `align` → 浮层水平对齐（见 [`BubbleAlign`]）
+/// - `size` → 圆盒尺寸（见 [`AvatarSize`]），锚点计算随之走，不会错位
+/// - `user_subtitle` → 用户卡第二行文案（默认「当前用户」）。任务负责人这类
+///   **可能是组织内其他成员**的场景要传别的文案，否则会把别人标成当前用户
 #[component]
 pub fn AvatarBubble(
     name: String,
@@ -209,6 +262,8 @@ pub fn AvatarBubble(
     #[props(default)] status: Option<i32>,
     #[props(default)] user_id: Option<String>,
     #[props(default)] align: BubbleAlign,
+    #[props(default)] size: AvatarSize,
+    #[props(default)] user_subtitle: Option<String>,
 ) -> Element {
     // None=未加载 / Some(Err)=加载失败 / Some(Ok)=已加载；仅点击时拉取并缓存
     let mut agent_card = use_signal(|| None::<Result<GetAgentResponse, ()>>);
@@ -217,6 +272,9 @@ pub fn AvatarBubble(
     let ring = status.map(avatar_status_ring).unwrap_or("");
     let tone_classes = tone.classes();
     let align_class = align.dropdown_class();
+    // 尺寸在渲染前取一次：onfocus 闭包与圆盒类名必须用同一个值
+    let avatar_px = size.px();
+    let avatar_class = size.avatar_class();
     let has_agent_card = agent_id.is_some();
     let open_agent_id = agent_id.clone();
     // 浮层用 `position: fixed` + 视口坐标锚定，而非 DaisyUI 的 `bottom: 100%`：
@@ -266,7 +324,15 @@ pub fn AvatarBubble(
                     {
                         let r = el.get_bounding_client_rect();
                         let bounds = scroll_ancestor_rect(&el);
-                        anchor.set(Some(resolve_anchor(r.left(), r.top(), vw, vh, align, bounds)));
+                        anchor.set(Some(resolve_anchor(
+                            r.left(),
+                            r.top(),
+                            vw,
+                            vh,
+                            avatar_px,
+                            align,
+                            bounds,
+                        )));
                     }
                     let Some(aid) = open_agent_id.clone() else {
                         return;
@@ -289,7 +355,7 @@ pub fn AvatarBubble(
                         agent_card.set(result);
                     });
                 },
-                div { class: "w-10 h-10 rounded-full {tone_classes} flex items-center justify-center font-bold {ring}",
+                div { class: "{avatar_class} rounded-full {tone_classes} flex items-center justify-center font-bold {ring}",
                     "{avatar_initials(&name)}"
                 }
             }
@@ -314,7 +380,10 @@ pub fn AvatarBubble(
                         Some(Ok(a)) => rsx! { { agent_bubble_card_content(&a) } },
                     }
                 } else {
-                    { user_bubble_card_content(&name, user_id.as_deref()) }
+                    {
+                        let subtitle = user_subtitle.as_deref().unwrap_or("当前用户");
+                        user_bubble_card_content(&name, user_id.as_deref(), subtitle)
+                    }
                 }
             }
         }
@@ -356,8 +425,11 @@ fn agent_bubble_card_content(agent: &GetAgentResponse) -> Element {
     }
 }
 
-/// 用户信息卡内容：静态展示（显示名 + 短 ID），无额外请求
-fn user_bubble_card_content(name: &str, user_id: Option<&str>) -> Element {
+/// 用户信息卡内容：静态展示（显示名 + 副标题 + 短 ID），无额外请求
+///
+/// `subtitle` 由调用方给出（见 `user_subtitle` prop）：聊天气泡是「当前用户」，
+/// 侧栏/列表里的负责人 chip 是「组织成员」。
+fn user_bubble_card_content(name: &str, user_id: Option<&str>, subtitle: &str) -> Element {
     // utils 里有两个同名 short_id（status/message 各一），glob 重导出二义，
     // 故此处用 status 模块完整路径调用
     let uid_text = user_id.map(crate::utils::status::short_id);
@@ -369,7 +441,7 @@ fn user_bubble_card_content(name: &str, user_id: Option<&str>) -> Element {
                 }
                 div { class: "flex-1 min-w-0",
                     div { class: "font-semibold truncate", "{name}" }
-                    div { class: "text-xs text-base-content/60", "当前用户" }
+                    div { class: "text-xs text-base-content/60", "{subtitle}" }
                 }
             }
             if let Some(text) = uid_text {

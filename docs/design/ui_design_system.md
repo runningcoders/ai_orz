@@ -226,6 +226,7 @@ linear-gradient(90deg, #c79100 0%, #e8430a 100%);
 | 主题变量 / HUD 皮肤 CSS | `frontend/styles/input.css` | DaisyUI v5 `--color-*` + 自定义 `.hud-*`、`.orz-tag`、`.navbar-link`、`.online-badge` |
 | 状态徽章单一事实源 | `frontend/src/utils/status.rs` | `agent_lifecycle_badge` / `task_status_badge` / `project_status_badge` / `auth_state_badge` / `priority_badge` / `agent_runtime_badge` |
 | 属性标签单一事实源 | `frontend/src/utils/status.rs` | `tag_chip()` |
+| 身份 chip（头像 + 展示名 + 信息卡） | `frontend/src/components/identity_chip.rs` | `IdentityChip`，承载「只有 ID 的负责人 / 分配对象」字段；卡片复用 `components/avatar_bubble.rs` 的 `AvatarBubble`（`AvatarSize::Sm`） |
 | 按钮组件 | `frontend/src/components/button.rs` | 封装 `Button`，强制带 `hud-btn` |
 | HUD 面板 / 表格 / Tab 原语 | `frontend/src/components/hud.rs` | `HudPanel` / `HudTable` / `HudTabs` / `HudCallout` 等 |
 | 顶部导航 | `frontend/src/layouts/navbar.rs` | 扁平 `.navbar-link` + `.online-badge` |

@@ -36,24 +36,37 @@ pub fn build_task_dispatch_content(
 /// 触发器以**项目归属用户身份中继**本通知（from_role=User），Agent 的 Final
 /// 自动回复会送达该用户——因此正文把「通知用户」收敛为「最终回复的写法要求」，
 /// 不再要求调 send_message（那会造成双重通知）。
+///
+/// **推进优先原则**：巡检的目的不是产出一份进度汇报，而是推进进度。正文必须
+/// 明确区分「无需用户确认、立即执行的动作」（按既定 execution_plan 调度 / 催办 /
+/// 调整计划 / 关闭项目）与「需用户决策、只上报选项的动作」（改方向 / 改范围），
+/// 否则 Agent 会保守地退化为「只汇报现状不推进」。
 pub fn build_project_followup_content(project_name: &str) -> String {
     format!(
         "📊 项目进度定期检查\n\
          项目：「{}」\n\n\
-         系统定时触发了项目跟进检查（以项目归属用户名义转发给你），请执行以下检查：\n\n\
-         1. **获取进度**：调用 get_project(with_progress_summary=true) 获取整体进度\n\
-         2. **识别阻塞**：\n\
-            - 检查 InProgress 任务是否有长时间无更新的（可能卡住了）\n\
-            - 检查 Pending 任务是否因依赖阻塞无法启动\n\
-         3. **对比计划**：对照 execution_plan，判断当前阶段是否正常推进\n\
-         4. **采取行动**：\n\
-            - 任务 / 项目状态有明确变化（任务完成 / 阻塞 / 取消、进度或状态流转、里程碑达成）→ 在最终回复中写清「变化内容 + 下一步」（会自动送达项目归属用户）\n\
-            - 阻塞任务 → 分析原因，调整分配或在最终回复中指出\n\
-            - 全部完成 → 更新项目状态为 Completed，并在最终回复中说明\n\
-            - 需要调整计划 → 更新 execution_plan\n\
-            - 无状态变化、进展正常 → 最终回复仅写一行简短确认（巡检每小时触发，避免重复打扰）\n\n\
-         注意：你的最终回复会自动送达项目归属用户，**无需**调用 send_message 重复通知；\n\
-         send_message 仅用于通知其他用户 / Agent 的场景。",
+         系统定时触发了项目跟进检查（以项目归属用户名义转发给你）。巡检的目的不是写\n\
+         一份进度汇报，而是推进进度：**能自主推进的立即推进，再汇报你做了什么**。\n\n\
+         1. **获取进度**：调用 get_project(with_progress_summary=true, with_task_graph=true) 获取整体进度与任务依赖图\n\
+         2. **识别可推进点**：\n\
+            - Pending 任务：dependencies 前置已全部 Completed → 可立即启动\n\
+            - InProgress 任务：modified_at 长时间无更新 / progress 长期不动 → 可能卡住\n\
+            - 对照 execution_plan，判断当前阶段是否落后于计划\n\
+         3. **立即推进（无需用户确认，直接执行）**：凡是不改变项目方向 / 范围 / 交付承诺、\n\
+            只是按既定 execution_plan 往前推的动作，都不要请示，直接做：\n\
+            - 可启动的 Pending 任务 → send_task_assignment_message 通知其 Task Owner 启动；\n\
+              Task Owner 是你自己 → 直接开工（update_task_status(InProgress) 后按执行循环推进）\n\
+            - 停滞的 InProgress 任务 → send_task_assignment_message 催办，要求更新进度或说明阻塞原因\n\
+            - 计划需调整 → update_project(execution_plan=修订版)\n\
+            - 全部任务完成 → update_project_status(Completed)\n\
+         4. **需要用户决策的才上报**：改变方向 / 范围的动作（新增需求、取消或删除任务、\n\
+            里程碑延期、方案分歧）不要擅自执行，在最终回复中写清「阻塞点 + 你的建议选项」，\n\
+            等用户决策\n\
+         5. **汇报本轮动作**：最终回复写清本轮推进了什么（调度 / 催办 / 调整了哪些任务、\n\
+            各任务当前状态与进度）、下一步；仅当确实不存在任何可推进点且无变化时，才回\n\
+            一行简短确认（巡检每小时触发，避免重复打扰）\n\n\
+         注意：你的最终回复会自动送达项目归属用户，**无需**调用 send_message 重复通知用户；\n\
+         send_task_assignment_message / send_message 仅用于通知其他 Agent 的场景。",
         project_name,
     )
 }
@@ -89,13 +102,17 @@ mod tests {
         let content = build_project_followup_content("AI 助手开发");
         assert!(content.contains("项目进度定期检查"));
         assert!(content.contains("AI 助手开发"));
-        assert!(content.contains("识别阻塞"));
+        assert!(content.contains("识别可推进点"));
+        // 推进优先：明确要求无需用户确认立即推进，而不是只汇报现状
+        assert!(content.contains("立即推进"));
+        assert!(content.contains("无需用户确认"));
+        assert!(content.contains("send_task_assignment_message"));
         // 巡检以归属用户身份中继，Final 自动送达 → 无需（也不该）再 send_message
         assert!(content.contains("自动送达"));
         assert!(content.contains("无需"));
-        // 状态有明确变化 → 最终回复写清变化与下一步（确定性要求）
-        assert!(content.contains("状态有明确变化"));
-        // 无变化则只回一行确认，避免每小时噪音
+        // 需要用户决策的动作只上报「阻塞点 + 建议选项」，不擅自执行
+        assert!(content.contains("需要用户决策"));
+        // 无任何可推进点才回一行确认，避免每小时噪音
         assert!(content.contains("一行简短确认"));
     }
 }

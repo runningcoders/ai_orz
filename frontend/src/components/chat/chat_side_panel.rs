@@ -17,9 +17,11 @@ use crate::api::hr::get_agent;
 use crate::api::organization::get_current_user_info;
 use crate::api::project::{get_project, get_task, list_project_tasks};
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
+use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ToolCallsTab;
 use crate::components::hud::HudProgress;
-use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
+use crate::components::identity_chip::IdentityChip;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
@@ -33,7 +35,7 @@ use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
     GetTaskRequest, GetTaskResponse, TaskListItem, UserInfoResponse,
 };
-use common::enums::ArtifactSourceType;
+use common::enums::{ArtifactSourceType, AssigneeType};
 use common::models::{AgentStats, ModelCallStats};
 
 /// SSE 消息触发的防抖刷新等待时长（毫秒）
@@ -151,7 +153,6 @@ pub fn ChatSidePanel(
             let req = GetProjectRequest {
                 id: pid.clone(),
                 with_progress_summary: Some(true),
-                with_task_graph: Some(true),
                 with_artifacts: Some(true),
                 ..Default::default()
             };
@@ -337,12 +338,11 @@ fn empty_hint(msg: &str) -> Element {
     }
 }
 
-/// Tab 总览：项目目标、进度汇总、执行计划/结果、任务依赖图
+/// Tab 总览：项目目标、进度汇总、执行计划/结果（任务依赖图已迁移至任务管理页）
 fn overview_tab(p: &GetProjectResponse) -> Element {
     let desc = p.description.clone().filter(|s| !s.is_empty());
     let plan = p.execution_plan.clone().filter(|s| !s.is_empty());
     let result = p.execution_result.clone().filter(|s| !s.is_empty());
-    let graph = p.task_graph.clone().filter(|s| !s.is_empty());
     rsx! {
         div { class: "space-y-4",
             // 基础信息：状态 / 优先级 / 标签 / 负责人
@@ -353,8 +353,13 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
                     span { key: "{tag}", class: "{tag_chip()}", "{tag}" }
                 }
             }
+            // 负责人字段只带 Agent ID，直接插 rsx 会把 ulid 打到界面上；
+            // 走身份 chip 换成「头像 + 名字」，点头像展开与聊天页同源的 Agent 信息卡
             if let Some(owner) = p.owner_agent_id.as_deref() {
-                div { class: "text-xs text-base-content/60", "负责人：{owner}" }
+                div { class: "flex items-center gap-2 min-w-0",
+                    span { class: "text-xs text-base-content/60", "负责人" }
+                    IdentityChip { id: owner.to_string(), tone: AvatarTone::Agent }
+                }
             }
 
             // 项目目标
@@ -389,14 +394,6 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
                     MarkdownRenderer { content: result, compact: true }
                 }
             }
-
-            // 任务依赖图
-            if let Some(graph) = graph {
-                div {
-                    label { class: "form-label", "任务依赖图" }
-                    MermaidDiagram { code: graph }
-                }
-            }
         }
     }
 }
@@ -421,6 +418,8 @@ fn tasks_tab(
                     let status = t.status;
                     let progress = t.progress;
                     let assignee = t.assignee_id.clone();
+                    // 分配对象类型（0=用户 1=Agent）→ 头像基调 / 名称目录 / 卡片形态
+                    let assignee_tone = AvatarTone::from(AssigneeType::from_i32(t.assignee_type));
                     let is_expanded = expanded_task_id() == Some(tid.clone());
                     let is_loading = loading_task_id() == Some(tid.clone());
                     rsx! {
@@ -467,7 +466,10 @@ fn tasks_tab(
                                     if is_expanded { "▲" } else { "▼" }
                                 }
                                 HudProgress { value: progress, tone: Some(progress_tone(progress).to_string()), show_value: Some(false), extra_class: Some("mt-1".to_string()) }
-                                div { class: "text-xs text-base-content/60 mt-1", "负责人：{assignee}" }
+                                div { class: "flex items-center gap-2 min-w-0 mt-1",
+                                    span { class: "text-xs text-base-content/60", "负责人" }
+                                    IdentityChip { id: assignee, tone: assignee_tone }
+                                }
                             }
                             // 展开详情
                             if is_expanded {

@@ -3,16 +3,19 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::project::{list_projects, list_tasks, query_tasks, search_tasks};
+use crate::api::project::{get_project, list_projects, list_tasks, query_tasks, search_tasks};
+use crate::components::avatar_bubble::AvatarTone;
 use crate::components::hud::{HudPanel, HudProgress, PageHeader, StatGrid, StatReadout};
+use crate::components::identity_chip::IdentityChip;
 use crate::components::kanban_canvas::{KanbanCanvas, KanbanColumn, KanbanTask};
+use crate::components::markdown::MermaidDiagram;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_datetime as format_time, task_status_badge, task_status_text};
 use common::api::{
-    ListProjectsRequest, ListProjectsResponseItem, ListTasksRequest, SearchTasksRequest,
-    TaskListItem, TaskQueryRequest,
+    GetProjectRequest, ListProjectsRequest, ListProjectsResponseItem, ListTasksRequest,
+    SearchTasksRequest, TaskListItem, TaskQueryRequest,
 };
 use common::enums::{AssigneeType, TaskStatus};
 
@@ -35,6 +38,8 @@ pub fn TaskList() -> Element {
     let mut filter_assignee_type = use_signal(|| -1i32);
     let mut search_keyword = use_signal(String::new);
     let mut search_request_id = use_signal(|| 0u32);
+    // 任务依赖图：依赖图按项目构建，跟随项目筛选，选定项目才拉取
+    let mut task_graph = use_signal(|| None::<String>);
 
     let toast = use_toast();
     let navigator = use_navigator();
@@ -115,6 +120,24 @@ pub fn TaskList() -> Element {
                 Ok(v) => tasks.set(v),
                 Err(e) => toast.error(&e),
             }
+            // 任务依赖图跟随项目筛选：选定项目才拉取，切回「全部项目」即清空
+            task_graph.set(None);
+            if !project_id.is_empty() {
+                let graph_res = get_project(GetProjectRequest {
+                    id: project_id.clone(),
+                    with_task_graph: Some(true),
+                    ..Default::default()
+                })
+                .await;
+                // 第二次 await 后重新校验代际，防止旧项目的图覆盖新筛选
+                if search_request_id() != my_id {
+                    return;
+                }
+                match graph_res {
+                    Ok(p) => task_graph.set(p.task_graph.filter(|s| !s.is_empty())),
+                    Err(e) => toast.error(&e),
+                }
+            }
             match list_projects(ListProjectsRequest::default()).await {
                 Ok(page) => projects.set(page.items),
                 Err(e) => toast.error(&e),
@@ -130,6 +153,7 @@ pub fn TaskList() -> Element {
 
     let tasks_list = tasks.read().clone();
     let projects_list = projects.read().clone();
+    let graph_value = task_graph.read().clone();
 
     // 统计数据
     let total = tasks_list.len();
@@ -261,6 +285,15 @@ pub fn TaskList() -> Element {
             }
         }
 
+        // 任务依赖图：位于任务列表/看板上方，跟随项目筛选展示
+        if let Some(graph) = graph_value.filter(|g| !g.is_empty()) {
+            HudPanel {
+                title: "任务依赖图".to_string(),
+                eyebrow: "DEPENDENCIES".to_string(),
+                MermaidDiagram { code: graph }
+            }
+        }
+
         // 视图内容
         if loading() {
             HudPanel {
@@ -309,10 +342,11 @@ pub fn TaskList() -> Element {
                                         td { "data-label": "进度",
                                             HudProgress { value: t_progress, tone: Some("primary".to_string()), show_value: Some(true) }
                                         }
+                                        // 负责人不再直出 ID：头像 + 名字的身份 chip，点头像展开名片
                                         td { "data-label": "负责人",
-                                            {
-                                                let assignee_type_text = if t_assignee_type == 0 { "用户" } else { "Agent" };
-                                                rsx! { "{assignee_type_text}: {t_assignee_id}" }
+                                            IdentityChip {
+                                                id: t_assignee_id,
+                                                tone: AvatarTone::from(AssigneeType::from_i32(t_assignee_type)),
                                             }
                                         }
                                         td { "data-label": "项目",

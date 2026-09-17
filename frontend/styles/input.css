@@ -291,7 +291,27 @@
   cursor: pointer;
 }
 .kg-node-group:hover {
-  transform: scale(1.1);
+  transform: scale(1.05);
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+/* 10. 矩形节点卡片 HUD 态（圆形改矩形后的替代动画：
+      kg-scan-ring / kg-ring-spin 依赖 circle 的 r 属性，对 rect 无效） */
+@keyframes kg-box-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 0.95; }
+}
+.kg-box-pulse {
+  animation: kg-box-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes kg-box-scan {
+  0%   { opacity: 0.75; transform: scale(1); }
+  100% { opacity: 0;    transform: scale(1.12); }
+}
+.kg-box-scan {
+  animation: kg-box-scan 1.8s ease-out infinite;
   transform-origin: center;
   transform-box: fill-box;
 }

@@ -82,6 +82,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
     match &memory.po {
         MemoryPo::Trace(trace) => MemoryResult {
             id: trace.id.clone(),
+            name: None,
             content: trace.input.clone(),
             memory_type: "trace".to_string(),
             score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
@@ -97,6 +98,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
         // 默认取 content 前几行作预览，避免「标题 + 摘要」两行重复。
         MemoryPo::ShortTerm(st) => MemoryResult {
             id: st.id.clone(),
+            name: None,
             content: st.summary.clone(),
             memory_type: "short_term".to_string(),
             score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
@@ -109,6 +111,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
         },
         MemoryPo::KnowledgeNode(kn) => MemoryResult {
             id: kn.id.clone(),
+            name: Some(kn.node_name.clone()),
             content: kn.node_description.clone(),
             memory_type: "knowledge_node".to_string(),
             score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
@@ -121,6 +124,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
         },
         MemoryPo::Relation(rel) => MemoryResult {
             id: rel.id.clone(),
+            name: None,
             content: format!("{:?}", rel.relation_type),
             memory_type: "relation".to_string(),
             score: memory.search_match.as_ref().and_then(|m| m.vector_distance),

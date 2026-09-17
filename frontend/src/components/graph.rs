@@ -1,17 +1,19 @@
 use dioxus::prelude::*;
 use std::collections::HashMap;
-use std::f64::consts::PI;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphNode {
     pub id: String,
+    /// 展示名：**名称优先，回退正文首行**（由调用方挑好，渲染层不碰 ID）
     pub label: String,
+    /// 正文/描述：卡片上只放前两行，完整内容留给 hover 详情
+    pub description: String,
     pub node_type: String,
     pub x: f64,
     pub y: f64,
-    /// 标签列表（用于多色边框 + 上方标签展示）
+    /// 标签列表（卡片底部胶囊，最多 3 个 + 聚合计数）
     pub tags: Vec<String>,
-    /// 摘要（显示在节点下方一行小字，None 时不显示）
+    /// 摘要（优先于正文作为卡片正文行，None 时回退 description）
     pub summary: Option<String>,
 }
 
@@ -20,6 +22,7 @@ impl Default for GraphNode {
         Self {
             id: String::new(),
             label: String::new(),
+            description: String::new(),
             node_type: String::new(),
             x: 0.0,
             y: 0.0,
@@ -83,27 +86,13 @@ fn build_hover_card(
         HoverTarget::Node(id) => {
             let node = nodes.iter().find(|n| &n.id == id)?;
             let (gx, gy) = positions.get(id).copied().unwrap_or((node.x, node.y));
-            let mut lines = vec![
-                format!("名称: {}", node.label),
-                format!("类型: {}", type_label(&node.node_type)),
-            ];
-            if let Some(summary) = &node.summary
-                && !summary.is_empty()
-            {
-                lines.push(format!(
-                    "摘要: {}",
-                    summary.chars().take(30).collect::<String>()
-                ));
-            }
-            if !node.tags.is_empty() {
-                lines.push(format!("标签: {}", node.tags.join("、")));
-            }
             Some(HoverCard {
-                lines,
+                lines: node_hover_lines(node),
                 accent: get_node_fill(&node.node_type).to_string(),
                 anchor_x: gx * scale + pan_x,
                 anchor_y: gy * scale + pan_y,
-                offset: 18.0,
+                // 矩形卡片：锚点偏移用半宽（圆形时代是固定 18）
+                offset: NODE_BOX_W / 2.0 * scale + 12.0,
             })
         }
         HoverTarget::Edge(source, target_id) => {
@@ -188,11 +177,15 @@ pub fn get_node_stroke_width(is_selected: bool) -> &'static str {
     if is_selected { "3" } else { "2" }
 }
 
+/// 节点组不透明度
+///
+/// ⚠️ 未高亮档位不能用圆形的 0.4：矩形卡片里还有正文小字，
+/// 0.4 会让「展开出来的邻居节点」整片糊掉读不清；高亮的区分度交给发光 + 边框承担。
 pub fn get_node_opacity(is_highlighted: bool, is_selected: bool) -> &'static str {
     if is_selected || is_highlighted {
         "1"
     } else {
-        "0.4"
+        "0.78"
     }
 }
 
@@ -206,51 +199,184 @@ pub fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
     }
 }
 
-/// 节点基础半径（按类型）
-pub fn base_node_radius(node_type: &str) -> f64 {
-    match node_type {
-        "knowledge_node" => 26.0,
-        "short_term" => 22.0,
-        "trace" => 18.0,
-        "relation" => 14.0,
-        _ => 18.0,
-    }
+// ==================== 矩形节点卡片几何（canvas / SVG 双端 SSOT） ====================
+//
+// 知识节点此前是圆形：只能塞下 10 个字 + 一个 ID，信息量几乎为零。
+// 改矩形卡片后画布上直接展示「名称 + 摘要/描述两行 + 标签」，ID 退到 hover 详情。
+// ⚠️ 卡片尺寸 / 折行 / 截断全部收敛在此：canvas 与 SVG 两条渲染路径都读这里，
+// 各画一套必然漂移（改了宽度忘了改折行宽度 = 文字溢出卡片）。
+
+/// 卡片固定宽度（高度按内容浮动，见 [`node_box_height`]）
+pub const NODE_BOX_W: f64 = 168.0;
+/// 卡片圆角
+pub const NODE_BOX_R: f64 = 6.0;
+/// 卡片内边距
+pub const NODE_BOX_PAD: f64 = 8.0;
+/// 左侧类型色竖条宽度（取代圆形的整体填充，保留类型辨识度）
+pub const NODE_ACCENT_W: f64 = 4.0;
+/// 标题字号 / 行高
+pub const NODE_TITLE_PX: f64 = 12.0;
+pub const NODE_TITLE_H: f64 = 15.0;
+/// 正文字号 / 行高 / 最大行数
+pub const NODE_BODY_PX: f64 = 10.0;
+pub const NODE_BODY_H: f64 = 13.0;
+pub const NODE_BODY_MAX_LINES: usize = 2;
+/// 标签胶囊高度
+pub const NODE_TAG_H: f64 = 14.0;
+/// 卡片内标签最多展示个数（超出聚合为 `+N`）
+pub const NODE_TAG_MAX: usize = 3;
+/// hover 详情卡正文折行宽度（与 canvas_scene 的 11px 卡片字号配套）
+pub const HOVER_TEXT_W: f64 = 280.0;
+pub const HOVER_FONT_PX: f64 = 11.0;
+
+/// 卡片内容区可用宽度（扣掉竖条与左右内边距）
+pub fn node_content_w() -> f64 {
+    NODE_BOX_W - NODE_ACCENT_W - NODE_BOX_PAD * 2.0
 }
 
-/// 根据信息量（tags 数量、是否有简介、名称长度）动态计算节点半径
-pub fn dynamic_node_radius(node: &GraphNode) -> f64 {
-    let mut r = base_node_radius(&node.node_type);
-    // 每个 tag +2（最多 +12）
-    r += (node.tags.len() * 2).min(12) as f64;
-    // 有简介 +3
-    if node.summary.is_some() {
-        r += 3.0;
-    }
-    // 名称较长（>8 字符）+2
-    if node.label.chars().count() > 8 {
-        r += 2.0;
-    }
-    r
+/// 文本渲染宽度估算：CJK≈字号，ASCII≈0.55×字号
+///
+/// canvas 侧有 `measure_text_width` 可用真实度量，但 SVG 只能估算；
+/// 两边共用这一套估算，卡片的折行结果才一致。
+pub fn text_width(s: &str, font_px: f64) -> f64 {
+    s.chars().fold(0.0, |acc, c| {
+        acc + if c.is_ascii() {
+            font_px * 0.55
+        } else {
+            font_px
+        }
+    })
 }
 
-/// 生成 tag 多色边框的 arc path 段
-/// 返回每段 (path_d, color)；无 tags 时返回空
-fn tag_border_arcs(cx: f64, cy: f64, r: f64, tags: &[String]) -> Vec<(String, &'static str)> {
-    if tags.is_empty() {
+/// 按像素宽度折行，最多 `max_lines` 行；超出时末行截断加省略号
+pub fn wrap_text(s: &str, max_width: f64, font_px: f64, max_lines: usize) -> Vec<String> {
+    // 正文常含换行/Markdown 换行，先摊平成单行再折，避免卡片里出现半截空行
+    let flat: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.is_empty() || max_lines == 0 {
         return Vec::new();
     }
-    let n = tags.len() as f64;
-    (0..tags.len())
-        .map(|i| {
-            let a1 = (i as f64 / n) * 2.0 * PI - PI / 2.0;
-            let a2 = ((i + 1) as f64 / n) * 2.0 * PI - PI / 2.0;
-            let x1 = cx + r * a1.cos();
-            let y1 = cy + r * a1.sin();
-            let x2 = cx + r * a2.cos();
-            let y2 = cy + r * a2.sin();
-            let large = if (a2 - a1) > PI { 1 } else { 0 };
-            let d = format!("M {x1:.1} {y1:.1} A {r:.1} {r:.1} 0 {large} 1 {x2:.1} {y2:.1}");
-            (d, tag_color(&tags[i]))
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for ch in flat.chars() {
+        let probe: String = cur.chars().chain(std::iter::once(ch)).collect();
+        if !cur.is_empty() && text_width(&probe, font_px) > max_width {
+            lines.push(std::mem::take(&mut cur));
+        }
+        cur.push(ch);
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    if lines.len() > max_lines {
+        lines.truncate(max_lines);
+        if let Some(last) = lines.last_mut() {
+            let mut t = last.clone();
+            while !t.is_empty() && text_width(&format!("{t}…"), font_px) > max_width {
+                t.pop();
+            }
+            t.push('…');
+            *last = t;
+        }
+    }
+    lines
+}
+
+/// 截断到 `max` 个字符（超出加省略号）
+pub fn truncate_chars(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut t: String = s.chars().take(max - 1).collect();
+    t.push('…');
+    t
+}
+
+/// 卡片高度：标题行 + 正文两行（+ 标签行）
+pub fn node_box_height(node: &GraphNode) -> f64 {
+    let mut h = NODE_BOX_PAD * 2.0 + NODE_TITLE_H + NODE_BODY_H * NODE_BODY_MAX_LINES as f64;
+    if !node.tags.is_empty() {
+        h += NODE_TAG_H + 3.0;
+    }
+    h
+}
+
+/// 卡片标题（展示名单行，超出省略）
+pub fn node_title(node: &GraphNode) -> String {
+    wrap_text(&node.label, node_content_w(), NODE_TITLE_PX, 1)
+        .pop()
+        .unwrap_or_default()
+}
+
+/// 卡片正文行：摘要优先，回退正文描述
+pub fn node_body_lines(node: &GraphNode) -> Vec<String> {
+    let summary = node.summary.as_deref().map(str::trim).unwrap_or("");
+    let text = if summary.is_empty() {
+        node.description.trim()
+    } else {
+        summary
+    };
+    if text.is_empty() {
+        return Vec::new();
+    }
+    wrap_text(text, node_content_w(), NODE_BODY_PX, NODE_BODY_MAX_LINES)
+}
+
+/// 卡片内标签胶囊（最多 `NODE_TAG_MAX` 个，超出聚合为 `+N`）
+pub fn node_tag_chips(node: &GraphNode) -> Vec<(String, &'static str)> {
+    if node.tags.is_empty() {
+        return Vec::new();
+    }
+    let mut chips: Vec<(String, &'static str)> = node
+        .tags
+        .iter()
+        .take(NODE_TAG_MAX)
+        .map(|t| (t.clone(), tag_color(t)))
+        .collect();
+    let rest = node.tags.len().saturating_sub(NODE_TAG_MAX);
+    if rest > 0 {
+        chips.push((format!("+{rest}"), "#4b5563"));
+    }
+    chips
+}
+
+/// hover 详情行：名称 / 类型 / 标签 / 摘要 / 描述 / ID
+///
+/// ID 只在这里出现 —— 画布卡片上不再直出 ID（用户反馈「没有有用的信息」）。
+pub fn node_hover_lines(node: &GraphNode) -> Vec<String> {
+    let mut lines = vec![
+        format!("名称: {}", node.label),
+        format!("类型: {}", type_label(&node.node_type)),
+    ];
+    if !node.tags.is_empty() {
+        lines.push(format!("标签: {}", node.tags.join("、")));
+    }
+    let summary = node.summary.as_deref().map(str::trim).unwrap_or("");
+    if !summary.is_empty() {
+        lines.extend(field_lines("摘要", summary));
+    }
+    let desc = node.description.trim();
+    if !desc.is_empty() {
+        lines.extend(field_lines("描述", desc));
+    }
+    lines.push(format!("ID: {}", node.id));
+    lines
+}
+
+/// 带字段名前缀的折行（续行缩进对齐到字段名之后）
+fn field_lines(label: &str, value: &str) -> Vec<String> {
+    let indent = " ".repeat(label.chars().count() * 2 + 2);
+    wrap_text(value, HOVER_TEXT_W, HOVER_FONT_PX, 2)
+        .into_iter()
+        .enumerate()
+        .map(|(i, l)| {
+            if i == 0 {
+                format!("{label}: {l}")
+            } else {
+                format!("{indent}{l}")
+            }
         })
         .collect()
 }
@@ -610,48 +736,28 @@ pub fn Graph(props: GraphProps) -> Element {
                     let fill = get_node_fill(&node.node_type).to_string();
                     let stroke = get_node_stroke(is_selected).to_string();
                     let stroke_width = get_node_stroke_width(is_selected).to_string();
-                    // 动态半径：信息越多节点越大
-                    let radius = dynamic_node_radius(&node);
                     let (nx, ny) = node_positions.read().get(&node.id).copied().unwrap_or((node.x, node.y));
                     let opacity = get_node_opacity(is_highlighted, is_selected);
                     let glow = get_node_glow(is_highlighted, is_selected);
 
-                    // 多色边框 arc 段（无 tags 时为空，使用 circle 自身 stroke）
-                    let border_r = radius + 3.0;
-                    let arcs = tag_border_arcs(nx, ny, border_r, &node.tags);
-
-                    // HUD 外环半径（仅选中态显示旋转刻度环）
-                    let ring_r = radius + 8.0;
-                    // 扫描环初始/结束半径（仅选中态）
-                    let scan_r0 = radius + 4.0;
-                    let scan_r1 = radius + 22.0;
-                    let scan_style = format!("--r0: {scan_r0}px; --r1: {scan_r1}px;");
-                    // 外环四向刻度端点
-                    let ring_top_y1 = ny - ring_r - 3.0;
-                    let ring_top_y2 = ny - ring_r + 3.0;
-                    let ring_right_x1 = nx + ring_r - 3.0;
-                    let ring_right_x2 = nx + ring_r + 3.0;
-                    let ring_bot_y1 = ny + ring_r - 3.0;
-                    let ring_bot_y2 = ny + ring_r + 3.0;
-                    let ring_left_x1 = nx - ring_r - 3.0;
-                    let ring_left_x2 = nx - ring_r + 3.0;
-
-                    // 节点上方 tags 标签：横向居中排列
-                    let tag_label_y = ny - radius - 16.0;
-                    let tag_widths: Vec<(String, f64, &'static str)> = node.tags.iter()
-                        .map(|t| (t.clone(), tag_label_width(t), tag_color(t)))
+                    // === 矩形卡片几何（与 canvas 渲染器共用 SSOT）===
+                    let box_h = node_box_height(&node);
+                    let box_x = nx - NODE_BOX_W / 2.0;
+                    let box_y = ny - box_h / 2.0;
+                    // 卡片内文字起始 x（竖条 + 左内边距）
+                    let text_x = box_x + NODE_ACCENT_W + NODE_BOX_PAD;
+                    let title_text = node_title(&node);
+                    let body_lines = node_body_lines(&node);
+                    let title_baseline = box_y + NODE_BOX_PAD + 11.0;
+                    let body_baseline0 = box_y + NODE_BOX_PAD + NODE_TITLE_H + NODE_BODY_H - 3.0;
+                    // 标签胶囊：卡片底部一行（无标签时不渲染）
+                    let tag_chips = node_tag_chips(&node);
+                    let tag_row_y = box_y + NODE_BOX_PAD + NODE_TITLE_H + NODE_BODY_H * NODE_BODY_MAX_LINES as f64 + 3.0;
+                    let tag_widths: Vec<(String, f64, &'static str)> = tag_chips
+                        .iter()
+                        .map(|(t, c)| (t.clone(), tag_label_width(t), *c))
                         .collect();
-                    let total_tag_w: f64 = tag_widths.iter().map(|(_, w, _)| *w).sum::<f64>() + (tag_widths.len().saturating_sub(1) as f64) * 4.0;
-                    let mut tag_x = nx - total_tag_w / 2.0;
-
-                    // 节点下方简介（截断一行）
-                    let summary_text = node.summary.as_ref().map(|s| {
-                        s.chars().take(14).collect::<String>()
-                    });
-                    let label_text = node.label.chars().take(10).collect::<String>();
-
-                    // HUD 节点组 class：出现动画 + hover 放大
-                    let node_group_class = "kg-node-appear kg-node-group";
+                    let mut tag_x = text_x;
 
                     // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
                     let hover_enter = HoverTarget::Node(node.id.clone());
@@ -660,7 +766,7 @@ pub fn Graph(props: GraphProps) -> Element {
 
                     rsx! {
                         g {
-                            class: "{node_group_class}",
+                            class: "kg-node-appear kg-node-group",
                             cursor: "move",
                             style: "{glow}",
                             opacity: "{opacity}",
@@ -682,102 +788,79 @@ pub fn Graph(props: GraphProps) -> Element {
                                 handle_node_drag_start_with_event(e, node_id_drag.clone());
                             },
 
-                            // 选中态：向外扩散的扫描环波纹（雷达扫描效果）
+                            // 选中态：向外扩散的扫描框（矩形版扫描环）
                             if is_selected {
-                                circle {
-                                    class: "kg-scan-ring",
-                                    cx: "{nx}",
-                                    cy: "{ny}",
-                                    r: "{scan_r0}",
+                                rect {
+                                    class: "kg-box-scan",
+                                    x: "{box_x - 5.0}",
+                                    y: "{box_y - 5.0}",
+                                    width: "{NODE_BOX_W + 10.0}",
+                                    height: "{box_h + 10.0}",
+                                    rx: "10",
+                                    fill: "none",
+                                    stroke: "#f97316",
+                                    stroke_width: "1.5",
+                                    stroke_dasharray: "6 4",
+                                }
+                            } else {
+                                // 未选中态：类型色呼吸框（矩形版呼吸光晕）
+                                rect {
+                                    class: "kg-box-pulse",
+                                    x: "{box_x - 3.0}",
+                                    y: "{box_y - 3.0}",
+                                    width: "{NODE_BOX_W + 6.0}",
+                                    height: "{box_h + 6.0}",
+                                    rx: "9",
                                     fill: "none",
                                     stroke: "{fill}",
                                     stroke_width: "2",
-                                    style: "{scan_style}",
                                 }
                             }
 
-                            // 选中态：HUD 外环刻度旋转（瞄准镜风格）
-                            if is_selected {
-                                g {
-                                    class: "kg-ring-spin",
-                                    style: "transform-origin: {nx}px {ny}px;",
-                                    circle {
-                                        cx: "{nx}",
-                                        cy: "{ny}",
-                                        r: "{ring_r}",
-                                        fill: "none",
-                                        stroke: "{fill}",
-                                        stroke_width: "1",
-                                        stroke_dasharray: "3 6",
-                                        opacity: "0.6",
-                                    }
-                                    // 四个刻度小线段（上/右/下/左）
-                                    line { x1: "{nx}", y1: "{ring_top_y1}", x2: "{nx}", y2: "{ring_top_y2}", stroke: "{fill}", stroke_width: "1.5" }
-                                    line { x1: "{ring_right_x1}", y1: "{ny}", x2: "{ring_right_x2}", y2: "{ny}", stroke: "{fill}", stroke_width: "1.5" }
-                                    line { x1: "{nx}", y1: "{ring_bot_y1}", x2: "{nx}", y2: "{ring_bot_y2}", stroke: "{fill}", stroke_width: "1.5" }
-                                    line { x1: "{ring_left_x1}", y1: "{ny}", x2: "{ring_left_x2}", y2: "{ny}", stroke: "{fill}", stroke_width: "1.5" }
-                                }
-                            }
-
-                            // 未选中态：微弱呼吸光晕（节点类型色光圈）
-                            if !is_selected {
-                                circle {
-                                    cx: "{nx}",
-                                    cy: "{ny}",
-                                    r: "{radius + 2.0}",
-                                    fill: "none",
-                                    stroke: "{fill}",
-                                    stroke_width: "2",
-                                    style: "animation: kg-node-pulse 2.4s ease-in-out infinite; transform-origin: {nx}px {ny}px; transform-box: view-box;",
-                                }
-                            }
-
-                            // 多色边框 arc 段
-                            for (d, color) in arcs.iter() {
-                                path {
-                                    d: "{d}",
-                                    fill: "none",
-                                    stroke: "{color}",
-                                    stroke_width: "3",
-                                    stroke_linecap: "round",
-                                }
-                            }
-
-                            // 节点主体
-                            circle {
-                                cx: "{nx}",
-                                cy: "{ny}",
-                                r: "{radius}",
-                                fill: "{fill}",
+                            // 卡片主体
+                            rect {
+                                x: "{box_x}",
+                                y: "{box_y}",
+                                width: "{NODE_BOX_W}",
+                                height: "{box_h}",
+                                rx: "{NODE_BOX_R}",
+                                fill: "rgba(17, 24, 39, 0.94)",
                                 stroke: "{stroke}",
                                 stroke_width: "{stroke_width}",
                             }
 
-                            // 节点名称（圆心）
-                            text {
-                                x: "{nx}",
-                                y: "{ny}",
-                                text_anchor: "middle",
-                                dominant_baseline: "middle",
-                                font_size: "10",
-                                fill: "white",
-                                font_weight: "500",
-                                "{label_text}"
+                            // 左侧类型色竖条（取代圆形整体填充，保留类型辨识度）
+                            rect {
+                                x: "{box_x}",
+                                y: "{box_y}",
+                                width: "{NODE_ACCENT_W}",
+                                height: "{box_h}",
+                                rx: "2",
+                                fill: "{fill}",
                             }
 
-                            // 节点下方简介
-                            if let Some(ref summary) = summary_text {
+                            // 名称
+                            text {
+                                x: "{text_x}",
+                                y: "{title_baseline}",
+                                font_size: "{NODE_TITLE_PX}",
+                                fill: "#f9fafb",
+                                font_weight: "600",
+                                "{title_text}"
+                            }
+
+                            // 摘要 / 描述（最多两行）
+                            for (i, line) in body_lines.iter().enumerate() {
                                 text {
-                                    x: "{nx}",
-                                    y: "{ny + radius + 11.0}",
-                                    text_anchor: "middle",
-                                    font_size: "8",
+                                    x: "{text_x}",
+                                    y: "{body_baseline0 + i as f64 * NODE_BODY_H}",
+                                    font_size: "{NODE_BODY_PX}",
                                     fill: "#9ca3af",
-                                    "{summary}"
+                                    "{line}"
                                 }
                             }
 
-                            // 节点上方 tags 标签（带颜色底色）
+                            // 标签胶囊（卡片底部一行，最多 3 个 + 聚合计数）
                             for (tag_text, tw, color) in tag_widths.iter() {
                                 {
                                     let tx = tag_x;
@@ -786,15 +869,15 @@ pub fn Graph(props: GraphProps) -> Element {
                                         g {
                                             rect {
                                                 x: "{tx}",
-                                                y: "{tag_label_y}",
+                                                y: "{tag_row_y}",
                                                 width: "{tw}",
-                                                height: "12",
+                                                height: "{NODE_TAG_H - 2.0}",
                                                 rx: "6",
                                                 fill: "{color}",
                                             }
                                             text {
                                                 x: "{tx + tw / 2.0}",
-                                                y: "{tag_label_y + 9.0}",
+                                                y: "{tag_row_y + 9.0}",
                                                 text_anchor: "middle",
                                                 font_size: "8",
                                                 fill: "white",
@@ -889,7 +972,8 @@ pub fn calculate_layout(nodes: &[GraphNode], center_id: Option<&str>) -> Vec<Gra
             }
         }
 
-        let radius = 180.0;
+        // 辐射半径需 ≥ 卡片宽度（168）+ 间隔：圆形时代 180 对矩形卡片太挤，会叠在一起
+        let radius = 250.0;
         let n = others.len() as f64;
         for (i, node) in others.into_iter().enumerate() {
             let angle = (i as f64 / n) * 2.0 * std::f64::consts::PI - std::f64::consts::FRAC_PI_2;
@@ -937,7 +1021,8 @@ pub fn expand_layout(
     // 计算中心节点已有的关联节点数（用于角度偏移）
     let existing_around = existing_nodes.iter().filter(|n| n.id != center_id).count();
 
-    let radius = 150.0;
+    // 同上：矩形卡片按 240px 半径铺开，避免新节点压在中心卡片上
+    let radius = 240.0;
     let n = new_nodes.len() as f64;
     let start_angle = (existing_around as f64) * 2.0 * std::f64::consts::PI
         / (existing_around + new_nodes.len()).max(1) as f64;
@@ -953,4 +1038,104 @@ pub fn expand_layout(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(label: &str, summary: Option<&str>, desc: &str, tags: &[&str]) -> GraphNode {
+        GraphNode {
+            id: "01J8ZKQ7X4M2N5P6R8T0VWXYZ".to_string(),
+            label: label.to_string(),
+            description: desc.to_string(),
+            node_type: "knowledge_node".to_string(),
+            x: 100.0,
+            y: 100.0,
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            summary: summary.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn text_width_counts_cjk_as_full_width() {
+        // CJK 按字号满宽，ASCII 按 0.55 折半（与 SVG 估算口径一致）
+        assert_eq!(text_width("知识", 10.0), 20.0);
+        assert_eq!(text_width("abc", 10.0), 16.5);
+        assert_eq!(text_width("", 10.0), 0.0);
+    }
+
+    #[test]
+    fn wrap_text_respects_max_lines_and_ellipsis() {
+        let long = "知识节点描述很长很长很长很长很长很长很长很长很长很长";
+        let lines = wrap_text(long, 100.0, 10.0, 2);
+        assert_eq!(lines.len(), 2, "超出 max_lines 必须被截断: {lines:?}");
+        assert!(lines[1].ends_with('…'), "末行被截断时应带省略号: {lines:?}");
+        // 每一行都不得超过可用宽度
+        for l in &lines {
+            assert!(text_width(l, 10.0) <= 100.0, "行超宽: {l:?}");
+        }
+    }
+
+    #[test]
+    fn wrap_text_flattens_newlines() {
+        // 正文里的换行摊平成单行（单词间保留一个空格），否则卡片里会出现半截空行
+        let lines = wrap_text("第一行\n第二行", 1000.0, 10.0, 2);
+        assert_eq!(lines, vec!["第一行 第二行".to_string()]);
+    }
+
+    #[test]
+    fn truncate_chars_keeps_boundary() {
+        assert_eq!(truncate_chars("知识节点", 10), "知识节点");
+        assert_eq!(truncate_chars("知识节点名称超长", 5), "知识节点…");
+        assert_eq!(truncate_chars("知识节点", 0), "");
+    }
+
+    #[test]
+    fn box_height_grows_with_tags() {
+        let plain = node("名称", None, "", &[]);
+        let tagged = node("名称", None, "", &["a"]);
+        assert!(
+            node_box_height(&tagged) > node_box_height(&plain),
+            "有标签时卡片要更高"
+        );
+        // 无标签：上下内边距 + 标题行 + 正文两行
+        assert_eq!(
+            node_box_height(&plain),
+            NODE_BOX_PAD * 2.0 + NODE_TITLE_H + NODE_BODY_H * 2.0
+        );
+    }
+
+    #[test]
+    fn body_lines_prefer_summary_then_description() {
+        let with_summary = node("名称", Some("摘要内容"), "正文内容", &[]);
+        assert_eq!(node_body_lines(&with_summary), vec!["摘要内容".to_string()]);
+        let desc_only = node("名称", None, "正文内容", &[]);
+        assert_eq!(node_body_lines(&desc_only), vec!["正文内容".to_string()]);
+        let empty = node("名称", None, "", &[]);
+        assert!(node_body_lines(&empty).is_empty());
+    }
+
+    #[test]
+    fn tag_chips_aggregate_overflow() {
+        let n = node("名称", None, "", &["一", "二", "三", "四", "五"]);
+        let chips = node_tag_chips(&n);
+        assert_eq!(chips.len(), NODE_TAG_MAX + 1);
+        assert_eq!(chips.last().unwrap().0, "+2");
+    }
+
+    #[test]
+    fn hover_lines_carry_id_and_body() {
+        let n = node("项目上下文", Some("这是摘要"), "这是正文描述", &["标签A"]);
+        let lines = node_hover_lines(&n);
+        let joined = lines.join("\n");
+        assert!(joined.contains("名称: 项目上下文"), "{joined}");
+        assert!(joined.contains("类型: 知识节点"), "{joined}");
+        assert!(joined.contains("标签: 标签A"), "{joined}");
+        assert!(joined.contains("摘要: 这是摘要"), "{joined}");
+        assert!(joined.contains("描述: 这是正文描述"), "{joined}");
+        // ID 只出现在 hover 详情里（画布卡片不再直出）
+        assert!(joined.contains("ID: 01J8ZKQ7X4M2N5P6R8T0VWXYZ"), "{joined}");
+        assert_eq!(lines.last().unwrap().split(": ").next().unwrap(), "ID");
+    }
 }

@@ -5,7 +5,9 @@ use dioxus_router::{Link, use_navigator};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;
+use crate::components::avatar_bubble::AvatarTone;
 use crate::components::hud::{HudPanel, HudProgress, PageHeader};
+use crate::components::identity_chip::IdentityChip;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -24,7 +26,7 @@ use common::api::{
     ProjectListItem, ProjectQueryRequest, TaskListItem, UpdateTaskProgressRequest,
     UpdateTaskStatusRequest,
 };
-use common::enums::TaskStatus;
+use common::enums::{AssigneeType, TaskStatus};
 
 /// 给 GetTaskRequest 注入统计参数（详情页时间筛选器产出，毫秒闭区间）。
 ///
@@ -409,11 +411,9 @@ pub fn TaskDetail(id: String) -> Element {
                     }
                     div {
                         label { class: "form-label", "分配对象" }
-                        {
-                            let assignee_type_text = if t.assignee_type == 0 { "用户" } else { "Agent" };
-                            rsx! {
-                                span { "{assignee_type_text}: {t.assignee_id}" }
-                            }
+                        IdentityChip {
+                            id: t.assignee_id.clone(),
+                            tone: AvatarTone::from(AssigneeType::from_i32(t.assignee_type)),
                         }
                     }
                     div {

@@ -61,7 +61,7 @@ D --> E["数据库/向量后端"]
 - 数据模型
   - MemoryPo：统一底层对象（Trace/ShortTerm/KnowledgeNode/Relation）
   - ShortTermMemoryIndexPo：短期记忆索引（summary/tags/trace_ids/status）
-  - LongTermKnowledgeNodePo：长期知识节点（node_description/summary/tags/is_published）
+  - LongTermKnowledgeNodePo：长期知识节点（node_name/node_description/summary/tags/is_published）
   - KnowledgeNodeRelationPo：节点关系（source/target/type）
   - Memory：业务实体（PO + SearchMatchInfo）
 - 搜索与遍历

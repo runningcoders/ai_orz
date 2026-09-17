@@ -6,7 +6,7 @@ use crate::api::hr::{query_agents, recommend_seed_nodes, search_memory_with_trav
 use crate::components::SearchableSelect;
 use crate::components::button::Button;
 use crate::components::graph::{
-    Graph, GraphEdge, GraphNode, calculate_layout, expand_layout, type_label,
+    Graph, GraphEdge, GraphNode, calculate_layout, expand_layout, truncate_chars, type_label,
 };
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
 use crate::components::markdown::MarkdownRenderer;
@@ -26,13 +26,47 @@ enum GraphStyle {
     Canvas,
 }
 
+/// 节点展示名：**名称 → 摘要首行 → 正文首行 → 「未命名节点」**
+///
+/// ⚠️ 关系端点在同批结果里查不到实体时用「未命名节点」占位，而不是把 ID 或
+/// 类型词（旧行为「知识节点」）当名字——那样一屏节点全是同一个词，等于没信息。
+/// ID 不进卡片，统一留给 hover 详情（见 `graph::node_hover_lines`）。
+fn node_display_name(item: &MemoryResult) -> String {
+    let head = |s: &str| {
+        let first = s.trim().lines().next().unwrap_or("").trim();
+        truncate_chars(first, 14)
+    };
+    if let Some(name) = item
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return truncate_chars(name, 14);
+    }
+    if let Some(summary) = item
+        .summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return head(summary);
+    }
+    let h = head(&item.content);
+    if h.is_empty() {
+        "未命名节点".to_string()
+    } else {
+        h
+    }
+}
+
 /// 从搜索结果构建图谱节点和边
 fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
     let mut seen_node_ids = HashSet::new();
 
-    // 第一遍：收集实体节点的名称映射（id → 内容摘要），
+    // 第一遍：收集实体节点的展示名映射（id → 名称），
     // 供关系边的端点节点复用真实名称，避免图上出现 UUID 或英文类型词
     let mut name_by_id: HashMap<&str, String> = HashMap::new();
     for item in results {
@@ -40,8 +74,9 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
             item.memory_type.as_str(),
             "knowledge_node" | "short_term" | "trace"
         ) {
-            let label = item.content.chars().take(20).collect::<String>();
-            name_by_id.entry(item.id.as_str()).or_insert(label);
+            name_by_id
+                .entry(item.id.as_str())
+                .or_insert_with(|| node_display_name(item));
         }
     }
 
@@ -51,7 +86,9 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
                 if seen_node_ids.insert(item.id.clone()) {
                     nodes.push(GraphNode {
                         id: item.id.clone(),
-                        label: item.content.chars().take(20).collect::<String>(),
+                        label: node_display_name(item),
+                        // 正文完整保留：卡片上只放前两行，hover 详情展示全文
+                        description: item.content.clone(),
                         node_type: item.memory_type.clone(),
                         x: 0.0,
                         y: 0.0,
@@ -62,15 +99,15 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
             }
             "relation" => {
                 if let (Some(src), Some(tgt)) = (&item.source_node_id, &item.target_node_id) {
-                    // 端点节点展示真实名称（查第一遍的名称映射）；
-                    // 同批记录查不到时用中性占位 —— id 不上图，点击节点可在详情面板查看
-                    let fallback = "知识节点".to_string();
+                    // 端点节点展示真实名称（查第一遍的名称映射）
+                    let fallback = "未命名节点".to_string();
                     let src_label = name_by_id.get(src.as_str()).unwrap_or(&fallback).clone();
                     let tgt_label = name_by_id.get(tgt.as_str()).unwrap_or(&fallback).clone();
                     if seen_node_ids.insert(src.clone()) {
                         nodes.push(GraphNode {
                             id: src.clone(),
                             label: src_label,
+                            description: String::new(),
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
@@ -82,6 +119,7 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
                         nodes.push(GraphNode {
                             id: tgt.clone(),
                             label: tgt_label,
+                            description: String::new(),
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
@@ -609,6 +647,18 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                         }),
                                     }
                                     div { class: "space-y-4",
+                                        // 知识节点的真实名称（node_name）：图谱卡片第一行用的就是它，
+                                        // 详情面板必须能对上；无名称的类型（短期记忆/调用记录）不显示
+                                        if let Some(name) = detail.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "名称" }
+                                                }
+                                                div { class: "p-2 bg-base-200 rounded-lg",
+                                                    span { class: "text-sm font-medium break-words", "{name}" }
+                                                }
+                                            }
+                                        }
                                         div { class: "grid grid-cols-2 gap-4",
                                             div {
                                                 label { class: "label",

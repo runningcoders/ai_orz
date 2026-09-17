@@ -43,6 +43,13 @@ pub struct SearchMemoryResponse {
 pub struct MemoryResult {
     /// 记忆 ID。
     pub id: String,
+    /// 记忆名称（知识节点 = `node_name`）。
+    ///
+    /// ⚠️ 与 `content` 不是一回事：知识节点的 `content` 是 `node_description`（正文），
+    /// 名称单独存放；前端图谱卡片第一行展示名称、正文留给 hover 详情。
+    /// 短期记忆 / 调用记录 / 关系没有独立名称，为 `None`（前端回退取正文首行）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// 记忆内容。
     pub content: String,
     /// 记忆类型。

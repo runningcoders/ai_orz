@@ -603,14 +603,25 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         },
     ));
 
-    // --- 渲染循环 effect：request_animation_frame 递归调用，每帧步进力学 + 重绘 ---
+    // --- props 同步 effect：边列表同步进 signal ---
+    // ⚠️ 不能让渲染循环直接捕获 props.edges 的快照：RAF 循环是在 effect 里注册的
+    // 闭包，捕获的是「effect 当次运行时」的 edges。展开节点后新增的边若走快照，
+    // 画布上就会出现「新节点没有连线」——节点走 signal 每帧刷新、边却停在挂载时。
+    // 边与节点同构：都同步进 signal，渲染循环每帧读最新值。
+    let edges_state: Signal<Vec<CanvasEdge>> = use_signal(|| props.edges.clone());
+    let mut edges_state_sync = edges_state;
+    use_effect(use_reactive(&props.edges, move |edges| {
+        edges_state_sync.set(edges);
+    }));
+
+    // 渲染循环 effect：request_animation_frame 递归调用，每帧步进力学 + 重绘
     let render_width = props.width;
     let render_height = props.height;
     let enable_force = props.enable_force_layout;
-    let render_edges = props.edges.clone();
-    // 供鼠标事件做边命中检测（与渲染用的 render_edges 同源，但后者在 Closure 内克隆）
-    let edges_static = props.edges.clone();
+    // 供鼠标事件做边命中检测（与渲染同源，每帧从 signal 读取）
+    let edges_static = edges_state;
     let mut nodes_state_c = nodes_state;
+    let edges_state_c = edges_state;
     let mut force_layout_c = force_layout;
     let mut is_stable_c = is_stable;
     let dragging_id_c = dragging_id;
@@ -679,8 +690,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
 
         let width = css_w;
         let height = css_h;
-        // 克隆 edges 给内部 Closure（use_effect 是 FnMut 可多次调用，不能直接 move）
-        let edges_inner = render_edges.clone();
+        // 边每帧从 signal 取（见上方 edges_state 注释：捕获快照会导致新增边不渲染）
 
         // running 标志：组件卸载时设为 false，停止递归 rAF
         let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
@@ -709,6 +719,8 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             if !running_clone.load(std::sync::atomic::Ordering::SeqCst) {
                 return;
             }
+            // 每帧取最新边列表（新增/删除的边当帧即生效）
+            let edges_inner = edges_state_c.read().clone();
             // 力导向步进
             if enable_force && !*is_stable_c.read() {
                 let mut nodes = nodes_state_c.read().clone();
@@ -897,8 +909,9 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                         hovered_id.set(new_hovered.clone());
                     }
                     // 未命中节点时做边命中检测（展示边的关系标签/描述）
+                    // 阈值 10px：细线（1.5~2px）用 6px 几乎点不中，用户会以为「连线不能 hover」
                     if new_hovered.is_none() {
-                        let he = nearest_edge(&edges_static, &nodes, x, y, 6.0);
+                        let he = nearest_edge(&edges_static.read().clone(), &nodes, x, y, 10.0);
                         if hovered_edge.read().clone() != he {
                             hovered_edge.set(he);
                         }
