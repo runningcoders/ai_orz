@@ -273,6 +273,7 @@ MD-->>Local : SSE/渠道投递
 classDiagram
 class MessageConsumer {
 +on_event(event) Result
++decide_retry(err, attempt) RetryDecision
 +ack(event_id) Result
 +nack(event_id) Result
 -handle_agent_message(message) Result

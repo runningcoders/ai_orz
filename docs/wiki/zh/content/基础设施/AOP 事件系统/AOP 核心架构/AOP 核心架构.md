@@ -187,7 +187,7 @@ end
 - topic：归属的事件主题（`EventTopic`），声明 1 producer : 1 topic
 - start/stop：生命周期管理；`start(EventSink)` 必须 spawn 后**立即返回**，`stop()` 必须置位并 await `JoinHandle`
 - on_consumed：消费成功或 Discard 后的业务收尾（先于 queue.ack，必须幂等）
-- on_failed：每次尝试失败回调，返回 `RetryDecision`（Retry/Nack 或 Discard/Ack）
+- on_failed：每次尝试失败回调，接收消费者 `decide_retry` 给出的 `RetryDecision`（Retry/Nack 或 Discard/Ack），只按它更新底层数据
 - 轮询机制：由 `ProducerLoop`（AtomicBool + 250ms 可中断 sleep）自管，不再有 `poll()`/`poll_interval_secs()`
 
 章节来源
@@ -254,7 +254,7 @@ end
 - 消费阶段：
   - 同步：on_event 直接执行，经 `finish_consumption` 判定收尾
   - 异步：worker 循环 dequeue → on_event → `finish_consumption` → 队列 ack/nack
-- 重试与退避：on_event 失败 → `on_failed` 返回 `Retry` → queue.nack 并 sleep(error_retry_sleep_ms)；`Discard` → queue.ack（仍回调 on_consumed）
+- 重试与退避：on_event 失败 → `decide_retry` 判为 `Retry` → queue.nack 并 sleep(error_retry_sleep_ms)；`Discard` → queue.ack（仍回调 on_consumed）
 - 顺序保证：order_key 相同的消息串行处理，通过 has_active_message 与队列头管理
 
 章节来源
@@ -277,7 +277,7 @@ end
 ### 错误处理
 - 序列化失败：记录错误并跳过该事件
 - 消费者同步错误：经 `finish_consumption` 判定，记录错误并上报指标
-- 异步 on_event 失败：调 `on_failed` 得 `RetryDecision`，`Retry` → nack 并 sleep，`Discard` → ack 且记 `on_consume_discarded`
+- 异步 on_event 失败：由 `Consumer::decide_retry` 判定 `RetryDecision`，`Retry` → nack 并 sleep，`Discard` → ack 且记 `on_consume_discarded`
 - 队列操作失败：记录错误但不中断主流程
 - 回调失败：`on_consumed`/`on_failed` 失败只记日志，不改投递结论（避免卡住队列）
 
@@ -324,6 +324,7 @@ class Consumer {
 +should_consume(event)
 +consume_mode()
 +on_event(event)
++decide_retry(err, attempt) RetryDecision
 +concurrency()
 +empty_queue_sleep_ms()
 +error_retry_sleep_ms()
@@ -333,7 +334,7 @@ class Producer {
 +name()
 +topic() EventTopic
 +on_consumed(ctx, event)
-+on_failed(ctx, event, err, attempt) RetryDecision
++on_failed(ctx, event, err, decision, attempt)
 +start(sink) Result
 +stop() Result
 }
@@ -403,7 +404,7 @@ InMemoryEventQueue ..|> EventQueue
 - 顺序错乱：确认 order_key 设置是否符合预期（如 MessageCreatedEvent 的 Agent 维度串行）
 - 队列堆积：查看 queue.stats 中的 pending_count 与 oldest_event_age_secs，调整 concurrency 或优化 on_event 耗时
 - 业务收尾丢失/启动失败：声明 `notify_producer` 的 topic 缺生产者 → `start_all` 返回 Err（早于 started 置位）
-- 频繁重试：关注 `on_failed` 返回的 `RetryDecision`；框架无 max_retry，需生产者自行 Discard
+- 频繁重试：关注 `decide_retry` 的判定；默认策略按永久错误码与 `DEFAULT_MAX_ATTEMPTS=8` 兜底 `Discard`
 - 死锁风险：Registry.start_all 已避免长持锁，确保消费者 on_event 不长时间持有外部锁
 
 章节来源

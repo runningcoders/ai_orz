@@ -142,7 +142,7 @@ CRONP --> PRODUCER_IF
 AOP 事件系统采用"生产者-消费者 + 事件总线"的解耦架构：
 - 生产者通过 `EventSink::emit` 发布事件，`EventSink` 校验 `event.kind() == 自身 topic` 后由框架序列化并注入元字段（event_id、kind、order_key、priority、created_at）。
 - 对于同步消费者，直接在发布线程调用 on_event 并经 `finish_consumption` 判定收尾；对于异步消费者，事件入队到对应消费者的内存队列，由 worker 拉取处理。
-- 收尾结论由 `finish_consumption` 单一判定：`Ok` → `on_consumed` → Ack；`Err` → `on_failed` 返回 `RetryDecision` → `Retry`(Nack)/`Discard`(Ack)。
+- 收尾结论由 `finish_consumption` 单一判定：`Ok` → `on_consumed` → Ack；`Err` → `Consumer::decide_retry` 判定 `RetryDecision` → `Retry`(Nack)/`Discard`(Ack)。
 - 队列按 order_key 保证顺序性，全局堆按 priority 和 created_at 决定出队优先级。
 
 ```mermaid
@@ -227,6 +227,7 @@ class Consumer {
 +should_consume(event) bool
 +consume_mode() ConsumeMode
 +on_event(event) Result
++decide_retry(err, attempt) RetryDecision
 +concurrency() usize
 +empty_queue_sleep_ms() u64
 +error_retry_sleep_ms() u64
@@ -241,6 +242,7 @@ class MessageConsumer {
 +subscriptions() Vec~Subscription~
 +consume_mode() ConsumeMode
 +on_event(event) Result
++decide_retry(err, attempt) RetryDecision
 +concurrency() usize
 +empty_queue_sleep_ms() u64
 +error_retry_sleep_ms() u64
@@ -325,7 +327,7 @@ Promote --> EndEnq
 - [src/pkg/aop/queue/mod.rs#L1-L107](src/pkg/aop/queue/mod.rs#L1-L107)
 
 ### 生产者接口与 EventSink
-- Producer trait 定义 `name()`、`topic()`、`on_consumed(ctx, event)`、`on_failed(ctx, event, err, attempt) -> RetryDecision`、`start(sink)`、`stop()`。
+- Producer trait 定义 `name()`、`topic()`、`on_consumed(ctx, event)`、`on_failed(ctx, event, err, decision, attempt)`、`start(sink)`、`stop()`。
 - 已删除 `register()`、`poll()`、`poll_interval_secs()`；轮询机制由生产者自持的 `ProducerLoop`（可中断 sleep，AtomicBool + 250ms 分片）实现。
 - `EventSink` 由 AOP 在 start_all 时构造并预绑定 `producer.topic()`，`emit` 校验 `event.kind() == topic`，确保 1 producer : 1 topic。
 - 生命周期两契约：`start()` 必须 spawn 后**立即返回**；`stop()` 必须置位**且** await `JoinHandle`。
@@ -372,7 +374,7 @@ MSGC --> DOMAIN["Domain 层"]
 
 ## 故障排查指南
 - 事件卡死：检查 order_key 是否仍有活动消息（has_active_message），确认 `finish_consumption` 结论是否落到 `queue.ack`/`queue.nack`。
-- 重试风暴：关注 `on_failed` 返回的 `RetryDecision`；框架**无 max_retry、无死信**，生产者需自行用永久错误表决定 `Discard`。
+- 重试风暴：关注 `Consumer::decide_retry` 的判定；默认策略已按永久错误码表与 `DEFAULT_MAX_ATTEMPTS = 8` 兜底 `Discard`。
 - 队列积压：增加消费者 concurrency，或优化 on_event 处理耗时。
 - 业务收尾丢失：检查声明了 `notify_producer` 的 topic 是否注册了对应 Producer；缺失会在 `start_all` 阶段启动失败。
 - 监控定位：使用队列 stats、query_events、get_event 查看 pending/in_progress 分布与最老事件年龄。

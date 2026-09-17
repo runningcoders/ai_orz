@@ -190,7 +190,7 @@ end
 - 消费模式：
   - 同步：直接 on_event，适合轻量操作。
   - 异步：入队后由 worker 拉取，支持 concurrency 并行度、empty_queue_sleep_ms/error_retry_sleep_ms 控制节奏。
-- 确认与重试：投递结论由框架在 `finish_consumption` 统一判定——成功回调生产者 `on_consumed` 并 `queue.ack`；失败由 `on_failed` 返回 `RetryDecision`（`Retry` 重投 / `Discard` 放弃），无需消费者自行 ack/nack。
+- 确认与重试：投递结论由框架在 `finish_consumption` 统一判定——成功回调生产者 `on_consumed` 并 `queue.ack`；失败由 `Consumer::decide_retry` 判定 `RetryDecision`（`Retry` 重投 / `Discard` 放弃），无需消费者自行 ack/nack。
 
 章节来源
 - [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
@@ -223,7 +223,7 @@ end
 ### 事件持久化、重放与补偿
 - 当前默认队列是内存实现，重启不保留事件；如需持久化，可实现新的 EventQueue 后端（如 SQLite/DuckDB/文件日志）并在 Registry 中注册。
 - 重放：可通过队列 query_events 获取待处理事件，由 finish_consumption 的 Retry 重投或自定义 re-enqueue 逻辑实现重放。
-- 补偿：失败经 `finish_consumption` 折算为 `queue.nack`（Retry）按 `error_retry_sleep_ms` 退避重投，或生产者 `on_failed` 返回 `Discard` 放弃；幂等业务可安全重放。
+- 补偿：失败经 `finish_consumption` 折算为 `queue.nack`（Retry）按 `error_retry_sleep_ms` 退避重投，或 `decide_retry` 判为 `Discard` 放弃；幂等业务可安全重放。
 
 章节来源
 - [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
@@ -275,7 +275,7 @@ end
   - 事件类型依赖 Event trait 与 `EventTopic`（`common::enums::EventTopic`）。
 - 潜在风险：
   - order_key 设计不当可能导致串行瓶颈。
-  - 异步消费失败经 `finish_consumption` 折算成 `queue.nack`（Retry/Discard 由生产者 `on_failed` 决定），需合理设置 error_retry_sleep_ms 避免自旋。
+  - 异步消费失败经 `finish_consumption` 折算成 `queue.nack`（Retry/Discard 由消费者 `decide_retry` 判定），需合理设置 error_retry_sleep_ms 避免自旋。
   - 同步消费者阻塞发布线程，应谨慎使用。
 
 ```mermaid
@@ -298,6 +298,7 @@ class Consumer {
 +should_consume(event_json)
 +consume_mode()
 +on_event(ctx, event_json)
++decide_retry(err, attempt) RetryDecision
 +concurrency()
 +empty_queue_sleep_ms()
 +error_retry_sleep_ms()
@@ -306,7 +307,7 @@ class Producer {
 +name()
 +topic() : EventTopic
 +on_consumed(ctx, event)
-+on_failed(ctx, event, err, attempt) : RetryDecision
++on_failed(ctx, event, err, decision, attempt)
 +start(sink : EventSink)
 +stop()
 }

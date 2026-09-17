@@ -31,7 +31,7 @@
 - AOP 生产者-消费者契约重构（Step 1/2/3）同步：删除 `EventKind`，统一为 `EventTopic`（`common::enums::EventTopic`）；`Event::topic()` 改为 `Event::kind()`
 - 订阅声明由 `interested_events()` 改为 `subscriptions() -> Vec<Subscription>`（含 `ordered` / `notify_producer` 语义）
 - 生产者改用 `Producer::start(EventSink)` 自管循环（`ProducerLoop` 可中断 sleep）+ `EventSink` 预绑定 topic；删除 `poll` / `register` / `poll_interval_secs`
-- 收尾统一为 `Registry::finish_consumption` 单一出口，按 topic 反查生产者回调 `on_consumed` / `on_failed`（返回 `RetryDecision`）；删除 `Consumer::ack/nack/source`
+- 收尾统一为 `Registry::finish_consumption` 单一出口，按 topic 反查生产者回调 `on_consumed` / `on_failed`（后者接收 `decision`）；删除 `Consumer::ack/nack/source`
 - `src/models/event.rs`（单数）已删除，采用 `pkg/aop/core/event.rs` 与 `src/models/events/`（复数）
 - 引入 DAL-as-Producer 归属模型：拥有某 topic 收尾能力的对象自身即生产者（`1 producer : 1 topic`）
 
@@ -144,7 +144,7 @@ end
 ### 消费者（Consumer）
 - 支持同步与异步两种消费模式
 - 用 `subscriptions() -> Vec<Subscription>` 声明订阅的 topic（含 `ordered` / `notify_producer` 语义），可自定义过滤 `should_consume`
-- 投递结论由框架在 `finish_consumption` 统一判定：成功 → 回调生产者 `on_consumed` + `queue.ack`；失败 → 生产者 `on_failed` 返回 `RetryDecision::{Retry,Discard}`
+- 投递结论由框架在 `finish_consumption` 统一判定：成功 → 回调生产者 `on_consumed` + `queue.ack`；失败 → 消费者 `decide_retry` 判定 `RetryDecision::{Retry,Discard}`
 - 可配置并发 worker 数量、空队列休眠、错误重试休眠
 
 章节来源
@@ -332,7 +332,7 @@ AOP 事件系统以简洁清晰的抽象实现了可靠的生产者-消费者模
 - 实现 `Producer` trait，提供 `name` / `topic()` / `on_consumed` / `on_failed` / `start(EventSink)` / `stop`；归属契约为 `1 producer : 1 topic`
 - 在 `producer::init()`（或 `dal::init()`）阶段调用 `Registry::register_producer` 注册；注册中心不再反向注入 `Arc<Registry>`
 - 自管循环：`start()` 内用 `ProducerLoop` 的 `loop_ctl.sleep(interval)` 周期产出，并通过预绑定 topic 的 `EventSink::emit` 发布；删除 `poll` / `poll_interval_secs` / `register`
-- 收尾回调：`on_consumed` 在 `queue.ack` 前调用（须幂等）；`on_failed` 返回 `RetryDecision` 决定重投（Retry）或放弃（Discard）
+- 收尾回调：`on_consumed` 在 `queue.ack` 前调用（须幂等）；`Consumer::decide_retry` 判定 `RetryDecision` 决定重投（Retry）或放弃（Discard）
 
 章节来源
 - [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
@@ -341,7 +341,7 @@ AOP 事件系统以简洁清晰的抽象实现了可靠的生产者-消费者模
 
 ### 事件消费者开发指南
 - 实现 `Consumer` trait，通过 `subscriptions() -> Vec<Subscription>` 声明订阅的 topic（含 `ordered` / `notify_producer`），并实现 `consume_mode` / `on_event`
-- 投递结论由框架在 `finish_consumption` 统一判定：成功回调生产者 `on_consumed`，失败由 `on_failed` 返回 `RetryDecision`；无需自行实现 ack/nack
+- 投递结论由框架在 `finish_consumption` 统一判定：成功回调生产者 `on_consumed`，失败由 `Consumer::decide_retry` 判定 `RetryDecision`；无需自行实现 ack/nack
 - 异步模式可通过 `concurrency` / `empty_queue_sleep_ms` / `error_retry_sleep_ms` 控制节奏；在启动阶段 `consumer::init` 注册，由 `aop::init_all` 统一 `start_all`
 
 章节来源
@@ -381,7 +381,7 @@ AOP 事件系统以简洁清晰的抽象实现了可靠的生产者-消费者模
 - empty_queue_sleep_ms：空队列休眠毫秒数
 - error_retry_sleep_ms：错误重试休眠毫秒数
 - ProducerLoop 休眠间隔：由生产者在 `start()` 内通过 `loop_ctl.sleep(interval)` 自行决定（如 `CronTriggerProducer` 每 60 秒）；框架不设 `poll_interval_secs`
-- RetryDecision：由生产者 `on_failed` 返回 `Retry`（重投）或 `Discard`（放弃 + 仍回调 `on_consumed`）；框架无 `max_retry`、无死信
+- RetryDecision：由消费者 `decide_retry` 判为 `Retry`（重投）或 `Discard`（放弃 + 仍回调 `on_consumed`）；框架无框架侧 `max_retry`、无死信
 
 章节来源
 - [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)

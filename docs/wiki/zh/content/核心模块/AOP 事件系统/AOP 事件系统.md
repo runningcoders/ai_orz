@@ -29,7 +29,7 @@
 **变更内容**
 - 主题体系收敛：删除 `EventKind`，统一为 `common::enums::EventTopic`（16 变体，点分线字符串）；`Event::topic()` 改为 `Event::kind() -> EventTopic`，响应侧 `AopEventMeta.event_kind` 恒为 `String`
 - 生产者契约改形：`interested_events()` → `subscriptions()`；删除 `register()` / `poll()` / `poll_interval_secs()`，新增 `start(sink)` / `stop()` 与 `EventSink`；`ProducerLoop` 自管可中断循环（250ms 分片），Registry 只做 `start_all` / `shutdown_all` 编排
-- 收尾单一出口 `finish_consumption`：按 topic 反查 producer 回调 `on_consumed` / `on_failed`，`RetryDecision { Retry, Discard }` 决策权下沉生产者，框架不设 `max_retry`、无死信
+- 收尾单一出口 `finish_consumption`：按 topic 反查 producer 回调 `on_consumed` / `on_failed`，`RetryDecision { Retry, Discard }` 判定权下沉消费者（`decide_retry`），框架不设 `max_retry`、无死信
 - 队列侧 `EventRef.attempt` 累计重试次数（nack 自增），`DeliveryOutcome { Ack, Nack }` 驱动 ack / nack
 - 「DAL-as-Producer」：`message.created` / `cron.trigger` / `email` / `wechat` / `lark` 入站由对应 DAL / 生产者对象自身收尾，不再新建独立 producer 类型
 
@@ -123,7 +123,7 @@ AOP 事件系统遵循「解耦、可扩展、可观测」的设计原则：
 - 顺序与优先级：`order_key` 保证同组顺序，`priority` 控制全局优先
 - 可插拔队列：通过 `EventQueue` 抽象，当前内存实现，未来可替换为持久化队列
 - 可观测性：通过 Hook 在发布、消费开始、成功、失败四个阶段埋点
-- 收尾反查：消费结束后由 `finish_consumption` 单点按 topic 反查生产者回调，重试决策权下沉生产者
+- 收尾反查：消费结束后由 `finish_consumption` 单点按 topic 反查生产者回调，重试判定权下沉消费者（`decide_retry`）
 
 ```mermaid
 sequenceDiagram
@@ -149,7 +149,7 @@ R->>R : 反查 producer.on_consumed(若声明 notify_producer)
 R->>Q : ack
 R->>H : on_consume_success
 else 失败
-R->>R : 反查 producer.on_failed → RetryDecision
+R->>R : 反查 producer.decide_retry → RetryDecision
 R->>Q : Nack(Retry)/Ack(Discard)
 R->>H : on_consume_failure
 end
@@ -200,7 +200,7 @@ WL --> CONS["Consumer.on_event"]
 CONS --> FC["finish_consumption 单一出口"]
 FC --> OK{"结果?"}
 OK --> |Ok| ACK["ack + 反查 on_consumed"]
-OK --> |Err| DEC["on_failed → RetryDecision"]
+OK --> |Err| DEC["decide_retry → RetryDecision"]
 DEC --> NACK["Nack: 重投"]
 DEC --> DISC["Discard: ack + 仍回调 on_consumed"]
 ```
@@ -338,7 +338,7 @@ BUS["业务模块"] --> REG
 - 队列与锁
   - InMemoryEventQueue 使用 Mutex 保护共享结构，批量操作尽量合并以减少锁竞争
 - 退避与背压
-  - `on_event` 失败后经 `on_failed` 决策；生产者 `ProducerLoop` 以 250ms 分片可中断 sleep 退避，避免紧密自旋
+  - `on_event` 失败后经 `decide_retry` 判定；生产者 `ProducerLoop` 以 250ms 分片可中断 sleep 退避，避免紧密自旋
   - 空队列由 `dequeue_next` 自身节奏控制，减少无意义轮询
 - 统计开销
   - Hook 通过 spawn 后台任务记录指标，避免阻塞主流程
@@ -353,7 +353,7 @@ BUS["业务模块"] --> REG
   - 定位：确认目标 topic 已被某消费者在 `subscriptions()` 中声明；`a2a.poll.requested` 等无 producer 的 topic 仍须有消费者，否则只入队不消费
 - 无限重投（Nack 风暴）
   - 现象：同一 `event_id` 反复出队，`attempt` 持续自增
-  - 定位：消费返回 `Err` 且无 producer 时，`delivery_of` 兜底走 `Nack` → 无限重投；检查 `on_event` 是否抛错，或对应生产者 `on_failed` 是否恒 `Retry`；入站消费者应经 `inbound_retry::decide`（`MAX_ATTEMPTS=8`）收敛为 `Discard`
+  - 定位：消费返回 `Err` 时先检查 `on_event` 为何抛错；收敛由 `Consumer::decide_retry` 负责（永久错误码 / `attempt >= DEFAULT_MAX_ATTEMPTS(8)` → `Discard`），若该消费者覆写了 `decide_retry` 且恒 `Retry`（如 cron）则永不放弃
 - Discard 静默
   - 现象：事件被 `Discard` 后消失，失败率面板不体现
   - 定位：`Discard` 走 ack 路径且仍回调 `on_consumed`，并打 `on_consume_discarded` 埋点（不计入失败率）；排查丢弃原因看 error 日志与丢弃埋点，而非失败率
@@ -369,7 +369,7 @@ BUS["业务模块"] --> REG
 - [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
 
 ## 结论
-AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内聚、低耦合的事件驱动架构。其优先级与顺序键机制保障了关键消息的处理语义；`EventTopic` 闭环枚举统一了主题表达；统计与监控钩子提供了运行时可观测性；内存队列满足大多数场景需求，同时为持久化队列预留了扩展点。结合「DAL-as-Producer」归属模型与 `finish_consumption` 单点收尾，重试决策权下沉生产者，可在复杂业务中稳定运行并持续演进。
+AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内聚、低耦合的事件驱动架构。其优先级与顺序键机制保障了关键消息的处理语义；`EventTopic` 闭环枚举统一了主题表达；统计与监控钩子提供了运行时可观测性；内存队列满足大多数场景需求，同时为持久化队列预留了扩展点。结合「DAL-as-Producer」归属模型与 `finish_consumption` 单点收尾，重试判定权下沉消费者（`decide_retry`），可在复杂业务中稳定运行并持续演进。
 
 [本节为总结，无需特定文件来源]
 
