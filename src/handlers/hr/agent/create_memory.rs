@@ -79,7 +79,11 @@ async fn create_short_term(ctx: RequestContext, params: CreateMemoryParams) -> R
 
 async fn create_knowledge_node(ctx: RequestContext, params: CreateMemoryParams) -> Result<String> {
     let now = chrono::Utc::now().timestamp();
-    let summary = params.summary.unwrap_or_else(|| params.content.clone());
+    // ⚠️ 缺省**不伪造摘要**：此前缺省 = content 全文，而 node_description 也是
+    // content 全文 → 详情面板「内容」与「摘要」并排显示同一段话，卡片第二行
+    // 与 hover 描述完全重复，读起来就是「没有信息量」。摘要留空由前端回退
+    // 用描述渲染，真有独立摘要时才填。
+    let summary = params.summary.clone().unwrap_or_default();
 
     // 根据 tags 是否包含 "published" 设置冗余字段 is_published
     // 注意：需在 tags_json 之前计算，因为 unwrap_or_default() 会 move params.tags

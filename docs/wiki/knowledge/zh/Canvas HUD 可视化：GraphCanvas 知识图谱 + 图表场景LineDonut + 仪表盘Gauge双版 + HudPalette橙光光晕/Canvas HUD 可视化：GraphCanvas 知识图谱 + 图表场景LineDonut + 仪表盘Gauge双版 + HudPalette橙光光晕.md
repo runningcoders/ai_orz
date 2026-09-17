@@ -56,7 +56,11 @@ source_files:
   - frontend/src/components/graph_canvas.rs (2026-09-17 增量：**删除 KnowledgeGraphRenderer 死代码**（565→145 行），降为纯适配层；关系类型进 CanvasEdge.tag；启用 ForceLayout + 四类粒子，对齐 Agent 关系图)
   - frontend/src/components/canvas_scene.rs (2026-09-17 增量：props.edges 同步进 edges_state signal（修复「展开节点后新边不渲染」）；DefaultRenderer 升级双形态（圆形 / 矩形信息卡，由 CanvasNode::is_card 判定）+ 边 hover 橙色加粗 + hover 卡画布内避让；新增 selected_node_id 受控 prop；边 hover 阈值 6→10px)
   - frontend/src/components/force_layout.rs (2026-09-17 增量：按等效半径的碰撞分离力 + 弹簧自然长度按两端半径放宽 + 边界留白取最大半径 —— 修复「卡片挤成一坨」)
-  - common/src/api/neural_tools.rs (2026-09-17 增量：MemoryResult 新增 name 字段，知识节点 = node_name；content 仍是 node_description)
+  - common/src/api/neural_tools.rs (2026-09-17 增量：MemoryResult 新增 name 字段，知识节点 = node_name；content 仍是 node_description；同日再增 weight 字段 = 关系强度 0~1，仅 relation 类型有值，`None` = 未标注)
+  - frontend/src/components/edge_style.rs (2026-09-17 新增：边权重的视觉映射 SSOT —— weight_style(强度) → (线宽 1.1~3.8, 不透明度系数 0.45~1.0)、weight_label → hover 读数；未标注走基准线宽 1.5，与「强度 0」区分；Canvas 与 SVG 双路径共用，禁止各写一套系数)
+  - frontend/src/components/canvas_scene.rs (2026-09-17 增量：CanvasEdge 增 weight；draw_edges 的色相/基色不透明度与强度系数拆开算（颜色只表达语义，粗细+浓淡表达强度）；hover 高亮线宽按被 hover 边的实际线宽 + 1.5 计算，避免固定 3.0 盖不住粗线)
+  - migrations/20260917000001_add_weight_to_knowledge_relation.sql (2026-09-17 新增：knowledge_node_relation 加 weight REAL 可空无默认值，存量行 = NULL = 未标注)
+  - src/handlers/hr/agent/save_long_term_memory.rs (2026-09-17 增量：relations[].weight → normalized_weight() 归一化后落库；工具描述与沉淀提示词同步说明「拿不准就省略」)
 
   - 【平行卡 3】docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md（TimeRangePicker 消费方：统计看板时间筛选）
   - 【平行卡 4】docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md（RingProgress 消费方：Agent 上下文 Token 占比展示）
@@ -129,6 +133,8 @@ HR 知识图谱页面加载：
    - hover：命中节点 → draw tooltip（node.label + degree + score）
 
 **知识图谱节点/边语义化展示 + hover 详情卡片（d248829a）**：节点标签改用"名称 + 类型徽标（type_label 中文化）"，边标签全部中文化，id 不再上图。**hover 详情卡片统一规格**：Canvas（graph_canvas.rs）与 SVG（graph.rs）双路径复用同一绘制规格——节点卡含名称/类型徽标/摘要/标签，边卡含关系类型 + 端点。draw_hover_card（canvas_scene.rs#L184）纯渲染函数，hover_card_size（#L170）精确测量 → 双路径各自 build_hover_card 组装 lines 后走同一 draw 入口。**画布边界避让**：卡片超右缘自动翻左侧、纵向 clamp 在画布内，不再超出边界被截断。**渲染顺序修正**：Canvas 渲染时边先于节点，边 hover 卡片暂存 pending_edge_card，全部节点绘制后补绘防遮挡（边在下层，节点卡在上层不被边覆盖）。**hover 互斥防闪烁**：节点 hover 与边 hover 事件层互斥，只保留最后一个 hover 对象的卡片，避免重叠闪烁。删除 `common MemoryType::zh_label` 死代码方法（返回临时值引用 E0515），type_label 改为纯静态字符串映射无临时值问题。
+
+**边权重表达关联强度（2026-09-17）**：关系边此前只有 `relation_type` 一列，图上所有连线长得一模一样，「A 依赖 B」与「A 顺带提到 B」无法区分。加 `knowledge_node_relation.weight`（REAL 可空，`NULL` = 未标注）后，`edge_style::weight_style` 把它映射成**线宽（1.1~3.8）+ 不透明度系数（0.45~1.0）**，未标注走基准线宽 1.5；hover 边卡在标注过时多一行 `强度: 80%`。强度**不占用颜色通道**（颜色已被关系类型哈希色与 ready/not_ready 语义色占用）。写入侧由 `save_long_term_memory` 的 `relations[].weight` 声明并经 `normalized_weight()` 归一化，**缺省不落默认值**。可选的替代方案「派生权重」被否决：候选信号（共现证据数）依赖 `knowledge_reference`，而节点写入路径恒传 `references: vec![]`，该表为空 → 派生值恒 0。
 ```
 
 ---
@@ -158,3 +164,4 @@ HR 知识图谱页面加载：
 21. **CanvasScene 的边列表必须走 signal，禁止在 RAF 闭包里捕获 props.edges 快照**（2026-09-17 新增）：渲染循环闭包捕获的是「effect 当次运行时」的 edges——展开节点后新增的边不参与绘制，症状是「点击节点展开后新出来的节点没有连线」（节点走 signal 每帧刷新、边却停在挂载时，不报错、纯视觉缺失）。边与节点同构：`use_effect(use_reactive(&props.edges, …))` 同步进 `edges_state` signal，RAF 每帧 `read().clone()`。边 hover 命中阈值用 10px（1.5~2px 的细线配 6px 几乎点不中，用户会以为「连线不能 hover」）。
 22. **不要为图谱另写渲染器：`CanvasScene` 只认内置 `DefaultRenderer`**（2026-09-17 新增）：`graph_canvas.rs` 曾有 400+ 行 `KnowledgeGraphRenderer`，因 `canvas_scene.rs` 硬编码 `let renderer = DefaultRenderer` 而**从未执行**——注释写着「用自定义 HUD 效果避免视觉过载」，实际跑出来是默认圆圈 + 圆下完整 ID，用户看到的就是「只显示『知识节点』和一个 id」。节点形态差异一律用数据表达（`CanvasNode::is_card()`：有 `summary` / `description` / `tags` 即矩形卡片，否则圆形）。若将来真要支持多渲染器，必须先把注入通道做进 props 并有测试覆盖，否则等价于死代码。
 23. **力导向必须按节点等效半径做碰撞避让，卡片节点的 `radius` 要填外接圆半径**（2026-09-17 新增）：`1/d²` 点斥力在近距离压不住 168px 宽的卡片，结果是「节点挤成一坨、连线糊在底下」；`ForceLayout::step` 已加碰撞分离力（最小中心距 `(r_i + r_j) * 1.15`）、弹簧自然长度按两端半径 + 60px 放宽、边界留白取最大半径。⚠️ 适配层若把卡片节点的 `radius` 填成小圆半径，卡片照样互压（该字段同时是无正文端点节点圆形形态的绘制半径）。
+24. **边强度只准走「粗细 + 不透明度」，颜色留给语义；未标注（`None`）≠ 强度 0**（2026-09-17 新增）：强度映射 SSOT 在 `edge_style.rs`（`weight_style` → `(线宽, 不透明度系数)`、`weight_label` → hover 读数），Canvas 与 SVG 两条路径只许引用、禁止各写一套系数（同一个强度在两个视图里粗细不同 = 用户以为数据变了）。三条红线：①**颜色通道已被关系类型/状态语义占用**（`tag_color` 哈希取色、关系图 ready/not_ready 语义色），拿颜色表达强度会和语义色打架；②`None`（未标注）渲染**基准线宽**，只有 `Some(0.0)` 才是最细最淡——把未标注当 0 会让存量关系整片塌到最细，看起来像「所有关联都很弱」，那是伪造语义；③hover 只在**标注过**时渲染 `强度: N%`，未标注整行不渲染（写「强度 0%」会被读成「明确很弱」），共享的 `canvas_scene` 因此不会给 Agent 关系图平添噪音。配套：写入侧缺省**不落默认值**（补 0.5 会把「没标」变成「标了中等强度」），归一化规则 `KnowledgeRelationParam::normalized_weight`（越界夹紧、NaN/Inf 丢弃）必须与前端 `edge_style::normalize` 同口径。反向教训：想让图谱边先「有差异」再谈准确，去派生权重（共现证据数）是走不通的——`knowledge_reference` 恒为空表（两条节点写入路径都传 `references: vec![]`）。

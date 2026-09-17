@@ -126,6 +126,9 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
             to_id: item.id.clone(),
             tag: item.edge_tag.clone(),
             description: item.edge_description.clone(),
+            // Agent 关系图不声明强度：边色已表达状态语义，多一个强度维度只会
+            // 让「线粗」变成没有依据的装饰（未标注统一走基准线宽）
+            weight: None,
         })
         .collect();
 

@@ -61,6 +61,16 @@ pub fn format_decimal(v: f64, digits: usize) -> String {
     trim_decimal(format!("{:.*}", digits, v))
 }
 
+/// 匹配相关度百分比：`0.0~1.0` 的相关度 → `0% ~ 100%`。
+///
+/// ⚠️ 别就地写 `format!("{:.4}", score)`：那会吐出 `0.4723` 这种没有单位、
+/// 也没有方向的裸数字，用户读成「匹配度只有 0.47，很低」，而字段语义其实是
+/// **越大越相关**（后端 `MemoryResult::score` 已由向量距离换算成相关度）。
+/// 图谱详情、记忆列表、记忆检索三处的相关度读数一律走这里。
+pub fn format_relevance(score: f32) -> String {
+    format!("{:.0}%", score.clamp(0.0, 1.0) * 100.0)
+}
+
 /// 量级自适应有效位：>=100 取整、>=10 保留 1 位、其余保留 2 位，再并入单位后缀。
 fn format_unit(v: f64, suffix: &str) -> String {
     let text = if v >= 100.0 {
@@ -144,6 +154,16 @@ mod tests {
         assert_eq!(format_compact_axis(9.94), "9.9");
         assert_eq!(format_compact_axis(999.0), "999");
         assert_eq!(format_compact_axis(1_500.0), "1.5K");
+    }
+
+    #[test]
+    fn relevance_is_percentage_and_clamped() {
+        assert_eq!(format_relevance(1.0), "100%");
+        assert_eq!(format_relevance(0.0), "0%");
+        assert_eq!(format_relevance(0.4723), "47%");
+        // 越界值夹紧，不出现 120% / -5%
+        assert_eq!(format_relevance(1.4), "100%");
+        assert_eq!(format_relevance(-0.1), "0%");
     }
 
     #[test]

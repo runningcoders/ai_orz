@@ -7,6 +7,7 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::number::format_relevance;
 use common::api::{MemoryResult, QueryMemoryParams, SearchMemoryParams};
 
 #[component]
@@ -196,7 +197,7 @@ pub fn HrMemorySearch() -> Element {
                                                 div { class: "flex items-center gap-2 shrink-0",
                                                     span { class: "badge orz-tag badge-sm", "{item.memory_type}" }
                                                     if let Some(score) = item.score {
-                                                        span { class: "text-xs text-base-content/70", "score={score:.4}" }
+                                                        span { class: "text-xs text-base-content/70", "相关度 {format_relevance(score)}" }
                                                     }
                                                 }
                                             }

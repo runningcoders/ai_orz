@@ -14,6 +14,7 @@ use wasm_bindgen::closure::Closure;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::button::{Button, ButtonVariant};
+use crate::components::edge_style;
 use crate::components::force_layout::{ForceLayout, ForceLayoutConfig, circle_initial_layout};
 use crate::components::hud_palette;
 use crate::components::node_card;
@@ -77,6 +78,12 @@ pub struct CanvasEdge {
     pub tag: Option<String>,
     /// 边的关系描述：hover 时展示，例如未就绪原因与修复提示。
     pub description: Option<String>,
+    /// 关系强度（0.0~1.0，越大越强）；`None` = 未标注
+    ///
+    /// 走 `edge_style::weight_style` 映射成**线宽 + 浓淡**（颜色已被关系类型/
+    /// 状态语义占用，不再拿颜色表达强度）。未标注渲染基准粗细、不是最细 ——
+    /// 只有知识图谱这类会声明强度的场景才填值，其余关系图留 `None` 即可。
+    pub weight: Option<f32>,
 }
 
 /// 画布视口变换：世界坐标 ↔ 屏幕坐标
@@ -342,7 +349,7 @@ fn draw_hover_card_anchored(
     draw_hover_card(ctx, bx, by, lines, accent);
 }
 
-/// 绘制边 hover 提示框（关系标签 + 描述）
+/// 绘制边 hover 提示框（关系标签 + 强度 + 描述）
 fn draw_edge_tooltip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, edge: &CanvasEdge) {
     let tag_label = match edge.tag.as_deref() {
         Some("ready") => "就绪",
@@ -351,6 +358,11 @@ fn draw_edge_tooltip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, edge: &Canv
         None => return,
     };
     let mut lines = vec![format!("关系: {}", tag_label)];
+    // 强度只在**标注过**时显示：未标注整行不渲染（写成「强度 0%」会被读成
+    // 「明确很弱」）。Agent 关系图不给强度，也就不会平白多出一行噪音。
+    if let Some(label) = edge_style::weight_label(edge.weight) {
+        lines.push(label);
+    }
     if let Some(desc) = &edge.description
         && !desc.is_empty()
     {
@@ -696,16 +708,21 @@ impl CanvasRenderer for DefaultRenderer {
         nodes: &[CanvasNode],
     ) {
         for edge in edges {
-            // 按关系标签着色：
+            // 颜色只表达**语义**，不表达强度：
             //   not_ready / ready → 语义色（关系图的「可用性」语义）
             //   其余 tag → 视为关系类型，按 tag 哈希稳定取色（知识图谱的 relation type）
             //   None → 中性灰（对不表达关系的连线零侵入）
-            let (color, width) = match edge.tag.as_deref() {
-                Some("not_ready") => ("#f97316".to_string(), 2.0),
-                Some("ready") => ("rgba(148, 163, 184, 0.55)".to_string(), 1.5),
-                Some(tag) => (hud_palette::hex_to_rgba(&tag_color(tag), 0.5), 1.5),
-                None => ("rgba(107, 114, 128, 0.4)".to_string(), 1.5),
+            // 强度另走粗细 + 浓淡两个未被占用的通道（`edge_style::weight_style`）
+            // 取 String 而不是 &str：`tag_color` 返回临时值，分支里 `.as_str()`
+            // 会在 match 结束时就释放（E0716），借用活不过这一行
+            let (hex, base_alpha) = match edge.tag.as_deref() {
+                Some("not_ready") => ("#f97316".to_string(), 0.9),
+                Some("ready") => ("#94a3b8".to_string(), 0.55),
+                Some(tag) => (tag_color(tag), 0.5),
+                None => ("#6b7280".to_string(), 0.4),
             };
+            let (width, alpha_scale) = edge_style::weight_style(edge.weight);
+            let color = hud_palette::hex_to_rgba(&hex, (base_alpha * alpha_scale).clamp(0.15, 1.0));
             ctx.set_stroke_style_str(&color);
             ctx.set_line_width(width);
             let from = nodes.iter().find(|n| n.id == edge.from_id);
@@ -735,8 +752,15 @@ impl CanvasRenderer for DefaultRenderer {
                 nodes.iter().find(|n| &n.id == to_id),
             )
         {
+            // 高亮线必须**盖得住**原线：线宽现在随强度变化（最粗 3.8），
+            // 固定 3.0 会在粗线上露边，看起来像「高亮后反而细了」
+            let (edge_width, _) = edges
+                .iter()
+                .find(|e| &e.from_id == from_id && &e.to_id == to_id)
+                .map(|e| edge_style::weight_style(e.weight))
+                .unwrap_or((edge_style::EDGE_BASE_WIDTH, 1.0));
             ctx.set_stroke_style_str("#f97316");
-            ctx.set_line_width(3.0);
+            ctx.set_line_width((edge_width + 1.5).max(3.0));
             ctx.begin_path();
             ctx.move_to(from.x, from.y);
             ctx.line_to(to.x, to.y);

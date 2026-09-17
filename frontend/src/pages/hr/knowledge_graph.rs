@@ -13,11 +13,25 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::number::format_relevance;
 use common::api::{
     AgentListItem, AgentQueryRequest, MemoryResult, RecommendSeedNodesParams, SearchMemoryParams,
     SeedNodeRecommendation,
 };
 use common::enums::KnowledgeRelationType;
+
+/// 匹配方式中文名。
+///
+/// 后端 `search_match.match_type` 有三种取值；详情面板必须把它和「相关度」
+/// 一起展示——单看一个百分比，用户无法分辨这是语义相似度还是关键词命中。
+fn match_type_label(match_type: &str) -> &str {
+    match match_type {
+        "hybrid" => "语义 + 关键词",
+        "vector" => "语义匹配",
+        "keyword" => "关键词命中",
+        other => other,
+    }
+}
 
 /// 渲染风格：svg（兜底）或 canvas（HUD 驾驶舱风格）
 #[derive(Clone, Copy, PartialEq)]
@@ -138,6 +152,8 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
                         source: src.clone(),
                         target: tgt.clone(),
                         label,
+                        // 关系强度：图谱按它调线宽与浓淡，未标注（存量边）走基准
+                        weight: item.weight,
                     });
                 }
             }
@@ -389,6 +405,35 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     let current_edges = edges.read().clone();
     let selected_id = selected_node_id.read().clone();
     let selected_detail = selected_node_data.read().clone();
+    // 只在摘要**独立于正文**时才单独渲染：写入侧此前会把摘要缺省落成正文
+    // （或正文前 100 字），详情面板「内容」「摘要」两栏显示同一段话 ——
+    // 这正是「字段没有信息量」的直接观感来源。
+    let independent_summary = selected_detail.as_ref().and_then(|d| {
+        let summary = d
+            .summary
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())?;
+        (!d.content.trim().starts_with(summary)).then(|| summary.to_string())
+    });
+    // 关系边详情：两端显示节点名而不是 UUID（端点通常就在图上，查得到）。
+    // 裸 ID 对用户没有意义，节点 ID 只在下方「节点 ID」栏出现一次。
+    let relation_endpoints = selected_detail
+        .as_ref()
+        .filter(|d| d.memory_type == "relation")
+        .map(|d| {
+            let label_of = |id: &str| {
+                current_nodes
+                    .iter()
+                    .find(|n| n.id == id)
+                    .map(|n| n.label.clone())
+                    .unwrap_or_else(|| id.to_string())
+            };
+            (
+                d.source_node_id.as_deref().map(label_of),
+                d.target_node_id.as_deref().map(label_of),
+            )
+        });
 
     rsx! {
         div { class: "space-y-4",
@@ -588,9 +633,11 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                     HudSection { title: format!("图谱视图 ({} 节点, {} 关系)", current_nodes.len(), current_edges.len()),
                                         actions: Some(rsx!{
                                             // 视口操作提示：滚轮/拖拽平移没有天然的视觉线索
-                                            // （右下角只显示缩放百分比），一句话说明最省事
+                                            // （右下角只显示缩放百分比），一句话说明最省事；
+                                            // 线粗这层编码也要点一句，否则「有的线更粗」会被
+                                            // 当成渲染抖动 —— 数值本身留给 hover
                                             span { class: "text-xs text-base-content/50 whitespace-nowrap hidden sm:inline",
-                                                "滚轮缩放 · 拖拽空白平移"
+                                                "滚轮缩放 · 拖拽空白平移 · 线越粗关联越强"
                                             }
                                             // 风格切换按钮：Canvas（HUD）/ SVG（兜底）
                                             div { class: "join",
@@ -673,12 +720,40 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                             }
                                             div {
                                                 label { class: "label",
-                                                    span { class: "label-text font-medium", "匹配分数" }
+                                                    span { class: "label-text font-medium", "相关度" }
                                                 }
-                                                if let Some(score) = detail.score {
-                                                    span { class: "font-mono text-sm", "{score:.4}" }
-                                                } else {
-                                                    span { class: "text-base-content/70", "N/A" }
+                                                div { class: "flex items-center gap-2",
+                                                    span { class: "font-mono text-sm",
+                                                        // 遍历展开出来的邻居/关系边没有匹配过程，留空比写
+                                                        // 「N/A」诚实 —— 后者会被读成「匹配度 0」
+                                                        match detail.score {
+                                                            Some(score) => format_relevance(score),
+                                                            None => "—".to_string(),
+                                                        }
+                                                    }
+                                                    if let Some(m) = detail.search_match.as_ref() {
+                                                        span { class: "badge orz-tag badge-sm",
+                                                            "{match_type_label(&m.match_type)}"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 关系边没有独立正文，DB 里只有 relation_type：
+                                        // 用「关系类型 + 两端节点名」把这条边讲清楚
+                                        if let Some((src, tgt)) = relation_endpoints.as_ref() {
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "关系" }
+                                                }
+                                                div { class: "p-2 bg-base-200 rounded-lg text-sm",
+                                                    span { class: "font-medium", "{detail.name.clone().unwrap_or_default()}" }
+                                                    if let (Some(src), Some(tgt)) = (src, tgt) {
+                                                        span { class: "text-base-content/70",
+                                                            "  {src} → {tgt}"
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -693,16 +768,20 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                             }
                                         }
 
-                                        div {
-                                            label { class: "label",
-                                                span { class: "label-text font-medium", "内容" }
-                                            }
-                                            div { class: "p-3 bg-base-200 rounded-lg",
-                                                MarkdownRenderer { content: detail.content.clone(), compact: true }
+                                        // 关系边的「内容」就是关系类型本身（上面「关系」栏已展示），
+                                        // 再渲染一遍只是同一行字重复出现
+                                        if detail.memory_type != "relation" {
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "内容" }
+                                                }
+                                                div { class: "p-3 bg-base-200 rounded-lg",
+                                                    MarkdownRenderer { content: detail.content.clone(), compact: true }
+                                                }
                                             }
                                         }
 
-                                        if let Some(summary) = &detail.summary {
+                                        if let Some(summary) = &independent_summary {
                                             div {
                                                 label { class: "label",
                                                     span { class: "label-text font-medium", "摘要" }

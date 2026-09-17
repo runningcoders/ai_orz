@@ -50,11 +50,16 @@ pub struct MemoryResult {
     /// 短期记忆 / 调用记录 / 关系没有独立名称，为 `None`（前端回退取正文首行）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// 记忆内容。
+    /// 记忆内容（知识节点 = 描述正文；关系边 = 关系类型中文标签）。
     pub content: String,
     /// 记忆类型。
     pub memory_type: String,
-    /// 匹配分数。
+    /// 匹配相关度（0.0~1.0，**越大越相关**）。
+    ///
+    /// 由向量距离换算（距离 0 = 完全相似 → 1.0），前端按百分比展示。
+    /// 仅「向量参与过命中」的条目有值；只有关键词命中、以及图谱遍历
+    /// 展开出来的邻居节点/关系边都没有匹配过程，为 `None`（前端整行不渲染，
+    /// 不要显示成 `N/A` —— 那会被读成「匹配度 0」）。
     pub score: Option<f32>,
     /// 记忆摘要。
     pub summary: Option<String>,
@@ -67,6 +72,13 @@ pub struct MemoryResult {
     /// 关系类型名称（仅 relation 类型有值）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relation_type: Option<String>,
+    /// 关系强度（0.0~1.0，越大越强；仅 relation 类型有值）。
+    ///
+    /// 写入方声明，图谱据此调线宽与浓淡、hover 展示数值。
+    /// `None` = **未标注**（存量边或产出时未声明）——前端渲染基准线宽，
+    /// 别回退成 0.0（那是「明确很弱」，与「没人标过」不是一回事）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f32>,
     /// 标签列表（仅 short_term / knowledge_node 类型有值）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
@@ -370,6 +382,24 @@ pub struct KnowledgeRelationParam {
     pub target_node_id: String,
     /// 关系类型。
     pub relation_type: String,
+    /// 关系强度（0.0~1.0）：
+    /// 这条关联有多强/多确定，用于图谱边的粗细与浓淡，hover 时展示。
+    /// 只在确实有判断时给（例如“直接依赖”接近 1.0、“顺带提到”接近 0.2）；
+    /// 拿不准就省略，省略会在图上渲染为基准线宽（好过随手给一个 0.5）。
+    pub weight: Option<f32>,
+}
+
+impl KnowledgeRelationParam {
+    /// 归一化关系强度：非有限值（NaN/Inf）与越界值一律夹紧到 0.0~1.0。
+    ///
+    /// 未提供时返回 `None`（未标注），**不回退成默认值**：0.5 这种“看起来
+    /// 合理”的缺省会把「模型没标」变成「模型标了中等强度」，图上的粗细
+    /// 就再也不能反映真实判断了。
+    pub fn normalized_weight(&self) -> Option<f32> {
+        self.weight
+            .filter(|w| w.is_finite())
+            .map(|w| w.clamp(0.0, 1.0))
+    }
 }
 
 /// 保存短期记忆请求参数。
@@ -471,4 +501,65 @@ pub struct SkillSummary {
     pub description: String,
     /// 标签列表。
     pub tags: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn param(weight: Option<f32>) -> KnowledgeRelationParam {
+        KnowledgeRelationParam {
+            source_node_id: "kn_a".into(),
+            target_node_id: "kn_b".into(),
+            relation_type: "related".into(),
+            weight,
+        }
+    }
+
+    /// 关系强度归一化：越界夹紧、NaN/Inf 丢弃，**未提供保持未标注**
+    ///
+    /// 重点是最后一条：缺省绝不能回退成某个「看起来合理」的中间值（0.5），
+    /// 否则「模型没标」会被渲染成「模型标了中等强度」，图上的粗细就不再是信息。
+    #[test]
+    fn relation_weight_is_normalized_without_inventing_a_default() {
+        assert_eq!(
+            param(None).normalized_weight(),
+            None,
+            "未标注必须保持 None，不能回退成默认值"
+        );
+        assert_eq!(param(Some(0.8)).normalized_weight(), Some(0.8));
+        assert_eq!(param(Some(1.7)).normalized_weight(), Some(1.0), "上界夹紧");
+        assert_eq!(param(Some(-0.3)).normalized_weight(), Some(0.0), "下界夹紧");
+        assert_eq!(
+            param(Some(0.0)).normalized_weight(),
+            Some(0.0),
+            "0 是合法值"
+        );
+        assert_eq!(param(Some(f32::NAN)).normalized_weight(), None);
+        assert_eq!(param(Some(f32::INFINITY)).normalized_weight(), None);
+    }
+
+    /// 未标注时响应里**不出现** weight 键（与 score 同款契约：前端据此整行不渲染）
+    #[test]
+    fn unset_weight_is_omitted_from_payload() {
+        let result = MemoryResult {
+            id: "kn_a".into(),
+            name: Some("订单状态机".into()),
+            content: "正文".into(),
+            memory_type: "knowledge_node".into(),
+            score: None,
+            summary: None,
+            source_node_id: None,
+            target_node_id: None,
+            relation_type: None,
+            weight: None,
+            tags: None,
+            search_match: None,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            !json.contains("\"weight\""),
+            "未标注的条目不应带 weight 键: {json}"
+        );
+    }
 }

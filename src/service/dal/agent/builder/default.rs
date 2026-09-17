@@ -985,7 +985,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("   - 新知识 → save_long_term_memory 创建节点\n");
         result.push_str("   - 已有相似节点 → update_memory 更新节点内容\n");
         result.push_str("   - 过大且可拆分的旧节点 → 拆分为子节点 + 概述父节点 + contains 关系\n");
-        result.push_str("4. **建立关系**：用 save_long_term_memory 的 relations 参数建立节点间关系（related/contains/depends 等）\n");
+        result.push_str("4. **建立关系**：用 save_long_term_memory 的 relations 参数建立节点间关系（related/contains/depends 等）；每条关系可带 weight（0~1）表示关联强度，知识图谱按它调边的粗细与浓淡，拿不准就省略、不要随手填一个中间值\n");
         result.push_str("5. **评估共享**：判断哪些节点对蜂巢有共享价值，用 update_memory 的 node_tags 字段加 'published' 标签\n");
         // 状态闭环由框架负责：不再要求 Agent 自己改 status
         //

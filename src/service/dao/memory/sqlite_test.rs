@@ -128,12 +128,13 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
     dao.save_knowledge_node(ctx.clone(), &node1).await.unwrap();
     dao.save_knowledge_node(ctx.clone(), &node2).await.unwrap();
 
-    // 添加关系
+    // 添加关系（带强度）
     let relation = KnowledgeNodeRelationPo {
         id: "rel-1".to_string(),
         source_node_id: "node-1".to_string(),
         target_node_id: "node-2".to_string(),
         relation_type: KnowledgeRelationType::Related,
+        weight: Some(0.75),
         created_at: 0,
         updated_at: 0,
     };
@@ -149,6 +150,8 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0].source_node_id, "node-1");
     assert_eq!(relations[0].target_node_id, "node-2");
+    // 强度必须落库并原样读回：漏列的表现是「图上线宽全都一样」，不报错
+    assert_eq!(relations[0].weight, Some(0.75));
 }
 
 #[sqlx::test]
@@ -672,6 +675,7 @@ async fn test_knowledge_relations(pool: SqlitePool) {
         source_node_id: "rel-1".to_string(),
         target_node_id: "rel-2".to_string(),
         relation_type: KnowledgeRelationType::Related,
+        weight: None,
         created_at: now,
         updated_at: now,
     }];
@@ -1360,6 +1364,7 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
             source_node_id: ids[100].clone(),
             target_node_id: ids[200].clone(),
             relation_type: KnowledgeRelationType::Related,
+            weight: None,
             created_at: now,
             updated_at: now,
         },
@@ -1374,6 +1379,7 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
             source_node_id: ids[0].clone(),
             target_node_id: ids[500].clone(),
             relation_type: KnowledgeRelationType::Related,
+            weight: None,
             created_at: now + 10,
             updated_at: now + 10,
         },

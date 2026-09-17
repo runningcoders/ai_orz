@@ -144,10 +144,15 @@ pub fn title(label: &str) -> String {
 }
 
 /// 卡片正文行：摘要优先，回退正文描述；两者都空则返回空（渲染成矮卡片）
+///
+/// ⚠️ 摘要若就是正文、或是正文的前缀，一律用正文：写入侧曾把摘要缺省落成
+/// 「正文前 100 字」，此时卡片第二行与 hover 详情里的「描述」完全重合，
+/// 读起来像是同一段话刷了两遍。
 pub fn body_lines(summary: Option<&str>, description: &str) -> Vec<String> {
+    let description = description.trim();
     let summary = summary.map(str::trim).unwrap_or("");
-    let text = if summary.is_empty() {
-        description.trim()
+    let text = if summary.is_empty() || description.starts_with(summary) {
+        description
     } else {
         summary
     };
@@ -204,10 +209,12 @@ pub fn hover_lines(
         lines.push(format!("标签: {}", tags.join("、")));
     }
     let summary = summary.map(str::trim).unwrap_or("");
-    if !summary.is_empty() {
+    let desc = description.trim();
+    // 摘要若就是描述本身（或描述的前缀），只保留「描述」一段 ——
+    // 写入侧曾把摘要缺省落成正文前缀，两段并列就是同一句话刷两遍
+    if !summary.is_empty() && !desc.starts_with(summary) {
         lines.extend(field_lines("摘要", summary));
     }
-    let desc = description.trim();
     if !desc.is_empty() {
         lines.extend(field_lines("描述", desc));
     }
@@ -321,6 +328,19 @@ mod tests {
     }
 
     #[test]
+    fn body_lines_ignores_derived_summary() {
+        // 回归：摘要缺省落成正文前缀时，卡片不该拿摘要当独立信息展示
+        let desc = "订单状态机描述订单从创建到完成的流转：待支付、已支付、已发货、已完成。";
+        let derived = "订单状态机描述订单从创建到完成";
+        assert_eq!(
+            body_lines(Some(derived), desc),
+            body_lines(None, desc),
+            "派生摘要应与「无摘要」走同一条回退路径"
+        );
+        assert_eq!(body_lines(Some(desc), desc), body_lines(None, desc));
+    }
+
+    #[test]
     fn body_lines_empty_when_both_blank() {
         assert!(body_lines(None, "   ").is_empty());
         assert!(body_lines(Some("  "), "").is_empty());
@@ -378,6 +398,18 @@ mod tests {
             lines.last().unwrap().starts_with("ID: "),
             "ID 只出现在 hover 末行"
         );
+    }
+
+    #[test]
+    fn hover_lines_dedupes_derived_summary() {
+        let desc = "订单状态机描述订单从创建到完成的流转。";
+        let lines = hover_lines("id", "订单状态机", "knowledge_node", &[], Some(desc), desc);
+        assert_eq!(
+            lines.iter().filter(|l| l.starts_with("摘要:")).count(),
+            0,
+            "摘要与描述重复时不应同时出现: {lines:?}"
+        );
+        assert_eq!(lines.iter().filter(|l| l.starts_with("描述:")).count(), 1);
     }
 
     #[test]

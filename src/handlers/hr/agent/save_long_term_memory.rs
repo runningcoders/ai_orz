@@ -13,7 +13,7 @@ use serde_json;
 #[register_handler_tool(
     id = "save_long_term_memory",
     name = "Save to Long-Term Memory",
-    description = "Persist durable knowledge as a long-term knowledge node (node_name, node_description, node_type, tags) and optionally create typed relations to other nodes in the same call. Returns node_id and relation_ids. For transient working-memory entries use save_short_term_memory.",
+    description = "Persist durable knowledge as a long-term knowledge node (node_name, node_description, node_type, tags) and optionally create typed relations to other nodes in the same call. Each relation accepts an optional weight (0.0-1.0) stating how strong/confirmed the association is; it drives edge thickness and color in the knowledge graph and is shown on hover, so omit it when unsure rather than guessing. Returns node_id and relation_ids. For transient working-memory entries use save_short_term_memory.",
     params = "common::api::SaveLongTermMemoryParams",
     neural
 )]
@@ -24,9 +24,11 @@ pub async fn save_long_term_memory(
 ) -> Result<SaveLongTermMemoryResponse> {
     let now = chrono::Utc::now().timestamp();
 
-    let summary = params
-        .summary
-        .unwrap_or_else(|| params.node_description.chars().take(100).collect());
+    // ⚠️ 缺省**不伪造摘要**：此前缺省取描述前 100 字，描述短于 100 字时摘要
+    // 与正文一字不差 → 图谱卡片第二行 / 详情面板「摘要」与「内容」重复显示。
+    // 留空交给前端回退用描述渲染（`node_card::body_lines` 已支持），
+    // 只有调用方真的给了摘要才落库。
+    let summary = params.summary.clone().unwrap_or_default();
 
     // 根据 tags 是否包含 "published" 设置冗余字段 is_published
     let is_published = params
@@ -89,6 +91,9 @@ pub async fn save_long_term_memory(
                     relation_type: common::enums::KnowledgeRelationType::from(
                         r.relation_type.clone(),
                     ),
+                    // 强度归一化在 DTO 上：非有限值丢弃、越界夹紧到 0.0~1.0，
+                    // 未给则 None（未标注 ≠ 0）
+                    weight: r.normalized_weight(),
                     created_at: now,
                     updated_at: now,
                 }

@@ -131,7 +131,7 @@ impl MemoryDaoSqliteImpl {
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
+            r#"SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
 FROM knowledge_node_relation
 WHERE source_node_id IN ("#,
         );
@@ -156,6 +156,8 @@ WHERE source_node_id IN ("#,
             let source_node_id: String = row.get("source_node_id");
             let target_node_id: String = row.get("target_node_id");
             let relation_type_str: String = row.get("relation_type");
+            // 动态 SQL 走 Row::get：显式取 f64 再收窄，避免依赖 f32 的 Decode 实现
+            let weight: Option<f32> = row.get::<Option<f64>, _>("weight").map(|w| w as f32);
             let created_at: i64 = row.get("created_at");
             let updated_at: i64 = row.get("updated_at");
             let relation_type = KnowledgeRelationType::from(relation_type_str);
@@ -164,6 +166,7 @@ WHERE source_node_id IN ("#,
                 source_node_id,
                 target_node_id,
                 relation_type,
+                weight,
                 created_at,
                 updated_at,
             });
@@ -1114,13 +1117,14 @@ ORDER BY created_at ASC
         sqlx::query!(
             r#"
 INSERT INTO knowledge_node_relation (
-    id, source_node_id, target_node_id, relation_type, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?)
+    id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 "#,
             relation.id,
             relation.source_node_id,
             relation.target_node_id,
             relation_type_str,
+            relation.weight,
             relation.created_at,
             relation.updated_at,
         )
@@ -1143,13 +1147,14 @@ INSERT INTO knowledge_node_relation (
             sqlx::query!(
                 r#"
 INSERT INTO knowledge_node_relation (
-    id, source_node_id, target_node_id, relation_type, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?)
+    id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 "#,
                 relation.id,
                 relation.source_node_id,
                 relation.target_node_id,
                 relation_type_str,
+                relation.weight,
                 relation.created_at,
                 relation.updated_at,
             )
@@ -1172,18 +1177,20 @@ INSERT INTO knowledge_node_relation (
         sqlx::query!(
             r#"
 INSERT INTO knowledge_node_relation (
-    id, source_node_id, target_node_id, relation_type, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?)
+    id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     source_node_id = excluded.source_node_id,
     target_node_id = excluded.target_node_id,
     relation_type  = excluded.relation_type,
+    weight         = excluded.weight,
     updated_at     = excluded.updated_at
 "#,
             relation.id,
             relation.source_node_id,
             relation.target_node_id,
             relation_type_str,
+            relation.weight,
             relation.created_at,
             relation.updated_at,
         )
@@ -1202,7 +1209,7 @@ ON CONFLICT(id) DO UPDATE SET
         // sqlx 不自动映射枚举，需要手动处理
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
 FROM knowledge_node_relation
 WHERE source_node_id = ?
 ORDER BY created_at ASC
@@ -1220,6 +1227,8 @@ ORDER BY created_at ASC
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
                 relation_type,
+                // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
+                weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });
@@ -1236,7 +1245,7 @@ ORDER BY created_at ASC
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
 FROM knowledge_node_relation
 WHERE target_node_id = ?
 ORDER BY created_at ASC
@@ -1254,6 +1263,8 @@ ORDER BY created_at ASC
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
                 relation_type,
+                // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
+                weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });
@@ -1270,7 +1281,7 @@ ORDER BY created_at ASC
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
 FROM knowledge_node_relation
 WHERE source_node_id = ? OR target_node_id = ?
 ORDER BY created_at ASC
@@ -1289,6 +1300,8 @@ ORDER BY created_at ASC
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
                 relation_type,
+                // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
+                weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });
@@ -1373,7 +1386,7 @@ ORDER BY created_at ASC
         let relation_type_str = relation_type.to_string();
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
 FROM knowledge_node_relation
 WHERE source_node_id = ? AND relation_type = ?
 ORDER BY created_at ASC
@@ -1392,6 +1405,8 @@ ORDER BY created_at ASC
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
                 relation_type,
+                // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
+                weight: row.weight.map(|w| w as f32),
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });

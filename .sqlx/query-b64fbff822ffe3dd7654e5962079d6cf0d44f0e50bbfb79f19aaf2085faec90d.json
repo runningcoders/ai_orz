@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at\nFROM knowledge_node_relation\nWHERE source_node_id = ? OR target_node_id = ?\nORDER BY created_at ASC\n",
+  "query": "\nSELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at\nFROM knowledge_node_relation\nWHERE source_node_id = ? AND relation_type = ?\nORDER BY created_at ASC\n",
   "describe": {
     "columns": [
       {
@@ -24,13 +24,18 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "weight",
         "ordinal": 4,
+        "type_info": "Float"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 5,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 5,
+        "ordinal": 6,
         "type_info": "Integer"
       }
     ],
@@ -42,9 +47,10 @@
       false,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "cea90a6e47e1ad59bd57b09fbda8c73a8231c7ebfc6a034e9a1a61d114dfc020"
+  "hash": "b64fbff822ffe3dd7654e5962079d6cf0d44f0e50bbfb79f19aaf2085faec90d"
 }

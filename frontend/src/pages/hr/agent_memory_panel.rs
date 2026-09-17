@@ -8,6 +8,7 @@ use crate::components::button::Button;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
+use crate::utils::number::format_relevance;
 use common::api::{MemoryResult, QueryMemoryParams, SearchMemoryParams};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -243,7 +244,13 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let summary_text = item.summary.clone().unwrap_or_default();
                                 // 短期记忆等无独立摘要的场景：摘要缺省取内容前几行作预览，
                                 // 避免「内容预览 + 摘要」两行渲染出同样的文本
-                                let independent_summary = item.summary.clone().filter(|s| !s.trim().is_empty());
+                                // 空摘要、以及「摘要就是正文 / 正文前缀」都视作派生摘要：
+                                // 写入侧曾把摘要缺省落成正文前 100 字，两栏会渲染同一段话
+                                let independent_summary = item
+                                    .summary
+                                    .clone()
+                                    .filter(|s| !s.trim().is_empty())
+                                    .filter(|s| !item.content.trim().starts_with(s.trim()));
                                 let summary_preview_text = independent_summary.clone().unwrap_or_else(|| {
                                     item.content
                                         .lines()
@@ -261,8 +268,9 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                         .collect::<Vec<_>>()
                                         .join(" / ")
                                 });
+                                // 相关度是 0~1 的比例，按百分比展示（裸 0.4723 会被读成「匹配度很低」）
                                 let score_text = item.score
-                                    .map(|s| format!("{:.4}", s))
+                                    .map(format_relevance)
                                     .unwrap_or_default();
                                 let mt = item.memory_type.clone();
                                 let src_node = item.source_node_id.clone().unwrap_or_default();

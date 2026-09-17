@@ -8,7 +8,7 @@ use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::MemorySearch;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{MemoryResult, MemorySearchMatch, SearchMemoryParams, SearchMemoryResponse};
+use common::api::{MemoryResult, SearchMemoryParams, SearchMemoryResponse};
 use common::enums::MemoryType;
 use common::error::{Result, bail_err};
 
@@ -163,84 +163,188 @@ fn memory_id(memory: &Memory) -> String {
 }
 
 fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {
-    memories.into_iter().map(|m| memory_to_result(&m)).collect()
+    // 字段映射收敛在 `Memory::to_api_result`（与 query_memory 共用一份实现），
+    // 这里只负责批量转换
+    memories.iter().map(Memory::to_api_result).collect()
 }
 
-/// 将 Memory 的 SearchMatchInfo 转换为 API 响应的 MemorySearchMatch。
-fn to_search_match(memory: &Memory) -> Option<MemorySearchMatch> {
-    memory.search_match.as_ref().map(|m| MemorySearchMatch {
-        match_type: match m.match_type {
-            crate::models::vector::MatchType::Hybrid => "hybrid".to_string(),
-            crate::models::vector::MatchType::Vector => "vector".to_string(),
-            crate::models::vector::MatchType::Keyword => "keyword".to_string(),
-        },
-        vector_distance: m.vector_distance,
-        fts_rank: m.fts_rank,
-    })
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::memory::{
+        KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams,
+    };
+    use crate::service::dao::memory::{MemoryQuery, MemorySearch};
+    use common::enums::MemoryStatus;
 
-fn memory_to_result(memory: &Memory) -> MemoryResult {
-    match &memory.po {
-        MemoryPo::Trace(trace) => MemoryResult {
-            id: trace.id.clone(),
-            name: None,
-            content: trace.input.clone(),
-            memory_type: "trace".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: None,
-            source_node_id: None,
-            target_node_id: None,
-            relation_type: None,
-            tags: None,
-            search_match: to_search_match(memory),
-        },
-        // 短期记忆 PO 只有一个文本字段 summary（无独立标题/正文）：
-        // content 放完整 summary；summary 置 None，由前端显示层
-        // 默认取 content 前几行作预览（搜索场景后续可改为命中详情，
-        // 与 query_memory 保持一致）。
-        MemoryPo::ShortTerm(st) => MemoryResult {
-            id: st.id.clone(),
-            name: None,
-            content: st.summary.clone(),
-            memory_type: "short_term".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: None,
-            source_node_id: None,
-            target_node_id: None,
-            relation_type: None,
-            tags: Some(parse_tags_json(&st.tags)),
-            search_match: to_search_match(memory),
-        },
-        MemoryPo::KnowledgeNode(kn) => MemoryResult {
-            id: kn.id.clone(),
-            name: Some(kn.node_name.clone()),
-            content: kn.node_description.clone(),
-            memory_type: "knowledge_node".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: Some(kn.summary.clone()),
-            source_node_id: None,
-            target_node_id: None,
-            relation_type: None,
-            tags: Some(parse_tags_json(&kn.tags)),
-            search_match: to_search_match(memory),
-        },
-        MemoryPo::Relation(rel) => MemoryResult {
-            id: rel.id.clone(),
-            name: None,
-            content: format!("{:?}", rel.relation_type),
-            memory_type: "relation".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: None,
-            source_node_id: Some(rel.source_node_id.clone()),
-            target_node_id: Some(rel.target_node_id.clone()),
-            relation_type: Some(format!("{:?}", rel.relation_type)),
-            tags: None,
-            search_match: to_search_match(memory),
-        },
+    fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
+        let _ = crate::config::init();
+        let base_path = crate::config::get().base_data_path();
+        crate::pkg::tool_tracing::logger::ToolCallLogger::init(base_path);
+        crate::service::dao::init_all();
+        crate::service::dal::init_all();
+        crate::service::domain::runtime::init();
+        crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
     }
-}
 
-/// 解析 tags JSON 数组字符串为 Vec<String>，解析失败返回空 Vec
-fn parse_tags_json(tags_json: &str) -> Vec<String> {
-    serde_json::from_str::<Vec<String>>(tags_json).unwrap_or_default()
+    async fn seed_node(ctx: &RequestContext, id: &str, name: &str, desc: &str, summary: &str) {
+        let now = chrono::Utc::now().timestamp();
+        let node = LongTermKnowledgeNodePo {
+            id: id.to_string(),
+            agent_id: "agent-kg".to_string(),
+            node_name: name.to_string(),
+            node_description: desc.to_string(),
+            node_type: "general".to_string(),
+            summary: summary.to_string(),
+            tags: r#"["published"]"#.to_string(),
+            status: MemoryStatus::Active,
+            is_published: true,
+            created_at: now,
+            updated_at: now,
+        };
+        runtime_domain()
+            .memory()
+            .create(
+                ctx.clone(),
+                MemoryCreateParams::CreateKnowledgeNode {
+                    node,
+                    references: vec![],
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    /// 读链路端到端回归：知识图谱页拿到的字段必须是**人可读**的。
+    ///
+    /// 覆盖用户反馈的三条（「打分 / 摘要 / 内容都是错的、没有信息量」）：
+    /// 1. 关系边的 content / relation_type 曾是 `format!("{:?}")` 的 Rust 变体名
+    ///    （`"Causes"`），前端关系标签词表只认 `"causes"` → 连线标签退化成英文；
+    /// 2. 关系边没有独立正文，至少要能读出中文关系名；
+    /// 3. 遍历展开出来的邻居节点/关系边没有匹配过程，`score` 保持 `None`，
+    ///    而不是伪造一个 0 让前端显示成「匹配度 0%」。
+    #[sqlx::test]
+    async fn knowledge_graph_payload_is_human_readable(pool: sqlx::SqlitePool) {
+        let ctx = init_env(pool);
+
+        let desc =
+            "订单状态机描述了订单从创建到完成的完整状态流转：待支付、已支付、已发货、已完成。";
+        // 模拟「调用方没给摘要」的写入：此处显式落空串，验证读侧会归一成 None
+        seed_node(&ctx, "kn_a", "订单状态机", desc, "").await;
+        seed_node(
+            &ctx,
+            "kn_b",
+            "订单超时补偿",
+            "订单超时补偿负责在订单超时后触发回滚。",
+            "",
+        )
+        .await;
+
+        let rel = KnowledgeNodeRelationPo {
+            id: "kr_1".to_string(),
+            source_node_id: "kn_a".to_string(),
+            target_node_id: "kn_b".to_string(),
+            relation_type: common::enums::KnowledgeRelationType::Causes,
+            // 强度要能一路穿过「迁移 → INSERT → SELECT → PO → DTO」，
+            // 任何一层漏掉列，图谱上的线宽就又退化成统一粗细
+            weight: Some(0.8),
+            created_at: 0,
+            updated_at: 0,
+        };
+        runtime_domain()
+            .memory()
+            .create(ctx.clone(), MemoryCreateParams::CreateRelations(vec![rel]))
+            .await
+            .unwrap();
+
+        let search = MemorySearch {
+            keyword: Some("订单状态机".to_string()),
+            top_k: Some(50),
+            filters: MemoryQuery {
+                memory_type: Some(MemoryType::KnowledgeNode),
+                limit: Some(50),
+                agent_id: Some(String::new()),
+                include_shared: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let hits = runtime_domain()
+            .memory()
+            .search(ctx.clone(), search)
+            .await
+            .unwrap();
+        let seed_ids: Vec<String> = hits
+            .iter()
+            .filter_map(|m| match &m.po {
+                MemoryPo::KnowledgeNode(kn) => Some(kn.id.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let mut all = hits;
+        all.extend(
+            runtime_domain()
+                .memory()
+                .traverse_graph(
+                    ctx.clone(),
+                    &seed_ids,
+                    1,
+                    10,
+                    TraversalStrategy::BreadthFirst,
+                )
+                .await
+                .unwrap(),
+        );
+
+        let results = memories_to_results(all);
+
+        let relation = results
+            .iter()
+            .find(|r| r.memory_type == "relation")
+            .expect("应返回关系边");
+        assert_eq!(
+            relation.relation_type.as_deref(),
+            Some("causes"),
+            "关系类型必须是 Display 的 snake_case，前端关系标签词表以此为 key"
+        );
+        assert_eq!(relation.content, "导致", "关系边内容应为中文标签");
+        assert_eq!(relation.name.as_deref(), Some("导致"));
+        assert_eq!(relation.source_node_id.as_deref(), Some("kn_a"));
+        assert_eq!(relation.target_node_id.as_deref(), Some("kn_b"));
+        assert_eq!(
+            relation.weight,
+            Some(0.8),
+            "关系强度要从库里读回来，否则图谱上的粗细与 hover 读数都是空的"
+        );
+        assert!(
+            !relation.content.contains("Causes"),
+            "不应再出现 Rust 变体名: {}",
+            relation.content
+        );
+
+        let neighbor = results
+            .iter()
+            .find(|r| r.id == "kn_b")
+            .expect("应返回邻居节点");
+        assert!(
+            neighbor.score.is_none(),
+            "遍历展开的邻居没有匹配过程，不应有分值"
+        );
+        assert!(
+            neighbor.summary.is_none(),
+            "空摘要要归一成 None，否则前端会渲染一个空的摘要块"
+        );
+        assert_eq!(neighbor.name.as_deref(), Some("订单超时补偿"));
+        assert!(!neighbor.content.is_empty(), "正文不能为空");
+        assert!(
+            neighbor.weight.is_none(),
+            "强度只属于关系边，节点/记忆条目不应带值"
+        );
+        assert_eq!(
+            neighbor.tags,
+            Some(Vec::new()),
+            "published 是可见性控制位，不该出现在业务标签里"
+        );
+    }
 }

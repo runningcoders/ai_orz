@@ -630,6 +630,7 @@ async fn test_create_relations(pool: SqlitePool) -> Result<()> {
         source_node_id: "kn-source-001".to_string(),
         target_node_id: "kn-target-001".to_string(),
         relation_type: common::enums::KnowledgeRelationType::Related,
+        weight: None,
         created_at: now,
         updated_at: now,
     };
@@ -1271,6 +1272,7 @@ async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<()> {
         source_node_id: "node-a".to_string(),
         target_node_id: "node-b".to_string(),
         relation_type: common::enums::KnowledgeRelationType::Related,
+        weight: None,
         created_at: now,
         updated_at: now,
     };
@@ -1805,6 +1807,7 @@ async fn test_search_relations(pool: SqlitePool) -> Result<()> {
         source_node_id: "kn-rel-001".to_string(),
         target_node_id: "kn-rel-002".to_string(),
         relation_type: common::enums::KnowledgeRelationType::Related,
+        weight: None,
         created_at: now,
         updated_at: now,
     };
@@ -1901,6 +1904,7 @@ fn traverse_rel(id: &str, src: &str, tgt: &str, created_at: i64) -> KnowledgeNod
         source_node_id: src.to_string(),
         target_node_id: tgt.to_string(),
         relation_type: common::enums::KnowledgeRelationType::Related,
+        weight: None,
         created_at,
         updated_at: created_at,
     }

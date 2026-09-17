@@ -103,6 +103,8 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
             // 而 tooltip 在 tag 为 None 时直接 return —— 表现为「连线 hover 没反应」。
             tag: (!e.label.is_empty()).then(|| e.label.clone()),
             description: None,
+            // 关系强度透传到画布：线宽与浓淡由它派生，未标注走基准粗细
+            weight: e.weight,
         })
         .collect();
 

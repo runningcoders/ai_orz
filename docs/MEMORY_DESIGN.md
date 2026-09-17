@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS knowledge_node_relation (
     source_node_id TEXT NOT NULL,
     target_node_id TEXT NOT NULL,
     relation_type TEXT NOT NULL,
+    weight REAL,                       -- 关系强度 0.0~1.0，NULL = 未标注（见下）
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (source_node_id) REFERENCES long_term_knowledge_node(id),
@@ -139,6 +140,18 @@ CREATE INDEX IF NOT EXISTS idx_knr_target ON knowledge_node_relation(target_node
 CREATE INDEX IF NOT EXISTS idx_knr_type ON knowledge_node_relation(relation_type);
 ```
 > 对应迁移文件参考：[migrations/ 目录](migrations/)
+
+**`weight`（关系强度）**：写入方（`save_long_term_memory` 的 `relations[].weight`）声明，
+图谱按它调**边的粗细与浓淡**、hover 展示百分比。三条语义边界：
+
+- `NULL` = **未标注**，渲染基准粗细 —— 与 `0.0`（明确很弱）不是一回事；
+  两者混同会让存量关系看起来「全都很弱」
+- 写入时归一化（`KnowledgeRelationParam::normalized_weight`）：越界夹紧到 0.0~1.0、
+  NaN/Inf 丢弃；**缺省不落默认值**（随手补 0.5 会把「没标」变成「标了中等强度」）
+- 颜色的语义已被关系类型占用，强度**只走粗细与不透明度**两个通道
+
+> 为什么不做「派生权重」：候选信号（共现证据数）依赖 `knowledge_reference`，
+> 而节点写入路径恒传 `references: vec![]`，该表实际为空 → 派生值恒 0。
 
 **预定义关系类型** (`KnowledgeRelationType` 枚举):
 

@@ -7,7 +7,9 @@
 //! - KnowledgeReferencePo - 知识节点引用原始短期索引
 //! - Memory - 记忆业务实体（包含 PO + 搜索匹配信息）
 
-use crate::models::vector::{SearchMatchInfo, VectorPayload, Vectorizable};
+use crate::models::vector::{MatchType, SearchMatchInfo, VectorPayload, Vectorizable};
+use common::api::{MemoryResult, MemorySearchMatch};
+use common::enums::KnowledgeRelationType;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
@@ -307,6 +309,12 @@ pub struct KnowledgeNodeRelationPo {
     pub target_node_id: String,
     /// 关系类型枚举
     pub relation_type: common::enums::KnowledgeRelationType,
+    /// 关系强度（0.0~1.0，越大越强），`None` = 未标注
+    ///
+    /// 由写入方（`save_long_term_memory` 的 `relations[].weight`）声明，
+    /// 图谱按它调线宽与浓淡；`None` 渲染基准线宽。
+    /// ⚠️ 与「强度 0」不是一回事：0 是「明确很弱」，`None` 是「没人标过」。
+    pub weight: Option<f32>,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
@@ -423,6 +431,131 @@ impl Memory {
         self.search_match = Some(search_match);
         self
     }
+
+    /// 转换为 API 响应 DTO（`search_memory` / `query_memory` 共用）
+    ///
+    /// ⚠️ **单一实现**：这两个 handler 此前各持一份逐字相同的拷贝，改一处漏一处。
+    /// 关系边两处都用 `format!("{:?}")` 输出关系类型 —— Debug 得到的是 Rust 变体名
+    /// （`"Causes"`），而前端 `zh_label_from_display` 的词表 key 是 `Display` 的
+    /// snake_case（`"causes"`），查表失败原样返回 → 画布上所有连线标签退化成英文词、
+    /// 详情面板「内容」显示同一串英文，等于没有信息。
+    ///
+    /// `score` 语义 = **相关度（0.0~1.0，越大越相关）**，由向量距离换算而来
+    /// （距离 0 = 完全相似 → 1.0）。⚠️ 旧实现直接吐 `vector_distance`（越小越相似），
+    /// UI 标签却写「匹配分数」，方向正好相反；且关键词命中时距离为空 →
+    /// 永远显示 `N/A`。只有向量参与过命中才有分值：`traverse_graph` 展开出来的
+    /// 邻居节点与关系边没有匹配过程，保持 `None`，前端应整行不渲染而不是显示 `N/A`。
+    pub fn to_api_result(&self) -> MemoryResult {
+        let search_match = self.search_match.as_ref().map(|m| MemorySearchMatch {
+            match_type: match m.match_type {
+                MatchType::Hybrid => "hybrid",
+                MatchType::Vector => "vector",
+                MatchType::Keyword => "keyword",
+            }
+            .to_string(),
+            vector_distance: m.vector_distance,
+            fts_rank: m.fts_rank,
+        });
+        let score = self
+            .search_match
+            .as_ref()
+            .and_then(|m| m.vector_distance)
+            .map(|distance| (1.0 - distance).clamp(0.0, 1.0));
+
+        match &self.po {
+            MemoryPo::Trace(trace) => MemoryResult {
+                id: trace.id.clone(),
+                name: None,
+                content: trace.input.clone(),
+                memory_type: "trace".to_string(),
+                score,
+                summary: None,
+                source_node_id: None,
+                target_node_id: None,
+                relation_type: None,
+                weight: None,
+                tags: None,
+                search_match,
+            },
+            // 短期记忆 PO 只有一个文本字段 summary（无独立标题/正文）：
+            // content 放完整 summary；summary 置 None，由前端显示层默认取
+            // content 前几行作预览，避免「内容 + 摘要」渲染出同样的文本。
+            MemoryPo::ShortTerm(st) => MemoryResult {
+                id: st.id.clone(),
+                name: None,
+                content: st.summary.clone(),
+                memory_type: "short_term".to_string(),
+                score,
+                summary: None,
+                source_node_id: None,
+                target_node_id: None,
+                relation_type: None,
+                weight: None,
+                tags: Some(business_tags(&st.tags)),
+                search_match,
+            },
+            MemoryPo::KnowledgeNode(kn) => MemoryResult {
+                id: kn.id.clone(),
+                name: Some(kn.node_name.clone()),
+                content: kn.node_description.clone(),
+                memory_type: "knowledge_node".to_string(),
+                score,
+                // 空串要归一成 None：写入侧未给摘要时可能是 `""`，
+                // 前端 `if let Some(summary)` 会渲染一个空的摘要块
+                summary: Some(kn.summary.clone()).filter(|s| !s.trim().is_empty()),
+                source_node_id: None,
+                target_node_id: None,
+                relation_type: None,
+                weight: None,
+                tags: Some(business_tags(&kn.tags)),
+                search_match,
+            },
+            MemoryPo::Relation(rel) => {
+                // 必须走 Display（snake_case）：前端关系标签词表以此为 key，
+                // 用 Debug 会得到 "Causes" 这类变体名而查不到中文
+                let relation_key = rel.relation_type.to_string();
+                let relation_label =
+                    KnowledgeRelationType::zh_label_from_display(&relation_key).to_string();
+                MemoryResult {
+                    id: rel.id.clone(),
+                    // 关系边在数据层只有类型一个可用字段，把中文标签同时给
+                    // name/content —— 详情与 hover 才不至于显示一串英文枚举名
+                    name: Some(relation_label.clone()),
+                    content: relation_label,
+                    memory_type: "relation".to_string(),
+                    score,
+                    summary: None,
+                    source_node_id: Some(rel.source_node_id.clone()),
+                    target_node_id: Some(rel.target_node_id.clone()),
+                    relation_type: Some(relation_key),
+                    // 关系强度透传给图谱：线宽/浓淡据此派生，`None` = 未标注
+                    weight: rel.weight,
+                    tags: None,
+                    search_match,
+                }
+            }
+        }
+    }
+}
+
+/// 解析 tags JSON 数组字符串为 Vec<String>，解析失败返回空 Vec
+pub(crate) fn parse_tags_json(tags_json: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(tags_json).unwrap_or_default()
+}
+
+/// 入库用的可见性控制标记。
+///
+/// 写节点时它同时落进 `tags` 且置冗余字段 [`LongTermKnowledgeNodePo::is_published`]
+/// （供查询走索引）。它是**控制位不是业务标签**，回给前端会在卡片上多出一个
+/// 没有意义的英文胶囊。
+const PUBLISHED_TAG: &str = "published";
+
+/// 结果侧业务标签：剔除 `published` 这类控制标记
+fn business_tags(tags_json: &str) -> Vec<String> {
+    parse_tags_json(tags_json)
+        .into_iter()
+        .filter(|t| t != PUBLISHED_TAG)
+        .collect()
 }
 
 /// 将 tags JSON 数组字符串展平为空格分隔的纯文本，便于向量化
@@ -449,4 +582,107 @@ pub struct SeedNodeRecommendation {
     pub incoming_count: usize,
     /// 出边数（引用其他节点次数）
     pub outgoing_count: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::enums::{KnowledgeRelationType, MemoryStatus};
+
+    fn node(summary: &str) -> Memory {
+        Memory::new(MemoryPo::KnowledgeNode(LongTermKnowledgeNodePo {
+            id: "kn_1".to_string(),
+            agent_id: "agent-a".to_string(),
+            node_name: "订单状态机".to_string(),
+            node_description: "订单状态机描述订单从创建到完成的流转。".to_string(),
+            node_type: "general".to_string(),
+            summary: summary.to_string(),
+            tags: "[]".to_string(),
+            status: MemoryStatus::Active,
+            is_published: false,
+            created_at: 0,
+            updated_at: 0,
+        }))
+    }
+
+    fn relation(kind: KnowledgeRelationType) -> Memory {
+        Memory::new(MemoryPo::Relation(KnowledgeNodeRelationPo {
+            id: "kr_1".to_string(),
+            source_node_id: "kn_a".to_string(),
+            target_node_id: "kn_b".to_string(),
+            relation_type: kind,
+            // 未标注示例：没有强度时不能写成 0.0（那是「明确很弱」）
+            weight: None,
+            created_at: 0,
+            updated_at: 0,
+        }))
+    }
+
+    /// 关系类型必须走 `Display`（前端标签词表以此为 key）。
+    ///
+    /// 回归：`format!("{:?}")` 会输出 Rust 变体名 `"Causes"`，前端查不到中文
+    /// 而原样显示英文 —— 画布上所有连线标签、详情面板「内容」都是这串英文。
+    #[test]
+    fn relation_type_uses_display_not_debug() {
+        let dto = relation(KnowledgeRelationType::Causes).to_api_result();
+        assert_eq!(dto.relation_type.as_deref(), Some("causes"));
+        assert_eq!(dto.content, "导致", "关系边的内容应是人可读的中文标签");
+        assert_eq!(dto.name.as_deref(), Some("导致"));
+
+        let dto = relation(KnowledgeRelationType::ContainedBy).to_api_result();
+        assert_eq!(dto.relation_type.as_deref(), Some("contained_by"));
+        assert_eq!(dto.content, "属于");
+    }
+
+    /// 空摘要归一成 `None`：前端 `if let Some(summary)` 否则会渲染一个空块。
+    #[test]
+    fn blank_summary_is_none() {
+        assert!(node("").to_api_result().summary.is_none());
+        assert!(node("   ").to_api_result().summary.is_none());
+        assert_eq!(
+            node("独立摘要").to_api_result().summary.as_deref(),
+            Some("独立摘要")
+        );
+    }
+
+    /// `score` 是**相关度**（越大越相关），由向量距离换算而来。
+    #[test]
+    fn score_is_relevance_not_distance() {
+        let memory = node("").with_search_match(SearchMatchInfo {
+            match_type: MatchType::Vector,
+            vector_distance: Some(0.2),
+            ..Default::default()
+        });
+        let dto = memory.to_api_result();
+        let score = dto.score.expect("向量命中应有相关度");
+        assert!((score - 0.8).abs() < 1e-6, "距离 0.2 应换算成相关度 0.8");
+        assert_eq!(
+            dto.search_match.as_ref().map(|m| m.match_type.as_str()),
+            Some("vector"),
+            "匹配方式要一并暴露，否则用户分不清语义还是关键词命中"
+        );
+    }
+
+    /// `published` 是可见性控制位（与 `is_published` 冗余字段同源），不是业务标签，
+    /// 回给前端会在卡片上多出一个没有意义的英文胶囊。
+    #[test]
+    fn published_control_tag_is_not_exposed_as_label() {
+        let mut memory = node("");
+        if let MemoryPo::KnowledgeNode(kn) = &mut memory.po {
+            kn.tags = r#"["published","架构"]"#.to_string();
+        }
+        assert_eq!(
+            memory.to_api_result().tags,
+            Some(vec!["架构".to_string()]),
+            "只保留业务标签"
+        );
+    }
+
+    /// 没有匹配过程（图谱遍历展开）就没有相关度，前端据此整行不渲染。
+    #[test]
+    fn no_match_means_no_score() {
+        let dto = node("").to_api_result();
+        assert!(dto.score.is_none());
+        assert!(dto.search_match.is_none());
+    }
 }

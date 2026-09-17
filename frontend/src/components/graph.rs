@@ -37,6 +37,11 @@ pub struct GraphEdge {
     pub source: String,
     pub target: String,
     pub label: String,
+    /// 关系强度（0.0~1.0）；`None` = 未标注（渲染基准线宽）
+    ///
+    /// 与 Canvas 版共用 `edge_style` 的映射：两处各写一份系数，同一个强度
+    /// 在两个视图里会粗细不同。
+    pub weight: Option<f32>,
 }
 
 /// 图元素 hover 目标（节点 ID / 边端点对），驱动 hover 详情卡片
@@ -109,10 +114,17 @@ fn build_hover_card(
                 edge.label.as_str()
             };
             Some(HoverCard {
-                lines: vec![
-                    format!("关系: {rel}"),
-                    format!("端点: {} → {}", from.label, to.label),
-                ],
+                lines: {
+                    let mut lines = vec![
+                        format!("关系: {rel}"),
+                        format!("端点: {} → {}", from.label, to.label),
+                    ];
+                    // 强度只在标注过时显示（未标注整行不渲染，避免被读成 0%）
+                    if let Some(label) = edge_style::weight_label(edge.weight) {
+                        lines.insert(1, label);
+                    }
+                    lines
+                },
                 accent: get_edge_color(rel).to_string(),
                 anchor_x: (fx + gx) / 2.0 * scale + pan_x,
                 anchor_y: (fy + gy) / 2.0 * scale + pan_y,
@@ -144,6 +156,7 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
 
 // 卡片几何 / 文案 / 配色的实现在 `components::node_card`（Canvas 与 SVG 共用一份；
 // 各画一套必然漂移：改了宽度忘改折行宽度 = 文字溢出卡片）。此处重导出保持调用点不变。
+use crate::components::edge_style;
 use crate::components::node_card;
 
 pub use crate::components::node_card::type_label;
@@ -528,6 +541,8 @@ pub fn Graph(props: GraphProps) -> Element {
                     let edge_color = get_edge_color(&edge.label);
                     let edge_dash = get_edge_dash(&edge.label);
                     let use_flow = edge_use_flow(&edge.label);
+                    // 线宽表达强度（颜色已被关系类型占用）；未标注走基准粗细
+                    let edge_width = edge_style::weight_style(edge.weight).0;
                     let len = edge_length(sx, sy, tx, ty);
                     let edge_class = if use_flow { "kg-edge-flow kg-edge-glow" } else { "kg-edge-glow" };
                     let edge_style = format!("--len: {len}px; color: {edge_color};");
@@ -546,7 +561,7 @@ pub fn Graph(props: GraphProps) -> Element {
                             x2: "{tx}",
                             y2: "{ty}",
                             stroke: "{edge_color}",
-                            stroke_width: "2",
+                            stroke_width: "{edge_width}",
                             stroke_dasharray: "{edge_dash}",
                             class: "{edge_class}",
                             style: "{edge_style}",

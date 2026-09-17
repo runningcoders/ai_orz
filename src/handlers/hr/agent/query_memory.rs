@@ -1,6 +1,6 @@
 //! Handler: 查询记忆 - Neural Tool
 
-use crate::models::memory::{Memory, MemoryPo};
+use crate::models::memory::Memory;
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
 use crate::service::domain::runtime::domain as runtime_domain;
@@ -75,72 +75,9 @@ pub async fn query_memory(
 }
 
 fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {
-    memories.into_iter().map(|m| memory_to_result(&m)).collect()
-}
-
-fn memory_to_result(memory: &Memory) -> MemoryResult {
-    match &memory.po {
-        MemoryPo::Trace(trace) => MemoryResult {
-            id: trace.id.clone(),
-            name: None,
-            content: trace.input.clone(),
-            memory_type: "trace".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: None,
-            source_node_id: None,
-            target_node_id: None,
-            relation_type: None,
-            tags: None,
-            search_match: None,
-        },
-        // 短期记忆 PO 只有一个文本字段 summary（无独立标题/正文）：
-        // content 放完整 summary；summary 置 None，由前端显示层
-        // 默认取 content 前几行作预览，避免「标题 + 摘要」两行重复。
-        MemoryPo::ShortTerm(st) => MemoryResult {
-            id: st.id.clone(),
-            name: None,
-            content: st.summary.clone(),
-            memory_type: "short_term".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: None,
-            source_node_id: None,
-            target_node_id: None,
-            relation_type: None,
-            tags: Some(parse_tags_json(&st.tags)),
-            search_match: None,
-        },
-        MemoryPo::KnowledgeNode(kn) => MemoryResult {
-            id: kn.id.clone(),
-            name: Some(kn.node_name.clone()),
-            content: kn.node_description.clone(),
-            memory_type: "knowledge_node".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: Some(kn.summary.clone()),
-            source_node_id: None,
-            target_node_id: None,
-            relation_type: None,
-            tags: Some(parse_tags_json(&kn.tags)),
-            search_match: None,
-        },
-        MemoryPo::Relation(rel) => MemoryResult {
-            id: rel.id.clone(),
-            name: None,
-            content: format!("{:?}", rel.relation_type),
-            memory_type: "relation".to_string(),
-            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: None,
-            source_node_id: Some(rel.source_node_id.clone()),
-            target_node_id: Some(rel.target_node_id.clone()),
-            relation_type: Some(format!("{:?}", rel.relation_type)),
-            tags: None,
-            search_match: None,
-        },
-    }
-}
-
-/// 解析 tags JSON 数组字符串为 Vec<String>，解析失败返回空 Vec
-fn parse_tags_json(tags_json: &str) -> Vec<String> {
-    serde_json::from_str::<Vec<String>>(tags_json).unwrap_or_default()
+    // 与 search_memory 共用 `Memory::to_api_result`：
+    // 结构化查询的 Memory 不带 search_match，转换后 score / search_match 自然为空
+    memories.iter().map(Memory::to_api_result).collect()
 }
 
 /// 解析记忆状态字符串为 MemoryStatus 枚举。
