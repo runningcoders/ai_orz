@@ -20,6 +20,9 @@ scope:
 - src/consumer/agent_loop.rs
 - src/middleware/sse.rs
 - common/src/api/message*.rs
+- common/src/enums/message.rs
+- src/consumer/message_route_policy.rs
+- src/pkg/policy/**
 - migrations/*external_key*
 source_files:
 - 'src/service/domain/message/mod.rs#L1-L60 '
@@ -67,6 +70,12 @@ source_files:
 - src/consumer/task_event_consumer.rs（2026-09-15 增量：TaskEvent 身份分层中继 + enrich_org_from_project_user）
 - src/consumer/mod.rs（2026-09-15 新增：enrich_org_from_project_user helper）
 - src/pkg/request_context.rs（2026-09-15 新增：message_sender_id / message_sender_role）
+- src/consumer/message_route_policy.rs#L40-L60（2026-09-18 新增：MAX_AGENT_REPLY_CHAIN=5 + NO_REPLY_SENTINEL + AutoReplyRoute 三态枚举 Peer/Discard/EscalateToOwner）
+- src/consumer/message_route_policy.rs#L148-L188（STATIC_ROUTE_DEFS 4 条静态规则 user_origin/system_origin/self_trigger/agent_notify，声明顺序即判定优先级）
+- src/consumer/message_route_policy.rs#L260-L291（judge_static_reply_route 静态判定段零查库 + judge_chain_reply_route 链深度机械兜底段）
+- src/pkg/policy/builtin.rs#L36-L67（2026-09-18 抽象化：impl_policy_delegate! 委托宏 + ThresholdPolicy 通用阈值策略 + FieldEqualsPolicy 字段全等策略）
+- src/consumer/message.rs（2026-09-18 增量：handle_agent_message 接入两段式路由判定 + agent_reply_chain_depth 查库计链深度）
+- common/src/enums/message.rs（2026-09-18 新增：MessageType::AgentNotify 知会类型，发送方声明无需回复）
 
 ---
 
@@ -91,6 +100,8 @@ source_files:
 
 **440624b2 修复：System 兜底 Final 按类型白名单投递 + 正文与投递对齐**：原来 `consumer/message.rs` System 分支无脑丢弃 Agent Final（后台唤醒没有来源方，里程碑/阻塞/项目收口会静默消失）。新增 `should_deliver_system_final` 白名单：TaskAssignment / TaskDispatchNotification 投递，排除 ProjectFollowupNotification（每小时巡检噪音）。同时 `domain/message/builder.rs` 补「正文与投递一致」断言——dispatch 消息说"系统自动送达"、followup 消息说"必须 send_message 主动上报"，两者语义不能反。
 
+**防乒乓路由 + 策略引擎抽象化（2026-09-18 增量，commit bba278d6）**：A↔B Agent 互发自动回复可能形成无限乒乓——每条回复的 reply_to_id 都指向触发它的消息，链随往返单调递增。收敛到 `src/consumer/message_route_policy.rs` 的 **两段式回发路由判定**：① `judge_static_reply_route` 静态段（零查库）按 `STATIC_ROUTE_DEFS` 声明序判定 4 条规则——`user_origin` → Peer（用户身份中继后 Final 自然回到该用户）、`system_origin` → Discard（系统消息无对等回复对象）、`self_trigger` → Discard（from==to 自触发防自唤醒循环）、`agent_notify` → Discard（MessageType::AgentNotify 知会消息，发送方声明无需回复；仅 Agent 来源命中，用户来源已被声明在前的 user_origin 拦下）；外加通用 `FieldEqualsPolicy` 承载 NO_REPLY 哨兵判定——Agent 判断「后续工作与来源方无关」时让 Final 恰好输出 `NO_REPLY`，Framework trim 后全等匹配即 Discard。静态段返回 `None` 表示「跨 Agent 对等回复候选」。② `judge_chain_reply_route` 机械段——consumer 查库算链深度（沿 reply_to_id 向上连续 Agent 来源消息条数，`MessageConsumer::agent_reply_chain_depth`），达到 `MAX_AGENT_REPLY_CHAIN=5` 时不再信任模型侧协调约定（哨兵/知会声明已失效），机械终止回发并 `EscalateToOwner` 通知归属用户。三态决策 `AutoReplyRoute { Peer, Discard{reason}, EscalateToOwner{reason} }`。配套 **策略引擎抽象化**（`pkg/policy/builtin.rs`）：抽出通用 `ThresholdPolicy`（指标 ≥ 阈值即触发）与 `FieldEqualsPolicy`（字段全等）两个跨领域共性抽象，8 个内置策略中 5 个改为薄包装（TimeoutPolicy/ContextOverflowPolicy/TokenBudgetPolicy/ConsecutiveLlmErrorsPolicy/FinalAnswerPolicy），`impl_policy_delegate!` 宏转发 Policy trait、保留原类型名与 new 签名，调用点零改动；保留专用的仅 MaxRoundsPolicy（双键 Metrics）/ UserCancelPolicy（AtomicBool 状态源）/ NoProgressPolicy（多键聚合）。
+
 ---
 
 ## §2 关键文件与职责表
@@ -114,6 +125,8 @@ source_files:
 | consumer/task_event_consumer.rs TaskEventConsumer | 任务事件触发器 | 与 CronTrigger 同样的身份分层中继逻辑 + `consumer::enrich_org_from_project_user` 补齐系统触发 ctx 的组织上下文 | 见 src/consumer/task_event_consumer.rs |
 | consumer/mod.rs | Consumer 公共 helper | `enrich_org_from_project_user(ctx, root_user_id)` 从项目归属用户补齐 ctx 组织上下文（系统触发链路 ctx 无组织绑定时，从 root_user_id 查 UserPo.organization_id 注入） | 见 src/consumer/mod.rs |
 | pkg/request_context.rs RequestContext | 请求上下文扩展 | 新增 `message_sender_id()` / `message_sender_role()`（2026-09-15）专供消息发送——后台唤醒场景 caller_type=System 但执行者是被唤醒 Agent，必须把 agent_id 写进 from_id；原 `caller_id_or_system()` 改仅用于审计字段 | 见 src/pkg/request_context.rs |
+| consumer/message_route_policy.rs 回发路由策略 | 防乒乓两段判定（2026-09-18） | `judge_static_reply_route`（STATIC_ROUTE_DEFS 4 条声明式规则 + FieldEqualsPolicy NO_REPLY 哨兵，零查库，返回 None 表示跨 Agent 对等候选）+ `judge_chain_reply_route`（ThresholdPolicy 链深度 ≥5 → EscalateToOwner）；`AutoReplyRoute { Peer, Discard{reason}, EscalateToOwner{reason} }` | `:L40-L60` `:L148-L188` `:L260-L291` |
+| pkg/policy/builtin.rs 策略引擎通用抽象 | ThresholdPolicy / FieldEqualsPolicy（2026-09-18） | 通用阈值策略（metric ≥ threshold 即触发）+ 字段全等策略；8 内置策略中 5 个收敛为薄包装（Timeout/ContextOverflow/TokenBudget/ConsecutiveLlmErrors/FinalAnswer），`impl_policy_delegate!` 宏转发保留原类型名与 new 签名，调用点零改动；保留专用：MaxRounds（双键）/ UserCancel（AtomicBool 状态源）/ NoProgress（多键聚合） | `:L36-L67` |
 
 **章节来源**
 - [message/delivery.rs:L1-L150](src/service/domain/message/delivery.rs#L1-L150)
@@ -156,7 +169,7 @@ Runtime 唤醒 Agent → Phase1 IntentAnalyze 解析用户意图 → Phase2 Awak
 
 ---
 
-## §4 硬约束与回归红线（7 条）
+## §4 硬约束与回归红线（16 条）
 
 1. **MessageDelivery.send_message_* 永不 panic**：内部 DAO/SSE/AOP 任何一步出错都用 `?` 捕获并转换为 DomainError；对调用方返回 500 时 message_id 仍然是 Some（因为已经落库），前端不会出现"找不到消息"的 404。
 2. **SSE 广播失败不回滚消息**：消息落库=用户最终会看到（刷新页面能查到），SSE 只是加速实时性；SSE 失败时返回 sse_warn=true 让前端弹 toast「实时推送失败，刷新查看」，绝不回滚 status=Pending 的消息行。
@@ -171,3 +184,6 @@ Runtime 唤醒 Agent → Phase1 IntentAnalyze 解析用户意图 → Phase2 Awak
 11. **触发器身份必须按归属中继，禁止统一 from_role=System**：CronTriggerConsumer 和 TaskEventConsumer 构造入口消息时，项目有 root_user_id 必须设 from_role=User / from_id=root_user_id（Agent Final 自然回到用户，也不会触发 Agent 自唤醒循环）；只有 A2A 项目无归属用户时才万不得已落 System（Final 自然丢弃）。违反此条会导致用户侧看到"来自 system 的消息"且渠道通知无人可投递。
 12. **System 分支 Final 投递必须走 `should_deliver_system_final` 白名单**：后台唤醒（dispatch / followup / 巡检）没有来源方，Agent Final 曾被 System 分支整体丢弃——里程碑/阻塞/项目收口会静默消失。白名单：TaskAssignment / TaskDispatchNotification 投递到任务/项目归属用户；**禁止自动投递 ProjectFollowupNotification**（每小时定时，"无异常"收尾变周期性噪音，确有结论时由 Agent 按技能要求 send_message 主动上报）。新增投递类型必须在此函数加条件，**禁止绕开它直接在 match System 分支写投递**。
 13. **MessageBuilder 正文与投递语义必须对齐**：系统 dispatch 消息正文声明"系统已自动送达"→ Agent 不能再调用 send_message（会重复）；followup 消息正文声明"需要 Agent send_message 主动上报"→ Agent 必须调用。`domain/message/builder.rs` 补断言钉住这条约束——若两者反了，投递行为与正文描述矛盾，用户体验炸。
+14. **Agent Final 自动回发必须过 message_route_policy 两段判定，禁止绕过**（2026-09-18 新增）：`handle_agent_message` 唤醒完成后回发 Final 前，必须先 `judge_static_reply_route`（静态零查库），返回 None（跨 Agent 对等候选）再走 `judge_chain_reply_route`（链深度机械兜底）。禁止在 consumer 里凭 from_role 手写回发分支——静态规则表是单一扩展点，绕过它 A↔B 乒乓防线即失效。
+15. **新增「无对等回复对象」场景只准在 STATIC_ROUTE_DEFS 加一条规则**（2026-09-18 新增）：声明顺序即判定优先级（user_origin 声明在前拦下用户来源，agent_notify 才不会误伤用户对话主干）；新增规则必须写明命中产出（Peer/Discard/Escalate 是路由语义，与引擎的 Deny/Confirm/Audit 是两套语义，规则表声明式携带 outcome，不走 PolicyAction），并同步补 `static_route_*` 测试。
+16. **新阈值/等值类策略必须复用 ThresholdPolicy / FieldEqualsPolicy 通用抽象**（2026-09-18 新增）：禁止为每个阈值场景复制一份 Policy impl——8 个内置策略已收敛为 5 个薄包装（`impl_policy_delegate!` 转发，保留原类型名与 new 签名，调用点零改动）；只有判定形态确实不同（MaxRoundsPolicy 双键 / UserCancelPolicy AtomicBool 状态源 / NoProgressPolicy 多键聚合）才允许独立实现。NO_REPLY 哨兵仅 trim 后全等匹配，禁止改成 includes 子串匹配（会误伤恰好包含该词的正常正文）。

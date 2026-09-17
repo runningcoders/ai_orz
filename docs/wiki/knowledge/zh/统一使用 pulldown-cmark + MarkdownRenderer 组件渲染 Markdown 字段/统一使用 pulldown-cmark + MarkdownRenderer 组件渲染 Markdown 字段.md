@@ -5,8 +5,10 @@ source: session
 category: adr
 scope:
     - 'frontend/src/components/**/Markdown*'
+    - 'frontend/src/pages/project/artifact_detail.rs'
 source_files:
     - docs/wiki/zh/content/前端应用/组件系统/基础组件/Markdown渲染组件.md
+    - frontend/src/pages/project/artifact_detail.rs#L39-L156 (2026-09-18 增量：产物详情页 preview_mode 预览/编辑 toggle + MarkdownRenderer compact:false 接入；描述字段以 compact 模式渲染)
 ---
 
 # 统一使用 pulldown-cmark + MarkdownRenderer 组件渲染 Markdown 字段
@@ -33,3 +35,5 @@ _来源：eb09a60 → 46c56db 提交周期内记录的编码计划——内容�
 
 ## 影响
 所有 Markdown 字段获得一致的渲染体验；Mermaid 代码块将以源码形式展示（Phase G 可选引入 mermaid.js）；无需 sanitize 依赖，XSS 风险由 pulldown-cmark 默认转义兜底。
+
+**2026-09-18 增量**（commit bc2b2c61）：产物详情页（`frontend/src/pages/project/artifact_detail.rs`）接入 MarkdownRenderer——`preview_mode` signal 驱动「预览/编辑」toggle 按钮组：预览态渲染 `MarkdownRenderer { content, compact: false }`（详情主视图完整排版），编辑态保留 CodeEditor 直接改源码；产物描述字段以 `compact: true` 紧凑模式渲染。至此 Markdown 字段覆盖面：项目详情 / 任务详情 / 聊天消息 / 记忆内容 / 产物详情。

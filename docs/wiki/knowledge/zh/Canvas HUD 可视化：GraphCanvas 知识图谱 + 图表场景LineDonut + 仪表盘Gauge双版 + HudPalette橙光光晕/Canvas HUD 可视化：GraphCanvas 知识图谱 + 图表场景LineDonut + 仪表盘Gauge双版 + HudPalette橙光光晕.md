@@ -20,6 +20,7 @@ scope:
   - "frontend/src/components/ring_progress.rs"
   - "frontend/src/components/time_range_picker.rs"
   - "frontend/src/components/chat/chat_side_panel.rs"
+  - "frontend/src/components/node_card.rs"
   - "frontend/src/pages/message/chat.rs"
 source_files:
   - 'frontend/src/components/graph_canvas.rs#L1-L80 (GraphCanvas 组件：dioxus_canvas::Canvas 节点 + 2D Context 渲染；属性 knowledge_graph: KnowledgeGraphDto + 交互：拖拽节点 + 滚轮缩放 + hover 显示摘要 tooltip)'
@@ -62,6 +63,11 @@ source_files:
   - migrations/20260917000001_add_weight_to_knowledge_relation.sql (2026-09-17 新增：knowledge_node_relation 加 weight REAL 可空无默认值，存量行 = NULL = 未标注)
   - src/handlers/hr/agent/save_long_term_memory.rs (2026-09-17 增量：relations[].weight → normalized_weight() 归一化后落库；工具描述与沉淀提示词同步说明「拿不准就省略」)
 
+  - frontend/src/components/chat/chat_side_panel.rs (2026-09-18 增量：任务依赖图前端自绘 build_task_graph_data + 缩略图 300x200 点击弹 Modal 放大 920x620 + 悬挂依赖边过滤)
+  - frontend/src/components/graph.rs (2026-09-18 增量：svg_width/svg_height 可配 props（clamp 最小 160/120）+ task_status_node_type 任务状态语义化 token + NEUTRAL_NODE_FILL/NEUTRAL_EDGE_COLOR 兜底色 + 4 条守卫测试)
+  - frontend/src/components/layered_layout.rs (2026-09-18 增量：y 自适应——层距压缩 min(layer_height, usable_height/max_layer) + 深链垂直居中，修复深链 DAG 纵向溢出)
+  - frontend/src/components/node_card.rs (2026-09-18 增量：type_label 补 5 个任务状态中文文案)
+
   - 【平行卡 3】docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md（TimeRangePicker 消费方：统计看板时间筛选）
   - 【平行卡 4】docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md（RingProgress 消费方：Agent 上下文 Token 占比展示）
 ---
@@ -80,6 +86,8 @@ source_files:
 **TimeRangePicker 通用时间区间筛选组件**（2026-09-11 新增）：`frontend/src/components/time_range_picker.rs` props: `start/end` DateTime + 预设快捷按钮（近 1h / 6h / 24h / 7d / 30d）+ 自定义日期选择器（dioxus-datepicker 集成）。所有统计看板统一引入——AOP 系统页、ModelProvider Token 时序、用户页统计。
 
 **聊天引用块即时显示 + 宽度以本条消息为上限**（2026-09-11 增量）：chat.rs 消息列表中带引用（reference_id）的消息，即时渲染引用块（气泡上方显示被引用的消息摘要），无需 hover 才弹出；引用块宽度严格限制为「本条消息气泡宽度」，不再溢出撑破消息列表布局。
+
+**任务依赖图前端自绘 + 放大弹窗（2026-09-18 增量，commit a7134bb7）**：聊天侧栏任务列表新增 DAG 依赖图——`chat_side_panel.rs::build_task_graph_data(tasks, w, h)` 纯前端从任务列表构建 GraphNode/GraphEdge（前置任务不在列表内的**悬挂依赖直接丢弃**，不产生缺失端点的边；`with_task_graph` 后端产物图改为不传，依赖图不再依赖后端生成），复用 graph.rs 的 LayeredLayout 分层渲染 SVG。缩略图 300x200，点击弹 Modal 放大 920x620（`graph_zoom_open` signal 状态放主组件，弹窗 top layer 渲染不受侧栏 overflow 裁剪），两个视图共用同一构建函数仅尺寸不同。graph.rs 配套扩展：① `svg_width`/`svg_height` 可配置 props（默认 800/600，clamp 最小 160/120）；② `task_status_node_type(status)` 把任务状态数值转语义化 token（cancelled/pending/in_progress/completed/archived），`get_node_fill` 配 5 个语义色（cancelled 红 / pending 蓝 / in_progress 琥珀 / completed 绿 / archived 灰）+ `NEUTRAL_NODE_FILL`/`NEUTRAL_EDGE_COLOR` 兜底色；③ 4 条守卫测试（relation 标签 / 任务状态 / memory 类型全覆盖，未知标签回落中性色）。配套 **layered_layout.rs y 自适应**：深链 DAG 层距压缩为 `min(config.layer_height, usable_height/max_layer)` + 垂直居中（`v_offset`），修复深链任务图纵向溢出画布把最后几层裁掉；环上节点沉底（无入度为 0 节点时 layer=0、bottom=1）。node_card.rs 同步补 5 个任务状态中文 type_label（如 task_in_progress → "任务（进行中）"）。
 
 ---
 
@@ -139,7 +147,7 @@ HR 知识图谱页面加载：
 
 ---
 
-## §4 硬约束与回归红线（8 条）
+## §4 硬约束与回归红线（28 条）
 
 1. **Canvas 2D 绘制不能依赖 DaisyUI CSS 变量**：HUD 色必须硬编码 HudPalette 的 const，不要从 window.getComputedStyle 读 --p（DaisyUI 主色），否则 WASM 里 DOM API 跨线程调用 + 切换主题 30+ 每换一次重绘所有 Canvas，性能炸。例外：Canvas 周围 DOM 外壳 card 样式可用 class="bg-base-200"。
 2. **ForceLayout 斥力 O(n²) 必须节点数 ≥1000 时降采样**：nodes.len() > 800 自动从 O(n²) 切换到 Barnes-Hut O(n log n) 近似（四叉树空间分块近似斥力）；测试 1500 节点渲染时 dt 单帧 > 32ms（< 30fps）→ 必须启用近似模式；默认模式 O(n²) 够用，代码不预实现 Barnes-Hut（YAGNI）。
@@ -165,3 +173,7 @@ HR 知识图谱页面加载：
 22. **不要为图谱另写渲染器：`CanvasScene` 只认内置 `DefaultRenderer`**（2026-09-17 新增）：`graph_canvas.rs` 曾有 400+ 行 `KnowledgeGraphRenderer`，因 `canvas_scene.rs` 硬编码 `let renderer = DefaultRenderer` 而**从未执行**——注释写着「用自定义 HUD 效果避免视觉过载」，实际跑出来是默认圆圈 + 圆下完整 ID，用户看到的就是「只显示『知识节点』和一个 id」。节点形态差异一律用数据表达（`CanvasNode::is_card()`：有 `summary` / `description` / `tags` 即矩形卡片，否则圆形）。若将来真要支持多渲染器，必须先把注入通道做进 props 并有测试覆盖，否则等价于死代码。
 23. **力导向必须按节点等效半径做碰撞避让，卡片节点的 `radius` 要填外接圆半径**（2026-09-17 新增）：`1/d²` 点斥力在近距离压不住 168px 宽的卡片，结果是「节点挤成一坨、连线糊在底下」；`ForceLayout::step` 已加碰撞分离力（最小中心距 `(r_i + r_j) * 1.15`）、弹簧自然长度按两端半径 + 60px 放宽、边界留白取最大半径。⚠️ 适配层若把卡片节点的 `radius` 填成小圆半径，卡片照样互压（该字段同时是无正文端点节点圆形形态的绘制半径）。
 24. **边强度只准走「粗细 + 不透明度」，颜色留给语义；未标注（`None`）≠ 强度 0**（2026-09-17 新增）：强度映射 SSOT 在 `edge_style.rs`（`weight_style` → `(线宽, 不透明度系数)`、`weight_label` → hover 读数），Canvas 与 SVG 两条路径只许引用、禁止各写一套系数（同一个强度在两个视图里粗细不同 = 用户以为数据变了）。三条红线：①**颜色通道已被关系类型/状态语义占用**（`tag_color` 哈希取色、关系图 ready/not_ready 语义色），拿颜色表达强度会和语义色打架；②`None`（未标注）渲染**基准线宽**，只有 `Some(0.0)` 才是最细最淡——把未标注当 0 会让存量关系整片塌到最细，看起来像「所有关联都很弱」，那是伪造语义；③hover 只在**标注过**时渲染 `强度: N%`，未标注整行不渲染（写「强度 0%」会被读成「明确很弱」），共享的 `canvas_scene` 因此不会给 Agent 关系图平添噪音。配套：写入侧缺省**不落默认值**（补 0.5 会把「没标」变成「标了中等强度」），归一化规则 `KnowledgeRelationParam::normalized_weight`（越界夹紧、NaN/Inf 丢弃）必须与前端 `edge_style::normalize` 同口径。反向教训：想让图谱边先「有差异」再谈准确，去派生权重（共现证据数）是走不通的——`knowledge_reference` 恒为空表（两条节点写入路径都传 `references: vec![]`）。
+25. **任务状态新增取值必须同步 `task_status_node_type` + `get_node_fill`，守卫测试兜底**（2026-09-18 新增）：`graph.rs` 的 `task_status_node_types_all_have_semantic_colors` 守卫测试枚举全部状态值断言非 `NEUTRAL_NODE_FILL`——新增 TaskStatus 枚举项若漏改颜色映射表直接测试失败，而不是静默画成中性灰被当成「未知类型」；同理 relation 标签（`vocabulary_relation_labels_all_have_semantic_colors`）与 memory 类型（`memory_type_values_all_have_node_colors`）各有守卫，未知值统一回落中性色常量。
+26. **SVG 渲染尺寸必须走 `svg_width`/`svg_height` props，禁止 fork 组件改常量**（2026-09-18 新增）：同一 Graph 渲染组件被缩略图（300x200）与放大弹窗（920x620）复用，尺寸 clamp 最小 160/120 防负值/过小；新增消费方传 props 即可，严禁复制组件副本改写死尺寸。
+27. **layered_layout 深链必须压缩层距适配画布高度**（2026-09-18 新增）：层距 = `min(config.layer_height, usable_height/max_layer)` + 垂直居中偏移 `v_offset`，禁止固定 layer_height 直排——深链任务图会纵向溢出画布把最后几层裁掉；环（无入度为 0 节点）整体沉到最底层（layer=0、bottom=1）。守卫测试：深链分层各层 y 不超画布 + 浅链垂直居中。
+28. **依赖图构建必须过滤悬挂依赖边**（2026-09-18 新增）：前置任务不在当前任务列表内（已删除/跨项目）时直接丢弃该边，禁止产出缺失端点的 GraphEdge——SVG/Canvas 对未知节点索引会 panic 或画出飞线；任务依赖图缩略图与放大弹窗共用 `build_task_graph_data`，过滤逻辑只写一处。

@@ -7,6 +7,7 @@
 - [frontend/src/pages/message/chat.rs](frontend/src/pages/message/chat.rs)
 - [frontend/src/components/chat/message_bubble.rs](frontend/src/components/chat/message_bubble.rs)
 - [frontend/src/pages/hr/memory_search.rs](frontend/src/pages/hr/memory_search.rs)
+- [frontend/src/pages/project/artifact_detail.rs](frontend/src/pages/project/artifact_detail.rs) — 产物详情页（2026-09-18 接入：preview_mode 预览/编辑 toggle）
 - [common/src/api/project.rs](common/src/api/project.rs)
 - [common/src/api/task.rs](common/src/api/task.rs)
 - [src/handlers/project/projects/response.rs](src/handlers/project/projects/response.rs)
@@ -34,6 +35,7 @@
 - 改进了Mermaid图渲染机制，支持延迟扫描和JS互操作
 - 完善了样式系统，提供紧凑模式专用样式类
 **2026-08-16 增量更新**：补齐 cite 区四类互引闭环（1 Design 真实 + 1 Design 占位 + 1 Plan 占位 + 2 RAG 卡）；关联 T7（前端 MarkdownRenderer DocLinkClassifier JS 桥接）主题并引用兄弟卡 T6（后端分类器）；§5 链接处理章节来源行号降级（因 fcb08db6 改造加入 classify 调用与 data-repo-href 属性注入，导致 markdown.rs 行号范围漂移，优先降级为无行号范围引用）。
+**2026-09-18 增量更新**（commit bc2b2c61）：产物详情页（artifact_detail.rs）接入 MarkdownRenderer——`preview_mode` signal 驱动「预览/编辑」toggle 按钮组：预览态 `MarkdownRenderer { content, compact: false }` 完整排版，编辑态 CodeEditor 源码编辑；产物描述字段以 compact 模式渲染。cite 区补 artifact_detail.rs 引用；§Compact 模式应用场景新增「产物详情页描述字段」。
 
 ## 目录
 1. [简介](#简介)
@@ -222,6 +224,13 @@ Compact 模式专为小容器场景设计，提供以下优化：
 
 章节来源
 - [frontend/src/pages/hr/memory_search.rs:170](frontend/src/pages/hr/memory_search.rs#L170)
+
+### 产物详情 Markdown 渲染
+- 产物详情页（artifact_detail.rs）`preview_mode` signal 驱动「预览/编辑」toggle 按钮组：预览态 `MarkdownRenderer { content, compact: false }`（详情主视图完整排版，支持表格/代码块/任务清单），编辑态保留 CodeEditor 直接改源码；产物描述字段以 compact 模式渲染。
+- 切换 toggle 不重新拉数据，content() 从同一产物详情缓存读取。
+
+章节来源
+- [frontend/src/pages/project/artifact_detail.rs:39-156](frontend/src/pages/project/artifact_detail.rs#L39-L156)
 
 ### 后端 DTO 与 Handler 映射
 - GetProjectResponse：新增 execution_plan、execution_result 字段，带默认序列化控制。
