@@ -36,6 +36,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
     let mut saving = use_signal(|| false);
     let mut is_text_type = use_signal(|| false);
     let mut show_meta_modal = use_signal(|| false);
+    let mut preview_mode = use_signal(|| true);
 
     // 同步：resource 完成时填充内容与元数据；用户已编辑则保留编辑内容
     // （peek 读取 content_dirty，避免被自身写回再次触发 effect）
@@ -121,7 +122,27 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                         eyebrow: "CONTENT".to_string(),
                         div { class: "card-body",
                             div { class: "flex justify-end mb-4",
-                                div { class: "flex gap-2",
+                                div { class: "flex gap-2 items-center",
+                                    div { class: "join",
+                                        button {
+                                            class: if preview_mode() {
+                                                "btn hud-btn btn-sm join-item btn-primary"
+                                            } else {
+                                                "btn hud-btn btn-sm join-item btn-ghost"
+                                            },
+                                            onclick: move |_| preview_mode.set(true),
+                                            "预览"
+                                        }
+                                        button {
+                                            class: if preview_mode() {
+                                                "btn hud-btn btn-sm join-item btn-ghost"
+                                            } else {
+                                                "btn hud-btn btn-sm join-item btn-primary"
+                                            },
+                                            onclick: move |_| preview_mode.set(false),
+                                            "编辑"
+                                        }
+                                    }
                                     if content_dirty() { span { class: "text-xs text-warning", "● 未保存" } }
                                     button {
                                         class: "btn hud-btn btn-primary btn-sm",
@@ -131,11 +152,15 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                                     }
                                 }
                             }
-                            CodeEditor {
-                                value: content(),
-                                on_input: move |v| { content.set(v); content_dirty.set(true); },
-                                language: "markdown".to_string(),
-                                min_lines: 20,
+                            if preview_mode() {
+                                MarkdownRenderer { content: content(), compact: false }
+                            } else {
+                                CodeEditor {
+                                    value: content(),
+                                    on_input: move |v| { content.set(v); content_dirty.set(true); },
+                                    language: "markdown".to_string(),
+                                    min_lines: 20,
+                                }
                             }
                         }
                     }
