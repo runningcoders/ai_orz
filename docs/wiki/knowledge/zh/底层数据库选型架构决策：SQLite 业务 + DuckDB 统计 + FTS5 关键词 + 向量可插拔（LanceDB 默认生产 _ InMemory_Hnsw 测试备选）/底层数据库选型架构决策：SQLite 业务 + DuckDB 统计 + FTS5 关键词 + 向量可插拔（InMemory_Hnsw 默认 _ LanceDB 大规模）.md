@@ -1,6 +1,6 @@
 ---
 kind: wiki_knowledge_card
-name: 底层数据库选型架构决策：SQLite 业务 + DuckDB 统计 + FTS5 关键词 + 向量可插拔（InMemory/Hnsw 默认 → LanceDB 大规模）
+name: 底层数据库选型架构决策：SQLite 业务 + DuckDB 统计 + FTS5 关键词 + 向量可插拔（LanceDB 默认生产 → InMemory/Hnsw 测试备选）
 category: 基础设施 / 存储架构决策
 scope:
   - "migrations/**/*.sql"
@@ -9,6 +9,7 @@ scope:
   - "src/service/dao/**/sqlite.rs"
   - "src/service/dal/**/*.rs"
 source_files:
+  - common/src/config.rs#L202-L218（VectorStoreType 枚举定义：4 后端 + #[default] LanceDb）
   - src/pkg/storage/mod.rs#L33-L95（Storage::new 中 SQLite SqlitePool + 4 种向量后端按 VectorStoreType 配置选择 + DuckDB Stats 初始化）
   - src/pkg/storage/vector.rs#L20-L88（VectorStore trait：8 个 async 方法，统一向量抽象，支持可插拔切换）
   - src/pkg/storage/lance.rs#L30-L190（LanceVectorStore 结构 + LanceDB Connection + 表名 sanitize + 维度自愈）
@@ -27,7 +28,7 @@ source_files:
 
 ## §1 概述与定位
 
-AI Orz 存储层采用 **嵌入式多引擎组合** 策略，而非单一大数据库覆盖所有需求：SQLite 承载全部业务数据（ACID 事务 + FTS5 关键词搜索）、DuckDB 承载多维统计分析（OLAP 列式聚合）、向量存储通过 `VectorStore` trait 可插拔切换（默认 InMemory/Hnsw 零依赖，大规模升级到 LanceDB）。触发读取场景：新增 DAO 选引擎、评估存储性能瓶颈、判断是否需要从 InMemory/Hnsw 升级到 LanceDB、讨论"为什么我们不选 PostgreSQL/ClickHouse/单一大向量库"。
+AI Orz 存储层采用 **嵌入式多引擎组合** 策略，而非单一大数据库覆盖所有需求：SQLite 承载全部业务数据（ACID 事务 + FTS5 关键词搜索）、DuckDB 承载多维统计分析（OLAP 列式聚合）、向量存储通过 `VectorStore` trait 可插拔切换（**LanceDB 默认生产后端**，Hnsw/InMemory/SqliteVss 为备选方案）。触发读取场景：新增 DAO 选引擎、评估存储性能瓶颈、讨论"为什么我们不选 PostgreSQL/ClickHouse/单一大向量库"。
 
 ## §2 关键文件表
 
@@ -79,13 +80,13 @@ AI Orz 存储层采用 **嵌入式多引擎组合** 策略，而非单一大数�
 
 | 后端 | 适用场景 | 优势 | 限制 |
 |------|---------|------|------|
-| **InMemoryVectorStore** | 开发/测试默认，≤1 万向量 | 零系统依赖、纯 Rust、单进程最快 | 内存内，重启丢失 |
-| **HnswStore** | 小规模生产（1~10 万向量） | 纯 Rust ANN 索引、高性能、零系统依赖 | 内存约束，超 RAM 则退化 |
+| **InMemoryVectorStore** | 测试/CI 显式指定，≤1 万向量 | 零系统依赖、纯 Rust、单进程最快 | 内存内，重启丢失；显式 `#[cfg(test)]` 使用 |
+| **HnswStore** | 嵌入式场景（如 WASM/桌面端），内存可容纳的向量规模 | 纯 Rust ANN 索引、高性能、零系统依赖 | 内存约束，超 RAM 则退化 |
 | **SqliteVssStore** | 向量想和业务数据同文件时 | 与 SQLite 共享连接池、SQL JOIN 方便 | 需要系统级 VSS 扩展依赖 |
-| **LanceVectorStore** | 大规模生产（>10 万向量 + 频繁增删） | 磁盘 ANN（IVF-PQ/HNSW）、可超 RAM、MVCC 版本化 | 额外 LanceDB 依赖 |
+| **LanceVectorStore** | **默认生产后端**（`#[default] LanceDb`） | 磁盘 ANN（IVF-PQ/HNSW）、可超 RAM、MVCC 版本化、持久化到磁盘 | 额外 LanceDB 依赖 |
 
-**默认路径（零依赖上线）**：`InMemoryVectorStore` → 向量规模涨 → 自动/手动切换 `HnswStore`
-**大规模升级路径（生产级）**：配置 `VectorStoreType::LanceDb` → `LanceVectorStore` 接管磁盘持久化
+**默认配置（生产零配置即 LanceDB）**：`common::config::VectorStoreType::default()` → `LanceDb`，Storage::new 按 `db_config.vector_store_type` 装配
+**测试/CI 覆盖**：`tests/common/env.rs` 显式设置 `VectorStoreType::InMemory`（零依赖快速起停）
 
 ### FTS5 + 向量 三位一体混合搜索
 
@@ -103,9 +104,9 @@ AI Orz 存储层采用 **嵌入式多引擎组合** 策略，而非单一大数�
 | 2 | **统计数据一律写 DuckDB Stats 模块，禁止让 SQLite DAO 承担聚合统计** | SQLite 行式存储聚合性能差 10~200 倍，且 DuckDB 有独立文件不会锁死业务连接 |
 | 3 | **向量后端切换必须通过 `VectorStore` trait，禁止 DAO 层感知具体实现** | 可插拔切换是核心设计，DAO 只调 trait 方法，具体后端由 Storage::new 按配置装配 |
 | 4 | **禁止让 DuckDB 承载业务事务，禁止让 SQLite 承载大规模向量** | 引擎职责严格分离：SQLite=OLTP+关键词，DuckDB=OLAP，向量=可插拔专用引擎 |
-| 5 | **LanceDB 切换触发条件**：向量规模 >10 万 **且** 存在频繁增删（记忆沉淀 / re-embedding）；规模 <10 万优先 HnswStore（零依赖） | LanceDB 磁盘 ANN 解决超 RAM 问题，但引入额外依赖；Hnsw 在内存内更快 |
+| 5 | **LanceDB 是默认生产后端**（`common::config::VectorStoreType` 枚举 `#[default] LanceDb`）。Hnsw/InMemory 仅用于**嵌入式零依赖场景**（WASM/桌面端）或测试显式指定 | LanceDB 磁盘 ANN + 持久化 + 规模无上限是最完整的生产方案；Hnsw 在纯嵌入式零依赖约束下才更优 |
 | 6 | **FTS5 关键词与向量搜索必须并存**：禁止删除 FTS5 只留向量（精度场景丢失），禁止删除向量只留 FTS5（召回场景丢失） | 三位一体混合搜索是已验证的最优方案，单侧降级会导致搜索质量显著下降 |
-| 7 | **`VectorStoreType::InMemory` 必须作为开发/测试默认**：任何新环境首次启动、CI 集成测试，必须 InMemory 后端（零系统依赖，可快速起停） | 开发体验 + CI 稳定性，引入 LanceDB/Hnsw 只在生产配置中指定 |
+| 7 | **测试/CI 必须显式指定 InMemory 后端**：`tests/common/env.rs` / `tests/http_handler_macro_test.rs` 中显式设置 `VectorStoreType::InMemory`，禁止用默认 LanceDb（磁盘持久化 + 启动慢会拖慢测试） | 测试隔离 + 快速起停，InMemory 重启丢失数据正好匹配测试用例隔离语义 |
 | 8 | **LanceDB 表名必须 sanitize**：collection 名含冒号（如 `memory:short_term`）需过滤为合法表名（`memory_short_term`） | LanceDB 0.26 表名只接受字母数字/下划线/连字符/点，非法名会 unwrap panic |
 | 9 | **LanceDB 只读/删除操作路径禁止隐式建表**：`get` / `delete` / `clear_collection` / `update_payload` / `search` 对不存在的 collection 必须 no-op，禁止以 `dimensions=0` 建残废表 | 残废表会导致后续正常维度 upsert 被 LanceDB "Append with different schema" 拒绝（已在实现中用 `open_existing_table` 防住） |
 | 10 | **DuckDB Stats 全局单例必须由 `Storage::new` 内部初始化**：禁止在业务代码中手动打开 DuckDB 文件或手动调用 `init_global_stats` | 三引擎装配统一在 Storage 门面内完成，避免重复初始化或连接泄漏 |
