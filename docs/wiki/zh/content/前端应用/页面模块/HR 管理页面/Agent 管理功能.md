@@ -4,6 +4,8 @@
 **本文引用的文件**
 - [frontend/src/pages/hr/agents.rs](frontend/src/pages/hr/agents.rs)
 - [frontend/src/pages/hr/agent_detail.rs](frontend/src/pages/hr/agent_detail.rs)
+- [frontend/src/components/model_provider_bubble.rs](frontend/src/components/model_provider_bubble.rs)
+- [frontend/src/components/avatar_bubble.rs](frontend/src/components/avatar_bubble.rs)
 - [src/handlers/hr/agent/mod.rs](src/handlers/hr/agent/mod.rs)
 - [src/handlers/hr/agent/list_agents.rs](src/handlers/hr/agent/list_agents.rs)
 - [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
@@ -162,6 +164,7 @@ HandleResult --> End(["渲染表格"])
 ### 详情页：信息展示、状态切换、配置编辑与调试
 - 基本信息与运行时配置
   - 显示 ID、类型、状态、模型提供商、创建时间
+  - 模型提供商标识为信息气泡（2026-09-18）：local Agent 的提供商字段点击弹出浮层卡片（基础信息 + 最近 24h 调用/QPS/Token 统计），卡片内跳模型提供商详情页；浮层定位复用 avatar_bubble pub(crate) 工具
   - 外部 Agent 显示 CLI/Remote 配置（命令、参数、工作目录、超时、Prompt 模板、A2A Server、目标 Agent、认证 Token）
 - 状态切换
   - 提供空闲/思考中/已入职/休息中选项，调用 update_agent_status
@@ -390,6 +393,8 @@ Agent 管理功能在前端与后端之间形成了清晰的职责划分与稳�
 
 ### 本文关联的文档（2026-09-13 增量）
 - 🎴 RAG 卡: docs/wiki/knowledge/zh/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md
+- 【2026-09-18 追加】🎴 RAG 卡: docs/wiki/knowledge/zh/模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片/模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片.md — 模型提供商标识升级为信息气泡（点击弹卡 + 懒加载详情/统计 + 卡内跳详情页）
+- 【2026-09-18 追加】🎴 RAG 卡: docs/wiki/knowledge/zh/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束.md — 组件分层与全站复用红线总卡
 
 ---
 
@@ -400,3 +405,14 @@ Agent 管理功能在前端与后端之间形成了清晰的职责划分与稳�
 2. frontend/src/pages/hr/onboard_modal.rs：入职弹窗按来源三组分包（系统预置/组织自定义/行业模板）+ 登录页单组织默认选中
 3. frontend/src/pages/hr/agents.rs + bind_model_modal.rs：Agent 列表就地引导下一步——缺模型绑定 → 显示绑定按钮；状态未推进 → 显示状态推进按钮
 **涉及 RAG 卡**：种子配置卡
+
+---
+
+### 更新摘要（2026-09-18，base 005a7e83→daed0b60）
+**主题**：模型提供商标识升级为信息气泡（列表页 + 详情页）
+**关键变更**：
+1. frontend/src/components/model_provider_bubble.rs（新增）：ModelProviderBubble 组件——文本 chip 触发（tabindex=0 + onfocus），浮层展示提供商基础信息 + 最近 24h 精简统计（调用/平均 QPS/输入输出 Token），卡片底部跳模型提供商详情页
+2. frontend/src/components/avatar_bubble.rs：浮层定位工具 pub(crate) 开放复用（BubbleAnchor/resolve_anchor/viewport_size/focused_element/scroll_ancestor_rect/BubbleAlign）；resolve_anchor 签名泛化为触发盒实测 DomRect（5 参），删除 AvatarSize::px()
+3. frontend/src/pages/hr/agents.rs + agent_detail.rs：local Agent 的模型提供商字段从文本/Link 替换为 ModelProviderBubble（外部 Agent 保持纯文本）
+**数据源**：零后端改动，复用 get_model_provider(with_model_call_stats=true)（stats_interval=hourly，窗口 24h）
+**涉及 RAG 卡**：模型提供商信息气泡卡（新增，Level 4 细卡）+ UI Design System 总卡
