@@ -597,17 +597,20 @@ fn draw_card_node(
         }
     }
 
-    let chips = node_card::tag_chips(&node.tags);
+    let row_width = bw - node_card::NODE_ACCENT_W - node_card::NODE_BOX_PAD * 2.0;
+    let chips = node_card::tag_chips(&node.tags, row_width);
     if !chips.is_empty() {
         ctx.set_font("8px sans-serif");
+        // 标签行 y 按实际正文行数排（与 box_height 的加分项对齐，
+        // 无正文但有标签的矮卡片不再把标签画出卡外）
         let tag_y = by
             + node_card::NODE_BOX_PAD
             + node_card::NODE_TITLE_H
-            + node_card::NODE_BODY_MAX_LINES as f64 * node_card::NODE_BODY_H
+            + body.len() as f64 * node_card::NODE_BODY_H
             + 3.0;
         let mut tx = text_x;
         for (text, color) in &chips {
-            let w = measure_text_width(ctx, text, 8.0) + 8.0;
+            let w = measure_text_width(ctx, text, 8.0) + node_card::NODE_TAG_CHIP_PAD;
             ctx.set_fill_style_str(color);
             round_rect_path(ctx, tx, tag_y, w, 12.0, 6.0);
             ctx.fill();
@@ -615,7 +618,7 @@ fn draw_card_node(
             ctx.set_fill_style_str("#ffffff");
             let _ = ctx.fill_text(text, tx + w / 2.0, tag_y + 2.5);
             ctx.set_text_align("left");
-            tx += w + 4.0;
+            tx += w + node_card::NODE_TAG_GAP;
         }
     }
 }

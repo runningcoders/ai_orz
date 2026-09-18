@@ -543,6 +543,8 @@ fn tasks_tab(
                 edges: raw_edges,
                 svg_width: Some(TASK_GRAPH_W as u32),
                 svg_height: Some(TASK_GRAPH_H as u32),
+                // 小地图模式：卡片只保留名称 + 连线，正文 / 标签省略，作缩略图预览
+                mini: Some(true),
                 // 点节点 = 展开任务列表中对应项的详情
                 on_node_click: move |id: String| {
                     expanded_task_id.set(Some(id));

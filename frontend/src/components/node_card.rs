@@ -37,6 +37,17 @@ pub const NODE_BODY_MAX_LINES: usize = 2;
 pub const NODE_TAG_H: f64 = 14.0;
 /// 卡片内标签最多展示个数（超出聚合为 `+N`）
 pub const NODE_TAG_MAX: usize = 3;
+/// 标签胶囊之间的水平间距
+pub const NODE_TAG_GAP: f64 = 4.0;
+/// 标签胶囊左右 padding 合计
+pub const NODE_TAG_CHIP_PAD: f64 = 8.0;
+/// 标签胶囊文字宽度估算（font 8~9px 语义）：ASCII≈5px / CJK≈9px
+///
+/// SVG 侧没有真实文本度量只能估算；canvas 侧虽有 `measure_text`，但胶囊
+/// 截断与 `+N` 聚合的**决策**必须两条路径同源——否则同一个节点在两种渲染
+/// 下胶囊个数不同。canvas 在决策之后仍按真实度量绘制，宽度天然贴合。
+const NODE_TAG_ASCII_W: f64 = 5.0;
+const NODE_TAG_CJK_W: f64 = 9.0;
 /// hover 详情卡正文折行宽度（与 canvas_scene 的 11px 卡片字号配套）
 pub const HOVER_TEXT_W: f64 = 280.0;
 pub const HOVER_FONT_PX: f64 = 11.0;
@@ -162,24 +173,101 @@ pub fn body_lines(summary: Option<&str>, description: &str) -> Vec<String> {
     wrap_text(text, content_w(), NODE_BODY_PX, NODE_BODY_MAX_LINES)
 }
 
-/// 标签胶囊（最多 [`NODE_TAG_MAX`] 个，超出聚合为 `+N`）
+/// 标签胶囊（最多 [`NODE_TAG_MAX`] 个，超出聚合为 `+N`；整行不超出 `row_width`）
 ///
 /// 返回 (文字, 颜色)：颜色由 [`chip_color`] 按 tag 名稳定派生，
 /// 同一个 tag 在画布、SVG、hover 详情卡三处必然同色。
-pub fn tag_chips(tags: &[String]) -> Vec<(String, &'static str)> {
+///
+/// 行宽约束两步走（此前只限个数不限宽度，长 tag / 多 tag 会画出卡片边界）：
+/// 1. 单个 tag 比整行还宽 → 按像素截断加省略号；
+/// 2. 累计放不下下一个胶囊 → 剩余聚合为 `+N`；`+N` 自身放不下时
+///    回退丢掉真实胶囊腾位，保证聚合胶囊也收在行内。
+///
+/// `row_width` 由调用方按实际卡宽传入（卡宽随标题/正文浮动，不能写死）。
+pub fn tag_chips(tags: &[String], row_width: f64) -> Vec<(String, &'static str)> {
     if tags.is_empty() {
         return Vec::new();
     }
-    let mut chips: Vec<(String, &'static str)> = tags
-        .iter()
-        .take(NODE_TAG_MAX)
-        .map(|t| (t.clone(), chip_color(t)))
-        .collect();
-    let rest = tags.len().saturating_sub(NODE_TAG_MAX);
-    if rest > 0 {
-        chips.push((format!("+{rest}"), "#4b5563"));
+    let mut chips: Vec<(String, &'static str)> = Vec::new();
+    let mut overflow_rest: Option<usize> = None;
+    for (idx, tag) in tags.iter().enumerate() {
+        if chips.len() >= NODE_TAG_MAX {
+            overflow_rest = Some(tags.len() - idx);
+            break;
+        }
+        let text = truncate_tag_text(tag, row_width);
+        if chips_row_width(&chips) + chip_gap(&chips) + tag_chip_width(&text) > row_width {
+            overflow_rest = Some(tags.len() - idx);
+            break;
+        }
+        chips.push((text, chip_color(tag)));
+    }
+    if let Some(mut rest) = overflow_rest {
+        loop {
+            let label = format!("+{rest}");
+            let extra = chip_gap(&chips) + tag_chip_width(&label);
+            if chips.is_empty() || chips_row_width(&chips) + extra <= row_width {
+                chips.push((label, "#4b5563"));
+                break;
+            }
+            // 回退：丢掉最后一个真实胶囊给聚合胶囊腾位，聚合计数随之 +1
+            chips.pop();
+            rest += 1;
+        }
     }
     chips
+}
+
+/// 标签文字宽度（不含胶囊 padding）
+fn tag_text_width(text: &str) -> f64 {
+    text.chars().fold(0.0, |acc, c| {
+        acc + if c.is_ascii() {
+            NODE_TAG_ASCII_W
+        } else {
+            NODE_TAG_CJK_W
+        }
+    })
+}
+
+/// 单个标签胶囊的估算宽度（文字 + 左右 padding）
+pub fn tag_chip_width(text: &str) -> f64 {
+    tag_text_width(text) + NODE_TAG_CHIP_PAD
+}
+
+/// 已铺开胶囊的总宽（不含下一个胶囊的前置间隔）
+fn chips_row_width(chips: &[(String, &'static str)]) -> f64 {
+    chips.iter().map(|(t, _)| tag_chip_width(t)).sum()
+}
+
+/// 下一个胶囊需要的前置间隔（首个胶囊贴左，无间隔）
+fn chip_gap(chips: &[(String, &'static str)]) -> f64 {
+    if chips.is_empty() { 0.0 } else { NODE_TAG_GAP }
+}
+
+/// 把单个 tag 截断到「胶囊总宽 ≤ row_width」的文字预算内（超出加省略号）
+fn truncate_tag_text(tag: &str, row_width: f64) -> String {
+    let max_text_w = row_width - NODE_TAG_CHIP_PAD;
+    if tag_text_width(tag) <= max_text_w {
+        return tag.to_string();
+    }
+    // 省略号按 CJK 宽预留，逐字装入剩余预算
+    let ellipsis_w = NODE_TAG_CJK_W;
+    let mut out = String::new();
+    let mut used = 0.0;
+    for c in tag.chars() {
+        let cw = if c.is_ascii() {
+            NODE_TAG_ASCII_W
+        } else {
+            NODE_TAG_CJK_W
+        };
+        if used + cw + ellipsis_w > max_text_w {
+            break;
+        }
+        used += cw;
+        out.push(c);
+    }
+    out.push('…');
+    out
 }
 
 /// hover 详情行：名称 / 类型 / 标签 / 摘要 / 描述 / ID
@@ -381,10 +469,59 @@ mod tests {
     #[test]
     fn tag_chips_aggregates_overflow() {
         let tags: Vec<String> = (0..5).map(|i| format!("t{i}")).collect();
-        let chips = tag_chips(&tags);
+        let chips = tag_chips(&tags, content_w());
         assert_eq!(chips.len(), NODE_TAG_MAX + 1);
         assert_eq!(chips.last().unwrap().0, "+2");
         assert_eq!(chips[0].1, chip_color("t0"), "胶囊颜色按 tag 稳定派生");
+    }
+
+    #[test]
+    fn tag_chips_truncates_overlong_tag() {
+        // 回归：此前 tag 不限宽，超长 tag 直接画出卡片边界
+        let tags = vec!["x".repeat(40)];
+        let chips = tag_chips(&tags, content_w());
+        assert_eq!(chips.len(), 1);
+        assert!(
+            chips[0].0.ends_with('…'),
+            "超宽 tag 应截断加省略号: {:?}",
+            chips[0].0
+        );
+        assert!(
+            tag_chip_width(&chips[0].0) <= content_w() + 0.01,
+            "截断后胶囊必须收进行宽: {}",
+            tag_chip_width(&chips[0].0)
+        );
+        // 颜色仍按原始 tag 派生（截断不改色）
+        assert_eq!(chips[0].1, chip_color(&tags[0]));
+    }
+
+    #[test]
+    fn tag_chips_caps_row_width() {
+        // 两个单独都放得下的 tag，加起来超行宽 → 第二个起聚合为 +N
+        let tags = vec!["architecture-learning".to_string(), "repo-read".to_string()];
+        let chips = tag_chips(&tags, content_w());
+        assert_eq!(chips.len(), 2);
+        assert_eq!(chips[0].0, "architecture-learning");
+        assert_eq!(chips[1].0, "+1");
+        let total = chips_row_width(&chips) + NODE_TAG_GAP * (chips.len() - 1) as f64;
+        assert!(total <= content_w() + 0.01, "整行不得超出行宽: {total}");
+    }
+
+    #[test]
+    fn tag_chips_overflow_chip_backfills_space() {
+        // 聚合胶囊自身放不下时，回退丢真实胶囊腾位（聚合计数随之 +1）
+        let tags = vec![
+            "aa".to_string(),
+            "bb".to_string(),
+            "cc".to_string(),
+            "dd".to_string(),
+        ];
+        // 3 个 18px 胶囊 + 2 个 4px 间隔 = 62px，再挤 18px 的 "+1" 需 84px > 80px 行宽
+        let chips = tag_chips(&tags, 80.0);
+        assert_eq!(chips.len(), 3, "回退后应剩 2 个真实胶囊 + 1 个聚合");
+        assert_eq!(chips[0].0, "aa");
+        assert_eq!(chips.last().unwrap().0, "+2");
+        assert!(chips_row_width(&chips) + NODE_TAG_GAP * (chips.len() - 1) as f64 <= 80.0 + 0.01);
     }
 
     #[test]

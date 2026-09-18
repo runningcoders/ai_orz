@@ -146,6 +146,9 @@ pub struct GraphProps {
     /// SVG 画布高度（默认 600）
     #[props(default = None)]
     pub svg_height: Option<u32>,
+    /// 小地图模式：卡片只保留名称一行（正文 / 标签省略），缩略图预览用
+    #[props(default = None)]
+    pub mini: Option<bool>,
     on_node_click: EventHandler<String>,
 }
 
@@ -235,8 +238,8 @@ pub fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
 // 卡片几何常量与折行/截断函数由上面的 `node_card` 提供，此处重导出保持调用点不变。
 // （宽度不再有常量版本：走 `node_box_width`，纯名称卡片会被收窄。）
 pub use crate::components::node_card::{
-    HOVER_FONT_PX, HOVER_TEXT_W, NODE_ACCENT_W, NODE_BODY_H, NODE_BODY_MAX_LINES, NODE_BODY_PX,
-    NODE_BOX_PAD, NODE_BOX_R, NODE_TAG_H, NODE_TITLE_H, NODE_TITLE_PX, truncate_chars, wrap_text,
+    HOVER_FONT_PX, HOVER_TEXT_W, NODE_ACCENT_W, NODE_BODY_H, NODE_BODY_PX, NODE_BOX_PAD,
+    NODE_BOX_R, NODE_TAG_GAP, NODE_TAG_H, NODE_TITLE_H, NODE_TITLE_PX, truncate_chars, wrap_text,
 };
 
 // 以下皆是 `GraphNode` → `node_card` 的薄包装：几何与文案的实现在
@@ -263,9 +266,10 @@ pub fn node_body_lines(node: &GraphNode) -> Vec<String> {
     node_card::body_lines(node.summary.as_deref(), &node.description)
 }
 
-/// 卡片内标签胶囊（最多 `NODE_TAG_MAX` 个，超出聚合为 `+N`）
+/// 卡片内标签胶囊（限个数也限宽度：行宽 = 卡宽 − 竖条 − 左右内边距）
 pub fn node_tag_chips(node: &GraphNode) -> Vec<(String, &'static str)> {
-    node_card::tag_chips(&node.tags)
+    let row_width = node_box_width(node) - NODE_ACCENT_W - NODE_BOX_PAD * 2.0;
+    node_card::tag_chips(&node.tags, row_width)
 }
 
 /// hover 详情行：名称 / 类型 / 标签 / 摘要 / 描述 / ID
@@ -305,13 +309,6 @@ fn field_lines(label: &str, value: &str) -> Vec<String> {
             }
         })
         .collect()
-}
-
-/// 估算 tag 标签渲染宽度（font-size 9，中文≈9px，英文≈5px）
-fn tag_label_width(tag: &str) -> f64 {
-    tag.chars()
-        .fold(0.0, |acc, c| acc + if c.is_ascii() { 5.0 } else { 9.0 })
-        + 8.0 // padding
 }
 
 /// 词表外关系的边颜色（中性灰）。
@@ -366,7 +363,8 @@ fn get_label_transform(sx: f64, sy: f64, tx: f64, ty: f64) -> String {
     let mid_x = (sx + tx) / 2.0;
     let mid_y = (sy + ty) / 2.0;
     let angle = calculate_edge_angle(sx, sy, tx, ty);
-    format!("translate({}, {}) rotate({})", mid_x, mid_y - 8.0, angle)
+    // 标签背景自带白底，直接压在边中点即可（此前的 -8 偏移会让标签漂离中点）
+    format!("translate({}, {}) rotate({})", mid_x, mid_y, angle)
 }
 
 #[component]
@@ -408,6 +406,8 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let svg_width = props.svg_width.unwrap_or(800).max(160);
     let svg_height = props.svg_height.unwrap_or(600).max(120);
+    // 小地图模式：卡片只保留名称（正文 / 标签省略），缩略图预览用
+    let mini = props.mini.unwrap_or(false);
 
     #[allow(clippy::type_complexity)]
     let valid_edges: Vec<(GraphEdge, (f64, f64), (f64, f64))> = props
@@ -422,6 +422,22 @@ pub fn Graph(props: GraphProps) -> Element {
             } else {
                 None
             }
+        })
+        .collect();
+
+    // 边标签置顶数据：SVG 后画覆盖先画，标签组必须渲染在节点之后才不被卡片
+    // 遮挡；这里提前算好文本 / 变换 / 颜色，渲染段只做纯输出
+    let edge_label_overlays: Vec<(String, String, &'static str)> = valid_edges
+        .iter()
+        .filter_map(|(edge, (sx, sy), (tx, ty))| {
+            let label: String = edge.label.chars().take(10).collect();
+            (!label.is_empty()).then(|| {
+                (
+                    label,
+                    get_label_transform(*sx, *sy, *tx, *ty),
+                    get_edge_color(&edge.label),
+                )
+            })
         })
         .collect();
 
@@ -596,11 +612,6 @@ pub fn Graph(props: GraphProps) -> Element {
                     let len = edge_length(sx, sy, tx, ty);
                     let edge_class = if use_flow { "kg-edge-flow kg-edge-glow" } else { "kg-edge-glow" };
                     let edge_style = format!("--len: {len}px; color: {edge_color};");
-                    let label_text = if !edge.label.is_empty() {
-                        Some(edge.label.chars().take(10).collect::<String>())
-                    } else {
-                        None
-                    };
                     // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
                     let hover_enter = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
                     let hover_leave = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
@@ -616,30 +627,6 @@ pub fn Graph(props: GraphProps) -> Element {
                             class: "{edge_class}",
                             style: "{edge_style}",
                             marker_end: "url(#arrowhead)",
-                        }
-                        if let Some(ref label) = label_text {
-                            g {
-                                transform: "{get_label_transform(sx, sy, tx, ty)}",
-                                rect {
-                                    x: "-{label.len() as f64 * 3.5}",
-                                    y: "-7",
-                                    width: "{label.len() as f64 * 7.0 + 4.0}",
-                                    height: "14",
-                                    rx: "2",
-                                    fill: "rgba(255, 255, 255, 0.9)",
-                                    stroke: "{edge_color}",
-                                    stroke_width: "1",
-                                }
-                                text {
-                                    x: "0",
-                                    y: "2",
-                                    text_anchor: "middle",
-                                    font_size: "10",
-                                    fill: "#374151",
-                                    font_weight: "500",
-                                    "{label}"
-                                }
-                            }
                         }
 
                         // 透明命中层：放宽边的 hover 命中区（视觉样式不变）
@@ -680,22 +667,41 @@ pub fn Graph(props: GraphProps) -> Element {
                     let glow = get_node_glow(is_highlighted, is_selected);
 
                     // === 矩形卡片几何（与 canvas 渲染器共用 SSOT）===
-                    let box_w = node_box_width(&node);
-                    let box_h = node_box_height(&node);
+                    // mini 小地图：几何按纯名称卡塌缩（一行标题），正文 / 标签全部省略；
+                    // 几何与内容必须同步切换——box_height 内部独立重算正文行数，
+                    // 只清空内容会让卡片仍按正文预留高度
+                    let (box_w, box_h) = if mini {
+                        (
+                            node_card::box_width(&node.label, 0),
+                            node_card::box_height(0, false),
+                        )
+                    } else {
+                        (node_box_width(&node), node_box_height(&node))
+                    };
                     let box_x = nx - box_w / 2.0;
                     let box_y = ny - box_h / 2.0;
                     // 卡片内文字起始 x（竖条 + 左内边距）
                     let text_x = box_x + NODE_ACCENT_W + NODE_BOX_PAD;
                     let title_text = node_title(&node);
-                    let body_lines = node_body_lines(&node);
+                    let body_lines = if mini {
+                        Vec::new()
+                    } else {
+                        node_body_lines(&node)
+                    };
                     let title_baseline = box_y + NODE_BOX_PAD + 11.0;
                     let body_baseline0 = box_y + NODE_BOX_PAD + NODE_TITLE_H + NODE_BODY_H - 3.0;
-                    // 标签胶囊：卡片底部一行（无标签时不渲染）
-                    let tag_chips = node_tag_chips(&node);
-                    let tag_row_y = box_y + NODE_BOX_PAD + NODE_TITLE_H + NODE_BODY_H * NODE_BODY_MAX_LINES as f64 + 3.0;
+                    // 标签胶囊：卡片底部一行（无标签时不渲染；mini 模式省略）
+                    let tag_chips = if mini {
+                        Vec::new()
+                    } else {
+                        node_tag_chips(&node)
+                    };
+                    // 标签行 y 按实际正文行数排（此前固定按两行预留，
+                    // 无正文但有标签的矮卡片会把标签画到卡外）
+                    let tag_row_y = box_y + NODE_BOX_PAD + NODE_TITLE_H + NODE_BODY_H * body_lines.len() as f64 + 3.0;
                     let tag_widths: Vec<(String, f64, &'static str)> = tag_chips
                         .iter()
-                        .map(|(t, c)| (t.clone(), tag_label_width(t), *c))
+                        .map(|(t, c)| (t.clone(), node_card::tag_chip_width(t), *c))
                         .collect();
                     let mut tag_x = text_x;
 
@@ -804,7 +810,7 @@ pub fn Graph(props: GraphProps) -> Element {
                             for (tag_text, tw, color) in tag_widths.iter() {
                                 {
                                     let tx = tag_x;
-                                    tag_x += tw + 4.0;
+                                    tag_x += tw + NODE_TAG_GAP;
                                     rsx! {
                                         g {
                                             rect {
@@ -829,6 +835,34 @@ pub fn Graph(props: GraphProps) -> Element {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // 边标签置顶层：SVG 无 z-index、后画覆盖先画，节点卡片不再遮挡关系名；
+            // 宽度按字符数（此前用字节数，中文标签底框会偏宽）
+            for (label, transform, edge_color) in edge_label_overlays.iter() {
+                g {
+                    transform: "{transform}",
+                    style: "pointer-events: none;",
+                    rect {
+                        x: "-{label.chars().count() as f64 * 3.5}",
+                        y: "-7",
+                        width: "{label.chars().count() as f64 * 7.0 + 4.0}",
+                        height: "14",
+                        rx: "2",
+                        fill: "rgba(255, 255, 255, 0.9)",
+                        stroke: "{edge_color}",
+                        stroke_width: "1",
+                    }
+                    text {
+                        x: "0",
+                        y: "2",
+                        text_anchor: "middle",
+                        font_size: "10",
+                        fill: "#374151",
+                        font_weight: "500",
+                        "{label}"
                     }
                 }
             }
