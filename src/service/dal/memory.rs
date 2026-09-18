@@ -157,12 +157,13 @@ pub trait MemoryDal: Send + Sync {
     /// 自动重新向量化。Trace / Relation 返回 `common::error::Error::Unsupported`。
     async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory>;
 
-    /// 🗑️ 删除记忆（仅支持 ShortTerm / KnowledgeNode）
+    /// 🗑️ 删除记忆（支持 ShortTerm / KnowledgeNode / Relation）
     ///
     /// 入参为业务实体本身，便于 DAL 内做删除前校验/审计而无需重新查询：
     /// - `ShortTerm` → 删库 + 删向量索引
     /// - `KnowledgeNode` → 级联：删入边/出边关系 + 删引用 + 删节点 + 删向量
-    /// - `Trace` / `Relation` → 返回 `common::error::Error::Unsupported`
+    /// - `Relation` → 软删除：标记边为 `Deleted`，行保留支持恢复（仅降级生效边）
+    /// - `Trace` → 返回 `common::error::Error::Unsupported`
     async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()>;
 
     /// 🌐 知识图谱遍历
@@ -391,7 +392,7 @@ impl MemoryDal for MemoryDalImpl {
         if memory_type == MemoryType::All || memory_type == MemoryType::KnowledgeNode {
             let pos = self
                 .memory_dao
-                .query_knowledge_nodes(ctx.clone(), query)
+                .query_knowledge_nodes(ctx.clone(), query.clone())
                 .await?;
             results.extend(pos.into_iter().map(|po| Memory {
                 po: MemoryPo::KnowledgeNode(po),
@@ -399,9 +400,17 @@ impl MemoryDal for MemoryDalImpl {
             }));
         }
 
-        // 3. 查询关系（暂不实现，等后续补充）
+        // 3. 查询关系（按 ids 精确取边；关系是依附节点的派生视图，
+        //    无 ids 时 DAO 返回空 —— All 的列表语义天然不包含独立边）
         if memory_type == MemoryType::All || memory_type == MemoryType::Relation {
-            // 目前 Relation 没有 query_relations 方法，后续补充
+            let pos = self
+                .memory_dao
+                .query_knowledge_relations(ctx.clone(), query)
+                .await?;
+            results.extend(pos.into_iter().map(|po| Memory {
+                po: MemoryPo::Relation(po),
+                search_match: None,
+            }));
         }
 
         Ok(results)
@@ -620,8 +629,11 @@ impl MemoryDal for MemoryDalImpl {
             crate::models::memory::MemoryPo::Trace(_) => {
                 bail_err!(UnsupportedOperation, "原始记忆 Trace 不可删除");
             }
-            crate::models::memory::MemoryPo::Relation(_) => {
-                bail_err!(UnsupportedOperation, "记忆 Relation 不可删除，需删除后重建");
+            crate::models::memory::MemoryPo::Relation(rel) => {
+                // 软删除：标记边为 Deleted(2)，行保留支持恢复；仅降级生效边的保护在 DAO 层
+                self.memory_dao
+                    .delete_knowledge_relation(ctx, &rel.id)
+                    .await
             }
         }
     }

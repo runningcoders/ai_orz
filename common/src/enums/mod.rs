@@ -29,7 +29,9 @@ pub use cron_trigger::TriggerType;
 pub use event_topic::EventTopic;
 pub use file::FileType;
 pub use mcp_server::{McpServerStatus, McpTransport};
-pub use memory::{KnowledgeRelationType, MemoryRole, MemoryStatus, MemoryType};
+pub use memory::{
+    KnowledgeRelationStatus, KnowledgeRelationType, MemoryRole, MemoryStatus, MemoryType,
+};
 pub use message::{MessageRole, MessageStatus, MessageType};
 pub use message_channel::{ChannelStatus, ChannelType};
 pub use organization::{

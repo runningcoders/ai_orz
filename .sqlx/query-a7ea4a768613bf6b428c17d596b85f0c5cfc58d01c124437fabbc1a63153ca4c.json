@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO knowledge_node_relation (\n    id, source_node_id, target_node_id, relation_type, weight, \"status\", created_at, updated_at\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "a7ea4a768613bf6b428c17d596b85f0c5cfc58d01c124437fabbc1a63153ca4c"
+}

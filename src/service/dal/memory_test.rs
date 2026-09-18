@@ -14,7 +14,9 @@ use crate::service::dao::memory::{
     MemoryQuery, MemorySearch, MemoryVectorDao, new_memory_dao, new_memory_vector_dao,
 };
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
-use common::enums::{MemoryStatus, ModelCapability, ModelProviderStatus, ProviderType};
+use common::enums::{
+    KnowledgeRelationStatus, MemoryStatus, ModelCapability, ModelProviderStatus, ProviderType,
+};
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -631,6 +633,7 @@ async fn test_create_relations(pool: SqlitePool) -> Result<()> {
         target_node_id: "kn-target-001".to_string(),
         relation_type: "related".to_string(),
         weight: None,
+        status: KnowledgeRelationStatus::Active,
         created_at: now,
         updated_at: now,
     };
@@ -1273,6 +1276,7 @@ async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<()> {
         target_node_id: "node-b".to_string(),
         relation_type: "related".to_string(),
         weight: None,
+        status: KnowledgeRelationStatus::Active,
         created_at: now,
         updated_at: now,
     };
@@ -1808,6 +1812,7 @@ async fn test_search_relations(pool: SqlitePool) -> Result<()> {
         target_node_id: "kn-rel-002".to_string(),
         relation_type: "related".to_string(),
         weight: None,
+        status: KnowledgeRelationStatus::Active,
         created_at: now,
         updated_at: now,
     };
@@ -1905,6 +1910,7 @@ fn traverse_rel(id: &str, src: &str, tgt: &str, created_at: i64) -> KnowledgeNod
         target_node_id: tgt.to_string(),
         relation_type: "related".to_string(),
         weight: None,
+        status: KnowledgeRelationStatus::Active,
         created_at,
         updated_at: created_at,
     }

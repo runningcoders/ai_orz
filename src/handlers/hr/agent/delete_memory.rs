@@ -12,7 +12,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "delete_memory",
     name = "Delete Memory Entry",
-    description = "Delete a memory entry by id; only short_term entries and knowledge_nodes are deletable, traces and relations are protected. Returns the deleted memory_id. Fails with NotFound if the id does not exist.",
+    description = "Delete a memory entry by id; supports short_term entries, knowledge_nodes, and knowledge relations (relations are soft-deleted and can be restored). Traces are protected. Returns the deleted memory_id. Fails with NotFound if the id does not exist.",
     params = "common::api::DeleteMemoryParams",
     neural
 )]
@@ -37,14 +37,9 @@ pub async fn delete_memory(
         .next()
         .ok_or_else(|| err!(NotFound, "记忆 {} 不存在", params.memory_id))?;
 
-    match &memory.po {
-        MemoryPo::Trace(_) => {
-            bail_err!(UnsupportedOperation, "原始记忆 Trace 不可删除");
-        }
-        MemoryPo::Relation(_) => {
-            bail_err!(UnsupportedOperation, "记忆 Relation 不可删除");
-        }
-        _ => {}
+    // 仅拦截 Trace：短期记忆/知识节点走删除，关系边走软删除（标记 Deleted 可恢复）
+    if let MemoryPo::Trace(_) = &memory.po {
+        bail_err!(UnsupportedOperation, "原始记忆 Trace 不可删除");
     }
 
     runtime_domain().memory().delete(ctx, memory).await?;

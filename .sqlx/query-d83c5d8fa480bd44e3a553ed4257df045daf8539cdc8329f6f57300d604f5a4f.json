@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO knowledge_node_relation (\n    id, source_node_id, target_node_id, relation_type, weight, \"status\", created_at, updated_at\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\nON CONFLICT(id) DO UPDATE SET\n    source_node_id = excluded.source_node_id,\n    target_node_id = excluded.target_node_id,\n    relation_type  = excluded.relation_type,\n    weight         = excluded.weight,\n    \"status\"       = excluded.\"status\",\n    updated_at     = excluded.updated_at\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "d83c5d8fa480bd44e3a553ed4257df045daf8539cdc8329f6f57300d604f5a4f"
+}

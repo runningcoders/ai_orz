@@ -190,7 +190,7 @@ mod tests {
     };
     use crate::service::dao::memory::{MemoryQuery, MemorySearch};
     use common::api::{KnowledgeRelationParam, SaveLongTermMemoryParams};
-    use common::enums::MemoryStatus;
+    use common::enums::{KnowledgeRelationStatus, MemoryStatus};
 
     fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
         let _ = crate::config::init();
@@ -263,6 +263,7 @@ mod tests {
             // 强度要能一路穿过「迁移 → INSERT → SELECT → PO → DTO」，
             // 任何一层漏掉列，图谱上的线宽就又退化成统一粗细
             weight: Some(0.8),
+            status: KnowledgeRelationStatus::Active,
             created_at: 0,
             updated_at: 0,
         };
@@ -412,6 +413,7 @@ mod tests {
                     target_node_id: tgt.to_string(),
                     relation_type: "causes".to_string(),
                     weight: Some(0.8),
+                    status: KnowledgeRelationStatus::Active,
                     created_at: 0,
                     updated_at: 0,
                 }]),

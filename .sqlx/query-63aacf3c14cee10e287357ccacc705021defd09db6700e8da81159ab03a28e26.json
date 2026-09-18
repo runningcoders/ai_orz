@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE knowledge_node_relation\nSET \"status\" = ?, updated_at = ?\nWHERE id = ? AND \"status\" = 1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "63aacf3c14cee10e287357ccacc705021defd09db6700e8da81159ab03a28e26"
+}

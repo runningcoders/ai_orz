@@ -7,6 +7,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SaveLongTermMemoryParams, SaveLongTermMemoryResponse};
+use common::enums::KnowledgeRelationStatus;
 use common::error::{Result, err};
 use serde_json;
 
@@ -94,6 +95,8 @@ pub async fn save_long_term_memory(
                     // 强度归一化在 DTO 上：非有限值丢弃、越界夹紧到 0.0~1.0，
                     // 未给则 None（未标注 ≠ 0）
                     weight: r.normalized_weight(),
+                    // 新建边即生效版本：修正会走"降级旧边 + 插入新边"，历史留库可追溯
+                    status: KnowledgeRelationStatus::Active,
                     created_at: now,
                     updated_at: now,
                 }

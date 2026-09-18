@@ -8,7 +8,7 @@ use crate::models::memory::{
     ShortTermMemoryIndexPo,
 };
 use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
-use common::enums::{MemoryRole, MemoryStatus};
+use common::enums::{KnowledgeRelationStatus, MemoryRole, MemoryStatus};
 use sqlx::{Row, SqlitePool};
 
 #[sqlx::test]
@@ -135,6 +135,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
         target_node_id: "node-2".to_string(),
         relation_type: "related".to_string(),
         weight: Some(0.75),
+        status: KnowledgeRelationStatus::Active,
         created_at: 0,
         updated_at: 0,
     };
@@ -676,6 +677,7 @@ async fn test_knowledge_relations(pool: SqlitePool) {
         target_node_id: "rel-2".to_string(),
         relation_type: "related".to_string(),
         weight: None,
+        status: KnowledgeRelationStatus::Active,
         created_at: now,
         updated_at: now,
     }];
@@ -699,8 +701,72 @@ async fn test_knowledge_relations(pool: SqlitePool) {
     assert_eq!(incoming.len(), 1);
     assert_eq!(incoming[0].source_node_id, "rel-1");
 
-    // 测试 delete_knowledge_relation (按 relation_id)
+    // 测试同键替换：新边插入时旧 Active 边降级为 Superseded（版本链）
+    let superseding = vec![KnowledgeNodeRelationPo {
+        id: "rel-rel-1-2-hist".to_string(),
+        source_node_id: "rel-1".to_string(),
+        target_node_id: "rel-2".to_string(),
+        relation_type: "related".to_string(),
+        weight: Some(0.9),
+        status: KnowledgeRelationStatus::Active,
+        created_at: now,
+        updated_at: now,
+    }];
+    dao.batch_add_knowledge_relations(ctx.clone(), &superseding)
+        .await
+        .unwrap();
+    let outgoing = dao
+        .list_outgoing_relations(ctx.clone(), "rel-1")
+        .await
+        .unwrap();
+    assert_eq!(outgoing.len(), 1);
+    assert_eq!(outgoing[0].id, "rel-rel-1-2-hist");
+    let old_status: i32 = sqlx::query_scalar(
+        r#"SELECT "status" FROM knowledge_node_relation WHERE id = 'rel-rel-1-2'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(old_status, KnowledgeRelationStatus::Superseded as i32);
+
+    // 测试 delete_knowledge_relation 只降级生效边：Superseded 历史边不可被覆盖成 Deleted
     dao.delete_knowledge_relation(ctx.clone(), "rel-rel-1-2")
+        .await
+        .unwrap();
+    let old_status: i32 = sqlx::query_scalar(
+        r#"SELECT "status" FROM knowledge_node_relation WHERE id = 'rel-rel-1-2'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(old_status, KnowledgeRelationStatus::Superseded as i32);
+
+    // 测试 query_knowledge_relations（按 ids 精确取生效边，默认过滤非 Active）
+    let found = dao
+        .query_knowledge_relations(
+            ctx.clone(),
+            MemoryQuery {
+                ids: Some(vec![
+                    "rel-rel-1-2".to_string(),
+                    "rel-rel-1-2-hist".to_string(),
+                ]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].id, "rel-rel-1-2-hist");
+
+    // 无 ids 时返回空：关系是依附节点的派生视图，不支持全量扫描
+    let empty = dao
+        .query_knowledge_relations(ctx.clone(), MemoryQuery::default())
+        .await
+        .unwrap();
+    assert!(empty.is_empty());
+
+    // 测试 delete_knowledge_relation 软删除：标记 Deleted(2)，行保留支持恢复
+    dao.delete_knowledge_relation(ctx.clone(), "rel-rel-1-2-hist")
         .await
         .unwrap();
     let outgoing_after = dao
@@ -708,6 +774,13 @@ async fn test_knowledge_relations(pool: SqlitePool) {
         .await
         .unwrap();
     assert_eq!(outgoing_after.len(), 0);
+    let hist_status: i32 = sqlx::query_scalar(
+        r#"SELECT "status" FROM knowledge_node_relation WHERE id = 'rel-rel-1-2-hist'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(hist_status, KnowledgeRelationStatus::Deleted as i32);
 }
 
 #[sqlx::test]
@@ -1365,6 +1438,7 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
             target_node_id: ids[200].clone(),
             relation_type: "related".to_string(),
             weight: None,
+            status: KnowledgeRelationStatus::Active,
             created_at: now,
             updated_at: now,
         },
@@ -1380,6 +1454,7 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
             target_node_id: ids[500].clone(),
             relation_type: "related".to_string(),
             weight: None,
+            status: KnowledgeRelationStatus::Active,
             created_at: now + 10,
             updated_at: now + 10,
         },
@@ -1540,6 +1615,7 @@ async fn relation_type_round_trips_verbatim(pool: SqlitePool) {
             target_node_id: "rt-b".to_string(),
             relation_type: "实现".to_string(),
             weight: None,
+            status: KnowledgeRelationStatus::Active,
             created_at: now,
             updated_at: now,
         },
@@ -1578,6 +1654,7 @@ async fn relation_type_round_trips_verbatim(pool: SqlitePool) {
             target_node_id: "rt-b".to_string(),
             relation_type: "depends".to_string(),
             weight: None,
+            status: KnowledgeRelationStatus::Active,
             created_at: now,
             updated_at: now,
         },

@@ -105,7 +105,7 @@
 
 - `query_memory`：按 agent_id / memory_type / tags 精确结构化筛选，无向量计算
 - `update_memory`：更新短期记忆或节点内容（自动重新向量化）。给节点加 tags（如 published）用 `node_tags`；标 Settled / Forgotten 用 `status`
-- `delete_memory`：删短期记忆（库 + 向量）/ 删节点（级联清理关系 + 引用 + 向量）
+- `delete_memory`：删短期记忆（库 + 向量）/ 删节点（级联清理关系 + 引用 + 向量）/ 删关系边（软删标记 Deleted，可恢复；Trace 不可删）
 
 ## 最佳实践
 

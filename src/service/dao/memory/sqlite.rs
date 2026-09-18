@@ -16,7 +16,7 @@ use crate::pkg::paths;
 use crate::pkg::storage::escape_fts5_keyword;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
 use async_trait::async_trait;
-use common::enums::{MemoryStatus, MemoryType};
+use common::enums::{KnowledgeRelationStatus, MemoryStatus, MemoryType};
 use common::error::{Result, bail_err};
 use serde_json;
 use sqlx::{FromRow, SqlitePool};
@@ -121,19 +121,36 @@ impl MemoryDaoSqliteImpl {
         Ok(trace.input)
     }
 
+    /// 关系边行 → PO（动态 SQL 通用映射；status 按 KnowledgeRelationStatus 解码）
+    fn knowledge_relation_from_row(row: &sqlx::sqlite::SqliteRow) -> KnowledgeNodeRelationPo {
+        use sqlx::Row;
+
+        KnowledgeNodeRelationPo {
+            id: row.get("id"),
+            source_node_id: row.get("source_node_id"),
+            target_node_id: row.get("target_node_id"),
+            relation_type: row.get("relation_type"),
+            // 动态 SQL 走 Row::get：显式取 f64 再收窄，避免依赖 f32 的 Decode 实现
+            weight: row.get::<Option<f64>, _>("weight").map(|w| w as f32),
+            status: row.get("status"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        }
+    }
+
     /// `list_relations_batch` 的单块查询（调用方保证 chunk 长度 ≤ IN_CLAUSE_CHUNK）
     async fn list_relations_batch_chunk(
         &self,
         ctx: RequestContext,
         node_ids: &[String],
     ) -> Result<Vec<KnowledgeNodeRelationPo>> {
-        use sqlx::{QueryBuilder, Row};
+        use sqlx::QueryBuilder;
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+            r#"SELECT id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
 FROM knowledge_node_relation
-WHERE source_node_id IN ("#,
+WHERE (source_node_id IN ("#,
         );
 
         let mut separated = builder.separated(", ");
@@ -146,33 +163,70 @@ WHERE source_node_id IN ("#,
         for id in node_ids {
             separated.push_bind(id);
         }
-        separated.push_unseparated(") ORDER BY created_at ASC");
+        separated.push_unseparated(") AND \"status\" = 1 ORDER BY created_at ASC");
 
         let rows = builder.build().fetch_all(&pool).await?;
 
         let mut result = Vec::new();
         for row in rows {
-            let id: String = row.get("id");
-            let source_node_id: String = row.get("source_node_id");
-            let target_node_id: String = row.get("target_node_id");
-            let relation_type: String = row.get("relation_type");
-            // 动态 SQL 走 Row::get：显式取 f64 再收窄，避免依赖 f32 的 Decode 实现
-            let weight: Option<f32> = row.get::<Option<f64>, _>("weight").map(|w| w as f32);
-            let created_at: i64 = row.get("created_at");
-            let updated_at: i64 = row.get("updated_at");
             // 关系类型原样带出（落库存的就是原文，读取侧不做任何枚举归一）
-            result.push(KnowledgeNodeRelationPo {
-                id,
-                source_node_id,
-                target_node_id,
-                relation_type,
-                weight,
-                created_at,
-                updated_at,
-            });
+            result.push(Self::knowledge_relation_from_row(&row));
         }
 
         Ok(result)
+    }
+
+    /// `query_knowledge_relations` 的单块查询（调用方保证 chunk 长度 ≤ IN_CLAUSE_CHUNK）
+    async fn query_relations_by_ids_chunk(
+        &self,
+        ctx: RequestContext,
+        ids: &[String],
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
+        use sqlx::QueryBuilder;
+
+        let pool = self.pool(ctx);
+        let mut builder = QueryBuilder::new(
+            r#"SELECT id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
+FROM knowledge_node_relation
+WHERE id IN ("#,
+        );
+
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(") AND \"status\" = 1 ORDER BY created_at ASC");
+
+        let rows = builder.build().fetch_all(&pool).await?;
+
+        Ok(rows.iter().map(Self::knowledge_relation_from_row).collect())
+    }
+
+    /// 把同键 (source, target, relation_type) 的旧生效边降级为 Superseded(0)
+    ///
+    /// 「版本化替换」的写侧闸门：与 INSERT 同事务执行，配合部分唯一索引
+    /// `uq_knowledge_relation_active_edge` 双保险，保证同一有向三元组只有一条
+    /// 生效边。旧边只降级不删除 —— 历史版本永久留库，记忆因果链回放依赖它。
+    async fn supersede_active_edge(
+        tx: &mut sqlx::SqliteConnection,
+        relation: &KnowledgeNodeRelationPo,
+    ) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        sqlx::query!(
+            r#"
+UPDATE knowledge_node_relation
+SET "status" = 0, updated_at = ?
+WHERE source_node_id = ? AND target_node_id = ? AND relation_type = ? AND "status" = 1
+"#,
+            now,
+            relation.source_node_id,
+            relation.target_node_id,
+            relation.relation_type,
+        )
+        .execute(tx)
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -1096,12 +1150,19 @@ ORDER BY created_at ASC
         relation: &KnowledgeNodeRelationPo,
     ) -> Result<()> {
         let pool = self.pool(ctx);
+        let mut tx = pool.begin().await?;
 
+        // 同键旧生效边先降级：部分唯一索引保证 (source, target, type) 仅一条生效，
+        // 新版本插入前必须先让位；两步同事务，保证不出现"零生效边"的真空期
+        Self::supersede_active_edge(&mut tx, relation).await?;
+
+        // 与节点写入同惯例：枚举先落成 i32 再绑定
+        let status_i32 = relation.status as i32;
         sqlx::query!(
             r#"
 INSERT INTO knowledge_node_relation (
-    id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 "#,
             relation.id,
             relation.source_node_id,
@@ -1109,12 +1170,14 @@ INSERT INTO knowledge_node_relation (
             // 原文直落：不经过枚举，词表外的标注不会丢
             relation.relation_type,
             relation.weight,
+            status_i32,
             relation.created_at,
             relation.updated_at,
         )
-        .execute(&pool)
+        .execute(&mut *tx)
         .await?;
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -1127,17 +1190,22 @@ INSERT INTO knowledge_node_relation (
         let mut tx = pool.begin().await?;
 
         for relation in relations {
+            // 批内同样先降级同键旧生效边再插入，与单条路径语义一致
+            Self::supersede_active_edge(&mut tx, relation).await?;
+
+            let status_i32 = relation.status as i32;
             sqlx::query!(
                 r#"
 INSERT INTO knowledge_node_relation (
-    id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                 relation.id,
                 relation.source_node_id,
                 relation.target_node_id,
                 relation.relation_type,
                 relation.weight,
+                status_i32,
                 relation.created_at,
                 relation.updated_at,
             )
@@ -1155,17 +1223,22 @@ INSERT INTO knowledge_node_relation (
         relation: &KnowledgeNodeRelationPo,
     ) -> Result<()> {
         let pool = self.pool(ctx);
+        let mut tx = pool.begin().await?;
 
+        Self::supersede_active_edge(&mut tx, relation).await?;
+
+        let status_i32 = relation.status as i32;
         sqlx::query!(
             r#"
 INSERT INTO knowledge_node_relation (
-    id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     source_node_id = excluded.source_node_id,
     target_node_id = excluded.target_node_id,
     relation_type  = excluded.relation_type,
     weight         = excluded.weight,
+    "status"       = excluded."status",
     updated_at     = excluded.updated_at
 "#,
             relation.id,
@@ -1173,12 +1246,14 @@ ON CONFLICT(id) DO UPDATE SET
             relation.target_node_id,
             relation.relation_type,
             relation.weight,
+            status_i32,
             relation.created_at,
             relation.updated_at,
         )
-        .execute(&pool)
+        .execute(&mut *tx)
         .await?;
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -1190,9 +1265,9 @@ ON CONFLICT(id) DO UPDATE SET
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
-WHERE source_node_id = ?
+WHERE source_node_id = ? AND "status" = 1
 ORDER BY created_at ASC
 "#,
             source_id
@@ -1210,6 +1285,7 @@ ORDER BY created_at ASC
                 relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
+                status: row.status,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });
@@ -1226,9 +1302,9 @@ ORDER BY created_at ASC
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
-WHERE target_node_id = ?
+WHERE target_node_id = ? AND "status" = 1
 ORDER BY created_at ASC
 "#,
             target_id
@@ -1246,6 +1322,7 @@ ORDER BY created_at ASC
                 relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
+                status: row.status,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });
@@ -1262,9 +1339,9 @@ ORDER BY created_at ASC
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
-WHERE source_node_id = ? OR target_node_id = ?
+WHERE (source_node_id = ? OR target_node_id = ?) AND "status" = 1
 ORDER BY created_at ASC
 "#,
             node_id,
@@ -1283,6 +1360,7 @@ ORDER BY created_at ASC
                 relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
+                status: row.status,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });
@@ -1312,15 +1390,44 @@ ORDER BY created_at ASC
         Ok(result)
     }
 
+    async fn query_knowledge_relations(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
+        let Some(ids) = query.ids.filter(|ids| !ids.is_empty()) else {
+            return Ok(Vec::new());
+        };
+
+        // SQLite 绑定参数上限 999：按 id 单绑定 IN 查询，分块复用 IN_CLAUSE_CHUNK
+        let mut result = Vec::new();
+        for chunk in ids.chunks(IN_CLAUSE_CHUNK) {
+            result.extend(
+                self.query_relations_by_ids_chunk(ctx.clone(), chunk)
+                    .await?,
+            );
+        }
+        Ok(result)
+    }
+
     async fn delete_knowledge_relation(
         &self,
         ctx: RequestContext,
         relation_id: &str,
     ) -> Result<()> {
         let pool = self.pool(ctx);
-
+        let now = chrono::Utc::now().timestamp();
+        let status_i32 = KnowledgeRelationStatus::Deleted as i32;
+        // 软删除：标记为 Deleted(2)，行保留支持恢复。
+        // 仅降级生效边：Superseded 历史边的版本链语义（"被替换"）不可被覆盖成"被删除"
         sqlx::query!(
-            r#"DELETE FROM knowledge_node_relation WHERE id = ?"#,
+            r#"
+UPDATE knowledge_node_relation
+SET "status" = ?, updated_at = ?
+WHERE id = ? AND "status" = 1
+"#,
+            status_i32,
+            now,
             relation_id
         )
         .execute(&pool)
@@ -1366,9 +1473,9 @@ ORDER BY created_at ASC
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
-SELECT id, source_node_id, target_node_id, relation_type, weight, created_at, updated_at
+SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
-WHERE source_node_id = ? AND relation_type = ?
+WHERE source_node_id = ? AND relation_type = ? AND "status" = 1
 ORDER BY created_at ASC
 "#,
             source_id,
@@ -1387,6 +1494,7 @@ ORDER BY created_at ASC
                 relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
+                status: row.status,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });

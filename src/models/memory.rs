@@ -9,7 +9,7 @@
 
 use crate::models::vector::{MatchType, SearchMatchInfo, VectorPayload, Vectorizable};
 use common::api::{MemoryResult, MemorySearchMatch};
-use common::enums::KnowledgeRelationType;
+use common::enums::{KnowledgeRelationStatus, KnowledgeRelationType};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
@@ -322,6 +322,15 @@ pub struct KnowledgeNodeRelationPo {
     /// 图谱按它调线宽与浓淡；`None` 渲染基准线宽。
     /// ⚠️ 与「强度 0」不是一回事：0 是「明确很弱」，`None` 是「没人标过」。
     pub weight: Option<f32>,
+    /// 边状态（生效/已替换）
+    ///
+    /// 只表达**边自身**的版本生命周期：修正关系 = 插入新边 + 旧边降级
+    /// `Superseded`，历史边永久留库（因果链回放可还原「当时怎么连的」）。
+    /// ⚠️ 与两端节点的 `MemoryStatus` 刻意不对等：节点遗忘不改边状态，
+    /// 该联动在读侧派生（端点不入批 → 边随批次丢弃；节点恢复后边自然回归）。
+    /// 默认查询只取 `Active`；同键 (source, target, relation_type) 仅一条生效
+    /// （部分唯一索引 `uq_knowledge_relation_active_edge` 保证）。
+    pub status: KnowledgeRelationStatus,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
@@ -628,6 +637,7 @@ mod tests {
             relation_type: kind.to_string(),
             // 未标注示例：没有强度时不能写成 0.0（那是「明确很弱」）
             weight: None,
+            status: KnowledgeRelationStatus::Active,
             created_at: 0,
             updated_at: 0,
         }))

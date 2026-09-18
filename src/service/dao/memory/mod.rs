@@ -491,7 +491,27 @@ pub trait MemoryDao: Send + Sync {
         node_ids: &[String],
     ) -> Result<Vec<KnowledgeNodeRelationPo>>;
 
-    /// 删除指定关系
+    /// 按 ID 批量查询生效关系边（仅 status = Active）
+    ///
+    /// 供 MemoryQuery.ids 精确取边（如 delete_memory 的前置取数）；关系是依附
+    /// 节点的派生视图，不提供无 ids 的全量扫描 —— 全量语义走图谱遍历接口。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - query: 记忆查询条件（仅消费 ids；缺失或为空返回空列表）
+    /// # 返回
+    /// - 生效关系列表
+    async fn query_knowledge_relations(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+    ) -> Result<Vec<KnowledgeNodeRelationPo>>;
+
+    /// 软删除指定关系（标记为 Deleted，行保留支持恢复）
+    ///
+    /// 与 delete_knowledge_node 的遗忘语义同族；生效边查询默认过滤非 Active，
+    /// 软删后边即刻从图谱消失。仅作用于生效边（status = 1），历史 Superseded
+    /// 边不受影响 —— 版本链语义不可被覆盖。
     ///
     /// # 参数
     /// - ctx: 请求上下文

@@ -3,6 +3,7 @@
 //! - `MemoryStatus` - 记忆状态（活跃/已遗忘）
 //! - `MemoryRole` - 记忆条目角色（user / assistant / system / summary）
 //! - `KnowledgeRelationType` - 知识节点关系类型
+//! - `KnowledgeRelationStatus` - 知识节点关系边状态（生效/已替换）
 //! - `MemoryType` - 记忆类型（用于过滤查询）
 
 #![deny(missing_docs)]
@@ -263,6 +264,59 @@ impl From<String> for KnowledgeRelationType {
             "custom" => KnowledgeRelationType::Custom,
             _ => KnowledgeRelationType::Custom, // 默认自定义
         }
+    }
+}
+
+// ==================== KnowledgeRelationStatus ====================
+
+/// 知识节点关系边状态
+///
+/// 只表达**边自身**的版本生命周期，与两端节点的 [`MemoryStatus`] 刻意「不对等」：
+/// 边的可见性取决于两个端点的状态（二元函数），无法用单值镜像 —— 节点遗忘的
+/// 联动由读侧派生（端点不入批，边随批次丢弃；节点恢复后边自然回归，无需恢复写入）。
+///
+/// - `Superseded` = 0：已被同键新边替换的历史版本，默认不查询但永久保留，
+///   记忆因果链回放时据此还原「当时这两点是怎么连的」
+/// - `Active` = 1：生效边；同一 (source, target, relation_type) 有向三元组
+///   仅允许一条生效（部分唯一索引 `uq_knowledge_relation_active_edge` 保证）
+/// - `Deleted` = 2：用户显式软删除的边。与 `Superseded` 刻意区分——
+///   「被替换」是版本链的自然演进，「被删除」是人为动作，因果链回放时
+///   两者含义不同；恢复 = 改回 Active（需先确认同键无生效边）
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum KnowledgeRelationStatus {
+    /// 已被替换 - 0，默认过滤不查询，历史版本保留可追溯
+    Superseded = 0,
+    /// 生效 - 1，正常参与图谱遍历与检索
+    #[default]
+    Active = 1,
+    /// 已删除 - 2，用户显式软删除；不参与查询，行保留支持恢复
+    Deleted = 2,
+}
+
+impl From<i32> for KnowledgeRelationStatus {
+    fn from(v: i32) -> Self {
+        match v {
+            0 => KnowledgeRelationStatus::Superseded,
+            1 => KnowledgeRelationStatus::Active,
+            2 => KnowledgeRelationStatus::Deleted,
+            _ => KnowledgeRelationStatus::default(),
+        }
+    }
+}
+
+impl From<i64> for KnowledgeRelationStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
+    }
+}
+
+impl KnowledgeRelationStatus {
+    /// 转换为 i32 用于数据库存储
+    pub fn to_i32(&self) -> i32 {
+        *self as i32
     }
 }
 
