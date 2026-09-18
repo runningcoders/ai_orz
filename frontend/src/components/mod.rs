@@ -29,6 +29,7 @@ pub mod layered_layout;
 pub mod markdown;
 pub mod mention_picker;
 pub mod modal;
+pub mod model_provider_bubble;
 pub mod node_card;
 pub mod particles;
 pub mod process_detail;

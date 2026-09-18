@@ -7,13 +7,16 @@
 //!
 //! 交互采用 DaisyUI dropdown 范式（tabindex + focus-within），点外自动收起，零额外 JS；
 //! 浮层位置与懒加载都挂在触发层的聚焦事件上（见 [`resolve_anchor`] 与 [`AvatarBubble`]）。
+//! 浮层定位工具（[`BubbleAnchor`] / [`resolve_anchor`] 等）以 `pub(crate)` 开放，
+//! 同类「点击弹信息卡」组件（如模型提供商气泡）直接复用，勿再复制一套定位逻辑。
 //! ⚠️ 不要改回 `onclick`：浮层展开那一刻 DaisyUI 会给触发层加 `pointer-events: none`
 //! （`.dropdown:focus-within > [tabindex]:first-child`），mouseup / click 落到 `.dropdown`
 //! 包装层上 → 挂在触发层的 `onclick` 永不触发（实测见组件内 `onfocus` 处注释）。
 //! `status` 传入时按 [`avatar_status_ring`] 渲染生命周期警示环（待离职=黄 / 已离职=红）。
 //!
 //! 头像圆盒尺寸由 [`AvatarSize`] 决定（聊天页消息气泡 40px；侧栏/列表里的紧凑身份
-//! chip 24px）—— 圆盒的 Tailwind 类与浮层锚点计算同源于该枚举，改尺寸只改一处。
+//! chip 24px）—— 圆盒的 Tailwind 类定义于该枚举；浮层锚点用展开瞬间的实测矩形，
+//! 没有可漂移的尺寸常量，改尺寸只改一处。
 //!
 //! ⚠️ **宿主契约**：调用方只需给一个定位容器（聊天页是 `.chat-image`，负责 grid 定位），
 //! **不要**再叠加 `.avatar`——`.avatar` 由本组件贴在触发层上，紧邻圆形，
@@ -49,9 +52,8 @@ impl AvatarTone {
 
 /// 头像圆盒尺寸档位。
 ///
-/// 圆盒的 Tailwind 类与 [`resolve_anchor`] 的锚点计算**同源于此**：
-/// 类名写死在这里、像素值也读这里，避免「改了 div 的 w-10 忘了改锚点常量」
-/// 那种浮层错位（两处漂移时卡片会整体偏掉一个身位）。
+/// 圆盒的 Tailwind 类写死在这里；浮层锚点用的是展开瞬间的**实测矩形**
+/// （见 [`resolve_anchor`]），没有可漂移的尺寸常量——改类名不会导致卡片错位。
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum AvatarSize {
     /// 24px（`w-6 h-6` + `text-xs`）：紧凑列表里的身份 chip
@@ -62,14 +64,6 @@ pub enum AvatarSize {
 }
 
 impl AvatarSize {
-    /// 圆盒边长（px）：浮层锚点与翻转判定都要用，必须与 [`Self::avatar_class`] 同值
-    fn px(self) -> f64 {
-        match self {
-            Self::Sm => 24.0,
-            Self::Md => 40.0,
-        }
-    }
-
     /// 圆盒尺寸类。⚠️ 必须是**字面量**：Tailwind v4 扫源码收集类名，
     /// `format!("w-{n}")` 拼出来的类不会被生成，圆盒会静默塌掉。
     fn avatar_class(self) -> &'static str {
@@ -107,7 +101,7 @@ pub enum BubbleAlign {
 }
 
 impl BubbleAlign {
-    fn dropdown_class(self) -> &'static str {
+    pub(crate) fn dropdown_class(self) -> &'static str {
         match self {
             Self::Start => "dropdown-start",
             Self::End => "dropdown-end",
@@ -129,7 +123,7 @@ const BUBBLE_MAX_H: f64 = 220.0;
 /// 浮层锚点（视口坐标）。定位改用 `position: fixed` 而非 DaisyUI 的
 /// `bottom: 100%`，见 [`AvatarBubble`] 的定位注释。
 #[derive(Clone, Copy, PartialEq)]
-struct BubbleAnchor {
+pub(crate) struct BubbleAnchor {
     /// `false` 用 `left`（start 左对齐）；`true` 用 `right`（end 右对齐）
     end: bool,
     /// 水平值：`left` 或 `right` 的 px
@@ -146,7 +140,7 @@ impl BubbleAnchor {
     /// 拼 inline style：四个方向里**必须成对写 `auto`**，
     /// 否则 DaisyUI `.dropdown-top .dropdown-content{bottom:100%}` 会与 inline `top` 同时生效，
     /// 把卡片按两个方向一起约束 → 高度被压扁。
-    fn style(&self) -> String {
+    pub(crate) fn style(&self) -> String {
         let h = if self.end {
             format!("right:{}px;left:auto", self.horizontal)
         } else {
@@ -168,7 +162,7 @@ impl BubbleAnchor {
 }
 
 /// 视口尺寸 `(宽, 高)`；取不到或为 0 时返回 `None`。
-fn viewport_size() -> Option<(f64, f64)> {
+pub(crate) fn viewport_size() -> Option<(f64, f64)> {
     let win = web_sys::window()?;
     let vw = win.inner_width().ok().and_then(|v| v.as_f64())?;
     let vh = win.inner_height().ok().and_then(|v| v.as_f64())?;
@@ -176,7 +170,7 @@ fn viewport_size() -> Option<(f64, f64)> {
 }
 
 /// 当前焦点元素（展开瞬间即触发层本体），用于向上定位滚动祖先。
-fn focused_element() -> Option<web_sys::Element> {
+pub(crate) fn focused_element() -> Option<web_sys::Element> {
     web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.active_element())
@@ -191,7 +185,7 @@ fn focused_element() -> Option<web_sys::Element> {
 /// 判定用「内容高度 > 可视高度」，不依赖具体 id、也不需要 computed style
 /// （本项目 web-sys 未开 `CssStyleDeclaration` feature）。
 /// 找不到时返回 `None`，调用方退化为按整个视口计算。
-fn scroll_ancestor_rect(from: &web_sys::Element) -> Option<web_sys::DomRect> {
+pub(crate) fn scroll_ancestor_rect(from: &web_sys::Element) -> Option<web_sys::DomRect> {
     let mut cur = from.parent_element();
     while let Some(el) = cur {
         if let Some(h) = el.dyn_ref::<web_sys::HtmlElement>()
@@ -204,31 +198,31 @@ fn scroll_ancestor_rect(from: &web_sys::Element) -> Option<web_sys::DomRect> {
     None
 }
 
-/// 由头像盒的视口左上角推导浮层锚点。
+/// 由触发盒的实测视口矩形推导浮层锚点。
 ///
 /// 鼠标点击与键盘 Tab 都会先触发触发层的 `onfocus`，故只有这一条展开路径，
 /// 规则统一为「向上优先 / 不够就翻向下 / 再不够就限高」。
 /// 可用的上/下边界取自 `bounds`（滚动祖先），取不到则退化为整个视口。
-/// `avatar_px` 由 [`AvatarSize::px`] 提供，参与「向左展开的偏移」与「下方剩余空间」计算。
-fn resolve_anchor(
-    box_left: f64,
-    box_top: f64,
+/// `box_rect` 为触发层的实测矩形——头像盒是正方形，文本 chip 这类长条触发层
+/// 用实测宽高，右对齐偏移与下方剩余空间才不会算偏。
+pub(crate) fn resolve_anchor(
+    box_rect: &web_sys::DomRect,
     vw: f64,
     vh: f64,
-    avatar_px: f64,
     align: BubbleAlign,
     bounds: Option<web_sys::DomRect>,
 ) -> BubbleAnchor {
+    let (box_left, box_top) = (box_rect.left(), box_rect.top());
     // 边界与视口取交集：滚动祖先矩形同样可能带部分越界的边（如消息区底部被输入区覆盖）
     let top_edge = bounds.as_ref().map_or(0.0, |b| b.top().max(0.0));
     let bottom_edge = bounds.as_ref().map_or(vh, |b| b.bottom().min(vh));
     let space_above = (box_top - top_edge).max(0.0);
-    let space_below = (bottom_edge - box_top - avatar_px).max(0.0);
+    let space_below = (bottom_edge - box_top - box_rect.height()).max(0.0);
     // 优先向上（既有视觉）；上方放不下整张卡且下方不更宽裕时才翻转
     let upward = space_above >= BUBBLE_MAX_H + BUBBLE_GAP || space_above >= space_below;
     let end = align.is_end();
     let horizontal = if end {
-        (vw - box_left - avatar_px).max(0.0)
+        (vw - box_left - box_rect.width()).max(0.0)
     } else {
         box_left.max(0.0)
     };
@@ -238,7 +232,7 @@ fn resolve_anchor(
         vertical: if upward {
             vh - box_top + BUBBLE_GAP
         } else {
-            box_top + avatar_px + BUBBLE_GAP
+            box_top + box_rect.height() + BUBBLE_GAP
         },
         upward,
         available: if upward { space_above } else { space_below },
@@ -272,8 +266,6 @@ pub fn AvatarBubble(
     let ring = status.map(avatar_status_ring).unwrap_or("");
     let tone_classes = tone.classes();
     let align_class = align.dropdown_class();
-    // 尺寸在渲染前取一次：onfocus 闭包与圆盒类名必须用同一个值
-    let avatar_px = size.px();
     let avatar_class = size.avatar_class();
     let has_agent_card = agent_id.is_some();
     let open_agent_id = agent_id.clone();
@@ -324,15 +316,7 @@ pub fn AvatarBubble(
                     {
                         let r = el.get_bounding_client_rect();
                         let bounds = scroll_ancestor_rect(&el);
-                        anchor.set(Some(resolve_anchor(
-                            r.left(),
-                            r.top(),
-                            vw,
-                            vh,
-                            avatar_px,
-                            align,
-                            bounds,
-                        )));
+                        anchor.set(Some(resolve_anchor(&r, vw, vh, align, bounds)));
                     }
                     let Some(aid) = open_agent_id.clone() else {
                         return;

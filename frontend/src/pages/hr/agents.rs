@@ -12,6 +12,7 @@ use crate::api::hr::{
 use crate::api::seed::{get_task_progress, preview_preset_agents, sync_preset_agents};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
+use crate::components::model_provider_bubble::ModelProviderBubble;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::hr::bind_model_modal::BindModelModal;
@@ -603,6 +604,12 @@ pub fn HrAgents() -> Element {
                                                             class: "btn hud-btn btn-warning btn-xs",
                                                             onclick: move |_| bind_model_target.set(Some((id_bind.clone(), bind_name.clone()))),
                                                             "请绑定模型"
+                                                        }
+                                                    } else if akind == "local" {
+                                                        // 点击弹信息卡（基础信息 + 最近统计），卡片内跳详情页
+                                                        ModelProviderBubble {
+                                                            provider_id: amp.clone(),
+                                                            provider_label: model_label.clone(),
                                                         }
                                                     } else {
                                                         span { class: "font-mono text-sm", "{model_label}" }

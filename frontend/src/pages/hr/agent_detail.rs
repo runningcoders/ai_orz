@@ -8,6 +8,7 @@ use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudCard, HudPanel};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
+use crate::components::model_provider_bubble::ModelProviderBubble;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::AgentStatsPanel;
@@ -1173,7 +1174,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         if a.kind == "local" {
                                             div {
                                                 span { class: "block text-sm text-base-content/70 mb-1", "模型提供商" }
-                                                span { class: "font-mono text-sm", "{a.model_provider_id}" }
+                                                // 点击弹信息卡（基础信息 + 最近统计），卡片内跳详情页
+                                                ModelProviderBubble {
+                                                    provider_id: a.model_provider_id.clone(),
+                                                    provider_label: a.model_provider_id.clone(),
+                                                }
                                             }
                                         }
                                         div {
