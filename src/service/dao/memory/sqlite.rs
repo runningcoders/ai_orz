@@ -163,7 +163,8 @@ WHERE (source_node_id IN ("#,
         for id in node_ids {
             separated.push_bind(id);
         }
-        separated.push_unseparated(") AND \"status\" = 1 ORDER BY created_at ASC");
+        // 双闭括号：先闭 IN( 再闭外层分组(，保证 status 过滤作用于整个 OR 表达式
+        separated.push_unseparated(")) AND \"status\" = 1 ORDER BY created_at ASC");
 
         let rows = builder.build().fetch_all(&pool).await?;
 
