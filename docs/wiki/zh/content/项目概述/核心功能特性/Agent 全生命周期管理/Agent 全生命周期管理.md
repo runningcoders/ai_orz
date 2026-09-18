@@ -301,8 +301,8 @@ end
 
 章节来源
 - [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
-- [frontend/components/workspace_graph.rs:114-151](frontend/src/components/workspace_graph.rs#L114-L151)
-- [frontend/components/workspace_graph.rs:257-331](frontend/src/components/workspace_graph.rs#L257-L331)
+- [frontend/src/components/workspace_graph.rs:158-195](frontend/src/components/workspace_graph.rs#L158-L195)
+- [frontend/src/components/workspace_graph.rs:297-375](frontend/src/components/workspace_graph.rs#L297-L375)
 
 ### 在项目与任务中协调多 Agent 协作
 - 关系建模
@@ -315,9 +315,9 @@ end
   - 通过消息将任务分派给不同 Agent；各 Agent 独立唤醒、执行、沉淀；前端以图形式展示协作拓扑。
 
 章节来源
-- [frontend/components/workspace_graph.rs:114-151](frontend/src/components/workspace_graph.rs#L114-L151)
-- [frontend/components/workspace_graph.rs:257-331](frontend/src/components/workspace_graph.rs#L257-L331)
-- [frontend/components/workspace_graph.rs:398-436](frontend/src/components/workspace_graph.rs#L398-L436)
+- [frontend/src/components/workspace_graph.rs:158-195](frontend/src/components/workspace_graph.rs#L158-L195)
+- [frontend/src/components/workspace_graph.rs:297-375](frontend/src/components/workspace_graph.rs#L297-L375)
+- [frontend/src/components/workspace_graph.rs:436-474](frontend/src/components/workspace_graph.rs#L436-L474)
 
 ### 监控与调试
 - 运行时状态事件

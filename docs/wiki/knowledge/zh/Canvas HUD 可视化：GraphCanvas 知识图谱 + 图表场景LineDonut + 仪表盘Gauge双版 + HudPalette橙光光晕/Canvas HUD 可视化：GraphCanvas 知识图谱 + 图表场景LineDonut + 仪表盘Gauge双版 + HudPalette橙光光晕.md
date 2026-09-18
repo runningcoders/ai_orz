@@ -70,6 +70,7 @@ source_files:
 
   - 【平行卡 3】docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md（TimeRangePicker 消费方：统计看板时间筛选）
   - 【平行卡 4】docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md（RingProgress 消费方：Agent 上下文 Token 占比展示）
+  - 【子卡】docs/wiki/knowledge/zh/工作台拓扑图 WorkspaceGraph：四视图节点渐进增强信息卡/工作台拓扑图 WorkspaceGraph：四视图节点渐进增强信息卡.md（2026-09-18 拆分：WorkspaceGraph 单文件专管——四视图节点 workspace_node 渐进增强信息卡 + 外接圆半径 + task_tags 进度胶囊；本卡 scope 中 workspace_graph.rs 的适配层细则以子卡为第一召回层，通用渲染/力导向红线仍在本卡 §4）
 ---
 
 ## §1 概述

@@ -236,7 +236,7 @@ W --> A["最终渲染结果"]
 
 **章节来源**
 - [frontend/src/components/canvas_scene.rs:519-578](frontend/src/components/canvas_scene.rs#L519-L578)
-- [frontend/src/components/workspace_graph.rs:545-570](frontend/src/components/workspace_graph.rs#L545-L570)
+- [frontend/src/components/workspace_graph.rs:620-682](frontend/src/components/workspace_graph.rs#L620-L682)
 - [frontend/src/pages/hr/memory_search.rs:85-95](frontend/src/pages/hr/memory_search.rs#L85-L95)
 
 ### Markdown 渲染样式系统
