@@ -65,6 +65,11 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 - **入职弹窗按来源三组分包**（`frontend/src/pages/hr/onboard_modal.rs`）：入职弹窗的技能包选择器按"来自哪个种子模板"分组展示（系统预置/组织自定义/行业模板三栏），登录页在只有一个组织时自动选中（无需手动点）。
 - **Agent 列表就地引导下一步**（`frontend/src/pages/hr/agents.rs` + `frontend/src/pages/hr/bind_model_modal.rs`）：Agent 列表页在每个 Agent 卡片上根据当前状态显示不同的操作按钮——**缺模型绑定**（model_provider_id 为 null）→ 显示「绑定模型」按钮（弹出 bind_model_modal）；**状态未推进**（status=Initializing 超过阈值）→ 显示「重新触发入职」按钮。替代了旧版需要管理员手动排查 Agent 入职卡点的低效流程。
 
+**预置本体词表（2026-09-19 增量，对齐 ontology_knowledge_sedimentation_design.md 决策 #15）**：
+- **default.json 新增 ontology 段**：预置本体词表快照（实体类/关系类型/同义映射），随系统初始化一次性注入全局三表（`ontology_classes / ontology_relation_types / ontology_synonym_mappings`）。词表量级约 40 条（15 关系词 + 10 实体类 + 15 同义映射），覆盖 concept/event/task/plan 等核心记忆节点 + contains/based_on/part_of 等核心关系
+- **sync_preset_ontology handler 新增**：`GET /api/v1/system/seed/preset-ontology/preview`（只读对比缺口清单）+ `POST /api/v1/system/seed/preset-ontology/sync`（仅补缺注入）。策略固定「仅补缺」——term_key 物理存在（含退役行）即跳过，不覆盖管理页本地修改（设计决策 #14）。走同步返回（量级几十条毫秒级，不走后台任务），与预置技能同步有意差异
+- **注入时机跟 seed 走**（设计决策 #15）：词表不做启动自动注入（启动链路只承担基础设施自检），跟组织初始化 seed 注入 + 管理员手动同步。漂移自然由 DuckDB 漂移看板给出信号（新词漂移堆积 → 提示同步）
+
 # §2 关键文件表
 
 | 角色 | 路径 | 关键锚点 |

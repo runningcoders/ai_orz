@@ -41,6 +41,7 @@ source_files:
 - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/四层记忆系统.md
 - docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 记忆系统.md
 - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/工作记忆 (Working Memory).md
+- 【兄弟卡】docs/wiki/knowledge/zh/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序）/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序）.md（2026-09-19 增量：build_sleep_prompt 静态指令块前置 + 易变数据收尾提升沉淀场景 Prompt 前缀缓存命中率）
 
 ---
 

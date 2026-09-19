@@ -30,6 +30,8 @@
 
 **更新摘要 2026-08-29**：① 补充 NoProgressPolicy 作为第六个内置策略（builtin.rs#L203-L262），退出条件从仅 MaxRounds 单一防线升级为纵深防御链（疲劳提示 8 轮 → NoProgressPolicy 20 次单工具触发 → 365 轮上限）；② PromptBuilder trait 从扁平 prompt 升级为 System/User 消息分层（ChatMessage::System 变体），首次符合 Chat Completions API 规范；③ agent.rs 拆分为 agent/mod.rs + agent/builder/*.rs 子模块；④ summary.rs 删除，新增 compaction.rs 上下文压缩模块；⑤ awaken() 移除 Phase 1 IntentAnalyze 强制调用（intent_analyze.rs 保留为独立工具，不再是 awaken 必经路径），简化为单阶段直接执行；⑥ PromptBuilder trait 新增 build_final_response_guidance() 方法，注入 §0-§5 回复规则（审题 SOP + 何时直接回复 + send_message 正确用途 + 闲聊豁免 + 检索空结果 + 禁止假忙），放在 System 消息尾部；⑦ 新增 recursive_settle_call 递归拦截（compaction.rs / think_loop.rs is_recursive_settle_call），防止 Agent 在上下文压缩过程中再次触发 settle_memory 导致无限递归。
 
+**更新摘要 2026-09-19**（commit 5b52c72c → 08c3e720，本体词表注入 + Prompt 前缀缓存优化）：① awakening.rs 唤醒入口新增 ontology_lexicon 词表注入调用链——OntologyDal::try_dal() 可选依赖降级 → load_lexicon_summary 三表 Active 全量 → builder.ontology_lexicon()（本体子系统未初始化自动跳过不阻断）；② PromptBuilder.build() 区块从 8 块重排为 11 块，按稳定性递减排序，本体词表固定为第 4 块；③ build_sleep_prompt / build_summary_prompt 静态指令块前置 + 易变数据（Trace/轮次/摘要/trace_ids）统一收尾，指令用"见文末【XXX】"引用；④ Project/Task Prompt 时间字段从 relative_duration（"5 小时前"）改为 format_datetime（"2026-09-15 10:30"），消除分钟级漂移导致的前缀缓存作废；⑤ 三个 *_initial_messages 变体补缓存友好注释防回退。cite 区补两个新 RAG 卡引用（本体词表治理卡 + PromptBuilder 前缀缓存优化卡），关联文档补 ontology_knowledge_sedimentation_design.md。
+
 **本文关联三类文档**
 - 【① Design 决策快照】[thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) — trait 聚合与接口层数据流
 - 【② Plan 落地快照】占位：（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
@@ -48,6 +50,9 @@
 - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
 - [ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API](docs/wiki/knowledge/zh/ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API/ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API.md)
 - [Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位](docs/wiki/knowledge/zh/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位.md)
+  - [本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账](docs/wiki/knowledge/zh/本体词表漂移治理与%20Prompt%20注入：OntologyDal%20load_lexicon_summary%20+%20common%20纯函数解析%20+%20写后认证%20+%20DuckDB%20漂移记账/本体词表漂移治理与%20Prompt%20注入：OntologyDal%20load_lexicon_summary%20+%20common%20纯函数解析%20+%20写后认证%20+%20DuckDB%20漂移记账.md) — 2026-09-19 增量：Runtime 唤醒入口调 OntologyDal::try_dal() → load_lexicon_summary → builder.ontology_lexicon() 注入词表区块
+  - [PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序）](docs/wiki/knowledge/zh/PromptBuilder%20工作空间与本体词表注入%20+%20前缀缓存优化：workspace_context,%20ontology_lexicon,%20稳定性递减排序/PromptBuilder%20工作空间与本体词表注入%20+%20前缀缓存优化：workspace_context,%20ontology_lexicon,%20稳定性递减排序.md) — 2026-09-19 增量：区块重排 8→11 + 场景 prompt 静态指令块前置 + 绝对时间优化 + 前缀缓存原则
+- 【① Design 决策快照】[ontology_knowledge_sedimentation_design.md](docs/design/ontology_knowledge_sedimentation_design.md) — 2026-09-19 增量：本体与知识图谱合一（TBox/ABox）、三段沉淀闭环、漂移不物化、Prompt 词表注入设计决策
 </cite>
 
 ## 目录

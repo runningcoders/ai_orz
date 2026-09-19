@@ -14,6 +14,7 @@ source_files:
   - src/service/domain/project/task_graph.rs#L17-L66
   - src/service/domain/project/artifact.rs#L26-L531
   - src/models/project.rs#L16-L358
+  - src/models/task.rs#L216-L245
   - src/service/dal/project.rs
   - src/handlers/project/mod.rs
   - docs/archive/design-archive/project_design.md
@@ -67,6 +68,10 @@ DAO 层 (SQLite sqlx + STRICT)
 3. **Artifact 双关联 + 三来源**：project_id 必选（权限校验+存储路径），task_id 可选（None=项目级，Some=任务级）；来源三枚举 attachment（引用 Finance 资产，不搬运文件）/generated_content（Agent 写入自有文本 + 乐观锁）/remote_url（预留）；`validate_project_and_task` 强制校验归属一致性。
 4. **按需返回 FetchOptions 模式**：get_project 三选项 with_task_graph/with_artifacts/with_progress_summary 独立控制，Option<T> + skip_serializing_if，未请求时不查询、不序列化，旧调用不传参数时响应字节级不变。
 5. **对话上下文聚合**：`Project::to_prompt_summary()` 提取 6 个关键字段（ID/名称/描述/状态/负责Agent/运作流程/指导建议），空字段跳过换行，最小化 Prompt token 占用；配合 `enrich_ctx!` 宏注入 project_id + agent_id 到 RequestContext 全链路。
+
+**Prompt 摘要演进（commit 14a4b688 + 08c3e720）**：为配合 PromptBuilder 前缀缓存优化，Project/Task Prompt 摘要做两项关键调整：
+- **Project 时间字段绝对化**：`start_at` / `last_followup_at` 从 `relative_duration("5 小时前")` 改为 `format_datetime("2026-09-15 10:30")`——相对时长随当前时刻漂移（分钟级变化），导致【项目上下文】区块字节级变化作废前缀缓存中其后的全部内容；绝对时间仅在数据本身变更时变化
+- **Task 前置依赖注入**：`to_prompt_summary()` 新增前置依赖任务 ID 行 + 阅读提示——DAG 协作中 Agent 接力时需要了解前置任务的执行结果与产物（常记录在 Artifact 里），新增 `get_task(前置ID, with_artifacts=true)` 提示让 Agent 自行查询
 
 ## §4 硬约束与红线
 

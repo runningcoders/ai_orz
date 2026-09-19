@@ -37,7 +37,7 @@ source_files:
 | [src/models/cortex_types.rs](src/models/cortex_types.rs#L135-L195) | ChatMessage 枚举 + System 变体 | `ChatMessage::System { content: String }` 第四种变体；`system()` 构造器；`to_summary_text` 处理 System 消息 |
 | [src/service/dao/cortex/native/http.rs](src/service/dao/cortex/native/http.rs#L42-L44) | HTTP 序列化 | System 角色序列化为 `{"role":"system","content":"..."}` |
 | [src/models/prompt_builder.rs](src/models/prompt_builder.rs#L155-L209) | PromptBuilder trait 扩展 | `build_initial_messages / build_sleep_initial_messages / build_summary_initial_messages / build_intent_analyze_initial_messages` — 输出 `Vec<ChatMessage>`，System + User 各一条 |
-| 【平行卡】PromptBuilder workspace_context | trait 扩展全貌 | [PromptBuilder workspace_context](docs/wiki/knowledge/zh/PromptBuilder 工作空间上下文注入：workspace_context 方法让 Agent 感知文件操作路径/PromptBuilder 工作空间上下文注入：workspace_context 方法让 Agent 感知文件操作路径.md) |
+| 【平行卡】PromptBuilder workspace_context | trait 扩展全貌 | [PromptBuilder workspace_context](docs/wiki/knowledge/zh/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序.md) |
 
 ## §3 架构约定
 
