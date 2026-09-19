@@ -958,11 +958,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                     .collect();
                 if !skills.is_empty() {
                     skills.sort_by(|a, b| a.id.cmp(&b.id));
-                    let label = if tag == "neural" {
-                        "🧠 神经技能".to_string()
-                    } else {
-                        format!("📦 {}", tag)
-                    };
+                    let label = format!("📦 {}", tag);
                     skill_view.push((label, tag == "neural", "accent", skills));
                 }
             }
