@@ -206,6 +206,23 @@ pub(super) fn build_scene_skills(
         .collect()
 }
 
+/// 本体词表注入（design §5.4）：awaken / settle / intent_analyze 三场景共用挂载
+///
+/// 优雅降级：本体子系统未初始化（`try_dal` 为 `None`）或词表查询失败时跳过注入，
+/// 可选增强不阻断唤醒主流程；词表为空时 builder 渲染空区块，同样无感。
+pub(super) async fn mount_ontology_lexicon(
+    ctx: &RequestContext,
+    builder: &mut dyn crate::models::prompt_builder::PromptBuilder,
+) {
+    let Some(ontology) = crate::service::dal::ontology::try_dal() else {
+        return;
+    };
+    match ontology.load_lexicon_summary(ctx.clone()).await {
+        Ok(summary) => builder.ontology_lexicon(&summary),
+        Err(e) => log_warn!(ctx, "awaken", "加载本体词表失败，跳过词表注入: {:?}", e),
+    }
+}
+
 // ==================== RuntimeAwakening trait 实现 ====================
 
 #[async_trait::async_trait]
@@ -479,6 +496,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             if let Some(user) = &options.user_profile {
                 builder.user_profile(user);
             }
+            // 本体词表（design §5.4）：记忆图谱用词约定，三场景共用挂载点
+            mount_ontology_lexicon(&ctx, builder.as_mut()).await;
             builder.history(&recent_memories);
             // 压缩产物直接注入：告诉模型「这是你上一轮工作的压缩结果」，
             // 无需再回顾历史记忆；需要更早的记忆时用 search_memory 检索。
@@ -1032,6 +1051,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             agent_workspace,
             project_workspace,
         );
+        // 本体词表（design §5.4）：记忆图谱用词约定，三场景共用挂载点
+        mount_ontology_lexicon(&ctx, builder.as_mut()).await;
         // 沉淀场景不装配 history（避免与待沉淀列表重复），只挂参考条目
         builder.settled_reference(&settled_reference);
 

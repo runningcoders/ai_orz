@@ -837,3 +837,192 @@ fn flat_builder_ignores_template_for_remote_config() {
     assert!(content.contains("测试助手"));
     assert!(content.contains("你好"));
 }
+
+// ==================== 本体词表注入（design §5.4）====================
+
+/// 构造小词表：2 关系词 + 2 实体类 + 1 同义映射（正常体量，三段均不触发裁剪）
+fn make_lexicon_summary() -> common::ontology::OntologyLexiconSummary {
+    use common::ontology::{LexiconSynonymSummary, LexiconTermSummary};
+    common::ontology::OntologyLexiconSummary {
+        relation_types: vec![
+            LexiconTermSummary {
+                term_key: "contains".into(),
+                display_name: "包含".into(),
+                description: "父节点包含子节点".into(),
+            },
+            LexiconTermSummary {
+                term_key: "prerequisite".into(),
+                display_name: "前置依赖".into(),
+                description: "A 完成后才能做 B".into(),
+            },
+        ],
+        classes: vec![
+            LexiconTermSummary {
+                term_key: "concept".into(),
+                display_name: "概念".into(),
+                description: "抽象知识单元".into(),
+            },
+            LexiconTermSummary {
+                term_key: "task".into(),
+                display_name: "任务".into(),
+                description: "有目标的工作项".into(),
+            },
+        ],
+        synonyms: vec![LexiconSynonymSummary {
+            raw_term: "父子关系".into(),
+            target_kind: common::ontology::TermKind::Relation,
+            target_key: "contains".into(),
+        }],
+    }
+}
+
+/// 未注入词表时不渲染【本体词表】区块
+#[test]
+fn lexicon_block_absent_when_not_injected() {
+    let agent = make_simple_agent();
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.system_prompt(&agent);
+    let prompt = builder.build();
+
+    assert!(
+        find_block(&prompt, "【本体词表】").is_none(),
+        "未注入词表不应渲染【本体词表】区块头"
+    );
+}
+
+/// 空词表（三段均无条目）注入后同样不渲染区块
+#[test]
+fn lexicon_block_skips_empty_summary() {
+    let agent = make_simple_agent();
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.system_prompt(&agent);
+    builder.ontology_lexicon(&common::ontology::OntologyLexiconSummary::default());
+    let prompt = builder.build();
+
+    assert!(
+        find_block(&prompt, "【本体词表】").is_none(),
+        "空词表不应渲染【本体词表】区块头"
+    );
+}
+
+/// 注入词表后渲染完整三段：引导语 + 关系词 + 实体类 + 同义映射
+#[test]
+fn lexicon_block_renders_full_vocabulary() {
+    let agent = make_simple_agent();
+    let lexicon = make_lexicon_summary();
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.system_prompt(&agent);
+    builder.ontology_lexicon(&lexicon);
+    let prompt = builder.build();
+
+    assert!(
+        find_block(&prompt, "【本体词表】").is_some(),
+        "注入词表后应渲染【本体词表】区块头"
+    );
+    // 引导语：节点从实体类取词、关系从关系词取词
+    assert!(prompt.contains("节点类型从「实体类」取词"));
+    assert!(prompt.contains("关系从「关系词」取词"));
+    // 三段段头齐全
+    assert!(prompt.contains("关系词（图谱边类型）"));
+    assert!(prompt.contains("实体类（图谱节点类型）"));
+    assert!(prompt.contains("同义映射"));
+    // 词条行格式：- {term_key}（{display_name}）：{description}
+    assert!(prompt.contains("- contains（包含）：父节点包含子节点"));
+    assert!(prompt.contains("- concept（概念）：抽象知识单元"));
+    // 同义映射行格式：「{raw_term}」→ {target_key}
+    assert!(prompt.contains("「父子关系」→ contains"));
+}
+
+/// 超预算裁剪：首条关系词即超预算 → 低优先级段（实体类 / 同义）整体让位 + 截断提示
+#[test]
+fn lexicon_block_truncates_low_priority_sections() {
+    use common::ontology::LexiconTermSummary;
+    let agent = make_simple_agent();
+
+    // 单条 description 3000+ 字符：连第一条都装不下预算
+    let long_desc = "这是一条语义描述用于撑大词表体积。".repeat(180);
+    let mut lexicon = make_lexicon_summary();
+    lexicon.relation_types = (0..30)
+        .map(|i| LexiconTermSummary {
+            term_key: format!("rel_{}", i),
+            display_name: format!("关系{}", i),
+            description: long_desc.clone(),
+        })
+        .collect();
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.system_prompt(&agent);
+    builder.ontology_lexicon(&lexicon);
+    let prompt = builder.build();
+
+    // 截断提示行出现
+    assert!(prompt.contains("词表超出注入预算"), "超预算应出现裁剪提示");
+    // 首条即超预算：任何关系词条目都不渲染
+    assert!(
+        !prompt.contains("- rel_0（关系0）"),
+        "首条超预算后不应渲染任何关系词条目"
+    );
+    // 低优先级段整体让位
+    assert!(
+        !prompt.contains("实体类（图谱节点类型）"),
+        "实体类段应整体让位"
+    );
+    assert!(
+        !prompt.contains("「父子关系」→ contains"),
+        "同义段应整体让位"
+    );
+}
+
+/// 前两段装完后剩余预算不足 → 同义段（最低优先级）整体让位，前两段不受影响
+#[test]
+fn lexicon_block_synonyms_yield_when_budget_exhausted() {
+    use common::ontology::{LexiconSynonymSummary, LexiconTermSummary};
+    let agent = make_simple_agent();
+
+    let lexicon = common::ontology::OntologyLexiconSummary {
+        relation_types: (0..10)
+            .map(|i| LexiconTermSummary {
+                term_key: format!("rel_{}", i),
+                display_name: format!("关系{}", i),
+                description: "语义描述".into(),
+            })
+            .collect(),
+        classes: (0..20)
+            .map(|i| LexiconTermSummary {
+                term_key: format!("cls_{}", i),
+                display_name: format!("类目{}", i),
+                description: "语义描述".into(),
+            })
+            .collect(),
+        synonyms: vec![LexiconSynonymSummary {
+            raw_term: "长".repeat(3000),
+            target_kind: common::ontology::TermKind::Relation,
+            target_key: "rel_0".into(),
+        }],
+    };
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.system_prompt(&agent);
+    builder.ontology_lexicon(&lexicon);
+    let prompt = builder.build();
+
+    // 前两段完整渲染
+    assert!(prompt.contains("关系词（图谱边类型）"));
+    assert!(prompt.contains("实体类（图谱节点类型）"));
+    assert!(
+        prompt.contains("- cls_19（类目19）"),
+        "实体类最后一条应完整装入"
+    );
+    // 同义段整体让位（prompt 中不应出现成片的长字符）
+    assert!(
+        prompt.matches('长').count() < 10,
+        "同义段超剩余预算应整体让位"
+    );
+    assert!(
+        prompt.contains("词表超出注入预算"),
+        "同义段让位应出现裁剪提示"
+    );
+}

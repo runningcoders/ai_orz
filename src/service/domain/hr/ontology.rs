@@ -17,11 +17,11 @@ use crate::models::ontology::{
     OntologySynonymMapping, OntologySynonymMappingPo,
 };
 use crate::pkg::RequestContext;
+use crate::service::dal::ontology::{active_all_pagination, warn_if_lexicon_truncated};
 use crate::service::dao::ontology::{
     OntologyClassQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
 };
 use crate::service::domain::hr::{HrDomainImpl, OntologyDomain};
-use common::api::PaginationParams;
 use common::api::ontology::{
     GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
     ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
@@ -30,38 +30,10 @@ use common::api::ontology::{
 use common::enums::OntologyStatus;
 use common::error::{Result, bail_err, err};
 use common::ontology::{
-    LexiconGapReport, LexiconSynonymSummary, LexiconTermSummary, MAX_TERM_KEY_LEN,
-    OntologyCertifyReport, OntologyLexiconApplyReport, OntologyLexiconSummary, PresetOntologyClass,
-    PresetOntologyLexicon, PresetOntologyRelationType, PresetOntologySynonym, TermKind, normalize,
+    LexiconGapReport, MAX_TERM_KEY_LEN, OntologyCertifyReport, OntologyLexiconApplyReport,
+    OntologyLexiconSummary, PresetOntologyClass, PresetOntologyLexicon, PresetOntologyRelationType,
+    PresetOntologySynonym, TermKind, normalize,
 };
-
-/// 词表视图 / 认证的全量拉取上限（词表量级几十条，1000 已远超需求；
-/// `PaginationParams` 无「全量」语义，用大 limit 模拟）
-const LEXICON_LOAD_LIMIT: usize = 1000;
-
-/// 拉取全量**生效**词表条目的分页参数（只取 Active，供提示词注入视图；
-/// 认证/看板走 `list_all_*` 含退役全量，语义不同）
-fn active_all_pagination() -> PaginationParams {
-    PaginationParams {
-        limit: Some(LEXICON_LOAD_LIMIT),
-        offset: None,
-    }
-}
-
-/// `active_all_pagination` 大 limit 模拟全量的截断留痕：拉回条目数达到
-/// `LEXICON_LOAD_LIMIT` 视为可能被截断（正常词表量级几十条，触发即异常），
-/// 打 warn 提醒，避免提示词注入视图静默丢词
-fn warn_if_lexicon_truncated(ctx: &RequestContext, what: &str, total: usize) {
-    if total >= LEXICON_LOAD_LIMIT {
-        log_warn!(
-            ctx,
-            "hr_ontology",
-            "{} 活跃条目数达到拉取上限 {}，结果可能被截断",
-            what,
-            LEXICON_LOAD_LIMIT
-        );
-    }
-}
 
 /// 校验 JSON 数组字符串合法性（空串 = 空清单，合法）
 ///
@@ -599,73 +571,8 @@ impl OntologyDomain for HrDomainImpl {
     // ==================== F. 词表视图（神经技能提示词注入） ====================
 
     async fn list_lexicon(&self, ctx: RequestContext) -> Result<OntologyLexiconSummary> {
-        let pagination = active_all_pagination();
-        let (classes, relation_types, synonyms) = tokio::try_join!(
-            self.ontology_dal.query_classes(
-                ctx.clone(),
-                OntologyClassQuery {
-                    status: Some(OntologyStatus::Active),
-                    keyword: None,
-                    pagination: pagination.clone(),
-                },
-            ),
-            self.ontology_dal.query_relation_types(
-                ctx.clone(),
-                OntologyRelationTypeQuery {
-                    status: Some(OntologyStatus::Active),
-                    keyword: None,
-                    pagination: pagination.clone(),
-                },
-            ),
-            self.ontology_dal.query_synonyms(
-                ctx.clone(),
-                OntologySynonymQuery {
-                    target_kind: None,
-                    target_key: None,
-                    keyword: None,
-                    pagination,
-                },
-            ),
-        )?;
-
-        warn_if_lexicon_truncated(&ctx, "实体类", classes.items.len());
-        warn_if_lexicon_truncated(&ctx, "关系类型", relation_types.items.len());
-        warn_if_lexicon_truncated(&ctx, "同义映射", synonyms.items.len());
-
-        Ok(OntologyLexiconSummary {
-            // 关系词 > 实体类 > 同义样例：字段顺序即 prompt 注入裁剪优先级（design §3）
-            relation_types: relation_types
-                .items
-                .into_iter()
-                .map(|e| LexiconTermSummary {
-                    term_key: e.po.term_key,
-                    display_name: e.po.display_name,
-                    description: e.po.description,
-                })
-                .collect(),
-            classes: classes
-                .items
-                .into_iter()
-                .map(|e| LexiconTermSummary {
-                    term_key: e.po.term_key,
-                    display_name: e.po.display_name,
-                    description: e.po.description,
-                })
-                .collect(),
-            // target_kind 非法属脏数据兜底（写入路径已校验），视图侧跳过不报错
-            synonyms: synonyms
-                .items
-                .into_iter()
-                .filter_map(|e| {
-                    let target_kind = e.po.kind()?;
-                    Some(LexiconSynonymSummary {
-                        raw_term: e.po.raw_term,
-                        target_kind,
-                        target_key: e.po.target_key,
-                    })
-                })
-                .collect(),
-        })
+        // 转换逻辑单点下沉 DAL（runtime prompt builder 同源消费），本层只透传
+        self.ontology_dal.load_lexicon_summary(ctx).await
     }
 
     // ==================== G. 漂移看板（薄透传 DAL 惰性聚合） ====================

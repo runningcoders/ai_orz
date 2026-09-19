@@ -6,6 +6,7 @@ mod tests {
     use crate::service::domain::system::seed::diff::*;
     use common::ontology::{
         PresetOntologyClass, PresetOntologyLexicon, PresetOntologyRelationType,
+        PresetOntologySynonym, TermKind,
     };
     use std::collections::{HashMap, HashSet};
 
@@ -537,27 +538,42 @@ mod tests {
     fn test_default_snapshot_ontology_lexicon() {
         let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
         let lex = &snapshot.ontology;
-        // 4 节点类 + 15 规范关系词 + 无预置同义映射
-        assert_eq!(lex.classes.len(), 4);
-        assert_eq!(lex.relation_types.len(), 15);
-        assert!(lex.synonym_mappings.is_empty());
+        // 4 认知类 + 8 领域类（AI Orz 自身实体建模）= 12 节点类、21 规范关系词、3 预置同义映射
+        assert_eq!(lex.classes.len(), 12);
+        assert_eq!(lex.relation_types.len(), 21);
+        assert_eq!(lex.synonym_mappings.len(), 3);
 
         let class_keys: Vec<&str> = lex.classes.iter().map(|c| c.term_key.as_str()).collect();
-        for key in ["concept", "event", "preference", "skill"] {
+        for key in [
+            "concept",
+            "event",
+            "preference",
+            "skill",
+            "organization",
+            "user",
+            "agent",
+            "model",
+            "memory",
+            "task",
+            "project",
+            "tool",
+        ] {
             assert!(class_keys.contains(&key), "节点类 {} 缺失", key);
         }
 
-        // 3 组 inverse 对偶必须双向互引且自洽
+        // 5 组 inverse 对偶必须双向互引且自洽
         let by_key: HashMap<&str, &PresetOntologyRelationType> = lex
             .relation_types
             .iter()
             .map(|r| (r.term_key.as_str(), r))
             .collect();
-        assert_eq!(by_key.len(), 15);
+        assert_eq!(by_key.len(), 21);
         for (fwd_key, rev_key) in [
             ("contains", "contained_by"),
             ("depends", "depended_by"),
             ("causes", "caused_by"),
+            ("owns", "owned_by"),
+            ("uses", "used_by"),
         ] {
             let fwd = by_key
                 .get(fwd_key)
@@ -579,6 +595,25 @@ mod tests {
                 rev_key,
                 fwd_key
             );
+        }
+
+        // 预置同义映射：raw 指向领域类，覆盖高频口语别名（kind 与目标必须自洽）
+        let by_raw: HashMap<&str, &PresetOntologySynonym> = lex
+            .synonym_mappings
+            .iter()
+            .map(|s| (s.raw_term.as_str(), s))
+            .collect();
+        assert_eq!(by_raw.len(), 3);
+        for (raw, kind, target) in [
+            ("llm", TermKind::Class, "model"),
+            ("bot", TermKind::Class, "agent"),
+            ("todo", TermKind::Class, "task"),
+        ] {
+            let s = by_raw
+                .get(raw)
+                .unwrap_or_else(|| panic!("同义映射 {} 缺失", raw));
+            assert_eq!(s.target_kind, kind, "{} 的 kind 应为类", raw);
+            assert_eq!(s.target_key, target, "{} 应指向 {}", raw, target);
         }
         // weight_base 必须存在（1.0/1.5/2.0 分级由图谱边权消费）
         for r in &lex.relation_types {

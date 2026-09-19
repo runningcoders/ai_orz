@@ -288,6 +288,54 @@
         "display_name": "技能",
         "description": "可执行的能力、方法或流程性知识",
         "required_fields": []
+      },
+      {
+        "term_key": "organization",
+        "display_name": "组织",
+        "description": "多级组织结构节点，用户与资源的归属单位",
+        "required_fields": []
+      },
+      {
+        "term_key": "user",
+        "display_name": "用户",
+        "description": "系统的操作主体，指令的发起者与偏好的来源",
+        "required_fields": []
+      },
+      {
+        "term_key": "agent",
+        "display_name": "智能体",
+        "description": "具备大脑与认知能力的自主执行实体",
+        "required_fields": []
+      },
+      {
+        "term_key": "model",
+        "display_name": "模型",
+        "description": "驱动智能体推理的大语言模型配置",
+        "required_fields": []
+      },
+      {
+        "term_key": "memory",
+        "display_name": "记忆",
+        "description": "智能体的知识沉淀单元，覆盖分层记忆体系",
+        "required_fields": []
+      },
+      {
+        "term_key": "task",
+        "display_name": "任务",
+        "description": "具备状态机的最小执行单元，可追踪进度",
+        "required_fields": []
+      },
+      {
+        "term_key": "project",
+        "display_name": "项目",
+        "description": "任务的聚合容器，提供整体上下文与目标边界",
+        "required_fields": []
+      },
+      {
+        "term_key": "tool",
+        "display_name": "工具",
+        "description": "可被智能体调用的外部能力或技能单元",
+        "required_fields": []
       }
     ],
     "relation_types": [
@@ -416,8 +464,76 @@
         "domain_classes": ["concept"],
         "range_classes": ["concept"],
         "weight_base": 1.0
+      },
+      {
+        "term_key": "owns",
+        "display_name": "持有",
+        "description": "头实体持有尾实体的所有权",
+        "domain_classes": ["organization", "user"],
+        "range_classes": ["agent", "tool", "model", "memory"],
+        "weight_base": 1.5,
+        "inverse_key": "owned_by"
+      },
+      {
+        "term_key": "owned_by",
+        "display_name": "归属于",
+        "description": "头实体归属尾实体所有，为 owns 的逆向",
+        "domain_classes": ["agent", "tool", "model", "memory"],
+        "range_classes": ["organization", "user"],
+        "weight_base": 1.5,
+        "inverse_key": "owns"
+      },
+      {
+        "term_key": "uses",
+        "display_name": "使用",
+        "description": "头实体在运行中使用尾实体提供的能力",
+        "domain_classes": ["agent", "user"],
+        "range_classes": ["tool", "model", "skill"],
+        "weight_base": 1.5,
+        "inverse_key": "used_by"
+      },
+      {
+        "term_key": "used_by",
+        "display_name": "被使用",
+        "description": "头实体的能力被尾实体调用，为 uses 的逆向",
+        "domain_classes": ["tool", "model", "skill"],
+        "range_classes": ["agent", "user"],
+        "weight_base": 1.5,
+        "inverse_key": "uses"
+      },
+      {
+        "term_key": "produces",
+        "display_name": "产出",
+        "description": "头实体在工作过程中产出尾实体",
+        "domain_classes": ["task", "project", "agent"],
+        "range_classes": ["concept", "event", "memory"],
+        "weight_base": 1.5
+      },
+      {
+        "term_key": "binds",
+        "display_name": "绑定",
+        "description": "头实体与尾实体建立运行时绑定关系",
+        "domain_classes": ["agent"],
+        "range_classes": ["model", "tool"],
+        "weight_base": 1.5
       }
     ],
-    "synonym_mappings": []
+    "synonym_mappings": [
+      {
+        "raw_term": "llm",
+        "target_kind": "class",
+        "target_key": "model"
+      },
+      {
+        "raw_term": "bot",
+        "target_kind": "class",
+        "target_key": "agent"
+      },
+      {
+        "raw_term": "todo",
+        "target_kind": "class",
+        "target_key": "task"
+      }
+    ]
   }
 }

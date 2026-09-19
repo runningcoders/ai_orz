@@ -34,17 +34,11 @@
 |------|------|
 | `node_name` | 简洁可识别，如「分页查询接口规范」 |
 | `node_description` | 完整知识内容 |
-| `node_type` | `concept` / `fact` / `skill` / `pattern` |
+| `node_type` | 从提示词【本体词表】的「实体类」取词；知识节点最常用 `concept`（概念）/ `event`（事件）/ `preference`（偏好）/ `skill`（技能） |
 | `summary` | 向量检索摘要（1-2 句） |
 | `tags` | 过滤检索用；**`published`** = 重要性标记（标给值得其他 Agent 优先参考的通用方法论 / 模式 / 概念，只影响图谱推荐起点排序，**不是**可见性开关） |
 
-**关系类型**（方向性要选对，如 `contains` 父→子；词表内的会显示成中文短标签）：
-- `related` — 无明确层级，**仅当其他类型都不适用时用**
-- `contains` / `contained_by` — 包含 / 被包含
-- `depends` / `depended_by` / `prerequisite` / `followup` — 依赖 / 被依赖 / 前置 / 后续
-- `similar` / `opposite` — 相似可合并 / 相反矛盾
-- `causes` / `caused_by` — 因果 / 源于
-- `instance_of` / `category_of` / `attribute_of` / `value_of` — 实例 / 分类 / 属性 / 取值
+**关系类型**：以提示词【本体词表】的「关系词」为准（方向性要选对，如 `contains` 父→子；词表内的关系显示成中文短标签，同义说法写入后自动归并到规范词）——少用 `related`（通用关联，无明确层级，仅当其他关系词都不适用时用）。
 
 **词表都不贴切时，直接写你判断的关系名**（中文短词最好，如「实现」「被测试覆盖」「退化自」）——原样保存、原样展示，不会被替换成「自定义」。**语义准确 > 用词规范**：为了凑词表选一个不准的类型，比自造一个准确的关系名更糟。
 
@@ -55,7 +49,7 @@
 对话中发现或被明确告知用户的习惯 / 偏好 / 沟通风格（回复语气、详略偏好、时间习惯、技术偏好）时（用户明确告知的走「指令式学习」分流）：
 
 1. **先记短期记忆**：`save_short_term_memory`，tags 含「用户偏好」
-2. **沉淀时建知识节点**：`tags` 必含 **`user_preference`**（种类过滤）+ **`published`**（用户偏好属高价值知识，标为推荐起点候选）；`node_type` 用 `fact`；**`node_name` 固定格式**：`用户偏好-{display_name}（{user_id}）`——被观察用户的 user_id 放名称里（FTS5 可检索），不进 tag；`node_description` 用 Markdown 写具体偏好 + 观察依据（哪次对话观察到的）
+2. **沉淀时建知识节点**：`tags` 必含 **`user_preference`**（种类过滤）+ **`published`**（用户偏好属高价值知识，标为推荐起点候选）；`node_type` 用 `preference`（对齐本体类词）；**`node_name` 固定格式**：`用户偏好-{display_name}（{user_id}）`——被观察用户的 user_id 放名称里（FTS5 可检索），不进 tag；`node_description` 用 Markdown 写具体偏好 + 观察依据（哪次对话观察到的）
 3. **优先更新不重建**：同一用户偏好先 `query_memory(tags=["user_preference"])` + 关键词检索定位既有节点，`update_memory` 追加 / 修正
 
 注意：你观察总结的是**推断**，用户在个人资料里的自述才是权威；冲突时以【用户画像】为准。

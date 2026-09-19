@@ -8,9 +8,10 @@
 //! 3. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
 //! 4. 【用户画像】          ← 随用户变化，对话中相对稳定
 //! 5. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
-//! 6. 【历史对话】          ← 随对话增长
-//! 7. 【工具失败警告】      ← 实时变化
-//! 8. 【trace_id + 当前消息】← 每次变化
+//! 6. 【本体词表】          ← 记忆图谱用词约定（词表数据注入时拼装）
+//! 7. 【历史对话】          ← 随对话增长
+//! 8. 【工具失败警告】      ← 实时变化
+//! 9. 【trace_id + 当前消息】← 每次变化
 //!
 //! 所有区块拼装方法（`build_skills_sections` / `build_common_context_sections` /
 //! `render_intent_analysis_section` / `build_final_response_guidance` /
@@ -29,6 +30,10 @@ use crate::models::user::UserPo;
 /// neural tag 常量：标记为神经级别的工具/技能，所有 Agent 必加载
 const NEURAL_TAG: &str = "neural";
 
+/// 词表区块注入预算（字符数）：预置词表全量约 2k 字符，正常全量注入；
+/// 管理员扩表超预算时按「关系词 > 实体类 > 同义样例」优先级裁剪（design §3）
+const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
+
 /// 默认 Prompt 构建器（Local Agent 使用）
 ///
 /// 统一注入 skills，build() 时按 tag 自动分块拼装：
@@ -38,9 +43,10 @@ const NEURAL_TAG: &str = "neural";
 /// 3. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
 /// 4. 【用户画像】          ← 随用户变化，对话中相对稳定
 /// 5. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
-/// 6. 【历史对话】          ← 随对话增长
-/// 7. 【工具失败警告】      ← 实时变化
-/// 8. 【trace_id + 当前消息】← 每次变化
+/// 6. 【本体词表】          ← 记忆图谱用词约定（词表数据注入时拼装）
+/// 7. 【历史对话】          ← 随对话增长
+/// 8. 【工具失败警告】      ← 实时变化
+/// 9. 【trace_id + 当前消息】← 每次变化
 ///
 /// match_keys = agent.roles ∪ agent.installed_tags
 ///
@@ -94,6 +100,8 @@ pub struct DefaultPromptBuilder {
     workspace_agent: Option<String>,
     /// 工作空间上下文：当前项目协作工作区（逻辑型 Project 为 None）
     workspace_project: Option<String>,
+    /// 本体词表注入视图（记忆图谱用词约定；None = 本体子系统未初始化，跳过注入）
+    ontology_lexicon: Option<common::ontology::OntologyLexiconSummary>,
 }
 
 impl DefaultPromptBuilder {
@@ -124,6 +132,88 @@ impl DefaultPromptBuilder {
         for skill in skills {
             s.push_str(&skill.to_prompt_summary());
             s.push('\n');
+        }
+        s.push('\n');
+        s
+    }
+
+    /// 渲染【本体词表】区块（design §5.4：词表进 prompt builder 引导图谱规范用词）
+    ///
+    /// 裁剪优先级 = [`OntologyLexiconSummary`] 字段顺序：关系词 > 实体类 > 同义样例
+    /// ——高优先级段落装入后，剩余预算才轮到低优先级段落；同段内逐词条贪心装入，
+    /// 装不下即停。同义样例优先级最低，任何段落触发裁剪即整体让位。
+    fn build_lexicon_section(lexicon: Option<&common::ontology::OntologyLexiconSummary>) -> String {
+        let Some(lexicon) = lexicon.filter(|l| !l.is_empty()) else {
+            return String::new();
+        };
+        let mut s = String::from(
+            "【本体词表】（记忆图谱用词约定：节点类型从「实体类」取词、关系从「关系词」取词，\
+             同义说法写入后自动归并到规范词；词表不贴切时可自拟，语义准确 > 用词规范）\n",
+        );
+        let mut used = s.chars().count();
+        let mut truncated = false;
+
+        // 关系词 > 实体类（行形态同为 LexiconTermSummary，合并渲染）
+        for (title, terms) in [
+            ("关系词（图谱边类型）", &lexicon.relation_types),
+            ("实体类（图谱节点类型）", &lexicon.classes),
+        ] {
+            if terms.is_empty() {
+                continue;
+            }
+            let header = format!("{}：\n", title);
+            let first = format!(
+                "- {}（{}）：{}\n",
+                terms[0].term_key, terms[0].display_name, terms[0].description
+            );
+            // 段首（header + 首词条）都装不下 → 低优先级段落整体让位
+            if used + header.chars().count() + first.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
+                truncated = true;
+                break;
+            }
+            s.push_str(&header);
+            used += header.chars().count();
+            for t in terms {
+                let line = format!(
+                    "- {}（{}）：{}\n",
+                    t.term_key, t.display_name, t.description
+                );
+                if used + line.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
+                    truncated = true;
+                    break;
+                }
+                s.push_str(&line);
+                used += line.chars().count();
+            }
+        }
+
+        // 同义样例（最低优先级：任何段落触发裁剪即整体让位）
+        if !lexicon.synonyms.is_empty() && !truncated {
+            let header = "同义映射（以下说法写入后自动归并到规范词）\n";
+            let first = format!(
+                "- 「{}」→ {}\n",
+                lexicon.synonyms[0].raw_term, lexicon.synonyms[0].target_key
+            );
+            if used + header.chars().count() + first.chars().count() <= LEXICON_PROMPT_BUDGET_CHARS
+            {
+                s.push_str(header);
+                used += header.chars().count();
+                for syn in &lexicon.synonyms {
+                    let line = format!("- 「{}」→ {}\n", syn.raw_term, syn.target_key);
+                    if used + line.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
+                        truncated = true;
+                        break;
+                    }
+                    s.push_str(&line);
+                    used += line.chars().count();
+                }
+            } else {
+                truncated = true;
+            }
+        }
+
+        if truncated {
+            s.push_str("（词表超出注入预算，低优先级词条已裁剪）\n");
         }
         s.push('\n');
         s
@@ -251,6 +341,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         self.workspace_project = project_workspace;
     }
 
+    fn ontology_lexicon(&mut self, lexicon: &common::ontology::OntologyLexiconSummary) {
+        self.ontology_lexicon = Some(lexicon.clone());
+    }
+
     // ==================== 区块拼装（DefaultPromptBuilder 完整实现；其他 Builder 走 trait 默认空实现）====================
 
     /// 构建技能区块（神经技能 + 必加载技能）
@@ -286,11 +380,12 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result
     }
 
-    /// 构建通用上下文区块：用户画像 + 项目上下文 + 任务上下文
+    /// 构建通用上下文区块：用户画像 + 项目上下文 + 任务上下文 + 本体词表
     ///
     /// 这些字段都是"有值即拼装"，唤醒和沉睡场景逻辑一致：
     /// - user_profile：认知是具身的，Agent 需知道"自己是谁"
     /// - project_context / task_context：场景化上下文，沉淀出的经验自带场景标签
+    /// - ontology_lexicon：记忆图谱用词约定（design §5.4，三场景共用一处挂载）
     fn build_common_context_sections(&self) -> String {
         let mut s = String::new();
         if let Some(profile) = &self.user_profile {
@@ -344,6 +439,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             s.push_str("- 不要将业务产物写入 workspace_user_home 下的配置子目录（.config/、.ssh/、.lark-cli/ 等）\n");
             s.push('\n');
         }
+        // 本体词表（记忆图谱用词约定）：有词表数据即拼装，awaken / settle / intent_analyze 三场景共用
+        s.push_str(&Self::build_lexicon_section(self.ontology_lexicon.as_ref()));
         s
     }
 

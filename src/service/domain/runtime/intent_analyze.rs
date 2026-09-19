@@ -17,6 +17,7 @@ use common::error::{Result, err};
 
 use super::awakening::{
     build_scene_skills, build_scene_tool_descriptors, init_think_runtime_and_policy,
+    mount_ontology_lexicon,
 };
 use super::types::config_resolve;
 use super::types::{IntentAnalysis, ThinkingOptions};
@@ -118,6 +119,8 @@ impl RuntimeDomainImpl {
         if let Some(user) = &analyze_opts.user_profile {
             builder.user_profile(user);
         }
+        // 本体词表（design §5.4）：记忆图谱用词约定，三场景共用挂载点
+        mount_ontology_lexicon(&ctx, builder.as_mut()).await;
         builder.history(&recent_memories);
         builder.current_message(message);
 

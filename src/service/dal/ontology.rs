@@ -18,14 +18,18 @@ use crate::service::dao::ontology::{
     OntologyRelationTypeQuery, OntologyStatsDao, OntologySynonymQuery,
 };
 use async_trait::async_trait;
-use common::api::PagedResult;
 use common::api::ontology::{
     DriftClassDetail, DriftCoverage, DriftRelationDetail, DriftWordItem, GetDriftDashboardRequest,
     GetDriftDashboardResponse, ListDriftClassDetailsRequest, ListDriftClassDetailsResponse,
     ListDriftRelationDetailsRequest, ListDriftRelationDetailsResponse,
 };
+use common::api::{PagedResult, PaginationParams};
+use common::enums::OntologyStatus;
 use common::error::Result;
-use common::ontology::{OntologyCertifyReport, OntologyLexicon, ResolvedTerm, TermKind, resolve};
+use common::ontology::{
+    LexiconSynonymSummary, LexiconTermSummary, OntologyCertifyReport, OntologyLexicon,
+    OntologyLexiconSummary, ResolvedTerm, TermKind, resolve,
+};
 use std::sync::Arc;
 
 // ==================== Factory + Singleton ====================
@@ -58,6 +62,44 @@ pub fn dal() -> Arc<dyn OntologyDal> {
     ONTOLOGY_DAL_INSTANCE.get().cloned().unwrap()
 }
 
+/// 尝试获取 OntologyDal 单例（未初始化返回 `None`）
+///
+/// 供**可选依赖**场景优雅降级：如提示词词表注入——本体子系统未初始化时
+/// 跳过注入即可，不应让可选增强阻断主流程（区别于 [`dal`] 的硬依赖语义）。
+pub fn try_dal() -> Option<Arc<dyn OntologyDal>> {
+    ONTOLOGY_DAL_INSTANCE.get().cloned()
+}
+
+// ==================== 词表视图辅助（Active 全量拉取） ====================
+
+/// 词表视图 / 认证的全量拉取上限（词表量级几十条，1000 已远超需求；
+/// `PaginationParams` 无「全量」语义，用大 limit 模拟）
+const LEXICON_LOAD_LIMIT: usize = 1000;
+
+/// 拉取全量**生效**词表条目的分页参数（只取 Active，供提示词注入视图；
+/// 认证/看板走 `list_all_*` 含退役全量，语义不同）
+pub(crate) fn active_all_pagination() -> PaginationParams {
+    PaginationParams {
+        limit: Some(LEXICON_LOAD_LIMIT),
+        offset: None,
+    }
+}
+
+/// `active_all_pagination` 大 limit 模拟全量的截断留痕：拉回条目数达到
+/// `LEXICON_LOAD_LIMIT` 视为可能被截断（正常词表量级几十条，触发即异常），
+/// 打 warn 提醒，避免提示词注入视图静默丢词
+pub(crate) fn warn_if_lexicon_truncated(ctx: &RequestContext, what: &str, total: usize) {
+    if total >= LEXICON_LOAD_LIMIT {
+        log_warn!(
+            ctx,
+            "ontology_dal",
+            "{} 活跃条目数达到拉取上限 {}，结果可能被截断",
+            what,
+            LEXICON_LOAD_LIMIT
+        );
+    }
+}
+
 // ==================== DAL Trait ====================
 
 #[async_trait]
@@ -72,6 +114,14 @@ pub trait OntologyDal: Send + Sync {
     /// 词表为空时 resolve 全部返回 Drift——语义正确（无词表 = 无约定 = 全漂移），
     /// 看板会引导管理员完成初始注入。
     async fn load_lexicon(&self, ctx: RequestContext) -> Result<OntologyLexicon>;
+
+    /// 词表注入视图：三表 **Active** 全量 → [`OntologyLexiconSummary`]（design §5.4）
+    ///
+    /// 消费方：神经技能提示词构建器（prompt builder 词表区块）与 hr Domain 词表
+    /// 视图 / 导出——转换逻辑单点在本 DAL。与 [`load_lexicon`] 的区别：
+    /// 只取生效词条（退役词条不进提示词），返回展示视图
+    /// （term_key + display_name + description）而非归一化解析键集合。
+    async fn load_lexicon_summary(&self, ctx: RequestContext) -> Result<OntologyLexiconSummary>;
 
     /// 漂移看板聚合（SQLite 读路径惰性聚合，"现在时"视角）
     ///
@@ -303,6 +353,76 @@ impl OntologyDal for OntologyDalImpl {
                 .collect(),
         };
         Ok(lexicon)
+    }
+
+    async fn load_lexicon_summary(&self, ctx: RequestContext) -> Result<OntologyLexiconSummary> {
+        let pagination = active_all_pagination();
+        let (classes, relation_types, synonyms) = tokio::try_join!(
+            self.ontology_dao.query_classes(
+                ctx.clone(),
+                OntologyClassQuery {
+                    status: Some(OntologyStatus::Active),
+                    keyword: None,
+                    pagination: pagination.clone(),
+                },
+            ),
+            self.ontology_dao.query_relation_types(
+                ctx.clone(),
+                OntologyRelationTypeQuery {
+                    status: Some(OntologyStatus::Active),
+                    keyword: None,
+                    pagination: pagination.clone(),
+                },
+            ),
+            self.ontology_dao.query_synonyms(
+                ctx.clone(),
+                OntologySynonymQuery {
+                    target_kind: None,
+                    target_key: None,
+                    keyword: None,
+                    pagination,
+                },
+            ),
+        )?;
+
+        warn_if_lexicon_truncated(&ctx, "实体类", classes.items.len());
+        warn_if_lexicon_truncated(&ctx, "关系类型", relation_types.items.len());
+        warn_if_lexicon_truncated(&ctx, "同义映射", synonyms.items.len());
+
+        Ok(OntologyLexiconSummary {
+            // 关系词 > 实体类 > 同义样例：字段顺序即 prompt 注入裁剪优先级（design §3）
+            relation_types: relation_types
+                .items
+                .into_iter()
+                .map(|po| LexiconTermSummary {
+                    term_key: po.term_key,
+                    display_name: po.display_name,
+                    description: po.description,
+                })
+                .collect(),
+            classes: classes
+                .items
+                .into_iter()
+                .map(|po| LexiconTermSummary {
+                    term_key: po.term_key,
+                    display_name: po.display_name,
+                    description: po.description,
+                })
+                .collect(),
+            // target_kind 非法属脏数据兜底（写入路径已校验），视图侧跳过不报错
+            synonyms: synonyms
+                .items
+                .into_iter()
+                .filter_map(|po| {
+                    let target_kind = po.kind()?;
+                    Some(LexiconSynonymSummary {
+                        raw_term: po.raw_term,
+                        target_kind,
+                        target_key: po.target_key,
+                    })
+                })
+                .collect(),
+        })
     }
 
     async fn get_drift_dashboard(

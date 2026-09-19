@@ -135,6 +135,17 @@ pub trait PromptBuilder: Send + Sync {
         );
     }
 
+    /// 设置【本体词表】注入视图（design §5.4：词表进 prompt builder 引导图谱规范用词）
+    ///
+    /// 数据由调用方经 `OntologyDal::load_lexicon_summary` 取得后注入；本 trait
+    /// 保持纯抽象（不感知 DAL / RequestContext），本体子系统未初始化时调用方
+    /// 直接不调用即可（可选增强，优雅降级不阻断主流程）。
+    ///
+    /// 默认实现为空（不影响未接词表的 Builder 实现）。
+    fn ontology_lexicon(&mut self, lexicon: &common::ontology::OntologyLexiconSummary) {
+        let _ = lexicon;
+    }
+
     // ==================== 区块拼装（生命周期定义在 trait，实现按需覆盖） ====================
     //
     // 以下方法定义 Prompt 各区块的拼装能力。`DefaultPromptBuilder`（Local Agent）
