@@ -8,6 +8,10 @@
 //!
 //! 邮箱渠道同走凭证引用模式：创建时必须选择「邮箱机器人」凭证（platform = 邮箱提供商）
 //! + 填写对端收件地址；SMTP/IMAP 参数在凭证中维护，渠道不重复存储。
+//!
+//! 列表「凭证」列：按渠道类型渲染该渠道引用的凭证（飞书 / 微信 / 邮箱三类引用型渠道；
+//! Slack / Webhook 无凭证概念显示 "-"），单元格整体是跳转「Finance → Identity 身份凭证页」
+//! 的链接，便于从渠道反查、管理对应凭证。
 
 use crate::components::hud::PageHeader;
 use crate::components::hud::{HudCallout, HudPanel};
@@ -31,8 +35,8 @@ use common::api::{
     AgentListItem, CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateMessageChannelRequest, CreateSlackChannelConfig, CreateWebhookChannelConfig,
     CreateWechatChannelConfig, EmailBotCredentialSnapshot, LarkCredentialSnapshot,
-    ListAgentsRequest, MessageChannelListItem, UpdateMessageChannelStatusRequest,
-    WechatCredentialSnapshot,
+    ListAgentsRequest, MessageChannelConfig, MessageChannelListItem,
+    UpdateMessageChannelStatusRequest, WechatCredentialSnapshot,
 };
 use common::enums::{ChannelStatus, ChannelType};
 
@@ -69,6 +73,39 @@ fn none_if_empty(value: String) -> Option<String> {
     } else {
         Some(value)
     }
+}
+
+/// 从渠道配置中提取「凭证引用」——返回 `(credential_id, credential_name)`
+///
+/// 三类凭证引用型渠道（飞书 / 微信 / 邮箱）的响应 DTO 都带 `credential_id` + `credential_name`
+/// （后端 `message_channel/response.rs` 统一反查填充）；Slack（只存 `channel_id`）与
+/// Webhook / A2aCallback（无凭证概念）不是引用型 → `None`。
+///
+/// ⚠️ 取值必须**按渠道类型选对应分组**：早期实现只读 `cfg.lark` 且只在 `is_lark` 时渲染，
+/// 导致微信 / 邮箱渠道的凭证列恒显示 "-"（后端其实早已返回数据，纯前端展示缺口）。
+pub fn channel_credential_ref(
+    channel_type: ChannelType,
+    config: Option<&MessageChannelConfig>,
+) -> Option<(String, Option<String>)> {
+    let cfg = config?;
+    let (credential_id, credential_name) = match channel_type {
+        ChannelType::Lark => {
+            let l = cfg.lark.as_ref()?;
+            (l.credential_id.clone(), l.credential_name.clone())
+        }
+        ChannelType::Wechat => {
+            let w = cfg.wechat.as_ref()?;
+            (w.credential_id.clone(), w.credential_name.clone())
+        }
+        ChannelType::Email => {
+            let e = cfg.email.as_ref()?;
+            (e.credential_id.clone(), e.credential_name.clone())
+        }
+        ChannelType::Slack | ChannelType::Webhook | ChannelType::A2aCallback => return None,
+    };
+    credential_id
+        .filter(|v| !v.trim().is_empty())
+        .map(|id| (id, credential_name))
 }
 
 #[component]
@@ -302,7 +339,7 @@ pub fn FinanceMessageChannels() -> Element {
                     } else {
                         div { class: "overflow-x-auto",
                             table { class: "table hud-table table-zebra table-pin-rows",
-                                thead { tr { th { "名称" }, th { "类型" }, th { "飞书凭证" }, th { "状态" }, th { "操作" } }}
+                                thead { tr { th { "名称" }, th { "类型" }, th { "凭证" }, th { "状态" }, th { "操作" } }}
                                 tbody {
                                     for c in channels_list.iter() {
                                         {
@@ -311,8 +348,33 @@ pub fn FinanceMessageChannels() -> Element {
                                             let is_active = status == ChannelStatus::Active;
                                             let channel_name = c.channel_name.clone();
                                             let channel_type = c.channel_type;
-                                            let is_lark = channel_type == ChannelType::Lark;
-                                            let credential_name = c.config.as_ref().and_then(|cfg| cfg.lark.as_ref()).and_then(|l| l.credential_name.clone());
+                                            // 凭证引用按渠道类型取（飞书 / 微信 / 邮箱三类引用型；Slack / Webhook 无凭证）
+                                            let credential_ref = channel_credential_ref(channel_type, c.config.as_ref());
+                                            // 引用型渠道却取不到凭证 → 提示未绑定（Slack / Webhook 显示 "-"）
+                                            let credential_missing = credential_ref.is_none()
+                                                && matches!(
+                                                    channel_type,
+                                                    ChannelType::Lark | ChannelType::Wechat | ChannelType::Email
+                                                );
+                                            // 单元格整体是跳「身份凭证」页的链接：名称徽标 + 可点击的凭证 ID
+                                            let credential_cell = if let Some((cid, cname)) = credential_ref {
+                                                let label = cname
+                                                    .filter(|s| !s.trim().is_empty())
+                                                    .unwrap_or_else(|| cid.clone());
+                                                rsx! {
+                                                    Link {
+                                                        class: "flex flex-col gap-0.5 w-fit",
+                                                        to: crate::pages::Route::FinanceIdentity {},
+                                                        title: "前往「身份凭证」页查看 / 管理该凭证",
+                                                        span { class: "badge orz-tag badge-sm", "{label}" }
+                                                        span { class: "link link-primary link-hover text-xs font-mono break-all", "{cid}" }
+                                                    }
+                                                }
+                                            } else if credential_missing {
+                                                rsx! { span { class: "badge hud-badge badge-warning", "未绑定凭证" } }
+                                            } else {
+                                                rsx! { span { class: "text-base-content/40 text-sm", "-" } }
+                                            };
                                             let id_disable = id.clone();
                                             let id_enable = id.clone();
                                             let id_delete = id.clone();
@@ -321,17 +383,8 @@ pub fn FinanceMessageChannels() -> Element {
                                                 tr { key: "{id}",
                                                     td { class: "font-semibold", "{channel_name}" }
                                                     td { span { class: "badge orz-tag badge-sm", "{channel_type}" } }
-                                                    td {
-                                                        if is_lark {
-                                                            if let Some(name) = &credential_name {
-                                                                span { class: "badge orz-tag badge-sm", "{name}" }
-                                                            } else {
-                                                                span { class: "badge hud-badge badge-warning", "未绑定凭证" }
-                                                            }
-                                                        } else {
-                                                            span { class: "text-base-content/40 text-sm", "-" }
-                                                        }
-                                                    }
+                                                    // 凭证列：按类型渲染引用凭证（名称 + 可点击 ID），未绑定/不适用各有兜底
+                                                    td { {credential_cell} }
                                                     td {
                                                         if is_active { span { class: "badge hud-badge badge-success", "启用" } }
                                                         else { span { class: "badge hud-badge badge-error", "禁用" } }
@@ -786,5 +839,124 @@ mod tests {
         assert_eq!(none_if_empty("".to_string()), None);
         assert_eq!(none_if_empty("  ".to_string()), None);
         assert_eq!(none_if_empty("x".to_string()), Some("x".to_string()));
+    }
+
+    // ===== channel_credential_ref：凭证列必须按渠道类型取对应分组 =====
+
+    use common::api::{EmailChannelConfig, LarkChannelConfig, WechatChannelConfig};
+
+    #[test]
+    fn test_credential_ref_wechat_reads_wechat_group() {
+        // 回归：微信渠道曾因只读 cfg.lark 而在列表里恒显示 "-"
+        let cfg = MessageChannelConfig {
+            wechat: Some(WechatChannelConfig {
+                credential_id: Some("cred-wx".to_string()),
+                credential_name: Some("微信 iLink（bot-1）".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            channel_credential_ref(ChannelType::Wechat, Some(&cfg)),
+            Some((
+                "cred-wx".to_string(),
+                Some("微信 iLink（bot-1）".to_string())
+            ))
+        );
+    }
+
+    #[test]
+    fn test_credential_ref_lark_and_email_resolve() {
+        let lark_cfg = MessageChannelConfig {
+            lark: Some(LarkChannelConfig {
+                credential_id: Some("cred-lark".to_string()),
+                credential_name: Some("飞书应用".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            channel_credential_ref(ChannelType::Lark, Some(&lark_cfg)).map(|(id, _)| id),
+            Some("cred-lark".to_string())
+        );
+
+        let email_cfg = MessageChannelConfig {
+            email: Some(EmailChannelConfig {
+                credential_id: Some("cred-mail".to_string()),
+                credential_name: Some("代理邮箱".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            channel_credential_ref(ChannelType::Email, Some(&email_cfg)).map(|(id, _)| id),
+            Some("cred-mail".to_string())
+        );
+    }
+
+    #[test]
+    fn test_credential_ref_ignores_mismatched_group() {
+        // 类型与配置分组不匹配时不串台（飞书渠道不能因 wechat 分组有值就显示出来）
+        let cfg = MessageChannelConfig {
+            wechat: Some(WechatChannelConfig {
+                credential_id: Some("cred-wx".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(channel_credential_ref(ChannelType::Lark, Some(&cfg)), None);
+    }
+
+    #[test]
+    fn test_credential_ref_none_for_non_credential_channels() {
+        let cfg = MessageChannelConfig {
+            slack: Some(common::api::SlackChannelConfig {
+                channel_id: Some("C123".to_string()),
+            }),
+            webhook: Some(common::api::WebhookChannelConfig {
+                method: Some("POST".to_string()),
+                body_template: None,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(channel_credential_ref(ChannelType::Slack, Some(&cfg)), None);
+        assert_eq!(
+            channel_credential_ref(ChannelType::Webhook, Some(&cfg)),
+            None
+        );
+        assert_eq!(channel_credential_ref(ChannelType::Lark, None), None);
+    }
+
+    #[test]
+    fn test_credential_ref_blank_id_is_none() {
+        let cfg = MessageChannelConfig {
+            wechat: Some(WechatChannelConfig {
+                credential_id: Some("   ".to_string()),
+                credential_name: Some("幽灵凭证".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            channel_credential_ref(ChannelType::Wechat, Some(&cfg)),
+            None
+        );
+    }
+
+    #[test]
+    fn test_credential_ref_keeps_id_when_name_unresolved() {
+        // 凭证名反查失败（None）时仍返回 ID，由前端回退用 ID 作标签，不得整体判为未绑定
+        let cfg = MessageChannelConfig {
+            wechat: Some(WechatChannelConfig {
+                credential_id: Some("cred-wx".to_string()),
+                credential_name: None,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            channel_credential_ref(ChannelType::Wechat, Some(&cfg)),
+            Some(("cred-wx".to_string(), None))
+        );
     }
 }
