@@ -52,7 +52,7 @@ source_files:
 | memory.rs (impl 总入口) | 策略分发 | 按 strategy enum dispatch → BFS 调 traverse_bfs / DFS 调 traverse_dfs → 结果 nodes + edges 过 `apply_visibility_filter(agent_id + published_flag)` 共享过滤 | `:L518-L577` |
 | memory.rs (traverse_bfs) | BFS 分层实现 | queue<(node_id, level)> + visited HashSet；每 pop 一批同 level 节点 → fetch_nodes_by_ids 批量 → edges IN_CHUNK_SIZE 拉 → 推入 ordered_levels[level] | `:L805-L890` |
 | memory.rs (traverse_dfs) | DFS 栈批量预取 | stack + edge_cache<NodeId, Vec<Edge>> + fetched_flag HashSet<NodeId>；每次 edge_cache miss 时，「当前栈上所有未 fetched 的节点」→ IN_CHUNK_SIZE 批量查，结果进 cache | `:L891-L990` |
-| memory.rs (list_relations_batch) | 关系批量查 + IN 分块 | from_ids + to_ids 两 Vec → 按 IN_CHUNK_SIZE=400 zip 分块 → 每块 SQL "WHERE from_id IN (...) OR to_id IN (...)" → 全部块 UNION ALL 拼接后按 created_at ASC 重排 | `:L653-L720` |
+| memory.rs (list_relations_batch) | 关系批量查 + IN 分块 + Active 过滤 | from_ids + to_ids 两 Vec → 按 IN_CHUNK_SIZE=400 zip 分块 → 每块 SQL "WHERE from_id IN (...) OR to_id IN (...) AND status = Active" → 全部块 UNION ALL 拼接后按 created_at ASC 重排；**2026-09-18 增量**：KnowledgeRelationStatus 字段，查询默认只取 Active 边，Superseded/Deleted 历史边不入图谱 | `:L653-L720` |
 | memory.rs (fetch_nodes_by_ids) | 节点批量查 + IN 分块 | ids Vec → IN_CHUNK_SIZE 400 分块 → 每块 query_knowledge_nodes(Query { ids: chunk, .. }) → 结果去重 → 共享可见性过滤 | `:L721-L804` |
 | common api/memory.rs | DTO | TraverseKnowledgeGraphResponse：nodes 是去重节点、edges 是去重关系带 weight、ordered_levels 是 BFS/DFS 分层顺序（严格按层，前端渲染顺序的唯一来源）| 见 common DTO |
 
