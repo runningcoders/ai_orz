@@ -4,18 +4,17 @@
 #   - DuckDB 文件锁冲突（单写者，.ai_orz/stats.duckdb）
 #   - dx 构建锁争抢（target/dx）与 8080、3000 端口占用
 #
-# start.sh 启动前自动调用；也可手动执行：
-#   ./scripts/cleanup.sh            直接清理
-#   ./scripts/cleanup.sh --dry-run  仅列出将清理的进程，不实际 kill
-#   make clean-proc                 等价直接清理
+# run.sh（开发态）启动前自动调用；也可手动执行：
+#   ./scripts/ai_orz.sh clean         直接清理（统一入口，推荐）
+#   ./scripts/cleanup.sh              等价直接清理（兼容别名）
+#   ./scripts/cleanup.sh --dry-run    仅列出将清理的进程，不实际 kill
+#   make clean-proc                   等价直接清理
 
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
-YELLOW=$(printf '\033[0;33m')
-GREEN=$(printf '\033[0;32m')
-RED=$(printf '\033[0;31m')
-NC=$(printf '\033[0m')
+# shellcheck source=./lib/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 # 温和清理一批 PID；stdout 返回实际命中的 PID 列表（供强杀阶段复用），日志走 stderr
 kill_gentle() {

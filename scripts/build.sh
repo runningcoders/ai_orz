@@ -1,9 +1,7 @@
 #!/bin/bash
-# ai_orz - 全量编译脚本
-# 统一委托给同目录 start.sh build 执行（推荐直接用 make build）
+# ai_orz - 兼容别名：build.sh → 统一入口 ai_orz.sh build
+# 实现在 scripts/prod.sh（build）+ scripts/build_frontend.sh（前端），本文件只转发。
 
-set -e
+set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-exec "$SCRIPT_DIR/start.sh" build "$@"
+exec "$(cd "$(dirname "$0")" && pwd)/ai_orz.sh" build "$@"

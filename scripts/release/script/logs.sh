@@ -1,14 +1,8 @@
 #!/bin/bash
-# ai_orz - 实时查看运行日志（tail -f .ai_orz/run.log）
+# ai_orz 发布包 - 实时跟踪日志（别名）：自动在 run.log 与按日业务日志间选择
+#
+# ⚠️ 本文件只在发布包内生效（需同目录存在 prod.sh）；仓库内的副本是模板，不要直接执行。
 
-set -e
+set -eu
 
-cd "$(cd "$(dirname "$0")/.." && pwd)"
-
-LOG=./.ai_orz/run.log
-if [ ! -f "$LOG" ]; then
-    echo "暂无运行日志: $LOG（先执行 ./script/start.sh）"
-    exit 1
-fi
-
-exec tail -f "$LOG"
+exec "$(cd "$(dirname "$0")" && pwd)/prod.sh" logs "$@"

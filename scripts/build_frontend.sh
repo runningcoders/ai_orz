@@ -1,14 +1,16 @@
 #!/bin/bash
 # 前端构建 + 产物复制（dx build --release → dist/）
 #
-# 供 start.sh cmd_build 与 CI e2e job 共用，保证「构建产物怎么进 dist/」只有一处逻辑。
+# 【唯一实现】「构建产物怎么进 dist/」只在这里：
+# prod.sh build（make build / make build-fe）、Dockerfile frontend-builder 阶段、
+# CI release 打包链路全部复用本脚本。
 # 依赖：dx（dioxus-cli）、wasm32-unknown-unknown target；
 # Tailwind CSS 编译由 frontend/build.rs 在 dx build 时自动触发。
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=./lib/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 cd "$REPO_ROOT/frontend"
 export BACKEND_API_URL=${BACKEND_API_URL:-http://localhost:3000}

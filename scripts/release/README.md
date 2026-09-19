@@ -32,6 +32,11 @@ make logs         # 实时跟踪运行日志
 
 脚本也可直接调用：`./script/start.sh`（`-f` 前台）/ `./script/stop.sh` 等。
 
+所有运维命令都由 `script/prod.sh` 统一实现（`start.sh` 等只是转发别名），
+与仓库内的 `scripts/prod.sh` 是同一份文件，行为完全一致；`script/lib/` 是其依赖库，不要删除。
+
+> `make start` 幂等：服务已在运行时会先优雅停止再启动，可放心重复执行。
+
 ## 首次使用（系统初始化）
 
 首次打开页面会进入初始化引导，按提示完成：

@@ -3,7 +3,8 @@
 # 检测指定模式所需的工具链依赖，缺失时打印精确安装命令；--fix 自动安装可自动装的项
 #
 # Usage:
-#   ./scripts/check_deps.sh [dev|frontend|backend|build|prod] [--fix]
+#   ./scripts/ai_orz.sh doctor [dev|frontend|backend|build|prod] [--fix]   # 统一入口
+#   ./scripts/check_deps.sh [dev|frontend|backend|build|prod] [--fix]      # 等价别名
 #   make doctor                # 等价 ./scripts/check_deps.sh dev
 #   make doctor FIX=1          # 等价 --fix
 #
@@ -29,30 +30,12 @@
 
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=./lib/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
-# 加载 rustup 环境（与 start.sh 同口径：非交互 shell 里 cargo 可能不在 PATH）
-if [ -f "$HOME/.cargo/env" ]; then
-    # shellcheck disable=SC1091
-    source "$HOME/.cargo/env"
-fi
-
-# PATH 探测增强：服务器 / CI / IDE 调起的非交互 shell 常缺用户级与包管理器 bin，
-# 先补齐常见位置再检测，避免「已安装却误报缺失」（探测到的不覆盖已有 PATH 顺序）
-for _dir in "$HOME/.cargo/bin" "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin "$HOME/bin"; do
-    if [ -d "$_dir" ]; then
-        case ":$PATH:" in *":$_dir:"*) ;; *) PATH="$_dir:$PATH" ;; esac
-    fi
-done
-# nvm：取最高版本的 node bin（若 node 尚不可用）
-if ! command -v node >/dev/null 2>&1 && [ -d "$HOME/.nvm/versions/node" ]; then
-    _nvm_bin=$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1)
-    if [ -n "$_nvm_bin" ]; then
-        PATH="$_nvm_bin:$PATH"
-    fi
-fi
-export PATH
+# PATH 探测增强（与 run.sh/prod.sh 同口径）：服务器 / CI / IDE 调起的非交互 shell
+# 常缺用户级与包管理器 bin，先补齐再检测，避免「已安装却报缺失」
+setup_path
 
 # ===== 参数解析 =====
 MODE="dev"
@@ -69,12 +52,7 @@ for arg in "$@"; do
 done
 DX_VERSION="${DX_VERSION:-0.7.10}"
 
-# 颜色输出（与 start.sh 同款，实际转义字符避免 echo -e 兼容性问题）
-RED=$(printf '\033[0;31m')
-GREEN=$(printf '\033[0;32m')
-YELLOW=$(printf '\033[0;33m')
-BLUE=$(printf '\033[0;34m')
-NC=$(printf '\033[0m')
+# 颜色输出由 lib/common.sh 统一提供（此处不再各写一份）
 
 # ===== 模式 → 依赖需求 =====
 needs_backend() {
