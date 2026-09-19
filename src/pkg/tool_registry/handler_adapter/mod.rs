@@ -173,10 +173,26 @@ where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
     async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
+        // args 为 null 不是「某个参数取值不对」，而是上游降级形态：模型给出的 arguments
+        // 不是合法 JSON（截断 / 拼串 / 语法错误），cortex 层解析失败后回填 Value::Null。
+        // 原文留在 `cortex_stream` 的日志里（见 http.rs::parse_tool_arguments），
+        // 这里显式点破，避免只报 `invalid type: null, expected struct XxxRequest`
+        // 让人误以为是某个参数的问题。
+        let args_is_null = args.is_null();
+
         // Parse JSON args to Params type
         let params: Params = match serde_json::from_value(args) {
             Ok(p) => p,
             Err(e) => {
+                if args_is_null {
+                    return Err(err!(
+                        ToolExecutionFailed,
+                        Tool,
+                        "empty tool arguments: model returned no valid JSON arguments for '{}' \
+                         (raw text logged as cortex_stream/tool call arguments is not valid JSON)",
+                        self.po.name
+                    ));
+                }
                 return Err(err!(ToolExecutionFailed, Tool, "invalid args: {}", e));
             }
         };

@@ -172,11 +172,14 @@ pub async fn call_chat_completions(
     }
 
     let acc = consume_think_stream(resp.bytes_stream(), presets::LLM_STREAM_IDLE_TIMEOUT).await?;
-    Ok(finish_think_result(acc))
+    Ok(finish_think_result(&ctx, acc))
 }
 
 /// 将流式聚合结果组装为上层 [`ThinkResult`]（与原非流式解析约定一致）。
-fn finish_think_result(acc: StreamAccumulator) -> ThinkResult {
+///
+/// 需要 `ctx` 仅为留痕：模型给出的 `arguments` 若不是合法 JSON，原文必须进日志
+/// （否则下游只能看到「参数整包为 null」，病因被永久掩盖，详见本函数内注释）。
+fn finish_think_result(ctx: &RequestContext, acc: StreamAccumulator) -> ThinkResult {
     let usage = TokenUsage {
         input_tokens: acc
             .usage
@@ -191,12 +194,21 @@ fn finish_think_result(acc: StreamAccumulator) -> ThinkResult {
         total_tokens: acc.usage.as_ref().and_then(|u| u.total_tokens),
     };
 
+    if acc.saw_index_less_tool_call {
+        log_warn!(
+            ctx,
+            "cortex_stream",
+            "model stream omitted `index` on tool_call deltas; slots resolved by fallback rule, tool_calls={}",
+            acc.tool_calls.len()
+        );
+    }
+
     if !acc.tool_calls.is_empty() {
         let calls: Vec<ToolCallRequest> = acc
             .tool_calls
             .into_values()
             .map(|tc| ToolCallRequest {
-                arguments: serde_json::from_str(&tc.arguments).unwrap_or(Value::Null),
+                arguments: parse_tool_arguments(ctx, &tc),
                 id: tc.id,
                 name: tc.name,
             })
@@ -214,6 +226,68 @@ fn finish_think_result(acc: StreamAccumulator) -> ThinkResult {
     }
 }
 
+/// 解析模型给出的 tool_call 参数原文。
+///
+/// 解析失败时**先把原文写进日志**再降级为 `Value::Null`。这条日志是唯一能指认病因的证据：
+/// 降级后下游（`handler_adapter`）只能报 `invalid type: null, expected struct XxxRequest`，
+/// 病症指向「某个参数取值不对」，而真正的原因（模型写坏 JSON / 被 max_tokens 截断 /
+/// 同轮多次调用的 arguments 被拼成一段）此前是**静默丢弃**的，靠日志永远查不出来。
+fn parse_tool_arguments(ctx: &RequestContext, tc: &AccumToolCall) -> Value {
+    match serde_json::from_str::<Value>(&tc.arguments) {
+        Ok(value) => value,
+        Err(e) => {
+            log_error!(
+                ctx,
+                "cortex_stream",
+                "tool call arguments is not valid JSON, degrading to null: tool={} call_id={} error={} raw_args={}",
+                tc.name,
+                tc.id,
+                e,
+                truncate_for_log(&tc.arguments)
+            );
+            Value::Null
+        }
+    }
+}
+
+/// 日志友好的长文本：超长时保留首尾两段。
+///
+/// 只留头部会丢掉语法错误位置——坏 JSON 的报错（`EOF while parsing`、未闭合括号、
+/// 尾逗号）几乎总在**尾部**。
+fn truncate_for_log(text: &str) -> String {
+    const HEAD: usize = 1200;
+    const TAIL: usize = 600;
+    if text.len() <= HEAD + TAIL {
+        return text.to_string();
+    }
+    let head_end = floor_char_boundary(text, HEAD);
+    let tail_start = ceil_char_boundary(text, text.len() - TAIL);
+    format!(
+        "{} …<omitted {} bytes>… {}",
+        &text[..head_end],
+        tail_start - head_end,
+        &text[tail_start..]
+    )
+}
+
+/// 向下取最近的 UTF-8 字符边界（避免切断多字节字符）
+fn floor_char_boundary(text: &str, index: usize) -> usize {
+    let mut index = index.min(text.len());
+    while !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+/// 向上取最近的 UTF-8 字符边界
+fn ceil_char_boundary(text: &str, index: usize) -> usize {
+    let mut index = index.min(text.len());
+    while index < text.len() && !text.is_char_boundary(index) {
+        index += 1;
+    }
+    index
+}
+
 /// 消费 SSE 响应流并聚合为 [`StreamAccumulator`]。
 ///
 /// 超时判定（替代原「请求总时长」）：
@@ -221,6 +295,9 @@ fn finish_think_result(acc: StreamAccumulator) -> ThinkResult {
 ///   判定流中断返回错误。只要 token 持续产出即视为正常，长生成不再被总时长误杀。
 /// - **总时长硬上限**：由请求构建处的逐请求 `.timeout()` 兜底（见调用方），
 ///   防服务端异常（如无限心跳）导致空闲判定永不触发。
+///
+/// 终止校验（`check_stream_end`）：流「正常结束」必须留下证据，否则一律判为截断——
+/// 原实现 `Ok(None) => break` 后直接返回 `Ok`，连接被切断时半截结果会被当成功使用。
 async fn consume_think_stream<S, B>(stream: S, idle_timeout: Duration) -> Result<StreamAccumulator>
 where
     S: Stream<Item = reqwest::Result<B>>,
@@ -229,7 +306,7 @@ where
     let mut stream = Box::pin(stream);
     let mut acc = StreamAccumulator::default();
     let mut buf: Vec<u8> = Vec::new();
-    loop {
+    'stream: loop {
         let chunk = match tokio::time::timeout(idle_timeout, stream.next()).await {
             Ok(None) => break,
             Err(_) => {
@@ -246,23 +323,57 @@ where
             let line = String::from_utf8_lossy(&line_bytes);
             if let Some(event) = parse_sse_line(&line)? {
                 match event {
-                    SseEvent::Done => return Ok(acc),
+                    // `[DONE]` 之后的内容一律丢弃，故直接跳出到终止校验
+                    SseEvent::Done => {
+                        acc.saw_done = true;
+                        break 'stream;
+                    }
                     SseEvent::Chunk(c) => acc.absorb(c),
                 }
             }
         }
     }
     // 容忍服务端未以换行收尾的最后一行
-    if !buf.is_empty() {
+    if !acc.saw_done && !buf.is_empty() {
         let line = String::from_utf8_lossy(&buf);
         if let Some(event) = parse_sse_line(&line)? {
             match event {
-                SseEvent::Done => {}
+                SseEvent::Done => acc.saw_done = true,
                 SseEvent::Chunk(c) => acc.absorb(c),
             }
         }
     }
+    check_stream_end(&acc)?;
     Ok(acc)
+}
+
+/// 流终止校验：把「静默的截断」变成显式错误。
+///
+/// 1. **结束证据缺失**：正常结束必然留下 `[DONE]` 或带 `finish_reason` 的 chunk（二者之一）。
+///    两者皆无说明连接在生成中途被切断——半截 `content` / 半截 `arguments` 此前会被
+///    当成功返回，是本文件里最隐蔽的一条静默通道。
+/// 2. **`finish_reason=length`**：被 `max_tokens` 截断。此时 `arguments` 一定是半截 JSON，
+///    经 [`parse_tool_arguments`] 降级成 `null` 后，下游只会报「参数整包为 null」这个
+///    与病因无关的错；在此直接失败，并把截断现场的规模信息带出去。
+fn check_stream_end(acc: &StreamAccumulator) -> Result<()> {
+    if !acc.saw_done && acc.finish_reason.is_none() {
+        return Err(err!(
+            Internal,
+            "chat completions stream ended unexpectedly: no `[DONE]` and no finish_reason \
+             (connection cut mid-stream), content_len={}",
+            acc.content.len()
+        ));
+    }
+    if acc.finish_reason.as_deref() == Some("length") {
+        let pending: Vec<&str> = acc.tool_calls.values().map(|t| t.name.as_str()).collect();
+        return Err(err!(
+            Internal,
+            "chat completions truncated by max_tokens (finish_reason=length): content_len={} pending_tool_calls={:?}",
+            acc.content.len(),
+            pending
+        ));
+    }
+    Ok(())
 }
 
 /// 调用标准 Embeddings API
@@ -447,6 +558,12 @@ struct StreamAccumulator {
     content: String,
     // 区分「无内容」与「空字符串」（ToolCall.content 的 None/"" 语义对齐非流式）
     saw_content: bool,
+    /// 是否收到 `[DONE]` 终止标记（流正常结束的证据之一，见 [`check_stream_end`]）
+    saw_done: bool,
+    /// 最后一次 outcome 标记：`stop` / `length` / `tool_calls` / `content_filter` 等
+    finish_reason: Option<String>,
+    /// 是否出现过「未带 index」的 tool_call delta（provider 不规范，需消歧，见 [`StreamAccumulator::resolve_tool_call_index`]）
+    saw_index_less_tool_call: bool,
     tool_calls: BTreeMap<usize, AccumToolCall>,
     usage: Option<Usage>,
 }
@@ -464,12 +581,17 @@ impl StreamAccumulator {
             self.usage = chunk.usage;
         }
         for choice in chunk.choices {
+            // finish_reason 只在流末尾的某个 chunk 出现，记录最后一次即最终原因
+            if let Some(reason) = choice.finish_reason {
+                self.finish_reason = Some(reason);
+            }
             if let Some(c) = choice.delta.content {
                 self.saw_content = true;
                 self.content.push_str(&c);
             }
             for tc in choice.delta.tool_calls.into_iter().flatten() {
-                let entry = self.tool_calls.entry(tc.index).or_default();
+                let index = self.resolve_tool_call_index(&tc);
+                let entry = self.tool_calls.entry(index).or_default();
                 if let Some(id) = tc.id {
                     entry.id = id;
                 }
@@ -483,6 +605,31 @@ impl StreamAccumulator {
                 }
             }
         }
+    }
+
+    /// 解析该 delta 归属的 tool_call 槽位。
+    ///
+    /// OpenAI 流式协议里 `index` 是**分组依据**，但部分 provider 只在首个 fragment 带、
+    /// 并行调用时甚至整体省略。原实现用 `#[serde(default)]` 把「省略」当 0，
+    /// 于是第二次调用的 fragment 被并进 index=0，两次调用的 arguments 被 `push_str`
+    /// 拼成 `{...}{...}`（非法 JSON）→ 参数整包退化为 `null`，报错还指不到病因。
+    ///
+    /// 这里按「id 优先」消歧：能对上已有槽位就复用；对不上且已有其它调用则另开槽位。
+    fn resolve_tool_call_index(&mut self, tc: &DeltaToolCall) -> usize {
+        if let Some(index) = tc.index {
+            return index;
+        }
+        self.saw_index_less_tool_call = true;
+        if let Some(id) = tc.id.as_deref().filter(|s| !s.is_empty()) {
+            if let Some((&index, _)) = self.tool_calls.iter().find(|(_, e)| e.id == id) {
+                return index;
+            }
+            if let Some((&last, _)) = self.tool_calls.iter().next_back() {
+                return last.saturating_add(1);
+            }
+        }
+        // 无 id（或首个调用）：按协议默认槽位 0
+        0
     }
 }
 
@@ -521,6 +668,8 @@ struct StreamChunk {
 struct StreamChoice {
     #[serde(default)]
     delta: StreamDelta,
+    /// 结束原因（`stop` / `length` / `tool_calls` / `content_filter`…），仅在流末尾的 chunk 出现
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -531,8 +680,9 @@ struct StreamDelta {
 
 #[derive(Deserialize)]
 struct DeltaToolCall {
-    #[serde(default)]
-    index: usize,
+    /// 分组依据。**不能 `#[serde(default)]`**：省略会被当成 0，
+    /// 并行调用的第二路 fragment 会被并进第一路（见 [`StreamAccumulator::resolve_tool_call_index`]）
+    index: Option<usize>,
     id: Option<String>,
     function: Option<DeltaToolFunction>,
 }
