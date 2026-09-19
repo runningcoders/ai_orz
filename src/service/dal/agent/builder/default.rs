@@ -10,9 +10,10 @@
 //! 5. 【用户画像】          ← 随用户变化，对话中相对稳定
 //! 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
 //! 7. 【工作空间与路径约定】 ← 静态路径配置
-//! 8. 【历史对话】          ← 随对话增长
-//! 9. 【工具失败警告】      ← 实时变化
-//! 10. 【trace_id + 当前消息】← 每次变化
+//! 8. 【历史对话】          ← 随对话增长（追加式，前缀稳定）
+//! 9. 【输入理解结果】+【消息链上下文】 ← 会话内恒定/追加，置于易变区块前保前缀缓存
+//! 10. 【工具失败警告】      ← 低频统计快照
+//! 11. 【trace_id + 当前消息】← 每次变化
 //!
 //! 所有区块拼装方法（`build_skills_sections` / `build_common_context_sections` /
 //! `render_intent_analysis_section` / `build_final_response_guidance` /
@@ -46,9 +47,10 @@ const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
 /// 5. 【用户画像】          ← 随用户变化，对话中相对稳定
 /// 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
 /// 7. 【工作空间与路径约定】 ← 静态路径配置
-/// 8. 【历史对话】          ← 随对话增长
-/// 9. 【工具失败警告】      ← 实时变化
-/// 10. 【trace_id + 当前消息】← 每次变化
+/// 8. 【历史对话】          ← 随对话增长（追加式，前缀稳定）
+/// 9. 【输入理解结果】+【消息链上下文】 ← 会话内恒定/追加，置于易变区块前保前缀缓存
+/// 10. 【工具失败警告】      ← 低频统计快照
+/// 11. 【trace_id + 当前消息】← 每次变化
 ///
 /// match_keys = agent.roles ∪ agent.installed_tags
 ///
@@ -453,7 +455,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
     /// 构建意图分析场景的 Prompt（Task 3：完整实现）
     ///
     /// 与 build()/build_sleep_prompt() 对称：复用 1-8 区块（人设 + 技能 + 上下文 + 历史），
-    /// 再追加「意图识别 SOP 五步走 + 严格执行禁令 + JSON Schema 输出约束」的专属指令块，
+    /// 再追加「意图识别 SOP 五步走 + 严格执行禁令 + JSON Schema 输出约束」的专属指令块
+    /// （完全静态，置于 Trace ID 之前保前缀缓存），随后是 Trace ID，
     /// 最后附上当前消息作为明确靶子。
     fn build_intent_analyze_prompt(&self) -> String {
         let mut result = String::new();
@@ -479,11 +482,6 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
                 result.push('\n');
             }
             result.push('\n');
-        }
-
-        // 9. Trace ID
-        if let Some(trace_id) = &self.current_trace_id {
-            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
         }
 
         // ==================== 阶段一：输入理解专用指令（核心）====================
@@ -627,7 +625,14 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         result.push_str("===== 【输入理解阶段】指令结束 =====\n\n");
 
-        // 10. 当前消息（放在最后，给 Agent 明确的靶子）
+        // 10. Trace ID（每轮变化）——置于静态 SOP 指令块之后：SOP 是本路径最大的
+        // 稳定区块（~140 行），前置 trace 会让每条新消息的意图分析请求作废整块缓存；
+        // 后置后「人设→技能→上下文→历史→SOP」前缀可跨轮命中
+        if let Some(trace_id) = &self.current_trace_id {
+            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+
+        // 11. 当前消息（放在最后，给 Agent 明确的靶子）
         if let Some(msg) = &self.current_message {
             result.push_str("【当前消息】\n");
             result.push_str(msg);
@@ -962,6 +967,14 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             }
             s.push('\n');
         }
+        // 意图理解参考：Phase 1 产出后会话内恒定，前移到易变区块（警告/Trace）之前保前缀缓存
+        // （与 build() 的区块顺序保持一致，避免两条拼装路径各排各的）
+        let intent_section = self.render_intent_analysis_section();
+        if !intent_section.is_empty() {
+            s.push_str(&intent_section);
+        }
+        // 消息链上下文：紧贴【当前消息】语义群，链头稳定、尾部追加
+        self.push_message_thread(&mut s);
         if !self.tool_failures.is_empty() {
             s.push_str("【工具失败警告】\n");
             s.push_str("以下工具近期失败次数较多，请谨慎使用或考虑替代方案：\n");
@@ -972,12 +985,6 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         }
         if let Some(trace_id) = &self.current_trace_id {
             s.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
-        }
-        // 消息链上下文：紧贴【当前消息】渲染，说明当前消息所属话题的来龙去脉
-        self.push_message_thread(&mut s);
-        let intent_section = self.render_intent_analysis_section();
-        if !intent_section.is_empty() {
-            s.push_str(&intent_section);
         }
         if let Some(msg) = &self.current_message {
             s.push_str(msg);
@@ -1012,7 +1019,19 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push('\n');
         }
 
-        // 9. 工具失败警告（有失败工具时才显示）
+        // 9. 【输入理解结果】区块（Phase 1 IntentAnalyze 阶段产出，Task 4：A+ P3 串联）
+        // 位置：历史之后、易变区块（警告/Trace/当前消息）之前——意图理解在会话内
+        // 只产出一次、之后恒定，前移使其随历史一起命中前缀缓存；None 时无输出
+        let intent_section = self.render_intent_analysis_section();
+        if !intent_section.is_empty() {
+            result.push_str(&intent_section);
+        }
+
+        // 10. 【消息链上下文】区块：链头消息（话题起点）稳定、尾部追加，
+        // 置于每轮变化区块之前可保会话内前缀缓存
+        self.push_message_thread(&mut result);
+
+        // 11. 工具失败警告（有失败工具时才显示；低频统计快照，变化时仅作废其后的易变区块）
         if !self.tool_failures.is_empty() {
             result.push_str("【工具失败警告】\n");
             result.push_str("以下工具近期失败次数较多，请谨慎使用或考虑替代方案：\n");
@@ -1022,22 +1041,12 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push('\n');
         }
 
-        // 10. 本次思考的 Trace ID
+        // 12. 本次思考的 Trace ID（每轮变化，紧贴当前消息使作废面最小）
         if let Some(trace_id) = &self.current_trace_id {
             result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
         }
 
-        // 10.5 【输入理解结果】区块（Phase 1 IntentAnalyze 阶段产出，Task 4：A+ P3 串联）
-        // 位置：严格在 Trace ID 之后、当前消息之前；若 intent_analysis 为 None 则无输出
-        let intent_section = self.render_intent_analysis_section();
-        if !intent_section.is_empty() {
-            result.push_str(&intent_section);
-        }
-
-        // 10.6 【消息链上下文】区块：紧贴当前消息，说明当前消息所属话题的来龙去脉
-        self.push_message_thread(&mut result);
-
-        // 11. 当前用户消息
+        // 13. 当前用户消息
         if let Some(msg) = &self.current_message {
             result.push_str(msg);
             result.push_str("\n\n请回复：");

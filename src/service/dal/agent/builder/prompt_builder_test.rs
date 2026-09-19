@@ -167,6 +167,38 @@ fn build_intent_analyze_prompt_contains_sop_and_schema() {
     );
 }
 
+/// 缓存友好排序：意图分析的静态 SOP 指令块（~140 行，完全不变）必须渲染在
+/// 【思考 Trace ID】（每轮变化）之前，否则每条新消息都会作废整个静态块的
+/// 前缀缓存（Trace ID 唯一能安全共享的位置是紧贴当前消息的易变尾部）。
+#[test]
+fn intent_analyze_prompt_sop_precedes_trace() {
+    let agent = make_simple_agent();
+    let message = make_simple_message("缓存排序测试");
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-cache-order-001");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+
+    let prompt = builder.build_intent_analyze_prompt();
+
+    let sop_idx = find_block(
+        &prompt,
+        "### 阶段一：输入理解专用指令（仅限 IntentAnalyze 场景）",
+    )
+    .expect("Prompt 应包含意图分析 SOP 标题");
+    let trace_idx = prompt
+        .find("【思考 Trace ID】")
+        .expect("意图分析 Prompt 应包含【思考 Trace ID】");
+
+    assert!(
+        sop_idx < trace_idx,
+        "静态 SOP (idx={}) 必须在 Trace ID (idx={}) 之前以保前缀缓存",
+        sop_idx,
+        trace_idx
+    );
+}
+
 // ============= Task 4 (A+ P3) 新增单元测试 =============
 
 use crate::service::domain::runtime::awakening::IntentAnalysis;
@@ -273,6 +305,18 @@ fn build_prompt_contains_input_understanding_before_current_message() {
         "【输入理解结果】(idx={}) 必须出现在【当前消息】(idx={}) 之前！",
         idx_understanding,
         idx_current_msg
+    );
+
+    // 缓存友好断言：理解区块（会话内恒定）还必须出现在【思考 Trace ID】
+    // （每轮变化）之前，否则每轮都会作废理解区块及其前所有内容的前缀缓存
+    let idx_trace = prompt_with_ia
+        .find("【思考 Trace ID】")
+        .expect("Prompt 应包含【思考 Trace ID】");
+    assert!(
+        idx_understanding < idx_trace,
+        "【输入理解结果】(idx={}) 必须出现在【思考 Trace ID】(idx={}) 之前以保前缀缓存",
+        idx_understanding,
+        idx_trace
     );
 
     // ========== 分支 2：intent_analysis=None（未注入）==========

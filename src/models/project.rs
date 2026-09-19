@@ -199,13 +199,16 @@ impl Project {
                 self.po.root_user_id
             ));
         }
+        // 时间字段用绝对时间渲染（YYYY-MM-DD HH:MM）：相对时长（"5 小时"）随当前时刻
+        // 漂移，分钟级变化会让本区块字节级变化，作废 Prompt 前缀缓存中其后的一切
+        // （含【历史对话】）；绝对时间仅在数据本身变更时变化，时长语义由模型自行推算
         if let Some(start_at) = self.po.start_at {
-            s.push_str(&format!("- 启动时长: {}\n", relative_duration(start_at)));
+            s.push_str(&format!("- 启动时间: {}\n", format_datetime(start_at)));
         }
         if let Some(last_followup_at) = self.po.last_followup_at {
             s.push_str(&format!(
-                "- 距上次跟进: {}\n",
-                relative_duration(last_followup_at)
+                "- 上次跟进时间: {}\n",
+                format_datetime(last_followup_at)
             ));
         }
         if let Some(workflow) = &self.po.workflow
@@ -223,21 +226,19 @@ impl Project {
     }
 }
 
-/// 毫秒时间戳 → 相对当前时刻的可读时长（如 "3 天" / "5 小时" / "12 分钟"）
-fn relative_duration(from_ms: i64) -> String {
-    let elapsed_ms = (utils::current_timestamp_ms() - from_ms).max(0);
-    let minutes = elapsed_ms / 60_000;
-    if minutes < 1 {
-        return "刚刚".to_string();
-    }
-    if minutes < 60 {
-        return format!("{minutes} 分钟");
-    }
-    let hours = minutes / 60;
-    if hours < 24 {
-        return format!("{hours} 小时");
-    }
-    format!("{} 天", hours / 24)
+/// 毫秒时间戳 → 本地时间的可读日期时间（如 "2026-09-15 10:30"）
+///
+/// 不用相对时长（"3 天前"）：它会随当前时刻漂移（分钟级变化），注入 Prompt 后
+/// 导致【项目上下文】区块字节级变化，作废前缀缓存中其后的一切；
+/// 绝对时间仅在数据本身变更时变化，对 Prompt 前缀缓存友好。
+fn format_datetime(from_ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(from_ms)
+        .map(|dt| {
+            dt.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|| "未知".to_string())
 }
 
 impl ProjectPo {
@@ -402,5 +403,22 @@ pub fn progress_summary_from_tasks(tasks: &[crate::models::task::Task]) -> Proje
         } else {
             0
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 时间字段渲染为固定格式的本地日期时间，不随调用时刻漂移（前缀缓存友好）
+    #[test]
+    fn format_datetime_renders_stable_local_datetime() {
+        let s = format_datetime(1_757_905_800_000);
+        let parsed = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M")
+            .expect("应渲染为 YYYY-MM-DD HH:MM 格式");
+        assert_eq!(parsed.format("%Y-%m-%d %H:%M").to_string(), s);
+
+        // 非法毫秒值优雅降级，不 panic
+        assert_eq!(format_datetime(i64::MAX), "未知");
     }
 }
