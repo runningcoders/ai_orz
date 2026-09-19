@@ -220,7 +220,7 @@ pub fn FinanceMcpServers() -> Element {
                                             tr { key: "{id}",
                                                 td { class: "font-semibold", "{name}" }
                                                 td { span { class: "badge orz-tag badge-sm", "{transport}" } }
-                                                td { span { class: "text-sm text-base-content/70 truncate block max-w-xs", "{config_display}" } }
+                                                td { span { class: "text-sm text-base-content/70 truncate block", "{config_display}" } }
                                                 td {
                                                     if is_enabled {
                                                         span { class: "badge hud-badge badge-success", "启用" }

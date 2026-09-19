@@ -1,11 +1,13 @@
 //! 本体词表管理页（/hr/ontology-lexicon）
 //!
-//! 五大区块 + 三个辅助 Modal：
-//! 1. **词表注入视图**：与神经技能注入共用同一契约的只读快照（关系词 / 实体类 / 同义样例）
-//! 2. **漂移看板**：词表覆盖率 / 漂移关系数 / 漂移节点占比 + Top 漂移词（可下钻明细）
-//! 3. **实体类词表**：分页列表 + 状态/关键词筛选 + 新增 / 编辑 / 退役（软删除）
-//! 4. **关系类型词表**：同上，附域/值域约束、边权重基数、反向关系
-//! 5. **同义映射**：分页列表 + 目标种类筛选 + 新增 / 删除（物理删除）
+//! 4 个子标签 + 三个辅助 Modal：
+//! 1. **总览**：词表注入视图（与神经技能注入共用同一契约的只读快照）+ 漂移看板
+//!    （词表覆盖率 / 漂移关系数 / 漂移节点占比 + Top 漂移词，可下钻明细）
+//! 2. **实体类词表**：分页列表 + 状态/关键词筛选 + 新增 / 编辑 / 退役（软删除）
+//! 3. **关系类型词表**：同上，附域/值域约束、边权重基数、反向关系
+//! 4. **同义映射**：分页列表 + 目标种类筛选 + 新增 / 删除（物理删除）
+//!
+//! 各标签共享同一组 signals，初始加载一次性拉取全部数据，切换标签仅切换渲染不重复请求。
 //!
 //! 同步 Modal：seed 预置词表 preview → sync（仅补缺策略，不覆盖本地修改）。
 //! 下钻 Modal：漂移词的关系（边）明细 + 节点明细。
@@ -110,9 +112,36 @@ fn kind_badge(kind: TermKind) -> Element {
     }
 }
 
+/// 页面子标签
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum OntologyTab {
+    /// 总览：词表注入视图 + 漂移看板
+    Overview,
+    /// 实体类词表
+    Classes,
+    /// 关系类型词表
+    Relations,
+    /// 同义映射
+    Synonyms,
+}
+
+impl OntologyTab {
+    fn label(self) -> &'static str {
+        match self {
+            OntologyTab::Overview => "总览",
+            OntologyTab::Classes => "实体类词表",
+            OntologyTab::Relations => "关系类型词表",
+            OntologyTab::Synonyms => "同义映射",
+        }
+    }
+}
+
 #[component]
 pub fn HrOntologyLexicon() -> Element {
     let toast = use_toast();
+
+    // ===== 子标签 =====
+    let mut active_tab = use_signal(|| OntologyTab::Overview);
 
     // ===== 实体类列表 =====
     let mut classes = use_signal(Vec::<OntologyClassItem>::new);
@@ -693,275 +722,578 @@ pub fn HrOntologyLexicon() -> Element {
                         }),
                     }
 
-                    // ==================== 词表注入视图 ====================
-                    HudSection {
-                        eyebrow: Some("LEXICON".to_string()),
-                        title: "词表注入视图".to_string(),
-                        actions: Some(rsx! {
-                            button { class: "btn hud-btn btn-ghost btn-sm",
-                                onclick: move |_| fetch_lexicon(),
-                                "刷新"
-                            }
-                        }),
-                        if lexicon_loading() {
-                            Loading { size: "md" }
-                        } else if let Some(s) = lexicon_summary() {
-                            if s.is_empty() {
-                                EmptyState {
-                                    icon: Some("📖".to_string()),
-                                    message: "词表为空，Agent 技能暂不注入本体词表，可点击右上角同步预置词表"
-                                        .to_string(),
-                                }
-                            } else {
-                                div { class: "space-y-4",
-                                    div { class: "flex flex-wrap items-center gap-3 text-sm",
-                                        span { class: "badge hud-badge badge-primary", "关系词 {s.relation_types.len()}" }
-                                        span { class: "badge hud-badge badge-secondary", "实体类 {s.classes.len()}" }
-                                        span { class: "badge hud-badge badge-ghost", "同义样例 {s.synonyms.len()}" }
-                                        span { class: "opacity-70", "与神经技能注入共用同一契约，Token 超限时按 关系词 > 实体类 > 同义 顺序裁剪" }
-                                    }
-                                    div { class: "space-y-1",
-                                        div { class: "text-xs font-semibold uppercase tracking-wider opacity-60", "关系类型（注入优先级最高）" }
-                                        div { class: "flex flex-wrap gap-2",
-                                            for t in s.relation_types {
-                                                span { class: "badge hud-badge badge-outline", "{t.term_key} · {t.display_name}" }
-                                            }
-                                        }
-                                    }
-                                    div { class: "space-y-1",
-                                        div { class: "text-xs font-semibold uppercase tracking-wider opacity-60", "实体类" }
-                                        div { class: "flex flex-wrap gap-2",
-                                            for t in s.classes {
-                                                span { class: "badge hud-badge badge-outline", "{t.term_key} · {t.display_name}" }
-                                            }
-                                        }
-                                    }
-                                    div { class: "space-y-1",
-                                        div { class: "text-xs font-semibold uppercase tracking-wider opacity-60", "同义映射样例" }
-                                        div { class: "flex flex-wrap gap-2",
-                                            for x in s.synonyms {
-                                                span { class: "badge hud-badge badge-ghost font-mono", "{x.raw_term} → {x.target_key}" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            EmptyState {
-                                icon: Some("⚠️".to_string()),
-                                message: "词表注入视图加载失败，请点击右上角刷新重试".to_string(),
+                    // ==================== 子标签栏 ====================
+                    div { class: "flex flex-wrap gap-2 mb-4",
+                        for tab in [
+                            OntologyTab::Overview,
+                            OntologyTab::Classes,
+                            OntologyTab::Relations,
+                            OntologyTab::Synonyms,
+                        ] {
+                            button {
+                                class: if active_tab() == tab {
+                                    "btn hud-btn btn-sm btn-primary"
+                                } else {
+                                    "btn hud-btn btn-sm btn-ghost"
+                                },
+                                onclick: move |_| active_tab.set(tab),
+                                "{tab.label()}"
                             }
                         }
                     }
 
-                    // ==================== 漂移看板 ====================
-                    HudSection {
-                        eyebrow: Some("DRIFT".to_string()),
-                        title: "漂移看板".to_string(),
-                        actions: Some(rsx! {
-                            button { class: "btn hud-btn btn-ghost btn-sm",
-                                onclick: move |_| fetch_dashboard(),
-                                "刷新"
-                            }
-                        }),
-                        StatGrid {
-                            if let Some(d) = dashboard() {
-                                StatReadout {
-                                    label: "词表覆盖率".to_string(),
-                                    value: format_relevance(
-                                        d.relation_coverage.coverage_ratio as f32,
-                                    ),
-                                    icon: Some("🎯".to_string()),
-                                    delta: Some(format!(
-                                        "规范 {} · 同义 {} · 漂移 {}",
-                                        d.relation_coverage.canonical_relations,
-                                        d.relation_coverage.via_synonym_relations,
-                                        d.relation_coverage.drift_relations
-                                    )),
+                    if active_tab() == OntologyTab::Overview {
+                        // ==================== 词表注入视图 ====================
+                        HudSection {
+                            eyebrow: Some("LEXICON".to_string()),
+                            title: "词表注入视图".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-ghost btn-sm",
+                                    onclick: move |_| fetch_lexicon(),
+                                    "刷新"
                                 }
-                                StatReadout {
-                                    label: "漂移关系数".to_string(),
-                                    value: format_compact_count(
-                                        d.relation_coverage.drift_relations,
-                                    ),
-                                    icon: Some("🌊".to_string()),
-                                    delta: Some("词表外关系边总数".to_string()),
-                                }
-                                StatReadout {
-                                    label: "漂移节点".to_string(),
-                                    value: format_compact_count(d.drift_node_count),
-                                    unit: Some("个".to_string()),
-                                    icon: Some("🧩".to_string()),
-                                    delta: Some(format!(
-                                        "占节点总数 {:.0}%",
-                                        if d.total_node_count > 0 {
-                                            d.drift_node_count as f64
-                                                / d.total_node_count as f64
-                                                * 100.0
-                                        } else {
-                                            0.0
-                                        }
-                                    )),
-                                }
-                            } else if dashboard_loading() {
+                            }),
+                            if lexicon_loading() {
                                 Loading { size: "md" }
+                            } else if let Some(s) = lexicon_summary() {
+                                if s.is_empty() {
+                                    EmptyState {
+                                        icon: Some("📖".to_string()),
+                                        message: "词表为空，Agent 技能暂不注入本体词表，可点击右上角同步预置词表"
+                                            .to_string(),
+                                    }
+                                } else {
+                                    div { class: "space-y-4",
+                                        div { class: "flex flex-wrap items-center gap-3 text-sm",
+                                            span { class: "badge hud-badge badge-primary", "关系词 {s.relation_types.len()}" }
+                                            span { class: "badge hud-badge badge-secondary", "实体类 {s.classes.len()}" }
+                                            span { class: "badge hud-badge badge-ghost", "同义样例 {s.synonyms.len()}" }
+                                            span { class: "opacity-70", "与神经技能注入共用同一契约，Token 超限时按 关系词 > 实体类 > 同义 顺序裁剪" }
+                                        }
+                                        div { class: "space-y-1",
+                                            div { class: "text-xs font-semibold uppercase tracking-wider opacity-60", "关系类型（注入优先级最高）" }
+                                            div { class: "flex flex-wrap gap-2",
+                                                for t in s.relation_types {
+                                                    span { class: "badge hud-badge badge-outline", "{t.term_key} · {t.display_name}" }
+                                                }
+                                            }
+                                        }
+                                        div { class: "space-y-1",
+                                            div { class: "text-xs font-semibold uppercase tracking-wider opacity-60", "实体类" }
+                                            div { class: "flex flex-wrap gap-2",
+                                                for t in s.classes {
+                                                    span { class: "badge hud-badge badge-outline", "{t.term_key} · {t.display_name}" }
+                                                }
+                                            }
+                                        }
+                                        div { class: "space-y-1",
+                                            div { class: "text-xs font-semibold uppercase tracking-wider opacity-60", "同义映射样例" }
+                                            div { class: "flex flex-wrap gap-2",
+                                                for x in s.synonyms {
+                                                    span { class: "badge hud-badge badge-ghost font-mono", "{x.raw_term} → {x.target_key}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             } else {
                                 EmptyState {
                                     icon: Some("⚠️".to_string()),
-                                    message: "漂移看板加载失败，请点击右上角刷新重试".to_string(),
+                                    message: "词表注入视图加载失败，请点击右上角刷新重试".to_string(),
                                 }
                             }
                         }
-                        if let Some(d) = dashboard() {
-                            if d.top_drift_words.is_empty() {
-                                EmptyState {
-                                    icon: Some("✨".to_string()),
-                                    message: "暂无漂移词，词表覆盖良好".to_string(),
+                    }
+
+                    if active_tab() == OntologyTab::Overview {
+                        // ==================== 漂移看板 ====================
+                        HudSection {
+                            eyebrow: Some("DRIFT".to_string()),
+                            title: "漂移看板".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-ghost btn-sm",
+                                    onclick: move |_| fetch_dashboard(),
+                                    "刷新"
                                 }
+                            }),
+                            StatGrid {
+                                if let Some(d) = dashboard() {
+                                    StatReadout {
+                                        label: "词表覆盖率".to_string(),
+                                        value: format_relevance(
+                                            d.relation_coverage.coverage_ratio as f32,
+                                        ),
+                                        icon: Some("🎯".to_string()),
+                                        delta: Some(format!(
+                                            "规范 {} · 同义 {} · 漂移 {}",
+                                            d.relation_coverage.canonical_relations,
+                                            d.relation_coverage.via_synonym_relations,
+                                            d.relation_coverage.drift_relations
+                                        )),
+                                    }
+                                    StatReadout {
+                                        label: "漂移关系数".to_string(),
+                                        value: format_compact_count(
+                                            d.relation_coverage.drift_relations,
+                                        ),
+                                        icon: Some("🌊".to_string()),
+                                        delta: Some("词表外关系边总数".to_string()),
+                                    }
+                                    StatReadout {
+                                        label: "漂移节点".to_string(),
+                                        value: format_compact_count(d.drift_node_count),
+                                        unit: Some("个".to_string()),
+                                        icon: Some("🧩".to_string()),
+                                        delta: Some(format!(
+                                            "占节点总数 {:.0}%",
+                                            if d.total_node_count > 0 {
+                                                d.drift_node_count as f64
+                                                    / d.total_node_count as f64
+                                                    * 100.0
+                                            } else {
+                                                0.0
+                                            }
+                                        )),
+                                    }
+                                } else if dashboard_loading() {
+                                    Loading { size: "md" }
+                                } else {
+                                    EmptyState {
+                                        icon: Some("⚠️".to_string()),
+                                        message: "漂移看板加载失败，请点击右上角刷新重试".to_string(),
+                                    }
+                                }
+                            }
+                            if let Some(d) = dashboard() {
+                                if d.top_drift_words.is_empty() {
+                                    EmptyState {
+                                        icon: Some("✨".to_string()),
+                                        message: "暂无漂移词，词表覆盖良好".to_string(),
+                                    }
+                                } else {
+                                    div { class: "overflow-x-auto",
+                                        table { class: "table hud-table table-zebra table-pin-rows",
+                                            thead {
+                                                tr {
+                                                    th { "漂移原文" }
+                                                    th { "种类" }
+                                                    th { "词频" }
+                                                    th { "Agent 数" }
+                                                    th { "" }
+                                                }
+                                            }
+                                            tbody {
+                                                for w in d.top_drift_words {
+                                                    tr { key: "{w.raw_term}",
+                                                        td { span { class: "font-mono text-sm", "{w.raw_term}" } }
+                                                        td { {kind_badge(w.kind)} }
+                                                        td { "{format_compact_count(w.count)}" }
+                                                        td { "{w.agent_count}" }
+                                                        td {
+                                                            button { class: "btn hud-btn btn-ghost btn-xs",
+                                                                onclick: move |_| open_drill(w.raw_term.clone()),
+                                                                "下钻"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if active_tab() == OntologyTab::Classes {
+                        // ==================== 实体类词表 ====================
+                        HudSection {
+                            eyebrow: Some("CLASSES".to_string()),
+                            title: "实体类词表".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-primary btn-sm",
+                                    onclick: move |_| {
+                                        class_edit_id.set(None);
+                                        class_form_key.set(String::new());
+                                        class_form_name.set(String::new());
+                                        class_form_desc.set(String::new());
+                                        class_form_fields.set(String::new());
+                                        show_class_modal.set(true);
+                                    },
+                                    "+ 新增实体类"
+                                }
+                            }),
+                            div { class: "filter-row",
+                                div { class: "filter-item",
+                                    label { class: "label", span { class: "label-text", "状态" } }
+                                    select { class: "select select-bordered hud-input w-full",
+                                        value: "{class_status_filter}",
+                                        onchange: move |e| {
+                                            class_status_filter.set(e.value());
+                                            fetch_classes(true);
+                                        },
+                                        option { value: "", "全部" }
+                                        option { value: "Active", "启用中" }
+                                        option { value: "Retired", "已退役" }
+                                    }
+                                }
+                                div { class: "filter-item flex-[2]",
+                                    label { class: "label", span { class: "label-text", "关键词" } }
+                                    input { class: "input input-bordered hud-input w-full",
+                                        value: "{class_keyword}",
+                                        oninput: move |e| class_keyword.set(e.value()),
+                                        onkeydown: move |evt| {
+                                            if evt.key() == Key::Enter {
+                                                fetch_classes(true);
+                                            }
+                                        },
+                                        placeholder: "按规范词 / 展示名模糊匹配，回车查询"
+                                    }
+                                }
+                                div { class: "filter-item justify-end",
+                                    label { class: "label", span { class: "label-text", "操作" } }
+                                    button { class: "btn hud-btn btn-primary",
+                                        onclick: move |_| fetch_classes(true),
+                                        "查询"
+                                    }
+                                }
+                            }
+                            if classes_loading() {
+                                Loading { size: "md" }
+                            } else if classes.is_empty() {
+                                EmptyState { message: "暂无实体类词条，点击右上角新增或同步预置词表".to_string() }
+                            } else {
+                                div { class: "overflow-x-auto",
+                                    table { class: "table hud-table table-zebra table-pin-rows",
+                                        thead {
+                                            tr {
+                                                th { "规范词" }
+                                                th { "展示名" }
+                                                th { "描述" }
+                                                th { "必填属性" }
+                                                th { "状态" }
+                                                th { "更新时间" }
+                                                th { "操作" }
+                                            }
+                                        }
+                                        tbody {
+                                            for c in classes().iter().cloned() {
+                                                {
+                                                    let edit_item = c.clone();
+                                                    let retire_id = c.id.clone();
+                                                    rsx! {
+                                                        tr { key: "{c.id}",
+                                                            td { span { class: "font-mono text-sm", "{c.term_key}" } }
+                                                            td { "{c.display_name}" }
+                                                            td {
+                                                                div { class: "line-clamp-2", title: "{c.description}",
+                                                                    "{c.description}"
+                                                                }
+                                                            }
+                                                            td {
+                                                                if c.required_fields.is_empty() {
+                                                                    span { class: "opacity-50", "-" }
+                                                                } else {
+                                                                    span { class: "font-mono text-xs", "{c.required_fields.join(\", \")}" }
+                                                                }
+                                                            }
+                                                            td { {status_badge(c.status)} }
+                                                            td { class: "whitespace-nowrap", "{format_datetime(c.updated_at * 1000)}" }
+                                                            td {
+                                                                div { class: "flex gap-2 items-center",
+                                                                    button { class: "btn hud-btn btn-ghost btn-sm",
+                                                                        onclick: move |_| {
+                                                                            class_edit_id.set(Some(edit_item.id.clone()));
+                                                                            class_form_key.set(edit_item.term_key.clone());
+                                                                            class_form_name.set(edit_item.display_name.clone());
+                                                                            class_form_desc.set(edit_item.description.clone());
+                                                                            class_form_fields.set(edit_item.required_fields.join(", "));
+                                                                            show_class_modal.set(true);
+                                                                        },
+                                                                        "编辑"
+                                                                    }
+                                                                    button { class: "btn hud-btn btn-error btn-sm",
+                                                                        disabled: c.status == OntologyStatus::Retired,
+                                                                        onclick: move |_| class_retire_id.set(Some(retire_id.clone())),
+                                                                        "退役"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if classes_total() > 0 {
+                                div { class: "flex items-center justify-between mt-3",
+                                    span { class: "text-sm opacity-70",
+                                        "共 {classes_total()} 条"
+                                    }
+                                    div { class: "flex gap-2",
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: class_offset() == 0,
+                                            onclick: move |_| {
+                                                class_offset.set(class_offset().saturating_sub(PAGE_SIZE));
+                                                fetch_classes(false);
+                                            },
+                                            "上一页"
+                                        }
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: class_offset() + PAGE_SIZE >= classes_total(),
+                                            onclick: move |_| {
+                                                class_offset.set(class_offset() + PAGE_SIZE);
+                                                fetch_classes(false);
+                                            },
+                                            "下一页"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if active_tab() == OntologyTab::Relations {
+                        // ==================== 关系类型词表 ====================
+                        HudSection {
+                            eyebrow: Some("RELATIONS".to_string()),
+                            title: "关系类型词表".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-primary btn-sm",
+                                    onclick: move |_| {
+                                        relation_edit_id.set(None);
+                                        relation_form_key.set(String::new());
+                                        relation_form_name.set(String::new());
+                                        relation_form_desc.set(String::new());
+                                        relation_form_domain.set(String::new());
+                                        relation_form_range.set(String::new());
+                                        relation_form_weight.set(String::new());
+                                        relation_form_inverse.set(String::new());
+                                        show_relation_modal.set(true);
+                                    },
+                                    "+ 新增关系类型"
+                                }
+                            }),
+                            div { class: "filter-row",
+                                div { class: "filter-item",
+                                    label { class: "label", span { class: "label-text", "状态" } }
+                                    select { class: "select select-bordered hud-input w-full",
+                                        value: "{relation_status_filter}",
+                                        onchange: move |e| {
+                                            relation_status_filter.set(e.value());
+                                            fetch_relations(true);
+                                        },
+                                        option { value: "", "全部" }
+                                        option { value: "Active", "启用中" }
+                                        option { value: "Retired", "已退役" }
+                                    }
+                                }
+                                div { class: "filter-item flex-[2]",
+                                    label { class: "label", span { class: "label-text", "关键词" } }
+                                    input { class: "input input-bordered hud-input w-full",
+                                        value: "{relation_keyword}",
+                                        oninput: move |e| relation_keyword.set(e.value()),
+                                        onkeydown: move |evt| {
+                                            if evt.key() == Key::Enter {
+                                                fetch_relations(true);
+                                            }
+                                        },
+                                        placeholder: "按规范词 / 展示名模糊匹配，回车查询"
+                                    }
+                                }
+                                div { class: "filter-item justify-end",
+                                    label { class: "label", span { class: "label-text", "操作" } }
+                                    button { class: "btn hud-btn btn-primary",
+                                        onclick: move |_| fetch_relations(true),
+                                        "查询"
+                                    }
+                                }
+                            }
+                            if relations_loading() {
+                                Loading { size: "md" }
+                            } else if relations.is_empty() {
+                                EmptyState { message: "暂无关系类型词条，点击右上角新增或同步预置词表".to_string() }
+                            } else {
+                                div { class: "overflow-x-auto",
+                                    table { class: "table hud-table table-zebra table-pin-rows",
+                                        thead {
+                                            tr {
+                                                th { "规范词" }
+                                                th { "展示名" }
+                                                th { "描述" }
+                                                th { "域 → 值域" }
+                                                th { "权重" }
+                                                th { "反向词" }
+                                                th { "状态" }
+                                                th { "更新时间" }
+                                                th { "操作" }
+                                            }
+                                        }
+                                        tbody {
+                                            for r in relations().iter().cloned() {
+                                                {
+                                                    let edit_item = r.clone();
+                                                    let retire_id = r.id.clone();
+                                                    let domain_label = if r.domain_classes.is_empty() {
+                                                        "不限".to_string()
+                                                    } else {
+                                                        r.domain_classes.join(", ")
+                                                    };
+                                                    let range_label = if r.range_classes.is_empty() {
+                                                        "不限".to_string()
+                                                    } else {
+                                                        r.range_classes.join(", ")
+                                                    };
+                                                    rsx! {
+                                                        tr { key: "{r.id}",
+                                                            td { span { class: "font-mono text-sm", "{r.term_key}" } }
+                                                            td { "{r.display_name}" }
+                                                            td {
+                                                                div { class: "line-clamp-2", title: "{r.description}",
+                                                                    "{r.description}"
+                                                                }
+                                                            }
+                                                            td {
+                                                                div { class: "text-xs whitespace-nowrap",
+                                                                    span { class: "font-mono", "{domain_label}" }
+                                                                    span { class: "opacity-50 mx-1", "→" }
+                                                                    span { class: "font-mono", "{range_label}" }
+                                                                }
+                                                            }
+                                                            td { "{r.weight_base}" }
+                                                            td {
+                                                                if let Some(inv) = r.inverse_key {
+                                                                    span { class: "font-mono text-xs", "{inv}" }
+                                                                } else {
+                                                                    span { class: "opacity-50", "-" }
+                                                                }
+                                                            }
+                                                            td { {status_badge(r.status)} }
+                                                            td { class: "whitespace-nowrap", "{format_datetime(r.updated_at * 1000)}" }
+                                                            td {
+                                                                div { class: "flex gap-2 items-center",
+                                                                    button { class: "btn hud-btn btn-ghost btn-sm",
+                                                                        onclick: move |_| {
+                                                                            relation_edit_id.set(Some(edit_item.id.clone()));
+                                                                            relation_form_key.set(edit_item.term_key.clone());
+                                                                            relation_form_name.set(edit_item.display_name.clone());
+                                                                            relation_form_desc.set(edit_item.description.clone());
+                                                                            relation_form_domain.set(edit_item.domain_classes.join(", "));
+                                                                            relation_form_range.set(edit_item.range_classes.join(", "));
+                                                                            relation_form_weight.set(format!("{}", edit_item.weight_base));
+                                                                            relation_form_inverse.set(edit_item.inverse_key.clone().unwrap_or_default());
+                                                                            show_relation_modal.set(true);
+                                                                        },
+                                                                        "编辑"
+                                                                    }
+                                                                    button { class: "btn hud-btn btn-error btn-sm",
+                                                                        disabled: r.status == OntologyStatus::Retired,
+                                                                        onclick: move |_| relation_retire_id.set(Some(retire_id.clone())),
+                                                                        "退役"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if relations_total() > 0 {
+                                div { class: "flex items-center justify-between mt-3",
+                                    span { class: "text-sm opacity-70",
+                                        "共 {relations_total()} 条"
+                                    }
+                                    div { class: "flex gap-2",
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: relation_offset() == 0,
+                                            onclick: move |_| {
+                                                relation_offset.set(relation_offset().saturating_sub(PAGE_SIZE));
+                                                fetch_relations(false);
+                                            },
+                                            "上一页"
+                                        }
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: relation_offset() + PAGE_SIZE >= relations_total(),
+                                            onclick: move |_| {
+                                                relation_offset.set(relation_offset() + PAGE_SIZE);
+                                                fetch_relations(false);
+                                            },
+                                            "下一页"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if active_tab() == OntologyTab::Synonyms {
+                        // ==================== 同义映射 ====================
+                        HudSection {
+                            eyebrow: Some("SYNONYMS".to_string()),
+                            title: "同义映射".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-primary btn-sm",
+                                    onclick: move |_| {
+                                        synonym_form_raw.set(String::new());
+                                        synonym_form_kind.set("relation".to_string());
+                                        synonym_form_target_key.set(String::new());
+                                        show_synonym_modal.set(true);
+                                    },
+                                    "+ 新增同义映射"
+                                }
+                            }),
+                            div { class: "filter-row",
+                                div { class: "filter-item",
+                                    label { class: "label", span { class: "label-text", "目标种类" } }
+                                    select { class: "select select-bordered hud-input w-full",
+                                        value: "{synonym_kind_filter}",
+                                        onchange: move |e| {
+                                            synonym_kind_filter.set(e.value());
+                                            fetch_synonyms(true);
+                                        },
+                                        option { value: "", "全部" }
+                                        option { value: "relation", "关系类型" }
+                                        option { value: "class", "实体类" }
+                                    }
+                                }
+                            }
+                            if synonyms_loading() {
+                                Loading { size: "md" }
+                            } else if synonyms.is_empty() {
+                                EmptyState { message: "暂无同义映射，新增后漂移原文将自动归并到目标规范词".to_string() }
                             } else {
                                 div { class: "overflow-x-auto",
                                     table { class: "table hud-table table-zebra table-pin-rows",
                                         thead {
                                             tr {
                                                 th { "漂移原文" }
-                                                th { "种类" }
-                                                th { "词频" }
-                                                th { "Agent 数" }
                                                 th { "" }
+                                                th { "目标种类" }
+                                                th { "目标规范词" }
+                                                th { "创建时间" }
+                                                th { "操作" }
                                             }
                                         }
                                         tbody {
-                                            for w in d.top_drift_words {
-                                                tr { key: "{w.raw_term}",
-                                                    td { span { class: "font-mono text-sm", "{w.raw_term}" } }
-                                                    td { {kind_badge(w.kind)} }
-                                                    td { "{format_compact_count(w.count)}" }
-                                                    td { "{w.agent_count}" }
-                                                    td {
-                                                        button { class: "btn hud-btn btn-ghost btn-xs",
-                                                            onclick: move |_| open_drill(w.raw_term.clone()),
-                                                            "下钻"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ==================== 实体类词表 ====================
-                    HudSection {
-                        eyebrow: Some("CLASSES".to_string()),
-                        title: "实体类词表".to_string(),
-                        actions: Some(rsx! {
-                            button { class: "btn hud-btn btn-primary btn-sm",
-                                onclick: move |_| {
-                                    class_edit_id.set(None);
-                                    class_form_key.set(String::new());
-                                    class_form_name.set(String::new());
-                                    class_form_desc.set(String::new());
-                                    class_form_fields.set(String::new());
-                                    show_class_modal.set(true);
-                                },
-                                "+ 新增实体类"
-                            }
-                        }),
-                        div { class: "filter-row",
-                            div { class: "filter-item",
-                                label { class: "label", span { class: "label-text", "状态" } }
-                                select { class: "select select-bordered hud-input w-full",
-                                    value: "{class_status_filter}",
-                                    onchange: move |e| {
-                                        class_status_filter.set(e.value());
-                                        fetch_classes(true);
-                                    },
-                                    option { value: "", "全部" }
-                                    option { value: "Active", "启用中" }
-                                    option { value: "Retired", "已退役" }
-                                }
-                            }
-                            div { class: "filter-item flex-[2]",
-                                label { class: "label", span { class: "label-text", "关键词" } }
-                                input { class: "input input-bordered hud-input w-full",
-                                    value: "{class_keyword}",
-                                    oninput: move |e| class_keyword.set(e.value()),
-                                    onkeydown: move |evt| {
-                                        if evt.key() == Key::Enter {
-                                            fetch_classes(true);
-                                        }
-                                    },
-                                    placeholder: "按规范词 / 展示名模糊匹配，回车查询"
-                                }
-                            }
-                            div { class: "filter-item justify-end",
-                                label { class: "label", span { class: "label-text", "操作" } }
-                                button { class: "btn hud-btn btn-primary",
-                                    onclick: move |_| fetch_classes(true),
-                                    "查询"
-                                }
-                            }
-                        }
-                        if classes_loading() {
-                            Loading { size: "md" }
-                        } else if classes.is_empty() {
-                            EmptyState { message: "暂无实体类词条，点击右上角新增或同步预置词表".to_string() }
-                        } else {
-                            div { class: "overflow-x-auto",
-                                table { class: "table hud-table table-zebra table-pin-rows",
-                                    thead {
-                                        tr {
-                                            th { "规范词" }
-                                            th { "展示名" }
-                                            th { "描述" }
-                                            th { "必填属性" }
-                                            th { "状态" }
-                                            th { "更新时间" }
-                                            th { "操作" }
-                                        }
-                                    }
-                                    tbody {
-                                        for c in classes().iter().cloned() {
-                                            {
-                                                let edit_item = c.clone();
-                                                let retire_id = c.id.clone();
-                                                rsx! {
-                                                    tr { key: "{c.id}",
-                                                        td { span { class: "font-mono text-sm", "{c.term_key}" } }
-                                                        td { "{c.display_name}" }
-                                                        td {
-                                                            div { class: "max-w-[220px] truncate", title: "{c.description}",
-                                                                "{c.description}"
-                                                            }
-                                                        }
-                                                        td {
-                                                            if c.required_fields.is_empty() {
-                                                                span { class: "opacity-50", "-" }
-                                                            } else {
-                                                                span { class: "font-mono text-xs", "{c.required_fields.join(\", \")}" }
-                                                            }
-                                                        }
-                                                        td { {status_badge(c.status)} }
-                                                        td { class: "whitespace-nowrap", "{format_datetime(c.updated_at * 1000)}" }
-                                                        td {
-                                                            div { class: "flex gap-2 items-center",
-                                                                button { class: "btn hud-btn btn-ghost btn-sm",
-                                                                    onclick: move |_| {
-                                                                        class_edit_id.set(Some(edit_item.id.clone()));
-                                                                        class_form_key.set(edit_item.term_key.clone());
-                                                                        class_form_name.set(edit_item.display_name.clone());
-                                                                        class_form_desc.set(edit_item.description.clone());
-                                                                        class_form_fields.set(edit_item.required_fields.join(", "));
-                                                                        show_class_modal.set(true);
-                                                                    },
-                                                                    "编辑"
-                                                                }
+                                            for s in synonyms().iter().cloned() {
+                                                {
+                                                    let delete_id = s.id.clone();
+                                                    rsx! {
+                                                        tr { key: "{s.id}",
+                                                            td { span { class: "font-mono text-sm", "{s.raw_term}" } }
+                                                            td { class: "opacity-50", "→" }
+                                                            td { {kind_badge(s.target_kind)} }
+                                                            td { span { class: "font-mono text-sm", "{s.target_key}" } }
+                                                            td { class: "whitespace-nowrap", "{format_datetime(s.created_at * 1000)}" }
+                                                            td {
                                                                 button { class: "btn hud-btn btn-error btn-sm",
-                                                                    disabled: c.status == OntologyStatus::Retired,
-                                                                    onclick: move |_| class_retire_id.set(Some(retire_id.clone())),
-                                                                    "退役"
+                                                                    onclick: move |_| synonym_delete_id.set(Some(delete_id.clone())),
+                                                                    "删除"
                                                                 }
                                                             }
                                                         }
@@ -972,301 +1304,28 @@ pub fn HrOntologyLexicon() -> Element {
                                     }
                                 }
                             }
-                        }
-                        if classes_total() > 0 {
-                            div { class: "flex items-center justify-between mt-3",
-                                span { class: "text-sm opacity-70",
-                                    "共 {classes_total()} 条"
-                                }
-                                div { class: "flex gap-2",
-                                    button { class: "btn hud-btn btn-ghost btn-sm",
-                                        disabled: class_offset() == 0,
-                                        onclick: move |_| {
-                                            class_offset.set(class_offset().saturating_sub(PAGE_SIZE));
-                                            fetch_classes(false);
-                                        },
-                                        "上一页"
+                            if synonyms_total() > 0 {
+                                div { class: "flex items-center justify-between mt-3",
+                                    span { class: "text-sm opacity-70",
+                                        "共 {synonyms_total()} 条"
                                     }
-                                    button { class: "btn hud-btn btn-ghost btn-sm",
-                                        disabled: class_offset() + PAGE_SIZE >= classes_total(),
-                                        onclick: move |_| {
-                                            class_offset.set(class_offset() + PAGE_SIZE);
-                                            fetch_classes(false);
-                                        },
-                                        "下一页"
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ==================== 关系类型词表 ====================
-                    HudSection {
-                        eyebrow: Some("RELATIONS".to_string()),
-                        title: "关系类型词表".to_string(),
-                        actions: Some(rsx! {
-                            button { class: "btn hud-btn btn-primary btn-sm",
-                                onclick: move |_| {
-                                    relation_edit_id.set(None);
-                                    relation_form_key.set(String::new());
-                                    relation_form_name.set(String::new());
-                                    relation_form_desc.set(String::new());
-                                    relation_form_domain.set(String::new());
-                                    relation_form_range.set(String::new());
-                                    relation_form_weight.set(String::new());
-                                    relation_form_inverse.set(String::new());
-                                    show_relation_modal.set(true);
-                                },
-                                "+ 新增关系类型"
-                            }
-                        }),
-                        div { class: "filter-row",
-                            div { class: "filter-item",
-                                label { class: "label", span { class: "label-text", "状态" } }
-                                select { class: "select select-bordered hud-input w-full",
-                                    value: "{relation_status_filter}",
-                                    onchange: move |e| {
-                                        relation_status_filter.set(e.value());
-                                        fetch_relations(true);
-                                    },
-                                    option { value: "", "全部" }
-                                    option { value: "Active", "启用中" }
-                                    option { value: "Retired", "已退役" }
-                                }
-                            }
-                            div { class: "filter-item flex-[2]",
-                                label { class: "label", span { class: "label-text", "关键词" } }
-                                input { class: "input input-bordered hud-input w-full",
-                                    value: "{relation_keyword}",
-                                    oninput: move |e| relation_keyword.set(e.value()),
-                                    onkeydown: move |evt| {
-                                        if evt.key() == Key::Enter {
-                                            fetch_relations(true);
+                                    div { class: "flex gap-2",
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: synonym_offset() == 0,
+                                            onclick: move |_| {
+                                                synonym_offset.set(synonym_offset().saturating_sub(PAGE_SIZE));
+                                                fetch_synonyms(false);
+                                            },
+                                            "上一页"
                                         }
-                                    },
-                                    placeholder: "按规范词 / 展示名模糊匹配，回车查询"
-                                }
-                            }
-                            div { class: "filter-item justify-end",
-                                label { class: "label", span { class: "label-text", "操作" } }
-                                button { class: "btn hud-btn btn-primary",
-                                    onclick: move |_| fetch_relations(true),
-                                    "查询"
-                                }
-                            }
-                        }
-                        if relations_loading() {
-                            Loading { size: "md" }
-                        } else if relations.is_empty() {
-                            EmptyState { message: "暂无关系类型词条，点击右上角新增或同步预置词表".to_string() }
-                        } else {
-                            div { class: "overflow-x-auto",
-                                table { class: "table hud-table table-zebra table-pin-rows",
-                                    thead {
-                                        tr {
-                                            th { "规范词" }
-                                            th { "展示名" }
-                                            th { "描述" }
-                                            th { "域 → 值域" }
-                                            th { "权重" }
-                                            th { "反向词" }
-                                            th { "状态" }
-                                            th { "更新时间" }
-                                            th { "操作" }
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: synonym_offset() + PAGE_SIZE >= synonyms_total(),
+                                            onclick: move |_| {
+                                                synonym_offset.set(synonym_offset() + PAGE_SIZE);
+                                                fetch_synonyms(false);
+                                            },
+                                            "下一页"
                                         }
-                                    }
-                                    tbody {
-                                        for r in relations().iter().cloned() {
-                                            {
-                                                let edit_item = r.clone();
-                                                let retire_id = r.id.clone();
-                                                let domain_label = if r.domain_classes.is_empty() {
-                                                    "不限".to_string()
-                                                } else {
-                                                    r.domain_classes.join(", ")
-                                                };
-                                                let range_label = if r.range_classes.is_empty() {
-                                                    "不限".to_string()
-                                                } else {
-                                                    r.range_classes.join(", ")
-                                                };
-                                                rsx! {
-                                                    tr { key: "{r.id}",
-                                                        td { span { class: "font-mono text-sm", "{r.term_key}" } }
-                                                        td { "{r.display_name}" }
-                                                        td {
-                                                            div { class: "max-w-[200px] truncate", title: "{r.description}",
-                                                                "{r.description}"
-                                                            }
-                                                        }
-                                                        td {
-                                                            div { class: "text-xs whitespace-nowrap",
-                                                                span { class: "font-mono", "{domain_label}" }
-                                                                span { class: "opacity-50 mx-1", "→" }
-                                                                span { class: "font-mono", "{range_label}" }
-                                                            }
-                                                        }
-                                                        td { "{r.weight_base}" }
-                                                        td {
-                                                            if let Some(inv) = r.inverse_key {
-                                                                span { class: "font-mono text-xs", "{inv}" }
-                                                            } else {
-                                                                span { class: "opacity-50", "-" }
-                                                            }
-                                                        }
-                                                        td { {status_badge(r.status)} }
-                                                        td { class: "whitespace-nowrap", "{format_datetime(r.updated_at * 1000)}" }
-                                                        td {
-                                                            div { class: "flex gap-2 items-center",
-                                                                button { class: "btn hud-btn btn-ghost btn-sm",
-                                                                    onclick: move |_| {
-                                                                        relation_edit_id.set(Some(edit_item.id.clone()));
-                                                                        relation_form_key.set(edit_item.term_key.clone());
-                                                                        relation_form_name.set(edit_item.display_name.clone());
-                                                                        relation_form_desc.set(edit_item.description.clone());
-                                                                        relation_form_domain.set(edit_item.domain_classes.join(", "));
-                                                                        relation_form_range.set(edit_item.range_classes.join(", "));
-                                                                        relation_form_weight.set(format!("{}", edit_item.weight_base));
-                                                                        relation_form_inverse.set(edit_item.inverse_key.clone().unwrap_or_default());
-                                                                        show_relation_modal.set(true);
-                                                                    },
-                                                                    "编辑"
-                                                                }
-                                                                button { class: "btn hud-btn btn-error btn-sm",
-                                                                    disabled: r.status == OntologyStatus::Retired,
-                                                                    onclick: move |_| relation_retire_id.set(Some(retire_id.clone())),
-                                                                    "退役"
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if relations_total() > 0 {
-                            div { class: "flex items-center justify-between mt-3",
-                                span { class: "text-sm opacity-70",
-                                    "共 {relations_total()} 条"
-                                }
-                                div { class: "flex gap-2",
-                                    button { class: "btn hud-btn btn-ghost btn-sm",
-                                        disabled: relation_offset() == 0,
-                                        onclick: move |_| {
-                                            relation_offset.set(relation_offset().saturating_sub(PAGE_SIZE));
-                                            fetch_relations(false);
-                                        },
-                                        "上一页"
-                                    }
-                                    button { class: "btn hud-btn btn-ghost btn-sm",
-                                        disabled: relation_offset() + PAGE_SIZE >= relations_total(),
-                                        onclick: move |_| {
-                                            relation_offset.set(relation_offset() + PAGE_SIZE);
-                                            fetch_relations(false);
-                                        },
-                                        "下一页"
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ==================== 同义映射 ====================
-                    HudSection {
-                        eyebrow: Some("SYNONYMS".to_string()),
-                        title: "同义映射".to_string(),
-                        actions: Some(rsx! {
-                            button { class: "btn hud-btn btn-primary btn-sm",
-                                onclick: move |_| {
-                                    synonym_form_raw.set(String::new());
-                                    synonym_form_kind.set("relation".to_string());
-                                    synonym_form_target_key.set(String::new());
-                                    show_synonym_modal.set(true);
-                                },
-                                "+ 新增同义映射"
-                            }
-                        }),
-                        div { class: "filter-row",
-                            div { class: "filter-item",
-                                label { class: "label", span { class: "label-text", "目标种类" } }
-                                select { class: "select select-bordered hud-input w-full",
-                                    value: "{synonym_kind_filter}",
-                                    onchange: move |e| {
-                                        synonym_kind_filter.set(e.value());
-                                        fetch_synonyms(true);
-                                    },
-                                    option { value: "", "全部" }
-                                    option { value: "relation", "关系类型" }
-                                    option { value: "class", "实体类" }
-                                }
-                            }
-                        }
-                        if synonyms_loading() {
-                            Loading { size: "md" }
-                        } else if synonyms.is_empty() {
-                            EmptyState { message: "暂无同义映射，新增后漂移原文将自动归并到目标规范词".to_string() }
-                        } else {
-                            div { class: "overflow-x-auto",
-                                table { class: "table hud-table table-zebra table-pin-rows",
-                                    thead {
-                                        tr {
-                                            th { "漂移原文" }
-                                            th { "" }
-                                            th { "目标种类" }
-                                            th { "目标规范词" }
-                                            th { "创建时间" }
-                                            th { "操作" }
-                                        }
-                                    }
-                                    tbody {
-                                        for s in synonyms().iter().cloned() {
-                                            {
-                                                let delete_id = s.id.clone();
-                                                rsx! {
-                                                    tr { key: "{s.id}",
-                                                        td { span { class: "font-mono text-sm", "{s.raw_term}" } }
-                                                        td { class: "opacity-50", "→" }
-                                                        td { {kind_badge(s.target_kind)} }
-                                                        td { span { class: "font-mono text-sm", "{s.target_key}" } }
-                                                        td { class: "whitespace-nowrap", "{format_datetime(s.created_at * 1000)}" }
-                                                        td {
-                                                            button { class: "btn hud-btn btn-error btn-sm",
-                                                                onclick: move |_| synonym_delete_id.set(Some(delete_id.clone())),
-                                                                "删除"
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if synonyms_total() > 0 {
-                            div { class: "flex items-center justify-between mt-3",
-                                span { class: "text-sm opacity-70",
-                                    "共 {synonyms_total()} 条"
-                                }
-                                div { class: "flex gap-2",
-                                    button { class: "btn hud-btn btn-ghost btn-sm",
-                                        disabled: synonym_offset() == 0,
-                                        onclick: move |_| {
-                                            synonym_offset.set(synonym_offset().saturating_sub(PAGE_SIZE));
-                                            fetch_synonyms(false);
-                                        },
-                                        "上一页"
-                                    }
-                                    button { class: "btn hud-btn btn-ghost btn-sm",
-                                        disabled: synonym_offset() + PAGE_SIZE >= synonyms_total(),
-                                        onclick: move |_| {
-                                            synonym_offset.set(synonym_offset() + PAGE_SIZE);
-                                            fetch_synonyms(false);
-                                        },
-                                        "下一页"
                                     }
                                 }
                             }
@@ -1529,7 +1588,7 @@ pub fn HrOntologyLexicon() -> Element {
                                                     td { class: "opacity-50", "→" }
                                                     td { "{e.target_name}" }
                                                     td {
-                                                        div { class: "font-mono text-xs max-w-[120px] truncate",
+                                                        div { class: "font-mono text-xs truncate",
                                                             title: "{e.agent_id}", "{e.agent_id}"
                                                         }
                                                     }
@@ -1560,7 +1619,7 @@ pub fn HrOntologyLexicon() -> Element {
                                                 tr { key: "{c.id}",
                                                     td { "{c.name}" }
                                                     td {
-                                                        div { class: "font-mono text-xs max-w-[120px] truncate",
+                                                        div { class: "font-mono text-xs truncate",
                                                             title: "{c.agent_id}", "{c.agent_id}"
                                                         }
                                                     }

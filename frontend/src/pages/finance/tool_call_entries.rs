@@ -164,7 +164,7 @@ pub fn FinanceToolCallEntries() -> Element {
                                             let started_at = e.started_at;
                                             rsx! {
                                                 tr { key: "{call_id}",
-                                                    td { class: "font-mono text-xs truncate max-w-xs", title: "{call_id}", "{call_id}" }
+                                                    td { class: "font-mono text-xs truncate", title: "{call_id}", "{call_id}" }
                                                     td { "{tool_name}" }
                                                     td { class: "font-mono text-xs", "{agent_id.as_deref().unwrap_or(\"-\")}" }
                                                     td { span { class: "{status_badge_class(status)}", "{status_text(status)}" } }
