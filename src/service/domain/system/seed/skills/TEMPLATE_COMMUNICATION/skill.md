@@ -57,6 +57,7 @@
 - **分工合作**：先 `list_messages` 了解分工 → 完成自己模块 / 必要时委派 → 成果保存到项目产物（项目管理技能）
 - **能力互补**：通过用户或前台建议目标 Agent → 用户给目标 ID 后 `send_task_assignment_message` 委派，收到结果再整合
 - **知识传递**：重要经验 `save_short_term_memory`（记忆认知技能），必要时在 task_description 里引用产物 / 记忆 ID
+- **接力前置产物**：接受的任务若 description / 任务上下文引用了前置任务或产物 ID，动手前先读（`get_task` + `get_artifact_content` / `fs_read`），不要凭空重做已有人做过的事
 
 ## 行为准则
 

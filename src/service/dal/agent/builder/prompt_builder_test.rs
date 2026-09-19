@@ -1026,3 +1026,47 @@ fn lexicon_block_synonyms_yield_when_budget_exhausted() {
         "同义段让位应出现裁剪提示"
     );
 }
+
+/// 词表区块前移回归：词表先于任务上下文渲染。
+///
+/// 任务上下文每轮随进度变化，而词表跨会话几乎不变——前移使其落入稳定前缀，
+/// 任务进度更新不会作废词表的 Prompt 前缀缓存复用。
+#[test]
+fn lexicon_block_precedes_task_context() {
+    use common::enums::AssigneeType;
+
+    let agent = make_simple_agent();
+    let lexicon = make_lexicon_summary();
+    let task = crate::models::task::Task::new(
+        "task-001".to_string(),
+        "实现导出功能".to_string(),
+        "导出为 CSV".to_string(),
+        2,
+        vec![],
+        None,
+        None,
+        None,
+        vec!["task-000".to_string()],
+        "test-user".to_string(),
+        AssigneeType::Agent,
+        "agent-test-001".to_string(),
+        None,
+        "test-user".to_string(),
+    );
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.system_prompt(&agent);
+    builder.ontology_lexicon(&lexicon);
+    builder.task_context(&task);
+    let prompt = builder.build();
+
+    let lexicon_idx = find_block(&prompt, "【本体词表】").expect("应渲染【本体词表】区块");
+    let task_idx = find_block(&prompt, "【任务上下文】").expect("应渲染【任务上下文】区块");
+    assert!(
+        lexicon_idx < task_idx,
+        "词表区块应先于任务上下文渲染（稳定前缀缓存）"
+    );
+    // 任务上下文带出前置依赖 ID + 可行动提示（Agent 自助查询前置任务状态与产物）
+    assert!(prompt.contains("- 前置依赖任务: task-000"));
+    assert!(prompt.contains("get_task(前置任务ID, with_artifacts=true)"));
+}

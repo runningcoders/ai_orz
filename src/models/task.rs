@@ -216,7 +216,9 @@ impl Task {
     /// 生成 Prompt 用的摘要字符串
     ///
     /// 用于在 Prompt 中注入任务上下文，让 Agent 感知当前消息所属的具体任务。
-    /// 仅包含关键字段，避免冗长。
+    /// 仅包含关键字段，避免冗长；前置依赖任务 ID 一并带出，
+    /// Agent 可据此自行 `get_task(前置ID, with_artifacts=true)` 查询前置任务状态与产物
+    /// （DAG 协作中前置任务的执行结果/方案文档常记录在产物里，需阅读后方可接力）。
     pub fn to_prompt_summary(&self) -> String {
         let mut s = String::from("【任务上下文】\n");
         s.push_str(&format!("- 任务ID: {}\n", self.po.id));
@@ -230,6 +232,11 @@ impl Task {
             self.po.assignee_type, self.po.assignee_id
         ));
         s.push_str(&format!("- 任务进度: {}%\n", self.po.progress));
+        let deps = self.po.get_dependencies();
+        if !deps.is_empty() {
+            s.push_str(&format!("- 前置依赖任务: {}\n", deps.join(", ")));
+            s.push_str("  （前置任务的执行结果与产出物常记录在产物里；需要时可用 get_task(前置任务ID, with_artifacts=true) 查看其状态、执行结果与产物清单，并阅读所依赖的方案/实现产物）\n");
+        }
         s
     }
 }
@@ -352,5 +359,46 @@ impl Vectorizable for TaskPo {
             tags: Some(self.tags.clone()),
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_task(dependencies: Vec<String>) -> Task {
+        Task::new(
+            "task-main".to_string(),
+            "实现导出功能".to_string(),
+            "导出为 CSV".to_string(),
+            2,
+            vec![],
+            None,
+            None,
+            None,
+            dependencies,
+            "root-user".to_string(),
+            AssigneeType::Agent,
+            "agent-1".to_string(),
+            Some("proj-1".to_string()),
+            "creator".to_string(),
+        )
+    }
+
+    #[test]
+    fn test_prompt_summary_with_dependencies_lists_ids_and_hint() {
+        let task = make_task(vec!["task-pre-a".to_string(), "task-pre-b".to_string()]);
+        let summary = task.to_prompt_summary();
+        assert!(summary.contains("- 前置依赖任务: task-pre-a, task-pre-b"));
+        assert!(summary.contains("get_task(前置任务ID, with_artifacts=true)"));
+        assert!(summary.contains("产物清单"));
+    }
+
+    #[test]
+    fn test_prompt_summary_without_dependencies_omits_line() {
+        let task = make_task(vec![]);
+        let summary = task.to_prompt_summary();
+        assert!(!summary.contains("前置依赖任务"));
+        assert!(!summary.contains("with_artifacts"));
     }
 }

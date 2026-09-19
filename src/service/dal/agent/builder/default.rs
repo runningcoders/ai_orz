@@ -6,12 +6,13 @@
 //! 1. 【Agent 人设】        ← 最稳定
 //! 2. 【神经技能】          ← tags 含 "neural"，所有 Agent 必加载
 //! 3. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
-//! 4. 【用户画像】          ← 随用户变化，对话中相对稳定
-//! 5. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
-//! 6. 【本体词表】          ← 记忆图谱用词约定（词表数据注入时拼装）
-//! 7. 【历史对话】          ← 随对话增长
-//! 8. 【工具失败警告】      ← 实时变化
-//! 9. 【trace_id + 当前消息】← 每次变化
+//! 4. 【本体词表】          ← 记忆图谱用词约定，跨会话最稳定（置于易变区块前保前缀缓存）
+//! 5. 【用户画像】          ← 随用户变化，对话中相对稳定
+//! 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
+//! 7. 【工作空间与路径约定】 ← 静态路径配置
+//! 8. 【历史对话】          ← 随对话增长
+//! 9. 【工具失败警告】      ← 实时变化
+//! 10. 【trace_id + 当前消息】← 每次变化
 //!
 //! 所有区块拼装方法（`build_skills_sections` / `build_common_context_sections` /
 //! `render_intent_analysis_section` / `build_final_response_guidance` /
@@ -41,12 +42,13 @@ const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
 /// 1. 【Agent 人设】        ← 最稳定
 /// 2. 【神经技能】          ← tags 含 "neural"，所有 Agent 必加载
 /// 3. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
-/// 4. 【用户画像】          ← 随用户变化，对话中相对稳定
-/// 5. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
-/// 6. 【本体词表】          ← 记忆图谱用词约定（词表数据注入时拼装）
-/// 7. 【历史对话】          ← 随对话增长
-/// 8. 【工具失败警告】      ← 实时变化
-/// 9. 【trace_id + 当前消息】← 每次变化
+/// 4. 【本体词表】          ← 记忆图谱用词约定，跨会话最稳定（置于易变区块前保前缀缓存）
+/// 5. 【用户画像】          ← 随用户变化，对话中相对稳定
+/// 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
+/// 7. 【工作空间与路径约定】 ← 静态路径配置
+/// 8. 【历史对话】          ← 随对话增长
+/// 9. 【工具失败警告】      ← 实时变化
+/// 10. 【trace_id + 当前消息】← 每次变化
 ///
 /// match_keys = agent.roles ∪ agent.installed_tags
 ///
@@ -54,7 +56,8 @@ const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
 /// - 工具列表（name/description/parameters）→ OpenAI tools API 字段（协议层）
 /// - Prompt 文本层不再包含任何工具描述（工具调用对模型透明，由 awakening 层根据 control_mode 分发）
 ///
-/// build_sleep_prompt() 与 build() 对称，复用 1-6 区块（跳过 tool_failures 和 current_message），
+/// build_sleep_prompt() 与 build() 对称，复用 1-7 区块（人设 + 技能 + 词表 + 画像 + 项目/任务 + 工作空间；
+/// 不含【历史对话】、工具失败警告与当前消息），
 /// 加上沉淀约束章节 + 待沉淀记忆摘要，用于 sleep_and_settle 场景。
 #[derive(Debug, Clone, Default)]
 pub struct DefaultPromptBuilder {
@@ -380,14 +383,19 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result
     }
 
-    /// 构建通用上下文区块：用户画像 + 项目上下文 + 任务上下文 + 本体词表
+    /// 构建通用上下文区块：本体词表 + 用户画像 + 项目上下文 + 任务上下文
     ///
     /// 这些字段都是"有值即拼装"，唤醒和沉睡场景逻辑一致：
+    /// - ontology_lexicon：记忆图谱用词约定（design §5.4，三场景共用一处挂载）。
+    ///   置于区块最前：词表跨会话几乎不变，而任务上下文每轮变化，
+    ///   前移使其落入稳定前缀，任务进度更新不会作废词表的前缀缓存复用
     /// - user_profile：认知是具身的，Agent 需知道"自己是谁"
     /// - project_context / task_context：场景化上下文，沉淀出的经验自带场景标签
-    /// - ontology_lexicon：记忆图谱用词约定（design §5.4，三场景共用一处挂载）
     fn build_common_context_sections(&self) -> String {
         let mut s = String::new();
+        // 本体词表（记忆图谱用词约定）：有词表数据即拼装，awaken / settle / intent_analyze 三场景共用；
+        // 置于最前以保 Prompt 前缀缓存（任务上下文每轮变动不影响词表命中）
+        s.push_str(&Self::build_lexicon_section(self.ontology_lexicon.as_ref()));
         if let Some(profile) = &self.user_profile {
             s.push_str("【用户画像】\n");
             s.push_str(profile);
@@ -439,8 +447,6 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             s.push_str("- 不要将业务产物写入 workspace_user_home 下的配置子目录（.config/、.ssh/、.lark-cli/ 等）\n");
             s.push('\n');
         }
-        // 本体词表（记忆图谱用词约定）：有词表数据即拼装，awaken / settle / intent_analyze 三场景共用
-        s.push_str(&Self::build_lexicon_section(self.ontology_lexicon.as_ref()));
         s
     }
 
@@ -458,11 +464,11 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-5. 技能区块（神经技能 + 必加载技能；调用方 analyze_input_intent 会通过
+        // 2-3. 技能区块（神经技能 + 必加载技能；调用方 analyze_input_intent 会通过
         //    scene=IntentAnalyze 的工具白名单过滤，保证 Prompt 中无执行类技能描述）
         result.push_str(&self.build_skills_sections());
 
-        // 6-7. 通用上下文区块（用户画像 + 项目 + 任务，有值即拼装）
+        // 4-7. 通用上下文区块（词表 + 画像 + 项目 + 任务 + 工作空间，有值即拼装）
         result.push_str(&self.build_common_context_sections());
 
         // 8. 历史对话记忆（最近 N 条）
@@ -989,11 +995,11 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-5. 技能区块（神经技能/必加载技能）
+        // 2-3. 技能区块（神经技能/必加载技能）
         // 工具列表和调用规范都不在 Prompt 中（工具通过 API 协议层传递，调用对模型透明）
         result.push_str(&self.build_skills_sections());
 
-        // 6-7. 通用上下文区块（用户画像 + 项目上下文 + 任务上下文，有值即拼装）
+        // 4-7. 通用上下文区块（词表 + 画像 + 项目上下文 + 任务上下文 + 工作空间，有值即拼装）
         result.push_str(&self.build_common_context_sections());
 
         // 8. 历史对话记忆
@@ -1049,10 +1055,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-5. 技能区块（sleep_and_settle 调用前已过滤只保留记忆相关）
+        // 2-3. 技能区块（sleep_and_settle 调用前已过滤只保留记忆相关）
         result.push_str(&self.build_skills_sections());
 
-        // 6-7. 通用上下文区块（用户画像 + 项目上下文 + 任务上下文）
+        // 4-7. 通用上下文区块（词表 + 画像 + 项目上下文 + 任务上下文 + 工作空间）
         // 认知是具身的 → 保留 user_profile
         // 场景化沉淀 → 保留 project/task_context，沉淀出的经验自带场景标签
         result.push_str(&self.build_common_context_sections());
@@ -1154,10 +1160,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-5. 技能区块（Summary 场景已过滤，只保留 neural/memory/messaging/project_management）
+        // 2-3. 技能区块（Summary 场景已过滤，只保留 neural/memory/messaging/project_management）
         result.push_str(&self.build_skills_sections());
 
-        // 6-7. 通用上下文区块（保留 project/task_context 帮助 Agent 理解任务背景）
+        // 4-7. 通用上下文区块（保留 project/task_context 帮助 Agent 理解任务背景）
         result.push_str(&self.build_common_context_sections());
 
         // 8. 历史对话记忆

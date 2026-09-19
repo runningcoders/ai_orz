@@ -213,6 +213,7 @@ graph LR
 
 **启动前强制清单**：
 - [ ] `get_task` / `list_project_tasks` 校验 `dependencies` 中**所有前置任务均 Completed**；任何一个未完成 → **等待**，`send_task_assignment_message` 向 Owner 报告阻塞原因，绝不强行启动
+- [ ] **有前置任务时必读前置产物**：`get_task(前置ID, with_artifacts=true)` 查看其 execution_result 与产物清单 → 文本产物用 `get_artifact_content` 读内容、文件类产物按存储路径 `fs_read`；前置的方案文档 / 技术实现是本任务的输入，跳过这步容易重复造轮子或与前置约定对不上
 - [ ] 完整读取 task.description / tags / due_at，理解需求边界
 - [ ] `update_task(execution_plan=...)` 写入执行计划 → `update_task_status(InProgress)` + `update_task_progress(progress=10)` 启动
 
