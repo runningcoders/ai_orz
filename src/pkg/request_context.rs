@@ -62,6 +62,11 @@ pub struct RequestContext {
     pub model_name: Option<String>,
 
     /// 当前工具调用 ID（可选，ToolCallDao::execute 单点注入/业务指定幂等键）
+    ///
+    /// 【归属】这是**单次工具执行**的标识，不是链路标识：**不随 [`ContextCarrier`] 传播**。
+    /// 若随事件流转，下游消费者与其唤醒的 Agent 会整体继承生产者那一次的 id，
+    /// 造成「一条链路上所有工具调用共用一个 call_id」（同时也把 DAO 的业务幂等分支
+    /// 从「业务显式指定」误开成「链路继承」）。
     #[log_field]
     pub tool_call_id: Option<String>,
 
@@ -604,6 +609,7 @@ impl RequestContext {
     ///
     /// 仅抽取可序列化、可用于链路串联的关键标识字段（见 [`ContextCarrier`]）。
     /// storage 等基础设施不可序列化，不携带；消费侧还原时会用全局 storage 兜底。
+    /// **单次调用级字段（如 `tool_call_id`）不在其中**——理由见 [`ContextCarrier`] 的红线说明。
     pub fn to_carrier(&self) -> ContextCarrier {
         ContextCarrier::from_context(self)
     }
@@ -619,6 +625,12 @@ pub const AOP_CONTEXT_CARRIER_KEY: &str = "context_carrier";
 /// 作用：在生产者→消费者边界，把主 context 中“可序列化、可传输”的关键标识字段
 /// 抽出来随事件一起流转，消费侧据此重建出与生产者同源的 [`RequestContext`]，
 /// 从而把整条链路（log_id 等）串联起来排查问题。
+///
+/// 【红线】只允许放「链路级」字段——即同一条链路内恒定不变的标识
+/// （log_id、归属组织/用户/Agent/项目/任务、调用方类型、模型配置）。
+/// **禁止放「单次调用级」字段**：这类字段每次业务动作都要换新值，一旦随 carrier 流转，
+/// 下游消费者与其唤醒出来的 Agent 会整体继承生产者那一次的值，且此后不断被再传播，
+/// 永远换不掉。典型反面案例是 `tool_call_id`（见 [`RequestContext`] 同名字段的说明）。
 ///
 /// 【扩展点】后续要新增可传递字段，只需：
 /// 1. 在此结构体增加字段；
@@ -651,8 +663,6 @@ pub struct ContextCarrier {
     pub model_provider_id: Option<String>,
     /// 当前 Model 名称
     pub model_name: Option<String>,
-    /// 当前工具调用 ID
-    pub tool_call_id: Option<String>,
 }
 
 impl ContextCarrier {
@@ -671,7 +681,6 @@ impl ContextCarrier {
             project_id: ctx.project_id.clone(),
             model_provider_id: ctx.model_provider_id.clone(),
             model_name: ctx.model_name.clone(),
-            tool_call_id: ctx.tool_call_id.clone(),
         }
     }
 
@@ -697,7 +706,6 @@ impl ContextCarrier {
             .try_project_id(self.project_id)
             .try_model_provider_id(self.model_provider_id)
             .try_model_name(self.model_name)
-            .try_tool_call_id(self.tool_call_id)
             .build()
     }
 }
@@ -866,6 +874,35 @@ mod caller_org_tests {
 
         let ctx_empty = RequestContext::new_system();
         assert_eq!(ctx_empty.caller_organization_id(), None);
+    }
+
+    /// carrier 只承载「链路级」字段：`log_id` 往返保持，`tool_call_id` **不得**被传播。
+    ///
+    /// 回归护栏：`tool_call_id` 若随事件流转，下游消费者与其唤醒的 Agent 会继承生产者
+    /// 那一次的 id，表现为「一条链路上所有工具调用共用一个 call_id」——工具调用记录页
+    /// 会出现多条记录跳同一条详情、列表展开串味，且 DAO 的业务幂等分支被误开。
+    #[tokio::test]
+    async fn test_carrier_does_not_propagate_tool_call_id() {
+        crate::pkg::storage::test_support::init_for_test().await;
+        let ctx = RequestContext::builder()
+            .log_id("log-chain-1")
+            .tool_call_id("call-per-execution-1")
+            .build();
+        assert_eq!(
+            ctx.tool_call_id(),
+            Some(&"call-per-execution-1".to_string())
+        );
+
+        let json = serde_json::to_value(ctx.to_carrier()).expect("carrier serialize");
+        let event = serde_json::json!({ AOP_CONTEXT_CARRIER_KEY: json });
+        let restored = ContextCarrier::from_json(&event)
+            .expect("carrier present")
+            .into_context();
+
+        // 链路级字段照常串联
+        assert_eq!(restored.log_id, "log-chain-1");
+        // 单次调用级字段不得被继承（继承 = 下游再也换不掉这个 call_id）
+        assert_eq!(restored.tool_call_id(), None);
     }
 
     /// R3：carrier 往返保持调用方组织字段（AOP 事件链路不丢）
