@@ -18,6 +18,7 @@ pub mod list;
 pub mod load;
 pub mod save;
 pub mod sync_preset_agents;
+pub mod sync_preset_ontology;
 pub mod sync_preset_skills;
 
 pub use apply_default::apply_default_handler;
@@ -31,6 +32,8 @@ pub use load::load_seed_handler;
 pub use save::save_seed_handler;
 pub use sync_preset_agents::preview_preset_agents_handler;
 pub use sync_preset_agents::sync_preset_agents_handler;
+pub use sync_preset_ontology::preview_preset_ontology_handler;
+pub use sync_preset_ontology::sync_preset_ontology_handler;
 pub use sync_preset_skills::preview_preset_skills_handler;
 pub use sync_preset_skills::sync_preset_skills_handler;
 
@@ -563,6 +566,13 @@ pub async fn assemble_snapshot_from_db_with_progress(
         });
     }
 
+    // 6. 本体词表（全局共享资产，不依赖组织；仅导出 Active 行）
+    progress(6, "正在导出本体词表");
+    let ontology = hr::domain()
+        .ontology_domain()
+        .export_lexicon(ctx.clone())
+        .await?;
+
     Ok(SeedSnapshot {
         version: SeedSnapshot::CURRENT_VERSION.to_string(),
         generated_at: common::constants::utils::current_timestamp_ms(),
@@ -573,6 +583,7 @@ pub async fn assemble_snapshot_from_db_with_progress(
         model_providers: provider_defs,
         agents: agent_defs,
         skills: skill_defs,
+        ontology,
     })
 }
 
@@ -597,7 +608,7 @@ pub async fn apply_snapshot_to_db(
 /// 带进度回调的 `apply_snapshot_to_db`
 ///
 /// `progress(step, message)` 在各导入阶段被调用（1-based step）。
-/// DryRun 模式只触发 step 1；写入模式下 step 1-4 分别对应用户/Provider/Agent/Skill。
+/// DryRun 模式只触发 step 1；写入模式下 step 1-5 分别对应用户/Provider/Agent/Skill/词表注入。
 pub async fn apply_snapshot_to_db_with_progress(
     ctx: RequestContext,
     snapshot: &SeedSnapshot,
@@ -627,18 +638,28 @@ pub async fn apply_snapshot_to_db_with_progress(
                     model_providers: vec![],
                     agents: vec![],
                     skills: vec![],
+                    // 词表是全局资产不随组织存在性变化：fallback 仍拉当前 DB 词表，
+                    // 避免把已存在的词表误判为 New；导出异常时降级为空词表
+                    ontology: hr::domain()
+                        .ontology_domain()
+                        .export_lexicon(ctx.clone())
+                        .await
+                        .unwrap_or_default(),
                 },
             };
         let diff = crate::service::domain::system::seed::diff::diff_snapshots(&current, snapshot);
         // DiffEntry<T> 的 T 因实体类型而异，无法直接 chain；分别统计后求和
+        // （词表条目无独立 ID，整体作为单一实体参与计数）
         let created = count_new(&diff.users)
             + count_new(&diff.model_providers)
             + count_new(&diff.agents)
-            + count_new(&diff.skills);
+            + count_new(&diff.skills)
+            + usize::from(matches!(diff.ontology, Some(DiffEntry::New { .. })));
         let updated = count_updated(&diff.users)
             + count_updated(&diff.model_providers)
             + count_updated(&diff.agents)
-            + count_updated(&diff.skills);
+            + count_updated(&diff.skills)
+            + usize::from(matches!(diff.ontology, Some(DiffEntry::Updated { .. })));
         return Ok(common::api::seed::LoadSeedResponse {
             created,
             updated,
@@ -880,6 +901,17 @@ pub async fn apply_snapshot_to_db_with_progress(
     created += skill_result.created;
     updated += skill_result.updated;
     skipped += skill_result.skipped;
+
+    // 9. 注入本体词表（仅补缺，跳过计 skipped；词表为空（老快照）时三段循环零执行）
+    progress(5, "正在注入本体词表");
+    let lexicon_report = hr::domain()
+        .ontology_domain()
+        .apply_default_lexicon(ctx.clone(), &snapshot.ontology)
+        .await?;
+    created += lexicon_report.inserted_classes.len()
+        + lexicon_report.inserted_relation_types.len()
+        + lexicon_report.inserted_synonyms;
+    skipped += lexicon_report.skipped;
 
     Ok(common::api::seed::LoadSeedResponse {
         created,

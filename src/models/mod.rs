@@ -12,6 +12,7 @@ pub mod memory;
 pub mod message;
 pub mod message_channel;
 pub mod model_provider;
+pub mod ontology;
 pub mod organization;
 pub mod organization_link;
 pub mod organization_pairing_code;

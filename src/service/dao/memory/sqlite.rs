@@ -14,12 +14,17 @@ use crate::models::memory::{
 use crate::pkg::RequestContext;
 use crate::pkg::paths;
 use crate::pkg::storage::escape_fts5_keyword;
-use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
+use crate::service::dao::memory::{
+    DriftClassDetailRow, DriftRelationDetailRow, MemoryDao, MemoryQuery, MemorySearch,
+    TermFrequencyRow,
+};
 use async_trait::async_trait;
+use common::api::{PagedResult, PaginationParams};
 use common::enums::{KnowledgeRelationStatus, MemoryStatus, MemoryType};
 use common::error::{Result, bail_err};
+use common::ontology::normalize;
 use serde_json;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
@@ -27,6 +32,10 @@ use std::sync::{Arc, OnceLock};
 /// `list_relations_batch` 每个节点 ID 占 2 个绑定（source + target 两个 IN 列表），
 /// 按 400 个节点分块（800 绑定）留出安全余量；ids IN 单绑定场景同样复用此常量。
 pub const IN_CLAUSE_CHUNK: usize = 400;
+
+/// 词频聚合返回行数的防御上限：正常本体词表远小于该值，
+/// 防御脏数据（海量不同 node_type / relation_type）导致 dashboard 全量聚合行数爆炸
+pub const MAX_WORD_FREQ_ROWS: i64 = 1000;
 
 /// 短期记忆搜索行（PO + fts_rank）
 #[derive(FromRow)]
@@ -213,6 +222,8 @@ WHERE id IN ("#,
         relation: &KnowledgeNodeRelationPo,
     ) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
+        // 匹配键同样归一：与 INSERT 侧写入的规范形同口径，才能命中旧边
+        let relation_type = normalize(&relation.relation_type);
         sqlx::query!(
             r#"
 UPDATE knowledge_node_relation
@@ -222,7 +233,7 @@ WHERE source_node_id = ? AND target_node_id = ? AND relation_type = ? AND "statu
             now,
             relation.source_node_id,
             relation.target_node_id,
-            relation.relation_type,
+            relation_type,
         )
         .execute(tx)
         .await?;
@@ -617,7 +628,9 @@ LIMIT ?
         let pool = self.pool(ctx);
 
         // 先试试更新，如果不存在就插入
-
+        // 写入侧单点归一：node_type 落库前转为规范形（trim + 小写），
+        // 读取侧直接裸列比对，无需 SQL 内再归一
+        let node_type = normalize(&node.node_type);
         let status_i32 = node.status as i32;
         let is_published_i64 = node.is_published as i64;
         let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
@@ -637,7 +650,7 @@ WHERE id = ?
             node.agent_id,
             node.node_name,
             node.node_description,
-            node.node_type,
+            node_type,
             node.summary,
             node.tags,
             status_i32,
@@ -666,7 +679,7 @@ INSERT INTO long_term_knowledge_node (
                 node.agent_id,
                 node.node_name,
                 node.node_description,
-                node.node_type,
+                node_type,
                 node.summary,
                 node.tags,
                 status_i32,
@@ -687,6 +700,8 @@ INSERT INTO long_term_knowledge_node (
         node: &LongTermKnowledgeNodePo,
     ) -> Result<()> {
         let pool = self.pool(ctx);
+        // 写入侧单点归一（与 save_knowledge_node 同口径）
+        let node_type = normalize(&node.node_type);
         let status_i32 = node.status as i32;
         let is_published_i64 = node.is_published as i64;
         let result = sqlx::query!(
@@ -706,7 +721,7 @@ WHERE id = ?
             node.agent_id,
             node.node_name,
             node.node_description,
-            node.node_type,
+            node_type,
             node.summary,
             node.tags,
             status_i32,
@@ -736,6 +751,8 @@ WHERE id = ?
         let mut tx = pool.begin().await?;
 
         for node in nodes {
+            // 写入侧单点归一（与 save_knowledge_node 同口径）
+            let node_type = normalize(&node.node_type);
             let status_i32 = node.status as i32;
             let is_published_i64 = node.is_published as i64;
             let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
@@ -755,7 +772,7 @@ WHERE id = ?
                 node.agent_id,
                 node.node_name,
                 node.node_description,
-                node.node_type,
+                node_type,
                 node.summary,
                 node.tags,
                 status_i32,
@@ -784,7 +801,7 @@ INSERT INTO long_term_knowledge_node (
                     node.agent_id,
                     node.node_name,
                     node.node_description,
-                    node.node_type,
+                    node_type,
                     node.summary,
                     node.tags,
                     status_i32,
@@ -1157,8 +1174,9 @@ ORDER BY created_at ASC
         // 新版本插入前必须先让位；两步同事务，保证不出现"零生效边"的真空期
         Self::supersede_active_edge(&mut tx, relation).await?;
 
-        // 与节点写入同惯例：枚举先落成 i32 再绑定
+        // 写入侧单点归一 + 与节点写入同惯例：枚举先落成 i32 再绑定
         let status_i32 = relation.status as i32;
+        let relation_type = normalize(&relation.relation_type);
         sqlx::query!(
             r#"
 INSERT INTO knowledge_node_relation (
@@ -1168,8 +1186,8 @@ INSERT INTO knowledge_node_relation (
             relation.id,
             relation.source_node_id,
             relation.target_node_id,
-            // 原文直落：不经过枚举，词表外的标注不会丢
-            relation.relation_type,
+            // 归一后落库：词表外的标注不会丢，且与读取侧裸列比对同口径
+            relation_type,
             relation.weight,
             status_i32,
             relation.created_at,
@@ -1195,6 +1213,7 @@ INSERT INTO knowledge_node_relation (
             Self::supersede_active_edge(&mut tx, relation).await?;
 
             let status_i32 = relation.status as i32;
+            let relation_type = normalize(&relation.relation_type);
             sqlx::query!(
                 r#"
 INSERT INTO knowledge_node_relation (
@@ -1204,7 +1223,7 @@ INSERT INTO knowledge_node_relation (
                 relation.id,
                 relation.source_node_id,
                 relation.target_node_id,
-                relation.relation_type,
+                relation_type,
                 relation.weight,
                 status_i32,
                 relation.created_at,
@@ -1229,6 +1248,7 @@ INSERT INTO knowledge_node_relation (
         Self::supersede_active_edge(&mut tx, relation).await?;
 
         let status_i32 = relation.status as i32;
+        let relation_type = normalize(&relation.relation_type);
         sqlx::query!(
             r#"
 INSERT INTO knowledge_node_relation (
@@ -1245,7 +1265,7 @@ ON CONFLICT(id) DO UPDATE SET
             relation.id,
             relation.source_node_id,
             relation.target_node_id,
-            relation.relation_type,
+            relation_type,
             relation.weight,
             status_i32,
             relation.created_at,
@@ -1282,7 +1302,7 @@ ORDER BY created_at ASC
                 id: row.id,
                 source_node_id: row.source_node_id,
                 target_node_id: row.target_node_id,
-                // 关系类型原样带出：落库存的是原文，读取侧不做任何枚举归一
+                // 关系类型原样带出：落库存的已是写入侧归一后的规范形
                 relation_type: row.relation_type,
                 // SQLite REAL 映射为 f64，PO 统一用 f32（与 API DTO 的 f32 对齐）
                 weight: row.weight.map(|w| w as f32),
@@ -1502,5 +1522,200 @@ ORDER BY created_at ASC
         }
 
         Ok(result)
+    }
+
+    async fn word_freq_relations(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<Vec<TermFrequencyRow>> {
+        let pool = self.pool(ctx);
+        // 写入侧已在 DAO 单点归一（normalize），聚合直接走裸列，无需 SQL 内再归一；
+        // 关系表无 agent 列，agent_count 按 LEFT JOIN 源节点归属去重（孤儿边计 0）；
+        // agent 过滤同口径取源节点归属（None / 空串 = 全组织）
+        let mut builder = QueryBuilder::new(
+            r#"
+SELECT r.relation_type AS term,
+       COUNT(*) AS count,
+       COUNT(DISTINCT s.agent_id) AS agent_count
+FROM knowledge_node_relation r
+LEFT JOIN long_term_knowledge_node s ON s.id = r.source_node_id
+WHERE r."status" = 1"#,
+        );
+        if let Some(agent) = agent_id.as_deref().filter(|s| !s.is_empty()) {
+            builder.push(" AND s.agent_id = ");
+            builder.push_bind(agent.to_string());
+        }
+        builder
+            .push("\nGROUP BY r.relation_type\nORDER BY count DESC, r.relation_type ASC\nLIMIT ");
+        builder.push_bind(MAX_WORD_FREQ_ROWS);
+        let rows = builder
+            .build_query_as::<TermFrequencyRow>()
+            .fetch_all(&pool)
+            .await?;
+        Ok(rows)
+    }
+
+    async fn word_freq_nodes(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<Vec<TermFrequencyRow>> {
+        let pool = self.pool(ctx);
+        // 节点自带 agent_id，直接 DISTINCT 去重；agent 过滤（None / 空串 = 全组织）
+        let mut builder = QueryBuilder::new(
+            r#"
+SELECT node_type AS term,
+       COUNT(*) AS count,
+       COUNT(DISTINCT agent_id) AS agent_count
+FROM long_term_knowledge_node
+WHERE status != 0"#,
+        );
+        if let Some(agent) = agent_id.as_deref().filter(|s| !s.is_empty()) {
+            builder.push(" AND agent_id = ");
+            builder.push_bind(agent.to_string());
+        }
+        builder.push("\nGROUP BY node_type\nORDER BY count DESC, node_type ASC\nLIMIT ");
+        builder.push_bind(MAX_WORD_FREQ_ROWS);
+        let rows = builder
+            .build_query_as::<TermFrequencyRow>()
+            .fetch_all(&pool)
+            .await?;
+        Ok(rows)
+    }
+
+    async fn detail_relations_by_term(
+        &self,
+        ctx: RequestContext,
+        raw_term: &str,
+        agent_id: Option<String>,
+        pagination: PaginationParams,
+    ) -> Result<PagedResult<DriftRelationDetailRow>> {
+        let pool = self.pool(ctx);
+        // 参数入口归一（normalize）后与落库规范形裸列比对；COUNT 与 LIST 共用同一过滤构造
+        let total: i64 = {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT COUNT(*)
+FROM knowledge_node_relation r
+LEFT JOIN long_term_knowledge_node s ON s.id = r.source_node_id
+WHERE r."status" = 1"#,
+            );
+            push_drift_relation_filters(&mut builder, raw_term, agent_id.as_deref());
+            builder.build_query_scalar().fetch_one(&pool).await?
+        };
+        // SQLite 语义：负 LIMIT = 无上限（LIMIT -1 OFFSET n 合法，兼容单独 offset）
+        let limit_i64 = pagination.limit.map(|v| v as i64).unwrap_or(-1);
+        let offset_i64 = pagination.offset.unwrap_or(0) as i64;
+        let mut builder = QueryBuilder::new(
+            r#"SELECT r.id AS id,
+       COALESCE(s.agent_id, '') AS agent_id,
+       COALESCE(s.node_name, '') AS source_name,
+       COALESCE(t.node_name, '') AS target_name,
+       r.created_at AS created_at
+FROM knowledge_node_relation r
+LEFT JOIN long_term_knowledge_node s ON s.id = r.source_node_id
+LEFT JOIN long_term_knowledge_node t ON t.id = r.target_node_id
+WHERE r."status" = 1"#,
+        );
+        push_drift_relation_filters(&mut builder, raw_term, agent_id.as_deref());
+        builder.push(" ORDER BY r.created_at DESC, r.id DESC LIMIT ");
+        builder.push_bind(limit_i64);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset_i64);
+        let items: Vec<DriftRelationDetailRow> = builder.build_query_as().fetch_all(&pool).await?;
+        Ok(PagedResult {
+            items,
+            total: total as usize,
+        })
+    }
+
+    async fn detail_nodes_by_term(
+        &self,
+        ctx: RequestContext,
+        raw_term: &str,
+        agent_id: Option<String>,
+        pagination: PaginationParams,
+    ) -> Result<PagedResult<DriftClassDetailRow>> {
+        let pool = self.pool(ctx);
+        let total: i64 = {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT COUNT(*) FROM long_term_knowledge_node WHERE status != 0"#,
+            );
+            push_drift_node_filters(&mut builder, raw_term, agent_id.as_deref());
+            builder.build_query_scalar().fetch_one(&pool).await?
+        };
+        let limit_i64 = pagination.limit.map(|v| v as i64).unwrap_or(-1);
+        let offset_i64 = pagination.offset.unwrap_or(0) as i64;
+        let mut builder = QueryBuilder::new(
+            r#"SELECT id, agent_id, node_name AS name, created_at
+FROM long_term_knowledge_node
+WHERE status != 0"#,
+        );
+        push_drift_node_filters(&mut builder, raw_term, agent_id.as_deref());
+        builder.push(" ORDER BY updated_at DESC, id DESC LIMIT ");
+        builder.push_bind(limit_i64);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset_i64);
+        let items: Vec<DriftClassDetailRow> = builder.build_query_as().fetch_all(&pool).await?;
+        Ok(PagedResult {
+            items,
+            total: total as usize,
+        })
+    }
+
+    async fn publish_nodes_by_type(
+        &self,
+        ctx: RequestContext,
+        node_type_normalized: &str,
+    ) -> Result<u64> {
+        let pool = self.pool(ctx);
+        let now = chrono::Utc::now().timestamp();
+        // 入口兜底归一：无论上游传入何种形态，匹配的都是落库规范形
+        let node_type = normalize(node_type_normalized);
+        // 幂等置位：已置位（is_published = 1）或已遗忘（status = 0）的行不重复计数
+        let result = sqlx::query!(
+            r#"
+UPDATE long_term_knowledge_node
+SET is_published = 1, updated_at = ?
+WHERE node_type = ? AND is_published = 0 AND status != 0
+"#,
+            now,
+            node_type
+        )
+        .execute(&pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+}
+
+/// 关系下钻过滤条件（COUNT 与 LIST 共用）：归一化词匹配 + 可选源节点归属过滤
+///
+/// 参数在入口经 `common::ontology::normalize` 归一，与写入侧落库的规范形
+/// 直接裸列比对（DB 中只存规范形，无需 SQL 内再归一）。
+fn push_drift_relation_filters(
+    builder: &mut QueryBuilder<'_, Sqlite>,
+    raw_term: &str,
+    agent_id: Option<&str>,
+) {
+    builder.push(" AND r.relation_type = ");
+    builder.push_bind(normalize(raw_term));
+    // None / 空串 = 不过滤（历史调用方表达"全局视图"的方式）
+    if let Some(agent) = agent_id.filter(|s| !s.is_empty()) {
+        builder.push(" AND s.agent_id = ");
+        builder.push_bind(agent.to_string());
+    }
+}
+
+/// 节点下钻过滤条件（COUNT 与 LIST 共用）：归一化词匹配 + 可选 agent 过滤
+fn push_drift_node_filters(
+    builder: &mut QueryBuilder<'_, Sqlite>,
+    raw_term: &str,
+    agent_id: Option<&str>,
+) {
+    builder.push(" AND node_type = ");
+    builder.push_bind(normalize(raw_term));
+    if let Some(agent) = agent_id.filter(|s| !s.is_empty()) {
+        builder.push(" AND agent_id = ");
+        builder.push_bind(agent.to_string());
     }
 }

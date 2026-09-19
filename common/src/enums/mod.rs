@@ -11,6 +11,7 @@ pub mod mcp_server;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
+pub mod ontology;
 pub mod organization;
 pub mod project;
 pub mod provider;
@@ -34,6 +35,7 @@ pub use memory::{
 };
 pub use message::{MessageRole, MessageStatus, MessageType};
 pub use message_channel::{ChannelStatus, ChannelType};
+pub use ontology::OntologyStatus;
 pub use organization::{
     FederationContractKind, FederationContractState, OrganizationLinkStatus, OrganizationScope,
     OrganizationStatus,

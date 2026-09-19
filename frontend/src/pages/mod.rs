@@ -30,6 +30,7 @@ use crate::pages::hr::agent_detail::HrAgentDetail;
 use crate::pages::hr::agents::HrAgents;
 use crate::pages::hr::knowledge_graph::HrKnowledgeGraph;
 use crate::pages::hr::memory_search::HrMemorySearch;
+use crate::pages::hr::ontology_panel::HrOntologyLexicon;
 use crate::pages::hr::skill_detail::HrSkillDetail;
 use crate::pages::hr::skills::HrSkills;
 use crate::pages::message::chat::MessageChat;
@@ -94,6 +95,8 @@ pub enum Route {
     HrMemorySearch {},
     #[route("/hr/knowledge-graph")]
     HrKnowledgeGraph {},
+    #[route("/hr/ontology-lexicon")]
+    HrOntologyLexicon {},
 
     // Finance 模块
     #[route("/finance/model-providers")]

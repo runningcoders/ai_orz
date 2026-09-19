@@ -4,6 +4,7 @@
 //! 敏感字段（password_hash / api_key）永远不导出，使用 PENDING_INPUT 占位符
 
 use common::api::OrganizationConfig;
+use common::ontology::PresetOntologyLexicon;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +36,12 @@ pub struct SeedSnapshot {
     pub agents: Vec<AgentDef>,
     /// Skill 列表
     pub skills: Vec<SkillDef>,
+    /// 预置本体词表（classes / relation_types / synonym_mappings）
+    ///
+    /// 词表是全局共享资产（无组织维度），随快照分发/迁移；
+    /// `#[serde(default)]` 兼容不带词表段的老快照（空词表 = 注入阶段跳过）。
+    #[serde(default)]
+    pub ontology: PresetOntologyLexicon,
 }
 
 impl SeedSnapshot {
@@ -175,6 +182,8 @@ pub struct SeedDiff {
     pub model_providers: Vec<DiffEntry<ModelProviderDef>>,
     pub agents: Vec<DiffEntry<AgentDef>>,
     pub skills: Vec<DiffEntry<SkillDef>>,
+    /// 本体词表 diff（词表无独立 ID，整体作为单一实体比对；None = 两侧词表均为空）
+    pub ontology: Option<DiffEntry<PresetOntologyLexicon>>,
 }
 
 /// Diff 元信息

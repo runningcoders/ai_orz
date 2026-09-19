@@ -262,5 +262,162 @@
         }
       ]
     }
-  ]
+  ],
+  "ontology": {
+    "classes": [
+      {
+        "term_key": "concept",
+        "display_name": "概念",
+        "description": "抽象语义实体：主题、知识点、理念等认知对象",
+        "required_fields": []
+      },
+      {
+        "term_key": "event",
+        "display_name": "事件",
+        "description": "发生在特定时间、具有因果链的客观事实",
+        "required_fields": []
+      },
+      {
+        "term_key": "preference",
+        "display_name": "偏好",
+        "description": "用户的倾向性表达：喜好、习惯与约束",
+        "required_fields": []
+      },
+      {
+        "term_key": "skill",
+        "display_name": "技能",
+        "description": "可执行的能力、方法或流程性知识",
+        "required_fields": []
+      }
+    ],
+    "relation_types": [
+      {
+        "term_key": "related",
+        "display_name": "相关",
+        "description": "通用语义关联，方向性弱",
+        "domain_classes": [],
+        "range_classes": [],
+        "weight_base": 1.0
+      },
+      {
+        "term_key": "contains",
+        "display_name": "包含",
+        "description": "头实体包含尾实体",
+        "domain_classes": ["concept"],
+        "range_classes": ["concept", "event"],
+        "weight_base": 1.5,
+        "inverse_key": "contained_by"
+      },
+      {
+        "term_key": "contained_by",
+        "display_name": "属于",
+        "description": "头实体隶属于尾实体，为 contains 的逆向",
+        "domain_classes": ["concept", "event"],
+        "range_classes": ["concept"],
+        "weight_base": 1.5,
+        "inverse_key": "contains"
+      },
+      {
+        "term_key": "depends",
+        "display_name": "依赖",
+        "description": "头实体的成立或运行依赖尾实体",
+        "domain_classes": ["skill"],
+        "range_classes": ["concept", "skill"],
+        "weight_base": 1.5,
+        "inverse_key": "depended_by"
+      },
+      {
+        "term_key": "depended_by",
+        "display_name": "被依赖",
+        "description": "头实体被尾实体依赖，为 depends 的逆向",
+        "domain_classes": ["concept", "skill"],
+        "range_classes": ["skill"],
+        "weight_base": 1.5,
+        "inverse_key": "depends"
+      },
+      {
+        "term_key": "prerequisite",
+        "display_name": "前置",
+        "description": "尾实体是头实体启动或掌握的前置条件",
+        "domain_classes": ["skill"],
+        "range_classes": ["skill"],
+        "weight_base": 2.0
+      },
+      {
+        "term_key": "followup",
+        "display_name": "后续",
+        "description": "头实体完成后的跟进动作或延伸方向",
+        "domain_classes": [],
+        "range_classes": [],
+        "weight_base": 1.0
+      },
+      {
+        "term_key": "similar",
+        "display_name": "相似",
+        "description": "头尾实体语义接近，可互为替代参考",
+        "domain_classes": [],
+        "range_classes": [],
+        "weight_base": 1.0
+      },
+      {
+        "term_key": "opposite",
+        "display_name": "相反",
+        "description": "头尾实体语义对立或互斥",
+        "domain_classes": [],
+        "range_classes": [],
+        "weight_base": 1.0
+      },
+      {
+        "term_key": "causes",
+        "display_name": "导致",
+        "description": "头实体引发尾实体的因果链",
+        "domain_classes": ["event"],
+        "range_classes": ["event"],
+        "weight_base": 1.5,
+        "inverse_key": "caused_by"
+      },
+      {
+        "term_key": "caused_by",
+        "display_name": "源于",
+        "description": "头实体由尾实体引发，为 causes 的逆向",
+        "domain_classes": ["event"],
+        "range_classes": ["event"],
+        "weight_base": 1.5,
+        "inverse_key": "causes"
+      },
+      {
+        "term_key": "instance_of",
+        "display_name": "实例",
+        "description": "头实体是尾实体的具体实例",
+        "domain_classes": ["concept"],
+        "range_classes": ["concept"],
+        "weight_base": 1.0
+      },
+      {
+        "term_key": "category_of",
+        "display_name": "分类",
+        "description": "头实体是尾实体的归类维度",
+        "domain_classes": ["concept"],
+        "range_classes": ["concept"],
+        "weight_base": 1.0
+      },
+      {
+        "term_key": "attribute_of",
+        "display_name": "属性",
+        "description": "头实体是尾实体的属性维度",
+        "domain_classes": ["concept"],
+        "range_classes": ["concept"],
+        "weight_base": 1.0
+      },
+      {
+        "term_key": "value_of",
+        "display_name": "取值",
+        "description": "头实体是尾实体某一属性的具体取值",
+        "domain_classes": ["concept"],
+        "range_classes": ["concept"],
+        "weight_base": 1.0
+      }
+    ],
+    "synonym_mappings": []
+  }
 }

@@ -53,6 +53,7 @@ pub mod message;
 pub mod message_channel;
 pub mod message_push;
 pub mod model_provider;
+pub mod ontology;
 pub mod organization;
 pub mod project;
 pub mod skill;
@@ -70,6 +71,8 @@ pub fn init_all() {
     cron_trigger::init();
     log_query::init();
     memory::init();
+    // ontology dal 组合 ontology dao + memory dao（观察者侧组合，对被观察者零感知）
+    ontology::init();
     message::init();
     message_channel::init();
     model_provider::init();

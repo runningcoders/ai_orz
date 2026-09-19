@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO ontology_synonym_mappings (id, raw_term, target_kind, target_key, created_at) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "26e451dd69f6f2ecb10fc73c805b2a3f8e56669bb481ccf7d53560c2cfdafc15"
+}

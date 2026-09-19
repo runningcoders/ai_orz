@@ -9,6 +9,7 @@ pub mod federation_ws_outbound;
 pub mod lark_inbound;
 pub mod message;
 pub mod message_route_policy;
+pub mod ontology_certify_consumer;
 pub mod scheduler;
 pub mod task_event_consumer;
 pub mod think_round_stats_consumer;
@@ -80,6 +81,9 @@ pub async fn init() -> Result<()> {
         think_round_stats_consumer::ThinkRoundStatsConsumer::new(),
     ))?;
     aop::registry().register_consumer(Arc::new(task_event_consumer::TaskEventConsumer::new()))?;
+    aop::registry().register_consumer(Arc::new(
+        ontology_certify_consumer::OntologyCertifyConsumer::new(),
+    ))?;
     aop::registry().register_consumer(Arc::new(
         federation_directory::FederationDirectoryConsumer::new(),
     ))?;

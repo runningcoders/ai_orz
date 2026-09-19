@@ -17,6 +17,7 @@ use super::agent_awake::AgentAwakeStatTable;
 use super::default::DefaultStatTable;
 use super::erased::{ErasedBuffer, ErasedStatTable, ErasedWrapper};
 use super::model_call::ModelCallStatTable;
+use super::ontology_drift::OntologyDriftStatTable;
 use super::project_event::ProjectStatTable;
 use super::task_event::TaskStatTable;
 use super::tool_call::ToolCallStatTable;
@@ -186,6 +187,7 @@ impl Stats {
     /// - agent_awake_events: Agent 唤醒专用表
     /// - project_events: Project 业务事件专用表
     /// - task_events: Task 业务事件专用表
+    /// - ontology_drift_events: 本体漂移词元原文专用表
     pub fn initialize_default(&self) -> Result<()> {
         self.register_table(DefaultStatTable)?;
         self.register_table(ModelCallStatTable)?;
@@ -193,6 +195,7 @@ impl Stats {
         self.register_table(AgentAwakeStatTable)?;
         self.register_table(ProjectStatTable)?;
         self.register_table(TaskStatTable)?;
+        self.register_table(OntologyDriftStatTable)?;
         Ok(())
     }
 

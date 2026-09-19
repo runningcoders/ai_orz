@@ -4,6 +4,9 @@
 mod tests {
     use crate::service::domain::system::seed::defs::*;
     use crate::service::domain::system::seed::diff::*;
+    use common::ontology::{
+        PresetOntologyClass, PresetOntologyLexicon, PresetOntologyRelationType,
+    };
     use std::collections::{HashMap, HashSet};
 
     fn make_test_snapshot(name: &str) -> SeedSnapshot {
@@ -34,6 +37,30 @@ mod tests {
             model_providers: vec![],
             agents: vec![],
             skills: vec![],
+            // 空词表：diff_ontology 两侧均空返回 None，不影响既有 diff 计数断言
+            ontology: PresetOntologyLexicon::default(),
+        }
+    }
+
+    /// 构造最小词表（1 节点类 + 1 关系词），供 ontology diff 测试
+    fn make_test_lexicon() -> PresetOntologyLexicon {
+        PresetOntologyLexicon {
+            classes: vec![PresetOntologyClass {
+                term_key: "concept".to_string(),
+                display_name: "概念".to_string(),
+                description: String::new(),
+                required_fields: vec![],
+            }],
+            relation_types: vec![PresetOntologyRelationType {
+                term_key: "related".to_string(),
+                display_name: "相关".to_string(),
+                description: String::new(),
+                domain_classes: vec![],
+                range_classes: vec![],
+                weight_base: Some(1.0),
+                inverse_key: None,
+            }],
+            synonym_mappings: vec![],
         }
     }
 
@@ -446,5 +473,120 @@ mod tests {
         }"#;
         let skill: SkillDef = serde_json::from_str(json).unwrap();
         assert!(skill.files.is_empty());
+    }
+
+    // ===== 本体词表段（Task P3-1）=====
+
+    #[test]
+    fn test_diff_ontology_both_empty_produces_no_entry() {
+        // 两侧词表均为空（老快照互比）→ 不产生条目、不计数
+        let base = make_test_snapshot("name");
+        let target = base.clone();
+        let diff = diff_snapshots(&base, &target);
+        assert!(diff.ontology.is_none());
+        assert_eq!(diff.summary.same_count, 2); // 仅 org + user
+    }
+
+    #[test]
+    fn test_diff_ontology_detects_new_when_base_empty() {
+        // 老快照（无词表）对比新快照（有词表）→ 整体 New
+        let base = make_test_snapshot("name");
+        let mut target = base.clone();
+        target.ontology = make_test_lexicon();
+        let diff = diff_snapshots(&base, &target);
+        assert!(matches!(diff.ontology, Some(DiffEntry::New { .. })));
+        assert_eq!(diff.summary.new_count, 1);
+    }
+
+    #[test]
+    fn test_diff_ontology_detects_updated_on_field_change() {
+        let mut base = make_test_snapshot("name");
+        base.ontology = make_test_lexicon();
+        let mut target = base.clone();
+        target.ontology.classes[0].display_name = "改名".to_string();
+        let diff = diff_snapshots(&base, &target);
+        assert!(matches!(diff.ontology, Some(DiffEntry::Updated { .. })));
+        assert_eq!(diff.summary.updated_count, 1);
+    }
+
+    #[test]
+    fn test_diff_ontology_same_lexicons_counted_once() {
+        let mut snapshot = make_test_snapshot("name");
+        snapshot.ontology = make_test_lexicon();
+        let target = snapshot.clone();
+        let diff = diff_snapshots(&snapshot, &target);
+        assert!(matches!(diff.ontology, Some(DiffEntry::Same { .. })));
+        assert_eq!(diff.summary.same_count, 3); // org + user + ontology
+    }
+
+    #[test]
+    fn test_seed_snapshot_backward_compat_without_ontology() {
+        // 老快照无 ontology 段 → serde default 空词表，不得反序列化失败
+        let json = r#"{
+            "version": "1.0.0",
+            "generated_at": 1000,
+            "source_organization_id": "ORG1",
+            "organization": {"id": "ORG1", "name": "组织", "description": "", "base_url": "", "status": 1, "scope": 0},
+            "users": [], "model_providers": [], "agents": [], "skills": []
+        }"#;
+        let snapshot: SeedSnapshot = serde_json::from_str(json).unwrap();
+        assert!(snapshot.ontology.is_empty());
+    }
+
+    #[test]
+    fn test_default_snapshot_ontology_lexicon() {
+        let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+        let lex = &snapshot.ontology;
+        // 4 节点类 + 15 规范关系词 + 无预置同义映射
+        assert_eq!(lex.classes.len(), 4);
+        assert_eq!(lex.relation_types.len(), 15);
+        assert!(lex.synonym_mappings.is_empty());
+
+        let class_keys: Vec<&str> = lex.classes.iter().map(|c| c.term_key.as_str()).collect();
+        for key in ["concept", "event", "preference", "skill"] {
+            assert!(class_keys.contains(&key), "节点类 {} 缺失", key);
+        }
+
+        // 3 组 inverse 对偶必须双向互引且自洽
+        let by_key: HashMap<&str, &PresetOntologyRelationType> = lex
+            .relation_types
+            .iter()
+            .map(|r| (r.term_key.as_str(), r))
+            .collect();
+        assert_eq!(by_key.len(), 15);
+        for (fwd_key, rev_key) in [
+            ("contains", "contained_by"),
+            ("depends", "depended_by"),
+            ("causes", "caused_by"),
+        ] {
+            let fwd = by_key
+                .get(fwd_key)
+                .unwrap_or_else(|| panic!("关系词 {} 缺失", fwd_key));
+            let rev = by_key
+                .get(rev_key)
+                .unwrap_or_else(|| panic!("关系词 {} 缺失", rev_key));
+            assert_eq!(
+                fwd.inverse_key.as_deref(),
+                Some(rev_key),
+                "{} 的 inverse_key 应指向 {}",
+                fwd_key,
+                rev_key
+            );
+            assert_eq!(
+                rev.inverse_key.as_deref(),
+                Some(fwd_key),
+                "{} 的 inverse_key 应指向 {}",
+                rev_key,
+                fwd_key
+            );
+        }
+        // weight_base 必须存在（1.0/1.5/2.0 分级由图谱边权消费）
+        for r in &lex.relation_types {
+            assert!(
+                r.weight_base.is_some(),
+                "关系词 {} 缺 weight_base",
+                r.term_key
+            );
+        }
     }
 }

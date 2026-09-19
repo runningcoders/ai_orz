@@ -35,8 +35,8 @@ pub struct SeedLoadTask {
 }
 
 impl SeedLoadTask {
-    /// 导入阶段：用户(1) + Provider(2) + Agent(3) + Skill(4)
-    const TOTAL_STEPS: usize = 4;
+    /// 导入阶段：用户(1) + Provider(2) + Agent(3) + Skill(4) + 词表注入(5)
+    const TOTAL_STEPS: usize = 5;
 
     /// 创建新的导入任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: LoadSeedRequest) -> Self {

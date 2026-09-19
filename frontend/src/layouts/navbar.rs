@@ -124,6 +124,7 @@ pub fn Navbar() -> Element {
                             li { Link { to: Route::HrSkills {}, "技能库" } }
                             li { Link { to: Route::HrMemorySearch {}, "记忆搜索" } }
                             li { Link { to: Route::HrKnowledgeGraph {}, "知识图谱" } }
+                            li { Link { to: Route::HrOntologyLexicon {}, "本体词表" } }
                         }
                     }
 
@@ -282,6 +283,7 @@ pub fn Navbar() -> Element {
                         li { Link { to: Route::HrSkills {}, onclick: move |_| drawer_open.set(false), "技能库" } }
                         li { Link { to: Route::HrMemorySearch {}, onclick: move |_| drawer_open.set(false), "记忆搜索" } }
                         li { Link { to: Route::HrKnowledgeGraph {}, onclick: move |_| drawer_open.set(false), "知识图谱" } }
+                        li { Link { to: Route::HrOntologyLexicon {}, onclick: move |_| drawer_open.set(false), "本体词表" } }
 
                         li { class: "menu-title", span { "财务管理" } }
                         li { Link { to: Route::FinanceModelProviders {}, onclick: move |_| drawer_open.set(false), "模型提供商" } }

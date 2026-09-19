@@ -102,7 +102,22 @@ impl RuntimeMemory for RuntimeDomainImpl {
 
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
-        dal().create(ctx, params).await
+
+        // 写路径单管道（design 决策 #16）：原文落库成功后的唯一动作是 publish
+        // 词条事件——不打点、不解析、不调 domain/dal，认证与漂移记账全在消费侧
+        let written = extract_written_terms(&ctx, &params);
+        let results = dal().create(ctx.clone(), params).await?;
+
+        if let Some((agent_id, terms)) = written {
+            // publish 返回 ()：投递失败已在 registry 内 sys_error! 兜底落日志，无需调用侧处理
+            let _ = crate::pkg::aop::publish(
+                &ctx,
+                crate::models::events::MemoryTermsWrittenEvent::new(agent_id, terms),
+            )
+            .await;
+        }
+
+        Ok(results)
     }
 
     async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory> {
@@ -127,5 +142,161 @@ impl RuntimeMemory for RuntimeDomainImpl {
         dal()
             .traverse_knowledge_graph(ctx, seed_node_ids, max_depth, max_breadth, strategy)
             .await
+    }
+}
+
+/// 从写入参数提取本次落库的词条清单（写路径单管道，design 决策 #16）
+///
+/// - `CreateKnowledgeNode` → node_type（class 类词元；agent_id 取 node.agent_id）
+/// - `CreateRelations` → relation_type（relation 类词元）
+/// - 其余变体无词条 → None；原文 trim 后为空的词条跳过
+/// - agent_id 优先取数据自带事实（node.agent_id），回退请求上下文
+fn extract_written_terms(
+    ctx: &RequestContext,
+    params: &MemoryCreateParams,
+) -> Option<(Option<String>, Vec<crate::models::events::WrittenTerm>)> {
+    use common::ontology::TermKind;
+
+    let (node_agent, raw_terms): (Option<String>, Vec<(TermKind, String)>) = match params {
+        MemoryCreateParams::CreateKnowledgeNode { node, .. } => (
+            Some(node.agent_id.clone()).filter(|s| !s.is_empty()),
+            vec![(TermKind::Class, node.node_type.clone())],
+        ),
+        MemoryCreateParams::CreateRelations(relations) => (
+            None,
+            relations
+                .iter()
+                .map(|r| (TermKind::Relation, r.relation_type.clone()))
+                .collect(),
+        ),
+        _ => return None,
+    };
+
+    let terms: Vec<crate::models::events::WrittenTerm> = raw_terms
+        .into_iter()
+        .map(|(kind, raw)| crate::models::events::WrittenTerm {
+            kind,
+            raw_term: raw.trim().to_string(),
+        })
+        .filter(|t| !t.raw_term.is_empty())
+        .collect();
+
+    if terms.is_empty() {
+        return None;
+    }
+
+    let agent_id = node_agent
+        .or_else(|| ctx.agent_id().cloned())
+        .filter(|s| !s.is_empty());
+    Some((agent_id, terms))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::memory::{KnowledgeNodeRelationPo, LongTermKnowledgeNodePo};
+    use common::enums::MemoryStatus;
+    use common::ontology::TermKind;
+
+    fn node_po(agent_id: &str, node_type: &str) -> LongTermKnowledgeNodePo {
+        LongTermKnowledgeNodePo {
+            id: "kn_test".to_string(),
+            agent_id: agent_id.to_string(),
+            node_name: "测试节点".to_string(),
+            node_description: String::new(),
+            node_type: node_type.to_string(),
+            summary: String::new(),
+            tags: "[]".to_string(),
+            status: MemoryStatus::Active,
+            is_published: false,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn relation_po(relation_type: &str) -> KnowledgeNodeRelationPo {
+        KnowledgeNodeRelationPo {
+            id: "kr_test".to_string(),
+            source_node_id: "kn_a".to_string(),
+            target_node_id: "kn_b".to_string(),
+            relation_type: relation_type.to_string(),
+            weight: None,
+            status: common::enums::KnowledgeRelationStatus::Active,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    /// 知识节点 → class 词条，agent_id 取 node 自带事实
+    #[sqlx::test]
+    async fn extract_knowledge_node_yields_class_term(pool: sqlx::SqlitePool) {
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool)
+            .to_builder()
+            .agent_id("agent_node")
+            .build();
+        let params = MemoryCreateParams::CreateKnowledgeNode {
+            node: node_po("agent_from_node", "  preference  "),
+            references: vec![],
+        };
+
+        let (agent_id, terms) = extract_written_terms(&ctx, &params).expect("应有词条");
+
+        assert_eq!(agent_id.as_deref(), Some("agent_from_node"));
+        assert_eq!(terms.len(), 1);
+        assert!(matches!(terms[0].kind, TermKind::Class));
+        assert_eq!(terms[0].raw_term, "preference");
+    }
+
+    /// 关系批次 → relation 词条（保留原文空白归一），agent_id 回退 ctx
+    #[sqlx::test]
+    async fn extract_relations_yields_relation_terms_with_ctx_agent(pool: sqlx::SqlitePool) {
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool)
+            .to_builder()
+            .agent_id("agent_ctx")
+            .build();
+        let params = MemoryCreateParams::CreateRelations(vec![
+            relation_po("管理"),
+            relation_po("  implements  "),
+        ]);
+
+        let (agent_id, terms) = extract_written_terms(&ctx, &params).expect("应有词条");
+
+        assert_eq!(agent_id.as_deref(), Some("agent_ctx"));
+        assert_eq!(terms.len(), 2);
+        assert!(terms.iter().all(|t| matches!(t.kind, TermKind::Relation)));
+        assert_eq!(terms[0].raw_term, "管理");
+        assert_eq!(terms[1].raw_term, "implements");
+    }
+
+    /// AppendTraces 变体无词条 → None
+    #[sqlx::test]
+    async fn extract_traces_yields_none(pool: sqlx::SqlitePool) {
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool);
+        let params = MemoryCreateParams::AppendTraces(vec![MemoryTrace::new(
+            "agent_1".to_string(),
+            "log_1".to_string(),
+            "u1".to_string(),
+            String::new(),
+            common::enums::MemoryRole::User,
+            "内容".to_string(),
+            None,
+        )]);
+
+        assert!(extract_written_terms(&ctx, &params).is_none());
+    }
+
+    /// node_type 全空白 → 词条全被过滤 → None
+    #[sqlx::test]
+    async fn extract_blank_terms_yields_none(pool: sqlx::SqlitePool) {
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool)
+            .to_builder()
+            .agent_id("agent_ctx")
+            .build();
+        let params = MemoryCreateParams::CreateKnowledgeNode {
+            node: node_po("agent_node", "   "),
+            references: vec![],
+        };
+
+        assert!(extract_written_terms(&ctx, &params).is_none());
     }
 }

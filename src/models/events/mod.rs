@@ -7,6 +7,7 @@ pub mod cron_trigger;
 pub mod email;
 pub mod federation;
 pub mod lark;
+pub mod memory_terms;
 pub mod message;
 pub mod organization;
 pub mod task_status;
@@ -29,6 +30,7 @@ pub use federation::{
     FederationOutboundEvent,
 };
 pub use lark::{LarkInboundEvent, LarkMessageEvent, LarkTextContent};
+pub use memory_terms::{MemoryTermsWrittenEvent, WrittenTerm};
 pub use message::MessageCreatedEvent;
 pub use organization::OrganizationChangedEvent;
 pub use task_status::TaskStatusChangedEvent;

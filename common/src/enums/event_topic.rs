@@ -62,6 +62,8 @@ pub enum EventTopic {
     FederationInboundOther,
     /// `a2a.poll.requested`（A2A 轮询生产者派发的认领事件）
     A2aPollRequested,
+    /// `memory.terms.written`（记忆沉淀词条落库，供写后认证 + 漂移记账消费）
+    MemoryTermsWritten,
 }
 
 impl EventTopic {
@@ -83,6 +85,7 @@ impl EventTopic {
         EventTopic::FederationInboundSendTask,
         EventTopic::FederationInboundOther,
         EventTopic::A2aPollRequested,
+        EventTopic::MemoryTermsWritten,
     ];
 
     /// 线格式：与历史 `EventKind` 的字符串**逐字一致**
@@ -106,6 +109,7 @@ impl EventTopic {
             EventTopic::FederationInboundSendTask => "federation.inbound.send_task",
             EventTopic::FederationInboundOther => "federation.inbound.other",
             EventTopic::A2aPollRequested => "a2a.poll.requested",
+            EventTopic::MemoryTermsWritten => "memory.terms.written",
         }
     }
 
@@ -130,6 +134,7 @@ impl EventTopic {
             "federation.inbound.send_task" => Some(EventTopic::FederationInboundSendTask),
             "federation.inbound.other" => Some(EventTopic::FederationInboundOther),
             "a2a.poll.requested" => Some(EventTopic::A2aPollRequested),
+            "memory.terms.written" => Some(EventTopic::MemoryTermsWritten),
             _ => None,
         }
     }

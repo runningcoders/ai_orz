@@ -43,8 +43,8 @@ pub struct InitializeSystemTask {
 impl InitializeSystemTask {
     /// 创建新的初始化任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: InitializeSystemRequest) -> Self {
-        // 基础 4 步（组织 + 内置工具 + 预置技能 + 预设前台 Agent）+ 对话模型(0/1) + 向量模型(0/1)
-        let total_steps = 4
+        // 基础 5 步（组织 + 内置工具 + 预置技能 + 本体词表注入 + 预设前台 Agent）+ 对话模型(0/1) + 向量模型(0/1)
+        let total_steps = 5
             + usize::from(params.chat_model.is_some())
             + usize::from(params.embedding_model.is_some());
         Self {
@@ -133,7 +133,7 @@ impl InitializeSystemTask {
     /// 执行初始化步骤（从原 run_initialize_steps 迁移逻辑）
     ///
     /// 每步通过 `set_step` 更新进度，保持原有业务逻辑不变：
-    /// 创建组织+Owner → chat provider（可选）→ embedding provider（可选）→ 同步内置工具 → 导入预置技能
+    /// 创建组织+Owner → chat provider（可选）→ embedding provider（可选）→ 同步内置工具 → 导入预置技能 → 注入本体词表
     async fn run_steps(&self) -> Result<InitializeSystemResponse> {
         let ctx = self.ctx.clone();
         let params = self.params.clone();
@@ -278,12 +278,26 @@ impl InitializeSystemTask {
             user_id
         );
 
+        // Step: 注入本体词表（仅补缺幂等；词表是全局共享资产，不依赖组织）
+        self.set_step(step + 2, "正在注入本体词表");
+        let lexicon_report = hr::domain()
+            .ontology_domain()
+            .apply_default_lexicon(ctx.clone(), &snapshot.ontology)
+            .await?;
+        sys_info!(
+            "initialize_system: 注入本体词表（classes={}, relation_types={}, synonyms={}, skipped={}）",
+            lexicon_report.inserted_classes.len(),
+            lexicon_report.inserted_relation_types.len(),
+            lexicon_report.inserted_synonyms,
+            lexicon_report.skipped
+        );
+
         // Step: 无条件创建预设前台 Agent（降低使用门槛）
         // - roles: ["reception"]：Web 前台通道精确命中；飞书/A2A 等场景经渐进匹配（子串/语义）自动回退
         // - 初始化配置了 chat provider → 直接绑定；未配置 → 留空，wake 时自动回退默认对话模型
         // - project_management（公司指定包）由入职流程 apply_onboard_bindings 统一绑定，
         //   此处不再重复安装；未配置模型时 Agent 停留 Interviewing，也就不绑岗位包
-        self.set_step(step + 2, "正在创建预设前台接待 Agent");
+        self.set_step(step + 3, "正在创建预设前台接待 Agent");
         let reception_agent_id =
             create_preset_reception_agent(ctx.clone(), &user_id, chat_provider_id.clone()).await?;
         sys_info!(

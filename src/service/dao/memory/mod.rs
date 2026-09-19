@@ -7,8 +7,10 @@ use crate::models::memory::{
 use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::api::{PagedResult, PaginationParams};
 use common::enums::{MemoryStatus, MemoryType};
 use common::error::Result;
+use serde::{Deserialize, Serialize};
 
 // ==================== 查询参数结构体 ====================
 
@@ -84,6 +86,55 @@ pub struct MemoryQuery {
     ///
     /// 队列类查询（如待沉淀短期记忆）应显式指定 [`MemorySortOrder::OldestFirst`]。
     pub order: MemorySortOrder,
+}
+
+/// 词频聚合行（本体漂移看板的 SQL 聚合结果）
+///
+/// 一个词一行：`term` 是**归一化后的原文**（`LOWER(TRIM(col))`，与
+/// `common::ontology::normalize` 同口径——大小写/首尾空白变体在聚合侧合并为一词），
+/// `count` 是该词的行数，`agent_count` 是独立产出该词的 Agent 数（决策清单
+/// "是否多源"信号）。是否属于词表外（漂移）由上层 `common::ontology::resolve`
+/// 用内存词表判定——聚合 SQL 只计数，不 JOIN 本体表。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+pub struct TermFrequencyRow {
+    /// 归一化后的词（`relation_type` / `node_type` 经 `LOWER(TRIM())` 归一）
+    pub term: String,
+    /// 出现次数
+    pub count: i64,
+    /// 独立产出该词的 Agent 数（关系侧按**源节点归属**去重）
+    pub agent_count: i64,
+}
+
+/// 漂移关系（边）明细投影行（看板下钻专用瘦投影，非 PO）
+///
+/// 不携带权重/状态等关系本体字段，只回明细卡片所需最小列集；`agent_id` 取
+/// **源节点归属**（关系表无 agent 列），`source_name` / `target_name` 由 JOIN
+/// 两端节点表取得。DAO 层投影 → DAL 层转 `common::api` DTO。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DriftRelationDetailRow {
+    /// 边 ID
+    pub id: String,
+    /// 产出该边的 Agent（源节点归属）
+    pub agent_id: String,
+    /// 源节点名称
+    pub source_name: String,
+    /// 目标节点名称
+    pub target_name: String,
+    /// 创建时间戳（秒）
+    pub created_at: i64,
+}
+
+/// 漂移节点明细投影行（看板下钻专用瘦投影，非 PO）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DriftClassDetailRow {
+    /// 节点 ID
+    pub id: String,
+    /// 产出该节点的 Agent
+    pub agent_id: String,
+    /// 节点名称
+    pub name: String,
+    /// 创建时间戳（秒）
+    pub created_at: i64,
 }
 
 /// ✅ 记忆搜索统一入参（关键词搜索 + 向量语义搜索共用）
@@ -547,6 +598,102 @@ pub trait MemoryDao: Send + Sync {
         source_id: &str,
         relation_type: &str,
     ) -> Result<Vec<KnowledgeNodeRelationPo>>;
+
+    // ========== 本体词频聚合（漂移看板读路径的 SQL 之家，聚合不 JOIN 本体表） ==========
+
+    /// 关系词频聚合：按 **归一化 relation_type**（`LOWER(TRIM(col))`）GROUP BY 计数
+    ///
+    /// 只统计**生效边**（`status = 1`）：Superseded 是"被替换的旧结论"，计入词频
+    /// 会让看板被历史版本污染。是否漂移由上层用内存词表判定，SQL 只负责计数。
+    ///
+    /// # 返回
+    /// - 词频行列表，按 `count` 降序、`term` 升序（Top N 直接取前缀）
+    /// - `term` 是归一化后的原文（与 `common::ontology::normalize` 同口径——
+    ///   大小写/首尾空白变体在聚合侧合并为一词）
+    /// - `agent_count` 按源节点归属去重（关系表无 agent 列，LEFT JOIN 源节点取
+    ///   `agent_id`，孤儿边计 0）
+    ///
+    /// # 参数
+    /// - agent_id: 可选 Agent 过滤（None / 空串 = 全组织），同口径取**源节点归属**
+    async fn word_freq_relations(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<Vec<TermFrequencyRow>>;
+
+    /// 节点类词频聚合：按 **归一化 node_type**（`LOWER(TRIM(col))`）GROUP BY 计数
+    ///
+    /// 排除已遗忘节点（`status != 0`），与 `query_knowledge_nodes` 的默认过滤同口径。
+    /// `node_type` 是开放字段，词表外的类型值（漂移主体）同样参与计数。
+    ///
+    /// # 返回
+    /// - 词频行列表，按 `count` 降序、`term` 升序
+    /// - `term` 归一化口径同上；`agent_count` 按节点自带 `agent_id` 去重
+    ///
+    /// # 参数
+    /// - agent_id: 可选 Agent 过滤（None / 空串 = 全组织）
+    async fn word_freq_nodes(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<Vec<TermFrequencyRow>>;
+
+    /// 关系明细下钻：按关系词**归一化**匹配生效边（`LOWER(TRIM(relation_type)) = LOWER(TRIM(?))`）
+    ///
+    /// 看板 Top N 点击后的明细视图：最近创建优先，返回分页结果（含 total，
+    /// 供前端分页控件展示）。归一化匹配与词频聚合侧同口径——词表命中的归一化词
+    /// 能下钻到所有大小写/空白变体。返回瘦投影行（DAO 层投影，DAL 层转
+    /// `common::api` DTO），`agent_id` 取源节点归属。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - raw_term: 词表命中词（与 `LOWER(TRIM(relation_type))` 比对）
+    /// - agent_id: 可选 Agent 过滤（None / 空串 = 不过滤，即全局视图）
+    /// - pagination: 分页参数（limit 为 None 时不限条数）
+    async fn detail_relations_by_term(
+        &self,
+        ctx: RequestContext,
+        raw_term: &str,
+        agent_id: Option<String>,
+        pagination: PaginationParams,
+    ) -> Result<PagedResult<DriftRelationDetailRow>>;
+
+    /// 节点明细下钻：按节点类**归一化**匹配存活节点（`LOWER(TRIM(node_type)) = LOWER(TRIM(?))`）
+    ///
+    /// 与 `list_knowledge_nodes_by_agent` 的 `MemoryType::parse` 校验刻意不同：
+    /// `node_type` 是开放字段，词表外的类型值必须能查出来（否则看板只能看到
+    /// 漂移词名却下钻不到任何明细）。排除已遗忘节点（`status != 0`）。
+    /// 返回瘦投影行（同上，DAL 层转 DTO）。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - raw_term: 词表命中词（与 `LOWER(TRIM(node_type))` 比对）
+    /// - agent_id: 可选 Agent 过滤（None / 空串 = 不过滤，即全局视图）
+    /// - pagination: 分页参数（limit 为 None 时不限条数）
+    async fn detail_nodes_by_term(
+        &self,
+        ctx: RequestContext,
+        raw_term: &str,
+        agent_id: Option<String>,
+        pagination: PaginationParams,
+    ) -> Result<PagedResult<DriftClassDetailRow>>;
+
+    /// 按归一化 node_type 批量置位 `is_published`（certify 软门禁写入路径）
+    ///
+    /// MemoryDao 不携带本体概念——调用方（OntologyDal.certify）先用词表校验
+    /// 并归一化，再调用本方法做纯数据置位。幂等：已置位的行不重复计数。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - node_type_normalized: 归一化后的节点类（写入侧已在 DAO 单点归一，此处裸列比对）
+    ///
+    /// # 返回
+    /// - 本次实际置位的行数（幂等重复调用返回 0）
+    async fn publish_nodes_by_type(
+        &self,
+        ctx: RequestContext,
+        node_type_normalized: &str,
+    ) -> Result<u64>;
 }
 
 // ==================== MemoryVectorDao Trait ====================

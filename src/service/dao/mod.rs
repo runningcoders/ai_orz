@@ -11,6 +11,7 @@ pub mod message;
 pub mod message_channel;
 pub mod message_push;
 pub mod model_provider;
+pub mod ontology;
 pub mod organization;
 pub mod organization_link;
 pub mod organization_pairing;
@@ -42,6 +43,7 @@ pub fn init_all() {
     message_channel::init();
     mcp_server::init();
     model_provider::init();
+    ontology::init();
     organization::init();
     organization_link::init();
     organization_pairing::init();

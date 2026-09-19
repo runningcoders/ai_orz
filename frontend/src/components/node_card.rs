@@ -196,7 +196,7 @@ pub fn tag_chips(tags: &[String], row_width: f64) -> Vec<(String, &'static str)>
             break;
         }
         let text = truncate_tag_text(tag, row_width);
-        if chips_row_width(&chips) + chip_gap(&chips) + tag_chip_width(&text) > row_width {
+        if row_width_with_next(&chips, &text) > row_width {
             overflow_rest = Some(tags.len() - idx);
             break;
         }
@@ -205,8 +205,7 @@ pub fn tag_chips(tags: &[String], row_width: f64) -> Vec<(String, &'static str)>
     if let Some(mut rest) = overflow_rest {
         loop {
             let label = format!("+{rest}");
-            let extra = chip_gap(&chips) + tag_chip_width(&label);
-            if chips.is_empty() || chips_row_width(&chips) + extra <= row_width {
+            if chips.is_empty() || row_width_with_next(&chips, &label) <= row_width {
                 chips.push((label, "#4b5563"));
                 break;
             }
@@ -232,6 +231,17 @@ fn tag_text_width(text: &str) -> f64 {
 /// 单个标签胶囊的估算宽度（文字 + 左右 padding）
 pub fn tag_chip_width(text: &str) -> f64 {
     tag_text_width(text) + NODE_TAG_CHIP_PAD
+}
+
+/// 已铺开胶囊的实际行宽（含胶囊间 n-1 个间隔）+ 再追加一个 `next` 宽度胶囊
+///
+/// `chips_row_width` 只累加胶囊本体，胶囊之间的间隔必须在此补齐——
+/// 漏掉会让「3 胶囊 + 聚合胶囊」被低估 2 个 GAP（8px），聚合误判放得下。
+fn row_width_with_next(chips: &[(String, &'static str)], next: &str) -> f64 {
+    chips_row_width(chips)
+        + NODE_TAG_GAP * chips.len().saturating_sub(1) as f64
+        + chip_gap(chips)
+        + tag_chip_width(next)
 }
 
 /// 已铺开胶囊的总宽（不含下一个胶囊的前置间隔）

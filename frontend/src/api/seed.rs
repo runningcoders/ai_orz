@@ -75,6 +75,19 @@ pub async fn sync_preset_agents(
     api_post("/api/v1/system/seed/preset-agents/sync", &req).await
 }
 
+/// 预置本体词表同步预览：对比 seed 与本体词表，返回「缺失 / 已存在」逐词条清单
+pub async fn preview_preset_ontology()
+-> Result<common::api::PreviewPresetOntologyResponse, ApiError> {
+    api_get("/api/v1/system/seed/preset-ontology/preview").await
+}
+
+/// 同步预置本体词表（仅补缺策略；同步返回不走后台任务，词表量级毫秒级）
+pub async fn sync_preset_ontology(
+    req: common::api::SyncPresetOntologyRequest,
+) -> Result<common::api::SyncPresetOntologyResponse, ApiError> {
+    api_post("/api/v1/system/seed/preset-ontology/sync", &req).await
+}
+
 /// 查询统一后台任务进度
 ///
 /// 调用 `GET /api/v1/system/tasks/{task_id}/progress`，所有后台任务（初始化、

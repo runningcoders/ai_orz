@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, raw_term, target_kind, target_key, created_at\nFROM ontology_synonym_mappings WHERE raw_term = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "raw_term",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_kind",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_key",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 4,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "402a7a74c02837100e9e7e22f550d7ce78102e47dd725be6c4b5bc0eafcf6234"
+}

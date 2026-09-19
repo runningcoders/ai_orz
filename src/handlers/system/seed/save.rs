@@ -34,8 +34,8 @@ pub struct SeedSaveTask {
 }
 
 impl SeedSaveTask {
-    /// 导出阶段：组织(1) + 用户(2) + Provider(3) + Agent(4) + Skill(5) + 写文件(6)
-    const TOTAL_STEPS: usize = 6;
+    /// 导出阶段：组织(1) + 用户(2) + Provider(3) + Agent(4) + Skill(5) + 词表(6) + 写文件(7)
+    const TOTAL_STEPS: usize = 7;
 
     /// 创建新的导出任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: SaveSeedRequest) -> Self {
@@ -123,8 +123,8 @@ impl BackgroundTask for SeedSaveTask {
 impl SeedSaveTask {
     /// 执行导出步骤（从原 save_seed handler 迁移逻辑）
     ///
-    /// Step 1-5: 组装 SeedSnapshot（进度由 assemble_snapshot_from_db_with_progress 内部更新）
-    /// Step 6: 写入文件
+    /// Step 1-6: 组装 SeedSnapshot（进度由 assemble_snapshot_from_db_with_progress 内部更新）
+    /// Step 7: 写入文件
     async fn run_steps(&self) -> Result<SaveSeedResponse> {
         let ctx = self.ctx.clone();
         let params = self.params.clone();
@@ -134,7 +134,7 @@ impl SeedSaveTask {
             .ok_or_else(|| Error::bad_request("缺少 organization_id".to_string()))?
             .clone();
 
-        // Step 1-5: 组装快照（进度回调更新 current_step）
+        // Step 1-6: 组装快照（进度回调更新 current_step）
         let snapshot = super::assemble_snapshot_from_db_with_progress(
             ctx.clone(),
             &org_id,

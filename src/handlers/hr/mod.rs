@@ -5,6 +5,7 @@
 //! - 员工管理 (预留未来扩展)
 
 pub mod agent;
+pub mod ontology;
 pub mod skill;
 
 // handler 函数导出供路由使用

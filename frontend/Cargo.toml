@@ -36,3 +36,5 @@ pulldown-cmark = "0.13"
 # 不是图片数据，必须由前端编码成二维码图像才能渲染（详见 identity_wechat.rs::qr_img_src）。
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 base64 = "0.22"
+# query string 值 percent-encoding：纯 Rust 无 std 依赖，wasm 兼容
+urlencoding = "2"

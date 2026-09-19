@@ -130,6 +130,8 @@ async fn test_assemble_snapshot_from_db_returns_valid_structure(pool: SqlitePool
     assert_eq!(snapshot.users.len(), 1);
     assert_eq!(snapshot.model_providers.len(), 2);
     assert_eq!(snapshot.agents.len(), 1);
+    // 词表段接线：测试库无词表数据 → 空词表（export_lexicon 查询走通即通过）
+    assert!(snapshot.ontology.is_empty());
     assert_eq!(
         snapshot.users[0].password_ref,
         crate::service::domain::system::seed::defs::PENDING_INPUT

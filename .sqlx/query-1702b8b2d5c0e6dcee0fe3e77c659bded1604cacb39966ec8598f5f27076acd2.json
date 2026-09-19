@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM ontology_synonym_mappings WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "1702b8b2d5c0e6dcee0fe3e77c659bded1604cacb39966ec8598f5f27076acd2"
+}

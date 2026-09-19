@@ -763,6 +763,66 @@ fn hr_routes() -> Router {
             "/agents/memories/{memory_id}",
             delete(handlers::hr::agent::delete_memory_handler),
         )
+        .route(
+            "/ontology/classes",
+            post(handlers::hr::ontology::create_ontology_class_handler),
+        )
+        .route(
+            "/ontology/classes",
+            get(handlers::hr::ontology::list_ontology_classes_handler),
+        )
+        .route(
+            "/ontology/classes/{id}",
+            put(handlers::hr::ontology::update_ontology_class_handler),
+        )
+        .route(
+            "/ontology/classes/{id}",
+            delete(handlers::hr::ontology::retire_ontology_class_handler),
+        )
+        .route(
+            "/ontology/relation-types",
+            post(handlers::hr::ontology::create_ontology_relation_type_handler),
+        )
+        .route(
+            "/ontology/relation-types",
+            get(handlers::hr::ontology::list_ontology_relation_types_handler),
+        )
+        .route(
+            "/ontology/relation-types/{id}",
+            put(handlers::hr::ontology::update_ontology_relation_type_handler),
+        )
+        .route(
+            "/ontology/relation-types/{id}",
+            delete(handlers::hr::ontology::retire_ontology_relation_type_handler),
+        )
+        .route(
+            "/ontology/synonyms",
+            post(handlers::hr::ontology::create_ontology_synonym_handler),
+        )
+        .route(
+            "/ontology/synonyms",
+            get(handlers::hr::ontology::list_ontology_synonyms_handler),
+        )
+        .route(
+            "/ontology/synonyms/{id}",
+            delete(handlers::hr::ontology::delete_ontology_synonym_handler),
+        )
+        .route(
+            "/ontology/lexicon",
+            get(handlers::hr::ontology::list_ontology_lexicon_handler),
+        )
+        .route(
+            "/ontology/drift/dashboard",
+            get(handlers::hr::ontology::get_ontology_drift_dashboard_handler),
+        )
+        .route(
+            "/ontology/drift/relations",
+            get(handlers::hr::ontology::list_ontology_drift_relation_details_handler),
+        )
+        .route(
+            "/ontology/drift/classes",
+            get(handlers::hr::ontology::list_ontology_drift_class_details_handler),
+        )
 }
 
 fn finance_routes() -> Router {
@@ -1123,6 +1183,14 @@ fn system_routes() -> Router {
                 .route(
                     "/preset-agents/sync",
                     post(handlers::system::seed::sync_preset_agents_handler),
+                )
+                .route(
+                    "/preset-ontology/preview",
+                    get(handlers::system::seed::preview_preset_ontology_handler),
+                )
+                .route(
+                    "/preset-ontology/sync",
+                    post(handlers::system::seed::sync_preset_ontology_handler),
                 ),
         )
         // 通用后台任务进度查询

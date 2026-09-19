@@ -152,12 +152,20 @@ pub fn LineChart(props: LineChartProps) -> Element {
 
     let mut canvas_ref: Signal<Option<HtmlCanvasElement>> = use_signal(|| None);
 
-    // 数据缓存：props.data 变化时更新
+    // 数据缓存：props.data 变化时更新（RAF 渲染闭包存活整个组件生命周期，
+    // 只能经信号取到「当前」数据，所以 props 必须先落到 cache 里）。
     let mut data_cache: Signal<Vec<TimeSeriesPoint>> = use_signal(|| props.data.clone());
-    let props_data = props.data.clone();
-    use_effect(move || {
-        data_cache.set(props_data.clone());
-    });
+    // ⚠️ 必须用 `use_reactive` 显式声明依赖：`use_effect` 只对**信号**依赖重跑，
+    // 而闭包捕获的 `props.data` 是普通值 —— 写成裸 `use_effect(move || data_cache.set(..))`
+    // 时该 effect 只在挂载时执行一次，cache 永远停在首帧数据。
+    // 症状：切换时间范围后读数（Dioxus 直接渲染）跟着变，曲线（走 cache 的 RAF 循环）
+    // 纹丝不动。
+    use_effect(use_reactive(
+        &props.data,
+        move |data: Vec<TimeSeriesPoint>| {
+            data_cache.set(data);
+        },
+    ));
 
     // 渲染循环资源（RAF 回调 + running flag + pending 帧句柄），供顶层 use_drop 清理
     #[allow(clippy::type_complexity)]

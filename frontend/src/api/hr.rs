@@ -3,24 +3,36 @@
 use common::api::{
     AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CancelThinkingRequest,
     CancelThinkingResponse, CompleteAgentOffboardRequest, CreateAgentRequest, CreateAgentResponse,
-    CreateExternalAgentRequest, CreateExternalAgentResponse, CreateSkillRequest,
-    CreateSkillResponse, DeleteSkillResponse, GetAgentRequest, GetAgentResponse,
-    GetReceptionAgentResponse, GetSkillFileContentRequest, GetSkillResponse,
-    InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
+    CreateExternalAgentRequest, CreateExternalAgentResponse, CreateOntologyClassRequest,
+    CreateOntologyClassResponse, CreateOntologyRelationTypeRequest,
+    CreateOntologyRelationTypeResponse, CreateOntologySynonymRequest,
+    CreateOntologySynonymResponse, CreateSkillRequest, CreateSkillResponse,
+    DeleteOntologySynonymResponse, DeleteSkillResponse, GetAgentRequest, GetAgentResponse,
+    GetDriftDashboardRequest, GetDriftDashboardResponse, GetReceptionAgentResponse,
+    GetSkillFileContentRequest, GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest,
+    ListAgentsRequest, ListDriftClassDetailsRequest, ListDriftClassDetailsResponse,
+    ListDriftRelationDetailsRequest, ListDriftRelationDetailsResponse,
     ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
-    ListInstalledToolPacksResponse, OnboardAgentRequest, PagedResult, QueryMemoryParams,
-    QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
-    RestoreSkillResponse, RuntimeStatusRequest, RuntimeStatusResponse, SearchAgentsRequest,
-    SearchMemoryParams, SearchMemoryResponse, SearchSkillsRequest, SelectAgentCareerRequest,
-    SkillListItem, SkillQueryRequest, StartAgentOffboardRequest, UnbindToolFromAgentRequest,
+    ListInstalledToolPacksResponse, ListOntologyClassesRequest, ListOntologyClassesResponse,
+    ListOntologyLexiconResponse, ListOntologyRelationTypesRequest,
+    ListOntologyRelationTypesResponse, ListOntologySynonymsRequest, ListOntologySynonymsResponse,
+    OnboardAgentRequest, PagedResult, QueryMemoryParams, QueryMemoryResponse,
+    RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
+    RestoreSkillResponse, RetireOntologyClassResponse, RetireOntologyRelationTypeResponse,
+    RuntimeStatusRequest, RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams,
+    SearchMemoryResponse, SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem,
+    SkillQueryRequest, StartAgentOffboardRequest, UnbindToolFromAgentRequest,
     UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
-    UpdateAgentStatusRequest, UpdateAgentStatusResponse, UpdateSkillFileContentRequest,
-    UpdateSkillRequest, UpdateSkillResponse,
+    UpdateAgentStatusRequest, UpdateAgentStatusResponse, UpdateOntologyClassRequest,
+    UpdateOntologyClassResponse, UpdateOntologyRelationTypeRequest,
+    UpdateOntologyRelationTypeResponse, UpdateSkillFileContentRequest, UpdateSkillRequest,
+    UpdateSkillResponse,
 };
+use common::enums::OntologyStatus;
 
 use super::{
-    ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put,
-    api_put_empty,
+    ApiError, api_delete, api_delete_with_response, api_get, api_get_or_default, api_post,
+    api_post_empty, api_put, api_put_empty,
 };
 
 // ===== Agent 管理 =====
@@ -398,4 +410,172 @@ pub async fn cancel_thinking(
         &(),
     )
     .await
+}
+
+// ===== 本体论词表管理 =====
+
+/// OntologyStatus 的 query 取值 = serde JSON 变体名
+///
+/// 数字枚举无 rename：query 传 1/0 会被 Params 宏的类型推断转为 JSON Number，
+/// serde 反序列化失败（纯 query 分支直接 400）；传小写也不匹配变体名（大小写敏感）。
+fn ontology_status_query_value(status: OntologyStatus) -> String {
+    match status {
+        OntologyStatus::Active => "Active".to_string(),
+        OntologyStatus::Retired => "Retired".to_string(),
+    }
+}
+
+/// 列出实体类词条（分页 + 状态/关键词筛选）
+/// GET /api/v1/hr/ontology/classes?status=&keyword=&limit=&offset=
+pub async fn list_ontology_classes(
+    req: ListOntologyClassesRequest,
+) -> Result<ListOntologyClassesResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("status", req.status.map(ontology_status_query_value)),
+        ("keyword", req.keyword.clone()),
+        ("limit", req.pagination.limit.map(|v| v.to_string())),
+        ("offset", req.pagination.offset.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/hr/ontology/classes{}", qs)).await
+}
+
+/// 创建实体类（term_key 重复创建报错）
+/// POST /api/v1/hr/ontology/classes
+pub async fn create_ontology_class(
+    req: CreateOntologyClassRequest,
+) -> Result<CreateOntologyClassResponse, ApiError> {
+    api_post("/api/v1/hr/ontology/classes", &req).await
+}
+
+/// 更新实体类（term_key 创建后不可改）
+/// PUT /api/v1/hr/ontology/classes/{id}
+pub async fn update_ontology_class(
+    req: UpdateOntologyClassRequest,
+) -> Result<UpdateOntologyClassResponse, ApiError> {
+    api_put(&format!("/api/v1/hr/ontology/classes/{}", req.id), &req).await
+}
+
+/// 退役实体类（软删除 status=Retired；历史存量引用仍可解释）
+/// DELETE /api/v1/hr/ontology/classes/{id}
+pub async fn retire_ontology_class(id: &str) -> Result<RetireOntologyClassResponse, ApiError> {
+    api_delete_with_response(&format!("/api/v1/hr/ontology/classes/{}", id)).await
+}
+
+/// 列出关系类型词条（分页 + 状态/关键词筛选）
+/// GET /api/v1/hr/ontology/relation-types?status=&keyword=&limit=&offset=
+pub async fn list_ontology_relation_types(
+    req: ListOntologyRelationTypesRequest,
+) -> Result<ListOntologyRelationTypesResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("status", req.status.map(ontology_status_query_value)),
+        ("keyword", req.keyword.clone()),
+        ("limit", req.pagination.limit.map(|v| v.to_string())),
+        ("offset", req.pagination.offset.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/hr/ontology/relation-types{}", qs)).await
+}
+
+/// 创建关系类型（term_key 重复创建报错）
+/// POST /api/v1/hr/ontology/relation-types
+pub async fn create_ontology_relation_type(
+    req: CreateOntologyRelationTypeRequest,
+) -> Result<CreateOntologyRelationTypeResponse, ApiError> {
+    api_post("/api/v1/hr/ontology/relation-types", &req).await
+}
+
+/// 更新关系类型（term_key 创建后不可改）
+/// PUT /api/v1/hr/ontology/relation-types/{id}
+pub async fn update_ontology_relation_type(
+    req: UpdateOntologyRelationTypeRequest,
+) -> Result<UpdateOntologyRelationTypeResponse, ApiError> {
+    api_put(
+        &format!("/api/v1/hr/ontology/relation-types/{}", req.id),
+        &req,
+    )
+    .await
+}
+
+/// 退役关系类型（软删除 status=Retired；历史存量边仍可解释）
+/// DELETE /api/v1/hr/ontology/relation-types/{id}
+pub async fn retire_ontology_relation_type(
+    id: &str,
+) -> Result<RetireOntologyRelationTypeResponse, ApiError> {
+    api_delete_with_response(&format!("/api/v1/hr/ontology/relation-types/{}", id)).await
+}
+
+/// 列出同义映射（分页 + 目标词条种类/规范词筛选）
+/// GET /api/v1/hr/ontology/synonyms?target_kind=&target_key=&limit=&offset=
+pub async fn list_ontology_synonyms(
+    req: ListOntologySynonymsRequest,
+) -> Result<ListOntologySynonymsResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        (
+            "target_kind",
+            req.target_kind.map(|k| k.as_str().to_string()),
+        ),
+        ("target_key", req.target_key.clone()),
+        ("limit", req.pagination.limit.map(|v| v.to_string())),
+        ("offset", req.pagination.offset.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/hr/ontology/synonyms{}", qs)).await
+}
+
+/// 创建同义映射（同一 (raw_term, target_kind) 重复创建报错）
+/// POST /api/v1/hr/ontology/synonyms
+pub async fn create_ontology_synonym(
+    req: CreateOntologySynonymRequest,
+) -> Result<CreateOntologySynonymResponse, ApiError> {
+    api_post("/api/v1/hr/ontology/synonyms", &req).await
+}
+
+/// 删除同义映射（物理删除，相关词条自然回落漂移，下一次解析即生效）
+/// DELETE /api/v1/hr/ontology/synonyms/{id}
+pub async fn delete_ontology_synonym(id: &str) -> Result<DeleteOntologySynonymResponse, ApiError> {
+    api_delete_with_response(&format!("/api/v1/hr/ontology/synonyms/{}", id)).await
+}
+
+/// 词表注入视图（管理页只读展示，与神经技能注入共用同一契约）
+/// GET /api/v1/hr/ontology/lexicon
+pub async fn list_ontology_lexicon() -> Result<ListOntologyLexiconResponse, ApiError> {
+    api_get("/api/v1/hr/ontology/lexicon").await
+}
+
+/// 漂移看板（Top N 漂移词 / 关系覆盖率 / 漂移节点占比，SQLite 读路径惰性聚合）
+/// GET /api/v1/hr/ontology/drift/dashboard?top_n=&agent_id=
+pub async fn get_ontology_drift_dashboard(
+    req: GetDriftDashboardRequest,
+) -> Result<GetDriftDashboardResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("top_n", req.top_n.map(|v| v.to_string())),
+        ("agent_id", req.agent_id.clone()),
+    ]);
+    api_get(&format!("/api/v1/hr/ontology/drift/dashboard{}", qs)).await
+}
+
+/// 漂移词下钻：关系（边）明细（raw_term 兼容漂移原文与规范词 key）
+/// GET /api/v1/hr/ontology/drift/relations?raw_term=&agent_id=&limit=&offset=
+pub async fn list_ontology_drift_relation_details(
+    req: ListDriftRelationDetailsRequest,
+) -> Result<ListDriftRelationDetailsResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("raw_term", Some(req.raw_term.clone())),
+        ("agent_id", req.agent_id.clone()),
+        ("limit", req.pagination.limit.map(|v| v.to_string())),
+        ("offset", req.pagination.offset.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/hr/ontology/drift/relations{}", qs)).await
+}
+
+/// 漂移词下钻：节点明细（raw_term 语义同关系下钻）
+/// GET /api/v1/hr/ontology/drift/classes?raw_term=&agent_id=&limit=&offset=
+pub async fn list_ontology_drift_class_details(
+    req: ListDriftClassDetailsRequest,
+) -> Result<ListDriftClassDetailsResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("raw_term", Some(req.raw_term.clone())),
+        ("agent_id", req.agent_id.clone()),
+        ("limit", req.pagination.limit.map(|v| v.to_string())),
+        ("offset", req.pagination.offset.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/hr/ontology/drift/classes{}", qs)).await
 }

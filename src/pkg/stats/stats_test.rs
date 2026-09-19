@@ -22,7 +22,7 @@ async fn test_open_and_create_default_table() -> Result<()> {
     let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
-    assert_eq!(stats.registered_table_count(), 6);
+    assert_eq!(stats.registered_table_count(), 7);
 
     Ok(())
 }
@@ -285,7 +285,7 @@ async fn test_custom_event() -> Result<()> {
     stats.initialize_default()?;
     stats.register_table(AgentExecutionTable)?;
 
-    assert_eq!(stats.registered_table_count(), 7);
+    assert_eq!(stats.registered_table_count(), 8);
 
     let ctx = RequestContext::new(None, None);
     let now = Utc::now().timestamp();
@@ -596,6 +596,71 @@ async fn test_periodic_flush_disabled_when_interval_zero() -> Result<()> {
     // 若误启动了周期任务，1s 后缓冲会被清空
     tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
     assert_eq!(stats.pending_buffer_len::<DefaultStatEvent>(), 1);
+
+    Ok(())
+}
+
+// ==================== OntologyDriftEvent 测试 ====================
+
+#[tokio::test]
+async fn test_ontology_drift_event_write_and_read() -> Result<()> {
+    crate::pkg::storage::test_support::init_for_test().await;
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let db_path_str = db_path.to_str().unwrap();
+
+    let stats = Stats::open(db_path_str, 100).await?;
+    stats.initialize_default()?;
+
+    let ctx = RequestContext::new(None, None);
+    let now = Utc::now().timestamp();
+
+    // 记录 3 条词元原文（不解析结论，只记原文）
+    let terms = [
+        ("relation", "  CONTAINS "),
+        ("class", "Agent"),
+        ("relation", "widget"),
+    ];
+    for (kind, raw_term) in &terms {
+        let event = OntologyDriftEvent::new(now)
+            .with_agent_id("agent_test_001".to_string())
+            .with_kind(kind.to_string())
+            .with_raw_term(raw_term.to_string());
+        stats.record(ctx.clone(), event).await?;
+    }
+
+    assert_eq!(stats.pending_buffer_len::<OntologyDriftEvent>(), 3);
+    stats.flush_all(ctx.clone()).await?;
+    assert_eq!(stats.pending_buffer_len::<OntologyDriftEvent>(), 0);
+
+    // 查询验证原文按 trim 前的调用口径落库（trim 归一由调用方负责）
+    let result = stats
+        .query(
+            ctx.clone(),
+            "SELECT kind, raw_term FROM ontology_drift_events WHERE agent_id = 'agent_test_001' ORDER BY raw_term",
+            &[],
+        )
+        .await?;
+
+    assert_eq!(result.len(), 3);
+    let got: Vec<(String, String)> = result
+        .iter()
+        .map(|row| {
+            (
+                row.get("kind").unwrap().as_str().unwrap().to_string(),
+                row.get("raw_term").unwrap().as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("relation".to_string(), "  CONTAINS ".to_string()),
+            ("class".to_string(), "Agent".to_string()),
+            ("relation".to_string(), "widget".to_string()),
+        ]
+    );
 
     Ok(())
 }

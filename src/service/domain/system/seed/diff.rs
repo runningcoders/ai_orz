@@ -5,6 +5,7 @@
 
 use super::defs::*;
 use crate::models::model_provider::ModelProviderConfig;
+use common::ontology::PresetOntologyLexicon;
 use std::collections::{HashMap, HashSet};
 
 /// 对比两个快照（纯函数）
@@ -21,6 +22,7 @@ pub fn diff_snapshots(base: &SeedSnapshot, target: &SeedSnapshot) -> SeedDiff {
     );
     let agents = diff_vec(&base.agents, &target.agents, &mut summary, |a| a.id.clone());
     let skills = diff_vec(&base.skills, &target.skills, &mut summary, |s| s.id.clone());
+    let ontology = diff_ontology(&base.ontology, &target.ontology, &mut summary);
 
     SeedDiff {
         meta: DiffMeta {
@@ -35,6 +37,51 @@ pub fn diff_snapshots(base: &SeedSnapshot, target: &SeedSnapshot) -> SeedDiff {
         model_providers,
         agents,
         skills,
+        ontology,
+    }
+}
+
+/// 本体词表 diff（纯函数）
+///
+/// 词表条目无独立 ID（term_key / raw_term 是语义锚点），整体作为单一实体比对：
+/// 字段级变更以 JSON 路径呈现在 changes 里。两侧词表均为空返回 `None`
+/// （老快照无词表段且目标也无 → 不产生条目、不计数）。
+fn diff_ontology(
+    base: &PresetOntologyLexicon,
+    target: &PresetOntologyLexicon,
+    summary: &mut DiffSummary,
+) -> Option<DiffEntry<PresetOntologyLexicon>> {
+    if base.is_empty() && target.is_empty() {
+        return None;
+    }
+    let id = "ontology".to_string();
+    let changes = collect_changes(base, target);
+    if changes.is_empty() {
+        summary.same_count += 1;
+        Some(DiffEntry::Same {
+            id,
+            current: base.clone(),
+        })
+    } else if base.is_empty() {
+        summary.new_count += 1;
+        Some(DiffEntry::New {
+            id,
+            snapshot: target.clone(),
+        })
+    } else if target.is_empty() {
+        summary.removed_count += 1;
+        Some(DiffEntry::Removed {
+            id,
+            current: base.clone(),
+        })
+    } else {
+        summary.updated_count += 1;
+        Some(DiffEntry::Updated {
+            id,
+            current: base.clone(),
+            snapshot: target.clone(),
+            changes,
+        })
     }
 }
 

@@ -18,7 +18,9 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
 /// 初始化 HR Domain 所有依赖
 /// 初始化顺序：dao -> dal -> domain
 fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestContext) {
-    // 初始化所有 DAO
+    // 初始化所有 DAO（memory 最先：本体 DAL 组合依赖 MemoryDao 单例）
+    crate::service::dao::memory::init();
+    crate::service::dao::ontology::init();
     crate::service::dao::agent::init();
     crate::service::dao::tool::init();
     crate::service::dao::skill::init();
@@ -37,6 +39,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     crate::service::dal::skill::init();
     crate::service::dal::model_provider::init();
     crate::service::dal::organization::init();
+    crate::service::dal::ontology::init();
 
     // 初始化 HR Domain
     super::init();
@@ -839,7 +842,9 @@ fn init_test_env_with_fs(
 
     crate::config::init().unwrap();
 
-    // 初始化所有 DAO
+    // 初始化所有 DAO（memory 最先：本体 DAL 组合依赖 MemoryDao 单例）
+    crate::service::dao::memory::init();
+    crate::service::dao::ontology::init();
     crate::service::dao::agent::init();
     crate::service::dao::tool::init();
     crate::service::dao::skill::init_vector();
@@ -857,6 +862,7 @@ fn init_test_env_with_fs(
     crate::service::dal::tool::init();
     crate::service::dal::model_provider::init();
     crate::service::dal::organization::init();
+    crate::service::dal::ontology::init();
     let skill_dal = crate::service::dal::skill::new(
         crate::service::dao::skill::new_skill_dao_with_base_path(base_path),
         crate::service::dao::skill::vector_dao(),
@@ -870,6 +876,7 @@ fn init_test_env_with_fs(
         skill_dal,
         std::sync::Arc::new(crate::service::dal::agent::AgentRuntimeDalImpl),
         crate::service::dal::organization::dal(),
+        crate::service::dal::ontology::dal(),
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx, temp_dir)

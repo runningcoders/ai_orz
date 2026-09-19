@@ -71,12 +71,14 @@ pub fn Gauge(props: GaugeProps) -> Element {
 
     let mut canvas_ref: Signal<Option<HtmlCanvasElement>> = use_signal(|| None);
 
-    // 数据 cache：props 变化时更新
+    // 数据 cache：props 变化时更新（RAF 渲染闭包存活整个组件生命周期，只能经信号取当前值）。
     let mut data_cache: Signal<GaugeProps> = use_signal(|| props.clone());
-    let props_clone = props.clone();
-    use_effect(move || {
-        data_cache.set(props_clone.clone());
-    });
+    // ⚠️ 必须用 `use_reactive` 显式声明依赖：`use_effect` 只对**信号**依赖重跑，
+    // 闭包捕获的 props 是普通值 —— 裸 `use_effect(move || data_cache.set(..))`
+    // 只在挂载时执行一次，cache 停在首帧 props（仪表盘读数不随数据刷新）。
+    use_effect(use_reactive(&props, move |p: GaugeProps| {
+        data_cache.set(p);
+    }));
 
     // 渲染循环资源：保存 RAF 回调 + running flag + pending 帧句柄，供顶层 use_drop 清理
     #[allow(clippy::type_complexity)]

@@ -6,18 +6,24 @@
 //! - Skill - 技能管理
 
 pub mod agent;
+pub mod ontology;
 pub mod skill;
 
 #[cfg(test)]
 mod agent_test;
 #[cfg(test)]
+mod ontology_test;
+#[cfg(test)]
 mod skill_test;
 
 use crate::models::agent::Agent;
+use crate::models::ontology::{OntologyClass, OntologyRelationType, OntologySynonymMapping};
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent as agent_dal;
 use crate::service::dal::agent::{AgentDal, AgentRuntimeDal};
+use crate::service::dal::ontology as ontology_dal;
+use crate::service::dal::ontology::OntologyDal;
 use crate::service::dal::organization as organization_dal;
 use crate::service::dal::organization::OrganizationDal;
 use crate::service::dal::skill as skill_dal;
@@ -25,10 +31,22 @@ use crate::service::dal::skill::SkillDal;
 use crate::service::dal::tool as tool_dal;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dao::agent::AgentQuery;
+use crate::service::dao::ontology::{
+    OntologyClassQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
+};
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
+use common::api::ontology::{
+    GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
+    ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
+    ListDriftRelationDetailsResponse,
+};
 use common::api::{AgentMatchCriteria, match_scores};
 use common::enums::{AgentStatus, SkillStatus};
 use common::error::Result;
+use common::ontology::{
+    LexiconGapReport, OntologyCertifyReport, OntologyLexiconApplyReport, OntologyLexiconSummary,
+    PresetOntologyLexicon, TermKind,
+};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 常量 ====================
@@ -53,6 +71,7 @@ pub fn init() {
         skill_dal::dal(),
         Arc::new(agent_dal::AgentRuntimeDalImpl),
         organization_dal::dal(),
+        ontology_dal::dal(),
     ));
 }
 
@@ -63,6 +82,7 @@ pub fn new(
     skill_dal: Arc<dyn SkillDal>,
     runtime_dal: Arc<dyn AgentRuntimeDal>,
     org_dal: Arc<dyn OrganizationDal + Send + Sync>,
+    ontology_dal: Arc<dyn OntologyDal>,
 ) -> Arc<dyn HrDomain> {
     Arc::new(HrDomainImpl::new(
         agent_dal,
@@ -70,6 +90,7 @@ pub fn new(
         skill_dal,
         runtime_dal,
         org_dal,
+        ontology_dal,
     ))
 }
 
@@ -87,6 +108,8 @@ struct HrDomainImpl {
     /// 组织配置读取（入职时装「组织要求的包」，AgentPo 无 organization_id，
     /// 组织归属一律取 `ctx.organization_id()`）
     org_dal: Arc<dyn OrganizationDal + Send + Sync>,
+    /// 本体词表数据通道（词表 CRUD 透传 + 认证 + 看板聚合）
+    ontology_dal: Arc<dyn OntologyDal>,
 }
 
 impl HrDomainImpl {
@@ -97,6 +120,7 @@ impl HrDomainImpl {
         skill_dal: Arc<dyn SkillDal>,
         runtime_dal: Arc<dyn AgentRuntimeDal>,
         org_dal: Arc<dyn OrganizationDal + Send + Sync>,
+        ontology_dal: Arc<dyn OntologyDal>,
     ) -> Self {
         Self {
             agent_dal,
@@ -104,6 +128,7 @@ impl HrDomainImpl {
             skill_dal,
             runtime_dal,
             org_dal,
+            ontology_dal,
         }
     }
 
@@ -275,6 +300,9 @@ impl HrDomain for HrDomainImpl {
     fn skill_manage(&self) -> &dyn SkillManage {
         self
     }
+    fn ontology_domain(&self) -> &dyn OntologyDomain {
+        self
+    }
 
     /// 根据打分规则挑选最匹配的 Agent（统一路由方法，单条件入口）。
     ///
@@ -336,6 +364,8 @@ pub trait HrDomain: Send + Sync {
     fn agent_manage(&self) -> &dyn AgentManage;
     /// Skill 管理能力
     fn skill_manage(&self) -> &dyn SkillManage;
+    /// 本体词表管理能力
+    fn ontology_domain(&self) -> &dyn OntologyDomain;
 
     /// 根据打分规则挑选最匹配的 Agent（统一路由方法，单条件入口）。
     ///
@@ -733,4 +763,153 @@ pub trait SkillManage: Send + Sync {
         content: &str,
         expected_updated_at: Option<i64>,
     ) -> Result<()>;
+}
+
+// ==================== 本体词表管理（OntologyDomain） ====================
+
+/// 本体词表管理 trait
+///
+/// 词表（TBox）生命周期编排：管理页 CRUD（写后校验 domain/range/
+/// required_fields）+ seed 预置注入（仅补缺，只新增）+ 写后认证
+/// （供消费者调用）+ 词表视图（神经技能提示词注入）+ 漂移看板编排。
+/// 数据通道全部由 [`crate::service::dal::ontology::OntologyDal`] 提供，
+/// PO↔Entity 转换已下沉 DAL，本层只做业务校验与流程编排。
+#[async_trait::async_trait]
+pub trait OntologyDomain: Send + Sync {
+    // A. 实体类 CRUD（管理页生命周期）
+
+    /// 新增实体类（required_fields 校验；term_key 唯一冲突 → Conflict）
+    async fn create_class(&self, ctx: RequestContext, class: &OntologyClass) -> Result<()>;
+
+    /// 按 ID 查实体类
+    async fn get_class(&self, ctx: RequestContext, id: &str) -> Result<Option<OntologyClass>>;
+
+    /// 实体类分页组合查询（status / keyword 过滤）
+    async fn list_classes(
+        &self,
+        ctx: RequestContext,
+        query: OntologyClassQuery,
+    ) -> Result<common::api::PagedResult<OntologyClass>>;
+
+    /// 全量更新实体类（term_key 不可变；不存在 → NotFound）
+    async fn update_class(&self, ctx: RequestContext, class: &OntologyClass) -> Result<()>;
+
+    /// 退役实体类（幂等软删除：不存在或已退役均静默成功）
+    async fn retire_class(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // B. 关系类型 CRUD（domain/range 引用的实体类必须存在）
+
+    /// 新增关系类型（校验 domain_classes / range_classes 引用；term_key 唯一冲突 → Conflict）
+    async fn create_relation_type(
+        &self,
+        ctx: RequestContext,
+        relation_type: &OntologyRelationType,
+    ) -> Result<()>;
+
+    /// 按 ID 查关系类型
+    async fn get_relation_type(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyRelationType>>;
+
+    /// 关系类型分页组合查询（status / keyword 过滤）
+    async fn list_relation_types(
+        &self,
+        ctx: RequestContext,
+        query: OntologyRelationTypeQuery,
+    ) -> Result<common::api::PagedResult<OntologyRelationType>>;
+
+    /// 全量更新关系类型（term_key 不可变；不存在 → NotFound；引用校验同新增）
+    async fn update_relation_type(
+        &self,
+        ctx: RequestContext,
+        relation_type: &OntologyRelationType,
+    ) -> Result<()>;
+
+    /// 退役关系类型（幂等软删除）
+    async fn retire_relation_type(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // C. 同义映射管理（raw_term 入库前归一化；target 必须存在于对应词表）
+
+    /// 新增同义映射（UNIQUE(raw_term, target_kind) 冲突 → Conflict）
+    async fn create_synonym(
+        &self,
+        ctx: RequestContext,
+        mapping: &OntologySynonymMapping,
+    ) -> Result<()>;
+
+    /// 同义映射分页组合查询（target_kind / keyword 过滤）
+    async fn list_synonyms(
+        &self,
+        ctx: RequestContext,
+        query: OntologySynonymQuery,
+    ) -> Result<common::api::PagedResult<OntologySynonymMapping>>;
+
+    /// 删除同义映射（物理删除；幂等；删除后相关词条自然回落漂移）
+    async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // D. seed 预置注入（仅补缺：term_key / raw_term 已存在跳过，只新增不修改删除）
+
+    /// 幂等注入预置词表（三段逐条补缺），返回注入报告
+    async fn apply_default_lexicon(
+        &self,
+        ctx: RequestContext,
+        preset: &PresetOntologyLexicon,
+    ) -> Result<OntologyLexiconApplyReport>;
+
+    /// 导出当前生效词表（seed 快照装配 / sync preview 数据源）
+    ///
+    /// 只含 Active 行：退役是本地治理痕迹，不进快照（注入端仅补缺，
+    /// 退役行随快照注入会以 Active 复活）；同义映射无退役语义，全量导出。
+    async fn export_lexicon(&self, ctx: RequestContext) -> Result<PresetOntologyLexicon>;
+
+    /// 预览词表缺口：preset 中归一化 term_key 不在本地词表的条目（只读，不写库）
+    ///
+    /// 判定与 apply_default_lexicon 的跳过逻辑同源（物理存在即算已存在，
+    /// 含退役行），保证 preview "将新增" 与 sync 实际结果一致。
+    async fn preview_lexicon_gaps(
+        &self,
+        ctx: RequestContext,
+        preset: &PresetOntologyLexicon,
+    ) -> Result<LexiconGapReport>;
+
+    // E. 写后认证（OntologyCertifyConsumer 调用；逐词条 resolve + 命中置位）
+
+    /// 批量写后认证：逐词条 resolve 判定，节点类命中即 `is_published` 置位，
+    /// Drift 软门禁不拦截（`agent_id` 仅用于日志标注归属，不参与判定）
+    async fn certify_memory_terms(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+        terms: Vec<(TermKind, String)>,
+    ) -> Result<OntologyCertifyReport>;
+
+    // F. 词表视图（神经技能提示词注入）
+
+    /// 词表注入视图（关系词 > 实体类 > 同义样例，字段顺序即裁剪优先级）
+    async fn list_lexicon(&self, ctx: RequestContext) -> Result<OntologyLexiconSummary>;
+
+    // G. 漂移看板（薄透传 DAL 惰性聚合）
+
+    /// 漂移看板：Top N 漂移词 + 关系覆盖率 + 节点漂移统计
+    async fn get_drift_dashboard(
+        &self,
+        ctx: RequestContext,
+        request: GetDriftDashboardRequest,
+    ) -> Result<GetDriftDashboardResponse>;
+
+    /// 漂移词下钻：关系（边）明细
+    async fn list_drift_relation_details(
+        &self,
+        ctx: RequestContext,
+        request: ListDriftRelationDetailsRequest,
+    ) -> Result<ListDriftRelationDetailsResponse>;
+
+    /// 漂移词下钻：节点明细
+    async fn list_drift_class_details(
+        &self,
+        ctx: RequestContext,
+        request: ListDriftClassDetailsRequest,
+    ) -> Result<ListDriftClassDetailsResponse>;
 }

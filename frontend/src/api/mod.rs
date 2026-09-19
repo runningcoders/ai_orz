@@ -351,6 +351,33 @@ pub async fn api_delete(path: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+pub async fn api_delete_with_response<T: serde::de::DeserializeOwned>(
+    path: &str,
+) -> Result<T, ApiError> {
+    let resp = build_request(Method::DELETE, path)
+        .send()
+        .await
+        .map_err(|e| network_err(e, path))?;
+    let status = resp.status();
+    let http_status = status.as_u16();
+    if !status.is_success() {
+        handle_unauthorized(http_status);
+        return Err(parse_error_response(resp, path).await);
+    }
+    let body_text = resp.text().await.map_err(|e| network_err(e, path))?;
+    let api_resp = decode_api_response::<T>(&body_text, http_status, path)?;
+    if !api_resp.is_success() {
+        return Err(ApiError {
+            http_status,
+            error_code: None,
+            message: api_resp.message,
+        });
+    }
+    api_resp
+        .data
+        .ok_or_else(|| empty_data_error(http_status, path))
+}
+
 #[derive(Debug, Clone)]
 pub struct ApiError {
     pub http_status: u16,
@@ -553,11 +580,16 @@ pub fn build_pagination_url(base_url: &str, pagination: &common::api::Pagination
     }
 }
 
-/// 构造 query string：从 `&[(&str, Option<String>)]` 过滤 None 后拼接
+/// 构造 query string：从 `&[(&str, Option<String>)]` 过滤 None 后拼接；
+/// 值统一 percent-encode（中文 keyword / 含 `&=` 等特殊字符的原文必须编码，
+/// 否则会被服务端 query 解析器截断或错分）
 pub fn build_query_string(params: &[(&str, Option<String>)]) -> String {
     let pairs: Vec<String> = params
         .iter()
-        .filter_map(|(k, v)| v.as_ref().map(|val| format!("{}={}", k, val)))
+        .filter_map(|(k, v)| {
+            v.as_ref()
+                .map(|val| format!("{}={}", k, urlencoding::encode(val)))
+        })
         .collect();
     if pairs.is_empty() {
         String::new()

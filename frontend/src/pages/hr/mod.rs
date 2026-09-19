@@ -6,6 +6,7 @@ pub mod create_agent_modal;
 pub mod knowledge_graph;
 pub mod memory_search;
 pub mod onboard_modal;
+pub mod ontology_panel;
 pub mod skill_detail;
 pub mod skills;
 
