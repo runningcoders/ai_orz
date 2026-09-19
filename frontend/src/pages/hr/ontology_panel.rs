@@ -662,14 +662,20 @@ pub fn HrOntologyLexicon() -> Element {
         }
     };
 
-    // ===== 初始加载（闭包同步段不读信号，effect 仅挂载执行一次） =====
+    // ===== 初始加载 =====
+    // fetch_* 闭包的同步段会读写 *_seq 信号（seq++ 防陈旧响应竞态）。若在 effect
+    // 同步段直接调用，Dioxus 0.7 会把读到的 seq 信号自动收集为 effect 依赖，且每轮
+    // 递增必变 → effect 无限自触发 → 5 个请求/轮的请求风暴卡死页面。
+    // 移入 spawn 异步段执行：异步段内的信号读取不注册 effect 依赖，effect 仅挂载执行一次。
 
     use_effect(move || {
-        fetch_classes(true);
-        fetch_relations(true);
-        fetch_synonyms(true);
-        fetch_dashboard();
-        fetch_lexicon();
+        spawn(async move {
+            fetch_classes(true);
+            fetch_relations(true);
+            fetch_synonyms(true);
+            fetch_dashboard();
+            fetch_lexicon();
+        });
     });
 
     rsx! {
