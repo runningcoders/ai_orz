@@ -48,12 +48,15 @@ pub struct OntologyClassItem {
 pub struct ListOntologyClassesRequest {
     /// 按状态筛选（None = 全部，含退役）
     #[serde(default)]
+    #[param(source = "query")]
     pub status: Option<OntologyStatus>,
     /// 关键词（对 term_key / display_name 模糊匹配）
     #[serde(default)]
+    #[param(source = "query")]
     pub keyword: Option<String>,
     /// 分页参数
     #[serde(flatten)]
+    #[param(source = "query")]
     pub pagination: PaginationParams,
 }
 
@@ -142,12 +145,15 @@ pub struct OntologyRelationTypeItem {
 pub struct ListOntologyRelationTypesRequest {
     /// 按状态筛选（None = 全部，含退役）
     #[serde(default)]
+    #[param(source = "query")]
     pub status: Option<OntologyStatus>,
     /// 关键词（对 term_key / display_name 模糊匹配）
     #[serde(default)]
+    #[param(source = "query")]
     pub keyword: Option<String>,
     /// 分页参数
     #[serde(flatten)]
+    #[param(source = "query")]
     pub pagination: PaginationParams,
 }
 
@@ -238,12 +244,15 @@ pub struct OntologySynonymItem {
 pub struct ListOntologySynonymsRequest {
     /// 按目标词条种类筛选
     #[serde(default)]
+    #[param(source = "query")]
     pub target_kind: Option<TermKind>,
     /// 按目标规范词筛选
     #[serde(default)]
+    #[param(source = "query")]
     pub target_key: Option<String>,
     /// 分页参数
     #[serde(flatten)]
+    #[param(source = "query")]
     pub pagination: PaginationParams,
 }
 
@@ -295,9 +304,11 @@ pub struct DeleteOntologySynonymResponse {
 pub struct GetDriftDashboardRequest {
     /// Top N 漂移词数量上限（None = 默认 20）
     #[serde(default)]
+    #[param(source = "query")]
     pub top_n: Option<usize>,
     /// 按 Agent 过滤（None = 全组织）
     #[serde(default)]
+    #[param(source = "query")]
     pub agent_id: Option<String>,
 }
 
@@ -345,9 +356,11 @@ pub struct GetDriftDashboardResponse {
 pub struct GetDriftTrendRequest {
     /// 统计最近 N 天（None = 默认 30）
     #[serde(default)]
+    #[param(source = "query")]
     pub days: Option<u32>,
     /// 按 Agent 过滤（None = 全组织）
     #[serde(default)]
+    #[param(source = "query")]
     pub agent_id: Option<String>,
 }
 
@@ -381,12 +394,15 @@ pub struct GetDriftTrendResponse {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListDriftRelationDetailsRequest {
     /// 词条原文（归一化匹配）
+    #[param(source = "query")]
     pub raw_term: String,
     /// 按 Agent 过滤（None = 全组织）
     #[serde(default)]
+    #[param(source = "query")]
     pub agent_id: Option<String>,
     /// 分页参数
     #[serde(flatten)]
+    #[param(source = "query")]
     pub pagination: PaginationParams,
 }
 
@@ -412,12 +428,15 @@ pub type ListDriftRelationDetailsResponse = PagedResult<DriftRelationDetail>;
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListDriftClassDetailsRequest {
     /// 词条原文（归一化匹配）
+    #[param(source = "query")]
     pub raw_term: String,
     /// 按 Agent 过滤（None = 全组织）
     #[serde(default)]
+    #[param(source = "query")]
     pub agent_id: Option<String>,
     /// 分页参数
     #[serde(flatten)]
+    #[param(source = "query")]
     pub pagination: PaginationParams,
 }
 
