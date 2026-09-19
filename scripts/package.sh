@@ -18,6 +18,7 @@ set -euo pipefail
 
 # shellcheck source=./lib/common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+setup_path
 
 # 版本号：优先显式传入，其次 git tag/describe，兜底 dev
 VERSION="${1:-}"

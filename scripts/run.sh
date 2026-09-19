@@ -17,6 +17,8 @@ set -eu
 
 # shellcheck source=./lib/service.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/service.sh"
+# IDE / CI / Makefile 调起的非交互 shell 可能缺 cargo / dx，先补齐 PATH 再启动
+setup_path
 
 MODE="${1:-dev}"
 
@@ -173,6 +175,6 @@ case "$MODE" in
         cmd_frontend
         ;;
     *)
-        die "未知模式: $MODE（可选: dev / backend / frontend）"
+        die "未知模式: ${MODE}（可选: dev / backend / frontend）"
         ;;
 esac

@@ -67,8 +67,12 @@ cmd_start() {
         foreground=1
     fi
 
+    # 统一以「根」为工作目录：前端静态目录（dist）、数据目录等默认按相对路径解析，
+    # 从任意路径调用本脚本行为一致（发布包可放在任意目录，同样成立）
+    cd "$REPO_ROOT"
+
     if [ ! -x "$BIN" ]; then
-        die "未找到服务二进制: $BIN（仓库先执行 make build 或 make prod）"
+        die "未找到服务二进制: ${BIN}（仓库先执行 make build 或 make prod）"
     fi
 
     if [ "$foreground" = "1" ]; then
@@ -82,7 +86,7 @@ cmd_start() {
     local old
     old=$(read_pid)
     if [ -n "$old" ]; then
-        warn "⚠️  检测到运行中的实例 PID=$old，先优雅停止..."
+        warn "⚠️  检测到运行中的实例 PID=${old}，先优雅停止..."
         cmd_stop
     fi
 
@@ -107,7 +111,8 @@ cmd_start() {
     echo "⏳ 等待服务就绪（业务日志: ${BLUE}$DAY_LOG${NC}）..."
     if wait_for_port localhost "$port" 60 "ai_orz 服务" "$pid"; then
         ok "✅ 服务已就绪"
-        echo "   地址: ${BLUE}http://localhost:$port${NC}（PID $pid，PID 文件 $PID_FILE）"
+        # ${pid} 必须带花括号：紧随其后的全角逗号会被 bash 当成变量名的一部分（UTF-8 下）
+        echo "   地址: ${BLUE}http://localhost:${port}${NC}（PID ${pid}，PID 文件 ${PID_FILE}）"
         echo "   日志: ${BLUE}make logs${NC}   状态: ${BLUE}make status${NC}   停止: ${BLUE}make stop${NC}"
         return 0
     fi
@@ -171,7 +176,7 @@ cmd_status() {
         echo "○ 未运行（启动: $(in_repo_checkout && echo 'make prod' || echo 'make start')）"
         return 0
     fi
-    ok "● 运行中（PID $pid）"
+    ok "● 运行中（PID ${pid}）"
     /bin/ps -p "$pid" -o pid,etime,%cpu,%mem,command
     local port
     port=$(listen_port)

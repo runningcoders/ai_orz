@@ -110,6 +110,7 @@ Organization ──┬── User
 | **前端架构** | [frontend_architecture.md](./docs/design/frontend_architecture.md) | Dioxus + 41 路由 |
 | **查询规范** | [pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md) | 分页 + 通用 count |
 | **记忆设计** | [memory_design.md](./docs/memory_design.md) | 四层记忆系统 |
+| **脚本地图** | [scripts/README.md](./scripts/README.md) | 运维脚本入口、职责划分与「一处实现」规则 |
 | **Wiki 百科** | [docs/wiki/](./docs/wiki/) | 8 大板块 353 篇（功能实现细节）|
 | **RAG 知识卡** | [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/) | 54+ 张原子卡（第一召回层）|
 

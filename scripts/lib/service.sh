@@ -120,7 +120,7 @@ graceful_stop() {
 
     # 基线（发信号前）
     local bases=() i
-    for i in $(seq 0 $((${#logs[@]} - 1))); do
+    for ((i = 0; i < ${#logs[@]}; i++)); do
         bases[i]=0
         if [ -f "${logs[i]}" ]; then
             bases[i]=$(wc -l < "${logs[i]}" 2>/dev/null | tr -d ' ')
@@ -136,7 +136,7 @@ graceful_stop() {
             return 1
         fi
         if [ "$marker_seen" = "0" ]; then
-            for i in $(seq 0 $((${#logs[@]} - 1))); do
+            for ((i = 0; i < ${#logs[@]}; i++)); do
                 if log_has_marker "${bases[i]}" "${logs[i]}"; then
                     marker_seen=1
                     ok "🧹 关停编排已完成（日志确认），等待进程退出..."
@@ -165,5 +165,5 @@ read_pid() {
 # 按进程名兜底找 PID（无 PID 文件时使用）
 # 用法: find_pids_by_cmd <egrep 模式>
 find_pids_by_cmd() {
-    /bin/ps aux | /usr/bin/grep -E "$1" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}'
+    /bin/ps aux 2>/dev/null | /usr/bin/grep -E "$1" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}'
 }
