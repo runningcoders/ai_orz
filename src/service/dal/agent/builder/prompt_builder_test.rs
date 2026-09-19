@@ -667,7 +667,8 @@ fn make_short_term_memory(summary: &str) -> crate::models::memory::Memory {
     ))
 }
 
-/// 区块顺序：通用上下文 →【近期已沉淀记忆】→ Trace ID → 待沉淀内容
+/// 区块顺序（扁平化文本）：System 静态规则 → 通用上下文 →【近期已沉淀记忆】
+/// → Trace ID → 待沉淀内容
 #[test]
 fn sleep_prompt_section_order() {
     let agent = make_simple_agent();
@@ -678,6 +679,9 @@ fn sleep_prompt_section_order() {
     builder.settled_reference(&["上一段沉淀到一半".to_string()]);
     let prompt = builder.build_sleep_prompt("待沉淀内容", &["t-1".to_string()]);
 
+    let idx_sys_rules = prompt
+        .find("【沉淀场景补充规则】")
+        .expect("System 应包含沉淀补充规则");
     let idx_ref = prompt
         .find("【近期已沉淀记忆（仅供参考）】")
         .expect("应包含参考区块");
@@ -686,6 +690,10 @@ fn sleep_prompt_section_order() {
         .expect("应包含【思考 Trace ID】");
     let idx_pending = prompt.find("待沉淀内容").expect("应包含待沉淀内容");
 
+    assert!(
+        idx_sys_rules < idx_trace,
+        "System 静态规则应排在【思考 Trace ID】之前"
+    );
     assert!(idx_ref < idx_trace, "参考区块应排在【思考 Trace ID】之前");
     assert!(
         idx_trace < idx_pending,
@@ -1113,4 +1121,68 @@ fn lexicon_block_precedes_task_context() {
     // 任务上下文带出前置依赖 ID + 可行动提示（Agent 自助查询前置任务状态与产物）
     assert!(prompt.contains("- 前置依赖任务: task-000"));
     assert!(prompt.contains("get_task(前置任务ID, with_artifacts=true)"));
+}
+
+/// DefaultPromptBuilder 沉淀扁平 Prompt：静态指令块先于易变数据。
+///
+/// 指令块（触发头+约束+任务+认知要点）跨次沉淀运行逐字节相同，若被易变数据
+/// （Trace/待沉淀记忆/依赖 trace 列表）切割，其后全部静态内容的前缀缓存失效——
+/// 因此指令块前置、易变数据统一收尾。
+#[test]
+fn default_sleep_prompt_static_block_first() {
+    let agent = make_simple_agent();
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-sleep");
+    builder.system_prompt(&agent);
+    builder.settled_reference(&["上一段沉淀到一半".to_string()]);
+    let prompt = builder.build_sleep_prompt("待沉淀内容", &["t-1".to_string()]);
+
+    let idx_trigger = prompt
+        .find("【沉淀工作模式触发】")
+        .expect("应包含沉淀触发头");
+    let idx_trace = find_block(&prompt, "【思考 Trace ID】").expect("应包含 Trace 区块");
+    let idx_pending = find_block(&prompt, "【待沉淀的短期记忆】").expect("应包含待沉淀区块");
+    let idx_ids = find_block(&prompt, "【依赖的 Trace ID 列表】").expect("应包含依赖 trace 列表");
+
+    assert!(
+        idx_trigger < idx_trace,
+        "静态指令块应排在【思考 Trace ID】之前"
+    );
+    assert!(idx_trace < idx_pending, "Trace 应排在待沉淀内容之前");
+    assert!(idx_pending < idx_ids, "待沉淀内容应排在依赖 trace 列表之前");
+    assert!(prompt.contains("- t-1"), "依赖 trace 列表应包含 t-1");
+}
+
+/// DefaultPromptBuilder 总结扁平 Prompt：静态指令块先于易变数据。
+///
+/// 触发头/任务/约束完全静态，Trace/轮次数/工作摘要/依赖 trace 列表统一收尾
+/// （与 build_sleep_prompt 对称，稳定性递减保前缀缓存）。
+#[test]
+fn default_summary_prompt_static_block_first() {
+    let agent = make_simple_agent();
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-summary");
+    builder.system_prompt(&agent);
+    let prompt = builder.build_summary_prompt("已完成 X 与 Y", 7, &["t-9".to_string()]);
+
+    let idx_trigger = prompt
+        .find("【总结退出模式触发】")
+        .expect("应包含总结退出触发头");
+    let idx_trace = find_block(&prompt, "【思考 Trace ID】").expect("应包含 Trace 区块");
+    let idx_rounds = find_block(&prompt, "【已连续思考轮次】").expect("应包含轮次区块");
+    let idx_summary = find_block(&prompt, "【当前工作对话摘要】").expect("应包含摘要区块");
+    let idx_ids = find_block(&prompt, "【依赖的 Trace ID 列表】").expect("应包含依赖 trace 列表");
+
+    assert!(
+        idx_trigger < idx_trace,
+        "静态指令块应排在【思考 Trace ID】之前"
+    );
+    assert!(idx_trace < idx_rounds, "Trace 应排在轮次区块之前");
+    assert!(idx_rounds < idx_summary, "轮次区块应排在摘要区块之前");
+    assert!(idx_summary < idx_ids, "摘要区块应排在依赖 trace 列表之前");
+    assert!(prompt.contains("7 轮"), "轮次区块应包含轮次数");
+    assert!(prompt.contains("已完成 X 与 Y"), "摘要区块应包含摘要内容");
+    assert!(prompt.contains("- t-9"), "依赖 trace 列表应包含 t-9");
 }

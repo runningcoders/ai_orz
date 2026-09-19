@@ -15,6 +15,10 @@
 //! 10. 【工具失败警告】      ← 低频统计快照
 //! 11. 【trace_id + 当前消息】← 每次变化
 //!
+//! 场景专属 Prompt（沉淀 build_sleep_prompt / 总结 build_summary_prompt / 意图分析
+//! build_intent_analyze_prompt）同样按「稳定性递减」排布：完全静态的指令块在前，
+//! 每轮变化的 Trace/场景数据统一收尾，保证跨次运行时静态块可命中前缀缓存。
+//!
 //! 所有区块拼装方法（`build_skills_sections` / `build_common_context_sections` /
 //! `render_intent_analysis_section` / `build_final_response_guidance` /
 //! `push_settled_reference` / `awaken_system_part` / `awaken_user_part`）
@@ -1055,6 +1059,12 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result
     }
 
+    /// 沉淀场景扁平 Prompt（trace/stat 记录用；模型输入走 build_sleep_initial_messages）
+    ///
+    /// 区块按稳定性递减排序：人设→技能→上下文→已沉淀参考→**完全静态的指令块**（触发头 +
+    /// 约束 + 任务步骤 + 认知要点，跨次沉淀运行逐字节相同），每轮变化的 Trace ID、待沉淀
+    /// 记忆、依赖 trace 列表统一收尾——指令块若被易变数据切割，跨次运行时其后的全部静态
+    /// 内容都无法命中前缀缓存。
     fn build_sleep_prompt(&self, pending_memories_summary: &str, trace_ids: &[String]) -> String {
         let mut result = String::new();
 
@@ -1074,7 +1084,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         // 8. 近期已沉淀记忆（少量参考，不是【历史对话】全量）
         //
-        // 沉淀场景**不放**【历史对话】：它与下面的【待沉淀的短期记忆】大面积重复
+        // 沉淀场景**不放**【历史对话】：它与文末的【待沉淀的短期记忆】大面积重复
         // （Active ≤ 20 条时完全重复），白白吃掉上下文预算。
         // 图谱里已有什么、曾经沉淀过什么，技能已要求 Agent 用 search_memory 按需检索，
         // 这里只给少量「顺手可见」的线索，用于衔接上次被截断的沉淀。
@@ -1084,19 +1094,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         // 它直接复用主循环的完整对话，也不需要这个区块。
         self.push_settled_reference(&mut result);
 
-        // 9. Trace ID
-        if let Some(trace_id) = &self.current_trace_id {
-            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
-        }
-
-        // 10. 沉淀约束 + 待沉淀记忆 + 任务步骤（模板内聚在 builder）
+        // 9. 沉淀指令块（触发头 + 约束 + 任务 + 认知要点，完全静态，置于易变数据之前）
         // 跳过 tool_failures（沉淀不调外部工具）
         result.push_str("【沉淀工作模式触发】\n\n");
-        result.push_str("你收到这个消息是因为触发了沉淀流程（类似人脑的睡眠整理记忆）。请进入沉淀工作模式，对以下未沉淀的短期记忆进行归纳整理：\n\n");
-        result.push_str(&format!(
-            "## 待沉淀的短期记忆\n{}\n\n",
-            pending_memories_summary
-        ));
+        result.push_str("你收到这个消息是因为触发了沉淀流程（类似人脑的睡眠整理记忆）。请进入沉淀工作模式，对文末【待沉淀的短期记忆】进行归纳整理：\n\n");
         result.push_str("## 沉淀约束（重要）\n\n");
         result.push_str("- **不要发送消息**：睡觉是对自身知识的沉淀积累，不应依赖外部信息\n");
         result.push_str("- **不要调用消息类工具**（send_message / send_task_assignment_message 等），避免触发消息流程导致异步唤醒自己\n");
@@ -1134,14 +1135,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("   - `summary`：本次沉淀提炼的核心经验摘要（不是细节流水账）\n");
         result.push_str("   - `content`：详细内容（可选，记录沉淀出的关键知识点列表）\n");
         result.push_str("   - `tags`：标签列表（如 `[\"settled\", \"consolidation\"]`）\n");
-        result.push_str(&format!(
-            "   - `trace_ids`：**必须填入** `[{}]`（本次沉淀依赖的 trace 列表，用于记忆追溯）\n\n",
-            trace_ids
-                .iter()
-                .map(|t| format!("\"{}\"", t))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
+        result.push_str("   - `trace_ids`：**必须填入**文末【依赖的 Trace ID 列表】中的全部 ID（本次沉淀依赖的 trace 列表，用于记忆追溯）\n\n");
         result.push_str("## 认知要点\n\n");
         result.push_str("- 图谱是活的，每次沉淀都是迭代优化，不是机械合并\n");
         result.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
@@ -1150,11 +1144,34 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             "- 知识节点在蜂巢内全局共享（无需标记即对所有 Agent 可见）；published 标签标记其中值得优先参考的高价值节点，以此为桥梁发现跨 Agent 的知识网络\n",
         );
         result.push_str("- 详见\"记忆认知\"技能的沉淀机制和新老知识交替章节\n\n");
-        result.push_str("开始沉淀吧。");
+        result.push_str("开始沉淀吧。\n\n");
+
+        // 10. 易变数据收尾（每轮沉淀运行都变化，置于最后使前缀缓存作废面最小）
+        if let Some(trace_id) = &self.current_trace_id {
+            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+        result.push_str("【待沉淀的短期记忆】\n");
+        result.push_str(pending_memories_summary);
+        result.push_str("\n\n");
+        result.push_str(
+            "【依赖的 Trace ID 列表】（调用 save_short_term_memory 时填入 trace_ids 字段）\n",
+        );
+        if trace_ids.is_empty() {
+            result.push_str("- （本次运行无依赖 trace，填 `[]`）\n");
+        } else {
+            for tid in trace_ids {
+                result.push_str(&format!("- {}\n", tid));
+            }
+        }
 
         result
     }
 
+    /// 总结退出场景扁平 Prompt
+    ///
+    /// 区块按稳定性递减排序：人设→技能→上下文→历史对话→**完全静态的指令块**（触发头 +
+    /// 任务 + 约束，跨次总结运行逐字节相同），每轮变化的 Trace ID、轮次数、工作摘要、
+    /// 依赖 trace 列表统一收尾。
     fn build_summary_prompt(
         &self,
         work_summary: &str,
@@ -1185,20 +1202,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push('\n');
         }
 
-        // 9. Trace ID
-        if let Some(trace_id) = &self.current_trace_id {
-            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
-        }
-
-        // 10. 总结退出指令
+        // 9. 总结退出指令块（触发头 + 任务 + 约束，完全静态，置于易变数据之前）
         result.push_str("【总结退出模式触发】\n\n");
-        result.push_str(&format!(
-            "你已连续思考 {} 轮仍未完成任务，现在需要总结当前工作进展并退出。\n\n",
-            total_rounds
-        ));
-        result.push_str("## 当前工作对话摘要\n\n");
-        result.push_str(work_summary);
-        result.push_str("\n\n");
+        result.push_str("你收到这个消息是因为连续多轮思考仍未完成任务，触发了总结退出流程。请总结当前工作进展并退出（实际轮次数与工作对话摘要见文末）：\n\n");
         result.push_str("## 你的任务\n\n");
         result.push_str("1. **总结进展**：梳理当前已完成的工作、取得的阶段性成果\n");
         result.push_str("2. **记录问题**：列出未解决的问题、遇到的障碍、下一步建议\n");
@@ -1209,21 +1215,33 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("   - `summary`：本次工作总结摘要（核心进展 + 问题 + 下一步）\n");
         result.push_str("   - `content`：详细内容（可选，记录完整总结）\n");
         result.push_str("   - `tags`：标签列表（如 `[\"work_summary\", \"max_rounds\"]`）\n");
-        result.push_str(&format!(
-            "   - `trace_ids`：**必须填入** `[{}]`（本次总结依赖的 trace 列表，用于记忆追溯）\n",
-            trace_ids
-                .iter()
-                .map(|t| format!("\"{}\"", t))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
+        result.push_str("   - `trace_ids`：**必须填入**文末【依赖的 Trace ID 列表】中的全部 ID（本次总结依赖的 trace 列表，用于记忆追溯）\n");
         result.push_str("5. **保持简洁**：总结应聚焦关键信息，避免冗长\n\n");
         result.push_str("## 约束\n\n");
         result.push_str("- 这是退出流程，完成总结后直接回复最终文本即可\n");
         result.push_str("- 不要尝试继续执行原任务，聚焦于总结和通知\n");
         result.push_str("- 如果无法发送消息（无目标），直接输出总结文本\n");
         result.push_str("- save_short_term_memory 是必须执行的操作，不要遗漏\n\n");
-        result.push_str("开始总结吧。");
+        result.push_str("开始总结吧。\n\n");
+
+        // 10. 易变数据收尾（每轮总结运行都变化，置于最后使前缀缓存作废面最小）
+        if let Some(trace_id) = &self.current_trace_id {
+            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+        result.push_str(&format!("【已连续思考轮次】{} 轮\n\n", total_rounds));
+        result.push_str("【当前工作对话摘要】\n");
+        result.push_str(work_summary);
+        result.push_str("\n\n");
+        result.push_str(
+            "【依赖的 Trace ID 列表】（调用 save_short_term_memory 时填入 trace_ids 字段）\n",
+        );
+        if trace_ids.is_empty() {
+            result.push_str("- （本次运行无依赖 trace，填 `[]`）\n");
+        } else {
+            for tid in trace_ids {
+                result.push_str(&format!("- {}\n", tid));
+            }
+        }
 
         result
     }
@@ -1248,6 +1266,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
     /// 沉淀场景：System（人设+技能+沉淀规范简版指引）
     /// + User（上下文+历史+本轮用户原始消息+待沉淀摘要+Trace）
+    ///
+    /// 缓存友好排布：System 消息跨次沉淀运行完全静态（人设/技能/规则逐字节相同，
+    /// 是前缀缓存的主要命中面），易变数据（Trace/待沉淀摘要/trace 列表）全部收尾在
+    /// User 消息末尾——后续新增区块保持「静态前、易变后」，不要插入到 System。
     fn build_sleep_initial_messages(
         &self,
         pending_memories_summary: &str,
@@ -1293,6 +1315,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
     }
 
     /// 总结场景：System（人设+技能+总结规范简版指引）+ User（上下文+摘要+轮次+Trace）
+    ///
+    /// 缓存友好排布：System 完全静态；User 中上下文/历史在前（会话内追加式），
+    /// Trace/轮次/摘要/trace 列表等每轮变化的数据收尾。
     fn build_summary_initial_messages(
         &self,
         work_summary: &str,
@@ -1344,6 +1369,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
     /// 意图分析场景：System（人设+技能+理解规范简版指引+原始专用指令块核心）
     /// + User（上下文+历史+Trace+当前消息靶子）
+    ///
+    /// 缓存友好排布：System 含意图分析 SOP 专属指令块（跨次唤醒完全静态，是本场景
+    /// 前缀缓存的主要命中面），User 中易变的 Trace/当前消息收尾。
     fn build_intent_analyze_initial_messages(&self) -> Vec<ChatMessage> {
         let mut system = String::new();
         if let Some(s) = &self.system_prompt {
