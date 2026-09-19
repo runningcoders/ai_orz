@@ -87,10 +87,13 @@ impl ToolCallDao for ToolCallDaoImpl {
         let po = tool.our_tool.po();
 
         // 幂等防重：仅业务指定 call_id 时查询历史（自动生成新 UUID 永不命中，避免多余扫描）
-        // 历史 Completed → 直接返回历史结果；Failed → 允许重试正常执行
+        // 历史 Completed → 直接返回历史结果；Failed → 允许重试正常执行。
+        //
+        // ⚠️ 判定只看 `call_id`：它是一次调用的唯一身份（UUID v7），**不按 tool_id 收窄** ——
+        // 收窄会让「同一 call_id 落在别的工具名下」的历史行查不到，等于把幂等做成半个。
         if business_specified
-            && let Ok(Some(history)) = crate::pkg::tool_tracing::logger::ToolCallLogger::get()
-                .read_call_by_id(Some(po.id.as_str()), &call_id)
+            && let Ok(Some(history)) =
+                crate::pkg::tool_tracing::logger::ToolCallLogger::get().read_call_by_id(&call_id)
             && history.status == ToolCallStatus::Completed
         {
             let mut entry = history;

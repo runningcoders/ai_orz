@@ -120,11 +120,18 @@ pub fn tools_root_dir(base_data_path: &Path) -> PathBuf {
     base_data_path.join("tools")
 }
 
-/// `{base}/tools/{tool_id}/call_trace` — 每次工具调用的 trace 文件目录
-pub fn tool_call_trace_dir(base_data_path: &Path, tool_id: &str) -> PathBuf {
-    tools_root_dir(base_data_path)
-        .join(tool_id)
-        .join("call_trace")
+/// `{base}/tools/call_trace` — 每次工具调用的 trace 文件目录（按天分片）
+///
+/// 【边界决策 2026-09-19】**不按 `tool_id` 再分一层目录**：
+/// - `call_id` 是一次工具调用的唯一身份（UUID v7），`tool_id` 只是 entry 里的字段；
+/// - 按 tool_id 分目录会让「未带 tool_id 的查询」（详情页按 call_id 查、「最近 N 条」列表）
+///   退化成全量目录枚举 —— 工具越多越慢；
+/// - 地址依赖业务字段后，工具改名/迁移会让历史 trace 变成孤儿目录；
+/// - 顺带会诱导出「按 (`tool_id`, `call_id`) 收窄」的幂等判定，而幂等只需 `call_id`。
+///
+/// 拉平后 `tool_id` 仍作为 `ToolCallEntry` 字段参与查询过滤，语义不变。
+pub fn tool_call_trace_dir(base_data_path: &Path) -> PathBuf {
+    tools_root_dir(base_data_path).join("call_trace")
 }
 
 /// `{base}/tools/{tool_id}/logs` — 工具执行日志目录
@@ -332,11 +339,12 @@ mod tests {
         );
     }
 
+    /// 调用轨迹按天分片、不按 tool_id 分目录（见 [`tool_call_trace_dir`] 的边界决策）
     #[test]
-    fn tool_call_trace_dir_nests_tool_id_and_call_trace() {
+    fn tool_call_trace_dir_is_flat_under_tools_root() {
         assert_eq!(
-            tool_call_trace_dir(Path::new("/data/.ai_orz"), "web_search"),
-            PathBuf::from("/data/.ai_orz/tools/web_search/call_trace")
+            tool_call_trace_dir(Path::new("/data/.ai_orz")),
+            PathBuf::from("/data/.ai_orz/tools/call_trace")
         );
     }
 

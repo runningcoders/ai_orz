@@ -99,9 +99,7 @@ async fn test_execute_dedup_returns_history_for_completed() {
     assert_eq!(registered_count, 1);
 
     // 模拟消费者落盘 JSONL
-    ToolCallLogger::get()
-        .log_call("shell_exec", entry1.clone())
-        .unwrap();
+    ToolCallLogger::get().log_call(entry1.clone()).unwrap();
 
     // 同 call_id 再次调用 → 直接返回历史结果，不重复执行
     let ctx2 = base_ctx()
@@ -154,9 +152,7 @@ async fn test_execute_dedup_allows_retry_after_failed() {
         status: ToolCallStatus::Failed,
         metadata: serde_json::json!({}),
     };
-    ToolCallLogger::get()
-        .log_call("shell_exec", failed_entry)
-        .unwrap();
+    ToolCallLogger::get().log_call(failed_entry).unwrap();
 
     // 同 call_id 调用 → 失败历史不阻止重试，正常执行
     let ctx = base_ctx()

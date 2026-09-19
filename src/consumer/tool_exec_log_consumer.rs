@@ -45,9 +45,10 @@ impl Consumer for ToolExecLogConsumer {
         })?;
 
         // 写入 JSONL 日志（与原 decorator 的 log_call 逻辑一致）
+        // 路径为 tools/call_trace/{YYYYMMDD}.jsonl —— 不按 tool_id 分目录，
+        // tool_id 只作为 entry 字段落盘（见 paths::tool_call_trace_dir 的边界决策）。
         let logger = ToolCallLogger::get();
-        let tool_id = event.entry.tool_id.clone();
-        let _ = logger.log_call(&tool_id, event.entry);
+        let _ = logger.log_call(event.entry);
 
         Ok(())
     }

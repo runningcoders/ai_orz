@@ -1,7 +1,11 @@
 //! Tool call logging implementation using daily JSONL files
 //!
-//! Stores tool call traces at: {base_data_path}/tools/{tool_id}/call_trace/{YYYYMMDD}.jsonl
+//! Stores tool call traces at: {base_data_path}/tools/call_trace/{YYYYMMDD}.jsonl
 //! Each line is a single ToolCallEntry with full input/output metadata
+//!
+//! 【边界决策 2026-09-19】**不按 `tool_id` 再分一层目录**（详见
+//! [`crate::pkg::paths::tool_call_trace_dir`]）：`call_id` 是一次调用的唯一身份，
+//! `tool_id` 只是 entry 的字段。拉平后未带 `tool_id` 的查询不再退化成全量目录枚举。
 
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -62,41 +66,39 @@ impl ToolCallLogger {
         Self { base_data_path }
     }
 
-    /// Get the writer for a specific tool's call traces
-    pub fn writer_for_tool(&self, tool_id: &str) -> DailyJsonlWriter {
-        DailyJsonlWriter::new(self.trace_dir_for_tool(tool_id))
+    /// Get the writer for the shared call trace directory
+    pub fn writer(&self) -> DailyJsonlWriter {
+        DailyJsonlWriter::new(self.trace_dir())
     }
 
     /// Log a tool call entry to the daily JSONL file
-    pub fn log_call(&self, tool_id: &str, entry: ToolCallEntry) -> Result<(String, usize)> {
-        let writer = self.writer_for_tool(tool_id);
-        writer.append(&entry)
+    ///
+    /// `tool_id` 仅作为 entry 字段落盘，不参与路径（见模块级边界决策）。
+    ///
+    /// 不返回「日期 + 行号」：call trace 的检索键是 `call_id`，行号定位用不上，
+    /// 而每次写入都数一遍当日文件行数会把成本放大成 O(行数²)（拉平后当日所有工具
+    /// 共用一个文件，行数远超按 tool 分目录时期）。需要位置坐标的测试请直接用
+    /// `writer().append()`。
+    pub fn log_call(&self, entry: ToolCallEntry) -> Result<()> {
+        let writer = self.writer();
+        writer.append_no_position(&entry)?;
+        Ok(())
     }
 
     /// Read a logged tool call entry by date and line number
     #[allow(dead_code)]
-    pub fn read_call(
-        &self,
-        tool_id: &str,
-        date: &str,
-        line_number: usize,
-    ) -> Result<ToolCallEntry> {
-        let writer = self.writer_for_tool(tool_id);
+    pub fn read_call(&self, date: &str, line_number: usize) -> Result<ToolCallEntry> {
+        let writer = self.writer();
         writer.read_line_json(date, line_number)
     }
 
     /// Read a logged tool call entry by call ID.
     ///
-    /// If `tool_id` is provided, only that tool's trace directory is scanned.
-    /// Otherwise all tool trace directories under `{base_data_path}/tools` are scanned.
-    pub fn read_call_by_id(
-        &self,
-        tool_id: Option<&str>,
-        call_id: &str,
-    ) -> Result<Option<ToolCallEntry>> {
+    /// `call_id` 即一次调用的唯一身份，**不按 `tool_id` 收窄**：收窄会让
+    /// 「同一个 call_id 落在别的工具名下」的历史行查不到，正是这次 UI 串号的成因之一。
+    pub fn read_call_by_id(&self, call_id: &str) -> Result<Option<ToolCallEntry>> {
         let entries = self.query_calls(ToolCallQuery {
             call_id: Some(call_id.to_string()),
-            tool_id: tool_id.map(ToString::to_string),
             limit: Some(1),
             ..Default::default()
         })?;
@@ -109,14 +111,9 @@ impl ToolCallLogger {
     /// simple and storage-detail-local; if query volume grows, add an index
     /// without changing this public API.
     pub fn query_calls(&self, query: ToolCallQuery) -> Result<Vec<ToolCallEntry>> {
-        let tool_ids = self.resolve_tool_ids(query.tool_id.as_deref())?;
+        let trace_dir = self.trace_dir();
         let mut entries = Vec::new();
-
-        for tool_id in tool_ids {
-            let trace_dir = self.trace_dir_for_tool(&tool_id);
-            if !trace_dir.exists() {
-                continue;
-            }
+        if trace_dir.exists() {
             for path in jsonl_files(&trace_dir)? {
                 read_matching_entries(&path, &query, &mut entries)?;
             }
@@ -140,46 +137,9 @@ impl ToolCallLogger {
         Ok(entries)
     }
 
-    fn trace_dir_for_tool(&self, tool_id: &str) -> PathBuf {
-        paths::tool_call_trace_dir(&self.base_data_path, tool_id)
+    fn trace_dir(&self) -> PathBuf {
+        paths::tool_call_trace_dir(&self.base_data_path)
     }
-
-    fn resolve_tool_ids(&self, tool_id: Option<&str>) -> Result<Vec<String>> {
-        if let Some(tool_id) = tool_id {
-            validate_tool_id_for_trace_path(tool_id)?;
-            return Ok(vec![tool_id.to_string()]);
-        }
-
-        let tools_dir = paths::tools_root_dir(&self.base_data_path);
-        if !tools_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut tool_ids = Vec::new();
-        for entry in fs::read_dir(tools_dir)? {
-            let entry = entry?;
-            if !entry.file_type()?.is_dir() {
-                continue;
-            }
-            if entry.path().join("call_trace").is_dir() {
-                tool_ids.push(entry.file_name().to_string_lossy().to_string());
-            }
-        }
-        tool_ids.sort();
-        Ok(tool_ids)
-    }
-}
-
-fn validate_tool_id_for_trace_path(tool_id: &str) -> Result<()> {
-    if tool_id.is_empty()
-        || tool_id.contains('/')
-        || tool_id.contains('\\')
-        || tool_id == "."
-        || tool_id == ".."
-    {
-        anyhow::bail!("invalid tool_id for call trace lookup");
-    }
-    Ok(())
 }
 
 fn jsonl_files(trace_dir: &Path) -> Result<Vec<PathBuf>> {

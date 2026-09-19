@@ -7,20 +7,19 @@ use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
 
 #[test]
-fn test_logger_creates_correct_directory_structure() {
+fn test_logger_creates_flat_trace_directory() {
     let temp_dir = tempdir().unwrap();
     let base_path = temp_dir.path().to_path_buf();
     let logger = ToolCallLogger::new(base_path.clone());
 
-    // Get writer for a tool - writer creates directory on first write
-    let tool_id = "test-tool-123";
-    let writer = logger.writer_for_tool(tool_id);
+    // 单一共享 writer —— 不再按 tool 取 writer，目录在首次写入时创建
+    let writer = logger.writer();
 
     // Do an empty write to create directory
-    let _ = writer.append(&json!({}));
+    let _ = writer.append_no_position(&json!({}));
 
-    // Verify directory structure is created: {base}/tools/{tool_id}/call_trace/
-    let expected_dir = base_path.join("tools").join(tool_id).join("call_trace");
+    // 拉平后：{base}/tools/call_trace/（不再有 {tool_id} 这一层）
+    let expected_dir = base_path.join("tools").join("call_trace");
     assert!(expected_dir.exists());
     assert!(expected_dir.is_dir());
 }
@@ -51,14 +50,14 @@ fn test_log_and_read_entry_roundtrip() {
         metadata: json!({ "source": "unit_test" }),
     };
 
-    // Log the entry
-    let result = logger.log_call(tool_id, entry.clone());
-    assert!(result.is_ok(), "Logging should succeed: {:?}", result);
-
-    let (date, line_number) = result.unwrap();
+    // Log the entry（生产路径 log_call 不返行号；这里要验证 read_call，直接用 writer 取坐标）
+    let (date, line_number) = logger
+        .writer()
+        .append(&entry)
+        .expect("append should succeed");
 
     // Read it back
-    let read_result = logger.read_call(tool_id, &date, line_number);
+    let read_result = logger.read_call(&date, line_number);
     assert!(
         read_result.is_ok(),
         "Reading should succeed: {:?}",
@@ -119,9 +118,9 @@ fn query_calls_filters_and_returns_latest_matching_entry_by_default() {
         ..old_entry.clone()
     };
 
-    logger.log_call("tool-a", old_entry).unwrap();
-    logger.log_call("tool-a", latest_entry.clone()).unwrap();
-    logger.log_call("tool-a", other_agent_entry).unwrap();
+    logger.log_call(old_entry).unwrap();
+    logger.log_call(latest_entry.clone()).unwrap();
+    logger.log_call(other_agent_entry).unwrap();
 
     let results = logger
         .query_calls(super::logger::ToolCallQuery {
@@ -169,11 +168,11 @@ fn query_calls_supports_call_id_and_cross_tool_filters() {
         ..entry_a.clone()
     };
 
-    logger.log_call("tool-a", entry_a).unwrap();
-    logger.log_call("tool-b", entry_b.clone()).unwrap();
+    logger.log_call(entry_a).unwrap();
+    logger.log_call(entry_b.clone()).unwrap();
 
     let by_call_id = logger
-        .read_call_by_id(None, "target-call")
+        .read_call_by_id("target-call")
         .expect("read by call id should succeed")
         .expect("target call should exist");
     assert_eq!(by_call_id.tool_id, "tool-b");
@@ -221,9 +220,10 @@ fn test_multiple_entries_append_correctly() {
             status: ToolCallStatus::Completed,
             metadata: json!(null),
         };
-        let result = logger.log_call(tool_id, entry.clone());
-        assert!(result.is_ok());
-        let (date, line) = result.unwrap();
+        let (date, line) = logger
+            .writer()
+            .append(&entry)
+            .expect("append should succeed");
         line_numbers.push(line);
         dates.push(date);
         entries.push(entry);
@@ -235,7 +235,7 @@ fn test_multiple_entries_append_correctly() {
 
     // Read back each entry and verify
     for (i, (line, expected)) in line_numbers.iter().zip(entries.iter()).enumerate() {
-        let read_result = logger.read_call(tool_id, &dates[0], *line);
+        let read_result = logger.read_call(&dates[0], *line);
         assert!(read_result.is_ok(), "Entry {} should be readable", i);
         let read_entry = read_result.unwrap();
         assert_eq!(read_entry.call_id, expected.call_id);
@@ -269,11 +269,11 @@ fn test_failed_entry_logged_correctly() {
         metadata: json!(null),
     };
 
-    let result = logger.log_call(tool_id, entry.clone());
-    assert!(result.is_ok());
-
-    let (date, line) = result.unwrap();
-    let read_entry = logger.read_call(tool_id, &date, line).unwrap();
+    let (date, line) = logger
+        .writer()
+        .append(&entry)
+        .expect("append should succeed");
+    let read_entry = logger.read_call(&date, line).unwrap();
 
     assert_eq!(read_entry.status, ToolCallStatus::Failed);
     assert_eq!(
@@ -289,36 +289,118 @@ fn test_read_nonexistent_entry_returns_error() {
     let base_path = temp_dir.path().to_path_buf();
     let logger = ToolCallLogger::new(base_path);
 
-    let tool_id = "test-tool-nonexistent";
-
     // Create directory structure by writing
-    let writer = logger.writer_for_tool(tool_id);
-    let _ = writer.append(&json!({}));
+    let writer = logger.writer();
+    let _ = writer.append_no_position(&json!({}));
 
     // Try to read non-existent date file
-    let result = logger.read_call(tool_id, "19990101", 1);
+    let result = logger.read_call("19990101", 1);
     assert!(result.is_err());
 }
 
+/// 拉平后所有工具共用同一目录 —— `tool_id` 只是 entry 的字段（过滤维度），不是地址维度。
 #[test]
-fn test_different_tools_have_separate_directories() {
+fn test_all_tools_share_one_flat_trace_dir() {
     let temp_dir = tempdir().unwrap();
     let base_path = temp_dir.path().to_path_buf();
     let logger = ToolCallLogger::new(base_path.clone());
 
-    let tool1 = "tool-alpha";
-    let tool2 = "tool-beta";
+    let writer = logger.writer();
+    let _ = writer.append_no_position(&json!({}));
 
-    // Create both writers and write something to create directories
-    let writer1 = logger.writer_for_tool(tool1);
-    let writer2 = logger.writer_for_tool(tool2);
-    let _ = writer1.append(&json!({}));
-    let _ = writer2.append(&json!({}));
+    let dir = base_path.join("tools").join("call_trace");
+    assert!(dir.exists());
+    // 不存在任何 per-tool 子目录
+    assert!(!dir.join("tool-alpha").exists());
+    assert!(!dir.join("tool-beta").exists());
+}
 
-    // Verify both directories exist
-    let dir1 = base_path.join("tools").join(tool1).join("call_trace");
-    let dir2 = base_path.join("tools").join(tool2).join("call_trace");
+/// 按 `call_id` 查询**不按 tool_id 收窄**：同一个 call_id 落在别的 tool_id 下也必须查得到
+/// （历史脏数据正是这种形态；按 tool_id 收窄会直接查不到，等于把幂等做成半个）。
+#[test]
+fn read_call_by_id_is_not_scoped_by_tool_id() {
+    let temp_dir = tempdir().unwrap();
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
 
-    assert!(dir1.exists());
-    assert!(dir2.exists());
+    let older = ToolCallEntry {
+        call_id: "cross-tool-call".to_string(),
+        tool_id: "tool-a".to_string(),
+        tool_name: "Tool A".to_string(),
+        agent_id: Some("agent-1".to_string()),
+        task_id: None,
+        project_id: None,
+        started_at: 1000,
+        finished_at: 1100,
+        duration_ms: 100,
+        input: json!({}),
+        output: Some(json!({"ok": true})),
+        error: None,
+        status: ToolCallStatus::Completed,
+        metadata: json!(null),
+    };
+    let newer = ToolCallEntry {
+        tool_id: "tool-b".to_string(),
+        tool_name: "Tool B".to_string(),
+        started_at: 2000,
+        finished_at: 2100,
+        ..older.clone()
+    };
+
+    logger.log_call(older).unwrap();
+    logger.log_call(newer.clone()).unwrap();
+
+    let found = logger
+        .read_call_by_id("cross-tool-call")
+        .expect("lookup should succeed")
+        .expect("cross-tool call_id must be findable without tool_id");
+    assert_eq!(found.tool_id, "tool-b");
+    assert_eq!(found.started_at, newer.started_at);
+}
+
+/// `log_call` 走「不数行」的追加路径：不返回坐标，但每行都完整落盘且可按 `call_id` 检索。
+#[test]
+fn log_call_appends_without_line_number_and_stays_queryable() {
+    let temp_dir = tempdir().unwrap();
+    let base_path = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base_path.clone());
+
+    for i in 0..5 {
+        logger
+            .log_call(ToolCallEntry {
+                call_id: format!("no-position-{i}"),
+                tool_id: "tool-x".to_string(),
+                tool_name: "Tool X".to_string(),
+                agent_id: None,
+                task_id: None,
+                project_id: None,
+                started_at: 1000 + i as u64,
+                finished_at: 1100 + i as u64,
+                duration_ms: 100,
+                input: json!({ "index": i }),
+                output: Some(json!({ "ok": true })),
+                error: None,
+                status: ToolCallStatus::Completed,
+                metadata: json!(null),
+            })
+            .expect("log_call should succeed");
+    }
+
+    for i in 0..5 {
+        let found = logger
+            .read_call_by_id(&format!("no-position-{i}"))
+            .expect("lookup should succeed")
+            .unwrap_or_else(|| panic!("entry no-position-{i} must be queryable"));
+        assert_eq!(found.input, json!({ "index": i }));
+    }
+
+    // 不数行 ≠ 少写：5 条都进了当日文件
+    let trace_dir = base_path.join("tools").join("call_trace");
+    let mut total_lines = 0;
+    for file in std::fs::read_dir(&trace_dir).expect("trace dir should exist") {
+        let path = file.unwrap().path();
+        if path.extension().is_some_and(|ext| ext == "jsonl") {
+            total_lines += std::fs::read_to_string(path).unwrap().lines().count();
+        }
+    }
+    assert_eq!(total_lines, 5);
 }

@@ -51,7 +51,7 @@ async fn query_tool_call_entries_handler_returns_scoped_trace_details() {
     let call_id = format!("handler-query-{}", uuid::Uuid::now_v7());
     let tool_id = "handler-query-tool";
     ToolCallLogger::get()
-        .log_call(tool_id, test_entry(&call_id, tool_id))
+        .log_call(test_entry(&call_id, tool_id))
         .expect("trace entry should be logged");
 
     let response = query_tool_call_entries(
@@ -79,7 +79,7 @@ async fn get_tool_call_entry_handler_gets_one_trace_by_call_id() {
     let call_id = format!("handler-get-{}", uuid::Uuid::now_v7());
     let tool_id = "handler-get-tool";
     ToolCallLogger::get()
-        .log_call(tool_id, test_entry(&call_id, tool_id))
+        .log_call(test_entry(&call_id, tool_id))
         .expect("trace entry should be logged");
 
     let response = get_tool_call_entry(

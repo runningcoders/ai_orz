@@ -951,7 +951,7 @@ mod tests {
             "runtime-project-1",
         );
         logger
-            .log_call("runtime-query-tool", entry.clone())
+            .log_call(entry.clone())
             .expect("trace entry should be logged");
 
         let results = runtime
@@ -1217,7 +1217,7 @@ mod tests {
             "runtime-project-2",
         );
         logger
-            .log_call("runtime-get-tool", entry)
+            .log_call(entry)
             .expect("trace entry should be logged");
 
         let mismatched = runtime
