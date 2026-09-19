@@ -381,7 +381,9 @@ WechatIlink {
 
 **已落地**（凭据闭环第一 slice）：`WechatIlink` 变体全量 match + 单测；`src/pkg/wechat_ilink.rs` 登录协议客户端（含状态解析单测）；domain `wechat_login_qrcode` / `wechat_login_poll`（confirmed 自动 upsert：默认凭据存在则整组轮换，否则创建并设默认）+ `wechat_integration_status` 聚合；handlers `wechat_integration/{get_status, get_login_qrcode, login_status}`；路由 `/api/v1/finance/identity/wechat/{status,qrcode,qrcode/status}`。待办：`delete_credential` 的 WechatIlink 渠道引用前置检查（渠道功能落地时补，见实现内注释）。
 
-**前端已落地**（凭据页微信卡片）：`frontend/src/api/wechat_integration.rs`（status / qrcode / login_status 客户端 + query 参数 percent-encode）；`frontend/src/pages/finance/identity_wechat.rs` 的 `IdentityWechatSection` 区块——「微信」区块内「iLink 机器人」子卡（凭证列表：名称 / bot_id / 默认徽标），「扫码授权」按钮弹 Modal 展示二维码（`qr_img_src` 兼容 data URI / URL / 裸 base64 三种形态）+ 长轮询状态机（Wait 立即重发 / Scaned 提示 / Expired 可重新生成 / Confirmed 刷新列表），轮询循环带 `Arc<AtomicBool>` 卸载守卫（同 lark 绑定轮询模式）。区块设计为多子卡容器，未来企微等其他微信凭据类型在同一区块追加子卡。
+**前端已落地**（凭据页微信卡片）：`frontend/src/api/wechat_integration.rs`（status / qrcode / login_status 客户端 + query 参数 percent-encode）；`frontend/src/pages/finance/identity_wechat.rs` 的 `IdentityWechatSection` 区块——「微信」区块内「iLink 机器人」子卡（凭证列表：名称 / bot_id / 默认徽标），「扫码授权」按钮弹 Modal 展示二维码（`qr_img_src` 兼容 data URI / URL / 裸 base64 三种形态）+ **手动单次查询状态机**：二维码下方「我已扫码完成」按钮 → 点击回调内直接 spawn 一次 `qrcode/status`（Scaned 提示「请在手机上确认」/ Expired 可重新生成 / Confirmed 弹窗就地切「已授权」形态，列 `bot_id` / `credential_id` / 是否整组轮换，并刷新凭据列表）。区块设计为多子卡容器，未来企微等其他微信凭据类型在同一区块追加子卡。
+
+> ⚠️ 交互为何是「手动按钮单次查询」而非自动轮询：轮询循环需要在外层 async 任务内部再 `spawn`，而该位置拿不到 Dioxus 的作用域上下文 → 内层任务从不启动（症状：扫码后二维码永不消失、整段操作零次 `qrcode/status` 请求）。手动按钮在点击回调里直接 spawn，与 lark 绑定轮询同构。后端接口本身不变（`qrcode/status` 仍是长轮询，服务端 hold ~35s，前端单次调用需给 loading 并允许重试）。
 
 ### 5.3 数据模型变更
 
