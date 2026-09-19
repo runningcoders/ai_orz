@@ -269,9 +269,11 @@ impl MemoryDao for MemoryDaoSqliteImpl {
         }
         let agent_dir = self.agent_memory_dir(&traces[0].agent_id);
         let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
+        // 一次数行 + 一次开文件：避免逐条 append 把成本放大成 O(n × 当日行数)
+        let (date, first_line_number) = writer.append_batch(traces)?;
         let mut positions = Vec::with_capacity(traces.len());
-        for trace in traces {
-            let (date, line_number) = writer.append(trace)?;
+        for (offset, trace) in traces.iter().enumerate() {
+            let line_number = first_line_number + offset;
             positions.push(MemoryTracePosition {
                 trace_id: trace.id.clone(),
                 date_filename: format!("{date}.jsonl"),

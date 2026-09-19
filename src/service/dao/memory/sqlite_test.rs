@@ -289,6 +289,23 @@ async fn test_batch_append_traces(pool: SqlitePool) {
     assert_eq!(positions[1].trace_id, traces[1].id);
     assert_eq!(positions[2].trace_id, traces[2].id);
     assert!(positions[0].date_filename.ends_with(".jsonl"));
+
+    // 批量写入只数一次行 → 位置必须严格连续（第 i 条 = 首行 + i），错一个就等于定位串位
+    assert_eq!(positions[1].line_number, positions[0].line_number + 1);
+    assert_eq!(positions[2].line_number, positions[0].line_number + 2);
+
+    // 按 (date_filename, line_number) 读回，内容与写入顺序一一对应
+    let trace_dir =
+        crate::pkg::paths::agent_memory_dir(&crate::config::get().base_data_path(), "test-agent-1");
+    let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(trace_dir);
+    for (position, expected) in positions.iter().zip(traces.iter()) {
+        let date = position.date_filename.trim_end_matches(".jsonl");
+        let read: MemoryTrace = writer
+            .read_line_json(date, position.line_number as usize)
+            .expect("position must resolve to a real line");
+        assert_eq!(read.id, expected.id);
+        assert_eq!(read.input, expected.input);
+    }
 }
 
 #[sqlx::test]
