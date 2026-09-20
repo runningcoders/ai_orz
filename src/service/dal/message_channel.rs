@@ -493,9 +493,36 @@ impl MessageChannelDalImpl {
                 let credentials = self
                     .resolve_wechat_credentials(ctx.clone(), channel)
                     .await?;
-                self.wechat_dao
-                    .push(ctx, message, channel, &credentials)
+                match self
+                    .wechat_dao
+                    .push(ctx.clone(), message, channel, &credentials)
                     .await
+                {
+                    // 推送成功：回写外部键映射（"wechat:{message_id}"），口径与飞书一致。
+                    // 语义边界：iLink 没有 `parent_id`/`root_id` 字段，此处承载的是
+                    // 「渠道消息平台 ID 存档」这一扩展语义，**不承担反查父消息**职责
+                    // （见 `AdaptedMessage.external_key` 的字段文档）。
+                    // 回写失败仅告警不阻断（下次推送重试，链路可容忍缺失）。
+                    Ok(Some(server_message_id)) => {
+                        let external_key = format!("wechat:{}", server_message_id);
+                        if let Err(e) = self
+                            .message_dao
+                            .set_external_key(ctx.clone(), &message.po.id, &external_key)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "message_channel_push",
+                                "外部键回写失败（忽略）: message_id={} key={} err={}",
+                                message.po.id,
+                                external_key,
+                                e
+                            );
+                        }
+                        Ok(())
+                    }
+                    other => other.map(|_| ()),
+                }
             }
             ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
             ChannelType::Email => {

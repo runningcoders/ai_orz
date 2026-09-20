@@ -457,18 +457,25 @@ pub trait IdentityCredentialManage: Send + Sync {
     // ==================== 微信 iLink 扫码登录（handler 禁直调 pkg，经 Domain 包装） ====================
 
     /// 获取 iLink 登录二维码
+    ///
+    /// 会带上该用户**已持有的 iLink bot token**（`local_token_list`，最新在前、最多 10 个）：
+    /// 服务端据此判断"该 bot 是否已绑过本客户端"，是 `binded_redirect` 能出现的前提。
     async fn wechat_login_qrcode(
         &self,
         ctx: RequestContext,
+        user_id: &str,
     ) -> Result<crate::pkg::wechat_ilink::IlinkQrCode>;
 
     /// 轮询 iLink 二维码状态；confirmed 时自动 upsert 该用户的 `wechat_ilink` 凭据
-    /// （默认凭据已存在则整组轮换，否则创建并设为默认）
+    /// （默认凭据已存在则整组轮换，否则创建并设为默认）；
+    /// `binded_redirect` 视为幂等成功——**不写库、不新建凭据**
     async fn wechat_login_poll(
         &self,
         ctx: RequestContext,
         user_id: &str,
         qrcode: &str,
+        verify_code: Option<&str>,
+        redirect_host: Option<&str>,
     ) -> Result<WechatLoginPollOutcome>;
 
     /// 微信集成状态聚合（当前用户已绑定的 iLink 凭证快照）
@@ -482,13 +489,22 @@ pub trait IdentityCredentialManage: Send + Sync {
 /// 微信 iLink 扫码轮询结果
 #[derive(Debug, Clone)]
 pub struct WechatLoginPollOutcome {
-    /// 二维码状态
+    /// 二维码状态（官方 8 态）
     pub status: crate::pkg::wechat_ilink::IlinkQrStatusKind,
+    /// 应切换到的接入点裸主机名（仅 `scaned_but_redirect`；调用方下次轮询回传）
+    pub redirect_host: Option<String>,
+    /// true = 该 bot 早已绑过本客户端（仅 `binded_redirect`）：
+    /// 幂等成功，未写库、无新凭据
+    pub already_bound: bool,
     /// 确认后的凭据 ID（仅 confirmed 时存在）
     pub credential_id: Option<String>,
     /// iLink bot 标识（仅 confirmed 时存在）
     pub bot_id: Option<String>,
-    /// true = 该用户已有 iLink 凭据并完成整组轮换；false = 新建
+    /// 扫码者标识（仅 confirmed；登录响应未返回时为 None）
+    pub user_id: Option<String>,
+    /// 本次绑定 / 轮换时间（epoch 毫秒；仅 confirmed）
+    pub bound_at: Option<i64>,
+    /// true = 该用户已有 iLink 凭据并完成整组轮换；false = 新建（仅 confirmed 有意义）
     pub rotated: bool,
 }
 

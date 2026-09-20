@@ -12,8 +12,8 @@ use tokio::sync::RwLock;
 
 use super::WechatDao;
 use super::ilink::{
-    CursorStore, IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry, send_text,
-    short_token,
+    CursorStore, IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry,
+    SessionGuard, send_text, short_token,
 };
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -48,6 +48,8 @@ pub struct WechatDaoHttpImpl {
     poll_loops: PollLoopRegistry,
     /// 已确认消费的入站游标（P2：轮询只读、消费确认才推进）
     cursors: Arc<CursorStore>,
+    /// 会话暂停表（`-14` 自愈：暂停期内入站休眠、出站快速失败）
+    session_guard: Arc<SessionGuard>,
     /// 入站运行状态写回（init 时注入；测试实例为 None，循环仅内存维护）
     state_writer: Option<Arc<dyn super::ilink::InboundStateWriter>>,
     /// registry 操作锁（防 ensure/stop 并发交错）
@@ -59,6 +61,7 @@ impl WechatDaoHttpImpl {
         Self {
             poll_loops: PollLoopRegistry::new(),
             cursors: Arc::new(CursorStore::new()),
+            session_guard: Arc::new(SessionGuard::new()),
             state_writer,
             lifecycle: RwLock::new(()),
         }
@@ -108,10 +111,21 @@ impl WechatDao for WechatDaoHttpImpl {
         message: &Message,
         channel: &MessageChannel,
         credentials: &IlinkChannelCredentials,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
+        // 暂停期出站快速失败（方案 D5，官方 `assertSessionActive` 口径）：
+        // 省一次必然失败的请求，并给出可读原因而不是让用户等到超时。
+        let remaining = self.session_guard.remaining_ms(channel.id()).await;
+        if remaining > 0 {
+            return Err(err!(
+                InvalidRequest,
+                "微信渠道会话已失效（服务端返回 -14），请求已暂停 {} 分钟：channel_id={}，请重新扫码授权",
+                remaining.div_euclid(60_000),
+                channel.po.id
+            ));
+        }
         let content = message.po.content.trim();
         if content.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         let peer = Self::resolve_peer(channel).ok_or_else(|| {
             err!(
@@ -129,17 +143,18 @@ impl WechatDao for WechatDaoHttpImpl {
             )
         })?;
 
-        send_text(credentials, &peer, &context_token, content).await?;
+        let message_id = send_text(credentials, &peer, &context_token, content).await?;
         log_info!(
             &ctx,
             "wechat_push",
-            "推送消息到微信 channel_id={} bot_id={} peer={} len={}",
+            "推送消息到微信 channel_id={} bot_id={} peer={} len={} server_message_id={}",
             channel.po.id,
             credentials.bot_id,
             peer,
-            content.len()
+            content.len(),
+            message_id.as_deref().unwrap_or("<none>")
         );
-        Ok(())
+        Ok(message_id)
     }
 
     async fn test_connection(
@@ -179,6 +194,7 @@ impl WechatDao for WechatDaoHttpImpl {
                 credentials,
                 self.state_writer.clone(),
                 Arc::clone(&self.cursors),
+                Arc::clone(&self.session_guard),
             )
             .await
     }

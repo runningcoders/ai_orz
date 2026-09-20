@@ -1,7 +1,7 @@
 # 微信 iLink 协议对齐重构方案
 
 > 🎯 **定位**：以腾讯官方插件 `@tencent-weixin/openclaw-weixin` 的类型定义为协议 SSOT，逐字段核对现有 iLink 实现，给出分期重构方案（含待拍板决策）
-> 状态：草稿（讨论中，未拍板；拍板后再转 Task 执行）
+> 状态：已拍板（D1–D8 定稿，见 §5；按阶段 A → B → C 执行）
 > 触发场景：修改 iLink 收发字段 / 排查"扫码成功却收不到消息" / 协议行为对不上官方时打开
 >
 > 关联文档：
@@ -103,7 +103,7 @@ curl -sSL -H "Accept: application/vnd.github.raw" \
 | 9 | `longpolling_timeout_ms` | 采纳服务端建议超时 | 忽略 | 服务端调整 hold 时长后我方口径漂移 |
 | 10 | `notifyStart` / `notifyStop` | 渠道启停各调一次（`ilink/bot/msg/notifystart` `/notifystop`）| 未实现 | 服务端不知客户端在册 |
 | 11 | 解析失败留痕 | 异常路径均有日志 | `.ok()` 吞 + 丢弃点 `log_debug!` | **排查黑洞**：症状与"上游没数据"完全同形 |
-| 12 | 顶层 `message_id` | 优先读 `message_id`（uint64，字符串无损），缺省回落 item `msg_id` | 只读 `client_id` + 顶层 `msg_id` | 官方 schema 中 `msg_id` 在 **item** 上，我方顶层 `msg_id` 大概率永不命中 → 幂等键实际只有 `client_id` 生效 |
+| 12 | 顶层 `message_id` | 顶层 `message_id` 为服务端权威消息 ID（uint64，字符串无损），`client_id` 为对端客户端生成；两者的 **`msg_id` 在 `MessageItem` 上**（item 级）| 顶层 `msg_id: Option<Value>` + `client_id` | **字段错位**：官方顶层没有 `msg_id`，我方顶层 `msg_id` 大概率永不命中 → 幂等键实际只有 `client_id` 生效；且微信链路 `external_key` 恒 `None`（见 §3.5）|
 
 ### 3.3 P2 —— 扫码登录状态机
 
@@ -126,6 +126,42 @@ curl -sSL -H "Accept: application/vnd.github.raw" \
 | 22 | 本地去重 | **插件本身不做去重**，交上层核心（`MessageSidFull`）| AOP `message_key` 幂等 + 游标确认 | **我方口径更优，无需对齐** |
 
 > 第 22 条是本次的一个"意外收获"：官方把去重责任推给宿主，等于承认协议层无法保证不重。我方 `message_key` 幂等 + 「确认才推进游标」正是官方缺失的那一层，属**领先而非落后**，不要在重构中削弱它。
+
+### 3.5 协议面之外的两处互通缺口
+
+这两条不属于"字段写错"，但同样影响可用性与可运维性，且都有官方参照。
+
+**（1）二维码的备用授权链接从未暴露给用户 —— 产品缺口**
+
+`get_bot_qrcode` 返回的 `qrcode_img_content` **本身就是一条 URL**（实测形如 `https://liteapp.weixin.qq.com/q/...`），
+它既可以被编码成二维码让人扫，也可以**直接在手机微信里打开完成授权**。官方 `displayQRCode` 就带这条兜底：
+
+```text
+若二维码未能显示或无法使用，你可以访问以下链接以继续：
+{qrcodeUrl}
+```
+
+我方前端只把它编码成二维码图像（`qr_img_src`），**链接本身没有以任何形式呈现**。
+后果：用户不在电脑前、屏幕太小看不清、或二维码渲染失败时，**没有任何替代路径**。
+
+> 这与"自动换码"针对的是**不同场景**：自动换码解决"码在电脑屏幕上、人回来时它还没过期"，
+> 备用链接解决"人根本看不到这块屏幕"。见 §5.1 Q2。
+
+**（2）微信链路 `messages.external_key` 恒为 `None` —— 数据面缺口**
+
+`service/dal/wechat/impl.rs:236` 的注释写着「iLink 协议无线程/回复字段，无外部键可映射」——
+这个结论**已被官方类型定义推翻**：顶层 `message_id` 就是权威平台侧 ID，出站 `SendMessageResp.message_id` 亦然。
+
+当前后果：
+- `messages` 表里微信消息**没有平台侧 ID 可对账**，跨渠道排障时缺一环；
+- 飞书有 `lark:om_xxx`、邮件有 `email:<Message-ID>`，只有微信是空的，口径不齐；
+- 未来若做引用消息（P3 #19），缺少现成的映射基础。
+
+> ⚠️ 语义边界：`external_key` 最初的用途是"入站回复按平台 `parent_id`/`root_id` 反查父消息"
+> （见 `migrations/20260909000004_add_external_key_to_messages.sql`），那是**飞书线程场景**。
+> 微信没有 `parent_id`/`root_id` 字段，因此微信侧打通后它承载的是**"渠道消息平台 ID 通用存档"**
+> 这一扩展语义，**不承担反查父消息的职责**。该边界写在 `AdaptedMessage.external_key` 的字段文档中
+> （**不改历史迁移文件、不动表结构**），避免后人误判。
 
 ---
 
@@ -170,7 +206,20 @@ curl -sSL -H "Accept: application/vnd.github.raw" \
 **B5.** 解析留痕：`parse_updates` 不再 `.ok()` 静默——单条失败 `warn` 并带消息键摘要；
 `service/dal/wechat/impl.rs` 两个丢弃点 `log_debug!` → `log_info!`。
 
-**B6.** `message_key()` 补顶层 `message_id`（字符串优先），回落 `client_id` / item `msg_id`。
+**B6.** `IlinkMessage` 补顶层 `message_id`（`Option<Value>`，数字/字符串双形态），
+`message_key()` 优先级改为 `message_id` → `client_id` → item `msg_id`（`client_id` 保留为出站本地幂等键）。
+
+**B7.** `external_key` 打通（决策 D8，含入站与出站两侧）：
+- **入站**：`adapt_wechat` 填 `external_key = Some(format!("wechat:{}", message_id))`
+  （`message_id` 缺失时回落 `client_id`；两者皆无则仍为 `None`，不伪造）；
+- **出站**：`WechatChannelDao::push` 返回类型 `Result<()>` → `Result<Option<String>>`
+  （携服务端 `SendMessageResp.message_id`），在 `dal/message_channel.rs::push_to_channel`
+  的 `ChannelType::Wechat` 分支**照抄飞书分支**回写 `set_external_key(ctx, &message.po.id, "wechat:{id}")`，
+  回写失败仅告警不阻断（与飞书口径一致）。
+
+**B8.** `AdaptedMessage.external_key` 字段文档（`src/pkg/adapter/mod.rs`）同步扩展语义
+（见 §3.5(2) 的边界说明）：微信侧承载"渠道消息平台 ID 存档"，**不承担反查父消息**职责。
+**不动历史迁移文件、不改表结构**（`external_key` 已是普通索引、无唯一约束，新增写入无需 DDL）。
 
 ### 阶段 C（P2：扫码状态机）
 
@@ -179,27 +228,84 @@ curl -sSL -H "Accept: application/vnd.github.raw" \
 **C3.** `scaned_but_redirect` → 切 `https://{redirect_host}` 继续轮询。
 **C4.** `binded_redirect` → 视为成功（幂等，不新建凭据）。
 **C5.** `need_verifycode` → 前端补配对码输入框；`verify_code_blocked` → 明确提示。
-**C6.** `expired` 处理见决策 **D7**。
+**C6.** `expired` 处理（决策 D7）：**前端自动长轮询 + 过期自动换码（上限 3 次）**，
+并**取代上一轮临时引入的「我已扫码完成」手动按钮**。
+
+落地要点（照抄 `frontend/src/pages/finance/identity.rs` 的飞书绑定轮询样板，避开上一轮的坑）：
+
+- **必须平铺 spawn**：轮询 `loop` 在点击回调内**直接** spawn，`loop` 体内只管 `await`。
+  ⚠️ 上一轮"自动轮询不工作"的根因是**嵌套 spawn**（外层 async 内再 spawn，拿不到 Dioxus 作用域）；
+  飞书绑定轮询用同样结构且工作正常，证明平铺写法可行。
+- **循环体天然就是长轮询**：`poll_wechat_login_status` 单次调用服务端 hold ~35s（客户端超时 45s），
+  故**不需要额外 `sleep`**，`loop` 体即「查询 → 处理 → 再查询」。
+- **卸载守卫**：`Rc<Cell<bool>>`，组件卸载 / 关闭弹窗时置 `false`（同飞书 `bind_poll_running`）。
+- **换码动作**：`expired` → 重新调 `get_wechat_login_qrcode`，就地替换 `qr_id` / `qr_img` / 重置 `qr_stage`，
+  刷新计数 +1；超过 3 次 → 停止轮询并提示「二维码多次失效，请关闭后重试」
+  （对齐官方 `MAX_QR_REFRESH_COUNT`）。
+- **在途查询作废**：换码后旧循环返回的响应必须自检 `qr_id` 不匹配即丢弃（现有代码已有该保护，保留）。
+- **换码状态展示**：弹窗内显示「二维码已自动刷新 x/3」与阶段徽章
+  （等待扫码 / 已扫码待确认 / 刷新中 / 已授权）。
+- **去掉手动按钮**：confirmed 由轮询自动捕获，弹窗自动切「已授权」形态。
+  这是本项最大的体验收益——上一轮的"必须手动点一下才拉取"是绕开嵌套 spawn 的权宜之计，不是设计。
+
+> 官方参数参照：`ACTIVE_LOGIN_TTL_MS = 5min`（会话 TTL）、`MAX_QR_REFRESH_COUNT = 3`、轮询窗口 8min。
+> 我方**服务端二维码实际 TTL 未实测**，阶段 C 落地时以真机观测为准，必要时把上限做成可调。
+
+**C7.** 备用授权链接展示：把 `qrcode_img_content` 以**可复制 / 可点击**形式展示在弹窗内
+（文案参照官方「若二维码无法使用，可用手机打开此链接继续」），补齐 §3.5(1) 的产品缺口。
+
+**C8.** 凭据展示优化（决策 D9）：`WechatCredentialSnapshot` 补 `user_id` / `base_url` /
+`created_at` / `updated_at`，前端凭据卡从「名称 + bot_id + 默认」扩展到含**扫码者标识、接入域、
+绑定时间 / 最后轮换时间**；扫码弹窗「已授权」形态同步补 `user_id` 与绑定时间。
 
 > 阶段 C 的 C1 + C4 是一组：没有 C1 的 `local_token_list`，服务端无从知道你已绑过这个 bot，
 > 也就永远不会回 `binded_redirect`，C4 便是死代码。
 
 ---
 
-## 五、待拍板决策
+## 五、决策清单（已定稿）
 
-> 这是本轮讨论的核心。每项给了推荐值，但需要你确认后我再动手。
+> D1–D6 沿用原推荐；D7 / D8 经讨论后调整，D9 为新增。执行时按本表口径，不再逐项确认。
 
-| # | 决策 | 选项 | 我的建议 |
-|---|------|------|---------|
+| # | 决策 | 选项 | 结论 |
+|---|------|------|------|
 | **D1** | 协议常量落点 | ① `src/models/events/wechat.rs`（与 DTO 同文件）② `src/pkg/wechat_ilink.rs`（协议基建）③ `common` | **②**。配置面与消息面两个客户端都要用；`models` 已依赖 `pkg::aop`（`impl crate::pkg::aop::Event`），依赖方向无新增；`common` 是前后端共享层，此处无前端诉求 |
 | **D2** | `channel_version` / `bot_agent` 填什么 | ① 镜像官方值（`2.4.9` / `OpenClaw`）② 我方标识（`ai_orz/<ver>`）| **②**。官方注释明确 `bot_agent`"仅用于观测，不参与鉴权与路由"、缺省即 `OpenClaw`；镜像官方属无必要冒名。`channel_version` 单独注释其语义（我方渠道实现版本）|
 | **D3** | 客户端超时口径 | ① 保持固定 45s（> 服务端 hold，超时=异常）② 对齐官方固定 35s（超时=常态）③ 服务端建议值 + 10s 余量 | **③**。既采纳 `longpolling_timeout_ms`，又保住"客户端超时仍是异常信号"的监控语义 |
 | **D4** | `-14` 暂停状态存哪 | ① 进程内（per-channel）② 落 `inbound_state` | **①**。暂停是自愈手段，重启后重试即恢复；落库会多出一处"必须两端闭合"的持久化运行态 |
 | **D5** | 出站是否也拦暂停 | ① 拦（官方 `assertSessionActive` 口径）② 不拦 | **①**。省一次必然失败的请求，并给用户可读原因而非超时 |
 | **D6** | `need_verifycode` 是否做 UI | ① 做配对码输入框 ② 只提示"请重新生成二维码" | **①**。这是风控/IDC 场景的唯一出路，不做等于该场景卡死 |
-| **D7** | `expired` 自动换码 | ① 服务端有状态会话 + 自动换码（官方做法）② 保持无状态，前端重取（现状）③ 后端返回"已过期"，前端自动重取一次（前端重试策略）| **③**。① 要给 handler 引入扫码会话状态，成本与收益不匹配（YAGNI）；② 已有交互，③ 只是加一层前端自动重试 |
-| **D8** | 顶层 `message_id` 是否进 `messages.external_key` | ① 只用于 `message_key` ② 一并打通 `external_key`（微信链路不再是 `None`）| **①**。`external_key` 语义变更会波及落库口径与飞书/邮件一致性，属另一件事 |
+| **D7** | `expired` 处理与扫码交互 | ① 服务端有状态会话 + 自动换码（官方做法）② 保持无状态，前端重取（现状）③ 后端返回"已过期"，前端自动重取一次 ④ **前端自动长轮询 + 过期自动换码（上限 3 次）** | **④（已定）**。① 要给 handler 引入扫码会话状态，成本与收益不匹配（YAGNI）；②③ 是半程方案——**自动换码必须依托自动轮询**，只做换码而没有轮询等于没做；④ 让前端（其本身就是二维码的状态载体）承担循环、后端保持无状态，并把上一轮的手动按钮一并撤回。详见 §5.1 Q2 |
+| **D8** | 顶层 `message_id` 是否进 `messages.external_key` | ① 只用于 `message_key` ② **一并打通 `external_key`（入站 + 出站回写）** | **②（已定）**。官方 `message_id` 即权威平台 ID，微信链路 `external_key` 恒空属**口径不齐**而非设计取舍；飞书分支已有现成的"推送成功后回写"样板，照抄即可。语义边界见 §3.5(2) |
+| **D9** | 凭据展示字段（新增）| ① 维持现状（名称 + bot_id + 默认）② 补 `user_id` / `base_url` / `created_at` / `updated_at` | **②（已定）**。数据全部现成（`credential.po` 已有时间戳，`detail` 已有 `user_id` / `base_url`），仅需在快照 DTO 与前端卡片上透出 |
+
+### 5.1 本轮拍板结论
+
+**Q1（message id 打通）** —— 已定为**打通**（D8）。官方顶层 `message_id` 是服务端权威 ID、
+`client_id` 是对端客户端生成、`msg_id` 在 `MessageItem` 上（item 级）；我方现有顶层 `msg_id` 是**错位字段**，
+幂等键实际只有 `client_id` 在生效。由阶段 B 的 B6 / B7 / B8 一并落地。
+
+**Q2（不做自动换码，用户是否受影响）** —— **受影响**，但要拆成三个不同场景，解法并不相同：
+
+| 场景 | 不自动换码的后果 | 正解 |
+|------|-----------------|------|
+| 打开弹窗后**放置几分钟才扫**（找手机 / 切窗口 / 被叫走）| 二维码已过期 → 需手动点「重新生成」才能扫；且"已过期"提示易被误读为流程失败 | **自动换码**（C6）：屏幕上始终有可用码 |
+| 扫到一半过期（手机端确认耗时超过码 TTL）| 旧码作废 → 必须重扫 | 自动换码**也救不了**（换码 = 作废旧码），但能立刻给出新码、免去一次手动点击 |
+| **人根本看不到这块屏幕**（不在电脑前 / 屏幕太小 / 渲染失败）| 无任何替代路径 | **备用授权链接**（C7）：`qrcode_img_content` 本身可在手机微信直接打开 |
+
+即：**自动换码解决的是"码在屏幕上、人回来时它还没过期"，解决不了"人看不到屏幕"**——后者靠 C7，两者互补。
+
+> 必须澄清的一个关联：**自动换码无法脱离自动轮询存在**。上一轮把轮询降级为「我已扫码完成」手动按钮，
+> 是为了绕开嵌套 spawn 的坑；改用飞书绑定轮询的**平铺 spawn** 写法即可恢复自动轮询，自动换码只是它的附带产物。
+> 因此 C6 的实际收益**远大于**"省一次点击"——它把交互从"用户必须手动拉取"恢复为"扫完自动完成"。
+>
+> 另需澄清**官方为何持状态、我们为何不需要**：官方是 CLI，`displayQRCode` 往 stdout 打印，没有任何前端能持有 `qrcode`，
+> 且要并发管理多个账号的登录会话（`activeLogins` 以 `sessionKey = accountId || randomUUID` 为键）——
+> 那个会话表是被"没有前端"逼出来的，不是协议要求。我方前端就是那块"屏幕"，`qrcode` 本就由前端持有并逐轮回传，
+> 因此换码动作（重调 `get_bot_qrcode`、就地替换 `qrcode` / `qrcode_img_content`）在前端做完全等价，**后端全程无状态**。
+> 换码的另一个触发源是 `verify_code_blocked`（配对码连错，见 D6），与 `expired` 共用同一套换码动作。
+> 据此，"刷新按钮"与"自动换码"的差别**不在换码本身**（两者都只是重调一次取码接口），
+> 而在于**是否依托自动轮询**——只加按钮不恢复轮询，用户要完成「我已扫码完成」+「刷新」两次手动操作，是方案 ③ 的半程形态。
 
 ---
 
@@ -208,14 +314,18 @@ curl -sSL -H "Accept: application/vnd.github.raw" \
 | 文件 | 角色 | 变更 |
 |------|------|------|
 | `src/pkg/wechat_ilink.rs` | 配置面协议客户端（pkg）| 协议常量 + 头/`base_info` 构造（D1）；扫码改 POST + `local_token_list` + 8 态 + `verify_code` |
-| `src/models/events/wechat.rs` | 消息面 DTO + AOP 事件（models）| `text`/`content` 双读；`message_type`/`state` 双形态；顶层 `message_id`；谓词改数字判定 |
-| `src/service/dao/wechat/ilink.rs` | 消息面客户端 + 长轮询循环（DAO）| 出站体对齐；错误码/超时协商/暂停/`notifyStart`；解析留痕；`message_key` |
-| `src/service/dao/wechat/http.rs` | DAO 门面 | 暂停期拦截出站 `push`（D5）|
-| `src/service/dal/wechat/impl.rs` | 入站适配 | 丢弃点 `log_debug!` → `log_info!` |
-| `common/src/api/`（微信相关 DTO）| 接口契约 | 扫码状态扩展 + `verify_code` 入参 + `redirect_host`；`wechat_poll` 增 `paused` 态 |
+| `src/models/events/wechat.rs` | 消息面 DTO + AOP 事件（models）| `text`/`content` 双读；`message_type`/`state` 双形态；**补顶层 `message_id`**；谓词改数字判定；`message_key()` 优先级调整（B6）|
+| `src/service/dao/wechat/ilink.rs` | 消息面客户端 + 长轮询循环（DAO）| 出站体对齐；错误码 / 超时协商 / 暂停 / `notifyStart`；解析留痕；`send_text` 返回服务端 `message_id`（B7）|
+| `src/service/dao/wechat/mod.rs` | 微信渠道 DAO trait | `push` 返回类型 `Result<()>` → `Result<Option<String>>`（B7）|
+| `src/service/dao/wechat/http.rs` | DAO 门面 | 暂停期拦截出站 `push`（D5）；`push` 透出 `message_id`（B7）|
+| `src/service/dal/wechat/impl.rs` | 入站适配 | 丢弃点 `log_debug!` → `log_info!`；**填 `external_key = "wechat:{message_id}"`**（B7）|
+| `src/service/dal/message_channel.rs` | 渠道出站分发 | `ChannelType::Wechat` 分支回写 `external_key`（照抄飞书分支，B7）|
+| `src/pkg/adapter/mod.rs` | 适配层契约 | `external_key` 字段文档登记微信侧扩展语义（B8；**不改历史迁移文件、不动表结构**）|
+| `common/src/api/wechat_integration.rs` | 接口契约（微信）| 扫码状态扩展 + `verify_code` 入参 + `redirect_host`；**`WechatCredentialSnapshot` 补 `user_id` / `base_url` / `created_at` / `updated_at`**（D9）|
+| `common/src/api/system.rs` | 接口契约（健康）| `wechat_poll` 增 `paused` 态 |
 | `src/handlers/finance/wechat_integration/login_status.rs` | handler | `verify_code` 透传 + 新状态文案 |
-| `src/service/domain/finance/identity_credential.rs` | 凭据编排 | `local_token_list` 构造；`binded_redirect` 幂等；轮换口径复核 |
-| `frontend/src/pages/finance/identity_wechat.rs` | 前端扫码弹窗 | 配对码输入 / 重定向提示 / 过期重取（D6/D7）|
+| `src/service/domain/finance/identity_credential.rs` | 凭据编排 | `local_token_list` 构造；`binded_redirect` 幂等；轮换口径复核；**快照补字段组装**（D9）|
+| `frontend/src/pages/finance/identity_wechat.rs` | 前端扫码弹窗 | **自动长轮询 + 过期自动换码（C6）**；备用授权链接（C7）；配对码输入 / 重定向提示（D6）；凭据卡扩展（C8）|
 | `docs/design/wechat_channel_integration_design.md` | 设计 SSOT | §5.1/§5.2 字段表按官方 spec 更正，并登记协议来源为官方插件 |
 | `docs/wiki/zh/content/功能模块/消息系统/微信 iLink 专属渠道.md` | Wiki | 同步协议口径与故障排查 |
 | `docs/wiki/knowledge/zh/微信 iLink 专属渠道闭环…` | RAG 卡 | 同步 |
@@ -237,6 +347,12 @@ curl -sSL -H "Accept: application/vnd.github.raw" \
 - [ ] **重启续拉**：重启进程，首轮日志 `resume_cursor=` 非空（游标回灌生效）
 - [ ] **监控判活**：健康页「微信长轮询」面板 `rounds` / `last_poll_at_ms` 持续推进
 - [ ] **错误码可见**：服务端返回 `ret != 0` 时日志明确区分错误码，而非静默空轮次
+- [ ] **`external_key` 落库**（D8）：微信入站消息行 `messages.external_key = "wechat:{message_id}"`；
+  出站回复行在推送成功后同样被回写（接口与飞书一致），入站/出站两侧互不冲突
+- [ ] **扫码自动轮询 + 自动换码**（C6）：打开弹窗后不作任何操作，扫完码后弹窗**自动**切「已授权」；
+  让二维码自然过期一次，观察弹窗自动刷新出新码并显示「已自动刷新 1/3」
+- [ ] **备用授权链接**（C7）：弹窗内可复制链接，能在手机微信里直接打开继续授权
+- [ ] **凭据展示**（D9）：凭据卡展示扫码者标识、接入域、绑定时间 / 最后轮换时间
 
 ---
 

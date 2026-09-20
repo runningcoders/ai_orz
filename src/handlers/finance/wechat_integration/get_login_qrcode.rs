@@ -17,7 +17,7 @@ pub async fn get_login_qrcode(
 
     let qr = crate::service::domain::finance::domain()
         .identity_credential_manage()
-        .wechat_login_qrcode(ctx)
+        .wechat_login_qrcode(ctx, &user_id)
         .await?;
     Ok(WechatLoginQrcodeResponse {
         qrcode: qr.qrcode,

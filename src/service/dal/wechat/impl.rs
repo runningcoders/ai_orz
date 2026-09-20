@@ -111,19 +111,24 @@ impl WechatDalImpl {
         event: &WechatInboundEvent,
     ) -> Result<Option<AdaptedMessage>> {
         // 1. 事件过滤：仅处理对端发来的完整文本消息
+        //
+        // ⚠️ 这两处丢弃用 **info** 而非 debug：它们是消息链路的「终点站」，
+        // 用 debug 等于让「收到帧却无下文」与「消息根本没到 iLink」在日志上完全同形
+        // （上一轮误判的直接原因之一）。
         let message = &event.message;
         if !message.is_user() || !message.is_finished() {
-            log_debug!(
+            log_info!(
                 &ctx,
                 "wechat_adapt",
-                "skip non-user/unfinished message: channel_id={} msg_type={}",
+                "skip non-user/unfinished message: channel_id={} msg_type={} msg_state={}",
                 event.channel_id,
-                message.message_type
+                message.message_type.value(),
+                message.message_state.value()
             );
             return Ok(None);
         }
         let Some(content) = message.text() else {
-            log_debug!(
+            log_info!(
                 &ctx,
                 "wechat_adapt",
                 "skip non-text message: channel_id={} message_key={}",
@@ -223,6 +228,16 @@ impl WechatDalImpl {
             to_agent_id
         );
 
+        // 平台侧消息 ID（`message_id` 优先，回落 `client_id`）→ 落 `messages.external_key`，
+        // 与飞书 `lark:{message_id}`、邮件 `email:<Message-ID>` 口径齐平。
+        //
+        // 语义边界：iLink 协议没有线程/回复字段，因此微信侧的 `external_key` 是
+        // 「渠道消息平台 ID 存档」这一扩展语义，**不承担反查父消息**的职责
+        // （见 `AdaptedMessage.external_key` 的字段文档）。
+        let external_key = message
+            .platform_message_id()
+            .map(|id| format!("wechat:{id}"));
+
         Ok(Some(AdaptedMessage {
             from_id,
             from_role: common::enums::MessageRole::User,
@@ -232,8 +247,7 @@ impl WechatDalImpl {
             project_id: None,
             task_id: None,
             reply_to_id: None,
-            // iLink 协议无线程/回复字段，无外部键可映射
-            external_key: None,
+            external_key,
         }))
     }
 }

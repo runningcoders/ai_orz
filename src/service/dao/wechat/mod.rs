@@ -26,13 +26,16 @@ pub trait WechatDao: Send + Sync {
     ///
     /// 对端标识：渠道 `wechat_peer_id`，未配置时回落最近活跃会话；
     /// `context_token` 取自 `inbound_state.sessions`（会话令牌滚动刷新）。
+    ///
+    /// 返回服务端 `SendMessageResp.message_id`（平台侧权威消息 ID，用于回写
+    /// `messages.external_key`）；服务端未返回该字段时为 `None`（不伪造）。
     async fn push(
         &self,
         ctx: RequestContext,
         message: &crate::models::message::Message,
         channel: &MessageChannel,
         credentials: &IlinkChannelCredentials,
-    ) -> std::result::Result<(), common::error::Error>;
+    ) -> std::result::Result<Option<String>, common::error::Error>;
 
     /// 测试微信渠道凭证可用性（凭证完整性校验；真实连通性待联调补协议探测）
     async fn test_connection(

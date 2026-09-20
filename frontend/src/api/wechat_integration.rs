@@ -27,13 +27,26 @@ pub async fn get_wechat_login_qrcode() -> Result<WechatLoginQrcodeResponse, ApiE
 }
 
 /// 轮询 iLink 二维码状态（服务端 hold ~35s 属正常长轮询语义）
-pub async fn poll_wechat_login_status(qrcode: &str) -> Result<WechatLoginStatusResponse, ApiError> {
-    api_get_or_default(&format!(
-        "{}/qrcode/status?qrcode={}",
-        BASE,
-        percent_encode(qrcode)
-    ))
-    .await
+///
+/// - `verify_code`：`need_verifycode` 场景下手机微信显示的配对码。**被服务端接受前
+///   每轮都要带**（服务端回 `scaned` 即表示已接受，调用方可清空）；
+/// - `redirect_host`：上一次 `scaned_but_redirect` 返回的接入点裸主机名，
+///   回传后后端以 `https://{host}` 作为本次轮询的接入点。
+pub async fn poll_wechat_login_status(
+    qrcode: &str,
+    verify_code: Option<&str>,
+    redirect_host: Option<&str>,
+) -> Result<WechatLoginStatusResponse, ApiError> {
+    let mut url = format!("{}/qrcode/status?qrcode={}", BASE, percent_encode(qrcode));
+    if let Some(code) = verify_code.filter(|c| !c.trim().is_empty()) {
+        url.push_str("&verify_code=");
+        url.push_str(&percent_encode(code));
+    }
+    if let Some(host) = redirect_host.filter(|h| !h.trim().is_empty()) {
+        url.push_str("&redirect_host=");
+        url.push_str(&percent_encode(host));
+    }
+    api_get_or_default(&url).await
 }
 
 /// 最小 percent-encode（RFC 3986 unreserved 之外全部转义；用于 query 参数）

@@ -83,7 +83,7 @@ pub struct WechatPollChannelMetrics {
     pub channel_name: String,
     /// iLink bot 标识（来自凭证）
     pub bot_id: String,
-    /// 轮询阶段：polling（正常）/ degraded（连续失败退避中）
+    /// 轮询阶段：polling（正常）/ degraded（连续失败退避中）/ paused（会话失效暂停中）
     pub state: String,
     /// 累计完成轮次（每轮成功返回 +1）
     pub rounds: u64,
@@ -97,6 +97,11 @@ pub struct WechatPollChannelMetrics {
     pub last_poll_at_ms: i64,
     /// 最近一条入站消息的时间戳（ms；从未收到则为 0）
     pub last_message_at_ms: i64,
+    /// 会话暂停解禁时间戳（ms；0 = 未暂停）
+    ///
+    /// 由服务端 `-14`（会话/令牌失效）触发，暂停该渠道全部请求直至解禁，
+    /// 须用户重新扫码授权才能恢复 —— 与 `degraded`（网络抖动，等一会自愈）语义不同。
+    pub paused_until_ms: i64,
     /// 已确认消费游标摘要（前 8 字符 + 长度；`None` = 尚未建立进度）
     pub cursor: Option<String>,
 }

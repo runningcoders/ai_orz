@@ -19,6 +19,9 @@ use common::models::{CredentialKind, CredentialVisibility};
 /// 凭证列表分页上限（单用户凭证为个位数量级，1000 覆盖全量场景）
 const CREDENTIAL_PAGE_LIMIT: usize = 1000;
 
+/// iLink 取码接口 `local_token_list` 上限（对齐官方 `getLocalBotTokenList` 的 10）
+const LOCAL_TOKEN_LIST_LIMIT: usize = 10;
+
 impl FinanceDomainImpl {
     /// 用户 DAL 引用（测试实例未注入时报内部错误）
     fn user_dal(&self) -> Result<&std::sync::Arc<dyn UserDal + Send + Sync>> {
@@ -63,6 +66,50 @@ impl FinanceDomainImpl {
             },
             ..Default::default()
         }
+    }
+
+    /// 本用户已持有的 iLink bot token（明文，最新在前，最多 [`LOCAL_TOKEN_LIST_LIMIT`] 个）
+    ///
+    /// 对齐官方 `getLocalBotTokenList`：取最近注册的若干账号 token 报给取码接口，
+    /// 让服务端识别"该 bot 是否已绑过本客户端"（`binded_redirect` 的前提）。
+    ///
+    /// 单条解密失败**跳过并告警**，不阻断取码——否则一条历史坏数据会让该用户
+    /// 彻底无法重新扫码（授不上权也修不了）。
+    async fn wechat_local_bot_tokens(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Vec<String>> {
+        let mut query = Self::owned_credential_query(user_id);
+        query.kind = Some(CredentialKind::WechatIlink);
+        query.pagination.limit = Some(LOCAL_TOKEN_LIST_LIMIT);
+        query.order_by = Some("created_at DESC".to_string());
+        let page = self
+            .user_dal()?
+            .clone()
+            .query_credentials(ctx.clone(), query)
+            .await?;
+
+        let mut tokens = Vec::new();
+        for credential in page.items {
+            let common::models::CredentialDetail::WechatIlink { bot_token, .. } =
+                credential.detail()
+            else {
+                continue;
+            };
+            match crate::pkg::crypto::decrypt_channel_secret(bot_token) {
+                Ok(plain) if !plain.trim().is_empty() => tokens.push(plain),
+                Ok(_) => {}
+                Err(e) => log_warn!(
+                    &ctx,
+                    "wechat_ilink_login_local_token",
+                    "本机 iLink 凭据 bot_token 解密失败，已跳过 credential_id={}: {}",
+                    credential.id(),
+                    e
+                ),
+            }
+        }
+        Ok(tokens)
     }
 }
 
@@ -616,11 +663,16 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
     }
 
     /// 获取 iLink 登录二维码（薄委托 pkg 协议客户端）
+    ///
+    /// 附带本用户已持有的 iLink bot token（`local_token_list`）：服务端据此识别
+    /// "该 bot 是否已绑过本客户端"，缺少它则 `binded_redirect` 永不出现。
     async fn wechat_login_qrcode(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
+        user_id: &str,
     ) -> Result<crate::pkg::wechat_ilink::IlinkQrCode> {
-        crate::pkg::wechat_ilink::get_login_qrcode().await
+        let tokens = self.wechat_local_bot_tokens(ctx, user_id).await?;
+        crate::pkg::wechat_ilink::get_login_qrcode(&tokens).await
     }
 
     /// 轮询 iLink 二维码状态；confirmed 时自动 upsert 凭据（见 trait 文档）
@@ -629,13 +681,45 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         ctx: RequestContext,
         user_id: &str,
         qrcode: &str,
+        verify_code: Option<&str>,
+        redirect_host: Option<&str>,
     ) -> Result<super::WechatLoginPollOutcome> {
-        let status = crate::pkg::wechat_ilink::poll_qrcode_status(qrcode).await?;
-        let Some(confirmed) = status.confirmed else {
+        let status =
+            crate::pkg::wechat_ilink::poll_qrcode_status(qrcode, verify_code, redirect_host)
+                .await?;
+
+        // 未到终局（等扫码 / 已扫码待确认 / 需换码 / 需配对码 / 需换接入点）：
+        // 原样透出，由调用方决定下一步动作，Domain 在此不做任何库操作。
+        if !status.status.is_terminal() {
             return Ok(super::WechatLoginPollOutcome {
                 status: status.status,
+                redirect_host: status.redirect_host,
+                already_bound: false,
                 credential_id: None,
                 bot_id: None,
+                user_id: None,
+                bound_at: None,
+                rotated: false,
+            });
+        }
+
+        // binded_redirect：该 bot 早已绑过本客户端，服务端未签发新凭据。
+        // 这是**幂等成功**而非失败——不写库、不新建，本地凭证保持有效。
+        let Some(confirmed) = status.confirmed else {
+            log_info!(
+                &ctx,
+                "wechat_ilink_login_already_bound",
+                "iLink 扫码返回已绑定（binded_redirect），无需重复绑定 user_id={}",
+                user_id
+            );
+            return Ok(super::WechatLoginPollOutcome {
+                status: status.status,
+                redirect_host: None,
+                already_bound: true,
+                credential_id: None,
+                bot_id: None,
+                user_id: None,
+                bound_at: None,
                 rotated: false,
             });
         };
@@ -691,6 +775,14 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             (credential_id, false)
         };
 
+        // 绑定时间取回读的 updated_at（新建即 created_at；轮换即本次写入时间），
+        // 避免在 Domain 里自行取时钟——以库中真实值为准。
+        let bound_at = self
+            .load_owned_credential(ctx.clone(), user_id, &credential_id)
+            .await?
+            .po
+            .updated_at;
+
         log_info!(
             &ctx,
             "wechat_ilink_credential_upsert",
@@ -702,8 +794,12 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         );
         Ok(super::WechatLoginPollOutcome {
             status: status.status,
+            redirect_host: None,
+            already_bound: false,
             credential_id: Some(credential_id),
             bot_id: Some(confirmed.bot_id),
+            user_id: confirmed.user_id,
+            bound_at: Some(bound_at),
             rotated,
         })
     }
@@ -719,7 +815,12 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         let page = user_dal.query_credentials(ctx, query).await?;
         let mut credentials = Vec::new();
         for credential in page.items {
-            let common::models::CredentialDetail::WechatIlink { bot_id, .. } = credential.detail()
+            let common::models::CredentialDetail::WechatIlink {
+                bot_id,
+                user_id: scan_user_id,
+                base_url,
+                ..
+            } = credential.detail()
             else {
                 continue;
             };
@@ -727,7 +828,11 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 credential_id: credential.id().to_string(),
                 name: credential.name().to_string(),
                 bot_id: bot_id.clone(),
+                user_id: scan_user_id.clone(),
+                base_url: base_url.clone(),
                 is_default: credential.po.is_default,
+                created_at: credential.po.created_at,
+                updated_at: credential.po.updated_at,
             });
         }
         Ok(common::api::WechatIntegrationStatusResponse { credentials })
