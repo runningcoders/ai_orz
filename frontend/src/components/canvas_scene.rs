@@ -94,6 +94,9 @@ pub struct CanvasEdge {
 ///
 /// 与 SVG 版 `graph.rs` 的 `view_transform`（`translate + scale`）语义一致，
 /// 三处图谱因此共享同一套手感，而不是各有各的缩放。
+///
+/// 设计取向是「无边界画布」（类无边记）：`pan` / `scale` 不做可视区 clamp，
+/// 节点可以散布在窗口之外，漫游靠拖拽平移，找回内容靠「适应 / 重置」按钮。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     pub scale: f64,
@@ -937,7 +940,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     // 边 hover：记录命中边的 (from_id, to_id)，用于绘制关系标签/描述提示
     let mut hovered_edge: Signal<Option<(String, String)>> = use_signal(|| None);
 
-    // 视口：滚轮缩放 + 空白处拖拽平移。渲染循环每帧读取，因此改它无需触发组件重渲染。
+    // 视口：Ctrl/⌘+滚轮缩放 + 空白处拖拽平移。渲染循环每帧读取，因此改它无需触发组件重渲染。
     let mut viewport: Signal<Viewport> = use_signal(Viewport::default);
     let mut is_panning: Signal<bool> = use_signal(|| false);
     // 上一次鼠标屏幕坐标（平移是增量式的，逐次累加）
@@ -1303,7 +1306,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 "width: 100%; height: 100%; display: block; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; cursor: grab;"
             },
             onwheel: move |e: WheelEvent| {
-                // 阻止默认滚动：否则滚轮既缩放画布、又滚动整页
+                // 缩放只认「Ctrl/⌘ + 滚轮」（触控板捏合天然带 ctrl 修饰键）：
+                // 裸滚轮极易误触缩放，直接交还给页面滚动，这里不做任何处理
+                let m = e.modifiers();
+                if !m.ctrl() && !m.meta() {
+                    return;
+                }
+                // Ctrl/⌘+滚轮同时是浏览器整页缩放快捷键，必须拦截默认行为
                 e.prevent_default();
                 let Some(canvas) = canvas_ref.read().clone() else { return; };
                 let rect = canvas.get_bounding_client_rect();

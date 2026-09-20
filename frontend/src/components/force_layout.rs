@@ -5,7 +5,7 @@
 //! - 碰撞分离：节点有实际尺寸时按等效半径保持最小中心距（见下方常量注释）
 //! - 吸引力：有连线的节点对互相吸引（胡克定律，正比于距离）
 //! - 阻尼：每帧速度衰减，防止振荡
-//! - 边界：节点不超出画布范围
+//! - 无边界：节点可停留在可视区之外（类无边记），「适应 / 重置」负责找回内容
 
 use crate::components::canvas_scene::{CanvasEdge, CanvasNode};
 
@@ -83,12 +83,15 @@ impl ForceLayout {
     /// 执行一帧力学步进，更新节点位置，返回本帧总位移（用于稳定检测）
     ///
     /// 返回值：所有节点位移之和。当该值趋近于 0 时，布局已稳定。
+    ///
+    /// `width` / `height` 仅保留为 API 形参（调用方按画布显示尺寸传入）：
+    /// 布局本身不感知画布边界，节点坐标是无限世界坐标，画布只是取景窗口。
     pub fn step(
         &mut self,
         nodes: &mut [CanvasNode],
         edges: &[CanvasEdge],
-        width: f64,
-        height: f64,
+        _width: f64,
+        _height: f64,
     ) -> f64 {
         self.sync(nodes.len());
         let n = nodes.len();
@@ -173,10 +176,9 @@ impl ForceLayout {
         }
 
         // 3. 应用力到速度，再应用速度到位置（带阻尼和限幅）
+        // 不做画布边界 clamp：边界墙会让「拖动节点」撞墙、元素多时挤成一团；
+        // 无边界下斥力随距离平方衰减 + is_stable 阈值兜底，散开有限不会失控
         let mut total_displacement = 0.0;
-        // 边界留白按最大等效半径走：写死 30px 时，卡片中心一贴边就等于半个卡片出画布
-        let max_radius = nodes.iter().map(|n| n.radius).fold(0.0f64, f64::max);
-        let margin = 30.0f64.max(max_radius);
         for i in 0..n {
             self.velocities[i].vx = (self.velocities[i].vx + forces[i].0) * cfg.damping;
             self.velocities[i].vy = (self.velocities[i].vy + forces[i].1) * cfg.damping;
@@ -189,10 +191,6 @@ impl ForceLayout {
 
             nodes[i].x += vx;
             nodes[i].y += vy;
-
-            // 边界约束：不超出画布
-            nodes[i].x = nodes[i].x.clamp(margin, width - margin);
-            nodes[i].y = nodes[i].y.clamp(margin, height - margin);
 
             total_displacement += vx.abs() + vy.abs();
         }
@@ -299,17 +297,23 @@ mod tests {
         );
     }
 
+    /// 无边界画布：节点受力后应能滑出「画布矩形」而不是被按回可视区。
+    ///
+    /// 画布只是取景窗口（类无边记），拖动不撞墙；找回内容靠「适应 / 重置」。
     #[test]
-    fn test_boundary_constraint() {
-        let mut nodes = vec![make_node("a", 5.0, 5.0)];
+    fn test_nodes_free_to_leave_canvas_bounds() {
+        // 两个节点叠在画布左上角附近：斥力沿连线向外推，a 应滑出左边界
+        let mut nodes = vec![make_node("a", 5.0, 5.0), make_node("b", 12.0, 5.0)];
         let edges: Vec<CanvasEdge> = vec![];
         let mut layout = ForceLayout::new(ForceLayoutConfig::default());
 
         layout.step(&mut nodes, &edges, 800.0, 600.0);
 
-        let margin = 30.0;
-        assert!(nodes[0].x >= margin, "节点 x 应在边界内: x={}", nodes[0].x);
-        assert!(nodes[0].y >= margin, "节点 y 应在边界内: y={}", nodes[0].y);
+        assert!(
+            nodes[0].x < 5.0,
+            "节点应能滑出画布边界（无边界墙）: x={}",
+            nodes[0].x
+        );
     }
 
     #[test]
@@ -377,26 +381,5 @@ mod tests {
             dist > 170.0,
             "168px 宽的卡片应被碰撞分离推开，实际中心距仅 {dist:.1}px"
         );
-    }
-
-    /// 边界留白按最大等效半径走：写死 30px 时，卡片中心贴边就等于半张卡出画布
-    #[test]
-    fn test_boundary_margin_follows_largest_radius() {
-        let mut big = make_node("big", 400.0, 300.0);
-        big.radius = 84.0;
-        let mut nodes = vec![big, make_node("small", 60.0, 300.0)];
-        let edges: Vec<CanvasEdge> = vec![];
-        let mut layout = ForceLayout::new(ForceLayoutConfig::default());
-
-        for _ in 0..240 {
-            layout.step(&mut nodes, &edges, 800.0, 600.0);
-        }
-        for n in &nodes {
-            assert!(
-                n.x >= 84.0 - 1e-6 && n.x <= 800.0 - 84.0 + 1e-6,
-                "应按最大半径 84 留白，实际 x={}",
-                n.x
-            );
-        }
     }
 }

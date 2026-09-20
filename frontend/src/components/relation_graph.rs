@@ -151,7 +151,7 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
                 }
             } else {
                 div { class: "text-sm text-base-content/70 mb-4",
-                    "共 {count} 个关联{related_label}，滚轮缩放、拖拽空白处平移，拖拽节点可重新布局，点击节点查看详情"
+                    "共 {count} 个关联{related_label}，Ctrl/⌘+滚轮缩放、拖拽空白处平移，拖拽节点可重新布局，点击节点查看详情"
                 }
                 // 包裹层提供确定高度（height:100% 需要父级有明确高度），canvas 内部自测量铺满
                 div { class: "w-full h-[520px]",

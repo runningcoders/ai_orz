@@ -640,7 +640,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                             // 线粗这层编码也要点一句，否则「有的线更粗」会被
                                             // 当成渲染抖动 —— 数值本身留给 hover
                                             span { class: "text-xs text-base-content/50 whitespace-nowrap hidden sm:inline",
-                                                "滚轮缩放 · 拖拽空白平移 · 线越粗关联越强"
+                                                "Ctrl/⌘+滚轮缩放 · 拖拽空白平移 · 线越粗关联越强"
                                             }
                                             // 风格切换按钮：Canvas（HUD）/ SVG（兜底）
                                             div { class: "join",
@@ -686,8 +686,11 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 }
 
                     if let Some(detail) = &selected_detail {
-                        div { class: "w-full lg:w-96",
-                            HudPanel { signal: Some(true),
+                        // 桌面端浮动覆盖（类无边记）：absolute 不占 flex 布局位，点击节点
+                        // 展开详情时左侧画布宽度不变，节点不再被挤压形变；内容超长时面板
+                        // 内部滚动。移动端维持原有的上下堆叠流式布局
+                        div { class: "w-full lg:absolute lg:inset-y-0 lg:right-0 lg:z-20 lg:w-96 lg:shadow-2xl",
+                            HudPanel { signal: Some(true), extra_class: Some("h-full overflow-y-auto".to_string()),
                                 div { class: "card-body",
                                     HudSection { title: "节点详情".to_string(),
                                         actions: Some(rsx!{

@@ -502,6 +502,13 @@ pub fn Graph(props: GraphProps) -> Element {
     };
 
     let handle_wheel = move |e: WheelEvent| {
+        // 缩放只认「Ctrl/⌘ + 滚轮」（与 Canvas 渲染器行为一致）：
+        // 裸滚轮极易误触缩放，直接交还给页面滚动，这里不做任何处理
+        let m = e.modifiers();
+        if !m.ctrl() && !m.meta() {
+            return;
+        }
+        // Ctrl/⌘+滚轮同时是浏览器整页缩放快捷键，必须拦截默认行为
         e.prevent_default();
         let (tx, ty, scale) = *view_transform.read();
         let delta_y = e.delta().strip_units().y;
