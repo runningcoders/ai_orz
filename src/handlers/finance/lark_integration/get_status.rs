@@ -73,10 +73,10 @@ pub async fn get_status(
             credential_id: credential.id().to_string(),
             name: credential.name().to_string(),
             app_id: app_id.clone(),
-            is_default: credential.po.is_default,
+            is_default: credential.is_default(),
             // 绑定 / 最后轮换时间（D9 对齐：凭据卡展示）
-            created_at: credential.po.created_at,
-            updated_at: credential.po.updated_at,
+            created_at: credential.created_at(),
+            updated_at: credential.updated_at(),
             channels: refs,
         });
     }

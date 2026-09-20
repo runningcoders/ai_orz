@@ -276,7 +276,12 @@ pub async fn start_device_login(user_id: &str, domains: &[String]) -> Result<Dev
     parse_device_login_json(&stdout).map_err(|e| err!(ThirdPartyError, "{}", e))
 }
 
-/// 正在进行 device flow 轮询的用户集合（防重复 spawn 两个 CLI 进程抢同一 device_code）
+/// 正在进行 device flow 轮询的设备码集合（防同一设备码被并发轮询抢跑）
+///
+/// 按 **device_code** 键控（而非 user_id）：用户关掉弹窗后重新发起授权会生成
+/// **新**设备码，新码的轮询不应被旧轮询拦截（旧后台任务 300s 超时后自行退出清理）。
+/// 若按 user_id 键控，重发起会被幂等分支拦成假成功，新设备码无人轮询——用户在
+/// 浏览器完成授权但 token 无人交换，最终误报「设备码已过期」。
 static AUTH_POLLING: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
 
@@ -287,19 +292,21 @@ static AUTH_POLLING: std::sync::LazyLock<Mutex<std::collections::HashSet<String>
 /// 现在立即返回、CLI 轮询转后台任务；**授权是否完成以 `auth_status` 为准**，
 /// 前端轮询 `auth/status` 直到 `logged_in=true`。
 pub async fn complete_device_login(user_id: &str, device_code: &str) -> Result<LarkAuthOutcome> {
+    // 前置检查先于守卫插入：失败提前返回时不留泄漏条目——否则该设备码的
+    // 守卫永不清理，后续重试全部被幂等分支拦成假成功，直到进程重启
+    let home = prepare_lark_home(user_id)?;
     let mut polling = AUTH_POLLING.lock().await;
-    if polling.contains(user_id) {
-        // 已有在途轮询：幂等返回（不是错误——可能上一轮还没收尾）
+    if polling.contains(device_code) {
+        // 同一设备码已有在途轮询：幂等返回（不是错误——可能上一轮还没收尾）
         return Ok(LarkAuthOutcome {
             success: true,
             degraded: false,
-            hint: Some("授权轮询已在后台进行".to_string()),
+            hint: Some("该设备码的授权轮询已在后台进行".to_string()),
         });
     }
-    polling.insert(user_id.to_string());
+    polling.insert(device_code.to_string());
     drop(polling);
 
-    let home = prepare_lark_home(user_id)?;
     let device_code = device_code.to_string();
     let user = user_id.to_string();
     tokio::spawn(async move {
@@ -500,9 +507,15 @@ async fn scan_bind_output(
     use tokio::io::{AsyncBufReadExt, BufReader};
     let mut lines = BufReader::new(reader).lines();
     while let Ok(Some(line)) = lines.next_line().await {
-        if progress.read().await.verification_url.is_some()
-            && progress.read().await.app_id.is_some()
-        {
+        // 已抓齐双字段后仍继续读（保持子进程 stdout 不积压），只是不再拼接/解析
+        let (has_url, has_app) = {
+            let progress = progress.read().await;
+            (
+                progress.verification_url.is_some(),
+                progress.app_id.is_some(),
+            )
+        };
+        if has_url && has_app {
             continue;
         }
         let mut buf = joined.lock().await;
@@ -686,13 +699,21 @@ pub async fn bind_session_status(
 /// 取消绑定会话（kill 进程并移除）
 pub async fn cancel_bind_session(user_id: &str, session_id: &str) -> Result<bool> {
     let registry = bind_registry();
-    let session = registry.write().await.remove(session_id);
-    let Some(session) = session else {
+    // 先校验归属再移除：直接 remove 会把他人会话移出注册表，Arc 析构触发
+    // kill_on_drop 杀掉无辜进程且原会话凭空消失
+    {
+        let sessions = registry.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return Ok(false);
+        };
+        if session.user_id != user_id {
+            return Ok(false);
+        }
+    }
+    let Some(session) = registry.write().await.remove(session_id) else {
+        // 校验通过与会话移除之间被并发取消：视为已被处理
         return Ok(false);
     };
-    if session.user_id != user_id {
-        return Ok(false);
-    }
     let mut child = session.child.lock().await;
     let _ = child.kill().await;
     Ok(true)

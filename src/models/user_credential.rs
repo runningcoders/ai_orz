@@ -138,6 +138,21 @@ impl UserCredential {
         &self.po.detail.0
     }
 
+    /// 是否默认凭证（作用域由 visibility 派生：private=个人默认 / public=组织默认）
+    pub fn is_default(&self) -> bool {
+        self.po.is_default
+    }
+
+    /// 创建时间戳（毫秒）
+    pub fn created_at(&self) -> i64 {
+        self.po.created_at
+    }
+
+    /// 更新时间戳（毫秒）
+    pub fn updated_at(&self) -> i64 {
+        self.po.updated_at
+    }
+
     /// 可见性
     pub fn visibility(&self) -> CredentialVisibility {
         self.po.visibility

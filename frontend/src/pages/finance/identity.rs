@@ -13,6 +13,7 @@
 //! 邮箱机器人区块数据来源 = `GET /api/v1/finance/identity/email/status` 聚合端点（platform 空串取全部提供商）。
 
 use crate::components::hud::{HudCallout, HudPanel};
+use crate::utils::format_datetime_full as format_timestamp;
 use crate::utils::status::*;
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -327,15 +328,17 @@ pub fn FinanceIdentity() -> Element {
                     auth_device_code.set(resp.device_code.clone());
                     auth_url.set(resp.verification_url.clone());
                     show_auth_modal.set(true);
-                    // 自动发起完成轮询；失败不阻断（用户仍可手动重试授权发起）
-                    if let Err(e) = lark_auth_complete(LarkAuthCompleteRequest {
+                    // 自动发起完成轮询：失败**不进轮询态**——后端没开始轮询，
+                    // 空转 300s 后会把「未启动」误报成「设备码已过期」；
+                    // 留在弹窗让用户重新点「发起授权」重试
+                    match lark_auth_complete(LarkAuthCompleteRequest {
                         device_code: resp.device_code,
                     })
                     .await
                     {
-                        toast.error(format!("启动授权轮询失败: {}", e));
+                        Ok(_) => auth_polling.set(true),
+                        Err(e) => toast.error(format!("启动授权轮询失败: {}", e)),
                     }
-                    auth_polling.set(true);
                 }
                 Err(e) => toast.error(format!("发起授权失败: {}", e)),
             }
@@ -486,6 +489,9 @@ pub fn FinanceIdentity() -> Element {
                                                 let app_id = cred.app_id.clone();
                                                 let channels = cred.channels.clone();
                                                 let is_default = cred.is_default;
+                                                // 绑定 / 最后轮换时间（D9：对齐微信凭据卡）
+                                                let created_at = format_timestamp(cred.created_at);
+                                                let updated_at = format_timestamp(cred.updated_at);
                                                 let id_for_edit = credential_id.clone();
                                                 let id_for_delete = credential_id.clone();
                                                 let id_for_default = credential_id.clone();
@@ -544,6 +550,14 @@ pub fn FinanceIdentity() -> Element {
                                                                     }
                                                                 }
                                                             }
+                                                        }
+                                                        div { class: "flex items-center gap-2 mt-2",
+                                                            span { class: "text-xs text-base-content/50 shrink-0 w-16", "绑定时间" }
+                                                            span { class: "text-xs", "{created_at}" }
+                                                        }
+                                                        div { class: "flex items-center gap-2",
+                                                            span { class: "text-xs text-base-content/50 shrink-0 w-16", "最后变更" }
+                                                            span { class: "text-xs", "{updated_at}" }
                                                         }
                                                     }
                                                 }

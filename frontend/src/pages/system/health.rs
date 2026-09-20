@@ -728,4 +728,72 @@ mod tests {
         assert_eq!(retention_text(0), "不清理");
         assert_eq!(retention_text(30), "30 天");
     }
+
+    /// ws_gauge_color 优先级：终局/半开（红）> 重连（橙）> 活跃（绿）> 空闲（灰）
+    #[test]
+    fn test_ws_gauge_color_priority() {
+        use common::api::{HealthMetricsResponse, LarkWsAppMetrics, LarkWsMetrics};
+
+        fn metrics_with(
+            apps: Vec<LarkWsAppMetrics>,
+            active_connections: u64,
+        ) -> HealthMetricsResponse {
+            HealthMetricsResponse {
+                backend_online: true,
+                aop_pending: 0,
+                aop_in_progress: 0,
+                active_agents: 0,
+                total_agents: 0,
+                active_projects: 0,
+                total_projects: 0,
+                pending_tasks: 0,
+                total_tasks: 0,
+                uptime_secs: 0,
+                lark_ws: LarkWsMetrics {
+                    active_connections,
+                    apps,
+                },
+                wechat_poll: Default::default(),
+            }
+        }
+
+        fn app(
+            state: &str,
+            last_frame_at_ms: i64,
+            terminal_reason: Option<String>,
+        ) -> LarkWsAppMetrics {
+            LarkWsAppMetrics {
+                app_id: "cli_test00000000000".to_string(),
+                state: state.to_string(),
+                reconnect_count: 0,
+                frames_received: 1,
+                last_frame_at_ms,
+                last_close_code: 0,
+                last_close_reason: None,
+                terminal_reason,
+            }
+        }
+
+        let now = 1_000_000_i64;
+
+        // 终局 → 红（优先于重连/活跃）
+        let m = metrics_with(vec![app("failed", 0, Some("exceed_conn_limit".into()))], 1);
+        assert_eq!(ws_gauge_color(&m, now), "#ef4444");
+
+        // 已连接但帧停走（半开：>300s 无帧）→ 红
+        let m = metrics_with(vec![app("connected", now - 301_000, None)], 1);
+        assert_eq!(ws_gauge_color(&m, now), "#ef4444");
+
+        // 重连中 → 橙（优先于活跃）
+        let m = metrics_with(vec![app("reconnecting", 0, None)], 1);
+        assert_eq!(ws_gauge_color(&m, now), "#fa520f");
+
+        // 已连接且帧新鲜 → 绿
+        let m = metrics_with(vec![app("connected", now - 1_000, None)], 1);
+        assert_eq!(ws_gauge_color(&m, now), "#10b981");
+
+        // 无监听 → 灰
+        let m = metrics_with(vec![], 0);
+        assert_eq!(ws_gauge_color(&m, now), "#64748b");
+    }
 }

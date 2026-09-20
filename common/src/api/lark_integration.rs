@@ -127,7 +127,8 @@ pub struct LarkAuthCompleteRequest {
 /// 完成 device flow 授权响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkAuthCompleteResponse {
-    /// 是否授权成功
+    /// **轮询是否已受理**（非授权结果：同一设备码重复提交的幂等分支同样为 true；
+    /// 授权是否成功以 `auth/status` 的 `logged_in` 为准）
     pub success: bool,
     /// keychain 等环境降级标记
     #[serde(default)]

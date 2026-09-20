@@ -71,7 +71,6 @@ pub async fn lark_auth_complete(
 }
 
 /// 查询用户授权状态
-#[allow(dead_code)]
 pub async fn lark_auth_status() -> Result<LarkAuthStatusResponse, ApiError> {
     api_get(&format!("{}/auth/status", BASE)).await
 }
