@@ -58,6 +58,11 @@ pub trait WechatDao: Send + Sync {
     /// 指定渠道是否正在轮询
     async fn is_polling(&self, channel_id: &str) -> bool;
 
+    /// 全部渠道的入站长轮询运行态快照（监控聚合用，与飞书 `listener_stats` 同构）
+    ///
+    /// 无监听时返回空快照（`active_polls=0`），不报错。
+    async fn listener_stats(&self) -> common::api::WechatPollMetrics;
+
     /// 推进入站游标（**消费确认后**调用，修 P2）
     ///
     /// 由 `WechatDalImpl` 的 AOP 生产者回调（`on_consumed`）触发：

@@ -8,7 +8,7 @@ pub use common::api::{
     AopStatsTimeSeriesPoint, AopStatsTimeSeriesResponse, BackupInfo, CleanupToolLogsRequest,
     CleanupToolLogsResponse, EventDetailResponse, EventSummaryResponse, GetWorkspaceMetricsRequest,
     HealthMetricsResponse, LogEntry, QueryLogsResponse, QueueStatsResponse, ToolLogStorageResponse,
-    WorkspaceMetricsResponse,
+    WechatPollChannelMetrics, WorkspaceMetricsResponse,
 };
 
 use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};

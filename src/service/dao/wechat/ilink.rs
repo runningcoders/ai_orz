@@ -138,6 +138,12 @@ pub struct IlinkUpdates {
     /// 新游标（`get_updates_buf`；服务端未返回时为 None，保持旧游标）
     pub cursor: Option<String>,
     pub messages: Vec<IlinkMessage>,
+    /// 本轮是否因**客户端超时**返回（非服务端 hold 到期）
+    ///
+    /// 客户端超时 45s > 服务端 hold ~35s，正常轮询**永不**触发 —— 一旦为真即
+    /// 网络 hang 或服务端异常。此前该分支直接返回空批次，导致「网络断了」与
+    /// 「队列就是空的」在日志上完全同形、无法区分。
+    pub client_timeout: bool,
 }
 
 /// 共享客户端：getupdates 长轮询专用（45s > 服务端 hold 35s）
@@ -173,6 +179,42 @@ fn http_err(op: &str, e: reqwest::Error) -> common::error::Error {
     err!(ThirdPartyError, "ilink {} http error: {}", op, e)
 }
 
+/// 日志用令牌摘要（游标 / 消息键等 opaque 值可能很长）
+///
+/// 只留前 8 个**字符**（按 char 而非字节切，避免切坏多字节）并附原始长度：
+/// 既够在日志里对照"是不是同一个值"，又不把整个长串灌进日志。
+pub(crate) fn short_token(value: &str) -> String {
+    let mut chars = value.chars();
+    let head: String = chars.by_ref().take(8).collect();
+    if chars.next().is_some() {
+        format!("{head}…({})", value.chars().count())
+    } else {
+        head
+    }
+}
+
+/// 收帧日志用的消息键摘要（最多 [`INBOUND_LOG_KEY_LIMIT`] 个，超出只报数量）
+///
+/// 键缺失时显示 `<auto>`（循环会为它生成占位 ID），便于对照"服务端没给幂等键"。
+fn brief_message_keys(messages: &[IlinkMessage]) -> String {
+    let mut keys: Vec<String> = messages
+        .iter()
+        .take(INBOUND_LOG_KEY_LIMIT)
+        .map(|m| {
+            let key = m.message_key();
+            if key.is_empty() {
+                "<auto>".to_string()
+            } else {
+                short_token(&key)
+            }
+        })
+        .collect();
+    if messages.len() > INBOUND_LOG_KEY_LIMIT {
+        keys.push(format!("+{}", messages.len() - INBOUND_LOG_KEY_LIMIT));
+    }
+    keys.join(", ")
+}
+
 /// 拉取增量消息（长轮询单次调用；客户端超时视为本轮无事件——服务端 hold 常态）
 pub async fn get_updates(
     credentials: &IlinkChannelCredentials,
@@ -187,7 +229,14 @@ pub async fn get_updates(
 
     let resp = match resp {
         Ok(r) => r,
-        Err(e) if e.is_timeout() => return Ok(IlinkUpdates::default()),
+        // 客户端超时：标记后交回循环记 warn（见 `IlinkUpdates::client_timeout`）。
+        // 不在此处记日志：DAO 协议层无 channel_id，且循环侧才掌握"第几次/连续几次"。
+        Err(e) if e.is_timeout() => {
+            return Ok(IlinkUpdates {
+                client_timeout: true,
+                ..Default::default()
+            });
+        }
         Err(e) => return Err(http_err("getupdates", e)),
     };
     let text = match resp.error_for_status() {
@@ -220,7 +269,12 @@ fn parse_updates(body: &str) -> Result<IlinkUpdates> {
         .into_iter()
         .filter_map(|m| serde_json::from_value::<IlinkMessage>(m).ok())
         .collect();
-    Ok(IlinkUpdates { cursor, messages })
+    Ok(IlinkUpdates {
+        cursor,
+        messages,
+        // 能解析出响应体 = 服务端已返回，非客户端超时
+        ..Default::default()
+    })
 }
 
 /// 构造 sendmessage 请求体（抽纯函数便于单测）
@@ -398,6 +452,58 @@ impl CursorStore {
 struct PollLoopHandle {
     join: tokio::task::JoinHandle<()>,
     fingerprint: u64,
+    /// 运行态快照（监控读取入口，与飞书 `WsClientState.conn_state` 同构）
+    stats: Arc<RwLock<PollRuntimeStats>>,
+}
+
+/// 长轮询运行态快照（监控用）
+///
+/// 由 `poll_loop` 独占写、[`PollLoopRegistry::listener_stats`] 读。
+///
+/// **判活不能只看「句柄在注册表里」**：任务可能已 panic / 卡死，而句柄仍在。
+/// 真判据是 `rounds` 与 `last_poll_at_ms` 是否推进——正常时长轮询约 35s 一轮。
+#[derive(Debug, Clone)]
+struct PollRuntimeStats {
+    /// 渠道名称（建连时从渠道行取，仅展示用）
+    channel_name: String,
+    /// iLink bot 标识
+    bot_id: String,
+    /// 累计完成轮次（每轮成功返回 +1，含超时宽容的空批次）
+    rounds: u64,
+    /// 累计入站消息数
+    inbound_messages: u64,
+    /// 连续失败次数（成功一轮归零）
+    consecutive_failures: u32,
+    /// 累计客户端超时次数
+    client_timeouts: u64,
+    /// 最近一次**正常**轮询返回时间（ms；客户端超时不刷新，便于与网络 hang 区分）
+    last_poll_at_ms: i64,
+    /// 最近一条入站消息时间（ms；0 = 从未收到）
+    last_message_at_ms: i64,
+}
+
+impl PollRuntimeStats {
+    fn new(channel_name: String, bot_id: String) -> Self {
+        Self {
+            channel_name,
+            bot_id,
+            rounds: 0,
+            inbound_messages: 0,
+            consecutive_failures: 0,
+            client_timeouts: 0,
+            last_poll_at_ms: 0,
+            last_message_at_ms: 0,
+        }
+    }
+
+    /// 轮询阶段：连续失败即 `degraded`（退避中），否则 `polling`
+    fn state(&self) -> &'static str {
+        if self.consecutive_failures > 0 {
+            "degraded"
+        } else {
+            "polling"
+        }
+    }
 }
 
 /// 连续失败重试节奏：前 5 次间隔 2s，超过后退避 30s（避免触发限流）
@@ -406,6 +512,11 @@ const FAIL_RETRY_SLOW_MS: u64 = 30_000;
 const FAIL_FAST_LIMIT: u32 = 5;
 /// 正常轮询间隙（长轮询本身 hold 35s，小幅间隔防紧密打转）
 const POLL_PAUSE_MS: u64 = 500;
+/// 心跳日志间隔（毫秒）：正常轮询（尤其空轮询）此前**零日志**，无法从日志
+/// 判断「监听是否在跑」。5 分钟 ≈ 8 轮长轮询，既能判活又不刷屏。
+const HEARTBEAT_INTERVAL_MS: i64 = 300_000;
+/// 收帧日志里最多列出的消息键个数（超出只报数量）
+const INBOUND_LOG_KEY_LIMIT: usize = 3;
 
 /// 长轮询循环体：收帧 publish 事件（带本轮游标）+ 刷会话 + 一次写回
 ///
@@ -421,21 +532,36 @@ async fn poll_loop(
     mut state: InboundState,
     writer: Option<Arc<dyn InboundStateWriter>>,
     cursors: Arc<CursorStore>,
+    stats: Arc<RwLock<PollRuntimeStats>>,
 ) {
+    let resuming = cursors.get(&channel_id).await;
     log_info!(
-        "ilink poll loop started: channel_id={} bot_id={} base_url={}",
+        "ilink poll loop started: channel_id={} bot_id={} base_url={} resume_cursor={}",
         channel_id,
         credentials.bot_id,
-        credentials.base_url
+        credentials.base_url,
+        resuming
+            .as_deref()
+            .map(short_token)
+            .unwrap_or_else(|| "<none>".to_string())
     );
-    let mut consecutive_failures: u32 = 0;
+
+    // 心跳基准（仅日志用；其余计数一律以 `stats` 为唯一存储，避免双份漂移）
+    let started_at_ms = common::constants::utils::current_timestamp_ms();
+    let mut last_heartbeat_ms = started_at_ms;
+
     loop {
         // 请求游标 = **已确认**消费的游标（P2）：上一轮没消费完则不动，下一轮重拉
         let cursor = cursors.get(&channel_id).await;
         match get_updates(&credentials, cursor.as_deref()).await {
             Err(e) => {
-                consecutive_failures = consecutive_failures.saturating_add(1);
-                let delay = if consecutive_failures <= FAIL_FAST_LIMIT {
+                // 失败计入运行态快照：连续失败 > 0 → 前端「降级中」阶段
+                let failures = {
+                    let mut s = stats.write().await;
+                    s.consecutive_failures = s.consecutive_failures.saturating_add(1);
+                    s.consecutive_failures
+                };
+                let delay = if failures <= FAIL_FAST_LIMIT {
                     FAIL_RETRY_FAST_MS
                 } else {
                     FAIL_RETRY_SLOW_MS
@@ -444,19 +570,66 @@ async fn poll_loop(
                     "ilink getupdates failed (retry in {}ms): channel_id={} failures={} err={}",
                     delay,
                     channel_id,
-                    consecutive_failures,
+                    failures,
                     e
                 );
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
             }
             Ok(updates) => {
-                consecutive_failures = 0;
                 let IlinkUpdates {
                     cursor: new_cursor,
                     messages,
+                    client_timeout,
                 } = updates;
                 let message_count = messages.len();
                 let now_ms = common::constants::utils::current_timestamp_ms();
+
+                // 运行态快照一次性更新（`stats` 是唯一存储：心跳日志与监控 API 同源，
+                // 避免两套计数各自漂移）
+                let total_client_timeouts = {
+                    let mut s = stats.write().await;
+                    s.rounds = s.rounds.saturating_add(1);
+                    s.consecutive_failures = 0;
+                    if client_timeout {
+                        s.client_timeouts = s.client_timeouts.saturating_add(1);
+                    } else {
+                        // 仅正常返回刷新：客户端超时不刷新 → 前端可区分「网络 hang」
+                        // （超时数增长但 last_poll 不动）与「整循环卡死」（两者都不动）
+                        s.last_poll_at_ms = now_ms;
+                    }
+                    if message_count > 0 {
+                        s.inbound_messages =
+                            s.inbound_messages.saturating_add(message_count as u64);
+                        s.last_message_at_ms = now_ms;
+                    }
+                    s.client_timeouts
+                };
+
+                // 客户端超时（正常永不触发）：与"服务端 hold 到期返回空批次"分开记，
+                // 否则「网络 hang」与「队列本就是空的」在日志上完全同形。
+                if client_timeout {
+                    log_warn!(
+                        "ilink getupdates client timeout ({}ms; server holds ~35s → abnormal): channel_id={} timeouts={}",
+                        UPDATES_POLL_TIMEOUT_MS,
+                        channel_id,
+                        total_client_timeouts
+                    );
+                }
+
+                // 收帧日志：此前"收到消息"没有任何日志，链路是否有消息只能靠下游倒推
+                if message_count > 0 {
+                    log_info!(
+                        "ilink inbound batch: channel_id={} bot_id={} count={} keys=[{}] new_cursor={}",
+                        channel_id,
+                        credentials.bot_id,
+                        message_count,
+                        brief_message_keys(&messages),
+                        new_cursor
+                            .as_deref()
+                            .map(short_token)
+                            .unwrap_or_else(|| "<none>".to_string())
+                    );
+                }
 
                 // 收帧即 publish（入队即返回），业务由 Async consumer 消费
                 for message in messages {
@@ -518,6 +691,33 @@ async fn poll_loop(
                     writer.save(&channel_id, &state).await;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(POLL_PAUSE_MS)).await;
+
+                // 心跳：轮次 / 累计入站 / 连续失败 / 客户端超时 / 游标 / 空闲时长。
+                // 有这一行才可能"从日志判断监听在不在跑"——此前只能靠抓 TCP 连接佐证。
+                if now_ms.saturating_sub(last_heartbeat_ms) >= HEARTBEAT_INTERVAL_MS {
+                    last_heartbeat_ms = now_ms;
+                    let confirmed = cursors.get(&channel_id).await;
+                    let s = stats.read().await;
+                    // 空闲基准：收到过消息则从最近一条算起，否则从循环启动算起
+                    let idle_base = if s.last_message_at_ms > 0 {
+                        s.last_message_at_ms
+                    } else {
+                        started_at_ms
+                    };
+                    log_info!(
+                        "ilink poll heartbeat: channel_id={} rounds={} inbound_messages={} consecutive_failures={} client_timeouts={} cursor={} idle_ms={}",
+                        channel_id,
+                        s.rounds,
+                        s.inbound_messages,
+                        s.consecutive_failures,
+                        s.client_timeouts,
+                        confirmed
+                            .as_deref()
+                            .map(short_token)
+                            .unwrap_or_else(|| "<none>".to_string()),
+                        now_ms.saturating_sub(idle_base)
+                    );
+                }
             }
         }
     }
@@ -567,19 +767,44 @@ impl PollLoopRegistry {
             .and_then(InboundState::from_json)
             .unwrap_or_default();
 
+        // 游标回灌（§5.6「进程重启从上次游标续拉」的实现口径）：
+        // `CursorStore` 是**进程内**的，重启后为空；落库的 `inbound_state.cursor`
+        // 是已确认消费的进度，也是重启后唯一的进度来源。
+        // 不回灌 → 首轮以空游标请求，而 iLink 对空游标**不重放**历史（实测 `msgs: []`）
+        // → 停机期间的消息永久丢失，且无日志、无报错（因此极难察觉）。
+        if let Some(cursor) = state.cursor.as_ref().filter(|c| !c.is_empty()) {
+            cursors.set(channel.id(), &cursor.value).await;
+            log_info!(
+                "ilink inbound cursor restored from inbound_state: channel_id={} cursor={} updated_at_ms={:?}",
+                channel.id(),
+                short_token(&cursor.value),
+                cursor.updated_at_ms
+            );
+        }
+
         let channel_id = channel.id().to_string();
         let credentials = credentials.clone();
+        // 运行态快照：建连时快照一次渠道名与 bot_id（展示用；改名需重建才刷新，可接受）
+        let stats = Arc::new(RwLock::new(PollRuntimeStats::new(
+            channel.po.channel_name.clone(),
+            credentials.bot_id.clone(),
+        )));
         let join = tokio::spawn(poll_loop(
             channel_id.clone(),
             credentials,
             state,
             writer,
             cursors,
+            stats.clone(),
         ));
-        self.loops
-            .write()
-            .await
-            .insert(channel_id.clone(), PollLoopHandle { join, fingerprint });
+        self.loops.write().await.insert(
+            channel_id.clone(),
+            PollLoopHandle {
+                join,
+                fingerprint,
+                stats,
+            },
+        );
         if removed {
             log_info!(
                 "ilink poll loop rebuilt (credentials changed): channel_id={}",
@@ -617,6 +842,39 @@ impl PollLoopRegistry {
     /// 指定 channel 是否正在轮询
     pub async fn is_running(&self, channel_id: &str) -> bool {
         self.loops.read().await.contains_key(channel_id)
+    }
+
+    /// 全部渠道的轮询运行态快照（监控 API 用，已组装为共享 DTO）
+    ///
+    /// ⚠️ [`Self::is_running`] 为真只说明**句柄在册**，不代表循环真的在推进
+    /// （任务可能已 panic 或卡死在 hold 里）。判活请看 `rounds` 与 `last_poll_at_ms`
+    /// 是否单调前进——这也是本快照存在的原因。
+    ///
+    /// 游标取 `cursors` 里**已确认消费**的值（非服务端最新值），与落库口径一致。
+    pub async fn metrics(
+        &self,
+        cursors: &CursorStore,
+    ) -> Vec<common::api::WechatPollChannelMetrics> {
+        let loops = self.loops.read().await;
+        let mut out = Vec::with_capacity(loops.len());
+        for (channel_id, handle) in loops.iter() {
+            let s = handle.stats.read().await;
+            let cursor = cursors.get(channel_id).await.map(|c| short_token(&c));
+            out.push(common::api::WechatPollChannelMetrics {
+                channel_id: channel_id.clone(),
+                channel_name: s.channel_name.clone(),
+                bot_id: s.bot_id.clone(),
+                state: s.state().to_string(),
+                rounds: s.rounds,
+                inbound_messages: s.inbound_messages,
+                consecutive_failures: s.consecutive_failures,
+                client_timeouts: s.client_timeouts,
+                last_poll_at_ms: s.last_poll_at_ms,
+                last_message_at_ms: s.last_message_at_ms,
+                cursor,
+            });
+        }
+        out
     }
 }
 
@@ -825,6 +1083,77 @@ mod tests {
         assert!(!registry.is_running("ch_wx_1").await);
     }
 
+    /// 轮询阶段判定：连续失败 > 0 → degraded，归零 → polling
+    #[test]
+    fn test_poll_runtime_stats_state() {
+        let mut s = PollRuntimeStats::new("我的微信".to_string(), "bot_1".to_string());
+        assert_eq!(s.state(), "polling");
+        s.consecutive_failures = 1;
+        assert_eq!(s.state(), "degraded");
+        s.consecutive_failures = 0;
+        assert_eq!(s.state(), "polling");
+    }
+
+    /// 运行态快照：无监听 → 空；ensure 后按 channel 暴露建连时快照的展示字段
+    ///
+    /// 注意此处**不断言** `state` / `last_poll_at_ms`：循环会真的去请求
+    /// `invalid.test` 并失败，断言初始值会 flaky（阶段判定由上面的纯单测覆盖）。
+    #[tokio::test]
+    async fn test_poll_registry_metrics_snapshot() {
+        let registry = PollLoopRegistry::new();
+        let cursors = Arc::new(CursorStore::new());
+        assert!(registry.metrics(&cursors).await.is_empty());
+
+        let ch = channel();
+        let creds = IlinkChannelCredentials {
+            bot_token: "tok".into(),
+            bot_id: "bot_1".into(),
+            base_url: "https://invalid.test".into(),
+        };
+        registry
+            .ensure(&ch, &creds, None, cursors.clone())
+            .await
+            .unwrap();
+
+        let metrics = registry.metrics(&cursors).await;
+        assert_eq!(metrics.len(), 1);
+        let m = &metrics[0];
+        assert_eq!(m.channel_id, "ch_wx_1");
+        assert_eq!(m.bot_id, "bot_1");
+        // 渠道名在建连时快照（`channel()` 构造为「我的微信」）
+        assert_eq!(m.channel_name, "我的微信");
+        // 尚无已确认消费 → cursor 为 None（而非空串占位）
+        assert_eq!(m.cursor, None);
+
+        // 句柄移除后快照同步清空（与 is_running 同源，不残留幽灵行）
+        registry.stop_all().await;
+        assert!(registry.metrics(&cursors).await.is_empty());
+    }
+
+    /// 监控快照里的游标是**已确认消费**值，且以摘要形式透出（不灌全量 opaque 串）
+    #[tokio::test]
+    async fn test_poll_metrics_cursor_is_confirmed_and_shortened() {
+        let registry = PollLoopRegistry::new();
+        let cursors = Arc::new(CursorStore::new());
+        let ch = channel();
+        let creds = IlinkChannelCredentials {
+            bot_token: "tok".into(),
+            bot_id: "bot_1".into(),
+            base_url: "https://invalid.test".into(),
+        };
+        registry
+            .ensure(&ch, &creds, None, cursors.clone())
+            .await
+            .unwrap();
+
+        // 消费确认推进游标（模拟 on_consumed 回调）后，快照应反映该值
+        cursors.set("ch_wx_1", "abcdefghij").await;
+        let metrics = registry.metrics(&cursors).await;
+        assert_eq!(metrics[0].cursor.as_deref(), Some("abcdefgh…(10)"));
+
+        registry.stop_all().await;
+    }
+
     /// P2：已确认游标存储 —— 覆盖语义（opaque 不可比较）/ 空值忽略 / channel 隔离
     #[tokio::test]
     async fn test_cursor_store_semantics() {
@@ -844,6 +1173,111 @@ mod tests {
 
         // channel 隔离
         assert_eq!(store.get("ch_b").await, None);
+    }
+
+    /// 日志摘要：短串原样、长串截断附长度、多字节不切坏
+    #[test]
+    fn test_short_token() {
+        assert_eq!(short_token(""), "");
+        assert_eq!(short_token("abc"), "abc");
+        assert_eq!(short_token("12345678"), "12345678");
+        assert_eq!(short_token("123456789"), "12345678…(9)");
+        // 按 char 切（中文游标不会出现半个字符）：前 8 个字符 = 游标一二三四五六
+        assert_eq!(
+            short_token("游标一二三四五六七八九十"),
+            "游标一二三四五六…(12)"
+        );
+    }
+
+    /// 收帧键摘要：缺失键标 `<auto>`，超出上限只报数量
+    #[test]
+    fn test_brief_message_keys() {
+        let mk = |key: &str| IlinkMessage {
+            client_id: key.to_string(),
+            ..Default::default()
+        };
+        assert_eq!(brief_message_keys(&[]), "");
+        assert_eq!(brief_message_keys(&[mk("c1"), mk("c2")]), "c1, c2");
+        // 无 client_id / msg_id → 循环会生成占位 ID，日志里如实标记
+        assert_eq!(brief_message_keys(&[IlinkMessage::default()]), "<auto>");
+        assert_eq!(
+            brief_message_keys(&[mk("c1"), mk("c2"), mk("c3"), mk("c4")]),
+            "c1, c2, c3, +1"
+        );
+    }
+
+    /// 游标回灌（§5.6）：落库的已确认游标在 ensure 时载入内存 CursorStore
+    ///
+    /// 不回灌 → 重启首轮以空游标请求，而 iLink 空游标不重放历史 → 停机期间消息丢失。
+    #[tokio::test]
+    async fn test_ensure_restores_persisted_cursor() {
+        let registry = PollLoopRegistry::new();
+        let mut ch = channel();
+        ch.po.inbound_state = Some(
+            InboundState {
+                cursor: Some(common::models::inbound_state::InboundCursor::opaque(
+                    "cur_persisted",
+                    "ilink",
+                )),
+                ..Default::default()
+            }
+            .to_json(),
+        );
+        let creds = IlinkChannelCredentials {
+            bot_token: "tok".into(),
+            bot_id: "bot_1".into(),
+            base_url: "https://invalid.test".into(),
+        };
+        let cursors = Arc::new(CursorStore::new());
+        registry
+            .ensure(&ch, &creds, None, Arc::clone(&cursors))
+            .await
+            .unwrap();
+        assert_eq!(
+            cursors.get("ch_wx_1").await.as_deref(),
+            Some("cur_persisted")
+        );
+        registry.stop_all().await;
+    }
+
+    /// 无落库游标（或空游标）→ 不回灌，保持"从头拉、由幂等键兜底"的原语义
+    #[tokio::test]
+    async fn test_ensure_without_persisted_cursor_keeps_empty() {
+        let creds = IlinkChannelCredentials {
+            bot_token: "tok".into(),
+            bot_id: "bot_1".into(),
+            base_url: "https://invalid.test".into(),
+        };
+
+        // 全无 inbound_state
+        let registry = PollLoopRegistry::new();
+        let cursors = Arc::new(CursorStore::new());
+        registry
+            .ensure(&channel(), &creds, None, Arc::clone(&cursors))
+            .await
+            .unwrap();
+        assert_eq!(cursors.get("ch_wx_1").await, None);
+        registry.stop_all().await;
+
+        // 有状态列但游标为空串
+        let registry = PollLoopRegistry::new();
+        let mut ch = channel();
+        ch.po.inbound_state = Some(
+            InboundState {
+                cursor: Some(common::models::inbound_state::InboundCursor::opaque(
+                    "", "ilink",
+                )),
+                ..Default::default()
+            }
+            .to_json(),
+        );
+        let cursors = Arc::new(CursorStore::new());
+        registry
+            .ensure(&ch, &creds, None, Arc::clone(&cursors))
+            .await
+            .unwrap();
+        assert_eq!(cursors.get("ch_wx_1").await, None);
+        registry.stop_all().await;
     }
 
     /// 内存 InboundStateWriter：写回链路可注入

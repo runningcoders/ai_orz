@@ -8,6 +8,7 @@
 //! - 待处理任务数
 //! - 运行时长
 //! - 飞书 WS 监听连接（活跃连接数 + per-app state/重连次数明细）
+//! - 微信 iLink 长轮询（活跃轮询数 + per-channel 轮次/入站/失败/超时/最近成功轮询）
 //! - 工具日志存储（① 运行时输出层：占用统计 + 手动清理）
 //!
 //! 健康指标 10 秒轮询刷新（use_effect + spawn + loop + sleep_ms）；
@@ -20,8 +21,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::api::system::{
-    CleanupToolLogsRequest, HealthMetricsResponse, ToolLogStorageResponse, check_health,
-    cleanup_tool_logs, get_health_metrics, get_tool_log_storage,
+    CleanupToolLogsRequest, HealthMetricsResponse, ToolLogStorageResponse,
+    WechatPollChannelMetrics, check_health, cleanup_tool_logs, get_health_metrics,
+    get_tool_log_storage,
 };
 use crate::components::gauge::Gauge;
 use crate::components::state::Loading;
@@ -87,6 +89,100 @@ fn ws_gauge_color(active_connections: u64, any_reconnecting: bool) -> String {
         "#10b981".to_string()
     } else {
         "#64748b".to_string()
+    }
+}
+
+/// 微信长轮询「卡死」阈值（ms）
+///
+/// 正常时长轮询约 35s 一轮（服务端 hold 到 ~35s 返空），故 90s 无成功轮询即异常。
+/// `last_poll_at_ms == 0`（从未成功轮询过）同样按卡死处理。
+const WECHAT_POLL_STALE_MS: i64 = 90_000;
+
+/// 微信渠道长轮询是否已卡死（心跳不新鲜）
+fn wechat_channel_stale(last_poll_at_ms: i64, now_ms: i64) -> bool {
+    last_poll_at_ms == 0 || now_ms.saturating_sub(last_poll_at_ms) > WECHAT_POLL_STALE_MS
+}
+
+/// 微信长轮询状态 → (徽标样式, 文案)
+///
+/// 与飞书的最大差异：WS 有连接阶段可直接看，长轮询**没有**——
+/// 只能靠「轮次/心跳是否还在推进」判活，所以「卡死」判定优先于 `state`。
+fn wechat_poll_badge(
+    state: &str,
+    last_poll_at_ms: i64,
+    now_ms: i64,
+) -> (&'static str, &'static str) {
+    if wechat_channel_stale(last_poll_at_ms, now_ms) {
+        ("badge hud-badge badge-error badge-sm", "疑似卡死")
+    } else if state == "degraded" {
+        ("badge hud-badge badge-warning badge-sm", "退避重试")
+    } else {
+        ("badge hud-badge badge-success badge-sm", "轮询中")
+    }
+}
+
+/// 微信长轮询 Gauge 颜色：有卡死 → 红；有退避 → 橙；有监听且正常 → 绿；无监听 → 灰
+fn wechat_gauge_color(m: &HealthMetricsResponse, now_ms: i64) -> String {
+    if m.wechat_poll
+        .channels
+        .iter()
+        .any(|c| wechat_channel_stale(c.last_poll_at_ms, now_ms))
+    {
+        "#ef4444".to_string()
+    } else if m.wechat_poll.channels.iter().any(|c| c.state == "degraded") {
+        "#fa520f".to_string()
+    } else if m.wechat_poll.active_polls > 0 {
+        "#10b981".to_string()
+    } else {
+        "#64748b".to_string()
+    }
+}
+
+/// 距今时长文案（监控用：长轮询判活全靠「多久没成功轮询过」）
+fn poll_age_text(now_ms: i64, ts_ms: i64) -> String {
+    if ts_ms == 0 {
+        return "从未".to_string();
+    }
+    let secs = now_ms.saturating_sub(ts_ms) / 1000;
+    if secs < 60 {
+        format!("{} 秒前", secs)
+    } else if secs < 3600 {
+        format!("{} 分钟前", secs / 60)
+    } else {
+        format!("{} 小时前", secs / 3600)
+    }
+}
+
+/// 微信长轮询明细行
+///
+/// 抽成函数而非内联：rsx 的 `for` 循环体内**不能写 `let` 绑定**（宏会报
+/// `expected identifier`），派生展示字段只能放到循环之外算。
+fn wechat_poll_row(c: &WechatPollChannelMetrics, now_ms: i64) -> Element {
+    let (badge_cls, badge_text) = wechat_poll_badge(&c.state, c.last_poll_at_ms, now_ms);
+    let cursor = c.cursor.clone().unwrap_or_else(|| "-".to_string());
+    let fail_cls = if c.consecutive_failures > 0 {
+        "text-error font-semibold"
+    } else {
+        ""
+    };
+    let timeout_cls = if c.client_timeouts > 0 {
+        "text-warning font-semibold"
+    } else {
+        ""
+    };
+    let last_poll = poll_age_text(now_ms, c.last_poll_at_ms);
+    rsx! {
+        tr {
+            td { "{c.channel_name}" }
+            td { class: "font-mono text-sm", "{c.bot_id}" }
+            td { span { class: "{badge_cls}", "{badge_text}" } }
+            td { "{c.rounds}" }
+            td { "{c.inbound_messages}" }
+            td { class: "{fail_cls}", "{c.consecutive_failures}" }
+            td { class: "{timeout_cls}", "{c.client_timeouts}" }
+            td { class: "text-sm", "{last_poll}" }
+            td { class: "font-mono text-xs", "{cursor}" }
+        }
     }
 }
 
@@ -345,6 +441,19 @@ pub fn SystemHealth() -> Element {
                         height: 180.0,
                         on_click: None,
                     }
+                    // 微信 iLink 长轮询（客户端拉，无连接阶段 → 靠轮次/心跳判活）
+                    Gauge {
+                        title: "微信长轮询".to_string(),
+                        center_value: m.wechat_poll.active_polls.to_string(),
+                        center_label: "active".to_string(),
+                        color: wechat_gauge_color(m, crate::utils::time::now_ms()),
+                        badge: None,
+                        footer: Some(format!("{} 个渠道监听中", m.wechat_poll.channels.len())),
+                        is_selected: false,
+                        width: 180.0,
+                        height: 180.0,
+                        on_click: None,
+                    }
                 }
 
                 // 飞书 WS 连接明细（per-app state + 累计重连次数）
@@ -366,6 +475,43 @@ pub fn SystemHealth() -> Element {
                                                 td { span { class: "{ws_state_badge(&app.state)}", "{ws_state_text(&app.state)}" } }
                                                 td { "{app.reconnect_count}" }
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 微信长轮询明细（per-channel 运行态）
+                //
+                // 关键判据与飞书不同：WS 断连会自己反映到连接阶段上，长轮询**不会**——
+                // 任务卡死时句柄仍在册，「活跃数」照样是 1。所以这张表要的是
+                // 「轮次有没有在涨 + 最近一次成功轮询多久以前」，而不是「在不在册」。
+                HudPanel { signal: Some(true),
+                    div { class: "card-body",
+                        HudSection { title: "微信渠道长轮询明细".to_string() }
+                        if m.wechat_poll.channels.is_empty() {
+                            div { class: "text-base-content/50 text-sm py-2",
+                                "暂无活跃长轮询（启用微信渠道并开启入站监听后自动建连）"
+                            }
+                        } else {
+                            div { class: "overflow-x-auto",
+                                table { class: "table hud-table table-zebra table-sm",
+                                    thead { tr {
+                                        th { "渠道" }
+                                        th { "bot_id" }
+                                        th { "状态" }
+                                        th { "轮次" }
+                                        th { "累计入站" }
+                                        th { "连续失败" }
+                                        th { "客户端超时" }
+                                        th { "最近成功轮询" }
+                                        th { "游标" }
+                                    } }
+                                    tbody {
+                                        for c in m.wechat_poll.channels.iter() {
+                                            {wechat_poll_row(c, crate::utils::time::now_ms())}
                                         }
                                     }
                                 }

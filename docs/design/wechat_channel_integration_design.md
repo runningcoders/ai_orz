@@ -621,8 +621,10 @@ let open_id = config.lark_open_id.as_ref().ok_or_else(|| err!(...))?;  // 渠道
 | 项 | 方案 |
 |----|------|
 | 消息去重 | 依赖 AOP 事件的 `id()`（iLink 消息 ID）做幂等键，无需额外存储 |
-| 轮询游标 | `get_updates_buf` 持久化到 `inbound_state.cursor`（`InboundCursor { kind: Opaque, source: "ilink" }`），随每轮状态整体写回，每轮轮询成功后写一次；进程重启从上次游标续拉，不再重复消费历史消息 |
-| 轮询超时 | ~35s 是正常现象，`AbortError` 当作空响应继续下一轮，不记错误 |
+| 轮询游标 | `get_updates_buf` 持久化到 `inbound_state.cursor`（`InboundCursor { kind: Opaque, source: "ilink" }`），随每轮状态整体写回。有消息的轮次：新游标随事件带出，由消费确认（`on_consumed`）才推进；无消息轮次：直接推进（否则服务端在空轮次给的新游标永远推不动）。**进程重启时 `ensure` 把落库游标回灌内存 `CursorStore`**，再从该点续拉 |
+| 轮询超时 | 两种情况必须分开：**服务端 hold ~35s 到期返回空批次**属正常，静默进入下一轮；**客户端 45s 超时**（45s > 服务端 hold，正常轮询永不触发）标记 `IlinkUpdates::client_timeout` 并由循环记 `warn`。否则「网络 hang」与「队列本就是空的」在日志上完全同形 |
+| 运行态观测 | 四段日志构成完整观测链，无需抓包即可判断监听存活：① 收帧记 `ilink inbound batch`（count + 幂等键摘要 + 新游标）；② 每 5 分钟记 `ilink poll heartbeat`（轮次 / 累计入站 / 连续失败 / 客户端超时 / 当前游标 / 空闲时长）；③ 消费确认推进游标记 `inbound cursor advanced`（info）—— 游标长时间不动时据此判断卡在消费侧还是未收帧；④ 消费侧适配**有意跳过**（非文本 / 非本渠道 peer / 渠道停用）记 `wechat inbound adapted to nothing`——否则「收到帧却无下文」完全静默，无法与「消息根本没到 iLink」区分 |
+| 运行态监控（UI） | `GET /api/v1/system/health/metrics` 的 `wechat_poll` 字段返回 per-channel 快照（渠道名 / bot_id / 阶段 / 轮次 / 累计入站 / 连续失败 / 客户端超时 / 最近成功轮询 / 已确认游标摘要），前端系统健康页「微信长轮询」区块展示。⚠️ **判活口径与飞书 WS 不同**：WS 断连会自己反映到连接阶段，长轮询**不会**——任务卡死时句柄仍在册、`active_polls` 照样是 1。真判据是 `rounds` / `last_poll_at_ms` 是否单调推进（正常约 35s 一轮，>90s 未成功轮询判为「疑似卡死」）；`client_timeouts` 增长而 `last_poll_at_ms` 不动 = 网络 hang，两者都不动 = 循环卡死 |
 | 连续失败 | 前 5 次间隔 2s 重试，超过后退避 30s，避免触发限流 |
 | 慢业务隔离 | consumer 必须 `ConsumeMode::Async`，否则阻塞整条轮询循环 |
 

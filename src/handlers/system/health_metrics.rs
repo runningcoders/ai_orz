@@ -111,11 +111,12 @@ pub async fn get_health_metrics(
         .await
         .unwrap_or(0);
 
-    // 飞书信道 WS 长连接监控（信道监控统一经 message channel domain 聚合）
-    let lark_ws = crate::service::domain::finance::domain()
-        .message_channel_manage()
-        .lark_ws_metrics()
-        .await;
+    // 信道长连接监控：飞书 WS（服务端推）+ 微信 iLink 长轮询（客户端拉），
+    // 统一经 message channel domain 聚合，前端一次请求拿到全部监听运行态
+    let finance = crate::service::domain::finance::domain();
+    let message_channel_manage = finance.message_channel_manage();
+    let lark_ws = message_channel_manage.lark_ws_metrics().await;
+    let wechat_poll = message_channel_manage.wechat_poll_metrics().await;
 
     Ok(HealthMetricsResponse {
         backend_online: true,
@@ -129,5 +130,6 @@ pub async fn get_health_metrics(
         total_tasks,
         uptime_secs,
         lark_ws,
+        wechat_poll,
     })
 }

@@ -82,6 +82,16 @@ impl Consumer for WechatInboundConsumer {
                     channel_id
                 ),
             }
+        } else {
+            // 适配层**有意跳过**（非文本 / 非本渠道 peer / 渠道已停用 / 渠道不存在等）。
+            // 事件按成功 ack、游标照常推进——这是预期行为（非文本消息不该重投），
+            // 但**必须留痕**：否则「收到帧却无下文」在日志与监控上完全静默，
+            // 无法与「消息根本没到 iLink」区分。与 poll_loop 的 batch 日志构成闭环。
+            log_info!(
+                "wechat inbound adapted to nothing (intentionally skipped): channel_id={} message_key={}",
+                channel_id,
+                message_key
+            );
         }
         Ok(())
     }

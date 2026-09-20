@@ -288,6 +288,9 @@ pub trait MessageChannelManage: Send + Sync {
 
     /// 飞书信道 WS 连接监控快照（health metrics 聚合用；未接入时返回空快照）
     async fn lark_ws_metrics(&self) -> common::api::LarkWsMetrics;
+
+    /// 微信渠道长轮询监控快照（health metrics 聚合用；未接入时返回空快照）
+    async fn wechat_poll_metrics(&self) -> common::api::WechatPollMetrics;
 }
 
 /// 创建凭证命令（detail 为明文，Domain 内规范化 + 校验 + 加密落库）

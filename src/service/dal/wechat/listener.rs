@@ -29,4 +29,10 @@ pub trait WechatListenerDal: Send + Sync {
     /// 遍历引用该凭证的渠道：启用且开监听的重新 ensure（凭证指纹变化时
     /// 停旧重建，覆盖 bot_id / bot_token / base_url 任一维度）。
     async fn rebuild_listeners_for_credential(&self, ctx: RequestContext, credential_id: &str);
+
+    /// 全部渠道的长轮询运行态快照（监控聚合用；无监听时返回空快照）
+    ///
+    /// 对齐飞书 `LarkListenerDal::listener_stats`：渠道监控统一从 DAL 取运行态，
+    /// Domain 只做聚合，不感知 DAO 内部结构。
+    async fn listener_stats(&self) -> common::api::WechatPollMetrics;
 }

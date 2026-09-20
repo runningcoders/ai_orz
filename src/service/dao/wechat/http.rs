@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 use super::WechatDao;
 use super::ilink::{
     CursorStore, IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry, send_text,
+    short_token,
 };
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -198,6 +199,14 @@ impl WechatDao for WechatDaoHttpImpl {
         self.poll_loops.is_running(channel_id).await
     }
 
+    async fn listener_stats(&self) -> common::api::WechatPollMetrics {
+        let channels = self.poll_loops.metrics(&self.cursors).await;
+        common::api::WechatPollMetrics {
+            active_polls: channels.len() as u64,
+            channels,
+        }
+    }
+
     /// 消费确认后推进游标（P2）—— 详见 `ilink::CursorStore` 的说明。
     ///
     /// `cursor_value` 来自 [`WechatInboundEvent::cursor`]（服务端 opaque 值，原样回传）；
@@ -209,11 +218,14 @@ impl WechatDao for WechatDaoHttpImpl {
         cursor_value: &str,
     ) -> Result<()> {
         self.cursors.set(channel_id, cursor_value).await;
-        log_debug!(
+        // info 而非 debug：与「收帧 batch」「轮询心跳」构成完整观测链
+        // （收到 → 消费确认 → 游标推进）。游标长时间不动时，一眼能看出卡在消费侧。
+        log_info!(
             &ctx,
             "wechat_inbound",
-            "inbound cursor advanced (consumption confirmed): channel_id={}",
-            channel_id
+            "inbound cursor advanced (consumption confirmed): channel_id={} cursor={}",
+            channel_id,
+            short_token(cursor_value)
         );
         Ok(())
     }

@@ -342,6 +342,10 @@ impl WechatListenerDal for WechatDalImpl {
             }
         }
     }
+
+    async fn listener_stats(&self) -> common::api::WechatPollMetrics {
+        self.wechat_dao.listener_stats().await
+    }
 }
 
 // ==================== 总 trait 空实现 ====================

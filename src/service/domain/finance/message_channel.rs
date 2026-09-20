@@ -142,4 +142,17 @@ impl super::MessageChannelManage for FinanceDomainImpl {
             None => common::api::LarkWsMetrics::default(),
         }
     }
+
+    /// 微信渠道长轮询监控快照（同 `lark_ws_metrics` 口径：未接入时返回空快照）
+    ///
+    /// 与飞书的语义差异：飞书是服务端推的 WS 连接（`state` 描述连接阶段），
+    /// 微信是客户端发起的**长轮询**（没有连接阶段，只有「轮次有没有在推进」）。
+    /// 因此前端判活看 `rounds` / `last_poll_at_ms` 是否单调前进，
+    /// `state` 仅表示是否处于失败退避（`polling` / `degraded`）。
+    async fn wechat_poll_metrics(&self) -> common::api::WechatPollMetrics {
+        match &self.wechat_channel_dal {
+            Some(dal) => dal.listener_stats().await,
+            None => common::api::WechatPollMetrics::default(),
+        }
+    }
 }

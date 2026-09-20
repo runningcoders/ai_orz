@@ -34,6 +34,9 @@ pub struct HealthMetricsResponse {
     /// 飞书 WebSocket 长连接监控（无监听时 active_connections=0）
     #[serde(default)]
     pub lark_ws: LarkWsMetrics,
+    /// 微信 iLink 入站长轮询监控（无监听时 active_polls=0）
+    #[serde(default)]
+    pub wechat_poll: WechatPollMetrics,
 }
 
 /// 飞书 WebSocket 长连接监控快照
@@ -54,6 +57,48 @@ pub struct LarkWsAppMetrics {
     pub state: String,
     /// 累计重连成功次数（首次建连不计）
     pub reconnect_count: u64,
+}
+
+/// 微信 iLink 入站长轮询监控快照
+///
+/// 与 [`LarkWsMetrics`] 同构：飞书是服务端推送的 WS 长连接，微信是客户端发起的
+/// 长轮询（iLink 无推送通道），两者都需回答同一个问题——「监听现在到底活没活」。
+/// 微信侧的判活不能只看「循环在注册表里」，还要看**轮次是否在推进**：
+/// 长轮询每轮成功返回都会 `rounds+1` 并刷新 `last_poll_at_ms`，
+/// 正常节奏约 35s 一轮，长时间不刷新即卡死。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WechatPollMetrics {
+    /// 活跃长轮询数（per-channel 一条）
+    pub active_polls: u64,
+    /// 每个渠道的轮询运行态明细
+    pub channels: Vec<WechatPollChannelMetrics>,
+}
+
+/// 单个微信渠道的长轮询运行态
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WechatPollChannelMetrics {
+    /// 渠道 ID
+    pub channel_id: String,
+    /// 渠道名称
+    pub channel_name: String,
+    /// iLink bot 标识（来自凭证）
+    pub bot_id: String,
+    /// 轮询阶段：polling（正常）/ degraded（连续失败退避中）
+    pub state: String,
+    /// 累计完成轮次（每轮成功返回 +1）
+    pub rounds: u64,
+    /// 累计入站消息数（本轮进程生命周期内）
+    pub inbound_messages: u64,
+    /// 连续失败次数（>0 即当前处于异常；成功一轮归零）
+    pub consecutive_failures: u32,
+    /// 累计客户端超时次数（>0 表示曾出现网络 hang / 服务端异常）
+    pub client_timeouts: u64,
+    /// 最近一次成功轮询的时间戳（ms），用于判断「轮询是否卡住」
+    pub last_poll_at_ms: i64,
+    /// 最近一条入站消息的时间戳（ms；从未收到则为 0）
+    pub last_message_at_ms: i64,
+    /// 已确认消费游标摘要（前 8 字符 + 长度；`None` = 尚未建立进度）
+    pub cursor: Option<String>,
 }
 
 /// 创建备份请求（无参数，由 Admin 触发）
