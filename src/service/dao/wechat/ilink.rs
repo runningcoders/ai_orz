@@ -812,6 +812,8 @@ async fn poll_loop(
     let mut next_timeout_ms = UPDATES_POLL_TIMEOUT_MS;
     // 暂停标记：避免暂停期内每轮重复写运行态快照
     let mut paused_marked = false;
+    // 上一轮请求携带的游标（同批次重复拉取的判定依据，见循环尾部退避）
+    let mut last_request_cursor: Option<String> = None;
 
     loop {
         // 0. 暂停期（`-14` 自愈）：不发请求，休眠到解禁
@@ -1046,7 +1048,21 @@ async fn poll_loop(
                 {
                     writer.save(&channel_id, &state).await;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(POLL_PAUSE_MS)).await;
+                // 同批次重复拉取退避：本轮请求游标与上轮相同且带消息返回 = 上一批
+                // 消费尚未确认（服务端对已见游标不 hold、立即返回同批）。紧密重拉会以
+                // ~2 req/s 打服务端并虚高轮次指标，退避到慢重试节奏等消费确认。
+                let same_batch_repull = message_count > 0 && last_request_cursor == cursor;
+                last_request_cursor = cursor;
+                if same_batch_repull {
+                    log_info!(
+                        "ilink poll backing off (in-flight batch unconsumed): channel_id={} messages={}",
+                        channel_id,
+                        message_count
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(FAIL_RETRY_SLOW_MS)).await;
+                } else {
+                    tokio::time::sleep(std::time::Duration::from_millis(POLL_PAUSE_MS)).await;
+                }
 
                 // 心跳：轮次 / 累计入站 / 连续失败 / 客户端超时 / 游标 / 空闲时长。
                 // 有这一行才可能"从日志判断监听在不在跑"——此前只能靠抓 TCP 连接佐证。
@@ -1141,7 +1157,13 @@ impl PollLoopRegistry {
         // 是已确认消费的进度，也是重启后唯一的进度来源。
         // 不回灌 → 首轮以空游标请求，而 iLink 对空游标**不重放**历史（实测 `msgs: []`）
         // → 停机期间的消息永久丢失，且无日志、无报错（因此极难察觉）。
-        if let Some(cursor) = state.cursor.as_ref().filter(|c| !c.is_empty()) {
+        //
+        // 仅在内存游标**缺失**时回灌：stop→ensure（凭证轮换重建 / 渠道停启）路径上
+        // CursorStore 不清空且比 DB 新（消费确认只写内存、落库滞后一轮），无条件覆盖
+        // 会把已确认游标回退到旧值 → 已消费消息重复投递。
+        if cursors.get(channel.id()).await.is_none()
+            && let Some(cursor) = state.cursor.as_ref().filter(|c| !c.is_empty())
+        {
             cursors.set(channel.id(), &cursor.value).await;
             log_info!(
                 "ilink inbound cursor restored from inbound_state: channel_id={} cursor={} updated_at_ms={:?}",

@@ -88,17 +88,18 @@ impl WechatDaoHttpImpl {
             .and_then(|state| state.sessions.latest().map(|s| s.peer_id.clone()))
     }
 
-    /// 出站 context_token：按 peer 取会话令牌（peer 未命中时回落最近活跃会话）
+    /// 出站 context_token：按 peer 精确取会话令牌
+    ///
+    /// 仅显式 peer 命中：`context_token` 协议上绑定会话，跨会话借用（拿 A 会话的
+    /// 滚动令牌发给 B 对端）大概率被服务端拒绝且报错难排查。未命中返回 `None`，
+    /// 让调用方拿到可读的「无会话令牌」错误，而不是静默借错 token。
     fn resolve_context_token(channel: &MessageChannel, peer: &str) -> Option<String> {
         let state = channel
             .po
             .inbound_state
             .as_deref()
             .and_then(common::models::InboundState::from_json)?;
-        let session = state
-            .sessions
-            .get(peer)
-            .or_else(|| state.sessions.latest())?;
+        let session = state.sessions.get(peer)?;
         session.context_token.clone().filter(|t| !t.is_empty())
     }
 }
@@ -298,19 +299,21 @@ mod tests {
         );
     }
 
-    /// context_token 解析：按 peer 命中；peer 未命中回落最近活跃会话；缺失 None
+    /// context_token 解析：仅显式 peer 精确命中；未命中/无状态 None（跨会话借用
+    /// 会被服务端拒绝，宁可报可读错误也不静默借错 token）
     #[test]
     fn test_resolve_context_token() {
         let state = state_with("peer_a", "tok_a");
         let ch = channel_with_state(Some(state), None);
+        // 显式 peer 命中
         assert_eq!(
             WechatDaoHttpImpl::resolve_context_token(&ch, "peer_a").as_deref(),
             Some("tok_a")
         );
-        // peer 未命中 → latest 兜底
+        // peer 未命中 → None（不再回落最近活跃会话）
         assert_eq!(
-            WechatDaoHttpImpl::resolve_context_token(&ch, "peer_other").as_deref(),
-            Some("tok_a")
+            WechatDaoHttpImpl::resolve_context_token(&ch, "peer_other"),
+            None
         );
         // 无状态 → None
         assert_eq!(

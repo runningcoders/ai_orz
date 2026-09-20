@@ -245,6 +245,16 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             && let Some(email_dal) = &self.email_channel_dal
         {
             email_dal
+                .rebuild_listeners_for_credential(ctx.clone(), &cmd.credential_id)
+                .await;
+        }
+        // WechatIlink：重新扫码 / 手工 patch 轮换 bot_token 后，引用该凭证的渠道
+        // 长轮询仍持有旧 token 快照（旧 token 被服务端作废 → `-14` 无限暂停-重试循环），
+        // 必须停旧重建（ensure 凭证指纹幂等 + 轮换时清除 `-14` 暂停；失败仅告警）
+        if kind == CredentialKind::WechatIlink
+            && let Some(wechat_dal) = &self.wechat_channel_dal
+        {
+            wechat_dal
                 .rebuild_listeners_for_credential(ctx, &cmd.credential_id)
                 .await;
         }

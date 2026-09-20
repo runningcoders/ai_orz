@@ -53,6 +53,33 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToAgentCommand<'_>,
     ) -> Result<Message> {
+        // 入站幂等吸收：external_key 已存在 → 该外部消息已落过库（游标回退 / 服务端
+        // 重推 / 事件重投后的重复拉取），返回既有消息避免重复投递给 Agent。
+        // 先查后插存在 TOCTOU 窗口，但 AOP 队列按 event_id 在途去重已挡掉绝大多数
+        // 并发路径，残余窗口与「单实例」威胁模型匹配（email 适配层同款模式）。
+        // 查重失败上抛：宁可重复投递也不静默丢消息。
+        if let Some(external_key) = cmd.external_key.filter(|k| !k.is_empty())
+            && let Some(existing_id) = self
+                .message_dal
+                .find_id_by_external_key(ctx.clone(), external_key)
+                .await?
+        {
+            log_info!(
+                &ctx,
+                "message_delivery",
+                "duplicate external message skipped: external_key={} existing_id={}",
+                external_key,
+                existing_id
+            );
+            if let Some(existing) = self
+                .message_dal
+                .find_by_id(ctx.clone(), &existing_id)
+                .await?
+            {
+                return Ok(existing);
+            }
+        }
+
         let project_id = cmd
             .project_id
             .or_else(|| ctx.project_id().map(|s| s.as_str()))

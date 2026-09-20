@@ -153,6 +153,16 @@ pub trait MessageDal: Send + Sync {
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>>;
 
+    /// 按外部渠道键反查内部消息 ID（未留痕返回 None）
+    ///
+    /// 入站幂等吸收用：external_key 已存在 → 该外部消息已落库（游标回退 / 服务端
+    /// 重推 / 事件重投后的重复拉取），跳过落库返回既有消息，避免重复投递给 Agent。
+    async fn find_id_by_external_key(
+        &self,
+        ctx: RequestContext,
+        external_key: &str,
+    ) -> Result<Option<String>>;
+
     /// 检查指定 Agent 是否有 Pending 状态的指定类型消息
     ///
     /// 用于 TaskEventConsumer 发送通知前去重，避免对同一 Agent 重复投递
@@ -395,6 +405,16 @@ impl MessageDal for MessageDalImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>> {
         let opt = self.message_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Message::from_po))
+    }
+
+    async fn find_id_by_external_key(
+        &self,
+        ctx: RequestContext,
+        external_key: &str,
+    ) -> Result<Option<String>> {
+        self.message_dao
+            .find_id_by_external_key(ctx, external_key)
+            .await
     }
 
     async fn has_pending_message_for_agent(

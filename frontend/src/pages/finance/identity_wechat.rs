@@ -337,6 +337,13 @@ pub fn IdentityWechatSection() -> Element {
                             break;
                         }
                         qr_refresh_count.set(count);
+                        // blocked：阶段条先呈现风控态（STAGE_BLOCKED 专属 warning 文案）
+                        // 并停留片刻，让用户知道是「配对码错了」而非普通二维码过期；
+                        // expired 无需停留，直接换码
+                        if blocked {
+                            qr_stage.set(STAGE_BLOCKED.to_string());
+                            TimeoutFuture::new(1500).await;
+                        }
                         qr_stage.set(STAGE_REFRESHING.to_string());
                         match get_wechat_login_qrcode().await {
                             Ok(qr) => {

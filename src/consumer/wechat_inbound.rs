@@ -8,7 +8,7 @@
 //! 消息投递都在 AOP worker 线程执行，慢业务不阻塞长轮询收帧。
 
 use async_trait::async_trait;
-use common::error::{Error, Result};
+use common::error::{Result, err};
 
 use crate::models::events::WechatInboundEvent;
 use crate::pkg::RequestContext;
@@ -44,8 +44,14 @@ impl Consumer for WechatInboundConsumer {
     }
 
     async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        // 封套由本仓自己的序列化产生，反序列化失败即**永久形态**（非瞬时故障）：
+        // 报 InvalidRequest 走首败即弃，避免确定性错误空转 8 次重试（指数退避累计约 4 分钟）
         let event: WechatInboundEvent = serde_json::from_value(event).map_err(|e| {
-            Error::internal(format!("failed to deserialize WechatInboundEvent: {}", e))
+            err!(
+                InvalidRequest,
+                "failed to deserialize WechatInboundEvent: {}",
+                e
+            )
         })?;
         let channel_id = event.channel_id.clone();
         let message_key = event.message_key.clone();
@@ -61,8 +67,9 @@ impl Consumer for WechatInboundConsumer {
                 // P6：适配失败**上报 Err**，不再当成功 ack。
                 // 改造前这里 `log_error!` 后 `return Ok(())` —— 事件被 ack、不进失败指标、
                 // 无任何审计痕迹；叠加当时"游标已推进"（P2）= 消息确定性丢失。
-                // 现在由微信 DAL 的 `on_failed` 判永久/瞬时：永久 → `Discard`
-                // （框架记 `on_consume_discarded` 埋点），瞬时 → `Retry` 重投（游标不动）。
+                // 重投判定走 Consumer 默认 `decide_retry`（永久错误码表首败即弃，
+                // 其余重试至上限）：永久 → `Discard`（框架记 `on_consume_discarded`
+                // 埋点），瞬时 → `Retry` 重投（游标不动，AOP 队列兜底）。
                 log_error!(
                     "wechat inbound adapt failed: channel_id={} message_key={} err={}",
                     channel_id,
