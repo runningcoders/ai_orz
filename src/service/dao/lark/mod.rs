@@ -23,6 +23,7 @@ use common::models::{CredentialDetail, CredentialKind};
 
 pub mod error;
 pub mod http;
+pub mod pbbp2;
 pub mod token;
 pub mod ws;
 

@@ -59,6 +59,10 @@ ai-orz-macros = { path = "./ai-orz-macros" }
 dashmap = "6.1"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 
+# 飞书长连接私有协议帧（pbbp2 protobuf）。derive-only：手写 #[derive(prost::Message)] 结构体，
+# 不引 prost-build / 不依赖 protoc（协议字段仅 Frame 9 个 + Header 2 个，见 dao/lark/pbbp2.rs 文件头）。
+prost = "0.13"
+
 # 备份相关
 tar = "0.4"
 flate2 = "1.0"

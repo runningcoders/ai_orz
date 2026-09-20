@@ -10,7 +10,7 @@
 
 use super::error::{LarkResponse, from_reqwest, validate_config};
 use super::token::{SharedTokenCache, shared as shared_token_cache};
-use super::ws::{WsState, WsTokenSource};
+use super::ws::WsState;
 use super::{LarkAppCredentials, LarkDao};
 use crate::models::events::LarkMessageEvent;
 use crate::models::message::Message;
@@ -237,27 +237,6 @@ async fn fetch_tenant_access_token(
     Ok((resp.tenant_access_token, resp.expire))
 }
 
-/// WS 连接的 token 来源：重连时实时取 token（共享 per-app 缓存，避免持有 DAO 自引用循环）
-struct LarkWsTokenSource {
-    http: reqwest::Client,
-    token_caches: Arc<RwLock<HashMap<String, SharedTokenCache>>>,
-    app_id: String,
-    app_secret: String,
-}
-
-#[async_trait::async_trait]
-impl WsTokenSource for LarkWsTokenSource {
-    async fn token(&self) -> Result<String> {
-        fetch_token_with_caches(
-            &self.http,
-            &self.token_caches,
-            &self.app_id,
-            &self.app_secret,
-        )
-        .await
-    }
-}
-
 // 出站凭证解析归 DAL 层（dal::message_channel）：内联字段已在二期重构中删除，
 // 渠道仅存引用，DAL 解析后以 LarkAppCredentials 传入本 DAO。
 
@@ -331,16 +310,8 @@ impl LarkDao for LarkDaoHttpImpl {
             }
         }
 
-        // 预热 token 缓存 + 构造 WS token source（重连时实时刷新 token）
-        self.get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
-            .await?;
-        let token_source = Arc::new(LarkWsTokenSource {
-            http: self.http.clone(),
-            token_caches: self.token_caches.clone(),
-            app_id: credentials.app_id.clone(),
-            app_secret: credentials.app_secret.clone(),
-        });
-
+        // 长连接只认**应用凭证**（AppID/AppSecret 直接进 `POST /callback/ws/endpoint` 请求体），
+        // **不需要** tenant_access_token —— 那是 REST 出站那条线的产物（两条鉴权线互不相干）
         let mut conns = self.ws_conns.write().await;
         // 双重检查（防止等待期间其他任务已建连）
         if conns.contains_key(&credentials.app_id) {
@@ -348,8 +319,7 @@ impl LarkDao for LarkDaoHttpImpl {
         }
 
         let app_id = credentials.app_id.clone();
-        let state =
-            super::ws::start_event_loop(self.http.clone(), app_id.clone(), token_source).await?;
+        let state = super::ws::start_event_loop(self.http.clone(), credentials).await?;
 
         conns.insert(app_id.clone(), state);
         log_info!("lark event listener started for app_id={}", app_id);
@@ -387,6 +357,12 @@ impl LarkDao for LarkDaoHttpImpl {
                 app_id: app_id.clone(),
                 state: snap.phase.as_str().to_string(),
                 reconnect_count: snap.reconnect_count,
+                frames_received: snap.frames_received,
+                // 0 = 从未收到（与微信 `last_poll_at_ms` 口径一致）
+                last_frame_at_ms: snap.last_frame_at_ms.unwrap_or(0),
+                last_close_code: snap.last_close_code.map(i64::from).unwrap_or(0),
+                last_close_reason: snap.last_close_reason.clone(),
+                terminal_reason: snap.terminal_reason.clone(),
             });
         }
         LarkWsMetrics {

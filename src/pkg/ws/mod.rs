@@ -1,12 +1,29 @@
 //! 通用 WebSocket 客户端长连接管理器
 //!
-//! 只负责连接生命周期：建连、supervisor 指数退避重连、心跳、读循环、
+//! 只负责连接生命周期：建连、重连（指数退避 / 固定间隔可配）、心跳、读循环、
 //! 优雅关闭与连接状态快照。**不含任何业务语义**（不知道飞书 / 联邦）：
 //! 帧的解析与处置由 `WsClientAdapter` 实现方全权解释（adapter 模式）。
 //!
-//! 心跳二态：
+//! # 帧形态
+//!
+//! - 文本帧：`on_frame(String)`（既有通路，联邦使用）
+//! - 二进制帧：`on_message(WsFrame)`（新通路，飞书 pbbp2 protobuf 使用）
+//!
+//! `on_message` 的默认实现把文本转投 `on_frame`、对二进制仅**留痕不静默**，
+//! 因此既有实现方（联邦）无需任何改动。
+//!
+//! # 心跳
+//!
 //! - 应用层心跳（如飞书 JSON ping）：adapter 实现 `heartbeat_frame()` 返回自定义文本帧
 //! - 协议级心跳（默认）：`heartbeat_frame()` 返回 None，pkg 发 WS Ping 控制帧
+//! - 心跳**间隔与帧内容**由 `heartbeat()` **每 tick 重新查询**（服务端可在运行期下发新值）
+//!
+//! # 终局停机（`terminal_reason`）
+//!
+//! 致命错误（如飞书 `exceed_conn_limit`：同应用活跃连接数超限）重试无意义。
+//! adapter 置 `terminal_reason()` 后 supervisor **停止重连**并把快照切到 `Failed`。
+//! 用单一机制表达「停机」而非给 `FrameAction` 加变体——加变体会让所有既有 `match`
+//! 变成非穷尽；且它还能覆盖**建连之前**的失败（取端点阶段的致命码，帧动作表达不到）。
 //!
 //! 典型用法：
 //! ```ignore
@@ -65,6 +82,118 @@ pub enum FrameAction {
     Reconnect,
 }
 
+/// 入站帧（pkg 只区分文本 / 二进制，对内容零假设）
+///
+/// 与 `Message::Text` / `Message::Binary` 一一对应。WS 控制帧（Ping / Pong / Close）
+/// **不**经过此类型——它们的处置是连接层自身的职责。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WsFrame {
+    /// 文本帧
+    Text(String),
+    /// 二进制帧
+    Binary(Vec<u8>),
+}
+
+impl WsFrame {
+    /// 帧负载字节数（日志用，避免打印内容）
+    pub fn len(&self) -> usize {
+        match self {
+            WsFrame::Text(t) => t.len(),
+            WsFrame::Binary(b) => b.len(),
+        }
+    }
+
+    /// 是否零长负载
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// 出站帧
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WsOutFrame {
+    /// 文本帧
+    Text(String),
+    /// 二进制帧
+    Binary(Vec<u8>),
+    /// 协议级 Ping 控制帧（对端会自动回 Pong）
+    Ping(Vec<u8>),
+}
+
+/// 单帧处置结果：动作 + 需要**立即回写**的帧
+///
+/// 「立即回写」是为需要当面应答（ACK）的协议准备的：飞书要求事件在 **3 秒**内回 ACK，
+/// 超时服务端重推。回写发生在读循环内、`on_message` 返回之后，因此仍满足
+/// 「读循环只入队不做业务」——`replies` 由 adapter 在解析层决定，不涉及业务处理。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameOutcome {
+    /// 本次连接是否应结束（`Reconnect` → supervisor 重连）
+    pub action: FrameAction,
+    /// 立即回写的帧（ACK / 自定义 pong 等）
+    pub replies: Vec<WsOutFrame>,
+}
+
+impl Default for FrameOutcome {
+    fn default() -> Self {
+        Self::cont()
+    }
+}
+
+impl FrameOutcome {
+    /// 继续接收、不回写
+    pub fn cont() -> Self {
+        Self {
+            action: FrameAction::Continue,
+            replies: Vec::new(),
+        }
+    }
+
+    /// 结束本次连接、不回写
+    pub fn reconnect() -> Self {
+        Self {
+            action: FrameAction::Reconnect,
+            replies: Vec::new(),
+        }
+    }
+
+    /// 附加一个需立即回写的帧
+    pub fn with_reply(mut self, reply: WsOutFrame) -> Self {
+        self.replies.push(reply);
+        self
+    }
+}
+
+/// 心跳指令（adapter 声明「每隔多久发什么」）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Heartbeat {
+    /// 心跳间隔；`Duration::ZERO` 表示关闭心跳
+    pub interval: Duration,
+    /// 要发的帧；`None` 表示协议级 Ping 控制帧
+    pub frame: Option<WsOutFrame>,
+}
+
+/// 重连策略（每轮重连**重新查询**，允许运行期改变间隔）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReconnectPolicy {
+    /// 指数退避（默认，等价既有行为）：1s 起倍增、60s 封顶、±20% 抖动
+    Exponential,
+    /// 固定间隔（飞书口径：服务端下发 `ReconnectInterval`）
+    Fixed {
+        /// 重连间隔
+        interval: Duration,
+        /// 首次重连叠加的随机抖动上限（服务端 `ReconnectNonce`；`None` 不叠加）
+        first_jitter: Option<Duration>,
+        /// 重连次数上限（`None` = 无限）；达到上限即终局停机
+        max_attempts: Option<u64>,
+    },
+}
+
+impl Default for ReconnectPolicy {
+    fn default() -> Self {
+        Self::Exponential
+    }
+}
+
 /// WebSocket 客户端适配器：协议语义由实现方全权解释
 ///
 /// pkg 对帧内容零假设——收到的每一帧文本都交给 `on_frame`，
@@ -94,6 +223,54 @@ pub trait WsClientAdapter: Send + Sync {
     fn handshake_headers(&self) -> Vec<(&'static str, String)> {
         Vec::new()
     }
+
+    /// 处理一帧入站消息（文本 / 二进制），返回动作与**需立即回写**的帧
+    ///
+    /// 默认实现：文本转投 [`WsClientAdapter::on_frame`]（既有通路零改动）；
+    /// 二进制**留痕不静默**——pkg 组件无二进制语义，需要二进制协议的 adapter
+    /// （如飞书 pbbp2）必须覆盖本方法。
+    async fn on_message(&self, frame: WsFrame) -> FrameOutcome {
+        match frame {
+            WsFrame::Text(text) => FrameOutcome {
+                action: self.on_frame(text).await,
+                replies: Vec::new(),
+            },
+            WsFrame::Binary(bytes) => {
+                log_debug!(
+                    "{} ws binary frame ignored by default adapter (len={})",
+                    self.name(),
+                    bytes.len()
+                );
+                FrameOutcome::cont()
+            }
+        }
+    }
+
+    /// 心跳指令；返回 `None` 表示关闭心跳
+    ///
+    /// 默认：30s 间隔 + [`WsClientAdapter::heartbeat_frame`]
+    /// （`Some` 发文本帧、`None` 发协议级 Ping）——等价既有行为。
+    /// 实现方覆盖本方法即可让**间隔与帧内容在运行期变化**（服务端下发新值时当轮生效）。
+    fn heartbeat(&self) -> Option<Heartbeat> {
+        Some(Heartbeat {
+            interval: HEARTBEAT_INTERVAL,
+            frame: self.heartbeat_frame().map(WsOutFrame::Text),
+        })
+    }
+
+    /// 重连策略；默认指数退避（等价既有行为）
+    fn reconnect_policy(&self) -> ReconnectPolicy {
+        ReconnectPolicy::Exponential
+    }
+
+    /// 终局原因：返回 `Some` 表示**不再重连**（supervisor 停机并把快照切 `Failed`）
+    ///
+    /// 适用于重试无意义且能定位根因的失败（凭据错、连接数超限）。
+    /// supervisor 在**每次连接退出的边界**查询——因此它同时覆盖建连前（取端点）
+    /// 与建连后两个阶段，这是帧动作表达不到的。
+    fn terminal_reason(&self) -> Option<String> {
+        None
+    }
 }
 
 // ==================== 连接状态监控 ====================
@@ -107,6 +284,8 @@ pub enum WsConnPhase {
     Connected,
     /// 断线后退避重连中
     Reconnecting,
+    /// 终局失败：已停止重连，需人工介入（见 `terminal_reason`）
+    Failed,
 }
 
 impl WsConnPhase {
@@ -115,7 +294,13 @@ impl WsConnPhase {
             WsConnPhase::Connecting => "connecting",
             WsConnPhase::Connected => "connected",
             WsConnPhase::Reconnecting => "reconnecting",
+            WsConnPhase::Failed => "failed",
         }
+    }
+
+    /// 是否为终局态（不再自动恢复）
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, WsConnPhase::Failed)
     }
 }
 
@@ -127,6 +312,19 @@ pub struct WsConnState {
     pub reconnect_count: u64,
     /// 最近一次建连成功时间（RFC3339）
     pub last_connected_at: Option<String>,
+    /// 最近一次收到**任意帧**的时间（Unix 毫秒；`None` = 本连接从未收到）
+    ///
+    /// 判活字段：「已连接但此值停走」= 对端静默 / 半开连接（TCP 黑洞下心跳写进内核
+    /// 缓冲区也会「成功」）。仅用于展示与告警，**不触发断连**（不做无帧判死）。
+    pub last_frame_at_ms: Option<i64>,
+    /// 累计收到帧数（含控制帧）
+    pub frames_received: u64,
+    /// 最近一次收到的 close 帧 code（服务端主动关闭的唯一证据）
+    pub last_close_code: Option<u16>,
+    /// 最近一次收到的 close 帧 reason
+    pub last_close_reason: Option<String>,
+    /// 终局原因（`Some` ⇒ supervisor 已停止重连）
+    pub terminal_reason: Option<String>,
 }
 
 impl WsConnState {
@@ -135,6 +333,11 @@ impl WsConnState {
             phase: WsConnPhase::Connecting,
             reconnect_count: 0,
             last_connected_at: None,
+            last_frame_at_ms: None,
+            frames_received: 0,
+            last_close_code: None,
+            last_close_reason: None,
+            terminal_reason: None,
         }
     }
 }
@@ -195,12 +398,14 @@ impl WsClientState {
 // ==================== supervisor ====================
 
 /// 单次连接的退出原因
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ConnExit {
     /// 是否因 shutdown 信号退出（true 则 supervisor 终止，不重连）
     shutdown: bool,
     /// 本次连接是否曾成功建连（用于重置退避）
     connected: bool,
+    /// 终局原因（`Some` ⇒ 不再重连，supervisor 停机）
+    terminal: Option<String>,
 }
 
 /// 计算下一次退避间隔（纯函数，可测）
@@ -231,6 +436,8 @@ pub async fn start_client(adapter: Arc<dyn WsClientAdapter>) -> Result<WsClientS
             let name = adapter.name().to_string();
             let mut backoff: Option<Duration> = None;
             let mut has_connected_once = false;
+            // 固定间隔策略下的连续重连尝试次数（建连成功即归零）
+            let mut attempts: u64 = 0;
             loop {
                 if *shutdown_rx.borrow() {
                     break;
@@ -249,6 +456,8 @@ pub async fn start_client(adapter: Arc<dyn WsClientAdapter>) -> Result<WsClientS
                         ConnExit {
                             shutdown: false,
                             connected: false,
+                            // 取端点阶段的失败（如连接数超限）也要能触发终局
+                            terminal: adapter.terminal_reason(),
                         }
                     }
                 };
@@ -256,15 +465,65 @@ pub async fn start_client(adapter: Arc<dyn WsClientAdapter>) -> Result<WsClientS
                     break;
                 }
                 if exit.connected {
-                    // 建连成功 → 重置退避；非首次视为一次重连成功
+                    // 建连成功 → 重置退避与尝试计数；非首次视为一次重连成功
                     backoff = None;
+                    attempts = 0;
                     if has_connected_once {
                         conn_state.write().await.reconnect_count += 1;
                     }
                     has_connected_once = true;
                 }
-                let delay = next_backoff(backoff);
-                backoff = Some(delay);
+
+                // 终局：adapter 显式置位（凭据错 / 连接数超限等重试无意义的失败）
+                if let Some(reason) = exit.terminal {
+                    {
+                        let mut st = conn_state.write().await;
+                        st.phase = WsConnPhase::Failed;
+                        st.terminal_reason = Some(reason.clone());
+                    }
+                    log_error!("{} ws terminal, stop reconnecting: {}", name, reason);
+                    break;
+                }
+
+                // 重连策略每轮重查（服务端可在运行期改变间隔）
+                let delay = match adapter.reconnect_policy() {
+                    ReconnectPolicy::Exponential => {
+                        let d = next_backoff(backoff);
+                        backoff = Some(d);
+                        d
+                    }
+                    ReconnectPolicy::Fixed {
+                        interval,
+                        first_jitter,
+                        max_attempts,
+                    } => {
+                        attempts += 1;
+                        // 重连次数耗尽 → 终局（官方 `reconnectCount` 语义，-1 为无限）
+                        if let Some(max) = max_attempts
+                            && attempts > max
+                        {
+                            let reason = format!("reconnect exhausted after {} attempts", max);
+                            {
+                                let mut st = conn_state.write().await;
+                                st.phase = WsConnPhase::Failed;
+                                st.terminal_reason = Some(reason.clone());
+                            }
+                            log_error!("{} ws terminal: {}", name, reason);
+                            break;
+                        }
+                        let mut d = interval;
+                        // 仅首次重连叠加抖动，之后固定间隔（官方 `ReconnectNonce` 语义）
+                        if attempts == 1
+                            && let Some(jitter) = first_jitter
+                            && !jitter.is_zero()
+                        {
+                            use rand::Rng;
+                            let ms = jitter.as_millis() as u64;
+                            d += Duration::from_millis(rand::thread_rng().gen_range(0..=ms));
+                        }
+                        d
+                    }
+                };
                 conn_state.write().await.phase = WsConnPhase::Reconnecting;
                 log_info!("{} ws will reconnect in {:?}", name, delay);
                 let mut sr = shutdown_rx.clone();
@@ -349,23 +608,36 @@ async fn run_connection_once(
     });
     *tx_slot.write().await = Some(client_tx.clone());
 
-    // 3. 心跳任务：adapter 提供应用层帧；否则发协议级 Ping
+    // 3. 心跳任务：adapter 每 tick 声明「发什么、间隔多久」（服务端可运行期改变）
     let heartbeat_write = write.clone();
     let heartbeat_shutdown = shutdown_rx.clone();
-    let heartbeat_frame = adapter.heartbeat_frame();
+    let heartbeat_adapter = adapter.clone();
+    let heartbeat_name = name.to_string();
     let heartbeat_handle = tokio::spawn(async move {
         let mut shutdown_rx = heartbeat_shutdown;
-        let mut ticker = tokio::time::interval(HEARTBEAT_INTERVAL);
         loop {
+            let hb = heartbeat_adapter.heartbeat();
+            // 心跳关闭（None / 零间隔）：仅等 shutdown，不忙等
+            let Some(hb) = hb else {
+                if wait_shutdown(&mut shutdown_rx).await {
+                    break;
+                }
+                continue;
+            };
+            if hb.interval.is_zero() {
+                if wait_shutdown(&mut shutdown_rx).await {
+                    break;
+                }
+                continue;
+            }
             tokio::select! {
-                _ = ticker.tick() => {
-                    let mut w = heartbeat_write.lock().await;
-                    let res = match &heartbeat_frame {
-                        Some(text) => w.send(Message::Text(text.clone())).await,
-                        None => w.send(Message::Ping(Vec::new())).await,
+                _ = tokio::time::sleep(hb.interval) => {
+                    let res = {
+                        let mut w = heartbeat_write.lock().await;
+                        send_out_frame(&mut w, hb.frame).await
                     };
                     if let Err(e) = res {
-                        log_warn!("ws heartbeat send failed: {}", e);
+                        log_warn!("{} ws heartbeat send failed: {}", heartbeat_name, e);
                         break;
                     }
                 }
@@ -382,6 +654,7 @@ async fn run_connection_once(
     let mut exit = ConnExit {
         shutdown: false,
         connected: true,
+        terminal: None,
     };
     loop {
         tokio::select! {
@@ -395,10 +668,49 @@ async fn run_connection_once(
             frame = read.next() => {
                 match frame {
                     Some(Ok(msg)) => {
-                        if let Message::Text(text) = msg
-                            && adapter.on_frame(text).await == FrameAction::Reconnect
-                        {
-                            // adapter 判定应结束本次连接（supervisor 重连）
+                        // 任何入站帧（含控制帧）都是「对端还活着」的证据
+                        mark_frame_received(&conn_state).await;
+                        let outcome = match msg {
+                            Message::Text(text) => adapter.on_message(WsFrame::Text(text)).await,
+                            Message::Binary(bytes) => {
+                                adapter.on_message(WsFrame::Binary(bytes)).await
+                            }
+                            Message::Close(close) => {
+                                // 服务端主动关闭：code/reason 是区分「正常轮换」与
+                                // 「连接被顶/冲突」的唯一证据，必须落进快照 + 日志
+                                let (code, reason) = record_close(&conn_state, close.as_ref()).await;
+                                log_info!(
+                                    "{} ws received close frame: code={:?} reason={:?}",
+                                    name,
+                                    code,
+                                    reason
+                                );
+                                break;
+                            }
+                            Message::Ping(payload) => {
+                                // tungstenite 在读循环内自动回 Pong（无需手工应答），此处仅留痕
+                                log_debug!("{} ws recv ping (len={})", name, payload.len());
+                                continue;
+                            }
+                            Message::Pong(payload) => {
+                                log_debug!("{} ws recv pong (len={})", name, payload.len());
+                                continue;
+                            }
+                            Message::Frame(_) => continue,
+                        };
+                        // 立即回写（ACK / 自定义应答）——必须在动作判定前完成，
+                        // 否则 Reconnect 会让需要应答的帧（如飞书 3s ACK 窗口）失去应答机会
+                        if !outcome.replies.is_empty() {
+                            let mut w = write.lock().await;
+                            for reply in outcome.replies {
+                                if let Err(e) = send_out_frame(&mut w, Some(reply)).await {
+                                    log_warn!("{} ws reply send failed: {}", name, e);
+                                    break;
+                                }
+                            }
+                        }
+                        if outcome.action == FrameAction::Reconnect {
+                            log_info!("{} ws frame requested reconnect", name);
                             break;
                         }
                     }
@@ -407,13 +719,15 @@ async fn run_connection_once(
                         break;
                     }
                     None => {
-                        log_info!("{} ws stream closed by server", name);
+                        log_info!("{} ws stream closed by server without close frame", name);
                         break;
                     }
                 }
             }
         }
     }
+    // 退出边界判定终局：adapter 已置位终局原因（如收到致命错误码）
+    exit.terminal = adapter.terminal_reason();
 
     // 关闭 write 端并等待心跳任务退出；清空出站句柄
     let _ = client_tx.close().await;
@@ -426,6 +740,59 @@ async fn run_connection_once(
     *tx_slot.write().await = None;
     log_info!("{} ws connection exited", name);
     Ok(exit)
+}
+
+// ==================== 连接层辅助 ====================
+
+/// 等待 shutdown 信号；返回 `true` 表示已收到关闭请求（发送端 drop 亦视为关闭）
+async fn wait_shutdown(rx: &mut tokio::sync::watch::Receiver<bool>) -> bool {
+    loop {
+        if *rx.borrow() {
+            return true;
+        }
+        if rx.changed().await.is_err() {
+            return true;
+        }
+    }
+}
+
+/// 标记收到一帧（判活证据：时间戳 + 计数）
+async fn mark_frame_received(conn_state: &Arc<RwLock<WsConnState>>) {
+    let mut st = conn_state.write().await;
+    st.last_frame_at_ms = Some(chrono::Utc::now().timestamp_millis());
+    st.frames_received = st.frames_received.saturating_add(1);
+}
+
+/// 记录 close 帧的 code/reason，返回记录值供日志使用
+async fn record_close(
+    conn_state: &Arc<RwLock<WsConnState>>,
+    close: Option<&tokio_tungstenite::tungstenite::protocol::CloseFrame<'_>>,
+) -> (Option<u16>, Option<String>) {
+    let mut st = conn_state.write().await;
+    match close {
+        Some(frame) => {
+            st.last_close_code = Some(u16::from(frame.code));
+            st.last_close_reason = Some(frame.reason.to_string());
+        }
+        None => {
+            st.last_close_code = None;
+            st.last_close_reason = None;
+        }
+    }
+    (st.last_close_code, st.last_close_reason.clone())
+}
+
+/// 向写端发送一帧（`None` → 协议级 Ping 控制帧）
+async fn send_out_frame(w: &mut TungsteniteSink, frame: Option<WsOutFrame>) -> Result<()> {
+    let msg = match frame {
+        Some(WsOutFrame::Text(text)) => Message::Text(text),
+        Some(WsOutFrame::Binary(bytes)) => Message::Binary(bytes),
+        Some(WsOutFrame::Ping(payload)) => Message::Ping(payload),
+        None => Message::Ping(Vec::new()),
+    };
+    w.send(msg)
+        .await
+        .map_err(|e| err!(ThirdPartyError, "ws send error: {}", e))
 }
 
 /// client 端帧发送句柄（内部包 tungstenite 写端）
@@ -631,5 +998,316 @@ mod tests {
         assert_eq!(WsConnPhase::Connecting.as_str(), "connecting");
         assert_eq!(WsConnPhase::Connected.as_str(), "connected");
         assert_eq!(WsConnPhase::Reconnecting.as_str(), "reconnecting");
+        assert_eq!(WsConnPhase::Failed.as_str(), "failed");
+        assert!(WsConnPhase::Failed.is_terminal());
+        assert!(!WsConnPhase::Connected.is_terminal());
+    }
+
+    // ==================== S1 新增能力测试 ====================
+
+    /// 二进制 + 回写 adapter：记录所有入站帧；二进制帧回写 ack
+    struct BinaryAckAdapter {
+        url: String,
+        received: Arc<tokio::sync::Mutex<Vec<WsFrame>>>,
+    }
+
+    #[async_trait]
+    impl WsClientAdapter for BinaryAckAdapter {
+        fn name(&self) -> &str {
+            "test-binary"
+        }
+        async fn endpoint(&self) -> Result<String> {
+            Ok(self.url.clone())
+        }
+        async fn on_frame(&self, text: String) -> FrameAction {
+            self.received.lock().await.push(WsFrame::Text(text));
+            FrameAction::Continue
+        }
+        async fn on_message(&self, frame: WsFrame) -> FrameOutcome {
+            self.received.lock().await.push(frame.clone());
+            match frame {
+                WsFrame::Binary(bytes) => FrameOutcome::cont()
+                    .with_reply(WsOutFrame::Binary(format!("ack:{}", bytes.len()).into_bytes())),
+                WsFrame::Text(_) => FrameOutcome::cont(),
+            }
+        }
+    }
+
+    /// 测试服务端：建连后推一帧二进制，收集对端回帧（首个文本/二进制后停止）
+    async fn spawn_binary_server(
+        payload: Vec<u8>,
+    ) -> (
+        String,
+        Arc<tokio::sync::Mutex<Vec<Message>>>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let got: Arc<tokio::sync::Mutex<Vec<Message>>> = Arc::default();
+        let got_server = got.clone();
+        let handle = tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let Ok(ws) = accept_async(stream).await else {
+                return;
+            };
+            let (mut write, mut read) = ws.split();
+            if write.send(Message::Binary(payload)).await.is_err() {
+                return;
+            }
+            while let Some(Ok(msg)) = read.next().await {
+                let stop = msg.is_binary() || msg.is_text();
+                got_server.lock().await.push(msg);
+                if stop {
+                    break;
+                }
+            }
+        });
+        (format!("ws://{}", addr), got, handle)
+    }
+
+    /// 二进制帧投递 adapter；`FrameOutcome.replies` 在读循环内被立即回写
+    #[tokio::test(flavor = "multi_thread")]
+    async fn binary_frame_delivery_and_reply() {
+        let received: Arc<tokio::sync::Mutex<Vec<WsFrame>>> = Arc::default();
+        let (url, server_got, server) = spawn_binary_server(vec![1, 2, 3]).await;
+
+        let adapter = Arc::new(BinaryAckAdapter {
+            url,
+            received: received.clone(),
+        });
+        let state = start_client(adapter).await.unwrap();
+
+        for _ in 0..50 {
+            if !received.lock().await.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            received.lock().await.clone(),
+            vec![WsFrame::Binary(vec![1, 2, 3])]
+        );
+
+        // adapter 声明的回写帧应被读循环立即发出
+        for _ in 0..50 {
+            if !server_got.lock().await.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let frames = server_got.lock().await.clone();
+        assert!(
+            frames
+                .iter()
+                .any(|m| matches!(m, Message::Binary(b) if b == b"ack:3")),
+            "expected ack reply frame, got {:?}",
+            frames
+        );
+
+        // 收帧证据：计数与时间戳（判活字段）
+        let snap = state.conn_state_snapshot().await;
+        assert!(snap.frames_received >= 1, "snapshot: {:?}", snap);
+        assert!(snap.last_frame_at_ms.is_some());
+
+        stop_client(state).await;
+        server.abort();
+    }
+
+    /// 默认实现下二进制帧不投 `on_frame`，但仍计入判活证据（不静默丢弃）
+    #[tokio::test(flavor = "multi_thread")]
+    async fn default_adapter_ignores_binary_but_counts_liveness() {
+        let received: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::default();
+        let (url, _got, server) = spawn_binary_server(vec![9, 9]).await;
+        let adapter = Arc::new(EchoTestAdapter {
+            url,
+            received: received.clone(),
+        });
+        let state = start_client(adapter).await.unwrap();
+
+        for _ in 0..50 {
+            if state.conn_state_snapshot().await.frames_received > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let snap = state.conn_state_snapshot().await;
+        assert_eq!(snap.phase, WsConnPhase::Connected);
+        assert!(snap.frames_received >= 1, "snapshot: {:?}", snap);
+        // 联邦默认路径：文本通路不被二进制污染（on_frame 未收到任何东西）
+        assert!(received.lock().await.is_empty());
+
+        stop_client(state).await;
+        server.abort();
+    }
+
+    /// 服务端 close 帧的 code/reason 落进快照（区分正常轮换与被顶/冲突的唯一证据）
+    #[tokio::test(flavor = "multi_thread")]
+    async fn close_frame_recorded_in_snapshot() {
+        use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let Ok(ws) = accept_async(stream).await else {
+                return;
+            };
+            let (mut write, _read) = ws.split();
+            let _ = write
+                .send(Message::Close(Some(CloseFrame {
+                    // 4001 = 应用自定义「被顶/踢出」：`CloseCode` 是私有 re-export，
+                    // 用 `.into()` 交给类型推断（目标类型由 CloseFrame.code 决定）
+                    code: 4001u16.into(),
+                    reason: std::borrow::Cow::Borrowed("kicked"),
+                })))
+                .await;
+        });
+
+        let received: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::default();
+        let adapter = Arc::new(EchoTestAdapter {
+            url: format!("ws://{}", addr),
+            received,
+        });
+        let state = start_client(adapter).await.unwrap();
+
+        for _ in 0..50 {
+            if state.conn_state_snapshot().await.last_close_code.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let snap = state.conn_state_snapshot().await;
+        assert_eq!(snap.last_close_code, Some(4001));
+        assert_eq!(snap.last_close_reason.as_deref(), Some("kicked"));
+
+        stop_client(state).await;
+        server.abort();
+    }
+
+    /// 终局停机 adapter：端点永远失败，且自报终局原因
+    struct TerminalAdapter {
+        terminal: Arc<std::sync::Mutex<Option<String>>>,
+    }
+
+    #[async_trait]
+    impl WsClientAdapter for TerminalAdapter {
+        fn name(&self) -> &str {
+            "test-terminal"
+        }
+        async fn endpoint(&self) -> Result<String> {
+            Err(err!(ThirdPartyError, "endpoint unavailable"))
+        }
+        async fn on_frame(&self, _text: String) -> FrameAction {
+            FrameAction::Continue
+        }
+        fn terminal_reason(&self) -> Option<String> {
+            self.terminal.lock().ok().and_then(|g| g.clone())
+        }
+    }
+
+    /// `terminal_reason` 置位 → supervisor 停机（`Failed`）且不再重连
+    #[tokio::test(flavor = "multi_thread")]
+    async fn terminal_reason_stops_reconnect() {
+        let adapter = Arc::new(TerminalAdapter {
+            terminal: Arc::new(std::sync::Mutex::new(Some("exceed_conn_limit".to_string()))),
+        });
+        let state = start_client(adapter).await.unwrap();
+
+        for _ in 0..50 {
+            if state.conn_state_snapshot().await.phase == WsConnPhase::Failed {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let snap = state.conn_state_snapshot().await;
+        assert_eq!(snap.phase, WsConnPhase::Failed, "snapshot: {:?}", snap);
+        assert_eq!(snap.terminal_reason.as_deref(), Some("exceed_conn_limit"));
+
+        // 停机不再重连：等待远超指数退避首轮（约 2s），状态保持 Failed
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+        let snap = state.conn_state_snapshot().await;
+        assert_eq!(snap.phase, WsConnPhase::Failed);
+        assert_eq!(snap.reconnect_count, 0);
+
+        stop_client(state).await;
+    }
+
+    /// 心跳间隔热变更 adapter（运行期可改，模拟服务端下发新参数）
+    struct TuningHeartbeatAdapter {
+        url: String,
+        interval_ms: Arc<std::sync::atomic::AtomicU64>,
+    }
+
+    #[async_trait]
+    impl WsClientAdapter for TuningHeartbeatAdapter {
+        fn name(&self) -> &str {
+            "test-heartbeat"
+        }
+        async fn endpoint(&self) -> Result<String> {
+            Ok(self.url.clone())
+        }
+        async fn on_frame(&self, _text: String) -> FrameAction {
+            FrameAction::Continue
+        }
+        fn heartbeat(&self) -> Option<Heartbeat> {
+            Some(Heartbeat {
+                interval: Duration::from_millis(self.interval_ms.load(Ordering::SeqCst)),
+                frame: Some(WsOutFrame::Text("hb".to_string())),
+            })
+        }
+    }
+
+    /// 心跳间隔由 adapter 每 tick 提供 ⇒ 运行期改变当轮生效
+    #[tokio::test(flavor = "multi_thread")]
+    async fn heartbeat_interval_takes_effect_live() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let got: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::default();
+        let got_server = got.clone();
+        let server = tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let Ok(ws) = accept_async(stream).await else {
+                return;
+            };
+            let (_write, mut read) = ws.split();
+            while let Some(Ok(msg)) = read.next().await {
+                if let Message::Text(text) = msg {
+                    got_server.lock().await.push(text);
+                }
+            }
+        });
+
+        let interval_ms = Arc::new(std::sync::atomic::AtomicU64::new(30));
+        let adapter = Arc::new(TuningHeartbeatAdapter {
+            url: format!("ws://{}", addr),
+            interval_ms: interval_ms.clone(),
+        });
+        let state = start_client(adapter).await.unwrap();
+
+        // 30ms 间隔：300ms 内应收到多帧
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let fast = got.lock().await.len();
+        assert!(fast >= 4, "expected several heartbeats at 30ms, got {}", fast);
+
+        // 改为 1000ms：当轮生效（旧间隔最多再补一帧）
+        interval_ms.store(1000, Ordering::SeqCst);
+        let mark = got.lock().await.len();
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let after = got.lock().await.len();
+        assert!(
+            after - mark <= 1,
+            "heartbeat interval change not effective: {} -> {}",
+            mark,
+            after
+        );
+
+        stop_client(state).await;
+        server.abort();
     }
 }

@@ -49,14 +49,36 @@ pub struct LarkWsMetrics {
 }
 
 /// 单个飞书应用的 WS 连接状态
+///
+/// 判活口径与微信 `WechatPollChannelMetrics` 同构：**只看 `state` 不够**——
+/// 「句柄还在、连接看着是 connected」与「真的有帧进来」是两件事（半开连接下
+/// 心跳写进内核缓冲区也算成功）。因此必须暴露 `frames_received` 与
+/// `last_frame_at_ms`，由页面判断「已连接但帧停走」→ 疑似半开连接。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkWsAppMetrics {
     /// 飞书 App ID
     pub app_id: String,
-    /// 连接阶段：connecting / connected / reconnecting
+    /// 连接阶段：connecting / connected / reconnecting / failed
     pub state: String,
     /// 累计重连成功次数（首次建连不计）
     pub reconnect_count: u64,
+    /// 累计收到帧数（含控制帧）
+    pub frames_received: u64,
+    /// 最近一次收到任意帧的时间戳（ms；0 = 本连接从未收到）
+    ///
+    /// 正常节奏下服务端每 `PingInterval`（默认 120s）会回一次 pong；
+    /// 长时间停走且 `state=connected` ⇒ 疑似半开连接。
+    pub last_frame_at_ms: i64,
+    /// 最近一次 close 帧 code（0 = 未收到 close）
+    ///
+    /// 服务端主动关闭时唯一能区分「正常轮换」与「连接被顶 / 冲突」的证据。
+    pub last_close_code: i64,
+    /// 最近一次 close 帧 reason
+    #[serde(default)]
+    pub last_close_reason: Option<String>,
+    /// 终局原因（存在 ⇒ 已停止重连，需人工介入：换凭据 / 排查连接冲突）
+    #[serde(default)]
+    pub terminal_reason: Option<String>,
 }
 
 /// 微信 iLink 入站长轮询监控快照
