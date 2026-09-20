@@ -11,23 +11,29 @@
 //!   避免中文输入法组合期间被重渲染打断（历史教训 `0644609c`）。
 //! - **菜单生命周期有兜底**：`@` 不做任何「前缀条件」（`hi@张` 这类不补空格的
 //!   写法必须能用，见 `common::mention::detect_mention_query`）；代价是打邮箱时
-//!   也会闪一下 —— 由**长关键词搜不到结果即自动收起** + 同一 `@` 位置的「死前缀」
+//!   也会闪一下 —— 由**关键词搜不到结果即自动收起** + 同一 `@` 位置的「死前缀」
 //!   抑制来兜底，用户不选就自然消失，无需按 ESC（ESC / Enter / 发送也可主动关）。
-//! - **候选分两级加载**：短关键词（空串 / 1–2 字符）走 list / query + 本地过滤，
-//!   长关键词（≥3 字符）走 search 语义召回。分界依据与实现见 [`MIN_SEARCH_CHARS`]
-//!   与 [`load_candidates`]。list 路径**只取一屏所需**（带关键词时留 [`FILTER_POOL`]
-//!   的余量），不做大池 —— 菜单屏幅有限，首屏没找到时继续打字走 search 才是正解。
+//! - **候选分两级加载**：空关键词走 list 取作用域内实体做首屏推荐，非空关键词
+//!   （1 字符起）一律走 search 语义召回 —— 后端 FTS5 已有 LIKE 兜底，短关键词
+//!   不再返回空（实现见 [`load_candidates`]）。仅联邦 Agent 这条数据源本质是
+//!   列表的路径保留 list + 本地过滤。list 路径**只取一屏所需**，不做大池 ——
+//!   菜单屏幅有限，首屏没找到时继续打字走 search 才是正解。
+//! - **范围分层打标**：候选与当前会话作用域的关系用行尾中性标签解释（见
+//!   [`MentionFlag`]）—— 默认对话把接待 Agent 置顶打「当前接待」；项目会话
+//!   把项目内 Agent 打头、组织其余打「未在项目内」缀后，当前项目置顶打
+//!   「当前项目」。作用域内的永远排前面，桶内不破坏相关性排序。
 //!
 //! ## 用法
 //!
 //! ```ignore
-//! let mention = MentionState::new(project_id); // project_id: Signal<Option<String>>
+//! let mention = MentionState::new(project_id, reception_agent);
+//! // project_id: Signal<Option<String>>，reception_agent: Signal<Option<GetReceptionAgentResponse>>
 //! // oninput: mention.sync(&value, caret)
 //! // onkeydown: mention.move_selection(±1) / mention.confirm(&input_text())
 //! rsx! {
 //!     MentionPicker {
 //!         state: mention,
-//!         tabs: mention_tabs(&[MentionKind::Agent, MentionKind::Task]),
+//!         tabs: mention_tabs(&[MentionKind::Agent, MentionKind::Project]),
 //!         on_pick: on_pick_mention,
 //!     }
 //! }
@@ -37,17 +43,18 @@ use std::collections::HashSet;
 
 use dioxus::prelude::*;
 
-use crate::api::hr::{query_agents, search_agents};
+use crate::api::hr::{get_agent, query_agents, search_agents};
 use crate::api::organization::list_federation_agents;
 use crate::api::project::{
-    list_project_tasks, list_projects, list_tasks, search_projects, search_tasks,
+    get_project, list_project_tasks, list_projects, list_tasks, search_projects, search_tasks,
 };
 use crate::utils::mention::{
     MentionKind, MentionQuery, MentionRef, apply_mention_pick, detect_mention_query,
     format_mention_ref, remove_mention_token,
 };
 use common::api::{
-    AgentListItem, AgentQueryRequest, ListProjectsRequest, ListTasksRequest, PaginationParams,
+    AgentListItem, AgentQueryRequest, GetAgentRequest, GetProjectRequest,
+    GetReceptionAgentResponse, ListProjectsRequest, ListTasksRequest, PaginationParams,
     ProjectListItem, SearchAgentsRequest, SearchProjectsRequest, SearchTasksRequest, TaskListItem,
 };
 
@@ -56,17 +63,17 @@ use common::api::{
 /// 取值按**可浏览性**定，不按数据量：`.mention-menu-body` 是 `max-height: 14rem`
 /// （224px），一条 `.mention-menu-item`（`padding: 0.375rem` ×2 + `0.875rem` 字号）
 /// 约占 32px —— 一屏实际只露得出 6–7 行，再多也全靠划。首屏没找到时用户的自然动作
-/// 是**继续打字**（≥ [`MIN_SEARCH_CHARS`] 转 search，语义召回覆盖全量），而不是在
-/// 浮层里翻页，所以给一屏半的余量即可。
+/// 是**继续打字**（转 search 语义召回覆盖全量），而不是在浮层里翻页，所以给一屏半
+/// 的余量即可。
 const CANDIDATE_LIMIT: usize = 12;
 
-/// 本地过滤的候选池大小：list 路径**带关键词**时的拉取量
+/// 本地过滤的候选池大小：项目内 Agent 路径**带关键词**时的拉取量
 ///
 /// 2× 展示上限。本地过滤看不到「被截掉的那部分」，池子只能略大于展示量，
 /// 保证过滤后仍剩得下一屏；再大就是纯浪费（见 [`CANDIDATE_LIMIT`] 的可浏览性口径）。
 const FILTER_POOL: usize = CANDIDATE_LIMIT * 2;
 
-/// list 路径的拉取量：无关键词只需首屏展示的条数，有关键词才多取一些给本地过滤留余地
+/// 项目内 Agent 路径的拉取量：无关键词只需首屏展示的条数，有关键词才多取一些给本地过滤留余地
 fn fetch_limit(keyword: Option<&str>) -> usize {
     if keyword.is_some() {
         FILTER_POOL
@@ -75,13 +82,32 @@ fn fetch_limit(keyword: Option<&str>) -> usize {
     }
 }
 
-/// 「list + 本地过滤」与「search 语义召回」的分界关键词长度
+/// 范围标签：解释「这条候选与当前会话作用域的关系」
 ///
-/// 与后端 FTS5 的 `tokenize='trigram'` 对齐：trigram 需至少 3 个字符才能成形，
-/// 空串与 1–2 字符交给 search 接口**必然返回空**（后端对空关键词更是直接返回空数组）。
-/// 短输入改走 list / query 取当前作用域内的实体、再本地做包含匹配：
-/// 空关键词即首屏推荐，1–2 字符则是「打个姓想 @ 人」这类最自然的输入。
-const MIN_SEARCH_CHARS: usize = 3;
+/// 渲染在选项行尾的中性胶囊（见 `.mention-menu-flag`），不参与类型配色 ——
+/// 类型语义已由左侧彩色 chip 承担，标签只回答「它是不是当前范围里的」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MentionFlag {
+    /// 默认对话：当前负责接待的 Agent（置顶）
+    Reception,
+    /// 项目会话：项目负责 Agent / PMO（置顶）
+    Owner,
+    /// 项目会话：当前所在项目（置顶；其他项目也可引用）
+    CurrentProject,
+    /// 项目会话：未参与该项目的 Agent（来自组织全量，缀后）
+    OutOfProject,
+}
+
+impl MentionFlag {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Reception => "当前接待",
+            Self::Owner => "负责人",
+            Self::CurrentProject => "当前项目",
+            Self::OutOfProject => "未在项目内",
+        }
+    }
+}
 
 /// 一个可选的提及目标
 #[derive(Debug, Clone, PartialEq)]
@@ -96,9 +122,17 @@ pub struct MentionCandidate {
     pub name: String,
     /// 副标题（Agent 角色 / 任务进度 / 对端组织名等补充信息，可为空）
     pub subtitle: String,
+    /// 范围标签（与当前会话作用域的关系，见 [`MentionFlag`]）
+    pub flag: Option<MentionFlag>,
 }
 
 impl MentionCandidate {
+    /// 打上范围标签（装配候选时的链式收尾）
+    fn with_flag(mut self, flag: MentionFlag) -> Self {
+        self.flag = Some(flag);
+        self
+    }
+
     /// 写入消息正文的提及语法（name 仅作为展示快照，渲染时优先用实时名）
     pub fn token(&self) -> String {
         format_mention_ref(
@@ -157,17 +191,19 @@ impl MentionTab {
 
 /// 当前会话允许 @ 的类型
 ///
-/// - 项目会话：Agent + 任务（已在项目内，不再允许 @ 项目本身）
-/// - 默认对话：Agent + 任务 + 项目（@ 仅作上下文提示，Agent 取组织全量由关键词本地收窄）
+/// - 项目会话：Agent + 任务 + 项目（Agent 双桶分层：项目内打头、未在项目内的打标
+///   缀后；项目可跨项目引用，当前项目置顶打标；任务仍只收项目内的）
+/// - 默认对话：Agent + 项目（以项目维度维护上下文：接待 Agent 置顶打「当前接待」；
+///   任务不进默认会话候选 —— 任务一律挂在项目下讨论，游离任务引导去项目里 @）
 ///
 /// 单一事实源：`MentionState` 拉候选与 Tab 渲染都走这里，避免两处口径漂移。
 pub fn mention_kinds_for(project_id: Option<&str>) -> Vec<MentionKind> {
     if project_id.is_some() {
-        // 项目会话：@ Agent 限于项目协作人，且不再允许 @ 项目本身
-        vec![MentionKind::Agent, MentionKind::Task]
-    } else {
-        // 默认对话：@ 仅作上下文提示，三种类型都可；Agent 取组织全量
+        // 项目会话：@ Agent 双桶分层（项目内 + 组织其余），且开放 @ 项目本身
         vec![MentionKind::Agent, MentionKind::Task, MentionKind::Project]
+    } else {
+        // 默认对话：Agent 取组织全量（接待 Agent 置顶打标）+ 项目；不收任务
+        vec![MentionKind::Agent, MentionKind::Project]
     }
 }
 
@@ -209,13 +245,13 @@ pub struct MentionState {
     req: Signal<u64>,
     /// 已判定「搜不到结果」的查询：`(@ 的字节下标, 当时的关键词)`
     ///
-    /// 长关键词（≥ [`MIN_SEARCH_CHARS`]）无命中说明用户多半不是在找实体
-    /// （在打邮箱、随手输了一串字），此时自动收掉菜单。记下这个「死前缀」是为了
-    /// **吸收后续输入**：在同一个 `@` 位置继续把它加长不会再把菜单弹回来，
-    /// 否则每次按键都是「弹出 → 请求 → 无结果 → 关闭」，比不收还烦。
+    /// 非空关键词无命中说明用户多半不是在找实体（在打邮箱、随手输了一串字），
+    /// 此时自动收掉菜单。记下这个「死前缀」是为了**吸收后续输入**：在同一个 `@`
+    /// 位置继续把它加长不会再把菜单弹回来，否则每次按键都是
+    /// 「弹出 → 请求 → 无结果 → 关闭」，比不收还烦。
     ///
-    /// ⚠️ 短关键词无命中**不进这个机制**：那条路径是 list + 本地过滤，
-    /// 无结果只说明候选池里没有，继续输入很可能命中（见 `load_candidates`）。
+    /// ⚠️ 空关键词（首屏）无命中**不进这个机制**：首屏展示的是当前作用域的
+    /// 实体列表，无命中只说明没有实体，与用户输入打偏无关。
     ///
     /// 解除条件：退格或换词（不再是前缀扩展）、换一个 `@` 位置，或用户主动
     /// 收起菜单（ESC / Enter / 发送，见 [`MentionState::close`]）。
@@ -225,9 +261,14 @@ pub struct MentionState {
 impl MentionState {
     /// 创建状态并启动候选加载 effect
     ///
-    /// `project_id` 传的是 **Signal 而非值**：effect 同步读取它，切换会话后
-    /// 后续候选拉取自动跟随新项目（按值捕获会让项目切换后仍查旧项目）。
-    pub fn new(project_id: Signal<Option<String>>) -> Self {
+    /// 两个入参都传 **Signal 而非值**：effect 同步读取它们，
+    /// - 切换会话后候选拉取自动跟随新项目（按值捕获会让项目切换后仍查旧项目）；
+    /// - 接待 Agent 异步到达（挂载后拉取）时补触发一次拉取，让「当前接待」
+    ///   置顶打标在菜单打开期间也能生效，而不是等下一次输入。
+    pub fn new(
+        project_id: Signal<Option<String>>,
+        reception_agent: Signal<Option<GetReceptionAgentResponse>>,
+    ) -> Self {
         let mut state = Self {
             menu: use_signal(|| None::<MentionQuery>),
             candidates: use_signal(Vec::<MentionCandidate>::new),
@@ -239,10 +280,13 @@ impl MentionState {
             dead_prefix: use_signal(|| None::<(usize, String)>),
         };
 
-        // 只同步读取 menu / project_id → 仅当「查询词变化 / 菜单开关 / 切换会话」时触发拉取，
-        // 不会因为父组件的消息列表刷新而重跑（避免打断输入）
+        // 只同步读取 menu / project_id / reception_agent → 仅当「查询词变化 / 菜单
+        // 开关 / 切换会话 / 接待 Agent 到达」时触发拉取，不会因为父组件的消息列表
+        // 刷新而重跑（避免打断输入）
         use_effect(move || {
-            // 同时取 start：空结果时要回填「死前缀」（标注是哪个 @ 位置的无命中词）
+            // 先读接待 Agent 注册订阅（默认对话置顶打「当前接待」要用），
+            // 再取 start：空结果时要回填「死前缀」（标注是哪个 @ 位置的无命中词）
+            let reception = reception_agent().map(|a| (a.agent_id, a.agent_name));
             let Some((start, query)) = state
                 .menu
                 .read()
@@ -260,20 +304,15 @@ impl MentionState {
             };
             state.loading.set(true);
             spawn(async move {
-                let list = load_candidates(pid, &kinds, &query).await;
+                let list = load_candidates(pid, &kinds, &query, reception).await;
                 // 丢弃过期响应：只有最新一次请求能写入结果
                 if *state.req.read() == seq {
                     let empty = list.is_empty();
                     state.candidates.set(list);
                     state.loading.set(false);
-                    // 关键词够长（真的走过了 search）仍无命中 → 用户大概率不是在找实体，
-                    // 收掉菜单。⚠️ 先写 dead_prefix 再收：不能走 close()，那会清掉抑制标记。
-                    //
-                    // ⚠️ 短关键词（< MIN_SEARCH_CHARS）无命中**不算死前缀**：那条路径是
-                    // list + 本地过滤，命中与否取决于候选池覆盖范围（如全局最近 100 条任务），
-                    // 候选池外本来就可能没有。若照旧收菜单 + 抑制后续输入，用户在同一个 @
-                    // 位置把「张」补成「张三丰」也永远弹不出来，等于把最自然的输入堵死。
-                    if empty && query.chars().count() >= MIN_SEARCH_CHARS {
+                    // 非空关键词仍无命中 → 用户大概率不是在找实体，收掉菜单。
+                    // ⚠️ 先写 dead_prefix 再收：不能走 close()，那会清掉抑制标记。
+                    if empty && !query.trim().is_empty() {
                         *state.dead_prefix.write() = Some((start, query));
                         state.hide();
                     }
@@ -474,50 +513,211 @@ impl MentionState {
 ///
 /// 单类型失败不影响其他类型（部分可用优于整体为空）。
 ///
-/// **两级策略**（分界见 [`MIN_SEARCH_CHARS`]）：
-/// - 短关键词（空串 / 1–2 字符）：走 list / query 取当前作用域内的实体，本地包含匹配。
-///   空关键词即首屏推荐（菜单一打开就有内容），1–2 字符是最常见的输入形态。
-/// - 长关键词（≥3 字符）：交给 search 的 FTS5 + 向量混合搜索，拿语义召回。
+/// **两级策略**：
+/// - 空关键词：走 list 取当前作用域内的实体做首屏推荐（菜单一打开就有内容）。
+/// - 非空关键词（1 字符起）：交给 search 的 FTS5 + 向量混合搜索。后端 FTS5 已有
+///   LIKE 兜底，短关键词不再返回空，前端无需按长度分流。
+/// - 例外：联邦 Agent 的数据源本质是收窄后的列表，无论关键词长短都走
+///   list + 本地过滤（见 [`load_federation_agents`]）。
+///
+/// **范围分层**（标签见 [`MentionFlag`]）：项目会话的 Agent 双桶分层 —— 负责人
+/// 置顶打「负责人」、项目内打头、组织其余打「未在项目内」缀后
+/// （[`load_agent_candidates`]）；当前项目置顶打「当前项目」
+/// （[`load_project_candidates`]）；默认对话的接待 Agent 置顶打「当前接待」。
+/// 搜索命中也保持「作用域内在前」，桶内不破坏相关性排序。
 async fn load_candidates(
     project_id: Option<String>,
     kinds: &[MentionKind],
     keyword: &str,
+    reception: Option<(String, String)>,
 ) -> Vec<MentionCandidate> {
     let kw = keyword.trim();
     let kw = if kw.is_empty() { None } else { Some(kw) };
-    let search_mode = kw.is_some_and(|s| s.chars().count() >= MIN_SEARCH_CHARS);
     let mut out = Vec::new();
     for kind in kinds {
         match kind {
-            // Agent 有三条来源：项目协作人 / 组织全量 / 联邦对端（后两者可叠加）。
-            // 项目协作人与联邦候选集天然收窄（前者个位数、后者按对端分组），一律
-            // list + 本地过滤；只有「默认对话下的组织全量 Agent」在长关键词时才值得
-            // 走 search —— 组织可能有很多 Agent，本地池覆盖不全。
             MentionKind::Agent => {
-                if let Some(pid) = project_id.as_deref() {
-                    out.extend(load_project_agents(pid, kw).await);
-                } else if search_mode {
-                    out.extend(search_org_agents(kw).await);
-                } else {
-                    out.extend(load_org_agents(kw).await);
-                }
-                out.extend(load_federation_agents(kw).await);
+                out.extend(
+                    load_agent_candidates(project_id.as_deref(), kw, reception.clone()).await,
+                );
             }
             MentionKind::Task => {
-                if search_mode {
-                    out.extend(search_tasks_by_keyword(project_id.as_deref(), kw).await);
+                if let Some(kw) = kw {
+                    out.extend(search_tasks_by_keyword(project_id.as_deref(), Some(kw)).await);
                 } else {
-                    out.extend(load_tasks(project_id.as_deref(), kw).await);
+                    out.extend(load_tasks(project_id.as_deref()).await);
                 }
             }
             MentionKind::Project => {
-                if search_mode {
-                    out.extend(search_projects_by_keyword(kw).await);
-                } else {
-                    out.extend(load_projects(kw).await);
-                }
+                out.extend(load_project_candidates(project_id.as_deref(), kw).await);
             }
         }
+    }
+    out
+}
+
+/// Agent 候选：按会话作用域双桶分层
+///
+/// - **项目会话**：负责人（PMO）解析置顶打「负责人」——不领任务就不在 assignee
+///   集合里，纯桶一推导会整个漏掉；桶一 = 项目内协作 Agent（任务 assignee 推导，
+///   不打标、打头，负责人若在其中则摘出置顶）；桶二 = 组织全量里其余的 Agent
+///   （打「未在项目内」缀后）。有关键词时桶二切 `search_agents` 服务端语义召回
+///   （组织可能很大，list 全量本地过滤覆盖不全），桶内保持相关性排序；联邦 Agent
+///   天然不在项目内，缀后不动。
+/// - **默认对话**：组织全量（关键词走 search）+ 联邦；接待 Agent 若在候选中则
+///   置顶打「当前接待」，首屏（无关键词）没刷出来时直接补一个置顶，保证
+///   「当前接待」总是第一眼可见 —— 用户 @ 的第一直觉就是找接待 Agent。
+async fn load_agent_candidates(
+    project_id: Option<&str>,
+    keyword: Option<&str>,
+    reception: Option<(String, String)>,
+) -> Vec<MentionCandidate> {
+    match project_id {
+        Some(pid) => {
+            // 负责人（PMO）先解析：id 只有 get_project 有，必须单独取
+            let owner_id = get_project(GetProjectRequest {
+                id: pid.to_string(),
+                ..Default::default()
+            })
+            .await
+            .ok()
+            .and_then(|p| p.owner_agent_id);
+
+            let mut out = load_project_agents(pid, keyword).await;
+            // 桶一已含负责人（领过任务）→ 摘出置顶打「负责人」标
+            if let Some(oid) = owner_id.as_deref()
+                && let Some(pos) = out.iter().position(|c| c.id == oid)
+            {
+                let c = out.remove(pos).with_flag(MentionFlag::Owner);
+                out.insert(0, c);
+            }
+            let mut seen: HashSet<String> = out.iter().map(|c| c.key()).collect();
+            let org = if let Some(kw) = keyword {
+                search_org_agents(Some(kw)).await
+            } else {
+                load_org_agents().await
+            };
+            // 桶一漏了负责人 → 首屏合成置顶兜底：名字优先从组织全量取（零额外
+            // 请求），没有再 get_agent；有关键词时交给桶二按命中打标，不置顶
+            if keyword.is_none()
+                && let Some(oid) = owner_id.clone()
+                && !seen.contains(&format!("{}:{}", MentionKind::Agent.as_str(), oid))
+            {
+                let name = match org.iter().find(|c| c.id == oid) {
+                    Some(c) => Some(c.name.clone()),
+                    None => get_agent(GetAgentRequest {
+                        id: oid.clone(),
+                        ..Default::default()
+                    })
+                    .await
+                    .ok()
+                    .map(|a| a.name),
+                };
+                if let Some(name) = name {
+                    seen.insert(format!("{}:{}", MentionKind::Agent.as_str(), oid));
+                    out.insert(
+                        0,
+                        MentionCandidate {
+                            kind: MentionKind::Agent,
+                            id: oid,
+                            org: None,
+                            name,
+                            subtitle: String::new(),
+                            flag: Some(MentionFlag::Owner),
+                        },
+                    );
+                }
+            }
+            let mut appended = 0usize;
+            for c in org {
+                if seen.insert(c.key()) {
+                    let flag = if owner_id.as_deref() == Some(c.id.as_str()) {
+                        MentionFlag::Owner
+                    } else {
+                        MentionFlag::OutOfProject
+                    };
+                    out.push(c.with_flag(flag));
+                    appended += 1;
+                    if appended >= CANDIDATE_LIMIT {
+                        break;
+                    }
+                }
+            }
+            out.extend(load_federation_agents(keyword).await);
+            out
+        }
+        None => {
+            let mut out = if let Some(kw) = keyword {
+                search_org_agents(Some(kw)).await
+            } else {
+                load_org_agents().await
+            };
+            if let Some((id, name)) = reception {
+                let key = format!("{}:{}", MentionKind::Agent.as_str(), id);
+                if let Some(pos) = out.iter().position(|c| c.key() == key) {
+                    let c = out.remove(pos).with_flag(MentionFlag::Reception);
+                    out.insert(0, c);
+                } else if keyword.is_none() {
+                    out.insert(
+                        0,
+                        MentionCandidate {
+                            kind: MentionKind::Agent,
+                            id,
+                            org: None,
+                            name,
+                            subtitle: String::new(),
+                            flag: Some(MentionFlag::Reception),
+                        },
+                    );
+                }
+            }
+            out.extend(load_federation_agents(keyword).await);
+            out
+        }
+    }
+}
+
+/// 项目候选：当前项目置顶打「当前项目」标，其余项目（组织全量）正常列出
+///
+/// 项目会话才打标（`project_id` 即当前项目）；默认对话无「当前」概念，原样返回。
+/// 首屏（无关键词）没刷出当前项目时（列表分页/排序没盖到），兜底 `get_project`
+/// 补一个置顶 —— 「标识出当前项目」是硬需求，不能让用户翻列表找自己所在的项目。
+async fn load_project_candidates(
+    project_id: Option<&str>,
+    keyword: Option<&str>,
+) -> Vec<MentionCandidate> {
+    let mut out = if let Some(kw) = keyword {
+        search_projects_by_keyword(Some(kw)).await
+    } else {
+        load_projects().await
+    };
+    let Some(pid) = project_id else {
+        return out;
+    };
+    let key = format!("{}:{}", MentionKind::Project.as_str(), pid);
+    if let Some(pos) = out.iter().position(|c| c.key() == key) {
+        let c = out.remove(pos).with_flag(MentionFlag::CurrentProject);
+        out.insert(0, c);
+    } else if keyword.is_none()
+        && let Some(name) = get_project(GetProjectRequest {
+            id: pid.to_string(),
+            ..Default::default()
+        })
+        .await
+        .ok()
+        .map(|p| p.name)
+    {
+        out.insert(
+            0,
+            MentionCandidate {
+                kind: MentionKind::Project,
+                id: pid.to_string(),
+                org: None,
+                name,
+                subtitle: String::new(),
+                flag: Some(MentionFlag::CurrentProject),
+            },
+        );
     }
     out
 }
@@ -531,6 +731,7 @@ fn agent_to_candidate(a: AgentListItem) -> MentionCandidate {
         org: None,
         name: a.name,
         subtitle,
+        flag: None,
     }
 }
 
@@ -542,6 +743,7 @@ fn task_to_candidate(t: TaskListItem) -> MentionCandidate {
         org: None,
         name: t.title,
         subtitle: format!("进度 {}%", t.progress),
+        flag: None,
     }
 }
 
@@ -553,10 +755,12 @@ fn project_to_candidate(p: ProjectListItem) -> MentionCandidate {
         org: None,
         name: p.name,
         subtitle: String::new(),
+        flag: None,
     }
 }
 
-/// 本地包含匹配（大小写不敏感）+ 截断到展示上限：list 路径的共同收尾
+/// 本地包含匹配（大小写不敏感）+ 截断到展示上限：仍走本地过滤的路径（项目内
+/// Agent、联邦 Agent）的共同收尾
 ///
 /// 只匹配展示名。副标题（角色 / 进度 / 联邦对端组织名）不参与 —— 用户 @ 时想的是
 /// 「那个 Agent / 任务 / 项目叫什么」，把副标题纳进来会带来成片意外命中。
@@ -591,6 +795,7 @@ async fn load_federation_agents(keyword: Option<&str>) -> Vec<MentionCandidate> 
                 org: Some(g.org_id.clone()),
                 name: a.name.clone(),
                 subtitle: format!("联邦 · {}", g.org_name),
+                flag: None,
             })
         })
         .collect();
@@ -634,23 +839,20 @@ async fn load_project_agents(project_id: &str, keyword: Option<&str>) -> Vec<Men
     }
 }
 
-/// 默认对话下**短关键词**的 Agent 候选 = 组织全量 list 后本地过滤
+/// 默认对话下的 Agent **首屏**候选：组织全量 list 取一屏
 ///
-/// 不传 keyword：后端 `AgentQuery.keyword` 已废弃且被静默忽略，传了只会制造
-/// 「以为在过滤」的错觉。过滤统一放本地。
-async fn load_org_agents(keyword: Option<&str>) -> Vec<MentionCandidate> {
+/// 只服务空关键词，非空关键词一律走 [`search_org_agents`]。不传 keyword：
+/// 后端 `AgentQuery.keyword` 已废弃且被静默忽略，传了只会制造「以为在过滤」的错觉。
+async fn load_org_agents() -> Vec<MentionCandidate> {
     let req = AgentQueryRequest {
         pagination: PaginationParams {
-            limit: Some(fetch_limit(keyword)),
+            limit: Some(CANDIDATE_LIMIT),
             offset: None,
         },
         ..Default::default()
     };
     match query_agents(&req).await {
-        Ok(page) => filter_by_name(
-            page.items.into_iter().map(agent_to_candidate).collect(),
-            keyword,
-        ),
+        Ok(page) => page.items.into_iter().map(agent_to_candidate).collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -671,21 +873,27 @@ async fn search_org_agents(keyword: Option<&str>) -> Vec<MentionCandidate> {
     }
 }
 
-/// 任务候选（短关键词路径）：list 取作用域内任务 + 本地过滤
+/// 任务**首屏**候选：list 取作用域内任务
 ///
+/// 只服务空关键词，非空关键词一律走 [`search_tasks_by_keyword`]。
 /// - 项目会话：`list_project_tasks(project_id)` 天然按项目收窄（返回该项目全量任务，
 ///   项目内任务量级可控）
 /// - 默认对话：`list_tasks` 不做作用域过滤，显式带 limit 避免默认无上限拉全表
-async fn load_tasks(project_id: Option<&str>, keyword: Option<&str>) -> Vec<MentionCandidate> {
-    let items: Vec<MentionCandidate> = match project_id {
+async fn load_tasks(project_id: Option<&str>) -> Vec<MentionCandidate> {
+    match project_id {
         Some(pid) => match list_project_tasks(pid).await {
-            Ok(resp) => resp.tasks.into_iter().map(task_to_candidate).collect(),
+            Ok(resp) => resp
+                .tasks
+                .into_iter()
+                .map(task_to_candidate)
+                .take(CANDIDATE_LIMIT)
+                .collect(),
             Err(_) => Vec::new(),
         },
         None => {
             let req = ListTasksRequest {
                 pagination: PaginationParams {
-                    limit: Some(fetch_limit(keyword)),
+                    limit: Some(CANDIDATE_LIMIT),
                     offset: None,
                 },
             };
@@ -694,8 +902,7 @@ async fn load_tasks(project_id: Option<&str>, keyword: Option<&str>) -> Vec<Ment
                 Err(_) => Vec::new(),
             }
         }
-    };
-    filter_by_name(items, keyword)
+    }
 }
 
 /// 任务候选（长关键词路径）：FTS5 + 向量语义混合搜索
@@ -718,19 +925,17 @@ async fn search_tasks_by_keyword(
     }
 }
 
-/// 项目候选（短关键词路径）：全局项目 list + 本地过滤
-async fn load_projects(keyword: Option<&str>) -> Vec<MentionCandidate> {
+/// 项目**首屏**候选：全局项目 list 取一屏。只服务空关键词，非空关键词一律走
+/// [`search_projects_by_keyword`]。
+async fn load_projects() -> Vec<MentionCandidate> {
     let req = ListProjectsRequest {
         pagination: PaginationParams {
-            limit: Some(fetch_limit(keyword)),
+            limit: Some(CANDIDATE_LIMIT),
             offset: None,
         },
     };
     match list_projects(req).await {
-        Ok(page) => filter_by_name(
-            page.items.into_iter().map(project_to_candidate).collect(),
-            keyword,
-        ),
+        Ok(page) => page.items.into_iter().map(project_to_candidate).collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -847,6 +1052,9 @@ pub fn MentionPicker(
                                     span { class: "mention-chip {item.kind.chip_class()}", "@{item.name}" }
                                     if !item.subtitle.is_empty() {
                                         span { class: "text-xs text-base-content/50 truncate", "{item.subtitle}" }
+                                    }
+                                    if let Some(flag) = item.flag {
+                                        span { class: "mention-menu-flag", "{flag.label()}" }
                                     }
                                 }
                             }

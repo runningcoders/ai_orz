@@ -1,4 +1,4 @@
-use crate::api::finance::{list_model_providers, list_tool_tags, query_tools};
+use crate::api::finance::{list_model_providers, list_tool_tags, search_tools};
 use crate::api::hr::*;
 use crate::api::message::{load_older_messages, poll_new_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
@@ -32,9 +32,9 @@ use common::api::{
     GetAgentRequest, InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
     ListExpiredAgentSkillsRequest, ListMessagesRequest, ListModelProvidersResponseItem,
     MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, RestoreSkillRequest,
-    RuntimeReady, SelectAgentCareerRequest, SendMessageToAgentParams, SkillListItem,
-    SkillQueryRequest, StartAgentOffboardRequest, TaskListItem, TaskQueryRequest, ToolListItem,
-    ToolQueryRequest, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
+    RuntimeReady, SearchSkillsRequest, SearchToolsRequest, SelectAgentCareerRequest,
+    SendMessageToAgentParams, SkillListItem, StartAgentOffboardRequest, TaskListItem,
+    TaskQueryRequest, ToolListItem, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
     UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
     UpdateAgentStatusRequest,
 };
@@ -1562,7 +1562,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "工具绑定" }
 
-                                    // 搜索框（动态搜索模式：on_search 回调调用 query_tools）
+                                    // 搜索框（动态搜索模式：on_search 回调调用 search_tools）
                                     div { class: "mb-4",
                                         SearchableSelect {
                                             placeholder: "搜索并绑定工具...".to_string(),
@@ -1594,12 +1594,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         return;
                                                     }
                                                     tool_search_loading.set(true);
-                                                    let req = ToolQueryRequest {
+                                                    let req = SearchToolsRequest {
                                                         keyword: Some(keyword),
                                                         enabled_only: Some(true),
                                                         ..Default::default()
                                                     };
-                                                    match query_tools(&req).await {
+                                                    match search_tools(&req).await {
                                                         Ok(resp) => tool_search_results.set(resp.items),
                                                         Err(_) => tool_search_results.set(Vec::new()),
                                                     }
@@ -1795,7 +1795,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "单个技能安装" }
 
-                                    // 搜索框（动态搜索模式：on_search 回调调用 query_skills）
+                                    // 搜索框（动态搜索模式：on_search 回调调用 search_skills）
                                     div { class: "mb-4",
                                         SearchableSelect {
                                             placeholder: "搜索并安装技能...".to_string(),
@@ -1819,24 +1819,33 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     }
                                                 }
                                             },
-                                            on_search: Some(EventHandler::new(move |keyword: String| {
+                                            on_search: Some({
+                                                // 已持有技能（已装副本 + 自建原始技能）不进入可安装列表
+                                                let installed = installed_skill_ids.clone();
+                                                EventHandler::new(move |keyword: String| {
+                                                let installed = installed.clone();
                                                 spawn(async move {
                                                     if keyword.trim().is_empty() {
                                                         skill_search_results.set(Vec::new());
                                                         return;
                                                     }
                                                     skill_search_loading.set(true);
-                                                    let req = SkillQueryRequest {
+                                                    let req = SearchSkillsRequest {
                                                         keyword: Some(keyword),
                                                         ..Default::default()
                                                     };
-                                                    match query_skills(&req).await {
-                                                        Ok(resp) => skill_search_results.set(resp.items),
+                                                    match search_skills(&req).await {
+                                                        Ok(resp) => {
+                                                            let mut items = resp.items;
+                                                            items.retain(|s| !installed.contains(&s.id));
+                                                            skill_search_results.set(items);
+                                                        }
                                                         Err(_) => skill_search_results.set(Vec::new()),
                                                     }
                                                     skill_search_loading.set(false);
                                                 });
-                                            })),
+                                                })
+                                            }),
                                             loading: *skill_search_loading.read(),
                                         }
                                     }

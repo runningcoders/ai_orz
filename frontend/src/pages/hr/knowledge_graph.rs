@@ -2,7 +2,7 @@ use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-use crate::api::hr::{query_agents, recommend_seed_nodes, search_memory_with_traversal};
+use crate::api::hr::{recommend_seed_nodes, search_agents, search_memory_with_traversal};
 use crate::components::SearchableSelect;
 use crate::components::button::Button;
 use crate::components::graph::{
@@ -15,7 +15,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::number::format_relevance;
 use common::api::{
-    AgentListItem, AgentQueryRequest, MemoryResult, RecommendSeedNodesParams, SearchMemoryParams,
+    AgentListItem, MemoryResult, RecommendSeedNodesParams, SearchAgentsRequest, SearchMemoryParams,
     SeedNodeRecommendation,
 };
 use common::enums::KnowledgeRelationType;
@@ -885,11 +885,11 @@ pub fn HrKnowledgeGraph() -> Element {
         }
         agent_search_loading.set(true);
         spawn(async move {
-            let req = AgentQueryRequest {
+            let req = SearchAgentsRequest {
                 keyword: Some(keyword),
                 ..Default::default()
             };
-            match query_agents(&req).await {
+            match search_agents(&req).await {
                 Ok(resp) => agent_search_results.set(resp.items),
                 Err(e) => toast.error(format!("搜索 Agent 失败: {}", e)),
             }

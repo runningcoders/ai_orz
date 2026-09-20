@@ -439,9 +439,11 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 写入侧（选中会话 / 默认对话 / 新建项目）只做 navigator.replace（会话切换属
     // 同页状态，replace 避免逐级刷历史栈），signal 统一由本守卫回流；值相等时 set
     // 幂等，收敛无环。注册在消息加载 effect 之前，保证同一轮先同步 prop 再触发加载。
-    use_effect(move || {
-        selected_project.set(project.clone());
-    });
+    // use_reactive 把非响应式 prop 装进内部 signal：use_effect 只追踪闭包内的响应式
+    // 读取，裸捕获 prop 的 effect 在 prop 变化时不会重跑——对话页内切换项目会失灵。
+    use_effect(use_reactive!(|project| {
+        selected_project.set(project);
+    }));
 
     // 修复 M1+M2：统一由 use_effect 根据 selected_project 变化加载消息，
     // 默认对话 (None) 也加载历史。handle_project_click 不再直接调用 load_messages 避免重复请求。
@@ -571,11 +573,12 @@ pub fn MessageChat(project: Option<String>) -> Element {
     };
 
     // ===== @ 提及 =====
-    // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务 / 默认对话 Agent+任务+项目）。
+    // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务+项目 / 默认对话 Agent+项目）。
     // 注意：@ 只是上下文补充，不改变消息路由——回应的仍是前台 Agent / 项目 owner。
-    // 候选范围随 selected_project 变化，故传 signal 而非快照值。
+    // 候选范围随 selected_project 变化、接待 Agent 异步到达后要补一次置顶打标，
+    // 故都传 signal 而非快照值。
     let mention_tab_list = mention_tabs(&mention_kinds_for(selected_project().as_deref()));
-    let mention = MentionState::new(selected_project);
+    let mention = MentionState::new(selected_project, reception_agent);
 
     let handle_send = use_callback(move |_: ()| {
         let text = input_text().trim().to_string();

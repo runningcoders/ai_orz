@@ -467,6 +467,21 @@
 .mention-menu-item.is-active {
   background: color-mix(in oklab, var(--color-primary) 10%, transparent);
 }
+/* 范围标签（当前接待 / 当前项目 / 未在项目内）：行尾中性胶囊，只解释「这条候选
+   与当前会话作用域的关系」，不参与类型配色 —— 类型语义已由左侧彩色 chip 承担。
+   margin-left: auto 顶到行尾；flex-shrink: 0 保证副标题截断时标签不跟着被压扁。 */
+.mention-menu-flag {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  color: var(--color-base-content);
+  opacity: 0.55;
+  white-space: nowrap;
+}
 .mention-menu-hint {
   padding: 0.25rem 0.625rem;
   border-top: 1px solid var(--color-base-300);

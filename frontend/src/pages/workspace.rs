@@ -26,17 +26,21 @@
 //!     ② 进入视图时默认 @ 该任务（内容层提示，可一键摘除）
 //!
 //!   语义是「跟 PMO 说，由 PMO 转达给任务执行 Agent」，不对任务 Agent 做微操。
-//! - @ 提及范围跟着对话上下文走（见 `MentionState::new(chat_project_id)`）：项目会话
-//!   （ProjectDetail / TaskDetail）收窄为项目协作 Agent + 任务；全局 / Agent 私聊没有
-//!   项目域，@ 即「全部 Agent + 全部任务 + 全部项目」。
+//! - @ 提及范围跟着对话上下文走（见 `MentionState::new(chat_project_id, reception_agent)`）：
+//!   项目会话（ProjectDetail / TaskDetail）= 项目协作 Agent（打头，组织其余打
+//!   「未在项目内」缀后）+ 项目内任务 + 项目（当前项目置顶打标）；全局 / Agent
+//!   私聊没有项目域 = 组织全量 Agent（接待 Agent 置顶打「当前接待」）+ 全部项目，
+//!   任务引导到项目下讨论。
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::Route;
-use common::api::{GetWorkspaceMetricsRequest, WorkspaceMetricsResponse};
+use common::api::{
+    GetReceptionAgentResponse, GetWorkspaceMetricsRequest, WorkspaceMetricsResponse,
+};
 
-use crate::api::hr::query_agents;
+use crate::api::hr::{get_reception_agent, query_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
 use crate::api::system::get_workspace_metrics;
@@ -262,12 +266,14 @@ pub fn Workspace(view: Option<String>) -> Element {
     // URL 单一事实源：路由 query 解析出的 view prop 回流进 current_view 镜像。
     // 写入侧（图节点点击 / 侧栏切换）只做 navigator.push（返回可逐级回退），
     // signal 统一由本守卫回流；值相等时 set 幂等，收敛无环。
-    use_effect(move || {
+    // use_reactive 把非响应式 prop 装进内部 signal：use_effect 只追踪闭包内的响应式
+    // 读取，裸捕获 prop 的 effect 在 prop 变化时不会重跑——页内切换视图会失灵。
+    use_effect(use_reactive!(|view| {
         let url_view = view_from_query(&view);
         if current_view() != url_view {
             current_view.set(url_view);
         }
-    });
+    }));
     let toast = use_toast();
 
     // 图数据（按视图按需加载）
@@ -297,12 +303,24 @@ pub fn Workspace(view: Option<String>) -> Element {
     // —— 只有输入框为空、或内容与它完全一致时才允许覆盖，绝不碰用户正在输入的内容。
     let auto_mention = use_signal(|| Option::<String>::None);
 
+    // 接待 Agent：默认对话（无项目域）@ 的「当前接待」置顶打标要用，挂载时拉一次。
+    // 失败静默处理（@ 里只是少一个置顶项，发送时后端仍有兜底）。
+    let mut reception_agent = use_signal(|| Option::<GetReceptionAgentResponse>::None);
+    use_effect(move || {
+        spawn(async move {
+            if let Ok(resp) = get_reception_agent().await {
+                reception_agent.set(Some(resp));
+            }
+        });
+    });
+
     // @ 提及：与对话页（pages/message/chat.rs）共用同一套状态机（触发判定 / 候选加载 /
     // 键盘导航 / 已提及胶囊）。候选范围直接跟随对话上下文 chat_project_id：
-    // - ProjectDetail / TaskDetail = 项目会话口径：项目协作 Agent + 任务
-    // - Global / AgentDetail = 无项目域：组织全量 Agent + 任务 + 项目
+    // - ProjectDetail / TaskDetail = 项目会话口径：项目协作 Agent + 项目内任务 + 项目
+    //   （当前项目置顶打标，组织其余 Agent 打「未在项目内」缀后）
+    // - Global / AgentDetail = 无项目域：组织全量 Agent（接待 Agent 置顶）+ 项目
     // 也就是说「@ 能选什么」不需要单独一套规则，视图切到哪儿就跟着哪儿。
-    let mention = MentionState::new(chat_project_id);
+    let mention = MentionState::new(chat_project_id, reception_agent);
 
     // 侧边栏红点提示：收到新消息但不在当前视图时，对应 project/agent 亮红点
     let mut project_unread = use_signal(std::collections::HashSet::<String>::new);
@@ -788,6 +806,7 @@ pub fn Workspace(view: Option<String>) -> Element {
                 org: None,
                 name: title.clone(),
                 subtitle: String::new(),
+                flag: None,
             };
             // 换任务时先摘掉上一轮自动写入的提及，避免残留或重复
             mention.reset_picked();
@@ -935,8 +954,12 @@ pub fn Workspace(view: Option<String>) -> Element {
                 };
 
                 match send_message_to_agent(req).await {
-                    Ok(_) => {
-                        let user_msg = build_optimistic_user_msg(text, pid, tid, aid);
+                    Ok(resp) => {
+                        // 用响应里的真实 message_id 覆盖 tmp_ ID（与 chat / agent_detail
+                        // 同口径）：否则 Agent 回复的 reply_to_id 在本地查不到目标，
+                        // 引用块不渲染；SSE 去重也只能退化成按 content 比对。
+                        let mut user_msg = build_optimistic_user_msg(text, pid, tid, aid);
+                        user_msg.message_id = resp.message_id;
                         chat_messages.write().push(user_msg);
                     }
                     Err(e) => {
