@@ -245,7 +245,7 @@ pub fn IdentityWechatSection() -> Element {
                 } else {
                     span { class: "text-sm text-base-content/60", "请使用微信扫码，并在手机上确认登录" }
                 }
-                button { class: "btn hud-btn btn-primary w-full",
+                button { class: "btn hud-btn btn-primary w-56",
                     disabled: querying() || starting(),
                     onclick: handle_query_result,
                     if querying() { "查询中..." } else { "我已扫码完成" }
