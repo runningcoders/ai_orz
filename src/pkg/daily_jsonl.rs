@@ -10,9 +10,17 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use anyhow::Result;
 use serde::Serialize;
+
+/// 进程内串行化 JSONL 追加，兜底保证「一条记录 = 一次 `write`」不被打断。
+///
+/// 并发追加时若一条记录被拆成多次 `write`，两条记录会交错粘成一行，读回时
+/// `serde_json` 报 `trailing characters`。机理与主防线（单次 `write`）见
+/// [`DailyJsonlWriter::write_lines`]。
+static APPEND_LOCK: Mutex<()> = Mutex::new(());
 
 /// A generic writer for daily JSONL files
 ///
@@ -55,13 +63,30 @@ impl DailyJsonlWriter {
     }
 
     /// Serialize entries and append them, one per line, in a single open/flush
+    ///
+    /// 【不变量】「一条记录 = 一次 `write`」。`writeln!(file, "{json}")` 会把 JSON
+    /// 载荷与结尾换行拆成**两次** `write` 系统调用；多个写入方并发追加同一文件时，
+    /// 两次调用之间会被别的记录插入，两条记录被粘成一行 —— 读回时 `serde_json` 报
+    /// `trailing characters at line 1 column N`，表现为 trace / 记忆查询整段失败
+    /// （测试并行、多线程消费者都会触发）。因此这里先把整行拼进缓冲区再单次写出：
+    /// `O_APPEND` 下单次 `write` 是原子的，正常不会被交错。
+    ///
+    /// `APPEND_LOCK` 是兜底：万一内核返回短写（`write_all` 需要拆成多次系统调用），
+    /// 进程内串行化仍能保证行完整；跨进程则依赖上面的单次 `write` 原子性。
     fn write_lines<T: Serialize>(&self, path: &Path, entries: &[T]) -> Result<()> {
+        let _guard = APPEND_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
         // Open file in append mode, create if it doesn't exist
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
 
+        let mut line = String::new();
         for entry in entries {
-            let json = serde_json::to_string(entry)?;
-            writeln!(file, "{json}")?;
+            line.clear();
+            line.push_str(&serde_json::to_string(entry)?);
+            line.push('\n');
+            file.write_all(line.as_bytes())?;
         }
         file.flush()?;
         Ok(())

@@ -171,7 +171,20 @@ fn read_matching_entries(
         if line.trim().is_empty() {
             continue;
         }
-        let entry: ToolCallEntry = serde_json::from_str(&line)?;
+        // 单行损坏（历史遗留的并发粘连行等）不应让整次查询失败：跳过并告警，
+        // 其余记录照常返回。写入侧已保证「一条记录 = 一次 write」（见
+        // `DailyJsonlWriter::write_lines`），这里只是对既有坏数据的降级容错。
+        let entry: ToolCallEntry = match serde_json::from_str(&line) {
+            Ok(entry) => entry,
+            Err(err) => {
+                log_warn!(
+                    "跳过无法解析的工具调用轨迹行: file={}, err={}",
+                    path.display(),
+                    err
+                );
+                continue;
+            }
+        };
         if matches_query(&entry, query) {
             entries.push(entry);
         }

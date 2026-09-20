@@ -190,3 +190,59 @@ fn test_daily_jsonl_append_no_position_skips_line_number() -> anyhow::Result<()>
 
     Ok(())
 }
+
+/// 并发追加回归：必须保持「一行一条完整记录」。
+///
+/// 历史 bug：`write_lines` 用 `writeln!` 把 JSON 载荷与结尾换行拆成两次 `write`，
+/// 并发追加时两次调用之间被别的记录插入，两条记录粘成一行；读回时 `serde_json`
+/// 报 `trailing characters`，使 trace / 记忆查询整段失败（集成测试并行时偶发）。
+#[test]
+fn test_daily_jsonl_concurrent_append_keeps_one_record_per_line() -> anyhow::Result<()> {
+    use std::sync::Arc;
+
+    let temp_dir = tempdir()?;
+    let writer = Arc::new(DailyJsonlWriter::new(temp_dir.path()));
+
+    const THREADS: usize = 8;
+    const PER_THREAD: usize = 200;
+
+    let mut handles = Vec::new();
+    for thread_id in 0..THREADS {
+        let writer = Arc::clone(&writer);
+        handles.push(std::thread::spawn(move || {
+            for i in 0..PER_THREAD {
+                writer
+                    .append_no_position(&TestLogEntry {
+                        id: thread_id * PER_THREAD + i,
+                        // 拉长载荷，放大「两次 write 之间被插入」的窗口
+                        message: "x".repeat(120),
+                        value: i as f64,
+                    })
+                    .expect("append_no_position should succeed");
+            }
+        }));
+    }
+    for handle in handles {
+        handle.join().expect("writer thread should not panic");
+    }
+
+    let date = chrono::Local::now().format("%Y%m%d").to_string();
+    let content = std::fs::read_to_string(temp_dir.path().join(format!("{date}.jsonl")))?;
+    let lines: Vec<&str> = content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+
+    assert_eq!(
+        lines.len(),
+        THREADS * PER_THREAD,
+        "每条记录必须独占一行（粘连会把物理行数压少）"
+    );
+    for line in lines {
+        // 任何一行粘了第二条记录都会在这里解析失败
+        let parsed: TestLogEntry = serde_json::from_str(line)?;
+        assert_eq!(parsed.message.len(), 120);
+    }
+
+    Ok(())
+}
