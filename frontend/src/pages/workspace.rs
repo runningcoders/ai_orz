@@ -31,7 +31,9 @@
 //!   项目域，@ 即「全部 Agent + 全部任务 + 全部项目」。
 
 use dioxus::prelude::*;
+use dioxus_router::use_navigator;
 
+use crate::Route;
 use common::api::{GetWorkspaceMetricsRequest, WorkspaceMetricsResponse};
 
 use crate::api::hr::query_agents;
@@ -216,10 +218,56 @@ fn context_agent_filter(view: &WorkspaceView, to_agent_id: Option<String>) -> Op
     }
 }
 
+/// WorkspaceView → 路由 query 编码（URL 即状态的写入侧）
+///
+/// Global 缺省不产生 query（`/workspace` 比 `/workspace?view=global` 干净）；
+/// 其余变体用 `类型:id` 前缀编码。id 为 UUID（字母数字连字符），`:` 在 query
+/// 中是合法字符且 dioxus 路由解析不做 percent-decode（identity round-trip），
+/// 无需转义。
+fn view_to_query(view: &WorkspaceView) -> Option<String> {
+    match view {
+        WorkspaceView::Global => None,
+        WorkspaceView::ProjectDetail(id) => Some(format!("project:{id}")),
+        WorkspaceView::AgentDetail(id) => Some(format!("agent:{id}")),
+        WorkspaceView::TaskDetail(id) => Some(format!("task:{id}")),
+    }
+}
+
+/// 路由 query → WorkspaceView 解码（URL 即状态的读取侧）
+///
+/// 未知编码（旧链接 / 手改 URL）回落全局视图，避免页面卡死在空状态。
+fn view_from_query(query: &Option<String>) -> WorkspaceView {
+    match query.as_deref() {
+        None => WorkspaceView::Global,
+        Some(raw) => {
+            if let Some(id) = raw.strip_prefix("project:") {
+                WorkspaceView::ProjectDetail(id.to_string())
+            } else if let Some(id) = raw.strip_prefix("agent:") {
+                WorkspaceView::AgentDetail(id.to_string())
+            } else if let Some(id) = raw.strip_prefix("task:") {
+                WorkspaceView::TaskDetail(id.to_string())
+            } else {
+                WorkspaceView::Global
+            }
+        }
+    }
+}
+
 #[component]
-pub fn Workspace() -> Element {
+pub fn Workspace(view: Option<String>) -> Element {
     let (sidebar_signal, mut refresh) = use_workspace_data();
+    let navigator = use_navigator();
     let mut current_view = use_signal(|| WorkspaceView::Global);
+
+    // URL 单一事实源：路由 query 解析出的 view prop 回流进 current_view 镜像。
+    // 写入侧（图节点点击 / 侧栏切换）只做 navigator.push（返回可逐级回退），
+    // signal 统一由本守卫回流；值相等时 set 幂等，收敛无环。
+    use_effect(move || {
+        let url_view = view_from_query(&view);
+        if current_view() != url_view {
+            current_view.set(url_view);
+        }
+    });
     let toast = use_toast();
 
     // 图数据（按视图按需加载）
@@ -929,7 +977,8 @@ pub fn Workspace() -> Element {
                         height: 600.0,
                         auto_size: true,
                         on_view_change: Some(EventHandler::new(move |new_view: WorkspaceView| {
-                            current_view.set(new_view);
+                            // URL 即状态：视图切换写入历史栈（返回可逐级回退），signal 由守卫回流
+                            navigator.push(Route::Workspace { view: view_to_query(&new_view) });
                         })),
                     }
                 }
@@ -1047,7 +1096,7 @@ pub fn Workspace() -> Element {
                                     if !collapsed {
                                         button {
                                             class: "btn hud-btn btn-ghost btn-xs",
-                                            onclick: move |_| { current_view.set(WorkspaceView::Global); },
+                                            onclick: move |_| { navigator.push(Route::Workspace { view: None }); },
                                             "全局"
                                         }
                                     }
@@ -1069,7 +1118,7 @@ pub fn Workspace() -> Element {
                                                 button {
                                                     class: "{item_class}",
                                                     onclick: move |_| {
-                                                        current_view.set(WorkspaceView::ProjectDetail(pid.clone()));
+                                                        navigator.push(Route::Workspace { view: view_to_query(&WorkspaceView::ProjectDetail(pid.clone())) });
                                                         project_unread.write().remove(&pid);
                                                     },
                                                     if has_unread {
@@ -1129,7 +1178,7 @@ pub fn Workspace() -> Element {
                                     if !collapsed {
                                         button {
                                             class: "btn hud-btn btn-ghost btn-xs",
-                                            onclick: move |_| { current_view.set(WorkspaceView::Global); },
+                                            onclick: move |_| { navigator.push(Route::Workspace { view: None }); },
                                             "全局"
                                         }
                                     }
@@ -1174,7 +1223,7 @@ pub fn Workspace() -> Element {
                                                 button {
                                                     class: "{item_class}",
                                                     onclick: move |_| {
-                                                        current_view.set(WorkspaceView::AgentDetail(aid.clone()));
+                                                        navigator.push(Route::Workspace { view: view_to_query(&WorkspaceView::AgentDetail(aid.clone())) });
                                                         agent_unread.write().remove(&aid);
                                                     },
                                                     if has_unread {
@@ -1468,5 +1517,44 @@ pub fn Workspace() -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_query_round_trip_preserves_all_variants() {
+        let views = vec![
+            WorkspaceView::Global,
+            WorkspaceView::ProjectDetail("prj-01".to_string()),
+            WorkspaceView::AgentDetail("agt-01".to_string()),
+            WorkspaceView::TaskDetail("tsk-01".to_string()),
+        ];
+        for view in views {
+            let encoded = view_to_query(&view);
+            assert_eq!(view_from_query(&encoded), view);
+        }
+    }
+
+    #[test]
+    fn global_view_encodes_to_none() {
+        // Global 缺省不产生 query，URL 保持 `/workspace` 干净
+        assert_eq!(view_to_query(&WorkspaceView::Global), None);
+    }
+
+    #[test]
+    fn unknown_query_falls_back_to_global() {
+        // 旧链接 / 手改 URL：未知编码回落全局视图，不卡死空状态
+        assert_eq!(
+            view_from_query(&Some("bogus:xyz".to_string())),
+            WorkspaceView::Global
+        );
+        assert_eq!(
+            view_from_query(&Some("project".to_string())),
+            WorkspaceView::Global
+        );
+        assert_eq!(view_from_query(&None), WorkspaceView::Global);
     }
 }

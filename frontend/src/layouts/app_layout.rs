@@ -19,7 +19,7 @@ pub fn AppLayout(children: Element) -> Element {
     }
 
     // Workspace 工作台走 HUD 全屏模式：main 去掉容器/内边距/最大宽度，由页面自身绝对定位铺满
-    let is_workspace = matches!(use_route::<Route>(), Route::Workspace {});
+    let is_workspace = matches!(use_route::<Route>(), Route::Workspace { .. });
 
     rsx! {
         div { class: "min-h-screen bg-base-100 flex flex-col",

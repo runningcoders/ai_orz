@@ -66,9 +66,9 @@ pub enum Route {
     #[route("/login")]
     Reception {},
 
-    // 对话首页
-    #[route("/")]
-    MessageChat {},
+    // 对话首页（?:project 编码当前选中会话，返回/刷新/分享自动恢复）
+    #[route("/?:project")]
+    MessageChat { project: Option<String> },
     #[route("/messages/search")]
     MessageSearch {},
 
@@ -162,9 +162,9 @@ pub enum Route {
     #[route("/user/profile")]
     UserProfile {},
 
-    // 工作台（Canvas 试点）
-    #[route("/workspace")]
-    Workspace {},
+    // 工作台（Canvas 试点）（?:view 编码当前视图，返回/刷新/分享自动恢复）
+    #[route("/workspace?:view")]
+    Workspace { view: Option<String> },
 
     // 设置
     #[route("/settings")]

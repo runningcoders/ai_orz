@@ -84,7 +84,7 @@ pub fn Navbar() -> Element {
         nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 orz-navbar",
             // 左侧：品牌
             div { class: "flex-1",
-                Link { to: Route::MessageChat {}, class: "flex items-center gap-2",
+                Link { to: Route::MessageChat { project: None }, class: "flex items-center gap-2",
                     span { class: "brand-mark", "O" }
                     span { class: "orz-brand-logo text-lg font-display", "AI Orz" }
                 }
@@ -93,7 +93,7 @@ pub fn Navbar() -> Element {
             // 中间：桌面导航
             if !is_mobile() {
                 div { class: "flex-none flex items-center gap-1",
-                    Link { to: Route::MessageChat {}, class: NAV_LINK_BASE,
+                    Link { to: Route::MessageChat { project: None }, class: NAV_LINK_BASE,
                         span { "💬" }
                         "对话"
                     }
@@ -101,7 +101,7 @@ pub fn Navbar() -> Element {
                         span { "🔍" }
                         "消息搜索"
                     }
-                    Link { to: Route::Workspace {}, class: NAV_LINK_BASE,
+                    Link { to: Route::Workspace { view: None }, class: NAV_LINK_BASE,
                         span { "🚀" }
                         "工作台"
                     }
@@ -274,9 +274,9 @@ pub fn Navbar() -> Element {
                         }
 
                         li { class: "menu-title", span { "导航" } }
-                        li { Link { to: Route::MessageChat {}, onclick: move |_| drawer_open.set(false), "💬 对话" } }
+                        li { Link { to: Route::MessageChat { project: None }, onclick: move |_| drawer_open.set(false), "💬 对话" } }
                         li { Link { to: Route::MessageSearch {}, onclick: move |_| drawer_open.set(false), "🔍 消息搜索" } }
-                        li { Link { to: Route::Workspace {}, onclick: move |_| drawer_open.set(false), "🚀 工作台" } }
+                        li { Link { to: Route::Workspace { view: None }, onclick: move |_| drawer_open.set(false), "🚀 工作台" } }
 
                         li { class: "menu-title", span { "人力资源" } }
                         li { Link { to: Route::HrAgents {}, onclick: move |_| drawer_open.set(false), "Agent 管理" } }

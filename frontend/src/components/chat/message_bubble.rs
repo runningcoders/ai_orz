@@ -14,7 +14,7 @@ use crate::utils::file::format_file_size;
 use crate::utils::message::{
     MSG_TEXT, involves_user, is_attachment_message, role_avatar, role_class, role_label,
 };
-use crate::utils::time::format_time_hm;
+use crate::utils::time::format_message_time;
 
 /// 单条消息气泡
 ///
@@ -36,7 +36,7 @@ pub fn MessageBubble(
     let avatar = role_avatar(role);
     let class = role_class(role);
     let role_name = role_label(role);
-    let time = format_time_hm(msg.created_at);
+    let time = format_message_time(msg.created_at);
 
     let directory = use_directory();
     let auth = use_auth_state();

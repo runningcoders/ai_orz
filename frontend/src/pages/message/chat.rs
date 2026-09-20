@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
+use dioxus_router::use_navigator;
 use wasm_bindgen::{JsCast, closure::Closure};
 
+use crate::Route;
 use crate::api::finance::upload_attachment;
 use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
@@ -22,8 +24,8 @@ use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::{
     HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT,
     MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials,
-    build_optimistic_user_msg, format_file_size, format_time_hm as format_time, in_project_context,
-    involves_user, is_attachment_message, project_status_text as status_text,
+    build_optimistic_user_msg, format_file_size, format_message_time as format_time,
+    in_project_context, involves_user, is_attachment_message, project_status_text as status_text,
     replace_tmp_with_real, request_scope,
 };
 use common::api::{
@@ -90,12 +92,13 @@ struct ReplyCtx {
 }
 
 #[component]
-pub fn MessageChat() -> Element {
+pub fn MessageChat(project: Option<String>) -> Element {
     // 修复 HIGH #3：之前 use_require_auth 提前 return 会跳过后续所有 use_signal，
     // Dioxus 的 hooks 槽位索引会与上一次 render 不一致，触发 panic。
     // 现在：先注册所有 hooks，再在渲染时根据 auth 状态条件返回。
     let mut projects = use_signal(Vec::<ListProjectsResponseItem>::new);
     let mut selected_project = use_signal(|| Option::<String>::None);
+    let navigator = use_navigator();
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
     // 当前会话目标 Agent 的运行时状态（0=Idle 1=Resting 2=Busy），轮询刷新。
@@ -432,6 +435,14 @@ pub fn MessageChat() -> Element {
         });
     });
 
+    // URL 单一事实源：路由 query 解析出的 project prop 回流进 selected_project 镜像。
+    // 写入侧（选中会话 / 默认对话 / 新建项目）只做 navigator.replace（会话切换属
+    // 同页状态，replace 避免逐级刷历史栈），signal 统一由本守卫回流；值相等时 set
+    // 幂等，收敛无环。注册在消息加载 effect 之前，保证同一轮先同步 prop 再触发加载。
+    use_effect(move || {
+        selected_project.set(project.clone());
+    });
+
     // 修复 M1+M2：统一由 use_effect 根据 selected_project 变化加载消息，
     // 默认对话 (None) 也加载历史。handle_project_click 不再直接调用 load_messages 避免重复请求。
     use_effect(move || {
@@ -761,7 +772,10 @@ pub fn MessageChat() -> Element {
     };
 
     let mut handle_project_click = move |project_id: String| {
-        selected_project.set(Some(project_id.clone()));
+        // URL 即状态：会话选择写入路由（replace 保持历史栈单条），signal 由守卫回流
+        navigator.replace(Route::MessageChat {
+            project: Some(project_id.clone()),
+        });
         // 修复 M1：不再直接调用 load_messages，由 use_effect 响应 selected_project 变化触发
         // 修复 L3：切换会话时清理 tool_expanded 状态
         tool_expanded.set(std::collections::HashSet::new());
@@ -784,7 +798,7 @@ pub fn MessageChat() -> Element {
 
     // 点击「默认对话」条目：清空选中项目
     let handle_default_chat_click = move |_| {
-        selected_project.set(None);
+        navigator.replace(Route::MessageChat { project: None });
         // 修复 L3：切换会话时清理 tool_expanded 状态
         tool_expanded.set(std::collections::HashSet::new());
         // 切换会话时同步清理回复 / 话题状态
@@ -830,7 +844,10 @@ pub fn MessageChat() -> Element {
                         created_at: resp.created_at,
                         updated_at: resp.updated_at,
                     };
-                    selected_project.set(Some(new_project.id.clone()));
+                    // URL 即状态：新建会话直接进路由（replace 保持历史栈单条）
+                    navigator.replace(Route::MessageChat {
+                        project: Some(new_project.id.clone()),
+                    });
                     projects.write().push(new_project.clone());
                     messages.set(Vec::new());
                     has_more.set(true);
