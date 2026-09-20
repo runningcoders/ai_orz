@@ -236,25 +236,52 @@ chain.push(AgentMatchCriteria::by_role(ROLE_RECEPTION));
 
 接入域：`https://ilinkai.weixin.qq.com`（登录响应中的 `baseurl` 为准，不硬编码）。
 
+> **协议来源（SSOT）**：腾讯官方插件 `@tencent-weixin/openclaw-weixin` 的
+> `src/api/types.ts`（proto 的 TypeScript 镜像）与 `src/api/api.ts` / `src/auth/login-qr.ts`
+> （传输层与登录状态机），核对版本 `2.4.9`。
+> `NousResearch/hermes-agent` 的 `gateway/platforms/weixin.py` 是独立实现，关键字段一致，可互证。
+> 早期本节的字段表来自社区整理，**存在多处与官方不符**（文本字段名、枚举类型、取码方法），
+> 已按官方更正；未在官方源码中出现过的字段一律不写入调用路径。
+> 我方落点：`src/pkg/wechat_ilink.rs`（协议常量与请求头/信封 SSOT）、
+> `src/service/dao/wechat/ilink.rs`（消息面客户端与长轮询循环）。
+
 | 接口 | 方法 / 路径 | 用途 |
 |------|------------|------|
-| 二维码 | `GET /ilink/bot/get_bot_qrcode?bot_type=` | 取登录二维码 |
-| 二维码状态 | `GET /ilink/bot/get_qrcode_status?qrcode=` | 轮询 `wait → scaned → confirmed → expired` |
-| 拉消息 | `POST /ilink/bot/getupdates` | 长轮询，游标 `get_updates_buf`，服务端 hold ~35s |
-| 发消息 | `POST /ilink/bot/sendmessage` | **必须回传收到的 `context_token`** |
-| 上传 | `POST /ilink/bot/getuploadurl` | 媒体上传地址 |
-| 配置 | `POST /ilink/bot/getconfig` | 账号配置（含 `typing_ticket`） |
-| 输入态 | `POST /ilink/bot/sendtyping` | "正在输入"提示 |
+| 二维码 | `POST /ilink/bot/get_bot_qrcode?bot_type=` | 取登录二维码；body `{local_token_list}` 上报本机已有 bot token（≤10 个）|
+| 二维码状态 | `GET /ilink/bot/get_qrcode_status?qrcode=[&verify_code=]` | 长轮询，服务端 hold ~35s；**8 态**见 §5.2 |
+| 拉消息 | `POST /ilink/bot/getupdates` | 长轮询，游标 `get_updates_buf`，服务端 hold ~35s，body 带 `base_info` |
+| 发消息 | `POST /ilink/bot/sendmessage` | **必须回传收到的 `context_token`**；body 只有 `msg` 一个键（**不带 `base_info`**）|
+| 渠道启停 | `POST /ilink/bot/msg/notifystart` / `notifystop` | 客户端在册通知，body 带 `base_info`；失败仅告警不影响本地状态 |
+| 上传 | `POST /ilink/bot/getuploadurl` | 媒体上传地址（阶段一不实现）|
+| 配置 | `POST /ilink/bot/getconfig` | 账号配置（含 `typing_ticket`；阶段一不实现）|
+| 输入态 | `POST /ilink/bot/sendtyping` | "正在输入"提示（阶段一不实现）|
 
-请求头固定三件套：
+请求头分两档：
 
 ```text
+# ① 通用两件套：GET / POST 全带
+iLink-App-Id:            bot
+iLink-App-ClientVersion: <0x00MMNNPP 编码，如 1.0.11 → 65547；由我方版本号编译期算出>
+
+# ② 鉴权档：仅"带 bot_token 的 POST"（getupdates / sendmessage / notify*）
+Content-Type:      application/json
 AuthorizationType: ilink_bot_token
 Authorization:     Bearer <bot_token>
-X-WECHAT-UIN:      <随机 uint32 的 base64，每次请求重新生成>
+X-WECHAT-UIN:      base64(<随机 uint32 的十进制字符串>)   ← 编码对象是十进制字符串，不是原始 4 字节
 ```
 
-消息结构关键字段：`from_user_id` / `to_user_id` / `client_id` / `message_type`（`USER` | `BOT`）/ `message_state`（`FINISH`）/ `item_list[]` / `context_token`。支持文本、图片、视频、文件、语音；阶段一只处理文本。
+> ⚠️ 扫码两接口是例外：`get_bot_qrcode` 虽是 POST 但**不带 `Authorization`**（此刻还没有令牌），
+> 只带通用两件套 + `AuthorizationType` + `X-WECHAT-UIN`；`get_qrcode_status` 是 GET，只用通用两件套。
+
+`base_info`（公共信封）出现在 `getupdates` / `getuploadurl` / `notifystart` / `notifystop` 的 body 里，
+字段为 `channel_version`（**我方**渠道实现版本）与 `bot_agent`（自述标识，类比 UA，官方注明"仅用于观测，
+不参与鉴权与路由"，缺省为其自身名称）。`sendmessage` 与扫码取码接口**不带**。
+
+消息结构关键字段：顶层 `message_id`（服务端权威消息 ID，uint64，字符串无损）/ `client_id`（对端客户端生成，
+出站本地幂等键）/ `from_user_id` / `to_user_id` / `message_type`（**数字**：`0`=NONE `1`=USER `2`=BOT）/
+`message_state`（**数字**：`0`=NEW `1`=GENERATING `2`=FINISH）/ `item_list[]` / `context_token`。
+文本正文在 `item_list[].text_item.text`——**不是 `content`**；item 级才有 `msg_id`（顶层没有该字段）。
+支持文本、图片、视频、文件、语音；阶段一只处理文本。
 
 发消息时 `from_user_id` 留空、`to_user_id` 填对端标识、`context_token` 回传收到的值：
 
@@ -262,11 +289,18 @@ X-WECHAT-UIN:      <随机 uint32 的 base64，每次请求重新生成>
 { "msg": {
     "from_user_id": "",          // 留空
     "to_user_id": "<对端 peer>",  // 取自入站消息的 from_user_id
-    "client_id": "<本地生成>",
-    "message_type": "BOT", "message_state": "FINISH",
-    "item_list": [], "context_token": "<入站消息携带>"
+    "client_id": "<本地生成 UUIDv7>",
+    "message_type": 2, "message_state": 2,        // BOT / FINISH（数字枚举，不是字符串）
+    "item_list": [
+        { "type": 1, "text_item": { "text": "<正文>" } }   // type=1 文本；正文键名是 text
+    ],
+    "context_token": "<入站消息携带>"
 } }
 ```
+
+> 解析侧对**数字/字符串双形态**都接受（`message_type` / `message_state`），出站恒定发数字——
+> 官方是数字，早期我方写成字符串会让 serde 整条失败，而失败又被 `.ok()` 吞掉，症状是
+> "一条消息都收不到且没有收帧日志"，与"上游没数据"完全同形。
 
 #### 5.1.1 三种标识别混淆
 
@@ -315,24 +349,61 @@ iLink 的授权模型决定了它不是"群发通道"，而是**专属 1:1 渠�
 iLink 的凭证不是静态 `app_id + secret`，而是**扫码换 token**，因此需要新增登录交互：
 
 ```text
-前端                     后端                       iLink
- │ 1. 请求登录二维码        │                          │
- │───────────────────────▶│ get_bot_qrcode ─────────▶│
- │◀─── qrcode_url ────────│◀─────────────────────────│
- │ 2. 展示二维码，轮询状态  │                          │
- │───────────────────────▶│ get_qrcode_status ──────▶│
- │   wait / scaned        │◀─────────────────────────│
- │                        │  （confirmed）            │
- │◀─── 登录成功 ──────────│ bot_token / ilink_bot_id │
+前端（二维码/会话状态的载体）          后端（无状态）            iLink
+ │ 1. POST qrcode                       │                       │
+ │─────────────────────────────────────▶ get_bot_qrcode ──────▶│
+ │◀─ qrcode + qrcode_img_content ───────│◀──────────────────────│
+ │ 2. 展示二维码（并给出备用授权链接）    │                       │
+ │ 3. 自动长轮询 loop                    │                       │
+ │─────────────────────────────────────▶ get_qrcode_status ───▶│
+ │◀─ wait / scaned / need_verifycode … ─│◀──────────────────────│
+ │   （expired → 就地重取二维码继续）      │                       │
+ │◀─ confirmed ─────────────────────────│ bot_token / bot_id /  │
+ │                                      │ user_id / baseurl     │
+ │                                      │ → upsert 凭据并设默认  │
 ```
 
-状态机 `wait → scaned → confirmed → expired`；`expired` 自动刷新（上限 3 次）。`confirmed` 返回 `bot_token` + `ilink_bot_id` + `ilink_user_id` + `baseurl`。
+**状态机是官方 8 态**，不是 4 态：
+
+| status | 含义 | 调用方动作 |
+|--------|------|-----------|
+| `wait` | 无人扫码 | 继续轮询 |
+| `scaned` | 已扫码待确认 | 继续轮询；**收到即说明配对码（若有）已被接受，可清空暂存** |
+| `need_verifycode` | 风控要求配对码 | 取手机微信显示的数字，作为 `verify_code` **每轮带上**直到 `scaned` |
+| `scaned_but_redirect` | 该 bot 归属其它 IDC | 按响应的 `redirect_host` 换接入点（`https://{host}`）继续轮询 |
+| `expired` | 二维码过期 | 换新码后继续（上限 3 次） |
+| `verify_code_blocked` | 配对码连错被拦截 | 清空配对码暂存 + 换新码（计入同一上限） |
+| `confirmed` | 授权成功 | 终局：落库凭据 |
+| `binded_redirect` | 该 bot 已绑过本客户端 | 终局：**幂等成功**，不签发新凭据 |
+
+> 只识别其中 4 态（早期实现）的后果很隐蔽：`scaned_but_redirect` 会让流程**一直空转到超时**，
+> `need_verifycode` 完全无解——两者都不是报错，而是"卡住"。
+
+设计要点（与官方 CLI 的差异均为**有意**）：
+
+- **后端无状态**：官方持 `activeLogins` 会话表（`sessionKey` 键控、TTL 5min），那是被"CLI 没有前端"
+  逼出来的——它只能往 stdout 打印二维码，无处持有 `qrcode`。我方前端就是那块"屏幕"，`qrcode` 由前端
+  持有并逐轮回传，因此**换码动作在前端做完全等价**（重取二维码、就地替换 `qrcode` 与图片），后端全程无状态。
+- **自动换码必须依托自动轮询**：只给"刷新"按钮而不恢复轮询，用户要完成两次手动操作；
+  真正的收益是把交互从"用户必须手动拉取"恢复为"扫完自动完成"。
+- **配对码与接入点重定向都是服务端会话态**，与 `qrcode` 同理由前端持有并回传
+  （即 `verify_code` / `redirect_host` 两个查询参数）。其中 `redirect_host` 由后端做**白名单校验**
+  （只接受落在腾讯接入域内的**裸主机名**）：该值最终会成为我方出站请求的目标主机，
+  照单全收等于把出站目标交给客户端指定。
+- **`local_token_list` 是重绑的前提**：不把已持有的 bot token 报给服务端，服务端只能走"新建"，
+  `binded_redirect` 永不出现（该分支即成死代码）。
+- `binded_redirect` 按**成功**处理而非失败：语义是"早已绑过、无需重复连接"，本地凭证继续有效。
+
+`confirmed` 返回 `bot_token` + `ilink_bot_id` + `ilink_user_id` + `baseurl`。
 
 落地要求：
 
 - 新增受保护的登录接口（生成二维码 / 查询状态），**不暴露在任何匿名路由**；
 - 登录成功后自动 upsert 一条 `wechat_ilink` 凭据到 `user_credentials`（见 §5.2.1），渠道只存 `credential_id` 引用；
-- 二维码是临时凭证，接口响应需带短期有效期，前端不做本地持久化。
+- 二维码是临时凭证，前端不做本地持久化；
+- **备用授权链接**：`qrcode_img_content` 本身就是一条可在手机微信直接打开的授权 URL，
+  必须同时以可点击 / 可复制形式呈现——它解决的是"人看不到这块屏幕"（不在电脑前 / 屏幕太小 / 渲染失败），
+  与自动换码（解决"码在屏幕上、人回来时已过期"）互补，缺一不可。
 
 #### 5.2.1 凭据类型：新增 `WechatIlink`，不能复用现有类型
 
@@ -620,11 +691,16 @@ let open_id = config.lark_open_id.as_ref().ok_or_else(|| err!(...))?;  // 渠道
 
 | 项 | 方案 |
 |----|------|
-| 消息去重 | 依赖 AOP 事件的 `id()`（iLink 消息 ID）做幂等键，无需额外存储 |
+| 消息去重 | 幂等键 `message_key()` 优先级：顶层 `message_id`（服务端权威）→ 顶层 `client_id`（对端生成）→ item 级 `msg_id`；同键由 AOP `id()` 幂等吸收，无需额外存储。官方插件把去重责任推给宿主（协议层不保证不重），我方这层是**领先**而非落后，不要在重构中削弱 |
+| 平台消息 ID 存档 | 入站 `messages.external_key = "wechat:{message_id}"`（缺 `message_id` 回落 `client_id`；两者皆无则留空，**不伪造**）；出站按 `SendMessageResp.message_id` 在推送成功后回写（照抄飞书 `lark:{id}` 口径，失败仅告警不阻断）。⚠️ 语义边界：`external_key` 最初用于"按平台 `parent_id` 反查父消息"（飞书线程场景），微信**没有** `parent_id`/`root_id`，故微信侧该字段只承担"渠道平台 ID 通用存档"，不承担反查父消息 |
 | 轮询游标 | `get_updates_buf` 持久化到 `inbound_state.cursor`（`InboundCursor { kind: Opaque, source: "ilink" }`），随每轮状态整体写回。有消息的轮次：新游标随事件带出，由消费确认（`on_consumed`）才推进；无消息轮次：直接推进（否则服务端在空轮次给的新游标永远推不动）。**进程重启时 `ensure` 把落库游标回灌内存 `CursorStore`**，再从该点续拉 |
-| 轮询超时 | 两种情况必须分开：**服务端 hold ~35s 到期返回空批次**属正常，静默进入下一轮；**客户端 45s 超时**（45s > 服务端 hold，正常轮询永不触发）标记 `IlinkUpdates::client_timeout` 并由循环记 `warn`。否则「网络 hang」与「队列本就是空的」在日志上完全同形 |
+| 轮询超时 | 三件事必须分开：① **服务端 hold 到期返回空批次**属正常，静默进入下一轮；② **客户端超时**在官方口径里是**正常控制流**（官方视其为"本轮无事件"），故降级为计数 + `debug`，不再记 `warn`——否则真问题会被淹没；③ 客户端超时 = 服务端建议的 `longpolling_timeout_ms` + 10s 余量（默认 45s），服务端调整 hold 时长时我方口径自动跟随，不再漂移 |
+| 响应错误码 | `ret` / `errcode` 任一非 0 即错误，按码分类；早期**完全不校验**、一律当空轮次，导致"会话已失效"与"没人发消息"在日志上完全同形。`-14` = 会话失效 → 暂停该渠道全部请求 **1 小时** |
+| 会话暂停（`-14`） | 进程内 `SessionGuard`（channel 键控，不落库——暂停是自愈手段，重启即恢复；落库会多出第二处"必须两端闭合"的持久化运行态）。暂停期：轮询休眠、出站 `push` **快速失败**并给出可读原因（省一次必然失败的请求，也避免用户看到超时）；**重新扫码授权导致凭证指纹变化时 `ensure` 主动清除暂停**，否则用户会遇到"授权成功了但收不到消息" |
+| 客户端上下线通知 | 循环启动 / 停止各调一次 `notifystart` / `notifystop`（循环被 `abort()` 后无法在循环内发，只能由 `stop` / `stop_all` 在句柄上补发）；失败仅告警——它用于服务端观测与协调，不影响本地状态 |
 | 运行态观测 | 四段日志构成完整观测链，无需抓包即可判断监听存活：① 收帧记 `ilink inbound batch`（count + 幂等键摘要 + 新游标）；② 每 5 分钟记 `ilink poll heartbeat`（轮次 / 累计入站 / 连续失败 / 客户端超时 / 当前游标 / 空闲时长）；③ 消费确认推进游标记 `inbound cursor advanced`（info）—— 游标长时间不动时据此判断卡在消费侧还是未收帧；④ 消费侧适配**有意跳过**（非文本 / 非本渠道 peer / 渠道停用）记 `wechat inbound adapted to nothing`——否则「收到帧却无下文」完全静默，无法与「消息根本没到 iLink」区分 |
-| 运行态监控（UI） | `GET /api/v1/system/health/metrics` 的 `wechat_poll` 字段返回 per-channel 快照（渠道名 / bot_id / 阶段 / 轮次 / 累计入站 / 连续失败 / 客户端超时 / 最近成功轮询 / 已确认游标摘要），前端系统健康页「微信长轮询」区块展示。⚠️ **判活口径与飞书 WS 不同**：WS 断连会自己反映到连接阶段，长轮询**不会**——任务卡死时句柄仍在册、`active_polls` 照样是 1。真判据是 `rounds` / `last_poll_at_ms` 是否单调推进（正常约 35s 一轮，>90s 未成功轮询判为「疑似卡死」）；`client_timeouts` 增长而 `last_poll_at_ms` 不动 = 网络 hang，两者都不动 = 循环卡死 |
+| 解析失败留痕 | 「字段不匹配就丢整条」的路径**必须留痕**（`parse_updates` 单条失败记 `warn` 并带消息键摘要；适配层丢弃点记 `info`）。解析层 `.ok()` + `debug` 的组合是排查黑洞：症状与"上游没数据"完全同形，早期即因此把"枚举类型写错"整整掩盖成"收不到消息" |
+| 运行态监控（UI） | `GET /api/v1/system/health/metrics` 的 `wechat_poll` 字段返回 per-channel 快照（渠道名 / bot_id / 阶段 / 轮次 / 累计入站 / 连续失败 / 客户端超时 / 最近成功轮询 / 已确认游标摘要 / `paused` 与 `paused_until_ms`），前端系统健康页「微信长轮询」区块展示。⚠️ **判活口径与飞书 WS 不同**：WS 断连会自己反映到连接阶段，长轮询**不会**——任务卡死时句柄仍在册、`active_polls` 照样是 1。真判据是 `rounds` / `last_poll_at_ms` 是否单调推进（正常约 35s 一轮，>90s 未成功轮询判为「疑似卡死」）；`client_timeouts` 增长而 `last_poll_at_ms` 不动 = 网络 hang，两者都不动 = 循环卡死 |
 | 连续失败 | 前 5 次间隔 2s 重试，超过后退避 30s，避免触发限流 |
 | 慢业务隔离 | consumer 必须 `ConsumeMode::Async`，否则阻塞整条轮询循环 |
 
