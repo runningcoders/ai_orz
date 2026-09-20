@@ -191,10 +191,29 @@ pub fn tmp_msg_id() -> String {
     format!("tmp_{}_{:09}", now_ms(), random)
 }
 
-/// 用真实消息替换同 content 的乐观消息（tmp_ 前缀）。
+/// 用真实消息替换本地乐观气泡。
+///
+/// 匹配顺序：
+/// 1. **按 message_id 精确对齐** —— 气泡在发送响应回来后已被重键为真实 ID
+///    （见 `build_optimistic_user_msg` 各调用方），此时 ID 就是最稳的对应关系。
+/// 2. 按 content 兜底 —— 覆盖尚未重键（仍是 `tmp_` 前缀）的气泡。
+///
+/// ⚠️ 只移除**本地气泡**（`tmp_` 前缀，或占位发送者 `OPTIMISTIC_USER_ID`）：
+/// 真实消息的重复推送不得命中，否则会把列表里已有的同一条删掉再追加到末尾，
+/// 表现为「消息跳到最后」。重复推送由调用方的 ID 去重拦掉。
 /// 只移除第一条匹配，避免连发同内容消息时误删。
-/// 如果不存在匹配的 tmp_ 消息，则不做任何操作（真实消息可能是重复推送）。
 pub fn replace_tmp_with_real(msgs: &mut Vec<MessageListItem>, real_msg: &MessageListItem) {
+    let is_provisional =
+        |m: &MessageListItem| m.message_id.starts_with("tmp_") || m.from_id == OPTIMISTIC_USER_ID;
+
+    if let Some(pos) = msgs
+        .iter()
+        .position(|m| is_provisional(m) && m.message_id == real_msg.message_id)
+    {
+        msgs.remove(pos);
+        return;
+    }
+
     if let Some(pos) = msgs
         .iter()
         .position(|m| m.message_id.starts_with("tmp_") && m.content == real_msg.content)

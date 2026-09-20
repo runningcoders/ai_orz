@@ -266,6 +266,41 @@ pub struct SendTaskAssignmentCommand<'a> {
     pub project_id: Option<&'a str>,
 }
 
+/// 投递出口开关
+///
+/// 决定一条消息落到哪些出口。默认双出口全开（`deliver_message` 的历史行为）。
+///
+/// ⚠️ **渠道入站消息必须用 [`DeliveryOptions::sse_only()`]**：它由对端渠道送达，
+/// 再走渠道投递会把消息回灌回原渠道形成回声（用户在微信里收到自己刚发的消息）；
+/// 但网页端没有本地气泡可兜底，SSE 这一路必须保留。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeliveryOptions {
+    /// 是否投递到外部渠道（飞书/微信/邮件…）
+    pub channels: bool,
+    /// 是否推送到 SSE 长连接（网页端）
+    pub sse: bool,
+}
+
+impl Default for DeliveryOptions {
+    /// 默认双出口全开
+    fn default() -> Self {
+        Self {
+            channels: true,
+            sse: true,
+        }
+    }
+}
+
+impl DeliveryOptions {
+    /// 只推前端（SSE），不做渠道投递
+    pub fn sse_only() -> Self {
+        Self {
+            channels: false,
+            sse: true,
+        }
+    }
+}
+
 /// 分发消息到用户所有可用渠道的命令参数
 #[derive(Debug, Clone)]
 pub struct DeliverMessageCommand<'a> {
@@ -273,6 +308,8 @@ pub struct DeliverMessageCommand<'a> {
     pub message: &'a Message,
     /// 目标用户 ID
     pub user_id: &'a str,
+    /// 出口开关（默认渠道 + SSE 双投递）
+    pub options: DeliveryOptions,
 }
 
 use tokio::sync::broadcast;

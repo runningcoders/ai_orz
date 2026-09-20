@@ -7,8 +7,8 @@ use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use crate::service::domain::message::{
-    DeliverMessageCommand, MessageDomain, SendTaskAssignmentCommand, SendToAgentCommand,
-    SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
+    DeliverMessageCommand, DeliveryOptions, MessageDomain, SendTaskAssignmentCommand,
+    SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome, ToolCallTraceRef,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
@@ -856,6 +856,7 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
             DeliverMessageCommand {
                 message: &message,
                 user_id,
+                options: DeliveryOptions::default(),
             },
         )
         .await

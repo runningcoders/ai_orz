@@ -25,7 +25,9 @@ extern crate common as common_ext;
 
 use crate::common::TestApp;
 use ai_orz::pkg::RequestContext;
-use ai_orz::service::domain::message::{self, DeliverMessageCommand, SendToUserCommand};
+use ai_orz::service::domain::message::{
+    self, DeliverMessageCommand, DeliveryOptions, SendToUserCommand,
+};
 use common_ext::enums::{CallerType, MessageRole, MessageType};
 use serde_json::json;
 use sqlx::SqlitePool;
@@ -445,6 +447,7 @@ async fn test_sse_push_delivers_message_payload_to_subscriber(pool: SqlitePool) 
             DeliverMessageCommand {
                 message: &msg,
                 user_id: &user_id,
+                options: DeliveryOptions::default(),
             },
         )
         .await
@@ -601,6 +604,7 @@ async fn test_webhook_channel_delivers_message_to_mock_server(pool: SqlitePool) 
             DeliverMessageCommand {
                 message: &msg,
                 user_id: &member_id,
+                options: DeliveryOptions::default(),
             },
         )
         .await
@@ -721,6 +725,7 @@ async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(pool: Sqli
             DeliverMessageCommand {
                 message: &msg,
                 user_id: &member_id,
+                options: DeliveryOptions::default(),
             },
         )
         .await;
@@ -813,6 +818,7 @@ async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(pool:
             DeliverMessageCommand {
                 message: &msg,
                 user_id: &member_id,
+                options: DeliveryOptions::default(),
             },
         )
         .await;

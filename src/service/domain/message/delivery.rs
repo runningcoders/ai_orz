@@ -35,6 +35,44 @@ fn generate_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
+/// 消息 → SSE 推送体
+///
+/// 与 `MessageListItem` 字段对齐：前端把 SSE 事件体直接反序列化为
+/// `MessageListItem`，缺字段会让「刚推送的消息」与历史消息行为不一致
+/// （如 `root_id` 缺失导致引用块跳转失效）。
+fn build_sse_payload(message: &Message) -> crate::service::dal::message_push::SsePushPayload {
+    let file_meta = message.file_meta().map(|fm| {
+        let name = fm
+            .file_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&fm.file_path)
+            .to_string();
+        common::api::message::FileMetaInfo {
+            name,
+            mime_type: fm.mime_type.clone(),
+            size: fm.file_size,
+        }
+    });
+    crate::service::dal::message_push::SsePushPayload {
+        message_id: message.id().to_string(),
+        project_id: message.project_id().map(|s| s.to_string()),
+        task_id: message.task_id().map(|s| s.to_string()),
+        from_id: message.from_id().to_string(),
+        from_role: message.from_role() as i32,
+        to_id: message.to_id().to_string(),
+        to_role: message.to_role() as i32,
+        message_type: message.message_type() as i32,
+        status: message.status() as i32,
+        content: message.content().to_string(),
+        reply_to_id: message.reply_to_id().map(|s| s.to_string()),
+        root_id: message.root_id().map(|s| s.to_string()),
+        created_at: message.created_at(),
+        file_type: message.file_type().map(|ft| ft as i32),
+        file_meta,
+    }
+}
+
 /// 将 Attachment FileType 映射到对应的 MessageType
 fn map_file_type_to_message_type(file_type: FileType) -> MessageType {
     match file_type {
@@ -414,48 +452,27 @@ impl MessageDelivery for MessageDomainImpl {
     ) -> Result<crate::service::dal::message_channel::DeliveryResult> {
         // 1. 投递到已配置的消息渠道（飞书/微信/钉钉等）
         // 飞书凭证由渠道 DAL 按引用 ID 直查凭证行（主键查询，无需预加载用户）
-        let channel_result = self
-            .message_channel_dal
-            .deliver_message(ctx.clone(), cmd.message, cmd.user_id)
-            .await?;
+        //
+        // 渠道入站消息走 `sse_only`：它本就来自该渠道，回灌会形成回声。
+        let channel_result = if cmd.options.channels {
+            self.message_channel_dal
+                .deliver_message(ctx.clone(), cmd.message, cmd.user_id)
+                .await?
+        } else {
+            crate::service::dal::message_channel::DeliveryResult::empty()
+        };
 
         // 2. 投递到 SSE 长连接（如果用户有在线连接）
-        let file_meta = cmd.message.file_meta().map(|fm| {
-            let name = fm
-                .file_path
-                .rsplit('/')
-                .next()
-                .unwrap_or(&fm.file_path)
-                .to_string();
-            common::api::message::FileMetaInfo {
-                name,
-                mime_type: fm.mime_type.clone(),
-                size: fm.file_size,
-            }
-        });
-        let sse_payload = crate::service::dal::message_push::SsePushPayload {
-            message_id: cmd.message.id().to_string(),
-            project_id: cmd.message.project_id().map(|s| s.to_string()),
-            task_id: cmd.message.task_id().map(|s| s.to_string()),
-            from_id: cmd.message.from_id().to_string(),
-            from_role: cmd.message.from_role() as i32,
-            to_id: cmd.message.to_id().to_string(),
-            to_role: cmd.message.to_role() as i32,
-            message_type: cmd.message.message_type() as i32,
-            status: cmd.message.status() as i32,
-            content: cmd.message.content().to_string(),
-            reply_to_id: cmd.message.reply_to_id().map(|s| s.to_string()),
-            root_id: cmd.message.root_id().map(|s| s.to_string()),
-            created_at: cmd.message.created_at(),
-            file_type: cmd.message.file_type().map(|ft| ft as i32),
-            file_meta,
+        let sse_delivered = if cmd.options.sse {
+            let sse_payload = build_sse_payload(cmd.message);
+            self.message_push_dal
+                .push_to_sse(ctx, cmd.user_id, &sse_payload)
+                .await
+                .map(|r| r.delivered_count)
+                .unwrap_or(0)
+        } else {
+            0
         };
-        let sse_result = self
-            .message_push_dal
-            .push_to_sse(ctx, cmd.user_id, &sse_payload)
-            .await;
-
-        let sse_delivered = sse_result.map(|r| r.delivered_count).unwrap_or(0);
 
         Ok(crate::service::dal::message_channel::DeliveryResult {
             total: channel_result.total,

@@ -43,8 +43,8 @@ use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::dal::message as message_dal;
 use crate::service::domain::hr::{self as hr_domain, HrDomain};
 use crate::service::domain::message::{
-    self as message_domain, DeliverMessageCommand, MessageDomain, SendToAgentCommand,
-    SendToUserCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
+    self as message_domain, DeliverMessageCommand, DeliveryOptions, MessageDomain,
+    SendToAgentCommand, SendToUserCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use crate::service::domain::organization::{self as organization_domain, OrganizationDomain};
 use crate::service::domain::project::{self as project_domain, ProjectDomain};
@@ -1074,6 +1074,7 @@ impl MessageConsumer {
         let cmd = DeliverMessageCommand {
             message,
             user_id: &message.po.to_id,
+            options: DeliveryOptions::default(),
         };
         let result = self
             .message_domain
