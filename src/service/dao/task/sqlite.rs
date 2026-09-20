@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 // ==================== FTS5 辅助 ====================
 
-use crate::pkg::storage::escape_fts5_keyword;
+use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 
 /// 任务搜索行（PO + fts_rank）
 #[derive(FromRow)]
@@ -184,92 +184,134 @@ FROM tasks WHERE id = ? AND "status" != 0
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = std::cmp::min(search.filters.pagination.limit.unwrap_or(20), 20) as i64;
 
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
             return Ok(Vec::new());
-        }
+        };
 
-        // 转义关键词为 FTS5 短语匹配
-        let escaped_keyword = escape_fts5_keyword(&keyword);
+        // 业务过滤条件拼装（MATCH / LIKE 两条路径共用）
+        // 注意：闭包对 QueryBuilder 生命周期高阶量化（HRTB），push_bind 的绑定值必须是
+        // 所有权（'static），因此 String 过滤值在绑定点 clone
+        let apply_filters = |builder: &mut sqlx::QueryBuilder<'_, sqlx::Sqlite>| {
+            builder.push(r#" AND t."status" != 0"#);
 
-        // FTS5 MATCH + JOIN + BM25 排序
+            if let Some(assignee_type) = &search.filters.assignee_type {
+                builder.push(r#" AND t."assignee_type" = "#);
+                builder.push_bind(*assignee_type as i32);
+            }
+
+            if let Some(assignee_id) = &search.filters.assignee_id {
+                builder.push(" AND t.assignee_id = ");
+                builder.push_bind(assignee_id.clone());
+            }
+
+            if let Some(project_id) = &search.filters.project_id {
+                builder.push(" AND t.project_id = ");
+                builder.push_bind(project_id.clone());
+            }
+
+            if let Some(status_list) = &search.filters.status_in
+                && !status_list.is_empty()
+            {
+                builder.push(r#" AND t."status" IN ("#);
+                let mut separated = builder.separated(", ");
+                for s in status_list {
+                    separated.push_bind(*s as i32);
+                }
+                builder.push(")");
+            }
+        };
+
+        // 行 → 结果元组映射（两条路径共用）
+        let to_result = |row: TaskSearchRow| {
+            let po = TaskPo {
+                id: row.id,
+                title: row.title,
+                description: row.description,
+                status: row.status,
+                priority: row.priority,
+                tags: row.tags,
+                due_at: row.due_at,
+                start_at: row.start_at,
+                end_at: row.end_at,
+                dependencies: row.dependencies,
+                root_user_id: row.root_user_id,
+                assignee_type: row.assignee_type,
+                assignee_id: row.assignee_id,
+                project_id: row.project_id,
+                thinking_depth: row.thinking_depth,
+                progress: row.progress,
+                created_by: row.created_by,
+                modified_by: row.modified_by,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                execution_plan: row.execution_plan,
+                execution_result: row.execution_result,
+            };
+            (po, row.fts_rank)
+        };
+
+        let mut primary: Vec<(TaskPo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(TaskPo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
-        let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, tasks_fts.rank as fts_rank
+        if let Some(match_expr) = &plan.match_expr {
+            let mut builder = sqlx::QueryBuilder::new(
+                r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, tasks_fts.rank as fts_rank
 FROM tasks_fts
 JOIN tasks t ON tasks_fts.rowid = t.rowid
 WHERE tasks_fts MATCH "#,
-        );
-        builder.push_bind(escaped_keyword);
-        builder.push(r#" AND t."status" != 0"#);
+            );
+            builder.push_bind(match_expr);
+            apply_filters(&mut builder);
 
-        // 业务过滤条件
-        if let Some(assignee_type) = &search.filters.assignee_type {
-            builder.push(r#" AND t."assignee_type" = "#);
-            builder.push_bind(*assignee_type as i32);
-        }
-
-        if let Some(assignee_id) = &search.filters.assignee_id {
-            builder.push(" AND t.assignee_id = ");
-            builder.push_bind(assignee_id);
-        }
-
-        if let Some(project_id) = &search.filters.project_id {
-            builder.push(" AND t.project_id = ");
-            builder.push_bind(project_id);
-        }
-
-        if let Some(status_list) = &search.filters.status_in
-            && !status_list.is_empty()
-        {
-            builder.push(r#" AND t."status" IN ("#);
-            let mut separated = builder.separated(", ");
-            for s in status_list {
-                separated.push_bind(*s as i32);
+            builder.push(" ORDER BY tasks_fts.rank LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = search.filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
             }
+
+            let rows: Vec<TaskSearchRow> = builder.build_query_as().fetch_all(pool).await?;
+            primary.extend(rows.into_iter().map(to_result));
+        }
+
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty() {
+            let mut builder = sqlx::QueryBuilder::new(
+                r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, NULL as fts_rank
+FROM tasks t
+WHERE "#,
+            );
+            // 条件与绑定值交错推送：QueryBuilder 里 push 文本中的 ? 不由 push_bind 消费
+            builder.push("(");
+            push_fts5_like_conditions(
+                &mut builder,
+                "t",
+                &["title", "description", "tags"],
+                &plan.like_patterns,
+            );
             builder.push(")");
+            apply_filters(&mut builder);
+
+            builder.push(" ORDER BY t.updated_at DESC, t.id DESC LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = search.filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
+            }
+
+            let rows: Vec<TaskSearchRow> = builder.build_query_as().fetch_all(pool).await?;
+            secondary.extend(rows.into_iter().map(to_result));
         }
 
-        builder.push(" ORDER BY tasks_fts.rank LIMIT ");
-        builder.push_bind(limit_i64);
-        if let Some(offset) = search.filters.pagination.offset {
-            builder.push(" OFFSET ").push_bind(offset as i64);
-        }
-
-        let rows: Vec<TaskSearchRow> = builder.build_query_as().fetch_all(pool).await?;
-
-        let results = rows
-            .into_iter()
-            .map(|row| {
-                let po = TaskPo {
-                    id: row.id,
-                    title: row.title,
-                    description: row.description,
-                    status: row.status,
-                    priority: row.priority,
-                    tags: row.tags,
-                    due_at: row.due_at,
-                    start_at: row.start_at,
-                    end_at: row.end_at,
-                    dependencies: row.dependencies,
-                    root_user_id: row.root_user_id,
-                    assignee_type: row.assignee_type,
-                    assignee_id: row.assignee_id,
-                    project_id: row.project_id,
-                    thinking_depth: row.thinking_depth,
-                    progress: row.progress,
-                    created_by: row.created_by,
-                    modified_by: row.modified_by,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    execution_plan: row.execution_plan,
-                    execution_result: row.execution_result,
-                };
-                (po, row.fts_rank)
-            })
-            .collect();
-
-        Ok(results)
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            limit_i64.max(0) as usize,
+        ))
     }
 
     async fn list_by_assignee(

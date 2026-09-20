@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use common::error::Result;
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use lancedb::{Connection, Table, connect};
+use lancedb::{Connection, DistanceType, Table, connect};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -521,11 +521,15 @@ impl super::VectorStore for LanceVectorStore {
         };
 
         // 执行向量搜索 - 0.26 API 使用 vector_search
+        // 统一余弦距离口径：InMemory 后端返回 1 - cos_sim，DAL 的距离阈值（如 0.8）
+        // 也按余弦距离解释；LanceDB 默认 L2 会导致跨后端阈值语义错乱（本表未建索引，
+        // flat search 下 distance_type 直接生效，无需重建数据）
         let mut query = table
             .vector_search(query_vector)
             .map_err(|e| {
                 common::error::Error::internal(format!("LanceDB vector_search error: {}", e))
             })?
+            .distance_type(DistanceType::Cosine)
             .limit(top_k as usize);
         // 谓词下推：Top-K 在满足谓词的候选集内选取（pre-filter）
         if let Some(f) = filter {

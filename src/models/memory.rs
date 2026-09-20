@@ -258,16 +258,24 @@ pub struct LongTermKnowledgeNodePo {
 }
 
 impl LongTermKnowledgeNodePo {
-    /// 构建用于向量索引的文本（node_description + summary + tags 拼接）
+    /// 构建用于向量索引的文本（node_name + node_description + summary + tags 拼接）
     ///
+    /// node_name 是节点最核心的语义锚点（如「Rust 异步运行时」），必须参与 embedding，
+    /// 否则按名称/主题搜节点时向量侧几乎无法命中；
     /// tags 为 JSON 数组字符串，会展平为空格分隔的纯文本；
-    /// 空标签或解析失败时仅返回 node_description + summary
+    /// 空标签或解析失败时仅返回 node_name + node_description + summary
     fn vector_text(&self) -> String {
         let tags = flatten_tags(&self.tags);
         if tags.is_empty() {
-            format!("{}\n{}", self.node_description, self.summary)
+            format!(
+                "{}\n{}\n{}",
+                self.node_name, self.node_description, self.summary
+            )
         } else {
-            format!("{}\n{}\n{}", self.node_description, self.summary, tags)
+            format!(
+                "{}\n{}\n{}\n{}",
+                self.node_name, self.node_description, self.summary, tags
+            )
         }
     }
 }

@@ -44,6 +44,31 @@ fn create_test_message(task_id: &str, from_id: &str, content: &str) -> MessagePo
     )
 }
 
+/// 短词元（<3 字符）LIKE 兜底路径回归测试。
+///
+/// 此前 QueryBuilder 两段式拼接（push 含 `?` 文本 + push_bind 参数）产生悬空
+/// `???` 占位符，SQLite 报 `near "?": syntax error`。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_search_messages_short_keyword_like_fallback(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    let msg = create_test_message("task-like-1", "user-like", "今天天气不错");
+    message_dao.insert(ctx.clone(), &msg).await?;
+
+    let results = message_dao
+        .search_messages(
+            ctx,
+            crate::service::dao::message::MessageSearch {
+                keyword: Some("天气".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.content, "今天天气不错");
+    Ok(())
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);

@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use super::{ProjectDao, ProjectQuery, ProjectSearch};
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
-use crate::pkg::storage::escape_fts5_keyword;
+use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use common::enums::project::ProjectStatus;
 use common::error::Result;
 use sqlx::FromRow;
@@ -289,20 +289,89 @@ impl ProjectDao for ProjectDaoSqliteImpl {
 
         let pool = _ctx.db_pool();
         let keyword = search.keyword.unwrap_or_default();
+        let limit_i64 = std::cmp::min(search.filters.pagination.limit.unwrap_or(20), 20) as i64;
 
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
             return Ok(Vec::new());
-        }
-
-        let escaped_keyword = escape_fts5_keyword(&keyword);
+        };
         let filters = search.filters;
 
-        // FTS5 MATCH + JOIN + BM25 排序
+        // 业务过滤条件拼装（MATCH / LIKE 两条路径共用）
         // ✅ 复用业务过滤条件（修复原 SQL 未应用 root_user_id/owner_agent_id/status_in/ids 的缺陷）
+        // 注意：不能直接复用 push_query_filters，因为它的字段引用不带表别名前缀；
+        // 闭包对 QueryBuilder 生命周期高阶量化（HRTB），push_bind 的绑定值必须是
+        // 所有权（'static），因此 String 过滤值在绑定点 clone
+        let apply_filters = |builder: &mut sqlx::QueryBuilder<'_, sqlx::Sqlite>| {
+            if let Some(ids) = &filters.ids
+                && !ids.is_empty()
+            {
+                builder.push(" AND p.id IN (");
+                let mut separated = builder.separated(", ");
+                for id in ids {
+                    separated.push_bind(id.clone());
+                }
+                separated.push_unseparated(")");
+            }
+            if let Some(root_user_id) = &filters.root_user_id {
+                builder
+                    .push(" AND p.root_user_id = ")
+                    .push_bind(root_user_id.clone());
+            }
+            if let Some(owner_agent_id) = &filters.owner_agent_id {
+                builder
+                    .push(" AND p.owner_agent_id = ")
+                    .push_bind(owner_agent_id.clone());
+            }
+            if let Some(status_list) = &filters.status_in
+                && !status_list.is_empty()
+            {
+                builder.push(" AND p.\"status\" IN (");
+                let mut separated = builder.separated(", ");
+                for s in status_list {
+                    separated.push_bind(*s as i32);
+                }
+                separated.push_unseparated(")");
+            }
+            // 默认排除软删除
+            builder.push(" AND p.\"status\" != 0");
+        };
+
+        // 行 → 结果元组映射（两条路径共用）
+        let to_result = |row: ProjectSearchRow| {
+            let po = ProjectPo {
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                workflow: row.workflow,
+                guidance: row.guidance,
+                status: ProjectStatus::from(row.status),
+                priority: row.priority,
+                tags: row.tags,
+                root_user_id: row.root_user_id,
+                owner_agent_id: row.owner_agent_id,
+                start_at: row.start_at,
+                due_at: row.due_at,
+                end_at: row.end_at,
+                created_by: row.created_by,
+                modified_by: row.modified_by,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                execution_plan: row.execution_plan,
+                execution_result: row.execution_result,
+                last_followup_at: row.last_followup_at,
+            };
+            (po, row.fts_rank)
+        };
+
+        let mut primary: Vec<(ProjectPo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(ProjectPo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
-        let mut builder = QueryBuilder::new(
-            r#"SELECT p.id, p.name, p.description, p.workflow, p.guidance, p."status" as status,
+        if let Some(match_expr) = &plan.match_expr {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT p.id, p.name, p.description, p.workflow, p.guidance, p."status" as status,
                   p.priority, p.tags, p.root_user_id, p.owner_agent_id,
                   p.start_at, p.due_at, p.end_at, p.created_by, p.modified_by,
                   p.created_at, p.updated_at, p.execution_plan, p.execution_result, p.last_followup_at,
@@ -310,88 +379,66 @@ impl ProjectDao for ProjectDaoSqliteImpl {
            FROM projects_fts
            JOIN projects p ON projects_fts.rowid = p.rowid
            WHERE projects_fts MATCH "#,
-        );
-        builder.push_bind(escaped_keyword);
+            );
+            builder.push_bind(match_expr);
+            apply_filters(&mut builder);
 
-        // 手动拼接业务过滤条件（带 p. 别名前缀，因为 JOIN 查询需要表别名）
-        // 注意：不能直接复用 push_query_filters，因为它的字段引用不带表别名前缀
-        if let Some(ids) = &filters.ids
-            && !ids.is_empty()
-        {
-            builder.push(" AND p.id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id);
+            builder.push(" ORDER BY projects_fts.rank LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
             }
-            separated.push_unseparated(")");
+
+            let rows: Vec<ProjectSearchRow> = builder
+                .build_query_as::<ProjectSearchRow>()
+                .fetch_all(pool)
+                .await?;
+            primary.extend(rows.into_iter().map(to_result));
         }
-        if let Some(root_user_id) = &filters.root_user_id {
-            builder
-                .push(" AND p.root_user_id = ")
-                .push_bind(root_user_id);
-        }
-        if let Some(owner_agent_id) = &filters.owner_agent_id {
-            builder
-                .push(" AND p.owner_agent_id = ")
-                .push_bind(owner_agent_id);
-        }
-        if let Some(status_list) = &filters.status_in
-            && !status_list.is_empty()
-        {
-            builder.push(" AND p.\"status\" IN (");
-            let mut separated = builder.separated(", ");
-            for s in status_list {
-                separated.push_bind(*s as i32);
+
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty() {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT p.id, p.name, p.description, p.workflow, p.guidance, p."status" as status,
+              p.priority, p.tags, p.root_user_id, p.owner_agent_id,
+              p.start_at, p.due_at, p.end_at, p.created_by, p.modified_by,
+              p.created_at, p.updated_at, p.execution_plan, p.execution_result, p.last_followup_at,
+              NULL as fts_rank
+       FROM projects p
+       WHERE "#,
+            );
+            // 条件与绑定值交错推送：QueryBuilder 里 push 文本中的 ? 不由 push_bind 消费
+            builder.push("(");
+            push_fts5_like_conditions(
+                &mut builder,
+                "p",
+                &["name", "description", "workflow", "guidance", "tags"],
+                &plan.like_patterns,
+            );
+            builder.push(")");
+            apply_filters(&mut builder);
+
+            builder.push(" ORDER BY p.updated_at DESC, p.id DESC LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
             }
-            separated.push_unseparated(")");
-        }
-        // 默认排除软删除
-        builder.push(" AND p.\"status\" != 0");
 
-        builder.push(" ORDER BY projects_fts.rank");
-
-        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
-        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20);
-        builder.push(" LIMIT ").push_bind(search_limit as i64);
-        if let Some(offset) = filters.pagination.offset {
-            builder.push(" OFFSET ").push_bind(offset as i64);
+            let rows: Vec<ProjectSearchRow> = builder
+                .build_query_as::<ProjectSearchRow>()
+                .fetch_all(pool)
+                .await?;
+            secondary.extend(rows.into_iter().map(to_result));
         }
 
-        let rows: Vec<ProjectSearchRow> = builder
-            .build_query_as::<ProjectSearchRow>()
-            .fetch_all(pool)
-            .await?;
-
-        let results = rows
-            .into_iter()
-            .map(|row| {
-                let po = ProjectPo {
-                    id: row.id,
-                    name: row.name,
-                    description: row.description,
-                    workflow: row.workflow,
-                    guidance: row.guidance,
-                    status: ProjectStatus::from(row.status),
-                    priority: row.priority,
-                    tags: row.tags,
-                    root_user_id: row.root_user_id,
-                    owner_agent_id: row.owner_agent_id,
-                    start_at: row.start_at,
-                    due_at: row.due_at,
-                    end_at: row.end_at,
-                    created_by: row.created_by,
-                    modified_by: row.modified_by,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    execution_plan: row.execution_plan,
-                    execution_result: row.execution_result,
-                    last_followup_at: row.last_followup_at,
-                };
-                (po, row.fts_rank)
-            })
-            .collect();
-
-        Ok(results)
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            limit_i64.max(0) as usize,
+        ))
     }
 }
 

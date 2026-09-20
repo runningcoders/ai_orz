@@ -30,6 +30,39 @@ fn create_test_agent(name: &str, provider_id: &str, created_by: &str) -> AgentPo
     )
 }
 
+/// 短词元（<3 字符）LIKE 兜底路径回归测试。
+///
+/// 此前 QueryBuilder 两段式拼接（push 含 `?` 文本 + push_bind 参数）产生悬空
+/// `???` 占位符，SQLite 报 `near "?": syntax error`。
+#[sqlx::test]
+async fn test_search_agents_short_keyword_like_fallback(pool: SqlitePool) {
+    let agent_dao = init_test_env();
+
+    let agent = create_test_agent("小叶助手", "provider-id-1", "admin");
+    agent_dao
+        .insert(new_ctx("admin", pool.clone()), &agent)
+        .await
+        .unwrap();
+
+    let results = agent_dao
+        .search_agents(
+            new_ctx("admin", pool),
+            crate::service::dao::agent::AgentSearch {
+                keyword: Some("小叶".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert!(
+        results.is_ok(),
+        "短关键词 LIKE 兜底路径执行失败: {:?}",
+        results.err()
+    );
+    let results = results.unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name, "小叶助手");
+}
+
 #[sqlx::test]
 async fn test_insert_and_find_by_id(pool: SqlitePool) {
     let agent_dao = init_test_env();

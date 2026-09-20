@@ -2,7 +2,7 @@
 
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
-use crate::pkg::storage::escape_fts5_keyword;
+use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use crate::service::dao::agent::{AgentDao, AgentQuery, AgentSearch};
 use chrono::Utc;
 use common::enums::AgentKind;
@@ -146,113 +146,159 @@ FROM agents WHERE id = ? AND status <> 0
         use sqlx::QueryBuilder;
 
         let keyword = search.keyword.unwrap_or_default();
+        let limit_i64 = std::cmp::min(search.filters.pagination.limit.unwrap_or(20), 20) as i64;
 
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
             return Ok(Vec::new());
-        }
-
-        // 转义关键词为 FTS5 短语匹配
-        let escaped_keyword = escape_fts5_keyword(&keyword);
+        };
         let filters = search.filters;
 
-        // FTS5 MATCH + JOIN + BM25 排序
+        // 业务过滤条件拼装（MATCH / LIKE 两条路径共用）
+        // 注意：闭包对 QueryBuilder 生命周期高阶量化（HRTB），push_bind 的绑定值必须是
+        // 所有权（'static），因此 String 过滤值在绑定点 clone
+        let apply_filters = |builder: &mut sqlx::QueryBuilder<'_, sqlx::Sqlite>| {
+            if let Some(ids) = &filters.ids
+                && !ids.is_empty()
+            {
+                builder.push(" AND m.id IN (");
+                let mut separated = builder.separated(", ");
+                for id in ids {
+                    separated.push_bind(id.clone());
+                }
+                separated.push_unseparated(")");
+            }
+
+            if let Some(status) = &filters.status {
+                builder.push(" AND m.status = ").push_bind(*status as i32);
+            }
+
+            if let Some(exclude_status) = &filters.exclude_status {
+                builder
+                    .push(" AND m.status != ")
+                    .push_bind(*exclude_status as i32);
+            }
+
+            if let Some(created_by) = &filters.created_by {
+                builder
+                    .push(" AND m.created_by = ")
+                    .push_bind(created_by.clone());
+            }
+
+            if let Some(model_provider_id) = &filters.model_provider_id {
+                builder
+                    .push(" AND m.model_provider_id = ")
+                    .push_bind(model_provider_id.clone());
+            }
+
+            // 角色标签过滤（OR 语义，使用 json_each 精确匹配）
+            if let Some(roles) = &filters.roles
+                && !roles.is_empty()
+            {
+                builder.push(
+                    " AND EXISTS (SELECT 1 FROM json_each(m.role) WHERE json_each.value IN (",
+                );
+                let mut separated = builder.separated(", ");
+                for role in roles {
+                    separated.push_bind(role.clone());
+                }
+                separated.push_unseparated("))");
+            }
+        };
+
+        // 行 → 结果元组映射（两条路径共用）
+        let to_result = |row: AgentSearchRow| {
+            let po = AgentPo {
+                id: row.id,
+                name: row.name,
+                role: row.role,
+                description: row.description,
+                soul: row.soul,
+                capabilities: row.capabilities,
+                runtime_config: row.runtime_config,
+                model_provider_id: row.model_provider_id,
+                status: row.status,
+                kind: row.kind,
+                created_by: row.created_by,
+                modified_by: row.modified_by,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            };
+            (po, row.fts_rank)
+        };
+
+        let mut primary: Vec<(AgentPo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(AgentPo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
         // agents 表的 status 字段不是 SQL 关键字，不需要双引号转义
-        let mut builder = QueryBuilder::new(
-            r#"SELECT m.id, m.name, m.role, m.description, m.soul, m.capabilities, m.runtime_config,
+        if let Some(match_expr) = &plan.match_expr {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT m.id, m.name, m.role, m.description, m.soul, m.capabilities, m.runtime_config,
                       m.model_provider_id, m.status, m.kind, m.created_by, m.modified_by, m.created_at, m.updated_at,
                       agents_fts.rank as fts_rank
                FROM agents_fts
                JOIN agents m ON agents_fts.rowid = m.rowid
                WHERE agents_fts MATCH "#,
-        );
-        builder.push_bind(escaped_keyword);
+            );
+            builder.push_bind(match_expr);
+            apply_filters(&mut builder);
 
-        // 应用业务过滤条件
-        if let Some(ids) = &filters.ids
-            && !ids.is_empty()
-        {
-            builder.push(" AND m.id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id);
+            builder.push(" ORDER BY agents_fts.rank LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
             }
-            separated.push_unseparated(")");
+
+            let rows: Vec<AgentSearchRow> = builder
+                .build_query_as::<AgentSearchRow>()
+                .fetch_all(_ctx.db_pool())
+                .await?;
+            primary.extend(rows.into_iter().map(to_result));
         }
 
-        if let Some(status) = &filters.status {
-            builder.push(" AND m.status = ").push_bind(*status as i32);
-        }
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty() {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT m.id, m.name, m.role, m.description, m.soul, m.capabilities, m.runtime_config,
+                  m.model_provider_id, m.status, m.kind, m.created_by, m.modified_by, m.created_at, m.updated_at,
+                  NULL as fts_rank
+           FROM agents m
+           WHERE "#,
+            );
+            // 条件与绑定值交错推送：QueryBuilder 里 push 文本中的 ? 不由 push_bind 消费
+            builder.push("(");
+            push_fts5_like_conditions(
+                &mut builder,
+                "m",
+                &["name", "role", "description", "capabilities"],
+                &plan.like_patterns,
+            );
+            builder.push(")");
+            apply_filters(&mut builder);
 
-        if let Some(exclude_status) = &filters.exclude_status {
-            builder
-                .push(" AND m.status != ")
-                .push_bind(*exclude_status as i32);
-        }
-
-        if let Some(created_by) = &filters.created_by {
-            builder.push(" AND m.created_by = ").push_bind(created_by);
-        }
-
-        if let Some(model_provider_id) = &filters.model_provider_id {
-            builder
-                .push(" AND m.model_provider_id = ")
-                .push_bind(model_provider_id);
-        }
-
-        // 角色标签过滤（OR 语义，使用 json_each 精确匹配）
-        if let Some(roles) = &filters.roles
-            && !roles.is_empty()
-        {
-            builder.push(" AND EXISTS (SELECT 1 FROM json_each(m.role) WHERE json_each.value IN (");
-            let mut separated = builder.separated(", ");
-            for role in roles {
-                separated.push_bind(role);
+            builder.push(" ORDER BY m.updated_at DESC, m.id DESC LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
             }
-            separated.push_unseparated("))");
+
+            let rows: Vec<AgentSearchRow> = builder
+                .build_query_as::<AgentSearchRow>()
+                .fetch_all(_ctx.db_pool())
+                .await?;
+            secondary.extend(rows.into_iter().map(to_result));
         }
 
-        builder.push(" ORDER BY agents_fts.rank");
-
-        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
-        // 用户传的 limit 若超过 MAX_SEARCH_RESULTS 则截断，未传则默认 MAX_SEARCH_RESULTS
-        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20);
-        builder.push(" LIMIT ").push_bind(search_limit as i64);
-
-        if let Some(offset) = filters.pagination.offset {
-            builder.push(" OFFSET ").push_bind(offset as i64);
-        }
-
-        let rows: Vec<AgentSearchRow> = builder
-            .build_query_as::<AgentSearchRow>()
-            .fetch_all(_ctx.db_pool())
-            .await?;
-
-        let results = rows
-            .into_iter()
-            .map(|row| {
-                let po = AgentPo {
-                    id: row.id,
-                    name: row.name,
-                    role: row.role,
-                    description: row.description,
-                    soul: row.soul,
-                    capabilities: row.capabilities,
-                    runtime_config: row.runtime_config,
-                    model_provider_id: row.model_provider_id,
-                    status: row.status,
-                    kind: row.kind,
-                    created_by: row.created_by,
-                    modified_by: row.modified_by,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                };
-                (po, row.fts_rank)
-            })
-            .collect();
-
-        Ok(results)
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            limit_i64.max(0) as usize,
+        ))
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>> {

@@ -13,7 +13,7 @@ use crate::models::memory::{
 };
 use crate::pkg::RequestContext;
 use crate::pkg::paths;
-use crate::pkg::storage::escape_fts5_keyword;
+use crate::pkg::storage::{build_fts5_like_clause, build_fts5_search_plan, merge_fts5_results};
 use crate::service::dao::memory::{
     DriftClassDetailRow, DriftRelationDetailRow, MemoryDao, MemoryQuery, MemorySearch,
     TermFrequencyRow,
@@ -526,15 +526,12 @@ FROM short_term_memory_index WHERE 1=1"#,
         let tags = search.filters.tags.clone().unwrap_or_default();
         let task_id = search.filters.task_id.clone();
 
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
             return Ok(Vec::new());
-        }
+        };
 
-        // 转义关键词为 FTS5 短语匹配
-        let escaped_keyword = escape_fts5_keyword(&keyword);
-
-        // 构建带可选 tags / task_id / agent_id 过滤的 SQL
+        // 构建带可选 tags / task_id / agent_id 过滤的 SQL（MATCH / LIKE 两条路径共用）
         let has_tags = !tags.is_empty();
         let tags_clause = if has_tags {
             let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
@@ -558,8 +555,30 @@ FROM short_term_memory_index WHERE 1=1"#,
             ""
         };
 
-        let sql = format!(
-            r#"
+        // 行 → 结果元组映射（两条路径共用）
+        let to_result = |row: ShortTermSearchRow| {
+            let po = ShortTermMemoryIndexPo {
+                id: row.id,
+                agent_id: row.agent_id,
+                task_id: row.task_id,
+                role: row.role,
+                summary: row.summary,
+                tags: row.tags,
+                trace_ids: row.trace_ids,
+                status: row.status,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            };
+            (po, row.fts_rank)
+        };
+
+        let mut primary: Vec<(ShortTermMemoryIndexPo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(ShortTermMemoryIndexPo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
+        if let Some(match_expr) = &plan.match_expr {
+            let sql = format!(
+                r#"
 SELECT m.id, m.agent_id, m.task_id, m.role, m.summary, m.tags, m.trace_ids,
        m.status, m.created_at, m.updated_at,
        short_term_memory_fts.rank as fts_rank
@@ -570,49 +589,76 @@ WHERE short_term_memory_fts MATCH ?
 ORDER BY short_term_memory_fts.rank
 LIMIT ?
 "#
-        );
+            );
 
-        let mut query = sqlx::query_as::<_, ShortTermSearchRow>(&sql).bind(escaped_keyword);
+            let mut query = sqlx::query_as::<_, ShortTermSearchRow>(&sql).bind(match_expr);
 
-        // 绑定 agent_id 参数（如果有）
-        if has_agent_filter {
-            query = query.bind(agent_id);
-        }
-
-        // 绑定 tags 参数（如果有）
-        if has_tags {
-            for tag in &tags {
-                query = query.bind(tag);
+            // 绑定 agent_id 参数（如果有）
+            if has_agent_filter {
+                query = query.bind(&agent_id);
             }
+
+            // 绑定 tags 参数（如果有）
+            if has_tags {
+                for tag in &tags {
+                    query = query.bind(tag);
+                }
+            }
+
+            // 绑定 task_id 参数（如果有）
+            if let Some(tid) = &task_id {
+                query = query.bind(tid);
+            }
+
+            let rows: Vec<ShortTermSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
+            primary.extend(rows.into_iter().map(to_result));
         }
 
-        // 绑定 task_id 参数（如果有）
-        if let Some(tid) = &task_id {
-            query = query.bind(tid);
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty()
+            && let Some((like_clause, like_params)) =
+                build_fts5_like_clause("m", &["summary", "tags"], &plan.like_patterns)
+        {
+            let sql = format!(
+                r#"
+SELECT m.id, m.agent_id, m.task_id, m.role, m.summary, m.tags, m.trace_ids,
+       m.status, m.created_at, m.updated_at,
+       NULL as fts_rank
+FROM short_term_memory_index m
+WHERE ({like_clause})
+  AND m.status != 0{agent_clause}{tags_clause}{task_id_clause}
+ORDER BY m.updated_at DESC, m.id DESC
+LIMIT ?
+"#
+            );
+
+            let mut query = sqlx::query_as::<_, ShortTermSearchRow>(&sql);
+            for pattern in &like_params {
+                query = query.bind(pattern);
+            }
+            if has_agent_filter {
+                query = query.bind(&agent_id);
+            }
+            if has_tags {
+                for tag in &tags {
+                    query = query.bind(tag);
+                }
+            }
+            if let Some(tid) = &task_id {
+                query = query.bind(tid);
+            }
+            let rows: Vec<ShortTermSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
+            secondary.extend(rows.into_iter().map(to_result));
         }
 
-        let rows: Vec<ShortTermSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
-
-        let results = rows
-            .into_iter()
-            .map(|row| {
-                let po = ShortTermMemoryIndexPo {
-                    id: row.id,
-                    agent_id: row.agent_id,
-                    task_id: row.task_id,
-                    role: row.role,
-                    summary: row.summary,
-                    tags: row.tags,
-                    trace_ids: row.trace_ids,
-                    status: row.status,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                };
-                (po, row.fts_rank)
-            })
-            .collect();
-
-        Ok(results)
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            limit_i64.max(0) as usize,
+        ))
     }
 
     fn read_memory_content(&self, _index: &ShortTermMemoryIndexPo) -> Result<String> {
@@ -979,15 +1025,12 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
         let tags = search.filters.tags.clone().unwrap_or_default();
 
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
             return Ok(Vec::new());
-        }
+        };
 
-        // 转义关键词为 FTS5 短语匹配
-        let escaped_keyword = escape_fts5_keyword(&keyword);
-
-        // 构建带可选 tags 过滤的 SQL
+        // 构建带可选 tags 过滤的 SQL（MATCH / LIKE 两条路径共用）
         let has_tags = !tags.is_empty();
         let tags_clause = if has_tags {
             let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
@@ -1006,8 +1049,31 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             "1=1"
         };
 
-        let sql = format!(
-            r#"
+        // 行 → 结果元组映射（两条路径共用）
+        let to_result = |row: KnowledgeNodeSearchRow| {
+            let po = LongTermKnowledgeNodePo {
+                id: row.id,
+                agent_id: row.agent_id,
+                node_name: row.node_name,
+                node_description: row.node_description,
+                node_type: row.node_type,
+                summary: row.summary,
+                tags: row.tags,
+                status: row.status,
+                is_published: row.is_published,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            };
+            (po, row.fts_rank)
+        };
+
+        let mut primary: Vec<(LongTermKnowledgeNodePo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(LongTermKnowledgeNodePo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
+        if let Some(match_expr) = &plan.match_expr {
+            let sql = format!(
+                r#"
 SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary, m.tags,
        m.status, m.is_published, m.created_at, m.updated_at,
        knowledge_node_fts.rank as fts_rank
@@ -1019,45 +1085,72 @@ WHERE knowledge_node_fts MATCH ?
 ORDER BY knowledge_node_fts.rank
 LIMIT ?
 "#
-        );
+            );
 
-        let mut query = sqlx::query_as::<_, KnowledgeNodeSearchRow>(&sql).bind(escaped_keyword);
+            let mut query = sqlx::query_as::<_, KnowledgeNodeSearchRow>(&sql).bind(match_expr);
 
-        // 绑定 agent 归属筛选参数（仅当调用方显式指定时）
-        if let Some(agent_id) = agent_filter {
-            query = query.bind(agent_id);
-        }
-
-        // 绑定 tags 参数（如果有）
-        if has_tags {
-            for tag in &tags {
-                query = query.bind(tag);
+            // 绑定 agent 归属筛选参数（仅当调用方显式指定时）
+            if let Some(agent_id) = &agent_filter {
+                query = query.bind(agent_id);
             }
+
+            // 绑定 tags 参数（如果有）
+            if has_tags {
+                for tag in &tags {
+                    query = query.bind(tag);
+                }
+            }
+
+            let rows: Vec<KnowledgeNodeSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
+            primary.extend(rows.into_iter().map(to_result));
         }
 
-        let rows: Vec<KnowledgeNodeSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty()
+            && let Some((like_clause, like_params)) = build_fts5_like_clause(
+                "m",
+                &["node_name", "summary", "node_description", "tags"],
+                &plan.like_patterns,
+            )
+        {
+            let sql = format!(
+                r#"
+SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary, m.tags,
+       m.status, m.is_published, m.created_at, m.updated_at,
+       NULL as fts_rank
+FROM long_term_knowledge_node m
+WHERE ({like_clause})
+  AND {ownership_clause}
+  AND m.status != 0{tags_clause}
+ORDER BY m.updated_at DESC, m.id DESC
+LIMIT ?
+"#
+            );
 
-        let results = rows
-            .into_iter()
-            .map(|row| {
-                let po = LongTermKnowledgeNodePo {
-                    id: row.id,
-                    agent_id: row.agent_id,
-                    node_name: row.node_name,
-                    node_description: row.node_description,
-                    node_type: row.node_type,
-                    summary: row.summary,
-                    tags: row.tags,
-                    status: row.status,
-                    is_published: row.is_published,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                };
-                (po, row.fts_rank)
-            })
-            .collect();
+            let mut query = sqlx::query_as::<_, KnowledgeNodeSearchRow>(&sql);
+            for pattern in &like_params {
+                query = query.bind(pattern);
+            }
+            if let Some(agent_id) = &agent_filter {
+                query = query.bind(agent_id);
+            }
+            if has_tags {
+                for tag in &tags {
+                    query = query.bind(tag);
+                }
+            }
+            let rows: Vec<KnowledgeNodeSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
+            secondary.extend(rows.into_iter().map(to_result));
+        }
 
-        Ok(results)
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            limit_i64.max(0) as usize,
+        ))
     }
 
     async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<()> {

@@ -681,6 +681,43 @@ async fn test_tool_search(pool: SqlitePool) {
     assert_eq!(results.len(), 1);
 }
 
+/// 短词元（<3 字符）LIKE 兜底路径回归测试。
+///
+/// 此前 QueryBuilder 两段式拼接（push 含 `?` 文本 + push_bind 参数）产生悬空
+/// `???` 占位符，SQLite 报 `near "?": syntax error`。
+#[sqlx::test]
+async fn test_tool_search_short_keyword_like_fallback(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
+
+    let tool = ToolPo::new(
+        "id-like-1".to_string(),
+        "天气工具".to_string(),
+        "查询天气的小工具".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("admin".to_string()),
+    );
+    let _ = tool_dao.create_tool(ctx.clone(), &tool).await;
+
+    // 2 字符关键词：不构成 trigram token，只走 LIKE 兜底路径
+    let search = crate::service::dao::tool::ToolSearch {
+        keyword: Some("天气".to_string()),
+        ..Default::default()
+    };
+    let results = tool_dao.search_tools(ctx, search).await;
+    assert!(
+        results.is_ok(),
+        "短关键词 LIKE 兜底路径执行失败: {:?}",
+        results.err()
+    );
+    let results = results.unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name, "天气工具");
+}
+
 #[sqlx::test]
 async fn test_query_by_tag(pool: SqlitePool) {
     let tool_dao = init_test_env();

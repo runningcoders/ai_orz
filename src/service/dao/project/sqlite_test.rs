@@ -387,6 +387,34 @@ fn create_searchable_project(
     )
 }
 
+/// 短词元（<3 字符）LIKE 兜底路径回归测试。
+///
+/// 此前 QueryBuilder 两段式拼接（push 含 `?` 文本 + push_bind 参数）产生悬空
+/// `???` 占位符，SQLite 报 `near "?": syntax error`。
+#[sqlx::test]
+async fn test_search_projects_short_keyword_like_fallback(pool: SqlitePool) -> Result<()> {
+    let dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let p = create_searchable_project("天气助手项目", "查天气的小助手", None, None, "user1");
+    dao.insert(ctx.clone(), &p).await?;
+
+    let results = dao
+        .search_projects(
+            ctx,
+            ProjectSearch {
+                keyword: Some("天气".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name, "天气助手项目");
+    // LIKE 兜底命中不带 BM25 rank
+    assert!(results[0].1.is_none());
+    Ok(())
+}
+
 /// 测试 FTS5 英文关键词搜索（按 name 匹配）
 #[sqlx::test]
 async fn test_search_projects_english_keyword(pool: SqlitePool) -> Result<()> {

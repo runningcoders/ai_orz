@@ -13,7 +13,7 @@ use std::sync::{Arc, OnceLock};
 
 // ==================== FTS5 辅助 ====================
 
-use crate::pkg::storage::escape_fts5_keyword;
+use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 
 /// 消息搜索行（PO + fts_rank）
 #[derive(FromRow)]
@@ -467,100 +467,134 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
         let pool = ctx.db_pool().clone();
         let keyword = search.keyword.unwrap_or_default();
         let filters = search.filters;
-
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // 转义关键词为 FTS5 短语匹配
-        let escaped_keyword = escape_fts5_keyword(&keyword);
         let limit_i64 = filters.limit.unwrap_or(50) as i64;
 
-        // FTS5 MATCH + JOIN + BM25 排序
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
+            return Ok(Vec::new());
+        };
+
+        // 业务过滤条件拼装（MATCH / LIKE 两条路径共用）
+        // 注意：闭包对 QueryBuilder 生命周期高阶量化（HRTB），push_bind 的绑定值必须是
+        // 所有权（'static），因此 String 过滤值在绑定点 clone
+        let apply_filters = |builder: &mut sqlx::QueryBuilder<'_, sqlx::Sqlite>| {
+            builder.push(r#" AND m."status" != 0"#);
+
+            // 动态添加业务过滤条件
+            if let Some(task_id) = &filters.task_id {
+                builder.push(" AND m.task_id = ");
+                builder.push_bind(task_id.clone());
+            }
+            if let Some(project_id) = &filters.project_id {
+                push_project_filter(builder, "m.project_id", project_id);
+            }
+            if let Some(from_id) = &filters.from_id {
+                builder.push(" AND m.from_id = ");
+                builder.push_bind(from_id.clone());
+            }
+            if let Some(to_id) = &filters.to_id {
+                builder.push(" AND m.to_id = ");
+                builder.push_bind(to_id.clone());
+            }
+            if let Some(id) = &filters.id {
+                builder.push(" AND m.id = ");
+                builder.push_bind(id.clone());
+            }
+            // 多租户隔离：FTS5 分支同样必须下推 organization_id（与 push_query_filters 口径一致），
+            // 否则关键词命中的消息会跨组织泄漏。向量分支此前也存在同样缺口，已一并修复。
+            if let Some(org_id) = &filters.organization_id {
+                builder.push(" AND m.organization_id = ");
+                builder.push_bind(org_id.clone());
+            }
+            if let Some(status_in) = &filters.status_in
+                && !status_in.is_empty()
+            {
+                builder.push(" AND m.\"status\" IN (");
+                let mut separated = builder.separated(", ");
+                for s in status_in {
+                    separated.push_bind(*s as i32);
+                }
+                separated.push_unseparated(")");
+            }
+        };
+
+        // 行 → 结果元组映射（两条路径共用）
+        let to_result = |row: MessageSearchRow| {
+            let po = MessagePo {
+                id: row.id,
+                project_id: row.project_id,
+                task_id: row.task_id,
+                from_id: row.from_id,
+                to_id: row.to_id,
+                from_role: row.from_role,
+                to_role: row.to_role,
+                message_type: row.message_type,
+                file_type: row.file_type,
+                status: row.status,
+                content: row.content,
+                file_meta: row.file_meta,
+                reply_to_id: row.reply_to_id,
+                root_id: row.root_id,
+                external_key: None,
+                organization_id: row.organization_id,
+                created_by: row.created_by,
+                modified_by: row.modified_by,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            };
+            (po, row.fts_rank)
+        };
+
+        let mut primary: Vec<(MessagePo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(MessagePo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
-        let mut builder = QueryBuilder::new(
-            r#"SELECT m.id, m.project_id, m.task_id, m.from_id, m.to_id, m.from_role, m.to_role, m.message_type, m.file_type, m."status", m.content, m.file_meta, m.reply_to_id, m.root_id, m.organization_id, m.created_by, m.modified_by, m.created_at, m.updated_at, messages_fts.rank as fts_rank
+        if let Some(match_expr) = &plan.match_expr {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT m.id, m.project_id, m.task_id, m.from_id, m.to_id, m.from_role, m.to_role, m.message_type, m.file_type, m."status", m.content, m.file_meta, m.reply_to_id, m.root_id, m.organization_id, m.created_by, m.modified_by, m.created_at, m.updated_at, messages_fts.rank as fts_rank
 FROM messages_fts
 JOIN messages m ON messages_fts.rowid = m.rowid
 WHERE messages_fts MATCH "#,
-        );
-        builder.push_bind(escaped_keyword);
-        builder.push(r#" AND m."status" != 0"#);
+            );
+            builder.push_bind(match_expr);
+            apply_filters(&mut builder);
 
-        // 动态添加业务过滤条件
-        if let Some(task_id) = &filters.task_id {
-            builder.push(" AND m.task_id = ");
-            builder.push_bind(task_id);
-        }
-        if let Some(project_id) = &filters.project_id {
-            push_project_filter(&mut builder, "m.project_id", project_id);
-        }
-        if let Some(from_id) = &filters.from_id {
-            builder.push(" AND m.from_id = ");
-            builder.push_bind(from_id);
-        }
-        if let Some(to_id) = &filters.to_id {
-            builder.push(" AND m.to_id = ");
-            builder.push_bind(to_id);
-        }
-        if let Some(id) = &filters.id {
-            builder.push(" AND m.id = ");
-            builder.push_bind(id);
-        }
-        // 多租户隔离：FTS5 分支同样必须下推 organization_id（与 push_query_filters 口径一致），
-        // 否则关键词命中的消息会跨组织泄漏。向量分支此前也存在同样缺口，已一并修复。
-        if let Some(org_id) = &filters.organization_id {
-            builder.push(" AND m.organization_id = ");
-            builder.push_bind(org_id);
-        }
-        if let Some(status_in) = &filters.status_in
-            && !status_in.is_empty()
-        {
-            builder.push(" AND m.\"status\" IN (");
-            let mut separated = builder.separated(", ");
-            for s in status_in {
-                separated.push_bind(*s as i32);
-            }
-            separated.push_unseparated(")");
+            builder.push(" ORDER BY messages_fts.rank LIMIT ");
+            builder.push_bind(limit_i64);
+
+            let rows: Vec<MessageSearchRow> = builder.build_query_as().fetch_all(&pool).await?;
+            primary.extend(rows.into_iter().map(to_result));
         }
 
-        builder.push(" ORDER BY messages_fts.rank");
-        builder.push(" LIMIT ");
-        builder.push_bind(limit_i64);
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty() {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT m.id, m.project_id, m.task_id, m.from_id, m.to_id, m.from_role, m.to_role, m.message_type, m.file_type, m."status", m.content, m.file_meta, m.reply_to_id, m.root_id, m.organization_id, m.created_by, m.modified_by, m.created_at, m.updated_at, NULL as fts_rank
+FROM messages m
+WHERE "#,
+            );
+            // 条件与绑定值交错推送：QueryBuilder 里 push 文本中的 ? 不由 push_bind 消费
+            builder.push("(");
+            push_fts5_like_conditions(&mut builder, "m", &["content"], &plan.like_patterns);
+            builder.push(")");
+            apply_filters(&mut builder);
 
-        let rows: Vec<MessageSearchRow> = builder.build_query_as().fetch_all(&pool).await?;
+            builder.push(" ORDER BY m.updated_at DESC, m.id DESC LIMIT ");
+            builder.push_bind(limit_i64);
 
-        let results = rows
-            .into_iter()
-            .map(|row| {
-                let po = MessagePo {
-                    id: row.id,
-                    project_id: row.project_id,
-                    task_id: row.task_id,
-                    from_id: row.from_id,
-                    to_id: row.to_id,
-                    from_role: row.from_role,
-                    to_role: row.to_role,
-                    message_type: row.message_type,
-                    file_type: row.file_type,
-                    status: row.status,
-                    content: row.content,
-                    file_meta: row.file_meta,
-                    reply_to_id: row.reply_to_id,
-                    root_id: row.root_id,
-                    external_key: None,
-                    organization_id: row.organization_id,
-                    created_by: row.created_by,
-                    modified_by: row.modified_by,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                };
-                (po, row.fts_rank)
-            })
-            .collect();
+            let rows: Vec<MessageSearchRow> = builder.build_query_as().fetch_all(&pool).await?;
+            secondary.extend(rows.into_iter().map(to_result));
+        }
 
-        Ok(results)
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            limit_i64.max(0) as usize,
+        ))
     }
 }
 

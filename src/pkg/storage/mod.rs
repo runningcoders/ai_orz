@@ -16,7 +16,9 @@ use crate::pkg::stats::Stats;
 
 /// FTS5 全文搜索工具
 pub mod fts5;
-pub use fts5::escape_fts5_keyword;
+pub use fts5::{
+    build_fts5_like_clause, build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions,
+};
 
 /// 向量存储抽象 Trait
 pub mod vector;

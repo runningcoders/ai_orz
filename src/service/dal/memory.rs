@@ -1295,6 +1295,8 @@ impl MemoryDalImpl {
     ) -> Result<Vec<Memory>> {
         // 向量距离阈值（可配置，默认 0.8）
         let vector_distance_threshold = search.vector_distance_threshold.unwrap_or(0.8);
+        // 向量召回条数（可配置，默认 50）
+        let vector_top_k = search.top_k.unwrap_or(50);
 
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
@@ -1313,13 +1315,13 @@ impl MemoryDalImpl {
             .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 50 条；业务过滤在 DAO 内转译为向量谓词下推）
+                    // 向量搜索（前 top_k 条；业务过滤在 DAO 内转译为向量谓词下推）
                     match self
                         .memory_vector_dao
                         .search_short_term_vector(
                             ctx.clone(),
                             &vec_params.vector,
-                            50,
+                            vector_top_k,
                             &search.filters,
                         )
                         .await
@@ -1450,6 +1452,8 @@ impl MemoryDalImpl {
     ) -> Result<Vec<Memory>> {
         // 向量距离阈值（可配置，默认 0.8）
         let vector_distance_threshold = search.vector_distance_threshold.unwrap_or(0.8);
+        // 向量召回条数（可配置，默认 50）
+        let vector_top_k = search.top_k.unwrap_or(50);
 
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
@@ -1468,13 +1472,13 @@ impl MemoryDalImpl {
             .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 50 条；业务过滤在 DAO 内转译为向量谓词下推）
+                    // 向量搜索（前 top_k 条；业务过滤在 DAO 内转译为向量谓词下推）
                     match self
                         .memory_vector_dao
                         .search_knowledge_node_vector(
                             ctx.clone(),
                             &vec_params.vector,
-                            50,
+                            vector_top_k,
                             &search.filters,
                         )
                         .await

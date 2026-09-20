@@ -2,7 +2,7 @@
 
 use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::storage::escape_fts5_keyword;
+use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use async_trait::async_trait;
 use common::error::Result;
 use sqlx::FromRow;
@@ -446,15 +446,11 @@ impl ToolDao for ToolDaoSqliteImpl {
             filters.exclude_status = Some(common::enums::ToolStatus::Stale);
         }
 
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
             return Ok(Vec::new());
-        }
+        };
 
-        let escaped_keyword = escape_fts5_keyword(&keyword);
-
-        // FTS5 MATCH + JOIN 主表 + BM25 排序
-        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
         // agent_id 过滤依赖 agent_tools 表的 JOIN（与 query 方法一致），其余过滤条件复用 push_query_filters
         let has_agent_filter = filters.agent_id.is_some();
         let join_clause = if has_agent_filter {
@@ -463,44 +459,91 @@ impl ToolDao for ToolDaoSqliteImpl {
             ""
         };
 
-        let base_sql = format!(
-            r#"SELECT t.id, t.name, t.description, t.protocol, t.control_mode, t.config,
+        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
+        // 用户传的 limit 若超过 20 则截断，未传则默认 20
+        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20) as i64;
+
+        let mut primary: Vec<(ToolPo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(ToolPo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
+        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
+        if let Some(match_expr) = &plan.match_expr {
+            let base_sql = format!(
+                r#"SELECT t.id, t.name, t.description, t.protocol, t.control_mode, t.config,
                       t.parameters_schema, t.tags, t.status, t.created_at, t.updated_at,
                       t.created_by, t.updated_by, tools_fts.rank as fts_rank
                FROM tools_fts
                JOIN tools t ON tools_fts.rowid = t.rowid{}
                WHERE tools_fts MATCH "#,
-            join_clause
-        );
-        let mut builder = sqlx::QueryBuilder::new(&base_sql);
-        builder.push_bind(escaped_keyword);
+                join_clause
+            );
+            let mut builder = sqlx::QueryBuilder::new(&base_sql);
+            builder.push_bind(match_expr);
 
-        // 复用通用过滤条件（agent_id 用 at. 前缀，其余用 t. 前缀）
-        push_query_filters(&mut builder, &filters);
+            // 复用通用过滤条件（agent_id 用 at. 前缀，其余用 t. 前缀）
+            push_query_filters(&mut builder, &filters);
 
-        // BM25 排序（rank 越小越相关）+ 分页
-        builder.push(" ORDER BY tools_fts.rank");
+            // BM25 排序（rank 越小越相关）+ 分页
+            builder.push(" ORDER BY tools_fts.rank");
+            builder.push(" LIMIT ").push_bind(search_limit);
 
-        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
-        // 用户传的 limit 若超过 20 则截断，未传则默认 20
-        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20);
-        builder.push(" LIMIT ").push_bind(search_limit as i64);
+            if let Some(offset) = filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
+            }
 
-        if let Some(offset) = filters.pagination.offset {
-            builder.push(" OFFSET ").push_bind(offset as i64);
+            let rows: Vec<ToolSearchRow> = builder
+                .build_query_as::<ToolSearchRow>()
+                .fetch_all(pool)
+                .await?;
+            primary.extend(rows.into_iter().map(|row| row.into_po_with_rank()));
         }
 
-        let rows: Vec<ToolSearchRow> = builder
-            .build_query_as::<ToolSearchRow>()
-            .fetch_all(pool)
-            .await?;
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty() {
+            let base_sql = format!(
+                r#"SELECT t.id, t.name, t.description, t.protocol, t.control_mode, t.config,
+                  t.parameters_schema, t.tags, t.status, t.created_at, t.updated_at,
+                  t.created_by, t.updated_by, NULL as fts_rank
+           FROM tools t{}"#,
+                join_clause
+            );
+            let mut builder = sqlx::QueryBuilder::new(&base_sql);
+            // 条件与绑定值交错推送：QueryBuilder 里 push 文本中的 ? 不由 push_bind 消费
+            builder.push(" WHERE (");
+            push_fts5_like_conditions(
+                &mut builder,
+                "t",
+                &["name", "description", "tags"],
+                &plan.like_patterns,
+            );
+            builder.push(")");
 
-        let results = rows
-            .into_iter()
-            .map(|row| row.into_po_with_rank())
-            .collect();
+            // 复用通用过滤条件（agent_id 用 at. 前缀，其余用 t. 前缀）
+            push_query_filters(&mut builder, &filters);
 
-        Ok(results)
+            builder.push(" ORDER BY t.updated_at DESC, t.id DESC");
+            builder.push(" LIMIT ").push_bind(search_limit);
+
+            if let Some(offset) = filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
+            }
+
+            let rows: Vec<ToolSearchRow> = builder
+                .build_query_as::<ToolSearchRow>()
+                .fetch_all(pool)
+                .await?;
+            secondary.extend(rows.into_iter().map(|row| row.into_po_with_rank()));
+        }
+
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            search_limit.max(0) as usize,
+        ))
     }
 }
 

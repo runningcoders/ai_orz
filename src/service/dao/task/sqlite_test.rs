@@ -599,3 +599,31 @@ async fn test_empty_task_list(pool: SqlitePool) {
         .unwrap();
     assert_eq!(count, 0);
 }
+
+/// 短词元（<3 字符）LIKE 兜底路径回归测试。
+///
+/// mention 拾取器输入 1-2 字符即触发 search，短词元无法形成 trigram token，
+/// 必须走主表 LIKE 兜底路径；此前该路径无任何 SQL 执行级测试覆盖。
+#[sqlx::test]
+async fn test_search_tasks_short_keyword_like_fallback(pool: SqlitePool) {
+    let task_dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let task = create_test_task("写周报", "user-123", "test-user");
+    task_dao.insert(ctx.clone(), &task).await.unwrap();
+
+    // 2 字符关键词：不构成 trigram token，只走 LIKE 兜底路径
+    let search = crate::service::dao::task::TaskSearch {
+        keyword: Some("周报".to_string()),
+        ..Default::default()
+    };
+    let results = task_dao.search_tasks(ctx, search).await;
+    assert!(
+        results.is_ok(),
+        "短关键词 LIKE 兜底路径执行失败: {:?}",
+        results.err()
+    );
+    let results = results.unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.title, "写周报");
+}
