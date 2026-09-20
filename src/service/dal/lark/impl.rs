@@ -193,7 +193,9 @@ impl LarkDalImpl {
     ) -> Result<Option<AdaptedMessage>> {
         // 1. 事件过滤：仅处理 P2P 文本消息
         if !event.is_p2p() || !event.is_text() {
-            log_debug!(
+            // info 而非 debug：默认级别下「群里 @ 机器人 / 发图片」必须留痕，
+            // 否则症状（没反应）与「上游没数据」完全同形（微信侧同规）
+            log_info!(
                 &ctx,
                 "lark_adapt",
                 "skip non-p2p/text event: event_id={} chat_type={} msg_type={}",
@@ -208,7 +210,7 @@ impl LarkDalImpl {
         let content = match event.parse_text() {
             Some(t) => t,
             None => {
-                log_debug!(
+                log_info!(
                     &ctx,
                     "lark_adapt",
                     "skip event with unparseable text content: event_id={}",
@@ -218,7 +220,49 @@ impl LarkDalImpl {
             }
         };
         if content.trim().is_empty() {
+            // 空内容此前完全无日志——「发了空消息没反应」查无此事
+            log_info!(
+                &ctx,
+                "lark_adapt",
+                "skip empty-content event: event_id={}",
+                event.header.event_id
+            );
             return Ok(None);
+        }
+
+        // 2.5 幂等查重（F20）：官方 3s 未 ACK 会重推、集群模式非广播（多实例随机
+        // 分发），同一 message 可能到达两次。落库前用 external_key 反查，命中即
+        // 跳过——这是「单实例订阅 + 幂等兜底」假设（D8）成立的前提。
+        let dedup_key = format!("lark:{}", event.event.message.message_id);
+        match self
+            .message_dao
+            .find_id_by_external_key(ctx.clone(), &dedup_key)
+            .await
+        {
+            Ok(Some(existing_id)) => {
+                log_info!(
+                    &ctx,
+                    "lark_adapt",
+                    "duplicate inbound event skipped: event_id={} message_id={} existing_message_id={}",
+                    event.header.event_id,
+                    event.event.message.message_id,
+                    existing_id
+                );
+                return Ok(None);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                // 反查失败不阻断入站（降级为不去重）：宁可小概率重复，
+                // 不可让一次 DB 抖动吞掉消息。留痕便于事后核对。
+                log_warn!(
+                    &ctx,
+                    "lark_adapt",
+                    "dedup lookup failed (degrade to no-dedup): event_id={} key={} err={}",
+                    event.header.event_id,
+                    dedup_key,
+                    e
+                );
+            }
         }
 
         // 3. 渠道查找 + 用户映射（app_id + open_id 二维定位）
@@ -422,19 +466,28 @@ impl LarkCredentialDal for LarkDalImpl {
             .query_channels(ctx.clone(), query)
             .await?;
 
+        // 候选渠道可能引用同一凭证——复用 cached_credential 消除逐渠道查库（F10）
+        let mut cache: HashMap<String, Option<UserCredentialPo>> = HashMap::new();
         for channel in page.items {
             let config = channel.config();
-            let open_matched = config
-                .lark_open_id
-                .as_deref()
-                .map(|id| id == open_id)
-                .unwrap_or(false);
-            if !open_matched {
+            if config.lark_open_id.as_deref() != Some(open_id) {
                 continue;
             }
-            if self
-                .resolve_channel_app_id(ctx.clone(), &channel)
+            let Some(credential_id) = config
+                .lark_credential_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let Some(row) = self
+                .cached_credential(&mut cache, ctx.clone(), credential_id)
                 .await
+            else {
+                continue;
+            };
+            if Self::resolve_credentials_from_row(&row, &channel)
+                .map(|c| c.app_id)
                 .as_deref()
                 == Some(app_id)
             {

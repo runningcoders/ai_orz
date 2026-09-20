@@ -67,6 +67,7 @@ fn ws_state_badge(state: &str) -> &'static str {
         "connected" => "badge hud-badge badge-success badge-sm",
         "connecting" => "badge hud-badge badge-warning badge-sm",
         "reconnecting" => "badge hud-badge badge-error badge-sm",
+        "failed" => "badge hud-badge badge-error badge-sm",
         _ => "badge hud-badge badge-ghost badge-sm",
     }
 }
@@ -77,15 +78,75 @@ fn ws_state_text(state: &str) -> &'static str {
         "connected" => "已连接",
         "connecting" => "连接中",
         "reconnecting" => "重连中",
+        "failed" => "已停机",
         _ => "未知",
     }
 }
 
-/// WS Gauge 颜色：存在重连中的应用 → 橙；有活跃连接 → 绿；无连接 → 灰
-fn ws_gauge_color(active_connections: u64, any_reconnecting: bool) -> String {
-    if any_reconnecting {
+/// 飞书 WS「无帧」阈值（ms）
+///
+/// **不能照抄微信的 90s**：飞书服务端按 `PingInterval`（默认 **120s**）主动 ping，
+/// 空闲渠道两次 pong 之间本就合法地无帧。阈值取 2.5 个心跳周期（300s）——
+/// 超过它仍无任何帧（含 pong），`state=connected` 即判「疑似半开连接」。
+const LARK_WS_STALE_MS: i64 = 300_000;
+
+/// 飞书 WS 渠道是否疑似半开（已连接但帧停走）
+///
+/// `last_frame_at_ms == 0`（本连接从未收到任何帧）同样按 stale 处理；
+/// 仅对 `connected` 判——重连中无帧是正常现象，`failed` 由 `terminal_reason` 呈现。
+fn lark_channel_stale(state: &str, last_frame_at_ms: i64, now_ms: i64) -> bool {
+    if state != "connected" {
+        return false;
+    }
+    last_frame_at_ms == 0 || now_ms.saturating_sub(last_frame_at_ms) > LARK_WS_STALE_MS
+}
+
+/// 飞书收帧列文案（rsx `for` 循环体内禁 `let` 绑定 → 抽 helper）
+fn lark_frame_text(frames_received: u64, last_frame_at_ms: i64, now_ms: i64) -> String {
+    format!(
+        "{} 帧 · 最近 {}",
+        frames_received,
+        poll_age_text(now_ms, last_frame_at_ms)
+    )
+}
+
+/// 收帧列是否标红（疑似半开连接）
+fn lark_frame_stale(state: &str, last_frame_at_ms: i64, now_ms: i64) -> bool {
+    lark_channel_stale(state, last_frame_at_ms, now_ms)
+}
+
+/// 收帧列样式（stale → 红色文本；其余默认）
+fn lark_frame_cell_class(state: &str, last_frame_at_ms: i64, now_ms: i64) -> &'static str {
+    if lark_frame_stale(state, last_frame_at_ms, now_ms) {
+        "text-error"
+    } else {
+        ""
+    }
+}
+
+/// 最近 close / 终局列文案
+fn lark_close_text(last_close_code: i64, terminal_reason: &Option<String>) -> String {
+    if let Some(reason) = terminal_reason {
+        return format!("已停机：{}", reason);
+    }
+    if last_close_code != 0 {
+        return format!("close {}", last_close_code);
+    }
+    "-".to_string()
+}
+
+/// WS Gauge 颜色：终局停机/疑似半开 → 红；重连中 → 橙；有活跃连接 → 绿；无连接 → 灰
+fn ws_gauge_color(m: &HealthMetricsResponse, now_ms: i64) -> String {
+    let apps = &m.lark_ws.apps;
+    if apps.iter().any(|a| a.terminal_reason.is_some())
+        || apps
+            .iter()
+            .any(|a| lark_channel_stale(&a.state, a.last_frame_at_ms, now_ms))
+    {
+        "#ef4444".to_string()
+    } else if apps.iter().any(|a| a.state == "reconnecting") {
         "#fa520f".to_string()
-    } else if active_connections > 0 {
+    } else if m.lark_ws.active_connections > 0 {
         "#10b981".to_string()
     } else {
         "#64748b".to_string()
@@ -430,10 +491,7 @@ pub fn SystemHealth() -> Element {
                         title: "飞书 WS 连接".to_string(),
                         center_value: m.lark_ws.active_connections.to_string(),
                         center_label: "active".to_string(),
-                        color: ws_gauge_color(
-                            m.lark_ws.active_connections,
-                            m.lark_ws.apps.iter().any(|a| a.state == "reconnecting"),
-                        ),
+                        color: ws_gauge_color(m, crate::utils::time::now_ms()),
                         badge: None,
                         footer: Some(format!("{} 个应用监听中", m.lark_ws.apps.len())),
                         is_selected: false,
@@ -467,13 +525,23 @@ pub fn SystemHealth() -> Element {
                         } else {
                             div { class: "overflow-x-auto",
                                 table { class: "table hud-table table-zebra table-sm",
-                                    thead { tr { th { "App ID" }, th { "连接状态" }, th { "累计重连" } } }
+                                    thead { tr {
+                                        th { "App ID" }
+                                        th { "连接状态" }
+                                        th { "累计重连" }
+                                        th { "最近收帧" }
+                                        th { "close / 终局" }
+                                    } }
                                     tbody {
                                         for app in m.lark_ws.apps.iter() {
                                             tr {
                                                 td { class: "font-mono text-sm", "{app.app_id}" }
                                                 td { span { class: "{ws_state_badge(&app.state)}", "{ws_state_text(&app.state)}" } }
                                                 td { "{app.reconnect_count}" }
+                                                td { class: "{lark_frame_cell_class(&app.state, app.last_frame_at_ms, crate::utils::time::now_ms())}",
+                                                    "{lark_frame_text(app.frames_received, app.last_frame_at_ms, crate::utils::time::now_ms())}"
+                                                }
+                                                td { class: "text-sm", "{lark_close_text(app.last_close_code, &app.terminal_reason)}" }
                                             }
                                         }
                                     }
@@ -630,13 +698,29 @@ mod tests {
     }
 
     #[test]
-    fn test_ws_gauge_color_priority() {
-        // 重连中优先告警，无论是否有活跃连接
-        assert_eq!(ws_gauge_color(2, true), "#fa520f");
-        // 无重连且有活跃连接 → 绿
-        assert_eq!(ws_gauge_color(1, false), "#10b981");
-        // 无连接 → 灰
-        assert_eq!(ws_gauge_color(0, false), "#64748b");
+    fn test_lark_channel_stale_threshold() {
+        // connected + 帧新鲜 → 不判 stale
+        assert!(!lark_channel_stale("connected", 1_000, 60_000));
+        // connected + 帧停走（>300s）→ stale
+        assert!(lark_channel_stale("connected", 1_000, 301_000 + 1_000));
+        // 从未收到帧 → 直接判 stale
+        assert!(lark_channel_stale("connected", 0, 60_000));
+        // 非 connected 阶段不判（重连中无帧是正常现象，failed 由 terminal 呈现）
+        assert!(!lark_channel_stale("reconnecting", 0, 60_000));
+        assert!(!lark_channel_stale("failed", 0, 60_000));
+    }
+
+    #[test]
+    fn test_lark_close_text() {
+        // 终局优先
+        assert_eq!(
+            lark_close_text(1006, &Some("连接冲突".to_string())),
+            "已停机：连接冲突"
+        );
+        // 无终局但有 close code
+        assert_eq!(lark_close_text(1006, &None), "close 1006");
+        // 什么都没有
+        assert_eq!(lark_close_text(0, &None), "-");
     }
 
     #[test]

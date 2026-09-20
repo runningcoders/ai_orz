@@ -33,7 +33,9 @@ pub async fn get_status(
         .await?
         .unwrap_or_default();
 
-    // 2. 当前用户名下的飞书渠道（经 message channel domain 查询；失败降级为空列表）
+    // 2. 当前用户名下的飞书渠道（经 message channel domain 查询）
+    // 查询失败**必须上抛**（F14）：吞成空列表会把「渠道引用丢失」伪装成「无引用」，
+    // 且前端已能区分加载失败与未绑定（S4-5），上抛是安全路径
     let channels = crate::service::domain::finance::domain()
         .message_channel_manage()
         .query_channels(
@@ -44,9 +46,8 @@ pub async fn get_status(
                 ..Default::default()
             },
         )
-        .await
-        .map(|page| page.items)
-        .unwrap_or_default();
+        .await?
+        .items;
 
     // 3. 逐凭证内存分组引用渠道（secret 恒不回显）
     let mut snapshots = Vec::new();
@@ -73,6 +74,9 @@ pub async fn get_status(
             name: credential.name().to_string(),
             app_id: app_id.clone(),
             is_default: credential.po.is_default,
+            // 绑定 / 最后轮换时间（D9 对齐：凭据卡展示）
+            created_at: credential.po.created_at,
+            updated_at: credential.po.updated_at,
             channels: refs,
         });
     }

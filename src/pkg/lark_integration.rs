@@ -276,31 +276,72 @@ pub async fn start_device_login(user_id: &str, domains: &[String]) -> Result<Dev
     parse_device_login_json(&stdout).map_err(|e| err!(ThirdPartyError, "{}", e))
 }
 
-/// 以 device_code 完成授权（CLI 内部轮询直到用户完成或过期）
+/// 正在进行 device flow 轮询的用户集合（防重复 spawn 两个 CLI 进程抢同一 device_code）
+static AUTH_POLLING: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
+
+/// 以 device_code 完成授权（后台轮询）
+///
+/// F5：CLI 的 `--device-code` 模式会内部轮询直到用户完成或过期，此前是一次
+/// 300s 阻塞单请求——网关 idle 超时会先切断，前端把「还没完成」误报成「完成失败」。
+/// 现在立即返回、CLI 轮询转后台任务；**授权是否完成以 `auth_status` 为准**，
+/// 前端轮询 `auth/status` 直到 `logged_in=true`。
 pub async fn complete_device_login(user_id: &str, device_code: &str) -> Result<LarkAuthOutcome> {
-    let home = prepare_lark_home(user_id)?;
-    let args = ["auth", "login", "--device-code", device_code, "--json"];
-    let (success, stdout, stderr) = run_cli(&home, &args, AUTH_COMMAND_TIMEOUT).await?;
-    if !success {
-        if let Some(hint) = detect_keychain_degradation(&stderr) {
-            return Ok(LarkAuthOutcome {
-                success: false,
-                degraded: true,
-                hint: Some(hint),
-            });
-        }
+    let mut polling = AUTH_POLLING.lock().await;
+    if polling.contains(user_id) {
+        // 已有在途轮询：幂等返回（不是错误——可能上一轮还没收尾）
         return Ok(LarkAuthOutcome {
-            success: false,
+            success: true,
             degraded: false,
-            hint: Some(extract_error_hint(&stderr)),
+            hint: Some("授权轮询已在后台进行".to_string()),
         });
     }
-    // 成功后输出可能含 token 类字段，不解析正文，仅标记成功
-    let _ = stdout;
+    polling.insert(user_id.to_string());
+    drop(polling);
+
+    let home = prepare_lark_home(user_id)?;
+    let device_code = device_code.to_string();
+    let user = user_id.to_string();
+    tokio::spawn(async move {
+        let args = [
+            "auth".to_string(),
+            "login".to_string(),
+            "--device-code".to_string(),
+            device_code,
+            "--json".to_string(),
+        ];
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        match run_cli(&home, &args, AUTH_COMMAND_TIMEOUT).await {
+            Ok((true, stdout, _stderr)) => {
+                // 成功后输出可能含 token 类字段，不落正文，仅留痕
+                log_info!("lark device flow completed in background: user={}", user);
+                let _ = stdout;
+            }
+            Ok((false, _stdout, stderr)) => {
+                // 过期/用户拒绝/keychain 降级：warn 留痕，状态以 auth_status 为准
+                let hint = detect_keychain_degradation(&stderr)
+                    .unwrap_or_else(|| extract_error_hint(&stderr));
+                log_warn!(
+                    "lark device flow background polling failed: user={} hint={}",
+                    user,
+                    hint
+                );
+            }
+            Err(e) => {
+                log_warn!(
+                    "lark device flow background polling error: user={} err={}",
+                    user,
+                    e
+                );
+            }
+        }
+        AUTH_POLLING.lock().await.remove(&user);
+    });
+
     Ok(LarkAuthOutcome {
         success: true,
         degraded: false,
-        hint: None,
+        hint: Some("已开始后台轮询，授权是否完成以 auth/status 为准".to_string()),
     })
 }
 
@@ -383,8 +424,20 @@ impl BindPhase {
     }
 }
 
-/// 绑定会话共享进度：(verification_url, phase, error)
-type BindProgress = Arc<RwLock<(Option<String>, BindPhase, Option<String>)>>;
+/// 绑定会话共享进度
+#[derive(Debug, Clone)]
+struct BindProgressState {
+    /// 验证 URL（扫码/浏览器打开）
+    verification_url: Option<String>,
+    phase: BindPhase,
+    /// failed 时的错误提示（脱敏）
+    error: Option<String>,
+    /// 建应用成功后 CLI 输出的 appId（F17：官方 `--json` 输出明文 appId，
+    /// 此前被丢弃导致 bind_status 恒 None、前端只能让用户手抄）
+    app_id: Option<String>,
+}
+
+type BindProgress = Arc<RwLock<BindProgressState>>;
 
 /// 绑定会话（内存态，完成即消亡）
 struct BindSession {
@@ -416,7 +469,29 @@ pub fn extract_verification_url(output: &str) -> Option<String> {
     })
 }
 
-/// 逐行扫描 `config init --new` 输出流，拼接后提取验证 URL（模块级 fn，供 spawn）
+/// 从 `config init --new` 输出中提取 appId（纯函数，可测）
+///
+/// 官方 `init.go` 建应用成功后 `output.PrintJson(out, {"appId": ..., "appSecret":
+/// "****", "brand": ...})`——**appId 是明文**（secret 脱敏，本就不该读）。
+/// 输出流可能混合 QR 块/进度文本，逐行找合法 JSON 再取字段，解析失败静默跳过。
+pub fn extract_app_id(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('{') {
+            return None;
+        }
+        serde_json::from_str::<serde_json::Value>(trimmed)
+            .ok()
+            .and_then(|v| {
+                v.get("appId")
+                    .and_then(|a| a.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+            })
+    })
+}
+
+/// 逐行扫描 `config init --new` 输出流，拼接后提取验证 URL 与 appId（模块级 fn，供 spawn）
 async fn scan_bind_output(
     reader: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
     progress: BindProgress,
@@ -425,14 +500,19 @@ async fn scan_bind_output(
     use tokio::io::{AsyncBufReadExt, BufReader};
     let mut lines = BufReader::new(reader).lines();
     while let Ok(Some(line)) = lines.next_line().await {
-        if progress.read().await.0.is_some() {
+        if progress.read().await.verification_url.is_some()
+            && progress.read().await.app_id.is_some()
+        {
             continue;
         }
         let mut buf = joined.lock().await;
         buf.push_str(&line);
         buf.push('\n');
         if let Some(url) = extract_verification_url(&buf) {
-            progress.write().await.0 = Some(url);
+            progress.write().await.verification_url = Some(url);
+        }
+        if let Some(app_id) = extract_app_id(&buf) {
+            progress.write().await.app_id = Some(app_id);
         }
     }
 }
@@ -455,7 +535,7 @@ pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
         let mut sessions = registry.write().await;
         let mut expired = Vec::new();
         for (id, s) in sessions.iter() {
-            let phase = s.progress.read().await.1;
+            let phase = s.progress.read().await.phase;
             if matches!(phase, BindPhase::Done | BindPhase::Failed)
                 && s.created_at.elapsed() > BIND_SESSION_TTL
             {
@@ -466,7 +546,7 @@ pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
             sessions.remove(&id);
         }
         for s in sessions.values() {
-            if s.user_id == user_id && s.progress.read().await.1 == BindPhase::Pending {
+            if s.user_id == user_id && s.progress.read().await.phase == BindPhase::Pending {
                 return Err(err!(Conflict, "已有一个进行中的绑定会话，请先完成或取消"));
             }
         }
@@ -476,7 +556,9 @@ pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
     tokio::fs::create_dir_all(&home).await?;
     let mut command = Command::new(LARK_CLI_BIN);
     command
-        .args(["config", "init", "--new"])
+        // --json：建应用成功后输出 {"appId": 明文, "appSecret": "****", ...}
+        //（官方 init.go 契约；不带时 appId 只落 keychain，我方拿不到）
+        .args(["config", "init", "--new", "--json"])
         .env("HOME", &home)
         .env("LARKSUITE_CLI_NO_UPDATE_NOTIFIER", "1")
         .env("LARKSUITE_CLI_NO_SKILLS_NOTIFIER", "1")
@@ -490,7 +572,12 @@ pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let session_id = uuid::Uuid::now_v7().to_string();
-    let progress: BindProgress = Arc::new(RwLock::new((None, BindPhase::Pending, None)));
+    let progress: BindProgress = Arc::new(RwLock::new(BindProgressState {
+        phase: BindPhase::Pending,
+        verification_url: None,
+        error: None,
+        app_id: None,
+    }));
 
     // 后台监控任务：并行扫 stdout+stderr 抓验证 URL（终态由 status 查询时 try_wait 检测）
     tokio::spawn({
@@ -523,16 +610,21 @@ pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
         progress,
         created_at: Instant::now(),
     });
+    // 先注册再等 URL（F8）：若先等 5s 再注册，窗口内 `bind_session_status` 查不到
+    // 会话、「取消」也杀不掉子进程——竞态不只是体验问题，是进程泄漏。
+    registry
+        .write()
+        .await
+        .insert(session_id.clone(), session.clone());
     // 启动窗口内尝试抓 URL（最多 5s，抓不到由轮询补取）
     let mut url = String::new();
     for _ in 0..50 {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        if let Some(u) = session.progress.read().await.0.clone() {
+        if let Some(u) = session.progress.read().await.verification_url.clone() {
             url = u;
             break;
         }
     }
-    registry.write().await.insert(session_id.clone(), session);
     Ok((session_id, url))
 }
 
@@ -542,6 +634,8 @@ pub struct BindSessionSnapshot {
     pub phase: BindPhase,
     pub verification_url: Option<String>,
     pub error: Option<String>,
+    /// 建应用成功后 CLI 输出的 appId（分支 B 预填；未拿到时为 None）
+    pub app_id: Option<String>,
 }
 
 /// 查询绑定会话状态（驱动终态检测：child.try_wait）
@@ -561,30 +655,31 @@ pub async fn bind_session_status(
     {
         let mut child = session.child.lock().await;
         let mut progress = session.progress.write().await;
-        if progress.1 == BindPhase::Pending {
+        if progress.phase == BindPhase::Pending {
             match child.try_wait() {
                 Ok(Some(status)) => {
                     if status.success() {
-                        progress.1 = BindPhase::Done;
+                        progress.phase = BindPhase::Done;
                     } else {
-                        progress.1 = BindPhase::Failed;
-                        progress.2 =
+                        progress.phase = BindPhase::Failed;
+                        progress.error =
                             Some(format!("lark-cli config init 退出码 {:?}", status.code()));
                     }
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    progress.1 = BindPhase::Failed;
-                    progress.2 = Some(format!("绑定进程状态检查失败: {}", e));
+                    progress.phase = BindPhase::Failed;
+                    progress.error = Some(format!("绑定进程状态检查失败: {}", e));
                 }
             }
         }
     }
     let progress = session.progress.read().await;
     Ok(Some(BindSessionSnapshot {
-        phase: progress.1,
-        verification_url: progress.0.clone(),
-        error: progress.2.clone(),
+        phase: progress.phase,
+        verification_url: progress.verification_url.clone(),
+        error: progress.error.clone(),
+        app_id: progress.app_id.clone(),
     }))
 }
 
@@ -698,5 +793,25 @@ mod tests {
         assert_eq!(BindPhase::Pending.as_str(), "pending");
         assert_eq!(BindPhase::Done.as_str(), "done");
         assert_eq!(BindPhase::Failed.as_str(), "failed");
+    }
+
+    /// 官方 init.go 的 JSON 输出 fixture：appId 明文、appSecret 脱敏
+    #[test]
+    fn extract_app_id_from_json_output() {
+        // 混合输出：进度文本 + 末尾 JSON 行
+        let output = "正在创建应用...\n\n{\"appId\":\"cli_a1b2c3d4e5f6\",\"appSecret\":\"****\",\"brand\":\"feishu\"}";
+        assert_eq!(extract_app_id(output).as_deref(), Some("cli_a1b2c3d4e5f6"));
+        // 纯 JSON 单行
+        assert_eq!(
+            extract_app_id("{\"appId\":\"cli_x\"}").as_deref(),
+            Some("cli_x")
+        );
+        // secret 永远不该被读出（即使输出异常，也只取 appId 字段）
+        assert!(extract_app_id("{\"appSecret\":\"real_secret\"}").is_none());
+        // 非 JSON / 缺字段 / 空 appId
+        assert!(extract_app_id("plain text").is_none());
+        assert!(extract_app_id("{\"brand\":\"feishu\"}").is_none());
+        assert!(extract_app_id("{\"appId\":\"\"}").is_none());
+        assert!(extract_app_id("").is_none());
     }
 }

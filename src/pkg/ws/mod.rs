@@ -173,9 +173,10 @@ pub struct Heartbeat {
 }
 
 /// 重连策略（每轮重连**重新查询**，允许运行期改变间隔）
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ReconnectPolicy {
     /// 指数退避（默认，等价既有行为）：1s 起倍增、60s 封顶、±20% 抖动
+    #[default]
     Exponential,
     /// 固定间隔（飞书口径：服务端下发 `ReconnectInterval`）
     Fixed {
@@ -186,12 +187,6 @@ pub enum ReconnectPolicy {
         /// 重连次数上限（`None` = 无限）；达到上限即终局停机
         max_attempts: Option<u64>,
     },
-}
-
-impl Default for ReconnectPolicy {
-    fn default() -> Self {
-        Self::Exponential
-    }
 }
 
 /// WebSocket 客户端适配器：协议语义由实现方全权解释
@@ -1026,8 +1021,9 @@ mod tests {
         async fn on_message(&self, frame: WsFrame) -> FrameOutcome {
             self.received.lock().await.push(frame.clone());
             match frame {
-                WsFrame::Binary(bytes) => FrameOutcome::cont()
-                    .with_reply(WsOutFrame::Binary(format!("ack:{}", bytes.len()).into_bytes())),
+                WsFrame::Binary(bytes) => FrameOutcome::cont().with_reply(WsOutFrame::Binary(
+                    format!("ack:{}", bytes.len()).into_bytes(),
+                )),
                 WsFrame::Text(_) => FrameOutcome::cont(),
             }
         }
@@ -1293,7 +1289,11 @@ mod tests {
         // 30ms 间隔：300ms 内应收到多帧
         tokio::time::sleep(Duration::from_millis(300)).await;
         let fast = got.lock().await.len();
-        assert!(fast >= 4, "expected several heartbeats at 30ms, got {}", fast);
+        assert!(
+            fast >= 4,
+            "expected several heartbeats at 30ms, got {}",
+            fast
+        );
 
         // 改为 1000ms：当轮生效（旧间隔最多再补一帧）
         interval_ms.store(1000, Ordering::SeqCst);

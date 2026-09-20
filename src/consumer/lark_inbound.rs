@@ -50,6 +50,8 @@ impl Consumer for LarkInboundConsumer {
         let event: LarkInboundEvent = serde_json::from_value(event).map_err(|e| {
             Error::internal(format!("failed to deserialize LarkInboundEvent: {}", e))
         })?;
+        // event 随后 move 进适配器；提前留档供过滤分支留痕
+        let event_id = event.event.header.event_id.clone();
 
         // 1) 入站适配：domain 门面（枚举收敛各渠道转换）
         let adapted = match message_domain::domain()
@@ -77,6 +79,13 @@ impl Consumer for LarkInboundConsumer {
                     log_warn!("lark inbound consumer dropped message: no callback registered")
                 }
             }
+        } else {
+            // 适配被过滤（非 P2P/非文本/空内容/重复/未绑定渠道）——此前零日志，
+            // 「群里 @ 不理」在默认级别下查无此事，必须留一行 info（含 event_id）
+            log_info!(
+                "lark inbound adapted to nothing (filtered or deduped): event_id={}",
+                event_id
+            );
         }
         Ok(())
     }

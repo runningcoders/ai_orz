@@ -374,7 +374,10 @@ mod tests {
             (error_code::SYSTEM_BUSY, "busy"),
         ] {
             assert!(
-                matches!(classify_config_error(code, msg), ConnConfigError::Terminal(_)),
+                matches!(
+                    classify_config_error(code, msg),
+                    ConnConfigError::Terminal(_)
+                ),
                 "code {} should be terminal",
                 code
             );

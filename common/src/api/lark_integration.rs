@@ -201,6 +201,12 @@ pub struct LarkCredentialSnapshot {
     /// 是否为用户选定的默认凭证（lark_cli 工具身份优先）
     #[serde(default)]
     pub is_default: bool,
+    /// 创建时间戳（毫秒）
+    #[serde(default)]
+    pub created_at: i64,
+    /// 更新时间戳（毫秒；secret 轮换后前进）
+    #[serde(default)]
+    pub updated_at: i64,
     /// 引用该凭证的渠道明细
     #[serde(default)]
     pub channels: Vec<LarkCredentialChannelRef>,

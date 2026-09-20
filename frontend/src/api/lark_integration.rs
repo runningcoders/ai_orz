@@ -116,16 +116,21 @@ pub enum BindPollOutcome {
 }
 
 /// 根据 bind/status 响应判定轮询走向（纯函数）
+///
+/// 未知状态 → 继续轮询而非终止（F15）：后端状态机只产出 pending/done/failed，
+/// 若未来出现新中间态，「当成失败终止」会让绑定假死且无任何恢复路径；
+/// 继续轮询的最坏代价只是多几次查询，用户仍可手动取消。
 pub fn judge_bind_status(status: &str, error: Option<&str>) -> BindPollOutcome {
     match status {
-        "pending" => BindPollOutcome::Continue,
         "done" => BindPollOutcome::Done,
-        _ => BindPollOutcome::Failed(
+        "failed" => BindPollOutcome::Failed(
             error
                 .filter(|s| !s.trim().is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| "绑定流程异常终止".to_string()),
         ),
+        // pending 与一切未知/新增中间态：继续轮询
+        _ => BindPollOutcome::Continue,
     }
 }
 
@@ -163,10 +168,9 @@ mod tests {
     }
 
     #[test]
-    fn test_judge_bind_status_unknown_treated_failed() {
-        assert!(matches!(
-            judge_bind_status("weird", None),
-            BindPollOutcome::Failed(_)
-        ));
+    fn test_judge_bind_status_unknown_continues() {
+        // F15：未知/新增中间态继续轮询，不当失败终止（假死无恢复路径）
+        assert_eq!(judge_bind_status("weird", None), BindPollOutcome::Continue);
+        assert_eq!(judge_bind_status("", None), BindPollOutcome::Continue);
     }
 }

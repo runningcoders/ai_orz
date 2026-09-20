@@ -1,7 +1,7 @@
 //! Handler: GET /api/v1/finance/identity/lark/bind/status - 绑定会话状态轮询
 //!
-//! 分支 B：done 时 secret 不可读出（存于 keychain），返回 done + 引导文案，
-//! 前端引导用户去飞书集成手动补填凭证（app_id 亦不在此返回，避免误读配置）。
+//! 分支 B：done 时 secret 存 keychain 不可读，返回 done + 引导文案；
+//! `app_id` 来自 CLI `--json` 输出的明文 appId（F17），前端预填、只补填 secret。
 
 use crate::pkg::RequestContext;
 use ai_orz_macros::generate_http_handler;
@@ -37,7 +37,8 @@ pub async fn bind_status(
         status: snapshot.phase.as_str().to_string(),
         credential_id: None,
         channel_id: None,
-        app_id: None,
+        // F17：CLI --json 输出的明文 appId（此前恒 None，契约字段从未被消费）
+        app_id: snapshot.app_id,
         verification_url: snapshot.verification_url,
         error: snapshot.error,
     })

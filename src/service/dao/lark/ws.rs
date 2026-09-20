@@ -228,10 +228,8 @@ fn merge_fragment(
         return MergeOutcome::Pending;
     }
     let mut merged = Vec::new();
-    for part in &slot.parts {
-        if let Some(bytes) = part {
-            merged.extend_from_slice(bytes);
-        }
+    for bytes in slot.parts.iter().flatten() {
+        merged.extend_from_slice(bytes);
     }
     cache.slots.remove(message_id);
     MergeOutcome::Complete(merged)
@@ -382,10 +380,7 @@ impl LarkWsAdapter {
 
     /// 参数快照（锁中毒时退化为兜底默认值，不让监控路径 panic）
     fn params_snapshot(&self) -> WsParams {
-        self.params
-            .read()
-            .map(|p| p.clone())
-            .unwrap_or_default()
+        self.params.read().map(|p| p.clone()).unwrap_or_default()
     }
 
     /// 置位终局原因（只置一次，保留首个根因）
@@ -432,7 +427,11 @@ impl LarkWsAdapter {
                         }
                     }
                     Err(e) => {
-                        log_warn!("lark ws invalid pong payload (ignored): {} body={}", e, text);
+                        log_warn!(
+                            "lark ws invalid pong payload (ignored): {} body={}",
+                            e,
+                            text
+                        );
                     }
                 }
             }
@@ -805,11 +804,15 @@ mod tests {
     /// 连接 URL query 解析出 service_id / device_id
     #[test]
     fn parse_query_extracts_ids() {
-        let (sid, did) = parse_conn_query("wss://gw.example.com/ws?device_id=dev-1&service_id=42&x=1");
+        let (sid, did) =
+            parse_conn_query("wss://gw.example.com/ws?device_id=dev-1&service_id=42&x=1");
         assert_eq!(sid, 42);
         assert_eq!(did, "dev-1");
         // 无 query / 无相关字段
-        assert_eq!(parse_conn_query("wss://gw.example.com/ws"), (0, String::new()));
+        assert_eq!(
+            parse_conn_query("wss://gw.example.com/ws"),
+            (0, String::new())
+        );
         assert_eq!(
             parse_conn_query("wss://gw.example.com/ws?a=b"),
             (0, String::new())
@@ -939,7 +942,9 @@ mod tests {
     async fn malformed_frames_are_not_fatal() {
         let adapter = test_adapter();
         // 乱码二进制
-        let out = adapter.on_message(WsFrame::Binary(vec![0xff, 0xff, 0xff])).await;
+        let out = adapter
+            .on_message(WsFrame::Binary(vec![0xff, 0xff, 0xff]))
+            .await;
         assert_eq!(out.action, crate::pkg::ws::FrameAction::Continue);
         assert!(out.replies.is_empty());
         // 文本帧

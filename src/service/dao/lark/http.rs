@@ -100,13 +100,15 @@ impl LarkDaoHttpImpl {
 
     /// 发送文本消息到指定 open_id 用户
     ///
-    /// 返回飞书 message_id
+    /// 返回飞书 message_id；服务端未给 ID（含字段缺失被 `#[serde(default)]`
+    /// 吞成空串）时返回 `None`——空串当成功会产生脏键 `"lark:"`，与微信侧
+    /// `None` = 无 ID 的语义对齐。
     pub async fn send_text_message(
         &self,
         token: &str,
         open_id: &str,
         text: &str,
-    ) -> Result<String> {
+    ) -> Result<Option<String>> {
         // 飞书文本消息 content：{"text":"消息内容"}
         let content = serde_json::json!({ "text": text }).to_string();
 
@@ -141,7 +143,15 @@ impl LarkDaoHttpImpl {
             .map_err(|e| from_reqwest("send_message", e))?;
 
         let data = resp.check("send_message")?;
-        Ok(data.message_id)
+        if data.message_id.is_empty() {
+            // 字段缺失 ≠ 发送失败，但也不能当成拿到了 ID：留痕后按无 ID 处理
+            log_warn!(
+                "lark send_message succeeded without message_id: open_id={}",
+                open_id
+            );
+            return Ok(None);
+        }
+        Ok(Some(data.message_id))
     }
 
     /// HTTP client 引用（供 ws 模块使用）
@@ -270,13 +280,13 @@ impl LarkDao for LarkDaoHttpImpl {
         log_info!(
             &ctx,
             "lark_push",
-            "推送消息到飞书 channel_id={} app_id={} open_id={} lark_message_id={}",
+            "推送消息到飞书 channel_id={} app_id={} open_id={} lark_message_id={:?}",
             channel.po.id,
             credentials.app_id,
             open_id,
             message_id
         );
-        Ok(Some(message_id))
+        Ok(message_id)
     }
 
     async fn test_connection(
