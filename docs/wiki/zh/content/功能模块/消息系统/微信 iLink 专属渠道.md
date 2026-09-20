@@ -221,43 +221,48 @@ sequenceDiagram
 ```
 
 **图表来源**
-- [dao/wechat/ilink.rs#L365-L461](src/service/dao/wechat/ilink.rs#L365-L461) — poll_loop 收帧 + publish + 刷会话 + 推进游标 + 一次写回
+- [dao/wechat/ilink.rs#L400-L650](src/service/dao/wechat/ilink.rs#L400-L650) — 已确认游标 CursorStore + poll_loop 收帧 + publish + 刷会话 + 一次写回 + 三段观测日志
 - [consumer/wechat_inbound.rs#L46-L85](src/consumer/wechat_inbound.rs#L46-L85) — on_event: adapt_wechat → callback.on_message
 - [dal/wechat/impl.rs#L122-L250](src/service/dal/wechat/impl.rs#L122-L250) — adapt_wechat 四层过滤
 
 ## 详细组件分析
 
-### 1. PollLoopRegistry（dao/wechat/ilink.rs#L464-L551）
+### 1. PollLoopRegistry（dao/wechat/ilink.rs#L652-L758）
 
 受管长轮询循环注册表，核心职责：channel_id 键控 + ensure 幂等三态 + 指纹变化自动重建。
 
 ensure 三态：
-- 未运行 → 启动新循环（加载 inbound_state，空状态从头拉取）
+- 未运行 → 启动新循环（加载 inbound_state；**把落库游标回灌内存 `CursorStore`**，从上次确认点续拉 —— `CursorStore` 是进程内的，不回灌会以空游标重拉，而 iLink 空游标不重放历史 → 停机期间消息永久丢失）
 - 运行中且凭证指纹相同 → no-op（幂等，不重建）
 - 运行中但指纹不同（bot_id / bot_token / base_url 任一变化）→ stop 旧句柄 abort + 启动新循环
 
 指纹计算（防 bot_token 明文留存）：`DefaultHasher` hash(bot_id + bot_token + base_url)。
 
-### 2. poll_loop 循环体（dao/wechat/ilink.rs#L365-L461）
+### 2. poll_loop 循环体（dao/wechat/ilink.rs#L400-L650）
 
 ```rust
 loop {
-    let cursor = state.cursor.as_ref().map(|c| c.value.clone());
+    // 请求游标 = **已确认消费**的游标（不是服务端最新值）
+    let cursor = cursors.get(&channel_id).await;
     match get_updates(&credentials, cursor.as_deref()).await {
         Err(e) → 退避重试（前 5 次 2s，之后 30s 避限流）
         Ok(updates) → {
+            // 客户端 45s 超时（正常永不触发）单独 warn，不与"服务端 hold 到期返空"混淆
+            if client_timeout { warn!("ilink getupdates client timeout") }
+            if message_count > 0 { info!("ilink inbound batch count=.. keys=[..]") }
             // 收帧即 publish AOP 事件（入队即返回，业务由 Async consumer 消费）
             for message in messages {
                 state.sessions.upsert(peer_id, Some(context_token), ...);
-                registry.publish(WechatInboundEvent { ... });
+                registry.publish(WechatInboundEvent { cursor: new_cursor, ... });
             }
-            // 推进游标
-            if let Some(new_cursor) = updates.cursor {
-                state.cursor = Some(InboundCursor::opaque(new_cursor, "ilink"));
-            }
-            // 一次写回（有变化才落库）
-            writer.save(&channel_id, &state).await;
+            // 无消息轮次：没有待确认事件 → 游标可直接推进（否则服务端在空轮次给的新游标永远推不动）
+            if message_count == 0 && let Some(cv) = new_cursor { cursors.set(&channel_id, cv) }
+            // 有消息轮次：**本循环不推进游标** —— 新游标随事件带出，
+            // 等消费确认（on_consumed → advance_inbound_cursor）才前进；
+            // 上一轮没消费完 → 游标不动 → 下一轮重拉同一批（幂等键吸收重复）
+            writer.save(&channel_id, &state).await;  // 有新游标或消息 > 0 才写
             sleep(POLL_PAUSE_MS);
+            // 每 5 分钟心跳：rounds / inbound_messages / consecutive_failures / client_timeouts / cursor / idle_ms
         }
     }
 }
@@ -275,7 +280,7 @@ loop {
 
 不做 Agent 路由——这个设计与 Lark Dal 对齐。
 
-### 4. InboundStateWriter 窄接口（dao/wechat/ilink.rs#L312-L344）
+### 4. InboundStateWriter 窄接口（dao/wechat/ilink.rs#L359-L398）
 
 DAO 不依赖 MessageChannelDao 完整类型（DAO 禁止跨 DAO 依赖），init 时注入薄接口：
 ```rust
@@ -292,6 +297,8 @@ pub trait InboundStateWriter: Send + Sync {
 **物理隔离**：inbound_state TEXT 列与 config_json TEXT 列同表但物理隔离。运行时循环只写 inbound_state，管理后台只写 config，互不覆盖。
 
 **游标 kind=Opaque**：iLink 的 get_updates_buf 不透明，只能原样回传，禁止比较大小、禁止回退。服务端返回新值才覆盖（空值保持旧游标）。
+
+**重启续拉靠回灌**：`CursorStore`（进程内）与落库的 `inbound_state.cursor` 是两份东西——前者是运行时请求游标，后者是已确认消费的持久化进度。`ensure` 启动循环时必须把后者**回灌**进前者；不回灌则重启后首轮以空游标请求，而 iLink 对空游标不重放历史（实测 `msgs: []`）→ 停机期间的消息永久丢失。
 
 **Sessions Vec 而非 HashMap**：peer 数个位数量级，线性查找开销可忽略；Vec 顺序稳定，日志排障直观。upsert 时 None 字段保留原值、Some 字段覆盖。100 上限裁剪防无限膨胀。
 
@@ -365,10 +372,22 @@ PO (message_channel.rs + user_credential.rs + events/wechat.rs)
 
 ### 故障 3：对端发消息但 poll_loop 没收到
 **现象**：用户手机发消息但 Agent 没回复。`message_channels.inbound_state` 游标长时间无更新。
-**排查**：
-1. `poll_loop` 日志 "started: channel_id=XXX" 是否出现（channel_id 正确）
-2. `get_updates` HTTP 请求是否发出（日志 "wechat getupdates failed" 还是正常）
+
+**排查**（按三段观测日志逐段定位，顺序即链路顺序）：
+
+| 日志 | 含义 | 判读 |
+|------|------|------|
+| `ilink poll loop started ... resume_cursor=X` | 循环启动 + 续拉基线 | 循环根本没起 → 看 `wechat adapter start skipped`（凭证引用未解析） |
+| `ilink poll heartbeat ...`（每 5 分钟） | 监听存活 | 有心跳 = 循环在跑；`rounds` 不增长 = 卡在长轮询内；`client_timeouts` 递增 = 网络异常 |
+| `ilink inbound batch count=N keys=[..]` | **收到帧** | 长期只有心跳、始终无 batch → **消息根本没到 iLink 侧**（先确认对端是否扫码者本人、是否在该机器人私聊里发，iLink 是 1:1 专属渠道） |
+| `inbound cursor advanced ...`（消费确认） | 帧已消费 + 游标推进 | 有 batch 但无此行 → 卡在 Consumer 侧（查 `wechat inbound adapt failed` / `no callback registered`）；此时游标不动、框架按 Retry 重投，**不会丢消息** |
+
+补充排查：
+
+1. `ilink getupdates failed (retry in ...)` → HTTP 层失败（凭证 / 网络 / 限流），退避 2s→30s
+2. `ilink getupdates client timeout`（**warn**）→ 客户端 45s 超时。正常轮询（服务端 hold ~35s 返回空）**不应**出现；出现即网络 hang 或服务端异常
 3. bot_token / base_url 是否正确（重新扫码获取新凭证，触发 ensure 指纹变化 → 自动重建）
+4. ⚠️ **不要依赖"连通性测试"绿灯**：`test_connection` 只做凭证完整性校验（bot_token/bot_id 非空），**不发任何网络请求**，通过不代表链路可用
 
 ### 故障 4：出站 sendmessage 报错 "让对端先发一条消息"
 **现象**：Agent 回复时报错缺少 context_token。

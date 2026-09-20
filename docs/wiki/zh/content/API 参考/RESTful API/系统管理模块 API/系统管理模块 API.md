@@ -285,19 +285,21 @@ participant Handler as "Health Metrics Handler"
 participant SysDom as "SystemDomain.aop_monitor"
 participant Hr as "HrDomain.agent_manage"
 participant Proj as "ProjectDomain.project_manage/task_manage"
+participant Fin as "FinanceDomain.message_channel_manage"
 Client->>Handler : "GET /api/v1/system/health/metrics"
 Handler->>SysDom : "all_queue_stats()"
 Handler->>Hr : "count_agents(...)"
 Handler->>Proj : "count_projects(...), count_tasks(...)"
+Handler->>Fin : "lark_ws_metrics(), wechat_poll_metrics()"
 Handler-->>Client : "HealthMetricsResponse"
 ```
 
 **图示来源**
-- [src/handlers/system/health_metrics.rs:33-135](src/handlers/system/health_metrics.rs#L33-L135)
+- [src/handlers/system/health_metrics.rs:35-135](src/handlers/system/health_metrics.rs#L35-L135)
 
 **章节来源**
 - [src/handlers/system/health_metrics.rs:1-135](src/handlers/system/health_metrics.rs#L1-L135)
-- [common/src/api/system.rs:7-33](common/src/api/system.rs#L7-L33)
+- [common/src/api/system.rs:7-104](common/src/api/system.rs#L7-L104)
 
 ### 后台任务
 - 列表：支持按 task_type 与 status 筛选，按 started_at 降序。

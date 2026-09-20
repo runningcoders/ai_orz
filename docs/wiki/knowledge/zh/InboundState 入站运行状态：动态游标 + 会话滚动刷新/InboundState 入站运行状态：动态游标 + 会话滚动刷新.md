@@ -68,7 +68,9 @@ source_files:
 ## §4 约束清单（最高权重，硬红线）
 
 1. ❌ **禁止直接拼字符串游标**：游标内容 `InboundCursor.value` 是 `String` 字段，但外部消费者（如出站推送）**必须先检查 cursor.kind**，Opaque 类型禁止比较大小、禁止生成"比当前大 N"的游标。只有 Sequence/Timestamp/Offset 语义才允许计算相对偏移。
-2. ❌ **禁止 inbound_state JSON 损坏时 panic 或阻断轮询**：`from_json` 返回 None → 等价"无状态，从头开始"（fail-open）。运行态丢失最多损失"上次游标的重复消息"——iLink 的 get_updates_buf 丢了 = 回退到第一条消息，靠 message_key 幂等键兜底。
+2. ❌ **禁止 inbound_state JSON 损坏时 panic 或阻断轮询**：`from_json` 返回 None → 等价"无状态"（fail-open），不阻断入站。
+   ⚠️ **但「无状态」不等于安全**：该状态是**已确认消费的持久化进度**，丢失即失去续拉基线。iLink 侧已实测——空游标 `getupdates` 返回 `msgs: []`（**不重放历史**），因此运行态丢失的后果是**停机期间的消息永久丢失**，而不是「重复消息可被 message_key 幂等键吸收」。
+   ⇒ 进程重启时渠道实现必须把落库游标**回灌**到运行期游标存储（见微信 iLink 卡 §4-8），不可依赖"幂等键兜底"。
 3. ✅ **InboundSessions.retain_default 必须在每次写回前调用**：`SESSIONS_RETAIN_LIMIT = 100` 硬编码上限，运行期超出时丢弃最旧的。禁止注释掉 retain_default 调用来"解决"会话多问题——正确做法是排查是否某 peer 每帧都被当作新 peer（peer_id 格式问题）。
 4. ✅ **InboundStateWriter.save 失败必须 warn 不中断**：轮询循环里 `if let Err(e) = writer.save(...) { log_warn! }`。DB 短暂不可用 → 轮询继续 → 状态可能落后一次 → DB 恢复后下次写回补上。禁止把 DB 错误冒泡到轮询循环外层导致整个通道挂掉。
 5. ✅ **整列覆盖写必须带 WHERE id = ? 精确命中**：`UPDATE message_channels SET inbound_state = ? WHERE id = ?`。禁止 `UPDATE ... SET inbound_state = ? WHERE channel_type = 'wechat'` 批量覆盖——多 bot 渠道同时轮询时会互相覆盖。
