@@ -498,6 +498,57 @@ async fn test_install_to_agent_idempotent(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// Agent 安装「自己创建的原始技能」：技能本就在自己名下（author_id = agent_id），
+/// 不应再副本化产生 parent_skill_id 指向自己的冗余行（否则提示词会出现两份同名技能）。
+#[sqlx::test]
+async fn test_install_to_agent_self_created_skill(pool: SqlitePool) -> Result<()> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // Agent 自己创建的 Published 原始技能（parent_skill_id = ""）
+    let self_skill_id = uuid::Uuid::now_v7().to_string();
+    let content_path = format!("agents/agent-self/skills/{}/", self_skill_id);
+    let mut self_po = SkillPo::new(
+        self_skill_id.clone(),
+        "self-created-skill".to_string(),
+        "A skill created by the agent itself".to_string(),
+        vec!["AI Agent".to_string()],
+        "shared".to_string(),
+        "".to_string(),
+        "agent-self".to_string(),
+        SkillAuthorType::Agent,
+        content_path,
+    );
+    self_po.status = SkillStatus::Published;
+    skill_dal.create(ctx.clone(), &self_po).await?;
+    skill_dal.write_main_content(&self_po, "# Self Created Skill\n\nMade by the agent.")?;
+
+    // Agent 安装自己的技能：应幂等返回源技能本体，不创建副本
+    let installed = skill_dal
+        .install_to_agent(ctx.clone(), &self_skill_id, "agent-self")
+        .await?;
+    assert_eq!(installed.po.id, self_skill_id);
+    assert_eq!(installed.po.parent_skill_id, "");
+    assert_eq!(installed.po.status, SkillStatus::Published);
+    assert!(!installed.files.is_empty());
+
+    // Agent 名下没有任何指向自己的副本行
+    use crate::service::dao::skill::SkillQuery;
+    let copies = skill_dal
+        .query(
+            ctx.clone(),
+            SkillQuery {
+                author_id: Some("agent-self".to_string()),
+                parent_skill_id: Some(self_skill_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert!(copies.items.is_empty(), "自装自建技能不应产生冗余副本");
+
+    Ok(())
+}
+
 /// 回归测试：软删除（Expired）的旧副本不能被当作「已安装」。
 ///
 /// 场景复现：Agent 卸载技能包（delete_copies=true）产生软删除副本后，

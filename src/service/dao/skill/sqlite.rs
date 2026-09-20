@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::pkg::RequestContext;
-use crate::pkg::storage::escape_fts5_keyword;
+use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 use async_trait::async_trait;
 use common::enums::SkillStatus;
@@ -325,71 +325,109 @@ ORDER BY updated_at DESC
         use sqlx::QueryBuilder;
 
         let keyword = search.keyword.unwrap_or_default();
-        let filters = search.filters;
+        let limit_i64 = std::cmp::min(search.filters.pagination.limit.unwrap_or(20), 20) as i64;
 
-        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
-        if keyword.trim().is_empty() {
+        // 搜索计划：词元按长度路由（>=3 字符走 MATCH 短语 OR 组合，短词元走 LIKE 兜底）
+        let Some(plan) = build_fts5_search_plan(&keyword) else {
             return Ok(Vec::new());
-        }
+        };
 
-        // 转义关键词为 FTS5 短语匹配
-        let escaped_keyword = escape_fts5_keyword(&keyword);
+        // 行 → 结果元组映射（两条路径共用）
+        let to_result = |row: SkillSearchRow| {
+            let po = SkillPo {
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                tags: row.tags,
+                category: row.category,
+                parent_skill_id: row.parent_skill_id,
+                author_id: row.author_id,
+                author_type: row.author_type,
+                modifier_id: row.modifier_id,
+                status: row.status,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                content_path: row.content_path,
+            };
+            (po, row.fts_rank)
+        };
 
-        // FTS5 MATCH + JOIN + BM25 排序
+        let mut primary: Vec<(SkillPo, Option<f32>)> = Vec::new();
+        let mut secondary: Vec<(SkillPo, Option<f32>)> = Vec::new();
+
+        // 路径一：MATCH 短语 OR 组合（多关键词任一命中即可），BM25 rank 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
         // 主表使用别名 m，与 push_query_filters 字段前缀一致，过滤条件复用
-        let mut builder = QueryBuilder::new(
-            r#"SELECT m.id, m.name, m.description, m.tags, m.category, m.parent_skill_id,
+        if let Some(match_expr) = &plan.match_expr {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT m.id, m.name, m.description, m.tags, m.category, m.parent_skill_id,
                       m.author_id, m.author_type, m.modifier_id, m.status, m.created_at, m.updated_at, m.content_path,
                       skills_fts.rank as fts_rank
                FROM skills_fts
                JOIN skills m ON skills_fts.rowid = m.rowid
                WHERE skills_fts MATCH "#,
-        );
-        builder.push_bind(escaped_keyword);
+            );
+            builder.push_bind(match_expr);
 
-        // 复用通用过滤条件（与 query 方法一致的 m. 前缀）
-        push_query_filters(&mut builder, &filters);
+            // 复用通用过滤条件（与 query 方法一致的 m. 前缀）
+            push_query_filters(&mut builder, &search.filters);
 
-        builder.push(" ORDER BY skills_fts.rank");
+            builder.push(" ORDER BY skills_fts.rank LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = search.filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
+            }
 
-        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
-        // 用户传的 limit 若超过 20 则截断，未传则默认 20
-        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20);
-        builder.push(" LIMIT ").push_bind(search_limit as i64);
-
-        if let Some(offset) = filters.pagination.offset {
-            builder.push(" OFFSET ").push_bind(offset as i64);
+            let rows: Vec<SkillSearchRow> = builder
+                .build_query_as::<SkillSearchRow>()
+                .fetch_all(ctx.db_pool())
+                .await?;
+            primary.extend(rows.into_iter().map(to_result));
         }
 
-        let rows: Vec<SkillSearchRow> = builder
-            .build_query_as::<SkillSearchRow>()
-            .fetch_all(ctx.db_pool())
-            .await?;
+        // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
+        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        if !plan.like_patterns.is_empty() {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT m.id, m.name, m.description, m.tags, m.category, m.parent_skill_id,
+                  m.author_id, m.author_type, m.modifier_id, m.status, m.created_at, m.updated_at, m.content_path,
+                  NULL as fts_rank
+           FROM skills m
+           WHERE "#,
+            );
+            // 条件与绑定值交错推送：QueryBuilder 里 push 文本中的 ? 不由 push_bind 消费
+            builder.push("(");
+            push_fts5_like_conditions(
+                &mut builder,
+                "m",
+                &["name", "description", "tags"],
+                &plan.like_patterns,
+            );
+            builder.push(")");
 
-        let results = rows
-            .into_iter()
-            .map(|row| {
-                let po = SkillPo {
-                    id: row.id,
-                    name: row.name,
-                    description: row.description,
-                    tags: row.tags,
-                    category: row.category,
-                    parent_skill_id: row.parent_skill_id,
-                    author_id: row.author_id,
-                    author_type: row.author_type,
-                    modifier_id: row.modifier_id,
-                    status: row.status,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    content_path: row.content_path,
-                };
-                (po, row.fts_rank)
-            })
-            .collect();
+            // 复用通用过滤条件（与 query 方法一致的 m. 前缀）
+            push_query_filters(&mut builder, &search.filters);
 
-        Ok(results)
+            builder.push(" ORDER BY m.updated_at DESC, m.id DESC LIMIT ");
+            builder.push_bind(limit_i64);
+            if let Some(offset) = search.filters.pagination.offset {
+                builder.push(" OFFSET ").push_bind(offset as i64);
+            }
+
+            let rows: Vec<SkillSearchRow> = builder
+                .build_query_as::<SkillSearchRow>()
+                .fetch_all(ctx.db_pool())
+                .await?;
+            secondary.extend(rows.into_iter().map(to_result));
+        }
+
+        // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po| po.id.clone(),
+            limit_i64.max(0) as usize,
+        ))
     }
 
     // ========== 文件操作 ==========
@@ -627,6 +665,16 @@ fn push_query_filters<'args>(
         builder
             .push(" AND m.author_id = ")
             .push_bind(author_id.clone());
+    }
+    if let Some(visible_to_agent_id) = &query.visible_to_agent_id {
+        // Agent 可见性语义：自己名下的技能行（含草稿副本 / 自建原始技能）
+        // ∪ 全局 Published 技能；其余主体的私有行一律不可见。
+        builder
+            .push(" AND (m.author_id = ")
+            .push_bind(visible_to_agent_id.clone())
+            .push(" OR m.status = ")
+            .push_bind(SkillStatus::Published as i32)
+            .push(")");
     }
     if let Some(parent_skill_id) = &query.parent_skill_id {
         builder

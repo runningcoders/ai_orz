@@ -29,6 +29,11 @@ pub struct SkillQuery {
     /// 是否有父技能（true = 只查副本，false = 只查原始技能，None = 不过滤）
     /// 注意：表 parent_skill_id 为 TEXT NOT NULL DEFAULT ''，因此用空串比较而非 NULL。
     pub has_parent: Option<bool>,
+    /// Agent 上下文可见性收紧：仅返回「该 Agent 名下的技能行 ∪ 全局 Published 技能」，
+    /// 确保 Agent 侧 query/search 永远看不到其他主体的私有副本。
+    /// DTO 不暴露该参数，由 handler 层从 ctx.agent_id() 解析后显式传入；
+    /// 不传（None）= 不收紧，user 场景全可见。
+    pub visible_to_agent_id: Option<String>,
     pub tags: Option<Vec<String>>, // 按 tag 过滤（OR 语义，命中任一即可）
     pub keyword: Option<String>,
     pub pagination: common::api::PaginationParams,

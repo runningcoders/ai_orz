@@ -27,6 +27,10 @@ pub async fn search_skills(
     ctx: RequestContext,
     params: SearchSkillsRequest,
 ) -> Result<PagedResult<SkillListItem>> {
+    // 可见性由 ctx 身份解析后显式下发：user 全可见；Agent 仅自己名下行 ∪ 全局 Published。
+    // DTO 不暴露该参数，避免 Agent 侧自行控制可见范围。
+    let visible_to_agent_id = ctx.agent_id().cloned();
+
     let search = SkillSearch {
         keyword: params.keyword,
         filters: SkillQuery {
@@ -37,6 +41,7 @@ pub async fn search_skills(
             author_id: params.author_id,
             author_type: params.author_type,
             parent_skill_id: params.parent_skill_id,
+            visible_to_agent_id,
             tags: params.tags,
             pagination: params.pagination,
             ..Default::default()

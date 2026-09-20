@@ -24,6 +24,9 @@ pub async fn search_skill(
     params: SearchSkillParams,
 ) -> Result<SearchSkillResponse> {
     let limit = params.limit.unwrap_or(10);
+    // 可见性由 ctx 身份解析后显式下发：user 全可见；Agent 仅自己名下行 ∪ 全局 Published。
+    // DTO 不暴露该参数，避免 Agent 侧自行控制可见范围。
+    let visible_to_agent_id = ctx.agent_id().cloned();
 
     let page = domain()
         .skill_manage()
@@ -32,6 +35,7 @@ pub async fn search_skill(
             SkillQuery {
                 keyword: params.keyword,
                 tags: params.tags,
+                visible_to_agent_id,
                 pagination: common::api::PaginationParams {
                     limit: Some(limit),
                     offset: None,

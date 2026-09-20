@@ -24,12 +24,16 @@ pub async fn list_skills(
     params: ListSkillsRequest,
 ) -> Result<PagedResult<SkillListItem>> {
     // list 是语法糖：只接受分页，内部固定排除 Expired
+    // 可见性由 ctx 身份解析后显式下发：user 全可见；Agent 仅自己名下行 ∪ 全局 Published。
+    let visible_to_agent_id = ctx.agent_id().cloned();
+
     let page = domain()
         .skill_manage()
         .query_skills(
             ctx,
             SkillQuery {
                 exclude_status: Some(SkillStatus::Expired),
+                visible_to_agent_id,
                 pagination: params.pagination,
                 ..Default::default()
             },

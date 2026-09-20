@@ -654,6 +654,19 @@ impl SkillDal for SkillDalImpl {
             .ok_or_else(|| err!(ResourceNotFound, "Skill not found"))?;
         let source_files = self.skill_dao.list_files(&source_po)?;
 
+        // ===== 自有原始技能幂等守卫 =====
+        // Agent 安装「自己创建的原始技能」（author_id 即本 Agent 且无 parent）时，
+        // 该技能本就以 author_id = agent_id 在自己的技能池内，若继续副本化会生成
+        // parent_skill_id 指向自己的冗余行，导致提示词出现两份同名技能。
+        // 与下方副本幂等策略同语义：直接返回源技能本体，不产生新行。
+        if source_po.author_id == agent_id && source_po.parent_skill_id.is_empty() {
+            return Ok(Skill {
+                po: source_po,
+                files: source_files,
+                search_match: None,
+            });
+        }
+
         // ===== 原地更新策略（解决 Expired 副本堆积） =====
         // 含 Expired 在内：只要 (author_id=agent_id, parent_skill_id=source_id) 存在任意状态副本，
         // 就复用其 ID，执行「状态重置（Expired→Draft）+ 元数据覆盖 + 字节级文件 diff 覆盖写」。

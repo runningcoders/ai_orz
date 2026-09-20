@@ -244,6 +244,46 @@ async fn test_search(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 短词元（<3 字符）LIKE 兜底路径回归测试。
+///
+/// 此前 QueryBuilder 两段式拼接（push 含 `?` 文本 + push_bind 参数）产生悬空
+/// `???` 占位符，SQLite 报 `near "?": syntax error`。
+#[sqlx::test]
+async fn test_search_short_keyword_like_fallback(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill_id = Uuid::now_v7().to_string();
+    let skill = SkillPo::new(
+        skill_id.clone(),
+        "搜索技能".to_string(),
+        "用于回归 LIKE 兜底路径".to_string(),
+        vec!["search".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{skill_id}"),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx, &skill).await?;
+
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("搜索".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert!(result.iter().any(|(s, _)| s.id == skill_id));
+    // LIKE 兜底命中不带 BM25 rank
+    assert!(result.iter().all(|(_, rank)| rank.is_none()));
+    Ok(())
+}
+
 /// 测试软删除（标记为过期）
 #[sqlx::test]
 async fn test_delete_by_id(pool: SqlitePool) -> Result<()> {

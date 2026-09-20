@@ -3,6 +3,7 @@
 use super::{CreateSkillParams, HrDomain, SkillFileImport, UpdateSkillParams};
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
+use crate::service::dao::skill::SkillQuery;
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
 use sqlx::SqlitePool;
@@ -255,6 +256,64 @@ async fn test_list_by_author(pool: SqlitePool) {
 }
 
 #[sqlx::test]
+async fn test_query_skills_agent_visibility(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env(pool.clone());
+
+    // 四类数据：自己的 Agent 副本 / 别人的 Agent 副本 / 全局 Published / 用户私有 Draft
+    let mut own_copy = create_test_skill("OwnCopy");
+    own_copy.po.author_id = "agent-a".to_string();
+    own_copy.po.author_type = SkillAuthorType::Agent;
+    own_copy.po.status = SkillStatus::Draft;
+
+    let mut other_copy = create_test_skill("OtherCopy");
+    other_copy.po.author_id = "agent-b".to_string();
+    other_copy.po.author_type = SkillAuthorType::Agent;
+    other_copy.po.status = SkillStatus::Draft;
+
+    let mut published = create_test_skill("GlobalPublished");
+    published.po.status = SkillStatus::Published;
+
+    let mut user_draft = create_test_skill("UserDraft");
+    user_draft.po.status = SkillStatus::Draft;
+
+    for skill in [&own_copy, &other_copy, &published, &user_draft] {
+        domain
+            .skill_manage()
+            .create_skill(ctx.clone(), CreateSkillParams::from_skill(skill))
+            .await
+            .unwrap();
+    }
+
+    // Agent 可见性（handler 从 ctx.agent_id() 解析后显式传入）：
+    // 只能看到自己的副本 + 全局 Published，看不到别人的副本和用户草稿
+    let page = domain
+        .skill_manage()
+        .query_skills(
+            ctx.clone(),
+            SkillQuery {
+                visible_to_agent_id: Some("agent-a".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let mut names: Vec<String> = page.items.iter().map(|s| s.name().to_string()).collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec!["GlobalPublished".to_string(), "OwnCopy".to_string()]
+    );
+
+    // 不带可见性参数（user 场景）：不受收紧影响（管理页仍可见全部）
+    let page = domain
+        .skill_manage()
+        .query_skills(ctx, SkillQuery::default())
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 4);
+}
+
+#[sqlx::test]
 async fn test_query_skills(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env(pool.clone());
 
@@ -288,6 +347,7 @@ async fn test_query_skills(pool: SqlitePool) {
         ids: None,
         exclude_status: None,
         has_parent: None,
+        visible_to_agent_id: None,
         pagination: Default::default(),
     };
 
