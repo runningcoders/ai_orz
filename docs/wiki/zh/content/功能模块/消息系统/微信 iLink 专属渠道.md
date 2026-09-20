@@ -6,7 +6,7 @@
 - [dal/wechat/impl.rs](src/service/dal/wechat/impl.rs) — WechatDalImpl：adapt_wechat + MessageInboundAdapter + WechatCredentialDal + WechatListenerDal
 - [dao/wechat/mod.rs](src/service/dao/wechat/mod.rs) — WechatDao trait：push / test_connection / start_polling / stop_polling / stop_all_polling / is_polling
 - [dao/wechat/ilink.rs](src/service/dao/wechat/ilink.rs) — iLink 协议客户端 + PollLoopRegistry + get_updates 长轮询 + sendmessage 出站 + InboundStateWriter 窄接口
-- [pkg/wechat_ilink.rs](src/pkg/wechat_ilink.rs) — 扫码登录协议：get_login_qrcode + poll_qrcode_status 长轮询
+- [pkg/wechat_ilink.rs](src/pkg/wechat_ilink.rs) — iLink 协议 SSOT（协议常量 / base_info 信封 / 请求头档位）+ 扫码登录：get_login_qrcode（POST + local_token_list）+ poll_qrcode_status（8 态长轮询 + verify_code / redirect_host）
 - [consumer/wechat_inbound.rs](src/consumer/wechat_inbound.rs) — WechatInboundConsumer：ConsumeMode::Async + adapt_wechat + callback.on_message
 - [models/events/wechat.rs](src/models/events/wechat.rs) — IlinkMessage + WechatInboundEvent（AOP 事件信封，order_key=bot_id）
 - [common/src/api/wechat_integration.rs](common/src/api/wechat_integration.rs) — DTO：WechatLoginQrcodeRequest + WechatLoginStatusResponse + WechatCredentialSnapshot
@@ -42,6 +42,8 @@
 ## 更新摘要
 **2026-09-07 新建长文**：微信 iLink（ClawBot）阶段一双向私信闭环完整说明——扫码授权获取 WechatIlink 凭证 → 创建微信渠道（wechat_credential_id 引用）→ WechatDalImpl 注册 MessageAdapterRegistry → poll_loop 长轮询收帧 → WechatInboundConsumer Async 消费 → adapt_wechat 协议转换 → callback.on_message 投递 producer → Agent 唤醒 + outbound push sendmessage 回复。iLink 特有机制：inbound_state 运行时持久化（Opaque 游标 + context_token 会话滚动刷新）+ channel_id 键控轮询（一渠道一轮询，不做 app_id 聚合）+ PollLoopRegistry ensure 凭证指纹幂等重建。
 
+**2026-09-20 协议对齐重构（阶段 A/B/C）**：以腾讯官方插件 `@tencent-weixin/openclaw-weixin@2.4.9` 为协议 **SSOT** 复核全链路，修正此前按社区整理实现的多处错误（详见下方「协议口径」）：文本字段 `content` → `text_item.text`；`message_type`/`message_state` 字符串 → **数字**；顶层补 `message_id` 并打通 `messages.external_key`；取码接口 GET → **POST + `local_token_list`**；扫码状态 4 态 → **8 态**（含 `need_verifycode` / `scaned_but_redirect` / `binded_redirect`）；补 `base_info` 信封、请求头档位、`notifystart`/`notifystop`；补响应错误码校验（`ret`/`errcode`）与 `-14` 会话暂停 1h；补超时协商与解析留痕。前端扫码弹窗改为**自动长轮询 + 过期自动换码（上限 3）**，并新增备用授权链接、配对码输入与凭据卡扩展字段。
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -65,6 +67,21 @@
 - **context_token 会话令牌**：iLink 协议要求出站 sendmessage 必须带最新 context_token（滚动刷新），空值报错提示"让对端先发一条消息"
 - **channel_id 键控轮询**：一渠道一轮询（一个 bot 微信号 = 一个 MessageChannel），不做共享连接
 - **PollLoopRegistry ensure 幂等三态**：同指纹 no-op / 指纹变化自动重建
+
+**协议口径（SSOT）**：iLink 协议的权威依据是**腾讯官方插件** `@tencent-weixin/openclaw-weixin`（`src/api/types.ts` 为 proto 的 TS 镜像，`src/api/api.ts` / `src/auth/login-qr.ts` 为传输层与登录状态机），核对版本 `2.4.9`；`NousResearch/hermes-agent` 的 `gateway/platforms/weixin.py` 是独立实现，可互证。我方落点：`src/pkg/wechat_ilink.rs`（常量 / 请求头 / 信封 SSOT）+ `src/service/dao/wechat/ilink.rs`（消息面客户端与长轮询循环）。**按官方复核后更正的关键点**（此前按社区整理实现，均为"静默失效"型错误）：
+
+| 协议点 | 官方 | 更正前 | 后果 |
+|--------|------|--------|------|
+| 文本字段 | `item_list[].text_item.text` | `text_item.content` | 收发双向都拿不到正文 |
+| `message_type` / `message_state` | **数字**（1/2 与 0/1/2） | 字符串 `"USER"` / `"FINISH"` | serde 整条失败 → 被 `.ok()` 吞掉 → **连收帧日志都不打**，症状＝"一条消息都收不到" |
+| 顶层消息 ID | 顶层 `message_id`（权威，uint64 字符串无损）；顶层**没有** `msg_id` | 顶层 `msg_id`（错位字段） | 幂等键实际只有 `client_id` 生效；`messages.external_key` 恒空 |
+| 取码接口 | `POST` + body `{local_token_list}` | `GET` 无 body | 服务端无从知道"已绑过"，重绑永远走新建 |
+| 扫码状态 | **8 态** | 4 态 | `scaned_but_redirect` 一直空转到超时；`need_verifycode` 无解 |
+| 请求头 | 通用两件套 + 鉴权档（`X-WECHAT-UIN` = base64(十进制字符串)） | 缺 `iLink-App-Id`；UIN 按原始 4 字节 base64 | 头格式与官方不符 |
+| `base_info` | `getupdates` / `getuploadurl` / `notify*` 带；`sendmessage` 与扫码接口**不带** | 无 | 服务端缺少客户端版本与自述标识 |
+| 响应错误码 | `ret` / `errcode` 非 0 即错误；`-14` 暂停 1h | 完全不校验，一律当空轮次 | 会话失效后永不恢复，且与"没人发消息"日志同形 |
+
+> 共同点：**没有一条会报错**，全都表现为"看起来在跑、但没有消息"。因此本轮同时补了"解析失败必须留痕"的约束——解析层 `.ok()` + `debug` 的组合是排查黑洞。
 
 ## 项目结构
 
@@ -134,7 +151,7 @@ graph TB
 ## 核心组件
 
 **配置面**
-- `pkg/wechat_ilink.rs`：扫码登录协议客户端，两接口（get_bot_qrcode + get_qrcode_status 长轮询），45s 超时宽容为无事件
+- `pkg/wechat_ilink.rs`：iLink **协议 SSOT**（协议常量 / `base_info` 信封 / 请求头档位）+ 扫码登录客户端——取码 `POST get_bot_qrcode`（带 `local_token_list`）；状态 `GET get_qrcode_status` 按**官方 8 态**处理（含 `need_verifycode` / `scaned_but_redirect` / `binded_redirect`），45s 超时宽容为无事件
 
 **DAL 层**
 - `dal/wechat/impl.rs`：WechatDalImpl 结构，三职责——adapt_wechat 协议转换（事件过滤 + peer 校验 + 首次入站自动回填 wechat_peer_id）、MessageInboundAdapter 实现（start 渠道数据驱动逐渠道建轮询 + stop 全部释放）、WechatCredentialDal/WechatListenerDal（凭证解析 + 渠道定位查询 + 凭证变更联动）
@@ -385,9 +402,10 @@ PO (message_channel.rs + user_credential.rs + events/wechat.rs)
 补充排查：
 
 1. `ilink getupdates failed (retry in ...)` → HTTP 层失败（凭证 / 网络 / 限流），退避 2s→30s
-2. `ilink getupdates client timeout`（**warn**）→ 客户端 45s 超时。正常轮询（服务端 hold ~35s 返回空）**不应**出现；出现即网络 hang 或服务端异常
+2. `ilink getupdates client timeout`（**debug + 计数**）→ 客户端超时。官方把"客户端先于服务端超时"视为**正常控制流**（本轮无事件），故已降级为 debug 并只累计计数：观察 `client_timeouts` 是否快速增长，配合 `last_poll_at_ms` 是否推进判断网络 hang（`rounds` 不动 + `client_timeouts` 涨 = 网络问题；两者都不动 = 循环卡死）
 3. bot_token / base_url 是否正确（重新扫码获取新凭证，触发 ensure 指纹变化 → 自动重建）
 4. ⚠️ **不要依赖"连通性测试"绿灯**：`test_connection` 只做凭证完整性校验（bot_token/bot_id 非空），**不发任何网络请求**，通过不代表链路可用
+5. `ilink getupdates error code ret=... errcode=...` → 服务端明确报错（此前这类响应被当空轮次静默吞掉）。`-14` 见下方故障 7
 
 ### 故障 4：出站 sendmessage 报错 "让对端先发一条消息"
 **现象**：Agent 回复时报错缺少 context_token。
@@ -408,6 +426,38 @@ PO (message_channel.rs + user_credential.rs + events/wechat.rs)
 **排查**：
 1. `ensure` 的指纹变化触发 stop + start。旧轮询 abort() 后日志 "stopped" 应出现
 2. 如果指纹没变（bot_id/bot_token/base_url 完全一致）→ 不会重建 → 手动 stop_all + start_all
+
+### 故障 7：`-14` 会话失效导致该渠道请求被暂停 1 小时
+**现象**：日志出现 `ilink session paused, polling suspended ... remaining_ms=...`；此后该渠道既无收帧也无出站，健康页 `wechat_poll` 的 `state` 变成 `paused`。
+**为什么要暂停**：`-14` 表示会话已失效，继续轮询只会持续失败——必须等用户**重新扫码**授权。
+**恢复路径**：重新扫码 → 凭据 `bot_token` / `base_url` 变化 → `ensure` 判定指纹变化并重建轮询 → **同时主动清除暂停**（否则会出现"授权成功了但收不到消息"，要干等到 1 小时到期）。
+**排查**：
+1. 是先出现 `-14` 才有暂停（正常），还是暂停后无法恢复（查 ensure 是否真的重建了）
+2. 暂停是**进程内**状态（`SessionGuard`，见设计 §5.6）：重启即清空，属预期
+3. 出站期间也会被拦（快速失败并给出可读原因），避免白等一次必然失败的请求
+
+### 故障 8：扫码弹窗卡住（一直"等待扫码"或一直空转）
+扫码状态是**官方 8 态**，不是 4 态；前端对每个状态都有明确动作（见设计 §5.2）。按现象定位：
+
+| 现象 | 状态 | 说明 |
+|------|------|------|
+| 扫完码后弹窗一直不动 | `need_verifycode` | 手机微信要求配对码 → 弹窗会显示输入框，输入手机上的数字即可（输入前不再空轮询） |
+| 扫完码后长时间空转、最终超时 | `scaned_but_redirect` | 该 bot 归属其它 IDC → 前端把 `redirect_host` 回传，后端切换接入点；若 `redirect_host` 缺失或不在腾讯域白名单内，日志会记 `redirect_host 形态非预期，已忽略` |
+| 二维码过期 | `expired` | 前端**自动换码**（上限 3 次），弹窗显示"已自动刷新 x/3"；超过上限需关闭后重试 |
+| 提示配对码错误 | `verify_code_blocked` | 风控拦截，同样走自动换码；连续 3 次失败即停止 |
+| 扫描后提示"无需重复绑定" | `binded_redirect` | **幂等成功**：该 bot 早已绑过本客户端，服务端不签发新凭据，本地凭证继续有效（不是失败） |
+
+> 后端为**无状态**实现：`qrcode` / `verify_code` / `redirect_host` 全部由前端持有并逐轮回传（官方 CLI 持有 `activeLogins` 会话表是被"没有前端"逼出来的）。因此前端必须**自动长轮询**——只提供"刷新"按钮而不轮询，用户要手动操作两次，且扫码后不会自动完成。
+>
+> 前端轮询必须**平铺 spawn**（在点击回调里与取码任务并列 spawn）。若在外层 async 任务内部再 spawn，该位置拿不到 Dioxus 作用域 → 内层任务从不启动，表现为"整段零次状态请求、二维码永不消失"。
+
+### 故障 9：`messages.external_key` 为空的微信消息
+**预期值**：入站 `wechat:{message_id}`（缺 `message_id` 时回落 `client_id`；两者皆无则留空，不伪造），出站按 `SendMessageResp.message_id` 在推送成功后回写。
+**排查**：
+1. 入站为空 → 服务端确实没给 `message_id` 也没给 `client_id`（看收帧日志的 `keys=[..]`）
+2. 出站为空 → 服务端 `sendmessage` 响应没带 `message_id`（回写失败仅告警，不阻断发送）
+3. ⚠️ 微信侧该字段只承担"平台消息 ID 存档"：微信协议**没有** `parent_id` / `root_id`，所以它**不**用于反查父消息（那是飞书线程场景的语义）
+
 
 ## 结论
 

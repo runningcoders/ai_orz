@@ -14,14 +14,14 @@ source_files:
   - common/src/models/identity_credentials.rs#L205-L214（CredentialDetailPatch::WechatIlink：重新扫码整组覆盖）
   - common/src/models/identity_credentials.rs#L359-L374（WechatIlink validate：bot_token/bot_id/base_url 三要素必填 + base_url https 校验）
 
-  - src/pkg/wechat_ilink.rs#L88-L121（get_login_qrcode：get_bot_qrcode → qrcode + qrcode_img_content）
-  - src/pkg/wechat_ilink.rs#L124-L209（poll_qrcode_status：长轮询 wait→scaned→confirmed，confirmed 返回 bot_token/bot_id/base_url）
+  - src/pkg/wechat_ilink.rs（iLink 协议 SSOT + 扫码登录：get_login_qrcode = POST + local_token_list；poll_qrcode_status = 官方 8 态 + verify_code / redirect_host）
+  - src/pkg/wechat_ilink.rs（poll_qrcode_status：**官方 8 态**长轮询 —— wait / scaned / confirmed / expired / scaned_but_redirect / need_verifycode / verify_code_blocked / binded_redirect，confirmed 返回 bot_token/bot_id/base_url）
 
   - src/handlers/finance/wechat_integration/（get_login_qrcode.rs + get_status.rs + login_status.rs：扫码登录 API 三端点）
 
   - src/service/domain/finance/identity_credential.rs（Domain 层：confirmed 时 create WechatIlink 凭证行；bot_token 加密落库；已存在同类型凭证 → 整组轮换）
 
-  - common/src/api/wechat_integration.rs#L14-L79（DTO：WechatLoginQrcodeRequest + WechatLoginStatusResponse + WechatCredentialSnapshot）
+  - common/src/api/wechat_integration.rs（DTO：WechatLoginQrcodeRequest + WechatLoginStatusRequest（含 `verify_code` / `redirect_host`）+ WechatLoginStatusResponse（含 `user_id` / `bound_at` / `redirect_host` / `already_bound`）+ WechatCredentialSnapshot（含 `user_id` / `base_url` / `created_at` / `updated_at`）+ **扫码状态字面量 SSOT** `WECHAT_QR_STATUS_*`）
 
   - src/service/dao/wechat/ilink.rs#L74-L128（resolve_ilink_credentials：从 user_credential 行解析 IlinkChannelCredentials；校验 kind=WechatIlink + 解密 bot_token）
 
@@ -55,8 +55,8 @@ CredentialKind::WechatIlink // 专用 kind，不需要 platform
 ```
 
 **扫码授权三端点**（路由：`/api/v1/finance/identity/wechat/`）：
-1. **get_login_qrcode** → 调 `pkg::wechat_ilink::get_login_qrcode()` → 返回 `{ qrcode, qrcode_img_content }`
-2. **get_status** → 调 `pkg::wechat_ilink::poll_qrcode_status(qrcode)` → 返回 `{ status: wait|scaned|expired|confirmed }`（长轮询，hold ~35s 属正常）
+1. **get_login_qrcode** → 调 `pkg::wechat_ilink::get_login_qrcode(local_token_list)` → **POST** 取码（body 带本用户已有 bot token，服务端据此判"是否已绑过"）→ 返回 `{ qrcode, qrcode_img_content }`（后者同时是一条可在手机微信直接打开的授权链接）
+2. **get_status** → 调 `pkg::wechat_ilink::poll_qrcode_status(qrcode, verify_code, redirect_host)` → 返回**官方 8 态**之一（长轮询，hold ~35s 属正常），由前端自动循环调用
 3. **login_status**（Domain 层 confirmed 处理）→ 调 `IdentityCredentialDomain.create` 创建/轮换 WechatIlink 凭证行 → 返回 `{ credential_id, bot_id, rotated }`
 
 ## §2 关键文件路径表格
@@ -64,10 +64,10 @@ CredentialKind::WechatIlink // 专用 kind，不需要 platform
 | 文件 | 角色 | 关键结构/入口 |
 |------|------|-------------|
 | [common/src/models/identity_credentials.rs](common/src/models/identity_credentials.rs) | 凭证类型契约（前后端共享）| CredentialKind::WechatIlink L38；CredentialDetail::WechatIlink L145；CredentialDetailPatch::WechatIlink L205；WechatIlink validate L359 |
-| [pkg/wechat_ilink.rs](src/pkg/wechat_ilink.rs) | 扫码登录协议客户端 | get_login_qrcode L89；poll_qrcode_status L124；IlinkQrStatusKind 四态 L41 |
+| [pkg/wechat_ilink.rs](src/pkg/wechat_ilink.rs) | iLink 协议 SSOT + 扫码登录协议客户端 | get_login_qrcode（POST + local_token_list）；poll_qrcode_status（8 态 + verify_code / redirect_host）；IlinkQrStatusKind 官方 8 态 |
 | [handlers/finance/wechat_integration/](src/handlers/finance/wechat_integration/) | REST API 三端点 | get_login_qrcode.rs + get_status.rs + login_status.rs |
 | [domain/finance/identity_credential.rs](src/service/domain/finance/identity_credential.rs) | Domain 层：扫码确认后落库 | confirmed 分支：encrypt bot_token → create WechatIlink 凭证 → 已存在同类型凭证 → 整组轮换（软删旧 + 创建新）|
-| [common/src/api/wechat_integration.rs](common/src/api/wechat_integration.rs) | 前后端共享 DTO | WechatLoginQrcodeRequest L16；WechatLoginStatusResponse L37；WechatCredentialSnapshot L69 |
+| [common/src/api/wechat_integration.rs](common/src/api/wechat_integration.rs) | 前后端共享 DTO + 扫码状态字面量 SSOT | WechatLoginQrcodeRequest；WechatLoginStatusRequest（`verify_code`/`redirect_host`）；WechatLoginStatusResponse（`user_id`/`bound_at`/`redirect_host`/`already_bound`）；WechatCredentialSnapshot（`user_id`/`base_url`/`created_at`/`updated_at`）；`WECHAT_QR_STATUS_*` |
 | [dao/wechat/ilink.rs](src/service/dao/wechat/ilink.rs#L74-L128) | DAO 消费凭证 | resolve_ilink_credentials：校验 kind=WechatIlink + 解密 bot_token + base_url 空值回落默认域 |
 | 【总卡】身份凭证统一链路 | 本卡描述 WechatIlink 类型如何接入通用框架（新增 kind + new 获取路径）；总卡 source_files[] 尾追加本卡 | 见本卡 source_files[] 尾总卡绝对路径 |
 | 【① Wiki 长文】身份凭证与授权流程.md | 完整扫码授权说明 | docs/wiki/zh/content/核心模块/凭证与安全/身份凭证与授权流程.md |

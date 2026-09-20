@@ -25,7 +25,7 @@ source_files:
   - src/service/dao/wechat/ilink.rs#L400-L650（已确认游标 CursorStore + poll_loop 循环体：收帧 publish AOP 事件 → 刷 context_token 会话 → 收帧/心跳/超时三段观测日志 → 一次写回 inbound_state）
   - src/service/dao/wechat/ilink.rs#L652-L758（PollLoopRegistry：channel_id 键控 + 凭证指纹 ensure 幂等 + 指纹变化自动重建 + **落库游标回灌 CursorStore**）
 
-  - src/pkg/wechat_ilink.rs#L88-L148（扫码登录协议：get_login_qrcode + poll_qrcode_status 长轮询）
+  - src/pkg/wechat_ilink.rs（iLink 协议 **SSOT**：协议常量 / base_info 信封 / 请求头档位；扫码登录 get_login_qrcode = POST + local_token_list；poll_qrcode_status = 8 态 + verify_code / redirect_host）
 
   - src/consumer/wechat_inbound.rs#L20-L86（WechatInboundConsumer：ConsumeMode::Async + adapt_wechat 转换 + callback.on_message 投递上层）
 
@@ -61,18 +61,31 @@ source_files:
 **关键组件（从下到上分层）**：
 
 **(a) 扫码登录配置面（pkg/wechat_ilink.rs）**：
-- `get_login_qrcode()` → iLink 服务端 `GET /ilink/bot/get_bot_qrcode?bot_type=3` 返回 `qrcode`（轮询标识）+ `qrcode_img_content`（二维码渲染内容）
-- `poll_qrcode_status(qrcode)` → `GET /ilink/bot/get_qrcode_status?qrcode=xxx` 长轮询（服务端 hold ~35s，客户端超时 45s）
-- 状态机：wait → scaned → confirmed（或 expired）。confirmed 时返回 bot_token/bot_id/user_id/baseurl
+- **[协议 SSOT]** 常量 / `base_info` 信封 / 请求头档位集中在本文件；依据是腾讯官方插件 `@tencent-weixin/openclaw-weixin`（`src/api/types.ts` + `src/api/api.ts` + `src/auth/login-qr.ts`，核对版本 `2.4.9`），Hermes `gateway/platforms/weixin.py` 可互证
+- `get_login_qrcode(local_token_list)` → **`POST /ilink/bot/get_bot_qrcode?bot_type=3`**，body `{local_token_list}`（本用户已有 bot token，最新在前 ≤10）。该列表是 `binded_redirect` 能出现的前提：不报给服务端，服务端只能走"新建"。此接口 POST 但**不带 `Authorization`**（扫码前无令牌）
+- `poll_qrcode_status(qrcode, verify_code, redirect_host)` → `GET /ilink/bot/get_qrcode_status?qrcode=…[&verify_code=…]` 长轮询（服务端 hold ~35s）。`redirect_host` 由后端做**白名单校验**（只接受腾讯接入域内的裸主机名）后拼成 `https://{host}`——该值最终是我方出站目标，照单全收等于把出站目标交给客户端指定
+- 状态机是**官方 8 态**：`wait` / `scaned` / `confirmed` / `expired` / `scaned_but_redirect` / `need_verifycode` / `verify_code_blocked` / `binded_redirect`（字面量 SSOT 在 `common::api::WECHAT_QR_STATUS_*`，前后端共用）。只识别 4 态会让 `scaned_but_redirect` 一直空转到超时、`need_verifycode` 无解
+- confirmed 时返回 bot_token/bot_id/user_id/baseurl；**`binded_redirect` 是幂等成功**（该 bot 早已绑过本客户端，不签发新凭据、不写库）
 - **Domain 层消费 confirmed**：encrypt bot_token → 写 `CredentialKind::WechatIlink` 行
+- **后端无状态**：官方持 `activeLogins` 会话表是被"CLI 没有前端"逼出来的；我方 `qrcode` / `verify_code` / `redirect_host` 全部由前端持有并逐轮回传，换码（重取二维码）动作在前端做完全等价
 
 **(b) DAO 层消息面协议客户端（dao/wechat/ilink.rs）**：
-- **长轮询**：`get_updates()` → `POST /ilink/bot/getupdates`，body 带不透明游标 `get_updates_buf`（只能原样回传，不可比较）
-- **出站推送**：`send_text()` → `POST /ilink/bot/sendmessage`，必须带 `to_user_id`（对端 peer_id）+ `context_token`（会话令牌，空值报错提示"让对端先发一条消息"）
+- **长轮询**：`get_updates()` → `POST /ilink/bot/getupdates`，body 带不透明游标 `get_updates_buf` + `base_info`；请求头走鉴权档（`iLink-App-Id` + `iLink-App-ClientVersion` + `AuthorizationType` + `Bearer` + `X-WECHAT-UIN`）
+- **出站推送**：`send_text()` → `POST /ilink/bot/sendmessage`，必须带 `to_user_id`（对端 peer_id）+ `context_token`（会话令牌，空值报错提示"让对端先发一条消息"）；body 只有 `msg` 一个键（**不带 `base_info`**，对齐官方）；返回服务端 `message_id`
+- **响应错误码必须校验**：`ret`/`errcode` 任一非 0 即错误。`-14` = 会话失效 → `SessionGuard` 暂停该渠道全部请求 **1 小时**（进程内、不落库），暂停期轮询休眠 + 出站快速失败并给出可读原因；**凭证指纹变化（重新扫码）时 `ensure` 主动清除暂停**，否则会出现"授权成功了但收不到消息"
+- **超时协商**：客户端超时 = 服务端 `longpolling_timeout_ms` + 10s 余量（默认 45s）；客户端超时按官方口径视为**正常控制流**，只计数 + `debug`（早期记 `warn` 会淹没真问题）
+- **客户端上下线通知**：循环启停各一次 `notifystart` / `notifystop`（`stop`/`stop_all` 在句柄上补发），失败仅告警
 - **PollLoopRegistry**：channel_id 键控 + **凭证指纹 ensure 幂等**（bot_id/bot_token/base_url 任一变化 → 指纹不同 → 自动停旧重建）
 - **失败退避节奏**：前 5 次 2s 快速重试，超过后 30s 避限流（对齐 lark WS 指数退避封顶模式）
 - **受管循环 poll_loop**：收帧即 publish AOP 事件 → Async consumer 消费业务 → 推进游标 + 刷 context_token → 一次写回 inbound_state（空轮询零写入）
-- **运行态观测（三段日志）**：① 收帧记 `ilink inbound batch`（count + 幂等键摘要）；② 每 5 分钟记 `ilink poll heartbeat`（轮次 / 累计入站 / 连续失败 / 客户端超时 / 游标 / 空闲时长）；③ 消费确认记 `inbound cursor advanced`。客户端 45s 超时单独记 `warn`，与「服务端 hold 到期返空」区分
+- **运行态观测（四段日志）**：① 收帧记 `ilink inbound batch`（count + 幂等键摘要）；② 每 5 分钟记 `ilink poll heartbeat`（轮次 / 累计入站 / 连续失败 / 客户端超时 / 游标 / 空闲时长）；③ 消费确认记 `inbound cursor advanced`；④ 适配**有意跳过**记 `wechat inbound adapted to nothing`。客户端超时单独计数 + `debug`，与「服务端 hold 到期返空」区分
+- **解析失败必须留痕**：单条消息解析失败记 `warn`（带消息键摘要）后跳过；适配层丢弃点记 `info`。解析层 `.ok()` + `debug` 的组合会让"字段写错"与"上游没数据"完全同形（本轮重构的根因即此）
+- **平台消息 ID**：入站按 `message_key()` 优先级（顶层 `message_id` → 顶层 `client_id` → item 级 `msg_id`）取幂等键，并回写 `messages.external_key = "wechat:{id}"`；出站按响应 `message_id` 在推送成功后回写（照抄飞书 `lark:{id}` 口径）
+
+**(b′) 入站消息 DTO 的字段口径（models/events/wechat.rs）**：
+- 文本正文在 `item_list[].text_item.text`（**不是 `content`**；解析侧兼容读 `content`，出站只发 `text`）
+- `message_type`（1=USER / 2=BOT）与 `message_state`（0=NEW / 1=GENERATING / 2=FINISH）是**数字**：解析侧接受数字/字符串双形态，出站恒定发数字
+- 顶层 `message_id` 是服务端权威消息 ID；顶层**没有** `msg_id`（`msg_id` 在 item 级）
 
 **(c) DAL 层入站管理（dal/wechat/impl.rs）**：
 - 实现 `MessageInboundAdapter` trait（注册到 pkg/adapter 中台）
@@ -102,7 +115,7 @@ source_files:
 | [dal/wechat/impl.rs](src/service/dal/wechat/impl.rs) | DAL 实现：凭证面 + 监听面 + 适配面 | WechatDalImpl struct L37；adapt_wechat L122；MessageInboundAdapter impl L369 |
 | [dao/wechat/mod.rs](src/service/dao/wechat/mod.rs) | DAO trait | WechatDao trait L24：push / start_polling / stop_polling / stop_all_polling |
 | [dao/wechat/ilink.rs](src/service/dao/wechat/ilink.rs) | DAO：iLink 协议客户端 + 受管长轮询 | IlinkChannelCredentials L37；get_updates L219；send_text L303；poll_loop L477；PollLoopRegistry L652 |
-| [pkg/wechat_ilink.rs](src/pkg/wechat_ilink.rs) | pkg：扫码登录协议客户端 | get_login_qrcode L89；poll_qrcode_status L124；ILINK_DEFAULT_BASE_URL L20 |
+| [pkg/wechat_ilink.rs](src/pkg/wechat_ilink.rs) | pkg：iLink 协议 SSOT（常量 / base_info / 请求头档位）+ 扫码登录协议客户端 | get_login_qrcode（POST + local_token_list）；poll_qrcode_status（8 态 + verify_code / redirect_host）；ILINK_DEFAULT_BASE_URL |
 | [consumer/wechat_inbound.rs](src/consumer/wechat_inbound.rs) | Consumer：微信入站消息消费 | WechatInboundConsumer struct L20；on_event L46（adapt_wechat → callback.on_message） |
 | [models/events/wechat.rs](src/models/events/wechat.rs) | AOP 事件类型 | IlinkMessage L18；WechatInboundEvent L105；Event impl（kind=wechat.inbound.message, order_key=bot_id） |
 | [common/src/api/wechat_integration.rs](common/src/api/wechat_integration.rs) | 前后端共享 DTO | WechatLoginQrcodeRequest L16；WechatLoginStatusRequest L29；WechatLoginStatusResponse L37 |
@@ -130,13 +143,18 @@ source_files:
 1. ❌ **禁止 MessageChannel.config_json 硬编码 bot_token 明文或任何加密后的 secret**。凭证必须走 `wechat_credential_id` → user_credentials 表引用路径。bot_token 的加解密边界固定在 DAO 层 `resolve_ilink_credentials`（调 `pkg::crypto::decrypt_channel_secret`），与 Lark 同构。
 2. ❌ **禁止 poll_loop 循环内做 DB IO / HTTP 调用**。读循环里只有 publish AOP 事件 + push InboundStateWriter::save。业务逻辑（adapt_wechat + 渠道查找 + callback.on_message）必须在 Consumer 层。禁止把 ConsumeMode 改成 Sync。
 3. ❌ **禁止 sendmessage 不传 context_token 或 to_user_id 即尝试出站**。这两个参数空值协议层直接报错——调用方必须确保 inbound_state.sessions 中有对应 peer_id 的最新 context_token。
-4. ✅ **45s 客户端超时必须大于服务端 35s hold，且两者语义必须分开**。正常轮次由服务端 hold ~35s 到期后**返回空批次**，静默进入下一轮；客户端 45s 超时（正常轮询**永不**触发）标记 `IlinkUpdates::client_timeout` 并由循环记 `warn`。若把客户端超时静默等同空批次，「网络 hang」与「队列本就是空的」在日志上完全同形、无法区分。禁止把超时降到 35s 以下。
+4. ✅ **客户端超时口径 = 服务端建议值 + 10s 余量（默认 45s），且与服务端 hold 语义必须分开**。正常轮次由服务端 hold ~35s 到期后**返回空批次**，静默进入下一轮；客户端超时（正常轮询**永不**触发）标记 `IlinkUpdates::client_timeout` 并计入计数、记 `debug`——官方把"客户端先于服务端超时"视为**正常控制流**（本轮无事件），故不再记 `warn`（否则真问题被淹没，只能靠 `client_timeouts` 计数与 `last_poll_at_ms` 联合判断）。若把客户端超时静默等同空批次，「网络 hang」与「队列本就是空的」在日志上完全同形。禁止把超时降到服务端建议 hold 以下（会丢掉当轮事件）。
 5. ✅ **IlinkChannelCredentials.fingerprint 三要素 hash（bot_id + bot_token + base_url）**。用 DefaultHasher 而非明文拼接：指纹常驻内存 registry，避免 bot_token 以可读形式留存。禁止 `format!("{bot_id}:{bot_token}:{base_url}")` 明文拼接。
 6. ✅ **失败退避节奏**：前 5 次 2s 快速重试，超过后退避 30s（避免触发 iLink 限流）。禁止无限快速重试或不封顶指数退避。
 7. ✅ **InboundCursor.kind=Opaque 必须原样回传**：`get_updates_buf` 是不透明字符串，禁止解析、禁止比较大小、禁止回退到更早游标（只能原样回传服务端给的新值）。服务端返回空值则保持旧游标不变。
 8. ✅ **落库游标必须在 `ensure` 时回灌内存 `CursorStore`**：`CursorStore` 是**进程内**的，重启后为空；`inbound_state.cursor` 是已确认消费的进度，也是重启后唯一的进度来源。不回灌 → 首轮以空游标请求，而 iLink 对空游标**不重放**历史（实测 `msgs: []`）→ 停机期间的消息永久丢失，且无日志、无报错（极难察觉）。禁止"只把落库游标用于写回、却不用于续拉"。
-9. ✅ **三段观测日志不得删减**：① 收帧 `ilink inbound batch`（count + 幂等键摘要 + 新游标）；② 每 5 分钟 `ilink poll heartbeat`（轮次 / 累计入站 / 连续失败 / 客户端超时 / 当前游标 / 空闲时长）；③ 消费确认 `inbound cursor advanced`（info）。排障时据此区分「未收帧 / 收帧但未消费 / 消费但游标未推进」三类分支，无需抓包。
+9. ✅ **四段观测日志不得删减**：① 收帧 `ilink inbound batch`（count + 幂等键摘要 + 新游标）；② 每 5 分钟 `ilink poll heartbeat`（轮次 / 累计入站 / 连续失败 / 客户端超时 / 当前游标 / 空闲时长）；③ 消费确认 `inbound cursor advanced`（info）；④ 适配有意跳过 `wechat inbound adapted to nothing`。排障时据此区分「未收帧 / 收帧但未消费 / 消费但游标未推进 / 有意跳过」四类分支，无需抓包。
 10. ✅ **四类互引闭环**：本卡 source_files[] 含 1 篇 Wiki 长文（微信 iLink 专属渠道）+ 3 张平行卡（Lark WS 私信入站 / 入站适配中台 / Domain 事件消费者）；Wiki 长文 cite 段回链本卡 + 平行卡。
+11. ✅ **协议字段一律以官方插件为准，禁按社区整理实现**：文本正文是 `item_list[].text_item.text`（**不是 `content`**）；`message_type` / `message_state` 是**数字**（解析接受双形态、出站恒发数字）；顶层 `message_id` 为权威消息 ID（顶层**没有** `msg_id`，`msg_id` 在 item 级）；`get_bot_qrcode` 是 **POST + `local_token_list`**；扫码状态是**官方 8 态**；`base_info` 只出现在 `getupdates` / `getuploadurl` / `notify*`（`sendmessage` 与扫码接口不带）。这批错误的共同特征是**写错也不报错**，只表现为"收不到/发不出"。
+12. ✅ **解析失败必须留痕，禁止 `.ok()` 静默**：任何「字段不匹配就丢整条」的路径都必须有 info/warn 级证据（带消息键摘要），否则症状与"上游没数据"完全同形，无从排查。
+13. ✅ **`redirect_host` 必须白名单校验后才可拼成出站 URL**：只接受落在腾讯接入域内的**裸主机名**（无 scheme / 端口 / 路径），校验失败时忽略并沿用当前接入点。它是客户端回传值，直接拼 URL 等于把出站目标交给客户端指定。
+14. ✅ **`-14` 会话暂停必须两端闭合**：暂停时轮询休眠 + 出站快速失败；**凭证指纹变化（重新扫码）时 `ensure` 必须主动清除暂停**，否则用户会遇到"授权成功了但收不到消息"，要干等 1 小时到期。
+15. ✅ **扫码状态与前端动作必须一一对应（8 态全覆盖）**：`expired` / `verify_code_blocked` → 自动换码（上限 3）；`need_verifycode` → 配对码输入并逐轮回传；`scaned_but_redirect` → 回传 `redirect_host`；`binded_redirect` → 按成功处理（不新建凭据）。前端轮询必须**平铺 spawn**（在点击回调里与取码任务并列），嵌套 spawn 拿不到 Dioxus 作用域 → 内层任务从不启动，表现为"零次状态请求、二维码永不消失"。
 
 ---
 
