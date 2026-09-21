@@ -15,6 +15,7 @@ use crate::api::finance::{
     delete_message_channel, get_message_channel, test_message_channel, update_message_channel,
     update_message_channel_status,
 };
+use crate::api::hr::list_agents;
 use crate::api::lark_integration::get_lark_integration_status;
 use crate::api::wechat_integration::get_wechat_integration_status;
 use crate::components::confirm_dialog::ConfirmDialog;
@@ -23,9 +24,9 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
+    AgentListItem, CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateSlackChannelConfig, CreateWebhookChannelConfig, CreateWechatChannelConfig,
-    EmailBotCredentialSnapshot, LarkCredentialSnapshot, LarkUserAuthSnapshot,
+    EmailBotCredentialSnapshot, LarkCredentialSnapshot, LarkUserAuthSnapshot, ListAgentsRequest,
     UpdateMessageChannelRequest, UpdateMessageChannelStatusRequest, WechatCredentialSnapshot,
 };
 use common::enums::{ChannelStatus, ChannelType};
@@ -104,6 +105,16 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
             lark_credentials.set(status.credentials.clone());
             lark_user_auth.set(status.user_auth.clone());
         }
+    });
+
+    // ===== Agent 下拉（编辑弹窗「关联 Agent」用；组织内 Agent 全量，一次拉完） =====
+    let mut agents = use_signal(Vec::<AgentListItem>::new);
+    use_effect(move || {
+        spawn(async move {
+            if let Ok(page) = list_agents(ListAgentsRequest::default()).await {
+                agents.set(page.items);
+            }
+        });
     });
 
     let mut on_toggle = {
@@ -291,6 +302,25 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                 let webhook_method = edit_webhook_method();
                 let webhook_body_template = edit_webhook_body_template();
 
+                // 凭证强制有值：引用型渠道（飞书 / 微信 / 邮箱）没有凭证 = 收发全废的僵尸渠道。
+                // 协议里 None 的语义是「不修改」，选空会被静默忽略（刷新后凭据还在），
+                // 所以在这里拦死；要停用渠道请用「禁用」或「删除」，而不是清空凭证。
+                if channel_type == ChannelType::Lark && credential_id.trim().is_empty() {
+                    toast.error("请选择飞书应用凭证");
+                    saving.set(false);
+                    return;
+                }
+                if channel_type == ChannelType::Wechat && wechat_credential_id.trim().is_empty() {
+                    toast.error("请选择微信 iLink 凭证");
+                    saving.set(false);
+                    return;
+                }
+                if channel_type == ChannelType::Email && email_credential_id.trim().is_empty() {
+                    toast.error("请选择邮箱机器人凭证");
+                    saving.set(false);
+                    return;
+                }
+
                 let req = UpdateMessageChannelRequest {
                     id: id.clone(),
                     user_id: None,
@@ -423,6 +453,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         .as_ref()
         .and_then(|r| r.as_ref().err())
         .map(|e| format!("加载失败: {}", e));
+    let agents_list = agents.read().clone();
     let credentials_list = lark_credentials.read().clone();
     let wechat_credentials_list = wechat_credentials.read().clone();
     let email_credentials_list = email_credentials.read().clone();
@@ -453,6 +484,20 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     let email_cfg = cfg.and_then(|c| c.email.as_ref());
                     let slack_cfg = cfg.and_then(|c| c.slack.as_ref());
                     let webhook_cfg = cfg.and_then(|c| c.webhook.as_ref());
+                    // 飞书 / 微信 / 邮箱走「渠道仅存凭证引用」模式（config_json 无敏感字段），
+                    // Slack / Webhook / A2A 回调仍为直连凭据（access_token / secret / config 敏感项）。
+                    let is_credential_ref_channel = matches!(
+                        c.channel_type,
+                        ChannelType::Lark | ChannelType::Wechat | ChannelType::Email
+                    );
+                    let credential_bound = match c.channel_type {
+                        ChannelType::Lark => lark_cfg.and_then(|l| l.credential_id.as_ref()).is_some(),
+                        ChannelType::Wechat => {
+                            wechat_cfg.and_then(|w| w.credential_id.as_ref()).is_some()
+                        }
+                        ChannelType::Email => email_cfg.and_then(|e| e.credential_id.as_ref()).is_some(),
+                        _ => false,
+                    };
                     rsx! {
                 HudPanel { signal: Some(true),
                     title: Some(c.channel_name.clone()),
@@ -506,7 +551,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                             if let Some(aid) = &c.agent_id {
                                 div {
                                     div { class: "text-sm text-base-content/60", "绑定 Agent" }
-                                    div { class: "font-mono", "{aid}" }
+                                    div { "{agent_display_name(aid, &agents_list)}" }
                                 }
                             }
                             if c.channel_type == ChannelType::Lark {
@@ -646,13 +691,24 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             div {
-                                div { class: "text-sm text-base-content/60", "凭据状态" }
+                                div { class: "text-sm text-base-content/60",
+                                    if is_credential_ref_channel { "凭证引用" } else { "凭据状态" }
+                                }
                                 div { class: "flex gap-2 flex-wrap",
-                                    if c.has_access_token { span { class: "badge hud-badge badge-success badge-sm", "Access Token" } }
-                                    if c.has_secret { span { class: "badge hud-badge badge-success badge-sm", "Secret" } }
-                                    if c.has_config_secret { span { class: "badge hud-badge badge-success badge-sm", "Config Secret" } }
-                                    if !c.has_access_token && !c.has_secret && !c.has_config_secret {
-                                        span { class: "text-base-content/50 text-sm", "无凭据" }
+                                    if is_credential_ref_channel {
+                                        // 引用模式：渠道本身不存凭据，只看是否绑定了凭证引用
+                                        if credential_bound {
+                                            span { class: "badge hud-badge badge-success badge-sm", "已绑定凭证" }
+                                        } else {
+                                            span { class: "badge hud-badge badge-warning badge-sm", "未绑定凭证" }
+                                        }
+                                    } else {
+                                        if c.has_access_token { span { class: "badge hud-badge badge-success badge-sm", "Access Token" } }
+                                        if c.has_secret { span { class: "badge hud-badge badge-success badge-sm", "Secret" } }
+                                        if c.has_config_secret { span { class: "badge hud-badge badge-success badge-sm", "Config Secret" } }
+                                        if !c.has_access_token && !c.has_secret && !c.has_config_secret {
+                                            span { class: "text-base-content/50 text-sm", "无凭据" }
+                                        }
                                     }
                                 }
                             }
@@ -722,10 +778,24 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                             }
                             div { class: "form-control w-full",
                                 label { class: "label",
-                                    span { class: "label-text font-medium", "关联 Agent ID" }
+                                    span { class: "label-text font-medium", "关联 Agent" }
                                 }
-                                input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_agent_id}",
-                                    oninput: move |e| edit_agent_id.set(e.value()), placeholder: "留空表示不关联" }
+                                select { class: "select select-bordered hud-input w-full", value: "{edit_agent_id}",
+                                    onchange: move |e| edit_agent_id.set(e.value()),
+                                    if agents_list.is_empty() {
+                                        option { value: "", "暂无可用 Agent" }
+                                    } else {
+                                        option { value: "", "不关联 Agent" }
+                                        for agent in agents_list.iter() {
+                                            option {
+                                                key: "{agent.id}",
+                                                value: "{agent.id}",
+                                                selected: edit_agent_id() == agent.id.clone(),
+                                                "{agent.name}"
+                                            }
+                                        }
+                                    }
+                                }
                                 label { class: "label",
                                     span { class: "label-text-alt text-base-content/60", "留空保存即解除与 Agent 的绑定关系" }
                                 }
@@ -738,13 +808,16 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     }
                                     select { class: "select select-bordered hud-input w-full", value: "{edit_credential_value}",
                                         onchange: move |e| edit_credential_id.set(e.value()),
-                                        option { value: "", "请选择已绑定的应用凭证" }
+                                        // 占位项不可回选：凭证是引用型渠道的必填项，没有凭证的渠道收/发全废
+                                        option { value: "", disabled: true, selected: edit_credential_value.is_empty(), "请选择已绑定的应用凭证" }
                                         for cred in credentials_list.iter() {
                                             {
                                                 let cid = cred.credential_id.clone();
                                                 let cname = cred.name.clone();
                                                 let capp = cred.app_id.clone();
-                                                rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{capp}）" } }
+                                                // Modal 条件渲染：select 的 value 早于 options 挂载，只靠 value 会丢选中
+                                                let is_cur = cid == edit_credential_value;
+                                                rsx! { option { key: "{cid}", value: "{cid}", selected: is_cur, "{cname}（{capp}）" } }
                                             }
                                         }
                                     }
@@ -758,9 +831,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     }
                                     select { class: "select select-bordered hud-input w-full", value: "{edit_mode_value}",
                                         onchange: move |e| edit_identity_mode.set(e.value()),
-                                        option { value: "", "自动（auto）" }
-                                        option { value: "bot", "应用身份（bot）" }
-                                        option { value: "user", "用户身份（user）" }
+                                        option { value: "", selected: edit_mode_value.is_empty(), "自动（auto）" }
+                                        option { value: "bot", selected: edit_mode_value == "bot", "应用身份（bot）" }
+                                        option { value: "user", selected: edit_mode_value == "user", "用户身份（user）" }
                                     }
                                 }
                                 div { class: "form-control w-full",
@@ -795,13 +868,16 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     }
                                     select { class: "select select-bordered hud-input w-full", value: "{edit_wechat_credential_value}",
                                         onchange: move |e| edit_wechat_credential_id.set(e.value()),
-                                        option { value: "", "请选择已扫码授权的 iLink 凭证" }
+                                        // 占位项不可回选：凭证是引用型渠道的必填项，没有凭证的渠道收/发全废
+                                        option { value: "", disabled: true, selected: edit_wechat_credential_value.is_empty(), "请选择已扫码授权的 iLink 凭证" }
                                         for cred in wechat_credentials_list.iter() {
                                             {
                                                 let cid = cred.credential_id.clone();
                                                 let cname = cred.name.clone();
                                                 let cbot = cred.bot_id.clone();
-                                                rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{cbot}）" } }
+                                                // Modal 条件渲染：select 的 value 早于 options 挂载，只靠 value 会丢选中
+                                                let is_cur = cid == edit_wechat_credential_value;
+                                                rsx! { option { key: "{cid}", value: "{cid}", selected: is_cur, "{cname}（{cbot}）" } }
                                             }
                                         }
                                     }
@@ -835,13 +911,16 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     }
                                     select { class: "select select-bordered hud-input w-full", value: "{edit_email_credential_value}",
                                         onchange: move |e| edit_email_credential_id.set(e.value()),
-                                        option { value: "", "请选择已添加的邮箱机器人凭证" }
+                                        // 占位项不可回选：凭证是引用型渠道的必填项，没有凭证的渠道收/发全废
+                                        option { value: "", disabled: true, selected: edit_email_credential_value.is_empty(), "请选择已添加的邮箱机器人凭证" }
                                         for cred in email_credentials_list.iter() {
                                             {
                                                 let cid = cred.credential_id.clone();
                                                 let cname = cred.name.clone();
                                                 let caddr = cred.email_address.clone();
-                                                rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{caddr}）" } }
+                                                // Modal 条件渲染：select 的 value 早于 options 挂载，只靠 value 会丢选中
+                                                let is_cur = cid == edit_email_credential_value;
+                                                rsx! { option { key: "{cid}", value: "{cid}", selected: is_cur, "{cname}（{caddr}）" } }
                                             }
                                         }
                                     }
@@ -876,11 +955,11 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     }
                                     select { class: "select select-bordered hud-input w-full", value: "{edit_webhook_method}",
                                         onchange: move |e| edit_webhook_method.set(e.value()),
-                                        option { value: "", "选择方法" }
-                                        option { value: "POST", "POST" }
-                                        option { value: "GET", "GET" }
-                                        option { value: "PUT", "PUT" }
-                                        option { value: "DELETE", "DELETE" }
+                                        option { value: "", selected: edit_webhook_method().is_empty(), "选择方法" }
+                                        option { value: "POST", selected: edit_webhook_method() == "POST", "POST" }
+                                        option { value: "GET", selected: edit_webhook_method() == "GET", "GET" }
+                                        option { value: "PUT", selected: edit_webhook_method() == "PUT", "PUT" }
+                                        option { value: "DELETE", selected: edit_webhook_method() == "DELETE", "DELETE" }
                                     }
                                 }
                                 div { class: "form-control w-full",
@@ -907,6 +986,15 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
             }
         }
     }
+}
+
+/// 绑定 Agent 展示名（Agent 列表未加载或该 Agent 已删除时回退原始 ID）
+fn agent_display_name(agent_id: &str, agents: &[AgentListItem]) -> String {
+    agents
+        .iter()
+        .find(|a| a.id == agent_id)
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| agent_id.to_string())
 }
 
 fn identity_mode_text(mode: Option<&str>) -> &'static str {
