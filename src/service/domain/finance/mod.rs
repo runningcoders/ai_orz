@@ -11,6 +11,7 @@ pub mod mcp_server;
 pub mod mcp_tool;
 pub mod message_channel;
 pub mod model_provider;
+pub mod tool_authorization;
 pub mod tool_provider;
 
 #[cfg(test)]
@@ -28,12 +29,16 @@ mod mcp_server_test;
 #[cfg(test)]
 mod tool_provider_test;
 
+#[cfg(test)]
+mod tool_authorization_test;
+
 use crate::models::attachment::{
     Attachment, AttachmentGetOptions, AttachmentTextContent, AttachmentUpload,
     TextAttachmentCreate, TextContentUpdate,
 };
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
+use crate::pkg::authorization::PendingAuthorization;
 use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::mcp_server::McpServerDal;
@@ -101,7 +106,7 @@ pub fn new(
 
 /// 初始化 Finance Domain（使用全局单例 DAO）
 pub fn init() {
-    let finance_domain = FinanceDomainImpl::new(
+    let mut finance_domain = FinanceDomainImpl::new(
         crate::service::dal::model_provider::dal(),
         crate::service::dal::message_channel::dal(),
         crate::service::dal::mcp_server::dal(),
@@ -114,6 +119,7 @@ pub fn init() {
     .with_wechat_channel_dal(crate::service::dal::wechat::dal())
     .with_email_channel_dal(crate::service::dal::email::dal())
     .with_user_dal(crate::service::dal::user::dal());
+    finance_domain.tool_authorization.message_dal = Some(crate::service::dal::message::dal());
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
 }
 
@@ -143,6 +149,111 @@ pub trait FinanceDomain: Send + Sync {
 
     /// 身份凭证管理能力（用户级凭证资产 + 飞书集成授权/绑定）
     fn identity_credential_manage(&self) -> &dyn IdentityCredentialManage;
+
+    /// 工具授权管理能力（审批回路编排）
+    fn tool_authorization_manage(&self) -> &dyn ToolAuthorizationManage;
+}
+
+/// 创建授权命令（拦截建单 / 主动申请共同入参）
+#[derive(Debug, Clone)]
+pub struct CreateAuthorizationCmd {
+    /// 申请人 Agent ID
+    pub agent_id: String,
+    /// 目标工具 ID
+    pub tool_id: String,
+    /// 受限命令规范化签名
+    pub command_signature: String,
+    /// 命中拦截规则 id
+    pub blocking_rule: String,
+    /// 拦截规则幂等性（决定签发默认次数上限）
+    pub rule_idempotent: bool,
+    /// 申请理由（审计留痕）
+    pub reason: Option<String>,
+}
+
+/// 审批决策命令（UI 直批 / 聊天指令直批 / 聊天代呈共用入口）
+#[derive(Debug, Clone, Default)]
+pub struct AuthorizationDecisionCmd {
+    /// 授权单 ID
+    pub authorization_id: String,
+    /// true=批准签发 / false=拒绝
+    pub approve: bool,
+    /// Scope 裁量：授权命令签名（None=沿用建单签名）
+    pub scope_command_signature: Option<String>,
+    /// Scope 裁量：前缀匹配（默认 false 精确）
+    pub prefix_match: bool,
+    /// Scope 裁量：次数上限（None=按规则幂等默认）
+    pub max_uses: Option<u32>,
+    /// Scope 裁量：有效期秒（None=默认 900）
+    pub ttl_secs: Option<i64>,
+    /// 证据类别（None=按 UI 直批处理）
+    pub evidence_class: Option<common::api::EvidenceClassDto>,
+    /// 证据消息 ID（聊天通道必携）
+    pub evidence_message_id: Option<String>,
+    /// 代呈 Agent（由调用侧从 ctx 注入，如 handler）
+    pub mediator_agent_id: Option<String>,
+}
+
+/// 审批决策结果
+#[derive(Debug, Clone)]
+pub struct AuthorizationDecisionOutcome {
+    /// 授权单 ID
+    pub authorization_id: String,
+    /// 决策后状态
+    pub status: crate::pkg::authorization::AuthorizationStatus,
+    /// 批准签发的授权 ID（拒绝为 None）
+    pub grant_id: Option<String>,
+}
+
+/// 工具授权管理 trait
+///
+/// 审批回路业务编排：建单 / 决策 / 证据链校验 / 撤销 / 查询 / 放行计数。
+/// 存储实现（内存授权存储）内聚本子域（§14.2 定案）；重启失效为有意安全默认。
+#[async_trait]
+pub trait ToolAuthorizationManage: Send + Sync {
+    /// 创建待审批授权单（同签名 Pending 已存在时拒绝，防重复建单）
+    async fn create_pending_authorization(
+        &self,
+        ctx: RequestContext,
+        cmd: CreateAuthorizationCmd,
+    ) -> Result<PendingAuthorization>;
+
+    /// 审批决策（红线④：Agent ctx 结构性拒绝；证据链五要素校验）
+    async fn decide_authorization(
+        &self,
+        ctx: RequestContext,
+        cmd: AuthorizationDecisionCmd,
+    ) -> Result<AuthorizationDecisionOutcome>;
+
+    /// 撤销授权单（即时生效；终态不可撤销）
+    async fn revoke_authorization(
+        &self,
+        ctx: RequestContext,
+        authorization_id: &str,
+        reason: Option<String>,
+    ) -> Result<AuthorizationDecisionOutcome>;
+
+    /// 授权单查询列表
+    async fn list_authorizations(
+        &self,
+        ctx: RequestContext,
+        query: common::api::AuthorizationQueryRequest,
+    ) -> Result<Vec<common::api::AuthorizationDetailDto>>;
+
+    /// 放行计数消耗（拦截侧授权放行时调用；次数用尽授权单闭环 Consumed，返回 None）
+    async fn consume_grant(
+        &self,
+        ctx: RequestContext,
+        authorization_id: &str,
+    ) -> Result<Option<crate::pkg::authorization::AuthorizationGrant>>;
+
+    /// 拦截侧有效授权查取（agent×tool 维度，供裁决融合）
+    async fn active_grants_for(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tool_id: &str,
+    ) -> Result<Vec<crate::pkg::authorization::AuthorizationGrant>>;
 }
 
 /// Model Provider 管理 trait
@@ -760,6 +871,8 @@ pub struct FinanceDomainImpl {
     pub email_channel_dal: Option<Arc<dyn crate::service::dal::email::EmailDal>>,
     /// 用户 DAL（身份凭证资产读写；测试实例可为 None）
     pub user_dal: Option<Arc<dyn crate::service::dal::user::UserDal + Send + Sync>>,
+    /// 工具授权编排（内存授权存储内聚于该服务；§14.2 存储落点 domain 定案）
+    pub tool_authorization: tool_authorization::AuthorizationService,
 }
 
 impl FinanceDomainImpl {
@@ -785,6 +898,7 @@ impl FinanceDomainImpl {
             wechat_channel_dal: None,
             email_channel_dal: None,
             user_dal: None,
+            tool_authorization: tool_authorization::AuthorizationService::new(),
         }
     }
 
@@ -852,5 +966,9 @@ impl FinanceDomain for FinanceDomainImpl {
 
     fn identity_credential_manage(&self) -> &dyn IdentityCredentialManage {
         self
+    }
+
+    fn tool_authorization_manage(&self) -> &dyn ToolAuthorizationManage {
+        &self.tool_authorization
     }
 }

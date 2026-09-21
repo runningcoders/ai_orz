@@ -488,3 +488,152 @@ pub struct ToolRuntimeStatsResponse {
     /// 平均调用耗时（毫秒），窗口内无调用时为 None
     pub avg_duration_ms: Option<f64>,
 }
+
+// ==================== 工具授权（阶段③批次一 · S1b DTO 契约）====================
+
+/// 授权单六态（领域镜像：pkg::authorization::AuthorizationStatus）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum AuthorizationStatusDto {
+    /// 待审批
+    Pending,
+    /// 已批准生效
+    Active,
+    /// 已过期
+    Expired,
+    /// 已撤销
+    Revoked,
+    /// 已拒绝
+    Rejected,
+    /// 已消耗
+    Consumed,
+}
+
+/// 证据类别：UI 直批 / 聊天指令直批（无 Agent 参与）/ 聊天确认代呈（Agent 携证据）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum EvidenceClassDto {
+    /// 平台界面直批（user ctx 即身份凭证）
+    Ui,
+    /// 聊天指令直批（渠道入站管线以消息归属人身份直调，无 Agent 参与）
+    ChatDirective,
+    /// 聊天确认代呈（Agent 携证据消息代呈，红线⑤运行时强制）
+    ChatMediated,
+}
+
+/// 授权范围（Approve 可裁量；默认精确签名最窄授权）
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AuthorizationScopeDto {
+    /// 授权命令签名（None=沿用建单签名）
+    pub command_signature: Option<String>,
+    /// true=前缀匹配放宽（默认 false 精确匹配）
+    pub prefix_match: bool,
+    /// 次数上限（None=按规则幂等属性默认：非幂等 1 次/幂等不限）
+    pub max_uses: Option<u32>,
+    /// 有效期秒（None=默认 900，clamp [60,3600]）
+    pub ttl_secs: Option<i64>,
+}
+
+/// 创建授权请求（主动建单：口头事前授权登记等场景）
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct CreateAuthorizationRequest {
+    /// 申请人 Agent ID
+    pub agent_id: String,
+    /// 目标工具 ID
+    pub tool_id: String,
+    /// 申请理由（审计留痕）
+    pub reason: String,
+    /// 拓展预留：仓库标识
+    pub repository: Option<String>,
+    /// 拓展预留：分支
+    pub branch: Option<String>,
+    /// 拓展预留：组织
+    pub org_id: Option<String>,
+}
+
+/// 创建授权响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CreateAuthorizationResponse {
+    /// 授权单 ID
+    pub authorization_id: String,
+    /// 当前状态
+    pub status: AuthorizationStatusDto,
+}
+
+/// 审批决策请求（UI 直批通道；Agent 不得调用，运行时强制 user ctx）
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct AuthorizationDecisionRequest {
+    /// 授权单 ID
+    pub authorization_id: String,
+    /// 决策：Approve / Reject
+    pub decision: String,
+    /// 授权范围裁量
+    pub scope: Option<AuthorizationScopeDto>,
+    /// 证据类别（UI 直批可省略；聊天指令直批必携证据消息）
+    pub evidence_class: Option<EvidenceClassDto>,
+    /// 证据消息 ID（证据链核心，平台校验五要素）
+    pub evidence_message_id: Option<String>,
+    /// 代呈 Agent ID（仅代呈通道；由 handler 从 ctx 注入，DTO 预留向后兼容）
+    pub mediator_agent_id: Option<String>,
+}
+
+/// 审批决策响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AuthorizationDecisionResponse {
+    /// 授权单 ID
+    pub authorization_id: String,
+    /// 决策后状态
+    pub status: AuthorizationStatusDto,
+    /// Approve 签发的授权 ID
+    pub grant_id: Option<String>,
+}
+
+/// 授权单查询请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct AuthorizationQueryRequest {
+    /// 按状态过滤
+    pub status: Option<AuthorizationStatusDto>,
+    /// 按申请人 Agent 过滤
+    pub agent_id: Option<String>,
+    /// 按工具过滤
+    pub tool_id: Option<String>,
+    /// 按归属用户过滤
+    pub user_id: Option<String>,
+}
+
+/// 授权单详情
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AuthorizationDetailDto {
+    /// 授权单 ID
+    pub authorization_id: String,
+    /// 申请人 Agent
+    pub agent_id: String,
+    /// 目标工具
+    pub tool_id: String,
+    /// 归属用户（审批人）
+    pub user_id: String,
+    /// 受限命令规范化签名
+    pub command_signature: String,
+    /// 命中拦截规则 id
+    pub blocking_rule: String,
+    /// 建单时刻 ms
+    pub requested_at_ms: i64,
+    /// 当前状态
+    pub status: AuthorizationStatusDto,
+    /// 已签发授权 ID（Pending/Rejected 为 None）
+    pub grant_id: Option<String>,
+    /// 过期时刻 ms
+    pub expires_at_ms: Option<i64>,
+    /// 剩余可用次数（None=不限）
+    pub remaining_uses: Option<u32>,
+}
+
+/// 撤销授权请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct RevokeAuthorizationRequest {
+    /// 授权单 ID
+    pub authorization_id: String,
+    /// 撤销理由（审计留痕）
+    pub reason: Option<String>,
+}
+
+/// 撤销授权响应（与决策响应同构）
+pub type RevokeAuthorizationResponse = AuthorizationDecisionResponse;

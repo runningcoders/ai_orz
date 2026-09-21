@@ -136,6 +136,73 @@ impl AuthorizationPolicySnapshot {
     }
 }
 
+/// 用户证据静态四要素载体（第⑤条自代呈为独立参数比较；单次消费防重放由 domain 状态承载）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceCheck {
+    /// 证据消息发送者 ID（必须等于授权单归属用户）
+    pub from_id: String,
+    /// 发送者角色是否为用户（伪造用户消息结构性拒绝）
+    pub from_role_is_user: bool,
+    /// 消息创建时刻 ms（必须晚于授权单建单时刻）
+    pub created_at_ms: i64,
+}
+
+/// 证据校验拒绝原因
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EvidenceRejection {
+    /// 未携带证据
+    Missing,
+    /// 证据消息归属用户与授权单归属用户不一致
+    MismatchedUser,
+    /// 证据消息发送者角色非用户
+    NotFromUser,
+    /// 证据消息早于建单时刻（先斩后奏）
+    Stale,
+    /// 代呈 Agent 即申请人（红线⑤：申请人不得自代呈）
+    SelfMediation,
+}
+
+impl EvidenceRejection {
+    pub fn describe(&self) -> String {
+        match self {
+            EvidenceRejection::Missing => "未携带用户证据".to_string(),
+            EvidenceRejection::MismatchedUser => {
+                "证据消息归属用户与授权单归属用户不一致".to_string()
+            }
+            EvidenceRejection::NotFromUser => "证据消息发送者角色非用户".to_string(),
+            EvidenceRejection::Stale => "证据消息早于授权单建单时刻".to_string(),
+            EvidenceRejection::SelfMediation => {
+                "申请人不得自代呈（代呈 Agent 即申请人）".to_string()
+            }
+        }
+    }
+}
+
+/// 证据静态校验纯函数（证据五要素：①存在 ②归属用户 ③角色为用户 ④晚于建单 ⑤代呈非申请人）
+///
+/// 返回 Ok(()) 表示静态要素齐备；单次消费防重放与「消息真实存在」的落库一致性
+/// 由消费方（domain：查消息表 + evidence 消费记录）保证。
+pub fn evaluate_evidence(
+    evidence: Option<&EvidenceCheck>,
+    authorization: &PendingAuthorization,
+    mediator_agent_id: Option<&str>,
+) -> Result<(), EvidenceRejection> {
+    if mediator_agent_id.is_some_and(|m| m == authorization.agent_id) {
+        return Err(EvidenceRejection::SelfMediation);
+    }
+    let ev = evidence.ok_or(EvidenceRejection::Missing)?;
+    if ev.from_id != authorization.user_id {
+        return Err(EvidenceRejection::MismatchedUser);
+    }
+    if !ev.from_role_is_user {
+        return Err(EvidenceRejection::NotFromUser);
+    }
+    if ev.created_at_ms < authorization.requested_at_ms {
+        return Err(EvidenceRejection::Stale);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +252,75 @@ mod tests {
         assert_eq!(grant.remaining_uses(), Some(0));
         grant.max_uses = None;
         assert_eq!(grant.remaining_uses(), None);
+    }
+    fn sample_pending() -> PendingAuthorization {
+        PendingAuthorization {
+            authorization_id: "a1".into(),
+            agent_id: "agent-a".into(),
+            tool_id: "shell_exec".into(),
+            user_id: "user-aman".into(),
+            command_signature: SAMPLE_SIG.into(),
+            blocking_rule: "git_dangerous_subcommand".into(),
+            requested_at_ms: 1_000,
+            status: AuthorizationStatus::Pending,
+        }
+    }
+
+    fn evidence(uid: &str, is_user: bool, at_ms: i64) -> EvidenceCheck {
+        EvidenceCheck {
+            from_id: uid.into(),
+            from_role_is_user: is_user,
+            created_at_ms: at_ms,
+        }
+    }
+
+    #[test]
+    fn evidence_passes_when_all_static_elements_hold() {
+        let pending = sample_pending();
+        let ev = evidence("user-aman", true, 2_000);
+        assert!(evaluate_evidence(Some(&ev), &pending, Some("agent-b")).is_ok());
+        assert!(evaluate_evidence(Some(&ev), &pending, None).is_ok());
+    }
+
+    #[test]
+    fn evidence_rejections_cover_all_paths() {
+        let pending = sample_pending();
+        assert_eq!(
+            evaluate_evidence(None, &pending, None),
+            Err(EvidenceRejection::Missing)
+        );
+        let ev = evidence("user-other", true, 2_000);
+        assert_eq!(
+            evaluate_evidence(Some(&ev), &pending, None),
+            Err(EvidenceRejection::MismatchedUser)
+        );
+        let ev = evidence("user-aman", false, 2_000);
+        assert_eq!(
+            evaluate_evidence(Some(&ev), &pending, None),
+            Err(EvidenceRejection::NotFromUser)
+        );
+        let ev = evidence("user-aman", true, 999);
+        assert_eq!(
+            evaluate_evidence(Some(&ev), &pending, None),
+            Err(EvidenceRejection::Stale)
+        );
+        let ev = evidence("user-aman", true, 2_000);
+        assert_eq!(
+            evaluate_evidence(Some(&ev), &pending, Some("agent-a")),
+            Err(EvidenceRejection::SelfMediation)
+        );
+    }
+
+    #[test]
+    fn rejection_descriptions_are_non_empty() {
+        for r in [
+            EvidenceRejection::Missing,
+            EvidenceRejection::MismatchedUser,
+            EvidenceRejection::NotFromUser,
+            EvidenceRejection::Stale,
+            EvidenceRejection::SelfMediation,
+        ] {
+            assert!(!r.describe().is_empty());
+        }
     }
 }
