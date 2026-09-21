@@ -719,7 +719,7 @@ pub fn HrSkills() -> Element {
                 }
             },
             div { class: "space-y-4",
-                // 策略选择（二选一）+ 增强子选项（同步已安装副本）
+                // 策略选择（二选一）
                 div { class: "border border-base-300 rounded-box bg-base-200 overflow-hidden",
                     div { class: "grid gap-2 p-3",
                         div {
@@ -751,20 +751,27 @@ pub fn HrSkills() -> Element {
                             }
                         }
                     }
-                    // 增强子选项：整行可点，checkbox 仅作视觉呈现（pointer-events-none 防双触发）
-                    label {
-                        class: "flex cursor-pointer select-none items-start gap-2.5 border-t border-base-300 bg-base-200/60 px-3 py-2.5",
-                        onclick: move |_| sync_installed.set(!sync_installed()),
-                        input {
-                            class: "checkbox checkbox-primary checkbox-sm mt-0.5 pointer-events-none",
-                            r#type: "checkbox",
-                            checked: sync_installed(),
+                }
+
+                // 增强子选项：同步后刷新 Agent 副本（独立于策略组，避免嵌套点击互相影响）
+                // 整行可点；复选框为纯视觉绘制——真实 input 会被 label 原生点击转发二次触发，表现为「点了没反应」
+                div {
+                    class: "flex cursor-pointer select-none items-start gap-2.5 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                    onclick: move |_| sync_installed.set(!sync_installed()),
+                    div {
+                        class: if sync_installed() {
+                            "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[0.25rem] bg-primary text-primary-content"
+                        } else {
+                            "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[0.25rem] border-2 border-base-content/30"
+                        },
+                        if sync_installed() {
+                            span { class: "text-[10px] font-bold leading-none", "✓" }
                         }
-                        div {
-                            div { class: "text-sm font-medium", "同时更新已安装到 Agent 的技能副本" }
-                            div { class: "text-xs text-base-content/60",
-                                "增强动作：策略执行后，把各 Agent 已安装的技能副本一并刷新为源技能最新内容（含 skill.md）"
-                            }
+                    }
+                    div {
+                        div { class: "text-sm font-medium", "同时更新已安装到 Agent 的技能副本" }
+                        div { class: "text-xs text-base-content/60",
+                            "增强动作：策略执行后，把各 Agent 已安装的技能副本一并刷新为源技能最新内容（含 skill.md）"
                         }
                     }
                 }
