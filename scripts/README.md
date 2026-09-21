@@ -23,7 +23,8 @@ scripts/
 ├── run.sh              【实现】开发态启动：dev / backend / frontend
 ├── prod.sh             【实现】生产态生命周期：build / start / stop / status / logs / restart
 ├── build_frontend.sh   【实现】前端 dx build --release → dist/（Dockerfile 也复用它）
-├── cleanup.sh          【实现】残留进程与端口占用清理（--dry-run 只列不杀）
+├── cleanup.sh          【实现】残留进程与端口占用清理（--dry-run 只列不杀）；
+│                       后端走 `service.sh::graceful_stop`（与 make stop 同一条链路）
 ├── check_deps.sh       【实现】依赖预检（[模式] [--fix]）
 ├── check.sh            【实现】代码门禁：fmt / clippy / clippy-fe / test / lint / ci / coverage
 ├── package.sh          【实现】发布物打包（CI release.yml 直接调用）
@@ -56,6 +57,10 @@ scripts/
    不要在入口里写实现逻辑，否则很快又变成「同一功能两份」。
 2. **通用片段下沉到 `lib/`**：颜色、路径推导、PATH 补齐 → `common.sh`；
    端口等待、PID 文件、优雅停止 → `service.sh`。发现第三处重复时，先想能不能进 lib。
+3. **停后端只有一条链路**：`service.sh::graceful_stop`（事件驱动等终态日志 / 进程退出，
+   超时才 `-9`）。`prod.sh stop`、`prod.sh start` 的幂等重启、`cleanup.sh` 全部走它。
+   ❌ 禁止对后端二进制写「`kill` + 固定 `sleep N` + `kill -9`」——优雅退出含 10s HTTP drain
+   窗口（SSE 长连接必然吃满）+ 渠道停服 + AOP 排空 + DuckDB flush，1s 就 `-9` 必丢统计落盘。
 
 ## 五、发布包如何复用这些脚本
 
