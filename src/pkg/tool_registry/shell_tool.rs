@@ -19,6 +19,7 @@ use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::process::{self, ExecOptions};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::http::{render_string_template, validate_args_schema};
+use crate::pkg::tool_registry::policy_authorization_fusion as fusion;
 use crate::pkg::tool_registry::shell_env;
 use crate::pkg::tool_registry::shell_policy::{self, ShellPolicyInput};
 use anyhow::anyhow;
@@ -139,12 +140,51 @@ async fn execute_shell_call(
         agent_id: ctx.agent_id.as_deref(),
     });
     if let Some(blocking) = verdict.blocking {
-        return Ok(json!({
-            "success": false,
-            "require_confirmation": true,
-            "error": blocking.reason(),
-            "message": blocking.reason(),
-        }));
+        let reason = blocking.reason();
+        match blocking {
+            // 红线①：Deny 结构性不可解锁
+            crate::pkg::policy::PolicyAction::Deny(_) => {
+                return Ok(fusion::blocking_response(reason, None));
+            }
+            // 红线②：Confirm 经授权门层级推导
+            crate::pkg::policy::PolicyAction::Confirm(_) => {
+                let gate = crate::pkg::authorization::authorization_gate::gate();
+                let command_text = format!("{} {}", config.program, argv.join(" "));
+                let sig = crate::pkg::authorization::command_signature(&command_text);
+                match fusion::confirm_with_authorization(
+                    ctx,
+                    gate,
+                    verdict.blocking_rule.unwrap_or("unknown"),
+                    reason.to_string(),
+                    &sig,
+                )
+                .await
+                {
+                    Ok(fusion::ConfirmOutcome::Released(release)) => {
+                        crate::log_info!(
+                            ctx,
+                            "shell_tool",
+                            authorization_id = release.authorization_id,
+                            grant_id = release.grant_id,
+                            "授权放行（Confirm 降级 Audit）"
+                        );
+                        // 放行 → 继续执行
+                    }
+                    Ok(fusion::ConfirmOutcome::Pending {
+                        pending_id, reason, ..
+                    }) => {
+                        return Ok(fusion::blocking_response(&reason, Some(&pending_id)));
+                    }
+                    Err(e) => {
+                        return Ok(fusion::blocking_response(&e.to_string(), None));
+                    }
+                }
+            }
+            other => {
+                let reason = other.reason();
+                return Ok(fusion::blocking_response(reason, None));
+            }
+        }
     }
     for (rule_id, reason) in verdict.audits {
         crate::log_info!(

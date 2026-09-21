@@ -10,6 +10,8 @@
 //! 未来非工具消费方可直接引用；pkg/policy 定位「通用判断引擎不感知业务语义」，
 //! 授权单六态生命周期语义不进入 policy（方案 §15.2 定案）。
 
+pub mod authorization_gate;
+pub use authorization_gate::{AuthorizationGate, CreateAuthorizationCmd, gate, install_gate};
 mod model;
 mod signing;
 mod verdict;

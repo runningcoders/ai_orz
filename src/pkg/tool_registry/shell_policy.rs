@@ -81,6 +81,8 @@ pub struct ShellRulePolicy {
     matcher: CommandMatcher,
     action: RuleAction,
     reason: &'static str,
+    /// 幂等性声明（§14.2 定案）：决定授权签发默认次数上限（非幂等=1 次）
+    pub idempotent: bool,
 }
 
 impl ShellRulePolicy {
@@ -185,6 +187,7 @@ static RULE_DEFS: &[ShellRulePolicy] = &[
         matcher: CommandMatcher::ScopeOutsideAllowedPaths,
         action: RuleAction::Confirm,
         reason: "Working directory is not in allowed paths. Execution requires explicit user confirmation.",
+        idempotent: false,
     },
     ShellRulePolicy {
         id: "workspace_identity_boundary",
@@ -193,6 +196,7 @@ static RULE_DEFS: &[ShellRulePolicy] = &[
         matcher: CommandMatcher::ScopeIdentityBoundary,
         action: RuleAction::Confirm,
         reason: "Working directory belongs to another user/agent workspace. You MUST STOP and ask the user for explicit confirmation before using it.",
+        idempotent: false,
     },
     ShellRulePolicy {
         id: "destructive_fs",
@@ -205,6 +209,7 @@ static RULE_DEFS: &[ShellRulePolicy] = &[
         ]),
         action: RuleAction::Confirm,
         reason: "Command matches a destructive filesystem pattern (broad rm / mkfs / dd to device). Explicit user confirmation is required.",
+        idempotent: false,
     },
     ShellRulePolicy {
         id: "git_dangerous_subcommand",
@@ -216,6 +221,7 @@ static RULE_DEFS: &[ShellRulePolicy] = &[
         },
         action: RuleAction::Confirm,
         reason: "Restricted git subcommand (push/reset/clean) requires explicit user confirmation.",
+        idempotent: false,
     },
     ShellRulePolicy {
         id: "git_commit_audit",
@@ -227,6 +233,7 @@ static RULE_DEFS: &[ShellRulePolicy] = &[
         },
         action: RuleAction::Audit,
         reason: "git commit executed; task-scoped trailer is injected via commit-msg hook",
+        idempotent: true,
     },
 ];
 
@@ -316,6 +323,8 @@ pub struct ShellPolicyInput<'a> {
 pub struct ShellPolicyVerdict {
     /// 阻断动作（Deny/Confirm）：命中即短路，不执行命令
     pub blocking: Option<PolicyAction>,
+    /// 阻断命中的规则 id（授权白名单按 rule_id 判定；None=未阻断）
+    pub blocking_rule: Option<&'static str>,
     /// 放行场景下命中的审计规则（rule_id, reason）
     pub audits: Vec<(&'static str, &'static str)>,
 }
@@ -355,7 +364,28 @@ pub fn evaluate(input: ShellPolicyInput<'_>) -> ShellPolicyVerdict {
             .collect()
     };
 
-    ShellPolicyVerdict { blocking, audits }
+    // 阻断规则 id：按声明序（=引擎 Or 优先级）找首个命中的阻断级规则
+    let blocking_rule = if blocking.is_some() {
+        RULE_DEFS
+            .iter()
+            .find(|r| {
+                matches!(r.action, RuleAction::Deny | RuleAction::Confirm) && r.matches(&metrics)
+            })
+            .map(|r| r.id)
+    } else {
+        None
+    };
+
+    ShellPolicyVerdict {
+        blocking,
+        blocking_rule,
+        audits,
+    }
+}
+
+/// 按规则 id 查规则定义（授权融合层取幂等属性等）
+pub fn rule_def(id: &str) -> Option<&'static ShellRulePolicy> {
+    RULE_DEFS.iter().find(|r| r.id == id)
 }
 
 #[cfg(test)]

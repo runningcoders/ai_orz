@@ -12,6 +12,9 @@ pub mod mcp_tool;
 pub mod message_channel;
 pub mod model_provider;
 pub mod tool_authorization;
+
+// 授权建单命令为 pkg 授权门契约类型（pkg/authorization 定义，domain 复用）
+pub use crate::pkg::authorization::CreateAuthorizationCmd;
 pub mod tool_provider;
 
 #[cfg(test)]
@@ -106,7 +109,7 @@ pub fn new(
 
 /// 初始化 Finance Domain（使用全局单例 DAO）
 pub fn init() {
-    let mut finance_domain = FinanceDomainImpl::new(
+    let finance_domain = FinanceDomainImpl::new(
         crate::service::dal::model_provider::dal(),
         crate::service::dal::message_channel::dal(),
         crate::service::dal::mcp_server::dal(),
@@ -119,8 +122,15 @@ pub fn init() {
     .with_wechat_channel_dal(crate::service::dal::wechat::dal())
     .with_email_channel_dal(crate::service::dal::email::dal())
     .with_user_dal(crate::service::dal::user::dal());
-    finance_domain.tool_authorization.message_dal = Some(crate::service::dal::message::dal());
+    finance_domain
+        .tool_authorization
+        .wire_message_dal(crate::service::dal::message::dal());
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
+    // 装配授权门（init_shared_service 已在 FinanceDomainImpl::new 建共享实例；
+    // 此处确保 gate 槽位安装完成，set-once 幂等）
+    let gate: std::sync::Arc<dyn crate::pkg::authorization::authorization_gate::AuthorizationGate> =
+        tool_authorization::init_shared_service();
+    let _ = crate::pkg::authorization::authorization_gate::install_gate(gate);
 }
 
 // ==================== trait 定义 ====================
@@ -152,23 +162,6 @@ pub trait FinanceDomain: Send + Sync {
 
     /// 工具授权管理能力（审批回路编排）
     fn tool_authorization_manage(&self) -> &dyn ToolAuthorizationManage;
-}
-
-/// 创建授权命令（拦截建单 / 主动申请共同入参）
-#[derive(Debug, Clone)]
-pub struct CreateAuthorizationCmd {
-    /// 申请人 Agent ID
-    pub agent_id: String,
-    /// 目标工具 ID
-    pub tool_id: String,
-    /// 受限命令规范化签名
-    pub command_signature: String,
-    /// 命中拦截规则 id
-    pub blocking_rule: String,
-    /// 拦截规则幂等性（决定签发默认次数上限）
-    pub rule_idempotent: bool,
-    /// 申请理由（审计留痕）
-    pub reason: Option<String>,
 }
 
 /// 审批决策命令（UI 直批 / 聊天指令直批 / 聊天代呈共用入口）
@@ -871,8 +864,9 @@ pub struct FinanceDomainImpl {
     pub email_channel_dal: Option<Arc<dyn crate::service::dal::email::EmailDal>>,
     /// 用户 DAL（身份凭证资产读写；测试实例可为 None）
     pub user_dal: Option<Arc<dyn crate::service::dal::user::UserDal + Send + Sync>>,
-    /// 工具授权编排（内存授权存储内聚于该服务；§14.2 存储落点 domain 定案）
-    pub tool_authorization: tool_authorization::AuthorizationService,
+    /// 工具授权编排（内存授权存储内聚于该服务；§14.2 存储落点 domain 定案；
+    /// Arc 与 AuthorizationGate 装配共享同一实例）
+    pub tool_authorization: Arc<tool_authorization::AuthorizationService>,
 }
 
 impl FinanceDomainImpl {
@@ -898,7 +892,7 @@ impl FinanceDomainImpl {
             wechat_channel_dal: None,
             email_channel_dal: None,
             user_dal: None,
-            tool_authorization: tool_authorization::AuthorizationService::new(),
+            tool_authorization: tool_authorization::init_shared_service(),
         }
     }
 
@@ -969,6 +963,6 @@ impl FinanceDomain for FinanceDomainImpl {
     }
 
     fn tool_authorization_manage(&self) -> &dyn ToolAuthorizationManage {
-        &self.tool_authorization
+        self.tool_authorization.as_ref()
     }
 }

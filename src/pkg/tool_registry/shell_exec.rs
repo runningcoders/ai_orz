@@ -9,6 +9,9 @@ use crate::pkg::git_workspace;
 use crate::pkg::paths;
 use crate::pkg::process::{self, ProcessEntry, ProcessStatus};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::policy_authorization_fusion::{
+    ConfirmOutcome, blocking_response, confirm_with_authorization,
+};
 use crate::pkg::tool_registry::shell_env;
 use crate::pkg::tool_registry::shell_policy::{self, ShellPolicyInput};
 use anyhow::anyhow;
@@ -291,12 +294,51 @@ impl CoreTool for ShellExecCoreTool {
         });
         if let Some(action) = verdict.blocking {
             let reason = action.reason();
-            return Ok(serde_json::json!({
-                "success": false,
-                "require_confirmation": true,
-                "error": reason,
-                "message": reason
-            }));
+            match action {
+                // 红线①：Deny 结构性不可解锁（授权策略物理上不进 Deny 分支）
+                crate::pkg::policy::PolicyAction::Deny(_) => {
+                    return Ok(blocking_response(reason, None));
+                }
+                // 红线②：Confirm 经授权门层级推导（Granted 降级 Audit 放行/未命中建单）
+                crate::pkg::policy::PolicyAction::Confirm(_) => {
+                    let gate = crate::pkg::authorization::authorization_gate::gate();
+                    let sig = crate::pkg::authorization::command_signature(&params.command);
+                    match confirm_with_authorization(
+                        &ctx,
+                        gate,
+                        verdict.blocking_rule.unwrap_or("unknown"),
+                        reason.to_string(),
+                        &sig,
+                    )
+                    .await
+                    {
+                        Ok(ConfirmOutcome::Released(release)) => {
+                            crate::log_info!(
+                                ctx,
+                                "shell_exec",
+                                authorization_id = release.authorization_id,
+                                grant_id = release.grant_id,
+                                "授权放行（Confirm 降级 Audit）"
+                            );
+                            // 放行 → 继续执行（落穿到下方执行段）
+                        }
+                        Ok(ConfirmOutcome::Pending {
+                            pending_id, reason, ..
+                        }) => {
+                            return Ok(blocking_response(&reason, Some(&pending_id)));
+                        }
+                        Err(e) => {
+                            // gate 异常保守短路（fail-closed）
+                            return Ok(blocking_response(&e.to_string(), None));
+                        }
+                    }
+                }
+                // Audit 不可能出现在 blocking（is_blocking 过滤），兜底按现状处理
+                other => {
+                    let reason = other.reason();
+                    return Ok(blocking_response(reason, None));
+                }
+            }
         }
 
         if !working_dir.exists() {

@@ -53,8 +53,9 @@ struct InMemoryAuthorizationStore {
 /// 工具授权编排服务（由 FinanceDomainImpl 持有，实现 ToolAuthorizationManage）
 pub struct AuthorizationService {
     store: RwLock<InMemoryAuthorizationStore>,
-    /// 消息 DAL（证据链第①条「消息真实存在」查询；测试/未接线实例为 None → 聊天通道 fail-closed）
-    pub message_dal: Option<Arc<dyn MessageDal>>,
+    /// 消息 DAL（证据链第①条「消息真实存在」查询；未接线实例为 None → 聊天通道 fail-closed；
+    /// RwLock 包装：init 流程经 &self 接线，Arc 共享实例不可 mut 借用）
+    message_dal: RwLock<Option<Arc<dyn MessageDal>>>,
 }
 
 impl std::fmt::Debug for AuthorizationService {
@@ -87,13 +88,23 @@ impl AuthorizationService {
     pub fn new() -> Self {
         Self {
             store: RwLock::new(InMemoryAuthorizationStore::default()),
-            message_dal: None,
+            message_dal: RwLock::new(None),
         }
     }
 
+    /// init 流程接线消息 DAL（&self 可调用，Arc 共享实例友好）
+    pub fn wire_message_dal(&self, dal: Arc<dyn MessageDal>) {
+        *self.message_dal.write().expect("消息 DAL 槽位锁") = Some(dal);
+    }
+
+    /// 读取消息 DAL（clone Arc，锁不跨方法）
+    fn message_dal_handle(&self) -> Option<Arc<dyn MessageDal>> {
+        self.message_dal.read().expect("消息 DAL 槽位锁").clone()
+    }
+
     /// 注入消息 DAL（生产 init 由 finance mod 接线；测试可直接构造）
-    pub fn with_message_dal(mut self, dal: Arc<dyn MessageDal>) -> Self {
-        self.message_dal = Some(dal);
+    pub fn with_message_dal(self, dal: Arc<dyn MessageDal>) -> Self {
+        *self.message_dal.write().expect("消息 DAL 槽位锁") = Some(dal);
         self
     }
 
@@ -118,6 +129,31 @@ impl Default for AuthorizationService {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// 共享实例槽：init 时先建 Arc<AuthorizationService> 同时用于
+/// FinanceDomainImpl 装配与 AuthorizationGate 装配（单一实例双面引用）
+static SHARED_SERVICE: std::sync::OnceLock<Arc<AuthorizationService>> = std::sync::OnceLock::new();
+
+/// init 装配：创建共享实例、安装 Gate、返回该实例（FinanceDomainImpl 持有同一 Arc）
+pub fn init_shared_service() -> Arc<AuthorizationService> {
+    let svc = Arc::new(AuthorizationService::new());
+    if SHARED_SERVICE.set(svc.clone()).is_ok() {
+        let gate: Arc<dyn crate::pkg::authorization::authorization_gate::AuthorizationGate> =
+            svc.clone();
+        let _ = crate::pkg::authorization::authorization_gate::install_gate(gate);
+    }
+    SHARED_SERVICE
+        .get()
+        .cloned()
+        .expect("init_shared_service 已在 OnceLock 初始化")
+}
+
+/// init 流程装配点：将共享授权服务安装为拦截侧授权门
+pub fn install_authorization_gate() {
+    let svc = init_shared_service();
+    let gate: Arc<dyn crate::pkg::authorization::authorization_gate::AuthorizationGate> = svc;
+    let _ = crate::pkg::authorization::authorization_gate::install_gate(gate);
 }
 
 #[async_trait]
@@ -231,8 +267,7 @@ impl super::ToolAuthorizationManage for AuthorizationService {
                 .clone()
                 .ok_or_else(|| Error::bad_request("聊天通道审批必须携带证据消息 ID"))?;
             let dal = self
-                .message_dal
-                .as_ref()
+                .message_dal_handle()
                 .ok_or_else(|| Error::internal("消息数据访问未接线（聊天通道证据链校验不可用）"))?;
             let msg = dal
                 .find_by_id(ctx.clone(), &ev_id)
@@ -485,5 +520,48 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             }
         }
         Ok(out)
+    }
+}
+
+// ==================== AuthorizationGate 实现（拦截侧装配） ====================
+
+use super::ToolAuthorizationManage as _;
+
+#[async_trait]
+impl crate::pkg::authorization::authorization_gate::AuthorizationGate for AuthorizationService {
+    async fn check_grant(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tool_id: &str,
+        command_signature: &str,
+    ) -> Result<Vec<AuthorizationGrant>> {
+        let grants = self.active_grants_for(ctx, agent_id, tool_id).await?;
+        Ok(grants
+            .into_iter()
+            .filter(|g| {
+                crate::pkg::authorization::signature_matches(
+                    &g.command_signature,
+                    g.prefix_match,
+                    command_signature,
+                )
+            })
+            .collect())
+    }
+
+    async fn request_authorization(
+        &self,
+        ctx: RequestContext,
+        cmd: crate::pkg::authorization::CreateAuthorizationCmd,
+    ) -> Result<PendingAuthorization> {
+        self.create_pending_authorization(ctx, cmd).await
+    }
+
+    async fn consume(
+        &self,
+        ctx: RequestContext,
+        authorization_id: &str,
+    ) -> Result<Option<AuthorizationGrant>> {
+        self.consume_grant(ctx, authorization_id).await
     }
 }
