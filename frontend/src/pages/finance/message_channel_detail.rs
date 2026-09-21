@@ -294,8 +294,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                 let req = UpdateMessageChannelRequest {
                     id: id.clone(),
                     user_id: None,
+                    // 留空 = 解除绑定：提交清除哨兵（None 的协议语义是「不修改」）
                     agent_id: if agent_id.trim().is_empty() {
-                        None
+                        Some(common::constants::sentinel::CLEAR_FIELD_SENTINEL.to_string())
                     } else {
                         Some(agent_id)
                     },
@@ -725,6 +726,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                                 input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_agent_id}",
                                     oninput: move |e| edit_agent_id.set(e.value()), placeholder: "留空表示不关联" }
+                                label { class: "label",
+                                    span { class: "label-text-alt text-base-content/60", "留空保存即解除与 Agent 的绑定关系" }
+                                }
                             }
                             if ct == ChannelType::Lark {
                                 div { class: "hud-divider divider", "飞书专属配置" }

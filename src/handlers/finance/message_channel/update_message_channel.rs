@@ -10,13 +10,14 @@ use common::api::{
 
 use super::create_message_channel::{validate_lark_credential_ref, validate_wechat_credential_ref};
 use super::response::to_detail;
+use common::constants::sentinel::merge_clearable_string;
 use common::error::{Result, bail_err, err};
 
 /// Update an existing message channel configuration (name, credentials, settings)
 #[register_handler_tool(
     id = "update_message_channel",
     name = "Update Channel Config",
-    description = "Partially update a message channel: name, bindings (user_id, agent_id), type, webhook_url, tokens, or type-specific config; omitted fields are preserved. Returns the updated channel detail. Fails if a Lark channel is left without a valid LarkApp credential.",
+    description = "Partially update a message channel: name, bindings (user_id, agent_id), type, webhook_url, tokens, or type-specific config; omitted fields are preserved. To unbind the agent, pass agent_id = __clear__ (the clear-field sentinel; None means no change). Returns the updated channel detail. Fails if a Lark channel is left without a valid LarkApp credential.",
     params = "common::api::UpdateMessageChannelRequest",
     tags = "admin"
 )]
@@ -47,9 +48,9 @@ pub async fn update_message_channel(
     if let Some(user_id) = params.user_id {
         channel.po.user_id = user_id;
     }
-    if let Some(agent_id) = params.agent_id {
-        channel.po.agent_id = Some(agent_id);
-    }
+    // agent_id 支持清除哨兵：None=保持原值，Some(__clear__)=解除绑定，Some(id)=设置
+    channel.po.agent_id =
+        merge_clearable_string(channel.po.agent_id.take(), params.agent_id.clone());
     if let Some(channel_type) = params.channel_type {
         channel.po.channel_type = channel_type;
     }

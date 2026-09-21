@@ -10,6 +10,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
+use common::constants::sentinel::fold_clear_sentinel;
 use common::error::{Result, bail_err, err};
 use common::models::CredentialKind;
 
@@ -192,11 +193,14 @@ pub async fn create_message_channel(
         &credentials,
     )?;
 
+    // 哨兵只在部分更新协议中有意义；创建路径防御性折叠，保证哨兵永不落库
+    let agent_id = fold_clear_sentinel(params.agent_id.clone());
+
     let channel_po = MessageChannelPo::new(
         Uuid::now_v7().to_string(),
         org_id,
         user_id,
-        params.agent_id.clone(),
+        agent_id,
         params.channel_type,
         params.channel_name.clone(),
         params.webhook_url.clone(),

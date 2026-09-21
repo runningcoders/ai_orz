@@ -10,6 +10,9 @@ pub mod test_message_channel_connection;
 pub mod update_message_channel;
 pub mod update_message_channel_status;
 
+#[cfg(test)]
+mod update_message_channel_test;
+
 mod response;
 
 pub use create_message_channel::create_message_channel_handler;
