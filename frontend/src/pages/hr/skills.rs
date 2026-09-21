@@ -755,7 +755,7 @@ pub fn HrSkills() -> Element {
 
                 // 增强子选项：同步后刷新 Agent 副本（独立于策略组）
                 // 单一路径：label 整行可点靠原生转发，onchange 读 e.checked() 真实勾选态，不做信号盲切防双触发
-                label { class: "flex cursor-pointer select-none items-center gap-2.5 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                label { class: "flex cursor-pointer select-none items-center gap-3.5 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
                     input {
                         class: "checkbox checkbox-sm checkbox-primary",
                         r#type: "checkbox",
