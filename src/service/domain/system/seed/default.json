@@ -211,7 +211,7 @@
     {
       "id": "TEMPLATE_USER_RECEPTION",
       "name": "用户接待",
-      "description": "前向接待类 Agent（reception / 飞书前台 / 微信前台 / service 客服接待）的通用接待 SOP：接待四步（意图识别 → 能答就答 → 该转则转 → 记忆沉淀）、三条分流路径（直接回答 / search_agents 找人对口 Agent 后 send_task_assignment_message 交办 / create_project + create_task 升级任务流转）、澄清一律走 Final 文本、边界与红线（不冒充专家、不越权承诺、每条必回）与接待最佳实践。",
+      "description": "前向接待类 Agent（reception / 飞书前台 / 微信前台 / service 客服接待）的通用接待 SOP：接待四步（意图识别 → 能答就答 → 该转则转 → 记忆沉淀）、三条分流路径（直接回答 / search_agents 找人对口 Agent 后 send_task_assignment_message 交办 / create_project + create_task 升级任务流转）、Agent 回执用户代理判定（用户委托之事有果 / 需用户拍板才转达，落默认会话不带 project_id；项目侧通知 Owner 已直达不重复）、澄清一律走 Final 文本、边界与红线（不冒充专家、不越权承诺、每条必回）与接待最佳实践。",
       "tags": ["reception", "service"],
       "category": "system",
       "parent_skill_id": "",
