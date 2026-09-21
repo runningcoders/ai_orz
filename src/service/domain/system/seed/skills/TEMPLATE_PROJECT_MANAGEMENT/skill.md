@@ -68,14 +68,24 @@ Completed  → Archived
 
 - **`create_task`**：`title`、`assignee_id` 必填；可选 `description` / `priority` / `tags` / `root_user_id`（默认当前用户）/ `assignee_type`（默认 Agent）/ `project_id` / `due_at`（毫秒）/ `dependencies`（DAG）。
   - **关键副作用**：`assignee_type = Agent` 时自动给目标 Agent 发任务分配通知（`send_task_assignment`），通知失败不影响创建。
+  - **项目归属**：创建时能确定项目就直接带 `project_id`；暂未立项可先创建游离任务（不传 `project_id`），归属确定后用 `update_task(project_id=...)` 一次性挂载（见下方「游离任务挂载」）。
 - **`get_task(id)`**：统计选项同项目；`with_artifacts` 一并返回关联产物；返回含 `thinking_depth` / `progress` / `created_by` / `modified_by` / `dependencies`。
 - **`list_tasks`**：仅分页，固定排除 `status=0`，`priority DESC, created_at DESC`。
 - **`list_project_tasks(project_id)`** / **`list_agent_tasks(agent_id)`**：均可选 `status` / `limit`；后者用于查看某 Agent 的待办。
 - **`query_tasks`**：POST body——`ids` / `keyword` / `project_id` / `assignee_type` / `assignee_id` / `status_in` / `pagination`。
-- **`update_task`**：全部可选 `title` / `description` / `priority` / `tags` / `due_at` / `dependencies` / `execution_plan` / `execution_result`。
+- **`update_task`**：全部可选 `title` / `description` / `priority` / `tags` / `due_at` / `dependencies` / `execution_plan` / `execution_result` / `project_id`（**挂载语义**：仅对尚未挂载项目的游离任务生效，已挂载任务忽略该参数，详见下方「游离任务挂载」）。
 - **`update_task_status(status)`**：不能设为 `Cancelled`；严格按状态机，非法转换返回 `InvalidRequest`。
 - **`update_task_progress(progress)`**：自动 clamp 到 [0, 100]，触发 `TaskEvent(progress_updated)`。
 - **`mark_done(task_id, summary?)`**：**绕过状态机**，直接设 `status=Completed` + `progress=100` + `end_at`，适合快速闭环；需严格校验用 `update_task_status(Completed)`。
+
+### 游离任务挂载（project_id 一次性绑定）
+
+任务允许不带 `project_id` 创建（游离任务：需求尚未立项、临时交办、先干活后归组等）；归属确定后用 `update_task(project_id=...)` 挂载到已有项目。**挂载是一次性操作**：
+
+- **仅未挂载任务可挂载**：已挂载任务的 `project_id` 参数被静默忽略——不支持迁移 / 解绑（涉及产物归属、统计口径等级联影响），挂错项目无法通过工具自行纠正
+- **目标项目必须存在**：挂载前先 `get_project` 确认项目 ID 有效
+- **发现游离任务**：`query_tasks`（不传 `project_id`）拉取任务列表，筛出 `project_id` 为空的项
+- **先确认后挂载**：帮用户整理零散任务时，先列出游离任务清单与目标项目，向用户确认归属关系后再逐个挂载，不要自行猜测归组
 
 ## execution_plan / execution_result 书写规范
 

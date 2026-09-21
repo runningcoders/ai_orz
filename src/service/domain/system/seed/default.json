@@ -157,7 +157,7 @@
     {
       "id": "TEMPLATE_PROJECT_MANAGEMENT",
       "name": "项目管理",
-      "description": "项目/任务/产物状态机与合法转换、create_task 自动通知副作用、mark_done 绕过状态机、产物来源类型（Attachment引用/GeneratedContent独立存储）、update_artifact 统一部分更新与乐观锁、register_artifact_from_path 路径穿越防御、附件 64KB 限制与软删除、权限模型与任务驱动工作流",
+      "description": "项目/任务/产物状态机与合法转换、create_task 自动通知副作用、游离任务一次性挂载（update_task project_id 挂载语义）、mark_done 绕过状态机、产物来源类型（Attachment引用/GeneratedContent独立存储）、update_artifact 统一部分更新与乐观锁、register_artifact_from_path 路径穿越防御、附件 64KB 限制与软删除、权限模型与任务驱动工作流",
       "tags": ["project_management"],
       "category": "system",
       "parent_skill_id": "",
