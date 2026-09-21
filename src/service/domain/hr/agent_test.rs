@@ -1,6 +1,6 @@
 //! HR Domain Agent 管理单元测试
 
-use super::{CreateSkillParams, HrDomain, domain};
+use super::{CreateSkillParams, HrDomain, SkillFileImport, UpdateSkillParams, domain};
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
@@ -1900,4 +1900,192 @@ async fn test_resolve_agent_multi_tier_chain(pool: SqlitePool) {
     let chain = vec![common::api::AgentMatchCriteria::by_role("nonexistent_role")];
     let found = domain.resolve_agent_multi(ctx, chain).await.unwrap();
     assert!(found.is_some(), "兜底应永远成立");
+}
+
+// ==================== 技能内容更新传导（同步副本计数 / 进修刷新） ====================
+
+/// 构造单文件导入（notes.md），用于字节级 diff 场景
+fn skill_imports(content: &str) -> Vec<SkillFileImport> {
+    vec![SkillFileImport {
+        target_path: Some("notes.md".to_string()),
+        source_abs_path: None,
+        content_bytes: Some(content.as_bytes().to_vec()),
+        suggested_name: None,
+    }]
+}
+
+/// 进修刷新：源技能内容更新（updated_at 推进）后，进修必须重装该技能包刷新已有副本
+///
+/// 回归背景：进修阶段 2 门禁原先只判「有新增技能」，纯内容更新永远不触发刷新
+/// （线上坑：seed 同步更新了源技能，Agent 副本内容一直落后，点进修无效果）。
+#[sqlx::test]
+async fn test_train_agent_refreshes_stale_copy(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let agent = create_test_agent("TrainStaleAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // 发布技能（带 notes.md v1）并安装到 Agent，生成副本
+    let source = create_published_skill_with_tag("StaleSource", "coding");
+    domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &source,
+                imports: skill_imports("v1"),
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "coding")
+        .await
+        .unwrap();
+
+    let before_train_copy_at = domain
+        .skill_manage()
+        .list_for_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.po.parent_skill_id == source.po.id)
+        .expect("安装后应有对应副本")
+        .po
+        .updated_at;
+
+    // 源技能「seed 同步」式更新：内容 v1 → v2 + 描述变更
+    // （sleep 跨过毫秒边界，保证 source.updated_at 严格大于副本安装时刻）
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let mut po = source.po.clone();
+    po.description = "updated description".to_string();
+    let updated = Skill::from_po(po);
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx.clone(),
+            UpdateSkillParams {
+                skill: &updated,
+                imports: skill_imports("v2"),
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    // 进修：无「新增技能」也必须因「源比副本新」重装刷新
+    let resp = domain
+        .agent_manage()
+        .train_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.refreshed_skill_packs,
+        vec!["coding".to_string()],
+        "进修必须刷新内容落后的技能包"
+    );
+
+    // 副本确实被刷新：元数据覆盖 + updated_at 推进
+    let copy = domain
+        .skill_manage()
+        .list_for_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.po.parent_skill_id == source.po.id)
+        .expect("进修后副本仍应存在");
+    assert_eq!(copy.po.description, "updated description");
+    assert!(
+        copy.po.updated_at > before_train_copy_at,
+        "刷新后副本 updated_at 必须推进"
+    );
+
+    // 幂等：源无变化时再次进修不再触发刷新
+    let resp2 = domain
+        .agent_manage()
+        .train_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(resp2.refreshed_skill_packs.is_empty());
+}
+
+/// 同步副本计数语义：sync_installed_copies 只统计真实变更的副本
+/// （无差异幂等路过不计数，避免前端 toast 虚报「N 个已更新」）
+#[sqlx::test]
+async fn test_sync_installed_copies_counts_only_real_changes(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let agent = create_test_agent("SyncCountAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    let source = create_published_skill_with_tag("SyncCountSource", "coding");
+    domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &source,
+                imports: skill_imports("v1"),
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    domain
+        .skill_manage()
+        .install_to_agent(ctx.clone(), &source.po.id, agent.id())
+        .await
+        .unwrap();
+
+    // 副本与源完全一致：同步为幂等空过，计数应为 0
+    let unchanged = domain
+        .skill_manage()
+        .sync_installed_copies(ctx.clone(), &source.po.id)
+        .await
+        .unwrap();
+    assert_eq!(unchanged, 0, "无差异的幂等路过不应计数");
+
+    // 更新源技能（内容 v1 → v2 + 描述变更）→ 同步应把这份真实变更计为 1
+    let mut po = source.po.clone();
+    po.description = "synced description".to_string();
+    let updated = Skill::from_po(po);
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx.clone(),
+            UpdateSkillParams {
+                skill: &updated,
+                imports: skill_imports("v2"),
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let changed = domain
+        .skill_manage()
+        .sync_installed_copies(ctx.clone(), &source.po.id)
+        .await
+        .unwrap();
+    assert_eq!(changed, 1, "发生真实变更的副本应计为 1");
+
+    // 同步完成后再同步：又无差异，计数归 0
+    let settled = domain
+        .skill_manage()
+        .sync_installed_copies(ctx.clone(), &source.po.id)
+        .await
+        .unwrap();
+    assert_eq!(settled, 0, "同步完成后的再次同步不应重复计数");
 }

@@ -242,10 +242,18 @@ impl SkillManage for HrDomainImpl {
             // 复用 DAL install_to_agent 的幂等「原地更新」分支：元数据覆盖 +
             // 字节级文件 diff + 向量索引按需刷新 + Expired 副本恢复为 Draft，
             // 不产生重复行。同步后源技能必为 Published，满足其前置校验。
-            self.skill_dal
+            //
+            // 计数语义：只统计实际发生变更的副本——install_to_agent 的原地
+            // 更新分支在「无差异」时不写库不推进 updated_at，用前后时间戳对比
+            // 区分「处理过」与「真变更」，避免 toast 虚报。
+            let before_updated_at = copy.po.updated_at;
+            let refreshed = self
+                .skill_dal
                 .install_to_agent(ctx.clone(), source_skill_id, &copy.po.author_id)
                 .await?;
-            updated += 1;
+            if refreshed.po.updated_at > before_updated_at {
+                updated += 1;
+            }
         }
 
         Ok(updated)

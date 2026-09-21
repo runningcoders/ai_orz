@@ -532,17 +532,30 @@ impl AgentManage for HrDomainImpl {
             let has_new = published
                 .iter()
                 .any(|s| !existing_parents.contains(s.po.id.as_str()));
-            if !has_new {
+            // 内容过期检测：源技能比副本新（seed 同步后源 updated_at 会推进）
+            // 时同样需要重装刷新——只判「新增」会漏掉「纯内容更新」的场景。
+            // 时间戳是粗粒度信号（源无差异重写也会推进），重装内部有字节级
+            // diff 兜底，假阳性只多一次文件比对、不会产生脏写。
+            let copy_updated_map: std::collections::HashMap<&str, i64> = existing_copies
+                .iter()
+                .map(|s| (s.po.parent_skill_id.as_str(), s.po.updated_at))
+                .collect();
+            let has_stale = published.iter().any(|s| {
+                copy_updated_map
+                    .get(s.po.id.as_str())
+                    .is_some_and(|&copy_at| copy_at < s.po.updated_at)
+            });
+            if !has_new && !has_stale {
                 continue;
             }
 
-            // 重装该技能包：补全新增技能 + 顺带刷新已有副本内容
+            // 重装该技能包：补全新增技能 + 刷新内容落后的已有副本
             match self.reinstall_skill_pack(ctx.clone(), agent_id, &tag).await {
                 Ok(count) => {
                     log_info!(
                         ctx,
                         "train_agent",
-                        "agent_id={}, tag={} 检测到新增技能，已重装补全: 处理={}",
+                        "agent_id={}, tag={} 检测到新增技能或内容更新，已重装: 处理={}",
                         agent_id,
                         tag,
                         count

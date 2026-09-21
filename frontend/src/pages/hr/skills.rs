@@ -199,7 +199,8 @@ pub fn HrSkills() -> Element {
         show_sync_modal.set(true);
         sync_preview.set(None);
         sync_strategy.set(PresetSkillSyncStrategy::Overwrite);
-        sync_installed.set(false);
+        // 默认开启副本同步：seed 技能更新通常就是想让 Agent 拿到新内容
+        sync_installed.set(true);
         sync_progress.set(String::new());
         sync_loading.set(true);
         spawn(async move {
@@ -750,15 +751,22 @@ pub fn HrSkills() -> Element {
                     }
                 }
 
-                // 可选：同步已安装到 Agent 的副本
-                div { class: "flex items-center gap-3",
-                    input {
-                        class: "toggle toggle-primary toggle-sm",
-                        r#type: "checkbox",
-                        checked: sync_installed(),
-                        onchange: move |_| sync_installed.set(!sync_installed()),
+                // 可选：同步已安装到 Agent 的副本（默认开启）
+                div { class: "card border border-base-300 bg-base-200",
+                    label { class: "card-body p-3 flex flex-row items-center gap-3 cursor-pointer",
+                        input {
+                            class: "toggle toggle-primary",
+                            r#type: "checkbox",
+                            checked: sync_installed(),
+                            onchange: move |_| sync_installed.set(!sync_installed()),
+                        }
+                        div {
+                            div { class: "font-semibold text-sm", "同时更新已安装到 Agent 的技能副本" }
+                            div { class: "text-xs text-base-content/70",
+                                "把各 Agent 已安装的技能副本刷新为源技能最新内容（含 skill.md）"
+                            }
+                        }
                     }
-                    span { class: "text-sm", "同时更新已安装到 Agent 的技能副本" }
                 }
 
                 // 影响清单
