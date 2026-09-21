@@ -315,3 +315,60 @@ async fn test_mark_push_status(pool: SqlitePool) -> Result<()> {
 
     Ok(())
 }
+
+/// 测试 scope_project 字段 DAO 往返（INSERT→SELECT 不丢失；UPDATE 可改写；NULL 恒保持）
+///
+/// 背景：scope_project 为渠道的项目范围过滤维度（NULL=所有项目，非空=仅该项目），
+/// 是 A2A PushNotifications 落库的前提。f5906c86 引入 models/schema 时唯独漏改 DAO
+/// 的 INSERT/UPDATE（SELECT 走 SELECT * 本就通），字段从未落库从未读出。
+/// 本测试守住「渠道项目范围可持久化」契约。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_scope_project_roundtrip(pool: SqlitePool) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
+
+    // ① INSERT→SELECT 不丢失
+    let mut channel = create_test_channel("org-001", "user-001", "项目范围渠道");
+    channel.scope_project = Some("proj-p".to_string());
+    dao.insert(ctx.clone(), &channel).await?;
+    let found = dao
+        .find_by_id(ctx.clone(), &channel.id)
+        .await?
+        .expect("insert 后应能查到渠道");
+    assert_eq!(
+        found.scope_project,
+        Some("proj-p".to_string()),
+        "INSERT→SELECT 后 scope_project 不应丢失"
+    );
+
+    // ② UPDATE 改写→SELECT 生效
+    let mut updated = found;
+    updated.scope_project = Some("proj-q".to_string());
+    dao.update(ctx.clone(), &updated).await?;
+    let found2 = dao
+        .find_by_id(ctx.clone(), &channel.id)
+        .await?
+        .expect("update 后应能查到渠道");
+    assert_eq!(
+        found2.scope_project,
+        Some("proj-q".to_string()),
+        "UPDATE→SELECT 后 scope_project 改写应生效"
+    );
+
+    // ③ UPDATE 置空→SELECT 读回 None
+    let mut cleared = found2;
+    cleared.scope_project = None;
+    dao.update(ctx.clone(), &cleared).await?;
+    let found3 = dao
+        .find_by_id(ctx.clone(), &channel.id)
+        .await?
+        .expect("clear 后应能查到渠道");
+    assert_eq!(found3.scope_project, None, "UPDATE 置空后应为 NULL");
+
+    // ④ NULL 恒保持：从未设置的渠道读回 None
+    let plain = create_test_channel("org-001", "user-plain", "普通渠道");
+    dao.insert(ctx.clone(), &plain).await?;
+    let found4 = dao.find_by_id(ctx.clone(), &plain.id).await?.unwrap();
+    assert_eq!(found4.scope_project, None, "NULL 恒保持");
+
+    Ok(())
+}

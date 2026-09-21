@@ -26,9 +26,10 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             INSERT INTO message_channels (
                 id, org_id, user_id, agent_id, channel_type, channel_name,
                 webhook_url, access_token, secret, config_json, status,
-                last_pushed_at, last_error, created_by, modified_by, created_at, updated_at
+                scope_project, last_pushed_at, last_error, created_by, modified_by,
+                created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             po.id,
             po.org_id,
@@ -41,6 +42,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             po.secret,
             po.config_json as _,
             status_i32,
+            po.scope_project,
             po.last_pushed_at,
             po.last_error,
             po.created_by,
@@ -64,7 +66,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             UPDATE message_channels
             SET org_id = ?, user_id = ?, agent_id = ?, channel_type = ?, channel_name = ?,
                 webhook_url = ?, access_token = ?, secret = ?, config_json = ?, status = ?,
-                last_pushed_at = ?, last_error = ?, modified_by = ?, updated_at = ?
+                scope_project = ?, last_pushed_at = ?, last_error = ?, modified_by = ?, updated_at = ?
             WHERE id = ?
             "#,
             po.org_id,
@@ -77,6 +79,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             po.secret,
             po.config_json as _,
             status_i32,
+            po.scope_project,
             po.last_pushed_at,
             po.last_error,
             po.modified_by,
