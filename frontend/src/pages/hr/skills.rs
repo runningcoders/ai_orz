@@ -753,20 +753,14 @@ pub fn HrSkills() -> Element {
                     }
                 }
 
-                // 增强子选项：同步后刷新 Agent 副本（独立于策略组，避免嵌套点击互相影响）
-                // 整行可点；复选框为纯视觉绘制——真实 input 会被 label 原生点击转发二次触发，表现为「点了没反应」
-                div {
-                    class: "flex cursor-pointer select-none items-start gap-2.5 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
-                    onclick: move |_| sync_installed.set(!sync_installed()),
-                    div {
-                        class: if sync_installed() {
-                            "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[0.25rem] bg-primary text-primary-content"
-                        } else {
-                            "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[0.25rem] border-2 border-base-content/30"
-                        },
-                        if sync_installed() {
-                            span { class: "text-[10px] font-bold leading-none", "✓" }
-                        }
+                // 增强子选项：同步后刷新 Agent 副本（独立于策略组）
+                // 单一路径：label 整行可点靠原生转发，onchange 读 e.checked() 真实勾选态，不做信号盲切防双触发
+                label { class: "flex cursor-pointer select-none items-center gap-2.5 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                    input {
+                        class: "checkbox checkbox-sm checkbox-primary",
+                        r#type: "checkbox",
+                        checked: sync_installed(),
+                        onchange: move |e| sync_installed.set(e.checked()),
                     }
                     div {
                         div { class: "text-sm font-medium", "同时更新已安装到 Agent 的技能副本" }
