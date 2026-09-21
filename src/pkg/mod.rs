@@ -1,6 +1,7 @@
 pub mod adapter;
 pub mod agent_runtime_state;
 pub mod aop;
+pub mod authorization;
 pub mod background_task;
 pub mod credential;
 pub mod cron;
