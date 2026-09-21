@@ -72,7 +72,20 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn status_to_dto(s: AuthorizationStatus) -> AuthorizationStatusDto {
+/// 审计证据原文节选（定长截断防日志爆炸；按字符截断保证多字节安全）
+fn evidence_preview(content: &str, max_chars: usize) -> String {
+    if content.chars().count() <= max_chars {
+        content.to_string()
+    } else {
+        format!(
+            "{}…(截断,原文共{}字符)",
+            content.chars().take(max_chars).collect::<String>(),
+            content.chars().count()
+        )
+    }
+}
+
+pub(crate) fn status_to_dto(s: AuthorizationStatus) -> AuthorizationStatusDto {
     match s {
         AuthorizationStatus::Pending => AuthorizationStatusDto::Pending,
         AuthorizationStatus::Active => AuthorizationStatusDto::Active,
@@ -225,17 +238,38 @@ impl super::ToolAuthorizationManage for AuthorizationService {
         ctx: RequestContext,
         cmd: super::AuthorizationDecisionCmd,
     ) -> Result<super::AuthorizationDecisionOutcome> {
-        // 红线④：decide 强制 user ctx（Agent 不得自我审批，结构性拒绝）
-        if ctx.agent_id.is_some() {
-            bail_err!(InvalidRequest, "Agent 不得自我审批（decide 强制 user ctx）");
+        // 红线④⑤细化（§14.3/§15.1 定稿）：Agent ctx 仅放行聊天代呈形态——
+        // evidence_class 强制 ChatMediated、mediator_agent_id 强制取 ctx.agent_id
+        //（不信任客户端传值，第三方代呈允许/自代呈仍拒）；user ctx 维持原语义
+        //（缺省 UI 直批免证据；ChatDirective 无 Agent 参与，携 mediator 即拒绝）。
+        let is_agent_ctx = ctx.agent_id.is_some();
+        if is_agent_ctx && !matches!(&cmd.evidence_class, Some(EvidenceClassDto::ChatMediated)) {
+            bail_err!(
+                InvalidRequest,
+                "Agent 不得自我审批（Agent ctx 仅允许聊天代呈通道，decide 直批强制 user ctx）"
+            );
         }
         let decided_by = ctx
             .user_id
             .clone()
             .ok_or_else(|| Error::bad_request("审批需要用户身份（user ctx）"))?;
         let auth_id = cmd.authorization_id.clone();
-        let class = cmd.evidence_class.unwrap_or(EvidenceClassDto::Ui);
-        let mediator = cmd.mediator_agent_id.clone();
+        let class = if is_agent_ctx {
+            EvidenceClassDto::ChatMediated
+        } else {
+            cmd.evidence_class.unwrap_or(EvidenceClassDto::Ui)
+        };
+        let mediator = if is_agent_ctx {
+            ctx.agent_id.clone()
+        } else {
+            cmd.mediator_agent_id.clone()
+        };
+        if !is_agent_ctx && matches!(class, EvidenceClassDto::ChatDirective) && mediator.is_some() {
+            bail_err!(
+                InvalidRequest,
+                "聊天指令直批不允许携带代呈 Agent（ChatDirective 无 Agent 参与）"
+            );
+        }
 
         // 阶段一（锁外）：取单 + 证据链静态校验（消息查询 await 不持锁）
         let pending = {
@@ -257,6 +291,7 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             EvidenceClassDto::ChatDirective | EvidenceClassDto::ChatMediated
         );
         let mut evidence_id: Option<String> = None;
+        let mut evidence_content: Option<String> = None;
         if needs_evidence {
             // 第⑤条：申请人不得自代呈（先于其他要素快速失败）
             if mediator.as_deref().is_some_and(|m| m == pending.agent_id) {
@@ -280,6 +315,7 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             };
             evaluate_evidence(Some(&check), &pending, mediator.as_deref())
                 .map_err(|r| Error::bad_request(r.describe()))?;
+            evidence_content = Some(evidence_preview(&msg.po.content, 200));
             evidence_id = Some(ev_id);
         }
 
@@ -320,9 +356,13 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             rec.decision_reason = Some("rejected".to_string());
             drop(store);
             log_info!(
-                "tool_authorization 审计 [拒绝] authorization_id={} decided_by={}",
+                "tool_authorization 审计 [拒绝] authorization_id={} decided_by={} decided_at_ms={} decision=Reject evidence={:?} evidence_content={:?} mediator={:?}",
                 auth_id,
-                decided_by
+                decided_by,
+                now_ms(),
+                evidence_id,
+                evidence_content,
+                mediator
             );
             return Ok(super::AuthorizationDecisionOutcome {
                 authorization_id: auth_id,
@@ -348,6 +388,9 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             uses: 0,
         };
         let grant_id = grant.grant_id.clone();
+        let scope_signature = grant.command_signature.clone();
+        let scope_prefix_match = grant.prefix_match;
+        let scope_max_uses = grant.max_uses;
         rec.grant = Some(grant);
         rec.status = AuthorizationStatus::Active;
         if let Some(ev_id) = &evidence_id {
@@ -355,12 +398,18 @@ impl super::ToolAuthorizationManage for AuthorizationService {
         }
         drop(store);
         log_info!(
-            "tool_authorization 审计 [批准] authorization_id={} grant_id={} decided_by={} evidence={:?} mediator={:?}",
+            "tool_authorization 审计 [批准] authorization_id={} grant_id={} decided_by={} decided_at_ms={} decision=Approve evidence={:?} evidence_content={:?} mediator={:?} scope_signature={:?} prefix_match={} max_uses={:?} ttl_secs={}",
             auth_id,
             grant_id,
             decided_by,
-            cmd.evidence_message_id,
-            cmd.mediator_agent_id
+            now_ms(),
+            evidence_id,
+            evidence_content,
+            mediator,
+            scope_signature,
+            scope_prefix_match,
+            scope_max_uses,
+            ttl
         );
         Ok(super::AuthorizationDecisionOutcome {
             authorization_id: auth_id,

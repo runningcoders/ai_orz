@@ -346,11 +346,19 @@ mod tests {
     // ============ 红线④：decide 强制 user ctx ============
 
     #[sqlx::test]
-    async fn agent_ctx_decide_is_structurally_rejected(pool: sqlx::SqlitePool) {
+    async fn agent_ctx_decide_without_mediation_is_structurally_rejected(pool: sqlx::SqlitePool) {
+        // 红线④细化（§14.3/§15.1）：Agent ctx 仅放行聊天代呈（ChatMediated），
+        // 无代呈形态的 decide 仍结构性拒绝
         let svc = service_with_evidence();
         let auth_id = make_pending(&svc, &pool).await;
+        // 无代呈形态（UI 直批形态）的 Agent ctx decide：结构性拒绝
+        let plain_cmd = AuthorizationDecisionCmd {
+            authorization_id: auth_id.clone(),
+            approve: true,
+            ..Default::default()
+        };
         let err = svc
-            .decide_authorization(agent_ctx(&pool), approve_cmd(&auth_id))
+            .decide_authorization(agent_ctx(&pool), plain_cmd)
             .await
             .unwrap_err();
         assert!(format!("{err}").contains("Agent 不得自我审批"));
@@ -363,6 +371,26 @@ mod tests {
             items[0].status,
             common::api::AuthorizationStatusDto::Pending
         );
+    }
+
+    #[sqlx::test]
+    async fn agent_ctx_chat_mediated_mediator_forced_from_ctx(pool: sqlx::SqlitePool) {
+        // Agent ctx 代呈：mediator 强制取 ctx.agent_id（覆盖客户端传值）——
+        // 客户端伪造 mediator=申请人（agent-a）不影响裁决，实际代呈者=agent-b
+        let svc = service_with_evidence();
+        let auth_id = make_pending(&svc, &pool).await;
+        let ctx_b = RequestContext::builder()
+            .user_id("user-aman")
+            .agent_id("agent-b")
+            .storage(crate::pkg::storage::test_support::create_test_storage(
+                pool.clone(),
+            ))
+            .build();
+        let mut cmd = approve_cmd(&auth_id);
+        cmd.mediator_agent_id = Some("agent-a".to_string());
+        let out = svc.decide_authorization(ctx_b, cmd).await.unwrap();
+        assert_eq!(out.status, AuthorizationStatus::Active);
+        assert!(out.grant_id.is_some());
     }
 
     // ============ 证据五要素正反例 ============

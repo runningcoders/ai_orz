@@ -2,8 +2,10 @@
 //! 按方法粒度拆分，每个方法单独一个文件
 
 pub mod bind_tool_to_agent;
+pub mod confirm_authorization_via_chat;
 pub mod create_tool;
 pub mod debug_call_tool;
+pub mod decide_authorization;
 pub mod delete_tool;
 pub mod get_tool;
 pub mod get_tool_call_entry;
@@ -22,6 +24,10 @@ pub mod update_tool_status;
 pub(crate) mod response;
 
 #[cfg(test)]
+mod confirm_authorization_via_chat_test;
+#[cfg(test)]
+mod decide_authorization_test;
+#[cfg(test)]
 mod response_test;
 #[cfg(test)]
 mod tool_call_entry_test;
@@ -29,8 +35,10 @@ mod tool_call_entry_test;
 mod update_tool_test;
 
 pub use bind_tool_to_agent::bind_tool_to_agent_handler;
+pub use confirm_authorization_via_chat::confirm_authorization_via_chat_handler;
 pub use create_tool::create_tool_handler;
 pub use debug_call_tool::debug_call_tool_handler;
+pub use decide_authorization::decide_authorization_handler;
 pub use delete_tool::delete_tool_handler;
 pub use get_tool::get_tool_handler;
 pub use get_tool_call_entry::get_tool_call_entry_handler;
