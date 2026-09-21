@@ -719,51 +719,51 @@ pub fn HrSkills() -> Element {
                 }
             },
             div { class: "space-y-4",
-                // 策略选择（二选一）
-                div { class: "grid gap-2",
-                    div {
-                        class: if sync_strategy() == PresetSkillSyncStrategy::Overwrite {
-                            "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
-                        } else {
-                            "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
-                        },
-                        onclick: move |_| sync_strategy.set(PresetSkillSyncStrategy::Overwrite),
-                        div { class: "card-body p-3",
-                            div { class: "font-semibold", "1 · 用 seed 覆盖重置" }
-                            div { class: "text-xs text-base-content/70",
-                                "已存在的同 ID 技能将覆写回初始状态（名称、描述、标签与 skill.md）；你在技能目录下额外添加的文件会保留"
+                // 策略选择（二选一）+ 增强子选项（同步已安装副本）
+                div { class: "border border-base-300 rounded-box bg-base-200 overflow-hidden",
+                    div { class: "grid gap-2 p-3",
+                        div {
+                            class: if sync_strategy() == PresetSkillSyncStrategy::Overwrite {
+                                "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                            } else {
+                                "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                            },
+                            onclick: move |_| sync_strategy.set(PresetSkillSyncStrategy::Overwrite),
+                            div { class: "card-body p-3",
+                                div { class: "font-semibold", "1 · 用 seed 覆盖重置" }
+                                div { class: "text-xs text-base-content/70",
+                                    "已存在的同 ID 技能将覆写回初始状态（名称、描述、标签与 skill.md）；你在技能目录下额外添加的文件会保留"
+                                }
                             }
-                        }
-                    }
-                    div {
-                        class: if sync_strategy() == PresetSkillSyncStrategy::OnlyMissing {
-                            "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
-                        } else {
-                            "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
-                        },
-                        onclick: move |_| sync_strategy.set(PresetSkillSyncStrategy::OnlyMissing),
-                        div { class: "card-body p-3",
-                            div { class: "font-semibold", "2 · 保留本地，仅补缺" }
-                            div { class: "text-xs text-base-content/70",
-                                "已存在的技能原样保留，只把 seed 中缺失的技能加入技能库"
-                            }
-                        }
-                    }
-                }
-
-                // 可选：同步已安装到 Agent 的副本（默认开启）
-                div { class: "card border border-base-300 bg-base-200",
-                    label { class: "card-body p-3 flex flex-row items-center gap-3 cursor-pointer",
-                        input {
-                            class: "toggle toggle-primary",
-                            r#type: "checkbox",
-                            checked: sync_installed(),
-                            onchange: move |_| sync_installed.set(!sync_installed()),
                         }
                         div {
-                            div { class: "font-semibold text-sm", "同时更新已安装到 Agent 的技能副本" }
-                            div { class: "text-xs text-base-content/70",
-                                "把各 Agent 已安装的技能副本刷新为源技能最新内容（含 skill.md）"
+                            class: if sync_strategy() == PresetSkillSyncStrategy::OnlyMissing {
+                                "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                            } else {
+                                "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                            },
+                            onclick: move |_| sync_strategy.set(PresetSkillSyncStrategy::OnlyMissing),
+                            div { class: "card-body p-3",
+                                div { class: "font-semibold", "2 · 保留本地，仅补缺" }
+                                div { class: "text-xs text-base-content/70",
+                                    "已存在的技能原样保留，只把 seed 中缺失的技能加入技能库"
+                                }
+                            }
+                        }
+                    }
+                    // 增强子选项：整行可点，checkbox 仅作视觉呈现（pointer-events-none 防双触发）
+                    label {
+                        class: "flex cursor-pointer select-none items-start gap-2.5 border-t border-base-300 bg-base-200/60 px-3 py-2.5",
+                        onclick: move |_| sync_installed.set(!sync_installed()),
+                        input {
+                            class: "checkbox checkbox-primary checkbox-sm mt-0.5 pointer-events-none",
+                            r#type: "checkbox",
+                            checked: sync_installed(),
+                        }
+                        div {
+                            div { class: "text-sm font-medium", "同时更新已安装到 Agent 的技能副本" }
+                            div { class: "text-xs text-base-content/60",
+                                "增强动作：策略执行后，把各 Agent 已安装的技能副本一并刷新为源技能最新内容（含 skill.md）"
                             }
                         }
                     }
