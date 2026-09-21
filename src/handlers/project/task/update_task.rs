@@ -26,14 +26,13 @@ pub async fn update_task(
     let domain = domain();
     let task_manage = domain.task_manage();
 
-    if let Some(project_id) = params.project_id.clone() {
-        if let Some(task) = task_manage.get(ctx.clone(), &params.id).await? {
-            if task.po.project_id.is_none() {
-                task_manage
-                    .bind_to_project(ctx.clone(), &params.id, project_id)
-                    .await?;
-            }
-        }
+    if let Some(project_id) = params.project_id.clone()
+        && let Some(task) = task_manage.get(ctx.clone(), &params.id).await?
+        && task.po.project_id.is_none()
+    {
+        task_manage
+            .bind_to_project(ctx.clone(), &params.id, project_id)
+            .await?;
     }
 
     let task = task_manage
