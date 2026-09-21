@@ -221,6 +221,9 @@ pub struct UpdateTaskRequest {
     /// 执行结果（Agent Loop 执行阶段产出）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_result: Option<String>,
+    /// 挂载到的目标项目 ID（仅当任务尚未挂载任何项目时生效；已挂载的任务忽略该参数）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
 }
 
 /// 更新 Task 响应

@@ -327,6 +327,19 @@ pub trait TaskManage: Send + Sync {
         execution_result: Option<String>,
     ) -> Result<Task>;
 
+    /// 将未挂载项目的任务绑定到指定项目
+    ///
+    /// 业务约束（挂载语义，区别于 update_basic 的字段更新）：
+    /// - 仅允许 project_id 为空（独立）的任务绑定；已挂载的任务返回 Conflict，
+    ///   不支持迁移或解绑
+    /// - 目标项目必须存在
+    async fn bind_to_project(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        project_id: String,
+    ) -> Result<Task>;
+
     /// 开始任务
     async fn start(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<()>;
 

@@ -51,6 +51,8 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
     let mut assignee_type = use_signal(|| AssigneeType::Agent);
     let mut assignee_id = use_signal(String::new);
     let mut project_id = use_signal(String::new);
+    // 编辑模式：任务已挂载项目时锁定"关联项目"，第一版不支持迁移/解绑
+    let mut project_locked = use_signal(|| false);
     let mut dependencies_input = use_signal(String::new); // 逗号分隔的 task id 列表
 
     // 下拉数据
@@ -96,10 +98,14 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
             match list_projects(ListProjectsRequest::default()).await {
                 Ok(page) => {
                     // 在 move 之前预先决定 project_id
+                    // 仅创建模式自动选中第一个项目；编辑模式以任务真实 project_id 为准，
+                    // 避免独立任务在提交时被误挂载
                     let pid_to_set = if !pid_initial.is_empty() {
                         Some(pid_initial.clone())
-                    } else {
+                    } else if matches!(mode_for_async, TaskEditMode::Create { .. }) {
                         page.items.first().map(|p| p.id.clone())
+                    } else {
+                        None
                     };
                     projects.set(page.items);
                     if let Some(pid) = pid_to_set {
@@ -143,7 +149,9 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                             AssigneeType::Agent
                         });
                         assignee_id.set(t.assignee_id);
-                        project_id.set(t.project_id.unwrap_or_default());
+                        let original_project_id = t.project_id.clone();
+                        project_id.set(original_project_id.clone().unwrap_or_default());
+                        project_locked.set(original_project_id.is_some());
                         dependencies_input.set(t.dependencies.join(","));
                     }
                     Err(e) => toast.error(&e),
@@ -211,6 +219,11 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         dependencies: parse_csv(&dependencies_input()),
                         execution_plan: None,
                         execution_result: None,
+                        project_id: if !project_locked() && !project_id().is_empty() {
+                            Some(project_id())
+                        } else {
+                            None
+                        },
                     };
                     update_task(req).await
                 }
@@ -381,9 +394,13 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                     div { class: "form-control w-full",
                         label { class: "label",
                             span { class: "label-text font-medium", "关联项目" }
+                            if project_locked() {
+                                span { class: "label-text-alt text-base-content/60", "已挂载项目，不可变更" }
+                            }
                         }
                         select {
                             class: "select select-bordered w-full",
+                            disabled: project_locked(),
                             value: "{project_id}",
                             onchange: move |e| project_id.set(e.value().clone()),
                             option { value: "", "无（独立任务）" }

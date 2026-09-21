@@ -486,6 +486,132 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
     );
 }
 
+#[sqlx::test]
+async fn test_task_bind_to_project(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let root_user_id = Uuid::now_v7().to_string();
+    let assignee_id = Uuid::now_v7().to_string();
+
+    let project = domain
+        .project_manage()
+        .create(
+            ctx.clone(),
+            "Bind Target Project".to_string(),
+            "Project for binding".to_string(),
+            1,
+            vec!["bind".to_string()],
+            None,
+            root_user_id.clone(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    // 独立任务（无 project_id）
+    let task = domain
+        .task_manage()
+        .create(
+            ctx.clone(),
+            "Loose Task".to_string(),
+            "Description".to_string(),
+            1,
+            vec!["test".to_string()],
+            root_user_id.clone(),
+            common::enums::task::AssigneeType::Agent,
+            assignee_id,
+            None,
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(task.po.project_id, None);
+
+    let bound = domain
+        .task_manage()
+        .bind_to_project(ctx.clone(), &task.po.id, project.po.id.clone())
+        .await
+        .unwrap();
+    assert_eq!(bound.po.project_id, Some(project.po.id.clone()));
+
+    let found = domain
+        .task_manage()
+        .get(ctx.clone(), &task.po.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.po.project_id, Some(project.po.id));
+}
+
+#[sqlx::test]
+async fn test_task_bind_to_project_rejections(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let root_user_id = Uuid::now_v7().to_string();
+    let assignee_id = Uuid::now_v7().to_string();
+
+    let project = domain
+        .project_manage()
+        .create(
+            ctx.clone(),
+            "Bound Project".to_string(),
+            "Project already bound".to_string(),
+            1,
+            vec!["bind".to_string()],
+            None,
+            root_user_id.clone(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    // 已挂载任务：重复绑定应被拒绝（第一版不支持迁移/解绑）
+    let bound_task = domain
+        .task_manage()
+        .create(
+            ctx.clone(),
+            "Bound Task".to_string(),
+            "Description".to_string(),
+            1,
+            vec!["test".to_string()],
+            root_user_id.clone(),
+            common::enums::task::AssigneeType::Agent,
+            assignee_id.clone(),
+            Some(project.po.id.clone()),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+    let err = domain
+        .task_manage()
+        .bind_to_project(ctx.clone(), &bound_task.po.id, project.po.id.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(err.code_enum(), common::error::ErrorCode::Conflict);
+
+    // 独立任务挂到不存在的项目：应 NotFound
+    let loose_task = domain
+        .task_manage()
+        .create(
+            ctx.clone(),
+            "Loose Task".to_string(),
+            "Description".to_string(),
+            1,
+            vec!["test".to_string()],
+            root_user_id,
+            common::enums::task::AssigneeType::Agent,
+            assignee_id,
+            None,
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+    let err = domain
+        .task_manage()
+        .bind_to_project(ctx.clone(), &loose_task.po.id, Uuid::now_v7().to_string())
+        .await
+        .unwrap_err();
+    assert_eq!(err.code_enum(), common::error::ErrorCode::NotFound);
+}
+
 // ==================== ArtifactManage 测试 ====================
 
 #[sqlx::test]

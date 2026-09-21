@@ -8,7 +8,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use common::enums::{ChannelStatus, ChannelType};
+use common::enums::{ChannelStatus, ChannelType, MessageRole};
 use common::error::{Result, err};
 use serde::Serialize;
 
@@ -284,18 +284,34 @@ impl MessageChannelDal for MessageChannelDalImpl {
             return Ok(DeliveryResult::empty());
         }
 
-        // 2. 按 scope_project 过滤：
-        //    - scope_project 为 NULL：全局渠道，接收所有消息
-        //    - scope_project 非空：项目级渠道，仅接收该项目的消息
+        // 2. 渠道放行过滤（两个维度 AND 叠加，单闭包完成）：
+        //    2.1 项目范围 scope_project（原有逻辑，不变）：
+        //        - NULL：全局渠道，接收所有消息
+        //        - 非空：项目级渠道，仅接收该项目的消息
+        //    2.2 Agent 绑定（出站按渠道绑定过滤，口径=v2 方案 artifact 01a0c19c）：
+        //        - agent_id 为 NULL：用户通用渠道，恒放行——所有发给用户的消息
+        //          （含全部 Agent 消息）照常广播，行为与改造前完全一致（不变量 I1/I2）
+        //        - agent_id 绑定 Agent X：专属渠道仅放行「发送方==X」的消息，其他消息
+        //          一律跳过（不变量 I3，对绑定渠道的单侧收窄，Agent 出站行为零变化）。
+        //          from_role 非 Agent（User 通知类/System，from_agent=None）不进专属渠道
+        //          （D2：默认严格排除；如需放开仅调整本分支，不引入新链路/配置项，不变量 I4。
+        //          已知代价 R3：用户仅建专属渠道、无通用渠道的极端场景下通知类漏达，
+        //          该类通知仅经通用渠道与网页 SSE 触达，交付已如实披露）。
+        let from_agent =
+            (message.po.from_role == MessageRole::Agent).then(|| message.po.from_id.clone());
         let project_id = message.po.project_id.as_deref();
         let filtered_channels: Vec<_> = channels
             .into_iter()
             .filter(|po| {
-                if let Some(scope_proj) = &po.scope_project {
-                    project_id == Some(scope_proj.as_str())
-                } else {
-                    true
-                }
+                let scope_ok = match &po.scope_project {
+                    Some(scope_proj) => project_id == Some(scope_proj.as_str()),
+                    None => true,
+                };
+                let agent_ok = match &po.agent_id {
+                    Some(bound_agent) => from_agent.as_deref() == Some(bound_agent.as_str()),
+                    None => true,
+                };
+                scope_ok && agent_ok
             })
             .collect();
 

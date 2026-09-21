@@ -3,7 +3,7 @@
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::dal::message_channel::MessageChannelDal;
-use common::enums::{ChannelStatus, ChannelType};
+use common::enums::{ChannelStatus, ChannelType, MessageRole};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
@@ -310,4 +310,207 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
     assert_eq!(result.total, 1);
     assert_eq!(result.success, 0);
     assert_eq!(result.failed, 1);
+}
+
+// ==================== 出站渠道绑定过滤（五象限） ====================
+// 口径=v2 方案（artifact 01a0c19c）：专属渠道（agent_id 绑定）仅收绑定 Agent 的消息；
+// 通用渠道（agent_id=NULL）恒放行广播不变；D2 默认严格排除 from_role=User 通知类（代价 R3）。
+// 断言口径：DeliveryResult.total 只统计通过过滤、实际发起推送的渠道（骨架推送失败也计入）；
+// 被过滤跳过的渠道不产生 detail，故 total==0 即「未推送」。
+
+/// 构造投递测试消息（from_role/from_id 决定过滤行为）
+fn deliver_test_message(
+    id: &str,
+    from_id: &str,
+    from_role: MessageRole,
+    project_id: Option<&str>,
+    to_user: &str,
+) -> crate::models::message::Message {
+    use crate::models::file::FileMeta;
+    use crate::models::message::{Message, MessagePo};
+    use common::enums::MessageType;
+
+    let po = MessagePo::new(
+        id.to_string(),
+        project_id.map(|s| s.to_string()),
+        None,
+        from_id.to_string(),
+        to_user.to_string(),
+        from_role,
+        MessageRole::User,
+        MessageType::Text,
+        "出站过滤测试消息".to_string(),
+        None,
+        FileMeta::default(),
+        None,
+        None,
+        None,
+        "admin".to_string(),
+    );
+    Message::from_po(po)
+}
+
+/// 创建指定绑定关系与项目范围的测试渠道
+async fn create_filter_test_channel(
+    ctx: &RequestContext,
+    dal: &Arc<dyn MessageChannelDal + Send + Sync>,
+    channel_id: &str,
+    agent_id: Option<&str>,
+    scope_project: Option<&str>,
+) {
+    let mut po = MessageChannelPo::new(
+        channel_id.to_string(),
+        "org-1".to_string(),
+        "user-1".to_string(),
+        agent_id.map(|s| s.to_string()),
+        ChannelType::Lark,
+        format!("渠道-{}", channel_id),
+        Some("https://example.com/webhook".to_string()),
+        None,
+        None,
+        ChannelConfig::default(),
+        "admin".to_string(),
+    );
+    po.scope_project = scope_project.map(|s| s.to_string());
+    dal.create_channel(ctx.clone(), &MessageChannel::from_po(po))
+        .await
+        .unwrap();
+}
+
+/// 象限1：专属渠道收绑定 Agent 的消息
+#[sqlx::test]
+async fn test_deliver_bound_channel_accepts_bound_agent(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
+    create_filter_test_channel(&ctx, &dal, "ofilter-bound-a", Some("agent-a"), None).await;
+
+    let msg = deliver_test_message(
+        "ofilter-msg-1",
+        "agent-a",
+        MessageRole::Agent,
+        None,
+        "user-1",
+    );
+    let result = dal.deliver_message(ctx, &msg, "user-1").await.unwrap();
+    assert_eq!(result.total, 1, "专属渠道应放行绑定 Agent 的消息");
+}
+
+/// 象限2：专属渠道跳过其他 Agent 的消息（AMan 渠道维度语义的核心断言）
+#[sqlx::test]
+async fn test_deliver_bound_channel_skips_other_agent(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
+    create_filter_test_channel(&ctx, &dal, "ofilter-bound-b", Some("agent-a"), None).await;
+
+    let msg = deliver_test_message(
+        "ofilter-msg-2",
+        "agent-b",
+        MessageRole::Agent,
+        None,
+        "user-1",
+    );
+    let result = dal.deliver_message(ctx, &msg, "user-1").await.unwrap();
+    assert_eq!(result.total, 0, "专属渠道应跳过非绑定 Agent 的消息");
+}
+
+/// 象限3（I2 回归断言）：通用渠道广播不变——任意 Agent/User 消息均照常进入
+#[sqlx::test]
+async fn test_deliver_unbound_channel_broadcast_unchanged(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
+    create_filter_test_channel(&ctx, &dal, "ofilter-global", None, None).await;
+
+    let cases = [
+        ("agent-a", MessageRole::Agent),
+        ("agent-b", MessageRole::Agent),
+        ("user-2", MessageRole::User),
+    ];
+    for (i, (from_id, role)) in cases.into_iter().enumerate() {
+        let msg = deliver_test_message(
+            &format!("ofilter-msg-g{}", i),
+            from_id,
+            role,
+            None,
+            "user-1",
+        );
+        let result = dal
+            .deliver_message(ctx.clone(), &msg, "user-1")
+            .await
+            .unwrap();
+        assert_eq!(
+            result.total, 1,
+            "通用渠道对 {} 的消息应恒放行（I1/I2）",
+            from_id
+        );
+    }
+}
+
+/// 象限4：scope_project 与专属收窄 AND 叠加
+#[sqlx::test]
+async fn test_deliver_bound_channel_scope_project_stack(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
+    create_filter_test_channel(
+        &ctx,
+        &dal,
+        "ofilter-scoped",
+        Some("agent-a"),
+        Some("proj-p"),
+    )
+    .await;
+
+    // 绑定 Agent + 命中项目 → 放行
+    let hit = deliver_test_message(
+        "ofilter-msg-p1",
+        "agent-a",
+        MessageRole::Agent,
+        Some("proj-p"),
+        "user-1",
+    );
+    let result = dal
+        .deliver_message(ctx.clone(), &hit, "user-1")
+        .await
+        .unwrap();
+    assert_eq!(result.total, 1, "绑定 Agent 且项目匹配应放行");
+
+    // 绑定 Agent + 项目不匹配 → 跳过
+    let miss = deliver_test_message(
+        "ofilter-msg-p2",
+        "agent-a",
+        MessageRole::Agent,
+        Some("proj-q"),
+        "user-1",
+    );
+    let result = dal.deliver_message(ctx, &miss, "user-1").await.unwrap();
+    assert_eq!(result.total, 0, "项目不匹配应跳过");
+}
+
+/// 象限5（D2 默认严格排除矩阵）：from_role=User 通知类不进专属渠道；
+/// 同一通知进通用渠道不受影响（对照）。漏达代价 R3 已在交付说明披露。
+#[sqlx::test]
+async fn test_deliver_d2_user_notification_excluded_from_bound(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
+    create_filter_test_channel(&ctx, &dal, "ofilter-d2-bound", Some("agent-a"), None).await;
+    create_filter_test_channel(&ctx, &dal, "ofilter-d2-global", None, None).await;
+
+    let msg = deliver_test_message(
+        "ofilter-msg-u1",
+        "user-2",
+        MessageRole::User,
+        None,
+        "user-1",
+    );
+    let result = dal.deliver_message(ctx, &msg, "user-1").await.unwrap();
+
+    assert_eq!(result.total, 1, "只有通用渠道放行该通知");
+    assert!(
+        result
+            .details
+            .iter()
+            .all(|d| d.channel_id != "ofilter-d2-bound"),
+        "D2 默认严格排除：User 通知类不进专属渠道"
+    );
+    assert!(
+        result
+            .details
+            .iter()
+            .any(|d| d.channel_id == "ofilter-d2-global"),
+        "同一通知照常进通用渠道"
+    );
 }

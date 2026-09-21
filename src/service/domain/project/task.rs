@@ -303,6 +303,43 @@ impl super::TaskManage for ProjectDomainImpl {
         Ok(task)
     }
 
+    /// 将未挂载项目的任务绑定到指定项目
+    async fn bind_to_project(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        project_id: String,
+    ) -> Result<Task> {
+        let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
+            bail_err!(NotFound, "Task not found: {}", task_id);
+        };
+
+        if task.po.project_id.is_some() {
+            bail_err!(
+                Conflict,
+                "Task {} is already bound to a project, rebinding is not supported",
+                task_id
+            );
+        }
+
+        if self
+            .project_dal
+            .find_by_id(ctx.clone(), &project_id)
+            .await?
+            .is_none()
+        {
+            bail_err!(NotFound, "Project not found: {}", project_id);
+        }
+
+        task.po.project_id = Some(project_id);
+        task.po.modified_by = ctx.uid();
+
+        let ctx = enrich_ctx!(&ctx, &task);
+
+        self.task_dal.update(ctx, &task).await?;
+        Ok(task)
+    }
+
     /// 开始任务
     async fn start(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<()> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
