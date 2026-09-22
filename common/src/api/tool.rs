@@ -541,6 +541,8 @@ pub struct CreateAuthorizationRequest {
     pub tool_id: String,
     /// 申请理由（审计留痕）
     pub reason: String,
+    /// 受限命令原文（规范化后即签名；主动建单必携——纵深校验与签名计算依据）
+    pub command: Option<String>,
     /// 拓展预留：仓库标识
     pub repository: Option<String>,
     /// 拓展预留：分支

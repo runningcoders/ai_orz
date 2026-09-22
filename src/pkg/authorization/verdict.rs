@@ -76,7 +76,7 @@ pub fn default_max_uses(idempotent: bool) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pkg::authorization::{AuthorizationGrant, command_signature};
+    use crate::pkg::authorization::AuthorizationGrant;
 
     const SAMPLE_SIG: &str = "docker push registry.local/app:1.0";
 

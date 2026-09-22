@@ -273,10 +273,8 @@ mod tests {
             let Some(g) = grants.get_mut(authorization_id) else {
                 return Ok(None);
             };
-            if let Some(max) = g.max_uses {
-                if g.uses >= max {
-                    return Ok(None);
-                }
+            if g.max_uses.is_some_and(|max| g.uses >= max) {
+                return Ok(None);
             }
             g.uses += 1;
             Ok(Some(g.clone()))

@@ -251,7 +251,7 @@ mod tests {
     async fn make_pending(svc: &AuthorizationService, pool: &sqlx::SqlitePool) -> String {
         let pending = svc
             .create_pending_authorization(
-                user_ctx(&pool),
+                user_ctx(pool),
                 CreateAuthorizationCmd {
                     agent_id: "agent-a".to_string(),
                     tool_id: "shell_exec".to_string(),
@@ -518,8 +518,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(all.len(), 1);
-        let mut q = common::api::AuthorizationQueryRequest::default();
-        q.agent_id = Some("agent-other".to_string());
+        let q = common::api::AuthorizationQueryRequest {
+            agent_id: Some("agent-other".to_string()),
+            ..Default::default()
+        };
         let none = svc.list_authorizations(user_ctx(&pool), q).await.unwrap();
         assert!(none.is_empty());
     }

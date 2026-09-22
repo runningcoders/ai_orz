@@ -3,17 +3,20 @@
 
 pub mod bind_tool_to_agent;
 pub mod confirm_authorization_via_chat;
+pub mod create_request_authorization;
 pub mod create_tool;
 pub mod debug_call_tool;
 pub mod decide_authorization;
 pub mod delete_tool;
 pub mod get_tool;
 pub mod get_tool_call_entry;
+pub mod list_authorizations;
 pub mod list_tool_tags;
 pub mod list_tools;
 pub mod query_tool_call_entries;
 pub mod query_tools;
 pub mod request_tool_call;
+pub mod revoke_authorization;
 pub mod runtime_stats;
 pub mod search_tools;
 pub mod send_tool_call_message;
@@ -23,6 +26,8 @@ pub mod update_tool_status;
 
 pub(crate) mod response;
 
+#[cfg(test)]
+mod authorization_manage_test;
 #[cfg(test)]
 mod confirm_authorization_via_chat_test;
 #[cfg(test)]
@@ -36,17 +41,20 @@ mod update_tool_test;
 
 pub use bind_tool_to_agent::bind_tool_to_agent_handler;
 pub use confirm_authorization_via_chat::confirm_authorization_via_chat_handler;
+pub use create_request_authorization::create_request_authorization_handler;
 pub use create_tool::create_tool_handler;
 pub use debug_call_tool::debug_call_tool_handler;
 pub use decide_authorization::decide_authorization_handler;
 pub use delete_tool::delete_tool_handler;
 pub use get_tool::get_tool_handler;
 pub use get_tool_call_entry::get_tool_call_entry_handler;
+pub use list_authorizations::list_authorizations_handler;
 pub use list_tool_tags::list_tool_tags_handler;
 pub use list_tools::list_tools_handler;
 pub use query_tool_call_entries::query_tool_call_entries_handler;
 pub use query_tools::query_tools_handler;
 pub use request_tool_call::request_tool_call_handler;
+pub use revoke_authorization::revoke_authorization_handler;
 pub use runtime_stats::get_tool_runtime_stats_handler;
 pub use search_tools::search_tools_handler;
 pub use send_tool_call_message::send_tool_call_message_handler;
