@@ -14,15 +14,25 @@
 # Usage:
 #   ./scripts/migrate_tool_call_trace.sh              # dry-run：只打印计划
 #   ./scripts/migrate_tool_call_trace.sh --apply      # 真正执行
-#   DATA_DIR=/path/to/.ai_orz ./scripts/migrate_tool_call_trace.sh --apply
+#   AI_ORZ_BASE_PATH=/path/to/data ./scripts/migrate_tool_call_trace.sh --apply
+#   DATA_DIR=/path/to/data ./scripts/migrate_tool_call_trace.sh --apply   （历史写法，仍兼容）
+#
+# 数据目录默认取部署根（仓库模式 = $HOME/.ai_orz/data），与 prod.sh 同口径，详见 lib/service.sh。
 #
 # 兼容 macOS 自带 bash 3.2（不用 mapfile / 关联数组）。
 
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DATA_DIR="${DATA_DIR:-$REPO_ROOT/.ai_orz}"
+# 数据目录来源与其它脚本同口径（部署根 / AI_ORZ_BASE_PATH），不再自行拼 $REPO_ROOT/.ai_orz
+# —— 生产数据已迁到部署根，自拼路径会静默操作错误目录。
+_INCOMING_DATA_DIR="${DATA_DIR:-}"
+# shellcheck source=./lib/service.sh
+source "$SCRIPT_DIR/lib/service.sh"
+# 兼容本脚本历史用法（DATA_DIR=...），但不覆盖 AI_ORZ_BASE_PATH（后者是全局唯一开关）
+if [ -n "$_INCOMING_DATA_DIR" ] && [ -z "${AI_ORZ_BASE_PATH:-}" ]; then
+    DATA_DIR="$_INCOMING_DATA_DIR"
+fi
 TOOLS_DIR="$DATA_DIR/tools"
 TARGET_DIR="$TOOLS_DIR/call_trace"
 

@@ -7,6 +7,12 @@
 # 这样做的好处：同一功能只有一处实现，改行为只需改脚本，不用在 Makefile、钩子、CI 三处同步。
 # 日常自测：make lint（纯静态检查，前后端全量，不跑测试）
 # 提交/推送前：make ci（= lint + 全量测试；与 pre-push 钩子同口径）
+#
+# 生产数据落点：make prod 的数据/二进制/前端产物/PID/日志统一在「部署根」下（仓库默认 $HOME/.ai_orz，
+# 数据在 <部署根>/data），不再长在 git 工作树里；开发态（make dev）仍在仓库内 .ai_orz 隔离。
+# 生产链路三段分离：make build（纯编译，产物留在仓库内）→ make install（搬运到部署根）→ 启动；
+# make prod = 这三步 + 残留清理；make package 只消费 build 产物（不触碰本机部署根）。
+# 详见 scripts/README.md「部署根」一节。
 
 # 每条命令执行前自动补充标准 PATH（覆盖受限 shell 环境，rustup 在 ~/.cargo/bin）
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
@@ -16,7 +22,7 @@ FAIL_UNDER ?= 45
 
 .DEFAULT_GOAL := help
 .PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate lint test test-be test-fe ci coverage e2e \
-        dev serve run build build-fe prod prod-stop stop prod-status status prod-log logs restart \
+        dev serve run build build-fe install prod prod-stop stop prod-status status prod-log logs restart \
         clean-proc clean clean-slim doctor package hooks
 
 # git hooks 目录指向仓库内 .githooks/
@@ -85,13 +91,16 @@ serve: ## 仅启动前端开发服务器（dx serve，http://localhost:8080）
 run: ## 仅启动后端开发服务器（cargo run，http://localhost:3000）
 	./scripts/ai_orz.sh backend
 
-build: ## 全量 release 编译：前端 dist/ + 后端二进制（= CI release 口径）
+build: ## 全量 release 编译：前端 dist/ + 后端二进制（产物留在仓库内，部署用 make install / make prod）
 	./scripts/ai_orz.sh build
+
+install: ## 把构建产物搬运到部署根（<部署根>/bin/ai_orz + <部署根>/dist；make prod 已内含）
+	./scripts/ai_orz.sh install
 
 build-fe: ## 仅编译前端 release 并复制产物到 dist/
 	./scripts/ai_orz.sh build-fe
 
-prod: ## 生产模式：构建 + 后台运行 release 二进制（0.0.0.0:3000，连跑两次 = 幂等重启）
+prod: ## 生产模式：编译 + 搬运到部署根 + 后台运行 release 二进制（数据落 ~/.ai_orz/data，连跑两次 = 幂等重启）
 	./scripts/ai_orz.sh prod
 
 stop: ## 停止后台生产服务（仅 release 二进制，不影响开发态进程）
@@ -100,10 +109,10 @@ stop: ## 停止后台生产服务（仅 release 二进制，不影响开发态�
 prod-stop: ## 停止后台生产服务（stop 的兼容别名）
 	$(MAKE) stop
 
-restart: ## 重启后台生产服务（优雅停止后启动，不重新构建）
+restart: ## 重启后台生产服务（优雅停止后启动，不重新构建、不搬运；产物落后会告警）
 	./scripts/ai_orz.sh restart
 
-status: ## 查看后台生产服务状态（PID / 运行时长 / 资源占用 / 监听端口）
+status: ## 查看后台生产服务状态（PID / 运行时长 / 资源占用 / 监听端口 / 数据目录）
 	./scripts/ai_orz.sh status
 
 prod-status: ## 查看生产服务状态（status 的兼容别名）
@@ -125,7 +134,7 @@ doctor: ## 依赖预检：MODE 指定模式（默认 dev），FIX=1 自动安装
 
 # ===== 发布 =====
 
-package: ## 编译并打包正式发布物（tar.gz：二进制 + dist/ + 运维脚本 + Makefile + README，可指定 VERSION）
+package: ## 编译并打包正式发布物（tar.gz：二进制 + dist/ + 运维脚本 + Makefile + README，可指定 VERSION；不触碰本机部署根）
 	./scripts/ai_orz.sh package $(VERSION)
 
 # ===== 磁盘治理 =====

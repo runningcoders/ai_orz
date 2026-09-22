@@ -19,13 +19,49 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 # 发布包  ：只有 ai_orz + dist/ + script/（无需构建，stdout 需落到 run.log）
 in_repo_checkout() { [ -f "$REPO_ROOT/Cargo.toml" ]; }
 
-# ===== 运行态路径（两种环境同口径，均相对根/数据目录）=====
-DATA_DIR="${AI_ORZ_BASE_PATH:-$REPO_ROOT/.ai_orz}"
+# ===== 部署根（生产实例的落点）=====
+# 目的：生产实例的「数据 / 二进制 / PID / run.log」不再长在 git 工作树里——
+#   - `git clean -xdf`、删仓库、切分支都不会碰到生产数据
+#   - 同一台机器从任意 checkout 调用 `make prod`，都指向同一个生产实例
+#
+# 默认值按环境分叉（沿用 in_repo_checkout() 这一个判定，不新增第二个环境开关）：
+#   仓库   → $HOME/.ai_orz（数据在 <部署根>/data，二进制安装在 <部署根>/bin/ai_orz）
+#   发布包 → 解压目录自身（布局与历史完全一致：数据在 <包根>/.ai_orz、二进制在 <包根>/ai_orz）
+# 显式覆盖：AI_ORZ_DEPLOY_ROOT > 上述默认。
+#
+# ⚠️ 开发态（run.sh / cargo run / cargo test）**刻意不使用部署根**：它继续落在仓库内 `.ai_orz`，
+#    靠「相对路径 + 进程 CWD」天然隔离，各 checkout / 集成测试互不干扰。
+#    若把 BASE_DATA_PATH 默认值改成全局 home，所有实例会共享同一份 SQLite/DuckDB/向量库
+#    （WAL 锁冲突、测试污染真实数据、bincode 元数据互相覆盖），且全程静默难以定位 —— 是禁区。
+DEPLOY_ROOT="$(
+    if [ -n "${AI_ORZ_DEPLOY_ROOT:-}" ]; then
+        echo "$AI_ORZ_DEPLOY_ROOT"
+    elif in_repo_checkout; then
+        echo "$HOME/.ai_orz"
+    else
+        echo "$REPO_ROOT"
+    fi
+)"
 
-# 服务二进制：显式覆盖 > 发布包根的 ./ai_orz > 仓库 target/release/ai_orz
+# ===== 运行态路径（两种环境同口径，均相对部署根/数据目录）=====
+# 数据目录：`AI_ORZ_BASE_PATH` 是后端与脚本共用的唯一开关（后端每次调用都会重新读它）
+if [ -n "${AI_ORZ_BASE_PATH:-}" ]; then
+    DATA_DIR="$AI_ORZ_BASE_PATH"
+elif in_repo_checkout; then
+    DATA_DIR="$DEPLOY_ROOT/data"
+else
+    DATA_DIR="$DEPLOY_ROOT/.ai_orz"
+fi
+
+# 服务二进制：显式覆盖 > 部署根安装位 > 发布包根的 ./ai_orz > 仓库 target/release/ai_orz
+# 部署根安装位（<部署根>/bin/ai_orz）由 `prod.sh install` 从 build 产物搬运，与 target/ 解耦：
+#   `cargo clean` / 重建 target 不会让生产实例在下次重启时找不到二进制。
+# 末位兜底保留 target/release/ai_orz，使未搬运时 `make restart` 仍可直接用（start 会告警提示 install）。
 resolve_bin() {
     if [ -n "${AI_ORZ_BIN:-}" ]; then
         echo "$AI_ORZ_BIN"
+    elif [ -x "$DEPLOY_ROOT/bin/ai_orz" ]; then
+        echo "$DEPLOY_ROOT/bin/ai_orz"
     elif [ -x "$REPO_ROOT/ai_orz" ]; then
         echo "$REPO_ROOT/ai_orz"
     else
@@ -50,6 +86,30 @@ run_log_path() { echo "$DATA_DIR/run.log"; }
 
 # 后端按日滚动的业务日志（关停编排的终态标记从这里读）
 day_log_path() { echo "$DATA_DIR/logs/ai_orz.log.$(date +%F)"; }
+
+# 前端静态产物目录（生产实例的 dist/）：
+#   仓库   → <部署根>/dist（由 `prod.sh install` 从仓库 dist/ 搬运过去，与 git 工作树解耦）
+#   发布包 → 解压目录/dist（打包时就在包根，与历史布局完全一致）
+# 部署根已按环境分叉，故这里无需再判定 —— 两种环境同为 "$DEPLOY_ROOT/dist"。
+# ⚠️ 后端的 `frontend.dist_dir` 默认是相对值 "dist"（common/src/config.rs），落点由进程 CWD 决定；
+#    要让生产实例读部署根产物，必须由启动器显式注入 FRONTEND_DIST_DIR（见 prod.sh::cmd_start）。
+dist_dir_path() { echo "$DEPLOY_ROOT/dist"; }
+
+# 开发态（cargo run，未走部署根）的数据目录 —— 仅供需要「同时兼容两种数据根」的清理逻辑使用
+repo_local_data_dir() { echo "$REPO_ROOT/.ai_orz"; }
+
+# 优雅停止时用于确认「关停编排已完成」的日志候选（每行一个路径）
+# 生产实例写 DATA_DIR；开发实例（cargo run）写仓库本地 .ai_orz。cleanup.sh 同时服务两种实例，
+# 故两份都作为终态标记来源；两份都没有该标记时自动退化为「纯等进程退出」，行为仍正确。
+shutdown_marker_logs() {
+    echo "$(run_log_path)"
+    echo "$(day_log_path)"
+    echo "$(repo_local_data_dir)/run.log"
+    echo "$(repo_local_data_dir)/logs/ai_orz.log.$(date +%F)"
+}
+
+# 把路径转成 egrep 的字面量模式（ps 输出里匹配二进制路径时用，避免路径中的 . 等元字符误匹配）
+egrep_literal() { printf '%s' "$1" | sed 's/[][\\.^$*+?(){}|]/\\&/g'; }
 
 # ===== 进程 / 端口 =====
 

@@ -78,10 +78,19 @@
 # 克隆并启动
 git clone https://github.com/runningcoders/ai_orz
 cd ai_orz
-make prod           # 生产模式：自动编译 + 启动
+make prod           # 生产模式：编译 → 搬运到部署根 → 启动
 ```
 
 服务监听 `0.0.0.0:3000`，浏览器打开 `http://localhost:3000` 即可使用。
+
+生产实例的落点（**部署根** `~/.ai_orz`）包含三样：数据（SQLite / DuckDB / 向量库 / Agent 工作区 / 日志）
+在 `~/.ai_orz/data`，二进制在 `~/.ai_orz/bin/ai_orz`，前端产物在 `~/.ai_orz/dist` ——
+都不在 git 工作树里，`git clean` / 切分支 / 删仓库都不影响它，从任意 checkout 调用 `make prod`
+指向同一个生产实例。开发态（`make dev`）仍使用仓库内 `.ai_orz` 以保持隔离。
+
+生产链路分三步：`make build`（只编译，产物留仓库）→ `make install`（搬运到部署根）→ 启动；
+`make prod` = 这三步一次做完。`make package` 只消费 build 产物打包分发，不触碰本机部署根。
+详见 [scripts/README.md](./scripts/README.md)「部署根」一节。
 
 **开发模式**（前端热重载）：
 

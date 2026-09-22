@@ -10,6 +10,10 @@
 # ⚠️ 后端**不能**用「kill + 固定 sleep 1 + kill -9」：优雅退出链路含 10s HTTP drain 窗口
 #    （SSE 长连接必然吃满）+ 渠道停服 + AOP 排空 + DuckDB flush，1s 后 -9 会打断落盘丢统计。
 #
+# ⚠️ 本脚本同时服务两种数据根（部署根见 lib/service.sh）：
+#    生产实例 = <部署根>/bin/ai_orz，数据在 <部署根>/data；开发实例 = target/debug/ai_orz，
+#    数据在仓库本地 .ai_orz。所以「按进程名扫描」与「终态标记日志」两处都必须两套都覆盖。
+#
 # run.sh（开发态）启动前自动调用；也可手动执行：
 #   ./scripts/ai_orz.sh clean         直接清理（统一入口，推荐）
 #   ./scripts/cleanup.sh              等价直接清理（兼容别名）
@@ -29,6 +33,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/service.sh"
 STOP_TIMEOUT="${AI_ORZ_STOP_TIMEOUT:-30}"
 RUN_LOG="$(run_log_path)"
 DAY_LOG="$(day_log_path)"
+
+# 关停编排终态标记的日志候选（生产写部署根数据目录、开发写仓库本地 .ai_orz）
+# 两份都看：否则会出现「日志里明明有终态标记、却白等到超时」的退化（行为仍正确，只是慢）
+MARKER_LOGS=()
+while IFS= read -r _marker_log; do
+    MARKER_LOGS+=("$_marker_log")
+done < <(shutdown_marker_logs)
 
 CLEANED=0
 HANDLED=""   # 已处理过的 PID（跨步骤去重）
@@ -65,13 +76,14 @@ stop_backend() {
         return 0
     fi
     echo "${YELLOW}  🧹 优雅停止残留后端进程 PID=${pid}（等关停编排完成，上限 ${STOP_TIMEOUT}s）${NC}" >&2
-    if graceful_stop "$pid" "$STOP_TIMEOUT" "$RUN_LOG" "$DAY_LOG" >&2; then
+    if graceful_stop "$pid" "$STOP_TIMEOUT" "${MARKER_LOGS[@]}" >&2; then
         echo "${GREEN}  ✓ PID=${pid} 已优雅退出（stats 已落盘）${NC}" >&2
         return 0
     fi
     echo "${YELLOW}  ⏰ ${STOP_TIMEOUT}s 未完成关停，最近日志（定位卡点）:${NC}" >&2
-    tail -n 10 "$RUN_LOG" 2>/dev/null >&2 || true
-    tail -n 10 "$DAY_LOG" 2>/dev/null >&2 || true
+    for _marker_log in "${MARKER_LOGS[@]}"; do
+        tail -n 10 "$_marker_log" 2>/dev/null >&2 || true
+    done
     echo "${YELLOW}  💥 强杀 PID=${pid}${NC}" >&2
     kill -9 "$pid" 2>/dev/null || true
 }
@@ -79,7 +91,14 @@ stop_backend() {
 echo "🧹 ai_orz 残留进程清理$( [ "$DRY_RUN" = "1" ] && echo '（dry-run 模式）' )..."
 
 # 1. 残留后端二进制进程（持有 DuckDB 文件锁、3000 端口）—— 走优雅停止
-STALE_BE=$(/bin/ps aux | /usr/bin/grep -E "target/(debug|release)/ai_orz( |$)" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
+#    仓库模式下有两个落点：部署根安装位（生产实例）与 target/（cargo run --release）
+BE_PATTERN="target/(debug|release)/ai_orz( |$)"
+if in_repo_checkout; then
+    BE_PATTERN="${BE_PATTERN}|$(egrep_literal "$DEPLOY_ROOT/bin/ai_orz")( |$)"
+else
+    BE_PATTERN="$(egrep_literal "$REPO_ROOT/ai_orz")( |$)"
+fi
+STALE_BE=$(/bin/ps aux | /usr/bin/grep -E "$BE_PATTERN" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
 for pid in $STALE_BE; do
     [ -z "$pid" ] && continue
     pid_alive "$pid" || continue

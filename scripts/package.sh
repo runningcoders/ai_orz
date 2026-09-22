@@ -5,6 +5,11 @@
 #
 # 本地与 CI 共用（release.yml 直接调用本脚本，保证打包逻辑只有一处）。
 #
+# ⚠️ 打包是**纯离线动作**：只消费 `prod.sh build` 的产物（仓库 dist/ + target/release/ai_orz），
+#    **不**执行 `prod.sh install` —— 打包不该有运行期副作用：CI 上会往 runner 的 $HOME 白写约 280MB，
+#    本机还会覆盖正在运行实例的 bin/ 与 dist/。素材路径与部署根完全无关。
+#    （部署路径是 build → install → start，见 scripts/prod.sh 头部「三段分离」。）
+#
 # Usage:
 #   ./scripts/ai_orz.sh package [版本号]      # 统一入口
 #   ./scripts/package.sh [版本号]             # 等价别名
@@ -40,7 +45,14 @@ echo "   平台: ${BLUE}$TARGET${NC}"
 echo ""
 
 # 1. 编译 release（复用本地构建链路：前端 dx build --release → dist/，后端 cargo build --release）
+#    只编译、不搬运（见头部说明）：打包不碰本机部署根
 "$SCRIPTS_DIR/prod.sh" build
+
+# 素材自检：二进制缺失时 cp 会报一句没头没尾的错；dist/ 缺 index.html 更危险 ——
+# 包能打出来也能启动，但所有页面白屏（ServeDir 读不到 index.html 不报错，
+# SPA 回退返回 200 + 空 body，状态码一切正常）。
+[ -x "$REPO_ROOT/target/release/ai_orz" ] || die "未找到 release 二进制: $REPO_ROOT/target/release/ai_orz"
+[ -s "$REPO_ROOT/dist/index.html" ] || die "未找到前端产物: $REPO_ROOT/dist/index.html（检查 build_frontend.sh 输出）"
 
 # 2. 组装发布目录
 PKG_NAME="ai_orz-${VERSION}-${TARGET}"
@@ -65,11 +77,13 @@ chmod +x "$PKG_DIR/script/"*.sh
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__TARGET__/$TARGET/g" \
     "$SCRIPTS_DIR/release/README.md" > "$PKG_DIR/README.md"
 
-# 3. 打包 tar.gz
-tar czf "${PKG_NAME}.tar.gz" "$PKG_NAME"
+# 3. 打包 tar.gz —— 输出位置显式钉在仓库根：下面回显与 CI 的 upload-artifact 都按这里取，
+#    不依赖调用方 CWD（原写法 tar 写 CWD、回显却写 $REPO_ROOT，两者会分叉）。
+TARBALL="$REPO_ROOT/${PKG_NAME}.tar.gz"
+tar czf "$TARBALL" -C "$REPO_ROOT" "$PKG_NAME"
 
 echo ""
 echo "${GREEN}✅ 打包完成${NC}"
-echo "   发布包: ${BLUE}$REPO_ROOT/${PKG_NAME}.tar.gz${NC}"
-echo "   目录:   ${BLUE}$REPO_ROOT/$PKG_NAME/${NC}（解压后 make start 即可运行，详见 README.md）"
-echo "   体积:   $(du -sh "$PKG_NAME.tar.gz" | cut -f1)"
+echo "   发布包: ${BLUE}${TARBALL}${NC}"
+echo "   目录:   ${BLUE}${PKG_DIR}/${NC}（解压后 make start 即可运行，详见 README.md）"
+echo "   体积:   $(du -sh "$TARBALL" | cut -f1)"
