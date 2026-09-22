@@ -25,9 +25,14 @@ pub async fn search_memory(
     ctx: RequestContext,
     params: SearchMemoryParams,
 ) -> Result<SearchMemoryResponse> {
-    let user_id = ctx.uid();
-    if user_id.is_empty() {
-        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    // 调用主体：人类用户（HTTP）或 Agent（唤醒 / 休息沉淀链路）都可以操作记忆。
+    // ⚠️ 不能只认 user —— 休息沉淀的 ctx 由 `RequestContext::new_system()` 还原，
+    // **天生没有 user_id**（只有 agent_id）：`agent_rest` cron → `agent.settle.requested`
+    // → Settle 场景，而沉淀 prompt 明确要求 Agent 调用本工具（TEMPLATE_MEMORY_COGNITION）。
+    // 只认 user 会让这类调用全部 400「当前请求缺少用户上下文」，实测 call_trace 已复现。
+    // 记忆的归属维度是 Agent（短期私有）与蜂巢（知识节点共享），本就与 user 无关。
+    if ctx.uid().is_empty() && ctx.agent_id().is_none() {
+        bail_err!(InvalidRequest, "当前请求缺少用户/Agent 上下文");
     }
 
     // 归属筛选：**只认显式传入的 `params.agent_id`**（空串 = None = 不过滤）。
@@ -184,12 +189,19 @@ fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handlers::hr::agent::create_memory::create_memory;
+    use crate::handlers::hr::agent::delete_memory::delete_memory;
+    use crate::handlers::hr::agent::query_memory::query_memory;
     use crate::handlers::hr::agent::save_long_term_memory::save_long_term_memory;
+    use crate::handlers::hr::agent::update_memory::update_memory;
     use crate::models::memory::{
         KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams,
     };
     use crate::service::dao::memory::{MemoryQuery, MemorySearch};
-    use common::api::{KnowledgeRelationParam, SaveLongTermMemoryParams};
+    use common::api::{
+        CreateMemoryParams, DeleteMemoryParams, KnowledgeRelationParam, QueryMemoryParams,
+        SaveLongTermMemoryParams, UpdateMemoryParams,
+    };
     use common::enums::{KnowledgeRelationStatus, MemoryStatus};
 
     fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
@@ -720,5 +732,133 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("合法 memory_type {good:?} 不该报错: {e}"));
         }
+    }
+
+    /// 回归：**休息沉淀链路**（System + 只有 agent_id、没有 user_id）必须能调用全部记忆工具。
+    ///
+    /// 沉淀的 ctx 由 `RequestContext::new_system()` 经 AOP `context_carrier` 还原 ——
+    /// `agent_rest` cron 只派发事件、事件本身不带用户，所以整条链路**天生没有 user_id**；
+    /// 而 5 个记忆工具曾一律要求 `!ctx.uid().is_empty()`，于是沉淀期只能新建节点、
+    /// 检索/更新/删除全线 400「当前请求缺少用户上下文」。
+    ///
+    /// 实测（`.ai_orz/tools/call_trace`，全量 10 个文件）：`update_memory` 失败 10 次、
+    /// `search_memory` 6 次、`query_memory` 6 次，失败调用全部 `task_id=null, project_id=null`、
+    /// 只有 agent_id —— 正是沉淀的形状；而同期无 user 校验的 `save_long_term_memory`（65 次）
+    /// 与 `save_short_term_memory`（109 次）畅通。后果是「先检索再创建」失效 → 持续制造重复节点，
+    /// 且「把已处理短期记忆标 Settled」只能靠框架兜底。
+    ///
+    /// 因此调用主体校验必须是「**用户 或 Agent**」；同时**不能退化成不校验** ——
+    /// 两者都没有的匿名 ctx 仍须拒绝。
+    #[sqlx::test]
+    async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::SqlitePool) {
+        let _ = init_env(pool.clone()); // 全局初始化（DAO/DAL/Domain）
+        let ctx = crate::pkg::request_context_test_support::new_test_agent_ctx(
+            "agent-settle",
+            pool.clone(),
+        );
+        assert!(ctx.uid().is_empty(), "本测试的前提就是 ctx 没有 user_id");
+        assert_eq!(ctx.agent_id().map(String::as_str), Some("agent-settle"));
+
+        // create_memory：沉淀期新建知识节点
+        let node = create_memory(
+            ctx.clone(),
+            CreateMemoryParams {
+                memory_type: "knowledge_node".to_string(),
+                content: "沉淀期新建的知识节点".to_string(),
+                summary: Some("沉淀期摘要".to_string()),
+                tags: None,
+                task_id: None,
+            },
+        )
+        .await
+        .expect("Agent 上下文（无 user）应能创建知识节点");
+
+        // search_memory：沉淀的第 2 步「先检索再创建」，检索失效就会造重复节点
+        let hit = search_memory(
+            ctx.clone(),
+            SearchMemoryParams {
+                query: "沉淀期新建".to_string(),
+                max_results: Some(20),
+                memory_type: Some("knowledge_node".to_string()),
+                traversal_depth: None,
+                traversal_breadth: None,
+                traversal_strategy: None,
+                seed_node_ids: None,
+                tags: None,
+                task_id: None,
+                agent_id: None,
+            },
+        )
+        .await
+        .expect("Agent 上下文（无 user）应能检索记忆");
+        assert!(
+            hit.results.iter().any(|r| r.id == node.memory_id),
+            "刚建的节点应能被检索到: {:?}",
+            hit.results.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()
+        );
+
+        // query_memory：按结构化条件查询
+        query_memory(
+            ctx.clone(),
+            QueryMemoryParams {
+                agent_id: Some("agent-settle".to_string()),
+                memory_type: Some("knowledge_node".to_string()),
+                limit: Some(20),
+                tags: None,
+                task_id: None,
+                status: None,
+            },
+        )
+        .await
+        .expect("Agent 上下文（无 user）应能按条件查询记忆");
+
+        // update_memory：沉淀的第 6 步「把已处理的短期记忆标 Settled」（call_trace 里失败最多的一处）
+        let st = create_memory(
+            ctx.clone(),
+            CreateMemoryParams {
+                memory_type: "short_term".to_string(),
+                content: "沉淀期待处理的工作记忆".to_string(),
+                summary: Some("待沉淀条目".to_string()),
+                tags: None,
+                task_id: None,
+            },
+        )
+        .await
+        .expect("Agent 上下文（无 user）应能创建短期记忆");
+        update_memory(
+            ctx.clone(),
+            UpdateMemoryParams {
+                memory_id: st.memory_id.clone(),
+                content: None,
+                summary: None,
+                tags: None,
+                status: Some("settled".to_string()),
+                node_tags: None,
+            },
+        )
+        .await
+        .expect("Agent 上下文（无 user）应能把短期记忆标记为 settled");
+
+        // delete_memory：确认冗余节点可删
+        delete_memory(
+            ctx.clone(),
+            DeleteMemoryParams {
+                memory_id: node.memory_id.clone(),
+            },
+        )
+        .await
+        .expect("Agent 上下文（无 user）应能删除记忆");
+
+        // 反向：user 与 agent 都没有的匿名 ctx 仍须拒绝（校验放宽不等于取消）
+        let anon = crate::pkg::request_context::RequestContext::builder()
+            .storage(crate::pkg::storage::test_support::create_test_storage(pool))
+            .build();
+        let err = search_memory(anon, click_params("kn_x", None))
+            .await
+            .expect_err("既无 user 又无 agent 的 ctx 必须被拒绝");
+        assert!(
+            err.to_string().contains("缺少用户/Agent 上下文"),
+            "错误信息应点明缺的是调用主体: {err}"
+        );
     }
 }

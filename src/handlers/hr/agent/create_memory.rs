@@ -23,9 +23,13 @@ pub async fn create_memory(
     ctx: RequestContext,
     params: CreateMemoryParams,
 ) -> Result<CreateMemoryResponse> {
-    let user_id = ctx.uid();
-    if user_id.is_empty() {
-        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    // 调用主体：人类用户（HTTP）或 Agent（唤醒 / 休息沉淀链路）都可以操作记忆。
+    // ⚠️ 不能只认 user —— 休息沉淀的 ctx 由 `RequestContext::new_system()` 还原，
+    // 天生没有 user_id（只有 agent_id），而沉淀 prompt 明确要求 Agent 调用本工具。
+    // 只认 user 会让这类调用全部 400「当前请求缺少用户上下文」（实测 call_trace 已复现）。
+    // 记忆的归属维度是 Agent（短期私有）与蜂巢（知识节点共享），本就与 user 无关。
+    if ctx.uid().is_empty() && ctx.agent_id().is_none() {
+        bail_err!(InvalidRequest, "当前请求缺少用户/Agent 上下文");
     }
 
     let memory_id = match params.memory_type.as_str() {

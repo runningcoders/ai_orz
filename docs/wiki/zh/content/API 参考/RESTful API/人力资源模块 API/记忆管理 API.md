@@ -294,9 +294,11 @@ DAL --> DAO : "组合"
 - [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
 
 ## 故障排查指南
-- 缺少用户上下文
-  - 现象：create/query/search/delete 返回 InvalidRequest
-  - 处理：确保请求携带有效 user_id
+- 缺少调用主体（用户 / Agent 上下文）
+  - 现象：create/query/search/update/delete 返回 InvalidRequest「当前请求缺少用户/Agent 上下文」
+  - 处理：HTTP 调用确保请求携带有效 user_id；**Agent 调用（唤醒 / 休息沉淀链路）只需 agent_id**——
+    沉淀的 ctx 由 `RequestContext::new_system()` 经 AOP `context_carrier` 还原，天生没有 user_id，
+    只认 user 会让沉淀期的检索 / 更新 / 删除全部 400（记忆的归属维度是 Agent 与蜂巢，与 user 无关）
 - 记忆不存在
   - 现象：delete_memory 报 NotFound
   - 处理：确认 memory_id 是否存在且可删除（Trace/Relation 不可删）

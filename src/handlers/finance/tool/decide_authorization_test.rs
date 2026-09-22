@@ -1,9 +1,11 @@
 //! decide_authorization handler 集成测试（真 DAL + 共享授权服务）
 
 use common::api::AuthorizationDecisionRequest;
+use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 
 use super::decide_authorization::decide_authorization;
+use crate::models::message::MessagePo;
 use crate::pkg::authorization::command_signature;
 use crate::pkg::request_context_test_support::new_test_ctx;
 use crate::service::domain::finance::{CreateAuthorizationCmd, domain};
@@ -80,4 +82,59 @@ async fn decide_agent_ctx_without_mediation_is_rejected(pool: SqlitePool) {
 
     assert!(err.code_enum() == common::error::ErrorCode::InvalidRequest);
     assert!(err.to_string().contains("Agent 不得自我审批"));
+}
+
+// ============ T5·S3 双向通知集成验证（真 DAL：落库即通知） ============
+
+/// 系统通知消息落库后经 find_by_id 可查（走真 MessageDal 全路径）
+async fn find_system_notification(pool: &SqlitePool, to_id: &str) -> Option<MessagePo> {
+    let ctx = new_test_ctx("user-aman", pool.clone());
+    let dal = crate::service::dal::message::dal();
+    let msgs = dal
+        .list_by_to_id(ctx, to_id, Some(20))
+        .await
+        .expect("查询通知消息");
+    msgs.into_iter()
+        .find(|m| m.po.from_role == MessageRole::System)
+        .map(|m| m.po)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn pending_notification_persisted_via_real_dal(pool: SqlitePool) {
+    init_test_singletons();
+    let auth_id = make_pending(&pool, &uniq_sig("t5-pending-notify")).await;
+    let po = find_system_notification(&pool, "user-aman")
+        .await
+        .expect("建单推送应经真 DAL 落库可查");
+    assert_eq!(po.from_role, MessageRole::System);
+    assert_eq!(po.to_role, MessageRole::User);
+    assert_eq!(po.to_id, "user-aman");
+    assert_eq!(po.message_type, MessageType::Text);
+    assert_eq!(po.status, MessageStatus::Pending);
+    assert!(
+        po.content.contains(&auth_id),
+        "建单推送应携带 authorization_id，实际: {}",
+        po.content
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn decided_notification_persisted_via_real_dal(pool: SqlitePool) {
+    init_test_singletons();
+    let auth_id = make_pending(&pool, &uniq_sig("t5-decided-notify")).await;
+    let params = approve_params(&auth_id);
+    decide_authorization(new_test_ctx("user-aman", pool.clone()), params)
+        .await
+        .expect("UI 直批成功");
+    let po = find_system_notification(&pool, "agent-a")
+        .await
+        .expect("决策回推应经真 DAL 落库可查");
+    assert_eq!(po.from_role, MessageRole::System);
+    assert_eq!(po.to_role, MessageRole::Agent);
+    assert_eq!(po.to_id, "agent-a");
+    assert!(
+        po.content.contains(&auth_id),
+        "决策回推应携带 authorization_id，实际: {}",
+        po.content
+    );
 }

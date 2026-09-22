@@ -26,6 +26,20 @@ pub fn new_test_ctx_from_global(user_id: &str) -> RequestContext {
     RequestContext::new(Some(user_id.to_string()), None)
 }
 
+/// 创建测试用「Agent 上下文」：**有 agent_id、没有 user_id**（caller_type = System）
+///
+/// 这是休息沉淀（`agent_rest` cron → `agent.settle.requested` → Settle 场景）的真实 ctx 形状：
+/// AOP 事件携带的 carrier 由 `RequestContext::new_system()` 生成，链路里只有 agent_id，
+/// 没有任何用户身份。凡是「Agent 会调用」的工具都必须在这个形状下可用。
+pub fn new_test_agent_ctx(agent_id: &str, pool: SqlitePool) -> RequestContext {
+    let storage = storage::test_support::create_test_storage(pool);
+    RequestContext::builder()
+        .caller_type(common::enums::CallerType::System)
+        .agent_id(agent_id)
+        .storage(storage)
+        .build()
+}
+
 /// 确保全局 base data 目录指向进程级共享临时目录（幂等，仅首次生效）
 ///
 /// 通过 BASE_DATA_PATH_ENV 环境变量生效（AppConfig::base_data_path 每次读环境变量），

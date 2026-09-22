@@ -14,10 +14,11 @@ use crate::pkg::authorization::{
 };
 use async_trait::async_trait;
 
+use crate::models::message::{Message, MessagePo};
 use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 use common::api::{AuthorizationDetailDto, AuthorizationStatusDto, EvidenceClassDto};
-use common::enums::MessageRole;
+use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::{Error, Result, bail_err};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -97,6 +98,113 @@ pub(crate) fn status_to_dto(s: AuthorizationStatus) -> AuthorizationStatusDto {
 }
 
 impl AuthorizationService {
+    // ==================== 双向通知（T5·S3：落库即通知） ====================
+    //
+    // 通知管道：经已接线的 MessageDal save_message 落库 → MessageCreatedEvent →
+    // 消费端按 to_role 分流（User→deliver_message 推送渠道；Agent→唤醒），
+    // 复用标准消息管道，不自建推送。红线⑥：Notifier 编排留 domain；
+    // 通知内容仅提示，不承载授权语义（实际批准仅经 decide 证据链）。
+    // 降级策略：DAL 未接线或落库失败仅 log_warn 留痕，不阻断授权主流程。
+
+    /// 构造系统通知消息（from_role=System，message_type=Text，纯文本提示）
+    fn build_notification(&self, to_id: &str, to_role: MessageRole, content: String) -> Message {
+        let po = MessagePo {
+            id: uuid::Uuid::now_v7().to_string(),
+            from_id: "system".to_string(),
+            to_id: to_id.to_string(),
+            from_role: MessageRole::System,
+            to_role,
+            message_type: MessageType::Text,
+            status: MessageStatus::Pending,
+            content,
+            ..Default::default()
+        };
+        Message::from_po(po)
+    }
+
+    /// 建单推送：通知归属用户「有授权单待审批」（经消息管道触达）
+    async fn notify_pending(&self, ctx: &RequestContext, pending: &PendingAuthorization) {
+        let Some(dal) = self.message_dal_handle() else {
+            log_warn!(
+                "tool_authorization 通知 [建单跳过] 消息 DAL 未接线 authorization_id={} agent={}",
+                pending.authorization_id,
+                pending.agent_id
+            );
+            return;
+        };
+        let content = format!(
+            "【授权审批请求】Agent {} 在工具 {} 上的受限操作被拦截，需要你审批。授权单 {}（规则 {}，签名 {}，状态 pending）。请在管理面或聊天通道处理；聊天回复仅作提醒，实际批准以授权服务 decide 证据链为准。",
+            pending.agent_id,
+            pending.tool_id,
+            pending.authorization_id,
+            pending.blocking_rule,
+            evidence_preview(&pending.command_signature, 64),
+        );
+        let message = self.build_notification(&pending.user_id, MessageRole::User, content);
+        let ctx = ctx.clone();
+        match dal.save_message(ctx, &message).await {
+            Ok(()) => log_info!(
+                "tool_authorization 通知 [建单推送] authorization_id={} to_user={}",
+                pending.authorization_id,
+                pending.user_id
+            ),
+            Err(e) => log_warn!(
+                "tool_authorization 通知 [建单推送失败·不阻断] authorization_id={} err={:?}",
+                pending.authorization_id,
+                e
+            ),
+        }
+    }
+
+    /// 决策回推：通知申请人 Agent「授权已生效/被拒绝」（经消息管道唤醒）
+    async fn notify_decided(
+        &self,
+        ctx: &RequestContext,
+        pending: &PendingAuthorization,
+        outcome_status: AuthorizationStatus,
+        grant_id: Option<&str>,
+    ) {
+        let Some(dal) = self.message_dal_handle() else {
+            log_warn!(
+                "tool_authorization 通知 [决策回推跳过] 消息 DAL 未接线 authorization_id={}",
+                pending.authorization_id
+            );
+            return;
+        };
+        let state_line = match outcome_status {
+            AuthorizationStatus::Active => {
+                format!(
+                    "授权已生效（grant_id={}，仅限授权范围内的命令与有效期）",
+                    grant_id.unwrap_or("-")
+                )
+            }
+            AuthorizationStatus::Rejected => "审批被拒绝，如需重试请由用户重新发起授权".to_string(),
+            other => format!("授权单状态变更为 {:?}", other),
+        };
+        let content = format!(
+            "【授权单决策回推】你申请的授权单 {}（规则 {}，签名 {}）已由用户处理：{}。本通知仅提醒，授权放行以授权服务裁决为准。",
+            pending.authorization_id,
+            pending.blocking_rule,
+            evidence_preview(&pending.command_signature, 64),
+            state_line,
+        );
+        let message = self.build_notification(&pending.agent_id, MessageRole::Agent, content);
+        let ctx = ctx.clone();
+        match dal.save_message(ctx, &message).await {
+            Ok(()) => log_info!(
+                "tool_authorization 通知 [决策回推] authorization_id={} status={:?} to_agent={}",
+                pending.authorization_id,
+                outcome_status,
+                pending.agent_id
+            ),
+            Err(e) => log_warn!(
+                "tool_authorization 通知 [决策回推失败·不阻断] authorization_id={} err={:?}",
+                pending.authorization_id,
+                e
+            ),
+        }
+    }
+
     /// 创建服务（空存储，无消息 DAL；生产 init 流程再接线）
     pub fn new() -> Self {
         Self {
@@ -230,6 +338,8 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             pending.blocking_rule,
             reason_log
         );
+        // T5·S3：建单推送（落库即通知；失败仅留痕不阻断建单主流程）
+        self.notify_pending(&ctx, &pending).await;
         Ok(pending)
     }
 
@@ -364,6 +474,9 @@ impl super::ToolAuthorizationManage for AuthorizationService {
                 evidence_content,
                 mediator
             );
+            // T5·S3：决策回推申请人 Agent（失败仅留痕不阻断决策主流程）
+            self.notify_decided(&ctx, &pending, AuthorizationStatus::Rejected, None)
+                .await;
             return Ok(super::AuthorizationDecisionOutcome {
                 authorization_id: auth_id,
                 status: AuthorizationStatus::Rejected,
@@ -411,6 +524,14 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             scope_max_uses,
             ttl
         );
+        // T5·S3：决策回推申请人 Agent（失败仅留痕不阻断决策主流程）
+        self.notify_decided(
+            &ctx,
+            &pending,
+            AuthorizationStatus::Active,
+            Some(grant_id.as_str()),
+        )
+        .await;
         Ok(super::AuthorizationDecisionOutcome {
             authorization_id: auth_id,
             status: AuthorizationStatus::Active,
