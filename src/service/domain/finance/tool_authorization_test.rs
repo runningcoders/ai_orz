@@ -550,102 +550,102 @@ mod tests {
         assert!(grants[0].prefix_match);
         assert_eq!(grants[0].command_signature, "docker");
     }
-}
 
-// ============ T5·S3 双向通知（落库即通知） ============
+    // ============ T5·S3 双向通知（落库即通知） ============
 
-/// 构造带 FakeMessageDal 的服务（同时返回 Fake 引用供断言）；证据时间戳同 service_with_evidence
-fn notifier_service() -> (Arc<AuthorizationService>, Arc<FakeMessageDal>) {
-    let base = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64
-        + 86_400_000;
-    let dal = Arc::new(FakeMessageDal::default());
-    dal.add_user_message("ev-1", "user-aman", base);
-    let svc = Arc::new(AuthorizationService::new().with_message_dal(dal.clone()));
-    (svc, dal)
-}
-
-fn mk_cmd() -> CreateAuthorizationCmd {
-    CreateAuthorizationCmd {
-        agent_id: "agent-a".to_string(),
-        tool_id: "shell_exec".to_string(),
-        command_signature: command_signature(SIGNATURE),
-        blocking_rule: "git_dangerous_subcommand".to_string(),
-        rule_idempotent: false,
-        reason: Some("测试".to_string()),
+    /// 构造带 FakeMessageDal 的服务（同时返回 Fake 引用供断言）；证据时间戳同 service_with_evidence
+    fn notifier_service() -> (Arc<AuthorizationService>, Arc<FakeMessageDal>) {
+        let base = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+            + 86_400_000;
+        let dal = Arc::new(FakeMessageDal::default());
+        dal.add_user_message("ev-1", "user-aman", base);
+        let svc = Arc::new(AuthorizationService::new().with_message_dal(dal.clone()));
+        (svc, dal)
     }
-}
 
-#[sqlx::test]
-async fn pending_and_decided_notifications_persisted(pool: sqlx::SqlitePool) {
-    let (svc, dal) = notifier_service();
-    let auth_id = make_pending(&svc, &pool).await;
+    fn mk_cmd() -> CreateAuthorizationCmd {
+        CreateAuthorizationCmd {
+            agent_id: "agent-a".to_string(),
+            tool_id: "shell_exec".to_string(),
+            command_signature: command_signature(SIGNATURE),
+            blocking_rule: "git_dangerous_subcommand".to_string(),
+            rule_idempotent: false,
+            reason: Some("测试".to_string()),
+        }
+    }
 
-    // 建单推送恰好 1 条：System → 归属用户，携带授权单 ID
-    {
+    #[sqlx::test]
+    async fn pending_and_decided_notifications_persisted(pool: sqlx::SqlitePool) {
+        let (svc, dal) = notifier_service();
+        let auth_id = make_pending(&svc, &pool).await;
+
+        // 建单推送恰好 1 条：System → 归属用户，携带授权单 ID
+        {
+            let saved = dal.saved.read().unwrap();
+            assert_eq!(saved.len(), 1, "建单后应恰有 1 条建单推送");
+            let po = &saved[0];
+            assert_eq!(po.from_role, MessageRole::System);
+            assert_eq!(po.to_role, MessageRole::User);
+            assert_eq!(po.to_id, "user-aman");
+            assert!(
+                po.content.contains(&auth_id),
+                "建单推送应携带 authorization_id，实际: {}",
+                po.content
+            );
+        }
+
+        // 审批批准 → 决策回推恰好新增 1 条：System → 申请人 Agent，携带授权单 ID
+        svc.decide_authorization(user_ctx(&pool), approve_cmd(&auth_id))
+            .await
+            .unwrap();
         let saved = dal.saved.read().unwrap();
-        assert_eq!(saved.len(), 1, "建单后应恰有 1 条建单推送");
-        let po = &saved[0];
+        assert_eq!(saved.len(), 2, "决策后应新增 1 条决策回推");
+        let po = &saved[1];
         assert_eq!(po.from_role, MessageRole::System);
-        assert_eq!(po.to_role, MessageRole::User);
-        assert_eq!(po.to_id, "user-aman");
+        assert_eq!(po.to_role, MessageRole::Agent);
+        assert_eq!(po.to_id, "agent-a");
         assert!(
             po.content.contains(&auth_id),
-            "建单推送应携带 authorization_id，实际: {}",
+            "决策回推应携带 authorization_id，实际: {}",
             po.content
         );
     }
 
-    // 审批批准 → 决策回推恰好新增 1 条：System → 申请人 Agent，携带授权单 ID
-    svc.decide_authorization(user_ctx(&pool), approve_cmd(&auth_id))
-        .await
-        .unwrap();
-    let saved = dal.saved.read().unwrap();
-    assert_eq!(saved.len(), 2, "决策后应新增 1 条决策回推");
-    let po = &saved[1];
-    assert_eq!(po.from_role, MessageRole::System);
-    assert_eq!(po.to_role, MessageRole::Agent);
-    assert_eq!(po.to_id, "agent-a");
-    assert!(
-        po.content.contains(&auth_id),
-        "决策回推应携带 authorization_id，实际: {}",
-        po.content
-    );
-}
+    #[sqlx::test]
+    async fn duplicate_signature_reuse_notifies_once(pool: sqlx::SqlitePool) {
+        let (svc, dal) = notifier_service();
+        svc.create_pending_authorization(user_ctx(&pool), mk_cmd())
+            .await
+            .unwrap();
+        let again = svc
+            .create_pending_authorization(user_ctx(&pool), mk_cmd())
+            .await;
+        assert!(again.is_err(), "同签名 Pending 复用应拒绝重复建单");
+        assert_eq!(
+            dal.saved.read().unwrap().len(),
+            1,
+            "同签名 Pending 复用不重复通知：建单推送仍仅 1 条"
+        );
+    }
 
-#[sqlx::test]
-async fn duplicate_signature_reuse_notifies_once(pool: sqlx::SqlitePool) {
-    let (svc, dal) = notifier_service();
-    svc.create_pending_authorization(user_ctx(&pool), mk_cmd())
-        .await
-        .unwrap();
-    let again = svc
-        .create_pending_authorization(user_ctx(&pool), mk_cmd())
-        .await;
-    assert!(again.is_err(), "同签名 Pending 复用应拒绝重复建单");
-    assert_eq!(
-        dal.saved.read().unwrap().len(),
-        1,
-        "同签名 Pending 复用不重复通知：建单推送仍仅 1 条"
-    );
-}
-
-#[sqlx::test]
-async fn notification_degraded_without_message_dal(pool: sqlx::SqlitePool) {
-    // 无消息 DAL：通知降级为 log_warn 留痕，建单与决策主流程不受阻断。
-    // 决策用 UI 直批形态（免证据链，不依赖消息 DAL）——批准分支的通知
-    // 降级与决策主流程解耦正是本用例要验证的行为。
-    let svc = AuthorizationService::new();
-    let auth_id = make_pending(&svc, &pool).await;
-    assert!(!auth_id.is_empty(), "DAL 未接线时建单仍应成功");
-    let ui_approve = AuthorizationDecisionCmd {
-        authorization_id: auth_id,
-        approve: true,
-        ..Default::default()
-    };
-    svc.decide_authorization(user_ctx(&pool), ui_approve)
-        .await
-        .unwrap_or_else(|e| panic!("DAL 未接线时决策不应被通知阻断: {e}"));
+    #[sqlx::test]
+    async fn notification_degraded_without_message_dal(pool: sqlx::SqlitePool) {
+        // 无消息 DAL：通知降级为 log_warn 留痕，建单与决策主流程不受阻断。
+        // 决策用 UI 直批形态（免证据链，不依赖消息 DAL）——批准分支的通知
+        // 降级与决策主流程解耦正是本用例要验证的行为。
+        let svc = AuthorizationService::new();
+        let auth_id = make_pending(&svc, &pool).await;
+        assert!(!auth_id.is_empty(), "DAL 未接线时建单仍应成功");
+        let ui_approve = AuthorizationDecisionCmd {
+            authorization_id: auth_id,
+            approve: true,
+            ..Default::default()
+        };
+        svc.decide_authorization(user_ctx(&pool), ui_approve)
+            .await
+            .unwrap_or_else(|e| panic!("DAL 未接线时决策不应被通知阻断: {e}"));
+    }
 }
