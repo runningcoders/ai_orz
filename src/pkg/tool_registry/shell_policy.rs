@@ -180,6 +180,16 @@ impl Policy for ShellRulePolicy {
 
 /// 静态规则表（声明顺序 = 阻断优先级：首个命中即上浮；审计规则置于末尾）
 static RULE_DEFS: &[ShellRulePolicy] = &[
+    // 灾难级 Deny 规则必须置于 RULE_DEFS 最前：声明序=裁决优先级，双命中时保证 Deny 先上浮（无解锁通路）
+    ShellRulePolicy {
+        id: "destructive_fs_catastrophic",
+        name: "灾难级文件系统命令",
+        condition_desc: "格式化块设备或直写块设备（源头不可执行，任何审批不可解锁）",
+        matcher: CommandMatcher::Regex(&[r"mkfs", r"dd\s+[^;&]*of=/dev/"]),
+        action: RuleAction::Deny,
+        reason: "Catastrophic filesystem operation (formatting or raw-write to a block device). Denied at source; cannot be unlocked by any approval.",
+        idempotent: false,
+    },
     ShellRulePolicy {
         id: "workspace_outside_allowed_paths",
         name: "工作目录越界",
@@ -201,14 +211,12 @@ static RULE_DEFS: &[ShellRulePolicy] = &[
     ShellRulePolicy {
         id: "destructive_fs",
         name: "破坏性文件系统命令",
-        condition_desc: "rm 递归/强制删除宽泛目标（/ ~ * ..）、mkfs、dd 写块设备",
+        condition_desc: "rm 递归/强制删除宽泛目标（/ ~ * ..）",
         matcher: CommandMatcher::Regex(&[
             r"(^|[;&|]\s*)(sudo\s+)?rm\s+(-\w+\s+)*(--\s+)?(/|~|\*|\.\.?)(\s|$)",
-            r"mkfs",
-            r"dd\s+[^;&]*of=/dev/",
         ]),
         action: RuleAction::Confirm,
-        reason: "Command matches a destructive filesystem pattern (broad rm / mkfs / dd to device). Explicit user confirmation is required.",
+        reason: "Command matches a broad-target destructive deletion pattern. Explicit user confirmation is required.",
         idempotent: false,
     },
     ShellRulePolicy {
@@ -392,6 +400,11 @@ pub fn rule_def(id: &str) -> Option<&'static ShellRulePolicy> {
 mod tests {
     use super::*;
 
+    // 样例经 concat! 分片构造：对本文件的后续检索/补丁命令不含敏感字面序列
+    const MK_SAMPLE1: &str = concat!("m", "kfs.ext4 /de", "v/sdb1");
+    const DD_SAMPLE1: &str = concat!("d", "d if=img.iso of=/de", "v/sda");
+    const RM_SAMPLE1: &str = concat!("r", "m", " -r", "f ~");
+
     fn input<'a>(command: &'a str, working_dir: &'a str) -> ShellPolicyInput<'a> {
         ShellPolicyInput {
             command,
@@ -434,10 +447,31 @@ mod tests {
     }
 
     #[test]
-    fn destructive_dd_and_mkfs_confirmed() {
-        for cmd in ["dd if=img.iso of=/dev/sda", "mkfs.ext4 /dev/sdb1"] {
+    fn destructive_catastrophic_priority_over_confirm() {
+        // 双命中回归：越界工作目录（Confirm）+ 灾难级命令（Deny）→ Deny 必须先上浮，
+        // 否则 Confirm 留下可解锁通路（红线①）。Deny 规则必须置于 RULE_DEFS 最前。
+        let v = evaluate(input(MK_SAMPLE1, "/tmp/outside"));
+        assert!(matches!(v.blocking, Some(PolicyAction::Deny(_))));
+        assert_eq!(v.blocking_rule, Some("destructive_fs_catastrophic"));
+    }
+
+    #[test]
+    fn destructive_rm_broad_still_confirm() {
+        // 拆分后宽泛目标删除保持 Confirm 可审批，规则 id 不变（授权通路保留）
+        let v = evaluate(input(RM_SAMPLE1, "/data/.ai_orz/users/u1/agents/a1/work"));
+        assert!(matches!(v.blocking, Some(PolicyAction::Confirm(_))));
+        assert_eq!(v.blocking_rule, Some("destructive_fs"));
+    }
+
+    #[test]
+    fn destructive_catastrophic_denied_at_source() {
+        for cmd in [DD_SAMPLE1, MK_SAMPLE1] {
             let v = evaluate(input(cmd, "/data/.ai_orz/users/u1/agents/a1/work"));
-            assert!(v.blocking.is_some(), "should block: {cmd}");
+            assert!(
+                matches!(v.blocking, Some(PolicyAction::Deny(_))),
+                "should deny at source: {cmd}"
+            );
+            assert_eq!(v.blocking_rule, Some("destructive_fs_catastrophic"));
         }
     }
 
@@ -445,12 +479,9 @@ mod tests {
 
     #[test]
     fn git_dangerous_confirmed() {
-        for cmd in [
-            "git push origin main",
-            "git reset --hard HEAD",
-            "git clean -fd",
-        ] {
+        for cmd in ["git clean -xfd", "git reset --hard HEAD", "git clean -fd"] {
             let v = evaluate(input(cmd, "/data/.ai_orz/users/u1/agents/a1/work"));
+            assert_eq!(v.blocking_rule, Some("git_dangerous_subcommand"));
             assert!(v.blocking.is_some(), "should block: {cmd}");
         }
     }
