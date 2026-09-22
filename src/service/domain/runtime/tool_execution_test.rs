@@ -436,6 +436,7 @@ mod tests {
         protocol: ToolProtocol,
         bound_tools: Vec<(String, ToolProtocol, ControlMode, ToolStatus)>,
         all_tools: Vec<ToolPo>,
+        call_tool_error: Option<String>,
         get_by_id_count: AtomicUsize,
         list_for_agent_count: AtomicUsize,
         query_count: AtomicUsize,
@@ -454,6 +455,7 @@ mod tests {
                 query_count: AtomicUsize::new(0),
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
+                call_tool_error: None,
             }
         }
 
@@ -479,6 +481,7 @@ mod tests {
                 query_count: AtomicUsize::new(0),
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
+                call_tool_error: None,
             }
         }
 
@@ -505,6 +508,11 @@ mod tests {
 
         fn call_tool_calls(&self) -> usize {
             self.call_tool_count.load(Ordering::SeqCst)
+        }
+
+        fn with_call_tool_error(mut self, msg: &str) -> Self {
+            self.call_tool_error = Some(msg.to_string());
+            self
         }
 
         fn tool(&self, tool_id: &str) -> Tool {
@@ -638,6 +646,9 @@ mod tests {
             request: ToolExecutionRequest,
         ) -> Result<(Value, ToolCallEntry)> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
+            if let Some(msg) = &self.call_tool_error {
+                return Err(common::error::Error::tool_call_failed(msg.clone()));
+            }
             let entry = ToolCallEntry {
                 tool_id: request.tool.id.clone(),
                 call_id: "test-call-id".to_string(),
@@ -2164,6 +2175,61 @@ mod tests {
         assert_eq!(
             runtime.tool_readiness(&test_ctx(), &installed).await,
             RuntimeReady::Ready
+        );
+    }
+
+    #[tokio::test]
+    async fn builtin_tool_failure_message_exposes_underlying_detail() {
+        let tool_dal = Arc::new(
+            RecordingToolDal::new(ToolProtocol::Builtin)
+                .with_call_tool_error("sqlite disk I/O error: database is locked"),
+        );
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let (_temp_dir, runtime) =
+            test_runtime_with_tool_dals(tool_dal.clone(), mcp_tool_dal.clone());
+
+        let err = runtime
+            .tool_execution()
+            .call_tool_by_id(
+                test_ctx(),
+                "builtin-tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect_err("builtin failure should propagate");
+
+        assert!(err.code_enum() == common::error::ErrorCode::ToolExecutionFailed);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("sqlite disk I/O error: database is locked"),
+            "underlying detail should be exposed, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn shell_protocol_failure_message_exposes_underlying_detail() {
+        let tool_dal = Arc::new(
+            RecordingToolDal::new(ToolProtocol::Shell)
+                .with_call_tool_error("command not found: nonexistent-bin"),
+        );
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let (_temp_dir, runtime) =
+            test_runtime_with_tool_dals(tool_dal.clone(), mcp_tool_dal.clone());
+
+        let err = runtime
+            .tool_execution()
+            .call_tool_by_id(
+                test_ctx(),
+                "shell-tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect_err("shell failure should propagate");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("command not found: nonexistent-bin"),
+            "underlying detail should be exposed, got: {msg}"
         );
     }
 }

@@ -72,11 +72,22 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             Ok((value, entry)) => (value, entry),
             Err(error) => {
                 // 修复：保留原 error 的 field（含 trace_ref），不再构造新 Error 丢弃 field
+                // T9 建议项①底层错误透出：原 Builtin/Http/Shell 分支静默降级为通用文案，
+                // 平台执行层间歇失败无从定位。现对外消息携带底层错误明细
+                // （Error Display 形如 [code] msg），并以 log_warn 留全量现场；
+                // 对外数据出口脱敏仍由查询接口层承担，此处透出不破坏脱敏边界。
+                log_warn!(
+                    "tool_execution underlying failure: tool_id={} protocol={:?} detail={:?} field={:?}",
+                    tool_id,
+                    tool.po.protocol,
+                    error.to_string(),
+                    error.field().map(|f| format!("{:?}", f))
+                );
                 let mapped_message: String = match tool.po.protocol {
                     ToolProtocol::Mcp => map_mcp_tool_error(&tool_id, &error),
                     ToolProtocol::Builtin | ToolProtocol::Http | ToolProtocol::Shell => {
-                        // 脱敏：不暴露底层错误细节给 LLM，避免路径/配置泄露
-                        format!("tool {} execution failed", tool_id)
+                        // T9：透出底层错误明细（原为裸通用文案吞掉根因）
+                        format!("tool {} execution failed: {}", tool_id, error)
                     }
                 };
                 let mut new_err = common::error::Error::new(
