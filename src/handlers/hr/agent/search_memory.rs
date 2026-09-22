@@ -794,7 +794,10 @@ mod tests {
         assert!(
             hit.results.iter().any(|r| r.id == node.memory_id),
             "刚建的节点应能被检索到: {:?}",
-            hit.results.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()
+            hit.results
+                .iter()
+                .map(|r| r.id.as_str())
+                .collect::<Vec<_>>()
         );
 
         // query_memory：按结构化条件查询
