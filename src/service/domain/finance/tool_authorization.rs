@@ -297,38 +297,39 @@ impl super::ToolAuthorizationManage for AuthorizationService {
         };
         let key = (pending.agent_id.clone(), pending.tool_id.clone());
         let reason_log = cmd.reason.clone();
-        let mut store = self
-            .store
-            .write()
-            .map_err(|_| Error::internal("授权存储状态异常"))?;
-        // 同签名 Pending 已存在 → 拒绝重复建单（防通知风暴）
-        if let Some(ids) = store.by_agent_tool.get(&key) {
-            for id in ids {
-                let dup = store.records.get(id).is_some_and(|rec| {
-                    rec.status == AuthorizationStatus::Pending
-                        && rec.pending.command_signature == pending.command_signature
-                });
-                if dup {
-                    bail_err!(Conflict, "同签名待审批授权单已存在 authorization_id={id}");
+        {
+            let mut store = self
+                .store
+                .write()
+                .map_err(|_| Error::internal("授权存储状态异常"))?;
+            // 同签名 Pending 已存在 → 拒绝重复建单（防通知风暴）
+            if let Some(ids) = store.by_agent_tool.get(&key) {
+                for id in ids {
+                    let dup = store.records.get(id).is_some_and(|rec| {
+                        rec.status == AuthorizationStatus::Pending
+                            && rec.pending.command_signature == pending.command_signature
+                    });
+                    if dup {
+                        bail_err!(Conflict, "同签名待审批授权单已存在 authorization_id={id}");
+                    }
                 }
             }
+            store
+                .by_agent_tool
+                .entry(key)
+                .or_default()
+                .push(authorization_id.clone());
+            store.records.insert(
+                authorization_id.clone(),
+                AuthorizationRecord {
+                    status: AuthorizationStatus::Pending,
+                    pending: pending.clone(),
+                    grant: None,
+                    rule_idempotent: cmd.rule_idempotent,
+                    decision_reason: None,
+                },
+            );
         }
-        store
-            .by_agent_tool
-            .entry(key)
-            .or_default()
-            .push(authorization_id.clone());
-        store.records.insert(
-            authorization_id.clone(),
-            AuthorizationRecord {
-                status: AuthorizationStatus::Pending,
-                pending: pending.clone(),
-                grant: None,
-                rule_idempotent: cmd.rule_idempotent,
-                decision_reason: None,
-            },
-        );
-        drop(store);
         log_info!(
             "tool_authorization 审计 [建单] authorization_id={} agent={} tool={} signature={} rule={} reason={:?}",
             pending.authorization_id,
@@ -430,113 +431,143 @@ impl super::ToolAuthorizationManage for AuthorizationService {
         }
 
         // 阶段二（临界区提交）：先不可变预检（状态 + 证据防重放），后可变提交
-        let mut store = self
-            .store
-            .write()
-            .map_err(|_| Error::internal("授权存储状态异常"))?;
-        let rule_idempotent;
-        {
+        enum DecisionCommit {
+            Rejected,
+            Approved {
+                grant_id: String,
+                scope_signature: String,
+                scope_prefix_match: bool,
+                scope_max_uses: Option<u32>,
+                ttl: i64,
+            },
+        }
+        let committed = {
+            let mut store = self
+                .store
+                .write()
+                .map_err(|_| Error::internal("授权存储状态异常"))?;
+            let rule_idempotent = {
+                let rec = store
+                    .records
+                    .get(&auth_id)
+                    .ok_or_else(|| Error::not_found(format!("授权单不存在 {auth_id}")))?;
+                if rec.status != AuthorizationStatus::Pending {
+                    bail_err!(Conflict, "授权单非待审批态 status={:?}", rec.status);
+                }
+                // 证据单次消费防重放（跨授权单全局唯一；同一临界区内检查+登记防竞态）
+                let replay = cmd.approve
+                    && evidence_id
+                        .as_deref()
+                        .is_some_and(|ev| store.used_evidence.contains(ev));
+                if replay {
+                    bail_err!(
+                        Conflict,
+                        "证据消息已被消费（防重放） {}",
+                        evidence_id.clone().unwrap()
+                    );
+                }
+                rec.rule_idempotent
+            };
             let rec = store
                 .records
-                .get(&auth_id)
+                .get_mut(&auth_id)
                 .ok_or_else(|| Error::not_found(format!("授权单不存在 {auth_id}")))?;
-            if rec.status != AuthorizationStatus::Pending {
-                bail_err!(Conflict, "授权单非待审批态 status={:?}", rec.status);
-            }
-            rule_idempotent = rec.rule_idempotent;
-            // 证据单次消费防重放（跨授权单全局唯一；同一临界区内检查+登记防竞态）
-            let replay = cmd.approve
-                && evidence_id
-                    .as_deref()
-                    .is_some_and(|ev| store.used_evidence.contains(ev));
-            if replay {
-                bail_err!(
-                    Conflict,
-                    "证据消息已被消费（防重放） {}",
-                    evidence_id.clone().unwrap()
+            if !cmd.approve {
+                rec.status = AuthorizationStatus::Rejected;
+                rec.decision_reason = Some("rejected".to_string());
+                DecisionCommit::Rejected
+            } else {
+                let ttl = clamp_ttl_secs(
+                    cmd.ttl_secs
+                        .unwrap_or(crate::pkg::authorization::DEFAULT_TTL_SECS),
                 );
+                let grant = AuthorizationGrant {
+                    grant_id: uuid::Uuid::now_v7().to_string(),
+                    authorization_id: pending.authorization_id.clone(),
+                    agent_id: pending.agent_id.clone(),
+                    tool_id: pending.tool_id.clone(),
+                    command_signature: cmd
+                        .scope_command_signature
+                        .unwrap_or_else(|| pending.command_signature.clone()),
+                    prefix_match: cmd.prefix_match,
+                    expires_at_ms: now_ms() + ttl * 1000,
+                    max_uses: cmd.max_uses.or_else(|| default_max_uses(rule_idempotent)),
+                    uses: 0,
+                };
+                let grant_id = grant.grant_id.clone();
+                let scope_signature = grant.command_signature.clone();
+                let scope_prefix_match = grant.prefix_match;
+                let scope_max_uses = grant.max_uses;
+                rec.grant = Some(grant);
+                rec.status = AuthorizationStatus::Active;
+                if let Some(ev_id) = &evidence_id {
+                    store.used_evidence.insert(ev_id.clone());
+                }
+                DecisionCommit::Approved {
+                    grant_id,
+                    scope_signature,
+                    scope_prefix_match,
+                    scope_max_uses,
+                    ttl,
+                }
+            }
+        };
+        match committed {
+            DecisionCommit::Rejected => {
+                log_info!(
+                    "tool_authorization 审计 [拒绝] authorization_id={} decided_by={} decided_at_ms={} decision=Reject evidence={:?} evidence_content={:?} mediator={:?}",
+                    auth_id,
+                    decided_by,
+                    now_ms(),
+                    evidence_id,
+                    evidence_content,
+                    mediator
+                );
+                // T5·S3：决策回推申请人 Agent（失败仅留痕不阻断决策主流程）
+                self.notify_decided(&ctx, &pending, AuthorizationStatus::Rejected, None)
+                    .await;
+                Ok(super::AuthorizationDecisionOutcome {
+                    authorization_id: auth_id,
+                    status: AuthorizationStatus::Rejected,
+                    grant_id: None,
+                })
+            }
+            DecisionCommit::Approved {
+                grant_id,
+                scope_signature,
+                scope_prefix_match,
+                scope_max_uses,
+                ttl,
+            } => {
+                log_info!(
+                    "tool_authorization 审计 [批准] authorization_id={} grant_id={} decided_by={} decided_at_ms={} decision=Approve evidence={:?} evidence_content={:?} mediator={:?} scope_signature={:?} prefix_match={} max_uses={:?} ttl_secs={}",
+                    auth_id,
+                    grant_id,
+                    decided_by,
+                    now_ms(),
+                    evidence_id,
+                    evidence_content,
+                    mediator,
+                    scope_signature,
+                    scope_prefix_match,
+                    scope_max_uses,
+                    ttl
+                );
+                // T5·S3：决策回推申请人 Agent（失败仅留痕不阻断决策主流程）
+                self.notify_decided(
+                    &ctx,
+                    &pending,
+                    AuthorizationStatus::Active,
+                    Some(grant_id.as_str()),
+                )
+                .await;
+                Ok(super::AuthorizationDecisionOutcome {
+                    authorization_id: auth_id,
+                    status: AuthorizationStatus::Active,
+                    grant_id: Some(grant_id),
+                })
             }
         }
-        let rec = store
-            .records
-            .get_mut(&auth_id)
-            .ok_or_else(|| Error::not_found(format!("授权单不存在 {auth_id}")))?;
-        if !cmd.approve {
-            rec.status = AuthorizationStatus::Rejected;
-            rec.decision_reason = Some("rejected".to_string());
-            drop(store);
-            log_info!(
-                "tool_authorization 审计 [拒绝] authorization_id={} decided_by={} decided_at_ms={} decision=Reject evidence={:?} evidence_content={:?} mediator={:?}",
-                auth_id,
-                decided_by,
-                now_ms(),
-                evidence_id,
-                evidence_content,
-                mediator
-            );
-            // T5·S3：决策回推申请人 Agent（失败仅留痕不阻断决策主流程）
-            self.notify_decided(&ctx, &pending, AuthorizationStatus::Rejected, None)
-                .await;
-            return Ok(super::AuthorizationDecisionOutcome {
-                authorization_id: auth_id,
-                status: AuthorizationStatus::Rejected,
-                grant_id: None,
-            });
-        }
-        let ttl = clamp_ttl_secs(
-            cmd.ttl_secs
-                .unwrap_or(crate::pkg::authorization::DEFAULT_TTL_SECS),
-        );
-        let grant = AuthorizationGrant {
-            grant_id: uuid::Uuid::now_v7().to_string(),
-            authorization_id: pending.authorization_id.clone(),
-            agent_id: pending.agent_id.clone(),
-            tool_id: pending.tool_id.clone(),
-            command_signature: cmd
-                .scope_command_signature
-                .unwrap_or_else(|| pending.command_signature.clone()),
-            prefix_match: cmd.prefix_match,
-            expires_at_ms: now_ms() + ttl * 1000,
-            max_uses: cmd.max_uses.or_else(|| default_max_uses(rule_idempotent)),
-            uses: 0,
-        };
-        let grant_id = grant.grant_id.clone();
-        let scope_signature = grant.command_signature.clone();
-        let scope_prefix_match = grant.prefix_match;
-        let scope_max_uses = grant.max_uses;
-        rec.grant = Some(grant);
-        rec.status = AuthorizationStatus::Active;
-        if let Some(ev_id) = &evidence_id {
-            store.used_evidence.insert(ev_id.clone());
-        }
-        drop(store);
-        log_info!(
-            "tool_authorization 审计 [批准] authorization_id={} grant_id={} decided_by={} decided_at_ms={} decision=Approve evidence={:?} evidence_content={:?} mediator={:?} scope_signature={:?} prefix_match={} max_uses={:?} ttl_secs={}",
-            auth_id,
-            grant_id,
-            decided_by,
-            now_ms(),
-            evidence_id,
-            evidence_content,
-            mediator,
-            scope_signature,
-            scope_prefix_match,
-            scope_max_uses,
-            ttl
-        );
-        // T5·S3：决策回推申请人 Agent（失败仅留痕不阻断决策主流程）
-        self.notify_decided(
-            &ctx,
-            &pending,
-            AuthorizationStatus::Active,
-            Some(grant_id.as_str()),
-        )
-        .await;
-        Ok(super::AuthorizationDecisionOutcome {
-            authorization_id: auth_id,
-            status: AuthorizationStatus::Active,
-            grant_id: Some(grant_id),
-        })
     }
 
     async fn revoke_authorization(
