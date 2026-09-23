@@ -22,6 +22,8 @@ source_files:
 - 'src/handlers/finance/tool/create_http_tool.rs#L1-L40 '
 - 'ai-orz-macros/src/register_handler_tool.rs '
 - src/service/domain/runtime/tool_execution.rs#L36-L101
+- src/service/domain/runtime/tool_execution.rs（2026-09-23 增量：Err 分支透出底层 Error field（含 trace_ref），不再构造新 Error 丢弃 field；anyOf 嵌套枚举参数序列化修复）
+- src/pkg/tool_registry/builtin.rs（2026-09-23 增量：confirm_authorization_via_chat 内置工具——Agent 被拦截时可在对话中就地请求授权，无需跳出审批面）
 - src/models/tool.rs#L17-L96
 - src/service/domain/hr/agent.rs#L100-L140
 - src/handlers/hr/agent/update_agent.rs
@@ -133,7 +135,7 @@ source_files:
 
 ---
 
-## §4 硬约束与回归红线（8 条）
+## §4 硬约束与回归红线（10 条）
 
 1. **入口统一 D26：think_loop 禁直连 tool_dal / mcp_tool_dal**：所有 Agent 工具调用必须经 domain `RuntimeToolExecution::call_tool` / `dispatch_manual_tool` 单点编排——绕行直连 DAL 会整条漏凭据注入；`ToolExecutionRequest { tool, args, resolved }` 是 domain → DAL 唯一传参形态。Handler 管理面（CRUD/绑定）走 Finance `ToolProviderManage`（分层 AGENTS.md §3.1 红线）；单元测试用 mock 测 domain 编排不调真实 DAO。
 2. **shell_exec 命令黑名单永不删**：`rm -rf /`、`sudo`、`su`、`ssh root@`、`chmod 777 /etc` 共 5 条硬匹配 + 子串匹配（黑名单列表在 impl.rs 顶部 const BLACKLIST）；新增命令须在 BLACKLIST 单元测试里补一条「匹配成功→返回错误」的测试。
@@ -143,3 +145,5 @@ source_files:
 6. **register_handler_tool 宏生成的 CallableTool 参数名必须与 Handler fn 参数 1:1**：参数名错会导致 Agent 传的 args JSON 无法被 Handler 接收（400）；修改 Handler 参数列表后要运行对应集成测试的「工具 JSON Schema 生成」断言，否则 schema 与 fn 签名漂移。
 7. **凭据实例单次性（D22）**：DAL per-call 经 `assemble_core_tool` 重组装新实例 + `check(resolved)` 注入——check 注入的实例禁止缓存复用（跨调用复用会串号）；带 requirements 的 stdio MCP server 禁止全局共享连接（per-operation 连接）。凭据需求声明 / 生产路由 / 敏感名拒绝等八条红线归平行卡「共享工具凭据增强器」§4 管辖，本卡只锁调用链侧不变式。
 8. **neural 管理类工具必须有调用时身份边界守卫**：任何暴露给 Agent 自调用的管理类工具（如 update_agent / update_memory / update_skill），handler 层必须检测 `ctx.agent_id()`：① Agent 上下文必须校验 `params.id == ctx.agent_id`（跨身份直接报 BadRequest）；② Agent 上下文下身份路由字段（name / roles / model_provider_id / runtime_config 等）**静默忽略**，仅允许语义字段（description / soul / capabilities / 内容类属性）生效；③ 人类用户上下文（无 agent_id）保持原有全部字段权限。守卫位置必须在 Handler 层（domain 层保持纯业务编排、不感知调用者身份）。
+9. **tool_execution Err 分支禁止丢弃底层 Error field**（2026-09-23 新增）：`RuntimeToolExecution::call_tool` DAL 层返回的 `Err(Error)` 必须保留原 Error 的所有 field（含 trace_ref / tool_name / call_id），禁止用 `Error::new(ErrorCode::ToolExecutionFailed, msg)` 构造新 Error 覆盖——否则前端无法追踪失败调用对应哪个 trace，审批面（T1 工具授权系统）关联断裂。修复点在 `tool_execution.rs` L73-L101 的 Err match 分支：先 `log_warn` 全量现场，再 `Error::tool_call_failed(format!("{error}"))` 保留 field。
+10. **anyOf 嵌套枚举参数禁止序列化为对象包裹**（2026-09-23 新增）：当 LLM 收敛层给枚举参数包一层 `anyOf: [{"enum": [...], "type": "string"}]` 时，参数序列化必须直接取枚举值，禁止序列化成 `{"value": "xxx"}` 对象——否则 Handler 层反序列化到 String 类型失败（400）。修复点在 `cortex_types.rs` 的参数提取逻辑：检测 anyOf 容器并展平取首个枚举分支。

@@ -26,7 +26,7 @@ scope:
 - migrations/*external_key*
 source_files:
 - 'src/service/domain/message/mod.rs#L1-L60 '
-- 'src/service/domain/message/delivery.rs#L1-L150 '
+- src/service/domain/message/delivery.rs（2026-09-23 增量：delivery.rs 重构为完整发送子系统——9 个 send_* 变体覆盖 to_user/to_agent/to_both 三种接收方 + Agent/System 两种 from_role；SSE broadcast 自动选择接收方所在 project 的广播 channel；AOP publish 追加 call_site（handlers/consumer/domain self 三来源）；收件人角色⟷ID 一致性门闩——from_role=Agent 必须传 from_agent_id / from_role=User 必须传 from_user_id，交叉或缺失即 BadRequest）
 - src/service/domain/message/management.rs#L1-L100 (MessageManagement：query_messages（分页）/
   list_threads（会话）/ mark_read（标记已读，HUD 未读橙光减 1） / delete_message（软删）)
 - 'src/service/dao/message_push.rs '
@@ -76,6 +76,9 @@ source_files:
 - src/pkg/policy/builtin.rs#L36-L67（2026-09-18 抽象化：impl_policy_delegate! 委托宏 + ThresholdPolicy 通用阈值策略 + FieldEqualsPolicy 字段全等策略）
 - src/consumer/message.rs（2026-09-18 增量：handle_agent_message 接入两段式路由判定 + agent_reply_chain_depth 查库计链深度）
 - common/src/enums/message.rs（2026-09-18 新增：MessageType::AgentNotify 知会类型，发送方声明无需回复）
+- src/service/domain/message/delivery.rs#L1-L585（2026-09-23 重构：9 个 send_* 变体 + 收件人角色⟷ID 一致性门闩 + SSE channel 自动选择 + AOP call_site 三来源）
+- src/consumer/message.rs（2026-09-23 增量：handle_agent_message 统一走新 delivery 变体 + 角色一致性门闩应用）
+- src/handlers/finance/message/send_message.rs / send_message_to_agent.rs / search_messages.rs（2026-09-23 适配新 delivery API）
 
 ---
 
@@ -109,7 +112,7 @@ source_files:
 | 文件 | 角色 | 内容摘要 | 源码锚点 |
 |------|------|---------|---------|
 | domain/message/mod.rs MessageDomain trait | Message 域总 trait | pub use 两个子 trait：MessageDelivery（出站写+SSE+AOP）+ MessageManagement（分页查询/thread聚合/标记已读/软删） | `:L1-L60` |
-| domain/message/delivery.rs MessageDelivery impl | 发送核心 | send_message_to_user/agent：落库→SSE broadcast→AOP publish；整体 Result；已读标记和未读计数联动 | `:L1-L150` |
+| domain/message/delivery.rs MessageDelivery impl | 发送核心（9 变体重构） | 2026-09-23 重构为完整发送子系统：`send_to_user` / `send_to_agent` / `send_both` + Agent/System 双 from_role 参数 × 3 接收方 = 9 个变体；统一走落库→SSE broadcast→AOP publish 链路；SSE 自动选接收方 project 的 channel；AOP 追加 call_site（handlers/consumer/domain self）；收件人角色⟷ID 一致性门闩（Agent from 必带 agent_id / User from 必带 user_id，交叉或缺失即 BadRequest） | `:L1-L585` |
 | domain/message/management.rs MessageManagement impl | 消息管理 | query_messages（Query 结构体：thread_id/sender_id/time_range/pagination）；list_threads（每个 thread 最新 1 条 + 未读计数）；mark_read；delete_message(status=0 软删) | `:L1-L100` |
 | dao/message_push.rs MessagePushDao 出站分发 | 5 渠道统一入口 | match kind 字符串→对应外部 DAO 方法；统一返回 DeliveryAttempt；错误捕获转换，不 panic 影响 consumer | 见 trait 定义 |
 | dao/lark/http.rs 飞书卡片出站 | LarkDao | push_interactive_card：user_id↔open_id 映射表查 → Markdown→飞书卡片 header+elements 转换 + 回复按钮 (open url 跳回本系统 /message/:id) | `:L50-L120` |
@@ -118,7 +121,7 @@ source_files:
 | awakening.rs Runtime 两阶段唤醒 | 注入 reply_to 上下文 | IntentAnalyze → Awaken 完成后，把入口消息的 reply_to 注入 Agent prompt，使 Agent 回复自动挂链 | 见 src/service/domain/runtime/awakening.rs |
 | dal/lark/impl.rs + dao/lark/http.rs 飞书双向映射 | external_key ↔ thread_id | 入站：飞书 thread_id → 存 messages.external_key；出站：external_key → 翻译为飞书 thread_id 发送（缺失映射降级为单条消息） | 见 src/service/dao/lark/http.rs |
 | domain/message/mod.rs MessageDomain 扩展 | 回复链能力 | MessageDelivery send_* 新增 reply_to + external_key 参数；落库时带链；SSE 事件 payload 追加 reply_to | 见 src/service/domain/message/mod.rs |
-| consumer/message.rs MessageConsumer | AOP 消费消息 + Agent 回复三路分发 | Sync ConsumeMode；message.created → 拉 channel_subscriptions → 循环 push；**handle_agent_message 三路分发**（2026-09-15 重构）：`routes_to_system_fallback` 判定是否无对等回复对象（System 来源 + Agent 自触发 from==to 兜底）+ `resolve_profile_user_id` 推导用户画像（User 消息用发送者本人，后台唤醒回退 root_user_id）；ack/nack 自动由 AOP Registry 调用 | `:L1-L80` |
+| consumer/message.rs MessageConsumer | AOP 消费消息 + Agent 回复三路分发 | Sync ConsumeMode；message.created → 拉 channel_subscriptions → 循环 push；**handle_agent_message 三路分发**（2026-09-23 增量：统一走 delivery.send_to_user/send_to_agent + 收件人角色⟷ID 一致性门闩——from_role=Agent 必传 from_agent_id / 落 to_role=Agent 投递 / from_role=User 必传 from_user_id / 落 to_role=User 投递；杜绝"Agent from_role 传 User to_id"导致 All delivery channels failed 死信；Agent neural 工具可达性：确保 Agent 自动回复链路能触达 send_message 工具） + 既有 2026-09-15 重构 `routes_to_system_fallback` / `resolve_profile_user_id` | `:L1-L80` |
 | consumer/agent_loop.rs AgentLoopConsumer | AOP 消费消息 | MessageConsumer 之后的同级消费者（注册顺序在后）；message.to_id 是 agent_id → BusyGuard 查 state；Idle=AOP publish agent.wake 事件触发两阶段唤醒；Busy/Resting=把事件挂 agent.pending_message Vec，下次唤醒一次性消费 | `:L1-L100` |
 | middleware/sse.rs SSE 广播中间件 | Axum 订阅 | BroadcastChannel: Arc<RwLock HashMap<user_id, Vec<mpsc::Sender<Event>>>>；new_user 注册 handler；heartbeat 15s tokio spawn 独立 loop；last_event_id 补发查询 | 见 sse.rs |
 | consumer/scheduler.rs CronTriggerConsumer | Cron 定时触发器 | 身份分层中继（2026-09-15 增量）：原来统一 from_role=System，现在按被触达事项归属选身份——项目有 root_user_id 时 from_role=User / from_id=root_user_id（Agent Final 自然回到用户），A2A 项目无归属时才落 System | 见 src/consumer/scheduler.rs |

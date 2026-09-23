@@ -5,6 +5,10 @@ source: session
 category: adr
 scope:
     - 'frontend/src/**/ChatSidePanel*'
+    - 'frontend/src/**/project_agents_tab*'
+    - 'frontend/src/**/tool_call_entries*'
+    - 'frontend/src/api/finance.rs'
+    - 'frontend/src/utils/status.rs'
 source_files:
     - docs/wiki/zh/content/前端应用/页面模块/消息与工作区页面/聊天侧面板/聊天侧面板.md
     - frontend/src/components/chat/chat_side_panel.rs
@@ -13,6 +17,10 @@ source_files:
     - frontend/src/components/charts/line_chart.rs
     - frontend/src/components/hud_palette.rs
     - frontend/src/components/stats.rs
+    - frontend/src/components/chat/project_agents_tab.rs（2026-09-23 增量：项目内 Agent 列表独立 Tab）
+    - frontend/src/pages/finance/tool_call_entries.rs（2026-09-23 增量：工具调用记录页 + 授权审批三重入口）
+    - frontend/src/api/finance.rs（2026-09-23 增量：list/decide/revoke 授权 API）
+    - docs/wiki/knowledge/zh/聊天侧栏项目内 Agent 列表 + 工具调用记录授权审批集成/聊天侧栏项目内 Agent 列表 + 工具调用记录授权审批集成.md（2026-09-23 细卡：chat_side_panel 扩展的具体实现视角）
 ---
 
 # 聊天页引入只读信息侧栏（ChatSidePanel）聚合项目上下文
