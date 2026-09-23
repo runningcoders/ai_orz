@@ -59,6 +59,10 @@ source_files:
 - docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md
 - src/service/domain/system/seed/skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md (2026-09-14 新增：项目上下文认知模板)
 - src/service/domain/system/seed/skills/TEMPLATE_SELF_EVOLUTION/skill.md (2026-09-14 新增：自我进化模板)
+- src/service/domain/hr/skill.rs (2026-09 增量：Agent 技能可见性收紧 + 自装自建幂等 + 副本同步断链修复)
+- src/service/dal/skill/mod.rs (2026-09 增量：scope_project 隔离落库 + 搜索短词元兜底)
+- src/handlers/hr/skill/search_skill.rs / search_skills.rs (2026-09 增量：短词元兜底查询)
+- frontend/src/components/chat/*.rs (2026-09 增量：副本同步复选框 × 3 fix)
 
 ---
 
@@ -100,6 +104,10 @@ source_files:
 | [navbar 路由注册](frontend/src/layouts/navbar.rs) | 技能管理页入口 | 导航栏新增技能管理菜单项，路由到 /hr/skills |
 | [ensure_skill_access Agent 上下文分支](src/service/domain/hr/skill.rs#L385-L450) (2026-09-14 增量) | Agent 自进化权限边界 | 新增 SkillAccessIntent::Read/Write；Agent 上下文 Write 仅限 author_id==agent_id；Read 放行 Published 共享技能；独立短路不走用户侧条件 |
 | [两个新 TEMPLATE 模板](src/service/domain/system/seed/skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md) + [TEMPLATE_SELF_EVOLUTION](src/service/domain/system/seed/skills/TEMPLATE_SELF_EVOLUTION/skill.md) (2026-09-14 新增) | 新增预置技能模板 | 项目上下文认知 + 自我进化；保持 6 字段结构（name/description/tags/prompt_template/system_constraints/usage_scenarios） |
+| [domain/hr/skill.rs](src/service/domain/hr/skill.rs) (2026-09 增量：可见性 + 副本同步) | Agent 技能可见性收紧 + 副本同步断链修复 | Agent 侧技能可见性必须 scope_project 匹配 + Agent 身份有权访问（禁止跨组织串台）；副本同步刷新走 train_agent 进修流程幂等执行 |
+| [dal/skill/mod.rs](src/service/dal/skill/mod.rs) (2026-09 增量：短词元兜底) | 技能搜索 DAO 层兜底 | 搜索技能短词元（≤3 字符）必须走 DAO 层兜底查询（FTS5 前缀 + 向量），handler 层禁止提前返回空结果 |
+| [handlers/hr/skill/search_skill.rs / search_skills.rs](src/handlers/hr/skill/search_skill.rs) (2026-09 增量：短词元兜底 handler) | 技能搜索 handler 层 | 短词元（≤3 字符）兜底查询透传到 DAO 层 FTS5 + 向量 |
+| [frontend/src/components/chat/*.rs](frontend/src/components/chat/) (2026-09 增量) | 前端副本同步复选框 | × 3 fix：进修刷新过期副本 + 同步计数去虚报 + 复选框状态管理 |
 
 ---
 
@@ -158,6 +166,11 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 2. **安装部分失败不回滚**：10 个技能装到第 6 个报错，前 5 个保留，6-10 记到 skipped[]，用户可在技能面板手动重试
 3. **技能与工具严格解绑**：技能是「Prompt 片段 + 使用说明」，不是工具集合；Agent 有无权限用某个工具由 ToolBinding 表决定，安装技能不会自动授予工具权限（反过来也一样）
 
+**（2026-09 增量追加）Agent 技能可见性 + 副本同步 + 搜索兜底约定**：
+1. **Agent 侧技能可见性必须 scope_project 匹配 + Agent 身份双检查**：禁止跨组织（scope_project 不同）技能串台；Agent 只能看到 Published 共享技能 + 自己 author_id 的私有草稿
+2. **技能副本同步刷新必须走 train_agent 进修流程**：幂等执行、不直接覆盖运行期已变更的技能副本；同步前先刷新过期副本、去重虚报计数
+3. **搜索短词元（≤3 字符）必须 DAO 层兜底**：DAO 层同时走 FTS5 前缀匹配 + 向量语义；handler 层收到短词元禁止提前返回空结果（短词元可能命中核心业务词如 "ai" "ml"）
+
 ---
 
 # §4 硬约束 / 必守红线 / 扩展入口
@@ -185,6 +198,9 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 | 17 | **Agent 上下文写操作严格仅限自身 author_id**：`ensure_skill_access` 在 Agent 上下文（ctx.agent_id 存在）下短路判定，Write 操作 bail_err 禁止修改他人技能或 Published 技能，Agent 只能进化自己的技能副本 | Agent 调 update_skill 传入非自己 author_id 的技能 → 返回权限错误；调 update 自己的技能副本成功 | [domain/hr/skill.rs ensure_skill_access Agent 分支](src/service/domain/hr/skill.rs#L385-L450) |
 | 18 | **Agent 上下文读操作放行 Published 共享技能**：SkillAccessIntent::Read 在 Agent 上下文下额外允许访问 `status == Published` 的技能（跨 Agent 只读），保障「隐藏技能按需读」能力；但仍不可 Read 其他 Agent 的私有草稿 | Agent 调 read 他人 PrivateDraft 技能 → 403；调 read Published 技能 → 200 | [domain/hr/skill.rs ensure_skill_access Read 分支](src/service/domain/hr/skill.rs#L385-L450) |
 | 19 | **Agent 工具绑定装配必须按 name 排序**：`agent.rs` 中 `resolve_agent_tools` 装配后调用 `sort_by(|a, b| a.po.name.cmp(&b.po.name))`，确保两条来源链（关联表 / 标签查询）返回顺序稳定，LLM tools 前缀缓存才能命中 | 多次调用 resolve_agent_tools 返回的 tools Vec 顺序完全一致；断言 assert_eq!(first, second) | [domain/hr/agent.rs resolve_agent_tools L151](src/service/domain/hr/agent.rs#L84-L133) |
+| 20 | **Agent 侧技能可见性必须同时满足 scope_project 匹配 + Agent 身份有权访问**（2026-09 新增）——禁止跨组织（scope_project 不同）技能串台；Agent 只能看到 Published 共享技能 + 自己 author_id 的私有草稿 | Agent A 跨 scope 查 Agent B 的私有草稿 → 403；查同 scope 的 Published → 200 | [domain/hr/skill.rs ensure_skill_access scope 分支](src/service/domain/hr/skill.rs) |
+| 21 | **技能副本同步刷新必须走进修（train_agent）流程幂等执行**（2026-09 新增）——禁止直接覆盖运行期已变更的技能副本；同步前先刷新过期副本、去重虚报计数 | 副本同步刷新前后 COUNT 只增量不翻倍；已修改的私有副本内容保持不变 | [domain/hr/skill.rs 副本同步逻辑](src/service/domain/hr/skill.rs) |
+| 22 | **搜索技能短词元（≤3 字符）必须走 DAO 层兜底查询**（2026-09 新增）——DAO 同时 FTS5 前缀 + 向量；handler 层禁止提前返回空结果 | 搜索 "ai" "ml" 应返回多条相关技能；handler 层 grep 不应有 `if query.len() < 3 { return Ok(vec![]) }` | [dal/skill/mod.rs + handlers/hr/skill/search_skill.rs](src/service/dal/skill/mod.rs) |
 
 **§4.2 扩展入口速查**
 
@@ -194,3 +210,11 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 | Prompt 熔断层新增「按需加载技能」机制（大技能包只在特定 ThinkingScene 注入） | ① DefaultPromptBuilder 追加 build_scene_skills_prompt(scene, available_skills) → ② awakening.rs 场景匹配时替换默认 Layer3 注入（Awaken 全部 + IntentAnalyze 只 neural/memory）→ ③ SKILL_PRIORITY 表按场景拆 AWAKE_PRIORITY / INTENT_PRIORITY / SETTLE_PRIORITY | [awakening.rs 工具白名单 is_tool_allowed](src/service/domain/runtime/awakening.rs) |
 | 技能版本升级通知（Agent 私有技能落后全局版本 N 个时提醒管理员升级） | ① AgentSkillPo 追加 global_skill_version 字段（记录安装时的全局版本号）→ ② SkillDomain.update_skill 时版本号+1 → ③ 新增 Handler list_outdated_agent_skills(skill_id) 查所有落后版本 Agent → ④ 前端技能详情页展示「落后版本 N 个，点此批量升级」 | [models/skill.rs AgentSkillPo 字段定义](src/models/skill.rs#L22-L120) |
 | 技能包分享导入导出（跨组织迁移，含 Prompt 模板 + 标签 + 使用场景） | ① Handlers 新增 export_skill_pack(skill_ids) / import_skill_pack(zip) → ② 定义 SkillPackArchiveFormat{version, skills[]} YAML 结构 → ③ 导入时 name+tag 冲突走「重命名 / 覆盖 / 跳过」三选一策略 → ④ 导入事务完整（半成功能回滚） | handlers/hr/skill/ 新增目录 |
+
+## §5 历史演进（f300b5c0..HEAD 增量）
+
+| commit | 事件 | 变更内容 |
+|--------|------|---------|
+| fc0ac32c | 副本同步断链修复 | 进修刷新过期副本 + 同步计数去虚报；禁止直接覆盖运行期已变更的技能副本 |
+| 2467e6a9 | Agent 技能可见性收紧 + 自装自建幂等 | Agent 侧技能可见性必须 scope_project 匹配 + Agent 身份双检查；搜索短词元（≤3 字符）DAO 层兜底 |
+| 12de2c0a + bc348d6a + ed03c10f | 前端副本同步复选框 × 3 fix | frontend/src/components/chat/*.rs 复选框状态管理 + 同步流程 UI 修复 |

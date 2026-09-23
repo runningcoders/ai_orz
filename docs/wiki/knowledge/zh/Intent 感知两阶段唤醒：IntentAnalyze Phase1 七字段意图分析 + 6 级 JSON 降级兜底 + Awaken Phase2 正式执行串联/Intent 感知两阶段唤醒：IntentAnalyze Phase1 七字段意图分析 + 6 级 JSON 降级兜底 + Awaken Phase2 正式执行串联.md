@@ -24,6 +24,8 @@ source_files:
 - src/service/dal/agent/mod.rsL1080
 - src/service/dal/agent/mod.rsL1715
 - src/models/prompt_builder.rs#L104-L123
+- src/models/cortex_types.rs (2026-09 增量：DeltaToolCall.index 改 Option + resolve_tool_call_index)
+- src/pkg/tool_registry/handler_adapter/mod.rs (2026-09 增量：check_stream_end + empty tool arguments 独立错误)
 - src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
 - docs/archive/design-archive/intent_aware_two_stage_awaken_design.md
 - docs/design/runtime_design.md
@@ -62,6 +64,8 @@ source_files:
 | [两阶段唤醒 Design 总纲](docs/archive/design-archive/intent_aware_two_stage_awaken_design.md) | 为什么 / 决策表 | §关键决策表 §4.2 降级兜底表 §5 非目标边界 |
 | [唤醒上下文 Plan 落地快照](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) | 怎么做 + 结果 | ThinkingOptions 统一参数 / PromptBuilder 公共方法复用 |
 | [运行时领域 Wiki 长文](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) | 人类百科 | §5 两阶段唤醒流程详细说明 §8 故障排查 |
+| [cortex_types.rs DeltaToolCall index 消歧](src/models/cortex_types.rs) (2026-09 增量) | LLM 流式 tool_call index 多路 fragment 消歧 | DeltaToolCall.index 改 Option；新增 `resolve_tool_call_index` 方法合并多路 fragment 的 index 消除歧义 |
+| [handler_adapter check_stream_end](src/pkg/tool_registry/handler_adapter/mod.rs) (2026-09 增量) | 流式终止校验 | `check_stream_end` 无 `[DONE]` 或 `finish_reason=length` 一律判截断；empty tool arguments 独立错误路径 |
 
 ---
 
@@ -98,6 +102,10 @@ source_files:
 2. **理解结果仅供参考原则**：Phase2 Prompt 渲染必须写入「以下是你上一阶段自己得出的结论，如与当前判断不一致可以推翻」，避免 Agent 被错误前置理解带偏
 3. **降级绝不阻塞主流程**：任何 Level 4-6 失败场景，只打 warn 日志 + 退化为 Default/单阶段，绝不返回 Err 中断 awaken 链路
 
+**（2026-09 cortex 流式终止 + tool_call index 消歧约定）**：
+4. **DeltaToolCall.index 必须 Option 化并由 resolve_tool_call_index 消歧**：多路 SSE fragment 并行到达时，不同 tool_call 的 index 可能交错拼接；直接拿 `delta.index.unwrap_or_default()` 会把多路 fragment 拼进第一路导致非法 JSON。必须在 cortex_types.rs 内用 `resolve_tool_call_index` 方法先合并再消歧
+5. **check_stream_end 终止判定严格化**：无 `[DONE]` 信号或 `finish_reason=length` 一律判截断——空 `finish_reason` / `finish_reason=stop` 都不代表正常结束；截断事件统一上报 stats + 触发降级兜底
+
 ---
 
 # §4 硬约束 / 必守红线 / 扩展入口
@@ -120,6 +128,8 @@ source_files:
 | 12 | **INTENT_ANALYSIS_START 锚点必须存在于 Prompt 末尾**：6 级 JSON 解析 Level 4 靠此锚点定位后提取 JSON，删除则误匹配 Prompt 示例代码 {} 的概率极高 | build_intent_analyze_prompt 单元测试：含 INTENT_ANALYSIS_START 字符串 | [dal/agent.rs#L1667-L1715](src/service/dal/agent/mod.rsL1715) |
 | 13 | **need_clarification=true 只做参考、当前不短路 Phase2**：短路是下一迭代功能；提前启用会导致每次都先问一句澄清再执行，响应翻倍 | awaken 入口 grep 不应有 send_message.*clarification 的短路 if 分支 | [awakening.rs awaken 入口 if need_clarification 检查位置](src/service/domain/runtime/awakening.rs#L200-L240) |
 | 14 | **Template Communication SOP 章节（方案 B）与代码级 Phase1（方案 A+）并行双保险**：不要删除 skill.md 末尾的「理解用户消息 SOP」章节；即便 Phase1 流程被禁用，沟通技能也能驱动 Agent 在普通 think loop 中自行按五步理解 | TEMPLATE_COMMUNICATION/skill.md grep 「SOP」命中 | [TEMPLATE_COMMUNICATION skill.md 末尾章节](src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) |
+| 15 | **DeltaToolCall.index 必须用 Option 类型并由 resolve_tool_call_index 消歧**（2026-09 新增）——多路 SSE fragment 并行到达时禁止直接拿 index（会把多路拼进第一路导致非法 JSON）；必须在 cortex_types.rs 内用 resolve_tool_call_index 方法先合并多路再输出统一 index | 单路 / 多路 SSE fragment 拼接测试断言生成的 tool_call JSON 合法；grep delta.index.unwrap_or_default 应不存在 | [cortex_types.rs DeltaToolCall](src/models/cortex_types.rs) |
+| 16 | **check_stream_end 无 [DONE] 或 finish_reason=length 一律判截断**（2026-09 新增）——空 finish_reason / finish_reason=stop 都不代表正常结束；截断事件统一上报 stats + 触发降级兜底 | 模拟 SSE 流中途断连（无 [DONE]、无 finish_reason）应触发截断标记而非正常结束 | [handler_adapter/mod.rs check_stream_end](src/pkg/tool_registry/handler_adapter/mod.rs) |
 
 **§4.2 扩展入口速查（按 4 步模板）**
 
@@ -129,3 +139,9 @@ source_files:
 | Phase1 强制搜索策略更激进（例如必须调 recommend_seed_nodes + traverse 1 跳） | build_intent_analyze_prompt 的 Step 4 SOP 文本修改；降级兜底保持不变（Agent 不执行只是 retrieved_context 为空） | intent_analyze Prompt SOP Step 4 位置 |
 | 短路澄清机制上线（need_clarification 非空直接发消息，不进入 Phase2） | awaken() 入口追加 if 分支；send_message 走与正常 Agent 调 send_message 同一通道；状态机正确回到 Idle | [awakening.rs awaken 方法入口](src/service/domain/runtime/awakening.rs#L150-L180) |
 | 新增 ThinkingScene（如 CodeReview 专用前置分析场景） | ① ThinkingScene 枚举追加变体 → ② is_tool_allowed 追加分支 → ③ 对应专用 build_xxx_prompt → ④ RuntimeAwakening trait 新增通用复用方法 → ⑤ awaken 内部按需串联前置阶段 | common/src/enums/thinking_scene.rs + awakening.rs is_tool_allowed match |
+
+## §5 历史演进（f300b5c0..HEAD 增量）
+
+| commit | 事件 | 变更内容 |
+|--------|------|---------|
+| 0e818092 | cortex 流式终止校验 + LLM 出站留痕 + empty tool arguments 独立错误 | DeltaToolCall.index 改 Option 类型 + resolve_tool_call_index 消歧（多路 fragment 并行时禁止直接拿 index）；check_stream_end 无 [DONE] 或 finish_reason=length 一律判截断；empty tool arguments 独立错误路径 |

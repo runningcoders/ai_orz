@@ -27,6 +27,8 @@ source_files:
 - src/service/domain/runtime/intent_analyze.rs#L124-L157
 - src/models/project.rs#L199-L245
 - src/models/task.rs#L216-L245
+- src/service/dal/ontology.rs#L62-L124
+- src/service/domain/hr/ontology.rs#L545-L573
 - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
 - docs/wiki/zh/content/基础设施/存储系统/本地文件安全与工作区隔离.md
 - docs/wiki/knowledge/zh/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账.md
@@ -68,6 +70,8 @@ source_files:
 | 【Wiki 长文】本地文件安全与工作区隔离.md | 路径安全系统化上下文 | [本地文件安全与工作区隔离](docs/wiki/zh/content/基础设施/存储系统/本地文件安全与工作区隔离.md) |
 | 【兄弟卡 1】本体词表漂移治理与 Prompt 注入 | 词表侧核心逻辑（三表 / DAL / common 纯函数 / 写后认证）| [本体词表卡](docs/wiki/knowledge/zh/本体词表漂移治理与%20Prompt%20注入：OntologyDal%20load_lexicon_summary%20+%20common%20纯函数解析%20+%20写后认证%20+%20DuckDB%20漂移记账/本体词表漂移治理与%20Prompt%20注入：OntologyDal%20load_lexicon_summary%20+%20common%20纯函数解析%20+%20写后认证%20+%20DuckDB%20漂移记账.md) |
 | 【兄弟卡 2】用户维度工作区路径改造 | 路径 SSOT + 安全边界 | [用户维度工作区路径改造](docs/wiki/knowledge/zh/用户维度工作区路径改造%20+%20工具调用安全边界检查：路径逃逸%20跨用户访问%20相对路径阻断/用户维度工作区路径改造%20+%20工具调用安全边界检查：路径逃逸%20跨用户访问%20相对路径阻断.md) |
+| [src/service/domain/hr/ontology.rs#L545-L573](src/service/domain/hr/ontology.rs#L545-L573) (2026-09 增量) | 本体词表运行时注入门面 | **OntologyDomain.list_lexicon()** 统一词表注入入口：调 `OntologyDal.load_lexicon_summary` → 返回 `OntologyLexiconSummary` → awakening.rs 取 summary → `builder.ontology_lexicon()` |
+| [src/service/dal/ontology.rs#L62-L124](src/service/dal/ontology.rs#L62-L124) (2026-09 增量) | OntologyDal 词表 DAO | try_dal() 可选依赖降级；**load_lexicon_summary()** 三表 Active 全量 → OntologyLexiconSummary；warn_if_lexicon_truncated() 截断留痕 |
 
 ## §3 架构约定
 
@@ -80,6 +84,7 @@ source_files:
 7. **区块顺序固定为稳定性递减**（build() 11 块、场景 prompt 同构）：完全静态的在前，每轮变化的统一收尾；指令用"见文末【XXX】"引用尾部数据
 8. **场景 prompt 的 initial-messages 变体**：System 消息跨次运行完全静态（人设 + 技能 + 词表 + 指令 SOP），User 中上下文/历史在前（追加式），Trace/轮次/摘要/trace 列表等易变数据收尾——禁止在 System 中间插入每轮变化的内容
 9. **Prompt 前缀缓存核心原则**：稳定内容不被易变内容切割——指令块哪怕只被一个每轮变化的 Trace ID 插入中间，其后全部静态内容都会作废前缀缓存命中
+10. **（2026-09 本体词表运行时落地）** 本体词表注入链路固定为：`awakening.rs` → `OntologyDal::try_dal()` → `load_lexicon_summary()` → `OntologyDomain.list_lexicon()` → 返回 `OntologyLexiconSummary` → `builder.ontology_lexicon()` → `build_lexicon_section()` 渲染。handler 层禁止自行拼接词表或跳过 OntologyDal 直查三表。`common::ontology` 纯函数只负责漂移解析，不参与注入链路
 
 ## §4 约束清单
 
@@ -95,3 +100,16 @@ source_files:
 10. ✅ 场景 prompt（sleep/summary/intent）的静态指令块必须完全静态（不含 Trace/轮次/摘要等易变数据）；易变数据统一收尾
 11. ✅ 指令块内引用易变数据必须用"见文末【XXX】"格式，禁止在指令行内嵌入动态值
 12. ✅ 本体词表区块裁剪优先级固定：关系词 > 实体类 > 同义样例；同义样例优先级最低，任何段落触发裁剪即整体让位
+13. ✅ （2026-09-XX 新增）扁平 Prompt 静态指令块必须前置在易变数据之前（易变：本体词表、工作区上下文、最近对话），保证前缀稳定命中缓存——易变数据一律收尾
+14. ✅ （2026-09-XX 新增）易变区块收尾时统一用绝对时间替代相对时长描述（"2026-09-19 14:02" 而非 "3 小时前"），避免缓存命中抖动
+15. ✅ （2026-09-XX 新增）本体词表运行时注入必须走 `OntologyDal.load_lexicon_summary` → `common::ontology` 纯函数解析链路，handler 层不得自行拼接词表或跳过 OntologyDal 直查三表
+
+## §5 历史演进
+
+| 日期 | commit | 事件 | 变更内容 |
+|------|--------|------|---------|
+| 2026-08 之前 | 初版 | PromptBuilder trait 含 workspace_context / compacted_context / settled_reference / past_memories_reference 四个上下文注入方法；无 ontology_lexicon | src/models/prompt_builder.rs |
+| 95a0b1bf | 2026-08 | ChatMessage::System 消息角色 + 四层分层传递 + build_final_response_guidance | src/models/cortex_types.rs；src/dal/agent/builder/default.rs |
+| 5b52c72c → 08c3e720 | 2026-09 | 本体词表注入 + 区块重排为 11 块稳定性递减排序；PromptBuilder.trait 新增 ontology_lexicon 默认方法；DefaultPromptBuilder 新增 build_lexicon_section | src/service/dal/agent/builder/default.rs；src/models/prompt_builder.rs |
+| 14a4b688 | 2026-09 | 前缀缓存专项优化：① Project/Task start_at 绝对时间替换 relative_duration ② 场景 prompt 静态指令块前置、易变数据统一收尾 ③ initial-messages 缓存友好注释 | src/models/project.rs；src/models/task.rs；src/service/dal/agent/builder/default.rs#L1055-L1234 |
+| db46a354 → 5b52c72c | 2026-09 | 本体词表前移为稳定前缀、运行时落地：awakening.rs → OntologyDal.load_lexicon_summary → OntologyDomain.list_lexicon → builder.ontology_lexicon() 完整注入链路 | src/service/dal/ontology.rs；src/service/domain/hr/ontology.rs |

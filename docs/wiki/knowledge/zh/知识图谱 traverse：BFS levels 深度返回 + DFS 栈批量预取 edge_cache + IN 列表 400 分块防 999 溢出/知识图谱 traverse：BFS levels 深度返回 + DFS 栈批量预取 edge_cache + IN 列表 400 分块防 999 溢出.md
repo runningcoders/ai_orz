@@ -15,6 +15,8 @@ source_files:
 - 'src/service/dal/memory.rs#L805-L890 '
 - 'src/service/dal/memory.rs#L891-L990 '
 - 'src/service/dal/memory.rs#L653-L720 '
+- src/service/dal/memory.rs#L653-L720 (2026-09 增量：动态 SQL IN 列表闭括号修复)
+- src/service/dal/memory.rs (2026-09 增量：list_relations_batch 先查 IN 列表存在性再拼接，防止空 ids 拼接出非法 SQL)
 - 'src/service/dal/memory.rs#L721-L804 '
 - 'src/models/memory/knowledge_relation_po.rs '
 - 'common/src/api/memory.rs '
@@ -52,7 +54,7 @@ source_files:
 | memory.rs (impl 总入口) | 策略分发 | 按 strategy enum dispatch → BFS 调 traverse_bfs / DFS 调 traverse_dfs → 结果 nodes + edges 过 `apply_visibility_filter(agent_id + published_flag)` 共享过滤 | `:L518-L577` |
 | memory.rs (traverse_bfs) | BFS 分层实现 | queue<(node_id, level)> + visited HashSet；每 pop 一批同 level 节点 → fetch_nodes_by_ids 批量 → edges IN_CHUNK_SIZE 拉 → 推入 ordered_levels[level] | `:L805-L890` |
 | memory.rs (traverse_dfs) | DFS 栈批量预取 | stack + edge_cache<NodeId, Vec<Edge>> + fetched_flag HashSet<NodeId>；每次 edge_cache miss 时，「当前栈上所有未 fetched 的节点」→ IN_CHUNK_SIZE 批量查，结果进 cache | `:L891-L990` |
-| memory.rs (list_relations_batch) | 关系批量查 + IN 分块 + Active 过滤 | from_ids + to_ids 两 Vec → 按 IN_CHUNK_SIZE=400 zip 分块 → 每块 SQL "WHERE from_id IN (...) OR to_id IN (...) AND status = Active" → 全部块 UNION ALL 拼接后按 created_at ASC 重排；**2026-09-18 增量**：KnowledgeRelationStatus 字段，查询默认只取 Active 边，Superseded/Deleted 历史边不入图谱 | `:L653-L720` |
+| memory.rs (list_relations_batch) | 关系批量查 + IN 分块 + Active 过滤 + 闭括号修复 | from_ids + to_ids 两 Vec → 按 IN_CHUNK_SIZE=400 zip 分块 → 每块 SQL "WHERE from_id IN (...) OR to_id IN (...) AND status = Active" → 全部块 UNION ALL 拼接后按 created_at ASC 重排；**2026-09-18 增量 1**：KnowledgeRelationStatus 字段，查询默认只取 Active 边；**2026-09 增量 2（6a529bf5）**：动态 SQL 拼接 IN 列表必须用闭括号包裹（测试断言 SELECT ... WHERE id IN (...) 而不是 SELECT ... WHERE id IN ... 无闭括号）；list_relations_batch 先查 IN 列表存在性再拼接，防止空 ids 产生非法 SQL | `:L653-L720` |
 | memory.rs (fetch_nodes_by_ids) | 节点批量查 + IN 分块 | ids Vec → IN_CHUNK_SIZE 400 分块 → 每块 query_knowledge_nodes(Query { ids: chunk, .. }) → 结果去重 → 共享可见性过滤 | `:L721-L804` |
 | common api/memory.rs | DTO | TraverseKnowledgeGraphResponse：nodes 是去重节点、edges 是去重关系带 weight、ordered_levels 是 BFS/DFS 分层顺序（严格按层，前端渲染顺序的唯一来源）| 见 common DTO |
 
@@ -96,6 +98,13 @@ TraverseKnowledgeGraphResponse { nodes, edges, ordered_levels }
 3. **扩展点 3**：**复用 IN_CHUNK_SIZE 400 的 list_relations_batch + fetch_nodes_by_ids**，不要重写 SQL（重写就会丢分块）。
 4. **扩展点 4**：在 `图谱遍历查询优化.md` Plan 附录追加新策略的测试场景，特别是极端：一条 10k 节点长链 + 一个 100 边扇出的 hub 节点——验证不会触发 "too many SQL variables"（防回归）。
 
+### 3.3 动态 SQL IN 列表拼接约定（2026-09 新增）
+
+凡 DAO / DAL 层动态拼接 `WHERE ids IN (?)` 或 `WHERE from_id IN (?) OR to_id IN (?)` 类 SQL 片段：
+- **必须用闭括号包裹** IN 参数列表——测试断言：`SELECT ... WHERE id IN (?, ?, ...)`，而不是 `SELECT ... WHERE id IN ?` 或 `SELECT ... WHERE id IN ...`
+- **拼接前先查 IN 列表非空**：空 ids 直接返回空结果集，不进入 SQL 拼接流程（否则会产生 `WHERE id IN ()` 非法语法）
+- 这条约定不只适用于 `list_relations_batch`，而是 memory DAO / 其他 domain DAO 所有动态 IN 拼接的统一红线
+
 ---
 
 ## §4 硬约束与故障排查
@@ -108,6 +117,7 @@ TraverseKnowledgeGraphResponse { nodes, edges, ordered_levels }
 4. **红线 4**：list_relations_batch / fetch_nodes_by_ids **分块后必须做全局去重 + created_at ASC 重排序**。否则前端每次刷新同一个 traverse 参数，返回的 edges 顺序会因为 SQLite IN 查出来顺序不稳定而抖动，画布上节点位置每次刷新都跳，体验极差。
 5. **红线 5**：**禁返回端点缺失的边**。层级（`traversal_depth`）是**节点维度**的概念——第 0 层 = 种子节点，沿一条边走到新节点算 +1 层；边只是连接两个「已在本批结果里的节点」的线，端点缺失的边没有意义（前端只能把缺失端点画成「未命名节点」：无名称/无正文/hover 无内容；LLM 拿到的只是「A → ?」的半条信息）。落地：DAL 单点闸 `drop_dangling_relations`，`search` 与 `traverse_knowledge_graph` 两条路径共用；前端 `build_graph_from_results` 是第二道防线（不画端点缺失的边，且**不给端点造占位节点**）。
 6. **红线 6**：**种子节点恒返回，且遍历不施加归属筛选**（2026-09-17 用户拍板）。①种子是调用方**点名**要的节点（前端点击展开的中心节点 / 关键词命中的起点），取回时不做任何归属过滤——中心节点缺席整张展开图就没意义；②知识节点是**蜂巢共享资产**，任何 Agent 都能看到全部知识节点，`published` 只是「重要性/影响力」标记，**不是可见性门槛**；③隔离属性只作用于**短期记忆**：作用域缺省回退 `ctx.agent_id()`（`private_agent_scope`），Agent 调用天然只看自己的便签；ctx 也没有归属（人类浏览）时保持不过滤的既有行为。**禁**在 handler 用 `ctx.agent_id()` 回退去收窄知识节点——那会让 Agent 的检索静默收窄成「只看自己」。
+7. **红线 7（2026-09 新增）**：**动态 SQL 拼接 IN 列表必须用闭括号包裹**——测试断言：`SELECT ... WHERE id IN (?, ?, ...)`，禁止 `SELECT ... WHERE id IN ?` 或 `SELECT ... WHERE id IN ...`（无闭括号非法语法）；list_relations_batch 必须先查 IN 列表存在性（非空）再拼接 SQL，空 ids 直接返回空结果集
 
 ### 4.2 故障排查路径
 
@@ -118,3 +128,10 @@ TraverseKnowledgeGraphResponse { nodes, edges, ordered_levels }
 | traverse 返回 nodes 数 = 0，明明 seed_node_ids 是正确的 | 先查这些 id 在 `long_term_knowledge_node` 里是否存在且 `status != Forgotten`（软删除的节点按设计不返回，挂在它身上的边也会一起丢弃） | 旧坑已修：以前是 `apply_visibility_filter` 用错 agent_id / 只认 published 节点导致「节点全被过滤、只剩边」；现在遍历不做归属过滤，若仍为空就是数据本身不在 |
 | ordered_levels 的 level 0 有节点，但前端画出来点都挤在同一个角落 | 检查 TraverseKnowledgeGraphResponse.ordered_levels 是否正确填 | 典型：traverse_bfs 中 visited set 没与 level 同步推进，BFS 层序错乱，levels[0] 把所有节点都标成 level 0。前端按 level 布局时 y 坐标都一样，挤成一根线 |
 | traverse 10 次有 1 次返回重复节点（同一 node_id 在 nodes Vec 出现两次） | [memory.rs:L721-L804](src/service/dal/memory.rs#L721-L804) fetch_nodes_by_ids 分块后的拼接逻辑 | 是否漏了 `dedup_by(|a,b| a.id == b.id)`？多块执行同一节点如果跨两块边界（第 399 个和 401 个刚好同一个 node_id 出现两次），不去重就会出现重复 |
+| 图谱遍历偶尔报 SQLite SQL 语法错误（no such column / syntax error near...） | [memory.rs:L653-L720](src/service/dal/memory.rs#L653-L720) list_relations_batch 动态 SQL 拼接 | 是否有分支路径跳过了闭括号？典型：空 ids 直接拼接出 `WHERE id IN ...`（无闭括号）；检查拼接路径是否有 `if ids.is_empty() { return Ok(vec![]) }` 前置守卫 |
+
+## §5 历史演进（f300b5c0..HEAD 增量）
+
+| commit | 事件 | 变更内容 |
+|--------|------|---------|
+| 6a529bf5 | 动态 SQL IN 列表缺闭括号修复 | list_relations_batch 动态 SQL 拼接 IN 列表必须用闭括号包裹（`WHERE id IN (?, ?, ...)`），禁止无闭括号；空 ids 先返回空结果集再拼接 |

@@ -22,12 +22,16 @@ source_files:
   - src/service/dao/ontology/mod.rs
   - src/service/dal/ontology.rs#L62-L124
   - src/service/domain/hr/ontology.rs#L545-L573
+  - src/service/domain/runtime/awakening.rs#L343-L393
+  - src/models/prompt_builder.rs#L135-L146
+  - src/service/dal/agent/builder/default.rs#L145-L230
   - src/consumer/ontology_certify_consumer.rs#L1-L80
   - src/pkg/stats/ontology_drift.rs#L1-L40
   - src/models/ontology.rs#L19-L240
   - common/src/ontology.rs#L1-L120
   - src/handlers/system/seed/sync_preset_ontology.rs#L1-L45
   - frontend/src/pages/hr/ontology_panel.rs#L114-L438
+  - frontend/src/pages/hr/ontology_panel.rs (2026-09 3 fix：GET #[param(query)] 补齐、use_effect 同步段移入 spawn、Agent 详情页神经技能包筛选 fix)
   - docs/design/ontology_knowledge_sedimentation_design.md
   - docs/wiki/zh/content/功能模块/知识图谱管理/本体词表与漂移治理.md
   - 【平行卡 1】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md
@@ -65,6 +69,9 @@ source_files:
 | 【① Design】ontology_knowledge_sedimentation_design.md | 决策快照（16 条关键决策）| [docs/design/ontology_knowledge_sedimentation_design.md](docs/design/ontology_knowledge_sedimentation_design.md) |
 | 【平行卡 1】知识图谱 traverse | ABox 遍历搜索视角（与本卡 TBox 词表治理视角互补）| [知识图谱 traverse 卡](docs/wiki/knowledge/zh/知识图谱%20traverse：BFS%20levels%20深度返回%20+%20DFS%20栈批量预取%20edge_cache%20+%20IN%20列表%20400%20分块防%20999%20溢出/知识图谱%20traverse：BFS%20levels%20深度返回%20+%20DFS%20栈批量预取%20edge_cache%20+%20IN%20列表%20400%20分块防%20999%20溢出.md) |
 | 【平行卡 2】记忆搜索增强三合一 | FTS5 + 向量 + 图谱 搜索三合一（与本卡漂移治理互补）| [记忆搜索增强三合一卡](docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%EF%BC%8FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%EF%BC%8FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md) |
+| [src/service/domain/runtime/awakening.rs#L343-L393](src/service/domain/runtime/awakening.rs#L343-L393) (2026-09 增量) | 词表注入运行时调用方 | `OntologyDal::try_dal()` → `load_lexicon_summary` → `builder.ontology_lexicon()`；同时调 workspace_context / compacted_context 等 |
+| [src/models/prompt_builder.rs#L135-L146](src/models/prompt_builder.rs#L135-L146) (2026-09 增量) | PromptBuilder.trait ontology_lexicon 方法 | trait 新增 `ontology_lexicon(&OntologyLexiconSummary)` 默认空操作；Remote/Cli Agent 不参与词表注入 |
+| [src/service/dal/agent/builder/default.rs#L145-L230](src/service/dal/agent/builder/default.rs#L145-L230) (2026-09 增量) | DefaultPromptBuilder 词表渲染 | `build_lexicon_section()` 预算 3000 chars；裁剪优先级关系词 > 实体类 > 同义样例；区块固定为第 4 块稳定性递减排序 |
 
 ## §3 架构约定
 
@@ -75,6 +82,7 @@ source_files:
 5. **词表注入可选依赖**：PromptBuilder.ontology_lexicon 默认实现空操作；OntologyDal.try_dal() 返回 Option（未初始化 → None → 跳过注入），本体子系统未初始化不阻断主流程
 6. **种子同步策略固定「仅补缺」**：term_key 物理存在（含退役行）即跳过，不覆盖管理页本地修改（管理页是词表唯一修改入口）
 7. **漂移看板数据来源**：DuckDB 漂移事件聚合（ontology_drift_events 表），展示 relation/class 漂移覆盖率、TOP 漂移词、趋势
+8. **（2026-09 运行时落地）词表注入链路固定为 Domain 统一门面**：`awakening.rs` → `OntologyDal::try_dal()` → `load_lexicon_summary()` → `OntologyDomain.list_lexicon()` → `OntologyLexiconSummary` → `builder.ontology_lexicon()` → `build_lexicon_section()` 渲染。handler 层禁止自行拼接词表或跳过 OntologyDal 直查三表。PromptBuilder.trait.ontology_lexicon 默认空操作，Remote/Cli Agent 自动跳过
 
 ## §4 约束清单
 
@@ -88,3 +96,12 @@ source_files:
 8. ✅ common/src/ontology.rs 是跨 crate 共享的纯函数层（domain 校验 / DAL 看板 / 统计消费），禁止引入 IO/时钟/副作用
 9. ✅ OntologyDal.try_dal() 供可选依赖场景优雅降级（本体子系统未初始化不阻断主流程）
 10. ✅ warn_if_lexicon_truncated() 在词表量级正常时永不触发（正常几十条，上限 1000）；触发即异常打 warn 提醒
+11. ✅ （2026-09-XX 新增）本体词表运行时注入必须走 `OntologyDal.load_lexicon_summary` → `OntologyDomain.list_lexicon` → `common::ontology` 纯函数解析链路；handler 层不得自行拼接词表或跳过 OntologyDal 直查三表
+
+## §5 历史演进
+
+| 日期 | commit | 事件 | 变更内容 |
+|------|--------|------|---------|
+| 2026-08 之前 | 初版 | 本体词表仅用于写后认证（OntologyCertifyConsumer certify_memory_terms），未注入 Prompt | src/consumer/ontology_certify_consumer.rs；src/service/domain/hr/ontology.rs |
+| 08c3e720 → 14a4b688 → db46a354 → 5b52c72c | 2026-09 | PromptBuilder ontology_lexicon trait 方法 + DefaultPromptBuilder.build_lexicon_section 3000 chars 预算；区块前移为第 4 块（稳定性递减排序）；运行时注入链路 awakening → OntologyDal → OntologyDomain → PromptBuilder 完整落地 | src/models/prompt_builder.rs；src/service/dal/agent/builder/default.rs#L145-L230；src/service/domain/runtime/awakening.rs#L343-L393 |
+| abec62c0 + 9c7ba27f + c49317b8 | 2026-09 | 前端本体管理页 3 fix：① GET 请求 #[param(source = "query")] 补齐 ② use_effect 同步段移入 spawn 异步段 ③ Agent 详情页神经技能包筛选 fix | frontend/src/pages/hr/ontology_panel.rs |

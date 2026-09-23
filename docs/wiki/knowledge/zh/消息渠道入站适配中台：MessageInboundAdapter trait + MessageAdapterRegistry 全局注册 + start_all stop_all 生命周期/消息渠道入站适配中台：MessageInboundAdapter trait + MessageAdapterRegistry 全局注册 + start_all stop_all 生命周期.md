@@ -29,6 +29,9 @@ source_files:
   - src/service/dal/lark.rs#L632-L710（LarkMessageChannelDal 实现 MessageInboundAdapter：channel_type = Lark；start = running RwLock 检查+置位+回调注入+启用的飞书渠道按 app_id 聚合+resolve_channel_credentials+调用 lark_dao 开启 WS；stop = running=false + 断开全部 WS；listener_stats() 透传 metrics 供系统健康面板）
 
   - src/service/dal/message_channel.rs#L329-L367（MessageChannelDalImpl push_to_channel：match ChannelType 分发出站调用（纯分发无 trait，漏加编译直接报错）。入站链路由 LarkMessageChannelDal 独立实现 MessageInboundAdapter，两者对称但独立）
+  - src/service/dal/message_channel.rs (2026-09 增量：新增 CLEAR_* sentinel 通用清除标记 + scope_project + channel 双写落库修复断链)
+  - src/service/domain/finance/message_channel.rs (2026-09 增量：domain 层清除逻辑，走通用清除哨兵而非手动置空 agent_id)
+  - src/models/message_channel.rs (2026-09 增量：模型层新增 CLEAR_* sentinel 常量)
   - src/service/dal/wechat/impl.rs#L37-L46（WechatDalImpl struct：message_channel_dal / wechat_dao / credential_dao / running —— 已移除自存的 `callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>>` 字段，投递回调统一由中台登记持有）
   - src/service/dal/wechat/impl.rs#L361（start(&self, _callback)：callback 参数用 `_` 前缀标记不再自存，入站投递回调统一从 `pkg::adapter::message::registry().current_callback()` 取用）
   - src/service/dal/wechat/mod.rs#L48-L63（WechatDalImpl.init 注册到 MessageAdapterRegistry：无条件注册，微信启停由渠道数据驱动）
@@ -210,6 +213,9 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 | 【③ Wiki 长文 4】消息渠道管理.md | 前端管理员创建/绑定渠道到 open_id，lark_listen_inbound 开关 | docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md |
 | 【平行卡 1】身份凭证 Domain 统一 CRUD（飞书渠道凭证引用解析依赖）| 渠道只存 lark_credential_id 引用，不存明文凭证 | source_files[] 尾平行卡1 路径 |
 | 【平行卡 2】AES-256-GCM 敏感字段加密（凭证引用解析后拿到的 secret 要解密使用）| encrypt_channel_secret 闭包注入 | source_files[] 尾平行卡2 路径 |
+| [dal/message_channel.rs](/src/service/dal/message_channel.rs) (2026-09 增量：scope_project 双写落库断链修复 + CLEAR 哨兵) | MessageChannel DAO 清除绑定 | DAO 落库必须同时更新 scope_project + channel 双表的关联元数据（agent_id / user_id / credential_id 等）；新增 CLEAR_* sentinel 通用清除标记（禁止 handler 手动置空）|
+| [domain/finance/message_channel.rs](/src/service/domain/finance/message_channel.rs) (2026-09 增量) | domain 层清除逻辑 | 解除 Agent 绑定必须走通用清除哨兵而非手动 UPDATE 置空 agent_id，防止悬空引用残留 |
+| [models/message_channel.rs](/src/models/message_channel.rs) (2026-09 增量) | 模型层 CLEAR sentinel | 新增 CLEAR_AGENT_ID / CLEAR_USER_ID / CLEAR_CREDENTIAL_ID 等通用清除哨兵常量，DAO 层据此识别"清除"语义 vs 正常 NULL |
 
 ## §3 架构约定
 
@@ -221,6 +227,8 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 6. **Consumer 无状态化是架构硬要求（2026-09 引入）**：所有入站 consumer（LarkInboundConsumer / WechatInboundConsumer / 未来 SlackInboundConsumer）必须 `#[derive(Default)]` 零字段，**禁止** consumer 持有任何渠道 DAL 引用（弱引用或强引用均禁止）。渠道 DAL 的获取统一经 `message_domain::domain().inbound()` 门面间接路由，consumer init 时零参数注册 `Consumer::new()`。
 7. **Domain 门面统一消费模式**：新增入站渠道时，扩展者必须：① 在 `InboundSource` 加 variant ② 在 `MessageInboundAdapt::adapt_inbound` match 加分支 ③ MessageDomainImpl 构造函数加新 DAL 字段。**禁止** consumer 层绕过 domain 门面直连渠道 DAL。这条约定的目的是把渠道分发逻辑集中在 domain 层，不分散在各 consumer 中。
 8. **投递回调单一来源（2026-09 引入）**：consumer 投递 AdaptedMessage 统一经 `pkg::adapter::message::registry().current_callback()` 取用，**禁止** consumer 自行持有或构造 MessageAdapterCallback。WechatDalImpl 已移除自存 callback 字段，lark_dao / 未来 slack_dao 等也应遵循"只发布事件、不持有回调"的模式。
+9. **（2026-09 scope_project 断链修复）MessageChannel DAO 落库必须 scope_project + channel 双写**：agent_id / user_id / credential_id 等关联元数据同时更新 scope_project 关联表和 message_channel 主表，禁止只改其中一表导致"scope_project 残留旧值、channel 已更新"的悬空断链。
+10. **（2026-09 CLEAR 哨兵）渠道解除绑定必须走模型层 CLEAR_* sentinel**：`CLEAR_AGENT_ID` / `CLEAR_USER_ID` / `CLEAR_CREDENTIAL_ID` 等哨兵值表示"显式清除"语义，DAO 层据此走双表清除逻辑；handler 层禁止手动 UPDATE SET agent_id = NULL（与"本就无绑定"的 NULL 语义混淆，且可能漏改 scope_project 表）。
 
 ## §4 约束清单（最高权重，硬红线）
 
@@ -230,12 +238,15 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 4. ✅ **AdaptedMessage.external_user_id + channel_type 组合必须全局唯一映射内部用户**：producer 侧查找逻辑依赖 (ChannelType + external_id) → MessageChannel → user_id；没找到时 log_warn 丢弃不 panic，外部用户如果没在系统内绑定渠道就只是无法收到响应，不应该抛错。
 5. ✅ **Lark 渠道实现中 resolve_channel_credentials 返回 None 时要 warn 并跳过该渠道**：管理员渠道创建时引用的凭证被删除了 → 不能 panic、不能让启动失败；记录一条"channel id={} lark_credential_id={} 找不到凭证"跳过即可。
 6. ✅ **四类互引闭环**：本卡 source_files[] 含 5 篇 wiki 长文 + 1 Design + Plan 占位 + 3 张平行卡（身份凭证 CRUD / AES 加密 / Lark WS P2P 入站）；对应 Wiki 长文 cite 段回链本卡 + message_channel_design Design + 3 张平行卡。
+7. ✅ **（2026-09-XX 新增）MessageChannel DAO 落库必须 scope_project + channel 双表统一更新关联元数据**（agent_id / user_id / credential_id），禁止只改 channel 主表导致 scope_project 残留旧值悬空引用。
+8. ✅ **（2026-09-XX 新增）渠道解除 Agent 绑定必须走模型层 CLEAR_* sentinel**（`CLEAR_AGENT_ID` / `CLEAR_USER_ID` / `CLEAR_CREDENTIAL_ID`），禁止 handler 手动 UPDATE SET agent_id = NULL——避免与"本就无绑定"的 NULL 语义混淆，且保证 DAO 层双表清除逻辑被正确触发。
 
 ## §5 历史演进
 
 | 日期 | 事件 | 变更内容 | 关联文件 |
 |------|------|---------|---------|
 | 2026-09 之前 | 初版 | MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all/stop_all 生命周期。consumer（lark_inbound / wechat_inbound）各自持有渠道 DAL 弱引用，on_event 内 upgrade 后直连 DAL 做 adapt，投递回调也自存一份 | src/pkg/adapter/message.rs；src/consumer/lark_inbound.rs（旧版含 Weak<LarkDalImpl> 字段）；src/consumer/wechat_inbound.rs（旧版含 Weak<WechatDalImpl> 字段）；src/service/dal/wechat/impl.rs（旧版含 callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>> 自存字段） |
+| 5db51263 + 97a482b1 | 2026-09 | 渠道解除 Agent 绑定 + scope_project DAO 落库断链修复：models/message_channel.rs 新增 CLEAR_* sentinel 通用清除标记；dal/message_channel.rs 双表统一更新 scope_project + channel 关联元数据（agent_id / user_id / credential_id）；domain/finance/message_channel.rs 清除逻辑走哨兵而非手动置空 | src/models/message_channel.rs；src/service/dal/message_channel.rs；src/service/domain/finance/message_channel.rs |
 | **2026-09（本次增量）** | **Consumer 架构简化 + Domain 门面层引入** | 三件事同时落地：① 新增 `src/service/domain/message/inbound.rs`（66 行）：InboundSource 枚举收敛 Lark/Wechat + MessageInboundAdapt trait adapt_inbound 入口 ② MessageDomainImpl 构造新增 lark_dal / wechat_dal 字段，统一经 domain 门面消费 ③ consumer 无状态化：`#[derive(Default)]` 零字段，consumer init 零参数构造；适配走 domain 门面、投递回调统一经 registry().current_callback() 取用；WechatDalImpl 移除自存 callback 字段 | src/service/domain/message/inbound.rs（全新）；src/service/domain/message/mod.rs（新增字段 + new() 构造 + inbound() trait 入口）；src/consumer/lark_inbound.rs / wechat_inbound.rs（零字段重写）；src/consumer/mod.rs（init 注册零参数）；src/service/dal/wechat/impl.rs（移除 callback 字段） |
 
 **本次简化的核心收益**：
