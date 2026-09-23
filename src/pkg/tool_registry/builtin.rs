@@ -99,4 +99,41 @@ mod tests {
             assert_eq!(factory.create_po().get_tags(), tags, "tags of {}", id);
         }
     }
+
+    /// 护栏：所有内置工具的参数 schema 必须是「LLM 友好」形状（无 `$ref`/`anyOf`/`oneOf`）。
+    ///
+    /// 背景：模型在属性层看不到 `type`/`enum` 时，会把枚举值写成**未加引号的裸标识符**
+    /// （`{"status":Pending}`），整段 arguments 变成非法 JSON → 降级为 null →
+    /// 下游只看到 `empty tool arguments`。线上实测 25 次/天、25/25 命中 `anyOf+$ref` 形状。
+    ///
+    /// 收敛由 `common::llm_schema::schema_for_llm` 在 `#[tool(..)]` 宏里完成；
+    /// 这条测试防止新工具绕过它（例如手写 `create_po` 或新增工厂）。
+    ///
+    /// 判定复用 `common::llm_schema::unflattened_positions`（与折叠规则同源）——
+    /// 判别联合（`#[serde(tag="type")]`，如 `CredentialBinding`）属设计内保留，不算违规。
+    #[test]
+    fn builtin_tool_schemas_are_llm_flattened() {
+        let registry = crate::pkg::tool_registry::get_registry();
+        let ids = registry.list_builtin_ids();
+        // 防空跑守卫：注册表因故为空时会「零工具全绿」，必须挡住
+        assert!(ids.len() > 20, "内置工具数异常偏少: {}", ids.len());
+
+        let mut offenders = Vec::new();
+        for id in ids {
+            let Some(factory) = registry.get_builtin_factory(&id) else {
+                continue;
+            };
+            let Some(schema) = factory.create_po().parameters_schema else {
+                continue;
+            };
+            for pos in common::llm_schema::unflattened_positions(&schema) {
+                offenders.push(format!("  {id}: {pos}"));
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "以下内置工具的 schema 未收敛（模型会写坏枚举参数）:\n{}",
+            offenders.join("\n")
+        );
+    }
 }

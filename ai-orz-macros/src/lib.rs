@@ -187,8 +187,9 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
         impl BuiltinToolFactory for #factory_ident {
             fn create_po(&self) -> ToolPo {
                 use common::enums::tool::{ControlMode, ToolProtocol, ToolStatus};
-                let schema = schemars::schema_for!(#params_type);
-                let schema_json = serde_json::to_value(&schema).unwrap();
+                // 经 common 的 LLM 收敛层：inline $ref + 折叠可空枚举，
+                // 让取值词表在属性层可见（否则模型会把枚举值写成未加引号的裸标识符）
+                let schema_json = common::llm_schema::schema_for_llm::<#params_type>();
                 let mut tags_vec = Vec::new();
                 if #neural {
                     tags_vec.push("neural".to_string());

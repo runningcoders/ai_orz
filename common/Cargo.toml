@@ -11,7 +11,7 @@ aho-corasick = "1.1.4"
 anyhow = { version = "1.0", default-features = true, features = ["std"] }
 bincode = "2.0"
 chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
-schemars = { version = "0.8", features = ["derive"] }
+schemars = { version = "1.2", features = ["derive"] }
 sqlx = { version = "0.8.6", features = ["macros"], default-features = false, optional = true }
 jsonwebtoken = { version = "9", optional = true }
 base64 = { version = "0.21", optional = true }

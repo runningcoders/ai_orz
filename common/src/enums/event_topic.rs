@@ -20,10 +20,10 @@
 //! - **响应侧保持 `String`**：闭合枚举一旦放进响应，后端新增 topic 而前端未同步重建
 //!   就会**整页反序列化失败**。展示层用 [`EventTopic::parse`] 映射标签，`None` 原样显示。
 
-use schemars::JsonSchema;
-use schemars::r#gen::SchemaGenerator;
-use schemars::schema::{InstanceType, Metadata, Schema, SchemaObject};
+use schemars::generate::SchemaGenerator;
+use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow::Cow;
 
 /// AOP 事件主题（topic）
 ///
@@ -178,27 +178,22 @@ impl<'de> Deserialize<'de> for EventTopic {
 // 手写 JsonSchema：derive 会按变体名生成 "MessageCreated" 这类枚举值，
 // 与真实线格式（点分字符串）不一致；这里直接声明为字符串 + 线格式枚举值。
 impl JsonSchema for EventTopic {
-    fn schema_name() -> String {
-        "EventTopic".to_string()
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("EventTopic")
     }
 
     fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
-        Schema::Object(SchemaObject {
-            instance_type: Some(InstanceType::String.into()),
-            enum_values: Some(
-                EventTopic::ALL
-                    .iter()
-                    .map(|t| serde_json::Value::String(t.as_str().to_string()))
-                    .collect(),
-            ),
-            metadata: Some(Box::new(Metadata {
-                description: Some(
-                    "AOP 事件主题（线格式为点分字符串，如 \"message.created\"）".to_string(),
-                ),
-                ..Default::default()
-            })),
-            ..Default::default()
-        })
+        let values: Vec<serde_json::Value> = EventTopic::ALL
+            .iter()
+            .map(|t| serde_json::Value::String(t.as_str().to_string()))
+            .collect();
+        // 1.x 的 Schema 是 serde_json::Value 的薄封装，经 Deserialize 构造
+        serde_json::from_value(serde_json::json!({
+            "type": "string",
+            "enum": values,
+            "description": "AOP 事件主题（线格式为点分字符串，如 \"message.created\"）"
+        }))
+        .expect("EventTopic 的 schema 是固定字面量，反序列化必然成功")
     }
 }
 

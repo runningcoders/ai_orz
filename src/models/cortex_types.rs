@@ -103,10 +103,13 @@ impl From<&crate::models::tool::Tool> for ToolDescriptor {
         ToolDescriptor {
             name: tool.po.name.clone(),
             description: tool.po.description.clone(),
+            // 内置工具的 schema 在注册时已收敛过，这里再跑一次是幂等的；
+            // 真正需要它的是 HTTP 自建工具与外部 MCP 同步的 inputSchema（不可信输入）。
             parameters: tool
                 .po
                 .parameters_schema
                 .clone()
+                .map(common::llm_schema::to_llm_schema)
                 .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
         }
     }
