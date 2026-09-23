@@ -2073,4 +2073,43 @@
     box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 40%, transparent);
   }
   .hud-seg-item-sm { padding: .16rem .5rem; font-size: 11px; }
-    
+
+  /* ===== 项目内 Agent 列表（ProjectAgentsTab，聊天侧栏项目模式 Agent Tab） =====
+     行容器对齐 .mention-menu-item 尺寸语言（gap 0.5rem / padding 0.375rem 0.5rem /
+     radius 0.375rem / text-sm）；hover = base-content 6%，选中 = primary 10% +
+     inset 2px 左数据条（对齐 .hud-row / .mention-menu-item.is-active 语言）。
+     键盘可达：focus-visible 用 2px primary 描边替换浏览器默认聚焦白边
+     （对齐 .hud-seg-item:focus-visible 口径）。 */
+  .project-agent-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: background-color .15s, box-shadow .15s;
+  }
+  .project-agent-item:hover {
+    background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+  }
+  .project-agent-item.is-selected {
+    background: color-mix(in oklab, var(--color-primary) 10%, transparent);
+    box-shadow: inset 2px 0 0 0 var(--color-primary);
+  }
+  .project-agent-item:focus-visible {
+    outline: none;
+    box-shadow: inset 2px 0 0 0 var(--color-primary),
+                0 0 0 2px color-mix(in oklab, var(--color-primary) 40%, transparent);
+  }
+  /* 行尾徽标区：负责人 / 角色标签，≤3 枚 nowrap，超出截断不换行 */
+  .project-agent-item-badges {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+  }

@@ -3,6 +3,10 @@
 //! 展示最近的工具调用记录（JSONL 扫描查询，limit 30），并与后台进程列表
 //! 按 `call_id` join 出仍在运行的关联进程；点击 PID 徽标弹出进程详情
 //! （复用 ProcessDetailContent）。行展开可查看 input/output 摘要。
+//!
+//! 行头在状态徽章之后、工具名之前渲染发起 Agent 的身份 chip（`IdentityChip`，
+//! 负责人样式同源；`agent_id` 为 None 不渲染），点头像弹出与聊天页同源的
+//! Agent 信息小卡片（AvatarBubble 复用；点击经 stop_propagation 防误触发行展开）。
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -11,6 +15,8 @@ use dioxus::prelude::*;
 
 use crate::api::finance::query_tool_call_entries;
 use crate::api::system::list_processes;
+use crate::components::avatar_bubble::{AvatarTone, BubbleAlign};
+use crate::components::identity_chip::IdentityChip;
 use crate::components::modal::Modal;
 use crate::components::process_detail::ProcessDetailContent;
 use crate::components::state::Loading;
@@ -218,6 +224,20 @@ pub fn ToolCallsTab(
                                         span {
                                             class: "{tool_call_status_badge(status)}",
                                             "{tool_call_status_text(status)}"
+                                        }
+                                        // 发起 Agent 身份（T3 需求②）：负责人样式同源，点小卡片看详情。
+                                        // agent_id 为 None（系统级调用等）不渲染；flex-none + chip 自带
+                                        // truncate，窄侧栏下压缩工具名而不是身份；点击不得触发行展开。
+                                        if let Some(entry_agent_id) = e.agent_id.clone() {
+                                            div {
+                                                class: "flex-none",
+                                                onclick: move |evt: MouseEvent| evt.stop_propagation(),
+                                                IdentityChip {
+                                                    id: entry_agent_id,
+                                                    tone: AvatarTone::Agent,
+                                                    align: BubbleAlign::Start,
+                                                }
+                                            }
                                         }
                                         span { class: "font-medium text-sm flex-1 truncate", "{tool_name}" }
                                         if let Some(pid) = pid_opt {

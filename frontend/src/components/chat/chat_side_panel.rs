@@ -1,7 +1,7 @@
 //! 聊天信息侧栏（ChatSidePanel）
 //!
 //! 沟通页面右侧可收起的信息面板，按对话模式动态组装 Tab：
-//! - 项目对话：总览 / 任务 / 产物 / Agent（负责人）/ 工具
+//! - 项目对话：总览 / 任务 / 产物 / Agent（项目内 Agent 列表）/ 工具
 //! - 默认对话：Agent（前台）/ 我（当前用户）/ 工具
 //!
 //! 面板纯只读：数据加载复用现有项目/任务/产物/Agent/用户 API，
@@ -18,6 +18,7 @@ use crate::api::organization::get_current_user_info;
 use crate::api::project::{get_project, get_task, list_project_tasks};
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
 use crate::components::avatar_bubble::AvatarTone;
+use crate::components::chat::ProjectAgentsTab;
 use crate::components::chat::ToolCallsTab;
 use crate::components::graph::{Graph, GraphEdge, GraphNode, task_status_node_type};
 use crate::components::hud::{HudPanel, HudProgress};
@@ -108,7 +109,8 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 /// - `reception_agent_id`：前台 Agent ID（现仅工具调用 Tab 使用；Agent Tab 改用
 ///   `target_agent_id`，以便与主链路轮询同源）
 /// - `target_agent_id`：当前会话目标 Agent ID，由 chat 页统一解析（项目会话 = 项目
-///   owner，默认对话 = 前台 Agent）。两个模式的 Agent Tab 都由它定位
+///   owner，默认对话 = 前台 Agent）。默认对话模式 Agent Tab 由它定位；项目模式
+///   Agent Tab 已改为项目内 Agent 列表（ProjectAgentsTab），不再单值定位
 /// - `agent_info`：主链路轮询共享的 Agent 详情，Agent Tab 优先消费（id 匹配时零请求）
 /// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据。
 ///   同样必须以 Signal 传入才能驱动 use_effect 重跑
@@ -128,7 +130,8 @@ pub fn ChatSidePanel(
     /// 当前会话目标 Agent ID：chat 页的单一解析来源（项目会话 = 项目 owner，
     /// 默认对话 = 前台 Agent）。
     ///
-    /// Agent Tab 用它定位，不再自行从项目详情 / reception 里各取一份 ——
+    /// 默认对话模式 Agent Tab 用它定位（项目模式已改为项目内 Agent 列表），
+    /// 不再自行从项目详情 / reception 里各取一份 ——
     /// 「面板展示的 Agent」与「3s 轮询刷新的 Agent」必须是同一个，
     /// 否则会出现展示 A 的身份、刷新 B 的状态这种错位。
     target_agent_id: Signal<Option<String>>,
@@ -274,14 +277,21 @@ pub fn ChatSidePanel(
                 toast,
             ),
             2 => artifacts_tab(project_data.as_ref(), &tasks_list),
-            // 负责人由 target_agent_id 提供（与主链路轮询同源）。
-            // 项目详情未就绪时先走加载态，避免闪现「未指定负责人」再跳成 Agent 信息。
-            3 => match (project_data.as_ref(), target_agent_id()) {
-                (None, _) => loading_placeholder(),
-                (Some(_), Some(agent_id)) => rsx! {
-                    AgentInfoTab { agent_id, shared_info: agent_info, refresh_tick: agent_stats_tick }
+            // 项目内 Agent 列表（T3 需求①）：assignee 推导（复用面板已拉的
+            // tasks_list，零额外项目请求）→ query_agents 批量详情；负责人置顶打标，
+            // 点击行进入单 Agent 详情子页（AgentInfoTab 原样复用）。
+            // 项目详情未就绪时先走加载态，避免拿不到 owner_id 时闪现无负责人徽标的列表。
+            3 => match project_data.as_ref() {
+                Some(p) => rsx! {
+                    ProjectAgentsTab {
+                        project_owner_id: p.owner_agent_id.clone(),
+                        tasks: tasks_list.clone(),
+                        refresh_tick: tool_tab_tick,
+                        agent_info,
+                        agent_stats_tick,
+                    }
                 },
-                (Some(_), None) => empty_hint("项目未指定负责人"),
+                None => loading_placeholder(),
             },
             4 => rsx! {
                 ToolCallsTab {
@@ -366,7 +376,7 @@ pub fn ChatSidePanel(
     }
 }
 
-fn loading_placeholder() -> Element {
+pub(crate) fn loading_placeholder() -> Element {
     rsx! {
         div { class: "flex items-center justify-center py-12",
             Loading { size: "md" }
@@ -796,7 +806,7 @@ fn ArtifactRow(artifact: ArtifactDetail) -> Element {
 /// （主链路高频轮询零额外开销），统计仅在 Tab 挂载时按需加载，
 /// 并随 `refresh_tick`（SSE/手动刷新）防抖刷新，机制与 ToolCallsTab 一致。
 #[component]
-fn AgentInfoTab(
+pub(crate) fn AgentInfoTab(
     agent_id: String,
     shared_info: Signal<Option<GetAgentResponse>>,
     refresh_tick: u64,
