@@ -26,6 +26,9 @@ pub struct CreateAuthorizationCmd {
     pub rule_idempotent: bool,
     /// 申请理由（审计留痕）
     pub reason: Option<String>,
+    /// 触发本次申请的工具调用 ID（拦截建单时取 `ctx.tool_call_id()`；
+    /// 主动建单为 None）——用于把授权单与工具调用记录精确对上
+    pub call_id: Option<String>,
 }
 
 /// 授权门（拦截侧消费的最小接口）

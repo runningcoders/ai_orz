@@ -107,6 +107,8 @@ pub async fn confirm_with_authorization(
         blocking_rule: blocked_by.to_string(),
         rule_idempotent: rule_def(blocked_by).map(|r| r.idempotent).unwrap_or(false),
         reason: Some(reason.clone()),
+        // 触发拦截的那次工具调用（trace call_id 同一事实源）⇒ 授权单可反查调用记录
+        call_id: ctx.tool_call_id().cloned(),
     };
     match gate.request_authorization(ctx.clone(), cmd).await {
         Ok(pending) => {
@@ -260,6 +262,7 @@ mod tests {
                 command_signature: cmd.command_signature,
                 blocking_rule: cmd.blocking_rule,
                 requested_at_ms: 0,
+                call_id: cmd.call_id,
                 status: crate::pkg::authorization::AuthorizationStatus::Pending,
             })
         }

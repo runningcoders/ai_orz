@@ -91,13 +91,17 @@ pub async fn create_request_authorization(
         blocking_rule: rule_id,
         rule_idempotent,
         reason: Some(params.reason),
+        // 主动建单没有「被拦的调用」上下文：call_id 恒 None（不能填本次
+        // create_request_authorization 自己的调用 ID，那会把审批单错挂到本工具上）
+        call_id: None,
     };
     let pending = domain()
         .tool_authorization_manage()
         .create_pending_authorization(ctx, cmd)
         .await?;
-    Ok(CreateAuthorizationResponse {
+    // 对外出口统一脱敏（口径对齐 tool-call-entries）
+    Ok(crate::redact!(CreateAuthorizationResponse {
         authorization_id: pending.authorization_id,
         status: status_to_dto(pending.status),
-    })
+    })?)
 }

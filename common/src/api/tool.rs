@@ -618,6 +618,11 @@ pub struct AuthorizationDetailDto {
     pub blocking_rule: String,
     /// 建单时刻 ms
     pub requested_at_ms: i64,
+    /// 触发本次拦截建单的工具调用 ID（= 工具调用记录 `call_id`）
+    ///
+    /// 前端据此把授权单挂到对应调用记录的详情/行内快捷审批上；
+    /// 主动建单（无被拦调用上下文）为 null。
+    pub call_id: Option<String>,
     /// 当前状态
     pub status: AuthorizationStatusDto,
     /// 已签发授权 ID（Pending/Rejected 为 None）

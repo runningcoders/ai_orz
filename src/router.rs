@@ -1004,6 +1004,28 @@ fn finance_routes() -> Router {
             "/tool-call-entries/{call_id}",
             get(handlers::finance::tool::get_tool_call_entry_handler),
         )
+        // 工具授权审批面（拦截建单 → 用户审批决策）。
+        // 路径用 POST + /query：查询参数 DTO（AuthorizationQueryRequest）未标注
+        // `#[param(source = "query")]`，生成的是「JSON body」形态的 handler；
+        // 出口已统一套 redact!（见各 handler）。
+        .route(
+            "/tool-authorizations/query",
+            post(handlers::finance::tool::list_authorizations::list_authorizations_handler),
+        )
+        .route(
+            "/tool-authorizations/decide",
+            post(handlers::finance::tool::decide_authorization::decide_authorization_handler),
+        )
+        .route(
+            "/tool-authorizations/revoke",
+            post(handlers::finance::tool::revoke_authorization::revoke_authorization_handler),
+        )
+        .route(
+            "/tool-authorizations/request",
+            post(
+                handlers::finance::tool::create_request_authorization::create_request_authorization_handler,
+            ),
+        )
         .route("/tools/{id}", get(handlers::finance::tool::get_tool::get_tool_handler))
         .route("/tools/{id}", put(handlers::finance::tool::update_tool::update_tool_handler))
         .route(

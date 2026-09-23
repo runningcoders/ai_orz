@@ -262,6 +262,7 @@ mod tests {
                     blocking_rule: "git_dangerous_subcommand".to_string(),
                     rule_idempotent: false,
                     reason: Some("测试".to_string()),
+                    call_id: None,
                 },
             )
             .await
@@ -505,6 +506,7 @@ mod tests {
                     blocking_rule: "git_dangerous_subcommand".to_string(),
                     rule_idempotent: false,
                     reason: None,
+                    call_id: None,
                 },
             )
             .await
@@ -551,6 +553,28 @@ mod tests {
         assert_eq!(grants[0].command_signature, "docker");
     }
 
+    /// 授权单携带「触发拦截的调用 ID」：审批面据此把单据挂到对应工具调用记录上
+    /// （前端按 `AuthorizationDetailDto.call_id == ToolCallEntryDetail.call_id` 关联）
+    #[sqlx::test]
+    async fn call_id_round_trips_into_list_dto(pool: sqlx::SqlitePool) {
+        let svc = service_with_evidence();
+        svc.create_pending_authorization(
+            user_ctx(&pool),
+            CreateAuthorizationCmd {
+                call_id: Some("call-abc".to_string()),
+                ..mk_cmd()
+            },
+        )
+        .await
+        .unwrap();
+        let items = svc
+            .list_authorizations(user_ctx(&pool), Default::default())
+            .await
+            .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].call_id.as_deref(), Some("call-abc"));
+    }
+
     // ============ T5·S3 双向通知（落库即通知） ============
 
     /// 构造带 FakeMessageDal 的服务（同时返回 Fake 引用供断言）；证据时间戳同 service_with_evidence
@@ -574,6 +598,7 @@ mod tests {
             blocking_rule: "git_dangerous_subcommand".to_string(),
             rule_idempotent: false,
             reason: Some("测试".to_string()),
+            call_id: None,
         }
     }
 
@@ -595,6 +620,25 @@ mod tests {
                 "建单推送应携带 authorization_id，实际: {}",
                 po.content
             );
+            // 时间戳 / 审计字段必须由 `MessagePo::new` 统一赋值：曾用字面量 +
+            // `..Default::default()` 导致 created_at=0（落库即 1970）并污染前端
+            // 历史分页游标（游标取最老一条 created_at，为 0 后历史再也拉不出来）。
+            assert!(
+                po.created_at > 0,
+                "created_at 不得为 0，实际 {}",
+                po.created_at
+            );
+            assert_eq!(
+                po.updated_at, po.created_at,
+                "updated_at 应与 created_at 同步"
+            );
+            assert_eq!(po.created_by, "system");
+            assert_eq!(po.modified_by, "system");
+            let expected_org = user_ctx(&pool).organization_id().cloned();
+            assert_eq!(
+                po.organization_id, expected_org,
+                "organization_id 必须透传 ctx（缺失会被消息列表的 org 过滤永久剔除）"
+            );
         }
 
         // 审批批准 → 决策回推恰好新增 1 条：System → 申请人 Agent，携带授权单 ID
@@ -611,6 +655,23 @@ mod tests {
             po.content.contains(&auth_id),
             "决策回推应携带 authorization_id，实际: {}",
             po.content
+        );
+        // 同建单推送：时间戳 / 审计字段同样必须走构造函数（否则回推消息也显示 1970）
+        assert!(
+            po.created_at > 0,
+            "created_at 不得为 0，实际 {}",
+            po.created_at
+        );
+        assert_eq!(
+            po.updated_at, po.created_at,
+            "updated_at 应与 created_at 同步"
+        );
+        assert_eq!(po.created_by, "system");
+        assert_eq!(po.modified_by, "system");
+        assert_eq!(
+            po.organization_id,
+            user_ctx(&pool).organization_id().cloned(),
+            "organization_id 必须透传 ctx"
         );
     }
 

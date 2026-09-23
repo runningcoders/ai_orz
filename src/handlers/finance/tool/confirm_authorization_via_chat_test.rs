@@ -60,6 +60,7 @@ async fn make_pending(pool: &SqlitePool, signature: &str) -> String {
                 blocking_rule: "git_dangerous_subcommand".to_string(),
                 rule_idempotent: false,
                 reason: Some("T4 handler 集成测试".to_string()),
+                call_id: None,
             },
         )
         .await

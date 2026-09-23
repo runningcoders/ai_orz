@@ -102,7 +102,11 @@ pub const KEY_RULES: &[KeyRule] = &[
     KeyRule {
         name: "authorization",
         patterns: &["authorization", "bearer"],
-        exclude: &[],
+        // `authorization_id` / `authorization_ids` 是**标识符**而非凭证：业务要按它做
+        // 关联与展示（如「工具调用记录 ↔ 授权审批单」的跳转），脱敏后前端只能拿到
+        // `0192***89ab` 这类残值。对齐 api_key 规则既有的 exclude 做法；
+        // 真正的 `Authorization: Bearer xxx` 头（键名无 id）照旧脱敏。
+        exclude: &["id"],
         value_class: ValueClass::StringOnly,
     },
     KeyRule {
@@ -288,6 +292,40 @@ mod tests {
         assert!(match_key("api_key_name").is_none());
         assert!(match_key("api_key_id").is_none());
         assert!(match_key("api_key").is_some());
+    }
+
+    #[test]
+    fn authorization_identifier_fields_preserved() {
+        // 授权单 ID 是业务主键（前端要拿它调审批接口），不得脱敏
+        assert!(match_key("authorization_id").is_none());
+        assert!(match_key("authorization_ids").is_none());
+        // 真正的凭证载体照旧命中
+        assert!(match_key("authorization").is_some());
+        assert!(match_key("Authorization").is_some());
+        assert!(match_key("bearer").is_some());
+        assert!(match_key("bearer_token").is_some());
+    }
+
+    #[test]
+    fn authorization_id_survives_end_to_end_redaction() {
+        // 端到端（不止规则表）：授权单 ID 必须穿过整个出口链路原样到达前端，
+        // 否则「工具调用记录 → 授权审批单」的关联与审批调用全部失效。
+        let mut value = serde_json::json!({
+            "authorization_id": "0192f3c1-89ab-7def-8123-456789abcdef",
+            "user_id": "u-1",
+            "authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+        });
+        crate::redaction::redact_json(&mut value);
+        assert_eq!(
+            value["authorization_id"],
+            "0192f3c1-89ab-7def-8123-456789abcdef"
+        );
+        assert_eq!(value["user_id"], "u-1");
+        // 真凭证载体（键名不含 id）照旧脱敏：exclude 只放行标识符，不放行凭证
+        assert_ne!(
+            value["authorization"],
+            "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+        );
     }
 
     #[test]

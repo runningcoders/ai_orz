@@ -66,6 +66,13 @@ pub struct PendingAuthorization {
     pub blocking_rule: String,
     /// 建单时间 ms（证据五要素第④条「证据晚于建单」的基准）
     pub requested_at_ms: i64,
+    /// 触发本次拦截建单的工具调用 ID（= 工具调用记录里的 `call_id`）
+    ///
+    /// 用途：把「授权审批单」与「工具调用记录（trace）」精确对上——审批面可直接在
+    /// 对应调用详情里给出通过/拒绝，无需按 (agent, tool, 时间窗) 反推。
+    /// 主动建单（[`CreateAuthorizationCmd`] 由管理面/Agent 口头登记发起）没有
+    /// 被拦的调用上下文，为 `None`。
+    pub call_id: Option<String>,
     /// 当前状态（六态流转由 domain 审批状态机维护）
     pub status: AuthorizationStatus,
 }
@@ -262,6 +269,7 @@ mod tests {
             command_signature: SAMPLE_SIG.into(),
             blocking_rule: "git_dangerous_subcommand".into(),
             requested_at_ms: 1_000,
+            call_id: None,
             status: AuthorizationStatus::Pending,
         }
     }

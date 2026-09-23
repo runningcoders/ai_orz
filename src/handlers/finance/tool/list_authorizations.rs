@@ -29,8 +29,10 @@ pub async fn list_authorizations(
     } else {
         params.user_id = Some(ctx.uid());
     }
-    domain()
+    let items = domain()
         .tool_authorization_manage()
         .list_authorizations(ctx, params)
-        .await
+        .await?;
+    // 对外出口统一脱敏（口径对齐 tool-call-entries）：command_signature 可能内嵌凭证
+    Ok(crate::redact!(items)?)
 }

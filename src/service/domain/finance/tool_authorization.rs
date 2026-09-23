@@ -18,7 +18,7 @@ use crate::models::message::{Message, MessagePo};
 use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 use common::api::{AuthorizationDetailDto, AuthorizationStatusDto, EvidenceClassDto};
-use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::enums::{MessageRole, MessageType};
 use common::error::{Error, Result, bail_err};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -107,18 +107,37 @@ impl AuthorizationService {
     // 降级策略：DAL 未接线或落库失败仅 log_warn 留痕，不阻断授权主流程。
 
     /// 构造系统通知消息（from_role=System，message_type=Text，纯文本提示）
-    fn build_notification(&self, to_id: &str, to_role: MessageRole, content: String) -> Message {
-        let po = MessagePo {
-            id: uuid::Uuid::now_v7().to_string(),
-            from_id: "system".to_string(),
-            to_id: to_id.to_string(),
-            from_role: MessageRole::System,
+    ///
+    /// 一律走 `MessagePo::new` 构造函数：时间戳 / 审计字段由构造函数统一赋值。
+    /// ❌ 禁止字面量 + `..Default::default()`：`MessagePo` 的 `Default` 会把
+    /// `created_at`/`updated_at` 归零（落库即 1970），`created_by`/`modified_by`
+    /// 留空串，`organization_id` 留 None（被消息列表的 org 过滤条件静默剔除）。
+    fn build_notification(
+        &self,
+        ctx: &RequestContext,
+        to_id: &str,
+        to_role: MessageRole,
+        content: String,
+    ) -> Message {
+        let id = uuid::Uuid::now_v7().to_string();
+        let po = MessagePo::new(
+            id.clone(),
+            None,
+            None,
+            "system".to_string(),
+            to_id.to_string(),
+            MessageRole::System,
             to_role,
-            message_type: MessageType::Text,
-            status: MessageStatus::Pending,
+            MessageType::Text,
             content,
-            ..Default::default()
-        };
+            None,
+            Default::default(),
+            None,
+            // 无父消息：根消息为自身（与 delivery.rs 同口径）
+            Some(id),
+            ctx.organization_id().cloned(),
+            "system".to_string(),
+        );
         Message::from_po(po)
     }
 
@@ -140,7 +159,7 @@ impl AuthorizationService {
             pending.blocking_rule,
             evidence_preview(&pending.command_signature, 64),
         );
-        let message = self.build_notification(&pending.user_id, MessageRole::User, content);
+        let message = self.build_notification(ctx, &pending.user_id, MessageRole::User, content);
         let ctx = ctx.clone();
         match dal.save_message(ctx, &message).await {
             Ok(()) => log_info!(
@@ -188,7 +207,7 @@ impl AuthorizationService {
             evidence_preview(&pending.command_signature, 64),
             state_line,
         );
-        let message = self.build_notification(&pending.agent_id, MessageRole::Agent, content);
+        let message = self.build_notification(ctx, &pending.agent_id, MessageRole::Agent, content);
         let ctx = ctx.clone();
         match dal.save_message(ctx, &message).await {
             Ok(()) => log_info!(
@@ -238,6 +257,7 @@ impl AuthorizationService {
             command_signature: rec.pending.command_signature.clone(),
             blocking_rule: rec.pending.blocking_rule.clone(),
             requested_at_ms: rec.pending.requested_at_ms,
+            call_id: rec.pending.call_id.clone(),
             status: status_to_dto(rec.status),
             grant_id: rec.grant.as_ref().map(|g| g.grant_id.clone()),
             expires_at_ms: rec.grant.as_ref().map(|g| g.expires_at_ms),
@@ -293,6 +313,8 @@ impl super::ToolAuthorizationManage for AuthorizationService {
             command_signature: cmd.command_signature,
             blocking_rule: cmd.blocking_rule,
             requested_at_ms: now_ms(),
+            // 触发拦截的调用 ID（主动建单为 None）⇒ 审批面据此关联工具调用记录
+            call_id: cmd.call_id,
             status: AuthorizationStatus::Pending,
         };
         let key = (pending.agent_id.clone(), pending.tool_id.clone());

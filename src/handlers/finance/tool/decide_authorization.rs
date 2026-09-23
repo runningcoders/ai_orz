@@ -59,9 +59,10 @@ pub async fn decide_authorization(
         .tool_authorization_manage()
         .decide_authorization(ctx, cmd)
         .await?;
-    Ok(AuthorizationDecisionResponse {
+    // 对外出口统一脱敏（口径对齐 tool-call-entries）
+    Ok(crate::redact!(AuthorizationDecisionResponse {
         authorization_id: outcome.authorization_id,
         status: status_to_dto(outcome.status),
         grant_id: outcome.grant_id,
-    })
+    })?)
 }
