@@ -200,6 +200,10 @@ name = "model_provider_embedding_test"
 path = "tests/integration/model_provider_embedding_test.rs"
 
 [[test]]
+name = "model_provider_access_mode_test"
+path = "tests/integration/model_provider_access_mode_test.rs"
+
+[[test]]
 name = "web_search_tool_test"
 path = "tests/integration/web_search_tool_test.rs"
 

@@ -31,6 +31,7 @@ fn embedding_req(name: &str) -> CreateModelProviderRequest {
         description: None,
         max_context_length: None,
         recommended_context_length: None,
+        access_mode: None,
     }
 }
 

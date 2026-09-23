@@ -41,7 +41,7 @@ pub use organization::{
     OrganizationStatus,
 };
 pub use project::ProjectStatus;
-pub use provider::{ModelCapability, ProviderType};
+pub use provider::{ModelAccessMode, ModelCapability, ProviderType};
 pub use skill::{SkillAuthorType, SkillStatus};
 pub use task::{AssigneeType, TaskStatus};
 pub use thinking_scene::ThinkingScene;

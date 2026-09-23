@@ -6,9 +6,10 @@
 use crate::models::cortex_types::{
     ChatMessage, ThinkResult, TokenUsage, ToolCallRequest, ToolDescriptor,
 };
-use crate::models::model_provider::ModelProviderPo;
+use crate::models::model_provider::{ModelProviderConfig, ModelProviderPo};
 use crate::pkg::RequestContext;
 use crate::pkg::http::presets;
+use common::enums::ModelAccessMode;
 use common::error::{Error, ErrorCode, Result, err};
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -101,11 +102,15 @@ fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
         .collect()
 }
 
-/// 调用 Chat Completions API（流式）
+/// 调用 Chat Completions API
 ///
-/// 所有 provider 统一走 /chat/completions endpoint。请求侧启用 SSE 流式，
-/// 超时判定从「请求总时长」改为「chunk 间隔空闲检测 + 总时长硬上限兜底」，
-/// 流式聚合细节见 [`consume_think_stream`]。
+/// 所有 provider 统一走 /chat/completions endpoint。访问模式按 provider 配置分流
+/// （方案 §四，缺省/脏 config 兜底 stream）：
+/// - stream：请求侧启用 SSE 流式，超时判定从「请求总时长」改为「chunk 间隔空闲检测 +
+///   总时长硬上限兜底」，流式聚合细节见 [`consume_think_stream`]；
+/// - non_stream：请求体不含流式字段，一次性解析完整 JSON 响应，仅总时长硬上限兜底。
+///
+/// 两路统一经 [`finish_think_result`] 组装上层 [`ThinkResult`]。
 pub async fn call_chat_completions(
     ctx: RequestContext,
     client: &reqwest::Client,
@@ -117,32 +122,11 @@ pub async fn call_chat_completions(
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
-    // 构建请求体：启用 SSE 流式；include_usage 让 usage 随最后一个 chunk 下发
-    let mut body = json!({
-        "model": provider.model_name,
-        "messages": messages_to_json(messages),
-        "stream": true,
-        "stream_options": { "include_usage": true },
-    });
+    // 方案 §四：按配置解析访问模式（缺省/脏 config 兜底 stream + 告警日志，不中断推理）
+    let access_mode = resolve_access_mode(&ctx, provider);
 
-    // 如果有工具，添加 tools 字段
-    if !tools.is_empty() {
-        body["tools"] = json!(
-            tools
-                .iter()
-                .map(|t| {
-                    json!({
-                        "type": "function",
-                        "function": {
-                            "name": t.name,
-                            "description": t.description,
-                            "parameters": t.parameters,
-                        }
-                    })
-                })
-                .collect::<Vec<_>>()
-        );
-    }
+    // 构建请求体：按访问模式分流 stream 字段，model/messages/tools 两路一致
+    let body = build_chat_request_body(provider, messages, tools, access_mode);
 
     log_debug!(
         ctx,
@@ -171,8 +155,147 @@ pub async fn call_chat_completions(
         return Err(model_call_error("chat completions", status, &text));
     }
 
-    let acc = consume_think_stream(resp.bytes_stream(), presets::LLM_STREAM_IDLE_TIMEOUT).await?;
+    // 方案 §四：按访问模式分流响应消费；两路统一经 finish_think_result 组装
+    let acc = match access_mode {
+        ModelAccessMode::Stream => {
+            consume_think_stream(resp.bytes_stream(), presets::LLM_STREAM_IDLE_TIMEOUT).await?
+        }
+        ModelAccessMode::NonStream => parse_non_stream_response(resp).await?,
+    };
     Ok(finish_think_result(&ctx, acc))
+}
+
+/// 解析 provider 的下行调用访问模式（方案 §四）。
+///
+/// - 配置缺省（None）→ [`ModelAccessMode::Stream`]（= 存量行为，零变化）；
+/// - config JSON 解析失败（脏配置）→ 兜底 Stream + 告警日志，不中断推理。
+fn resolve_access_mode(ctx: &RequestContext, provider: &ModelProviderPo) -> ModelAccessMode {
+    match serde_json::from_str::<ModelProviderConfig>(&provider.config) {
+        Ok(cfg) => cfg.access_mode_or_default(),
+        Err(e) => {
+            log_warn!(
+                ctx,
+                "cortex_chat_request",
+                "provider config parse failed, falling back to stream access mode: provider_id={} error={}",
+                provider.id,
+                e
+            );
+            ModelAccessMode::Stream
+        }
+    }
+}
+
+/// 构建 Chat Completions 请求体（方案 §四：按访问模式分流 stream 字段）。
+///
+/// model/messages/tools 两路一致；stream 模式附加 `stream` + `stream_options`
+/// （include_usage 让 usage 随最后一个 chunk 下发），non_stream 模式不含任何流式字段。
+fn build_chat_request_body(
+    provider: &ModelProviderPo,
+    messages: &[ChatMessage],
+    tools: &[ToolDescriptor],
+    access_mode: ModelAccessMode,
+) -> Value {
+    let mut body = json!({
+        "model": provider.model_name,
+        "messages": messages_to_json(messages),
+    });
+    if access_mode == ModelAccessMode::Stream {
+        body["stream"] = json!(true);
+        body["stream_options"] = json!({ "include_usage": true });
+    }
+    // 如果有工具，添加 tools 字段
+    if !tools.is_empty() {
+        body["tools"] = json!(
+            tools
+                .iter()
+                .map(|t| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.parameters,
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+    body
+}
+
+/// 读取并解析非流式 Chat Completions 响应体（方案 §四）。
+async fn parse_non_stream_response(resp: reqwest::Response) -> Result<StreamAccumulator> {
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| transport_error("chat completions body", e))?;
+    parse_non_stream_body(&text)
+}
+
+/// 解析非流式响应体为与流式聚合同构的 [`StreamAccumulator`]（复用 [`finish_think_result`] 组装）。
+///
+/// 截断防护（方案 §四）：正常结束必须携带 `finish_reason`，缺失视为响应被网关/代理
+/// 截断——半截 content/arguments 不得当成功返回；`finish_reason=length` 走
+/// [`check_stream_end`] 与流式同源的 max_tokens 截断防护。
+fn parse_non_stream_body(text: &str) -> Result<StreamAccumulator> {
+    let body: NonStreamResponse = serde_json::from_str(text).map_err(|e| {
+        err!(
+            Internal,
+            "chat completions non-stream response parse failed: {e}; body={}",
+            truncate_for_log(text)
+        )
+    })?;
+
+    let Some(choice) = body.choices.into_iter().next() else {
+        return Err(err!(
+            Internal,
+            "chat completions non-stream response has no choices; body={}",
+            truncate_for_log(text)
+        ));
+    };
+
+    let mut acc = StreamAccumulator {
+        usage: body.usage,
+        ..Default::default()
+    };
+    if let Some(message) = choice.message {
+        if let Some(content) = message.content {
+            acc.saw_content = true;
+            acc.content = content;
+        }
+        // 非流式 tool_calls 是完整数组，按数组顺序落槽（无跨 chunk 消歧问题）
+        for tc in message.tool_calls.into_iter().flatten() {
+            let index = acc.tool_calls.len();
+            let entry = acc.tool_calls.entry(index).or_default();
+            if let Some(id) = tc.id {
+                entry.id = id;
+            }
+            if let Some(func) = tc.function {
+                if let Some(name) = func.name {
+                    entry.name.push_str(&name);
+                }
+                if let Some(args) = func.arguments {
+                    entry.arguments.push_str(&args);
+                }
+            }
+        }
+    }
+
+    if choice.finish_reason.is_none() {
+        return Err(err!(
+            Internal,
+            "chat completions non-stream response missing finish_reason \
+             (possibly truncated by gateway), content_len={} tool_calls={}",
+            acc.content.len(),
+            acc.tool_calls.len()
+        ));
+    }
+    acc.finish_reason = choice.finish_reason;
+
+    // 与流式同源：finish_reason=length（max_tokens 截断）在此显式失败
+    check_stream_end(&acc)?;
+    Ok(acc)
 }
 
 /// 将流式聚合结果组装为上层 [`ThinkResult`]（与原非流式解析约定一致）。
@@ -718,6 +841,42 @@ struct MultimodalEmbeddingResponse {
 #[derive(Deserialize)]
 struct MultimodalEmbeddingData {
     embedding: Vec<f64>,
+}
+
+// ==================== 非流式响应结构（方案 §四） ====================
+
+/// 非流式 Chat Completions 响应（OpenAI 协议一次性 JSON）
+#[derive(Debug, Deserialize)]
+struct NonStreamResponse {
+    /// 正常响应恒有 choices；缺失/为空按异常响应显式失败
+    #[serde(default)]
+    choices: Vec<NonStreamChoice>,
+    usage: Option<Usage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NonStreamChoice {
+    message: Option<NonStreamMessage>,
+    /// 正常结束的证据（截断防护：缺失即显式失败，见 [`parse_non_stream_body`]）
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NonStreamMessage {
+    content: Option<String>,
+    tool_calls: Option<Vec<NonStreamToolCall>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NonStreamToolCall {
+    id: Option<String>,
+    function: Option<NonStreamFunction>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NonStreamFunction {
+    name: Option<String>,
+    arguments: Option<String>,
 }
 
 #[cfg(test)]

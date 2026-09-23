@@ -69,6 +69,8 @@ pub async fn get_model_provider(
         updated_at: provider.po.updated_at,
         max_context_length: config.max_context_length,
         recommended_context_length: config.recommended_context_length,
+        // 方案 §2.3：恒返回按 config 解析后的访问模式（缺省 Stream）
+        access_mode: config.access_mode_or_default(),
         stats: provider.stats,
     })
 }

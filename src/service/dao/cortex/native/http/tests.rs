@@ -349,3 +349,170 @@ fn truncate_for_log_keeps_head_and_tail() {
     // 短文本原样返回
     assert_eq!(truncate_for_log("{\"a\":1}"), "{\"a\":1}");
 }
+
+// ==================== 访问模式分流（方案 §四） ====================
+
+fn provider_with_config(config: &str) -> ModelProviderPo {
+    ModelProviderPo {
+        id: "prov_1".to_string(),
+        name: "test-provider".to_string(),
+        provider_type: common::enums::ProviderType::OpenAI,
+        model_name: "gpt-4o".to_string(),
+        capability: common::enums::ModelCapability::Agent,
+        api_key: "sk-test".to_string(),
+        base_url: None,
+        description: None,
+        config: config.to_string(),
+        status: common::enums::ModelProviderStatus::Normal,
+        created_by: "tester".to_string(),
+        modified_by: "tester".to_string(),
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+#[test]
+fn stream_body_keeps_stream_fields() {
+    let provider = provider_with_config("{}");
+    let body = build_chat_request_body(&provider, &[], &[], ModelAccessMode::Stream);
+    assert_eq!(body["stream"], serde_json::json!(true));
+    assert_eq!(
+        body["stream_options"]["include_usage"],
+        serde_json::json!(true)
+    );
+    assert_eq!(body["model"], serde_json::json!("gpt-4o"));
+}
+
+#[test]
+fn non_stream_body_omits_stream_fields_and_keeps_tools() {
+    let provider = provider_with_config("{}");
+    let body = build_chat_request_body(&provider, &[], &[], ModelAccessMode::NonStream);
+    assert!(
+        body.get("stream").is_none(),
+        "non_stream 请求体不得携带 stream 字段: {body}"
+    );
+    assert!(
+        body.get("stream_options").is_none(),
+        "non_stream 请求体不得携带 stream_options 字段: {body}"
+    );
+    assert_eq!(body["model"], serde_json::json!("gpt-4o"));
+
+    // tools 两路一致：非空时照常携带
+    let tools = [ToolDescriptor {
+        name: "t".to_string(),
+        description: "d".to_string(),
+        parameters: serde_json::json!({"type": "object"}),
+    }];
+    let body = build_chat_request_body(&provider, &[], &tools, ModelAccessMode::NonStream);
+    assert!(
+        body.get("tools").is_some(),
+        "tools 不得因访问模式丢失: {body}"
+    );
+}
+
+#[tokio::test]
+async fn resolve_access_mode_defaults_to_stream_and_falls_back_on_dirty_config() {
+    let ctx = test_ctx();
+    // 缺省（{}）→ Stream（存量行为零变化）
+    assert_eq!(
+        resolve_access_mode(&ctx, &provider_with_config("{}")),
+        ModelAccessMode::Stream
+    );
+    // 脏 config（JSON 解析失败）→ 兜底 Stream + 告警日志（不中断推理）
+    assert_eq!(
+        resolve_access_mode(&ctx, &provider_with_config("{not-json")),
+        ModelAccessMode::Stream
+    );
+    // 显式 non_stream → NonStream
+    assert_eq!(
+        resolve_access_mode(
+            &ctx,
+            &provider_with_config(r#"{"access_mode":"non_stream"}"#)
+        ),
+        ModelAccessMode::NonStream
+    );
+}
+
+#[tokio::test]
+async fn parses_non_stream_body_with_content_tool_calls_and_usage() {
+    let body = r#"{
+        "choices": [{
+            "message": {
+                "content": "let me check",
+                "tool_calls": [
+                    {"id": "call_1", "function": {"name": "get_weather", "arguments": "{\"city\":\"SF\"}"}},
+                    {"id": "call_2", "function": {"name": "now", "arguments": "{}"}}
+                ]
+            },
+            "finish_reason": "tool_calls"
+        }],
+        "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+    }"#;
+    let acc = parse_non_stream_body(body).expect("non-stream body parses");
+    assert!(acc.saw_content);
+    assert_eq!(acc.content, "let me check");
+    assert_eq!(acc.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(acc.tool_calls.len(), 2);
+
+    // 两路统一经 finish_think_result 组装
+    let ctx = test_ctx();
+    match finish_think_result(&ctx, acc) {
+        ThinkResult::ToolCall {
+            content,
+            tool_calls,
+            usage,
+        } => {
+            assert_eq!(content.as_deref(), Some("let me check"));
+            assert_eq!(tool_calls[0].id, "call_1");
+            assert_eq!(tool_calls[0].name, "get_weather");
+            assert_eq!(tool_calls[0].arguments, serde_json::json!({"city": "SF"}));
+            assert_eq!(tool_calls[1].id, "call_2");
+            assert_eq!(usage.input_tokens, 11);
+            assert_eq!(usage.output_tokens, 7);
+            assert_eq!(usage.total_tokens, Some(18));
+        }
+        other => panic!("expected tool call result, got {other:?}"),
+    }
+}
+
+#[test]
+fn non_stream_body_missing_finish_reason_is_error() {
+    let body = r#"{"choices":[{"message":{"content":"half"}}]}"#;
+    let err = parse_non_stream_body(body).expect_err("missing finish_reason must fail");
+    assert!(
+        err.msg.contains("missing finish_reason"),
+        "msg: {}",
+        err.msg
+    );
+}
+
+#[test]
+fn non_stream_body_truncated_by_max_tokens_is_error() {
+    // finish_reason=length：与流式同源复用 check_stream_end 的截断防护
+    let body = r#"{"choices":[{"message":{"tool_calls":[{"id":"c1","function":{"name":"create_task","arguments":"{\"title\":"}}]},"finish_reason":"length"}]}"#;
+    let err = parse_non_stream_body(body).expect_err("max_tokens truncation must fail");
+    assert!(
+        err.msg.contains("truncated by max_tokens"),
+        "msg: {}",
+        err.msg
+    );
+    assert!(err.msg.contains("create_task"), "msg: {}", err.msg);
+}
+
+#[test]
+fn non_stream_body_parse_failure_is_error() {
+    let err = parse_non_stream_body("this is not json").expect_err("bad json must fail");
+    assert!(
+        err.msg.contains("non-stream response parse failed"),
+        "msg: {}",
+        err.msg
+    );
+}
+
+#[test]
+fn non_stream_body_without_choices_is_error() {
+    // choices 缺失（serde default 空数组）→ 异常响应显式失败
+    let err =
+        parse_non_stream_body(r#"{"object":"chat.completion"}"#).expect_err("no choices must fail");
+    assert!(err.msg.contains("no choices"), "msg: {}", err.msg);
+}

@@ -17,7 +17,7 @@ use common::api::{
     CallModelRequest, GetModelProviderRequest, SwitchEmbeddingProviderRequest,
     UpdateModelProviderRequest,
 };
-use common::enums::{ModelCapability, ProviderType};
+use common::enums::{ModelAccessMode, ModelCapability, ProviderType};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
@@ -33,6 +33,22 @@ fn build_provider_stats_request(id: String, range: TimeRange) -> GetModelProvide
         stats_start_time: Some(range.start_ms),
         stats_end_time: Some(range.end_ms),
         stats_interval: Some(range.suggested_interval().to_string()),
+    }
+}
+
+/// access_mode → select 绑定键（编辑 Modal 回显；T2 设计 §4.2）
+fn access_mode_key(m: &ModelAccessMode) -> &'static str {
+    match m {
+        ModelAccessMode::Stream => "stream",
+        ModelAccessMode::NonStream => "non_stream",
+    }
+}
+
+/// access_mode → 展示文案（详情信息格徽标；T2 设计 §4.4/§5）
+fn access_mode_label(m: &ModelAccessMode) -> &'static str {
+    match m {
+        ModelAccessMode::Stream => "流式",
+        ModelAccessMode::NonStream => "非流式",
     }
 }
 
@@ -81,6 +97,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut edit_description = use_signal(String::new);
     let mut edit_max_context_length = use_signal(String::new);
     let mut edit_recommended_context_length = use_signal(String::new);
+    let mut edit_access_mode = use_signal(|| "stream".to_string());
     let mut saving_meta = use_signal(|| false);
 
     // 当前提供商是否 Embedding：编辑表单的上下文长度必填校验与标签用它。
@@ -197,6 +214,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                         .recommended_context_length
                                         .map(|v| v.to_string())
                                         .unwrap_or_default();
+                                    let edit_access_mode_init = access_mode_key(&p.access_mode).to_string();
                                     rsx! {
                                         if is_enabled {
                                             button { class: "btn hud-btn btn-outline btn-sm",
@@ -283,6 +301,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                 edit_description.set(edit_description_init.clone());
                                                 edit_max_context_length.set(edit_max_ctx_init.clone());
                                                 edit_recommended_context_length.set(edit_rec_ctx_init.clone());
+                                                edit_access_mode.set(edit_access_mode_init.clone());
                                                 show_edit_modal.set(true);
                                             },
                                             "✏️ 编辑"
@@ -358,6 +377,18 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                         span { class: "badge hud-badge badge-success", "启用" }
                                     } else {
                                         span { class: "badge hud-badge badge-neutral", "禁用" }
+                                    }
+                                }
+                            }
+                            if !p.capability.is_embedding() {
+                                div {
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "访问模式" }
+                                    }
+                                    div {
+                                        span { class: "badge hud-badge badge-ghost badge-sm",
+                                            "{access_mode_label(&p.access_mode)}"
+                                        }
                                     }
                                 }
                             }
@@ -522,6 +553,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     "DoubaoVision" => ProviderType::DoubaoVision,
                                     _ => ProviderType::OpenAI,
                                 };
+                                let access_mode = match edit_access_mode().as_str() {
+                                    "non_stream" => ModelAccessMode::NonStream,
+                                    _ => ModelAccessMode::Stream,
+                                };
                                 let api_key = if edit_api_key().is_empty() { None } else { Some(edit_api_key()) };
                                 let base_url = if edit_base_url().trim().is_empty() { None } else { Some(edit_base_url()) };
                                 let description = if edit_description().trim().is_empty() { None } else { Some(edit_description()) };
@@ -551,6 +586,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     status: None,
                                     max_context_length: Some(max_ctx),
                                     recommended_context_length: Some(rec_ctx),
+                                    // 访问模式：Update 恒传当前选值（T2 §4.2/S3，无 None 分支）
+                                    access_mode: Some(access_mode),
                                 };
                                 saving_meta.set(true);
                                 let reload_id = id_for_submit.clone();
@@ -593,6 +630,22 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             option { value: "Custom", "自定义" }
                             option { value: "FastEmbed", "FastEmbed" }
                             option { value: "DoubaoVision", "豆包 Vision (多模态)" }
+                        }
+                    }
+                    if !editing_is_embedding {
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "访问模式" } }
+                            select {
+                                class: "select select-bordered w-full",
+                                "data-testid": "mp-edit-access-mode",
+                                value: "{edit_access_mode}",
+                                onchange: move |e| edit_access_mode.set(e.value()),
+                                option { value: "stream", "流式" }
+                                option { value: "non_stream", "非流式" }
+                            }
+                            p { class: "text-xs text-base-content/60",
+                                "仅当下游网关不支持 SSE 流式时选择非流式"
+                            }
                         }
                     }
                     div { class: "form-control w-full",
@@ -649,5 +702,22 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod access_mode_tests {
+    use super::*;
+
+    #[test]
+    fn access_mode_key_maps_both_values() {
+        assert_eq!(access_mode_key(&ModelAccessMode::Stream), "stream");
+        assert_eq!(access_mode_key(&ModelAccessMode::NonStream), "non_stream");
+    }
+
+    #[test]
+    fn access_mode_label_maps_both_values() {
+        assert_eq!(access_mode_label(&ModelAccessMode::Stream), "流式");
+        assert_eq!(access_mode_label(&ModelAccessMode::NonStream), "非流式");
     }
 }

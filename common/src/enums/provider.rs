@@ -151,3 +151,48 @@ impl From<i64> for ModelCapability {
         (v as i32).into()
     }
 }
+
+/// 模型下行调用访问模式（model_provider config JSON 内可选字段，非 DB 独立列）
+///
+/// 平台默认以 stream 模式调用下游网关；部分下游网关不支持 stream，
+/// 可配置为 NonStream 走非流式调用。缺省（未配置/脏配置兜底）恒为 Stream
+/// = 平台历史行为，存量配置零影响。
+///
+/// serde 线上取值契约：`"stream"` / `"non_stream"`（snake_case；
+/// `non_stream` 不带连字符 —— 方案 §2.1 定稿取值，见 access_mode_serde_roundtrip 单测锁）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelAccessMode {
+    /// 流式调用（平台现状默认）
+    #[default]
+    Stream,
+    /// 非流式调用（下游网关不支持 stream 时的兼容模式）
+    NonStream,
+}
+
+#[cfg(test)]
+mod access_mode_tests {
+    use super::*;
+
+    #[test]
+    fn access_mode_default_is_stream() {
+        assert_eq!(ModelAccessMode::default(), ModelAccessMode::Stream);
+    }
+
+    #[test]
+    fn access_mode_serde_roundtrip() {
+        // 锁定线上取值契约：stream / non_stream（snake_case）
+        assert_eq!(
+            serde_json::to_string(&ModelAccessMode::Stream).unwrap(),
+            "\"stream\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelAccessMode::NonStream).unwrap(),
+            "\"non_stream\""
+        );
+        let s: ModelAccessMode = serde_json::from_str("\"stream\"").unwrap();
+        assert_eq!(s, ModelAccessMode::Stream);
+        let ns: ModelAccessMode = serde_json::from_str("\"non_stream\"").unwrap();
+        assert_eq!(ns, ModelAccessMode::NonStream);
+    }
+}

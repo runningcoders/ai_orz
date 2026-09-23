@@ -49,6 +49,8 @@ pub async fn create_model_provider(
     let config = ModelProviderConfig {
         max_context_length: params.max_context_length.filter(|&v| v > 0),
         recommended_context_length: params.recommended_context_length.filter(|&v| v > 0),
+        // 方案②：访问模式落 config；None=未配置（生效时等价 Stream）
+        access_mode: params.access_mode,
         ..Default::default()
     };
     provider_po.set_config(&config);

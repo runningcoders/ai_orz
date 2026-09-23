@@ -1,7 +1,7 @@
 //! 模型提供商实体
 
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
-use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+use common::enums::{ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt;
@@ -32,6 +32,19 @@ pub struct ModelProviderConfig {
     /// 每日配额（token 或 请求数）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub daily_quota: Option<i64>,
+    /// 下行调用访问模式（方案②：stream=流式 SSE / non_stream=非流式一次性响应）
+    ///
+    /// None=未配置（生效时等价 Stream，保持存量行为）；存量 config JSON 缺字段
+    /// 自动兼容，无 migration。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_mode: Option<ModelAccessMode>,
+}
+
+impl ModelProviderConfig {
+    /// 解析下行调用访问模式（方案 §2.3 口径）：字段缺省 → Stream（保持存量行为）
+    pub fn access_mode_or_default(&self) -> ModelAccessMode {
+        self.access_mode.unwrap_or(ModelAccessMode::Stream)
+    }
 }
 
 /// 模型提供商持久化对象
@@ -235,5 +248,41 @@ impl crate::pkg::request_context::EnrichContext for ModelProviderPo {
 impl EnrichContext for ModelProvider {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
         self.po.enrich(builder)
+    }
+}
+
+#[cfg(test)]
+mod access_mode_config_tests {
+    use super::*;
+
+    /// 存量 config JSON（无 access_mode 字段）必须零变化兼容（方案②：无 migration）
+    #[test]
+    fn legacy_config_without_access_mode_deserializes_to_default_stream() {
+        let cfg: ModelProviderConfig =
+            serde_json::from_str(r#"{"max_context_length":128000}"#).expect("legacy config");
+        assert_eq!(cfg.max_context_length, Some(128_000));
+        assert_eq!(cfg.access_mode, None);
+        assert_eq!(cfg.access_mode_or_default(), ModelAccessMode::Stream);
+    }
+
+    /// access_mode 仅在已设置时序列化；取值为 serde snake_case 契约值
+    #[test]
+    fn access_mode_roundtrips_with_snake_case_value() {
+        let empty = ModelProviderConfig::default();
+        assert!(
+            !serde_json::to_string(&empty)
+                .unwrap()
+                .contains("access_mode"),
+            "未设置时不得序列化 access_mode 字段"
+        );
+
+        let cfg = ModelProviderConfig {
+            access_mode: Some(ModelAccessMode::NonStream),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("non_stream"), "json: {json}");
+        let back: ModelProviderConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.access_mode, Some(ModelAccessMode::NonStream));
     }
 }

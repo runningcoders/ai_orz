@@ -98,6 +98,12 @@ pub async fn update_model_provider(
             }
         });
     }
+    // 访问模式 partial update（方案 §2.2：None=不变更，无清除语义）
+    if let Some(mode) = params.access_mode {
+        provider.po.update_config(|cfg| {
+            cfg.access_mode = Some(mode);
+        });
+    }
     // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = common::constants::utils::current_timestamp_ms();

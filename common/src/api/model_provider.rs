@@ -1,7 +1,7 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
 use crate::api::PaginationParams;
-use crate::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+use crate::enums::{ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,9 @@ pub struct CreateModelProviderRequest {
     /// 选填：未设置时按 `max_context_length * 60%` 自动计算。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recommended_context_length: Option<i32>,
+    /// 调用下游网关的访问模式（选填；缺省 Stream = 平台现状）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_mode: Option<ModelAccessMode>,
 }
 
 /// Create Model Provider response
@@ -85,6 +88,8 @@ pub struct ModelProviderListItem {
     pub status: i32,
     /// Created timestamp
     pub created_at: i64,
+    /// 下行调用访问模式（后端解析 config，缺省 Stream，恒返回）
+    pub access_mode: ModelAccessMode,
 }
 
 /// Get Model Provider request
@@ -142,6 +147,8 @@ pub struct GetModelProviderResponse {
     pub recommended_context_length: Option<i32>,
     /// 模型调用统计（可选）
     pub stats: Option<crate::models::ModelCallStats>,
+    /// 下行调用访问模式（后端解析 config，缺省 Stream，恒返回）
+    pub access_mode: ModelAccessMode,
 }
 
 /// Update Model Provider request
@@ -176,6 +183,11 @@ pub struct UpdateModelProviderRequest {
     /// None 表示不修改；传入 0 表示清除配置（回退到 max_context_length * 60%）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recommended_context_length: Option<i32>,
+    /// 调用下游网关的访问模式
+    ///
+    /// None 表示不变更（Update 无清除语义；如需回退 stream，显式传 `"stream"`）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_mode: Option<ModelAccessMode>,
 }
 
 /// Update Model Provider response

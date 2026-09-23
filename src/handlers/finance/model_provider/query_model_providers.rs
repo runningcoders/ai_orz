@@ -55,5 +55,7 @@ pub async fn query_model_providers(
         },
         status: provider.po.status as i32,
         created_at: provider.po.created_at,
+        // 方案 §2.3：恒返回按 config 解析后的访问模式（缺省 Stream）
+        access_mode: provider.po.config().access_mode_or_default(),
     }))
 }

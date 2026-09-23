@@ -17,7 +17,7 @@ use common::api::{
     CallModelRequest, CreateModelProviderRequest, ListModelProvidersResponseItem,
     SwitchEmbeddingProviderRequest,
 };
-use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+use common::enums::{ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType};
 use dioxus_router::Link;
 
 #[component]
@@ -30,6 +30,12 @@ pub fn FinanceModelProviders() -> Element {
     let mut name = use_signal(String::new);
     let mut provider_type = use_signal(|| ProviderType::OpenAI);
     let mut new_capability = use_signal(|| 0i32); // 0=Agent(对话) 1=Embedding(向量)
+    // 访问模式（T1 方案 §五 / T2 设计 §4.1）：默认 stream；Embedding 切换隐藏但不清除
+    let mut new_access_mode = use_signal(|| ModelAccessMode::Stream);
+    let new_access_mode_str = match new_access_mode() {
+        ModelAccessMode::Stream => "stream",
+        ModelAccessMode::NonStream => "non_stream",
+    };
     let mut model_name = use_signal(String::new);
     let mut api_key = use_signal(String::new);
     let mut base_url = use_signal(String::new);
@@ -100,6 +106,12 @@ pub fn FinanceModelProviders() -> Element {
                 },
                 max_context_length: max_context_length().trim().parse::<i32>().ok(),
                 recommended_context_length: recommended_context_length().trim().parse::<i32>().ok(),
+                // 访问模式：Create 恒传（T2 §4.1/S3）；Embedding 隐藏时强制 stream 保持语义干净
+                access_mode: Some(if is_embedding {
+                    ModelAccessMode::Stream
+                } else {
+                    new_access_mode()
+                }),
             };
             match create_model_provider(req).await {
                 Ok(resp) => {
@@ -111,6 +123,7 @@ pub fn FinanceModelProviders() -> Element {
                     description.set(String::new());
                     max_context_length.set(String::new());
                     recommended_context_length.set(String::new());
+                    new_access_mode.set(ModelAccessMode::Stream);
                     toast.success("创建成功");
                     if resp.rebuild_task_id.is_some() {
                         toast.info("已触发向量索引全量重建，期间语义搜索可能不完整");
@@ -235,7 +248,14 @@ pub fn FinanceModelProviders() -> Element {
                                                 td { class: "font-semibold",
                                                     Link { to: crate::pages::Route::FinanceModelProviderDetail { id: id_detail.clone() }, "{pname}" }
                                                 }
-                                                td { span { class: "badge orz-tag badge-sm", "{ptype_str}" } }
+                                                td {
+                                                    div { class: "flex items-center gap-1",
+                                                        span { class: "badge orz-tag badge-sm", "{ptype_str}" }
+                                                        if matches!(p.access_mode, ModelAccessMode::NonStream) {
+                                                            span { class: "badge hud-badge badge-ghost badge-sm", "非流式" }
+                                                        }
+                                                    }
+                                                }
                                                 td {
                                                     if is_embedding {
                                                         span { class: "badge orz-tag badge-sm", "embedding" }
@@ -407,6 +427,29 @@ pub fn FinanceModelProviders() -> Element {
                         },
                         option { value: "0", "Agent（对话 / 思考）" }
                         option { value: "1", "Embedding（向量化 / 语义搜索）" }
+                    }
+                }
+                if new_capability() != ModelCapability::Embedding as i32 {
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "访问模式" }
+                        }
+                        select {
+                            class: "select select-bordered w-full",
+                            "data-testid": "mp-create-access-mode",
+                            value: "{new_access_mode_str}",
+                            onchange: move |e| {
+                                new_access_mode.set(match e.value().as_str() {
+                                    "non_stream" => ModelAccessMode::NonStream,
+                                    _ => ModelAccessMode::Stream,
+                                });
+                            },
+                            option { value: "stream", "流式" }
+                            option { value: "non_stream", "非流式" }
+                        }
+                        p { class: "text-xs text-base-content/60",
+                            "仅当下游网关不支持 SSE 流式时选择非流式"
+                        }
                     }
                 }
                 div { class: "form-control w-full",
