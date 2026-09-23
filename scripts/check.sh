@@ -18,6 +18,7 @@
 #   clippy-fe            前端 wasm32 clippy（CI frontend job 口径）
 #   docs-lint            文档链接规范门禁
 #   docs-migrate         文档链接批量迁移（默认 dry-run，APPLY=1 写盘）
+#   seed-sync            预置技能同步到运行期数据目录（默认 dry-run，APPLY=1 写盘）
 #   test-be / test-fe / test   后端 / 前端 / 全量测试
 #   lint                 全部静态检查 = fmt-check + clippy + clippy-fe + docs-lint
 #   ci                   lint + 全量测试（与 pre-push 钩子同口径）
@@ -80,6 +81,26 @@ cmd_docs_migrate() {
         echo "== dry-run 模式（预览不写盘；确认后 APPLY=1 make docs-migrate）=="
         cargo run -p ai-orz-tools --bin docs_migrate
     fi
+}
+
+# 预置技能同步：把仓库 seed（default.json + skills/<ID>/skill.md）刷到运行期数据目录的
+# 「预置技能行本体 + 各 Agent 装机副本」。技能没有内置工具那样的启动同步机制，改 seed 对存量
+# Agent 零效果（副本照旧文说）—— 详见 tools/src/bin/sync_seed_skill.rs 头部说明。
+# SKILL=<ID> 只同步一个技能；不传即 --all。
+cmd_seed_sync() {
+    local args=()
+    if [ -n "${SKILL:-}" ]; then
+        args+=("$SKILL")
+    else
+        args+=("--all")
+    fi
+    if [ "${APPLY:-0}" = "1" ]; then
+        echo "== APPLY 模式：写盘 =="
+        args+=("--apply")
+    else
+        echo "== dry-run 模式（预览不写盘；确认后 APPLY=1 make seed-sync）=="
+    fi
+    cargo run -p ai-orz-tools --bin sync_seed_skill -- "${args[@]}"
 }
 
 # dx check：dioxus 路由级 + 打包构建校验，作 clippy-fe 之外的**补充**门禁 ——
@@ -154,6 +175,7 @@ ai_orz - 代码门禁（make 与各 git 钩子的共同实现）
   clippy-fe         前端 wasm32 clippy
   docs-lint         文档链接规范门禁
   docs-migrate      文档链接迁移（APPLY=1 写盘）
+  seed-sync         预置技能同步到数据目录（SKILL=<ID> 限定单个；APPLY=1 写盘）
   test-be/test-fe/test   后端 / 前端 / 全量测试
   lint              全部静态检查
   ci                lint + 全量测试
@@ -172,6 +194,7 @@ case "$CMD" in
     clippy-fe) cmd_clippy_fe ;;
     docs-lint) cmd_docs_lint ;;
     docs-migrate) cmd_docs_migrate ;;
+    seed-sync) cmd_seed_sync ;;
     test-be) cmd_test_be ;;
     test-fe) cmd_test_fe ;;
     test) cmd_test ;;

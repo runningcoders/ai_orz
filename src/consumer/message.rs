@@ -380,6 +380,72 @@ impl MessageConsumer {
         Ok(routed)
     }
 
+    /// 把框架侧通知（非模型产出）回发给**触发本次唤醒的来源方**。
+    ///
+    /// 收件人通道必须由**来源方的角色**决定，不能一律按「人」发：
+    /// `send_to_user` 落 `to_role=User`、`send_to_agent` 落 `to_role=Agent`，
+    /// 而消费端是按 `to_role` 分流的。来源是 Agent 时若写
+    /// `send_to_user(to_user_id = from_id)`，就落成 `to_role=User + to_id=<Agent>`
+    /// 的死信：投递渠道全找不到人 → `All delivery channels failed` → 重试 8 次
+    /// → `DISCARDED`（详见 `delivery.rs::ensure_recipient_role`）。
+    ///
+    /// Agent 分支用 `AgentNotify`（知会/无需回复）而非 `Text`：本通知是"我已停止"
+    /// 的终态播报，对方若按普通消息自动回发，会重新唤醒本 Agent → 再次命中
+    /// max_depth → 再次通知，形成 A↔B 无限乒乓。
+    async fn notify_message_source(
+        &self,
+        ctx: &RequestContext,
+        message: &Message,
+        from_agent_id: &str,
+        content: &str,
+    ) -> Result<()> {
+        let project_id = message.po.project_id.as_deref();
+        let task_id = message.po.task_id.as_deref();
+
+        match message.from_role() {
+            MessageRole::User => self
+                .message_domain
+                .delivery()
+                .send_to_user(
+                    ctx.clone(),
+                    SendToUserCommand {
+                        from_agent_id,
+                        to_user_id: &message.po.from_id,
+                        content,
+                        project_id,
+                        task_id,
+                        reply_to_id: None,
+                    },
+                )
+                .await
+                .map(|_| ()),
+
+            MessageRole::Agent => self
+                .message_domain
+                .delivery()
+                .send_to_agent(
+                    ctx.clone(),
+                    SendToAgentCommand {
+                        from_id: from_agent_id,
+                        from_role: MessageRole::Agent,
+                        to_agent_id: &message.po.from_id,
+                        content,
+                        project_id,
+                        task_id,
+                        reply_to_id: None,
+                        external_key: None,
+                        attachment_ids: None,
+                        message_type: MessageType::AgentNotify,
+                    },
+                )
+                .await
+                .map(|_| ()),
+
+            // 系统 / 自触发没有"对等来源方"，回给自己只会造自唤醒循环
+            MessageRole::System => Ok(()),
+        }
+    }
+
     /// Agent 消息处理：调用 RuntimeDomain 唤醒 Agent
     async fn handle_agent_message(&self, ctx: &RequestContext, message: &Message) -> Result<()> {
         // P4：跨组织提及直连路由（agent:<id>@<org_id>），命中即不再唤醒本端 Agent
@@ -505,23 +571,17 @@ impl MessageConsumer {
                     max_depth
                 );
 
-                let send_result = self.message_domain
-                        .delivery()
-                        .send_to_user(
-                            ctx.clone(),
-                            crate::service::domain::message::SendToUserCommand {
-                                from_agent_id: agent_id,
-                                to_user_id: &message.po.from_id,
-                                content: &format!(
-                                    "Agent has reached the maximum thinking depth ({} turns). The task has been stopped to prevent infinite loops.",
-                                    max_depth
-                                ),
-                                project_id: message.po.project_id.as_deref(),
-                                task_id: message.po.task_id.as_deref(),
-                                reply_to_id: None,
-                            },
-                        )
-                        .await;
+                let send_result = self
+                    .notify_message_source(
+                        &ctx,
+                        message,
+                        agent_id,
+                        &format!(
+                            "Agent has reached the maximum thinking depth ({} turns). The task has been stopped to prevent infinite loops.",
+                            max_depth
+                        ),
+                    )
+                    .await;
 
                 // 通知失败仅记录警告，不阻塞 Agent 释放 busy / 返回 Ok
                 // （thinking depth 是合法停止，通知失败不应触发消息重试）
@@ -529,7 +589,7 @@ impl MessageConsumer {
                     log_warn!(
                         &ctx,
                         "handle_agent_message",
-                        "通知用户 Agent 已达最大思考深度失败（不阻塞停止流程）: {}",
+                        "通知来源方 Agent 已达最大思考深度失败（不阻塞停止流程）: {}",
                         notify_err
                     );
                 }

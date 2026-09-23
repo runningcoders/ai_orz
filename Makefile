@@ -21,7 +21,7 @@ export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$
 FAIL_UNDER ?= 45
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate lint test test-be test-fe ci coverage e2e \
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate seed-sync lint test test-be test-fe ci coverage e2e \
         dev serve run build build-fe install prod prod-stop stop prod-status status prod-log logs restart \
         clean-proc clean clean-slim doctor package hooks
 
@@ -57,6 +57,9 @@ docs-lint: ## 文档链接规范门禁：file:// 伪协议/绝对路径/冒号�
 
 docs-migrate: ## 文档链接批量迁移，默认 dry-run；写盘加 APPLY=1
 	APPLY=$(APPLY) ./scripts/check.sh docs-migrate
+
+seed-sync: ## 预置技能同步到运行期数据目录，默认 dry-run；写盘加 APPLY=1（SKILL=<ID> 只同步一个）
+	SKILL=$(SKILL) APPLY=$(APPLY) ./scripts/check.sh seed-sync
 
 # ===== 测试 =====
 

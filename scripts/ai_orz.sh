@@ -47,6 +47,7 @@ ai_orz - 脚本统一入口
   doctor             依赖预检（[dev|frontend|backend|build|prod] [--fix]）
   check              代码门禁：fmt / clippy / clippy-fe / test / lint / ci ...
   migrate            call_trace 存储布局迁移（默认 dry-run，--apply 落盘）
+  seed-sync          预置技能同步到运行期数据目录（SKILL=<ID> 限定单个；APPLY=1 写盘）
 
 发布
   package [版本号]    构建并打包 tar.gz（复用 build 产物，不触碰本机部署根；版本号缺省取 git describe）
@@ -128,6 +129,9 @@ case "$CMD" in
         ;;
     migrate)
         "$SCRIPTS_DIR/migrate_tool_call_trace.sh" "$@"
+        ;;
+    seed-sync)
+        SKILL="${SKILL:-}" APPLY="${APPLY:-0}" "$SCRIPTS_DIR/check.sh" seed-sync
         ;;
 
     # ===== 发布 =====

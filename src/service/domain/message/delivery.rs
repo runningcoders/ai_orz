@@ -84,6 +84,69 @@ fn map_file_type_to_message_type(file_type: FileType) -> MessageType {
     }
 }
 
+impl MessageDomainImpl {
+    /// 收件人「角色 ⟷ ID」一致性门闩
+    ///
+    /// 背景：`to_role` 由本模块**硬编码**（`send_to_user` 恒 `User`、`send_to_agent` 恒
+    /// `Agent`），因此「角色与 ID 实指同一类实体」这条不变量只能在这里守。一旦破防，
+    /// 消息会落成 `to_role=User + to_id=<Agent>` 这种错配行：消费端按角色分流到
+    /// 「投递给用户」分支 → 找不到该用户的任何渠道 → `All delivery channels failed`
+    /// → 重试 8 次后 `DISCARDED`。**工具调用本身返回 Completed，失败只写 ERROR 日志**，
+    /// 属于典型的「静默丢失」。
+    ///
+    /// 这里的错误文案不是给人看的，而是**回灌给模型**的：工具错误的 message 原样进入
+    /// tool result（见 `consumer::message::tool_error_message`），所以文案要直接点名
+    /// 「该改用哪个工具」，这是修正 Agent 认知的唯一时机。
+    ///
+    /// 只拦**跨类型碰撞**，刻意**不做存在性校验**：
+    /// - 调用方遍布框架内部（渠道入站、任务调度、A2A 回传）与测试夹具，存在 `system`
+    ///   这类合成 ID，联邦/外部 Agent 也未必有本地行；
+    /// - 「ID 是否真实存在」的判定归各投递链路自身，这里只负责「角色与 ID 明显不符」。
+    async fn ensure_recipient_role(
+        &self,
+        ctx: &RequestContext,
+        id: &str,
+        expected: MessageRole,
+    ) -> Result<()> {
+        match expected {
+            MessageRole::User => {
+                if let Some(agent) = self.agent_dal.find_by_id(ctx.clone(), id).await? {
+                    bail_err!(
+                        InvalidRequest,
+                        "收件人 ID「{}」是 Agent「{}」，不是用户：send_message 只能发给用户。\
+                         跨 Agent 协作/知会请改用 send_message_to_agent（to_agent_id=\"{}\"）；\
+                         派发任务用 send_task_assignment_message。",
+                        id,
+                        agent.po.name,
+                        id
+                    );
+                }
+            }
+            MessageRole::Agent => {
+                if let Some(user) = self.user_dal.find_by_id(ctx.clone(), id).await? {
+                    let name = if user.display_name.is_empty() {
+                        user.username.clone()
+                    } else {
+                        user.display_name.clone()
+                    };
+                    bail_err!(
+                        InvalidRequest,
+                        "收件人 ID「{}」是用户「{}」，不是 Agent：\
+                         send_message_to_agent / send_task_assignment_message 只能发给 Agent。\
+                         给用户发消息请改用 send_message（to_user_id=\"{}\"）。",
+                        id,
+                        name,
+                        id
+                    );
+                }
+            }
+            // System 收件人无对应实体表（如 send_tool_call_request 的执行器），不校验
+            MessageRole::System => {}
+        }
+        Ok(())
+    }
+}
+
 #[async_trait::async_trait]
 impl MessageDelivery for MessageDomainImpl {
     async fn send_to_agent(
@@ -91,6 +154,11 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToAgentCommand<'_>,
     ) -> Result<Message> {
+        // 收件人角色门闩：把用户 ID 当 to_agent_id 传（反向误用）同样会产生
+        // `to_role=Agent + to_id=<用户>` 的死信，且永远不会有人被唤醒。先拦。
+        self.ensure_recipient_role(&ctx, cmd.to_agent_id, MessageRole::Agent)
+            .await?;
+
         // 入站幂等吸收：external_key 已存在 → 该外部消息已落过库（游标回退 / 服务端
         // 重推 / 事件重投后的重复拉取），返回既有消息避免重复投递给 Agent。
         // 先查后插存在 TOCTOU 窗口，但 AOP 队列按 event_id 在途去重已挡掉绝大多数
@@ -229,6 +297,11 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
     ) -> Result<Message> {
+        // 收件人角色门闩：`to_role` 在此硬编码为 User，而 Agent 常把自己同伴的 ID
+        // 当 `to_user_id` 传进来 → 必产生投递必失败的死信。这里直接报错并给出正确工具。
+        self.ensure_recipient_role(&ctx, cmd.to_user_id, MessageRole::User)
+            .await?;
+
         let id = generate_id();
         let project_id = cmd
             .project_id
@@ -401,6 +474,10 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendTaskAssignmentCommand<'_>,
     ) -> Result<Message> {
+        // 收件人角色门闩：任务分配的目标必须是 Agent（to_role 在此硬编码为 Agent）
+        self.ensure_recipient_role(&ctx, cmd.to_agent_id, MessageRole::Agent)
+            .await?;
+
         let id = generate_id();
         let project_id = cmd
             .project_id

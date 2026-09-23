@@ -2,6 +2,10 @@
 //!
 //! 未来租户规划：wiki-dedup-check（AGENTS §2.1.3 Step 0 五级判定机器预检）、
 //! cite-graph-check（四类互引闭环校验）。本 crate 依赖永不进生产二进制。
+//!
+//! 另含 `seed_sync`：预置技能同步（`src/bin/sync_seed_skill.rs`）的纯逻辑层。
+
+pub mod seed_sync;
 
 use std::path::{Path, PathBuf};
 

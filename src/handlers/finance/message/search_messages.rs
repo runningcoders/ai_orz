@@ -8,11 +8,17 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::message::{MessageSearchResult, SearchMessagesRequest, SearchMessagesResponse};
 use common::error::{Result, bail_err, err};
 
+/// `neural` 必需：本工具原先只挂 `messaging` tag，而该 tag 从未装进任何 Agent 的
+/// `installed_tags`（也不在 `BASE_AGENT_PACKS`）⇒ Agent 的工具面里**根本没有这个工具**，
+/// 但协作沟通技能（`TEMPLATE_COMMUNICATION`「理解用户消息 SOP」Step 3）在叫模型
+/// 「必须做一次语义检索」时点名了它。与 `list_messages`（同为 neural 常驻）对齐打上
+/// `neural`，让技能里的说法重新可执行；两者分工见工具描述。
 #[register_handler_tool(
     id = "search_messages",
     name = "Search Messages",
-    description = "Search messages by free-text keyword using hybrid FTS5 + vector semantic ranking, optionally filtered by project_id, task_id, from_id, or to_id. Returns ranked results with match_type and relevance scores. Use list_messages to browse chronologically instead.",
+    description = "Search chat messages by free-text keyword using hybrid FTS5 + vector semantic ranking (optional filters: project_id, task_id, from_id, to_id). Returns ranked results with match_type and relevance scores. Use this when you look for a known topic / decision / artifact id but do not know when it was said; use list_messages when you want the chronological thread (browse history / poll new messages).",
     params = "common::api::message::SearchMessagesRequest",
+    neural,
     tags = "messaging"
 )]
 #[generate_http_handler]

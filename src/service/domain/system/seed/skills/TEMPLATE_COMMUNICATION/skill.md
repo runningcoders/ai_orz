@@ -2,17 +2,29 @@
 
 多 Agent 协作本质上是在模拟人类团队的协作模式：**前台 Agent** 是公司前台/秘书——每个访客（用户）进来都接待、转交给合适的项目经理；**Project Owner** 是项目经理——管整个项目的排期、拆任务、追进度、向客户汇报结果；**Task Owner** 是具体执行的同事——拿到分配的任务、闷头干、有问题就问项目经理、干完就交付。沟通的核心原则是「有回应」：A 交给 B 的事，B 一定要回——这和人类同事之间「凡事有交代、件件有着落、事事有回音」是一个道理。
 
-沟通要主动、及时、闭环、结构化。你只调用带 `neural` 标签的消息工具。
+沟通要主动、及时、闭环、结构化。你只调用带 `neural` 标签的消息工具；**发消息前先看清收件人是谁**——人走 `send_message`，Agent 走 `send_task_assignment_message` / `send_message_to_agent`。
 
 ## 你可用的沟通工具（neural 常驻）
+
+**第一步永远是「先按收件人是谁选工具」**——框架会校验「收件人角色 ⟷ 收件人 ID」是否匹配，选错直接报错，不会静默送达：
+
+| 收件人 | 用哪个工具 | 收件人字段 |
+|--------|-----------|-----------|
+| **用户（人）** | `send_message` | `to_user_id` 填用户 ID |
+| **其他 Agent** | `send_task_assignment_message` | `to_agent_id`，用于分配 / 上报**任务** |
+| **其他 Agent** | `send_message_to_agent` | `to_agent_id`，用于**非任务**的协作沟通（知会、同步、追问进展） |
+
+> ❌ 最常见的错：把**同伴 Agent 的 ID** 填进 `send_message.to_user_id`（"顺手用哪个都一样"）。框架会拒绝并提示你改用 `send_message_to_agent`——即使不拒绝，这类消息也会因为「收件人是用户角色、ID 却是 Agent」而投递不出去。
 
 | 工具 | 方向 | 何时用 |
 |------|------|--------|
 | `send_message` | Agent → 用户 | 进展同步、关键节点通知、异步汇报（**不需要等用户回复、发完继续干活的场景**）；澄清 / 询问 / 决策类请直接用 Final 文本输出，不要用 send_message |
-| `send_task_assignment_message` | Agent → Agent | 给其他 Agent 分配 / 上报任务（**你与其他 Agent 协作的唯一通道**，不要用 send_message_to_agent） |
-| `list_messages` | 查看历史 | 上拉历史 / 下拉新消息，按上下文看之前讨论 |
+| `send_task_assignment_message` | Agent → Agent | 给其他 Agent 分配 / 上报**任务**（要对方交付东西） |
+| `send_message_to_agent` | Agent → Agent | 与其他 Agent 的**普通沟通**：同步信息、知会结论、追问进展（不构成任务指派）；`notify_only=true` 表示"知会、不用回" |
+| `list_messages` | 查看历史 | 按时序上拉历史 / 下拉新消息，看之前讨论的上下文 |
+| `search_messages` | 检索历史 | 按关键词 / 语义找消息（**记得内容、不记得什么时候说的**用它；想按时间顺序浏览用 `list_messages`） |
 
-> 非 neural 协作工具（`send_message_to_agent`、`query_agents`、`search_agents`、`get_agent`、`get_reception_agent`、`search_messages`）默认是**用户 / 前端**的 HTTP 入口，不在你的工具面板中。需要找 Agent 时通过用户或前台 Agent 协助即可。
+> 非 neural 协作工具（`query_agents`、`search_agents`、`get_agent`、`get_reception_agent`）默认是**用户 / 前端**的 HTTP 入口，不在你的工具面板中。需要找 Agent 时通过用户或前台 Agent 协助即可。
 >
 > **例外**：前台接待类 Agent（角色 `reception` / `service` 等）经 `reception` 路由包额外获得 `search_agents` / `query_agents` / `list_agents` / `get_agent` 四个找人工具——它们是分流的前置能力，用法见「用户接待」技能。
 
@@ -33,6 +45,16 @@
 **参数**：`task_id`、`task_title`、`to_agent_id` 必填；可选 `task_description`（**强烈建议填**：目标 / 输入 / 预期 / 边界）、`project_id`。返回 `message_id`。消息类型 `TaskAssignment (9)`，目标 Agent 下一轮 awaken 收到。发送方身份优先 `ctx.agent_id()`，不降级为 system。
 
 **委派流程**：确认任务背景 → 确认目标 Agent 空闲且能力匹配 → task_description 写清需求边界 → 对方完成后回你结果 → 你整合确认。
+
+## `send_message_to_agent`（与 Agent 的普通沟通）
+
+**参数**：`content` 必填；`to_agent_id` 可选（不填时后端路由到项目 Owner Agent、或兜底到前台接待 Agent）；可选 `project_id` / `task_id` / `reply_to_id` / `attachment_ids` / `notify_only`。返回 `message_id`。
+
+**与 `send_task_assignment_message` 的分界**：**要对方交付东西 → 派任务**（`send_task_assignment_message`）；**只是同步信息 / 知会结论 / 追问进展 → 用本工具**。别用派任务的方式发通知（对方会当成新任务去做），也别用本工具派活（任务上下文丢失）。
+
+**知会模式**：`notify_only=true` 时消息类型为 `AgentNotify`，**对方处理完不会把结果回发给你**——适用于"接下来的工作与对方无关"的单向告知，避免两个 Agent 无限互发（乒乓）。需要对方回应时**不要**置该参数。
+
+**机制**：调用后对方下一轮 awaken 处理，**你继续推进、不会停下来等回复**（和 `send_message` 一样是异步的）。
 
 ## `list_messages`（查看历史）
 
@@ -66,7 +88,7 @@
 3. **闭环负责**：委派的任务跟进结果；接受的任务完成后回对方
 4. **结构化内容**：按进展 / 结果 / 问题三类规范组织，别发模糊消息
 5. **成果留痕**：重要工作存产物，不要只存在对话里
-6. **尊重边界**：Task Agent 不越级联系用户（除非 Owner 授权）；Agent 对 Agent 只走 `send_task_assignment_message`
+6. **尊重边界**：Task Agent 不越级联系用户（除非 Owner 授权）；Agent 对 Agent 的消息一律填 `to_agent_id`（派任务用 `send_task_assignment_message`，普通沟通用 `send_message_to_agent`）——**任何情况下都不要把 Agent 的 ID 填进 `send_message.to_user_id`**
 7. **委派 description 必须清晰**：目标 / 输入 / 预期输出 / 边界，别发一句「你做一下」
 8. **善用历史**：新加入上下文先 `list_messages` 读背景，避免重复确认
 9. **留意用户偏好**：按记忆认知技能的「用户偏好沉淀」规范记录；回复风格优先遵循【用户画像】中已有偏好
@@ -97,7 +119,7 @@
 
 ### Step 3：关键词抽取 + 语义检索
 
-从消息原文 + 消歧后的对象抽取关键词（专有名词、任务标识、动词短语、时间限定词），**必须做一次语义检索**（除非 100% 全新话题）：`search_memory` 混合搜索、`recommend_seed_nodes` + `traverse_knowledge_graph` 图谱探索、`list_messages` 补全更早历史。检索结果自己概括为短摘要，不要贴原始 JSON。
+从消息原文 + 消歧后的对象抽取关键词（专有名词、任务标识、动词短语、时间限定词），**必须做一次语义检索**（除非 100% 全新话题）：`search_memory` 混合搜索、`recommend_seed_nodes` + `traverse_knowledge_graph` 图谱探索、`search_messages` 按关键词捞历史消息、`list_messages` 按时间线补全更早历史。检索结果自己概括为短摘要，不要贴原始 JSON。
 
 ### Step 4：判断是否需要澄清
 

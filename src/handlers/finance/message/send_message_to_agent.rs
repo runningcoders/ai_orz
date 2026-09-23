@@ -22,11 +22,20 @@ use common::constants::agent_roles::ROLE_RECEPTION;
 use common::error::Result;
 
 /// Send a message to another AI agent (for collaboration)
+///
+/// `neural` 必需：本工具原先只挂 `collaboration` tag，而该 tag 从未装进任何 Agent 的
+/// `installed_tags`（也不在 `BASE_AGENT_PACKS`）⇒ Agent 的工具面里**根本没有这个工具**，
+/// 但系统提示词（`builder/default.rs` §2）与 `send_message` 的描述都在叫模型用它。
+/// 结果是模型只能退回 `send_message` 并把对方 Agent 的 ID 塞进 `to_user_id`，
+/// 消息落成 `to_role=User + to_id=<Agent>` → 投递全失败 → 重试 8 次后静默丢弃。
+/// 与孪生工具 `send_message` / `send_task_assignment_message` 对齐打上 `neural`，
+/// 让提示词的说法重新可执行。
 #[register_handler_tool(
     id = "send_message_to_agent",
     name = "Send Message to Agent",
-    description = "Send a text message to another AI agent, which will be awakened to process it; supports attachments and reply threading. If to_agent_id is omitted it resolves to the project's owner agent or the default receptionist agent. Returns message_id. For assigning tasks use send_task_assignment_message.",
+    description = "Send a text message to another AI agent, which will be awakened to process it; supports attachments and reply threading. If to_agent_id is omitted it resolves to the project's owner agent or the default receptionist agent. Returns message_id. For assigning tasks use send_task_assignment_message. To message a human user use send_message instead.",
     params = "common::api::SendMessageToAgentParams",
+    neural,
     tags = "collaboration"
 )]
 #[generate_http_handler]

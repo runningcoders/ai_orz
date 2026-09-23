@@ -8,10 +8,15 @@ use common::api::{SendMessageParams, SendMessageResponse};
 use common::error::Result;
 
 /// 发送消息给用户
+///
+/// `to_user_id` 必须是**人类用户**的 ID：框架在 domain 层按「收件人角色 ⟷ ID」校验，
+/// 传同伴 Agent 的 ID 会直接被拒（并提示改用 `send_message_to_agent`）。
+/// 历史上模型常把 Agent ID 塞进这里，落库成 `to_role=User + to_id=<Agent>` 的死信
+/// （投递全失败 → 重试 8 次 → 静默丢弃），故描述里显式写明收件人类型。
 #[register_handler_tool(
     id = "send_message",
     name = "Send Chat Message",
-    description = "Send a chat message from the current agent to a user, optionally scoped with project_id, task_id, or reply_to_id to thread the reply. Returns the message_id. Use send_message_to_agent for agent-to-agent collaboration instead.",
+    description = "Send a chat message from the current agent to a human user (to_user_id MUST be a real user id, never another agent's id), optionally scoped with project_id, task_id, or reply_to_id to thread the reply. Returns the message_id. To message another AI agent use send_message_to_agent; to assign work to another agent use send_task_assignment_message.",
     params = "common::api::SendMessageParams",
     neural,
     tags = "messaging"

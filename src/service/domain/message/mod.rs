@@ -21,10 +21,12 @@ use crate::models::file::FileMeta;
 use crate::models::message::Message;
 pub use crate::models::tool::ToolCallTraceRef;
 use crate::pkg::RequestContext;
+use crate::service::dal::agent::AgentDal;
 use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
 use crate::service::dal::message_push::MessagePushDal;
+use crate::service::dal::user::UserDal;
 use crate::service::dao::message::{MessageQuery, MessageSearch};
 use common::enums::{MessageRole, MessageStatus};
 use common::error::Result;
@@ -42,6 +44,7 @@ pub fn domain() -> Arc<dyn MessageDomain> {
 }
 
 /// 创建新的 Message Domain 实例（用于测试，每次测试创建独立实例保证隔离）
+#[allow(clippy::too_many_arguments)]
 pub fn new(
     message_dal: Arc<dyn MessageDal>,
     message_channel_dal: Arc<dyn MessageChannelDal>,
@@ -50,6 +53,8 @@ pub fn new(
     lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
     wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
     email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
+    user_dal: Arc<dyn UserDal + Send + Sync>,
+    agent_dal: Arc<dyn AgentDal>,
 ) -> Arc<dyn MessageDomain> {
     let domain = MessageDomainImpl::new(
         message_dal,
@@ -59,6 +64,8 @@ pub fn new(
         lark_dal,
         wechat_dal,
         email_dal,
+        user_dal,
+        agent_dal,
     );
     Arc::new(domain)
 }
@@ -73,6 +80,8 @@ pub fn init() {
         crate::service::dal::lark::dal(),
         crate::service::dal::wechat::dal(),
         crate::service::dal::email::dal(),
+        crate::service::dal::user::dal(),
+        crate::service::dal::agent::dal(),
     );
     let _ = MESSAGE_DOMAIN.set(Arc::new(message_domain));
 }
@@ -94,10 +103,15 @@ struct MessageDomainImpl {
     wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
     /// 邮件渠道 DAL（入站适配：IMAP 轮询事件 → AdaptedMessage）
     email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
+    /// 用户 DAL：收件人「角色 ⟷ ID」一致性门闩用（`to_user_id` 必须不是 Agent）
+    user_dal: Arc<dyn UserDal + Send + Sync>,
+    /// Agent DAL：收件人「角色 ⟷ ID」一致性门闩用（`to_agent_id` 必须不是用户）
+    agent_dal: Arc<dyn AgentDal>,
 }
 
 impl MessageDomainImpl {
     /// 创建 Domain 实例
+    #[allow(clippy::too_many_arguments)]
     fn new(
         message_dal: Arc<dyn MessageDal>,
         message_channel_dal: Arc<dyn MessageChannelDal>,
@@ -106,6 +120,8 @@ impl MessageDomainImpl {
         lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
         wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
         email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
+        user_dal: Arc<dyn UserDal + Send + Sync>,
+        agent_dal: Arc<dyn AgentDal>,
     ) -> Self {
         Self {
             message_dal,
@@ -115,6 +131,8 @@ impl MessageDomainImpl {
             lark_dal,
             wechat_dal,
             email_dal,
+            user_dal,
+            agent_dal,
         }
     }
 }

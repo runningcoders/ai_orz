@@ -152,6 +152,9 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
         lark_dal,
         wechat_dal,
         email_dal,
+        // 收件人「角色 ⟷ ID」门闩依赖 user/agent DAL
+        crate::service::dal::user::dal(),
+        crate::service::dal::agent::dal(),
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx)
@@ -955,4 +958,173 @@ async fn test_send_task_assignment_from_user(pool: SqlitePool) {
     assert_eq!(payload.project_id, None);
     assert_eq!(payload.from_id, "user-admin");
     assert_eq!(payload.to_agent_id, "agent-worker");
+}
+
+// ==================== 收件人「角色 ⟷ ID」门闩 ====================
+
+/// 建一条真实的 agents 行（门闩只判定「该 ID 能否在 agents 表命中」）
+async fn seed_agent(ctx: &RequestContext, name: &str) -> String {
+    let po = crate::models::agent::AgentPo::new(
+        name.to_string(),
+        vec!["worker".to_string()],
+        String::new(),
+        Vec::new(),
+        String::new(),
+        "provider-test".to_string(),
+        "admin".to_string(),
+    );
+    let agent = crate::models::agent::Agent::from_po(po);
+    let id = agent.po.id.clone();
+    crate::service::dal::agent::dal()
+        .create(ctx.clone(), &agent)
+        .await
+        .expect("seed agent");
+    id
+}
+
+/// 建一条真实的 users 行
+async fn seed_user(ctx: &RequestContext, id: &str, display_name: &str) {
+    let po = crate::models::user::UserPo::new(
+        id.to_string(),
+        "org-test".to_string(),
+        format!("u_{id}"),
+        display_name.to_string(),
+        format!("{id}@example.com"),
+        "hash".to_string(),
+        common::enums::UserRole::Member,
+        "admin".to_string(),
+    );
+    crate::service::dal::user::dal()
+        .create(ctx.clone(), &po)
+        .await
+        .expect("seed user");
+}
+
+/// 门闩①：Agent ID 当 `to_user_id` → 直接报错，且文案点名正确工具。
+///
+/// 2026-09-23「不回复消息」事故的直接回归用例：`send_to_user` 把 `to_role` 硬编码为
+/// User，Agent ID 落进去就是一条投递必失败的死信（重试 8 次后 DISCARDED），而工具调用
+/// 本身返回 Completed —— 静默丢失。门闩必须在这里就把它变成模型看得见的错误。
+#[sqlx::test]
+async fn test_send_to_user_rejects_agent_id(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let agent_id = seed_agent(&ctx, "被误当用户的Agent").await;
+
+    let err = domain
+        .delivery()
+        .send_to_user(
+            ctx.clone(),
+            SendToUserCommand {
+                from_agent_id: "agent-sender",
+                to_user_id: &agent_id,
+                content: "任务完成汇报",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+            },
+        )
+        .await
+        .expect_err("Agent ID 传给 to_user_id 必须报错");
+
+    let msg = err.msg.clone();
+    assert!(msg.contains(&agent_id), "文案应含收件人 ID，实际: {msg}");
+    assert!(
+        msg.contains("被误当用户的Agent"),
+        "文案应含 Agent 名以便模型识别，实际: {msg}"
+    );
+    assert!(
+        msg.contains("send_message_to_agent"),
+        "文案应直接指点正确工具，实际: {msg}"
+    );
+}
+
+/// 门闩②：未知用户 ID 不过度触发。
+///
+/// 调用方遍布框架内部（渠道入站 / 任务调度 / A2A 回传）与测试夹具，存在 `system`
+/// 之类合成 ID 与未落库的外部实体 —— 门闩只拦「跨类型碰撞」，不做存在性校验。
+#[sqlx::test]
+async fn test_send_to_user_allows_unknown_user_id(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let sent = domain
+        .delivery()
+        .send_to_user(
+            ctx.clone(),
+            SendToUserCommand {
+                from_agent_id: "agent-sender",
+                to_user_id: "user-not-in-db",
+                content: "hello",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+            },
+        )
+        .await
+        .expect("未知用户 ID 应放行（存在性判定不归本门闩）");
+
+    assert_eq!(sent.po.to_id, "user-not-in-db");
+    assert_eq!(sent.po.to_role, MessageRole::User);
+}
+
+/// 门闩③：用户 ID 当 `to_agent_id` → 报错（反向误用同样产生死信）
+#[sqlx::test]
+async fn test_send_to_agent_rejects_user_id(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    seed_user(&ctx, "user-bkl52klbu3kzj", "AMan").await;
+
+    let err = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "agent-sender",
+                from_role: MessageRole::Agent,
+                to_agent_id: "user-bkl52klbu3kzj",
+                content: "hi",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                attachment_ids: None,
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .expect_err("用户 ID 传给 to_agent_id 必须报错");
+
+    let msg = err.msg.clone();
+    assert!(msg.contains("AMan"), "文案应含用户名，实际: {msg}");
+    assert!(
+        msg.contains("send_message"),
+        "文案应指点改用 send_message，实际: {msg}"
+    );
+}
+
+/// 门闩④：任务分配同样只认 Agent
+#[sqlx::test]
+async fn test_send_task_assignment_rejects_user_id(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    seed_user(&ctx, "user-assignee", "AMan").await;
+
+    let err = domain
+        .delivery()
+        .send_task_assignment(
+            ctx.clone(),
+            SendTaskAssignmentCommand {
+                task_id: "task-x",
+                task_title: "t",
+                task_description: None,
+                from_id: "agent-sender",
+                from_role: MessageRole::Agent,
+                to_agent_id: "user-assignee",
+                project_id: None,
+            },
+        )
+        .await
+        .expect_err("用户 ID 不能被分配任务");
+
+    assert!(err.msg.contains("不是 Agent"), "实际: {}", err.msg);
 }
