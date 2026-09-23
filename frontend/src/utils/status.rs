@@ -1,6 +1,6 @@
 //! 任务/项目/Agent/工具调用 状态映射
 
-use common::api::ToolCallStatusDto;
+use common::api::{AuthorizationStatusDto, ToolCallStatusDto};
 use common::enums::AgentStatus;
 use common::enums::skill::SkillAuthorType;
 
@@ -264,6 +264,44 @@ pub fn tool_call_status_badge(status: ToolCallStatusDto) -> &'static str {
     }
 }
 
+/// 工具授权单状态中文文案（单一事实源，六态对齐后端 `AuthorizationStatusDto`）
+pub fn authorization_status_text(status: AuthorizationStatusDto) -> &'static str {
+    match status {
+        AuthorizationStatusDto::Pending => "待审批",
+        AuthorizationStatusDto::Active => "已生效",
+        AuthorizationStatusDto::Expired => "已过期",
+        AuthorizationStatusDto::Revoked => "已撤销",
+        AuthorizationStatusDto::Rejected => "已拒绝",
+        AuthorizationStatusDto::Consumed => "已消耗",
+    }
+}
+
+/// 工具授权单状态徽章 class（单一事实源）。
+///
+/// 语义分层：待审批=warning（需人工介入，唯一非终态的动作项）/ 已生效=success /
+/// 已拒绝·已撤销=error（人为否决）/ 已过期·已消耗=neutral（自然终结，非异常）。
+/// 与 `tool_call_status_badge` 共用 `badge hud-badge badge-sm` 基底，尺寸一致。
+pub fn authorization_status_badge(status: AuthorizationStatusDto) -> &'static str {
+    match status {
+        AuthorizationStatusDto::Pending => "badge hud-badge badge-sm badge-warning",
+        AuthorizationStatusDto::Active => "badge hud-badge badge-sm badge-success",
+        AuthorizationStatusDto::Rejected | AuthorizationStatusDto::Revoked => {
+            "badge hud-badge badge-sm badge-error"
+        }
+        AuthorizationStatusDto::Expired | AuthorizationStatusDto::Consumed => {
+            "badge hud-badge badge-sm badge-neutral"
+        }
+    }
+}
+
+/// 授权单是否可撤销（对齐后端 domain 门禁：终态 Expired/Revoked/Rejected/Consumed 不可撤销）
+pub fn authorization_revocable(status: AuthorizationStatusDto) -> bool {
+    matches!(
+        status,
+        AuthorizationStatusDto::Pending | AuthorizationStatusDto::Active
+    )
+}
+
 /// 技能「作者类型」徽章 class（单一事实源，HUD 风格对齐）。
 ///
 /// 设计准则：**作者类型是「属性/类别」而非状态**，因此走中性 `orz-tag` chip
@@ -402,5 +440,36 @@ mod tests {
             org_link_status_badge(0),
             "badge hud-badge badge-sm badge-error"
         );
+    }
+
+    #[test]
+    fn authorization_status_variants() {
+        for (status, text) in [
+            (AuthorizationStatusDto::Pending, "待审批"),
+            (AuthorizationStatusDto::Active, "已生效"),
+            (AuthorizationStatusDto::Expired, "已过期"),
+            (AuthorizationStatusDto::Revoked, "已撤销"),
+            (AuthorizationStatusDto::Rejected, "已拒绝"),
+            (AuthorizationStatusDto::Consumed, "已消耗"),
+        ] {
+            assert_eq!(authorization_status_text(status), text);
+            // 统一基底：不得散写 badge 颜色类
+            assert!(authorization_status_badge(status).starts_with("badge hud-badge badge-sm "));
+        }
+        assert_eq!(
+            authorization_status_badge(AuthorizationStatusDto::Pending),
+            "badge hud-badge badge-sm badge-warning"
+        );
+    }
+
+    #[test]
+    fn authorization_revocable_matches_terminal_rule() {
+        assert!(authorization_revocable(AuthorizationStatusDto::Pending));
+        assert!(authorization_revocable(AuthorizationStatusDto::Active));
+        // 四终态不可撤销（对齐后端 domain::revoke_authorization 门禁）
+        assert!(!authorization_revocable(AuthorizationStatusDto::Expired));
+        assert!(!authorization_revocable(AuthorizationStatusDto::Revoked));
+        assert!(!authorization_revocable(AuthorizationStatusDto::Rejected));
+        assert!(!authorization_revocable(AuthorizationStatusDto::Consumed));
     }
 }

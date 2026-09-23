@@ -1,12 +1,14 @@
 //! Finance 域 API - 模型提供商、工具、附件、MCP 服务器、消息渠道
 
 use common::api::{
-    AttachmentDetail, CallModelRequest, CallModelResponse, CreateMcpServerRequest,
-    CreateMcpServerResponse, CreateModelProviderRequest, CreateModelProviderResponse,
-    CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolRequest,
-    DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetToolRequest,
-    GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse, ListToolsRequest,
-    MessageChannelListItem, PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
+    AttachmentDetail, AuthorizationDecisionRequest, AuthorizationDecisionResponse,
+    AuthorizationDetailDto, AuthorizationQueryRequest, CallModelRequest, CallModelResponse,
+    CreateMcpServerRequest, CreateMcpServerResponse, CreateModelProviderRequest,
+    CreateModelProviderResponse, CreateTextAttachmentRequest, CreateToolRequest,
+    CreateToolResponse, DebugCallToolRequest, DebugCallToolResponse, GetModelProviderRequest,
+    GetModelProviderResponse, GetToolRequest, GetToolResponse, ListMcpServersResponse,
+    ListModelProvidersResponse, ListToolsRequest, MessageChannelListItem, PagedResult,
+    QueryToolCallEntriesRequest, QueryToolCallEntriesResponse, RevokeAuthorizationRequest,
     SearchToolsRequest, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
     TestConnectionResponse, TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
     UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
@@ -355,4 +357,34 @@ pub async fn get_tool_call_entry(
 /// 列出所有启用工具的不重复 tag 列表
 pub async fn list_tool_tags() -> Result<common::api::ListToolTagsResponse, ApiError> {
     api_get("/api/v1/finance/tools/tags").await
+}
+
+// ===== 工具授权审批（拦截建单 → 审批面决策）=====
+
+/// 授权单列表（状态/申请人/工具过滤）。
+///
+/// 归属基准由后端按 ctx 强制注入（Agent ctx → 仅本人申请单；user ctx → 自己名下全量）。
+/// `AuthorizationQueryRequest` 未标注 `#[param(source = "query")]`，后端生成的是
+/// JSON body 形态 handler ⇒ 走 POST `/query`（而非 GET query string）。
+pub async fn list_tool_authorizations(
+    req: &AuthorizationQueryRequest,
+) -> Result<Vec<AuthorizationDetailDto>, ApiError> {
+    api_post("/api/v1/finance/tool-authorizations/query", req).await
+}
+
+/// 审批决策：Approve 签发受限授权（scope 可裁量）/ Reject 落档。
+///
+/// 平台直批通道要求 user ctx（Agent ctx 会被 domain 结构性拒绝）；
+/// `scope` 省略即沿用建单签名的最窄授权（默认次数与 TTL 由后端按规则幂等性给）。
+pub async fn decide_tool_authorization(
+    req: &AuthorizationDecisionRequest,
+) -> Result<AuthorizationDecisionResponse, ApiError> {
+    api_post("/api/v1/finance/tool-authorizations/decide", req).await
+}
+
+/// 撤销授权单（Pending/Active → Revoked，即时生效；终态不可撤销）
+pub async fn revoke_tool_authorization(
+    req: &RevokeAuthorizationRequest,
+) -> Result<AuthorizationDecisionResponse, ApiError> {
+    api_post("/api/v1/finance/tool-authorizations/revoke", req).await
 }
