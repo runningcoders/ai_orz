@@ -235,8 +235,8 @@ pub fn ProjectAgentsTab(
 
 /// 项目内 Agent 列表行（T2 设计说明 §2.2 + 2026-09-23/24 AMan 三轮反馈拍板布局）
 ///
-/// 上半 = 40px 圆形头像（对齐详情页 agent_identity_row）+ 名称加粗横排
-/// + 行尾运行时状态徽标（AMan 拍板方案 A 2026-09-24：负责人/角色标签行内
+/// 上半 = 40px 圆形头像 + 名称加粗/类型两行（AMan 反馈 2026-09-24：头像/名字/类型
+///   三要素样式对齐详情页 agent_identity_row，其他不对齐）+ 行尾运行时状态徽标（方案 A：
 ///   全部收起，负责人身份由置顶表达，全量标签进详情子页查看）；
 /// 下半 = 左侧介绍两行截断（hover 原生 tooltip 看全文）+ 右侧任务数按钮恒在
 /// （两块完整切分，不受左侧文本截断影响）；点按钮在行底展开/收起
@@ -279,13 +279,16 @@ fn ProjectAgentRow(
                 Key::Character(c) if c == " " => on_open.call(()),
                 _ => {}
             },
-            // 首行：头像 + 名称横排，行尾徽标区铺右（仅运行时状态徽标，方案 A）
+            // 首行：头像 + 名称/类型两行（三要素对齐详情页 agent_identity_row），行尾徽标区铺右（仅运行时状态徽标，方案 A）
             div { class: "project-agent-item-head",
                 // 40px 头像：对齐详情页 agent_identity_row（w-10 h-10 rounded-full + font-bold）
                 div { class: "w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold {ring}",
                     "{avatar_initials(&name)}"
                 }
-                div { class: "flex-1 min-w-0 text-sm font-semibold truncate", title: "{name}", "{name}" }
+                div { class: "flex-1 min-w-0",
+                    div { class: "text-sm font-semibold truncate", title: "{name}", "{name}" }
+                    div { class: "text-xs text-base-content/60 truncate", title: "{agent.kind}", "类型：{agent.kind}" }
+                }
                 div { class: "project-agent-item-badges",
                     span { class: "{runtime_badge}", "{runtime_text}" }
                 }
