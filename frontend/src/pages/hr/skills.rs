@@ -381,9 +381,11 @@ pub fn HrSkills() -> Element {
                         if is_copy { span { class: "badge orz-tag badge-sm shrink-0", "副本" } }
                     }
                 }
-                td { class: "text-base-content/70", "data-label": "描述", "{description}" }
-                td { "data-label": "标签",
-                    div { class: "flex flex-wrap gap-1",
+                td { class: "text-base-content/70 max-w-[16rem]", "data-label": "描述",
+                    span { class: "block truncate", title: "{description}", "{description}" }
+                }
+                td { class: "max-w-[12rem]", "data-label": "标签",
+                    div { class: "flex flex-wrap gap-1 min-w-0",
                         for tag in &tags {
                             span { class: "badge orz-tag badge-sm", "{tag}" }
                         }
@@ -398,8 +400,8 @@ pub fn HrSkills() -> Element {
                         span { class: "font-mono text-xs text-base-content/60 select-all", "{author_id_short}" }
                     }
                 }
-                td { "data-label": "操作",
-                    div { class: "flex gap-1",
+                td { class: "whitespace-nowrap", "data-label": "操作",
+                    div { class: "flex gap-1 shrink-0",
                         Link {
                             class: "btn hud-btn btn-ghost btn-sm",
                             to: crate::pages::Route::HrSkillDetail { id: id.clone() },
