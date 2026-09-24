@@ -3,12 +3,12 @@
 //! ## 背景
 //! 项目会话右侧信息面板的 Agent Tab 此前复用单值 `AgentInfoTab`，
 //! 永远只显示项目 owner（PMO）一个 Agent。本组件把该 Tab 改造为
-//! 「项目内 Agent 列表」：谁在项目里干活（任务 assignee 推导）、
-//! 项目内身份（负责人置顶打标）、点击进入单 Agent 详情子页。
+//! 「项目内 Agent 列表」：谁在项目里干活（项目 owner + 任务 assignee 推导）、
+//! 项目内身份（负责人置顶，方案 A 后行内不再打标）、点击进入单 Agent 详情子页。
 //!
 //! ## 数据口径（对齐 mention_picker::load_project_agents）
-//! 项目没有成员表，「项目内 Agent」的唯一事实源 = 项目任务 assignee
-//! （assignee_type==1 去重，用户 assignee 不展示）→ `query_agents(ids)`
+//! 项目没有成员表，「项目内 Agent」的成员集合 = 项目 owner ∪ 项目任务
+//! assignee（assignee_type==1 去重，用户 assignee 不展示）→ `query_agents(ids)`
 //! 批量取详情。本组件不自己拉任务列表：复用面板已拉取的 `TaskListItem`
 //! 推导 agent_ids，零额外项目请求；仅 Agent 详情走一次 `query_agents` 批量。
 //!
@@ -25,7 +25,7 @@ use wasm_bindgen::JsCast;
 
 use crate::api::hr::query_agents;
 use crate::components::chat::chat_side_panel::{AgentInfoTab, loading_placeholder};
-use crate::utils::status::{agent_runtime_badge, agent_runtime_text, short_id, tag_chip};
+use crate::utils::status::{agent_runtime_badge, agent_runtime_text, short_id};
 use crate::utils::{avatar_initials, avatar_status_ring};
 use common::api::{
     AgentListItem, AgentQueryRequest, GetAgentResponse, PaginationParams, TaskListItem,
@@ -37,10 +37,17 @@ const AGENT_QUERY_LIMIT: usize = 50;
 /// 防抖刷新等待时长（毫秒），与 ChatSidePanel 保持一致
 const REFRESH_DEBOUNCE_MS: u64 = 2000;
 
-/// 从任务列表推导项目内 Agent ID（assignee_type==1 去重，保持首次出现顺序）
-fn agent_ids_from_tasks(tasks: &[TaskListItem]) -> Vec<String> {
+/// 推导项目内 Agent ID 成员集合：项目 owner 恒在队首 + 任务 assignee
+/// （assignee_type==1 去重，保持首次出现顺序，用户 assignee 不展示）。
+/// owner 已在任务集合中则去重不重复；两者皆无 → 空集合（触发列表空态）。
+fn agent_ids_from_tasks(tasks: &[TaskListItem], owner_id: Option<&str>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut ids = Vec::new();
+    if let Some(owner) = owner_id
+        && seen.insert(owner.to_string())
+    {
+        ids.push(owner.to_string());
+    }
     for t in tasks {
         if t.assignee_type == 1 && seen.insert(t.assignee_id.clone()) {
             ids.push(t.assignee_id.clone());
@@ -60,8 +67,8 @@ fn sort_project_agents(items: &mut [AgentListItem], owner_id: Option<&str>) {
 
 /// 项目内 Agent 列表 Tab
 ///
-/// - `project_owner_id`：项目负责人 Agent ID（列表置顶 + 「负责人」徽标）
-/// - `tasks`：面板已拉取的项目任务列表（assignee 推导的唯一事实源）
+/// - `project_owner_id`：项目负责人 Agent ID（成员集合来源之一 + 列表置顶；方案 A 后行内不展示负责人徽标，身份由置顶表达）
+/// - `tasks`：面板已拉取的项目任务列表（assignee 推导成员集合的另一来源）
 /// - `refresh_tick`：SSE + 手动刷新计数器，变化时防抖重取 Agent 详情
 /// - `agent_info`：chat 主链路轮询共享的 Agent 详情，详情子页优先消费（id 匹配零请求）
 /// - `agent_stats_tick`：Agent 统计刷新驱动（SSE + 手动 + 30s 周期叠加，透传 AgentInfoTab）
@@ -73,7 +80,7 @@ pub fn ProjectAgentsTab(
     agent_info: Signal<Option<GetAgentResponse>>,
     agent_stats_tick: u64,
 ) -> Element {
-    let agent_ids = agent_ids_from_tasks(&tasks);
+    let agent_ids = agent_ids_from_tasks(&tasks, project_owner_id.as_deref());
     let ids_key = agent_ids.join(",");
 
     let mut agents = use_signal(Vec::<AgentListItem>::new);
@@ -155,7 +162,7 @@ pub fn ProjectAgentsTab(
             div { class: "text-center py-12 text-base-content/60 text-sm", "Agent 信息加载失败" }
         };
     }
-    // 空态（T2 §2.5）：项目还没有任何 Agent assignee
+    // 空态：项目既无 owner 也无任务 assignee（成员集合为空，T2 §2.5 口径收敛）
     if agent_ids.is_empty() {
         return rsx! {
             div { class: "text-center py-12",
@@ -202,7 +209,6 @@ pub fn ProjectAgentsTab(
                 {
                     let a = a.clone();
                     let aid_open = a.id.clone();
-                    let is_owner = owner_id.as_deref() == Some(a.id.as_str());
                     let is_selected = last_selected() == Some(a.id.clone());
                     let task_titles: Vec<String> = tasks
                         .iter()
@@ -213,7 +219,6 @@ pub fn ProjectAgentsTab(
                         ProjectAgentRow {
                             key: "{aid_open}",
                             agent: a,
-                            is_owner,
                             task_titles,
                             selected: is_selected,
                             on_open: move |_| {
@@ -231,7 +236,8 @@ pub fn ProjectAgentsTab(
 /// 项目内 Agent 列表行（T2 设计说明 §2.2 + 2026-09-23/24 AMan 三轮反馈拍板布局）
 ///
 /// 上半 = 40px 圆形头像（对齐详情页 agent_identity_row）+ 名称加粗横排
-/// + 行尾标签区（运行时状态/负责人/角色全保留，≤3 枚 nowrap）；
+/// + 行尾运行时状态徽标（AMan 拍板方案 A 2026-09-24：负责人/角色标签行内
+///   全部收起，负责人身份由置顶表达，全量标签进详情子页查看）；
 /// 下半 = 左侧介绍两行截断（hover 原生 tooltip 看全文）+ 右侧任务数按钮恒在
 /// （两块完整切分，不受左侧文本截断影响）；点按钮在行底展开/收起
 /// 「1. 2. 3.」编号任务列表；Agent 行之间以加深细分隔线区分（input.css）。
@@ -239,7 +245,6 @@ pub fn ProjectAgentsTab(
 #[component]
 fn ProjectAgentRow(
     agent: AgentListItem,
-    is_owner: bool,
     task_titles: Vec<String>,
     selected: bool,
     on_open: Callback,
@@ -260,10 +265,6 @@ fn ProjectAgentRow(
         .filter(|d| !d.trim().is_empty())
         .unwrap_or_else(|| "暂无介绍".to_string());
     let task_total = task_titles.len();
-    // 徽标区配额 ≤3 枚 nowrap：负责人 + 运行时状态 + 角色（is_owner 1 枚角色 /
-    // 非 owner 2 枚），超出截断
-    let role_take = if is_owner { 1 } else { 2 };
-    let roles: Vec<String> = agent.roles.iter().take(role_take).cloned().collect();
     // 运行时状态徽标（utils/status.rs 单一事实源）：空闲/休息中/忙碌，并入行尾 Tag 区
     let runtime_badge = agent_runtime_badge(agent.runtime_state);
     let runtime_text = agent_runtime_text(agent.runtime_state);
@@ -278,7 +279,7 @@ fn ProjectAgentRow(
                 Key::Character(c) if c == " " => on_open.call(()),
                 _ => {}
             },
-            // 首行：头像 + 名称横排，行尾徽标区铺右（负责人/状态/角色 ≤3 枚 nowrap）
+            // 首行：头像 + 名称横排，行尾徽标区铺右（仅运行时状态徽标，方案 A）
             div { class: "project-agent-item-head",
                 // 40px 头像：对齐详情页 agent_identity_row（w-10 h-10 rounded-full + font-bold）
                 div { class: "w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold {ring}",
@@ -286,13 +287,7 @@ fn ProjectAgentRow(
                 }
                 div { class: "flex-1 min-w-0 text-sm font-semibold truncate", title: "{name}", "{name}" }
                 div { class: "project-agent-item-badges",
-                    if is_owner {
-                        span { class: "badge hud-badge badge-primary badge-xs", "负责人" }
-                    }
                     span { class: "{runtime_badge}", "{runtime_text}" }
-                    for role in roles {
-                        span { key: "{role}", class: "{tag_chip()}", "{role}" }
-                    }
                 }
             }
             // 下半部分（AMan 拍板 2026-09-24）：左侧 = 介绍两行截断（hover 看全文），
@@ -398,12 +393,29 @@ mod tests {
             task("t3", 1, "agt-a"), // 重复去重
             task("t4", 1, "agt-b"),
         ];
-        assert_eq!(agent_ids_from_tasks(&tasks), vec!["agt-a", "agt-b"]);
+        // owner 不在任务集合：插队首；不传 owner：纯任务 assignee 口径
+        assert_eq!(
+            agent_ids_from_tasks(&tasks, Some("agt-c")),
+            vec!["agt-c", "agt-a", "agt-b"]
+        );
+        assert_eq!(agent_ids_from_tasks(&tasks, None), vec!["agt-a", "agt-b"]);
     }
 
     #[test]
-    fn agent_ids_empty_when_no_tasks() {
-        assert!(agent_ids_from_tasks(&[]).is_empty());
+    fn agent_ids_empty_when_no_owner_and_no_tasks() {
+        assert!(agent_ids_from_tasks(&[], None).is_empty());
+        // 有 owner 无任务：owner 恒在列表（空态收敛为两者皆无）
+        assert_eq!(agent_ids_from_tasks(&[], Some("agt-x")), vec!["agt-x"]);
+    }
+
+    #[test]
+    fn agent_ids_owner_dedup_when_already_assignee() {
+        // owner 已在任务集合：去重不重复（顺序即首现顺序，配合置顶排序生效）
+        let tasks = vec![task("t1", 1, "agt-a"), task("t2", 1, "agt-b")];
+        assert_eq!(
+            agent_ids_from_tasks(&tasks, Some("agt-b")),
+            vec!["agt-b", "agt-a"]
+        );
     }
 
     #[test]
