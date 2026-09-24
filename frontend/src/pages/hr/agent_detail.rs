@@ -2472,97 +2472,93 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        // 技能包卸载确认对话框
+                        // 技能包卸载确认对话框（复用 Modal：原生 dialog.showModal 进 top layer，修复被局部堆叠上下文裁剪）
                         if let Some(tag) = show_skill_pack_uninstall_dialog.read().as_ref() {
                             {
                             let tag_a = tag.clone();
                             let tag_b = tag.clone();
                             rsx! {
-                            div {
-                                class: "modal modal-open hud-modal",
-                                onclick: move |_| show_skill_pack_uninstall_dialog.set(None),
-                                div {
-                                    class: "modal-box hud-modal-box",
-                                    onclick: move |e| e.stop_propagation(),
-                                    h3 { class: "font-bold text-lg mb-2", "卸载技能包" }
-                                    p { class: "text-sm text-base-content/70 mb-4",
-                                        "即将卸载技能包 [{tag_a}]，请选择卸载方式："
+                            Modal {
+                                title: "卸载技能包".to_string(),
+                                show: true,
+                                on_close: move |_| show_skill_pack_uninstall_dialog.set(None),
+                                footer: rsx! {
+                                    button {
+                                        class: "btn hud-btn btn-ghost",
+                                        onclick: move |_| show_skill_pack_uninstall_dialog.set(None),
+                                        "取消"
                                     }
-                                    div { class: "flex flex-col gap-3",
-                                        // 选项 A：仅移除关联
-                                        button {
-                                            class: "btn hud-btn btn-ghost justify-start text-left",
-                                            onclick: move |_| {
-                                                let aid = agent_id_signal();
-                                                let t = tag_a.clone();
-                                                show_skill_pack_uninstall_dialog.set(None);
-                                                spawn(async move {
-                                                    match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(false) }).await {
-                                                        Ok(_) => {
-                                                            toast.success(format!("技能包 [{}] 已卸载（保留副本）", t));
-                                                            match list_installed_skill_packs(&aid).await {
-                                                                Ok(resp) => {
-                                                                    skill_packs.set(resp.skill_packs);
-                                                                    skill_filter_tags.write().retain(|x| x != &t);
-                                                                }
-                                                                Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                },
+                                p { class: "text-sm text-base-content/70 mb-4",
+                                    "即将卸载技能包 [{tag_a}]，请选择卸载方式："
+                                }
+                                div { class: "flex flex-col gap-3",
+                                    // 选项 A：仅移除关联
+                                    button {
+                                        class: "btn hud-btn btn-ghost justify-start text-left",
+                                        onclick: move |_| {
+                                            let aid = agent_id_signal();
+                                            let t = tag_a.clone();
+                                            show_skill_pack_uninstall_dialog.set(None);
+                                            spawn(async move {
+                                                match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(false) }).await {
+                                                    Ok(_) => {
+                                                        toast.success(format!("技能包 [{}] 已卸载（保留副本）", t));
+                                                        match list_installed_skill_packs(&aid).await {
+                                                            Ok(resp) => {
+                                                                skill_packs.set(resp.skill_packs);
+                                                                skill_filter_tags.write().retain(|x| x != &t);
                                                             }
-                                                            // 刷新 Agent 全景（skill tag 可能已变更）
-                                                            match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
-                                                                Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                                                            }
+                                                            Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                         }
-                                                        Err(e) => toast.error(format!("卸载失败: {}", e)),
-                                                    }
-                                                });
-                                            },
-                                            div {
-                                                p { class: "font-medium", "仅移除关联" }
-                                                p { class: "text-xs text-base-content/50", "移除 tag 标记，保留 Agent 侧技能副本" }
-                                            }
-                                        }
-                                        // 选项 B：同时删除副本
-                                        button {
-                                            class: "btn hud-btn btn-error btn-outline justify-start text-left",
-                                            onclick: move |_| {
-                                                let aid = agent_id_signal();
-                                                let t = tag_b.clone();
-                                                show_skill_pack_uninstall_dialog.set(None);
-                                                spawn(async move {
-                                                    match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(true) }).await {
-                                                        Ok(_) => {
-                                                            toast.success(format!("技能包 [{}] 已卸载（含副本删除）", t));
-                                                            match list_installed_skill_packs(&aid).await {
-                                                                Ok(resp) => {
-                                                                    skill_packs.set(resp.skill_packs);
-                                                                    skill_filter_tags.write().retain(|x| x != &t);
-                                                                }
-                                                                Err(e) => toast.error(format!("刷新失败: {}", e)),
-                                                            }
-                                                            // 刷新 Agent 全景（副本已删除，skill_list 会减少）
-                                                            match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
-                                                                Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                                                            }
+                                                        // 刷新 Agent 全景（skill tag 可能已变更）
+                                                        match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
+                                                            Ok(a) => agent_res.set(Some(Ok(a))),
+                                                            Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                         }
-                                                        Err(e) => toast.error(format!("卸载失败: {}", e)),
                                                     }
-                                                });
-                                            },
-                                            div {
-                                                p { class: "font-medium", "移除关联 + 删除副本" }
-                                                p { class: "text-xs text-error/70",
-                                                    "⚠ Agent 技能可能已经进化（修改过内容），删除后无法恢复"
+                                                    Err(e) => toast.error(format!("卸载失败: {}", e)),
                                                 }
-                                            }
+                                            });
+                                        },
+                                        div {
+                                            p { class: "font-medium", "仅移除关联" }
+                                            p { class: "text-xs text-base-content/50", "移除 tag 标记，保留 Agent 侧技能副本" }
                                         }
                                     }
-                                    div { class: "modal-action",
-                                        button {
-                                            class: "btn hud-btn btn-ghost",
-                                            onclick: move |_| show_skill_pack_uninstall_dialog.set(None),
-                                            "取消"
+                                    // 选项 B：同时删除副本
+                                    button {
+                                        class: "btn hud-btn btn-error btn-outline justify-start text-left",
+                                        onclick: move |_| {
+                                            let aid = agent_id_signal();
+                                            let t = tag_b.clone();
+                                            show_skill_pack_uninstall_dialog.set(None);
+                                            spawn(async move {
+                                                match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(true) }).await {
+                                                    Ok(_) => {
+                                                        toast.success(format!("技能包 [{}] 已卸载（含副本删除）", t));
+                                                        match list_installed_skill_packs(&aid).await {
+                                                            Ok(resp) => {
+                                                                skill_packs.set(resp.skill_packs);
+                                                                skill_filter_tags.write().retain(|x| x != &t);
+                                                            }
+                                                            Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                        }
+                                                        // 刷新 Agent 全景（副本已删除，skill_list 会减少）
+                                                        match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
+                                                            Ok(a) => agent_res.set(Some(Ok(a))),
+                                                            Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                        }
+                                                    }
+                                                    Err(e) => toast.error(format!("卸载失败: {}", e)),
+                                                }
+                                            });
+                                        },
+                                        div {
+                                            p { class: "font-medium", "移除关联 + 删除副本" }
+                                            p { class: "text-xs text-error/70",
+                                                "⚠ Agent 技能可能已经进化（修改过内容），删除后无法恢复"
+                                            }
                                         }
                                     }
                                 }

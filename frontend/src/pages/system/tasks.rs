@@ -8,8 +8,10 @@
 //! - 清理已完成任务
 
 use crate::api::background_task::{cleanup_tasks, list_tasks};
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::PageHeader;
 use crate::components::hud::{HudCallout, HudPanel, StatGrid, StatReadout};
+use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -289,86 +291,66 @@ pub fn SystemTasks() -> Element {
                 }
             }
 
-            // 详情弹窗
+            // 详情弹窗（复用 Modal：原生 dialog.showModal 进 top layer，修复被局部堆叠上下文裁剪）
             if let Some(detail) = detail_task() {
-                div {
-                    class: "modal modal-open hud-modal",
-                        onclick: move |_| detail_task.set(None),
-                        div {
-                            class: "modal-box hud-modal-box",
-                            onclick: |e| e.stop_propagation(),
-                            h3 { class: "font-bold text-lg", "任务详情" }
-                            div { class: "py-4 space-y-2",
-                                div { class: "flex gap-2",
-                                    span { class: "font-semibold", "任务 ID:" }
-                                    span { class: "font-mono text-sm", "{detail.task_id}" }
-                                }
-                                div { class: "flex gap-2",
-                                    span { class: "font-semibold", "类型:" }
-                                    span { "{detail.task_type}" }
-                                }
-                                div { class: "flex gap-2",
-                                    span { class: "font-semibold", "状态:" }
-                                    span { "{detail.status:?}" }
-                                }
-                                div { class: "flex gap-2",
-                                    span { class: "font-semibold", "步骤:" }
-                                    span { "{detail.current_step} / {detail.total_steps}" }
-                                }
-                                div { class: "flex gap-2",
-                                    span { class: "font-semibold", "当前描述:" }
-                                    span { "{detail.step_message}" }
-                                }
-                                if let Some(err) = &detail.error {
-                                    HudCallout { tone: Some("error".to_string()),
-                                        span { class: "font-semibold", "错误信息:" }
-                                        span { "{err}" }
-                                    }
-                                }
-                                if let Some(result) = &detail.result {
-                                    div {
-                                        span { class: "font-semibold", "结果:" }
-                                        pre { class: "bg-base-200 p-2 rounded mt-1 text-xs overflow-x-auto",
-                                            {serde_json::to_string_pretty(result).unwrap_or_default()}
-                                        }
-                                    }
-                                }
+                Modal {
+                    title: "任务详情".to_string(),
+                    show: true,
+                    on_close: move |_| detail_task.set(None),
+                    footer: rsx! {
+                        button {
+                            class: "btn",
+                            onclick: move |_| detail_task.set(None),
+                            "关闭"
+                        }
+                    },
+                    div { class: "py-4 space-y-2",
+                        div { class: "flex gap-2",
+                            span { class: "font-semibold", "任务 ID:" }
+                            span { class: "font-mono text-sm", "{detail.task_id}" }
+                        }
+                        div { class: "flex gap-2",
+                            span { class: "font-semibold", "类型:" }
+                            span { "{detail.task_type}" }
+                        }
+                        div { class: "flex gap-2",
+                            span { class: "font-semibold", "状态:" }
+                            span { "{detail.status:?}" }
+                        }
+                        div { class: "flex gap-2",
+                            span { class: "font-semibold", "步骤:" }
+                            span { "{detail.current_step} / {detail.total_steps}" }
+                        }
+                        div { class: "flex gap-2",
+                            span { class: "font-semibold", "当前描述:" }
+                            span { "{detail.step_message}" }
+                        }
+                        if let Some(err) = &detail.error {
+                            HudCallout { tone: Some("error".to_string()),
+                                span { class: "font-semibold", "错误信息:" }
+                                span { "{err}" }
                             }
-                            div { class: "modal-action",
-                                button {
-                                    class: "btn",
-                                    onclick: move |_| detail_task.set(None),
-                                    "关闭"
+                        }
+                        if let Some(result) = &detail.result {
+                            div {
+                                span { class: "font-semibold", "结果:" }
+                                pre { class: "bg-base-200 p-2 rounded mt-1 text-xs overflow-x-auto",
+                                    {serde_json::to_string_pretty(result).unwrap_or_default()}
                                 }
                             }
                         }
-                    }
+                    },
+                }
             }
-
-            // 清理确认弹窗
-            if show_cleanup_confirm() {
-                div {
-                    class: "modal modal-open hud-modal",
-                        onclick: move |_| show_cleanup_confirm.set(false),
-                        div {
-                            class: "modal-box hud-modal-box",
-                            onclick: |e| e.stop_propagation(),
-                            h3 { class: "font-bold text-lg", "确认清理" }
-                            p { class: "py-4", "将清理已完成的旧任务，每个类型保留最近 10 个。运行中的任务不受影响。" }
-                            div { class: "modal-action",
-                                button {
-                                    class: "btn hud-btn btn-ghost",
-                                    onclick: move |_| show_cleanup_confirm.set(false),
-                                    "取消"
-                                }
-                                button {
-                                    class: "btn hud-btn btn-warning",
-                                    onclick: move |_| on_cleanup(()),
-                                    "确认清理"
-                                }
-                            }
-                        }
-                    }
+            // 清理确认弹窗（复用 ConfirmDialog → Modal：原生 dialog.showModal 进 top layer）
+            ConfirmDialog {
+                show: show_cleanup_confirm(),
+                title: "确认清理".to_string(),
+                message: "将清理已完成的旧任务，每个类型保留最近 10 个。运行中的任务不受影响。".to_string(),
+                confirm_text: Some("确认清理".to_string()),
+                confirm_class: Some("btn hud-btn btn-warning".to_string()),
+                on_confirm: move |_| on_cleanup(()),
+                on_cancel: move |_| show_cleanup_confirm.set(false),
             }
         }
     }
