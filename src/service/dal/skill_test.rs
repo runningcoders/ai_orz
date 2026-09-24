@@ -1207,3 +1207,164 @@ async fn test_search_fts_rank_transparency(pool: SqlitePool) -> Result<()> {
 
     Ok(())
 }
+
+// ==================== M2 技能持有关系修复用例 ====================
+
+/// 构造测试技能 PO（可指定 author/parent/status/tags）
+fn make_m2_skill_po(
+    id: &str,
+    name: &str,
+    author_id: &str,
+    author_type: SkillAuthorType,
+    parent_skill_id: &str,
+    tags: Vec<String>,
+    status: SkillStatus,
+) -> SkillPo {
+    let mut po = SkillPo::new(
+        id.to_string(),
+        name.to_string(),
+        format!("M2 test skill: {}", name),
+        tags,
+        "testing".to_string(),
+        parent_skill_id.to_string(),
+        author_id.to_string(),
+        author_type,
+        format!("skills/pending/{}", id),
+    );
+    po.status = status;
+    po
+}
+
+/// M2 修复 A：list_for_agent 只保留「安装副本 或 非正式发布」——
+/// Agent 历史创建并发布的共享库根技能不再被计为 Agent 直接持有。
+#[sqlx::test]
+async fn test_list_for_agent_excludes_published_root_skill(pool: SqlitePool) -> Result<()> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // ① 历史脏数据形态：Agent 创建并发布的共享库根技能（应被排除）
+    let published_root_id = uuid::Uuid::now_v7().to_string();
+    let published_root = make_m2_skill_po(
+        &published_root_id,
+        "agent-published-root",
+        "agent-1",
+        SkillAuthorType::Agent,
+        "",
+        vec!["search".to_string()],
+        SkillStatus::Published,
+    );
+    skill_dal.create(ctx.clone(), &published_root).await?;
+
+    // ② 安装副本（应保留）
+    let copy_id = uuid::Uuid::now_v7().to_string();
+    let copy = make_m2_skill_po(
+        &copy_id,
+        "agent-copy",
+        "agent-1",
+        SkillAuthorType::Agent,
+        "source-skill-x",
+        vec!["search".to_string()],
+        SkillStatus::Draft,
+    );
+    skill_dal.create(ctx.clone(), &copy).await?;
+
+    // ③ 自有草稿根技能（应保留）
+    let draft_root_id = uuid::Uuid::now_v7().to_string();
+    let draft_root = make_m2_skill_po(
+        &draft_root_id,
+        "agent-draft-root",
+        "agent-1",
+        SkillAuthorType::Agent,
+        "",
+        vec![],
+        SkillStatus::Draft,
+    );
+    skill_dal.create(ctx.clone(), &draft_root).await?;
+
+    // 干扰项：其他 Agent 的技能（author 过滤应排除）
+    let other = make_m2_skill_po(
+        &uuid::Uuid::now_v7().to_string(),
+        "other-agent-copy",
+        "agent-2",
+        SkillAuthorType::Agent,
+        "source-skill-y",
+        vec![],
+        SkillStatus::Draft,
+    );
+    skill_dal.create(ctx.clone(), &other).await?;
+
+    let skills = skill_dal.list_for_agent(ctx, "agent-1").await?;
+    let ids: Vec<&str> = skills.iter().map(|s| s.po.id.as_str()).collect();
+
+    assert!(
+        !ids.contains(&published_root_id.as_str()),
+        "正式发布版根技能不应被 Agent 直接持有"
+    );
+    assert!(ids.contains(&copy_id.as_str()), "安装副本应保留");
+    assert!(ids.contains(&draft_root_id.as_str()), "自有草稿应保留");
+    assert_eq!(skills.len(), 2, "Agent 持有恰好 2 条：安装副本 + 自有草稿");
+
+    Ok(())
+}
+
+/// M2 修复 B：list_published_by_tag 排除安装副本——
+/// Published 状态的 Agent 副本（历史脏数据）不能作为共享库安装源。
+#[sqlx::test]
+async fn test_list_published_by_tag_excludes_copies(pool: SqlitePool) -> Result<()> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // 共享库正式发布根技能（tag: m2tag）
+    let root_id = uuid::Uuid::now_v7().to_string();
+    let root = make_m2_skill_po(
+        &root_id,
+        "m2-published-root",
+        "user-a",
+        SkillAuthorType::User,
+        "",
+        vec!["m2tag".to_string()],
+        SkillStatus::Published,
+    );
+    skill_dal.create(ctx.clone(), &root).await?;
+
+    // Published 状态的 Agent 安装副本（tag: m2tag）——应被排除
+    let copy_id = uuid::Uuid::now_v7().to_string();
+    let copy = make_m2_skill_po(
+        &copy_id,
+        "m2-published-copy",
+        "agent-9",
+        SkillAuthorType::Agent,
+        &root_id,
+        vec!["m2tag".to_string()],
+        SkillStatus::Published,
+    );
+    skill_dal.create(ctx.clone(), &copy).await?;
+
+    // Draft 根技能（同 tag、非 Published，也应排除）
+    let draft_id = uuid::Uuid::now_v7().to_string();
+    let draft = make_m2_skill_po(
+        &draft_id,
+        "m2-draft-root",
+        "user-b",
+        SkillAuthorType::User,
+        "",
+        vec!["m2tag".to_string()],
+        SkillStatus::Draft,
+    );
+    skill_dal.create(ctx.clone(), &draft).await?;
+
+    let published = skill_dal.list_published_by_tag(ctx, "m2tag").await?;
+    let ids: Vec<&str> = published.iter().map(|s| s.po.id.as_str()).collect();
+
+    assert!(ids.contains(&root_id.as_str()), "正式发布根技能应保留");
+    assert!(
+        !ids.contains(&copy_id.as_str()),
+        "Published 安装副本不应作为安装源"
+    );
+    assert!(
+        !ids.contains(&draft_id.as_str()),
+        "非 Published 根技能不应出现"
+    );
+
+    Ok(())
+}

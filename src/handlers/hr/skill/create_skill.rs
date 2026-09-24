@@ -63,6 +63,13 @@ pub async fn create_skill(
         author_type,
         content_path,
     );
+    // M2 修复 C：Agent 上下文禁止创建即正式发布（发布收敛为共享库根技能单一入口）
+    super::validate_agent_skill_status_change(
+        ctx.agent_id().is_some(),
+        skill_po.author_type,
+        &skill_po.parent_skill_id,
+        params.status,
+    )?;
     if let Some(status) = params.status {
         skill_po.status = status;
     }
@@ -155,4 +162,71 @@ pub async fn create_skill(
         .ok_or_else(|| err!(NotFound, "Skill {} not found", skill_id))?;
 
     Ok(to_detail(&created))
+}
+
+#[cfg(test)]
+mod m2_status_guard_tests {
+    use super::super::validate_agent_skill_status_change;
+    use common::enums::skill::{SkillAuthorType, SkillStatus};
+
+    /// M2 修复 C：Agent 上下文或 Agent 安装副本禁止 status 直改 Published；其余组合放行。
+    #[test]
+    fn agent_skill_status_publish_is_restricted() {
+        // 条件①：Agent 上下文 + 目标 Published → 拒绝（无论形态）
+        assert!(
+            validate_agent_skill_status_change(
+                true,
+                SkillAuthorType::Agent,
+                "",
+                Some(SkillStatus::Published)
+            )
+            .is_err(),
+            "Agent 上下文设置 Published 应被拒绝"
+        );
+        // Agent 上下文 + 草稿 → 放行
+        assert!(
+            validate_agent_skill_status_change(
+                true,
+                SkillAuthorType::Agent,
+                "",
+                Some(SkillStatus::Draft)
+            )
+            .is_ok()
+        );
+        // Agent 上下文 + 不改状态 → 放行
+        assert!(validate_agent_skill_status_change(true, SkillAuthorType::Agent, "", None).is_ok());
+
+        // 条件②：用户上下文 + Agent 安装副本（parent 非空）+ Published → 拒绝
+        assert!(
+            validate_agent_skill_status_change(
+                false,
+                SkillAuthorType::Agent,
+                "source-x",
+                Some(SkillStatus::Published)
+            )
+            .is_err(),
+            "Agent 安装副本直改 Published 应被拒绝"
+        );
+        // 用户上下文 + Agent 自有草稿根技能（parent 空）+ Published → 放行
+        assert!(
+            validate_agent_skill_status_change(
+                false,
+                SkillAuthorType::Agent,
+                "",
+                Some(SkillStatus::Published)
+            )
+            .is_ok(),
+            "Agent 自有草稿根技能由用户发布应放行"
+        );
+        // 用户上下文 + User 根技能 + Published → 放行（共享库根技能发布入口）
+        assert!(
+            validate_agent_skill_status_change(
+                false,
+                SkillAuthorType::User,
+                "",
+                Some(SkillStatus::Published)
+            )
+            .is_ok()
+        );
+    }
 }

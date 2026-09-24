@@ -326,7 +326,16 @@ impl SkillDal for SkillDalImpl {
                 },
             )
             .await?;
-        Ok(page.items)
+
+        // M2 修复 A：持有语义收紧——只保留 Agent「实际持有」的技能：
+        // ① 安装副本（parent_skill_id 非空，install_to_agent 产物）；
+        // ② 自有非正式发布技能（Agent 上下文创建的草稿等，status != Published）。
+        // 共享库正式发布版根技能（author_id 历史上指向本 Agent、parent 为空、Published）
+        // 属于共享库资产而非 Agent 私有持有，不再计入 Agent 技能列表。
+        let mut skills = page.items;
+        skills
+            .retain(|s| !s.po.parent_skill_id.is_empty() || s.po.status != SkillStatus::Published);
+        Ok(skills)
     }
 
     async fn list_expired_for_agent(
@@ -833,6 +842,10 @@ impl SkillDal for SkillDalImpl {
                 SkillQuery {
                     tags: Some(vec![tag.to_string()]),
                     status: Some(SkillStatus::Published),
+                    // M2 修复 B：排除安装副本（has_parent=false 即 parent_skill_id='' 根技能）。
+                    // 共享库安装源必须来自正式发布的根技能，防止 Published 状态的
+                    // Agent 副本（历史脏数据）被当作安装源复制出二级副本。
+                    has_parent: Some(false),
                     ..Default::default()
                 },
             )

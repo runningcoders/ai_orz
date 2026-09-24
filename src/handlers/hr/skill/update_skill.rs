@@ -53,6 +53,13 @@ pub async fn update_skill(
         }
         skill.po.category = category;
     }
+    // M2 修复 C：Agent 上下文禁止把技能（含安装副本）直改成正式发布
+    super::validate_agent_skill_status_change(
+        ctx.agent_id().is_some(),
+        skill.po.author_type,
+        &skill.po.parent_skill_id,
+        params.status,
+    )?;
     if let Some(status) = params.status {
         skill.po.status = status;
     }

@@ -1821,6 +1821,99 @@ async fn test_agent_skill_list_unique(pool: SqlitePool) {
     );
 }
 
+/// M2 扩围（技术负责人裁定①）：resolve_agent_skills 与修复 A 同谓词——
+/// 关联全景/wake 路径（get_agent with_skills 唯一调用点）不出现正式发布版根技能。
+#[sqlx::test]
+async fn test_resolve_agent_skills_excludes_published_root_skill(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+    let agent = create_test_agent("ResolveSkillsAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // ① 历史脏数据形态：author_id 指向本 Agent 的共享库正式发布版根技能（应被排除）
+    let mut root_po = create_published_skill_with_tag("ResolvePublishedRoot", "search").po;
+    root_po.author_id = agent.id().to_string();
+    root_po.modifier_id = agent.id().to_string();
+    root_po.author_type = SkillAuthorType::Agent;
+    let root_id = root_po.id.clone();
+    domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams::from_skill(&Skill::from_po(root_po)),
+        )
+        .await
+        .unwrap();
+
+    // ② 正常安装副本（应保留）：从共享库源技能安装
+    let source = create_published_skill_with_tag("ResolveSourceSkill", "coding");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&source))
+        .await
+        .unwrap();
+    domain
+        .skill_manage()
+        .install_to_agent(ctx.clone(), &source.po.id, agent.id())
+        .await
+        .unwrap();
+
+    // ③ 自有草稿根技能（应保留）
+    let draft_po = SkillPo::new(
+        format!("resolve-draft--{}", Uuid::new_v4()),
+        "ResolveDraftRoot".to_string(),
+        "Agent draft skill".to_string(),
+        vec![],
+        "misc".to_string(),
+        String::new(),
+        agent.id().to_string(),
+        SkillAuthorType::Agent,
+        "skills/resolve-draft".to_string(),
+    );
+    let draft_id = draft_po.id.clone();
+    domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams::from_skill(&Skill::from_po(draft_po)),
+        )
+        .await
+        .unwrap();
+
+    // 走真实调用路径：get_agent with_skills（resolve_agent_skills 唯一调用点，验收基准 c）
+    let loaded = domain
+        .agent_manage()
+        .get_agent(
+            ctx,
+            agent.id(),
+            crate::service::dal::agent::AgentFetchOptions {
+                with_skills: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .expect("agent should exist");
+
+    let skills = loaded.skills();
+    assert!(
+        !skills.iter().any(|s| s.po.id == root_id),
+        "正式发布版根技能不应出现在关联全景/wake 路径"
+    );
+    assert!(
+        skills.iter().any(|s| s.po.parent_skill_id == source.po.id),
+        "安装副本应保留"
+    );
+    assert!(
+        skills.iter().any(|s| s.po.id == draft_id),
+        "自有草稿根技能应保留"
+    );
+    assert_eq!(skills.len(), 2, "Agent 持有恰好 2 条：安装副本 + 自有草稿");
+}
+
 /// id 维度短路：`by_id` 直查命中即决定性胜出，不受候选集 limit 与 created_at 影响
 #[sqlx::test]
 async fn test_resolve_agent_id_short_circuit(pool: SqlitePool) {

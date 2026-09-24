@@ -57,16 +57,21 @@ impl HrDomainImpl {
     }
 
     /// 解析 Agent 可见的技能全集（供 wake/awaken 与关联全景共用）。
-    /// 解析 Agent 可见的技能全集（供 wake/awaken 与关联全景共用）。
     ///
-    /// 仅返回 Agent 自身已安装的副本（author_id = agent_id，排除 Expired）。
+    /// 仅返回 Agent「实际持有」的技能（author_id = agent_id，排除 Expired）：
+    /// ① 安装副本（parent_skill_id 非空，install_to_agent 产物）；
+    /// ② 自有非正式发布技能（Agent 上下文创建的草稿等，status != Published）。
     /// 神经技能等基础包在 create_agent 时已显式安装为副本，因此加载侧无需再兜底。
+    /// M2 扩围（技术负责人裁定①）：与 DAL list_for_agent（修复 A）同谓词收紧——
+    /// 共享库正式发布版根技能（author_id 历史上指向本 Agent、parent 为空、Published）
+    /// 属共享库资产而非 Agent 私有持有，不计入技能全集；
+    /// 关联全景/wake 路径同样不得出现正式发布版根技能。
     async fn resolve_agent_skills(
         &self,
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Skill>> {
-        let skills = self
+        let page = self
             .skill_dal
             .query(
                 ctx.clone(),
@@ -77,7 +82,12 @@ impl HrDomainImpl {
                 },
             )
             .await?;
-        Ok(skills.items)
+        // M2 修复 A 同谓词：安装副本保留 / 自有草稿保留 / 发布版根技能排除。
+        let mut skills = page.items;
+        skills.retain(|s| {
+            !s.po.parent_skill_id.is_empty() || s.po.status != common::enums::SkillStatus::Published
+        });
+        Ok(skills)
     }
 
     /// 【边：Incubating → Interviewing】职业生涯选择
