@@ -17,7 +17,7 @@
 //! list / detail 是同一 Tab 内的两个视图态（面板内切换，不走路由）；
 //! Detail 原样复用 [`AgentInfoTab`]，返回列表时保留选中高亮。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 
 use dioxus::prelude::*;
@@ -25,7 +25,7 @@ use wasm_bindgen::JsCast;
 
 use crate::api::hr::query_agents;
 use crate::components::chat::chat_side_panel::{AgentInfoTab, loading_placeholder};
-use crate::utils::status::{short_id, tag_chip};
+use crate::utils::status::{agent_runtime_badge, agent_runtime_text, short_id, tag_chip};
 use crate::utils::{avatar_initials, avatar_status_ring};
 use common::api::{
     AgentListItem, AgentQueryRequest, GetAgentResponse, PaginationParams, TaskListItem,
@@ -47,17 +47,6 @@ fn agent_ids_from_tasks(tasks: &[TaskListItem]) -> Vec<String> {
         }
     }
     ids
-}
-
-/// 统计每个 Agent 作为 assignee 的任务数（副标题「参与 N 个任务」的数据源）
-fn assignee_task_counts(tasks: &[TaskListItem]) -> HashMap<String, usize> {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for t in tasks {
-        if t.assignee_type == 1 {
-            *counts.entry(t.assignee_id.clone()).or_insert(0) += 1;
-        }
-    }
-    counts
 }
 
 /// 列表排序：负责人置顶第一，其余按名称字典序（T2 设计说明 §2.4）
@@ -202,11 +191,10 @@ pub fn ProjectAgentsTab(
         };
     }
 
-    // Ready(list)：负责人置顶 + 名称字典序；副标题与任务数由任务列表统计
+    // Ready(list)：负责人置顶 + 名称字典序；负责任务名列表由任务列表过滤（展开区数据源）
     let mut items: Vec<AgentListItem> = agents.read().clone();
     let owner_id = project_owner_id.clone();
     sort_project_agents(&mut items, owner_id.as_deref());
-    let counts = assignee_task_counts(&tasks);
 
     rsx! {
         div { class: "space-y-0.5",
@@ -216,13 +204,17 @@ pub fn ProjectAgentsTab(
                     let aid_open = a.id.clone();
                     let is_owner = owner_id.as_deref() == Some(a.id.as_str());
                     let is_selected = last_selected() == Some(a.id.clone());
-                    let task_count = counts.get(&a.id).copied().unwrap_or(0);
+                    let task_titles: Vec<String> = tasks
+                        .iter()
+                        .filter(|t| t.assignee_type == 1 && t.assignee_id == a.id)
+                        .map(|t| t.title.clone())
+                        .collect();
                     rsx! {
                         ProjectAgentRow {
                             key: "{aid_open}",
                             agent: a,
                             is_owner,
-                            task_count,
+                            task_titles,
                             selected: is_selected,
                             on_open: move |_| {
                                 view_agent.set(Some(aid_open.clone()));
@@ -236,15 +228,19 @@ pub fn ProjectAgentsTab(
     }
 }
 
-/// 项目内 Agent 列表行（对齐 `.mention-menu-item` 尺寸语言，T2 设计说明 §2.2）
+/// 项目内 Agent 列表行（T2 设计说明 §2.2 + 2026-09-23/24 AMan 三轮反馈拍板布局）
 ///
-/// 结构：24px 头像 + 名称/副标题 + 行尾徽标区（负责人 + 角色，≤3 枚 nowrap）。
+/// 上半 = 40px 圆形头像（对齐详情页 agent_identity_row）+ 名称加粗横排
+/// + 行尾标签区（运行时状态/负责人/角色全保留，≤3 枚 nowrap）；
+/// 下半 = 左侧介绍两行截断（hover 原生 tooltip 看全文）+ 右侧任务数按钮恒在
+/// （两块完整切分，不受左侧文本截断影响）；点按钮在行底展开/收起
+/// 「1. 2. 3.」编号任务列表；Agent 行之间以加深细分隔线区分（input.css）。
 /// hover / 选中 / focus 态由 `.project-agent-item` 及其修饰类提供（input.css）。
 #[component]
 fn ProjectAgentRow(
     agent: AgentListItem,
     is_owner: bool,
-    task_count: usize,
+    task_titles: Vec<String>,
     selected: bool,
     on_open: Callback,
 ) -> Element {
@@ -255,15 +251,22 @@ fn ProjectAgentRow(
         agent.name.clone()
     };
     let ring = avatar_status_ring(agent.status);
-    // 副标题：简介单行截断；空简介回退「参与 N 个任务」（零额外请求）
-    let subtitle = agent
+    // 展开态：行内独立（项目切换行重建自动复位，无需父级清理）
+    let mut expanded = use_signal(|| false);
+    // 介绍：固定两行截断展示，hover 原生 tooltip 看全文；空介绍回退「暂无介绍」（零额外请求）
+    let desc_text = agent
         .description
         .clone()
         .filter(|d| !d.trim().is_empty())
-        .unwrap_or_else(|| format!("参与 {task_count} 个任务"));
-    // 徽标区：负责人 + 最多 2 个角色（is_owner）/ 最多 3 个（非 owner），超出截断
-    let role_take = if is_owner { 2 } else { 3 };
+        .unwrap_or_else(|| "暂无介绍".to_string());
+    let task_total = task_titles.len();
+    // 徽标区配额 ≤3 枚 nowrap：负责人 + 运行时状态 + 角色（is_owner 1 枚角色 /
+    // 非 owner 2 枚），超出截断
+    let role_take = if is_owner { 1 } else { 2 };
     let roles: Vec<String> = agent.roles.iter().take(role_take).cloned().collect();
+    // 运行时状态徽标（utils/status.rs 单一事实源）：空闲/休息中/忙碌，并入行尾 Tag 区
+    let runtime_badge = agent_runtime_badge(agent.runtime_state);
+    let runtime_text = agent_runtime_text(agent.runtime_state);
     rsx! {
         div {
             class: if selected { "project-agent-item is-selected" } else { "project-agent-item" },
@@ -275,24 +278,57 @@ fn ProjectAgentRow(
                 Key::Character(c) if c == " " => on_open.call(()),
                 _ => {}
             },
-            // 24px 头像：AvatarSize::Sm 同款字面量类（Tailwind v4 扫源码，不能 format! 拼类名）
-            div { class: "w-6 h-6 text-xs rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold {ring}",
-                "{avatar_initials(&name)}"
+            // 首行：头像 + 名称横排，行尾徽标区铺右（负责人/状态/角色 ≤3 枚 nowrap）
+            div { class: "project-agent-item-head",
+                // 40px 头像：对齐详情页 agent_identity_row（w-10 h-10 rounded-full + font-bold）
+                div { class: "w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold {ring}",
+                    "{avatar_initials(&name)}"
+                }
+                div { class: "flex-1 min-w-0 text-sm font-semibold truncate", title: "{name}", "{name}" }
+                div { class: "project-agent-item-badges",
+                    if is_owner {
+                        span { class: "badge hud-badge badge-primary badge-xs", "负责人" }
+                    }
+                    span { class: "{runtime_badge}", "{runtime_text}" }
+                    for role in roles {
+                        span { key: "{role}", class: "{tag_chip()}", "{role}" }
+                    }
+                }
             }
-            div { class: "flex-1 min-w-0",
-                div { class: "text-sm font-medium truncate", title: "{name}", "{name}" }
+            // 下半部分（AMan 拍板 2026-09-24）：左侧 = 介绍两行截断（hover 看全文），
+            // 右侧 = 任务数按钮恒在（两块完整切分，不受左侧文本截断影响）；
+            // 按钮点击展开/收起行底任务列表，动作不得触发整行「打开详情」/行级键盘
+            // 事件，故双重阻断冒泡；原生 button 自带键盘可达（Enter/Space）。
+            div { class: "project-agent-item-body",
                 div {
-                    class: "text-xs text-base-content/60 truncate",
-                    title: "{subtitle}",
-                    "{subtitle}"
+                    class: "project-agent-item-desc",
+                    title: "{desc_text}",
+                    "{desc_text}"
+                }
+                button {
+                    class: "project-agent-item-tasks-btn",
+                    title: if expanded() { "点击收起负责任务" } else { "点击展开负责任务" },
+                    onclick: move |evt: MouseEvent| {
+                        evt.stop_propagation();
+                        expanded.set(!expanded());
+                    },
+                    onkeydown: move |evt: KeyboardEvent| evt.stop_propagation(),
+                    "任务 {task_total}"
                 }
             }
-            div { class: "project-agent-item-badges",
-                if is_owner {
-                    span { class: "badge hud-badge badge-primary badge-xs", "负责人" }
-                }
-                for role in roles {
-                    span { key: "{role}", class: "{tag_chip()}", "{role}" }
+            // 展开区：任务数按钮展开/收起的「1. 2. 3.」编号任务列表
+            if expanded() {
+                div { class: "project-agent-item-detail",
+                    div { class: "text-[11px] text-base-content/50", "负责任务（{task_total}）" }
+                    if task_titles.is_empty() {
+                        div { class: "text-xs text-base-content/40", "暂无任务" }
+                    } else {
+                        ol { class: "project-agent-item-tasks",
+                            for t in task_titles.iter() {
+                                li { key: "{t}", title: "{t}", "{t}" }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -368,18 +404,6 @@ mod tests {
     #[test]
     fn agent_ids_empty_when_no_tasks() {
         assert!(agent_ids_from_tasks(&[]).is_empty());
-    }
-
-    #[test]
-    fn task_counts_count_all_assignments() {
-        let tasks = vec![
-            task("t1", 1, "agt-a"),
-            task("t2", 1, "agt-a"),
-            task("t3", 0, "usr-1"),
-        ];
-        let counts = assignee_task_counts(&tasks);
-        assert_eq!(counts.get("agt-a"), Some(&2));
-        assert!(!counts.contains_key("usr-1"));
     }
 
     #[test]

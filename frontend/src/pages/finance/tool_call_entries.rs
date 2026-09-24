@@ -350,7 +350,13 @@ pub fn FinanceToolCallEntries() -> Element {
                                                 tr { key: "{call_id}",
                                                     td { class: "font-mono text-xs truncate", title: "{call_id}", "{call_id}" }
                                                     td { "{tool_name}" }
-                                                    td { class: "font-mono text-xs", "{agent_id.as_deref().unwrap_or(\"-\")}" }
+                                                    td {
+                                                        if let Some(aid) = agent_id {
+                                                            IdentityChip { id: aid, tone: AvatarTone::Agent }
+                                                        } else {
+                                                            span { class: "font-mono text-xs", "-" }
+                                                        }
+                                                    }
                                                     td { span { class: "{tool_call_status_badge(status)}", "{tool_call_status_text(status)}" } }
                                                     td { class: "font-mono", "{duration_ms}ms" }
                                                     td { class: "font-mono text-xs", "{crate::utils::format_datetime(started_at as i64)}" }
@@ -388,7 +394,14 @@ pub fn FinanceToolCallEntries() -> Element {
                             div { span { class: "text-base-content/60", "工具: " }, "{e.tool_name}" }
                             div { span { class: "text-base-content/60", "状态: " }, "{tool_call_status_text(e.status)}" }
                             div { span { class: "text-base-content/60", "耗时: " }, span { class: "font-mono", "{e.duration_ms}ms" } }
-                            div { span { class: "text-base-content/60", "Agent: " }, span { class: "font-mono", "{e.agent_id.as_deref().unwrap_or(\"-\")}" } }
+                            div { class: "flex items-center gap-1",
+                                span { class: "text-base-content/60", "Agent: " },
+                                if let Some(aid) = e.agent_id.clone() {
+                                    IdentityChip { id: aid, tone: AvatarTone::Agent }
+                                } else {
+                                    span { class: "font-mono", "-" }
+                                }
+                            }
                             div { span { class: "text-base-content/60", "Task: " }, span { class: "font-mono", "{e.task_id.as_deref().unwrap_or(\"-\")}" } }
                         }
 
