@@ -1447,6 +1447,26 @@
          主流 IM（微信 / Telegram / Slack）都把头像放在消息起始位置，这里统一改回
          start，让头像与 chat-header（发送者 + 接收方）齐平。 */
       .chat .chat-image { align-self: start; }
+      /* 尖角跟随头像（体验问题排查专项-问题二，方案 A）：DaisyUI 5.7.0 的
+         `.chat-bubble::before` 尖角硬编码贴气泡底边（bottom:0），而头像已按产品
+         决策改到顶边（上一条规则），尖角与头像脱钩导致指向错位。这里把尖角整体
+         翻到气泡顶边并垂直翻转：mask 形状的底边水平线翻转为顶边、尖点由左下/
+         右下变为左上/右上，仍指向头像一侧；mask-position 的 -1px 子像素补偿在
+         垂直翻转后恰好令形状顶边贴合气泡顶边，无需调整；抹平圆角同步由底角换到
+         对应顶角，底角恢复 --radius-field 与原生一致。
+         chat-end 的水平镜像靠 rotateY(180deg)，覆盖 transform 时必须保留，
+         否则右侧尖角会翻错方向 —— 故分方位覆盖。 */
+      .chat .chat-bubble::before { bottom: auto; top: 0; }
+      .chat .chat-start .chat-bubble::before { transform: scaleY(-1); }
+      .chat .chat-end .chat-bubble::before { transform: scaleY(-1) rotateY(180deg); }
+      .chat .chat-start .chat-bubble {
+        border-start-start-radius: 0;
+        border-end-start-radius: var(--radius-field);
+      }
+      .chat .chat-end .chat-bubble {
+        border-start-end-radius: 0;
+        border-end-end-radius: var(--radius-field);
+      }
       /* 旁听消息（Agent 之间的横向交流，收发双方都不是当前用户）：
          整体降透明度，避免刷屏时误以为每条都在找自己；hover 恢复便于细读。 */
       .message-item.message-bystander { opacity: 0.6; }
