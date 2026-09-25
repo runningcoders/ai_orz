@@ -167,6 +167,27 @@ pub trait SkillDal: Send + Sync {
         parent_skill_ids: &[String],
     ) -> Result<Vec<Skill>>;
 
+    /// 发布完成后的「回写自身技能」补偿建副本（N2 修复）。
+    ///
+    /// 语义：Agent 自有根技能发布为 Published 后，为作者 Agent 生成 1 条指向
+    /// 已发布技能的本地工作副本（Draft / parent=源 id / author=作者 Agent /
+    /// content 全量拷贝 / 补向量索引）。
+    ///
+    /// 关键语义（N5 存量补偿将复用本方法，由单测锁定）：
+    /// - 幂等查重：该 Agent 名下已存在指向本源且状态 != Expired 的副本 → 跳过
+    ///   返回 `Ok(None)`，重复发布/补偿重放不产生重复行（Expired 副本允许重建，
+    ///   与 install_to_agent 的「过期副本原地恢复」语义一致）；
+    /// - 纯建副本路径：直调 DAO `install_to_agent`（不经 DAL 入口——后者对
+    ///   「Agent 安装自有技能」有返回本体的幂等守卫，语义不符）；
+    /// - 向量索引补偿：DAO 直建副本不会自动建索引，此处补一次（best-effort，
+    ///   失败仅 warn 降级，不向上抛错）。
+    async fn publish_writeback_copy(
+        &self,
+        ctx: RequestContext,
+        source_skill_id: &str,
+        agent_id: &str,
+    ) -> Result<Option<Skill>>;
+
     /// 🔄 重建所有技能的向量索引
     ///
     /// 清空向量集合后，**分页**查询全量技能，逐条重新生成 embedding 并 upsert。
@@ -788,6 +809,94 @@ impl SkillDal for SkillDalImpl {
             files,
             search_match: None,
         })
+    }
+
+    async fn publish_writeback_copy(
+        &self,
+        ctx: RequestContext,
+        source_skill_id: &str,
+        agent_id: &str,
+    ) -> Result<Option<Skill>> {
+        // 1. 源技能必须存在（发布事务的回写对象；缺失=可能已被删除，不阻断）
+        let Some(source_po) = self
+            .skill_dao
+            .find_by_id(ctx.clone(), source_skill_id)
+            .await?
+        else {
+            log_warn!(
+                &ctx,
+                "skill_writeback",
+                skill_id = %source_skill_id,
+                "回写跳过：源技能不存在（可能已被删除），不阻断发布主流程"
+            );
+            return Ok(None);
+        };
+
+        // 2. 幂等查重：该 Agent 名下已存在指向本源的任意有效状态副本（!= Expired）
+        //    → 跳过。重复发布/补偿重放不产生重复副本。
+        let existing = self
+            .skill_dao
+            .query(
+                ctx.clone(),
+                SkillQuery {
+                    author_id: Some(agent_id.to_string()),
+                    parent_skill_id: Some(source_skill_id.to_string()),
+                    exclude_status: Some(SkillStatus::Expired),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        if !existing.items.is_empty() {
+            log_debug!(
+                &ctx,
+                "skill_writeback",
+                skill_id = %source_skill_id,
+                agent_id = %agent_id,
+                "回写跳过：已存在有效副本，幂等去重"
+            );
+            return Ok(None);
+        }
+
+        // 3. 纯建副本路径：直调 DAO install_to_agent（无 self-created 幂等分支：
+        //    校验源 Published → 新 v7 id → parent=源 id → author=Agent → Draft →
+        //    copy_skill_dir 文件拷贝 → insert）
+        let installed_po = self
+            .skill_dao
+            .install_to_agent(ctx.clone(), &source_po, agent_id)
+            .await?;
+
+        // 4. 向量索引补偿：DAO 直建副本不会自动建索引，补一次（best-effort，失败仅 warn 降级）
+        if let Ok(Some(vec_params)) = self
+            .try_build_skill_vector_params(ctx.clone(), &installed_po)
+            .await
+            && let Err(e) = self
+                .skill_vector_dao
+                .upsert_vector(ctx.clone(), &installed_po.id, &vec_params)
+                .await
+        {
+            log_warn!(
+                &ctx,
+                "skill_writeback",
+                skill_id = %installed_po.id,
+                error = ?e,
+                "回写副本向量索引补偿失败，已降级"
+            );
+        }
+
+        let files = self.skill_dao.list_files(&installed_po)?;
+        log_info!(
+            &ctx,
+            "skill_writeback",
+            source_skill_id = %source_skill_id,
+            copy_id = %installed_po.id,
+            agent_id = %agent_id,
+            "发布回写完成：已为作者 Agent 生成本地工作副本"
+        );
+        Ok(Some(Skill {
+            po: installed_po,
+            files,
+            search_match: None,
+        }))
     }
 
     fn read_main_content(&self, skill: &SkillPo) -> Result<String> {

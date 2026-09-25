@@ -50,6 +50,13 @@ impl SkillManage for HrDomainImpl {
 
     async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<()> {
         // 资源级权限校验（管理员 / 作者 / Agent 创建者 / Agent 上下文仅限自身记录）
+        // 0. 快照发布前原值（N2 回写判定需要更新前 status：handler 传入的 po
+        //    已是改后值，domain 入口自查最稳，handler 层零改动）
+        let before = self
+            .skill_dal
+            .get_po_by_id(ctx.clone(), params.skill.po.id.clone())
+            .await?;
+
         self.ensure_skill_access(&ctx, &params.skill.po, SkillAccessIntent::Write)
             .await?;
 
@@ -68,6 +75,37 @@ impl SkillManage for HrDomainImpl {
         // 3. 处理文件删除：调用 DAL 删除指定文件（禁删 skill.md，canonicalize 双防）
         for filename in params.file_deletes {
             self.skill_dal.delete_file(&params.skill.po, filename)?;
+        }
+
+        // 4. 发布回写（N2 修复）：Agent 自有根技能「非 Published → Published」
+        //    转换完成后，为作者 Agent 补建 1 条指向已发布技能的本地工作副本
+        //    （Draft / parent=源 id / author=作者 Agent）。回写失败仅告警降级，
+        //    不阻断发布主流程（副本缺失可由幂等补偿函数重放补齐，N5 复用）；
+        //    源不存在（before=None，如并发删除）不触发。
+        if let Some(before_po) = before.as_ref() {
+            let is_publish_transition = before_po.status != SkillStatus::Published
+                && params.skill.po.status == SkillStatus::Published;
+            let is_agent_root_skill = matches!(params.skill.po.author_type, SkillAuthorType::Agent)
+                && params.skill.po.parent_skill_id.is_empty();
+            if is_publish_transition
+                && is_agent_root_skill
+                && let Err(e) = self
+                    .skill_dal
+                    .publish_writeback_copy(
+                        ctx.clone(),
+                        &params.skill.po.id,
+                        &params.skill.po.author_id,
+                    )
+                    .await
+            {
+                log_warn!(
+                    &ctx,
+                    "skill_writeback",
+                    skill_id = %params.skill.po.id,
+                    error = ?e,
+                    "发布回写失败，已降级（不阻断发布主流程，可由补偿函数重放补齐）"
+                );
+            }
         }
 
         Ok(())

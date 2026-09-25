@@ -8,7 +8,7 @@ use crate::pkg::request_context::RequestContext;
 use crate::service::dal::skill::{SkillDal, new};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
-use crate::service::dao::skill::{self, SkillSearch};
+use crate::service::dao::skill::{self, SkillQuery, SkillSearch};
 use common::enums::skill::SkillAuthorType;
 use common::enums::skill::SkillStatus;
 use common::error::Result;
@@ -1365,6 +1365,129 @@ async fn test_list_published_by_tag_excludes_copies(pool: SqlitePool) -> Result<
         !ids.contains(&draft_id.as_str()),
         "非 Published 根技能不应出现"
     );
+
+    Ok(())
+}
+
+// ==================== N2 发布回写自身技能用例 ====================
+
+/// N2 修复：publish_writeback_copy 主路径——
+/// 已发布源技能 → 为作者 Agent 生成 Draft 副本（parent=源 id / author=Agent /
+/// 文件拷贝 / 向量索引补偿可查）；同时锁定 N5 复用的幂等语义（重复调用不产生
+/// 第二条副本）与源缺失边界（Ok(None) 不报错）。
+#[sqlx::test]
+async fn test_publish_writeback_copy_creates_agent_draft_copy(pool: SqlitePool) -> Result<()> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // 已发布源技能（Agent 自有根技能发布后的共享库形态）
+    let source_id = uuid::Uuid::now_v7().to_string();
+    let source = make_m2_skill_po(
+        &source_id,
+        "doubao-search",
+        "agent-1",
+        SkillAuthorType::Agent,
+        "",
+        vec!["search".to_string()],
+        SkillStatus::Published,
+    );
+    skill_dal.create(ctx.clone(), &source).await?;
+    // 源写入 skill.md，验证副本文件全量拷贝
+    skill_dal.write_main_content(&source, "# Doubao Search\n正文")?;
+
+    // ===== 主路径：回写生成副本 =====
+    let copy = skill_dal
+        .publish_writeback_copy(ctx.clone(), &source_id, "agent-1")
+        .await?
+        .expect("首次回写应生成副本");
+    assert_ne!(copy.po.id, source_id, "副本应为新 id");
+    assert_eq!(copy.po.status, SkillStatus::Draft, "副本应为 Draft");
+    assert_eq!(copy.po.parent_skill_id, source_id, "副本 parent 应指向源");
+    assert_eq!(copy.po.author_id, "agent-1");
+    assert!(matches!(copy.po.author_type, SkillAuthorType::Agent));
+    assert!(
+        copy.files.iter().any(|f| f.filename == "skill.md"),
+        "副本应携带拷贝的 skill.md 文件"
+    );
+
+    // 向量索引补偿：副本可查到索引（Mock embed 恒可用）
+    let copy_hash = skill_dal
+        .get_vector_content_hash(ctx.clone(), &copy.po.id)
+        .await?;
+    assert!(copy_hash.is_some(), "回写副本应有向量索引补偿");
+
+    // ===== 幂等语义（N5 补偿重放依赖）：重复调用不产生第二条副本 =====
+    let second = skill_dal
+        .publish_writeback_copy(ctx.clone(), &source_id, "agent-1")
+        .await?;
+    assert!(second.is_none(), "重复回写应幂等跳过");
+    let copies = skill_dal
+        .query(
+            ctx.clone(),
+            SkillQuery {
+                author_id: Some("agent-1".to_string()),
+                parent_skill_id: Some(source_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(copies.items.len(), 1, "重复回写不得产生第二条副本");
+
+    // ===== 边界：源不存在 → Ok(None) 不报错（发布主流程不被阻断的前提） =====
+    let missing = skill_dal
+        .publish_writeback_copy(ctx, "nonexistent-source-id", "agent-1")
+        .await?;
+    assert!(missing.is_none(), "源缺失应返回 Ok(None)");
+
+    Ok(())
+}
+
+/// N2 修复：Expired 副本不参与幂等查重——旧副本过期后发布回写允许重建新副本
+/// （与 install_to_agent「过期副本原地恢复」的可用性语义一致）。
+#[sqlx::test]
+async fn test_publish_writeback_copy_rebuilds_after_expired(pool: SqlitePool) -> Result<()> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    let source_id = uuid::Uuid::now_v7().to_string();
+    let source = make_m2_skill_po(
+        &source_id,
+        "tavily-search",
+        "agent-2",
+        SkillAuthorType::Agent,
+        "",
+        vec!["search".to_string()],
+        SkillStatus::Published,
+    );
+    skill_dal.create(ctx.clone(), &source).await?;
+
+    // 第一次回写 → 副本生成
+    let copy1 = skill_dal
+        .publish_writeback_copy(ctx.clone(), &source_id, "agent-2")
+        .await?
+        .expect("首次回写应生成副本");
+
+    // 副本置为 Expired（模拟过期清理）
+    let mut expired_po = copy1.po.clone();
+    expired_po.status = SkillStatus::Expired;
+    skill_dal
+        .update(
+            ctx.clone(),
+            &Skill {
+                po: expired_po,
+                files: vec![],
+                search_match: None,
+            },
+        )
+        .await?;
+
+    // 再次回写：Expired 副本不参与查重 → 允许重建
+    let copy2 = skill_dal
+        .publish_writeback_copy(ctx.clone(), &source_id, "agent-2")
+        .await?
+        .expect("Expired 副本不应阻断重建");
+    assert_ne!(copy2.po.id, copy1.po.id, "重建应产生新副本 id");
+    assert_eq!(copy2.po.status, SkillStatus::Draft);
 
     Ok(())
 }

@@ -876,3 +876,288 @@ async fn test_skill_access_agent_context_restriction(
 
     Ok(())
 }
+
+// ==================== N2 发布回写自身技能用例 ====================
+
+/// 构造 Agent 自有根技能（Draft，author=指定 Agent，parent 为空）
+fn create_agent_root_skill(agent_id: &str, name: &str) -> Skill {
+    let slug = name.to_lowercase().replace(" ", "-");
+    let skill_po = SkillPo::new(
+        format!("{}--{}", slug, uuid::Uuid::new_v4()),
+        name.to_string(),
+        "Agent owned draft skill".to_string(),
+        vec!["search".to_string()],
+        "testing".to_string(),
+        String::new(), // 根技能：parent 为空
+        agent_id.to_string(),
+        SkillAuthorType::Agent,
+        format!("agents/{}/skills/{}", agent_id, slug),
+    );
+    Skill::from_po(skill_po)
+}
+
+/// N1 验收要点：Agent 上下文创建草稿 → 用户上下文发布 →
+/// 该 Agent 名下恰好 1 条 Draft 副本（修复 A 谓词 parent 非空放行形态），
+/// 且副本携带源文件、源技能保持 Published。
+#[sqlx::test]
+async fn test_publish_agent_root_skill_creates_writeback_copy(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env(pool);
+
+    let skill = create_agent_root_skill("agent-1", "DoubaoSearch");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    // 用户上下文发布：Draft → Published（Admin bypass），附带 skill.md 内容
+    let mut published = skill.clone();
+    published.po.status = SkillStatus::Published;
+    let imports = vec![SkillFileImport {
+        target_path: Some("skill.md".to_string()),
+        source_abs_path: None,
+        content_bytes: Some("# Doubao Search\n正文".as_bytes().to_vec()),
+        suggested_name: None,
+    }];
+    let ctx_admin = ctx
+        .to_builder()
+        .user_id("admin".to_string())
+        .user_role(1)
+        .build();
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx_admin.clone(),
+            UpdateSkillParams {
+                skill: &published,
+                imports,
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    // 源技能保持 Published
+    let src = domain
+        .skill_manage()
+        .get_skill(ctx.clone(), skill.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        src.po.status,
+        SkillStatus::Published,
+        "源技能应保持 Published"
+    );
+
+    // 该 Agent 名下恰好 1 条回写副本：Draft / parent=源 id / author=Agent / 文件齐全
+    let copies = domain
+        .skill_manage()
+        .query_skills(
+            ctx.clone(),
+            SkillQuery {
+                author_id: Some("agent-1".to_string()),
+                parent_skill_id: Some(skill.id().to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(copies.items.len(), 1, "发布后应恰好回写 1 条副本");
+    let copy = &copies.items[0];
+    assert_eq!(copy.po.status, SkillStatus::Draft, "回写副本应为 Draft");
+    assert_eq!(copy.po.parent_skill_id, skill.id(), "副本 parent 应指向源");
+    assert_eq!(copy.po.author_id, "agent-1");
+    assert!(matches!(copy.po.author_type, SkillAuthorType::Agent));
+    assert!(
+        copy.files.iter().any(|f| f.filename == "skill.md"),
+        "回写副本应携带拷贝的 skill.md 文件"
+    );
+}
+
+/// 重复发布幂等：发布 → 翻回 Draft → 再次发布，第二次仍命中回写路径，
+/// 但幂等查重应跳过（不产生第二条副本）——N5 补偿重放语义依赖此处锁定。
+#[sqlx::test]
+async fn test_publish_writeback_is_idempotent(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env(pool);
+    let ctx_admin = ctx
+        .to_builder()
+        .user_id("admin".to_string())
+        .user_role(1)
+        .build();
+
+    let skill = create_agent_root_skill("agent-1", "RepeatSearch");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    let copies_query = || async {
+        domain
+            .skill_manage()
+            .query_skills(
+                ctx.clone(),
+                SkillQuery {
+                    author_id: Some("agent-1".to_string()),
+                    parent_skill_id: Some(skill.id().to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+    };
+
+    // 第一次发布
+    let mut published = skill.clone();
+    published.po.status = SkillStatus::Published;
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx_admin.clone(),
+            UpdateSkillParams {
+                skill: &published,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        copies_query().await.items.len(),
+        1,
+        "首次发布应回写 1 条副本"
+    );
+
+    // 翻回 Draft 再发布：第二次仍命中回写路径，幂等查重跳过
+    let mut back_to_draft = skill.clone();
+    back_to_draft.po.status = SkillStatus::Draft;
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx_admin.clone(),
+            UpdateSkillParams {
+                skill: &back_to_draft,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    let mut published_again = skill.clone();
+    published_again.po.status = SkillStatus::Published;
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx_admin,
+            UpdateSkillParams {
+                skill: &published_again,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        copies_query().await.items.len(),
+        1,
+        "重复发布不得产生第二条副本（幂等查重）"
+    );
+}
+
+/// 负向语义：User 技能发布不回写；安装副本（parent 非空）状态变更不回写。
+#[sqlx::test]
+async fn test_publish_no_writeback_for_user_skill_and_installed_copy(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env(pool);
+    let ctx_admin = ctx
+        .to_builder()
+        .user_id("admin".to_string())
+        .user_role(1)
+        .build();
+
+    // ③ User 技能发布 → 不回写
+    let user_skill = create_test_skill("UserOwned");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&user_skill))
+        .await
+        .unwrap();
+    let mut published = user_skill.clone();
+    published.po.status = SkillStatus::Published;
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx_admin.clone(),
+            UpdateSkillParams {
+                skill: &published,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    let copies = domain
+        .skill_manage()
+        .query_skills(
+            ctx.clone(),
+            SkillQuery {
+                author_id: Some("admin".to_string()),
+                parent_skill_id: Some(user_skill.id().to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(copies.items.is_empty(), "User 技能发布不应产生回写副本");
+
+    // ④ 安装副本形态（parent 非空，author=Agent）状态变更 → 不回写
+    let installed_copy = Skill::from_po(SkillPo::new(
+        format!("installed-copy--{}", uuid::Uuid::new_v4()),
+        "Installed Search".to_string(),
+        "installed copy".to_string(),
+        vec!["search".to_string()],
+        "testing".to_string(),
+        user_skill.id().to_string(), // parent 非空：安装副本
+        "agent-9".to_string(),
+        SkillAuthorType::Agent,
+        "agents/agent-9/skills/installed-copy".to_string(),
+    ));
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&installed_copy))
+        .await
+        .unwrap();
+    let mut copy_published = installed_copy.clone();
+    copy_published.po.status = SkillStatus::Published;
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx_admin,
+            UpdateSkillParams {
+                skill: &copy_published,
+                imports: vec![],
+                file_deletes: vec![],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    let nested = domain
+        .skill_manage()
+        .query_skills(
+            ctx,
+            SkillQuery {
+                author_id: Some("agent-9".to_string()),
+                parent_skill_id: Some(installed_copy.id().to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(nested.items.is_empty(), "安装副本状态变更不应触发回写");
+}
