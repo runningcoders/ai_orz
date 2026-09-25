@@ -381,7 +381,7 @@ pub fn HrSkills() -> Element {
                         if is_copy { span { class: "badge orz-tag badge-sm shrink-0", "副本" } }
                     }
                 }
-                td { class: "text-base-content/70 max-w-[16rem]", "data-label": "描述",
+                td { class: "text-base-content/70 min-w-0", "data-label": "描述",
                     span { class: "block truncate", title: "{description}", "{description}" }
                 }
                 td { class: "max-w-[12rem]", "data-label": "标签",
@@ -543,7 +543,14 @@ pub fn HrSkills() -> Element {
                 } else {
                     div { class: "flex flex-col gap-2",
                         div { class: "overflow-x-auto",
-                            table { class: "table hud-table table-zebra table-pin-rows",
+                            table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                colgroup {
+                                    col { class: "w-[22%]" }
+                                    col {}
+                                    col { class: "w-[14%]" }
+                                    col { class: "w-[14%]" }
+                                    col { class: "w-[16%]" }
+                                }
                                 thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "创建者" }, th { "操作" } }}
                                 tbody {
                                     if is_default_view {
