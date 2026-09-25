@@ -1832,6 +1832,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     skill_search_loading.set(true);
                                                     let req = SearchSkillsRequest {
                                                         keyword: Some(keyword),
+                                                        // 安装入口仅搜 Published 技能：排除他人 Draft 副本与非正式发布技能
+                                                        status: Some(SkillStatus::Published),
                                                         ..Default::default()
                                                     };
                                                     match search_skills(&req).await {
