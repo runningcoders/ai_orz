@@ -91,6 +91,16 @@ struct ReplyCtx {
     on_open_thread: Callback<String>,
 }
 
+/// 问题一：左栏项目列表状态子过滤器标签组（单选互斥 + 显式「全部」，AMan 拍板①）
+/// 标签→状态映射：未完成=InProgress(1)、已完成=Completed(2)、已归档=Archived(3)；
+/// Deleted=0 由后端 list_projects 排除不可达，前端无需处理（方案 §4.2）。
+const FILTER_TABS: [(&str, Option<i32>); 4] = [
+    ("全部", None),
+    ("未完成", Some(1)), // InProgress
+    ("已完成", Some(2)), // Completed
+    ("已归档", Some(3)), // Archived
+];
+
 #[component]
 pub fn MessageChat(project: Option<String>) -> Element {
     // 修复 HIGH #3：之前 use_require_auth 提前 return 会跳过后续所有 use_signal，
@@ -110,6 +120,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let mut input_text = use_signal(String::new);
     // 修复 L1：删除未使用的 error signal（之前从未 set，is_empty() 永远为 true）
     let mut loading_projects = use_signal(|| true);
+    // 问题一：左栏状态子过滤器当前选中下标（AMan 拍板②：默认「未完成」，见 FILTER_TABS 下标 1）
+    let mut status_filter = use_signal(|| 1usize);
     let mut has_more = use_signal(|| true);
     let mut loading_messages = use_signal(|| false);
     let mut sse_connected = use_signal(|| false);
@@ -887,7 +899,15 @@ pub fn MessageChat(project: Option<String>) -> Element {
         .find(|p| selected_project().as_deref() == Some(&p.id))
         .cloned();
 
-    let project_items = projects.read().clone();
+    // 问题一：iterator filter 保序——后端 ORDER BY priority DESC, created_at DESC 顺序原样保留，「排序不动」零接触；
+    // AMan 拍板④：过滤只影响左栏渲染，selected_project 不动 → 选中项目被隐藏时保持选中、聊天区不闪变。
+    let active_filter = status_filter();
+    let project_items: Vec<ListProjectsResponseItem> = projects
+        .read()
+        .iter()
+        .filter(|p| FILTER_TABS[active_filter].1.is_none_or(|s| p.status == s))
+        .cloned()
+        .collect();
 
     // 输入框回复条预览：正在回复谁 + 内容摘要（读 reply_target 使组件订阅其变化）
     let reply_preview = reply_target().map(|rt| {
@@ -1457,6 +1477,27 @@ pub fn MessageChat(project: Option<String>) -> Element {
                         "+ 新建项目"
                     }
                 }
+                // 问题一：状态子过滤器标签组（单选互斥 + 显式「全部」，flex-wrap 自适应抽屉宽度）
+                div { class: "flex flex-wrap gap-1 px-3 py-2 border-b border-base-300",
+                    for (idx, (label, _)) in FILTER_TABS.iter().enumerate() {
+                        {
+                            let chip_class = if status_filter() == idx {
+                                "btn hud-btn btn-xs bg-primary/10 border border-primary text-primary"
+                            } else {
+                                "btn hud-btn btn-xs bg-base-100 border border-base-300 text-base-content/70"
+                            };
+                            rsx! {
+                                button {
+                                    key: "{idx}",
+                                    class: "{chip_class}",
+                                    r#type: "button",
+                                    onclick: move |_| status_filter.set(idx),
+                                    "{label}"
+                                }
+                            }
+                        }
+                    }
+                }
                 div { class: "flex-1 overflow-y-auto",
                     {
                         let is_active = selected_project().is_none();
@@ -1474,7 +1515,12 @@ pub fn MessageChat(project: Option<String>) -> Element {
                             }
                         }
                     }
-                    if loading_projects() {
+                        // 问题一：过滤后空态（默认「未完成」过滤下该状态可能无项目）
+                        if !loading_projects() && project_items.is_empty() {
+                            div { class: "text-center text-sm text-base-content/50 py-8",
+                                "该状态下暂无项目"
+                            }
+                        } else if loading_projects() {
                         div { class: "flex items-center justify-center py-8",
                             Loading { size: "sm" }
                             span { class: "ml-2 text-sm text-base-content/60", "加载中..." }
