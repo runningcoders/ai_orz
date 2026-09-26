@@ -235,11 +235,11 @@ pub fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
     }
 }
 
-// 卡片几何常量与折行/截断函数由上面的 `node_card` 提供，此处重导出保持调用点不变。
+// 卡片几何常量与折行函数由上面的 `node_card` 提供，此处重导出保持调用点不变。
 // （宽度不再有常量版本：走 `node_box_width`，纯名称卡片会被收窄。）
 pub use crate::components::node_card::{
     HOVER_FONT_PX, HOVER_TEXT_W, NODE_ACCENT_W, NODE_BODY_H, NODE_BODY_PX, NODE_BOX_PAD,
-    NODE_BOX_R, NODE_TAG_GAP, NODE_TAG_H, NODE_TITLE_H, NODE_TITLE_PX, truncate_chars, wrap_text,
+    NODE_BOX_R, NODE_TAG_GAP, NODE_TAG_H, NODE_TITLE_H, NODE_TITLE_PX, wrap_text,
 };
 
 // 以下皆是 `GraphNode` → `node_card` 的薄包装：几何与文案的实现在
@@ -1064,13 +1064,6 @@ mod tests {
         // 正文里的换行摊平成单行（单词间保留一个空格），否则卡片里会出现半截空行
         let lines = wrap_text("第一行\n第二行", 1000.0, 10.0, 2);
         assert_eq!(lines, vec!["第一行 第二行".to_string()]);
-    }
-
-    #[test]
-    fn truncate_chars_keeps_boundary() {
-        assert_eq!(truncate_chars("知识节点", 10), "知识节点");
-        assert_eq!(truncate_chars("知识节点名称超长", 5), "知识节点…");
-        assert_eq!(truncate_chars("知识节点", 0), "");
     }
 
     #[test]

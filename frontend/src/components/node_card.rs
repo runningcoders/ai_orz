@@ -132,19 +132,6 @@ pub fn wrap_text(s: &str, max_width: f64, font_px: f64, max_lines: usize) -> Vec
     lines
 }
 
-/// 截断到 `max` 个字符（超出加省略号）
-pub fn truncate_chars(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut t: String = s.chars().take(max - 1).collect();
-    t.push('…');
-    t
-}
-
 // ==================== 卡片文案 ====================
 
 /// 卡片标题（展示名单行，超出省略）
@@ -585,11 +572,5 @@ mod tests {
     fn chip_color_is_stable() {
         assert_eq!(chip_color("架构"), chip_color("架构"));
         assert!(TAG_COLORS.contains(&chip_color("架构")));
-    }
-
-    #[test]
-    fn truncate_chars_adds_ellipsis() {
-        assert_eq!(truncate_chars("abcdef", 3), "ab…");
-        assert_eq!(truncate_chars("ab", 5), "ab");
     }
 }
