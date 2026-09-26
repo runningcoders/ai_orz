@@ -1599,13 +1599,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                             .get(local_store::UNREAD_DEFAULT_KEY)
                                             .copied()
                                             .unwrap_or(0);
-                                        if count > 0 {
-                                            rsx! {
-                                                span { class: "badge badge-sm badge-error", "{count}" }
-                                            }
-                                        } else {
-                                            rsx! { {} }
-                                        }
+                                        { unread_badge(count) }
                                     }
                                 }
                                 div { class: "text-xs text-base-content/60", "与前台 Agent 直接沟通" }
@@ -1643,16 +1637,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                             {
                                                 let count =
                                                     unread_badges().get(&id).copied().unwrap_or(0);
-                                                if count > 0 {
-                                                    rsx! {
-                                                        span {
-                                                            class: "badge badge-sm badge-error",
-                                                            "{count}",
-                                                        }
-                                                    }
-                                                } else {
-                                                    rsx! { {} }
-                                                }
+                                                { unread_badge(count) }
                                             }
                                         }
                                         div { class: "text-xs text-base-content/60", "{status_text(status)}" }
@@ -2534,6 +2519,24 @@ fn group_messages_by_date(messages: &[MessageListItem]) -> Vec<MessageListEntry>
 
 /// 格式化毫秒时间戳为日期分组标签 (今天 / 昨天 / YYYY-MM-DD)
 // 修复 M5：日期分组使用本地时区，之前用 UTC 深夜时段日期分组错乱
+/// 未读角标（问题二·UI 形态优化）：可伸缩胶囊形红底 + 数字展示。
+///
+/// 只改「长什么样」，不改「怎么计数」：count > 0 才渲染的显示行为原样保留；
+/// 进会话清零 / 默认对话哨兵键 / 仅 Text 消息计入等计数逻辑由调用方持有，本函数零触碰。
+/// 胶囊宽度随数字位数自适应伸缩（min-w 保底、px 内边距随内容撑开），
+/// 尺寸与配色对齐 `hud-badge badge-sm`（11px 字号 / 20px 高）与 `badge-error` 语义。
+fn unread_badge(count: u32) -> Element {
+    if count == 0 {
+        return rsx! { {} };
+    }
+    rsx! {
+        span {
+            class: "inline-flex items-center justify-center h-5 min-w-[1.25rem] px-1.5 rounded-full bg-error text-error-content text-[11px] font-semibold leading-none",
+            "{count}",
+        }
+    }
+}
+
 fn format_date_group_label(ts_ms: i64) -> String {
     use chrono::{Datelike, Local, TimeZone};
     let secs = ts_ms / 1000;
