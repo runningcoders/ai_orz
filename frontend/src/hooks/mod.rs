@@ -8,7 +8,7 @@ pub mod use_workspace_data;
 use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
 use crate::store::auth::{is_logged_in, logout, save_role, save_user_identity, use_auth_state};
-use crate::utils::local_storage;
+use crate::utils::local_store;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wasm_bindgen::JsCast;
 
@@ -73,8 +73,10 @@ pub fn use_require_auth() -> bool {
 pub const AVAILABLE_THEMES: &[(&str, &str)] = &[("orz-hud", "HUD 深色"), ("orz-light", "Orz 默认")];
 
 fn get_saved_theme() -> String {
-    local_storage()
-        .and_then(|s| s.get_item("ai_orz_theme").ok().flatten())
+    // 经组件层读取（ai_orz:theme）；旧明文键 ai_orz_theme 未命中时回退读取并一次性迁移
+    local_store::get_string_with_legacy(local_store::keys::THEME, local_store::legacy::THEME)
+        .ok()
+        .flatten()
         .filter(|t| !t.is_empty())
         .unwrap_or_else(|| "orz-hud".to_string())
 }
@@ -98,9 +100,8 @@ impl ThemeController {
     }
 
     pub fn set(&mut self, new_theme: String) {
-        if let Some(storage) = local_storage() {
-            let _ = storage.set_item("ai_orz_theme", &new_theme);
-        }
+        // 经组件层写入（ai_orz:theme，编码统一走版本包装）
+        let _ = local_store::set_json(local_store::keys::THEME, &new_theme);
         set_html_theme(&new_theme);
         self.theme.set(new_theme);
     }
@@ -138,7 +139,7 @@ pub fn use_theme() -> ThemeController {
 ///   2. 页面可见性从「隐藏 → 显示」切换时（切 tab 回来 / 最小化恢复 / 锁屏回来）
 ///   3. 每 10 分钟一次的弱心跳（前台发呆超过 10 分钟也会自检，而不是等交互）
 ///
-/// 前提：仅当 localStorage `ai_orz_logged_in=true` 或内存 AuthState 仍认为已登录
+/// 前提：仅当登录标志位（组件层键 ai_orz:auth_logged_in）或内存 AuthState 仍认为已登录
 /// 时才会真正打请求；未登录时三条通路都空转，不浪费任何流量。
 ///
 /// 节流：inflight 门闩 + 30 秒最小间隔，防止 visibilitychange 事件在切换瞬间

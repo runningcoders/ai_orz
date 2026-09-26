@@ -5,32 +5,22 @@
 
 use dioxus::prelude::*;
 
-use crate::utils::local_storage;
+use crate::utils::local_store;
 
-const LOGGED_IN_KEY: &str = "ai_orz_logged_in";
-const ROLE_KEY: &str = "ai_orz_role";
-const USERNAME_KEY: &str = "ai_orz_username";
-const DISPLAY_NAME_KEY: &str = "ai_orz_display_name";
+// 键名统一收敛至组件层 local_store::keys（旧明文键兼容读取见 local_store::legacy）
 
 pub fn mark_logged_in() {
-    if let Some(storage) = local_storage() {
-        let _ = storage.set(LOGGED_IN_KEY, "true");
-    }
+    let _ = local_store::set_json(local_store::keys::AUTH_LOGGED_IN, &true);
 }
 
 /// 持久化用户角色到 localStorage，供页面刷新后恢复管理员菜单显示
 pub fn save_role(role: i32) {
-    if let Some(storage) = local_storage() {
-        let role_str = role.to_string();
-        let _ = storage.set(ROLE_KEY, &role_str);
-    }
+    let _ = local_store::set_json(local_store::keys::AUTH_ROLE, &role);
 }
 
 pub fn clear_login_state() {
-    if let Some(storage) = local_storage() {
-        let _ = storage.remove_item(LOGGED_IN_KEY);
-        let _ = storage.remove_item(ROLE_KEY);
-    }
+    let _ = local_store::remove(local_store::keys::AUTH_LOGGED_IN);
+    let _ = local_store::remove(local_store::keys::AUTH_ROLE);
 }
 
 /// 持久化用户身份（username / display_name）到 localStorage。
@@ -39,23 +29,22 @@ pub fn clear_login_state() {
 /// 而回填的 re-render 又未能可靠反映时，顶栏长期停留在 "用户" 占位。
 /// 仅在值非空时写入，避免把已保存的好数据被一次空响应覆盖。
 pub fn save_user_identity(username: &str, display_name: &str) {
-    if let Some(storage) = local_storage() {
-        if !username.is_empty() {
-            let _ = storage.set(USERNAME_KEY, username);
-        }
-        if !display_name.is_empty() {
-            let _ = storage.set(DISPLAY_NAME_KEY, display_name);
-        }
+    if !username.is_empty() {
+        let _ = local_store::set_json(local_store::keys::AUTH_USERNAME, &username.to_string());
+    }
+    if !display_name.is_empty() {
+        let _ = local_store::set_json(
+            local_store::keys::AUTH_DISPLAY_NAME,
+            &display_name.to_string(),
+        );
     }
 }
 
 /// 完整登出：清除 localStorage + 重置内存中的 AuthState 信号
 pub fn logout(mut auth: Signal<AuthState>) {
     clear_login_state();
-    if let Some(storage) = local_storage() {
-        let _ = storage.remove_item(USERNAME_KEY);
-        let _ = storage.remove_item(DISPLAY_NAME_KEY);
-    }
+    let _ = local_store::remove(local_store::keys::AUTH_USERNAME);
+    let _ = local_store::remove(local_store::keys::AUTH_DISPLAY_NAME);
     let mut state = auth.write();
     state.logged_in = false;
     state.role = 0;
@@ -66,23 +55,33 @@ pub fn logout(mut auth: Signal<AuthState>) {
 }
 
 pub fn is_logged_in() -> bool {
-    local_storage()
-        .and_then(|s| s.get(LOGGED_IN_KEY).ok()?)
-        .map(|v| v == "true")
-        .unwrap_or(false)
+    // 新键未命中回退旧明文键（"true" 恰为合法 JSON bool），命中即一次性迁移
+    local_store::get_json_with_legacy::<bool>(
+        local_store::keys::AUTH_LOGGED_IN,
+        local_store::legacy::AUTH_LOGGED_IN,
+    )
+    .ok()
+    .flatten()
+    .unwrap_or(false)
 }
 
 fn restore_role() -> i32 {
-    local_storage()
-        .and_then(|s| s.get(ROLE_KEY).ok().flatten())
-        .and_then(|v| v.parse::<i32>().ok())
-        .unwrap_or(0)
+    // 新键未命中回退旧明文键（"1" 恰为合法 JSON i32），命中即一次性迁移
+    local_store::get_json_with_legacy::<i32>(
+        local_store::keys::AUTH_ROLE,
+        local_store::legacy::AUTH_ROLE,
+    )
+    .ok()
+    .flatten()
+    .unwrap_or(0)
 }
 
 /// 从 localStorage 读取一个字符串字段（用于 username / display_name 的同步恢复）
-fn restore_string(key: &str) -> String {
-    local_storage()
-        .and_then(|s| s.get(key).ok().flatten())
+fn restore_string(key: &str, legacy_key: &str) -> String {
+    // 新键未命中回退旧明文键（用户名 / 显示名旧编码为裸文本），命中即一次性迁移
+    local_store::get_string_with_legacy(key, legacy_key)
+        .ok()
+        .flatten()
         .unwrap_or_default()
 }
 
@@ -118,8 +117,14 @@ impl AuthState {
         Self {
             logged_in: is_logged_in(),
             role: restore_role(),
-            username: restore_string(USERNAME_KEY),
-            display_name: restore_string(DISPLAY_NAME_KEY),
+            username: restore_string(
+                local_store::keys::AUTH_USERNAME,
+                local_store::legacy::AUTH_USERNAME,
+            ),
+            display_name: restore_string(
+                local_store::keys::AUTH_DISPLAY_NAME,
+                local_store::legacy::AUTH_DISPLAY_NAME,
+            ),
             ..Default::default()
         }
     }

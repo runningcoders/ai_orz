@@ -7,10 +7,12 @@
 //! - `doc_link`: Markdown 渲染期站内链接后处理（data-repo-href 预拼）
 //! - `mention`: 消息 @ 提及文本协议（`[@名](agent:id)`）解析与 chip 渲染
 //! - `number`: 数值紧凑格式化（大数进位 k/M、定点小数去尾零）
+//! - `local_store`: 通用 localStorage 组件层（统一前缀 / 类型化读写 / 版本兼容 / 结构体集中）
 
 pub mod avatar;
 pub mod doc_link;
 pub mod file;
+pub mod local_store;
 pub mod mention;
 pub mod message;
 pub mod number;

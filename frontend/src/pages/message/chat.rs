@@ -20,6 +20,7 @@ use crate::layouts::navbar::Navbar;
 use crate::store::auth::use_auth_state;
 use crate::store::directory::{Directory, use_directory};
 use crate::store::toast::use_toast;
+use crate::utils::local_store;
 use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::{
     HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT,
@@ -196,15 +197,21 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let mut sidebar_open = use_signal(|| false);
     let is_mobile = crate::hooks::use_breakpoint();
 
-    // 信息侧栏状态（展开状态持久化到 localStorage，刷新页面后恢复）
+    // 信息侧栏状态（经通用组件层持久化，刷新页面后恢复；旧明文键 chat_project_panel_open 兼容读取）
     let mut panel_open = use_signal(|| {
-        crate::utils::local_storage()
-            .and_then(|s| s.get_item("chat_project_panel_open").ok().flatten())
-            .map(|v| v == "1")
-            .unwrap_or(false)
+        local_store::get_string_with_legacy(
+            local_store::keys::CHAT_PANEL_OPEN,
+            local_store::legacy::CHAT_PANEL_OPEN,
+        )
+        .ok()
+        .flatten()
+        .map(|v| v == "1")
+        .unwrap_or(false)
     });
     // SSE 消息计数器：当前会话收到新消息时递增，驱动侧栏防抖刷新
     let mut refresh_tick = use_signal(|| 0u64);
+    // 问题二：会话未读角标（仅 Text 消息计入；默认对话计入；持久化走组件层 ai_orz:unread_badges）
+    let mut unread_badges = use_signal(local_store::load_unread_badges);
     // 统计周期刷新计数器：由下方 3s 轮询循环每 10 拍（30s，对齐后端统计落盘节奏）递增一次，
     // 单独成信号以便只命中 Agent 统计 Tab，不牵动项目总览/工具 Tab 的事件驱动语义。
     let mut stats_poll_tick = use_signal(|| 0u64);
@@ -358,6 +365,17 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 }
             }
             messages.set(visible);
+            // 问题二（AMan 拍板）：进入会话加载完成后清除该会话未读角标
+            //（默认对话用哨兵键 default，项目会话用 project_id 原值）
+            {
+                let cur_key = project_id
+                    .as_deref()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| local_store::UNREAD_DEFAULT_KEY.to_string());
+                let mut badges = unread_badges.write();
+                badges.remove(&cur_key);
+                let _ = local_store::set_json(local_store::keys::UNREAD_BADGES, &*badges);
+            }
             has_more.set(full_page);
             loading_messages.set(false);
         });
@@ -452,6 +470,19 @@ pub fn MessageChat(project: Option<String>) -> Element {
             }
             // 通知信息侧栏防抖刷新（任务进度/执行计划/产物可能已变化）
             refresh_tick.set(refresh_tick() + 1);
+        } else if msg.message_type == MSG_TEXT {
+            // 问题二（AMan 拍板）：非当前会话的 Text 消息计入未读角标；
+            // 默认对话（project_id=None）用哨兵键 default，项目会话用 project_id 原值。
+            // SSE 正常推送语义下单条消息只到达一次，未做 message_id 去重（评估报告口径：倾向简单）。
+            let key = match msg.project_id.as_deref() {
+                Some(pid) => pid.to_string(),
+                None => local_store::UNREAD_DEFAULT_KEY.to_string(),
+            };
+            {
+                let mut badges = unread_badges.write();
+                *badges.entry(key).or_insert(0) += 1;
+                let _ = local_store::set_json(local_store::keys::UNREAD_BADGES, &*badges);
+            }
         }
     };
 
@@ -841,9 +872,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let toggle_panel = move |_| {
         let next = !panel_open();
         panel_open.set(next);
-        if let Some(storage) = crate::utils::local_storage() {
-            let _ = storage.set_item("chat_project_panel_open", if next { "1" } else { "0" });
-        }
+        // 经组件层持久化（ai_orz:chat_panel_open，编码统一沿用 "1"/"0" 语义）
+        let flag = if next { "1" } else { "0" };
+        let _ = local_store::set_json(local_store::keys::CHAT_PANEL_OPEN, &flag.to_string());
     };
 
     // 点击「默认对话」条目：清空选中项目
@@ -1561,7 +1592,22 @@ pub fn MessageChat(project: Option<String>) -> Element {
                             div {
                                 class: "{item_class}",
                                 onclick: handle_default_chat_click,
-                                div { class: "font-medium", "💬 默认对话" }
+                                div { class: "flex items-center justify-between gap-2",
+                                    div { class: "font-medium", "💬 默认对话" }
+                                    {
+                                        let count = unread_badges()
+                                            .get(local_store::UNREAD_DEFAULT_KEY)
+                                            .copied()
+                                            .unwrap_or(0);
+                                        if count > 0 {
+                                            rsx! {
+                                                span { class: "badge badge-sm badge-error", "{count}" }
+                                            }
+                                        } else {
+                                            rsx! { {} }
+                                        }
+                                    }
+                                }
                                 div { class: "text-xs text-base-content/60", "与前台 Agent 直接沟通" }
                             }
                         }
@@ -1592,7 +1638,23 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                     div {
                                         class: "{item_class}",
                                         onclick: move |_| handle_project_click(id.clone()),
-                                        div { class: "font-medium", "{name}" }
+                                        div { class: "flex items-center justify-between gap-2",
+                                            div { class: "font-medium", "{name}" }
+                                            {
+                                                let count =
+                                                    unread_badges().get(&id).copied().unwrap_or(0);
+                                                if count > 0 {
+                                                    rsx! {
+                                                        span {
+                                                            class: "badge badge-sm badge-error",
+                                                            "{count}",
+                                                        }
+                                                    }
+                                                } else {
+                                                    rsx! { {} }
+                                                }
+                                            }
+                                        }
                                         div { class: "text-xs text-base-content/60", "{status_text(status)}" }
                                     }
                                 }
