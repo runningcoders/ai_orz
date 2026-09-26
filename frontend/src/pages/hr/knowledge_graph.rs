@@ -6,7 +6,7 @@ use crate::api::hr::{recommend_seed_nodes, search_agents, search_memory_with_tra
 use crate::components::SearchableSelect;
 use crate::components::button::Button;
 use crate::components::graph::{
-    Graph, GraphEdge, GraphNode, calculate_layout, expand_layout, truncate_chars, type_label,
+    Graph, GraphEdge, GraphNode, calculate_layout, expand_layout, type_label,
 };
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
 use crate::components::markdown::MarkdownRenderer;
@@ -45,18 +45,19 @@ enum GraphStyle {
 /// 「未命名节点」只兜底「实体节点本身字段全空」这一种情况；**不给关系端点造占位**
 /// （端点缺失的边整条不画，见 `build_graph_from_results`）。
 /// ID 不进卡片，统一留给 hover 详情（见 `graph::node_hover_lines`）。
+///
+/// ⚠️ 名称保持**完整不截断**：截断只属于「节点卡片标题」这一处渲染
+/// （`node_card::title` 单行收窄）；label 若在数据构建层被截断，hover 详情卡、
+/// SVG 兜底与边端点名将拿到残缺文本（体验问题排查专项·第二批·问题一）。
 fn node_display_name(item: &MemoryResult) -> String {
-    let head = |s: &str| {
-        let first = s.trim().lines().next().unwrap_or("").trim();
-        truncate_chars(first, 14)
-    };
+    let head = |s: &str| s.trim().lines().next().unwrap_or("").trim().to_string();
     if let Some(name) = item
         .name
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        return truncate_chars(name, 14);
+        return name.to_string();
     }
     if let Some(summary) = item
         .summary
@@ -1019,6 +1020,28 @@ mod tests {
         assert_eq!(edges[0].source, "kn_a");
         assert_eq!(edges[0].target, "kn_b");
         assert_eq!(edges[0].weight, Some(0.8));
+    }
+
+    /// 名称在数据层保持完整：`node_display_name` 不再 14 字符截断，
+    /// hover 详情卡 / SVG 兜底 / 边端点名才能拿到完整文本（截断只留在渲染处 title()）。
+    #[test]
+    fn display_name_keeps_full_name_without_truncation() {
+        let long_name = "超长知识节点名称用于验证hover弹窗标题完整显示";
+        let item = node("kn_long", long_name);
+        assert_eq!(node_display_name(&item), long_name);
+
+        let (nodes, _) = build_graph_from_results(&[node("kn_long", long_name)]);
+        assert_eq!(
+            nodes[0].label, long_name,
+            "GraphNode.label 不应在数据构建层被截断"
+        );
+
+        // 兜底名（正文首行）同样完整保留，不再截断
+        let first_line = format!("{}{}", "第一行正文", "很长".repeat(9));
+        let mut by_content = node("kn_c", "");
+        by_content.name = None;
+        by_content.content = format!("{first_line}\n第二行");
+        assert_eq!(node_display_name(&by_content), first_line);
     }
 
     /// 「未命名节点」只兜底「实体节点字段全空」，不是端点占位的产物。
