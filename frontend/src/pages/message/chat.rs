@@ -6,7 +6,7 @@ use crate::Route;
 use crate::api::finance::upload_attachment;
 use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
-use crate::api::project::{create_project, get_project, list_projects};
+use crate::api::project::{create_project, get_project, list_projects, query_projects};
 use crate::components::avatar_bubble::{AvatarBubble, AvatarTone, BubbleAlign};
 use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
@@ -31,7 +31,7 @@ use crate::utils::{
 use common::api::{
     AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse, GetProjectRequest,
     GetReceptionAgentResponse, ListAgentsRequest, ListProjectsRequest, ListProjectsResponseItem,
-    MessageListItem, SendMessageToAgentParams,
+    MessageListItem, ProjectQueryRequest, SendMessageToAgentParams,
 };
 
 /// 全局名称目录里查不到某 Agent 时，按需拉取该 Agent 的单条详情并回填到目录，
@@ -122,6 +122,11 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let mut loading_projects = use_signal(|| true);
     // 问题一：左栏状态子过滤器当前选中下标（AMan 拍板②：默认「未完成」，见 FILTER_TABS 下标 1）
     let mut status_filter = use_signal(|| 1usize);
+    // 问题一（第三批·候选一）：过滤器点击改走后端 query_projects 拉最新数据。
+    // filter_loading=局部加载态（仅标签组细条提示，不复用全局 loading_projects 避免整块闪烁）；
+    // filter_request_id=自增竞态守卫（快速连点丢弃过期响应，与项目页 search_request_id 同款）。
+    let mut filter_loading = use_signal(|| false);
+    let mut filter_request_id = use_signal(|| 0u32);
     let mut has_more = use_signal(|| true);
     let mut loading_messages = use_signal(|| false);
     let mut sse_connected = use_signal(|| false);
@@ -250,6 +255,36 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 }
             }
             loading_projects.set(false);
+        });
+    };
+
+    // 问题一（第三批·候选一）：点击过滤器时按状态调 query_projects 拉取最新项目列表。
+    // 竞态守卫：request_id 自增，响应回来时 id 不匹配（已有点击）则丢弃，旧不覆新；
+    // 失败兜底：保留旧数据（projects 不动）+ toast 报错；全部=None 不过滤状态（语义与
+    // 排查报告拍板④一致）；root_user_id 显式传当前用户（CR 整改：后端 query_projects 将 body 的
+    // root_user_id 原样透传不取 ctx.uid()，前端不传即无用户域条件，与挂载
+    // list_projects（内部固定 ctx.uid()）不同源；显式传入保持同用户域）。
+    let mut reload_projects_filtered = move |status_in: Option<i32>| {
+        let my_id = filter_request_id() + 1;
+        filter_request_id.set(my_id);
+        filter_loading.set(true);
+        let my_user_id = auth.read().user_id.clone();
+        spawn(async move {
+            let result = query_projects(&ProjectQueryRequest {
+                status_in: status_in.map(|s| vec![common::enums::ProjectStatus::from(s)]),
+                root_user_id: Some(my_user_id),
+                ..Default::default()
+            })
+            .await;
+            // 竞态守卫：期间有新点击（id 已变）则丢弃本次过期响应
+            if filter_request_id() != my_id {
+                return;
+            }
+            match result {
+                Ok(resp) => projects.set(resp.items),
+                Err(e) => toast.error(format!("刷新项目列表失败: {}", e)),
+            }
+            filter_loading.set(false);
         });
     };
 
@@ -899,8 +934,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
         .find(|p| selected_project().as_deref() == Some(&p.id))
         .cloned();
 
-    // 问题一：iterator filter 保序——后端 ORDER BY priority DESC, created_at DESC 顺序原样保留，「排序不动」零接触；
-    // AMan 拍板④：过滤只影响左栏渲染，selected_project 不动 → 选中项目被隐藏时保持选中、聊天区不闪变。
+    // 问题一（第三批·候选一）：点击过滤器已改走 query_projects 拉最新数据，
+    // 此处仅保留内存筛选兜底（默认会话/挂载首帧沿用既有数据），selected_project 不动 →
+    // 选中项目被隐藏时保持选中、聊天区不闪变（AMan 拍板④语义维持）。
     let active_filter = status_filter();
     let project_items: Vec<ListProjectsResponseItem> = projects
         .read()
@@ -1491,9 +1527,24 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                     key: "{idx}",
                                     class: "{chip_class}",
                                     r#type: "button",
-                                    onclick: move |_| status_filter.set(idx),
+                                    onclick: move |_| {
+                                        status_filter.set(idx);
+                                        reload_projects_filtered(FILTER_TABS[idx].1);
+                                    },
                                     "{label}"
                                 }
+                            }
+                        }
+                    }
+                }
+                // 问题一（第三批·候选一）：过滤器拉取中的局部加载提示（细条，不复用全局 loading）
+                {
+                    let loading = filter_loading();
+                    rsx! {
+                        if loading {
+                            div { class: "flex items-center gap-2 px-3 py-1 text-xs text-base-content/60 border-b border-base-300",
+                                span { class: "loading loading-dots loading-xs" }
+                                "刷新中…"
                             }
                         }
                     }
