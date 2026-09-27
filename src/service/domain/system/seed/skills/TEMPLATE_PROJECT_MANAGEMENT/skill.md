@@ -87,7 +87,18 @@ Completed  → Archived
 - **发现游离任务**：`query_tasks`（不传 `project_id`）拉取任务列表，筛出 `project_id` 为空的项
 - **先确认后挂载**：帮用户整理零散任务时，先列出游离任务清单与目标项目，向用户确认归属关系后再逐个挂载，不要自行猜测归组
 
-## execution_plan / execution_result 书写规范
+## description / execution_plan / execution_result 书写规范
+
+### description（项目定位卡 + 产物索引）
+
+`description` 只写两样东西，保持简短（建议 ≤10 行）：
+
+1. **项目定位**：做什么 / 为什么 / 边界（一段话）
+2. **关键产物 ID 索引**：技术方案、计划变更快照等关键产物的 `artifact_id`（一行一个，附一句话说明）——任何人 `get_project` 一眼就能拿到入口，无需翻找
+
+**不放计划与过程快照**——拆分计划写入 `execution_plan`；计划的历史变更快照存为**项目级产物**（`create_text_artifact(tags=["plan_snapshot"], project_id=...)`，`task_id` 不传即为项目级），随后把产物 ID 回写进 description 索引。更新时**替换不追加**：description 始终是「当前有效」的定位与索引，历史沿革靠 `plan_snapshot` 产物链追溯，不在 description 里堆叠。
+
+### execution_plan / execution_result
 
 前端按 **Markdown** 渲染（支持表格、任务清单、```mermaid 代码块画流程图 / 甘特图 / 依赖图），请用 Markdown 书写，让计划与结果可视化、易读。
 
@@ -213,7 +224,7 @@ graph LR
 
 ### 阶段 1：Project Owner 规划与分配（启动后强制清单）
 
-- [ ] 产出技术方案并 `create_text_artifact(tags=["technical_design"], project_id=...)` 保存；拆分计划写入 `update_project(description=...)`
+- [ ] 产出技术方案并 `create_text_artifact(tags=["technical_design"], project_id=...)` 保存；`update_project(description=...)` 写**简短项目定位 + 技术方案产物 ID 索引**（规范见「description 书写规范」，拆分计划不进 description）
 - [ ] **`update_project(execution_plan=...)` 写入项目执行计划**（Phase 划分 + 关键任务 + 风险），作为后续调度与跟进的基准（项目创建即 InProgress，规划在 InProgress 中完成，无需状态流转）
 - [ ] `send_message` 向用户发拆分方案（任务列表 / 依赖 / 预期产出），**等待用户确认后再分配**，避免方向偏差返工
 - [ ] 确认后 `create_task` 填好 `dependencies` 构成 DAG，按「分配前必查空闲」选 Task Owner（**可分配给其他 Agent，也可分配给自己**；创建后系统自动发分配通知）
@@ -245,7 +256,7 @@ graph LR
 2. **逐个审视任务**：InProgress 任务对照 `execution_plan` vs `progress` 是否偏离，关注 `modified_at`（>1 小时无更新可能卡住）；Pending 任务检查 `dependencies` 是否满足；异常任务读 `execution_result` 中的阻塞描述
 3. **决策下一步**：
    - 有可启动任务（前置均完成）→ `send_task_assignment_message` 通知对应 Task Owner
-   - 需调整 → `update_project(execution_plan=修订版)` 并通知受影响 Agent，可能重新拆分任务或修改依赖
+   - 需调整 → `update_project(execution_plan=修订版)` 并通知受影响 Agent，可能重新拆分任务或修改依赖；**方案级重大变更**先用 `create_text_artifact(tags=["plan_snapshot"], project_id=...)` 留存变更快照，再把产物 ID 回写进 description 索引（替换旧条目，不追加）
    - 里程碑达成（如 Phase 1 全部完成）→ `send_message` 通知用户阶段性成果（附 progress_summary 数据）
    - 阻塞 > 2 轮未解 → `send_message` 通知用户决策
    - 阻塞决策选项：调整依赖 / 拆新任务 / 修改任务描述 / 换 Agent 分配
@@ -314,3 +325,4 @@ graph LR
 8. **路径安全**：`register_artifact_from_path` 的 `source_path` 必须在自己工作目录下，穿越会被拒绝
 9. **进度诚实**：按子步骤真实更新，禁止 0→100 一步到位；Owner 巡检关注 `modified_at` 与 plan/progress 偏差
 10. **结果详尽**：execution_result 写产出物 ID、遗留问题、下一步建议——未来重启项目的你自己会感谢现在的你
+11. **description 只做定位与索引**：简短项目定位 + 关键产物 ID 一目了然；计划变更快照走项目级 `plan_snapshot` 产物，历史靠产物链追溯，不在 description 里堆叠
