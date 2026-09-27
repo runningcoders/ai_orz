@@ -13,7 +13,7 @@ pub struct CreateModelProviderRequest {
     pub name: String,
     /// Provider type
     pub provider_type: ProviderType,
-    /// Model capability
+    /// Model capability (0=Agent 对话/思考, 1=Embedding 向量, 2=Decision 小脑决策)
     pub capability: ModelCapability,
     /// Model name
     pub model_name: String,
@@ -78,7 +78,7 @@ pub struct ModelProviderListItem {
     pub name: String,
     /// Provider type
     pub provider_type: ProviderType,
-    /// Model capability
+    /// Model capability (0=Agent 对话/思考, 1=Embedding 向量, 2=Decision 小脑决策)
     pub capability: ModelCapability,
     /// Model name
     pub model_name: String,
@@ -125,7 +125,7 @@ pub struct GetModelProviderResponse {
     pub name: String,
     /// Provider type
     pub provider_type: ProviderType,
-    /// Model capability
+    /// Model capability (0=Agent 对话/思考, 1=Embedding 向量, 2=Decision 小脑决策)
     pub capability: ModelCapability,
     /// Model name
     pub model_name: String,
@@ -199,7 +199,7 @@ pub struct UpdateModelProviderResponse {
     pub name: String,
     /// Provider type
     pub provider_type: ProviderType,
-    /// Model capability
+    /// Model capability (0=Agent 对话/思考, 1=Embedding 向量, 2=Decision 小脑决策)
     pub capability: ModelCapability,
     /// Model name
     pub model_name: String,
@@ -303,7 +303,7 @@ pub struct ModelProviderQueryRequest {
     /// 按提供方类型查询
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_type: Option<ProviderType>,
-    /// 按能力类型查询
+    /// 按能力类型查询 (0=Agent 对话/思考, 1=Embedding 向量, 2=Decision 小脑决策)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability: Option<ModelCapability>,
     /// 按状态查询

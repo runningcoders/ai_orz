@@ -551,6 +551,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     "Custom" => ProviderType::Custom,
                                     "FastEmbed" => ProviderType::FastEmbed,
                                     "DoubaoVision" => ProviderType::DoubaoVision,
+    "Jev" => ProviderType::Jev,
                                     _ => ProviderType::OpenAI,
                                 };
                                 let access_mode = match edit_access_mode().as_str() {
@@ -630,6 +631,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             option { value: "Custom", "自定义" }
                             option { value: "FastEmbed", "FastEmbed" }
                             option { value: "DoubaoVision", "豆包 Vision (多模态)" }
+                            option { value: "Jev", "Jev（小脑决策模型）" }
                         }
                     }
                     if !editing_is_embedding {

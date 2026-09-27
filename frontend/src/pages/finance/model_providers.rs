@@ -29,7 +29,7 @@ pub fn FinanceModelProviders() -> Element {
 
     let mut name = use_signal(String::new);
     let mut provider_type = use_signal(|| ProviderType::OpenAI);
-    let mut new_capability = use_signal(|| 0i32); // 0=Agent(对话) 1=Embedding(向量)
+    let mut new_capability = use_signal(|| 0i32); // 0=Agent(对话) 1=Embedding(向量) 2=Decision(小脑决策)
     // 访问模式（T1 方案 §五 / T2 设计 §4.1）：默认 stream；Embedding 切换隐藏但不清除
     let mut new_access_mode = use_signal(|| ModelAccessMode::Stream);
     let new_access_mode_str = match new_access_mode() {
@@ -400,6 +400,7 @@ pub fn FinanceModelProviders() -> Element {
                                 "custom" => ProviderType::Custom,
                                 "fastembed" => ProviderType::FastEmbed,
                                 "doubao_vision" => ProviderType::DoubaoVision,
+    "jev" => ProviderType::Jev,
                                 _ => ProviderType::OpenAI,
                             });
                         },
@@ -410,6 +411,7 @@ pub fn FinanceModelProviders() -> Element {
                         option { value: "doubao_vision", "豆包 Vision (多模态 Embedding)" }
                         option { value: "qwen", "通义千问" }
                         option { value: "ollama", "Ollama" }
+                        option { value: "jev", "Jev（小脑决策模型）" }
                     }
                 }
                 div { class: "form-control w-full",
@@ -427,6 +429,7 @@ pub fn FinanceModelProviders() -> Element {
                         },
                         option { value: "0", "Agent（对话 / 思考）" }
                         option { value: "1", "Embedding（向量化 / 语义搜索）" }
+                        option { value: "2", "小脑/决策" }
                     }
                 }
                 if new_capability() != ModelCapability::Embedding as i32 {
