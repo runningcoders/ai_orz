@@ -81,7 +81,7 @@
 
 - **先检索再创建**：建节点前先搜一遍（别人的节点会直接命中），避免同一概念沉淀出重复节点
 - **判断后再吸收**：搜到他人节点时按自己的上下文校验，不要照搬（他人经验未必适配你的场景）
-- **`published` 是重要性标记，不是可见性开关**：对「值得其他 Agent 优先参考」的通用方法论 / 模式 / 概念加 `published`（用 `update_memory` 的 `node_tags`）——它只影响图谱「推荐起点」的排序。可见性对所有节点一视同仁，所以别指望靠不加标签来「藏」节点；真要隐藏只有 `delete_memory`（确认错误/冗余）或 `status=Forgotten`（暂时不用）
+- **`published` 是重要性标记，不是可见性开关**：对「值得其他 Agent 优先参考」的通用方法论 / 模式 / 概念加 `published`（用 `update_memory` 的 `node_tags`）——它只影响图谱「推荐起点」的排序。可见性对所有节点一视同仁（项目专属经验同样全局可见，只是没必要标 `published`），所以别指望靠不加标签来「藏」节点；真要隐藏只有 `delete_memory`（确认错误/冗余）或 `status=Forgotten`（暂时不用）
 
 ## 记忆搜索（`search_memory`）：三种模式
 
@@ -100,12 +100,3 @@
 - `query_memory`：按 agent_id / memory_type / tags 精确结构化筛选，无向量计算
 - `update_memory`：更新短期记忆或节点内容（自动重新向量化）。给节点加 tags（如 published）用 `node_tags`；标 Settled / Forgotten 用 `status`
 - `delete_memory`：删短期记忆（库 + 向量）/ 删节点（级联清理关系 + 引用 + 向量）/ 删关系边（软删标记 Deleted，可恢复；Trace 不可删）
-
-## 最佳实践
-
-1. **先检索再创建**：新建节点前 `search_memory` 查重，优先更新旧节点
-2. **记抽象不记细节**：一次性步骤、临时 ID、对话细节留短期 / Trace，不进图谱；summary 写要点不写原文
-3. **定期沉淀**：工作多轮后主动 `settle_memory`（默认 limit=10）；每次沉淀可拆旧节点、补关系、修正内容
-4. **善用遍历**：复杂问题用 depth=2~3 + breadth=5 找隐藏关联，别只做 depth=0
-5. **及时纠错**：发现错误记忆 → update_memory / delete_memory；推翻旧认知建 `opposite` 保留痕迹
-6. **`published` 标重要性、不控可见性**：只加给「值得别人优先参考」的通用方法论 / 模式 / 概念；项目专属经验同样全局可见，只是没必要标

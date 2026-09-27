@@ -31,16 +31,16 @@ Completed  → InProgress（项目重启专用）/ Archived
 相同状态 → no-op；其它 → 非法
 ```
 
-**核心理念**：项目从创建起就在 `InProgress`——对齐与执行交织进行（「一边聊、一边对齐、一边干」），不存在「未开始」状态；启动时刻 = 创建时刻（`start_at`），**结束**（`Completed`）才是需要显式流转的节点。
+**核心理念**：对齐与执行交织进行（「一边聊、一边对齐、一边干」），只有**结束**（`Completed`）需要显式流转。
 
 ### 工具速览
 
-- **`create_project`**：`name` 必填，可选 `description` / `priority` / `tags` / `owner_agent_id`（**纯透传**，后端不调 `resolve_agent`）。创建即 `InProgress`（`start_at` 自动写入），规划与对齐在 InProgress 中进行。
-- **`get_project(id)`**：统计选项 `with_stats` / `with_model_call_stats` / `stats_time_start`+`stats_time_end`（毫秒，须同时存在）/ `stats_interval(hourly|daily)`；可选 `with_task_graph`（Mermaid 依赖图）/ `with_artifacts` / **`with_progress_summary`**。
-  - `with_progress_summary=true` 实时计算不持久化：`total_tasks` / 各状态计数（completed/in_progress/pending/blocked/cancelled）/ `overall_percent`（Σ task.progress / total）。**Owner 跟进进度务必开启，无需自己逐任务计算**。
-- **`list_projects`**：仅分页；固定过滤 `root_user_id = ctx.uid()`，排除 `status=0`，按 `priority DESC, created_at DESC`。
-- **`query_projects`**：POST body——`ids` / `keyword` / `root_user_id` / `status_in`（OR 语义）/ `pagination`。
-- **`update_project`**：全部可选 `name` / `description` / `priority` / `tags` / `execution_plan` / `execution_result`（书写规范见下文统一章节）。另可更新预留字段 `last_followup_at`（巡检时间，系统后续会自动注入，现在主动填写有助于调度节奏）。
+参数与默认值见工具 Schema，此处只记 Schema 看不出来的语义与坑：
+
+- **`create_project`**：`owner_agent_id` **纯透传**，后端不调 `resolve_agent`（ID 无效不报错）。创建即 `InProgress`，规划与对齐在 InProgress 中进行。
+- **`get_project(id)`**：`stats_time_start`+`stats_time_end`（毫秒）须成对出现；`with_progress_summary=true` 实时计算不持久化（`overall_percent` = Σ task.progress / total），**Owner 跟进进度务必开启，无需自己逐任务计算**。
+- **`list_projects`**：固定过滤 `root_user_id = ctx.uid()`（看不到他人项目），按 `priority DESC, created_at DESC`。
+- **`update_project`**：`description` / `execution_plan` / `execution_result` 书写规范见下文统一章节；预留字段 `last_followup_at`（巡检时间）现在主动填写有助于调度节奏。
 - **`update_project_status(status)`**：不能设为 `Deleted`。
 
 ## 任务管理
@@ -66,26 +66,20 @@ Completed  → Archived
 
 ### 工具速览
 
-- **`create_task`**：`title`、`assignee_id` 必填；可选 `description` / `priority` / `tags` / `root_user_id`（默认当前用户）/ `assignee_type`（默认 Agent）/ `project_id` / `due_at`（毫秒）/ `dependencies`（DAG）。
-  - **关键副作用**：`assignee_type = Agent` 时自动给目标 Agent 发任务分配通知（`send_task_assignment`），通知失败不影响创建。
-  - **项目归属**：创建时能确定项目就直接带 `project_id`；暂未立项可先创建游离任务（不传 `project_id`），归属确定后用 `update_task(project_id=...)` 一次性挂载（见下方「游离任务挂载」）。
-- **`get_task(id)`**：统计选项同项目；`with_artifacts` 一并返回关联产物；返回含 `thinking_depth` / `progress` / `created_by` / `modified_by` / `dependencies`。
-- **`list_tasks`**：仅分页，固定排除 `status=0`，`priority DESC, created_at DESC`。
-- **`list_project_tasks(project_id)`** / **`list_agent_tasks(agent_id)`**：均可选 `status` / `limit`；后者用于查看某 Agent 的待办。
-- **`query_tasks`**：POST body——`ids` / `keyword` / `project_id` / `assignee_type` / `assignee_id` / `status_in` / `pagination`。
-- **`update_task`**：全部可选 `title` / `description` / `priority` / `tags` / `due_at` / `dependencies` / `execution_plan` / `execution_result` / `project_id`（**挂载语义**：仅对尚未挂载项目的游离任务生效，已挂载任务忽略该参数，详见下方「游离任务挂载」）。`description` 只写需求边界 + 产物索引（规范见下文「任务 description」）。
-- **`update_task_status(status)`**：不能设为 `Cancelled`；严格按状态机，非法转换返回 `InvalidRequest`。
-- **`update_task_progress(progress)`**：自动 clamp 到 [0, 100]，触发 `TaskEvent(progress_updated)`。
-- **`mark_done(task_id, summary?)`**：**绕过状态机**，直接设 `status=Completed` + `progress=100` + `end_at`，适合快速闭环；需严格校验用 `update_task_status(Completed)`。
+- **`create_task`**：`assignee_type=Agent` 时自动给目标 Agent 发分配通知，**通知失败不影响创建**。能确定项目就直接带 `project_id`；暂未立项可先游离创建，归属确定后 `update_task(project_id=...)` 一次性挂载（见「游离任务挂载」）。
+- **`get_task(id)`**：`with_artifacts=true` 一并返回关联产物。
+- **`query_tasks`**：`status_in` 为 OR 语义。
+- **`update_task`**：`project_id` 仅对未挂载任务生效（见「游离任务挂载」）；`description` 只写需求边界 + 产物索引（规范见下文「任务 description」）。
+- **`update_task_status(status)`**：不能设为 `Cancelled`；非法转换返回 `InvalidRequest`。
+- **`mark_done(task_id, summary?)`**：**绕过状态机**，直接 `Completed` + `progress=100`，快速闭环用；严格校验走 `update_task_status(Completed)`。
 
 ### 游离任务挂载（project_id 一次性绑定）
 
-任务允许不带 `project_id` 创建（游离任务：需求尚未立项、临时交办、先干活后归组等）；归属确定后用 `update_task(project_id=...)` 挂载到已有项目。**挂载是一次性操作**：
+**挂载是一次性操作**：
 
-- **仅未挂载任务可挂载**：已挂载任务的 `project_id` 参数被静默忽略——不支持迁移 / 解绑（涉及产物归属、统计口径等级联影响），挂错项目无法通过工具自行纠正
-- **目标项目必须存在**：挂载前先 `get_project` 确认项目 ID 有效
-- **发现游离任务**：`query_tasks`（不传 `project_id`）拉取任务列表，筛出 `project_id` 为空的项
-- **先确认后挂载**：帮用户整理零散任务时，先列出游离任务清单与目标项目，向用户确认归属关系后再逐个挂载，不要自行猜测归组
+- 已挂载任务的 `project_id` 参数被**静默忽略**——不支持迁移 / 解绑（涉及产物归属、统计口径级联），挂错项目无法通过工具自行纠正
+- 挂载前先 `get_project` 确认目标 ID 有效；`query_tasks`（不传 `project_id`）筛出 `project_id` 为空的项即可发现游离任务
+- 帮用户整理零散任务时，先列游离任务清单与目标项目向用户确认归属，再逐个挂载，不要自行猜测归组
 
 ## description / execution_plan / execution_result 书写规范
 
@@ -116,37 +110,22 @@ Completed  → Archived
 - `execution_plan`——项目创建后立即由 Owner 写入（`update_project`），任务由 Task Owner 在开工（InProgress）前写（`update_task`）；阶段 / 方案有重大调整时**立即更新**，让 Owner 与系统巡检看到思路变化。
 - `execution_result`——项目收尾（Owner）或任务完成 / 阻塞（Task Owner）时写入。
 
-**plan 示例（分阶段 + 占比 + 风险，越具体越好，别只写一句「我先看看怎么做」）**：
+**plan 骨架（分阶段 + 占比 + 风险，越具体越好，别只写一句「我先看看怎么做」）**：
 
 ```markdown
 ## Phase 1: 项目脚手架（3 天，预计 5 个任务）
-- [ ] Task-A: 前端 Dioxus 初始化 + 路由 + 状态管理
-- [ ] Task-B: 后端 Axum 分层 + SQLite/sqlx 接入
-- [ ] Task-C: 鉴权（JWT + HttpOnly Cookie）- 依赖 Task-B
-
-## Phase 2: 核心功能...
-### 阶段依赖
-```mermaid
-graph LR
-  P1[Phase 1] --> P2[Phase 2] --> P3[测试部署]
-```
+- [ ] Task-A: ...（每任务一行，依赖注明「依赖 Task-X」）
+## Phase 2: ...
+## 风险：...
 ```
 
-**result 示例（完成情况 → 产出物清单 → 遗留与风险必填）**：
+**result 骨架（完成情况 → 产出物清单 → 遗留与风险必填）**：
 
 ```markdown
-## 完成情况
-- handlers/xxx 路由 3 个端点全部实现并自测通过（对照 plan 逐步说明，未完成的写差什么、为什么）
-
-## 产出物清单
-- Artifact: 测试报告.md（id=art-xxx）
-- Artifact: 接口说明.md（id=art-yyy）
-
+## 完成情况（对照 plan 逐步说明，未完成的写差什么、为什么）
+## 产出物清单（Artifact 名 + id）
 ## 遗留与风险（必填）
-- upload_file 超 10MB 可能报错（超 64KB 文本附件限制），建议后续接入分片上传
-
-## 下一步建议（可选）
-- 建议启动 Task-yyy（task_id=tsk-zzz），原因：...
+## 下一步建议（可选，含 task_id）
 ```
 
 ## 产物管理
@@ -163,11 +142,11 @@ graph LR
 
 ### 工具速览
 
-- **`create_text_artifact`**：`project_id`、`name`、`content`（≤1MB）必填；可选 `task_id`（None = 项目级产物）/ `description` / `file_name`（默认 `{name}.md`）/ `mime_type`（默认 text/plain）/ `file_type`（默认 Document）/ `tags`。适用：报告、方案、设计文档、代码片段、分析结论。
-- **`register_artifact_from_path`**：将工作目录文件**复制**注册为产物，源文件保留。`project_id`、`name`、`source_path`（**相对你的工作目录**）必填；其余同上（`file_name` 默认取 basename，mime / file_type 按扩展名推断）。约束：仅 Agent 可调用；`source_path` 必须是文件不能是目录；经 `canonicalize + starts_with` 校验必须在 `agents/{agent_id}/` 之下（路径穿越拒绝）；失败自动回滚产物记录。
-- **`create_artifact`**：按 `source_type` 分支。Attachment 模式需 `attachment_id`（不能带 content / file_name / mime_type），跨 Domain 读附件后**仅建立引用关系不复制内容**（存储仍在 Finance Attachment 模块）；GeneratedContent 模式需 `content` + `file_name`。公共：`project_id` 必填 / `task_id` / `name` / `description` / `mime_type` / `file_type` / `tags`。
-- **`update_artifact`**：统一部分更新，**仅 `Some` 字段生效**。`content` 仅 GeneratedContent 可用（≤1MB）；`name` trim 后非空；`expected_updated_at` 乐观锁（不匹配返回 409 Conflict，重新加载后再试）；元数据更新适用所有类型。
-- **`query_artifacts`**：`project_id` / `task_id` / `file_type` / `source_type` / `pagination`。用于了解团队已有产出、避免重复创建。
+- **`create_text_artifact`**：`task_id` 不传 = 项目级产物；适用报告、方案、设计文档、代码片段（≤1MB）。
+- **`register_artifact_from_path`**：工作目录文件**复制**注册为产物，源文件保留；`source_path` 必须在自己工作目录 `agents/{agent_id}/` 之下（穿越拒绝），失败自动回滚产物记录。
+- **`create_artifact`**：Attachment 模式**仅建立引用关系不复制内容**（存储仍在附件模块）。
+- **`update_artifact`**：`content` 仅 GeneratedContent 可用；`expected_updated_at` 乐观锁不匹配返回 409，重新加载后再试。
+- **`query_artifacts`**：创建产物前先查重，避免重复产出。
 
 **产物创建选择**：
 
@@ -177,11 +156,9 @@ graph LR
 | 工作目录大文件 / 二进制 | `register_artifact_from_path` |
 | 已上传到附件系统的文件 | `create_artifact`（Attachment 模式） |
 
-## 附件管理（Finance Domain，64KB 文本限制）
+## 附件管理（Finance Domain）
 
-**关键约束**：文本 ≤64KB；文件名不能含 `/` `\` `..`、不能是绝对路径；文本附件 `file_type` 必须是 `Document` 且 mime 为 text 类（`text/*` / json / yaml / toml / xml / javascript 等）；权限 `attachment.root_user_id == ctx.uid()`，非 owner 返回 `NotFound`（避免泄露存在性）；`delete_attachment` 为软删除。
-
-工具：**`create_text_attachment`**（`file_name` / `content` ≤64KB 必填，可选 `mime_type` / `purpose` 如 skill / message / artifact / tool_result）、**`get_attachment`**（元信息）/ **`get_attachment_content`**（仅 Document 可读）、**`list_attachments`**（`purpose` / `file_type` / `pagination`）、**`update_attachment_content`**（`content` ≤64KB，可选乐观锁）、**`delete_attachment`**（软删除）。
+**关键约束**：文本 ≤64KB；文件名禁 `/` `\` `..` 与绝对路径；文本附件必须 `file_type=Document` + text 类 mime；非 owner 访问返回 `NotFound`（避免泄露存在性）；删除为软删除。工具参数见 Schema（`create_text_attachment` / `get_attachment` / `get_attachment_content` / `list_attachments` / `update_attachment_content` / `delete_attachment`）。
 
 ## 权限模型与工作目录
 
@@ -216,21 +193,7 @@ graph LR
 
 ### 流程总览
 
-```
-用户需求
-  ↓
-前台 Agent 路由 → 创建项目 → 转交 Project Owner
-  ↓
-【阶段 1：Owner 规划】拆分 → 写 execution_plan → 用户确认 → 分配任务
-  ↓
-【阶段 2：Task 执行】校验前置 → 写 plan → 执行+更新进度 → 上报结果
-  ↓
-【阶段 3：Owner 调度】总揽 → 决定下一个任务 → 通知 Task Owner（循环）
-  ↓
-【阶段 4：收尾】项目总结 → 标记完成
-  ↓
-【项目结束后】用户继续发消息 → 查询类直接回复 / 新需求走项目重启
-```
+前台转交 → 【阶段 1】Owner 规划分配 → 【阶段 2】Task Owner 执行上报 → 【阶段 3】Owner 调度循环（↺ 收到上报 / 巡检通知）→ 【阶段 4】收尾 → 项目重启（查询类直接回复 / 新需求重新规划）
 
 ### 阶段 1：Project Owner 规划与分配（启动后强制清单）
 
@@ -249,7 +212,7 @@ graph LR
 - [ ] `update_task(execution_plan=...)` 写入执行计划 → `update_task_status(InProgress)` + `update_task_progress(progress=10)` 启动
 
 **执行循环**：
-- 每个子步骤完成后**立即** `update_task_progress`；长任务（预估 >1h）**至少每小时更新一次 progress 或划掉 plan 中一个子项**，让系统巡检和 Owner 知道你还活着，避免误判阻塞
+- 每个子步骤完成后**立即** `update_task_progress`（长任务更新节奏见「进度纪律」）
 - 方案调整时**立即 `update_task(execution_plan=修订版)`**，不要闷头做事
 - 成果随手保存：文本 → `create_text_artifact`；工作目录文件 → `register_artifact_from_path`；已有附件 → `create_artifact(Attachment 模式)`
 
@@ -312,27 +275,9 @@ graph LR
 3. 执行指令要求的具体动作
 4. 指令信息不全或上下文冲突 → 立即 `send_task_assignment_message` / `send_message` 上报冲突点，不要跳过或猜测
 
-**📊 项目进度定期检查**：
-1. `get_project(with_progress_summary=true, with_task_graph=true)` 拉全貌
-2. 逐个检查消息列出的重点任务：`get_task` 读 execution_plan / execution_result / progress / modified_at，判断是否超时无更新、plan 与 progress 不匹配、阻塞未处理
-3. 对应处理：进度卡住 → 催办或重新分配；阻塞未处理 → 决策后通知处理方案或上报用户；Pending 可启动 → 调度；计划需调整 → 更新 execution_plan
-4. 处理完更新 `last_followup_at`；发现重大偏差（里程碑超时、整体落后 >30%）→ `send_message` 通知用户并给出调整建议
+**📊 项目进度定期检查**：按**阶段 3 调度循环**执行（拉全貌 → 逐任务审视 → 决策 → 记巡检时间）；发现重大偏差（里程碑超时、整体落后 >30%）→ `send_message` 通知用户并给出调整建议。
 
 **通用响应原则**：
 - 不要回复「收到」「好的」之类空泛确认——**用工具调用（更新进度 / 计划 / 结果 + 发送含具体动作的消息）证明你真的执行了**
 - Task Owner 执行中被要求上报 → 至少更新一次 progress 或划掉 plan 一个子项，并回简短分配消息说明当前状态
 - Owner 被列出 N 个重点任务 → **每个都要有明确处理动作或记录决策**（哪怕「已确认无阻塞，保持当前执行」），不要只看全局进度就跳过
-
-## 最佳实践
-
-1. **角色边界**：前台不负责项目；Owner 同时只 1 个项目；Task Owner 同时只 1 个任务
-2. **先查后分**：分配前必查候选空闲（runtime_state=0）且无未完结项目 / 任务
-3. **规划优先**：Owner 第一步产出方案 + 写 execution_plan，经用户确认再分配，不要跳过直接执行
-4. **前置校验**：Task Owner 启动前必须校验前置任务已完成，未完成等待并上报
-5. **闭环三步**：写 execution_result → mark_done(带 summary) → 上报 Owner，缺一不可；不自行决定下一个任务
-6. **先查后建**：创建产物前先 `query_artifacts` 查重；产物关联 `project_id` / `task_id` 便于溯源
-7. **大小限制**：附件 ≤64KB、产物内容 ≤1MB，超限走 `register_artifact_from_path`；并发更新产物带乐观锁 `expected_updated_at`
-8. **路径安全**：`register_artifact_from_path` 的 `source_path` 必须在自己工作目录下，穿越会被拒绝
-9. **进度诚实**：按子步骤真实更新，禁止 0→100 一步到位；Owner 巡检关注 `modified_at` 与 plan/progress 偏差
-10. **结果详尽**：execution_result 写产出物 ID、遗留问题、下一步建议——未来重启项目的你自己会感谢现在的你
-11. **description 只做定位与索引**：项目 = 定位卡 + 产物索引，任务 = 需求边界 + 产物索引（均替换不追加）；计划变更快照走 `plan_snapshot` 产物、需求变更走 `requirement_change` 产物，历史靠产物链追溯，不在 description 里堆叠

@@ -45,16 +45,16 @@
 
 **(b) 交给对口的专业 Agent** → 先找人，再交办：
 
-1. 找人：`search_agents`（自然语言描述「谁能干这个」）→ 不满意再用 `query_agents`（按 `roles` / `status` 精确筛）；`list_agents` 无条件浏览，`get_agent` 看某人完整档案（`with_tools` / `with_skills` / `with_stats`）。
-2. 交办：`send_task_assignment_message(task_id, task_title, to_agent_id, task_description)`。`task_description` **必须写清目标 / 输入 / 预期输出 / 边界**，别只丢一句「你做一下」。
+1. 找人：`search_agents`（自然语言描述「谁能干这个」）→ 不满意再用 `query_agents`（精确筛）；`list_agents` 无条件浏览，`get_agent` 看某人完整档案。
+2. 交办：`send_task_assignment_message`。`task_description` **必须写清目标 / 输入 / 预期输出 / 边界**，别只丢一句「你做一下」。
 3. 不合适就如实告知用户当前没有胜任者，给出替代方案（自己尽力回答 / 建任务待办），不要硬塞。
 
 > 找人时优先看 `status = Onboarded` 且 `runtime_state` 空闲的 Agent——把活交给没到岗或正在忙的人，等于把事丢进黑洞。
 
-**(c) 升级为任务流转** → 当请求**多步、需要产出、需要追踪**时：
+**(c) 升级为任务流转** → 当请求**多步、需要产出、需要追踪**时——能建任务就别用消息口头交代，任务自带状态与追踪，口头交代会丢：
 
-- 已有归属项目 → 直接 `create_task`（必填 `title` + `assignee_id`；补充 `description` / `priority` / `tags` / `project_id` / `due`）。**指派给 Agent 时会自动向该 Agent 发送任务通知**——这是最可靠的分流方式，因为它自带闭环。
-- 尚未成项目 → 先 `create_project`（必填 `name`，可带 `owner agent ID`），再建任务。
+- 已有归属项目 → 直接 `create_task`。**指派给 Agent 时会自动向该 Agent 发送任务通知**——这是最可靠的分流方式，因为它自带闭环。
+- 尚未成项目 → 先 `create_project`，再建任务。
 - 后续跟进用 `update_task` / `update_task_status` / `mark_done`。
 
 **(d) 判断不了** → 澄清。指代不清、需求边界不明、需要用户决策时，**先澄清再动手**：用 Final 文本写出选择题式的追问（优先选择题而非简答题，有依赖的问题合并成一轮），不要用 `send_message` 提问——那不会终止思考循环，你会空跑工具直到轮次耗尽。
@@ -86,14 +86,12 @@
 
 ## 工具速览
 
-| 分组 | 工具 | 说明 |
-|------|------|------|
-| **沟通**（neural 常驻） | `send_message` | 进展 / 结果类通知，发完继续干活，不等回复 |
-| | `send_task_assignment_message` | 给其他 Agent 分配任务，**Agent 间协作的唯一通道** |
-| | `list_messages` | 读历史（上拉 / 下拉双向分页） |
-| **找人**（`reception` 路由包） | `search_agents` / `query_agents` / `list_agents` / `get_agent` | 语义搜 / 精确筛 / 浏览 / 看档案 |
-| **任务流转**（`project_management` 包） | `create_project` / `create_task` / `update_task` / `mark_done` | 建项目、建任务（指派即通知）、跟进、完结 |
-| **记忆**（neural 常驻） | `search_memory` / `save_short_term_memory` / `save_long_term_memory` / `update_memory` | 检索与沉淀 |
+参数与默认值见工具 Schema，此处只记分组归属（各工具用法见正文对应步骤）：
+
+- **沟通**（neural 常驻）：`send_message` / `send_task_assignment_message` / `list_messages`
+- **找人**（`reception` 路由包）：`search_agents` / `query_agents` / `list_agents` / `get_agent`
+- **任务流转**（`project_management` 包）：`create_project` / `create_task` / `update_task` / `mark_done`
+- **记忆**（neural 常驻）：`search_memory` / `save_short_term_memory` / `save_long_term_memory` / `update_memory`
 
 ## 边界与红线
 
@@ -106,15 +104,6 @@
 
 ## 与其他技能的关系
 
-- **协作沟通**（neural）：消息工具完整参数、分层响应矩阵、委派与汇报规范。
+- **协作沟通**（neural）：消息工具用法与坑、分层响应矩阵、委派与汇报规范。
 - **项目管理**：任务 / 项目状态机与合法流转，建任务前值得一读。
 - **记忆认知**：用户偏好沉淀的具体写法。
-
-## 最佳实践
-
-1. **先检索后回答**：组织里问过的第二次不该再问一遍用户。
-2. **先找人后交办**：`search_agents` 确认对口再 `send_task_assignment_message`，避免错派。
-3. **任务带描述**：`task_description` 写清目标 / 输入 / 预期 / 边界，替接手的人省一轮澄清。
-4. **能建任务就别口头交代**：任务自带状态与追踪，口头交代会丢。
-5. **闭环**：转派 / 建任务后给用户回执；不确定成果时主动 `list_messages` 查后续；收到 Agent 回执按「用户代理判定」过滤后再决定是否打扰用户。
-6. **沉淀**：每次接待留下一条有价值的记忆，让下一次更快。

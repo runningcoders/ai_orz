@@ -17,17 +17,10 @@ Agent 招聘技能模拟人类组织的「岗位设计 + 入职」流程：把�
 
 ## 工具速览
 
-查重与尽调：
+参数与默认值见工具 Schema，此处只记 Schema 看不出来的语义与坑：
 
-- **`search_agents(keyword)`**：语义搜（FTS5 + 向量混合），用于「组织里是不是已经有人能干这个」
-- **`query_agents(...)`**：精确筛（`ids` / `keyword` / `status` / `roles` / `model_provider_id` / `runtime_state` / `pagination`）
-- **`list_agents`**：无条件浏览花名册
-- **`get_agent(id, with_*)`**：看某人完整档案（`with_tools` / `with_skills` / `with_stats`）
-
-落库与入职：
-
-- **`create_agent`**：`name` + `model_provider_id` 必填，其余可选；**新建即 `Interviewing`（面试中）**
-- **`update_agent_status(id, status)`**：改生命周期状态（走状态机校验）
+- 查重与尽调：`search_agents`（语义搜「组织里是不是已经有人能干这个」）/ `query_agents`（精确筛）/ `list_agents`（无条件浏览花名册）/ `get_agent`（看完整档案）
+- 落库与入职：`create_agent`（**新建即 `Interviewing`**）/ `update_agent_status`（改生命周期状态，走状态机校验）
 
 ## 招聘流程
 
@@ -47,7 +40,7 @@ Agent 招聘技能模拟人类组织的「岗位设计 + 入职」流程：把�
 
 ### 第 3 步 · 产出《岗位说明书》
 
-按四项交付逐项写，字段名与创建表单一一对应，让用户可直接复制。
+按四项交付逐项写，字段名与创建表单一一对应，让用户可直接复制；交付时说明各字段的用途，让用户理解为什么这样填。
 
 **roles 怎么写**：英文小写下划线，优先复用系统预设（`common/src/constants/agent_roles.rs`）：
 `reception`（Web 前台）/ `feishu_reception` / `wechat_reception` / `a2a_gateway` / `project_owner` / `worker` / `coder` / `data_analyst` / `service`（客服接待）；其余场景自拟（如 `code_assistant`、`doc_keeper`）。
@@ -71,13 +64,13 @@ Agent 招聘技能模拟人类组织的「岗位设计 + 入职」流程：把�
 
 ### 第 4 步 · 落库
 
-用户确认后调 `create_agent`，传 `name` / `roles` / `description` / `capabilities` / `soul` / `model_provider_id`。
+用户确认后调 `create_agent`。
 
-`model_provider_id` 必填——用 `query_model_providers` 选组织里合适的**对话模型**（非 Embedding）；拿不准就先用招聘官自己的同一个供应商。
+`model_provider_id` 用 `query_model_providers` 选组织里合适的**对话模型**（非 Embedding）；拿不准就先用招聘官自己的同一个供应商。
 
 ### 第 5 步 · 入职（两步，缺一不可）
 
-新建 Agent 是 `Interviewing`，**不能直接跳到 `Onboarded`**——状态机只认逐级流转：
+**不能直接跳到 `Onboarded`**——状态机只认逐级流转：
 
 ```
 Interviewing(1) → PendingOnboard(2) → Onboarded(3) → PendingOffboard(5) → Offboarded(4)
@@ -101,15 +94,6 @@ Interviewing(1) → PendingOnboard(2) → Onboarded(3) → PendingOffboard(5) �
 | `Onboarded` | 3 | 已入职（可用） |
 | `Offboarded` | 4 | 已离职 |
 | `PendingOffboard` | 5 | 待离职（交接中，不再接新任务） |
-
-## 最佳实践
-
-1. **先查后招**：`search_agents` 查重后再 `create_agent`，避免同能力 Agent 泛滥
-2. **检索词写进 capabilities**：soul 不参与向量化，别把关键词埋在灵魂里
-3. **roles 兼顾复用与匹配**：优先预设常量；自拟时记住它同时是技能匹配键
-4. **入职两步走**：`Interviewing → PendingOnboard → Onboarded`，跳级会被状态机拒绝
-5. **不越界**：你负责招人，不替新 Agent 写业务技能；需求未确认前不擅自创建
-6. **交代清楚**：交付《岗位说明书》时说明每个字段的用途，让用户理解为什么这样填
 
 ## 相关技能
 
