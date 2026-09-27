@@ -73,7 +73,7 @@ Completed  → Archived
 - **`list_tasks`**：仅分页，固定排除 `status=0`，`priority DESC, created_at DESC`。
 - **`list_project_tasks(project_id)`** / **`list_agent_tasks(agent_id)`**：均可选 `status` / `limit`；后者用于查看某 Agent 的待办。
 - **`query_tasks`**：POST body——`ids` / `keyword` / `project_id` / `assignee_type` / `assignee_id` / `status_in` / `pagination`。
-- **`update_task`**：全部可选 `title` / `description` / `priority` / `tags` / `due_at` / `dependencies` / `execution_plan` / `execution_result` / `project_id`（**挂载语义**：仅对尚未挂载项目的游离任务生效，已挂载任务忽略该参数，详见下方「游离任务挂载」）。
+- **`update_task`**：全部可选 `title` / `description` / `priority` / `tags` / `due_at` / `dependencies` / `execution_plan` / `execution_result` / `project_id`（**挂载语义**：仅对尚未挂载项目的游离任务生效，已挂载任务忽略该参数，详见下方「游离任务挂载」）。`description` 只写需求边界 + 产物索引（规范见下文「任务 description」）。
 - **`update_task_status(status)`**：不能设为 `Cancelled`；严格按状态机，非法转换返回 `InvalidRequest`。
 - **`update_task_progress(progress)`**：自动 clamp 到 [0, 100]，触发 `TaskEvent(progress_updated)`。
 - **`mark_done(task_id, summary?)`**：**绕过状态机**，直接设 `status=Completed` + `progress=100` + `end_at`，适合快速闭环；需严格校验用 `update_task_status(Completed)`。
@@ -89,7 +89,7 @@ Completed  → Archived
 
 ## description / execution_plan / execution_result 书写规范
 
-### description（项目定位卡 + 产物索引）
+### 项目 description（定位卡 + 产物索引）
 
 `description` 只写两样东西，保持简短（建议 ≤10 行）：
 
@@ -97,6 +97,16 @@ Completed  → Archived
 2. **关键产物 ID 索引**：技术方案、计划变更快照等关键产物的 `artifact_id`（一行一个，附一句话说明）——任何人 `get_project` 一眼就能拿到入口，无需翻找
 
 **不放计划与过程快照**——拆分计划写入 `execution_plan`；计划的历史变更快照存为**项目级产物**（`create_text_artifact(tags=["plan_snapshot"], project_id=...)`，`task_id` 不传即为项目级），随后把产物 ID 回写进 description 索引。更新时**替换不追加**：description 始终是「当前有效」的定位与索引，历史沿革靠 `plan_snapshot` 产物链追溯，不在 description 里堆叠。
+
+### 任务 description（需求边界说明 + 产物索引）
+
+任务 `description` 是 Owner 交给 Task Owner 的**需求说明**，只写三样东西，保持简短：
+
+1. **需求目标**：要做什么、做成什么样（含验收标准）
+2. **边界**：明确不做什么、依赖哪些前置约定
+3. **关键产物 ID 索引**：需求变更快照、参考产物等 `artifact_id`（一行一个，附一句话说明）
+
+**不放过程快照**——执行思路写 `execution_plan`，结果写 `execution_result`；需求的重大变更快照存为**任务级产物**（`create_text_artifact(project_id=..., task_id=..., tags=["requirement_change"])`），随后把产物 ID 回写进 description 索引。更新时**替换不追加**：历史沿革靠 `requirement_change` 产物链追溯，不在 description 里堆叠。
 
 ### execution_plan / execution_result
 
@@ -285,11 +295,11 @@ graph LR
 
      | 老任务状态 | 处理方式 |
      |-----------|---------|
-     | 仍然需要 | 保留，可被新任务依赖，更新描述对齐新规划 |
+     | 仍然需要 | 保留，可被新任务依赖；对齐新规划只更新 description 的需求边界与索引（替换不追加），变更说明存任务级 `requirement_change` 产物 |
      | 不再需要 | `update_task_status(Archived)` 废弃 |
-     | 需要调整 | `update_task` 修改描述 / 依赖 |
+     | 需要调整 | `update_task` 修改描述 / 依赖（描述只写当前需求边界，重大调整存 `requirement_change` 产物并回写索引） |
 
-  5. **关键约束：被废弃（Archived）的老任务不能作为新任务的前置依赖**，`dependencies` 中不应包含 Archived 任务 ID；若新任务需要其成果，把成果提炼为新任务的描述或参考产物
+  5. **关键约束：被废弃（Archived）的老任务不能作为新任务的前置依赖**，`dependencies` 中不应包含 Archived 任务 ID；若新任务需要其成果，在需求描述中引用老任务产物 ID 作为输入参考即可，成果全文由产物承载，不塞进 description
   6. `send_message` 向用户说明重启规划（新任务列表 / 依赖 / 废弃的老任务）→ `send_task_assignment_message` 通知 Task Owner
 
 ## 系统通知响应规范（所有 Agent 强制）
@@ -325,4 +335,4 @@ graph LR
 8. **路径安全**：`register_artifact_from_path` 的 `source_path` 必须在自己工作目录下，穿越会被拒绝
 9. **进度诚实**：按子步骤真实更新，禁止 0→100 一步到位；Owner 巡检关注 `modified_at` 与 plan/progress 偏差
 10. **结果详尽**：execution_result 写产出物 ID、遗留问题、下一步建议——未来重启项目的你自己会感谢现在的你
-11. **description 只做定位与索引**：简短项目定位 + 关键产物 ID 一目了然；计划变更快照走项目级 `plan_snapshot` 产物，历史靠产物链追溯，不在 description 里堆叠
+11. **description 只做定位与索引**：项目 = 定位卡 + 产物索引，任务 = 需求边界 + 产物索引（均替换不追加）；计划变更快照走 `plan_snapshot` 产物、需求变更走 `requirement_change` 产物，历史靠产物链追溯，不在 description 里堆叠
