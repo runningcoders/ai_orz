@@ -49,6 +49,22 @@ pub trait ModelProviderDao: Send + Sync {
         &self,
         ctx: RequestContext,
     ) -> Result<Option<ModelProviderPo>>;
+
+    /// 获取默认的小脑 Provider（第一个可用的 Decision 记录）
+    ///
+    /// 与 `get_default_embedding_provider` 同构：「capability=Decision + status=Normal」
+    /// 单启用记录即默认小脑标记（无 tag/is_default 字段，model_providers 表零 migration）；
+    /// api_key 为空的记录不可用，跳过。无启用记录返回 None（合法：运行时兜底归二期）。
+    async fn get_default_cerebellum_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>>;
+
+    /// 获取当前启用的小脑 Provider（用于单启用守卫校验）
+    async fn find_enabled_decision_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>>;
 }
 
 /// ModelProvider 统计查询参数（统一结构体，覆盖所有查询场景）

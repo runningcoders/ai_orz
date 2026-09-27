@@ -32,6 +32,21 @@ impl ModelProviderManage for FinanceDomainImpl {
             provider.po.status = ModelProviderStatus::Disabled;
         }
 
+        // Decision（小脑）单启用：与 Embedding 同构的「创建不阻塞」，已有启用者时
+        // 新记录静默降级 Disabled；首个 Decision 直接 Normal 启用。
+        // 切换形态见 update 守卫：静默自动停用旧记录（无 409 / 无 switch modal /
+        // 无重建——小脑切换零重建成本，选路逻辑下次自然选到新模型）。
+        if provider.po.capability.is_decision()
+            && provider.po.status == ModelProviderStatus::Normal
+            && self
+                .model_provider_dal
+                .find_enabled_decision_provider(ctx.clone())
+                .await?
+                .is_some()
+        {
+            provider.po.status = ModelProviderStatus::Disabled;
+        }
+
         let ctx = enrich_ctx!(&ctx, &provider);
         self.model_provider_dal.create(ctx, &provider).await
     }
@@ -91,6 +106,23 @@ impl ModelProviderManage for FinanceDomainImpl {
                 ),
             )
             .with_field(field));
+        }
+
+        // Decision（小脑）「随时切换零额外操作」（AMan 澄清口径）：启用某条
+        // Decision 记录时，静默自动停用旧的启用记录——不做 409 / switch modal /
+        // 全量重建（小脑切换零重建成本，选路逻辑下次选到新模型即可）。
+        if provider.po.capability.is_decision()
+            && provider.po.status == ModelProviderStatus::Normal
+            && let Some(mut current) = self
+                .model_provider_dal
+                .find_enabled_decision_provider(ctx.clone())
+                .await?
+            && current.po.id != provider.po.id
+        {
+            current.po.status = ModelProviderStatus::Disabled;
+            self.model_provider_dal
+                .update(ctx.clone(), &current)
+                .await?;
         }
 
         let ctx = enrich_ctx!(&ctx, provider);

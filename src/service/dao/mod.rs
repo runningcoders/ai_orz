@@ -2,6 +2,7 @@ pub mod agent;
 pub mod agent_runtime;
 pub mod artifact;
 pub mod attachment;
+pub mod cerebellum;
 pub mod cortex;
 pub mod cron_trigger;
 pub mod federation_contract;
@@ -35,6 +36,7 @@ pub fn init_all() {
     agent::init();
     artifact::init();
     attachment::init();
+    cerebellum::init();
     cortex::init();
     cortex::native::init();
     cron_trigger::init();

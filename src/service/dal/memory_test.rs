@@ -67,6 +67,20 @@ impl ModelProviderDao for MockModelProviderDao {
     ) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
+
+    async fn get_default_cerebellum_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+
+    async fn find_enabled_decision_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
 }
 
 /// Mock CortexDao（跳过向量搜索）
@@ -1346,6 +1360,20 @@ impl ModelProviderDao for MockVectorProviderDao {
     }
 
     async fn find_enabled_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+
+    async fn get_default_cerebellum_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+
+    async fn find_enabled_decision_provider(
         &self,
         _ctx: RequestContext,
     ) -> Result<Option<ModelProviderPo>> {

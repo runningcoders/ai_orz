@@ -127,6 +127,14 @@ impl CortexDaoRegistry {
                 // TODO Task 6: 返回 FastEmbedCortexDao
                 self.openai_compatible.clone() // 临时 fallback
             }
+            // jev（System One 决策模型）不兼容 OpenAI 协议，不属于 cortex chat 路由；
+            // 一期未接运行时，正常业务不会走到此分支。误用时显式报错而非静默
+            // fallback（防 FastEmbed「枚举已挂、实现悬空」反例扩散到 Jev）。
+            ProviderType::Jev => {
+                panic!(
+                    "Jev/System One is a cerebellum decision model, not a cortex chat provider; use dao::cerebellum::dao() for fast decisions"
+                )
+            }
         }
     }
 }

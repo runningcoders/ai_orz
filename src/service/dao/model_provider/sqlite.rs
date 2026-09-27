@@ -232,6 +232,55 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
             .await?;
         Ok(page.items.into_iter().next())
     }
+
+    async fn get_default_cerebellum_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        // 取候选列表后过滤：api_key 为空的 provider 无法调用模型 API，
+        // 不应被选为"默认可用"的小脑 provider（避免二期接入选路时才因空 key
+        // 报错）。与 get_default_embedding_provider 同口径，limit 100 足以
+        // 覆盖绝大多数组织规模。
+        let page = self
+            .query(
+                ctx,
+                ModelProviderQuery {
+                    capability: Some(ModelCapability::Decision),
+                    status: Some(ModelProviderStatus::Normal),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(100),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page
+            .items
+            .into_iter()
+            .find(|p| !p.api_key.trim().is_empty()))
+    }
+
+    async fn find_enabled_decision_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        let page = self
+            .query(
+                ctx,
+                ModelProviderQuery {
+                    capability: Some(ModelCapability::Decision),
+                    status: Some(ModelProviderStatus::Normal),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(1),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items.into_iter().next())
+    }
 }
 
 /// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）

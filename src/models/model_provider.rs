@@ -38,6 +38,11 @@ pub struct ModelProviderConfig {
     /// 自动兼容，无 migration。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_mode: Option<ModelAccessMode>,
+    /// 请求超时（毫秒）。目前仅 Jev/System One 小脑 client 消费：
+    /// 缺省时走 client 内建默认超时兜底（一期 dao/cerebellum 常量）。
+    /// None=未配置；存量 config JSON 缺字段自动兼容，无 migration。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 impl ModelProviderConfig {

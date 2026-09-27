@@ -29,6 +29,12 @@ pub enum ProviderType {
     FastEmbed = 6,
     /// 豆包 Vision 多模态 Embedding（使用 /embeddings/multimodal endpoint）
     DoubaoVision = 7,
+    /// jev（TypeSafe AI System One 决策模型，小脑 cerebellum）
+    ///
+    /// 协议维度：System One 形态（state + 类型化问题 → 带概率决策），
+    /// 不兼容 OpenAI chat/completions，走 dao/cerebellum 独立 System One client。
+    /// #[repr(i32)] 尾部追加变体，免 DB migration（仓库既有模式）。
+    Jev = 8,
 }
 
 /// Model capability type - 区分模型是用于 Agent 思考还是 Embedding 向量化
@@ -42,6 +48,11 @@ pub enum ModelCapability {
     Agent = 0,
     /// Embedding 类型 - 支持向量化
     Embedding = 1,
+    /// Decision 类型 - 小脑快判断（cerebellum，System One 决策模型）
+    ///
+    /// 用途维度：标记「决策/快判断」用途，区别于 Agent（对话思考）与
+    /// Embedding（向量化）。调度与展示按用途过滤（T1 报告 §3.2）。
+    Decision = 2,
 }
 
 impl From<i32> for ProviderType {
@@ -55,6 +66,7 @@ impl From<i32> for ProviderType {
             5 => ProviderType::Custom,
             6 => ProviderType::FastEmbed,
             7 => ProviderType::DoubaoVision,
+            8 => ProviderType::Jev,
             _ => ProviderType::default(),
         }
     }
@@ -83,6 +95,7 @@ impl fmt::Display for ProviderType {
             ProviderType::Custom => write!(f, "custom"),
             ProviderType::FastEmbed => write!(f, "fastembed"),
             ProviderType::DoubaoVision => write!(f, "doubao_vision"),
+            ProviderType::Jev => write!(f, "jev"),
         }
     }
 }
@@ -104,6 +117,7 @@ impl From<i32> for ModelCapability {
         match v {
             0 => ModelCapability::Agent,
             1 => ModelCapability::Embedding,
+            2 => ModelCapability::Decision,
             _ => ModelCapability::default(),
         }
     }
@@ -129,6 +143,11 @@ impl ModelCapability {
     pub fn is_embedding(&self) -> bool {
         matches!(self, ModelCapability::Embedding)
     }
+
+    /// Check if it's Decision capability（小脑快判断）
+    pub fn is_decision(&self) -> bool {
+        matches!(self, ModelCapability::Decision)
+    }
 }
 
 impl fmt::Display for ModelCapability {
@@ -136,6 +155,7 @@ impl fmt::Display for ModelCapability {
         match self {
             ModelCapability::Agent => write!(f, "agent"),
             ModelCapability::Embedding => write!(f, "embedding"),
+            ModelCapability::Decision => write!(f, "decision"),
         }
     }
 }
@@ -194,5 +214,43 @@ mod access_mode_tests {
         assert_eq!(s, ModelAccessMode::Stream);
         let ns: ModelAccessMode = serde_json::from_str("\"non_stream\"").unwrap();
         assert_eq!(ns, ModelAccessMode::NonStream);
+    }
+}
+
+#[cfg(test)]
+mod cerebellum_variant_tests {
+    use super::*;
+
+    #[test]
+    fn jev_variant_roundtrip() {
+        assert_eq!(ProviderType::Jev.to_i32(), 8);
+        assert_eq!(ProviderType::from_i32(8), ProviderType::Jev);
+        assert_eq!(ProviderType::from(8_i64), ProviderType::Jev);
+        // 尾部追加不破坏既有变体
+        assert_eq!(ProviderType::from_i32(7), ProviderType::DoubaoVision);
+        assert_eq!(ProviderType::from_i32(0), ProviderType::OpenAI);
+        // 未知值兜底 default，不 panic
+        assert_eq!(ProviderType::from_i32(9), ProviderType::default());
+        assert_eq!(ProviderType::Jev.to_string(), "jev");
+    }
+
+    #[test]
+    fn decision_capability_roundtrip() {
+        assert_eq!(ModelCapability::Decision.to_i32(), 2);
+        assert_eq!(ModelCapability::from_i32(2), ModelCapability::Decision);
+        assert!(ModelCapability::Decision.is_decision());
+        assert!(!ModelCapability::Agent.is_decision());
+        assert!(!ModelCapability::Embedding.is_decision());
+        // 既有变体不漂移
+        assert_eq!(ModelCapability::from_i32(0), ModelCapability::Agent);
+        assert_eq!(ModelCapability::from_i32(1), ModelCapability::Embedding);
+        assert_eq!(ModelCapability::Decision.to_string(), "decision");
+    }
+
+    #[test]
+    fn decision_capability_serde_roundtrip() {
+        let s = serde_json::to_string(&ModelCapability::Decision).unwrap();
+        let back: ModelCapability = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, ModelCapability::Decision);
     }
 }

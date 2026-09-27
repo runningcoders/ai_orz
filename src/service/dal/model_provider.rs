@@ -93,6 +93,12 @@ pub trait ModelProviderDal: Send + Sync {
         ctx: RequestContext,
     ) -> Result<Option<ModelProvider>>;
 
+    /// 获取当前启用的小脑 Provider（Decision 单启用守卫用）
+    async fn find_enabled_decision_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProvider>>;
+
     // ==================== 统计查询 ====================
 
     /// 获取 ModelProvider 统计数据（按 options 控制返回哪些维度）
@@ -217,6 +223,20 @@ impl ModelProviderDal for ModelProviderDalImpl {
         match self
             .model_provider_dao
             .find_enabled_embedding_provider(ctx)
+            .await?
+        {
+            Some(po) => Ok(Some(ModelProvider { po, stats: None })),
+            None => Ok(None),
+        }
+    }
+
+    async fn find_enabled_decision_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProvider>> {
+        match self
+            .model_provider_dao
+            .find_enabled_decision_provider(ctx)
             .await?
         {
             Some(po) => Ok(Some(ModelProvider { po, stats: None })),

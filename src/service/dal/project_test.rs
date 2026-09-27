@@ -128,6 +128,20 @@ impl ModelProviderDao for MockModelProviderDao {
     ) -> common::error::Result<Option<ModelProviderPo>> {
         Ok(None)
     }
+
+    async fn get_default_cerebellum_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+
+    async fn find_enabled_decision_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
 }
 
 /// 构造测试用 ModelProviderPo

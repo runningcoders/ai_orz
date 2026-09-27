@@ -37,6 +37,9 @@ pub fn default_base_url(provider_type: common::enums::ProviderType) -> &'static 
         common::enums::ProviderType::Ollama => "http://localhost:11434/v1",
         common::enums::ProviderType::Custom => "",
         common::enums::ProviderType::FastEmbed => "",
+        // jev 非 OpenAI 兼容协议，cortex 侧无默认端点
+        // （System One 端点兜底在 dao/cerebellum::DEFAULT_SYSTEM_ONE_BASE_URL）
+        common::enums::ProviderType::Jev => "",
     }
 }
 
