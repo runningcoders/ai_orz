@@ -205,9 +205,22 @@ async fn test_delete(pool: SqlitePool) -> Result<()> {
     // 删除
     dao.delete(ctx.clone(), &channel.id).await?;
 
-    // 仍然可以查到（软删除）
+    // 默认查询过滤软删除：find_by_id 查不到
     let found = dao.find_by_id(ctx.clone(), &channel.id).await?;
-    assert!(found.is_some());
+    assert!(found.is_none());
+
+    // 逃生通道：显式 status_in 指定 Deleted 仍可查到（审计/恢复场景）
+    let page = dao
+        .query(
+            ctx.clone(),
+            MessageChannelQuery {
+                id: Some(channel.id.clone()),
+                status_in: Some(vec![ChannelStatus::Deleted]),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(page.items.len(), 1);
 
     Ok(())
 }

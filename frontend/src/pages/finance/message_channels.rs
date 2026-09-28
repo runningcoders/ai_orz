@@ -573,12 +573,18 @@ pub fn FinanceMessageChannels() -> Element {
                                 oninput: move |e| new_lark_user_name.set(e.value()),
                                 placeholder: "可选，用于展示" }
                         }
-                        div { class: "form-control",
-                            label { class: "label cursor-pointer justify-start gap-3",
-                                input { class: "toggle toggle-primary", r#type: "checkbox", checked: listen_inbound_value,
-                                    onchange: move |_| new_listen_inbound.set(!new_listen_inbound()) }
-                                span { class: "label-text",
-                                    "入站监听（接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份）"
+                        // 单一路径：label 整行可点靠原生转发，onchange 读 e.checked() 真实勾选态，不做信号盲切防双触发
+                        label { class: "flex cursor-pointer select-none items-center gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                            input {
+                                class: "checkbox checkbox-sm checkbox-primary",
+                                r#type: "checkbox",
+                                checked: listen_inbound_value,
+                                onchange: move |e| new_listen_inbound.set(e.checked()),
+                            }
+                            div {
+                                div { class: "text-sm font-medium", "入站监听" }
+                                div { class: "text-xs text-base-content/60",
+                                    "接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份"
                                 }
                             }
                         }
@@ -625,12 +631,18 @@ pub fn FinanceMessageChannels() -> Element {
                                 span { class: "label-text-alt", "留空时以最近活跃会话作为出站目标；出站前需先收到过该用户的消息" }
                             }
                         }
-                        div { class: "form-control",
-                            label { class: "label cursor-pointer justify-start gap-3",
-                                input { class: "toggle toggle-primary", r#type: "checkbox", checked: wechat_listen_inbound_value,
-                                    onchange: move |_| new_wechat_listen_inbound.set(!new_wechat_listen_inbound()) }
-                                span { class: "label-text",
-                                    "入站监听（建立 iLink 长轮询接收该 bot 的私信；关闭后仅用于出站推送）"
+                        // 单一路径：label 整行可点靠原生转发，onchange 读 e.checked() 真实勾选态，不做信号盲切防双触发
+                        label { class: "flex cursor-pointer select-none items-center gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                            input {
+                                class: "checkbox checkbox-sm checkbox-primary",
+                                r#type: "checkbox",
+                                checked: wechat_listen_inbound_value,
+                                onchange: move |e| new_wechat_listen_inbound.set(e.checked()),
+                            }
+                            div {
+                                div { class: "text-sm font-medium", "入站监听" }
+                                div { class: "text-xs text-base-content/60",
+                                    "建立 iLink 长轮询接收该 bot 的私信；关闭后仅用于出站推送"
                                 }
                             }
                         }

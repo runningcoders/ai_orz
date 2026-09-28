@@ -335,6 +335,11 @@ fn push_query_filters<'args>(
             .push(" AND channel_type = ")
             .push_bind(channel_type as i32);
     }
+    // 默认软删除过滤：未显式指定 status_in 时排除 Deleted (0)。
+    // 与 message DAO 同范式——显式 status_in 会覆盖该默认过滤（查历史/恢复走 query 逃生通道）
+    if query.status_in.is_none() {
+        builder.push(" AND status != 0");
+    }
     if query.only_enabled {
         builder.push(" AND status = 1");
     }

@@ -104,14 +104,14 @@ mod tests {
             .await
             .unwrap();
 
-        // 验证删除（软删除，仍然可以查询到，但 deleted_at 有值）
+        // 验证删除（软删除：默认查询过滤，get 不再返回）
         let fetched_after_delete = domain
             .message_channel_manage()
             .get_message_channel(ctx.clone(), channel_id)
             .await
             .unwrap();
-        // 软删除后仍然可以查询到
-        assert!(fetched_after_delete.is_some());
+        // 软删除后默认查询不可见（记录仍在库中，审计走 query 逃生通道）
+        assert!(fetched_after_delete.is_none());
     }
 
     #[sqlx::test]

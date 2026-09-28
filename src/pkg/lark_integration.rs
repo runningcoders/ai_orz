@@ -478,23 +478,15 @@ pub fn extract_verification_url(output: &str) -> Option<String> {
 
 /// 从 `config init --new` 输出中提取 appId（纯函数，可测）
 ///
-/// 官方 `init.go` 建应用成功后 `output.PrintJson(out, {"appId": ..., "appSecret":
-/// "****", "brand": ...})`——**appId 是明文**（secret 脱敏，本就不该读）。
-/// 输出流可能混合 QR 块/进度文本，逐行找合法 JSON 再取字段，解析失败静默跳过。
+/// lark-cli v1.0.94 建应用成功后输出为**文本行**（非 JSON）：
+/// `App configured! App ID: cli_xxx`（中文 `应用配置成功! App ID: cli_xxx`），
+/// appSecret 不下发。逐行定位 `App ID:` 后取首个 token，并以 `cli_` 前缀做形制
+/// 校验——避免误匹配帮助文本（如 `App ID (required)` / `App ID: <app_id>`）。
 pub fn extract_app_id(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
-        let trimmed = line.trim();
-        if !trimmed.starts_with('{') {
-            return None;
-        }
-        serde_json::from_str::<serde_json::Value>(trimmed)
-            .ok()
-            .and_then(|v| {
-                v.get("appId")
-                    .and_then(|a| a.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-            })
+        let idx = line.find("App ID:")?;
+        let token = line[idx + "App ID:".len()..].split_whitespace().next()?;
+        token.starts_with("cli_").then(|| token.to_string())
     })
 }
 
@@ -569,9 +561,10 @@ pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
     tokio::fs::create_dir_all(&home).await?;
     let mut command = Command::new(LARK_CLI_BIN);
     command
-        // --json：建应用成功后输出 {"appId": 明文, "appSecret": "****", ...}
-        //（官方 init.go 契约；不带时 appId 只落 keychain，我方拿不到）
-        .args(["config", "init", "--new", "--json"])
+        // 不带 --json：lark-cli v1.0.94 的 config init 只支持文本输出，传 --json 会因
+        // unknown flag 立即退出（URL 与 appId 双双拿不到）。成功后打印
+        // `App configured! App ID: cli_xxx`（appSecret 不下发）
+        .args(["config", "init", "--new"])
         .env("HOME", &home)
         .env("LARKSUITE_CLI_NO_UPDATE_NOTIFIER", "1")
         .env("LARKSUITE_CLI_NO_SKILLS_NOTIFIER", "1")
@@ -816,23 +809,24 @@ mod tests {
         assert_eq!(BindPhase::Failed.as_str(), "failed");
     }
 
-    /// 官方 init.go 的 JSON 输出 fixture：appId 明文、appSecret 脱敏
+    /// lark-cli v1.0.94 文本输出 fixture：`App ID:` 后跟明文 appId
     #[test]
-    fn extract_app_id_from_json_output() {
-        // 混合输出：进度文本 + 末尾 JSON 行
-        let output = "正在创建应用...\n\n{\"appId\":\"cli_a1b2c3d4e5f6\",\"appSecret\":\"****\",\"brand\":\"feishu\"}";
+    fn extract_app_id_from_text_output() {
+        // 英文成功文案（混合进度文本）
+        let output = "正在创建应用...\n\nApp configured! App ID: cli_a1b2c3d4e5f6";
         assert_eq!(extract_app_id(output).as_deref(), Some("cli_a1b2c3d4e5f6"));
-        // 纯 JSON 单行
+        // 中文成功文案
         assert_eq!(
-            extract_app_id("{\"appId\":\"cli_x\"}").as_deref(),
+            extract_app_id("应用配置成功! App ID: cli_x").as_deref(),
             Some("cli_x")
         );
-        // secret 永远不该被读出（即使输出异常，也只取 appId 字段）
-        assert!(extract_app_id("{\"appSecret\":\"real_secret\"}").is_none());
-        // 非 JSON / 缺字段 / 空 appId
+        // 状态展示行（`App ID:` 后双空格分隔）
+        assert_eq!(extract_app_id("  App ID:  cli_y").as_deref(), Some("cli_y"));
+        // 帮助文本不得误匹配：无冒号 / token 非 cli_ 形制 / 空输出
+        assert!(extract_app_id("App ID (required)").is_none());
+        assert!(extract_app_id("App ID: <app_id>").is_none());
+        assert!(extract_app_id("app_secret: cli_leaked").is_none());
         assert!(extract_app_id("plain text").is_none());
-        assert!(extract_app_id("{\"brand\":\"feishu\"}").is_none());
-        assert!(extract_app_id("{\"appId\":\"\"}").is_none());
         assert!(extract_app_id("").is_none());
     }
 }

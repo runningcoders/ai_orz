@@ -207,7 +207,7 @@ async fn test_delete_and_set_status(pool: SqlitePool) {
     // 删除渠道（软删除）
     dal.delete_channel(ctx, &channel_id).await.unwrap();
 
-    // 应该找不到了
+    // 默认查询过滤软删除：应找不到（记录仍在库中，仅状态置 Deleted）
     let found = dal
         .get_channel(
             crate::pkg::request_context_test_support::new_test_ctx("admin", pool),
@@ -215,9 +215,7 @@ async fn test_delete_and_set_status(pool: SqlitePool) {
         )
         .await
         .unwrap();
-    // 因为是软删除，状态变成 Deleted，查询时默认过滤掉
-    // 删除只是标记状态，数据库中仍然存在
-    assert!(found.is_some());
+    assert!(found.is_none());
 }
 
 #[sqlx::test]

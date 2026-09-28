@@ -850,12 +850,18 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     input { class: "input input-bordered hud-input w-full", value: "{edit_user_name}",
                                         oninput: move |e| edit_user_name.set(e.value()), placeholder: "可选" }
                                 }
-                                div { class: "form-control",
-                                    label { class: "label cursor-pointer justify-start gap-3",
-                                        input { class: "toggle toggle-primary", r#type: "checkbox", checked: edit_listen_inbound(),
-                                            onchange: move |_| edit_listen_inbound.set(!edit_listen_inbound()) }
-                                        span { class: "label-text",
-                                            "入站监听（接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份）"
+                                // 单一路径：label 整行可点靠原生转发，onchange 读 e.checked() 真实勾选态，不做信号盲切防双触发
+                                label { class: "flex cursor-pointer select-none items-center gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                                    input {
+                                        class: "checkbox checkbox-sm checkbox-primary",
+                                        r#type: "checkbox",
+                                        checked: edit_listen_inbound(),
+                                        onchange: move |e| edit_listen_inbound.set(e.checked()),
+                                    }
+                                    div {
+                                        div { class: "text-sm font-medium", "入站监听" }
+                                        div { class: "text-xs text-base-content/60",
+                                            "接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份"
                                         }
                                     }
                                 }
@@ -893,12 +899,18 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                         oninput: move |e| edit_wechat_peer_id.set(e.value()),
                                         placeholder: "可留空：首条入站消息到达时自动回填" }
                                 }
-                                div { class: "form-control",
-                                    label { class: "label cursor-pointer justify-start gap-3",
-                                        input { class: "toggle toggle-primary", r#type: "checkbox", checked: edit_wechat_listen_inbound(),
-                                            onchange: move |_| edit_wechat_listen_inbound.set(!edit_wechat_listen_inbound()) }
-                                        span { class: "label-text",
-                                            "入站监听（建立 iLink 长轮询接收该 bot 的私信；关闭后仅用于出站推送）"
+                                // 单一路径：label 整行可点靠原生转发，onchange 读 e.checked() 真实勾选态，不做信号盲切防双触发
+                                label { class: "flex cursor-pointer select-none items-center gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                                    input {
+                                        class: "checkbox checkbox-sm checkbox-primary",
+                                        r#type: "checkbox",
+                                        checked: edit_wechat_listen_inbound(),
+                                        onchange: move |e| edit_wechat_listen_inbound.set(e.checked()),
+                                    }
+                                    div {
+                                        div { class: "text-sm font-medium", "入站监听" }
+                                        div { class: "text-xs text-base-content/60",
+                                            "建立 iLink 长轮询接收该 bot 的私信；关闭后仅用于出站推送"
                                         }
                                     }
                                 }
