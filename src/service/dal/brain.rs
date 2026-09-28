@@ -6,8 +6,9 @@
 
 use crate::models::agent::{AgentPo, ExternalAgentConfig};
 use crate::models::brain::Brain;
+use crate::models::cerebellum_types::{CerebellumQuestion, ThinkFastResult};
 use crate::models::cortex_types::{ThinkResult, TokenUsage, ToolDescriptor};
-use crate::models::model_provider::ModelProvider;
+use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::service::dao::agent_runtime;
@@ -17,6 +18,8 @@ use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use common::enums::AgentKind;
 use common::error::{Result, err};
+use serde_json::Value;
+use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -107,6 +110,20 @@ pub trait BrainDal: Send + Sync {
         messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
     ) -> Result<ThinkResult>;
+
+    /// 小脑快判断：单次亚秒级 System One decision 调用（B3 运行时路由消费面）
+    ///
+    /// 与 cortex 消费模式同构：DAO 不作为字段持有，方法体内联获取
+    /// `dao::cerebellum::dao()` 单例透传（快判断无状态、全配置随
+    /// `&ModelProviderPo` 传入）。domain 层 cerebellum_router 仅依赖
+    /// BrainDal 唯一思考门面，禁止直连 DAO。
+    async fn think_fast(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+        state: Value,
+        questions: BTreeMap<String, CerebellumQuestion>,
+    ) -> Result<ThinkFastResult>;
 
     /// 向量化实体（domain 层入口）
     ///
@@ -394,6 +411,20 @@ impl BrainDal for BrainDalImpl {
                 })
             }
         }
+    }
+
+    async fn think_fast(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+        state: Value,
+        questions: BTreeMap<String, CerebellumQuestion>,
+    ) -> Result<ThinkFastResult> {
+        // 与 cortex 消费同构：DAO 不上字段，方法体内联获取单例透传
+        // （快判断无状态，全配置随 &ModelProviderPo 传入）
+        crate::service::dao::cerebellum::dao()
+            .think_fast(ctx, provider, state, questions)
+            .await
     }
 
     async fn embed_entity(

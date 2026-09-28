@@ -42,7 +42,6 @@ pub mod artifact;
 pub mod attachment;
 pub mod backup;
 pub mod brain;
-pub mod cerebellum;
 pub mod cron_trigger;
 pub mod email;
 pub mod lark;
@@ -69,7 +68,6 @@ pub fn init_all() {
     attachment::init();
     backup::init();
     brain::init();
-    cerebellum::init();
     cron_trigger::init();
     log_query::init();
     memory::init();

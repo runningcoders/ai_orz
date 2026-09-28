@@ -1443,6 +1443,19 @@ mod tests {
             })
         }
 
+        async fn think_fast(
+            &self,
+            _ctx: RequestContext,
+            _provider: &crate::models::model_provider::ModelProviderPo,
+            _state: serde_json::Value,
+            _questions: std::collections::BTreeMap<
+                String,
+                crate::models::cerebellum_types::CerebellumQuestion,
+            >,
+        ) -> common::error::Result<crate::models::cerebellum_types::ThinkFastResult> {
+            unimplemented!("not needed by awaken skill tests")
+        }
+
         async fn embed_entity(
             &self,
             _ctx: RequestContext,
@@ -1497,6 +1510,19 @@ mod tests {
                 common::error::ErrorCode::ModelRateLimited,
                 "chat completions rate limited (429): quota exceeded for this minute",
             ))
+        }
+
+        async fn think_fast(
+            &self,
+            _ctx: RequestContext,
+            _provider: &crate::models::model_provider::ModelProviderPo,
+            _state: serde_json::Value,
+            _questions: std::collections::BTreeMap<
+                String,
+                crate::models::cerebellum_types::CerebellumQuestion,
+            >,
+        ) -> common::error::Result<crate::models::cerebellum_types::ThinkFastResult> {
+            unimplemented!("not needed by awaken abort test")
         }
 
         async fn embed_entity(

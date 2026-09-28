@@ -19,7 +19,7 @@ use crate::models::cerebellum_types::{
 };
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
-use crate::service::dal::cerebellum::CerebellumDal;
+use crate::service::dal::brain::BrainDal;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -95,13 +95,13 @@ pub enum RouteDecision {
 
 /// B3 运行时快判断路由
 ///
-/// - `dal` 参数化 trait 对象：生产 = `dal::cerebellum::cerebellum_dal()`，测试注入 mock；
+/// - `dal` 参数化 trait 对象：生产 = `dal::brain::dal()`（BrainDal::think_fast），测试注入 mock；
 /// - `total` 开关关 / cerebellum None → Skip{NoCerebellum}（零调用，全局回滚开关）；
 /// - state 只携带轻量上下文（last_user_message + agent 标识），不取全量记忆；
 /// - 单次调用受 800ms 超时约束，任何失败/低置信 → Skip（= 现状）。
 pub async fn route(
     ctx: &RequestContext,
-    dal: Arc<dyn CerebellumDal>,
+    dal: Arc<dyn BrainDal>,
     cerebellum: &ModelProviderPo,
     enabled: bool,
     agent_id: &str,
@@ -271,7 +271,7 @@ fn translate(result: &ThinkFastResult, _latency_ms: u64) -> RouteDecision {
     }
 }
 
-/// 便捷封装：单例 DAL 的生产入口
+/// 便捷封装：单例 Brain DAL（BrainDal::think_fast）的生产入口
 pub async fn route_with_default_dao(
     ctx: &RequestContext,
     cerebellum: &ModelProviderPo,
@@ -282,7 +282,7 @@ pub async fn route_with_default_dao(
 ) -> RouteDecision {
     route(
         ctx,
-        crate::service::dal::cerebellum::cerebellum_dal(),
+        crate::service::dal::brain::dal(),
         cerebellum,
         enabled,
         agent_id,
@@ -300,15 +300,15 @@ mod tests {
     use common::error::{Result, err};
     use std::time::Duration as StdDuration;
 
-    // ---------- mock CerebellumDal ----------
+    // ---------- mock BrainDal（实现全 trait 方法，仅 think_fast 生效） ----------
 
-    struct MockDao {
+    struct MockBrainDal {
         result: Option<Result<ThinkFastResult>>,
         delay_ms: u64,
     }
 
     #[async_trait]
-    impl CerebellumDal for MockDao {
+    impl BrainDal for MockBrainDal {
         async fn think_fast(
             &self,
             _ctx: RequestContext,
@@ -323,6 +323,50 @@ mod tests {
                 Some(r) => r.clone(),
                 None => Err(err!(Internal, "mock error")),
             }
+        }
+
+        async fn wake_brain(
+            &self,
+            _ctx: RequestContext,
+            _agent: &crate::models::agent::AgentPo,
+            _memories: Vec<crate::models::memory::Memory>,
+        ) -> Result<crate::models::brain::Brain> {
+            unimplemented!("not needed by cerebellum router tests")
+        }
+
+        async fn test_connection(
+            &self,
+            _ctx: RequestContext,
+            _provider: &crate::models::model_provider::ModelProvider,
+            _prompt: &str,
+        ) -> Result<String> {
+            unimplemented!("not needed by cerebellum router tests")
+        }
+
+        async fn think(
+            &self,
+            _ctx: RequestContext,
+            _brain: &crate::models::brain::Brain,
+            _messages: &[crate::models::cortex_types::ChatMessage],
+            _tools: &[crate::models::cortex_types::ToolDescriptor],
+        ) -> Result<crate::models::cortex_types::ThinkResult> {
+            unimplemented!("not needed by cerebellum router tests")
+        }
+
+        async fn embed_entity(
+            &self,
+            _ctx: RequestContext,
+            _entity: &dyn crate::models::vector::Vectorizable,
+        ) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
+        }
+
+        async fn embed_text_for_search(
+            &self,
+            _ctx: RequestContext,
+            _text: &str,
+        ) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
         }
     }
 
@@ -367,7 +411,7 @@ mod tests {
         let ctx = test_ctx();
         route(
             &ctx,
-            Arc::new(MockDao { result, delay_ms }),
+            Arc::new(MockBrainDal { result, delay_ms }),
             &mock_provider(),
             enabled,
             "agent-1",

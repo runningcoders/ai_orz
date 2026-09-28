@@ -299,6 +299,19 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
+        async fn think_fast(
+            &self,
+            _ctx: RequestContext,
+            _provider: &crate::models::model_provider::ModelProviderPo,
+            _state: serde_json::Value,
+            _questions: std::collections::BTreeMap<
+                String,
+                crate::models::cerebellum_types::CerebellumQuestion,
+            >,
+        ) -> Result<crate::models::cerebellum_types::ThinkFastResult> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
         async fn embed_entity(
             &self,
             _ctx: RequestContext,

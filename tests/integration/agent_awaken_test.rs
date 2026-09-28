@@ -336,6 +336,18 @@ impl CapturingBrainDal {
 
 #[async_trait]
 impl BrainDal for CapturingBrainDal {
+    async fn think_fast(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ai_orz::models::model_provider::ModelProviderPo,
+        _state: serde_json::Value,
+        _questions: std::collections::BTreeMap<
+            String,
+            ai_orz::models::cerebellum_types::CerebellumQuestion,
+        >,
+    ) -> CommonResult<ai_orz::models::cerebellum_types::ThinkFastResult> {
+        unimplemented!("not needed by awaken manual tools integration test")
+    }
     async fn wake_brain(
         &self,
         _ctx: RequestContext,
@@ -687,6 +699,18 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
 
     #[async_trait]
     impl BrainDal for FailingBrainDal {
+        async fn think_fast(
+            &self,
+            _ctx: RequestContext,
+            _provider: &ai_orz::models::model_provider::ModelProviderPo,
+            _state: serde_json::Value,
+            _questions: std::collections::BTreeMap<
+                String,
+                ai_orz::models::cerebellum_types::CerebellumQuestion,
+            >,
+        ) -> CommonResult<ai_orz::models::cerebellum_types::ThinkFastResult> {
+            unimplemented!("not needed")
+        }
         async fn wake_brain(
             &self,
             _ctx: RequestContext,
@@ -996,6 +1020,18 @@ impl TwoPhaseMockBrainDal {
 
 #[async_trait]
 impl BrainDal for TwoPhaseMockBrainDal {
+    async fn think_fast(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ai_orz::models::model_provider::ModelProviderPo,
+        _state: serde_json::Value,
+        _questions: std::collections::BTreeMap<
+            String,
+            ai_orz::models::cerebellum_types::CerebellumQuestion,
+        >,
+    ) -> CommonResult<ai_orz::models::cerebellum_types::ThinkFastResult> {
+        unimplemented!("not needed by two-phase awaken integration test")
+    }
     async fn wake_brain(
         &self,
         _ctx: RequestContext,
