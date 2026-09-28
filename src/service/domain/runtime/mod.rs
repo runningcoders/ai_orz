@@ -328,6 +328,7 @@ pub mod awakening;
 // busy_guard 需要 pub：消费侧（消息 / 沉淀消费者）在「自己抢占 Agent」后
 // 必须挂一个 RAII 兜底释放，否则中途 ? 提早返回会把 Agent 永久留在 Busy/Resting
 pub mod busy_guard;
+mod cerebellum_router;
 mod compaction;
 mod intent_analyze;
 mod memory;

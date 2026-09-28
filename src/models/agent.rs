@@ -77,6 +77,14 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub think_timeout_secs: u64,
 
+    /// 是否启用小脑路由（B3 运行时快判断）：关闭=全域静默跳过（Agent 级回滚开关）
+    #[serde(default = "default_true")]
+    pub enable_cerebellum_route: bool,
+
+    /// 琐碎请求模板直回（TRIVIAL）：默认关，放开需 Spike 实测+灰度后另行拍板
+    #[serde(default)]
+    pub cerebellum_trivial_direct: bool,
+
     /// 外部 Agent 执行配置（仅 Cli/Remote kind 时使用）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_config: Option<ExternalAgentConfig>,
@@ -132,6 +140,8 @@ impl Default for AgentRuntimeConfig {
             intent_analyze_max_rounds: 0,
             summary_max_rounds: 0,
             think_timeout_secs: 0,
+            enable_cerebellum_route: true,
+            cerebellum_trivial_direct: false,
             external_config: None,
         }
     }
@@ -722,5 +732,42 @@ mod tests {
 
         config.uninstall_skill_pack_tag("coding");
         assert!(!config.has_skill_pack_tag("coding"));
+    }
+
+    #[test]
+    fn test_cerebellum_switches_default_values() {
+        let config = AgentRuntimeConfig::default();
+        // 增强注入默认开 / TRIVIAL 直回默认关（T1 拍板）
+        assert!(config.enable_cerebellum_route);
+        assert!(!config.cerebellum_trivial_direct);
+    }
+
+    #[test]
+    fn test_cerebellum_switches_serde_backward_compat() {
+        // 存量 config JSON 无新字段 → serde default 自动补齐（向后兼容）
+        let legacy = "{}";
+        let config: AgentRuntimeConfig = serde_json::from_str(legacy).expect("legacy config");
+        assert!(config.enable_cerebellum_route);
+        assert!(!config.cerebellum_trivial_direct);
+
+        // 显式覆盖可关闭
+        let custom = serde_json::json!({
+            "enable_cerebellum_route": false,
+            "cerebellum_trivial_direct": true
+        })
+        .to_string();
+        let config: AgentRuntimeConfig = serde_json::from_str(&custom).expect("custom config");
+        assert!(!config.enable_cerebellum_route);
+        assert!(config.cerebellum_trivial_direct);
+
+        // round-trip 保留
+        let config = AgentRuntimeConfig {
+            enable_cerebellum_route: false,
+            ..Default::default()
+        };
+        let json = config.to_json();
+        let back: AgentRuntimeConfig = serde_json::from_str(&json).expect("round-trip");
+        assert!(!back.enable_cerebellum_route);
+        assert!(!back.cerebellum_trivial_direct);
     }
 }

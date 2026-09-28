@@ -3,6 +3,7 @@
 //! `run_think_loop` 是 awaken / sleep_and_settle / summary / intent_analyze
 //! 共用的多轮思考循环，封装：超时控制 + 多轮迭代 + 工具调用分发 + 策略评估。
 
+use super::cerebellum_router::{self, RouteDecision};
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ChatMessage, ThinkResult};
 use crate::models::events::ThinkRoundEvent;
@@ -286,6 +287,54 @@ impl RuntimeDomainImpl {
 
         let think_future = async {
             let mut messages = initial_messages;
+            // ---- B3 小脑快判断路由（单点接线；四场景自动全覆盖）----
+            // 三层降级全部收敛为「静默跳过 = 现状」：无启用小脑/总开关关、
+            // 800ms 超时/调用失败、低置信。只有 Inject 会改变消息序列。
+            if let Some(cerebellum) = brain.cerebellum.as_ref() {
+                let rc = &brain.runtime_config;
+                let last_user_text = messages.iter().rev().find_map(|m| match m {
+                    ChatMessage::User { content } => Some(content.as_str()),
+                    _ => None,
+                });
+                let decision = cerebellum_router::route_with_default_dao(
+                    &ctx,
+                    cerebellum,
+                    rc.enable_cerebellum_route,
+                    &brain.agent_id,
+                    &brain.agent_name,
+                    last_user_text,
+                )
+                .await;
+                match decision {
+                    // TRIVIAL 高置信直回：默认关；开则跳过主循环提前返回
+                    RouteDecision::Direct {
+                        content,
+                        confidence,
+                    } => {
+                        if rc.cerebellum_trivial_direct {
+                            log_info!(
+                                &ctx,
+                                "think_loop",
+                                "cerebellum trivial direct short-circuit, confidence={}",
+                                confidence
+                            );
+                            return Ok(ThinkLoopResult::Final { content, messages });
+                        }
+                        // 直回开关关 → 不直回也不注入（保守口径）
+                    }
+                    // 增强注入（默认开）：路由结论作为首轮 System 提示插入消息头
+                    RouteDecision::Inject { system_prompt, .. } => {
+                        messages.insert(
+                            0,
+                            ChatMessage::System {
+                                content: system_prompt,
+                            },
+                        );
+                    }
+                    // 静默跳过 = 现状
+                    RouteDecision::Skip { .. } => {}
+                }
+            }
             // 提取模型提供商信息（所有轮次共用）
             let (model_provider_id, model_name) = match brain.model_provider() {
                 Some(po) => (Some(po.id.clone()), Some(po.model_name.clone())),
