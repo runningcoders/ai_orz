@@ -136,3 +136,103 @@ async fn test_test_connection(pool: SqlitePool) {
 
     assert!(result.is_err());
 }
+
+// ==================== B2 小脑注入测试 ====================
+
+/// 创建测试 Decision（小脑）ModelProvider
+fn create_test_decision_provider() -> ModelProvider {
+    let provider_po = ModelProviderPo::new(
+        "Jev Cerebellum".to_string(),
+        ProviderType::Jev,
+        ModelCapability::Decision,
+        "jev-latest".to_string(),
+        "test-key".to_string(),
+        None,
+        Some("测试小脑模型".to_string()),
+        "test".to_string(),
+    );
+    ModelProvider::from_po(provider_po)
+}
+
+/// 创建测试 Cli（外部）AgentPo
+fn create_test_cli_agent() -> AgentPo {
+    let mut po = AgentPo::new(
+        "Test Cli Agent".to_string(),
+        vec!["assistant".to_string()],
+        "Test description".to_string(),
+        vec!["chat".to_string()],
+        "Test soul".to_string(),
+        String::new(),
+        "test-user".to_string(),
+    );
+    po.id = "test-cli-agent".to_string();
+    po.kind = AgentKind::Cli;
+    po
+}
+
+/// 有启用 Decision 记录 → Local brain 注入 Some 且 id 吻合
+#[sqlx::test]
+async fn test_wake_brain_local_injects_default_cerebellum(pool: SqlitePool) {
+    let (brain_dal, ctx) = init_test_env(pool).await;
+
+    let provider = create_test_provider();
+    crate::service::dao::model_provider::dao()
+        .insert(ctx.clone(), &provider.po)
+        .await
+        .unwrap();
+    let cerebellum = create_test_decision_provider();
+    crate::service::dao::model_provider::dao()
+        .insert(ctx.clone(), &cerebellum.po)
+        .await
+        .unwrap();
+
+    let agent = create_test_local_agent(&provider.po.id);
+    let brain = brain_dal.wake_brain(ctx, &agent, Vec::new()).await.unwrap();
+
+    let injected = brain
+        .cerebellum
+        .as_ref()
+        .expect("存在启用 Decision 记录时应注入默认小脑");
+    assert_eq!(injected.id, cerebellum.po.id);
+}
+
+/// 无任何 Decision 记录 → Local brain cerebellum=None（现状行为，逐字节一致）
+#[sqlx::test]
+async fn test_wake_brain_local_no_cerebellum_is_none(pool: SqlitePool) {
+    let (brain_dal, ctx) = init_test_env(pool).await;
+
+    let provider = create_test_provider();
+    crate::service::dao::model_provider::dao()
+        .insert(ctx.clone(), &provider.po)
+        .await
+        .unwrap();
+
+    let agent = create_test_local_agent(&provider.po.id);
+    let brain = brain_dal.wake_brain(ctx, &agent, Vec::new()).await.unwrap();
+
+    assert!(
+        brain.cerebellum.is_none(),
+        "无启用 Decision 记录时应为 None（与现状一致）"
+    );
+}
+
+/// Cli（外部）brain 恒不注入小脑（即便存在启用 Decision 记录）
+#[sqlx::test]
+async fn test_wake_brain_external_cerebellum_none(pool: SqlitePool) {
+    let (brain_dal, ctx) = init_test_env(pool).await;
+
+    let cerebellum = create_test_decision_provider();
+    crate::service::dao::model_provider::dao()
+        .insert(ctx.clone(), &cerebellum.po)
+        .await
+        .unwrap();
+
+    let agent = create_test_cli_agent();
+    let brain = brain_dal.wake_brain(ctx, &agent, Vec::new()).await.unwrap();
+
+    assert!(brain.is_external());
+    assert!(
+        brain.cerebellum.is_none(),
+        "Cli brain 不注入小脑（外部 Agent 小脑接入列后续可选，不在本期）"
+    );
+}

@@ -534,6 +534,7 @@ fn make_cli_agent(prompt_template: Option<String>) -> Agent {
             ..Default::default()
         },
         model_provider: None,
+        cerebellum: None,
         memories: vec![],
     });
     agent
@@ -873,6 +874,7 @@ fn flat_builder_ignores_template_for_remote_config() {
             ..Default::default()
         },
         model_provider: None,
+        cerebellum: None,
         memories: vec![],
     });
 

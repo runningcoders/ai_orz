@@ -62,8 +62,9 @@ pub fn new(
 pub trait BrainDal: Send + Sync {
     /// 从 AgentPo 和记忆列表创建完整的 Brain
     ///
-    /// - Local agent: 内部加载 ModelProvider，绑定到 Brain
-    /// - 外部 agent (Cli/Remote): 不绑定 ModelProvider，仅保存 runtime_config
+    /// - Local agent: 内部加载 ModelProvider，绑定到 Brain，并注入默认小脑
+    ///   （`get_default_cerebellum_provider`，无启用记录 → None）
+    /// - 外部 agent (Cli/Remote): 不绑定 ModelProvider，仅保存 runtime_config（小脑维持 None）
     /// - memories: 记忆列表，已经由上层创建好
     /// - 返回完整的 Brain 实例
     async fn wake_brain(
@@ -180,13 +181,21 @@ impl BrainDal for BrainDalImpl {
 
                 let runtime_config = agent.get_runtime_config();
 
-                Ok(Brain::new_local(
+                let mut brain = Brain::new_local(
                     agent.id.clone(),
                     agent.name.clone(),
                     runtime_config,
                     provider_po,
                     memories,
-                ))
+                );
+                // 小脑装配（B2 二期）：Local Agent 注入默认小脑（status 单启用即默认）。
+                // 查询失败向上传播（装配期失败应显性暴露）；无启用记录 → None，
+                // 与无小脑的现状行为逐字节一致（运行时消费归 B3）。
+                brain.cerebellum = self
+                    .model_provider_dao
+                    .get_default_cerebellum_provider(ctx)
+                    .await?;
+                Ok(brain)
             }
             AgentKind::Cli | AgentKind::Remote => {
                 let runtime_config = agent.get_runtime_config();

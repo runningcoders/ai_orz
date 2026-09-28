@@ -26,6 +26,11 @@ pub struct Brain {
     pub runtime_config: AgentRuntimeConfig,
     /// 模型提供商配置（仅 Local kind 有值，外部 agent 为 None）
     pub model_provider: Option<ModelProviderPo>,
+    /// 默认小脑模型配置（B2 二期注入；None=无启用小脑，行为与现状一致）
+    ///
+    /// 由 wake_brain Local 分支经 `get_default_cerebellum_provider` 装配后赋值
+    /// （构造签名不动，零调用点破坏）；Cli/Remote 外部 Agent 维持 None。
+    pub cerebellum: Option<ModelProviderPo>,
     /// 记忆列表
     pub memories: Vec<crate::models::memory::Memory>,
 }
@@ -45,6 +50,7 @@ impl Brain {
             agent_name,
             runtime_config,
             model_provider: Some(model_provider),
+            cerebellum: None,
             memories,
         }
     }
@@ -64,6 +70,7 @@ impl Brain {
             agent_name,
             runtime_config,
             model_provider: None,
+            cerebellum: None,
             memories,
         }
     }
