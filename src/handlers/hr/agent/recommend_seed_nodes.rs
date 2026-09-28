@@ -9,7 +9,7 @@
 use crate::models::memory::SeedNodeRecommendation;
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime::domain as runtime_domain;
-use ai_orz_macros::generate_http_handler;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
     RecommendSeedNodesParams, RecommendSeedNodesResponse,
     SeedNodeRecommendation as ApiSeedNodeRecommendation,
@@ -17,6 +17,14 @@ use common::api::{
 use common::error::Result;
 
 /// 推荐知识图谱起点节点（按关联度数 Top N）
+#[register_handler_tool(
+    id = "recommend_seed_nodes",
+    name = "Recommend Graph Seed Nodes",
+    description = "Recommend top knowledge-graph seed nodes ranked by connection degree (in + out edges) as entry points for graph exploration. Use this for cold-start when no relevant node is known yet: pick a seed node, then expand its neighborhood with search_memory(seed_node_ids=[...], traversal_depth=1~2). agent_id optionally scopes the candidate pool; omit it to recommend from the whole hive (knowledge nodes are shared across agents). Nodes tagged published win ties when degrees are equal. For semantic search use search_memory instead.",
+    params = "common::api::RecommendSeedNodesParams",
+    neural,
+    tags = "memory"
+)]
 #[generate_http_handler]
 pub async fn recommend_seed_nodes(
     ctx: RequestContext,
