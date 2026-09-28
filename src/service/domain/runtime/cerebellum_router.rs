@@ -19,7 +19,7 @@ use crate::models::cerebellum_types::{
 };
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::cerebellum::CerebellumDao;
+use crate::service::dal::cerebellum::CerebellumDal;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -95,13 +95,13 @@ pub enum RouteDecision {
 
 /// B3 运行时快判断路由
 ///
-/// - `dao` 参数化 trait 对象：生产 = `dao::cerebellum::dao()`，测试注入 mock；
+/// - `dal` 参数化 trait 对象：生产 = `dal::cerebellum::cerebellum_dal()`，测试注入 mock；
 /// - `total` 开关关 / cerebellum None → Skip{NoCerebellum}（零调用，全局回滚开关）；
 /// - state 只携带轻量上下文（last_user_message + agent 标识），不取全量记忆；
 /// - 单次调用受 800ms 超时约束，任何失败/低置信 → Skip（= 现状）。
 pub async fn route(
     ctx: &RequestContext,
-    dao: Arc<dyn CerebellumDao>,
+    dal: Arc<dyn CerebellumDal>,
     cerebellum: &ModelProviderPo,
     enabled: bool,
     agent_id: &str,
@@ -160,7 +160,7 @@ pub async fn route(
     let started = Instant::now();
     let call = tokio::time::timeout(
         Duration::from_millis(CEREBELLUM_ROUTE_TIMEOUT_MS),
-        dao.think_fast(ctx.clone(), cerebellum, state, questions),
+        dal.think_fast(ctx.clone(), cerebellum, state, questions),
     )
     .await;
 
@@ -271,7 +271,7 @@ fn translate(result: &ThinkFastResult, _latency_ms: u64) -> RouteDecision {
     }
 }
 
-/// 便捷封装：单例 dao 的生产入口
+/// 便捷封装：单例 DAL 的生产入口
 pub async fn route_with_default_dao(
     ctx: &RequestContext,
     cerebellum: &ModelProviderPo,
@@ -282,7 +282,7 @@ pub async fn route_with_default_dao(
 ) -> RouteDecision {
     route(
         ctx,
-        crate::service::dao::cerebellum::dao(),
+        crate::service::dal::cerebellum::cerebellum_dal(),
         cerebellum,
         enabled,
         agent_id,
@@ -300,7 +300,7 @@ mod tests {
     use common::error::{Result, err};
     use std::time::Duration as StdDuration;
 
-    // ---------- mock CerebellumDao ----------
+    // ---------- mock CerebellumDal ----------
 
     struct MockDao {
         result: Option<Result<ThinkFastResult>>,
@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl CerebellumDao for MockDao {
+    impl CerebellumDal for MockDao {
         async fn think_fast(
             &self,
             _ctx: RequestContext,
