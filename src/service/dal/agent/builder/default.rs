@@ -498,7 +498,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str(
             "   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍，每一步都要有实质思考，不要跳过\n",
         );
-        result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory + 一次 recommend_seed_nodes 或 traverse_knowledge_graph（100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
+        result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory（关键词语义检索，traversal_depth>0 时同步展开知识图谱关联网络）+ 一次 query_memory 或 recommend_seed_nodes（100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
         result.push_str("   3. 关键词联想要充分展开，联想扩展词与基础关键词一起写入 key_terms\n");
         result.push_str("   4. 最终输出严格的 JSON 对象，字段完整可被解析\n\n");
         result.push_str("❌ 严格禁止做（任何违反都将导致此阶段结果作废）：\n");
@@ -559,13 +559,20 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             "- 示例：用户问上次那个方案进度 → 先搜「方案 进度」，再搜「方案A 项目X」\n\n",
         );
         result.push_str(
-            "4.2 知识图谱探索（recommend_seed_nodes + traverse_knowledge_graph）——第二轮：\n",
+            "4.2 知识图谱探索（search_memory 遍历模式 + query_memory / recommend_seed_nodes）——第二轮：\n",
         );
         result.push_str(
-            "- 调用 recommend_seed_nodes 获取与当前 project/task/agent 相关的图谱种子节点\n",
+            "- 语义检索命中知识节点后，用 search_memory(query=核心概念, traversal_depth=1~2) 沿关系边展开关联网络：起点节点一定在结果里，每条边两端节点一起返回，不会出现半条边\n",
         );
-        result
-            .push_str("- 从种子节点出发，调用 traverse_knowledge_graph 走 1~2 跳，探索关联知识\n");
+        result.push_str(
+            "- 已知节点 id 时可做纯图谱遍历：search_memory(seed_node_ids=[节点id], traversal_depth=1~2)，追溯前置/因果链（traversal_strategy=depth_first）或看全貌（breadth_first）\n",
+        );
+        result.push_str(
+            "- 无任何已知节点时（冷启动）：先调用 recommend_seed_nodes 拿高连接度种子节点，再用上面的遍历模式从种子展开\n",
+        );
+        result.push_str(
+            "- query_memory 按结构化条件精确定位：如 query_memory(tags=[\"user_preference\"]) 找用户偏好节点，也可按 agent_id / memory_type / task_id 筛选\n",
+        );
         result.push_str(
             "- 重点关注：用户偏好节点（user_preference tag）、历史决策节点、相关项目/任务节点\n",
         );
@@ -789,7 +796,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             "   ② 判断信息是否充足：结合人设、能力清单、上下文/历史，你自己是否能直接给出正确回答？\n",
         );
         s.push_str(
-            "      若还缺资料 → 只做 1 次检索（见 §4）；若够了 → 直接跳到第三步输出回复。\n",
+            "      若还缺资料 → 检索知识图谱，鼓励沿命中节点递进探索（节奏与边界见 §4）。\n",
+        );
+        s.push_str(
+            "      若够了 → 跳到第三步输出回复（闲聊类消息也建议做 1 次联想检索，见 §3）。\n",
         );
         s.push_str("   ③ 输出方式（注意机制差异）：\n");
         s.push_str("      - 信息充足能直接回答 → 直接输出 Final 文本，不要包 JSON、不要用工具\n");
@@ -835,21 +845,42 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s.push_str("   - ❌ 严禁：用 send_message 询问用户澄清/决策 → 必须走 Final 文本，否则不会等待用户回复\n");
         s.push_str("   - ❌ 有足够信息能直接给出简单答复时，直接 Final 文本——不要为了发一句话而调用 send_message\n\n");
 
-        s.push_str("§3. 闲聊/简单消息的检索豁免：\n");
-        s.push_str("   - 寒暄/客套/问候/纯确认类消息（如 你好、测试、OK、收到、在吗 等）属于 Chat 闲聊型\n");
+        s.push_str("§3. 闲聊/简单消息也要检索联想（不是豁免，是换个目的）：\n");
         s.push_str(
-            "   - Chat 型消息 **不需要强制性检索**，可跳过 search_memory / query_memory 等工具\n",
+            "   - 寒暄/客套/问候类消息（如 你好、测试、OK、收到、在吗 等）不需要「找答案」，\n",
         );
-        s.push_str("   - 直接给出友好自然的回复即可\n\n");
-
-        s.push_str("§4. 检索工具空结果时的处理（防死循环！）：\n");
-        s.push_str("   - 调用 search_memory / query_memory 返回空结果，意味着系统暂无相关知识\n");
-        s.push_str("   - ❌ 不要反复换参数、换工具重试（同一语义的检索只需 1 次即可）\n");
-        s.push_str("   - ❌ 若已检索多次（≥2 次）都没有找到有用信息，在没有出现新的有用输入\n");
-        s.push_str("     （用户补充了说明、或其他工具返回了新线索）之前，**不要再搜索**。\n");
-        s.push_str("     继续搜索不会有新发现，只会浪费轮次。已有信息够多少就先用多少。\n");
+        s.push_str("     但依然值得做 1 次图谱联想检索（search_memory，浅展开即可）\n");
+        s.push_str("   - 联想目的（思考本质、举一反三）：用户偏好节点（让语气/详略合口味）、\n");
         s.push_str(
-            "   - ✅ 空结果后直接基于已有信息答复用户；确实不知道就坦诚说「没有相关记录」\n\n",
+            "     历史互动记忆（上次聊过什么，衔接更自然）、话题关联知识（值得顺带提起的线索）\n",
+        );
+        s.push_str("   - 命中了让回复更有人情味、更连贯；空结果是常态（纯新用户/新话题），\n");
+        s.push_str("     直接友好自然地回复即可，不深挖、不重试（同义重试限制见 §4）\n\n");
+
+        s.push_str("§4. 检索节奏：递进探索 ✅ / 同义重试 ❌（防死循环！）：\n");
+        s.push_str(
+            "   - ✅ 鼓励递进探索知识图谱：检索命中节点后，展开关联网络、从已知节点追因果链、\n",
+        );
+        s.push_str("     换维度定位——每一步都由上一步的新线索驱动，不是重复劳动\n");
+        s.push_str(
+            "     （检索模式与工具参数的完整用法见「记忆认知」技能：traversal_depth 展开 / seed_node_ids 纯遍历 / query_memory 结构化筛选）\n",
+        );
+        s.push_str(
+            "   - 探索时要带着联想与思考：这个节点让我联想到什么？它与当前问题的本质关联是什么？\n",
+        );
+        s.push_str("     关系链路本身就是因果线索（A 依赖 B、A 衍生自 C、A 取代了 D），\n");
+        s.push_str("     沿链路多问一层「为什么」，把零散命中串成对问题本质的理解，举一反三\n");
+        s.push_str(
+            "   - ❌ 禁止同义重试：search_memory / query_memory 返回空结果，意味着系统暂无相关知识，\n",
+        );
+        s.push_str("     不要换个说法再搜同一个意思（同一语义的检索只需 1 次即可）\n");
+        s.push_str(
+            "   - ❌ 若连续多步探索（≥3 次）都没有找到任何有用信息，在没有出现新的有用输入\n",
+        );
+        s.push_str("     （用户补充了说明、或其他工具返回了新线索）之前，**不要再搜索**。\n");
+        s.push_str("     已有信息够多少就先用多少。\n");
+        s.push_str(
+            "   - ✅ 探索完毕后基于已收集的信息答复用户；确实不知道就坦诚说「没有相关记录」\n\n",
         );
 
         s.push_str("§5. 禁止无意义工具调用（假忙）：\n");
@@ -1107,7 +1138,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("请用已有工具自主完成沉淀：\n\n");
         result.push_str("1. **归纳总结**：对上述短期记忆进行归纳，提炼核心概念、抽象经验、可复用模式（不要记具体细节）\n");
         result.push_str(
-            "2. **查询已有图谱**：用 search_memory 检查是否已有相关知识点（避免重复节点）\n",
+            "2. **查询已有图谱**：用 search_memory 检查是否已有相关知识点（避免重复节点）；\n",
+        );
+        result.push_str(
+            "   检索时带着联想——这条经验与哪些既有节点相关？看似无关的节点之间是否存在深层关联？\n",
         );
         result.push_str("3. **创建/更新节点**：\n");
         result.push_str("   - 新知识 → save_long_term_memory 创建节点\n");
@@ -1139,6 +1173,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("## 认知要点\n\n");
         result.push_str("- 图谱是活的，每次沉淀都是迭代优化，不是机械合并\n");
         result.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
+        result.push_str("- 沉淀时多问「为什么」：这批记忆背后的共性规律与本质是什么？\n");
+        result.push_str(
+            "  跨节点的联想（把看似无关的知识连起来）往往比新建节点更有价值——新边是图谱的增量智慧\n",
+        );
         result.push_str("- 新老知识交替不是覆盖是迭代，推翻时用 opposite 关系保留痕迹\n");
         result.push_str(
             "- 知识节点在蜂巢内全局共享（无需标记即对所有 Agent 可见）；published 标签标记其中值得优先参考的高价值节点，以此为桥梁发现跨 Agent 的知识网络\n",
@@ -1388,7 +1426,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         system.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果（JSON），然后就结束本轮思考。\n\n");
         system.push_str("✅ 必须做：\n");
         system.push_str("   1. 按「理解 SOP 五步走」的方法理解当前消息\n");
-        system.push_str("   2. 需要检索时调用 search_memory / recommend_seed_nodes / traverse_knowledge_graph（纯闲聊 Chat 型且无历史时可直接豁免，不必为了检索而检索）\n");
+        system.push_str("   2. 需要检索时调用 search_memory（traversal_depth>0 可沿知识图谱展开关联网络，冷启动可先 recommend_seed_nodes 拿种子）/ query_memory（按 tags/类型结构化筛选）（纯闲聊 Chat 型且无历史时可直接豁免，不必为了检索而检索）\n");
         system.push_str("   3. 最终输出严格的 JSON 对象（含 intent_type / confidence / summary / key_terms / resolutions / need_clarification / suggested_tools 等字段），不要附加无关废话\n\n");
         system.push_str("❌ 严格禁止：\n");
         system.push_str("   1. 严禁给任何用户/Agent 发消息（禁止 send_message 类工具）\n");

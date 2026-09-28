@@ -97,7 +97,7 @@
 
 ### Step 3：关键词抽取 + 语义检索
 
-从消息原文 + 消歧后的对象抽取关键词（专有名词、任务标识、动词短语、时间限定词），**必须做一次语义检索**（除非 100% 全新话题）：`search_memory` 混合搜索、`recommend_seed_nodes` + `traverse_knowledge_graph` 图谱探索、`search_messages` 按关键词捞历史消息、`list_messages` 按时间线补全更早历史。检索结果自己概括为短摘要，不要贴原始 JSON。
+从消息原文 + 消歧后的对象抽取关键词（专有名词、任务标识、动词短语、时间限定词），**必须做一次语义检索**（除非 100% 全新话题）：`search_memory` 混合搜索（图谱展开与冷启动遍历的用法见「记忆认知」技能）、`query_memory` 按 tags/类型结构化筛选、`search_messages` 按关键词捞历史消息、`list_messages` 按时间线补全更早历史。检索结果自己概括为短摘要，不要贴原始 JSON。
 
 ### Step 4：判断是否需要澄清
 
