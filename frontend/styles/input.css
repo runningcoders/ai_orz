@@ -874,6 +874,20 @@
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem 1.5rem;
 }
+/* ---- 长文本区（项目/任务描述等 Agent 可能写入的长 Markdown）----
+   独立成块 + 限高滚动：短文本不触发（无滚动条），超长文本内部滚动，
+   不再把同页 detail-grid 的短字段网格撑变形、把后续面板挤出首屏。
+   与 .soul-prompt / .graph-detail-content-box 同一「限高滚动」做法。
+   无头实测（720px 内容宽 / 同一段长文）：留在 detail-grid 内时描述被挤进
+   210px 列 → 单元格高 1619.6px、整格 1685.2px，同排的短字段被 align-items:stretch
+   一起拉到 1619.6px；改独立成块后基本信息网格 114.2px、描述容器 678×512、
+   内部 scrollHeight 1565（长文自滚），420px 窄视口复测仍为 512 且无横向溢出。 */
+.detail-longtext {
+  max-height: 32rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
+}
 .detail-section { margin-bottom: 1rem; }
 .detail-section:last-child { margin-bottom: 0; }
 .detail-card-body { display: block; }

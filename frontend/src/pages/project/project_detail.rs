@@ -357,18 +357,6 @@ pub fn ProjectDetail(id: String) -> Element {
                         }
                         div { class: "detail-grid",
                             div {
-                                label { class: "form-label", "描述" }
-                                if let Some(desc) = &p.description {
-                                    if desc.is_empty() {
-                                        span { class: "text-base-content/70", "暂无描述" }
-                                    } else {
-                                        MarkdownRenderer { content: desc.clone(), compact: true }
-                                    }
-                                } else {
-                                    span { class: "text-base-content/70", "暂无描述" }
-                                }
-                            }
-                            div {
                                 label { class: "form-label", "状态" }
                                 span { class: "{project_status_badge(p.status)}", "{project_status_text(p.status)}" }
                             }
@@ -392,6 +380,21 @@ pub fn ProjectDetail(id: String) -> Element {
                                 label { class: "form-label", "创建时间" }
                                 span { class: "font-mono text-base-content/70", "{format_datetime(p.created_at)}" }
                             }
+                        }
+                    }
+
+                    // 区域 1.2：项目描述 —— Agent 可能往里写很长的 Markdown，
+                    // 独立成块（不再与上方 detail-grid 的短字段混排），并限高滚动，
+                    // 避免长文把网格撑变形、把后续面板挤到屏幕外
+                    HudPanel {
+                        title: "项目描述".to_string(),
+                        eyebrow: "DESCRIPTION".to_string(),
+                        if p.description.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+                            div { class: "detail-longtext",
+                                MarkdownRenderer { content: p.description.clone().unwrap_or_default() }
+                            }
+                        } else {
+                            span { class: "text-base-content/70 text-sm", "暂无描述" }
                         }
                     }
 

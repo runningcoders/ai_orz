@@ -394,18 +394,6 @@ pub fn TaskDetail(id: String) -> Element {
                         }),
                         div { class: "detail-grid",
                     div {
-                        label { class: "form-label", "描述" }
-                        if let Some(desc) = &t.description {
-                            if desc.is_empty() {
-                                span { class: "text-base-content/70", "暂无描述" }
-                            } else {
-                                MarkdownRenderer { content: desc.clone(), compact: true }
-                            }
-                        } else {
-                            span { class: "text-base-content/70", "暂无描述" }
-                        }
-                    }
-                    div {
                         label { class: "form-label", "优先级" }
                         span { "{t.priority}" }
                     }
@@ -456,6 +444,21 @@ pub fn TaskDetail(id: String) -> Element {
                             span { class: "font-mono", "{format_timestamp(Some(end))}" }
                         }
                     }
+                }
+            }
+
+            // 区域 1.2：任务描述 —— Agent 可能往里写很长的 Markdown，
+            // 独立成块（不再与上方 detail-grid 的短字段混排），并限高滚动，
+            // 避免长文把网格撑变形、把后续面板挤到屏幕外
+            HudPanel {
+                title: "任务描述".to_string(),
+                eyebrow: "DESCRIPTION".to_string(),
+                if t.description.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+                    div { class: "detail-longtext",
+                        MarkdownRenderer { content: t.description.clone().unwrap_or_default() }
+                    }
+                } else {
+                    span { class: "text-base-content/70 text-sm", "暂无描述" }
                 }
             }
 
