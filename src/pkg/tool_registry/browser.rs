@@ -33,6 +33,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::process::{ExecOptions, exec};
 use crate::pkg::tool_registry::BuiltinToolFactory;
 use crate::pkg::tool_registry::tool_readiness;
+use common::config::BrowserConfig;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
 
@@ -171,12 +172,14 @@ impl BuiltinToolFactory for BrowserToolFactory {
                 "additionalProperties": false
             })),
             // CLI 命令与行为参数进 PO config（D28：工具自身属性，工具管理页可改）
-            config: json!({
-                "command": DEFAULT_COMMAND,
-                "timeout_ms": DEFAULT_TIMEOUT_MS,
-                "max_output_bytes": DEFAULT_MAX_OUTPUT_BYTES,
-                "install_hint": DEFAULT_INSTALL_HINT,
-            }),
+            // 强类型约束：键集与 `common::config::BrowserConfig` 一一对应
+            config: serde_json::to_value(BrowserConfig {
+                command: Some(DEFAULT_COMMAND.to_string()),
+                timeout_ms: Some(DEFAULT_TIMEOUT_MS),
+                max_output_bytes: Some(DEFAULT_MAX_OUTPUT_BYTES),
+                install_hint: Some(DEFAULT_INSTALL_HINT.to_string()),
+            })
+            .unwrap_or_default(),
             tags: serde_json::to_string(&vec![
                 "browser".to_string(),
                 "network".to_string(),
@@ -275,14 +278,33 @@ impl CoreTool for BrowserCoreTool {
         }
 
         // 2. CLI 就绪预检（未安装 → 统一安装引导）
-        // 命令读实例 PO config（存量 config=Null → 常量缺省兜底，零迁移，D28）
-        let bin = self
-            .po
-            .cli_command()
+        // 配置走强类型 `BrowserConfig`（键与 `ToolPo::cli_command` 等访问器一致；
+        // 存量 config=Null → 结构体缺省兜底，零迁移，D28）
+        let config: BrowserConfig = if self.po.config.is_null() {
+            BrowserConfig::default()
+        } else {
+            match serde_json::from_value::<BrowserConfig>(self.po.config.clone()) {
+                Ok(config) => config,
+                Err(e) => {
+                    // 强类型解析整包失败 ⇒ 全部字段回落内置缺省（含 command）：
+                    // 不留痕时「配置被改坏后仍跑默认命令」会变成排查黑洞
+                    crate::log_warn!(
+                        ctx,
+                        "browser",
+                        "browser config 反序列化失败，回退内置缺省（command / timeout / max_output）: {}",
+                        e
+                    );
+                    BrowserConfig::default()
+                }
+            }
+        };
+        let bin = config
+            .command
+            .clone()
             .unwrap_or_else(|| DEFAULT_COMMAND.to_string());
-        let install_hint = self
-            .po
-            .cli_install_hint()
+        let install_hint = config
+            .install_hint
+            .clone()
             .unwrap_or_else(|| DEFAULT_INSTALL_HINT.to_string());
         if !tool_readiness::command_available(&bin) {
             return Ok(tool_readiness::cli_not_installed_json(
@@ -293,12 +315,12 @@ impl CoreTool for BrowserCoreTool {
         }
 
         // 3. spawn（不经 shell，argv 直拼；--session 隔离）
-        // timeout / max_output 同源读 PO config（params.timeout_ms 优先，缺省常量兜底）
+        // timeout / max_output 同源读 `BrowserConfig`（params.timeout_ms 优先，缺省常量兜底）
         let session = session_id(&ctx);
         let timeout_ms = params
             .timeout_ms
-            .unwrap_or_else(|| self.po.config_timeout_ms(DEFAULT_TIMEOUT_MS));
-        let max_output_bytes = self.po.config_max_output_bytes(DEFAULT_MAX_OUTPUT_BYTES);
+            .unwrap_or_else(|| config.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
+        let max_output_bytes = config.max_output_bytes.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES);
 
         let output = match exec(
             &ExecOptions::new(

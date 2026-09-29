@@ -4,6 +4,12 @@ use crate::api::finance::{
     debug_call_tool, delete_tool, get_tool, query_tools, update_tool, update_tool_status,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::create_tool_http::{
+    HttpToolFormState, HttpToolSubForm, http_config_from_form, http_form_from_config,
+};
+use crate::components::create_tool_shell::{
+    ShellToolFormState, ShellToolSubForm, shell_config_from_form, shell_form_from_config,
+};
 use crate::components::credential_requirements::CredentialRequirementsTable;
 use crate::components::hud::{HudCallout, HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
@@ -81,14 +87,17 @@ fn generate_default_value(prop_schema: &serde_json::Value) -> serde_json::Value 
 enum BuiltinConfigForm {
     /// browser：command / timeout_ms / max_output_bytes / install_hint 四字段
     Browser,
-    /// gh_cli：command 单字段
+    /// gh_cli：command + 默认超时 / 默认输出上限（`common::config::CliToolConfig`）
     GhCli,
-    /// lark_cli：command 单字段
+    /// lark_cli：同 `GhCli`（共用 `CliToolConfig`）
     LarkCli,
-    /// tavily_search：timeout_ms 单字段
-    TavilySearch,
-    /// shell_exec：path_additions（多行目录）+ home_mode（HOME 策略）
+    /// tavily_search / doubao_search：timeout_ms 单字段
+    /// （`common::config::SearchToolConfig`）
+    SearchTool,
+    /// shell_exec：受信任目录 / PATH 补全 / 工具链 / HOME 策略 / 默认超时与输出上限
     ShellExec,
+    /// fs_read / fs_write：受信任目录单字段（`common::config::FsToolConfig`）
+    Fs,
 }
 
 /// 按工具名匹配内置工具结构化表单；不匹配（MCP / Http / 未知 Builtin）→ None 回退只读 JSON
@@ -99,8 +108,9 @@ fn builtin_config_form(id: &str) -> Option<BuiltinConfigForm> {
         "browser" => Some(BuiltinConfigForm::Browser),
         "gh_cli" => Some(BuiltinConfigForm::GhCli),
         "lark_cli" => Some(BuiltinConfigForm::LarkCli),
-        "tavily_search" => Some(BuiltinConfigForm::TavilySearch),
+        "tavily_search" | "doubao_search" => Some(BuiltinConfigForm::SearchTool),
         "shell_exec" => Some(BuiltinConfigForm::ShellExec),
+        "fs_read" | "fs_write" => Some(BuiltinConfigForm::Fs),
         _ => None,
     }
 }
@@ -112,8 +122,19 @@ struct BuiltinConfigFormState {
     timeout_ms: String,
     max_output_bytes: String,
     install_hint: String,
+    /// 默认超时（毫秒）；键 `default_timeout_ms`——`gh_cli`/`lark_cli`
+    /// （`common::config::CliToolConfig`）与 `shell_exec`（`ShellExecConfig`）共用同一键名
+    default_timeout_ms: String,
+    /// 默认输出上限（字节）；键 `default_max_output_size_bytes`——同上两个结构体的共用字段
+    default_max_output_size_bytes: String,
     /// shell_exec：PATH 补全目录（一行一个，支持 ~ 与 * 通配）
     path_additions: String,
+    /// shell_exec：受信任目录（additional_allowed_paths，一行一个）
+    ///
+    /// 与 `path_additions`（PATH 补全）语义不同：此处是工作目录白名单，落入其中
+    /// 的命令不再触发「目录越界 / 身份边界」两类确认，降低授权频率。
+    /// 字段名与 `common::config::ShellExecConfig` 对齐，新增字段需同步两侧。
+    additional_allowed_paths: String,
     /// shell_exec：隔离 HOME 下指回真实 HOME 的工具链名单（一行一个）
     toolchain_envs: String,
     /// shell_exec：HOME 策略（isolated / inherit，留空 = 用后端默认）
@@ -161,12 +182,26 @@ fn builtin_form_from_config(config: Option<&serde_json::Value>) -> BuiltinConfig
                 .join("\n")
         })
         .unwrap_or_default();
+    let additional_allowed_paths = object
+        .get("additional_allowed_paths")
+        .and_then(|v| v.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
     BuiltinConfigFormState {
         command: text("command"),
         timeout_ms: number("timeout_ms"),
         max_output_bytes: number("max_output_bytes"),
         install_hint: text("install_hint"),
+        default_timeout_ms: number("default_timeout_ms"),
+        default_max_output_size_bytes: number("default_max_output_size_bytes"),
         path_additions,
+        additional_allowed_paths,
         toolchain_envs,
         home_mode: text("home_mode"),
     }
@@ -198,14 +233,34 @@ fn merge_builtin_config(
         }
         BuiltinConfigForm::GhCli | BuiltinConfigForm::LarkCli => {
             insert_command(&mut map, &form.command);
+            // 键名对齐 common::config::CliToolConfig
+            insert_positive_number(&mut map, "default_timeout_ms", &form.default_timeout_ms);
+            insert_positive_number(
+                &mut map,
+                "default_max_output_size_bytes",
+                &form.default_max_output_size_bytes,
+            );
         }
-        BuiltinConfigForm::TavilySearch => {
+        BuiltinConfigForm::SearchTool => {
+            // 键名对齐 common::config::SearchToolConfig（tavily_search / doubao_search 共用）
             insert_positive_number(&mut map, "timeout_ms", &form.timeout_ms);
         }
         BuiltinConfigForm::ShellExec => {
+            // 键名对齐 common::config::ShellExecConfig（按结构体字段顺序书写）
+            insert_positive_number(&mut map, "default_timeout_ms", &form.default_timeout_ms);
+            insert_positive_number(
+                &mut map,
+                "default_max_output_size_bytes",
+                &form.default_max_output_size_bytes,
+            );
+            insert_additional_allowed_paths(&mut map, &form.additional_allowed_paths);
             insert_path_additions(&mut map, &form.path_additions);
             insert_toolchain_envs(&mut map, &form.toolchain_envs)?;
             insert_home_mode(&mut map, &form.home_mode)?;
+        }
+        BuiltinConfigForm::Fs => {
+            // 键名对齐 common::config::FsToolConfig（fs_read / fs_write 共用）
+            insert_additional_allowed_paths(&mut map, &form.additional_allowed_paths);
         }
     }
     let merged = serde_json::Value::Object(map);
@@ -234,6 +289,30 @@ fn insert_path_additions(map: &mut serde_json::Map<String, serde_json::Value>, t
     } else {
         map.insert(
             "path_additions".to_string(),
+            serde_json::Value::Array(entries.into_iter().map(serde_json::Value::String).collect()),
+        );
+    }
+}
+
+/// additional_allowed_paths 覆盖：按行拆分、去空行；全部为空时删除该键（回退默认 = 不受信任目录白名单）
+///
+/// 与 `insert_path_additions`（PATH 补全，可执行性）语义不同：此处是工作目录白名单，
+/// 落入其中的命令不再触发「目录越界 / 身份边界」两类确认，降低授权频率。
+fn insert_additional_allowed_paths(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    text: &str,
+) {
+    let entries: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect();
+    if entries.is_empty() {
+        map.remove("additional_allowed_paths");
+    } else {
+        map.insert(
+            "additional_allowed_paths".to_string(),
             serde_json::Value::Array(entries.into_iter().map(serde_json::Value::String).collect()),
         );
     }
@@ -346,8 +425,10 @@ pub fn FinanceToolDetail(id: String) -> Element {
     // 工具配置编辑状态（Builtin 结构化字段；文本输入，提交时统一解析）
     let mut config_form = use_signal(BuiltinConfigFormState::default);
     let mut config_saving = use_signal(|| false);
-    // 用户自建工具（HTTP / Shell）config 文本编辑状态
-    let mut custom_config_text = use_signal(|| "{}".to_string());
+    // 用户自建工具（HTTP / Shell）配置编辑状态：直接复用创建页的协议子表单
+    // （`HttpToolSubForm` / `ShellToolSubForm`），避免详情页另写一套字段与校验
+    let mut http_form = use_signal(HttpToolFormState::default);
+    let mut shell_form = use_signal(ShellToolFormState::default);
     let mut custom_config_saving = use_signal(|| false);
     // 运行时就绪（详情响应无此字段，经 query_tools 与列表 badge 同源探测）
     let runtime_ready = use_resource(move || {
@@ -372,14 +453,10 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 debug_args.set(generate_skeleton_from_schema(schema));
             }
             config_form.set(builtin_form_from_config(tool.config.as_ref()));
-            // 用户自建工具（HTTP / Shell）：config 以美化 JSON 文本初始化编辑器
+            // 用户自建工具（HTTP / Shell）：config 反填协议子表单（与创建页同一字段集）
             if matches!(tool.protocol, ToolProtocol::Http | ToolProtocol::Shell) {
-                let pretty = tool
-                    .config
-                    .as_ref()
-                    .map(|c| serde_json::to_string_pretty(c).unwrap_or_else(|_| "{}".to_string()))
-                    .unwrap_or_else(|| "{}".to_string());
-                custom_config_text.set(pretty);
+                http_form.set(http_form_from_config(tool.config.as_ref()));
+                shell_form.set(shell_form_from_config(tool.config.as_ref()));
             }
         }
     });
@@ -572,7 +649,9 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                } else if layout == BuiltinConfigForm::TavilySearch {
+                                } else if layout == BuiltinConfigForm::SearchTool {
+                                    // tavily_search / doubao_search：超时单字段
+                                    // （字段名对齐 common::config::SearchToolConfig）
                                     div {
                                         label { class: "label",
                                             span { class: "label-text font-medium", "超时毫秒 (timeout_ms)" }
@@ -581,11 +660,49 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             class: "input input-bordered hud-input w-full text-sm",
                                             value: "{config_form.read().timeout_ms}",
                                             oninput: move |e| config_form.write().timeout_ms = e.value(),
-                                            placeholder: "15000",
+                                            placeholder: if t.id == "tavily_search" { "15000" } else { "20000" },
                                         }
                                     }
                                 } else if layout == BuiltinConfigForm::ShellExec {
                                     div { class: "grid grid-cols-1 gap-4",
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "默认超时毫秒 (default_timeout_ms)" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().default_timeout_ms}",
+                                                    oninput: move |e| config_form.write().default_timeout_ms = e.value(),
+                                                    placeholder: "300000",
+                                                }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "默认输出上限 (default_max_output_size_bytes)" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().default_max_output_size_bytes}",
+                                                    oninput: move |e| config_form.write().default_max_output_size_bytes = e.value(),
+                                                    placeholder: "10485760",
+                                                }
+                                            }
+                                        }
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "受信任目录 (additional_allowed_paths)" }
+                                            }
+                                            textarea {
+                                                class: "textarea textarea-bordered hud-input w-full font-mono text-sm h-24",
+                                                value: "{config_form.read().additional_allowed_paths}",
+                                                oninput: move |e| config_form.write().additional_allowed_paths = e.value(),
+                                                placeholder: "/Users/aman/Projects\n/Users/aman/Technology",
+                                            }
+                                            p { class: "text-xs opacity-60 mt-1",
+                                                "一行一个绝对路径。落入这些目录的命令不再触发「目录越界 / 身份边界」两类确认，可降低授权频率；不影响命令级确认（如 git push / rm -rf）。全部清空 = 不设白名单。"
+                                            }
+                                        }
                                         div {
                                             label { class: "label",
                                                 span { class: "label-text font-medium", "PATH 补全目录 (path_additions)" }
@@ -622,9 +739,9 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                 class: "select select-bordered hud-input w-full text-sm",
                                                 value: "{config_form.read().home_mode}",
                                                 onchange: move |e| config_form.write().home_mode = e.value(),
-                                                option { value: "", "留空（后端默认 isolated）" }
-                                                option { value: "isolated", "isolated — 用户隔离 HOME（git/gh 身份确定）" }
-                                                option { value: "inherit", "inherit — 继承服务进程 HOME（nvm/cargo/ssh 可用）" }
+                                                option { value: "", selected: config_form.read().home_mode.is_empty(), "留空（后端默认 isolated）" }
+                                                option { value: "isolated", selected: config_form.read().home_mode == "isolated", "isolated — 用户隔离 HOME（git/gh 身份确定）" }
+                                                option { value: "inherit", selected: config_form.read().home_mode == "inherit", "inherit — 继承服务进程 HOME（nvm/cargo/ssh 可用）" }
                                             }
                                             // 说明随选中值联动：帮用户在「身份确定」与「工具链可用」之间做取舍
                                             HudCallout {
@@ -638,17 +755,59 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                } else {
-                                    // gh_cli / lark_cli：command 单字段
+                                } else if layout == BuiltinConfigForm::Fs {
+                                    // fs_read / fs_write：受信任目录单字段
+                                    // （字段名对齐 common::config::FsToolConfig）
                                     div {
                                         label { class: "label",
-                                            span { class: "label-text font-medium", "命令 (command)" }
+                                            span { class: "label-text font-medium", "受信任目录 (additional_allowed_paths)" }
                                         }
-                                        input {
-                                            class: "input input-bordered hud-input w-full font-mono text-sm",
-                                            value: "{config_form.read().command}",
-                                            oninput: move |e| config_form.write().command = e.value(),
-                                            placeholder: if t.name == "gh_cli" { "gh" } else { "lark-cli" },
+                                        textarea {
+                                            class: "textarea textarea-bordered hud-input w-full font-mono text-sm h-24",
+                                            value: "{config_form.read().additional_allowed_paths}",
+                                            oninput: move |e| config_form.write().additional_allowed_paths = e.value(),
+                                            placeholder: "/Users/aman/Projects\n/Users/aman/Technology",
+                                        }
+                                        p { class: "text-xs opacity-60 mt-1",
+                                            "一行一个绝对路径（锚定到项目根 / base data path）。列出的目录在默认工作区之外仍可读写，且不再触发「目录越界 / 身份边界」确认。全部清空 = 仅限默认工作区。"
+                                        }
+                                    }
+                                } else {
+                                    // gh_cli / lark_cli：command + 默认超时 / 默认输出上限
+                                    // （字段名对齐 common::config::CliToolConfig）
+                                    div { class: "grid grid-cols-1 md:grid-cols-3 gap-4",
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "命令 (command)" }
+                                            }
+                                            input {
+                                                class: "input input-bordered hud-input w-full font-mono text-sm",
+                                                value: "{config_form.read().command}",
+                                                oninput: move |e| config_form.write().command = e.value(),
+                                                placeholder: if t.id == "gh_cli" { "gh" } else { "lark-cli" },
+                                            }
+                                        }
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "默认超时毫秒 (default_timeout_ms)" }
+                                            }
+                                            input {
+                                                class: "input input-bordered hud-input w-full text-sm",
+                                                value: "{config_form.read().default_timeout_ms}",
+                                                oninput: move |e| config_form.write().default_timeout_ms = e.value(),
+                                                placeholder: "60000",
+                                            }
+                                        }
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "默认输出上限 (default_max_output_size_bytes)" }
+                                            }
+                                            input {
+                                                class: "input input-bordered hud-input w-full text-sm",
+                                                value: "{config_form.read().default_max_output_size_bytes}",
+                                                oninput: move |e| config_form.write().default_max_output_size_bytes = e.value(),
+                                                placeholder: "1048576",
+                                            }
                                         }
                                     }
                                 }
@@ -709,15 +868,17 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                     }
                                 }
                             } else if matches!(t.protocol, ToolProtocol::Http | ToolProtocol::Shell) {
-                                // —— 用户自建工具（HTTP / Shell）：config 可编辑（JSON 文本）——
-                                textarea {
-                                    class: "textarea textarea-bordered hud-input w-full font-mono text-sm h-64",
-                                    value: "{custom_config_text()}",
-                                    oninput: move |e| custom_config_text.set(e.value()),
-                                    placeholder: "{{}}",
+                                // —— 用户自建工具（HTTP / Shell）：复用创建页协议子表单 ——
+                                // 同一组件 + 同一 common 结构体构造点，详情页不再另写一套字段。
+                                div { class: "grid grid-cols-1 gap-4",
+                                    if t.protocol == ToolProtocol::Http {
+                                        HttpToolSubForm { form: http_form }
+                                    } else {
+                                        ShellToolSubForm { form: shell_form }
+                                    }
                                 }
                                 p { class: "text-xs opacity-60 mt-2",
-                                    "编辑后点击「保存配置」提交；JSON 须合法，服务端会校验协议相关字段（如 HTTP 的 url / method）。MCP 工具配置在其 Server 管理页维护，此处只读。"
+                                    "字段集与创建页一致；保存时按 common 的 HttpToolConfig / ShellToolConfig 整体覆盖 config（含凭据需求）。MCP 工具配置在其 Server 管理页维护，此处只读。"
                                 }
                                 div { class: "flex items-center gap-3 mt-3",
                                     button {
@@ -725,13 +886,26 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                         disabled: custom_config_saving(),
                                         onclick: {
                                             let id = t.id.clone();
+                                            let is_http = t.protocol == ToolProtocol::Http;
                                             move |_| {
                                                 let id = id.clone();
-                                                let text = custom_config_text();
-                                                let parsed = match serde_json::from_str::<serde_json::Value>(&text) {
-                                                    Ok(v) => v,
+                                                // 构造 common SSOT 结构体 → 序列化（与创建页同一函数，
+                                                // 校验同源：URL/方法/占位符/凭据需求都在此拦截）
+                                                let config = if is_http {
+                                                    http_config_from_form(&http_form.read()).and_then(|c| {
+                                                        serde_json::to_value(c)
+                                                            .map_err(|e| format!("HTTP 配置序列化失败: {}", e))
+                                                    })
+                                                } else {
+                                                    shell_config_from_form(&shell_form.read()).and_then(|c| {
+                                                        serde_json::to_value(c)
+                                                            .map_err(|e| format!("Shell 配置序列化失败: {}", e))
+                                                    })
+                                                };
+                                                let config = match config {
+                                                    Ok(config) => config,
                                                     Err(e) => {
-                                                        toast.error(format!("JSON 解析失败: {}", e));
+                                                        toast.error(&e);
                                                         return;
                                                     }
                                                 };
@@ -739,15 +913,15 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                 spawn(async move {
                                                     match update_tool(UpdateToolRequest {
                                                         id: id.clone(),
-                                                        config: Some(parsed),
+                                                        config: Some(config),
                                                         ..Default::default()
                                                     }).await {
                                                         Ok(_) => {
                                                             toast.success("工具配置已保存");
                                                             match get_tool(build_tool_stats_request(id, stats_range())).await {
                                                                 Ok(tool) => {
-                                                                    let pretty = tool.config.as_ref().map(|c| serde_json::to_string_pretty(c).unwrap_or_else(|_| "{}".to_string())).unwrap_or_else(|| "{}".to_string());
-                                                                    custom_config_text.set(pretty);
+                                                                    http_form.set(http_form_from_config(tool.config.as_ref()));
+                                                                    shell_form.set(shell_form_from_config(tool.config.as_ref()));
                                                                     tool_res.set(Some(Ok(tool)));
                                                                 }
                                                                 Err(e) => toast.error(&e),
@@ -966,20 +1140,31 @@ mod tests {
             builtin_config_form("lark_cli"),
             Some(BuiltinConfigForm::LarkCli)
         );
+        // tavily_search / doubao_search 共用同一表单（超时单字段，SearchToolConfig）
         assert_eq!(
             builtin_config_form("tavily_search"),
-            Some(BuiltinConfigForm::TavilySearch)
+            Some(BuiltinConfigForm::SearchTool)
+        );
+        assert_eq!(
+            builtin_config_form("doubao_search"),
+            Some(BuiltinConfigForm::SearchTool)
         );
         assert_eq!(
             builtin_config_form("shell_exec"),
             Some(BuiltinConfigForm::ShellExec)
         );
+        // fs_read / fs_write 共用同一表单（受信任目录单字段，FsToolConfig）
+        assert_eq!(builtin_config_form("fs_read"), Some(BuiltinConfigForm::Fs));
+        assert_eq!(builtin_config_form("fs_write"), Some(BuiltinConfigForm::Fs));
         // 显示名（入库 name 字段）不匹配 —— 这是历史 bug 的根因，必须恒为 None
         assert_eq!(builtin_config_form("GitHub CLI"), None);
         assert_eq!(builtin_config_form("Browser Automation"), None);
         assert_eq!(builtin_config_form("Feishu/Lark CLI"), None);
         assert_eq!(builtin_config_form("Search Web (Tavily)"), None);
+        assert_eq!(builtin_config_form("Search Chinese Web (Doubao)"), None);
         assert_eq!(builtin_config_form("Execute Shell Command"), None);
+        assert_eq!(builtin_config_form("Read File from Workspace"), None);
+        assert_eq!(builtin_config_form("Write File to Workspace"), None);
         // MCP / Http / 未知内置工具名 → None（回退只读 JSON）
         assert_eq!(builtin_config_form("mcp_tool"), None);
         assert_eq!(builtin_config_form("http_tool"), None);
@@ -988,12 +1173,21 @@ mod tests {
     #[test]
     fn form_from_config_reads_shell_exec_fields() {
         let config = serde_json::json!({
+            "default_timeout_ms": 120000,
+            "default_max_output_size_bytes": 5242880,
             "path_additions": ["/opt/homebrew/bin", "~/.cargo/bin"],
+            "additional_allowed_paths": ["/Users/aman/Projects", "/Users/aman/Tech"],
             "toolchain_envs": ["cargo", "nvm"],
             "home_mode": "inherit"
         });
         let form = builtin_form_from_config(Some(&config));
+        assert_eq!(form.default_timeout_ms, "120000");
+        assert_eq!(form.default_max_output_size_bytes, "5242880");
         assert_eq!(form.path_additions, "/opt/homebrew/bin\n~/.cargo/bin");
+        assert_eq!(
+            form.additional_allowed_paths,
+            "/Users/aman/Projects\n/Users/aman/Tech"
+        );
         assert_eq!(form.toolchain_envs, "cargo\nnvm");
         assert_eq!(form.home_mode, "inherit");
     }
@@ -1002,15 +1196,24 @@ mod tests {
     fn merge_shell_exec_roundtrip_and_reset() {
         // 回写：多行文本 → JSON 数组 + home_mode 校验
         let form = BuiltinConfigFormState {
+            default_timeout_ms: "120000".to_string(),
+            default_max_output_size_bytes: "5242880".to_string(),
             path_additions: " /opt/homebrew/bin \n\n~/.cargo/bin\n".to_string(),
+            additional_allowed_paths: "/p1\n\n/p2\n".to_string(),
             toolchain_envs: "Cargo\n\nnvm\nCARGO\n".to_string(),
             home_mode: "inherit".to_string(),
             ..Default::default()
         };
         let merged = merge_builtin_config(None, &form, BuiltinConfigForm::ShellExec).unwrap();
+        assert_eq!(merged["default_timeout_ms"], 120000);
+        assert_eq!(merged["default_max_output_size_bytes"], 5242880);
         assert_eq!(
             merged["path_additions"],
             serde_json::json!(["/opt/homebrew/bin", "~/.cargo/bin"])
+        );
+        assert_eq!(
+            merged["additional_allowed_paths"],
+            serde_json::json!(["/p1", "/p2"])
         );
         // 小写归一 + 去重
         assert_eq!(
@@ -1021,14 +1224,21 @@ mod tests {
 
         // 全部清空 → 删除键（回退后端内置默认），不影响基底其他字段
         let base = serde_json::json!({
+            "default_timeout_ms": 111,
+            "default_max_output_size_bytes": 222,
             "path_additions": ["/x"],
+            "additional_allowed_paths": ["/keep"],
             "toolchain_envs": ["cargo"],
             "keep": true
         });
         let form = BuiltinConfigFormState::default();
         let merged =
             merge_builtin_config(Some(&base), &form, BuiltinConfigForm::ShellExec).unwrap();
+        // 数字字段留空 = 不修改（保留基底值）——与 browser / tavily 表单语义一致
+        assert_eq!(merged["default_timeout_ms"], 111);
+        assert_eq!(merged["default_max_output_size_bytes"], 222);
         assert!(merged.get("path_additions").is_none());
+        assert!(merged.get("additional_allowed_paths").is_none());
         assert!(merged.get("toolchain_envs").is_none());
         assert_eq!(merged["keep"], true);
 
@@ -1105,19 +1315,24 @@ mod tests {
         assert_eq!(merged["install_hint"], "brew install agent-browser");
     }
 
+    // 搜索结果/表单产物必须能被 common 的共享结构体解析（键名漂移即在此暴露）
     #[test]
-    fn merge_tavily_only_touches_timeout() {
+    fn merge_search_tool_only_touches_timeout() {
         let base = serde_json::json!({ "timeout_ms": 15000, "keep": 1 });
         let form = BuiltinConfigFormState {
             timeout_ms: "30000".to_string(),
-            command: "不应写入".to_string(), // tavily 表单无 command 字段
+            command: "不应写入".to_string(), // 搜索工具表单无 command 字段
             ..Default::default()
         };
         let merged =
-            merge_builtin_config(Some(&base), &form, BuiltinConfigForm::TavilySearch).unwrap();
+            merge_builtin_config(Some(&base), &form, BuiltinConfigForm::SearchTool).unwrap();
         assert_eq!(merged["timeout_ms"], 30000);
         assert_eq!(merged["keep"], 1);
         assert!(merged.get("command").is_none());
+        // SSOT 保险：产物必须能被 common::config::SearchToolConfig 解析
+        let parsed: common::config::SearchToolConfig =
+            serde_json::from_value(merged.clone()).unwrap();
+        assert_eq!(parsed.timeout_ms, Some(30000));
     }
 
     #[test]
@@ -1135,7 +1350,7 @@ mod tests {
             timeout_ms: "abc".to_string(),
             ..Default::default()
         };
-        let err = merge_builtin_config(None, &form, BuiltinConfigForm::TavilySearch).unwrap_err();
+        let err = merge_builtin_config(None, &form, BuiltinConfigForm::SearchTool).unwrap_err();
         assert!(err.contains("timeout_ms"));
 
         // timeout_ms 非正整数（0）
@@ -1144,7 +1359,7 @@ mod tests {
             ..Default::default()
         };
         assert!(
-            merge_builtin_config(None, &form, BuiltinConfigForm::TavilySearch)
+            merge_builtin_config(None, &form, BuiltinConfigForm::SearchTool)
                 .unwrap_err()
                 .contains("timeout_ms")
         );
@@ -1159,5 +1374,97 @@ mod tests {
         };
         let merged = merge_builtin_config(None, &form, BuiltinConfigForm::GhCli).unwrap();
         assert_eq!(merged["command"], "gh");
+    }
+
+    #[test]
+    fn merge_gh_cli_writes_cli_default_fields_matching_common_struct() {
+        // 键名必须与 common::config::CliToolConfig 字段一致（前后端共享 SSOT）
+        let form = BuiltinConfigFormState {
+            command: "gh".to_string(),
+            default_timeout_ms: "45000".to_string(),
+            default_max_output_size_bytes: "2097152".to_string(),
+            ..Default::default()
+        };
+        let merged = merge_builtin_config(None, &form, BuiltinConfigForm::GhCli).unwrap();
+        // 反序列化回 common SSOT 结构体：字段命名漂移即编译期/断言期暴露
+        let parsed: common::config::CliToolConfig = serde_json::from_value(merged).unwrap();
+        assert_eq!(parsed.command.as_deref(), Some("gh"));
+        assert_eq!(parsed.default_timeout_ms, Some(45_000));
+        assert_eq!(parsed.default_max_output_size_bytes, Some(2_097_152));
+    }
+
+    #[test]
+    fn merged_configs_deserialize_into_common_ssot_structs() {
+        // 前端构造的 config JSON 必须能被 common 的共享结构体解析（键名一致性保险）
+        let browser = merge_builtin_config(
+            None,
+            &BuiltinConfigFormState {
+                command: "agent-browser".to_string(),
+                timeout_ms: "60000".to_string(),
+                max_output_bytes: "262144".to_string(),
+                install_hint: "brew install agent-browser".to_string(),
+                ..Default::default()
+            },
+            BuiltinConfigForm::Browser,
+        )
+        .unwrap();
+        let parsed_browser: common::config::BrowserConfig =
+            serde_json::from_value(browser).unwrap();
+        assert_eq!(parsed_browser.command.as_deref(), Some("agent-browser"));
+        assert_eq!(parsed_browser.max_output_bytes, Some(262_144));
+
+        let shell = merge_builtin_config(
+            None,
+            &BuiltinConfigFormState {
+                additional_allowed_paths: "/Users/aman/Projects".to_string(),
+                path_additions: "/opt/homebrew/bin".to_string(),
+                ..Default::default()
+            },
+            BuiltinConfigForm::ShellExec,
+        )
+        .unwrap();
+        let parsed_shell: common::config::ShellExecConfig = serde_json::from_value(shell).unwrap();
+        assert_eq!(
+            parsed_shell.additional_allowed_paths.as_deref(),
+            Some(&["/Users/aman/Projects".to_string()][..])
+        );
+
+        // fs_read / fs_write 共用 FsToolConfig：受信任目录键名必须一致
+        let fs = merge_builtin_config(
+            None,
+            &BuiltinConfigFormState {
+                additional_allowed_paths: "/Users/aman/Projects\n/srv/data".to_string(),
+                ..Default::default()
+            },
+            BuiltinConfigForm::Fs,
+        )
+        .unwrap();
+        let parsed_fs: common::config::FsToolConfig = serde_json::from_value(fs).unwrap();
+        assert_eq!(
+            parsed_fs.additional_allowed_paths.as_deref(),
+            Some(&["/Users/aman/Projects".to_string(), "/srv/data".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn merge_fs_only_touches_additional_allowed_paths() {
+        // Fs 表单只覆盖受信任目录；基底其它字段原样保留（防丢字段）
+        let base = serde_json::json!({ "additional_allowed_paths": ["/old"], "keep": true });
+        let form = BuiltinConfigFormState {
+            additional_allowed_paths: "/new\n/second".to_string(),
+            ..Default::default()
+        };
+        let merged = merge_builtin_config(Some(&base), &form, BuiltinConfigForm::Fs).unwrap();
+        assert_eq!(
+            merged["additional_allowed_paths"],
+            serde_json::json!(["/new", "/second"])
+        );
+        assert_eq!(merged["keep"], true);
+
+        // 清空 → 删除该键（回退默认：仅限工作区）
+        let form = BuiltinConfigFormState::default();
+        let merged = merge_builtin_config(Some(&base), &form, BuiltinConfigForm::Fs).unwrap();
+        assert!(merged.get("additional_allowed_paths").is_none());
+        assert_eq!(merged["keep"], true);
     }
 }

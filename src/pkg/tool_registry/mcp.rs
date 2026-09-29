@@ -18,7 +18,6 @@ use rmcp::{
     RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService,
     transport::TokioChildProcess,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -26,19 +25,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
 
-/// MCP tool binding configuration stored in `ToolPo.config`.
-///
-/// This intentionally contains no server credentials or transport config. The
-/// MCP-specific DAL loads the referenced `McpServerPo` and passes those deps to
-/// the MCP runtime factory.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct McpToolConfig {
-    /// ID of the MCP server/provider record.
-    pub server_id: String,
-    /// Name of the concrete tool exposed by that MCP server.
-    pub tool_name: String,
-}
+/// `McpToolConfig` 已下沉至 [`common::config::McpToolConfig`]（前后端共享 SSOT），此处仅转发兼容；
+/// 其不含 server 凭据/传输配置，MCP DAL 另加载被引用的 `McpServerPo` 传给运行时工厂。
+pub use common::config::McpToolConfig;
 
 /// Tool metadata discovered from a remote MCP server via `tools/list`.
 #[derive(Debug, Clone, PartialEq)]

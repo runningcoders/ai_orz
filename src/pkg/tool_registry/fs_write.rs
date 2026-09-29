@@ -10,18 +10,13 @@ use crate::pkg::tool_registry::tool_security::fs::{
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 
-/// File system tool configuration stored in `ToolPo.config`.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct FsToolConfig {
-    /// Additional allowed paths outside the default `base_data_path`.
-    /// All paths are anchored to the project root / base data path.
-    pub additional_allowed_paths: Option<Vec<String>>,
-}
+/// `FsToolConfig` 已下沉至 [`common::config::FsToolConfig`]（前后端共享 SSOT），此处仅转发兼容。
+pub use common::config::FsToolConfig;
 
 /// `write_file` (fs_write) tool parameter arguments
 #[derive(Debug, Deserialize)]

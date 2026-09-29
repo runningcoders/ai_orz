@@ -12,13 +12,8 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-/// File system tool configuration stored in `ToolPo.config`.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct FsToolConfig {
-    /// Additional allowed paths outside the default `base_data_path`.
-    /// All paths are anchored to the project root / base data path.
-    pub additional_allowed_paths: Option<Vec<String>>,
-}
+/// `FsToolConfig` 已下沉至 [`common::config::FsToolConfig`]（前后端共享 SSOT），此处仅转发兼容。
+pub use common::config::FsToolConfig;
 
 /// `read_file` (fs_read) tool parameter arguments
 #[derive(Debug, Deserialize)]

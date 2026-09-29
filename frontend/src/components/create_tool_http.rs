@@ -150,12 +150,13 @@ fn validate_no_sensitive_keys(
     Ok(())
 }
 
-/// 校验并构造 CreateToolRequest（纯函数，便于单测）
-pub fn build_http_create_request(
-    basics: &ToolBasicsState,
+/// 校验并构造 common SSOT 结构体 `HttpToolConfig`（创建页与详情页更新共用同一构造点）
+///
+/// 校验规则与后端同源：方法白名单走 common `is_supported_http_method`，模板敏感名
+/// 拦截对齐后端 `validate_no_sensitive_template_keys`。
+pub fn http_config_from_form(
     form: &HttpToolFormState,
-) -> Result<CreateToolRequest, String> {
-    validate_basics(basics)?;
+) -> Result<common::config::HttpToolConfig, String> {
     if form.url.trim().is_empty() {
         return Err("URL 模板不能为空".to_string());
     }
@@ -171,9 +172,11 @@ pub fn build_http_create_request(
     validate_no_sensitive_keys("query", &query)?;
     let body = parse_optional_json(&form.body, "body")?;
     let timeout_ms = parse_optional_u64(&form.timeout_ms, "超时时间")?;
-    let response_max_bytes = parse_optional_u64(&form.response_max_bytes, "响应上限字节数")?;
+    // common::config::HttpToolConfig.response_max_bytes 为 usize：显式转换，越界报错（不静默截断）
+    let response_max_bytes = parse_optional_u64(&form.response_max_bytes, "响应上限字节数")?
+        .map(|v| usize::try_from(v).map_err(|_| "响应上限字节数超出范围".to_string()))
+        .transpose()?;
     let allowed_status_codes = parse_status_codes(&form.allowed_status_codes)?;
-    let parameters_schema = parse_parameters_schema(&basics.parameters_schema)?;
 
     // 凭据需求预校验（规范化后执行；HTTP 工具恒 HttpTool scope：仅 Header/Query）
     let requirements = normalize_requirements(form.credential_requirements.clone());
@@ -189,26 +192,119 @@ pub fn build_http_create_request(
     };
     let allowed_domains = parse_comma_list(&form.allowed_domains);
     let blocked_domains = parse_comma_list(&form.blocked_domains);
-    let tags = parse_comma_list(&basics.tags);
 
-    let mut config = serde_json::json!({
-        "method": form.method,
-        "url": form.url.trim(),
-        "headers": headers,
-        "query": query,
-        "body": body,
-        "timeout_ms": timeout_ms,
-        "response_max_bytes": response_max_bytes,
-        "allowed_status_codes": allowed_status_codes,
-        "response_json_pointer": response_json_pointer,
-        "allowed_domains": if allowed_domains.is_empty() { None } else { Some(allowed_domains) },
-        "blocked_domains": if blocked_domains.is_empty() { None } else { Some(blocked_domains) },
-        "allow_local_network": form.allow_local_network,
-    });
-    if !requirements.is_empty() {
-        config["credential_requirements"] = serde_json::to_value(&requirements)
-            .map_err(|e| format!("凭据需求序列化失败: {}", e))?;
+    Ok(common::config::HttpToolConfig {
+        method: form.method.clone(),
+        url: form.url.trim().to_string(),
+        headers,
+        query,
+        body,
+        timeout_ms,
+        response_max_bytes,
+        allowed_status_codes,
+        response_json_pointer,
+        allowed_domains: if allowed_domains.is_empty() {
+            None
+        } else {
+            Some(allowed_domains)
+        },
+        blocked_domains: if blocked_domains.is_empty() {
+            None
+        } else {
+            Some(blocked_domains)
+        },
+        allow_local_network: Some(form.allow_local_network),
+        credential_requirements: requirements,
+    })
+}
+
+/// 由已有 config 反填 HTTP 表单（详情页编辑入口；缺失字段 → 空串，由占位符提示缺省值）
+///
+/// 与 [`http_config_from_form`] 互逆：`HttpToolConfig` 增删 / 改名字段时两处都要同步。
+pub fn http_form_from_config(config: Option<&serde_json::Value>) -> HttpToolFormState {
+    let Some(object) = config.and_then(|c| c.as_object()) else {
+        return HttpToolFormState::default();
+    };
+    let text = |key: &str| {
+        object
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let number = |key: &str| {
+        object
+            .get(key)
+            .and_then(|v| v.as_u64())
+            .map(|n| n.to_string())
+            .unwrap_or_default()
+    };
+    // 模板类字段：对象 / 数组美化为 JSON 文本；null 与缺失同为「未配置」
+    let json_text = |key: &str| {
+        object
+            .get(key)
+            .filter(|v| !v.is_null())
+            .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+            .unwrap_or_default()
+    };
+    // 列表类字段：`200,201` / `api.example.com` 形态（与 parse_comma_list / parse_status_codes 互逆）
+    let list_text = |key: &str| {
+        object
+            .get(key)
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| match item {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default()
+    };
+    let method = {
+        let m = text("method").to_ascii_uppercase();
+        if m.is_empty() { "GET".to_string() } else { m }
+    };
+    HttpToolFormState {
+        method,
+        url: text("url"),
+        headers: json_text("headers"),
+        query: json_text("query"),
+        body: json_text("body"),
+        timeout_ms: number("timeout_ms"),
+        response_max_bytes: number("response_max_bytes"),
+        allowed_status_codes: list_text("allowed_status_codes"),
+        response_json_pointer: text("response_json_pointer"),
+        allowed_domains: list_text("allowed_domains"),
+        blocked_domains: list_text("blocked_domains"),
+        allow_local_network: object
+            .get("allow_local_network")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        credential_requirements: object
+            .get("credential_requirements")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
     }
+}
+
+/// 校验并构造 CreateToolRequest（纯函数，便于单测）
+pub fn build_http_create_request(
+    basics: &ToolBasicsState,
+    form: &HttpToolFormState,
+) -> Result<CreateToolRequest, String> {
+    validate_basics(basics)?;
+
+    // 构造 common SSOT 结构体 `HttpToolConfig`（前后端共享同一类型定义，杜绝键名漂移）；
+    // 空 credential_requirements 经 `skip_serializing_if` 自动省略（对齐后端）。
+    // ⚠️ 先于 schema/tags 解析：保持既有错误报告顺序（字段级错误优先于 schema JSON 错误）
+    let config = serde_json::to_value(http_config_from_form(form)?)
+        .map_err(|e| format!("HTTP 配置序列化失败: {}", e))?;
+    let parameters_schema = parse_parameters_schema(&basics.parameters_schema)?;
+    let tags = parse_comma_list(&basics.tags);
 
     Ok(CreateToolRequest {
         name: basics.name.trim().to_string(),
@@ -253,8 +349,9 @@ pub fn HttpToolSubForm(mut form: Signal<HttpToolFormState>) -> Element {
                     class: "select select-bordered hud-input w-full",
                     value: "{form.read().method}",
                     onchange: move |e| form.write().method = e.value(),
-                    option { value: "GET", "GET" }
-                    option { value: "POST", "POST" }
+                    // 每个 option 显式给 selected：仅绑 value 在重渲染/首屏（详情页反填）会丢选中
+                    option { value: "GET", selected: form.read().method == "GET", "GET" }
+                    option { value: "POST", selected: form.read().method == "POST", "POST" }
                 }
             }
             div { class: "form-control flex-1",
@@ -453,12 +550,12 @@ pub fn HttpToolSubForm(mut form: Signal<HttpToolFormState>) -> Element {
                                                         r.enhancer = None;
                                                     }
                                                 },
-                                                option { value: "lark_app", "lark_app（飞书应用）" }
-                                                option { value: "github_token", "github_token（GitHub 令牌）" }
-                                                option { value: "tavily_key", "tavily_key（Tavily Key）" }
-                                                option { value: "generic_token", "generic_token（通用平台令牌）" }
-                                                option { value: "oauth", "oauth（OAuth 刷新凭据）" }
-                                                option { value: "user_password", "user_password（用户名密码）" }
+                                                option { value: "lark_app", selected: kind_value == "lark_app", "lark_app（飞书应用）" }
+                                                option { value: "github_token", selected: kind_value == "github_token", "github_token（GitHub 令牌）" }
+                                                option { value: "tavily_key", selected: kind_value == "tavily_key", "tavily_key（Tavily Key）" }
+                                                option { value: "generic_token", selected: kind_value == "generic_token", "generic_token（通用平台令牌）" }
+                                                option { value: "oauth", selected: kind_value == "oauth", "oauth（OAuth 刷新凭据）" }
+                                                option { value: "user_password", selected: kind_value == "user_password", "user_password（用户名密码）" }
                                             }
                                         }
                                         if requires_platform {
@@ -514,9 +611,9 @@ pub fn HttpToolSubForm(mut form: Signal<HttpToolFormState>) -> Element {
                                                         r.field = None;
                                                     }
                                                 },
-                                                option { value: "none", "不使用增强器" }
+                                                option { value: "none", selected: enhancer_value == "none", "不使用增强器" }
                                                 for e in enhancer_opts.iter() {
-                                                    option { value: "{enhancer_to_value(*e)}", "{enhancer_display(*e)}" }
+                                                    option { value: "{enhancer_to_value(*e)}", selected: enhancer_to_value(*e) == enhancer_value, "{enhancer_display(*e)}" }
                                                 }
                                             }
                                             if enhancer_disabled {
@@ -551,8 +648,8 @@ pub fn HttpToolSubForm(mut form: Signal<HttpToolFormState>) -> Element {
                                                     };
                                                     form.write().credential_requirements[idx_binding_kind].binding = binding;
                                                 },
-                                                option { value: "header", "Header（请求头）" }
-                                                option { value: "query", "Query（查询参数）" }
+                                                option { value: "header", selected: binding_kind_value == "header", "Header（请求头）" }
+                                                option { value: "query", selected: binding_kind_value == "query", "Query（查询参数）" }
                                             }
                                         }
                                         div { class: "form-control flex-1 min-w-[8rem]",
@@ -818,5 +915,74 @@ mod tests {
         }];
         let err = build_http_create_request(&base_basics(), &form).unwrap_err();
         assert!(err.contains("注入点名"), "unexpected: {err}");
+    }
+
+    // ===== 详情页复用：config ⇄ 表单 往返（新增字段必须两处同步，否则此组测试失败）=====
+
+    #[test]
+    fn form_from_none_config_is_default() {
+        assert_eq!(http_form_from_config(None), HttpToolFormState::default());
+        assert_eq!(
+            http_form_from_config(Some(&serde_json::Value::Null)),
+            HttpToolFormState::default()
+        );
+    }
+
+    #[test]
+    fn http_form_from_config_fills_all_fields() {
+        let config = serde_json::json!({
+            "method": "post",
+            "url": "https://api.example.com/v1/weather",
+            "headers": { "Content-Type": "application/json" },
+            "query": { "city": "{{city}}" },
+            "body": { "q": "{{q}}" },
+            "timeout_ms": 30000,
+            "response_max_bytes": 1048576,
+            "allowed_status_codes": [200, 201],
+            "response_json_pointer": "/data",
+            "allowed_domains": ["api.example.com"],
+            "blocked_domains": ["internal.example.com"],
+            "allow_local_network": true,
+            "credential_requirements": [
+                { "kind": "github_token", "binding": { "type": "header", "name": "authorization" } }
+            ]
+        });
+        let form = http_form_from_config(Some(&config));
+        // 方法归一化为大写（选择框只有 GET/POST 两个选项，小写会显示空）
+        assert_eq!(form.method, "POST");
+        assert_eq!(form.url, "https://api.example.com/v1/weather");
+        assert!(form.headers.contains("Content-Type"), "{}", form.headers);
+        assert!(form.query.contains("{{city}}"), "{}", form.query);
+        assert!(form.body.contains("{{q}}"), "{}", form.body);
+        assert_eq!(form.timeout_ms, "30000");
+        assert_eq!(form.response_max_bytes, "1048576");
+        assert_eq!(form.allowed_status_codes, "200,201");
+        assert_eq!(form.response_json_pointer, "/data");
+        assert_eq!(form.allowed_domains, "api.example.com");
+        assert_eq!(form.blocked_domains, "internal.example.com");
+        assert!(form.allow_local_network);
+        assert_eq!(form.credential_requirements, vec![header_req()]);
+    }
+
+    #[test]
+    fn http_config_round_trip_preserves_fields() {
+        // 创建页 → config → 详情页表单 → config：字段集必须等价（否则详情页保存会丢字段）
+        let mut form = base_http();
+        form.timeout_ms = "30000".to_string();
+        form.allowed_status_codes = "200,201".to_string();
+        form.allowed_domains = "api.example.com".to_string();
+        form.blocked_domains = "internal.example.com".to_string();
+        form.response_max_bytes = "1048576".to_string();
+        form.response_json_pointer = "/data".to_string();
+        form.allow_local_network = true;
+        form.credential_requirements = vec![header_req()];
+
+        let json = serde_json::to_value(http_config_from_form(&form).unwrap()).unwrap();
+        let back = http_form_from_config(Some(&json));
+        assert_eq!(back, form, "config ⇄ 表单 往返应等价");
+
+        // 反填结果再构造一次仍稳定（幂等：normalize / trim 只作用于首轮）
+        let json_again = serde_json::to_value(http_config_from_form(&back).unwrap()).unwrap();
+        assert_eq!(json, json_again);
     }
 }

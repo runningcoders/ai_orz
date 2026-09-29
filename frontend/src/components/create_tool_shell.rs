@@ -33,12 +33,10 @@ pub fn parse_args_template(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 校验并构造 CreateToolRequest（纯函数，便于单测）
-pub fn build_shell_create_request(
-    basics: &ToolBasicsState,
+/// 校验并构造 common SSOT 结构体 `ShellToolConfig`（创建页与详情页更新共用同一构造点）
+pub fn shell_config_from_form(
     form: &ShellToolFormState,
-) -> Result<CreateToolRequest, String> {
-    validate_basics(basics)?;
+) -> Result<common::config::ShellToolConfig, String> {
     let program = form.program.trim().to_string();
     if program.is_empty() {
         return Err("可执行文件不能为空".to_string());
@@ -65,16 +63,68 @@ pub fn build_shell_create_request(
         }
     };
     let timeout_ms = parse_optional_u64(&form.timeout_ms, "超时时间")?;
+
+    Ok(common::config::ShellToolConfig {
+        program,
+        args_template,
+        working_dir,
+        timeout_ms,
+    })
+}
+
+/// 由已有 config 反填 Shell 表单（详情页编辑入口；缺失字段 → 空串，由占位符提示缺省值）
+///
+/// 与 [`shell_config_from_form`] 互逆：`ShellToolConfig` 增删 / 改名字段时两处都要同步。
+pub fn shell_form_from_config(config: Option<&serde_json::Value>) -> ShellToolFormState {
+    let Some(object) = config.and_then(|c| c.as_object()) else {
+        return ShellToolFormState::default();
+    };
+    ShellToolFormState {
+        program: object
+            .get("program")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        // argv 模板每行一项（与 parse_args_template 互逆）
+        args_template: object
+            .get("args_template")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default(),
+        working_dir: object
+            .get("working_dir")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        timeout_ms: object
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
+    }
+}
+
+/// 校验并构造 CreateToolRequest（纯函数，便于单测）
+pub fn build_shell_create_request(
+    basics: &ToolBasicsState,
+    form: &ShellToolFormState,
+) -> Result<CreateToolRequest, String> {
+    validate_basics(basics)?;
+
+    // 构造 common SSOT 结构体 `ShellToolConfig`（前后端共享同一类型定义，杜绝键名漂移），
+    // 再序列化为 config JSON：Option 字段为 None 序列化成 null，与旧行为一致。
+    // ⚠️ 先于 schema/tags 解析：保持既有错误报告顺序（字段级错误优先于 schema JSON 错误）
+    let config = serde_json::to_value(shell_config_from_form(form)?)
+        .map_err(|e| format!("Shell 工具配置序列化失败: {}", e))?;
     let parameters_schema =
         crate::components::create_tool_http::parse_parameters_schema(&basics.parameters_schema)?;
     let tags = crate::components::create_tool_http::parse_comma_list(&basics.tags);
-
-    let config = serde_json::json!({
-        "program": program,
-        "args_template": args_template,
-        "working_dir": working_dir,
-        "timeout_ms": timeout_ms,
-    });
 
     Ok(CreateToolRequest {
         name: basics.name.trim().to_string(),
@@ -169,6 +219,13 @@ mod tests {
         assert_eq!(config["args_template"][0], "-i");
         assert_eq!(config["working_dir"], serde_json::Value::Null);
         assert_eq!(config["timeout_ms"], serde_json::Value::Null);
+        // SSOT 保险：前端产物必须能被 common 的共享结构体解析（键名漂移即在此暴露）
+        let parsed: common::config::ShellToolConfig =
+            serde_json::from_value(config.clone()).unwrap();
+        assert_eq!(parsed.program, "ffmpeg");
+        assert_eq!(parsed.args_template[0], "-i");
+        assert_eq!(parsed.working_dir, None);
+        assert_eq!(parsed.timeout_ms, None);
     }
 
     #[test]
@@ -217,5 +274,53 @@ mod tests {
         let mut b = basics();
         b.name = " ".into();
         assert!(build_shell_create_request(&b, &form()).is_err());
+    }
+
+    // ===== 详情页复用：config ⇄ 表单 往返（新增字段必须两处同步，否则此组测试失败）=====
+
+    #[test]
+    fn shell_form_from_none_config_is_default() {
+        assert_eq!(shell_form_from_config(None), ShellToolFormState::default());
+    }
+
+    #[test]
+    fn shell_form_from_config_fills_all_fields() {
+        let config = serde_json::json!({
+            "program": "ffmpeg",
+            "args_template": ["-i", "{{args.input}}", "{{args.output}}"],
+            "working_dir": "/tmp/work",
+            "timeout_ms": 60000
+        });
+        let form = shell_form_from_config(Some(&config));
+        assert_eq!(form.program, "ffmpeg");
+        assert_eq!(form.args_template, "-i\n{{args.input}}\n{{args.output}}");
+        assert_eq!(form.working_dir, "/tmp/work");
+        assert_eq!(form.timeout_ms, "60000");
+
+        // 缺失 / null → 空串（由占位符提示缺省值）
+        let sparse = shell_form_from_config(Some(&serde_json::json!({
+            "program": "ffmpeg", "working_dir": null, "timeout_ms": null
+        })));
+        assert_eq!(sparse.args_template, "");
+        assert_eq!(sparse.working_dir, "");
+        assert_eq!(sparse.timeout_ms, "");
+    }
+
+    #[test]
+    fn shell_config_round_trip_preserves_fields() {
+        // 创建页 → config → 详情页表单 → config：字段集必须等价（否则详情页保存会丢字段）
+        let mut f = form();
+        f.working_dir = "/tmp/work".into();
+        f.timeout_ms = "120000".into();
+
+        let json = serde_json::to_value(shell_config_from_form(&f).unwrap()).unwrap();
+        let back = shell_form_from_config(Some(&json));
+        assert_eq!(back, f, "config ⇄ 表单 往返应等价");
+
+        // 反填结果再构造一次仍稳定（幂等）
+        assert_eq!(
+            serde_json::to_value(shell_config_from_form(&back).unwrap()).unwrap(),
+            json
+        );
     }
 }

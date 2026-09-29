@@ -23,6 +23,7 @@ use crate::pkg::tool_registry::BuiltinToolFactory;
 use crate::pkg::tool_registry::tool_readiness;
 use anyhow::anyhow;
 use async_trait::async_trait;
+use common::config::SearchToolConfig;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::{Result, err};
 use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
@@ -169,16 +170,29 @@ impl TavilySearchCoreTool {
         if let Some(client) = self.http.get() {
             return Ok(client);
         }
-        let timeout_ms = self
-            .po
-            .config
-            .get("timeout_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(DEFAULT_TIMEOUT_MS);
+        let timeout_ms = configured_timeout_ms(&self.po.config);
         let client =
             crate::pkg::http::presets::with_timeout(Some(Duration::from_millis(timeout_ms)))
                 .build()?;
         Ok(self.http.get_or_init(|| client))
+    }
+}
+
+/// 从 PO config 解析请求超时（config 为 Null / 形状不符 → 内置缺省）
+///
+/// 强类型走 common SSOT [`SearchToolConfig`]（键名与前端表单同源，防键名漂移）。
+fn configured_timeout_ms(config: &Value) -> u64 {
+    if config.is_null() {
+        return DEFAULT_TIMEOUT_MS;
+    }
+    match serde_json::from_value::<SearchToolConfig>(config.clone()) {
+        Ok(cfg) => cfg.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+        Err(e) => {
+            // 强类型解析失败会整体回落内置缺省：不留痕时「配置被改坏后行为照旧」
+            // 会变成排查黑洞（config 形状与 SearchToolConfig 不一致）
+            crate::log_warn!("tavily_search config 反序列化失败，回退内置缺省超时: {}", e);
+            DEFAULT_TIMEOUT_MS
+        }
     }
 }
 
@@ -348,6 +362,22 @@ mod tests {
     fn test_ctx() -> RequestContext {
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
         new_test_ctx("test-user", pool)
+    }
+
+    #[test]
+    fn configured_timeout_reads_search_tool_config() {
+        // config 为空 → 内置缺省
+        assert_eq!(configured_timeout_ms(&Value::Null), DEFAULT_TIMEOUT_MS);
+        // 显式 timeout_ms → 生效（键名与 common::config::SearchToolConfig 同源）
+        assert_eq!(
+            configured_timeout_ms(&json!({ "timeout_ms": 1_234 })),
+            1_234
+        );
+        // 形状不符（非数字）→ 回退缺省，不 panic
+        assert_eq!(
+            configured_timeout_ms(&json!({ "timeout_ms": "abc" })),
+            DEFAULT_TIMEOUT_MS
+        );
     }
 
     #[test]

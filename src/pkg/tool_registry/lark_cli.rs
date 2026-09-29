@@ -35,12 +35,6 @@ use std::path::{Path, PathBuf};
 /// lark-cli 二进制名
 pub const LARK_CLI_BIN: &str = "lark-cli";
 
-/// 默认超时 60s
-const DEFAULT_TIMEOUT_MS: u64 = 60_000;
-
-/// 默认输出截断上限 1MB
-const DEFAULT_MAX_OUTPUT_BYTES: u64 = 1024 * 1024;
-
 // ==================== 凭据需求声明（工厂与实例共用单点，D17） ====================
 
 /// 凭据需求静态声明：同一 LarkApp 凭证三字段（D4 多字段模式；
@@ -66,37 +60,9 @@ fn credential_requirements() -> Vec<CredentialRequirement> {
 
 // ==================== 工具定义 ====================
 
-/// lark_cli 工具配置（存储于 `ToolPo.config`）
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
-pub struct LarkCliConfig {
-    /// lark-cli 二进制名或绝对路径（缺省 `LARK_CLI_BIN`；存量 config 无该字段 → 常量兜底，D28）
-    pub command: Option<String>,
-    /// 默认超时（毫秒）
-    pub default_timeout_ms: Option<u64>,
-    /// 默认输出截断上限（字节）
-    pub default_max_output_size_bytes: Option<u64>,
-}
-
-impl LarkCliConfig {
-    /// lark-cli 命令（缺省 `LARK_CLI_BIN` 兜底）
-    pub fn command(&self) -> String {
-        self.command
-            .clone()
-            .unwrap_or_else(|| LARK_CLI_BIN.to_string())
-    }
-
-    /// 默认超时（毫秒）
-    pub fn default_timeout_ms(&self) -> u64 {
-        self.default_timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)
-    }
-
-    /// 默认输出截断上限（字节）
-    pub fn default_max_output_size_bytes(&self) -> u64 {
-        self.default_max_output_size_bytes
-            .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES)
-    }
-}
+/// `CliToolConfig` 已下沉至 [`common::config::CliToolConfig`]（前后端共享 SSOT），此处仅转发兼容；
+/// lark-cli 的二进制缺省名由调用方以 [`LARK_CLI_BIN`] 兜底。
+pub use common::config::CliToolConfig;
 
 /// `lark_cli` 工具参数
 #[derive(Debug, Deserialize)]
@@ -141,7 +107,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
                 "additionalProperties": false
             })),
             // CLI 命令进 PO config（D28：缺省 LARK_CLI_BIN，工具管理页可改命令路径）
-            config: serde_json::json!(LarkCliConfig {
+            config: serde_json::json!(CliToolConfig {
                 command: Some(LARK_CLI_BIN.to_string()),
                 ..Default::default()
             }),
@@ -166,7 +132,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
 #[derive(Debug, Clone)]
 pub struct LarkCliCoreTool {
     po: ToolPo,
-    config: LarkCliConfig,
+    config: CliToolConfig,
     /// check 注入的飞书应用凭证三元组 `(app_id, app_secret, identity_mode)`
     ///（D22 create → check → call；None → 绑定引导）
     credentials: Option<(String, String, String)>,
@@ -175,7 +141,7 @@ pub struct LarkCliCoreTool {
 impl LarkCliCoreTool {
     fn new(po: ToolPo) -> Self {
         let config = if po.config.is_null() {
-            LarkCliConfig::default()
+            CliToolConfig::default()
         } else {
             serde_json::from_value(po.config.clone()).unwrap_or_default()
         };
@@ -358,7 +324,7 @@ impl CoreTool for LarkCliCoreTool {
         };
         let home_dir = lark_home(&get().base_data_path(), &user_id);
         // 命令读实例 PO config（存量 config 无 command → LARK_CLI_BIN 常量兜底，D28）
-        let bin = self.config.command();
+        let bin = self.config.command(LARK_CLI_BIN);
         if !tool_readiness::command_available(&bin) {
             return Ok(tool_readiness::cli_not_installed_json(
                 "lark-cli",
@@ -514,7 +480,7 @@ mod tests {
 
     #[test]
     fn config_defaults() {
-        let config = LarkCliConfig::default();
+        let config = CliToolConfig::default();
         assert_eq!(config.default_timeout_ms(), 60_000);
         assert_eq!(config.default_max_output_size_bytes(), 1024 * 1024);
     }

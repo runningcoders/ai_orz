@@ -26,7 +26,6 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use common::err;
 use common::error::Result;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -43,19 +42,8 @@ pub fn test_fallback_base_root() -> PathBuf {
     std::env::temp_dir().join("ai_orz_test_base")
 }
 
-/// 声明式 Shell 工具配置（存储于 `ToolPo.config`）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShellToolConfig {
-    /// 可执行文件（固定 program，模型不可指定；纯名称走 PATH 解析）
-    pub program: String,
-    /// argv 模板：支持 `{{args.x}}` 占位符，渲染后逐项传递（不经 shell 解释）
-    #[serde(default)]
-    pub args_template: Vec<String>,
-    /// 工作目录（绝对路径；None = 继承父进程）
-    pub working_dir: Option<String>,
-    /// 执行超时毫秒（默认 60s，硬上限 10 分钟）
-    pub timeout_ms: Option<u64>,
-}
+/// `ShellToolConfig` 已下沉至 [`common::config::ShellToolConfig`]（前后端共享 SSOT），此处仅转发兼容。
+pub use common::config::ShellToolConfig;
 
 /// 可执行的声明式 Shell 工具
 #[derive(Debug, Clone)]

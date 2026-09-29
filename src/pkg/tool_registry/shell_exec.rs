@@ -26,94 +26,9 @@ use std::process::Stdio;
 use tokio::fs::{OpenOptions, create_dir_all};
 use tokio::process::Command;
 
-/// ShellExec tool configuration stored in `ToolPo.config`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
-/// Configuration for shell_exec tool.
-pub struct ShellExecConfig {
-    /// Default timeout in milliseconds.
-    pub default_timeout_ms: Option<u64>,
-    /// Default maximum output size in bytes.
-    pub default_max_output_size_bytes: Option<u64>,
-    /// Additional allowed paths for execution (beyond base data path).
-    pub additional_allowed_paths: Option<Vec<String>>,
-    /// 追加到子进程 PATH 尾部的目录（None = 内置默认，见 `common::config::ShellConfig`）
-    ///
-    /// 支持 `~` 前缀与单段 `*` 通配（如 `~/.nvm/versions/node/*/bin`）；
-    /// 仅追加「存在且尚未出现在 PATH 中」的目录，不覆盖既有解析顺序。
-    pub path_additions: Option<Vec<String>>,
-    /// 子进程 HOME 策略（None = 内置默认 `isolated`）
-    pub home_mode: Option<HomeMode>,
-    /// 隔离 HOME 下把工具链根目录指回真实 HOME 的工具链名单（None = 不注入）
-    ///
-    /// 仅 `home_mode = isolated` 时生效：git/gh 走隔离身份的同时，名单内工具链
-    /// 经官方环境变量（`CARGO_HOME` / `NVM_DIR` 等，见
-    /// `common::models::tool::SHELL_TOOLCHAIN_HOME_VARS`）读取真实 HOME 配置。
-    /// 路径不存在或未知名忽略；`params.env` 显式传的同名变量优先。
-    pub toolchain_envs: Option<Vec<String>>,
-    /// 显式注入/覆盖的环境变量名（取值来自服务进程环境）
-    ///
-    /// **这不是安全边界**：子进程默认继承服务进程**全部**环境变量——兼容优先，
-    /// 因为 `TMPDIR` / `LANG` / `DYLD_*` / `XDG_*` 等被剔除会直接搞挂大量 CLI，
-    /// 而命令本身已由 `shell_policy` 拦截 + Manual 批准兜底，环境变量白名单的
-    /// 边际收益不值这个兼容性代价。这里声明的只是「额外显式带上」的变量
-    /// （敏感子串仍会剔除），默认 `PATH`（也是 PATH 补全的锚点）。
-    pub allowed_env: Option<Vec<String>>,
-}
-
-impl Default for ShellExecConfig {
-    fn default() -> Self {
-        Self {
-            default_timeout_ms: None,
-            default_max_output_size_bytes: None,
-            additional_allowed_paths: None,
-            path_additions: None,
-            home_mode: None,
-            toolchain_envs: None,
-            allowed_env: Some(vec!["PATH".to_string()]),
-        }
-    }
-}
-
-impl ShellExecConfig {
-    /// Get default timeout in milliseconds.
-    pub fn default_timeout_ms(&self) -> u64 {
-        self.default_timeout_ms.unwrap_or(300_000)
-    }
-
-    /// Get default max output size in bytes.
-    pub fn default_max_output_size_bytes(&self) -> u64 {
-        self.default_max_output_size_bytes
-            .unwrap_or(10 * 1024 * 1024)
-    }
-
-    /// Get additional allowed paths.
-    pub fn additional_allowed_paths(&self) -> &[String] {
-        self.additional_allowed_paths.as_deref().unwrap_or(&[])
-    }
-
-    /// Get allowed environment variable names.
-    pub fn allowed_env(&self) -> &[String] {
-        self.allowed_env.as_deref().unwrap_or(&[])
-    }
-
-    /// Get PATH 补全目录（未配置时回退内置默认）
-    pub fn path_additions(&self) -> Vec<String> {
-        self.path_additions
-            .clone()
-            .unwrap_or_else(|| common::config::ShellConfig::default().path_additions)
-    }
-
-    /// Get HOME 策略（未配置时回退内置默认 `isolated`）
-    pub fn home_mode(&self) -> HomeMode {
-        self.home_mode.unwrap_or_default()
-    }
-
-    /// Get 工具链根目录指回名单（未配置时为空 = 不注入）
-    pub fn toolchain_envs(&self) -> &[String] {
-        self.toolchain_envs.as_deref().unwrap_or(&[])
-    }
-}
+/// `ShellExecConfig` 已下沉至 [`common::config::ShellExecConfig`]（前后端共享 SSOT），
+/// 此处仅转发兼容，旧引用点（如 `shell_tests.rs` 的 `shell_exec::ShellExecConfig`）仍可解析。
+pub use common::config::ShellExecConfig;
 
 /// `shell_exec` tool parameters.
 #[derive(Debug, Deserialize)]

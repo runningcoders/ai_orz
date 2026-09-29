@@ -16,7 +16,6 @@ use common::err;
 use common::error::Result;
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, Url};
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::str::FromStr;
 use std::time::Duration;
@@ -39,44 +38,8 @@ impl HttpToolFactory for DefaultHttpToolFactory {
     }
 }
 
-/// HTTP tool configuration stored in `ToolPo.config`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpToolConfig {
-    /// HTTP method, e.g. GET/POST.
-    pub method: String,
-    /// Fixed URL template. The model must not supply raw URL at call time.
-    pub url: String,
-
-    /// Header template object.
-    pub headers: Option<Value>,
-    /// Query template object.
-    pub query: Option<Value>,
-    /// Body template object.
-    pub body: Option<Value>,
-
-    /// Per-tool timeout override.
-    pub timeout_ms: Option<u64>,
-    /// Maximum response bytes accepted by the runtime.
-    pub response_max_bytes: Option<usize>,
-
-    /// Accepted HTTP status codes. Defaults will be decided by runtime.
-    pub allowed_status_codes: Option<Vec<u16>>,
-    /// Optional JSON pointer used to extract a subset from JSON response.
-    pub response_json_pointer: Option<String>,
-
-    /// Domain allow-list for SSRF protection.
-    pub allowed_domains: Option<Vec<String>>,
-    /// Domain deny-list for SSRF protection.
-    pub blocked_domains: Option<Vec<String>>,
-    /// Explicit risk-acknowledgement switch for localhost/private-network targets.
-    /// Defaults to false when omitted.
-    pub allow_local_network: Option<bool>,
-
-    /// Credential requirements (type-level; sensitive header/query injection
-    /// is only allowed through these bindings, D15).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub credential_requirements: Vec<common::models::CredentialRequirement>,
-}
+/// `HttpToolConfig` 已下沉至 [`common::config::HttpToolConfig`]（前后端共享 SSOT），此处仅转发兼容。
+pub use common::config::HttpToolConfig;
 
 /// Executable HTTP core tool created from `ToolPo + HttpToolConfig`.
 #[derive(Debug, Clone)]

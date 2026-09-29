@@ -36,12 +36,6 @@ use std::path::{Path, PathBuf};
 /// gh 二进制名
 pub const GH_CLI_BIN: &str = "gh";
 
-/// 默认超时 60s
-const DEFAULT_TIMEOUT_MS: u64 = 60_000;
-
-/// 默认输出截断上限 1MB
-const DEFAULT_MAX_OUTPUT_BYTES: u64 = 1024 * 1024;
-
 // ==================== 凭据需求声明（工厂与实例共用单点，D17） ====================
 
 /// 凭据需求静态声明：个人 GitHub token（单条 Internal 注入实例 `token` 字段；
@@ -60,37 +54,9 @@ fn credential_requirements() -> Vec<CredentialRequirement> {
 
 // ==================== 工具定义 ====================
 
-/// gh_cli 工具配置（存储于 `ToolPo.config`）
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
-pub struct GhCliConfig {
-    /// gh 二进制名或绝对路径（缺省 `GH_CLI_BIN`；存量 config 无该字段 → 常量兜底，D28）
-    pub command: Option<String>,
-    /// 默认超时（毫秒）
-    pub default_timeout_ms: Option<u64>,
-    /// 默认输出截断上限（字节）
-    pub default_max_output_size_bytes: Option<u64>,
-}
-
-impl GhCliConfig {
-    /// gh 命令（缺省 `GH_CLI_BIN` 兜底）
-    pub fn command(&self) -> String {
-        self.command
-            .clone()
-            .unwrap_or_else(|| GH_CLI_BIN.to_string())
-    }
-
-    /// 默认超时（毫秒）
-    pub fn default_timeout_ms(&self) -> u64 {
-        self.default_timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)
-    }
-
-    /// 默认输出截断上限（字节）
-    pub fn default_max_output_size_bytes(&self) -> u64 {
-        self.default_max_output_size_bytes
-            .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES)
-    }
-}
+/// `CliToolConfig` 已下沉至 [`common::config::CliToolConfig`]（前后端共享 SSOT），此处仅转发兼容；
+/// gh 的二进制缺省名由调用方以 [`GH_CLI_BIN`] 兜底。
+pub use common::config::CliToolConfig;
 
 /// `gh_cli` 工具参数
 #[derive(Debug, Deserialize)]
@@ -144,7 +110,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for GhCliToolFactory {
                 "additionalProperties": false
             })),
             // CLI 命令进 PO config（D28：缺省 GH_CLI_BIN，工具管理页可改命令路径）
-            config: serde_json::json!(GhCliConfig {
+            config: serde_json::json!(CliToolConfig {
                 command: Some(GH_CLI_BIN.to_string()),
                 ..Default::default()
             }),
@@ -169,7 +135,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for GhCliToolFactory {
 #[derive(Debug, Clone)]
 pub struct GhCliCoreTool {
     po: ToolPo,
-    config: GhCliConfig,
+    config: CliToolConfig,
     /// check 注入的 GitHub token（D22 create → check → call；None → 绑定引导）
     token: Option<String>,
 }
@@ -177,7 +143,7 @@ pub struct GhCliCoreTool {
 impl GhCliCoreTool {
     fn new(po: ToolPo) -> Self {
         let config = if po.config.is_null() {
-            GhCliConfig::default()
+            CliToolConfig::default()
         } else {
             serde_json::from_value(po.config.clone()).unwrap_or_default()
         };
@@ -387,7 +353,7 @@ impl CoreTool for GhCliCoreTool {
         let base_path = get().base_data_path();
         let home_dir = gh_home(&base_path, &user_id);
         // 命令读实例 PO config（存量 config 无 command → GH_CLI_BIN 常量兜底，D28）
-        let bin = self.config.command();
+        let bin = self.config.command(GH_CLI_BIN);
         if !crate::pkg::tool_registry::tool_readiness::command_available(&bin) {
             return Ok(
                 crate::pkg::tool_registry::tool_readiness::cli_not_installed_json(
@@ -547,7 +513,7 @@ mod tests {
 
     #[test]
     fn config_defaults() {
-        let config = GhCliConfig::default();
+        let config = CliToolConfig::default();
         assert_eq!(config.default_timeout_ms(), 60_000);
         assert_eq!(config.default_max_output_size_bytes(), 1024 * 1024);
     }

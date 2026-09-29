@@ -319,7 +319,7 @@ fn default_tool_log_retention_days() -> u32 {
 /// Shell 子进程环境配置 —— **内置默认值，不挂 AppConfig**
 ///
 /// 工具行为类配置一律放在 ToolPo.config（与 `additional_allowed_paths` 一致）：
-/// `shell_exec` 用 [`ShellExecConfig`](由各自 crate 定义) 的 `path_additions` /
+/// `shell_exec` 用 [`ShellExecConfig`] 的 `path_additions` /
 /// `home_mode` 覆盖这里的内置默认；声明式 shell 工具与 MCP stdio 没有工具级
 /// 配置项，直接用这里的默认值。因此本结构**不出现在 ai_orz.toml 中**。
 ///
@@ -372,6 +372,98 @@ pub enum HomeMode {
     /// 期望身份（除非仓库已被 `git_workspace` 写过 repo-local config）。适合单机
     /// 自用、受信环境；多用户部署请保持 `isolated`。
     Inherit,
+}
+
+/// `shell_exec` 工具配置（存于 `ToolPo.config`）。
+///
+/// 下沉到 common 作为前后端共享的 SSOT：后端 `shell_exec` / `shell_policy` 消费，
+/// 前端 `tool_detail` 表单字段与其一一对齐（见 `frontend/src/pages/finance/tool_detail.rs`
+/// 的 `BuiltinConfigFormState`）。新增字段需同步两侧。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct ShellExecConfig {
+    /// Default timeout in milliseconds.
+    pub default_timeout_ms: Option<u64>,
+    /// Default maximum output size in bytes.
+    pub default_max_output_size_bytes: Option<u64>,
+    /// Additional allowed paths for execution (beyond base data path).
+    pub additional_allowed_paths: Option<Vec<String>>,
+    /// 追加到子进程 PATH 尾部的目录（None = 内置默认，见 [`ShellConfig`]）
+    ///
+    /// 支持 `~` 前缀与单段 `*` 通配（如 `~/.nvm/versions/node/*/bin`）；
+    /// 仅追加「存在且尚未出现在 PATH 中」的目录，不覆盖既有解析顺序。
+    pub path_additions: Option<Vec<String>>,
+    /// 子进程 HOME 策略（None = 内置默认 `isolated`）
+    pub home_mode: Option<HomeMode>,
+    /// 隔离 HOME 下把工具链根目录指回真实 HOME 的工具链名单（None = 不注入）
+    ///
+    /// 仅 `home_mode = isolated` 时生效：git/gh 走隔离身份的同时，名单内工具链
+    /// 经官方环境变量（`CARGO_HOME` / `NVM_DIR` 等，见
+    /// `crate::models::tool::SHELL_TOOLCHAIN_HOME_VARS`）读取真实 HOME 配置。
+    /// 路径不存在或未知名忽略；`params.env` 显式传的同名变量优先。
+    pub toolchain_envs: Option<Vec<String>>,
+    /// 显式注入/覆盖的环境变量名（取值来自服务进程环境）
+    ///
+    /// **这不是安全边界**：子进程默认继承服务进程**全部**环境变量——兼容优先，
+    /// 因为 `TMPDIR` / `LANG` / `DYLD_*` / `XDG_*` 等被剔除会直接搞挂大量 CLI，
+    /// 而命令本身已由 `shell_policy` 拦截 + Manual 批准兜底，环境变量白名单的
+    /// 边际收益不值这个兼容性代价。这里声明的只是「额外显式带上」的变量
+    /// （敏感子串仍会剔除），默认 `PATH`（也是 PATH 补全的锚点）。
+    pub allowed_env: Option<Vec<String>>,
+}
+
+impl Default for ShellExecConfig {
+    fn default() -> Self {
+        Self {
+            default_timeout_ms: None,
+            default_max_output_size_bytes: None,
+            additional_allowed_paths: None,
+            path_additions: None,
+            home_mode: None,
+            toolchain_envs: None,
+            allowed_env: Some(vec!["PATH".to_string()]),
+        }
+    }
+}
+
+impl ShellExecConfig {
+    /// Get default timeout in milliseconds.
+    pub fn default_timeout_ms(&self) -> u64 {
+        self.default_timeout_ms.unwrap_or(300_000)
+    }
+
+    /// Get default max output size in bytes.
+    pub fn default_max_output_size_bytes(&self) -> u64 {
+        self.default_max_output_size_bytes
+            .unwrap_or(10 * 1024 * 1024)
+    }
+
+    /// Get additional allowed paths.
+    pub fn additional_allowed_paths(&self) -> &[String] {
+        self.additional_allowed_paths.as_deref().unwrap_or(&[])
+    }
+
+    /// Get allowed environment variable names.
+    pub fn allowed_env(&self) -> &[String] {
+        self.allowed_env.as_deref().unwrap_or(&[])
+    }
+
+    /// Get PATH 补全目录（未配置时回退内置默认）
+    pub fn path_additions(&self) -> Vec<String> {
+        self.path_additions
+            .clone()
+            .unwrap_or_else(|| ShellConfig::default().path_additions)
+    }
+
+    /// Get HOME 策略（未配置时回退内置默认 `isolated`）
+    pub fn home_mode(&self) -> HomeMode {
+        self.home_mode.unwrap_or_default()
+    }
+
+    /// Get 工具链根目录指回名单（未配置时为空 = 不注入）
+    pub fn toolchain_envs(&self) -> &[String] {
+        self.toolchain_envs.as_deref().unwrap_or(&[])
+    }
 }
 
 /// 默认补全目录（Windows 无此问题，返回空）
@@ -640,6 +732,171 @@ fn default_a2a_endpoint() -> String {
 
 fn default_a2a_card_path() -> String {
     "/.well-known/agent.json".to_string()
+}
+
+// ==================== 工具配置结构体（存于 `ToolPo.config`，前后端共享 SSOT） ====================
+//
+// 这些结构体原本定义在各内置工具的 `src/pkg/tool_registry/*` 中；前端是独立 WASM crate，
+// 只能依赖 `common`，无法引用 `src/` 的类型，导致前后端各写一套。统一下沉到此处后，
+// 后端通过各工具文件顶部的 `pub use common::config::X;` 薄转发层保持既有引用点兼容。
+
+/// 文件系统工具（`read_file` / `write_file`）配置（存于 `ToolPo.config`）。
+///
+/// 两个工具的 config 形状一致（仅 `additional_allowed_paths`），合并为单一结构体下沉
+/// common 作为前后端共享 SSOT。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct FsToolConfig {
+    /// Additional allowed paths outside the default `base_data_path`.
+    /// All paths are anchored to the project root / base data path.
+    pub additional_allowed_paths: Option<Vec<String>>,
+}
+
+/// CLI 工具（`gh_cli` / `lark_cli`）默认超时（毫秒）
+pub const CLI_TOOL_DEFAULT_TIMEOUT_MS: u64 = 60_000;
+/// CLI 工具（`gh_cli` / `lark_cli`）默认输出截断上限（字节）
+pub const CLI_TOOL_DEFAULT_MAX_OUTPUT_BYTES: u64 = 1024 * 1024;
+
+/// 内置 CLI 工具（`gh_cli` / `lark_cli`）配置（存于 `ToolPo.config`）。
+///
+/// 两个工具的 config 形状一致（二进制名 + 默认超时 + 默认输出上限），合并为单一结构体
+/// 下沉 common 作为前后端共享 SSOT；二进制名的缺省兜底由调用方传入工具默认常量
+/// （`GH_CLI_BIN` / `LARK_CLI_BIN`）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct CliToolConfig {
+    /// CLI 二进制名或绝对路径（None → 由调用方以工具默认常量兜底）
+    pub command: Option<String>,
+    /// 默认超时（毫秒）
+    pub default_timeout_ms: Option<u64>,
+    /// 默认输出截断上限（字节）
+    pub default_max_output_size_bytes: Option<u64>,
+}
+
+impl CliToolConfig {
+    /// CLI 命令（缺省用调用方给定的默认二进制名兜底）
+    pub fn command(&self, default_bin: &str) -> String {
+        self.command
+            .clone()
+            .unwrap_or_else(|| default_bin.to_string())
+    }
+
+    /// 默认超时（毫秒）
+    pub fn default_timeout_ms(&self) -> u64 {
+        self.default_timeout_ms
+            .unwrap_or(CLI_TOOL_DEFAULT_TIMEOUT_MS)
+    }
+
+    /// 默认输出截断上限（字节）
+    pub fn default_max_output_size_bytes(&self) -> u64 {
+        self.default_max_output_size_bytes
+            .unwrap_or(CLI_TOOL_DEFAULT_MAX_OUTPUT_BYTES)
+    }
+}
+
+/// HTTP 自建工具配置（存于 `ToolPo.config`）。
+///
+/// 由 `src/pkg/tool_registry/http.rs` 消费；前端 `frontend/src/components/create_tool_http.rs`
+/// 对齐同一字段集。下沉 common 作为前后端共享 SSOT。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HttpToolConfig {
+    /// HTTP method, e.g. GET/POST.
+    pub method: String,
+    /// Fixed URL template. The model must not supply raw URL at call time.
+    pub url: String,
+
+    /// Header template object.
+    pub headers: Option<serde_json::Value>,
+    /// Query template object.
+    pub query: Option<serde_json::Value>,
+    /// Body template object.
+    pub body: Option<serde_json::Value>,
+
+    /// Per-tool timeout override.
+    pub timeout_ms: Option<u64>,
+    /// Maximum response bytes accepted by the runtime.
+    pub response_max_bytes: Option<usize>,
+
+    /// Accepted HTTP status codes. Defaults will be decided by runtime.
+    pub allowed_status_codes: Option<Vec<u16>>,
+    /// Optional JSON pointer used to extract a subset from JSON response.
+    pub response_json_pointer: Option<String>,
+
+    /// Domain allow-list for SSRF protection.
+    pub allowed_domains: Option<Vec<String>>,
+    /// Domain deny-list for SSRF protection.
+    pub blocked_domains: Option<Vec<String>>,
+    /// Explicit risk-acknowledgement switch for localhost/private-network targets.
+    /// Defaults to false when omitted.
+    pub allow_local_network: Option<bool>,
+
+    /// Credential requirements (type-level; sensitive header/query injection
+    /// is only allowed through these bindings, D15).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_requirements: Vec<crate::models::CredentialRequirement>,
+}
+
+/// 声明式 Shell 工具配置（存于 `ToolPo.config`）。
+///
+/// 由 `src/pkg/tool_registry/shell_tool.rs` 消费；前端 `frontend/src/components/create_tool_shell.rs`
+/// 对齐同一字段集。下沉 common 作为前后端共享 SSOT。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ShellToolConfig {
+    /// 可执行文件（固定 program，模型不可指定；纯名称走 PATH 解析）
+    pub program: String,
+    /// argv 模板：支持 `{{args.x}}` 占位符，渲染后逐项传递（不经 shell 解释）
+    #[serde(default)]
+    pub args_template: Vec<String>,
+    /// 工作目录（绝对路径；None = 继承父进程）
+    pub working_dir: Option<String>,
+    /// 执行超时毫秒（默认 60s，硬上限 10 分钟）
+    pub timeout_ms: Option<u64>,
+}
+
+/// MCP 工具绑定配置（存于 `ToolPo.config`）。
+///
+/// 只保存「标准工具记录 → MCP server/tool」的绑定；Server 连接/凭据/命令属于
+/// `McpServerPo.config`，不得复制进每个工具的 config。下沉 common 作为前后端共享 SSOT。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct McpToolConfig {
+    /// ID of the MCP server/provider record.
+    pub server_id: String,
+    /// Name of the concrete tool exposed by that MCP server.
+    pub tool_name: String,
+}
+
+/// `browser` 内置工具配置（存于 `ToolPo.config`）。
+///
+/// `browser` 是 CLI 型内置工具，config 为 CLI 通用字段集，键名与
+/// [`crate::models::ToolPo::cli_command`] 等泛型访问器读取的键一致
+/// （`command` / `timeout_ms` / `max_output_bytes` / `install_hint`）。
+/// 下沉 common 作为前后端共享 SSOT。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct BrowserConfig {
+    /// agent-browser 二进制名或绝对路径（None → 内置缺省命令兜底）
+    pub command: Option<String>,
+    /// 单次超时（毫秒，None → 内置缺省兜底）
+    pub timeout_ms: Option<u64>,
+    /// 输出截断上限（字节，None → 内置缺省兜底）
+    pub max_output_bytes: Option<u64>,
+    /// 未安装时的安装引导文案（None → 内置缺省兜底）
+    pub install_hint: Option<String>,
+}
+
+/// 网络搜索工具（`tavily_search` / `doubao_search`）配置（存于 `ToolPo.config`）。
+///
+/// 两者的 config 形状一致（仅请求超时），合并为单一结构体下沉 common 作为前后端共享
+/// SSOT：后端 `src/pkg/tool_registry/{tavily_search,doubao_search}.rs` 消费，前端
+/// `frontend/src/pages/finance/tool_detail.rs` 的搜索工具表单对齐同一键名。
+///
+/// 超时缺省值各工具不同（`tavily_search` 15s / `doubao_search` 20s），故字段为
+/// `Option`，缺省由各工具自身常量兜底（与 [`BrowserConfig`] 同构）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct SearchToolConfig {
+    /// 单次请求超时（毫秒，None → 各工具内置缺省兜底）
+    pub timeout_ms: Option<u64>,
 }
 
 #[cfg(test)]
