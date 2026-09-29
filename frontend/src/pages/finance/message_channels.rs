@@ -495,21 +495,19 @@ pub fn FinanceMessageChannels() -> Element {
                         }
                     }
 
-                    // ===== 通用：绑定 Agent + Webhook URL（非飞书渠道） =====
-                    if !is_lark_type {
-                        div { class: "form-control w-full",
-                            label { class: "label",
-                                span { class: "label-text", "绑定 Agent" }
-                            }
-                            select { class: "select select-bordered hud-input w-full", value: "{agent_value}",
-                                onchange: move |e| new_agent_id.set(e.value()),
-                                option { value: "", "不绑定（用户全局默认渠道）" }
-                                for agent in agents_list.iter() {
-                                    {
-                                        let aid = agent.id.clone();
-                                        let aname = agent.name.clone();
-                                        rsx! { option { key: "{aid}", value: "{aid}", "{aname}" } }
-                                    }
+                    // ===== 通用：绑定 Agent（所有渠道类型；飞书入站路由优先取渠道 agent_id） =====
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text", "绑定 Agent" }
+                        }
+                        select { class: "select select-bordered hud-input w-full", value: "{agent_value}",
+                            onchange: move |e| new_agent_id.set(e.value()),
+                            option { value: "", "不绑定（用户全局默认渠道）" }
+                            for agent in agents_list.iter() {
+                                {
+                                    let aid = agent.id.clone();
+                                    let aname = agent.name.clone();
+                                    rsx! { option { key: "{aid}", value: "{aid}", "{aname}" } }
                                 }
                             }
                         }
