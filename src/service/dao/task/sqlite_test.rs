@@ -627,3 +627,74 @@ async fn test_search_tasks_short_keyword_like_fallback(pool: SqlitePool) {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].0.title, "写周报");
 }
+
+/// 默认对话（虚拟项目）哨兵：query 路径只返回游离任务。
+///
+/// 哨兵 `__default__` 是「默认对话 = 默认虚拟项目」的查询期别名，
+/// DAO 将其翻译成 `project_id IS NULL`，即尚未挂载任何项目的游离任务。
+/// 挂载了真实项目的任务必须被排除。
+#[sqlx::test]
+async fn test_query_default_conversation_sentinel_returns_unbound_only(pool: SqlitePool) {
+    let task_dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    // 游离任务（无项目）
+    let floating = create_test_task("游离任务", "user-123", "test-user");
+    let floating_id = floating.id.clone();
+    task_dao.insert(ctx.clone(), &floating).await.unwrap();
+
+    // 挂载真实项目的任务
+    let mut attached = create_test_task("项目内任务", "user-123", "test-user");
+    attached.project_id = Some("proj-1".to_string());
+    task_dao.insert(ctx.clone(), &attached).await.unwrap();
+
+    let result = task_dao
+        .query(
+            ctx,
+            crate::service::dao::task::TaskQuery {
+                project_id: Some(
+                    common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID.to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].id, floating_id);
+    assert!(result.items[0].project_id.is_none());
+    assert_eq!(result.total, 1);
+}
+
+/// 默认对话（虚拟项目）哨兵：search 路径同样只返回游离任务。
+#[sqlx::test]
+async fn test_search_default_conversation_sentinel_returns_unbound_only(pool: SqlitePool) {
+    let task_dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let floating = create_test_task("写周报-游离", "user-123", "test-user");
+    let floating_id = floating.id.clone();
+    task_dao.insert(ctx.clone(), &floating).await.unwrap();
+
+    let mut attached = create_test_task("写周报-项目", "user-123", "test-user");
+    attached.project_id = Some("proj-1".to_string());
+    task_dao.insert(ctx.clone(), &attached).await.unwrap();
+
+    // 2 字符关键词走 LIKE 兜底路径，两任务均命中关键词，靠哨兵过滤区分
+    let search = crate::service::dao::task::TaskSearch {
+        keyword: Some("周报".to_string()),
+        filters: crate::service::dao::task::TaskQuery {
+            project_id: Some(
+                common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID.to_string(),
+            ),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let results = task_dao.search_tasks(ctx, search).await.unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.id, floating_id);
+    assert!(results[0].0.project_id.is_none());
+}

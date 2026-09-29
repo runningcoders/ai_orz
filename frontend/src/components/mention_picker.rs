@@ -46,16 +46,17 @@ use dioxus::prelude::*;
 use crate::api::hr::{get_agent, query_agents, search_agents};
 use crate::api::organization::list_federation_agents;
 use crate::api::project::{
-    get_project, list_project_tasks, list_projects, list_tasks, search_projects, search_tasks,
+    get_project, list_project_tasks, list_projects, query_tasks, search_projects, search_tasks,
 };
 use crate::utils::mention::{
     MentionKind, MentionQuery, MentionRef, apply_mention_pick, detect_mention_query,
     format_mention_ref, remove_mention_token,
 };
+use crate::utils::message::request_scope;
 use common::api::{
     AgentListItem, AgentQueryRequest, GetAgentRequest, GetProjectRequest,
-    GetReceptionAgentResponse, ListProjectsRequest, ListTasksRequest, PaginationParams,
-    ProjectListItem, SearchAgentsRequest, SearchProjectsRequest, SearchTasksRequest, TaskListItem,
+    GetReceptionAgentResponse, ListProjectsRequest, PaginationParams, ProjectListItem,
+    SearchAgentsRequest, SearchProjectsRequest, SearchTasksRequest, TaskListItem, TaskQueryRequest,
 };
 
 /// 候选展示上限：单类型上限，同时是 search 路径的召回上限
@@ -192,18 +193,19 @@ impl MentionTab {
 /// 当前会话允许 @ 的类型
 ///
 /// - 项目会话：Agent + 任务 + 项目（Agent 双桶分层：项目内打头、未在项目内的打标
-///   缀后；项目可跨项目引用，当前项目置顶打标；任务仍只收项目内的）
-/// - 默认对话：Agent + 项目（以项目维度维护上下文：接待 Agent 置顶打「当前接待」；
-///   任务不进默认会话候选 —— 任务一律挂在项目下讨论，游离任务引导去项目里 @）
+///   缀后；项目可跨项目引用，当前项目置顶打标；任务只收项目内的）
+/// - 默认对话：Agent + 任务 + 项目（默认对话本身即「默认虚拟项目」，其任务域就是
+///   **游离任务**（`project_id IS NULL`）——这样才能直接把游离任务 @ 出来交给 Agent
+///   处理，并在需要时晋升为真实项目；接待 Agent 置顶打「当前接待」）
 ///
 /// 单一事实源：`MentionState` 拉候选与 Tab 渲染都走这里，避免两处口径漂移。
 pub fn mention_kinds_for(project_id: Option<&str>) -> Vec<MentionKind> {
     if project_id.is_some() {
-        // 项目会话：@ Agent 双桶分层（项目内 + 组织其余），且开放 @ 项目本身
+        // 项目会话：@ Agent 双桶分层（项目内 + 组织其余），任务收项目内的，且开放 @ 项目本身
         vec![MentionKind::Agent, MentionKind::Task, MentionKind::Project]
     } else {
-        // 默认对话：Agent 取组织全量（接待 Agent 置顶打标）+ 项目；不收任务
-        vec![MentionKind::Agent, MentionKind::Project]
+        // 默认对话：Agent 取组织全量（接待 Agent 置顶打标），任务收游离任务，同样开放 @ 项目
+        vec![MentionKind::Agent, MentionKind::Task, MentionKind::Project]
     }
 }
 
@@ -878,7 +880,10 @@ async fn search_org_agents(keyword: Option<&str>) -> Vec<MentionCandidate> {
 /// 只服务空关键词，非空关键词一律走 [`search_tasks_by_keyword`]。
 /// - 项目会话：`list_project_tasks(project_id)` 天然按项目收窄（返回该项目全量任务，
 ///   项目内任务量级可控）
-/// - 默认对话：`list_tasks` 不做作用域过滤，显式带 limit 避免默认无上限拉全表
+/// - 默认对话：走 `query_tasks` 并带
+///   [`DEFAULT_CONVERSATION_PROJECT_ID`](common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID)
+///   哨兵，后端翻译成 `project_id IS NULL` —— 只收**游离任务**（未挂载任何项目），
+///   与「默认对话 = 默认虚拟项目」的任务域口径一致
 async fn load_tasks(project_id: Option<&str>) -> Vec<MentionCandidate> {
     match project_id {
         Some(pid) => match list_project_tasks(pid).await {
@@ -891,13 +896,15 @@ async fn load_tasks(project_id: Option<&str>) -> Vec<MentionCandidate> {
             Err(_) => Vec::new(),
         },
         None => {
-            let req = ListTasksRequest {
+            let req = TaskQueryRequest {
+                project_id: request_scope(None),
                 pagination: PaginationParams {
                     limit: Some(CANDIDATE_LIMIT),
                     offset: None,
                 },
+                ..Default::default()
             };
-            match list_tasks(req).await {
+            match query_tasks(&req).await {
                 Ok(page) => page.items.into_iter().map(task_to_candidate).collect(),
                 Err(_) => Vec::new(),
             }
@@ -906,13 +913,16 @@ async fn load_tasks(project_id: Option<&str>) -> Vec<MentionCandidate> {
 }
 
 /// 任务候选（长关键词路径）：FTS5 + 向量语义混合搜索
+///
+/// `project_id` 走 [`request_scope`] 翻译：`None`（默认对话）→ 哨兵，后端据此只召回
+/// 游离任务；`Some(pid)`（项目会话）原样透传。
 async fn search_tasks_by_keyword(
     project_id: Option<&str>,
     keyword: Option<&str>,
 ) -> Vec<MentionCandidate> {
     let req = SearchTasksRequest {
         keyword: keyword.map(|s| s.to_string()),
-        project_id: project_id.map(|s| s.to_string()),
+        project_id: request_scope(project_id),
         pagination: PaginationParams {
             limit: Some(CANDIDATE_LIMIT),
             offset: None,

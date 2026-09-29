@@ -651,7 +651,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
     };
 
     // ===== @ 提及 =====
-    // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务+项目 / 默认对话 Agent+项目）。
+    // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务+项目 / 默认对话
+    // Agent+游离任务+项目——默认对话即默认虚拟项目，其任务域为未挂载项目的游离任务）。
     // 注意：@ 只是上下文补充，不改变消息路由——回应的仍是前台 Agent / 项目 owner。
     // 候选范围随 selected_project 变化、接待 Agent 异步到达后要补一次置顶打标，
     // 故都传 signal 而非快照值。
@@ -1087,15 +1088,12 @@ pub fn MessageChat(project: Option<String>) -> Element {
             .as_ref()
             .filter(|a| a.id == msg_clone.from_id)
             .map(|a| a.status);
-        // 「发给谁」：项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，
-        // Agent 之间也会互相说话 —— 头部拼出接收方（复用正文 @ 提及的 chip 写法，
-        // 同样的 @名 形态 + 同样的配色），一眼看清谁在跟谁聊。
-        // 默认对话是 1:1，收件人显然，不重复展示。
-        let receiver_html = if selected_project().is_some() {
-            directory().receiver_mention(&msg_clone)
-        } else {
-            None
-        };
+        // 「发给谁」：拼出接收方（复用正文 @ 提及的 chip 写法，同样的 @名 形态 +
+        // 同样的配色），一眼看清这条消息路由给谁。
+        // 项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，Agent 之间也会互相说话；
+        // 默认对话（默认虚拟项目）同样可能有明确收件人（前台 Agent / 被 @ 的游离任务），
+        // 故不再按模式门控 —— 收件人为空时 `receiver_mention` 自身返回 None，不渲染空 chip。
+        let receiver_html = directory().receiver_mention(&msg_clone);
         // 收发双方都不是当前用户 → 旁听消息，整体降透明度（hover 恢复）
         let bystander = !involves_user(&msg_clone, &auth.read().user_id);
         // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
@@ -1351,15 +1349,12 @@ pub fn MessageChat(project: Option<String>) -> Element {
             .as_ref()
             .filter(|a| a.id == msg_clone.from_id)
             .map(|a| a.status);
-        // 「发给谁」：项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，
-        // Agent 之间也会互相说话 —— 头部拼出接收方（复用正文 @ 提及的 chip 写法，
-        // 同样的 @名 形态 + 同样的配色），一眼看清谁在跟谁聊。
-        // 默认对话是 1:1，收件人显然，不重复展示。
-        let receiver_html = if selected_project().is_some() {
-            directory().receiver_mention(&msg_clone)
-        } else {
-            None
-        };
+        // 「发给谁」：拼出接收方（复用正文 @ 提及的 chip 写法，同样的 @名 形态 +
+        // 同样的配色），一眼看清这条消息路由给谁。
+        // 项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，Agent 之间也会互相说话；
+        // 默认对话（默认虚拟项目）同样可能有明确收件人（前台 Agent / 被 @ 的游离任务），
+        // 故不再按模式门控 —— 收件人为空时 `receiver_mention` 自身返回 None，不渲染空 chip。
+        let receiver_html = directory().receiver_mention(&msg_clone);
         // 收发双方都不是当前用户 → 旁听消息，整体降透明度（hover 恢复）
         let bystander = !involves_user(&msg_clone, &auth.read().user_id);
         // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；

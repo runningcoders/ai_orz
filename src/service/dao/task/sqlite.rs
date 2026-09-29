@@ -206,8 +206,7 @@ FROM tasks WHERE id = ? AND "status" != 0
             }
 
             if let Some(project_id) = &search.filters.project_id {
-                builder.push(" AND t.project_id = ");
-                builder.push_bind(project_id.clone());
+                push_project_filter(builder, "t.project_id", project_id);
             }
 
             if let Some(status_list) = &search.filters.status_in
@@ -511,9 +510,7 @@ fn push_query_filters<'args>(
             .push_bind(assignee_id.clone());
     }
     if let Some(project_id) = &query.project_id {
-        builder
-            .push(" AND project_id = ")
-            .push_bind(project_id.clone());
+        push_project_filter(builder, "project_id", project_id);
     }
     if let Some(status_list) = &query.status_in
         && !status_list.is_empty()
@@ -524,5 +521,29 @@ fn push_query_filters<'args>(
             separated.push_bind(*s as i32);
         }
         builder.push(")");
+    }
+}
+
+/// 推送 project_id 过滤条件
+///
+/// 「默认对话（虚拟项目）」在读侧用哨兵值
+/// [`DEFAULT_CONVERSATION_PROJECT_ID`](common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID)
+/// 表达，这里把它翻译成 `IS NULL` —— 默认对话下的任务即**游离任务**（尚未挂载任何项目）。
+///
+/// - 哨兵 → `col IS NULL`（只取游离任务）
+/// - 其它 → `col = ?`（某个真实项目）
+///
+/// `column` 由调用方给出：`query` / `count` 走裸表列名 `project_id`，
+/// `search_tasks` 走别名后的 `t.project_id`。
+fn push_project_filter<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    column: &str,
+    project_id: &str,
+) {
+    if common::constants::message::is_default_conversation(Some(project_id)) {
+        builder.push(format!(" AND {} IS NULL", column));
+    } else {
+        builder.push(format!(" AND {} = ", column));
+        builder.push_bind(project_id.to_string());
     }
 }

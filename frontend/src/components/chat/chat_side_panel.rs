@@ -2,9 +2,13 @@
 //!
 //! 沟通页面右侧可收起的信息面板，按对话模式动态组装 Tab：
 //! - 项目对话：总览 / 任务 / 产物 / Agent（项目内 Agent 列表）/ 工具
-//! - 默认对话：Agent（前台）/ 我（当前用户）/ 工具
+//! - 默认对话：Agent（前台）/ 任务（游离任务）/ 产物 / 工具
 //!
-//! 面板纯只读：数据加载复用现有项目/任务/产物/Agent/用户 API，
+//! 默认对话即「默认虚拟项目」：其任务域是**游离任务**（`project_id IS NULL`），
+//! 因此任务 Tab 直接复用项目模式的任务列表组件，只是数据源换成游离任务；
+//! 产物当前硬绑定真实项目（游离任务不可能有产物），故产物 Tab 先做空态占位。
+//!
+//! 面板纯只读：数据加载复用现有项目/任务/产物/Agent API，
 //! 创建与编辑操作仍在跳转各自详情页完成。
 
 use std::collections::HashMap;
@@ -14,8 +18,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 
 use crate::api::hr::get_agent;
-use crate::api::organization::get_current_user_info;
-use crate::api::project::{get_project, get_task, list_project_tasks};
+use crate::api::project::{get_project, get_task, list_project_tasks, query_tasks};
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
 use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
@@ -29,15 +32,16 @@ use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
+use crate::utils::message::request_scope;
 use crate::utils::time::now_ms;
 use crate::utils::{
-    avatar_initials, avatar_status_ring, format_file_size,
-    format_timestamp_opt as format_timestamp, priority_badge, progress_tone, project_status_badge,
-    project_status_text, tag_chip, task_status_badge, task_status_text,
+    avatar_status_ring, format_file_size, format_timestamp_opt as format_timestamp, priority_badge,
+    progress_tone, project_status_badge, project_status_text, tag_chip, task_status_badge,
+    task_status_text,
 };
 use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
-    GetTaskRequest, GetTaskResponse, TaskListItem, UserInfoResponse,
+    GetTaskRequest, GetTaskResponse, TaskListItem, TaskQueryRequest,
 };
 use common::enums::{ArtifactSourceType, AssigneeType};
 use common::models::{AgentStats, ModelCallStats};
@@ -193,6 +197,38 @@ pub fn ChatSidePanel(
         });
     };
 
+    // 加载默认对话（虚拟项目）的游离任务：`project_id IS NULL` 的任务
+    //
+    // 请求侧带哨兵值（见 `utils::message::request_scope`）——后端把哨兵翻译成
+    // `project_id IS NULL`，只返回未挂载任何项目的任务，与「默认对话 = 默认虚拟项目」
+    // 的任务域口径一致。代际守卫与 `do_load` 同源，避免与项目加载的过期结果互相覆盖。
+    let mut do_load_floating = move |debounce: bool| {
+        let my_gen = load_gen() + 1;
+        load_gen.set(my_gen);
+        loading.set(true);
+        spawn(async move {
+            if debounce {
+                gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
+                if load_gen() != my_gen {
+                    return;
+                }
+            }
+            let req = TaskQueryRequest {
+                project_id: request_scope(None),
+                ..Default::default()
+            };
+            let tasks_res = query_tasks(&req).await;
+            if load_gen() != my_gen {
+                return;
+            }
+            match tasks_res {
+                Ok(page) => tasks.set(page.items),
+                Err(e) => toast.error(format!("加载任务列表失败: {}", e)),
+            }
+            loading.set(false);
+        });
+    };
+
     // 手动刷新专用副本与模式判断（调用 Signal 读出当前值，渲染时同步订阅）
     let project_id_value = project_id();
     let is_project_mode = project_id_value.is_some();
@@ -221,26 +257,32 @@ pub fn ChatSidePanel(
                 Some(id) => do_load(id, false),
                 None => {
                     project.set(None);
-                    tasks.set(Vec::new());
+                    // 默认对话 = 默认虚拟项目：任务域是游离任务，同步拉取
+                    do_load_floating(false);
                 }
             }
-        } else if tick_changed && let Some(id) = pid {
-            do_load(id, true);
+        } else if tick_changed {
+            // SSE 消息触发：项目模式重拉项目数据，默认对话重拉游离任务
+            match pid {
+                Some(id) => do_load(id, true),
+                None => do_load_floating(true),
+            }
         }
     });
 
-    // 手动刷新：项目模式重拉项目数据，两种模式均同步刷新工具调用 Tab
+    // 手动刷新：项目模式重拉项目数据，默认对话重拉游离任务；两种模式均同步刷新工具调用 Tab
     let manual_refresh = move |_| {
         manual_tick.set(manual_tick() + 1);
-        if let Some(id) = pid_for_refresh.clone() {
-            do_load(id, false);
+        match pid_for_refresh.clone() {
+            Some(id) => do_load(id, false),
+            None => do_load_floating(false),
         }
     };
 
     let tab_labels: Vec<&'static str> = if is_project_mode {
         vec!["总览", "任务", "产物", "Agent", "工具"]
     } else {
-        vec!["Agent", "我", "工具"]
+        vec!["Agent", "任务", "产物", "工具"]
     };
 
     // 工具调用 Tab 的刷新驱动：SSE tick + 手动刷新计数
@@ -315,8 +357,18 @@ pub fn ChatSidePanel(
                 },
                 None => empty_hint("暂无前台 Agent"),
             },
-            1 => rsx! { UserInfoTab {} },
-            2 => rsx! {
+            // 默认对话 = 默认虚拟项目：任务 Tab 展示游离任务，复用项目模式的任务列表组件
+            1 => tasks_tab(
+                &tasks_list,
+                expanded_task_id,
+                task_cache,
+                loading_task_id,
+                graph_zoom_open,
+                toast,
+            ),
+            // 产物硬绑定真实项目，游离任务不可能有产物 → 先做空态占位
+            2 => empty_hint("暂无产物"),
+            3 => rsx! {
                 ToolCallsTab {
                     project_id: None,
                     agent_id: reception_agent_id.clone(),
@@ -974,59 +1026,6 @@ pub(crate) fn AgentInfoTab(
                 class: "btn hud-btn btn-ghost btn-xs",
                 to: crate::pages::Route::HrAgentDetail { id: aid },
                 "在详情页打开 →"
-            }
-        }
-    }
-}
-
-/// Tab 我：当前用户信息（只读）+ 跳转设置页
-#[component]
-fn UserInfoTab() -> Element {
-    let mut user = use_signal(|| None::<UserInfoResponse>);
-    use_effect(move || {
-        spawn(async move {
-            if let Ok(resp) = get_current_user_info().await {
-                user.set(Some(resp.data));
-            }
-        });
-    });
-    let Some(u) = user().clone() else {
-        return loading_placeholder();
-    };
-    let display = u
-        .display_name
-        .clone()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| u.username.clone());
-    let email = u.email.clone().filter(|s| !s.is_empty());
-    let enabled = u.status == 1;
-    rsx! {
-        div { class: "space-y-4",
-            div { class: "flex items-center gap-2",
-                div { class: "w-10 h-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold",
-                    "{avatar_initials(&display)}"
-                }
-                div { class: "flex-1 min-w-0",
-                    div { class: "font-semibold truncate", "{display}" }
-                    div { class: "text-xs text-base-content/60", "@{u.username}" }
-                }
-            }
-            div { class: "flex flex-wrap gap-1 items-center",
-                span { class: "badge orz-tag badge-sm", "{u.role_name}" }
-                span { class: if enabled { "badge hud-badge badge-sm badge-success" } else { "badge hud-badge badge-sm badge-error" },
-                    if enabled { "已启用" } else { "已禁用" }
-                }
-            }
-            if let Some(email) = email {
-                div { class: "text-sm", "📧 {email}" }
-            }
-            div { class: "text-xs text-base-content/60",
-                "主题等偏好设置请前往设置页调整"
-            }
-            Link {
-                class: "btn hud-btn btn-ghost btn-xs",
-                to: crate::pages::Route::Settings {},
-                "打开设置 →"
             }
         }
     }

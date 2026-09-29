@@ -98,7 +98,13 @@ impl TaskVectorDao for TaskVectorDaoImpl {
 pub(crate) fn translate_filters(query: &TaskQuery) -> Option<VectorFilter> {
     let mut conditions: Vec<VectorFilter> = Vec::new();
 
-    if let Some(project_id) = &query.project_id {
+    // 「默认对话（虚拟项目）」哨兵无法用向量谓词表达（payload 无 IS NULL 语义）：
+    // 跳过下推，让向量召回正常返回候选，正确性由 DAL 按 ID 回表兜底
+    // （dal/task.rs 用 `TaskQuery { ids, ..search.filters.clone() }` 回表，query 侧
+    // 已把哨兵翻译成 `project_id IS NULL`，非游离命中会被丢弃）。
+    if let Some(project_id) = &query.project_id
+        && !common::constants::message::is_default_conversation(Some(project_id))
+    {
         conditions.push(VectorFilter::Eq(
             VectorField::ProjectId,
             FilterValue::Str(project_id.clone()),
@@ -184,6 +190,16 @@ mod translate_tests {
             VectorFilter::All(fs) => assert_eq!(fs.len(), 2),
             other => panic!("expect All, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_translate_default_conversation_sentinel_skipped() {
+        // 默认对话哨兵：向量谓词无法表达 IS NULL，跳过下推（靠 DAL 回表兜底）
+        let q = TaskQuery {
+            project_id: Some(common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID.into()),
+            ..Default::default()
+        };
+        assert!(translate_filters(&q).is_none());
     }
 
     #[test]
