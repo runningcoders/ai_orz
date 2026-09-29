@@ -186,6 +186,12 @@ pub struct UpdateMemoryParams {
     pub status: Option<String>,
     /// 新增：更新知识节点的 tags（与 tags 字段区分，tags 用于 ShortTerm，node_tags 用于 KnowledgeNode）
     pub node_tags: Option<Vec<String>>,
+    /// 新建关系边（仅知识节点有效；短期记忆传入报 400）。
+    ///
+    /// 给**既有节点**补边的唯一路径：沉淀时发现新经验与已有节点相关，
+    /// 用本参数落成显式关系边。正文里提及 / 引用其他节点不算建边——
+    /// 图谱遍历只认关系表，正文引用对 traversal 不可达。
+    pub relations: Option<Vec<KnowledgeRelationParam>>,
 }
 
 /// 更新记忆响应。

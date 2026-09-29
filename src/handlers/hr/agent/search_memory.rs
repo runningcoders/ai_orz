@@ -837,6 +837,7 @@ mod tests {
                 tags: None,
                 status: Some("settled".to_string()),
                 node_tags: None,
+                relations: None,
             },
         )
         .await
