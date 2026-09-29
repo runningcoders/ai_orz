@@ -92,8 +92,10 @@ enum BuiltinConfigForm {
 }
 
 /// 按工具名匹配内置工具结构化表单；不匹配（MCP / Http / 未知 Builtin）→ None 回退只读 JSON
-fn builtin_config_form(name: &str) -> Option<BuiltinConfigForm> {
-    match name {
+fn builtin_config_form(id: &str) -> Option<BuiltinConfigForm> {
+    // 按工具 id 匹配（非显示名 name）：内置工具入库时 name 为「GitHub CLI」等
+    // 人类可读名，详情页必须用 t.id（"gh_cli" 等）匹配才能命中结构化表单分支。
+    match id {
         "browser" => Some(BuiltinConfigForm::Browser),
         "gh_cli" => Some(BuiltinConfigForm::GhCli),
         "lark_cli" => Some(BuiltinConfigForm::LarkCli),
@@ -344,6 +346,9 @@ pub fn FinanceToolDetail(id: String) -> Element {
     // 工具配置编辑状态（Builtin 结构化字段；文本输入，提交时统一解析）
     let mut config_form = use_signal(BuiltinConfigFormState::default);
     let mut config_saving = use_signal(|| false);
+    // 用户自建工具（HTTP / Shell）config 文本编辑状态
+    let mut custom_config_text = use_signal(|| "{}".to_string());
+    let mut custom_config_saving = use_signal(|| false);
     // 运行时就绪（详情响应无此字段，经 query_tools 与列表 badge 同源探测）
     let runtime_ready = use_resource(move || {
         let id = rid();
@@ -367,6 +372,15 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 debug_args.set(generate_skeleton_from_schema(schema));
             }
             config_form.set(builtin_form_from_config(tool.config.as_ref()));
+            // 用户自建工具（HTTP / Shell）：config 以美化 JSON 文本初始化编辑器
+            if matches!(tool.protocol, ToolProtocol::Http | ToolProtocol::Shell) {
+                let pretty = tool
+                    .config
+                    .as_ref()
+                    .map(|c| serde_json::to_string_pretty(c).unwrap_or_else(|_| "{}".to_string()))
+                    .unwrap_or_else(|| "{}".to_string());
+                custom_config_text.set(pretty);
+            }
         }
     });
 
@@ -500,13 +514,16 @@ pub fn FinanceToolDetail(id: String) -> Element {
                     }
                 }
 
-                // ===== 工具配置卡片（Builtin 按工厂名结构化编辑；MCP/Http/未匹配只读 JSON）=====
-                if builtin_config_form(&t.name).is_some() || t.has_config {
+                // ===== 工具配置卡片（Builtin 结构化编辑；HTTP/Shell 可编辑 JSON；MCP/其它只读）=====
+                if builtin_config_form(&t.id).is_some()
+                    || t.has_config
+                    || matches!(t.protocol, ToolProtocol::Http | ToolProtocol::Shell)
+                {
                     HudPanel {
                         title: "工具配置".to_string(),
                         eyebrow: "CONFIG".to_string(),
                         div { class: "card-body",
-                            if let Some(layout) = builtin_config_form(&t.name) {
+                            if let Some(layout) = builtin_config_form(&t.id) {
                                 // —— Builtin 结构化表单（D28：CLI 命令与行为参数）——
                                 if layout == BuiltinConfigForm::Browser {
                                     div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
@@ -691,8 +708,67 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                         }
                                     }
                                 }
+                            } else if matches!(t.protocol, ToolProtocol::Http | ToolProtocol::Shell) {
+                                // —— 用户自建工具（HTTP / Shell）：config 可编辑（JSON 文本）——
+                                textarea {
+                                    class: "textarea textarea-bordered hud-input w-full font-mono text-sm h-64",
+                                    value: "{custom_config_text()}",
+                                    oninput: move |e| custom_config_text.set(e.value()),
+                                    placeholder: "{{}}",
+                                }
+                                p { class: "text-xs opacity-60 mt-2",
+                                    "编辑后点击「保存配置」提交；JSON 须合法，服务端会校验协议相关字段（如 HTTP 的 url / method）。MCP 工具配置在其 Server 管理页维护，此处只读。"
+                                }
+                                div { class: "flex items-center gap-3 mt-3",
+                                    button {
+                                        class: "btn hud-btn btn-primary btn-sm",
+                                        disabled: custom_config_saving(),
+                                        onclick: {
+                                            let id = t.id.clone();
+                                            move |_| {
+                                                let id = id.clone();
+                                                let text = custom_config_text();
+                                                let parsed = match serde_json::from_str::<serde_json::Value>(&text) {
+                                                    Ok(v) => v,
+                                                    Err(e) => {
+                                                        toast.error(format!("JSON 解析失败: {}", e));
+                                                        return;
+                                                    }
+                                                };
+                                                custom_config_saving.set(true);
+                                                spawn(async move {
+                                                    match update_tool(UpdateToolRequest {
+                                                        id: id.clone(),
+                                                        config: Some(parsed),
+                                                        ..Default::default()
+                                                    }).await {
+                                                        Ok(_) => {
+                                                            toast.success("工具配置已保存");
+                                                            match get_tool(build_tool_stats_request(id, stats_range())).await {
+                                                                Ok(tool) => {
+                                                                    let pretty = tool.config.as_ref().map(|c| serde_json::to_string_pretty(c).unwrap_or_else(|_| "{}".to_string())).unwrap_or_else(|| "{}".to_string());
+                                                                    custom_config_text.set(pretty);
+                                                                    tool_res.set(Some(Ok(tool)));
+                                                                }
+                                                                Err(e) => toast.error(&e),
+                                                            }
+                                                        }
+                                                        Err(e) => toast.error(&e),
+                                                    }
+                                                    custom_config_saving.set(false);
+                                                });
+                                            }
+                                        },
+                                        if custom_config_saving() {
+                                            Loading { size: "sm" }
+                                            "保存中..."
+                                        } else {
+                                            "保存配置"
+                                        }
+                                    }
+                                }
                             } else {
-                                // —— MCP / Http / 未匹配内置工具：只读 JSON（MCP server 配置在 MCP 管理页维护）——
+                                // —— MCP / 未匹配内置工具：只读 JSON（MCP server 配置在 MCP 管理页维护）——
                                 if let Some(ref config) = t.config {
                                     pre { class: "bg-base-200 rounded-lg p-3 text-xs overflow-x-auto max-h-96 font-mono",
                                         {serde_json::to_string_pretty(config).unwrap_or_default()}
@@ -875,7 +951,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_config_form_matches_factory_names() {
+    fn builtin_config_form_matches_factory_ids_not_display_names() {
+        // 按工具 id 匹配（非显示名）：详情页据此渲染结构化配置表单，
+        // 调用方必须传 t.id（"gh_cli" 等），不能用 t.name（"GitHub CLI" 等）。
         assert_eq!(
             builtin_config_form("browser"),
             Some(BuiltinConfigForm::Browser)
@@ -896,6 +974,12 @@ mod tests {
             builtin_config_form("shell_exec"),
             Some(BuiltinConfigForm::ShellExec)
         );
+        // 显示名（入库 name 字段）不匹配 —— 这是历史 bug 的根因，必须恒为 None
+        assert_eq!(builtin_config_form("GitHub CLI"), None);
+        assert_eq!(builtin_config_form("Browser Automation"), None);
+        assert_eq!(builtin_config_form("Feishu/Lark CLI"), None);
+        assert_eq!(builtin_config_form("Search Web (Tavily)"), None);
+        assert_eq!(builtin_config_form("Execute Shell Command"), None);
         // MCP / Http / 未知内置工具名 → None（回退只读 JSON）
         assert_eq!(builtin_config_form("mcp_tool"), None);
         assert_eq!(builtin_config_form("http_tool"), None);
