@@ -8,7 +8,7 @@ use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, get_project, list_projects, query_projects};
 use crate::components::avatar_bubble::{AvatarBubble, AvatarTone, BubbleAlign};
-use crate::components::chat::ChatSidePanel;
+use crate::components::chat::{CancelThinkingButton, CancelThinkingStyle, ChatSidePanel};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::mention_picker::{
     MentionCandidate, MentionPickedBar, MentionPicker, MentionState, MentionTab, mention_kinds_for,
@@ -985,6 +985,15 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 取消回复（引用条 × 按钮）
     let cancel_reply = move |_| reply_target.set(None);
 
+    // 停止思考成功后的乐观回写：runtime_state 是 3s 周期轮询的，不立刻归零的话
+    // 按钮要等最多一拍才消失，用户会以为没点中而连点。顺带清掉「等待回复」标记 ——
+    // Agent 已被叫停，这一轮不会再有回复送达。
+    // EventHandler 是 Copy，下面两个对话分支（项目 / 默认）可各自传一份。
+    let on_thinking_cancelled = EventHandler::new(move |_: ()| {
+        agent_state.set(0);
+        is_typing.set(false);
+    });
+
     let chat_content = if let Some(project) = current_project {
         let project_name = project.name.clone();
         // 状态气泡展示名：项目 owner agent 的目录名，解析不到兜底「Agent」
@@ -1199,6 +1208,18 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                             }
                                         }
                                         span { class: "text-sm", "{status}" }
+                                        // Busy 时给一个就地出口：停住这个正在转的脑子，不必跑去 Agent 详情页。
+                                        // 仅 Busy(2) 显示 —— Resting(1) 时气泡也出现（「正在休息…」），
+                                        // 但取消思考对休息态无意义，按钮不能跟着冒出来。
+                                        if agent_state() == 2 {
+                                            if let Some(aid) = target_agent_id() {
+                                                CancelThinkingButton {
+                                                    agent_id: aid,
+                                                    style: CancelThinkingStyle::Inline,
+                                                    on_cancelled: on_thinking_cancelled,
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1238,6 +1259,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 agent_state,
                 reply_preview.clone(),
                 cancel_reply,
+                target_agent_id(),
+                on_thinking_cancelled,
             )}
         }
     } else {
@@ -1460,6 +1483,18 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                             }
                                         }
                                         span { class: "text-sm", "{status}" }
+                                        // Busy 时给一个就地出口：停住这个正在转的脑子，不必跑去 Agent 详情页。
+                                        // 仅 Busy(2) 显示 —— Resting(1) 时气泡也出现（「正在休息…」），
+                                        // 但取消思考对休息态无意义，按钮不能跟着冒出来。
+                                        if agent_state() == 2 {
+                                            if let Some(aid) = target_agent_id() {
+                                                CancelThinkingButton {
+                                                    agent_id: aid,
+                                                    style: CancelThinkingStyle::Inline,
+                                                    on_cancelled: on_thinking_cancelled,
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1499,6 +1534,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 agent_state,
                 reply_preview.clone(),
                 cancel_reply,
+                target_agent_id(),
+                on_thinking_cancelled,
             )}
         }
     };
@@ -1874,6 +1911,10 @@ fn chat_input_area(
     agent_state: Signal<i32>,
     reply_preview: Option<(String, String)>,
     cancel_reply: impl FnMut(dioxus::events::MouseEvent) + 'static,
+    // 当前会话目标 Agent（项目 owner / 前台 Agent）：Busy 时发送键位让给「停止思考」
+    cancel_agent_id: Option<String>,
+    // 取消思考成功后的乐观回写（归零 runtime_state + 清「等待回复」标记）
+    on_cancelled: EventHandler<()>,
 ) -> Element {
     // 鼠标点选候选：先由组件对齐高亮，这里直接 confirm 即可
     let mut input_text_pick = input_text;
@@ -2122,15 +2163,28 @@ fn chat_input_area(
                         }
                     },
                 }
-                button {
-                    class: "btn hud-btn btn-primary",
-                    onclick: move |_| handle_send(()),
-                    disabled: agent_state() != 0
-                        || (input_text().trim().is_empty() && pending_attachments().is_empty()),
-                    if agent_state() != 0 {
-                        "处理中"
-                    } else {
-                        "发送"
+                // Busy 时发送键位让给「停止思考」：此刻用户多半正是想发下一句却发现发不出去，
+                // 这个位置就是他正在找的出口（主流对话产品同款肌肉记忆）。
+                // Resting(1) 仍沿用原「处理中」禁用态 —— 取消思考对休息态无意义。
+                if agent_state() == 2 {
+                    if let Some(aid) = cancel_agent_id {
+                        CancelThinkingButton {
+                            agent_id: aid,
+                            style: CancelThinkingStyle::Block,
+                            on_cancelled,
+                        }
+                    }
+                } else {
+                    button {
+                        class: "btn hud-btn btn-primary",
+                        onclick: move |_| handle_send(()),
+                        disabled: agent_state() != 0
+                            || (input_text().trim().is_empty() && pending_attachments().is_empty()),
+                        if agent_state() != 0 {
+                            "处理中"
+                        } else {
+                            "发送"
+                        }
                     }
                 }
             }
