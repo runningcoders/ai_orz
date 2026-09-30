@@ -1023,6 +1023,97 @@ async fn test_producer_on_failed_keeps_status_when_discarded(pool: SqlitePool) {
     );
 }
 
+/// **撤回终态**：`on_consumed` 不得把已 `Recalled` 的消息抹成 `Processed`
+///
+/// 撤回之后事件仍会走完队列（Phase 1 不动物理队列）：出队 → 消费者守卫跳过 → ack →
+/// 框架回调 `on_consumed`。若这里覆盖，撤回痕迹消失（前端徽章退回「已处理」）。
+#[sqlx::test]
+async fn test_producer_on_consumed_keeps_recalled(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Recalled).await;
+
+    dal.on_consumed(&ctx, &envelope(&message_id)).await.unwrap();
+
+    let found = dal
+        .find_by_id_with_recalled(ctx, &message_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        found.po.status,
+        MessageStatus::Recalled,
+        "收尾写入不得覆盖撤回终态"
+    );
+}
+
+/// **撤回终态**：`on_failed(Retry)` 不得把已 `Recalled` 的消息写回 `Pending`
+///
+/// 否则重投 / 启动恢复会把它复活 —— 撤回被静默撤销。
+#[sqlx::test]
+async fn test_producer_on_failed_keeps_recalled_when_retried(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Recalled).await;
+
+    dal.on_failed(
+        &ctx,
+        &envelope(&message_id),
+        "db timeout",
+        RetryDecision::Retry,
+        1,
+    )
+    .await
+    .unwrap();
+
+    let found = dal
+        .find_by_id_with_recalled(ctx, &message_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        found.po.status,
+        MessageStatus::Recalled,
+        "重投收尾不得撤销撤回"
+    );
+}
+
+/// 读路径分离：`find_by_id` 过滤撤回态（默认软删除语义），
+/// `find_by_id_with_recalled` 必须能读到它
+///
+/// 两条依赖它的链路：撤回幂等校验（重复撤回要回 `already_recalled` 而非 404）、
+/// 消费入口守卫（撤回消息出队时必须识别为「已撤回」并 ack 跳过，而不是当作
+/// 「消息不存在」上抛触发 8 次重投）。
+#[sqlx::test]
+async fn test_find_by_id_with_recalled_sees_recalled_message(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Recalled).await;
+
+    assert!(
+        dal.find_by_id(ctx.clone(), &message_id)
+            .await
+            .unwrap()
+            .is_none(),
+        "默认读路径必须过滤撤回态"
+    );
+
+    let found = dal
+        .find_by_id_with_recalled(ctx, &message_id)
+        .await
+        .unwrap()
+        .expect("不过滤撤回态的读路径必须能读到撤回的消息");
+    assert_eq!(found.po.status, MessageStatus::Recalled);
+    assert_eq!(found.po.id, message_id);
+}
+
+/// 非撤回态在两条读路径上都可见（新读路径不能退化成「只读撤回态」）
+#[sqlx::test]
+async fn test_find_by_id_with_recalled_sees_pending_message(pool: SqlitePool) {
+    let (dal, ctx, message_id) = seed_message(pool, MessageStatus::Pending).await;
+
+    let found = dal
+        .find_by_id_with_recalled(ctx, &message_id)
+        .await
+        .unwrap()
+        .expect("普通消息也必须能读到");
+    assert_eq!(found.po.status, MessageStatus::Pending);
+}
+
 /// **幂等**：同一事件回调两次结果一致（框架在 `queue.ack` 前回调，崩溃会重投）
 #[sqlx::test]
 async fn test_producer_on_consumed_is_idempotent(pool: SqlitePool) {

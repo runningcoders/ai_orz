@@ -169,6 +169,8 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
         // 收件人「角色 ⟷ ID」门闩依赖 user/agent DAL
         crate::service::dal::user::dal(),
         crate::service::dal::agent::dal(),
+        // 撤回权限 gate（归属用户 / Owner Agent 判据）依赖 project DAL
+        crate::service::dal::project::dal(),
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx)

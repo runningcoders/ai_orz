@@ -153,6 +153,21 @@ pub trait MessageDal: Send + Sync {
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>>;
 
+    /// 按 ID 读取消息，**不过滤撤回态**（`Recalled` 也能读到）
+    ///
+    /// [`Self::find_by_id`] 继承了 `MessageQuery` 的软删除默认过滤（`status != 0`，
+    /// 见 `dao/message/sqlite.rs::push_query_filters`），撤回态对业务读路径不可见 —— 这是
+    /// 「撤回=逻辑作废」的正常语义。但两条链路必须能看见撤回态：
+    /// - **撤回幂等校验**：已撤回的消息要回 `already_recalled` 而不是 404；
+    /// - **消费入口守卫**：撤回的消息事件仍在 AOP 队列里，出队时 `find_by_id` 返回
+    ///   `None`，若把它当「消息不存在」上抛，框架会 nack 重投 8 次 —— 撤回反而把该
+    ///   Agent 的队列堵死（与撤回的初衷完全相反）。
+    async fn find_by_id_with_recalled(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<Message>>;
+
     /// 按外部渠道键反查内部消息 ID（未留痕返回 None）
     ///
     /// 入站幂等吸收用：external_key 已存在 → 该外部消息已落库（游标回退 / 服务端
@@ -405,6 +420,34 @@ impl MessageDal for MessageDalImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>> {
         let opt = self.message_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Message::from_po))
+    }
+
+    /// 见 trait 文档：显式给出全部状态，**绕过** `status != 0` 的软删除默认过滤
+    async fn find_by_id_with_recalled(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<Message>> {
+        let rows = self
+            .message_dao
+            .query(
+                ctx,
+                MessageQuery {
+                    id: Some(id.to_string()),
+                    // 显式列出全部状态 ⇒ push_query_filters 不再叠加 `status != 0`
+                    status_in: Some(vec![
+                        MessageStatus::Recalled,
+                        MessageStatus::Pending,
+                        MessageStatus::Processing,
+                        MessageStatus::Processed,
+                        MessageStatus::Failed,
+                    ]),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(rows.into_iter().next().map(Message::from_po))
     }
 
     async fn find_id_by_external_key(
@@ -770,6 +813,36 @@ impl MessageDalImpl {
     pub(crate) fn message_id_of(event: &serde_json::Value) -> Option<&str> {
         event.get("event_id").and_then(|v| v.as_str())
     }
+
+    /// 撤回终态守卫：`Recalled` 是**终态**，两条收尾写入都不得覆盖它
+    ///
+    /// 撤回（`MessageStatus::Recalled`）与「消费完成」是两种互斥的结局：
+    /// 消息被撤回后，它的事件仍会在队列里走完（Phase 1 不动物理队列），
+    /// 出队时被消费者跳过 → `ack` → 框架回调 `on_consumed`。若不加守卫，
+    /// `on_consumed` 会把 `Recalled` 抹成 `Processed`，**撤回痕迹消失**
+    /// （前端徽章退回「已处理」）；`on_failed` 的 `Retry` 分支同理会把
+    /// `Recalled` 写回 `Pending`，等于「撤回被重投撤销」。
+    ///
+    /// 读-判-写之间理论上存在与「撤回写入」交错的窗口，但撤回是低频人工/工具动作，
+    /// 且窗口内两侧都只会把状态推向各自的终态，实践中不构成问题；若要严格消除，
+    /// 需在 DAO 层加 `WHERE status != 0` 的条件更新（本期不做，YAGNI）。
+    async fn is_recalled(&self, ctx: &RequestContext, message_id: &str) -> Result<bool> {
+        Ok(self
+            .message_dao
+            .query(
+                ctx.clone(),
+                MessageQuery {
+                    id: Some(message_id.to_string()),
+                    status_in: Some(vec![MessageStatus::Recalled]),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .into_iter()
+            .next()
+            .is_some())
+    }
 }
 
 /// `message.created` 的归属：业务收尾由**拥有这份状态的那个对象自身**完成
@@ -802,6 +875,17 @@ impl Producer for MessageDalImpl {
             return Ok(());
         };
 
+        // 撤回是终态：不得被「消费完成」覆盖（否则撤回痕迹消失，见 `is_recalled`）
+        if self.is_recalled(ctx, message_id).await? {
+            log_info!(
+                ctx,
+                "message_recalled",
+                message_id = %message_id,
+                "消息已撤回，跳过 on_consumed 的 Processed 写入"
+            );
+            return Ok(());
+        }
+
         self.update_status(ctx.clone(), message_id, MessageStatus::Processed)
             .await
     }
@@ -828,6 +912,17 @@ impl Producer for MessageDalImpl {
         }
 
         if let Some(message_id) = Self::message_id_of(event) {
+            // 撤回是终态：`Retry` 分支不得把已 `Recalled` 的消息写回 `Pending`
+            // （否则下一次启动恢复 / 重投会把它复活，撤回被静默撤销，见 `is_recalled`）
+            if self.is_recalled(ctx, message_id).await? {
+                log_info!(
+                    ctx,
+                    "message_recalled",
+                    message_id = %message_id,
+                    "消息已撤回，跳过 on_failed 的 Pending 写回"
+                );
+                return Ok(());
+            }
             self.update_status(ctx.clone(), message_id, MessageStatus::Pending)
                 .await?;
         }

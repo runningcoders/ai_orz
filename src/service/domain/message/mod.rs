@@ -11,11 +11,14 @@ pub mod builder;
 pub mod delivery;
 pub mod inbound;
 pub mod management;
+pub mod recall;
 
 #[cfg(test)]
 mod delivery_test;
 #[cfg(test)]
 mod management_test;
+#[cfg(test)]
+mod recall_test;
 
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
@@ -26,11 +29,13 @@ use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
 use crate::service::dal::message_push::MessagePushDal;
+use crate::service::dal::project::ProjectDal;
 use crate::service::dal::user::UserDal;
 use crate::service::dao::message::{MessageQuery, MessageSearch};
 use common::enums::{MessageRole, MessageStatus};
 use common::error::Result;
 pub use inbound::{InboundSource, MessageInboundAdapt};
+pub use recall::RecallOutcome;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -55,6 +60,7 @@ pub fn new(
     email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
     user_dal: Arc<dyn UserDal + Send + Sync>,
     agent_dal: Arc<dyn AgentDal>,
+    project_dal: Arc<dyn ProjectDal + Send + Sync>,
 ) -> Arc<dyn MessageDomain> {
     let domain = MessageDomainImpl::new(
         message_dal,
@@ -66,6 +72,7 @@ pub fn new(
         email_dal,
         user_dal,
         agent_dal,
+        project_dal,
     );
     Arc::new(domain)
 }
@@ -82,6 +89,7 @@ pub fn init() {
         crate::service::dal::email::dal(),
         crate::service::dal::user::dal(),
         crate::service::dal::agent::dal(),
+        crate::service::dal::project::dal(),
     );
     let _ = MESSAGE_DOMAIN.set(Arc::new(message_domain));
 }
@@ -107,6 +115,8 @@ struct MessageDomainImpl {
     user_dal: Arc<dyn UserDal + Send + Sync>,
     /// Agent DAL：收件人「角色 ⟷ ID」一致性门闩用（`to_agent_id` 必须不是用户）
     agent_dal: Arc<dyn AgentDal>,
+    /// 项目 DAL：撤回权限 gate 用（判据「归属用户 / Owner Agent」需读项目）
+    project_dal: Arc<dyn ProjectDal + Send + Sync>,
 }
 
 impl MessageDomainImpl {
@@ -122,6 +132,7 @@ impl MessageDomainImpl {
         email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
         user_dal: Arc<dyn UserDal + Send + Sync>,
         agent_dal: Arc<dyn AgentDal>,
+        project_dal: Arc<dyn ProjectDal + Send + Sync>,
     ) -> Self {
         Self {
             message_dal,
@@ -133,6 +144,7 @@ impl MessageDomainImpl {
             email_dal,
             user_dal,
             agent_dal,
+            project_dal,
         }
     }
 }
@@ -158,6 +170,15 @@ impl MessageDomain for MessageDomainImpl {
         self.message_dal
             .has_pending_message_for_agent(ctx, agent_id, message_type)
             .await
+    }
+
+    async fn recall_message(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+        reason: Option<&str>,
+    ) -> Result<RecallOutcome> {
+        self.recall_message_impl(ctx, message_id, reason).await
     }
 }
 
@@ -361,6 +382,23 @@ pub trait MessageDomain: Send + Sync {
         agent_id: &str,
         message_type: common::enums::message::MessageType,
     ) -> Result<bool>;
+
+    /// 撤回一条消息（权限 gate + 状态 gate + 在飞转取消）
+    ///
+    /// 单点入口：REST handler 与神经工具 `recall_message` 共用同一实现
+    /// （权限判据 / 状态判据只写一遍）。
+    ///
+    /// - 未处理（`Pending`）→ 标 `Recalled`；其事件仍在 AOP 队列，出队时被消费者守卫跳过；
+    /// - 正在处理（in-flight，以 `AgentRuntimeStateManager` 为准）→ 发取消信号 + 标 `Recalled`；
+    /// - 已撤回 / 已处理 / 已失败 → 幂等返回，**不报 error**（见 [`RecallOutcome`]）。
+    ///
+    /// `reason` 仅用于审计日志，不落库。
+    async fn recall_message(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+        reason: Option<&str>,
+    ) -> Result<RecallOutcome>;
 }
 
 /// 消息投递 trait

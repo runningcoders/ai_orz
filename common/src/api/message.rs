@@ -216,6 +216,43 @@ pub struct ToolCallMessagePayload {
     pub error_message: Option<String>,
 }
 
+// ==================== 消息撤回 ====================
+
+/// 撤回消息请求（POST body；REST 与神经工具 `recall_message` 共用同一个 handler）
+///
+/// 语义边界（与工具描述同源，避免模型误承诺）：
+/// - 只对**未处理（`Pending`）**的消息有效；正在处理（in-flight）的消息会**尽力取消**
+///   （轮次边界生效，不保证立即停止当前 LLM 调用）。
+/// - 已处理 / 已失败的消息撤回是 **no-op**（`outcome = not_recallable`，不算错误）。
+/// - 撤回是「阻止后续消费」，**不是时间倒流**：不消除该消息对已读上下文的影响，且不可撤销。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct RecallMessageRequest {
+    /// 目标消息 ID
+    pub message_id: String,
+    /// 撤回原因（可选，仅用于审计日志，不落库）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// 撤回消息响应
+///
+/// 幂等语义统一放在 `outcome` **字段**里，不靠错误码区分（撤回已/不可撤回的消息不算失败）：
+/// - `recalled`：本次成功撤回（未处理 → 标撤回；在飞 → 已发出取消信号）
+/// - `already_recalled`：此前已撤回（幂等成功，不报 error）
+/// - `not_recallable`：消息已处理 / 已失败，撤回无意义（no-op，不报 error）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecallMessageResponse {
+    /// 本次是否产生了实际效果（`outcome = recalled` 时为 true；其余为 false 但请求仍算成功）
+    pub success: bool,
+    /// 结果码：`recalled` / `already_recalled` / `not_recallable`
+    pub outcome: String,
+    /// 人类可读说明（会原样回灌给模型，须点名具体原因）
+    pub message: String,
+    /// 被取消的在飞 Agent ID（仅「撤回正在处理的消息」时有值）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancelled_agent_id: Option<String>,
+}
+
 // ==================== 任务分配消息结构 ====================
 
 /// 任务分配消息内容

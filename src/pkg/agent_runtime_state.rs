@@ -416,6 +416,24 @@ impl AgentRuntimeStateManager {
             .unwrap_or(AgentRuntimeState::Idle)
     }
 
+    /// 按「正在处理的消息 ID」反查 Agent（`current_message_id` 的反向索引）
+    ///
+    /// 用途：撤回一条**正在处理**的消息时，入口只有 `message_id`，而取消信号
+    /// （[`Self::cancel_thinking`]）按 `agent_id` 发 —— 两者之间需要这层反查。
+    ///
+    /// 为什么不看 `messages.status == Processing`：该状态**当前没有任何写入路径**
+    /// （生产代码只写 `Pending` / `Processed`），在飞消息在库里仍是 `Pending`，
+    /// 只看 DB 会把「正在跑」误判成「排队中」。运行时状态才是唯一可靠的在飞依据。
+    ///
+    /// 同一时刻一条消息最多被一个 Agent 持有（AOP `order_key` 串行保证），
+    /// 因此取首个命中即可；撤回是低频动作，遍历成本可接受。
+    pub fn find_busy_agent_by_message(&self, message_id: &str) -> Option<String> {
+        self.states
+            .iter()
+            .find(|entry| entry.value().current_message_id.as_deref() == Some(message_id))
+            .map(|entry| entry.key().clone())
+    }
+
     /// Agent 是否不可用（忙碌或休息）
     pub fn is_unavailable(&self, agent_id: &str) -> bool {
         self.get_state(agent_id).is_unavailable()
@@ -539,6 +557,25 @@ mod tests {
         let info = mgr.get("agent-1").unwrap();
         assert_eq!(info.task_id, Some("task-1".to_string()));
         assert_eq!(info.project_id, Some("proj-1".to_string()));
+    }
+
+    /// 按「正在处理的消息」反查 Agent：撤回在飞消息时的定位依据
+    #[test]
+    fn test_find_busy_agent_by_message() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        mgr.set_busy("agent-2", "msg-2", None, None);
+
+        assert_eq!(
+            mgr.find_busy_agent_by_message("msg-2"),
+            Some("agent-2".to_string())
+        );
+        // 无人处理的消息 → None（撤回会走「排队中」分支）
+        assert_eq!(mgr.find_busy_agent_by_message("msg-404"), None);
+
+        // 思考结束（转 Idle）后反向索引必须失效，否则撤回会去取消一个已经空闲的 Agent
+        mgr.set_idle("agent-2");
+        assert_eq!(mgr.find_busy_agent_by_message("msg-2"), None);
     }
 
     #[test]

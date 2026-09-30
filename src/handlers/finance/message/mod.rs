@@ -2,6 +2,7 @@
 //! 按方法粒度拆分，每个方法单独一个文件。
 
 pub mod list_messages;
+pub mod recall_message;
 pub mod search_messages;
 pub mod send_message;
 pub mod send_message_to_agent;
@@ -9,6 +10,7 @@ pub mod send_task_assignment_message;
 pub mod subscribe_sse;
 
 pub use list_messages::list_messages_handler;
+pub use recall_message::recall_message_handler;
 pub use search_messages::search_messages_handler;
 pub use send_message::send_message_handler;
 pub use send_message_to_agent::send_message_to_agent_handler;

@@ -94,6 +94,15 @@ mod tests {
                 .map(Message::from_po))
         }
 
+        /// 本假体不做软删除语义，含撤回态的读路径与 `find_by_id` 等价
+        async fn find_by_id_with_recalled(
+            &self,
+            ctx: RequestContext,
+            id: &str,
+        ) -> Result<Option<Message>> {
+            self.find_by_id(ctx, id).await
+        }
+
         async fn save_message(&self, _ctx: RequestContext, m: &Message) -> Result<()> {
             self.saved.write().unwrap().push(m.po.clone());
             Ok(())

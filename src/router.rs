@@ -917,6 +917,13 @@ fn finance_routes() -> Router {
             "/messages/search",
             post(handlers::finance::message::search_messages_handler),
         )
+        // 撤回消息：`generate_http_handler` **只生成 handler、不注册路由**，必须在这里
+        // 手加一条，否则接口静默 404。params DTO（RecallMessageRequest）未标
+        // `#[param(source = "query")]` ⇒ 宏按「JSON body」形态生成，故用 post。
+        .route(
+            "/messages/recall",
+            post(handlers::finance::message::recall_message_handler),
+        )
         .route(
             "/messages/sse",
             get(handlers::finance::message::subscribe_sse_handler),

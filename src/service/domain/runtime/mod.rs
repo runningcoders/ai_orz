@@ -5,6 +5,7 @@
 //! 包含子模块：
 //! - memory: 运行时记忆管理（读取历史、写入思考 Trace）
 //! - awakening: Agent 唤醒主流程
+//! - cancel: 取消思考编排（Domain 单点：存在性校验 + 投递 cancel_flag 信号）
 //! - tool_execution: 工具实际执行（单次/批量）
 //! - context_assembly: Prompt 上下文组装（纯函数，无 async）
 
@@ -33,6 +34,7 @@ use common::error::Result;
 /// Runtime Domain 总 trait
 ///
 /// 聚合运行时领域所有子功能 trait
+#[async_trait]
 pub trait RuntimeDomain: Send + Sync + Debug {
     /// 记忆管理能力
     fn memory(&self) -> &dyn RuntimeMemory;
@@ -47,11 +49,15 @@ pub trait RuntimeDomain: Send + Sync + Debug {
     /// Agent 是否处于不可用状态（忙碌或休息）
     fn is_agent_unavailable(&self, agent_id: &str) -> bool;
 
-    /// 取消 Agent 思考（触发 cancel_flag）
+    /// 取消 Agent 思考（Domain 单点：存在性校验 + 信号投递）
     ///
-    /// 返回 true 表示成功取消（Agent 正在思考），
-    /// 返回 false 表示 Agent 当前未在思考。
-    fn cancel_thinking(&self, agent_id: &str) -> bool;
+    /// 返回 `Cancelled` 表示取消信号已投递（在**当前轮次边界**生效，不抢占进行中的
+    /// LLM 调用）；`NotThinking` 表示目标存在但当前未在思考（幂等 no-op，**不是错误**）；
+    /// 目标 Agent 不存在时返回 `NotFound`。
+    ///
+    /// ⚠️ 校验必须在这一层做，而不是散在 handler / 工具适配层：REST 入口与神经工具
+    /// `cancel_thinking` 共用同一个实现，判据只写一遍。
+    async fn cancel_thinking(&self, ctx: RequestContext, agent_id: &str) -> Result<CancelOutcome>;
 
     /// 查询 Agent 运行时状态 + 思考运行时快照
     ///
@@ -335,6 +341,9 @@ pub mod awakening;
 // busy_guard 需要 pub：消费侧（消息 / 沉淀消费者）在「自己抢占 Agent」后
 // 必须挂一个 RAII 兜底释放，否则中途 ? 提早返回会把 Agent 永久留在 Busy/Resting
 pub mod busy_guard;
+// cancel 需要 pub：`CancelOutcome` 由 Adapter（`handlers/hr/agent/cancel_thinking.rs`）
+// 映射为 `CancelThinkingResponse`，暴露方式与消息域 `RecallOutcome` 对齐
+pub mod cancel;
 mod cerebellum_router;
 mod compaction;
 mod intent_analyze;
@@ -345,10 +354,13 @@ mod tool_execution;
 mod types;
 
 #[cfg(test)]
+mod cancel_test;
+#[cfg(test)]
 mod tool_execution_test;
 
 // DefaultPromptBuilder 已迁移到 dal/agent.rs，由 AgentDal.prompt_builder() 提供
 pub use crate::service::dal::agent::{DefaultPromptBuilder, build_conversation_prompt};
+pub use cancel::CancelOutcome;
 pub(crate) use tool_call_query::status_from_dto;
 
 // ==================== 实现 ====================
@@ -499,6 +511,7 @@ impl RuntimeDomainImpl {
     }
 }
 
+#[async_trait]
 impl RuntimeDomain for RuntimeDomainImpl {
     fn memory(&self) -> &dyn RuntimeMemory {
         self
@@ -518,9 +531,8 @@ impl RuntimeDomain for RuntimeDomainImpl {
         crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().is_unavailable(agent_id)
     }
 
-    fn cancel_thinking(&self, agent_id: &str) -> bool {
-        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
-            .cancel_thinking(agent_id)
+    async fn cancel_thinking(&self, ctx: RequestContext, agent_id: &str) -> Result<CancelOutcome> {
+        self.cancel_thinking_impl(ctx, agent_id).await
     }
 
     fn get_runtime_status(

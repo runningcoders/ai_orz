@@ -23,7 +23,7 @@
 //! `MessageCreatedEvent::order_key` 注释里早就写明的设计意图。
 
 use async_trait::async_trait;
-use common::enums::{CallerType, MessageRole, MessageType};
+use common::enums::{CallerType, MessageRole, MessageStatus, MessageType};
 use common::error::{Error, ErrorCode, Result};
 use serde_json::Value;
 use std::sync::Arc;
@@ -182,12 +182,49 @@ impl MessageConsumer {
 
         // 从 DB 加载完整 Message
         // ctx 已由 AOP 框架从事件顶层 context_carrier 还原，保留原始 log_id 等链路标识
-        let message = message_dal::dal()
+        let message = match message_dal::dal()
             .find_by_id(ctx.clone(), &msg_event.message_id)
             .await?
-            .ok_or_else(|| {
-                Error::not_found(format!("Message {} not found", msg_event.message_id))
-            })?;
+        {
+            Some(m) => m,
+            None => {
+                // `find_by_id` 带 `status != 0` 的软删除过滤 ⇒ 查不到有两种可能：
+                // ① 消息已被**撤回**（`Recalled = 0`，逻辑作废）；② 行确实不存在。
+                // 撤回是一个**正常结局**且事件仍排在 AOP 队列里，出队即走到此处 ——
+                // 必须 ack 跳过（返回 `Ok`），**不能**当「消息不存在」上抛：上抛会让
+                // 框架 nack 重投最多 8 次，把该 Agent 的队列堵死（与撤回的初衷完全相反）。
+                if message_dal::dal()
+                    .find_by_id_with_recalled(ctx.clone(), &msg_event.message_id)
+                    .await?
+                    .is_some()
+                {
+                    log_info!(
+                        &ctx,
+                        "message_recalled",
+                        message_id = %msg_event.message_id,
+                        "消息已撤回，出队即跳过（不唤醒 Agent）"
+                    );
+                    return Ok(());
+                }
+
+                return Err(Error::not_found(format!(
+                    "Message {} not found",
+                    msg_event.message_id
+                )));
+            }
+        };
+
+        // 兜底守卫：撤回态本会被上面的软删除过滤挡掉，此处再判一次，防止将来
+        // `find_by_id` 的过滤口径变化，让已撤回的消息悄悄唤醒 Agent。
+        if message.po.status == MessageStatus::Recalled {
+            log_info!(
+                &ctx,
+                "message_recalled",
+                message_id = %message.po.id,
+                "消息已撤回（status=Recalled），跳过唤醒"
+            );
+            return Ok(());
+        }
 
         sys_debug!(
             "received message: {:?} -> {:?}, type: {:?}",

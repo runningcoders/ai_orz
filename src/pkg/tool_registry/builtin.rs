@@ -114,6 +114,14 @@ mod tests {
     ///
     /// 这几个工具是同一条沟通链路的不同出口，可达性必须一致：任一被取消 `neural`
     /// 都会让提示词 / 技能的推荐重新变成「做不到的事」，且症状是**静默丢消息**而非报错。
+    /// `recall_message` 是同一条链路的**反向出口**（撤回已入队但未处理的消息），
+    /// 与其余消息工具可达性必须一致；漏挂 `neural` 的结果同样是**静默失效**
+    /// （模型撤不掉过时消息，只能继续往队列里堆新的）。
+    ///
+    /// `cancel_thinking` 列入同一清单：它是 `recall_message` 的**互补原语** ——
+    /// `recall_message` 管「这条消息还要不要处理」（状态语义），`cancel_thinking` 管
+    /// 「现在这一轮停不停」（信号语义）。撤回在飞消息时若调用方就是那个 Agent 自己，
+    /// 本能力会引导它改用 `cancel_thinking`；后者不可达则该引导变成空话。
     #[test]
     fn message_tools_are_neural_reachable() {
         let registry = crate::pkg::tool_registry::get_registry();
@@ -123,6 +131,8 @@ mod tests {
             "send_task_assignment_message",
             "list_messages",
             "search_messages",
+            "recall_message",
+            "cancel_thinking",
         ] {
             let factory = registry
                 .get_builtin_factory(id)
