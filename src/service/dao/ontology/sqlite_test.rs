@@ -30,6 +30,7 @@ fn create_test_relation(term_key: &str, display_name: &str) -> OntologyRelationT
         String::new(),
         1.0,
         None,
+        "undirected",
     )
 }
 

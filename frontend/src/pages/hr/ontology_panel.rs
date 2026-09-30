@@ -597,6 +597,7 @@ pub fn HrOntologyLexicon() -> Element {
                         range_classes,
                         weight_base,
                         inverse_key,
+                        direction: None,
                     })
                     .await
                 }

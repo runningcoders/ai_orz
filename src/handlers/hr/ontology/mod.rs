@@ -75,6 +75,7 @@ pub(super) fn relation_type_item(po: OntologyRelationTypePo) -> OntologyRelation
         range_classes,
         weight_base: po.weight_base,
         inverse_key: po.inverse_key,
+        direction: po.direction,
         status: po.status,
         created_at: po.created_at,
         updated_at: po.updated_at,

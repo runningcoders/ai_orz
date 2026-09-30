@@ -335,6 +335,7 @@ impl OntologyDomain for HrDomainImpl {
                 range_classes,
                 p.weight_base.unwrap_or(1.0),
                 p.inverse_key.clone(),
+                p.direction.as_str(),
             );
             self.ontology_dal
                 .insert_relation_type(ctx.clone(), &OntologyRelationType::from_po(po))
@@ -464,6 +465,7 @@ impl OntologyDomain for HrDomainImpl {
                         range_classes,
                         weight_base: Some(po.weight_base),
                         inverse_key: po.inverse_key,
+                        direction: po.direction,
                     }
                 })
                 .collect(),

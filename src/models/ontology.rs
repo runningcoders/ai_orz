@@ -116,6 +116,8 @@ pub struct OntologyRelationTypePo {
     pub weight_base: f64,
     /// 逆向关系词（如 contains ↔ contained_by），可空
     pub inverse_key: Option<String>,
+    /// 方向二值（"directed" / "undirected"；与 migration CHECK 同口径）
+    pub direction: String,
     /// 条目状态（1 正常 / 0 退役；退役 ≠ 删除，历史存量引用仍可解释）
     pub status: OntologyStatus,
     /// 创建时间戳（秒级）
@@ -135,6 +137,7 @@ impl OntologyRelationTypePo {
         range_classes: impl Into<String>,
         weight_base: f64,
         inverse_key: Option<String>,
+        direction: &str,
     ) -> Self {
         let now = common::constants::utils::current_timestamp();
         Self {
@@ -146,6 +149,7 @@ impl OntologyRelationTypePo {
             range_classes: range_classes.into(),
             weight_base,
             inverse_key,
+            direction: direction.to_string(),
             status: OntologyStatus::default(),
             created_at: now,
             updated_at: now,
@@ -292,12 +296,14 @@ mod tests {
             "".to_string(),
             1.0,
             Some("contained_by".to_string()),
+            "directed",
         );
         let entity = OntologyRelationType::from_po(po.clone());
         assert_eq!(entity.term_key(), "contains");
         assert_eq!(entity.into_po(), po);
         assert_eq!(po.parse_domain_classes(), vec!["document".to_string()]);
         assert!(po.parse_range_classes().is_empty());
+        assert_eq!(po.direction, "directed");
     }
 
     #[test]

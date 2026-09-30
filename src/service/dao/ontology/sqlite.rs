@@ -208,7 +208,7 @@ WHERE id = ?
         let term_key = normalize(&relation_type.term_key);
         let status = relation_type.status.to_i32();
         if let Err(e) = sqlx::query!(
-            "INSERT INTO ontology_relation_types (id, term_key, display_name, description, domain_classes, range_classes, weight_base, inverse_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO ontology_relation_types (id, term_key, display_name, description, domain_classes, range_classes, weight_base, inverse_key, direction, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             relation_type.id,
             term_key,
             relation_type.display_name,
@@ -217,6 +217,7 @@ WHERE id = ?
             relation_type.range_classes,
             relation_type.weight_base,
             relation_type.inverse_key,
+            relation_type.direction,
             status,
             relation_type.created_at,
             relation_type.updated_at
@@ -241,7 +242,7 @@ WHERE id = ?
             OntologyRelationTypePo,
             r#"
 SELECT id, term_key, display_name, description, domain_classes, range_classes,
-       weight_base, inverse_key, status AS "status: _", created_at, updated_at
+       weight_base, inverse_key, direction, status AS "status: _", created_at, updated_at
 FROM ontology_relation_types WHERE id = ?
             "#,
             id
@@ -262,7 +263,7 @@ FROM ontology_relation_types WHERE id = ?
             OntologyRelationTypePo,
             r#"
 SELECT id, term_key, display_name, description, domain_classes, range_classes,
-       weight_base, inverse_key, status AS "status: _", created_at, updated_at
+       weight_base, inverse_key, direction, status AS "status: _", created_at, updated_at
 FROM ontology_relation_types WHERE term_key = ?
             "#,
             term_key
@@ -285,7 +286,7 @@ FROM ontology_relation_types WHERE term_key = ?
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
-            r#"SELECT id, term_key, display_name, description, domain_classes, range_classes, weight_base, inverse_key, status, created_at, updated_at FROM ontology_relation_types WHERE 1=1"#,
+            r#"SELECT id, term_key, display_name, description, domain_classes, range_classes, weight_base, inverse_key, direction, status, created_at, updated_at FROM ontology_relation_types WHERE 1=1"#,
         );
         push_relation_type_filters(&mut list_builder, &query);
         list_builder.push(" ORDER BY term_key ASC");
@@ -310,7 +311,7 @@ FROM ontology_relation_types WHERE term_key = ?
             OntologyRelationTypePo,
             r#"
 SELECT id, term_key, display_name, description, domain_classes, range_classes,
-       weight_base, inverse_key, status AS "status: _", created_at, updated_at
+       weight_base, inverse_key, direction, status AS "status: _", created_at, updated_at
 FROM ontology_relation_types ORDER BY term_key ASC
             "#
         )

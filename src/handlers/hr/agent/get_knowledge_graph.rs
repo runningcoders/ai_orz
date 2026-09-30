@@ -32,6 +32,7 @@ pub async fn get_knowledge_graph(
         nodes,
         edges,
         degrees,
+        edge_directions,
     } = runtime_domain()
         .memory()
         .get_knowledge_graph(ctx, params.agent_id)
@@ -44,7 +45,16 @@ pub async fn get_knowledge_graph(
             to_node_api(node, incoming_count, outgoing_count)
         })
         .collect();
-    let edges = edges.into_iter().map(to_edge_api).collect();
+    let edges = edges
+        .into_iter()
+        .map(|rel| {
+            let direction = edge_directions
+                .get(&rel.id)
+                .cloned()
+                .unwrap_or_else(|| "undirected".to_string());
+            to_edge_api(rel, direction)
+        })
+        .collect();
 
     Ok(GetKnowledgeGraphResponse {
         nodes,
@@ -82,13 +92,14 @@ fn to_node_api(
     }
 }
 
-/// domain 层关系 PO → API 边 DTO
-fn to_edge_api(rel: KnowledgeNodeRelationPo) -> GraphEdge {
+/// domain 层关系 PO → API 边 DTO（direction 由 DAL 服务端 resolve 带出，前端零词表映射）
+fn to_edge_api(rel: KnowledgeNodeRelationPo, direction: String) -> GraphEdge {
     GraphEdge {
         id: rel.id,
         source: rel.source_node_id,
         target: rel.target_node_id,
         relation_type: rel.relation_type,
+        direction,
         weight: rel.weight,
     }
 }

@@ -125,12 +125,14 @@ async fn init_test(_pool: SqlitePool) -> Arc<dyn MemoryDal> {
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
 
-    // 创建 DAL 实例
+    // 创建 DAL 实例（三期 direction：MemoryDalImpl 组合 OntologyDao）
+    let ontology_dao = crate::service::dao::ontology::new();
     new(
         memory_dao,
         memory_vector_dao,
         model_provider_dao,
         cortex_dao,
+        ontology_dao,
     )
 }
 
@@ -1519,6 +1521,7 @@ async fn init_test_with_vector(
         memory_vector_dao,
         model_provider_dao,
         cortex_dao,
+        crate::service::dao::ontology::new(),
     )
 }
 

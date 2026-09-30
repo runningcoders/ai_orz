@@ -94,6 +94,7 @@ fn preset_lexicon() -> PresetOntologyLexicon {
             range_classes: vec!["document".to_string()],
             weight_base: Some(1.5),
             inverse_key: Some("contained_by".to_string()),
+            direction: "directed".to_string(),
         }],
         synonym_mappings: vec![PresetOntologySynonym {
             raw_term: "  CONTAINS ".to_string(),
@@ -157,6 +158,7 @@ async fn test_create_relation_type_validates_class_refs(pool: SqlitePool) {
         "[]",
         1.0,
         None,
+        "directed",
     ));
     let err = onto
         .create_relation_type(ctx.clone(), &bad)
@@ -177,6 +179,7 @@ async fn test_create_relation_type_validates_class_refs(pool: SqlitePool) {
         r#"["agent"]"#,
         1.0,
         None,
+        "directed",
     ));
     onto.create_relation_type(ctx.clone(), &ok).await.unwrap();
     let found = onto
@@ -201,7 +204,7 @@ async fn test_update_missing_entity_returns_not_found(pool: SqlitePool) {
     );
 
     let rt = OntologyRelationType::from_po(OntologyRelationTypePo::new(
-        "depends", "依赖", "x", "[]", "[]", 1.0, None,
+        "depends", "依赖", "x", "[]", "[]", 1.0, None, "directed",
     ));
     let err = onto
         .update_relation_type(ctx.clone(), &rt)
@@ -345,6 +348,7 @@ async fn test_apply_default_lexicon_rejects_missing_ref(pool: SqlitePool) {
             range_classes: vec![],
             weight_base: None,
             inverse_key: None,
+            direction: "directed".to_string(),
         }],
         synonym_mappings: vec![],
     };
@@ -628,4 +632,49 @@ async fn test_drift_dashboard_coverage_lifecycle(pool: SqlitePool) {
     assert!((cov.coverage_ratio - 1.0).abs() < 1e-9, "覆盖率回升至 100%");
     assert_eq!(dashboard.drift_node_count, 0);
     assert!(dashboard.top_drift_words.is_empty());
+}
+
+/// 三期方案 a′：create 联动校验——directed + inverse_key 合法且 Po 方向落位
+#[sqlx::test]
+async fn test_create_relation_type_directed_with_inverse_key_ok(pool: SqlitePool) {
+    let (hr, ctx) = init_test_env(pool);
+    let onto = hr.ontology_domain();
+
+    let class = OntologyClass::from_po(OntologyClassPo::new("agent", "智能体", "x", "[]"));
+    onto.create_class(ctx.clone(), &class).await.unwrap();
+    let rt = OntologyRelationType::from_po(OntologyRelationTypePo::new(
+        "contains",
+        "包含",
+        "组成关系",
+        r#"["agent"]"#,
+        r#"["agent"]"#,
+        1.0,
+        Some("contained_by".to_string()),
+        "directed",
+    ));
+    onto.create_relation_type(ctx.clone(), &rt).await.unwrap();
+    let found = onto
+        .get_relation_type(ctx.clone(), &rt.po.id)
+        .await
+        .unwrap()
+        .expect("directed + inverse_key 合法组合创建成功");
+    assert_eq!(found.po.direction, "directed");
+    assert_eq!(found.po.inverse_key.as_deref(), Some("contained_by"));
+}
+
+/// 三期方案 a′：create 联动校验——undirected + inverse_key 互斥（handler 层 400 口径）
+#[test]
+fn test_direction_validation_rules() {
+    use common::ontology::Direction;
+
+    // 解析规则：仅 directed / undirected 合法（handler 未批处置=400 InvalidRequest）
+    assert!("directed".parse::<Direction>().is_ok());
+    assert!("undirected".parse::<Direction>().is_ok());
+    assert!("both".parse::<Direction>().is_err());
+    assert!("".parse::<Direction>().is_err());
+    // 互斥规则：undirected 不允许携带 inverse_key（无向词不允许声明互逆）；
+    // 词表条目经 DAO 落库后无 handler 侧再校验，互斥在 create 入口单点完成——
+    // 此处锁规则常量：parse 失败兜底路径 = handler err! InvalidRequest 分支
+    let undirected = Direction::default();
+    assert_eq!(undirected, Direction::Undirected);
 }

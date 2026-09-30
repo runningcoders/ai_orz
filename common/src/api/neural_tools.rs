@@ -311,6 +311,8 @@ pub struct GraphEdge {
     pub target: String,
     /// 关系类型原文（写入方标注，落库不归一化）。
     pub relation_type: String,
+    /// 边方向（"directed" / "undirected"，服务端按词表 resolve 后带出，前端零词表映射）。
+    pub direction: String,
     /// 关系强度（0.0~1.0）；`None` = 未标注（渲染基准线宽）。
     pub weight: Option<f32>,
 }

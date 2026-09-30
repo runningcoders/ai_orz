@@ -81,7 +81,7 @@ impl Consumer for OntologyCertifyConsumer {
         // 漂移记账：Drift 分支才打点，只记原文（解析结论不入库）
         if let Some(stats) = global_stats() {
             for entry in &report.entries {
-                let ResolvedTerm::Drift { raw_term } = &entry.verdict else {
+                let ResolvedTerm::Drift { raw_term, .. } = &entry.verdict else {
                     continue;
                 };
                 let stats_event = OntologyDriftEvent::new(event.created_at)

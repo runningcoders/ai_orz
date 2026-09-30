@@ -27,7 +27,7 @@ use common::api::{PagedResult, PaginationParams};
 use common::enums::OntologyStatus;
 use common::error::Result;
 use common::ontology::{
-    LexiconSynonymSummary, LexiconTermSummary, OntologyCertifyReport, OntologyLexicon,
+    Direction, LexiconSynonymSummary, LexiconTermSummary, OntologyCertifyReport, OntologyLexicon,
     OntologyLexiconSummary, ResolvedTerm, TermKind, resolve,
 };
 use std::sync::Arc;
@@ -337,8 +337,17 @@ impl OntologyDal for OntologyDalImpl {
                 .map(|po| common::ontology::normalize(&po.term_key))
                 .collect(),
             relation_keys: relation_types
-                .into_iter()
+                .iter()
                 .map(|po| common::ontology::normalize(&po.term_key))
+                .collect(),
+            relation_directions: relation_types
+                .iter()
+                .map(|po| {
+                    (
+                        common::ontology::normalize(&po.term_key),
+                        Direction::parse_or_default(&po.direction),
+                    )
+                })
                 .collect(),
             synonyms: synonyms
                 .into_iter()
@@ -454,7 +463,7 @@ impl OntologyDal for OntologyDalImpl {
             match resolve(&lexicon, TermKind::Relation, &row.term) {
                 ResolvedTerm::Canonical { .. } => canonical_relations += count,
                 ResolvedTerm::ViaSynonym { .. } => via_synonym_relations += count,
-                ResolvedTerm::Drift { raw_term } => {
+                ResolvedTerm::Drift { raw_term, .. } => {
                     drift_relations += count;
                     drift_words.push(DriftWordItem {
                         raw_term,
@@ -471,7 +480,7 @@ impl OntologyDal for OntologyDalImpl {
             total_node_count += count;
             match resolve(&lexicon, TermKind::Class, &row.term) {
                 ResolvedTerm::Canonical { .. } | ResolvedTerm::ViaSynonym { .. } => {}
-                ResolvedTerm::Drift { raw_term } => {
+                ResolvedTerm::Drift { raw_term, .. } => {
                     drift_node_count += count;
                     drift_words.push(DriftWordItem {
                         raw_term,
@@ -556,7 +565,7 @@ impl OntologyDal for OntologyDalImpl {
 
         let mut report = OntologyCertifyReport::default();
         let publish_key = match &verdict {
-            ResolvedTerm::Canonical { term_key } => Some(term_key.clone()),
+            ResolvedTerm::Canonical { term_key, .. } => Some(term_key.clone()),
             ResolvedTerm::ViaSynonym { term_key, .. } => Some(term_key.clone()),
             ResolvedTerm::Drift { .. } => None,
         };

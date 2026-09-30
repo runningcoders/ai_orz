@@ -60,6 +60,7 @@ mod tests {
                 range_classes: vec![],
                 weight_base: Some(1.0),
                 inverse_key: None,
+                direction: "undirected".to_string(),
             }],
             synonym_mappings: vec![],
         }

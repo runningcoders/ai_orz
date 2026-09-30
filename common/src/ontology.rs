@@ -73,6 +73,8 @@ pub enum ResolvedTerm {
     Canonical {
         /// 命中的规范词（词表语义锚点，snake_case）
         term_key: String,
+        /// 命中词的方向（= 词表登记值；实体类解析无方向语义，恒为无向兜底）
+        direction: Direction,
     },
     /// 同义映射命中：原文经映射表收敛到规范词
     ViaSynonym {
@@ -80,11 +82,15 @@ pub enum ResolvedTerm {
         term_key: String,
         /// 归一化后的原文
         raw_term: String,
+        /// 映射目标词的方向（= 目标词词表登记值）
+        direction: Direction,
     },
     /// 词表外 = 漂移（软门禁：不拦截写入，仅标记待审与计数）
     Drift {
         /// 归一化后的原文
         raw_term: String,
+        /// 漂移词无方向语义，兜底无向（与 DDL DEFAULT 对齐）
+        direction: Direction,
     },
 }
 
@@ -98,6 +104,12 @@ pub struct OntologyLexicon {
     pub class_keys: HashSet<String>,
     /// 关系类型规范词集合（归一化 key）
     pub relation_keys: HashSet<String>,
+    /// 关系类型方向映射（归一化 key → 方向；平行结构，既有
+    /// `relation_keys` 全部消费点零改动）
+    ///
+    /// 未登记的 key（词表构建保证同源，理论不缺）解析时按
+    /// [`Direction::Undirected`] 兜底，不 panic 不阻断。
+    pub relation_directions: HashMap<String, Direction>,
     /// 同义映射：(归一化 raw_term, 目标 kind) → 目标规范词原文
     ///
     /// 以 target_kind 做复合键：同一 raw_term 可分别映射到实体类与关系词，
@@ -108,7 +120,10 @@ pub struct OntologyLexicon {
 impl OntologyLexicon {
     /// 词表是否完全为空（三类均无词条）
     pub fn is_empty(&self) -> bool {
-        self.class_keys.is_empty() && self.relation_keys.is_empty() && self.synonyms.is_empty()
+        self.class_keys.is_empty()
+            && self.relation_keys.is_empty()
+            && self.relation_directions.is_empty()
+            && self.synonyms.is_empty()
     }
 }
 
@@ -124,6 +139,52 @@ pub fn normalize(raw: &str) -> String {
     raw.trim().to_ascii_lowercase()
 }
 
+/// 关系方向的二值承载（方案 a′：direction 只表达「是否有方向」）
+///
+/// 与 DDL 列 `direction TEXT NOT NULL DEFAULT 'undirected'
+/// CHECK(direction IN ('directed', 'undirected'))` 同一取值口径；
+/// 序列化小写（`"directed"` / `"undirected"`），与落库值逐字对齐。
+/// 解析失败一律兜底 [`Direction::Undirected`]——与词表外漂移软门禁哲学一致：
+/// 脏数据/自拟词退化为「无向」，不 panic 不拦截。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Direction {
+    /// 有向边（渲染时 target 端绘箭头）
+    Directed,
+    /// 无向边（渲染纯线，默认值）
+    #[default]
+    Undirected,
+}
+
+impl Direction {
+    /// 落库/序列化字符串（与 migration CHECK 枚举逐字一致）
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Directed => "directed",
+            Self::Undirected => "undirected",
+        }
+    }
+}
+
+impl std::str::FromStr for Direction {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "directed" => Ok(Self::Directed),
+            "undirected" => Ok(Self::Undirected),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Direction {
+    /// 词表行脏数据兜底解析：非法值一律退 [`Direction::Undirected`]（不 panic 不阻断）
+    pub fn parse_or_default(s: &str) -> Self {
+        s.parse().unwrap_or_default()
+    }
+}
+
 /// 解析入口：判定一个词条相对当前词表的三分支结论
 ///
 /// 判定顺序（优先级从高到低）：
@@ -137,25 +198,45 @@ pub fn normalize(raw: &str) -> String {
 pub fn resolve(lexicon: &OntologyLexicon, kind: TermKind, raw_term: &str) -> ResolvedTerm {
     let raw = normalize(raw_term);
     if raw.is_empty() {
-        return ResolvedTerm::Drift { raw_term: raw };
+        return ResolvedTerm::Drift {
+            raw_term: raw,
+            direction: Direction::Undirected,
+        };
     }
     let keys = match kind {
         TermKind::Class => &lexicon.class_keys,
         TermKind::Relation => &lexicon.relation_keys,
     };
     if keys.contains(&raw) {
-        return ResolvedTerm::Canonical { term_key: raw };
+        let direction = lexicon
+            .relation_directions
+            .get(&raw)
+            .copied()
+            .unwrap_or_default();
+        return ResolvedTerm::Canonical {
+            term_key: raw,
+            direction,
+        };
     }
     if let Some(target) = lexicon.synonyms.get(&(raw.clone(), kind)) {
         let target = normalize(target);
         if keys.contains(&target) {
+            let direction = lexicon
+                .relation_directions
+                .get(&target)
+                .copied()
+                .unwrap_or_default();
             return ResolvedTerm::ViaSynonym {
                 term_key: target,
                 raw_term: raw,
+                direction,
             };
         }
     }
-    ResolvedTerm::Drift { raw_term: raw }
+    ResolvedTerm::Drift {
+        raw_term: raw,
+        direction: Direction::Undirected,
+    }
 }
 
 // ==================== 认证报告（certify 聚合） ====================
@@ -222,7 +303,7 @@ impl OntologyCertifyReport {
         let mut keys: Vec<String> = Vec::new();
         for entry in &self.entries {
             let key = match &entry.verdict {
-                ResolvedTerm::Canonical { term_key } => term_key,
+                ResolvedTerm::Canonical { term_key, .. } => term_key,
                 ResolvedTerm::ViaSynonym { term_key, .. } => term_key,
                 ResolvedTerm::Drift { .. } => continue,
             };
@@ -239,7 +320,7 @@ impl OntologyCertifyReport {
     pub fn drift_terms(&self) -> Vec<String> {
         let mut terms: Vec<String> = Vec::new();
         for entry in &self.entries {
-            if let ResolvedTerm::Drift { raw_term } = &entry.verdict
+            if let ResolvedTerm::Drift { raw_term, .. } = &entry.verdict
                 && !terms.contains(raw_term)
             {
                 terms.push(raw_term.clone());
@@ -291,6 +372,15 @@ pub struct PresetOntologyRelationType {
     /// 反向关系 key（None = 无对称反向词）
     #[serde(default)]
     pub inverse_key: Option<String>,
+    /// 方向二值（"directed"/"undirected"）；serde default 兜底旧快照
+    /// （旧 seed 快照无该字段时按 "undirected" 落位，双向兼容不破 seed）
+    #[serde(default = "default_preset_direction")]
+    pub direction: String,
+}
+
+/// 旧 seed 快照（无 direction 字段）反序列化兜底值，与 DDL DEFAULT 同口径
+fn default_preset_direction() -> String {
+    "undirected".to_string()
 }
 
 /// 预置同义映射条目（字段对齐 `CreateOntologySynonymRequest`）
@@ -441,6 +531,14 @@ mod tests {
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+            relation_directions: [
+                ("contains", Direction::Directed),
+                ("depends", Direction::Directed),
+                ("similar", Direction::Undirected),
+            ]
+            .into_iter()
+            .map(|(k, d)| (k.to_string(), d))
+            .collect(),
             synonyms: [
                 (
                     ("包含".to_string(), TermKind::Relation),
@@ -466,7 +564,8 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Relation, "contains"),
             ResolvedTerm::Canonical {
-                term_key: "contains".to_string()
+                term_key: "contains".to_string(),
+                direction: Direction::Directed,
             }
         );
     }
@@ -477,7 +576,8 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Relation, "  Contains "),
             ResolvedTerm::Canonical {
-                term_key: "contains".to_string()
+                term_key: "contains".to_string(),
+                direction: Direction::Directed,
             }
         );
     }
@@ -489,7 +589,8 @@ mod tests {
             resolve(&lexicon, TermKind::Relation, "包含"),
             ResolvedTerm::ViaSynonym {
                 term_key: "contains".to_string(),
-                raw_term: "包含".to_string()
+                raw_term: "包含".to_string(),
+                direction: Direction::Directed,
             }
         );
     }
@@ -501,7 +602,8 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Relation, "object"),
             ResolvedTerm::Drift {
-                raw_term: "object".to_string()
+                raw_term: "object".to_string(),
+                direction: Direction::Undirected,
             }
         );
         // 同一词条按实体类解析则同义命中
@@ -509,7 +611,8 @@ mod tests {
             resolve(&lexicon, TermKind::Class, "object"),
             ResolvedTerm::ViaSynonym {
                 term_key: "document".to_string(),
-                raw_term: "object".to_string()
+                raw_term: "object".to_string(),
+                direction: Direction::Undirected,
             }
         );
     }
@@ -520,7 +623,8 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Relation, "买卖"),
             ResolvedTerm::Drift {
-                raw_term: "买卖".to_string()
+                raw_term: "买卖".to_string(),
+                direction: Direction::Undirected,
             }
         );
     }
@@ -532,13 +636,15 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Relation, "agent"),
             ResolvedTerm::Drift {
-                raw_term: "agent".to_string()
+                raw_term: "agent".to_string(),
+                direction: Direction::Undirected,
             }
         );
         assert_eq!(
             resolve(&lexicon, TermKind::Class, "agent"),
             ResolvedTerm::Canonical {
-                term_key: "agent".to_string()
+                term_key: "agent".to_string(),
+                direction: Direction::Undirected,
             }
         );
     }
@@ -555,7 +661,8 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Relation, "contains"),
             ResolvedTerm::Canonical {
-                term_key: "contains".to_string()
+                term_key: "contains".to_string(),
+                direction: Direction::Directed,
             }
         );
     }
@@ -566,7 +673,8 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Relation, "   "),
             ResolvedTerm::Drift {
-                raw_term: String::new()
+                raw_term: String::new(),
+                direction: Direction::Undirected,
             }
         );
     }
@@ -595,7 +703,8 @@ mod tests {
         assert_eq!(
             resolve(&lexicon, TermKind::Class, "agent"),
             ResolvedTerm::Drift {
-                raw_term: "agent".to_string()
+                raw_term: "agent".to_string(),
+                direction: Direction::Undirected,
             }
         );
     }
@@ -693,5 +802,96 @@ mod tests {
         let json = serde_json::to_string(&preset).expect("serialize");
         let back: PresetOntologyLexicon = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, preset);
+    }
+
+    // ==================== direction（三期方案 a′）====================
+
+    #[test]
+    fn resolve_relation_carries_lexicon_direction() {
+        let lexicon = fixture_lexicon();
+        // Canonical：方向 = 词表登记值
+        assert_eq!(
+            resolve(&lexicon, TermKind::Relation, "contains"),
+            ResolvedTerm::Canonical {
+                term_key: "contains".to_string(),
+                direction: Direction::Directed,
+            }
+        );
+        assert_eq!(
+            resolve(&lexicon, TermKind::Relation, "similar"),
+            ResolvedTerm::Canonical {
+                term_key: "similar".to_string(),
+                direction: Direction::Undirected,
+            }
+        );
+        // ViaSynonym：方向 = 映射目标词的登记值
+        assert_eq!(
+            resolve(&lexicon, TermKind::Relation, "包含"),
+            ResolvedTerm::ViaSynonym {
+                term_key: "contains".to_string(),
+                raw_term: "包含".to_string(),
+                direction: Direction::Directed,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_drift_defaults_to_undirected() {
+        let lexicon = fixture_lexicon();
+        // Drift：词表外自拟词兜底无向（软门禁哲学，渲染无线箭头）
+        assert_eq!(
+            resolve(&lexicon, TermKind::Relation, "买卖"),
+            ResolvedTerm::Drift {
+                raw_term: "买卖".to_string(),
+                direction: Direction::Undirected,
+            }
+        );
+        // 词表缺方向登记（relation_directions 无该 key）同样兜底无向
+        let mut lexicon = lexicon;
+        lexicon.relation_directions.remove("contains");
+        assert_eq!(
+            resolve(&lexicon, TermKind::Relation, "contains"),
+            ResolvedTerm::Canonical {
+                term_key: "contains".to_string(),
+                direction: Direction::Undirected,
+            }
+        );
+    }
+
+    #[test]
+    fn direction_parses_and_serializes_lowercase() {
+        assert_eq!(Direction::Directed.as_str(), "directed");
+        assert_eq!(Direction::Undirected.as_str(), "undirected");
+        assert_eq!(Direction::default(), Direction::Undirected);
+        assert_eq!("directed".parse::<Direction>(), Ok(Direction::Directed));
+        assert_eq!("undirected".parse::<Direction>(), Ok(Direction::Undirected));
+        assert_eq!(Direction::parse_or_default("directed"), Direction::Directed);
+        assert_eq!(
+            Direction::parse_or_default("garbage"),
+            Direction::Undirected
+        );
+        // 非法值解析失败（由调用侧统一兜底 Undirected），不猜测
+        assert!("both".parse::<Direction>().is_err());
+        assert_eq!(
+            serde_json::to_string(&Direction::Directed).unwrap(),
+            "\"directed\""
+        );
+        assert_eq!(
+            serde_json::from_str::<Direction>("\"undirected\"").unwrap(),
+            Direction::Undirected
+        );
+    }
+
+    #[test]
+    fn preset_relation_type_direction_defaults_to_undirected() {
+        // 旧快照无 direction 字段：serde default 兜底，双向兼容不破 seed
+        let json = r#"{"term_key": "contains", "display_name": "包含", "description": "组成关系"}"#;
+        let preset: PresetOntologyRelationType = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(preset.direction, "undirected");
+
+        let mut preset = preset;
+        preset.direction = "directed".to_string();
+        let out = serde_json::to_string(&preset).expect("serialize");
+        assert!(out.contains("\"direction\":\"directed\""));
     }
 }

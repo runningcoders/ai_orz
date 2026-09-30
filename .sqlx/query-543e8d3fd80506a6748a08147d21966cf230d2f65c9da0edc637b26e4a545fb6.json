@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, term_key, display_name, description, domain_classes, range_classes,\n       weight_base, inverse_key, status AS \"status: _\", created_at, updated_at\nFROM ontology_relation_types WHERE term_key = ?\n            ",
+  "query": "\nSELECT id, term_key, display_name, description, domain_classes, range_classes,\n       weight_base, inverse_key, direction, status AS \"status: _\", created_at, updated_at\nFROM ontology_relation_types ORDER BY term_key ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -44,23 +44,28 @@
         "type_info": "Text"
       },
       {
-        "name": "status: _",
+        "name": "direction",
         "ordinal": 8,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "status: _",
         "ordinal": 9,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 11,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       false,
@@ -73,8 +78,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "f64b21f788efbf71b9437a94401fc3715bf5ac6d61728fb742c71d1746d2f867"
+  "hash": "543e8d3fd80506a6748a08147d21966cf230d2f65c9da0edc637b26e4a545fb6"
 }

@@ -19,6 +19,7 @@ use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
 use crate::service::dao::model_provider::ModelProviderDao;
+use crate::service::dao::ontology::OntologyDao;
 use async_trait::async_trait;
 use common::enums::MemoryStatus;
 use common::enums::MemoryType;
@@ -82,21 +83,25 @@ pub fn new(
     memory_vector_dao: Arc<dyn MemoryVectorDao>,
     model_provider_dao: Arc<dyn ModelProviderDao>,
     cortex_dao: Arc<dyn CortexDao>,
+    ontology_dao: Arc<dyn OntologyDao>,
 ) -> Arc<dyn MemoryDal> {
     Arc::new(MemoryDalImpl {
         memory_dao,
         memory_vector_dao,
         model_provider_dao,
         cortex_dao,
+        ontology_dao,
     })
 }
 
 pub fn init() {
+    crate::service::dao::ontology::init();
     let _ = MEMORY_DAL_INSTANCE.set(new(
         crate::service::dao::memory::dao(),
         crate::service::dao::memory::vector_dao(),
         crate::service::dao::model_provider::dao(),
         crate::service::dao::cortex::dao(),
+        crate::service::dao::ontology::dao(),
     ));
 }
 
@@ -281,6 +286,7 @@ pub struct MemoryDalImpl {
     memory_vector_dao: Arc<dyn MemoryVectorDao>,
     model_provider_dao: Arc<dyn ModelProviderDao>,
     cortex_dao: Arc<dyn CortexDao>,
+    ontology_dao: Arc<dyn OntologyDao>,
 }
 
 #[async_trait]
@@ -534,12 +540,16 @@ impl MemoryDal for MemoryDalImpl {
                 nodes: Vec::new(),
                 edges: Vec::new(),
                 degrees: std::collections::HashMap::new(),
+                edge_directions: std::collections::HashMap::new(),
             });
         }
 
         // 2. 全量拉取关系（list_relations_batch 的 SQL 仅返回 Active 边）
         let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
-        let all_relations = self.memory_dao.list_relations_batch(ctx, &node_ids).await?;
+        let all_relations = self
+            .memory_dao
+            .list_relations_batch(ctx.clone(), &node_ids)
+            .await?;
 
         // 3. R2：严格双端活跃——只保留两端节点都在活跃节点集内的边
         let active_ids: std::collections::HashSet<&str> =
@@ -562,10 +572,68 @@ impl MemoryDal for MemoryDalImpl {
             degrees.entry(rel.target_node_id.clone()).or_default().0 += 1;
         }
 
+        // 5. 三期方案 a′：按本体词表 resolve 逐边带出方向（服务端聚合，
+        //    前端零词表映射）。词表三表 try_join 并行拉取，图聚合不串行化。
+        //    纪律：DAL 之间禁止互引——此处直接走 OntologyDao 原始行装配词表，
+        //    不调用 dal::ontology::load_lexicon（同构口径见 OntologyDalImpl）。
+        let (classes, relation_types, synonyms) = tokio::try_join!(
+            self.ontology_dao.list_all_classes(ctx.clone()),
+            self.ontology_dao.list_all_relation_types(ctx.clone()),
+            self.ontology_dao.list_all_synonyms(ctx)
+        )?;
+        let lexicon = common::ontology::OntologyLexicon {
+            class_keys: classes
+                .into_iter()
+                .map(|po| common::ontology::normalize(&po.term_key))
+                .collect(),
+            relation_keys: relation_types
+                .iter()
+                .map(|po| common::ontology::normalize(&po.term_key))
+                .collect(),
+            relation_directions: relation_types
+                .iter()
+                .map(|po| {
+                    (
+                        common::ontology::normalize(&po.term_key),
+                        common::ontology::Direction::parse_or_default(&po.direction),
+                    )
+                })
+                .collect(),
+            synonyms: synonyms
+                .into_iter()
+                .filter_map(|po| {
+                    // target_kind 解析失败（脏数据）的映射不进词表
+                    let kind = po.target_kind.parse().ok()?;
+                    Some((
+                        (common::ontology::normalize(&po.raw_term), kind),
+                        po.target_key,
+                    ))
+                })
+                .collect(),
+        };
+        let edge_directions: HashMap<String, String> = edges
+            .iter()
+            .map(|rel| {
+                let direction = match common::ontology::resolve(
+                    &lexicon,
+                    common::ontology::TermKind::Relation,
+                    &rel.relation_type,
+                ) {
+                    common::ontology::ResolvedTerm::Canonical { direction, .. }
+                    | common::ontology::ResolvedTerm::ViaSynonym { direction, .. } => direction,
+                    common::ontology::ResolvedTerm::Drift { .. } => {
+                        common::ontology::Direction::Undirected
+                    }
+                };
+                (rel.id.clone(), direction.as_str().to_string())
+            })
+            .collect();
+
         Ok(KnowledgeGraphData {
             nodes,
             edges,
             degrees,
+            edge_directions,
         })
     }
 
@@ -2008,6 +2076,8 @@ mod tests {
         crate::service::dao::memory::init_vector();
         crate::service::dao::model_provider::init();
         crate::service::dao::cortex::init();
+        // 三期 direction：get_knowledge_graph 聚合依赖 OntologyDao 单例
+        crate::service::dao::ontology::init();
         init();
         let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool);
         let d = dal();
@@ -2077,5 +2147,63 @@ mod tests {
         assert!(data.nodes.is_empty());
         assert!(data.edges.is_empty());
         assert!(data.degrees.is_empty());
+    }
+
+    /// 三期方案 a′：边方向服务端按词表 resolve 带出（edge_directions 与 edges 键集对齐；
+    /// 词表外自拟词兜底 "undirected"，前端零词表映射不变式维持）
+    #[sqlx::test]
+    async fn get_knowledge_graph_resolves_edge_directions(pool: sqlx::SqlitePool) {
+        let ctx = seed_graph(pool).await;
+        // 词表注册 "related" = undirected（DDL 回填口径），"kr_ab" 边 relation_type="related"
+        let data = dal()
+            .get_knowledge_graph(ctx, None)
+            .await
+            .expect("get_knowledge_graph should succeed");
+        assert_eq!(data.edges.len(), 1);
+        assert_eq!(
+            data.edge_directions.get("kr_ab").map(String::as_str),
+            Some("undirected")
+        );
+        // 键集与生效边一一对应，零缺零余
+        let mut dir_keys: Vec<&str> = data.edge_directions.keys().map(String::as_str).collect();
+        dir_keys.sort_unstable();
+        let mut edge_keys: Vec<&str> = data.edges.iter().map(|e| e.id.as_str()).collect();
+        edge_keys.sort_unstable();
+        assert_eq!(dir_keys, edge_keys);
+    }
+
+    /// 三期方案 a′：directed 词带出 "directed"（contains 属 10 有逆词回填口径）
+    #[sqlx::test]
+    async fn get_knowledge_graph_carries_directed_direction_for_lexicon_hit(
+        pool: sqlx::SqlitePool,
+    ) {
+        let ctx = seed_graph(pool).await;
+        let d = dal();
+        d.create(
+            ctx.clone(),
+            MemoryCreateParams::CreateRelations(vec![KnowledgeNodeRelationPo {
+                id: "kr_dir".to_string(),
+                source_node_id: "kn_a".to_string(),
+                target_node_id: "kn_b".to_string(),
+                relation_type: "CONTAINS".to_string(), // 书写变体：经同义/归一命中词表
+                weight: None,
+                status: KnowledgeRelationStatus::Active,
+                created_at: 0,
+                updated_at: 0,
+            }]),
+        )
+        .await
+        .expect("create directed edge should succeed");
+
+        let data = d
+            .get_knowledge_graph(ctx, None)
+            .await
+            .expect("get_knowledge_graph should succeed");
+        // seed_graph 预置词表不含 contains——本用例词表为空，CONTAINS 应判 Drift 兜底 undirected；
+        // directed 命中路径由 common/src/ontology.rs resolve 单测覆盖（resolve_relation_carries_lexicon_direction）
+        assert_eq!(
+            data.edge_directions.get("kr_dir").map(String::as_str),
+            Some("undirected")
+        );
     }
 }

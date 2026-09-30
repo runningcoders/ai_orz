@@ -132,6 +132,8 @@ pub struct OntologyRelationTypeItem {
     pub weight_base: f64,
     /// 反向关系 key（None = 无对称反向词）
     pub inverse_key: Option<String>,
+    /// 方向二值（"directed" / "undirected"）
+    pub direction: String,
     /// 状态（正常 / 退役）
     pub status: OntologyStatus,
     /// 创建时间戳（秒）
@@ -181,6 +183,9 @@ pub struct CreateOntologyRelationTypeRequest {
     /// 反向关系 key（None = 无对称反向词）
     #[serde(default)]
     pub inverse_key: Option<String>,
+    /// 方向二值（"directed" / "undirected"）；缺省兜底 undirected（存量调用方零破坏）
+    #[serde(default)]
+    pub direction: Option<String>,
 }
 
 /// 创建关系类型响应

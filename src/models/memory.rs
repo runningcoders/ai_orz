@@ -630,6 +630,11 @@ pub struct KnowledgeGraphData {
     pub edges: Vec<KnowledgeNodeRelationPo>,
     /// 节点连接度（key = 节点 ID，value = (入边数, 出边数)），仅计生效边
     pub degrees: HashMap<String, (usize, usize)>,
+    /// 边方向映射（key = 边 ID，value = "directed"/"undirected"）
+    ///
+    /// 三期方案 a′：服务端 DAL 聚合时按本体词表 resolve 逐边带出方向，
+    /// 前端零词表映射（架构不变式）。词表外/解析兜底一律 "undirected"。
+    pub edge_directions: HashMap<String, String>,
 }
 
 #[cfg(test)]
