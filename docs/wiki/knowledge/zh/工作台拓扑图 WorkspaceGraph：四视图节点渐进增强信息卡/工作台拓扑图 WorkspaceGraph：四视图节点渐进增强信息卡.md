@@ -22,6 +22,9 @@ source_files:
   - 'frontend/src/components/node_card.rs（卡片几何 SSOT：NODE_BOX_W=168 + box_width/box_height/wrap_text/hover_lines —— 构造点只引用不自算，详见父卡 §4-20）'
   - 'frontend/src/components/layered_layout.rs（Task DAG 分层布局：compute_layered_layout + y 自适应）'
   - 'docs/wiki/zh/content/前端应用/组件系统/业务组件.md（§工作区画布 WorkspaceGraph：四视图职责与交互长文）'
+  - 'frontend/src/components/node_card.rs（2026-09-26 增量 b1f4c4fa：移除失去调用方的 truncate_chars —— 卡片文案「截断只留在渲染处 title() 单行收窄」，与本卡 §4-4「description 原样下发、禁止构造点截断」同源；卡片几何/文案 SSOT 更加中立）'
+  - 'frontend/src/pages/hr/knowledge_graph.rs（2026-09-26 增量 e963af78：知识图谱数据构建层 node_display_name 取消 14 字符截断 —— 「名称完整下发、截断只留在渲染处」的同类修复，共卡 §4-20 SSOT 口径）'
+  - 'frontend/src/components/canvas_scene.rs（CanvasNode::is_card 渐进增强判定 + DefaultRenderer 双形态绘制：圆形 / 矩形信息卡，详见父卡 §4-22）'
 ---
 
 ## §1 概述

@@ -20,12 +20,26 @@
 - [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
 - [src/handlers/hr/skill/get_skill_file_content.rs](src/handlers/hr/skill/get_skill_file_content.rs)
 - [src/handlers/hr/skill/update_skill_file_content.rs](src/handlers/hr/skill/update_skill_file_content.rs)
+- [src/service/domain/hr/agent.rs#L69-L92](src/service/domain/hr/agent.rs#L69-L92) — resolve_agent_skills 持有语义收紧 retain 谓词（M2 修复 A）
+- [src/service/domain/hr/skill.rs#L51-L110](src/service/domain/hr/skill.rs#L51-L110) — update_skill 发布回写编排（N2）
+- [src/handlers/hr/skill/mod.rs#L49-L74](src/handlers/hr/skill/mod.rs#L49-L74) — validate_agent_skill_status_change 发布收敛单一入口（M2 修复 C）
+- [src/handlers/hr/skill/create_skill.rs#L66-L72](src/handlers/hr/skill/create_skill.rs#L66-L72) — create 即发布拦截
+- [src/handlers/hr/skill/update_skill.rs#L56-L62](src/handlers/hr/skill/update_skill.rs#L56-L62) — update 直改 Published 拦截
+- [src/service/dal/skill.rs#L351-L359](src/service/dal/skill.rs#L351-L359) — list_for_agent 同谓词收紧（M2 修复 A）
 - [src/service/domain/hr/agent.rs#get_agent_association_groups](src/service/domain/hr/agent.rs#L654-L845)
 - [src/service/domain/hr/mod.rs#AgentToolGroups](src/service/domain/hr/mod.rs#L433-L467)
 - [src/handlers/hr/agent/association.rs](src/handlers/hr/agent/association.rs)
 - [common/src/api/agent.rs#AgentToolsOverview](common/src/api/agent.rs#L145-L189)
 - [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
 </cite>
+
+### 更新摘要（2026-09-30，base b82d3f7f→8fa050d0）
+
+技能「发布 / 持有」语义收敛（M2）+ 发布回写副本（N2）：
+
+- `resolve_agent_skills`（[src/service/domain/hr/agent.rs#L69-L92](src/service/domain/hr/agent.rs#L69-L92)）与 `SkillDal::list_for_agent`（[src/service/dal/skill.rs#L351-L359](src/service/dal/skill.rs#L351-L359)）使用同一 retain 谓词，仅返回 Agent「实际持有」的技能（安装副本 `parent_skill_id` 非空 或 自有非正式发布技能 `status != Published`）；共享库正式发布版根技能不再计入关联全景 / wake 路径。
+- `SkillManage::update_skill`（[src/service/domain/hr/skill.rs#L51-L110](src/service/domain/hr/skill.rs#L51-L110)）在「非 Published → Published」且 Agent 自有根技能时调 `publish_writeback_copy` 为作者 Agent 补建本地工作副本，失败仅 log_warn 降级不阻断发布。
+- Handler 层新增发布守卫 `validate_agent_skill_status_change`（[src/handlers/hr/skill/mod.rs#L49-L74](src/handlers/hr/skill/mod.rs#L49-L74)），`create_skill`（[#L66-L72](src/handlers/hr/skill/create_skill.rs#L66-L72)）与 `update_skill`（[#L56-L62](src/handlers/hr/skill/update_skill.rs#L56-L62)）均调用，拦截 Agent 上下文 / Agent 安装副本直改 Published。
 
 ### 更新摘要（2026-08-31）
 

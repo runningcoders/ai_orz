@@ -81,6 +81,8 @@ source_files:
 
   - 【平行卡】docs/wiki/knowledge/zh/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md
 
+  - 【平行卡】docs/wiki/knowledge/zh/模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析/模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析.md
+
 ---
 
 # Embedding Provider 生命周期与重建触发条件
@@ -127,6 +129,8 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 | [src/service/domain/system/seed/diff.rs](src/service/domain/system/seed/diff.rs) (v1.2 增量) | 种子 diff 校验 | 导入时对话模型 context_length 必填校验 |
 
 ## §3 架构约定
+
+本卡与「模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析」构成互补视角：该卡聚焦 Chat 模型的下行调用访问模式（stream / non_stream），本卡聚焦 Embedding Provider 的业务生命周期与向量重建触发条件。
 
 ### 3.1 Embedding 创建降级矩阵
 

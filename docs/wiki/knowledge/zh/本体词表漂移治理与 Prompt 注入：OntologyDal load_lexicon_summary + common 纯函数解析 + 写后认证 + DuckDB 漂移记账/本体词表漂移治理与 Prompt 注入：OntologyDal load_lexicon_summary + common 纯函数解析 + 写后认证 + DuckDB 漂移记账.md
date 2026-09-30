@@ -36,9 +36,14 @@ source_files:
   - docs/wiki/zh/content/功能模块/知识图谱管理/本体词表与漂移治理.md
   - 【平行卡 1】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md
   - 【平行卡 2】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md
+  - common/src/ontology.rs#L142-L186 (2026-09-30 增量 0ef6ba28：新增 **Direction 二值枚举** Directed/Undirected —— `#[serde(rename_all="lowercase")]` 序列化 "directed"/"undirected"、`Default=Undirected`、`FromStr` + `parse_or_default` 兜底；`OntologyLexicon.relation_directions: HashMap<String, Direction>` 平行结构（未登记 key 解析兜底无向）；`ResolvedTerm` 三分支各带 direction；`PresetRelationType.direction` 带 `#[serde(default="default_preset_direction")]` 兜底旧 seed 快照)
+  - migrations/20260930000001_add_direction_to_ontology_relation_types.sql#L1-L25 (2026-09-30 增量 0ef6ba28：`ontology_relation_types` 增 `direction TEXT NOT NULL DEFAULT 'undirected' CHECK(direction IN ('directed','undirected'))` + `multiplicity` 可空占位 + 三段幂等回填（有逆词 → directed / 显式点名无向词 → undirected）)
+  - 【兄弟卡】docs/wiki/knowledge/zh/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头.md（2026-09-30 新增：方向登记的**消费侧** —— `get_knowledge_graph` 逐边 `common::ontology::resolve` 带出 `edge_directions`，前端零词表映射）
 ---
 
 # 本体词表漂移治理与 Prompt 注入
+
+**关联声明（Level 3 兄弟卡）**：本卡是本体词表（TBox）漂移治理视角卡；本体 `direction` 方向登记的下游**消费侧**（`get_knowledge_graph` 逐边 `common::ontology::resolve` 带出 `edge_directions`、前端零词表映射、双渲染器箭头）拆为兄弟细卡 [知识图谱全局点线视图…](docs/wiki/knowledge/zh/%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%E5%85%A8%E5%B1%80%E7%82%B9%E7%BA%BF%E8%A7%86%E5%9B%BE%EF%BC%9Aget_knowledge_graph%20%E5%85%A8%E9%87%8F%E8%81%9A%E5%90%88%E7%AB%AF%E7%82%B9%20+%20R1R2R4%20%E5%8F%A3%E5%BE%84%20+%20%E8%BE%B9%E6%96%B9%E5%90%91%E6%9C%8D%E5%8A%A1%E7%AB%AF%20resolve%20+%20%E5%8F%8C%E6%B8%B2%E6%9F%93%E5%99%A8%E7%AE%AD%E5%A4%B4/%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%E5%85%A8%E5%B1%80%E7%82%B9%E7%BA%BF%E8%A7%86%E5%9B%BE%EF%BC%9Aget_knowledge_graph%20%E5%85%A8%E9%87%8F%E8%81%9A%E5%90%88%E7%AB%AF%E7%82%B9%20+%20R1R2R4%20%E5%8F%A3%E5%BE%84%20+%20%E8%BE%B9%E6%96%B9%E5%90%91%E6%9C%8D%E5%8A%A1%E7%AB%AF%20resolve%20+%20%E5%8F%8C%E6%B8%B2%E6%9F%93%E5%99%A8%E7%AE%AD%E5%A4%B4.md)（本卡管 TBox 词表登记与治理，该卡管 ABox 全量聚合与方向消费）。
 
 ## §1 整体方案
 
@@ -97,6 +102,7 @@ source_files:
 9. ✅ OntologyDal.try_dal() 供可选依赖场景优雅降级（本体子系统未初始化不阻断主流程）
 10. ✅ warn_if_lexicon_truncated() 在词表量级正常时永不触发（正常几十条，上限 1000）；触发即异常打 warn 提醒
 11. ✅ （2026-09-XX 新增）本体词表运行时注入必须走 `OntologyDal.load_lexicon_summary` → `OntologyDomain.list_lexicon` → `common::ontology` 纯函数解析链路；handler 层不得自行拼接词表或跳过 OntologyDal 直查三表
+12. ✅ （2026-09-30 新增，0ef6ba28）**`direction` 只有 `directed` / `undirected` 二值**——DDL `CHECK(direction IN ('directed','undirected'))`、`Direction` 枚举（`#[serde(rename_all="lowercase")]`）、`Direction::as_str()` 三处必须同一口径；解析非法值一律兜底 `Undirected`，禁止第三值或 panic。旧 seed 快照（无 `direction` 字段）由 `PresetRelationType.direction` 的 `#[serde(default="default_preset_direction")]` 兜底为 `"undirected"`，与 DDL `DEFAULT` 同口径，**不破旧 seed**。方向登记的下游消费（`get_knowledge_graph` 逐边 resolve 带出 `edge_directions`）见兄弟卡「知识图谱全局点线视图」
 
 ## §5 历史演进
 
@@ -105,3 +111,4 @@ source_files:
 | 2026-08 之前 | 初版 | 本体词表仅用于写后认证（OntologyCertifyConsumer certify_memory_terms），未注入 Prompt | src/consumer/ontology_certify_consumer.rs；src/service/domain/hr/ontology.rs |
 | 08c3e720 → 14a4b688 → db46a354 → 5b52c72c | 2026-09 | PromptBuilder ontology_lexicon trait 方法 + DefaultPromptBuilder.build_lexicon_section 3000 chars 预算；区块前移为第 4 块（稳定性递减排序）；运行时注入链路 awakening → OntologyDal → OntologyDomain → PromptBuilder 完整落地 | src/models/prompt_builder.rs；src/service/dal/agent/builder/default.rs#L145-L230；src/service/domain/runtime/awakening.rs#L343-L393 |
 | abec62c0 + 9c7ba27f + c49317b8 | 2026-09 | 前端本体管理页 3 fix：① GET 请求 #[param(source = "query")] 补齐 ② use_effect 同步段移入 spawn 异步段 ③ Agent 详情页神经技能包筛选 fix | frontend/src/pages/hr/ontology_panel.rs |
+| 0ef6ba28 | 2026-09-30 | 方向性边承载（方案 a′ 三期）：`ontology_relation_types` 增 `direction`（二值 + CHECK）/`multiplicity`（占位）；`common::ontology` 增 `Direction` 枚举 + `OntologyLexicon.relation_directions` + `ResolvedTerm` 三分支带 direction；create 联动校验（direction 解析失败→400、undirected↔inverse_key 互斥→400）；seed 双向扩展 + 旧快照 serde 兜底 | common/src/ontology.rs#L142-L186；migrations/20260930000001_add_direction_to_ontology_relation_types.sql#L1-L25；src/handlers/hr/ontology/create_relation_type.rs |

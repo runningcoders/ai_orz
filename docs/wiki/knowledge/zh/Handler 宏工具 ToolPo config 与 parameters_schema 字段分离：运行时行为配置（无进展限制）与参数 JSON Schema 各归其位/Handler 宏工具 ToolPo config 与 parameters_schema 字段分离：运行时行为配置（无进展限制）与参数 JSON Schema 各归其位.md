@@ -27,6 +27,7 @@ source_files:
 - docs/wiki/zh/content/架构设计/分层架构设计/DAL 层组合.md
 - docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md
 - docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md
+- 【视角兄弟卡】docs/wiki/knowledge/zh/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆.md
 
 ---
 
@@ -111,6 +112,8 @@ source_files:
 
 ## §3 关键文件路径表格（读代码直接跳）
 
+本卡与 [工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆](docs/wiki/knowledge/zh/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆.md) 构成 **ToolPo.config 体系** 的 字段语义契约 / 结构体定义与前后端共享 互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡。
+
 | 文件锚点 | 角色 | 核心契约 |
 |---------|------|---------|
 | [ai-orz-macros/src/lib.rs](ai-orz-macros/src/lib.rs#L187-L280) | 宏展开 ToolPo 构造 | name/description/tags/neural 元数据 + schema_json → parameters_schema（Some）；config = Value::Null |
@@ -141,7 +144,7 @@ source_files:
 
 1. ❌ **禁止把参数 schema 写入 config**：这是历史 bug，任何 `create_po()` / `HandlerToolBuilder::build()` 实现如果 `config = schema_json` 一律视为错误；单测 `test_handler_macro_po_fields_convention` 强制约束。
 2. ✅ **sync_builtin_tools_to_db 永不覆盖 config**：UPDATE 语句里不能出现 `config = ?` 这种赋值（除非是未来显式设计的"清 config"操作，且有充分理由）。
-3. ✅ **新增 ToolPo 便捷方法时统一 `.get("snake_case_key")` 风格**：与 `config_timeout_ms()` / `config_max_output_bytes()` / `cli_command()` 保持一致，不要强类型 struct 反序列化（config 是开放 JSON，未来可能不断加新键）。
+3. **内置工具 config 读取走 `common::config` 强类型结构体**（2026-09-30 起）：工具行为配置（`HttpToolConfig` / `ShellToolConfig` / `ShellExecConfig` / `FsToolConfig` / `CliToolConfig` / `McpToolConfig` / `BrowserConfig` / `SearchToolConfig`）已在 `common/src/config.rs` 定义，读取统一 `from_value::<X>()`（先 `is_null` 短路回缺省 + 解析失败留 `warn`），不再散落 `.get("snake_case_key")`；**handler 宏工具**的 `config` 仍是开放 JSON、以 `Null` 起步（本卡 §1 约定不变）。新增字段改结构体 + 前端表单两处同步，见视角兄弟卡。
 4. ✅ **NoProgressPolicy 配置示例**：运维给 search_memory 写运行时限制时，config 应形如 `{"no_progress_max_calls": 15}`，schema 通过 sync 自动刷新到 parameters_schema。
 5. ❌ **禁止在 description 里写内部实现细节或 ACL 枚举**：违反 §2.2 规则 1 和规则 2。description 读者是 LLM Agent，它不关心 DAO 层方法名或需要什么数据库角色。
 6. ❌ **require_confirmation 场景禁止写 "blocked" / "denied"**：违反 §2.2 规则（require_confirmation 语义是请用户确认，不是硬拒绝）。已在 2026-09 重写中修正 fs_read / fs_write / shell_exec 的 description。

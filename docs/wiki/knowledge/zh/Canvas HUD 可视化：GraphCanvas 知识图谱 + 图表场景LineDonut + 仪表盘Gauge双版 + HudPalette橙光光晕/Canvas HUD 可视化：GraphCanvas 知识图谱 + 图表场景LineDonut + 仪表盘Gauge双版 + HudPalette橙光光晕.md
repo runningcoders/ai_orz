@@ -71,9 +71,21 @@ source_files:
   - 【平行卡 3】docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md（TimeRangePicker 消费方：统计看板时间筛选）
   - 【平行卡 4】docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md（RingProgress 消费方：Agent 上下文 Token 占比展示）
   - 【子卡】docs/wiki/knowledge/zh/工作台拓扑图 WorkspaceGraph：四视图节点渐进增强信息卡/工作台拓扑图 WorkspaceGraph：四视图节点渐进增强信息卡.md（2026-09-18 拆分：WorkspaceGraph 单文件专管——四视图节点 workspace_node 渐进增强信息卡 + 外接圆半径 + task_tags 进度胶囊；本卡 scope 中 workspace_graph.rs 的适配层细则以子卡为第一召回层，通用渲染/力导向红线仍在本卡 §4）
+
+  - frontend/src/pages/hr/knowledge_graph.rs（2026-09-26 增量 e963af78：知识图谱 hover 详情标题完整显示 —— `node_display_name` 取消 14 字符截断，label 在数据构建层保持完整；截断只留在渲染处 `node_card::title` 单行收窄）
+  - frontend/src/components/node_card.rs（2026-09-26 增量 b1f4c4fa：移除失去调用方的 `truncate_chars`（截断职责收归 `title()` 单行收窄），卡片几何/文案 SSOT 更加中立）
+  - frontend/src/components/graph.rs（2026-09-26 增量 b1f4c4fa：`node_card` 重导出列表去掉 `truncate_chars`）
+
+  - frontend/src/components/canvas_scene.rs（2026-09-30 增量 412c2e90：CanvasEdge 增 `directional: bool`（Default=false）；`draw_edges` 增**箭头原语**——directed 边在 target 端画小三角、沿 source→target 方向、尺寸随线宽派生、填充复用边色；命中/选中/hover 零触碰）
+  - frontend/src/components/graph.rs（2026-09-30 增量 412c2e90 / f7ad05e8：**marker 条件挂载**——`<marker id="arrowhead">` + `marker_end` 按 `edge.direction == "directed"` 挂载，undirected 纯线；`global_node_radius` / `global_node_label` 上提为 SVG/Canvas 双渲染器 SSOT；全局态圆点分支对齐 Canvas）
+  - frontend/src/components/graph_canvas.rs（2026-09-30 增量 f7ad05e8 / 412c2e90：global_mode 时 `radius=graph::global_node_radius(degree)`（半径公式改调 SSOT）；`GraphEdge→CanvasEdge` 透传 `directional = e.direction == "directed"`）
+  - 【兄弟卡】docs/wiki/knowledge/zh/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头.md（2026-09-30 新增：全局点线视图端点 + R1/R2/R4 口径 + 边方向服务端 resolve + 双渲染器箭头一致性）
+
 ---
 
 ## §1 概述
+
+**关联声明（Level 3 兄弟卡）**：本卡是 Canvas 渲染**总卡**，知识图谱全局点线视图（`get_knowledge_graph` 全量聚合端点 + R1/R2/R4 口径 + 边方向服务端 resolve + 双渲染器箭头）拆为兄弟细卡 [知识图谱全局点线视图…](docs/wiki/knowledge/zh/%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%E5%85%A8%E5%B1%80%E7%82%B9%E7%BA%BF%E8%A7%86%E5%9B%BE%EF%BC%9Aget_knowledge_graph%20%E5%85%A8%E9%87%8F%E8%81%9A%E5%90%88%E7%AB%AF%E7%82%B9%20+%20R1R2R4%20%E5%8F%A3%E5%BE%84%20+%20%E8%BE%B9%E6%96%B9%E5%90%91%E6%9C%8D%E5%8A%A1%E7%AB%AF%20resolve%20+%20%E5%8F%8C%E6%B8%B2%E6%9F%93%E5%99%A8%E7%AE%AD%E5%A4%B4/%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%E5%85%A8%E5%B1%80%E7%82%B9%E7%BA%BF%E8%A7%86%E5%9B%BE%EF%BC%9Aget_knowledge_graph%20%E5%85%A8%E9%87%8F%E8%81%9A%E5%90%88%E7%AB%AF%E7%82%B9%20+%20R1R2R4%20%E5%8F%A3%E5%BE%84%20+%20%E8%BE%B9%E6%96%B9%E5%90%91%E6%9C%8D%E5%8A%A1%E7%AB%AF%20resolve%20+%20%E5%8F%8C%E6%B8%B2%E6%9F%93%E5%99%A8%E7%AE%AD%E5%A4%B4.md)（本卡管渲染基础设施与力导向/图表，该卡管全量端点与边方向契约；双卡在 `graph.rs` / `canvas_scene.rs` / `graph_canvas.rs` 上 scope 相交，增量互认）。
 
 **本卡角色**：前端 HUD 驾驶舱风格 Canvas 可视化体系知识卡。覆盖 GraphCanvas（知识图谱 Canvas 渲染 + 力导向/分层两布局）、ChartScene 统一图表场景（LineChart 时序折线/DonutChart 甜甜圈）、仪表盘 Gauge/AopGauge 双刻度、HudPalette 橙光调色板 + draw_glow_stroke 光晕工具。**定位：新增图表类型、调整图谱布局卡顿、排查 HUD 橙光效果被主题色覆盖、调力导向 alpha 冷却参数时读。**
 
@@ -81,6 +93,7 @@ source_files:
 - **GraphCanvas 图谱双布局 + 两端复用**（graph_canvas.rs + HR 知识图谱页 + Workspace 工作台页）：ForceLayout 力导向用于自由探索（知识图谱 HR 页）：所有节点对算 1/r² 斥力 + 胡克力边引力 + center(0,0) 中心拉力；alpha 冷却系数 α_t = 0.99^t，300 帧后 α<0.01 → stop。LayeredLayout 分层用于结构化视图（任务 DAG/Agent 工具依赖）：先算 depth 层号（BFS）→ 层内等分 x → 层间按 y 等分；不做连线交叉最小化（性能优先，仅按 edge weight 重排）。两端复用：HR 页和 Workspace 页都用同一 GraphCanvas 组件，仅 props 的 layout_mode="force" | "layered" + 数据来源不同；种子节点推荐 recommend_seed_nodes 返回的 node.score → 映射到节点颜色（HUD_ORANGE 高分→HUD_BLUE 低分）+ 外发光 draw_glow_stroke。
 - **HUD 风格橙光调色板（HudPalette）+ 仪表盘 Gauge**（hud_palette.rs + gauge.rs）：4 主色 HUD_ORANGE/HUD_BLUE/HUD_GREEN/HUD_RED；draw_glow_stroke 实现：先 `ctx.shadow_blur = 8.0` + `ctx.shadow_color = HUD_ORANGE` → 画一次描边（光晕）→ reset shadow → 画第二次正常描边（实线）；这样 CSS 不会被 DaisyUI 主题覆盖（是 Canvas 2D API，不是 DOM）。仪表盘 Gauge：value 0-100 → 映射到 240° 圆弧起点角度 150° 到终点 390°；指针三角箭头 + 刻度 20 条（每 20 一条长刻度）；AopGauge（aop_gauge.rs）同 Gauge 组件 + 上半圆环 AOP 队列延迟毫秒 + 下半圆环消费者阻塞数 双刻度，System AOP 页用。HudPalette 新增 HUD_SECONDARY(#22d3ee 青蓝) + HUD_TERTIARY(#a78bfa 紫) 两色，支撑 LineChart 同轴三条曲线（输入/输出/total）冷暖和对比色区分。
 - **聊天侧栏 Agent Tab 消费图表组件**（chat_side_panel.rs + stats.rs）：LineChart 组件从「主要在统计仪表盘」扩展到聊天侧栏 Agent 运行统计 Tab；AgentStatsPanelCompact 紧凑面板（320x180 原生渲染），展示唤醒次数 + Token 消耗（input/output/total）三线趋势；HudPalette 橙光光晕风格 + 次色/第三色区分曲线；聊天侧栏 Tab 按需加载（共享轮询高频链路零额外开销，统计仅在 Tab 挂载时触发）。
+- **节点名称完整展示（2026-09-26，e963af78 / b1f4c4fa）**：知识图谱数据构建层 `node_display_name` 取消 14 字符截断，label 保持完整——hover 详情卡、SVG 兜底与边端点名不再拿到残缺文本；截断只留在渲染处 `node_card::title` 单行收窄，失去调用方的 `node_card::truncate_chars` 已删除。
 
 **RingProgress 通用环形进度组件**（2026-09-11 新增）：`frontend/src/components/ring_progress.rs` 纯 Canvas 2D 渲染（非 DOM），props: `ratio: f32`（0.0-1.0 进度比例）+ `color: String`；内环半径 + 外环 strokeWidth + 橙色光晕（HudPalette.draw_glow_stroke 复用）；Agent 上下文 Token 占比专用——AgentRuntimeState.tokens_used_ratio → RingProgress 渲染 + context_threshold 为 None 时显示配置入口提示。
 
@@ -146,9 +159,11 @@ HR 知识图谱页面加载：
 **边权重表达关联强度（2026-09-17）**：关系边此前只有 `relation_type` 一列，图上所有连线长得一模一样，「A 依赖 B」与「A 顺带提到 B」无法区分。加 `knowledge_node_relation.weight`（REAL 可空，`NULL` = 未标注）后，`edge_style::weight_style` 把它映射成**线宽（1.1~3.8）+ 不透明度系数（0.45~1.0）**，未标注走基准线宽 1.5；hover 边卡在标注过时多一行 `强度: 80%`。强度**不占用颜色通道**（颜色已被关系类型哈希色与 ready/not_ready 语义色占用）。写入侧由 `save_long_term_memory` 的 `relations[].weight` 声明并经 `normalized_weight()` 归一化，**缺省不落默认值**。可选的替代方案「派生权重」被否决：候选信号（共现证据数）依赖 `knowledge_reference`，而节点写入路径恒传 `references: vec![]`，该表为空 → 派生值恒 0。
 ```
 
+**名称在数据层保持完整不截断（2026-09-26，e963af78 / b1f4c4fa）**：知识图谱原先在 `node_display_name`（`frontend/src/pages/hr/knowledge_graph.rs`）里对名称做 14 字符截断，导致 hover 详情卡、SVG 兜底与边端点名拿到的是残缺文本。修复后**截断只属于「节点卡片标题」这一处渲染**（`node_card::title` 单行收窄），数据构建层不再截断——`node_display_name` 对 name / 兜底正文首行一律原样返回。配套移除失去调用方的 `node_card::truncate_chars`（`graph.rs` 重导出列表同步删除），截断职责单点收敛在渲染处，守卫测试 `display_name_keeps_full_name_without_truncation` 断言 `GraphNode.label` 不被数据层截断。
+
 ---
 
-## §4 硬约束与回归红线（28 条）
+## §4 硬约束与回归红线（30 条）
 
 1. **Canvas 2D 绘制不能依赖 DaisyUI CSS 变量**：HUD 色必须硬编码 HudPalette 的 const，不要从 window.getComputedStyle 读 --p（DaisyUI 主色），否则 WASM 里 DOM API 跨线程调用 + 切换主题 30+ 每换一次重绘所有 Canvas，性能炸。例外：Canvas 周围 DOM 外壳 card 样式可用 class="bg-base-200"。
 2. **ForceLayout 斥力 O(n²) 必须节点数 ≥1000 时降采样**：nodes.len() > 800 自动从 O(n²) 切换到 Barnes-Hut O(n log n) 近似（四叉树空间分块近似斥力）；测试 1500 节点渲染时 dt 单帧 > 32ms（< 30fps）→ 必须启用近似模式；默认模式 O(n²) 够用，代码不预实现 Barnes-Hut（YAGNI）。
@@ -178,3 +193,5 @@ HR 知识图谱页面加载：
 26. **SVG 渲染尺寸必须走 `svg_width`/`svg_height` props，禁止 fork 组件改常量**（2026-09-18 新增）：同一 Graph 渲染组件被缩略图（300x200）与放大弹窗（920x620）复用，尺寸 clamp 最小 160/120 防负值/过小；新增消费方传 props 即可，严禁复制组件副本改写死尺寸。
 27. **layered_layout 深链必须压缩层距适配画布高度**（2026-09-18 新增）：层距 = `min(config.layer_height, usable_height/max_layer)` + 垂直居中偏移 `v_offset`，禁止固定 layer_height 直排——深链任务图会纵向溢出画布把最后几层裁掉；环（无入度为 0 节点）整体沉到最底层（layer=0、bottom=1）。守卫测试：深链分层各层 y 不超画布 + 浅链垂直居中。
 28. **依赖图构建必须过滤悬挂依赖边**（2026-09-18 新增）：前置任务不在当前任务列表内（已删除/跨项目）时直接丢弃该边，禁止产出缺失端点的 GraphEdge——SVG/Canvas 对未知节点索引会 panic 或画出飞线；任务依赖图缩略图与放大弹窗共用 `build_task_graph_data`，过滤逻辑只写一处。
+29. **节点名称在数据构建层禁止截断，截断只准留在渲染处 `title()`**（2026-09-26 新增，e963af78 / b1f4c4fa）：`node_display_name`（`frontend/src/pages/hr/knowledge_graph.rs`）必须原样返回 name / 兜底正文首行，**禁止**在数据层调 `truncate_chars`——label 一旦残缺，hover 详情卡、SVG 兜底与边端点名三处同时拿到残缺文本（用户看到的 hover 标题被生硬截断）。截断职责单点收敛在渲染处 `node_card::title` 单行收窄；`node_card::truncate_chars` 已删除（失去调用方），`graph.rs` 重导出列表同步移除。守卫测试 `display_name_keeps_full_name_without_truncation` 兜底。
+30. **有向边箭头必须是双渲染器一致的条件挂载，半径公式必须双渲染器同源**（2026-09-30 新增，412c2e90 / f7ad05e8）：SVG 渲染器（`graph.rs`）的 `marker_end` 按 `edge.direction == "directed"` **条件挂载**（undirected 纯线），Canvas 渲染器（`canvas_scene.rs` 的 `draw_edges` 箭头原语）对 `CanvasEdge.directional` 为真的边在 target 端画小三角 —— **禁止只在单渲染器上加箭头**，否则同一份数据在 SVG/Canvas 下有无箭头不一致 = 视觉漂移（用户以为方向语义丢失）；`global_node_radius` / `global_node_label` 是度数→半径/限绘的**唯一 SSOT**（`graph.rs`），`graph_canvas.rs` 必须调用它、禁止另抄系数（一处改一处漏 = 两种渲染器同度数点大小不同）。箭头/半径的构造在共享基础设施层完成，业务适配层只透传 `direction`→`directional`，禁止各写一套几何。

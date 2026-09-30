@@ -14,7 +14,16 @@
 - [src/config.rs](src/config.rs)
 - [common/config/ai_orz.toml](common/config/ai_orz.toml)
 - [src/pkg/tool_registry/shell_tests.rs](src/pkg/tool_registry/shell_tests.rs)
+- [common/src/config.rs](common/src/config.rs#L379-L475)
+- [frontend/src/components/create_tool_shell.rs](frontend/src/components/create_tool_shell.rs#L37-L143)
+
+### 本文关联的文档
+- 知识卡：[工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆](docs/wiki/knowledge/zh/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆.md)
 </cite>
+
+## 更新摘要（2026-09-30，base 4ad13f2e→HEAD）
+- `shell_exec` 工具配置 `ShellExecConfig`（`default_timeout_ms` / `default_max_output_size_bytes` / `additional_allowed_paths` / `path_additions` / `home_mode` / `toolchain_envs` / `allowed_env`）下沉 `common/src/config.rs`；`src/pkg/tool_registry/shell_exec.rs` 改 `pub use common::config::ShellExecConfig;` 薄转发。
+- 声明式 Shell 工具配置 `ShellToolConfig` 同批下沉；前端创建/详情页共用 `create_tool_shell.rs` 的 `ShellToolSubForm`。
 
 ## 更新摘要
 **所做更改**

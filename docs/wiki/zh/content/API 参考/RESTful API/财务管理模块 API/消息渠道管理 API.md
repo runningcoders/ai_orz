@@ -9,12 +9,20 @@
 - [src/service/domain/finance/message_channel.rs](src/service/domain/finance/message_channel.rs)
 - [src/service/dal/message_channel.rs](src/service/dal/message_channel.rs)
 - [src/service/dao/message_channel/mod.rs](src/service/dao/message_channel/mod.rs)
-- [src/service/dao/message_channel/sqlite.rs](src/service/dao/message_channel/sqlite.rs)
+- [src/service/dao/message_channel/sqlite.rs](src/service/dao/message_channel/sqlite.rs) — 查询期默认软删除过滤（push_query_filters #L317-L345）
 - [src/models/message_channel.rs](src/models/message_channel.rs)
 - [common/src/enums/message_channel.rs](common/src/enums/message_channel.rs)
 - [migrations/20260508000000_message_channels.sql](migrations/20260508000000_message_channels.sql)
-- [docs/message_channel_design.md](docs/message_channel_design.md)
+- [docs/archive/design-archive/message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
+
+**本文关联的文档**
+- ① Design：[message_channel_design.md](docs/archive/design-archive/message_channel_design.md) — 消息渠道入站适配中台架构与渠道引用检查
+- ④ RAG：[消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期](docs/wiki/knowledge/zh/消息渠道入站适配中台：MessageInboundAdapter%20trait%20+%20MessageAdapterRegistry%20全局注册%20+%20start_all%20stop_all%20生命周期/消息渠道入站适配中台：MessageInboundAdapter%20trait%20+%20MessageAdapterRegistry%20全局注册%20+%20start_all%20stop_all%20生命周期.md)
+- ③ Wiki 关联长文：[微信 iLink 专属渠道.md](docs/wiki/zh/content/功能模块/消息系统/微信%20iLink%20专属渠道.md)、[飞书集成系统.md](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md)
 </cite>
+
+## 更新摘要
+**2026-09-30 增量（base b82d3f7f→8fa050d0）**：修复已删除渠道从列表泄漏——`MessageChannelDao` 的 `push_query_filters` 补默认软删除过滤，未显式传 `status_in` 时追加 `AND status != 0`（与 message DAO 同范式），已软删渠道不再出现在列表/查询结果；显式 `status_in` 保留「查历史/恢复」逃生通道（覆盖默认过滤）。清单/查询接口行为随之收紧。
 
 ## 目录
 1. [简介](#简介)
@@ -56,7 +64,7 @@ D --> F["DB: message_channels 表"]
 
 章节来源
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [docs/message_channel_design.md:52-69](docs/message_channel_design.md#L52-L69)
+- [docs/archive/design-archive/message_channel_design.md:52-69](docs/archive/design-archive/message_channel_design.md#L52-L69)
 
 ## 核心组件
 - 枚举与实体
@@ -117,7 +125,7 @@ Handler-->>Client : 200 + 脱敏详情
 
 ### 渠道类型与状态
 - 渠道类型：支持飞书、微信、Slack、邮件、Webhook、A2A 回调。新增类型需更新枚举与 DAL 分发逻辑。
-- 渠道状态：Active/Disabled/Deleted，状态迁移规则内聚于领域模型，确保 Deleted 不可通过普通状态更新产生。
+- 渠道状态：Active/Disabled/Deleted，状态迁移规则内聚于领域模型，确保 Deleted 不可通过普通状态更新产生。列表/查询默认排除已软删（Deleted=0）渠道。
 
 ```mermaid
 stateDiagram-v2
@@ -188,7 +196,7 @@ integer updated_at
   - 测试连接通过 Domain/DAL 分发到具体渠道 DAO 执行连通性检查。
 
 章节来源
-- [docs/message_channel_design.md:52-69](docs/message_channel_design.md#L52-L69)
+- [docs/archive/design-archive/message_channel_design.md:52-69](docs/archive/design-archive/message_channel_design.md#L52-L69)
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 - [common/src/api/message_channel.rs:9-228](common/src/api/message_channel.rs#L9-L228)
 
@@ -291,6 +299,7 @@ Next --> |否| End(["结束"])
 章节来源
 - [src/service/dao/message_channel/mod.rs:11-36](src/service/dao/message_channel/mod.rs#L11-L36)
 - [src/service/dao/message_channel/sqlite.rs:92-130](src/service/dao/message_channel/sqlite.rs#L92-L130)
+- [src/service/dao/message_channel/sqlite.rs:317-345](src/service/dao/message_channel/sqlite.rs#L317-L345) — push_query_filters 默认软删除过滤（未传 status_in 时 AND status != 0）
 - [common/src/api/message_channel.rs:82-128](common/src/api/message_channel.rs#L82-L128)
 
 ## 依赖关系分析
@@ -347,7 +356,7 @@ DL --> AC["DAO(A2aCallbackDao)"]
 - [src/handlers/finance/message_channel/test_message_channel_connection.rs:20-56](src/handlers/finance/message_channel/test_message_channel_connection.rs#L20-L56)
 - [src/models/message_channel.rs:67-107](src/models/message_channel.rs#L67-L107)
 - [src/service/dal/message_channel.rs:202-222](src/service/dal/message_channel.rs#L202-L222)
-- [docs/message_channel_design.md:23-36](docs/message_channel_design.md#L23-L36)
+- [docs/archive/design-archive/message_channel_design.md:23-36](docs/archive/design-archive/message_channel_design.md#L23-L36)
 
 ## 结论
 消息渠道管理 API 提供了完整的渠道生命周期管理能力，并通过严格的分层与纯 match 分发机制实现了多渠道支持与可扩展的消息路由。当前管理面已具备 CRUD、查询、状态管理与连接测试能力；运行面消息分发已具备框架与部分渠道实现，通用 Webhook 尚未完全实现但已有明确的失败聚合策略。后续可按需扩展新渠道类型与推送实现。
@@ -367,4 +376,4 @@ DL --> AC["DAO(A2aCallbackDao)"]
 章节来源
 - [src/models/message_channel.rs:197-255](src/models/message_channel.rs#L197-L255)
 - [src/service/dal/message_channel.rs:289-313](src/service/dal/message_channel.rs#L289-L313)
-- [docs/message_channel_design.md:478-513](docs/message_channel_design.md#L478-L513)
+- [docs/archive/design-archive/message_channel_design.md:478-513](docs/archive/design-archive/message_channel_design.md#L478-L513)

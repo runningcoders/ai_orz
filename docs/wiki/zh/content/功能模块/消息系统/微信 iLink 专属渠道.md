@@ -12,7 +12,7 @@
 - [common/src/api/wechat_integration.rs](common/src/api/wechat_integration.rs) — DTO：WechatLoginQrcodeRequest + WechatLoginStatusResponse + WechatCredentialSnapshot
 - [common/src/models/inbound_state.rs](common/src/models/inbound_state.rs) — InboundState + InboundCursor(CursorKind::Opaque) + InboundSessions
 - [common/src/models/identity_credentials.rs](common/src/models/identity_credentials.rs) — CredentialKind::WechatIlink + CredentialDetail::WechatIlink + CredentialDetailPatch::WechatIlink
-- [dao/message_channel/sqlite.rs](src/service/dao/message_channel/sqlite.rs) — set_inbound_state（InboundStateWriter 生产实现）
+- [dao/message_channel/sqlite.rs](src/service/dao/message_channel/sqlite.rs) — set_inbound_state（InboundStateWriter 生产实现）+ push_query_filters 默认软删除过滤（#L317-L345，渠道列表不再泄漏已软删渠道）
 - [models/message_channel.rs](src/models/message_channel.rs) — MessageChannelPo.inbound_state 字段 + wechat_* config 字段
 - [pkg/adapter/message.rs](src/pkg/adapter/message.rs) — MessageInboundAdapter trait + MessageAdapterRegistry 中台
 - [producer/message_channel.rs](src/producer/message_channel.rs) — MessageAdapterCallback 注入 + start_all/stop_all
@@ -43,6 +43,8 @@
 **2026-09-07 新建长文**：微信 iLink（ClawBot）阶段一双向私信闭环完整说明——扫码授权获取 WechatIlink 凭证 → 创建微信渠道（wechat_credential_id 引用）→ WechatDalImpl 注册 MessageAdapterRegistry → poll_loop 长轮询收帧 → WechatInboundConsumer Async 消费 → adapt_wechat 协议转换 → callback.on_message 投递 producer → Agent 唤醒 + outbound push sendmessage 回复。iLink 特有机制：inbound_state 运行时持久化（Opaque 游标 + context_token 会话滚动刷新）+ channel_id 键控轮询（一渠道一轮询，不做 app_id 聚合）+ PollLoopRegistry ensure 凭证指纹幂等重建。
 
 **2026-09-20 协议对齐重构（阶段 A/B/C）**：以腾讯官方插件 `@tencent-weixin/openclaw-weixin@2.4.9` 为协议 **SSOT** 复核全链路，修正此前按社区整理实现的多处错误（详见下方「协议口径」）：文本字段 `content` → `text_item.text`；`message_type`/`message_state` 字符串 → **数字**；顶层补 `message_id` 并打通 `messages.external_key`；取码接口 GET → **POST + `local_token_list`**；扫码状态 4 态 → **8 态**（含 `need_verifycode` / `scaned_but_redirect` / `binded_redirect`）；补 `base_info` 信封、请求头档位、`notifystart`/`notifystop`；补响应错误码校验（`ret`/`errcode`）与 `-14` 会话暂停 1h；补超时协商与解析留痕。前端扫码弹窗改为**自动长轮询 + 过期自动换码（上限 3）**，并新增备用授权链接、配对码输入与凭据卡扩展字段。
+
+**2026-09-30 增量（base b82d3f7f→8fa050d0）**：渠道列表口径收紧——`dao/message_channel/sqlite.rs` 的 `push_query_filters`（#L317-L345）补默认软删除过滤，未显式传 `status_in` 时追加 `AND status != 0`，已软删渠道不再泄漏到列表/查询（与本篇无关的入站链路无改动，仅同 DAO 文件的查询路径更新）。
 
 ## 目录
 1. [简介](#简介)

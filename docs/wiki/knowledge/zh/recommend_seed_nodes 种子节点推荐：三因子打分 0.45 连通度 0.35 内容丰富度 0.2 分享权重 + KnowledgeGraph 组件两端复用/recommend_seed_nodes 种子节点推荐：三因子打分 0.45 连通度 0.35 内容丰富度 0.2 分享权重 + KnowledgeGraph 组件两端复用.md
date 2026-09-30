@@ -1,40 +1,43 @@
 ---
 kind: RAG 原子知识卡
-name: recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用
+name: recommend_seed_nodes 种子节点推荐：度数排序（入边+出边）Top N + published 度数持平决胜 + KnowledgeGraph 组件两端复用 + Agent 神经工具免绑定
 category: 记忆系统 / 前端组件复用
 scope:
   - "src/service/dal/memory.rs"
   - "src/handlers/hr/agent/recommend_seed_nodes.rs"
-  - "common/src/api/memory.rs"
+  - "src/models/memory.rs"
+  - "common/src/api/neural_tools.rs"
   - "frontend/src/pages/hr/knowledge_graph.rs"
   - "frontend/src/pages/hr/agent_detail.rs"
+  - "frontend/src/components/graph_canvas.rs"
 source_files:
-  - src/service/dal/memory.rs#L97-L138 (MemoryDal trait：recommend_seed_nodes 签名：agent_id(Option, None=全局+published) + limit(默认5 / max 50) → Vec<RecommendedSeedNode>)
-  - src/service/dal/memory.rs#L314-L398 (recommend_seed_nodes 应用层计算：DAL 先拉节点 → 再拉所有关系 → HashMap 统计每个节点入边+出边度数 → 三因子加权排序 → truncate(limit))
-  - src/handlers/hr/agent/recommend_seed_nodes.rs#L21-L80 (HTTP Handler：RecommendSeedNodesParams { agent_id, limit } 结构化；agent_id 鉴权（只能查自己的 Agent）；limit min(5, 50) 双保护)
-  - frontend/src/pages/hr/knowledge_graph.rs#L115-L210 (KnowledgeGraph 可复用子组件：agent_id: Option<String> 唯一 prop；use_effect 自动重拉推荐；种子卡片区渲染 + 点击卡片 → seed_node_ids → 调 traverse_knowledge_graph)
-  - frontend/src/pages/hr/knowledge_graph.rs#L688-L770 (HrKnowledgeGraph 路由入口：AppLayout + Agent 选择器 + KnowledgeGraph(agent_id=None))
-  - frontend/src/pages/hr/agent_detail.rs#L1090-L1120 (Agent 详情页 Tab5：内嵌 KnowledgeGraph { agent_id: Some(current_agent_id.clone()) } —— 证明「组件两端复用」生效)
-  - common/src/api/memory.rs (RecommendSeedNodesParams / RecommendedSeedNode { node, score, reasons: Vec<String> }：reasons 数组给前端展示「为什么推荐这个节点」)
-  - frontend/src/components/graph_canvas/knowledge_graph_canvas.rs (画布渲染子组件：接收 nodes + edges + levels，Dioxus 独立 state，与推荐逻辑完全解耦)
-  - docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md（完整 7 章：度数统计 + 前端组件拆分 HrKnowledgeGraph vs KnowledgeGraph 两端复用 + agent_id Option 语义）
-  - docs/archive/design-archive/memory_search_enhancement_design.md（§1 决策表 扩展；§3 涉及文件清单包含前端知识图谱页面）
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Design 路径 design/seed_node_recommendation_and_component_reuse.md → 目前只有 Plan，后续需补齐决策表与红线）
-  - docs/wiki/zh/content/功能模块/AI Agent 管理/记忆系统管理.md（种子节点推荐面板：reasons 列展示每个节点的推荐原因 + 点击按钮后跳画布定位节点）
-  - docs/wiki/zh/content/架构设计/记忆系统架构.md（§图谱可视化子系统：推荐起点 + 画布渲染 + 链式探索三段）
-  - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆 (Long-term Memory)/知识节点管理.md（长期知识节点 PO 字段：tags 数量 + summary 长度 = 内容丰富度打分依据）
-  - docs/wiki/zh/content/前端应用/页面结构与路由/知识图谱页面与Agent详情页复用链路.md（两端复用架构图：HrKnowledgeGraph 路由 vs Agent 详情 Tab 嵌入）
-  - 【平行卡 1】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md（用户点击推荐卡片后，实际调用 traverse_knowledge_graph 链路 = 本卡推荐的下游）
-  - 【平行卡 2】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md（三位一体搜索增强；本卡是 recommend_seed_nodes 细节拆解的独立卡，与那张形成总-分关系）
+  - src/service/dal/memory.rs#L139-L144 (MemoryDal trait：recommend_seed_nodes 签名 —— agent_id: Option<String>（None / 空串 = 蜂巢全域） + limit → Vec<SeedNodeRecommendation>)
+  - src/service/dal/memory.rs#L419-L489 (DAL 实现：① 查知识节点（status Active、排除 Forgotten、query limit 500 总池上限）② list_relations_batch 批量拉边 ③ HashMap 统计每节点入度/出度 ④ degree=入+出 倒序、度数持平 `is_published` 决胜 ⑤ truncate(limit))
+  - src/models/memory.rs#L608-L617 (领域模型 SeedNodeRecommendation { node: LongTermKnowledgeNodePo, degree, incoming_count, outgoing_count })
+  - src/handlers/hr/agent/recommend_seed_nodes.rs#L20-L27 (register_handler_tool(id="recommend_seed_nodes", neural, tags="memory") —— 免绑定神经工具，所有 Agent 自动装配)
+  - src/handlers/hr/agent/recommend_seed_nodes.rs#L29-L43 (双入口：HTTP + 工具；limit = params.limit.unwrap_or(5).min(50) → runtime_domain().memory().recommend_seed_nodes → to_api 扁平化映射)
+  - common/src/api/neural_tools.rs#L221-L257 (DTO：RecommendSeedNodesParams{agent_id,limit} / RecommendSeedNodesResponse{recommendations} / SeedNodeRecommendation{node_id,node_name,node_description,node_type,summary,tags,degree,incoming_count,outgoing_count})
+  - frontend/src/pages/hr/knowledge_graph.rs#L164 (KnowledgeGraph(agent_id: Option<String>) 可复用子组件：单 prop)
+  - frontend/src/pages/hr/knowledge_graph.rs#L876 (HrKnowledgeGraph 路由入口：AppLayout + Agent 选择器 + KnowledgeGraph)
+  - frontend/src/pages/hr/agent_detail.rs (Agent 详情页内嵌 KnowledgeGraph { agent_id: Some(...) } —— 两端复用落地证据)
+  - frontend/src/components/graph_canvas.rs (画布渲染组件：nodes + edges + levels，与推荐算法完全解耦)
+  - docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md (② Plan 快照：度数统计 + 前端组件拆分 HrKnowledgeGraph vs KnowledgeGraph 两端复用 + agent_id Option 语义)
+  - docs/archive/design-archive/memory_search_enhancement_design.md (① Design 快照：记忆搜索增强决策表，含图谱推荐起点)
+  - docs/wiki/zh/content/功能模块/AI Agent 管理/记忆系统管理.md (③ Wiki 长文：种子节点推荐面板 + 点击定位画布)
+  - docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md (③ Wiki 长文：推荐起点 + 画布渲染 + 链式探索三段)
+  - 【平行卡】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md (下游：用户点推荐卡片后实际调用 traverse_knowledge_graph 展开邻域)
+  - 【总卡】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md (本卡是「recommend_seed_nodes 起点推荐」这一段的总-分细卡)
 ---
 
 ## §1 概述
 
-**本卡角色**：图谱页面「起步入口」推荐算法 + 前端组件复用拆分的一张双域（后端算法 + 前端组件）综合卡。覆盖后端 DAL 层的三因子加权打分算法（连通度 0.45 + 内容丰富度 0.35 + 分享权重 0.2）、HTTP Handler 的参数双保护、以及前端 `KnowledgeGraph { agent_id: Option<String> }` 可复用子组件——既能在 HrKnowledgeGraph 路由入口以「全局+Agent选择器」模式用，也能在 Agent 详情页第 5 个 Tab 直接嵌入固定 agent_id 的单 Agent 模式。
+**本卡角色**：知识图谱页面「起步入口」推荐能力的双域（后端算法 + 前端组件）综合卡。覆盖后端 DAL 的**度数排序推荐算法**、HTTP/神经工具双入口、以及前端 `KnowledgeGraph { agent_id: Option<String> }` 可复用子组件——既能在 HrKnowledgeGraph 路由页以「全域 + Agent 选择器」模式用，也能在 Agent 详情页直接嵌入固定 agent_id 的单 Agent 模式。
 
-- **三因子算法设计**：选择在 DAL 应用层做统计（而非纯 SQL 窗口函数），原因：SQLite 对窗口函数支持有限，跨 SQLite 版本兼容性差。做法：两步 DAO 查询 → ① `query_knowledge_nodes` 拉候选节点（受 agent_id + published 过滤）→ ② `list_relations_batch` 一次拉候选节点所有出入边 → HashMap 汇总每节点的入度 + 出度 → 内容丰富度按节点 tags.len() + summary.chars().count() 归一化 → 分享权重按 `published=true` 给 0.2 额外分、共享给团队的额外 0.1。
-- **reasons 数组语义**：`RecommendedSeedNode.reasons: Vec<String>` 每一项对应一个子得分（如「连通度高：24 条关联（入8出16）/ 100 归一化得分 0.42」「内容完整：8 个标签 + 摘要 320 字 / 得分 0.31」「已发布共享：+0.2」），前端卡片按 reasons 逐行渲染，用户知道为什么推荐。
-- **组件拆分硬约束**：`KnowledgeGraph` 子组件对外只暴露一个 `agent_id: Option<String>` prop。其他所有内部状态（推荐结果、搜索参数、画布节点坐标、levels）必须全部收敛在组件内部的 `use_signal` 里，调用方不能传自定义状态。原因：Agent 详情页调用一行 `KnowledgeGraph { agent_id: Some(x) }` 就够，零心智负担。
+- **算法（现行）**：按知识节点的**关联度数（入边 + 出边总数）倒序**取 Top N；**度数持平时 `is_published` 优先**。`published` 不再是入池门槛，而是降级为「同等连接度时更值得当起点」的决胜信号——因此即使全库没有 published 节点，全域推荐依然有结果。
+- **⚠️ 卡片名历史口径**：卡片路径与标题沿用了早期实现「三因子打分（0.45 连通度 + 0.35 内容丰富度 + 0.2 分享权重）」的命名；该三因子加权实现**已重构为上述度数排序**（见 §5）。`name` 字段已更新为度数排序口径，路径保留不变以维持全库引用稳定（旧名仍可被检索命中）。
+- **返回值扁平化**：DTO `SeedNodeRecommendation` 直接摊平节点字段（node_id / node_name / node_type / summary / tags）+ 三个度数指标（degree / incoming_count / outgoing_count），不再有早期 `reasons: Vec<String>` 打分明细。
+- **神经工具免绑定**：Handler 带 `neural` 标记 + `tags = "memory"`，所有 Agent 自动装配（无需在工具绑定里手动勾选）。LLM 冷启动时可直接调用本工具挑起点，再用 `search_memory(seed_node_ids=[...], traversal_depth=1~2)` 沿邻域展开——这正是「推荐 → 展开」两段式图谱探索的入口。
+- **组件拆分硬约束**：`KnowledgeGraph` 子组件对外只暴露一个 `agent_id: Option<String>` prop，其余状态（推荐结果、搜索参数、画布节点坐标、levels）全部收敛在组件内部 signal 中。
 
 ---
 
@@ -42,54 +45,75 @@ source_files:
 
 | 文件 | 角色 | 内容摘要 | 锚点 |
 |------|------|---------|------|
-| memory.rs (DAL trait) | 对外签名 | agent_id: Option<String>（None = 全局 + published；Some = 指定 Agent 的私有 + published）；limit: Option<usize>（内部 min(user_limit, 50, 500_total_cap)）| `:L97-L138` |
-| memory.rs (DAL impl) | 三因子打分核心 | ① 拉节点 → ② 批量拉边 → ③ HashMap<NodeId, InOutDegree> 统计 → ④ 每个节点 score=0.45×norm(连通度) + 0.35×norm(内容丰富度) + 0.2×share_weight → ⑤ sort_by score rev → truncate(limit) → ⑥ 生成 reasons 数组 | `:L314-L398` |
-| recommend_seed_nodes.rs (Handler) | HTTP 鉴权 + 参数保护 | agent_id 必做「当前用户对该 Agent 有 view 权限」检查；limit 先 `unwrap_or(5)` 再 `min(50)` 再传给 DAL（DAL 内再做一次 min(500) 总上限，两层防穿透）| `:L21-L80` |
-| knowledge_graph.rs (子组件) | KnowledgeGraph 复用子组件 | 单 prop `agent_id: Option<String>`；内部 use_signal(recommended)、use_effect(deps=[agent_id])：一变就自动重新拉推荐；推荐卡片网格区渲染；点击卡片 seed_ids → 调用 search_memory_with_traversal 查图谱 → 给画布组件 | `:L115-L210` |
-| knowledge_graph.rs (路由入口) | HrKnowledgeGraph 页面 | 包裹 AppLayout + 顶部 Agent 选择器（下拉，选中后存入 selected_agent_id signal）；调用 KnowledgeGraph { agent_id: selected_agent_id() }（selected 为「不选」= None 语义）| `:L688-L770` |
-| agent_detail.rs (Agent 详情页) | Tab5 嵌入证明 | Agent 详情页 5 个 Tab：概览/工具技能/状态图/对话与记忆/知识图谱；第 5 个 Tab = `KnowledgeGraph { agent_id: Some(current_id.clone()) }` —— 组件两端复用的典型落地 | `:L1090-L1120` |
-| common/api/memory.rs | DTO | RecommendedSeedNode { node: KnowledgeNode, score: f32, reasons: Vec<String> }；reasons 数组给前端展示「推荐原因清单」| 见 common DTO |
+| memory.rs (DAL trait) | 对外签名 | `recommend_seed_nodes(ctx, agent_id: Option<String>, limit)`：`None` / 空串 = 蜂巢全域候选；`Some(id)` = 只筛该 Agent 归属节点；返回 `Vec<SeedNodeRecommendation>` | `:L139-L144` |
+| memory.rs (DAL impl) | 度数排序核心 | ① `query_knowledge_nodes`（`Status::Active`、排除 `Forgotten`、query `limit = 500` 总池上限）② `list_relations_batch` 一次批量拉候选点所有出入边 ③ `HashMap<NodeId,(in,out)>` 统计 ④ `degree = in + out`，`sort_by_key((Reverse(degree), Reverse(is_published)))` ⑤ `truncate(limit)` | `:L419-L489` |
+| recommend_seed_nodes.rs (Handler) | 神经工具 + HTTP 双入口 | `#[register_handler_tool(id="recommend_seed_nodes", neural, tags="memory")]` 免绑定装配；`limit = params.limit.unwrap_or(5).min(50)`；经 `runtime_domain().memory()` 调 DAL；`to_api` 把 domain 模型映射为 API DTO 并 `parse_tags_json` 解析 tags | `:L20-L43` |
+| models/memory.rs | 领域模型 | `SeedNodeRecommendation { node: LongTermKnowledgeNodePo, degree, incoming_count, outgoing_count }` | `:L608-L617` |
+| neural_tools.rs (common) | API DTO | `RecommendSeedNodesParams{agent_id,limit}` / `RecommendSeedNodesResponse{recommendations}` / `SeedNodeRecommendation{node_id..tags, degree, incoming_count, outgoing_count}` | `:L221-L257` |
+| knowledge_graph.rs (子组件) | KnowledgeGraph 复用子组件 | 单 prop `agent_id: Option<String>`；内部 `use_signal`(推荐结果) + `use_effect(deps=[agent_id])` 自动重拉；推荐卡片网格 → 点击 → seed_node_ids → 调 traverse 展开 → 喂给画布组件 | `:L164` |
+| knowledge_graph.rs (路由入口) | HrKnowledgeGraph 页面 | `AppLayout` + 顶部 Agent 选择器（「不选」= None 语义）→ `KnowledgeGraph { agent_id }` | `:L876` |
+| agent_detail.rs (Agent 详情页) | 两端复用证据 | Agent 详情页内嵌 `KnowledgeGraph { agent_id: Some(current_agent_id) }` —— 与路由页共用同一子组件 | 见文件 |
+| graph_canvas.rs (前端组件) | 画布渲染 | 接收 `nodes + edges + levels`，独立 state，与推荐算法解耦 | 见文件 |
 
 **章节来源**
-- [memory.rs:L314-L398](src/service/dal/memory.rs#L314-L398)
-- [recommend_seed_nodes.rs:L21-L80](src/handlers/hr/agent/recommend_seed_nodes.rs#L21-L80)
-- [knowledge_graph.rs:L115-L210](frontend/src/pages/hr/knowledge_graph.rs#L115-L210)
-- [knowledge_graph.rs:L688-L770](frontend/src/pages/hr/knowledge_graph.rs#L688-L770)
+- [memory.rs:L419-L489](src/service/dal/memory.rs#L419-L489)
+- [recommend_seed_nodes.rs:L20-L43](src/handlers/hr/agent/recommend_seed_nodes.rs#L20-L43)
+- [neural_tools.rs:L221-L257](common/src/api/neural_tools.rs#L221-L257)
+- [knowledge_graph.rs:L164](frontend/src/pages/hr/knowledge_graph.rs#L164)
+- [knowledge_graph.rs:L876](frontend/src/pages/hr/knowledge_graph.rs#L876)
 
 ---
 
 ## §3 架构约定与扩展模式
 
-### 3.1 双端复用数据流
+**关联声明（Level 4 细卡）**：本卡是【总卡】`记忆搜索增强三合一`（FTS5 / traverse / recommend_seed_nodes 三位一体）中「起点推荐」这一段的分细卡，二者构成总-分关系；下游展开能力见【平行卡】`知识图谱 traverse`。
+
+### 3.1 agent_id 语义与候选池
+
+| 入参 | 候选池 | 说明 |
+|------|--------|------|
+| `agent_id = None` 或 `Some("")` | **蜂巢全域**所有 Agent 的知识节点 | DAL 内 `agent_id.clone().filter(\|s\| !s.is_empty())` 把空串归一为 None；`published` 只参与决胜 |
+| `agent_id = Some(id)` | 只筛该 Agent 归属的知识节点 | 用于 Agent 详情页 Tab 内嵌场景 |
+
+### 3.2 排序与决胜
+
+1. 主排序键：`degree = incoming_count + outgoing_count`（有向图总度数，**入边与出边同等计入**），倒序。
+2. 次排序键：`is_published` 倒序 —— 仅当度数完全相等时生效。
+3. 截断：`limit`（Handler 侧 `unwrap_or(5).min(50)`）；候选池另有 query `limit = 500` 的总量上限，避免节点过多拖慢应用层统计。
+
+### 3.3 双端复用数据流
 
 ```
-后端推荐算法（DAL 应用层 HashMap 统计）
-  query_nodes(agent_id_filter) + query_relations_bulk
+后端推荐算法（DAL 应用层 HashMap 度数统计）
+  query_knowledge_nodes(agent_id_filter, status=Active, !Forgotten, pool<=500)
+        + list_relations_batch(node_ids)
         │
-        ▼  HashMap 统计 + 三因子加权 + reasons 生成
-  Vec<RecommendedSeedNode> → 倒序 → truncate(min(limit,50))
-        │
-        └── HTTP Handler /api/v1/hr/agents/recommend_seed_nodes
+        ▼  统计 (in, out) → degree=in+out → 倒序 → is_published 决胜 → truncate(limit)
+  Vec<SeedNodeRecommendation>（领域模型）
+        │  to_api 扁平化
+        ▼  RecommendSeedNodesResponse
+  ┌─ HTTP：GET/POST /api/v1/hr/agents/recommend_seed_nodes
+  └─ 工具：register_handler_tool(neural, tags="memory")
                 ▲
-                │ 两种调用者：
-前端路由页 HrKnowledgeGraph ─┘   └── Agent 详情页 Tab5
-      agent_id = None / 选择器值         agent_id = Some(current_agent_id)
-                │                           │
-                └─────────┬─────────────────┘
-                          ▼  统一 KnowledgeGraph { agent_id: Option<String> } 子组件
-                          │  use_effect(agent_id): 自动拉推荐
-                          │  推荐卡片网格：点击 → seed_node_ids → 图谱 traverse
-                          ▼
-                   KnowledgeGraphCanvas 画布
-                (nodes + edges + ordered_levels)
+                │ 三种调用者：
+前端路由页 HrKnowledgeGraph ─┐  Agent 详情页内嵌 ─┐  所有 Agent（神经工具）
+     agent_id = None / 选择器值  agent_id = Some(id)   冷启动自主调用
+                └────────┬───────────────┘
+                         ▼  统一 KnowledgeGraph { agent_id: Option<String> }
+                         │  use_effect(agent_id): 自动拉推荐
+                         │  推荐卡片网格：点击 → seed_node_ids → 图谱 traverse
+                         ▼
+                  graph_canvas 画布 (nodes + edges + ordered_levels)
 ```
 
-### 3.2 扩展模式：新增第 4 个推荐因子（如「最近 7 天被浏览次数」）
+### 3.4 扩展模式：想引入「度数与发布之外」的新排序信号
 
-1. **后端加因子字段**：在 DAL impl `recommend_seed_nodes` 内部新增 factor4_score，权重建议从原有三因子中分摊（比如把 0.45 + 0.35 + 0.2 → 0.35 + 0.3 + 0.15 + 0.2 浏览热度）。
-2. **reasons 追加文案**：对应 factor4 命中节点的 reasons 数组必须追加对应一行（如「近期热门：近 7 天被 12 次浏览 / 最高 32 次 → 得分 0.18」），保证 UI 透明。
-3. **前端零改动**：组件不改，DTO 不用扩展（reasons 是 Vec<String>），只需要后端多返回一条 reason 文本——这就是为什么 DTO 设计成 Vec<String> 而不是结构化字段的原因：未来加因子不改 DTO，前端无感知。
-4. **组件新增嵌入位置**：比如在 Project 详情页要嵌入项目维度的知识图谱 → 新建一行 `KnowledgeGraph { agent_id: find_project_owner_agent_id(project_id) }`，就搞定了。**组件不提供自定义筛选 prop**，因为业务差异（项目/团队维度）应该通过「过滤 agent_id」实现，不应该污染通用组件。
+现行实现**没有因子框架**（三因子加权已废弃），新增信号时按下面口径扩展，避免重新引入不可解释的加权：
+
+1. **在 DAL 排序键里加第二/第三排序键**，而不是恢复加权求和。例如「近 7 天访问热度」→ `sort_by_key((Reverse(degree), Reverse(hotness), Reverse(is_published)))`，语义直观、可解释。
+2. **DTO 扁平化扩展**：若要把新信号回传前端展示，在 `SeedNodeRecommendation` 加一个明确命名的字段（如 `recent_hits: usize`），不要恢复成自由文本 `reasons`。
+3. **前端零改动**：`KnowledgeGraph` 组件不改；`agent_id` 仍是唯一 prop。业务差异（项目/团队维度）通过「过滤 agent_id」实现，不允许污染通用组件。
+4. **组件新增嵌入位置**：例如 Project 详情页要嵌项目维度图谱 → 直接新增一行 `KnowledgeGraph { agent_id: Some(owner_agent_id) }`。
 
 ---
 
@@ -97,17 +121,27 @@ source_files:
 
 ### 4.1 必守红线
 
-1. **红线 1**：**三因子权重之和必须 = 1.00（±0.01 容差）**，绝不能 0.45 + 0.35 + 0.2 = 1.02 或 0.98。代码评审里必须加 `debug_assert!((0.45 + 0.35 + 0.2 - 1.0).abs() < 1e-6)`，否则未来加新因子时没人记得归一化，导致 score 线性叠加爆炸，推荐结果完全不可解释。
-2. **红线 2**：**limit 双保护，Handler 层一层（min 50）+ DAL 层一层（min 500）**，禁止只做一层。原因：万一 HTTP 路由改了，绕过 Handler 直接进 DAL，仍然有一层兜底，避免一次拉 10 万个节点把前端卡成死机。
-3. **红线 3**：**KnowledgeGraph 子组件绝不暴露除 agent_id 外的自定义状态**。如果未来有人为了复用想要「自定义推荐过滤条件」，应该：(a) 在后端 DTO `RecommendSeedNodesParams` 加字段；(b) 在组件内部按 agent_id 派生。绝不把内部 signal 通过 prop 暴露出去——否则两端调用方会开始写大量 `if (custom_mode) { ... }`，组件复用会彻底变成复制粘贴。
-4. **红线 4**：**published 节点的分享权重永不等于 0**。即使这个节点连通度 0、内容丰富度 0（空节点），只要 published=true，分享权重 0.2 就能让它出现在全局推荐（None agent_id 模式下）的尾部。否则用户「我明明发布了一个节点，为什么全局图谱推荐一个都看不到？」永远是个玄学 bug。
+1. **红线 1：`published` 只做决胜、绝不做入池门槛**。全域推荐（`agent_id = None`）池子必须是**全部**知识节点；把 `is_published` 当 WHERE 过滤会让「没有 published 节点时全域推荐为空」成为必然 bug。它只在度数相等时提升排序。
+2. **红线 2：`limit` 两层保护缺一不可** —— Handler 层 `min(50)`（对外契约）+ DAL 候选池 `limit = 500`（一次统计的总量上限）。禁止只做一层：绕过 Handler 直调 DAL 时仍要有池上限兜底。
+3. **红线 3：度数口径必须 `in + out`**。`degree` 是入边 + 出边总数；只算一边会让「被大量引用」或「大量引用他人」的节点排名严重失真。`incoming_count` / `outgoing_count` 必须与 `degree` 自洽（`degree == incoming_count + outgoing_count`）。
+4. **红线 4：`KnowledgeGraph` 子组件绝不暴露除 `agent_id` 外的状态**。需要自定义筛选时，正确做法是 (a) 后端 DTO 加字段、(b) 组件内部按 `agent_id` 派生；绝不把内部 signal 通过 prop 透出，否则两端调用方会写出大量 `if custom_mode { ... }`，复用退化为复制粘贴。
+5. **红线 5：`recommend_seed_nodes` 是纯读操作**。注册为 `neural` 免绑定工具意味着所有 Agent 都会自动加载，它必须无副作用（不写库、不改状态），否则一次误调用会污染全库。
 
 ### 4.2 故障排查路径
 
 | 症状 | 起点锚点 | 次级排查 |
 |------|---------|---------|
-| 全局图谱（HrKnowledgeGraph 不选 Agent）页面打开，推荐卡片空（0 个节点） | [memory.rs:L314-L398](src/service/dal/memory.rs#L314-L398) 检查 published_flag 过滤 | 典型：知识库初始为空（所有节点都是私有），没一条 published=true。临时排查：手动去 DB 手动把一条知识节点 UPDATE `is_published = 1` 后刷新验证 |
-| 同一 Agent 详情页嵌入的 KnowledgeGraph 推荐节点 ≠ 全局页选同一个 Agent 下拉的推荐节点（顺序差很多） | [knowledge_graph.rs:L115-L210](frontend/src/pages/hr/knowledge_graph.rs#L115-L210) 检查两端调用参数 | 典型：全局页传了 `limit = 5`，详情页 `limit = 10`，推荐排序截断点不同 → 节点重叠但顺序不保证；或者一端走了缓存（没走网络）另一端没走，use_resource 缓存 key 漏了 agent_id |
-| 推荐 reasons 数组里的得分加起来 ≠ 最终 score | [memory.rs:L350-L390](src/service/dal/memory.rs#L350-L390) 三因子权重计算处 | 典型：某因子归一化公式改了（比如 max_degree 从全局 max 改成 候选集 max），但 reasons 文案还按旧公式打印，显示得分与实际 score 对不上 |
-| Agent 详情页 Tab 切换到「知识图谱」，整个页面白屏 5 秒后才渲染 | 检查 use_effect 是否在每次 Tab 切换时都重复拉推荐 + traverse 两遍 | [agent_detail.rs:L1090-L1120](frontend/src/pages/hr/agent_detail.rs#L1090-L1120) 确认：是否给 KnowledgeGraph 子组件传了稳定的 agent_id（如果每次 render 生成新 String 实例，use_effect 会认为依赖变了，不停重拉推荐） |
-| 新增因子后 DTO/Handler 编译通过但前端显示 reasons 全空 | 检查 reasons 数组的 push 代码 | 典型：新增因子 push reason 时写错了 `if factor4_score > 0 { reasons.push(...) }` 但 factor4_score 默认 0.0，实际上所有节点都没过条件；应改为无论得分多少都要 push reason（至少显示 "最近浏览：无记录，得分 0.0"），保证 UI 透明性 |
+| 全域图谱（HrKnowledgeGraph 未选 Agent）推荐卡片为空 | [memory.rs:L419-L489](src/service/dal/memory.rs#L419-L489) 检查候选查询 | 典型：知识库确实为空（无 Active 知识节点）。注意**不是** published 过滤导致（published 已不做门槛）；若库内有节点仍为空，检查 `status`/`exclude_status` 是否把节点误排除 |
+| 推荐顺序「看起来和关联数不符」 | [memory.rs:L455-L484](src/service/dal/memory.rs#L455-L484) 度数统计与排序 | 典型：只统计了单侧边（入或出）；或两条边指向同一对节点的重复统计；核对 `degree == incoming_count + outgoing_count` 自洽性 |
+| 同一 Agent 在路由页与详情页推荐结果不同 | [knowledge_graph.rs:L164](frontend/src/pages/hr/knowledge_graph.rs#L164) 两端调用参数 | 典型：两端 `limit` 不同（截断点不同）→ 节点集合有交集但顺序不保证；或 `agent_id` 一端 `None`（全域）一端 `Some(id)`（仅该 Agent），候选池本就不同 |
+| Agent 详情页切到知识图谱 Tab 卡顿/重复请求 | 检查 `use_effect` 是否每次切换都重拉 | [agent_detail.rs](frontend/src/pages/hr/agent_detail.rs) 确认传给 `KnowledgeGraph` 的 `agent_id` 是否每次 render 新建 String（依赖判定为变化 → 不停重拉）；应传稳定值 |
+| 新加的排序信号生效但前端看不到 | [neural_tools.rs:L221-L257](common/src/api/neural_tools.rs#L221-L257) | 典型：只改了 DAL 排序键但没在 `SeedNodeRecommendation` / `to_api` 里补字段回传；或前端卡片按固定字段渲染，新字段未接入展示 |
+
+---
+
+## §5 历史演进
+
+- **卡片命名沿革**：最早实现为三因子加权打分（0.45 连通度 + 0.35 内容丰富度 + 0.2 分享权重），返回 `RecommendedSeedNode { node, score, reasons: Vec<String> }`，DTO 落在 `common/src/api/memory.rs`。上述实现与命名一并被本卡标题/路径继承。
+- **重构为度数排序**：`recommend_seed_nodes` 改为按关联度数（入边 + 出边）倒序、度数持平用 `is_published` 决胜；`published` 从「入池门槛」降级为「决胜信号」；返回模型改为 `SeedNodeRecommendation { node, degree, incoming_count, outgoing_count }`，DTO 迁至 `common/src/api/neural_tools.rs` 并扁平化（去掉 `score` / `reasons`）。
+- **神经工具化（2026-09，b82d3f7f→8fa050d0 区间）**：Handler 补 `#[register_handler_tool(id="recommend_seed_nodes", neural, tags="memory")]`，从纯 HTTP 接口升级为**所有 Agent 自动装配的神经工具**（免绑定），使 Agent 在冷启动时能自主挑选图谱起点再沿 `search_memory(seed_node_ids, traversal_depth)` 展开邻域。
+- **前端组件复用**：拆出 `KnowledgeGraph { agent_id: Option<String> }` 子组件，HrKnowledgeGraph 路由页与 Agent 详情页两处共用（早期 Plan 快照见 `docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md`）。

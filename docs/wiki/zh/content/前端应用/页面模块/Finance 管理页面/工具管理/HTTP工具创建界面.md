@@ -3,9 +3,12 @@
 <cite>
 **本文引用的文件**
 - [frontend/src/pages/finance/tools.rs](frontend/src/pages/finance/tools.rs)
-- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_http_tool.rs)
+- [frontend/src/components/create_tool_http.rs](frontend/src/components/create_tool_http.rs#L157-L360)
+- [frontend/src/components/create_tool_shell.rs](frontend/src/components/create_tool_shell.rs#L37-L143)
+- [frontend/src/pages/finance/tool_detail.rs](frontend/src/pages/finance/tool_detail.rs#L429-L460)
 - [frontend/src/components/modal.rs](frontend/src/components/modal.rs)
 - [common/src/api/system.rs](common/src/api/system.rs)
+- [common/src/config.rs](common/src/config.rs#L737-L900)
 - [src/handlers/system/process/shell_list.rs](src/handlers/system/process/shell_list.rs)
 - [src/router.rs](src/router.rs)
 - [src/pkg/tool_registry/http.rs](src/pkg/tool_registry/http.rs)
@@ -13,7 +16,16 @@
 - [frontend/src/api/system.rs](frontend/src/api/system.rs)
 - [frontend/src/api/finance.rs](frontend/src/api/finance.rs)
 - [HTTP 工具创建表单限定 method 白名单为 GET/POST](docs/wiki/knowledge/zh/HTTP 工具创建表单限定 method 白名单为 GET_POST/HTTP 工具创建表单限定 method 白名单为 GET_POST.md)
+
+### 本文关联的文档
+- 知识卡：[工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆](docs/wiki/knowledge/zh/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆.md)
+- 知识卡：[工具详情页配置编辑：HTTP Shell 子表单复用创建页 + MCP 只读 + 内置工具配置表单 id 匹配修复](docs/wiki/knowledge/zh/工具详情页配置编辑：HTTP Shell 子表单复用创建页 + MCP 只读 + 内置工具配置表单 id 匹配修复/工具详情页配置编辑：HTTP Shell 子表单复用创建页 + MCP 只读 + 内置工具配置表单 id 匹配修复.md)
 </cite>
+
+## 更新摘要（2026-09-30，base 4ad13f2e→HEAD）
+- 创建页与详情页共用同一构造点 `http_config_from_form` / `http_form_from_config`（新增「表单产物反序列化回 `common::config::HttpToolConfig`」+ 往返幂等测试）；`<select>` 每个 option 显式绑定 `selected`，避免反填初值后只绑 `value` 丢失选中。
+- 新增 Shell 工具创建/编辑子表单 `create_tool_shell.rs`（`shell_config_from_form` / `shell_form_from_config` / `ShellToolSubForm`），与 `ShellToolConfig` 字段一一对齐。
+- 详情页（`tool_detail.rs`）HTTP/Shell 由通用 JSON textarea 换为复用 `HttpToolSubForm` / `ShellToolSubForm`。
 
 ## 更新摘要
 **变更内容**

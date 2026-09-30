@@ -15,9 +15,17 @@
 - [src/handlers/hr/skill/list_skill_files.rs](src/handlers/hr/skill/list_skill_files.rs)
 - [src/handlers/hr/skill/get_skill_file_content.rs](src/handlers/hr/skill/get_skill_file_content.rs)
 - [src/handlers/hr/skill/update_skill_file_content.rs](src/handlers/hr/skill/update_skill_file_content.rs)
+- [src/handlers/hr/skill/mod.rs#L49-L74](src/handlers/hr/skill/mod.rs#L49-L74) — validate_agent_skill_status_change 发布收敛单一入口（M2 修复 C）
+- [src/handlers/hr/skill/create_skill.rs#L66-L72](src/handlers/hr/skill/create_skill.rs#L66-L72) — create 即发布拦截
+- [src/handlers/hr/skill/update_skill.rs#L56-L62](src/handlers/hr/skill/update_skill.rs#L56-L62) — update 直改 Published 拦截
 - [common/src/api/skill.rs](common/src/api/skill.rs)
 - [src/models/skill.rs](src/models/skill.rs)
+- [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md)
 </cite>
+
+## 更新摘要（2026-09-30，base b82d3f7f→8fa050d0）
+
+**M2 修复 C：发布收敛单一入口**——`handlers/hr/skill/mod.rs` 新增服务端守卫 `validate_agent_skill_status_change`（[src/handlers/hr/skill/mod.rs#L49-L74](src/handlers/hr/skill/mod.rs#L49-L74)）：当请求 `status=Published` 且满足「Agent 上下文（无论目标形态）」或「Agent 安装副本（`author_type=Agent` 且 `parent_skill_id` 非空）」时返回 `InvalidRequest`；`create_skill`（[create_skill.rs#L66-L72](src/handlers/hr/skill/create_skill.rs#L66-L72)）与 `update_skill`（[update_skill.rs#L56-L62](src/handlers/hr/skill/update_skill.rs#L56-L62)）两处入口均调用，发布只走共享库根技能（用户上下文）单一入口。
 
 ## 目录
 1. [简介](#简介)

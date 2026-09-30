@@ -6,7 +6,8 @@
 - [frontend/src/pages/finance/tools.rs](frontend/src/pages/finance/tools.rs)
 - [frontend/src/pages/finance/mcp_servers.rs](frontend/src/pages/finance/mcp_servers.rs)
 - [frontend/src/pages/finance/model_providers.rs](frontend/src/pages/finance/model_providers.rs)
-- [frontend/src/pages/finance/message_channels.rs](frontend/src/pages/finance/message_channels.rs)
+- [frontend/src/pages/finance/message_channels.rs](frontend/src/pages/finance/message_channels.rs) — 渠道创建弹窗「绑定 Agent」选框（所有类型，去 is_lark 门控 #L498-L501）+ 入站监听复选框 checkbox 写法（#L577、#L635）
+- [frontend/src/pages/finance/message_channel_detail.rs](frontend/src/pages/finance/message_channel_detail.rs) — 渠道详情入站监听复选框 checkbox 写法（#L856-L862、#L905-L911）
 - [frontend/src/pages/finance/attachments.rs](frontend/src/pages/finance/attachments.rs)
 - [frontend/src/api/finance.rs](frontend/src/api/finance.rs)
 - [src/handlers/finance/mod.rs](src/handlers/finance/mod.rs)
@@ -17,7 +18,15 @@
 - [src/handlers/finance/attachment/mod.rs](src/handlers/finance/attachment/mod.rs)
 - [src/pkg/tool_tracing/mod.rs](src/pkg/tool_tracing/mod.rs)
 - [src/consumer/message.rs](src/consumer/message.rs)
+
+**本文关联的文档**
+- ① Design：[frontend_architecture.md](docs/design/frontend_architecture.md) — 前端整体分层与模块划分
+- ④ RAG：[UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束](docs/wiki/knowledge/zh/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束.md)
+- ③ Wiki 关联长文：[消息渠道管理.md](docs/wiki/zh/content/前端应用/页面模块/Finance%20管理页面/消息渠道管理.md)
 </cite>
+
+## 更新摘要
+**2026-09-30 增量（base b82d3f7f→8fa050d0）**：消息渠道前端两处修复——创建弹窗「绑定 Agent」选框去掉 `is_lark_type` 门控，所有渠道类型一致展示（飞书入站路由本就优先取渠道 `agent_id`，缺选框会让用户无法指定飞书渠道接单 Agent，见 `message_channels.rs` #L498-L501）；创建弹窗与详情页的「入站监听」复选框由 DaisyUI `toggle` + 信号盲切改为统一 `checkbox checkbox-sm checkbox-primary` + `onchange` 读 `e.checked()`，label 整行可点（`message_channels.rs` #L577/#L635、`message_channel_detail.rs` #L856-L862/#L905-L911），修复复选框不可见/不可选。
 
 ## 目录
 1. [简介](#简介)
@@ -261,12 +270,14 @@ API-->>UI : 提示/刷新
 
 图表来源
 - [frontend/src/pages/finance/message_channels.rs:50-121](frontend/src/pages/finance/message_channels.rs#L50-L121)
-- [frontend/src/pages/finance/message_channels.rs:202-218](frontend/src/pages/finance/message_channels.rs#L202-L218)
+- [frontend/src/pages/finance/message_channels.rs:498-501](frontend/src/pages/finance/message_channels.rs#L498-L501)
+- [frontend/src/pages/finance/message_channels.rs:577-593](frontend/src/pages/finance/message_channels.rs#L577-L593)
 - [frontend/src/api/finance.rs:167-201](frontend/src/api/finance.rs#L167-L201)
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 
 章节来源
 - [frontend/src/pages/finance/message_channels.rs:1-332](frontend/src/pages/finance/message_channels.rs#L1-L332)
+- [frontend/src/pages/finance/message_channel_detail.rs:850-914](frontend/src/pages/finance/message_channel_detail.rs#L850-L914)
 - [frontend/src/api/finance.rs:167-201](frontend/src/api/finance.rs#L167-L201)
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 

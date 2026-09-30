@@ -14,6 +14,10 @@ scope:
   - "src/consumer/wechat_inbound.rs"（同上，Async 模式，不阻塞 DAO 读循环）
   - "src/consumer/mod.rs"（init 注册：Consumer::new() 零参数，不再注入 DAL 弱引用）
   - "src/service/dal/wechat/impl.rs"（WechatDalImpl 瘦身：移除自存 callback 字段，start 参数 _callback 不再持有）
+  - "src/service/dao/message_channel/sqlite.rs"（push_query_filters 渠道列表默认软删除过滤，2026-09 新增）
+  - "src/pkg/lark_integration.rs"（lark-cli config init 文本输出契约：去 --json + App ID 文本行解析）
+  - "frontend/src/pages/finance/message_channels.rs"（渠道创建弹窗「绑定 Agent」选框：所有渠道类型一致展示）
+  - "frontend/src/pages/finance/message_channel_detail.rs"（入站监听复选框统一为 checkbox checkbox-sm checkbox-primary）
 source_files:
 
   - src/pkg/adapter/message.rs#L46-L78（MessageInboundAdapter trait：4 方法 channel_type()/start(callback)/stop()/is_running()；async_trait 标注；start 接收 Arc<dyn MessageAdapterCallback> 投递回调；重复启动 Conflict 错误）
@@ -43,6 +47,12 @@ source_files:
   - src/consumer/wechat_inbound.rs#L1-L80（【简化后】同上，`WechatInboundConsumer` 无状态，事件类型 WechatInboundEvent，Async 模式，转换失败记录 channel_id + message_key 便于排查）
   - src/consumer/mod.rs#L21-L58（init 注册所有 consumer：`Arc::new(xxx::XxxConsumer::new())` 零参数构造，不再向 consumer 注入 DAL 弱引用；lark_inbound / wechat_inbound 行注释明确标注"适配走 message domain 门面，投递回调经中台取用"）
   - 'common/src/enums/channel_type.rs:Ln-Lm（ChannelType enum：Lark/Wechat/Slack/Email/Webhook/A2aCallback 六渠道，与出站一致；新增入站渠道时扩展此枚举，MessageInboundAdapter 匹配）'
+
+  - src/service/dao/message_channel/sqlite.rs#L338-L355（【2026-09 新增】push_query_filters 默认软删除过滤：未显式传 status_in 时追加 `AND status != 0` 排除 Deleted，已删除渠道不再泄漏到列表；显式 status_in 覆盖默认过滤，保留查历史/恢复的 query 逃生通道，与 message DAO 同范式）
+  - src/pkg/lark_integration.rs#L480-L492（extract_app_id：lark-cli v1.0.94 建应用成功输出为文本行 `App configured! App ID: cli_xxx`（非 JSON），逐行定位 `App ID:` 取首个 token + `cli_` 前缀形制校验，避免误匹配帮助文本）
+  - src/pkg/lark_integration.rs#L561-L567（start_bind_session：`config init --new` 去掉 `--json`——v1.0.94 传该 flag 以 unknown flag 立即退出，验证 URL 与 appId 双双丢失）
+  - frontend/src/pages/finance/message_channels.rs#L498-L513（创建弹窗「绑定 Agent」选框：去掉 is_lark_type 门控，所有渠道类型一致展示——入站路由优先取渠道 agent_id，缺选框会让用户无法指定飞书渠道接单 Agent）
+  - frontend/src/pages/finance/message_channel_detail.rs#L853-L868（入站监听复选框统一预置技能同步弹窗写法：`checkbox checkbox-sm checkbox-primary` + onchange 读 e.checked()，label 整行可点，修不可见/不可选）
 
   - docs/archive/design-archive/message_channel_design.md
 
@@ -229,6 +239,8 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 8. **投递回调单一来源（2026-09 引入）**：consumer 投递 AdaptedMessage 统一经 `pkg::adapter::message::registry().current_callback()` 取用，**禁止** consumer 自行持有或构造 MessageAdapterCallback。WechatDalImpl 已移除自存 callback 字段，lark_dao / 未来 slack_dao 等也应遵循"只发布事件、不持有回调"的模式。
 9. **（2026-09 scope_project 断链修复）MessageChannel DAO 落库必须 scope_project + channel 双写**：agent_id / user_id / credential_id 等关联元数据同时更新 scope_project 关联表和 message_channel 主表，禁止只改其中一表导致"scope_project 残留旧值、channel 已更新"的悬空断链。
 10. **（2026-09 CLEAR 哨兵）渠道解除绑定必须走模型层 CLEAR_* sentinel**：`CLEAR_AGENT_ID` / `CLEAR_USER_ID` / `CLEAR_CREDENTIAL_ID` 等哨兵值表示"显式清除"语义，DAO 层据此走双表清除逻辑；handler 层禁止手动 UPDATE SET agent_id = NULL（与"本就无绑定"的 NULL 语义混淆，且可能漏改 scope_project 表）。
+11. **（2026-09 渠道列表软删除过滤）MessageChannelQuery DAO 侧必须默认排除软删除渠道**：`push_query_filters` 在未显式传 `status_in` 时追加 `AND status != 0`（Deleted），COUNT 与 LIST 复用同一函数；只有显式 `status_in` 才绕过该默认过滤（查历史/恢复用 query 逃生通道）。禁止让已删除渠道泄漏到管理列表。
+12. **（2026-09 绑定 Agent 统一入口）渠道创建/编辑弹窗必须对所有渠道类型展示「绑定 Agent」选框**：入站路由本就优先取渠道 `agent_id`（见下游 Lark 卡的 open_id → channel.agent_id 映射），若飞书渠道缺该选框，用户无法指定接单 Agent。前端禁止用 `is_lark_type` 等门控把该选框对飞书隐藏。
 
 ## §4 约束清单（最高权重，硬红线）
 
@@ -240,6 +252,8 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 6. ✅ **四类互引闭环**：本卡 source_files[] 含 5 篇 wiki 长文 + 1 Design + Plan 占位 + 3 张平行卡（身份凭证 CRUD / AES 加密 / Lark WS P2P 入站）；对应 Wiki 长文 cite 段回链本卡 + message_channel_design Design + 3 张平行卡。
 7. ✅ **（2026-09-XX 新增）MessageChannel DAO 落库必须 scope_project + channel 双表统一更新关联元数据**（agent_id / user_id / credential_id），禁止只改 channel 主表导致 scope_project 残留旧值悬空引用。
 8. ✅ **（2026-09-XX 新增）渠道解除 Agent 绑定必须走模型层 CLEAR_* sentinel**（`CLEAR_AGENT_ID` / `CLEAR_USER_ID` / `CLEAR_CREDENTIAL_ID`），禁止 handler 手动 UPDATE SET agent_id = NULL——避免与"本就无绑定"的 NULL 语义混淆，且保证 DAO 层双表清除逻辑被正确触发。
+9. ✅ **（2026-09-29 新增）渠道列表读侧必须默认软删除过滤**：`push_query_filters` 未传 `status_in` 时 `AND status != 0`，禁止返回 Deleted 渠道；显式 `status_in` 保留逃生通道（查历史/恢复）。DAO 单测覆盖「默认排除 Deleted」与「显式 status_in 生效」两分支。
+10. ✅ **（2026-09-29 新增）入站监听开关必须对所有渠道类型可见可选**：前端复选框统一预置技能同步弹窗写法（`checkbox checkbox-sm checkbox-primary` + `onchange` 读 `e.checked()`，label 整行可点），禁止用 `toggle` + 信号盲切导致不可见/双触发；飞书 `config init` 必须不带 `--json`（v1.0.94 会 unknown flag 退出），appId 从文本行 `App ID: cli_xxx` 解析。
 
 ## §5 历史演进
 
@@ -248,6 +262,7 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 | 2026-09 之前 | 初版 | MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all/stop_all 生命周期。consumer（lark_inbound / wechat_inbound）各自持有渠道 DAL 弱引用，on_event 内 upgrade 后直连 DAL 做 adapt，投递回调也自存一份 | src/pkg/adapter/message.rs；src/consumer/lark_inbound.rs（旧版含 Weak<LarkDalImpl> 字段）；src/consumer/wechat_inbound.rs（旧版含 Weak<WechatDalImpl> 字段）；src/service/dal/wechat/impl.rs（旧版含 callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>> 自存字段） |
 | 5db51263 + 97a482b1 | 2026-09 | 渠道解除 Agent 绑定 + scope_project DAO 落库断链修复：models/message_channel.rs 新增 CLEAR_* sentinel 通用清除标记；dal/message_channel.rs 双表统一更新 scope_project + channel 关联元数据（agent_id / user_id / credential_id）；domain/finance/message_channel.rs 清除逻辑走哨兵而非手动置空 | src/models/message_channel.rs；src/service/dal/message_channel.rs；src/service/domain/finance/message_channel.rs |
 | **2026-09（本次增量）** | **Consumer 架构简化 + Domain 门面层引入** | 三件事同时落地：① 新增 `src/service/domain/message/inbound.rs`（66 行）：InboundSource 枚举收敛 Lark/Wechat + MessageInboundAdapt trait adapt_inbound 入口 ② MessageDomainImpl 构造新增 lark_dal / wechat_dal 字段，统一经 domain 门面消费 ③ consumer 无状态化：`#[derive(Default)]` 零字段，consumer init 零参数构造；适配走 domain 门面、投递回调统一经 registry().current_callback() 取用；WechatDalImpl 移除自存 callback 字段 | src/service/domain/message/inbound.rs（全新）；src/service/domain/message/mod.rs（新增字段 + new() 构造 + inbound() trait 入口）；src/consumer/lark_inbound.rs / wechat_inbound.rs（零字段重写）；src/consumer/mod.rs（init 注册零参数）；src/service/dal/wechat/impl.rs（移除 callback 字段） |
+| **405ba0bd / e1e65baf** | **2026-09-29 渠道管理三处修复** | ① `push_query_filters` 补默认软删除过滤（未显式 status_in 时 `AND status != 0`），已删除渠道不再泄漏 ② 渠道创建弹窗「绑定 Agent」选框去掉 `is_lark_type` 门控，所有渠道类型一致展示 ③ 入站监听复选框统一为 `checkbox checkbox-sm checkbox-primary` + `e.checked()`；`lark-cli config init` 去掉 `--json`（v1.0.94 unknown flag 退出）改文本行解析 appId | src/service/dao/message_channel/sqlite.rs；frontend/src/pages/finance/message_channels.rs；frontend/src/pages/finance/message_channel_detail.rs；src/pkg/lark_integration.rs |
 
 **本次简化的核心收益**：
 - Consumer 测试成本大幅降低：无状态 struct 无需构造依赖、无需处理 Weak upgrade 错误分支，单元测试直接 `LarkInboundConsumer::new().on_event(...)` 即可。

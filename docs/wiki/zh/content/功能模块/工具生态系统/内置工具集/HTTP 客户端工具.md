@@ -11,7 +11,16 @@
 - [common/src/constants/http_header.rs](common/src/constants/http_header.rs)
 - [docs/request_context_design.md](docs/request_context_design.md)
 - [src/router.rs](src/router.rs)
+- [common/src/config.rs](common/src/config.rs#L801-L835)
+- [frontend/src/components/create_tool_http.rs](frontend/src/components/create_tool_http.rs#L157-L360)
+
+### 本文关联的文档
+- 知识卡：[工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆](docs/wiki/knowledge/zh/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆/工具 config 结构体下沉 common 前后端 SSOT：8 类结构体 + 后端薄转发 + from_value 强类型读取 + 表单构造反填互逆.md)
 </cite>
+
+## 更新摘要（2026-09-30，base 4ad13f2e→HEAD）
+- HTTP 工具 config 结构体 `HttpToolConfig` 下沉 `common/src/config.rs` 作为前后端 SSOT；`src/pkg/tool_registry/http.rs` 改 `pub use common::config::HttpToolConfig;` 薄转发，运行时按 `from_value::<HttpToolConfig>()` 强类型读取（不再自由键 `get`）。
+- 前端创建页与详情页共用 `http_config_from_form` / `http_form_from_config`（`frontend/src/components/create_tool_http.rs`），字段集与结构体一一对齐。
 
 ## 目录
 1. [简介](#简介)

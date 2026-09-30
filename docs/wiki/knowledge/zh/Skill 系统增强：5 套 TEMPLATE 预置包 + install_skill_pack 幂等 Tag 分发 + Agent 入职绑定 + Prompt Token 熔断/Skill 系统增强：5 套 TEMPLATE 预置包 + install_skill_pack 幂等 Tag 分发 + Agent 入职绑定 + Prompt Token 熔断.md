@@ -14,6 +14,8 @@ scope:
 - src/handlers/hr/skill/*.rs
 - src/handlers/system/seed/sync_preset_skills.rs
 - src/models/skill.rs
+- frontend/src/pages/hr/skills.rs
+- frontend/src/pages/hr/agent_detail.rs
 - common/src/enums/tool_tag.rs
 - common/src/api/hr.rs
 - common/src/api/agent.rs
@@ -63,10 +65,24 @@ source_files:
 - src/service/dal/skill/mod.rs (2026-09 增量：scope_project 隔离落库 + 搜索短词元兜底)
 - src/handlers/hr/skill/search_skill.rs / search_skills.rs (2026-09 增量：短词元兜底查询)
 - frontend/src/components/chat/*.rs (2026-09 增量：副本同步复选框 × 3 fix)
+- src/service/dal/skill.rs#L184-L189 (2026-09-25 增量：publish_writeback_copy trait 声明)
+- src/service/dal/skill.rs#L814-L901 (2026-09-25 增量：publish_writeback_copy 实现——幂等查重 + 纯建副本 + 向量索引补偿)
+- src/service/dal/skill.rs#L351-L359 (2026-09-25 增量：list_for_agent 持有语义收紧 retain 谓词)
+- src/service/dal/skill.rs#L947-L962 (2026-09-25 增量：list_published_by_tag 加 has_parent=false 只认根技能)
+- src/service/domain/hr/skill.rs#L51-L110 (2026-09-25 增量：update_skill 发布回写 N2——非 Published→Published 为作者 Agent 补建副本)
+- src/service/domain/hr/agent.rs#L59-L91 (2026-09-25 增量：resolve_agent_skills 同谓词收紧)
+- src/handlers/hr/skill/mod.rs#L49-L74 (2026-09-25 增量：validate_agent_skill_status_change 发布收敛单一入口)
+- src/handlers/hr/skill/create_skill.rs#L66-L72 (2026-09-25 增量：create 即发布拦截)
+- src/handlers/hr/skill/update_skill.rs#L56-L62 (2026-09-25 增量：update 直改 Published 拦截)
+- frontend/src/pages/hr/skills.rs#L384-L395 + #L546-L552 (2026-09-25 增量：列表列宽约束 + 描述列弹性压缩)
+- frontend/src/pages/hr/agent_detail.rs#L1832-L1840 (2026-09-25 增量：安装入口搜索仅列 Published)
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md（2026-09-27~28 增量：description 语义收敛——plan_snapshot / requirement_change 产物链）
 
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）
+
+**2026-09-25 增量（M2 持有关系收紧 + N2 发布回写）**：三处「技能发布 / 持有」语义收敛——① **M2-A 持有语义收紧**：`list_for_agent` 与 `resolve_agent_skills` 统一 retain 谓词「安装副本（parent 非空）或自有非正式发布技能（status != Published）」，共享库正式发布版根技能不再计入 Agent 持有列表 / 关联全景 / wake 路径；② **M2-B 安装源收紧**：`list_published_by_tag` 加 `has_parent=false`，共享库安装源只能来自正式发布的**根技能**，防止 Published 脏副本被当作二级副本源；③ **M2-C 发布收敛单一入口**：handler 层新增 `validate_agent_skill_status_change`，Agent 上下文或 Agent 安装副本禁止通过 create/update 直接把 status 刷成 Published（InvalidRequest）；④ **N2 发布回写**：Agent 自有根技能「非 Published→Published」后，`SkillDal::publish_writeback_copy` 为作者 Agent 补建 1 条本地工作副本（幂等查重 + 纯建副本 + 向量索引补偿），失败仅降级不阻断发布。前端配套：技能列表列宽约束 + 描述列弹性压缩（N4）、安装入口搜索仅列 Published（N3）、技能包卸载确认弹窗复用 Modal 进 top-layer。
 
 **2026-09-14 增量**：Skill 权限体系从「管理员/作者/Agent创建者」三级扩展为**Agent 上下文独立分支**——新增 `SkillAccessIntent::Read/Write` 双意图参数，`ensure_skill_access` 在 Agent 上下文下短路判定：Write 仅限 `author_id == agent_id`（自己的技能副本），Read 放行 Published 共享技能（跨 Agent 只读访问能力）。预置技能从 8 套扩展到 **10 套**（新增 TEMPLATE_PROJECT_CONTEXT_COGNITION 项目上下文认知 + TEMPLATE_SELF_EVOLUTION 自我进化模板）。Agent 工具绑定装配增加 **按 name 排序** 确保确定性（L151：`all_tools.sort_by(|a, b| a.po.name.cmp(&b.po.name))`），解决两条来源链（关联表 / 标签查询）返回顺序不稳定问题。
 
@@ -108,6 +124,14 @@ source_files:
 | [dal/skill/mod.rs](src/service/dal/skill/mod.rs) (2026-09 增量：短词元兜底) | 技能搜索 DAO 层兜底 | 搜索技能短词元（≤3 字符）必须走 DAO 层兜底查询（FTS5 前缀 + 向量），handler 层禁止提前返回空结果 |
 | [handlers/hr/skill/search_skill.rs / search_skills.rs](src/handlers/hr/skill/search_skill.rs) (2026-09 增量：短词元兜底 handler) | 技能搜索 handler 层 | 短词元（≤3 字符）兜底查询透传到 DAO 层 FTS5 + 向量 |
 | [frontend/src/components/chat/*.rs](frontend/src/components/chat/) (2026-09 增量) | 前端副本同步复选框 | × 3 fix：进修刷新过期副本 + 同步计数去虚报 + 复选框状态管理 |
+| [SkillDal::publish_writeback_copy 声明](src/service/dal/skill.rs#L184-L189) + [实现](src/service/dal/skill.rs#L814-L901) (2026-09-25 新增：N2 发布回写) | 发布回写自身副本补偿 | Agent 自有根技能发布为 Published 后，为作者 Agent 补建本地工作副本（Draft / parent=源 id / author=作者 Agent）；幂等查重（同 Agent 指向本源且状态 != Expired 已有副本 → 跳过）；纯建副本直调 DAO install_to_agent；向量索引 best-effort 补偿失败仅 warn |
+| [SkillDal::list_for_agent 持有语义收紧](src/service/dal/skill.rs#L351-L359) + [AgentDomain::resolve_agent_skills 同谓词](src/service/domain/hr/agent.rs#L59-L91) (2026-09-25 新增：M2-A) | Agent 实际持有技能全集 | retain 谓词「安装副本（parent 非空）或 自有非正式发布技能（status != Published）」；共享库正式发布版根技能（author_id 指向本 Agent、parent 空、Published）属共享库资产，不计入持有列表 / 关联全景 / wake 路径 |
+| [SkillDal::list_published_by_tag 安装源收紧](src/service/dal/skill.rs#L947-L962) (2026-09-25 新增：M2-B) | 共享库安装源只认根技能 | 查询加 `has_parent: Some(false)`；防止 Published 状态的 Agent 副本（历史脏数据）被当作安装源复制出二级副本 |
+| [validate_agent_skill_status_change 状态变更守卫](src/handlers/hr/skill/mod.rs#L49-L74) + [create 拦截](src/handlers/hr/skill/create_skill.rs#L66-L72) + [update 拦截](src/handlers/hr/skill/update_skill.rs#L56-L62) (2026-09-25 新增：M2-C) | 发布收敛单一入口 | Agent 上下文（无论形态）或 Agent 安装副本（author=Agent 且 parent 非空）携带 status=Published → InvalidRequest；发布只走共享库根技能（用户上下文）单一入口 |
+| [SkillManage::update_skill 发布回写](src/service/domain/hr/skill.rs#L51-L110) (2026-09-25 新增：N2) | 发布回写领域编排 | 更新前快照 before status；「非 Published → Published」且 Agent 自有根技能（author=Agent 且 parent 空）→ 调 publish_writeback_copy；失败仅 log_warn 降级不阻断发布主流程 |
+| [前端技能列表列宽约束](frontend/src/pages/hr/skills.rs#L384-L395) + [colgroup 弹性列](frontend/src/pages/hr/skills.rs#L546-L552) (2026-09-25 增量) | 技能库列表布局 | 描述列 min-w-0 + truncate 弹性压缩（N4）、标签列 max-w、操作列 whitespace-nowrap、table-fixed + colgroup 百分比列宽，删除按钮无需横向滚动即可见 |
+| [前端安装入口搜索仅列 Published](frontend/src/pages/hr/agent_detail.rs#L1832-L1840) (2026-09-25 增量：N3) | 安装入口技能搜索 | SearchSkillsRequest 补 `status: Some(SkillStatus::Published)`，排除他人 Draft 副本与非正式发布技能 |
+| [前端技能包卸载确认弹窗复用 Modal](frontend/src/pages/hr/agent_detail.rs#L2477-L2490) (2026-09-25 增量) | 弹窗进 top-layer | 技能包卸载确认复用 Modal 组件（原生 dialog.showModal 进 top layer），修复被局部堆叠上下文裁剪的黑边问题 |
 
 ---
 
@@ -201,6 +225,10 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 | 20 | **Agent 侧技能可见性必须同时满足 scope_project 匹配 + Agent 身份有权访问**（2026-09 新增）——禁止跨组织（scope_project 不同）技能串台；Agent 只能看到 Published 共享技能 + 自己 author_id 的私有草稿 | Agent A 跨 scope 查 Agent B 的私有草稿 → 403；查同 scope 的 Published → 200 | [domain/hr/skill.rs ensure_skill_access scope 分支](src/service/domain/hr/skill.rs) |
 | 21 | **技能副本同步刷新必须走进修（train_agent）流程幂等执行**（2026-09 新增）——禁止直接覆盖运行期已变更的技能副本；同步前先刷新过期副本、去重虚报计数 | 副本同步刷新前后 COUNT 只增量不翻倍；已修改的私有副本内容保持不变 | [domain/hr/skill.rs 副本同步逻辑](src/service/domain/hr/skill.rs) |
 | 22 | **搜索技能短词元（≤3 字符）必须走 DAO 层兜底查询**（2026-09 新增）——DAO 同时 FTS5 前缀 + 向量；handler 层禁止提前返回空结果 | 搜索 "ai" "ml" 应返回多条相关技能；handler 层 grep 不应有 `if query.len() < 3 { return Ok(vec![]) }` | [dal/skill/mod.rs + handlers/hr/skill/search_skill.rs](src/service/dal/skill/mod.rs) |
+| 23 | **Agent 持有技能全集谓词收紧**（2026-09-25 新增 M2-A）：`list_for_agent` 与 `resolve_agent_skills` 必须用同一 retain 谓词「parent_skill_id 非空 或 status != Published」；共享库正式发布版根技能（author_id 指向本 Agent、parent 空、Published）**禁止**进入 Agent 持有列表 / 关联全景 / wake 路径 | Agent 持有列表断言无「parent 空 + Published」条目；两处谓词同源（改一处必须同步另一处） | [dal/skill.rs list_for_agent](src/service/dal/skill.rs#L351-L359) + [domain/hr/agent.rs resolve_agent_skills](src/service/domain/hr/agent.rs#L59-L91) |
+| 24 | **共享库安装源必须是正式发布根技能**（2026-09-25 新增 M2-B）：`list_published_by_tag` 查询必须带 `has_parent: Some(false)`；Published 脏副本（历史数据）禁止作为安装源复制出二级副本 | 构造 Published 副本调 list_published_by_tag 不返回；对应安装断言不产生二级副本 | [dal/skill.rs list_published_by_tag](src/service/dal/skill.rs#L947-L962) |
+| 25 | **发布收敛为共享库根技能单一入口**（2026-09-25 新增 M2-C）：Agent 上下文（无论目标形态）或 Agent 安装副本（author=Agent 且 parent 非空）禁止经 create/update 直改 status=Published → InvalidRequest；服务端守卫 `validate_agent_skill_status_change` 双条件（is_agent_context / author+parent）必须在 create_skill 与 update_skill 均调用 | Agent ctx 调 create/update 带 status=Published → InvalidRequest；用户 ctx + Agent 自有草稿根技能发布 → 放行 | [handlers/hr/skill/mod.rs](src/handlers/hr/skill/mod.rs#L49-L74) + [create_skill.rs](src/handlers/hr/skill/create_skill.rs#L66-L72) + [update_skill.rs](src/handlers/hr/skill/update_skill.rs#L56-L62) |
+| 26 | **发布回写副本幂等 + 不阻断发布**（2026-09-25 新增 N2）：Agent 自有根技能「非 Published→Published」必须调 `publish_writeback_copy` 为作者 Agent 补建本地工作副本；幂等查重（同 Agent 指向本源且状态 != Expired 已有副本 → 跳过返回 None）；回写失败仅 log_warn 降级，禁止上抛中断发布主流程 | 重复发布不产生重复副本；回写失败发布仍成功（响应 200）；发布后作者 Agent 持有 1 条 Draft 工作副本 | [dal/skill.rs publish_writeback_copy](src/service/dal/skill.rs#L814-L901) + [domain/hr/skill.rs update_skill](src/service/domain/hr/skill.rs#L51-L110) |
 
 **§4.2 扩展入口速查**
 
@@ -218,3 +246,7 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 | fc0ac32c | 副本同步断链修复 | 进修刷新过期副本 + 同步计数去虚报；禁止直接覆盖运行期已变更的技能副本 |
 | 2467e6a9 | Agent 技能可见性收紧 + 自装自建幂等 | Agent 侧技能可见性必须 scope_project 匹配 + Agent 身份双检查；搜索短词元（≤3 字符）DAO 层兜底 |
 | 12de2c0a + bc348d6a + ed03c10f | 前端副本同步复选框 × 3 fix | frontend/src/components/chat/*.rs 复选框状态管理 + 同步流程 UI 修复 |
+| e77e9f6d | M2 持有关系收紧（A/B/C） | Agent 实际持有技能谓词收紧（list_for_agent + resolve_agent_skills）；安装源只认根技能（list_published_by_tag has_parent=false）；发布收敛单一入口（validate_agent_skill_status_change 双拦截） |
+| cf4e38bd | N2 发布回写自身副本 | SkillDal::publish_writeback_copy + update_skill 发布回写编排；幂等查重 + 纯建副本 + 向量索引补偿，失败仅降级不阻断发布 |
+| f36d6a68 + 490d3deb + 13fd2389 + d02e6d9d | 前端技能管理 4 fix | 安装入口搜索仅列 Published（N3）+ 卸载确认弹窗复用 Modal 进 top-layer + 列表列宽约束 + 描述列弹性压缩（N4） |
+| 76ac4f5e + 382247b2 + 84a61c27 | 预置技能语义收敛与精简 | TEMPLATE_PROJECT_MANAGEMENT description 收敛（plan_snapshot / requirement_change 产物链，替换不追加）；全量 10 份 skill.md 信息密度精简（93KB→79KB） |

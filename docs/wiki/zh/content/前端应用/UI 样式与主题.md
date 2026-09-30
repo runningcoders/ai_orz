@@ -19,6 +19,11 @@
 - [frontend/src/pages/settings.rs](frontend/src/pages/settings.rs) — HUD 收口示例：组织级配置区改用 HudCard + HudPanel
 - [frontend/src/pages/hr/agent_detail.rs](frontend/src/pages/hr/agent_detail.rs) — HUD 收口示例：工具与技能全景改用 HudCard + HudPanel
 - [frontend/src/pages/message/chat.rs](frontend/src/pages/message/chat.rs) — HUD 收口示例：气泡 + 消息侧面板 HUD 统一
+- [frontend/styles/input.css#L877-L890](frontend/styles/input.css#L877-L890) — 长文本区 .detail-longtext（2026-09-30 增量：max-height 32rem + overflow-y:auto + overscroll-behavior:contain，长 Markdown 独立成块内部滚动，不再撑坏同页 detail-grid 短字段网格）
+- [frontend/styles/input.css#L1464-L1483](frontend/styles/input.css#L1464-L1483) — 聊天气泡尖角贴顶（2026-09-30 增量：`.chat-bubble::before { bottom:auto; top:0 }` + `scaleY(-1)` 垂直翻转，chat-end 保留 rotateY(180deg)，抹平角由底角换顶角）
+- [frontend/styles/input.css#L2111-L2229](frontend/styles/input.css#L2111-L2229) — 项目内 Agent 列表两段布局（2026-09-30 增量：.project-agent-item 上下两段 + 行间 20% 分隔线 + .project-agent-item-body/desc/tasks-btn/detail/tasks）
+- [frontend/src/utils/local_store.rs#L1-L270](frontend/src/utils/local_store.rs#L1-L270) — 通用 localStorage 组件层（2026-09-30 增量：KEY_PREFIX 统一前缀 + 类型化读写 + Versioned 版本包装 + 存量迁移 + UnreadBadges）
+- [frontend/src/pages/message/chat.rs#L2523-L2536](frontend/src/pages/message/chat.rs#L2523-L2536) — 未读角标胶囊形红底渲染（2026-09-30 增量：unread_badge）
 
 ### 本文关联的三类文档（四类互引闭环）
 
@@ -36,6 +41,15 @@
 - [Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格](docs/wiki/knowledge/zh/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md)
 - [前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层](docs/wiki/knowledge/zh/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层.md)
 </cite>
+
+## 更新摘要（2026-09-30，base b82d3f7f→8fa050d0）
+**变更内容（前端体验专项）**
+- `frontend/styles/input.css` 新增 `.detail-longtext`（L877-L890）：项目/任务描述等长 Markdown 独立成块 + `max-height:32rem` 限高滚动，短文本不触发滚动条，超长文本内部滚动，不再把同页 `.detail-grid` 短字段网格撑到 1619px 高。
+- `frontend/styles/input.css` 聊天气泡尖角跟随头像贴顶（L1464-L1483）：DaisyUI 5.7.0 `.chat-bubble::before` 尖角硬编码贴底边（`bottom:0`），头像改到顶边后尖角脱钩；改为 `bottom:auto;top:0` + `scaleY(-1)` 垂直翻转，`chat-end` 保留 `rotateY(180deg)` 水平镜像，抹平角由底角换到顶角、底角恢复 `var(--radius-field)`。
+- `frontend/styles/input.css` 项目内 Agent 列表改上下两段布局（L2111-L2229）：上半 40px 头像 + 名称加粗横排 + 标签区铺右；下半介绍两行截断 + 任务数按钮恒在；行间以 base-content 20% 细分隔线区分（旧 10% 偏淡）。
+- 新增 `frontend/src/utils/local_store.rs`（L1-L270）通用 localStorage 组件层：统一 `ai_orz:` 前缀 + `keys`/`legacy` 常量集中 + `get_json`/`set_json`/`remove` 类型化读写 + `Versioned` 版本包装 + 存量一次性迁移 + `UnreadBadges` 结构集中；
+- `frontend/src/pages/message/chat.rs#L2523-L2536` 未读角标 `unread_badge` 改为可伸缩胶囊形红底（`badge-error` 语义）。
+- 关联 RAG 卡：[UI Design System 组件设计系统](docs/wiki/knowledge/zh/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束.md)、[Canvas HUD 可视化](docs/wiki/knowledge/zh/Canvas%20HUD%20可视化：GraphCanvas%20知识图谱%20+%20图表场景LineDonut%20+%20仪表盘Gauge双版%20+%20HudPalette橙光光晕/Canvas%20HUD%20可视化：GraphCanvas%20知识图谱%20+%20图表场景LineDonut%20+%20仪表盘Gauge双版%20+%20HudPalette橙光光晕.md)。
 
 ## 更新摘要
 **变更内容（T5 HUD 设计系统全站应用）**

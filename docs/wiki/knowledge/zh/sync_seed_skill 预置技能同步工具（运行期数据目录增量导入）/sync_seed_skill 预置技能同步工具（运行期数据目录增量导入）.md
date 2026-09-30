@@ -8,6 +8,7 @@ scope:
 - scripts/ai_orz.sh（seed-sync 子命令）
 - scripts/check.sh（seed-sync 命令实现）
 - src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md
 - src/service/domain/system/seed/default.json
 source_files:
 - tools/src/seed_sync.rs#L1-L305（纯逻辑层：parse_seed_json / SeedFileDef / SeedSkillDef / Args / SeedFileSource 枚举 + 校验 + 标签 JSON 生成）
@@ -15,6 +16,7 @@ source_files:
 - scripts/ai_orz.sh（seed-sync 子命令：SKILL= APPLY= 透传给 check.sh）
 - scripts/check.sh（seed-sync 实现：调用 sync_seed_skill bin → 默认 dry-run，APPLY=1 写盘，SKILL=<ID> 限定单个）
 - src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md（2026-09-23 增量：用户接待技能补 Agent 回执的用户代理判定）
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md（2026-09-27~28 增量：description 语义收敛——plan_snapshot / requirement_change 产物链，替换不追加；全量 10 份 skill.md 信息密度精简 93KB→79KB）
 - src/service/domain/system/seed/default.json（2026-09-23 增量：种子 Agent 默认配置扩展）
 - tools/Cargo.toml（新增 seed-sync binary）
 - docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md
@@ -79,3 +81,4 @@ source_files:
 - **tools/ 二进制工具框架**：tools/Cargo.toml 新增 sync_seed_skill bin + seed_sync.rs 纯逻辑层（与 docs_migrate / migrate_tool_call_trace 共享"逻辑层 vs 入口"两阶段分工模式）。
 - **仓库 seed 源文件增量**：TEMPLATE_COMMUNICATION/skill.md 补 Agent 回执的用户代理判定；default.json 种子 Agent 默认配置扩展。
 - **scripts 入口统一**：Makefile + ai_orz.sh + check.sh 三处新增 seed-sync 子命令；SKILL= / APPLY= 参数透传。
+- **2026-09-27~28 源文件增量**：TEMPLATE_PROJECT_MANAGEMENT/skill.md description 语义收敛（项目 description = 定位卡 + 产物索引；需求重大变更走任务级 `requirement_change` 产物、方案级变更走项目级 `plan_snapshot` 产物，均替换不追加）；全量 10 份 skill.md 信息密度精简（93KB→79KB，最大化头 TEMPLATE_PROJECT_MANAGEMENT 27.7KB→21.4KB）。这些源文件变更经 sync_seed_skill 的 ADD/UPDATE 增量导入落到运行期数据目录。

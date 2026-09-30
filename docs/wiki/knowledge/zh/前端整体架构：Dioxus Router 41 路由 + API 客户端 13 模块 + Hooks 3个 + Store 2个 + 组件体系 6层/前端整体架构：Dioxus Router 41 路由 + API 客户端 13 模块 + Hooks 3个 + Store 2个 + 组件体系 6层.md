@@ -28,6 +28,10 @@ source_files:
   2.状态 State 3.统计 Stats 4.图表 Charts(Line/Donut) 5.业务 Chat(气泡/侧栏/打字)/GraphCanvas/Gauge/RuntimePanel
   6.复合 KanbanCanvas/WorkspaceGraph)
 - 'frontend/src/utils/time.rs '
+- frontend/src/utils/local_store.rs#L1-L270（2026-09-26 增量 17cb0056：通用 localStorage 组件层 —— KEY_PREFIX `ai_orz:` 统一前缀 + keys/legacy 常量集中 + get_json/set_json/remove 类型化读写 + Versioned 版本包装 `{"v":1,"data":...}` + get_json_with_legacy/get_string_with_legacy 存量一次性迁移 + LocalStoreError 错误分层 + UnreadBadges 结构集中）
+- frontend/src/config.rs（2026-09-26 增量 17cb0056：FrontendConfig::load/save/clear_saved 改走 local_store，旧键 ai_orz_config 兼容迁移）
+- frontend/src/store/auth.rs（2026-09-26 增量 17cb0056：键名收敛至 local_store::keys，is_logged_in/restore_role/restore_string 走 get_json_with_legacy/get_string_with_legacy）
+- frontend/src/hooks/mod.rs（2026-09-26 增量 17cb0056：get_saved_theme / ThemeController::set 走 local_store 读写主题）
 - docs/design/frontend_architecture.md
 - docs/design/ui_design_system.md
 - docs/archive/plan-archive/前端工具与进程管理.md
@@ -52,6 +56,7 @@ source_files:
 - **41 条路由分布（7 大域 + 4 单页）**（pages/mod.rs Route enum）：① 登录 Reception + 对话 2（Chat/Search）= 3 条；② 组织域 Organization 2（Info/Users）；③ HR 域 5（AgentList/Detail + SkillList/Detail + MemorySearch + KnowledgeGraph）；④ Finance 域 11（ModelProviders 2 + Tools 3 + Identity + MessageChannels 2 + McpServers 2 + Attachments 2）；⑤ Project 域 6（List/Detail + Artifacts 2 + TaskList/Detail）；⑥ System 域 9（Triggers/Health/Docs/Logs/Backup/Processes/Aop/Seed/Tasks）；⑦ 用户 Profile + Workspace 工作台 + Settings 设置 = 3 条。前台无 token 访问受保护路由 → use_require_auth Hook 自动 redirect /login。
 - **API 客户端 13 模块分层（禁止直接在页面组件里写 reqwest）**（api/ 目录）：每个域一个文件（hr.rs / finance.rs / project.rs 等），内部 use `api_client()` 获取配置了 base_url + JWT 的 Client；调用方式：`hr::list_agents(ctx, pagination).await` 返回 `Result<ApiResponse<PagedResult<AgentDto>>>`；DTO 类型全部 `pub use common::api::AgentDto`，不在前端本地 struct 重复定义。API 失败 401 统一由 Axum 拦截器处理 → 前端 `result.map_err(|_| AuthStore.logout())`。
 - **组件体系 6 层单向引用（下层不允许 use 上层）**（components/）：Layer1 基础（Button/Modal/Toast/ConfirmDialog/Markdown/CodeEditor/SearchableSelect/ProcessDetail）；Layer2 状态展示（StateTag/TaskProgress）；Layer3 统计（StatsSummary/StatsOverviewCard）；Layer4 图表（charts/LineChart/DonutChart + ChartScene + Gauge/AopGauge）；Layer5 业务组件（chat/MessageBubble/TypingIndicator/ChatSidePanel/ToolCallsTab + RuntimePanel + GraphCanvas + ArtifactMetaModal + CreateHttpTool）；Layer6 复合 Canvas（CanvasScene + ForceLayout + LayeredLayout + RelationGraph + WorkspaceGraph + KanbanCanvas + Particles + HudPalette）。跨层引用只能上层 import 下层，循环依赖会触发 Rust 编译器错误。
+- **utils/local_store 通用 localStorage 组件层（2026-09-26 增量 17cb0056）**：`frontend/src/utils/local_store.rs` 作为持久化唯一出口——`KEY_PREFIX = "ai_orz:"` 统一前缀 + `keys` 模块集中 Key 常量（`AUTH_LOGGED_IN`/`AUTH_ROLE`/`AUTH_USERNAME`/`AUTH_DISPLAY_NAME`/`CONFIG`/`THEME`/`CHAT_PANEL_OPEN`/`UNREAD_BADGES`）+ `legacy` 模块收旧键；类型化接口 `get_json`/`set_json`/`remove` 统一走 `Versioned { v, data }`（`{"v":1,"data":...}`）包装；`get_json_with_legacy`/`get_string_with_legacy` 在新键未命中时回退旧键旧编码、命中即回写完成一次性迁移。消费方 `config.rs`（配置）、`store/auth.rs`（登录态/角色/身份）、`hooks/mod.rs`（主题）、`pages/message/chat.rs`（未读角标/侧栏开关）均已改走组件层。
 
 ---
 
@@ -67,6 +72,7 @@ source_files:
 | layouts/app_layout.rs | 顶层布局 + 守卫 | 首行 `let _ = use_require_auth().read().redirect_if_unauthenticated();` → 无 token 302 /login；内部 rsx!(Navbar { }, Sidebar { routes }, Outlet::<Route> {}, ToastContainer { }) 四部分 | 见 AppLayout fn |
 | components/mod.rs 6 层导出 | 组件聚合 | pub use button::Button; pub use modal::Modal; pub use stats::StatsSummary; pub use charts::LineChart; pub use chat::{MessageBubble, ChatSidePanel}; pub use graph_canvas::GraphCanvas；顺序严格按依赖层排列 | `见 pub use 顺序` |
 | utils/time.rs 等 5 子模块 | 纯函数工具 | `format_timestamp(ts: i64) -> String` 相对时间 "3分钟前" / 绝对 "2026-07-12 09:30"；`truncate_markdown(text, 200)` 中文截断 + 加省略号；`status_label(TaskStatus::Running)` → `<span class="badge badge-info">运行中</span>` | 见 utils/mod.rs pub use |
+| utils/local_store.rs localStorage 组件层 | 持久化唯一出口 | `KEY_PREFIX` + `keys`/`legacy` 常量 + `get_json`/`set_json`/`remove`（`Versioned` 包装）+ `get_json_with_legacy`/`get_string_with_legacy` 存量迁移 + `UnreadBadges`；消费方 config/auth/hooks/chat | `frontend/src/utils/local_store.rs#L1-L270` |
 
 **章节来源**
 - [pages/mod.rs:L61-L163](frontend/src/pages/mod.rs#L61-L163)

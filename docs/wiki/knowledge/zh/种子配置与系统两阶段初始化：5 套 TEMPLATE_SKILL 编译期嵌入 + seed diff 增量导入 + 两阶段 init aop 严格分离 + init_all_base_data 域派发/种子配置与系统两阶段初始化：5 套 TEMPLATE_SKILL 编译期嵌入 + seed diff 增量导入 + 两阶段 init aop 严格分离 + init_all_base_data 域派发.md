@@ -22,6 +22,7 @@ source_files:
 - src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
 - src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md
 - src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md（2026-09-27~28 增量：description 语义收敛——plan_snapshot / requirement_change 产物链；全量 10 份 skill.md 信息密度精简 93KB→79KB）
 - src/service/domain/system/seed/skills/TEMPLATE_SKILL_MANAGEMENT/skill.md
 - src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md
 - src/service/domain/system/seed/skills/GIT_BRANCH_WORKFLOW/skill.md
@@ -49,6 +50,8 @@ source_files:
 ---
 
 # §1 概述与定位
+
+**2026-09-27~28 增量（预置技能语义收敛 + 信息密度精简）**：预置技能模板集做两轮内容治理——① **项目管理模板 description 语义收敛**：项目 `description` 收敛为「项目定位卡 + 关键产物 ID 索引」（≤10 行，替换不追加），拆分计划归 `execution_plan`，方案级重大变更快照存项目级 `plan_snapshot` 产物并回写索引；任务 `description` 收敛为「需求边界说明 + 产物索引」，需求重大变更快照存任务级 `requirement_change` 产物并回写索引；② **全量 10 份 skill.md 信息密度精简**：按四条标准（删工具速览参数枚举、收敛重复规则、压缩完整示例为骨架、类比定位段/状态机表/唯一事实源章节不动）从 93KB 精简到 79KB，最大头 TEMPLATE_PROJECT_MANAGEMENT 27.7KB→21.4KB（-23%），语义零损失。变更只动 `src/service/domain/system/seed/skills/**/*.md`（编译期 `include_str!` 源），不新增模板、不改嵌入注册表。
 
 本知识卡沉淀 AI Orz 的**种子配置（Seed）系统**与**系统两阶段初始化**架构：覆盖 5 套预置技能模板编译期嵌入（TEMPLATE_*）、SeedSnapshot 纯数据结构与 diff 增量导入算法、两阶段初始化（`init_all` 静态单例 → `init_base_data` 异步基础数据 → `aop init_all` 事件调度器启动）严格分离原则、以及 `init_all_base_data` 跨 domain 的域派发模式。
 
@@ -189,3 +192,5 @@ service::init_base_data → AOP metrics hook inject → aop::init_all
 10. **对话模型 seed 配置必须带 context_length**：种子导入 diff 校验 + apply-default 默认模板两条路径，对话模型 Provider 的 `context_length` 字段是**必填项**（Embedding Provider 可空）。缺失返回 400 `context_length_required`。**原因**：Agent 运行时需要此字段计算 Token 占比上下文阈值（`agent_runtime_state.context_threshold`），缺了会导致前端 RingProgress 无法显示 + Agent 思考时无法判断上下文是否接近溢出
 11. **reception 同名双身份包单向引用（禁反向）**：TEMPLATE_USER_RECEPTION（Skill 模板）与 HR onboarding Handler 的默认技能包引用 reception tag 时，两者**必须**复用同一个 tag 常量（common/src/enums/tool_tag.rs SkillTag::Reception）；禁止 Handler 侧硬编码 "reception" 字符串；禁止 Skill 模板硬编码 "agent_reception" 等变体。Seed 与 Handler 共享枚举定义，保证技能安装时 `find_by_tag(SkillTag::Reception)` 能精确命中模板
 12. **预置 Agent 同步禁止覆盖用户自定义 Provider 绑定**（2026-09-12 新增，Ref 67a7c7ec）：`sync_preset_agents.rs` 三策略（Overwrite/OnlyMissing/RestoreDeleted）同步范围**仅限 Agent 元数据**（角色/描述/能力/灵魂/soul）和**技能包分配**（skill_tags 匹配 + 绑定）。**模型绑定（model_provider_id / model_name / runtime_config）已彻底移出同步范围**——无论选 Overwrite 还是其他策略，用户已为某个预置 Agent 配置好的模型 Provider 绑定**永不被覆盖**。这是种子系统最核心的安全红线之一：预置 Agent 同步是「升级 Agent 模板能力」而非「重置用户配置」
+13. **TEMPLATE_PROJECT_MANAGEMENT description 字段只做定位与索引**（2026-09-27~28 新增）：项目 `description` 仅写「项目定位 + 关键产物 ID 索引」（≤10 行）；拆分计划写 `execution_plan`，方案级重大变更快照存项目级 `plan_snapshot` 产物（`create_text_artifact(tags=["plan_snapshot"], project_id=...)`，`task_id` 不传即项目级）。任务 `description` 仅写「需求目标 + 边界 + 关键产物 ID 索引」；需求重大变更快照存任务级 `requirement_change` 产物（`tags=["requirement_change"]` + `task_id`）。两类 description 更新一律**替换不追加**，历史沿革靠产物链追溯。禁止在 description 堆叠历史快照（字段冗长破坏 `get_project` / `get_task` 一眼可取入口）
+14. **预置 skill.md 信息密度精简必须语义零损失**（2026-09-28 新增）：精简只删「工具速览参数枚举 / 重复规则 / 完整示例」，独有增量条目必须并入正文对应章节不丢弃；「类比定位段 / 状态机表 / 唯一事实源章节」不动。精简只改 `skills/**/*.md`，不得改动 `embedded.rs` 嵌入注册表条目数（`list_embedded_skill_files_count()` 断言值不变）

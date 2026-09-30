@@ -9,6 +9,7 @@ scope:
 - frontend/src/layouts/**/*.rs
 - frontend/styles/**/*.css
 - frontend/src/pages/**/*.rs
+- frontend/src/utils/**/*.rs
 source_files:
 - frontend/src/components/button.rs#L1-L49
 - frontend/src/components/modal.rs#L1-L43
@@ -43,6 +44,13 @@ source_files:
 - docs/wiki/zh/content/前端应用/UI 样式与主题.md
 - docs/wiki/zh/content/前端应用/前端架构设计.md
 - docs/wiki/zh/content/前端应用/前端应用.md
+- frontend/src/utils/local_store.rs#L1-L270（2026-09-26 增量：通用 localStorage 组件层 —— KEY_PREFIX 统一前缀 + keys/legacy 常量集中定义 + get_json/set_json/remove 类型化读写 + Versioned 版本包装 + get_json_with_legacy/get_string_with_legacy 存量一次性迁移 + UnreadBadges 结构集中）
+- frontend/src/config.rs（2026-09-26 增量：load/save/clear_saved 改走 local_store，旧键 ai_orz_config 兼容迁移）
+- frontend/src/store/auth.rs#L1-L90（2026-09-26 增量：键名收敛至 local_store::keys，is_logged_in/restore_role/restore_string 走 get_json_with_legacy/get_string_with_legacy）
+- frontend/src/hooks/mod.rs（2026-09-26 增量：get_saved_theme / ThemeController::set 走 local_store 读写主题）
+- frontend/styles/input.css#L1447-L1468（2026-09-25 增量：聊天气泡 chat-bubble 尖角贴顶翻转 —— scaleY(-1) 覆盖块 + 抹平角换顶角 + 底角恢复 var(--radius-field)）
+- frontend/src/pages/message/chat.rs（2026-09-26 增量：项目列表未读角标 —— local_store::UnreadBadges 计数 + 进会话清零 + 默认对话哨兵键 default）
+- frontend/styles/input.css#L877-L890（2026-09-30 增量：`.detail-longtext` 长文本限高内部滚动 —— 详情页长可变量字段独立成块，不再撑坏 .detail-grid）
 
 ---
 
@@ -53,6 +61,8 @@ source_files:
 **2026-09-12 增量**：DaisyUI 主题系统瘦身——从 31 个内置主题**删除 7 个无用皮肤**（bumblebee / emerald / forest / wireframe / black / sun / winter），仅保留自研双主题 `orz-light`（暖色驾驶舱）+ `orz-dark`（深色驾驶舱）+ 少量精选内置主题（lemonade / caribou）。同步 `hooks/mod.rs` 的 `AVAILABLE_THEMES` 数组，禁止 UI 选择器展示已删除主题。输入框视觉升级：`.hud-input` 新增**静息态发丝边**（1px 渐变描边 + 微妙发光层 `box-shadow: 0 0 0 1px rgba(250, 82, 15, 0.08)`）+ **聚焦态流动光带边框**（`hud-input:focus-within` 触发 `hud-signal` keyframes 从左至右扫过输入框边缘，橙光 1.2s 循环一次，呼应 HUD 驾驶舱流光风格），彻底替换之前普通的 1px gray-300 描边。
 
 **2026-09-12 增量（c632f4bf→HEAD）**：输入框控件**加 0.5rem 纵向留白**（`.hud-input` 类追加 `py-2`），与上下控件保持呼吸感，避免表单元素贴得过密；**同步弹窗进度指示改用统一 Loading 组件**（`frontend/src/pages/hr/agents.rs` 预置 Agent 同步弹窗中，之前使用自定义 spinner，现在改用 DaisyUI `loading loading-spinner` 或 HUD 原子组件中的 Loading 原语，与全站其他弹窗进度指示风格统一）；**工作台底部横幅重构为 MMORPG 式三段布局**（`frontend/src/pages/workspace.rs`）——将原来简陋的单条底部横幅拆解为三个功能分区（左上状态/中间对话/右下工具提示），类 MMORPG 游戏 UI 的 HUD 风格，左侧显示当前视图状态与上下文锚点、中间是可交互的对话框入口、右下是快捷工具提示条，整体通过 Tailwind `flex justify-between items-end` + 各自独立的 `HudCallout`/`HudCard` 容器实现。
+
+**2026-09-26 增量（17cb0056 / 9e093e79 / 924d900d）**：两处前端体验修复。① **localStorage 收敛为通用组件层** `frontend/src/utils/local_store.rs`——此前各业务散点直调 localStorage，键名两套、编码三种并存；组件层统一 `ai_orz:` 前缀（`keys` 模块集中定义 Key、`legacy` 模块收旧键），类型化接口 `get_json`/`set_json`/`remove`（值内嵌 `{"v":1,"data":...}` 版本包装），错误分层 `LocalStoreError`（调用方决定兜底），并提供 `get_json_with_legacy`/`get_string_with_legacy` 在**新键未命中时回退旧键旧编码、命中即回写新键**完成一次性迁移（防登录态/配置丢失）；`config.rs` / `store/auth.rs` / `hooks/mod.rs`（主题）全部改走组件层。② **DaisyUI `chat-bubble` 尖角贴顶翻转**（`frontend/styles/input.css`）——头像已按产品决策对齐消息起始位置（顶边），而 DaisyUI 5.7.0 的 `.chat-bubble::before` 尖角硬编码贴气泡底边导致与头像脱钩；用 `scaleY(-1)` 覆盖块把尖角翻到顶边并垂直翻转（抹平圆角由底角换到顶角、底角恢复 `var(--radius-field)`），`chat-end` 保留 `rotateY(180deg)` 水平镜像。
 
 # §2 关键文件表
 
@@ -82,6 +92,8 @@ source_files:
 | Design 规范文档 | docs/design/ui_design_system.md | Mistral 暖色系设计原则 + DaisyUI 5 迁移落地章节；HUD 驾驶舱效果说明；组件清单参考 |
 | Plan 统计图表基础设施 | docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md | charts/ 子目录组件（donut_chart/line_chart）落地计划与复用约束 |
 | Plan 知识图谱组件复用 | docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md | Graph/GraphCanvas/KanbanCanvas/WorkspaceGraph/CanvasScene 复用层级划分 |
+| localStorage 通用组件层 | frontend/src/utils/local_store.rs | L1-L270 `KEY_PREFIX` + `keys`/`legacy` 常量集中 + `get_json`/`set_json`/`remove` 类型化 + `Versioned` 版本包装（`{"v":1,"data":...}`）+ `get_json_with_legacy`/`get_string_with_legacy` 存量迁移 + `LocalStoreError` + `UnreadBadges`/`UNREAD_DEFAULT_KEY` |
+| 聊天气泡尖角贴顶 | frontend/styles/input.css | L1447-L1468 `.chat .chat-bubble::before { bottom:auto; top:0 }` + `.chat-start/.chat-end` `transform: scaleY(-1)`（`chat-end` 保留 `rotateY(180deg)`）+ 抹平角由底角换顶角、底角恢复 `var(--radius-field)` |
 
 # §3 架构与约定
 
@@ -168,3 +180,6 @@ Layer 1 - Foundation（基础层，非 Rust 组件）
 11. **hud-tone 旧变体移除红线**：前端页面已废弃 hud-tone 独立变体，统一收口为 `HudCard { tone: Some("primary"|"accent"|"success"|"neutral") }`。**禁止** 新增 `.hud-tone-*` 类名直写或自定义 tone 变体。
 12. **SkillCard 状态 HUD + Agent 详情页 tab 拆分约束**：SkillCard 必须支持 Expired 状态（badge 颜色 `badge-error` + 操作区「恢复」按钮）；Agent 详情页（agent_detail.rs）拆为工具 tab + 技能 tab，工具关系图并入工具 tab 上部总览；TextMetrics measure_text（web-sys crate）替代字符数估算，Canvas 文本测量精度升级
 13. **Loading 组件统一红线**（2026-09-12 新增，Ref 6dbad9b2）：全站所有进度指示/加载状态**禁止**自定义 spinner（如纯 CSS 动画、svg circle+animation 硬写），**必须**使用统一的 DaisyUI `loading` 类（`loading loading-spinner` / `loading loading-dots` / `loading loading-ring` 等）或 HUD 原子组件中的 Loading 原语。例外情况须在 HUD 原语中新增对应变体（如定制颜色或尺寸），而非页面自行实现。当前已统一：预置 Agent 同步弹窗（agents.rs）、工作台底部横幅加载状态（workspace.rs）、各类导入/导出进度弹窗
+14. **localStorage 只能走组件层红线**（2026-09-26 新增，17cb0056）：`frontend/src/**` 中**禁止**再出现 `utils::local_storage()` 直调或散点自造键名（`storage.get/set_item/remove_item("xxx")`）；所有持久化**必须**经 `frontend/src/utils/local_store.rs`——键名挂 `keys` 模块常量（`ai_orz:` 前缀，模块内测试 `all_keys_use_unified_prefix` 兜底校验）、读写走 `get_json`/`set_json`/`remove`（版本包装统一）、存量迁移走 `get_json_with_legacy`/`get_string_with_legacy`（读旧成功即回写新键）。新增业务持久化结构体集中定义在组件层（如 `UnreadBadges`），键名必须三者一致（`keys` 常量、`legacy` 旧键、迁移调用点）
+15. **聊天气泡尖角必须贴顶翻转且分方位覆盖**（2026-09-25 新增，924d900d）：DaisyUI 的 `.chat-bubble::before` 尖角默认贴底边，而产品决策把头像对齐到消息起始（顶）边，故**必须**用 `frontend/styles/input.css` 的覆盖块把尖角 `top:0` + `scaleY(-1)` 翻到顶边。`chat-end` 的水平镜像由原生 `rotateY(180deg)` 提供，**覆盖 `transform` 时必须保留 `rotateY(180deg)`**（否则右侧尖角翻错方向）——故必须分 `.chat-start` / `.chat-end` 两方位分别写，禁止只写一条 `.chat .chat-bubble::before` 破坏右侧镜像；抹平圆角同步由底角换到对应顶角、底角恢复 `var(--radius-field)`
+16. **详情页长文本必须独立成块限高红线**（2026-09-30 新增）：详情页的长可变量字段（如 `description`）**禁止**与固定宽度的短字段同处 `.detail-grid`（`repeat(auto-fit, minmax(200px, 1fr))`）——长文会把单元格撑高，并经 `align-items: stretch` 连带拉高同排短字段、把后续面板挤出首屏。**必须**独立成块（`HudPanel` + eyebrow `DESCRIPTION`）并用 `.detail-longtext`（`max-height: 32rem` + `overflow-y: auto` + `overscroll-behavior: contain`）限高内部滚动：短文本不出滚动条、超长文本 Markdown 在块内滚动；空描述仍渲染面板 + 灰字「暂无描述」。锚点：frontend/styles/input.css#L877-L890
