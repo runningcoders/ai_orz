@@ -149,6 +149,12 @@ pub struct GraphProps {
     /// 小地图模式：卡片只保留名称一行（正文 / 标签省略），缩略图预览用
     #[props(default = None)]
     pub mini: Option<bool>,
+    /// 全局点线视图模式：圆点 + 连接度映射半径（对齐 Canvas 全局模式；默认关，卡片态不受影响）
+    #[props(default = false)]
+    pub global_mode: bool,
+    /// 节点连接度表（全局模式半径映射依据：id → degree，R4 in+out 仅活跃边）
+    #[props(default)]
+    pub node_degrees: Option<std::collections::HashMap<String, usize>>,
     on_node_click: EventHandler<String>,
 }
 
@@ -193,6 +199,30 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
         // 归档用 slate-400 与兜底灰（#6b7280）区分，守卫测试才能兜住漏配
         "task_archived" => "#94a3b8",
         _ => NEUTRAL_NODE_FILL,
+    }
+}
+
+/// 全局点线视图：连接度 → 节点半径（Canvas / SVG 双渲染器 SSOT）。
+///
+/// 底 7px、度数线性增长（每度 +1.1px，19 度封顶 ≈ 27.9px，28px 系防御性上限）。
+/// 此前公式内联在 `graph_canvas.rs`，SVG 对齐时若各抄一份必然漂移，故上提至此。
+pub fn global_node_radius(degree: usize) -> f64 {
+    (7.0 + degree.min(19) as f64 * 1.1).min(28.0)
+}
+
+/// 全局点线视图：半径 → 名称限绘（Canvas / SVG 双渲染器 SSOT，对齐
+/// `canvas_scene.rs` `draw_circle_node` 的免绘名守卫与截断宽度）。
+///
+/// 半径 < 14 时不绘名（画不下，返回空串由调用方跳过渲染）；
+/// 否则按「半径 × 1.5」估可容宽度截断，clamp 在 3~12 字符。
+pub fn global_node_label(label: &str, radius: f64) -> String {
+    if radius < 14.0 {
+        String::new()
+    } else {
+        label
+            .chars()
+            .take(((radius * 1.5) as usize).clamp(3, 12))
+            .collect()
     }
 }
 
@@ -408,6 +438,9 @@ pub fn Graph(props: GraphProps) -> Element {
     let svg_height = props.svg_height.unwrap_or(600).max(120);
     // 小地图模式：卡片只保留名称（正文 / 标签省略），缩略图预览用
     let mini = props.mini.unwrap_or(false);
+    // 全局点线模式（对齐 Canvas 全局模式）：圆点分支 + 跳过边标签 overlay
+    let global_mode = props.global_mode;
+    let global_degrees = props.node_degrees.clone().unwrap_or_default();
 
     #[allow(clippy::type_complexity)]
     let valid_edges: Vec<(GraphEdge, (f64, f64), (f64, f64))> = props
@@ -427,19 +460,24 @@ pub fn Graph(props: GraphProps) -> Element {
 
     // 边标签置顶数据：SVG 后画覆盖先画，标签组必须渲染在节点之后才不被卡片
     // 遮挡；这里提前算好文本 / 变换 / 颜色，渲染段只做纯输出
-    let edge_label_overlays: Vec<(String, String, &'static str)> = valid_edges
-        .iter()
-        .filter_map(|(edge, (sx, sy), (tx, ty))| {
-            let label: String = edge.label.chars().take(10).collect();
-            (!label.is_empty()).then(|| {
-                (
-                    label,
-                    get_label_transform(*sx, *sy, *tx, *ty),
-                    get_edge_color(&edge.label),
-                )
+    // 全局点线态不绘边标签（对齐 Canvas 全局模式：点线承载类型着色，标签留给局部卡片态）
+    let edge_label_overlays: Vec<(String, String, &'static str)> = if global_mode {
+        Vec::new()
+    } else {
+        valid_edges
+            .iter()
+            .filter_map(|(edge, (sx, sy), (tx, ty))| {
+                let label: String = edge.label.chars().take(10).collect();
+                (!label.is_empty()).then(|| {
+                    (
+                        label,
+                        get_label_transform(*sx, *sy, *tx, *ty),
+                        get_edge_color(&edge.label),
+                    )
+                })
             })
-        })
-        .collect();
+            .collect()
+    };
 
     let selected_id = props.selected_node_id.clone();
 
@@ -673,6 +711,76 @@ pub fn Graph(props: GraphProps) -> Element {
                     let opacity = get_node_opacity(is_highlighted, is_selected);
                     let glow = get_node_glow(is_highlighted, is_selected);
 
+                    // === 全局点线分支（对齐 Canvas 全局模式）：圆点 + 连接度半径、
+                    // 名称按半径限绘，跳过矩形卡片 / 竖条 / 正文 / 标签 ===
+                    if global_mode {
+                        let degree = global_degrees.get(&node.id).copied().unwrap_or(0);
+                        let radius = global_node_radius(degree);
+                        let label = global_node_label(&node.label, radius);
+                        // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
+                        let hover_enter = HoverTarget::Node(node.id.clone());
+                        let hover_leave = HoverTarget::Node(node.id.clone());
+                        let node_id_drag = node.id.clone();
+
+                        rsx! {
+                            g {
+                                class: "kg-node-appear kg-node-group",
+                                cursor: "move",
+                                style: "{glow}",
+                                opacity: "{opacity}",
+                                onmouseenter: move |_| {
+                                    hovered.set(Some(hover_enter.clone()));
+                                },
+                                onmouseleave: move |_| {
+                                    // 仅清除仍停留在当前元素上的 hover，避免误清新进入的其他元素
+                                    if hovered.read().as_ref() == Some(&hover_leave) {
+                                        hovered.set(None);
+                                    }
+                                },
+                                onmousedown: move |e: MouseEvent| {
+                                    // 与卡片分支一致：阻止冒泡，拖拽节点时不平移画布
+                                    e.stop_propagation();
+                                    handle_node_drag_start_with_event(e, node_id_drag.clone());
+                                },
+
+                                // 选中态：圆点外圈虚线扫描环（卡片扫描框的圆形对应）
+                                if is_selected {
+                                    circle {
+                                        cx: "{nx}",
+                                        cy: "{ny}",
+                                        r: "{radius + 5.0}",
+                                        fill: "none",
+                                        stroke: "#f97316",
+                                        stroke_width: "1.5",
+                                        stroke_dasharray: "6 4",
+                                    }
+                                }
+
+                                circle {
+                                    cx: "{nx}",
+                                    cy: "{ny}",
+                                    r: "{radius}",
+                                    fill: "{fill}",
+                                    stroke: "{stroke}",
+                                    stroke_width: "{stroke_width}",
+                                }
+
+                                // 名称限绘：半径足够才绘（global_node_label 空串则跳过）
+                                if !label.is_empty() {
+                                    text {
+                                        x: "{nx}",
+                                        y: "{ny + radius + 12.0}",
+                                        text_anchor: "middle",
+                                        font_size: "10",
+                                        fill: "#f9fafb",
+                                        font_weight: "500",
+                                        "{label}"
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+
                     // === 矩形卡片几何（与 canvas 渲染器共用 SSOT）===
                     // mini 小地图：几何按纯名称卡塌缩（一行标题），正文 / 标签全部省略；
                     // 几何与内容必须同步切换——box_height 内部独立重算正文行数，
@@ -842,6 +950,7 @@ pub fn Graph(props: GraphProps) -> Element {
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -1189,5 +1298,28 @@ mod tests {
         }
         // 超范围状态必须落 "task" 兜底（不 panic）
         assert_eq!(task_status_node_type(99), "task");
+    }
+
+    #[test]
+    fn global_node_radius_maps_degree_and_caps() {
+        // 底值：0 度 → 7px
+        assert_eq!(global_node_radius(0), 7.0);
+        // 线性增长：19 度 → 7 + 19×1.1 = 27.9
+        assert!((global_node_radius(19) - 27.9).abs() < 1e-9);
+        // 封顶：内层 min(19) 先封，19 度以上恒 27.9（外层 28.0 系防御性上限）
+        assert!((global_node_radius(28) - 27.9).abs() < 1e-9);
+        assert!((global_node_radius(1000) - 27.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn global_node_label_truncates_by_radius() {
+        // 半径不足 14：免绘名（空串）
+        assert_eq!(global_node_label("任意名称", 13.9), "");
+        // 半径恰 14：14×1.5=21 → clamp 后 12 字符上限
+        let long = "一个相当长的知识节点名称超出了允许宽度上限";
+        assert_eq!(global_node_label(long, 14.0).chars().count(), 12);
+        assert_eq!(global_node_label(long, 28.0).chars().count(), 12);
+        // 短名称完整保留
+        assert_eq!(global_node_label("短名", 28.0), "短名");
     }
 }

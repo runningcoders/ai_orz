@@ -747,7 +747,11 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                                 Some(rsx! {
                                                     button {
                                                         class: "btn btn-xs btn-outline",
-                                                        onclick: move |_| view_mode.set(ViewMode::Global),
+                                                        onclick: move |_| {
+                                                            view_mode.set(ViewMode::Global);
+                                                            // 全局点线态固定 Canvas：返回全局时同步复位风格（CR 观察项①整改）
+                                                            graph_style.set(GraphStyle::Canvas);
+                                                        },
                                                         title: "返回全局点线视图（全量知识图谱）",
                                                         "← 返回全局"
                                                     }
@@ -798,6 +802,8 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                         edges: current_edges,
                                         selected_node_id: selected_id,
                                         highlighted_node_ids: Some(highlighted_node_ids()),
+                                        global_mode: view_mode() == ViewMode::Global,
+                                        node_degrees: Some(global_degrees()),
                                         on_node_click: handle_node_click,
                                     }
                                 },

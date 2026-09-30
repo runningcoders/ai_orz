@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use dioxus::prelude::*;
 
 use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene};
-use crate::components::graph::{GraphEdge, GraphNode, get_node_fill};
+use crate::components::graph::{GraphEdge, GraphNode, get_node_fill, global_node_radius};
 use crate::components::node_card;
 
 /// KnowledgeGraphCanvas Props
@@ -87,7 +87,7 @@ fn to_canvas_node(
     // 有正文 → 卡片（等效半径 = 外接圆半径）；无正文的端点节点 → 小圆点，
     // 半径与 Agent 关系图同档，不硬撑一张空卡片；全局态一律按连接度给半径
     canvas.radius = if global_mode {
-        (7.0 + degree.min(19) as f64 * 1.1).min(28.0)
+        global_node_radius(degree)
     } else if canvas.is_card() {
         w.max(h) / 2.0
     } else {
