@@ -42,6 +42,9 @@ pub struct GraphEdge {
     /// 与 Canvas 版共用 `edge_style` 的映射：两处各写一份系数，同一个强度
     /// 在两个视图里会粗细不同。
     pub weight: Option<f32>,
+    /// 方向性（方案 a′）：`"directed"` = 有向边，target 端绘制箭头；
+    /// 其余（`"undirected"`）= 无向纯线。契约值由服务端解析带出，前端零词表映射纯透传。
+    pub direction: String,
 }
 
 /// 图元素 hover 目标（节点 ID / 边端点对），驱动 hover 详情卡片
@@ -657,6 +660,12 @@ pub fn Graph(props: GraphProps) -> Element {
                     let len = edge_length(sx, sy, tx, ty);
                     let edge_class = if use_flow { "kg-edge-flow kg-edge-glow" } else { "kg-edge-glow" };
                     let edge_style = format!("--len: {len}px; color: {edge_color};");
+                    // 方向性边（方案 a′）：directed 挂箭头（target 端），其余纯线
+                    let edge_marker = if edge.direction == "directed" {
+                        "url(#arrowhead)"
+                    } else {
+                        "none"
+                    };
                     // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
                     let hover_enter = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
                     let hover_leave = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
@@ -671,7 +680,7 @@ pub fn Graph(props: GraphProps) -> Element {
                             stroke_dasharray: "{edge_dash}",
                             class: "{edge_class}",
                             style: "{edge_style}",
-                            marker_end: "url(#arrowhead)",
+                            marker_end: "{edge_marker}",
                         }
 
                         // 透明命中层：放宽边的 hover 命中区（视觉样式不变）

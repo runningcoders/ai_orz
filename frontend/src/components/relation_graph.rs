@@ -129,6 +129,8 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
             // Agent 关系图不声明强度：边色已表达状态语义，多一个强度维度只会
             // 让「线粗」变成没有依据的装饰（未标注统一走基准线宽）
             weight: None,
+            // Agent 关系图边无方向语义：保持无向现状零回退（方案 a′ 扩围编译兼容行）
+            directional: false,
         })
         .collect();
 

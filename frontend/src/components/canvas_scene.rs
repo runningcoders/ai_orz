@@ -84,6 +84,9 @@ pub struct CanvasEdge {
     /// 状态语义占用，不再拿颜色表达强度）。未标注渲染基准粗细、不是最细 ——
     /// 只有知识图谱这类会声明强度的场景才填值，其余关系图留 `None` 即可。
     pub weight: Option<f32>,
+    /// 方向性（方案 a′）：`true` = 有向边，target 端绘制箭头；`false` = 无向纯线。
+    /// Default = `false`，既有无向关系图经 `..Default::default()` 构造零波及。
+    pub directional: bool,
 }
 
 /// 画布视口变换：世界坐标 ↔ 屏幕坐标
@@ -742,6 +745,30 @@ impl CanvasRenderer for DefaultRenderer {
                 ctx.move_to(from.x, from.y);
                 ctx.line_to(to.x, to.y);
                 ctx.stroke();
+
+                // 方向性边箭头原语（方案 a′）：directed 边在 target 端补小三角，
+                // 方向沿 source→target，尺寸随线宽派生，填充色复用边色保持一致。
+                // Canvas 几何活在世界坐标系，viewport 缩放对整幅画面等比生效，
+                // 箭头与世界坐标同尺度、随视图缩放同步缩放，无需单独换算。
+                if edge.directional {
+                    let dx = to.x - from.x;
+                    let dy = to.y - from.y;
+                    let len = (dx * dx + dy * dy).sqrt();
+                    if len > f64::EPSILON {
+                        let (ux, uy) = (dx / len, dy / len);
+                        let size = (width * 2.5).max(5.0);
+                        let half = size * 0.42;
+                        let (base_x, base_y) = (to.x - ux * size, to.y - uy * size);
+                        let (px, py) = (-uy, ux);
+                        ctx.begin_path();
+                        ctx.move_to(to.x, to.y);
+                        ctx.line_to(base_x + px * half, base_y + py * half);
+                        ctx.line_to(base_x - px * half, base_y - py * half);
+                        ctx.close_path();
+                        ctx.set_fill_style_str(&color);
+                        ctx.fill();
+                    }
+                }
             }
         }
     }

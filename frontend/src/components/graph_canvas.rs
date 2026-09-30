@@ -136,6 +136,8 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
             description: None,
             // 关系强度透传到画布：线宽与浓淡由它派生，未标注走基准粗细
             weight: e.weight,
+            // 方向性透传（方案 a′）：SVG/Canvas 渲染层按它决定挂不挂箭头
+            directional: e.direction == "directed",
         })
         .collect();
 

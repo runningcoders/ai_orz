@@ -566,6 +566,8 @@ fn build_task_graph_data(
                     target: t.id.clone(),
                     label: "前置".to_string(),
                     weight: None,
+                    // 任务依赖图语义有向（前置 → 任务）：保持既有恒挂箭头行为零回退
+                    direction: "directed".to_string(),
                 })
         })
         .collect();

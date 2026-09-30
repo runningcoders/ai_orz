@@ -152,6 +152,9 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
                         label,
                         // 关系强度：图谱按它调线宽与浓淡，未标注（存量边）走基准
                         weight: item.weight,
+                        // MemoryResult 数据源无方向字段：零词表映射不变式维持，暂兜底无向；
+                        // TODO(backlog): 后端 direction 契约覆盖本地检索路径后改透传
+                        direction: "undirected".to_string(),
                     });
                 }
             }
@@ -191,6 +194,10 @@ fn build_graph_from_global(resp: &GetKnowledgeGraphResponse) -> (Vec<GraphNode>,
             target: e.target.clone(),
             label: KnowledgeRelationType::zh_label_from_display(&e.relation_type).to_string(),
             weight: e.weight,
+            // 后端 DTO（common GraphEdge）尚未落地 direction：选项 A 前端先行，
+            // 暂兜底无向保证本批次独立可编译可 commit；
+            // TODO(联调): 后端 DTO 落地后改透传 e.direction（方案 §五.5）
+            direction: "undirected".to_string(),
         })
         .collect();
     (nodes, edges)
