@@ -84,13 +84,15 @@ pub fn CancelThinkingButton(props: CancelThinkingButtonProps) -> Element {
 
     let busy = *cancelling.read();
     let (class, label) = match style {
+        // whitespace-nowrap：`.btn` 自身不禁止折行，输入区按钮在窄屏下会把「停止思考」
+        // 折成两行、把按钮撑高。文案收到两字 + 显式 nowrap，双保险（「取消中…」同样受益）
         CancelThinkingStyle::Inline => (
-            "btn hud-btn btn-xs btn-warning shrink-0",
+            "btn hud-btn btn-xs btn-warning shrink-0 whitespace-nowrap",
             if busy { "取消中…" } else { "停止" },
         ),
         CancelThinkingStyle::Block => (
-            "btn hud-btn btn-warning",
-            if busy { "取消中…" } else { "停止思考" },
+            "btn hud-btn btn-warning whitespace-nowrap",
+            if busy { "取消中…" } else { "停止" },
         ),
     };
 
