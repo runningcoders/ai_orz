@@ -1345,3 +1345,136 @@ async fn test_default_conversation_sentinel_project_filter(pool: SqlitePool) -> 
 
     Ok(())
 }
+
+/// 时间窗口（`created_after` / `created_before`）必须在 SQL 层过滤。
+///
+/// 回归点：此前这两个游标只在 handler 内存里筛，于是只能「超量取 `limit + 100` 条再筛」——
+/// `limit` 因此失真（返回条数远大于 `limit`），且被筛掉的行数超过缓冲量时会静默截断。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_query_time_window_pushes_down_to_sql(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    // 5 条消息，created_at = 1000..1004
+    for i in 0..5i64 {
+        let mut msg = create_test_message("task-time-1", "user-time", &format!("msg-{i}"));
+        msg.created_at = 1000 + i;
+        msg.updated_at = 1000 + i;
+        message_dao.insert(ctx.clone(), &msg).await?;
+    }
+
+    // 轮询：after=1001 + ASC + limit=2 → 恰好 2 条（limit 精确生效，不是 limit + 100）
+    let polled = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                created_after: Some(1001),
+                order_by: Some("created_at ASC".to_string()),
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(
+        polled.len(),
+        2,
+        "limit 必须精确生效（旧实现会返回 limit + 100 条）"
+    );
+    assert_eq!(polled[0].created_at, 1002);
+    assert_eq!(polled[1].created_at, 1003);
+
+    // 翻旧页：before=1003 + DESC + limit=2 → 离游标最近的旧页，而不是最老的两条
+    let prev_page = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                created_before: Some(1003),
+                order_by: Some("created_at DESC".to_string()),
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(prev_page.len(), 2);
+    assert_eq!(prev_page[0].created_at, 1002);
+    assert_eq!(prev_page[1].created_at, 1001);
+
+    // 两端都是开区间
+    let window = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                created_after: Some(1000),
+                created_before: Some(1004),
+                order_by: Some("created_at ASC".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    let stamps: Vec<i64> = window.iter().map(|m| m.created_at).collect();
+    assert_eq!(stamps, vec![1001, 1002, 1003], "两端都是开区间（排他）");
+
+    // count 与 query 同口径
+    let count = message_dao
+        .count(
+            ctx.clone(),
+            MessageQuery {
+                created_after: Some(1001),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(count, 3);
+
+    Ok(())
+}
+
+/// 回归：长历史下轮询（`after_timestamp`）必须仍能拉到新消息。
+///
+/// 旧实现在 `after` 分支用 `ORDER BY created_at ASC` + 无 SQL 时间过滤 ⇒
+/// 实际取的是**全表最老的 `limit + 100`(=110) 条**。历史超过 110 条时，这批全都
+/// 早于游标，内存过滤后为空 ⇒ **轮询永远拉不到新消息**，且前端 `incoming.is_empty()`
+/// 直接静默返回，不报错。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_poll_after_cursor_survives_long_history(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    // 150 条历史（> 旧的 110 条缓冲），created_at = 1_000_000..1_000_149
+    for i in 0..150i64 {
+        let mut msg = create_test_message("task-poll-1", "user-poll", &format!("history-{i}"));
+        msg.created_at = 1_000_000 + i;
+        msg.updated_at = 1_000_000 + i;
+        message_dao.insert(ctx.clone(), &msg).await?;
+    }
+
+    // 游标指向最新一条 → 没有更新的消息
+    let empty = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                created_after: Some(1_000_149),
+                order_by: Some("created_at ASC".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert!(empty.is_empty(), "游标已在最新一条，不应再返回消息");
+
+    // 游标指向中段 → 取到紧随其后的 20 条，而不是全表最老的一批（旧的静默 bug）
+    let page = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                created_after: Some(1_000_099),
+                order_by: Some("created_at ASC".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(page.len(), 20);
+    assert_eq!(page[0].created_at, 1_000_100);
+    assert_eq!(page[19].created_at, 1_000_119);
+
+    Ok(())
+}

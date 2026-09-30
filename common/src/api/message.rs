@@ -45,6 +45,14 @@ pub struct ListMessagesRequest {
     #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+    /// 按处理状态过滤（0=已撤回 / 1=待处理 / 2=处理中 / 3=处理完成 / 4=处理失败）
+    ///
+    /// 不传 = 不过滤（默认排除已撤回）。传 `1`（Pending）可精确拉出「尚未处理」的消息
+    /// —— 它同时覆盖「排队中」与「正在处理」：`Processing` 无写入路径，在飞消息在库中
+    /// 仍是 `Pending`。用于后台巡检「某 Agent / 某项目还有哪些活没干」。
+    #[param(source = "query")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<i32>,
 }
 
 /// 消息列表项（脱敏后的展示对象）

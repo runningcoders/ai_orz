@@ -516,6 +516,15 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
                 }
                 separated.push_unseparated(")");
             }
+            // 时间窗口：与 `push_query_filters` 口径一致（FTS5 两条路径走 JOIN，列必须带 `m.` 前缀）
+            if let Some(after) = filters.created_after {
+                builder.push(" AND m.created_at > ");
+                builder.push_bind(after);
+            }
+            if let Some(before) = filters.created_before {
+                builder.push(" AND m.created_at < ");
+                builder.push_bind(before);
+            }
         };
 
         // 行 → 结果元组映射（两条路径共用）
@@ -688,6 +697,14 @@ fn push_query_filters<'args>(
             separated.push_bind(*s as i32);
         }
         separated.push_unseparated(")");
+    }
+    // 时间窗口（开区间）：下推到 SQL。见 `MessageQuery::created_after` 的说明 ——
+    // 过滤留在 handler 会迫使调用方超量取数，这里过滤才能让 LIMIT 语义准确。
+    if let Some(after) = query.created_after {
+        builder.push(" AND created_at > ").push_bind(after);
+    }
+    if let Some(before) = query.created_before {
+        builder.push(" AND created_at < ").push_bind(before);
     }
     if let Some(org_id) = &query.organization_id {
         builder

@@ -35,6 +35,17 @@ pub struct MessageQuery {
     pub message_type: Option<MessageType>,
     /// 按状态 IN 查询（支持多选）
     pub status_in: Option<Vec<MessageStatus>>,
+    /// 创建时间**下界**（开区间：`created_at > created_after`，毫秒）
+    ///
+    /// 与 [`created_before`](Self::created_before) 组成时间窗口，用于分页游标：
+    /// 翻旧页传 `created_before`、轮询新消息传 `created_after`。
+    ///
+    /// ⚠️ 这两个条件**必须在 SQL 里过滤**。此前时间过滤只在 handler 层做内存筛，
+    /// 于是只能「超量取 `limit + 100` 条再筛」（历史遗留的固定缓冲），既不准
+    /// （筛掉超过缓冲量就截断）又让 `LIMIT` 语义失真。
+    pub created_after: Option<i64>,
+    /// 创建时间**上界**（开区间：`created_at < created_before`，毫秒）
+    pub created_before: Option<i64>,
     /// 限制返回条数（分页）
     pub limit: Option<usize>,
     /// 跳过条数（分页）

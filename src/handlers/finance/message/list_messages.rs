@@ -5,6 +5,7 @@ use crate::service::dao::message::MessageQuery;
 use crate::service::domain::message;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::message::{ListMessagesRequest, ListMessagesResponse, MessageListItem};
+use common::enums::MessageStatus;
 use common::error::{Result, bail_err, err};
 
 /// List messages with optional filtering by project, task, from_id, to_id, before/after timestamp
@@ -14,14 +15,17 @@ use common::error::{Result, bail_err, err};
 /// - `__default__` → 只要**默认会话**（`project_id IS NULL`）的消息
 /// - 真实 project id → 该项目会话
 ///
-/// 分页模式：
-/// - 初始加载 / 上拉翻页：传 `before_timestamp` → 返回 created_at < before_timestamp 的消息，按 DESC 排序
-/// - 下拉轮询新消息：传 `after_timestamp` → 返回 created_at > after_timestamp 的消息，按 ASC 排序
-/// - 无时间过滤：默认返回最新消息，按 DESC 排序
+/// 分页模式（**返回结果恒按 `created_at` 正序**，与前端「上拉翻页时插入到列表头部」的用法一致）：
+/// - 初始加载：不带时间游标 → 取最新的 `limit` 条
+/// - 上拉翻页：传 `before_timestamp` → 取该时间点**之前**、离它最近的 `limit` 条
+/// - 下拉轮询：传 `after_timestamp` → 取该时间点**之后**最早的 `limit` 条
+///
+/// 两个时间游标都是**开区间**且**下推到 SQL**（`MessageQuery::created_after / created_before`），
+/// 因此 `limit` 语义准确 —— 返回条数不超过 `limit`，调用方无需超量取值。
 #[register_handler_tool(
     id = "list_messages",
     name = "List Chat Messages",
-    description = "List chat messages filtered by project_id, task_id, from_id, to_id, or root_id (pass root_id to fetch an entire message thread / discussion chain) with time-window pagination: pass before_timestamp to page older history or after_timestamp to poll for new messages. Omit project_id to search across all conversations; pass project_id=\"__default__\" to restrict to the default (project-less) conversation only. Returns messages with a total count. Use search_messages for keyword lookup.",
+    description = "List chat messages filtered by project_id, task_id, from_id, to_id, root_id, or status with time-window pagination: pass before_timestamp to page older history or after_timestamp to poll for new messages. Pass status=1 to return only unprocessed (pending) messages — useful to inspect what work an agent or project still has queued. Pass root_id to fetch an entire message thread / discussion chain. Omit project_id to search across all conversations; pass project_id=\"__default__\" to restrict to the default (project-less) conversation only. Returns messages with a total count. Use search_messages for keyword lookup.",
     params = "common::api::message::ListMessagesRequest",
     neural,
     tags = "messaging"
@@ -42,6 +46,9 @@ pub async fn list_messages(
 
     let limit = params.limit.unwrap_or(10);
 
+    // 取数顺序 ≠ 展示顺序：
+    // - 翻旧页 / 无游标 → DESC + LIMIT，「离游标最近的一页」（再反转成正序返回）
+    // - 轮询新消息      → ASC  + LIMIT，「游标之后最早的一页」（取出来已是正序）
     let order_by = if params.after_timestamp.is_some() {
         "created_at ASC".to_string()
     } else {
@@ -55,7 +62,13 @@ pub async fn list_messages(
         from_id: params.from_id.clone(),
         to_id: params.to_id.clone(),
         root_id: params.root_id.clone(),
-        limit: Some(limit + 100),
+        // 显式指定状态时走 status_in（DAO 侧据此不再叠加 `status != 0` 的软删除过滤）；
+        // 不传则保持默认行为（排除已撤回）。判定见 `push_query_filters`。
+        status_in: params.status.map(|s| vec![MessageStatus::from(s)]),
+        // 时间游标下推到 SQL（开区间），不再「超量取 limit + 100 条再内存过滤」
+        created_after: params.after_timestamp,
+        created_before: params.before_timestamp,
+        limit: Some(limit),
         offset: None,
         order_by: Some(order_by),
         ..Default::default()
@@ -63,24 +76,8 @@ pub async fn list_messages(
 
     let messages = message::domain().management().query(ctx, query).await?;
 
-    let filtered: Vec<_> = match (params.before_timestamp, params.after_timestamp) {
-        (Some(before), None) => messages
-            .into_iter()
-            .filter(|m| m.po.created_at < before)
-            .take(limit)
-            .collect(),
-        (None, Some(after)) => messages
-            .into_iter()
-            .filter(|m| m.po.created_at > after)
-            .collect(),
-        (Some(before), Some(after)) => messages
-            .into_iter()
-            .filter(|m| m.po.created_at > after && m.po.created_at < before)
-            .collect(),
-        (None, None) => messages.into_iter().take(limit).collect(),
-    };
-
-    let mut sorted = filtered;
+    // DESC 取数的两个分支需反转成时间正序；after 分支取数本就是正序
+    let mut sorted = messages;
     if params.after_timestamp.is_none() {
         sorted.reverse();
     }
