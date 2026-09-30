@@ -194,10 +194,9 @@ fn build_graph_from_global(resp: &GetKnowledgeGraphResponse) -> (Vec<GraphNode>,
             target: e.target.clone(),
             label: KnowledgeRelationType::zh_label_from_display(&e.relation_type).to_string(),
             weight: e.weight,
-            // 后端 DTO（common GraphEdge）尚未落地 direction：选项 A 前端先行，
-            // 暂兜底无向保证本批次独立可编译可 commit；
-            // TODO(联调): 后端 DTO 落地后改透传 e.direction（方案 §五.5）
-            direction: "undirected".to_string(),
+            // 后端 DTO（common GraphEdge）direction 已随 0ef6ba28 落地：联调兑现
+            // TODO，透传服务端解析带出的方向值（前端零词表映射，方案 §五.5）
+            direction: e.direction.clone(),
         })
         .collect();
     (nodes, edges)

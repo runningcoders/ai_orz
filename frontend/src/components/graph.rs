@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 use std::collections::HashMap;
 
+use super::canvas_scene::arrow_tip_point;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphNode {
     pub id: String,
@@ -666,6 +668,19 @@ pub fn Graph(props: GraphProps) -> Element {
                     } else {
                         "none"
                     };
+
+                    // 整改（方案 a′）：directed 边线终点回退到 target 节点圆周外
+                    // GAP 处（半径与 Canvas 同源口径 global_node_radius），箭头尖端
+                    // （marker ref_x=10 恰落线终点）不再被后绘节点遮挡；undirected
+                    // 维持纯线到圆心零回归。透明命中层与交互逻辑零触碰。
+                    let (line_tx, line_ty) = if edge.direction == "directed" {
+                        let node_radius = global_node_radius(
+                            global_degrees.get(&edge.target).copied().unwrap_or(0),
+                        );
+                        arrow_tip_point((sx, sy), (tx, ty), node_radius)
+                    } else {
+                        (tx, ty)
+                    };
                     // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
                     let hover_enter = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
                     let hover_leave = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
@@ -673,8 +688,8 @@ pub fn Graph(props: GraphProps) -> Element {
                         line {
                             x1: "{sx}",
                             y1: "{sy}",
-                            x2: "{tx}",
-                            y2: "{ty}",
+                            x2: "{line_tx}",
+                            y2: "{line_ty}",
                             stroke: "{edge_color}",
                             stroke_width: "{edge_width}",
                             stroke_dasharray: "{edge_dash}",

@@ -705,6 +705,26 @@ fn draw_circle_node(
 #[derive(Clone, Copy)]
 pub struct DefaultRenderer;
 
+/// directed 边箭头尖端与 target 节点圆周的间隙（世界坐标 px）。
+///
+/// 两渲染器同源：Canvas 箭头原语与 SVG 线终点回退共用同一常量与
+/// [`arrow_tip_point`]，守卫测试同覆盖（方案 a′ 整改）。
+pub(crate) const ARROW_TIP_GAP: f64 = 2.0;
+
+/// directed 边箭头尖端回退点：tip = target 圆心沿 source→target 反向回退
+/// `radius + ARROW_TIP_GAP`，恰落节点圆周外 GAP 处——箭头尖端不再被后绘
+/// 节点遮挡（review 整改项）。零长度向量守卫回退 target 圆心本身。
+pub(crate) fn arrow_tip_point(from: (f64, f64), to: (f64, f64), target_radius: f64) -> (f64, f64) {
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= f64::EPSILON {
+        return to;
+    }
+    let back = (target_radius + ARROW_TIP_GAP) / len;
+    (to.0 - dx * back, to.1 - dy * back)
+}
+
 impl CanvasRenderer for DefaultRenderer {
     fn clear(&self, ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
         ctx.clear_rect(0.0, 0.0, width, height);
@@ -750,6 +770,7 @@ impl CanvasRenderer for DefaultRenderer {
                 // 方向沿 source→target，尺寸随线宽派生，填充色复用边色保持一致。
                 // Canvas 几何活在世界坐标系，viewport 缩放对整幅画面等比生效，
                 // 箭头与世界坐标同尺度、随视图缩放同步缩放，无需单独换算。
+                let tip = arrow_tip_point((from.x, from.y), (to.x, to.y), to.radius);
                 if edge.directional {
                     let dx = to.x - from.x;
                     let dy = to.y - from.y;
@@ -758,10 +779,10 @@ impl CanvasRenderer for DefaultRenderer {
                         let (ux, uy) = (dx / len, dy / len);
                         let size = (width * 2.5).max(5.0);
                         let half = size * 0.42;
-                        let (base_x, base_y) = (to.x - ux * size, to.y - uy * size);
+                        let (base_x, base_y) = (tip.0 - ux * size, tip.1 - uy * size);
                         let (px, py) = (-uy, ux);
                         ctx.begin_path();
-                        ctx.move_to(to.x, to.y);
+                        ctx.move_to(tip.0, tip.1);
                         ctx.line_to(base_x + px * half, base_y + py * half);
                         ctx.line_to(base_x - px * half, base_y - py * half);
                         ctx.close_path();
@@ -1719,5 +1740,29 @@ mod tests {
         assert_eq!(fit_viewport(&[], 800.0, 600.0), Viewport::default());
         let single = vec![node("A")];
         assert_eq!(fit_viewport(&single, 0.0, 0.0), Viewport::default());
+    }
+
+    /// 方案 a′ 整改守卫：箭头 tip 必须（1）距 target 圆心恰为
+    /// `radius + ARROW_TIP_GAP`（圆周外 GAP 处）；（2）不与圆心重合；
+    /// （3）仍在 source→target 射线上；零长度向量回退圆心。
+    /// Canvas 与 SVG 两渲染器共用本几何，本守卫同覆盖。
+    #[test]
+    fn arrow_tip_point_retracts_to_circle_edge_with_gap() {
+        let from = (100.0, 100.0);
+        let to = (400.0, 100.0);
+        let radius = 12.0;
+        let (tip_x, tip_y) = arrow_tip_point(from, to, radius);
+        assert!((tip_y - to.1).abs() < 1e-9, "tip 应沿 source→target 射线");
+        assert!(tip_x < to.0, "tip 不应与 target 圆心重合");
+        let dist = ((tip_x - to.0).powi(2) + (tip_y - to.1).powi(2)).sqrt();
+        assert!(
+            (dist - (radius + ARROW_TIP_GAP)).abs() < 1e-9,
+            "tip 距圆心应为 radius + GAP"
+        );
+        assert_eq!(
+            arrow_tip_point(from, from, radius),
+            from,
+            "零长度向量应回退圆心"
+        );
     }
 }
