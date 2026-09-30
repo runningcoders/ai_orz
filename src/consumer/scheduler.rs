@@ -226,14 +226,19 @@ impl CronTriggerConsumer {
     /// 定时补偿场景（Agent Loop Engine 场景 3）：扫描所有 InProgress 且
     /// owner_agent_id 非空的项目，向 Owner Agent 发送 ProjectFollowupNotification
     /// 消息，驱动其检查项目进度并处理阻塞任务。
-    /// 预检查 Agent 运行时状态：Busy/Resting 时跳过，避免无意义 nack 堆积。
+    ///
+    /// 两道预检查（互补，缺一不可）：
+    /// 1. **运行态**：Agent Busy/Resting 时跳过，避免无意义 nack 堆积；
+    /// 2. **落库态**：该项目已有未处理（`Pending`）的跟进通知时跳过 —— 见下文注释，
+    ///    运行态看不到「已投递但还堵在队列里」的消息。
     async fn handle_project_followup(&self, _extra: &Value) -> Result<()> {
         use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+        use crate::service::dao::message::MessageQuery;
         use crate::service::domain::message::SendToAgentCommand;
         use crate::service::domain::message::builder::build_project_followup_content;
         use crate::service::domain::message::domain as message_domain;
         use crate::service::domain::project::domain as project_domain;
-        use common::enums::{MessageRole, MessageType};
+        use common::enums::{MessageRole, MessageStatus, MessageType};
 
         let ctx = RequestContext::new_system();
 
@@ -256,14 +261,46 @@ impl CronTriggerConsumer {
                 continue;
             }
 
-            // 3. 构建消息内容（意图指令嵌入消息本体）
+            // 3. 去重：该项目已有「未处理」的跟进通知 → 本次不再重复发
+            //
+            // ⚠️ 上面的 `is_unavailable` 只看**运行态内存**（Agent 这一瞬间在不在跑），
+            // 看不见「已经投递、但还堵在队列里没轮到」的跟进消息。Agent 长时间占线
+            // （一次巡检跑 20 分钟是常态）时，每个 tick 都会再追加一条，队列里就叠出
+            // 一串**同项目**的跟进通知 —— 之后每消化一条就要重跑一遍长巡检。
+            // 以落库状态为准查一次，把它「合并」成一条：Agent 处理时会看到最新状态。
+            //
+            // 作用域是**项目**而非 Agent：Owner 带多个项目时，按 Agent 去重会让第一个
+            // 项目一直占着门（每次 tick 都从列表头部命中它），后面的项目永远排不上。
+            let pending = message_domain()
+                .management()
+                .query(
+                    ctx.clone(),
+                    MessageQuery {
+                        project_id: Some(project.po.id.clone()),
+                        message_type: Some(MessageType::ProjectFollowupNotification),
+                        status_in: Some(vec![MessageStatus::Pending]),
+                        limit: Some(1),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            if !pending.is_empty() {
+                sys_info!(
+                    "项目 {} 已有未处理的跟进通知（agent={}），跳过本次投递",
+                    project.po.id,
+                    owner_agent_id
+                );
+                continue;
+            }
+
+            // 4. 构建消息内容（意图指令嵌入消息本体）
             let content = build_project_followup_content(&project.po.name);
 
-            // 4. 补齐组织上下文（系统触发链路 ctx 无组织绑定，见 mod.rs helper 说明）
+            // 5. 补齐组织上下文（系统触发链路 ctx 无组织绑定，见 mod.rs helper 说明）
             let ctx =
                 crate::consumer::enrich_org_from_project_user(&ctx, &project.po.root_user_id).await;
 
-            // 5. 发送消息（填充 project_id 上下文，MessageConsumer 会自动补充 project 信息）
+            // 6. 发送消息（填充 project_id 上下文，MessageConsumer 会自动补充 project 信息）
             //
             // 【身份分层模型】触发器按「被触达事项的归属」选择发送方身份：
             // - 项目归属用户非空 → **以用户身份中继**（from_role=User）：巡检的是用户

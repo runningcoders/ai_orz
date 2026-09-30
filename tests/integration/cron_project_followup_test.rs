@@ -162,3 +162,75 @@ async fn test_cron_project_followup_sends_notification(pool: SqlitePool) {
     assert!(followup.po.content.contains("项目进度定期检查"));
     assert!(followup.po.content.contains("get_project"));
 }
+
+/// 去重：项目已有未处理（`Pending`）的跟进通知时，再次触发**不**重复投递。
+///
+/// 回归「Agent 长时间占线（一次巡检跑 20 分钟）时，每个 tick 都往队列里再叠一条
+/// 同项目的跟进通知」的堆积问题 —— 运行态预检查看不到「已投递但还没轮到」的消息。
+#[sqlx::test]
+async fn test_cron_project_followup_dedups_pending_notification(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("FollowupDedup-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    let project_id = create_project_with_owner(
+        &app,
+        &jwt,
+        &format!("FollowupDedupProject-{}", uuid::Uuid::now_v7()),
+        Some(&agent_id),
+    )
+    .await;
+    transition_project_status(&app, &jwt, &project_id, "InProgress").await;
+
+    AgentRuntimeStateManager::global().set_idle(&agent_id);
+
+    let payload = json!({"action":"project_followup","extra":{}}).to_string();
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let event_value = json!({
+        "event_id": uuid::Uuid::now_v7().to_string(),
+        "trigger_id": "test-trigger-project-followup-dedup",
+        "trigger_name": "test project followup dedup trigger",
+        "payload": payload,
+        "created_at": now_ms,
+    });
+
+    // 连续触发两个 tick（模拟「上一条还堵在队列里，下一个小时又到点」）
+    let consumer = CronTriggerConsumer::new();
+    for _ in 0..2 {
+        consumer
+            .on_event(RequestContext::new_system(), event_value.clone())
+            .await
+            .expect("on_event project_followup should succeed");
+    }
+
+    let messages = message::domain()
+        .management()
+        .list_by_project_id(ctx, &project_id)
+        .await
+        .expect("list_by_project_id should succeed");
+
+    let followups: Vec<_> = messages
+        .iter()
+        .filter(|m| {
+            m.po.to_id == agent_id && m.po.message_type == MessageType::ProjectFollowupNotification
+        })
+        .collect();
+    assert_eq!(
+        followups.len(),
+        1,
+        "已有 Pending 的跟进通知时，第二个 tick 不应再投递（实际 {} 条）",
+        followups.len()
+    );
+}
