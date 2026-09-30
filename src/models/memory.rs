@@ -616,6 +616,22 @@ pub struct SeedNodeRecommendation {
     pub outgoing_count: usize,
 }
 
+/// 知识图谱全量数据（domain 层结构）
+///
+/// 由 DAL 层 `get_knowledge_graph` 返回，供全局点线视图一次拉取：
+/// - 节点 = 全部活跃知识节点（R1 口径：仅知识节点 + 关系边，不含短期记忆/trace）
+/// - 边 = 双端活跃的关系边（R2 口径：端点任一不在活跃节点集内的边一律丢弃）
+/// - 度数 = 仅按生效边统计（R4 口径：in + out 仅活跃边）
+#[derive(Debug, Clone)]
+pub struct KnowledgeGraphData {
+    /// 全部活跃知识节点
+    pub nodes: Vec<LongTermKnowledgeNodePo>,
+    /// 双端活跃的关系边
+    pub edges: Vec<KnowledgeNodeRelationPo>,
+    /// 节点连接度（key = 节点 ID，value = (入边数, 出边数)），仅计生效边
+    pub degrees: HashMap<String, (usize, usize)>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -684,14 +684,18 @@ fn draw_circle_node(
     }
 
     // 名称（圆内，按半径自适应字号，过长截断）
-    ctx.set_fill_style_str("white");
-    let font_size = (draw_radius * 0.42).max(9.0);
-    ctx.set_font(&format!("{font_size:.0}px sans-serif"));
-    ctx.set_text_align("center");
-    ctx.set_text_baseline("middle");
-    let max_chars = ((draw_radius * 1.5) as usize).clamp(3, 12);
-    let name: String = node.label.chars().take(max_chars).collect();
-    let _ = ctx.fill_text(&name, node.x, node.y);
+    // 全局点线视图的小圆点不放文字（半径小时文字会溢出圆外糊成一团），
+    // 节点名留给 hover 详情卡；半径足够（兜底圆点/全局枢纽节点）才绘名
+    if draw_radius >= 14.0 {
+        ctx.set_fill_style_str("white");
+        let font_size = (draw_radius * 0.42).max(9.0);
+        ctx.set_font(&format!("{font_size:.0}px sans-serif"));
+        ctx.set_text_align("center");
+        ctx.set_text_baseline("middle");
+        let max_chars = ((draw_radius * 1.5) as usize).clamp(3, 12);
+        let name: String = node.label.chars().take(max_chars).collect();
+        let _ = ctx.fill_text(&name, node.x, node.y);
+    }
 }
 
 /// 默认渲染器：圆形 / 矩形信息卡双形态节点 + 直线连线 + 边 hover 高亮

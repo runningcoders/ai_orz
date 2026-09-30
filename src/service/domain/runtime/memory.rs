@@ -100,6 +100,15 @@ impl RuntimeMemory for RuntimeDomainImpl {
         dal().recommend_seed_nodes(ctx, agent_id, limit).await
     }
 
+    async fn get_knowledge_graph(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<crate::models::memory::KnowledgeGraphData> {
+        use crate::service::dal::memory::dal;
+        dal().get_knowledge_graph(ctx, agent_id).await
+    }
+
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
 

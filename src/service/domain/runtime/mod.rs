@@ -129,6 +129,13 @@ pub trait RuntimeMemory: Send + Sync {
         limit: usize,
     ) -> Result<Vec<crate::models::memory::SeedNodeRecommendation>>;
 
+    /// 获取知识图谱全量数据（全局点线视图：R1 仅知识节点+关系边 / R2 双端活跃 / R4 度数仅计生效边）
+    async fn get_knowledge_graph(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<crate::models::memory::KnowledgeGraphData>;
+
     /// 创建记忆
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>>;
 

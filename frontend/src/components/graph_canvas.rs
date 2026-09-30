@@ -10,7 +10,7 @@
 //! 凡是「实现了但没接线」的代码等价于不存在，还会让人误判现状：注释写着
 //! 「用自定义 HUD 效果」，跑出来的却是默认圆圈。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use dioxus::prelude::*;
 
@@ -29,6 +29,13 @@ pub struct KnowledgeGraphCanvasProps {
     pub selected_node_id: Option<String>,
     /// 高亮节点 ID 列表（搜索匹配结果）
     pub highlighted_node_ids: Option<Vec<String>>,
+    /// 全局点线视图模式：一律圆点 + 连接度映射半径（AMan 口径：默认全局视图）。
+    /// 卡片正文数据被裁掉（is_card()=false → 圆点分支），细节留给局部卡片态。
+    #[props(default = false)]
+    pub global_mode: bool,
+    /// 节点连接度表（全局模式半径映射依据：id → degree，R4 in+out 仅活跃边）
+    #[props(default)]
+    pub node_degrees: Option<HashMap<String, usize>>,
     /// 节点点击回调
     pub on_node_click: EventHandler<String>,
     /// 是否自适应父容器尺寸（铺满包裹层，去掉固定 800×600 导致的 HiDPI 溢出）
@@ -40,7 +47,12 @@ pub struct KnowledgeGraphCanvasProps {
 ///
 /// 卡片尺寸在这里算一次，它同时是**节点等效半径**的来源：力导向的碰撞避让按
 /// `radius` 算最小中心距，填成一个小圆半径，168px 宽的卡片照样互相压叠。
-fn to_canvas_node(node: &GraphNode, highlighted: &HashSet<String>) -> CanvasNode {
+fn to_canvas_node(
+    node: &GraphNode,
+    highlighted: &HashSet<String>,
+    global_mode: bool,
+    degree: usize,
+) -> CanvasNode {
     let body = node_card::body_lines(node.summary.as_deref(), &node.description);
     let (w, h) = (
         node_card::box_width(&node.label, body.len()),
@@ -64,9 +76,19 @@ fn to_canvas_node(node: &GraphNode, highlighted: &HashSet<String>) -> CanvasNode
         tags: node.tags.clone(),
         highlighted: highlighted.contains(&node.id),
     };
+    if global_mode {
+        // 全局点线：裁掉正文三件套 → is_card()=false → 渲染器走圆点分支。
+        // 点的大小编码连接度（底 7px + 度数线性增长，封顶 28px 与兜底圆点同档），
+        // 颜色编码节点类型（get_node_fill 现成映射），关系类型/强度留给边。
+        canvas.description = String::new();
+        canvas.summary = None;
+        canvas.tags = Vec::new();
+    }
     // 有正文 → 卡片（等效半径 = 外接圆半径）；无正文的端点节点 → 小圆点，
-    // 半径与 Agent 关系图同档，不硬撑一张空卡片
-    canvas.radius = if canvas.is_card() {
+    // 半径与 Agent 关系图同档，不硬撑一张空卡片；全局态一律按连接度给半径
+    canvas.radius = if global_mode {
+        (7.0 + degree.min(19) as f64 * 1.1).min(28.0)
+    } else if canvas.is_card() {
         w.max(h) / 2.0
     } else {
         26.0
@@ -86,10 +108,19 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
         .into_iter()
         .collect();
 
+    let global_mode = props.global_mode;
+    let degrees = props.node_degrees.clone().unwrap_or_default();
     let canvas_nodes: Vec<CanvasNode> = props
         .nodes
         .iter()
-        .map(|n| to_canvas_node(n, &highlighted))
+        .map(|n| {
+            to_canvas_node(
+                n,
+                &highlighted,
+                global_mode,
+                degrees.get(&n.id).copied().unwrap_or(0),
+            )
+        })
         .collect();
 
     let canvas_edges: Vec<CanvasEdge> = props

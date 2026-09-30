@@ -2,7 +2,9 @@ use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-use crate::api::hr::{recommend_seed_nodes, search_agents, search_memory_with_traversal};
+use crate::api::hr::{
+    get_knowledge_graph, recommend_seed_nodes, search_agents, search_memory_with_traversal,
+};
 use crate::components::SearchableSelect;
 use crate::components::button::Button;
 use crate::components::graph::{
@@ -15,8 +17,8 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::number::format_relevance;
 use common::api::{
-    AgentListItem, MemoryResult, RecommendSeedNodesParams, SearchAgentsRequest, SearchMemoryParams,
-    SeedNodeRecommendation,
+    AgentListItem, GetKnowledgeGraphParams, GetKnowledgeGraphResponse, MemoryResult,
+    RecommendSeedNodesParams, SearchAgentsRequest, SearchMemoryParams, SeedNodeRecommendation,
 };
 use common::enums::KnowledgeRelationType;
 
@@ -38,6 +40,16 @@ fn match_type_label(match_type: &str) -> &str {
 enum GraphStyle {
     Svg,
     Canvas,
+}
+
+/// 视图两态：全局点线（默认）/ 局部卡片（点击节点或搜索后进入）
+///
+/// 默认装载全局点线视图（R1=A 全量活跃知识节点+双端活跃关系边）；
+/// 点击节点进入以该节点为中心的探索图谱（现行卡片页）；「返回全局」切回。
+#[derive(Clone, Copy, PartialEq)]
+enum ViewMode {
+    Global,
+    Local,
 }
 
 /// 节点展示名：**名称 → 摘要首行 → 正文首行 → 「未命名节点」**
@@ -150,6 +162,40 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
     (nodes, edges)
 }
 
+/// 从全局聚合端点构建图谱节点和边（全局点线视图）。
+///
+/// 后端已保证 R1（仅活跃知识节点）与 R2（边严格双端活跃），此处只做
+/// DTO → 渲染结构映射：边标签走关系类型中文化（同时是边着色依据），
+/// weight 透传给 edge_style（线宽+浓淡）。节点正文裁剪（口径②）：
+/// 全局点线只承载「点（名称/类型/度数）+线」，细节走局部卡片态。
+fn build_graph_from_global(resp: &GetKnowledgeGraphResponse) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+    let nodes = resp
+        .nodes
+        .iter()
+        .map(|n| GraphNode {
+            id: n.id.clone(),
+            label: n.node_name.clone(),
+            description: String::new(),
+            node_type: n.node_type.clone(),
+            x: 0.0,
+            y: 0.0,
+            tags: n.tags.clone(),
+            summary: None,
+        })
+        .collect();
+    let edges = resp
+        .edges
+        .iter()
+        .map(|e| GraphEdge {
+            source: e.source.clone(),
+            target: e.target.clone(),
+            label: KnowledgeRelationType::zh_label_from_display(&e.relation_type).to_string(),
+            weight: e.weight,
+        })
+        .collect();
+    (nodes, edges)
+}
+
 fn type_badge_class(t: &str) -> &'static str {
     // 记忆节点类型（knowledge_node/short_term/trace/relation）是「类别标签」，
     // 统一走中性 orz-tag chip（与状态徽章区分）
@@ -180,6 +226,13 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     let mut click_request_id = use_signal(|| 0u32);
     // 渲染风格切换：默认 Canvas（HUD 驾驶舱风格），可切回 SVG 作为兜底
     let mut graph_style = use_signal(|| GraphStyle::Canvas);
+
+    // 全局点线视图（默认态，R1=A：全量活跃知识节点+双端活跃关系边，字段按裁剪口径）
+    let mut global_nodes = use_signal(Vec::<GraphNode>::new);
+    let mut global_edges = use_signal(Vec::<GraphEdge>::new);
+    // 连接度表（全局圆点半径映射：R4 in+out 仅活跃边）
+    let mut global_degrees = use_signal(std::collections::HashMap::<String, usize>::new);
+    let mut view_mode = use_signal(|| ViewMode::Global);
 
     // 推荐起点状态
     let mut recommendations = use_signal(Vec::<SeedNodeRecommendation>::new);
@@ -217,10 +270,42 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
         load_recommendations();
     });
 
+    // 加载全局点线视图（R1=A 全量聚合；agent_id 变化时重新拉取刷新归属过滤）
+    let mut load_global_graph = move || {
+        loading.set(true);
+        let aid = agent_id_signal();
+        spawn(async move {
+            let params = GetKnowledgeGraphParams { agent_id: aid };
+            match get_knowledge_graph(&params).await {
+                Ok(resp) => {
+                    global_degrees.set(
+                        resp.nodes
+                            .iter()
+                            .map(|n| (n.id.clone(), n.degree))
+                            .collect(),
+                    );
+                    let (new_nodes, new_edges) = build_graph_from_global(&resp);
+                    let laid = calculate_layout(&new_nodes, None);
+                    global_nodes.set(laid);
+                    global_edges.set(new_edges);
+                }
+                Err(e) => toast.error(format!("加载全局知识图谱失败: {}", e)),
+            }
+            loading.set(false);
+        });
+    };
+    use_effect(move || {
+        load_global_graph();
+    });
+
     let mut handle_search = move |_| {
         let kw = keyword().clone();
         if kw.is_empty() {
             return;
+        }
+        // 搜索是聚焦探索：从全局态进入局部卡片态（结果装载局部工作区）
+        if view_mode() == ViewMode::Global {
+            view_mode.set(ViewMode::Local);
         }
         let tags_raw = tags_input().clone();
         loading.set(true);
@@ -296,6 +381,16 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     };
 
     let mut handle_node_click = move |node_id: String| {
+        // 全局态点击节点 → 进入以该节点为中心的局部卡片态（两态切换）：
+        // 清空局部工作区后走既有种子展开链路装载该节点的关联子图
+        if view_mode() == ViewMode::Global {
+            view_mode.set(ViewMode::Local);
+            nodes.set(Vec::new());
+            edges.set(Vec::new());
+            expanded_nodes.set(HashSet::new());
+            detail_map.set(std::collections::HashMap::new());
+            highlighted_node_ids.set(Vec::new());
+        }
         selected_node_id.set(Some(node_id.clone()));
 
         if let Some(detail) = detail_map.read().get(&node_id) {
@@ -389,8 +484,12 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
         });
     };
 
-    let current_nodes = nodes.read().clone();
-    let current_edges = edges.read().clone();
+    // 两态数据源：全局态读全局点线信号，局部态读搜索/展开工作区信号
+    let (current_nodes, current_edges) = if view_mode() == ViewMode::Global {
+        (global_nodes.read().clone(), global_edges.read().clone())
+    } else {
+        (nodes.read().clone(), edges.read().clone())
+    };
     let selected_id = selected_node_id.read().clone();
     let selected_detail = selected_node_data.read().clone();
     // 只在摘要**独立于正文**时才单独渲染：写入侧此前会把摘要缺省落成正文
@@ -643,21 +742,40 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                             span { class: "text-xs text-base-content/50 whitespace-nowrap hidden sm:inline",
                                                 "Ctrl/⌘+滚轮缩放 · 拖拽空白平移 · 线越粗关联越强"
                                             }
-                                            // 风格切换按钮：Canvas（HUD）/ SVG（兜底）
-                                            div { class: "join",
-                                                button {
-                                                    class: "{canvas_btn_class}",
-                                                    onclick: move |_| graph_style.set(GraphStyle::Canvas),
-                                                    title: "Canvas HUD 风格（高级渲染，适合大规模节点）",
-                                                    "Canvas"
-                                                }
-                                                button {
-                                                    class: "{svg_btn_class}",
-                                                    onclick: move |_| graph_style.set(GraphStyle::Svg),
-                                                    title: "SVG 风格（兜底方案，适合少量节点）",
-                                                    "SVG"
-                                                }
-                                            }
+                                            // 两态切换：局部卡片态提供「返回全局」入口
+                                            {if view_mode() == ViewMode::Local {
+                                                Some(rsx! {
+                                                    button {
+                                                        class: "btn btn-xs btn-outline",
+                                                        onclick: move |_| view_mode.set(ViewMode::Global),
+                                                        title: "返回全局点线视图（全量知识图谱）",
+                                                        "← 返回全局"
+                                                    }
+                                                })
+                                            } else {
+                                                None
+                                            }}
+                                            // 风格切换按钮：Canvas（HUD）/ SVG（兜底）——全局点线态固定 Canvas
+                                            {if view_mode() == ViewMode::Local {
+                                                Some(rsx! {
+                                                    div { class: "join",
+                                                        button {
+                                                            class: "{canvas_btn_class}",
+                                                            onclick: move |_| graph_style.set(GraphStyle::Canvas),
+                                                            title: "Canvas HUD 风格（高级渲染，适合大规模节点）",
+                                                            "Canvas"
+                                                        }
+                                                        button {
+                                                            class: "{svg_btn_class}",
+                                                            onclick: move |_| graph_style.set(GraphStyle::Svg),
+                                                            title: "SVG 风格（兜底方案，适合少量节点）",
+                                                            "SVG"
+                                                        }
+                                                    }
+                                                })
+                                            } else {
+                                                None
+                                            }}
                                         }),
                                     }
                                 }
@@ -669,6 +787,8 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                         edges: current_edges,
                                         selected_node_id: selected_id,
                                         highlighted_node_ids: Some(highlighted_node_ids()),
+                                        global_mode: view_mode() == ViewMode::Global,
+                                        node_degrees: Some(global_degrees()),
                                         on_node_click: handle_node_click,
                                     }
                                 },

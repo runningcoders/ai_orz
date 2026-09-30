@@ -760,6 +760,10 @@ fn hr_routes() -> Router {
             post(handlers::hr::agent::recommend_seed_nodes_handler),
         )
         .route(
+            "/agents/get_knowledge_graph",
+            post(handlers::hr::agent::get_knowledge_graph_handler),
+        )
+        .route(
             "/agents/memories/{memory_id}",
             delete(handlers::hr::agent::delete_memory_handler),
         )

@@ -8,11 +8,12 @@ use common::api::{
     CreateOntologyRelationTypeResponse, CreateOntologySynonymRequest,
     CreateOntologySynonymResponse, CreateSkillRequest, CreateSkillResponse,
     DeleteOntologySynonymResponse, DeleteSkillResponse, GetAgentRequest, GetAgentResponse,
-    GetDriftDashboardRequest, GetDriftDashboardResponse, GetReceptionAgentResponse,
-    GetSkillFileContentRequest, GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest,
-    ListAgentsRequest, ListDriftClassDetailsRequest, ListDriftClassDetailsResponse,
-    ListDriftRelationDetailsRequest, ListDriftRelationDetailsResponse,
-    ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
+    GetDriftDashboardRequest, GetDriftDashboardResponse, GetKnowledgeGraphParams,
+    GetKnowledgeGraphResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
+    GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
+    ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
+    ListDriftRelationDetailsResponse, ListExpiredAgentSkillsRequest,
+    ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
     ListInstalledToolPacksResponse, ListOntologyClassesRequest, ListOntologyClassesResponse,
     ListOntologyLexiconResponse, ListOntologyRelationTypesRequest,
     ListOntologyRelationTypesResponse, ListOntologySynonymsRequest, ListOntologySynonymsResponse,
@@ -388,6 +389,14 @@ pub async fn recommend_seed_nodes(
     req: &RecommendSeedNodesParams,
 ) -> Result<RecommendSeedNodesResponse, ApiError> {
     api_post("/api/v1/hr/agents/recommend_seed_nodes", req).await
+}
+
+/// 获取知识图谱全量数据（全局点线视图默认装载：全部活跃知识节点+双端活跃关系边+度数）
+/// POST /api/v1/hr/agents/get_knowledge_graph
+pub async fn get_knowledge_graph(
+    req: &GetKnowledgeGraphParams,
+) -> Result<GetKnowledgeGraphResponse, ApiError> {
+    api_post("/api/v1/hr/agents/get_knowledge_graph", req).await
 }
 
 // ===== Agent 运行时 =====

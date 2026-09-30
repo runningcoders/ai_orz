@@ -143,6 +143,23 @@ pub trait MemoryDal: Send + Sync {
         limit: usize,
     ) -> Result<Vec<crate::models::memory::SeedNodeRecommendation>>;
 
+    /// 🕸️ 获取知识图谱全量数据（全局点线视图聚合）
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - agent_id: 归属筛选；`None`（或空串）= 蜂巢全域（知识节点是共享资产，
+    ///   全局视图默认全量展示）
+    ///
+    /// # 口径
+    /// - R1：仅知识节点（`long_term_knowledge_node`）+ 关系边，不含短期记忆/trace；
+    /// - R2：边严格双端活跃——source/target 任一不在活跃节点集内的边一律丢弃；
+    /// - R4：度数 = in + out，仅计生效边。
+    async fn get_knowledge_graph(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<crate::models::memory::KnowledgeGraphData>;
+
     /// ✍️ 创建记忆（按 MemoryCreateParams 变体分发）
     ///
     /// 聚合流程：
@@ -486,6 +503,70 @@ impl MemoryDal for MemoryDalImpl {
         // 5. 截断到 limit
         recommendations.truncate(limit);
         Ok(recommendations)
+    }
+
+    async fn get_knowledge_graph(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+    ) -> Result<crate::models::memory::KnowledgeGraphData> {
+        use crate::models::memory::KnowledgeGraphData;
+        use crate::service::dao::memory::MemoryQuery;
+        use common::enums::{MemoryStatus, MemoryType};
+
+        // 1. 全量拉取活跃知识节点（R1：仅知识节点；蜂巢语义与 recommend_seed_nodes 一致）
+        let query = MemoryQuery {
+            memory_type: Some(MemoryType::KnowledgeNode),
+            agent_id: agent_id.clone().filter(|s| !s.is_empty()),
+            status: Some(MemoryStatus::Active),
+            exclude_status: Some(MemoryStatus::Forgotten),
+            // 全量：limit/offset 均为 None 时 SQL 不带 LIMIT 子句
+            limit: None,
+            ..Default::default()
+        };
+        let nodes = self
+            .memory_dao
+            .query_knowledge_nodes(ctx.clone(), query)
+            .await?;
+
+        if nodes.is_empty() {
+            return Ok(KnowledgeGraphData {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                degrees: std::collections::HashMap::new(),
+            });
+        }
+
+        // 2. 全量拉取关系（list_relations_batch 的 SQL 仅返回 Active 边）
+        let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
+        let all_relations = self.memory_dao.list_relations_batch(ctx, &node_ids).await?;
+
+        // 3. R2：严格双端活跃——只保留两端节点都在活跃节点集内的边
+        let active_ids: std::collections::HashSet<&str> =
+            nodes.iter().map(|n| n.id.as_str()).collect();
+        let edges: Vec<crate::models::memory::KnowledgeNodeRelationPo> = all_relations
+            .into_iter()
+            .filter(|rel| {
+                active_ids.contains(rel.source_node_id.as_str())
+                    && active_ids.contains(rel.target_node_id.as_str())
+            })
+            .collect();
+
+        // 4. R4：度数只按生效边统计（in + out）
+        let mut degrees: std::collections::HashMap<String, (usize, usize)> =
+            std::collections::HashMap::new();
+        for rel in &edges {
+            // 出边：rel.source_node_id 指向 rel.target_node_id
+            degrees.entry(rel.source_node_id.clone()).or_default().1 += 1;
+            // 入边：rel.target_node_id 被 rel.source_node_id 引用
+            degrees.entry(rel.target_node_id.clone()).or_default().0 += 1;
+        }
+
+        Ok(KnowledgeGraphData {
+            nodes,
+            edges,
+            degrees,
+        })
     }
 
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
@@ -1879,4 +1960,122 @@ async fn try_build_vector_params_for_entity(
         .embed_entity(ctx.clone(), &provider, entity)
         .await?;
     Ok(VectorIndexAction::Reindex(Box::new(params)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dal, init};
+    use crate::models::memory::{
+        KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams,
+    };
+    use crate::pkg::RequestContext;
+    use common::enums::{KnowledgeRelationStatus, MemoryStatus};
+
+    fn node_po(id: &str, agent_id: &str) -> LongTermKnowledgeNodePo {
+        LongTermKnowledgeNodePo {
+            id: id.to_string(),
+            agent_id: agent_id.to_string(),
+            node_name: format!("节点-{id}"),
+            node_description: String::new(),
+            node_type: "concept".to_string(),
+            summary: String::new(),
+            tags: "[]".to_string(),
+            status: MemoryStatus::Active,
+            is_published: false,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn relation_po(id: &str, source: &str, target: &str) -> KnowledgeNodeRelationPo {
+        KnowledgeNodeRelationPo {
+            id: id.to_string(),
+            source_node_id: source.to_string(),
+            target_node_id: target.to_string(),
+            relation_type: "related".to_string(),
+            weight: None,
+            status: KnowledgeRelationStatus::Active,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    /// 造数：2 个活跃知识节点 + 1 条生效边 + 1 条悬挂边（关系表无外键，悬挂边可直接插入）
+    async fn seed_graph(pool: sqlx::SqlitePool) -> RequestContext {
+        // dal::init() 会取用四个 DAO 单例，先按依赖顺序逐个初始化
+        //（生产路径由 bootstrap 统一完成，测试路径须自备；OnceLock.set 幂等可重复调）
+        crate::service::dao::memory::init();
+        crate::service::dao::memory::init_vector();
+        crate::service::dao::model_provider::init();
+        crate::service::dao::cortex::init();
+        init();
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool);
+        let d = dal();
+        for id in ["kn_a", "kn_b"].iter() {
+            d.create(
+                ctx.clone(),
+                MemoryCreateParams::CreateKnowledgeNode {
+                    node: node_po(id, "agent_x"),
+                    references: vec![],
+                },
+            )
+            .await
+            .expect("create knowledge node should succeed");
+        }
+        d.create(
+            ctx.clone(),
+            MemoryCreateParams::CreateRelations(vec![
+                // 生效边：kn_a → kn_b
+                relation_po("kr_ab", "kn_a", "kn_b"),
+                // 悬挂边：target "kn_ghost" 不在活跃节点集（R2 应被过滤）
+                relation_po("kr_ghost", "kn_a", "kn_ghost"),
+            ]),
+        )
+        .await
+        .expect("create relations should succeed");
+        ctx
+    }
+
+    /// 全量图聚合口径：R1 仅知识节点 / R2 悬挂边被丢弃 / R4 度数仅计生效边
+    #[sqlx::test]
+    async fn get_knowledge_graph_returns_active_nodes_and_drops_dangling_edges(
+        pool: sqlx::SqlitePool,
+    ) {
+        let ctx = seed_graph(pool).await;
+
+        let data = dal()
+            .get_knowledge_graph(ctx, None)
+            .await
+            .expect("get_knowledge_graph should succeed");
+
+        // R1：仅活跃知识节点，不含短期记忆/trace
+        assert_eq!(data.nodes.len(), 2);
+        let mut ids: Vec<&str> = data.nodes.iter().map(|n| n.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["kn_a", "kn_b"]);
+
+        // R2：悬挂边（target 不在活跃节点集）被严格双端活跃过滤
+        assert_eq!(data.edges.len(), 1);
+        assert_eq!(data.edges[0].id, "kr_ab");
+
+        // R4：度数 = in + out，仅计生效边（悬挂边不计入）
+        assert_eq!(data.degrees.get("kn_a"), Some(&(0, 1)));
+        assert_eq!(data.degrees.get("kn_b"), Some(&(1, 0)));
+        assert!(!data.degrees.contains_key("kn_ghost"));
+    }
+
+    /// agent_id 归属筛选：无归属匹配节点 → 返回空图
+    #[sqlx::test]
+    async fn get_knowledge_graph_filters_by_agent_id(pool: sqlx::SqlitePool) {
+        let ctx = seed_graph(pool).await;
+
+        let data = dal()
+            .get_knowledge_graph(ctx, Some("agent_other".to_string()))
+            .await
+            .expect("get_knowledge_graph should succeed");
+
+        assert!(data.nodes.is_empty());
+        assert!(data.edges.is_empty());
+        assert!(data.degrees.is_empty());
+    }
 }

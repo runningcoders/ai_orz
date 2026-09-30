@@ -256,6 +256,65 @@ pub struct SeedNodeRecommendation {
     pub outgoing_count: usize,
 }
 
+/// 知识图谱全局视图请求参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetKnowledgeGraphParams {
+    /// 按 Agent 归属筛选（只返回该 Agent 沉淀的知识节点）。
+    /// 不传则返回蜂巢全量（知识节点是全体 Agent 共享资产，全局视图默认全域）。
+    pub agent_id: Option<String>,
+}
+
+/// 知识图谱全局视图响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct GetKnowledgeGraphResponse {
+    /// 全部活跃知识节点（字段按全局视图裁剪口径精简，详情走卡片页既有通道）。
+    pub nodes: Vec<GraphNode>,
+    /// 双端活跃的关系边。
+    pub edges: Vec<GraphEdge>,
+    /// 生成时间戳（毫秒）。
+    pub generated_at: i64,
+}
+
+/// 全局视图节点（字段裁剪口径：全局视角关注模块/区域/实体间关系，裁细节字段）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct GraphNode {
+    /// 节点 ID。
+    pub id: String,
+    /// 节点名称。
+    pub node_name: String,
+    /// 节点类型（concept/fact/skill/pattern...）。
+    pub node_type: String,
+    /// 标签列表。
+    pub tags: Vec<String>,
+    /// 所属 Agent ID。
+    pub agent_id: String,
+    /// 高价值/高影响力标记（非可见性控制位）。
+    pub is_published: bool,
+    /// 连接度（入边 + 出边，仅计双端活跃的生效边）。
+    pub degree: usize,
+    /// 入边数。
+    pub incoming_count: usize,
+    /// 出边数。
+    pub outgoing_count: usize,
+    /// 创建时间戳。
+    pub created_at: i64,
+}
+
+/// 全局视图边。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct GraphEdge {
+    /// 边 ID。
+    pub id: String,
+    /// 源节点 ID。
+    pub source: String,
+    /// 目标节点 ID。
+    pub target: String,
+    /// 关系类型原文（写入方标注，落库不归一化）。
+    pub relation_type: String,
+    /// 关系强度（0.0~1.0）；`None` = 未标注（渲染基准线宽）。
+    pub weight: Option<f32>,
+}
+
 /// 发送消息请求参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct SendMessageParams {
