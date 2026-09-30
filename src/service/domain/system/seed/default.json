@@ -139,7 +139,7 @@
     {
       "id": "TEMPLATE_COMMUNICATION",
       "name": "协作沟通",
-      "description": "要给其他 Agent 发消息、委派任务或查沟通历史前必读全文：如何按收件人选择 send_message（发给用户）/ send_message_to_agent（与 Agent 普通沟通）/ send_task_assignment_message（给 Agent 派任务）——选错通道会被框架拒绝且消息投递不出去；三个工具与 list_messages / search_messages 的完整参数、双向分页与关键词检索机制、send_message_to_agent 路由兜底澄清、Agent 查询工具能力差异与协作场景",
+      "description": "要给其他 Agent 发消息、委派任务、查沟通历史，或撤回/纠正已发出的过时指令、让某个项目先停一下前必读全文：如何按收件人选择 send_message（发给用户）/ send_message_to_agent（与 Agent 普通沟通）/ send_task_assignment_message（给 Agent 派任务）——选错通道会被框架拒绝且消息投递不出去；纠错止损工具 recall_message（作废尚未处理的消息，接收方可拒收）与 cancel_thinking（停止某 Agent 当前思考轮次）的语义分界与权限范围；list_messages 按 status 筛出某个项目/Agent 尚未处理的消息、项目批量止损两步法；send_message_to_agent 路由兜底、查询工具能力差异与协作场景",
       "tags": ["neural", "messaging", "collaboration"],
       "category": "system",
       "parent_skill_id": "",

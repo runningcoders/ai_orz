@@ -33,6 +33,8 @@ Completed  → InProgress（项目重启专用）/ Archived
 
 **核心理念**：对齐与执行交织进行（「一边聊、一边对齐、一边干」），只有**结束**（`Completed`）需要显式流转。
 
+**「让项目先停一下」不是状态流转**：它的意思是让相关 Agent 放下手里的事回到空闲、等用户下一步指示——改状态动不了队列里积压的旧指令，做法见协作沟通技能「批量止损」。
+
 ### 工具速览
 
 参数与默认值见工具 Schema，此处只记 Schema 看不出来的语义与坑：
@@ -207,6 +209,7 @@ Completed  → Archived
 
 **启动前强制清单**：
 - [ ] `get_task` / `list_project_tasks` 校验 `dependencies` 中**所有前置任务均 Completed**；任何一个未完成 → **等待**，`send_task_assignment_message` 向 Owner 报告阻塞原因，绝不强行启动
+- [ ] **先验任务自身是否仍然有效**：`get_task` 发现自身 `status` 为 `Archived(5)` / `Cancelled(0)` ⇒ 这条分配已被废弃（多为需求变更后重规划所致）→ **不执行、不改状态**，先 `recall_message` **拒收这条消息**，再 `send_task_assignment_message` 回报 Owner 请其重发新指令
 - [ ] **有前置任务时必读前置产物**：`get_task(前置ID, with_artifacts=true)` 查看其 execution_result 与产物清单 → 文本产物用 `get_artifact_content` 读内容、文件类产物按存储路径 `fs_read`；前置的方案文档 / 技术实现是本任务的输入，跳过这步容易重复造轮子或与前置约定对不上
 - [ ] 完整读取 task.description / tags / due_at，理解需求边界
 - [ ] `update_task(execution_plan=...)` 写入执行计划 → `update_task_status(InProgress)` + `update_task_progress(progress=10)` 启动
@@ -229,7 +232,7 @@ Completed  → Archived
 2. **逐个审视任务**：InProgress 任务对照 `execution_plan` vs `progress` 是否偏离，关注 `modified_at`（>1 小时无更新可能卡住）；Pending 任务检查 `dependencies` 是否满足；异常任务读 `execution_result` 中的阻塞描述
 3. **决策下一步**：
    - 有可启动任务（前置均完成）→ `send_task_assignment_message` 通知对应 Task Owner
-   - 需调整 → `update_project(execution_plan=修订版)` 并通知受影响 Agent，可能重新拆分任务或修改依赖；**方案级重大变更**先用 `create_text_artifact(tags=["plan_snapshot"], project_id=...)` 留存变更快照，再把产物 ID 回写进 description 索引（替换旧条目，不追加）
+   - 需调整 → `update_project(execution_plan=修订版)` 并通知受影响 Agent，可能重新拆分任务或修改依赖；**先撤回过期指令再发新指令**（`recall_message` 撤掉队列里按旧方案派发的消息，否则对方会被旧指令依次唤醒；语义见协作沟通技能「纠错与止损」）；**方案级重大变更**先用 `create_text_artifact(tags=["plan_snapshot"], project_id=...)` 留存变更快照，再把产物 ID 回写进 description 索引（替换旧条目，不追加）
    - 里程碑达成（如 Phase 1 全部完成）→ `send_message` 通知用户阶段性成果（附 progress_summary 数据）
    - 阻塞 > 2 轮未解 → `send_message` 通知用户决策
    - 阻塞决策选项：调整依赖 / 拆新任务 / 修改任务描述 / 换 Agent 分配
@@ -263,7 +266,8 @@ Completed  → Archived
      | 需要调整 | `update_task` 修改描述 / 依赖（描述只写当前需求边界，重大调整存 `requirement_change` 产物并回写索引） |
 
   5. **关键约束：被废弃（Archived）的老任务不能作为新任务的前置依赖**，`dependencies` 中不应包含 Archived 任务 ID；若新任务需要其成果，在需求描述中引用老任务产物 ID 作为输入参考即可，成果全文由产物承载，不塞进 description
-  6. `send_message` 向用户说明重启规划（新任务列表 / 依赖 / 废弃的老任务）→ `send_task_assignment_message` 通知 Task Owner
+  6. **先撤回过期派发**：被废弃（Archived）的老任务若已发过分配消息、且尚未被处理 → `recall_message` 撤回它，否则 Task Owner 仍会被旧指令唤醒去开工已废弃的任务；**先撤、后发**
+  7. `send_message` 向用户说明重启规划（新任务列表 / 依赖 / 废弃的老任务）→ `send_task_assignment_message` 通知 Task Owner
 
 ## 系统通知响应规范（所有 Agent 强制）
 

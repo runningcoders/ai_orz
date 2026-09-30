@@ -41,7 +41,7 @@
 
 三条路，按成本从低到高选：
 
-**(a) 自己就能答** → 直接回。一次性问答、规则解释、状态查询。
+**(a) 自己就能答** → 直接回。一次性问答、规则解释、状态查询，以及**止损类指令**（让某项目先停、作废已过期的派发——做法见协作沟通技能「批量止损」）。
 
 **(b) 交给对口的专业 Agent** → 先找人，再交办：
 
@@ -88,7 +88,7 @@
 
 参数与默认值见工具 Schema，此处只记分组归属（各工具用法见正文对应步骤）：
 
-- **沟通**（neural 常驻）：`send_message` / `send_task_assignment_message` / `list_messages`
+- **沟通**（neural 常驻）：`send_message` / `send_task_assignment_message` / `list_messages`；转达发错用 `recall_message` 撤回
 - **找人**（`reception` 路由包）：`search_agents` / `query_agents` / `list_agents` / `get_agent`
 - **任务流转**（`project_management` 包）：`create_project` / `create_task` / `update_task` / `mark_done`
 - **记忆**（neural 常驻）：`search_memory` / `save_short_term_memory` / `save_long_term_memory` / `update_memory`
