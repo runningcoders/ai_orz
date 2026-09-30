@@ -195,11 +195,13 @@ CallDomain --> End(["返回 message_id"])
 ### 消息列表与分页
 - 路由：GET /api/v1/messages
 - 入口：list_messages_handler
-- 行为：校验组织/用户上下文；根据 after_timestamp 决定排序方向；查询后在 Handler 层按时间过滤并组装响应 DTO。
-- 分页模式：
-  - 初始加载/上拉翻页：传 before_timestamp，按 created_at DESC 取 limit。
-  - 下拉轮询新消息：传 after_timestamp，按 created_at ASC 追加。
-  - 两者都传：after < created_at < before。
+- 行为：校验组织/用户上下文；按 after_timestamp 决定取数方向；时间游标**下推到 SQL**（`MessageQuery.created_after / created_before`，两端均为**开区间**），因此 `limit` 是精确上限，不需要超量取值。
+- 分页模式（**返回结果恒按 created_at 正序**）：
+  - 初始加载：不带时间游标，取最新 limit 条。
+  - 上拉翻页：传 before_timestamp，取该时间点**之前**、离它最近的 limit 条。
+  - 下拉轮询新消息：传 after_timestamp，取该时间点**之后**最早的 limit 条。
+  - 两者都传：before_timestamp > created_at > after_timestamp。
+- 另可按 status 过滤（0=已撤回 / 1=待处理 / 2=处理中 / 3=完成 / 4=失败）；不传时默认排除已撤回。
 
 ```mermaid
 flowchart TD
@@ -207,11 +209,10 @@ A["接收 ListMessagesRequest"] --> B["校验 org/user 上下文"]
 B --> C{"after_timestamp 是否存在?"}
 C -- 是 --> D["order_by = created_at ASC"]
 C -- 否 --> E["order_by = created_at DESC"]
-D --> F["查询消息(多拉一些)"]
+D --> F["查询消息(时间游标 + limit 一并下推 SQL)"]
 E --> F
-F --> G{"before/after 过滤"}
-G --> H["必要时反转顺序"]
-H --> I["组装 MessageListItem"]
+F --> G["必要时反转顺序(取数方向 → 展示正序)"]
+G --> I["组装 MessageListItem"]
 I --> J["返回 {messages,total}"]
 ```
 
@@ -374,7 +375,7 @@ DP --> DAO_S["SsePushDao"]
 - SSE 推送
   - 内存广播通道，连接数受限于进程内存；keep_alive 15s 保活；客户端断开自动清理。
 - 分页与过滤
-  - 列表查询在 Handler 层做时间范围过滤，减少网络传输；limit 适度放大以支持边界过滤。
+  - 列表查询的时间游标（before/after_timestamp）下推到 SQL 过滤，`limit` 即精确页大小；不再「超量取数 + Handler 层内存过滤」。
 - 优先级与顺序
   - 消息默认优先级 5；order_key 保证同一任务内顺序消费。
 
@@ -414,7 +415,7 @@ DP --> DAO_S["SsePushDao"]
 - [router.rs:480-524](src/router.rs#L480-L524)
 
 ### 请求/响应要点
-- 列表请求：ListMessagesRequest 支持 project/task/from/to/before/after/limit。
+- 列表请求：ListMessagesRequest 支持 project/task/from/to/root/before/after/status/limit（`status=1` 只取未处理消息）。
 - 列表响应：ListMessagesResponse 包含脱敏的消息列表与 total。
 - 搜索请求：SearchMessagesRequest 支持 keyword、filters、limit。
 - 搜索响应：SearchMessagesResponse 包含 match_type、fts_rank、vector_distance。
