@@ -873,7 +873,14 @@ pub fn HrOntologyLexicon() -> Element {
                                     }
                                 } else {
                                     div { class: "overflow-x-auto",
-                                        table { class: "table hud-table table-zebra table-pin-rows",
+                                        table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                            colgroup {
+                                                col {}
+                                                col { class: "w-[96px]" }
+                                                col { class: "w-[80px]" }
+                                                col { class: "w-[96px]" }
+                                                col { class: "w-[80px]" }
+                                            }
                                             thead {
                                                 tr {
                                                     th { "漂移原文" }
@@ -886,7 +893,7 @@ pub fn HrOntologyLexicon() -> Element {
                                             tbody {
                                                 for w in d.top_drift_words {
                                                     tr { key: "{w.raw_term}",
-                                                        td { span { class: "font-mono text-sm", "{w.raw_term}" } }
+                                                        td { span { class: "font-mono text-sm block truncate", title: "{w.raw_term}", "{w.raw_term}" } }
                                                         td { {kind_badge(w.kind)} }
                                                         td { "{format_compact_count(w.count)}" }
                                                         td { "{w.agent_count}" }
@@ -924,8 +931,8 @@ pub fn HrOntologyLexicon() -> Element {
                                     "+ 新增实体类"
                                 }
                             }),
-                            div { class: "filter-row",
-                                div { class: "filter-item",
+                            div { class: "flex flex-wrap gap-4 items-end",
+                                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                                     label { class: "label", span { class: "label-text", "状态" } }
                                     select { class: "select select-bordered hud-input w-full",
                                         value: "{class_status_filter}",
@@ -938,7 +945,7 @@ pub fn HrOntologyLexicon() -> Element {
                                         option { value: "Retired", "已退役" }
                                     }
                                 }
-                                div { class: "filter-item flex-[2]",
+                                div { class: "flex flex-col gap-1 min-w-[140px] flex-[2]",
                                     label { class: "label", span { class: "label-text", "关键词" } }
                                     input { class: "input input-bordered hud-input w-full",
                                         value: "{class_keyword}",
@@ -951,8 +958,7 @@ pub fn HrOntologyLexicon() -> Element {
                                         placeholder: "按规范词 / 展示名模糊匹配，回车查询"
                                     }
                                 }
-                                div { class: "filter-item justify-end",
-                                    label { class: "label", span { class: "label-text", "操作" } }
+                                div { class: "flex flex-col gap-1",
                                     button { class: "btn hud-btn btn-primary",
                                         onclick: move |_| fetch_classes(true),
                                         "查询"
@@ -965,7 +971,16 @@ pub fn HrOntologyLexicon() -> Element {
                                 EmptyState { message: "暂无实体类词条，点击右上角新增或同步预置词表".to_string() }
                             } else {
                                 div { class: "overflow-x-auto",
-                                    table { class: "table hud-table table-zebra table-pin-rows",
+                                    table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                        colgroup {
+                                            col {}
+                                            col {}
+                                            col {}
+                                            col {}
+                                            col { class: "w-[88px]" }
+                                            col { class: "w-[140px]" }
+                                            col { class: "w-[132px]" }
+                                        }
                                         thead {
                                             tr {
                                                 th { "规范词" }
@@ -984,8 +999,8 @@ pub fn HrOntologyLexicon() -> Element {
                                                     let retire_id = c.id.clone();
                                                     rsx! {
                                                         tr { key: "{c.id}",
-                                                            td { span { class: "font-mono text-sm", "{c.term_key}" } }
-                                                            td { "{c.display_name}" }
+                                                            td { span { class: "font-mono text-sm block truncate", title: "{c.term_key}", "{c.term_key}" } }
+                                                            td { class: "truncate", "{c.display_name}" }
                                                             td {
                                                                 div { class: "line-clamp-2", title: "{c.description}",
                                                                     "{c.description}"
@@ -995,7 +1010,7 @@ pub fn HrOntologyLexicon() -> Element {
                                                                 if c.required_fields.is_empty() {
                                                                     span { class: "opacity-50", "-" }
                                                                 } else {
-                                                                    span { class: "font-mono text-xs", "{c.required_fields.join(\", \")}" }
+                                                                    span { class: "font-mono text-xs block truncate", title: "{c.required_fields.join(\", \")}", "{c.required_fields.join(\", \")}" }
                                                                 }
                                                             }
                                                             td { {status_badge(c.status)} }
@@ -1077,8 +1092,8 @@ pub fn HrOntologyLexicon() -> Element {
                                     "+ 新增关系类型"
                                 }
                             }),
-                            div { class: "filter-row",
-                                div { class: "filter-item",
+                            div { class: "flex flex-wrap gap-4 items-end",
+                                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                                     label { class: "label", span { class: "label-text", "状态" } }
                                     select { class: "select select-bordered hud-input w-full",
                                         value: "{relation_status_filter}",
@@ -1091,7 +1106,7 @@ pub fn HrOntologyLexicon() -> Element {
                                         option { value: "Retired", "已退役" }
                                     }
                                 }
-                                div { class: "filter-item flex-[2]",
+                                div { class: "flex flex-col gap-1 min-w-[140px] flex-[2]",
                                     label { class: "label", span { class: "label-text", "关键词" } }
                                     input { class: "input input-bordered hud-input w-full",
                                         value: "{relation_keyword}",
@@ -1104,8 +1119,7 @@ pub fn HrOntologyLexicon() -> Element {
                                         placeholder: "按规范词 / 展示名模糊匹配，回车查询"
                                     }
                                 }
-                                div { class: "filter-item justify-end",
-                                    label { class: "label", span { class: "label-text", "操作" } }
+                                div { class: "flex flex-col gap-1",
                                     button { class: "btn hud-btn btn-primary",
                                         onclick: move |_| fetch_relations(true),
                                         "查询"
@@ -1118,7 +1132,18 @@ pub fn HrOntologyLexicon() -> Element {
                                 EmptyState { message: "暂无关系类型词条，点击右上角新增或同步预置词表".to_string() }
                             } else {
                                 div { class: "overflow-x-auto",
-                                    table { class: "table hud-table table-zebra table-pin-rows",
+                                    table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                        colgroup {
+                                            col {}
+                                            col {}
+                                            col {}
+                                            col {}
+                                            col { class: "w-[72px]" }
+                                            col {}
+                                            col { class: "w-[88px]" }
+                                            col { class: "w-[140px]" }
+                                            col { class: "w-[132px]" }
+                                        }
                                         thead {
                                             tr {
                                                 th { "规范词" }
@@ -1149,15 +1174,15 @@ pub fn HrOntologyLexicon() -> Element {
                                                     };
                                                     rsx! {
                                                         tr { key: "{r.id}",
-                                                            td { span { class: "font-mono text-sm", "{r.term_key}" } }
-                                                            td { "{r.display_name}" }
+                                                            td { span { class: "font-mono text-sm block truncate", title: "{r.term_key}", "{r.term_key}" } }
+                                                            td { class: "truncate", "{r.display_name}" }
                                                             td {
                                                                 div { class: "line-clamp-2", title: "{r.description}",
                                                                     "{r.description}"
                                                                 }
                                                             }
                                                             td {
-                                                                div { class: "text-xs whitespace-nowrap",
+                                                                div { class: "text-xs truncate", title: "{domain_label} → {range_label}",
                                                                     span { class: "font-mono", "{domain_label}" }
                                                                     span { class: "opacity-50 mx-1", "→" }
                                                                     span { class: "font-mono", "{range_label}" }
@@ -1166,7 +1191,7 @@ pub fn HrOntologyLexicon() -> Element {
                                                             td { "{r.weight_base}" }
                                                             td {
                                                                 if let Some(inv) = r.inverse_key {
-                                                                    span { class: "font-mono text-xs", "{inv}" }
+                                                                    span { class: "font-mono text-xs block truncate", title: "{inv}", "{inv}" }
                                                                 } else {
                                                                     span { class: "opacity-50", "-" }
                                                                 }
@@ -1248,8 +1273,8 @@ pub fn HrOntologyLexicon() -> Element {
                                     "+ 新增同义映射"
                                 }
                             }),
-                            div { class: "filter-row",
-                                div { class: "filter-item",
+                            div { class: "flex flex-wrap gap-4 items-end",
+                                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                                     label { class: "label", span { class: "label-text", "目标种类" } }
                                     select { class: "select select-bordered hud-input w-full",
                                         value: "{synonym_kind_filter}",
@@ -1269,7 +1294,15 @@ pub fn HrOntologyLexicon() -> Element {
                                 EmptyState { message: "暂无同义映射，新增后漂移原文将自动归并到目标规范词".to_string() }
                             } else {
                                 div { class: "overflow-x-auto",
-                                    table { class: "table hud-table table-zebra table-pin-rows",
+                                    table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                        colgroup {
+                                            col {}
+                                            col { class: "w-[32px]" }
+                                            col { class: "w-[112px]" }
+                                            col {}
+                                            col { class: "w-[140px]" }
+                                            col { class: "w-[88px]" }
+                                        }
                                         thead {
                                             tr {
                                                 th { "漂移原文" }
@@ -1286,10 +1319,10 @@ pub fn HrOntologyLexicon() -> Element {
                                                     let delete_id = s.id.clone();
                                                     rsx! {
                                                         tr { key: "{s.id}",
-                                                            td { span { class: "font-mono text-sm", "{s.raw_term}" } }
+                                                            td { span { class: "font-mono text-sm block truncate", title: "{s.raw_term}", "{s.raw_term}" } }
                                                             td { class: "opacity-50", "→" }
                                                             td { {kind_badge(s.target_kind)} }
-                                                            td { span { class: "font-mono text-sm", "{s.target_key}" } }
+                                                            td { span { class: "font-mono text-sm block truncate", title: "{s.target_key}", "{s.target_key}" } }
                                                             td { class: "whitespace-nowrap", "{format_datetime(s.created_at * 1000)}" }
                                                             td {
                                                                 button { class: "btn hud-btn btn-error btn-sm",
