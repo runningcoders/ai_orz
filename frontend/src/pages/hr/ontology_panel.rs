@@ -18,8 +18,8 @@ use common::api::{
     ListDriftClassDetailsRequest, ListDriftRelationDetailsRequest, ListOntologyClassesRequest,
     ListOntologyLexiconResponse, ListOntologyRelationTypesRequest, ListOntologySynonymsRequest,
     OntologyClassItem, OntologyRelationTypeItem, OntologySynonymItem, PaginationParams,
-    PreviewPresetOntologyResponse, SyncPresetOntologyRequest, SyncPresetOntologyResponse,
-    UpdateOntologyClassRequest, UpdateOntologyRelationTypeRequest,
+    PresetOntologySyncStrategy, PreviewPresetOntologyResponse, SyncPresetOntologyRequest,
+    SyncPresetOntologyResponse, UpdateOntologyClassRequest, UpdateOntologyRelationTypeRequest,
 };
 use common::enums::OntologyStatus;
 use common::ontology::TermKind;
@@ -217,6 +217,8 @@ pub fn HrOntologyLexicon() -> Element {
     let mut sync_preview_loading = use_signal(|| false);
     let mut syncing = use_signal(|| false);
     let mut sync_result = use_signal(|| None::<SyncPresetOntologyResponse>);
+    let mut sync_strategy = use_signal(PresetOntologySyncStrategy::default);
+    let mut sync_confirm_pending = use_signal(|| false);
 
     // ===== 词表注入视图 =====
     let mut lexicon_summary = use_signal(|| None::<ListOntologyLexiconResponse>);
@@ -440,6 +442,8 @@ pub fn HrOntologyLexicon() -> Element {
         sync_result.set(None);
         sync_preview.set(None);
         sync_preview_loading.set(true);
+        sync_strategy.set(PresetOntologySyncStrategy::default());
+        sync_confirm_pending.set(false);
         spawn(async move {
             match preview_preset_ontology().await {
                 Ok(p) => sync_preview.set(Some(p)),
@@ -451,10 +455,18 @@ pub fn HrOntologyLexicon() -> Element {
 
     let mut handle_sync = move || {
         syncing.set(true);
+        sync_confirm_pending.set(false);
         spawn(async move {
-            match sync_preset_ontology(SyncPresetOntologyRequest {}).await {
+            match sync_preset_ontology(SyncPresetOntologyRequest {
+                strategy: sync_strategy(),
+            })
+            .await
+            {
                 Ok(r) => {
-                    let msg = format!("同步完成：新建 {} 条，跳过 {} 条", r.created, r.skipped);
+                    let msg = format!(
+                        "同步完成：新建 {} 条，更新 {} 条，跳过 {} 条",
+                        r.created, r.updated, r.skipped
+                    );
                     sync_result.set(Some(r));
                     toast.success(msg);
                     fetch_classes(true);
@@ -1552,38 +1564,119 @@ pub fn HrOntologyLexicon() -> Element {
                     button { class: "btn hud-btn btn-ghost", onclick: move |_| show_sync_modal.set(false), "关闭" }
                     button { class: "btn hud-btn btn-primary",
                         disabled: syncing() || sync_preview_loading() || sync_result().is_some(),
-                        onclick: move |_| handle_sync(),
-                        if syncing() { "同步中..." } else { "执行同步" }
+                        onclick: move |_| {
+                            // 覆盖式同步为破坏性动作：首点置确认态，再点才执行；仅补缺直接执行
+                            if sync_strategy() == PresetOntologySyncStrategy::Overwrite
+                                && !sync_confirm_pending()
+                            {
+                                sync_confirm_pending.set(true);
+                            } else {
+                                handle_sync();
+                            }
+                        },
+                        if syncing() {
+                            "同步中..."
+                        } else if sync_strategy() == PresetOntologySyncStrategy::Overwrite
+                            && sync_confirm_pending()
+                        {
+                            "确认覆盖同步？"
+                        } else {
+                            "执行同步"
+                        }
                     }
                 },
                 if sync_preview_loading() {
                     Loading { size: "md" }
                 } else if let Some(p) = sync_preview() {
-                    div { class: "space-y-4",
-                        div { class: "flex flex-wrap items-center gap-3 text-sm",
-                            span { class: "badge hud-badge badge-success", "将新建 {p.missing_count}" }
-                            span { class: "badge hud-badge badge-ghost", "已存在 {p.existing_count}" }
-                            span { class: "opacity-70", "预置共 {p.items.len()} 条 · 仅补缺，不覆盖已有修改" }
-                        }
-                        if let Some(r) = sync_result() {
-                            div { class: "alert alert-success text-sm",
-                                "同步完成：新建 {r.created} 条，跳过 {r.skipped} 条（预置共 {r.total} 条）"
-                            }
-                        }
-                        div { class: "max-h-80 overflow-y-auto space-y-1",
-                            for item in p.items {
-                                                div { class: "flex flex-wrap items-center gap-3 rounded-lg border border-base-300 px-3 py-2",
-                                                    {kind_badge(item.kind)}
-                                                    span { class: "font-mono text-sm", "{item.term_key}" }
-                                                    span { class: "text-sm flex-1 truncate", "{item.display_name}" }
-                                                    if item.exists {
-                                                        span { class: "badge badge-ghost badge-sm", "已存在·跳过" }
-                                                    } else {
-                                                        span { class: "badge badge-success badge-sm", "将新建" }
-                                                    }
-                                                    div { class: "w-full text-xs opacity-60 truncate", "{item.description}" }
+                    {
+                        // 影响面文案在 rsx 外计算：嵌套 if 进 format! 会破坏 rsx 解析（沿 skills 同步 Modal 同款先例）
+                        let overwrite = sync_strategy() == PresetOntologySyncStrategy::Overwrite;
+                        let strategy_hint = if overwrite {
+                            format!(
+                                "预置共 {} 条 · 覆盖式：已存在词条将按 seed 覆写（展示名/描述/方向等），退役词条跳过，自拟词不受影响",
+                                p.items.len()
+                            )
+                        } else {
+                            format!("预置共 {} 条 · 仅补缺，不覆盖已有修改", p.items.len())
+                        };
+                        rsx! {
+                            div { class: "space-y-4",
+                                // 策略选择（二选一，仿 skills 同步 Modal 先例）
+                                div { class: "border border-base-300 rounded-box bg-base-200 overflow-hidden",
+                                    div { class: "grid gap-2 p-3",
+                                        div {
+                                            class: if sync_strategy() == PresetOntologySyncStrategy::OnlyMissing {
+                                                "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                                            } else {
+                                                "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                                            },
+                                            onclick: move |_| {
+                                                sync_strategy.set(PresetOntologySyncStrategy::OnlyMissing);
+                                                sync_confirm_pending.set(false);
+                                            },
+                                            div { class: "card-body p-3",
+                                                div { class: "font-semibold", "1 · 仅补缺（安全）" }
+                                                div { class: "text-xs text-base-content/70",
+                                                    "已存在的词条跳过，不覆盖管理页修改；只把 seed 中缺失的词条加入词表"
                                                 }
                                             }
+                                        }
+                                        div {
+                                            class: if sync_strategy() == PresetOntologySyncStrategy::Overwrite {
+                                                "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                                            } else {
+                                                "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                                            },
+                                            onclick: move |_| {
+                                                sync_strategy.set(PresetOntologySyncStrategy::Overwrite);
+                                                sync_confirm_pending.set(false);
+                                            },
+                                            div { class: "card-body p-3",
+                                                div { class: "font-semibold", "2 · 覆盖式同步" }
+                                                div { class: "text-xs text-base-content/70",
+                                                    "已存在词条将被 seed 值覆写（展示名/描述/方向等）；退役词条跳过，自拟词不受影响"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                div { class: "flex flex-wrap items-center gap-3 text-sm",
+                                    span { class: "badge hud-badge badge-success", "将新建 {p.missing_count}" }
+                                    span { class: "badge hud-badge badge-ghost", "已存在 {p.existing_count}" }
+                                    if overwrite {
+                                        span { class: "badge hud-badge badge-warning", "将覆写 {p.overwrite_count}" }
+                                    }
+                                    span { class: "badge hud-badge badge-ghost", "退役行 {p.retired_count}" }
+                                    span { class: "opacity-70", "{strategy_hint}" }
+                                }
+                                if let Some(r) = sync_result() {
+                                    div { class: "alert alert-success text-sm",
+                                        "同步完成：新建 {r.created} 条，更新 {r.updated} 条，跳过 {r.skipped} 条（预置共 {r.total} 条）"
+                                    }
+                                }
+                                div { class: "max-h-80 overflow-y-auto space-y-1",
+                                    for item in p.items {
+                                        div { class: "flex flex-wrap items-center gap-3 rounded-lg border border-base-300 px-3 py-2",
+                                            {kind_badge(item.kind)}
+                                            span { class: "font-mono text-sm", "{item.term_key}" }
+                                            span { class: "text-sm flex-1 truncate", "{item.display_name}" }
+                                            if item.retired {
+                                                span { class: "badge badge-ghost badge-sm", "退役·跳过" }
+                                            } else if !item.exists {
+                                                span { class: "badge badge-success badge-sm", "将新建" }
+                                            } else if overwrite && !item.diff_fields.is_empty() {
+                                                span { class: "badge badge-warning badge-sm", "将覆写 {item.diff_fields.len()} 字段" }
+                                            } else {
+                                                span { class: "badge badge-ghost badge-sm", "已存在·跳过" }
+                                            }
+                                            div { class: "w-full text-xs opacity-60 truncate", "{item.description}" }
+                                            if overwrite && item.exists && !item.retired && !item.diff_fields.is_empty() {
+                                                div { class: "w-full text-xs text-warning", "覆写字段：{item.diff_fields.join(\"、\")}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
