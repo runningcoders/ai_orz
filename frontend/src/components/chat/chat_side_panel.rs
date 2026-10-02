@@ -534,6 +534,17 @@ fn build_task_graph_data(
         side_margin: width * 0.09,
     };
     let positions = compute_layered_layout(&task_ids, &deps_map, &config);
+    // 负责人展示名：Agent 分配对象（assignee_type=1）显示 ID 前 8 位（完整 ID 过长，
+    // hover 详情另有 ID 行），其余 / 未分配显示占位文案（任务列表页同款口径）
+    let assignee_name = |t: &TaskListItem| -> String {
+        if t.assignee_id.is_empty() {
+            "未分配".to_string()
+        } else if AssigneeType::from_i32(t.assignee_type) == AssigneeType::Agent {
+            format!("Agent·{}", t.assignee_id.get(..8).unwrap_or(&t.assignee_id))
+        } else {
+            t.assignee_id.clone()
+        }
+    };
     let nodes = tasks
         .iter()
         .map(|t| {
@@ -551,7 +562,14 @@ fn build_task_graph_data(
                 x,
                 y,
                 tags: t.tags.clone(),
-                summary: Some(format!("进度 {}%", t.progress)),
+                // hover 关键信息一行概览：状态 · 进度 · 负责人
+                //（node_hover_lines 通道自动携带，点线图下名称也由 hover 承载）
+                summary: Some(format!(
+                    "{} · 进度 {}% · 负责人 {}",
+                    task_status_text(t.status),
+                    t.progress,
+                    assignee_name(t)
+                )),
             }
         })
         .collect();
@@ -1079,6 +1097,71 @@ mod tests {
         assert_eq!(task_level.len(), 2);
         assert!(project_level.iter().all(|a| a.task_id.is_none()));
         assert!(task_level.iter().all(|a| a.task_id.is_some()));
+    }
+
+    fn test_task_item(
+        id: &str,
+        title: &str,
+        status: i32,
+        progress: i32,
+        assignee: &str,
+    ) -> TaskListItem {
+        TaskListItem {
+            id: id.to_string(),
+            title: title.to_string(),
+            description: None,
+            status,
+            priority: 1,
+            tags: Vec::new(),
+            root_user_id: String::new(),
+            assignee_type: 1,
+            assignee_id: assignee.to_string(),
+            project_id: None,
+            thinking_depth: 0,
+            progress,
+            created_at: 0,
+            updated_at: 0,
+            dependencies: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn graph_node_summary_carries_status_progress_assignee() {
+        // 点线图（mini）下节点不绘名称卡，任务名/状态/进度/负责人全量由 hover 承载：
+        // summary 一行概览必须含三要素（node_hover_lines 通道自动携带）
+        let tasks = vec![test_task_item("t1", "任务甲", 2, 40, "01J8ZKQ7X4M2")];
+        let (nodes, _edges) = build_task_graph_data(&tasks, TASK_GRAPH_W, TASK_GRAPH_H);
+        assert_eq!(nodes.len(), 1);
+        let summary = nodes[0].summary.as_deref().unwrap_or_default();
+        assert!(summary.contains("进行中"), "{summary}");
+        assert!(summary.contains("进度 40%"), "{summary}");
+        assert!(summary.contains("负责人 Agent·01J8ZKQ7"), "{summary}");
+    }
+
+    #[test]
+    fn graph_node_summary_handles_unassigned_and_user_assignee() {
+        // 未分配 → 占位文案；用户分配对象（assignee_type=0）→ ID 原样展示
+        let mut t = test_task_item("t1", "任务甲", 0, 0, "");
+        let (nodes, _) =
+            build_task_graph_data(std::slice::from_ref(&t), TASK_GRAPH_W, TASK_GRAPH_H);
+        assert!(
+            nodes[0]
+                .summary
+                .as_deref()
+                .unwrap_or_default()
+                .contains("负责人 未分配")
+        );
+        t.assignee_id = "user123".to_string();
+        t.assignee_type = 0;
+        let (nodes, _) =
+            build_task_graph_data(std::slice::from_ref(&t), TASK_GRAPH_W, TASK_GRAPH_H);
+        assert!(
+            nodes[0]
+                .summary
+                .as_deref()
+                .unwrap_or_default()
+                .contains("负责人 user123")
+        );
     }
 
     #[test]

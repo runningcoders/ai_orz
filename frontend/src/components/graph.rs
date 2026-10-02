@@ -207,6 +207,13 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
     }
 }
 
+/// 点线图形态判定（SSOT）：全局点线视图与任务依赖图 mini 预览小框共用
+/// 「圆点 + 连线」分支，同时抑制边标签 overlay——两处必须同开同关，
+/// 否则会出现圆点节点配矩形边标签的混合形态。
+pub fn dot_graph_mode(global_mode: bool, mini: bool) -> bool {
+    global_mode || mini
+}
+
 /// 全局点线视图：连接度 → 节点半径（Canvas / SVG 双渲染器 SSOT）。
 ///
 /// 底 7px、度数线性增长（每度 +1.1px，19 度封顶 ≈ 27.9px，28px 系防御性上限）。
@@ -466,23 +473,24 @@ pub fn Graph(props: GraphProps) -> Element {
     // 边标签置顶数据：SVG 后画覆盖先画，标签组必须渲染在节点之后才不被卡片
     // 遮挡；这里提前算好文本 / 变换 / 颜色，渲染段只做纯输出
     // 全局点线态不绘边标签（对齐 Canvas 全局模式：点线承载类型着色，标签留给局部卡片态）
-    let edge_label_overlays: Vec<(String, String, &'static str)> = if global_mode {
-        Vec::new()
-    } else {
-        valid_edges
-            .iter()
-            .filter_map(|(edge, (sx, sy), (tx, ty))| {
-                let label: String = edge.label.chars().take(10).collect();
-                (!label.is_empty()).then(|| {
-                    (
-                        label,
-                        get_label_transform(*sx, *sy, *tx, *ty),
-                        get_edge_color(&edge.label),
-                    )
+    let edge_label_overlays: Vec<(String, String, &'static str)> =
+        if dot_graph_mode(global_mode, mini) {
+            Vec::new()
+        } else {
+            valid_edges
+                .iter()
+                .filter_map(|(edge, (sx, sy), (tx, ty))| {
+                    let label: String = edge.label.chars().take(10).collect();
+                    (!label.is_empty()).then(|| {
+                        (
+                            label,
+                            get_label_transform(*sx, *sy, *tx, *ty),
+                            get_edge_color(&edge.label),
+                        )
+                    })
                 })
-            })
-            .collect()
-    };
+                .collect()
+        };
 
     let selected_id = props.selected_node_id.clone();
 
@@ -735,9 +743,14 @@ pub fn Graph(props: GraphProps) -> Element {
                     let opacity = get_node_opacity(is_highlighted, is_selected);
                     let glow = get_node_glow(is_highlighted, is_selected);
 
-                    // === 全局点线分支（对齐 Canvas 全局模式）：圆点 + 连接度半径、
-                    // 名称按半径限绘，跳过矩形卡片 / 竖条 / 正文 / 标签 ===
-                    if global_mode {
+                    // 任务依赖图 mini 预览小框：点线图分支——小圆点（状态语义色）+
+                    // 连线呈现整体关系；不绘矩形卡 / 竖条 / 正文 / 标签，消除
+                    // 300×200 小画布内矩形卡互相覆盖的问题。任务名等关键信息
+                    // 全量承载于 hover 详情（node_hover_lines 通道）与点选详情；
+                    // 全局点线分支与放大弹窗矩形卡路径零改动。
+                    if dot_graph_mode(global_mode, mini) {
+                        // mini 无 node_degrees 供给（deps 全在 global_mode 调用点）：
+                        // degree=0 → 固定 7px 点半径，300×200 小画布下免绘名（半径 < 14）
                         let degree = global_degrees.get(&node.id).copied().unwrap_or(0);
                         let radius = global_node_radius(degree);
                         let label = global_node_label(&node.label, radius);
@@ -1333,6 +1346,17 @@ mod tests {
         // 封顶：内层 min(19) 先封，19 度以上恒 27.9（外层 28.0 系防御性上限）
         assert!((global_node_radius(28) - 27.9).abs() < 1e-9);
         assert!((global_node_radius(1000) - 27.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn dot_graph_mode_covers_global_and_mini() {
+        // 全局点线视图与任务依赖图 mini 预览小框共用点线形态：
+        // 分支条件与边标签抑制必须同源（dot_graph_mode 单点判定）
+        assert!(dot_graph_mode(true, false));
+        assert!(dot_graph_mode(false, true));
+        assert!(dot_graph_mode(true, true));
+        // 卡片态（放大弹窗 / 局部关系图）不进点线分支
+        assert!(!dot_graph_mode(false, false));
     }
 
     #[test]
