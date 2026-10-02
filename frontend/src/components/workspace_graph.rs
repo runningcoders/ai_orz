@@ -80,6 +80,12 @@ pub struct WorkspaceGraphProps {
     /// 是否自适应父容器尺寸（HUD 全屏背景模式，覆盖 width/height）
     #[props(default = false)]
     pub auto_size: bool,
+    /// 轻量概览模式：只画「圆点 + 边」，不渲染节点信息卡。
+    ///
+    /// 对标知识图谱的全局点线态：节点数量很大时（如 Agent 视图「全部」），
+    /// 每个节点画一张矩形信息卡会导致整页卡顿，降级为圆点即可保持可读与流畅。
+    #[props(default = false)]
+    pub simple: bool,
 }
 
 impl PartialEq for WorkspaceGraphProps {
@@ -90,6 +96,7 @@ impl PartialEq for WorkspaceGraphProps {
             && self.tasks == other.tasks
             && self.width == other.width
             && self.height == other.height
+            && self.simple == other.simple
         // on_view_change 不参与比较（EventHandler 无法比较）
     }
 }
@@ -119,6 +126,20 @@ fn task_status_color(status: i32) -> String {
         1 => "#3b82f6".to_string(), // InProgress 蓝
         2 => "#6b7280".to_string(), // Completed 灰
         _ => "#9ca3af".to_string(),
+    }
+}
+
+/// 轻量概览模式下圆点的统一半径（按节点类型归一）。
+///
+/// 信息卡节点的 `radius` 存的是**卡片外接圆半径**（可达上百像素），直接拿来当圆点
+/// 会让圆点巨大且互压；概览态丢弃「中心节点放大」的差异化，按类型取统一小半径，
+/// 换取一致的视觉密度（与知识图谱全局点线态同一取向）。
+fn simple_dot_radius(node_type: Option<&str>) -> f64 {
+    match node_type {
+        Some("project") => 28.0,
+        Some("agent") => 25.0,
+        Some("task") => 20.0,
+        _ => 20.0,
     }
 }
 
@@ -570,7 +591,7 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
     };
 
     // 根据视图模式构建节点和边
-    let (nodes, edges) = match &view {
+    let (mut nodes, edges) = match &view {
         WorkspaceView::Global => build_global_view(&projects, &agents, &tasks),
         WorkspaceView::ProjectDetail(pid) => {
             if let Some(p) = projects.iter().find(|p| p.id == *pid) {
@@ -594,6 +615,20 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
             }
         }
     };
+
+    // 轻量概览模式：把信息卡降级为「圆点 + 边」，只保留 id / 类型 / 颜色 / 分层。
+    //
+    // 与知识图谱「全局点线态」同一套表达（数据驱动：无正文即圆点），此处直接对
+    // 已构建的节点做一次降级，避免在 4 个 build_* 与十余处调用点重复分支。
+    // 半径必须按类型归一：卡片节点的 radius 是外接圆半径，留着会让圆点巨大互压。
+    if props.simple {
+        for n in &mut nodes {
+            n.description.clear();
+            n.summary = None;
+            n.tags.clear();
+            n.radius = simple_dot_radius(n.node_type.as_deref());
+        }
+    }
 
     // 节点 id → (类型, 真实ID) 查找表，供点击回调判断跳转
     let mut click_map: std::collections::HashMap<String, (String, String)> =

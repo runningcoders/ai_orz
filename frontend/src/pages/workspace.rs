@@ -66,7 +66,7 @@ use common::api::{
     AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem,
     ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest,
 };
-use common::enums::AssigneeType;
+use common::enums::{AssigneeType, ProjectStatus, TaskStatus};
 use wasm_bindgen::{JsCast, closure::Closure};
 
 /// Project 状态标签
@@ -331,6 +331,9 @@ pub fn Workspace(view: Option<String>) -> Element {
     // 概览计数 + 运行态三色 + 模型/工具窗口读数 + 队列积压，全部出自同一份后端快照。
     let workspace_metrics = use_signal(|| Option::<WorkspaceMetricsResponse>::None);
     let mut runtime_filter = use_signal(|| None::<String>);
+    // 工作台 Agent 视图过滤：是否只渲染「进行中」内容（隐藏已归档/已完成的任务与项目）。
+    // 默认开启，避免大量历史归档内容淹没当前工作视图；需要回溯时切到「全部」。
+    let mut agent_detail_active_only = use_signal(|| true);
 
     // HUD 悬浮面板折叠状态
     let mut project_panel_collapsed = use_signal(|| false);
@@ -361,6 +364,8 @@ pub fn Workspace(view: Option<String>) -> Element {
         let view = current_view.read().clone();
         let live_view = current_view; // 捕获信号副本，供 spawn 内检测视图是否已切换
         let sidebar_data = sidebar_signal.read().clone();
+        // 读取 Agent 视图「仅进行中」开关：作为 effect 依赖，切换时自动重载图数据
+        let active_only = *agent_detail_active_only.read();
         let toast = toast;
 
         spawn(async move {
@@ -457,45 +462,75 @@ pub fn Workspace(view: Option<String>) -> Element {
 
                 WorkspaceView::AgentDetail(aid) => {
                     // AgentDetail：复用 Agent 详情页加载逻辑
-                    // 1. 按 agent_id 过滤 tasks
+                    // 1. 按 agent_id 过滤 tasks；「仅进行中」时叠加 status_in，排除
+                    //    已取消/已完成/已归档的任务，只保留待处理与进行中的活跃工作。
                     let Some(data) = sidebar_data else {
                         graph_loading.set(false);
                         return;
                     };
-                    let req = TaskQueryRequest {
+                    let mut req = TaskQueryRequest {
                         assignee_id: Some(aid.clone()),
                         assignee_type: Some(AssigneeType::Agent),
                         pagination: PaginationParams::default(),
                         ..Default::default()
                     };
+                    if active_only {
+                        req.status_in = Some(vec![TaskStatus::Pending, TaskStatus::InProgress]);
+                    }
                     match query_tasks(&req).await {
                         Ok(page) => {
                             guard!();
                             let tasks = page.items;
-                            // 2. 从 tasks 收集 project_ids，批量查询
+                            // 2. 从 tasks 收集 project_ids，批量查询；「仅进行中」时只保留
+                            //    进行中的项目，避免已归档/已完成项目节点混入当前工作视图。
                             let project_ids: Vec<String> = tasks
                                 .iter()
                                 .filter_map(|t| t.project_id.clone())
                                 .collect::<std::collections::HashSet<_>>()
                                 .into_iter()
                                 .collect();
-                            graph_tasks.set(tasks);
-                            if project_ids.is_empty() {
-                                graph_projects.set(Vec::new());
-                            } else {
-                                let req = ProjectQueryRequest {
-                                    ids: Some(project_ids),
+                            // 默认（含「全部」视图、以及无任何项目归属的任务）展示全部任务；
+                            // 项目查询失败也保留已加载的任务，仅项目区为空。
+                            let mut visible_tasks = tasks;
+                            let mut visible_projects: Vec<ProjectListItem> = Vec::new();
+                            if !project_ids.is_empty() {
+                                let mut preq = ProjectQueryRequest {
+                                    ids: Some(project_ids.clone()),
                                     pagination: PaginationParams::default(),
                                     ..Default::default()
                                 };
-                                match query_projects(&req).await {
+                                if active_only {
+                                    preq.status_in = Some(vec![ProjectStatus::InProgress]);
+                                }
+                                match query_projects(&preq).await {
                                     Ok(page) => {
                                         guard!();
-                                        graph_projects.set(page.items)
+                                        visible_projects = page.items;
+                                        if active_only {
+                                            // 反查：只保留「所属项目仍在进行中」的任务，
+                                            // 避免已归档项目里残留的活跃任务成为孤儿节点；
+                                            // 无归属项目的任务（project_id 为 None）保留显示。
+                                            let active_project_ids: std::collections::HashSet<
+                                                String,
+                                            > = visible_projects
+                                                .iter()
+                                                .map(|p| p.id.clone())
+                                                .collect();
+                                            visible_tasks = visible_tasks
+                                                .into_iter()
+                                                .filter(|t| {
+                                                    t.project_id.as_ref().is_none_or(|pid| {
+                                                        active_project_ids.contains(pid)
+                                                    })
+                                                })
+                                                .collect::<Vec<_>>();
+                                        }
                                     }
                                     Err(e) => toast.error(format!("批量获取项目失败: {}", e)),
                                 }
                             }
+                            graph_tasks.set(visible_tasks);
+                            graph_projects.set(visible_projects);
                         }
                         Err(e) => toast.error(format!("获取任务列表失败: {}", e)),
                     }
@@ -976,6 +1011,14 @@ pub fn Workspace(view: Option<String>) -> Element {
     let ga = graph_agents.read().clone();
     let gt = graph_tasks.read().clone();
     let loading = *graph_loading.read();
+    // Agent 视图「仅进行中」开关的当前值：作为渲染依赖，切换时重渲染左下角开关与图数据
+    let ad_active = *agent_detail_active_only.read();
+    let active_btn_cls = if ad_active { "btn-active" } else { "" };
+    let all_btn_cls = if !ad_active { "btn-active" } else { "" };
+    // Agent 视图「全部」态节点数量极大，降级为「圆点 + 边」概览渲染
+    // （对标知识图谱的全局点线态），避免逐节点绘制信息卡导致整页卡顿。
+    let graph_simple =
+        !ad_active && matches!(current_view.read().clone(), WorkspaceView::AgentDetail(_));
 
     rsx! {
         AppLayout {
@@ -999,6 +1042,7 @@ pub fn Workspace(view: Option<String>) -> Element {
                         width: 800.0,
                         height: 600.0,
                         auto_size: true,
+                        simple: graph_simple,
                         on_view_change: Some(EventHandler::new(move |new_view: WorkspaceView| {
                             // URL 即状态：视图切换写入历史栈（返回可逐级回退），signal 由守卫回流
                             navigator.push(Route::Workspace { view: view_to_query(&new_view) });
@@ -1373,6 +1417,22 @@ pub fn Workspace(view: Option<String>) -> Element {
                                     if let Some(desc) = &a.description {
                                         p { class: "text-xs text-base-content/60 mt-1.5 line-clamp-2 leading-relaxed",
                                             "{desc}"
+                                        }
+                                    }
+                                    // Agent 视图内容过滤：仅进行中（默认）/ 全部
+                                    div { class: "mt-2 flex items-center gap-2",
+                                        span { class: "text-xs text-base-content/50 shrink-0", "显示" }
+                                        div { class: "join",
+                                            button {
+                                                class: "btn hud-btn btn-xs join-item {active_btn_cls}",
+                                                onclick: move |_| agent_detail_active_only.set(true),
+                                                "进行中"
+                                            }
+                                            button {
+                                                class: "btn hud-btn btn-xs join-item {all_btn_cls}",
+                                                onclick: move |_| agent_detail_active_only.set(false),
+                                                "全部"
+                                            }
                                         }
                                     }
                                 } else {
