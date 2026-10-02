@@ -1152,6 +1152,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("   - 更新既有节点 → update_memory 的 relations 参数补边\n");
         result.push_str("   （related/contains/depends 等规范词优先；都不贴切就直接写你判断的关系名，会被原样保存与展示，不会被替换成「自定义」）；每条关系可带 weight（0~1）表示关联强度，知识图谱按它调边的粗细与浓淡，拿不准就省略、不要随手填一个中间值\n");
         result.push_str("   ⚠️ 正文里提及 / 引用其他节点**不等于建边**——图谱遍历只认关系表，正文引用对检索不可达\n");
+        result.push_str("   - **新建节点不要零边入库**：孤岛节点多数不是真的无关联，只是缺一次关联检索——创建后若还没边，用它的核心概念换几个角度再 search_memory 查几轮，能连就连上；确认无关联再孤立\n");
         result.push_str("5. **评估重要性**：对「值得其他 Agent 优先参考」的通用方法论 / 模式 / 概念，用 update_memory 的 node_tags 字段加 'published' 标签——它标记的是**重要性/影响力**（用于图谱推荐起点的排序），**不是**可见性开关：知识节点在蜂巢内本就全局共享\n");
         // 状态闭环由框架负责：不再要求 Agent 自己改 status
         //

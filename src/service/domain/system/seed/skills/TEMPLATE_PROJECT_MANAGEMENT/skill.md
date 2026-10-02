@@ -102,7 +102,7 @@ Completed  → Archived
 2. **边界**：明确不做什么、依赖哪些前置约定
 3. **关键产物 ID 索引**：需求变更快照、参考产物等 `artifact_id`（一行一个，附一句话说明）
 
-**不放过程快照**——执行思路写 `execution_plan`，结果写 `execution_result`；需求的重大变更快照存为**任务级产物**（`create_text_artifact(project_id=..., task_id=..., tags=["requirement_change"])`），随后把产物 ID 回写进 description 索引。更新时**替换不追加**：历史沿革靠 `requirement_change` 产物链追溯，不在 description 里堆叠。
+**不放过程快照**——执行思路写 `execution_plan`，结果写 `execution_result`，过程执行记录存 `execution_log` 产物（规范见「产物粒度与分片规范」）；需求的重大变更快照存为**任务级产物**（`create_text_artifact(project_id=..., task_id=..., tags=["requirement_change"])`），随后把产物 ID 回写进 description 索引。更新时**替换不追加**：历史沿革靠 `requirement_change` 产物链追溯，不在 description 里堆叠。
 
 ### execution_plan / execution_result
 
@@ -157,6 +157,22 @@ Completed  → Archived
 | 报告 / 方案 / 文档（≤1MB 文本） | `create_text_artifact` |
 | 工作目录大文件 / 二进制 | `register_artifact_from_path` |
 | 已上传到附件系统的文件 | `create_artifact`（Attachment 模式） |
+
+### 产物粒度与分片规范
+
+**一产物一主题，快照独立成链**：每个产物只承载一个主题的一次快照，每次变更 / 每阶段记录**独立 `create_text_artifact` 创建新产物**，禁止把单一产物当滚动日志反复 `update_artifact` 追加——产物是「归档的快照」，不是「增长的账本」，持续追加会让单文件膨胀到上百 KB，下游 `get_artifact_content` 读入时既慢又挤占上下文窗口。`update_artifact` 的合法用途是**替换修正**（改错内容 / 重写某节），不是**追加记录**。
+
+**软大小阈值 ≤32KB**：单个文本产物建议 ≤32KB（约 8K tokens，保障读入上下文的效率；1MB 是系统硬限制，不是存满的目标）。预计超限 → 按「主题 + 阶段」拆分为产物链（如 `执行记录-Phase1` / `执行记录-Phase2`），各段 description 注明阶段范围与前后衔接。
+
+**快照 tags 分类**（过程记录一律走对应产物链，不在 description / execution_result 里堆叠）：
+
+| 快照类型 | tags | 层级 | 触发时机 |
+|---------|------|------|---------|
+| 计划变更快照 | `plan_snapshot` | 项目级 | 方案级重大调整 |
+| 需求变更快照 | `requirement_change` | 任务级 | 需求重大变更 |
+| 阶段执行记录 | `execution_log` | 任务级；Owner 巡检汇总为项目级 | 每阶段完成 / 定期巡检 |
+
+快照产物 ID 统一回写 description 索引（**替换不追加**），历史沿革靠对应 tags 产物链按时间顺序追溯。
 
 ## 附件管理（Finance Domain）
 
@@ -217,7 +233,7 @@ Completed  → Archived
 **执行循环**：
 - 每个子步骤完成后**立即** `update_task_progress`（长任务更新节奏见「进度纪律」）
 - 方案调整时**立即 `update_task(execution_plan=修订版)`**，不要闷头做事
-- 成果随手保存：文本 → `create_text_artifact`；工作目录文件 → `register_artifact_from_path`；已有附件 → `create_artifact(Attachment 模式)`
+- 成果随手保存：文本 → `create_text_artifact`；工作目录文件 → `register_artifact_from_path`；已有附件 → `create_artifact(Attachment 模式)`；阶段执行记录 → `create_text_artifact(tags=["execution_log"], task_id=...)` **独立分片存储**，不要合并进单个大产物（粒度规范见「产物粒度与分片规范」）
 
 **完成 / 阻塞清单（顺序缺一不可）**：
 - [ ] 产出物已保存并关联 `project_id` + `task_id`
