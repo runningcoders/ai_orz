@@ -25,7 +25,8 @@ use crate::service::domain::hr::{HrDomainImpl, OntologyDomain};
 use common::api::ontology::{
     GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
     ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
-    ListDriftRelationDetailsResponse,
+    ListDriftRelationDetailsResponse, PresetOntologySyncItem, PresetOntologySyncStrategy,
+    PreviewPresetOntologyResponse,
 };
 use common::enums::OntologyStatus;
 use common::error::{Result, bail_err, err};
@@ -270,135 +271,391 @@ impl OntologyDomain for HrDomainImpl {
         self.ontology_dal.delete_synonym(ctx, id).await
     }
 
-    // ==================== D. seed 预置注入（仅补缺） ====================
+    // ==================== D. seed 预置注入（缺省仅补缺；Overwrite 覆盖式同步见下） ====================
 
-    /// 仅补缺幂等注入（**非原子**）：逐条 find → skip or insert，中途失败会留下
-    /// 部分注入结果。这是有意取舍——真正事务化要求 DAO 全套 find/insert 支持事务
-    /// executor，改动面大；幂等设计已兜底：失败后重跑（或管理页 sync）会跳过
-    /// 已注入条目、补齐缺失条目，最终收敛到完整词表。调用方请勿假设原子性。
+    /// 仅补缺幂等注入（**非原子**）：薄委托 [`Self::apply_default_lexicon_with_strategy`]
+    /// 的 OnlyMissing 路径，历史签名与行为零变化；中途失败会留下部分注入结果，幂等
+    /// 设计已兜底（失败后重跑或管理页 sync 收敛到完整词表）。调用方请勿假设原子性。
     async fn apply_default_lexicon(
         &self,
         ctx: RequestContext,
         preset: &PresetOntologyLexicon,
     ) -> Result<OntologyLexiconApplyReport> {
+        self.apply_default_lexicon_with_strategy(
+            ctx,
+            preset,
+            PresetOntologySyncStrategy::OnlyMissing,
+        )
+        .await
+    }
+
+    /// 按策略注入预置词表（**非原子**；逐条 find → 按策略分流）
+    ///
+    /// - `OnlyMissing`：term_key / raw_term 已存在（含退役行）即跳过，与历史行为一致；
+    /// - `Overwrite`：已存在**非退役**条目按 seed 幂等覆写业务字段（display_name /
+    ///   description / required_fields / domain_classes / range_classes / weight_base /
+    ///   inverse_key / direction），term_key / id / status / created_at 永不触碰，
+    ///   退役行整体跳过（不覆写不复活），用户自拟词（库有 seed 无）不受影响；
+    ///   同义映射 (raw, kind) 已存在则覆写 target_key（无退役语义，一律执行动作）。
+    ///
+    /// `updated_*` 计数 = 执行覆写动作的条目数（非实际字段变化数，TL 口径③）。
+    /// 覆写复用 domain 既有 update 原语（NotFound 检查 / 引用校验随原语生效），不新写原语。
+    async fn apply_default_lexicon_with_strategy(
+        &self,
+        ctx: RequestContext,
+        preset: &PresetOntologyLexicon,
+        strategy: PresetOntologySyncStrategy,
+    ) -> Result<OntologyLexiconApplyReport> {
         let mut report = OntologyLexiconApplyReport::default();
 
-        // A. 实体类：term_key 归一化比对，已存在跳过（seed 不覆盖管理页本地修改）
+        // A. 实体类：不存在新建（两策略同路径）；存在时仅补缺跳过 / 覆盖式幂等覆写
         for p in &preset.classes {
             let key = normalize(&p.term_key);
-            if self
+            let existing = self
                 .ontology_dal
                 .find_class_by_term_key(ctx.clone(), &key)
-                .await?
-                .is_some()
-            {
-                report.skipped += 1;
-                continue;
-            }
-            let required_fields = serde_json::to_string(&p.required_fields).unwrap_or_default();
-            let po = OntologyClassPo::new(
-                key.clone(),
-                &p.display_name,
-                &p.description,
-                required_fields,
-            );
-            self.ontology_dal
-                .insert_class(ctx.clone(), &OntologyClass::from_po(po))
                 .await?;
-            report.inserted_classes.push(key);
+            match existing {
+                None => {
+                    let required_fields =
+                        serde_json::to_string(&p.required_fields).unwrap_or_default();
+                    let po = OntologyClassPo::new(
+                        key.clone(),
+                        &p.display_name,
+                        &p.description,
+                        required_fields,
+                    );
+                    self.ontology_dal
+                        .insert_class(ctx.clone(), &OntologyClass::from_po(po))
+                        .await?;
+                    report.inserted_classes.push(key);
+                }
+                Some(local) => {
+                    if strategy == PresetOntologySyncStrategy::Overwrite
+                        && local.po.status == OntologyStatus::Active
+                    {
+                        // 保留 id / term_key / status / created_at 原值，仅覆写业务字段
+                        let required_fields =
+                            serde_json::to_string(&p.required_fields).unwrap_or_default();
+                        let mut po = local.po.clone();
+                        po.display_name = p.display_name.clone();
+                        po.description = p.description.clone();
+                        po.required_fields = required_fields;
+                        self.update_class(ctx.clone(), &OntologyClass::from_po(po))
+                            .await?;
+                        report.updated_classes.push(key);
+                    } else {
+                        // 仅补缺跳过；覆盖式下退役行整体跳过
+                        report.skipped += 1;
+                    }
+                }
+            }
         }
 
-        // B. 关系类型：同策略；引用校验（classes 段已先行注入，直接查库验证）
+        // B. 关系类型：同策略分流；引用校验（classes 段已先行注入，直接查库验证）
         for p in &preset.relation_types {
             let key = normalize(&p.term_key);
-            if self
+            let existing = self
                 .ontology_dal
                 .find_relation_type_by_term_key(ctx.clone(), &key)
-                .await?
-                .is_some()
-            {
-                report.skipped += 1;
-                continue;
+                .await?;
+            match existing {
+                None => {
+                    let domain_classes =
+                        serde_json::to_string(&p.domain_classes).unwrap_or_default();
+                    let range_classes = serde_json::to_string(&p.range_classes).unwrap_or_default();
+                    // 预置快照引用不存在的实体类 = 快照残缺，fail fast 不静默
+                    self.validate_class_refs(&ctx, &domain_classes, "domain_classes")
+                        .await?;
+                    self.validate_class_refs(&ctx, &range_classes, "range_classes")
+                        .await?;
+                    let po = OntologyRelationTypePo::new(
+                        key.clone(),
+                        &p.display_name,
+                        &p.description,
+                        domain_classes,
+                        range_classes,
+                        p.weight_base.unwrap_or(1.0),
+                        p.inverse_key.clone(),
+                        p.direction.as_str(),
+                    );
+                    self.ontology_dal
+                        .insert_relation_type(ctx.clone(), &OntologyRelationType::from_po(po))
+                        .await?;
+                    report.inserted_relation_types.push(key);
+                }
+                Some(local) => {
+                    if strategy == PresetOntologySyncStrategy::Overwrite
+                        && local.po.status == OntologyStatus::Active
+                    {
+                        let domain_classes =
+                            serde_json::to_string(&p.domain_classes).unwrap_or_default();
+                        let range_classes =
+                            serde_json::to_string(&p.range_classes).unwrap_or_default();
+                        // 引用校验与新建路径同口径 fail fast
+                        self.validate_class_refs(&ctx, &domain_classes, "domain_classes")
+                            .await?;
+                        self.validate_class_refs(&ctx, &range_classes, "range_classes")
+                            .await?;
+                        // 保留 id / term_key / status / created_at 原值，仅覆写业务字段
+                        let mut po = local.po.clone();
+                        po.display_name = p.display_name.clone();
+                        po.description = p.description.clone();
+                        po.domain_classes = domain_classes;
+                        po.range_classes = range_classes;
+                        po.weight_base = p.weight_base.unwrap_or(1.0);
+                        po.inverse_key = p.inverse_key.clone();
+                        po.direction = p.direction.clone();
+                        self.update_relation_type(ctx.clone(), &OntologyRelationType::from_po(po))
+                            .await?;
+                        report.updated_relation_types.push(key);
+                    } else {
+                        // 仅补缺跳过；覆盖式下退役行整体跳过
+                        report.skipped += 1;
+                    }
+                }
             }
-            let domain_classes = serde_json::to_string(&p.domain_classes).unwrap_or_default();
-            let range_classes = serde_json::to_string(&p.range_classes).unwrap_or_default();
-            // 预置快照引用不存在的实体类 = 快照残缺，fail fast 不静默
-            self.validate_class_refs(&ctx, &domain_classes, "domain_classes")
-                .await?;
-            self.validate_class_refs(&ctx, &range_classes, "range_classes")
-                .await?;
-            let po = OntologyRelationTypePo::new(
-                key.clone(),
-                &p.display_name,
-                &p.description,
-                domain_classes,
-                range_classes,
-                p.weight_base.unwrap_or(1.0),
-                p.inverse_key.clone(),
-                p.direction.as_str(),
-            );
-            self.ontology_dal
-                .insert_relation_type(ctx.clone(), &OntologyRelationType::from_po(po))
-                .await?;
-            report.inserted_relation_types.push(key);
         }
 
-        // C. 同义映射：raw_term 归一化 + UNIQUE(raw_term, target_kind) 维度查重
-        //    （同一 raw 词可分别映射 class / relation 两类，只按 kind 判定已存在——
-        //    同 (raw, kind) 不同 target_key 也不覆盖：仅补缺不改既有映射）
+        // C. 同义映射：(raw, kind) 维度判定——不存在新建（目标存在性 fail fast）；
+        //    存在时仅补缺跳过 / 覆盖式一律执行覆写动作（归一化 target_key，同值幂等静默）
         for p in &preset.synonym_mappings {
             let raw = normalize(&p.raw_term);
             let existing = self
                 .ontology_dal
                 .find_synonyms_by_raw_term(ctx.clone(), &raw)
                 .await?;
-            if existing
+            let matched = existing
                 .iter()
-                .any(|s| s.po.target_kind == p.target_kind.as_str())
-            {
-                report.skipped += 1;
-                continue;
-            }
-            // 目标存在性校验（快照残缺 fail fast，口径与关系类型引用校验一致）
-            let target_key = normalize(&p.target_key);
-            match p.target_kind {
-                TermKind::Class => {
-                    if self
-                        .ontology_dal
-                        .find_class_by_term_key(ctx.clone(), &target_key)
-                        .await?
-                        .is_none()
-                    {
-                        bail_err!(
-                            InvalidRequest,
-                            "预置同义映射目标实体类 {} 不存在",
-                            p.target_key
-                        );
+                .find(|s| s.po.target_kind == p.target_kind.as_str());
+            match matched {
+                None => {
+                    // 目标存在性校验（快照残缺 fail fast，口径与关系类型引用校验一致）
+                    let target_key = normalize(&p.target_key);
+                    match p.target_kind {
+                        TermKind::Class => {
+                            if self
+                                .ontology_dal
+                                .find_class_by_term_key(ctx.clone(), &target_key)
+                                .await?
+                                .is_none()
+                            {
+                                bail_err!(
+                                    InvalidRequest,
+                                    "预置同义映射目标实体类 {} 不存在",
+                                    p.target_key
+                                );
+                            }
+                        }
+                        TermKind::Relation => {
+                            if self
+                                .ontology_dal
+                                .find_relation_type_by_term_key(ctx.clone(), &target_key)
+                                .await?
+                                .is_none()
+                            {
+                                bail_err!(
+                                    InvalidRequest,
+                                    "预置同义映射目标关系类型 {} 不存在",
+                                    p.target_key
+                                );
+                            }
+                        }
+                    }
+                    let po = OntologySynonymMappingPo::new(raw, p.target_kind.as_str(), target_key);
+                    self.ontology_dal
+                        .insert_synonym(ctx.clone(), &OntologySynonymMapping::from_po(po))
+                        .await?;
+                    report.inserted_synonyms += 1;
+                }
+                Some(local) => {
+                    if strategy == PresetOntologySyncStrategy::Overwrite {
+                        // 同义映射无退役语义，一律执行覆写动作（计数=动作数，TL 口径③）
+                        let target_key = normalize(&p.target_key);
+                        self.ontology_dal
+                            .update_synonym(ctx.clone(), &local.po.id, &target_key)
+                            .await?;
+                        report.updated_synonyms += 1;
+                    } else {
+                        report.skipped += 1;
                     }
                 }
-                TermKind::Relation => {
-                    if self
-                        .ontology_dal
-                        .find_relation_type_by_term_key(ctx.clone(), &target_key)
-                        .await?
-                        .is_none()
-                    {
-                        bail_err!(
-                            InvalidRequest,
-                            "预置同义映射目标关系类型 {} 不存在",
-                            p.target_key
-                        );
-                    }
-                }
             }
-            let po = OntologySynonymMappingPo::new(raw, p.target_kind.as_str(), target_key);
-            self.ontology_dal
-                .insert_synonym(ctx.clone(), &OntologySynonymMapping::from_po(po))
-                .await?;
-            report.inserted_synonyms += 1;
         }
 
         Ok(report)
+    }
+
+    /// 预置词表同步预览（只读，不写库）：seed 与本地现值逐条对比
+    ///
+    /// 缺口计数复用 [`Self::preview_lexicon_gaps`]（判定同源：归一化 term_key 物理
+    /// 存在即算已存在，含退役行）；条目细节（local_* / diff_fields / retired /
+    /// direction 对比）逐条 find 取本地现值。同义映射维持「以计数呈现」原口径
+    /// （raw→target 映射无显示名不逐条展示），其覆盖贡献由 existing_count 反推
+    /// （无退役语义，全部计入 overwrite_count）。退役行不参与覆写，diff_fields
+    /// 置空（跳过语义由 retired 标记承载）。
+    async fn build_preset_sync_preview(
+        &self,
+        ctx: RequestContext,
+        preset: &PresetOntologyLexicon,
+    ) -> Result<PreviewPresetOntologyResponse> {
+        let gaps = self.preview_lexicon_gaps(ctx.clone(), preset).await?;
+
+        let mut items: Vec<PresetOntologySyncItem> = Vec::new();
+        let mut overwrite_count = 0usize;
+        let mut retired_count = 0usize;
+        let mut existing_classes = 0usize;
+        let mut existing_relations = 0usize;
+
+        // A. 实体类：逐条 find 取本地现值（与 gaps 判定同键同库）
+        for p in &preset.classes {
+            let key = normalize(&p.term_key);
+            let local = self
+                .ontology_dal
+                .find_class_by_term_key(ctx.clone(), &key)
+                .await?;
+            let Some(entity) = local else {
+                items.push(PresetOntologySyncItem {
+                    kind: TermKind::Class,
+                    term_key: p.term_key.clone(),
+                    display_name: p.display_name.clone(),
+                    description: p.description.clone(),
+                    exists: false,
+                    local_display_name: None,
+                    local_description: None,
+                    diff_fields: Vec::new(),
+                    retired: false,
+                    seed_direction: None,
+                    local_direction: None,
+                });
+                continue;
+            };
+            existing_classes += 1;
+            let retired = entity.po.status != OntologyStatus::Active;
+            if retired {
+                retired_count += 1;
+            } else {
+                overwrite_count += 1;
+            }
+            let seed_required = serde_json::to_string(&p.required_fields).unwrap_or_default();
+            let mut diff_fields: Vec<String> = Vec::new();
+            if entity.po.display_name != p.display_name {
+                diff_fields.push("display_name".to_string());
+            }
+            if entity.po.description != p.description {
+                diff_fields.push("description".to_string());
+            }
+            if entity.po.required_fields != seed_required {
+                diff_fields.push("required_fields".to_string());
+            }
+            // 退役行整体跳过不覆写，diff 不进入影响面（retired 标记承载跳过语义）
+            if retired {
+                diff_fields.clear();
+            }
+            items.push(PresetOntologySyncItem {
+                kind: TermKind::Class,
+                term_key: p.term_key.clone(),
+                display_name: p.display_name.clone(),
+                description: p.description.clone(),
+                exists: true,
+                local_display_name: Some(entity.po.display_name.clone()),
+                local_description: Some(entity.po.description.clone()),
+                diff_fields,
+                retired,
+                seed_direction: None,
+                local_direction: None,
+            });
+        }
+
+        // B. 关系类型：逐条 find 取本地现值 + direction 对比（本专项核心字段）
+        for p in &preset.relation_types {
+            let key = normalize(&p.term_key);
+            let local = self
+                .ontology_dal
+                .find_relation_type_by_term_key(ctx.clone(), &key)
+                .await?;
+            let Some(entity) = local else {
+                items.push(PresetOntologySyncItem {
+                    kind: TermKind::Relation,
+                    term_key: p.term_key.clone(),
+                    display_name: p.display_name.clone(),
+                    description: p.description.clone(),
+                    exists: false,
+                    local_display_name: None,
+                    local_description: None,
+                    diff_fields: Vec::new(),
+                    retired: false,
+                    seed_direction: Some(p.direction.clone()),
+                    local_direction: None,
+                });
+                continue;
+            };
+            existing_relations += 1;
+            let retired = entity.po.status != OntologyStatus::Active;
+            if retired {
+                retired_count += 1;
+            } else {
+                overwrite_count += 1;
+            }
+            let seed_domain = serde_json::to_string(&p.domain_classes).unwrap_or_default();
+            let seed_range = serde_json::to_string(&p.range_classes).unwrap_or_default();
+            let mut diff_fields: Vec<String> = Vec::new();
+            if entity.po.display_name != p.display_name {
+                diff_fields.push("display_name".to_string());
+            }
+            if entity.po.description != p.description {
+                diff_fields.push("description".to_string());
+            }
+            if entity.po.domain_classes != seed_domain {
+                diff_fields.push("domain_classes".to_string());
+            }
+            if entity.po.range_classes != seed_range {
+                diff_fields.push("range_classes".to_string());
+            }
+            if entity.po.weight_base != p.weight_base.unwrap_or(1.0) {
+                diff_fields.push("weight_base".to_string());
+            }
+            if entity.po.inverse_key != p.inverse_key {
+                diff_fields.push("inverse_key".to_string());
+            }
+            if entity.po.direction != p.direction {
+                diff_fields.push("direction".to_string());
+            }
+            // 退役行整体跳过不覆写，diff 不进入影响面（retired 标记承载跳过语义）
+            if retired {
+                diff_fields.clear();
+            }
+            items.push(PresetOntologySyncItem {
+                kind: TermKind::Relation,
+                term_key: p.term_key.clone(),
+                display_name: p.display_name.clone(),
+                description: p.description.clone(),
+                exists: true,
+                local_display_name: Some(entity.po.display_name.clone()),
+                local_description: Some(entity.po.description.clone()),
+                diff_fields,
+                retired,
+                seed_direction: Some(p.direction.clone()),
+                local_direction: Some(entity.po.direction.clone()),
+            });
+        }
+
+        // 同义映射覆盖贡献：existing_count 反推（无退役语义全覆盖计入）
+        let existing_synonyms = gaps
+            .skipped
+            .saturating_sub(existing_classes)
+            .saturating_sub(existing_relations);
+        overwrite_count += existing_synonyms;
+
+        Ok(PreviewPresetOntologyResponse {
+            items,
+            missing_count: gaps.missing_classes.len()
+                + gaps.missing_relation_types.len()
+                + gaps.missing_synonyms,
+            existing_count: gaps.skipped,
+            overwrite_count,
+            retired_count,
+        })
     }
 
     async fn export_lexicon(&self, ctx: RequestContext) -> Result<PresetOntologyLexicon> {

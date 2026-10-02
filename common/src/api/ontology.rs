@@ -492,6 +492,18 @@ pub struct PresetOntologySyncItem {
     pub description: String,
     /// 库内是否已存在（仅补缺策略下存在即跳过）
     pub exists: bool,
+    /// 库内当前展示名（不存在为 None）
+    pub local_display_name: Option<String>,
+    /// 库内当前语义描述（不存在为 None）
+    pub local_description: Option<String>,
+    /// 与 seed 不一致的字段名清单（覆盖策略下将按 seed 覆写）
+    pub diff_fields: Vec<String>,
+    /// 库内是否为退役行（覆盖策略下整体跳过）
+    pub retired: bool,
+    /// seed 中关系方向（仅关系类型条目携带；实体类/同义映射为 None）
+    pub seed_direction: Option<String>,
+    /// 库内当前关系方向（仅已存在的关系类型条目携带）
+    pub local_direction: Option<String>,
 }
 
 /// 预置词表同步预览响应
@@ -503,14 +515,34 @@ pub struct PreviewPresetOntologyResponse {
     pub missing_count: usize,
     /// 库内已存在的数量（仅补缺策略下直接跳过）
     pub existing_count: usize,
+    /// 覆盖策略下将执行覆写动作的条目数（已存在非退役条目一律幂等覆写；与 sync 响应 updated 同口径）
+    pub overwrite_count: usize,
+    /// 库内退役行数（覆盖策略下整体跳过不覆写；同时计入 existing_count）
+    pub retired_count: usize,
+}
+
+/// 预置词表同步策略
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+pub enum PresetOntologySyncStrategy {
+    /// 仅补缺：term_key 不存在才插入，已存在条目（含退役行）一律跳过
+    #[default]
+    OnlyMissing,
+    /// 覆盖重置：对已存在非退役条目按 seed 幂等覆写（term_key / id / status / created_at 永不触碰），退役行整体跳过
+    Overwrite,
 }
 
 /// 同步预置词表请求
 ///
-/// 无策略字段：seed 注入**仅补缺**（term_key 不存在才插入），不做覆盖 /
-/// 删除——管理页是词表的唯一修改入口，避免两处写路径打架。
+/// `strategy` 缺省为**仅补缺**（term_key 不存在才插入，已存在条目跳过），
+/// 与历史行为一致；显式传 `Overwrite` 时对已存在非退役条目按 seed 幂等
+/// 覆写，退役行整体跳过。管理页仍是词表条目增删的唯一修改入口，同步只
+/// 承载 seed 预置词表的注入与对齐。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
-pub struct SyncPresetOntologyRequest {}
+pub struct SyncPresetOntologyRequest {
+    /// 同步策略（缺省=仅补缺）
+    #[serde(default)]
+    pub strategy: PresetOntologySyncStrategy,
+}
 
 /// 同步预置词表响应
 ///
@@ -519,7 +551,9 @@ pub struct SyncPresetOntologyRequest {}
 pub struct SyncPresetOntologyResponse {
     /// 新建的词条数量
     pub created: usize,
-    /// 跳过的词条数量（term_key 已存在）
+    /// 执行覆写动作的条目数量（覆盖策略下命中非退役条目即计，非实际字段变化数）
+    pub updated: usize,
+    /// 跳过的词条数量（仅补缺下 term_key 已存在；覆盖下为退役行）
     pub skipped: usize,
     /// seed 中预置词条总数
     pub total: usize,

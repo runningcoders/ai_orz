@@ -495,6 +495,15 @@ pub struct OntologyLexiconApplyReport {
     pub inserted_relation_types: Vec<String>,
     /// 新增同义映射条数
     pub inserted_synonyms: usize,
+    /// 覆写实体类 term_key 清单（覆盖策略下执行覆写动作的实体类，按注入顺序）
+    #[serde(default)]
+    pub updated_classes: Vec<String>,
+    /// 覆写关系类型 term_key 清单（覆盖策略下执行覆写动作的关系类型，按注入顺序）
+    #[serde(default)]
+    pub updated_relation_types: Vec<String>,
+    /// 覆写同义映射条数
+    #[serde(default)]
+    pub updated_synonyms: usize,
     /// 跳过条目数（term_key / raw_term 已存在，三段合计）
     pub skipped: usize,
 }

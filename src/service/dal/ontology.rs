@@ -310,6 +310,9 @@ pub trait OntologyDal: Send + Sync {
         query: OntologySynonymQuery,
     ) -> Result<PagedResult<OntologySynonymMapping>>;
 
+    /// 更新同义映射 target_key（幂等；同义表无 updated_at，仅 UPDATE 该列）
+    async fn update_synonym(&self, ctx: RequestContext, id: &str, target_key: &str) -> Result<()>;
+
     /// 删除同义映射（物理删除；幂等；删除后相关词条自然回落漂移）
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }
@@ -768,6 +771,10 @@ impl OntologyDal for OntologyDalImpl {
             .query_synonyms(ctx, query)
             .await?
             .map(OntologySynonymMapping::from_po))
+    }
+
+    async fn update_synonym(&self, ctx: RequestContext, id: &str, target_key: &str) -> Result<()> {
+        self.ontology_dao.update_synonym(ctx, id, target_key).await
     }
 
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()> {

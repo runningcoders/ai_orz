@@ -419,3 +419,151 @@ async fn test_apply_single_preset_agent(pool: SqlitePool) {
         "恢复不应冲掉软删行原有的模型绑定"
     );
 }
+
+/// 预置词表同步守卫①：Overwrite 覆写生效且永不触碰边界成立
+///
+/// 覆盖路径逐点断言（TL 裁定口径）：业务字段（display_name / direction）按 seed 覆写；
+/// term_key / id / status / created_at 保持本地原值；退役行整体跳过不覆写不复活；
+/// updated 计数 = 执行覆写动作的条目数（非实际字段变化数）；preview retired_count
+/// 冒烟对账。随 seed 的 21 关系词全量入库后，后续 OnlyMissing 复调 created=0
+/// 幂等性同链验证。
+#[sqlx::test]
+async fn test_sync_preset_ontology_overwrite_strategy(pool: SqlitePool) {
+    use crate::handlers::system::seed::sync_preset_ontology::{
+        preview_preset_ontology, sync_preset_ontology,
+    };
+    use crate::service::domain::hr;
+    use common::api::ontology::{PresetOntologySyncStrategy, SyncPresetOntologyRequest};
+
+    let ctx = init_test_env(pool).await;
+    let _org_id = prepare_test_data(&ctx).await;
+
+    // 注入一版本地值（模拟管理页本地修改），为后续 Overwrite 断言提供基线
+    let domain = hr::domain();
+    let class_domain = domain.ontology_domain();
+    class_domain
+        .create_class(
+            ctx.clone(),
+            &crate::models::ontology::OntologyClass::from_po(
+                crate::models::ontology::OntologyClassPo::new(
+                    "agent",
+                    "本地展示名 Agent",
+                    "本地描述（将被 seed 覆写）",
+                    "[]",
+                ),
+            ),
+        )
+        .await
+        .unwrap();
+
+    // Overwrite 全量注入 seed
+    let report = sync_preset_ontology(
+        ctx.clone(),
+        SyncPresetOntologyRequest {
+            strategy: PresetOntologySyncStrategy::Overwrite,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(report.created > 0, "缺失条目应被新建");
+    assert!(
+        report.updated > 0,
+        "本地已有条目应执行覆写动作（updated 计数口径=动作数）"
+    );
+
+    // 本地修改被 seed 值覆写 + term_key / created_at / id 保持本地原值
+    let class = crate::service::dal::ontology::dal()
+        .find_class_by_term_key(ctx.clone(), "agent")
+        .await
+        .unwrap()
+        .expect("agent 应已入库");
+    assert_eq!(class.po.display_name, "智能体");
+    assert_eq!(class.po.description, "具备大脑与认知能力的自主执行实体");
+
+    // 关系词 direction 随 seed 落库（related=undirected / contains=directed）
+    let related = crate::service::dal::ontology::dal()
+        .find_relation_type_by_term_key(ctx.clone(), "related")
+        .await
+        .unwrap()
+        .expect("related 应已入库");
+    assert_eq!(related.po.direction, "undirected");
+    let contains = crate::service::dal::ontology::dal()
+        .find_relation_type_by_term_key(ctx.clone(), "contains")
+        .await
+        .unwrap()
+        .expect("contains 应已入库");
+    assert_eq!(contains.po.direction, "directed");
+    // seed 展示名同步覆写（contains 本地原为「包含」，仅补缺注入不产生差异）
+    assert_eq!(contains.po.display_name, "包含");
+
+    // 退役行整体跳过：retire 后再次 Overwrite，updated 不含该行且状态保持 Retired
+    hr::domain()
+        .ontology_domain()
+        .retire_relation_type(ctx.clone(), &related.po.id)
+        .await
+        .unwrap();
+    let before = crate::service::dal::ontology::dal()
+        .find_relation_type_by_term_key(ctx.clone(), "related")
+        .await
+        .unwrap()
+        .unwrap();
+    let report2 = sync_preset_ontology(
+        ctx.clone(),
+        SyncPresetOntologyRequest {
+            strategy: PresetOntologySyncStrategy::Overwrite,
+        },
+    )
+    .await
+    .unwrap();
+    let after = crate::service::dal::ontology::dal()
+        .find_relation_type_by_term_key(ctx.clone(), "related")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.po.status, common::enums::OntologyStatus::Retired);
+    assert_eq!(after.po.display_name, before.po.display_name);
+    assert_eq!(after.po.direction, before.po.direction);
+
+    // preview retired_count 冒烟：seed 21 词中仅 related 退役
+    let preview = preview_preset_ontology(ctx.clone(), Default::default())
+        .await
+        .unwrap();
+    assert_eq!(preview.retired_count, 1);
+
+    // 同链幂等性：同一策略复调，created=0（缺失条目上一轮已建齐）
+    assert_eq!(report2.created, 0, "重复 Overwrite 不应重复新建");
+}
+
+/// 预置词表同步守卫②：缺省（不传 strategy）与历史行为逐字节一致
+///
+/// serde default=OnlyMissing 兼容守卫：空请求体走仅补缺路径，已存在条目
+/// 跳过、无覆写动作（updated=0），审计与响应计数形态与历史一致。
+#[sqlx::test]
+async fn test_sync_preset_ontology_default_is_only_missing(pool: SqlitePool) {
+    use crate::handlers::system::seed::sync_preset_ontology::sync_preset_ontology;
+    use common::api::ontology::SyncPresetOntologyRequest;
+
+    let ctx = init_test_env(pool).await;
+    let _org_id = prepare_test_data(&ctx).await;
+
+    // 空请求体（serde default 生效）→ 仅补缺注入 seed
+    let report = sync_preset_ontology(ctx.clone(), SyncPresetOntologyRequest::default())
+        .await
+        .unwrap();
+    assert!(report.created > 0);
+    assert_eq!(report.updated, 0, "缺省策略不得产生覆写动作");
+    assert!(report.skipped == 0, "空库仅补缺首轮无跳过");
+    assert_eq!(
+        report.created + report.skipped,
+        report.total,
+        "created + skipped 应对账 seed 总数"
+    );
+
+    // 复调幂等：全部计入 skipped，created=updated=0
+    let report2 = sync_preset_ontology(ctx.clone(), SyncPresetOntologyRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(report2.created, 0);
+    assert_eq!(report2.updated, 0);
+    assert_eq!(report2.skipped, report2.total);
+}

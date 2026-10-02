@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE ontology_synonym_mappings SET target_key = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "f74382ef7ed46e7c56979c725f8a296f4d8ef0ee97b80b378a1bd4aa14c90d82"
+}

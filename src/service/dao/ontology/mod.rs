@@ -161,6 +161,9 @@ pub trait OntologyDao: Send + Sync {
     async fn list_all_synonyms(&self, ctx: RequestContext)
     -> Result<Vec<OntologySynonymMappingPo>>;
 
+    /// 更新同义映射目标词（target_key 归一化由实现侧单点完成；幂等：不存在静默成功）
+    async fn update_synonym(&self, ctx: RequestContext, id: &str, target_key: &str) -> Result<()>;
+
     /// 物理删除（映射是解释规则非事实数据，无退役语义；幂等）
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }

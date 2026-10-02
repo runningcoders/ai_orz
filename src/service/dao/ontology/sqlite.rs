@@ -331,7 +331,7 @@ FROM ontology_relation_types ORDER BY term_key ASC
             r#"
 UPDATE ontology_relation_types
 SET display_name = ?, description = ?, domain_classes = ?, range_classes = ?,
-    weight_base = ?, inverse_key = ?, updated_at = ?
+    weight_base = ?, inverse_key = ?, direction = ?, updated_at = ?
 WHERE id = ?
             "#,
             relation_type.display_name,
@@ -340,6 +340,7 @@ WHERE id = ?
             relation_type.range_classes,
             relation_type.weight_base,
             relation_type.inverse_key,
+            relation_type.direction,
             now,
             relation_type.id
         )
@@ -390,6 +391,19 @@ WHERE id = ?
                 ),
             ));
         }
+        Ok(())
+    }
+
+    async fn update_synonym(&self, ctx: RequestContext, id: &str, target_key: &str) -> Result<()> {
+        // 归一化与写入侧单点同口径；幂等（不存在或同值均静默成功）；表无 updated_at 仅 UPDATE 该列
+        let target_key = normalize(target_key);
+        sqlx::query!(
+            "UPDATE ontology_synonym_mappings SET target_key = ? WHERE id = ?",
+            target_key,
+            id
+        )
+        .execute(ctx.db_pool())
+        .await?;
         Ok(())
     }
 

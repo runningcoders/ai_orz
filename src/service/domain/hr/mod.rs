@@ -38,7 +38,7 @@ use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::api::ontology::{
     GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
     ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
-    ListDriftRelationDetailsResponse,
+    ListDriftRelationDetailsResponse, PresetOntologySyncStrategy, PreviewPresetOntologyResponse,
 };
 use common::api::{AgentMatchCriteria, match_scores};
 use common::enums::{AgentStatus, SkillStatus};
@@ -849,7 +849,7 @@ pub trait OntologyDomain: Send + Sync {
     /// 删除同义映射（物理删除；幂等；删除后相关词条自然回落漂移）
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
-    // D. seed 预置注入（仅补缺：term_key / raw_term 已存在跳过，只新增不修改删除）
+    // D. seed 预置注入（缺省仅补缺；Overwrite 覆盖式同步见 apply_default_lexicon_with_strategy）
 
     /// 幂等注入预置词表（三段逐条补缺），返回注入报告
     async fn apply_default_lexicon(
@@ -857,6 +857,33 @@ pub trait OntologyDomain: Send + Sync {
         ctx: RequestContext,
         preset: &PresetOntologyLexicon,
     ) -> Result<OntologyLexiconApplyReport>;
+
+    /// 按策略注入预置词表（幂等、**非原子**，语义与 [`Self::apply_default_lexicon`] 同源）
+    ///
+    /// - `OnlyMissing`：与 [`Self::apply_default_lexicon`] 逐字节一致（薄委托）；
+    /// - `Overwrite`：对已存在**非退役**条目按 seed 幂等覆写（业务字段=display_name /
+    ///   description / required_fields / domain_classes / range_classes / weight_base /
+    ///   inverse_key / direction），term_key / id / status / created_at 永不触碰，
+    ///   退役行整体跳过，用户自拟词（库有 seed 无）不受影响；`updated` 计数=
+    ///   执行覆写动作的条目数（非实际字段变化数，TL 口径③）。
+    async fn apply_default_lexicon_with_strategy(
+        &self,
+        ctx: RequestContext,
+        preset: &PresetOntologyLexicon,
+        strategy: PresetOntologySyncStrategy,
+    ) -> Result<OntologyLexiconApplyReport>;
+
+    /// 预置词表同步预览（只读，不写库）：逐条对比 seed 与本地现值
+    ///
+    /// 产出 items（exists / local_* / diff_fields / retired / direction 对比）与
+    /// missing / existing / overwrite / retired 四计数，判定口径与
+    /// [`Self::preview_lexicon_gaps`] 同源（归一化 term_key 物理存在即算已存在，
+    /// 含退役行），供管理页同步 Modal 影响面前置展示。
+    async fn build_preset_sync_preview(
+        &self,
+        ctx: RequestContext,
+        preset: &PresetOntologyLexicon,
+    ) -> Result<PreviewPresetOntologyResponse>;
 
     /// 导出当前生效词表（seed 快照装配 / sync preview 数据源）
     ///
