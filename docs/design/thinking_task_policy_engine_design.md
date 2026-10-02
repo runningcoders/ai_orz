@@ -280,7 +280,7 @@ pub trait Policy: Send + Sync + 'static {
 
 | 场景 | UserCancel | ContextOverflow | MaxRounds | Timeout | 触发后处理 |
 |------|:---:|:---:|:---:|:---:|------|
-| `Awaken` | ✅ | ✅（待整合） | ✅ | ✅ | ContextOverflow → sleep_and_settle；MaxRounds/Timeout/TokenBudget → awaken_for_summary；Cancelled → 清理退出 |
+| `Awaken` | ✅ | ✅（待整合） | ✅ | ✅ | ContextOverflow → compact_context（就地压缩后 continue）；MaxRounds/Timeout/TokenBudget → awaken_for_summary；Cancelled → 清理退出 |
 | `Settle` | ✅ | ❌ | ✅ | ✅ | 所有触发 → 兜底返回空字符串（现有行为） |
 | `Summary` | ✅ | ❌ | ✅ | ✅ | 所有触发 → 兜底返回空字符串（现有行为） |
 | `IntentAnalyze` | ✅ | ❌ | ✅ | ✅ | 所有触发 → 返回 Err（现有行为，外层降级为 None） |
@@ -334,8 +334,8 @@ pub trait Policy: Send + Sync + 'static {
 IntentAnalyze:  intent-analyze-{log_id}        ← Phase 1，独立 trace_id
     ↓
 Awaken 主循环:   trace-{agent}-{ts1}-{rand1}   ← Phase 2，所有轮次复用
-    ↓ (ContextOverflow 触发)
-Settle:          trace-{agent}-{ts2}-{rand2}   ← 新 trace_id，通过 pending_trace_ids 关联回 awaken
+    ↓ (ContextOverflow 触发，就地压缩后 continue)
+Compaction:      compact-{awaken_trace_id}     ← 派生 trace_id，不切换主循环的思考上下文
     ↓ (回到 Awaken 主循环，仍用 ts1)
     ↓ (Final 或 MaxRoundsExceeded 触发)
 Summary:         trace-{agent}-{ts3}-{rand3}   ← 新 trace_id，log_id = summary-{awaken_trace_id}
@@ -385,7 +385,7 @@ consumer/message.rs on_event(message)
         │   └── 返回 IntentAnalysis 或 None（降级）
         │
         ├── Phase 2: awaken loop（同上改造）
-        │   ├── ContextOverflow → sleep_and_settle（build 新 policy）
+        │   ├── ContextOverflow → compact_context（就地压缩后 continue）
         │   ├── MaxRoundsExceeded → awaken_for_summary（build 新 policy）
         │   └── Final → awaken_for_summary（统一总结流程）
         │

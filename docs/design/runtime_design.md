@@ -1090,9 +1090,11 @@ Phase 3 的核心目标是让 Agent 在多回合对话中能够：
 
 系统采用**两层轮次限制**，分别在不同层级保护 Agent 不陷入无限循环：
 
-**第一层：consumer 层跨唤醒累计工具调用数（`max_thinking_depth`）**
+**第一层：consumer 层单任务内唤醒次数上限（`max_thinking_depth`）**
 
-**设计原则**：在消费者层实现，利用统计模块查询当前任务的累计工具调用次数，与 Agent 配置的 `max_thinking_depth`（默认 10）对比。防止 Agent 在无限消息循环中空转。
+**设计原则**：在消费者层实现，利用统计模块按 `agent_id + task_id` 查询 `agent_awake_events` 的累计条数（每次唤醒记 1 条），与 Agent 配置的 `max_thinking_depth`（默认 365，与系统配置 `[agent].max_thinking_rounds` 对齐）对比。防止 Agent 在无限消息循环中空转。
+
+> ⚠️ **口径澄清**：这里统计的是**单任务内的唤醒次数**，不是工具调用数、也不是思考轮次；单次唤醒内的思考轮次由第二层的 `max_thinking_rounds` 单独把关。
 
 **执行流程**：
 ```
@@ -1101,7 +1103,7 @@ Phase 3 的核心目标是让 Agent 在多回合对话中能够：
     ├── 查询 Agent（含统计信息）
     │       └── AgentFetchOptions { with_stats: true, stats_task_id: Some(task_id) }
     │
-    ├── 检查跨唤醒累计工具调用数
+    ├── 检查该任务内的累计唤醒次数
     │       └── 如果 call_summary.total_calls >= max_thinking_depth
     │               └── 发送提示消息，终止唤醒
     │
@@ -1130,7 +1132,7 @@ Agent.runtime_config.max_thinking_rounds（非 0 时优先）
 ```
 
 **与第一层的区别**：
-- 第一层统计**跨消息**累计工具调用数，保护消息循环层
+- 第一层统计**单任务内**累计唤醒次数，保护消息循环层
 - 第二层统计**单次唤醒内**思考轮次（包含上下文压缩后的跨压缩累计），保护 think loop 层
 - 长任务可能需要多次上下文压缩，压缩次数本身不限制，只限制总思考轮次
 
@@ -1197,13 +1199,13 @@ awaken() 收到 ThinkLoopResult::MaxRoundsExceeded { messages, total_rounds }
 
 **pending_trace_ids 维护规则**：
 - 初始化：`[awaken_trace_id]`（awaken 流程预生成的 trace_id）
-- 每次 `sleep_and_settle` 完成后重置：`[settle_trace_id]`（下次总结范围 = 自上次压缩以来）
+- 每次上下文压缩（`compact_context`）完成后重置：`[compact_trace_id]`（下次总结范围 = 自上次压缩以来）
 - MaxRoundsExceeded 触发总结时：`pending_trace_ids + [awaken_trace_id]`（兜底去重）
 - 正常 Final 完成触发总结时：直接使用 `pending_trace_ids`（已含 awaken_trace_id）
 
 #### 21.2.1b 上下文压缩触发阈值
 
-**设计原则**：基于 ModelProvider 配置的上下文长度，自动检测 think loop 中的上下文溢出并触发压缩（sleep_and_settle 沉淀后重试）。
+**设计原则**：基于 ModelProvider 配置的上下文长度，自动检测 think loop 中的上下文溢出并触发**就地压缩**（`compact_context` 压缩后继续思考，**不置 `Resting`**）。
 
 **阈值优先级**：
 ```
@@ -1223,14 +1225,14 @@ run_think_loop() 每轮 think 后
     │
     └── 调用方（awaken）收到 ContextOverflow
             ├── total_rounds += rounds_used
-            ├── 调用 sleep_and_settle(pending_trace_ids) 沉淀记忆
-            │   └── sleep_and_settle 内部强制写入沉淀摘要到短期记忆（含 trace_ids）
-            ├── 压缩完成后重置 pending_trace_ids = [settle_trace_id]
+            ├── 调用 compact_context(&messages, pending_trace_ids) 就地压缩
+            │   └── 压缩产物落为一条短期记忆，并作为 compacted_context 注入下一轮
+            ├── 压缩完成后重置 pending_trace_ids = [compact_trace_id]
             │   └── 下次总结范围 = 自上次压缩以来
-            └── 重新构造 prompt 调用 run_think_loop（携带累计轮次）
+            └── `continue`：用压缩结果重建 prompt 调用 run_think_loop（携带累计轮次）
 ```
 
-**关键代码位置**：`src/service/domain/runtime/awakening.rs` → `run_think_loop()` 中的 `overflow_threshold` 计算
+**关键代码位置**：`src/service/domain/runtime/think_loop.rs` → `run_think_loop()` 的溢出判定（`overflow_threshold`）；`src/service/domain/runtime/awakening.rs` → ContextOverflow 分支调用 `compact_context`
 
 **配置来源**：
 - `ModelProviderConfig.max_context_length` — 模型支持的最大 token 数
@@ -2028,13 +2030,14 @@ settle_body
 4. **强制写入短期记忆指令**：两个 prompt 模板都明确要求 Agent **必须**调用 `save_short_term_memory`，并将 prompt 中提供的 `trace_ids` 填入 `trace_ids` 字段，保证记忆可追溯
 5. **API 扩展**：`SaveShortTermMemoryParams` 新增 `trace_ids: Option<Vec<String>>` 字段，handler 序列化后存入 `ShortTermMemoryIndexPo.trace_ids`
 
-**关键流程**（统一后）：
+**关键流程**（统一后；`ContextOverflow` 分支已按后续「压缩改为就地 `compact_context`」重构更新）：
+
 ```
 awaken 循环
     │
-    ├── ContextOverflow → sleep_and_settle(trace_ids=pending_trace_ids)
-    │   ├── 沉淀 + 强制写入沉淀摘要（含 trace_ids）
-    │   └── 重置 pending_trace_ids = [settle_trace_id]
+    ├── ContextOverflow → compact_context(trace_ids=pending_trace_ids)
+    │   ├── 就地压缩上下文为一条短期记忆（不置 Resting，Agent 保持 Busy）
+    │   └── 重置 pending_trace_ids = [compact_trace_id]
     │
     ├── MaxRoundsExceeded → awaken_for_summary(trace_ids=pending_trace_ids + [awaken_trace_id])
     │   └── 总结 + 强制写入短期记忆（含 trace_ids）

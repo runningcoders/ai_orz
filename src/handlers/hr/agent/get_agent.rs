@@ -111,6 +111,7 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
     let runtime_config = {
         let rc = agent.po.get_runtime_config();
         Some(AgentRuntimeConfigInfo {
+            max_thinking_depth: rc.max_thinking_depth,
             max_thinking_rounds: rc.max_thinking_rounds,
             intent_analyze_max_rounds: rc.intent_analyze_max_rounds,
             summary_max_rounds: rc.summary_max_rounds,

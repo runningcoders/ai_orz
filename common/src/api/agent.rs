@@ -158,12 +158,32 @@ pub struct AgentRemoteConfig {
     pub timeout_secs: u64,
 }
 
+/// 最大思考深度默认值（**单任务内 Agent 唤醒次数上限**）
+///
+/// 计量口径：consumer 层按 `agent_id + task_id` 统计 `agent_awake_events`
+/// 的累计条数（每次唤醒记 1 条，见 `domain/runtime/awakening.rs`），达到该值即
+/// 停止唤醒并通知来源方。它**不是**工具调用数、**不是**思考轮次 —— 轮次由
+/// `max_thinking_rounds` 在 awakening 层按单次唤醒内的轮次单独把关。
+///
+/// `AgentRuntimeConfig`（后端存储结构）与 `AgentRuntimeConfigInfo`（前后端 API DTO）
+/// 共用此常量，避免默认值在两端漂移。取值与系统配置 `[agent].max_thinking_rounds`
+/// 对齐（365），便于记忆。
+pub const DEFAULT_MAX_THINKING_DEPTH: i32 = 365;
+
+/// serde 默认值函数，供 `#[serde(default = "default_max_thinking_depth")]` 引用。
+pub fn default_max_thinking_depth() -> i32 {
+    DEFAULT_MAX_THINKING_DEPTH
+}
+
 /// Agent 运行时配置信息（详情页展示 / 编辑表单使用）
 ///
 /// 对应 `AgentRuntimeConfig` 中可由用户在 UI 配置的字段子集。
 /// 其余字段（如 installed_tags / external_config 等）由其他流程管理，不在本结构体暴露。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgentRuntimeConfigInfo {
+    /// 最大思考深度（**单任务内唤醒次数上限**；达到即停止唤醒并通知来源方）
+    #[serde(default = "default_max_thinking_depth")]
+    pub max_thinking_depth: i32,
     /// 单次唤醒最大思考轮次（0 = 使用系统配置）
     pub max_thinking_rounds: usize,
     /// 意图识别阶段最大思考轮次（0 = 使用系统配置）

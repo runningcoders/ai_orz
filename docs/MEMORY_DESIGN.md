@@ -885,11 +885,9 @@ Agent 可以这样使用：
 ### 17.1 设计理念
 
 对齐人类的睡眠机制：
-- **短暂休息**：上下文过载时，清理一下思绪，继续工作
 - **长时间睡眠**：每天定时，整理当天的记忆，沉淀为知识
 
 Agent 也一样：
-- **短暂休息**：连续工作 N 轮后，进入 Resting 状态，清理上下文
 - **睡眠沉淀**：每日定时触发，将近期短期记忆消化为长期知识图谱
 
 ### 17.2 沉淀方式的演进
@@ -898,7 +896,7 @@ Agent 也一样：
 
 **v2 自主沉淀（2026-07-31）**：沉淀是"信号"，让 Agent 进入特定工作模式自主完成。handler 只负责生成待沉淀记忆摘要 + 调用 `sleep_and_settle`，沉淀约束模板内聚在 `PromptBuilder.build_sleep_prompt`，Agent 用已有记忆类工具自主完成归纳、查询、创建、更新、建关系、加 published 标签等操作。
 
-**v2.1 强制写入沉淀摘要（2026-08-05，v3.7）**：v2 依赖 Agent 自发调用 `save_short_term_memory` 写入短期记忆，实际运行中经常遗忘。v3.7 在 `build_sleep_prompt` 模板中增加"强制写入沉淀摘要"步骤，明确要求 Agent **必须**调用 `save_short_term_memory` 并填入 `trace_ids`（由 prompt 提供，记录本次沉淀依赖的 trace 列表）。同时 `sleep_and_settle` 签名新增 `trace_ids` 参数，awaken 上下文压缩时传入 `pending_trace_ids`，独立沉淀场景传空。
+**v2.1 强制写入沉淀摘要（2026-08-05，v3.7）**：v2 依赖 Agent 自发调用 `save_short_term_memory` 写入短期记忆，实际运行中经常遗忘。v3.7 在 `build_sleep_prompt` 模板中增加"强制写入沉淀摘要"步骤，明确要求 Agent **必须**调用 `save_short_term_memory` 并填入 `trace_ids`（由 prompt 提供，记录本次沉淀依赖的 trace 列表）。同时 `sleep_and_settle` 签名新增 `trace_ids` 参数（独立沉淀场景传空）；awaken 侧的同一「按 trace 划界」思路后来改由 `compact_context` / `abort_summary` 承载。
 
 **v2 的核心认知**：
 - 沉淀是 Agent 的自主认知行为，不是工程化的 JSON 解析
@@ -914,10 +912,6 @@ Idle (空闲)
   │     │
   │     └─ 处理完成 → Idle
   │
-  ├─ 上下文过载 → Resting (休息中) ← 短暂休息
-  │     │
-  │     └─ 休息完成 → Idle
-  │
   └─ 定时睡眠 → Resting (休息中) ← 长时间睡眠（sleep_and_settle）
         │
         └─ 沉淀完成 → Idle
@@ -926,19 +920,15 @@ Idle (空闲)
 **状态说明**：
 - `Idle`：空闲，可以接受新消息
 - `Busy`：忙碌，正在处理消息，拒绝新消息
-- `Resting`：休息中，不接受新消息，正在进行上下文清理或知识沉淀
+- `Resting`：休息中，不接受新消息，正在进行知识沉淀
 
 `sleep_and_settle` 复用 `BusyGuard` 的 RAII 机制保证 `set_idle` 一定被执行（Drop 语义与 Resting 恢复一致）。
 
 ### 17.4 触发策略
 
-#### 策略一：上下文过载触发短暂休息
+> **上下文过载不再是休息触发点**：`awaken` 主循环收到 `ContextOverflow` 后走 `compact_context` 就地压缩上下文并继续思考（Agent 全程保持 `Busy`，见 `docs/design/runtime_design.md` §21.2.1b）。因此 `Resting` 的唯一来源是下面的沉淀链路。
 
-- **触发条件**：Agent 连续工作轮次达到 `max_thinking_depth` 阈值
-- **休息内容**：设置为 Resting 状态，简要清理上下文，快速恢复为 Idle
-- **类比**：人类工作累了，休息 5 分钟
-
-#### 策略二：定时触发长时间睡眠（sleep_and_settle）
+#### 定时触发长时间睡眠（sleep_and_settle）
 
 - **触发条件**：通过定时任务系统配置（如每日凌晨 2 点）或 Agent 主动调用 `settle_memory` 神经工具
 - **休息内容**：
@@ -952,7 +942,7 @@ Idle (空闲)
 ### 17.5 沉淀流程（v2 自主沉淀）
 
 ```
-settle_memory handler / CronTrigger / awaken 上下文压缩
+settle_memory handler / CronTrigger（agent_rest 每日触发）
     │
     ├── build_pending_memories_summary: 查询未沉淀短期记忆，生成编号摘要
     │
@@ -962,7 +952,7 @@ settle_memory handler / CronTrigger / awaken 上下文压缩
         ├── wake_agent_brain(scene=Settle): 装配 Brain + 过滤 Auto 工具
         │
         └── sleep_and_settle(options=ThinkingOptions::for_scene(Settle), trace_ids)
-            │   └── trace_ids：awaken 压缩传 pending_trace_ids，独立沉淀传空
+            │   └── trace_ids：独立沉淀场景传空（awaken 的上下文压缩走 compact_context，不再经本链路）
             │
             ├── set_resting + RAII guard
             ├── 读取最近短期记忆作为 history

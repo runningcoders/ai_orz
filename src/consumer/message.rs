@@ -593,7 +593,9 @@ impl MessageConsumer {
             }
         }
 
-        // 检查轮次限制
+        // 检查唤醒次数限制（max_thinking_depth）：口径是「该 Agent 在该任务上被唤醒的
+        // 累计次数」（agent_awake_events 条数，每次唤醒记 1），**不是**工具调用数、
+        // **不是**思考轮次 —— 单次唤醒内的思考轮次由 max_thinking_rounds 单独把关
         if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats)
             && let Some(call_summary) = &stats.call_summary
         {
@@ -603,7 +605,7 @@ impl MessageConsumer {
                 log_warn!(
                     &ctx,
                     "handle_agent_message",
-                    "Agent {} reached max thinking depth ({}), stopping loop",
+                    "Agent {} reached max_thinking_depth ({} wakeups for this task), stopping loop",
                     agent_id,
                     max_depth
                 );
@@ -614,19 +616,19 @@ impl MessageConsumer {
                         message,
                         agent_id,
                         &format!(
-                            "Agent has reached the maximum thinking depth ({} turns). The task has been stopped to prevent infinite loops.",
+                            "Agent has reached the maximum wakeup count for this task ({}). The task has been stopped to prevent infinite loops.",
                             max_depth
                         ),
                     )
                     .await;
 
                 // 通知失败仅记录警告，不阻塞 Agent 释放 busy / 返回 Ok
-                // （thinking depth 是合法停止，通知失败不应触发消息重试）
+                // （唤醒次数超限是合法停止，通知失败不应触发消息重试）
                 if let Err(notify_err) = send_result {
                     log_warn!(
                         &ctx,
                         "handle_agent_message",
-                        "通知来源方 Agent 已达最大思考深度失败（不阻塞停止流程）: {}",
+                        "通知来源方 Agent 已达单任务唤醒次数上限失败（不阻塞停止流程）: {}",
                         notify_err
                     );
                 }

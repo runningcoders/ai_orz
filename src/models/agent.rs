@@ -18,10 +18,13 @@ use std::fmt;
 /// 方便后续扩展各类运行时参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRuntimeConfig {
-    /// 最大思考深度（跨消息累计工具调用数），默认 10
+    /// 最大思考深度（**单任务内 Agent 唤醒次数上限**），默认 365
     ///
-    /// 用于 consumer 层跨唤醒安全检查：当任务累计工具调用数达到此值时，
-    /// 停止唤醒并通知用户。防止 Agent 在无限消息循环中空转。
+    /// consumer 层按 `agent_id + task_id` 统计 `agent_awake_events` 累计条数
+    /// （每次唤醒记 1 条，见 `domain/runtime/awakening.rs`），达到此值即停止
+    /// 唤醒并通知来源方，防止 Agent 在无限消息循环中空转。
+    /// ⚠️ **不是**工具调用数、**不是**思考轮次 —— 单次唤醒内的思考轮次由
+    /// `max_thinking_rounds` 在 awakening 层单独把关。
     #[serde(default = "default_max_thinking_depth")]
     pub max_thinking_depth: i32,
 
@@ -31,22 +34,6 @@ pub struct AgentRuntimeConfig {
     /// 非 0 = Agent 级覆盖值。
     #[serde(default)]
     pub max_thinking_rounds: usize,
-
-    /// 思考间隔（毫秒），避免过快调用，默认 0（无间隔）
-    #[serde(default)]
-    pub thinking_interval_ms: i32,
-
-    /// 单步最大工具调用次数，默认 5
-    #[serde(default = "default_max_tool_calls_per_step")]
-    pub max_tool_calls_per_step: i32,
-
-    /// 是否启用反思模式
-    #[serde(default)]
-    pub enable_reflection: bool,
-
-    /// 是否启用用户确认机制
-    #[serde(default = "default_true")]
-    pub require_user_confirm: bool,
 
     /// 已安装的工具包 tag 列表
     ///
@@ -131,10 +118,6 @@ impl Default for AgentRuntimeConfig {
         Self {
             max_thinking_depth: default_max_thinking_depth(),
             max_thinking_rounds: 0,
-            thinking_interval_ms: 0,
-            max_tool_calls_per_step: default_max_tool_calls_per_step(),
-            enable_reflection: false,
-            require_user_confirm: true,
             installed_tags: Vec::new(),
             installed_skill_packs: Vec::new(),
             intent_analyze_max_rounds: 0,
@@ -194,12 +177,9 @@ impl AgentRuntimeConfig {
 }
 
 // 辅助函数用于 serde default
+// 单一事实源在 common::api::DEFAULT_MAX_THINKING_DEPTH，避免前后端默认值漂移
 fn default_max_thinking_depth() -> i32 {
-    10
-}
-
-fn default_max_tool_calls_per_step() -> i32 {
-    5
+    common::api::DEFAULT_MAX_THINKING_DEPTH
 }
 
 fn default_true() -> bool {

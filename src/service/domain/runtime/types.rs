@@ -349,7 +349,7 @@ pub(crate) mod config_resolve {
 /// # 字段说明
 /// - `scene`：场景标识（Awaken/Settle/Summary），决定工具过滤行为
 /// - `project` / `task`：awaken 场景下，消息关联的项目/任务实体，注入 prompt 作为业务上下文
-/// - `max_thinking_rounds`：awaken 场景最大思考轮次（跨压缩累计），None 时用默认值 90
+/// - `max_thinking_rounds`：awaken 场景最大思考轮次（跨压缩累计），None 时取系统配置 `[agent].max_thinking_rounds`（默认 365）
 /// - `user_profile`：用户画像（消息发送者的 UserPo，含自述偏好，注入 Prompt 的【用户画像】区块）
 #[derive(Debug, Clone, Default)]
 pub struct ThinkingOptions {

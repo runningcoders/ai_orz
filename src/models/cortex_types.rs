@@ -183,7 +183,7 @@ impl ChatMessage {
         }
     }
 
-    /// 将消息序列化为摘要文本（用于上下文压缩时传递给沉淀 prompt）
+    /// 将消息序列化为摘要文本（用于 think_loop 的 `RoundDigest.transcript` 轮次快照与兜底摘要）
     ///
     /// 格式：
     /// - User: `[user] {content}`

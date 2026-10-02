@@ -462,6 +462,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut edit_soul = use_signal(String::new);
     let mut edit_model_provider_id = use_signal(String::new);
     // 运行时配置编辑字段（number input 用 String 承载，提交时 parse）
+    let mut edit_max_thinking_depth = use_signal(String::new);
     let mut edit_max_thinking_rounds = use_signal(String::new);
     let mut edit_intent_analyze_max_rounds = use_signal(String::new);
     let mut edit_summary_max_rounds = use_signal(String::new);
@@ -1078,6 +1079,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     edit_model_provider_id.set(a.model_provider_id.clone());
                                     // 加载运行时配置现有值（缺失时回退 0）
                                     let rc = a.runtime_config.as_ref();
+                                    edit_max_thinking_depth.set(
+                                        rc.map(|r| r.max_thinking_depth.to_string())
+                                            .unwrap_or_else(|| common::api::DEFAULT_MAX_THINKING_DEPTH.to_string()),
+                                    );
                                     edit_max_thinking_rounds.set(
                                         rc.map(|r| r.max_thinking_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
                                     );
@@ -1264,6 +1269,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "mb-6",
                                         h3 { class: "text-lg font-semibold mb-3", "运行时参数" }
                                         div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4",
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "最大思考深度" }
+                                                span { class: "text-sm", "{rc.max_thinking_depth}" }
+                                            }
                                             div {
                                                 span { class: "block text-sm text-base-content/70 mb-1", "最大思考轮次" }
                                                 span { class: "text-sm",
@@ -2201,6 +2210,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             let soul = if edit_soul().trim().is_empty() { None } else { Some(edit_soul()) };
                                             let mp_id = if edit_model_provider_id().is_empty() { None } else { Some(edit_model_provider_id()) };
                                             // 运行时配置：解析输入框，空字符串/非法值视为 0
+                                            // max_thinking_depth 例外：0 会让 Agent 永不被唤醒，非法值回退默认值
+                                            let max_thinking_depth = edit_max_thinking_depth()
+                                                .trim()
+                                                .parse::<i32>()
+                                                .unwrap_or(common::api::DEFAULT_MAX_THINKING_DEPTH);
                                             let max_thinking_rounds = edit_max_thinking_rounds()
                                                 .trim()
                                                 .parse::<usize>()
@@ -2226,6 +2240,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 soul,
                                                 model_provider_id: mp_id,
                                                 runtime_config: Some(AgentRuntimeConfigInfo {
+                                                    max_thinking_depth,
                                                     max_thinking_rounds,
                                                     intent_analyze_max_rounds,
                                                     summary_max_rounds,
@@ -2431,6 +2446,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                                 // 运行时配置分区
                                 div { class: "pt-2 border-t border-base-300" }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "最大思考深度" }
+                                        span { class: "label-text-alt text-base-content/60", "单任务内唤醒次数上限" }
+                                    }
+                                    input { class: "input input-bordered w-full", r#type: "number",
+                                        value: "{edit_max_thinking_depth}",
+                                        oninput: move |e| edit_max_thinking_depth.set(e.value()),
+                                        placeholder: "365" }
+                                }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text font-medium", "最大思考轮次" }

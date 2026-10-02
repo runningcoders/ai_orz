@@ -74,6 +74,7 @@ pub async fn update_agent(
         // 更新运行时配置（整体替换：前端传入完整的 runtime_config 对象）
         if let Some(rc_info) = params.runtime_config {
             let mut rc = agent.po.get_runtime_config();
+            rc.max_thinking_depth = rc_info.max_thinking_depth;
             rc.max_thinking_rounds = rc_info.max_thinking_rounds;
             rc.intent_analyze_max_rounds = rc_info.intent_analyze_max_rounds;
             rc.summary_max_rounds = rc_info.summary_max_rounds;
@@ -105,6 +106,7 @@ pub async fn update_agent(
     let runtime_config = {
         let rc = agent.po.get_runtime_config();
         Some(AgentRuntimeConfigInfo {
+            max_thinking_depth: rc.max_thinking_depth,
             max_thinking_rounds: rc.max_thinking_rounds,
             intent_analyze_max_rounds: rc.intent_analyze_max_rounds,
             summary_max_rounds: rc.summary_max_rounds,
@@ -183,6 +185,7 @@ mod tests {
 
     fn build_rc_info(rounds: usize) -> AgentRuntimeConfigInfo {
         AgentRuntimeConfigInfo {
+            max_thinking_depth: 42,
             max_thinking_rounds: rounds,
             intent_analyze_max_rounds: 3,
             summary_max_rounds: 3,
@@ -222,6 +225,7 @@ mod tests {
         assert_eq!(resp.soul.as_deref(), Some("新灵魂设定"));
         assert_eq!(resp.model_provider_id, "provider-new");
         assert_eq!(resp.runtime_config.as_ref().unwrap().max_thinking_rounds, 8);
+        assert_eq!(resp.runtime_config.as_ref().unwrap().max_thinking_depth, 42);
     }
 
     /// Agent 自改：description / capabilities / soul 生效；基础设施字段静默忽略
@@ -266,6 +270,11 @@ mod tests {
         assert_eq!(resp.model_provider_id, "provider-stub");
         // 默认 runtime_config：max_thinking_rounds 为 0（语义 = 使用系统配置）
         assert_eq!(resp.runtime_config.as_ref().unwrap().max_thinking_rounds, 0);
+        // 身份字段被忽略：未被 DTO 覆盖的 max_thinking_depth 保持默认值
+        assert_eq!(
+            resp.runtime_config.as_ref().unwrap().max_thinking_depth,
+            common::api::DEFAULT_MAX_THINKING_DEPTH
+        );
     }
 
     /// Agent 跨改其他 Agent：直接报错
