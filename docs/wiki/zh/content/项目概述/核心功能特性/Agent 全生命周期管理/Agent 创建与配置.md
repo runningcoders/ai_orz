@@ -65,8 +65,8 @@ C --> F["存储: SQLite + LanceDB/HNSW/SqliteVss"]
   - AgentStatus：生命周期状态（面试中→待入职→已入职→待离职→已离职→已删除）
   - AgentRuntimeState：内存态运行状态（空闲/休息/忙碌）
 - Agent 运行时配置（JSON 序列化到 agents.runtime_config）
-  - 最大思考深度、单次唤醒最大思考轮次、思考间隔、单步最大工具调用次数
-  - 是否启用反思模式、是否需要用户确认
+  - 最大思考深度（单任务内唤醒次数上限，默认 365）、单次唤醒最大思考轮次
+  - 意图识别 / 总结退出阶段最大思考轮次、思考超时、小脑路由
   - 已安装的工具包 tag、已安装的技能包 tag
   - 外部执行器配置（CLI/Remote）
 - Agent 业务对象与持久化对象
@@ -172,10 +172,6 @@ classDiagram
 class AgentRuntimeConfig {
 +int max_thinking_depth
 +int max_thinking_rounds
-+int thinking_interval_ms
-+int max_tool_calls_per_step
-+bool enable_reflection
-+bool require_user_confirm
 +string[] installed_tags
 +string[] installed_skill_packs
 +ExternalAgentConfig external_config
@@ -223,12 +219,11 @@ Dal-->>Dal : "agent.set_brain(brain)"
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 
 ### 参数调优与运行时配置
-- 最大思考深度：控制跨消息累计工具调用数，防止无限循环
+- 最大思考深度：控制单任务内唤醒次数上限，防止无限循环
 - 单次唤醒最大思考轮次：控制 think loop 轮次，达到阈值进入总结退出
-- 思考间隔：避免过快调用
-- 单步最大工具调用次数：限制每步工具调用数量
-- 反思模式：可启用反思以提升质量
-- 用户确认机制：默认开启，需用户确认关键操作
+- 意图识别 / 总结退出阶段最大思考轮次：两个阶段各自收窄轮次预算
+- 思考超时：单次唤醒超时（0 = 不限制）
+- 小脑路由：运行时快判开关，可关闭以全域回滚
 - 工具包/技能包 tag：安装后在唤醒时自动注入到 Prompt（免绑定）
 
 章节来源
@@ -292,7 +287,7 @@ D --> R["AgentRuntimeStateManager"]
 - 向量索引：创建/更新时自动 upsert，失败降级；无 Embedding Provider 时跳过
 - 搜索优化：混合搜索（FTS5 + 向量）合并结果，限制最大结果数（20），内存态 runtime_state 过滤
 - 统计查询：stats 查询失败不阻塞 agent 加载，避免重试风暴
-- 工具调用限制：通过 max_tool_calls_per_step 与 max_thinking_rounds 控制资源消耗
+- 唤醒次数限制：通过 max_thinking_depth（单任务内唤醒次数上限，默认 365）与 max_thinking_rounds（单次唤醒内思考轮次）控制资源消耗
 
 章节来源
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)

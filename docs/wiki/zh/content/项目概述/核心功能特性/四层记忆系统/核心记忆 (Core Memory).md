@@ -317,12 +317,11 @@ AW --> PB["PromptBuilder"]
 
 ## 附录：配置与管理 API
 - 配置示例（Agent 运行时配置）
-  - max_thinking_depth：最大思考深度（默认 10）。
-  - max_thinking_rounds：单次唤醒最大思考轮次（默认 90）。
-  - thinking_interval_ms：思考间隔（毫秒）。
-  - max_tool_calls_per_step：单步最大工具调用次数（默认 5）。
-  - enable_reflection：是否启用反思模式。
-  - require_user_confirm：是否启用用户确认机制（默认 true）。
+  - max_thinking_depth：单任务内唤醒次数上限（默认 365）。
+  - max_thinking_rounds：单次唤醒最大思考轮次（0 = 继承系统配置，默认 365）。
+  - intent_analyze_max_rounds：意图识别阶段最大思考轮次（0 = 继承系统配置）。
+  - summary_max_rounds：总结退出阶段最大思考轮次（0 = 继承系统配置）。
+  - think_timeout_secs：思考超时秒数（0 = 不限制）。
   - installed_tags：已安装的工具包 tag 列表。
   - installed_skill_packs：已安装的技能包 tag 列表。
   - external_config：外部 Agent 执行配置（CLI/Remote）。

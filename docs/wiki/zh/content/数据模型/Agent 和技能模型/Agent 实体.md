@@ -30,7 +30,7 @@
 - Agent 类型区分（Local/Cli/Remote）、能力描述与元数据存储
 - Agent 与 Skill、Tool 的绑定关系与外键约束
 - Agent 创建、更新与删除的业务规则
-- AgentRuntimeConfig 的运行时配置选项（思考深度限制、工具调用次数控制、反思模式等）
+- AgentRuntimeConfig 的运行时配置选项（唤醒次数上限、思考轮次、思考超时、小脑路由等）
 - 外部 Agent 配置（CLI 子进程与 A2A 远程执行）的具体实现方式
 
 ## 项目结构
@@ -88,7 +88,7 @@ I --> A
 ## 核心组件
 - AgentPo：持久化对象，映射 agents 表，包含 ID、名称、角色、描述、灵魂设定、能力、运行时配置、模型提供商、状态、类型、审计字段等。
 - Agent：业务对象，组合 AgentPo、Brain、Tools、Skills、运行时信息、统计信息等，提供装配与查询辅助方法。
-- AgentRuntimeConfig：JSON 存储的运行时配置，包括思考深度、思考轮次、思考间隔、单步工具调用上限、反思模式、用户确认、已安装标签、技能包标签、外部执行器配置等。
+- AgentRuntimeConfig：JSON 存储的运行时配置，包括最大思考深度（单任务内唤醒次数上限）、单次唤醒 / 意图识别 / 总结退出三档思考轮次、思考超时、小脑路由开关、已安装标签、技能包标签、外部执行器配置等。
 - ExternalAgentConfig：外部执行器配置，支持 CLI 子进程与 A2A 远程两种执行器。
 - AgentStatus：生命周期状态（面试中、待入职、已入职、待离职、已离职、已删除）。
 - AgentKind：执行后端类型（Local、Cli、Remote）。
@@ -172,19 +172,18 @@ stateDiagram-v2
 - [src/pkg/agent_runtime_state.rs:62-107](src/pkg/agent_runtime_state.rs#L62-L107)
 
 ### 运行时配置 AgentRuntimeConfig
-- 最大思考深度：跨消息累计的工具调用数上限，达到后停止唤醒并通知用户
-- 单次唤醒最大思考轮次：跨上下文压缩累计的思考轮次上限，达到后进入总结退出流程
-- 思考间隔：毫秒级间隔，避免过快调用
-- 单步最大工具调用次数：每步工具调用上限
-- 反思模式：是否启用反思
-- 用户确认机制：是否要求用户确认
+- 最大思考深度：单任务内累计唤醒次数上限（默认 365），达到后停止唤醒并通知用户
+- 单次唤醒最大思考轮次：跨上下文压缩累计的思考轮次上限（0 = 继承系统配置），达到后进入总结退出流程
+- 意图识别 / 总结退出最大思考轮次：两个阶段各自的轮次上限（0 = 继承系统配置）
+- 思考超时：单次唤醒的超时秒数（0 = 不限制）
+- 小脑路由：是否启用运行时快判（含琐碎请求模板直回开关）
 - 已安装工具包标签：自动注入到 Prompt，免绑定
 - 已安装技能包标签：记录安装的技能包
 - 外部执行器配置：CLI 或 Remote
 
 ```mermaid
 flowchart TD
-Start(["进入思考循环"]) --> CheckDepth["检查累计工具调用数"]
+Start(["进入思考循环"]) --> CheckDepth["检查单任务累计唤醒次数"]
 CheckDepth --> DepthReached{"达到最大思考深度?"}
 DepthReached --> |是| StopAwaken["停止唤醒并通知用户"]
 DepthReached --> |否| CheckRound["检查本轮思考轮次"]
@@ -316,8 +315,7 @@ AgentRuntimeStateManager --> AgentRuntimeState
 
 ## 性能考量
 - 思考深度与轮次限制：防止无限循环与过度消耗模型资源
-- 思考间隔：避免过快调用导致下游服务压力
-- 单步工具调用上限：控制单次处理的复杂度
+- 思考超时：单次唤醒的超时兜底，避免长时间阻塞（0 = 不限制）
 - 运行时状态并发安全：try_set_busy 防止同一 Agent 被并发唤醒
 - 向量化文本过滤空字段：减少无效索引与检索开销
 
@@ -325,7 +323,7 @@ AgentRuntimeStateManager --> AgentRuntimeState
 
 ## 故障排查指南
 - 状态异常：检查 AgentStatus 与 AgentRuntimeState 是否一致，确认是否有并发唤醒问题
-- 工具调用超限：调整 max_tool_calls_per_step 或 max_thinking_depth
+- 唤醒次数超限：调整 max_thinking_depth（单任务内唤醒次数上限）或 max_thinking_rounds（单次唤醒轮次上限）
 - 外部执行失败：校验 CLI command/args/work_dir/env 或 A2A endpoint/auth_token/timeout
 - 绑定关系缺失：确认 agent_tools 表中是否存在对应记录
 

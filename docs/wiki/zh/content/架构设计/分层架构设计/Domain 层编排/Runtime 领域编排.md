@@ -176,7 +176,7 @@ AW-->>Caller : AwakeningResult
 
 ### 唤醒与思考循环（RuntimeAwakening）
 - 统一 think loop：run_think_loop 封装超时、多轮迭代、工具调用分发、上下文压缩检测与统计事件发布。
-- 上下文压缩：当 input_tokens 达到阈值时中断循环，触发 sleep_and_settle 沉淀后重试；累计轮次跨压缩保持。
+- 上下文压缩：当 input_tokens 达到阈值时中断循环，走 compact_context 就地压缩后继续（Agent 保持 Busy）；累计轮次跨压缩保持。
 - 总结退出：当达到最大轮次限制时进入 summary 流程，让 Agent 总结当前工作并发送/记录结果。
 - 状态保护：awaken 设置 Busy，sleep_and_settle 设置 Resting，均通过 BusyGuard 在 Drop 时恢复 Idle。
 
@@ -346,7 +346,7 @@ AG --> TE
 
 ## 性能与稳定性
 - 超时与轮次保护：think loop 内置 300s 超时与最大轮次限制，避免长尾任务拖垮服务。
-- 上下文压缩：input_tokens 达到阈值即触发沉淀，降低后续轮次的上下文压力，提升吞吐。
+- 上下文压缩：input_tokens 达到阈值即就地压缩当前对话，降低后续轮次的上下文压力，提升吞吐。
 - 并发安全：try_set_busy 原子尝试设置 Busy，避免同一 Agent 被重复唤醒；BusyGuard 确保状态回收。
 - 错误隔离：工具执行失败不阻塞主流程（如总结失败仅告警），统计写入失败不影响业务返回。
 - 事件解耦：AOP 事件同步转发但消费端异步处理，降低主链路延迟。
@@ -357,7 +357,7 @@ AG --> TE
 - Agent 永远 Busy：检查 awaken 中 set_busy 后是否有异常提前返回导致 BusyGuard 未释放；确认 BusyGuard 已正确构造（set_busy_with_think_runtime 之后立即构造，中间不能有任何可能提前 return 的语句）。
 - Policy required_metrics 声明的 key 在 think_loop 构造 Metrics 时漏注入：新增 Policy 的 required_metrics() 有哪些 key，think_loop 开头 Metrics::new().with() 必须全部注入（即使是 0/false）；缺 key 不会导致运行时 panic，但会导致策略永不命中（比如 MaxRoundsPolicy 读不到"rounds"）。可以从 pkg/policy/tests.rs 的 required_metrics 声明完整性测试中反查漏注入。
 - runtime-list count 与 list 数量不一致（分页显示错误）：确认 DAO/Domain 的 count(query) 和 list(query) 复用了**完全相同的 push_query_filters**；即使是内存态 DashMap 也要抽独立的过滤函数，count 与 list 都调用（禁止 count 单独写一套过滤逻辑）。
-- 上下文溢出频繁：调整 ModelProvider 的 recommended_context_length 或 max_context_length，或优化 prompt 长度；可考虑把 ContextOverflowPolicy 从独立的 Or 策略升级为与 sleep_and_settle 阈值严格对齐（目前 run_think_loop 有独立溢出判断逻辑，后续可整合进策略引擎统一）。
+- 上下文溢出频繁：调整 ModelProvider 的 recommended_context_length 或 max_context_length，或优化 prompt 长度；可考虑把 ContextOverflowPolicy 从独立的 Or 策略升级为与 compact_context 的溢出阈值严格对齐（目前 run_think_loop 有独立溢出判断逻辑，后续可整合进策略引擎统一）。
 - 工具执行失败：查看 tool_execution 的错误映射逻辑，区分 MCP 超时/服务器不可用/工具禁用等情况；核对 ControlMode 与标签过滤。
 - 统计缺失：确认 AOP 事件发布成功，消费者正常注册；若统计写入失败，关注警告日志但不影响业务。
 

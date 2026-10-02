@@ -66,7 +66,7 @@ Agent 状态机新增 **离职两阶段**：`Onboarded → PendingOffboard → O
 ## 项目结构
 Agent 生命周期贯穿适配层（Handler）、领域层（Runtime Domain）、数据访问层（DAL/DAO）与事件总线（AOP）。关键路径包括：
 - 消息到达后由消费者加载 Agent 与上下文，必要时装配 Brain，再调用 Runtime Awakening 执行 awaken 思考循环。
-- 思考循环支持多轮工具调用、上下文压缩沉淀、轮次上限控制与总结退出。
+- 思考循环支持多轮工具调用、上下文压缩、轮次上限控制与总结退出。
 - 运行时状态通过内存管理器维护，用于并发控制与可观测性。
 
 ```mermaid
@@ -158,7 +158,7 @@ Consumer-->>Client : 返回结果
 - 运行时状态（AgentRuntimeState）：空闲（Idle）、休息（Resting）、忙碌（Busy），纯内存，服务重启重置。
 - 状态转换规则：
   - 收到消息且可用 → set_busy（或 try_set_busy 原子获取）
-  - 进入沉淀/总结 → set_resting
+  - 进入沉淀（每日定时 / 手动触发）→ set_resting
   - 完成处理/沉淀结束 → set_idle
   - 任务已完成/取消/归档 → 直接释放 Busy，跳过唤醒
 
@@ -166,7 +166,7 @@ Consumer-->>Client : 返回结果
 stateDiagram-v2
 [*] --> 空闲
 空闲 --> 忙碌 : "收到消息且可用"
-忙碌 --> 休息 : "上下文超限/需要沉淀"
+忙碌 --> 休息 : "每日定时 / 手动沉淀"
 休息 --> 空闲 : "沉淀完成"
 忙碌 --> 空闲 : "处理完成"
 空闲 --> 空闲 : "任务已结束则跳过唤醒"
@@ -190,7 +190,7 @@ stateDiagram-v2
     - 超时保护（默认 300s）
     - 多轮迭代，每轮发布 ThinkRoundEvent
     - 工具调用分发（Auto/Manual），结果回写消息历史
-    - 上下文压缩检测：超过阈值则中断，调用 sleep_and_settle 沉淀后重试
+    - 上下文压缩检测：超过阈值则中断，调用 compact_context 就地压缩后继续（不置 Resting、不中断任务）
     - 轮次上限：达到 max_rounds 进入总结退出流程
   - 写入 ThinkingTrace，记录统计事件，发布 finished 事件
 - 沉睡沉淀：sleep_and_settle(ctx, agent, pending_memories_summary, options, trace_ids)
@@ -227,12 +227,11 @@ Stats --> End(["结束"])
 
 ### 配置参数详解
 - 运行时配置（AgentRuntimeConfig）：
-  - 最大思考深度（跨消息累计工具调用数）
-  - 单次唤醒最大思考轮次（跨压缩累计）
-  - 思考间隔（毫秒）
-  - 单步最大工具调用次数
-  - 是否启用反思模式
-  - 是否需要用户确认
+  - 最大思考深度（单任务内唤醒次数上限，默认 365）
+  - 单次唤醒最大思考轮次（跨压缩累计，0 = 继承系统配置）
+  - 意图识别 / 总结退出阶段最大思考轮次（0 = 继承系统配置）
+  - 思考超时（秒，0 = 不限制）
+  - 小脑路由 / 琐碎请求模板直回
   - 已安装工具包/技能包 tag
   - 外部 Agent 执行配置（CLI/A2A Remote）
 - 外部 Agent 配置（ExternalAgentConfig）：
@@ -322,9 +321,9 @@ DL --> AOP
 - [src/service/domain/runtime/awakening.rs:166-363](src/service/domain/runtime/awakening.rs#L166-L363)
 
 ## 性能考虑
-- 上下文压缩：当 input_tokens 超过阈值（recommended_context_length 或 max_context_length*60%）时中断循环，沉淀后重试，避免 OOM 与延迟飙升
+- 上下文压缩：当 input_tokens 超过阈值（recommended_context_length 或 max_context_length*60%）时就地压缩当前对话（compact_context）后继续循环，避免 OOM 与延迟飙升
 - 轮次限制：max_thinking_rounds 控制单次唤醒的最大思考轮次，防止无限循环
-- 工具调用节流：thinking_interval_ms 可设置思考间隔，避免过快调用
+- 唤醒次数上限：max_thinking_depth 在 consumer 层按「Agent + 任务」累计唤醒次数（`agent_awake_events` 条数），达到上限即停止唤醒并通知来源方
 - 统计开销：record_event 失败不阻塞业务，仅记录警告，保证主流程性能
 - 内存状态：AgentRuntimeStateManager 为 DashMap 并发容器，try_set_busy 原子操作减少锁竞争
 

@@ -267,7 +267,7 @@ H-->>U : "200 OK"
 
 ### Agent 生命周期与配置
 - 生命周期状态：面试中、运行中、休眠、已禁用、已删除等（由枚举定义）。
-- 运行时配置：最大思考深度、单次唤醒最大思考轮次、思考间隔、单步最大工具调用次数、反思模式、用户确认机制、已安装工具包/技能包 tag、外部执行器配置（CLI/Remote）。
+- 运行时配置：最大思考深度、单次唤醒最大思考轮次、意图识别/总结阶段最大思考轮次、思考超时、已安装工具包/技能包 tag、外部执行器配置（CLI/Remote）。
 - 工具绑定：通过工具包 tag 自动注入或显式绑定工具。
 - 技能安装：安装时复制技能到 Agent 目录，卸载时仅移除 tag 关联。
 
@@ -276,10 +276,6 @@ classDiagram
 class AgentRuntimeConfig {
 +int max_thinking_depth
 +int max_thinking_rounds
-+int thinking_interval_ms
-+int max_tool_calls_per_step
-+bool enable_reflection
-+bool require_user_confirm
 +string[] installed_tags
 +string[] installed_skill_packs
 +ExternalAgentConfig external_config
@@ -342,7 +338,7 @@ DM -.-> M["Models(Agent/Skill/Memory)"]
 - 列表与查询：优先使用分页与必要字段过滤，避免全表扫描；向量检索结合 FTS5 提升召回率与速度。
 - 记忆写入：分阶段写入（trace 先入库，短期索引后向量化），减少同步开销。
 - 技能文件：小文件预读，大文件按需加载，避免一次性内存膨胀。
-- 运行时限制：通过 max_thinking_depth、max_thinking_rounds、thinking_interval_ms 控制 Agent 行为，防止无限循环与资源耗尽。
+- 运行时限制：通过 max_thinking_depth、max_thinking_rounds 与策略引擎（超时 / 无进展检测 / 上下文溢出）控制 Agent 行为，防止无限循环与资源耗尽。
 
 ## 故障排查指南
 - 缺少用户上下文：创建类接口会校验 uid，为空则返回无效请求错误。
@@ -364,7 +360,7 @@ DM -.-> M["Models(Agent/Skill/Memory)"]
   - 方法：POST /api/v1/hr/agents
   - 请求体：名称、角色数组、描述、能力数组、灵魂设定、模型提供商 ID
   - 响应：创建后的 id、name、description、created_at
-  - 示例要点：确保 uid 存在；默认启用 require_user_confirm；可后续设置外部执行器配置
+  - 示例要点：确保 uid 存在；可后续设置外部执行器配置
   - 参考实现
     - [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
     - [src/models/agent.rs:1-709](src/models/agent.rs#L1-L709)

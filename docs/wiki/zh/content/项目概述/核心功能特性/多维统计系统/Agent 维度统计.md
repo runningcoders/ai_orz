@@ -197,7 +197,7 @@ Record --> End(["完成"])
 
 ### RuntimeDomain 中的采集点
 - awaken：设置 Busy 状态、发布循环启动事件、执行 think 循环、记录 Trace、总结退出流程、记录 AgentAwakeEvent（成功/失败）、发布循环完成事件。
-- run_think_loop：每轮 think 后发布 ThinkRoundEvent，携带模型用量与上下文；检测上下文溢出与最大轮次耗尽，分别进入沉淀或总结退出流程。
+- run_think_loop：每轮 think 后发布 ThinkRoundEvent，携带模型用量与上下文；检测上下文溢出与最大轮次耗尽，分别进入就地压缩（`compact_context`）或总结退出流程。
 
 ```mermaid
 sequenceDiagram

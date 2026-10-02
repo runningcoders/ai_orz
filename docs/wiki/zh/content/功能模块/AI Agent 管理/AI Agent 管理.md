@@ -107,7 +107,7 @@ DOC5 --> D1
 - Agent 生命周期状态：Interviewing → PendingOnboard → Onboarded → PendingOffboard → Offboarded（含 Deleted 软删除）
 - 运行时状态：Idle/Resting/Busy（纯内存，服务重启重置）
 - Agent 类型：Local（本地 Brain+Tools）、Cli（子进程）、Remote（A2A 远程）
-- 运行时配置：最大思考深度/轮次、思考间隔、单步工具调用上限、反思模式、用户确认、已安装工具包/技能包 tags、外部执行器配置（CLI/A2A）
+- 运行时配置：最大思考深度（单任务内唤醒次数上限）、三档思考轮次、思考超时、小脑路由、已安装工具包/技能包 tags、外部执行器配置（CLI/A2A）
 - DAL：提供 CRUD、混合搜索（关键词+向量）、统计注入、向量索引重建、PromptBuilder 工厂等
 - 运行时状态管理器：原子 try_set_busy 避免并发重复唤醒，发布状态变更事件
 
@@ -287,7 +287,7 @@ ADP-->>API : 返回 ok
 - [external_agent_design.md:107-199](docs/external_agent_design.md#L107-L199)
 
 ### 配置模板与示例
-- AgentRuntimeConfig 默认值：max_thinking_depth=10、max_thinking_rounds=90、thinking_interval_ms=0、max_tool_calls_per_step=5、enable_reflection=false、require_user_confirm=true
+- AgentRuntimeConfig 默认值：max_thinking_depth=365、max_thinking_rounds=0（继承系统 365）、intent_analyze_max_rounds=0、summary_max_rounds=0、think_timeout_secs=0、enable_cerebellum_route=true、cerebellum_trivial_direct=false
 - 外部配置：
   - CLI：command/args/work_dir/env/timeout_secs/prompt_template
   - Remote：endpoint/agent_name/auth_token/timeout_secs
@@ -370,7 +370,6 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
   - 沉淀模式：Settle 场景限制工具范围，专注记忆积累
   - A2A：Push 回调 + Poll 轮询，适配层直调 Domain
 - 常用配置项
-  - max_thinking_depth、max_thinking_rounds、thinking_interval_ms、max_tool_calls_per_step
-  - enable_reflection、require_user_confirm
+  - max_thinking_depth、max_thinking_rounds、intent_analyze_max_rounds、summary_max_rounds、think_timeout_secs
   - installed_tags、installed_skill_packs
   - ExternalAgentConfig（CLI/Remote）

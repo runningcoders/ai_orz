@@ -62,7 +62,7 @@ Agent 运行时状态 = **纯内存全局单例**（`AgentRuntimeStateManager::g
 ```
 
 - **Idle → Busy**：consumer 从消息队列取出 Agent 有待处理消息 → set_busy/try_set_busy 成功 → 触发 awaken；参数 task_id/project_id 作为业务上下文注入
-- **Busy → Resting**：awaken 触发压缩循环（ContextOverflow）后调用 sleep_and_settle → 调用 set_resting；**task_id/project_id 保留不清空**（沉淀仍在同一任务/项目语境下完成）
+- **Busy → Resting**：沉淀链路（每日 `agent_rest` cron / 手动 `settle_memory`）调用 sleep_and_settle → 调用 set_resting；**task_id/project_id 保留不清空**（沉淀仍在同一任务/项目语境下完成）。⚠️ 上下文压缩（ContextOverflow → `compact_context`）**不走**这条转换：它发生在 awaken 主循环内部，Agent 必须保持 `Busy`
 - **任何状态 → Idle**：只有 set_idle。永远通过 BusyGuard 的 drop 自动调用，不要在业务代码里手动 set_idle（忘记某条分支就是状态泄漏）
 - **Resting → Busy**：理论上禁止（Resting 也是 set_idle 才恢复 Idle）。但代码未强制阻止（因为 sleep_and_settle 失败时 BusyGuard drop 直接把 Resting 也会转到 Idle）。
 

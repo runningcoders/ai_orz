@@ -92,7 +92,7 @@ HR --> DAL
   - 生命周期状态（持久化）：面试中 → 待入职 → 已入职 → 待离职 → 已离职；删除态用于软删除。
   - 运行时状态（内存）：空闲 → 忙碌 → 休息；Busy/Resting 不可接受新消息。
 - Agent 运行时配置
-  - 最大思考深度、单次唤醒最大思考轮次、思考间隔、单步最大工具调用次数、是否启用反思、是否需要用户确认、已安装工具包 tag、已安装技能包 tag、外部 Agent 执行配置（CLI/A2A）。
+  - 最大思考深度（单任务内唤醒次数上限）、单次唤醒 / 意图识别 / 总结退出三档最大思考轮次、思考超时、小脑路由、已安装工具包 tag、已安装技能包 tag、外部 Agent 执行配置（CLI/A2A）。
 - 运行时状态管理器
   - 全局单例，提供 set_idle/set_busy/set_resting/try_set_busy/get_state/is_unavailable 等方法，并在状态变更时发布 AOP 事件。
 - 运行时领域（RuntimeDomain）
@@ -186,7 +186,7 @@ stateDiagram-v2
 - 创建
   - 通过 HR 域创建 AgentPo，默认状态为“面试中”，附带角色、描述、灵魂设定、模型提供商等。
 - 运行时配置
-  - 存储在 agents.runtime_config JSON，包含最大思考深度、单次唤醒最大思考轮次、思考间隔、单步最大工具调用次数、反思开关、用户确认开关、已安装工具包/技能包 tags、外部 Agent 配置（CLI/A2A）。
+  - 存储在 agents.runtime_config JSON，包含最大思考深度（单任务内唤醒次数上限）、三档最大思考轮次、思考超时、小脑路由开关、已安装工具包/技能包 tags、外部 Agent 配置（CLI/A2A）。
 - 外部 Agent 类型
   - Local：本地进程内执行，具备 Cortex + ModelProvider。
   - Cli：子进程执行器（如 Codex/Claude Code/Aider），可配置命令、参数、工作目录、环境变量、超时、prompt 模板。
@@ -387,8 +387,8 @@ F["消费者"] --> E
   - max_thinking_rounds 控制单次唤醒的最大思考轮次，防止无限循环。
 - 上下文压缩
   - 当上下文超限时触发压缩，减少后续 token 消耗。
-- 工具调用节流
-  - thinking_interval_ms 与 max_tool_calls_per_step 控制调用频率与批大小。
+- 工具调用上限
+  - max_thinking_depth 在 consumer 层按「Agent + 任务」累计唤醒次数（`agent_awake_events` 条数），达到上限即停止唤醒并通知来源方。
 - 外部 Agent 超时
   - Cli/Remote 配置中的 timeout_secs 避免长时间阻塞。
 
