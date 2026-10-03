@@ -1069,8 +1069,8 @@ pub fn Workspace(view: Option<String>) -> Element {
                     let active_project_count = m.active_project_count;
                     let busy_agent_count = m.runtime.busy;
 
-                    // 运行中 Agent 实时状态计数
-                    let idle_n = m.runtime.idle;
+                    // 运行中 Agent 实时状态计数（空闲展示已移除：顶栏只含本进程启动后
+                    // 唤醒过的 Agent，与列表页「查不到兜底 Idle」口径不一致，2026-10-02 AMan 拍板）
                     let busy_n = m.runtime.busy;
                     let rest_n = m.runtime.resting;
 
@@ -1111,9 +1111,6 @@ pub fn Workspace(view: Option<String>) -> Element {
                             div { class: "h-8 w-px bg-base-content/15" }
                             // 运行中 Agent 实时状态
                             div { class: "flex items-center gap-3 text-xs",
-                                span { class: "flex items-center gap-1",
-                                    span { class: "w-2 h-2 rounded-full bg-success" } "空闲 {idle_n}"
-                                }
                                 span { class: "flex items-center gap-1",
                                     span { class: "w-2 h-2 rounded-full bg-warning" } "思考 {busy_n}"
                                 }

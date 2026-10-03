@@ -43,7 +43,7 @@ use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
     GetTaskRequest, GetTaskResponse, TaskListItem, TaskQueryRequest,
 };
-use common::enums::{ArtifactSourceType, AssigneeType};
+use common::enums::{ArtifactSourceType, AssigneeType, TaskStatus};
 use common::models::{AgentStats, ModelCallStats};
 
 /// SSE 消息触发的防抖刷新等待时长（毫秒）
@@ -149,6 +149,9 @@ pub fn ChatSidePanel(
     let mut load_gen = use_signal(|| 0u64);
     let mut prev_project_id = use_signal(|| Option::<String>::None);
     let mut prev_tick = use_signal(|| 0u64);
+    // 首帧兜底开关：变化检测的初值比较在首帧恒为 false（None==None / 0==0），
+    // 默认对话首帧会跳过加载 → 任务面板空「暂无任务」。首帧强制走一次加载后关闭。
+    let mut first_run = use_signal(|| true);
     // 手动刷新计数：叠加到 refresh_tick 一并下发给工具调用 Tab
     let mut manual_tick = use_signal(|| 0u64);
 
@@ -215,6 +218,9 @@ pub fn ChatSidePanel(
             }
             let req = TaskQueryRequest {
                 project_id: request_scope(None),
+                // 2026-10-03 AMan 拍板：游离任务面板只展示「进行中 + 待办」，
+                // Completed/Archived 不再进入展示（Cancelled 由基线 status != 0 排除）。
+                status_in: Some(vec![TaskStatus::InProgress, TaskStatus::Pending]),
                 ..Default::default()
             };
             let tasks_res = query_tasks(&req).await;
@@ -241,15 +247,17 @@ pub fn ChatSidePanel(
         let tick = refresh_tick();
         let project_changed = prev_project_id() != pid;
         let tick_changed = prev_tick() != tick;
+        let first_run_now = first_run();
         // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
         // 无条件写回本 effect 自己订阅的信号会触发 effect 重跑 → 无限循环卡死主线程
-        if project_changed {
+        if project_changed || first_run_now {
             prev_project_id.set(pid.clone());
         }
         if tick_changed {
             prev_tick.set(tick);
         }
-        if project_changed {
+        if project_changed || first_run_now {
+            first_run.set(false);
             active_tab.set(0);
             expanded_task_id.set(None);
             task_cache.set(HashMap::new());
