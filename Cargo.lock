@@ -1346,6 +1346,7 @@ dependencies = [
  "bincode",
  "chrono",
  "jsonwebtoken",
+ "pulldown-cmark",
  "reqwest 0.11.27",
  "schemars 1.2.1",
  "serde",

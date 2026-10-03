@@ -20,6 +20,7 @@ toml = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 ai-orz-macros = { path = "../ai-orz-macros" }
 axum = { version = "0.8", optional = true }
+pulldown-cmark = "0.13"
 
 [features]
 default = ["std"]

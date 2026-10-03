@@ -15,13 +15,14 @@
 
 pub use common::mention::{
     MentionKind, MentionQuery, MentionRef, apply_mention_pick, detect_mention_query,
-    format_mention_ref, parse_mention_dest, remove_mention_token, resolve_display_name,
+    format_mention_ref, remove_mention_token, resolve_display_name,
 };
 
-use pulldown_cmark::{Event, Tag, TagEnd};
+use pulldown_cmark::Event;
 use wasm_bindgen::JsCast;
 
 use common::api::MessageListItem;
+use common::markdown_protocol::{ProtocolRegistry, TransformOptions, transform};
 
 use crate::utils::message::{NameMap, resolve_receiver_name};
 
@@ -179,83 +180,26 @@ pub fn receiver_mention_html(
 /// 顺带承担源文 HTML 的转义（`Html` / `InlineHtml` → `Text`），
 /// 因此调用方不需要再单独做一层转义映射。
 ///
-/// 提及链接内部的事件会被吞掉并收集为展示名快照 —— Markdown 不允许链接嵌套链接，
-/// 所以用单层状态机即可，无需维护深度栈。
+/// 提及链接内部的事件由 common 协议层吞掉并收集为展示名快照（Markdown 不允许
+/// 链接嵌套链接，单层状态机即可）；拦截资格以注册表为准，未注册 scheme
+/// （如 `user:`）与 mention 之外的已注册 scheme（attachment/artifact）均降级为
+/// 普通链接原样透传。
 pub fn transform_mentions<'a, I>(events: I, agents: Option<&NameMap>) -> Vec<Event<'a>>
 where
     I: Iterator<Item = Event<'a>>,
 {
-    let mut out: Vec<Event<'a>> = Vec::new();
-    // 非空表示当前处于提及链接内部
-    let mut pending: Option<MentionRef> = None;
-    let mut name_buf = String::new();
-
-    for event in events {
-        if pending.is_some() {
-            let is_end = matches!(event, Event::End(TagEnd::Link));
-            match &event {
-                Event::Text(t) | Event::Code(t) => name_buf.push_str(t),
-                Event::SoftBreak | Event::HardBreak => name_buf.push(' '),
-                _ => {}
-            }
-            if is_end {
-                let m = pending.take().unwrap_or(MentionRef {
-                    kind: MentionKind::Agent,
-                    id: String::new(),
-                    org: None,
-                });
-                let snapshot = normalize_snapshot(&name_buf, &m);
-                let name = resolve_display_name(&m, &snapshot, agents);
-                out.push(Event::InlineHtml(render_mention_chip(&m, &name).into()));
-            }
-            continue;
-        }
-
-        match event {
-            // 源文原始 HTML 降级为纯文本（push_html 会自动转义），保证注入安全
-            Event::Html(raw) | Event::InlineHtml(raw) => out.push(Event::Text(raw)),
-            Event::Start(Tag::Link {
-                link_type,
-                dest_url,
-                title,
-                id,
-            }) => match parse_mention_dest(&dest_url) {
-                Some(m) => {
-                    pending = Some(m);
-                    name_buf.clear();
-                }
-                None => out.push(Event::Start(Tag::Link {
-                    link_type,
-                    dest_url,
-                    title,
-                    id,
-                })),
-            },
-            other => out.push(other),
-        }
-    }
-
-    // 异常兜底：链接未闭合时（理论上不会发生）至少把已收集的内容吐出来
-    if let Some(m) = pending.take() {
-        let snapshot = normalize_snapshot(&name_buf, &m);
-        let name = resolve_display_name(&m, &snapshot, agents);
-        out.push(Event::InlineHtml(render_mention_chip(&m, &name).into()));
-    }
-
-    out
-}
-
-/// 规整快照名：去掉首尾空白与多余的 `@` 前缀
-///
-/// 链接文本为空（用户手打了 `[](agent:agt_7f3)`）时回退到 id，
-/// 保证 chip 至少有个可读内容。
-fn normalize_snapshot(raw: &str, m: &MentionRef) -> String {
-    let trimmed = raw.trim().trim_start_matches('@').trim();
-    if trimmed.is_empty() {
-        m.id.clone()
-    } else {
-        trimmed.to_string()
-    }
+    let registry = ProtocolRegistry::default_registry();
+    let opts = TransformOptions {
+        demote_raw_html: true,
+    };
+    transform(events, &registry, &opts, |r, snapshot, _| {
+        // mention 族（agent/task/project）→ chip；mention 之外的已注册 scheme
+        // （attachment/artifact）在 to_mention 失败时返回 None，
+        // common 层按原始链接形态吐回（快照文本替代内层事件）
+        let m = r.to_mention()?;
+        let name = resolve_display_name(&m, snapshot, agents);
+        Some(Event::InlineHtml(render_mention_chip(&m, &name).into()))
+    })
 }
 
 #[cfg(test)]
@@ -363,7 +307,7 @@ mod tests {
         let token = common::mention::format_mention(MentionKind::Project, "prj_1", "平台");
         let parsed = token
             .split_once("](")
-            .and_then(|(_, dest)| parse_mention_dest(dest.trim_end_matches(')')));
+            .and_then(|(_, dest)| common::mention::parse_mention_dest(dest.trim_end_matches(')')));
         assert_eq!(
             parsed,
             Some(MentionRef {
@@ -372,6 +316,127 @@ mod tests {
                 org: None
             })
         );
+    }
+
+    /// 批1 T2 黄金输出快照：TL 下发 12 输入 + 增补 2 输入（attachment 已注册
+    /// scheme 的降级吐回 / 强调内层吞并），期望值为切换前旧 transform_mentions
+    /// 实现的真实端到端渲染快照（捕获留痕 shell call 01a1035c-1b8d-7562-b055），
+    /// 薄封装切换后逐字节复现，防 chip HTML / 降级行为漂移。
+    const GOLDEN_HTML_CASES: &[(&str, bool, &str)] = &[
+        (
+            "[@张伟](agent:agt_7f3) 看下进度",
+            false,
+            concat!(
+                r#"<p><span class="mention-chip mention-agent" data-mention-kind="agent" data-mention-id="agt_7f3" title="agent: agt_7f3">@张伟</span> 看下进度</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[@张伟](agent:agt_7f3) 你好",
+            true,
+            concat!(
+                r#"<p><span class="mention-chip mention-agent" data-mention-kind="agent" data-mention-id="agt_7f3" title="agent: agt_7f3">@李雷</span> 你好</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[@A](task:t1) 和 [@B](task:t2) 都阻塞了",
+            false,
+            concat!(
+                r#"<p><span class="mention-chip mention-task" data-mention-kind="task" data-mention-id="t1" title="task: t1">@A</span> 和 <span class="mention-chip mention-task" data-mention-kind="task" data-mention-id="t2" title="task: t2">@B</span> 都阻塞了</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[@远端助手](agent:agt_9@org-B12) 跨组织",
+            false,
+            concat!(
+                r#"<p><span class="mention-chip mention-agent mention-federated" data-mention-kind="agent" data-mention-id="agt_9" data-mention-org="org-B12" title="agent: agt_9@org-B12">@远端助手</span> 跨组织</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[文档](https://example.com) 参考",
+            false,
+            concat!(
+                r#"<p><a href="https://example.com">文档</a> 参考</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[x](user:u1) 未注册 scheme 降级普通链接",
+            false,
+            concat!(
+                r#"<p><a href="user:u1">x</a> 未注册 scheme 降级普通链接</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[x](task:tsk_1@org) 非 agent 带 org 降级",
+            false,
+            concat!(
+                r#"<p><a href="task:tsk_1@org">x</a> 非 agent 带 org 降级</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "<script>alert(1)</script> 与 <b>粗体</b> 源文 HTML 转义",
+            false,
+            r#"&lt;script&gt;alert(1)&lt;/script&gt; 与 &lt;b&gt;粗体&lt;/b&gt; 源文 HTML 转义"#,
+        ),
+        (
+            "[](agent:agt_e) 空名回退 id",
+            false,
+            concat!(
+                r#"<p><span class="mention-chip mention-agent" data-mention-kind="agent" data-mention-id="agt_e" title="agent: agt_e">@agt_e</span> 空名回退 id</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[@a\\]b](task:tsk_1) 转义名",
+            false,
+            concat!(
+                r#"<p><span class="mention-chip mention-task" data-mention-kind="task" data-mention-id="tsk_1" title="task: tsk_1">@a]b</span> 转义名</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "[@多\n行](agent:agt_m) 换行名",
+            false,
+            concat!(
+                r#"<p><span class="mention-chip mention-agent" data-mention-kind="agent" data-mention-id="agt_m" title="agent: agt_m">@多 行</span> 换行名</p>"#,
+                "\n"
+            ),
+        ),
+        (
+            "无任何链接的普通文本",
+            false,
+            concat!(r#"<p>无任何链接的普通文本</p>"#, "\n"),
+        ),
+        (
+            "[设计稿](attachment:att_1) 参考",
+            false,
+            concat!(r#"<p><a href="attachment:att_1">设计稿</a> 参考</p>"#, "\n"),
+        ),
+        (
+            "[**张伟**](agent:agt_1) 强调内层",
+            false,
+            concat!(
+                r#"<p><span class="mention-chip mention-agent" data-mention-kind="agent" data-mention-id="agt_1" title="agent: agt_1">@张伟</span> 强调内层</p>"#,
+                "\n"
+            ),
+        ),
+    ];
+
+    #[test]
+    fn golden_snapshot_matches_after_thin_wrapper_switch() {
+        let mut agents = NameMap::new();
+        agents.insert("agt_7f3".to_string(), "李雷".to_string());
+        for (md, use_agents, expected) in GOLDEN_HTML_CASES {
+            let a = if *use_agents { Some(&agents) } else { None };
+            let html = render(md, a);
+            assert_eq!(html, *expected, "黄金快照不一致：{md}");
+        }
     }
 
     /// 气泡头部的接收方 chip：Agent 走复用 path（info 配色），用户降级为基础 chip，

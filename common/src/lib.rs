@@ -14,6 +14,7 @@ pub mod doc_link;
 pub mod enums;
 pub mod error;
 pub mod llm_schema;
+pub mod markdown_protocol;
 pub mod mention;
 pub mod models;
 pub mod ontology;

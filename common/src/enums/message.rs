@@ -87,6 +87,8 @@ pub enum MessageType {
     ProjectFollowupNotification = 11,
     /// Agent 知会通知（Agent→Agent，声明无需回复来源方，防协作乒乓）
     AgentNotify = 12,
+    /// 混排消息（content 为多资源混排协议文本，批3 主线启用；批1 仅枚举预留，无生产写入路径）
+    Mixed = 13,
 }
 
 impl From<i32> for MessageType {
@@ -105,6 +107,7 @@ impl From<i32> for MessageType {
             10 => MessageType::TaskDispatchNotification,
             11 => MessageType::ProjectFollowupNotification,
             12 => MessageType::AgentNotify,
+            13 => MessageType::Mixed,
             _ => MessageType::default(),
         }
     }
