@@ -125,6 +125,8 @@ pub trait MessageChannelDal: Send + Sync {
     /// - `ctx`: 请求上下文
     /// - `message`: 消息实体
     /// - `user_id`: 用户 ID
+    /// - `reply_target`: 引用回复目标（Domain 层反查父消息得出）；`None` 时各渠道
+    ///   按普通发送处理
     ///
     /// # 返回
     /// 分发结果详情，包含各渠道的推送状态
@@ -133,6 +135,7 @@ pub trait MessageChannelDal: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         user_id: &str,
+        reply_target: Option<ReplyTarget>,
     ) -> Result<DeliveryResult>;
 }
 
@@ -272,6 +275,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
         ctx: RequestContext,
         message: &Message,
         user_id: &str,
+        reply_target: Option<ReplyTarget>,
     ) -> Result<DeliveryResult> {
         let ctx = enrich_ctx!(&ctx, message);
         // 1. 查询用户的所有活跃渠道
@@ -324,10 +328,8 @@ impl MessageChannelDal for MessageChannelDalImpl {
 
         for po in filtered_channels {
             let channel = MessageChannel::from_po(po);
-            // 端到端贯通在 Task 3：此处暂传 None（行为与现状等价），
-            // 仅完成 push_to_channel 的签名扩展。
             let result = self
-                .push_to_channel(ctx.clone(), message, &channel, None)
+                .push_to_channel(ctx.clone(), message, &channel, reply_target.as_ref())
                 .await;
 
             // 4. 更新渠道推送状态

@@ -8,8 +8,8 @@ use crate::models::message::ToolCallMessage;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::{
-    DeliverMessageCommand, MessageDelivery, SendTaskAssignmentCommand, SendToAgentCommand,
-    SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
+    DeliverMessageCommand, MessageDelivery, ReplyTarget, SendTaskAssignmentCommand,
+    SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome,
 };
 use common::enums::{FileType, MessageRole, MessageType};
@@ -545,9 +545,27 @@ impl MessageDelivery for MessageDomainImpl {
         // 飞书凭证由渠道 DAL 按引用 ID 直查凭证行（主键查询，无需预加载用户）
         //
         // 渠道入站消息走 `sse_only`：它本就来自该渠道，回灌会形成回声。
+        // 出站引用回复：按出站消息的 reply_to_id 反查父消息一次，产出渠道无关的
+        // 回复目标（父消息外部渠道键 + 话题 ID），透传给渠道 DAL 决定是否走
+        // 「引用回复」端点。查不到父消息 / 父消息尚未落外部键 → None，渠道侧降级普通发送。
+        // 主键点查、成本极低；父消息的上下文无法跨「创建 → 推送」两段异步在内存传递。
+        let reply_target = match cmd.message.po.reply_to_id.as_deref() {
+            Some(parent_id) => match self.message_dal.find_by_id(ctx.clone(), parent_id).await? {
+                Some(parent) => match parent.po.external_key.filter(|k| !k.is_empty()) {
+                    Some(external_key) => Some(ReplyTarget {
+                        external_key,
+                        thread_id: parent.po.thread_id,
+                    }),
+                    None => None,
+                },
+                None => None,
+            },
+            None => None,
+        };
+
         let channel_result = if cmd.options.channels {
             self.message_channel_dal
-                .deliver_message(ctx.clone(), cmd.message, cmd.user_id)
+                .deliver_message(ctx.clone(), cmd.message, cmd.user_id, reply_target)
                 .await?
         } else {
             crate::service::dal::message_channel::DeliveryResult::empty()

@@ -27,7 +27,7 @@ use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDal;
 use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::message::MessageDal;
-pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
+pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal, ReplyTarget};
 use crate::service::dal::message_push::MessagePushDal;
 use crate::service::dal::project::ProjectDal;
 use crate::service::dal::user::UserDal;

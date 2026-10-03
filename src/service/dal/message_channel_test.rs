@@ -302,7 +302,10 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
     );
     let message = Message::from_po(message_po);
 
-    let result = dal.deliver_message(ctx, &message, "user-1").await.unwrap();
+    let result = dal
+        .deliver_message(ctx, &message, "user-1", None)
+        .await
+        .unwrap();
     // 骨架实现返回 success_count = 0（因为还没实现实际推送）
     // 这里只验证调用不报错即可
     assert_eq!(result.total, 1);
@@ -388,7 +391,10 @@ async fn test_deliver_bound_channel_accepts_bound_agent(pool: SqlitePool) {
         None,
         "user-1",
     );
-    let result = dal.deliver_message(ctx, &msg, "user-1").await.unwrap();
+    let result = dal
+        .deliver_message(ctx, &msg, "user-1", None)
+        .await
+        .unwrap();
     assert_eq!(result.total, 1, "专属渠道应放行绑定 Agent 的消息");
 }
 
@@ -405,7 +411,10 @@ async fn test_deliver_bound_channel_skips_other_agent(pool: SqlitePool) {
         None,
         "user-1",
     );
-    let result = dal.deliver_message(ctx, &msg, "user-1").await.unwrap();
+    let result = dal
+        .deliver_message(ctx, &msg, "user-1", None)
+        .await
+        .unwrap();
     assert_eq!(result.total, 0, "专属渠道应跳过非绑定 Agent 的消息");
 }
 
@@ -429,7 +438,7 @@ async fn test_deliver_unbound_channel_broadcast_unchanged(pool: SqlitePool) {
             "user-1",
         );
         let result = dal
-            .deliver_message(ctx.clone(), &msg, "user-1")
+            .deliver_message(ctx.clone(), &msg, "user-1", None)
             .await
             .unwrap();
         assert_eq!(
@@ -462,7 +471,7 @@ async fn test_deliver_bound_channel_scope_project_stack(pool: SqlitePool) {
         "user-1",
     );
     let result = dal
-        .deliver_message(ctx.clone(), &hit, "user-1")
+        .deliver_message(ctx.clone(), &hit, "user-1", None)
         .await
         .unwrap();
     assert_eq!(result.total, 1, "绑定 Agent 且项目匹配应放行");
@@ -475,7 +484,10 @@ async fn test_deliver_bound_channel_scope_project_stack(pool: SqlitePool) {
         Some("proj-q"),
         "user-1",
     );
-    let result = dal.deliver_message(ctx, &miss, "user-1").await.unwrap();
+    let result = dal
+        .deliver_message(ctx, &miss, "user-1", None)
+        .await
+        .unwrap();
     assert_eq!(result.total, 0, "项目不匹配应跳过");
 }
 
@@ -494,7 +506,10 @@ async fn test_deliver_d2_user_notification_excluded_from_bound(pool: SqlitePool)
         None,
         "user-1",
     );
-    let result = dal.deliver_message(ctx, &msg, "user-1").await.unwrap();
+    let result = dal
+        .deliver_message(ctx, &msg, "user-1", None)
+        .await
+        .unwrap();
 
     assert_eq!(result.total, 1, "只有通用渠道放行该通知");
     assert!(
