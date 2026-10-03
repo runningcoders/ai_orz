@@ -11,7 +11,7 @@
 use super::error::{LarkResponse, from_reqwest, validate_config};
 use super::token::{SharedTokenCache, shared as shared_token_cache};
 use super::ws::WsState;
-use super::{LarkAppCredentials, LarkDao};
+use super::{LarkAppCredentials, LarkDao, LarkReply};
 use crate::models::events::LarkMessageEvent;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -28,6 +28,7 @@ use tokio::sync::RwLock;
 const API_BASE: &str = "https://open.feishu.cn";
 const PATH_TOKEN: &str = "/open-apis/auth/v3/tenant_access_token/internal";
 const PATH_SEND_MESSAGE: &str = "/open-apis/im/v1/messages";
+const PATH_REPLY_MESSAGE: &str = "/open-apis/im/v1/messages/{message_id}/reply";
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -154,6 +155,65 @@ impl LarkDaoHttpImpl {
         Ok(Some(data.message_id))
     }
 
+    /// 以「引用回复」形式发送文本消息到指定飞书消息
+    ///
+    /// 端点：`POST /open-apis/im/v1/messages/:message_id/reply`。
+    /// `reply_in_thread = true` 时以话题形式回复（父消息属于话题时使用）。
+    /// 返回值语义与 [`Self::send_text_message`] 一致（无 message_id 时返回 `None`）。
+    pub async fn reply_text_message(
+        &self,
+        token: &str,
+        reply_to_message_id: &str,
+        text: &str,
+        reply_in_thread: bool,
+    ) -> Result<Option<String>> {
+        let content = serde_json::json!({ "text": text }).to_string();
+
+        #[derive(Serialize)]
+        struct ReplyMessageReq {
+            content: String,
+            msg_type: &'static str,
+            reply_in_thread: bool,
+        }
+
+        #[derive(Default, Deserialize)]
+        struct ReplyMessageData {
+            #[serde(default)]
+            message_id: String,
+        }
+
+        let url = format!(
+            "{}{}",
+            API_BASE,
+            PATH_REPLY_MESSAGE.replace("{message_id}", reply_to_message_id)
+        );
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(token)
+            .json(&ReplyMessageReq {
+                content,
+                msg_type: "text",
+                reply_in_thread,
+            })
+            .send()
+            .await
+            .map_err(|e| from_reqwest("reply_message", e))?
+            .json::<LarkResponse<ReplyMessageData>>()
+            .await
+            .map_err(|e| from_reqwest("reply_message", e))?;
+
+        let data = resp.check("reply_message")?;
+        if data.message_id.is_empty() {
+            log_warn!(
+                "lark reply_message succeeded without message_id: reply_to={}",
+                reply_to_message_id
+            );
+            return Ok(None);
+        }
+        Ok(Some(data.message_id))
+    }
+
     /// HTTP client 引用（供 ws 模块使用）
     pub fn http_client(&self) -> &reqwest::Client {
         &self.http
@@ -258,6 +318,7 @@ impl LarkDao for LarkDaoHttpImpl {
         message: &Message,
         channel: &MessageChannel,
         credentials: &LarkAppCredentials,
+        reply: Option<&LarkReply>,
     ) -> Result<Option<String>> {
         let config = channel.config();
         let open_id = config.lark_open_id.as_ref().ok_or_else(|| {
@@ -276,14 +337,23 @@ impl LarkDao for LarkDaoHttpImpl {
         let token = self
             .get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
             .await?;
-        let message_id = self.send_text_message(&token, open_id, content).await?;
+        // 有回复参数走回复端点（飞书按父消息定位会话，话题消息以话题形式回复）；
+        // 无回复参数走普通发送端点。
+        let message_id = match reply {
+            Some(r) => {
+                self.reply_text_message(&token, &r.message_id, content, r.in_thread)
+                    .await?
+            }
+            None => self.send_text_message(&token, open_id, content).await?,
+        };
         log_info!(
             &ctx,
             "lark_push",
-            "推送消息到飞书 channel_id={} app_id={} open_id={} lark_message_id={:?}",
+            "推送消息到飞书 channel_id={} app_id={} open_id={} reply_to={:?} lark_message_id={:?}",
             channel.po.id,
             credentials.app_id,
             open_id,
+            reply.map(|r| r.message_id.as_str()),
             message_id
         );
         Ok(message_id)

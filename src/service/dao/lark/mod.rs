@@ -93,6 +93,18 @@ pub fn resolve_lark_credentials(
     })
 }
 
+/// 飞书「引用回复」参数（DAL 已把渠道无关的回复目标解析为飞书原生语义）
+///
+/// DAL 层负责读取父消息外部键并剥离渠道前缀；DAO 只接收可直接用于
+/// `POST /open-apis/im/v1/messages/:message_id/reply` 的原生参数。
+#[derive(Debug, Clone)]
+pub struct LarkReply {
+    /// 待回复消息的飞书 message_id（`om_xxx`）
+    pub message_id: String,
+    /// 是否以话题形式回复（父消息属于话题时置 true）
+    pub in_thread: bool,
+}
+
 /// 飞书渠道 DAO 接口
 ///
 /// 职责：
@@ -113,6 +125,8 @@ pub trait LarkDao: Send + Sync {
     /// - `message`: 消息实体
     /// - `channel`: 消息渠道配置（取 `lark_open_id`）
     /// - `credentials`: 已解析的飞书应用凭证（DAL 层从渠道引用解析）
+    /// - `reply`: 引用回复参数；`None` 时走普通发送端点（`POST /messages`），
+    ///   `Some` 时走回复端点（`POST /messages/:message_id/reply`）
     ///
     /// 返回飞书侧 message_id（om_xxx），DAL 层据此回写消息的外部键映射，
     /// 供后续入站回复反查父消息、贯通跨渠道消息链。
@@ -122,6 +136,7 @@ pub trait LarkDao: Send + Sync {
         message: &Message,
         channel: &MessageChannel,
         credentials: &LarkAppCredentials,
+        reply: Option<&LarkReply>,
     ) -> Result<Option<String>>;
 
     /// 测试飞书渠道凭证是否可用（获取 tenant_access_token）

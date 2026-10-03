@@ -19,7 +19,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::a2a_callback::A2aCallbackDao;
 use crate::service::dao::email::EmailDao;
 use crate::service::dao::email::smtp::{EmailSmtpCredentials, resolve_email_credentials};
-use crate::service::dao::lark::{LarkAppCredentials, LarkDao, resolve_lark_credentials};
+use crate::service::dao::lark::{LarkAppCredentials, LarkDao, LarkReply, resolve_lark_credentials};
 use crate::service::dao::message::MessageDao;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
 use crate::service::dao::project::ProjectDao;
@@ -324,7 +324,11 @@ impl MessageChannelDal for MessageChannelDalImpl {
 
         for po in filtered_channels {
             let channel = MessageChannel::from_po(po);
-            let result = self.push_to_channel(ctx.clone(), message, &channel).await;
+            // 端到端贯通在 Task 3：此处暂传 None（行为与现状等价），
+            // 仅完成 push_to_channel 的签名扩展。
+            let result = self
+                .push_to_channel(ctx.clone(), message, &channel, None)
+                .await;
 
             // 4. 更新渠道推送状态
             let _ = self
@@ -469,15 +473,25 @@ impl MessageChannelDalImpl {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
+        reply_target: Option<&ReplyTarget>,
     ) -> std::result::Result<(), common::error::Error> {
         match channel.channel_type() {
             ChannelType::Lark => {
                 // 凭证解析在 DAL 层完成（按凭证 ID 查 user_credentials 行），
                 // DAO 只接收已解析凭证执行出站调用
                 let credentials = self.resolve_lark_credentials(ctx.clone(), channel).await?;
+                // 渠道无关的回复目标 → 飞书原生回复参数；解析失败（无目标/前缀不符）
+                // 返回 None，DAO 退回普通发送端点（静默降级，不影响投递）
+                let lark_reply = resolve_lark_reply(reply_target);
                 match self
                     .lark_dao
-                    .push(ctx.clone(), message, channel, &credentials)
+                    .push(
+                        ctx.clone(),
+                        message,
+                        channel,
+                        &credentials,
+                        lark_reply.as_ref(),
+                    )
                     .await
                 {
                     // 推送成功：回写外部键映射（"lark:om_xxx"），供入站回复
@@ -645,6 +659,37 @@ impl MessageChannelDalImpl {
     }
 }
 
+/// 出站引用回复目标（渠道无关）
+///
+/// 由 Domain 层按出站消息的 `reply_to_id` 反查父消息得出，透传给渠道 DAL。
+/// DAL 各渠道分支按自身语义解释：飞书剥离 `lark:` 前缀得到 `om_xxx` 并据此走
+/// 回复端点；其它渠道忽略。
+#[derive(Debug, Clone)]
+pub struct ReplyTarget {
+    /// 父消息在外部渠道的键（形如 `lark:om_xxx`）
+    pub external_key: String,
+    /// 父消息所属话题 ID（`omt_` 前缀）；`None` 表示非话题消息
+    pub thread_id: Option<String>,
+}
+
+/// 把渠道无关的回复目标解析为飞书原生回复参数（纯函数，便于单测）
+///
+/// - 校验 `external_key` 渠道前缀为 `lark:` 并剥离出飞书 `om_xxx` message_id；
+/// - `thread_id` 存在 → 以话题形式回复（`reply_in_thread = true`）。
+///
+/// 返回 `None` 时调用方降级为普通发送（无目标 / 前缀不符 / 键为空）。
+fn resolve_lark_reply(target: Option<&ReplyTarget>) -> Option<LarkReply> {
+    let target = target?;
+    let message_id = target.external_key.strip_prefix("lark:")?;
+    if message_id.is_empty() {
+        return None;
+    }
+    Some(LarkReply {
+        message_id: message_id.to_string(),
+        in_thread: target.thread_id.is_some(),
+    })
+}
+
 // ==================== 分发结果结构体 ====================
 
 /// 消息分发结果
@@ -737,4 +782,50 @@ pub struct ChannelDeliveryDetail {
     pub success: bool,
     /// 错误信息（如果失败）
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ReplyTarget, resolve_lark_reply};
+
+    fn target(external_key: &str, thread_id: Option<&str>) -> ReplyTarget {
+        ReplyTarget {
+            external_key: external_key.to_string(),
+            thread_id: thread_id.map(|s| s.to_string()),
+        }
+    }
+
+    /// 无回复目标 → 不解析（调用方降级普通发送）
+    #[test]
+    fn resolve_lark_reply_none_when_no_target() {
+        assert!(resolve_lark_reply(None).is_none());
+    }
+
+    /// 飞书键 + 普通消息 → 普通引用回复（非话题）
+    #[test]
+    fn resolve_lark_reply_plain_message() {
+        let r = resolve_lark_reply(Some(&target("lark:om_abc", None))).unwrap();
+        assert_eq!(r.message_id, "om_abc");
+        assert!(!r.in_thread);
+    }
+
+    /// 飞书键 + 话题消息 → 话题内引用回复
+    #[test]
+    fn resolve_lark_reply_thread_message() {
+        let r = resolve_lark_reply(Some(&target("lark:om_abc", Some("omt_1")))).unwrap();
+        assert_eq!(r.message_id, "om_abc");
+        assert!(r.in_thread);
+    }
+
+    /// 非飞书渠道键（微信）→ 不解析（降级普通发送）
+    #[test]
+    fn resolve_lark_reply_rejects_other_channel() {
+        assert!(resolve_lark_reply(Some(&target("wechat:123", None))).is_none());
+    }
+
+    /// 空 message_id（脏键 "lark:"）→ 不解析（避免空路径参数）
+    #[test]
+    fn resolve_lark_reply_rejects_empty_id() {
+        assert!(resolve_lark_reply(Some(&target("lark:", None))).is_none());
+    }
 }
