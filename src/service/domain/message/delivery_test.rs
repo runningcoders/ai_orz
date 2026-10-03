@@ -1148,3 +1148,55 @@ async fn test_send_task_assignment_rejects_user_id(pool: SqlitePool) {
 
     assert!(err.msg.contains("不是 Agent"), "实际: {}", err.msg);
 }
+
+/// 出站消息（Agent → 用户）应继承父消息话题 ID，且链根指向父消息。
+/// 阶段一已让入站话题消息落库 thread_id；本例验证出站回复复用同一次父消息查询
+/// 顺带继承，从而后续话题内回复可继续走话题端点。
+#[sqlx::test]
+async fn test_send_to_user_inherits_parent_thread_id(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    // 1. 入站话题消息：用户 → Agent，携带 thread_id
+    let parent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "user-1",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "话题内的用户消息",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: Some("omt_demo_001"),
+                attachment_ids: None,
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(parent.po.thread_id.as_deref(), Some("omt_demo_001"));
+
+    // 2. Agent 回复该消息 → 出站消息应继承话题 ID、链根指向父消息
+    let reply = domain
+        .delivery()
+        .send_to_user(
+            ctx.clone(),
+            SendToUserCommand {
+                from_agent_id: "agent-1",
+                to_user_id: "user-1",
+                content: "话题内的 Agent 回复",
+                project_id: None,
+                task_id: None,
+                reply_to_id: Some(&parent.po.id),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reply.po.thread_id.as_deref(), Some("omt_demo_001"));
+    assert_eq!(reply.po.root_id.as_deref(), Some(parent.po.id.as_str()));
+    assert_eq!(reply.po.reply_to_id.as_deref(), Some(parent.po.id.as_str()));
+}
