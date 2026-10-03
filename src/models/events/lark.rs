@@ -53,16 +53,28 @@ pub struct LarkEventSender {
     pub sender_type: String,
 }
 
+/// null 容错的字符串反序列化：字段显式为 `null` 时按空串处理
+///
+/// 飞书是外部 API 边界：应用无 user_id/union_id 权限时会下发 `"user_id": null`
+/// 而非省略字段，此时 `#[serde(default)]` 不生效（它只补缺失字段），
+/// 直接反序列化到 `String` 会整帧失败，消息静默丢失。
+fn null_as_empty<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkSenderId {
     /// 用户的 open_id（主要标识）
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub open_id: String,
-    /// 用户的 user_id（企业内）
-    #[serde(default)]
+    /// 用户的 user_id（企业内；应用无权限时飞书下发 null）
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub user_id: String,
-    /// 用户的 union_id
-    #[serde(default)]
+    /// 用户的 union_id（应用无权限时飞书下发 null）
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub union_id: String,
 }
 
@@ -207,6 +219,54 @@ mod tests {
         assert!(event.is_text());
         assert_eq!(event.sender_open_id(), "ou_xxx");
         assert_eq!(event.parse_text(), Some("你好".to_string()));
+    }
+
+    /// 线上实测 payload：应用无 user_id/union_id 权限，飞书下发 `null`（非缺失字段）。
+    /// 修复前整帧反序列化失败 → 消息静默丢失且不 ACK（服务端持续重推）。
+    #[test]
+    fn test_parse_event_with_null_sender_ids() {
+        const REAL_NULL_IDS_EVENT: &str = r#"{
+            "schema": "2.0",
+            "header": {
+                "event_id": "962e93e8705d3b0925bc45a62ddcbac2",
+                "token": "",
+                "create_time": "1791015529231",
+                "event_type": "im.message.receive_v1",
+                "tenant_key": "2d5565227d0f175d",
+                "app_id": "cli_a9402a7268781cb0"
+            },
+            "event": {
+                "message": {
+                    "chat_id": "oc_eac2088b249e4578c6cd4c4d274a5a87",
+                    "chat_type": "p2p",
+                    "content": "{\"text\":\"测试连通性\"}",
+                    "create_time": "1791015528564",
+                    "message_id": "om_x100b633fe84b58a0b1faeb76e3bddf7",
+                    "message_type": "text",
+                    "update_time": "1791015528564"
+                },
+                "sender": {
+                    "sender_id": {
+                        "open_id": "ou_a19c91734de4b79c38b618ae5d45c5fc",
+                        "union_id": null,
+                        "user_id": null
+                    },
+                    "sender_type": "user",
+                    "tenant_key": "2d5565227d0f175d"
+                }
+            }
+        }"#;
+        let event: LarkMessageEvent = serde_json::from_str(REAL_NULL_IDS_EVENT).unwrap();
+        assert!(event.is_p2p());
+        assert!(event.is_text());
+        assert_eq!(event.parse_text(), Some("测试连通性".to_string()));
+        assert_eq!(
+            event.sender_open_id(),
+            "ou_a19c91734de4b79c38b618ae5d45c5fc"
+        );
+        // null → 空串，不 panic 不丢帧
+        assert_eq!(event.event.sender.sender_id.user_id, "");
+        assert_eq!(event.event.sender.sender_id.union_id, "");
     }
 
     #[test]
