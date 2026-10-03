@@ -183,7 +183,7 @@ impl LarkDalImpl {
     /// **不做 Agent 路由**：返回的 `AdaptedMessage.to_agent_id` 为 `None`，
     /// consumer 层根据渠道绑定 agent_id 或 feishu_reception 角色策略自行决定。
     ///
-    /// 返回 `None` 表示事件被过滤（非 P2P、非文本、未绑定渠道、内容为空），
+    /// 返回 `None` 表示事件被过滤（非 P2P/群聊、非文本、未绑定渠道、内容为空），
     /// consumer 可据此决定是否推送"未绑定/不可用"提示。
     pub async fn adapt_lark(
         &self,
@@ -191,14 +191,18 @@ impl LarkDalImpl {
         app_id: &str,
         event: &LarkMessageEvent,
     ) -> Result<Option<AdaptedMessage>> {
-        // 1. 事件过滤：仅处理 P2P 文本消息
-        if !event.is_p2p() || !event.is_text() {
+        // 1. 事件过滤：仅处理 P2P / 群聊文本消息
+        //
+        // 群聊消息同样放行：未绑定用户在下方第 3 步「渠道查找」按 open_id 被过滤，
+        // 因此实际只接收「绑定用户」的群消息（沿用 open_id 绑定，最小改动），
+        // 群内其他成员的发言不会触发接待。
+        if !(event.is_p2p() || event.is_group()) || !event.is_text() {
             // info 而非 debug：默认级别下「群里 @ 机器人 / 发图片」必须留痕，
             // 否则症状（没反应）与「上游没数据」完全同形（微信侧同规）
             log_info!(
                 &ctx,
                 "lark_adapt",
-                "skip non-p2p/text event: event_id={} chat_type={} msg_type={}",
+                "skip non-p2p/group/text event: event_id={} chat_type={} msg_type={}",
                 event.header.event_id,
                 event.event.message.chat_type,
                 event.event.message.message_type
@@ -336,12 +340,13 @@ impl LarkDalImpl {
         log_info!(
             &ctx,
             "lark_adapt",
-            "adapted event_id={} app_id={} from_user={} bound_agent={:?} reply_to={:?}",
+            "adapted event_id={} app_id={} from_user={} bound_agent={:?} reply_to={:?} thread_id={:?}",
             event.header.event_id,
             app_id,
             from_id,
             to_agent_id,
-            reply_to_id
+            reply_to_id,
+            event.event.message.thread_id
         );
 
         Ok(Some(AdaptedMessage {
@@ -355,6 +360,13 @@ impl LarkDalImpl {
             reply_to_id,
             // 本消息的平台侧 ID 也落库留痕，供后续回复反查
             external_key: Some(format!("lark:{}", event.event.message.message_id)),
+            // 话题消息携带 thread_id（同话题内所有消息共享）；普通消息为 None
+            thread_id: event
+                .event
+                .message
+                .thread_id
+                .clone()
+                .filter(|s| !s.is_empty()),
         }))
     }
 }

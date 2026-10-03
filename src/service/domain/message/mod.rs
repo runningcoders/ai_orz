@@ -206,6 +206,11 @@ pub struct SendToAgentCommand<'a> {
     /// 渠道入站消息落库时随消息写入 `messages.external_key`，供后续
     /// 入站回复按渠道 parent_id/root_id 反查父消息、贯通跨渠道消息链。
     pub external_key: Option<&'a str>,
+    /// 外部渠道话题键（可选，形如 `"omt_xxx"`，飞书「话题」唯一标识）
+    ///
+    /// 渠道入站话题消息落库时随消息写入 `messages.thread_id`，同一话题内
+    /// 所有消息共享，供出站时按话题回复。
+    pub thread_id: Option<&'a str>,
     /// 附件 ID 列表（可选）
     /// 如果提供，会为每个附件创建一条附件消息，按顺序排列在文本消息之前
     pub attachment_ids: Option<&'a [String]>,

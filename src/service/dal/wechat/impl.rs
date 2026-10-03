@@ -248,6 +248,8 @@ impl WechatDalImpl {
             task_id: None,
             reply_to_id: None,
             external_key,
+            // 微信侧无话题概念
+            thread_id: None,
         }))
     }
 }

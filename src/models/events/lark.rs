@@ -88,6 +88,12 @@ pub struct LarkEventMessage {
     /// 父消息 ID（回复消息时存在）
     #[serde(default)]
     pub parent_id: Option<String>,
+    /// 话题 ID（`omt_` 前缀，仅话题消息存在）
+    ///
+    /// 飞书「话题」形态的唯一标识：同一话题内的所有消息共享同一 `thread_id`。
+    /// 普通回复/私信无此字段，故为 `None`。
+    #[serde(default)]
+    pub thread_id: Option<String>,
     /// 消息创建时间（毫秒字符串）
     pub create_time: String,
     /// 会话 ID
@@ -154,6 +160,11 @@ impl LarkMessageEvent {
     /// 是否为 P2P 私信
     pub fn is_p2p(&self) -> bool {
         self.event.message.chat_type == "p2p"
+    }
+
+    /// 是否为群聊消息
+    pub fn is_group(&self) -> bool {
+        self.event.message.chat_type == "group"
     }
 
     /// 是否为文本消息
@@ -274,7 +285,47 @@ mod tests {
         let raw = P2P_TEXT_EVENT.replace("\"p2p\"", "\"group\"");
         let event: LarkMessageEvent = serde_json::from_str(&raw).unwrap();
         assert!(!event.is_p2p());
+        assert!(event.is_group());
         assert!(event.is_text());
+    }
+
+    /// 话题消息：携带 thread_id（omt_ 前缀），群聊形态，共享话题标识
+    #[test]
+    fn test_parse_group_thread_message() {
+        const THREAD_EVENT: &str = r#"{
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_thread",
+                "event_type": "im.message.receive_v1",
+                "create_time": "1700000000000",
+                "token": "verify_token_xxx",
+                "app_id": "cli_xxx",
+                "tenant_key": "tenant_xxx"
+            },
+            "event": {
+                "sender": {
+                    "sender_id": { "open_id": "ou_xxx" },
+                    "sender_type": "open_id"
+                },
+                "message": {
+                    "message_id": "om_xxx",
+                    "root_id": "om_root",
+                    "parent_id": "om_parent",
+                    "thread_id": "omt_xxx",
+                    "create_time": "1700000000000",
+                    "chat_id": "oc_xxx",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "content": "{\"text\":\"话题内回复\"}"
+                }
+            }
+        }"#;
+        let event: LarkMessageEvent = serde_json::from_str(THREAD_EVENT).unwrap();
+        assert!(event.is_group());
+        assert!(event.is_text());
+        assert_eq!(event.event.message.thread_id.as_deref(), Some("omt_xxx"));
+        assert_eq!(event.event.message.parent_id.as_deref(), Some("om_parent"));
+        assert_eq!(event.parse_text(), Some("话题内回复".to_string()));
     }
 
     #[test]

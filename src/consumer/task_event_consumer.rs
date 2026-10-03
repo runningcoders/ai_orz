@@ -138,6 +138,7 @@ impl Consumer for TaskEventConsumer {
             task_id: Some(&event.task_id),
             reply_to_id: None,
             external_key: None,
+            thread_id: None,
             attachment_ids: None,
             message_type: MessageType::TaskDispatchNotification,
         };

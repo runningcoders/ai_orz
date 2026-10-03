@@ -54,6 +54,11 @@ pub struct AdaptedMessage {
     /// 扩展语义——iLink 协议没有线程/回复字段，故**不承担反查父消息**职责。
     /// 该列是普通索引、无唯一约束，新增写入无需 DDL。
     pub external_key: Option<String>,
+    /// 外部渠道话题键（可选，形如 `"omt_xxx"`，飞书「话题」唯一标识）
+    ///
+    /// 渠道自身的「话题/线程」平台侧 ID，随消息落库到 `messages.thread_id`。
+    /// 同一话题内所有消息共享同一值；普通私信与非话题回复为 `None`。
+    pub thread_id: Option<String>,
 }
 
 // ==================== 注册中心 ====================

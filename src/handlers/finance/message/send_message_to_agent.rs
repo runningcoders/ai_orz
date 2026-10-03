@@ -111,6 +111,7 @@ pub async fn send_message_to_agent(
         task_id: params.task_id.as_deref(),
         reply_to_id: reply_to_id.as_deref(),
         external_key: None,
+        thread_id: None,
         attachment_ids: params.attachment_ids.as_deref(),
         message_type: if notify_only {
             common::enums::MessageType::AgentNotify

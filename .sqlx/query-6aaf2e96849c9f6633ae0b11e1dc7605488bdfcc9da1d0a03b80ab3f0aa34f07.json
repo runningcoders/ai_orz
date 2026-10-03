@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, project_id, task_id, from_id, to_id, from_role as \"from_role: MessageRole\", to_role as \"to_role: MessageRole\", message_type as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", reply_to_id, root_id, external_key, organization_id, created_by, modified_by, created_at, updated_at\nFROM messages WHERE id = ? AND \"status\" != 0\n            ",
+  "query": "\nSELECT id, project_id, task_id, from_id, to_id, from_role as \"from_role: MessageRole\", to_role as \"to_role: MessageRole\", message_type as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", reply_to_id, root_id, external_key, thread_id, organization_id, created_by, modified_by, created_at, updated_at\nFROM messages WHERE id = ? AND \"status\" != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -79,28 +79,33 @@
         "type_info": "Text"
       },
       {
-        "name": "organization_id",
+        "name": "thread_id",
         "ordinal": 15,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "organization_id",
         "ordinal": 16,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 17,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 18,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 19,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 19,
+        "ordinal": 20,
         "type_info": "Integer"
       }
     ],
@@ -124,11 +129,12 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "92c6a4784684ae7462876ebc09e40350fedb9c1eb8bfadd85568a60d718d34da"
+  "hash": "6aaf2e96849c9f6633ae0b11e1dc7605488bdfcc9da1d0a03b80ab3f0aa34f07"
 }

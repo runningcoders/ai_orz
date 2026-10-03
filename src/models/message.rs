@@ -246,6 +246,11 @@ pub struct MessagePo {
     /// - 出站：推送成功后按内部消息 ID 回写
     /// - 入站适配按渠道 parent_id/root_id 反查此字段，解析消息链父消息
     pub external_key: Option<String>,
+    /// 外部渠道话题键（形如 `"omt_xxx"`，飞书「话题」唯一标识）
+    /// - 入站：话题消息落库时随消息写入（同话题内所有消息共享）
+    /// - 出站：按是否存在话题选择普通回复 / 话题回复
+    /// - 普通私信与非话题回复为 `None`
+    pub thread_id: Option<String>,
     /// 组织 ID（用于异步消费时重建上下文）
     pub organization_id: Option<String>,
     /// 创建人 ID
@@ -355,6 +360,7 @@ impl MessagePo {
             reply_to_id,
             root_id,
             external_key: None,
+            thread_id: None,
             organization_id,
             created_by: created_by.clone(),
             modified_by: created_by,

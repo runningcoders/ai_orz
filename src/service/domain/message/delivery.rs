@@ -284,6 +284,8 @@ impl MessageDelivery for MessageDomainImpl {
         );
         // 外部渠道消息键（渠道入站消息才有，供跨渠道消息链反查）
         po.external_key = cmd.external_key.map(|s| s.to_string());
+        // 外部渠道话题键（渠道入站话题消息才有，供出站按话题回复）
+        po.thread_id = cmd.thread_id.map(|s| s.to_string());
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);

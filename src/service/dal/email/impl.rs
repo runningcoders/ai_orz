@@ -265,6 +265,8 @@ impl EmailDalImpl {
             reply_to_id: None,
             // 外部键随消息落库（delivery 持久化），供 IMAP 重投去重与出站回写同键对齐
             external_key: Some(external_key),
+            // 邮件无话题概念
+            thread_id: None,
         }))
     }
 }

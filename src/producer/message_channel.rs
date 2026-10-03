@@ -151,6 +151,7 @@ impl MessageAdapterCallback for MessageChannelProducer {
             task_id: msg.task_id.as_deref(),
             reply_to_id: msg.reply_to_id.as_deref(),
             external_key: msg.external_key.as_deref(),
+            thread_id: msg.thread_id.as_deref(),
             attachment_ids: None,
             message_type: MessageType::Text,
         };

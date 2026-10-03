@@ -85,6 +85,7 @@ pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Re
         task_id: None,
         reply_to_id: None,
         external_key: None,
+        thread_id: None,
         attachment_ids: None,
         message_type: MessageType::Text,
     };

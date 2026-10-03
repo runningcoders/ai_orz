@@ -515,6 +515,60 @@ async fn test_set_and_find_external_key(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 测试话题键随消息落库并可按 ID 读回（飞书话题贯通）
+#[sqlx::test(migrations = "./migrations")]
+async fn test_insert_and_find_thread_id(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
+    let mut msg = MessagePo::new(
+        Uuid::now_v7().to_string(),
+        None,
+        None,
+        "user-001".to_string(),
+        "agent-001".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        "话题内消息".to_string(),
+        None,
+        empty_file_meta,
+        None,
+        None,
+        None,
+        "test-user".to_string(),
+    );
+    msg.thread_id = Some("omt_001".to_string());
+    message_dao.insert(ctx.clone(), &msg).await?;
+
+    let found = message_dao.find_by_id(ctx.clone(), &msg.id).await?;
+    assert_eq!(found.and_then(|m| m.thread_id), Some("omt_001".to_string()));
+
+    // 非话题消息 thread_id 缺省为 None
+    let plain = MessagePo::new(
+        Uuid::now_v7().to_string(),
+        None,
+        None,
+        "user-001".to_string(),
+        "agent-001".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        "普通消息".to_string(),
+        None,
+        FileMeta::new("".to_string(), "".to_string(), 0),
+        None,
+        None,
+        None,
+        "test-user".to_string(),
+    );
+    message_dao.insert(ctx.clone(), &plain).await?;
+    let found_plain = message_dao.find_by_id(ctx.clone(), &plain.id).await?;
+    assert_eq!(found_plain.and_then(|m| m.thread_id), None);
+
+    Ok(())
+}
+
 /// 测试统计任务消息数量
 #[sqlx::test(migrations = "./migrations")]
 async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
