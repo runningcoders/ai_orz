@@ -16,7 +16,7 @@ source_files:
 - src/service/dao/lark/mod.rs#L96-L140
 - src/service/dao/lark/http.rs#L158-L215
 - src/service/dao/lark/http.rs#L315-L360
-- docs/plan/飞书出站引用回复方案.md
+- docs/archive/plan-archive/飞书出站引用回复方案.md
 - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息处理核心.md
 - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md
 - docs/wiki/knowledge/zh/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md
