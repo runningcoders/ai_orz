@@ -79,6 +79,7 @@ source_files:
 - src/service/domain/message/delivery.rs#L1-L585（2026-09-23 重构：9 个 send_* 变体 + 收件人角色⟷ID 一致性门闩 + SSE channel 自动选择 + AOP call_site 三来源）
 - src/consumer/message.rs（2026-09-23 增量：handle_agent_message 统一走新 delivery 变体 + 角色一致性门闩应用）
 - src/handlers/finance/message/send_message.rs / send_message_to_agent.rs / search_messages.rs（2026-09-23 适配新 delivery API）
+- 【子卡】docs/wiki/knowledge/zh/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md（2026-10 新增：出站引用回复 Level 2 子卡——飞书 reply 端点 / 话题内 reply_in_thread / 静默降级）
 
 ---
 
@@ -130,6 +131,7 @@ source_files:
 | pkg/request_context.rs RequestContext | 请求上下文扩展 | 新增 `message_sender_id()` / `message_sender_role()`（2026-09-15）专供消息发送——后台唤醒场景 caller_type=System 但执行者是被唤醒 Agent，必须把 agent_id 写进 from_id；原 `caller_id_or_system()` 改仅用于审计字段 | 见 src/pkg/request_context.rs |
 | consumer/message_route_policy.rs 回发路由策略 | 防乒乓两段判定（2026-09-18） | `judge_static_reply_route`（STATIC_ROUTE_DEFS 4 条声明式规则 + FieldEqualsPolicy NO_REPLY 哨兵，零查库，返回 None 表示跨 Agent 对等候选）+ `judge_chain_reply_route`（ThresholdPolicy 链深度 ≥5 → EscalateToOwner）；`AutoReplyRoute { Peer, Discard{reason}, EscalateToOwner{reason} }` | `:L40-L60` `:L148-L188` `:L260-L291` |
 | pkg/policy/builtin.rs 策略引擎通用抽象 | ThresholdPolicy / FieldEqualsPolicy（2026-09-18） | 通用阈值策略（metric ≥ threshold 即触发）+ 字段全等策略；8 内置策略中 5 个收敛为薄包装（Timeout/ContextOverflow/TokenBudget/ConsecutiveLlmErrors/FinalAnswer），`impl_policy_delegate!` 宏转发保留原类型名与 new 签名，调用点零改动；保留专用：MaxRounds（双键）/ UserCancel（AtomicBool 状态源）/ NoProgress（多键聚合） | `:L36-L67` |
+| 【Level 2 子卡】消息出站引用回复 | `docs/wiki/knowledge/zh/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md` | 出站引用回复细视角（飞书 reply 端点 / 话题内 `reply_in_thread` / 静默降级）；总卡负责多渠道出站全貌，子卡聚焦引用回复语义——修 `delivery.rs` / `message_channel.rs` / `dao/lark` 出站语义时同读 | 见子卡 |
 
 **章节来源**
 - [message/delivery.rs:L1-L150](src/service/domain/message/delivery.rs#L1-L150)
