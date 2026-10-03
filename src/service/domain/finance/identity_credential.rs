@@ -56,6 +56,43 @@ impl FinanceDomainImpl {
         Ok(credential)
     }
 
+    /// 授权入口惰性初始化用的 LarkApp 凭证（默认凭证优先，回退最新一条）
+    ///
+    /// 返回解密后的 `(app_id, app_secret)`；无任何 LarkApp 凭证时为 None
+    /// （由调用方保持「尚未绑定」引导语义）。
+    async fn lark_credential_for_cli(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Option<(String, String)>> {
+        let user_dal = self.user_dal()?.clone();
+        let mut credential = user_dal
+            .find_default_credential(ctx.clone(), user_id, CredentialKind::LarkApp, None)
+            .await?;
+        if credential.is_none() {
+            let mut query = Self::owned_credential_query(user_id);
+            query.kind = Some(CredentialKind::LarkApp);
+            query.order_by = Some("created_at DESC".to_string());
+            query.pagination.limit = Some(1);
+            credential = user_dal
+                .query_credentials(ctx, query)
+                .await?
+                .items
+                .into_iter()
+                .next();
+        }
+        match credential.as_ref().map(UserCredential::detail) {
+            Some(common::models::CredentialDetail::LarkApp {
+                app_id, app_secret, ..
+            }) => {
+                let secret = crate::pkg::crypto::decrypt_channel_secret(app_secret)
+                    .map_err(|e| err!(Internal, "LarkApp 凭证 app_secret 解密失败: {}", e))?;
+                Ok(Some((app_id.clone(), secret)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// 构造该用户的凭证查询（活跃凭证全量，按创建序）
     fn owned_credential_query(user_id: &str) -> UserCredentialQuery {
         UserCredentialQuery {
@@ -608,10 +645,23 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
     /// 发起飞书用户授权 device flow（返回设备码 + 验证 URL）
     async fn lark_auth_start(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         user_id: &str,
         domains: &[String],
     ) -> Result<crate::pkg::lark_integration::DeviceLoginStart> {
+        // HOME config 缺失时用库内凭证惰性补建：手动录入凭证只落库，config 仅由
+        // 自动绑定或 lark_cli 工具调用生成（编辑凭证 clear 后同理），直接发起
+        // 授权会被前置检查拦成「尚未绑定飞书应用」。ensure 幂等，存在即零开销。
+        if !crate::pkg::lark_integration::home_config_exists(user_id)
+            && let Some((app_id, app_secret)) = self.lark_credential_for_cli(ctx, user_id).await?
+        {
+            let home = crate::pkg::tool_registry::lark_cli::lark_home(
+                &crate::config::get().base_data_path(),
+                user_id,
+            );
+            crate::pkg::tool_registry::lark_cli::ensure_cli_config(&home, &app_id, &app_secret)
+                .await?;
+        }
         crate::pkg::lark_integration::start_device_login(user_id, domains).await
     }
 

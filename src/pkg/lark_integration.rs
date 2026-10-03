@@ -88,6 +88,18 @@ fn prepare_lark_home(user_id: &str) -> Result<std::path::PathBuf> {
     Ok(home)
 }
 
+/// 用户隔离 HOME 下 lark-cli config 是否已就绪
+///
+/// 授权入口惰性初始化判定：手动录入凭证只落库，HOME config 仅由自动绑定
+/// （`config init --new`）或 lark_cli 工具调用（`ensure_cli_config`）生成——
+/// 授权发起前由 Domain 用库内凭证补建，本函数只做存在性探测。
+pub fn home_config_exists(user_id: &str) -> bool {
+    lark_home(&crate::config::get().base_data_path(), user_id)
+        .join(".lark-cli")
+        .join("config.json")
+        .exists()
+}
+
 /// 执行 lark-cli 子命令（HOME 隔离 + 稳定 JSON 环境变量），返回 (exit_success, stdout, stderr)
 async fn run_cli(
     home_dir: &Path,
