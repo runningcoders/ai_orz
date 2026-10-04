@@ -99,6 +99,8 @@ impl CortexDao for ExternalCortexDao {
             .rev()
             .find_map(|m| match m {
                 ChatMessage::User { content } => Some(content.as_str()),
+                // 多模态消息取 text part（防静默空 prompt；批4 方案 §2.4）
+                ChatMessage::UserMultimodal { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .unwrap_or("");

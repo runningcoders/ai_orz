@@ -186,20 +186,12 @@ impl ProtocolComponent for MentionComponent {
 ///   不参与通知），`default_registry` 维持向后兼容、批1 行为零回归；
 /// - [`AttachmentComponent::with_resolved`]：批2 实装形态——domain 层 async 预解析
 ///   attachment id → [`ResolvedPayload`] 后注入，命中实名降级、未命中快照兜底。
+#[derive(Default)]
 pub struct AttachmentComponent {
     /// 预解析表：attachment id → 资源载荷（domain 层注入）
     resolved: HashMap<String, ResolvedPayload>,
     /// 是否参与通知提取链（数据化实例 = true；批1 占位 = false）
     notify_participant: bool,
-}
-
-impl Default for AttachmentComponent {
-    fn default() -> Self {
-        Self {
-            resolved: HashMap::new(),
-            notify_participant: false,
-        }
-    }
 }
 
 impl AttachmentComponent {
@@ -239,20 +231,12 @@ impl ProtocolComponent for AttachmentComponent {
 ///
 /// - [`ArtifactComponent::default`]：批1 占位形态（向后兼容）；
 /// - [`ArtifactComponent::with_resolved`]：批2 实装形态（产物 id → 载荷注入）。
+#[derive(Default)]
 pub struct ArtifactComponent {
     /// 预解析表：artifact id → 资源载荷（domain 层注入）
     resolved: HashMap<String, ResolvedPayload>,
     /// 是否参与通知提取链（数据化实例 = true；批1 占位 = false）
     notify_participant: bool,
-}
-
-impl Default for ArtifactComponent {
-    fn default() -> Self {
-        Self {
-            resolved: HashMap::new(),
-            notify_participant: false,
-        }
-    }
 }
 
 impl ArtifactComponent {

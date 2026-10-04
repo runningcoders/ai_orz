@@ -157,6 +157,10 @@ fn extract_last_user_prompt(messages: &[crate::models::cortex_types::ChatMessage
         .rev()
         .find_map(|m| match m {
             crate::models::cortex_types::ChatMessage::User { content } => Some(content.as_str()),
+            // 多模态消息取 text part（防静默空 prompt；批4 方案 §2.4）
+            crate::models::cortex_types::ChatMessage::UserMultimodal { text, .. } => {
+                Some(text.as_str())
+            }
             _ => None,
         })
         .unwrap_or("")
@@ -459,5 +463,38 @@ impl BrainDal for BrainDalImpl {
         };
         let params = cortex::embed_text_for_search(ctx, &provider, text).await?;
         Ok(Some(params))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::cortex_types::{ChatMessage, ImagePart};
+
+    #[test]
+    fn extract_last_user_prompt_multimodal_takes_text_part() {
+        let messages = vec![
+            ChatMessage::user("第一条"),
+            ChatMessage::user_multimodal(
+                "看图",
+                vec![ImagePart {
+                    mime_type: "image/png".to_string(),
+                    data_base64: "AAAA".to_string(),
+                }],
+            ),
+        ];
+        assert_eq!(extract_last_user_prompt(&messages), "看图");
+    }
+
+    #[test]
+    fn extract_last_user_prompt_plain_user_unchanged() {
+        let messages = vec![ChatMessage::user("纯文本")];
+        assert_eq!(extract_last_user_prompt(&messages), "纯文本");
+    }
+
+    #[test]
+    fn extract_last_user_prompt_empty_when_no_user() {
+        let messages = vec![ChatMessage::system("sys")];
+        assert_eq!(extract_last_user_prompt(&messages), "");
     }
 }

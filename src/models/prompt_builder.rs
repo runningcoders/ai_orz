@@ -20,7 +20,7 @@
 //! - 其他技能 → 必加载技能区块（按 agent roles ∪ installed_tags 匹配）
 
 use crate::models::agent::Agent;
-use crate::models::cortex_types::ChatMessage;
+use crate::models::cortex_types::{ChatMessage, ImagePart};
 use crate::models::memory::Memory;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
@@ -87,6 +87,26 @@ pub trait PromptBuilder: Send + Sync {
     /// 默认实现为空（不影响 sleep / summary 等场景）。
     fn message_thread(&mut self, items: &[String]) {
         let _ = items;
+    }
+
+    /// 设置当前消息的视觉图像 parts（仅 awaken 场景，批4 vision 携带机制）
+    ///
+    /// 默认实现为空（flat/remote 等实现零波及）：图像 parts 仅由 Local Agent 的
+    /// DefaultPromptBuilder 缓存，并在 build_initial_messages 时升级当前 User 消息。
+    /// 历史消息零注入（token 裁剪口径：仅当前消息携带图像 part；base64 不进
+    /// build() trace raw_input，也不进 RoundDigest）。
+    fn set_current_message_vision(&mut self, images: Vec<ImagePart>) {
+        let _ = images;
+    }
+
+    /// 设置当前消息【资源上下文】文本详情行（仅 awaken 场景，批4 资源上下文）
+    ///
+    /// 调用方（awakening 预解析双产出）把旁路附件+协议引用的实时详情行
+    /// （名称 / mime·大小 / 产物描述≤64 字截断）按行注入；
+    /// DefaultPromptBuilder 在 current_message 渲染时追加【资源上下文】区块。
+    /// 默认实现为空（flat/remote 零波及）。
+    fn set_resource_context_lines(&mut self, lines: Vec<String>) {
+        let _ = lines;
     }
 
     /// 设置 Agent 可用技能（全量注入，build 时按 tag 分块）

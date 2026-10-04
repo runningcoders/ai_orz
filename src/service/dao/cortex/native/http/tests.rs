@@ -516,3 +516,30 @@ fn non_stream_body_without_choices_is_error() {
         parse_non_stream_body(r#"{"object":"chat.completion"}"#).expect_err("no choices must fail");
     assert!(err.msg.contains("no choices"), "msg: {}", err.msg);
 }
+
+#[test]
+fn messages_to_json_user_multimodal_uses_openai_vision_shape() {
+    let messages = vec![ChatMessage::user_multimodal(
+        "看图",
+        vec![crate::models::cortex_types::ImagePart {
+            mime_type: "image/png".to_string(),
+            data_base64: "AAAA".to_string(),
+        }],
+    )];
+    let out = messages_to_json(&messages);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0]["role"], "user");
+    let parts = out[0]["content"].as_array().expect("content parts array");
+    assert_eq!(parts.len(), 2);
+    assert_eq!(parts[0]["type"], "text");
+    assert_eq!(parts[0]["text"], "看图");
+    assert_eq!(parts[1]["type"], "image_url");
+    assert_eq!(parts[1]["image_url"]["url"], "data:image/png;base64,AAAA");
+}
+
+#[test]
+fn messages_to_json_plain_user_unchanged() {
+    let out = messages_to_json(&[ChatMessage::user("hi")]);
+    assert_eq!(out[0]["role"], "user");
+    assert_eq!(out[0]["content"], "hi");
+}

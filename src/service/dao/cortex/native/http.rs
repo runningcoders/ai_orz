@@ -67,6 +67,19 @@ fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
         .map(|m| match m {
             ChatMessage::System { content } => json!({"role": "system", "content": content}),
             ChatMessage::User { content } => json!({"role": "user", "content": content}),
+            // OpenAI vision 标准形态：content = [text part] + [image_url part × n]
+            ChatMessage::UserMultimodal { text, images } => {
+                let mut parts = vec![json!({"type": "text", "text": text})];
+                for img in images {
+                    parts.push(json!({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": format!("data:{};base64,{}", img.mime_type, img.data_base64)
+                        }
+                    }));
+                }
+                json!({"role": "user", "content": parts})
+            }
             ChatMessage::Assistant {
                 content,
                 tool_calls,

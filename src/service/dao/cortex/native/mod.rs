@@ -16,6 +16,60 @@ use std::sync::{Arc, OnceLock};
 pub mod http;
 pub mod openai;
 
+/// no-vision 降级：provider 不支持视觉输入时把 `UserMultimodal` 降级为纯文本
+///
+/// 判定源 = `provider.config` JSON 的 `supports_vision` 字段（**缺省 false 保守降级**；
+/// config 解析失败按 false + 告警日志，不中断推理）。零迁移：config 是自由 JSON
+/// 字符串，界面/接口可直接配置，无需改 `ModelProviderConfig` 结构。
+///
+/// 降级行为：清空 images，text 追加占位行说明图片未展示（模型仍能感知有附件）。
+/// 支持 vision 的 provider 原样透传（零克隆降级路径直接 to_vec）。
+pub fn downgrade_messages_for_no_vision(
+    messages: &[ChatMessage],
+    provider: &ModelProviderPo,
+) -> Vec<ChatMessage> {
+    if provider_supports_vision(provider) {
+        return messages.to_vec();
+    }
+    messages
+        .iter()
+        .map(|m| match m {
+            ChatMessage::UserMultimodal { text, images } => {
+                let mut downgraded = text.clone();
+                if !images.is_empty() {
+                    downgraded.push_str(&format!(
+                        "\n\n[图片附件：共 {} 张未展示：当前模型不支持视觉输入]",
+                        images.len()
+                    ));
+                }
+                ChatMessage::user(downgraded)
+            }
+            other => other.clone(),
+        })
+        .collect()
+}
+
+/// 读取 provider.config JSON 的 `supports_vision` 能力位
+///
+/// 缺省 / 非 bool / 解析失败 → false（保守降级，与存量纯文本链路行为一致）。
+fn provider_supports_vision(provider: &ModelProviderPo) -> bool {
+    let parsed: Option<serde_json::Value> = match serde_json::from_str(&provider.config) {
+        Ok(v) => Some(v),
+        Err(_) => {
+            log_warn!(
+                "cortex supports_vision probe: provider config parse failed, fallback to false, provider_id={}",
+                provider.id
+            );
+            None
+        }
+    };
+    parsed
+        .as_ref()
+        .and_then(|cfg| cfg.get("supports_vision"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 /// Native Cortex DAO trait - 模型调用接口
 ///
 /// 职责：
@@ -151,4 +205,77 @@ pub fn registry() -> &'static CortexDaoRegistry {
 /// 初始化 Cortex DAO Registry
 pub fn init() {
     let _ = REGISTRY.set(CortexDaoRegistry::new());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::cortex_types::ImagePart;
+    use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+
+    fn provider_with_config(config: &str) -> ModelProviderPo {
+        ModelProviderPo {
+            id: "p1".to_string(),
+            name: "p1".to_string(),
+            provider_type: ProviderType::Custom,
+            model_name: "m".to_string(),
+            capability: ModelCapability::Agent,
+            api_key: String::new(),
+            base_url: None,
+            description: None,
+            config: config.to_string(),
+            status: ModelProviderStatus::Normal,
+            created_by: "system".to_string(),
+            modified_by: "system".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn multimodal() -> ChatMessage {
+        ChatMessage::user_multimodal(
+            "看图",
+            vec![ImagePart {
+                mime_type: "image/png".to_string(),
+                data_base64: "AAAA".to_string(),
+            }],
+        )
+    }
+
+    #[test]
+    fn default_config_downgrades_to_plain_user_with_placeholder() {
+        let provider = provider_with_config("{}");
+        let out = downgrade_messages_for_no_vision(&[multimodal()], &provider);
+        match &out[0] {
+            ChatMessage::User { content } => {
+                assert!(content.starts_with("看图"));
+                assert!(content.contains("[图片附件：共 1 张未展示：当前模型不支持视觉输入]"));
+            }
+            other => panic!("期望降级为纯文本 User，实际 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn supports_vision_true_passes_through() {
+        let provider = provider_with_config(r#"{"supports_vision": true}"#);
+        let out = downgrade_messages_for_no_vision(&[multimodal()], &provider);
+        assert!(matches!(out[0], ChatMessage::UserMultimodal { .. }));
+    }
+
+    #[test]
+    fn dirty_config_falls_back_to_false_and_downgrades() {
+        let provider = provider_with_config("not-json");
+        let out = downgrade_messages_for_no_vision(&[multimodal()], &provider);
+        assert!(matches!(out[0], ChatMessage::User { .. }));
+    }
+
+    #[test]
+    fn plain_user_messages_untouched() {
+        let provider = provider_with_config("{}");
+        let out = downgrade_messages_for_no_vision(&[ChatMessage::user("hi")], &provider);
+        match &out[0] {
+            ChatMessage::User { content } => assert_eq!(content, "hi"),
+            other => panic!("纯文本消息不得被降级改动，实际 {:?}", other),
+        }
+    }
 }

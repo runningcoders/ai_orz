@@ -26,7 +26,7 @@
 //! 本实现为其完整实现；其他 Builder（如 FlatPromptBuilder）用不上的方法走 trait 默认空实现。
 
 use crate::models::agent::Agent;
-use crate::models::cortex_types::ChatMessage;
+use crate::models::cortex_types::{ChatMessage, ImagePart};
 use crate::models::memory::Memory;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
@@ -91,6 +91,11 @@ pub struct DefaultPromptBuilder {
     message_thread: Vec<String>,
     /// 当前用户消息
     current_message: Option<String>,
+    /// 当前消息视觉图像 parts（仅 awaken 场景：awakening 预解析注入，
+    /// build_initial_messages 时升级当前 User 消息为 UserMultimodal；历史零注入）
+    vision_parts: Vec<ImagePart>,
+    /// 当前消息【资源上下文】详情行（仅 awaken 场景：awakening 预解析双产出注入）
+    resource_context_lines: Vec<String>,
     /// 技能（全量，build 时按 tag 分块）
     skills: Vec<SkillPo>,
     /// 工具失败统计：(工具名称, 失败次数)
@@ -310,7 +315,30 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             );
         }
 
+        // 【资源上下文】（批1 预埋落点 L270-310，批4 实装）：当前消息旁路附件+协议引用
+        // 的文本级实时详情，与 vision parts 同一次预解析双产出注入。
+        // 仅新增区块：【提及上下文】既有行为零改动。
+        if !self.resource_context_lines.is_empty() {
+            body.push_str("\n\n【资源上下文】\n");
+            body.push_str(
+                "本条消息引用了以下资源（详情供参考，需要完整内容时用对应查询工具获取）：\n",
+            );
+            for line in &self.resource_context_lines {
+                body.push_str("- ");
+                body.push_str(line);
+                body.push('\n');
+            }
+        }
+
         self.current_message = Some(body);
+    }
+
+    fn set_current_message_vision(&mut self, images: Vec<ImagePart>) {
+        self.vision_parts = images;
+    }
+
+    fn set_resource_context_lines(&mut self, lines: Vec<String>) {
+        self.resource_context_lines = lines;
     }
 
     fn skills(&mut self, skills: &[SkillPo]) {
@@ -1304,7 +1332,16 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
     fn build_initial_messages(&self) -> Vec<ChatMessage> {
         let system = self.awaken_system_part();
         let user = self.awaken_user_part();
-        vec![ChatMessage::system(system), ChatMessage::user(user)]
+        // 批4 vision：当前消息有图像 parts 时升级为 UserMultimodal（文本区块照旧、
+        // 图像仅追加）；build() trace raw_input 与 RoundDigest 均纯文本，base64 不进。
+        if self.vision_parts.is_empty() {
+            vec![ChatMessage::system(system), ChatMessage::user(user)]
+        } else {
+            vec![
+                ChatMessage::system(system),
+                ChatMessage::user_multimodal(user, self.vision_parts.clone()),
+            ]
+        }
     }
 
     /// 沉淀场景：System（人设+技能+沉淀规范简版指引）
@@ -1460,5 +1497,117 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         user.push_str("请开始理解并输出最终 JSON：");
 
         vec![ChatMessage::system(system), ChatMessage::user(user)]
+    }
+}
+
+#[cfg(test)]
+mod vision_builder_tests {
+    use super::*;
+
+    // trait 方法语法需显式导入（use super::* 不带父模块的 use 导入）
+    use crate::models::prompt_builder::PromptBuilder;
+
+    fn make_text_message(content: &str) -> Message {
+        let mut po = crate::models::message::MessagePo::default();
+        po.from_role = common::enums::MessageRole::User;
+        po.message_type = common::enums::MessageType::Text;
+        po.content = content.to_string();
+        Message::from_po(po)
+    }
+
+    fn make_image(mime: &str) -> ImagePart {
+        ImagePart {
+            mime_type: mime.to_string(),
+            data_base64: "aGVsbG8=".to_string(),
+        }
+    }
+
+    #[test]
+    fn initial_messages_stay_plain_text_without_vision_parts() {
+        let mut b = DefaultPromptBuilder::new();
+        b.current_message(&make_text_message("hi"));
+        let msgs = b.build_initial_messages();
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(msgs[1], ChatMessage::User { .. }));
+    }
+
+    #[test]
+    fn initial_messages_upgrade_to_user_multimodal_with_vision_parts() {
+        let mut b = DefaultPromptBuilder::new();
+        b.current_message(&make_text_message("看图"));
+        b.set_current_message_vision(vec![make_image("image/png")]);
+        let msgs = b.build_initial_messages();
+        assert_eq!(msgs.len(), 2);
+        match &msgs[1] {
+            ChatMessage::UserMultimodal { text, images } => {
+                assert!(text.contains("看图"));
+                assert_eq!(images.len(), 1);
+                assert_eq!(images[0].mime_type, "image/png");
+            }
+            other => panic!("expected UserMultimodal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_prompt_stays_text_only_even_with_vision_parts() {
+        // token 裁剪口径：base64 不进 build() 输出（trace raw_input/RoundDigest 纯文本）
+        let mut b = DefaultPromptBuilder::new();
+        b.current_message(&make_text_message("hi"));
+        b.set_current_message_vision(vec![make_image("image/png")]);
+        let prompt = b.build();
+        assert!(!prompt.contains("aGVsbG8="));
+        assert!(prompt.contains("hi"));
+    }
+
+    #[test]
+    fn resource_context_block_rendered_into_current_message() {
+        let mut b = DefaultPromptBuilder::new();
+        b.current_message(&make_text_message("引用了产物"));
+        assert!(!b.build().contains("【资源上下文】"));
+
+        let mut b2 = DefaultPromptBuilder::new();
+        b2.set_resource_context_lines(vec![
+            "附件「截图.png」 · image/png · 125952 字节".to_string(),
+            "产物「调研报告」 · text/plain · 核心结论…".to_string(),
+        ]);
+        b2.current_message(&make_text_message("引用了产物"));
+        let prompt = b2.build();
+        assert!(prompt.contains("【资源上下文】"));
+        assert!(prompt.contains("截图.png"));
+        assert!(prompt.contains("调研报告"));
+    }
+
+    #[test]
+    fn thread_and_history_stay_text_with_vision_parts() {
+        // token 裁剪口径：消息链/历史为纯文本，仅当前消息携带图像 part
+        let mut b = DefaultPromptBuilder::new();
+        b.set_current_message_vision(vec![make_image("image/png")]);
+        b.message_thread(&["链头消息".to_string(), "链内回复".to_string()]);
+        b.current_message(&make_text_message("hi"));
+        let msgs = b.build_initial_messages();
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(msgs[0], ChatMessage::System { .. }));
+        match &msgs[1] {
+            ChatMessage::UserMultimodal { text, images } => {
+                assert_eq!(images.len(), 1);
+                assert!(text.contains("链头消息"));
+                assert!(text.contains("链内回复"));
+            }
+            _ => panic!("expected UserMultimodal"),
+        }
+    }
+
+    #[test]
+    fn sleep_scene_stays_plain_text_despite_vision_parts() {
+        // sleep/summary/intent_analyze 场景零改动：即使缓存了 vision parts 也不升级
+        let mut b = DefaultPromptBuilder::new();
+        b.set_current_message_vision(vec![make_image("image/png")]);
+        let msgs = b.build_sleep_initial_messages("待沉淀摘要", &["t1".to_string()]);
+        // DefaultPromptBuilder 覆写 sleep 场景为 [System, User] 双消息——
+        // 真口径 = 全部消息零 UserMultimodal（场景零改动，vision parts 不升级）
+        assert!(
+            msgs.iter()
+                .all(|m| !matches!(m, ChatMessage::UserMultimodal { .. }))
+        );
     }
 }

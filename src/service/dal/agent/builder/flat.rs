@@ -120,6 +120,16 @@ impl FlatPromptBuilder {
                     }
                     user.push_str(content);
                 }
+                // 多模态消息文本化：text part 拼接 + 图像计数占位（Cli/Remote 天然纯文本链路）
+                ChatMessage::UserMultimodal { text, images } => {
+                    if !user.is_empty() {
+                        user.push_str("\n\n");
+                    }
+                    user.push_str(text);
+                    if !images.is_empty() {
+                        user.push_str(&format!("\n\n[图片 x{}]", images.len()));
+                    }
+                }
                 _ => {}
             }
         }
@@ -296,5 +306,49 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
 
     fn build_intent_analyze_initial_messages(&self) -> Vec<ChatMessage> {
         self.flatten(&self.inner.build_intent_analyze_initial_messages())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::cortex_types::ImagePart;
+
+    #[test]
+    fn flatten_multimodal_becomes_text_with_image_placeholder() {
+        let builder = FlatPromptBuilder::new();
+        let messages = vec![ChatMessage::user_multimodal(
+            "看两张图",
+            vec![
+                ImagePart {
+                    mime_type: "image/png".to_string(),
+                    data_base64: "QQ==".to_string(),
+                },
+                ImagePart {
+                    mime_type: "image/jpeg".to_string(),
+                    data_base64: "Aw==".to_string(),
+                },
+            ],
+        )];
+        let flattened = builder.flatten(&messages);
+        assert_eq!(flattened.len(), 1);
+        match &flattened[0] {
+            ChatMessage::User { content } => {
+                assert!(content.contains("看两张图"));
+                assert!(content.contains("[图片 x2]"));
+                assert!(!content.contains("QQ=="), "base64 不得进入扁平化文本");
+            }
+            other => panic!("期望单条 User 消息，实际 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn flatten_plain_user_unchanged() {
+        let builder = FlatPromptBuilder::new();
+        let flattened = builder.flatten(&[ChatMessage::user("hi")]);
+        match &flattened[0] {
+            ChatMessage::User { content } => assert_eq!(content, "hi"),
+            other => panic!("期望 User 消息，实际 {:?}", other),
+        }
     }
 }

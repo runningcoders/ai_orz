@@ -294,6 +294,8 @@ impl RuntimeDomainImpl {
                 let rc = &brain.runtime_config;
                 let last_user_text = messages.iter().rev().find_map(|m| match m {
                     ChatMessage::User { content } => Some(content.as_str()),
+                    // 批4 披露②：带图消息取文本 part（防小脑快判断静默跳过）
+                    ChatMessage::UserMultimodal { text, .. } => Some(text.as_str()),
                     _ => None,
                 });
                 let decision = cerebellum_router::route_with_default_dao(

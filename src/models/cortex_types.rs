@@ -128,6 +128,19 @@ pub struct ToolCallRequest {
     pub arguments: Value,
 }
 
+/// 图像 part（模型输入侧；base64 data URL 由传输转换层拼装）
+///
+/// 仅用于 [`ChatMessage::UserMultimodal`]（最新 1 条用户消息的多模态输入）；
+/// base64 不进 `to_summary_text` 轮次快照 / RoundDigest，也不进 trace raw_input
+/// （builder.build() 为纯文本），token 与内存双保险。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImagePart {
+    /// 图像 MIME 类型（image/png | image/jpeg | image/gif | image/webp）
+    pub mime_type: String,
+    /// 裸 base64 数据（不含 data: 前缀）
+    pub data_base64: String,
+}
+
 /// 聊天消息（多轮对话历史）
 ///
 /// 对应 OpenAI Chat Completions API 的 messages 数组中的元素。
@@ -158,6 +171,16 @@ pub enum ChatMessage {
         /// 工具执行结果
         content: String,
     },
+    /// 用户多模态消息：文本 part + 图像 parts（仅最新 1 条用户消息使用）
+    ///
+    /// 与 `User{content}` 并存：既有纯文本构造点零波及；仅组装层（awakening）
+    /// 在当前消息携带图像时升级为本变体。`role` tag 序列化为 "user_multimodal"。
+    UserMultimodal {
+        /// 文本 part（原完整 user 文本，各文本区块照旧）
+        text: String,
+        /// 图像 parts（内置参数：≤4 张/单条，单图原始字节 ≤10MB，mime 白名单 image/*）
+        images: Vec<ImagePart>,
+    },
 }
 
 impl ChatMessage {
@@ -180,6 +203,14 @@ impl ChatMessage {
         ChatMessage::Tool {
             tool_call_id: tool_call_id.into(),
             content: content.into(),
+        }
+    }
+
+    /// 创建用户多模态消息（文本 + 图像 parts）
+    pub fn user_multimodal(text: impl Into<String>, images: Vec<ImagePart>) -> Self {
+        ChatMessage::UserMultimodal {
+            text: text.into(),
+            images,
         }
     }
 
@@ -230,6 +261,14 @@ impl ChatMessage {
                     truncate_str(content, max_content_len)
                 )
             }
+            ChatMessage::UserMultimodal { text, images } => {
+                // base64 不进轮次快照 / RoundDigest：只取 text，图像仅计数占位
+                format!(
+                    "[user] {} [+{} images]",
+                    truncate_str(text, max_content_len),
+                    images.len()
+                )
+            }
         }
     }
 }
@@ -243,5 +282,52 @@ fn truncate_str(s: &str, max_len: usize) -> &str {
             Some((idx, _)) => &s[..idx],
             None => s,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn user_multimodal_serializes_with_role_tag() {
+        let msg = ChatMessage::user_multimodal(
+            "看图",
+            vec![ImagePart {
+                mime_type: "image/png".to_string(),
+                data_base64: "AAAA".to_string(),
+            }],
+        );
+        let v = serde_json::to_value(&msg).expect("serialize");
+        assert_eq!(v["role"], "user_multimodal");
+        assert_eq!(v["text"], "看图");
+        assert_eq!(v["images"][0]["mime_type"], "image/png");
+        assert_eq!(v["images"][0]["data_base64"], "AAAA");
+    }
+
+    #[test]
+    fn to_summary_text_multimodal_counts_images_without_base64() {
+        let msg = ChatMessage::user_multimodal(
+            "看两张图",
+            vec![
+                ImagePart {
+                    mime_type: "image/png".to_string(),
+                    data_base64: "QQ==".to_string(),
+                },
+                ImagePart {
+                    mime_type: "image/jpeg".to_string(),
+                    data_base64: "Aw==".to_string(),
+                },
+            ],
+        );
+        let summary = msg.to_summary_text(200);
+        assert_eq!(summary, "[user] 看两张图 [+2 images]");
+        assert!(!summary.contains("QQ=="), "base64 不得进入轮次快照");
+    }
+
+    #[test]
+    fn to_summary_text_plain_user_unchanged() {
+        let summary = ChatMessage::user("纯文本").to_summary_text(200);
+        assert_eq!(summary, "[user] 纯文本");
     }
 }

@@ -12,7 +12,7 @@
 use super::types::ThinkLoopParams;
 use crate::enrich_ctx;
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ImagePart, ToolDescriptor};
 use crate::models::events::AgentLoopEvent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
@@ -221,6 +221,157 @@ pub(super) async fn mount_ontology_lexicon(
         Ok(summary) => builder.ontology_lexicon(&summary),
         Err(e) => log_warn!(ctx, "awaken", "加载本体词表失败，跳过词表注入: {:?}", e),
     }
+}
+
+/// 当前消息资源预解析（批4 §2.5：文本详情 + vision parts 双产出，一次 DAL 查询）
+///
+/// 仅处理 `from_role=User` 的当前消息（历史消息零注入 = token 裁剪口径）：
+/// - 旁路文件消息：`content=attachment id` + `file_meta`（delivery.rs 落库口径）；
+/// - Text/Mixed 协议引用：`[文本](attachment:id)` / `[文本](artifact:id)`（extract_refs）。
+///
+/// 内置上限：单图 ≤10MB、单条 ≤4 张、mime 白名单 image/*；
+/// 超限或非图片 → 降级为文本占位行（不中断）；查询失败 → log_warn 跳过
+/// （优雅降级，与 mount_ontology_lexicon 同构：可选增强不阻断唤醒主流程）。
+///
+/// 返回：(资源上下文文本详情行, 当前消息图像 parts)
+pub(super) async fn resolve_current_message_resources(
+    ctx: &RequestContext,
+    message: &Message,
+) -> (Vec<String>, Vec<ImagePart>) {
+    let mut lines: Vec<String> = Vec::new();
+    let mut images: Vec<ImagePart> = Vec::new();
+
+    // 仅用户发来的当前消息注入（token 裁剪口径：历史/系统消息零图像 part）
+    if message.from_role() != common::enums::MessageRole::User {
+        return (lines, images);
+    }
+
+    let mut att_ids: Vec<String> = Vec::new();
+    if message.file_meta().is_some() {
+        // 旁路文件消息：content = attachment id
+        att_ids.push(message.content().to_string());
+    }
+    let (ref_atts, ref_arts) = collect_resource_ref_ids(message.content());
+    for id in ref_atts {
+        if !att_ids.contains(&id) {
+            att_ids.push(id);
+        }
+    }
+    if att_ids.is_empty() && ref_arts.is_empty() {
+        return (lines, images);
+    }
+
+    use base64::Engine as _;
+    let attachment_dal = crate::service::dal::attachment::dal();
+    let artifact_dal = crate::service::dal::artifact::dal();
+
+    for att_id in &att_ids {
+        let att = match attachment_dal.get_by_id(ctx.clone(), att_id).await {
+            Ok(Some(att)) => att,
+            Ok(None) => {
+                lines.push(format!("附件「{att_id}」：未找到（可能已删除）"));
+                continue;
+            }
+            Err(e) => {
+                log_warn!(ctx, "awaken", "预解析附件 {att_id} 查询失败，跳过: {e:?}");
+                continue;
+            }
+        };
+        let po = &att.po;
+        let mime = po.mime_type.clone();
+        let size = po.size;
+        lines.push(format!(
+            "附件「{}」 · {} · {} 字节",
+            po.original_name, mime, size
+        ));
+        if let Err(reason) = image_part_admission(&mime, size, images.len()) {
+            lines.push(format!("  （{reason}）"));
+            continue;
+        }
+        match attachment_dal.read_file(&att) {
+            Ok(bytes) => {
+                images.push(ImagePart {
+                    mime_type: mime,
+                    data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                });
+            }
+            Err(e) => {
+                log_warn!(
+                    ctx,
+                    "awaken",
+                    "预解析附件 {att_id} 读取失败，仅保留文本详情: {e:?}"
+                );
+            }
+        }
+    }
+
+    for art_id in &ref_arts {
+        match artifact_dal.find_by_id(ctx.clone(), art_id).await {
+            Ok(Some(art)) => {
+                let po = &art.po;
+                let raw_desc = po.description.trim();
+                let desc: String = if raw_desc.chars().count() > 64 {
+                    format!("{}…", raw_desc.chars().take(64).collect::<String>())
+                } else {
+                    raw_desc.to_string()
+                };
+                lines.push(format!(
+                    "产物「{}」 · {} · {desc}",
+                    po.name, po.file_meta.0.mime_type
+                ));
+            }
+            Ok(None) => {
+                lines.push(format!("产物「{art_id}」：未找到（可能已删除）"));
+            }
+            Err(e) => {
+                log_warn!(ctx, "awaken", "预解析产物 {art_id} 查询失败，跳过: {e:?}");
+            }
+        }
+    }
+
+    (lines, images)
+}
+
+/// 协议引用 id 收集（纯函数，供单测）：attachment/artifact 分桶、去重保序；
+/// mention 等其余 scheme 不在资源上下文范围
+fn collect_resource_ref_ids(content: &str) -> (Vec<String>, Vec<String>) {
+    let mut att_ids: Vec<String> = Vec::new();
+    let mut art_ids: Vec<String> = Vec::new();
+    for (r, _snapshot) in common::markdown_protocol::extract_refs(content) {
+        let scheme = r.scheme.as_str();
+        let id = r.id;
+        match scheme {
+            "attachment" if !att_ids.contains(&id) => att_ids.push(id),
+            "artifact" if !art_ids.contains(&id) => art_ids.push(id),
+            _ => {}
+        }
+    }
+    (att_ids, art_ids)
+}
+
+/// 图像上限校验（纯函数，供单测）：mime 白名单 image/* + 单图 ≤10MB + 单条 ≤4 张；
+/// 超限返回占位说明（降级文本，不中断）
+fn image_part_admission(
+    mime: &str,
+    size: i64,
+    current_images: usize,
+) -> std::result::Result<(), String> {
+    const MAX_IMAGE_BYTES: i64 = 10 * 1024 * 1024;
+    const MAX_IMAGES_PER_MESSAGE: usize = 4;
+    if !mime.starts_with("image/") {
+        return Err(format!("mime「{mime}」不在 image/* 白名单，未注入视觉输入"));
+    }
+    if size > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "图片 {size} 字节超过单图 {MAX_IMAGE_BYTES} 字节上限，未注入视觉输入"
+        ));
+    }
+    if current_images >= MAX_IMAGES_PER_MESSAGE {
+        return Err(format!(
+            "图像数量已达单条 {MAX_IMAGES_PER_MESSAGE} 张上限，未注入视觉输入"
+        ));
+    }
+    Ok(())
 }
 
 // ==================== RuntimeAwakening trait 实现 ====================
@@ -506,6 +657,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             }
             if !past_memories.is_empty() {
                 builder.past_memories_reference(&past_memories);
+            }
+            // 批4：当前消息资源预解析（仅 from_role=User）——文本详情与图像 parts
+            // 同一次 DAL 查询双产出；【资源上下文】行与 vision parts 均须在
+            // builder.current_message 渲染前注入。历史通道（message_thread）零注入。
+            let (resource_lines, vision_parts) =
+                resolve_current_message_resources(&ctx, message).await;
+            if !resource_lines.is_empty() {
+                builder.set_resource_context_lines(resource_lines);
+            }
+            if !vision_parts.is_empty() {
+                builder.set_current_message_vision(vision_parts);
             }
             builder.current_message(message);
             builder.message_thread(&message_thread_items);
@@ -1433,6 +1595,8 @@ mod tests {
                     ChatMessage::User { content } => Some(content.as_str()),
                     ChatMessage::Assistant { content, .. } => content.as_deref(),
                     ChatMessage::Tool { content, .. } => Some(content.as_str()),
+                    // 批4 P1 新变体穷举波及臂（测试 mock，编译器强制；行为=取 text part）
+                    ChatMessage::UserMultimodal { text, .. } => Some(text.as_str()),
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -2058,5 +2222,39 @@ mod tests {
         assert_eq!(ia.need_clarification.len(), 1);
         assert!(ia.need_clarification[0].contains("排期是指哪个版本"));
         assert_eq!(ia.summary, "用户询问项目X的排期，需要澄清版本信息");
+    }
+}
+
+#[cfg(test)]
+mod vision_resource_tests {
+    use super::*;
+
+    #[test]
+    fn collect_refs_buckets_attachment_and_artifact() {
+        let content = "看 [图](attachment:att_1) 和 [报告](artifact:art_2)，再 [图2](attachment:att_1) 与 [提及](user:u9)";
+        let (atts, arts) = collect_resource_ref_ids(content);
+        assert_eq!(atts, vec!["att_1".to_string()]);
+        assert_eq!(arts, vec!["art_2".to_string()]);
+    }
+
+    #[test]
+    fn collect_refs_empty_for_plain_text() {
+        let (atts, arts) = collect_resource_ref_ids("纯文本无引用");
+        assert!(atts.is_empty());
+        assert!(arts.is_empty());
+    }
+
+    #[test]
+    fn image_admission_accepts_within_limits() {
+        assert!(image_part_admission("image/png", 1024, 0).is_ok());
+        assert!(image_part_admission("image/jpeg", 10 * 1024 * 1024, 3).is_ok());
+    }
+
+    #[test]
+    fn image_admission_degrades_beyond_limits() {
+        // 非 image/* mime / 超单图 10MB / 超单条 4 张 —— 均降级占位不中断
+        assert!(image_part_admission("application/pdf", 100, 0).is_err());
+        assert!(image_part_admission("image/png", 10 * 1024 * 1024 + 1, 0).is_err());
+        assert!(image_part_admission("image/png", 100, 4).is_err());
     }
 }
