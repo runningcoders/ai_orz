@@ -137,6 +137,20 @@ pub fn render_mention_chip(m: &MentionRef, display_name: &str) -> String {
     }
 }
 
+/// 渲染资源引用 chip 的 HTML（批2：attachment / artifact 协议引用，供 `Event::InlineHtml` 注入）
+///
+/// 复用 mention chip 样式与转义纪律（AMan 批2 决策点③：复用 mention chip 形态，
+/// 渲染差异仅 `data-mention-kind` 与文案）；展示名优先快照文本（站内 SSE 不查
+/// DAL，实时名解析归批3 混排主线）。
+pub fn render_resource_chip(scheme: &str, id: &str, display_name: &str) -> String {
+    let kind = escape_html(scheme);
+    let id = escape_html(id);
+    let name = escape_html(display_name);
+    format!(
+        r#"<span class="mention-chip mention-{kind}" data-mention-kind="{kind}" data-mention-id="{id}" title="{kind}: {id}">{name}</span>"#
+    )
+}
+
 /// 消息接收方的「提及 chip」HTML（气泡头部拼出「这条消息发给谁」）
 ///
 /// 群聊（项目会话）里消息不止你 ↔ 一个 Agent 两条线，Agent 之间也会互相说话。
@@ -182,8 +196,9 @@ pub fn receiver_mention_html(
 ///
 /// 提及链接内部的事件由 common 协议层吞掉并收集为展示名快照（Markdown 不允许
 /// 链接嵌套链接，单层状态机即可）；拦截资格以注册表为准，未注册 scheme
-/// （如 `user:`）与 mention 之外的已注册 scheme（attachment/artifact）均降级为
-/// 普通链接原样透传。
+/// （如 `user:`）降级为普通链接原样透传。批2 起 attachment/artifact 资源引用
+/// 渲染为资源 chip（复用 mention chip 样式，`data-mention-kind` 区分），批1
+/// 登记的「快照吐回」语义边界随 render 接管自然消解。
 pub fn transform_mentions<'a, I>(events: I, agents: Option<&NameMap>) -> Vec<Event<'a>>
 where
     I: Iterator<Item = Event<'a>>,
@@ -193,12 +208,17 @@ where
         demote_raw_html: true,
     };
     transform(events, &registry, &opts, |r, snapshot, _| {
-        // mention 族（agent/task/project）→ chip；mention 之外的已注册 scheme
-        // （attachment/artifact）在 to_mention 失败时返回 None，
-        // common 层按原始链接形态吐回（快照文本替代内层事件）
-        let m = r.to_mention()?;
-        let name = resolve_display_name(&m, snapshot, agents);
-        Some(Event::InlineHtml(render_mention_chip(&m, &name).into()))
+        // mention 族（agent/task/project）→ 提及 chip（实时名优先，快照回退）；
+        // 批2：attachment/artifact 资源引用 → 资源 chip（复用 mention chip 样式，
+        // data-mention-kind 区分资源类型），render 恒 Some——common 层「快照吐回」
+        // 分支不再触发，批1 登记语义边界（结构化内层链接吐回快照纯文本）随之消解。
+        if let Some(m) = r.to_mention() {
+            let name = resolve_display_name(&m, snapshot, agents);
+            return Some(Event::InlineHtml(render_mention_chip(&m, &name).into()));
+        }
+        Some(Event::InlineHtml(
+            render_resource_chip(&r.scheme, &r.id, snapshot).into(),
+        ))
     })
 }
 
@@ -416,7 +436,10 @@ mod tests {
         (
             "[设计稿](attachment:att_1) 参考",
             false,
-            concat!(r#"<p><a href="attachment:att_1">设计稿</a> 参考</p>"#, "\n"),
+            concat!(
+                r#"<p><span class="mention-chip mention-attachment" data-mention-kind="attachment" data-mention-id="att_1" title="attachment: att_1">设计稿</span> 参考</p>"#,
+                "\n"
+            ),
         ),
         (
             "[**张伟**](agent:agt_1) 强调内层",
@@ -427,6 +450,38 @@ mod tests {
             ),
         ),
     ];
+
+    #[test]
+    fn transform_renders_artifact_resource_chip() {
+        let html = render("[调研报告](artifact:art_1) 已交付", None);
+        assert!(html.contains("mention-chip mention-artifact"));
+        assert!(html.contains("data-mention-kind=\"artifact\""));
+        assert!(html.contains("data-mention-id=\"art_1\""));
+        // 协议 dest 不裸奔给渲染层
+        assert!(!html.contains("artifact:art_1\""));
+        assert!(html.contains("已交付"));
+    }
+
+    /// 批1 登记语义边界消解实证：已注册非 mention scheme + 结构化内层（加粗）链接，
+    /// 批1 吐回「Start+快照纯文本+End」（内层格式丢失且 dest 裸奔），批2 render
+    /// 恒 Some 接管后输出资源 chip——吐回分支不再触发。
+    #[test]
+    fn batch1_semantic_boundary_resolved_by_render_takeover() {
+        let html = render("[**张伟**](attachment:att_1) 看看", None);
+        // 消解：chip 形态 + 快照名，内层结构事件被吞并（与 mention 同口径）
+        assert!(html.contains("mention-chip mention-attachment"));
+        assert!(html.contains(">张伟</span>"));
+        // 吐回分支（dest 裸奔为 <a href>）不再触发
+        assert!(!html.contains("<a href=\"attachment:att_1\">"));
+    }
+
+    #[test]
+    fn resource_chip_escapes_html() {
+        let html = render_resource_chip("attachment", "att_<1>", "<img src=x>");
+        assert!(html.contains("&lt;img src=x&gt;"));
+        assert!(html.contains("data-mention-id=\"att_&lt;1&gt;\""));
+        assert!(html.contains("mention-attachment"));
+    }
 
     #[test]
     fn golden_snapshot_matches_after_thin_wrapper_switch() {

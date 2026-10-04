@@ -139,6 +139,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_push_dal = crate::service::dal::message_push::dal();
     // 注入 Attachment DAL（测试中如果用不到附件，可保持真实 DAL 即可，因为它只会在 attachment_ids 非空时调用）
     let attachment_dal = crate::service::dal::attachment::dal();
+    let artifact_dal = crate::service::dal::artifact::dal();
     // 入站适配门面依赖的渠道 DAL（构造独立实例，不依赖单例 init 顺序）
     let lark_dal = crate::service::dal::lark::new_with_credential_dao(
         message_channel_dal.clone(),
@@ -163,6 +164,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
         message_channel_dal,
         message_push_dal,
         attachment_dal,
+        artifact_dal,
         lark_dal,
         wechat_dal,
         email_dal,

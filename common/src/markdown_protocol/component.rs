@@ -133,8 +133,8 @@ impl ProtocolRegistry {
         for kind in [MentionKind::Agent, MentionKind::Task, MentionKind::Project] {
             reg.register(Arc::new(MentionComponent { kind }));
         }
-        reg.register(Arc::new(AttachmentComponent));
-        reg.register(Arc::new(ArtifactComponent));
+        reg.register(Arc::new(AttachmentComponent::default()));
+        reg.register(Arc::new(ArtifactComponent::default()));
         reg
     }
 }
@@ -180,8 +180,37 @@ impl ProtocolComponent for MentionComponent {
     }
 }
 
-/// 附件引用占位组件（批2 经 AttachmentDal resolver 注入 extract）
-pub struct AttachmentComponent;
+/// 附件引用组件（批2 数据化：domain resolver 预解析注入，协议层零 DAL 依赖）
+///
+/// - [`AttachmentComponent::default`]：批1 占位形态（空解析表，`extract` = None、
+///   不参与通知），`default_registry` 维持向后兼容、批1 行为零回归；
+/// - [`AttachmentComponent::with_resolved`]：批2 实装形态——domain 层 async 预解析
+///   attachment id → [`ResolvedPayload`] 后注入，命中实名降级、未命中快照兜底。
+pub struct AttachmentComponent {
+    /// 预解析表：attachment id → 资源载荷（domain 层注入）
+    resolved: HashMap<String, ResolvedPayload>,
+    /// 是否参与通知提取链（数据化实例 = true；批1 占位 = false）
+    notify_participant: bool,
+}
+
+impl Default for AttachmentComponent {
+    fn default() -> Self {
+        Self {
+            resolved: HashMap::new(),
+            notify_participant: false,
+        }
+    }
+}
+
+impl AttachmentComponent {
+    /// 数据化构造：注入预解析载荷表（经 Registry 注册即覆盖批1 占位组件）
+    pub fn with_resolved(resolved: HashMap<String, ResolvedPayload>) -> Self {
+        Self {
+            resolved,
+            notify_participant: true,
+        }
+    }
+}
 
 impl ProtocolComponent for AttachmentComponent {
     fn scheme(&self) -> &'static str {
@@ -189,16 +218,52 @@ impl ProtocolComponent for AttachmentComponent {
     }
 
     fn participates_in_notify(&self) -> bool {
-        false
+        self.notify_participant
     }
 
-    fn render_text(&self, _r: &ProtocolRef, snapshot: &str) -> String {
-        format!("[附件：{snapshot}]")
+    fn extract(&self, r: &ProtocolRef) -> Option<ResolvedPayload> {
+        self.resolved.get(&r.id).cloned()
+    }
+
+    fn render_text(&self, r: &ProtocolRef, snapshot: &str) -> String {
+        match self.resolved.get(&r.id) {
+            // 已解析：实名占位（资源详情参与出站降级）
+            Some(p) => format!("[附件：{}]", p.name),
+            // 未命中（id 查无 / 已删）：快照兜底，防悬空
+            None => format!("[附件：{snapshot}]"),
+        }
     }
 }
 
-/// 产物引用占位组件（批2 经产物 DAL resolver 注入 extract）
-pub struct ArtifactComponent;
+/// 产物引用组件（批2 数据化，与 [`AttachmentComponent`] 同构）
+///
+/// - [`ArtifactComponent::default`]：批1 占位形态（向后兼容）；
+/// - [`ArtifactComponent::with_resolved`]：批2 实装形态（产物 id → 载荷注入）。
+pub struct ArtifactComponent {
+    /// 预解析表：artifact id → 资源载荷（domain 层注入）
+    resolved: HashMap<String, ResolvedPayload>,
+    /// 是否参与通知提取链（数据化实例 = true；批1 占位 = false）
+    notify_participant: bool,
+}
+
+impl Default for ArtifactComponent {
+    fn default() -> Self {
+        Self {
+            resolved: HashMap::new(),
+            notify_participant: false,
+        }
+    }
+}
+
+impl ArtifactComponent {
+    /// 数据化构造：注入预解析载荷表（经 Registry 注册即覆盖批1 占位组件）
+    pub fn with_resolved(resolved: HashMap<String, ResolvedPayload>) -> Self {
+        Self {
+            resolved,
+            notify_participant: true,
+        }
+    }
+}
 
 impl ProtocolComponent for ArtifactComponent {
     fn scheme(&self) -> &'static str {
@@ -206,11 +271,18 @@ impl ProtocolComponent for ArtifactComponent {
     }
 
     fn participates_in_notify(&self) -> bool {
-        false
+        self.notify_participant
     }
 
-    fn render_text(&self, _r: &ProtocolRef, snapshot: &str) -> String {
-        format!("[产物：{snapshot}]")
+    fn extract(&self, r: &ProtocolRef) -> Option<ResolvedPayload> {
+        self.resolved.get(&r.id).cloned()
+    }
+
+    fn render_text(&self, r: &ProtocolRef, snapshot: &str) -> String {
+        match self.resolved.get(&r.id) {
+            Some(p) => format!("[产物：{}]", p.name),
+            None => format!("[产物：{snapshot}]"),
+        }
     }
 }
 
@@ -345,5 +417,95 @@ mod tests {
             .build();
         assert!(reg.contains("another"));
         assert!(reg.contains("agent"));
+    }
+
+    #[test]
+    fn resolved_attachment_component_extracts_and_renders() {
+        // 批2 数据化：命中实名载荷 / 未命中快照兜底 / 参与通知
+        let mut map = HashMap::new();
+        map.insert(
+            "att_1".to_string(),
+            ResolvedPayload {
+                name: "设计稿.png".to_string(),
+                summary: Some("image/png · 125952".to_string()),
+            },
+        );
+        let c = AttachmentComponent::with_resolved(map);
+        let r = ProtocolRef {
+            scheme: "attachment".into(),
+            id: "att_1".into(),
+            org: None,
+        };
+        assert_eq!(
+            c.extract(&r),
+            Some(ResolvedPayload {
+                name: "设计稿.png".into(),
+                summary: Some("image/png · 125952".into()),
+            })
+        );
+        assert_eq!(c.render_text(&r, "快照名"), "[附件：设计稿.png]");
+        assert!(c.participates_in_notify());
+
+        // 未命中 id：快照兜底防悬空
+        let miss = ProtocolRef {
+            scheme: "attachment".into(),
+            id: "att_x".into(),
+            org: None,
+        };
+        assert_eq!(c.extract(&miss), None);
+        assert_eq!(c.render_text(&miss, "快照名"), "[附件：快照名]");
+    }
+
+    #[test]
+    fn default_resource_components_stay_placeholder_compatible() {
+        // 批1 占位行为零回归：Default 构造 extract=None / 不参与通知 / 快照 render
+        let c = AttachmentComponent::default();
+        let r = ProtocolRef {
+            scheme: "attachment".into(),
+            id: "att_1".into(),
+            org: None,
+        };
+        assert_eq!(c.extract(&r), None);
+        assert!(!c.participates_in_notify());
+        assert_eq!(c.render_text(&r, "设计稿"), "[附件：设计稿]");
+
+        let a = ArtifactComponent::default();
+        let ar = ProtocolRef {
+            scheme: "artifact".into(),
+            id: "art_1".into(),
+            org: None,
+        };
+        assert_eq!(a.extract(&ar), None);
+        assert!(!a.participates_in_notify());
+        assert_eq!(a.render_text(&ar, "报告"), "[产物：报告]");
+    }
+
+    #[test]
+    fn late_registration_overrides_placeholder() {
+        // 「同 scheme 后注册者覆盖」：数据化实例覆盖 default_registry 占位
+        let mut map = HashMap::new();
+        map.insert(
+            "att_2".to_string(),
+            ResolvedPayload {
+                name: "doc.pdf".to_string(),
+                summary: None,
+            },
+        );
+        let mut reg = ProtocolRegistry::default_registry();
+        assert!(!reg.get("attachment").unwrap().participates_in_notify());
+        reg.register(Arc::new(AttachmentComponent::with_resolved(map)));
+        let c = reg.get("attachment").unwrap();
+        assert!(c.participates_in_notify());
+        assert_eq!(
+            c.extract(&ProtocolRef {
+                scheme: "attachment".into(),
+                id: "att_2".into(),
+                org: None,
+            }),
+            Some(ResolvedPayload {
+                name: "doc.pdf".into(),
+                summary: None,
+            })
+        );
     }
 }

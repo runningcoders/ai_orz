@@ -7,6 +7,7 @@ use crate::models::message::TaskAssignmentMessage;
 use crate::models::message::ToolCallMessage;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
+use crate::service::domain::message::resource_resolver;
 use crate::service::domain::message::{
     DeliverMessageCommand, MessageDelivery, ReplyTarget, SendTaskAssignmentCommand,
     SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
@@ -564,8 +565,33 @@ impl MessageDelivery for MessageDomainImpl {
         };
 
         let channel_result = if cmd.options.channels {
+            // 外部渠道出站降级（批2）：协议引用（[文本](attachment:id) 等）在
+            // 渠道分发前统一降级为纯文本占位（[附件：名]/[产物：名]，未命中快照
+            // 兜底防悬空）——lark/wechat/email 渠道 DAL 收到的即降级文本，零改动；
+            // SSE 站内不降级（下方原样推送，前端 chip 渲染）。
+            let (attachments, artifacts) = resource_resolver::resolve_message_resources(
+                &ctx,
+                &self.attachment_dal,
+                &self.artifact_dal,
+                cmd.message.content(),
+            )
+            .await;
+            let registry = resource_resolver::build_resolved_registry(attachments, artifacts);
+            let degraded =
+                resource_resolver::degrade_content_for_external(cmd.message.content(), &registry);
+            // 降级零改动（无协议引用，幂等）→ 原消息分发；有改动 → 局部降级副本，
+            // 仅作用于本次渠道分发，库内消息保持协议原文（SSE 站内同原文）。
+            let degraded_message;
+            let outbound = if degraded == cmd.message.content() {
+                cmd.message
+            } else {
+                let mut po = cmd.message.po.clone();
+                po.content = degraded;
+                degraded_message = Message::from_po(po);
+                &degraded_message
+            };
             self.message_channel_dal
-                .deliver_message(ctx.clone(), cmd.message, cmd.user_id, reply_target)
+                .deliver_message(ctx.clone(), outbound, cmd.user_id, reply_target)
                 .await?
         } else {
             crate::service::dal::message_channel::DeliveryResult::empty()

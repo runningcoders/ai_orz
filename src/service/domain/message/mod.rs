@@ -12,6 +12,7 @@ pub mod delivery;
 pub mod inbound;
 pub mod management;
 pub mod recall;
+pub mod resource_resolver;
 
 #[cfg(test)]
 mod delivery_test;
@@ -25,6 +26,7 @@ use crate::models::message::Message;
 pub use crate::models::tool::ToolCallTraceRef;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDal;
+use crate::service::dal::artifact::ArtifactDal;
 use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal, ReplyTarget};
@@ -55,6 +57,7 @@ pub fn new(
     message_channel_dal: Arc<dyn MessageChannelDal>,
     message_push_dal: Arc<dyn MessagePushDal>,
     attachment_dal: Arc<dyn AttachmentDal>,
+    artifact_dal: Arc<dyn ArtifactDal>,
     lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
     wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
     email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
@@ -67,6 +70,7 @@ pub fn new(
         message_channel_dal,
         message_push_dal,
         attachment_dal,
+        artifact_dal,
         lark_dal,
         wechat_dal,
         email_dal,
@@ -84,6 +88,7 @@ pub fn init() {
         crate::service::dal::message_channel::dal(),
         crate::service::dal::message_push::dal(),
         crate::service::dal::attachment::dal(),
+        crate::service::dal::artifact::dal(),
         crate::service::dal::lark::dal(),
         crate::service::dal::wechat::dal(),
         crate::service::dal::email::dal(),
@@ -105,6 +110,8 @@ struct MessageDomainImpl {
     message_push_dal: Arc<dyn MessagePushDal>,
     /// 用于在发送消息时按 ID 查找附件
     attachment_dal: Arc<dyn AttachmentDal>,
+    /// 用于消息资源引用（artifact:）预解析与出站降级
+    artifact_dal: Arc<dyn ArtifactDal>,
     /// 飞书渠道 DAL（入站适配：WS 事件 → AdaptedMessage）
     lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
     /// 微信渠道 DAL（入站适配：iLink 轮询事件 → AdaptedMessage）
@@ -127,6 +134,7 @@ impl MessageDomainImpl {
         message_channel_dal: Arc<dyn MessageChannelDal>,
         message_push_dal: Arc<dyn MessagePushDal>,
         attachment_dal: Arc<dyn AttachmentDal>,
+        artifact_dal: Arc<dyn ArtifactDal>,
         lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
         wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
         email_dal: Arc<crate::service::dal::email::EmailDalImpl>,
@@ -139,6 +147,7 @@ impl MessageDomainImpl {
             message_channel_dal,
             message_push_dal,
             attachment_dal,
+            artifact_dal,
             lark_dal,
             wechat_dal,
             email_dal,
