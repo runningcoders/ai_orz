@@ -56,6 +56,17 @@ pub fn collect_resource_ids(text: &str) -> (HashSet<String>, HashSet<String>) {
     (att, art)
 }
 
+/// content 是否含资源混排协议引用（批3：Mixed=13 写入路径判定，handler 单点调用）。
+///
+/// 仅认 attachment / artifact scheme（AMan 批3 决策点②：mention 族 agent/task/project/user
+/// 系协作协议不算混排）；未注册 scheme（https 等）与歪格式不命中——[`extract_refs`]
+/// 的 registry 校验链天然过滤。
+pub fn content_has_resource_refs(text: &str) -> bool {
+    extract_refs(text)
+        .iter()
+        .any(|(r, _)| r.scheme == "attachment" || r.scheme == "artifact")
+}
+
 /// 组装带预解析数据的 Registry：批1 default_registry + 数据化组件后注册覆盖
 pub fn build_resolved_registry(
     attachments: HashMap<String, ResolvedPayload>,
@@ -261,5 +272,31 @@ mod tests {
 
         // 空 description：仅文件类型标签
         assert_eq!(artifact_summary(FileType::Image, "  ").unwrap(), "图片");
+    }
+
+    #[test]
+    fn has_resource_refs_true_when_resource_ref_present() {
+        assert!(content_has_resource_refs("看 [设计稿](attachment:att_1)"));
+        assert!(content_has_resource_refs("报告见 [报告](artifact:art_2)"));
+        assert!(content_has_resource_refs(
+            "混排 [@张伟](agent:agt_1) + [附件](attachment:a1)"
+        ));
+    }
+
+    #[test]
+    fn has_resource_refs_false_for_mention_and_plain_text() {
+        assert!(!content_has_resource_refs(
+            "[@张伟](agent:agt_1) 请跟进 [@任务](task:t_9)"
+        ));
+        assert!(!content_has_resource_refs("普通文本，无任何协议引用"));
+    }
+
+    #[test]
+    fn has_resource_refs_false_for_unregistered_or_malformed() {
+        assert!(!content_has_resource_refs("普通 [链接](https://e.com)"));
+        assert!(!content_has_resource_refs("[x](user:u1) 未注册不算混排"));
+        assert!(!content_has_resource_refs(
+            "歪格式 [x](attachment) 缺 id 段"
+        ));
     }
 }

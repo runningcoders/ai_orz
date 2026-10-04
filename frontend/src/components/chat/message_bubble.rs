@@ -12,7 +12,7 @@ use crate::store::auth::use_auth_state;
 use crate::store::directory::use_directory;
 use crate::utils::file::format_file_size;
 use crate::utils::message::{
-    MSG_TEXT, involves_user, is_attachment_message, role_avatar, role_class, role_label,
+    MSG_MIXED, MSG_TEXT, involves_user, is_attachment_message, role_avatar, role_class, role_label,
 };
 use crate::utils::time::format_message_time;
 
@@ -106,7 +106,8 @@ fn render_content(msg: &MessageListItem) -> Element {
         } else {
             rsx! { span { class: "message-text", "[附件]" } }
         }
-    } else if msg.message_type == MSG_TEXT {
+    } else if msg.message_type == MSG_TEXT || msg.message_type == MSG_MIXED {
+        // 批3 混排主线：Text/Mixed 同路 Markdown 渲染（资源引用自动 chip 化）
         // Text 消息按 Markdown 渲染（紧凑样式）
         rsx! {
             span { class: "message-text",

@@ -31,6 +31,8 @@ pub const MSG_VIDEO: i32 = 4;
 pub const MSG_TOOL_CALL_REQUEST: i32 = 5;
 pub const MSG_TOOL_CALL_RESULT: i32 = 6;
 pub const MSG_TASK_ASSIGNMENT: i32 = 9;
+/// 混排消息（文本+资源引用混排，对应 common MessageType::Mixed=13；批3 混排主线）
+pub const MSG_MIXED: i32 = 13;
 
 /// 判断是否为附件消息（图片/文件/音频/视频）
 pub fn is_attachment_message(msg_type: i32) -> bool {
@@ -245,5 +247,59 @@ pub fn build_optimistic_user_msg(
         created_at: now_ms(),
         file_type: None,
         file_meta: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 源码结构守卫辅助：切出 tests 模块之前的代码区（include_str! 是全文件，
+    /// 测试模块自身字符串字面量也会被计入，必须排除）。
+    fn code_region(src: &str) -> &str {
+        src.split("#[cfg(test)]").next().unwrap_or(src)
+    }
+
+    #[test]
+    fn msg_mixed_constant_matches_backend_mixed() {
+        // 批3：前端 MSG_MIXED 与 common MessageType::Mixed 数值（13）对齐
+        assert_eq!(MSG_MIXED, 13);
+        assert_ne!(MSG_MIXED, MSG_TEXT);
+        assert_ne!(MSG_MIXED, MSG_TASK_ASSIGNMENT);
+    }
+
+    #[test]
+    fn optimistic_msg_stays_text_without_mixed_leak() {
+        // 乐观消息硬编码 MSG_TEXT（批3 方案 §7 不改面）：Mixed=13 写入路径仅 handler
+        // 单点（前端零写入路径），协议 chip 化由渲染层统一承担。
+        //
+        // ⚠️ 不直接调用 build_optimistic_user_msg：其内部 tmp_msg_id() 依赖
+        // js_sys（wasm-bindgen 导入函数），原生测试 target 会 panic；改用源码结构守卫。
+        let src = include_str!("message.rs");
+        let occurrences = code_region(src).matches("message_type: MSG_TEXT,").count();
+        assert_eq!(
+            occurrences, 1,
+            "build_optimistic_user_msg 须维持硬编码 MSG_TEXT（零 Mixed 泄漏）"
+        );
+    }
+
+    #[test]
+    fn text_and_mixed_share_render_paths() {
+        // 批3 主副渲染分支合并守卫：MSG_MIXED 与 MSG_TEXT 同路直渲染，
+        // 任一渲染面回退/移除 MSG_MIXED 分支时本测试即失败暴露。
+        let chat = include_str!("../pages/message/chat.rs");
+        assert_eq!(
+            chat.matches("MSG_TEXT | MSG_MIXED => {").count(),
+            1,
+            "chat.rs 主渲染 match 须恰一处 MSG_TEXT|MSG_MIXED 合并臂"
+        );
+        let bubble = include_str!("../components/chat/message_bubble.rs");
+        assert_eq!(
+            bubble
+                .matches("msg.message_type == MSG_TEXT || msg.message_type == MSG_MIXED")
+                .count(),
+            1,
+            "message_bubble.rs 副渲染须恰一处 Text||Mixed 合并条件"
+        );
     }
 }

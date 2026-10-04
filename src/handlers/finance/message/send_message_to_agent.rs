@@ -114,7 +114,14 @@ pub async fn send_message_to_agent(
         thread_id: None,
         attachment_ids: params.attachment_ids.as_deref(),
         message_type: if notify_only {
+            // 知会语义优先（AMan 批3 决策点②）：含资源引用的知会仍标 AgentNotify，
+            // 防 Agent 间协作乒乓机制不受 Mixed 影响
             common::enums::MessageType::AgentNotify
+        } else if message::resource_resolver::content_has_resource_refs(&params.content) {
+            // 批3 开启：content 含 [文本](attachment:id) / [文本](artifact:id) 资源引用
+            // → 混排消息；mention 族不算混排（决策点②），未命中 id 由批2 快照兜底
+            // （写入路径零 DAL 查询零 id 存在性验证，方案 §3.1）
+            common::enums::MessageType::Mixed
         } else {
             common::enums::MessageType::Text
         },

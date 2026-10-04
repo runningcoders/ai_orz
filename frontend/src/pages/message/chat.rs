@@ -23,11 +23,11 @@ use crate::store::toast::use_toast;
 use crate::utils::local_store;
 use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::{
-    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT,
-    MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials,
-    build_optimistic_user_msg, format_file_size, format_message_time as format_time,
-    in_project_context, involves_user, is_attachment_message, project_status_text as status_text,
-    replace_tmp_with_real, request_scope,
+    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MSG_AUDIO, MSG_IMAGE, MSG_MIXED,
+    MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO,
+    avatar_initials, build_optimistic_user_msg, format_file_size,
+    format_message_time as format_time, in_project_context, involves_user, is_attachment_message,
+    project_status_text as status_text, replace_tmp_with_real, request_scope,
 };
 use common::api::{
     AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse, GetProjectRequest,
@@ -2256,7 +2256,9 @@ fn render_message_content(
         MSG_TASK_ASSIGNMENT => {
             render_task_card(&msg.content, msg.created_at, bubble_class, time_class)
         }
-        MSG_TEXT => {
+        // 批3 混排主线：Mixed=13 与 Text 同路直渲染（引用块+MarkdownRenderer+hover 操作排），
+        // 协议资源引用经批1 markdown_protocol+批2 render_resource_chip 自动 chip 化。
+        MSG_TEXT | MSG_MIXED => {
             let content = msg.content.clone();
             let toast_copy = toast;
             // 引用块：quote_label 驱动展示，quote_target 供点击回调取链根
