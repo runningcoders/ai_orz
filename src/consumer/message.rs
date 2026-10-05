@@ -23,7 +23,7 @@
 //! `MessageCreatedEvent::order_key` 注释里早就写明的设计意图。
 
 use async_trait::async_trait;
-use common::enums::{CallerType, MessageRole, MessageStatus, MessageType};
+use common::enums::{CallerType, MessageRole, MessageStatus, MessageType, TaskStatus};
 use common::error::{Error, ErrorCode, Result};
 use serde_json::Value;
 use std::sync::Arc;
@@ -31,6 +31,9 @@ use std::sync::Arc;
 use super::message_route_policy::{
     AutoReplyRoute, MAX_AGENT_REPLY_CHAIN, RouteInput, judge_chain_reply_route,
     judge_static_reply_route,
+};
+use super::wake_gate_policy::{
+    STALE_DEPENDENCY_POLICY_ID, WAKEUP_BUDGET_POLICY_ID, WakeGateInput, judge_wake_gate,
 };
 
 use crate::handlers::hr::agent::settle_memory::{SettleAttempt, settle_agent_exclusive};
@@ -546,10 +549,8 @@ impl MessageConsumer {
             }
         };
 
-        // 检查任务完成状态（优先于 thinking_depth 检查）
-        // 顺序说明：若任务已 Completed/Cancelled，应直接跳过唤醒，避免向已结束的任务
-        // 发送误导性的"达到最大思考深度"消息
-        // 同时缓存 task 实体，供后续 ThinkingOptions 注入 prompt 上下文复用
+        // 加载关联任务实体：① 唤醒门闩的判定输入（任务状态 / 前置依赖）
+        // ② 后续 ThinkingOptions 注入 prompt 上下文复用（不重复查询）
         let mut cached_task: Option<crate::models::task::Task> = None;
         if let Some(task_id) = &message.po.task_id {
             match self
@@ -558,26 +559,7 @@ impl MessageConsumer {
                 .get(ctx.clone(), task_id)
                 .await
             {
-                Ok(Some(task)) => {
-                    if matches!(
-                        task.po.status,
-                        common::enums::TaskStatus::Completed
-                            | common::enums::TaskStatus::Cancelled
-                            | common::enums::TaskStatus::Archived
-                    ) {
-                        log_info!(
-                            &ctx,
-                            "handle_agent_message",
-                            "Task {} is in {:?} state, skipping agent wake",
-                            task_id,
-                            task.po.status
-                        );
-                        // 释放 Busy 状态（awaken 不会被调用）
-                        AgentRuntimeStateManager::global().set_idle(agent_id);
-                        return Ok(());
-                    }
-                    cached_task = Some(task);
-                }
+                Ok(Some(task)) => cached_task = Some(task),
                 Ok(None) => {
                     log_warn!(
                         &ctx,
@@ -594,23 +576,18 @@ impl MessageConsumer {
             }
         }
 
-        // 检查唤醒次数限制（max_thinking_depth）：口径是「该 Agent 在该任务上被唤醒的
-        // 累计次数」（agent_awake_events 条数，每次唤醒记 1），**不是**工具调用数、
-        // **不是**思考轮次 —— 单次唤醒内的思考轮次由 max_thinking_rounds 单独把关
-        if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats)
-            && let Some(call_summary) = &stats.call_summary
-        {
-            let runtime_config = agent.po.get_runtime_config();
-            let max_depth = runtime_config.max_thinking_depth as u64;
-            if call_summary.total_calls >= max_depth {
-                log_warn!(
-                    &ctx,
-                    "handle_agent_message",
-                    "Agent {} reached max_thinking_depth ({} wakeups for this task), stopping loop",
-                    agent_id,
-                    max_depth
-                );
-
+        // ══════ 唤醒前置门闩（策略引擎驱动，判据集中在 wake_gate_policy）══════
+        //
+        // 三条判据在这里一次性裁决：「任务是否还活着」「前置依赖是否满足」
+        // 「单任务唤醒预算是否耗尽」。新增判据只在 `WAKE_GATE_DEFS` 加一条规则，
+        // 本分支不需要改动 —— 策略只回答「跳不跳 + 为什么」，副作用留在这里处理。
+        let gate_input = self
+            .build_wake_gate_input(&ctx, message, &agent, cached_task.as_ref())
+            .await;
+        if let Some(skip) = judge_wake_gate(gate_input) {
+            // 唤醒预算耗尽是「合法停止」，来源方（派发者 Agent 或用户）需要知道
+            // 为什么停；其余门闩是「还没轮到 / 已终结」，通知只会制造噪音
+            if skip.policy_id == WAKEUP_BUDGET_POLICY_ID {
                 let send_result = self
                     .notify_message_source(
                         &ctx,
@@ -618,13 +595,12 @@ impl MessageConsumer {
                         agent_id,
                         &format!(
                             "Agent has reached the maximum wakeup count for this task ({}). The task has been stopped to prevent infinite loops.",
-                            max_depth
+                            skip.reason
                         ),
                     )
                     .await;
 
                 // 通知失败仅记录警告，不阻塞 Agent 释放 busy / 返回 Ok
-                // （唤醒次数超限是合法停止，通知失败不应触发消息重试）
                 if let Err(notify_err) = send_result {
                     log_warn!(
                         &ctx,
@@ -633,11 +609,31 @@ impl MessageConsumer {
                         notify_err
                     );
                 }
-
-                // 释放 Busy 状态（awaken 不会被调用，BusyGuard 不会创建）
-                AgentRuntimeStateManager::global().set_idle(agent_id);
-                return Ok(());
+            } else if skip.policy_id == STALE_DEPENDENCY_POLICY_ID {
+                // 前置被撤销 / 归档 ⇒ 这次等待永远不会结束，属于需要人工介入的
+                // 死锁信号，不能混在普通「还没轮到」里被静默吞掉
+                log_warn!(
+                    &ctx,
+                    "handle_agent_message",
+                    "Agent {} wake skipped ({}): {}",
+                    agent_id,
+                    skip.policy_id,
+                    skip.reason
+                );
+            } else {
+                log_info!(
+                    &ctx,
+                    "handle_agent_message",
+                    "Agent {} wake skipped ({}): {}",
+                    agent_id,
+                    skip.policy_id,
+                    skip.reason
+                );
             }
+
+            // 释放 Busy 状态（awaken 不会被调用，BusyGuard 不会创建）
+            AgentRuntimeStateManager::global().set_idle(agent_id);
+            return Ok(());
         }
 
         // 确保 Agent 有 Brain
@@ -1038,6 +1034,99 @@ impl MessageConsumer {
         }
 
         Ok(())
+    }
+
+    /// 组装唤醒门闩的判定输入（事实收敛点：策略侧零查库）
+    ///
+    /// 依赖判据**只对 TaskAssignment 生效**：普通文本消息（用户针对某任务的追问、
+    /// Agent 之间的协作汇报）即使在 DAG 未就绪时也必须送达 —— 门闩管的是
+    /// 「要不要因为这条派发开始干活」，不是「能不能说话」。
+    async fn build_wake_gate_input(
+        &self,
+        ctx: &RequestContext,
+        message: &Message,
+        agent: &crate::models::agent::Agent,
+        cached_task: Option<&crate::models::task::Task>,
+    ) -> WakeGateInput {
+        let mut input = WakeGateInput {
+            task_status: None,
+            pending_dependencies: Vec::new(),
+            stale_dependencies: Vec::new(),
+            wakeup_count: None,
+            max_wakeups: agent.po.get_runtime_config().max_thinking_depth as u64,
+        };
+
+        let Some(task) = cached_task else {
+            return input;
+        };
+        input.task_status = Some(task.po.status);
+
+        if message.message_type() == MessageType::TaskAssignment {
+            let (pending, stale) = self.classify_dependencies(ctx, task).await;
+            input.pending_dependencies = pending;
+            input.stale_dependencies = stale;
+        }
+
+        // 唤醒预算只在「本次是某个任务的消息」时才有意义：普通对话没有单任务累计口径
+        if message.po.task_id.is_some() {
+            input.wakeup_count = agent
+                .stats
+                .as_ref()
+                .and_then(|s| s.call_summary.as_ref())
+                .map(|summary| summary.total_calls);
+        }
+
+        input
+    }
+
+    /// 把任务的前置依赖分箱为「尚未完成」与「已失效」
+    ///
+    /// 口径（与 `task.po.dependencies` 的 DAG 语义一致）：
+    /// - `pending`：还没跑到 Completed，这次唤醒应该等 —— 前置完成时会由
+    ///   `TaskEventConsumer` 重发 TaskAssignment，不会漏执行
+    /// - `stale`：Cancelled / Archived，永远不会 Completed —— 单独分箱是为了在日志里
+    ///   显式暴露，而不是混进「还没轮到」里被当成正常排队忽略
+    ///
+    /// 查不到的依赖 id（已删除 / 脏数据 / 查询失败）一律按 `pending` 处理：
+    /// 宁可多等一轮，也不要因为一次查询异常就把 DAG 误判为就绪
+    async fn classify_dependencies(
+        &self,
+        ctx: &RequestContext,
+        task: &crate::models::task::Task,
+    ) -> (Vec<String>, Vec<String>) {
+        let deps = task.po.get_dependencies();
+        if deps.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+        let mut pending = Vec::new();
+        let mut stale = Vec::new();
+        for dep_id in deps {
+            match self
+                .project_domain
+                .task_manage()
+                .get(ctx.clone(), &dep_id)
+                .await
+            {
+                Ok(Some(dep)) => match dep.po.status {
+                    TaskStatus::Completed => {}
+                    TaskStatus::Cancelled | TaskStatus::Archived => stale.push(dep_id),
+                    TaskStatus::Pending | TaskStatus::InProgress => pending.push(dep_id),
+                },
+                Ok(None) => pending.push(dep_id),
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "classify_dependencies",
+                        "前置任务 {} 状态查询失败，按未完成处理（保守）：{}",
+                        dep_id,
+                        e
+                    );
+                    pending.push(dep_id);
+                }
+            }
+        }
+        (pending, stale)
     }
 
     /// 向用户推送 Agent 执行失败通知（如模型调用错误）。

@@ -15,6 +15,7 @@ pub mod task_event_consumer;
 pub mod think_round_stats_consumer;
 pub mod tool_exec_log_consumer;
 pub mod tool_exec_stats_consumer;
+pub mod wake_gate_policy;
 pub mod wechat_inbound;
 
 use common::error::Result;
