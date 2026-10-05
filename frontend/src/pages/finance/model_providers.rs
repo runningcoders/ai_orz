@@ -32,6 +32,7 @@ pub fn FinanceModelProviders() -> Element {
     let mut new_capability = use_signal(|| 0i32); // 0=Agent(对话) 1=Embedding(向量) 2=Decision(小脑决策)
     // 访问模式（T1 方案 §五 / T2 设计 §4.1）：默认 stream；Embedding 切换隐藏但不清除
     let mut new_access_mode = use_signal(|| ModelAccessMode::Stream);
+    let mut new_supports_vision = use_signal(|| false); // 批5-P2：vision 能力开关（创建 Modal，默认不勾选）
     let new_access_mode_str = match new_access_mode() {
         ModelAccessMode::Stream => "stream",
         ModelAccessMode::NonStream => "non_stream",
@@ -112,6 +113,11 @@ pub fn FinanceModelProviders() -> Element {
                 } else {
                     new_access_mode()
                 }),
+                // 批5-P2：vision 能力开关随创建上送；checkbox 仅 capability==Agent 显示，
+                // 隐藏态（Embedding/Decision）保守上送 false（沿 access_mode 先例防隐藏态残留）
+                supports_vision: Some(
+                    new_supports_vision() && new_capability() == ModelCapability::Agent as i32,
+                ),
             };
             match create_model_provider(req).await {
                 Ok(resp) => {
@@ -124,6 +130,7 @@ pub fn FinanceModelProviders() -> Element {
                     max_context_length.set(String::new());
                     recommended_context_length.set(String::new());
                     new_access_mode.set(ModelAccessMode::Stream);
+                    new_supports_vision.set(false); // 批5-P2：重置 vision checkbox
                     toast.success("创建成功");
                     if resp.rebuild_task_id.is_some() {
                         toast.info("已触发向量索引全量重建，期间语义搜索可能不完整");
@@ -253,6 +260,9 @@ pub fn FinanceModelProviders() -> Element {
                                                         span { class: "badge orz-tag badge-sm", "{ptype_str}" }
                                                         if matches!(p.access_mode, ModelAccessMode::NonStream) {
                                                             span { class: "badge hud-badge badge-ghost badge-sm", "非流式" }
+                                                        }
+                                                        if p.supports_vision {
+                                                            span { class: "badge hud-badge badge-ghost badge-sm", "图像" }
                                                         }
                                                     }
                                                 }
@@ -455,6 +465,18 @@ pub fn FinanceModelProviders() -> Element {
                         }
                     }
                 }
+                if new_capability() == ModelCapability::Agent as i32 {
+                    // 批5-P2：vision 能力开关（仅对话模型显示；Embedding/Decision 隐藏，独立分支防 Decision 误显）
+                    label { class: "flex cursor-pointer select-none items-center gap-2",
+                        input {
+                            class: "checkbox checkbox-sm checkbox-primary",
+                            r#type: "checkbox",
+                            checked: new_supports_vision(),
+                            onchange: move |e| new_supports_vision.set(e.checked()),
+                        }
+                        span { class: "text-sm font-medium", "支持图像输入（vision）" }
+                    }
+                }
                 div { class: "form-control w-full",
                     label { class: "label",
                         span { class: "label-text font-medium", "模型名称 *" }
@@ -610,5 +632,49 @@ pub fn FinanceModelProviders() -> Element {
             }
         }
         }
+    }
+}
+
+#[cfg(test)]
+mod batch5_p2_tests {
+    /// 批5-P2 结构守卫：创建 Modal vision checkbox 与列表徽标锚点存在且唯一。
+    /// 源码结构断言（include_str!，零运行时依赖），任一渲染面回退即失败。
+    #[test]
+    fn batch5_p2_vision_ui_anchors_present() {
+        let src = include_str!("model_providers.rs");
+
+        // 断言仅作用于首个测试模块之前的代码区（切出测试模块自身，防测试字面量自匹配——批3 同款教训规避）
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+        // checkbox 事件绑定各恰 1
+        assert_eq!(code.matches("checked: new_supports_vision(),").count(), 1);
+        assert_eq!(
+            code.matches("onchange: move |e| new_supports_vision.set(e.checked()),")
+                .count(),
+            1
+        );
+        // SSE hint 先于 checkbox（checkbox 位于访问模式块之后）
+        let hint_pos = code
+            .find("仅当下游网关不支持 SSE 流式时选择非流式")
+            .expect("access_mode hint");
+        let cb_pos = code
+            .find("checked: new_supports_vision(),")
+            .expect("vision checkbox");
+        assert!(hint_pos < cb_pos, "vision checkbox 应位于访问模式块之后");
+        // Agent 独立分支恰 1（防 Decision 误显）
+        assert_eq!(
+            code.matches("if new_capability() == ModelCapability::Agent as i32 {")
+                .count(),
+            1
+        );
+        // 列表徽标：图像 badge 恰 1（true 显 false 隐）
+        assert_eq!(code.matches("if p.supports_vision {").count(), 1);
+        assert_eq!(code.matches("\"图像\"").count(), 1);
+        // 提交上送恰 1 且带 Agent 守卫
+        assert_eq!(code.matches("supports_vision: Some(").count(), 1);
+        assert!(code.contains(
+            "new_supports_vision() && new_capability() == ModelCapability::Agent as i32"
+        ));
+        // P1 机械接线注释已由 P2 接管
+        assert!(!code.contains("批5-P1 机械接线"));
     }
 }

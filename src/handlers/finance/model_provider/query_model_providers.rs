@@ -57,5 +57,7 @@ pub async fn query_model_providers(
         created_at: provider.po.created_at,
         // 方案 §2.3：恒返回按 config 解析后的访问模式（缺省 Stream）
         access_mode: provider.po.config().access_mode_or_default(),
+        // 批5：恒返回按 config 解析后的 vision 能力位（缺省 false）
+        supports_vision: provider.po.config().supports_vision_or_default(),
     }))
 }

@@ -39,6 +39,12 @@ pub struct CreateModelProviderRequest {
     /// 调用下游网关的访问模式（选填；缺省 Stream = 平台现状）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_mode: Option<ModelAccessMode>,
+    /// 是否支持图像输入（vision 能力位，批5 UI 开关）
+    ///
+    /// 选填：缺省 false（保守降级）。与 provider_type 相互独立（DoubaoVision
+    /// 系多模态 embedding 端点，不作判定源）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_vision: Option<bool>,
 }
 
 /// Create Model Provider response
@@ -90,6 +96,8 @@ pub struct ModelProviderListItem {
     pub created_at: i64,
     /// 下行调用访问模式（后端解析 config，缺省 Stream，恒返回）
     pub access_mode: ModelAccessMode,
+    /// 是否支持图像输入（后端解析 config，缺省 false，恒返回）
+    pub supports_vision: bool,
 }
 
 /// Get Model Provider request
@@ -149,6 +157,8 @@ pub struct GetModelProviderResponse {
     pub stats: Option<crate::models::ModelCallStats>,
     /// 下行调用访问模式（后端解析 config，缺省 Stream，恒返回）
     pub access_mode: ModelAccessMode,
+    /// 是否支持图像输入（后端解析 config，缺省 false，恒返回）
+    pub supports_vision: bool,
 }
 
 /// Update Model Provider request
@@ -188,6 +198,12 @@ pub struct UpdateModelProviderRequest {
     /// None 表示不变更（Update 无清除语义；如需回退 stream，显式传 `"stream"`）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_mode: Option<ModelAccessMode>,
+    /// 是否支持图像输入（vision 能力位，批5 UI 开关）
+    ///
+    /// None 表示不变更（partial update 语义沿 access_mode 先例）；编辑 UI
+    /// 恒传当前选值，无 None 分支歧义。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_vision: Option<bool>,
 }
 
 /// Update Model Provider response

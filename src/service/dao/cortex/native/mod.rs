@@ -5,7 +5,7 @@
 //! 所有配置从 `&ModelProviderPo` 读取。
 
 use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
-use crate::models::model_provider::ModelProviderPo;
+use crate::models::model_provider::{ModelProviderConfig, ModelProviderPo};
 use crate::models::vector::{VectorIndexParams, VectorPayload, Vectorizable};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
@@ -18,9 +18,9 @@ pub mod openai;
 
 /// no-vision 降级：provider 不支持视觉输入时把 `UserMultimodal` 降级为纯文本
 ///
-/// 判定源 = `provider.config` JSON 的 `supports_vision` 字段（**缺省 false 保守降级**；
-/// config 解析失败按 false + 告警日志，不中断推理）。零迁移：config 是自由 JSON
-/// 字符串，界面/接口可直接配置，无需改 `ModelProviderConfig` 结构。
+/// 判定源 = `ModelProviderConfig.supports_vision` 结构体字段（批5 单一事实源；
+/// **缺省 None=false 保守降级**；config 解析失败按 false + 告警日志，不中断推理）。
+/// 零迁移：存量 config JSON 缺字段反序列化为 None，自动兼容。
 ///
 /// 降级行为：清空 images，text 追加占位行说明图片未展示（模型仍能感知有附件）。
 /// 支持 vision 的 provider 原样透传（零克隆降级路径直接 to_vec）。
@@ -49,25 +49,22 @@ pub fn downgrade_messages_for_no_vision(
         .collect()
 }
 
-/// 读取 provider.config JSON 的 `supports_vision` 能力位
+/// 读取 provider 的 vision 能力位（批5：改读 `ModelProviderConfig` 结构体字段，
+/// 消除 raw JSON 键硬编码与「非 bool 静默 false」两类隐患，单一事实源）
 ///
-/// 缺省 / 非 bool / 解析失败 → false（保守降级，与存量纯文本链路行为一致）。
+/// 缺省 None / 解析失败 → false（保守降级，与存量纯文本链路行为一致；
+/// 显式非 bool 值经 serde 反序列化报错，走解析失败分支，行为与批4 等价）。
 fn provider_supports_vision(provider: &ModelProviderPo) -> bool {
-    let parsed: Option<serde_json::Value> = match serde_json::from_str(&provider.config) {
-        Ok(v) => Some(v),
+    match serde_json::from_str::<ModelProviderConfig>(&provider.config) {
+        Ok(cfg) => cfg.supports_vision_or_default(),
         Err(_) => {
             log_warn!(
                 "cortex supports_vision probe: provider config parse failed, fallback to false, provider_id={}",
                 provider.id
             );
-            None
+            false
         }
-    };
-    parsed
-        .as_ref()
-        .and_then(|cfg| cfg.get("supports_vision"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+    }
 }
 
 /// Native Cortex DAO trait - 模型调用接口
@@ -277,5 +274,28 @@ mod tests {
             ChatMessage::User { content } => assert_eq!(content, "hi"),
             other => panic!("纯文本消息不得被降级改动，实际 {:?}", other),
         }
+    }
+
+    /// 批5：probe 改读结构体字段后行为等价断言——set_config 结构体字段 true
+    /// 与 raw JSON 显式 true 两条写入路径均透传（单一事实源双向可写）
+    #[test]
+    fn supports_vision_via_struct_field_passes_through() {
+        let mut provider = provider_with_config("{}");
+        provider.update_config(|cfg| cfg.supports_vision = Some(true));
+        let out = downgrade_messages_for_no_vision(&[multimodal()], &provider);
+        assert!(matches!(out[0], ChatMessage::UserMultimodal { .. }));
+    }
+
+    /// 批5：显式 false 与非 bool 值（serde Err → 解析失败分支）均保守降级，
+    /// 与批4 as_bool 失败行为等价
+    #[test]
+    fn explicit_false_and_non_bool_value_both_downgrade() {
+        let explicit_false = provider_with_config(r#"{"supports_vision": false}"#);
+        let out = downgrade_messages_for_no_vision(&[multimodal()], &explicit_false);
+        assert!(matches!(out[0], ChatMessage::User { .. }));
+
+        let non_bool = provider_with_config(r#"{"supports_vision": "yes"}"#);
+        let out = downgrade_messages_for_no_vision(&[multimodal()], &non_bool);
+        assert!(matches!(out[0], ChatMessage::User { .. }));
     }
 }

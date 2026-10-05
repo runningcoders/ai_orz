@@ -98,6 +98,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut edit_max_context_length = use_signal(String::new);
     let mut edit_recommended_context_length = use_signal(String::new);
     let mut edit_access_mode = use_signal(|| "stream".to_string());
+    let mut edit_supports_vision = use_signal(|| false); // 批5-P2：vision 能力开关（编辑 Modal）
     let mut saving_meta = use_signal(|| false);
 
     // 当前提供商是否 Embedding：编辑表单的上下文长度必填校验与标签用它。
@@ -107,6 +108,13 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
         .as_ref()
         .and_then(|r| r.as_ref().ok())
         .is_some_and(|p| p.capability == ModelCapability::Embedding);
+
+    // 当前提供商是否对话模型：编辑 Modal 的 vision 开关显示条件用它（Modal 不在 p 作用域，沿 editing_is_embedding 派生先例）。
+    let editing_is_agent = provider_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .is_some_and(|p| p.capability == ModelCapability::Agent);
 
     // 加载由上方 use_resource（rid 响应式）负责，无需 use_effect
 
@@ -215,6 +223,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                         .map(|v| v.to_string())
                                         .unwrap_or_default();
                                     let edit_access_mode_init = access_mode_key(&p.access_mode).to_string();
+                                    let edit_supports_vision_init = p.supports_vision; // 批5-P2：回显（Get 恒返回 bool 无 None 态）
                                     rsx! {
                                         if is_enabled {
                                             button { class: "btn hud-btn btn-outline btn-sm",
@@ -302,6 +311,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                 edit_max_context_length.set(edit_max_ctx_init.clone());
                                                 edit_recommended_context_length.set(edit_rec_ctx_init.clone());
                                                 edit_access_mode.set(edit_access_mode_init.clone());
+                                                edit_supports_vision.set(edit_supports_vision_init); // 批5-P2：回显 vision 开关
                                                 show_edit_modal.set(true);
                                             },
                                             "✏️ 编辑"
@@ -389,6 +399,16 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                         span { class: "badge hud-badge badge-ghost badge-sm",
                                             "{access_mode_label(&p.access_mode)}"
                                         }
+                                    }
+                                }
+                            }
+                            if p.supports_vision {
+                                div {
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "图像输入" }
+                                    }
+                                    div {
+                                        span { class: "badge hud-badge badge-ghost badge-sm", "支持图像" }
                                     }
                                 }
                             }
@@ -589,6 +609,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     recommended_context_length: Some(rec_ctx),
                                     // 访问模式：Update 恒传当前选值（T2 §4.2/S3，无 None 分支）
                                     access_mode: Some(access_mode),
+                                    // 批5-P2：vision 开关保存恒传当前选值（沿 access_mode「恒传当前选值」口径）
+                                    supports_vision: Some(edit_supports_vision()),
                                 };
                                 saving_meta.set(true);
                                 let reload_id = id_for_submit.clone();
@@ -648,6 +670,19 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             p { class: "text-xs text-base-content/60",
                                 "仅当下游网关不支持 SSE 流式时选择非流式"
                             }
+                        }
+                    }
+                    if editing_is_agent {
+                        // 批5-P2：vision 能力开关（仅对话模型显示；Embedding/Decision 隐藏；
+                        // 显示条件沿 editing_is_agent 派生——编辑 Modal 不在 p 作用域）
+                        label { class: "flex cursor-pointer select-none items-center gap-2",
+                            input {
+                                class: "checkbox checkbox-sm checkbox-primary",
+                                r#type: "checkbox",
+                                checked: edit_supports_vision(),
+                                onchange: move |e| edit_supports_vision.set(e.checked()),
+                            }
+                            span { class: "text-sm font-medium", "支持图像输入（vision）" }
                         }
                     }
                     div { class: "form-control w-full",
@@ -721,5 +756,47 @@ mod access_mode_tests {
     fn access_mode_label_maps_both_values() {
         assert_eq!(access_mode_label(&ModelAccessMode::Stream), "流式");
         assert_eq!(access_mode_label(&ModelAccessMode::NonStream), "非流式");
+    }
+}
+
+#[cfg(test)]
+mod batch5_p2_tests {
+    /// 批5-P2 结构守卫：编辑 Modal vision checkbox 回显/恒传与信息格徽标锚点存在且唯一。
+    /// 源码结构断言（include_str!，零运行时依赖），任一渲染面回退即失败。
+    #[test]
+    fn batch5_p2_vision_edit_ui_anchors_present() {
+        let src = include_str!("model_provider_detail.rs");
+
+        // 断言仅作用于首个测试模块之前的代码区（切出测试模块自身，防测试字面量自匹配——批3 同款教训规避）
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+        // checkbox 事件绑定各恰 1
+        assert_eq!(code.matches("checked: edit_supports_vision(),").count(), 1);
+        assert_eq!(
+            code.matches("onchange: move |e| edit_supports_vision.set(e.checked()),")
+                .count(),
+            1
+        );
+        // 回显链：init 与 set 各恰 1
+        assert_eq!(
+            code.matches("let edit_supports_vision_init = p.supports_vision;")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches("edit_supports_vision.set(edit_supports_vision_init);")
+                .count(),
+            1
+        );
+        // 保存恒传当前选值（沿 access_mode 口径）
+        assert_eq!(
+            code.matches("supports_vision: Some(edit_supports_vision()),")
+                .count(),
+            1
+        );
+        // 信息格徽标恰 1（true 显 false 隐）
+        assert_eq!(code.matches("if p.supports_vision {").count(), 1);
+        assert_eq!(code.matches("\"支持图像\"").count(), 1);
+        // P1 机械接线注释已由 P2 接管
+        assert!(!code.contains("批5-P1 机械接线"));
     }
 }

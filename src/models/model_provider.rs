@@ -43,12 +43,26 @@ pub struct ModelProviderConfig {
     /// None=未配置；存量 config JSON 缺字段自动兼容，无 migration。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
+    /// 是否支持图像输入（vision 能力位，批5：UI 开关收编）
+    ///
+    /// 语义：chat 推理端点能否接收图像（OpenAI vision content parts）。
+    /// None=false（保守降级，保持批4 存量行为）；存量 config JSON 缺字段
+    /// 自动兼容，零迁移。**与 provider_type 相互独立**（含 DoubaoVision——
+    /// 批4 已裁定其语义=多模态 embedding 端点≠chat vision 能力位，UI 开关
+    /// 不以其作判定源）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_vision: Option<bool>,
 }
 
 impl ModelProviderConfig {
     /// 解析下行调用访问模式（方案 §2.3 口径）：字段缺省 → Stream（保持存量行为）
     pub fn access_mode_or_default(&self) -> ModelAccessMode {
         self.access_mode.unwrap_or(ModelAccessMode::Stream)
+    }
+
+    /// 解析 vision 能力位（批5 口径）：字段缺省 → false（保守降级，保持存量行为）
+    pub fn supports_vision_or_default(&self) -> bool {
+        self.supports_vision.unwrap_or(false)
     }
 }
 
@@ -289,5 +303,40 @@ mod access_mode_config_tests {
         assert!(json.contains("non_stream"), "json: {json}");
         let back: ModelProviderConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.access_mode, Some(ModelAccessMode::NonStream));
+    }
+
+    /// 批5：存量 config JSON（无 supports_vision 字段）反序列化 → None，语义等价 false
+    #[test]
+    fn legacy_config_without_supports_vision_defaults_to_false() {
+        let cfg: ModelProviderConfig =
+            serde_json::from_str(r#"{"max_context_length":128000}"#).expect("legacy config");
+        assert_eq!(cfg.supports_vision, None);
+        assert!(
+            !cfg.supports_vision_or_default(),
+            "缺省 None 语义必须等价 false（保守降级）"
+        );
+    }
+
+    /// 批5：supports_vision 仅在已设置时序列化；true/false roundtrip 保形
+    #[test]
+    fn supports_vision_roundtrips_and_none_is_not_serialized() {
+        let empty = ModelProviderConfig::default();
+        assert!(
+            !serde_json::to_string(&empty)
+                .unwrap()
+                .contains("supports_vision"),
+            "未设置时不得序列化 supports_vision 字段"
+        );
+
+        for value in [true, false] {
+            let cfg = ModelProviderConfig {
+                supports_vision: Some(value),
+                ..Default::default()
+            };
+            let json = serde_json::to_string(&cfg).unwrap();
+            let back: ModelProviderConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.supports_vision, Some(value));
+            assert_eq!(back.supports_vision_or_default(), value);
+        }
     }
 }

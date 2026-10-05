@@ -104,6 +104,12 @@ pub async fn update_model_provider(
             cfg.access_mode = Some(mode);
         });
     }
+    // 批5：vision 能力位 partial update（None=不变更；编辑 UI 恒传当前选值）
+    if let Some(vision) = params.supports_vision {
+        provider.po.update_config(|cfg| {
+            cfg.supports_vision = Some(vision);
+        });
+    }
     // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = common::constants::utils::current_timestamp_ms();

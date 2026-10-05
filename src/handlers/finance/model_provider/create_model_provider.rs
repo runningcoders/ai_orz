@@ -51,6 +51,8 @@ pub async fn create_model_provider(
         recommended_context_length: params.recommended_context_length.filter(|&v| v > 0),
         // 方案②：访问模式落 config；None=未配置（生效时等价 Stream）
         access_mode: params.access_mode,
+        // 批5：vision 能力位落 config；None=false（缺省保守降级）
+        supports_vision: params.supports_vision,
         ..Default::default()
     };
     provider_po.set_config(&config);

@@ -71,6 +71,8 @@ pub async fn get_model_provider(
         recommended_context_length: config.recommended_context_length,
         // 方案 §2.3：恒返回按 config 解析后的访问模式（缺省 Stream）
         access_mode: config.access_mode_or_default(),
+        // 批5：恒返回按 config 解析后的 vision 能力位（缺省 false）
+        supports_vision: config.supports_vision_or_default(),
         stats: provider.stats,
     })
 }
