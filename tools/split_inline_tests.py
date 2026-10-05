@@ -26,22 +26,30 @@ BT = chr(96)  # 反引号，避免 python 字符串转义问题
 
 
 def find_test_module(lines):
-    """返回 (cfg_index, body_start, body_end) —— 末尾唯一一个顶层内联测试模块。"""
-    cands = [
-        i
-        for i, l in enumerate(lines)
-        if l.strip() == "#[cfg(test)]" and not l.startswith((" ", "\t"))
-    ]
+    """返回 (cfg_index, body_start, body_end, mod_name) —— 末尾唯一一个顶层内联测试模块。
+
+    判定 `#[cfg(test)]` 是不是「测试模块」：下一行必须是 `mod xxx {`。
+    业务代码里可能有**测试专用辅助函数**也带 `#[cfg(test)]`（如 settle_memory.rs:41
+    的 `short_term_of_mut`），那些不能算测试模块，按声明位置过滤掉。
+    """
+    cands = []
+    for i, l in enumerate(lines):
+        if l.strip() != "#[cfg(test)]" or l.startswith((" ", "\t")):
+            continue
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        m = re.match(r"mod\s+(\w+)\s*\{", nxt)
+        if m:
+            cands.append((i, m.group(1)))
+
     if not cands:
         return None
     if len(cands) > 1:
-        got = [(i + 1, lines[i + 1].strip()) for i in cands]
+        got = ", ".join(f"L{i+1} mod {n}" for i, n in cands)
         raise SystemExit(
-            "发现多个顶层 #[cfg(test)]："
-            + ", ".join(f"L{ln} {name}" for ln, name in got)
-            + "\n→ 本脚本只处理单个；多个请手工拆（先拆末尾的，再重跑）"
+            f"发现多个顶层测试模块：{got}\n"
+            + "→ 本脚本只处理单个；多个请手工拆（先拆末尾的，再重跑）"
         )
-    i = cands[-1]
+    i, name = cands[0]
     if i + 1 >= len(lines) or not lines[i + 1].strip().startswith("mod "):
         raise SystemExit(f"L{i+1} 的 #[cfg(test)] 后面不是 mod 声明，手工处理")
     name = re.match(r"mod\s+(\w+)", lines[i + 1].strip()).group(1)
