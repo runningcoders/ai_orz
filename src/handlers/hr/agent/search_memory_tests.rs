@@ -1,0 +1,677 @@
+//! search_memory Handler 单元测试（search_memory.rs 知识图谱 / 混合搜索 / 关系边）
+//!
+//! 拆分自 `search_memory.rs` 尾部 tests 模块（文件瘦身，业务代码 868 → 191 行）。
+//! 用 `#[path]` 而非 `mod.rs` 注册：保持 `mod tests` 的模块层级，
+//! 私有 helper（如 `memories_to_results`）在 `use super::*` 下仍可见。
+//!
+//! 覆盖口径：
+//! - 知识图谱 traverse（BFS/DFS）+ 关系边落库与解析
+//! - 语义/关键词/混合搜索三条路径的召回与排序
+//! - 调用主体缺失时的错误信息必须点明缺什么
+
+use super::*;
+use crate::handlers::hr::agent::create_memory::create_memory;
+use crate::handlers::hr::agent::delete_memory::delete_memory;
+use crate::handlers::hr::agent::query_memory::query_memory;
+use crate::handlers::hr::agent::save_long_term_memory::save_long_term_memory;
+use crate::handlers::hr::agent::update_memory::update_memory;
+use crate::models::memory::{KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams};
+use crate::service::dao::memory::{MemoryQuery, MemorySearch};
+use common::api::{
+    CreateMemoryParams, DeleteMemoryParams, KnowledgeRelationParam, QueryMemoryParams,
+    SaveLongTermMemoryParams, UpdateMemoryParams,
+};
+use common::enums::{KnowledgeRelationStatus, MemoryStatus};
+
+fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
+    let _ = crate::config::init();
+    let base_path = crate::config::get().base_data_path();
+    crate::pkg::tool_tracing::logger::ToolCallLogger::init(base_path);
+    crate::service::dao::init_all();
+    crate::service::dal::init_all();
+    crate::service::domain::runtime::init();
+    crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
+}
+
+async fn seed_node(ctx: &RequestContext, id: &str, name: &str, desc: &str, summary: &str) {
+    let now = chrono::Utc::now().timestamp();
+    let node = LongTermKnowledgeNodePo {
+        id: id.to_string(),
+        agent_id: "agent-kg".to_string(),
+        node_name: name.to_string(),
+        node_description: desc.to_string(),
+        node_type: "general".to_string(),
+        summary: summary.to_string(),
+        tags: r#"["published"]"#.to_string(),
+        status: MemoryStatus::Active,
+        is_published: true,
+        created_at: now,
+        updated_at: now,
+    };
+    runtime_domain()
+        .memory()
+        .create(
+            ctx.clone(),
+            MemoryCreateParams::CreateKnowledgeNode {
+                node,
+                references: vec![],
+            },
+        )
+        .await
+        .unwrap();
+}
+
+/// 读链路端到端回归：知识图谱页拿到的字段必须是**人可读**的。
+///
+/// 覆盖用户反馈的三条（「打分 / 摘要 / 内容都是错的、没有信息量」）：
+/// 1. 关系边的 content / relation_type 曾是 `format!("{:?}")` 的 Rust 变体名
+///    （`"Causes"`），前端关系标签词表只认 `"causes"` → 连线标签退化成英文；
+/// 2. 关系边没有独立正文，至少要能读出中文关系名；
+/// 3. 遍历展开出来的邻居节点/关系边没有匹配过程，`score` 保持 `None`，
+///    而不是伪造一个 0 让前端显示成「匹配度 0%」。
+#[sqlx::test]
+async fn knowledge_graph_payload_is_human_readable(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+
+    let desc = "订单状态机描述了订单从创建到完成的完整状态流转：待支付、已支付、已发货、已完成。";
+    // 模拟「调用方没给摘要」的写入：此处显式落空串，验证读侧会归一成 None
+    seed_node(&ctx, "kn_a", "订单状态机", desc, "").await;
+    seed_node(
+        &ctx,
+        "kn_b",
+        "订单超时补偿",
+        "订单超时补偿负责在订单超时后触发回滚。",
+        "",
+    )
+    .await;
+
+    let rel = KnowledgeNodeRelationPo {
+        id: "kr_1".to_string(),
+        source_node_id: "kn_a".to_string(),
+        target_node_id: "kn_b".to_string(),
+        relation_type: "causes".to_string(),
+        // 强度要能一路穿过「迁移 → INSERT → SELECT → PO → DTO」，
+        // 任何一层漏掉列，图谱上的线宽就又退化成统一粗细
+        weight: Some(0.8),
+        status: KnowledgeRelationStatus::Active,
+        created_at: 0,
+        updated_at: 0,
+    };
+    runtime_domain()
+        .memory()
+        .create(ctx.clone(), MemoryCreateParams::CreateRelations(vec![rel]))
+        .await
+        .unwrap();
+
+    let search = MemorySearch {
+        keyword: Some("订单状态机".to_string()),
+        top_k: Some(50),
+        filters: MemoryQuery {
+            memory_type: Some(MemoryType::KnowledgeNode),
+            limit: Some(50),
+            // 不选 Agent = 全域（蜂巢：所有知识节点都可见）
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let hits = runtime_domain()
+        .memory()
+        .search(ctx.clone(), search)
+        .await
+        .unwrap();
+    let seed_ids: Vec<String> = hits
+        .iter()
+        .filter_map(|m| match &m.po {
+            MemoryPo::KnowledgeNode(kn) => Some(kn.id.clone()),
+            _ => None,
+        })
+        .collect();
+
+    let mut all = hits;
+    all.extend(
+        runtime_domain()
+            .memory()
+            .traverse_graph(
+                ctx.clone(),
+                &seed_ids,
+                1,
+                10,
+                TraversalStrategy::BreadthFirst,
+            )
+            .await
+            .unwrap(),
+    );
+
+    let results = memories_to_results(all);
+
+    let relation = results
+        .iter()
+        .find(|r| r.memory_type == "relation")
+        .expect("应返回关系边");
+    assert_eq!(
+        relation.relation_type.as_deref(),
+        Some("causes"),
+        "关系类型必须是 Display 的 snake_case，前端关系标签词表以此为 key"
+    );
+    assert_eq!(relation.content, "导致", "关系边内容应为中文标签");
+    assert_eq!(relation.name.as_deref(), Some("导致"));
+    assert_eq!(relation.source_node_id.as_deref(), Some("kn_a"));
+    assert_eq!(relation.target_node_id.as_deref(), Some("kn_b"));
+    assert_eq!(
+        relation.weight,
+        Some(0.8),
+        "关系强度要从库里读回来，否则图谱上的粗细与 hover 读数都是空的"
+    );
+    assert!(
+        !relation.content.contains("Causes"),
+        "不应再出现 Rust 变体名: {}",
+        relation.content
+    );
+
+    let neighbor = results
+        .iter()
+        .find(|r| r.id == "kn_b")
+        .expect("应返回邻居节点");
+    assert!(
+        neighbor.score.is_none(),
+        "遍历展开的邻居没有匹配过程，不应有分值"
+    );
+    assert!(
+        neighbor.summary.is_none(),
+        "空摘要要归一成 None，否则前端会渲染一个空的摘要块"
+    );
+    assert_eq!(neighbor.name.as_deref(), Some("订单超时补偿"));
+    assert!(!neighbor.content.is_empty(), "正文不能为空");
+    assert!(
+        neighbor.weight.is_none(),
+        "强度只属于关系边，节点/记忆条目不应带值"
+    );
+    assert_eq!(
+        neighbor.tags,
+        Some(Vec::new()),
+        "published 是重要性/影响力控制位，不该出现在业务标签里"
+    );
+}
+
+/// 造一个可指定归属与共享状态的节点（私有 / 已发布）
+async fn seed_scoped(ctx: &RequestContext, id: &str, name: &str, agent_id: &str, published: bool) {
+    let now = chrono::Utc::now().timestamp();
+    let node = LongTermKnowledgeNodePo {
+        id: id.to_string(),
+        agent_id: agent_id.to_string(),
+        node_name: name.to_string(),
+        node_description: format!("{name}的正文"),
+        node_type: "general".to_string(),
+        summary: format!("{name}的摘要"),
+        tags: if published {
+            r#"["published"]"#.to_string()
+        } else {
+            "[]".to_string()
+        },
+        status: MemoryStatus::Active,
+        is_published: published,
+        created_at: now,
+        updated_at: now,
+    };
+    runtime_domain()
+        .memory()
+        .create(
+            ctx.clone(),
+            MemoryCreateParams::CreateKnowledgeNode {
+                node,
+                references: vec![],
+            },
+        )
+        .await
+        .unwrap();
+}
+
+async fn link(ctx: &RequestContext, id: &str, src: &str, tgt: &str) {
+    runtime_domain()
+        .memory()
+        .create(
+            ctx.clone(),
+            MemoryCreateParams::CreateRelations(vec![KnowledgeNodeRelationPo {
+                id: id.to_string(),
+                source_node_id: src.to_string(),
+                target_node_id: tgt.to_string(),
+                relation_type: "causes".to_string(),
+                weight: Some(0.8),
+                status: KnowledgeRelationStatus::Active,
+                created_at: 0,
+                updated_at: 0,
+            }]),
+        )
+        .await
+        .unwrap();
+}
+
+/// 前端「点击节点展开」的真实请求形状：seed-only + depth=1，query 为空
+fn click_params(seed: &str, agent_id: Option<&str>) -> SearchMemoryParams {
+    SearchMemoryParams {
+        query: String::new(),
+        max_results: Some(50),
+        memory_type: None,
+        traversal_depth: Some(1),
+        traversal_breadth: Some(10),
+        traversal_strategy: Some("breadth_first".to_string()),
+        seed_node_ids: Some(vec![seed.to_string()]),
+        tags: None,
+        task_id: None,
+        agent_id: agent_id.map(|s| s.to_string()),
+    }
+}
+
+/// 回归（用户实测 ×2）：点击一个节点展开时 ——
+/// ① **中心节点（种子）必须回来**；② 边必须随其两端节点一起回来；③ 展开不受归属筛选。
+///
+/// 前端图谱卡片的名称回退链是 `name → summary → content`，三者都拿不到才显示
+/// 「未命名节点」。旧实现里 traverse 取节点用 `ctx.agent_id()` 做可见性过滤
+/// （HTTP 场景 ctx 恒为空 → 目标 Agent 的私有节点全被滤掉），而拉边不受该约束，
+/// 于是「只回来一堆边、节点全丢」/「点开节点缺中心节点」。
+#[sqlx::test]
+async fn click_expand_returns_seed_node_with_edges(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    // Agent 自行沉淀的节点默认是私有的（未发布）——蜂巢语义下同样全域可见
+    seed_scoped(&ctx, "kn_a", "订单状态机", "agent-kg", false).await;
+    seed_scoped(&ctx, "kn_b", "订单超时补偿", "agent-kg", false).await;
+    link(&ctx, "kr_1", "kn_a", "kn_b").await;
+
+    // 不选 Agent（全局）、选定本 Agent、以及**选了一个不相干的 Agent**，
+    // 三种情况都必须拿到同一份完整邻居图：种子 + 邻居 + 边。
+    for agent in [None, Some("agent-kg"), Some("agent-other")] {
+        let resp = search_memory(ctx.clone(), click_params("kn_a", agent))
+            .await
+            .unwrap();
+        let ids: Vec<&str> = resp.results.iter().map(|r| r.id.as_str()).collect();
+        assert!(
+            ids.contains(&"kn_a"),
+            "中心节点（种子）必须返回，否则点开之后图中心是空的: agent={agent:?} {ids:?}"
+        );
+        assert!(
+            ids.contains(&"kn_b"),
+            "邻居节点必须返回，否则前端只能画「未命名节点」: agent={agent:?} {ids:?}"
+        );
+        assert!(ids.contains(&"kr_1"), "边必须返回: agent={agent:?} {ids:?}");
+
+        for node in resp
+            .results
+            .iter()
+            .filter(|r| r.memory_type == "knowledge_node")
+        {
+            assert!(
+                node.name.as_deref().is_some_and(|n| !n.trim().is_empty()),
+                "图谱卡片第一行取自 name，不能为空: {node:?}"
+            );
+            assert!(!node.content.is_empty(), "hover 详情要展示正文，不能为空");
+        }
+    }
+}
+
+/// 写入方标注的**词表外**关系名必须逐字回到 DTO —— 不能被归一成 `custom`。
+///
+/// 回归：写入路径曾做 `KnowledgeRelationType::from()`，凡没进那 16 个变体的
+/// 标注（「实现」「被测试覆盖」…）都会被塌成 `Custom`，于是这一类边在图上
+/// 一律显示「自定义」—— Agent 明明标了明确语义，用户却什么都看不出来。
+#[sqlx::test]
+async fn relation_type_outside_vocabulary_stays_verbatim(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    seed_scoped(&ctx, "kn_impl", "支付接口的实现", "agent-kg", false).await;
+    seed_scoped(&ctx, "kn_spec", "支付接口契约", "agent-kg", false).await;
+
+    // 走真实写入路径（归一化就发生在这个 handler 里），挂一条词表外的关系
+    let saved = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "支付接口实现说明".to_string(),
+            node_description: "记录实现与契约的对应关系".to_string(),
+            node_type: "concept".to_string(),
+            summary: Some("实现与契约的对应".to_string()),
+            tags: None,
+            relations: Some(vec![KnowledgeRelationParam {
+                source_node_id: "kn_impl".to_string(),
+                target_node_id: "kn_spec".to_string(),
+                relation_type: "实现".to_string(),
+                weight: None,
+            }]),
+            task_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!saved.relation_ids.is_empty(), "关系应写入成功");
+
+    let resp = search_memory(ctx.clone(), click_params("kn_impl", None))
+        .await
+        .unwrap();
+    let edge = resp
+        .results
+        .iter()
+        .find(|r| {
+            r.memory_type == "relation"
+                && r.source_node_id.as_deref() == Some("kn_impl")
+                && r.target_node_id.as_deref() == Some("kn_spec")
+        })
+        .expect("应返回 kn_impl → kn_spec 这条边");
+
+    assert_eq!(
+        edge.relation_type.as_deref(),
+        Some("实现"),
+        "词表外的原文必须原样回传，不能被归一成 custom"
+    );
+    assert_eq!(edge.content, "实现", "没有中文映射可用时展示标签就是原文");
+    assert_ne!(
+        edge.content, "自定义",
+        "匹配不上时绝不能替换成「自定义」—— 那会把 Agent 标注的语义抹掉"
+    );
+}
+
+/// 软删除的端点必须**连边一起消失**（图批次不变式：边只随两端节点一起返回）。
+///
+/// 可见性门槛已经不在归属维度上了（蜂巢共享），真正会让端点缺席的是
+/// `status = Forgotten`：节点被遗忘后，挂在它身上的边不能再单独漏出来，
+/// 否则前端会凭空长出一个「未命名节点」。
+#[sqlx::test]
+async fn forgotten_endpoint_drops_the_edge(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    seed_scoped(&ctx, "kn_live", "在库节点", "agent-kg", true).await;
+    // 造一个已遗忘的节点（软删除），它是那条边的远端
+    let now = chrono::Utc::now().timestamp();
+    runtime_domain()
+        .memory()
+        .create(
+            ctx.clone(),
+            MemoryCreateParams::CreateKnowledgeNode {
+                node: LongTermKnowledgeNodePo {
+                    id: "kn_gone".to_string(),
+                    agent_id: "agent-kg".to_string(),
+                    node_name: "已遗忘节点".to_string(),
+                    node_description: "已遗忘节点的正文".to_string(),
+                    node_type: "general".to_string(),
+                    summary: "已遗忘节点的摘要".to_string(),
+                    tags: "[]".to_string(),
+                    status: MemoryStatus::Forgotten,
+                    is_published: false,
+                    created_at: now,
+                    updated_at: now,
+                },
+                references: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    link(&ctx, "kr_cross", "kn_live", "kn_gone").await;
+
+    let resp = search_memory(ctx.clone(), click_params("kn_live", None))
+        .await
+        .unwrap();
+    let kinds: Vec<(&str, &str)> = resp
+        .results
+        .iter()
+        .map(|r| (r.id.as_str(), r.memory_type.as_str()))
+        .collect();
+
+    assert!(
+        kinds.contains(&("kn_live", "knowledge_node")),
+        "在库节点必须可见: {kinds:?}"
+    );
+    assert!(
+        !kinds.iter().any(|(id, _)| *id == "kn_gone"),
+        "已遗忘节点不应出现在图上: {kinds:?}"
+    );
+    assert!(
+        !kinds.iter().any(|(_, t)| *t == "relation"),
+        "只有一端在批内的边不能返回，否则另一端会在图上变成「未命名节点」: {kinds:?}"
+    );
+}
+
+/// 搜索路径（无种子、`traversal_depth=0`）同样守「边必须两端节点同在批内」。
+///
+/// `search_relations_internal` 会把命中节点的**全部**入/出边一并带出来，远端节点没命中
+/// 时那条边就是半条信息（前端只能把远端画成「未命名节点」）—— 必须在这里丢掉。
+#[sqlx::test]
+async fn keyword_search_never_returns_dangling_edges(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    seed_scoped(&ctx, "kn_x", "苹果种植技术要点", "agent-kg", false).await;
+    seed_scoped(&ctx, "kn_y", "香蕉冷链运输方案", "agent-kg", false).await;
+    // 只有 kn_x 会被关键词命中；kn_y 是「远端未命中」的那一侧
+    link(&ctx, "kr_xy", "kn_x", "kn_y").await;
+
+    let resp = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: "苹果种植".to_string(),
+            max_results: Some(50),
+            memory_type: None,
+            traversal_depth: None,
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: None,
+            tags: None,
+            task_id: None,
+            agent_id: Some("agent-kg".to_string()),
+        },
+    )
+    .await
+    .unwrap();
+
+    let node_ids: HashSet<&str> = resp
+        .results
+        .iter()
+        .filter(|r| r.memory_type != "relation")
+        .map(|r| r.id.as_str())
+        .collect();
+    assert!(
+        node_ids.contains("kn_x"),
+        "关键词命中的节点必须在结果里，否则本测试是空跑的: {:?}",
+        resp.results
+    );
+    // 不变式：返回的每一条边，两端节点都要在结果里
+    for rel in resp.results.iter().filter(|r| r.memory_type == "relation") {
+        assert!(
+            node_ids.contains(rel.source_node_id.as_deref().unwrap_or_default()),
+            "边 {} 的源端不在结果里: {:?}",
+            rel.id,
+            resp.results
+        );
+        assert!(
+            node_ids.contains(rel.target_node_id.as_deref().unwrap_or_default()),
+            "边 {} 的目标端不在结果里: {:?}",
+            rel.id,
+            resp.results
+        );
+    }
+    // 本场景下（FTS 只命中 kn_x）这条半条边必须已被丢弃
+    assert!(
+        !resp.results.iter().any(|r| r.id == "kr_xy"),
+        "远端未命中的边不该出现在搜索结果里: {:?}",
+        resp.results
+    );
+}
+
+/// 非法 `memory_type` / `traversal_strategy` 必须报 400，**不能静默降级**。
+///
+/// 回归背景：这两个字段曾用 `_ => MemoryType::All` / `_ => BreadthFirst` 兜底 ——
+/// 拼错一个词就拿到**全量结果**或**另一种形状的图**，而响应看起来完全成功。
+#[sqlx::test]
+async fn invalid_filter_values_are_rejected_instead_of_defaulted(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+
+    let base = |memory_type: Option<&str>, strategy: Option<&str>| SearchMemoryParams {
+        query: "任意关键词".to_string(),
+        max_results: Some(5),
+        memory_type: memory_type.map(|s| s.to_string()),
+        traversal_depth: None,
+        traversal_breadth: None,
+        traversal_strategy: strategy.map(|s| s.to_string()),
+        seed_node_ids: None,
+        tags: None,
+        task_id: None,
+        agent_id: None,
+    };
+
+    // 拼错的 memory_type（少了 d）→ 400，而不是悄悄搜全部
+    let err = search_memory(ctx.clone(), base(Some("knowlege_node"), None))
+        .await
+        .expect_err("拼错的 memory_type 必须报错");
+    let msg = err.to_string();
+    assert!(msg.contains("invalid_request"), "错误码不对: {msg}");
+    assert!(msg.contains("memory_type"), "错误信息应指明字段: {msg}");
+    assert!(
+        msg.contains("knowledge_node"),
+        "错误信息应列出合法取值供调用方纠正: {msg}"
+    );
+
+    // 拼错的 traversal_strategy → 400，而不是悄悄退化成 BFS
+    let err = search_memory(ctx.clone(), base(None, Some("depth")))
+        .await
+        .expect_err("拼错的 traversal_strategy 必须报错");
+    let msg = err.to_string();
+    assert!(msg.contains("invalid_request"), "错误码不对: {msg}");
+    assert!(
+        msg.contains("traversal_strategy"),
+        "错误信息应指明字段: {msg}"
+    );
+
+    // 合法值（含 PascalCase 与显式 all）照常放行
+    for good in [
+        Some("knowledge_node"),
+        Some("KnowledgeNode"),
+        Some("all"),
+        None,
+    ] {
+        search_memory(ctx.clone(), base(good, Some("depth_first")))
+            .await
+            .unwrap_or_else(|e| panic!("合法 memory_type {good:?} 不该报错: {e}"));
+    }
+}
+
+/// 回归：**休息沉淀链路**（System + 只有 agent_id、没有 user_id）必须能调用全部记忆工具。
+///
+/// 沉淀的 ctx 由 `RequestContext::new_system()` 经 AOP `context_carrier` 还原 ——
+/// `agent_rest` cron 只派发事件、事件本身不带用户，所以整条链路**天生没有 user_id**；
+/// 而 5 个记忆工具曾一律要求 `!ctx.uid().is_empty()`，于是沉淀期只能新建节点、
+/// 检索/更新/删除全线 400「当前请求缺少用户上下文」。
+///
+/// 实测（`.ai_orz/tools/call_trace`，全量 10 个文件）：`update_memory` 失败 10 次、
+/// `search_memory` 6 次、`query_memory` 6 次，失败调用全部 `task_id=null, project_id=null`、
+/// 只有 agent_id —— 正是沉淀的形状；而同期无 user 校验的 `save_long_term_memory`（65 次）
+/// 与 `save_short_term_memory`（109 次）畅通。后果是「先检索再创建」失效 → 持续制造重复节点，
+/// 且「把已处理短期记忆标 Settled」只能靠框架兜底。
+///
+/// 因此调用主体校验必须是「**用户 或 Agent**」；同时**不能退化成不校验** ——
+/// 两者都没有的匿名 ctx 仍须拒绝。
+#[sqlx::test]
+async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::SqlitePool) {
+    let _ = init_env(pool.clone()); // 全局初始化（DAO/DAL/Domain）
+    let ctx =
+        crate::pkg::request_context_test_support::new_test_agent_ctx("agent-settle", pool.clone());
+    assert!(ctx.uid().is_empty(), "本测试的前提就是 ctx 没有 user_id");
+    assert_eq!(ctx.agent_id().map(String::as_str), Some("agent-settle"));
+
+    // create_memory：沉淀期新建知识节点
+    let node = create_memory(
+        ctx.clone(),
+        CreateMemoryParams {
+            memory_type: "knowledge_node".to_string(),
+            content: "沉淀期新建的知识节点".to_string(),
+            summary: Some("沉淀期摘要".to_string()),
+            tags: None,
+            task_id: None,
+        },
+    )
+    .await
+    .expect("Agent 上下文（无 user）应能创建知识节点");
+
+    // search_memory：沉淀的第 2 步「先检索再创建」，检索失效就会造重复节点
+    let hit = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: "沉淀期新建".to_string(),
+            max_results: Some(20),
+            memory_type: Some("knowledge_node".to_string()),
+            traversal_depth: None,
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: None,
+            tags: None,
+            task_id: None,
+            agent_id: None,
+        },
+    )
+    .await
+    .expect("Agent 上下文（无 user）应能检索记忆");
+    assert!(
+        hit.results.iter().any(|r| r.id == node.memory_id),
+        "刚建的节点应能被检索到: {:?}",
+        hit.results
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect::<Vec<_>>()
+    );
+
+    // query_memory：按结构化条件查询
+    query_memory(
+        ctx.clone(),
+        QueryMemoryParams {
+            agent_id: Some("agent-settle".to_string()),
+            memory_type: Some("knowledge_node".to_string()),
+            limit: Some(20),
+            tags: None,
+            task_id: None,
+            status: None,
+        },
+    )
+    .await
+    .expect("Agent 上下文（无 user）应能按条件查询记忆");
+
+    // update_memory：沉淀的第 6 步「把已处理的短期记忆标 Settled」（call_trace 里失败最多的一处）
+    let st = create_memory(
+        ctx.clone(),
+        CreateMemoryParams {
+            memory_type: "short_term".to_string(),
+            content: "沉淀期待处理的工作记忆".to_string(),
+            summary: Some("待沉淀条目".to_string()),
+            tags: None,
+            task_id: None,
+        },
+    )
+    .await
+    .expect("Agent 上下文（无 user）应能创建短期记忆");
+    update_memory(
+        ctx.clone(),
+        UpdateMemoryParams {
+            memory_id: st.memory_id.clone(),
+            content: None,
+            summary: None,
+            tags: None,
+            status: Some("settled".to_string()),
+            node_tags: None,
+            relations: None,
+        },
+    )
+    .await
+    .expect("Agent 上下文（无 user）应能把短期记忆标记为 settled");
+
+    // delete_memory：确认冗余节点可删
+    delete_memory(
+        ctx.clone(),
+        DeleteMemoryParams {
+            memory_id: node.memory_id.clone(),
+        },
+    )
+    .await
+    .expect("Agent 上下文（无 user）应能删除记忆");
+
+    // 反向：user 与 agent 都没有的匿名 ctx 仍须拒绝（校验放宽不等于取消）
+    let anon = crate::pkg::request_context::RequestContext::builder()
+        .storage(crate::pkg::storage::test_support::create_test_storage(pool))
+        .build();
+    let err = search_memory(anon, click_params("kn_x", None))
+        .await
+        .expect_err("既无 user 又无 agent 的 ctx 必须被拒绝");
+    assert!(
+        err.to_string().contains("缺少用户/Agent 上下文"),
+        "错误信息应点明缺的是调用主体: {err}"
+    );
+}
