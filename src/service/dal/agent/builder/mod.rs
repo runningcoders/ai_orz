@@ -16,6 +16,8 @@ pub use default::DefaultPromptBuilder;
 pub use flat::FlatPromptBuilder;
 
 #[cfg(test)]
+mod default_test;
+#[cfg(test)]
 mod prompt_builder_test;
 
 use crate::models::agent::Agent;
