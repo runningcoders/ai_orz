@@ -68,7 +68,7 @@ Completed  → Archived
 
 ### 工具速览
 
-- **`create_task`**：`assignee_type=Agent` 时自动给目标 Agent 发分配通知，**通知失败不影响创建**。能确定项目就直接带 `project_id`；暂未立项可先游离创建，归属确定后 `update_task(project_id=...)` 一次性挂载（见「游离任务挂载」）。
+- **`create_task`**：`dependencies` 填前置任务 ID 构成 DAG——任务存在前置时**必须填写**，留空视为可立即开工，会导致错序执行。`assignee_type=Agent` 时自动给目标 Agent 发分配通知，**通知失败不影响创建**。能确定项目就直接带 `project_id`；暂未立项可先游离创建，归属确定后 `update_task(project_id=...)` 一次性挂载（见「游离任务挂载」）。
 - **`get_task(id)`**：`with_artifacts=true` 一并返回关联产物。
 - **`query_tasks`**：`status_in` 为 OR 语义。
 - **`update_task`**：`project_id` 仅对未挂载任务生效（见「游离任务挂载」）；`description` 只写需求边界 + 产物索引（规范见下文「任务 description」）。
@@ -218,7 +218,7 @@ Completed  → Archived
 - [ ] 产出技术方案并 `create_text_artifact(tags=["technical_design"], project_id=...)` 保存；`update_project(description=...)` 写**简短项目定位 + 技术方案产物 ID 索引**（规范见「description 书写规范」，拆分计划不进 description）
 - [ ] **`update_project(execution_plan=...)` 写入项目执行计划**（Phase 划分 + 关键任务 + 风险），作为后续调度与跟进的基准（项目创建即 InProgress，规划在 InProgress 中完成，无需状态流转）
 - [ ] `send_message` 向用户发拆分方案（任务列表 / 依赖 / 预期产出），**等待用户确认后再分配**，避免方向偏差返工
-- [ ] 确认后 `create_task` 填好 `dependencies` 构成 DAG，按「分配前必查空闲」选 Task Owner（**可分配给其他 Agent，也可分配给自己**；创建后系统自动发分配通知）
+- [ ] 确认后 `create_task` 批量建任务：**先按拆分方案画出完整 DAG，逐任务回填 `dependencies`（存在前置却留空 = 错序开工），全部建完对照 execution_plan 复查一遍依赖无遗漏**；按「分配前必查空闲」选 Task Owner（**可分配给其他 Agent，也可分配给自己**；创建后系统自动发分配通知）
 - [ ] 通过 `send_task_assignment_message` 通知 Task Owner 启动；分配给自己的话直接进入阶段 2
 
 ### 阶段 2：Task Owner 执行与上报

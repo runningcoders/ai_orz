@@ -28,7 +28,7 @@ pub struct CreateTaskRequest {
     pub project_id: Option<String>,
     /// 截止时间戳
     pub due_at: Option<i64>,
-    /// 前置任务 ID 列表
+    /// 前置任务 ID 列表（DAG 依赖）；任务存在前置时必须填写，留空 / 缺省表示可立即开工
     pub dependencies: Option<Vec<String>>,
 }
 
@@ -213,7 +213,7 @@ pub struct UpdateTaskRequest {
     pub tags: Option<Vec<String>>,
     /// 截止时间戳
     pub due_at: Option<i64>,
-    /// 前置任务 ID 列表
+    /// 前置任务 ID 列表（DAG 依赖）；不传不修改，传值整体替换；任务存在前置时必须填写完整
     pub dependencies: Option<Vec<String>>,
     /// 执行计划（Agent Loop 规划阶段产出）
     #[serde(default, skip_serializing_if = "Option::is_none")]
