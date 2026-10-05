@@ -26,6 +26,8 @@ fn chat_req(name: &str, access_mode: Option<ModelAccessMode>) -> CreateModelProv
         max_context_length: Some(128_000),
         recommended_context_length: None,
         access_mode,
+        // 本文件专注 access_mode 契约，vision 不参与断言：走缺省（None → 服务端落 false）
+        supports_vision: None,
     }
 }
 

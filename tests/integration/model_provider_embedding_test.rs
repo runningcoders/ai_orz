@@ -32,6 +32,8 @@ fn embedding_req(name: &str) -> CreateModelProviderRequest {
         max_context_length: None,
         recommended_context_length: None,
         access_mode: None,
+        // Embedding 端点无对话上下文的概念，vision 能力位对其无意义：走缺省
+        supports_vision: None,
     }
 }
 

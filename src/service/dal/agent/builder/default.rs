@@ -1505,13 +1505,29 @@ mod vision_builder_tests {
     use super::*;
 
     // trait 方法语法需显式导入（use super::* 不带父模块的 use 导入）
+    use crate::models::file::FileMeta;
     use crate::models::prompt_builder::PromptBuilder;
 
+    // 构造消息 PO 走 `MessagePo::new`（本金库红线）：`Default` + 逐字段赋值会让
+    // created_at 归零，也会让测试 PO 与真实写入路径形态不一致。
     fn make_text_message(content: &str) -> Message {
-        let mut po = crate::models::message::MessagePo::default();
-        po.from_role = common::enums::MessageRole::User;
-        po.message_type = common::enums::MessageType::Text;
-        po.content = content.to_string();
+        let po = crate::models::message::MessagePo::new(
+            "msg-test".to_string(),
+            None, // project_id
+            None, // task_id
+            "user-test".to_string(),
+            "agent-test".to_string(),
+            common::enums::MessageRole::User,
+            common::enums::MessageRole::Agent,
+            common::enums::MessageType::Text,
+            content.to_string(),
+            None, // file_type
+            FileMeta::new("".to_string(), "".to_string(), 0),
+            None, // reply_to_id
+            None, // root_id
+            None, // organization_id
+            "test-user".to_string(),
+        );
         Message::from_po(po)
     }
 

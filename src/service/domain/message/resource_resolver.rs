@@ -174,31 +174,32 @@ pub async fn resolve_message_resources(
 
     let mut attachments = HashMap::new();
     for id in att_ids {
-        if let Ok(Some(a)) = attachment_dal.get_by_id(ctx.clone(), &id).await {
-            if a.po.status == 1 {
-                attachments.insert(
-                    id,
-                    ResolvedPayload {
-                        name: a.po.original_name,
-                        summary: Some(format!("{} · {}", a.po.mime_type, a.po.size)),
-                    },
-                );
-            }
+        // status == 1 = 启用态；软删资源不参与解析（let-chain 展平，避免嵌套 if）
+        if let Ok(Some(a)) = attachment_dal.get_by_id(ctx.clone(), &id).await
+            && a.po.status == 1
+        {
+            attachments.insert(
+                id,
+                ResolvedPayload {
+                    name: a.po.original_name,
+                    summary: Some(format!("{} · {}", a.po.mime_type, a.po.size)),
+                },
+            );
         }
     }
 
     let mut artifacts = HashMap::new();
     for id in art_ids {
-        if let Ok(Some(a)) = artifact_dal.find_by_id(ctx.clone(), &id).await {
-            if a.po.status == 1 {
-                artifacts.insert(
-                    id,
-                    ResolvedPayload {
-                        name: a.po.name,
-                        summary: artifact_summary(a.po.file_type, &a.po.description),
-                    },
-                );
-            }
+        if let Ok(Some(a)) = artifact_dal.find_by_id(ctx.clone(), &id).await
+            && a.po.status == 1
+        {
+            artifacts.insert(
+                id,
+                ResolvedPayload {
+                    name: a.po.name,
+                    summary: artifact_summary(a.po.file_type, &a.po.description),
+                },
+            );
         }
     }
     (attachments, artifacts)
