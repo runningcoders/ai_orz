@@ -1257,6 +1257,39 @@ mod tests {
         }
     }
 
+    /// 等待接收计数稳定（排空服务端积压），返回稳定后的计数。
+    ///
+    /// 修 `heartbeat_interval_takes_effect_live` 的 flaky 根因：`mark` 若取自
+    /// 「服务端已处理帧数」且此时有积压，观测窗口内服务端补处理积压帧会被
+    /// 误判成「客户端还在按旧间隔发帧」。机器负载越高越容易复现——全量串行
+    /// 跑必挂、单独跑必过。
+    ///
+    /// 稳定性判定用「连续 N 次读数不变」，并设总次数上限：若心跳真的没停
+    /// （功能失效），计数会持续增长，函数在上限后返回当前值，让后续断言照常
+    /// 失败——排空辅助不该把真正的失败伪装成超时卡死。
+    async fn wait_count_stable(got: &Arc<tokio::sync::Mutex<Vec<String>>>) -> usize {
+        const POLL: Duration = Duration::from_millis(50);
+        const STABLE_HITS: usize = 3;
+        const MAX_POLLS: usize = 40; // 上限 2s
+
+        let mut last = got.lock().await.len();
+        let mut stable_hits = 0;
+        for _ in 0..MAX_POLLS {
+            tokio::time::sleep(POLL).await;
+            let now = got.lock().await.len();
+            if now == last {
+                stable_hits += 1;
+                if stable_hits >= STABLE_HITS {
+                    return now;
+                }
+            } else {
+                stable_hits = 0;
+                last = now;
+            }
+        }
+        got.lock().await.len()
+    }
+
     /// 心跳间隔由 adapter 每 tick 提供 ⇒ 运行期改变当轮生效
     #[tokio::test(flavor = "multi_thread")]
     async fn heartbeat_interval_takes_effect_live() {
@@ -1295,10 +1328,13 @@ mod tests {
             fast
         );
 
-        // 改为 1000ms：当轮生效（旧间隔最多再补一帧）
+        // 改为 1000ms：当轮生效（正在 sleep 的旧 tick 最多再补一帧）
         interval_ms.store(1000, Ordering::SeqCst);
-        let mark = got.lock().await.len();
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        // 取 mark 前先排空接收侧积压，否则窗口内补处理的积压帧会被误判成旧节奏
+        let mark = wait_count_stable(&got).await;
+        // 观测窗 400ms：对 30ms 旧节奏有 13 倍余量，同时对 tokio timer 在高负载
+        // 下的漂移留足容忍（250ms 偏紧，全量跑时 timer 漂移能突破）
+        tokio::time::sleep(Duration::from_millis(400)).await;
         let after = got.lock().await.len();
         assert!(
             after - mark <= 1,
