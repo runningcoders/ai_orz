@@ -59,6 +59,9 @@ source_files:
 - src/models/message.rs (MessagePo reply_to + external_key + federation_contract)
 - src/service/domain/runtime/awakening.rs (两阶段唤醒后注入 reply_to 上下文)
 - src/service/dal/lark/impl.rs + src/service/dao/lark/http.rs (飞书 thread_id ↔ external_key 双向映射)
+- 【平行卡 3】docs/wiki/knowledge/zh/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 +
+  TaskEventConsumer 依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 +
+  TaskEventConsumer 依赖就绪自动重发.md
 - docs/wiki/zh/content/功能模块/消息系统/消息系统.md
 - docs/wiki/zh/content/功能模块/消息系统/消息管理.md
 - common/src/mention.rs（2026-09-13 修复：放开 @ 前缀判定 + 光标 UTF-16/字节单位错配修复）
@@ -86,6 +89,8 @@ source_files:
 ## §1 概述
 
 **本卡角色**：用户↔Agent 消息交互、SSE 实时推送、多渠道出站的总知识卡。覆盖 MessageDomain 的 delivery（发送）/ management（查询管理）双能力、AgentLoopConsumer 完成投递后驱动 Agent 唤醒、MessagePushDao 作为出站统一入口分发到 5 类渠道（飞书卡片/Slack Block/Email SMTP/Webhook HMAC/微信客服）以及 SSE 中间件的广播机制。**定位：新增出站渠道、排查消息发了用户没收到、Agent 收到消息但没自动唤醒时读。**
+
+> 📌 视角声明（AGENTS §2.1.3 Level 3 互补视角平行卡）：本卡与 [AOP 生产消费事件中心](docs/wiki/knowledge/zh/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册.md) + [Lark P2P WS 私信入站](docs/wiki/knowledge/zh/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标.md) + [唤醒前置门闩与依赖补发闭环](docs/wiki/knowledge/zh/唤醒前置门闩与依赖补发闭环：wake_gate_policy%20策略化前置校验%20+%20TaskEventConsumer%20依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy%20策略化前置校验%20+%20TaskEventConsumer%20依赖就绪自动重发.md) 构成「消息链路端到端」体系的框架层 / 渠道层 / 消费门控层互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡。本卡讲「消息本身与投递」，**「为什么这条消息没唤醒 Agent」的前置门闩判据见唤醒门闩兄弟卡**。
 
 - **发送 4 段原子链路**（MessageDelivery::send_message_to_user/agent，内部按序，出错整体回滚）：① 先写 `messages` 表（带 status=Pending）→ ② SSE push 当前在线的目标 user_id 浏览器（通过 middleware/sse.rs 的 BroadcastChannel：Arc<RwLock<HashMap<user_id, Vec<mpsc::Sender>>>>）→ ③ AOP publish message.created 事件 → ④ 返回 Message ID。失败回滚：写 DB 后 SSE/AOP 任一步失败都不回滚 DB（消息已经落了就不能丢），但是会 return 500 给调用方附带"投递警告"标记让前端显示「发送成功但渠道推送部分失败，对方稍后能在站内收到」。
 - **SSE 中间件 + HUD 未读计数橙光**（middleware/sse.rs）：EventSource `GET /api/v1/sse/subscribe?token=JWT`；JWT 解析 user_id 后加入广播映射。事件格式 3 类：`event: message.created data: {message_id, from_id, content, thread_id, unread_count}`（unread_count 让前端所有页面右上角角标同步更新，不用再单独拉未读接口）；`event: message.read`（对方已读后自己的消息自动勾选）；`event: heartbeat data: pong` 15s 一帧防 Nginx 超时。断线重连时前端自动带 `Last-Event-ID` 头，服务端从 `message_seen_logs` 表拿用户上次最后看到的 ID → SELECT id > last-id 的 200 条补推。

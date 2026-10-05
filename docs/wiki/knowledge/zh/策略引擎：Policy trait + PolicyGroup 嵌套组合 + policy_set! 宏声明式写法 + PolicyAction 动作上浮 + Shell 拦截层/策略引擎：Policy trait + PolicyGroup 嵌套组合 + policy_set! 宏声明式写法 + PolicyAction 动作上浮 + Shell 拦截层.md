@@ -20,9 +20,12 @@ source_files:
 - docs/wiki/zh/content/核心模块/服务层/领域层/策略引擎与 Shell 拦截层.md
 - docs/wiki/zh/content/基础设施/工具注册表/内置工具系统/Shell执行工具.md
 - docs/wiki/knowledge/zh/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行.md
+- docs/wiki/knowledge/zh/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发.md
 ---
 
 # 策略引擎框架（通用判断引擎 + Shell 拦截层落地）
+
+> 📌 视角声明（AGENTS §2.1.3 Level 3 互补视角平行卡）：本卡与 [Shell 工具全链路](docs/wiki/knowledge/zh/Shell%20工具全链路：shell_tool%20注册%20+%20shell_policy%20拦截%20+%20shell_exec%20执行/Shell%20工具全链路：shell_tool%20注册%20+%20shell_policy%20拦截%20+%20shell_exec%20执行.md) + [唤醒前置门闩与依赖补发闭环](docs/wiki/knowledge/zh/唤醒前置门闩与依赖补发闭环：wake_gate_policy%20策略化前置校验%20+%20TaskEventConsumer%20依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy%20策略化前置校验%20+%20TaskEventConsumer%20依赖就绪自动重发.md) 构成「策略引擎领域落地」的互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡。本卡讲引擎本体 + think_loop / Shell 两处落地，消费侧唤醒门闩见兄弟卡。
 
 ## §1 概述
 

@@ -38,12 +38,17 @@ source_files:
 - 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry
   全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8
   类业务消费者注册.md
+- 【平行卡 3】docs/wiki/knowledge/zh/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 +
+  TaskEventConsumer 依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 +
+  TaskEventConsumer 依赖就绪自动重发.md（`dependencies` DAG 列的**运行时消费方**：谁在读它、读到什么算就绪）
 
 ---
 
 ## §1 概述
 
 **本卡角色**：任务状态机与项目聚合的业务领域知识卡。覆盖 `TaskStatus` 五态枚举（Cancelled/Pending/InProgress/Completed/Archived；PendingReview 已废弃并入 Pending）（禁止数字大小比较，用 match 分支）+ `progress` 自动联动 status 规则、`TaskPo.execution_plan / execution_result` 两字段 JSON 结构化存储规范（后端 patch 合并，不允许前端整字段覆盖）、`Project.progress_summary` 按任务子状态实时百分比计算算法、以及 `task_graph.rs` 基于 `dependencies` 前置任务数组构建的 Mermaid DAG 可视化链路。**定位：写任务推进代码、前端进度条 UI、项目详情聚合查询、排查状态流转错乱时读。**
+
+> 📌 视角声明（AGENTS §2.1.3 Level 3 互补视角平行卡）：本卡与 [AOP 生产消费事件中心](docs/wiki/knowledge/zh/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册.md) + [唤醒前置门闩与依赖补发闭环](docs/wiki/knowledge/zh/唤醒前置门闩与依赖补发闭环：wake_gate_policy%20策略化前置校验%20+%20TaskEventConsumer%20依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy%20策略化前置校验%20+%20TaskEventConsumer%20依赖就绪自动重发.md) 构成「任务领域语义 / 事件框架 / DAG 运行时推进」互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡。本卡讲 `dependencies` 与 `TaskStatus` 的**存储与展示语义**，**谁在运行时读 `dependencies` 决定能不能开跑，见唤醒门闩兄弟卡**。
 
 - **四态状态机（硬顺序）**：`Pending(2)` → `InProgress(3)` → `Completed(4)`；任意状态可跳 `Cancelled(0)`（软删除）。禁止逆向跳转（Completed→InProgress 的"重新打开"应新建任务而非回退，保证历史审计链完整）。`progress` 字段联动规则：写入 progress 时 Domain 自动 → 0=Pending、1-99=InProgress、100=Completed。如果同时传 status + progress → 以 status 为准，progress 裁剪（防止 status=Completed 但 progress=80 的冲突状态进库）。
 - **execution_plan / result 结构化 + patch 增量**：`execution_plan` JSON Schema 固定结构：`{ steps: [{ description, estimated_minutes, risk: "低|中|高" }], total_estimated_minutes, notes }`。`execution_result`：`{ completed_steps: [{ description, actual_minutes, output_summary, artifacts: [path] }], risks_mitigated, issues_found, next_actions }`。接口绝不允许整字段 PUT 覆盖——前端通过 `execution_plan_delta / execution_result_delta` 传增量，Domain `patch_execution_json()` 合并原 JSON 并校验 Schema，非法直接 400。
