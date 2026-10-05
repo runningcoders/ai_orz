@@ -21,7 +21,7 @@ export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$
 FAIL_UNDER ?= 45
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate seed-sync lint test test-be test-fe ci coverage e2e \
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint inline-test-lint docs-migrate seed-sync lint test test-be test-fe ci coverage e2e \
         dev serve run build build-fe install prod prod-stop stop prod-status status prod-log logs restart \
         clean-proc clean clean-slim doctor package hooks
 
@@ -55,6 +55,9 @@ clippy-fe: ## 前端 wasm32 clippy（CI frontend job 口径）
 docs-lint: ## 文档链接规范门禁：file:// 伪协议/绝对路径/冒号行号（AGENTS §2.1.2）
 	./scripts/check.sh docs-lint
 
+inline-test-lint: ## 内联测试体量门禁：禁止 >200 行的巨型内联 mod tests（拆分用 tools/split_inline_tests.py）
+	./scripts/check.sh inline-test-lint
+
 docs-migrate: ## 文档链接批量迁移，默认 dry-run；写盘加 APPLY=1
 	APPLY=$(APPLY) ./scripts/check.sh docs-migrate
 
@@ -74,7 +77,7 @@ test-fe: ## 前端测试（CI frontend job 口径）
 
 # ===== 聚合门禁 =====
 
-lint: ## 全部静态检查（前后端）：fmt + clippy + clippy-fe + docs-lint
+lint: ## 全部静态检查（前后端）：fmt + clippy + clippy-fe + docs-lint + inline-test-lint
 	./scripts/check.sh lint
 
 ci: ## 本地模拟 CI 全部门禁（= lint + 全量测试，不含 coverage）

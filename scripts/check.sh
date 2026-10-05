@@ -17,10 +17,11 @@
 #   clippy               clippy -D warnings（CI lint job 口径，需 protoc）
 #   clippy-fe            前端 wasm32 clippy（CI frontend job 口径）
 #   docs-lint            文档链接规范门禁
+#   inline-test-lint     内联测试体量门禁（禁止 >200 行的巨型内联 mod tests）
 #   docs-migrate         文档链接批量迁移（默认 dry-run，APPLY=1 写盘）
 #   seed-sync            预置技能同步到运行期数据目录（默认 dry-run，APPLY=1 写盘）
 #   test-be / test-fe / test   后端 / 前端 / 全量测试
-#   lint                 全部静态检查 = fmt-check + clippy + clippy-fe + docs-lint
+#   lint                 全部静态检查 = fmt-check + clippy + clippy-fe + docs-lint + inline-test-lint
 #   ci                   lint + 全量测试（与 pre-push 钩子同口径）
 #   coverage             覆盖率门禁（FAIL_UNDER 默认 45，PR 口径 38）
 #   dx-check             前端 dioxus 构建检查（dx 缺失则跳过，不阻塞）
@@ -73,6 +74,11 @@ cmd_clippy_fe() {
 
 cmd_docs_lint() { cargo run -p ai-orz-tools --bin docs_lint; }
 
+# 内联测试体量门禁：禁止 >200 行的巨型内联 `#[cfg(test)] mod tests`。
+# 拆分用 `python3 tools/split_inline_tests.py <file>`（工具会自动处理
+# #[path] 声明、私有 use 可见性、mod.rs 命名等细节）。
+cmd_inline_test_lint() { cargo run -p ai-orz-tools --bin inline_test_lint; }
+
 cmd_docs_migrate() {
     if [ "${APPLY:-0}" = "1" ]; then
         echo "== APPLY 模式：写盘 =="
@@ -119,11 +125,12 @@ cmd_dx_check() {
 }
 
 cmd_lint() {
-    step "lint（fmt-check + clippy + clippy-fe + docs-lint）"
+    step "lint（fmt-check + clippy + clippy-fe + docs-lint + inline-test-lint）"
     cmd_fmt_check
     cmd_clippy
     cmd_clippy_fe
     cmd_docs_lint
+    cmd_inline_test_lint
 }
 
 # ===== 测试 =====
@@ -174,6 +181,7 @@ ai_orz - 代码门禁（make 与各 git 钩子的共同实现）
   clippy            后端与共享 crate 的 clippy（-D warnings）
   clippy-fe         前端 wasm32 clippy
   docs-lint         文档链接规范门禁
+  inline-test-lint  内联测试体量门禁（阈值 200 行，INLINE_TEST_MAX_LINES 可覆盖）
   docs-migrate      文档链接迁移（APPLY=1 写盘）
   seed-sync         预置技能同步到数据目录（SKILL=<ID> 限定单个；APPLY=1 写盘）
   test-be/test-fe/test   后端 / 前端 / 全量测试
@@ -193,6 +201,7 @@ case "$CMD" in
     clippy) cmd_clippy ;;
     clippy-fe) cmd_clippy_fe ;;
     docs-lint) cmd_docs_lint ;;
+    inline-test-lint) cmd_inline_test_lint ;;
     docs-migrate) cmd_docs_migrate ;;
     seed-sync) cmd_seed_sync ;;
     test-be) cmd_test_be ;;
