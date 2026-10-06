@@ -75,6 +75,20 @@ fn is_top_level_cfg_test(line: &str) -> bool {
     line.trim() == "#[cfg(test)]" && !line.starts_with(' ') && !line.starts_with('\t')
 }
 
+/// `mod xxx {`（有花括号 = 内联模块定义）
+fn re_mod_inline() -> &'static Regex {
+    // OnceLock：clippy::regex_creation_in_loops 禁止在循环里 new，
+    // 而这三个正则每个源文件都要用，编译一次复用比每次 new 更划算。
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^mod\s+(\w+)\s*\{$").unwrap())
+}
+
+/// `// inline-test-allow: <行数>`
+fn re_allow() -> &'static Regex {
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"inline-test-allow:\s*(\d+)").unwrap())
+}
+
 /// 收集单个文件里的内联测试模块
 fn scan_file(path: &Path, root: &Path) -> Vec<Finding> {
     let Ok(content) = fs::read_to_string(path) else {
@@ -83,16 +97,10 @@ fn scan_file(path: &Path, root: &Path) -> Vec<Finding> {
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
     let rel = path.strip_prefix(root).unwrap_or(path).to_path_buf();
-    let file_str = rel.to_string_lossy().replace('\\', "/");
-
-    // 已拆分形态：`#[path = "..."] mod xxx;`（无花括号）→ 目标形态，不统计
-    let path_mod = Regex::new(r#"^\s*#\[path\s*=\s*"[^"]+"\]\s*$"#).unwrap();
-    // 豁免声明
-    let allow_re = Regex::new(r"inline-test-allow:\s*(\d+)").unwrap();
 
     let mut allowed = None;
     for l in &lines {
-        if let Some(cap) = allow_re.captures(l) {
+        if let Some(cap) = re_allow().captures(l) {
             allowed = cap.get(1).and_then(|m| m.as_str().parse().ok());
         }
     }
@@ -104,8 +112,7 @@ fn scan_file(path: &Path, root: &Path) -> Vec<Finding> {
         }
         // ① 下一行必须是 `mod xxx {` 才算测试模块
         let Some(next) = lines.get(i + 1) else { break };
-        let nxt = next.trim();
-        let Some(mods) = Regex::new(r"^mod\s+(\w+)\s*\{$").unwrap().captures(nxt) else {
+        let Some(mods) = re_mod_inline().captures(next.trim()) else {
             continue;
         };
         let mod_name = mods.get(1).unwrap().as_str().to_string();
@@ -128,13 +135,6 @@ fn scan_file(path: &Path, root: &Path) -> Vec<Finding> {
             }
         }
         let Some(end) = end else { continue };
-        // 若闭合后紧跟 `#[path`（不可能，但留个兜底）则跳过
-        if lines
-            .get(end + 1)
-            .is_some_and(|l| path_mod.is_match(l.trim()))
-        {
-            continue;
-        }
 
         let span = end - i + 1;
         out.push(Finding {
@@ -145,7 +145,6 @@ fn scan_file(path: &Path, root: &Path) -> Vec<Finding> {
             file_total: total,
             allowed,
         });
-        let _ = file_str;
     }
     out
 }
