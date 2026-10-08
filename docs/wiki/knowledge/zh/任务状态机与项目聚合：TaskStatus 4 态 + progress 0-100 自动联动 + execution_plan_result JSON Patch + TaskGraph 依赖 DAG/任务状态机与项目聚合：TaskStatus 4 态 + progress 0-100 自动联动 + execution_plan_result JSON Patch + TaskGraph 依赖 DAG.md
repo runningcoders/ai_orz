@@ -22,6 +22,8 @@ source_files:
 - 'src/service/domain/project/service.rs#L1-L120 '
 - 'src/service/domain/project/task.rs#L1-L150 '
 - 'common/src/api/project_task.rs '
+- common/src/api/task.rs（CreateTaskRequest/UpdateTaskRequest.dependencies 字段注释：存在前置时必须填写，留空/缺省表示可立即开工；update 传值整体替换，空数组清空）
+- src/handlers/project/task/create_task.rs（create_task 工具 description：dependencies 为构成 DAG 的前置任务 ID，存在依赖时 MUST 填写，否则被视为可立即开工、错序执行）
 - docs/archive/design-archive/task_design.md
 - docs/archive/design-archive/project_design.md
 - docs/archive/design-archive/project_management_design.md
@@ -105,3 +107,4 @@ source_files:
 4. **项目进度百分比 = 各子任务 completed 权重平均**：算法固定（`已完成任务数 × 1 + 进行中任务数 × 0.5 + 待处理任务数 × 0）/ 总任务数（不包含 Cancelled）× 100%`，Cancelled 不算分母（否则「取消一个任务」居然让进度跳上去，反直觉）。算法改任何一项 → 前端所有显示百分比的地方必须同步文案说明变更。
 5. **execution_plan/result 禁含敏感信息**：Token、MASTER_KEY、密码等明文绝对不能写进这两字段——这两个字段会通过 project 详情 API 暴露给所有有项目权限的用户。Domain 写这两个字段前过 `sanitize_json_secrets(value)` 通用扫描（匹配 `sk-xxx`、`MASTER_KEY`、`Bearer ` 等正则）。
 6. **TaskGraph 图渲染依赖循环防 XSS**：build_task_graph_mermaid 的 task_id 作为 Mermaid `id`，必须过 `sanitize_mermaid_id(task_id)`——禁止含有空格、`"`、括号等字符，否则被前端 Mermaid.js 当作图语法节点注入。Mermaid 渲染不是 XSS 安全的，graph 输入用户可控时必须 ID 白名单过滤。
+7. **创建任务时存在前置关系就必须回填 `dependencies`，留空 = 视为可立即开工**：`dependencies` 为空（或缺省）的任务在语义上等同于「无前置、可立即启动」，运行时唤醒门闩不会拦它。拆分 DAG 时若任务实际有前置却漏填，Task Owner 校验前置时会拿到空列表直接通过，导致错序开工——**这类缺失无法由消费侧兜底救回**（空依赖列表永远校验通过）。因此拆分方案必须先画出完整 DAG，逐任务回填 `dependencies`，全部建完对照 execution_plan 复查一遍无遗漏；`update_task` 传 `dependencies` 为整体替换语义，改依赖时必须给全量列表，不能只补新增项。

@@ -39,6 +39,10 @@ source_files:
   - 【平行卡 2】docs/wiki/knowledge/zh/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）.md（vector_degradation 集成测试 target：向量存储 Mock 失败 → 搜索自动降级 FTS5-only 断言结果非空 score>0）
   - src/pkg/request_context_test_support.rs#L1-L15（测试基建统一入口 init_service_for_test()：幂等一次调用搞定 config → dao::init_all → dal::init_all → domain::init 全链初始化，解决 domain 测试 message_channel → lark/wechat/slack/email/webhook/a2a_callback 依赖链漏调 panic）
   - .githooks/pre-push（2026-09-13 增量：加回 dx check 作为 Dioxus 前端编译检查补充门禁；修正钩子启动行文案误导 + 过期注释）
+  - tools/src/bin/inline_test_lint.rs#L1-L60（内联测试体量门禁：非 `*_test.rs`/`*_tests.rs` 源文件里顶层 `#[cfg(test)] mod xxx {` 跨度 > 200 行即 fail；只认「`#[cfg(test)]` 紧跟 `mod xxx {`」才算测试模块，已拆分形态 `#[path = "x_tests.rs"] mod tests;` 不统计；上限 `INLINE_TEST_MAX_LINES` 可覆盖，豁免用文件内 `// inline-test-allow: <实测行数>`）
+  - tools/split_inline_tests.py（内联测试批量拆出工具：自动处理 `#[path]` 声明、私有 use 可见性、mod.rs 命名；用法 `python3 tools/split_inline_tests.py src/foo/bar.rs`）
+  - scripts/check.sh（`cmd_inline_test_lint` 并入 `cmd_lint` 组合 → `make lint` / `make ci` 均跑；pre-push 钩子当前未含该项）
+  - Makefile（`inline-test-lint` 薄转发 target，门禁逻辑只在 check.sh 写一遍）
 ---
 
 ## §1 概述
@@ -50,6 +54,7 @@ source_files:
 - **clippy `-D warnings` 双端零容忍（后端 x86 + 前端 wasm32）**（CI check stage）：① 后端默认 target x86_64-apple-darwin：`cargo clippy --workspace --exclude frontend --all-targets -- -D warnings`；② 前端 target wasm32-unknown-unknown（Dioxus WASM）：`cargo clippy -p frontend --target wasm32-unknown-unknown --all-targets -- -D warnings`；双端任一 warning 触发即 CI fail。常见清理：unused_import / dead_code / explicit_write（std::io::Write 未 import 时自动触发）/ match 多余 arm；clippy lint 配置在 `.cargo/config.toml`，自定义规则在 ai-orz-macros 里（禁止 role >= 2 数字比较等项目级红线）。
 - **测试基建统一入口 init_service_for_test()（`src/pkg/request_context_test_support.rs`）**：幂等一次调用搞定 `config::init()` → `dao::init_all()` → `dal::init_all()` → `domain::init()` 全链注册，解决 domain 单元测试因依赖链长（如 finance domain 依赖 message_channel → lark/wechat/slack/email/webhook/a2a_callback 一串）漏调某层导致 panic 的痛点。各层 init 均为 OnceLock 内存单例注册（零 DB IO），重复调用安全不重复注册。集成测试走 `tests/common/env.rs` 的 `init_full_test_env()`（含 producer/consumer/AOP/base data 完整链路），domain 单元测试走本函数（仅业务层注册）。
 - **pre-push 钩子加回 dx check 作为补充门禁（2026-09-13 增量）**：`.githooks/pre-push` 本地门禁脚本在 clippy + test 之后追加 `cargo check -p frontend --target wasm32-unknown-unknown`（Dioxus 前端编译检查）——解决前端代码能过 clippy 但 wasm32 编译失败的情况（如漏掉 feature flag、crate 依赖 wasm-only trait）。同时修正钩子启动行文案误导（旧写"pre-commit"实际是"pre-push"）+ 清理过期注释（已删除的 target 名仍留在脚本注释里）。
+- **内联测试体量门禁 inline_test_lint（2026-10 增量）**：`tools/src/bin/inline_test_lint.rs` 扫 `src` / `common` / `tools` 三处，对**非** `*_test.rs` / `*_tests.rs` 的源文件里顶层 `#[cfg(test)] mod xxx {` 统计跨度行数，> 200 行（`INLINE_TEST_MAX_LINES` 可覆盖）即 fail 并逐条给出拆分命令。背景：本仓曾出现 `identity_credentials.rs` 2051 行里 999 行是测试、`search_memory.rs` 868 行里 570 行是测试，业务实现被测试挤到要滚屏才能读完；本会话据此拆出 48 个文件（164 → 116 处内联模块），门禁防回潮。接入 `scripts/check.sh cmd_inline_test_lint` → 并入 `cmd_lint`，故 `make lint` / `make ci` 覆盖；**pre-push 钩子与 GitHub CI（rust.yml）当前均未含该项**。拆分工具 `tools/split_inline_tests.py`，豁免用文件内 `// inline-test-allow: <实测行数>`。
 
 ---
 
@@ -66,6 +71,7 @@ source_files:
 | docs/archive/design-archive/testing_guidelines.md 测试设计 | 金字塔分层 | 金字塔图：DAO单元(底) → DAL → Domain → Handler → 集成测试(中) → E2E(尖)；每一层责任：DAO 层只测 SQL（+边界），集成测试测真实链路（跨 Domain），E2E 测用户 happy path | `:L1-L50` |
 | docs/design/sqlx_guide.md SQL 规范 | sqlx 0.8 + SQLite | STRICT 模式所有表必须；枚举 `as "status: TaskStatus"` 显式标注；.sqlx/ 目录必须 git 提交（query! 离线编译元数据，CI 无网也能过）；软删除 status=0 WHERE 默认过滤 | `:L1-L60` |
 | src/pkg/request_context_test_support.rs 测试基建统一入口 | 业务层 init 单点 | `init_service_for_test()` 幂等一次调 `config::init` → `dao::init_all` → `dal::init_all` → `domain::init` 全链注册；各层 OnceLock 内存单例，重复调用安全；domain 单元测试依赖 message_channel 等长链路时调用本函数替代手工拼装 | `:L1-L15` |
+| tools/src/bin/inline_test_lint.rs 内联测试体量门禁 | 测试组织门禁 | 扫 src/common/tools，非 `*_test(s).rs` 源文件里顶层 `#[cfg(test)] mod xxx {` 跨度 > 200 行即 fail；已拆分形态 `#[path = "x_tests.rs"] mod tests;` 不统计；`INLINE_TEST_MAX_LINES` 覆盖阈值，`// inline-test-allow: <n>` 豁免 | `:L1-L60` |
 
 **章节来源**
 - [env.rs:L1-L120](tests/common/env.rs#L1-L120)
@@ -136,6 +142,7 @@ STAGE 4. build(release)【2-3min，仅 main branch 触发】
 8. **前端 wasm32 单元测试不 mock 网络请求，直接测纯逻辑组件**：测试 GraphCanvas、PagedResult::map UI 渲染、use_resource deps 变化触发不发 HTTP；HTTP 用真实 API client 测试放集成/Playwright E2E。否则 wasm32 里模拟网络需要 wasm-bindgen-test 引入 js-sys 庞大依赖，测试启动超 10 秒无法接受。
 9. **pre-push 是真门禁（exit 1 阻止 push），不是提示**：`.githooks/pre-push` shell 脚本必须 `exit 1` 当 clippy 或 test 失败；任何"warn only"软门禁违反红线。开发者用 `git push --no-verify` 跳过必须在 PR 描述里注明原因。
 10. **workspace clippy 命令必须双端独立**：后端用 `cargo clippy --workspace --exclude frontend --all-targets -- -D warnings`；前端单独 `cargo clippy -p frontend --target wasm32-unknown-unknown --all-targets -- -D warnings`；禁止合并为单一命令（wasm32 target 不能跑 workspace 全量）；clippy lint 自定义配置在 `.cargo/config.toml`，禁止分散在各 crate。
+11. **源文件内联测试模块跨度不得超过 200 行（内联测试体量门禁）**：非 `*_test.rs` / `*_tests.rs` 源文件里，`#[cfg(test)]` 紧跟 `mod xxx {` 的顶层内联测试模块 > 200 行即被 `inline_test_lint` 拦截；新增/扩充测试应直接拆到同目录 `*_tests.rs` 并用 `#[path = "xxx_tests.rs"] mod tests;` 外链（用 `python3 tools/split_inline_tests.py <file>` 自动拆）。确需临时放行必须写 `// inline-test-allow: <实测行数>` 且数值与实测一致，不得随意调高 `INLINE_TEST_MAX_LINES` 绕过。业务代码里带 `#[cfg(test)]` 的**测试专用辅助函数**（无 `mod`）不计入——门禁只认测试模块。
 
 ---
 
@@ -144,3 +151,4 @@ STAGE 4. build(release)【2-3min，仅 main branch 触发】
 | 时间 | 事件 | 影响 |
 |------|------|------|
 | 2026-09 | 新增 `src/pkg/request_context_test_support.rs` 测试基建统一入口 `init_service_for_test()` | 解决 domain 单元测试手工拼装 init 链（dao init → dal init → domain init 各调一遍）容易漏依赖导致 panic 的痛点；finance domain 等依赖 message_channel → lark/wechat/slack/email/webhook/a2a_callback 长链路的测试从此一行搞定；OnceLock 幂等设计保证重复调用安全；区分集成测试走 `init_full_test_env()`（含 AOP/producer/consumer/base data）与 domain 单元测试走 `init_service_for_test()`（仅业务层注册）的两层 init 语义 |
+| 2026-10 | 内联测试体量门禁 `inline_test_lint` 落地 + 48 个文件内联测试拆出 | 从「靠自觉」升级为「门禁强制」：> 200 行的顶层内联 `mod tests` 直接 fail。本会话把 164 处内联模块降到 116 处，最坏的 identity_credentials.rs（2051 行含 999 行测试）、search_memory.rs（868 行含 570 行测试）等已拆分。所有拆分均为「文件末尾测试模块 → `#[path] mod tests;` 外链」，生产代码零改动、行号零漂移 |
