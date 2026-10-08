@@ -115,6 +115,10 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 当前会话目标 Agent 的运行时状态（0=Idle 1=Resting 2=Busy），轮询刷新。
     // 驱动置底状态气泡文案 + 非空闲时的发送门禁。
     let mut agent_state = use_signal(|| 0i32);
+    // 思考状态跨会话污染修复（任务 01a11b5b，排查 01a11b41，方案 B）：agent_state/is_typing
+    // 的归属快照 —— 记录当前状态值属于哪个会话目标 Agent。状态消费点必须先校验
+    // agent_state_owner() == target_agent_id() 再消费，杜绝切换会话后旧 Agent 状态串台。
+    let mut agent_state_owner = use_signal(|| Option::<String>::None);
     // 轮询得到的完整 Agent 详情（get_agent 响应），与右侧 ChatSidePanel 的
     // AgentInfoTab 共享同一份数据，避免重复请求、并让徽章实时刷新。
     let mut target_agent_info = use_signal(|| Option::<GetAgentResponse>::None);
@@ -221,6 +225,14 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 而不再实时刷新。现在统一以 `get_project` 为事实源，`projects` 列表只负责左侧导航。
     let mut target_agent_id = use_signal(|| Option::<String>::None);
     use_effect(move || {
+        // 思考状态跨会话污染修复（任务 01a11b5b，排查 01a11b41，方案 A）：会话切换
+        // （selected_project 变化）时立即重置思考状态为干净初始值，杜绝旧会话状态串台。
+        // 本 effect 是 target 解析的唯一入口，覆盖项目→默认、默认→项目、项目→项目全部
+        // 切换路径。残留竞态（轮询拍已带旧值断言）由方案 B 归属过滤根治。
+        agent_state.set(0);
+        is_typing.set(false);
+        agent_state_owner.set(None);
+        target_agent_info.set(None);
         let Some(pid) = selected_project() else {
             // 默认对话：前台 Agent（后端在无前台 Agent 时会回退 resolve_agent 兜底）
             target_agent_id.set(reception_agent().map(|a| a.agent_id));
@@ -606,12 +618,15 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 match target {
                     Some(id) => {
                         if let Ok(resp) = get_agent(GetAgentRequest {
-                            id,
+                            id: id.clone(),
                             ..Default::default()
                         })
                         .await
                         {
+                            // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：状态与
+                            // 归属成对写入，消费点据此过滤跨会话旧状态。
                             agent_state.set(resp.runtime_state);
+                            agent_state_owner.set(Some(id));
                             target_agent_info.set(Some(resp));
                         }
                     }
@@ -663,7 +678,14 @@ pub fn MessageChat(project: Option<String>) -> Element {
             return;
         }
         // 非空闲门禁：Agent 忙碌 / 休息中不接受新消息（按钮已禁用，此处兜底 Alt+Enter 快捷键路径）
-        if agent_state() != 0 {
+        // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：旧会话残留状态（归属不匹配）
+        // 不拦截新会话发送。
+        if agent_state() != 0
+            && agent_state_owner_matches(
+                agent_state_owner().as_deref(),
+                target_agent_id().as_deref(),
+            )
+        {
             toast.info("对方正在处理消息，请稍候再发");
             return;
         }
@@ -1175,7 +1197,16 @@ pub fn MessageChat(project: Option<String>) -> Element {
                         }
                         // 置底 Agent 状态气泡：文案随 runtime_state 实时切换，
                         // 新消息经 SSE 到达后堆叠在其上方；Agent 回到 Idle 后消失
-                        if let Some(status) = agent_status_line(is_typing(), agent_state()) {
+                        if let Some(status) = agent_status_line(
+                                is_typing(),
+                                agent_state(),
+                                // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：
+                                // 仅当状态归属 == 当前会话目标时才渲染状态气泡
+                                agent_state_owner_matches(
+                                    agent_state_owner().as_deref(),
+                                    target_agent_id().as_deref(),
+                                ),
+                            ) {
                             div { class: "chat chat-start",
                                 div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
                                 div { class: "chat-image",
@@ -1211,7 +1242,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                         if agent_state() == 2 {
                                             if let Some(aid) = target_agent_id() {
                                                 CancelThinkingButton {
-                                                    agent_id: aid,
+                                                    agent_id: aid.clone(),
                                                     style: CancelThinkingStyle::Inline,
                                                     on_cancelled: on_thinking_cancelled,
                                                 }
@@ -1450,7 +1481,16 @@ pub fn MessageChat(project: Option<String>) -> Element {
                         }
                         // 置底 Agent 状态气泡：文案随 runtime_state 实时切换，
                         // 新消息经 SSE 到达后堆叠在其上方；Agent 回到 Idle 后消失
-                        if let Some(status) = agent_status_line(is_typing(), agent_state()) {
+                        if let Some(status) = agent_status_line(
+                                is_typing(),
+                                agent_state(),
+                                // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：
+                                // 仅当状态归属 == 当前会话目标时才渲染状态气泡
+                                agent_state_owner_matches(
+                                    agent_state_owner().as_deref(),
+                                    target_agent_id().as_deref(),
+                                ),
+                            ) {
                             div { class: "chat chat-start",
                                 div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
                                 div { class: "chat-image",
@@ -1486,7 +1526,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                         if agent_state() == 2 {
                                             if let Some(aid) = target_agent_id() {
                                                 CancelThinkingButton {
-                                                    agent_id: aid,
+                                                    agent_id: aid.clone(),
                                                     style: CancelThinkingStyle::Inline,
                                                     on_cancelled: on_thinking_cancelled,
                                                 }
@@ -1876,12 +1916,34 @@ const CHAT_INPUT_ID: &str = "chat-input-textarea";
 ///
 /// 优先级：Busy（思考中）> Resting（休息中）> 刚发送等待回复 > 不显示。
 /// 气泡恒渲染在消息列表末尾，新消息经 SSE 到达后自然堆叠在其上方。
-fn agent_status_line(awaiting_reply: bool, state: i32) -> Option<&'static str> {
+///
+/// 思考状态跨会话污染修复（任务 01a11b5b，排查 01a11b41，方案 B）：
+/// `owner_matches` = 状态归属 Agent 与当前会话目标 Agent 一致。切换会话后
+/// agent_state/is_typing 仍是旧会话的残留值（3s 轮询兜底前一拍），归属不匹配
+/// 即返回 None —— 根治置底气泡误挂旧 Agent 状态（含「正在等待回复…」变体）。
+fn agent_status_line(
+    awaiting_reply: bool,
+    state: i32,
+    owner_matches: bool,
+) -> Option<&'static str> {
+    if !owner_matches {
+        return None;
+    }
     match state {
         2 => Some("正在思考中…"),
         1 => Some("正在休息，恢复精力…"),
         _ if awaiting_reply => Some("正在等待回复…"),
         _ => None,
+    }
+}
+
+/// 思考状态归属校验（任务 01a11b5b，方案 B）：状态快照属于哪个 Agent、
+/// 是否正挂在当前会话目标上。两侧同为 None（状态从未经轮询写入，如刚重置）
+/// 视为一致，避免切换瞬间误伤新会话自身的状态。
+fn agent_state_owner_matches(state_owner: Option<&str>, current_target: Option<&str>) -> bool {
+    match (state_owner, current_target) {
+        (Some(o), Some(t)) => o == t,
+        _ => true,
     }
 }
 
@@ -2068,7 +2130,12 @@ fn chat_input_area(
                     rows: "2",
                     id: CHAT_INPUT_ID,
                     value: "{input_text}",
-                    placeholder: if agent_state() != 0 {
+                    // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：placeholder 归属
+                    // 过滤 —— cancel_agent_id 即调用点传入的当前会话目标，与 None（未解析）
+                    // 一致放行，杜绝切换会话后旧状态误占 placeholder。
+                    placeholder: if agent_state() != 0
+                        && cancel_agent_id.is_some()
+                    {
                         "对方正在处理消息，暂不接受新消息…"
                     } else {
                         "输入消息...（Alt+回车发送，@ 提及 Agent / 任务 / 项目）"
@@ -2163,10 +2230,12 @@ fn chat_input_area(
                 // Busy 时发送键位让给「停止思考」：此刻用户多半正是想发下一句却发现发不出去，
                 // 这个位置就是他正在找的出口（主流对话产品同款肌肉记忆）。
                 // Resting(1) 仍沿用原「处理中」禁用态 —— 取消思考对休息态无意义。
-                if agent_state() == 2 {
-                    if let Some(aid) = cancel_agent_id {
+                // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：旧会话残留状态
+                // （归属不匹配）不让发送键位让位 —— 本会话 Agent 并未在思考。
+                if agent_state() == 2 && cancel_agent_id.is_some() {
+                    if let Some(ref aid) = cancel_agent_id {
                         CancelThinkingButton {
-                            agent_id: aid,
+                            agent_id: aid.clone(),
                             style: CancelThinkingStyle::Block,
                             on_cancelled,
                         }
@@ -2175,9 +2244,11 @@ fn chat_input_area(
                     button {
                         class: "btn hud-btn btn-primary",
                         onclick: move |_| handle_send(()),
-                        disabled: agent_state() != 0
+                        // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：旧会话残留
+                        // 状态（归属不匹配，cancel_agent_id=None）不禁用发送键位。
+                        disabled: (agent_state() != 0 && cancel_agent_id.is_some())
                             || (input_text().trim().is_empty() && pending_attachments().is_empty()),
-                        if agent_state() != 0 {
+                        if agent_state() != 0 && cancel_agent_id.is_some() {
                             "处理中"
                         } else {
                             "发送"
@@ -2607,4 +2678,99 @@ fn format_date_group_label(ts_ms: i64) -> String {
         return "昨天".to_string();
     }
     format!("{:04}-{:02}-{:02}", msg_key.0, msg_key.1, msg_key.2)
+}
+
+#[cfg(test)]
+mod chat_state_fix_tests {
+    /// 思考状态跨会话污染修复（任务 01a11b5b，排查 01a11b41）源码结构守卫：
+    /// 方案 A 切换重置 + 方案 B 归属过滤的关键锚点一旦被回退即测试失败。
+    /// include_str! 取本文件源码，按 #[cfg(test)] 切出代码区，防测试文本自匹配
+    /// （批3/批5 实证教训）。
+    fn code_region() -> String {
+        include_str!("chat.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    #[test]
+    fn chat_state_fix_switch_reset_anchors_present() {
+        let src = code_region();
+        // 方案 A：target 解析 effect 入口切换即重置（四信号一次清干净）
+        assert_eq!(
+            src.matches("agent_state.set(0);\n        is_typing.set(false);\n        agent_state_owner.set(None);\n        target_agent_info.set(None);")
+                .count(),
+            1,
+            "方案 A：切换即重置四信号块应恰出现 1 次"
+        );
+        // 方案 B：归属快照 signal 与轮询成对写入
+        assert_eq!(
+            src.matches("let mut agent_state_owner = use_signal(|| Option::<String>::None);")
+                .count(),
+            1,
+            "方案 B：agent_state_owner signal 应恰出现 1 次"
+        );
+        assert_eq!(
+            src.matches("agent_state_owner.set(Some(id));").count(),
+            1,
+            "方案 B：轮询状态与归属应成对写入"
+        );
+        // 方案 B：get_agent 请求带 id.clone()（归属 id 与响应分别持有）
+        assert_eq!(src.matches("id: id.clone(),").count(), 1);
+    }
+
+    #[test]
+    fn chat_state_fix_owner_filter_anchors_present() {
+        let src = code_region();
+        // agent_status_line 签名带 owner_matches 参数（带防回退 doc 注释）
+        assert_eq!(
+            src.matches("owner_matches: bool,").count(),
+            1,
+            "方案 B：agent_status_line 应带归属参数"
+        );
+        assert_eq!(
+            src.matches("if !owner_matches {\n        return None;")
+                .count(),
+            1
+        );
+        // 归属谓词函数恰 1 处定义
+        assert_eq!(
+            src.matches("fn agent_state_owner_matches(state_owner: Option<&str>, current_target: Option<&str>) -> bool {")
+                .count(),
+            1
+        );
+        // 双气泡渲染点均已接归属过滤（旧三参调用零残留）
+        assert_eq!(
+            src.matches("agent_state_owner_matches(\n                                    agent_state_owner().as_deref(),\n                                    target_agent_id().as_deref(),\n                                ),")
+                .count(),
+            2,
+            "方案 B：双分支气泡渲染点均应接归属过滤"
+        );
+        assert_eq!(
+            src.matches("agent_status_line(is_typing(), agent_state())")
+                .count(),
+            0,
+            "旧三参调用不应残留"
+        );
+        // 发送兜底门禁 + 键位区归属校验（门禁块 + 让位块 + 发送键 disabled）
+        assert_eq!(
+            src.matches("if agent_state() != 0\n            && agent_state_owner_matches(")
+                .count(),
+            1,
+            "发送兜底门禁应接归属校验"
+        );
+        assert_eq!(
+            src.matches("if agent_state() == 2 && cancel_agent_id.is_some() {")
+                .count(),
+            1,
+            "停止思考键位应接归属校验"
+        );
+        assert_eq!(
+            src.matches("(agent_state() != 0 && cancel_agent_id.is_some())")
+                .count(),
+            1,
+            "发送键 disabled 应接归属校验"
+        );
+    }
 }
