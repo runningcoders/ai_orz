@@ -194,6 +194,7 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
             canvas {
                 width: "{width as u32}",
                 height: "{height as u32}",
+                style: "width: {width as u32}px; height: {height as u32}px; max-width: 100%;",
                 onmounted: move |evt: MountedEvent| {
                     let data = evt.data();
                     if let Some(element) = data.downcast::<web_sys::Element>() {
@@ -377,5 +378,33 @@ mod tests {
         ];
         let total: u64 = data.iter().map(|s| s.value).sum();
         assert_eq!(total, 10);
+    }
+
+    #[test]
+    fn chart_overlap_fix_canvas_style_anchors_present() {
+        // 守卫（任务 01a11b16，方案 A+B）：canvas 必须钉 CSS 显示尺寸为逻辑尺寸
+        // （位图仍按 dpr 放大保清晰）并带 max-width:100% 兜底；缺失即回退到
+        // 「dpr>=2 时布局尺寸翻倍溢出 grid 轨道、右侧压左侧」的重叠缺陷。
+        let code_region = include_str!("donut_chart.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("donut_chart.rs 必须包含 tests 模块分隔")
+            .to_string();
+        assert_eq!(
+            code_region
+                .matches("style: \"width: {width as u32}px;")
+                .count(),
+            1,
+            "canvas style 必须恰 1 处钉 CSS 显示尺寸（width: ...）"
+        );
+        assert_eq!(
+            code_region.matches("max-width: 100%").count(),
+            1,
+            "canvas style 必须恰 1 处携带 max-width:100% 兜底（方案 B）"
+        );
+        assert!(
+            code_region.contains("canvas.set_width((render_width * dpr) as u32)"),
+            "dpr 位图放大逻辑必须保留（清晰度不受修复影响）"
+        );
     }
 }

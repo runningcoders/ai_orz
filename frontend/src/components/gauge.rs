@@ -183,7 +183,7 @@ pub fn Gauge(props: GaugeProps) -> Element {
             width: "{width as u32}",
             height: "{height as u32}",
             class: "cursor-pointer",
-            style: "display: block;",
+            style: "display: block; width: {width as u32}px; height: {height as u32}px; max-width: 100%;",
             onclick: move |_| {
                 if let Some(handler) = on_click_handler.as_ref() {
                     handler.call(());
@@ -361,5 +361,33 @@ mod tests {
             on_click: None,
         };
         assert!(p1 != p2);
+    }
+
+    #[test]
+    fn chart_overlap_fix_canvas_style_anchors_present() {
+        // 守卫（任务 01a11b16，方案 A+B）：canvas 必须钉 CSS 显示尺寸为逻辑尺寸
+        // （位图仍按 dpr 放大保清晰）并带 max-width:100% 兜底；缺失即回退到
+        // 「dpr>=2 时布局尺寸翻倍溢出 grid 轨道、右侧压左侧」的重叠缺陷。
+        let code_region = include_str!("gauge.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("gauge.rs 必须包含 tests 模块分隔")
+            .to_string();
+        assert_eq!(
+            code_region
+                .matches("style: \"display: block; width: {width as u32}px;")
+                .count(),
+            1,
+            "canvas style 必须恰 1 处钉 CSS 显示尺寸（display: block; width: ...）"
+        );
+        assert_eq!(
+            code_region.matches("max-width: 100%").count(),
+            1,
+            "canvas style 必须恰 1 处携带 max-width:100% 兜底（方案 B）"
+        );
+        assert!(
+            code_region.contains("canvas.set_width((width * dpr) as u32)"),
+            "dpr 位图放大逻辑必须保留（清晰度不受修复影响）"
+        );
     }
 }
