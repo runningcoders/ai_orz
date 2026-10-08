@@ -127,19 +127,20 @@ pub fn Reception() -> Element {
                         }
                         return; // 自检完成直接返回，不再执行后续初始化加载
                     }
-                    Err(e) => {
-                        // 401 已由网络层 handle_unauthorized 清 localStorage + 跳到 /login；
-                        // 其余失败（404/5xx/网络）主动清脏登录态，兜底避免假登录残留
-                        if e.http_status != 401 {
-                            clear_login_state();
-                            let mut state = auth.write();
-                            state.logged_in = false;
-                            state.role = 0;
-                            state.user_id = String::new();
-                            state.username = String::new();
-                            state.display_name = String::new();
-                            state.org_id = String::new();
-                        }
+                    Err(_) => {
+                        // 自检失败一律清脏登录态（幂等，与网络层重复清无害）：
+                        // 401 = cookie 失效、404/5xx/网络 = 后端查不到该用户。
+                        // 内存 AuthState 必须同步复位：401 场景下网络层不再整页刷新
+                        // （已在接待页，见 handle_unauthorized），不复位的话用户手动
+                        // 导航到受保护路由时 use_require_auth 仍会读到 logged_in=true。
+                        clear_login_state();
+                        let mut state = auth.write();
+                        state.logged_in = false;
+                        state.role = 0;
+                        state.user_id = String::new();
+                        state.username = String::new();
+                        state.display_name = String::new();
+                        state.org_id = String::new();
                     }
                 }
             }

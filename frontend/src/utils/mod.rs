@@ -32,3 +32,21 @@ use web_sys::window;
 pub fn local_storage() -> Option<web_sys::Storage> {
     window()?.local_storage().ok()?
 }
+
+/// 当前页面路径（不含 origin / query / hash）；取不到时返回空串
+pub fn current_path() -> String {
+    window()
+        .and_then(|w| w.location().pathname().ok())
+        .unwrap_or_default()
+}
+
+/// 是否正停在接待页（`/login`）
+///
+/// 401 兜底跳转的目标就是这一页。鉴权失效的兜底逻辑若在**该页自己**发起，
+/// 再写入一次 `location` 会把页面整个刷新一遍，于是「刷新 → 自检 → 401 → 刷新」
+/// 闭成死循环（接待页自检 `/user/me`、App 根组件的登录态探活都跑在这一页）。
+/// 需要整页跳转的兜底点一律先过这个门闩。
+pub fn is_reception_page() -> bool {
+    let path = current_path();
+    path == "/login" || path == "/login/"
+}

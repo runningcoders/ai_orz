@@ -40,12 +40,23 @@ fn build_request(method: Method, path: &str) -> RequestBuilder {
 }
 
 /// 401 处理：cookie 过期时清除登录态并重定向到登录页
+///
+/// ⚠️ 防御：已经停在接待页 `/login` 时**不做** location 跳转。
+/// 接待页自己就会发鉴权请求（登录态自检 `/user/me`、App 根组件的
+/// `use_login_liveness` 探活），这些请求 401 是**预期内**的——它恰恰说明
+/// 「本地登录态是脏的，请停留在本页登录」。此时再整页跳一次 `/login` 就会
+/// 变成「刷新 → 自检 → 401 → 刷新」，状态清不干净时直接无限刷新。
+/// 清状态是幂等的，留在当前页由页面自己继续走初始化检查即可。
 pub(crate) fn handle_unauthorized(status: u16) {
-    if status == 401 {
-        crate::store::auth::clear_login_state();
-        if let Some(window) = web_sys::window() {
-            let _ = window.location().set_href("/login");
-        }
+    if status != 401 {
+        return;
+    }
+    crate::store::auth::clear_login_state();
+    if crate::utils::is_reception_page() {
+        return;
+    }
+    if let Some(window) = web_sys::window() {
+        let _ = window.location().set_href("/login");
     }
 }
 

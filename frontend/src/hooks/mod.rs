@@ -73,8 +73,8 @@ pub fn use_require_auth() -> bool {
 pub const AVAILABLE_THEMES: &[(&str, &str)] = &[("orz-hud", "HUD 深色"), ("orz-light", "Orz 默认")];
 
 fn get_saved_theme() -> String {
-    // 经组件层读取（ai_orz:theme）；旧明文键 ai_orz_theme 未命中时回退读取并一次性迁移
-    local_store::get_string_with_legacy(local_store::keys::THEME, local_store::legacy::THEME)
+    // 经组件层读取（ai_orz:theme）
+    local_store::get_string(local_store::keys::THEME)
         .ok()
         .flatten()
         .filter(|t| !t.is_empty())
@@ -213,7 +213,9 @@ pub fn use_login_liveness() {
                     Err(e) => {
                         let is_401 = e.http_status == 401;
                         logout(auth);
-                        if !is_401 {
+                        // 已在接待页就别再整页跳了：本 hook 挂在 App 上，接待页也会跑，
+                        // 在那儿跳一次等于把自己刷新一遍（与 handle_unauthorized 同门闩）。
+                        if !is_401 && !crate::utils::is_reception_page() {
                             // 后端异常（非 401）强制登出：本 hook 挂在 Router 祖先(App)上，
                             // 无法使用 use_navigator，改用 web_sys 整页跳转回登录流。
                             if let Some(window) = web_sys::window() {

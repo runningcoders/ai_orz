@@ -197,16 +197,13 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let mut sidebar_open = use_signal(|| false);
     let is_mobile = crate::hooks::use_breakpoint();
 
-    // 信息侧栏状态（经通用组件层持久化，刷新页面后恢复；旧明文键 chat_project_panel_open 兼容读取）
+    // 信息侧栏状态（经通用组件层持久化，刷新页面后恢复）
     let mut panel_open = use_signal(|| {
-        local_store::get_string_with_legacy(
-            local_store::keys::CHAT_PANEL_OPEN,
-            local_store::legacy::CHAT_PANEL_OPEN,
-        )
-        .ok()
-        .flatten()
-        .map(|v| v == "1")
-        .unwrap_or(false)
+        local_store::get_string(local_store::keys::CHAT_PANEL_OPEN)
+            .ok()
+            .flatten()
+            .map(|v| v == "1")
+            .unwrap_or(false)
     });
     // SSE 消息计数器：当前会话收到新消息时递增，驱动侧栏防抖刷新
     let mut refresh_tick = use_signal(|| 0u64);

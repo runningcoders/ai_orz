@@ -51,12 +51,8 @@ impl Default for FrontendConfig {
 impl FrontendConfig {
     pub fn load() -> Self {
         // 经通用 localStorage 组件层读取（ai_orz:config，版本包装）；
-        // 旧键 ai_orz_config（裸 JSON）未命中时回退读取并一次性迁移，防配置丢失。
         // 任何错误 / 缺失统一兜底默认（origin 动态探测），与历史行为一致。
-        match local_store::get_json_with_legacy::<Self>(
-            local_store::keys::CONFIG,
-            local_store::legacy::CONFIG,
-        ) {
+        match local_store::get_json::<Self>(local_store::keys::CONFIG) {
             Ok(Some(cfg)) => cfg,
             _ => Self::default(),
         }
@@ -76,10 +72,7 @@ impl FrontendConfig {
     /// 与 `reset_to_default` + `save` 的区别：后者会把「点击瞬间的 origin 快照」持久化，
     /// 换环境访问（如换机器/换域名）仍被旧快照粘住；删除键才能恢复真正的默认行为。
     pub fn clear_saved(&self) -> Result<(), String> {
-        // 经组件层删除新键；旧键一并清除避免残留（迁移完成后不再回读旧数据）
-        local_store::remove(local_store::keys::CONFIG).map_err(|e| e.to_string())?;
-        let _ = local_store::remove(local_store::legacy::CONFIG);
-        Ok(())
+        local_store::remove(local_store::keys::CONFIG).map_err(|e| e.to_string())
     }
 
     pub fn api_url(&self, path: &str) -> String {

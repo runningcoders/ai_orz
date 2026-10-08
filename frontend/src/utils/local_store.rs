@@ -7,9 +7,21 @@
 //! - 类型化接口 [`get_json`] / [`set_json`] / [`remove`]，JSON 编码统一；
 //! - 版本兼容：值内嵌 `{"v":1,"data":...}` 包装（[`DATA_VERSION`]），未来结构演进按 `v` 分流；
 //! - 错误分层：组件层返回 [`LocalStoreError`]，调用方决定兜底策略（静默 / toast / 默认值）；
-//! - 存量迁移：[`get_json_with_legacy`] / [`get_string_with_legacy`] 在新键未命中时回退读
-//!   旧键旧编码，命中即回写新键，完成一次性迁移（防登录态 / 配置丢失）；
 //! - 相关结构体集中定义（如未读角标 [`UnreadBadges`]）。
+//!
+//! ## 为什么不再保留旧键回退
+//!
+//! 2026-09-26 收敛出本层时同时改了键名与编码，为避免已登录用户掉线，一度加了
+//! `get_json_with_legacy` —— 新键未命中就回退读旧明文键、并把它「迁移」写回新键。
+//! 该回退已于 2026-10-08 整体移除（迁移窗口早已关闭，新构建覆盖两周以上）：
+//!
+//! 1. **读路径会写 ⇒ 删除永远不是终态**。`clear_login_state()` 删掉新键后，下一次
+//!    读又会从旧键复活并写回，登录标志位清不掉——这是登录页无限刷新的根因。
+//! 2. **一次性成本换永久复杂度**。它换来的是「老用户少登一次录 / 主题不重置」，
+//!    代价是每个读点多一条分支、且清状态逻辑必须记住「新旧键都要删」这个隐性契约。
+//! 3. 旧键从此无人读取，留在浏览器里是无害死数据，无需专门清理。
+//!
+//! 结论：键名 / 编码要变就硬切换，不要在读路径上做迁移。
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -44,16 +56,10 @@ pub mod keys {
     pub const UNREAD_BADGES: &str = "ai_orz:unread_badges";
 }
 
-/// 存量旧键常量（仅迁移读取 / 清除用，禁止新代码写入）
-pub mod legacy {
-    pub const AUTH_LOGGED_IN: &str = "ai_orz_logged_in";
-    pub const AUTH_ROLE: &str = "ai_orz_role";
-    pub const AUTH_USERNAME: &str = "ai_orz_username";
-    pub const AUTH_DISPLAY_NAME: &str = "ai_orz_display_name";
-    pub const CONFIG: &str = "ai_orz_config";
-    pub const THEME: &str = "ai_orz_theme";
-    pub const CHAT_PANEL_OPEN: &str = "chat_project_panel_open";
-}
+// 注：历史上曾存在 `legacy` 旧明文键（ai_orz_logged_in / ai_orz_config / …）与
+// `get_json_with_legacy` 回退迁移，2026-09-26 组件层收敛时为防已登录用户掉线而加。
+// 现已整体移除，理由见模块文档「为什么不再保留旧键回退」。旧键不会被任何代码读取，
+// 留在浏览器里是无害死数据；新代码一律只用 `keys` 下的新键。
 
 /// 组件层统一错误类型；调用方按场景决定兜底策略
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,53 +144,9 @@ pub fn remove(key: &str) -> Result<(), LocalStoreError> {
         .map_err(|e| LocalStoreError::Remove(format!("{e:?}")))
 }
 
-/// 兼容读取（存量迁移）：新键（版本包装）未命中时回退读旧键裸 JSON；
-/// 旧键命中即回写新键，完成一次性迁移。适用于旧编码本身是合法 JSON 的场景
-/// （config 整体 JSON；auth 布尔 / 数字的明文——`"true"` / `"1"` 恰为合法 JSON 字面量）。
-pub fn get_json_with_legacy<T: DeserializeOwned + Serialize>(
-    key: &str,
-    legacy_key: &str,
-) -> Result<Option<T>, LocalStoreError> {
-    if let Some(value) = get_json::<T>(key)? {
-        return Ok(Some(value));
-    }
-    let Some(storage) = crate::utils::local_storage() else {
-        return Err(LocalStoreError::StorageUnavailable);
-    };
-    let raw_opt = storage
-        .get(legacy_key)
-        .map_err(|e| LocalStoreError::Read(format!("{e:?}")))?;
-    let Some(raw) = raw_opt else {
-        return Ok(None);
-    };
-    let value: T =
-        serde_json::from_str(&raw).map_err(|e| LocalStoreError::Decode(e.to_string()))?;
-    // 一次性迁移：读旧成功即写新；写失败不阻断读取（下次进入再试）
-    let _ = set_json(key, &value);
-    Ok(Some(value))
-}
-
-/// 兼容读取（存量迁移，明文变体）：新键未命中时回退读旧键明文字符串；
-/// 旧键命中即回写新键。适用于旧编码为裸文本的场景（主题、用户名、侧栏开关 `"1"`/`"0"`）。
-pub fn get_string_with_legacy(
-    key: &str,
-    legacy_key: &str,
-) -> Result<Option<String>, LocalStoreError> {
-    if let Some(value) = get_json::<String>(key)? {
-        return Ok(Some(value));
-    }
-    let Some(storage) = crate::utils::local_storage() else {
-        return Err(LocalStoreError::StorageUnavailable);
-    };
-    let raw_opt = storage
-        .get(legacy_key)
-        .map_err(|e| LocalStoreError::Read(format!("{e:?}")))?;
-    let Some(raw) = raw_opt else {
-        return Ok(None);
-    };
-    // 一次性迁移：读旧成功即写新；写失败不阻断读取（下次进入再试）
-    let _ = set_json(key, &raw);
-    Ok(Some(raw))
+/// 读取字符串（新键，版本包装编码）；键不存在返回 `Ok(None)`
+pub fn get_string(key: &str) -> Result<Option<String>, LocalStoreError> {
+    get_json::<String>(key)
 }
 
 /// 读取未读角标全集（缺失时为空表）

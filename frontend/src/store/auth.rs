@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 
 use crate::utils::local_store;
 
-// 键名统一收敛至组件层 local_store::keys（旧明文键兼容读取见 local_store::legacy）
+// 键名统一收敛至组件层 local_store::keys
 
 pub fn mark_logged_in() {
     let _ = local_store::set_json(local_store::keys::AUTH_LOGGED_IN, &true);
@@ -55,31 +55,22 @@ pub fn logout(mut auth: Signal<AuthState>) {
 }
 
 pub fn is_logged_in() -> bool {
-    // 新键未命中回退旧明文键（"true" 恰为合法 JSON bool），命中即一次性迁移
-    local_store::get_json_with_legacy::<bool>(
-        local_store::keys::AUTH_LOGGED_IN,
-        local_store::legacy::AUTH_LOGGED_IN,
-    )
-    .ok()
-    .flatten()
-    .unwrap_or(false)
+    local_store::get_json::<bool>(local_store::keys::AUTH_LOGGED_IN)
+        .ok()
+        .flatten()
+        .unwrap_or(false)
 }
 
 fn restore_role() -> i32 {
-    // 新键未命中回退旧明文键（"1" 恰为合法 JSON i32），命中即一次性迁移
-    local_store::get_json_with_legacy::<i32>(
-        local_store::keys::AUTH_ROLE,
-        local_store::legacy::AUTH_ROLE,
-    )
-    .ok()
-    .flatten()
-    .unwrap_or(0)
+    local_store::get_json::<i32>(local_store::keys::AUTH_ROLE)
+        .ok()
+        .flatten()
+        .unwrap_or(0)
 }
 
 /// 从 localStorage 读取一个字符串字段（用于 username / display_name 的同步恢复）
-fn restore_string(key: &str, legacy_key: &str) -> String {
-    // 新键未命中回退旧明文键（用户名 / 显示名旧编码为裸文本），命中即一次性迁移
-    local_store::get_string_with_legacy(key, legacy_key)
+fn restore_string(key: &str) -> String {
+    local_store::get_string(key)
         .ok()
         .flatten()
         .unwrap_or_default()
@@ -117,14 +108,8 @@ impl AuthState {
         Self {
             logged_in: is_logged_in(),
             role: restore_role(),
-            username: restore_string(
-                local_store::keys::AUTH_USERNAME,
-                local_store::legacy::AUTH_USERNAME,
-            ),
-            display_name: restore_string(
-                local_store::keys::AUTH_DISPLAY_NAME,
-                local_store::legacy::AUTH_DISPLAY_NAME,
-            ),
+            username: restore_string(local_store::keys::AUTH_USERNAME),
+            display_name: restore_string(local_store::keys::AUTH_DISPLAY_NAME),
             ..Default::default()
         }
     }
