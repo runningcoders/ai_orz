@@ -536,19 +536,14 @@ impl EventQueue for InMemoryEventQueue {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        // 脱敏处理：截取前 200 字符
-        let payload_preview = {
-            let json_str = serde_json::to_string(&event_json).unwrap_or_default();
-            if json_str.len() > 200 {
-                format!(
-                    "{}... (truncated, total {} bytes)",
-                    &json_str[..200],
-                    json_str.len()
-                )
-            } else {
-                json_str
-            }
-        };
+        // 事件内容：返回**完整** payload，不做任何截断。
+        //
+        // 原实现截断到前 200 字节，踩了两个坑：① 字节切片落在多字节字符（中文）中间会
+        // panic（`byte index N is not a char boundary`），且发生在**持队列锁**期间 →
+        // std Mutex 永久 poison → 消费者队列永久不可用（「发消息没响应」根因）；
+        // ② 截断本身让监控页查看事件详情时信息残缺。AOP 监控是本地内存态调试视图，
+        // 完整返回无顾虑，故直接返回全量 JSON。
+        let payload = serde_json::to_string(&event_json).unwrap_or_default();
 
         Some(super::EventDetail {
             summary: super::EventSummary {
@@ -559,7 +554,7 @@ impl EventQueue for InMemoryEventQueue {
                 created_at,
                 status,
             },
-            payload_preview,
+            payload,
         })
     }
 }

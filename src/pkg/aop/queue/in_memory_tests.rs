@@ -489,3 +489,70 @@ async fn ungated_enqueue_bypasses_order_key_gate() {
         "ungated 事件不得出现在 order_key 门闩统计里"
     );
 }
+
+/// 回归：含中文（多字节）payload 的事件详情**完整返回、不截断、不 panic**
+///
+/// 历史：`get_event` 曾按前 200 字节截断，第 200 字节落在汉字（3 字节）中间时
+/// panic（`byte index N is not a char boundary`）——中文消息必踩，且该 panic 发生在
+/// **持队列锁**期间 → std Mutex 永久 poison → 消费者队列永久不可用。现改为完整返回。
+#[tokio::test]
+async fn get_event_returns_full_cjk_payload_without_truncation() {
+    let queue = new_queue().await;
+
+    // 足以让序列化结果远超 200 字节的中文正文
+    let long_text = "汉字测试".repeat(60);
+    let mut ev = envelope("cn1", "message.created", "", 1);
+    ev["text"] = serde_json::json!(long_text);
+    queue
+        .enqueue(RequestContext::new_system(), ev)
+        .await
+        .unwrap();
+
+    let detail = queue.get_event("cn1").expect("事件详情应可取到");
+    // 完整 payload：含完整中文正文，且无截断标记
+    assert!(
+        detail.payload.contains(&long_text),
+        "payload 应为完整内容，实际：{}",
+        detail.payload
+    );
+    assert!(
+        !detail.payload.contains("truncated"),
+        "不应再出现截断标记，实际：{}",
+        detail.payload
+    );
+    assert!(detail.payload.len() > 200, "完整 payload 应超过 200 字节");
+}
+
+/// 回归：队列锁被 poison 后仍能自愈继续工作
+///
+/// 背景：`get_event` 的字节切片 panic 发生在**持队列锁**期间 → std `Mutex` 永久
+/// poison，之后 awakening 侧 `dequeue error: ... poisoned lock: another task failed
+/// inside` 死循环 → 用户侧「发消息没响应」。本测试直接模拟「持锁 panic」，断言
+/// `lock_guard` 恢复后 enqueue / dequeue 依旧正常。
+#[tokio::test]
+async fn queue_recovers_after_lock_poisoned() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    let queue = std::sync::Arc::new(InMemoryEventQueue::new());
+
+    // 另一线程持锁并 panic → Mutex 被 poison
+    let q2 = std::sync::Arc::clone(&queue);
+    let join = std::thread::spawn(move || {
+        let _guard = q2.lock_guard();
+        panic!("intentional panic while holding queue lock");
+    })
+    .join();
+    assert!(join.is_err(), "子线程应因 panic 失败（锁已 poison）");
+
+    // 锁虽已 poison，但 lock_guard 恢复 → 队列照常工作
+    let ctx = RequestContext::new_system();
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "", 1))
+        .await
+        .expect("poison 后 enqueue 仍应成功");
+    let got = queue
+        .dequeue_next(ctx)
+        .await
+        .expect("poison 后 dequeue 仍应成功")
+        .expect("事件应可取到");
+    assert_eq!(got["event_id"], "e1");
+}

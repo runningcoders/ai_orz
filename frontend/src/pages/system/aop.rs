@@ -323,10 +323,10 @@ pub fn SystemAop() -> Element {
                                             span { class: "{status_badge_class(&d.status)}", "{d.status}" }
                                         }
                                         div { class: "mt-4",
-                                            div { class: "text-base-content/70 text-sm mb-1", "内容预览" }
+                                            div { class: "text-base-content/70 text-sm mb-1", "事件内容" }
                                             pre { class: "font-mono text-sm",
                                                 style: "background: var(--color-warm-ivory); padding: var(--space-3); border-radius: var(--radius-md); max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word;",
-                                                "{d.payload_preview}"
+                                                "{d.payload}"
                                             }
                                         }
                                     }

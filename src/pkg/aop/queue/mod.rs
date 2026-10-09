@@ -50,8 +50,8 @@ pub enum EventStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct EventDetail {
     pub summary: EventSummary,
-    /// 脱敏后的事件内容预览（前 200 字符）
-    pub payload_preview: String,
+    /// 事件内容（完整 payload JSON，**不截断**）
+    pub payload: String,
 }
 
 /// 事件查询过滤条件

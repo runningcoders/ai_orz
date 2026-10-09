@@ -134,7 +134,7 @@ pub async fn get_event(
             priority: e.summary.priority,
             created_at: e.summary.created_at,
             status: format!("{:?}", e.summary.status).to_lowercase(),
-            payload_preview: e.payload_preview,
+            payload: e.payload,
         }),
         None => Err(Error::not_found(format!(
             "Event '{}' not found in queue '{}'",

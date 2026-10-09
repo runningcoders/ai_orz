@@ -282,8 +282,8 @@ pub struct EventDetailResponse {
     pub created_at: i64,
     /// 状态
     pub status: String,
-    /// payload 预览
-    pub payload_preview: String,
+    /// 事件完整 payload（JSON 字符串，**不截断**）
+    pub payload: String,
 }
 
 /// AOP 实时统计概览响应
