@@ -13,9 +13,15 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::format_rfc3339 as format_timestamp;
-use crate::utils::parse_datetime_local_to_ms;
+use crate::utils::{ms_to_datetime_local_value, parse_datetime_local_to_ms};
 use common::api::LogQueryRequest;
 use common::models::TimeSeriesPoint;
+
+/// 默认开始时间：now 之前 24 小时的时刻（固定默认，与打开页面时刻无关）
+fn default_form_start() -> String {
+    let now = chrono::Local::now().timestamp_millis();
+    ms_to_datetime_local_value(now - 24 * 60 * 60 * 1000)
+}
 
 /// 默认每页条数
 const DEFAULT_PAGE_SIZE: usize = 20;
@@ -60,7 +66,9 @@ pub fn SystemLogs() -> Element {
     let mut form_keyword = use_signal(String::new);
     let mut form_log_id = use_signal(String::new);
     let mut form_level = use_signal(String::new); // 空字符串表示"全部"
-    let mut form_start = use_signal(String::new);
+    // 开始时间默认 24 小时前（now-24h 固定默认，UX 优化任务 01a1217c §2）；
+    // end 保持空 = 后端默认 end=now，避免固化打开页面时刻
+    let mut form_start = use_signal(default_form_start);
     let mut form_end = use_signal(String::new);
 
     // 当前生效的查询（用于触发刷新 / 翻页）
@@ -174,7 +182,7 @@ pub fn SystemLogs() -> Element {
         form_keyword.set(String::new());
         form_log_id.set(String::new());
         form_level.set(String::new());
-        form_start.set(String::new());
+        form_start.set(default_form_start());
         form_end.set(String::new());
     };
 
@@ -211,7 +219,7 @@ pub fn SystemLogs() -> Element {
         form_log_id.set(id.clone());
         form_keyword.set(String::new());
         form_level.set(String::new());
-        form_start.set(String::new());
+        form_start.set(default_form_start());
         form_end.set(String::new());
         let params = LogQueryRequest {
             keyword: None,
@@ -507,5 +515,55 @@ fn total_pages(res: Option<QueryLogsResponse>) -> usize {
             (r.total + ps - 1) / ps.max(1)
         }
         None => 1,
+    }
+}
+#[cfg(test)]
+mod logs_form_default_tests {
+    //! 守卫（UX 优化任务 01a1217c §2）：日志查询开始时间默认 now-24h
+
+    #[test]
+    fn logs_form_start_defaults_to_now_minus_24h() {
+        let code_region = include_str!("logs.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("logs.rs 必须包含 tests 区分隔")
+            .to_string();
+        assert!(
+            code_region.contains("let mut form_start = use_signal(default_form_start);"),
+            "form_start 必须经 default_form_start 初始化（不再是空串）"
+        );
+        assert_eq!(
+            code_region
+                .matches("form_start.set(default_form_start());")
+                .count(),
+            2,
+            "两处重置点必须恢复默认开始时间"
+        );
+        assert_eq!(
+            code_region
+                .matches("form_start.set(String::new());")
+                .count(),
+            0,
+            "重置为空不得回退"
+        );
+        assert!(
+            code_region.contains("ms_to_datetime_local_value(now - 24 * 60 * 60 * 1000)"),
+            "默认值必须基于 now-24h 偏移并经反向格式化"
+        );
+    }
+
+    #[test]
+    fn logs_form_states_register_no_sse_subscription() {
+        // 复杂度守卫：默认值接线不得引入 EventSource 订阅
+        let code_region = include_str!("logs.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("logs.rs 必须包含 tests 区分隔")
+            .to_string();
+        assert_eq!(
+            code_region.matches("EventSource").count(),
+            0,
+            "日志页表单层不得新增 SSE 订阅"
+        );
     }
 }

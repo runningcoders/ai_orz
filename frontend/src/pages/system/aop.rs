@@ -147,6 +147,8 @@ pub fn SystemAop() -> Element {
                                             pending: pending,
                                             in_progress: in_progress,
                                             oldest_age_secs: oldest,
+                                            width: 220.0,
+                                            height: 220.0,
                                             order_keys_count: order_keys_count,
                                             is_selected: is_selected,
                                             on_click: Some(EventHandler::new(move |_| {
@@ -475,8 +477,8 @@ fn AopStatsPanel() -> Element {
                     div { class: "card-body",
                         LineChart {
                             data: line_data,
-                            width: Some(800.0),
-                            height: Some(220.0),
+                            width: Some(1200.0),
+                            height: Some(280.0),
                             title: Some("事件数量".to_string()),
                             value_label: Some("次数".to_string()),
                         }
@@ -492,8 +494,8 @@ fn AopStatsPanel() -> Element {
                         div { class: "card-body",
                             DonutChart {
                                 data: status_slices,
-                                width: Some(240.0),
-                                height: Some(240.0),
+                                width: Some(300.0),
+                                height: Some(300.0),
                                 center_label: Some("事件数".to_string()),
                             }
                         }
@@ -505,8 +507,8 @@ fn AopStatsPanel() -> Element {
                         div { class: "card-body",
                             DonutChart {
                                 data: consumer_slices,
-                                width: Some(240.0),
-                                height: Some(240.0),
+                                width: Some(300.0),
+                                height: Some(300.0),
                                 center_label: Some("事件数".to_string()),
                             }
                         }

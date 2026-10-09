@@ -197,4 +197,19 @@ mod tests {
             "--:--"
         );
     }
+    #[test]
+    fn ms_to_datetime_local_value_roundtrip() {
+        // UX 优化任务 01a1217c（§2）：日志查询默认开始时间经本函数反向格式化，
+        // 与 parse_datetime_local_to_ms 互逆（分钟粒度往返：格式无秒位，回解析截断到分钟）
+        let ms = Local::now().timestamp_millis();
+        let s = super::ms_to_datetime_local_value(ms);
+        assert_eq!(s.len(), 16, "YYYY-MM-DDTHH:MM 恰 16 字符");
+        assert_eq!(s.as_bytes().get(10), Some(&b'T'), "第 10 字符必须为 'T'");
+        let back = super::parse_datetime_local_to_ms(&s).expect("反向解析必须成功");
+        assert!(
+            back <= ms && ms - back < 60_000,
+            "回解析不得超前原时刻，分钟粒度截断误差必须小于 60 秒"
+        );
+        assert_eq!(super::ms_to_datetime_local_value(back), s, "格式化幂等");
+    }
 }

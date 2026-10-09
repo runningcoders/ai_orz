@@ -257,7 +257,11 @@ fn draw_gauge(
 
     // 6. 中心数字
     ctx.set_fill_style_str(color);
-    ctx.set_font("bold 36px sans-serif");
+    // 中心数字字号随画布宽度比例化（width=200 基线=36px 不变；UX 优化任务 01a1217c §1.3）
+    ctx.set_font(&format!(
+        "bold {}px sans-serif",
+        (36.0 * width / 200.0).round().max(12.0)
+    ));
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");
     let _ = ctx.fill_text(&data.center_value, cx, cy - 4.0);
@@ -388,6 +392,34 @@ mod tests {
         assert!(
             code_region.contains("canvas.set_width((width * dpr) as u32)"),
             "dpr 位图放大逻辑必须保留（清晰度不受修复影响）"
+        );
+    }
+    #[test]
+    fn gauge_center_font_scales_with_width() {
+        // UX 优化任务 01a1217c（§1.3）：中心数字字号随画布宽度比例化，
+        // width=200 基线保持原 36px（存量消费点零视觉回归）
+        assert_eq!((36.0f64 * 200.0 / 200.0).round(), 36.0);
+        assert_eq!((36.0f64 * 220.0 / 200.0).round(), 40.0);
+        assert_eq!((36.0f64 * 180.0 / 200.0).round(), 32.0);
+    }
+
+    #[test]
+    fn gauge_center_font_scaling_anchor_present() {
+        // 源码结构守卫：动态字号表达式必须在场，硬编码 36px 不得回退
+        let code_region = include_str!("gauge.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("gauge.rs 必须包含 tests 模块分隔")
+            .to_string();
+        assert_eq!(
+            code_region.matches("(36.0 * width / 200.0)").count(),
+            1,
+            "中心数字字号必须使用 (36.0 * width / 200.0) 比例化表达式"
+        );
+        assert_eq!(
+            code_region.matches("bold 36px sans-serif").count(),
+            0,
+            "硬编码 bold 36px 不得回退"
         );
     }
 }

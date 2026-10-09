@@ -25,6 +25,10 @@ pub struct AopGaugeProps {
     pub order_keys_count: usize,
     /// 是否选中（加强发光边框）
     pub is_selected: bool,
+    /// 仪表显示宽度（px），透传给内部 Gauge
+    pub width: f64,
+    /// 仪表显示高度（px），透传给内部 Gauge
+    pub height: f64,
     /// 点击回调
     pub on_click: Option<EventHandler<()>>,
 }
@@ -82,6 +86,8 @@ pub fn AopGauge(props: AopGaugeProps) -> Element {
             badge,
             footer: Some(footer),
             is_selected: props.is_selected,
+            width: props.width,
+            height: props.height,
             on_click: props.on_click,
         }
     }
@@ -111,5 +117,34 @@ mod tests {
     fn test_status_color_overload() {
         assert_eq!(status_color(10, 0), "#ef4444");
         assert_eq!(status_color(100, 5), "#ef4444");
+    }
+    #[test]
+    fn aop_gauge_passes_size_to_gauge() {
+        // 源码结构守卫（UX 优化任务 01a1217c §1.2）：AopGauge 必须 width/height 透传
+        let code_region = include_str!("aop_gauge.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("aop_gauge.rs 必须包含 tests 模块分隔")
+            .to_string();
+        assert_eq!(
+            code_region.matches("pub width: f64").count(),
+            1,
+            "Props 必须带 width: f64"
+        );
+        assert_eq!(
+            code_region.matches("pub height: f64").count(),
+            1,
+            "Props 必须带 height: f64"
+        );
+        assert_eq!(
+            code_region.matches("width: props.width,").count(),
+            1,
+            "Gauge 调用必须透传 width"
+        );
+        assert_eq!(
+            code_region.matches("height: props.height,").count(),
+            1,
+            "Gauge 调用必须透传 height"
+        );
     }
 }

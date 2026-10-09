@@ -387,8 +387,8 @@ pub fn SystemHealth() -> Element {
                         badge: None,
                         footer: None,
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                     // AOP 队列
@@ -404,8 +404,8 @@ pub fn SystemHealth() -> Element {
                         },
                         footer: None,
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                     // 活跃 Agent
@@ -430,8 +430,8 @@ pub fn SystemHealth() -> Element {
                             }
                         )),
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                     // 活跃项目
@@ -456,8 +456,8 @@ pub fn SystemHealth() -> Element {
                             }
                         )),
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                     // 待处理任务
@@ -469,8 +469,8 @@ pub fn SystemHealth() -> Element {
                         badge: None,
                         footer: None,
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                     // 运行时长
@@ -482,8 +482,8 @@ pub fn SystemHealth() -> Element {
                         badge: None,
                         footer: Some(format!("{}s", m.uptime_secs % 3600)),
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                     // 飞书 WS 监听连接
@@ -495,8 +495,8 @@ pub fn SystemHealth() -> Element {
                         badge: None,
                         footer: Some(format!("{} 个应用监听中", m.lark_ws.apps.len())),
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                     // 微信 iLink 长轮询（客户端拉，无连接阶段 → 靠轮次/心跳判活）
@@ -508,8 +508,8 @@ pub fn SystemHealth() -> Element {
                         badge: None,
                         footer: Some(format!("{} 个渠道监听中", m.wechat_poll.channels.len())),
                         is_selected: false,
-                        width: 180.0,
-                        height: 180.0,
+                        width: 220.0,
+                        height: 220.0,
                         on_click: None,
                     }
                 }
