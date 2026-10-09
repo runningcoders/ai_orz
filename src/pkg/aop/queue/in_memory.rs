@@ -1,10 +1,10 @@
 use std::cell::UnsafeCell;
 use std::collections::{BinaryHeap, HashMap};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
-use common::error::{Result, err};
+use common::error::Result;
 
 use super::EventQueue;
 
@@ -77,6 +77,22 @@ impl Default for InMemoryEventQueue {
 }
 
 impl InMemoryEventQueue {
+    /// 获取队列内部锁，**poison 自动恢复**。
+    ///
+    /// 为什么必须恢复：std `Mutex` 在持锁任务 panic 后会**永久 poison**，之后所有
+    /// `lock()` 都返回 `Err`。本队列是「一个消费者一个实例」，一旦 poison，该消费者的
+    /// 消费链路就此**永久死亡**（awakening 侧表现为 `dequeue error: ... poisoned lock:
+    /// another task failed inside` 死循环，用户侧表现为「发消息没响应」）。
+    ///
+    /// 这里锁保护的是 `HashMap` / `BinaryHeap` 的 insert/remove/pop —— 单次操作要么
+    /// 完成、要么不改变结构，**不存在跨多步的半更新不变式**，故 panic 后取回内部 guard
+    /// 继续访问是安全的。真正的修复是消灭持锁 panic 源（见 [`Self::get_event`] 的 UTF-8
+    /// 安全截断），本恢复是「即便将来又踩到别的 panic，也不至于把整个消费者拖死」的
+    /// 第二道防线。
+    fn lock_guard(&self) -> MutexGuard<'_, ()> {
+        self.lock.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn new() -> Self {
         Self::with_backoff_policy(RETRY_BACKOFF_BASE_MS, RETRY_BACKOFF_MAX_MS)
     }
@@ -100,10 +116,7 @@ impl InMemoryEventQueue {
     /// `order_key` 直进堆，按 `(priority, created_at)` 排序 —— 供**未声明
     /// `ordered`** 的订阅走（门闩是订阅者的 opt-in，见设计稿 §4.1）。
     async fn do_enqueue(&self, event: serde_json::Value, gated: bool) -> Result<()> {
-        let _guard = self
-            .lock
-            .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
+        let _guard = self.lock_guard();
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -196,7 +209,7 @@ impl InMemoryEventQueue {
         let events = unsafe { &*self.events.get() };
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs() as i64;
 
         events
@@ -250,10 +263,7 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     async fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<serde_json::Value>> {
-        let _guard = self
-            .lock
-            .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
+        let _guard = self.lock_guard();
 
         let events = unsafe { &mut *self.events.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
@@ -301,10 +311,7 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     async fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
-        let _guard = self
-            .lock
-            .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
+        let _guard = self.lock_guard();
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -346,10 +353,7 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     async fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
-        let _guard = self
-            .lock
-            .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
+        let _guard = self.lock_guard();
 
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
@@ -380,13 +384,13 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn len(&self) -> usize {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock_guard();
         let events = unsafe { &*self.events.get() };
         events.len()
     }
 
     fn in_progress_count(&self) -> usize {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock_guard();
         let in_progress = unsafe { &*self.in_progress.get() };
         in_progress.len()
     }
@@ -396,7 +400,7 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn clear(&self) {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock_guard();
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
@@ -411,13 +415,13 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn stats(&self) -> super::QueueStats {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock_guard();
 
         let events = unsafe { &*self.events.get() };
         let in_progress = unsafe { &*self.in_progress.get() };
 
         super::QueueStats {
-            pending_count: events.len() - in_progress.len(),
+            pending_count: events.len().saturating_sub(in_progress.len()),
             in_progress_count: in_progress.len(),
             order_keys: self.collect_order_key_stats(),
             oldest_event_age_secs: self.find_oldest_event_age(),
@@ -425,7 +429,7 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn query_events(&self, filter: super::EventQueryFilter) -> Vec<super::EventSummary> {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock_guard();
 
         let events = unsafe { &*self.events.get() };
         let in_progress = unsafe { &*self.in_progress.get() };
@@ -495,7 +499,7 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn get_event(&self, event_id: &str) -> Option<super::EventDetail> {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock_guard();
 
         let events = unsafe { &*self.events.get() };
         let in_progress = unsafe { &*self.in_progress.get() };

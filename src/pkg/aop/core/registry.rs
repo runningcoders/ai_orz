@@ -12,6 +12,20 @@ use crate::pkg::aop::queue::{EventQueue, InMemoryEventQueue};
 use common::enums::EventTopic;
 use tracing::Level;
 
+/// 读锁获取（poison 恢复）：std `RwLock` 在持锁任务 panic 后会**永久 poison**，
+/// 之后 `.read()` / `.write()` 均返回 `Err`。在 publish / dequeue 等热路径上，这会让
+/// 「事件静默不投递 / 消费队列取不到」——即用户侧的「消息无响应」。
+///
+/// registry 的锁只保护 `HashMap` 的 get / insert / iterate（单步、无跨步不变式），
+/// poison 后取回内部 guard 继续访问是安全的，故统一恢复，而非让功能降级或 panic。
+fn read_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
+    lock.read().unwrap_or_else(|e| e.into_inner())
+}
+
+fn write_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(|e| e.into_inner())
+}
+
 pub struct Registry {
     consumers: RwLock<HashMap<EventTopic, Vec<Arc<dyn Consumer>>>>,
     /// topic → 生产者索引：按 `Event::kind()` 反查归属的**唯一**依据
@@ -41,13 +55,13 @@ impl Registry {
 
     /// 注入指标采集 Hook（业务层在启动时调用）
     pub fn set_metrics_hook(&self, hook: Arc<dyn AopMetricsHook>) {
-        let mut guard = self.metrics_hook.write().unwrap();
+        let mut guard = write_lock(&self.metrics_hook);
         *guard = Some(hook);
     }
 
     /// 读取 hook（内部辅助方法，None 时返回 None）
     fn metrics_hook(&self) -> Option<Arc<dyn AopMetricsHook>> {
-        self.metrics_hook.read().ok()?.clone()
+        read_lock(&self.metrics_hook).clone()
     }
 
     pub fn register_consumer(&self, consumer: Arc<dyn Consumer>) -> Result<()> {
@@ -68,21 +82,15 @@ impl Registry {
 
         if mode == ConsumeMode::Async {
             let queue: Arc<dyn EventQueue> = Arc::new(InMemoryEventQueue::new());
-            self.queues
-                .write()
-                .map_err(|e| err!(Internal, "registry lock error: {}", e))?
-                .insert(name.clone(), queue);
+            write_lock(&self.queues).insert(name.clone(), queue);
         }
 
-        let mut consumers = self
-            .consumers
-            .write()
-            .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+        let mut consumers = write_lock(&self.consumers);
 
         for subscription in subscriptions {
             consumers
                 .entry(subscription.kind)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(consumer.clone());
         }
 
@@ -103,10 +111,7 @@ impl Registry {
         let topic = producer.topic();
         let name = producer.name().to_string();
 
-        let mut producers = self
-            .producers_by_topic
-            .write()
-            .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+        let mut producers = write_lock(&self.producers_by_topic);
 
         if let Some(existing) = producers.get(&topic) {
             return Err(err!(
@@ -124,15 +129,12 @@ impl Registry {
 
     /// 按 topic 反查生产者（落空 = ①类纯通知，跳过生产者回调）
     fn producer_for(&self, kind: EventTopic) -> Option<Arc<dyn Producer>> {
-        self.producers_by_topic.read().ok()?.get(&kind).cloned()
+        read_lock(&self.producers_by_topic).get(&kind).cloned()
     }
 
     /// 快照全部生产者（注册期顺序不确定 → 按 name 排序，保证启动日志稳定）
     fn producers_snapshot(&self) -> Result<Vec<Arc<dyn Producer>>> {
-        let producers = self
-            .producers_by_topic
-            .read()
-            .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+        let producers = read_lock(&self.producers_by_topic);
 
         let mut result: Vec<Arc<dyn Producer>> = producers.values().cloned().collect();
         result.sort_by(|a, b| a.name().cmp(b.name()));
@@ -143,13 +145,7 @@ impl Registry {
         let kind = event.kind();
 
         let interested = {
-            let consumers = match self.consumers.read() {
-                Ok(c) => c,
-                Err(e) => {
-                    sys_error!("registry read error: {}", e);
-                    return;
-                }
-            };
+            let consumers = read_lock(&self.consumers);
 
             consumers.get(&kind).cloned()
         };
@@ -249,13 +245,7 @@ impl Registry {
                 }
                 ConsumeMode::Async => {
                     let queue = {
-                        let queues = match self.queues.read() {
-                            Ok(q) => q,
-                            Err(e) => {
-                                sys_error!("registry read error: {}", e);
-                                continue;
-                            }
-                        };
+                        let queues = read_lock(&self.queues);
                         queues.get(consumer.name()).cloned()
                     };
 
@@ -302,10 +292,7 @@ impl Registry {
 
     pub async fn dequeue_for(&self, consumer_name: &str) -> Result<Option<serde_json::Value>> {
         let queue = {
-            let queues = self
-                .queues
-                .read()
-                .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+            let queues = read_lock(&self.queues);
 
             queues
                 .get(consumer_name)
@@ -320,10 +307,7 @@ impl Registry {
 
     pub async fn ack(&self, consumer_name: &str, event_id: &str) -> Result<()> {
         let queue = {
-            let queues = self
-                .queues
-                .read()
-                .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+            let queues = read_lock(&self.queues);
 
             queues
                 .get(consumer_name)
@@ -337,10 +321,7 @@ impl Registry {
 
     pub async fn nack(&self, consumer_name: &str, event_id: &str) -> Result<()> {
         let queue = {
-            let queues = self
-                .queues
-                .read()
-                .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+            let queues = read_lock(&self.queues);
 
             queues
                 .get(consumer_name)
@@ -362,10 +343,7 @@ impl Registry {
         // 语义：start_all 只能成功执行一次；后续调用直接返回。
         // 失败时不回退标记——与原逻辑一致（已 spawn 的 worker 无法回收）。
         {
-            let mut started = self
-                .started
-                .write()
-                .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+            let mut started = write_lock(&self.started);
 
             if *started {
                 return Ok(());
@@ -374,10 +352,7 @@ impl Registry {
         }
 
         let async_consumers: Vec<Arc<dyn Consumer>> = {
-            let consumers = self
-                .consumers
-                .read()
-                .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+            let consumers = read_lock(&self.consumers);
 
             let mut seen = std::collections::HashSet::new();
             let mut result = Vec::new();
@@ -402,10 +377,7 @@ impl Registry {
             let error_sleep = consumer.error_retry_sleep_ms();
 
             let has_queue = {
-                let queues = self
-                    .queues
-                    .read()
-                    .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+                let queues = read_lock(&self.queues);
                 queues.contains_key(&name)
             };
 
@@ -579,14 +551,8 @@ impl Registry {
     /// 游标推进 / `mark_trigger_executed`）会**静默丢失**。
     /// 之所以放在这里而不是注册期：消费者与生产者的注册顺序不固定，注册期判不了。
     fn ensure_producers_for_notifying_consumers(&self) -> Result<()> {
-        let consumers = self
-            .consumers
-            .read()
-            .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
-        let producers = self
-            .producers_by_topic
-            .read()
-            .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+        let consumers = read_lock(&self.consumers);
+        let producers = read_lock(&self.producers_by_topic);
 
         let mut missing: Vec<String> = Vec::new();
         for (kind, interested) in consumers.iter() {
@@ -614,10 +580,7 @@ impl Registry {
     }
 
     pub fn consumer_count(&self) -> usize {
-        self.consumers
-            .read()
-            .map(|c| c.values().map(|v| v.len()).sum())
-            .unwrap_or(0)
+        read_lock(&self.consumers).values().map(|v| v.len()).sum()
     }
 
     /// 停机标志是否已置位（异步 worker 每轮检查；生产者用自己的 `ProducerLoop`）
@@ -644,7 +607,7 @@ impl Registry {
     }
 
     pub fn producer_count(&self) -> usize {
-        self.producers_by_topic.read().map(|p| p.len()).unwrap_or(0)
+        read_lock(&self.producers_by_topic).len()
     }
 
     /// 是否存在拥有该 topic 的生产者
@@ -652,27 +615,19 @@ impl Registry {
     /// 观测/装配自检用（与 `producer_count` 同族）。它同时是「①类纯通知」的判据：
     /// 返回 `false` 的 topic 就是「没有归属、不需要业务回调」的纯通知。
     pub fn has_producer(&self, kind: EventTopic) -> bool {
-        self.producers_by_topic
-            .read()
-            .map(|p| p.contains_key(&kind))
-            .unwrap_or(false)
+        read_lock(&self.producers_by_topic).contains_key(&kind)
     }
 
     pub fn queue_len(&self, consumer_name: &str) -> usize {
-        if let Ok(queues) = self.queues.read()
-            && let Some(queue) = queues.get(consumer_name)
-        {
-            return queue.len();
-        }
-        0
+        read_lock(&self.queues)
+            .get(consumer_name)
+            .map(|q| q.len())
+            .unwrap_or(0)
     }
 
     /// 获取所有队列的聚合统计
     pub fn all_queue_stats(&self) -> Vec<(String, crate::pkg::aop::queue::QueueStats)> {
-        let queues = match self.queues.read() {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
+        let queues = read_lock(&self.queues);
 
         let mut result = Vec::new();
         for (name, queue) in queues.iter() {
@@ -686,7 +641,7 @@ impl Registry {
 
     /// 获取指定消费者的队列统计
     pub fn queue_stats(&self, consumer_name: &str) -> Option<crate::pkg::aop::queue::QueueStats> {
-        let queues = self.queues.read().ok()?;
+        let queues = read_lock(&self.queues);
         let queue = queues.get(consumer_name)?;
         Some(queue.stats())
     }
@@ -697,7 +652,7 @@ impl Registry {
         consumer_name: &str,
         filter: crate::pkg::aop::queue::EventQueryFilter,
     ) -> Option<Vec<crate::pkg::aop::queue::EventSummary>> {
-        let queues = self.queues.read().ok()?;
+        let queues = read_lock(&self.queues);
         let queue = queues.get(consumer_name)?;
         Some(queue.query_events(filter))
     }
@@ -708,7 +663,7 @@ impl Registry {
         consumer_name: &str,
         event_id: &str,
     ) -> Option<crate::pkg::aop::queue::EventDetail> {
-        let queues = self.queues.read().ok()?;
+        let queues = read_lock(&self.queues);
         let queue = queues.get(consumer_name)?;
         queue.get_event(event_id)
     }
