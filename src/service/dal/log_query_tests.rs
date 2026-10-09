@@ -384,3 +384,231 @@ fn test_log_query_struct_fields() {
     assert_eq!(r.total, 0);
     assert!(r.entries.is_empty());
 }
+
+// ==================== query_logs 主链路（倒序扫描）测试 ====================
+//
+// 经 `query_logs_in_dir` 注入临时目录，覆盖调研 §3.2 草案 1~7
+// （草案第 8 例「剪枝一致性」随 TL 待议②裁定取消，不纳入本单）。
+
+/// 构造一行标准 JSONL 日志（不含换行符）
+fn make_log_line(timestamp: &str, level: &str, message: &str) -> String {
+    serde_json::to_string(&make_log_json(timestamp, level, message, None, None, None))
+        .expect("serialize log line")
+}
+
+/// 指定偏移天数的日志文件名（collect_log_files 仅收集最近 MAX_SCAN_DAYS 天内）
+fn day_log_name(offset_days: i64) -> String {
+    format!(
+        "{}{}",
+        LOG_FILE_PREFIX,
+        (Utc::now().date_naive() - chrono::Duration::days(offset_days)).format("%Y-%m-%d")
+    )
+}
+
+/// 无过滤条件、单页取全的主链路查询参数
+fn scan_query() -> LogQuery {
+    LogQuery {
+        keyword: None,
+        log_id: None,
+        level: None,
+        start_time: None,
+        end_time: None,
+        page: 1,
+        page_size: 10000,
+    }
+}
+
+/// 草案①：上限下取最新——总量 > MAX_SCAN_ENTRIES 时恰收集「最新」10000 条
+/// （跨文件：今天文件全部保留 + 昨天文件仅保留最新的 9990 条，最旧被丢弃）
+#[test]
+fn test_query_logs_reverse_scan_returns_newest_first_under_cap() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+
+    // 昨天文件：10005 行（序号 1..=10005，时间戳随序号递增）
+    let mut old_content = String::new();
+    for i in 1..=10005usize {
+        let ts = format!("2020-01-01T00:00:00.{:06}Z", i);
+        old_content.push_str(&make_log_line(&ts, "INFO", &format!("msg_old_{i:05}")));
+        old_content.push('\n');
+    }
+    std::fs::write(dir.path().join(day_log_name(1)), old_content).expect("write old log");
+
+    // 今天文件：10 行（文件序更新，应优先且全部保留）
+    let mut new_content = String::new();
+    for i in 1..=10usize {
+        let ts = format!("2020-01-02T00:00:00.{:06}Z", i);
+        new_content.push_str(&make_log_line(&ts, "INFO", &format!("msg_new_{i:02}")));
+        new_content.push('\n');
+    }
+    std::fs::write(dir.path().join(day_log_name(0)), new_content).expect("write new log");
+
+    let resp = query_logs_in_dir(dir.path(), &scan_query(), 1, 10000).expect("query ok");
+
+    assert_eq!(resp.total, MAX_SCAN_ENTRIES, "应恰收集上限 10000 条");
+    assert_eq!(resp.entries.len(), 10000);
+    for i in 1..=10usize {
+        let msg = format!("msg_new_{i:02}");
+        assert!(
+            resp.entries.iter().any(|e| e.message == msg),
+            "今天文件的行应全部保留: {msg}"
+        );
+    }
+    let old_kept = resp
+        .entries
+        .iter()
+        .filter(|e| e.message.starts_with("msg_old_"))
+        .count();
+    assert_eq!(old_kept, 9990, "昨天文件应保留最新的 9990 条");
+    // 倒序终排下最后一条 = 保留中最旧的一条（序号 16；序号 1..=15 被丢弃）
+    assert_eq!(
+        resp.entries.last().map(|e| e.message.as_str()),
+        Some("msg_old_00016"),
+        "截断方向应为丢最旧（修复目标：最近优先）"
+    );
+    assert!(
+        !resp.entries.iter().any(|e| e.message == "msg_old_00001"),
+        "最旧的行不应出现"
+    );
+}
+
+/// 草案②：单文件内倒序——entries[0] 应为文件最后一行
+#[test]
+fn test_query_logs_file_internal_reverse_order() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let content = [
+        make_log_line("2020-01-01T00:00:01.000000Z", "INFO", "msg1"),
+        make_log_line("2020-01-01T00:00:02.000000Z", "INFO", "msg2"),
+        make_log_line("2020-01-01T00:00:03.000000Z", "INFO", "msg3"),
+    ]
+    .join("\n")
+        + "\n";
+    std::fs::write(dir.path().join(day_log_name(0)), content).expect("write log");
+
+    let resp = query_logs_in_dir(dir.path(), &scan_query(), 1, 10000).expect("query ok");
+    assert_eq!(resp.total, 3);
+    let msgs: Vec<&str> = resp.entries.iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(
+        msgs,
+        vec!["msg3", "msg2", "msg1"],
+        "文件内应倒序（最新行在前）"
+    );
+}
+
+/// 草案③：块边界长行完整性——超长行跨多个 64KB 块边界不得截断/重复
+#[test]
+fn test_query_logs_chunk_boundary_line_integrity() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+
+    // 中间行 message 总长 150KB（> 2 × SCAN_CHUNK_SIZE，必然跨块边界）
+    let marker_start = "LONG_START_";
+    let marker_end = "_LONG_END";
+    let long_len = 150 * 1024usize;
+    let body_len = long_len - marker_start.len() - marker_end.len();
+    let long_message = format!("{}{}{}", marker_start, "x".repeat(body_len), marker_end);
+
+    let content = [
+        make_log_line("2020-01-01T00:00:01.000000Z", "INFO", "head_line"),
+        make_log_line("2020-01-01T00:00:02.000000Z", "INFO", &long_message),
+        make_log_line("2020-01-01T00:00:03.000000Z", "INFO", "tail_line"),
+    ]
+    .join("\n")
+        + "\n";
+    std::fs::write(dir.path().join(day_log_name(0)), content).expect("write log");
+
+    let resp = query_logs_in_dir(dir.path(), &scan_query(), 1, 10000).expect("query ok");
+    assert_eq!(resp.total, 3, "长行跨块不应产生重复/截断行");
+    assert_eq!(resp.entries[0].message, "tail_line");
+    assert_eq!(resp.entries[2].message, "head_line");
+    let long = &resp.entries[1].message;
+    assert_eq!(long.len(), long_len, "长行应完整无截断");
+    assert!(
+        long.starts_with(marker_start) && long.ends_with(marker_end),
+        "长行首尾标记应完好（块间拼接顺序正确）"
+    );
+}
+
+/// 草案④：文件尾无换行——最后一行仍应被计入
+#[test]
+fn test_query_logs_no_trailing_newline_last_line_counted() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let content = [
+        make_log_line("2020-01-01T00:00:01.000000Z", "INFO", "msg1"),
+        make_log_line("2020-01-01T00:00:02.000000Z", "INFO", "msg2"),
+        make_log_line("2020-01-01T00:00:03.000000Z", "INFO", "msg3_last"),
+    ]
+    .join("\n"); // 无尾随换行
+    std::fs::write(dir.path().join(day_log_name(0)), content).expect("write log");
+
+    let resp = query_logs_in_dir(dir.path(), &scan_query(), 1, 10000).expect("query ok");
+    assert_eq!(resp.total, 3, "无尾换行的最后一行应被计入");
+    assert_eq!(resp.entries[0].message, "msg3_last");
+}
+
+/// 草案⑤：空行/坏行跳过——倒序扫描下与正序版语义等价
+#[test]
+fn test_query_logs_empty_and_malformed_lines_skipped_reverse() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let content = [
+        make_log_line("2020-01-01T00:00:01.000000Z", "INFO", "good1"),
+        "   ".to_string(),       // 空白行（trim 后为空）
+        String::new(),           // 纯空行
+        "{not-json".to_string(), // 坏 JSON
+        make_log_line("2020-01-01T00:00:02.000000Z", "INFO", "good2"),
+        String::new(), // 尾部空行
+    ]
+    .join("\n")
+        + "\n";
+    std::fs::write(dir.path().join(day_log_name(0)), content).expect("write log");
+
+    let resp = query_logs_in_dir(dir.path(), &scan_query(), 1, 10000).expect("query ok");
+    assert_eq!(resp.total, 2, "空行与坏 JSON 行应被跳过");
+    let msgs: Vec<&str> = resp.entries.iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(msgs, vec!["good2", "good1"], "跳过不应影响倒序");
+}
+
+/// 草案⑥：满 MAX_SCAN_ENTRIES 提前停机——单文件 10005 行恰收集最新 10000 条
+#[test]
+fn test_query_logs_respects_max_scan_entries_stop_early() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut content = String::new();
+    for i in 1..=10005usize {
+        let ts = format!("2020-01-01T00:00:00.{:06}Z", i);
+        content.push_str(&make_log_line(&ts, "INFO", &format!("msg_{i:05}")));
+        content.push('\n');
+    }
+    std::fs::write(dir.path().join(day_log_name(0)), content).expect("write log");
+
+    let resp = query_logs_in_dir(dir.path(), &scan_query(), 1, 10000).expect("query ok");
+    assert_eq!(resp.total, MAX_SCAN_ENTRIES, "满上限即停，不应超出");
+    assert_eq!(resp.entries[0].message, "msg_10005", "最新行在前");
+    assert_eq!(
+        resp.entries.last().map(|e| e.message.as_str()),
+        Some("msg_00006"),
+        "保留的恰是最新 10000 条（序号 6..=10005，最旧 1..=5 被丢弃）"
+    );
+}
+
+/// 草案⑦：时间窗过滤在倒序扫描下仍正确
+#[test]
+fn test_query_logs_time_window_filter_still_applies() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let content = [
+        make_log_line("2020-01-01T10:00:00.000000Z", "INFO", "t10"),
+        make_log_line("2020-01-01T10:01:00.000000Z", "INFO", "t11"),
+        make_log_line("2020-01-01T10:02:00.000000Z", "INFO", "t12"),
+        make_log_line("2020-01-01T10:03:00.000000Z", "INFO", "t13"),
+        make_log_line("2020-01-01T10:04:00.000000Z", "INFO", "t14"),
+    ]
+    .join("\n")
+        + "\n";
+    std::fs::write(dir.path().join(day_log_name(0)), content).expect("write log");
+
+    let mut query = scan_query();
+    query.start_time = parse_timestamp_to_millis("2020-01-01T10:01:30Z");
+    query.end_time = parse_timestamp_to_millis("2020-01-01T10:03:30Z");
+
+    let resp = query_logs_in_dir(dir.path(), &query, 1, 10000).expect("query ok");
+    assert_eq!(resp.total, 2);
+    let msgs: Vec<&str> = resp.entries.iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(msgs, vec!["t13", "t12"], "窗口内行应倒序返回");
+}

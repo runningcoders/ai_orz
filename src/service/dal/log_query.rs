@@ -94,6 +94,8 @@ const LOG_FILE_PREFIX: &str = "ai_orz.log.";
 const MAX_SCAN_ENTRIES: usize = 10000;
 /// 最多扫描最近 N 天的日志文件
 const MAX_SCAN_DAYS: i64 = 30;
+/// 反向扫描的块缓冲大小（案 B：seek 尾部 + 固定块缓冲反向解析）
+const SCAN_CHUNK_SIZE: usize = 64 * 1024;
 
 #[async_trait::async_trait]
 impl LogQueryDal for LogQueryDalFsImpl {
@@ -119,74 +121,179 @@ impl LogQueryDal for LogQueryDalFsImpl {
             });
         }
 
-        // 收集日志文件并按日期倒序排列（最新文件优先扫描）
-        let mut log_files = collect_log_files(&logs_dir);
-        log_files.sort_by(|a, b| b.cmp(a));
+        // 目录内查询（收集 → 倒序扫描 → 终排 → 分页）抽为独立函数：
+        // 日志目录来自全局配置单例，单测无法注入临时目录；抽参后主链路可测。
+        query_logs_in_dir(&logs_dir, &query, page, page_size)
+    }
+}
 
-        // 预处理过滤条件
-        let keyword_lower = query.keyword.as_ref().map(|s| s.to_lowercase());
-        let level_filter = query.level.as_ref().map(|s| s.to_uppercase());
+/// 目录内执行日志查询：收集日志文件（新文件优先）→ 文件内倒序扫描
+/// （案 B：seek 尾部 + 固定块缓冲反向解析；收集满 `MAX_SCAN_ENTRIES` 即停，
+/// 停机语义 = 收集「最新」的 10000 条）→ 按时间倒序终排 → 内存分页。
+///
+/// 从 `query_logs` 抽出的原因：日志目录来自全局配置单例，测试无法注入；
+/// 显式 `logs_dir` 参数使主链路单测可直接以临时目录调用。
+fn query_logs_in_dir(
+    logs_dir: &std::path::Path,
+    query: &LogQuery,
+    page: usize,
+    page_size: usize,
+) -> Result<QueryLogsResponse> {
+    // 收集日志文件并按日期倒序排列（最新文件优先扫描）
+    let mut log_files = collect_log_files(logs_dir);
+    log_files.sort_by(|a, b| b.cmp(a));
 
-        let mut entries: Vec<LogEntry> = Vec::new();
+    // 预处理过滤条件
+    let keyword_lower = query.keyword.as_ref().map(|s| s.to_lowercase());
+    let level_filter = query.level.as_ref().map(|s| s.to_uppercase());
 
-        for file_path in &log_files {
-            if entries.len() >= MAX_SCAN_ENTRIES {
-                break;
+    let mut entries: Vec<LogEntry> = Vec::new();
+
+    for file_path in &log_files {
+        // 文件级停机：已收集满上限，不再打开后续（更旧的）文件
+        if entries.len() >= MAX_SCAN_ENTRIES {
+            break;
+        }
+
+        let Ok(file) = std::fs::File::open(file_path) else {
+            continue;
+        };
+        let file_len = match file.metadata() {
+            Ok(m) => m.len(),
+            Err(_) => continue,
+        };
+
+        // 块读取闭包：从 offset 处读满 buf，返回实际填充长度（短读=源比预期短）
+        let read_chunk = |offset: u64, buf: &mut [u8]| -> std::io::Result<usize> {
+            use std::io::{Read, Seek, SeekFrom};
+            let mut f = &file;
+            f.seek(SeekFrom::Start(offset))?;
+            let mut filled = 0;
+            while filled < buf.len() {
+                match f.read(&mut buf[filled..]) {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(e),
+                }
             }
+            Ok(filled)
+        };
 
-            let file = match std::fs::File::open(file_path) {
-                Ok(f) => f,
-                Err(_) => continue,
+        // 行处理闭包：解析 + 过滤 + 收集；收集满上限返回 false 提前停机（行级停机）
+        let on_line = |line_bytes: &[u8]| -> bool {
+            if entries.len() >= MAX_SCAN_ENTRIES {
+                return false;
+            }
+            // 非 UTF-8 行跳过（与正序 BufRead::lines 的 Err-continue 语义等价）
+            let Ok(line) = std::str::from_utf8(line_bytes) else {
+                return true;
             };
+            let line = line.trim();
+            if line.is_empty() {
+                return true;
+            }
+            let Ok(raw) = serde_json::from_str::<serde_json::Value>(line) else {
+                return true;
+            };
+            if let Some(entry) = parse_and_filter(
+                &raw,
+                keyword_lower.as_deref(),
+                query.log_id.as_deref(),
+                level_filter.as_deref(),
+                query.start_time,
+                query.end_time,
+            ) {
+                entries.push(entry);
+            }
+            entries.len() < MAX_SCAN_ENTRIES
+        };
 
-            for line in std::io::BufRead::lines(std::io::BufReader::new(file)) {
-                if entries.len() >= MAX_SCAN_ENTRIES {
-                    break;
+        // 块级 IO 异常时跳过该文件继续（与正序版逐行 Err-continue 的容错口径一致）
+        if scan_lines_reverse(file_len, read_chunk, on_line).is_err() {
+            continue;
+        }
+    }
+
+    // 按时间倒序排列（最新的在前）
+    // ISO8601 格式字符串可直接按字典序比较得到时间顺序
+    entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    let total = entries.len();
+    let skip = (page - 1) * page_size;
+    let page_entries: Vec<LogEntry> = entries.into_iter().skip(skip).take(page_size).collect();
+
+    Ok(QueryLogsResponse {
+        total,
+        entries: page_entries,
+        page,
+        page_size,
+    })
+}
+
+/// 反向逐行扫描一个字节源（案 B：seek 尾部 + 固定块缓冲反向解析）。
+///
+/// 从源末尾向前以 [`SCAN_CHUNK_SIZE`] 块读取，按 `\n` 切行并以**倒序**
+/// （最新行优先）逐行交给 `on_line`；`on_line` 返回 `false` 时立即终止。
+///
+/// 与正序 `BufRead::lines` 的语义对齐（差异经调用方 `trim` 后等价）：
+/// - 文件尾无换行的最后一行正常产出；
+/// - 行跨块边界时正确拼接（不截断、不重复）；
+/// - 连续换行 / 块尾换行会产出空行片段（由调用方跳过，行为等价）；
+/// - 行尾 `\r` 保留（调用方 `trim` 去除）。
+///
+/// `read_chunk(offset, buf)` 读取 `[offset, offset + buf.len())` 的内容填入
+/// `buf`，返回实际填充长度（短读表示源比预期短，如并发截断）。该闭包抽象
+/// 使单测可用内存 `&[u8]` 字节源注入，无需真实文件。
+fn scan_lines_reverse(
+    source_len: u64,
+    mut read_chunk: impl FnMut(u64, &mut [u8]) -> std::io::Result<usize>,
+    mut on_line: impl FnMut(&[u8]) -> bool,
+) -> std::io::Result<()> {
+    // carry：跨块边界的行头片段（当前读取位置之前、尚未遇到其换行符的行开头部分）
+    let mut carry: Vec<u8> = Vec::new();
+    let mut pos = source_len;
+
+    while pos > 0 {
+        let start = pos.saturating_sub(SCAN_CHUNK_SIZE as u64);
+        let want = (pos - start) as usize;
+        let mut buf = vec![0u8; want];
+        let filled = read_chunk(start, &mut buf)?;
+        if filled == 0 {
+            break; // 源比预期短（并发截断等），按已读内容收尾
+        }
+        buf.truncate(filled);
+
+        let mut end = buf.len();
+        while end > 0 {
+            match buf[..end].iter().rposition(|&b| b == b'\n') {
+                Some(nl) => {
+                    // 完整行 = 本块内片段（较早内容）+ carry（已扫过的更晚块中的片段）
+                    let mut line = buf[nl + 1..end].to_vec();
+                    line.extend_from_slice(&carry);
+                    carry.clear();
+                    if !on_line(&line) {
+                        return Ok(());
+                    }
+                    end = nl;
                 }
-
-                let line = match line {
-                    Ok(l) => l,
-                    Err(_) => continue,
-                };
-
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-
-                let raw: serde_json::Value = match serde_json::from_str(line) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-
-                if let Some(entry) = parse_and_filter(
-                    &raw,
-                    keyword_lower.as_deref(),
-                    query.log_id.as_deref(),
-                    level_filter.as_deref(),
-                    query.start_time,
-                    query.end_time,
-                ) {
-                    entries.push(entry);
+                None => {
+                    // 本块剩余部分无换行：整体并入行头片段，待读更早内容后拼接
+                    let mut head = buf[..end].to_vec();
+                    head.extend_from_slice(&carry);
+                    carry = head;
+                    end = 0;
                 }
             }
         }
-
-        // 按时间倒序排列（最新的在前）
-        // ISO8601 格式字符串可直接按字典序比较得到时间顺序
-        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-        let total = entries.len();
-        let skip = (page - 1) * page_size;
-        let page_entries: Vec<LogEntry> = entries.into_iter().skip(skip).take(page_size).collect();
-
-        Ok(QueryLogsResponse {
-            total,
-            entries: page_entries,
-            page,
-            page_size,
-        })
+        pos = start;
     }
+
+    // 源头残余：carry 即源中的第一行（其前再无内容）
+    if !carry.is_empty() {
+        on_line(&carry);
+    }
+    Ok(())
 }
 
 // ==================== 辅助函数 ====================
