@@ -160,7 +160,7 @@ BuildResp --> End(["返回响应"])
 - GET /api/v1/system/aop/{consumer}/events
   - 事件列表：支持 status(pending/processing)、order_key、limit(≤1000)、offset。
 - GET /api/v1/system/aop/{consumer}/events/{event_id}
-  - 事件详情：包含摘要与 payload_preview；不存在则 404。
+  - 事件详情：包含摘要与 payload；不存在则 404。
 
 ```mermaid
 sequenceDiagram
@@ -344,7 +344,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
     - offset: number
   - 响应：事件摘要数组（event_id、event_kind、order_key、priority、created_at、status）。
 - GET /api/v1/system/aop/{consumer}/events/{event_id}
-  - 响应：事件详情（含 payload_preview）；不存在返回 404。
+  - 响应：事件详情（含 payload）；不存在返回 404。
 
 章节来源
 - [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)

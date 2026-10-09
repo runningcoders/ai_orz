@@ -317,7 +317,7 @@ API --> COL
   - 统计缺失：确认Hook已注入且后台record任务正常执行；必要时增加日志观察on_*回调触发。
 - 诊断步骤
   - 使用GET /api/v1/system/aop/{consumer}/events列出待处理事件，筛选status=pending/processing。
-  - 使用GET /api/v1/system/aop/{consumer}/events/{event_id}查看事件详情与payload_preview。
+  - 使用GET /api/v1/system/aop/{consumer}/events/{event_id}查看事件详情与payload。
   - 使用GET /api/v1/system/aop/stats/time-series与distribution分析异常时段与分布。
 - 恢复建议
   - 调整消费者并发度与empty_queue_sleep_ms/error_retry_sleep_ms参数。

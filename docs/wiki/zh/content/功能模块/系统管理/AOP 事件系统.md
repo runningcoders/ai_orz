@@ -245,7 +245,7 @@ end
 - [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
 
 ### 事件调试工具、追踪链路、错误诊断
-- 调试查询：通过 registry.query_events/get_event 查看队列中的事件摘要与详情（payload_preview 脱敏）。
+- 调试查询：通过 registry.query_events/get_event 查看队列中的事件摘要与详情（payload 为完整 payload，不截断）。
 - 追踪链路：事件 JSON 顶层包含 event_id/kind/order_key/priority/created_at，可作为跨组件追踪键。
 - 错误诊断：
   - 关注 nack 路径与 error_retry_sleep_ms 配置，避免频繁重试导致 CPU 抖动。

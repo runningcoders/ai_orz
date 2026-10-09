@@ -400,7 +400,7 @@ AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内�
 ### 调试工具
 - 队列查询
   - 使用 `registry.query_events(consumer_name, filter)` 获取待处理 / 处理中事件列表
-  - 使用 `registry.get_event(consumer_name, event_id)` 获取单个事件详情（含脱敏预览）
+  - 使用 `registry.get_event(consumer_name, event_id)` 获取单个事件详情（完整 payload，不截断）
 - 统计快照
   - 通过 `AopStatsCollector.overview` / `time_series` / `distribution` 获取概览、时序与分布
 - 日志与埋点

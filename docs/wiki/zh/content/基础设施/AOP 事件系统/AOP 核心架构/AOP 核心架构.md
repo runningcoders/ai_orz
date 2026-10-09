@@ -243,7 +243,7 @@ end
 
 统计与查询：
 - stats：pending_count、in_progress_count、order_keys 分布、最老事件年龄
-- query_events/get_event：支持分页、过滤、脱敏预览
+- query_events/get_event：支持分页、过滤、完整 payload（不截断）
 
 章节来源
 - [src/pkg/aop/queue/mod.rs#L1-L107](src/pkg/aop/queue/mod.rs#L1-L107)

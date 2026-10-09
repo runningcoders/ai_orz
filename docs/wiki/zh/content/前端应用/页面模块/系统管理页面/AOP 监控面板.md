@@ -344,7 +344,7 @@ HK --> C
   - 分布分析：通过 distribution 按 consumer/status/kind 定位热点与瓶颈。
 - 系统异常排查：
   - 队列堆积：检查 pending_count、in_progress_count、oldest_event_age_secs。
-  - 消费者失败：关注 failed 分布与错误信息（可在事件详情中查看 payload_preview）。
+  - 消费者失败：关注 failed 分布与错误信息（可在事件详情中查看 payload）。
   - 退避与重试：确认 on_event 失败后存在退避 sleep，避免 CPU 自旋。
 - 容量规划建议：
   - 根据峰值 QPS 与平均耗时评估 collector 与 worker 并发度。
