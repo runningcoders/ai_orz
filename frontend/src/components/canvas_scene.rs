@@ -985,6 +985,9 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let force_layout: Signal<ForceLayout> =
         use_signal(|| ForceLayout::new(ForceLayoutConfig::default()));
     let mut is_stable: Signal<bool> = use_signal(|| false);
+    // 问题 4：默认视角「适应」一次性标记 —— 力学布局首次稳定时自动 fit 一次，
+    // 之后视口完全交给用户（缩放/平移/重置/适应按钮），不重复接管。
+    let mut fit_applied: Signal<bool> = use_signal(|| false);
     let mut dragging_id: Signal<Option<String>> = use_signal(|| None);
     let mut drag_offset: Signal<(f64, f64)> = use_signal(|| (0.0, 0.0));
     let mut hovered_id: Signal<Option<String>> = use_signal(|| None);
@@ -1109,7 +1112,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let selected_id_c = selected_id;
     let hovered_edge_c = hovered_edge;
     let renderer_c = renderer;
-    let viewport_c = viewport;
+    let mut viewport_c = viewport;
     // RAF 渲染循环资源：保存 running flag + Closure + pending 帧句柄供顶层 use_drop 清理
     #[allow(clippy::type_complexity)]
     struct RafResource {
@@ -1210,6 +1213,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 nodes_state_c.set(nodes);
                 if layout.is_stable(displacement, 0.5) {
                     is_stable_c.set(true);
+                    // 问题 4：默认视角=「适应」——力学首次稳定时把全图包进画布并居中
+                    //（替换默认 100% 的看不全问题）。仅首翻一次；空节点集不消耗
+                    // 一次性机会（分批到达以首批稳定为准）。
+                    if !fit_applied() && !nodes_state_c.read().is_empty() {
+                        fit_applied.set(true);
+                        viewport_c.set(fit_viewport(&nodes_state_c.read(), width, height));
+                    }
                 }
             }
 
@@ -1549,7 +1559,10 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 variant: ButtonVariant::Ghost,
                 small: true,
                 title: "重置视图",
-                onclick: move |_| viewport.set(Viewport::default()),
+                onclick: move |_| {
+                    fit_applied.set(true); // 手动接管视口后，首次自动 fit 不再生效
+                    viewport.set(Viewport::default());
+                },
                 "重置"
             }
         }
@@ -1587,6 +1600,11 @@ fn ZoomBadge(viewport: Signal<Viewport>) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 按测试开关切出代码区，防止守卫断言与测试自身字符串自匹配
+    fn code_region(src: &str) -> String {
+        src.split("#[cfg(test)]").next().unwrap_or("").to_string()
+    }
 
     fn node(label: &str) -> CanvasNode {
         CanvasNode {
@@ -1763,6 +1781,34 @@ mod tests {
             arrow_tip_point(from, from, radius),
             from,
             "零长度向量应回退圆心"
+        );
+    }
+
+    /// 问题 4 守卫：默认视角「适应」链路锚点必须在场——
+    /// fit_applied 一次性标记 + RAF 力学稳定翻转点自动 fit + 手动重置让位。
+    #[test]
+    fn default_fit_on_stable_anchors_present() {
+        let src = code_region(include_str!("canvas_scene.rs"));
+        assert_eq!(
+            src.matches("let mut fit_applied: Signal<bool> = use_signal(|| false);")
+                .count(),
+            1
+        );
+        assert_eq!(
+            src.matches("if !fit_applied() && !nodes_state_c.read().is_empty() {")
+                .count(),
+            1
+        );
+        assert_eq!(src.matches("fit_applied.set(true);").count(), 2);
+        assert_eq!(
+            src.matches("viewport_c.set(fit_viewport(&nodes_state_c.read(), width, height));")
+                .count(),
+            1
+        );
+        assert_eq!(
+            src.matches("fit_applied.set(true); // 手动接管视口后，首次自动 fit 不再生效")
+                .count(),
+            1
         );
     }
 }
