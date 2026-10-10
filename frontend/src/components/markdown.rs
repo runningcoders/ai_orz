@@ -78,13 +78,19 @@ pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool
     // 全局名称目录：命中时 Agent 提及用实时名渲染。
     // 文档中心等未提供 provider 的页面 try_consume_context 返回 None，自动回退到快照名。
     let directory = try_consume_context::<Signal<Directory>>();
-    // 按 content 缓存 HTML，避免聊天等长列表场景每帧重复解析
-    let html = use_memo(move || match directory {
-        // read() 会订阅目录：Agent 名预载完成后，已在屏的历史气泡 chip 自动刷新为实时名
+    // 每次渲染直接计算 HTML（修复：知识图谱详情「内容」栏切换不更新）：
+    // 此前 use_memo 闭包只捕获普通 String prop、零 signal 订阅，Memo 依赖空集永不重算，
+    // 组件实例被位置 diff 复用时「内容」恒显示首个渲染节点的固化值。
+    // Some 分支 read() 订阅目录：Agent 名预载完成后，已在屏的历史气泡 chip 自动刷新为实时名。
+    let html = match directory {
         Some(sig) => render_markdown_with_names(&content, Some(&sig.read().agents)),
-        // 无目录（文档中心等未 provider 的页面）：回到无上下文版本，chip 用文本快照名
         None => render_markdown(&content),
-    });
+    };
+    // use_effect 只订阅 signal、无法跟踪普通值：渲染期把最新 html 同步进 signal，
+    // 供下方 mermaid 效果在内容变化后重新触发；set 对相等值短路（PartialEq），
+    // 内容未变化时不产生版本推进、不触发下游重跑。
+    let mut html_signal = use_signal(String::new);
+    html_signal.set(html.clone());
     let container_id = use_hook(|| next_container_id("md"));
     // 含 ```mermaid 代码块时，挂载后（use_effect 已在 DOM 挂载后运行）直接调用 JS 渲染层替换为 SVG。
     // 不再用 spawn + 30ms sleep 延迟：该 future 会在所属组件卸载时被 drop，
@@ -93,7 +99,7 @@ pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool
     {
         let id = container_id.clone();
         use_effect(move || {
-            if html().contains("language-mermaid") {
+            if html_signal.read().contains("language-mermaid") {
                 render_mermaid_blocks_now(&id);
             }
         });
@@ -219,5 +225,28 @@ mod tests {
         let html = render_markdown("```mermaid\ngraph LR\nA-->B\n```");
         assert!(html.contains("language-mermaid"));
         assert!(html.contains("graph LR"));
+    }
+
+    // 问题 3 回归守卫：MarkdownRenderer 禁止回到 use_memo 固化实现。
+    // 病灶：use_memo 闭包只捕获普通 String prop、零 signal 订阅 → Memo 永不重算，
+    // 位置 diff 复用组件实例时「内容」栏恒显示首个渲染节点的固化值。
+    // 结构断言（include_str! + 按 #[cfg(test)] 切分代码区防自匹配）：
+    // 组件区必须保留「每渲染直接计算 + 渲染期同步 signal + 效果订阅 signal」锚点。
+    #[test]
+    fn markdown_renderer_content_switch_fix_anchors_present() {
+        let src = include_str!("markdown.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+        assert!(
+            !code.contains("use_memo("),
+            "组件区禁止 use_memo（固化病灶回退即失败）"
+        );
+        assert_eq!(code.matches("let html = match directory {").count(), 1);
+        assert_eq!(code.matches("html_signal.set(html.clone());").count(), 1);
+        assert_eq!(
+            code.matches("html_signal.read().contains(\"language-mermaid\")")
+                .count(),
+            1
+        );
+        assert_eq!(code.matches("dangerous_inner_html: \"{html}\"").count(), 1);
     }
 }
