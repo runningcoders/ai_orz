@@ -1,5 +1,6 @@
 //! Handler: 保存长期记忆 - Neural Tool
 
+use super::save_node_properties;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo,
 };
@@ -14,9 +15,10 @@ use serde_json;
 #[register_handler_tool(
     id = "save_long_term_memory",
     name = "Save to Long-Term Memory",
-    description = "Persist durable knowledge as a long-term knowledge node (node_name, node_description, node_type, tags) and optionally create typed relations to other nodes in the same call. Each relation accepts an optional weight (0.0-1.0) stating how strong/confirmed the association is; it drives edge thickness and color in the knowledge graph and is shown on hover, so omit it when unsure rather than guessing. Returns node_id and relation_ids. For transient working-memory entries use save_short_term_memory.",
+    description = "Persist durable knowledge as a long-term knowledge node (node_name, node_description, node_type, tags) and optionally create typed relations to other nodes in the same call. Each relation accepts an optional weight (0.0-1.0) stating how strong/confirmed the association is; it drives edge thickness and color in the knowledge graph and is shown on hover, so omit it when unsure rather than guessing. You may also attach structured properties (term_key + typed value) for facts that need to be filtered or compared, e.g. model_name, effective_from, confidence - leave them out for narrative content, which belongs in node_description. Returns node_id, relation_ids and property_issues; property_issues is empty when every property was accepted, otherwise each entry reads '<term_key>: <reason>' and tells you which properties were skipped (the node itself is still created). For transient working-memory entries use save_short_term_memory.",
     params = "common::api::SaveLongTermMemoryParams",
-    neural
+    neural,
+    tags = "ontology"
 )]
 #[generate_http_handler]
 pub async fn save_long_term_memory(
@@ -75,6 +77,11 @@ pub async fn save_long_term_memory(
         })
         .ok_or_else(|| err!(Internal, "创建知识节点失败，未返回结果"))?;
 
+    // 属性写入**独立一步**，不并入 MemoryCreateParams：
+    // 属性写失败不该连累节点（节点已经建成功了，回滚代价远大于留一个缺属性的节点）。
+    // ⚠️ 结果必须回给模型：静默吞掉会让它以为写成功了，下次不再补。
+    let property_issues = save_node_properties(&ctx, &node_id, params.properties).await?;
+
     let mut relation_ids: Vec<String> = Vec::new();
 
     if let Some(relations) = params.relations
@@ -113,5 +120,9 @@ pub async fn save_long_term_memory(
     Ok(SaveLongTermMemoryResponse {
         node_id,
         relation_ids,
+        property_issues,
     })
 }
+
+// 属性写入的共享实现在 `super::save_node_properties`（与 update_memory 同一份）：
+// 新建与更新两条路径的门闩口径必须一致，否则「新建时能写、补写时被拒」会成为薛定谔行为。

@@ -784,6 +784,22 @@ fn hr_routes() -> Router {
             delete(handlers::hr::ontology::retire_ontology_class_handler),
         )
         .route(
+            "/ontology/properties",
+            post(handlers::hr::ontology::create_ontology_property_handler),
+        )
+        .route(
+            "/ontology/properties",
+            get(handlers::hr::ontology::list_ontology_properties_handler),
+        )
+        .route(
+            "/ontology/properties/{id}",
+            put(handlers::hr::ontology::update_ontology_property_handler),
+        )
+        .route(
+            "/ontology/properties/{id}",
+            delete(handlers::hr::ontology::retire_ontology_property_handler),
+        )
+        .route(
             "/ontology/relation-types",
             post(handlers::hr::ontology::create_ontology_relation_type_handler),
         )

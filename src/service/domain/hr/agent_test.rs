@@ -358,7 +358,7 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
             .po
             .get_installed_tags()
             .contains(&"project_management".to_string()),
-        "入职后 installed_tags 应含 project_management（同名工具包 tag，工具授权与技能 match_keys 都依赖它）"
+        "入职后 installed_tags 应含 project_management（工具包 tag，是工具授权的唯一依据）"
     );
 }
 
@@ -368,7 +368,7 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
 ///
 /// 重点验证「工具看 installed_tags、技能必须有副本」这处不对称 —— 只做一侧都会瘸腿：
 /// - 工具授权 = `neural ∪ (tool.tags ∩ installed_tags)`，**不含 roles**；
-/// - 技能必须先以副本进入 Agent 副本池（`author_id = agent_id`）才轮得到 match_keys 判定。
+/// - 技能进 Prompt 只看副本是否进入 Agent 副本池（`author_id = agent_id`），**不看 tags**。
 #[sqlx::test]
 async fn test_career_selection_binds_role_tagged_packs(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool.clone());

@@ -458,7 +458,7 @@ fn make_test_agent_with_brain(agent_id: &str) -> Agent {
 
 /// 创建 Manual 工具（Http 协议自动派生 ControlMode::Manual）
 ///
-/// tags 用于匹配 Agent 的 match_keys（roles ∪ installed_tags）。
+/// tags 用于匹配 Agent 的工具授权面（`neural` ∪ `installed_tags`）。
 /// 工具列表本身不进入 Prompt（通过 OpenAI tools API 协议层传递），
 /// 但持有 Manual 工具会触发 Prompt 输出【Manual 工具调用规范】段落。
 fn make_manual_tool(name: &str, description: &str, tags: Vec<String>) -> Tool {

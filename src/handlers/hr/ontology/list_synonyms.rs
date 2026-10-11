@@ -13,7 +13,8 @@ use common::error::Result;
     name = "List Ontology Synonyms",
     description = "List synonym mappings with pagination. Filter by target_kind (class/relation) and target_key (exact match on the canonical term key).",
     params = "common::api::ListOntologySynonymsRequest",
-    tags = "ontology_management"
+    neural,
+    tags = "ontology_management,ontology"
 )]
 #[generate_http_handler]
 pub async fn list_ontology_synonyms(

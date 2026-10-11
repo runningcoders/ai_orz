@@ -96,6 +96,7 @@ fn preset_lexicon() -> PresetOntologyLexicon {
             inverse_key: Some("contained_by".to_string()),
             direction: "directed".to_string(),
         }],
+        properties: vec![],
         synonym_mappings: vec![PresetOntologySynonym {
             raw_term: "  CONTAINS ".to_string(),
             target_kind: TermKind::Relation,
@@ -350,6 +351,7 @@ async fn test_apply_default_lexicon_rejects_missing_ref(pool: SqlitePool) {
             inverse_key: None,
             direction: "directed".to_string(),
         }],
+        properties: vec![],
         synonym_mappings: vec![],
     };
     let err = onto

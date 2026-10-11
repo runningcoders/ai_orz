@@ -4,8 +4,8 @@
 //! 默认实现使用的 Prompt 拼装逻辑。统一注入 skills，build() 时按 tag 自动分块：
 //!
 //! 1. 【Agent 人设】        ← 最稳定
-//! 2. 【神经技能】          ← tags 含 "neural"，所有 Agent 必加载
-//! 3. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
+//! 2. 【神经技能】          ← 已安装副本中 tags 含 "neural" 者（出生自带 ⇒ 通常人人有）
+//! 3. 【已安装技能】        ← 已安装副本中不含 "neural" 的其余全部（装了就进，无 tag 匹配）
 //! 4. 【本体词表】          ← 记忆图谱用词约定，跨会话最稳定（置于易变区块前保前缀缓存）
 //! 5. 【用户画像】          ← 随用户变化，对话中相对稳定
 //! 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
@@ -33,7 +33,12 @@ use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
 // ==================== Prompt Builder（Local Agent 默认实现） ====================
 
-/// neural tag 常量：标记为神经级别的工具/技能，所有 Agent 必加载
+/// neural tag 常量：标记为神经级别的工具/技能。
+///
+/// ⚠️ 两侧语义不同，别混用同一句话描述：
+/// - 工具侧 = 可达性（工具面 = 绑定 ∪ tag(neural ∪ installed_tags)）；
+/// - 技能侧 = 出生自带（`BASE_AGENT_PACKS` 装 neural 包 ⇒ 装所有 neural tag 已发布技能）
+///   + 区块置前 + 不可卸载；**不再决定可见性**（可见性 = 是否已安装副本）。
 const NEURAL_TAG: &str = "neural";
 
 /// 词表区块注入预算（字符数）：预置词表全量约 2k 字符，正常全量注入；
@@ -45,8 +50,8 @@ const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
 /// 统一注入 skills，build() 时按 tag 自动分块拼装：
 ///
 /// 1. 【Agent 人设】        ← 最稳定
-/// 2. 【神经技能】          ← tags 含 "neural"，所有 Agent 必加载
-/// 3. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
+/// 2. 【神经技能】          ← 已安装副本中 tags 含 "neural" 者（出生自带 ⇒ 通常人人有）
+/// 3. 【已安装技能】        ← 已安装副本中不含 "neural" 的其余全部（装了就进，无 tag 匹配）
 /// 4. 【本体词表】          ← 记忆图谱用词约定，跨会话最稳定（置于易变区块前保前缀缓存）
 /// 5. 【用户画像】          ← 随用户变化，对话中相对稳定
 /// 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
@@ -56,7 +61,12 @@ const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
 /// 10. 【工具失败警告】      ← 低频统计快照
 /// 11. 【trace_id + 当前消息】← 每次变化
 ///
-/// match_keys = agent.roles ∪ agent.installed_tags
+/// 技能区块的判据是「**Agent 是否已安装该副本**」，不是 tag 匹配：
+/// `self.skills` 已经是 Agent 私有技能副本池（`resolve_agent_skills`：author_id =
+/// agent_id，排除 Expired 与共享库正式发布版根技能），**安装动作本身已完成挑选**，
+/// 加载侧不需要再用「tags ∩ (roles ∪ 已装包 tag)」二次兜底——那是早期「没有安装
+/// 过程」时的遗留做法，会让「装了包却不进 Prompt」这类静默故障有机可乘。
+/// `neural` 只决定**分块置前**（静态块稳定 ⇒ 保前缀缓存）与不可卸载，不决定可见性。
 ///
 /// 工具信息传递路径：
 /// - 工具列表（name/description/parameters）→ OpenAI tools API 字段（协议层）
@@ -71,8 +81,6 @@ pub struct DefaultPromptBuilder {
     current_trace_id: Option<String>,
     /// Agent 人设 / System Prompt
     system_prompt: Option<String>,
-    /// 匹配键：agent.roles ∪ agent.installed_tags（system_prompt 时缓存）
-    match_keys: Vec<String>,
     /// 用户画像信息（仅客服类 Agent 使用）
     user_profile: Option<String>,
     /// 项目上下文摘要（消息关联的项目实体，有值即拼装）
@@ -129,11 +137,6 @@ impl DefaultPromptBuilder {
         skill.parse_tags().iter().any(|t| t == NEURAL_TAG)
     }
 
-    /// 工具/技能的 tags 是否与 match_keys 有交集
-    fn tags_match(tags: &[String], match_keys: &[String]) -> bool {
-        tags.iter().any(|t| match_keys.contains(t))
-    }
-
     /// 构建技能区块字符串
     fn build_skills_section(title: &str, skills: &[&SkillPo]) -> String {
         if skills.is_empty() {
@@ -153,77 +156,64 @@ impl DefaultPromptBuilder {
 
     /// 渲染【本体词表】区块（design §5.4：词表进 prompt builder 引导图谱规范用词）
     ///
-    /// 裁剪优先级 = [`OntologyLexiconSummary`] 字段顺序：关系词 > 实体类 > 同义样例
-    /// ——高优先级段落装入后，剩余预算才轮到低优先级段落；同段内逐词条贪心装入，
-    /// 装不下即停。同义样例优先级最低，任何段落触发裁剪即整体让位。
+    /// 裁剪优先级 = [`OntologyLexiconSummary`] 字段顺序：关系词 > 实体类 >
+    /// 属性定义 > 同义样例——高优先级段落装入后，剩余预算才轮到低优先级段落；
+    /// 同段内逐词条贪心装入，装不下即停。每段享有「段首保底」：只要
+    /// header + 首行装得下就一定露脸，装不下才整段让位。
     fn build_lexicon_section(lexicon: Option<&common::ontology::OntologyLexiconSummary>) -> String {
         let Some(lexicon) = lexicon.filter(|l| !l.is_empty()) else {
             return String::new();
         };
         let mut s = String::from(
             "【本体词表】（记忆图谱用词约定：节点类型从「实体类」取词、关系从「关系词」取词，\
-             同义说法写入后自动归并到规范词；词表不贴切时可自拟，语义准确 > 用词规范）\n",
+             额外事实优先落成「属性定义」里的属性而不是新建节点；同义说法写入后自动归并到\
+             规范词；词表不贴切时可自拟，语义准确 > 用词规范）\n",
         );
         let mut used = s.chars().count();
         let mut truncated = false;
 
-        // 关系词 > 实体类（行形态同为 LexiconTermSummary，合并渲染）
+        // 关系词 > 实体类（行形态同为 LexiconTermSummary）
         for (title, terms) in [
             ("关系词（图谱边类型）", &lexicon.relation_types),
             ("实体类（图谱节点类型）", &lexicon.classes),
         ] {
-            if terms.is_empty() {
-                continue;
-            }
-            let header = format!("{}：\n", title);
-            let first = format!(
-                "- {}（{}）：{}\n",
-                terms[0].term_key, terms[0].display_name, terms[0].description
-            );
-            // 段首（header + 首词条）都装不下 → 低优先级段落整体让位
-            if used + header.chars().count() + first.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
-                truncated = true;
+            if truncated {
                 break;
             }
-            s.push_str(&header);
-            used += header.chars().count();
-            for t in terms {
-                let line = format!(
-                    "- {}（{}）：{}\n",
-                    t.term_key, t.display_name, t.description
-                );
-                if used + line.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
-                    truncated = true;
-                    break;
-                }
-                s.push_str(&line);
-                used += line.chars().count();
-            }
+            truncated |= push_budgeted_section(
+                &mut s,
+                &mut used,
+                &format!("{}：\n", title),
+                terms.iter().map(|t| {
+                    format!(
+                        "- {}（{}）：{}\n",
+                        t.term_key, t.display_name, t.description
+                    )
+                }),
+            );
+        }
+
+        // 属性定义（行形态自带写侧约束：类型 / 基数 / 载体 / 取值）
+        if !truncated {
+            truncated |= push_budgeted_section(
+                &mut s,
+                &mut used,
+                "属性定义（挂在节点或关系上的键值对，方括号内是写值约束）\n",
+                lexicon.properties.iter().map(|p| p.to_prompt_line()),
+            );
         }
 
         // 同义样例（最低优先级：任何段落触发裁剪即整体让位）
-        if !lexicon.synonyms.is_empty() && !truncated {
-            let header = "同义映射（以下说法写入后自动归并到规范词）\n";
-            let first = format!(
-                "- 「{}」→ {}\n",
-                lexicon.synonyms[0].raw_term, lexicon.synonyms[0].target_key
+        if !truncated {
+            truncated |= push_budgeted_section(
+                &mut s,
+                &mut used,
+                "同义映射（以下说法写入后自动归并到规范词）\n",
+                lexicon
+                    .synonyms
+                    .iter()
+                    .map(|syn| format!("- 「{}」→ {}\n", syn.raw_term, syn.target_key)),
             );
-            if used + header.chars().count() + first.chars().count() <= LEXICON_PROMPT_BUDGET_CHARS
-            {
-                s.push_str(header);
-                used += header.chars().count();
-                for syn in &lexicon.synonyms {
-                    let line = format!("- 「{}」→ {}\n", syn.raw_term, syn.target_key);
-                    if used + line.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
-                        truncated = true;
-                        break;
-                    }
-                    s.push_str(&line);
-                    used += line.chars().count();
-                }
-            } else {
-                truncated = true;
-            }
         }
 
         if truncated {
@@ -234,6 +224,37 @@ impl DefaultPromptBuilder {
     }
 }
 
+/// 按预算装入一个词表段落：段首（header + 首行）装不下则整段让位
+///
+/// 返回是否触发裁剪（触发后调用方应停止渲染更低优先级段落）。段首保底的
+/// 意义在于：低优先级段落不会被高优先级段落的局部超长静默吞掉——只要还能
+/// 挤出 header + 一行的空间，该段至少露脸一行 + 段落标题。
+fn push_budgeted_section(
+    s: &mut String,
+    used: &mut usize,
+    header: &str,
+    lines: impl Iterator<Item = String>,
+) -> bool {
+    let mut lines = lines.peekable();
+    let Some(first) = lines.peek() else {
+        return false;
+    };
+    // 段首（header + 首行）都装不下 → 本段整体让位
+    if *used + header.chars().count() + first.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
+        return true;
+    }
+    s.push_str(header);
+    *used += header.chars().count();
+    for line in lines {
+        if *used + line.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
+            return true;
+        }
+        s.push_str(&line);
+        *used += line.chars().count();
+    }
+    false
+}
+
 /// 实现 PromptBuilder trait
 impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
     fn current_trace_id(&mut self, trace_id: &str) {
@@ -242,12 +263,6 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
     fn system_prompt(&mut self, agent: &Agent) {
         self.system_prompt = Some(agent.to_system_prompt());
-        // 缓存匹配键：roles ∪ installed_tags
-        let mut keys = agent.po.get_roles();
-        keys.extend(agent.po.get_installed_tags());
-        keys.sort();
-        keys.dedup();
-        self.match_keys = keys;
     }
 
     fn history(&mut self, memories: &[Memory]) {
@@ -384,17 +399,23 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
     // ==================== 区块拼装（DefaultPromptBuilder 完整实现；其他 Builder 走 trait 默认空实现）====================
 
-    /// 构建技能区块（神经技能 + 必加载技能）
+    /// 构建技能区块（神经技能 + 已安装技能）
     ///
     /// 工具列表和调用规范都不再出现在 Prompt 中：
     /// - 工具列表（name/description/parameters）通过 OpenAI tools API 协议层传递
     /// - Manual 工具调用对模型透明（awakening 层根据 control_mode 分发执行）
     ///
-    /// 技能仍按 tag 分块展示在 Prompt 中（技能是方法论，无 API 对应）。
+    /// 技能仍进 Prompt（技能是方法论，无 API 对应），**判据只有「是否安装」**：
+    /// `self.skills` 已是 Agent 私有副本池，装上即在这里，因此两个区块合起来就是全量，
+    /// 不存在「装了却隐藏」的技能。
     fn build_skills_sections(&self) -> String {
         let mut result = String::new();
 
-        // 神经技能（tags 含 "neural"，所有 Agent 必加载）
+        // 神经技能（tags 含 "neural"）：分块置前，构成稳定前缀
+        //
+        // ⚠️ neural 只剩两个特殊语义：**区块置前**（静态块，保前缀缓存）与
+        // **不可卸载**（卸载保护见 uninstall_skill_pack）；**不再决定可见性**——
+        // 可见性由「是否已安装副本」决定，与其他技能同判据。
         let neural_skills: Vec<_> = self
             .skills
             .iter()
@@ -402,17 +423,18 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             .collect();
         result.push_str(&Self::build_skills_section("神经技能", &neural_skills));
 
-        // 必加载技能（tags 不含 "neural" 但与 match_keys 有交集）
-        let tagged_skills: Vec<_> = self
+        // 已安装技能（其余全部）：**装了就进**，不再用 tags 二次匹配
+        //
+        // 历史做法（已废弃）：`tags ∩ (roles ∪ installed_tags ∪ installed_skill_packs)`。
+        // 那是「没有安装过程」年代的兜底，如今安装链路（install_skill_to_agent /
+        // install_skill_pack / 入职预装）已经完成了挑选，再按 tag 过滤只会制造
+        // 「装了包却不进 Prompt」的静默故障。
+        let installed_skills: Vec<_> = self
             .skills
             .iter()
-            .filter(|s| {
-                let tags = s.parse_tags();
-                !tags.iter().any(|tag| tag == NEURAL_TAG)
-                    && Self::tags_match(&tags, &self.match_keys)
-            })
+            .filter(|s| !Self::is_neural_skill(s))
             .collect();
-        result.push_str(&Self::build_skills_section("必加载技能", &tagged_skills));
+        result.push_str(&Self::build_skills_section("已安装技能", &installed_skills));
 
         result
     }
@@ -499,7 +521,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-3. 技能区块（神经技能 + 必加载技能；调用方 analyze_input_intent 会通过
+        // 2-3. 技能区块（神经技能 + 已安装技能；调用方 analyze_input_intent 会通过
         //    scene=IntentAnalyze 的工具白名单过滤，保证 Prompt 中无执行类技能描述）
         result.push_str(&self.build_skills_sections());
 
@@ -1065,7 +1087,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-3. 技能区块（神经技能/必加载技能）
+        // 2-3. 技能区块（神经技能/已安装技能）
         // 工具列表和调用规范都不在 Prompt 中（工具通过 API 协议层传递，调用对模型透明）
         result.push_str(&self.build_skills_sections());
 

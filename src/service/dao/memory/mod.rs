@@ -1,15 +1,17 @@
 //! Memory DAO - 记忆系统数据访问
 //!\n//! 负责：\n//! - 短期记忆索引的增删查改（SQLite）\n//! - 长期知识图谱节点的增删查改（SQLite）\n//! - 记忆追踪文件的写入（每日文件追加）\n//! - 原始记忆不可修改不可删除，只能追加，符合设计原则\n\nuse async_trait::async_trait;
 use crate::models::memory::{
-    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
-    MemoryTracePosition, ShortTermMemoryIndexPo,
+    KnowledgeNodeRelationPo, KnowledgePropertyPo, KnowledgeReferencePo, LongTermKnowledgeNodePo,
+    MemoryTrace, MemoryTracePosition, ShortTermMemoryIndexPo,
 };
 use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::api::{PagedResult, PaginationParams};
+use common::enums::ontology::PropertyTargetType;
 use common::enums::{MemoryStatus, MemoryType};
 use common::error::Result;
+use common::ontology_property::PropertyFilter;
 use serde::{Deserialize, Serialize};
 
 // ==================== 查询参数结构体 ====================
@@ -598,6 +600,76 @@ pub trait MemoryDao: Send + Sync {
         source_id: &str,
         relation_type: &str,
     ) -> Result<Vec<KnowledgeNodeRelationPo>>;
+
+    // ========== 属性值（ABox：图谱域内通用，target_type 解释 target_id） ==========
+
+    /// 版本化写入单条属性值
+    ///
+    /// 「修正 = 旧行降级 Superseded + 插入新行」两步在**同一事务**内完成：
+    /// 顺序必须是先降级后插入，否则 `uq_knowledge_property_active`
+    /// 部分唯一索引会撞车（同一槽位出现两条 status=1）。
+    ///
+    /// # 参数
+    /// - property: 属性值 PO，`ordinal` 由调用方给出（单值恒 0，多值递增）
+    async fn upsert_property(
+        &self,
+        ctx: RequestContext,
+        property: &KnowledgePropertyPo,
+    ) -> Result<()>;
+
+    /// 批量版本化写入（整个批次**一个事务**，不是每条一个）
+    ///
+    /// 对齐 `batch_save_knowledge_nodes` 的既有做法：批量是原子的，中途失败整批回滚，
+    /// 不会出现「一半属性是新版、一半是旧版」的中间态。
+    async fn batch_upsert_properties(
+        &self,
+        ctx: RequestContext,
+        properties: &[KnowledgePropertyPo],
+    ) -> Result<()>;
+
+    /// 取一个载体的全部生效属性（只 `status = 1`，历史版本不返回）
+    async fn list_active_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+    ) -> Result<Vec<KnowledgePropertyPo>>;
+
+    /// 批量取多个载体的生效属性（防 N+1；对齐 `list_relations_batch` 先例）
+    ///
+    /// # 返回
+    /// - key 为 `(target_type, target_id)`；**没有任何属性的载体不出现在 map 里**
+    ///   （调用方用 `get` + `unwrap_or_default`，不要假设键一定存在）
+    async fn list_active_properties_batch(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
+
+    /// 下线某载体的某属性（全部槽位一起降级 Superseded）
+    ///
+    /// # 返回
+    /// - 被降级的行数
+    async fn supersede_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+        term_key: &str,
+    ) -> Result<u64>;
+
+    /// 按属性值反查挂载了它的载体（「查所有 model=xxx 的 agent 节点」入口）
+    ///
+    /// 值列由 `filter.value` 的变体决定（数值查 `value_num`、文本/日期/枚举查
+    /// `value_text`、引用查 `value_ref`），调用方不感知列映射。
+    ///
+    /// ⚠️ 运算符与值类型不匹配时（如文本用 `Gt`）返回**空结果**而不是报错：
+    /// 这条链路的调用方是搜索过滤，静默空集比抛错更符合「过滤无匹配」语义。
+    async fn query_properties_by_value(
+        &self,
+        ctx: RequestContext,
+        filter: &PropertyFilter,
+    ) -> Result<Vec<KnowledgePropertyPo>>;
 
     // ========== 本体词频聚合（漂移看板读路径的 SQL 之家，聚合不 JOIN 本体表） ==========
 

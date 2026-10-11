@@ -8,6 +8,7 @@
 //! `ModelProvider` 相同的「持 PO」形态，`from_po` / `into_po` 往返无损。
 
 use common::enums::OntologyStatus;
+use common::enums::ontology::PropertyTargetType;
 use common::ontology::TermKind;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -200,6 +201,159 @@ impl OntologyRelationType {
     }
 }
 
+// ==================== 属性定义词表 ====================
+
+/// 属性定义词表 PO（TBox：属性类型）
+///
+/// 补齐本体缺失的属性维度：此前 `OntologyClassPo::required_fields` 只是字段名
+/// 字符串数组（无类型、无值域、无基数，且零校验消费者），ABox 也没有属性落点，
+/// 只能用 `attribute_of` / `value_of` 两条关系词「用边模拟属性」。
+/// 本表定义「属性是什么」，实例值落在通用表 `knowledge_property`（ABox）。
+///
+/// 取值约束与类型见 [`common::ontology_property`]（校验纯函数层）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct OntologyPropertyPo {
+    /// 唯一 ID
+    pub id: String,
+    /// 语义锚点（snake_case 规范词），跨表/跨环境引用一律用它
+    pub term_key: String,
+    /// 展示名（管理页与属性编辑器使用）
+    pub display_name: String,
+    /// 语义说明（这个属性指什么、何时使用）
+    pub description: String,
+    /// 适用实体类 term_key 清单（JSON 数组字符串；空数组 = 不限定实体类）
+    pub domain_classes: String,
+    /// 允许挂载的载体类型（JSON 数组字符串，取值子集：`node` / `relation`）
+    ///
+    /// 泛化属性值表带来的配套约束：同一 term_key 挂节点与挂边可能不是同一语义，
+    /// 故在 TBox 侧声明适用载体，写侧据此拦截（判定纯函数
+    /// `common::ontology_property::allows_target`）。空清单 = 不限载体。
+    pub applies_to: String,
+    /// 值类型（"string"/"number"/"boolean"/"date"/"reference"/"enum"；
+    /// 与 DDL CHECK 同口径）
+    pub data_type: String,
+    /// 取值约束（JSON：enum 型为白名单数组 / number 型为 {"min","max"}；
+    /// 空串视为无约束）
+    pub value_range: String,
+    /// 基数（"single" / "many"），决定 ABox 侧 ordinal 槽位用法
+    pub cardinality: String,
+    /// 计量单位（可空；仅 number 型有意义，如 "ms" / "percent"）
+    pub unit: Option<String>,
+    /// 是否必填（0 可选 / 1 必填），写后校验判据之一
+    pub required: i32,
+    /// 条目状态（1 正常 / 0 退役；退役 ≠ 删除，历史存量值仍可解释）
+    pub status: OntologyStatus,
+    /// 创建时间戳（秒级）
+    pub created_at: i64,
+    /// 更新时间戳（秒级）
+    pub updated_at: i64,
+}
+
+impl OntologyPropertyPo {
+    /// 创建属性定义词条（id / status / 时间戳自动填充）
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        term_key: impl Into<String>,
+        display_name: impl Into<String>,
+        description: impl Into<String>,
+        domain_classes: impl Into<String>,
+        applies_to: impl Into<String>,
+        data_type: &str,
+        value_range: impl Into<String>,
+        cardinality: &str,
+        unit: Option<String>,
+        required: bool,
+    ) -> Self {
+        let now = common::constants::utils::current_timestamp();
+        Self {
+            id: uuid::Uuid::now_v7().to_string(),
+            term_key: term_key.into(),
+            display_name: display_name.into(),
+            description: description.into(),
+            domain_classes: domain_classes.into(),
+            applies_to: applies_to.into(),
+            data_type: data_type.to_string(),
+            value_range: value_range.into(),
+            cardinality: cardinality.to_string(),
+            unit,
+            required: i32::from(required),
+            status: OntologyStatus::default(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// 解析适用实体类清单；空串或非法 JSON 视为不限定
+    pub fn parse_domain_classes(&self) -> Vec<String> {
+        serde_json::from_str(&self.domain_classes).unwrap_or_default()
+    }
+
+    /// 解析适用载体清单；空串 / 非法 JSON → 空清单 = 不限载体
+    ///
+    /// ⚠️ 数组内拼错的载体名会被静默丢弃，结果是谁都不让挂。
+    pub fn applies_to(&self) -> Vec<PropertyTargetType> {
+        common::ontology_property::parse_applies_to(&self.applies_to)
+    }
+
+    /// 该属性是否允许挂到指定载体（空清单 = 不限）
+    pub fn allows_target(&self, target: PropertyTargetType) -> bool {
+        common::ontology_property::allows_target(&self.applies_to(), target)
+    }
+
+    /// 解析值类型；脏数据兜底退 `string`（与本体软门禁同口径，不 panic 不阻断）
+    pub fn data_type(&self) -> common::enums::ontology::PropertyDataType {
+        common::enums::ontology::PropertyDataType::parse_or_default(&self.data_type)
+    }
+
+    /// 解析基数；脏数据兜底退 `single`（保守取值，避免放开写入量）
+    pub fn cardinality(&self) -> common::enums::ontology::Cardinality {
+        common::enums::ontology::Cardinality::parse_or_default(&self.cardinality)
+    }
+
+    /// 解析取值约束（非法 JSON / 空串 → 无约束）
+    pub fn value_range(&self) -> common::ontology_property::ValueRange {
+        common::ontology_property::parse_value_range(&self.value_range)
+    }
+
+    /// 是否必填
+    pub fn is_required(&self) -> bool {
+        self.required != 0
+    }
+}
+
+/// 属性定义 Entity（Domain 层及以上唯一可见形态）
+#[derive(Debug, Clone)]
+pub struct OntologyProperty {
+    pub po: OntologyPropertyPo,
+}
+
+impl OntologyProperty {
+    /// 从 PO 创建业务实体
+    pub fn from_po(po: OntologyPropertyPo) -> Self {
+        Self { po }
+    }
+
+    /// 转回 PO（DAO 写入用；往返无损）
+    pub fn into_po(self) -> OntologyPropertyPo {
+        self.po
+    }
+
+    /// 语义锚点
+    pub fn term_key(&self) -> &str {
+        &self.po.term_key
+    }
+
+    /// 展示名
+    pub fn display_name(&self) -> &str {
+        &self.po.display_name
+    }
+
+    /// 条目状态
+    pub fn status(&self) -> OntologyStatus {
+        self.po.status
+    }
+}
+
 // ==================== 同义映射 ====================
 
 /// 同义映射 PO（漂移修复手段：旧词/别名 → 规范词）
@@ -270,6 +424,7 @@ impl OntologySynonymMapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::enums::ontology::{Cardinality, PropertyDataType};
 
     #[test]
     fn class_po_entity_roundtrip_lossless() {
@@ -335,5 +490,120 @@ mod tests {
         assert_eq!(po.status, OntologyStatus::Active);
         assert!(po.created_at > 0);
         assert_eq!(po.created_at, po.updated_at);
+    }
+
+    #[test]
+    fn property_po_entity_roundtrip_lossless() {
+        let po = OntologyPropertyPo::new(
+            "model_name",
+            "模型名",
+            "绑定的模型标识",
+            r#"["agent"]"#,
+            r#"["node"]"#,
+            "string",
+            "[]",
+            "single",
+            None,
+            false,
+        );
+        let entity = OntologyProperty::from_po(po.clone());
+        assert_eq!(entity.term_key(), "model_name");
+        assert_eq!(entity.display_name(), "模型名");
+        assert_eq!(entity.status(), OntologyStatus::Active);
+        assert_eq!(entity.into_po(), po);
+    }
+
+    #[test]
+    fn property_required_flag_maps_to_int_column() {
+        let required = OntologyPropertyPo::new(
+            "a", "A", "d", "[]", "[]", "string", "", "single", None, true,
+        );
+        assert_eq!(required.required, 1);
+        assert!(required.is_required());
+
+        let optional = OntologyPropertyPo::new(
+            "b", "B", "d", "[]", "[]", "string", "", "single", None, false,
+        );
+        assert_eq!(optional.required, 0);
+        assert!(!optional.is_required());
+        assert_eq!(optional.created_at, optional.updated_at);
+    }
+
+    #[test]
+    fn property_parse_helpers_degrade_gracefully() {
+        // 脏定义一律退化到「最宽松类型 + 最保守基数」，不 panic 不阻断写值链路
+        let po = OntologyPropertyPo::new(
+            "score",
+            "分数",
+            "质量分",
+            "not-json",
+            "not-json",
+            "bogus",
+            "not-json",
+            "bogus",
+            Some("percent".to_string()),
+            false,
+        );
+        assert!(po.parse_domain_classes().is_empty());
+        assert!(po.applies_to().is_empty());
+        assert_eq!(po.data_type(), PropertyDataType::String);
+        assert_eq!(po.cardinality(), Cardinality::Single);
+        assert!(po.value_range().is_empty());
+        assert_eq!(po.unit.as_deref(), Some("percent"));
+    }
+
+    #[test]
+    fn property_parses_domain_classes_and_value_range() {
+        let po = OntologyPropertyPo::new(
+            "confidence",
+            "置信度",
+            "0~1 质量分",
+            r#"["concept"]"#,
+            r#"["node"]"#,
+            "number",
+            r#"{"min": 0.0, "max": 1.0}"#,
+            "single",
+            None,
+            true,
+        );
+        assert_eq!(po.parse_domain_classes(), vec!["concept".to_string()]);
+        assert_eq!(po.data_type(), PropertyDataType::Number);
+        assert_eq!(po.value_range().max, Some(1.0));
+    }
+
+    /// 泛化表配套：属性定义声明适用载体，写侧据此拦截，
+    /// 否则同一 term_key 挂节点与挂边的语义会漂移。
+    #[test]
+    fn property_applies_to_gates_target() {
+        let node_only = OntologyPropertyPo::new(
+            "model_name",
+            "模型名",
+            "绑定的模型标识",
+            r#"["agent"]"#,
+            r#"["node"]"#,
+            "string",
+            "[]",
+            "single",
+            None,
+            false,
+        );
+        assert!(node_only.allows_target(PropertyTargetType::Node));
+        assert!(!node_only.allows_target(PropertyTargetType::Relation));
+
+        // 空清单 = 未声明 = 不限载体
+        let unconstrained = OntologyPropertyPo::new(
+            "effective_from",
+            "生效时间",
+            "起始时间",
+            "[]",
+            "[]",
+            "date",
+            "{}",
+            "single",
+            None,
+            false,
+        );
+        assert!(unconstrained.allows_target(PropertyTargetType::Node));
+        assert!(unconstrained.allows_target(PropertyTargetType::Relation));
     }
 }

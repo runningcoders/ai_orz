@@ -18,6 +18,7 @@ pub mod markdown_protocol;
 pub mod mention;
 pub mod models;
 pub mod ontology;
+pub mod ontology_property;
 pub mod redaction;
 
 #[cfg(test)]

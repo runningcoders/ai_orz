@@ -9,13 +9,15 @@
 //! 方向纪律（决策 #5）：依赖单向指向被观察者，[`crate::service::dal::MemoryDal`]
 //! 零改动零感知；DAL 之间禁止互引，本模块只依赖 DAO 层。
 
-use crate::models::ontology::{OntologyClass, OntologyRelationType, OntologySynonymMapping};
+use crate::models::ontology::{
+    OntologyClass, OntologyProperty, OntologyRelationType, OntologySynonymMapping,
+};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::OntologyDriftEvent;
 use crate::service::dao::memory::MemoryDao;
 use crate::service::dao::ontology::{
     OntologyClassQuery, OntologyDao, OntologyDriftQuery, OntologyDriftTermRow,
-    OntologyRelationTypeQuery, OntologyStatsDao, OntologySynonymQuery,
+    OntologyPropertyQuery, OntologyRelationTypeQuery, OntologyStatsDao, OntologySynonymQuery,
 };
 use async_trait::async_trait;
 use common::api::ontology::{
@@ -27,8 +29,9 @@ use common::api::{PagedResult, PaginationParams};
 use common::enums::OntologyStatus;
 use common::error::Result;
 use common::ontology::{
-    Direction, LexiconSynonymSummary, LexiconTermSummary, OntologyCertifyReport, OntologyLexicon,
-    OntologyLexiconSummary, ResolvedTerm, TermKind, resolve,
+    Direction, LexiconPropertySummary, LexiconSynonymSummary, LexiconTermSummary,
+    OntologyCertifyReport, OntologyLexicon, OntologyLexiconSummary, ResolvedTerm, TermKind,
+    resolve,
 };
 use std::sync::Arc;
 
@@ -315,6 +318,45 @@ pub trait OntologyDal: Send + Sync {
 
     /// 删除同义映射（物理删除；幂等；删除后相关词条自然回落漂移）
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // ---- 属性定义（TBox：属性类型；本体第 4 张词表） ----
+
+    /// 插入属性定义（term_key 唯一，冲突返回 Conflict）
+    async fn insert_property(&self, ctx: RequestContext, property: &OntologyProperty)
+    -> Result<()>;
+
+    /// 按 ID 查属性定义
+    async fn find_property_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyProperty>>;
+
+    /// 按语义锚点查属性定义（写侧查重 / seed 注入补缺判断）
+    async fn find_property_by_term_key(
+        &self,
+        ctx: RequestContext,
+        term_key: &str,
+    ) -> Result<Option<OntologyProperty>>;
+
+    /// 属性定义分页组合查询（status / 实体类 / 载体 / keyword 过滤，count 内嵌）
+    async fn query_properties(
+        &self,
+        ctx: RequestContext,
+        query: OntologyPropertyQuery,
+    ) -> Result<common::api::PagedResult<OntologyProperty>>;
+
+    /// 全量属性定义（含退役；写侧校验需全貌，故**不过滤 status**）
+    async fn list_all_properties(&self, ctx: RequestContext) -> Result<Vec<OntologyProperty>>;
+
+    /// 全量更新属性定义（term_key 不可变 —— 语义锚点是历史属性值引用的稳定性来源）
+    async fn update_property(&self, ctx: RequestContext, property: &OntologyProperty)
+    -> Result<()>;
+
+    /// 退役属性定义（软删除 status=0；幂等）
+    ///
+    /// ⚠️ 退役**不清理**已落库的属性值：历史值是事实，保留可回放。
+    async fn retire_property(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }
 
 // ==================== DAL Impl ====================
@@ -369,7 +411,7 @@ impl OntologyDal for OntologyDalImpl {
 
     async fn load_lexicon_summary(&self, ctx: RequestContext) -> Result<OntologyLexiconSummary> {
         let pagination = active_all_pagination();
-        let (classes, relation_types, synonyms) = tokio::try_join!(
+        let (classes, relation_types, properties, synonyms) = tokio::try_join!(
             self.ontology_dao.query_classes(
                 ctx.clone(),
                 OntologyClassQuery {
@@ -382,6 +424,16 @@ impl OntologyDal for OntologyDalImpl {
                 ctx.clone(),
                 OntologyRelationTypeQuery {
                     status: Some(OntologyStatus::Active),
+                    keyword: None,
+                    pagination: pagination.clone(),
+                },
+            ),
+            self.ontology_dao.query_properties(
+                ctx.clone(),
+                OntologyPropertyQuery {
+                    status: Some(OntologyStatus::Active),
+                    domain_class: None,
+                    target_type: None,
                     keyword: None,
                     pagination: pagination.clone(),
                 },
@@ -399,10 +451,11 @@ impl OntologyDal for OntologyDalImpl {
 
         warn_if_lexicon_truncated(&ctx, "实体类", classes.items.len());
         warn_if_lexicon_truncated(&ctx, "关系类型", relation_types.items.len());
+        warn_if_lexicon_truncated(&ctx, "属性定义", properties.items.len());
         warn_if_lexicon_truncated(&ctx, "同义映射", synonyms.items.len());
 
         Ok(OntologyLexiconSummary {
-            // 关系词 > 实体类 > 同义样例：字段顺序即 prompt 注入裁剪优先级（design §3）
+            // 关系词 > 实体类 > 属性定义 > 同义样例：字段顺序即 prompt 注入裁剪优先级（design §3）
             relation_types: relation_types
                 .items
                 .into_iter()
@@ -419,6 +472,35 @@ impl OntologyDal for OntologyDalImpl {
                     term_key: po.term_key,
                     display_name: po.display_name,
                     description: po.description,
+                })
+                .collect(),
+            // 属性段携带写侧约束（类型/基数/载体/取值），模型据此避免写出被拒的值
+            properties: properties
+                .items
+                .into_iter()
+                .map(|po| {
+                    // 借用派生的字段先算完，再 move String 字段出 po
+                    let value_hint = po.value_range().to_hint();
+                    let unit = po.unit.clone();
+                    let required = po.is_required();
+                    let data_type = po.data_type().as_str().to_string();
+                    let cardinality = po.cardinality().as_str().to_string();
+                    let applies_to = po
+                        .applies_to()
+                        .iter()
+                        .map(|t| t.as_str().to_string())
+                        .collect();
+                    LexiconPropertySummary {
+                        term_key: po.term_key,
+                        display_name: po.display_name,
+                        description: po.description,
+                        data_type,
+                        cardinality,
+                        applies_to,
+                        value_hint,
+                        unit,
+                        required,
+                    }
                 })
                 .collect(),
             // target_kind 非法属脏数据兜底（写入路径已校验），视图侧跳过不报错
@@ -779,6 +861,75 @@ impl OntologyDal for OntologyDalImpl {
 
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.ontology_dao.delete_synonym(ctx, id).await
+    }
+
+    // ---- 属性定义（PO ↔ Entity 转换在 DAL 收口，PO 不上浮） ----
+
+    async fn insert_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyProperty,
+    ) -> Result<()> {
+        self.ontology_dao
+            .insert_property(ctx, &property.clone().into_po())
+            .await
+    }
+
+    async fn find_property_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyProperty>> {
+        Ok(self
+            .ontology_dao
+            .find_property_by_id(ctx, id)
+            .await?
+            .map(OntologyProperty::from_po))
+    }
+
+    async fn find_property_by_term_key(
+        &self,
+        ctx: RequestContext,
+        term_key: &str,
+    ) -> Result<Option<OntologyProperty>> {
+        Ok(self
+            .ontology_dao
+            .find_property_by_term_key(ctx, term_key)
+            .await?
+            .map(OntologyProperty::from_po))
+    }
+
+    async fn query_properties(
+        &self,
+        ctx: RequestContext,
+        query: OntologyPropertyQuery,
+    ) -> Result<common::api::PagedResult<OntologyProperty>> {
+        let page = self.ontology_dao.query_properties(ctx, query).await?;
+        Ok(page.map(OntologyProperty::from_po))
+    }
+
+    async fn list_all_properties(&self, ctx: RequestContext) -> Result<Vec<OntologyProperty>> {
+        Ok(self
+            .ontology_dao
+            .list_all_properties(ctx)
+            .await?
+            .into_iter()
+            .map(OntologyProperty::from_po)
+            .collect())
+    }
+
+    async fn update_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyProperty,
+    ) -> Result<()> {
+        self.ontology_dao
+            .update_property(ctx, &property.clone().into_po())
+            .await
+    }
+
+    async fn retire_property(&self, ctx: RequestContext, id: &str) -> Result<()> {
+        self.ontology_dao.retire_property(ctx, id).await
     }
 }
 

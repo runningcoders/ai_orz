@@ -21,7 +21,7 @@ use common::error::Result;
     description = "Get the full knowledge-graph dataset for the global point-line view: all active knowledge nodes (R1: knowledge nodes + relation edges only), relation edges whose both endpoints are active (R2), and per-node degree counted from active edges only (R4). Fields are trimmed for the global view (no descriptions/summaries - node details go through the existing card-page channel). agent_id optionally filters by owner; omit it for the whole hive. Load this once for the default global view; use recommend_seed_nodes for cold-start entry points and search_memory for focused exploration.",
     params = "common::api::GetKnowledgeGraphParams",
     neural,
-    tags = "memory"
+    tags = "memory,ontology"
 )]
 #[generate_http_handler]
 pub async fn get_knowledge_graph(

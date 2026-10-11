@@ -122,6 +122,188 @@ mod tests {
     /// `recall_message` 管「这条消息还要不要处理」（状态语义），`cancel_thinking` 管
     /// 「现在这一轮停不停」（信号语义）。撤回在飞消息时若调用方就是那个 Agent 自己，
     /// 本能力会引导它改用 `cancel_thinking`；后者不可达则该引导变成空话。
+    /// 护栏：本体**消费侧**工具必须带 `ontology` 主题 tag。
+    ///
+    /// tag 分两层，与安全模型同构（`install_tool_pack` 按 tag 批量授权）：
+    /// - `ontology` = **消费侧**：查词表 + 按词写节点/关系/属性 + 按属性检索 +
+    ///   图谱遍历 + 沉淀。装这个包是安全的，任何 Agent 都可以有。
+    /// - `ontology_management` = **治理侧**：改词表定义本身（create/update/retire/
+    ///   delete），敏感，需单独授权。
+    ///
+    /// 消费侧跨两处目录（本体 handler 的读工具 + agent handler 的记忆/图谱/沉淀工具），
+    /// 手工维护极易漏——漏了的表现是 `install_tool_pack("ontology")` 只装到一半，
+    /// Agent 能查词表却拿不到写记忆的工具（或反之），且**不报错**。
+    #[test]
+    fn ontology_consumer_tools_carry_ontology_tag() {
+        let registry = crate::pkg::tool_registry::get_registry();
+        for id in [
+            // 本体 handler 的读侧
+            "list_ontology_classes",
+            "list_ontology_relation_types",
+            "list_ontology_properties",
+            "list_ontology_synonyms",
+            "list_ontology_lexicon",
+            "get_ontology_drift_dashboard",
+            "list_ontology_drift_class_details",
+            "list_ontology_drift_relation_details",
+            // agent handler 的本体语义消费方（词表主消费点 / 属性检索 / 遍历 / 沉淀）
+            "save_long_term_memory",
+            "update_memory",
+            "search_memory",
+            "settle_memory",
+            "get_knowledge_graph",
+        ] {
+            let factory = registry
+                .get_builtin_factory(id)
+                .unwrap_or_else(|| panic!("builtin tool {} not registered", id));
+            let tags = factory.create_po().get_tags();
+            assert!(
+                tags.iter().any(|t| t == "ontology"),
+                "{id} 是本体消费侧工具，必须带 ontology tag（否则 install_tool_pack(\"ontology\") \
+                 装不到它，Agent 拿到的是半套本体能力且不报错）。实际 tags={tags:?}"
+            );
+            // 顺带挡住 `tags = \"\"` —— 宏按逗号 split 空串会产出一个空字符串 tag
+            assert!(
+                tags.iter().all(|t| !t.is_empty()),
+                "{id} 的 tags 含空字符串（tags = \"\" 被宏 split 成 [\"\"]），实际 tags={tags:?}"
+            );
+        }
+    }
+
+    /// 护栏：本体**消费侧全集**（读侧 8 + 记忆/图谱/沉淀 5）必须恒带 `neural`。
+    ///
+    /// 这条直接决定「普通员工要不要装 `ontology` 包」的答案：消费侧 13 个工具全部
+    /// 出生自带 ⇒ **任何 Agent 不装 ontology 包也能用**，`ontology` 在这里只是主题
+    /// 归类 tag（`install_tool_pack("ontology")` 的批量授权面），**不是可达性前提**。
+    ///
+    /// ⚠️ 因此真正的风险是反过来：哪个消费侧工具被摘掉 `neural`，它就退化成
+    /// 「只有装了 ontology 包的 Agent 才可见」⇒ 其余 Agent **静默失去**写记忆、
+    /// 查词表的能力——不报错、不告警，是这个项目最难查的一类故障。本护栏守这个不变量。
+    #[test]
+    fn ontology_consumer_tools_are_neural_reachable() {
+        let registry = crate::pkg::tool_registry::get_registry();
+        for id in [
+            // 读侧（词表 / 漂移看板）
+            "list_ontology_classes",
+            "list_ontology_relation_types",
+            "list_ontology_properties",
+            "list_ontology_synonyms",
+            "list_ontology_lexicon",
+            "get_ontology_drift_dashboard",
+            "list_ontology_drift_class_details",
+            "list_ontology_drift_relation_details",
+            // 写记忆 / 检索 / 遍历 / 沉淀（本体词表的主消费点）
+            "save_long_term_memory",
+            "update_memory",
+            "search_memory",
+            "settle_memory",
+            "get_knowledge_graph",
+        ] {
+            let factory = registry
+                .get_builtin_factory(id)
+                .unwrap_or_else(|| panic!("builtin tool {} not registered", id));
+            let tags = factory.create_po().get_tags();
+            assert!(
+                tags.iter().any(|t| t == "neural"),
+                "{id} 是本体消费侧工具，必须带 neural tag：不带它就只有装了 ontology 包的 \
+                 Agent 才可见，其余 Agent 会静默失去写记忆/查词表能力。实际 tags={tags:?}"
+            );
+        }
+    }
+
+    /// 护栏：本体**读侧**工具必须对每个 Agent 可达（带 `neural`）。
+    ///
+    /// 背景与消息类工具同源（工具面 = 绑定工具 ∪ tag(`neural` ∪ `installed_tags`)）：
+    /// 19 个本体工具原先一律只挂 `ontology_management`，而该 tag 既不在
+    /// `BASE_AGENT_PACKS`、也不在组织 onboard 的 required packs（seed 只配了
+    /// `project_management`）⇒ 它们**不在任何 Agent 的工具面里**。本体论技能会教模型
+    /// 「写记忆前先查词表、发现漂移先查看板」，读侧不可达 ⇒ 这些引导全是空话，
+    /// 模型只能凭直觉造词 → 蜂巢共享图谱被同义词反复污染（漂移看板正是为此存在）。
+    ///
+    /// **只守读侧**是刻意的分层：写侧（`create/update/retire/delete_*`）保留
+    /// `ontology_management` 包 tag，由管理员 Agent 装包后才有权限。词表是蜂巢共享的
+    /// 全局约定，任何 Agent 都能改 = 一个 Agent 的错误用词会污染所有人的图谱；
+    /// 与「语义判断走 Agent 提案 + 人审」的设计决策一致。
+    ///
+    /// ⚠️ 读侧也不可怕漏：属性/词表写入本身有兜底（本体未定义的 term 按值自身类型
+    /// 照写不丢），所以读侧失效不会报错，只会**静默退化成自由造词**。
+    #[test]
+    fn ontology_read_tools_are_neural_reachable() {
+        let registry = crate::pkg::tool_registry::get_registry();
+        for id in [
+            "list_ontology_classes",
+            "list_ontology_relation_types",
+            "list_ontology_properties",
+            "list_ontology_synonyms",
+            "list_ontology_lexicon",
+            "get_ontology_drift_dashboard",
+            "list_ontology_drift_class_details",
+            "list_ontology_drift_relation_details",
+        ] {
+            let factory = registry
+                .get_builtin_factory(id)
+                .unwrap_or_else(|| panic!("builtin tool {} not registered", id));
+            let tags = factory.create_po().get_tags();
+            assert!(
+                tags.iter().any(|t| t == "neural"),
+                "{id} 是本体读侧工具，必须带 neural tag（否则不在任何 Agent 的工具面里，\
+                 本体论技能里「写前先查词表」的引导会变成静默造词）。实际 tags={tags:?}"
+            );
+            // 保留 ontology_management：装包的管理员 Agent 仍按领域归类
+            assert!(
+                tags.iter().any(|t| t == "ontology_management"),
+                "{id} 应同时保留 ontology_management tag（领域归类 + 装包可见性），\
+                 实际 tags={tags:?}"
+            );
+        }
+    }
+
+    /// 护栏：本体**写侧**工具必须**不**带 `neural`（防后人顺手全开）。
+    ///
+    /// 词表是蜂巢共享的全局约定：写侧一旦对所有 Agent 开放，单个 Agent 的错误用词
+    /// 会污染整个组织的图谱，且没有回收路径（retire 只挡新写、历史节点照旧）。
+    /// 写侧应保留在 `ontology_management` 包内，由管理员 Agent 显式装包获得。
+    #[test]
+    fn ontology_write_tools_are_not_neural() {
+        let registry = crate::pkg::tool_registry::get_registry();
+        for id in [
+            "create_ontology_class",
+            "update_ontology_class",
+            "retire_ontology_class",
+            "create_ontology_relation_type",
+            "update_ontology_relation_type",
+            "retire_ontology_relation_type",
+            "create_ontology_property",
+            "update_ontology_property",
+            "retire_ontology_property",
+            "create_ontology_synonym",
+            "delete_ontology_synonym",
+        ] {
+            let factory = registry
+                .get_builtin_factory(id)
+                .unwrap_or_else(|| panic!("builtin tool {} not registered", id));
+            let tags = factory.create_po().get_tags();
+            assert!(
+                !tags.iter().any(|t| t == "neural"),
+                "{id} 是本体写侧工具，不得带 neural tag（词表是蜂巢共享全局约定，\
+                 应对所有 Agent 开放会让单个 Agent 的错误用词污染整个图谱）。\
+                 实际 tags={tags:?}"
+            );
+            assert!(
+                tags.iter().any(|t| t == "ontology_management"),
+                "{id} 必须挂 ontology_management tag（否则管理员装包后也拿不到），\
+                 实际 tags={tags:?}"
+            );
+            // 写侧不得并入 ontology 消费包：否则 install_tool_pack("ontology")
+            // 会一把梭给出改词表的权限，治理侧就不再是可控的独立授权面
+            assert!(
+                !tags.iter().any(|t| t == "ontology"),
+                "{id} 是本体治理侧工具，不得带 ontology tag（会让 install_tool_pack(\"ontology\") \
+                 一把梭给出改词表的权限，治理侧必须保持独立授权面）。实际 tags={tags:?}"
+            );
+        }
+    }
+
     #[test]
     fn message_tools_are_neural_reachable() {
         let registry = crate::pkg::tool_registry::get_registry();

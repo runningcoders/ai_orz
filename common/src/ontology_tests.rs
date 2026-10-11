@@ -371,6 +371,79 @@ fn direction_parses_and_serializes_lowercase() {
 }
 
 #[test]
+fn lexicon_property_summary_renders_write_constraints() {
+    let property = LexiconPropertySummary {
+        term_key: "confidence".into(),
+        display_name: "置信度".into(),
+        description: "该条记忆的可信程度".into(),
+        data_type: "number".into(),
+        cardinality: "single".into(),
+        applies_to: vec!["node".into()],
+        value_hint: "0~1".into(),
+        unit: Some("percent".into()),
+        required: true,
+    };
+    // 写值约束（类型 / 取值提示 / 基数 / 载体 / 单位 / 必填）必须在同一行里可见
+    let line = property.to_prompt_line();
+    assert_eq!(
+        line,
+        "- confidence（置信度）[number 0~1，单值，挂 node，单位 percent，必填]：该条记忆的可信程度\n"
+    );
+}
+
+#[test]
+fn lexicon_property_summary_unconstrained_target_renders_both() {
+    // applies_to 空 = 不限载体；cardinality=many = 多值；两者都要写进提示
+    let property = LexiconPropertySummary {
+        term_key: "source".into(),
+        display_name: "来源".into(),
+        description: "信息出处".into(),
+        data_type: "string".into(),
+        cardinality: "many".into(),
+        applies_to: vec![],
+        value_hint: String::new(),
+        unit: None,
+        required: false,
+    };
+    assert_eq!(
+        property.to_prompt_line(),
+        "- source（来源）[string，多值，节点/关系均可]：信息出处\n"
+    );
+}
+
+#[test]
+fn lexicon_summary_total_count_includes_properties() {
+    let summary = OntologyLexiconSummary {
+        relation_types: vec![LexiconTermSummary {
+            term_key: "contains".into(),
+            display_name: "包含".into(),
+            description: "父包含子".into(),
+        }],
+        classes: vec![LexiconTermSummary {
+            term_key: "concept".into(),
+            display_name: "概念".into(),
+            description: "抽象单元".into(),
+        }],
+        properties: vec![LexiconPropertySummary {
+            term_key: "confidence".into(),
+            ..Default::default()
+        }],
+        synonyms: vec![],
+    };
+    assert_eq!(summary.total_count(), 3);
+    assert!(!summary.is_empty());
+}
+
+/// 旧快照（三段）反序列化兼容：properties 缺失 → 空段，词表仍可用
+#[test]
+fn lexicon_summary_deserializes_without_properties() {
+    let json = r#"{"relation_types":[],"classes":[],"synonyms":[]}"#;
+    let summary: OntologyLexiconSummary = serde_json::from_str(json).expect("deserialize");
+    assert!(summary.properties.is_empty());
+    assert!(summary.is_empty());
+}
+
+#[test]
 fn preset_relation_type_direction_defaults_to_undirected() {
     // 旧快照无 direction 字段：serde default 兜底，双向兼容不破 seed
     let json = r#"{"term_key": "contains", "display_name": "包含", "description": "组成关系"}"#;

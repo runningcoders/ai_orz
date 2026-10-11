@@ -35,6 +35,9 @@ pub const ROLE_DATA_ANALYST: &str = "data_analyst";
 /// 客服 / 接待通用角色（作为通用 reception fallback 可命中）
 pub const ROLE_SERVICE: &str = "service";
 
+/// 图谱专家 Agent（知识图谱与本体词表的专职维护者，seed 预置基础员工之一）
+pub const ROLE_KNOWLEDGE_GRAPH_SPECIALIST: &str = "knowledge_graph_specialist";
+
 /// 返回所有系统预设角色的列表（用于前端展示预设 chip 下拉）
 pub const SYSTEM_PRESET_ROLES: &[&str] = &[
     ROLE_RECEPTION,
@@ -46,6 +49,7 @@ pub const SYSTEM_PRESET_ROLES: &[&str] = &[
     ROLE_CODER,
     ROLE_DATA_ANALYST,
     ROLE_SERVICE,
+    ROLE_KNOWLEDGE_GRAPH_SPECIALIST,
 ];
 
 /// 预设角色 → 展示名称（中文标签，用于前端 chip 显示）
@@ -60,6 +64,7 @@ pub fn preset_role_display(role: &str) -> Option<&'static str> {
         ROLE_CODER => Some("代码开发"),
         ROLE_DATA_ANALYST => Some("数据分析"),
         ROLE_SERVICE => Some("客服接待"),
+        ROLE_KNOWLEDGE_GRAPH_SPECIALIST => Some("图谱专家"),
         _ => None,
     }
 }

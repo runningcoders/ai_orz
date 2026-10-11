@@ -7,9 +7,10 @@
 //! - 结果聚合排序
 
 use crate::models::memory::{
-    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
-    MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
+    KnowledgeNodeRelationPo, KnowledgePropertyPo, KnowledgeReferencePo, LongTermKnowledgeNodePo,
+    Memory, MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
+use crate::models::ontology::OntologyPropertyPo;
 use crate::models::vector::{
     MatchType, ReindexDecision, SearchMatchInfo, VectorIndexParams, Vectorizable,
 };
@@ -23,7 +24,13 @@ use crate::service::dao::ontology::OntologyDao;
 use async_trait::async_trait;
 use common::enums::MemoryStatus;
 use common::enums::MemoryType;
+use common::enums::ontology::{Cardinality, PropertyTargetType};
 use common::error::{Result, bail_err};
+use common::ontology::normalize;
+use common::ontology_property::{
+    PropertyEntry, PropertyFilter, PropertyIssue, PropertySaveReport, PropertyValueIssue,
+    PropertyWriteIssue, ValueRange, allows_append, validate_property_value,
+};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
@@ -225,6 +232,68 @@ pub trait MemoryDal: Send + Sync {
         max_breadth: i32,
         strategy: TraversalStrategy,
     ) -> Result<Vec<Memory>>;
+
+    // ========== 实体属性（ABox 泛化挂载：节点 / 边共用一张表） ==========
+
+    /// ✍️ 写入一个载体的属性（带本体门闩，部分成功语义）
+    ///
+    /// # 门闩顺序（每条独立判定，一条坏不连累一批）
+    /// 1. `applies_to` 载体门闩 —— 定义声明了适用载体却没命中 ⇒ 告警后照写；
+    /// 2. `data_type` 类型门闩 —— 值形态与声明不符 ⇒ **拒绝本条**（这是写错，
+    ///    不是认知分歧，没有解释空间）；
+    /// 3. `value_range` 值域 / 白名单 —— 越界 ⇒ 告警后照写（本体是包容的抽象）；
+    /// 4. `cardinality` 基数 —— 单值属性被重复写 ⇒ 拒绝本条（无处安置）。
+    ///
+    /// 本体未定义的 `term_key` 走**兜底写入**：按值自身类型落库并记
+    /// `UndefinedProperty` 告警，不丢数据（术语漂移是常态，写侧不裁决）。
+    ///
+    /// # 返回值语义
+    /// `Ok(report)` **不代表全部写入成功**——非法条目在 `report.issues` 里。
+    /// 这是刻意对齐本体的软门禁哲学：漂移不拦截、不撤回，只标记待审。
+    ///
+    /// # 单值属性的槽位归一
+    /// `Cardinality::Single` 一律强制 `ordinal = 0`，调用方传什么都一样：
+    /// 「同一个槽位被新值取代」正是版本化修正的本意，不算基数冲突。
+    async fn save_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+        entries: Vec<PropertyEntry>,
+    ) -> Result<PropertySaveReport>;
+
+    /// 📖 取一个载体的全部生效属性（历史版本不返回）
+    async fn list_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+    ) -> Result<Vec<KnowledgePropertyPo>>;
+
+    /// 📖 批量取多个载体的生效属性（防 N+1；搜索结果回显一趟查完）
+    async fn list_entity_properties_batch(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
+
+    /// 🔍 按属性条件**精确召回**载体 id（结构化过滤入口）
+    ///
+    /// # 为什么是独立召回通道而不是搜索过滤器
+    /// `MemoryQuery` 的字段会被转译成向量库谓词下推（见 `dao/memory/vector.rs`），
+    /// 而 `VectorField` 只有九个取值、属性值不在向量 payload 里 ⇒ 挂到
+    /// `MemoryQuery` 上会被向量通道**静默忽略**、只被 SQL 通道生效，两条召回
+    /// 通道语义割裂。这里直接反查业务表拿 id，由调用方注入
+    /// `MemoryQuery.ids`（该字段明确定位为「回业务表过滤兜底」，对三条通道一视同仁）。
+    ///
+    /// # AND 语义
+    /// 多个条件逐个反查后取交集；运算符与值类型不匹配（如文本用 `Gt`）直接报错，
+    /// **不做静默放宽**——否则会返回过宽的 id 集，让调用方以为筛过了。
+    async fn query_entities_by_properties(
+        &self,
+        ctx: RequestContext,
+        filters: &[PropertyFilter],
+    ) -> Result<Vec<String>>;
 
     /// 🏛️ 将未沉淀的短期记忆总结并沉淀为长期知识
     ///
@@ -846,6 +915,221 @@ impl MemoryDal for MemoryDalImpl {
 
         let nodes = self.fetch_nodes_by_ids(ctx.clone(), &visited_nodes).await?;
         Ok(self.build_graph_memories(nodes, result_relations))
+    }
+
+    async fn save_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+        entries: Vec<PropertyEntry>,
+    ) -> Result<PropertySaveReport> {
+        if entries.is_empty() {
+            return Ok(PropertySaveReport::default());
+        }
+
+        // 词表很小，既有做法就是全量加载 + 内存映射（与 load_lexicon 同口径），
+        // 不做「按 applies_to 过滤的 SQL 查询」
+        let defs = self.ontology_dao.list_all_properties(ctx.clone()).await?;
+        let def_map: HashMap<String, OntologyPropertyPo> =
+            defs.into_iter().map(|d| (d.term_key.clone(), d)).collect();
+
+        // 基数判定需要知道「该槽位以外已占了几条」（IO，故在 DAL 取）
+        let existing = self
+            .memory_dao
+            .list_active_properties(ctx.clone(), target_type, target_id)
+            .await?;
+
+        let mut issues: Vec<PropertyIssue> = Vec::new();
+        let mut to_write: Vec<KnowledgePropertyPo> = Vec::new();
+        // 批内占位：同一批次重复写同一属性也要计入基数
+        let mut batch_taken: HashMap<String, usize> = HashMap::new();
+
+        for entry in entries {
+            let term_key = normalize(&entry.term_key);
+            if term_key.is_empty() {
+                // 空锚点无处挂载，跳过（防御性分支：写进去会成为查不到的孤儿行）
+                log_warn!(
+                    ctx,
+                    "ontology_property",
+                    "属性 term_key 归一化后为空，跳过写入: {:?}",
+                    entry.term_key
+                );
+                continue;
+            }
+
+            // —— 门闩 0：本体是否已定义该属性 ——
+            // 未定义 ⇒ 按值自身类型兜底写入（不丢数据），只记告警：
+            // 术语漂移是常态，写侧不裁决认知分歧
+            let (data_type, cardinality, range, target_allowed) = match def_map.get(&term_key) {
+                Some(def) => (
+                    def.data_type(),
+                    def.cardinality(),
+                    def.value_range(),
+                    def.allows_target(target_type),
+                ),
+                None => {
+                    issues.push(PropertyIssue {
+                        term_key: term_key.clone(),
+                        kind: PropertyWriteIssue::UndefinedProperty,
+                    });
+                    (
+                        entry.value.data_type(),
+                        Cardinality::Single,
+                        ValueRange::default(),
+                        true,
+                    )
+                }
+            };
+
+            // —— 门闩 1：载体 ——（软门禁，记录后照写）
+            if !target_allowed {
+                issues.push(PropertyIssue {
+                    term_key: term_key.clone(),
+                    kind: PropertyWriteIssue::TargetNotAllowed,
+                });
+            }
+
+            // —— 门闩 2 + 3：类型（硬拦）与值域（软门禁）——
+            if let Err(value_issue) = validate_property_value(data_type, &entry.value, &range) {
+                let kind = match value_issue {
+                    PropertyValueIssue::TypeMismatch { expected } => {
+                        PropertyWriteIssue::TypeMismatch { expected }
+                    }
+                    PropertyValueIssue::NumberOutOfRange => PropertyWriteIssue::NumberOutOfRange,
+                    PropertyValueIssue::NotInEnumValue => PropertyWriteIssue::NotInEnumValue,
+                };
+                let rejects = kind.rejects_write();
+                issues.push(PropertyIssue {
+                    term_key: term_key.clone(),
+                    kind,
+                });
+                if rejects {
+                    continue;
+                }
+            }
+
+            // —— 门闩 4：基数 ——
+            // 单值属性强制槽位 0：新值取代旧值正是版本化修正的本意，不算冲突
+            let ordinal = match cardinality {
+                Cardinality::Single => 0,
+                Cardinality::Many => entry.ordinal,
+            };
+            let occupied_other = existing
+                .iter()
+                .filter(|p| p.term_key == term_key && p.ordinal != ordinal)
+                .count()
+                + batch_taken.get(&term_key).copied().unwrap_or(0);
+            if !allows_append(cardinality, occupied_other) {
+                issues.push(PropertyIssue {
+                    term_key: term_key.clone(),
+                    kind: PropertyWriteIssue::CardinalityExceeded,
+                });
+                continue;
+            }
+            *batch_taken.entry(term_key.clone()).or_insert(0) += 1;
+
+            to_write.push(KnowledgePropertyPo::new(
+                target_type,
+                target_id.to_string(),
+                term_key,
+                entry.value,
+                ordinal,
+            ));
+        }
+
+        if to_write.is_empty() {
+            return Ok(PropertySaveReport {
+                accepted: 0,
+                issues,
+            });
+        }
+
+        // 整批一个事务：不留「一半新版一半旧版」的中间态
+        self.memory_dao
+            .batch_upsert_properties(ctx.clone(), &to_write)
+            .await?;
+
+        if !issues.is_empty() {
+            log_warn!(
+                ctx,
+                "ontology_property",
+                "实体属性写入 {} 条，{} 条有判定问题（{} 条被拒）",
+                to_write.len(),
+                issues.len(),
+                issues.iter().filter(|i| i.kind.rejects_write()).count()
+            );
+        }
+
+        Ok(PropertySaveReport {
+            accepted: to_write.len(),
+            issues,
+        })
+    }
+
+    async fn list_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+    ) -> Result<Vec<KnowledgePropertyPo>> {
+        self.memory_dao
+            .list_active_properties(ctx, target_type, target_id)
+            .await
+    }
+
+    async fn list_entity_properties_batch(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
+        if targets.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        self.memory_dao
+            .list_active_properties_batch(ctx, targets)
+            .await
+    }
+
+    async fn query_entities_by_properties(
+        &self,
+        ctx: RequestContext,
+        filters: &[PropertyFilter],
+    ) -> Result<Vec<String>> {
+        if filters.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut intersection: Option<HashSet<String>> = None;
+        for filter in filters {
+            // 运算符与值类型不匹配（如文本用 Gt）是调用方写错，直接报错：
+            // DAO 侧会静默返回空集，但在这里静默放宽会让调用方误以为「筛过了」
+            if !filter.is_supported() {
+                bail_err!(
+                    InvalidRequest,
+                    "属性 {} 的反查运算符不支持值类型 {}（仅 number 支持比较运算）",
+                    filter.term_key,
+                    filter.value.data_type().as_str()
+                );
+            }
+            let hits = self
+                .memory_dao
+                .query_properties_by_value(ctx.clone(), filter)
+                .await?;
+            let ids: HashSet<String> = hits.into_iter().map(|p| p.target_id).collect();
+            intersection = Some(match intersection {
+                None => ids,
+                Some(acc) => acc.intersection(&ids).cloned().collect(),
+            });
+            // 已经空了就不用再查后面的条件
+            if intersection.as_ref().is_some_and(|s| s.is_empty()) {
+                break;
+            }
+        }
+
+        let mut ids: Vec<String> = intersection.unwrap_or_default().into_iter().collect();
+        ids.sort();
+        Ok(ids)
     }
 
     async fn mark_short_term_settled(

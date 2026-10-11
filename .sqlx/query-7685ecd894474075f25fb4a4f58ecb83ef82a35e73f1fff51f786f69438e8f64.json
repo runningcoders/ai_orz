@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO knowledge_property (\n    id, target_type, target_id, term_key, data_type, ordinal,\n    value_text, value_num, value_bool, value_ref, \"status\", created_at, updated_at\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 13
+    },
+    "nullable": []
+  },
+  "hash": "7685ecd894474075f25fb4a4f58ecb83ef82a35e73f1fff51f786f69438e8f64"
+}

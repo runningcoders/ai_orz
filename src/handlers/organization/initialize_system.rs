@@ -367,25 +367,68 @@ async fn create_preset_reception_agent(
         .find(|a| a.id == "TEMPLATE_RECEPTION_AGENT")
         .ok_or_else(|| Error::internal("种子配置缺少 TEMPLATE_RECEPTION_AGENT"))?;
 
-    // 用模板字段创建，model_provider_id 用初始化配置的 chat provider（无则留空）
-    let po = AgentPo::new(
-        agent_def.name.clone(),
-        agent_def.roles.clone(),
-        agent_def.description.clone(),
-        agent_def.capabilities.clone(),
-        agent_def.soul.clone(),
-        chat_provider_id.clone().unwrap_or_default(),
-        owner_id.to_string(),
-    );
-    // 创建即 Incubating（create_agent 强制状态），缺 model 由此状态表达
-    let agent = Agent::from_po(po);
-    hr::domain()
+    // ⚠️ id 必须与 seed 预置对齐：若这里用新生成的 id 建人，后续「同步预置 Agent」
+    // 按 seed 的 TEMPLATE_RECEPTION_AGENT 查不到行 ⇒ 再造一条，库里就出现两张「前台接待」。
+    // 故初始化直接占用 seed 的 id；该 id 行已存在（init 失败重试）则复用本体。
+    let preset_id = agent_def.id.clone();
+    let reused = hr::domain()
         .agent_manage()
-        .create_agent(ctx.clone(), &agent)
-        .await?;
-    let agent_id = agent.po.id.clone();
+        .query(
+            ctx.clone(),
+            crate::service::dao::agent::AgentQuery {
+                ids: Some(vec![preset_id.clone()]),
+                ..Default::default()
+            },
+        )
+        .await?
+        .items
+        .into_iter()
+        .next();
+
+    let agent_id = match reused {
+        Some(mut row) => {
+            sys_info!(
+                "initialize_system: 预置前台 Agent {} 已存在（status={:?}），复用",
+                row.po.id,
+                row.po.status
+            );
+            if let Some(pid) = chat_provider_id.clone()
+                && row.po.model_provider_id != pid
+            {
+                row.po.model_provider_id = pid;
+                hr::domain()
+                    .agent_manage()
+                    .update_agent(ctx.clone(), &row)
+                    .await?;
+            }
+            row.po.id
+        }
+        None => {
+            // 用模板字段创建，model_provider_id 用初始化配置的 chat provider（无则留空）
+            let mut po = AgentPo::new(
+                agent_def.name.clone(),
+                agent_def.roles.clone(),
+                agent_def.description.clone(),
+                agent_def.capabilities.clone(),
+                agent_def.soul.clone(),
+                chat_provider_id.clone().unwrap_or_default(),
+                owner_id.to_string(),
+            );
+            po.id = preset_id;
+            // 基础员工出生即带 seed 的完整运行时配置（工具包/技能包），不靠后续补装
+            po.runtime_config = agent_def.runtime_config.clone();
+            // 创建即 Incubating（create_agent 强制状态），缺 model 由此状态表达
+            let agent = Agent::from_po(po);
+            hr::domain()
+                .agent_manage()
+                .create_agent(ctx.clone(), &agent)
+                .await?;
+            agent.po.id.clone()
+        }
+    };
 
     // 若初始化已配置对话模型：直接入职（Interviewing → PendingOnboard → Onboarded），立即可用
+    // 新建行从 Incubating 起走，复用行可能停在中间态 ⇒ 按当前状态沿边推进到 Onboarded
     if chat_provider_id.is_some() {
         let mut agent = hr::domain()
             .agent_manage()
@@ -396,19 +439,28 @@ async fn create_preset_reception_agent(
             )
             .await?
             .ok_or_else(|| Error::not_found(format!("前台 Agent {} 不存在", agent_id)))?;
-        hr::domain()
-            .agent_manage()
-            // 初创 → 面试中：按 roles/capabilities 完成职业选择
-            .transition_status(ctx.clone(), &mut agent, AgentStatus::Interviewing, None)
-            .await?;
-        hr::domain()
-            .agent_manage()
-            .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard, None)
-            .await?;
-        hr::domain()
-            .agent_manage()
-            .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded, None)
-            .await?;
+        let mut hops = 0;
+        while agent.po.status != AgentStatus::Onboarded && hops < 4 {
+            hops += 1;
+            let next = match agent.po.status {
+                // 初创 → 面试中：按 roles/capabilities 完成职业选择
+                AgentStatus::Incubating => AgentStatus::Interviewing,
+                AgentStatus::Interviewing => AgentStatus::PendingOnboard,
+                AgentStatus::PendingOnboard => AgentStatus::Onboarded,
+                other => {
+                    sys_info!(
+                        "initialize_system: 前台 Agent {} 状态 {:?} 不在入职链路上，跳过推进",
+                        agent_id,
+                        other
+                    );
+                    break;
+                }
+            };
+            hr::domain()
+                .agent_manage()
+                .transition_status(ctx.clone(), &mut agent, next, None)
+                .await?;
+        }
         sys_info!(
             "initialize_system: 前台 Agent {} 已绑定对话模型并入职",
             agent_id

@@ -62,6 +62,7 @@ mod tests {
                 inverse_key: None,
                 direction: "undirected".to_string(),
             }],
+            properties: vec![],
             synonym_mappings: vec![],
         }
     }
@@ -308,10 +309,11 @@ mod tests {
         assert_eq!(snapshot.version, "1.0.0");
         assert_eq!(snapshot.users.len(), 1);
         assert_eq!(snapshot.model_providers.len(), 2);
-        assert_eq!(snapshot.agents.len(), 2);
-        // 预置 10 个技能（6 个 neural + 1 个 project_management + 1 个 git_branch_workflow
+        // 预置 3 个基础员工：前台接待 / 招聘官 / 图谱专家
+        assert_eq!(snapshot.agents.len(), 3);
+        // 预置 11 个技能（7 个 neural + 1 个 project_management + 1 个 git_branch_workflow
         // + 1 个 agent_recruitment + 1 个 user_reception）
-        assert_eq!(snapshot.skills.len(), 10);
+        assert_eq!(snapshot.skills.len(), 11);
         assert_eq!(
             snapshot.agents[0].model_provider_id,
             "TEMPLATE_CHAT_PROVIDER"
@@ -340,6 +342,106 @@ mod tests {
         assert_eq!(onboard.required_skill_packs, vec!["project_management"]);
     }
 
+    /// 预置 Agent 的 `runtime_config` 必须是「可直接落库」的完整配置
+    ///
+    /// 背景（回归护栏）：`apply_single_preset_agent` 的 Overwrite 策略会**整行覆写**
+    /// `runtime_config`（只保留本地 model_provider_id 与生命周期状态）。若 seed 里写空壳
+    /// （如 `installed_tags: []`），用户点一次「同步预置 Agent」就会把在用 Agent 的工具包
+    /// / 技能包清空 ⇒ 该 Agent 立刻失去全部非神经工具。seed 与在用配置必须同口径。
+    #[test]
+    fn test_preset_agents_runtime_config_is_complete() {
+        let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+        for agent in &snapshot.agents {
+            let cfg: serde_json::Value = serde_json::from_str(&agent.runtime_config)
+                .unwrap_or_else(|e| {
+                    panic!("预置 Agent {} 的 runtime_config 非法 JSON: {e}", agent.id)
+                });
+            let tags = cfg
+                .get("installed_tags")
+                .and_then(|v| v.as_array())
+                .unwrap_or_else(|| panic!("预置 Agent {} 缺少 installed_tags", agent.id));
+            assert!(
+                tags.iter().any(|t| t.as_str() == Some("neural")),
+                "预置 Agent {} 的 installed_tags 缺少 neural（出生自带包，缺失即残废）",
+                agent.id
+            );
+            assert!(
+                !agent.soul.trim().is_empty() && !agent.capabilities.is_empty(),
+                "预置 Agent {} 的人设或能力关键词为空（覆写会打空在用 Agent）",
+                agent.id
+            );
+            // 基础员工一律显式持有 `ontology` 消费侧包（查词表 / 写记忆 / 检索 / 看图谱）。
+            // 注意它**不是可达性前提**：消费侧 13 个工具恒带 neural（出生自带），
+            // 见 `ontology_consumer_tools_are_neural_reachable`。显式标注是为了语义自洽
+            //（基础员工 = 认知基建全量）与未来 proof（若将来出现非 neural 的消费侧工具，
+            // 已标注的员工不会突然失能）。
+            assert!(
+                tags.iter().any(|t| t.as_str() == Some("ontology")),
+                "预置基础员工 {} 缺少 ontology 消费侧工具包",
+                agent.id
+            );
+            // 工具包与技能包必须**成套**：本体这条线上，工具侧是消费侧 13 个（恒 neural），
+            // 技能侧是 `TEMPLATE_ONTOLOGY_COGNITION`（tags 含 ontology）。只装一半的表现是
+            // 「模型有工具没人教」或「被教了却调不到工具」——两侧都不报错，靠人肉才看得出来。
+            let packs = cfg
+                .get("installed_skill_packs")
+                .and_then(|v| v.as_array())
+                .unwrap_or_else(|| panic!("预置 Agent {} 缺少 installed_skill_packs", agent.id));
+            assert!(
+                packs.iter().any(|t| t.as_str() == Some("ontology")),
+                "预置基础员工 {} 的 installed_skill_packs 缺少 ontology（工具包与技能包必须成套）",
+                agent.id
+            );
+        }
+    }
+
+    /// 预置 Agent 的 id 必须是 `TEMPLATE_*` 规范 id。
+    ///
+    /// **本护栏防的回归**：seed 与运行库的匹配键是 **id**（见 `sync_preset_agents`
+    /// 「匹配键是 Agent ID（`TEMPLATE_*`），不是名称」）。若预置条目用运行时生成的裸 id
+    /// （曾经这么干过），则：① 新装实例按 seed id 建一条；② 旧库里那条同名人仍在
+    /// ⇒ 两张「图谱专家」重复造人。裸 id 也无法一眼区分「预置」与「用户自建」。
+    #[test]
+    fn test_preset_agent_ids_use_template_prefix() {
+        let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+        assert!(!snapshot.agents.is_empty(), "预置 Agent 列表为空");
+        for agent in &snapshot.agents {
+            assert!(
+                agent.id.starts_with("TEMPLATE_"),
+                "预置 Agent {} 的 id 不是 TEMPLATE_* 规范 id（按 id 匹配 ⇒ 会重复造人）",
+                agent.id
+            );
+        }
+    }
+
+    /// 图谱专家是第三个基础员工
+    #[test]
+    fn test_preset_graph_specialist_agent() {
+        let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+        let g = snapshot
+            .agents
+            .iter()
+            .find(|a| a.roles.iter().any(|r| r == "knowledge_graph_specialist"))
+            .expect("预置图谱专家 Agent 缺失");
+        assert_eq!(g.name, "图谱专家");
+        assert_eq!(g.id, "TEMPLATE_KNOWLEDGE_GRAPH_AGENT");
+        let cfg: serde_json::Value = serde_json::from_str(&g.runtime_config).unwrap();
+        let tags: Vec<&str> = cfg["installed_tags"]
+            .as_array()
+            .expect("installed_tags 缺失")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert!(
+            tags.contains(&"ontology"),
+            "图谱专家需持有 ontology 消费侧工具包"
+        );
+        assert!(
+            tags.contains(&"ontology_management"),
+            "图谱专家需持有 ontology_management 治理侧工具包"
+        );
+    }
+
     #[test]
     fn test_organization_def_backward_compat_without_config() {
         // 老快照没有 organization.config → config 为 None，不得反序列化失败
@@ -361,8 +463,20 @@ mod tests {
         assert!(ids.contains(&"TEMPLATE_MEMORY_COGNITION"));
         assert!(ids.contains(&"TEMPLATE_COMMUNICATION"));
         assert!(ids.contains(&"TEMPLATE_PROJECT_MANAGEMENT"));
+        assert!(ids.contains(&"TEMPLATE_ONTOLOGY_COGNITION"));
 
-        // 全部 6 个神经技能必须包含 neural tag（含自我进化 / 项目上下文两个新技能）
+        // 全部 7 个神经技能必须包含 neural tag（含自我进化 / 项目上下文 / 本体认知三个新技能）
+        //
+        // ⚠️ 技能侧 neural 的真实语义是「**出生自带**」：`BASE_AGENT_PACKS` 含 neural ⇒
+        // create_agent / train_agent 阶段 1 会装 neural 技能包 ⇒ 装上所有 tags 含 neural
+        // 的已发布技能。摘掉本体认知的 neural ⇒ 新 Agent 出生不再自动持有本体方法论副本，
+        // 只有显式装了 `ontology` 技能包的才有。
+        //
+        // 这与工具侧护栏 `ontology_consumer_tools_are_neural_reachable` 是**成套**的两侧：
+        // - 工具侧 neural = 可达性（人人能写记忆 / 查词表）；
+        // - 技能侧 neural = 出生自带（人人生而懂怎么给知识分类）。
+        // 只留一侧都会退化：有工具没方法论 ⇒ 凭直觉造词污染蜂巢共享图谱（无租户）；
+        // 有方法论没工具 ⇒ 技能里的引导全是空话。两侧都不报错，故各锁一条。
         let neural_ids = [
             "TEMPLATE_TOOL_MANAGEMENT",
             "TEMPLATE_SKILL_MANAGEMENT",
@@ -370,6 +484,7 @@ mod tests {
             "TEMPLATE_COMMUNICATION",
             "TEMPLATE_SELF_EVOLUTION",
             "TEMPLATE_PROJECT_CONTEXT_COGNITION",
+            "TEMPLATE_ONTOLOGY_COGNITION",
         ];
         for skill in &snapshot.skills {
             if neural_ids.contains(&skill.id.as_str()) {

@@ -375,7 +375,8 @@ async fn settle_body(ctx: RequestContext, agent_id: &str, settle_limit: usize) -
     name = "Settle Working Memory",
     description = "Trigger the agent's rest-and-consolidate cycle: pending working-memory entries are handed to the agent, which autonomously distills them into long-term knowledge nodes and relations; processed entries are then marked Settled. Returns the number settled (0 if nothing is pending or the agent is not idle).",
     params = "common::api::SettleMemoryParams",
-    neural
+    neural,
+    tags = "ontology"
 )]
 #[generate_http_handler]
 pub async fn settle_memory(

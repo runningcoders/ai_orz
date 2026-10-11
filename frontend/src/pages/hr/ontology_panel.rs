@@ -1,11 +1,13 @@
 //! 本体词表管理页（/hr/ontology-lexicon）
 //!
-//! 4 个子标签 + 三个辅助 Modal：
+//! 5 个子标签 + 四个辅助 Modal：
 //! 1. **总览**：词表注入视图（与神经技能注入共用同一契约的只读快照）+ 漂移看板
 //!    （词表覆盖率 / 漂移关系数 / 漂移节点占比 + Top 漂移词，可下钻明细）
 //! 2. **实体类词表**：分页列表 + 状态/关键词筛选 + 新增 / 编辑 / 退役（软删除）
 //! 3. **关系类型词表**：同上，附域/值域约束、边权重基数、反向关系
-//! 4. **同义映射**：分页列表 + 目标种类筛选 + 新增 / 删除（物理删除）
+//! 4. **属性定义**：分页列表 + 状态/关键词筛选 + 新增 / 编辑 / 退役；表单承载
+//!    值类型 / 基数 / 允许载体 / 取值约束（这些会随词表注入提示词，是模型写值依据）
+//! 5. **同义映射**：分页列表 + 目标种类筛选 + 新增 / 删除（物理删除）
 //!
 //! 各标签共享同一组 signals，初始加载一次性拉取全部数据，切换标签仅切换渲染不重复请求。
 //!
@@ -13,24 +15,30 @@
 //! 下钻 Modal：漂移词的关系（边）明细 + 节点明细。
 
 use common::api::{
-    CreateOntologyClassRequest, CreateOntologyRelationTypeRequest, CreateOntologySynonymRequest,
-    DriftClassDetail, DriftRelationDetail, GetDriftDashboardRequest, GetDriftDashboardResponse,
-    ListDriftClassDetailsRequest, ListDriftRelationDetailsRequest, ListOntologyClassesRequest,
-    ListOntologyLexiconResponse, ListOntologyRelationTypesRequest, ListOntologySynonymsRequest,
-    OntologyClassItem, OntologyRelationTypeItem, OntologySynonymItem, PaginationParams,
+    CreateOntologyClassRequest, CreateOntologyPropertyRequest, CreateOntologyRelationTypeRequest,
+    CreateOntologySynonymRequest, DriftClassDetail, DriftRelationDetail, GetDriftDashboardRequest,
+    GetDriftDashboardResponse, ListDriftClassDetailsRequest, ListDriftRelationDetailsRequest,
+    ListOntologyClassesRequest, ListOntologyLexiconResponse, ListOntologyPropertiesRequest,
+    ListOntologyRelationTypesRequest, ListOntologySynonymsRequest, OntologyClassItem,
+    OntologyPropertyItem, OntologyRelationTypeItem, OntologySynonymItem, PaginationParams,
     PresetOntologySyncStrategy, PreviewPresetOntologyResponse, SyncPresetOntologyRequest,
-    SyncPresetOntologyResponse, UpdateOntologyClassRequest, UpdateOntologyRelationTypeRequest,
+    SyncPresetOntologyResponse, UpdateOntologyClassRequest, UpdateOntologyPropertyRequest,
+    UpdateOntologyRelationTypeRequest,
 };
 use common::enums::OntologyStatus;
+use common::enums::ontology::{Cardinality, PropertyDataType, PropertyTargetType};
 use common::ontology::TermKind;
+use common::ontology_property::ValueRange;
 use dioxus::prelude::*;
 
 use crate::api::hr::{
-    create_ontology_class, create_ontology_relation_type, create_ontology_synonym,
-    delete_ontology_synonym, get_ontology_drift_dashboard, list_ontology_classes,
-    list_ontology_drift_class_details, list_ontology_drift_relation_details, list_ontology_lexicon,
-    list_ontology_relation_types, list_ontology_synonyms, retire_ontology_class,
-    retire_ontology_relation_type, update_ontology_class, update_ontology_relation_type,
+    create_ontology_class, create_ontology_property, create_ontology_relation_type,
+    create_ontology_synonym, delete_ontology_synonym, get_ontology_drift_dashboard,
+    list_ontology_classes, list_ontology_drift_class_details, list_ontology_drift_relation_details,
+    list_ontology_lexicon, list_ontology_properties, list_ontology_relation_types,
+    list_ontology_synonyms, retire_ontology_class, retire_ontology_property,
+    retire_ontology_relation_type, update_ontology_class, update_ontology_property,
+    update_ontology_relation_type,
 };
 use crate::api::seed::{preview_preset_ontology, sync_preset_ontology};
 use crate::components::confirm_dialog::ConfirmDialog;
@@ -94,6 +102,50 @@ fn split_list(v: &str) -> Vec<String> {
         .collect()
 }
 
+// ==================== 属性定义表单：字符串 ↔ 强类型枚举 ====================
+//
+// 表单用字符串 signal（Dioxus 受控输入的通用形态），提交前转强类型枚举。
+// 非法值走 `parse().unwrap_or_default()` 而非报错：下拉框已限定取值，
+// 这里只防手改 DOM 与未来新增变体时的旧快照，与后端软门禁同口径。
+
+/// 值类型下拉值 → PropertyDataType
+fn parse_data_type(v: &str) -> PropertyDataType {
+    v.parse().unwrap_or_default()
+}
+
+/// 基数下拉值 → Cardinality
+fn parse_cardinality(v: &str) -> Cardinality {
+    v.parse().unwrap_or_default()
+}
+
+/// 载体清单（逗号分隔 node / relation）→ PropertyTargetType 清单；拼错项丢弃
+fn parse_applies_to(v: &str) -> Vec<PropertyTargetType> {
+    split_list(v)
+        .into_iter()
+        .filter_map(|s| s.parse::<PropertyTargetType>().ok())
+        .collect()
+}
+
+/// PropertyTargetType 清单 → 表单回填文本
+fn applies_to_text(v: &[PropertyTargetType]) -> String {
+    v.iter()
+        .map(|t| t.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 取值约束三输入（min / max / 枚举白名单）→ ValueRange
+///
+/// 数字解析失败即视为未填（不做静默回退）：写侧据此校验，猜出来的边界比
+/// 没有边界更危险；空则退化为「只校验数据类型」。
+fn parse_value_range_form(min: &str, max: &str, enum_text: &str) -> ValueRange {
+    ValueRange {
+        min: min.trim().parse::<f64>().ok(),
+        max: max.trim().parse::<f64>().ok(),
+        enum_values: split_list(enum_text),
+    }
+}
+
 fn status_badge(status: OntologyStatus) -> Element {
     match status {
         OntologyStatus::Active => {
@@ -121,6 +173,8 @@ enum OntologyTab {
     Classes,
     /// 关系类型词表
     Relations,
+    /// 属性定义词表
+    Properties,
     /// 同义映射
     Synonyms,
 }
@@ -131,6 +185,7 @@ impl OntologyTab {
             OntologyTab::Overview => "总览",
             OntologyTab::Classes => "实体类词表",
             OntologyTab::Relations => "关系类型词表",
+            OntologyTab::Properties => "属性定义",
             OntologyTab::Synonyms => "同义映射",
         }
     }
@@ -160,6 +215,15 @@ pub fn HrOntologyLexicon() -> Element {
     let mut relation_status_filter = use_signal(String::new);
     let mut relation_keyword = use_signal(String::new);
     let mut relation_offset = use_signal(|| 0usize);
+
+    // ===== 属性定义列表 =====
+    let mut properties = use_signal(Vec::<OntologyPropertyItem>::new);
+    let mut properties_total = use_signal(|| 0usize);
+    let mut properties_loading = use_signal(|| false);
+    let mut property_seq = use_signal(|| 0u64);
+    let mut property_status_filter = use_signal(String::new);
+    let mut property_keyword = use_signal(String::new);
+    let mut property_offset = use_signal(|| 0usize);
 
     // ===== 同义映射列表 =====
     let mut synonyms = use_signal(Vec::<OntologySynonymItem>::new);
@@ -199,6 +263,23 @@ pub fn HrOntologyLexicon() -> Element {
     let mut relation_form_inverse = use_signal(String::new);
     let mut relation_saving = use_signal(|| false);
 
+    // ===== 属性定义表单 Modal =====
+    let mut show_property_modal = use_signal(|| false);
+    let mut property_edit_id = use_signal(|| None::<String>);
+    let mut property_form_key = use_signal(String::new);
+    let mut property_form_name = use_signal(String::new);
+    let mut property_form_desc = use_signal(String::new);
+    let mut property_form_data_type = use_signal(|| "string".to_string());
+    let mut property_form_cardinality = use_signal(|| "single".to_string());
+    let mut property_form_applies_to = use_signal(String::new);
+    let mut property_form_domain = use_signal(String::new);
+    let mut property_form_min = use_signal(String::new);
+    let mut property_form_max = use_signal(String::new);
+    let mut property_form_enum = use_signal(String::new);
+    let mut property_form_unit = use_signal(String::new);
+    let mut property_form_required = use_signal(|| false);
+    let mut property_saving = use_signal(|| false);
+
     // ===== 同义映射表单 Modal =====
     let mut show_synonym_modal = use_signal(|| false);
     let mut synonym_form_raw = use_signal(String::new);
@@ -209,6 +290,7 @@ pub fn HrOntologyLexicon() -> Element {
     // ===== 确认框目标 =====
     let mut class_retire_id = use_signal(|| None::<String>);
     let mut relation_retire_id = use_signal(|| None::<String>);
+    let mut property_retire_id = use_signal(|| None::<String>);
     let mut synonym_delete_id = use_signal(|| None::<String>);
 
     // ===== 预置词表同步 Modal =====
@@ -311,6 +393,52 @@ pub fn HrOntologyLexicon() -> Element {
                     Err(e) => toast.error(format!("加载关系类型失败：{e}")),
                 }
                 relations_loading.set(false);
+            }
+        });
+    };
+
+    let request_properties = move |offset: usize| {
+        list_ontology_properties(ListOntologyPropertiesRequest {
+            status: parse_status_filter(&property_status_filter()),
+            domain_class: None,
+            target_type: None,
+            keyword: non_empty(&property_keyword()),
+            pagination: PaginationParams {
+                limit: Some(PAGE_SIZE),
+                offset: Some(offset),
+            },
+        })
+    };
+
+    let mut fetch_properties = move |reset_offset: bool| {
+        if reset_offset {
+            property_offset.set(0);
+        }
+        property_seq.set(property_seq() + 1);
+        let seq = property_seq();
+        properties_loading.set(true);
+        spawn(async move {
+            let offset = property_offset();
+            let res = request_properties(offset).await;
+            if property_seq() == seq {
+                match res {
+                    Ok(page) => {
+                        properties_total.set(page.total);
+                        // 同 fetch_classes：写入缩减末页后钳回最后一个非空页重拉
+                        if page.items.is_empty() && page.total > 0 && offset >= page.total {
+                            property_offset.set((page.total - 1) / PAGE_SIZE * PAGE_SIZE);
+                            if let Ok(page2) = request_properties(property_offset()).await
+                                && property_seq() == seq
+                            {
+                                properties.set(page2.items);
+                            }
+                        } else {
+                            properties.set(page.items);
+                        }
+                    }
+                    Err(e) => toast.error(format!("加载属性定义失败：{e}")),
+                }
+                properties_loading.set(false);
             }
         });
     };
@@ -471,6 +599,7 @@ pub fn HrOntologyLexicon() -> Element {
                     toast.success(msg);
                     fetch_classes(true);
                     fetch_relations(true);
+                    fetch_properties(true);
                     fetch_synonyms(true);
                     fetch_dashboard();
                     fetch_lexicon();
@@ -649,6 +778,98 @@ pub fn HrOntologyLexicon() -> Element {
         }
     };
 
+    // ===== 属性定义写入 =====
+
+    let mut handle_save_property = move || {
+        let display_name = property_form_name().trim().to_string();
+        if display_name.is_empty() {
+            toast.warning("展示名不能为空");
+            return;
+        }
+        let edit_id = property_edit_id();
+        let is_edit = edit_id.is_some();
+        if edit_id.is_none() && property_form_key().trim().is_empty() {
+            toast.warning("规范词 key 不能为空（小写 snake_case）");
+            return;
+        }
+        let data_type = parse_data_type(&property_form_data_type());
+        let cardinality = parse_cardinality(&property_form_cardinality());
+        let applies_to = parse_applies_to(&property_form_applies_to());
+        let domain_classes = split_list(&property_form_domain());
+        let value_range = parse_value_range_form(
+            &property_form_min(),
+            &property_form_max(),
+            &property_form_enum(),
+        );
+        let unit = non_empty(&property_form_unit());
+        let required = property_form_required();
+        property_saving.set(true);
+        spawn(async move {
+            let res = match edit_id {
+                Some(id) => {
+                    update_ontology_property(UpdateOntologyPropertyRequest {
+                        id,
+                        display_name,
+                        description: property_form_desc(),
+                        domain_classes,
+                        applies_to,
+                        data_type,
+                        value_range,
+                        cardinality,
+                        unit,
+                        required,
+                    })
+                    .await
+                }
+                None => {
+                    create_ontology_property(CreateOntologyPropertyRequest {
+                        term_key: property_form_key().trim().to_string(),
+                        display_name,
+                        description: property_form_desc(),
+                        domain_classes,
+                        applies_to,
+                        data_type,
+                        value_range,
+                        cardinality,
+                        unit,
+                        required,
+                    })
+                    .await
+                }
+            };
+            property_saving.set(false);
+            match res {
+                Ok(_) => {
+                    toast.success(if is_edit {
+                        "属性定义已更新"
+                    } else {
+                        "属性定义已创建"
+                    });
+                    show_property_modal.set(false);
+                    fetch_properties(false);
+                    fetch_lexicon();
+                }
+                Err(e) => toast.error(format!("保存失败：{e}")),
+            }
+        });
+    };
+
+    let mut handle_retire_property = move || {
+        if let Some(id) = property_retire_id() {
+            property_retire_id.set(None);
+            spawn(async move {
+                match retire_ontology_property(&id).await {
+                    Ok(_) => {
+                        toast.success("属性定义已退役");
+                        fetch_properties(false);
+                        fetch_lexicon();
+                    }
+                    Err(e) => toast.error(format!("退役失败：{e}")),
+                }
+            });
+        }
+    };
+
     // ===== 同义映射写入 =====
 
     let mut handle_save_synonym = move || {
@@ -714,6 +935,7 @@ pub fn HrOntologyLexicon() -> Element {
         spawn(async move {
             fetch_classes(true);
             fetch_relations(true);
+            fetch_properties(true);
             fetch_synonyms(true);
             fetch_dashboard();
             fetch_lexicon();
@@ -741,6 +963,7 @@ pub fn HrOntologyLexicon() -> Element {
                             OntologyTab::Overview,
                             OntologyTab::Classes,
                             OntologyTab::Relations,
+                            OntologyTab::Properties,
                             OntologyTab::Synonyms,
                         ] {
                             button {
@@ -1269,6 +1492,200 @@ pub fn HrOntologyLexicon() -> Element {
                         }
                     }
 
+                    if active_tab() == OntologyTab::Properties {
+                        // ==================== 属性定义 ====================
+                        HudSection {
+                            eyebrow: Some("PROPERTIES".to_string()),
+                            title: "属性定义".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-primary btn-sm",
+                                    onclick: move |_| {
+                                        property_edit_id.set(None);
+                                        property_form_key.set(String::new());
+                                        property_form_name.set(String::new());
+                                        property_form_desc.set(String::new());
+                                        property_form_data_type.set("string".to_string());
+                                        property_form_cardinality.set("single".to_string());
+                                        property_form_applies_to.set(String::new());
+                                        property_form_domain.set(String::new());
+                                        property_form_min.set(String::new());
+                                        property_form_max.set(String::new());
+                                        property_form_enum.set(String::new());
+                                        property_form_unit.set(String::new());
+                                        property_form_required.set(false);
+                                        show_property_modal.set(true);
+                                    },
+                                    "+ 新增属性"
+                                }
+                            }),
+                            div { class: "flex flex-wrap gap-4 items-end",
+                                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                                    label { class: "label", span { class: "label-text", "状态" } }
+                                    select { class: "select select-bordered hud-input w-full",
+                                        value: "{property_status_filter}",
+                                        onchange: move |e| {
+                                            property_status_filter.set(e.value());
+                                            fetch_properties(true);
+                                        },
+                                        option { value: "", "全部" }
+                                        option { value: "Active", "启用中" }
+                                        option { value: "Retired", "已退役" }
+                                    }
+                                }
+                                div { class: "flex flex-col gap-1 min-w-[140px] flex-[2]",
+                                    label { class: "label", span { class: "label-text", "关键词" } }
+                                    input { class: "input input-bordered hud-input w-full",
+                                        value: "{property_keyword}",
+                                        oninput: move |e| property_keyword.set(e.value()),
+                                        onkeydown: move |evt| {
+                                            if evt.key() == Key::Enter {
+                                                fetch_properties(true);
+                                            }
+                                        },
+                                        placeholder: "按规范词 / 展示名模糊匹配，回车查询"
+                                    }
+                                }
+                                div { class: "flex flex-col gap-1",
+                                    button { class: "btn hud-btn btn-primary",
+                                        onclick: move |_| fetch_properties(true),
+                                        "查询"
+                                    }
+                                }
+                            }
+                            if properties_loading() {
+                                Loading { size: "md" }
+                            } else if properties.is_empty() {
+                                EmptyState { message: "暂无属性定义，点击右上角新增或同步预置词表".to_string() }
+                            } else {
+                                div { class: "overflow-x-auto",
+                                    table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                        colgroup {
+                                            col {}
+                                            col {}
+                                            col {}
+                                            col { class: "w-[84px]" }
+                                            col { class: "w-[104px]" }
+                                            col { class: "w-[96px]" }
+                                            col { class: "w-[160px]" }
+                                            col { class: "w-[88px]" }
+                                            col { class: "w-[140px]" }
+                                            col { class: "w-[132px]" }
+                                        }
+                                        thead {
+                                            tr {
+                                                th { "规范词" }
+                                                th { "展示名" }
+                                                th { "描述" }
+                                                th { "值类型" }
+                                                th { "基数 / 必填" }
+                                                th { "载体" }
+                                                th { "取值约束" }
+                                                th { "状态" }
+                                                th { "更新时间" }
+                                                th { "操作" }
+                                            }
+                                        }
+                                        tbody {
+                                            for p in properties().iter().cloned() {
+                                                {
+                                                    let edit_item = p.clone();
+                                                    let retire_id = p.id.clone();
+                                                    let hint = p.value_range.to_hint();
+                                                    let applies = if p.applies_to.is_empty() {
+                                                        "节点/边".to_string()
+                                                    } else {
+                                                        applies_to_text(&p.applies_to)
+                                                    };
+                                                    let cardinality_label = format!(
+                                                        "{}{}",
+                                                        p.cardinality.as_str(),
+                                                        if p.required { " · 必填" } else { "" }
+                                                    );
+                                                    rsx! {
+                                                        tr { key: "{p.id}",
+                                                            td { span { class: "font-mono text-sm block truncate", title: "{p.term_key}", "{p.term_key}" } }
+                                                            td { class: "truncate", "{p.display_name}" }
+                                                            td {
+                                                                div { class: "line-clamp-2", title: "{p.description}",
+                                                                    "{p.description}"
+                                                                }
+                                                            }
+                                                            td { span { class: "font-mono text-xs", "{p.data_type.as_str()}" } }
+                                                            td { class: "text-xs", "{cardinality_label}" }
+                                                            td { class: "text-xs truncate", title: "{applies}", "{applies}" }
+                                                            td {
+                                                                if hint.is_empty() {
+                                                                    span { class: "opacity-50", "-" }
+                                                                } else {
+                                                                    span { class: "font-mono text-xs block truncate", title: "{hint}", "{hint}" }
+                                                                }
+                                                            }
+                                                            td { {status_badge(p.status)} }
+                                                            td { class: "whitespace-nowrap", "{format_datetime(p.updated_at * 1000)}" }
+                                                            td {
+                                                                div { class: "flex gap-2 items-center",
+                                                                    button { class: "btn hud-btn btn-ghost btn-sm",
+                                                                        onclick: move |_| {
+                                                                            property_edit_id.set(Some(edit_item.id.clone()));
+                                                                            property_form_key.set(edit_item.term_key.clone());
+                                                                            property_form_name.set(edit_item.display_name.clone());
+                                                                            property_form_desc.set(edit_item.description.clone());
+                                                                            property_form_data_type.set(edit_item.data_type.as_str().to_string());
+                                                                            property_form_cardinality.set(edit_item.cardinality.as_str().to_string());
+                                                                            property_form_applies_to.set(applies_to_text(&edit_item.applies_to));
+                                                                            property_form_domain.set(edit_item.domain_classes.join(", "));
+                                                                            property_form_min.set(edit_item.value_range.min.map(|v| v.to_string()).unwrap_or_default());
+                                                                            property_form_max.set(edit_item.value_range.max.map(|v| v.to_string()).unwrap_or_default());
+                                                                            property_form_enum.set(edit_item.value_range.enum_values.join(", "));
+                                                                            property_form_unit.set(edit_item.unit.clone().unwrap_or_default());
+                                                                            property_form_required.set(edit_item.required);
+                                                                            show_property_modal.set(true);
+                                                                        },
+                                                                        "编辑"
+                                                                    }
+                                                                    button { class: "btn hud-btn btn-error btn-sm",
+                                                                        disabled: p.status == OntologyStatus::Retired,
+                                                                        onclick: move |_| property_retire_id.set(Some(retire_id.clone())),
+                                                                        "退役"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if properties_total() > 0 {
+                                div { class: "flex items-center justify-between mt-3",
+                                    span { class: "text-sm opacity-70",
+                                        "共 {properties_total()} 条"
+                                    }
+                                    div { class: "flex gap-2",
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: property_offset() == 0,
+                                            onclick: move |_| {
+                                                property_offset.set(property_offset().saturating_sub(PAGE_SIZE));
+                                                fetch_properties(false);
+                                            },
+                                            "上一页"
+                                        }
+                                        button { class: "btn hud-btn btn-ghost btn-sm",
+                                            disabled: property_offset() + PAGE_SIZE >= properties_total(),
+                                            onclick: move |_| {
+                                                property_offset.set(property_offset() + PAGE_SIZE);
+                                                fetch_properties(false);
+                                            },
+                                            "下一页"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if active_tab() == OntologyTab::Synonyms {
                         // ==================== 同义映射 ====================
                         HudSection {
@@ -1508,6 +1925,140 @@ pub fn HrOntologyLexicon() -> Element {
                             value: "{relation_form_inverse}",
                             oninput: move |e| relation_form_inverse.set(e.value()),
                             placeholder: "如 belongs_to 的反向词 owns；留空 = 无对称反向词"
+                        }
+                    }
+                }
+            }
+
+            // ==================== 属性定义 新增/编辑 Modal ====================
+            Modal {
+                title: if property_edit_id().is_some() { "编辑属性定义".to_string() } else { "新增属性定义".to_string() },
+                show: show_property_modal(),
+                on_close: move |_| show_property_modal.set(false),
+                width_class: Some("max-w-2xl".to_string()),
+                footer: rsx! {
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_property_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-primary", disabled: property_saving(),
+                        onclick: move |_| handle_save_property(),
+                        if property_saving() { "保存中..." } else { "保存" }
+                    }
+                },
+                div { class: "space-y-4",
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "规范词 key *" } }
+                        input { class: "input input-bordered hud-input w-full font-mono",
+                            value: "{property_form_key}",
+                            disabled: property_edit_id().is_some(),
+                            oninput: move |e| property_form_key.set(e.value()),
+                            placeholder: "小写 snake_case，如：confidence"
+                        }
+                        if property_edit_id().is_some() {
+                            span { class: "label-text-alt opacity-60", "创建后不可修改，如需换词请退役后新建" }
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "展示名 *" } }
+                        input { class: "input input-bordered hud-input w-full",
+                            value: "{property_form_name}",
+                            oninput: move |e| property_form_name.set(e.value()),
+                            placeholder: "如：置信度"
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "语义描述" } }
+                        textarea { class: "textarea textarea-bordered hud-input w-full",
+                            rows: "2",
+                            value: "{property_form_desc}",
+                            oninput: move |e| property_form_desc.set(e.value()),
+                            placeholder: "该属性指什么、何时使用（会随词表注入提示词，帮助模型判断）"
+                        }
+                    }
+                    div { class: "grid grid-cols-2 gap-4",
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "值类型" } }
+                            select { class: "select select-bordered hud-input w-full",
+                                value: "{property_form_data_type}",
+                                onchange: move |e| property_form_data_type.set(e.value()),
+                                option { value: "string", "string（文本）" }
+                                option { value: "number", "number（数值）" }
+                                option { value: "boolean", "boolean（布尔）" }
+                                option { value: "date", "date（日期）" }
+                                option { value: "reference", "reference（引用）" }
+                                option { value: "enum", "enum（枚举）" }
+                            }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "基数" } }
+                            select { class: "select select-bordered hud-input w-full",
+                                value: "{property_form_cardinality}",
+                                onchange: move |e| property_form_cardinality.set(e.value()),
+                                option { value: "single", "single（单值）" }
+                                option { value: "many", "many（多值）" }
+                            }
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "允许挂载的载体" } }
+                        input { class: "input input-bordered hud-input w-full font-mono",
+                            value: "{property_form_applies_to}",
+                            oninput: move |e| property_form_applies_to.set(e.value()),
+                            placeholder: "node, relation；留空 = 节点与边皆可"
+                        }
+                        span { class: "label-text-alt opacity-60", "作用域仅限知识图谱域内（节点 / 边），不扩展到 agent / task / project" }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "适用实体类" } }
+                        input { class: "input input-bordered hud-input w-full font-mono",
+                            value: "{property_form_domain}",
+                            oninput: move |e| property_form_domain.set(e.value()),
+                            placeholder: "逗号分隔的实体类 key；留空 = 不限实体类"
+                        }
+                    }
+                    div { class: "border border-base-300 rounded-box p-3 space-y-2",
+                        div { class: "label", span { class: "label-text font-medium", "取值约束（可全留空 = 无约束）" } }
+                        div { class: "grid grid-cols-3 gap-2",
+                            div { class: "form-control w-full",
+                                input { class: "input input-bordered hud-input w-full",
+                                    r#type: "number",
+                                    step: "any",
+                                    value: "{property_form_min}",
+                                    oninput: move |e| property_form_min.set(e.value()),
+                                    placeholder: "最小"
+                                }
+                            }
+                            div { class: "form-control w-full",
+                                input { class: "input input-bordered hud-input w-full",
+                                    r#type: "number",
+                                    step: "any",
+                                    value: "{property_form_max}",
+                                    oninput: move |e| property_form_max.set(e.value()),
+                                    placeholder: "最大"
+                                }
+                            }
+                            div { class: "form-control w-full",
+                                input { class: "input input-bordered hud-input w-full",
+                                    value: "{property_form_unit}",
+                                    oninput: move |e| property_form_unit.set(e.value()),
+                                    placeholder: "单位（仅数值型）"
+                                }
+                            }
+                        }
+                        div { class: "form-control w-full",
+                            input { class: "input input-bordered hud-input w-full font-mono",
+                                value: "{property_form_enum}",
+                                oninput: move |e| property_form_enum.set(e.value()),
+                                placeholder: "枚举白名单，逗号分隔，如：high, medium, low"
+                            }
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label cursor-pointer flex items-center gap-2",
+                            input { class: "checkbox",
+                                r#type: "checkbox",
+                                checked: property_form_required(),
+                                onchange: move |e| property_form_required.set(e.checked()),
+                            }
+                            span { class: "label-text font-medium", "必填属性" }
                         }
                     }
                 }
@@ -1780,6 +2331,15 @@ pub fn HrOntologyLexicon() -> Element {
                 confirm_class: Some("btn hud-btn btn-error".to_string()),
                 on_confirm: move |_| handle_retire_relation(),
                 on_cancel: move |_| relation_retire_id.set(None),
+            }
+            ConfirmDialog {
+                show: property_retire_id().is_some(),
+                title: "确认退役".to_string(),
+                message: "退役后该属性不再参与注入与校验（历史存量属性值仍可解释）。确定退役？".to_string(),
+                confirm_text: Some("退役".to_string()),
+                confirm_class: Some("btn hud-btn btn-error".to_string()),
+                on_confirm: move |_| handle_retire_property(),
+                on_cancel: move |_| property_retire_id.set(None),
             }
             ConfirmDialog {
                 show: synonym_delete_id().is_some(),

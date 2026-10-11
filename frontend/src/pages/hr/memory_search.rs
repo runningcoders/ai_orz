@@ -62,6 +62,7 @@ pub fn HrMemorySearch() -> Element {
                     tags: None,
                     task_id: task_filter,
                     agent_id: None,
+                    property_filters: None,
                 })
                 .await
                 .map(|r| r.results)

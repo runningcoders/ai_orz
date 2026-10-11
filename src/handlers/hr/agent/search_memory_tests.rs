@@ -18,10 +18,12 @@ use crate::handlers::hr::agent::update_memory::update_memory;
 use crate::models::memory::{KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams};
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use common::api::{
-    CreateMemoryParams, DeleteMemoryParams, KnowledgeRelationParam, QueryMemoryParams,
-    SaveLongTermMemoryParams, UpdateMemoryParams,
+    CreateMemoryParams, DeleteMemoryParams, KnowledgePropertyParam, KnowledgeRelationParam,
+    PropertyFilterOpParam, PropertyFilterParam, QueryMemoryParams, SaveLongTermMemoryParams,
+    UpdateMemoryParams,
 };
 use common::enums::{KnowledgeRelationStatus, MemoryStatus};
+use common::ontology_property::PropertyValue;
 
 fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
     let _ = crate::config::init();
@@ -259,6 +261,7 @@ fn click_params(seed: &str, agent_id: Option<&str>) -> SearchMemoryParams {
         tags: None,
         task_id: None,
         agent_id: agent_id.map(|s| s.to_string()),
+        property_filters: None,
     }
 }
 
@@ -334,6 +337,7 @@ async fn relation_type_outside_vocabulary_stays_verbatim(pool: sqlx::SqlitePool)
                 relation_type: "实现".to_string(),
                 weight: None,
             }]),
+            properties: None,
             task_id: None,
         },
     )
@@ -450,6 +454,7 @@ async fn keyword_search_never_returns_dangling_edges(pool: sqlx::SqlitePool) {
             tags: None,
             task_id: None,
             agent_id: Some("agent-kg".to_string()),
+            property_filters: None,
         },
     )
     .await
@@ -508,6 +513,7 @@ async fn invalid_filter_values_are_rejected_instead_of_defaulted(pool: sqlx::Sql
         tags: None,
         task_id: None,
         agent_id: None,
+        property_filters: None,
     };
 
     // 拼错的 memory_type（少了 d）→ 400，而不是悄悄搜全部
@@ -597,6 +603,7 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
             tags: None,
             task_id: None,
             agent_id: None,
+            property_filters: None,
         },
     )
     .await
@@ -648,6 +655,7 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
             status: Some("settled".to_string()),
             node_tags: None,
             relations: None,
+            properties: None,
         },
     )
     .await
@@ -673,5 +681,262 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
     assert!(
         err.to_string().contains("缺少用户/Agent 上下文"),
         "错误信息应点明缺的是调用主体: {err}"
+    );
+}
+
+// ==================== 结构化属性（回显 + 精确召回） ====================
+
+/// 造一条本体属性定义（写侧门闩的输入）
+async fn define_property(ctx: &RequestContext, term_key: &str, data_type: &str) {
+    crate::service::dao::ontology::dao()
+        .insert_property(
+            ctx.clone(),
+            &crate::models::ontology::OntologyPropertyPo::new(
+                term_key,
+                format!("属性-{term_key}"),
+                format!("{term_key} 的语义描述"),
+                "[]",
+                "node",
+                data_type,
+                "",
+                "single",
+                None,
+                false,
+            ),
+        )
+        .await
+        .expect("属性定义应插入成功");
+}
+
+fn prop(term_key: &str, value: PropertyValue) -> KnowledgePropertyParam {
+    KnowledgePropertyParam {
+        term_key: term_key.to_string(),
+        value,
+        ordinal: 0,
+    }
+}
+
+/// 给既有节点挂属性（属性只能这样补，短期记忆没有载体语义）
+async fn attach(ctx: &RequestContext, node_id: &str, entries: Vec<KnowledgePropertyParam>) {
+    update_memory(
+        ctx.clone(),
+        UpdateMemoryParams {
+            memory_id: node_id.to_string(),
+            content: None,
+            summary: None,
+            tags: None,
+            status: None,
+            node_tags: None,
+            relations: None,
+            properties: Some(entries),
+        },
+    )
+    .await
+    .expect("挂属性应成功");
+}
+
+/// 回显：命中节点带上已挂属性——模型看得到自己写过什么，才能照抄回填去更正
+#[sqlx::test]
+async fn search_memory_echoes_node_properties(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "source", "string").await;
+    seed_node(&ctx, "kn_p", "属性节点", "带属性的正文", "摘要").await;
+    attach(
+        &ctx,
+        "kn_p",
+        vec![prop("source", PropertyValue::Text("官方手册".to_string()))],
+    )
+    .await;
+
+    let resp = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: String::new(),
+            max_results: Some(10),
+            memory_type: None,
+            traversal_depth: Some(0),
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: Some(vec!["kn_p".to_string()]),
+            tags: None,
+            task_id: None,
+            agent_id: None,
+            property_filters: None,
+        },
+    )
+    .await
+    .expect("种子遍历应成功");
+
+    let node = resp
+        .results
+        .iter()
+        .find(|r| r.id == "kn_p")
+        .expect("点名的种子必须返回");
+    let props = node
+        .properties
+        .as_ref()
+        .expect("挂了属性的节点应回显 properties");
+    assert_eq!(props.len(), 1, "只回显一条生效属性: {props:?}");
+    assert_eq!(props[0].term_key, "source");
+    assert_eq!(props[0].value, PropertyValue::Text("官方手册".to_string()));
+}
+
+/// 精确召回：`property_filters` 走独立通道反查命中 id，与语义 query 取交集
+#[sqlx::test]
+async fn property_filters_recall_matching_nodes_only(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "confidence", "number").await;
+    seed_node(&ctx, "kn_hi", "种植方案甲", "种植方案正文", "摘要").await;
+    seed_node(&ctx, "kn_lo", "种植方案乙", "种植方案正文", "摘要").await;
+    attach(
+        &ctx,
+        "kn_hi",
+        vec![prop("confidence", PropertyValue::Number(0.9))],
+    )
+    .await;
+    attach(
+        &ctx,
+        "kn_lo",
+        vec![prop("confidence", PropertyValue::Number(0.2))],
+    )
+    .await;
+
+    let resp = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: "种植方案".to_string(),
+            max_results: Some(20),
+            memory_type: Some("knowledge_node".to_string()),
+            traversal_depth: None,
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: None,
+            tags: None,
+            task_id: None,
+            agent_id: None,
+            property_filters: Some(vec![PropertyFilterParam {
+                term_key: "confidence".to_string(),
+                op: Some(PropertyFilterOpParam::Gte),
+                value: PropertyValue::Number(0.8),
+            }]),
+        },
+    )
+    .await
+    .expect("按属性过滤应成功");
+
+    let ids: Vec<&str> = resp.results.iter().map(|r| r.id.as_str()).collect();
+    assert!(ids.contains(&"kn_hi"), "高置信节点应在命中集里: {ids:?}");
+    assert!(
+        !ids.contains(&"kn_lo"),
+        "低置信节点不应被召回（属性是精确通道，不是后置过滤）: {ids:?}"
+    );
+}
+
+/// 命中集为空 → 空结果，**不**回退成全量（否则调用方会以为筛过了）
+#[sqlx::test]
+async fn property_filters_with_no_hit_returns_empty(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "confidence", "number").await;
+    seed_node(&ctx, "kn_x", "种植方案丙", "种植方案正文", "摘要").await;
+    attach(
+        &ctx,
+        "kn_x",
+        vec![prop("confidence", PropertyValue::Number(0.2))],
+    )
+    .await;
+
+    let resp = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: "种植方案".to_string(),
+            max_results: Some(20),
+            memory_type: Some("knowledge_node".to_string()),
+            traversal_depth: None,
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: None,
+            tags: None,
+            task_id: None,
+            agent_id: None,
+            property_filters: Some(vec![PropertyFilterParam {
+                term_key: "confidence".to_string(),
+                op: Some(PropertyFilterOpParam::Gte),
+                value: PropertyValue::Number(0.99),
+            }]),
+        },
+    )
+    .await
+    .expect("过滤请求本身应成功");
+    assert!(
+        resp.results.is_empty(),
+        "无人满足条件时必须返回空，而不是放宽成全量: {:?}",
+        resp.results
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// `property_filters` 与 `seed_node_ids` 互斥：种子恒返回，叠加过滤会静默失真
+#[sqlx::test]
+async fn property_filters_conflict_with_seed_nodes(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let err = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: String::new(),
+            max_results: Some(10),
+            memory_type: None,
+            traversal_depth: Some(1),
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: Some(vec!["kn_x".to_string()]),
+            tags: None,
+            task_id: None,
+            agent_id: None,
+            property_filters: Some(vec![PropertyFilterParam {
+                term_key: "confidence".to_string(),
+                op: None,
+                value: PropertyValue::Number(0.8),
+            }]),
+        },
+    )
+    .await
+    .expect_err("两种检索意图混用必须被拒");
+    assert!(
+        err.to_string().contains("property_filters"),
+        "错误信息应点明冲突字段: {err}"
+    );
+}
+
+/// 数值运算符配非 number 值 → 400（调用方写错参数，报错要早）
+#[sqlx::test]
+async fn numeric_operator_requires_number_value(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let err = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: "任意".to_string(),
+            max_results: Some(10),
+            memory_type: None,
+            traversal_depth: None,
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: None,
+            tags: None,
+            task_id: None,
+            agent_id: None,
+            property_filters: Some(vec![PropertyFilterParam {
+                term_key: "source".to_string(),
+                op: Some(PropertyFilterOpParam::Gte),
+                value: PropertyValue::Text("官方手册".to_string()),
+            }]),
+        },
+    )
+    .await
+    .expect_err("文本值用比较运算必须被拒");
+    assert!(
+        err.to_string().contains("number"),
+        "错误信息应点明需要 number 值: {err}"
     );
 }

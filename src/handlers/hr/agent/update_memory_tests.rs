@@ -7,9 +7,16 @@
 //! 拆分命令见 `tools/split_inline_tests.py`。
 
 use super::*;
+use crate::handlers::hr::agent::save_long_term_memory::save_long_term_memory;
 use crate::handlers::hr::agent::save_short_term_memory::save_short_term_memory;
+use crate::models::ontology::OntologyPropertyPo;
 use crate::service::dao::memory::MemoryQuery;
-use common::api::{KnowledgeRelationParam, SaveShortTermMemoryParams, UpdateMemoryParams};
+use common::api::{
+    KnowledgePropertyParam, KnowledgeRelationParam, SaveLongTermMemoryParams,
+    SaveShortTermMemoryParams, UpdateMemoryParams,
+};
+use common::enums::ontology::PropertyTargetType;
+use common::ontology_property::PropertyValue;
 
 fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
     let _ = crate::config::init();
@@ -73,6 +80,7 @@ fn update_params(memory_id: &str, status: Option<&str>) -> UpdateMemoryParams {
         status: status.map(|s| s.to_string()),
         node_tags: None,
         relations: None,
+        properties: None,
     }
 }
 
@@ -155,6 +163,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             summary: None,
             tags: None,
             relations: None,
+            properties: None,
             task_id: None,
         },
     )
@@ -170,6 +179,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             summary: None,
             tags: None,
             relations: None,
+            properties: None,
             task_id: None,
         },
     )
@@ -204,6 +214,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             tags: None,
             task_id: None,
             agent_id: None,
+            property_filters: None,
         },
     )
     .await
@@ -231,5 +242,148 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
     assert_eq!(
         node.content, "新描述：入站后走两阶段唤醒",
         "内容更新与建边应同调用生效"
+    );
+}
+
+// ==================== 结构化属性（既有节点的补 / 改入口） ====================
+
+/// 造一条本体属性定义（写侧门闩的输入；**不**定义则走「未定义属性兜底写入」）
+async fn define_property(ctx: &RequestContext, term_key: &str, data_type: &str) {
+    crate::service::dao::ontology::dao()
+        .insert_property(
+            ctx.clone(),
+            &OntologyPropertyPo::new(
+                term_key,
+                format!("属性-{term_key}"),
+                format!("{term_key} 的语义描述"),
+                "[]",
+                "node",
+                data_type,
+                "",
+                "single",
+                None,
+                false,
+            ),
+        )
+        .await
+        .expect("属性定义应插入成功");
+}
+
+/// 读回某节点的生效属性（走 domain 直读，验证「真的落库」而不是只看回执说成功）
+async fn active_properties(ctx: &RequestContext, node_id: &str) -> Vec<(String, PropertyValue)> {
+    crate::service::domain::runtime::domain()
+        .memory()
+        .list_entity_properties(ctx.clone(), PropertyTargetType::Node, node_id)
+        .await
+        .expect("读属性应成功")
+        .into_iter()
+        .filter_map(|po| Some((po.term_key.clone(), po.value()?)))
+        .collect()
+}
+
+/// 既有节点补属性 + 软取代更正：`update_memory` 的 `properties` 是唯一路径
+///
+/// 沉淀链路命中既有节点时走的就是这条路——没有它，存量节点永远挂不上属性。
+#[sqlx::test]
+async fn update_memory_attaches_and_supersedes_properties(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "confidence", "number").await;
+
+    let node_id = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "入站去重策略".to_string(),
+            node_description: "同一条消息重复入站时按幂等键丢弃".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            relations: None,
+            properties: None,
+            task_id: None,
+        },
+    )
+    .await
+    .expect("建节点应成功")
+    .node_id;
+
+    let write = |v: f64| {
+        update_memory(
+            ctx.clone(),
+            UpdateMemoryParams {
+                memory_id: node_id.clone(),
+                content: None,
+                summary: None,
+                tags: None,
+                status: None,
+                node_tags: None,
+                relations: None,
+                properties: Some(vec![KnowledgePropertyParam {
+                    term_key: "confidence".to_string(),
+                    value: PropertyValue::Number(v),
+                    ordinal: 0,
+                }]),
+            },
+        )
+    };
+
+    let resp = write(0.4).await.expect("补属性应成功");
+    assert!(
+        resp.property_issues.is_empty(),
+        "类型对齐的属性应被接受，实际回执: {:?}",
+        resp.property_issues
+    );
+    let rows = active_properties(&ctx, &node_id).await;
+    assert_eq!(rows.len(), 1, "属性应真的落库");
+    assert_eq!(rows[0].0, "confidence");
+    assert!(
+        matches!(rows[0].1, PropertyValue::Number(v) if (v - 0.4).abs() < 1e-6),
+        "首次写入值不对: {:?}",
+        rows[0].1
+    );
+
+    // 软取代：同一个单值属性再写一次 = 更正（不是冲突、不需要先删后建）
+    let resp = write(0.9).await.expect("更正属性应成功");
+    assert!(
+        resp.property_issues.is_empty(),
+        "单值属性重复写是软取代而非冲突，实际回执: {:?}",
+        resp.property_issues
+    );
+    let rows = active_properties(&ctx, &node_id).await;
+    assert_eq!(rows.len(), 1, "读侧仍只见一条生效值");
+    assert!(
+        matches!(rows[0].1, PropertyValue::Number(v) if (v - 0.9).abs() < 1e-6),
+        "软取代后应读到新值: {:?}",
+        rows[0].1
+    );
+}
+
+/// 短期记忆挂属性 → 400：属性挂在图谱载体上，短期记忆没有载体语义
+#[sqlx::test]
+async fn properties_are_rejected_for_short_term_memory(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let memory_id = seed_short_term(&ctx).await;
+
+    let err = update_memory(
+        ctx.clone(),
+        UpdateMemoryParams {
+            memory_id,
+            content: None,
+            summary: None,
+            tags: None,
+            status: None,
+            node_tags: None,
+            relations: None,
+            properties: Some(vec![KnowledgePropertyParam {
+                term_key: "confidence".to_string(),
+                value: PropertyValue::Number(0.5),
+                ordinal: 0,
+            }]),
+        },
+    )
+    .await
+    .expect_err("短期记忆挂属性必须被拒");
+    assert!(
+        err.to_string().contains("properties"),
+        "错误信息应点明是 properties 字段: {err}"
     );
 }

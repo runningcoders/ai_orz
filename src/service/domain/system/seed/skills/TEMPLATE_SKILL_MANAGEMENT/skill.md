@@ -4,15 +4,20 @@
 
 ## 技能加载规则（重要）
 
-技能加载是「安装范围限定 + 标签匹配」双层规则：
+**规则只有一条：装了就进 Prompt，没装就不进。** 你的技能区块 = 你目录下所有已安装（author_id = 你）且非 Expired 的副本，**无论它的 tags 是什么**，也无论它是否命中你的角色名或已装包标签。
 
-1. **第一层 · 必须先安装到你的目录**：只在你已安装（author_id = agent_id）且非 Expired 的副本范围内加载；**哪怕是 neural 常驻技能，也要先安装**；未安装的 Published 技能不会出现在 Prompt 里（但可被 `search_skill` 发现，再安装）。
-2. **第二层 · 按 tags 分块**：
-   - tags 含 `neural` → **神经技能**：你必加载，常驻 Prompt（你现在读的这本就是其中之一）
-   - tags 不含 `neural` 但与你的 `match_keys` 有交集 → **必加载技能**：出现在 Prompt 中
-   - 否则 → **隐藏技能**：不展示在 Prompt，但你仍可通过 `search_skill` 发现 + `get_skill_file_content` 读取内容使用（装了却没出现在 Prompt = tags 与 match_keys 无交集，排查方向）
+> **没有「隐藏技能」这回事**：装了却看不到 = 副本没装上（安装失败 / 已 Expired / 装到了别的 Agent 目录下），去查安装环节，**不要**去调 tags——tags 不决定可见性。
 
-> **`match_keys` 是什么**：你的 `roles` 角色 ∪ `installed_tags` 已安装技能包标签。例如 roles=`backend_developer`、installed_tags=`project_management`，则 match_keys 两者并集。安装技能包（install_skill_pack）会把对应 tag 加入 installed_tags，从而让该 tag 的技能进入必加载。
+1. **必须先安装到你的目录**：**哪怕是 neural 常驻技能，也要先安装**（出生/入职时已预装）；未安装的 Published 技能不会出现在 Prompt 里，但可被 `search_skill` 发现 → 安装后才出现。
+2. **分块只是排版，不影响可见性**：
+   - tags 含 `neural` → 【神经技能】区块，排在前面（你现在读的这本就是其中之一）
+   - 其余 → 【已安装技能】区块
+
+> **`neural` 只剩两个特殊语义**：① 分块置前（静态块，省前缀缓存）；② **不可卸载**（出生自带、卸载受保护）。
+> 它**不再**决定你能不能看到这本技能——看得见看不见只看装没装。
+
+> **工具包 vs 技能包是两个语义面**：`installed_tags` 是工具授权面（决定你能调哪些工具），
+> `installed_skill_packs` 是技能包记录（决定你批量装了哪些方法论）。装技能包 ≠ 授权工具，两者互不同步。
 
 ## 技能查询 / 发现（你常用的都是 neural 常驻）
 
@@ -28,7 +33,7 @@
 
 - `list_skills` / `query_skills`：分页列表 / 按条件过滤，管理场景用
 - **`search_skills`**（和 `search_skill` 只差一个 s）：搜 Published 技能的管理版本，条件更全；**对 Agent 而言，日常只用 `search_skill`（neural 常驻）即可**
-- `get_skill` / `list_skill_files` / `get_skill_file_content`：查看技能详情与文件内容；**注意 neural 常驻技能已经在 Prompt 里了，不用再读文件**，隐藏技能按需才读
+- `get_skill` / `list_skill_files` / `get_skill_file_content`：查看技能详情与文件内容；**已装技能在 Prompt 里只显示一行摘要（名称+id+描述），正文一律按需 `get_skill` 读全文**——别凭摘要臆断内容
 - `list_agent_skills(agent_id)`：查看某 Agent 已装了哪些技能
 
 ## 安装 / 卸载技能
@@ -39,11 +44,13 @@
 
 ### `install_skill_pack`
 
-把所有 tags 含该 tag 的 Published 技能批量安装到 Agent，**并把该 tag 加入 Agent 的 installed_tags**，从而让该 tag 下的技能进入「必加载技能」分块。一次获取一个领域的完整能力包。
+把所有 tags 含该 tag 的 Published 技能批量安装到你的目录，**并把该 tag 记入 `installed_skill_packs`**（注意：不是 `installed_tags`，那是工具包字段）。装完即进 Prompt——不用管 tags 是否命中你的角色。一次获取一个领域的完整能力包。
+
+> 若该 tag 下**没有任何已发布技能**，工具直接报错且**不记录 tag**——不会出现空包。
 
 ### `uninstall_skill_pack`
 
-`delete_copies` 默认 false：只从 installed_tags 移除 tag，副本保留但不再必加载；置 true 则同时删掉该 tag 下所有副本。
+`delete_copies` 默认 false：只从 `installed_skill_packs` 移除 tag，**副本保留 ⇒ 仍会出现在 Prompt 里**（要真正不出现，必须 `delete_copies=true` 删掉副本）；置 true 则同时删掉该 tag 下所有副本。
 
 ## `update_skill`（更新技能内容）
 

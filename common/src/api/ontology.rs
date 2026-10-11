@@ -15,7 +15,9 @@
 
 use super::{PagedResult, PaginationParams};
 use crate::enums::OntologyStatus;
+use crate::enums::ontology::{Cardinality, PropertyDataType, PropertyTargetType};
 use crate::ontology::TermKind;
+use crate::ontology_property::ValueRange;
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -110,6 +112,152 @@ pub struct RetireOntologyClassRequest {
 
 /// 退役实体类响应
 pub type RetireOntologyClassResponse = OntologyClassItem;
+
+// ==================== 词表 CRUD：属性定义 ====================
+//
+// 本体第 4 张词表（TBox）：定义「属性是什么」。实例值落在 `knowledge_property`
+// （ABox），见 `crate::ontology_property`。
+
+/// 属性定义条目（列表项 + 创建 / 更新 / 退役的返回体）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OntologyPropertyItem {
+    /// 条目 ID
+    pub id: String,
+    /// 规范词 key（小写 snake_case，全库唯一；创建后不可改）
+    pub term_key: String,
+    /// 展示名
+    pub display_name: String,
+    /// 语义描述
+    pub description: String,
+    /// 适用实体类 term_key 清单（空 = 不限实体类）
+    pub domain_classes: Vec<String>,
+    /// 允许挂载的载体清单（空 = 节点与边皆可）
+    pub applies_to: Vec<PropertyTargetType>,
+    /// 值类型（决定属性值落 `knowledge_property` 的哪一列）
+    pub data_type: PropertyDataType,
+    /// 取值约束（数值区间 / 枚举白名单；全空 = 无约束）
+    pub value_range: ValueRange,
+    /// 基数（单值 / 多值）
+    pub cardinality: Cardinality,
+    /// 计量单位（仅 number 型有意义）
+    pub unit: Option<String>,
+    /// 是否必填
+    pub required: bool,
+    /// 状态（正常 / 退役）
+    pub status: OntologyStatus,
+    /// 创建时间戳（秒）
+    pub created_at: i64,
+    /// 更新时间戳（秒）
+    pub updated_at: i64,
+}
+
+/// 列出属性定义请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListOntologyPropertiesRequest {
+    /// 按状态筛选（None = 全部，含退役）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub status: Option<OntologyStatus>,
+    /// 按适用实体类筛选
+    #[serde(default)]
+    #[param(source = "query")]
+    pub domain_class: Option<String>,
+    /// 按适用载体筛选（node / relation）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub target_type: Option<PropertyTargetType>,
+    /// 关键词（对 term_key / display_name / description 模糊匹配）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub keyword: Option<String>,
+    /// 分页参数
+    #[serde(flatten)]
+    #[param(source = "query")]
+    pub pagination: PaginationParams,
+}
+
+/// 列出属性定义响应（分页）
+pub type ListOntologyPropertiesResponse = PagedResult<OntologyPropertyItem>;
+
+/// 创建属性定义请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct CreateOntologyPropertyRequest {
+    /// 规范词 key（小写 snake_case，重复创建报错）
+    pub term_key: String,
+    /// 展示名
+    pub display_name: String,
+    /// 语义描述
+    pub description: String,
+    /// 适用实体类 term_key 清单（空 = 不限实体类）
+    #[serde(default)]
+    pub domain_classes: Vec<String>,
+    /// 允许挂载的载体清单（空 = 节点与边皆可）
+    #[serde(default)]
+    pub applies_to: Vec<PropertyTargetType>,
+    /// 值类型
+    pub data_type: PropertyDataType,
+    /// 取值约束（全空 = 无约束）
+    #[serde(default)]
+    pub value_range: ValueRange,
+    /// 基数
+    pub cardinality: Cardinality,
+    /// 计量单位
+    #[serde(default)]
+    pub unit: Option<String>,
+    /// 是否必填
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// 创建属性定义响应
+pub type CreateOntologyPropertyResponse = OntologyPropertyItem;
+
+/// 更新属性定义请求
+///
+/// `term_key` 创建后不可改：它是历史属性值的语义锚点，改 key 等价于
+/// 「废弃旧属性 + 新增新属性」，应走退役 + 新建流程。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateOntologyPropertyRequest {
+    /// 条目 ID
+    pub id: String,
+    /// 展示名
+    pub display_name: String,
+    /// 语义描述
+    pub description: String,
+    /// 适用实体类 term_key 清单
+    #[serde(default)]
+    pub domain_classes: Vec<String>,
+    /// 允许挂载的载体清单
+    #[serde(default)]
+    pub applies_to: Vec<PropertyTargetType>,
+    /// 值类型
+    pub data_type: PropertyDataType,
+    /// 取值约束
+    #[serde(default)]
+    pub value_range: ValueRange,
+    /// 基数
+    pub cardinality: Cardinality,
+    /// 计量单位
+    #[serde(default)]
+    pub unit: Option<String>,
+    /// 是否必填
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// 更新属性定义响应
+pub type UpdateOntologyPropertyResponse = OntologyPropertyItem;
+
+/// 退役属性定义请求（软删除 status=0）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RetireOntologyPropertyRequest {
+    /// 条目 ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 退役属性定义响应
+pub type RetireOntologyPropertyResponse = OntologyPropertyItem;
 
 // ==================== 词表 CRUD：关系类型 ====================
 

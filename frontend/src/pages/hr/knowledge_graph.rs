@@ -355,6 +355,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 tags: tags_field,
                 task_id: None,
                 agent_id: aid,
+                property_filters: None,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {
@@ -425,6 +426,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 tags: None,
                 task_id: None,
                 agent_id: aid,
+                property_filters: None,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {
@@ -1104,6 +1106,7 @@ mod tests {
             relation_type: None,
             weight: None,
             tags: None,
+            properties: None,
             search_match: None,
         }
     }
@@ -1121,6 +1124,7 @@ mod tests {
             relation_type: Some("causes".to_string()),
             weight: Some(0.8),
             tags: None,
+            properties: None,
             search_match: None,
         }
     }

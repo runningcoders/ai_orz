@@ -17,7 +17,9 @@ mod ontology_test;
 mod skill_test;
 
 use crate::models::agent::Agent;
-use crate::models::ontology::{OntologyClass, OntologyRelationType, OntologySynonymMapping};
+use crate::models::ontology::{
+    OntologyClass, OntologyProperty, OntologyRelationType, OntologySynonymMapping,
+};
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent as agent_dal;
@@ -32,7 +34,7 @@ use crate::service::dal::tool as tool_dal;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::dao::ontology::{
-    OntologyClassQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
+    OntologyClassQuery, OntologyPropertyQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
 };
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::api::ontology::{
@@ -848,6 +850,37 @@ pub trait OntologyDomain: Send + Sync {
 
     /// 删除同义映射（物理删除；幂等；删除后相关词条自然回落漂移）
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // C4. 属性定义管理（本体第 4 张词表；ABox 值的类型 / 值域 / 基数 / 载体来源）
+
+    /// 新增属性定义（term_key 唯一，冲突 → Conflict）
+    ///
+    /// 校验：`term_key` 非空且不超长；`domain_classes` / `applies_to` / `value_range`
+    /// 三个 JSON 字段形态合法（脏 JSON 一律拒绝，不放进词表）。
+    async fn create_property(&self, ctx: RequestContext, property: &OntologyProperty)
+    -> Result<()>;
+
+    /// 按 ID 查属性定义
+    async fn get_property(&self, ctx: RequestContext, id: &str)
+    -> Result<Option<OntologyProperty>>;
+
+    /// 属性定义分页组合查询（status / 实体类 / 载体 / keyword 过滤）
+    async fn list_properties(
+        &self,
+        ctx: RequestContext,
+        query: OntologyPropertyQuery,
+    ) -> Result<common::api::PagedResult<OntologyProperty>>;
+
+    /// 全量更新属性定义（term_key 不可变；不存在 → NotFound）
+    async fn update_property(&self, ctx: RequestContext, property: &OntologyProperty)
+    -> Result<()>;
+
+    /// 退役属性定义（软删除；幂等）
+    ///
+    /// ⚠️ 退役**不清理**已落库的属性值：历史值是事实，保留可回放。
+    /// ⚠️ 退役**不等于失效**：`list_all_properties` 仍返回退役定义（含退役全量），
+    /// 因此存量属性值的读侧解析与新写入的门闩判定照常受其约束，只是管理页默认不展示。
+    async fn retire_property(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     // D. seed 预置注入（缺省仅补缺；Overwrite 覆盖式同步见 apply_default_lexicon_with_strategy）
 

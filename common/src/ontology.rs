@@ -383,6 +383,56 @@ fn default_preset_direction() -> String {
     "undirected".to_string()
 }
 
+/// 预置属性定义条目（本体第 4 段）
+///
+/// 字段以**字符串 / JSON 值**承载而不是强类型枚举：预置快照是可由人直接编辑的
+/// 数据文件，用裸形态更友好；合法性由 Domain 的 `validate_property_definition`
+/// 统一 **fail fast**（快照残缺不该静默落库）。
+///
+/// ⚠️ 顺序约束：`properties` 段在 `classes` 之后注入（`domain_classes` 引用的
+/// 实体类必须先存在），因此**不要**把 properties 挪到 classes 之前。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PresetOntologyProperty {
+    /// 规范词 key（小写 snake_case）
+    pub term_key: String,
+    /// 展示名
+    pub display_name: String,
+    /// 语义描述
+    pub description: String,
+    /// 适用实体类 key 清单（空 = 不限）
+    #[serde(default)]
+    pub domain_classes: Vec<String>,
+    /// 允许挂载的载体清单（`"node"` / `"relation"`；空 = 不限）
+    #[serde(default)]
+    pub applies_to: Vec<String>,
+    /// 值类型（`"string"` / `"number"` / `"boolean"` / `"date"` / `"reference"` / `"enum"`）
+    #[serde(default = "default_preset_data_type")]
+    pub data_type: String,
+    /// 取值约束：数组 = 枚举白名单，对象 = `{"min":..,"max":..,"enum":[..]}`；
+    /// 缺省（Null）视为无约束
+    #[serde(default)]
+    pub value_range: serde_json::Value,
+    /// 基数（`"single"` / `"many"`）
+    #[serde(default = "default_preset_cardinality")]
+    pub cardinality: String,
+    /// 计量单位
+    #[serde(default)]
+    pub unit: Option<String>,
+    /// 是否必填
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// 旧 seed 快照（无 data_type 字段）反序列化兜底值，与 DDL DEFAULT 同口径
+fn default_preset_data_type() -> String {
+    "string".to_string()
+}
+
+/// 旧 seed 快照（无 cardinality 字段）反序列化兜底值，与 DDL DEFAULT 同口径
+fn default_preset_cardinality() -> String {
+    "single".to_string()
+}
+
 /// 预置同义映射条目（字段对齐 `CreateOntologySynonymRequest`）
 ///
 /// 不 derive `Default`：`target_kind` 为必填枚举（[`TermKind`] 无默认形），
@@ -411,18 +461,24 @@ pub struct PresetOntologyLexicon {
     /// 关系类型条目
     #[serde(default)]
     pub relation_types: Vec<PresetOntologyRelationType>,
+    /// 属性定义条目（本体第 4 段）
+    #[serde(default)]
+    pub properties: Vec<PresetOntologyProperty>,
     /// 同义映射条目
     #[serde(default)]
     pub synonym_mappings: Vec<PresetOntologySynonym>,
 }
 
 impl PresetOntologyLexicon {
-    /// 三段条目总数（预览响应 total 口径）
+    /// 四段条目总数（预览响应 total 口径）
     pub fn total_count(&self) -> usize {
-        self.classes.len() + self.relation_types.len() + self.synonym_mappings.len()
+        self.classes.len()
+            + self.relation_types.len()
+            + self.properties.len()
+            + self.synonym_mappings.len()
     }
 
-    /// 词表是否为空（三段均无条目）
+    /// 词表是否为空（四段均无条目）
     pub fn is_empty(&self) -> bool {
         self.total_count() == 0
     }
@@ -457,27 +513,107 @@ pub struct LexiconSynonymSummary {
     pub target_key: String,
 }
 
+/// 属性定义注入行（本体第 4 段）
+///
+/// 与 [`LexiconTermSummary`] 的差别：属性除"叫什么"之外还须告知模型
+/// **怎么写**——值类型、基数、允许挂载的载体、取值约束。缺这些模型只能猜，
+/// 猜错的后果是写侧软门禁告警（类型错则硬拒，整条值丢失），因此这几个
+/// 约束字段是注入的必备信息，不能为省 token 省略。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LexiconPropertySummary {
+    /// 规范词 key（snake_case）
+    pub term_key: String,
+    /// 展示名
+    pub display_name: String,
+    /// 语义说明
+    pub description: String,
+    /// 值类型（"string"/"number"/"boolean"/"date"/"reference"/"enum"）
+    pub data_type: String,
+    /// 基数（"single" / "many"）
+    pub cardinality: String,
+    /// 允许挂载的载体（"node" / "relation" 子集）；空 = 不限载体
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub applies_to: Vec<String>,
+    /// 取值提示（枚举白名单 / 数值区间；无约束为空串）
+    ///
+    /// 由 `ValueRange::to_hint()` 生成的可读短串（如 `0~1`、`取值: a|b|c`）。
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub value_hint: String,
+    /// 计量单位（可空；仅 number 型有意义）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// 是否必填
+    #[serde(default)]
+    pub required: bool,
+}
+
+impl LexiconPropertySummary {
+    /// 渲染为提示词单行（与术语行同构的 `- ` 列表项）
+    ///
+    /// 形态：`- {term_key}（{display_name}）[{约束清单}]：{description}`
+    /// ——约束清单收在一对方括号里，避免与描述正文混淆；模型写值时先读
+    /// 括号内的类型/基数/载体再读语义。
+    pub fn to_prompt_line(&self) -> String {
+        let mut constraint = self.data_type.clone();
+        if !self.value_hint.is_empty() {
+            constraint.push(' ');
+            constraint.push_str(&self.value_hint);
+        }
+        if self.cardinality == "many" {
+            constraint.push_str("，多值");
+        } else {
+            constraint.push_str("，单值");
+        }
+        if self.applies_to.is_empty() {
+            constraint.push_str("，节点/关系均可");
+        } else {
+            constraint.push_str("，挂 ");
+            constraint.push_str(&self.applies_to.join("/"));
+        }
+        if let Some(unit) = &self.unit {
+            constraint.push_str("，单位 ");
+            constraint.push_str(unit);
+        }
+        if self.required {
+            constraint.push_str("，必填");
+        }
+        format!(
+            "- {}（{}）[{}]：{}\n",
+            self.term_key, self.display_name, constraint, self.description
+        )
+    }
+}
+
 /// 词表注入视图（`OntologyDomain::list_lexicon` 返回）
 ///
 /// 消费方是神经技能提示词构建器：Token 预算超限时按"关系词 > 实体类 >
-/// 同义样例"顺序裁剪（design §3），因此三段分列且字段顺序即裁剪优先级。
+/// 属性定义 > 同义样例"顺序裁剪（design §3），因此四段分列且**字段顺序即
+/// 裁剪优先级**。
+///
+/// 属性段排在实体类之后：实体类与关系词是图谱骨架（决定节点/边"是什么"），
+/// 属性是修饰（决定"还有什么"），骨架优先于修饰；且属性段是管理员最易
+/// 持续扩充的一段，优先级过高会反噬骨架段。属性段仍享有"段首保底"——
+/// 只要 header + 首行装得下就一定露脸，不会整段隐形。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct OntologyLexiconSummary {
     /// 关系类型词条（注入优先级最高）
     pub relation_types: Vec<LexiconTermSummary>,
     /// 实体类词条
     pub classes: Vec<LexiconTermSummary>,
+    /// 属性定义词条
+    #[serde(default)]
+    pub properties: Vec<LexiconPropertySummary>,
     /// 同义映射样例
     pub synonyms: Vec<LexiconSynonymSummary>,
 }
 
 impl OntologyLexiconSummary {
-    /// 三段条目总数
+    /// 四段条目总数
     pub fn total_count(&self) -> usize {
-        self.relation_types.len() + self.classes.len() + self.synonyms.len()
+        self.relation_types.len() + self.classes.len() + self.properties.len() + self.synonyms.len()
     }
 
-    /// 词表为空（三段均无条目——提示词注入跳过，看板引导初始注入）
+    /// 词表为空（四段均无条目——提示词注入跳过，看板引导初始注入）
     pub fn is_empty(&self) -> bool {
         self.total_count() == 0
     }
@@ -493,6 +629,9 @@ pub struct OntologyLexiconApplyReport {
     pub inserted_classes: Vec<String>,
     /// 新增关系类型 term_key 清单（按注入顺序）
     pub inserted_relation_types: Vec<String>,
+    /// 新增属性定义 term_key 清单（按注入顺序）
+    #[serde(default)]
+    pub inserted_properties: Vec<String>,
     /// 新增同义映射条数
     pub inserted_synonyms: usize,
     /// 覆写实体类 term_key 清单（覆盖策略下执行覆写动作的实体类，按注入顺序）
@@ -501,10 +640,13 @@ pub struct OntologyLexiconApplyReport {
     /// 覆写关系类型 term_key 清单（覆盖策略下执行覆写动作的关系类型，按注入顺序）
     #[serde(default)]
     pub updated_relation_types: Vec<String>,
+    /// 覆写属性定义 term_key 清单（覆盖策略下执行覆写动作的属性，按注入顺序）
+    #[serde(default)]
+    pub updated_properties: Vec<String>,
     /// 覆写同义映射条数
     #[serde(default)]
     pub updated_synonyms: usize,
-    /// 跳过条目数（term_key / raw_term 已存在，三段合计）
+    /// 跳过条目数（term_key / raw_term 已存在，四段合计）
     pub skipped: usize,
 }
 
@@ -519,9 +661,12 @@ pub struct LexiconGapReport {
     pub missing_classes: Vec<String>,
     /// 缺失关系类型 term_key 清单（归一化，将新增）
     pub missing_relation_types: Vec<String>,
+    /// 缺失属性定义 term_key 清单（归一化，将新增）
+    #[serde(default)]
+    pub missing_properties: Vec<String>,
     /// 缺失同义映射条数（仅计数不列明细：raw→target 映射无显示名，前端以「N 条」呈现）
     pub missing_synonyms: usize,
-    /// 已存在条目数（三段合计，注入时将跳过）
+    /// 已存在条目数（四段合计，注入时将跳过）
     pub skipped: usize,
 }
 #[cfg(test)]

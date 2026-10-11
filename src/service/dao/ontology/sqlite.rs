@@ -1,9 +1,12 @@
 //! Ontology DAO SQLite 实现
 
-use crate::models::ontology::{OntologyClassPo, OntologyRelationTypePo, OntologySynonymMappingPo};
+use crate::models::ontology::{
+    OntologyClassPo, OntologyPropertyPo, OntologyRelationTypePo, OntologySynonymMappingPo,
+};
 use crate::pkg::RequestContext;
 use crate::service::dao::ontology::{
-    OntologyClassQuery, OntologyDao, OntologyRelationTypeQuery, OntologySynonymQuery,
+    OntologyClassQuery, OntologyDao, OntologyPropertyQuery, OntologyRelationTypeQuery,
+    OntologySynonymQuery,
 };
 use common::constants::utils::current_timestamp;
 use common::error::Result;
@@ -480,6 +483,204 @@ FROM ontology_synonym_mappings ORDER BY raw_term ASC
             .await?;
         Ok(())
     }
+
+    // ==================== 属性定义（TBox：属性类型） ====================
+
+    async fn insert_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyPropertyPo,
+    ) -> Result<()> {
+        // 与 class / relation_type 同口径：term_key 写入侧单点归一
+        let term_key = normalize(&property.term_key);
+        let status = property.status.to_i32();
+        if let Err(e) = sqlx::query!(
+            r#"
+INSERT INTO ontology_properties (
+    id, term_key, display_name, description, domain_classes, applies_to,
+    data_type, value_range, cardinality, unit, "required", "status", created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"#,
+            property.id,
+            term_key,
+            property.display_name,
+            property.description,
+            property.domain_classes,
+            property.applies_to,
+            property.data_type,
+            property.value_range,
+            property.cardinality,
+            property.unit,
+            property.required,
+            status,
+            property.created_at,
+            property.updated_at
+        )
+        .execute(ctx.db_pool())
+        .await
+        {
+            return Err(map_unique_conflict(
+                e,
+                format!("属性 term_key={} 已存在", term_key),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn find_property_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyPropertyPo>> {
+        let property = sqlx::query_as!(
+            OntologyPropertyPo,
+            r#"
+SELECT id, term_key, display_name, description, domain_classes, applies_to,
+       data_type, value_range, cardinality, unit, "required" AS "required!: i32",
+       "status" AS "status!", created_at, updated_at
+FROM ontology_properties WHERE id = ?
+"#,
+            id
+        )
+        .fetch_optional(ctx.db_pool())
+        .await?;
+        Ok(property)
+    }
+
+    async fn find_property_by_term_key(
+        &self,
+        ctx: RequestContext,
+        term_key: &str,
+    ) -> Result<Option<OntologyPropertyPo>> {
+        let term_key = normalize(term_key);
+        let property = sqlx::query_as!(
+            OntologyPropertyPo,
+            r#"
+SELECT id, term_key, display_name, description, domain_classes, applies_to,
+       data_type, value_range, cardinality, unit, "required" AS "required!: i32",
+       "status" AS "status!", created_at, updated_at
+FROM ontology_properties WHERE term_key = ?
+"#,
+            term_key
+        )
+        .fetch_optional(ctx.db_pool())
+        .await?;
+        Ok(property)
+    }
+
+    async fn query_properties(
+        &self,
+        ctx: RequestContext,
+        query: OntologyPropertyQuery,
+    ) -> Result<common::api::PagedResult<OntologyPropertyPo>> {
+        let pool = ctx.db_pool();
+
+        // domain_classes / applies_to 是 JSON 数组列，无法用 SQL 参数做「数组包含」判定，
+        // 故这两个维度在内存侧过滤：先按 status + keyword 取候选（SQL），再内存收窄。
+        // 属性定义是管理员维护的小词表（量级十~百），全量取回代价可忽略。
+        let mut count_builder =
+            QueryBuilder::new("SELECT COUNT(*) FROM ontology_properties WHERE 1=1");
+        push_property_sql_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = QueryBuilder::new(
+            r#"SELECT id, term_key, display_name, description, domain_classes, applies_to,
+       data_type, value_range, cardinality, unit, "required", "status", created_at, updated_at
+FROM ontology_properties WHERE 1=1"#,
+        );
+        push_property_sql_filters(&mut list_builder, &query);
+        list_builder.push(" ORDER BY term_key ASC");
+        push_pagination(&mut list_builder, &query.pagination);
+
+        let rows = list_builder
+            .build_query_as::<OntologyPropertyPo>()
+            .fetch_all(pool)
+            .await?;
+
+        let items: Vec<OntologyPropertyPo> = rows
+            .into_iter()
+            .filter(|p| {
+                if let Some(class) = &query.domain_class
+                    && !p.parse_domain_classes().contains(class)
+                {
+                    return false;
+                }
+                if let Some(target) = query.target_type
+                    && !p.allows_target(target)
+                {
+                    return false;
+                }
+                true
+            })
+            .collect();
+
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
+    }
+
+    async fn list_all_properties(&self, ctx: RequestContext) -> Result<Vec<OntologyPropertyPo>> {
+        let properties = sqlx::query_as!(
+            OntologyPropertyPo,
+            r#"
+SELECT id, term_key, display_name, description, domain_classes, applies_to,
+       data_type, value_range, cardinality, unit, "required" AS "required!: i32",
+       "status" AS "status!", created_at, updated_at
+FROM ontology_properties ORDER BY term_key ASC
+            "#
+        )
+        .fetch_all(ctx.db_pool())
+        .await?;
+        Ok(properties)
+    }
+
+    async fn update_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyPropertyPo,
+    ) -> Result<()> {
+        // term_key 不可变（语义锚点；改名等于新造一个属性，旧值的解释会断裂）
+        let status = property.status.to_i32();
+        sqlx::query!(
+            r#"
+UPDATE ontology_properties
+SET display_name = ?, description = ?, domain_classes = ?, applies_to = ?,
+    data_type = ?, value_range = ?, cardinality = ?, unit = ?,
+    "required" = ?, "status" = ?, updated_at = ?
+WHERE id = ?
+"#,
+            property.display_name,
+            property.description,
+            property.domain_classes,
+            property.applies_to,
+            property.data_type,
+            property.value_range,
+            property.cardinality,
+            property.unit,
+            property.required,
+            status,
+            property.updated_at,
+            property.id
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(())
+    }
+
+    async fn retire_property(&self, ctx: RequestContext, id: &str) -> Result<()> {
+        // 软删除 status=0；幂等：不存在或已退役均静默成功
+        // ⚠️ 退役 ≠ 删除：存量属性值按 data_type 冗余列继续可解释
+        let now = current_timestamp();
+        sqlx::query!(
+            "UPDATE ontology_properties SET status = 0, updated_at = ? WHERE id = ?",
+            now,
+            id
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(())
+    }
 }
 
 // ==================== 查询构造辅助 ====================
@@ -557,6 +758,33 @@ fn push_synonym_filters<'args>(
             .push(" AND (raw_term LIKE ")
             .push_bind(pattern.clone())
             .push(" ESCAPE '\\' OR target_key LIKE ")
+            .push_bind(pattern)
+            .push(" ESCAPE '\\')");
+    }
+}
+
+/// 属性定义查询 WHERE 构造（只含可用 SQL 表达的维度）
+///
+/// `domain_class` / `target_type` 两个维度针对 JSON 数组列，**不在这里下推**——
+/// SQL 无法表达「JSON 数组包含某元素」的参数化判定，由 `query_properties`
+/// 在内存侧收窄。两份过滤必须成对维护：SQL 侧加条件要同步内存侧，反之亦然。
+fn push_property_sql_filters<'args>(
+    builder: &mut QueryBuilder<'args, sqlx::Sqlite>,
+    query: &'args OntologyPropertyQuery,
+) {
+    if let Some(status) = query.status {
+        builder
+            .push(" AND \"status\" = ")
+            .push_bind(status.to_i32());
+    }
+    if let Some(keyword) = &query.keyword {
+        let pattern = format!("%{}%", escape_like(keyword));
+        builder
+            .push(" AND (term_key LIKE ")
+            .push_bind(pattern.clone())
+            .push(" ESCAPE '\\' OR display_name LIKE ")
+            .push_bind(pattern.clone())
+            .push(" ESCAPE '\\' OR description LIKE ")
             .push_bind(pattern)
             .push(" ESCAPE '\\')");
     }

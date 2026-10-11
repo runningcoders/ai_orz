@@ -10,11 +10,14 @@
 //! - 词表条目软删除（status 1 正常 / 0 退役，退役 ≠ 删除）；
 //! - 同义映射是解释规则非事实数据，物理删除、无退役语义。
 
-use crate::models::ontology::{OntologyClassPo, OntologyRelationTypePo, OntologySynonymMappingPo};
+use crate::models::ontology::{
+    OntologyClassPo, OntologyPropertyPo, OntologyRelationTypePo, OntologySynonymMappingPo,
+};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{StatAggregation, StatEvent, StatFilter, Stats};
 use common::api::PaginationParams;
 use common::enums::OntologyStatus;
+use common::enums::ontology::PropertyTargetType;
 use common::error::Result;
 use common::ontology::TermKind;
 use serde_json::Value as JsonValue;
@@ -34,6 +37,20 @@ pub struct OntologyClassQuery {
 pub struct OntologyRelationTypeQuery {
     /// 按状态过滤（None = 不过滤，含退役）
     pub status: Option<OntologyStatus>,
+    /// 关键词（term_key / display_name / description LIKE 模糊匹配）
+    pub keyword: Option<String>,
+    pub pagination: PaginationParams,
+}
+
+/// 属性定义查询参数
+#[derive(Debug, Clone, Default)]
+pub struct OntologyPropertyQuery {
+    /// 按状态过滤（None = 不过滤，含退役）
+    pub status: Option<OntologyStatus>,
+    /// 按适用实体类过滤（匹配 domain_classes 清单；None = 不过滤）
+    pub domain_class: Option<String>,
+    /// 按适用载体过滤（node / relation；匹配 applies_to 清单；None = 不过滤）
+    pub target_type: Option<PropertyTargetType>,
     /// 关键词（term_key / display_name / description LIKE 模糊匹配）
     pub keyword: Option<String>,
     pub pagination: PaginationParams,
@@ -166,6 +183,50 @@ pub trait OntologyDao: Send + Sync {
 
     /// 物理删除（映射是解释规则非事实数据，无退役语义；幂等）
     async fn delete_synonym(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // ==================== 属性定义（TBox：属性类型） ====================
+
+    /// 插入属性定义（term_key 唯一，冲突返回 Conflict）
+    async fn insert_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyPropertyPo,
+    ) -> Result<()>;
+
+    async fn find_property_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyPropertyPo>>;
+
+    /// 按规范词查属性定义（写侧校验主查路径；term_key 写入侧已归一）
+    async fn find_property_by_term_key(
+        &self,
+        ctx: RequestContext,
+        term_key: &str,
+    ) -> Result<Option<OntologyPropertyPo>>;
+
+    /// 分页组合查询（count 内嵌）
+    async fn query_properties(
+        &self,
+        ctx: RequestContext,
+        query: OntologyPropertyQuery,
+    ) -> Result<common::api::PagedResult<OntologyPropertyPo>>;
+
+    /// 全量属性定义（含退役；写侧校验与 lexicon 加载需要全貌）
+    async fn list_all_properties(&self, ctx: RequestContext) -> Result<Vec<OntologyPropertyPo>>;
+
+    /// 全量更新（term_key 不可变）
+    async fn update_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyPropertyPo,
+    ) -> Result<()>;
+
+    /// 退役（软删除 status=0；幂等：不存在或已退役均静默成功）
+    ///
+    /// ⚠️ 退役 ≠ 删除：存量属性值仍按 `data_type` 冗余列解释（迁移决策 #4）。
+    async fn retire_property(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }
 
 /// 本体漂移事件查询参数（DuckDB 时间线视角）

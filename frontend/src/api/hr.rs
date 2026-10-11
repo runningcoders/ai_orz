@@ -4,30 +4,31 @@ use common::api::{
     AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CancelThinkingRequest,
     CancelThinkingResponse, CompleteAgentOffboardRequest, CreateAgentRequest, CreateAgentResponse,
     CreateExternalAgentRequest, CreateExternalAgentResponse, CreateOntologyClassRequest,
-    CreateOntologyClassResponse, CreateOntologyRelationTypeRequest,
-    CreateOntologyRelationTypeResponse, CreateOntologySynonymRequest,
-    CreateOntologySynonymResponse, CreateSkillRequest, CreateSkillResponse,
-    DeleteOntologySynonymResponse, DeleteSkillResponse, GetAgentRequest, GetAgentResponse,
-    GetDriftDashboardRequest, GetDriftDashboardResponse, GetKnowledgeGraphParams,
+    CreateOntologyClassResponse, CreateOntologyPropertyRequest, CreateOntologyPropertyResponse,
+    CreateOntologyRelationTypeRequest, CreateOntologyRelationTypeResponse,
+    CreateOntologySynonymRequest, CreateOntologySynonymResponse, CreateSkillRequest,
+    CreateSkillResponse, DeleteOntologySynonymResponse, DeleteSkillResponse, GetAgentRequest,
+    GetAgentResponse, GetDriftDashboardRequest, GetDriftDashboardResponse, GetKnowledgeGraphParams,
     GetKnowledgeGraphResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
     GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
     ListDriftRelationDetailsResponse, ListExpiredAgentSkillsRequest,
     ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
     ListInstalledToolPacksResponse, ListOntologyClassesRequest, ListOntologyClassesResponse,
-    ListOntologyLexiconResponse, ListOntologyRelationTypesRequest,
-    ListOntologyRelationTypesResponse, ListOntologySynonymsRequest, ListOntologySynonymsResponse,
-    OnboardAgentRequest, PagedResult, QueryMemoryParams, QueryMemoryResponse,
-    RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
-    RestoreSkillResponse, RetireOntologyClassResponse, RetireOntologyRelationTypeResponse,
-    RuntimeStatusRequest, RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams,
-    SearchMemoryResponse, SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem,
-    SkillQueryRequest, StartAgentOffboardRequest, UnbindToolFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
-    UpdateAgentStatusRequest, UpdateAgentStatusResponse, UpdateOntologyClassRequest,
-    UpdateOntologyClassResponse, UpdateOntologyRelationTypeRequest,
-    UpdateOntologyRelationTypeResponse, UpdateSkillFileContentRequest, UpdateSkillRequest,
-    UpdateSkillResponse,
+    ListOntologyLexiconResponse, ListOntologyPropertiesRequest, ListOntologyPropertiesResponse,
+    ListOntologyRelationTypesRequest, ListOntologyRelationTypesResponse,
+    ListOntologySynonymsRequest, ListOntologySynonymsResponse, OnboardAgentRequest, PagedResult,
+    QueryMemoryParams, QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse,
+    RestoreSkillRequest, RestoreSkillResponse, RetireOntologyClassResponse,
+    RetireOntologyPropertyResponse, RetireOntologyRelationTypeResponse, RuntimeStatusRequest,
+    RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
+    SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem, SkillQueryRequest,
+    StartAgentOffboardRequest, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
+    UpdateAgentStatusResponse, UpdateOntologyClassRequest, UpdateOntologyClassResponse,
+    UpdateOntologyPropertyRequest, UpdateOntologyPropertyResponse,
+    UpdateOntologyRelationTypeRequest, UpdateOntologyRelationTypeResponse,
+    UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
 };
 use common::enums::OntologyStatus;
 
@@ -541,6 +542,49 @@ pub async fn create_ontology_synonym(
 /// DELETE /api/v1/hr/ontology/synonyms/{id}
 pub async fn delete_ontology_synonym(id: &str) -> Result<DeleteOntologySynonymResponse, ApiError> {
     api_delete_with_response(&format!("/api/v1/hr/ontology/synonyms/{}", id)).await
+}
+
+/// 列出属性定义词条（分页 + 状态/适用实体类/载体/关键词筛选）
+/// GET /api/v1/hr/ontology/properties?status=&domain_class=&target_type=&keyword=&limit=&offset=
+pub async fn list_ontology_properties(
+    req: ListOntologyPropertiesRequest,
+) -> Result<ListOntologyPropertiesResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("status", req.status.map(ontology_status_query_value)),
+        ("domain_class", req.domain_class.clone()),
+        (
+            "target_type",
+            req.target_type.map(|t| t.as_str().to_string()),
+        ),
+        ("keyword", req.keyword.clone()),
+        ("limit", req.pagination.limit.map(|v| v.to_string())),
+        ("offset", req.pagination.offset.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/hr/ontology/properties{}", qs)).await
+}
+
+/// 创建属性定义（term_key 重复创建报错）
+/// POST /api/v1/hr/ontology/properties
+pub async fn create_ontology_property(
+    req: CreateOntologyPropertyRequest,
+) -> Result<CreateOntologyPropertyResponse, ApiError> {
+    api_post("/api/v1/hr/ontology/properties", &req).await
+}
+
+/// 更新属性定义（term_key 创建后不可改）
+/// PUT /api/v1/hr/ontology/properties/{id}
+pub async fn update_ontology_property(
+    req: UpdateOntologyPropertyRequest,
+) -> Result<UpdateOntologyPropertyResponse, ApiError> {
+    api_put(&format!("/api/v1/hr/ontology/properties/{}", req.id), &req).await
+}
+
+/// 退役属性定义（软删除 status=Retired；历史存量属性值仍可解释）
+/// DELETE /api/v1/hr/ontology/properties/{id}
+pub async fn retire_ontology_property(
+    id: &str,
+) -> Result<RetireOntologyPropertyResponse, ApiError> {
+    api_delete_with_response(&format!("/api/v1/hr/ontology/properties/{}", id)).await
 }
 
 /// 词表注入视图（管理页只读展示，与神经技能注入共用同一契约）

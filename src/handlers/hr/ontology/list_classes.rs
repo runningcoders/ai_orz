@@ -13,7 +13,8 @@ use common::error::Result;
     name = "List Ontology Classes",
     description = "List entity-class lexicon entries (knowledge graph node types) with pagination. Filter by status (active/retired, defaults to all) and keyword (matches term_key, display_name, or description).",
     params = "common::api::ListOntologyClassesRequest",
-    tags = "ontology_management"
+    neural,
+    tags = "ontology_management,ontology"
 )]
 #[generate_http_handler]
 pub async fn list_ontology_classes(

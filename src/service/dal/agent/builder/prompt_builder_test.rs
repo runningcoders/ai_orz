@@ -894,9 +894,9 @@ fn flat_builder_ignores_template_for_remote_config() {
 
 // ==================== 本体词表注入（design §5.4）====================
 
-/// 构造小词表：2 关系词 + 2 实体类 + 1 同义映射（正常体量，三段均不触发裁剪）
+/// 构造小词表：2 关系词 + 2 实体类 + 2 属性 + 1 同义映射（正常体量，四段均不触发裁剪）
 fn make_lexicon_summary() -> common::ontology::OntologyLexiconSummary {
-    use common::ontology::{LexiconSynonymSummary, LexiconTermSummary};
+    use common::ontology::{LexiconPropertySummary, LexiconSynonymSummary, LexiconTermSummary};
     common::ontology::OntologyLexiconSummary {
         relation_types: vec![
             LexiconTermSummary {
@@ -920,6 +920,30 @@ fn make_lexicon_summary() -> common::ontology::OntologyLexiconSummary {
                 term_key: "task".into(),
                 display_name: "任务".into(),
                 description: "有目标的工作项".into(),
+            },
+        ],
+        properties: vec![
+            LexiconPropertySummary {
+                term_key: "confidence".into(),
+                display_name: "置信度".into(),
+                description: "该条记忆的可信程度".into(),
+                data_type: "number".into(),
+                cardinality: "single".into(),
+                applies_to: vec!["node".into()],
+                value_hint: "0~1".into(),
+                unit: None,
+                required: true,
+            },
+            LexiconPropertySummary {
+                term_key: "source".into(),
+                display_name: "来源".into(),
+                description: "信息出处".into(),
+                data_type: "string".into(),
+                cardinality: "many".into(),
+                applies_to: vec![],
+                value_hint: String::new(),
+                unit: None,
+                required: false,
             },
         ],
         synonyms: vec![LexiconSynonymSummary {
@@ -961,7 +985,7 @@ fn lexicon_block_skips_empty_summary() {
     );
 }
 
-/// 注入词表后渲染完整三段：引导语 + 关系词 + 实体类 + 同义映射
+/// 注入词表后渲染完整四段：引导语 + 关系词 + 实体类 + 属性定义 + 同义映射
 #[test]
 fn lexicon_block_renders_full_vocabulary() {
     let agent = make_simple_agent();
@@ -979,13 +1003,17 @@ fn lexicon_block_renders_full_vocabulary() {
     // 引导语：节点从实体类取词、关系从关系词取词
     assert!(prompt.contains("节点类型从「实体类」取词"));
     assert!(prompt.contains("关系从「关系词」取词"));
-    // 三段段头齐全
+    // 四段段头齐全
     assert!(prompt.contains("关系词（图谱边类型）"));
     assert!(prompt.contains("实体类（图谱节点类型）"));
+    assert!(prompt.contains("属性定义（挂在节点或关系上的键值对"));
     assert!(prompt.contains("同义映射"));
     // 词条行格式：- {term_key}（{display_name}）：{description}
     assert!(prompt.contains("- contains（包含）：父节点包含子节点"));
     assert!(prompt.contains("- concept（概念）：抽象知识单元"));
+    // 属性行格式：- {term_key}（{display_name}）[{类型 取值提示，基数，载体，必填}]：{description}
+    assert!(prompt.contains("- confidence（置信度）[number 0~1，单值，挂 node，必填]"));
+    assert!(prompt.contains("- source（来源）[string，多值，节点/关系均可]"));
     // 同义映射行格式：「{raw_term}」→ {target_key}
     assert!(prompt.contains("「父子关系」→ contains"));
 }
@@ -1025,8 +1053,44 @@ fn lexicon_block_truncates_low_priority_sections() {
         "实体类段应整体让位"
     );
     assert!(
+        !prompt.contains("属性定义（挂在节点或关系上的键值对"),
+        "属性段应整体让位"
+    );
+    assert!(
         !prompt.contains("「父子关系」→ contains"),
         "同义段应整体让位"
+    );
+}
+
+/// 属性段享有段首保底：实体类段吃满预算后，只要还剩 header + 一行的空间，
+/// 属性段仍会渲染（标题 + 至少一条），不会被静默吞掉。
+#[test]
+fn lexicon_property_section_gets_head_guarantee() {
+    use common::ontology::LexiconTermSummary;
+    let agent = make_simple_agent();
+
+    let mut lexicon = make_lexicon_summary();
+    // 实体类段堆到贴近预算上限（每条 ~30 字，80 条 ≈ 2400 字，给属性段留出余量）
+    lexicon.classes = (0..80)
+        .map(|i| LexiconTermSummary {
+            term_key: format!("cls_{}", i),
+            display_name: format!("类目{}", i),
+            description: "语义描述".repeat(3),
+        })
+        .collect();
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.system_prompt(&agent);
+    builder.ontology_lexicon(&lexicon);
+    let prompt = builder.build();
+
+    assert!(
+        prompt.contains("属性定义（挂在节点或关系上的键值对"),
+        "属性段应享有段首保底，不能因前段吃满预算而整段消失"
+    );
+    assert!(
+        prompt.contains("- confidence（置信度）[number 0~1，单值，挂 node，必填]"),
+        "属性段至少装入首条（含完整写值约束）"
     );
 }
 
@@ -1051,6 +1115,7 @@ fn lexicon_block_synonyms_yield_when_budget_exhausted() {
                 description: "语义描述".into(),
             })
             .collect(),
+        properties: vec![],
         synonyms: vec![LexiconSynonymSummary {
             raw_term: "长".repeat(3000),
             target_kind: common::ontology::TermKind::Relation,
@@ -1187,4 +1252,127 @@ fn default_summary_prompt_static_block_first() {
     assert!(prompt.contains("7 轮"), "轮次区块应包含轮次数");
     assert!(prompt.contains("已完成 X 与 Y"), "摘要区块应包含摘要内容");
     assert!(prompt.contains("- t-9"), "依赖 trace 列表应包含 t-9");
+}
+
+/// 技能进 Prompt 的**唯一判据是「是否已安装」**，与 tags 无关。
+///
+/// 本护栏锁的是「装了就进」这条不变量：副本出现在 `skills()` 里就必须在 Prompt 里露脸，
+/// 哪怕它的 tags 既不是 `neural`、也不命中 Agent 的 roles / 已装包 tag。
+/// 历史实现按「tags ∩ match_keys」二次过滤，会出现「装了却不进 Prompt」的静默故障。
+#[test]
+fn installed_skill_copy_always_appears_regardless_of_tags() {
+    use crate::models::skill::SkillPo;
+    use common::enums::skill::SkillAuthorType;
+
+    // 注意：Agent 既没装 ontology 技能包、roles 也不是 ontology —— 只有副本存在
+    let agent = make_simple_agent();
+
+    let skill = SkillPo::new(
+        "onto-001".to_string(),
+        "本体论方法论".to_string(),
+        "给知识分类的方法".to_string(),
+        vec!["ontology".to_string()],
+        "method".to_string(),
+        String::new(),
+        "agent-test-001".to_string(),
+        SkillAuthorType::Agent,
+        "skills/onto-001".to_string(),
+    );
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-pack");
+    builder.system_prompt(&agent);
+    builder.skills(&[skill]);
+    builder.current_message(&make_simple_message("你好"));
+    let prompt = builder.build();
+
+    let idx_block = find_block(&prompt, "【已安装技能】").expect("应渲染【已安装技能】区块");
+    let idx_name = prompt
+        .find("本体论方法论")
+        .expect("已安装副本必须出现在 Prompt 中（装了就进，不看 tags）");
+    assert!(idx_name > idx_block, "该技能应落在【已安装技能】区块内");
+}
+
+/// 反面对照：**未安装**的 Published 技能不进 Prompt（发现靠 `search_skill`）。
+///
+/// 锁定「装了就进」的另一半：可见性边界在**副本池**，Prompt 侧不兜底、不补全。
+#[test]
+fn uninstalled_skill_stays_out_of_prompt() {
+    use crate::models::skill::SkillPo;
+    use common::enums::skill::SkillAuthorType;
+
+    let agent = make_simple_agent();
+    // 技能存在，但**不喂给 builder**（= 没装到该 Agent 目录）
+    let skill = SkillPo::new(
+        "onto-002".to_string(),
+        "本体论方法论".to_string(),
+        "给知识分类的方法".to_string(),
+        vec!["assistant".to_string()],
+        "method".to_string(),
+        String::new(),
+        "someone-else".to_string(),
+        SkillAuthorType::Agent,
+        "skills/onto-002".to_string(),
+    );
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-hidden");
+    builder.system_prompt(&agent);
+    builder.skills(&[]);
+    let _ = skill;
+    builder.current_message(&make_simple_message("你好"));
+    let prompt = builder.build();
+
+    assert!(
+        !prompt.contains("本体论方法论"),
+        "未安装的技能不应进 Prompt（可见性边界在已安装副本池）"
+    );
+}
+
+/// `neural` 只剩「分块置前」这一个排版语义：不决定可见性，只决定区块归属。
+#[test]
+fn neural_only_orders_blocks_not_visibility() {
+    use crate::models::skill::SkillPo;
+    use common::enums::skill::SkillAuthorType;
+
+    let agent = make_simple_agent();
+
+    let neural = SkillPo::new(
+        "s-neural".to_string(),
+        "神经方法论".to_string(),
+        "常驻".to_string(),
+        vec!["neural".to_string()],
+        "method".to_string(),
+        String::new(),
+        "agent-test-001".to_string(),
+        SkillAuthorType::Agent,
+        "skills/s-neural".to_string(),
+    );
+    let plain = SkillPo::new(
+        "s-plain".to_string(),
+        "普通方法论".to_string(),
+        "已装".to_string(),
+        vec!["coding".to_string()],
+        "method".to_string(),
+        String::new(),
+        "agent-test-001".to_string(),
+        SkillAuthorType::Agent,
+        "skills/s-plain".to_string(),
+    );
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-neural");
+    builder.system_prompt(&agent);
+    builder.skills(&[neural, plain]);
+    builder.current_message(&make_simple_message("你好"));
+    let prompt = builder.build();
+
+    let idx_neural = find_block(&prompt, "【神经技能】").expect("应有【神经技能】区块");
+    let idx_installed = find_block(&prompt, "【已安装技能】").expect("应有【已安装技能】区块");
+    assert!(
+        idx_neural < idx_installed,
+        "神经技能区块须置前（保前缀缓存）"
+    );
+    assert!(prompt.contains("神经方法论"), "neural 副本可见");
+    assert!(prompt.contains("普通方法论"), "非 neural 副本同样可见");
 }

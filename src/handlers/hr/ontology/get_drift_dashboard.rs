@@ -12,7 +12,8 @@ use common::error::Result;
     name = "Get Ontology Drift Dashboard",
     description = "Get the ontology drift dashboard: top N drifted raw terms (with frequency and distinct-agent multi-source signals), relation-dimension lexicon coverage (canonical hits + synonym merges vs all relations), and node drift statistics. Lazily aggregated from SQLite read paths and self-heals as the lexicon evolves. Filter by agent_id optionally.",
     params = "common::api::GetDriftDashboardRequest",
-    tags = "ontology_management"
+    neural,
+    tags = "ontology_management,ontology"
 )]
 #[generate_http_handler]
 pub async fn get_ontology_drift_dashboard(

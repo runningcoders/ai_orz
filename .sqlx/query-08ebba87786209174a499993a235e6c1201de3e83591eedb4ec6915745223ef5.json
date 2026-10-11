@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE knowledge_property\nSET \"status\" = ?, updated_at = ?\nWHERE target_type = ? AND target_id = ? AND term_key = ? AND \"status\" = 1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "08ebba87786209174a499993a235e6c1201de3e83591eedb4ec6915745223ef5"
+}

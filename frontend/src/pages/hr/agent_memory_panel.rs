@@ -89,6 +89,7 @@ fn fetch_memories(
                 tags: None,
                 task_id: task_filter.clone(),
                 agent_id: agent_id.clone(),
+                property_filters: None,
             })
             .await
             .map(|r| r.results)

@@ -14,7 +14,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::models::agent::Agent;
-use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
+use crate::models::memory::{KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryTrace};
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
@@ -27,7 +27,9 @@ use crate::service::dal::tool::ToolDal;
 use crate::service::dal::user::UserDal;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use common::enums::AgentRuntimeState;
+use common::enums::ontology::PropertyTargetType;
 use common::error::Result;
+use common::ontology_property::{PropertyEntry, PropertyFilter, PropertySaveReport};
 
 // ==================== traits 定义 ===================
 
@@ -163,6 +165,46 @@ pub trait RuntimeMemory: Send + Sync {
         max_breadth: i32,
         strategy: TraversalStrategy,
     ) -> Result<Vec<Memory>>;
+
+    // ========== 实体属性（ABox 图谱域通用挂载） ==========
+
+    /// ✍️ 写入一个载体的属性（本体门闩在 DAL，本层只做编排）
+    ///
+    /// ⚠️ `Ok(report)` **不代表全部写入成功**：被拒条目在 `report.issues` 里。
+    /// 调用方（工具 / Handler）负责把 issues 翻成模型可见的反馈——
+    /// 属性写错若静默吞掉，模型会以为写成功了，下次不再补。
+    async fn save_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+        entries: Vec<PropertyEntry>,
+    ) -> Result<PropertySaveReport>;
+
+    /// 📖 取一个载体的全部生效属性
+    async fn list_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+    ) -> Result<Vec<KnowledgePropertyPo>>;
+
+    /// 📖 批量取多个载体的生效属性（防 N+1；结果回显一趟查完）
+    ///
+    /// # 返回
+    /// - key 为 `(target_type.as_str(), target_id)`；**没有任何属性的载体不出现在 map 里**
+    async fn list_entity_properties_batch(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
+
+    /// 🔍 按属性条件精确召回载体 id（结构化过滤入口，与语义召回互补）
+    async fn query_entities_by_properties(
+        &self,
+        ctx: RequestContext,
+        filters: &[PropertyFilter],
+    ) -> Result<Vec<String>>;
 }
 
 /// 唤醒能力 trait

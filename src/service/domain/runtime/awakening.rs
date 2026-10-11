@@ -482,7 +482,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // Step 2.6: 技能已由 hr_domain.get_agent(with_skills=true) 加载到 agent.skills
         // 技能只在 Agent 已安装的副本范围内（author_id = agent_id，排除 Expired）
-        // 不匹配 match_keys 的技能不展示在 Prompt，由 Agent 通过 search_skill 神经工具按需加载
+        // 已安装副本全部进 Prompt（装了就进，无 tag 匹配）；未安装的 Published 技能不展示，
+        // 由 Agent 通过 search_skill 神经工具发现 + install_skill_to_agent 安装后才会出现
         let skill_pos: Vec<crate::models::skill::SkillPo> =
             agent.skills().iter().map(|s| s.po.clone()).collect();
 

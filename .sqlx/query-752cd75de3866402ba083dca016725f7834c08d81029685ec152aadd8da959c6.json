@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, term_key, display_name, description, domain_classes, applies_to,\n       data_type, value_range, cardinality, unit, \"required\" AS \"required!: i32\",\n       \"status\" AS \"status!\", created_at, updated_at\nFROM ontology_properties ORDER BY term_key ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "term_key",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "domain_classes",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "applies_to",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "data_type",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "value_range",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "cardinality",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "unit",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "required!: i32",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "status!",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 13,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "752cd75de3866402ba083dca016725f7834c08d81029685ec152aadd8da959c6"
+}

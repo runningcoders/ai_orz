@@ -75,11 +75,16 @@ pub use update_memory::update_memory_handler;
 // ==================== 共享序列化 ====================
 
 use crate::models::agent::{Agent, ExternalAgentConfig};
+use crate::pkg::RequestContext;
+use crate::service::domain::runtime::domain as runtime_domain;
 use common::api::{
     AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, AgentRuntimeConfigInfo,
-    UpdateAgentStatusResponse,
+    KnowledgePropertyParam, UpdateAgentStatusResponse,
 };
+use common::enums::ontology::PropertyTargetType;
 use common::enums::{AgentKind, AgentRuntimeState};
+use common::error::Result;
+use common::ontology_property::PropertyEntry;
 
 /// 把 Agent 实体序列化为「状态流转类」接口的统一响应
 ///
@@ -203,4 +208,38 @@ pub fn build_status_response(agent: &Agent) -> UpdateAgentStatusResponse {
         stats: None,
         model_call_stats: None,
     }
+}
+
+/// 写入知识节点属性（部分成功语义：坏条目只跳过，不中断）
+///
+/// 门闩（类型 / 值域 / 基数 / 载体）全在 DAL，这里只做「入参 → 回执文案」的翻译。
+/// 空入参直接返回空回执，不打扰 DAL。
+///
+/// `save_long_term_memory`（新建）与 `update_memory`（既有节点补 / 改）共用一份：
+/// 属性是**独立于记忆主体**的一步写入——
+/// - 写失败不该连累节点本身（节点已经建好 / 改好了，回滚代价远大于留一个缺属性的节点）；
+/// - 但回执**必须**回给模型：静默吞掉会让它以为写成功了，下次不再补。
+pub(crate) async fn save_node_properties(
+    ctx: &RequestContext,
+    node_id: &str,
+    properties: Option<Vec<KnowledgePropertyParam>>,
+) -> Result<Vec<String>> {
+    let Some(properties) = properties else {
+        return Ok(Vec::new());
+    };
+    if properties.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let entries: Vec<PropertyEntry> = properties.into_iter().map(|p| p.into_entry()).collect();
+    let report = runtime_domain()
+        .memory()
+        .save_entity_properties(ctx.clone(), PropertyTargetType::Node, node_id, entries)
+        .await?;
+
+    Ok(report
+        .issues
+        .iter()
+        .map(|i| format!("{}: {}", i.term_key, i.kind.describe()))
+        .collect())
 }

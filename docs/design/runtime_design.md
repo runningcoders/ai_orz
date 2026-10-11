@@ -1543,12 +1543,15 @@ Manual 工具调用校验：
 
 **注入阶段**（`RuntimeDomainImpl::awaken`）：
 - 从 `agent.skills()` 提取 `SkillPo` 列表供 PromptBuilder 使用（与 ToolPo 提取方式一致）
-- PromptBuilder 按 tag 分块拼装："【神经技能】"（tags 含 neural）+ "【必加载技能】"（tags 匹配 match_keys）
+- PromptBuilder 按「是否已安装」分块拼装："【神经技能】"（tags 含 neural，置前构成稳定前缀）+ "【已安装技能】"（其余全部）。**两个区块合起来即已安装副本全集，没有 tag 匹配兜底**
 
 **技能与工具的关键差异**：
 - 工具支持全局 tag 匹配（neural + installed_tags 全局查询），所有 Agent 天生拥有神经工具
 - 技能讲究"安装且自进化"，即便是神经技能也必须安装到自身目录才能使用（只在 `author_id = agent_id` 范围内查）
-- 不匹配 match_keys 的已安装技能不展示在 Prompt，由 Agent 通过 `search_skill` 神经工具按需渐进式加载
+- **装了就进 Prompt**：可见性判据只有「副本是否已安装」，与 tags / roles / 已装包 tag 无关
+  （历史做法曾按 `tags ∩ match_keys` 二次过滤，会造成"装了却不进 Prompt"的静默故障，已废弃）
+- `neural` 只剩两个特殊语义：**区块置前**（静态块保前缀缓存）+ **不可卸载**；不再决定可见性
+- 未安装的 Published 技能不展示在 Prompt，由 Agent 通过 `search_skill` 发现 + `install_skill_to_agent` 安装后才出现
 
 ### 22.7 三种角色定位
 

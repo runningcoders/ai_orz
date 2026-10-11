@@ -12,7 +12,8 @@ use common::error::Result;
     name = "List Ontology Drift Class Details",
     description = "Drill down into knowledge-graph node instances for a term. raw_term accepts either a drifted raw term or a canonical term key (drill-down is not limited to drifted words). Filter by agent_id optionally. Returns paged node details: id, producer agent, node name, created_at.",
     params = "common::api::ListDriftClassDetailsRequest",
-    tags = "ontology_management"
+    neural,
+    tags = "ontology_management,ontology"
 )]
 #[generate_http_handler]
 pub async fn list_ontology_drift_class_details(

@@ -26,6 +26,10 @@ static EMBEDDED_SKILL_FILES: &[(&str, &str)] = &[
         include_str!("skills/TEMPLATE_MEMORY_COGNITION/skill.md"),
     ),
     (
+        "skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md",
+        include_str!("skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md"),
+    ),
+    (
         "skills/TEMPLATE_COMMUNICATION/skill.md",
         include_str!("skills/TEMPLATE_COMMUNICATION/skill.md"),
     ),
@@ -145,6 +149,12 @@ mod tests {
     }
 
     #[test]
+    fn test_read_embedded_file_ontology_cognition() {
+        let content = read_embedded_file("skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md").unwrap();
+        assert!(content.contains("本体认知"));
+    }
+
+    #[test]
     fn test_read_embedded_file_project_context_cognition() {
         let content =
             read_embedded_file("skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md").unwrap();
@@ -161,10 +171,11 @@ mod tests {
     #[test]
     fn test_list_embedded_skill_files_count() {
         let files = list_embedded_skill_files();
-        assert_eq!(files.len(), 10);
+        assert_eq!(files.len(), 11);
         assert!(files.contains(&"skills/TEMPLATE_TOOL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_SKILL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_MEMORY_COGNITION/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_COMMUNICATION/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/GIT_BRANCH_WORKFLOW/skill.md".to_string()));

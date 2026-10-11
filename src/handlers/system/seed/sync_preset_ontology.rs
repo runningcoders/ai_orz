@@ -57,9 +57,12 @@ pub async fn sync_preset_ontology(
     params: SyncPresetOntologyRequest,
 ) -> Result<SyncPresetOntologyResponse> {
     let snapshot = default::embedded_default_snapshot();
+    // ⚠️ `total` 必须覆盖**四类**词条：漏算 properties 会让「created + skipped 对账」
+    // 恒等式在第二次同步时崩掉（skipped 含属性、total 不含）。
     let total = snapshot.ontology.classes.len()
         + snapshot.ontology.relation_types.len()
-        + snapshot.ontology.synonym_mappings.len();
+        + snapshot.ontology.synonym_mappings.len()
+        + snapshot.ontology.properties.len();
     let report = hr::domain()
         .ontology_domain()
         .apply_default_lexicon_with_strategy(ctx.clone(), &snapshot.ontology, params.strategy)
@@ -80,10 +83,12 @@ pub async fn sync_preset_ontology(
     Ok(SyncPresetOntologyResponse {
         created: report.inserted_classes.len()
             + report.inserted_relation_types.len()
-            + report.inserted_synonyms,
+            + report.inserted_synonyms
+            + report.inserted_properties.len(),
         updated: report.updated_classes.len()
             + report.updated_relation_types.len()
-            + report.updated_synonyms,
+            + report.updated_synonyms
+            + report.updated_properties.len(),
         skipped: report.skipped,
         total,
     })

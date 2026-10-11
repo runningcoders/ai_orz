@@ -308,7 +308,8 @@ fn make_test_message(content: &str) -> Message {
 
 /// 在数据库中为 Agent 创建技能副本
 ///
-/// skills tags 包含 "assistant" 以匹配 Agent 的 role，确保出现在"必加载技能"区块
+/// 技能副本一旦建到 Agent 目录（author_id = agent_id）就会出现在「已安装技能」区块，
+/// 与 tags 无关 —— 可见性判据是「是否安装」而非 tag 匹配
 async fn create_skill_for_agent(
     ctx: RequestContext,
     agent_id: &str,
@@ -397,10 +398,10 @@ async fn test_awaken_with_skills(pool: SqlitePool) {
         .clone()
         .expect("应该捕获到 prompt");
 
-    // 验证 Prompt 包含"【必加载技能】"部分（tags 匹配 agent role "assistant"）
+    // 验证 Prompt 包含"【已安装技能】"部分（副本已建到 Agent 目录 ⇒ 装了就进）
     assert!(
-        prompt.contains("【必加载技能】"),
-        "Prompt 应该包含【必加载技能】部分，实际: {}",
+        prompt.contains("【已安装技能】"),
+        "Prompt 应该包含【已安装技能】部分，实际: {}",
         prompt
     );
     // 验证两个技能都出现在 Prompt 中
@@ -463,7 +464,7 @@ async fn test_awaken_without_skills(pool: SqlitePool) {
 
     // 验证 Prompt 不包含技能相关区块（Agent 无技能）
     assert!(
-        !prompt.contains("【必加载技能】") && !prompt.contains("【神经技能】"),
+        !prompt.contains("【已安装技能】") && !prompt.contains("【神经技能】"),
         "Prompt 不应该包含技能区块（Agent 无技能），实际: {}",
         prompt
     );

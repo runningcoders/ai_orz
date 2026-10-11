@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE ontology_properties SET status = 0, updated_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "768d583587f76388741515f7a60ddefde2008e3eb6a67f8e1afc69ad262363b9"
+}

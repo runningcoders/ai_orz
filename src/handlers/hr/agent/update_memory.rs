@@ -1,5 +1,6 @@
 //! Handler: 更新记忆 - Neural Tool
 
+use super::save_node_properties;
 use crate::models::memory::{KnowledgeNodeRelationPo, Memory, MemoryCreateParams, MemoryPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
@@ -14,9 +15,10 @@ use serde_json;
 #[register_handler_tool(
     id = "update_memory",
     name = "Update Memory Entry",
-    description = "Update an existing short_term memory or knowledge_node by id: change content, summary, tags, or status (active/settled/forgotten; any other value is rejected with invalid_request rather than silently ignored); knowledge nodes also accept node_tags to toggle the published flag, and relations to create typed edges to other nodes — this is the ONLY way to add edges to an existing node (mentioning another node in the body text does NOT create an edge: graph traversal only follows the relation table, in-text references are unreachable). Trace and Relation entries cannot be modified. Returns the memory_id.",
+    description = "Update an existing short_term memory or knowledge_node by id: change content, summary, tags, or status (active/settled/forgotten; any other value is rejected with invalid_request rather than silently ignored); knowledge nodes also accept node_tags to toggle the published flag, relations to create typed edges to other nodes — this is the ONLY way to add edges to an existing node (mentioning another node in the body text does NOT create an edge: graph traversal only follows the relation table, in-text references are unreachable) — and properties to attach or correct structured facts (term_key + typed value), the ONLY way to put properties on an existing node. Re-writing a single-valued property supersedes the old value (history is kept, only the newest is read back), so correcting a property is just another write, not a delete-then-create. Rejected entries are listed in property_issues as '<term_key>: <reason>' and never fail the update itself. Trace and Relation entries cannot be modified, and neither relations nor properties are accepted for short_term memories. Returns memory_id and property_issues.",
     params = "common::api::UpdateMemoryParams",
-    neural
+    neural,
+    tags = "ontology"
 )]
 #[generate_http_handler]
 pub async fn update_memory(
@@ -45,10 +47,20 @@ pub async fn update_memory(
 
     // relations 只对知识节点有意义（短期记忆没有节点间关系语义）。
     // 静默忽略会让调用方以为边已建立——沉淀联想悄悄丢失，比报错更糟。
-    if params.relations.is_some() && !matches!(memory.po, MemoryPo::KnowledgeNode(_)) {
+    let is_node = matches!(memory.po, MemoryPo::KnowledgeNode(_));
+
+    if params.relations.is_some() && !is_node {
         bail_err!(
             InvalidRequest,
             "relations 仅支持知识节点；短期记忆不支持建边（联想请沉淀为知识节点后再建关系）"
+        );
+    }
+    // 属性同样只对知识节点有意义（ABox 属性挂在图谱载体上，短期记忆没有载体语义）。
+    // 与 relations 同口径报 400：静默忽略会让模型以为属性已补上。
+    if params.properties.is_some() && !is_node {
+        bail_err!(
+            InvalidRequest,
+            "properties 仅支持知识节点；短期记忆不支持挂属性（结构化事实请沉淀为知识节点后再补）"
         );
     }
 
@@ -132,6 +144,20 @@ pub async fn update_memory(
         .update(ctx.clone(), updated_memory)
         .await?;
 
+    let node_id = match &result.po {
+        MemoryPo::KnowledgeNode(kn) => Some(kn.id.clone()),
+        _ => None,
+    };
+
+    // 属性写入独立一步（与 `save_long_term_memory` 共用 `save_node_properties`）：
+    // 放在 update 之后——内容写失败时不应留下孤儿属性；写失败也不回滚节点本身。
+    // ⚠️ 单值属性重复写 = **软取代**（旧值留历史、读侧只见新值），不是冲突，
+    // 所以「修正属性」走 update_memory 是对的，不必先删后建。
+    let property_issues = match &node_id {
+        Some(id) => save_node_properties(&ctx, id, params.properties).await?,
+        None => Vec::new(),
+    };
+
     // 知识节点更新成功后落地关系边（复用 save_long_term_memory 的建边路径）。
     // 放在 update 之后：内容写失败时不应留下孤儿边。
     if let Some(relations) = params.relations.filter(|rs| !rs.is_empty()) {
@@ -162,7 +188,10 @@ pub async fn update_memory(
         _ => params.memory_id.clone(),
     };
 
-    Ok(UpdateMemoryResponse { memory_id })
+    Ok(UpdateMemoryResponse {
+        memory_id,
+        property_issues,
+    })
 }
 
 // （原地的 `parse_memory_status` 已删除：解析收敛到 `MemoryStatus::parse`，

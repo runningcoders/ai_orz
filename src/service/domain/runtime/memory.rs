@@ -1,11 +1,13 @@
 //! Runtime Memory 具体实现
 
-use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
+use crate::models::memory::{KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeMemory};
+use common::enums::ontology::PropertyTargetType;
 use common::error::{Result, err};
+use common::ontology_property::{PropertyEntry, PropertyFilter, PropertySaveReport};
 
 #[async_trait::async_trait]
 impl RuntimeMemory for RuntimeDomainImpl {
@@ -151,6 +153,51 @@ impl RuntimeMemory for RuntimeDomainImpl {
         dal()
             .traverse_knowledge_graph(ctx, seed_node_ids, max_depth, max_breadth, strategy)
             .await
+    }
+
+    // ==================== 实体属性（薄编排：门闩与事务都在 DAL） ====================
+
+    async fn save_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+        entries: Vec<PropertyEntry>,
+    ) -> Result<PropertySaveReport> {
+        use crate::service::dal::memory::dal;
+        dal()
+            .save_entity_properties(ctx, target_type, target_id, entries)
+            .await
+    }
+
+    async fn list_entity_properties(
+        &self,
+        ctx: RequestContext,
+        target_type: PropertyTargetType,
+        target_id: &str,
+    ) -> Result<Vec<KnowledgePropertyPo>> {
+        use crate::service::dal::memory::dal;
+        dal()
+            .list_entity_properties(ctx, target_type, target_id)
+            .await
+    }
+
+    async fn list_entity_properties_batch(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
+        use crate::service::dal::memory::dal;
+        dal().list_entity_properties_batch(ctx, targets).await
+    }
+
+    async fn query_entities_by_properties(
+        &self,
+        ctx: RequestContext,
+        filters: &[PropertyFilter],
+    ) -> Result<Vec<String>> {
+        use crate::service::dal::memory::dal;
+        dal().query_entities_by_properties(ctx, filters).await
     }
 }
 

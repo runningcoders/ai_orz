@@ -224,8 +224,8 @@ impl HrDomainImpl {
     /// 为什么两侧都必须装（缺一不可）：
     /// - **工具**：授权 = `neural ∪ (tool.tags ∩ installed_tags)`，**不含 roles**，
     ///   所以不写 `installed_tags` 的工具一律被拒；
-    /// - **技能**：`roles` 虽直接进 `match_keys`，但技能必须先存在于 Agent 副本池
-    ///   （`author_id = agent_id`）才轮得到判定，所以必须真正建副本。
+    /// - **技能**：Prompt 可见性只看副本是否存在于 Agent 副本池（`author_id = agent_id`），
+    ///   **不看 tags** ⇒ 必须真正建副本，装包 tag 只是记录与批量卸载用。
     ///
     /// 守卫与容错：
     /// - 工具包：**个人匹配**要求库里确有该 tag 的已启用工具才写 `installed_tags`
@@ -349,9 +349,28 @@ impl HrDomainImpl {
 
 /// 【第一阶段：出生自带】创建 Agent 时默认安装的基础包 tags（工具包与技能包共用同一集合）。
 ///
-/// 对应「天生就会」的能力：与角色、岗位无关，所有 Agent 出生即持有。
+/// ⚠️ 判据是「**是否与角色/岗位无关**」，**不是「是否已经学会」** —— `neural` 这个名字
+/// 容易把人带偏（包括把「方法论塞进 neural」理解成「无条件占用上下文」）。
 ///
-/// - `neural`：神经工具/技能（思考场景白名单 + 无条件进 Prompt 的方法论）；
+/// ## 落点两侧不同（改 Prompt 判据后必须分清，否则会误判「摘掉 neural 只是换个区块」）
+/// - **工具侧** `neural` = **可达性**：工具面 = 绑定工具 ∪ tag(`neural` ∪ `installed_tags`)。
+///   不带 ⇒ 只有装了同名工具包的 Agent 才看得到它，其余**静默失去能力**（不报错）。
+/// - **技能侧** `neural` = **出生自带**：本集合里的 tag 会在 `create_agent` /
+///   `train_agent` 阶段 1 被安装 ⇒ 装 `neural` 技能包 = 装上**所有 tags 含 neural 的
+///   已发布技能**。所以方法论类技能带 neural 的确切含义是「**任何 Agent 出生就持有一份
+///   副本**」，不必等职业匹配或组织配包。
+///   另有两个次要语义：区块置前（静态块保前缀缓存）、不可卸载。
+///
+/// ## 「进 Prompt」与「进上下文」是两件事
+/// - **可见性**由「是否已安装副本」决定（`resolve_agent_skills`，装了就进，与 tags 无关）；
+/// - **注入体积**只有索引摘要（`build_skills_section` → `to_prompt_summary`，一行 id + 摘要），
+///   正文按需 `get_skill` 读 ⇒ 把方法论放进 neural **不等于**把正文塞进上下文。
+///   真正的「学会」发生在模型去读全文的那一刻。
+///
+/// ⚠️ 因此「没有副本」才是死技能（模型压根不知道有这套方法 ⇒ 永远不会去读），
+/// 这与「工具不在工具面里」同构 —— 都不报错，是这个项目最难查的一类故障。
+///
+/// - `neural`：神经工具/技能（工具侧=可达性，技能侧=出生自带 + 置前 + 不可卸载）；
 /// - `skill_management` / `tool_management`：Agent 自治骨架，能管理自己的技能与工具。
 ///
 /// 显式安装让每个 Agent 都持有一份自己的副本/绑定，无需加载侧再兜底；
@@ -369,9 +388,12 @@ const BASE_AGENT_PACKS: &[&str] = &["neural", "skill_management", "tool_manageme
 /// 保留这条注释说明「同名双重身份」这个坑：像 `project_management` 这样的包，
 /// 工具包与技能包两个字段都必须配置：
 /// - 工具包：项目/任务/产物工具挂着该 tag，须写入 `installed_tags` 才被授权
-///   （授权 = neural ∪ (tool.tags ∩ installed_tags)，见 runtime/tool_execution.rs），
-///   同时它参与技能必加载的 `match_keys`，也是技能进 Prompt 的必要条件；
+///   （授权 = neural ∪ (tool.tags ∩ installed_tags)，见 runtime/tool_execution.rs）；
 /// - 技能包：写入 `installed_skill_packs` 并真正建技能副本。
+///
+/// ⚠️ 技能侧**不看 tag**：进 Prompt 的唯一判据是「副本是否已安装」（见
+/// `DefaultPromptBuilder::build_skills_sections`），装技能包 ⇒ 副本建好 ⇒ 必进。
+/// 同名 tag 两边都配，是为了「能用工具」+「懂方法论」成套，与 Prompt 可见性无关。
 ///
 /// 组织未配置任何包时，入职只做状态流转，不装额外能力（合法，不是错误）。
 

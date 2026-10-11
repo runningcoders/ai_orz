@@ -10,6 +10,7 @@
 //! 业务校验（term_key 非空 / 引用完整性）在 Domain 层完成；归一化由 DAO 写入侧单点完成。
 
 pub mod create_class;
+pub mod create_property;
 pub mod create_relation_type;
 pub mod create_synonym;
 pub mod delete_synonym;
@@ -18,14 +19,18 @@ pub mod list_classes;
 pub mod list_drift_class_details;
 pub mod list_drift_relation_details;
 pub mod list_lexicon;
+pub mod list_properties;
 pub mod list_relation_types;
 pub mod list_synonyms;
 pub mod retire_class;
+pub mod retire_property;
 pub mod retire_relation_type;
 pub mod update_class;
+pub mod update_property;
 pub mod update_relation_type;
 
 pub use create_class::create_ontology_class_handler;
+pub use create_property::create_ontology_property_handler;
 pub use create_relation_type::create_ontology_relation_type_handler;
 pub use create_synonym::create_ontology_synonym_handler;
 pub use delete_synonym::delete_ontology_synonym_handler;
@@ -34,16 +39,24 @@ pub use list_classes::list_ontology_classes_handler;
 pub use list_drift_class_details::list_ontology_drift_class_details_handler;
 pub use list_drift_relation_details::list_ontology_drift_relation_details_handler;
 pub use list_lexicon::list_ontology_lexicon_handler;
+pub use list_properties::list_ontology_properties_handler;
 pub use list_relation_types::list_ontology_relation_types_handler;
 pub use list_synonyms::list_ontology_synonyms_handler;
 pub use retire_class::retire_ontology_class_handler;
+pub use retire_property::retire_ontology_property_handler;
 pub use retire_relation_type::retire_ontology_relation_type_handler;
 pub use update_class::update_ontology_class_handler;
+pub use update_property::update_ontology_property_handler;
 pub use update_relation_type::update_ontology_relation_type_handler;
 
-use crate::models::ontology::{OntologyClassPo, OntologyRelationTypePo, OntologySynonymMappingPo};
-use common::api::ontology::{OntologyClassItem, OntologyRelationTypeItem, OntologySynonymItem};
+use crate::models::ontology::{
+    OntologyClassPo, OntologyPropertyPo, OntologyRelationTypePo, OntologySynonymMappingPo,
+};
+use common::api::ontology::{
+    OntologyClassItem, OntologyPropertyItem, OntologyRelationTypeItem, OntologySynonymItem,
+};
 use common::ontology::TermKind;
+use common::ontology_property::parse_applies_to;
 
 /// 实体类 Entity → 列表项 DTO（JSON 数组字符串还原为清单）
 pub(super) fn class_item(po: OntologyClassPo) -> OntologyClassItem {
@@ -55,6 +68,37 @@ pub(super) fn class_item(po: OntologyClassPo) -> OntologyClassItem {
         display_name: po.display_name,
         description: po.description,
         required_fields,
+        status: po.status,
+        created_at: po.created_at,
+        updated_at: po.updated_at,
+    }
+}
+
+/// 属性定义 PO → 列表项 DTO（三个 JSON 字段还原为结构化清单）
+///
+/// ⚠️ `applies_to` 走 [`parse_applies_to`] 而不是 `serde_json` 直解：后者拿到的是
+/// 裸字符串，前端拿到的是「看起来合法的 JSON 数组」却无法区分拼错的载体名；
+/// 前者会把非法项丢弃，前端看到的就是真实生效的载体集。
+pub(super) fn property_item(po: OntologyPropertyPo) -> OntologyPropertyItem {
+    // 先借调解析器再 move 字段，避免 partial move
+    let domain_classes = po.parse_domain_classes();
+    let applies_to = parse_applies_to(&po.applies_to);
+    let value_range = po.value_range();
+    let data_type = po.data_type();
+    let cardinality = po.cardinality();
+    let required = po.is_required();
+    OntologyPropertyItem {
+        id: po.id,
+        term_key: po.term_key,
+        display_name: po.display_name,
+        description: po.description,
+        domain_classes,
+        applies_to,
+        data_type,
+        value_range,
+        cardinality,
+        unit: po.unit,
+        required,
         status: po.status,
         created_at: po.created_at,
         updated_at: po.updated_at,

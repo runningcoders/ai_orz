@@ -9,7 +9,9 @@
 
 use crate::models::vector::{MatchType, SearchMatchInfo, VectorPayload, Vectorizable};
 use common::api::{MemoryResult, MemorySearchMatch};
+use common::enums::ontology::PropertyTargetType;
 use common::enums::{KnowledgeRelationStatus, KnowledgeRelationType};
+use common::ontology_property::{PropertyColumns, PropertyValue};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
@@ -345,6 +347,125 @@ pub struct KnowledgeNodeRelationPo {
     pub updated_at: i64,
 }
 
+/// 知识节点属性 PO（ABox：属性值，版本化）
+///
+/// 补齐 ABox 缺失的属性落点：此前属性只能用 `attribute_of` / `value_of`
+/// 两条关系词「用边模拟属性」，值不可索引、无数据类型、无值域，
+/// 也没法回答「查所有 model=xxx 的 agent 节点」这类结构化过滤。
+///
+/// **EAV 行存储**：每行一个属性值，四个类型化值列（`value_text` /
+/// `value_num` / `value_bool` / `value_ref`）由 `data_type` 指派其一，
+/// 未使用的列落 NULL。这样数值属性可直接 `WHERE value_num > ?` 走索引，
+/// 引用属性可直接 JOIN 回节点表——单列 JSON 做不到这两点。
+///
+/// **图谱域内通用**：一张表同时承载节点属性与边属性，靠 `target_type`
+/// 解释 `target_id` 指向哪张表（见迁移决策 #6）。**不跨域**扩展：
+/// agent / task / project 带 `organization_id`，而图谱与本体表一律不带，
+/// 混进一张表会撕裂作用域约定。
+///
+/// **版本化**：修正 = 旧行降级 `Superseded` + 插入新行，历史全留，
+/// 可回答「当时这个值是多少」；部分唯一索引 `uq_knowledge_property_active`
+/// 保证同一 (target_type, target_id, term_key, ordinal) 只有一条生效。
+/// 与知识边表的版本化先例同构。
+///
+/// 属性定义（类型 / 值域 / 基数 / 适用载体）在 TBox `ontology_properties`；
+/// 值的形态与校验纯函数见 `common::ontology_property`。
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct KnowledgePropertyPo {
+    /// 唯一 ID
+    pub id: String,
+    /// 挂载载体类型：`node` → `long_term_knowledge_node.id` /
+    /// `relation` → `knowledge_node_relation.id`
+    pub target_type: String,
+    /// 载体 ID（裸列无外键，归属由 `target_type` 解释——ABox 既有惯例）
+    pub target_id: String,
+    /// 属性语义锚点，指向 `ontology_properties.term_key`（非 id）
+    pub term_key: String,
+    /// 值类型（冗余落库：属性定义退役后存量值仍可解释）
+    pub data_type: String,
+    /// 多值槽位序号：`single` 型恒 0，`many` 型从 0 递增
+    pub ordinal: i32,
+    /// 文本列（`string` / `date` / `enum` 型承载）
+    pub value_text: Option<String>,
+    /// 数值列（`number` 型承载；量化指标的过滤入口）
+    pub value_num: Option<f64>,
+    /// 布尔列（`boolean` 型承载；false 落 0，未赋值落 NULL）
+    pub value_bool: Option<i32>,
+    /// 引用列（`reference` 型承载；指向另一个节点 id 或外部实体标识）
+    pub value_ref: Option<String>,
+    /// 行版本生命周期：1 生效 / 0 被取代 / 2 已删除（与边状态同口径）
+    pub status: KnowledgeRelationStatus,
+    /// 创建时间戳（秒级）
+    pub created_at: i64,
+    /// 更新时间戳（秒级）
+    pub updated_at: i64,
+}
+
+impl KnowledgePropertyPo {
+    /// 创建一条生效属性值（id / status / 时间戳自动填充）
+    ///
+    /// 值按 [`PropertyValue::into_columns`] 拆到对应列；`ordinal` 由调用方
+    /// 给出（`single` 型传 0，`many` 型按槽位递增）。
+    ///
+    /// 载体用枚举 [`PropertyTargetType`] 而不是裸字符串传入：泛化表的最大风险
+    /// 是 `target_type` 拼错导致静默查不到（无外键兜底），构造入口收窄类型
+    /// 可把这个错误提前到编译期。
+    pub fn new(
+        target_type: PropertyTargetType,
+        target_id: impl Into<String>,
+        term_key: impl Into<String>,
+        value: PropertyValue,
+        ordinal: i32,
+    ) -> Self {
+        let now = common::constants::utils::current_timestamp();
+        let data_type = value.data_type().as_str().to_string();
+        let cols = value.into_columns();
+        Self {
+            id: uuid::Uuid::now_v7().to_string(),
+            target_type: target_type.as_str().to_string(),
+            target_id: target_id.into(),
+            term_key: term_key.into(),
+            data_type,
+            ordinal,
+            value_text: cols.value_text,
+            value_num: cols.value_num,
+            value_bool: cols.value_bool,
+            value_ref: cols.value_ref,
+            status: KnowledgeRelationStatus::default(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// 解析挂载载体；脏数据兜底退 `node`（软门禁，不 panic 不阻断）
+    pub fn target(&self) -> PropertyTargetType {
+        PropertyTargetType::parse_or_default(&self.target_type)
+    }
+
+    /// 解析值类型；脏数据兜底退 `string`（软门禁，不 panic 不阻断）
+    pub fn data_type(&self) -> common::enums::ontology::PropertyDataType {
+        common::enums::ontology::PropertyDataType::parse_or_default(&self.data_type)
+    }
+
+    /// 按声明类型还原属性值（指派列缺失返 `None` = 脏数据行）
+    pub fn value(&self) -> Option<PropertyValue> {
+        PropertyValue::from_columns(
+            self.data_type(),
+            PropertyColumns {
+                value_text: self.value_text.clone(),
+                value_num: self.value_num,
+                value_bool: self.value_bool,
+                value_ref: self.value_ref.clone(),
+            },
+        )
+    }
+
+    /// 是否生效（参与读路径）
+    pub fn is_active(&self) -> bool {
+        matches!(self.status, KnowledgeRelationStatus::Active)
+    }
+}
+
 /// 知识节点引用原始记忆细节
 ///
 /// 记录知识节点引用了哪些原始记忆细节，同时存储原始细节位置信息
@@ -499,6 +620,7 @@ impl Memory {
                 relation_type: None,
                 weight: None,
                 tags: None,
+                properties: None,
                 search_match,
             },
             // 短期记忆 PO 只有一个文本字段 summary（无独立标题/正文）：
@@ -516,6 +638,7 @@ impl Memory {
                 relation_type: None,
                 weight: None,
                 tags: Some(business_tags(&st.tags)),
+                properties: None,
                 search_match,
             },
             MemoryPo::KnowledgeNode(kn) => MemoryResult {
@@ -532,6 +655,9 @@ impl Memory {
                 relation_type: None,
                 weight: None,
                 tags: Some(business_tags(&kn.tags)),
+                // 属性由 `search_memory` 单独批量查询后回填（不在 `Memory` 结构内）：
+                // 这里恒 None，保持 PO→DTO 的纯粹映射
+                properties: None,
                 search_match,
             },
             MemoryPo::Relation(rel) => {
@@ -563,6 +689,7 @@ impl Memory {
                     // 关系强度透传给图谱：线宽/浓淡据此派生，`None` = 未标注
                     weight: rel.weight,
                     tags: None,
+                    properties: None,
                     search_match,
                 }
             }
@@ -751,5 +878,136 @@ mod tests {
         let dto = node("").to_api_result();
         assert!(dto.score.is_none());
         assert!(dto.search_match.is_none());
+    }
+
+    #[test]
+    fn property_new_splits_value_into_assigned_column() {
+        let po = KnowledgePropertyPo::new(
+            PropertyTargetType::Node,
+            "node-1",
+            "confidence",
+            PropertyValue::Number(0.8),
+            0,
+        );
+        assert_eq!(po.target_type, "node");
+        assert_eq!(po.target_id, "node-1");
+        assert_eq!(po.term_key, "confidence");
+        assert_eq!(po.data_type, "number");
+        assert_eq!(po.value_num, Some(0.8));
+        // 未被 data_type 指派的列必须留 NULL，不残留脏值
+        assert!(po.value_text.is_none() && po.value_bool.is_none() && po.value_ref.is_none());
+        assert!(po.is_active());
+        assert!(!po.id.is_empty());
+    }
+
+    /// 泛化表靠 target_type 解释 target_id：边属性必须落 "relation"，
+    /// 否则按节点查会静默查不到（无外键兜底，拼错不报错）。
+    #[test]
+    fn property_relation_target_is_distinct_from_node() {
+        let edge = KnowledgePropertyPo::new(
+            PropertyTargetType::Relation,
+            "rel-1",
+            "effective_from",
+            PropertyValue::Date("2026-10-11".into()),
+            0,
+        );
+        assert_eq!(edge.target_type, "relation");
+        assert_eq!(edge.target(), PropertyTargetType::Relation);
+        // 同一 term_key 挂在不同载体上是两条独立记录，互不覆盖
+        let node = KnowledgePropertyPo::new(
+            PropertyTargetType::Node,
+            "rel-1",
+            "effective_from",
+            PropertyValue::Date("2026-10-11".into()),
+            0,
+        );
+        assert_ne!(edge.target_type, node.target_type);
+    }
+
+    #[test]
+    fn property_dirty_target_type_falls_back_to_node() {
+        let po = KnowledgePropertyPo {
+            target_type: "nodes".to_string(),
+            ..KnowledgePropertyPo::new(
+                PropertyTargetType::Node,
+                "node-1",
+                "p",
+                PropertyValue::Text("v".into()),
+                0,
+            )
+        };
+        assert_eq!(
+            po.target(),
+            PropertyTargetType::Node,
+            "脏载体名软门禁退 node，不 panic"
+        );
+    }
+
+    #[test]
+    fn property_boolean_false_is_distinct_from_unset() {
+        // false 落 0，未赋值落 NULL —— 两者在读侧必须可区分
+        let po = KnowledgePropertyPo::new(
+            PropertyTargetType::Node,
+            "node-1",
+            "enabled",
+            PropertyValue::Boolean(false),
+            0,
+        );
+        assert_eq!(po.value_bool, Some(0));
+        assert_eq!(po.value(), Some(PropertyValue::Boolean(false)));
+    }
+
+    #[test]
+    fn property_value_roundtrip_all_types() {
+        let cases = [
+            PropertyValue::Text("t".into()),
+            PropertyValue::Number(0.5),
+            PropertyValue::Boolean(true),
+            PropertyValue::Date("2026-10-11".into()),
+            PropertyValue::Reference("node-9".into()),
+            PropertyValue::Enum("open".into()),
+        ];
+        for value in cases {
+            let po =
+                KnowledgePropertyPo::new(PropertyTargetType::Node, "node-1", "p", value.clone(), 0);
+            assert_eq!(po.value(), Some(value));
+        }
+    }
+
+    #[test]
+    fn property_missing_assigned_column_reads_as_none() {
+        // 声明 number 但数值列为 NULL = 脏数据行，不猜 0 不 panic
+        let po = KnowledgePropertyPo {
+            id: "p1".to_string(),
+            target_type: "node".to_string(),
+            target_id: "node-1".to_string(),
+            term_key: "confidence".to_string(),
+            data_type: "number".to_string(),
+            ordinal: 0,
+            value_text: None,
+            value_num: None,
+            value_bool: None,
+            value_ref: None,
+            status: KnowledgeRelationStatus::Active,
+            created_at: 1,
+            updated_at: 1,
+        };
+        assert_eq!(po.value(), None);
+    }
+
+    #[test]
+    fn property_superseded_and_deleted_are_not_active() {
+        let mut po = KnowledgePropertyPo::new(
+            PropertyTargetType::Node,
+            "node-1",
+            "p",
+            PropertyValue::Text("v".into()),
+            0,
+        );
+        assert!(po.is_active());
+        po.status = KnowledgeRelationStatus::Superseded;
+        assert!(!po.is_active());
+        po.status = KnowledgeRelationStatus::Deleted;
+        assert!(!po.is_active());
     }
 }

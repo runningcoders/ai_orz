@@ -1,5 +1,7 @@
 //! Neural tools API request/response DTOs - shared between backend and frontend
 
+use crate::enums::ontology::PropertyTargetType;
+use crate::ontology_property::{PropertyEntry, PropertyFilter, PropertyFilterOp, PropertyValue};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -41,6 +43,17 @@ pub struct SearchMemoryParams {
     /// 该参数只约束「从谁的节点起步」（关键词搜索/列表），不传 = 全域。
     /// 不传则回退当前请求上下文的 agent_id。
     pub agent_id: Option<String>,
+    /// 按属性值**精确**过滤（多个条件 AND 语义）。
+    ///
+    /// 与 `query` 语义检索互补：语义解决「像不像」，属性解决「是不是」
+    /// （如「置信度 ≥ 0.8 的规范性结论」「source = 官方手册 的条目」）。
+    /// 走的是独立精确召回通道（先按属性反查命中节点 id，再直取节点），
+    /// **不是**在语义 top_k 里再筛一遍——所以命中率不依赖语义排序。
+    ///
+    /// ⚠️ 与 `seed_node_ids` 互斥：点名种子展开时种子恒返回，叠加过滤会
+    /// 造成「传了过滤却仍返回未命中节点」的静默失真，直接报 400。
+    /// 数值运算符（`gt`/`gte`/`lt`/`lte`）必须配 `number` 值，配其他类型报 400。
+    pub property_filters: Option<Vec<PropertyFilterParam>>,
 }
 
 /// 搜索记忆响应。
@@ -94,6 +107,13 @@ pub struct MemoryResult {
     /// 标签列表（仅 short_term / knowledge_node 类型有值）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+    /// 结构化属性（仅 knowledge_node 且该节点**确实挂了属性**时有值；
+    /// 无属性的节点为 `None`，不是空数组）。
+    ///
+    /// `search_memory` 会回显命中节点的全部生效属性（历史版本不回显），
+    /// 让模型看得到自己写过什么、也能照抄回显结果回填进写入参数。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<Vec<KnowledgePropertyItem>>,
     /// 匹配元信息（仅 search_memory 语义搜索有值）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_match: Option<MemorySearchMatch>,
@@ -192,6 +212,12 @@ pub struct UpdateMemoryParams {
     /// 用本参数落成显式关系边。正文里提及 / 引用其他节点不算建边——
     /// 图谱遍历只认关系表，正文引用对 traversal 不可达。
     pub relations: Option<Vec<KnowledgeRelationParam>>,
+    /// 给**既有节点**补 / 改属性的唯一路径（仅知识节点有效；短期记忆传入报 400）。
+    ///
+    /// 与 `save_long_term_memory` 的 `properties` 同形同语义：本体里声明过的
+    /// `term_key` 才受门闩保护，未声明的按值自身类型兜底写入。
+    /// 单值属性重复写 = **软取代**（旧值留历史、读侧只见新值），不是报错。
+    pub properties: Option<Vec<KnowledgePropertyParam>>,
 }
 
 /// 更新记忆响应。
@@ -199,6 +225,11 @@ pub struct UpdateMemoryParams {
 pub struct UpdateMemoryResponse {
     /// 记忆 ID。
     pub memory_id: String,
+    /// 属性写入的问题清单（`term_key: 原因`），空数组表示全部写入成功。
+    ///
+    /// ⚠️ 记忆本身**已更新成功**：属性写入是「部分成功」语义，坏条目只跳过。
+    /// 与 `save_long_term_memory` 同口径——静默吞掉会让模型以为写成功了。
+    pub property_issues: Vec<String>,
 }
 
 /// 删除记忆请求参数。
@@ -495,6 +526,114 @@ pub struct KnowledgeRelationParam {
     pub weight: Option<f32>,
 }
 
+/// 待写入的实体属性（神经工具入参形态）
+///
+/// `value` 是**带标签的联合类型**，标签决定落 `knowledge_property` 的哪一列
+/// （`number` → `value_num`、`text`/`date`/`enum` → `value_text`、
+/// `reference` → `value_ref`、`boolean` → `value_bool`）。
+/// JSON 形态示例：`{"number": 0.8}` / `{"text": "gpt-4"}` / `{"boolean": true}`。
+///
+/// ⚠️ 标签与本体里该属性声明的 `data_type` 必须一致，否则本条会被**拒绝写入**
+/// （值类型错属于写错，不是认知分歧，没有解释空间）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
+pub struct KnowledgePropertyParam {
+    /// 属性语义锚点（本体 `ontology_properties.term_key`，如 `model_name`）
+    pub term_key: String,
+    /// 属性值（标签决定类型）
+    pub value: PropertyValue,
+    /// 多值属性的槽位，从 0 递增；单值属性传 0（服务端会强制归一为 0）
+    #[serde(default)]
+    pub ordinal: i32,
+}
+
+impl KnowledgePropertyParam {
+    /// 转为 DAL 写侧入参
+    pub fn into_entry(self) -> PropertyEntry {
+        PropertyEntry {
+            term_key: self.term_key,
+            value: self.value,
+            ordinal: self.ordinal,
+        }
+    }
+}
+
+/// 读回的属性条目（`search_memory` 结果回显形态）
+///
+/// 与 [`KnowledgePropertyParam`] 刻意**同形**（term_key + 带标签值 + 槽位）：
+/// 模型想把某条属性改个值，可以直接照抄回显结果回填进写入参数，
+/// 不用再猜 JSON 形态。多值属性的 `ordinal` 是槽位，单值恒 0。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
+pub struct KnowledgePropertyItem {
+    /// 属性语义锚点（本体 `ontology_properties.term_key`）
+    pub term_key: String,
+    /// 属性值（标签决定类型；与写入入参同形）
+    pub value: PropertyValue,
+    /// 多值属性槽位；单值恒 0
+    pub ordinal: i32,
+}
+
+/// 属性过滤运算符（工具面枚举，非法值在反序列化阶段即 400）
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PropertyFilterOpParam {
+    /// 等于（文本 / 布尔 / 枚举 / 引用 / 日期都用它）
+    Eq,
+    /// 大于（仅数值）
+    Gt,
+    /// 大于等于（仅数值）
+    Gte,
+    /// 小于（仅数值）
+    Lt,
+    /// 小于等于（仅数值）
+    Lte,
+}
+
+impl PropertyFilterOpParam {
+    /// 是否数值专用（非 `Eq` 的运算符全部只对 `Number` 有意义）
+    pub fn requires_number(self) -> bool {
+        !matches!(self, Self::Eq)
+    }
+
+    /// 转 DAL 过滤运算符
+    pub fn into_op(self) -> PropertyFilterOp {
+        match self {
+            Self::Eq => PropertyFilterOp::Eq,
+            Self::Gt => PropertyFilterOp::Gt,
+            Self::Gte => PropertyFilterOp::Gte,
+            Self::Lt => PropertyFilterOp::Lt,
+            Self::Lte => PropertyFilterOp::Lte,
+        }
+    }
+}
+
+/// 属性过滤条件（`search_memory` 的结构化精确召回入口）
+///
+/// 多个条件 AND 语义。与语义 `query` 同时给出时取交集——
+/// 属性过滤走的是**独立精确召回通道**（先反查命中 id 再直取节点），
+/// 不是「在语义 top_k 里再筛一遍」。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
+pub struct PropertyFilterParam {
+    /// 属性语义锚点（本体 `ontology_properties.term_key`）
+    pub term_key: String,
+    /// 比较运算符；省略 = `eq`
+    #[serde(default)]
+    pub op: Option<PropertyFilterOpParam>,
+    /// 比较值（标签决定类型；数值运算符必须配 `number` 值）
+    pub value: PropertyValue,
+}
+
+impl PropertyFilterParam {
+    /// 转 DAL 过滤条件（工具面只开放**节点**载体的属性过滤）
+    pub fn into_filter(self) -> PropertyFilter {
+        PropertyFilter {
+            term_key: self.term_key,
+            target_type: PropertyTargetType::Node,
+            op: self.op.unwrap_or(PropertyFilterOpParam::Eq).into_op(),
+            value: self.value,
+        }
+    }
+}
+
 impl KnowledgeRelationParam {
     /// 归一化关系强度：非有限值（NaN/Inf）与越界值一律夹紧到 0.0~1.0。
     ///
@@ -545,6 +684,11 @@ pub struct SaveLongTermMemoryParams {
     pub tags: Option<Vec<String>>,
     /// 关联关系列表。
     pub relations: Option<Vec<KnowledgeRelationParam>>,
+    /// 节点属性列表（结构化字段，如「模型名」「生效时间」「置信度」）。
+    ///
+    /// 只有**可复用、可比较、需要被结构化过滤**的事实才适合放这里；
+    /// 叙述性内容放 `node_description`（走全文检索），不要塞进属性。
+    pub properties: Option<Vec<KnowledgePropertyParam>>,
     /// 关联任务 ID。
     pub task_id: Option<String>,
 }
@@ -556,6 +700,11 @@ pub struct SaveLongTermMemoryResponse {
     pub node_id: String,
     /// 创建的关系 ID 列表，可能为空。
     pub relation_ids: Vec<String>,
+    /// 属性写入的问题清单（`term_key: 原因`），空数组表示全部写入成功。
+    ///
+    /// ⚠️ 节点本身**已创建成功**：属性写入是「部分成功」语义，坏条目只跳过。
+    /// 模型必须读这个字段——静默吞掉会让它以为属性写成功了，下次不再补。
+    pub property_issues: Vec<String>,
 }
 
 /// 沉淀记忆请求参数。
@@ -660,6 +809,7 @@ mod tests {
             relation_type: None,
             weight: None,
             tags: None,
+            properties: None,
             search_match: None,
         };
         let json = serde_json::to_string(&result).unwrap();

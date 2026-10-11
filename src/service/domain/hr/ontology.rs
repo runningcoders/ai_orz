@@ -13,13 +13,13 @@
 //! （PO↔Entity 转换已在 DAL 完成），不触碰 DAO / PO（CODE_STANDARDS §2 分层红线）。
 
 use crate::models::ontology::{
-    OntologyClass, OntologyClassPo, OntologyRelationType, OntologyRelationTypePo,
-    OntologySynonymMapping, OntologySynonymMappingPo,
+    OntologyClass, OntologyClassPo, OntologyProperty, OntologyPropertyPo, OntologyRelationType,
+    OntologyRelationTypePo, OntologySynonymMapping, OntologySynonymMappingPo,
 };
 use crate::pkg::RequestContext;
 use crate::service::dal::ontology::{active_all_pagination, warn_if_lexicon_truncated};
 use crate::service::dao::ontology::{
-    OntologyClassQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
+    OntologyClassQuery, OntologyPropertyQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
 };
 use crate::service::domain::hr::{HrDomainImpl, OntologyDomain};
 use common::api::ontology::{
@@ -29,12 +29,14 @@ use common::api::ontology::{
     PreviewPresetOntologyResponse,
 };
 use common::enums::OntologyStatus;
+use common::enums::ontology::{Cardinality, PropertyDataType, PropertyTargetType};
 use common::error::{Result, bail_err, err};
 use common::ontology::{
     LexiconGapReport, MAX_TERM_KEY_LEN, OntologyCertifyReport, OntologyLexiconApplyReport,
-    OntologyLexiconSummary, PresetOntologyClass, PresetOntologyLexicon, PresetOntologyRelationType,
-    PresetOntologySynonym, TermKind, normalize,
+    OntologyLexiconSummary, PresetOntologyClass, PresetOntologyLexicon, PresetOntologyProperty,
+    PresetOntologyRelationType, PresetOntologySynonym, TermKind, normalize,
 };
+use common::ontology_property::parse_applies_to;
 
 /// 校验 JSON 数组字符串合法性（空串 = 空清单，合法）
 ///
@@ -46,6 +48,58 @@ fn validate_json_list(raw: &str, field: &str) -> Result<Vec<String>> {
     }
     serde_json::from_str(raw)
         .map_err(|e| err!(InvalidRequest, "{} 不是合法的 JSON 数组: {}", field, e))
+}
+
+/// 校验属性定义的**结构化字段**（写侧强校验，脏定义不放进词表）
+///
+/// 与 [`validate_json_list`] 的分工：后者只管「是不是合法 JSON 数组」，
+/// 这里管「取值是不是本域承认的枚举」——
+///
+/// - `data_type` / `cardinality`：必须是 DDL CHECK 里的取值。
+///   models 层的 parse 助手会**静默兜底**（非法退 string / single），
+///   写侧不能接受这种静默：管理员以为写的是 number，实际落的是 string，
+///   之后所有数值属性都写不进 `value_num`，范围查询全废且极难排查。
+/// - `applies_to`：逐个校验载体名。common 层的 `parse_applies_to` 会**静默丢弃**
+///   拼错的项（结果是「谁都不让挂」），写侧必须把拼错暴露成 400。
+/// - `value_range`：必须是数组（枚举白名单）或对象（数值区间 / 带 enum 键）两种形态之一。
+fn validate_property_definition(po: &OntologyPropertyPo) -> Result<()> {
+    if po.data_type.parse::<PropertyDataType>().is_err() {
+        bail_err!(
+            InvalidRequest,
+            "属性 data_type 取值非法: {}（合法值: {}）",
+            po.data_type,
+            PropertyDataType::ACCEPTED_VALUES
+        );
+    }
+    if po.cardinality.parse::<Cardinality>().is_err() {
+        bail_err!(
+            InvalidRequest,
+            "属性 cardinality 取值非法: {}（合法值: {}）",
+            po.cardinality,
+            Cardinality::ACCEPTED_VALUES
+        );
+    }
+    for raw in validate_json_list(&po.applies_to, "applies_to")? {
+        if raw.parse::<PropertyTargetType>().is_err() {
+            bail_err!(
+                InvalidRequest,
+                "applies_to 含非法载体: {}（合法值: {}）",
+                raw,
+                PropertyTargetType::ACCEPTED_VALUES
+            );
+        }
+    }
+    // value_range 允许两种形态：数组 = 枚举白名单；对象 = {min,max,enum}
+    if !po.value_range.trim().is_empty() {
+        match serde_json::from_str::<serde_json::Value>(&po.value_range) {
+            Ok(serde_json::Value::Array(_)) | Ok(serde_json::Value::Object(_)) => {}
+            _ => bail_err!(
+                InvalidRequest,
+                "value_range 必须是 JSON 数组（枚举白名单）或对象（{{min,max,enum}}）"
+            ),
+        }
+    }
+    Ok(())
 }
 
 impl HrDomainImpl {
@@ -271,6 +325,71 @@ impl OntologyDomain for HrDomainImpl {
         self.ontology_dal.delete_synonym(ctx, id).await
     }
 
+    // ==================== C4. 属性定义 CRUD ====================
+
+    async fn create_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyProperty,
+    ) -> Result<()> {
+        // 校验基于规范形（与 DAO 落库值同口径）；归一由 DAO 单点完成，此处不覆写参数
+        let term_key = normalize(&property.po.term_key);
+        if term_key.is_empty() {
+            bail_err!(InvalidRequest, "属性 term_key 不能为空");
+        }
+        if term_key.chars().count() > MAX_TERM_KEY_LEN {
+            bail_err!(
+                InvalidRequest,
+                "属性 term_key 超长（上限 {} 字符）",
+                MAX_TERM_KEY_LEN
+            );
+        }
+        self.validate_class_refs(&ctx, &property.po.domain_classes, "domain_classes")
+            .await?;
+        validate_property_definition(&property.po)?;
+        self.ontology_dal.insert_property(ctx, property).await
+    }
+
+    async fn get_property(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyProperty>> {
+        self.ontology_dal.find_property_by_id(ctx, id).await
+    }
+
+    async fn list_properties(
+        &self,
+        ctx: RequestContext,
+        query: OntologyPropertyQuery,
+    ) -> Result<common::api::PagedResult<OntologyProperty>> {
+        self.ontology_dal.query_properties(ctx, query).await
+    }
+
+    async fn update_property(
+        &self,
+        ctx: RequestContext,
+        property: &OntologyProperty,
+    ) -> Result<()> {
+        self.validate_class_refs(&ctx, &property.po.domain_classes, "domain_classes")
+            .await?;
+        validate_property_definition(&property.po)?;
+        // DAO update 按 id 行更新、不存在静默成功；NotFound 语义由 Domain 补齐
+        if self
+            .ontology_dal
+            .find_property_by_id(ctx.clone(), &property.po.id)
+            .await?
+            .is_none()
+        {
+            return Err(err!(NotFound, "属性 {} 不存在", property.po.id));
+        }
+        self.ontology_dal.update_property(ctx, property).await
+    }
+
+    async fn retire_property(&self, ctx: RequestContext, id: &str) -> Result<()> {
+        self.ontology_dal.retire_property(ctx, id).await
+    }
+
     // ==================== D. seed 预置注入（缺省仅补缺；Overwrite 覆盖式同步见下） ====================
 
     /// 仅补缺幂等注入（**非原子**）：薄委托 [`Self::apply_default_lexicon_with_strategy`]
@@ -409,6 +528,71 @@ impl OntologyDomain for HrDomainImpl {
                         self.update_relation_type(ctx.clone(), &OntologyRelationType::from_po(po))
                             .await?;
                         report.updated_relation_types.push(key);
+                    } else {
+                        // 仅补缺跳过；覆盖式下退役行整体跳过
+                        report.skipped += 1;
+                    }
+                }
+            }
+        }
+
+        // C4. 属性定义：与关系类型同策略分流；
+        //     注入顺序在 classes 之后（domain_classes 引用必须先存在）
+        for p in &preset.properties {
+            let key = normalize(&p.term_key);
+            let domain_classes = serde_json::to_string(&p.domain_classes).unwrap_or_default();
+            let applies_to = serde_json::to_string(&p.applies_to).unwrap_or_default();
+            // Null（字段缺省）视为无约束，不落 "null" 字符串
+            let value_range = match &p.value_range {
+                serde_json::Value::Null => String::new(),
+                v => v.to_string(),
+            };
+            let po = OntologyPropertyPo::new(
+                key.clone(),
+                &p.display_name,
+                &p.description,
+                domain_classes.clone(),
+                applies_to.clone(),
+                &p.data_type,
+                value_range.clone(),
+                &p.cardinality,
+                p.unit.clone(),
+                p.required,
+            );
+            // 快照残缺 fail fast：与关系类型引用校验同口径，不静默落脏定义
+            self.validate_class_refs(&ctx, &domain_classes, "domain_classes")
+                .await?;
+            validate_property_definition(&po)?;
+
+            let existing = self
+                .ontology_dal
+                .find_property_by_term_key(ctx.clone(), &key)
+                .await?;
+            match existing {
+                None => {
+                    self.ontology_dal
+                        .insert_property(ctx.clone(), &OntologyProperty::from_po(po))
+                        .await?;
+                    report.inserted_properties.push(key);
+                }
+                Some(local) => {
+                    if strategy == PresetOntologySyncStrategy::Overwrite
+                        && local.po.status == OntologyStatus::Active
+                    {
+                        // 保留 id / term_key / status / created_at 原值，仅覆写业务字段
+                        let mut po = local.po.clone();
+                        po.display_name = p.display_name.clone();
+                        po.description = p.description.clone();
+                        po.domain_classes = domain_classes;
+                        po.applies_to = applies_to;
+                        po.data_type = p.data_type.clone();
+                        po.value_range = value_range;
+                        po.cardinality = p.cardinality.clone();
+                        po.unit = p.unit.clone();
+                        po.required = i32::from(p.required);
+                        self.update_property(ctx.clone(), &OntologyProperty::from_po(po))
+                            .await?;
+                        report.updated_properties.push(key);
                     } else {
                         // 仅补缺跳过；覆盖式下退役行整体跳过
                         report.skipped += 1;
@@ -659,7 +843,7 @@ impl OntologyDomain for HrDomainImpl {
     }
 
     async fn export_lexicon(&self, ctx: RequestContext) -> Result<PresetOntologyLexicon> {
-        let (classes, relation_types, synonyms) = tokio::try_join!(
+        let (classes, relation_types, properties, synonyms) = tokio::try_join!(
             self.ontology_dal.query_classes(
                 ctx.clone(),
                 OntologyClassQuery {
@@ -672,6 +856,16 @@ impl OntologyDomain for HrDomainImpl {
                 ctx.clone(),
                 OntologyRelationTypeQuery {
                     status: Some(OntologyStatus::Active),
+                    keyword: None,
+                    pagination: active_all_pagination(),
+                },
+            ),
+            self.ontology_dal.query_properties(
+                ctx.clone(),
+                OntologyPropertyQuery {
+                    status: Some(OntologyStatus::Active),
+                    domain_class: None,
+                    target_type: None,
                     keyword: None,
                     pagination: active_all_pagination(),
                 },
@@ -689,6 +883,7 @@ impl OntologyDomain for HrDomainImpl {
 
         warn_if_lexicon_truncated(&ctx, "实体类", classes.items.len());
         warn_if_lexicon_truncated(&ctx, "关系类型", relation_types.items.len());
+        warn_if_lexicon_truncated(&ctx, "属性定义", properties.items.len());
         warn_if_lexicon_truncated(&ctx, "同义映射", synonyms.items.len());
 
         Ok(PresetOntologyLexicon {
@@ -723,6 +918,36 @@ impl OntologyDomain for HrDomainImpl {
                         weight_base: Some(po.weight_base),
                         inverse_key: po.inverse_key,
                         direction: po.direction,
+                    }
+                })
+                .collect(),
+            properties: properties
+                .items
+                .into_iter()
+                .map(|p| {
+                    let po = p.po;
+                    // 先借调解析器再 move 字段，避免 partial move
+                    let domain_classes = po.parse_domain_classes();
+                    let applies_to = parse_applies_to(&po.applies_to)
+                        .into_iter()
+                        .map(|t| t.as_str().to_string())
+                        .collect();
+                    let value_range = po.value_range();
+                    let data_type = po.data_type();
+                    let cardinality = po.cardinality();
+                    let required = po.is_required();
+                    PresetOntologyProperty {
+                        term_key: po.term_key,
+                        display_name: po.display_name,
+                        description: po.description,
+                        domain_classes,
+                        applies_to,
+                        data_type: data_type.as_str().to_string(),
+                        // 无约束导出为空对象（写回快照时保持「已声明但无限定」的可读性）
+                        value_range: serde_json::to_value(value_range).unwrap_or_default(),
+                        cardinality: cardinality.as_str().to_string(),
+                        unit: po.unit,
+                        required,
                     }
                 })
                 .collect(),
@@ -777,6 +1002,20 @@ impl OntologyDomain for HrDomainImpl {
                 report.skipped += 1;
             } else {
                 report.missing_relation_types.push(key);
+            }
+        }
+
+        for p in &preset.properties {
+            let key = normalize(&p.term_key);
+            if self
+                .ontology_dal
+                .find_property_by_term_key(ctx.clone(), &key)
+                .await?
+                .is_some()
+            {
+                report.skipped += 1;
+            } else {
+                report.missing_properties.push(key);
             }
         }
 

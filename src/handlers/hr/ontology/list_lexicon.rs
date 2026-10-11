@@ -12,7 +12,8 @@ use common::error::Result;
     name = "List Ontology Lexicon",
     description = "Get the ontology lexicon injection view in three sections: relation types, entity classes, and synonym samples. Field order reflects the token-trimming priority for neural skill prompt injection (relations first, then classes, then synonym samples). Shared by the neural skill and the management page.",
     params = "common::api::ListOntologyLexiconRequest",
-    tags = "ontology_management"
+    neural,
+    tags = "ontology_management,ontology"
 )]
 #[generate_http_handler]
 pub async fn list_ontology_lexicon(

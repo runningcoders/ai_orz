@@ -16,8 +16,11 @@
 //! ```
 //!
 //! 【分块拼装】skills 统一注入，build() 时按 tag 自动分块：
-//! - neural tag 的技能 → 神经技能区块（所有 Agent 必加载）
-//! - 其他技能 → 必加载技能区块（按 agent roles ∪ installed_tags 匹配）
+//! - neural tag 的技能 → 【神经技能】区块（置前，构成稳定前缀；不可卸载）
+//! - 其余 → 【已安装技能】区块
+//!
+//! 两者的判据**都只是「Agent 是否已安装该副本」**（`skills()` 传入的已是 Agent 私有
+//! 副本池）。装了就进，没有 tag 匹配兜底——技能包 tag / roles 不再决定可见性。
 
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ChatMessage, ImagePart};
@@ -172,9 +175,10 @@ pub trait PromptBuilder: Send + Sync {
     // 提供完整实现；其他 Builder（如 FlatPromptBuilder 走扁平化协议）用不上的
     // 方法继承默认空实现即可，无需逐一声明。
 
-    /// 构建技能区块字符串（神经技能 + 必加载技能）
+    /// 构建技能区块字符串（神经技能 + 已安装技能）
     ///
-    /// 技能按 tag 分块展示在 Prompt 中（技能是方法论，无 API 对应）。
+    /// 技能按「是否已安装」分块展示在 Prompt 中（技能是方法论，无 API 对应）；
+    /// neural 只负责分块置前 + 不可卸载，不负责可见性。
     /// DefaultPromptBuilder 完整实现；外部 Agent 走工具协议层，默认空。
     fn build_skills_sections(&self) -> String {
         String::new()
