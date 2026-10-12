@@ -109,8 +109,11 @@ pub struct Viewport {
 
 impl Default for Viewport {
     fn default() -> Self {
+        // 问题 8：初始缩放 100%→66%（AMan 拍板「不要自动适应，初始 66%」）。
+        // 三消费点（知识图谱页/工作台画布/Agent 详情页关系图）共用本组件 signal
+        // 初值，单点生效即三处一致；重置语义=恢复初始态，目标值随此同步（见重置按钮）。
         Self {
-            scale: 1.0,
+            scale: 0.66,
             pan_x: 0.0,
             pan_y: 0.0,
         }
@@ -985,9 +988,8 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let force_layout: Signal<ForceLayout> =
         use_signal(|| ForceLayout::new(ForceLayoutConfig::default()));
     let mut is_stable: Signal<bool> = use_signal(|| false);
-    // 问题 4：默认视角「适应」一次性标记 —— 力学布局首次稳定时自动 fit 一次，
-    // 之后视口完全交给用户（缩放/平移/重置/适应按钮），不重复接管。
-    let mut fit_applied: Signal<bool> = use_signal(|| false);
+    // 问题 8：fit_applied 一次性门闩随早期 fit 撤销一并退役（无其他消费者），
+    // 视口不再有任何自动接管点，初始 66% + 手动「适应」按钮为唯一 fit 途径。
     let mut dragging_id: Signal<Option<String>> = use_signal(|| None);
     let mut drag_offset: Signal<(f64, f64)> = use_signal(|| (0.0, 0.0));
     let mut hovered_id: Signal<Option<String>> = use_signal(|| None);
@@ -1112,7 +1114,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let selected_id_c = selected_id;
     let hovered_edge_c = hovered_edge;
     let renderer_c = renderer;
-    let mut viewport_c = viewport;
+    let viewport_c = viewport;
     // RAF 渲染循环资源：保存 running flag + Closure + pending 帧句柄供顶层 use_drop 清理
     #[allow(clippy::type_complexity)]
     struct RafResource {
@@ -1205,13 +1207,9 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             }
             // 每帧取最新边列表（新增/删除的边当帧即生效）
             let edges_inner = edges_state_c.read().clone();
-            // 问题 5：早期 fit——不等力学布局收敛，数据就绪（首批节点写入 signal）
-            // 后下一渲染帧立即 fit 一次，首屏即见全图；一次性门闩仅 fit 一次，
-            // 之后视口完全交给用户（缩放/平移/重置/适应按钮），不重复接管。
-            if !fit_applied() && !nodes_state_c.read().is_empty() {
-                fit_applied.set(true);
-                viewport_c.set(fit_viewport(&nodes_state_c.read(), width, height));
-            }
+            // 问题 8：撤销早期 fit（18fa2aa3 引入）——实测命中帧对象为布局初值圆环
+            // （bbox 远小于画布，fit 反而放大到 107%），自动 fit 全链清零；视口初始
+            // 即 66%（见 Viewport::default），之后完全交给用户（缩放/平移/重置/适应按钮）。
             // 力导向步进
             if enable_force && !*is_stable_c.read() {
                 let mut nodes = nodes_state_c.read().clone();
@@ -1560,7 +1558,8 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 small: true,
                 title: "重置视图",
                 onclick: move |_| {
-                    fit_applied.set(true); // 手动接管视口后，首次自动 fit 不再生效
+                    // 问题 8：撤销自动 fit 后重置语义回归「恢复初始态」——
+                    // 目标值=Viewport::default()（初始 66%），与初始态自然一致。
                     viewport.set(Viewport::default());
                 },
                 "重置"
@@ -1784,38 +1783,40 @@ mod tests {
         );
     }
 
-    /// 问题 5 守卫（沿问题 4 守卫合法演进）：早期 fit 链路锚点必须在场——
-    /// fit_applied 一次性标记 + RAF 数据就绪即 fit 独立首查 +
-    /// 力学稳定翻转机制保留（不再挂 fit）+ 手动重置让位。
+    /// 问题 8 守卫（沿 01a12efa/01a12f32 合法演进先例，函数名保留）：
+    /// ①自动 fit 全链清零（RAF 首查块/fit_applied 门闩/让位行零残留）；
+    /// ②初始 66% 在场（Viewport::default scale=0.66）；
+    /// ③重置语义=恢复初始态（重置 onclick 内 viewport.set(Viewport::default())）；
+    /// ④手动「适应」按钮保留（fit_viewport 手动调用在场）；is_stable 翻转机制保留。
     #[test]
     fn default_fit_on_stable_anchors_present() {
         let src = code_region(include_str!("canvas_scene.rs"));
+        // 问题 8：早期 fit 链路锚点必须全部清零
         assert_eq!(
             src.matches("let mut fit_applied: Signal<bool> = use_signal(|| false);")
                 .count(),
-            1
+            0
         );
         assert_eq!(
             src.matches("if !fit_applied() && !nodes_state_c.read().is_empty() {")
                 .count(),
-            1
+            0
         );
-        assert_eq!(src.matches("fit_applied.set(true);").count(), 2);
+        assert_eq!(src.matches("fit_applied.set(true);").count(), 0);
+        // 问题 8：初始 66% 拍板值在场（Viewport::default）
+        assert_eq!(src.matches("scale: 0.66,").count(), 1);
+        assert!(src.contains("初始缩放 100%→66%"));
+        // 问题 8：重置=恢复初始态（重置按钮内 viewport.set(Viewport::default())）
+        assert_eq!(src.matches("viewport.set(Viewport::default());").count(), 1);
+        // 问题 8：手动「适应」按钮保留（fit_viewport 手动调用在场，仅撤销自动触发）
         assert_eq!(
-            src.matches("viewport_c.set(fit_viewport(&nodes_state_c.read(), width, height));")
+            src.matches("viewport.set(fit_viewport(&nodes, w, h));")
                 .count(),
             1
         );
-        assert_eq!(
-            src.matches("fit_applied.set(true); // 手动接管视口后，首次自动 fit 不再生效")
-                .count(),
-            1
-        );
-        // 问题 5 新增：早期 fit 注释锚点在场（数据就绪即 fit）
-        assert_eq!(src.matches("// 问题 5：早期 fit").count(), 1);
-        // 问题 5 新增：旧 is_stable 翻转点内问题 4 注释已随挪位消失
-        assert_eq!(src.matches("力学首次稳定时把全图包进画布").count(), 0);
-        // 问题 5 新增：is_stable 翻转机制保留（力学暂停必需，不再挂 fit）
+        // is_stable 翻转机制保留（力学暂停必需，不挂 fit）
         assert_eq!(src.matches("is_stable_c.set(true);").count(), 1);
+        // 问题 8 注释锚点在场
+        assert_eq!(src.matches("// 问题 8：撤销早期 fit").count(), 1);
     }
 }

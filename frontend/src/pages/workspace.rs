@@ -1582,6 +1582,13 @@ pub fn Workspace(view: Option<String>) -> Element {
                                     }
                                 }
                             }
+
+                            // ---- 右下角：隐形占位（问题 7）----
+                            // 与左段同宽（w-64 flex-shrink-0），把聊天框顶回下部中间，
+                            // 三段 flex 分布与 18fa2aa3 之前一致；不带 pointer-events-auto、
+                            // 无内容无按钮，不截获右下视口浮层点击（不回归问题 6 病灶），
+                            // 刷新按钮保持退役。
+                            div { class: "w-64 flex-shrink-0" }
                         }
                     }
                 }
@@ -1626,5 +1633,31 @@ mod tests {
             WorkspaceView::Global
         );
         assert_eq!(view_from_query(&None), WorkspaceView::Global);
+    }
+}
+#[cfg(test)]
+mod problem7_placeholder_tests {
+    /// 问题 7 守卫：底部栏右段隐形占位锚点必须在场。
+    /// 生产区切分（split("#[cfg(test)]")）防自匹配：include_str! 全文含测试区，
+    /// 测试体内字面量若计入会令锚点计数虚高；切分后仅对生产区断言。
+    #[test]
+    fn bottom_bar_hidden_placeholder_anchor_present() {
+        let src = include_str!("../pages/workspace.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or("");
+        // 占位 div 唯一（与左段信息卡/右侧面板 w-64 区分：占位无其他类无内容）
+        assert_eq!(
+            src.matches("div { class: \"w-64 flex-shrink-0\" }").count(),
+            1
+        );
+        // 占位注释锚点在场（问题 7 落点标记）
+        assert_eq!(
+            src.matches("// ---- 右下角：隐形占位（问题 7）----")
+                .count(),
+            1
+        );
+        // 硬约束 b：右下不得出现 pointer-events 截获层——占位区不得携带 pointer-events-auto
+        assert!(!src.contains("w-64 flex-shrink-0 pointer-events-auto"));
     }
 }
