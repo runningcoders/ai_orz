@@ -3,7 +3,8 @@ use dioxus::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::api::hr::{
-    get_knowledge_graph, recommend_seed_nodes, search_agents, search_memory_with_traversal,
+    get_knowledge_graph, list_ontology_properties, recommend_seed_nodes, search_agents,
+    search_memory_with_traversal,
 };
 use crate::components::SearchableSelect;
 use crate::components::button::Button;
@@ -17,10 +18,12 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::number::format_relevance;
 use common::api::{
-    AgentListItem, GetKnowledgeGraphParams, GetKnowledgeGraphResponse, MemoryResult,
+    AgentListItem, GetKnowledgeGraphParams, GetKnowledgeGraphResponse,
+    ListOntologyPropertiesRequest, MemoryResult, OntologyPropertyItem, PaginationParams,
     RecommendSeedNodesParams, SearchAgentsRequest, SearchMemoryParams, SeedNodeRecommendation,
 };
 use common::enums::KnowledgeRelationType;
+use common::ontology_property::PropertyValue;
 
 /// 匹配方式中文名。
 ///
@@ -209,6 +212,38 @@ fn type_badge_class(t: &str) -> &'static str {
     "badge orz-tag badge-sm"
 }
 
+/// 属性语义锚点 → 显示名（问题②）。
+///
+/// 词表（list_ontology_properties）查无该 term_key 时兜底原文展示：
+/// 漂移词未被词表收录是常态（同义归并异步生效），严禁空白。
+fn property_display_name(display_names: &HashMap<String, String>, term_key: &str) -> String {
+    display_names
+        .get(term_key)
+        .cloned()
+        .unwrap_or_else(|| term_key.to_string())
+}
+
+/// PropertyValue 六分支格式化（问题②）：返回 (展示文本, 是否枚举徽标)。
+///
+/// 枚举走徽标（与 tags 同族 chip）；boolean 中文化（true/false 直出可读性差）；
+/// 整数不带小数点；引用保留原文并明示「本期不支持跳转」（TL 待议①按评估推荐口径）。
+fn format_property_value(value: &PropertyValue) -> (String, bool) {
+    match value {
+        PropertyValue::Text(v) => (v.clone(), false),
+        PropertyValue::Number(v) => {
+            if v.fract() == 0.0 && v.abs() < 1e15 {
+                (format!("{}", *v as i64), false)
+            } else {
+                (format!("{v}"), false)
+            }
+        }
+        PropertyValue::Boolean(v) => ((if *v { "是" } else { "否" }).to_string(), false),
+        PropertyValue::Date(v) => (v.clone(), false),
+        PropertyValue::Reference(v) => (format!("{v}（引用 · 本期不支持跳转）"), false),
+        PropertyValue::Enum(v) => (v.clone(), true),
+    }
+}
+
 /// 可复用知识图谱子组件。
 /// agent_id = Some(id)：锁定 Agent（Agent 详情页场景）
 /// agent_id = None：全局知识图谱（独立页面场景，由父组件提供 Agent 选择器）
@@ -225,6 +260,31 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     let mut expanded_nodes = use_signal(HashSet::<String>::new);
     let mut selected_node_id = use_signal(|| None::<String>);
     let mut selected_node_data = use_signal(|| None::<MemoryResult>);
+    // 本体属性显示名缓存（term_key → display_name）：挂载时拉取一次属性定义词表。
+    // effect 闭包零 signal 读取 → 仅首挂执行一次；词表全库共享，agent 切换不重拉。
+    let mut property_display_names = use_signal(HashMap::<String, String>::new);
+    use_effect(move || {
+        spawn(async move {
+            let req = ListOntologyPropertiesRequest {
+                pagination: PaginationParams {
+                    limit: Some(500),
+                    offset: None,
+                },
+                ..Default::default()
+            };
+            match list_ontology_properties(req).await {
+                Ok(resp) => {
+                    let map: HashMap<String, String> = resp
+                        .items
+                        .into_iter()
+                        .map(|p: OntologyPropertyItem| (p.term_key, p.display_name))
+                        .collect();
+                    property_display_names.set(map);
+                }
+                Err(e) => toast.error(format!("加载属性定义词表失败: {e}")),
+            }
+        });
+    });
     let mut search_history = use_signal(Vec::<String>::new);
     let mut highlighted_node_ids = use_signal(Vec::<String>::new);
     let mut detail_map = use_signal(std::collections::HashMap::<String, MemoryResult>::new);
@@ -500,6 +560,24 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     };
     let selected_id = selected_node_id.read().clone();
     let selected_detail = selected_node_data.read().clone();
+    // 本体属性展示行预格式化（问题②）：显示名兜底 + PropertyValue 六分支口径在 rsx 外
+    // 先算好；此处读取显示名缓存 signal = 渲染订阅，词表拉取完成后展示名自动刷新。
+    let property_rows: Vec<(String, String, bool, bool)> = selected_detail
+        .as_ref()
+        .and_then(|d| d.properties.as_ref())
+        .map(|props| {
+            props
+                .iter()
+                .map(|prop| {
+                    let display =
+                        property_display_name(&property_display_names.read(), &prop.term_key);
+                    let (text, is_enum) = format_property_value(&prop.value);
+                    let is_reference = matches!(prop.value, PropertyValue::Reference(_));
+                    (display, text, is_enum, is_reference)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     // 只在摘要**独立于正文**时才单独渲染：写入侧此前会把摘要缺省落成正文
     // （或正文前 100 字），详情面板「内容」「摘要」两栏显示同一段话 ——
     // 这正是「字段没有信息量」的直接观感来源。
@@ -948,6 +1026,45 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                             }
                                         }
 
+                                        // 本体结构化属性（知识图谱本体化升级·问题②）：
+                                        // 渲染 selected_detail 回带的生效属性（后端 search-memory
+                                        // attach_properties 已回带 status=1）；无属性的节点/关系为
+                                        // 空 Vec——整块不渲染，不画空容器。区块位置=「标签」之后
+                                        // （TL 待议②：位置由前端落码裁量）。
+                                        if !property_rows.is_empty() {
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "属性" }
+                                                }
+                                                div { class: "space-y-2",
+                                                    for (display, text, is_enum, is_reference) in property_rows.iter() {
+                                                        div {
+                                                            if *is_reference {
+                                                                details { class: "collapse collapse-arrow bg-base-200 rounded-lg",
+                                                                    summary { class: "collapse-title text-sm min-h-0 py-2",
+                                                                        span { class: "font-medium", "{display}" }
+                                                                        span { class: "badge orz-tag badge-sm ml-2", "引用" }
+                                                                    }
+                                                                    div { class: "collapse-content",
+                                                                        span { class: "font-mono text-xs break-all text-base-content/70", "{text}" }
+                                                                    }
+                                                                }
+                                                            } else if *is_enum {
+                                                                div { class: "flex items-center gap-2",
+                                                                    span { class: "text-sm font-medium", "{display}" }
+                                                                    span { class: "badge orz-tag badge-sm", "{text}" }
+                                                                }
+                                                            } else {
+                                                                div { class: "flex items-baseline gap-2",
+                                                                    span { class: "text-sm font-medium whitespace-nowrap", "{display}" }
+                                                                    span { class: "text-sm break-all", "{text}" }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                         if detail.memory_type == "relation" {
                                             div { class: "grid grid-cols-1 gap-2",
                                                 if let Some(source) = &detail.source_node_id {
@@ -1189,5 +1306,104 @@ mod tests {
         let (nodes, _) = build_graph_from_results(&[blank]);
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].label, "未命名节点");
+    }
+
+    // ==================== 本体属性展示守卫（知识图谱本体化升级·问题②） ====================
+
+    /// PropertyValue 六分支格式化口径：枚举→徽标、boolean 中文化、
+    /// 整数不带小数点、引用保留原文并明示本期不支持跳转。
+    #[test]
+    fn format_property_value_six_variants() {
+        assert_eq!(
+            format_property_value(&PropertyValue::Text("pkg基建".into())),
+            ("pkg基建".to_string(), false)
+        );
+        assert_eq!(
+            format_property_value(&PropertyValue::Number(201.0)),
+            ("201".to_string(), false)
+        );
+        assert_eq!(
+            format_property_value(&PropertyValue::Number(0.66)),
+            ("0.66".to_string(), false)
+        );
+        assert_eq!(
+            format_property_value(&PropertyValue::Boolean(true)),
+            ("是".to_string(), false)
+        );
+        assert_eq!(
+            format_property_value(&PropertyValue::Date("2026-10-13".into())),
+            ("2026-10-13".to_string(), false)
+        );
+        assert_eq!(
+            format_property_value(&PropertyValue::Enum("进行中".into())),
+            ("进行中".to_string(), true)
+        );
+        let (text, is_enum) = format_property_value(&PropertyValue::Reference("01a130ea".into()));
+        assert!(!is_enum, "引用不是枚举徽标");
+        assert!(text.contains("01a130ea"), "引用须保留 ID 原文");
+        assert!(text.contains("本期不支持跳转"), "引用口径须明示增强项");
+    }
+
+    /// 显示名兜底：词表查无 term_key 时原文展示，严禁空白。
+    #[test]
+    fn property_display_name_falls_back_to_term_key() {
+        let mut display_names = HashMap::new();
+        display_names.insert("lifecycle_status".to_string(), "生命周期状态".to_string());
+        assert_eq!(
+            property_display_name(&display_names, "lifecycle_status"),
+            "生命周期状态"
+        );
+        assert_eq!(
+            property_display_name(&display_names, "custom_key"),
+            "custom_key"
+        );
+        let empty: HashMap<String, String> = HashMap::new();
+        assert_eq!(property_display_name(&empty, "domain"), "domain");
+    }
+
+    /// 源码结构守卫：属性区块/词表缓存/六分支 helper/引用折叠区锚点在场。
+    /// include_str! 全文含本测试自身 → code_region 按 #[cfg(test)] 切分防自匹配。
+    #[test]
+    fn node_properties_panel_anchors_present() {
+        let all = include_str!("knowledge_graph.rs");
+        let code_region = all.split("#[cfg(test)]").next().expect("生产区必须存在");
+        let count = |needle: &str| code_region.matches(needle).count();
+
+        assert_eq!(
+            count("span { class: \"label-text font-medium\", \"属性\" }"),
+            1,
+            "「属性」区块标题恰 1"
+        );
+        assert_eq!(count("fn format_property_value("), 1, "六分支 helper 恰 1");
+        assert_eq!(
+            count("fn property_display_name("),
+            1,
+            "显示名兜底 helper 恰 1"
+        );
+        assert_eq!(
+            count("list_ontology_properties(req)"),
+            1,
+            "属性词表拉取恰 1（挂载一次缓存）"
+        );
+        assert_eq!(
+            count("use common::ontology_property::PropertyValue;"),
+            1,
+            "PropertyValue 导入恰 1"
+        );
+        assert_eq!(count("let property_rows"), 1, "展示行预格式化恰 1");
+        assert_eq!(
+            count("collapse collapse-arrow"),
+            1,
+            "引用折叠区恰 1（本期不做跳转的承载形态）"
+        );
+        assert_eq!(count("PaginationParams {"), 1, "词表分页参数恰 1");
+        assert!(
+            code_region.contains("property_display_names.set(map);"),
+            "显示名缓存写入在场"
+        );
+        assert!(
+            code_region.contains("if !property_rows.is_empty()"),
+            "属性区块空不渲染守卫在场"
+        );
     }
 }
