@@ -138,6 +138,39 @@ fn parse_value_range_object_may_carry_enum_key() {
 }
 
 #[test]
+fn parse_value_range_object_reads_enum_values_key() {
+    // 写入侧 serde_json::to_string(&ValueRange) 直存产出的就是 enum_values 键：
+    // 读侧必须识别它，否则属性定义回显/白名单校验/提示词注入三条消费链全部退化
+    let range = parse_value_range(r#"{"enum_values": ["domain 12值", "现行有效"]}"#);
+    assert_eq!(range.enum_values.len(), 2);
+    assert!(range.enum_values.contains(&"现行有效".to_string()));
+}
+
+#[test]
+fn parse_value_range_object_enum_values_precedes_enum() {
+    // 两键并存时主键 enum_values 优先（写入侧直存 DTO 键名即权威形态）
+    let range = parse_value_range(r#"{"enum_values": ["new"], "enum": ["old"]}"#);
+    assert_eq!(range.enum_values, vec!["new".to_string()]);
+}
+
+#[test]
+fn parse_value_range_roundtrip_with_serialized_dto() {
+    // 端到端闭环：写入侧序列化产物 = 读侧可解析形态（键不对称缺陷的防回归守卫）
+    let original = ValueRange {
+        min: None,
+        max: None,
+        enum_values: vec![
+            "规划中".to_string(),
+            "进行中".to_string(),
+            "已完结".to_string(),
+        ],
+    };
+    let raw = serde_json::to_string(&original).expect("serialize should succeed");
+    let parsed = parse_value_range(&raw);
+    assert_eq!(parsed, original, "序列化→落库原文→解析 必须无损往返");
+}
+
+#[test]
 fn parse_value_range_malformed_degrades_to_no_constraint() {
     // 软门禁：脏定义不失效整条写值链路
     assert!(parse_value_range("not-json").is_empty());

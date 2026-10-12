@@ -324,6 +324,62 @@ async fn save_entity_properties_supersedes_single_value_and_keeps_history(pool: 
     assert_eq!(count_property_rows(&ctx, "kn_a").await, 2);
 }
 
+/// 批量回读只出 status=1 生效值（修复「回读带出 status=0 已取代旧值」缺陷的防回归守卫）
+///
+/// 复刻实证场景：reference 型多值属性 related_task_id 软取代后，批量回读
+/// （search_memory attach_properties 消费链）不得再带出旧值。
+#[sqlx::test]
+async fn list_entity_properties_batch_returns_only_active_rows(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph(pool).await;
+    define_property(
+        &ctx,
+        &property_po("related_task_id", "reference", "", "many", ""),
+    )
+    .await;
+    let d = dal();
+
+    for task_id in [
+        "01a0de98-0000-7000-8000-000000000001",
+        "01a0de98-0000-7000-8000-000000000002",
+    ] {
+        d.save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Node,
+            "kn_batch",
+            vec![PropertyEntry {
+                term_key: "related_task_id".to_string(),
+                value: PropertyValue::Reference(task_id.to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("write should succeed");
+    }
+
+    // 物理行两条（历史保留），活跃层只允许最新一条
+    assert_eq!(count_property_rows(&ctx, "kn_batch").await, 2);
+    let map = d
+        .list_entity_properties_batch(
+            ctx.clone(),
+            &[(PropertyTargetType::Node, "kn_batch".to_string())],
+        )
+        .await
+        .expect("batch read should succeed");
+    let rows = map
+        .get(&(
+            PropertyTargetType::Node.as_str().to_string(),
+            "kn_batch".to_string(),
+        ))
+        .expect("活跃值应存在");
+    assert_eq!(rows.len(), 1, "批量回读只出 status=1 生效值: {rows:?}");
+    assert_eq!(
+        rows[0].value(),
+        Some(PropertyValue::Reference(
+            "01a0de98-0000-7000-8000-000000000002".to_string()
+        ))
+    );
+}
+
 /// 门闩 4（基数）硬拦：管理员把 many 收紧为 single 后，已占的其他槽位堵住新写
 #[sqlx::test]
 async fn save_entity_properties_rejects_cardinality_overflow(pool: sqlx::SqlitePool) {

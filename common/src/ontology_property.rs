@@ -113,7 +113,9 @@ impl PropertyValue {
 ///
 /// 两种合法 JSON 形态：
 /// - 数组 → 枚举白名单（如 `["gpt-4","claude"]`）；
-/// - 对象 → 数值区间 `{"min": 0.0, "max": 1.0}`，也可带 `enum` 键给白名单。
+/// - 对象 → 数值区间 `{"min": 0.0, "max": 1.0}`，枚举白名单键为 `enum_values`
+///   （与本 DTO 序列化产物同构；写入侧 `serde_json::to_string(&ValueRange)` 产出的
+///   `{"enum_values":[...]}` 即此形态，见 create/update_property 直存链路）。
 ///
 /// 全 [`Default`]（min/max 皆 None、白名单为空）= 无约束。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -170,6 +172,24 @@ impl ValueRange {
     }
 }
 
+/// 从对象形态的 value_range 里读枚举白名单
+///
+/// 主键 `enum_values`（与 [`ValueRange`] 自身序列化键同构——修复写入侧直存 DTO
+/// 与读侧解析键不对称的缺陷）；旧键 `enum` 保留防御性兼容（数据库无存量旧格式行，
+/// 仅为手写 JSON 定义兜底）。两键并存时以主键为准。
+fn read_enum_values(map: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+    map.get("enum_values")
+        .or_else(|| map.get("enum"))
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToOwned::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// 数值短串（整数不带小数点：`1` 而非 `1.0`）
 fn fmt_num(v: f64) -> String {
     if v.fract() == 0.0 {
@@ -202,16 +222,7 @@ pub fn parse_value_range(raw: &str) -> ValueRange {
         serde_json::Value::Object(map) => ValueRange {
             min: map.get("min").and_then(serde_json::Value::as_f64),
             max: map.get("max").and_then(serde_json::Value::as_f64),
-            enum_values: map
-                .get("enum")
-                .and_then(serde_json::Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|item| item.as_str().map(ToOwned::to_owned))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            enum_values: read_enum_values(&map),
         },
         _ => ValueRange::default(),
     }
