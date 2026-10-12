@@ -746,10 +746,16 @@ async fn test_knowledge_relations(pool: SqlitePool) {
     .unwrap();
     assert_eq!(old_status, KnowledgeRelationStatus::Superseded as i32);
 
-    // 测试 delete_knowledge_relation 只降级生效边：Superseded 历史边不可被覆盖成 Deleted
-    dao.delete_knowledge_relation(ctx.clone(), "rel-rel-1-2")
+    // 测试 delete_knowledge_relation 只降级生效边：Superseded 历史边不可被覆盖成 Deleted，
+    // 且 rows_affected 检查后必须**显式报错**（修复假成功：旧实现静默 Ok）
+    let del_err = dao
+        .delete_knowledge_relation(ctx.clone(), "rel-rel-1-2")
         .await
-        .unwrap();
+        .expect_err("删除非生效边必须报错（rows_affected 检查）");
+    assert!(
+        del_err.to_string().contains("resource_not_found"),
+        "错误码应为 resource_not_found: {del_err}"
+    );
     let old_status: i32 = sqlx::query_scalar(
         r#"SELECT "status" FROM knowledge_node_relation WHERE id = 'rel-rel-1-2'"#,
     )
@@ -798,6 +804,16 @@ async fn test_knowledge_relations(pool: SqlitePool) {
     .await
     .unwrap();
     assert_eq!(hist_status, KnowledgeRelationStatus::Deleted as i32);
+
+    // rows_affected 检查：删除不存在的边必须显式报错（同上，不再静默 Ok）
+    let missing_err = dao
+        .delete_knowledge_relation(ctx.clone(), "rel-not-exist")
+        .await
+        .expect_err("删除不存在的边必须报错");
+    assert!(
+        missing_err.to_string().contains("resource_not_found"),
+        "错误码应为 resource_not_found: {missing_err}"
+    );
 }
 
 #[sqlx::test]

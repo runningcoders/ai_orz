@@ -1633,7 +1633,7 @@ ORDER BY created_at ASC
         let status_i32 = KnowledgeRelationStatus::Deleted as i32;
         // 软删除：标记为 Deleted(2)，行保留支持恢复。
         // 仅降级生效边：Superseded 历史边的版本链语义（"被替换"）不可被覆盖成"被删除"
-        sqlx::query!(
+        let result = sqlx::query!(
             r#"
 UPDATE knowledge_node_relation
 SET "status" = ?, updated_at = ?
@@ -1645,6 +1645,16 @@ WHERE id = ? AND "status" = 1
         )
         .execute(&pool)
         .await?;
+
+        // 假成功修复：WHERE 带 status=1 过滤后 0 行受影响 = 边不存在或已非生效
+        // （被新版本取代/已删除）——必须显式报错，不能静默 Ok 让调用方以为删掉了。
+        if result.rows_affected() == 0 {
+            bail_err!(
+                ResourceNotFound,
+                "关系边 {} 不存在或已非生效状态（可能已被新版本取代或已删除）",
+                relation_id
+            );
+        }
 
         Ok(())
     }

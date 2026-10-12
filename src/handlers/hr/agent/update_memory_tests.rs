@@ -12,7 +12,7 @@ use crate::handlers::hr::agent::save_short_term_memory::save_short_term_memory;
 use crate::models::ontology::OntologyPropertyPo;
 use crate::service::dao::memory::MemoryQuery;
 use common::api::{
-    KnowledgePropertyParam, KnowledgeRelationParam, SaveLongTermMemoryParams,
+    KnowledgePropertyParam, KnowledgeRelationParam, RelationWriteStatus, SaveLongTermMemoryParams,
     SaveShortTermMemoryParams, UpdateMemoryParams,
 };
 use common::enums::ontology::PropertyTargetType;
@@ -385,5 +385,398 @@ async fn properties_are_rejected_for_short_term_memory(pool: sqlx::SqlitePool) {
     assert!(
         err.to_string().contains("properties"),
         "错误信息应点明是 properties 字段: {err}"
+    );
+}
+
+// ==================== 建边 keyed 回执（relations_result / 假成功修复回归） ====================
+
+/// 造一个最小知识节点（回执测试的端点素材）。
+async fn seed_node(ctx: &RequestContext, name: &str) -> String {
+    save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: name.to_string(),
+            node_description: format!("{name} 的描述"),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            relations: None,
+            properties: None,
+            task_id: None,
+        },
+    )
+    .await
+    .expect("建节点应成功")
+    .node_id
+}
+
+/// 混合批次：逐项有 key、成功项 relation_id = **实际落库** ID（删后实证）、
+/// 占位符 / 缺失端点 / 批内重复逐项 failed、顶层 relation_ids 只收成功项。
+///
+/// 覆盖调研单要求的「混合成败」「占位符」「重复边」与语义自测①③。
+#[sqlx::test]
+async fn mixed_batch_relations_receipt_has_keys_and_real_ids(pool: sqlx::SqlitePool) {
+    use crate::handlers::hr::agent::delete_memory::delete_memory;
+    use common::api::DeleteMemoryParams;
+
+    let ctx = init_env(pool);
+    let node_a = seed_node(&ctx, "回执端点A").await;
+    let node_b = seed_node(&ctx, "回执端点B").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "混合建边批次".to_string(),
+            node_description: "1 成功 + 3 失败：整批必须 200".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            relations: Some(vec![
+                // 0：两端都存在 → 成功
+                KnowledgeRelationParam {
+                    source_node_id: node_a.clone(),
+                    target_node_id: node_b.clone(),
+                    relation_type: "related".to_string(),
+                    weight: None,
+                },
+                // 1：占位符 → placeholder_node_id_rejected
+                KnowledgeRelationParam {
+                    source_node_id: "SELF".to_string(),
+                    target_node_id: node_b.clone(),
+                    relation_type: "related".to_string(),
+                    weight: None,
+                },
+                // 2：目标不存在 → target_node_not_found
+                KnowledgeRelationParam {
+                    source_node_id: node_b.clone(),
+                    target_node_id: "kn_missing_node".to_string(),
+                    relation_type: "related".to_string(),
+                    weight: None,
+                },
+                // 3：批内同键重复 → duplicate_active_edge
+                KnowledgeRelationParam {
+                    source_node_id: node_a.clone(),
+                    target_node_id: node_b.clone(),
+                    relation_type: "related".to_string(),
+                    weight: None,
+                },
+            ]),
+            properties: None,
+            task_id: None,
+        },
+    )
+    .await
+    .expect("混合批次整批必须 200 + 逐项回执（拍板①）");
+
+    let results = resp
+        .relations_result
+        .expect("携带 relations 必须有 keyed 回执");
+    assert_eq!(results.len(), 4, "逐项回执：4 条 4 项");
+
+    // 语义自测①：逐项有 key（index 为主 + 复合串辅助）
+    assert_eq!(results[0].key, format!("0:{node_a}->{node_b}"));
+    assert_eq!(results[1].key, format!("1:SELF->{node_b}"));
+    assert_eq!(results[2].key, format!("2:{node_b}->kn_missing_node"));
+    assert_eq!(results[3].key, format!("3:{node_a}->{node_b}"));
+
+    assert_eq!(results[0].status, RelationWriteStatus::Success);
+    let real_id = results[0]
+        .relation_id
+        .clone()
+        .expect("成功项必须带 relation_id");
+    assert!(
+        real_id.starts_with("kr_"),
+        "落库边 ID 应为 kr_ 前缀: {real_id}"
+    );
+
+    assert_eq!(results[1].status, RelationWriteStatus::Failed);
+    assert_eq!(
+        results[1].error_code.as_deref(),
+        Some("placeholder_node_id_rejected")
+    );
+    assert!(results[1].relation_id.is_none());
+
+    assert_eq!(results[2].status, RelationWriteStatus::Failed);
+    assert_eq!(
+        results[2].error_code.as_deref(),
+        Some("target_node_not_found")
+    );
+
+    assert_eq!(results[3].status, RelationWriteStatus::Failed);
+    assert_eq!(
+        results[3].error_code.as_deref(),
+        Some("duplicate_active_edge"),
+        "批内同键重复必须逐项拒绝"
+    );
+
+    // 顶层 relation_ids 收紧：恰为实际落库成功边 ID（与 results 成功项严格一致）
+    assert_eq!(
+        resp.relation_ids,
+        vec![real_id.clone()],
+        "relation_ids 只收实际落库成功项（假成功修复）"
+    );
+
+    // 语义自测③：回执 relation_id = 实际落库 ID —— 删除成功证明它真的在库里
+    delete_memory(
+        ctx.clone(),
+        DeleteMemoryParams {
+            memory_id: real_id.clone(),
+        },
+    )
+    .await
+    .expect("回执返回的边 ID 必须真实落库（可删除）");
+    // 二次删除必须报错：证明第一次删除真的消费了这条边（不是预生成假 ID 的幻影成功）
+    let again = delete_memory(ctx.clone(), DeleteMemoryParams { memory_id: real_id })
+        .await
+        .expect_err("已删除的边二次删除必须报错");
+    assert!(
+        again.to_string().contains("not_found"),
+        "二次删除错误应指明不存在: {again}"
+    );
+}
+
+/// 占位符批次：逐项 failed + 绝不落半悬空边（图谱遍历证伪）。
+/// 覆盖语义自测②与拍板⑤。
+#[sqlx::test]
+async fn placeholder_relations_fail_per_item_without_any_edge(pool: sqlx::SqlitePool) {
+    use crate::handlers::hr::agent::search_memory::search_memory;
+    use common::api::SearchMemoryParams;
+
+    let ctx = init_env(pool);
+    let node = seed_node(&ctx, "占位符批次宿主").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "占位符批次".to_string(),
+            node_description: "两条全占位符".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            relations: Some(vec![
+                KnowledgeRelationParam {
+                    source_node_id: "SELF".to_string(),
+                    target_node_id: node.clone(),
+                    relation_type: "related".to_string(),
+                    weight: None,
+                },
+                KnowledgeRelationParam {
+                    source_node_id: node.clone(),
+                    target_node_id: "kn_new_self".to_string(),
+                    relation_type: "related".to_string(),
+                    weight: None,
+                },
+            ]),
+            properties: None,
+            task_id: None,
+        },
+    )
+    .await
+    .expect("全失败仍必须 200 + 回执（拍板①）");
+
+    let results = resp.relations_result.expect("必须有 keyed 回执");
+    assert_eq!(results.len(), 2);
+    assert!(
+        results
+            .iter()
+            .all(|r| r.status == RelationWriteStatus::Failed),
+        "占位符条目必须全 failed"
+    );
+    assert!(
+        results
+            .iter()
+            .all(|r| r.error_code.as_deref() == Some("placeholder_node_id_rejected")),
+        "占位符错误码必须逐项标注: {:?}",
+        results
+    );
+    assert!(
+        resp.relation_ids.is_empty(),
+        "占位符绝不落半悬空边（relation_ids 必空）"
+    );
+
+    // 图谱遍历证伪：种子节点周边不存在任何边
+    let graph = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: String::new(),
+            max_results: Some(50),
+            memory_type: None,
+            traversal_depth: Some(1),
+            traversal_breadth: Some(10),
+            traversal_strategy: Some("breadth_first".to_string()),
+            seed_node_ids: Some(vec![node]),
+            tags: None,
+            task_id: None,
+            agent_id: None,
+            property_filters: None,
+        },
+    )
+    .await
+    .expect("遍历应成功");
+    assert!(
+        !graph.results.iter().any(|r| r.memory_type == "relation"),
+        "占位符批次不得留下任何边: {:?}",
+        graph.results
+    );
+}
+
+/// 全失败批次：update 本体更新照常成功，HTTP 语义成功 + 全 failed 逐项回执。
+/// 覆盖语义自测④与拍板①。
+#[sqlx::test]
+async fn all_failed_relations_return_ok_with_full_failed_receipt(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let node_a = seed_node(&ctx, "全失败宿主").await;
+    let node_b = seed_node(&ctx, "全失败对端").await;
+
+    let mut params = update_params(&node_a, None);
+    params.relations = Some(vec![
+        // 占位符
+        KnowledgeRelationParam {
+            source_node_id: "SELF".to_string(),
+            target_node_id: "SELF".to_string(),
+            relation_type: "related".to_string(),
+            weight: None,
+        },
+        // 目标不存在
+        KnowledgeRelationParam {
+            source_node_id: node_b.clone(),
+            target_node_id: "kn_ghost".to_string(),
+            relation_type: "related".to_string(),
+            weight: None,
+        },
+        // 源格式非法
+        KnowledgeRelationParam {
+            source_node_id: "not_a_kn_id".to_string(),
+            target_node_id: node_b.clone(),
+            relation_type: "related".to_string(),
+            weight: None,
+        },
+    ]);
+
+    let resp = update_memory(ctx.clone(), params)
+        .await
+        .expect("全失败批次不得整体报错（拍板①）");
+    let results = resp.relations_result.expect("必须有 keyed 回执");
+    assert_eq!(results.len(), 3);
+    let codes: Vec<_> = results
+        .iter()
+        .map(|r| r.error_code.as_deref().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        codes,
+        vec![
+            "placeholder_node_id_rejected",
+            "target_node_not_found",
+            "invalid_node_id",
+        ],
+        "逐项错误码必须按入参序标注: {:?}",
+        codes
+    );
+    assert!(results.iter().all(|r| r.relation_id.is_none()));
+}
+
+/// property_issues V2 结构化：code 取自 error 词表、field 至少携带 term_key、
+/// 类型不符另带 expected；V1 串过渡期并存。
+/// 覆盖语义自测⑤与拍板③。
+#[sqlx::test]
+async fn property_issues_v2_structured_with_error_codes(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "confidence", "number").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "V2 结构化回执".to_string(),
+            node_description: "类型不符 + 未定义属性".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            relations: None,
+            properties: Some(vec![
+                // 类型不符（number 声明 vs 文本值）→ 硬拒
+                KnowledgePropertyParam {
+                    term_key: "confidence".to_string(),
+                    value: PropertyValue::Text("oops".to_string()),
+                    ordinal: 0,
+                },
+                // 本体未定义 → 兜底写入（软门禁）
+                KnowledgePropertyParam {
+                    term_key: "brand_new_key".to_string(),
+                    value: PropertyValue::Number(0.5),
+                    ordinal: 0,
+                },
+            ]),
+            task_id: None,
+        },
+    )
+    .await
+    .expect("带属性的保存应成功（部分成功语义）");
+
+    // V1 串保留（过渡并存）
+    assert!(
+        resp.property_issues
+            .iter()
+            .any(|s| s.starts_with("confidence: ")),
+        "V1 串必须并存: {:?}",
+        resp.property_issues
+    );
+
+    // V2 结构化
+    let v2 = resp.property_issues_v2.expect("V2 回执必须存在");
+    assert_eq!(v2.len(), 2, "两条问题各一条 V2 条目");
+
+    let mismatch = v2
+        .iter()
+        .find(|e| e.field["term_key"] == "confidence")
+        .expect("类型不符条目必须在场");
+    assert_eq!(
+        mismatch.code, "property_type_mismatch",
+        "code 取自 error 词表"
+    );
+    assert_eq!(
+        mismatch.field["expected"], "number",
+        "类型不符必须把声明类型结构化带出"
+    );
+    assert!(!mismatch.message.is_empty(), "message 必须有可读原因");
+
+    let undefined = v2
+        .iter()
+        .find(|e| e.field["term_key"] == "brand_new_key")
+        .expect("未定义属性条目必须在场");
+    assert_eq!(undefined.code, "property_undefined");
+    assert_eq!(undefined.field["term_key"], "brand_new_key");
+}
+
+/// 无问题属性：V1 空数组、V2 缺省（None，序列化省略）。
+#[sqlx::test]
+async fn clean_properties_yield_empty_v1_and_omitted_v2(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "confidence", "number").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "干净属性".to_string(),
+            node_description: "类型对齐应全过".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            relations: None,
+            properties: Some(vec![KnowledgePropertyParam {
+                term_key: "confidence".to_string(),
+                value: PropertyValue::Number(0.8),
+                ordinal: 0,
+            }]),
+            task_id: None,
+        },
+    )
+    .await
+    .expect("类型对齐属性应全过");
+
+    assert!(resp.property_issues.is_empty());
+    assert!(resp.property_issues_v2.is_none(), "无问题不得有 V2 条目");
+    assert!(
+        resp.relations_result.is_none(),
+        "未带 relations 不得有建边回执"
     );
 }

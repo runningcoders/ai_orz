@@ -230,6 +230,13 @@ pub struct UpdateMemoryResponse {
     /// ⚠️ 记忆本身**已更新成功**：属性写入是「部分成功」语义，坏条目只跳过。
     /// 与 `save_long_term_memory` 同口径——静默吞掉会让模型以为写成功了。
     pub property_issues: Vec<String>,
+    /// 逐条建边 keyed 回执（V1 并存过渡：旧消费方忽略此字段不受影响）。
+    /// 仅入参携带 relations 时出现；每项 key/status/relation_id/error_code/message。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relations_result: Option<Vec<RelationWriteResult>>,
+    /// 属性写入问题清单 V2（结构化 code/message/field，与 V1 串同内容并存一版）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property_issues_v2: Option<Vec<PropertyIssueEntry>>,
 }
 
 /// 删除记忆请求参数。
@@ -634,6 +641,58 @@ impl PropertyFilterParam {
     }
 }
 
+/// 逐条建边的写入状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationWriteStatus {
+    /// 该条已成功落库。
+    Success,
+    /// 该条被拒绝或落库失败（整批仍返回 200，不整体报错）。
+    Failed,
+}
+
+/// 逐条建边回执：与 property_issues 的「部分成功」哲学同构——一条坏不连累一批，
+/// 每条独立给出 key / 状态 / 错误码，调用方逐条补写而不是整批重试。
+///
+/// ⚠️ `relation_id` 是**实际落库**的边 ID（仅 success 项有值）——不是预生成的假 ID；
+/// 顶层 `relation_ids` 与本表 success 项严格一致。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct RelationWriteResult {
+    /// 条目定位键：`{index}:{source_node_id}->{target_node_id}`
+    /// （index 为主、复合串辅助——单字段同时给出批次序号与两端节点）。
+    pub key: String,
+    /// 写入状态。
+    pub status: RelationWriteStatus,
+    /// 实际落库的关系边 ID（仅 success 且真的写了库才有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relation_id: Option<String>,
+    /// 失败错误码（snake_case，取自平台 error 词表），仅 failed 有值。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    /// 失败原因（人类可读；底层/下游错误时为其 msg 摘要），仅 failed 有值。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// 结构化错误上下文（对齐 `Error.field` 的自由形态，如 `{"node_id": "..."}`），
+    /// 仅 failed 且底层错误携带 field 时有值——把原来只打日志的错误带到外边来。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<serde_json::Value>,
+}
+
+/// 属性写入问题清单 V2 条目：结构对齐平台 `Error{code,msg,field}`，
+/// 取代 V1 的 `"<term_key>: <原因>"` 自由文本串。
+///
+/// ⚠️ 过渡期 V1 `property_issues`（字符串数组）**并存一版**，新旧同内容——
+/// 旧消费方按 V1 解析不受影响，新消费方直接读 V2 的结构化 code / field。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct PropertyIssueEntry {
+    /// 错误码（snake_case，取自平台 error 词表属性域，如 `property_type_mismatch`）。
+    pub code: String,
+    /// 人类可读原因（与 V1 串的 `<原因>` 部分同文案）。
+    pub message: String,
+    /// 结构化上下文：至少携带 `term_key`，类型不符时另带 `expected` 等字段。
+    pub field: serde_json::Value,
+}
+
 impl KnowledgeRelationParam {
     /// 归一化关系强度：非有限值（NaN/Inf）与越界值一律夹紧到 0.0~1.0。
     ///
@@ -705,6 +764,15 @@ pub struct SaveLongTermMemoryResponse {
     /// ⚠️ 节点本身**已创建成功**：属性写入是「部分成功」语义，坏条目只跳过。
     /// 模型必须读这个字段——静默吞掉会让它以为属性写成功了，下次不再补。
     pub property_issues: Vec<String>,
+    /// 逐条建边 keyed 回执（仅入参携带 relations 时出现）。
+    /// ⚠️ 顶层 `relation_ids` 已收紧为「实际落库成功边 ID」，与本表 success 项一致；
+    /// 占位符/不存在节点/批内重复等失败项逐条进本表（status=failed + 错误码），
+    /// 整批仍返回 200。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relations_result: Option<Vec<RelationWriteResult>>,
+    /// 属性写入问题清单 V2（结构化 code/message/field，与 V1 串同内容并存一版）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property_issues_v2: Option<Vec<PropertyIssueEntry>>,
 }
 
 /// 沉淀记忆请求参数。
@@ -816,6 +884,70 @@ mod tests {
         assert!(
             !json.contains("\"weight\""),
             "未标注的条目不应带 weight 键: {json}"
+        );
+    }
+
+    /// relations_result / property_issues_v2 未提供时**不出现**在序列化载荷里
+    /// （与 weight 同款契约：老消费方拿到的 JSON 与升级前逐字节同形）。
+    #[test]
+    fn v2_fields_are_omitted_when_not_provided() {
+        let save = SaveLongTermMemoryResponse {
+            node_id: "kn_a".into(),
+            relation_ids: vec!["kr_1".into()],
+            property_issues: vec![],
+            relations_result: None,
+            property_issues_v2: None,
+        };
+        let json = serde_json::to_string(&save).unwrap();
+        assert!(
+            !json.contains("relations_result") && !json.contains("property_issues_v2"),
+            "缺省时 V2 字段不应出现: {json}"
+        );
+
+        let update = UpdateMemoryResponse {
+            memory_id: "kn_a".into(),
+            property_issues: vec![],
+            relations_result: None,
+            property_issues_v2: None,
+        };
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(
+            !json.contains("relations_result") && !json.contains("property_issues_v2"),
+            "缺省时 V2 字段不应出现: {json}"
+        );
+    }
+
+    /// 成功项只带 relation_id、失败项只带错误码：回执形态的契约自检。
+    #[test]
+    fn relation_write_result_shape() {
+        let ok = RelationWriteResult {
+            key: "0:kn_a->kn_b".into(),
+            status: RelationWriteStatus::Success,
+            relation_id: Some("kr_1".into()),
+            error_code: None,
+            message: None,
+            field: None,
+        };
+        let json = serde_json::to_string(&ok).unwrap();
+        assert!(
+            json.contains("\"success\""),
+            "状态序列化为 snake_case: {json}"
+        );
+        assert!(!json.contains("error_code"), "成功项不应带错误码: {json}");
+
+        let bad = RelationWriteResult {
+            key: "1:SELF->kn_b".into(),
+            status: RelationWriteStatus::Failed,
+            relation_id: None,
+            error_code: Some("placeholder_node_id_rejected".into()),
+            message: Some("占位符".into()),
+            field: None,
+        };
+        let json = serde_json::to_string(&bad).unwrap();
+        assert!(json.contains("placeholder_node_id_rejected"));
+        assert!(
+            !json.contains("relation_id"),
+            "失败项不应带 relation_id: {json}"
         );
     }
 }

@@ -129,10 +129,60 @@ define_error_codes! {
             http: 409,
             code: "embedding_provider_switch_required",
         }
-        RebuildInProgress {
+        SourceNodeNotFound {
+            type: Biz,
+            http: 404,
+            code: "source_node_not_found",
+        }
+        TargetNodeNotFound {
+            type: Biz,
+            http: 404,
+            code: "target_node_not_found",
+        }
+        PlaceholderNodeIdRejected {
+            type: Validation,
+            http: 400,
+            code: "placeholder_node_id_rejected",
+        }
+        InvalidNodeId {
+            type: Validation,
+            http: 400,
+            code: "invalid_node_id",
+        }
+        DuplicateActiveEdge {
             type: Biz,
             http: 409,
-            code: "rebuild_in_progress",
+            code: "duplicate_active_edge",
+        }
+        PropertyTypeMismatch {
+            type: Validation,
+            http: 400,
+            code: "property_type_mismatch",
+        }
+        PropertyNumberOutOfRange {
+            type: Validation,
+            http: 400,
+            code: "property_number_out_of_range",
+        }
+        PropertyNotInEnumValue {
+            type: Validation,
+            http: 400,
+            code: "property_not_in_enum_value",
+        }
+        PropertyCardinalityExceeded {
+            type: Validation,
+            http: 400,
+            code: "property_cardinality_exceeded",
+        }
+        PropertyTargetNotAllowed {
+            type: Validation,
+            http: 400,
+            code: "property_target_not_allowed",
+        }
+        PropertyUndefined {
+            type: Validation,
+            http: 400,
+            code: "property_undefined",
         }
         Internal {
             type: System,

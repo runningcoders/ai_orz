@@ -1,13 +1,16 @@
 //! Handler: 更新记忆 - Neural Tool
 
-use super::save_node_properties;
-use crate::models::memory::{KnowledgeNodeRelationPo, Memory, MemoryCreateParams, MemoryPo};
+use super::{
+    RelationBatchReceipt, property_issue_entries, property_issue_strings, save_node_properties,
+    write_relations_with_receipt,
+};
+use crate::models::memory::{Memory, MemoryPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMemoryParams, UpdateMemoryResponse};
-use common::enums::{KnowledgeRelationStatus, MemoryStatus};
+use common::enums::MemoryStatus;
 use common::error::{Result, bail_err, err};
 use serde_json;
 
@@ -15,7 +18,7 @@ use serde_json;
 #[register_handler_tool(
     id = "update_memory",
     name = "Update Memory Entry",
-    description = "Update an existing short_term memory or knowledge_node by id: change content, summary, tags, or status (active/settled/forgotten; any other value is rejected with invalid_request rather than silently ignored); knowledge nodes also accept node_tags to toggle the published flag, relations to create typed edges to other nodes — this is the ONLY way to add edges to an existing node (mentioning another node in the body text does NOT create an edge: graph traversal only follows the relation table, in-text references are unreachable) — and properties to attach or correct structured facts (term_key + typed value), the ONLY way to put properties on an existing node. Re-writing a single-valued property supersedes the old value (history is kept, only the newest is read back), so correcting a property is just another write, not a delete-then-create. Rejected entries are listed in property_issues as '<term_key>: <reason>' and never fail the update itself. Trace and Relation entries cannot be modified, and neither relations nor properties are accepted for short_term memories. Returns memory_id and property_issues.",
+    description = "Update an existing short_term memory or knowledge_node by id: change content, summary, tags, or status (active/settled/forgotten; any other value is rejected with invalid_request rather than silently ignored); knowledge nodes also accept node_tags to toggle the published flag, relations to create typed edges to other nodes — this is the ONLY way to add edges to an existing node (mentioning another node in the body text does NOT create an edge: graph traversal only follows the relation table, in-text references are unreachable) — and properties to attach or correct structured facts (term_key + typed value), the ONLY way to put properties on an existing node. Re-writing a single-valued property supersedes the old value (history is kept, only the newest is read back), so correcting a property is just another write, not a delete-then-create. Relation writes are per-item keyed: relations_result[] reports each entry as {key, status, relation_id (success only), error_code, message} — placeholder node IDs (SELF / kn_new_self) and nonexistent endpoints are rejected per-item without failing the update. Rejected property entries are listed in property_issues (V1 strings, deprecated) and property_issues_v2 (structured {code,message,field}), never failing the update itself. Trace and Relation entries cannot be modified, and neither relations nor properties are accepted for short_term memories. Returns memory_id, relations_result, property_issues and property_issues_v2.",
     params = "common::api::UpdateMemoryParams",
     neural,
     tags = "ontology"
@@ -153,34 +156,27 @@ pub async fn update_memory(
     // 放在 update 之后——内容写失败时不应留下孤儿属性；写失败也不回滚节点本身。
     // ⚠️ 单值属性重复写 = **软取代**（旧值留历史、读侧只见新值），不是冲突，
     // 所以「修正属性」走 update_memory 是对的，不必先删后建。
-    let property_issues = match &node_id {
+    let property_report = match &node_id {
         Some(id) => save_node_properties(&ctx, id, params.properties).await?,
-        None => Vec::new(),
+        None => Default::default(),
     };
+    let property_issues = property_issue_strings(&property_report);
+    let property_issues_v2 = property_issue_entries(&property_report);
 
-    // 知识节点更新成功后落地关系边（复用 save_long_term_memory 的建边路径）。
+    // 知识节点更新成功后落地关系边（与 save_long_term_memory 共用同一份共享实现：
+    // 校验口径与回执形态一致——占位符 / 格式 / 批内重复 / 端点存在性逐项校验 +
+    // 逐条独立落库 + keyed 回执；修复旧实现「不回执边 ID」的同构缺陷）。
     // 放在 update 之后：内容写失败时不应留下孤儿边。
-    if let Some(relations) = params.relations.filter(|rs| !rs.is_empty()) {
-        let now = chrono::Utc::now().timestamp();
-        let relation_pos: Vec<KnowledgeNodeRelationPo> = relations
-            .iter()
-            .map(|r| KnowledgeNodeRelationPo {
-                id: format!("kr_{}", uuid::Uuid::now_v7().simple()),
-                source_node_id: r.source_node_id.clone(),
-                target_node_id: r.target_node_id.clone(),
-                // 原文直落：词表外的标注原样保留（与 save_long_term_memory 一致）
-                relation_type: r.relation_type.trim().to_string(),
-                weight: r.normalized_weight(),
-                status: KnowledgeRelationStatus::Active,
-                created_at: now,
-                updated_at: now,
-            })
-            .collect();
-        runtime_domain()
-            .memory()
-            .create(ctx, MemoryCreateParams::CreateRelations(relation_pos))
-            .await?;
-    }
+    let receipt = match params.relations.filter(|rs| !rs.is_empty()) {
+        Some(relations) => {
+            let now = chrono::Utc::now().timestamp();
+            write_relations_with_receipt(&ctx, relations, now).await
+        }
+        None => RelationBatchReceipt {
+            results: Vec::new(),
+            relation_ids: Vec::new(),
+        },
+    };
 
     let memory_id = match &result.po {
         MemoryPo::ShortTerm(st) => st.id.clone(),
@@ -191,6 +187,8 @@ pub async fn update_memory(
     Ok(UpdateMemoryResponse {
         memory_id,
         property_issues,
+        relations_result: (!receipt.results.is_empty()).then_some(receipt.results),
+        property_issues_v2: (!property_issues_v2.is_empty()).then_some(property_issues_v2),
     })
 }
 
