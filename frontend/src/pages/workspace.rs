@@ -15,7 +15,6 @@
 //! 底部游戏式横幅（MMORPG 风格，左右通透）：
 //! - 左下角：当前对话上下文 / 选中 Agent 信息卡（名称 + 运行状态 + 角色标签 + 简介）
 //! - 中间：对话框（消息区 + 输入行 + @ 提及浮层）；聚焦与否仅消息区展开高度不同，布局两态一致
-//! - 右下角：预留区（暂放数据刷新）
 //! - 视图联动（三种对话场景 + 一种锚定）：
 //!   - Global = 默认对话（后端兜底到前台接待）
 //!   - ProjectDetail = 项目会话：消息按 project_id 过滤，发给项目 owner（PMO）
@@ -259,7 +258,7 @@ fn view_from_query(query: &Option<String>) -> WorkspaceView {
 
 #[component]
 pub fn Workspace(view: Option<String>) -> Element {
-    let (sidebar_signal, mut refresh) = use_workspace_data();
+    let (sidebar_signal, _) = use_workspace_data();
     let navigator = use_navigator();
     let mut current_view = use_signal(|| WorkspaceView::Global);
 
@@ -1581,15 +1580,6 @@ pub fn Workspace(view: Option<String>) -> Element {
                                             "发送"
                                         }
                                     }
-                                }
-                            }
-
-                            // ---- 右下角：预留区（后续扩展，暂放数据刷新） ----
-                            div { class: "pointer-events-auto w-64 flex-shrink-0 flex items-end justify-end pb-1",
-                                button {
-                                    class: "btn hud-btn btn-ghost btn-xs",
-                                    onclick: move |_| { refresh(); toast.info("已刷新数据"); },
-                                    "🔄"
                                 }
                             }
                         }

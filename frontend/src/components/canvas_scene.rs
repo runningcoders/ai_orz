@@ -1205,6 +1205,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             }
             // 每帧取最新边列表（新增/删除的边当帧即生效）
             let edges_inner = edges_state_c.read().clone();
+            // 问题 5：早期 fit——不等力学布局收敛，数据就绪（首批节点写入 signal）
+            // 后下一渲染帧立即 fit 一次，首屏即见全图；一次性门闩仅 fit 一次，
+            // 之后视口完全交给用户（缩放/平移/重置/适应按钮），不重复接管。
+            if !fit_applied() && !nodes_state_c.read().is_empty() {
+                fit_applied.set(true);
+                viewport_c.set(fit_viewport(&nodes_state_c.read(), width, height));
+            }
             // 力导向步进
             if enable_force && !*is_stable_c.read() {
                 let mut nodes = nodes_state_c.read().clone();
@@ -1213,13 +1220,6 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 nodes_state_c.set(nodes);
                 if layout.is_stable(displacement, 0.5) {
                     is_stable_c.set(true);
-                    // 问题 4：默认视角=「适应」——力学首次稳定时把全图包进画布并居中
-                    //（替换默认 100% 的看不全问题）。仅首翻一次；空节点集不消耗
-                    // 一次性机会（分批到达以首批稳定为准）。
-                    if !fit_applied() && !nodes_state_c.read().is_empty() {
-                        fit_applied.set(true);
-                        viewport_c.set(fit_viewport(&nodes_state_c.read(), width, height));
-                    }
                 }
             }
 
@@ -1784,8 +1784,9 @@ mod tests {
         );
     }
 
-    /// 问题 4 守卫：默认视角「适应」链路锚点必须在场——
-    /// fit_applied 一次性标记 + RAF 力学稳定翻转点自动 fit + 手动重置让位。
+    /// 问题 5 守卫（沿问题 4 守卫合法演进）：早期 fit 链路锚点必须在场——
+    /// fit_applied 一次性标记 + RAF 数据就绪即 fit 独立首查 +
+    /// 力学稳定翻转机制保留（不再挂 fit）+ 手动重置让位。
     #[test]
     fn default_fit_on_stable_anchors_present() {
         let src = code_region(include_str!("canvas_scene.rs"));
@@ -1810,5 +1811,11 @@ mod tests {
                 .count(),
             1
         );
+        // 问题 5 新增：早期 fit 注释锚点在场（数据就绪即 fit）
+        assert_eq!(src.matches("// 问题 5：早期 fit").count(), 1);
+        // 问题 5 新增：旧 is_stable 翻转点内问题 4 注释已随挪位消失
+        assert_eq!(src.matches("力学首次稳定时把全图包进画布").count(), 0);
+        // 问题 5 新增：is_stable 翻转机制保留（力学暂停必需，不再挂 fit）
+        assert_eq!(src.matches("is_stable_c.set(true);").count(), 1);
     }
 }
