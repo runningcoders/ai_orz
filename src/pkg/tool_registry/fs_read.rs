@@ -3,8 +3,8 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::fs::{
-    ValidationResult, crosses_user_boundary, is_sensitive_filename, resolve_and_validate_path,
-    sanitize_error,
+    FsAccessMode, ValidationResult, crosses_agent_workspace, crosses_user_boundary,
+    is_sensitive_path, resolve_and_validate_path, sanitize_error,
 };
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
@@ -137,7 +137,12 @@ impl CoreTool for FsReadCoreTool {
             .additional_allowed_paths
             .as_deref()
             .unwrap_or(&[]);
-        match resolve_and_validate_path(&base_path, &args.path, additional_allowed)? {
+        match resolve_and_validate_path(
+            &base_path,
+            &args.path,
+            additional_allowed,
+            FsAccessMode::Read,
+        )? {
             ValidationResult::NeedConfirmation(message) => {
                 // Return explicit prompt for agent to ask user confirmation
                 return Ok(serde_json::json!({
@@ -170,7 +175,30 @@ impl CoreTool for FsReadCoreTool {
 
                 // 目录：返回条目列表（单层），而非文件内容
                 if metadata.is_dir() {
-                    return list_directory_entries(&target_path, &args.path, &args);
+                    // Agent 工作区边界：Agent 身份列举其他 Agent 工作区需用户确认，
+                    // 防止枚举他区文件名/大小（与 fs_write 的写边界同语义）
+                    if crosses_agent_workspace(
+                        &base_root,
+                        &target_path,
+                        ctx.agent_id().map(String::as_str),
+                    ) {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "require_confirmation": true,
+                            "message": format!(
+                                "Path '{}' is inside another agent's workspace. \
+                                You MUST STOP and ask the user for explicit confirmation before listing it.",
+                                args.path
+                            )
+                        }));
+                    }
+                    return list_directory_entries(
+                        &target_path,
+                        &args.path,
+                        &args,
+                        &base_root,
+                        ctx.agent_id().map(String::as_str),
+                    );
                 }
 
                 const HARD_READ_MAX_BYTES: usize = 10 * 1024 * 1024; // 10MB
@@ -277,26 +305,34 @@ const MAX_DIR_ENTRIES: usize = 500;
 
 /// 列举目录条目（单层，不递归；目录在前、其余按名称排序，输出稳定）
 ///
-/// 安全：条目名过 [`is_sensitive_filename`] 过滤——隐藏文件（.env / .git …）与
-/// 密钥类命名不出现在结果里，与「读不到」的规则对齐。符号链接条目如实标注为
+/// 安全：条目名过 [`is_sensitive_path`] 读档过滤——机密载体（.env / .git /
+/// 密钥类命名）不出现在结果里，与「读不到」的规则对齐；普通隐藏文件
+/// （.gitignore 等）可读可列。符号链接条目如实标注为
 /// `symlink`（读取目标会被 `resolve_and_validate_path` 的符号链接检查拒绝）。
-fn list_directory_entries(dir: &Path, display_path: &str, args: &ReadFileArgs) -> Result<Value> {
+/// 条目路径同样过 [`crosses_agent_workspace`] 边界校验后才输出（与父目录级
+/// 校验形成纵深防御，防列举被借道枚举其他 Agent 工作区内容）。
+fn list_directory_entries(
+    dir: &Path,
+    display_path: &str,
+    args: &ReadFileArgs,
+    base_root: &Path,
+    agent_id: Option<&str>,
+) -> Result<Value> {
     let entries = std::fs::read_dir(dir)
         .map_err(|e| anyhow::anyhow!("Failed to read directory: {}", sanitize_error(e)))
         .map_err(common::error::Error::from)?;
     let mut items: Vec<Value> = Vec::new();
-    let mut truncated = false;
     for entry in entries {
         let entry = entry
             .map_err(|e| anyhow::anyhow!("Failed to read directory entry: {}", sanitize_error(e)))
             .map_err(common::error::Error::from)?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if is_sensitive_filename(&name) {
+        if is_sensitive_path(&name, FsAccessMode::Read) {
             continue;
         }
-        if items.len() >= MAX_DIR_ENTRIES {
-            truncated = true;
-            break;
+        // 条目级 Agent 工作区边界：越界条目直接丢弃，不进入输出
+        if crosses_agent_workspace(base_root, &dir.join(&name), agent_id) {
+            continue;
         }
         let (entry_type, size_bytes) = match entry.file_type() {
             Ok(ft) if ft.is_dir() => ("directory", Value::Null),
@@ -316,7 +352,8 @@ fn list_directory_entries(dir: &Path, display_path: &str, args: &ReadFileArgs) -
             "size_bytes": size_bytes,
         }));
     }
-    // 排序：目录在前，然后按名称
+    // 先全量收集并排序、再截断：保留哪 MAX_DIR_ENTRIES 条由排序结果决定，
+    // 不依赖 readdir 顺序，输出稳定；truncated 基于排序后的总数计算
     items.sort_by(|a, b| {
         let a_dir = a.get("type").and_then(|t| t.as_str()) == Some("directory");
         let b_dir = b.get("type").and_then(|t| t.as_str()) == Some("directory");
@@ -330,6 +367,8 @@ fn list_directory_entries(dir: &Path, display_path: &str, args: &ReadFileArgs) -
             }
         }
     });
+    let truncated = items.len() > MAX_DIR_ENTRIES;
+    items.truncate(MAX_DIR_ENTRIES);
 
     // 行范围 / grep 只对文件有意义；传了目录就在响应里明说，不静默忽略
     let ignored_file_only_params =

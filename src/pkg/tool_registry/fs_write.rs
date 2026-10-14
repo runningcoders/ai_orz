@@ -4,16 +4,17 @@ use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::paths;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::fs::{
-    ValidationResult, crosses_agent_workspace, crosses_user_boundary, resolve_and_validate_path,
-    sanitize_error,
+    FsAccessMode, ValidationResult, canonical_path_in_scope, crosses_agent_workspace,
+    crosses_user_boundary, resolve_and_validate_path, sanitize_error,
 };
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
-use common::error::Result;
+use common::error::{Result, bail_err};
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 
 /// `FsToolConfig` 已下沉至 [`common::config::FsToolConfig`]（前后端共享 SSOT），此处仅转发兼容。
 pub use common::config::FsToolConfig;
@@ -148,7 +149,7 @@ impl CoreTool for FsWriteCoreTool {
                 crate::pkg::paths::user_home(&crate::config::get().base_data_path(), uid);
             allowed.push(user_home.to_string_lossy().to_string());
         }
-        match resolve_and_validate_path(&base_path, &args.path, &allowed)? {
+        match resolve_and_validate_path(&base_path, &args.path, &allowed, FsAccessMode::Write)? {
             ValidationResult::NeedConfirmation(message) => {
                 // Return explicit prompt for agent to ask user confirmation
                 return Ok(serde_json::json!({
@@ -190,9 +191,21 @@ impl CoreTool for FsWriteCoreTool {
                             )
                         }));
                     }
+                    // 记录建目录前尚不存在的目录链，供复核失败时反向清理
+                    let created_chain = missing_dir_chain(&target_path);
                     std::fs::create_dir_all(&target_path)
                         .map_err(|e| anyhow!("Failed to create directory: {}", sanitize_error(e)))
                         .map_err(common::error::Error::from)?;
+                    // TOCTOU 复核：canonicalize 重跑边界校验，逃逸即清理刚建目录并报错
+                    revalidate_created_dir(
+                        &base_root,
+                        &base_path,
+                        &target_path,
+                        &allowed,
+                        ctx.user_id.as_deref(),
+                        ctx.agent_id().map(String::as_str),
+                        &created_chain,
+                    )?;
                     // 工作区惰性 git init（新目录自身作为产物锚点）
                     crate::pkg::git_workspace::ensure_workspace_repo(
                         &base_root,
@@ -226,11 +239,23 @@ impl CoreTool for FsWriteCoreTool {
                 if let Some(parent) = target_path.parent()
                     && !parent.as_os_str().is_empty()
                 {
+                    // 记录建目录前尚不存在的目录链，供复核失败时反向清理
+                    let created_chain = missing_dir_chain(parent);
                     std::fs::create_dir_all(parent)
                         .map_err(|e| {
                             anyhow!("Failed to create parent directories: {}", sanitize_error(e))
                         })
                         .map_err(common::error::Error::from)?;
+                    // TOCTOU 复核：canonicalize 重跑边界校验，逃逸即清理刚建目录并报错
+                    revalidate_created_dir(
+                        &base_root,
+                        &base_path,
+                        parent,
+                        &allowed,
+                        ctx.user_id.as_deref(),
+                        ctx.agent_id().map(String::as_str),
+                        &created_chain,
+                    )?;
                 }
 
                 // 工作区惰性 git init（产物锚点基建，best-effort 不阻断写入）
@@ -363,6 +388,60 @@ impl CoreTool for FsWriteCoreTool {
     fn po(&self) -> &ToolPo {
         &self.po
     }
+}
+
+/// 记录 `create_dir_all` 之前尚不存在的目录链（自目标向上到最近已存在祖先），
+/// 供 TOCTOU 复核失败时反向清理刚建目录。
+fn missing_dir_chain(target: &Path) -> Vec<PathBuf> {
+    let mut chain = Vec::new();
+    let mut current = target.to_path_buf();
+    while !current.exists() {
+        chain.push(current.clone());
+        match current.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => current = parent.to_path_buf(),
+            _ => break,
+        }
+    }
+    chain
+}
+
+/// best-effort 反向清理刚建的目录链（`remove_dir` 仅能删空目录；失败忽略——
+/// 逃逸本身会以错误上抛，清理只是避免在作用域外留下空目录残骸）
+fn cleanup_created_dirs(chain: &[PathBuf]) {
+    for dir in chain.iter().rev() {
+        let _ = std::fs::remove_dir(dir);
+    }
+}
+
+/// TOCTOU 复核：`create_dir_all` 会跟随符号链接，缺失路径段可能在
+/// 「校验后、建目录前」被并发替换为指向作用域外的符号链接。
+/// 建完后 `canonicalize`（物理解析符号链接）重跑三重边界校验——
+/// 作用域（base / 附加允许路径，见 [`canonical_path_in_scope`]）、用户树、
+/// Agent 工作区；任一不过即视为逃逸：清理刚建目录并报错。
+fn revalidate_created_dir(
+    base_root: &Path,
+    scope_base: &Path,
+    created: &Path,
+    additional_allowed: &[String],
+    user_id: Option<&str>,
+    agent_id: Option<&str>,
+    created_chain: &[PathBuf],
+) -> Result<()> {
+    let canonical = created
+        .canonicalize()
+        .map_err(|e| anyhow!("Failed to resolve created directory: {}", sanitize_error(e)))
+        .map_err(common::error::Error::from)?;
+    let escaped = !canonical_path_in_scope(scope_base, &canonical, additional_allowed)
+        || crosses_user_boundary(base_root, &canonical, user_id)
+        || crosses_agent_workspace(base_root, &canonical, agent_id);
+    if escaped {
+        cleanup_created_dirs(created_chain);
+        bail_err!(
+            ToolExecutionFailed,
+            "Directory creation escaped workspace scope (possible symlink race); created directories removed"
+        );
+    }
+    Ok(())
 }
 
 /// Validate required parameters based on mode

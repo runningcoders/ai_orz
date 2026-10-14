@@ -111,25 +111,27 @@ pub mod fs {
 
     /// Resolve and validate a user-provided path against base data directory and additional allowed paths.
     /// Follows sandbox security rules:
-    /// 1. Reject sensitive filenames (.env, .key, etc.) immediately
-    /// 2. Normalize lexically (kills `.`/`..` so the scope check can't be fooled)
-    /// 3. Canonicalize to resolve symlinks
-    /// 4. Check that final path is within allowed scope (base or additional)
+    /// 1. Normalize lexically (kills `.`/`..` so the scope check can't be fooled)
+    /// 2. Canonicalize to resolve symlinks
+    /// 3. Check that final path is within allowed scope (base or additional)，
+    ///    并取得「相对作用域根」的路径段
+    /// 4. Reject sensitive filenames on the scope-relative portion（按 [`FsAccessMode`] 分档）
     /// 5. Reject symbolic links
     ///
     /// 目标路径**尚不存在**时（写新文件 / 建目录）不报错：向上找最近的已存在祖先
     /// canonicalize 后拼回缺失尾部，作用域校验仍在完整路径上进行。
+    ///
+    /// 敏感名判定只看**作用域根以内的相对部分**：基址（`.ai_orz`）与白名单根
+    /// （如 `/home/u/.config/app`）自身的隐藏成分不属于 Agent 可操控的路径，
+    /// 不参与判定——否则白名单外部路径因根里带隐藏成分被整体误拦。
+    /// `mode` 决定检查档位（见 [`FsAccessMode`]）：读宽松 / 写严格。
     pub fn resolve_and_validate_path(
         base_path: &Path,
         user_path: &str,
         additional_allowed_paths: &[String],
+        mode: FsAccessMode,
     ) -> Result<ValidationResult> {
-        // 1. Check sensitive filename patterns first
-        if is_sensitive_filename(user_path) {
-            return Err(anyhow!("Access denied: cannot access sensitive file").into());
-        }
-
-        // 2. Build absolute path (lexically normalized — see normalize_lexically)
+        // 1. Build absolute path (lexically normalized — see normalize_lexically)
         let user_path_input = user_path;
         let user_path = Path::new(user_path_input);
         let raw_path = if user_path.is_absolute() {
@@ -139,7 +141,7 @@ pub mod fs {
         };
         let absolute_path = normalize_lexically(&raw_path);
 
-        // 3. Canonicalize to resolve .. and symlinks.
+        // 2. Canonicalize to resolve .. and symlinks.
         //    Path exists: canonicalize directly.
         //    Path missing: canonicalize the nearest existing ancestor and re-join
         //    the missing tail (see resolve_missing_path).
@@ -152,17 +154,21 @@ pub mod fs {
         }
         .map_err(common::error::Error::from)?;
 
-        // 4. Check that canonical path is in allowed scope:
+        // 3. Check that canonical path is in allowed scope:
         //    - either under base_path, OR under one of the additional allowed paths
+        //    命中的根同时给出「相对段」，供第 4 步敏感名判定使用
         let base_canonical = base_path
             .canonicalize()
             .map_err(|e| anyhow!("Invalid base data path: {}", e))
             .map_err(common::error::Error::from)?;
 
-        let mut allowed = canonical.starts_with(&base_canonical);
+        let mut scope_rel = canonical
+            .strip_prefix(&base_canonical)
+            .ok()
+            .map(|p| p.to_path_buf());
 
         // Check additional allowed paths from configuration
-        if !allowed {
+        if scope_rel.is_none() {
             for additional in additional_allowed_paths {
                 let additional_path = Path::new(additional);
                 let additional_canon = if additional_path.is_absolute() {
@@ -172,22 +178,27 @@ pub mod fs {
                 }
                 .canonicalize();
                 if let Ok(additional_canon) = additional_canon
-                    && canonical.starts_with(&additional_canon)
+                    && let Ok(rel) = canonical.strip_prefix(&additional_canon)
                 {
-                    allowed = true;
+                    scope_rel = Some(rel.to_path_buf());
                     break;
                 }
                 // Ignore invalid/unresolvable additional paths
             }
         }
 
-        if !allowed {
+        let Some(scope_rel) = scope_rel else {
             // Not strictly denied, but needs user confirmation
             return Ok(ValidationResult::NeedConfirmation(format!(
                 "Path '{}' is outside the default working directory. \
             You MUST STOP and ask the user for explicit confirmation before accessing this file.",
                 user_path_input
             )));
+        };
+
+        // 4. Check sensitive filename patterns on the scope-relative portion（按 mode 分档）
+        if is_sensitive_path(&scope_rel.to_string_lossy(), mode) {
+            return Err(anyhow!("Access denied: cannot access sensitive file").into());
         }
 
         // 5. Reject symlinks
@@ -255,67 +266,145 @@ pub mod fs {
         }
     }
 
-    /// Check if filename matches sensitive patterns that should be blocked
-    pub fn is_sensitive_filename(path: &str) -> bool {
+    /// 敏感关键词：按「词元」匹配（词元 = 成分按非字母数字切分后的段），
+    /// 词元等于或以关键词结尾才算命中——避免子串误杀（`author.md` / `tokenizer.rs`）
+    const SENSITIVE_KEYWORDS: [&str; 5] = ["password", "secret", "token", "credential", "auth"];
+
+    /// 敏感路径检查档位：读宽松 / 写严格
+    ///
+    /// - [`FsAccessMode::Read`]：读取与目录列举。仅拦「承载机密」的路径成分
+    ///   （凭据 / 密钥命名、机密隐藏名），普通隐藏文件（`.gitignore`、
+    ///   `docs/.hidden/x.txt`）可读可列——读档不为写侧的注入面买单。
+    /// - [`FsAccessMode::Write`]：写入与建目录。任何隐藏成分一律拦——写入
+    ///   `.git/hooks/` 会在工作区惰性 git init 后被 git 钩子执行（注入面），
+    ///   必须从严；隐藏配置文件也不该被 Agent 覆写。
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum FsAccessMode {
+        /// 读取 / 目录列举（宽松档）
+        Read,
+        /// 写入 / 建目录（严格档）
+        Write,
+    }
+
+    /// 承载机密的隐藏名（读档特判名单）：`.env*` 之外的凭据载体。
+    /// 按「名字.」派生族匹配：`.yarnrc.yml` 命中 `.yarnrc`，而 `.gitignore`
+    /// 不命中 `.git`（派生族要求 `.` 分隔后缀）。
+    const SECRET_HIDDEN_NAMES: [&str; 9] = [
+        ".git", // config 可含带令牌的远端 URL（工作区会惰性 git init，非理论风险）
+        ".ssh", ".aws", ".gnupg", ".npmrc", ".netrc", ".pypirc", ".docker", ".yarnrc",
+    ];
+
+    /// 隐藏成分是否承载机密（读档判定；写档一律拦隐藏成分，不走本函数）
+    fn is_secret_hidden_component(comp: &str) -> bool {
+        // .env / .env.local / .envrc —— 环境变量文件普遍含凭据，前缀匹配
+        if comp.starts_with(".env") {
+            return true;
+        }
+        SECRET_HIDDEN_NAMES.iter().any(|name| {
+            comp == *name
+                || comp
+                    .strip_prefix(name)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        })
+    }
+
+    /// Check if a path (or bare filename) matches sensitive patterns that should be blocked.
+    ///
+    /// 按**路径成分**匹配，任意层级的成分（中间目录成分与文件名成分）一视同仁，
+    /// 按 [`FsAccessMode`] 分档：
+    /// 1. 隐藏成分：写档一律拦（`.env`、`.git`、`.ssh`、`docs/.hidden/x.txt` 的
+    ///    `.hidden` 等）；读档仅拦 [`is_secret_hidden_component`]（机密载体），
+    ///    普通隐藏文件放行；
+    /// 2. 成分等于敏感名或其「名字.」派生族：`id_rsa` / `id_rsa.pub` / `id_dsa.pub` …；
+    /// 3. 成分以敏感后缀结尾：`.pem` / `.key` / `.p12` / `.pfx` / `.env`（`config.env`
+    ///    这类「名字.env」形态不靠隐藏规则也能拦）；
+    /// 4. 成分的词元命中 [`SENSITIVE_KEYWORDS`]：`password.txt`、`secret_key`、
+    ///    `api_token` 拦；`author.md`、`tokenizer.rs` 这类子串误杀放行。
+    pub fn is_sensitive_path(path: &str, mode: FsAccessMode) -> bool {
         let lower = path.to_lowercase();
-        // Sensitive patterns
-        if lower.contains(".env") {
-            return true;
-        }
-        if lower.contains(".pem") {
-            return true;
-        }
-        if lower.contains(".key") {
-            return true;
-        }
-        if lower.contains(".p12") {
-            return true;
-        }
-        if lower.contains(".pfx") {
-            return true;
-        }
-        if lower.contains("id_rsa") {
-            return true;
-        }
-        if lower.contains("id_dsa") {
-            return true;
-        }
-        if lower.contains("id_ecdsa") {
-            return true;
-        }
-        if lower.contains("password") {
-            return true;
-        }
-        if lower.contains("secret") {
-            return true;
-        }
-        if lower.contains("token") {
-            return true;
-        }
-        if lower.contains("credential") {
-            return true;
-        }
-        if lower.contains("auth") {
-            return true;
-        }
-        // 版本控制 / 密钥目录：任意层级出现即拒
-        // （.git/config 可含带令牌的远端 URL；且工作区会被惰性 git init，
-        //  .git 是真实存在的目录，不是理论风险）
         for comp in lower.split('/') {
-            if comp == ".git" || comp == ".ssh" {
+            // 跳过空段与词法归一化成分，避免把 `..` 误判为隐藏文件
+            if comp.is_empty() || comp == "." || comp == ".." {
+                continue;
+            }
+            // 1. 隐藏成分：写档一律拦；读档仅拦机密载体
+            if comp.starts_with('.') {
+                match mode {
+                    FsAccessMode::Write => return true,
+                    FsAccessMode::Read => {
+                        if is_secret_hidden_component(comp) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            // 2. 敏感名精确匹配或「名字.」派生族（如 id_rsa.pub）
+            if matches!(comp, "id_rsa" | "id_dsa" | "id_ecdsa")
+                || ["id_rsa", "id_dsa", "id_ecdsa"].iter().any(|name| {
+                    comp.strip_prefix(name)
+                        .is_some_and(|rest| rest.starts_with('.'))
+                })
+            {
+                return true;
+            }
+            // 3. 敏感后缀（`.env` 同时以隐藏成分本名与「名字.env」形态出现，
+            //    如 config.env / prod.env——不能只靠隐藏成分规则）
+            if [".pem", ".key", ".p12", ".pfx", ".env"]
+                .iter()
+                .any(|ext| comp.ends_with(ext))
+            {
+                return true;
+            }
+            // 4. 敏感关键词词元：等于或以关键词结尾才算（tokenizer ≠ token）
+            if comp
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|token| SENSITIVE_KEYWORDS.iter().any(|kw| token.ends_with(kw)))
+            {
                 return true;
             }
         }
-        // Hidden files starting with .
-        if path
-            .split('/')
-            .next_back()
-            .map(|name| name.starts_with('.'))
-            .unwrap_or(false)
-        {
+        false
+    }
+
+    /// 校验「已 canonicalize 的绝对路径」是否落在作用域内（base 或附加允许路径）
+    ///
+    /// 与 [`resolve_and_validate_path`] 第 4 步同一套 `starts_with` 语义，
+    /// 供写入侧 `create_dir_all` 之后的 TOCTOU 复核复用。
+    /// 不做敏感名检查：canonical 形态含 `.ai_orz` 等隐藏基础目录成分，
+    /// 名字规则只适用于用户输入路径。
+    pub fn canonical_path_in_scope(
+        base_path: &Path,
+        canonical: &Path,
+        additional_allowed_paths: &[String],
+    ) -> bool {
+        let Ok(base_canonical) = base_path.canonicalize() else {
+            return false;
+        };
+        if canonical.starts_with(&base_canonical) {
             return true;
         }
+        for additional in additional_allowed_paths {
+            let additional_path = Path::new(additional);
+            let additional_canon = if additional_path.is_absolute() {
+                additional_path.to_path_buf()
+            } else {
+                base_path.join(additional_path)
+            }
+            .canonicalize();
+            if let Ok(additional_canon) = additional_canon
+                && canonical.starts_with(&additional_canon)
+            {
+                return true;
+            }
+            // Ignore invalid/unresolvable additional paths
+        }
         false
+    }
+
+    /// 兼容包装：等价于 [`is_sensitive_path`] 的写档（严格档）语义。
+    /// 新代码请显式传 [`FsAccessMode`] 选择档位。
+    pub fn is_sensitive_filename(path: &str) -> bool {
+        is_sensitive_path(path, FsAccessMode::Write)
     }
 
     /// Sanitize IO error to remove absolute paths for security
