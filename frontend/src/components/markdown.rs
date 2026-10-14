@@ -23,6 +23,8 @@
 //! }
 //! ```
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dioxus::prelude::*;
@@ -69,27 +71,81 @@ pub fn render_markdown_with_names(md: &str, agents: Option<&NameMap>) -> String 
     crate::utils::doc_link::post_process_doc_links(&html_out, crate::utils::doc_link::BLOB_BASE)
 }
 
+/// `MarkdownRenderer` 每实例的渲染缓存（内容寻址）
+///
+/// 失效键 = `content` + 目录快照（`Option<NameMap>`，仅 `agents` 参与 HTML 计算）：
+/// 任一变化即全量重解析；都未变时直接复用缓存 HTML —— chat / 长列表里父组件
+/// 的重渲染只剩一次字符串对比，不再触发 O(n) 重解析。
+#[derive(Default)]
+struct MdCache {
+    /// 上次解析的 Markdown 源文
+    content: String,
+    /// 上次解析使用的目录快照（None = 无目录上下文）。仅目录失配重算时克隆一次，命中路径零克隆
+    names: Option<NameMap>,
+    /// 上次解析产物
+    html: String,
+}
+
 /// Markdown 渲染组件
 ///
 /// - `content`: Markdown 源文本
 /// - `compact`: 紧凑模式（更小字号 / 收紧上下边距），用于卡片、聊天气泡、列表展开等场景
+///
+/// 内容寻缓存：`content` / 目录任一变化必重算（修复知识图谱详情「内容」栏切换不更新），
+/// 都未变化则直接复用缓存（chat / 长列表高频父渲染下不丢性能）。
 #[component]
 pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool) -> Element {
     // 全局名称目录：命中时 Agent 提及用实时名渲染。
     // 文档中心等未提供 provider 的页面 try_consume_context 返回 None，自动回退到快照名。
     let directory = try_consume_context::<Signal<Directory>>();
-    // 每次渲染直接计算 HTML（修复：知识图谱详情「内容」栏切换不更新）：
-    // 此前 use_memo 闭包只捕获普通 String prop、零 signal 订阅，Memo 依赖空集永不重算，
-    // 组件实例被位置 diff 复用时「内容」恒显示首个渲染节点的固化值。
-    // Some 分支 read() 订阅目录：Agent 名预载完成后，已在屏的历史气泡 chip 自动刷新为实时名。
-    let html = match directory {
-        Some(sig) => render_markdown_with_names(&content, Some(&sig.read().agents)),
-        None => render_markdown(&content),
+    // 内容寻缓存兼顾两个目标：
+    // 1) content 变化必重算（修复：知识图谱详情「内容」栏切换不更新）——
+    //    病灶是 use_memo 闭包只捕获普通 String prop、零 signal 订阅永不重算，
+    //    组件实例被位置 diff 复用时「内容」恒显示首个渲染节点的固化值；
+    //    现以 content 为失效键在渲染期对比，变化必重算，语义等价于此前
+    //    「每渲染直接计算」的修复。
+    // 2) content 未变化不重解析 —— 父组件任何重渲染只付 O(len) 字符串对比
+    //    + 一次 String 克隆，不再 O(n) 解析。
+    //
+    // use_hook 每次渲染返回存储值的 clone（State: Clone），裸 RefCell 会被克隆走、
+    // 写入不落回组件状态，故包一层 Rc（clone 只拷指针，cell 本体跨渲染共享）。
+    let cache = use_hook(|| Rc::new(RefCell::new(MdCache::default())));
+    let html = {
+        let mut c = cache.borrow_mut();
+        // 目录指纹取舍：Directory 非 Arc 包装、HashMap 也没有廉价的稳定指针指纹，
+        // 故缓存里存快照用 PartialEq 精确对比（组织内 ≤ 500 条纯字符串比较，
+        // 远低于一次 markdown 解析）；比弱指纹（len+首键，会漏掉中间实体改名）可靠。
+        // Some 分支每次渲染无条件 read()：维持对目录 signal 的订阅，Agent 名预载
+        // 完成后已在屏的历史气泡 chip 自动失效重算为实时名。
+        let names_match = match &directory {
+            Some(sig) => {
+                let d = sig.read();
+                c.names.as_ref() == Some(&d.agents)
+            }
+            None => c.names.is_none(),
+        };
+        if c.content != content || !names_match {
+            // 目录快照仅在失配时重新克隆：流式场景 content 每 token 失效一次，
+            // 目录未变时不应付出整表克隆的代价。
+            if !names_match {
+                c.names = directory.as_ref().map(|sig| sig.read().agents.clone());
+            }
+            c.html = match directory.as_ref() {
+                Some(sig) => {
+                    let d = sig.read();
+                    render_markdown_with_names(&content, Some(&d.agents))
+                }
+                None => render_markdown(&content),
+            };
+            c.content = content.clone();
+        }
+        c.html.clone()
     };
     // use_effect 只订阅 signal、无法跟踪普通值：渲染期把最新 html 同步进 signal，
-    // 供下方 mermaid 效果在内容变化后重新触发；set 对相等值短路（PartialEq），
-    // 内容未变化时不产生版本推进、不触发下游重跑。
-    let mut html_signal = use_signal(String::new);
+    // 供下方 mermaid 效果在内容变化后重新触发。signal 初值即首帧计算结果
+    // （use_signal 初始化闭包），消除「空 → 首值」多出的一次重渲染；
+    // 后续帧渲染期仍无条件 set 同步，值相等时由 vdom diff 保证无 DOM 变更。
+    let mut html_signal = use_signal(|| html.clone());
     html_signal.set(html.clone());
     let container_id = use_hook(|| next_container_id("md"));
     // 含 ```mermaid 代码块时，挂载后（use_effect 已在 DOM 挂载后运行）直接调用 JS 渲染层替换为 SVG。
@@ -227,11 +283,12 @@ mod tests {
         assert!(html.contains("graph LR"));
     }
 
-    // 问题 3 回归守卫：MarkdownRenderer 禁止回到 use_memo 固化实现。
+    // 问题 3 回归守卫：MarkdownRenderer 禁止回到 use_memo 固化实现，也禁止丢掉内容寻缓存。
     // 病灶：use_memo 闭包只捕获普通 String prop、零 signal 订阅 → Memo 永不重算，
     // 位置 diff 复用组件实例时「内容」栏恒显示首个渲染节点的固化值。
     // 结构断言（include_str! + 按 #[cfg(test)] 切分代码区防自匹配）：
-    // 组件区必须保留「每渲染直接计算 + 渲染期同步 signal + 效果订阅 signal」锚点。
+    // 组件区必须保留「内容寻缓存失效键 + signal 初值即首帧结果 + 渲染期同步 signal +
+    // 效果订阅 signal」锚点。
     #[test]
     fn markdown_renderer_content_switch_fix_anchors_present() {
         let src = include_str!("markdown.rs");
@@ -240,7 +297,20 @@ mod tests {
             !code.contains("use_memo("),
             "组件区禁止 use_memo（固化病灶回退即失败）"
         );
-        assert_eq!(code.matches("let html = match directory {").count(), 1);
+        // 内容寻缓存：缓存容器 + 失效键对比 + 命中复用
+        assert_eq!(
+            code.matches("use_hook(|| Rc::new(RefCell::new(MdCache::default())))")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches("if c.content != content || !names_match {")
+                .count(),
+            1
+        );
+        assert_eq!(code.matches("c.html.clone()").count(), 1);
+        // signal 初值即首帧计算结果（无「空 → 首值」多渲染），渲染期维持同步
+        assert_eq!(code.matches("use_signal(|| html.clone())").count(), 1);
         assert_eq!(code.matches("html_signal.set(html.clone());").count(), 1);
         assert_eq!(
             code.matches("html_signal.read().contains(\"language-mermaid\")")
