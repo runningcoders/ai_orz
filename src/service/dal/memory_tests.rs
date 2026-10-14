@@ -56,7 +56,7 @@ async fn seed_graph(pool: sqlx::SqlitePool) -> RequestContext {
     // 三期 direction：get_knowledge_graph 聚合依赖 OntologyDao 单例
     crate::service::dao::ontology::init();
     init();
-    let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool.clone());
     let d = dal();
     for id in ["kn_a", "kn_b"].iter() {
         d.create(
@@ -72,14 +72,25 @@ async fn seed_graph(pool: sqlx::SqlitePool) -> RequestContext {
     d.create(
         ctx.clone(),
         MemoryCreateParams::CreateRelations(vec![
-            // 生效边：kn_a → kn_b
+            // 生效边：kn_a → kn_b（走生产写入路径）
             relation_po("kr_ab", "kn_a", "kn_b"),
-            // 悬挂边：target "kn_ghost" 不在活跃节点集（R2 应被过滤）
-            relation_po("kr_ghost", "kn_a", "kn_ghost"),
         ]),
     )
     .await
     .expect("create relations should succeed");
+    // 悬挂边：target "kn_ghost" 不在活跃节点集（R2 应被过滤）。
+    // DAO 写入侧已在事务内拦截悬空端点（建边防线），这里模拟的是
+    // 「防线存在前的存量脏数据」，故绕过生产路径直接裸 SQL 植入。
+    sqlx::query(
+        r#"
+INSERT INTO knowledge_node_relation (
+    id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
+) VALUES ('kr_ghost', 'kn_a', 'kn_ghost', 'related', NULL, 1, 0, 0)
+"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("seed dangling edge should succeed");
     ctx
 }
 

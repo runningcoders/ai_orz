@@ -404,7 +404,22 @@ async fn forgotten_endpoint_drops_the_edge(pool: sqlx::SqlitePool) {
         )
         .await
         .unwrap();
-    link(&ctx, "kr_cross", "kn_live", "kn_gone").await;
+    // 悬挂端点的边无法再走生产建边路径（DAO 写入侧已加事务内端点防线，
+    // 非活跃端点直接拒绝落库），这里模拟的是「边先于节点被遗忘而存在」
+    // 的存量数据，故绕过生产路径直接裸 SQL 植入，验证读侧可见性过滤。
+    sqlx::query(
+        r#"
+INSERT INTO knowledge_node_relation (
+    id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
+) VALUES (?, ?, ?, 'causes', 0.8, 1, 0, 0)
+"#,
+    )
+    .bind("kr_cross")
+    .bind("kn_live")
+    .bind("kn_gone")
+    .execute(ctx.db_pool())
+    .await
+    .unwrap();
 
     let resp = search_memory(ctx.clone(), click_params("kn_live", None))
         .await

@@ -816,6 +816,140 @@ async fn test_knowledge_relations(pool: SqlitePool) {
     );
 }
 
+/// 建边端点事务内防线：端点不存在/非活跃时报错且整体回滚，不落任何行
+///
+/// 复现 handler 批量预检 → 逐条落库之间端点被并发删除的场景：DAO 校验与
+/// INSERT 同事务，任一端点缺失（含软删为 Forgotten）即报 SourceNodeNotFound /
+/// TargetNodeNotFound，同批已插入的合法边也一并回滚。
+#[sqlx::test]
+async fn test_batch_add_knowledge_relations_rejects_inactive_endpoint(pool: SqlitePool) {
+    crate::config::init().unwrap();
+    let dao = MemoryDaoSqliteImpl::new();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
+
+    let now = chrono::Utc::now().timestamp();
+    // 准备三个活跃节点 a / b / c
+    for (id, name) in [
+        ("edge-node-a", "节点A"),
+        ("edge-node-b", "节点B"),
+        ("edge-node-c", "节点C"),
+    ] {
+        dao.save_knowledge_node(
+            ctx.clone(),
+            &LongTermKnowledgeNodePo {
+                id: id.to_string(),
+                agent_id: "test-agent".to_string(),
+                node_name: name.to_string(),
+                node_description: format!("{name}描述"),
+                node_type: "concept".to_string(),
+                summary: format!("{name}摘要"),
+                tags: "[]".to_string(),
+                status: MemoryStatus::Active,
+                is_published: false,
+                created_at: now,
+                updated_at: now,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let relation = |id: &str, src: &str, tgt: &str| KnowledgeNodeRelationPo {
+        id: id.to_string(),
+        source_node_id: src.to_string(),
+        target_node_id: tgt.to_string(),
+        relation_type: "related".to_string(),
+        weight: None,
+        status: KnowledgeRelationStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+
+    // 统计 relations 全表行数（含非生效行，验证「不落任何行」）
+    let count_rows = || async {
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM knowledge_node_relation")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        n
+    };
+    assert_eq!(count_rows().await, 0);
+
+    // 1) 目标端点不存在 → TargetNodeNotFound，错误信息带 target_id，不落行
+    let err = dao
+        .batch_add_knowledge_relations(
+            ctx.clone(),
+            &[relation("kr-1", "edge-node-a", "edge-ghost")],
+        )
+        .await
+        .expect_err("目标端点不存在必须报错");
+    assert_eq!(err.code.code_str(), "target_node_not_found");
+    assert!(
+        err.msg.contains("edge-ghost"),
+        "错误信息应带 target_id: {}",
+        err.msg
+    );
+    assert_eq!(count_rows().await, 0, "报错后不得落任何行");
+
+    // 2) 源端点不存在 → SourceNodeNotFound，错误信息带 source_id，不落行
+    let err = dao
+        .batch_add_knowledge_relations(
+            ctx.clone(),
+            &[relation("kr-2", "edge-ghost", "edge-node-b")],
+        )
+        .await
+        .expect_err("源端点不存在必须报错");
+    assert_eq!(err.code.code_str(), "source_node_not_found");
+    assert!(
+        err.msg.contains("edge-ghost"),
+        "错误信息应带 source_id: {}",
+        err.msg
+    );
+    assert_eq!(count_rows().await, 0);
+
+    // 3) 端点被并发软删（Active → Forgotten）→ 同样拒绝，对齐 delete_knowledge_node 场景
+    dao.delete_knowledge_node(ctx.clone(), "edge-node-b")
+        .await
+        .unwrap();
+    let err = dao
+        .batch_add_knowledge_relations(
+            ctx.clone(),
+            &[relation("kr-3", "edge-node-a", "edge-node-b")],
+        )
+        .await
+        .expect_err("端点已软删（非活跃）必须报错");
+    assert_eq!(err.code.code_str(), "target_node_not_found");
+    assert_eq!(count_rows().await, 0);
+
+    // 4) 批内「合法 + 非法」混合 → 整体回滚：已插入的合法边也不得残留
+    let mixed = vec![
+        relation("kr-4", "edge-node-a", "edge-node-c"), // 两端活跃，合法
+        relation("kr-5", "edge-node-a", "edge-ghost"),  // 目标缺失，非法
+    ];
+    let err = dao
+        .batch_add_knowledge_relations(ctx.clone(), &mixed)
+        .await
+        .expect_err("批内含非法端点必须整体回滚");
+    assert_eq!(err.code.code_str(), "target_node_not_found");
+    assert_eq!(count_rows().await, 0, "合法边必须随事务一并回滚");
+
+    // 5) 正常建边回归：两端活跃时仍成功落库、可读回
+    dao.batch_add_knowledge_relations(
+        ctx.clone(),
+        &[relation("kr-6", "edge-node-a", "edge-node-c")],
+    )
+    .await
+    .expect("两端活跃的建边应成功");
+    assert_eq!(count_rows().await, 1);
+    let outgoing = dao
+        .list_outgoing_relations(ctx.clone(), "edge-node-a")
+        .await
+        .unwrap();
+    assert_eq!(outgoing.len(), 1);
+    assert_eq!(outgoing[0].id, "kr-6");
+    assert_eq!(outgoing[0].target_node_id, "edge-node-c");
+}
+
 #[sqlx::test]
 async fn test_knowledge_references(pool: SqlitePool) {
     crate::config::init().unwrap();

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT COUNT(*) AS \"count!\" FROM long_term_knowledge_node\nWHERE id = ? AND status = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "count!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7c07b5fa3cc3939d27faf50cdc2e66b20679d015493bdb3ce02e06439d5709a6"
+}

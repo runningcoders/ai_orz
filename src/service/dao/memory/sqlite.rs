@@ -243,6 +243,61 @@ WHERE source_node_id = ? AND target_node_id = ? AND relation_type = ? AND "statu
         Ok(())
     }
 
+    /// 建边端点事务内防线：INSERT 前在同一事务、同一连接校验两端节点均存在且活跃
+    ///
+    /// handler 层的端点批量预检与本 DAO 落库之间没有事务/外键约束（建表 DDL 无
+    /// REFERENCES），预检通过后端点节点可能被并发软删（status → Forgotten），
+    /// 若不复查会插出悬空边。本校验与 INSERT 共用同一事务连接：SQLite 单写锁下
+    /// 「检查 → 插入 → 提交」之间不存在跨连接窗口——并发删除要么先提交（本校验
+    /// 失败、本事务整体回滚、不落任何行），要么后提交（本事务已先完成）。
+    /// 错误码与 handler 预检回执同源（SourceNodeNotFound / TargetNodeNotFound）。
+    async fn ensure_relation_endpoints_active(
+        tx: &mut sqlx::SqliteConnection,
+        relation: &KnowledgeNodeRelationPo,
+    ) -> Result<()> {
+        let active_i32 = MemoryStatus::Active as i32;
+
+        let source_exists = sqlx::query_scalar!(
+            r#"
+SELECT COUNT(*) AS "count!" FROM long_term_knowledge_node
+WHERE id = ? AND status = ?
+"#,
+            relation.source_node_id,
+            active_i32
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if source_exists == 0 {
+            bail_err!(
+                SourceNodeNotFound,
+                "建边被拒绝：源节点 source_node_id={} 不存在或非活跃状态（target_node_id={}），事务已回滚、未落任何边",
+                relation.source_node_id,
+                relation.target_node_id
+            );
+        }
+
+        let target_exists = sqlx::query_scalar!(
+            r#"
+SELECT COUNT(*) AS "count!" FROM long_term_knowledge_node
+WHERE id = ? AND status = ?
+"#,
+            relation.target_node_id,
+            active_i32
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if target_exists == 0 {
+            bail_err!(
+                TargetNodeNotFound,
+                "建边被拒绝：目标节点 target_node_id={} 不存在或非活跃状态（source_node_id={}），事务已回滚、未落任何边",
+                relation.target_node_id,
+                relation.source_node_id
+            );
+        }
+
+        Ok(())
+    }
+
     /// 属性值写入的第 1 步：降级同槽位的旧生效行（Superseded）
     ///
     /// ⚠️ 必须在 INSERT **之前**执行：`uq_knowledge_property_active` 是
@@ -1401,6 +1456,10 @@ INSERT INTO knowledge_node_relation (
         let mut tx = pool.begin().await?;
 
         for relation in relations {
+            // 端点存在性事务内防线：与下方 INSERT 同事务，任一端点缺失/非活跃
+            // 即整体回滚，杜绝「handler 预检通过后被并发删除」的悬空边落库
+            Self::ensure_relation_endpoints_active(&mut tx, relation).await?;
+
             // 批内同样先降级同键旧生效边再插入，与单条路径语义一致
             Self::supersede_active_edge(&mut tx, relation).await?;
 
