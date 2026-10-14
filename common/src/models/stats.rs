@@ -241,3 +241,16 @@ pub struct ProjectProgressSummary {
     /// 整体进度百分比（0-100，任务进度均值）
     pub overall_percent: u32,
 }
+
+impl ProjectProgressSummary {
+    /// 是否所有任务都处于终态（Completed/Cancelled），且项目至少有一个任务
+    ///
+    /// 「无任何可推进的活跃任务」= pending / in_progress / blocked 全为 0；
+    /// 消费场景：项目仍在 InProgress 但已无可推动的工作 → 大概率卡在收尾
+    /// （状态流转 + 最终汇报），跟进通知应切换为「收尾」语义而非「催办进度」。
+    /// `total_tasks == 0`（项目从未建过任务）**不**视为收尾——空项目可能是
+    /// 刚创建或被遗忘，原「去推进」跟进仍合理。
+    pub fn all_tasks_terminal(&self) -> bool {
+        self.total_tasks > 0 && self.pending == 0 && self.in_progress == 0 && self.blocked == 0
+    }
+}

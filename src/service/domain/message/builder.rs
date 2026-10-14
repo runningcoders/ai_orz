@@ -85,6 +85,40 @@ pub fn build_project_followup_content(
     )
 }
 
+/// 构建项目收尾通知消息内容（场景 3 变体：全部任务已终态、项目仍 InProgress）
+///
+/// 与 [`build_project_followup_content`] 的区别：此时**没有可推进的任务**，
+/// 「催办进度」语义不再适用——项目大概率卡在收尾环节（状态流转到 Completed +
+/// 最终汇报）。正文改为「二选一」指令：目标已达成则关闭项目并汇报；确有后续
+/// 工作则创建新任务继续推进。避免把长周期项目（阶段性建任务）误杀成「必须关」，
+/// 也避免 Agent 对着一个 100% 的进度快照困惑地乱建任务。
+///
+/// 消息类型仍为 `ProjectFollowupNotification`：②③④⑤ 所有防打扰门禁原样生效。
+pub fn build_project_finalize_content(
+    project_name: &str,
+    progress: &ProjectProgressSummary,
+) -> String {
+    format!(
+        "🏁 项目收尾检查\n\
+         项目：「{}」\n\
+         当前进度快照：共 {} 个任务（已完成 {} / 已取消 {}），整体进度 {}%。\n\n\
+         巡检发现：项目仍处于「进行中」，但已**没有任何可推进的任务**（无待启动 / 进行中 /\n\
+         阻塞）。这通常意味着项目卡在了收尾环节。请二选一处理：\n\n\
+         1. **项目目标已达成（多数情况）**：核对任务产出与 execution_plan 后，直接执行\n\
+            update_project_status(Completed) 完成项目，并在最终回复中输出最终汇报\n\
+            （做了什么、交付了什么、遗留事项与建议）\n\
+         2. **确有后续工作（如长周期项目的下一阶段）**：创建新任务（create_task）并给出\n\
+            明确的标题 / 描述 / 优先级，让项目回到有活可干的状态；不要只为应付检查而\n\
+            创建占位任务\n\n\
+         注意：你的最终回复会自动送达项目归属用户，**无需**调用 send_message 重复通知用户。",
+        project_name,
+        progress.total_tasks,
+        progress.completed,
+        progress.cancelled,
+        progress.overall_percent,
+    )
+}
+
 fn task_status_label(status: TaskStatus) -> &'static str {
     match status {
         TaskStatus::Cancelled => "已取消",
@@ -152,5 +186,56 @@ mod tests {
         assert!(content.contains("待启动 1"));
         assert!(content.contains("已取消 1"));
         assert!(content.contains("整体进度 42%"));
+    }
+
+    /// 收尾文案：全部任务终态时的跟进通知应切换为「二选一收尾」语义
+    #[test]
+    fn test_build_project_finalize_content() {
+        let progress = ProjectProgressSummary {
+            total_tasks: 3,
+            completed: 2,
+            in_progress: 0,
+            pending: 0,
+            blocked: 0,
+            cancelled: 1,
+            overall_percent: 100,
+        };
+        let content = build_project_finalize_content("数据迁移项目", &progress);
+        assert!(content.contains("项目收尾检查"));
+        assert!(content.contains("数据迁移项目"));
+        assert!(content.contains("共 3 个任务"));
+        assert!(content.contains("已完成 2"));
+        assert!(content.contains("已取消 1"));
+        // 二选一指令：默认关闭项目 + 汇报；确有后续工作则建新任务
+        assert!(content.contains("update_project_status(Completed)"));
+        assert!(content.contains("create_task"));
+        // 巡检以归属用户身份中继，Final 自动送达 → 无需再 send_message
+        assert!(content.contains("自动送达"));
+        assert!(content.contains("无需"));
+    }
+
+    /// `all_tasks_terminal` 判定边界：有活跃任务/空项目不算，终态组合（含取消）算
+    #[test]
+    fn test_progress_summary_all_tasks_terminal() {
+        let mk =
+            |total: usize, completed: usize, in_prog: usize, pending: usize, cancelled: usize| {
+                ProjectProgressSummary {
+                    total_tasks: total,
+                    completed,
+                    in_progress: in_prog,
+                    pending,
+                    blocked: 0,
+                    cancelled,
+                    overall_percent: 0,
+                }
+            };
+        // 空项目：从未建过任务 → 不算收尾
+        assert!(!mk(0, 0, 0, 0, 0).all_tasks_terminal());
+        // 有活跃任务 → 不算
+        assert!(!mk(3, 1, 1, 1, 0).all_tasks_terminal());
+        assert!(!mk(2, 1, 0, 1, 0).all_tasks_terminal());
+        // 全部终态（完成 + 取消混合）→ 算
+        assert!(mk(3, 2, 0, 0, 1).all_tasks_terminal());
+        assert!(mk(1, 1, 0, 0, 0).all_tasks_terminal());
     }
 }

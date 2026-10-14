@@ -241,6 +241,7 @@ impl CronTriggerConsumer {
     async fn handle_project_followup(&self, _extra: &Value) -> Result<()> {
         use crate::service::dao::message::MessageQuery;
         use crate::service::domain::message::SendToAgentCommand;
+        use crate::service::domain::message::builder::build_project_finalize_content;
         use crate::service::domain::message::builder::build_project_followup_content;
         use crate::service::domain::message::domain as message_domain;
         use crate::service::domain::project::domain as project_domain;
@@ -322,7 +323,7 @@ impl CronTriggerConsumer {
                 let elapsed = now.saturating_sub(last_followup_at);
                 if elapsed < min_followup_interval_seconds * 1000 {
                     sys_info!(
-                        "项目 {} 距上次跟进仅 {}s（< {}s），跳过本次跟随",
+                        "项目 {} 距上次跟进仅 {}s（< {}s），跳过本次跟进",
                         project.po.id,
                         elapsed / 1000,
                         min_followup_interval_seconds
@@ -330,7 +331,6 @@ impl CronTriggerConsumer {
                     continue;
                 }
             }
-
             // ⑤ 去重：该项目已有「未处理」的跟进通知 → 本次不再重复发
             //
             // 上面的 `is_unavailable` 只看**运行态内存**，看不见「已投递但还堵在队列里」
@@ -355,15 +355,23 @@ impl CronTriggerConsumer {
                 sys_info!(
                     "项目 {} 最近活动距今仅 {}s（< {}s），未停滞，跳过跟进",
                     project.po.id,
-                    (now - assess.last_activity_at) / 1000,
+                    now.saturating_sub(assess.last_activity_at) / 1000,
                     stall_threshold_seconds
                 );
                 continue;
             }
 
             // 构建消息内容（意图指令嵌入消息本体；带上预取的进度快照省去 Agent 一跳查询）
-            let content =
-                build_project_followup_content(&project.po.name, Some(&assess.progress_summary));
+            //
+            // 分支：项目仍有任务但已全部终态（无任何可推进的活跃任务）→ 大概率卡在
+            // 收尾环节（状态流转 + 最终汇报），切换为「收尾」语义而非「催办进度」，
+            // 避免 Agent 对着 100% 快照困惑地乱建任务。空项目（total==0）不命中，
+            // 维持原「去推进」跟进。
+            let content = if assess.progress_summary.all_tasks_terminal() {
+                build_project_finalize_content(&project.po.name, &assess.progress_summary)
+            } else {
+                build_project_followup_content(&project.po.name, Some(&assess.progress_summary))
+            };
 
             // 补齐组织上下文（系统触发链路 ctx 无组织绑定，见 mod.rs helper 说明）
             let ctx =

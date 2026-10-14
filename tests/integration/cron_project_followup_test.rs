@@ -42,7 +42,9 @@ fn now_ms() -> i64 {
 
 /// 把项目的活动时间拨到 3 小时前：默认停滞阈值 2h，使其满足「停滞」判据。
 ///
-/// 任务的写路径不会更新父项目 updated_at，故此处必须直接改项目行的 updated_at。
+/// 停滞判据取 `max(项目.updated_at, 各任务.updated_at)`，故项目行与任务行
+/// 都要拨旧（任务写路径不更新父项目 updated_at，但任务自身的 updated_at
+/// 参与 max 计算——刚流转过的任务会让项目被判为「未停滞」）。
 async fn backdate_project_activity(pool: &SqlitePool, project_id: &str) {
     let three_hours_ago = now_ms() - 3 * 3600 * 1000;
     sqlx::query("UPDATE projects SET updated_at = ? WHERE id = ?")
@@ -51,6 +53,12 @@ async fn backdate_project_activity(pool: &SqlitePool, project_id: &str) {
         .execute(pool)
         .await
         .expect("backdate project failed");
+    sqlx::query("UPDATE tasks SET updated_at = ? WHERE project_id = ?")
+        .bind(three_hours_ago)
+        .bind(project_id)
+        .execute(pool)
+        .await
+        .expect("backdate tasks failed");
 }
 
 /// 设置项目「上次跟进时间」
@@ -415,4 +423,119 @@ async fn test_cron_project_followup_dedups_pending_notification(pool: SqlitePool
         "已有 Pending 的跟进通知时，本次触发不应再投递（实际 {} 条）",
         followups.len()
     );
+}
+
+/// 在项目内创建一个任务并流转到 Completed（Pending → InProgress → Completed）。
+async fn create_task_and_complete(
+    app: &TestApp,
+    jwt: &str,
+    project_id: &str,
+    assignee_agent_id: &str,
+    title: &str,
+) {
+    let task_req = json!({
+        "title": title,
+        "description": "task for finalize followup test",
+        "project_id": project_id,
+        "assignee_id": assignee_agent_id,
+    });
+    let (status, body) = app.post_with_jwt("/api/v1/tasks", &task_req, jwt).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let task_id = data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing task id")
+        .to_string();
+
+    for next in ["InProgress", "Completed"] {
+        let req = json!({ "id": task_id, "status": next });
+        let (code, body) = app
+            .put_with_jwt(&format!("/api/v1/tasks/{}/status", task_id), &req, jwt)
+            .await;
+        assert_eq!(
+            code,
+            axum::http::StatusCode::OK,
+            "task transition to {} should succeed, body: {}",
+            next,
+            body
+        );
+    }
+}
+
+/// ⑥ 变体（收尾分支）：项目 InProgress 但**全部任务已 Completed**
+/// → 巡检仍投递跟进通知，但内容切换为「收尾」语义（二选一：关项目汇报 / 建新任务），
+/// 而非「催办进度」。（含 Cancelled 的终态混合组合由 `all_tasks_terminal` 单测覆盖；
+/// Task 取消不走状态接口，需专门 action，集成用例不引入该依赖。）
+#[sqlx::test]
+async fn test_cron_project_followup_sends_finalize_content_when_all_tasks_terminal(
+    pool: SqlitePool,
+) {
+    // 串行化临界区：见文件顶部 SERIAL 说明
+    let _serial = SERIAL.lock().await;
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool.clone()).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("FollowupFinalize-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    let project_id = create_project_with_owner(
+        &app,
+        &jwt,
+        &format!("FollowupFinalizeProject-{}", uuid::Uuid::now_v7()),
+        Some(&agent_id),
+    )
+    .await;
+    transition_project_status(&app, &jwt, &project_id, "InProgress").await;
+
+    // 2 个任务全部 Completed → all_tasks_terminal 命中
+    create_task_and_complete(&app, &jwt, &project_id, &agent_id, "任务一").await;
+    create_task_and_complete(&app, &jwt, &project_id, &agent_id, "任务二").await;
+
+    // 项目行拨到 3h 前（任务写路径不更新父项目 updated_at，停滞判据看的是项目行）
+    backdate_project_activity(ctx.db_pool(), &project_id).await;
+    AgentRuntimeStateManager::global().set_idle(&agent_id);
+
+    let consumer = CronTriggerConsumer::new();
+    consumer
+        .on_event(
+            RequestContext::new_system(),
+            build_trigger_event("test-trigger-finalize", "test finalize trigger"),
+        )
+        .await
+        .expect("on_event project_followup should succeed");
+
+    let messages = message::domain()
+        .management()
+        .list_by_project_id(ctx, &project_id)
+        .await
+        .expect("list_by_project_id should succeed");
+
+    let followup = messages
+        .iter()
+        .find(|m| {
+            m.po.to_id == agent_id && m.po.message_type == MessageType::ProjectFollowupNotification
+        })
+        .expect("all-terminal project should still receive a followup notification");
+
+    // 内容切换为「收尾」语义，而非「催办进度」
+    assert!(
+        followup.po.content.contains("项目收尾检查"),
+        "全任务终态应投递收尾文案，实际：{}",
+        followup.po.content
+    );
+    assert!(!followup.po.content.contains("项目进度定期检查"));
+    assert!(
+        followup
+            .po
+            .content
+            .contains("update_project_status(Completed)")
+    );
+    assert!(followup.po.content.contains("create_task"));
 }
