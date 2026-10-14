@@ -23,6 +23,7 @@ use crate::service::dao::task::TaskQuery;
 use common::api::ArtifactDetail;
 use common::enums::{AssigneeType, FileType, ProjectStatus, TaskStatus};
 use common::error::Result;
+use common::models::ProjectProgressSummary;
 
 /// 将 Artifact 业务实体转换为 ArtifactDetail DTO
 ///
@@ -59,6 +60,22 @@ mod project_test;
 mod task_graph_test;
 
 pub use artifact::{ListArtifactsParams, ProjectScreenshotStorer, ProjectToolOutputRegistrar};
+
+/// 项目停滞评估结果（供定时巡检等编排层复用）
+///
+/// 把「项目是否停滞」下沉为 domain 方法，避免消费者层各自重复计算：
+/// - `last_activity_at`：项目与其任务最近一次活动时间（毫秒）
+/// - `stalled`：是否已达到停滞阈值
+/// - `progress_summary`：按任务状态实时聚合的进度汇总
+#[derive(Debug, Clone)]
+pub struct ProjectStallAssessment {
+    /// 最近一次活动时间（毫秒）：project.updated_at 与各任务 updated_at 的最大值
+    pub last_activity_at: i64,
+    /// 是否停滞（now - last_activity_at >= stall_threshold）
+    pub stalled: bool,
+    /// 当前进度汇总
+    pub progress_summary: ProjectProgressSummary,
+}
 
 // ==================== 单例 ====================
 
@@ -219,6 +236,25 @@ pub trait ProjectManage: Send + Sync {
         project: &mut Project,
         target_status: ProjectStatus,
     ) -> Result<()>;
+
+    /// 评估项目是否停滞（供定时巡检复用）
+    ///
+    /// 判据：项目与其任务最近一次活动（max(project.updated_at, tasks 的 updated_at)）
+    /// 距今 ≥ `stall_threshold_seconds`。纳入任务 `updated_at` 是关键事实——任务的
+    /// 写路径不会更新父项目 `updated_at`，只看项目自身会把活跃项目误判为停滞。
+    ///
+    /// 同时返回按任务状态聚合的进度汇总，供通知内容复用，避免重复查询。
+    async fn assess_stall(
+        &self,
+        ctx: RequestContext,
+        project: &Project,
+        stall_threshold_seconds: i64,
+    ) -> Result<ProjectStallAssessment>;
+
+    /// 记录一次项目跟进（回写 `projects.last_followup_at`）
+    ///
+    /// 发送跟进通知成功后调用，用于节流后续巡检（`min_followup_interval_seconds`）。
+    async fn record_followup(&self, ctx: RequestContext, project_id: &str) -> Result<()>;
 }
 
 /// Task 管理 trait

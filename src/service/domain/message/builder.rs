@@ -5,6 +5,7 @@
 //! - 项目跟进通知（场景 3：定时补偿触发）
 
 use common::enums::task::TaskStatus;
+use common::models::ProjectProgressSummary;
 
 /// 构建任务调度通知消息内容（场景 2：任务状态变更触发）
 pub fn build_task_dispatch_content(
@@ -33,6 +34,9 @@ pub fn build_task_dispatch_content(
 
 /// 构建项目跟进通知消息内容（场景 3：定时补偿触发）
 ///
+/// `progress` 为消费侧预取的进度汇总（省去 Agent 的一跳查询，也让通知更具体）；
+/// 传 `None` 时不注入快照块（保持正文与历史一致）。
+///
 /// 触发器以**项目归属用户身份中继**本通知（from_role=User），Agent 的 Final
 /// 自动回复会送达该用户——因此正文把「通知用户」收敛为「最终回复的写法要求」，
 /// 不再要求调 send_message（那会造成双重通知）。
@@ -41,10 +45,20 @@ pub fn build_task_dispatch_content(
 /// 明确区分「无需用户确认、立即执行的动作」（按既定 execution_plan 调度 / 催办 /
 /// 调整计划 / 关闭项目）与「需用户决策、只上报选项的动作」（改方向 / 改范围），
 /// 否则 Agent 会保守地退化为「只汇报现状不推进」。
-pub fn build_project_followup_content(project_name: &str) -> String {
+pub fn build_project_followup_content(
+    project_name: &str,
+    progress: Option<&ProjectProgressSummary>,
+) -> String {
+    let progress_snapshot = match progress {
+        Some(p) => format!(
+            "\n当前进度快照：共 {} 个任务（已完成 {} / 进行中 {} / 待启动 {} / 已取消 {}），整体进度 {}%。\n",
+            p.total_tasks, p.completed, p.in_progress, p.pending, p.cancelled, p.overall_percent
+        ),
+        None => String::new(),
+    };
     format!(
         "📊 项目进度定期检查\n\
-         项目：「{}」\n\n\
+         项目：「{}」\n{}\n\
          系统定时触发了项目跟进检查（以项目归属用户名义转发给你）。巡检的目的不是写\n\
          一份进度汇报，而是推进进度：**能自主推进的立即推进，再汇报你做了什么**。\n\n\
          1. **获取进度**：调用 get_project(with_progress_summary=true, with_task_graph=true) 获取整体进度与任务依赖图\n\
@@ -67,7 +81,7 @@ pub fn build_project_followup_content(project_name: &str) -> String {
             一行简短确认（巡检每小时触发，避免重复打扰）\n\n\
          注意：你的最终回复会自动送达项目归属用户，**无需**调用 send_message 重复通知用户；\n\
          send_task_assignment_message / send_message 仅用于通知其他 Agent 的场景。",
-        project_name,
+        project_name, progress_snapshot,
     )
 }
 
@@ -99,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_build_project_followup_content() {
-        let content = build_project_followup_content("AI 助手开发");
+        let content = build_project_followup_content("AI 助手开发", None);
         assert!(content.contains("项目进度定期检查"));
         assert!(content.contains("AI 助手开发"));
         assert!(content.contains("识别可推进点"));
@@ -114,5 +128,29 @@ mod tests {
         assert!(content.contains("需要用户决策"));
         // 无任何可推进点才回一行确认，避免每小时噪音
         assert!(content.contains("一行简短确认"));
+        // 未传进度时不注入快照块
+        assert!(!content.contains("当前进度快照"));
+    }
+
+    /// 传入进度汇总时正文追加「当前进度快照」块（消费侧预取，省去 Agent 一跳查询）
+    #[test]
+    fn test_build_project_followup_content_with_progress_snapshot() {
+        let progress = ProjectProgressSummary {
+            total_tasks: 5,
+            completed: 2,
+            in_progress: 1,
+            pending: 1,
+            blocked: 0,
+            cancelled: 1,
+            overall_percent: 42,
+        };
+        let content = build_project_followup_content("AI 助手开发", Some(&progress));
+        assert!(content.contains("当前进度快照"));
+        assert!(content.contains("共 5 个任务"));
+        assert!(content.contains("已完成 2"));
+        assert!(content.contains("进行中 1"));
+        assert!(content.contains("待启动 1"));
+        assert!(content.contains("已取消 1"));
+        assert!(content.contains("整体进度 42%"));
     }
 }

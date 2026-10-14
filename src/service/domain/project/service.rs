@@ -11,8 +11,8 @@ use common::constants::utils;
 use common::enums::project::ProjectStatus;
 use uuid::Uuid;
 
-use super::ProjectDomainImpl;
 use super::task_graph::build_task_graph_mermaid;
+use super::{ProjectDomainImpl, ProjectStallAssessment};
 use common::error::{Result, bail_err};
 
 use crate::enrich_ctx;
@@ -424,5 +424,46 @@ impl super::ProjectManage for ProjectDomainImpl {
         );
 
         Ok(())
+    }
+
+    /// 评估项目是否停滞（供定时巡检复用）
+    ///
+    /// 关键事实：任务的写路径**不会**更新父项目 `updated_at`，所以活动时间必须
+    /// 纳入各任务的 `updated_at`（否则活跃项目会被误判为停滞）。取项目自身与所有
+    /// 任务 `updated_at` 的最大值作为「最近活动时间」。
+    async fn assess_stall(
+        &self,
+        ctx: RequestContext,
+        project: &Project,
+        stall_threshold_seconds: i64,
+    ) -> Result<ProjectStallAssessment> {
+        let tasks = self
+            .task_dal
+            .list_by_project(ctx, &project.po.id, None)
+            .await?;
+
+        let latest_task_activity = tasks
+            .iter()
+            .map(|t| t.po.updated_at)
+            .max()
+            .unwrap_or(i64::MIN);
+        let last_activity_at = project.po.updated_at.max(latest_task_activity);
+
+        let now = utils::current_timestamp_ms();
+        // 阈值单位是秒，活动时间是毫秒，统一换算后比较
+        let stalled = now - last_activity_at >= stall_threshold_seconds * 1000;
+
+        Ok(ProjectStallAssessment {
+            last_activity_at,
+            stalled,
+            progress_summary: progress_summary_from_tasks(&tasks),
+        })
+    }
+
+    /// 记录一次项目跟进（回写 `last_followup_at`）
+    async fn record_followup(&self, ctx: RequestContext, project_id: &str) -> Result<()> {
+        self.project_dal
+            .update_last_followup_at(ctx, project_id, utils::current_timestamp_ms())
+            .await
     }
 }

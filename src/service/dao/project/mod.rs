@@ -81,6 +81,13 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
         status: ProjectStatus,
         modified_by: &str,
     ) -> Result<()>;
+    /// 回写项目「上次跟进时间」（定时巡检发送跟进成功后记账，STRICT 表 INTEGER 可空列）
+    async fn update_last_followup_at(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        ts: i64,
+    ) -> Result<()>;
     /// 统计根用户的项目总数
     async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64>;
     /// 统计根用户指定状态的项目数

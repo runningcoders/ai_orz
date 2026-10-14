@@ -154,6 +154,14 @@ pub trait ProjectDal: Send + Sync {
         modified_by: &str,
     ) -> Result<()>;
 
+    /// 回写项目「上次跟进时间」（定时巡检发送跟进成功后记账）
+    async fn update_last_followup_at(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        ts: i64,
+    ) -> Result<()>;
+
     /// 归档项目（软删除）
     async fn archive(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<()>;
 
@@ -449,6 +457,18 @@ impl ProjectDal for ProjectDalImpl {
         let ctx = ctx.to_builder().project_id(id).build();
         self.project_dao
             .update_status(ctx, id, status, modified_by)
+            .await
+    }
+
+    async fn update_last_followup_at(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        ts: i64,
+    ) -> Result<()> {
+        let ctx = ctx.to_builder().project_id(project_id).build();
+        self.project_dao
+            .update_last_followup_at(ctx, project_id, ts)
             .await
     }
 

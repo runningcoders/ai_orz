@@ -242,6 +242,21 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(())
     }
 
+    async fn update_last_followup_at(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        ts: i64,
+    ) -> Result<()> {
+        let pool = ctx.db_pool();
+        sqlx::query("UPDATE projects SET last_followup_at = ? WHERE id = ?")
+            .bind(ts)
+            .bind(project_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(

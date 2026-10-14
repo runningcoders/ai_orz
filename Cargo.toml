@@ -233,6 +233,10 @@ name = "cron_project_followup_test"
 path = "tests/integration/cron_project_followup_test.rs"
 
 [[test]]
+name = "task_event_consumer_test"
+path = "tests/integration/task_event_consumer_test.rs"
+
+[[test]]
 name = "agent_settle_queue_test"
 path = "tests/integration/agent_settle_queue_test.rs"
 

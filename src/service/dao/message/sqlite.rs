@@ -668,6 +668,18 @@ fn push_query_filters<'args>(
     if let Some(project_id) = &query.project_id {
         push_project_filter(builder, "project_id", project_id);
     }
+    // 批量项目去重：一次 IN 查询替代逐项目查询（N+1 → 1）。
+    // 空 vec 与现有 IN 语义一致：跳过该条件（视为不过滤）。
+    if let Some(project_ids) = &query.project_ids
+        && !project_ids.is_empty()
+    {
+        builder.push(" AND project_id IN (");
+        let mut separated = builder.separated(", ");
+        for pid in project_ids {
+            separated.push_bind(pid.clone());
+        }
+        separated.push_unseparated(")");
+    }
     if let Some(from_id) = &query.from_id {
         builder.push(" AND from_id = ").push_bind(from_id.clone());
     }

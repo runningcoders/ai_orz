@@ -289,6 +289,43 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 回写「上次跟进时间」：UPDATE last_followup_at 应落库且可读回
+#[sqlx::test]
+async fn test_update_last_followup_at(pool: SqlitePool) -> Result<()> {
+    let dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let project_id = uuid::Uuid::now_v7().to_string();
+    let project = ProjectPo::new(
+        project_id.clone(),
+        "Followup Test".to_string(),
+        "".to_string(),
+        None, // workflow
+        None, // guidance
+        0,
+        vec![],
+        "test-user".to_string(),
+        Some("agent-123".to_string()),
+        None,
+        None,
+        None,
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &project).await?;
+
+    // 初始未跟进 → None
+    let found = dao.find_by_id(ctx.clone(), &project_id).await?.unwrap();
+    assert!(found.last_followup_at.is_none());
+
+    let ts = 1_700_000_000_000_i64;
+    dao.update_last_followup_at(ctx.clone(), &project_id, ts)
+        .await?;
+
+    let found = dao.find_by_id(ctx, &project_id).await?.unwrap();
+    assert_eq!(found.last_followup_at, Some(ts));
+    Ok(())
+}
+
 #[sqlx::test]
 async fn test_count_functions(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();

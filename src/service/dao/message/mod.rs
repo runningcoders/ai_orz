@@ -21,6 +21,8 @@ pub struct MessageQuery {
     pub task_id: Option<String>,
     /// 按项目 ID 查询
     pub project_id: Option<String>,
+    /// 按多个项目 ID 批量 IN 查询（批量去重用）
+    pub project_ids: Option<Vec<String>>,
     /// 按发送方 ID 查询
     pub from_id: Option<String>,
     /// 按接收方 ID 查询

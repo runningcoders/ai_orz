@@ -78,6 +78,10 @@ pub struct AppConfig {
     /// 工具运行日志配置（shell_exec 等工具的运行时输出清理策略）
     #[serde(default)]
     pub tool_log: ToolLogConfig,
+
+    /// 项目跟进巡检配置（系统定时 project_followup 触发器的停滞判据与节流）
+    #[serde(default)]
+    pub project_followup: ProjectFollowupConfig,
 }
 
 /// Agent 运行时配置（系统级默认值）
@@ -314,6 +318,41 @@ impl Default for ToolLogConfig {
 
 fn default_tool_log_retention_days() -> u32 {
     30 // 默认保留 30 天
+}
+
+/// 项目跟进巡检配置（系统定时 `project_followup` 触发器）
+///
+/// 两道业务判据：
+/// - `stall_threshold_seconds`：项目「数据层面停滞」判据——项目与其任务最近一次
+///   活动距今超过该阈值才认为停滞（避免对活跃项目无意义打扰）。
+/// - `min_followup_interval_seconds`：同一项目的跟进节流——距上次跟进不足该间隔
+///   则跳过（把「每个 tick 都可能触发」收敛为有节奏的巡检）。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ProjectFollowupConfig {
+    /// 停滞阈值（秒）：项目最近活动距今 ≥ 该值视为停滞，默认 7200（2 小时）
+    #[serde(default = "default_project_followup_stall_threshold_seconds")]
+    pub stall_threshold_seconds: i64,
+
+    /// 最小跟进间隔（秒）：距上次跟进不足该值则跳过，默认 21600（6 小时）
+    #[serde(default = "default_project_followup_min_interval_seconds")]
+    pub min_followup_interval_seconds: i64,
+}
+
+impl Default for ProjectFollowupConfig {
+    fn default() -> Self {
+        Self {
+            stall_threshold_seconds: default_project_followup_stall_threshold_seconds(),
+            min_followup_interval_seconds: default_project_followup_min_interval_seconds(),
+        }
+    }
+}
+
+fn default_project_followup_stall_threshold_seconds() -> i64 {
+    7200 // 2 小时无活动即视为停滞
+}
+
+fn default_project_followup_min_interval_seconds() -> i64 {
+    21600 // 同一项目最短 6 小时跟进一次
 }
 
 /// Shell 子进程环境配置 —— **内置默认值，不挂 AppConfig**

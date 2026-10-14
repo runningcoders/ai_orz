@@ -181,6 +181,26 @@ impl MessageDomain for MessageDomainImpl {
             .await
     }
 
+    async fn has_pending_followup_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<bool> {
+        // 「跟进类」两类统一去重，口径与理由见 trait 文档
+        for message_type in [
+            common::enums::message::MessageType::TaskDispatchNotification,
+            common::enums::message::MessageType::ProjectFollowupNotification,
+        ] {
+            if self
+                .has_pending_message_for_agent(ctx.clone(), agent_id, message_type)
+                .await?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     async fn recall_message(
         &self,
         ctx: RequestContext,
@@ -395,6 +415,21 @@ pub trait MessageDomain: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
         message_type: common::enums::message::MessageType,
+    ) -> Result<bool>;
+
+    /// 检查指定 Agent 是否有「跟进类」的未处理（Pending）通知
+    ///
+    /// 「跟进类」= 语义同源、都会让 Owner 重跑一遍全局编排的这两类：
+    /// `TaskDispatchNotification`（任务完成驱动 Owner 审视）与
+    /// `ProjectFollowupNotification`（定时巡检驱动 Owner 审视）。
+    ///
+    /// 二者由不同链路投递同一 Owner，但去重口径必须统一：若只在各自类型内去重，
+    /// 同一项目会同时收到两条跟进通知（一条变更驱动、一条定时驱动）。消费侧不得
+    /// 自行拼类型清单，故收敛到本 domain 单点，避免清单在各消费者间漂移。
+    async fn has_pending_followup_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
     ) -> Result<bool>;
 
     /// 撤回一条消息（权限 gate + 状态 gate + 在飞转取消）

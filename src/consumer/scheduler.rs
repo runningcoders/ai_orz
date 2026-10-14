@@ -221,26 +221,37 @@ impl CronTriggerConsumer {
         Ok(())
     }
 
-    /// project_followup 动作：对所有进行中且有 Owner Agent 的项目发送跟进通知
+    /// project_followup 动作：对停滞且无人正在处理的项目发送跟进通知
     ///
     /// 定时补偿场景（Agent Loop Engine 场景 3）：扫描所有 InProgress 且
     /// owner_agent_id 非空的项目，向 Owner Agent 发送 ProjectFollowupNotification
     /// 消息，驱动其检查项目进度并处理阻塞任务。
     ///
-    /// 两道预检查（互补，缺一不可）：
-    /// 1. **运行态**：Agent Busy/Resting 时跳过，避免无意义 nack 堆积；
-    /// 2. **落库态**：该项目已有未处理（`Pending`）的跟进通知时跳过 —— 见下文注释，
-    ///    运行态看不到「已投递但还堵在队列里」的消息。
+    /// 五道关（循环内按代价从低到高）：
+    /// ① status InProgress 且有 owner（候选查询已保证）；
+    /// ② 项目内无 Busy 的运行态 Agent（内存 O(1)，避免与在跑唤醒抢资源）；
+    /// ③ owner 运行态不可用（Busy/Resting）则跳过，避免无意义 nack 堆积；
+    /// ④ 距上次跟进 < `min_followup_interval` 则跳过（节流）；
+    /// ⑤ 该项目已有 Pending 跟进通知则跳过（一次批量查询，循环内只查 HashSet）；
+    /// ⑥ 数据层面停滞（`assess_stall`）：最近无活动 < `stall_threshold` 则跳过。
+    ///
+    /// 运行态判据经**合适的层**获取：②由 project domain 提供
+    /// （`has_active_agent_on_project`，定时巡检无「刚完成者」概念故传 `None`）、
+    /// ③由 runtime domain 提供（`agent_runtime_state`），本层只做编排，不直接触碰 pkg 单例。
     async fn handle_project_followup(&self, _extra: &Value) -> Result<()> {
-        use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
         use crate::service::dao::message::MessageQuery;
         use crate::service::domain::message::SendToAgentCommand;
         use crate::service::domain::message::builder::build_project_followup_content;
         use crate::service::domain::message::domain as message_domain;
         use crate::service::domain::project::domain as project_domain;
+        use common::constants::utils;
         use common::enums::{MessageRole, MessageStatus, MessageType};
+        use std::collections::HashSet;
 
         let ctx = RequestContext::new_system();
+        let cfg = crate::config::get();
+        let stall_threshold_seconds = cfg.project_followup.stall_threshold_seconds;
+        let min_followup_interval_seconds = cfg.project_followup.min_followup_interval_seconds;
 
         // 1. 查询所有进行中且有 Owner Agent 的项目
         let projects = project_domain()
@@ -248,59 +259,117 @@ impl CronTriggerConsumer {
             .list_in_progress_with_owner(ctx.clone())
             .await?;
 
+        // 2. 一次批量查询「已有 Pending 跟进通知」的项目集合（替代循环内逐个查询的 N+1）
+        //
+        // 为什么以**项目**为去重作用域而不是 Agent：Owner 带多个项目时，按 Agent 去重会让
+        // 第一个项目一直占着门（每次 tick 都从列表头部命中它），后面的项目永远排不上。
+        let candidate_ids: Vec<String> = projects.iter().map(|p| p.po.id.clone()).collect();
+        let pending_project_ids: HashSet<String> = if candidate_ids.is_empty() {
+            HashSet::new()
+        } else {
+            let pending = message_domain()
+                .management()
+                .query(
+                    ctx.clone(),
+                    MessageQuery {
+                        project_ids: Some(candidate_ids.clone()),
+                        message_type: Some(MessageType::ProjectFollowupNotification),
+                        status_in: Some(vec![MessageStatus::Pending]),
+                        limit: Some(candidate_ids.len().max(1)),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            pending
+                .iter()
+                .filter_map(|m| m.po.project_id.clone())
+                .collect()
+        };
+
+        let now = utils::current_timestamp_ms();
+
         for project in projects {
             let owner_agent_id = match &project.po.owner_agent_id {
                 Some(id) => id,
                 None => continue,
             };
 
-            // 2. 预检查：Agent 必须空闲才发送，避免无意义 nack 堆积
-            let state = AgentRuntimeStateManager::global().get_state(owner_agent_id);
-            if state.is_unavailable() {
-                sys_info!("Agent {} 当前 {:?}，跳过项目跟进", owner_agent_id, state);
-                continue;
-            }
-
-            // 3. 去重：该项目已有「未处理」的跟进通知 → 本次不再重复发
-            //
-            // ⚠️ 上面的 `is_unavailable` 只看**运行态内存**（Agent 这一瞬间在不在跑），
-            // 看不见「已经投递、但还堵在队列里没轮到」的跟进消息。Agent 长时间占线
-            // （一次巡检跑 20 分钟是常态）时，每个 tick 都会再追加一条，队列里就叠出
-            // 一串**同项目**的跟进通知 —— 之后每消化一条就要重跑一遍长巡检。
-            // 以落库状态为准查一次，把它「合并」成一条：Agent 处理时会看到最新状态。
-            //
-            // 作用域是**项目**而非 Agent：Owner 带多个项目时，按 Agent 去重会让第一个
-            // 项目一直占着门（每次 tick 都从列表头部命中它），后面的项目永远排不上。
-            let pending = message_domain()
-                .management()
-                .query(
-                    ctx.clone(),
-                    MessageQuery {
-                        project_id: Some(project.po.id.clone()),
-                        message_type: Some(MessageType::ProjectFollowupNotification),
-                        status_in: Some(vec![MessageStatus::Pending]),
-                        limit: Some(1),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-            if !pending.is_empty() {
+            // ② 项目内已有 Busy 的运行态 Agent → 该项目正被处理，跳过本次跟进
+            // 运行态单一事实源在 runtime domain：取「本项目 Busy 列表」判非空。
+            // 判据留在编排层（定时巡检无「刚完成者」概念，不做排除）。
+            if !runtime_domain()
+                .list_runtime_agents(Some("busy"), None, Some(project.po.id.as_str()))
+                .is_empty()
+            {
                 sys_info!(
-                    "项目 {} 已有未处理的跟进通知（agent={}），跳过本次投递",
+                    "项目 {} 内有正在运行的 Agent，跳过项目跟进（owner={}）",
                     project.po.id,
                     owner_agent_id
                 );
                 continue;
             }
 
-            // 4. 构建消息内容（意图指令嵌入消息本体）
-            let content = build_project_followup_content(&project.po.name);
+            // ③ Agent 必须空闲才发送，避免无意义 nack 堆积（经 runtime domain 取运行态）
+            let state = runtime_domain().agent_runtime_state(owner_agent_id);
+            if state.is_unavailable() {
+                sys_info!("Agent {} 当前 {:?}，跳过项目跟进", owner_agent_id, state);
+                continue;
+            }
 
-            // 5. 补齐组织上下文（系统触发链路 ctx 无组织绑定，见 mod.rs helper 说明）
+            // ④ 节流：距上次跟进不足 min_followup_interval 则跳过
+            // `last_followup_at` 为 None（从未跟进）时不触发节流。
+            if let Some(last_followup_at) = project.po.last_followup_at {
+                let elapsed = now.saturating_sub(last_followup_at);
+                if elapsed < min_followup_interval_seconds * 1000 {
+                    sys_info!(
+                        "项目 {} 距上次跟进仅 {}s（< {}s），跳过本次跟随",
+                        project.po.id,
+                        elapsed / 1000,
+                        min_followup_interval_seconds
+                    );
+                    continue;
+                }
+            }
+
+            // ⑤ 去重：该项目已有「未处理」的跟进通知 → 本次不再重复发
+            //
+            // 上面的 `is_unavailable` 只看**运行态内存**，看不见「已投递但还堵在队列里」
+            // 的消息。Agent 长时间占线（一次巡检跑 20 分钟是常态）时，每个 tick 都会
+            // 再追加一条，队列里叠出一串**同项目**的跟进通知 —— 之后每消化一条就要重跑
+            // 一遍长巡检。以落库状态为准查一次（循环前已批量预取），把它「合并」成一条。
+            if pending_project_ids.contains(&project.po.id) {
+                sys_info!(
+                    "项目 {} 已有未处理的跟进通知（owner={}），跳过本次投递",
+                    project.po.id,
+                    owner_agent_id
+                );
+                continue;
+            }
+
+            // ⑥ 数据层面停滞判据：项目最近无活动 < stall_threshold 则跳过（下沉 domain 复用）
+            let assess = project_domain()
+                .project_manage()
+                .assess_stall(ctx.clone(), &project, stall_threshold_seconds)
+                .await?;
+            if !assess.stalled {
+                sys_info!(
+                    "项目 {} 最近活动距今仅 {}s（< {}s），未停滞，跳过跟进",
+                    project.po.id,
+                    (now - assess.last_activity_at) / 1000,
+                    stall_threshold_seconds
+                );
+                continue;
+            }
+
+            // 构建消息内容（意图指令嵌入消息本体；带上预取的进度快照省去 Agent 一跳查询）
+            let content =
+                build_project_followup_content(&project.po.name, Some(&assess.progress_summary));
+
+            // 补齐组织上下文（系统触发链路 ctx 无组织绑定，见 mod.rs helper 说明）
             let ctx =
                 crate::consumer::enrich_org_from_project_user(&ctx, &project.po.root_user_id).await;
 
-            // 6. 发送消息（填充 project_id 上下文，MessageConsumer 会自动补充 project 信息）
+            // 发送消息（填充 project_id 上下文，MessageConsumer 会自动补充 project 信息）
             //
             // 【身份分层模型】触发器按「被触达事项的归属」选择发送方身份：
             // - 项目归属用户非空 → **以用户身份中继**（from_role=User）：巡检的是用户
@@ -327,12 +396,28 @@ impl CronTriggerConsumer {
                 message_type: MessageType::ProjectFollowupNotification,
             };
 
-            if let Err(e) = message_domain()
+            match message_domain()
                 .delivery()
                 .send_to_agent(ctx.clone(), cmd)
                 .await
             {
-                sys_warn!("发送项目跟进消息失败: agent={}, err={}", owner_agent_id, e);
+                Ok(_) => {
+                    // 发送成功后记账，供下一轮节流判据使用（失败不记，下个 tick 会重试）
+                    if let Err(e) = project_domain()
+                        .project_manage()
+                        .record_followup(ctx.clone(), &project.po.id)
+                        .await
+                    {
+                        sys_warn!(
+                            "项目跟进成功但记账 last_followup_at 失败: project={}, err={}",
+                            project.po.id,
+                            e
+                        );
+                    }
+                }
+                Err(e) => {
+                    sys_warn!("发送项目跟进消息失败: agent={}, err={}", owner_agent_id, e);
+                }
             }
         }
 
