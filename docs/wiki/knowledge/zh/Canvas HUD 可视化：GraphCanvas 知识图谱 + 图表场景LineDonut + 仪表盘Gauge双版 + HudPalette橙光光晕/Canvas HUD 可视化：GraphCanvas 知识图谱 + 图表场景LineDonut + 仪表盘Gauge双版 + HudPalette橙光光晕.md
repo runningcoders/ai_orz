@@ -81,6 +81,12 @@ source_files:
   - frontend/src/components/graph_canvas.rs（2026-09-30 增量 f7ad05e8 / 412c2e90：global_mode 时 `radius=graph::global_node_radius(degree)`（半径公式改调 SSOT）；`GraphEdge→CanvasEdge` 透传 `directional = e.direction == "directed"`）
   - 【兄弟卡】docs/wiki/knowledge/zh/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头.md（2026-09-30 新增：全局点线视图端点 + R1/R2/R4 口径 + 边方向服务端 resolve + 双渲染器箭头一致性）
 
+  - frontend/src/components/canvas_scene.rs（2026-10-12 增量 d29a0664：图谱初始视角三轮演进终态——撤销「力学稳定后自动 fit」（c8338a8d is_stable 首翻一次 → 18fa2aa3 数据就绪即 fit·三消费点一致 → d29a0664 撤销），Viewport::default scale=0.66 初始 66% 在场（L116），重置=viewport.set(Viewport::default())，之后全交用户；守卫断言 scale: 0.66 全文件唯一）
+  - frontend/src/pages/system/health.rs（2026-10-10 增量 efad1491：8×Gauge 尺寸 180→220，L390-L512）
+  - frontend/src/pages/system/aop.rs（2026-10-10 增量 efad1491：AopGauge 显式传 220/220；2×DonutChart 240→300；LineChart 800×220→1200×280）
+  - frontend/src/components/aop_gauge.rs（2026-10-10 增量 efad1491：AopGaugeProps 新增 width/height 并透传内部 Gauge——薄包装装配必需）
+  - frontend/src/components/gauge.rs（2026-10-10 增量 efad1491：中心数字字号比例化 bold 36px→bold {36×width/200}px，width=200 基线不变、下限 12px；Gauge 默认尺寸仍 200 不动）
+
 ---
 
 ## §1 概述
@@ -94,6 +100,10 @@ source_files:
 - **HUD 风格橙光调色板（HudPalette）+ 仪表盘 Gauge**（hud_palette.rs + gauge.rs）：4 主色 HUD_ORANGE/HUD_BLUE/HUD_GREEN/HUD_RED；draw_glow_stroke 实现：先 `ctx.shadow_blur = 8.0` + `ctx.shadow_color = HUD_ORANGE` → 画一次描边（光晕）→ reset shadow → 画第二次正常描边（实线）；这样 CSS 不会被 DaisyUI 主题覆盖（是 Canvas 2D API，不是 DOM）。仪表盘 Gauge：value 0-100 → 映射到 240° 圆弧起点角度 150° 到终点 390°；指针三角箭头 + 刻度 20 条（每 20 一条长刻度）；AopGauge（aop_gauge.rs）同 Gauge 组件 + 上半圆环 AOP 队列延迟毫秒 + 下半圆环消费者阻塞数 双刻度，System AOP 页用。HudPalette 新增 HUD_SECONDARY(#22d3ee 青蓝) + HUD_TERTIARY(#a78bfa 紫) 两色，支撑 LineChart 同轴三条曲线（输入/输出/total）冷暖和对比色区分。
 - **聊天侧栏 Agent Tab 消费图表组件**（chat_side_panel.rs + stats.rs）：LineChart 组件从「主要在统计仪表盘」扩展到聊天侧栏 Agent 运行统计 Tab；AgentStatsPanelCompact 紧凑面板（320x180 原生渲染），展示唤醒次数 + Token 消耗（input/output/total）三线趋势；HudPalette 橙光光晕风格 + 次色/第三色区分曲线；聊天侧栏 Tab 按需加载（共享轮询高频链路零额外开销，统计仅在 Tab 挂载时触发）。
 - **节点名称完整展示（2026-09-26，e963af78 / b1f4c4fa）**：知识图谱数据构建层 `node_display_name` 取消 14 字符截断，label 保持完整——hover 详情卡、SVG 兜底与边端点名不再拿到残缺文本；截断只留在渲染处 `node_card::title` 单行收窄，失去调用方的 `node_card::truncate_chars` 已删除。
+
+**图谱初始视角终态：初始 66%，不做自动适应（2026-10-12，d29a0664；三轮演进）**：图谱打开后的初始视角经历三次拍板——① c8338a8d「力学稳定后自动 fit」（is_stable 首翻一次）→ ② 18fa2aa3「数据就绪即 fit，三消费点一致仅一次」→ ③ d29a0664 **撤销自动适应**：AMan 拍板「不要做这种自动适应了，就给它初始 66%」。终态：`Viewport::default` 内 `scale: 0.66`（canvas_scene.rs#L116），三个图谱消费点（KnowledgeGraphCanvas 知识图谱页 / RelationGraph Agent 详情关系图 / WorkspaceGraph 工作台拓扑，后者还被 project_detail/task_detail/workspace 复用）初始即 66% 在场，重置按钮 `viewport.set(Viewport::default())` 语义=恢复初始态，之后缩放/平移完全交给用户。守卫测试断言 `scale: 0.66,` 全文件唯一出现一次。
+
+**图表放大控间距（2026-10-10，efad1491）**：健康仪表盘页 8 个 Gauge 统一 180→220px；AOP 页 AopGauge 显式传 220/220（Gauge 组件自身默认 200 保持不动，尺寸由消费方 props 决定），配套 AopGaugeProps 新增 width/height 透传内部 Gauge（薄包装不透传则消费方无法装配）；2 个 DonutChart 240→300、LineChart 800×220→1200×280；Gauge 中心数字字号改为比例化 `bold {36×width/200}px`（200 基线下仍 36px，下限 12px），放大后中心读数不再显小。容器 gap-4 与 HudPanel padding 20px 不变。
 
 **RingProgress 通用环形进度组件**（2026-09-11 新增）：`frontend/src/components/ring_progress.rs` 纯 Canvas 2D 渲染（非 DOM），props: `ratio: f32`（0.0-1.0 进度比例）+ `color: String`；内环半径 + 外环 strokeWidth + 橙色光晕（HudPalette.draw_glow_stroke 复用）；Agent 上下文 Token 占比专用——AgentRuntimeState.tokens_used_ratio → RingProgress 渲染 + context_threshold 为 None 时显示配置入口提示。
 
@@ -163,7 +173,7 @@ HR 知识图谱页面加载：
 
 ---
 
-## §4 硬约束与回归红线（30 条）
+## §4 硬约束与回归红线（32 条）
 
 1. **Canvas 2D 绘制不能依赖 DaisyUI CSS 变量**：HUD 色必须硬编码 HudPalette 的 const，不要从 window.getComputedStyle 读 --p（DaisyUI 主色），否则 WASM 里 DOM API 跨线程调用 + 切换主题 30+ 每换一次重绘所有 Canvas，性能炸。例外：Canvas 周围 DOM 外壳 card 样式可用 class="bg-base-200"。
 2. **ForceLayout 斥力 O(n²) 必须节点数 ≥1000 时降采样**：nodes.len() > 800 自动从 O(n²) 切换到 Barnes-Hut O(n log n) 近似（四叉树空间分块近似斥力）；测试 1500 节点渲染时 dt 单帧 > 32ms（< 30fps）→ 必须启用近似模式；默认模式 O(n²) 够用，代码不预实现 Barnes-Hut（YAGNI）。
@@ -195,3 +205,5 @@ HR 知识图谱页面加载：
 28. **依赖图构建必须过滤悬挂依赖边**（2026-09-18 新增）：前置任务不在当前任务列表内（已删除/跨项目）时直接丢弃该边，禁止产出缺失端点的 GraphEdge——SVG/Canvas 对未知节点索引会 panic 或画出飞线；任务依赖图缩略图与放大弹窗共用 `build_task_graph_data`，过滤逻辑只写一处。
 29. **节点名称在数据构建层禁止截断，截断只准留在渲染处 `title()`**（2026-09-26 新增，e963af78 / b1f4c4fa）：`node_display_name`（`frontend/src/pages/hr/knowledge_graph.rs`）必须原样返回 name / 兜底正文首行，**禁止**在数据层调 `truncate_chars`——label 一旦残缺，hover 详情卡、SVG 兜底与边端点名三处同时拿到残缺文本（用户看到的 hover 标题被生硬截断）。截断职责单点收敛在渲染处 `node_card::title` 单行收窄；`node_card::truncate_chars` 已删除（失去调用方），`graph.rs` 重导出列表同步移除。守卫测试 `display_name_keeps_full_name_without_truncation` 兜底。
 30. **有向边箭头必须是双渲染器一致的条件挂载，半径公式必须双渲染器同源**（2026-09-30 新增，412c2e90 / f7ad05e8）：SVG 渲染器（`graph.rs`）的 `marker_end` 按 `edge.direction == "directed"` **条件挂载**（undirected 纯线），Canvas 渲染器（`canvas_scene.rs` 的 `draw_edges` 箭头原语）对 `CanvasEdge.directional` 为真的边在 target 端画小三角 —— **禁止只在单渲染器上加箭头**，否则同一份数据在 SVG/Canvas 下有无箭头不一致 = 视觉漂移（用户以为方向语义丢失）；`global_node_radius` / `global_node_label` 是度数→半径/限绘的**唯一 SSOT**（`graph.rs`），`graph_canvas.rs` 必须调用它、禁止另抄系数（一处改一处漏 = 两种渲染器同度数点大小不同）。箭头/半径的构造在共享基础设施层完成，业务适配层只透传 `direction`→`directional`，禁止各写一套几何。
+31. **图谱初始视角固定初始 66%，禁止再引入自动 fit**（2026-10-12 新增，d29a0664）：三消费点（KnowledgeGraphCanvas / RelationGraph / WorkspaceGraph）初始视角唯一来源是 `Viewport::default`（scale=0.66，canvas_scene.rs#L116），重置按钮必须 `viewport.set(Viewport::default())` 回到同一初始态。自动适应方案经两轮上线（is_stable 首翻一次、数据就绪即 fit）后被用户拍板撤销——图谱初始视角不应被程序接管，后续缩放/平移全交用户；新图谱消费方禁止私设初始 scale 或挂数据就绪 fit 钩子。守卫断言 `scale: 0.66,` 在 canvas_scene.rs 唯一。
+32. **Gauge 尺寸由消费方 props 决定，中心字号必须随尺寸比例化**（2026-10-10 新增，efad1491）：Gauge 组件默认 200 不动，放大（如健康页 220）由消费页显式传 width/height；AopGauge 这类薄包装必须把 width/height 透传进内部 Gauge，禁止新增尺寸 prop 而不透传（消费方直传无法编译）。中心数字字号统一 `bold {36×width/200}px`（下限 12px），禁止写死 36px——放大的仪表盘配固定字号会显小；同页多个 Gauge 尺寸必须一致（健康页 8 个统一 220）。

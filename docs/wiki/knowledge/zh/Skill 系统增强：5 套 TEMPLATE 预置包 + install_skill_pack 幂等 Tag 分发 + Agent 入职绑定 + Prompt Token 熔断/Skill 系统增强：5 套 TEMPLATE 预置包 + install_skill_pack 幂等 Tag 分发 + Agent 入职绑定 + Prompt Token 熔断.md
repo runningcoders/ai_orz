@@ -21,6 +21,10 @@ scope:
 - common/src/api/agent.rs
 - common/src/api/skill.rs
 - common/src/api/seed.rs
+- common/src/constants/agent_roles.rs
+- src/service/dal/agent/builder/default.rs
+- src/pkg/tool_registry/builtin.rs
+- src/handlers/organization/initialize_system.rs
 source_files:
 - src/models/skill.rs#L9-L100
 - src/models/skill.rs#L88-L92
@@ -77,10 +81,18 @@ source_files:
 - frontend/src/pages/hr/skills.rs#L384-L395 + #L546-L552 (2026-09-25 增量：列表列宽约束 + 描述列弹性压缩)
 - frontend/src/pages/hr/agent_detail.rs#L1832-L1840 (2026-09-25 增量：安装入口搜索仅列 Published)
 - src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md（2026-09-27~28 增量：description 语义收敛——plan_snapshot / requirement_change 产物链）
+- src/service/domain/system/seed/skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md（2026-10-11 新增第 11 份预置技能：神经技能，tags = neural + ontology；写图谱前教四选一判别 + 选词四规 + 软退役守则）
+- src/service/domain/system/seed/default.json（2026-10-11：第三基础员工 TEMPLATE_KNOWLEDGE_GRAPH_AGENT，role knowledge_graph_specialist；前台/招聘官 runtime_config 补 installed_tags/skill_packs 含 ontology，status 2→3；ontology.properties 4 条预置属性）
+- common/src/constants/agent_roles.rs（2026-10-11：KnowledgeGraphSpecialist 角色常量）
+- src/service/dal/agent/builder/default.rs#L408-L440（2026-10-11：build_skills_sections「装了就进」——神经技能置前，其余已安装技能不再做 tag 二次匹配兜底）
+- src/pkg/tool_registry/builtin.rs（2026-10-11：ontology tag 护栏三测试，13 个消费侧工具：读 8 + 写 5）
+- src/handlers/organization/initialize_system.rs（2026-10-11：仍只自动创建前台 Agent；图谱专家/招聘官不自动创建，复用行沿状态推进）
 
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）
+
+**2026-10-11 增量（本体属性特性配套预置体系重构，4b4e9e7a）**：① 预置技能 10 → **11 套**：新增神经技能 **TEMPLATE_ONTOLOGY_COGNITION**（tags `neural`+`ontology`，常驻所有 Agent 唤醒上下文，教模型本体四选一判别/选词/软退役与「事实进 properties 不进正文」）；② 新增第三基础员工 **TEMPLATE_KNOWLEDGE_GRAPH_AGENT**（知识图谱专家，role `knowledge_graph_specialist`），与前台/招聘官成套，runtime_config 显式声明 installed_tags/skill_packs（含 ontology），status 统一推进到 3；③ PromptBuilder 技能区块改「**装了就进**」语义——`build_skills_sections` 神经技能置前后，其余技能区块只反映 Agent 实际持有，**取消 builder 侧按 tag 的二次兜底匹配**（区块内容 = 持有事实，避免「没装也提示」）；④ TOOL_REGISTRY 加 ontology tag 护栏三测试锁定消费侧工具标签（读 8 + 写 5）；⑤ initialize_system 仍只自动创建前台 Agent，图谱专家/招聘官靠 seed 同步/复用推进，不自动入职。
 
 **2026-09-25 增量（M2 持有关系收紧 + N2 发布回写）**：三处「技能发布 / 持有」语义收敛——① **M2-A 持有语义收紧**：`list_for_agent` 与 `resolve_agent_skills` 统一 retain 谓词「安装副本（parent 非空）或自有非正式发布技能（status != Published）」，共享库正式发布版根技能不再计入 Agent 持有列表 / 关联全景 / wake 路径；② **M2-B 安装源收紧**：`list_published_by_tag` 加 `has_parent=false`，共享库安装源只能来自正式发布的**根技能**，防止 Published 脏副本被当作二级副本源；③ **M2-C 发布收敛单一入口**：handler 层新增 `validate_agent_skill_status_change`，Agent 上下文或 Agent 安装副本禁止通过 create/update 直接把 status 刷成 Published（InvalidRequest）；④ **N2 发布回写**：Agent 自有根技能「非 Published→Published」后，`SkillDal::publish_writeback_copy` 为作者 Agent 补建 1 条本地工作副本（幂等查重 + 纯建副本 + 向量索引补偿），失败仅降级不阻断发布。前端配套：技能列表列宽约束 + 描述列弹性压缩（N4）、安装入口搜索仅列 Published（N3）、技能包卸载确认弹窗复用 Modal 进 top-layer。
 
@@ -250,3 +262,4 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 | cf4e38bd | N2 发布回写自身副本 | SkillDal::publish_writeback_copy + update_skill 发布回写编排；幂等查重 + 纯建副本 + 向量索引补偿，失败仅降级不阻断发布 |
 | f36d6a68 + 490d3deb + 13fd2389 + d02e6d9d | 前端技能管理 4 fix | 安装入口搜索仅列 Published（N3）+ 卸载确认弹窗复用 Modal 进 top-layer + 列表列宽约束 + 描述列弹性压缩（N4） |
 | 76ac4f5e + 382247b2 + 84a61c27 | 预置技能语义收敛与精简 | TEMPLATE_PROJECT_MANAGEMENT description 收敛（plan_snapshot / requirement_change 产物链，替换不追加）；全量 10 份 skill.md 信息密度精简（93KB→79KB） |
+| 4b4e9e7a（2026-10-11） | 本体属性配套预置体系重构 | 新增神经技能 TEMPLATE_ONTOLOGY_COGNITION（第 11 套，neural+ontology）；新增第三基础员工知识图谱专家（成套 runtime_config，status→3）；build_skills_sections 改「装了就进」去掉 tag 二次兜底；TOOL_REGISTRY ontology 护栏三测试；initialize_system 只建前台口径明确 |

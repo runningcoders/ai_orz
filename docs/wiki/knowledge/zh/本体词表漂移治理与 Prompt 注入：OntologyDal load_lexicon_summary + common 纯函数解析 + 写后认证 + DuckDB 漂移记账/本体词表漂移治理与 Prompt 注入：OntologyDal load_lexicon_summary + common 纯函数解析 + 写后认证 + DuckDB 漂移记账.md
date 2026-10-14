@@ -15,6 +15,10 @@ scope:
   - "common/src/ontology.rs"
   - "common/src/enums/ontology.rs"
   - "common/src/api/ontology.rs"
+  - "common/src/ontology_property.rs"
+  - "common/src/api/neural_tools.rs"
+  - "migrations/20261011*.sql"
+  - "src/handlers/hr/ontology/*property*.rs"
   - "src/service/dal/agent/builder/default.rs"
   - "src/models/prompt_builder.rs"
   - "frontend/src/pages/hr/ontology_panel.rs"
@@ -39,11 +43,19 @@ source_files:
   - common/src/ontology.rs#L142-L186 (2026-09-30 增量 0ef6ba28：新增 **Direction 二值枚举** Directed/Undirected —— `#[serde(rename_all="lowercase")]` 序列化 "directed"/"undirected"、`Default=Undirected`、`FromStr` + `parse_or_default` 兜底；`OntologyLexicon.relation_directions: HashMap<String, Direction>` 平行结构（未登记 key 解析兜底无向）；`ResolvedTerm` 三分支各带 direction；`PresetRelationType.direction` 带 `#[serde(default="default_preset_direction")]` 兜底旧 seed 快照)
   - migrations/20260930000001_add_direction_to_ontology_relation_types.sql#L1-L25 (2026-09-30 增量 0ef6ba28：`ontology_relation_types` 增 `direction TEXT NOT NULL DEFAULT 'undirected' CHECK(direction IN ('directed','undirected'))` + `multiplicity` 可空占位 + 三段幂等回填（有逆词 → directed / 显式点名无向词 → undirected）)
   - 【兄弟卡】docs/wiki/knowledge/zh/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头.md（2026-09-30 新增：方向登记的**消费侧** —— `get_knowledge_graph` 逐边 `common::ontology::resolve` 带出 `edge_directions`，前端零词表映射）
+  - 【Level 3 兄弟卡 2·2026-10-11 新增】docs/wiki/knowledge/zh/本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查/本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查.md（本卡管三张旧词表「叫什么」+ 漂移治理；该卡管第 4 张词表（属性定义）与 EAV 值表「是什么值」：六型/值域/基数/载体 + 软门禁写入 + 结构化反查）
+  - migrations/20261011000001_create_ontology_properties.sql (2026-10-11：本体第 4 张词表 ontology_properties + ABox EAV 值表 knowledge_property，细节见兄弟卡 2)
+  - common/src/ontology_property.rs (2026-10-11：属性值六型/值域/基数/软门禁纯判定，细节见兄弟卡 2)
+  - src/service/domain/hr/ontology.rs#L65-L103 (2026-10-11：validate_property_definition 属性定义 Domain 严格校验 → 400)
+  - src/handlers/hr/ontology/{create,list,update,retire}_property.rs (2026-10-11：属性定义 CRUD；list 三标签 neural+ontology_management+ontology，写侧仅 ontology_management)
+  - src/service/domain/system/seed/default.json (2026-10-11：properties 段 4 条预置属性 confidence/effective_from/source/status + 神经技能 TEMPLATE_ONTOLOGY_COGNITION)
 ---
 
 # 本体词表漂移治理与 Prompt 注入
 
 **关联声明（Level 3 兄弟卡）**：本卡是本体词表（TBox）漂移治理视角卡；本体 `direction` 方向登记的下游**消费侧**（`get_knowledge_graph` 逐边 `common::ontology::resolve` 带出 `edge_directions`、前端零词表映射、双渲染器箭头）拆为兄弟细卡 [知识图谱全局点线视图…](docs/wiki/knowledge/zh/%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%E5%85%A8%E5%B1%80%E7%82%B9%E7%BA%BF%E8%A7%86%E5%9B%BE%EF%BC%9Aget_knowledge_graph%20%E5%85%A8%E9%87%8F%E8%81%9A%E5%90%88%E7%AB%AF%E7%82%B9%20+%20R1R2R4%20%E5%8F%A3%E5%BE%84%20+%20%E8%BE%B9%E6%96%B9%E5%90%91%E6%9C%8D%E5%8A%A1%E7%AB%AF%20resolve%20+%20%E5%8F%8C%E6%B8%B2%E6%9F%93%E5%99%A8%E7%AE%AD%E5%A4%B4/%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%E5%85%A8%E5%B1%80%E7%82%B9%E7%BA%BF%E8%A7%86%E5%9B%BE%EF%BC%9Aget_knowledge_graph%20%E5%85%A8%E9%87%8F%E8%81%9A%E5%90%88%E7%AB%AF%E7%82%B9%20+%20R1R2R4%20%E5%8F%A3%E5%BE%84%20+%20%E8%BE%B9%E6%96%B9%E5%90%91%E6%9C%8D%E5%8A%A1%E7%AB%AF%20resolve%20+%20%E5%8F%8C%E6%B8%B2%E6%9F%93%E5%99%A8%E7%AE%AD%E5%A4%B4.md)（本卡管 TBox 词表登记与治理，该卡管 ABox 全量聚合与方向消费）。
+
+**关联声明（Level 3 兄弟卡 2·2026-10-11）**：本体新增**属性维度**后拆出同域兄弟卡 [本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查](../本体属性层：ontology_properties%20TBox%20第四张词表%20+%20knowledge_property%20EAV%20版本化%20ABox%20+%20四类型列软门禁写入%20+%20property_filters%20结构化反查/本体属性层：ontology_properties%20TBox%20第四张词表%20+%20knowledge_property%20EAV%20版本化%20ABox%20+%20四类型列软门禁写入%20+%20property_filters%20结构化反查.md)——**本卡管类/关系/同义三张词表（「叫什么」）与漂移治理，该卡管属性定义（TBox 第 4 张词表）与 EAV 值表（「是什么值」）的软门禁写入与结构化反查**；两卡共享「全局无 org_id + term_key 锚点 + seed 仅补缺 + common 纯函数」基座。seed 同步 2026-10-11 起同时注入 properties 段（4 条预置属性），新增神经技能 TEMPLATE_ONTOLOGY_COGNITION（neural+ontology）。
 
 ## §1 整体方案
 
@@ -103,6 +115,7 @@ source_files:
 10. ✅ warn_if_lexicon_truncated() 在词表量级正常时永不触发（正常几十条，上限 1000）；触发即异常打 warn 提醒
 11. ✅ （2026-09-XX 新增）本体词表运行时注入必须走 `OntologyDal.load_lexicon_summary` → `OntologyDomain.list_lexicon` → `common::ontology` 纯函数解析链路；handler 层不得自行拼接词表或跳过 OntologyDal 直查三表
 12. ✅ （2026-09-30 新增，0ef6ba28）**`direction` 只有 `directed` / `undirected` 二值**——DDL `CHECK(direction IN ('directed','undirected'))`、`Direction` 枚举（`#[serde(rename_all="lowercase")]`）、`Direction::as_str()` 三处必须同一口径；解析非法值一律兜底 `Undirected`，禁止第三值或 panic。旧 seed 快照（无 `direction` 字段）由 `PresetRelationType.direction` 的 `#[serde(default="default_preset_direction")]` 兜底为 `"undirected"`，与 DDL `DEFAULT` 同口径，**不破旧 seed**。方向登记的下游消费（`get_knowledge_graph` 逐边 resolve 带出 `edge_directions`）见兄弟卡「知识图谱全局点线视图」
+13. ✅ （2026-10-11 新增，4b4e9e7a）**属性维度不在本卡展开**：本体第 4 张词表 `ontology_properties` + EAV 值表 `knowledge_property` 的六型/值域/基数/载体、软门禁写入（类型/基数硬拦，其余软 issue）、property_issues_v2、property_filters 反查全部归 Level 3 兄弟卡 2「本体属性层」；本卡只管三表词表与漂移。两表族共享红线：不带 org_id、term_key 锚点、seed 仅补缺、common 纯函数。属性定义写侧仅 ontology_management，`list_ontology_properties` 三标签（追加 neural+ontology），护栏由 TOOL_REGISTRY 三测试锁定
 
 ## §5 历史演进
 
@@ -112,3 +125,4 @@ source_files:
 | 08c3e720 → 14a4b688 → db46a354 → 5b52c72c | 2026-09 | PromptBuilder ontology_lexicon trait 方法 + DefaultPromptBuilder.build_lexicon_section 3000 chars 预算；区块前移为第 4 块（稳定性递减排序）；运行时注入链路 awakening → OntologyDal → OntologyDomain → PromptBuilder 完整落地 | src/models/prompt_builder.rs；src/service/dal/agent/builder/default.rs#L145-L230；src/service/domain/runtime/awakening.rs#L343-L393 |
 | abec62c0 + 9c7ba27f + c49317b8 | 2026-09 | 前端本体管理页 3 fix：① GET 请求 #[param(source = "query")] 补齐 ② use_effect 同步段移入 spawn 异步段 ③ Agent 详情页神经技能包筛选 fix | frontend/src/pages/hr/ontology_panel.rs |
 | 0ef6ba28 | 2026-09-30 | 方向性边承载（方案 a′ 三期）：`ontology_relation_types` 增 `direction`（二值 + CHECK）/`multiplicity`（占位）；`common::ontology` 增 `Direction` 枚举 + `OntologyLexicon.relation_directions` + `ResolvedTerm` 三分支带 direction；create 联动校验（direction 解析失败→400、undirected↔inverse_key 互斥→400）；seed 双向扩展 + 旧快照 serde 兜底 | common/src/ontology.rs#L142-L186；migrations/20260930000001_add_direction_to_ontology_relation_types.sql#L1-L25；src/handlers/hr/ontology/create_relation_type.rs |
+| 4b4e9e7a + 87c35228 + 5a7cf19e | 2026-10-11/12 | **本体补齐属性维度（Level 3 兄弟卡 2 拆出）**：新增 ontology_properties（第 4 张词表）+ knowledge_property（EAV 版本化值表）；记忆两写入口寄生 properties[] + 五闸门软/硬门禁 + property_issues_v2；search_memory 回显 + property_filters 独立召回；定义 CRUD 4 handler（list neural 常驻 / 写侧 ontology_management）+ TOOL_REGISTRY 三护栏；seed 4 预置属性 + 神经技能 TEMPLATE_ONTOLOGY_COGNITION + 第三基础员工；value_range enum_values 双键兼容修复 | 细节全部见兄弟卡 2；seed 同步仅补缺口径不变（src/handlers/system/seed/sync_preset_ontology.rs） |

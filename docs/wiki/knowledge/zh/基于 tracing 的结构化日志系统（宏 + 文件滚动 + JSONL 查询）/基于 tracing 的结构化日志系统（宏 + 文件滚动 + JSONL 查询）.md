@@ -11,7 +11,7 @@ source_files:
     - ai-orz-macros/src/lib.rs
     - common/src/config.rs
     - src/handlers/system/logs/query_logs.rs
-    - src/service/dal/log_query.rs
+    - src/service/dal/log_query.rs（2026-10-12 增量：scan_lines_reverse 倒序块扫描 L248 + MAX_SCAN_ENTRIES L94/MAX_SCAN_DAYS L96/SCAN_CHUNK_SIZE L98）
     - src/pkg/logging_test.rs
     - src/pkg/tool_tracing/mod.rs
     - src/pkg/tool_tracing/entry.rs
@@ -85,6 +85,14 @@ source_files:
 ### 3.6 日志查询 API
 `GET /api/v1/system/logs` 接收 `LogQueryRequest`（keyword、log_id、level、start_time、end_time、page、page_size），DAL 层逐行解析 JSONL 并按条件过滤，返回 `QueryLogsResponse { total, entries, page, page_size }`。该接口受 `require_role_middleware(UserRole::Admin)` 保护。
 
+### 3.7 倒序块扫描（2026-10-12 重构，scan_lines_reverse）
+日志查看天然「最新优先」，旧实现正序扫描必须读完全部文件才能截到最新一页，大日志下延迟与内存都不可控。重构后链路：**收集文件（按日期倒序）→ 文件内倒序扫描 → 按时间倒序终排 → 内存分页**：
+- **文件收集** `collect_log_files`：只收 `ai_orz.log.YYYY-MM-DD` 前缀文件，且仅保留最近 `MAX_SCAN_DAYS=30` 天（`src/service/dal/log_query.rs#L96`），文件名日期倒序排列（最新文件先扫）
+- **倒序扫描** `scan_lines_reverse`（`src/service/dal/log_query.rs#L248`）：seek 到文件尾，以 `SCAN_CHUNK_SIZE=64KB`（L98）固定块向文件头方向读取；块内用 `rposition(b'\n')` 从块尾反向切行
+- **carry 跨行拼接**：跨块边界的半行先存入 `carry`（已扫过的更晚块中的行头片段），在更早的块中遇到换行符后拼成完整行再回调，保证长行不截断、不重复；文件尾无换行的最后一行、源首行残余均正常产出
+- **停机语义**：收集满 `MAX_SCAN_ENTRIES=10000`（L94）即在行级与文件级双停机——语义是取「最新的 10000 条」而非随机 10000 条，更旧文件不再打开
+- **可测试性**：`read_chunk(offset, buf)` / `on_line(&[u8])` 双闭包抽象 + `query_logs_in_dir(logs_dir, ...)` 显式目录参数，使倒序扫描主链路可用内存字节源与临时目录直接单测，不依赖全局配置单例与真实文件
+
 ## 4. 约定与约束
 
 1. **必须使用 `log_*!` 宏**：设计文档明确要求业务代码统一使用 `log_*!`，禁止直接调用 `tracing::*!`，以保证上下文字段自动注入和统一格式。
@@ -105,3 +113,4 @@ source_files:
 16. **日志文件命名固定为 `ai_orz.log.*`**，清理逻辑只处理该前缀的文件。
 17. **环境变量覆盖**：日志级别可通过标准 `RUST_LOG` 等 tracing 环境变量控制（由 `EnvFilter::try_from_default_env` 支持）。
 18. **新增 RequestContext 字段需加 `#[log_field]` 注解**，才能自动注入到 span；字段列表是唯一数据源。
+19. **日志查询必须走倒序块扫描 + 最新优先停机**（2026-10-12 新增）：禁止回退为正序全量扫描——文件按日期倒序打开、文件内必须经 `scan_lines_reverse` 从尾部按 64KB 块反向切行；`MAX_SCAN_ENTRIES=10000` 的停机语义是「最新 10000 条」，跨块半行必须经 carry 拼接后整行解析，禁止把截断半行直接送 JSON 解析。

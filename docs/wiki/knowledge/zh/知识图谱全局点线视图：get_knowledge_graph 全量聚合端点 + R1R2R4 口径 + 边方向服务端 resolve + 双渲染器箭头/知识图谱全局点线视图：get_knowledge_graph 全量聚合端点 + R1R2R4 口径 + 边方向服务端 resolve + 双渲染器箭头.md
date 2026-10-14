@@ -44,6 +44,10 @@ source_files:
   - 【总卡/兄弟卡】docs/wiki/knowledge/zh/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md
   - 【兄弟卡】docs/wiki/knowledge/zh/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账.md
   - 【平行卡】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md
+  - 'frontend/src/pages/hr/knowledge_graph.rs#L215-L245 (2026-10-12 增量：节点详情面板结构化属性——property_display_name 显示名兜底（词表查无回退 term_key 原文）+ format_property_value PropertyValue 六分支格式化（Text/Number 整數不带小数点/Boolean 是·否/Date/Reference 明示本期不支持跳转/Enum 走徽标）)'
+  - 'frontend/src/pages/hr/knowledge_graph.rs#L263-L287 (property_display_names 缓存：挂载时拉 list_ontology_properties（limit 500）一次建 term_key→display_name map；effect 零 signal 读取仅首挂执行，词表全库共享 agent 切换不重拉)'
+  - 'frontend/src/pages/hr/knowledge_graph.rs#L565-L580 + #L1029-L1067 (property_rows 在 rsx 外预格式化 (display,text,is_enum,is_reference)；详情面板「标签」之后条件渲染属性区块——空 Vec 整块不渲染；引用走 collapse 折叠、枚举走 orz-tag chip、普通键值两行)'
+  - 【兄弟卡】docs/wiki/knowledge/zh/本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查/本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查.md（2026-10-12：属性区块的数据契约——MemoryResult.properties 由后端 search-memory attach_properties 回带 status=1 生效行，写入门禁/EAV 版本化见该卡）
 ---
 
 # 知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头
@@ -88,6 +92,7 @@ source_files:
 6. **双渲染器 SSOT（半径 + 箭头）**：① 半径：`graph::global_node_radius(degree)`（底 7px、每度 +1.1px、19 度封顶 ≈27.9px、28px 防御上限）由 SVG 与 Canvas 共用（Canvas 适配层 `graph_canvas.rs` 调用它，此前内联在 `graph_canvas.rs` 会漂移）；`global_node_label`（半径 <14 不绘名，否则按半径 ×1.5 估宽截断 3~12 字符）同样双端共用。② 箭头：**SVG** 用 `<marker id="arrowhead">` + `marker_end` 按 `edge.direction == "directed"` **条件挂载**（undirected 纯线）；**Canvas** 用 `draw_edges` 内箭头原语（directed 边在 target 端画小三角、方向沿 source→target、尺寸随线宽派生、填充复用边色）。两渲染器的方向输入同源（`GraphEdge.direction` → `CanvasEdge.directional`）。
 7. **全局态两者形态对齐 + 全局态固定 Canvas 的例外**：全局态下 SVG 走**圆点分支**（对齐 Canvas 全局模式：圆点 + 度数半径 + 名称限绘，跳过矩形卡片/竖条/正文/标签）；边标签 overlay 在全局态跳过（对齐 Canvas 全局态无边标签）。「返回全局」按钮 onclick 同步切回 Canvas（全局态默认渲染器固定 Canvas，SVG 的圆点分支主要服务对拍与兜底）。
 8. **ViewMode 两态语义**：默认 `ViewMode::Global`（`use_effect` 装载全量）；搜索或点选节点 → 切 `ViewMode::Local`（装载以该节点为中心的局部卡片页）；「返回全局」→ 切回 `ViewMode::Global` 并复用已拉取的全局数据。`agent_id` 变化时重新拉取全局数据刷新归属过滤。
+9. **节点详情面板的结构化属性区块（2026-10-12 增量）**：点节点进入 Local 卡片页时，详情数据走 search-memory 通道（`MemoryResult.properties`，后端 `attach_properties` 已只回带 status=1 生效行），前端在「标签」区块之后条件渲染「属性」区块：① **显示名**经 `property_display_name(cache, term_key)`——挂载时一次性拉 `list_ontology_properties`（limit 500）建 term_key→display_name 缓存（effect 零 signal 读取仅首挂执行，词表全库共享、agent 切换不重拉），词表查无的漂移词**兜底原文 term_key 展示，严禁空白**；② **值格式化**走 `format_property_value` 六分支（Text 原文 / Number 整数不带小数点 / Boolean 中文化是·否 / Date 原文 / Reference 原文+「引用·本期不支持跳转」/ Enum 走徽标）；③ `property_rows` 在 rsx **外**预格式化（读取缓存 signal = 渲染订阅，词表拉取完成后自动刷新）；④ 属性为空整块不渲染（不画空容器）；引用值用 collapse 折叠、枚举值用 orz-tag chip、普通值键值两行。写入门禁/EAV 版本化/property_filters 契约在 [本体属性层] 兄弟卡。
 
 ## §4 硬约束与回归红线
 
@@ -102,3 +107,4 @@ source_files:
 9. **度数→半径公式是双渲染器 SSOT**：`global_node_radius` / `global_node_label` 只在 `graph.rs` 一处实现，SVG 与 Canvas 都引用它；禁止任一渲染器另抄一份系数（一处改一处漏 = 两种渲染器同度数点大小不同）。
 10. **DAL 之间禁止互引**：`get_knowledge_graph` 直接走 `OntologyDao` 原始行装配词表，禁止调用 `dal::ontology::load_lexicon`（跨 DAL 依赖会形成 DAL 层环）。
 11. **全局态 SVG 残留必须清零**：全局态下 SVG 不得残留矩形卡片/正文/标签等局部态元素，也不得绘边标签 overlay（对齐 Canvas 全局态的纯点线形态）；「返回全局」必须同步切回 Canvas。
+12. **属性区块显示名禁止空白、值必须走六分支格式化**（2026-10-12 新增）：属性 term_key 在显示名词表查无时必须兜底原文（漂移词未收录是常态），禁止渲染空标签；`PropertyValue` 六分支只许走 `format_property_value` 一处（Boolean 必须中文化、整数不带小数点、Reference 必须明示本期不支持跳转、Enum 才用徽标），禁止在 rsx 内就地 match；属性词表缓存全库共享只拉一次，禁止按节点/按 agent 重复拉取；空属性 Vec 必须整块不渲染。

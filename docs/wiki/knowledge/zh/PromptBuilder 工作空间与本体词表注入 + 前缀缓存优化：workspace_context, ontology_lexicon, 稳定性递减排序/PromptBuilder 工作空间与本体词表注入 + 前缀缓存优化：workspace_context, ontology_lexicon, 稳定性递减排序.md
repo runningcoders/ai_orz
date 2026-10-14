@@ -33,6 +33,8 @@ source_files:
 - docs/wiki/zh/content/基础设施/存储系统/本地文件安全与工作区隔离.md
 - docs/wiki/knowledge/zh/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账.md
 - docs/wiki/knowledge/zh/用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断/用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断.md
+- src/service/dal/agent/builder/default.rs#L408-L440 (2026-10-11 增量 4b4e9e7a：build_skills_sections 改「装了就进」——神经技能置前后，其余已安装技能不再按 tag 二次匹配兜底)
+- src/service/domain/system/seed/skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md (2026-10-11：神经技能新增，随「神经技能」区块常驻)
 
 ---
 
@@ -52,6 +54,8 @@ source_files:
 1. **绝对时间替代相对时长**：Project/Task 的 `start_at` / `last_followup_at` 从 `relative_duration("5 小时前")` 改为 `format_datetime("2026-09-15 10:30")`——相对时长随当前时刻漂移（分钟级变化），导致区块字节级变化作废前缀缓存；绝对时间仅在数据本身变更时变化
 2. **场景 prompt 静态指令块前置 + 易变数据收尾**：`build_sleep_prompt` / `build_summary_prompt` 原来把 Trace ID / 轮次数 / 摘要 / trace_ids 等易变数据嵌入指令块中间，导致指令块被切割后其后全部静态内容（约束/步骤/认知要点）都无法命中前缀缓存。重构后：指令块完全静态、易变数据（Trace/待沉淀记忆/trace_ids）统一收尾；指令用"见文末【XXX】"引用尾部数据
 3. **initial-messages 缓存友好注释**：三个 `*_initial_messages` 变体（已是优序）补上防回退注释——System 消息跨次运行完全静态，后续新增区块必须保持"静态前、易变后"，禁止插入到 System 中间
+
+**技能区块「装了就进」（commit 4b4e9e7a，2026-10-11）**：`build_skills_sections`（default.rs#L408-L440）原对「必加载技能」之外的技能按 tag 做二次兜底匹配，导致 Agent 没装的技能也可能进 Prompt（区块内容 ≠ 实际持有）。重构后：神经技能区块置前（常驻，含新增 TEMPLATE_ONTOLOGY_COGNITION），其余技能区块**只列 Agent 实际持有**（安装副本 + 自有副本），取消 tag 兜底；区块仍保持稳定性排序位置不变（前缀缓存友好），语义从「按角色猜你需要」改为「装了就进，没装不出现」。
 
 ## §2 关键文件路径表格（读代码直接跳）
 
@@ -100,9 +104,9 @@ source_files:
 10. ✅ 场景 prompt（sleep/summary/intent）的静态指令块必须完全静态（不含 Trace/轮次/摘要等易变数据）；易变数据统一收尾
 11. ✅ 指令块内引用易变数据必须用"见文末【XXX】"格式，禁止在指令行内嵌入动态值
 12. ✅ 本体词表区块裁剪优先级固定：关系词 > 实体类 > 同义样例；同义样例优先级最低，任何段落触发裁剪即整体让位
-13. ✅ （2026-09-XX 新增）扁平 Prompt 静态指令块必须前置在易变数据之前（易变：本体词表、工作区上下文、最近对话），保证前缀稳定命中缓存——易变数据一律收尾
-14. ✅ （2026-09-XX 新增）易变区块收尾时统一用绝对时间替代相对时长描述（"2026-09-19 14:02" 而非 "3 小时前"），避免缓存命中抖动
-15. ✅ （2026-09-XX 新增）本体词表运行时注入必须走 `OntologyDal.load_lexicon_summary` → `common::ontology` 纯函数解析链路，handler 层不得自行拼接词表或跳过 OntologyDal 直查三表
+13. ✅ （2026-09-XX 新增）扁平 Prompt 静态指令块必须前置在易变数据之前（易变：本体词表、工作区上下文、最近对话），易变数据一律收尾；收尾时间一律用绝对时间（"2026-09-19 14:02" 而非 "3 小时前"），避免缓存命中抖动
+14. ✅ （2026-09-XX 新增）本体词表运行时注入必须走 `OntologyDal.load_lexicon_summary` → `common::ontology` 纯函数解析链路，handler 层不得自行拼接词表或跳过 OntologyDal 直查三表
+15. ✅ （2026-10-11 新增，4b4e9e7a）技能区块「**装了就进**」：神经技能（须挂 neural tag 且模板内容跨次稳定，如新增 TEMPLATE_ONTOLOGY_COGNITION）置前常驻，其余技能只渲染 Agent 实际持有（安装副本 + 自有副本），禁止 builder 侧按 tag 二次兜底把未安装技能塞进 Prompt；需要某技能的语义走安装（install_skill_pack / sync_packs），不靠 Prompt 隐式补全
 
 ## §5 历史演进
 
@@ -113,3 +117,4 @@ source_files:
 | 5b52c72c → 08c3e720 | 2026-09 | 本体词表注入 + 区块重排为 11 块稳定性递减排序；PromptBuilder.trait 新增 ontology_lexicon 默认方法；DefaultPromptBuilder 新增 build_lexicon_section | src/service/dal/agent/builder/default.rs；src/models/prompt_builder.rs |
 | 14a4b688 | 2026-09 | 前缀缓存专项优化：① Project/Task start_at 绝对时间替换 relative_duration ② 场景 prompt 静态指令块前置、易变数据统一收尾 ③ initial-messages 缓存友好注释 | src/models/project.rs；src/models/task.rs；src/service/dal/agent/builder/default.rs#L1055-L1234 |
 | db46a354 → 5b52c72c | 2026-09 | 本体词表前移为稳定前缀、运行时落地：awakening.rs → OntologyDal.load_lexicon_summary → OntologyDomain.list_lexicon → builder.ontology_lexicon() 完整注入链路 | src/service/dal/ontology.rs；src/service/domain/hr/ontology.rs |
+| 4b4e9e7a | 2026-10-11 | 技能区块「装了就进」：build_skills_sections 取消 tag 二次兜底，非神经区块只渲染实际持有；新增神经技能 TEMPLATE_ONTOLOGY_COGNITION（neural+ontology） | src/service/dal/agent/builder/default.rs#L408-L440；seed TEMPLATE_ONTOLOGY_COGNITION |

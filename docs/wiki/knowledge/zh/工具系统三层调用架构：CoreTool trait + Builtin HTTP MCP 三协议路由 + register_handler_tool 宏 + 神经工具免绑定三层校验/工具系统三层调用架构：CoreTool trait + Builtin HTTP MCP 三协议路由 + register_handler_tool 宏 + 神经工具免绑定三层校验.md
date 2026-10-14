@@ -12,6 +12,9 @@ scope:
 - src/service/domain/finance/tool_provider.rs
 - ai-orz-macros/src/register_handler_tool/**
 - src/handlers/**/*tool*.rs
+- src/pkg/tool_registry/builtin.rs
+- src/handlers/hr/ontology/*property*.rs
+- src/handlers/hr/ontology/list_*.rs
 source_files:
 - 'src/service/dao/tool/mod.rs '
 - 'src/service/dao/tool_call/mod.rs '
@@ -35,6 +38,8 @@ source_files:
 - docs/archive/design-archive/generic_builtin_tools_design.md
 - docs/archive/design-archive/handler-tool-registration-macro.md
 - docs/design/tool_credential_requirement_design.md
+- src/pkg/tool_registry/builtin.rs（2026-10-11 增量 4b4e9e7a：ontology tag 护栏三测试——ontology_consumer_tools_carry_ontology_tag / ontology_consumer_tools_are_neural_reachable / ontology_read_tools_are_neural_reachable；13 个消费侧工具读 8 + 写 5）
+- src/router.rs#L786-L800（2026-10-11：list_ontology_properties = neural+ontology_management+ontology 三标签；create/update/retire_property 仅 ontology_management）
 - docs/archive/plan-archive/进程管理与shell_exec修复.md
 - docs/archive/plan-archive/前端工具与进程管理.md
 - docs/archive/plan-archive/移除rig依赖与向量存储后端解耦.md
@@ -63,6 +68,7 @@ source_files:
 - **凭据编排并入调用链**（2026-08-21，D22/D26）：domain `call_tool` 先读 `ToolRegistry::credential_requirements(&po)` → `resolve_tool_credentials` 取数加工 → 未命中返回 `credential_missing_json` 结构化引导（不构造实例不进 DAL）；命中经 `ToolExecutionRequest.resolved` 传 DAL，由 `check` 注入单次实例（禁止缓存复用）。Agent 工具加载（绑定 + neural 免绑定 - internal 剔除）现位于 hr/agent.rs 与 runtime/tool_execution.rs。凭据需求声明/生产路由/增强器全貌见平行卡「共享工具凭据增强器」。
 - **tag 加载过滤三层免绑定规则**（2026-07-12 增强，工具设计文档 §工具包机制；2026-08-21 加载位置更新）：① `tag = "neural"` 的工具在 Agent 唤醒加载（hr/agent.rs，SQL 层 tag_filter）时不用 agent.tool_bindings 就自动加入「神经工具集」（核心思考工具如记忆写入沉淀，避免入职漏绑）；② `tag = "internal"` 的工具加载时从 Agent 可绑定列表过滤掉 + ToolProviderManage.bind_tool_to_agent 绑定拒绝，Manual 调用经 domain `call_manual_tool_for_agent` 授权（绑定/neural/已装包三来源校验，control_mode 必须为 Manual）（用于后台任务/备份恢复等用户直操作工具，不给 Agent 直接用）；③ 普通工具按 tool_packs.tag 分组（"tool_memory", "tool_file", "tool_project"），Agent 入职 install_skill_pack 后再 bind 对应 tag。
 - **RequestContext 调用者身份注入链**（2026-09 显式梳理）：Agent 工具调用时，`ctx.agent_id` **始终有值**——注入点在 awakening.rs / sleep_and_settle 入口的 `let ctx = enrich_ctx!(&ctx, agent)` → `AgentPo::enrich` → `builder.agent_id(self.id.clone())`。整个 think_loop → call_tool → handler 调用链上 ctx 只 clone、不重建。Handler 检测 Agent 上下文的标准模式：`ctx.agent_id().is_some()` 判断调用者身份，Agent 上下文 → 只允许自改 + 身份路由字段静默忽略；人类上下文（无 agent_id）→ 全部字段可改。2026-09 首例：`update_agent` 加 `neural`，handler 层实现此守卫。完整守卫细节见平行卡「Handler 宏元数据契约」§2.3。
+- **ontology 消费侧 tag 护栏**（2026-10-11 新增，4b4e9e7a）：本体属性层上线后，13 个消费侧工具（读侧 8：list_ontology_classes/relations/synonyms/properties 等；写侧 5：save_long_term_memory / update_memory / search_memory 等）的标签边界由 `src/pkg/tool_registry/builtin.rs` 三条测试锁死——消费侧必须挂 `ontology` tag；消费侧必须 neural 可达（Agent 免绑定可唤醒）；读侧 8 个单列白名单。授权分层：`list_ontology_properties` = `neural`+`ontology_management`+`ontology` 三标签（Agent 写前读词表需要），属性定义写侧 create/update/retire 仅 `ontology_management`（防误提权为 neural）。
 - **4 个通用内置工具参数规范**（generic_builtin_tools_design.md）：① `shell_exec(command, cwd)` — 命令黑名单 rm -rf /、sudo、；② `fs_read(path)` — 必须在 data_dir 下，禁止 `..` 穿越；③ `fs_write(path, content)` — 同路径安全校验，先校验再分块写；④ `http_fetch(url, method, headers, body)` — 默认禁止访问 `169.254.169.254`（元数据服务）+ `localhost:*` 本地端口，method 只许 GET/POST。HTTP 工具创建接口（create_http_tool.rs）的白名单在 DAO 层再双校验一次，防止前端绕过。
 
 ---
@@ -135,7 +141,7 @@ source_files:
 
 ---
 
-## §4 硬约束与回归红线（10 条）
+## §4 硬约束与回归红线（12 条）
 
 1. **入口统一 D26：think_loop 禁直连 tool_dal / mcp_tool_dal**：所有 Agent 工具调用必须经 domain `RuntimeToolExecution::call_tool` / `dispatch_manual_tool` 单点编排——绕行直连 DAL 会整条漏凭据注入；`ToolExecutionRequest { tool, args, resolved }` 是 domain → DAL 唯一传参形态。Handler 管理面（CRUD/绑定）走 Finance `ToolProviderManage`（分层 AGENTS.md §3.1 红线）；单元测试用 mock 测 domain 编排不调真实 DAO。
 2. **shell_exec 命令黑名单永不删**：`rm -rf /`、`sudo`、`su`、`ssh root@`、`chmod 777 /etc` 共 5 条硬匹配 + 子串匹配（黑名单列表在 impl.rs 顶部 const BLACKLIST）；新增命令须在 BLACKLIST 单元测试里补一条「匹配成功→返回错误」的测试。
@@ -147,3 +153,5 @@ source_files:
 8. **neural 管理类工具必须有调用时身份边界守卫**：任何暴露给 Agent 自调用的管理类工具（如 update_agent / update_memory / update_skill），handler 层必须检测 `ctx.agent_id()`：① Agent 上下文必须校验 `params.id == ctx.agent_id`（跨身份直接报 BadRequest）；② Agent 上下文下身份路由字段（name / roles / model_provider_id / runtime_config 等）**静默忽略**，仅允许语义字段（description / soul / capabilities / 内容类属性）生效；③ 人类用户上下文（无 agent_id）保持原有全部字段权限。守卫位置必须在 Handler 层（domain 层保持纯业务编排、不感知调用者身份）。
 9. **tool_execution Err 分支禁止丢弃底层 Error field**（2026-09-23 新增）：`RuntimeToolExecution::call_tool` DAL 层返回的 `Err(Error)` 必须保留原 Error 的所有 field（含 trace_ref / tool_name / call_id），禁止用 `Error::new(ErrorCode::ToolExecutionFailed, msg)` 构造新 Error 覆盖——否则前端无法追踪失败调用对应哪个 trace，审批面（T1 工具授权系统）关联断裂。修复点在 `tool_execution.rs` L73-L101 的 Err match 分支：先 `log_warn` 全量现场，再 `Error::tool_call_failed(format!("{error}"))` 保留 field。
 10. **anyOf 嵌套枚举参数禁止序列化为对象包裹**（2026-09-23 新增）：当 LLM 收敛层给枚举参数包一层 `anyOf: [{"enum": [...], "type": "string"}]` 时，参数序列化必须直接取枚举值，禁止序列化成 `{"value": "xxx"}` 对象——否则 Handler 层反序列化到 String 类型失败（400）。修复点在 `cortex_types.rs` 的参数提取逻辑：检测 anyOf 容器并展平取首个枚举分支。
+11. **本体消费侧 13 个工具标签受三测试锁定**（2026-10-11 新增，4b4e9e7a）：读侧 8 个（list_ontology_classes/relation_types/properties/synonyms/lexicon + drift 3 个）与写侧 5 个（save_long_term_memory / update_memory / search_memory / settle_memory / get_knowledge_graph）必须全部带 `ontology` tag 且对 neural 通道可达；新增本体消费侧工具时必须同步加进 `builtin.rs` 三测试白名单，漏标即测试红。
+12. **本体读宽写窄授权不可颠倒**（2026-10-11 新增）：`list_ontology_properties` 三标签（neural + ontology_management + ontology）允许 Agent 免绑定读；属性定义 create/update/retire 只挂 ontology_management，禁止挂 neural（Agent 不得自造/退役属性定义）；改标签必须同步第 11 条三测试。

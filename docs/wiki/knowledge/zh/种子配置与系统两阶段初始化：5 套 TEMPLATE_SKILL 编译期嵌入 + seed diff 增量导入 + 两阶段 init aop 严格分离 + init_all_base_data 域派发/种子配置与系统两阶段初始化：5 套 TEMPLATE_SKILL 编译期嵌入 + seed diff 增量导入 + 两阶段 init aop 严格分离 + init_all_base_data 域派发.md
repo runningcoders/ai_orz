@@ -9,8 +9,10 @@ scope:
 - src/service/domain/mod.rs
 - src/lib.rs
 - src/handlers/system/seed/**/*.rs
+- src/handlers/organization/initialize_system.rs
 - frontend/src/pages/system/seed*.rs
 - common/src/api/model_provider.rs
+- common/src/constants/agent_roles.rs
 source_files:
 - src/service/domain/system/seed/mod.rs#L1-L16
 - src/service/domain/system/seed/defs.rs#L1-L223
@@ -37,7 +39,7 @@ source_files:
 - frontend/src/api/seed.rs（2026-09-12 前端 DTO 扩展）
 - src/router.rs（2026-09-12 preset-agents 路由组注册）
 - src/handlers/finance/model_provider/create_model_provider.rs
-- src/handlers/organization/initialize_system.rs
+- src/handlers/organization/initialize_system.rs（2026-10-11 增量：组织初始化只无条件创建前台接待 Agent，招聘官不再随初始化创建）
 - frontend/src/pages/hr/onboard_modal.rs（2026-09-13 增量：入职弹窗按来源三组分包 + 登录页单组织默认选中）
 - frontend/src/pages/hr/bind_model_modal.rs（2026-09-13 增量：Agent 列表就地引导 — 缺模型绑定 → 显示绑定按钮；状态未推进 → 显示状态推进按钮）
 - docs/archive/design-archive/seed-config-migration.md
@@ -46,6 +48,9 @@ source_files:
 - docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md
 - docs/wiki/zh/content/功能模块/AI Agent 管理/技能包管理.md
 - docs/wiki/zh/content/核心模块/处理器层/System模块处理器/种子数据处理器.md
+- src/service/domain/system/seed/skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md（2026-10-11 新增：本体认知神经技能，tag=[neural, ontology]，embedded.rs 注册表同步 +1）
+- src/service/domain/system/seed/default.json（2026-10-11 增量：第三基础员工 TEMPLATE_KNOWLEDGE_GRAPH_AGENT「图谱专家」/ role knowledge_graph_specialist；ontology.properties 4 条预置属性 confidence/effective_from/source/status；三基础员工 status 2→3）
+- common/src/constants/agent_roles.rs（2026-10-11：ROLE_KNOWLEDGE_GRAPH_SPECIALIST = "knowledge_graph_specialist" 角色常量）
 
 ---
 
@@ -72,6 +77,12 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 - **default.json 新增 ontology 段**：预置本体词表快照（实体类/关系类型/同义映射），随系统初始化一次性注入全局三表（`ontology_classes / ontology_relation_types / ontology_synonym_mappings`）。词表量级约 40 条（15 关系词 + 10 实体类 + 15 同义映射），覆盖 concept/event/task/plan 等核心记忆节点 + contains/based_on/part_of 等核心关系
 - **sync_preset_ontology handler 新增**：`GET /api/v1/system/seed/preset-ontology/preview`（只读对比缺口清单）+ `POST /api/v1/system/seed/preset-ontology/sync`（仅补缺注入）。策略固定「仅补缺」——term_key 物理存在（含退役行）即跳过，不覆盖管理页本地修改（设计决策 #14）。走同步返回（量级几十条毫秒级，不走后台任务），与预置技能同步有意差异
 - **注入时机跟 seed 走**（设计决策 #15）：词表不做启动自动注入（启动链路只承担基础设施自检），跟组织初始化 seed 注入 + 管理员手动同步。漂移自然由 DuckDB 漂移看板给出信号（新词漂移堆积 → 提示同步）
+
+**预置体系扩容：第三基础员工 + 本体认知技能 + 预置属性（2026-10-11 增量）**：
+- **第三基础员工「图谱专家」**：default.json.agents 新增 `TEMPLATE_KNOWLEDGE_GRAPH_AGENT`（name 图谱专家，roles=[`knowledge_graph_specialist`]，角色常量 `common/src/constants/agent_roles.rs::ROLE_KNOWLEDGE_GRAPH_SPECIALIST`），定位知识图谱专职维护者（游离节点识别、补边、词表治理、结构巡检），installed_tags 含 ontology_management/ontology，只做图谱治理不做开发。三个基础员工（前台/招聘官/图谱专家）status 统一 2→3
+- **新增神经技能 TEMPLATE_ONTOLOGY_COGNITION「本体认知」**：tag=[neural, ontology]，与 TEMPLATE_MEMORY_COGNITION 并列的第 6 个常驻神经技能；embedded.rs 的 EMBEDDED_SKILL_FILES 注册表与 count 测试同步 +1。内容覆盖本体域真实边界（受控词表+结构化属性+漂移检测，无自动推理）、实体类/节点/关系/属性四选一判别、选词四规、软退役守则
+- **ontology 段新增 properties 4 条预置属性**：`confidence`（number 0~1，node+relation，single）/ `effective_from`（date，node+relation，single）/ `source`（string，many）/ `status`（enum draft/active/blocked/done/archived，仅 task/project 节点），随 preset-ontology「仅补缺」同步一并注入 ontology_properties TBox 第四张词表
+- **组织初始化只建前台**：`initialize_system.rs` 组织初始化无条件创建的预设 Agent 收敛为前台接待（TEMPLATE_RECEPTION_AGENT）一个——降低开箱门槛；招聘官、图谱专家等其余预置员工改由预置 Agent 同步（sync_preset_agents）按组织需要按需拉取，不再在初始化链路自动造人
 
 # §2 关键文件表
 
@@ -194,3 +205,4 @@ service::init_base_data → AOP metrics hook inject → aop::init_all
 12. **预置 Agent 同步禁止覆盖用户自定义 Provider 绑定**（2026-09-12 新增，Ref 67a7c7ec）：`sync_preset_agents.rs` 三策略（Overwrite/OnlyMissing/RestoreDeleted）同步范围**仅限 Agent 元数据**（角色/描述/能力/灵魂/soul）和**技能包分配**（skill_tags 匹配 + 绑定）。**模型绑定（model_provider_id / model_name / runtime_config）已彻底移出同步范围**——无论选 Overwrite 还是其他策略，用户已为某个预置 Agent 配置好的模型 Provider 绑定**永不被覆盖**。这是种子系统最核心的安全红线之一：预置 Agent 同步是「升级 Agent 模板能力」而非「重置用户配置」
 13. **TEMPLATE_PROJECT_MANAGEMENT description 字段只做定位与索引**（2026-09-27~28 新增）：项目 `description` 仅写「项目定位 + 关键产物 ID 索引」（≤10 行）；拆分计划写 `execution_plan`，方案级重大变更快照存项目级 `plan_snapshot` 产物（`create_text_artifact(tags=["plan_snapshot"], project_id=...)`，`task_id` 不传即项目级）。任务 `description` 仅写「需求目标 + 边界 + 关键产物 ID 索引」；需求重大变更快照存任务级 `requirement_change` 产物（`tags=["requirement_change"]` + `task_id`）。两类 description 更新一律**替换不追加**，历史沿革靠产物链追溯。禁止在 description 堆叠历史快照（字段冗长破坏 `get_project` / `get_task` 一眼可取入口）
 14. **预置 skill.md 信息密度精简必须语义零损失**（2026-09-28 新增）：精简只删「工具速览参数枚举 / 重复规则 / 完整示例」，独有增量条目必须并入正文对应章节不丢弃；「类比定位段 / 状态机表 / 唯一事实源章节」不动。精简只改 `skills/**/*.md`，不得改动 `embedded.rs` 嵌入注册表条目数（`list_embedded_skill_files_count()` 断言值不变）
+15. **新增预置技能/员工必须三处同改 + 初始化只造前台**（2026-10-11 新增）：① 新增预置技能 = 建 `skills/TEMPLATE_XXX/skill.md` + embedded.rs `EMBEDDED_SKILL_FILES` 加 include_str! 条目 + count 断言同步，缺一即编译/测试失败；② 新增预置员工角色，role 字符串必须落 `common/src/constants/agent_roles.rs` 常量，禁止在 default.json 与 Handler 双侧裸写字符串；③ 预置 ontology 属性走 default.json `ontology.properties`，随 preset-ontology「仅补缺」注入，不经启动链路；④ `initialize_system.rs` 组织初始化**只允许**无条件创建前台接待 Agent（开箱体验底线），其余预置员工一律经 sync_preset_agents 按需同步，禁止在初始化链路批量造人

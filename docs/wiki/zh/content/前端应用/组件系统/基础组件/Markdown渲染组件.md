@@ -35,6 +35,8 @@
 - 改进了Mermaid图渲染机制，支持延迟扫描和JS互操作
 - 完善了样式系统，提供紧凑模式专用样式类
 **2026-08-16 增量更新**：补齐 cite 区四类互引闭环（1 Design 真实 + 1 Design 占位 + 1 Plan 占位 + 2 RAG 卡）；关联 T7（前端 MarkdownRenderer DocLinkClassifier JS 桥接）主题并引用兄弟卡 T6（后端分类器）；§5 链接处理章节来源行号降级（因 fcb08db6 改造加入 classify 调用与 data-repo-href 属性注入，导致 markdown.rs 行号范围漂移，优先降级为无行号范围引用）。
+**2026-10-11 增量更新**（base 2f42b407→a4525d6c）：MarkdownRenderer 由 `use_memo` 缓存 HTML 改为**每次渲染直接计算**——旧实现在气泡列表内容快速切换（SSE 流式追加/会话切换）时，memo 依赖未覆盖 content 变化导致短暂渲染上一条内容的陈旧 HTML；pulldown-cmark 解析为纯 CPU 同步轻量操作，直接计算消除了缓存一致性窗口，复杂度不变。
+
 **2026-09-18 增量更新**（commit bc2b2c61）：产物详情页（artifact_detail.rs）接入 MarkdownRenderer——`preview_mode` signal 驱动「预览/编辑」toggle 按钮组：预览态 `MarkdownRenderer { content, compact: false }` 完整排版，编辑态 CodeEditor 源码编辑；产物描述字段以 compact 模式渲染。cite 区补 artifact_detail.rs 引用；§Compact 模式应用场景新增「产物详情页描述字段」。
 
 ## 目录

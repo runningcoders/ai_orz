@@ -8,6 +8,8 @@
 - [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
 - [src/service/dal/log_query.rs](src/service/dal/log_query.rs)
 - [docs/logging_design.md](docs/logging_design.md)
+
+> **2026-10-11 更新**：底层文件扫描改为**倒序**（`scan_lines_reverse`，src/service/dal/log_query.rs#L248，64KB 块反向读取），limit=10000 语义由「最旧 1 万条」变为「时间窗内最新 1 万条」；接口入参/出参不变。详见 [日志管理系统](../../../功能模块/系统管理/日志管理系统.md)。
 </cite>
 
 ## 目录
