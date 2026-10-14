@@ -43,6 +43,17 @@ fn test_validate_args_ok() {
         end_line: Some(5),
     };
     assert!(validate_args(&args).is_ok());
+
+    // create_directory 不需要 content
+    let args = WriteFileArgs {
+        path: "newdir/sub".to_string(),
+        content: None,
+        mode: "create_directory".to_string(),
+        after_line: None,
+        start_line: None,
+        end_line: None,
+    };
+    assert!(validate_args(&args).is_ok());
 }
 
 #[test]

@@ -112,9 +112,13 @@ pub mod fs {
     /// Resolve and validate a user-provided path against base data directory and additional allowed paths.
     /// Follows sandbox security rules:
     /// 1. Reject sensitive filenames (.env, .key, etc.) immediately
-    /// 2. Canonicalize to resolve .. and symlinks
-    /// 3. Check that final path is within allowed scope (base or additional)
-    /// 4. Reject symbolic links
+    /// 2. Normalize lexically (kills `.`/`..` so the scope check can't be fooled)
+    /// 3. Canonicalize to resolve symlinks
+    /// 4. Check that final path is within allowed scope (base or additional)
+    /// 5. Reject symbolic links
+    ///
+    /// 目标路径**尚不存在**时（写新文件 / 建目录）不报错：向上找最近的已存在祖先
+    /// canonicalize 后拼回缺失尾部，作用域校验仍在完整路径上进行。
     pub fn resolve_and_validate_path(
         base_path: &Path,
         user_path: &str,
@@ -125,31 +129,26 @@ pub mod fs {
             return Err(anyhow!("Access denied: cannot access sensitive file").into());
         }
 
-        // 2. Build absolute path
+        // 2. Build absolute path (lexically normalized — see normalize_lexically)
         let user_path_input = user_path;
         let user_path = Path::new(user_path_input);
-        let absolute_path = if user_path.is_absolute() {
+        let raw_path = if user_path.is_absolute() {
             user_path.to_path_buf()
         } else {
             base_path.join(user_path)
         };
+        let absolute_path = normalize_lexically(&raw_path);
 
-        // 3. Canonicalize to resolve .. and symlinks
+        // 3. Canonicalize to resolve .. and symlinks.
+        //    Path exists: canonicalize directly.
+        //    Path missing: canonicalize the nearest existing ancestor and re-join
+        //    the missing tail (see resolve_missing_path).
         let canonical = if absolute_path.exists() {
             absolute_path
                 .canonicalize()
                 .map_err(|_| anyhow!("Failed to resolve path: file not found or permission denied"))
         } else {
-            // File doesn't exist yet - canonicalize parent directory
-            match absolute_path.parent() {
-                Some(parent) => {
-                    let parent_canon = parent.canonicalize().map_err(|_| {
-                        anyhow!("Parent directory does not exist or permission denied")
-                    })?;
-                    Ok(parent_canon.join(absolute_path.file_name().unwrap()))
-                }
-                None => Err(anyhow!("Invalid path: no parent directory")),
-            }
+            resolve_missing_path(&absolute_path)
         }
         .map_err(common::error::Error::from)?;
 
@@ -201,6 +200,61 @@ pub mod fs {
         Ok(ValidationResult::Valid(canonical))
     }
 
+    /// 词法规范化：消除路径中的 `.` / `..` 成分（不触碰文件系统）
+    ///
+    /// 作用域校验用 `starts_with`（纯词法逐成分比较）：若 `a/../../etc/x` 这类残留
+    /// `..` 的成分参与比较，前缀匹配会被绕过 ⇒ 必须在拼接后、校验前规范化。
+    /// 与「先 canonicalize 再校验」相比，词法优先还顺带消掉「符号链接 + `..`」
+    /// 组合逃逸（`..` 不再穿透链接目标解析）。
+    fn normalize_lexically(path: &Path) -> PathBuf {
+        use std::path::Component;
+        let mut out = PathBuf::new();
+        for comp in path.components() {
+            match comp {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    out.pop();
+                }
+                other => out.push(other.as_os_str()),
+            }
+        }
+        out
+    }
+
+    /// 为「尚不存在的路径」构造校验用路径：自下向上找最近的已存在祖先，
+    /// canonicalize 该祖先后拼回缺失尾部（写新文件 / 建目录时路径本就不存在）。
+    ///
+    /// 祖先经 canonicalize ⇒ 链条上的符号链接被物理展开，逃逸链接会在
+    /// 作用域校验时现形；向上直到文件系统根都找不到已存在祖先才报错。
+    fn resolve_missing_path(absolute_path: &Path) -> anyhow::Result<PathBuf> {
+        let mut tail: Vec<std::ffi::OsString> = Vec::new();
+        let mut current = absolute_path.to_path_buf();
+        loop {
+            match current.parent() {
+                // 父路径非空：记录尾部成分后继续向上
+                Some(parent) if !parent.as_os_str().is_empty() => {
+                    if let Some(name) = current.file_name() {
+                        tail.push(name.to_os_string());
+                    }
+                    current = parent.to_path_buf();
+                    if current.exists() {
+                        let anchor = current
+                            .canonicalize()
+                            .map_err(|_| anyhow!("Failed to resolve path: permission denied"))?;
+                        tail.reverse();
+                        return Ok(anchor.join(tail.iter().collect::<PathBuf>()));
+                    }
+                }
+                // 已到文件系统根仍无已存在祖先
+                _ => {
+                    return Err(anyhow!(
+                        "Parent directory does not exist or permission denied"
+                    ));
+                }
+            }
+        }
+    }
+
     /// Check if filename matches sensitive patterns that should be blocked
     pub fn is_sensitive_filename(path: &str) -> bool {
         let lower = path.to_lowercase();
@@ -243,6 +297,14 @@ pub mod fs {
         }
         if lower.contains("auth") {
             return true;
+        }
+        // 版本控制 / 密钥目录：任意层级出现即拒
+        // （.git/config 可含带令牌的远端 URL；且工作区会被惰性 git init，
+        //  .git 是真实存在的目录，不是理论风险）
+        for comp in lower.split('/') {
+            if comp == ".git" || comp == ".ssh" {
+                return true;
+            }
         }
         // Hidden files starting with .
         if path

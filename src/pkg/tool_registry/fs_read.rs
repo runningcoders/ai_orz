@@ -3,7 +3,8 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::fs::{
-    ValidationResult, crosses_user_boundary, resolve_and_validate_path, sanitize_error,
+    ValidationResult, crosses_user_boundary, is_sensitive_filename, resolve_and_validate_path,
+    sanitize_error,
 };
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 /// `FsToolConfig` 已下沉至 [`common::config::FsToolConfig`]（前后端共享 SSOT），此处仅转发兼容。
 pub use common::config::FsToolConfig;
@@ -55,6 +57,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsReadToolFactory {
                 "Read content from a file in the current project/workspace. ",
                 "Supports full file read, range read by line numbers, and grep-style pattern matching. ",
                 "Returns content with line numbers for easy editing. ",
+                "If the path is a directory, returns its entries (name/type/size, single level, at most 500 entries) instead of content; ",
+                "start_line/end_line/grep apply to files only. ",
                 "Reads are allowed across the shared base data directory and configured additional paths. ",
                 "Paths inside another user's tree return a require_confirmation result instead of content — stop and ask the user for explicit confirmation first."
             ).to_string(),
@@ -65,7 +69,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsReadToolFactory {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to the file to read, relative to the project/workspace root"
+                        "description": "Path to read: a file (returns content with line numbers) or a directory (returns its entries), relative to the project/workspace root"
                     },
                     "start_line": {
                         "type": "integer",
@@ -157,12 +161,17 @@ impl CoreTool for FsReadCoreTool {
                     }));
                 }
 
-                // Check file size before opening
+                // 取元信息：目录走列举分支，文件继续走大小检查
                 let metadata = std::fs::metadata(&target_path)
                     .map_err(|e| {
                         anyhow::anyhow!("Failed to read file metadata: {}", sanitize_error(e))
                     })
                     .map_err(common::error::Error::from)?;
+
+                // 目录：返回条目列表（单层），而非文件内容
+                if metadata.is_dir() {
+                    return list_directory_entries(&target_path, &args.path, &args);
+                }
 
                 const HARD_READ_MAX_BYTES: usize = 10 * 1024 * 1024; // 10MB
 
@@ -261,4 +270,83 @@ fn resolve_line_range(start: Option<usize>, end: Option<usize>, total: usize) ->
     };
     // Clamp to valid range
     (start_idx.min(total), end_idx.max(start_idx))
+}
+
+/// 目录列举的条目数硬上限（防大目录树撑爆上下文；与 `HARD_READ_MAX_BYTES` 同思路）
+const MAX_DIR_ENTRIES: usize = 500;
+
+/// 列举目录条目（单层，不递归；目录在前、其余按名称排序，输出稳定）
+///
+/// 安全：条目名过 [`is_sensitive_filename`] 过滤——隐藏文件（.env / .git …）与
+/// 密钥类命名不出现在结果里，与「读不到」的规则对齐。符号链接条目如实标注为
+/// `symlink`（读取目标会被 `resolve_and_validate_path` 的符号链接检查拒绝）。
+fn list_directory_entries(dir: &Path, display_path: &str, args: &ReadFileArgs) -> Result<Value> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| anyhow::anyhow!("Failed to read directory: {}", sanitize_error(e)))
+        .map_err(common::error::Error::from)?;
+    let mut items: Vec<Value> = Vec::new();
+    let mut truncated = false;
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| anyhow::anyhow!("Failed to read directory entry: {}", sanitize_error(e)))
+            .map_err(common::error::Error::from)?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if is_sensitive_filename(&name) {
+            continue;
+        }
+        if items.len() >= MAX_DIR_ENTRIES {
+            truncated = true;
+            break;
+        }
+        let (entry_type, size_bytes) = match entry.file_type() {
+            Ok(ft) if ft.is_dir() => ("directory", Value::Null),
+            Ok(ft) if ft.is_symlink() => ("symlink", Value::Null),
+            // 普通文件：不跟随符号链接取自身大小
+            _ => (
+                "file",
+                entry
+                    .metadata()
+                    .ok()
+                    .map_or(Value::Null, |m| serde_json::json!(m.len())),
+            ),
+        };
+        items.push(serde_json::json!({
+            "name": name,
+            "type": entry_type,
+            "size_bytes": size_bytes,
+        }));
+    }
+    // 排序：目录在前，然后按名称
+    items.sort_by(|a, b| {
+        let a_dir = a.get("type").and_then(|t| t.as_str()) == Some("directory");
+        let b_dir = b.get("type").and_then(|t| t.as_str()) == Some("directory");
+        match (a_dir, b_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => {
+                let a_name = a.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let b_name = b.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                a_name.cmp(b_name)
+            }
+        }
+    });
+
+    // 行范围 / grep 只对文件有意义；传了目录就在响应里明说，不静默忽略
+    let ignored_file_only_params =
+        args.grep.is_some() || args.start_line.is_some() || args.end_line.is_some();
+
+    let mut response = serde_json::json!({
+        "success": true,
+        "path": display_path,
+        "type": "directory",
+        "entry_count": items.len(),
+        "truncated": truncated,
+        "entries": items,
+    });
+    if ignored_file_only_params {
+        response["note"] = serde_json::json!(
+            "start_line/end_line/grep apply to files only and were ignored for this directory listing"
+        );
+    }
+    Ok(response)
 }

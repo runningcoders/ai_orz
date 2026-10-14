@@ -51,6 +51,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsWriteToolFactory {
                 "Write content to a file in the current project/workspace. ",
                 "Supports multiple atomic modes: overwrite entire file, append to end, insert after a line, ",
                 "delete a range of lines, or replace a range of lines. ",
+                "Missing parent directories are created automatically when writing files. ",
+                "Use mode \"create_directory\" to create a directory (including missing parents; idempotent). ",
                 "All changes are atomic — either complete or not written. ",
                 "Writes are allowed within your own agent workspace, the current user's home tree, and configured additional paths. ",
                 "Other users' trees or other agents' workspaces return a require_confirmation result instead of writing — stop and ask the user for explicit confirmation first."
@@ -62,12 +64,12 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsWriteToolFactory {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to the file to write, relative to the project/workspace root"
+                        "description": "Path to the file (or directory when mode is create_directory), relative to the project/workspace root"
                     },
                     "mode": {
                         "type": "string",
-                        "enum": ["overwrite", "append", "insert_after", "delete_range", "replace_range"],
-                        "description": "Write mode:\n- overwrite: overwrite entire file (create if not exists)\n- append: append content to end of file\n- insert_after: insert content after the specified line number\n- delete_range: delete lines from start_line to end_line (inclusive)\n- replace_range: replace lines from start_line to end_line with new content"
+                        "enum": ["overwrite", "append", "insert_after", "delete_range", "replace_range", "create_directory"],
+                        "description": "Write mode:\n- overwrite: overwrite entire file (create if not exists, missing parents are created too)\n- append: append content to end of file\n- insert_after: insert content after the specified line number\n- delete_range: delete lines from start_line to end_line (inclusive)\n- replace_range: replace lines from start_line to end_line with new content\n- create_directory: create the directory at path (including missing parent directories; no content needed, idempotent)"
                     },
                     "content": {
                         "type": "string",
@@ -174,6 +176,61 @@ impl CoreTool for FsWriteCoreTool {
                             args.path
                         )
                     }));
+                }
+
+                // create_directory 模式：建目录（含父链），幂等
+                if args.mode == "create_directory" {
+                    let already_exists = target_path.exists();
+                    if already_exists && !target_path.is_dir() {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "error": format!(
+                                "Path '{}' already exists and is not a directory",
+                                args.path
+                            )
+                        }));
+                    }
+                    std::fs::create_dir_all(&target_path)
+                        .map_err(|e| anyhow!("Failed to create directory: {}", sanitize_error(e)))
+                        .map_err(common::error::Error::from)?;
+                    // 工作区惰性 git init（新目录自身作为产物锚点）
+                    crate::pkg::git_workspace::ensure_workspace_repo(
+                        &base_root,
+                        &target_path,
+                        ctx.user_id.as_deref(),
+                        ctx.agent_id().map(String::as_str),
+                    )
+                    .await;
+                    return Ok(serde_json::json!({
+                        "success": true,
+                        "path": args.path,
+                        "mode": args.mode,
+                        "created": !already_exists
+                    }));
+                }
+
+                // 文件模式：目标是已存在目录 → 明确报错（而非晦涩的 EISDIR）
+                if target_path.exists() && target_path.is_dir() {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "error": format!(
+                            "Path '{}' is a directory. Use mode \"create_directory\" to create directories, \
+                            or read_file to list directory entries.",
+                            args.path
+                        )
+                    }));
+                }
+
+                // 文件模式：自动补建缺失的父目录链
+                // （resolve_and_validate_path 已放行不存在路径并做过作用域校验）
+                if let Some(parent) = target_path.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| {
+                            anyhow!("Failed to create parent directories: {}", sanitize_error(e))
+                        })
+                        .map_err(common::error::Error::from)?;
                 }
 
                 // 工作区惰性 git init（产物锚点基建，best-effort 不阻断写入）
@@ -345,6 +402,9 @@ fn validate_args(args: &WriteFileArgs) -> Result<()> {
                     anyhow!("start_line and end_line are required for replace_range mode").into(),
                 );
             }
+        }
+        "create_directory" => {
+            // 建目录不需要 content（父链自动补建，幂等）
         }
         _ => {}
     }
