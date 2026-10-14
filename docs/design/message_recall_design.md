@@ -115,7 +115,7 @@ BusyGuard Drop → set_idle → 事件 ack → 门闩推进
 | 运行时状态 | [pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs) | 在飞定位 | 新增 `find_busy_agent_by_message`（`current_message_id` 反向索引，撤回在飞消息的定位依据） |
 | Adapter | `src/handlers/finance/message/recall_message.rs`（新建） | REST + 工具 | 双宏标注（`register_handler_tool` + `generate_http_handler`）；工具侧自动注册、路由侧须手动注册，详见 §3.1 |
 | Adapter 导出 | [handlers/finance/message/mod.rs](src/handlers/finance/message/mod.rs#L3-L15) | 模块导出 | 增 `pub mod recall_message;` + `pub use recall_message::recall_message_handler;` |
-| 工具护栏 | [pkg/tool_registry/builtin.rs](src/pkg/tool_registry/builtin.rs#L117-L137) | 护栏测试 | `message_tools_are_neural_reachable` 清单增 `recall_message` + `cancel_thinking` |
+| 工具护栏 | [pkg/tool_registry/builtin_tests.rs](src/pkg/tool_registry/builtin_tests.rs#L240-L262) | 护栏测试 | `message_tools_are_neural_reachable` 清单增 `recall_message` + `cancel_thinking` |
 | 路由 | [router.rs](src/router.rs#L908-L923) | 路由注册 | 消息路由组手加 `POST /messages/recall` |
 | Consumer | [consumer/message.rs](src/consumer/message.rs#L180-L213) | 队列跳过 | `handle_message` 入口加守卫（`None` 分支区分「已撤回」与「不存在」，覆盖三种 `to_role`） |
 | 取消入口可达性 | [handlers/hr/agent/cancel_thinking.rs](src/handlers/hr/agent/cancel_thinking.rs) | 工具可达性 | 补 `neural`（原只挂 `collaboration` ⇒ 死工具）；描述与 `recall_message` 互补分工 |
@@ -150,7 +150,7 @@ pub async fn recall_message(
 | 工具侧注册 | **自动**：宏生成 `BuiltinToolFactory` + `ctor` 启动即注册，不需要在别处登记 | [ai-orz-macros/src/lib.rs](ai-orz-macros/src/lib.rs#L157-L228) |
 | HTTP 侧注册 | **手动**：`generate_http_handler` 只生成 `recall_message_handler` 函数、**不注册路由** ⇒ 必须在 [router.rs](src/router.rs#L908-L923) 消息路由组手加一条，否则接口静默 404 | `send_message_to_agent` / `cancel_thinking` 先例 |
 | 路由方法 | `post(...)`（JSON body 形态）：params DTO 未标 `#[param(source = "query")]` 时宏按 body 生成，错配 `get(...)` 会在解析阶段失败 | [router.rs](src/router.rs#L1013) 同款说明 |
-| 可达性 tag | `neural`（+ `tags = "messaging"`）⇒ 进入**所有 Agent** 的工具面（`绑定工具 ∪ neural ∪ installed_tags`） | [builtin.rs 护栏](src/pkg/tool_registry/builtin.rs#L103-L137) |
+| 可达性 tag | `neural`（+ `tags = "messaging"`）⇒ 进入**所有 Agent** 的工具面（`绑定工具 ∪ neural ∪ installed_tags`） | [builtin_tests.rs 护栏](src/pkg/tool_registry/builtin_tests.rs#L240-L262) |
 | 参数 schema | 宏内已走 `common::llm_schema::schema_for_llm`（inline `$ref` + 折叠可空枚举）⇒ 天然满足「LLM-LCD 无 `$ref`/`anyOf`」护栏；DTO 内不要再嵌判别联合 | [lib.rs](ai-orz-macros/src/lib.rs#L188-L197) |
 | 只挂工具、不挂路由的先例 | `send_task_assignment_message` 只注册工具；撤回前端有「撤回」按钮 ⇒ **两者都挂** | [router.rs](src/router.rs#L908-L911) |
 
