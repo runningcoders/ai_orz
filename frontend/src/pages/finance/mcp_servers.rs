@@ -15,6 +15,7 @@ use crate::components::credential_form::{
     has_any_enhancer_support, injection_value_preview, kind_from_value, mcp_transport_scope,
     normalize_requirements, recommended_binding_name, validate_requirements_scoped,
 };
+use crate::components::mcp_server_edit_modal::{McpServerEditModal, McpServerEditSnapshot};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -46,6 +47,7 @@ pub fn FinanceMcpServers() -> Element {
     let mut loading = use_signal(|| true);
     let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
+    let mut edit_server = use_signal(|| None::<McpServerEditSnapshot>);
 
     let mut new_name = use_signal(String::new);
     let mut new_transport = use_signal(|| "0".to_string());
@@ -211,6 +213,12 @@ pub fn FinanceMcpServers() -> Element {
                                         let id_enable = id.clone();
                                         let id_delete = id.clone();
                                         let id_sync = id.clone();
+                                        let edit_snap = McpServerEditSnapshot {
+                                            id: id.clone(),
+                                            name: name.clone(),
+                                            transport,
+                                            config: config.clone(),
+                                        };
                                         let config_display = if transport == McpTransport::StreamableHttp {
                                             config.url.unwrap_or_default()
                                         } else {
@@ -234,6 +242,13 @@ pub fn FinanceMcpServers() -> Element {
                                                         class: "btn hud-btn btn-ghost btn-sm",
                                                         to: crate::pages::Route::FinanceMcpServerDetail { id: id.clone() },
                                                         "详情"
+                                                    }
+                                                    button {
+                                                        class: "btn hud-btn btn-ghost btn-sm",
+                                                        onclick: move |_| {
+                                                            edit_server.set(Some(edit_snap.clone()));
+                                                        },
+                                                        "编辑"
                                                     }
                                                     if is_enabled {
                                                         button { class: "btn hud-btn btn-ghost btn-sm",
@@ -528,6 +543,30 @@ pub fn FinanceMcpServers() -> Element {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // ===== 编辑 MCP 服务器 Modal =====
+        if edit_server().is_some() {
+            {
+                let snap = edit_server().unwrap();
+                let snap_id = snap.id.clone();
+                rsx! {
+                    McpServerEditModal {
+                        key: "{snap_id}",
+                        server: snap,
+                        on_close: move |_| edit_server.set(None),
+                        on_saved: move |_| {
+                            edit_server.set(None);
+                            spawn(async move {
+                                match list_mcp_servers().await {
+                                    Ok(list) => servers.set(list.servers),
+                                    Err(e) => toast.error(&e),
+                                }
+                            });
+                        },
                     }
                 }
             }

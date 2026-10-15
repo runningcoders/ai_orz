@@ -27,6 +27,7 @@ pub mod identity_chip;
 pub mod kanban_canvas;
 pub mod layered_layout;
 pub mod markdown;
+pub mod mcp_server_edit_modal;
 pub mod mention_picker;
 pub mod modal;
 pub mod model_provider_bubble;

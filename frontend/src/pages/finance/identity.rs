@@ -27,6 +27,7 @@ use crate::api::lark_integration::{
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::layouts::app_layout::AppLayout;
+use crate::pages::finance::identity_custom_credentials::IdentityCustomCredentialsSection;
 use crate::pages::finance::identity_email::IdentityEmailSection;
 use crate::pages::finance::identity_generic_token::IdentityGenericTokenSection;
 use crate::pages::finance::identity_github::IdentityGithubSection;
@@ -612,6 +613,9 @@ pub fn FinanceIdentity() -> Element {
 
                     // ==================== 邮箱机器人凭证子区块 ====================
                     IdentityEmailSection {}
+
+                    // ==================== 自定义凭证子区块（页面最下方） ====================
+                    IdentityCustomCredentialsSection {}
                 }
             }
 

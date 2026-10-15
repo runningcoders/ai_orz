@@ -6,6 +6,7 @@ use crate::api::finance::{
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::credential_requirements::CredentialRequirementsTable;
 use crate::components::hud::{HudPanel, PageHeader};
+use crate::components::mcp_server_edit_modal::{McpServerEditModal, McpServerEditSnapshot};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -22,6 +23,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
     let mut syncing = use_signal(|| false);
     let mut toggling = use_signal(|| false);
     let mut show_delete_confirm = use_signal(|| false);
+    let mut show_edit_modal = use_signal(|| false);
 
     // M1 修复（方案 B）：响应式 id + use_resource，拉取仅在 :id 变化时触发，
     // 切换本地状态（如弹窗）不再误重拉
@@ -136,6 +138,11 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                                         }
                                         button {
                                             class: "btn hud-btn btn-ghost btn-sm",
+                                            onclick: move |_| show_edit_modal.set(true),
+                                            "✏️ 编辑"
+                                        }
+                                        button {
+                                            class: "btn hud-btn btn-ghost btn-sm",
                                             disabled: syncing(),
                                             onclick: on_sync,
                                             if syncing() { "同步中..." } else { "🔄 同步工具" }
@@ -192,6 +199,40 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                 Some(Err(e)) => rsx! {
                     EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) }
                 },
+            }
+
+            // ===== 编辑 MCP 服务器 Modal =====
+            if show_edit_modal() && server_view.as_ref().map(|r| r.is_ok()).unwrap_or(false) {
+                {
+                    let s = match server_view.as_ref() {
+                        Some(Ok(s)) => s.clone(),
+                        _ => unreachable!(),
+                    };
+                    let snap = McpServerEditSnapshot {
+                        id: s.id.clone(),
+                        name: s.name.clone(),
+                        transport: s.transport,
+                        config: s.config.clone(),
+                    };
+                    let snap_id = snap.id.clone();
+                    rsx! {
+                        McpServerEditModal {
+                            key: "{snap_id}",
+                            server: snap,
+                            on_close: move |_| show_edit_modal.set(false),
+                            on_saved: move |_| {
+                                show_edit_modal.set(false);
+                                let id_reload = id();
+                                spawn(async move {
+                                    match get_mcp_server(&id_reload).await {
+                                        Ok(s) => server_res.set(Some(Ok(s))),
+                                        Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                    }
+                                });
+                            },
+                        }
+                    }
+                }
             }
 
             ConfirmDialog {

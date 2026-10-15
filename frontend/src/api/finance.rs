@@ -11,9 +11,9 @@ use common::api::{
     QueryToolCallEntriesRequest, QueryToolCallEntriesResponse, RevokeAuthorizationRequest,
     SearchToolsRequest, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
     TestConnectionResponse, TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
-    UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
-    UpdateMessageChannelStatusRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
-    UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
+    UpdateAttachmentContentRequest, UpdateMcpServerRequest, UpdateMcpServerResponse,
+    UpdateMcpServerStatusRequest, UpdateMessageChannelStatusRequest, UpdateModelProviderRequest,
+    UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
 };
 use web_sys::FormData;
 
@@ -227,6 +227,12 @@ pub async fn create_mcp_server(
     req: CreateMcpServerRequest,
 ) -> Result<CreateMcpServerResponse, ApiError> {
     api_post("/api/v1/finance/mcp-servers", &req).await
+}
+
+pub async fn update_mcp_server(
+    req: UpdateMcpServerRequest,
+) -> Result<UpdateMcpServerResponse, ApiError> {
+    api_put(&format!("/api/v1/finance/mcp-servers/{}", req.id), &req).await
 }
 
 pub async fn update_mcp_server_status(req: UpdateMcpServerStatusRequest) -> Result<(), ApiError> {
