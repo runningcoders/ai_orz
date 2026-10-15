@@ -344,3 +344,129 @@ async fn test_resolved_requirement_field_integrity(pool: SqlitePool) {
     // platform 正确
     assert_eq!(r.requirement.platform.as_deref(), Some("tavily"));
 }
+
+// ==================== status 端点 platform 可选化（空串=全量，TL 任务书 B-2③） ====================
+
+/// status 端点便捷调用：query 形态 "?platform="（空串全量）或 "?platform=xxx"（精确过滤），返回 credentials 数组
+async fn status_credentials(
+    app: &common::TestApp,
+    jwt: &str,
+    query: &str,
+) -> Vec<serde_json::Value> {
+    let path = format!("{GENERIC_TOKEN_BASE}/status{query}");
+    let (status, body) = app.get_with_jwt(&path, jwt).await;
+    let data = common::assert_api_ok(status, &body);
+    data.get("credentials")
+        .and_then(|v| v.as_array())
+        .expect("credentials array")
+        .clone()
+}
+
+/// 不传/空串 platform → 全量：多 platform（含自定义 ledger）凭证全部返回，
+/// 快照 platform 字段回填凭证自身实值，token 永不回显仅尾号
+#[sqlx::test]
+async fn test_generic_token_status_empty_platform_returns_all(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+    let (jwt, _user_id, _org) = crate::common::factories::register_fresh_member(&app).await;
+
+    create_generic_token(&app, &jwt, "Tavily key", "tavily", "tvly-status-all-key").await;
+    create_generic_token(
+        &app,
+        &jwt,
+        "Doubao key",
+        "doubao_search",
+        "doubao-status-all-key",
+    )
+    .await;
+    create_generic_token(&app, &jwt, "Ledger key", "ledger", "ledger-status-all-key").await;
+
+    // 显式空串 platform（?platform=）→ 全量（沿 email/status「空串=全量」同构口径；
+    // 实际调用链=单 A 前端封装 get_status("") 恒显式拼参，见完工回报披露）
+    let all = status_credentials(&app, &jwt, "?platform=").await;
+    assert_eq!(all.len(), 3, "空串 platform 应回全部 3 条凭证");
+    let platforms: Vec<&str> = all
+        .iter()
+        .filter_map(|c| c.get("platform").and_then(|v| v.as_str()))
+        .collect();
+    assert!(platforms.contains(&"tavily") && platforms.contains(&"doubao_search"));
+    assert!(
+        platforms.contains(&"ledger"),
+        "自定义 platform=ledger 应可枚举（单 A 自定义凭证区块数据源）"
+    );
+
+    // token 永不回显：仅尾号 4 位
+    for c in &all {
+        let tail = c
+            .get("api_token_tail")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert_eq!(tail.chars().count(), 4, "api_token_tail 仅尾号 4 位");
+        assert!(!tail.contains("status-all-key"), "token 明文不得回显");
+    }
+}
+
+/// 传 platform → 原精确过滤语义零变更；未匹配 platform 返回空数组非报错
+#[sqlx::test]
+async fn test_generic_token_status_filter_by_platform(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+    let (jwt, _user_id, _org) = crate::common::factories::register_fresh_member(&app).await;
+
+    create_generic_token(&app, &jwt, "Tavily key", "tavily", "tvly-status-filter-key").await;
+    create_generic_token(
+        &app,
+        &jwt,
+        "Ledger key",
+        "ledger",
+        "ledger-status-filter-key",
+    )
+    .await;
+
+    let tavily = status_credentials(&app, &jwt, "?platform=tavily").await;
+    assert_eq!(tavily.len(), 1, "过滤语义零变更：仅返回匹配 platform");
+    assert_eq!(
+        tavily[0].get("platform").and_then(|v| v.as_str()),
+        Some("tavily")
+    );
+    assert_eq!(
+        tavily[0].get("name").and_then(|v| v.as_str()),
+        Some("Tavily key")
+    );
+
+    let none = status_credentials(&app, &jwt, "?platform=nonexistent").await;
+    assert!(none.is_empty(), "未匹配 platform 返回空数组非报错");
+}
+
+/// 零凭证用户：全量与过滤均返回空数组（200 非报错）
+#[sqlx::test]
+async fn test_generic_token_status_empty_credentials_ok(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+    let (jwt, _user_id, _org) = crate::common::factories::register_fresh_member(&app).await;
+
+    let all = status_credentials(&app, &jwt, "?platform=").await;
+    assert!(all.is_empty(), "零凭证用户全量查询返回空数组非报错");
+    let filtered = status_credentials(&app, &jwt, "?platform=tavily").await;
+    assert!(filtered.is_empty());
+}
+
+/// 跨用户隔离：owned_credential_query 只见本人凭证
+#[sqlx::test]
+async fn test_generic_token_status_user_isolation(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+    let (jwt_a, _ua, _oa) = crate::common::factories::register_fresh_member(&app).await;
+    let (jwt_b, _ub, _ob) = crate::common::factories::register_fresh_member(&app).await;
+
+    create_generic_token(&app, &jwt_a, "A tavily", "tavily", "tvly-isol-key").await;
+
+    let b_view = status_credentials(&app, &jwt_b, "?platform=").await;
+    assert!(b_view.is_empty(), "跨用户隔离：B 不得见到 A 的凭证");
+    let a_view = status_credentials(&app, &jwt_a, "?platform=tavily").await;
+    assert_eq!(a_view.len(), 1, "本人查询不受隔离影响");
+}

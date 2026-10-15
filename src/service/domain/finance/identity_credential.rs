@@ -527,6 +527,9 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
     }
 
     /// 通用 API Token 集成状态聚合（按 platform 维度返回该用户绑定的凭证快照）
+    ///
+    /// platform 可选过滤：空串 = 返回该用户 kind=GenericToken 全部凭证
+    /// （沿 email_bot_status「空串=全量」口径，自定义凭证区块全量表格数据源）。
     async fn generic_token_status(
         &self,
         ctx: RequestContext,
@@ -534,18 +537,18 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         platform: &str,
     ) -> Result<common::api::GenericTokenIntegrationStatusResponse> {
         let platform = platform.trim();
-        if platform.is_empty() {
-            bail_err!(InvalidRequest, "platform 不能为空");
-        }
         let user_dal = self.user_dal()?.clone();
         let mut query = Self::owned_credential_query(user_id);
         query.kind = Some(CredentialKind::GenericToken);
-        query.platform = Some(platform.to_string());
+        // platform 可选过滤：空串 = 返回全部 platform 的凭证（沿 email_bot_status 口径）
+        if !platform.is_empty() {
+            query.platform = Some(platform.to_string());
+        }
         let page = user_dal.query_credentials(ctx, query).await?;
         let mut credentials = Vec::new();
         for credential in page.items {
-            // 再做一次内存兜底：platform 精确匹配（DAO 查询已按 platform 过滤）
-            if credential.po.platform.as_deref() != Some(platform) {
+            // 再做一次内存兜底：platform 精确匹配（DAO 查询已按 platform 过滤；空串=全量时跳过）
+            if !platform.is_empty() && credential.po.platform.as_deref() != Some(platform) {
                 continue;
             }
             let common::models::CredentialDetail::GenericToken { token } = credential.detail()
@@ -568,7 +571,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             credentials.push(common::api::GenericTokenCredentialSnapshot {
                 credential_id: credential.id().to_string(),
                 name: credential.name().to_string(),
-                platform: platform.to_string(),
+                platform: credential.po.platform.clone().unwrap_or_default(),
                 api_token_tail,
                 is_default: credential.po.is_default,
             });
