@@ -21,14 +21,14 @@
 | 👥 组织权限 | 多级组织 + 角色并查集继承 + JWT 双模式 + 偏好双源沉淀 |
 | 🤖 Agent | 全生命周期 + 两阶段唤醒（IntentAnalyze → Awaken）+ 策略引擎 |
 | 🧠 记忆 | 四层记忆 + 休息沉淀 + 知识图谱 + 种子推荐 |
-| 💬 对话消息 | SSE 实时推送 + 多渠道入站（飞书 WS）+ 5 类出站骨架 |
+| 💬 对话消息 | SSE 实时推送 + 多渠道入站（飞书 WS / 微信 iLink / 邮件 IMAP）+ 5 类出站骨架 |
 | 📋 任务项目 | 任务状态机 + 进度追踪 + TaskGraph DAG + 项目聚合上下文 |
-| 🛠️ 工具技能 | 三层调用架构 + 10 份预置技能（6 个神经技能常驻）+ 技能副本自我进化 + MCP 集成 |
+| 🛠️ 工具技能 | 三层调用架构 + 11 份预置技能（7 个神经技能常驻）+ 技能副本自我进化 + MCP 集成 |
 | 🔌 外部 Agent | A2A 协议 Client/Server + 异步回调 |
 | 🔎 搜索 | FTS5 + 向量 + 图谱三位一体混合搜索 |
 | 📊 统计监控 | DuckDB 五维统计 + 运行时观测 + 系统健康仪表盘 |
 | 🚀 异步基建 | AOP 事件中心 + 8 类消费者 + cron 定时触发器 |
-| 🎨 前端 | Dioxus 41 路由 + HUD Canvas + Markdown/Mermaid 全链路 |
+| 🎨 前端 | Dioxus 44 路由 + HUD Canvas + Markdown/Mermaid 全链路 |
 
 ---
 
@@ -107,12 +107,12 @@ Organization ──┬── User
 | **日志规范** | [logging_design.md](./docs/design/logging_design.md) | 统一宏 + tracing 语法 |
 | **Runtime** | [runtime_design.md](./docs/design/runtime_design.md) | Agent 唤醒 + 工具二分 |
 | **策略引擎** | [thinking_task_policy_engine_design.md](./docs/design/thinking_task_policy_engine_design.md) | Policy trait + policy_set! 宏 |
-| **前端架构** | [frontend_architecture.md](./docs/design/frontend_architecture.md) | Dioxus + 41 路由 |
+| **前端架构** | [frontend_architecture.md](./docs/design/frontend_architecture.md) | Dioxus + 44 路由 |
 | **查询规范** | [pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md) | 分页 + 通用 count |
 | **记忆设计** | [memory_design.md](./docs/memory_design.md) | 四层记忆系统 |
 | **脚本地图** | [scripts/README.md](./scripts/README.md) | 运维脚本入口、职责划分与「一处实现」规则 |
-| **Wiki 百科** | [docs/wiki/](./docs/wiki/) | 8 大板块 353 篇（功能实现细节）|
-| **RAG 知识卡** | [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/) | 54+ 张原子卡（第一召回层）|
+| **Wiki 百科** | [docs/wiki/](./docs/wiki/) | 9 大板块 375 篇（功能实现细节）|
+| **RAG 知识卡** | [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/) | 118 张原子卡（第一召回层）|
 
 ---
 
