@@ -295,7 +295,7 @@ pub struct McpCoreTool {
     config: McpToolConfig,
     server: Option<McpServerPo>,
     client_runtime: Option<Arc<McpClientRuntime>>,
-    /// check 写入的 Env 注入值（D22：凭据是实例状态，实例单次使用不复用）
+    /// check 写入的凭据注入值（Env/Header/Query 随 transport 分派；D22：凭据是实例状态，实例单次使用不复用）
     credential_injections: Vec<(String, String)>,
 }
 
@@ -384,15 +384,30 @@ impl CoreTool for McpCoreTool {
     }
 
     fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
+        // 注入点合法性随 transport 分派（配置期 validate_requirements 已限定，此处防御兜底）：
+        // Stdio 仅 Env；StreamableHttp（McpHttp scope）支持 Header + Query（拓展单1 放宽）。
+        // 注入值统一存 credential_injections，HTTP runtime 侧消费由拓展单2 落地。
+        let streamable_http = self
+            .server
+            .as_ref()
+            .is_some_and(|server| matches!(server.transport, McpTransport::StreamableHttp));
         let mut injections = Vec::with_capacity(resolved.len());
         for item in resolved {
             match &item.requirement.binding {
-                // stdio MCP 唯一合法注入点（配置期 validate_requirements 已限定，此处防御兜底）
-                common::models::CredentialBinding::Env { name } => {
+                common::models::CredentialBinding::Env { name } if !streamable_http => {
+                    injections.push((name.clone(), item.value.clone()));
+                }
+                common::models::CredentialBinding::Header { name } if streamable_http => {
+                    injections.push((name.clone(), item.value.clone()));
+                }
+                common::models::CredentialBinding::Query { name } if streamable_http => {
                     injections.push((name.clone(), item.value.clone()));
                 }
                 _ => {
-                    return Err(err!(InvalidRequest, "stdio MCP 仅支持 env 凭据注入点"));
+                    return Err(err!(
+                        InvalidRequest,
+                        "MCP 凭据注入点与传输方式不匹配（Stdio 仅支持 env，StreamableHttp 支持 header/query）"
+                    ));
                 }
             }
         }

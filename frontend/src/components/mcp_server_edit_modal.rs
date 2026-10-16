@@ -170,12 +170,12 @@ pub fn McpServerEditModal(
     };
     let requirements_list = edit_requirements();
     let binding_name_label = if is_http_transport {
-        "注入请求头名（Header）*"
+        "注入点名（随注入形态）*"
     } else {
         "注入环境变量名（Env）*"
     };
     let binding_name_placeholder = if is_http_transport {
-        "如 authorization"
+        "如 authorization / key（随注入形态）"
     } else {
         "如 GITHUB_TOKEN"
     };
@@ -236,7 +236,7 @@ pub fn McpServerEditModal(
                         option { value: "1", "StreamableHttp" }
                     }
                     p { class: "text-xs text-warning mt-1",
-                        "修改传输方式将影响启动方式与注入点类型（Stdio → 环境变量 / StreamableHttp → 请求头），请确认后保存。"
+                        "修改传输方式将影响启动方式与注入点类型（Stdio → 环境变量 / StreamableHttp → 请求头或查询参数），请确认后保存。"
                     }
                 }
                 div { class: "form-control w-full",
@@ -271,6 +271,11 @@ pub fn McpServerEditModal(
                                     let field_disabled = req.enhancer.is_some();
                                     let requires_platform = req.kind.requires_platform();
                                     let binding_name_value = binding_name(&req.binding).to_string();
+                                    let binding_form_value = if matches!(req.binding, CredentialBinding::Query { .. }) {
+                                        "query"
+                                    } else {
+                                        "header"
+                                    };
                                     let preview = injection_value_preview(req);
                                     let name_recommendation = if binding_name_value.is_empty() {
                                         recommended_binding_name(req)
@@ -388,6 +393,30 @@ pub fn McpServerEditModal(
                                                                 "该凭据类型不适用增强器".to_string()
                                                             } }
                                                         }
+                                                    }
+                                                }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "label",
+                                                    span { class: "label-text text-xs", "注入形态（Header/Query）" }
+                                                }
+                                                select { class: "select select-bordered select-sm w-full", value: "{binding_form_value}",
+                                                    onchange: move |e| {
+                                                        let v = e.value();
+                                                        let mut list = edit_requirements.write();
+                                                        let name = binding_name(&list[idx_binding].binding).to_string();
+                                                        list[idx_binding].binding = if v == "query" {
+                                                            CredentialBinding::Query { name }
+                                                        } else {
+                                                            CredentialBinding::Header { name }
+                                                        };
+                                                    },
+                                                    option { value: "header", "Header（请求头，默认推荐）" }
+                                                    option { value: "query", "Query（URL 查询参数）" }
+                                                }
+                                                if binding_form_value == "query" {
+                                                    p { class: "text-xs text-warning mt-1",
+                                                        "⚠️ Query 形态将凭据拼接进请求 URL 查询串，更易进入访问日志与代理记录；仅在目标服务仅支持 Query 传参（如高德地图 key）时选用。"
                                                     }
                                                 }
                                             }

@@ -1,5 +1,6 @@
 use super::{McpClientRuntime, McpToolConfig, McpToolDeps, create_mcp_tool, create_tool};
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
+use crate::models::tool::CoreTool;
 use crate::models::tool::ToolPo;
 use crate::pkg::credential::ResolvedRequirement;
 use crate::pkg::tool_registry::ToolRegistry;
@@ -756,8 +757,6 @@ async fn check_rejects_non_env_binding_for_stdio_mcp() {
 /// 用最小 CoreTool 实现（不覆盖 credential_requirements/check）验证 trait 默认语义
 #[tokio::test]
 async fn default_check_rejects_unexpected_injections() {
-    use crate::models::tool::CoreTool;
-
     #[derive(Clone)]
     struct NoCredentialTool {
         po: ToolPo,
@@ -803,4 +802,128 @@ async fn default_check_rejects_unexpected_injections() {
         }])
         .expect_err("default check must reject unexpected injections");
     assert!(err.to_string().contains("未声明凭据需求"));
+}
+
+// ==================== 拓展单1：McpHttp scope Header/Query 校验分派 ====================
+
+fn http_header_requirement() -> CredentialRequirement {
+    CredentialRequirement {
+        kind: CredentialKind::GenericToken,
+        platform: Some("linear".to_string()),
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Header {
+            name: "Authorization".to_string(),
+        },
+    }
+}
+
+fn http_query_requirement() -> CredentialRequirement {
+    CredentialRequirement {
+        kind: CredentialKind::GenericToken,
+        platform: Some("amap".to_string()),
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Query {
+            name: "key".to_string(),
+        },
+    }
+}
+
+fn streamable_http_server() -> McpServerPo {
+    McpServerPo::new(
+        "http-echo-server".to_string(),
+        "http-echo-test".to_string(),
+        McpTransport::StreamableHttp,
+        McpServerConfig {
+            url: Some("https://mcp.example.invalid/mcp".to_string()),
+            ..McpServerConfig::default_streamable_http()
+        },
+        Some("test".to_string()),
+    )
+}
+
+/// StreamableHttp MCP：check 接受 Header + Query 双形态（拓展单1；HTTP runtime 消费由拓展单2 落地）
+#[test]
+fn streamable_http_check_accepts_header_and_query_bindings() {
+    let po = mcp_tool_po(json!({
+        "server_id": "http-echo-server",
+        "tool_name": "echo"
+    }));
+    let runtime = Arc::new(McpClientRuntime::default());
+    let server = streamable_http_server();
+    let mut tool = create_mcp_tool(
+        po,
+        McpToolDeps {
+            server,
+            client_runtime: runtime,
+        },
+    )
+    .expect("MCP tool should be created");
+
+    tool.check(&[
+        ResolvedRequirement {
+            requirement: http_header_requirement(),
+            value: "Bearer x".to_string(),
+        },
+        ResolvedRequirement {
+            requirement: http_query_requirement(),
+            value: "<AMAP_KEY>".to_string(),
+        },
+    ])
+    .expect("StreamableHttp MCP check must accept Header and Query bindings");
+}
+
+/// StreamableHttp MCP：check 拒绝 Env 注入（防御兜底）
+#[test]
+fn streamable_http_check_rejects_env_binding() {
+    let po = mcp_tool_po(json!({
+        "server_id": "http-echo-server",
+        "tool_name": "echo"
+    }));
+    let runtime = Arc::new(McpClientRuntime::default());
+    let server = streamable_http_server();
+    let mut tool = create_mcp_tool(
+        po,
+        McpToolDeps {
+            server,
+            client_runtime: runtime,
+        },
+    )
+    .expect("MCP tool should be created");
+
+    let err = tool
+        .check(&[ResolvedRequirement {
+            requirement: env_requirement(),
+            value: "x".to_string(),
+        }])
+        .expect_err("StreamableHttp MCP check must reject Env bindings");
+    assert!(err.to_string().contains("不匹配"), "{err}");
+}
+
+/// stdio MCP：check 仍拒绝 Query 注入（既有口径回归）
+#[test]
+fn stdio_check_still_rejects_query_binding() {
+    let po = mcp_tool_po(json!({
+        "server_id": "env-echo-server",
+        "tool_name": "echo"
+    }));
+    let runtime = Arc::new(McpClientRuntime::default());
+    let (server, _script) = env_echo_server();
+    let mut tool = create_mcp_tool(
+        po,
+        McpToolDeps {
+            server,
+            client_runtime: runtime,
+        },
+    )
+    .expect("MCP tool should be created");
+
+    let err = tool
+        .check(&[ResolvedRequirement {
+            requirement: http_query_requirement(),
+            value: "x".to_string(),
+        }])
+        .expect_err("stdio MCP check must reject Query bindings");
+    assert!(err.to_string().contains("仅支持 env"), "{err}");
 }

@@ -1000,3 +1000,90 @@ fn test_enhancer_kind_as_str() {
     assert_eq!(CredentialEnhancerKind::BasicAuth.as_str(), "basic_auth");
     assert_eq!(CredentialEnhancerKind::AccessToken.as_str(), "access_token");
 }
+
+// ==================== 拓展单1：McpHttp scope 放宽 Header | Query ====================
+
+#[test]
+fn test_validate_requirements_mcp_http_allows_header_and_query() {
+    // 放宽后：Header 与 Query 均可进入 McpHttp scope
+    let header_req = req(
+        CredentialKind::GenericToken,
+        Some("linear"),
+        None,
+        None,
+        header("authorization"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&header_req),
+            CredentialRequirementScope::McpHttp
+        )
+        .is_ok(),
+        "McpHttp 应放行 Header 注入"
+    );
+    let query_req = req(
+        CredentialKind::GenericToken,
+        Some("amap"),
+        None,
+        None,
+        CredentialBinding::Query {
+            name: "key".to_string(),
+        },
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&query_req),
+            CredentialRequirementScope::McpHttp
+        )
+        .is_ok(),
+        "McpHttp 应放行 Query 注入（拓展单1）"
+    );
+
+    // 既有口径回归：Env / Internal 不得进入 McpHttp；Query 不得进入 McpStdio / Builtin
+    let env_req = req(
+        CredentialKind::GenericToken,
+        Some("ledger"),
+        None,
+        None,
+        CredentialBinding::Env {
+            name: "LEDGER_CREDENTIAL".to_string(),
+        },
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&env_req),
+            CredentialRequirementScope::McpHttp
+        )
+        .is_err()
+    );
+    let internal_req = req(
+        CredentialKind::GithubToken,
+        None,
+        None,
+        None,
+        CredentialBinding::Internal {
+            field: "token".to_string(),
+        },
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&internal_req),
+            CredentialRequirementScope::McpHttp
+        )
+        .is_err()
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&query_req),
+            CredentialRequirementScope::McpStdio
+        )
+        .is_err()
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&query_req),
+            CredentialRequirementScope::Builtin
+        )
+        .is_err()
+    );
+}

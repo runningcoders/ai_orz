@@ -50,9 +50,9 @@ fn validate_rejects_env_binding_outside_stdio() {
     assert!(validate_requirements(&[r], CredentialRequirementScope::HttpTool).is_err());
 }
 
-/// Query binding 仅限 HTTP 工具（McpStdio / McpHttp → Err）
+/// Query binding 仅限 HTTP 工具与 StreamableHttp MCP（拓展单1：McpHttp 放行 Header|Query；McpStdio 仍拒绝）
 #[test]
-fn validate_rejects_query_binding_for_mcp() {
+fn validate_query_binding_allowed_for_http_tool_and_mcp_http() {
     let r = req(
         CredentialKind::GenericToken,
         Some("notion"),
@@ -69,7 +69,14 @@ fn validate_rejects_query_binding_for_mcp() {
         )
         .is_err()
     );
-    assert!(validate_requirements(&[r], CredentialRequirementScope::McpHttp).is_err());
+    // 拓展单1 放宽：Query 合法进入 McpHttp scope
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&r),
+            CredentialRequirementScope::McpHttp
+        )
+        .is_ok()
+    );
 }
 
 /// Internal binding 仅限内置工具（D25）

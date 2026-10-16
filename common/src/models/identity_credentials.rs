@@ -880,7 +880,7 @@ pub enum CredentialBinding {
 pub enum CredentialRequirementScope {
     /// stdio MCP Server：仅 Env binding
     McpStdio,
-    /// streamable HTTP MCP Server：仅 Header binding
+    /// streamable HTTP MCP Server：Header / Query binding（拓展单1 放宽）
     McpHttp,
     /// HTTP 工具：Header / Query binding
     HttpTool,
@@ -961,6 +961,9 @@ pub fn binding_allowed(binding: &CredentialBinding, scope: CredentialRequirement
             CredentialBinding::Header { .. },
             CredentialRequirementScope::McpHttp
         ) | (
+            CredentialBinding::Query { .. },
+            CredentialRequirementScope::McpHttp
+        ) | (
             CredentialBinding::Header { .. },
             CredentialRequirementScope::HttpTool
         ) | (
@@ -995,8 +998,12 @@ pub fn validate_requirements(
         // 1. binding ↔ scope
         if !binding_allowed(&req.binding, scope) {
             return Err(match scope {
-                CredentialRequirementScope::McpStdio | CredentialRequirementScope::McpHttp => {
-                    "凭据注入点与传输方式不匹配（Stdio 仅支持环境变量注入，StreamableHttp 仅支持请求头注入）".to_string()
+                CredentialRequirementScope::McpStdio => {
+                    "凭据注入点与传输方式不匹配（Stdio 仅支持环境变量注入）".to_string()
+                }
+                CredentialRequirementScope::McpHttp => {
+                    "凭据注入点与传输方式不匹配（StreamableHttp 支持请求头或查询参数注入）"
+                        .to_string()
                 }
                 CredentialRequirementScope::HttpTool => {
                     "凭据注入点与工具协议不匹配（HTTP 工具仅支持请求头或查询参数注入）".to_string()
