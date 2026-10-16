@@ -132,10 +132,12 @@ fn static_route_discards_no_reply_sentinel() {
     );
 }
 
-/// Or 组声明顺序即优先级：Agent 来源 + 知会 + 哨兵同时成立时，
-/// 知会规则（声明在前）胜出，reason 为知会文案
+/// Or 组声明顺序即优先级：哨兵是保留字，恒声明在最前——与领域规则
+/// （知会 / 用户来源）同时成立时哨兵胜出（均为 Discard，reason 为哨兵文案）。
+/// 修复前 user_origin 会短路，把 "NO_REPLY" 原文发给用户（2026-10-16 实证）
 #[test]
-fn static_route_order_notify_wins_over_sentinel() {
+fn static_route_sentinel_wins_over_domain_rules() {
+    // Agent 来源 + 知会 + 哨兵同时成立
     assert_eq!(
         judge_static_reply_route(input(
             MessageRole::Agent,
@@ -144,7 +146,26 @@ fn static_route_order_notify_wins_over_sentinel() {
             NO_REPLY_SENTINEL
         )),
         Some(AutoReplyRoute::Discard {
-            reason: "agent-notify message (sender declared no reply needed)"
+            reason: "agent final output is the NO_REPLY sentinel"
+        })
+    );
+}
+
+/// 回归（2026-10-16）：用户身份中继的任务派发 from_role=User，Agent Final
+/// 输出 NO_REPLY 时若 user_origin 先命中，会把哨兵原文当回复发给用户
+/// （全库实证 29 条泄漏、25+ 条直达用户）。哨兵优先级最高，任何来源
+/// 全等即 Discard
+#[test]
+fn static_route_discards_no_reply_sentinel_for_user_origin() {
+    assert_eq!(
+        judge_static_reply_route(input(
+            MessageRole::User,
+            "user-1",
+            MessageType::Text,
+            NO_REPLY_SENTINEL
+        )),
+        Some(AutoReplyRoute::Discard {
+            reason: "agent final output is the NO_REPLY sentinel"
         })
     );
 }
