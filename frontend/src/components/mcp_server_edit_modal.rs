@@ -6,6 +6,10 @@
 //! 保存 = `PUT /api/v1/finance/mcp-servers/{id}`，name/transport/config 三 Option 全量发送
 //! （config 整体替换；凭证由平台运行时注入不落 config，无敏感丢失风险）。
 //!
+//! 未编辑字段零丢失：表单承载字段（command/url/凭据需求）跟随表单（含显式清空语义）；
+//! 表单未承载字段（args / timeout_ms / connect_timeout_ms / response_max_bytes）
+//! 从快照原样回传（build_updated_config），不得以空数组/None 等默认值覆盖现值。
+//!
 //! 纪律：transport 允许修改（变更时注入点类型联动重置并保留注入名，UI 一行确认提示）；
 //! 由父页条件渲染挂载（每次打开重新挂载，signals 从 props 正确初始化）。
 
@@ -44,6 +48,47 @@ fn empty_binding(transport: McpTransport) -> CredentialBinding {
     }
 }
 
+/// 按表单构造更新后 config（保存提交用）。
+///
+/// 承载语义分界（防「表单未承载」被默认值覆盖）：
+/// - 表单承载字段：`command`/`url` 跟随输入框（显式清空 → None）；
+///   `credential_requirements` 跟随编辑器列表（显式清空 → 空 vec）；
+/// - 表单未承载字段：`args` / `timeout_ms` / `connect_timeout_ms` / `response_max_bytes`
+///   本 Modal 无输入控件、不存在 UI 清空通道，恒取快照现值原样回传（保存零丢失）。
+fn build_updated_config(
+    transport: McpTransport,
+    config_value: String,
+    snapshot_config: &McpServerConfigDto,
+    requirements: Vec<CredentialRequirement>,
+) -> McpServerConfigDto {
+    let mut config = match transport {
+        McpTransport::StreamableHttp => McpServerConfigDto {
+            url: if config_value.is_empty() {
+                None
+            } else {
+                Some(config_value)
+            },
+            ..Default::default()
+        },
+        McpTransport::Stdio => McpServerConfigDto {
+            command: if config_value.is_empty() {
+                None
+            } else {
+                Some(config_value)
+            },
+            ..Default::default()
+        },
+    };
+    // 表单未承载字段：从快照原样回传（用户未编辑字段保存后零丢失）
+    config.args = snapshot_config.args.clone();
+    config.timeout_ms = snapshot_config.timeout_ms;
+    config.connect_timeout_ms = snapshot_config.connect_timeout_ms;
+    config.response_max_bytes = snapshot_config.response_max_bytes;
+    // 表单承载字段：凭据需求以编辑器列表为准
+    config.credential_requirements = requirements;
+    config
+}
+
 /// MCP 服务器编辑 Modal（父页条件渲染挂载：每次打开重新挂载，signals 从 props 正确初始化）
 #[component]
 pub fn McpServerEditModal(
@@ -66,6 +111,7 @@ pub fn McpServerEditModal(
         McpTransport::Stdio => server.config.command.clone().unwrap_or_default(),
     };
     let init_requirements = server.config.credential_requirements.clone();
+    let snapshot_config = server.config.clone();
 
     let mut edit_name = use_signal(move || init_name);
     let mut edit_transport = use_signal(move || init_transport_value);
@@ -76,6 +122,7 @@ pub fn McpServerEditModal(
     // ===== 保存提交（name/transport/config 三 Option 全量发送；config 整体替换）=====
     let handle_save = move |_| {
         let id = server_id.clone();
+        let snap = snapshot_config.clone();
         spawn(async move {
             let name = edit_name().trim().to_string();
             if name.is_empty() {
@@ -94,26 +141,7 @@ pub fn McpServerEditModal(
                 toast.error(&e);
                 return;
             }
-            let mut config = if transport == McpTransport::StreamableHttp {
-                McpServerConfigDto {
-                    url: if edit_config_value().is_empty() {
-                        None
-                    } else {
-                        Some(edit_config_value())
-                    },
-                    ..Default::default()
-                }
-            } else {
-                McpServerConfigDto {
-                    command: if edit_config_value().is_empty() {
-                        None
-                    } else {
-                        Some(edit_config_value())
-                    },
-                    ..Default::default()
-                }
-            };
-            config.credential_requirements = requirements;
+            let config = build_updated_config(transport, edit_config_value(), &snap, requirements);
             saving.set(true);
             let req = UpdateMcpServerRequest {
                 id,
@@ -401,5 +429,124 @@ pub fn McpServerEditModal(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 快照现值构造器（测试夹具）：stdio 带 args + 非默认 timeout 三项
+    fn stdio_snapshot() -> McpServerConfigDto {
+        McpServerConfigDto {
+            command: Some("uv".to_string()),
+            args: vec![
+                "run".to_string(),
+                "--directory".to_string(),
+                "/tmp/some/project".to_string(),
+            ],
+            url: None,
+            credential_requirements: Vec::new(),
+            timeout_ms: Some(45_000),
+            connect_timeout_ms: Some(12_000),
+            response_max_bytes: Some(20 * 1024 * 1024),
+        }
+    }
+
+    #[test]
+    fn stdio_unedited_fields_preserved() {
+        // 验收 a：用户仅改 name（与 config 无关），未动 args/timeout —— 保存后零丢失
+        let snapshot = stdio_snapshot();
+        let config = build_updated_config(
+            McpTransport::Stdio,
+            "uv".to_string(), // command 未编辑
+            &snapshot,
+            Vec::new(),
+        );
+        assert_eq!(config.command.as_deref(), Some("uv"));
+        assert_eq!(config.args, snapshot.args, "args 必须原样回传不得清空");
+        assert_eq!(config.timeout_ms, Some(45_000));
+        assert_eq!(config.connect_timeout_ms, Some(12_000));
+        assert_eq!(config.response_max_bytes, Some(20 * 1024 * 1024));
+    }
+
+    #[test]
+    fn uncarried_fields_never_overwritten_by_defaults() {
+        // 验收 b：表单未承载字段不得以空数组/None 等默认值覆盖现值
+        let snapshot = stdio_snapshot();
+        let config = build_updated_config(
+            McpTransport::Stdio,
+            String::new(), // 输入框值与本缺陷无涉
+            &snapshot,
+            Vec::new(),
+        );
+        assert_eq!(config.args, snapshot.args);
+        assert!(config.timeout_ms.is_some());
+        assert!(config.connect_timeout_ms.is_some());
+        assert!(config.response_max_bytes.is_some());
+    }
+
+    #[test]
+    fn stdio_explicit_clear_of_command_is_respected() {
+        // 用户显式清空 command（表单承载字段）→ None；args 仍原样回传（无 UI 清空通道）
+        let snapshot = stdio_snapshot();
+        let config =
+            build_updated_config(McpTransport::Stdio, String::new(), &snapshot, Vec::new());
+        assert!(config.command.is_none(), "command 显式清空语义保留");
+        assert_eq!(config.args, snapshot.args);
+    }
+
+    #[test]
+    fn http_transport_preserves_uncarried_fields() {
+        // http 场景：url 跟随表单；args/timeout 三项同样原样回传
+        let mut snapshot = stdio_snapshot();
+        snapshot.url = Some("https://example.invalid/mcp".to_string());
+        snapshot.command = None;
+        let config = build_updated_config(
+            McpTransport::StreamableHttp,
+            "https://example.invalid/mcp".to_string(),
+            &snapshot,
+            Vec::new(),
+        );
+        assert_eq!(config.url.as_deref(), Some("https://example.invalid/mcp"));
+        assert!(config.command.is_none());
+        assert_eq!(config.args, snapshot.args);
+        assert_eq!(config.timeout_ms, Some(45_000));
+    }
+
+    #[test]
+    fn requirements_follow_form() {
+        // 表单承载字段：凭据需求以编辑器列表为准（显式清空 → 空 vec）
+        let snapshot = stdio_snapshot();
+        let requirements = vec![CredentialRequirement {
+            kind: CredentialKind::GenericToken,
+            platform: Some("ledger".to_string()),
+            field: None,
+            enhancer: None,
+            binding: CredentialBinding::Env {
+                name: "LEDGER_CREDENTIAL".to_string(),
+            },
+        }];
+        let config = build_updated_config(
+            McpTransport::Stdio,
+            "uv".to_string(),
+            &snapshot,
+            requirements.clone(),
+        );
+        assert_eq!(config.credential_requirements, requirements);
+    }
+
+    #[test]
+    fn transport_switch_preserves_uncarried_fields() {
+        // 传输方式切换场景：未承载字段仍原样回传（不因 transport 变更丢失）
+        let snapshot = stdio_snapshot();
+        let config = build_updated_config(
+            McpTransport::StreamableHttp,
+            "https://example.invalid/mcp".to_string(),
+            &snapshot,
+            Vec::new(),
+        );
+        assert_eq!(config.args, snapshot.args);
+        assert_eq!(config.timeout_ms, Some(45_000));
     }
 }
