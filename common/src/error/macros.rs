@@ -112,56 +112,60 @@ macro_rules! err {
 }
 
 /// Return early with a typed [`Error`](crate::error::Error).
+///
+/// 展开体为 `return Err(...)`（**无尾分号**）：调用方在语句位置写 `bail_err!(..);`、
+/// 在 match arm 等表达式位置写 `=> bail_err!(..),`。若在展开体补回分号，会触发
+/// rustc `semicolon_in_expressions_from_non_local_macros`（1.99 起 deny 化）。
 #[macro_export]
 macro_rules! bail_err {
     // === Special case: inline json field syntax ===
     ($variant:ident, $msg:literal, field: { $($k:ident: $v:expr),* $(,)? } $(, $rest:tt)* $(,)?) => {
-        return Err($crate::err!($variant, $msg, field: { $($k: $v),* } $(, $rest)*));
+        return Err($crate::err!($variant, $msg, field: { $($k: $v),* } $(, $rest)*))
     };
     ($variant:ident, $msg:literal source: $source:expr $(,)?) => {
-        return Err($crate::err!($variant, $msg, source: $source));
+        return Err($crate::err!($variant, $msg, source: $source))
     };
     ($variant:ident, $error_type:ident, $msg:literal, field: { $($k:ident: $v:expr),* $(,)? } $(, $rest:tt)* $(,)?) => {
-        return Err($crate::err!($variant, $error_type, $msg, field: { $($k: $v),* } $(, $rest)*));
+        return Err($crate::err!($variant, $error_type, $msg, field: { $($k: $v),* } $(, $rest)*))
     };
     // === Special case: inline json field + source ===
     ($variant:ident, $msg:literal, field: { $($k:ident: $v:expr),* $(,)? }, source: $source:expr $(,)?) => {
-        return Err($crate::err!($variant, $msg, field: { $($k: $v),* }, source: $source));
+        return Err($crate::err!($variant, $msg, field: { $($k: $v),* }, source: $source))
     };
     ($variant:ident, $error_type:ident, $msg:literal, field: { $($k:ident: $v:expr),* $(,)? }, source: $source:expr $(,)?) => {
-        return Err($crate::err!($variant, $error_type, $msg, field: { $($k: $v),* }, source: $source));
+        return Err($crate::err!($variant, $error_type, $msg, field: { $($k: $v),* }, source: $source))
     };
     // === Named parameters first ===
     ($variant:ident, $msg:literal, field: $field:expr $(,)?) => {
-        return Err($crate::err!($variant, $msg, field: $field));
+        return Err($crate::err!($variant, $msg, field: $field))
     };
     ($variant:ident, $error_type:ident, $msg:literal, field: $field:expr $(,)?) => {
-        return Err($crate::err!($variant, $error_type, $msg, field: $field));
+        return Err($crate::err!($variant, $error_type, $msg, field: $field))
     };
     ($variant:ident, $msg:literal, field: $field:expr, source: $source:expr $(,)?) => {
-        return Err($crate::err!($variant, $msg, field: $field, source: $source));
+        return Err($crate::err!($variant, $msg, field: $field, source: $source))
     };
     ($variant:ident, $error_type:ident, $msg:literal, field: $field:expr, source: $source:expr $(,)?) => {
-        return Err($crate::err!($variant, $error_type, $msg, field: $field, source: $source));
+        return Err($crate::err!($variant, $error_type, $msg, field: $field, source: $source))
     };
     ($variant:ident, $msg:literal, source: $source:expr $(,)?) => {
-        return Err($crate::err!($variant, $msg, source: $source));
+        return Err($crate::err!($variant, $msg, source: $source))
     };
     ($variant:ident, $error_type:ident, $msg:literal, source: $source:expr $(,)?) => {
-        return Err($crate::err!($variant, $error_type, $msg, source: $source));
+        return Err($crate::err!($variant, $error_type, $msg, source: $source))
     };
     // === Basic cases ===
     ($variant:ident, $msg:literal $(, $arg:expr)* $(,)?) => {
-        return Err($crate::err!($variant, $msg $(, $arg)*));
+        return Err($crate::err!($variant, $msg $(, $arg)*))
     };
     ($variant:ident, $msg:expr $(,)?) => {
-        return Err($crate::err!($variant, $msg));
+        return Err($crate::err!($variant, $msg))
     };
     ($variant:ident, $error_type:ident, $msg:literal $(, $arg:expr)* $(,)?) => {
-        return Err($crate::err!($variant, $error_type, $msg $(, $arg)*));
+        return Err($crate::err!($variant, $error_type, $msg $(, $arg)*))
     };
     ($variant:ident, $error_type:ident, $msg:expr $(,)?) => {
-        return Err($crate::err!($variant, $error_type, $msg));
+        return Err($crate::err!($variant, $error_type, $msg))
     };
 }
 

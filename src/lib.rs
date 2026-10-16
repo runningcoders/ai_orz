@@ -1,4 +1,10 @@
 //! ai_orz - AI 代理执行框架
+//!
+//! async_trait 为每个 trait 方法生成 `#[must_use]`，而返回类型
+//! `Pin<Box<dyn Future>>` 本身也是 must_use，clippy 1.99 的 double_must_use
+//! 因此对整个 crate 误报上千次（属上游误报，async_trait 修复前保持 allow）。
+#![allow(clippy::double_must_use)]
+
 //! 统一日志宏
 //!
 //! 核心机制：第一个参数是字符串字面量 → 无上下文模式；第一个参数非字符串 + 第二个是字符串 → 带上下文模式

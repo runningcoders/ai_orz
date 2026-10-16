@@ -1,4 +1,8 @@
 [toolchain]
-channel = "stable"
+# 锁死具体版本而非 stable：CI/本地/pre-push 必须跑同一个 clippy。
+# 1.99.0 起新 lint（double_must_use 对 async_trait 误报、
+# semicolon_in_expressions_from_non_local_macros）在 stable 滚动时突袭过门禁，
+# 升级需人工验证后改此版本号。
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]
