@@ -46,8 +46,35 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         // 未命中直接返回结构化引导（不构造实例、不进 DAL）；
         // 命中（含空需求 → Some(empty)）经统一传参进 DAL，由 per-call
         // 重组装的实例经 `CoreTool::check` 注入（D22 create → check → call）。
-        let requirements =
-            crate::pkg::tool_registry::get_registry().credential_requirements(&tool.po);
+        // 凭据需求取数来源（MCP 凭证需求传导缺口修复，任务 01a142c7）：
+        // - MCP 工具：声明落在 server 行 config（sync 恒写工具行
+        //   config={server_id,tool_name}，工具行无声明字段——旧编排从工具行取数恒得
+        //   空需求、静默零注入）。经 McpToolDal::get_by_id 组装带 server PO 的
+        //   可执行实例读取既有桥 `CoreTool::credential_requirements()`
+        //   （McpCoreTool 实现 = server 行声明），顺带在编排期完成工具/服务器
+        //   存在性与启用性 fail-fast；零新增查询通路。
+        // - Builtin/Http/Shell：维持 registry 取数（工厂静态声明 / 工具行声明语义各自正确）。
+        // 传递路径/使用方式零改动：requirements 仍进 D26 resolve 单点 → check 注入 →
+        // connect_stdio_client env 注入；无声明 → 空需求 → 空注入，语义逐字节不变；
+        // 声明变更经 per-call 重组装即时生效，无需重启/sync。
+        let requirements: Vec<CredentialRequirement> = match tool.po.protocol {
+            ToolProtocol::Mcp => {
+                let executable = self
+                    .mcp_tool_dal
+                    .get_by_id(ctx.clone(), tool_id.clone())
+                    .await?
+                    .ok_or_else(|| {
+                        common::error::Error::tool_call_failed(format!(
+                            "Tool not found: {}",
+                            tool_id
+                        ))
+                    })?;
+                executable.our_tool.credential_requirements()
+            }
+            ToolProtocol::Builtin | ToolProtocol::Http | ToolProtocol::Shell => {
+                crate::pkg::tool_registry::get_registry().credential_requirements(&tool.po)
+            }
+        };
         let Some(resolved) = self.resolve_tool_credentials(&ctx, &requirements).await? else {
             return Ok(ToolExecutionResult::new(
                 crate::pkg::credential::credential_missing_json(&requirements[0]),

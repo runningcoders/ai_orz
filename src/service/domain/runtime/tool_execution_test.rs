@@ -712,16 +712,47 @@ mod tests {
         call_tool_count: AtomicUsize,
         error_message: Option<String>,
         error_trace_ref: Option<ToolCallTraceRef>,
+        /// get_by_id 组装态（MCP server 行声明传导修复）：持有 server 行，
+        /// get_by_id 按其组装带 server PO 的可执行实例（credential_requirements() 桥）
+        executable_server: std::sync::Mutex<crate::models::mcp_server::McpServerPo>,
     }
 
     impl RecordingMcpToolDal {
+        /// 默认装配：无声明的 server 行（现状回归语义）
+        fn default_executable_server() -> crate::models::mcp_server::McpServerPo {
+            crate::models::mcp_server::McpServerPo::new(
+                "test-server".to_string(),
+                "test-server".to_string(),
+                crate::models::mcp_server::McpTransport::Stdio,
+                crate::models::mcp_server::McpServerConfig::default_stdio(),
+                None,
+            )
+        }
+
         fn new() -> Self {
             Self {
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
                 error_message: None,
                 error_trace_ref: None,
+                executable_server: std::sync::Mutex::new(Self::default_executable_server()),
             }
+        }
+
+        /// 指定 server 行（可含 credential_requirements 声明）供编排层取数桥读取
+        fn with_server(server: crate::models::mcp_server::McpServerPo) -> Self {
+            Self {
+                call_by_id_count: AtomicUsize::new(0),
+                call_tool_count: AtomicUsize::new(0),
+                error_message: None,
+                error_trace_ref: None,
+                executable_server: std::sync::Mutex::new(server),
+            }
+        }
+
+        /// 模拟声明变更（编辑保存）：下一次 get_by_id 即按新 server 行组装
+        fn set_server(&self, server: crate::models::mcp_server::McpServerPo) {
+            *self.executable_server.lock().unwrap() = server;
         }
 
         fn failing(error_message: &str) -> Self {
@@ -730,6 +761,7 @@ mod tests {
                 call_tool_count: AtomicUsize::new(0),
                 error_message: Some(error_message.to_string()),
                 error_trace_ref: None,
+                executable_server: std::sync::Mutex::new(Self::default_executable_server()),
             }
         }
 
@@ -742,6 +774,7 @@ mod tests {
                     tool_id: tool_id.to_string(),
                     call_id: call_id.to_string(),
                 }),
+                executable_server: std::sync::Mutex::new(Self::default_executable_server()),
             }
         }
 
@@ -756,8 +789,25 @@ mod tests {
 
     #[async_trait]
     impl McpToolDal for RecordingMcpToolDal {
-        async fn get_by_id(&self, _ctx: RequestContext, _tool_id: String) -> Result<Option<Tool>> {
-            unimplemented!("not needed by tool execution routing tests")
+        async fn get_by_id(&self, _ctx: RequestContext, tool_id: String) -> Result<Option<Tool>> {
+            // MCP 取数桥（server 行声明传导修复）：按持有 server 行组装带
+            // server PO 的可执行实例，credential_requirements() 即 server 行声明
+            let server = self.executable_server.lock().unwrap().clone();
+            let po = mcp_executable_tool_po(&tool_id, &server.id);
+            let deps = crate::pkg::tool_registry::mcp::McpToolDeps {
+                server,
+                client_runtime: std::sync::Arc::new(
+                    crate::pkg::tool_registry::mcp::McpClientRuntime::default(),
+                ),
+            };
+            let our_tool = crate::pkg::tool_registry::mcp::create_mcp_tool(po.clone(), deps)
+                .map_err(|e| common::error::Error::tool_call_failed(e.to_string()))?;
+            Ok(Some(Tool {
+                po,
+                our_tool,
+                search_match: None,
+                stats: None,
+            }))
         }
 
         async fn sync_from_server(&self, _ctx: RequestContext, _server_id: &str) -> Result<usize> {
@@ -870,6 +920,43 @@ mod tests {
             .build()
     }
 
+    /// 组装态 MCP 工具 PO（parse_and_validate_config 要求 server_id+tool_name）
+    fn mcp_executable_tool_po(tool_id: &str, server_id: &str) -> ToolPo {
+        ToolPo::new(
+            tool_id.to_string(),
+            tool_id.to_string(),
+            "test mcp tool".to_string(),
+            ToolProtocol::Mcp,
+            json!({ "server_id": server_id, "tool_name": "echo" }),
+            Some(json!({ "type": "object" })),
+            vec!["test".to_string()],
+            Some("test-user".to_string()),
+        )
+    }
+
+    /// 带 credential_requirements 声明的 server 行（generic_token/platform 绑 env）
+    fn mcp_server_with_requirements(platform: &str) -> crate::models::mcp_server::McpServerPo {
+        let mut server = crate::models::mcp_server::McpServerPo::new(
+            "test-server".to_string(),
+            "test-server".to_string(),
+            crate::models::mcp_server::McpTransport::Stdio,
+            crate::models::mcp_server::McpServerConfig::default_stdio(),
+            None,
+        );
+        let mut config = server.config();
+        config.credential_requirements = vec![common::models::CredentialRequirement {
+            kind: common::models::CredentialKind::GenericToken,
+            platform: Some(platform.to_string()),
+            field: None,
+            enhancer: None,
+            binding: common::models::CredentialBinding::Env {
+                name: "TEST_CREDENTIAL".to_string(),
+            },
+        }];
+        server.set_config(&config);
+        server
+    }
+
     fn test_tool_call_entry(
         call_id: &str,
         tool_id: &str,
@@ -952,6 +1039,89 @@ mod tests {
             po.install_tag(tag);
         }
         Agent::from_po(po)
+    }
+
+    /// 修复验证①：MCP server 行声明传导——有声明且凭据未命中 → credential_missing
+    /// 结构化引导，阻断在编排层（不构造执行实例、不进 DAL）
+    #[tokio::test]
+    async fn runtime_mcp_tool_server_row_declaration_missing_credential_returns_guidance() {
+        let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::with_server(
+            mcp_server_with_requirements("ledger"),
+        ));
+        let (_temp_dir, runtime) =
+            test_runtime_with_tool_dals(tool_dal.clone(), mcp_tool_dal.clone());
+
+        let result = runtime
+            .tool_execution()
+            .call_tool_by_id(test_ctx(), "mcp-tool-1".to_string(), json!({}))
+            .await
+            .unwrap();
+
+        assert_eq!(result.result["error_code"], "api_key_missing");
+        assert!(
+            result.result["error"]
+                .as_str()
+                .unwrap()
+                .contains("generic_token/ledger")
+        );
+        assert_eq!(
+            mcp_tool_dal.call_tool_calls(),
+            0,
+            "凭据缺失须阻断在编排层，不进 DAL"
+        );
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+    }
+
+    /// 修复验证②：无声明 → 空需求 → 空注入，现状语义逐字节不变（正常进 DAL）
+    #[tokio::test]
+    async fn runtime_mcp_tool_without_server_row_declaration_keeps_empty_injection_semantics() {
+        let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let (_temp_dir, runtime) =
+            test_runtime_with_tool_dals(tool_dal.clone(), mcp_tool_dal.clone());
+
+        let result = runtime
+            .tool_execution()
+            .call_tool_by_id(test_ctx(), "mcp-tool-1".to_string(), json!({}))
+            .await
+            .unwrap();
+
+        assert_eq!(result.result["called_by"], "mcp_tool_dal");
+        assert_eq!(mcp_tool_dal.call_tool_calls(), 1);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+    }
+
+    /// 修复验证③：server 行声明变更 per-call 即时生效（首次无声明直达 DAL；
+    /// 补声明后下一次调用即被编排层阻断，无需重启/sync）
+    #[tokio::test]
+    async fn runtime_mcp_tool_server_row_declaration_change_takes_effect_per_call() {
+        let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let (_temp_dir, runtime) =
+            test_runtime_with_tool_dals(tool_dal.clone(), mcp_tool_dal.clone());
+
+        let first = runtime
+            .tool_execution()
+            .call_tool_by_id(test_ctx(), "mcp-tool-1".to_string(), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(first.result["called_by"], "mcp_tool_dal");
+
+        // 模拟编辑 Modal 保存声明：下一次 get_by_id 按新 server 行组装
+        mcp_tool_dal.set_server(mcp_server_with_requirements("ledger"));
+
+        let second = runtime
+            .tool_execution()
+            .call_tool_by_id(test_ctx(), "mcp-tool-1".to_string(), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(second.result["error_code"], "api_key_missing");
+        assert_eq!(
+            mcp_tool_dal.call_tool_calls(),
+            1,
+            "第二笔须被编排层阻断，不进 DAL"
+        );
     }
 
     #[tokio::test]

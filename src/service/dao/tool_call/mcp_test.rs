@@ -79,3 +79,52 @@ fn mcp_tool_call_assembles_mcp_core_tool_with_server_runtime_deps() {
     assert_eq!(assembled.po().id, po.id);
     assert_eq!(assembled.po().protocol, ToolProtocol::Mcp);
 }
+
+#[test]
+fn mcp_core_tool_credential_requirements_reads_server_row_declaration() {
+    use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
+
+    let base = tool_call::new();
+    let mcp_tool_call_dao = tool_call::new_mcp_tool_call_dao(base);
+    let po = mcp_tool_po("filesystem-server", "read_file");
+    let mut server = mcp_server("filesystem-server");
+    let mut config = server.config();
+    config.credential_requirements = vec![CredentialRequirement {
+        kind: CredentialKind::GenericToken,
+        platform: Some("ledger".to_string()),
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Env {
+            name: "LEDGER_CREDENTIAL".to_string(),
+        },
+    }];
+    server.set_config(&config);
+
+    let assembled = mcp_tool_call_dao
+        .assemble_mcp_core_tool(&po, &server)
+        .expect("mcp-specific assemble should succeed")
+        .expect("valid MCP tool/server config should create a CoreTool");
+
+    let requirements = assembled.credential_requirements();
+    assert_eq!(requirements.len(), 1, "实例桥应读出 server 行声明");
+    assert_eq!(requirements[0].kind, CredentialKind::GenericToken);
+    assert_eq!(requirements[0].platform.as_deref(), Some("ledger"));
+}
+
+#[test]
+fn mcp_core_tool_credential_requirements_empty_without_server_declaration() {
+    let base = tool_call::new();
+    let mcp_tool_call_dao = tool_call::new_mcp_tool_call_dao(base);
+    let po = mcp_tool_po("filesystem-server", "read_file");
+    let server = mcp_server("filesystem-server");
+
+    let assembled = mcp_tool_call_dao
+        .assemble_mcp_core_tool(&po, &server)
+        .expect("mcp-specific assemble should succeed")
+        .expect("valid MCP tool/server config should create a CoreTool");
+
+    assert!(
+        assembled.credential_requirements().is_empty(),
+        "server 行未声明时实例桥应返回空需求（现状语义）"
+    );
+}
