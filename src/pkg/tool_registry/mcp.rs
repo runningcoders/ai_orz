@@ -14,13 +14,18 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
 use common::error::{Result, err};
+use reqwest::header::{HeaderName, HeaderValue};
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+};
 use rmcp::{
     RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService,
     transport::TokioChildProcess,
 };
-use serde_json::Value;
-use std::collections::HashSet;
+use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
@@ -37,11 +42,31 @@ pub struct RemoteMcpTool {
     pub input_schema: Value,
 }
 
+/// MCP 凭据注入值（凭据解析链经 `check()` 产出，绑定形态随值携带）。
+///
+/// 消费按 transport 分派：Stdio 取 Env 形态（子进程环境变量）；StreamableHttp 取
+/// Header 形态（连接请求头，initialize 及后续请求均带，http.rs 先例语义）与 Query
+/// 形态（endpoint URL 查询参数）。绑定形态不可丢：裸 (name, value) 混存无法区分
+/// 注入点（http.rs 先例即 Header/Query 分桶承载）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpCredentialInjection {
+    /// 注入 stdio 子进程环境变量
+    Env { name: String, value: String },
+    /// 注入 StreamableHttp 请求头
+    Header { name: String, value: String },
+    /// 注入 StreamableHttp endpoint URL 查询参数
+    Query { name: String, value: String },
+}
+
 /// Minimal MCP client runtime.
 ///
-/// The first executable runtime path is stdio-only. Streamable HTTP stays behind
-/// an explicit not-implemented error until its SSRF and header-safety rules are
-/// implemented in a later phase.
+/// Both transports use per-call short-lived sessions (stdio spawns a fresh
+/// child process per call; Streamable HTTP opens a fresh StreamableHttpClient
+/// session per call/list and closes it afterwards), so credentials only exist
+/// for the duration of a single call. Credential injections carry their
+/// binding kind (env/header/query) and each transport consumes the proper
+/// injection point. Streamable HTTP connection targets are admin-configured
+/// server URLs (management-plane gated, same trust model as stdio commands).
 #[derive(Debug, Default)]
 pub struct McpClientRuntime {
     invalidated_servers: Mutex<HashSet<String>>,
@@ -64,15 +89,23 @@ impl McpClientRuntime {
         server: &McpServerPo,
         tool_name: &str,
         args: Value,
-        env_injections: &[(String, String)],
+        credential_injections: &[McpCredentialInjection],
     ) -> Result<Value> {
+        let arguments = match args {
+            Value::Object(map) => map,
+            _other => {
+                return Err(anyhow!("MCP tool arguments must be a JSON object").into());
+            }
+        };
         let result = match server.transport {
             McpTransport::Stdio => {
-                self.call_stdio_tool(server, tool_name, args, env_injections)
+                let env_injections = env_injection_pairs(credential_injections);
+                self.call_stdio_tool(server, tool_name, arguments, &env_injections)
                     .await
             }
             McpTransport::StreamableHttp => {
-                Err(anyhow!("MCP streamable HTTP runtime is not implemented yet").into())
+                self.call_http_tool(server, tool_name, arguments, credential_injections)
+                    .await
             }
         };
         if result.is_ok() {
@@ -84,12 +117,15 @@ impl McpClientRuntime {
     pub async fn list_tools(
         &self,
         server: &McpServerPo,
-        env_injections: &[(String, String)],
+        credential_injections: &[McpCredentialInjection],
     ) -> Result<Vec<RemoteMcpTool>> {
         let result = match server.transport {
-            McpTransport::Stdio => self.list_stdio_tools(server, env_injections).await,
+            McpTransport::Stdio => {
+                let env_injections = env_injection_pairs(credential_injections);
+                self.list_stdio_tools(server, &env_injections).await
+            }
             McpTransport::StreamableHttp => {
-                Err(anyhow!("MCP streamable HTTP runtime is not implemented yet").into())
+                self.list_http_tools(server, credential_injections).await
             }
         };
         if result.is_ok() {
@@ -124,7 +160,8 @@ impl McpClientRuntime {
         let close_result = client.close().await;
         let tools = list_result?;
         if let Err(_e) = close_result {
-            return Err(anyhow!(mcp_stdio_session_close_failed_message(
+            return Err(anyhow!(mcp_session_close_failed_message(
+                "stdio",
                 &server.id,
                 "tools/list",
             ))
@@ -145,16 +182,9 @@ impl McpClientRuntime {
         &self,
         server: &McpServerPo,
         tool_name: &str,
-        args: Value,
+        arguments: Map<String, Value>,
         env_injections: &[(String, String)],
     ) -> Result<Value> {
-        let arguments = match args {
-            Value::Object(map) => map,
-            _other => {
-                return Err(anyhow!("MCP tool arguments must be a JSON object").into());
-            }
-        };
-
         let config = server.config();
         let mut client = connect_stdio_client(server, &config, env_injections).await?;
 
@@ -183,7 +213,99 @@ impl McpClientRuntime {
         let close_result = client.close().await;
         let result = call_result?;
         if let Err(_e) = close_result {
-            return Err(anyhow!(mcp_stdio_session_close_failed_message(
+            return Err(anyhow!(mcp_session_close_failed_message(
+                "stdio",
+                &server.id,
+                &format!("tool call {}", tool_name),
+            ))
+            .into());
+        }
+
+        serde_json::to_value(result)
+            .map_err(|e| anyhow!("failed to serialize MCP tool result: {}", e).into())
+    }
+
+    async fn list_http_tools(
+        &self,
+        server: &McpServerPo,
+        credential_injections: &[McpCredentialInjection],
+    ) -> Result<Vec<RemoteMcpTool>> {
+        let config = server.config();
+        let mut client = connect_http_client(server, &config, credential_injections).await?;
+
+        let list_result = match tokio::time::timeout(
+            Duration::from_millis(config.timeout_ms),
+            client.peer().list_all_tools(),
+        )
+        .await
+        {
+            Ok(Ok(tools)) => Ok(tools),
+            Ok(Err(_e)) => Err(anyhow!("MCP tools/list on server {} failed", server.id)),
+            Err(_) => Err(anyhow!(
+                "MCP tools/list on server {} timed out after {}ms",
+                server.id,
+                config.timeout_ms
+            )),
+        };
+
+        let close_result = client.close().await;
+        let tools = list_result?;
+        if let Err(_e) = close_result {
+            return Err(anyhow!(mcp_session_close_failed_message(
+                "streamable HTTP",
+                &server.id,
+                "tools/list",
+            ))
+            .into());
+        }
+
+        Ok(tools
+            .into_iter()
+            .map(|tool| RemoteMcpTool {
+                name: tool.name.to_string(),
+                description: tool.description.map(|description| description.to_string()),
+                input_schema: Value::Object(tool.input_schema.as_ref().clone()),
+            })
+            .collect())
+    }
+
+    async fn call_http_tool(
+        &self,
+        server: &McpServerPo,
+        tool_name: &str,
+        arguments: Map<String, Value>,
+        credential_injections: &[McpCredentialInjection],
+    ) -> Result<Value> {
+        let config = server.config();
+        let mut client = connect_http_client(server, &config, credential_injections).await?;
+
+        let params = CallToolRequestParams::new(tool_name.to_string()).with_arguments(arguments);
+
+        let call_result = match tokio::time::timeout(
+            Duration::from_millis(config.timeout_ms),
+            client.peer().call_tool(params),
+        )
+        .await
+        {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(_e)) => Err(anyhow!(
+                "MCP tool {} on server {} call failed",
+                tool_name,
+                server.id
+            )),
+            Err(_) => Err(anyhow!(
+                "MCP tool {} on server {} timed out after {}ms",
+                tool_name,
+                server.id,
+                config.timeout_ms
+            )),
+        };
+
+        let close_result = client.close().await;
+        let result = call_result?;
+        if let Err(_e) = close_result {
+            return Err(anyhow!(mcp_session_close_failed_message(
+                "streamable HTTP",
                 &server.id,
                 &format!("tool call {}", tool_name),
             ))
@@ -251,10 +373,119 @@ async fn connect_stdio_client(
     Ok(service)
 }
 
-fn mcp_stdio_session_close_failed_message(server_id: &str, operation: &str) -> String {
+async fn connect_http_client(
+    server: &McpServerPo,
+    config: &McpServerConfig,
+    credential_injections: &[McpCredentialInjection],
+) -> common::error::Result<RunningService<RoleClient, ()>> {
+    let url = config
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| anyhow!("MCP streamable HTTP server {} url is required", server.id))?;
+
+    let header_injections: Vec<(String, String)> = credential_injections
+        .iter()
+        .filter_map(|injection| match injection {
+            McpCredentialInjection::Header { name, value } => Some((name.clone(), value.clone())),
+            _ => None,
+        })
+        .collect();
+    let query_injections: Vec<(String, String)> = credential_injections
+        .iter()
+        .filter_map(|injection| match injection {
+            McpCredentialInjection::Query { name, value } => Some((name.clone(), value.clone())),
+            _ => None,
+        })
+        .collect();
+
+    // Header 形态：注入连接请求头，initialize 及后续全部请求由 transport 统一携带
+    //（rmcp StreamableHttpClientTransportConfig::custom_headers 全请求应用，http.rs 先例语义）。
+    let custom_headers = streamable_http_custom_headers(&server.id, &header_injections)?;
+    // Query 形态：在 endpoint URL 追加查询参数（高德场景 key=<AMAP_KEY>）。
+    let endpoint = streamable_http_endpoint(&server.id, url, &query_injections)?;
+
+    // per-call 短会话（沿 stdio 形态语义：每次调用独立连接、用后即关）：
+    // 凭据只存在于当次会话请求，不存在跨调用复用面。
+    let transport_config =
+        StreamableHttpClientTransportConfig::with_uri(endpoint).custom_headers(custom_headers);
+    let transport = StreamableHttpClientTransport::from_config(transport_config);
+
+    let service = tokio::time::timeout(
+        Duration::from_millis(config.connect_timeout_ms),
+        ().serve(transport),
+    )
+    .await
+    .map_err(|_| {
+        anyhow!(
+            "MCP streamable HTTP server {} session initialization timed out after {}ms",
+            server.id,
+            config.connect_timeout_ms
+        )
+    })?
+    .map_err(|_e| {
+        anyhow!(
+            "failed to initialize MCP streamable HTTP server {} session",
+            server.id
+        )
+    })?;
+
+    Ok(service)
+}
+
+/// 构建 StreamableHttp endpoint URL：把 Query 形态凭据追加为查询参数
+///（percent-encoding 走 serde_urlencoded；URL 已含查询参数时用 `&` 续接）。
+/// endpoint 含凭据值，严禁进入任何错误消息。
+fn streamable_http_endpoint(
+    server_id: &str,
+    url: &str,
+    query_injections: &[(String, String)],
+) -> Result<String> {
+    if query_injections.is_empty() {
+        return Ok(url.to_string());
+    }
+    let encoded = serde_urlencoded::to_string(query_injections)
+        .map_err(|_e| anyhow!("MCP server {} query credential encoding failed", server_id))?;
+    let separator = if url.contains('?') { '&' } else { '?' };
+    Ok(format!("{url}{separator}{encoded}"))
+}
+
+/// 构建 StreamableHttp 注入请求头映射。名字/值非法时报错且不回显凭据值。
+fn streamable_http_custom_headers(
+    server_id: &str,
+    header_injections: &[(String, String)],
+) -> Result<HashMap<HeaderName, HeaderValue>> {
+    let mut headers = HashMap::with_capacity(header_injections.len());
+    for (name, value) in header_injections {
+        let name = HeaderName::from_str(name)
+            .map_err(|_| anyhow!("MCP server {} credential header name is invalid", server_id))?;
+        let value = HeaderValue::from_str(value).map_err(|_| {
+            anyhow!(
+                "MCP server {} credential header value is invalid",
+                server_id
+            )
+        })?;
+        headers.insert(name, value);
+    }
+    Ok(headers)
+}
+
+/// Stdio 侧只消费 Env 形态注入（`check()` 已按 transport 限定注入点合法性，此处过滤兜底）。
+fn env_injection_pairs(credential_injections: &[McpCredentialInjection]) -> Vec<(String, String)> {
+    credential_injections
+        .iter()
+        .filter_map(|injection| match injection {
+            McpCredentialInjection::Env { name, value } => Some((name.clone(), value.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn mcp_session_close_failed_message(transport: &str, server_id: &str, operation: &str) -> String {
     format!(
-        "MCP stdio session close failed after {} on server {}",
-        operation, server_id
+        "MCP {} session close failed after {} on server {}",
+        transport, operation, server_id
     )
 }
 
@@ -295,8 +526,9 @@ pub struct McpCoreTool {
     config: McpToolConfig,
     server: Option<McpServerPo>,
     client_runtime: Option<Arc<McpClientRuntime>>,
-    /// check 写入的凭据注入值（Env/Header/Query 随 transport 分派；D22：凭据是实例状态，实例单次使用不复用）
-    credential_injections: Vec<(String, String)>,
+    /// check 写入的凭据注入值（绑定形态随值携带；D22：凭据是实例状态，实例单次使用不复用。
+    /// runtime 按 transport 分派消费：Stdio→Env 环境变量，StreamableHttp→Header 请求头/Query URL 参数）
+    credential_injections: Vec<McpCredentialInjection>,
 }
 
 impl McpCoreTool {
@@ -386,7 +618,7 @@ impl CoreTool for McpCoreTool {
     fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
         // 注入点合法性随 transport 分派（配置期 validate_requirements 已限定，此处防御兜底）：
         // Stdio 仅 Env；StreamableHttp（McpHttp scope）支持 Header + Query（拓展单1 放宽）。
-        // 注入值统一存 credential_injections，HTTP runtime 侧消费由拓展单2 落地。
+        // 注入值连绑定形态统一存 credential_injections，由 runtime 按 transport 分派消费（拓展单2）。
         let streamable_http = self
             .server
             .as_ref()
@@ -395,13 +627,22 @@ impl CoreTool for McpCoreTool {
         for item in resolved {
             match &item.requirement.binding {
                 common::models::CredentialBinding::Env { name } if !streamable_http => {
-                    injections.push((name.clone(), item.value.clone()));
+                    injections.push(McpCredentialInjection::Env {
+                        name: name.clone(),
+                        value: item.value.clone(),
+                    });
                 }
                 common::models::CredentialBinding::Header { name } if streamable_http => {
-                    injections.push((name.clone(), item.value.clone()));
+                    injections.push(McpCredentialInjection::Header {
+                        name: name.clone(),
+                        value: item.value.clone(),
+                    });
                 }
                 common::models::CredentialBinding::Query { name } if streamable_http => {
-                    injections.push((name.clone(), item.value.clone()));
+                    injections.push(McpCredentialInjection::Query {
+                        name: name.clone(),
+                        value: item.value.clone(),
+                    });
                 }
                 _ => {
                     return Err(err!(

@@ -1,4 +1,7 @@
-use super::{McpClientRuntime, McpToolConfig, McpToolDeps, create_mcp_tool, create_tool};
+use super::{
+    McpClientRuntime, McpCredentialInjection, McpToolConfig, McpToolDeps, create_mcp_tool,
+    create_tool,
+};
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::CoreTool;
 use crate::models::tool::ToolPo;
@@ -322,7 +325,8 @@ async fn mcp_core_tool_calls_stdio_server_through_rmcp_runtime() {
 
 #[test]
 fn mcp_stdio_session_close_failure_message_redacts_lower_layer_details() {
-    let message = super::mcp_stdio_session_close_failed_message("private-server", "tool call echo");
+    let message =
+        super::mcp_session_close_failed_message("stdio", "private-server", "tool call echo");
 
     assert!(message.contains("MCP stdio session close failed"));
     assert!(message.contains("private-server"));
@@ -926,4 +930,359 @@ fn stdio_check_still_rejects_query_binding() {
         }])
         .expect_err("stdio MCP check must reject Query bindings");
     assert!(err.to_string().contains("仅支持 env"), "{err}");
+}
+
+// ==================== 拓展单2：StreamableHTTP runtime（连接/注入/脱敏/失败路径） ====================
+
+fn streamable_http_server_with_url(url: Option<String>) -> McpServerPo {
+    McpServerPo::new(
+        "http-echo-server".to_string(),
+        "http-echo-test".to_string(),
+        McpTransport::StreamableHttp,
+        McpServerConfig {
+            url,
+            ..McpServerConfig::default_streamable_http()
+        },
+        Some("test".to_string()),
+    )
+}
+
+fn http_credential_injections() -> Vec<McpCredentialInjection> {
+    vec![
+        McpCredentialInjection::Header {
+            name: "Authorization".to_string(),
+            value: "Bearer <AMAP_KEY>".to_string(),
+        },
+        McpCredentialInjection::Query {
+            name: "key".to_string(),
+            value: "<AMAP_KEY>".to_string(),
+        },
+    ]
+}
+
+/// Query 形态注入的 endpoint 拼接：追加用 ?、续接用 &、值经 percent-encoding。
+#[test]
+fn streamable_http_endpoint_appends_and_encodes_query_credentials() {
+    use super::streamable_http_endpoint;
+
+    // 无注入：URL 原样返回
+    assert_eq!(
+        streamable_http_endpoint("srv", "https://mcp.example.invalid/mcp", &[]).unwrap(),
+        "https://mcp.example.invalid/mcp"
+    );
+    // 追加形态：无既有 query 用 ?
+    assert_eq!(
+        streamable_http_endpoint(
+            "srv",
+            "https://mcp.example.invalid/mcp",
+            &[("key".to_string(), "<AMAP_KEY>".to_string())]
+        )
+        .unwrap(),
+        "https://mcp.example.invalid/mcp?key=%3CAMAP_KEY%3E"
+    );
+    // 续接形态：URL 已含 query 用 &
+    assert_eq!(
+        streamable_http_endpoint(
+            "srv",
+            "https://mcp.example.invalid/mcp?lang=zh",
+            &[("key".to_string(), "<AMAP_KEY>".to_string())]
+        )
+        .unwrap(),
+        "https://mcp.example.invalid/mcp?lang=zh&key=%3CAMAP_KEY%3E"
+    );
+    // 值中保留字符（空格/&/=）必须被编码，避免凭据值破坏 URL 结构
+    assert_eq!(
+        streamable_http_endpoint(
+            "srv",
+            "https://mcp.example.invalid/mcp",
+            &[("key".to_string(), "a b&c=d".to_string())]
+        )
+        .unwrap(),
+        "https://mcp.example.invalid/mcp?key=a+b%26c%3Dd"
+    );
+}
+
+/// Header 形态注入的请求头构造：合法名值成对；非法名/非法值报错且回显零凭据值。
+#[test]
+fn streamable_http_custom_headers_build_and_rejects_invalid_input() {
+    use super::streamable_http_custom_headers;
+
+    let headers = streamable_http_custom_headers(
+        "srv",
+        &[("Authorization".to_string(), "Bearer <AMAP_KEY>".to_string())],
+    )
+    .expect("valid header injection should build");
+    assert_eq!(headers.len(), 1);
+
+    let err = streamable_http_custom_headers(
+        "srv",
+        &[("bad header".to_string(), "Bearer <AMAP_KEY>".to_string())],
+    )
+    .expect_err("invalid header name must be rejected");
+    let message = err.to_string();
+    assert!(
+        message.contains("credential header name is invalid"),
+        "{message}"
+    );
+    assert!(!message.contains("<AMAP_KEY>"), "{message}");
+
+    let err = streamable_http_custom_headers(
+        "srv",
+        &[("Authorization".to_string(), "bad\nvalue".to_string())],
+    )
+    .expect_err("invalid header value must be rejected");
+    let message = err.to_string();
+    assert!(
+        message.contains("credential header value is invalid"),
+        "{message}"
+    );
+    assert!(!message.contains("bad\nvalue"), "{message}");
+}
+
+/// Stdio 侧只消费 Env 形态注入：Header/Query 形态被过滤兜底（check() 已按 transport 限定）。
+#[test]
+fn env_injection_pairs_filters_env_only_for_stdio() {
+    use super::env_injection_pairs;
+
+    let pairs = env_injection_pairs(&[
+        McpCredentialInjection::Env {
+            name: "LEDGER_CREDENTIAL".to_string(),
+            value: "env-secret".to_string(),
+        },
+        McpCredentialInjection::Header {
+            name: "Authorization".to_string(),
+            value: "Bearer x".to_string(),
+        },
+        McpCredentialInjection::Query {
+            name: "key".to_string(),
+            value: "q-secret".to_string(),
+        },
+    ]);
+    assert_eq!(
+        pairs,
+        vec![("LEDGER_CREDENTIAL".to_string(), "env-secret".to_string())]
+    );
+}
+
+/// StreamableHttp 无 url 配置：连接前置校验 fail-fast。
+#[tokio::test]
+async fn streamable_http_runtime_fails_fast_without_server_url() {
+    let runtime = McpClientRuntime::default();
+    let server = streamable_http_server_with_url(None);
+
+    let error = runtime
+        .list_tools(&server, &[])
+        .await
+        .expect_err("StreamableHttp server without url must fail fast");
+    assert!(error.to_string().contains("url is required"), "{error}");
+}
+
+/// StreamableHttp 非对象参数：连接前置校验（不产生网络副作用）。
+#[tokio::test]
+async fn streamable_http_runtime_rejects_non_object_args_before_connecting() {
+    let runtime = McpClientRuntime::default();
+    let server =
+        streamable_http_server_with_url(Some("https://mcp.example.invalid/mcp".to_string()));
+
+    let error = runtime
+        .call_tool(&server, "echo", json!("not-an-object"), &[])
+        .await
+        .expect_err("non-object args must be rejected before connecting");
+    assert!(
+        error
+            .to_string()
+            .contains("MCP tool arguments must be a JSON object"),
+        "{error}"
+    );
+}
+
+/// StreamableHttp 不可达端点（tools/call）：失败路径安全 + 错误消息零凭据值。
+#[tokio::test]
+async fn streamable_http_call_fails_safely_on_unreachable_endpoint() {
+    let runtime = McpClientRuntime::default();
+    // 127.0.0.1:9（discard 端口）连接拒绝：错误消息只含 server id，零 URL/注入值回显
+    let server = streamable_http_server_with_url(Some("http://127.0.0.1:9/mcp".to_string()));
+
+    let error = runtime
+        .call_tool(
+            &server,
+            "echo",
+            json!({ "text": "hello" }),
+            &http_credential_injections(),
+        )
+        .await
+        .expect_err("unreachable endpoint must fail safely");
+    let message = error.to_string();
+    assert!(
+        message
+            .contains("failed to initialize MCP streamable HTTP server http-echo-server session"),
+        "{message}"
+    );
+    assert!(!message.contains("<AMAP_KEY>"), "{message}");
+    assert!(!message.contains("127.0.0.1:9"), "{message}");
+}
+
+/// StreamableHttp 不可达端点（tools/list）：失败路径安全 + 错误消息零凭据值。
+#[tokio::test]
+async fn streamable_http_list_fails_safely_on_unreachable_endpoint() {
+    let runtime = McpClientRuntime::default();
+    let server = streamable_http_server_with_url(Some("http://127.0.0.1:9/mcp".to_string()));
+
+    let error = runtime
+        .list_tools(&server, &http_credential_injections())
+        .await
+        .expect_err("unreachable endpoint must fail safely");
+    let message = error.to_string();
+    assert!(
+        message
+            .contains("failed to initialize MCP streamable HTTP server http-echo-server session"),
+        "{message}"
+    );
+    assert!(!message.contains("<AMAP_KEY>"), "{message}");
+    assert!(!message.contains("127.0.0.1:9"), "{message}");
+}
+
+/// 本地 mock MCP server 端到端会话：完整 initialize→tools/list→tools/call 链路，
+/// Header/Query 注入被服务端实证收到，会话用后即关（per-call 短会话语义）。
+#[tokio::test]
+async fn streamable_http_end_to_end_mock_server_header_and_query_injection() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    let script = r#"
+import json
+import socket
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+PORT = sock.getsockname()[1]
+sock.close()
+print(PORT, flush=True)
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        try:
+            message = json.loads(body)
+        except Exception:
+            self.send_response(400)
+            self.end_headers()
+            return
+        method = message.get("method", "")
+        request_id = message.get("id")
+        if method.startswith("notifications/"):
+            self.send_response(202)
+            self.end_headers()
+            return
+        if method == "initialize":
+            result = {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "http-mock", "version": "1.0.0"},
+            }
+        elif method == "tools/list":
+            result = {
+                "tools": [
+                    {
+                        "name": "echo",
+                        "description": "Echo input text",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"text": {"type": "string"}},
+                            "required": ["text"],
+                        },
+                    }
+                ]
+            }
+        elif method == "tools/call":
+            args = message.get("params", {}).get("arguments", {})
+            text = args.get("text", "")
+            result = {
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": {
+                    "echo": text,
+                    "auth_seen": self.headers.get("Authorization", ""),
+                    "key_seen": self.path.split("key=")[-1].split("&")[0],
+                },
+                "isError": False,
+            }
+        else:
+            self.send_response(400)
+            self.end_headers()
+            return
+        resp = json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(resp)))
+        self.end_headers()
+        self.wfile.write(resp)
+
+    def log_message(self, *args):
+        pass
+
+HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+"#;
+
+    let mut script_file =
+        tempfile::NamedTempFile::new().expect("temp mock script should be created");
+    std::io::Write::write_all(&mut script_file, script.as_bytes())
+        .expect("temp mock script should be written");
+
+    let mut child = Command::new("python3")
+        .arg(script_file.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("python3 should be available for the mock MCP server");
+    let mock_pid = child.id();
+    let port_line = BufReader::new(child.stdout.take().expect("mock stdout"))
+        .lines()
+        .next()
+        .expect("mock server should print its port")
+        .expect("mock server port line should be readable");
+    let port: u16 = port_line
+        .trim()
+        .parse()
+        .expect("mock port should be numeric");
+
+    let runtime = McpClientRuntime::default();
+    let server = streamable_http_server_with_url(Some(format!("http://127.0.0.1:{port}/mcp")));
+
+    // tools/list：完整会话 + 远端工具发现
+    let tools = runtime
+        .list_tools(&server, &http_credential_injections())
+        .await
+        .expect("mock StreamableHttp session should list tools");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].name, "echo");
+    assert_eq!(tools[0].description.as_deref(), Some("Echo input text"));
+    assert_eq!(tools[0].input_schema["type"], "object");
+
+    // tools/call：注入实证——服务端回显收到的 Authorization 头与 key 查询参数
+    let result = runtime
+        .call_tool(
+            &server,
+            "echo",
+            json!({ "text": "hello-http" }),
+            &http_credential_injections(),
+        )
+        .await
+        .expect("mock StreamableHttp session should call the tool");
+    assert_eq!(result["structuredContent"]["echo"], "hello-http");
+    assert_eq!(result["isError"], false);
+    assert_eq!(
+        result["structuredContent"]["auth_seen"], "Bearer <AMAP_KEY>",
+        "Authorization header injection must reach the server on every request"
+    );
+    assert_eq!(
+        result["structuredContent"]["key_seen"], "%3CAMAP_KEY%3E",
+        "query credential must be percent-encoded on the endpoint URL"
+    );
+
+    // mock 进程显式回收（std::process::Command 无 kill_on_drop；防残留进程占用端口）
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = mock_pid;
 }
