@@ -148,22 +148,19 @@ async fn mcp_server_dal_create_rejects_stdio_without_command_and_does_not_persis
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn mcp_server_dal_create_rejects_streamable_http_until_security_policy_exists(
+async fn mcp_server_dal_create_accepts_public_https_streamable_http_endpoint(
     pool: SqlitePool,
 ) -> Result<()> {
     let (dal, _mcp_tool_call_dao, ctx) = init_test_env(pool);
-    let server = streamable_http_server("pending-http-server", "http", "test-user");
+    let server = streamable_http_server("public-http-server", "http", "test-user");
 
-    let result = dal.create(ctx.clone(), &server).await;
+    dal.create(ctx.clone(), &server).await?;
 
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
-    assert!(
-        dal.find_by_id(ctx.clone(), "pending-http-server")
-            .await?
-            .is_none()
-    );
+    let persisted = dal
+        .find_by_id(ctx.clone(), "public-http-server")
+        .await?
+        .expect("public https streamable_http server should persist");
+    assert_eq!(persisted.po.transport, McpTransport::StreamableHttp);
     Ok(())
 }
 
