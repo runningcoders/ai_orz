@@ -249,6 +249,21 @@ async fn mcp_tool_dal_syncs_stdio_server_tools_into_tool_records(pool: SqlitePoo
     assert!(persisted.tags.contains(&"mcp".to_string()));
     assert!(persisted.tags.contains(&"echo-server".to_string()));
     assert!(persisted.tags.contains(&"echo".to_string()));
+    // 方案 A 位次契约：tags[0]=server.name（前端分组键）、tags[1]="mcp"（协议筛选保留位）、
+    // tags[2]=server.id、tags[3]=remote_tool.name。
+    // fixture 实值：server.id="echo-server"、server.name="echo"（恰与 tool name "echo" 同形）。
+    // tags 系 JSON string 落库形态：解析后做精确位次断言
+    let synced_tags: Vec<String> =
+        serde_json::from_str(&persisted.tags).expect("synced tags should be a valid JSON array");
+    assert_eq!(
+        synced_tags,
+        vec![
+            "echo".to_string(),
+            "mcp".to_string(),
+            "echo-server".to_string(),
+            "echo".to_string(),
+        ]
+    );
     Ok(())
 }
 

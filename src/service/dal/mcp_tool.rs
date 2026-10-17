@@ -312,6 +312,7 @@ fn build_synced_tool_po(
         }),
         Some(remote_tool.input_schema.clone()),
         vec![
+            server.name.clone(),
             "mcp".to_string(),
             server.id.clone(),
             remote_tool.name.clone(),
