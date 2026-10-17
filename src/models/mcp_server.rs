@@ -181,6 +181,33 @@ fn redact_url_userinfo(url: &str) -> String {
     )
 }
 
+/// 底层错误文本的 URL 脱敏出口（Task 3.3 顺带项 B）：
+/// 错误文本内嵌的 URL 携带 query（可能含 ?key= 凭据值）进日志前整段替换。
+/// 内嵌 URL 无锚定形态，先收紧到候选起点（scheme 分隔符后跟域名字符段）再脱敏；
+/// 逐 token 处理（空白/引号/反引号/括号/逗号/分号分隔），token 内含 scheme 即按 URL 处理。
+pub(crate) fn redact_url_for_logging(text: &str) -> String {
+    let split_mask = |ch: char| {
+        ch.is_whitespace()
+            || matches!(
+                ch,
+                '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
+            )
+    };
+    text.split(split_mask)
+        .map(|token| {
+            let probe = token.trim_start_matches(['<', '=']);
+            if probe.len() >= 8 && probe.as_bytes()[..8].eq_ignore_ascii_case(b"https://")
+                || probe.len() >= 7 && probe.as_bytes()[..7].eq_ignore_ascii_case(b"http://")
+            {
+                redact_url_query(token)
+            } else {
+                token.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn redact_url_query(url: &str) -> String {
     let Some(query_start) = url.find('?') else {
         return url.to_string();

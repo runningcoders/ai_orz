@@ -865,3 +865,264 @@ fn mcp_tool_global_dal_invalidates_global_mcp_tool_call_runtime() {
         "global McpToolDal must reuse tool_call::mcp_dao() so invalidation reaches the same runtime"
     );
 }
+
+// ==================== sync 凭据编排测试（Task 3.3 补完） ====================
+
+fn amap_sync_server(
+    id: &str,
+    url: String,
+    requirements: Vec<common::models::CredentialRequirement>,
+) -> McpServerPo {
+    McpServerPo::new(
+        id.to_string(),
+        "amap".to_string(),
+        McpTransport::StreamableHttp,
+        McpServerConfig {
+            url: Some(url),
+            credential_requirements: requirements,
+            ..McpServerConfig::default_streamable_http()
+        },
+        Some("test-user".to_string()),
+    )
+}
+
+fn amap_query_requirement() -> common::models::CredentialRequirement {
+    common::models::CredentialRequirement {
+        kind: common::models::CredentialKind::GenericToken,
+        platform: Some("amap".to_string()),
+        field: None,
+        enhancer: None,
+        binding: common::models::CredentialBinding::Query {
+            name: "key".to_string(),
+        },
+    }
+}
+
+/// 种子：test-user + generic_token(platform=amap) 默认凭证（明文占位符直通兼容）
+async fn seed_default_amap_credential(pool: &SqlitePool) {
+    crate::service::dao::user::init();
+    crate::service::dao::user_credential::init();
+    // dal 层单例（生产由 dal::init_all 保序装配；测试显式装配）
+    crate::service::dal::user::init();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
+    let user = crate::models::user::UserPo::new(
+        "test-user".to_string(),
+        "org-test".to_string(),
+        "test-user-name".to_string(),
+        "test-user-display".to_string(),
+        String::new(),
+        String::new(),
+        common::enums::UserRole::Member,
+        "admin".to_string(),
+    );
+    crate::service::dao::user::dao()
+        .insert(ctx.clone(), &user)
+        .await
+        .unwrap();
+    let mut po = crate::models::user_credential::UserCredentialPo::new(
+        "cred-amap".to_string(),
+        "org-test".to_string(),
+        "test-user".to_string(),
+        common::models::CredentialKind::GenericToken,
+        "amap-key".to_string(),
+        common::models::CredentialDetail::GenericToken {
+            token: "<AMAP_KEY>".to_string(),
+        },
+        common::models::CredentialVisibility::Private,
+        "admin".to_string(),
+    );
+    po.platform = Some("amap".to_string());
+    crate::service::dao::user_credential::dao()
+        .insert(ctx, &po)
+        .await
+        .unwrap();
+}
+
+/// 本地 mock MCP server 端到端：sync 编排把 Query key 注入传到 list_mcp_tools，
+/// 服务端在 initialize 请求实测收到 ?key=<AMAP_KEY>（injection 构造正确传入的可观测断言）。
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_passes_query_credential_injection_to_runtime(pool: SqlitePool) {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    seed_default_amap_credential(&pool).await;
+    let (dal, ctx) = init_test_env(pool);
+
+    let script = r#"
+import json
+import socket
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+PORT = sock.getsockname()[1]
+sock.close()
+print(PORT, flush=True)
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        try:
+            message = json.loads(body)
+        except Exception:
+            self.send_response(400)
+            self.end_headers()
+            return
+        method = message.get("method", "")
+        request_id = message.get("id")
+        if method.startswith("notifications/"):
+            self.send_response(202)
+            self.end_headers()
+            return
+        if method == "initialize":
+            result = {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "sync-mock", "version": "1.0.0"},
+            }
+        elif method == "tools/list":
+            result = {
+                "tools": [
+                    {
+                        "name": "echo",
+                        "description": "Echo input text",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"text": {"type": "string"}},
+                            "required": ["text"],
+                        },
+                    }
+                ]
+            }
+        else:
+            self.send_response(400)
+            self.end_headers()
+            return
+        resp = json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(resp)))
+        self.end_headers()
+        self.wfile.write(resp)
+
+    def log_message(self, *args):
+        pass
+
+HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+"#;
+    let mut script_file =
+        tempfile::NamedTempFile::new().expect("temp mock script should be created");
+    std::io::Write::write_all(&mut script_file, script.as_bytes())
+        .expect("temp mock script should be written");
+
+    let mut child = Command::new("python3")
+        .arg(script_file.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("python3 should be available for the mock MCP server");
+    let mock_pid = child.id();
+    let port_line = BufReader::new(child.stdout.take().expect("mock stdout"))
+        .lines()
+        .next()
+        .expect("mock server should print its port")
+        .expect("mock server port line should be readable");
+    let port: u16 = port_line
+        .trim()
+        .parse()
+        .expect("mock port should be numeric");
+
+    let server = amap_sync_server(
+        "amap-sync-server",
+        format!("http://127.0.0.1:{port}/mcp"),
+        vec![amap_query_requirement()],
+    );
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await
+        .unwrap();
+
+    let synced = dal
+        .sync_from_server(ctx.clone(), &server.id)
+        .await
+        .expect("sync with seeded default credential should succeed");
+    assert_eq!(synced, 1, "mock exposes exactly one tool");
+
+    child.kill().expect("mock server should be stopped");
+    let _ = child.wait();
+    let _ = mock_pid;
+}
+
+/// 缺凭证场景：sync 失败 + 引导性错误文案（带 server id；零 URL 零凭据回显）。
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_fails_with_guidance_when_credential_missing(pool: SqlitePool) {
+    // 编排触达 user dal 单例（生产由 dal::init_all 保序装配；测试显式装配），
+    // find_default 无命中 → 引导性错误路径
+    crate::service::dao::user::init();
+    crate::service::dao::user_credential::init();
+    crate::service::dal::user::init();
+    let (dal, ctx) = init_test_env(pool);
+
+    let server = amap_sync_server(
+        "amap-missing-server",
+        "https://mcp.example.invalid/mcp".to_string(),
+        vec![amap_query_requirement()],
+    );
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await
+        .unwrap();
+
+    let error = dal
+        .sync_from_server(ctx.clone(), &server.id)
+        .await
+        .expect_err("sync must fail when the default credential is missing");
+    let message = error.to_string();
+    assert!(
+        message.contains("amap-missing-server"),
+        "guidance error must carry server id: {message}"
+    );
+    assert!(
+        message.contains("generic_token/amap"),
+        "guidance error must name the missing credential kind/platform: {message}"
+    );
+    assert!(
+        !message.contains("mcp.example.invalid"),
+        "guidance error must not echo the endpoint URL: {message}"
+    );
+    assert!(
+        !message.to_uppercase().contains("AMAP_KEY"),
+        "guidance error must not echo credential placeholder or value: {message}"
+    );
+}
+
+/// ctx.user_id = None 防御路径：有凭据需求 server 的 sync 直接给引导性错误，不 panic。
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_agent_ctx_without_user_id_fails_with_guidance(pool: SqlitePool) {
+    let dal = mcp_tool::new(
+        tool::new_tool_dao(),
+        mcp_server::new_mcp_server_dao(),
+        tool_call::new_mcp_tool_call_dao(tool_call::new()),
+    );
+    let ctx = crate::pkg::request_context_test_support::new_test_agent_ctx("agent-1", pool);
+
+    let server = amap_sync_server(
+        "amap-agent-server",
+        "https://mcp.example.invalid/mcp".to_string(),
+        vec![amap_query_requirement()],
+    );
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await
+        .unwrap();
+
+    let error = dal
+        .sync_from_server(ctx, &server.id)
+        .await
+        .expect_err("agent ctx without user_id must fail with guidance");
+    assert!(
+        error.to_string().contains("amap-agent-server"),
+        "guidance error must carry server id"
+    );
+}

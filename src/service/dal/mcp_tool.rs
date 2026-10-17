@@ -4,10 +4,13 @@
 //! dependency preparation out of the generic `ToolDal`.
 
 use crate::models::mcp_server::McpServerStatus;
+use crate::models::mcp_server::{McpServerPo, McpTransport};
 use crate::models::tool::{Tool, ToolExecutionRequest, ToolPo};
 use crate::pkg::RequestContext;
-use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
+use crate::pkg::credential::FetchedCredential;
+use crate::pkg::tool_registry::mcp::{McpCredentialInjection, McpToolConfig, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
+use crate::service::dal::lark::LarkCredentialDal as _;
 use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery};
 use crate::service::dao::tool_call::{self, McpToolCallDao};
@@ -16,7 +19,9 @@ use async_trait::async_trait;
 use common::api::{ListMcpToolsByServerRequest, PagedResult};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::{Result, bail_err, err};
+use common::models::{CredentialBinding, CredentialDetail, CredentialKind, CredentialRequirement};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 static MCP_TOOL_DAL: OnceLock<Arc<dyn McpToolDal + Send + Sync>> = OnceLock::new();
@@ -106,7 +111,13 @@ impl McpToolDal for McpToolDalImpl {
             bail_err!(ResourceNotFound, "MCP server not found: {}", server_id);
         };
 
-        let remote_tools = self.mcp_tool_call_dao.list_mcp_tools(&server).await?;
+        let remote_tools = self
+            .mcp_tool_call_dao
+            .list_mcp_tools(
+                &server,
+                &resolve_sync_credential_injections(&ctx, &server).await?,
+            )
+            .await?;
         let remote_tool_ids: std::collections::HashSet<String> = remote_tools
             .iter()
             .map(|remote_tool| mcp_tool_record_id(&server.id, &remote_tool.name))
@@ -374,4 +385,121 @@ fn parse_mcp_tool_config(po: &ToolPo) -> Result<McpToolConfig> {
         )
         .with_source::<common::error::Error>(e.into())
     })
+}
+// ==================== sync 凭据编排（Task 3.3 补完，AMan 拍板方案 A） ====================
+
+/// sync 路径凭据解析与注入值构造（domain `resolve_tool_credentials` 同构编排）。
+///
+/// 生产路由二元化（沿 D17 v1.5 先例）：
+/// - `LarkApp` → 渠道路径（`LarkCredentialDal::resolve_credentials_for_user`，明文态）；
+/// - 其余 kind → `ctx.user_id`（缺失即未命中）→ `UserDal::find_default_credential`（DB 加密态）。
+///
+/// 任一需求未命中 → 引导性错误（带 server id；零凭据零完整 URL 回显），sync 失败。
+/// 解密与取值复用 `pkg::credential::resolve_requirements`（AES-256-GCM 链路零明文；
+/// 明文兼容形态仅测试直通，生产值均带 `enc:v1:` 前缀）。
+///
+/// 注：runtime domain 的 `resolve_tool_credentials` 为 `pub(super)`（仅 runtime domain
+/// 内可见），dal 侧不做跨模块调用，按先例同构自持编排。
+async fn resolve_sync_credential_injections(
+    ctx: &RequestContext,
+    server: &McpServerPo,
+) -> Result<Vec<McpCredentialInjection>> {
+    let requirements = &server.config().credential_requirements;
+    if requirements.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut fetched = Vec::with_capacity(requirements.len());
+    for requirement in requirements {
+        let fetched_credential = match requirement.kind {
+            // 生产路由（D17 v1.5）：LarkApp 走渠道路径（明文态 + 派生属性）
+            CredentialKind::LarkApp => {
+                let creds = crate::service::dal::lark::dal()
+                    .resolve_credentials_for_user(ctx)
+                    .await?
+                    .ok_or_else(|| sync_credential_missing_error(server, requirement))?;
+                FetchedCredential {
+                    credential_id: creds.0.app_id.clone(), // 生产端无独立 id，以 app_id 代
+                    detail: CredentialDetail::LarkApp {
+                        app_id: creds.0.app_id,
+                        app_secret: creds.0.app_secret,
+                        encrypt_key: None,
+                        verification_token: None,
+                    },
+                    attributes: BTreeMap::from([("identity_mode".to_string(), creds.1)]),
+                    already_decrypted: true,
+                }
+            }
+            // 其余 kind 统一走 user dal find_default（纯单轨 D27，无兜底）
+            _ => {
+                let Some(user_id) = ctx.user_id.clone() else {
+                    return Err(sync_credential_missing_error(server, requirement));
+                };
+                let credential = crate::service::dal::user::dal()
+                    .find_default_credential(
+                        ctx.clone(),
+                        &user_id,
+                        requirement.kind,
+                        requirement.platform.as_deref(),
+                    )
+                    .await?
+                    .ok_or_else(|| sync_credential_missing_error(server, requirement))?;
+                FetchedCredential {
+                    credential_id: credential.id().to_string(),
+                    detail: credential.detail().clone(),
+                    attributes: BTreeMap::new(),
+                    already_decrypted: false,
+                }
+            }
+        };
+        fetched.push(fetched_credential);
+    }
+
+    let resolved = crate::pkg::credential::resolve_requirements(requirements, &fetched).await?;
+
+    // binding → 注入形态映射（check() 先例同构：Stdio 仅 Env；StreamableHttp Header/Query）
+    let streamable_http = matches!(server.transport, McpTransport::StreamableHttp);
+    let mut injections = Vec::with_capacity(resolved.len());
+    for item in resolved {
+        let injection = match (&item.requirement.binding, streamable_http) {
+            (CredentialBinding::Env { name }, false) => McpCredentialInjection::Env {
+                name: name.clone(),
+                value: item.value.clone(),
+            },
+            (CredentialBinding::Header { name }, true) => McpCredentialInjection::Header {
+                name: name.clone(),
+                value: item.value.clone(),
+            },
+            (CredentialBinding::Query { name }, true) => McpCredentialInjection::Query {
+                name: name.clone(),
+                value: item.value.clone(),
+            },
+            _ => {
+                return Err(err!(
+                    InvalidRequest,
+                    "MCP server {} 凭据注入点与传输方式不匹配（Stdio 仅支持 env，StreamableHttp 支持 header/query）",
+                    server.id
+                ));
+            }
+        };
+        injections.push(injection);
+    }
+    Ok(injections)
+}
+
+/// 凭据未命中引导性错误（带 server id；零凭据零完整 URL 回显）
+fn sync_credential_missing_error(
+    server: &McpServerPo,
+    requirement: &CredentialRequirement,
+) -> common::error::Error {
+    let kind_desc = match &requirement.platform {
+        Some(platform) => format!("{}/{}", requirement.kind.as_str(), platform),
+        None => requirement.kind.as_str().to_string(),
+    };
+    err!(
+        InvalidRequest,
+        "MCP server {} 同步失败：缺少 {} 凭据，请在设置 → 身份凭证录入并设为默认后再同步",
+        server.id,
+        kind_desc
+    )
 }

@@ -8,7 +8,9 @@ use super::ToolCallDao;
 use crate::models::mcp_server::McpServerPo;
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::mcp::{self, McpClientRuntime, McpToolDeps, RemoteMcpTool};
+use crate::pkg::tool_registry::mcp::{
+    self, McpClientRuntime, McpCredentialInjection, McpToolDeps, RemoteMcpTool,
+};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -31,7 +33,13 @@ pub trait McpToolCallDao: ToolCallDao {
 
     fn invalidate_mcp_server(&self, server_id: &str);
 
-    async fn list_mcp_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>>;
+    /// 同步路径凭据注入编排（Task 3.3 补完）：dal sync 编排层 resolve 后传入，此处仅转发。
+    /// 空 slice = 无凭据需求直连（现行为零回归）；非空 = runtime 按 transport 分派消费。
+    async fn list_mcp_tools(
+        &self,
+        server: &McpServerPo,
+        credential_injections: &[McpCredentialInjection],
+    ) -> Result<Vec<RemoteMcpTool>>;
 
     #[cfg(test)]
     fn is_mcp_server_invalidated(&self, server_id: &str) -> bool;
@@ -113,11 +121,15 @@ impl McpToolCallDao for McpToolCallDaoImpl {
         self.client_runtime.invalidate_server(server_id);
     }
 
-    async fn list_mcp_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
-        // 同步路径凭据解析在 Task 3.3 接入（domain sync 编排 resolve 后传入）；
-        // 当前无凭据需求服务器以空注入列表直连
+    async fn list_mcp_tools(
+        &self,
+        server: &McpServerPo,
+        credential_injections: &[McpCredentialInjection],
+    ) -> Result<Vec<RemoteMcpTool>> {
+        // Task 3.3 已接线：dal sync 编排层 resolve 凭据后传入，此处仅转发 runtime；
+        // 无凭据需求服务器以空注入列表直连（现行为零回归）
         self.client_runtime
-            .list_tools(server, &[])
+            .list_tools(server, credential_injections)
             .await
             .map_err(Into::into)
     }

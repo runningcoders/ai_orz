@@ -66,7 +66,9 @@ pub enum McpCredentialInjection {
 /// for the duration of a single call. Credential injections carry their
 /// binding kind (env/header/query) and each transport consumes the proper
 /// injection point. Streamable HTTP connection targets are admin-configured
-/// server URLs (management-plane gated, same trust model as stdio commands).
+/// server URLs (management-plane gated, same trust model as stdio commands);
+/// the same injection set now serves both the runtime call path (check → call)
+/// and the dal sync path (Task 3.3, resolve → list) with identical semantics.
 #[derive(Debug, Default)]
 pub struct McpClientRuntime {
     invalidated_servers: Mutex<HashSet<String>>,
@@ -425,6 +427,15 @@ async fn connect_http_client(
         )
     })?
     .map_err(|_e| {
+        // 顺带项 B（Task 3.3）：Query 注入后底层错误可能携带完整 endpoint URL（含 ?key= 凭据值），
+        // 进日志前必须过 URL 脱敏（models 层 redact 函数族，query 整段替换为 [REDACTED]），
+        // 防凭据泄漏进日志文件；用户面错误消息保持现状（零 URL 零凭据回显）。
+        let detail = crate::models::mcp_server::redact_url_for_logging(&_e.to_string());
+        log_warn!(
+            "MCP streamable HTTP server {} session init failed: {}",
+            server.id,
+            detail
+        );
         anyhow!(
             "failed to initialize MCP streamable HTTP server {} session",
             server.id
@@ -445,8 +456,10 @@ fn streamable_http_endpoint(
     if query_injections.is_empty() {
         return Ok(url.to_string());
     }
-    let encoded = serde_urlencoded::to_string(query_injections)
-        .map_err(|_e| anyhow!("MCP server {} query credential encoding failed", server_id))?;
+    let encoded = serde_urlencoded::to_string(query_injections).map_err(|_e| {
+        log_warn!("MCP server {} query credential encoding failed", server_id);
+        anyhow!("MCP server {} query credential encoding failed", server_id)
+    })?;
     let separator = if url.contains('?') { '&' } else { '?' };
     Ok(format!("{url}{separator}{encoded}"))
 }
