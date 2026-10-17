@@ -4,7 +4,8 @@
 //! 当前含飞书（应用绑定卡 + 用户身份卡）、微信（iLink 机器人卡，扫码授权）、
 //! GitHub（PAT 凭证 + 登录态）、通用 API Token（单字段 API Key 类平台按 platform 分 Tab，
 //! 如 Tavily、豆包搜索）与邮箱机器人（用户自建代理邮箱，按提供商预填 SMTP/IMAP 参数）
-//! 五个子区块；未来新增 Slack 等类型直接加区块。
+//! 四个子区块；原自定义凭证区块已并入通用 Token 区块「全部」Tab（platform 自由输入 +
+//! 跨平台全量表格），防重复维护；未来新增 Slack 等类型直接加区块。
 //!
 //! 飞书区块数据来源 = `GET /api/v1/finance/identity/lark/status` 聚合端点（不缓存 localStorage）。
 //! 微信区块数据来源 = `GET /api/v1/finance/identity/wechat/status` 聚合端点。
@@ -27,7 +28,6 @@ use crate::api::lark_integration::{
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::layouts::app_layout::AppLayout;
-use crate::pages::finance::identity_custom_credentials::IdentityCustomCredentialsSection;
 use crate::pages::finance::identity_email::IdentityEmailSection;
 use crate::pages::finance::identity_generic_token::IdentityGenericTokenSection;
 use crate::pages::finance::identity_github::IdentityGithubSection;
@@ -608,14 +608,12 @@ pub fn FinanceIdentity() -> Element {
                     // ==================== GitHub 凭证子区块 ====================
                     IdentityGithubSection {}
 
-                    // ==================== 通用 API Token 凭证子区块 ====================
-                    IdentityGenericTokenSection {}
-
                     // ==================== 邮箱机器人凭证子区块 ====================
                     IdentityEmailSection {}
 
-                    // ==================== 自定义凭证子区块（页面最下方） ====================
-                    IdentityCustomCredentialsSection {}
+                    // ==================== 通用 API Token 凭证子区块 ====================
+                    IdentityGenericTokenSection {}
+
                 }
             }
 
