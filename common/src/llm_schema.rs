@@ -37,6 +37,13 @@ use serde_json::{Map, Value};
 /// 这里只是防御外部来源（MCP `inputSchema` 是**不可信输入**）构造出的畸形嵌套。
 const MAX_DEPTH: usize = 32;
 
+/// 单次转换允许展开的内部 `$ref` 数量上限。
+///
+/// 外部来源 schema 属**不可信输入**：一个被上百处引用的大 `$defs` 项会被复制
+/// 上百份直送模型，足以吃满上下文窗口。超预算即停止展开（残留 `$ref` 由
+/// `$defs` 兜底）——宁可让模型少看见几个字段，也不让 prompt 膨胀失控。
+const MAX_INLINED_REFS: usize = 64;
+
 // ==================== 公开 API ====================
 
 /// 生成「LLM 友好」的参数 schema（内置工具注册时用）
@@ -61,6 +68,7 @@ pub fn schema_for_llm<T: JsonSchema + ?Sized>() -> Value {
 /// 覆盖三种来源：内置工具（生成侧已处理，再跑一次幂等）、HTTP 自建工具、
 /// 外部 MCP server 同步的 `inputSchema`。
 pub fn to_llm_schema(mut schema: Value) -> Value {
+    inline_local_refs(&mut schema);
     flatten_value(&mut schema, 0);
     strip_root_noise(&mut schema);
     schema
@@ -75,6 +83,157 @@ impl Transform for LlmSchemaFlattener {
         // Schema 是 Value 的薄封装，直接就地改它的 object，不必来回转换
         if let Some(obj) = schema.as_object_mut() {
             flatten_object(obj, 0);
+        }
+    }
+}
+
+// ==================== $ref 内联 ====================
+
+/// 出站侧比生成侧少一道工序：内置工具靠 schemars 的 `inline_subschemas` 在生成
+/// 时就把 `$ref` 摊平了，而用户自填 / 外部 MCP 同步的 schema 是**带着 `$defs`
+/// 直接进库**的。不补这一刀有两层后果：
+///
+/// 1. 模型得自己跳到 `$defs` 才能看见嵌套字段 —— 多数模型不会跳，于是干脆不传；
+/// 2. `anyOf:[{$ref}, {type:"null"}]` 折叠时 `$ref` 分支没有 `type`，
+///    可空对象被写成 `type:["null"]`（见 `collapse_nullable_any_of`）——
+///    模型照字面传字符串 `"null"`，嵌套字段全丢且不报错。
+fn inline_local_refs(root: &mut Value) {
+    let Some(root_obj) = root.as_object_mut() else {
+        return;
+    };
+    let defs = collect_local_defs(root_obj);
+    if defs.is_empty() {
+        return;
+    }
+    let mut unresolved = false;
+    let mut budget = MAX_INLINED_REFS;
+    let mut stack: Vec<String> = Vec::new();
+    inline_refs_in_object(root_obj, &defs, &mut stack, &mut budget, 0, &mut unresolved);
+    // 仍有残留（环引用 / 外部 URI / 预算耗尽）时必须**留住** `$defs`，
+    // 否则剩下的 `$ref` 会变成模型侧解不开的悬空指针。
+    if !unresolved {
+        root_obj.remove("$defs");
+        root_obj.remove("definitions");
+    }
+}
+
+/// 收集根上可解析的子 schema 表（`$defs` 优先于 `definitions`）
+fn collect_local_defs(root: &Map<String, Value>) -> Map<String, Value> {
+    let mut defs = Map::new();
+    for container in ["$defs", "definitions"] {
+        if let Some(Value::Object(subs)) = root.get(container) {
+            for (name, schema) in subs {
+                defs.entry(name.clone()).or_insert_with(|| schema.clone());
+            }
+        }
+    }
+    defs
+}
+
+/// 解析本地引用指针，返回指向的子 schema 名
+///
+/// 只认 `#/$defs/<name>` / `#/definitions/<name>` 两段形态。深层 pointer
+/// （`#/$defs/A/properties/b`）与外部 URI 一律返回 `None`（保守不展开）。
+fn resolve_local_ref(reference: &str) -> Option<String> {
+    let mut parts = reference.strip_prefix("#/")?.split('/');
+    let container = parts.next()?;
+    if container != "$defs" && container != "definitions" {
+        return None;
+    }
+    let name = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    // JSON Pointer 反转义：`~1` = `/`、`~0` = `~`
+    Some(name.replace("~1", "/").replace("~0", "~"))
+}
+
+/// 沿 schema 承载位下钻并就地替换 `$ref`
+///
+/// `stack` 记录当前正在展开的 def 名，用于打破自引用 / 互相引用；
+/// `budget` 控制总展开次数；`unresolved` 记录「存在一个最终没展开的 `$ref`」。
+fn inline_refs_in_object(
+    obj: &mut Map<String, Value>,
+    defs: &Map<String, Value>,
+    stack: &mut Vec<String>,
+    budget: &mut usize,
+    depth: usize,
+    unresolved: &mut bool,
+) {
+    if depth > MAX_DEPTH {
+        *unresolved = true;
+        return;
+    }
+
+    if let Some(Value::String(reference)) = obj.get("$ref").cloned() {
+        match resolve_local_ref(&reference) {
+            // 环：这次不展开（保留 `$ref`），否则无限递归
+            Some(name) if stack.contains(&name) => *unresolved = true,
+            Some(name) => match defs.get(&name) {
+                Some(Value::Object(target)) if *budget > 0 => {
+                    *budget -= 1;
+                    // def 的内容为主，`$ref` 旁的兄弟键补 def 没覆盖的部分
+                    let mut merged = target.clone();
+                    for (k, v) in obj.iter() {
+                        if k == "$ref" {
+                            continue;
+                        }
+                        merged.entry(k.clone()).or_insert(v.clone());
+                    }
+                    // 被展开的目标内部还可能挂着 `$ref`，此时继续下钻
+                    stack.push(name);
+                    inline_refs_in_object(&mut merged, defs, stack, budget, depth + 1, unresolved);
+                    stack.pop();
+                    *obj = merged;
+                    // ⚠️ 必须就此返回：`merged` 的键（含原 `$ref` 旁的兄弟键）
+                    // 上面已处理完。若接着走下方的下钻，`stack` 已出栈，自引用的
+                    // 子树会被当成首次展开再来一遍，一路复制到 MAX_DEPTH
+                    // （实测 Node.child 被复制了 30 层）。
+                    return;
+                }
+                _ => *unresolved = true,
+            },
+            None => *unresolved = true,
+        }
+    }
+
+    // 下钻承载位：与 `recurse_subschemas` 同一套判定，但**不进** `$defs`/`definitions`
+    // ——那里是待查表，走进去会把环按倍率放大。
+    let keys: Vec<String> = obj.keys().cloned().collect();
+    for key in keys {
+        match key.as_str() {
+            "properties" | "patternProperties" | "dependentSchemas" => {
+                if let Some(Value::Object(map)) = obj.get_mut(&key) {
+                    let subs: Vec<String> = map.keys().cloned().collect();
+                    for sk in subs {
+                        if let Some(Value::Object(sub)) = map.get_mut(&sk) {
+                            inline_refs_in_object(sub, defs, stack, budget, depth + 1, unresolved);
+                        }
+                    }
+                }
+            }
+            "anyOf" | "oneOf" | "allOf" | "prefixItems" => {
+                if let Some(Value::Array(arr)) = obj.get_mut(&key) {
+                    for v in arr.iter_mut() {
+                        if let Some(sub) = v.as_object_mut() {
+                            inline_refs_in_object(sub, defs, stack, budget, depth + 1, unresolved);
+                        }
+                    }
+                }
+            }
+            "items"
+            | "additionalProperties"
+            | "propertyNames"
+            | "contains"
+            | "not"
+            | "if"
+            | "then"
+            | "else" => {
+                if let Some(Value::Object(sub)) = obj.get_mut(&key) {
+                    inline_refs_in_object(sub, defs, stack, budget, depth + 1, unresolved);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -255,13 +414,27 @@ fn collapse_nullable_any_of(obj: &mut Map<String, Value>) {
 
     obj.remove("anyOf");
 
+    // ⚠️ 只在 other 分支**显式给出** `type` 时才写回 `type`。
+    // other 是纯 `$ref` 时 `types` 里其实只有我们补的 `"null"`，写出去就成了
+    // `type: ["null"]`——「可空对象」被声明成「只能填 null」。模型照字面提交
+    // 字符串 `"null"`，嵌套字段一个都到不了；而 MCP server 侧往往宽松接受，
+    // 状态仍是 Completed ⇒ **日志零报错的静默丢参**。
+    // （2026-10-18 实证：`add_transaction.location` 7/7 全传 `"null"`，
+    //   `LocationInfo` 的 9 个键（name/addr/city/point/poi_id/adcode/biz/raw/type）全部丢失）
     let mut types: Vec<Value> = Vec::new();
+    let mut typed = false;
     match other_obj.get("type") {
-        Some(Value::String(s)) => types.push(Value::String(s.clone())),
-        Some(Value::Array(a)) => types.extend(a.iter().cloned()),
+        Some(Value::String(s)) => {
+            types.push(Value::String(s.clone()));
+            typed = true;
+        }
+        Some(Value::Array(a)) => {
+            types.extend(a.iter().cloned());
+            typed = true;
+        }
         _ => {}
     }
-    if !types.iter().any(|t| t == "null") {
+    if typed && !types.iter().any(|t| t == "null") {
         types.push(Value::String("null".to_string()));
     }
 
@@ -283,7 +456,8 @@ fn collapse_nullable_any_of(obj: &mut Map<String, Value>) {
         }
         obj.insert(k.clone(), v.clone());
     }
-    if !types.is_empty() {
+    // 未 typed：宁可不写 `type`，也不能写只有 `"null"` 的伪类型
+    if typed && !types.is_empty() {
         obj.insert("type".to_string(), Value::Array(types));
     }
     if let Some(e) = merged_enum {
@@ -485,5 +659,132 @@ mod tests {
             "anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]
         });
         assert_eq!(to_llm_schema(src.clone()), src);
+    }
+
+    // ==================== $ref 内联（出站侧）====================
+
+    /// 真实 MCP 工具 `add_transaction` 的 inputSchema（2026-10-18 从运行库抓取，
+    /// 已裁掉与问题无关的字段）。
+    ///
+    /// 这份夹具的价值在于它**不是**事后编出来的：`location` 的
+    /// `anyOf:[{$ref},{type:null}]` 让模型把 `"null"` 当值传了 7 次，
+    /// `LocationInfo` 的 9 个键一个都没到，而 MCP server 侧宽松接受 ⇒
+    /// 状态 Completed、日志零报错。
+    fn add_transaction_schema() -> Value {
+        serde_json::json!({
+            "type": "object",
+            "title": "add_transaction",
+            "properties": {
+                "txn_type": {
+                    "type": "string",
+                    "enum": ["expense", "income", "transfer"],
+                    "title": "Txn Type"
+                },
+                "amount": {"type": "string", "title": "Amount"},
+                "tags": {
+                    "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
+                    "default": null
+                },
+                "location": {
+                    "anyOf": [{"$ref": "#/$defs/LocationInfo"}, {"type": "null"}],
+                    "default": null
+                }
+            },
+            "required": ["txn_type", "amount"],
+            "$defs": {
+                "LocationInfo": {
+                    "type": "object",
+                    "title": "LocationInfo",
+                    "description": "地点信息结构体。全键 Optional，整体 None=无地点。",
+                    "properties": {
+                        "name": {"anyOf": [{"type": "string", "maxLength": 128}, {"type": "null"}], "default": null},
+                        "addr": {"anyOf": [{"type": "string", "maxLength": 256}, {"type": "null"}], "default": null},
+                        "city": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                        "point": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                        "poi_id": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                        "adcode": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                        "biz": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                        "raw": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                        "type": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null}
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn 可空引用对象_内联后嵌套字段在属性层可见() {
+        let out = to_llm_schema(add_transaction_schema());
+        let location = &out["properties"]["location"];
+        // 关键防线：折叠后必须是「可空对象」，绝不能退化成「只能填 null」
+        assert_eq!(location["type"], serde_json::json!(["object", "null"]));
+        for key in [
+            "name", "addr", "city", "point", "poi_id", "adcode", "biz", "raw",
+        ] {
+            assert_eq!(
+                location["properties"][key]["type"],
+                serde_json::json!(["string", "null"]),
+                "location.{key} 必须在属性层可见且保持可空"
+            );
+        }
+        // 全展开后 $defs 已被丢弃
+        assert!(out.get("$defs").is_none());
+    }
+
+    #[test]
+    fn 外部_mcp_schema_收敛后无未收敛位置() {
+        let out = to_llm_schema(add_transaction_schema());
+        let gaps = unflattened_positions(&out);
+        assert!(gaps.is_empty(), "{gaps:?}");
+    }
+
+    #[test]
+    fn 内联加折叠是幂等的() {
+        let once = to_llm_schema(add_transaction_schema());
+        let twice = to_llm_schema(once.clone());
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn 目标缺失的_ref_不得反推成_null_类型() {
+        let src = serde_json::json!({
+            "properties": {
+                "location": {"anyOf": [{"$ref": "#/$defs/Missing"}, {"type": "null"}]}
+            },
+            "$defs": {"LocationInfo": {"type": "object"}}
+        });
+        let out = to_llm_schema(src);
+        let location = &out["properties"]["location"];
+        assert!(
+            location["type"].is_null(),
+            "未知类型绝不许写成 type:[\"null\"]，实际为 {}",
+            location["type"]
+        );
+        assert_eq!(location["$ref"], serde_json::json!("#/$defs/Missing"));
+    }
+
+    #[test]
+    fn 自引用_schema_不死循环_保留_defs_兜底() {
+        let src = serde_json::json!({
+            "properties": {"node": {"$ref": "#/$defs/Node"}},
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {"child": {"$ref": "#/$defs/Node"}}
+                }
+            }
+        });
+        let out = to_llm_schema(src);
+        // 外层照常展开
+        assert_eq!(
+            out["properties"]["node"]["type"],
+            serde_json::json!("object")
+        );
+        // 内层的环保留 $ref，$defs 随之保留以免成为悬空指针
+        assert_eq!(
+            out["properties"]["node"]["properties"]["child"]["$ref"],
+            serde_json::json!("#/$defs/Node")
+        );
+        assert!(out["$defs"]["Node"].is_object());
     }
 }

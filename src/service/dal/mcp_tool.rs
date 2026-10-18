@@ -142,6 +142,25 @@ impl McpToolDal for McpToolDalImpl {
                 );
                 continue;
             }
+            // LLM 可见性护栏：出站前 `to_llm_schema` 会把内部 `$ref` 就地展开，
+            // 展开后**仍然**未收敛的位置（残留 `$ref` / 可压平的 `oneOf` /
+            // 可折叠的可空 `anyOf`）意味着模型看到的字段定义不完整——典型症状是
+            // 嵌套对象参数被传成 `"null"` 字符串，MCP server 宽松接受后状态仍是
+            // Completed，日志零报错 ⇒ 静默丢参（2026-10-18 实证：
+            // add_transaction.location 7/7 丢光 LocationInfo 的 9 个键）。
+            // 只告警、不拦：schema 本身可用，只是对模型不友好。
+            let llm_view = common::llm_schema::to_llm_schema(remote_tool.input_schema.clone());
+            let gaps = common::llm_schema::unflattened_positions(&llm_view);
+            if !gaps.is_empty() {
+                log_warn!(
+                    ctx,
+                    "mcp_tool_sync",
+                    server_id = %server.id,
+                    tool_name = %remote_tool.name,
+                    positions = %gaps.join(", "),
+                    "MCP 工具的 inputSchema 收敛后仍有对模型不可见的位置，嵌套参数有丢字段风险"
+                );
+            }
             let mut po = build_synced_tool_po(&server, remote_tool, ctx.user_id.clone());
             if let Some(existing) = self.tool_dao.get_by_id(ctx.clone(), po.id.clone()).await? {
                 ensure_sync_target_matches(&existing, &po)?;
