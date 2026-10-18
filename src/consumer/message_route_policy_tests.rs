@@ -188,3 +188,103 @@ fn chain_route_escalates_at_depth_limit() {
         AutoReplyRoute::EscalateToOwner { .. }
     ));
 }
+
+/// 回归（2026-10-18）：模型把哨兵写成中文「未回复」——全库 grep / git 历史 /
+/// seeds / soul 均无该字面量，只能来自模型输出。英文全等不命中，该 Final 被
+/// 当成真实回复投给财务总监，引发两轮无意义往返（一次确认 + 一次澄清）。
+/// 词表内的等价写法必须与主哨兵等效：任何来源一律 Discard
+#[test]
+fn static_route_discards_no_reply_sentinel_variants() {
+    for variant in NO_REPLY_SENTINEL_VARIANTS {
+        assert_eq!(
+            judge_static_reply_route(input(
+                MessageRole::Agent,
+                "agent-2",
+                MessageType::Text,
+                variant
+            )),
+            Some(AutoReplyRoute::Discard {
+                reason: SENTINEL_HIT_REASON
+            }),
+            "哨兵写法 {variant:?} 必须命中"
+        );
+        // 用户身份中继的任务派发同样受词表约束（from_role=User 不得短路）
+        assert_eq!(
+            judge_static_reply_route(input(
+                MessageRole::User,
+                "user-1",
+                MessageType::Text,
+                variant
+            )),
+            Some(AutoReplyRoute::Discard {
+                reason: SENTINEL_HIT_REASON
+            }),
+            "哨兵写法 {variant:?} 在用户来源下也必须命中"
+        );
+    }
+}
+
+/// 归一化容忍：大小写差异与收尾标点/引号不应让模型躲过哨兵识别
+#[test]
+fn static_route_discards_normalized_sentinel_forms() {
+    for raw in [
+        "no_reply",
+        "No_Reply",
+        "NO_REPLY.",
+        "  NO_REPLY  ",
+        "\"NO_REPLY\"",
+        "未回复。",
+    ] {
+        assert_eq!(
+            judge_static_reply_route(input(MessageRole::Agent, "agent-2", MessageType::Text, raw)),
+            Some(AutoReplyRoute::Discard {
+                reason: SENTINEL_HIT_REASON
+            }),
+            "{raw:?} 归一化后应命中哨兵"
+        );
+    }
+}
+
+/// 包含但不全等 → 不命中：正文中提到「无需回复」是合法内容，
+/// 只有独占全文才算哨兵（判定恒为全等，绝不做包含匹配）
+#[test]
+fn static_route_ignores_sentinel_inside_prose() {
+    for raw in [
+        "这笔账无需回复",
+        "我判断该请求无需跟进，但仍需你确认金额",
+        "NO_REPLY 是哨兵",
+        "如果你不需要回复就不用管",
+    ] {
+        assert_eq!(
+            judge_static_reply_route(input(MessageRole::Agent, "agent-2", MessageType::Text, raw)),
+            None,
+            "{raw:?} 是正常正文，不得被哨兵误伤"
+        );
+    }
+}
+
+/// 词表护栏：封闭集合必须含英文主哨兵，且无空白/重复/空条目
+/// （有人偷偷把词表清空 => 2026-10-18 泄漏现场回归，测试必须红）
+#[test]
+fn no_reply_sentinel_variants_stays_closed_and_clean() {
+    assert!(
+        NO_REPLY_SENTINEL_VARIANTS.contains(&NO_REPLY_SENTINEL),
+        "词表必须包含英文主哨兵"
+    );
+    for variant in NO_REPLY_SENTINEL_VARIANTS {
+        assert!(!variant.is_empty(), "词表不得含空条目");
+        assert_eq!(
+            variant.trim(),
+            *variant,
+            "词表条目 {variant:?} 不得含首尾空白"
+        );
+        assert_eq!(
+            NO_REPLY_SENTINEL_VARIANTS
+                .iter()
+                .filter(|v| *v == variant)
+                .count(),
+            1,
+            "词表条目 {variant:?} 重复"
+        );
+    }
+}

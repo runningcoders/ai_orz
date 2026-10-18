@@ -1,8 +1,7 @@
 //! Final 自动回发路由策略（策略引擎的消息路由领域落地）
 //!
 //! 复用 `pkg/policy` 引擎组合路由策略组（照 shell_policy 先例）：
-//! - 静态判定段（零查库）：builtin 通用 `FieldEqualsPolicy`（NO_REPLY
-//!   哨兵全等，保留字恒声明在最前）+ 领域匹配器规则（来源角色 / 自触发 /
+//! - 静态判定段（零查库）：领域匹配器规则（哨兵 / 来源角色 / 自触发 /
 //!   知会类型）按 Or 组合，声明顺序即判定优先级（首个命中即产出路由）
 //! - 机械兜底段：builtin 通用 `ThresholdPolicy`（`chain_depth >= 上限` →
 //!   升级归属用户）。仅对「跨 Agent 对等回复候选」执行——需要沿 reply_to_id
@@ -18,8 +17,12 @@ use std::sync::OnceLock;
 
 use common::enums::{MessageRole, MessageType};
 
-use crate::pkg::policy::builtin::{FieldEqualsPolicy, ThresholdPolicy};
+use crate::pkg::policy::builtin::ThresholdPolicy;
 use crate::pkg::policy::{Metrics, Policy, PolicyBuilder};
+
+// 历史注记：哨兵曾由 builtin `FieldEqualsPolicy`（单键 == 单常量）承载。
+// 2026-10-18 起改为领域 matcher `RouteMatcher::NoReplySentinel`——需要一次
+// 比对多个等价写法 + 归一化，属路由特有形态（同 `SelfTrigger` 的双键比较）。
 
 /// Metrics 键约定（入口统一填充）
 pub mod keys {
@@ -42,11 +45,55 @@ pub mod keys {
 pub const MAX_AGENT_REPLY_CHAIN: usize = 5;
 
 /// 无需回复哨兵：Agent 判断「后续工作与来源方无关」时，让 Final 恰好输出该词，
-/// Framework 检测到后不再把 Final 回发给任何对象。仅做 trim 后全等匹配，
-/// 防止误伤恰好包含该词的正常正文。保留协议字，路由判定中优先级高于一切
-/// 来源角色规则（见 `static_ruleset`）——任务派发经用户身份中继后
-/// from_role=User，若让 `user_origin` 先命中会把哨兵原文发给用户
+/// Framework 检测到后不再把 Final 回发给任何对象。保留协议字，路由判定中
+/// 优先级高于一切来源角色规则（见 `static_ruleset`）——任务派发经用户身份
+/// 中继后 from_role=User，若让 `user_origin` 先命中会把哨兵原文发给用户
 pub const NO_REPLY_SENTINEL: &str = "NO_REPLY";
+
+/// 哨兵的等价写法（**封闭集合**，判定见 [`is_no_reply_sentinel`]）
+///
+/// 除英文主哨兵外，收录模型自作主张写出的的表达。2026-10-18 实证：前台
+/// Agent 把同一个意图写成「未回复」（全库 grep / git 历史 / seeds / soul
+/// 均无该字面量 ⇒ 只能来自模型），英文全等不命中，该输出被当作真实回复
+/// 投给财务总监，引发两轮无意义往返（一次确认 + 一次澄清）。
+/// prompt 只能降低发生率，**确定性防线必须在路由层**。
+pub const NO_REPLY_SENTINEL_VARIANTS: &[&str] = &[
+    NO_REPLY_SENTINEL,
+    "未回复",
+    "无需回复",
+    "无须回复",
+    "勿需回复",
+    "不必回复",
+    "不需要回复",
+    "无需跟进",
+    "无回复",
+    "不回复",
+];
+
+/// 哨兵判定时从首尾剥离的字符：模型常给整段输出套句号 / 引号 / markdown 强调
+const SENTINEL_TRIM_CHARS: &[char] = &[
+    '.', '。', '!', '！', ',', '，', ';', '；', '"', '\'', '`', '*',
+];
+
+/// Final 是否命中无需回复哨兵
+///
+/// 一律「归一化后**全等**」，绝不做包含判断——正文中提到「无需回复」是合法内容
+/// （如「这条消息无需回复，但我还有个问题…」），只有独占全文才算哨兵。
+/// 归一化两步：① trim；② 剥离收尾标点/引号；③ 纯 ASCII 时统一大写（容忍
+/// `no_reply` / `No_Reply`）。
+pub fn is_no_reply_sentinel(raw_output: &str) -> bool {
+    let normalized = raw_output
+        .trim()
+        .trim_matches(|c| SENTINEL_TRIM_CHARS.contains(&c));
+    let normalized = normalized.trim();
+    if normalized.is_empty() {
+        return false;
+    }
+    if NO_REPLY_SENTINEL_VARIANTS.contains(&normalized) {
+        return true;
+    }
+    normalized.is_ascii() && normalized.to_ascii_uppercase() == NO_REPLY_SENTINEL
+}
 
 /// Final 自动回发的路由决策
 ///
@@ -78,6 +125,8 @@ pub struct RouteInput<'a> {
 /// 路由匹配器（路由领域特有的判定形态）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RouteMatcher {
+    /// Final 命中无需回复哨兵（归一化后全等词表，见 `is_no_reply_sentinel`）
+    NoReplySentinel,
     /// 来源角色等值（用户 / 系统来源的粗分类）
     RoleEquals(MessageRole),
     /// 双键等值：`from_id == agent_id`（自触发守卫）
@@ -89,6 +138,9 @@ enum RouteMatcher {
 impl RouteMatcher {
     fn matches(&self, metrics: &Metrics) -> bool {
         match self {
+            RouteMatcher::NoReplySentinel => metrics
+                .get_str(keys::RAW_OUTPUT)
+                .is_some_and(is_no_reply_sentinel),
             RouteMatcher::RoleEquals(role) => {
                 metrics.get_u64(keys::FROM_ROLE) == Some(role.to_i32() as u64)
             }
@@ -129,6 +181,7 @@ impl Policy for StaticRoutePolicy {
 
     fn required_metrics(&self) -> Vec<String> {
         match self.matcher {
+            RouteMatcher::NoReplySentinel => vec![keys::RAW_OUTPUT.to_string()],
             RouteMatcher::RoleEquals(_) => vec![keys::FROM_ROLE.to_string()],
             RouteMatcher::SelfTrigger => {
                 vec![keys::FROM_ID.to_string(), keys::AGENT_ID.to_string()]
@@ -148,6 +201,16 @@ impl Policy for StaticRoutePolicy {
 
 /// 静态规则表（声明顺序 = 判定优先级：首个命中即产出路由）
 static STATIC_ROUTE_DEFS: &[StaticRoutePolicy] = &[
+    // 无需回复哨兵 → Discard：保留字，**恒声明在最前**（详见 `static_ruleset`）
+    StaticRoutePolicy {
+        id: SENTINEL_POLICY_ID,
+        name: "无需回复哨兵",
+        condition_desc: "Final 全等 NO_REPLY 或其等价写法",
+        matcher: RouteMatcher::NoReplySentinel,
+        outcome: AutoReplyRoute::Discard {
+            reason: SENTINEL_HIT_REASON,
+        },
+    },
     // 用户来源 → Peer：用户身份中继后 Final 自然回到该用户
     StaticRoutePolicy {
         id: "user_origin",
@@ -189,30 +252,25 @@ static STATIC_ROUTE_DEFS: &[StaticRoutePolicy] = &[
     },
 ];
 
-/// 通用哨兵策略 id（FieldEqualsPolicy 成员，产出见 `static_outcome` 的表外分支）
+/// 通用哨兵策略 id（领域规则表成员，见下条注释）
 const SENTINEL_POLICY_ID: &str = "no_reply_sentinel";
 /// 哨兵命中的路由产出 reason
 const SENTINEL_HIT_REASON: &str = "agent final output is the NO_REPLY sentinel";
 
-/// 静态规则集：哨兵策略 + 领域规则表按 Or 组合
+/// 静态规则集：领域规则表按 Or 组合
 /// （等价 policy_set!(OR { .. }) 的展开结果，声明顺序即优先级）
 ///
-/// **哨兵必须声明在最前**：`NO_REPLY` 是保留协议字（trim 后全等才命中），
-/// 任何来源的 Final 全等即 Discard。若排在 `user_origin` 之后，任务派发经
-/// 「用户身份中继」后 from_role=User，会被 Peer 短路，把 "NO_REPLY" 原文
-/// 当回复发给用户——2026-10-16 实证：全库 29 条泄漏、25+ 条直达用户。
-/// 保留字不存在「合法正文」歧义，优先级高于一切来源角色规则。
+/// **哨兵必须声明在最前**（`STATIC_ROUTE_DEFS[0]`）：哨兵是保留协议字
+/// （归一化后全等才命中），任何来源的 Final 命中即 Discard。若排在
+/// `user_origin` 之后，任务派发经「用户身份中继」后 from_role=User，
+/// 会被 Peer 短路，把哨兵原文当回复发给用户——2026-10-16 实证：全库 29 条
+/// 泄漏、25+ 条直达用户。保留字不存在「合法正文」歧义，优先级高于一切
+/// 来源角色规则。
 fn static_ruleset() -> &'static dyn Policy {
     static RULESET: OnceLock<Box<dyn Policy>> = OnceLock::new();
     RULESET
         .get_or_init(|| {
-            let mut builder = PolicyBuilder::new().with_policy(FieldEqualsPolicy::new(
-                SENTINEL_POLICY_ID,
-                "NoReplySentinel",
-                keys::RAW_OUTPUT,
-                NO_REPLY_SENTINEL,
-                "Final 全等 NO_REPLY",
-            ));
+            let mut builder = PolicyBuilder::new();
             for rule in STATIC_ROUTE_DEFS {
                 builder = builder.with_policy(*rule);
             }
@@ -237,8 +295,9 @@ fn chain_policy() -> &'static ThresholdPolicy {
     })
 }
 
-/// 静态命中 id → 路由产出：领域规则产出内嵌在规则表；表外唯一成员是
-/// 通用 FieldEqualsPolicy 哨兵策略，命中即 Discard
+/// 静态命中 id → 路由产出：全部内嵌在规则表（含哨兵），由 Or 组的首个命中
+/// 上浮。fallback 仅作防御——表新增成员忘了写 outcome 时，退化为「不投递」
+/// 而非「发给来源方」，失败的永远是噪声最少的一侧
 fn static_outcome(policy_id: &str) -> AutoReplyRoute {
     STATIC_ROUTE_DEFS
         .iter()
@@ -258,7 +317,7 @@ fn static_outcome(policy_id: &str) -> AutoReplyRoute {
 ///
 /// | 场景 | 规则 | 路由 | 理由 |
 /// |------|------|------|------|
-/// | 无需回复哨兵（**任何来源，优先级最高**） | `no_reply_sentinel`（通用 FieldEqualsPolicy） | Discard | Agent 自判后续工作与来源方无关，回发只会制造乒乓；保留字先于下表所有来源规则判定，用户身份中继的任务派发同样生效 |
+/// | 无需回复哨兵（**任何来源，优先级最高**） | `no_reply_sentinel`（领域 matcher） | Discard | Agent 自判后续工作与来源方无关，回发只会制造乒乓；判定是归一化后全等的**封闭词表**（含模型自造的「未回复」等中文写法），保留字先于下表所有来源规则判定，用户身份中继的任务派发同样生效 |
 /// | 用户消息 | `user_origin` | Peer | 用户身份中继后 Final 自然回到该用户 |
 /// | System 来源 | `system_origin` | Discard | 触发器消息（纯系统指令、无归属用户的 A2A 触达）没有对等回复对象 |
 /// | Agent 自触发 | `self_trigger` | Discard | 触发器以 Owner Agent 名义发给自己的消息，回给自己会无限自唤醒循环 |

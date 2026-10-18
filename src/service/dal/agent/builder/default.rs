@@ -876,8 +876,15 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             "   - 【Agent 间协作】若你判断「本次请求已处理完毕，接下来的工作与来源 Agent 无关、\n",
         );
         s.push_str(
-            "     无需它继续跟进」，让 Final 文本**恰好只包含** NO_REPLY（独占全文，不要附加其他文字），\n",
+            "     无需它继续跟进」，让 Final 文本**恰好只包含** NO_REPLY（**英文大写**这串字符，\n",
         );
+        s.push_str(
+            "     独占全文：不要加标点/引号/解释，也不要写成 no_reply、NoReply 或「未回复」「无需回复」\n",
+        );
+        s.push_str(
+            "     「无需跟进」等中文表达——写法不符时 Framework 识别不了，会被当成真实回复转发给\n",
+        );
+        s.push_str("     来源 Agent，产生无意义的往返。\n");
         s.push_str(
             "     Framework 检测到后将不再把回复转发给来源 Agent，避免两个 Agent 无限互发；\n",
         );
