@@ -9,7 +9,7 @@
 //! - `ConsumeMode::Async`：异步消费，发送方（DAL 层 update_status）不阻塞
 //! - 仅处理 `TaskStatus::Completed` 事件（其他状态变更暂不通知）
 //! - **① 后继补发无条件执行**：`dispatch_ready_successors` 是 DAG 的机械推进责任方，放在所有门禁**之前**，绝不因 Owner 通知被跳过而停摆
-//! - **Owner 通知三道门禁**（按代价从低到高，任一命中即跳过本次通知）：② 项目内已有**除本次事件 assignee 以外**的 Busy 运行态 Agent（项目正自行推进）→ 跳过；③ Owner 运行态不可用（Busy/Resting）→ 跳过；⑤ 已有「跟进类」未处理通知（`TaskDispatchNotification` / `ProjectFollowupNotification`）→ 跳过（跨类型统一去重，口径见 message domain）
+//! - **Owner 通知唯一门禁**：⑤ **同一项目内**已有「跟进类」未处理通知（`TaskDispatchNotification` / `ProjectFollowupNotification`）→ 跳过（跨类型统一去重，作用域是项目而非 Owner —— 按 Agent 去重会让多项目 Owner 被先挂上 Pending 的项目永久占门，口径见 message domain）
 //! - 消息内容使用 `build_task_dispatch_content` 构建意图指令
 //! - 消息填充 `project_id` + `task_id` 上下文字段，MessageConsumer 自动补充上下文
 //!
@@ -23,24 +23,28 @@
 //! DAG 的推进责任会从一条确定的消息，转嫁给「Owner Agent 记得重新派发」这个
 //! 概率性行为上。门闩负责省资源，补发负责不丢活，两者必须成对存在。
 //!
-//! # 为什么 Owner 通知可以被门禁省略，而补发不行
+//! # 为什么不再用「谁在忙」来决定是否通知（已删除的两道旧门禁）
 //!
-//! 两者职责不同：后续补发是 **DAG 机械推进的确定责任方**（不丢活的兜底），
-//! Owner 通知则是 **软补偿** —— 让 Owner 在项目状态变化时重新审视全局编排。
-//! 当项目已在自行推进（门禁 ②/③ 命中：项目内有 Agent 在跑 / Owner 不可用）
-//! 或已有跟进通知在途（门禁 ⑤ 命中）时，重复唤醒 Owner 只会让它重跑一遍长编排，
-//! 收益为零，故可安全省略；但无论如何都不能因此停掉后继补发。
+//! 历史实现有另两道门禁：② 项目内已有除本次 assignee 以外的 Busy Agent → 跳过；
+//! ③ Owner 运行态不可用（Busy/Resting）→ 跳过。二者的共同假设是「有人在跑 ⇒
+//! 项目已在推进 ⇒ 通知冗余」。这个假设不成立：
 //!
-//! # 门禁 ② 必须排除事件 assignee（自抑制竞态）
+//! - **② 把「别人忙」当成「别人会推进」**：忙碌来源可能是与本项目无关的对话、
+//!   临时追问、自己调工具。忙完之后若没有新的任务状态事件，就没有下一轮触发，
+//!   Owner 再也等不到通知 —— 静默饿死，只留下一条 INFO 日志。
+//! - **③ 把运行态当成「消息不会被处理」**：队列里同一 `order_key`（= agent_id）
+//!   的事件本就串行排队（见 `pkg/aop/queue/in_memory.rs::ack` 的门闩两段互斥），
+//!   真正的缺口只是「Agent 忙但不是本队列造成的」（沉淀 Resting / A2A / 直接唤醒）。
+//!   为这个缺口丢掉整条通知，代价远大于收益。
 //!
-//! 本消费者是 `ConsumeMode::Async` 消费：事件发送方（DAL 层 `update_status`）不等待
-//! 消费完成，而任务完成写入与 Agent 退出运行态是**两条独立的异步链路**。因此消费
-//! 时刻**几乎总是**落在「刚完成任务的 assignee 仍处 Busy（project_id=本项目）」的窗口内。
-//! 若门禁 ② 把该 assignee 也算作「项目内正在跑的 Agent」，则「任务完成 → 通知 Owner
-//! 再编排」的通知会被自身触发者几乎全部压掉，变更驱动链路对 Agent 执行的任务基本失效。
-//! 故门禁 ② 调用时把 `event.assignee_id` 作为 `exclude_agent_id` 传入，只把「除触发者
-//! 以外的 Busy Agent」视为「项目正自行推进」；定时巡检（无「刚完成者」概念）传 `None`。
-//! 闸③ 保持不变：若 Owner 本身就是该 assignee 且 Busy，闸③ 仍会拦住，符合语义。
+//! 结论：**Owner 通知是机械性兜底，不该被任何「可能有人处理过」的猜测抑制。**
+//! 重复唤起的代价只是 Owner 多跑一轮编排（正文已明确告知「可能已处理过，请先核对」），
+//! 而漏掉一次的代价是项目永久停在原地。所以只保留 ⑤ 这一道**确定性去重**
+//! （同项目已有未处理通知，确实不需要第二条），其余一律放行。
+//!
+//! Owner 忙碌时消息不会被丢弃：落库为 `Pending` 后若消费侧拿不到运行态
+//! （`try_set_busy` 失败），事件按退避重投；彻底放弃时消息仍停在 `Pending`，
+//! 由 `scheduler::handle_pending_notification_redelivery` 定时重投兜底。
 
 use async_trait::async_trait;
 use common::enums::message::{MessageRole, MessageType};
@@ -151,54 +155,24 @@ impl Consumer for TaskEventConsumer {
 
         // ② 项目 Owner Agent 通知（Layer 2 补偿，驱动 Owner 审视全局编排）
         //
-        // 下面三道门禁按代价从低到高排列，任一命中即跳过本次通知 —— 但上面 ① 的
-        // `dispatch_ready_successors` 不受约束。Owner 通知是软补偿，项目已在推进时
-        // 可省略；后继补发是不丢活的兜底，任何情况下都必须执行。
+        // 只保留 ⑤ 这一道确定性去重：同一项目已有跟进类通知在途 → 确有第二条也无意义。
+        // 「项目内有 Agent 在忙」「Owner 不可用」都不再作为跳过理由 —— 那是在用
+        // 「可能有人处理过」的猜测替代「确实没处理」，会把兜底通知静默吃掉。
+        // 详细论证见文件头「为什么不再用『谁在忙』来决定是否通知」。
         let Some(owner_agent_id) = &project.po.owner_agent_id else {
             return Ok(());
         };
 
-        // ② 运行态在推进：项目内有**除本次 assignee 以外**的 Busy 运行态 Agent →
-        // 项目正被处理，跳过本次通知。
-        //
-        // ⚠️ 必须排除 `event.assignee_id`（自抑制竞态）：Async 消费几乎总落在「刚完成
-        // 任务的 assignee 仍 Busy（project_id=本项目）」窗口内，不排除则会把「任务完成
-        // → 通知 Owner 再编排」几乎全部压掉。详见文件顶部「门禁 ② 必须排除事件 assignee」。
-        //
-        // 判据取 runtime domain 的 Busy 列表（运行态单一事实源），排除逻辑在此编排层完成。
-        if crate::service::domain::runtime::domain()
-            .list_runtime_agents(Some("busy"), None, Some(project_id))
-            .iter()
-            .any(|(id, _)| id.as_str() != event.assignee_id.as_str())
-        {
-            log_info!(
-                &ctx,
-                "task_dispatch",
-                project_id = %project_id,
-                agent_id = %owner_agent_id,
-                "项目内已有正在运行的 Agent，跳过 Owner 通知"
-            );
-            return Ok(());
-        }
-
-        // ③ owner 运行态不可用（Busy/Resting）→ 跳过，避免无意义 nack 堆积
-        if crate::service::domain::runtime::domain().is_agent_unavailable(owner_agent_id) {
-            log_info!(
-                &ctx,
-                "task_dispatch",
-                agent_id = %owner_agent_id,
-                "Owner Agent 运行态不可用，跳过本次通知"
-            );
-            return Ok(());
-        }
-
-        // ⑤ 跨类型去重：Owner 已有「跟进类」的未处理通知
+        // ⑤ 跨类型去重：**该项目**已有「跟进类」的未处理通知
         // （TaskDispatchNotification 或 ProjectFollowupNotification）→ 本次不再重复投递，
         // 避免同一项目各来一条。类型清单收敛在 message domain 单点，见 trait 文档。
+        //
+        // ⚠️ 作用域是项目不是 Owner：Owner 同时带多个项目时，按 Agent 去重会让先挂上
+        // Pending 的那个项目一直占着门，其余项目的完成通知被永久饿死。
         let message_domain = crate::service::domain::message::domain();
 
         if message_domain
-            .has_pending_followup_for_agent(ctx.clone(), owner_agent_id)
+            .has_pending_followup_for_project(ctx.clone(), project_id)
             .await?
         {
             log_debug!(
@@ -303,7 +277,7 @@ async fn dispatch_ready_successors(
 
         let message_domain = crate::service::domain::message::domain();
         if message_domain
-            .has_pending_message_for_agent(
+            .has_unfinished_message_for_agent(
                 ctx.clone(),
                 &task.po.assignee_id,
                 MessageType::TaskAssignment,

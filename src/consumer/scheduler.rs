@@ -15,6 +15,7 @@ use crate::models::events::{AgentSettleEvent, CronTriggerEvent};
 use crate::pkg::RequestContext;
 use crate::pkg::aop::Event;
 use crate::pkg::aop::{ConsumeMode, Consumer, RetryDecision, Subscription};
+use crate::service::dal::message::RepublishOutcome;
 use crate::service::domain::runtime::domain as runtime_domain;
 use common::enums::EventTopic;
 use common::error::{Error, Result};
@@ -112,6 +113,9 @@ impl Consumer for CronTriggerConsumer {
                 }
             }
             "project_followup" => self.handle_project_followup(&params).await?,
+            "pending_notification_redelivery" => {
+                self.handle_pending_notification_redelivery().await?
+            }
             "tool_log_cleanup" => self.handle_tool_log_cleanup().await?,
             "directory_reconcile" => self.handle_directory_reconcile().await?,
             _ => {
@@ -227,17 +231,17 @@ impl CronTriggerConsumer {
     /// owner_agent_id 非空的项目，向 Owner Agent 发送 ProjectFollowupNotification
     /// 消息，驱动其检查项目进度并处理阻塞任务。
     ///
-    /// 五道关（循环内按代价从低到高）：
+    /// 三道关（循环内按代价从低到高，全部是**确定性判据**）：
     /// ① status InProgress 且有 owner（候选查询已保证）；
-    /// ② 项目内无 Busy 的运行态 Agent（内存 O(1)，避免与在跑唤醒抢资源）；
-    /// ③ owner 运行态不可用（Busy/Resting）则跳过，避免无意义 nack 堆积；
-    /// ④ 距上次跟进 < `min_followup_interval` 则跳过（节流）；
-    /// ⑤ 该项目已有 Pending 跟进通知则跳过（一次批量查询，循环内只查 HashSet）；
-    /// ⑥ 数据层面停滞（`assess_stall`）：最近无活动 < `stall_threshold` 则跳过。
+    /// ② 距上次跟进 < `min_followup_interval` 则跳过（节流）；
+    /// ③ 该项目已有 Pending 跟进通知则跳过（一次批量查询，循环内只查 HashSet）；
+    /// ④ 数据层面停滞（`assess_stall`）：最近无活动 < `stall_threshold` 则跳过。
     ///
-    /// 运行态判据经**合适的层**获取：②由 project domain 提供
-    /// （`has_active_agent_on_project`，定时巡检无「刚完成者」概念故传 `None`）、
-    /// ③由 runtime domain 提供（`agent_runtime_state`），本层只做编排，不直接触碰 pkg 单例。
+    /// ⚠️ 曾经还有「项目内无 Busy Agent」「Owner 运行态可用」两道关，已删除：
+    /// 巡检是机械性兜底，不该被「可能有人正在处理」的猜测抑制（论证见
+    /// `task_event_consumer.rs` 文件头「为什么不再用『谁在忙』来决定是否通知」）。
+    /// 投递后若接收方确实占线，消息留在 `Pending` 由
+    /// [`Self::handle_pending_notification_redelivery`] 定时重投。
     async fn handle_project_followup(&self, _extra: &Value) -> Result<()> {
         use crate::service::dao::message::MessageQuery;
         use crate::service::domain::message::SendToAgentCommand;
@@ -260,10 +264,13 @@ impl CronTriggerConsumer {
             .list_in_progress_with_owner(ctx.clone())
             .await?;
 
-        // 2. 一次批量查询「已有 Pending 跟进通知」的项目集合（替代循环内逐个查询的 N+1）
+        // 2. 一次批量查询「已有在途跟进通知」的项目集合（替代循环内逐个查询的 N+1）
         //
         // 为什么以**项目**为去重作用域而不是 Agent：Owner 带多个项目时，按 Agent 去重会让
         // 第一个项目一直占着门（每次 tick 都从列表头部命中它），后面的项目永远排不上。
+        //
+        // ⚠️ 判据是**未完成**（`Pending | Processing`）：已被 Owner 领走（`Processing`）的
+        // 跟进通知仍在途，漏掉它会导致同一项目被重复投跟进通知。
         let candidate_ids: Vec<String> = projects.iter().map(|p| p.po.id.clone()).collect();
         let pending_project_ids: HashSet<String> = if candidate_ids.is_empty() {
             HashSet::new()
@@ -275,7 +282,7 @@ impl CronTriggerConsumer {
                     MessageQuery {
                         project_ids: Some(candidate_ids.clone()),
                         message_type: Some(MessageType::ProjectFollowupNotification),
-                        status_in: Some(vec![MessageStatus::Pending]),
+                        status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),
                         limit: Some(candidate_ids.len().max(1)),
                         ..Default::default()
                     },
@@ -295,27 +302,13 @@ impl CronTriggerConsumer {
                 None => continue,
             };
 
-            // ② 项目内已有 Busy 的运行态 Agent → 该项目正被处理，跳过本次跟进
-            // 运行态单一事实源在 runtime domain：取「本项目 Busy 列表」判非空。
-            // 判据留在编排层（定时巡检无「刚完成者」概念，不做排除）。
-            if !runtime_domain()
-                .list_runtime_agents(Some("busy"), None, Some(project.po.id.as_str()))
-                .is_empty()
-            {
-                sys_info!(
-                    "项目 {} 内有正在运行的 Agent，跳过项目跟进（owner={}）",
-                    project.po.id,
-                    owner_agent_id
-                );
-                continue;
-            }
-
-            // ③ Agent 必须空闲才发送，避免无意义 nack 堆积（经 runtime domain 取运行态）
-            let state = runtime_domain().agent_runtime_state(owner_agent_id);
-            if state.is_unavailable() {
-                sys_info!("Agent {} 当前 {:?}，跳过项目跟进", owner_agent_id, state);
-                continue;
-            }
+            // 不再判「项目内有没有 Agent 在忙」「Owner 是否 Busy/Resting」：
+            // 巡检与任务完成通知同属**机械性兜底**，用一个「可能有人处理过」的猜测
+            // 去抑制它，会让项目在「别人忙完却没产生新事件」时永久停在原地。
+            // 真正需要抑制的是「同一项目已有未处理通知」（⑤）—— 那是确定性判据。
+            //
+            // 投递失败/接收方占线不会丢消息：落库为 Pending，AOP 退避重投失败后
+            // 仍停在 Pending，由 `handle_pending_notification_redelivery` 定时兜底。
 
             // ④ 节流：距上次跟进不足 min_followup_interval 则跳过
             // `last_followup_at` 为 None（从未跟进）时不触发节流。
@@ -429,6 +422,121 @@ impl CronTriggerConsumer {
             }
         }
 
+        Ok(())
+    }
+
+    /// pending_notification_redelivery 动作：重投「滞留 Pending」的跟进类通知
+    ///
+    /// # 为什么需要它
+    ///
+    /// 跟进通知（任务完成驱动 / 定时巡检驱动）是项目推进的**机械性兜底**：它不该
+    /// 被「可能有人在处理」抑制，所以两道「谁在忙」的门禁已经删掉。但投递出去之后
+    /// 还有一段路：消费侧要先用 `try_set_busy` 抢占接收方，抢不到就 nack 重投，
+    /// 退避若干次仍失败则 `Discard` —— 此时 AOP 队列已移除事件，而框架仍会回调
+    /// `on_consumed` ⇒ 消息落 `Processed` 终态。**本动作救不了这条路径**（详见下文
+    /// 「兜底边界」），它兜的是另一类问题。
+    ///
+    /// 本动作就是补上这个确定性兜底：**消息表是权威待办，队列只是加速器**。
+    ///
+    /// # 兜底边界（哪些丢它能救、哪些救不了）
+    ///
+    /// - ✅ **能救「事件没了但消息还在」**：进程重启（`in_memory` 队列全丢）、
+    ///   `publish` 时无订阅者、`on_consumed` 写库失败。这些场景下消息停在 `Pending`，
+    ///   重投能把它捡回来。
+    /// - ❌ **救不了「消费一直失败直到 Discard」**：那类消息是 `Processed` 终态，
+    ///   本扫描**刻意不碰**（碰了等于把坏事件反复拉回来，每 5 分钟炸一次日志）。
+    ///   跟进通知本身就是冗余兜底，Owner 忙完通常会自己推进，且下一轮任务完成事件
+    ///   仍会重新派发 —— 这是「尽力而为」而非「绝对不丢」的取舍。
+    ///
+    /// # 判据为什么这么定
+    ///
+    /// - **状态必须只看 `Pending`**：窄口径。`Processing` 表示已被领走、正在跑，
+    ///   捞它重投会造成同一条消息并发消费两次（去重要宽、重投要窄，见
+    ///   `MessageStatus::is_unfinished` 的对照表）；
+    /// - **滞留时间窗**（`STALE_AFTER_MS`）：双重保险 —— 既避免捞到刚创建还没来得及
+    ///   被消费的消息，也让 crashes 留下来的孤儿有时间自己走完重试；
+    /// - **队列可见性才是主判据**：即便消息仍停在 `Pending`，只要队列里还有它的事件，
+    ///   就说明它没丢（`RepublishOutcome::AlreadyQueued`）—— 状态可能写失败、也可能
+    ///   还没轮到写，两者本就不同步；
+    /// - **接收方必须空闲**：占线时重投只会被 nack，白刷日志还占着 `order_key` 门闩，
+    ///   等它空出来的下一轮即可；
+    /// - **只看跟进类**（`TaskDispatchNotification` / `ProjectFollowupNotification`）：
+    ///   普通对话的「重投」应由用户重发决定，框架不该替用户复活一条闲聊；
+    ///   而 `TaskAssignment` 有 `dispatch_ready_successors` 这个更精确的补发方。
+    ///
+    /// 重投复用 `MessageDal::republish_created`（与首次投递共用事件构造点），
+    /// 消费侧还有 `status == Processed` 幂等守卫兜底，故即便队列判重漏掉也安全。
+    async fn handle_pending_notification_redelivery(&self) -> Result<()> {
+        use crate::service::domain::message::domain as message_domain;
+
+        /// 滞留阈值：留足一次完整 LLM 会话的余量（巡检类会话实测可能十几分钟）
+        const STALE_AFTER_MS: i64 = 15 * 60 * 1000;
+        /// 单轮重投上限：防御值，正常远达不到；触顶时下个周期继续
+        const SCAN_LIMIT: usize = 50;
+
+        let ctx = RequestContext::new_system();
+        let stale = message_domain()
+            .list_stale_pending_notifications(ctx.clone(), STALE_AFTER_MS, SCAN_LIMIT)
+            .await?;
+
+        if stale.is_empty() {
+            return Ok(());
+        }
+
+        let mut already_queued = 0usize;
+        let mut redelivered = 0usize;
+        let mut busy_skipped = 0usize;
+        let mut failed = 0usize;
+
+        for message in &stale {
+            let agent_id = &message.po.to_id;
+            if runtime_domain().is_agent_unavailable(agent_id) {
+                busy_skipped += 1;
+                continue;
+            }
+
+            match crate::service::dal::message::dal()
+                .republish_created(ctx.clone(), &message.po.id)
+                .await
+            {
+                Ok(RepublishOutcome::Redelivered) => {
+                    redelivered += 1;
+                    sys_info!(
+                        "重投滞留跟进通知: message_id={}, agent={}, type={:?}, created_at={}",
+                        message.po.id,
+                        agent_id,
+                        message.message_type(),
+                        message.po.created_at
+                    );
+                }
+                // 队列里还有它的事件 ⇒ 它没丢，只是还没轮到 / 正在跑。
+                // 这是**健康信号**，与「已处理完」语义完全不同 —— 必须单独计数，
+                // 否则「重投 0 条」这条日志无法判断到底该不该紧张。
+                Ok(RepublishOutcome::AlreadyQueued) => {
+                    already_queued += 1;
+                }
+                // 状态在这一瞬间变了（被别的路径处理掉）→ 正常现象，不算失败
+                Ok(RepublishOutcome::NotPending) => {}
+                Err(e) => {
+                    failed += 1;
+                    sys_warn!(
+                        "重投滞留跟进通知失败: message_id={}, agent={}, err={}",
+                        message.po.id,
+                        agent_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        sys_info!(
+            "pending_notification_redelivery 完成: 扫描 {} 条滞留通知，重投 {} 条，队列在途跳过 {} 条，接收方占线跳过 {} 条，失败 {} 条",
+            stale.len(),
+            redelivered,
+            already_queued,
+            busy_skipped,
+            failed
+        );
         Ok(())
     }
 

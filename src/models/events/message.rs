@@ -51,3 +51,56 @@ impl Event for MessageCreatedEvent {
         self.created_at
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ⚠️⚠️ 这条不变量是整个「滞留重投不会重复投递」机制的基石，**不要删也不要改**：
+    ///
+    /// AOP 内存队列用 `event_id` 去重（`InMemoryEventQueue::do_enqueue` 入口判
+    /// `events.contains_key(event_id)`），而定时重投任务每 5 分钟会把同一条消息再
+    /// publish 一次。二者叠起来成立的唯一原因就是：`event_id == message_id`，
+    /// 于是「同一条消息」在队列里最多一份事件。
+    ///
+    /// 一旦有人把 `id()` 改成随机 uuid（看似更"规范"），重投会立刻退化为真重复投递：
+    /// 同一条消息被同个 Agent 并发消费两次。这种 bug 只在机器忙的时候出现，极难复现。
+    #[test]
+    fn event_id_is_the_message_id_redelivery_dedup_depends_on_it() {
+        let event = MessageCreatedEvent {
+            message_id: "msg-1".to_string(),
+            project_id: Some("proj-1".to_string()),
+            task_id: Some("task-1".to_string()),
+            from_id: "u1".to_string(),
+            from_role: 2,
+            to_id: "a1".to_string(),
+            to_role: 1,
+            message_type: 10,
+            content: "hi".to_string(),
+            created_at: 1000,
+        };
+
+        assert_eq!(event.id(), "msg-1");
+        assert_eq!(event.id(), event.message_id);
+        assert!(matches!(event.kind(), EventTopic::MessageCreated));
+    }
+
+    /// 同一消息构造两次 ⇒ id 必须相同（幂等键的定义）
+    #[test]
+    fn same_message_yields_same_event_id_across_republishes() {
+        let build = || MessageCreatedEvent {
+            message_id: "msg-42".to_string(),
+            project_id: None,
+            task_id: None,
+            from_id: "u1".to_string(),
+            from_role: 2,
+            to_id: "a1".to_string(),
+            to_role: 1,
+            message_type: 11,
+            content: "followup".to_string(),
+            created_at: 2000,
+        };
+
+        assert_eq!(build().id(), build().id());
+    }
+}

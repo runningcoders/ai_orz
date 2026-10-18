@@ -90,6 +90,15 @@ pub trait EventQueue: Send + Sync + std::fmt::Debug + 'static {
         events: Vec<serde_json::Value>,
     ) -> Result<()>;
     async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<serde_json::Value>>;
+
+    /// 该 event_id 是否**仍在队列里**（待出队 / 退避重试中 / 正在消费，三者均算）
+    ///
+    /// 这是「事件有没有丢」的唯一真相源，**数据库状态不能替代它**：前者是队列视角，
+    /// 后者是持久化视角，二者本就不同步（写状态失败 / 出队后才写状态都会让它们背离）。
+    ///
+    /// 典型用途：定时重投前先问一句 —— 还在队列里就说明它没丢，只是还没轮到。
+    fn contains(&self, event_id: &str) -> bool;
+
     async fn ack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
     /// 事件处理未成功：退回队列等待重投（per-event 指数退避，见 `retry_backoff_ms`）
     async fn nack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;

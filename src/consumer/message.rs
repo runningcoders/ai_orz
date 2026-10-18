@@ -229,6 +229,24 @@ impl MessageConsumer {
             return Ok(());
         }
 
+        // 幂等守卫：已处理完成的消息不再唤醒 Agent。
+        //
+        // 存在的必要：消息状态是**权威的待办记录**，同一 message_id 的事件可能被
+        // 投递多次 —— ① AOP nack 重投；② `scheduler::handle_pending_notification_redelivery`
+        // 对「滞留 Pending」的跟进类通知做定时补投（老事件可能仍在队列里等门闩）。
+        // 没有这道守卫，补投会变成「同一通知唤醒 Owner 两次」，正文里的
+        // 「请先核对是否已处理」根本来不及起作用。
+        if message.po.status == MessageStatus::Processed {
+            log_debug!(
+                &ctx,
+                "message_idempotent",
+                message_id = %message.po.id,
+                agent_id = %message.po.to_id,
+                "消息已处理完成（status=Processed），重复投递跳过唤醒"
+            );
+            return Ok(());
+        }
+
         sys_debug!(
             "received message: {:?} -> {:?}, type: {:?}",
             message.from_role(),
@@ -1063,16 +1081,27 @@ impl MessageConsumer {
         let Some(task) = cached_task else {
             return input;
         };
-        input.task_status = Some(task.po.status);
 
-        if message.message_type() == MessageType::TaskAssignment {
+        // 任务级判据（终态 / 依赖 / 唤醒预算）**只对执行类消息（TaskAssignment）生效**。
+        //
+        // 通知类消息天然绑定「刚发生变化的那个任务」：`TaskDispatchNotification` 的
+        // task_id 正是刚刚变成 Completed 的任务 ⇒ 若照样喂给 `task_terminal`，等于
+        // 100% 自我否决 —— 消息落库后被 ack 成 Processed，Owner 永不唤醒且只有 INFO
+        // 日志（见 `consumer/task_event_consumer.rs` 顶部说明）。而这类消息的语义是
+        // 「去审视项目全局」，不是「去这个任务上干活」，终态拦它没有意义。
+        //
+        // 普通对话（用户/Agent 对某任务的追问、汇报）同理：门闩管的是「要不要因为
+        // 这条派发开始干活」，不是「能不能说话」。
+        if applies_task_scope_gates(message.message_type()) {
+            input.task_status = Some(task.po.status);
+
             let (pending, stale) = self.classify_dependencies(ctx, task).await;
             input.pending_dependencies = pending;
             input.stale_dependencies = stale;
-        }
 
-        // 唤醒预算只在「本次是某个任务的消息」时才有意义：普通对话没有单任务累计口径
-        if message.po.task_id.is_some() {
+            // 唤醒预算的口径是「该 Agent 在该任务上被唤醒的累计次数」，
+            // 只在「这条消息是派给它的活」时成立；通知类的接收方是 Owner，
+            // 这不是它的累计口径，用它会误伤
             input.wakeup_count = agent
                 .stats
                 .as_ref()
@@ -1449,6 +1478,18 @@ fn tool_error_message(err: &Error) -> String {
     err.msg.clone()
 }
 
+/// 任务级唤醒门闩（任务终态 / 前置依赖 / 唤醒预算）是否适用于这条消息
+///
+/// 只有「派给某个 Agent 去执行的活」才受这些判据约束。其余类型必须能落地：
+/// - `TaskDispatchNotification`：绑定的就是刚刚变成 `Completed` 的那个任务，
+///   若也走 `task_terminal`，等于通知 100% 自我否决（消息落库 → ack 成 Processed
+///   → Owner 永不唤醒，全程只有 INFO 日志）；
+/// - `ProjectFollowupNotification` / 普通对话：语义是「审视全局」或「说话」，
+///   不是「去这个任务上干活」，终态与依赖都不该拦。
+fn applies_task_scope_gates(message_type: MessageType) -> bool {
+    message_type == MessageType::TaskAssignment
+}
+
 /// 推导本次唤醒【用户画像】区块应注入哪个用户
 ///
 /// 画像里带【用户 ID】/【显示名称】/【用户偏好】，直接决定 Agent「在跟谁打交道」的
@@ -1551,5 +1592,30 @@ mod tests {
             resolve_profile_user_id(MessageRole::System, "task-1", Some("")),
             None
         );
+    }
+
+    /// 护栏：任务级门闩只能拦「派活」，不能拦「通知」与「说话」
+    ///
+    /// `TaskDispatchNotification` 必然绑定刚完成的任务（`task_id` 指向 Completed），
+    /// 一旦被算进 `task_terminal`，Owner 通知链路就是 100% 死的 —— 而失败形态是
+    /// 「消息已置 Processed + 一行 INFO 日志」，肉眼看不出来。这条断言把边界钉在
+    /// 白名单上：新增类型默认**不受**任务级约束。
+    #[test]
+    fn task_scope_gates_only_apply_to_task_assignments() {
+        assert!(
+            applies_task_scope_gates(MessageType::TaskAssignment),
+            "TaskAssignment 是执行类消息，必须走任务终态 / 依赖 / 预算门闩"
+        );
+        for message_type in [
+            MessageType::TaskDispatchNotification,
+            MessageType::ProjectFollowupNotification,
+            MessageType::Text,
+            MessageType::AgentNotify,
+        ] {
+            assert!(
+                !applies_task_scope_gates(message_type),
+                "{message_type:?} 不该受任务级门闩约束（通知/对话被任务终态拦住 = 静默丢唤醒）"
+            );
+        }
     }
 }

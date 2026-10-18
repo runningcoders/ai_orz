@@ -63,10 +63,12 @@ impl MessageDomainImpl {
         // ③ 权限 gate（发送方 / 归属用户 / Owner Agent / SuperAdmin）
         self.ensure_can_recall(&ctx, &message).await?;
 
-        // ④ 在飞判定：以**运行时状态**为准。
-        //    `MessageStatus::Processing` 当前没有任何写入路径（生产只写 Pending / Processed），
-        //    在飞消息在库里仍是 `Pending` —— 只看 DB 会把「正在跑」误判成「排队中」，
-        //    于是只改状态、不发取消信号，Agent 会继续跑完并回复。
+        // ④ 在飞判定：以**运行时状态**为准，不能只看 DB。
+        //    「已派发」在 DB 里是 `Processing`（`Producer::on_started` 写入），但它与
+        //    「Agent 是否真的开始跑」之间仍有一段距离：`on_started` 先写状态、随后才
+        //    `try_set_busy`，且后者可能被拒（占线）→ 消息退回 `Pending` 等待重试。
+        //    因此库里的 `Processing` 只能说明「被领走过」，真正的在飞真相在
+        //    `AgentRuntimeStateManager`（它持有 current_message_id）。
         let busy_agent_id =
             AgentRuntimeStateManager::global().find_busy_agent_by_message(message_id);
 

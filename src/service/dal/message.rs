@@ -178,16 +178,36 @@ pub trait MessageDal: Send + Sync {
         external_key: &str,
     ) -> Result<Option<String>>;
 
-    /// 检查指定 Agent 是否有 Pending 状态的指定类型消息
+    /// 检查指定 Agent 是否已有「未完成」的指定类型消息（`Pending` 或 `Processing`）
+    ///
+    /// ⚠️ 必须用 `unfinished` 而非 `pending`（见 [`common::enums::MessageStatus::is_unfinished`]）：
+    /// 消息一旦被消费侧领走就写成 `Processing`，若这里只认 `Pending`，正在处理的那条
+    /// 会「隐形」—— 同一个执行 Agent 会被重复派发同一个任务。
     ///
     /// 用于 TaskEventConsumer 发送通知前去重，避免对同一 Agent 重复投递
     /// TaskDispatchNotification 等系统通知。
-    async fn has_pending_message_for_agent(
+    async fn has_unfinished_message_for_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
         message_type: MessageType,
     ) -> Result<bool>;
+
+    /// 重新发布 `message.created` 事件，唤醒该消息的接收方（滞留 Pending 的兜底重投）
+    ///
+    /// 与 [`Self::save_message`] 共用同一个事件构造点 —— 重投的是**同一条消息**，
+    /// 不是新消息。两道安全保障：
+    /// 1. **队列可见性**（主）：先问 `has_pending_event`，队列里已有就不再发布；
+    /// 2. **消费侧幂等**（辅）：即便撞车，`consumer/message.rs::handle_message`
+    ///    见到 `status == Processed` 直接跳过。
+    ///
+    /// 返回 [`RepublishOutcome`] 而非 bool —— 「没发布」有两种截然不同的含义，
+    /// 压成一个 `false` 会让调用方日志分不清「它没丢」和「它不该被救」。
+    async fn republish_created(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<RepublishOutcome>;
 
     async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
@@ -206,6 +226,20 @@ pub trait MessageDal: Send + Sync {
     ) -> Result<()>;
 }
 
+/// [`MessageDal::republish_created`] 的结论
+///
+/// 三种情况必须分开：**「没丢」与「不该救」在运维视角完全是两回事**，压成一个
+/// `false` 会让「重投 0 条」这条日志无法判断到底该不该紧张。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepublishOutcome {
+    /// 已重新发布事件（队列里原本没有它 ⇒ 它确实掉队了）
+    Redelivered,
+    /// 队列里已有同一条事件 ⇒ 它没丢，只是还没轮到 / 正在跑；本次未发布任何东西
+    AlreadyQueued,
+    /// 消息不该重投：不存在、已撤回、或已不是待处理状态
+    NotPending,
+}
+
 pub(crate) struct MessageDalImpl {
     message_dao: Arc<dyn MessageDao>,
     message_vector_dao: Arc<dyn MessageVectorDao>,
@@ -218,20 +252,7 @@ pub(crate) struct MessageDalImpl {
 impl MessageDal for MessageDalImpl {
     async fn save_message(&self, ctx: RequestContext, message: &Message) -> Result<()> {
         self.message_dao.insert(ctx.clone(), &message.po).await?;
-
-        let event = MessageCreatedEvent {
-            message_id: message.id().to_string(),
-            project_id: message.project_id().map(|s| s.to_string()),
-            task_id: message.task_id().map(|s| s.to_string()),
-            from_id: message.from_id().to_string(),
-            from_role: message.from_role() as i32,
-            to_id: message.to_id().to_string(),
-            to_role: message.to_role() as i32,
-            message_type: message.message_type() as i32,
-            content: message.content().to_string(),
-            created_at: message.created_at(),
-        };
-        aop::publish(&ctx, event).await;
+        publish_message_created(&ctx, message).await;
 
         // 组织级开关：默认不构建消息向量索引（enable_message_vector 默认 false）。
         // 配置经组织 DAO 的缓存读取；关闭时连 Embedding Provider 都不查，
@@ -460,7 +481,7 @@ impl MessageDal for MessageDalImpl {
             .await
     }
 
-    async fn has_pending_message_for_agent(
+    async fn has_unfinished_message_for_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
@@ -473,12 +494,39 @@ impl MessageDal for MessageDalImpl {
                     to_id: Some(agent_id.to_string()),
                     to_role: Some(MessageRole::Agent),
                     message_type: Some(message_type),
-                    status_in: Some(vec![MessageStatus::Pending]),
+                    // 宽口径：已派发（`Processing`）也算「这条还在处理」，不能重复投递
+                    status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),
                     ..Default::default()
                 },
             )
             .await?;
         Ok(count > 0)
+    }
+
+    async fn republish_created(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<RepublishOutcome> {
+        let Some(po) = self.message_dao.find_by_id(ctx.clone(), message_id).await? else {
+            return Ok(RepublishOutcome::NotPending);
+        };
+        // ① 状态判据（窄）：只有 `Pending` 是「没人领走」，`Processing` 说明消费侧
+        //    已领走 —— 尽管此时队列里必有它的事件，仍先按状态挡一道，省一次查队列。
+        //    `Recalled` 被软删除过滤挡在 `find_by_id` 外面（这里依赖它，不再重复判）。
+        if po.status != MessageStatus::Pending {
+            return Ok(RepublishOutcome::NotPending);
+        }
+
+        // ② 队列可见性（主判据）：这是「事件有没有丢」的真相。
+        //    幂等键是 event_id，而 `MessageCreatedEvent::id()` 返回的就是 message_id
+        //    —— 有 `MessageCreatedEvent` 的单测盯住这个不变量，别把它改成 uuid。
+        if aop::registry().has_pending_event(EventTopic::MessageCreated, &po.id) {
+            return Ok(RepublishOutcome::AlreadyQueued);
+        }
+
+        publish_message_created(&ctx, &Message::from_po(po)).await;
+        Ok(RepublishOutcome::Redelivered)
     }
 
     async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<()> {
@@ -864,6 +912,76 @@ impl Producer for MessageDalImpl {
         EventTopic::MessageCreated
     }
 
+    /// 已被消费侧领走 → 消息置 `Processing`
+    ///
+    /// 补上这一端后，`messages.status` 才真正四态齐全：「排队中」与「正在跑」在库里
+    /// 可区分（`recall_message` 判撤回路径、重投扫描、运维排障都依赖这个区分）。
+    ///
+    /// ⚠️ 每次重试都会再调一次 ⇒ 幂等是天然满足的（写的都是同一个状态值）。
+    ///
+    /// ⚠️ 返回 `Err` 不改变投递结论（框架只记日志）：状态回写失败的消息仍是 `Pending`，
+    ///    下一轮重投扫描会捞它，而队列防重保证不会因此重复唤醒 —— **可观测性改进
+    ///    不会反过来吃掉可用性**。
+    async fn on_started(&self, ctx: &RequestContext, event: &serde_json::Value) -> Result<()> {
+        let Some(message_id) = Self::message_id_of(event) else {
+            return Ok(());
+        };
+
+        // 终态守卫（第三条必经路径）：`update_status` 是无条件的 UPDATE，
+        // 若不挡，`Recalled`（撤回竞态）与 `Processed`（重投撞车）会被覆盖掉。
+        // 项目里 `on_consumed` / `on_failed` 已各守一道，这里是第三个写入点。
+        if let Some(message) = self
+            .find_by_id_with_recalled(ctx.clone(), message_id)
+            .await?
+            && message.po.status.is_terminal()
+        {
+            log_info!(
+                ctx,
+                "message_terminal",
+                message_id = %message_id,
+                status = ?message.po.status,
+                "消息已到终态，跳过 on_started 的 Processing 写入"
+            );
+            return Ok(());
+        }
+
+        self.update_status(ctx.clone(), message_id, MessageStatus::Processing)
+            .await
+    }
+
+    /// 启动恢复：把所有 `Processing` 孤儿重置回 `Pending`
+    ///
+    /// 论证：AOP 队列是**纯内存**的，进程刚起来时队列里不可能有事件 ⇒ 库里任何
+    /// `Processing` 必然是上一世 worker 崩溃 / 进程被杀的残留（那时 `on_consumed`
+    /// 与 `on_failed` 都不会被调用，没人会收拾它们）。
+    ///
+    /// 天然幂等：`start_all` 只会成功执行一次，重复跑也只是把已经是 `Pending` 的
+    /// 再写一次同值。
+    async fn recover(&self, ctx: &RequestContext) -> Result<()> {
+        let orphaned = self
+            .list_by_status(ctx.clone(), vec![MessageStatus::Processing], None)
+            .await?;
+
+        if orphaned.is_empty() {
+            return Ok(());
+        }
+
+        let ids: Vec<String> = orphaned.iter().map(|m| m.po.id.clone()).collect();
+        for message in &orphaned {
+            self.update_status(ctx.clone(), &message.po.id, MessageStatus::Pending)
+                .await?;
+        }
+
+        sys_info!(
+            &ctx,
+            "message_recover",
+            "启动恢复：{} 条 Processing 孤儿已重置为 Pending（上一世 worker 崩溃 / 进程重启）: {:?}",
+            ids.len(),
+            ids
+        );
+        Ok(())
+    }
+
     /// 事件生命周期**终结**（成功消费 **或** 被放弃）→ 消息置为 `Processed`
     ///
     /// ⚠️ 框架在 `queue.ack` **之前**调用，且 `Discard` 后还会再回调一次
@@ -894,10 +1012,9 @@ impl Producer for MessageDalImpl {
     ///
     /// 这里不做任何终局判定 —— 重试还是放弃由 `MessageConsumer::decide_retry`
     /// 回答（默认策略：永久性错误码 / 累计 8 次），本方法只收结论：
-    /// - `Retry` → 消息置回 `Pending`：它是**启动恢复的依据** —— `message_dal` 按
-    ///   `status = Pending` 扫出未处理消息重投（等价于改造前 `Consumer::nack` 的副作用）；
-    ///   漏这一步，失败的消息会停在 `Processing` 上再也没人捞。
-    /// - `Discard` → **不**置回 `Pending`：否则启动恢复会把这条已放弃的消息再扫出来重投。
+    /// - `Retry` → 消息置回 `Pending`：否则它会停在 `Processing` 上，本轮的
+    ///   `recover`（启动恢复）能救它，但当轮之内就是死路一条；
+    /// - `Discard` → **不**置回 `Pending`：否则下一轮启动恢复 / 重投会把它复活。
     ///   框架随后回调 `on_consumed` → 消息置为 `Processed`，并留下 error 日志 + 独立埋点。
     async fn on_failed(
         &self,
@@ -928,4 +1045,25 @@ impl Producer for MessageDalImpl {
         }
         Ok(())
     }
+}
+
+/// 发布 `message.created` 事件（`save_message` 与 `republish_created` 的唯一构造点）
+///
+/// 两者必须共用同一份构造逻辑：字段口径一旦漂移，重投出去的事件会与首次投递
+/// 长得不一样（少 `project_id` ⇒ 消费侧补不出项目上下文，少 `task_id` ⇒ 门闩口径
+/// 不同），而这种差异只在「重投」这条低频路径上暴露，极难发现。
+async fn publish_message_created(ctx: &RequestContext, message: &Message) {
+    let event = MessageCreatedEvent {
+        message_id: message.id().to_string(),
+        project_id: message.project_id().map(|s| s.to_string()),
+        task_id: message.task_id().map(|s| s.to_string()),
+        from_id: message.from_id().to_string(),
+        from_role: message.from_role() as i32,
+        to_id: message.to_id().to_string(),
+        to_role: message.to_role() as i32,
+        message_type: message.message_type() as i32,
+        content: message.content().to_string(),
+        created_at: message.created_at(),
+    };
+    aop::publish(ctx, event).await;
 }

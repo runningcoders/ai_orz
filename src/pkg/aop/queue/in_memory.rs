@@ -62,7 +62,7 @@ pub struct InMemoryEventQueue {
     in_progress: UnsafeCell<HashMap<String, (EventRef, String)>>,
     has_active_message: UnsafeCell<HashMap<String, bool>>,
     lock: Mutex<()>,
-    /// 重试退避参数（生产默认 1s 起、60s 封顶；测试注入毫秒级以保持用例速度）
+    /// 重试退避参数（生产默认 15s 起、5min 封顶，取值理由见常量处；测试注入毫秒级以保持用例速度）
     backoff_base_ms: i64,
     backoff_max_ms: i64,
 }
@@ -222,12 +222,28 @@ impl InMemoryEventQueue {
 
 /// per-event 重试退避：第 `attempt` 次消费失败重投前的静默时长（毫秒）
 ///
-/// 指数递增：attempt 2→1s、3→2s、4→4s … 封顶 `max_ms`。
+/// 指数递增：`base << (attempt - 2)`，封顶 `max_ms`。
 /// `attempt` 由 `nack` 自增后传入（首次重投 attempt == 2 → base）。
 /// 次数上限**不在队列层**：是否继续重试由消费者的 `decide_retry` 回答
 /// （默认：永久性错误码 → 放弃；累计 8 次 → 放弃）。
-const RETRY_BACKOFF_BASE_MS: i64 = 1_000;
-const RETRY_BACKOFF_MAX_MS: i64 = 60_000;
+///
+/// ⚠️ **取值不是手感挑的，是被「Agent 忙」这个真实失败形态倒逼出来的**
+/// （2026-10-18 从 1s / 60s 上调到这里）：
+/// 消息消费失败最常见的原因是 `try_set_busy` 抢占失败 → `[conflict] Agent is busy`，
+/// 消息本身没坏、只是来早了。而 Agent 处理一条消息动辄几分钟，**退避窗口必须
+/// 长于一次典型处理时长**，否则 8 次机会会在它忙完之前全部耗尽 → `Discard`
+/// → 业务侧永久丢失（丢的是「任务完成通知」这类没人再补发的消息）。
+///
+/// 15s 起步 + 5min 封顶下 8 次尝试的完整窗口 ≈ 17.8 分钟
+/// （15s→30s→1m→2m→4m→5m→5m；护栏 `retry_backoff_window_covers_agent_busy_round`
+/// 把这个区间钉死，改任一个常量都会在那里失败）。
+///
+/// ⚠️ **代价（已知且接受）**：gated 事件 `nack` 后**继续占着 order_key 门闩**
+/// （见 [`Self::nack`]），所以退避窗口就是同一 Agent 后继消息的**最长等待**。
+/// 它只在「该 Agent 持续忙满整个窗口」时才兑现 —— 那种情况下后继消息本来也
+/// 处理不了，故不算回归；Agent 一旦空闲，下一次退避到期即消费成功、门闩放行。
+const RETRY_BACKOFF_BASE_MS: i64 = 15_000;
+const RETRY_BACKOFF_MAX_MS: i64 = 300_000;
 
 fn retry_backoff_ms(base_ms: i64, max_ms: i64, attempt: u32) -> i64 {
     let shift = attempt.saturating_sub(2).min(6);
@@ -308,6 +324,14 @@ impl EventQueue for InMemoryEventQueue {
             global_heap.extend(deferred);
             return Ok(Some(cloned_event));
         }
+    }
+
+    /// 见 trait 文档。`events` 只在 `ack` 时移除 ⇒ 本查询同时覆盖三种在飞形态：
+    /// 等待出队、退避重试中（`not_before` 未到）、正在消费（已挪进 `in_progress`）。
+    fn contains(&self, event_id: &str) -> bool {
+        let _guard = self.lock_guard();
+        let events = unsafe { &*self.events.get() };
+        events.contains_key(event_id)
     }
 
     async fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {

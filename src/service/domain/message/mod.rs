@@ -170,35 +170,91 @@ impl MessageDomain for MessageDomainImpl {
         self
     }
 
-    async fn has_pending_message_for_agent(
+    async fn has_unfinished_message_for_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
         message_type: common::enums::message::MessageType,
     ) -> Result<bool> {
         self.message_dal
-            .has_pending_message_for_agent(ctx, agent_id, message_type)
+            .has_unfinished_message_for_agent(ctx, agent_id, message_type)
             .await
     }
 
-    async fn has_pending_followup_for_agent(
+    async fn has_pending_followup_for_project(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
+        project_id: &str,
     ) -> Result<bool> {
         // 「跟进类」两类统一去重，口径与理由见 trait 文档
+        //
+        // 作用域是**项目**而不是接收方 Agent：Owner 同时带多个项目时，按 Agent 去重
+        // 会让先挂上 Pending 的那个项目一直占着门，其余项目的完成通知被永久饿死
+        // （「重复」变「饿死」，更隐蔽）。与 `scheduler::handle_project_followup`
+        // 的批量去重口径一致。
+        //
+        // ⚠️ 宽口径 `unfinished`：已派发（`Processing`）的跟进通知仍在途，必须算「已有」，
+        // 否则同一项目会被重复投跟进通知（见 `MessageStatus::is_unfinished` 的双用途说明）。
         for message_type in [
             common::enums::message::MessageType::TaskDispatchNotification,
             common::enums::message::MessageType::ProjectFollowupNotification,
         ] {
-            if self
-                .has_pending_message_for_agent(ctx.clone(), agent_id, message_type)
-                .await?
-            {
+            let pending = self
+                .message_dal
+                .count(
+                    ctx.clone(),
+                    MessageQuery {
+                        project_id: Some(project_id.to_string()),
+                        message_type: Some(message_type),
+                        status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            if pending > 0 {
                 return Ok(true);
             }
         }
         Ok(false)
+    }
+
+    async fn list_stale_pending_notifications(
+        &self,
+        ctx: RequestContext,
+        older_than_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>> {
+        // 两种跟进类型各查一次：`MessageQuery::message_type` 是单值，且不能不带它 ——
+        // 否则普通对话会把 `limit` 占满，真正要救的通知永远排不进来。
+        //
+        // `created_before` 取「创建时间早于 now - older_than_ms」：这个时间窗是
+        // 幂等前提 —— 只有「早就该处理却还停在 Pending」的才算滞留；刚创建的消息
+        // 可能正在被消费（状态要等 `on_consumed` 才翻 `Processed`），提前重投会
+        // 变成同一通知唤醒两次。
+        let cutoff = common::constants::utils::current_timestamp_ms() - older_than_ms;
+        let mut stale = Vec::new();
+        for message_type in [
+            common::enums::message::MessageType::TaskDispatchNotification,
+            common::enums::message::MessageType::ProjectFollowupNotification,
+        ] {
+            let rows = self
+                .message_dal
+                .query(
+                    ctx.clone(),
+                    MessageQuery {
+                        to_role: Some(MessageRole::Agent),
+                        message_type: Some(message_type),
+                        status_in: Some(vec![MessageStatus::Pending]),
+                        created_before: Some(cutoff),
+                        order_by: Some("created_at ASC".to_string()),
+                        limit: Some(limit),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            stale.extend(rows);
+        }
+        Ok(stale)
     }
 
     async fn recall_message(
@@ -406,18 +462,24 @@ pub trait MessageDomain: Send + Sync {
     /// 入站适配能力（外部渠道事件 → AdaptedMessage）
     fn inbound(&self) -> &dyn MessageInboundAdapt;
 
-    /// 检查指定 Agent 是否有 Pending 状态的指定类型消息
+    /// 检查指定 Agent 是否已有「未完成」的指定类型消息
+    ///
+    /// 「未完成」= `Pending` 或 `Processing`（见 [`MessageStatus::is_unfinished`]）。
+    ///
+    /// ⚠️⚠️ **必须是宽口径**：消息被派发给消费者的那一刻就会写成 `Processing`，
+    /// 若只看 `Pending`，正在处理的那条会「隐形」 ⇒ `dispatch_ready_successors`
+    /// 会把同一个任务重复派发给同一个执行 Agent（重复干活，且更难被发现）。
     ///
     /// 用于 TaskEventConsumer 发送通知前去重，避免对同一 Agent 重复投递
     /// TaskDispatchNotification 等系统通知。
-    async fn has_pending_message_for_agent(
+    async fn has_unfinished_message_for_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
         message_type: common::enums::message::MessageType,
     ) -> Result<bool>;
 
-    /// 检查指定 Agent 是否有「跟进类」的未处理（Pending）通知
+    /// 检查指定**项目**是否已有「跟进类」的**在途**（未完成）通知
     ///
     /// 「跟进类」= 语义同源、都会让 Owner 重跑一遍全局编排的这两类：
     /// `TaskDispatchNotification`（任务完成驱动 Owner 审视）与
@@ -426,11 +488,41 @@ pub trait MessageDomain: Send + Sync {
     /// 二者由不同链路投递同一 Owner，但去重口径必须统一：若只在各自类型内去重，
     /// 同一项目会同时收到两条跟进通知（一条变更驱动、一条定时驱动）。消费侧不得
     /// 自行拼类型清单，故收敛到本 domain 单点，避免清单在各消费者间漂移。
-    async fn has_pending_followup_for_agent(
+    ///
+    /// ⚠️ 作用域必须是项目，不能是接收方 Agent：Owner 带多个项目时，按 Agent 去重
+    /// 会让先挂上 Pending 的项目一直占着门，其余项目的通知永远排不上。
+    ///
+    /// ⚠️ 判据是**未完成**（`Pending | Processing`）而非 Pending：正在处理的跟进
+    /// 通知仍会让 Owner 重跑一轮编排，它没「在途」只是我们看不见（详见
+    /// [`MessageStatus::is_unfinished`] 的双用途对照表）。
+    async fn has_pending_followup_for_project(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
+        project_id: &str,
     ) -> Result<bool>;
+
+    /// 列出「滞留 Pending」的跟进类通知（定时兜底重投用）
+    ///
+    /// 「滞留」判据只有两条：状态仍是 `Pending`、创建时间早于 `now - older_than_ms`。
+    ///
+    /// ⚠️⚠️ **状态必须是窄口径 `Pending`，不能用 `is_unfinished()`** —— 这是本
+    /// 方法与其他去重口径**唯一相反**的地方：`Processing` 表示「消费侧已领走、正在跑」，
+    /// 捞它重投会造成同一条消息被并发消费两次。去重要宽、重投要窄，理由见
+    /// [`MessageStatus::is_unfinished`] 的对照表。
+    ///
+    /// 时间窗同样是必需的：消息在消费完成前也是 `Pending`，只有过了窗口还停着，
+    /// 才能断定「这条的唤醒被吃掉了」。
+    ///
+    /// 为什么要这个兜底：Owner 通知一旦投递时恰逢接收方不可用（沉淀 Resting /
+    /// 被别的链路占用），AOP 的重投会在退避若干次后 `Discard`，消息就永久停在
+    /// `Pending` 再无人问津。定时扫描 + `MessageDal::republish_created` 是这条链路
+    /// 最后的确定性兜底 —— 消息表是权威待办，队列只是加速器。
+    async fn list_stale_pending_notifications(
+        &self,
+        ctx: RequestContext,
+        older_than_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>>;
 
     /// 撤回一条消息（权限 gate + 状态 gate + 在飞转取消）
     ///

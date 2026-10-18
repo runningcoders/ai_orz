@@ -222,9 +222,14 @@ async fn test_cron_project_followup_sends_notification(pool: SqlitePool) {
     assert!(followup.po.content.contains("当前进度快照"));
 }
 
-/// ② 项目内有 Busy 的运行态 Agent 时，跳过本次跟进（不投递）。
+/// 回归锚点：项目内有 Busy 的 Agent（且该 Agent 就是 Owner）时，跟进通知**仍然投递**。
+///
+/// 旧实现有两道门禁：「项目内有 Busy Agent → 跳过」「Owner 不可用 → 跳过」。
+/// 二者都把「可能有人在处理」当成「不必再通知」，结果是项目在「别人忙完却没有
+/// 产生新事件」时永久停在原地 —— 而巡检正是这种情况的**唯一**兜底。
+/// 现在改为照发：占线时消息停在 `Pending`，由滞留重投等它空闲。
 #[sqlx::test]
-async fn test_cron_project_followup_skips_when_agent_busy_on_project(pool: SqlitePool) {
+async fn test_cron_project_followup_delivers_even_when_agent_busy_on_project(pool: SqlitePool) {
     // 串行化临界区：见文件顶部 SERIAL 说明
     let _serial = SERIAL.lock().await;
     let ctx = crate::common::init_full_test_env(pool.clone()).await;
@@ -272,9 +277,10 @@ async fn test_cron_project_followup_skips_when_agent_busy_on_project(pool: Sqlit
         .iter()
         .filter(|m| m.po.message_type == MessageType::ProjectFollowupNotification)
         .collect();
-    assert!(
-        followups.is_empty(),
-        "项目内有 Busy Agent 时不应投递跟进通知（实际 {} 条）",
+    assert_eq!(
+        followups.len(),
+        1,
+        "项目内有 Busy Agent 也不应抑制巡检兜底通知（实际 {} 条）",
         followups.len()
     );
 

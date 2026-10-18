@@ -437,6 +437,9 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     let has_directory_reconcile = existing
         .iter()
         .any(|t| t.payload.contains("\"directory_reconcile\""));
+    let has_pending_redelivery = existing
+        .iter()
+        .any(|t| t.payload.contains("\"pending_notification_redelivery\""));
 
     // 1. agent_rest：每天凌晨 4 点执行一次睡眠沉淀（Cron 表达式，系统时区）
     if !has_agent_rest {
@@ -523,6 +526,26 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
             expression,
             timezone
         );
+    }
+
+    // 5. pending_notification_redelivery：每 5 分钟重投「滞留 Pending」的跟进通知
+    //
+    // 跟进通知是项目推进的机械兜底，不该被「谁在忙」抑制（相关门禁已删除）。
+    // 但投递后若接收方持续占线，AOP 退避重投会以 Discard 收场 —— 消息停在
+    // Pending 且再无消费者。本触发器把「消息表 = 权威待办」这件事补完。
+    if !has_pending_redelivery {
+        let mut trigger = CronTriggerPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            "系统默认-滞留通知重投".into(),
+            TriggerType::Interval,
+            common::constants::utils::current_timestamp_ms() + 300 * 1000,
+            Some("system".into()),
+        );
+        trigger.interval_seconds = Some(300);
+        trigger.payload = r#"{"action":"pending_notification_redelivery","extra":{}}"#.into();
+        trigger.is_enabled = 1;
+        cron_manager.create_trigger(ctx.clone(), &trigger).await?;
+        sys_info!("已创建系统级定时任务: pending_notification_redelivery (interval: 300s)");
     }
 
     Ok(())

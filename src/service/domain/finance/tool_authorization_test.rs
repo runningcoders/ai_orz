@@ -9,7 +9,7 @@ mod tests {
     use crate::models::message::{Message, MessagePo};
     use crate::pkg::RequestContext;
     use crate::pkg::authorization::{AuthorizationStatus, command_signature};
-    use crate::service::dal::message::MessageDal;
+    use crate::service::dal::message::{MessageDal, RepublishOutcome};
     use crate::service::domain::finance::tool_authorization::AuthorizationService;
     use crate::service::domain::finance::{
         AuthorizationDecisionCmd, CreateAuthorizationCmd, ToolAuthorizationManage,
@@ -108,6 +108,14 @@ mod tests {
             Ok(())
         }
 
+        async fn republish_created(
+            &self,
+            _ctx: RequestContext,
+            _message_id: &str,
+        ) -> Result<RepublishOutcome> {
+            unimplemented!("本测试不需要")
+        }
+
         async fn query(
             &self,
             _ctx: RequestContext,
@@ -190,7 +198,7 @@ mod tests {
             unimplemented!("本测试不需要")
         }
 
-        async fn has_pending_message_for_agent(
+        async fn has_unfinished_message_for_agent(
             &self,
             _ctx: RequestContext,
             _a: &str,

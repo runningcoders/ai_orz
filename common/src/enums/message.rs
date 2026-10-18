@@ -179,6 +179,28 @@ impl MessageStatus {
     pub fn to_i32(&self) -> i32 {
         (*self).into()
     }
+
+    /// 是否「未完成」：`Pending`（没人领走）或 `Processing`（已被领走、正在跑）
+    ///
+    /// ⚠️⚠️ **这个判据有两个相反的用途，混用会静默丢是哪一边：**
+    ///
+    /// | 用途 | 应该用 | 判错方向的后果 |
+    /// |---|---|---|
+    /// | **去重**（该 Agent / 项目是否已有在途消息） | `is_unfinished()` | 只看 `Pending` ⇒ 正在跑的那条不算「在途」⇒ 重复派发同一任务 |
+    /// | **重投**（哪些消息「没人管、要捞回来」） | 仅 `Pending` | 误用 `is_unfinished()` ⇒ 把正在跑的会话又投递一遍，同一条消息并发消费两次 |
+    ///
+    /// 一句话记法：**去重要「宽」（在飞也算有了），重投要「窄」（只捡没人管的）。**
+    pub fn is_unfinished(&self) -> bool {
+        matches!(self, MessageStatus::Pending | MessageStatus::Processing)
+    }
+
+    /// 是否终态：一旦到达就不该再被任何生命周期回调覆盖（`Recalled` / `Processed`）
+    ///
+    /// ⚠️ `Failed` **不在终态里**：它是可重投的中间态（重投成功后仍会走到 `Processed`）。
+    /// 把它误判成终态会让失败消息永久卡死。
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, MessageStatus::Recalled | MessageStatus::Processed)
+    }
 }
 
 impl From<MessageStatus> for i32 {
@@ -190,5 +212,42 @@ impl From<MessageStatus> for i32 {
 impl From<i64> for MessageStatus {
     fn from(v: i64) -> Self {
         (v as i32).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 锁住「去重要宽、重投要窄」这组相反口径 —— 两者搞反都会静默出错：
+    /// 去重错 ⇒ 重复派发同一任务；重投错 ⇒ 同一条消息被并发消费两次。
+    #[test]
+    fn unfinished_covers_both_queued_and_inflight() {
+        assert!(MessageStatus::Pending.is_unfinished());
+        assert!(MessageStatus::Processing.is_unfinished());
+
+        assert!(!MessageStatus::Processed.is_unfinished());
+        assert!(!MessageStatus::Recalled.is_unfinished());
+        // Failed 是可被重投的中间态，不在「未完成」里 —— 它由别的路径兜
+        assert!(!MessageStatus::Failed.is_unfinished());
+    }
+
+    #[test]
+    fn failed_is_not_terminal_so_it_can_be_retried() {
+        assert!(MessageStatus::Processed.is_terminal());
+        assert!(MessageStatus::Recalled.is_terminal());
+        assert!(!MessageStatus::Failed.is_terminal());
+        assert!(!MessageStatus::Pending.is_terminal());
+        assert!(!MessageStatus::Processing.is_terminal());
+    }
+
+    /// 状态值不能漂移：`#[repr(i32)]` 的判别值已在库里落地
+    #[test]
+    fn status_discriminants_are_stable() {
+        assert_eq!(MessageStatus::Recalled.to_i32(), 0);
+        assert_eq!(MessageStatus::Pending.to_i32(), 1);
+        assert_eq!(MessageStatus::Processing.to_i32(), 2);
+        assert_eq!(MessageStatus::Processed.to_i32(), 3);
+        assert_eq!(MessageStatus::Failed.to_i32(), 4);
     }
 }

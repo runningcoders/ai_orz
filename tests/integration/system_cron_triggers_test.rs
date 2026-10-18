@@ -11,8 +11,9 @@
 //! Note: `init_full_test_env` (called once per process via `OnceCell`) now
 //! follows the real startup order: `service::init()` → producer/consumer register
 //! to AOP → `service::init_base_data().await` → `ensure_system_cron_triggers`.
-//! So by the time each test runs, the two default system triggers already exist
-//! in the shared global DB.
+//! So by the time each test runs, the system-default triggers already exist
+//! in the shared global DB (本文件只断言 `agent_rest` / `project_followup` 两条，
+//! 其余如 `pending_notification_redelivery` 按同样方式幂等创建，不在此处覆盖)。
 //!
 //! Parallel-test safety: integration tests share a single global DB and run in
 //! parallel, so counting "all triggers with action X" would be flaky (another

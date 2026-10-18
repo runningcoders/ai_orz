@@ -8,15 +8,27 @@ use common::enums::task::TaskStatus;
 use common::models::ProjectProgressSummary;
 
 /// 构建任务调度通知消息内容（场景 2：任务状态变更触发）
+///
+/// **这是一条机械性兜底通知，不是「第一次告知」**：同一次任务完成可能已经通过
+/// 其他路径（Agent 自主汇报、上一轮编排）驱动过进展，触发时也没有任何「是否已处理」
+/// 的可靠判据 —— 所以正文必须**先自证再行动**：让 Agent 用 `get_project` 核对现状，
+/// 已处理就收住，不要重复派发、重复催办、重复通知用户。
+///
+/// 这里的取舍是刻意的：宁可让 Owner 多跑一轮核对（代价 = 一次查询 + 一小段回复），
+/// 也不能因为「可能重复」而不发（代价 = 项目永久停在原地，且无任何报错）。
 pub fn build_task_dispatch_content(
     task_title: &str,
     new_status: TaskStatus,
     progress: i32,
 ) -> String {
     format!(
-        "📋 任务调度通知\n\
+        "📋 任务调度通知（兜底触发）\n\
          任务：「{}」状态变更为「{}」（进度：{}%）\n\n\
-         作为项目 Owner Agent，请执行以下调度职责：\n\n\
+         ⚠️ **这是兜底通知**：本变更可能已通过其他路径驱动过一轮编排，本通知不保证是首次告知。\n\
+         请先用 get_project(with_progress_summary=true) 核对现状，若下列事项**已经完成**，\n\
+         说明本轮无需新增动作 —— 不要重复派发任务、不要重复催办、不要重复通知用户，\n\
+         简短说明「已是最新状态」即可结束。\n\n\
+         作为项目 Owner Agent，请执行以下调度职责（仅在尚未完成时）：\n\n\
          1. **更新进度**：调用 get_project(with_progress_summary=true) 获取最新进度汇总\n\
          2. **检查计划**：对比 execution_plan，判断当前进展是否符合预期\n\
          3. **调度下一任务**：\n\
@@ -143,6 +155,12 @@ mod tests {
         // 该场景 Final 由消费者兜底投递，正文需说明「最终回复即送达」以免重复 send_message
         assert!(content.contains("自动送达"));
         assert!(content.contains("无需"));
+        // 机械性兜底通知：必须让 Agent 先自证「是否已处理」，否则它会重复派发/重复通知
+        assert!(content.contains("兜底通知"), "正文必须自证这是兜底触发");
+        assert!(
+            content.contains("不要重复派发") && content.contains("不要重复通知"),
+            "正文必须明确「已处理则不要重复动作」"
+        );
     }
 
     #[test]

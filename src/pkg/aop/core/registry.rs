@@ -272,6 +272,30 @@ impl Registry {
         }
     }
 
+    /// 该 topic 的消费链路上**是否已有**这个 event_id 在飞
+    ///
+    /// 「事件是否还活着」的权威判据 —— 覆盖范围包含待出队、退避重试中、正在消费
+    /// 三种形态（见 `EventQueue::contains`）。
+    ///
+    /// ⚠️ 它是**有且仅有**的重投防重依据：数据库状态（`messages.status`）回答不了
+    /// 这个问题 —— 状态可能写失败，也可能还没轮到写，队列与库的视图天然不同步。
+    pub fn has_pending_event(&self, topic: EventTopic, event_id: &str) -> bool {
+        // 两把锁**不同时持有**：先取 consumer 名单快照、释放 consumers 锁，再查
+        // queues（避免锁顺序引发死锁；额外代价只是一次 names clone，调用频率极低）。
+        let consumer_names: Vec<String> = {
+            let consumers = read_lock(&self.consumers);
+            match consumers.get(&topic) {
+                Some(list) => list.iter().map(|c| c.name().to_string()).collect(),
+                None => return false,
+            }
+        };
+
+        let queues = read_lock(&self.queues);
+        consumer_names
+            .iter()
+            .any(|name| queues.get(name).is_some_and(|q| q.contains(event_id)))
+    }
+
     /// 从事件 JSON 还原消费侧 ctx。
     ///
     /// 提取顶层 `context_carrier` 并重建成与主 context 同源的 [`RequestContext`]
@@ -351,6 +375,18 @@ impl Registry {
             *started = true;
         }
 
+        // ⚠️⚠️ 恢复必须**先于** spawn workers：worker 一出队就会通过
+        // `Producer::on_started` 写「已被领走」的新痕迹，而恢复的本意是清理上一世的
+        // 孤儿；顺序颠倒的话，恢复会把刚写的痕迹当成孤儿冲掉（表现为「明明在跑，
+        // 状态却被复位」）。
+        for producer in self.producers_snapshot()? {
+            if let Err(e) = producer.recover(&RequestContext::new_system()).await {
+                // 恢复失败**不阻断启动**：它没有让数据变得比「孤儿状态」更糟，
+                // 继续跑至少还能正常处理新事件。只留 error 日志供排障。
+                sys_error!("[{}] producer recover error: {}", producer.name(), e);
+            }
+        }
+
         let async_consumers: Vec<Arc<dyn Consumer>> = {
             let consumers = read_lock(&self.consumers);
 
@@ -416,6 +452,25 @@ impl Registry {
                                 // 埋点：on_consume_start
                                 if let Some(hook) = registry_arc.metrics_hook() {
                                     hook.on_consume_start(&consumer_name, &meta);
+                                }
+
+                                // 生命周期起点：先把底层数据标成「已被领走」，再跑业务。
+                                // 位置必须在 dequeue 之后、on_event 之前，且失败只记日志
+                                // —— 状态回写失败不该丢掉这次投递（详见 Producer::on_started）。
+                                if let Some(producer) =
+                                    producer_for(&registry_arc, &consumer, &meta)
+                                {
+                                    let started_ctx = Registry::carried_ctx(&event_json);
+                                    if let Err(e) =
+                                        producer.on_started(&started_ctx, &event_json).await
+                                    {
+                                        sys_error!(
+                                            "[{}] producer {} on_started error: {}",
+                                            consumer_name,
+                                            producer.name(),
+                                            e
+                                        );
+                                    }
                                 }
 
                                 let ctx = Self::carried_ctx(&event_json);

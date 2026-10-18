@@ -384,6 +384,40 @@ fn retry_backoff_grows_exponentially_and_caps() {
     assert_eq!(super::retry_backoff_ms(base, max, 100), max, "封顶");
 }
 
+/// 退避窗口护栏：8 次尝试加起来的静默时长必须落在「Agent 忙完一轮」的尺度内
+///
+/// 背景（2026-10-18）：`base=1s / max=60s` 时 8 次尝试约 2 分钟就走完 —— **短于
+/// Agent 处理一条消息的典型耗时**。于是「Agent 正忙」导致的 `[conflict]` 会在它
+/// 忙完之前把 8 次机会全部耗尽 → `Discard` → 消息永久丢失（且丢的是「任务完成
+/// 通知」这类没有第二次补发机会的消息）。
+///
+/// 这里把完整窗口钉在 15 ~ 20 分钟：下限保证等得到 Agent 空闲，上限保证不会
+/// 把队列（以及同 `order_key` 门闩）占死到天荒地老。
+#[test]
+fn retry_backoff_window_covers_agent_busy_round() {
+    use crate::pkg::aop::DEFAULT_MAX_ATTEMPTS;
+
+    let mut total_ms = 0i64;
+    for attempt in 2..=DEFAULT_MAX_ATTEMPTS {
+        total_ms += super::retry_backoff_ms(
+            super::RETRY_BACKOFF_BASE_MS,
+            super::RETRY_BACKOFF_MAX_MS,
+            attempt,
+        );
+    }
+
+    assert!(
+        total_ms >= 15 * 60_000,
+        "完整退避窗口 {}s 太短 —— 撑不到 Agent 忙完一轮，8 次机会会白烧掉",
+        total_ms / 1_000
+    );
+    assert!(
+        total_ms <= 20 * 60_000,
+        "完整退避窗口 {}s 太长 —— 一条坏事件会占住队列与 order_key 门闩过久",
+        total_ms / 1_000
+    );
+}
+
 /// nack 后事件进入退避静默期：未到期不可出队，但**不阻塞**堆里已到期的其他事件
 #[tokio::test]
 async fn nack_backoff_defers_event_without_blocking_due_ones() {

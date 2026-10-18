@@ -581,10 +581,27 @@ impl TaskDal for TaskDalImpl {
 
     async fn update(&self, ctx: RequestContext, task: &Task) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, task);
+
+        // 读变更前状态：`TaskStatusChangedEvent` 的判据是「状态真的变了」。
+        //
+        // ⚠️ 这里是任务状态变更的**唯一收口**：domain 层的 `start` / `complete` /
+        // `transition_status` 全部走 `update()` 而不是 `update_status()`。事件漏在这里
+        // 发布，「任务完成 → 通知项目 Owner」整条链路就永不触发 —— 而且全程静默：
+        // 2026-10 实证 `messages` 表 type=10（TaskDispatchNotification）零条、
+        // `TaskEventConsumer` 零条日志，项目只能靠每小时巡检与执行者自觉汇报推进。
+        let before = self.task_dao.find_by_id(ctx.clone(), &task.po.id).await?;
+
         // 1. 更新 SQLite
         self.task_dao.update(ctx.clone(), &task.po).await?;
 
-        // 2. 重新向量化（title + description 拼接，失败 warn 降级）
+        // 2. 状态实际变化 → 发布事件（与 `update_status` 同口径，共用同一构造点）
+        if let Some(before) = &before
+            && before.status != task.po.status
+        {
+            publish_status_changed(&ctx, &task.po, before.status, task.po.status).await;
+        }
+
+        // 3. 重新向量化（title + description 拼接，失败 warn 降级）
         match try_build_vector_params_for_entity(
             ctx.clone(),
             &self.cortex_dao,
@@ -630,24 +647,12 @@ impl TaskDal for TaskDalImpl {
             .await?;
 
         // SQL UPDATE 成功后发布 TaskStatusChangedEvent（AOP 异步消费，发送方不阻塞）
-        if let Some(task_po) = before {
-            let old_status = task_po.status;
-            // 仅在状态实际变化时才发布，避免重复事件
-            if old_status != status {
-                let _ = crate::pkg::aop::publish(
-                    &ctx,
-                    crate::models::events::TaskStatusChangedEvent::new(
-                        &task_po.id,
-                        &task_po.title,
-                        task_po.project_id.as_deref(),
-                        &task_po.assignee_id,
-                        old_status,
-                        status,
-                        task_po.progress,
-                    ),
-                )
-                .await;
-            }
+        // 仅在状态实际变化时才发布，避免重复事件。
+        // ⚠️ `before` 是**更新前**的快照，新状态必须显式传入，不能读 `task_po.status`。
+        if let Some(task_po) = before
+            && task_po.status != status
+        {
+            publish_status_changed(&ctx, &task_po, task_po.status, status).await;
         }
 
         Ok(())
@@ -895,4 +900,34 @@ async fn try_build_vector_params_for_search(
         .embed_text_for_search(ctx, &provider, text)
         .await?;
     Ok(Some(params))
+}
+
+/// 发布「任务状态变更」AOP 事件（`TaskStatusChangedEvent` 的唯一构造点）
+///
+/// 两个调用方都必须走这里，否则事件口径会分叉：
+/// - `update_status()`（DAL 单点改状态，如取消）
+/// - `update()`（domain 层 `start` / `complete` / `transition_status` 的实际路径）
+///
+/// 事件是「任务完成 → 通知项目 Owner」（`TaskEventConsumer`）与「后继依赖补发」
+/// 两条链路的唯一触发源；发送方不阻塞（AOP 异步消费），发布失败仅丢失通知，
+/// 因此吞掉错误 —— 状态写入已经是事实，不该因通知链路失败而回滚。
+async fn publish_status_changed(
+    ctx: &RequestContext,
+    task: &TaskPo,
+    old_status: TaskStatus,
+    new_status: TaskStatus,
+) {
+    let _ = crate::pkg::aop::publish(
+        ctx,
+        crate::models::events::TaskStatusChangedEvent::new(
+            &task.id,
+            &task.title,
+            task.project_id.as_deref(),
+            &task.assignee_id,
+            old_status,
+            new_status,
+            task.progress,
+        ),
+    )
+    .await;
 }
