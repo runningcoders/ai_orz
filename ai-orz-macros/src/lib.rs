@@ -328,9 +328,12 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
         .collect();
     let has_query = !query_idents.is_empty() || !flattened_query_idents.is_empty();
 
+    // path / query 字段的字符串名（下沉到这里供多个片段共用）
+    let path_idents_str: Vec<String> = path_idents.iter().map(|i| i.to_string()).collect();
+    let query_idents_str: Vec<String> = query_idents.iter().map(|i| i.to_string()).collect();
+
     // 为非 flatten query 字段生成提取代码（所有分支共用，故提到 match 之前）
     let extract_query_fields = {
-        let query_idents_str: Vec<String> = query_idents.iter().map(|i| i.to_string()).collect();
         quote! {
             #(
                 if let Some(__v) = __query_value.get(#query_idents_str) {
@@ -351,6 +354,94 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 }
             )*
         }
+    };
+
+    // ===== path + body（可带 query）合并提取所需的公共片段 =====
+    //
+    // 背景：早期实现把 path 字段也交给 `Json<Params>` 反序列化（`params.id = path_id`
+    // 只是事后覆盖），于是标了 `#[param(source = "path")]` 的字段仍然**必须出现在
+    // JSON body 里**，否则 axum 在进入 handler 之前就返回 422 missing field —— 事后
+    // 覆盖的那行永远执行不到。
+    //
+    // 现在改为：body 取 `Value` → 与 query / path 值合并成一张 map（优先级
+    // path > query > body）→ 一次性 `serde_json::from_value` 到 Params。path 字段由此
+    // 名副其实地来自 URL，body 可以完全省略。
+
+    // 把 query string 解析成 `serde_json::Value`（带类型推断）。
+    //
+    // 不能用 `axum::extract::Query`：其底层 serde_urlencoded 不支持 `#[serde(flatten)]`，
+    // 对 `Option<usize>` 之类的分页参数会报 `invalid type: string "500", expected usize`，
+    // 导致带 limit 的分页 GET（如 agents 列表预载传 limit=500）解析失败。
+    let build_query_value = quote! {
+        let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
+            let __query_map: std::collections::HashMap<String, String> =
+                serde_urlencoded::from_str(__qs).unwrap_or_default();
+            let mut __obj = serde_json::Map::new();
+            for (__k, __v) in &__query_map {
+                let __parsed: serde_json::Value = if __v == "true" {
+                    serde_json::Value::Bool(true)
+                } else if __v == "false" {
+                    serde_json::Value::Bool(false)
+                } else if __v == "null" {
+                    serde_json::Value::Null
+                } else if let Ok(__n) = __v.parse::<i64>() {
+                    serde_json::Value::Number(__n.into())
+                } else if let Ok(__n) = __v.parse::<f64>() {
+                    serde_json::Number::from_f64(__n)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::String(__v.clone()))
+                } else {
+                    serde_json::Value::String(__v.clone())
+                };
+                __obj.insert(__k.clone(), __parsed);
+            }
+            serde_json::Value::Object(__obj)
+        } else {
+            serde_json::Value::Object(serde_json::Map::new())
+        };
+    };
+
+    // 读取请求体到 map。空 body ⇒ 空 map；非对象或语法错误 ⇒ 400（不当 422 抛到框架层）
+    let read_body_into_map = quote! {
+        let __raw_body = axum::body::to_bytes(__request.into_body(), 2 * 1024 * 1024)
+            .await
+            .map_err(|e| common::error::Error::bad_request(
+                format!("读取请求体失败: {e}")
+            ))?;
+        let mut __merged: serde_json::Map<String, serde_json::Value> = if __raw_body.is_empty() {
+            serde_json::Map::new()
+        } else {
+            match serde_json::from_slice::<serde_json::Value>(&__raw_body) {
+                Ok(serde_json::Value::Object(__m)) => __m,
+                Ok(_) => return Err(common::error::Error::bad_request(
+                    "请求体必须是 JSON 对象".to_string()
+                )),
+                Err(e) => return Err(common::error::Error::bad_request(
+                    format!("请求体 JSON 解析失败: {e}")
+                )),
+            }
+        };
+    };
+
+    // query 覆盖 body（优先级 query > body）
+    let inject_query_into_map = quote! {
+        #(
+            if let Some(__q) = __query_value.get(#query_idents_str) {
+                __merged.insert(#query_idents_str.to_string(), __q.clone());
+            }
+        )*
+    };
+
+    // path 覆盖一切（优先级最高，且是 path 字段唯一可靠的来源）
+    let inject_path_into_map = quote! {
+        #(
+            __merged.insert(
+                #path_idents_str.to_string(),
+                serde_json::to_value(&#path_idents).map_err(|e| common::error::Error::bad_request(
+                    format!("path 参数 {} 解析失败: {e}", #path_idents_str)
+                ))?,
+            );
+        )*
     };
 
     // Generate the handler code
@@ -374,33 +465,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                         let mut params = <#params_ty as ::std::default::Default>::default();
 
-                        // 解析 query string 并构建 serde_json::Value（带类型推断）
-                        let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
-                            let __query_map: std::collections::HashMap<String, String> =
-                                serde_urlencoded::from_str(__qs).unwrap_or_default();
-                            let mut __obj = serde_json::Map::new();
-                            for (__k, __v) in &__query_map {
-                                let __parsed: serde_json::Value = if __v == "true" {
-                                    serde_json::Value::Bool(true)
-                                } else if __v == "false" {
-                                    serde_json::Value::Bool(false)
-                                } else if __v == "null" {
-                                    serde_json::Value::Null
-                                } else if let Ok(__n) = __v.parse::<i64>() {
-                                    serde_json::Value::Number(__n.into())
-                                } else if let Ok(__n) = __v.parse::<f64>() {
-                                    serde_json::Number::from_f64(__n)
-                                        .map(serde_json::Value::Number)
-                                        .unwrap_or(serde_json::Value::String(__v.clone()))
-                                } else {
-                                    serde_json::Value::String(__v.clone())
-                                };
-                                __obj.insert(__k.clone(), __parsed);
-                            }
-                            serde_json::Value::Object(__obj)
-                        } else {
-                            serde_json::Value::Object(serde_json::Map::new())
-                        };
+                        #build_query_value
 
                         // 提取非 flatten query 字段
                         #extract_query_fields
@@ -414,7 +479,8 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     }
                 }
             } else {
-                // path + query + body 混合：保留 Json 提取器
+                // path + query + body 混合：body 取 Value 后与 query / path 合并，
+                // 再一次性反序列化（优先级 path > query > body）
                 quote! {
                     #item_fn
 
@@ -422,42 +488,18 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                         axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                         axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
                         axum::extract::RawQuery(__raw_query): axum::extract::RawQuery,
-                        axum::Json(mut params): axum::Json<#params_ty>,
+                        __request: axum::extract::Request,
                     ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
-                        // 解析 query string 并构建 serde_json::Value
-                        let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
-                            let __query_map: std::collections::HashMap<String, String> =
-                                serde_urlencoded::from_str(__qs).unwrap_or_default();
-                            let mut __obj = serde_json::Map::new();
-                            for (__k, __v) in &__query_map {
-                                let __parsed: serde_json::Value = if __v == "true" {
-                                    serde_json::Value::Bool(true)
-                                } else if __v == "false" {
-                                    serde_json::Value::Bool(false)
-                                } else if __v == "null" {
-                                    serde_json::Value::Null
-                                } else if let Ok(__n) = __v.parse::<i64>() {
-                                    serde_json::Value::Number(__n.into())
-                                } else if let Ok(__n) = __v.parse::<f64>() {
-                                    serde_json::Number::from_f64(__n)
-                                        .map(serde_json::Value::Number)
-                                        .unwrap_or(serde_json::Value::String(__v.clone()))
-                                } else {
-                                    serde_json::Value::String(__v.clone())
-                                };
-                                __obj.insert(__k.clone(), __parsed);
-                            }
-                            serde_json::Value::Object(__obj)
-                        } else {
-                            serde_json::Value::Object(serde_json::Map::new())
-                        };
+                        #build_query_value
+                        #read_body_into_map
+                        #inject_query_into_map
+                        #inject_path_into_map
 
-                        // 优先级：path > query > body
-                        // 先用 query 覆盖 body 字段
-                        #extract_query_fields
-                        #extract_flattened_query_fields
-                        // 最后用 path 覆盖
-                        #assign_paths
+                        let params: #params_ty = serde_json::from_value(
+                            serde_json::Value::Object(__merged)
+                        ).map_err(|e| common::error::Error::bad_request(
+                            format!("参数解析失败: {e}")
+                        ))?;
 
                         let __result = #core_ident(ctx, params).await?;
                         Ok(axum::Json(common::api::ApiResponse::success(__result)))
@@ -496,17 +538,26 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     }
                 }
             } else {
-                // path + body 混合：保留 Json 提取器，path 字段后覆盖 body 字段
-                // 优先级：path > body（path 字段从 URL 提取，覆盖 body 中的同名字段）
+                // path + body 混合：body 取 Value 后由 path 值覆盖同名字段，
+                // 再一次性反序列化（优先级 path > body）。body 可整体省略，
+                // 只要 DTO 里非 path 字段都能默认构造。
                 quote! {
                     #item_fn
 
                     pub async fn #handler_ident(
                         axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                         axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
-                        axum::Json(mut params): axum::Json<#params_ty>,
+                        __request: axum::extract::Request,
                     ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
-                        #assign_paths
+                        #read_body_into_map
+                        #inject_path_into_map
+
+                        let params: #params_ty = serde_json::from_value(
+                            serde_json::Value::Object(__merged)
+                        ).map_err(|e| common::error::Error::bad_request(
+                            format!("参数解析失败: {e}")
+                        ))?;
+
                         let result = #core_ident(ctx, params).await?;
                         Ok(axum::Json(common::api::ApiResponse::success(result)))
                     }
@@ -521,37 +572,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                     axum::extract::RawQuery(__raw_query): axum::extract::RawQuery,
                 ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
-                    // 解析 query string 并构建 serde_json::Value（带类型推断）。
-                    // 不能用 `axum::extract::Query`：其底层 serde_urlencoded 不支持
-                    // `#[serde(flatten)]`，对 `Option<usize>` 的分页参数会报
-                    // `invalid type: string "500", expected usize`，导致带 limit 的
-                    // 分页 GET（如 agents 列表预载传 limit=500）解析失败。
-                    let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
-                        let __query_map: std::collections::HashMap<String, String> =
-                            serde_urlencoded::from_str(__qs).unwrap_or_default();
-                        let mut __obj = serde_json::Map::new();
-                        for (__k, __v) in &__query_map {
-                            let __parsed: serde_json::Value = if __v == "true" {
-                                serde_json::Value::Bool(true)
-                            } else if __v == "false" {
-                                serde_json::Value::Bool(false)
-                            } else if __v == "null" {
-                                serde_json::Value::Null
-                            } else if let Ok(__n) = __v.parse::<i64>() {
-                                serde_json::Value::Number(__n.into())
-                            } else if let Ok(__n) = __v.parse::<f64>() {
-                                serde_json::Number::from_f64(__n)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::String(__v.clone()))
-                            } else {
-                                serde_json::Value::String(__v.clone())
-                            };
-                            __obj.insert(__k.clone(), __parsed);
-                        }
-                        serde_json::Value::Object(__obj)
-                    } else {
-                        serde_json::Value::Object(serde_json::Map::new())
-                    };
+                    #build_query_value
 
                     // 直接把整个 params 从 serde_json::Value 反序列化（serde_json 支持
                     // flatten，且已把 "500" 识别为数字），无需 Params 实现 Default。

@@ -75,6 +75,10 @@ pub async fn delete_model_provider(id: &str) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/finance/model-providers/{}", id)).await
 }
 
+/// 连通性测试：用默认 prompt（"Hello!"）探活
+///
+/// body 为空即可——`id` 由 URL path 提供（`source = "path"` 字段不必在 body 里
+/// 冗余复述），`prompt` 留空则服务端回落到默认值。
 pub async fn test_model_provider_connection(id: &str) -> Result<TestConnectionResponse, ApiError> {
     let body = serde_json::json!({});
     api_post(

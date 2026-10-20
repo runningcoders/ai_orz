@@ -4,8 +4,12 @@
 //! 1. 空 struct GET（无 body） - 走 (false, false) 的 is_empty_params 子分支
 //! 2. path-only GET（无 body） - 走 (true, false) 的 path-only 优化子分支
 //! 3. query-only GET（无 body） - 走 (false, true) 分支
-//! 4. path+body 混合 PUT（body 含 path 字段） - 走 (true, false) 的 path+body 子分支
+//! 4. path+body 混合 PUT - 走 (true, false) 的 path+body 子分支
 //! 5. path+query 混合 GET（无 body） - 走 (true, true) 分支
+//!
+//! 参数来源不再分层提取，而是统一按「body → query → path」合并成一张 map 后
+//! 一次性反序列化（详见测试 14/15）：`#[param(source = "path")]` 因此名副其实，
+//! path 字段不再被要求在 JSON body 里冗余出现（历史实现会返回 422 missing field）。
 //!
 //! 此外还验证：
 //! - 优先级：path > query > body（path 字段从 URL 提取，覆盖 body 中的同名字段）
@@ -20,7 +24,7 @@ use axum::Extension;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use common::config::{DatabaseConfig, StatsConfig, VectorStoreType};
 use common::enums::ToolStatus;
 use common::error::Error;
@@ -748,16 +752,18 @@ async fn test_path_and_query_with_numeric_types_works() {
     assert!(body_str.contains("3.14"), "rate=3.14 应从 query 提取");
 }
 
-// ==================== 测试 12: 反例固化 —— path + 未标注字段会被当成 body（415 陷阱） ====================
+// ==================== 测试 12: 漏标字段已被宽容，但会静默取不到值 ====================
 
 /// 反例：只有 `id` 标注了 `#[param(source = "path")]`，`filter` 漏标。
 ///
-/// `generate_http_handler` 会把未标注字段统统算作 body，于是走进
-/// "path + body 混合" 分支，生成 `axum::Json` 提取器。GET 请求不带
-/// `Content-Type: application/json` 时，axum 直接回 415。
+/// 历史实现下这类 GET 会 415 —— 宏把未标注字段算作 body 并生成 `axum::Json`
+/// 提取器，而 GET 不带 `Content-Type: application/json`。真实事故：
+/// `GetToolCallEntryRequest` 曾漏标 tool_id / agent_id / project_id / task_id，
+/// 导致 `/api/v1/finance/tool-call-entries/{call_id}` 详情接口 415。
 ///
-/// 真实事故：`GetToolCallEntryRequest` 曾漏标 tool_id / agent_id / project_id /
-/// task_id，导致 `/api/v1/finance/tool-call-entries/{call_id}` 详情接口 415。
+/// 改为「body 取 Value 后合并 path/query」之后，415 消失了——GET 无 body 时该字段
+/// 静默落到 `None` 而不再报错。**响亮失败换成了静默降级**，因此测试 13 的全量扫描
+/// 护栏（GET/DELETE 路由字段必须全部标注）成为唯一防线，两者须成对存在。
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
 pub struct PitfallUnannotatedRequest {
     #[param(source = "path")]
@@ -780,7 +786,7 @@ pub async fn pitfall_unannotated(
 }
 
 #[tokio::test]
-async fn test_unannotated_field_turns_get_into_json_extractor() {
+async fn test_unannotated_field_no_longer_breaks_get() {
     let app = make_router(|r| r.route("/pitfall/{id}", get(pitfall_unannotated_handler))).await;
 
     let req = Request::builder()
@@ -792,9 +798,24 @@ async fn test_unannotated_field_turns_get_into_json_extractor() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(
         resp.status(),
-        StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        "path + 未标注字段的 GET 会因 Json 提取器返回 415；\
-         GET 路由的 params 字段必须全部标注 path/query（见测试 13 的全量扫描）"
+        StatusCode::OK,
+        "漏标字段不再让 GET 变成 Json 提取器、不再 415；\
+         代价是该字段静默为 None，必须由测试 13 的全量扫描兜住"
+    );
+
+    // 即便把 query 带上，漏标的字段也取不到值（它仍被当成 body 字段）
+    let app = make_router(|r| r.route("/pitfall/{id}", get(pitfall_unannotated_handler))).await;
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/pitfall/abc?filter=txt")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        !body_str.contains("txt"),
+        "未标注的字段不会从 query 取值（静默丢失），实际: {body_str}"
     );
 }
 
@@ -1010,7 +1031,140 @@ fn test_get_delete_route_params_are_fully_annotated() {
     assert!(
         offenders.is_empty(),
         "以下 GET/DELETE 路由的 params 结构体存在未标注 #[param(source = ...)] 的字段，\
-         宏会将其当作 body 并生成 axum::Json 提取器，导致不带 Content-Type 的请求 415：\n{}",
+         宏会将其当作 body 并从 body 取值，导致该字段静默为 None（测试 12）：\n{}",
         offenders.join("\n")
+    );
+}
+
+// ==================== 测试 14: path 字段不必出现在 JSON body 中 ====================
+
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
+pub struct ProbeItemRequest {
+    #[param(source = "path")]
+    pub id: String,
+    pub prompt: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ProbeItemResponse {
+    pub id: String,
+    pub prompt: Option<String>,
+}
+
+#[generate_http_handler]
+pub async fn probe_item(
+    _ctx: RequestContext,
+    params: ProbeItemRequest,
+) -> Result<ProbeItemResponse, Error> {
+    Ok(ProbeItemResponse {
+        id: params.id,
+        prompt: params.prompt,
+    })
+}
+
+/// 历史回归护栏：标了 `#[param(source = "path")]` 的字段**不得**被要求在 body 里出现。
+///
+/// 事故原型：`TestModelProviderConnectionRequest`（`id` 标 source=path、其余为
+/// `Option<prompt>`）的前端调用只发 `{}`，而旧实现把 path 字段也交给
+/// `Json<DTO>` 反序列化 ⇒ `422 missing field \`id\``（事后那句 `params.id = id`
+/// 覆盖永远执行不到）。
+#[tokio::test]
+async fn test_body_omitting_path_field_is_accepted() {
+    let app = make_router(|r| r.route("/probe/{id}", post(probe_item_handler))).await;
+
+    // 1) 完全空 body：DTO 的非 path 字段都能缺省构造 ⇒ 必须可用
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/probe/from_path")
+        .header("Content-Type", "application/json")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    let status = resp.status();
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "空 body 必须可用：id 来自 path，其余字段缺省，实际状态 {status}，响应: {body_str}"
+    );
+    assert!(
+        body_str.contains("from_path"),
+        "id 必须取自 URL path，实际: {body_str}"
+    );
+
+    // 2) body 只含业务字段、不含 path 字段
+    let app = make_router(|r| r.route("/probe/{id}", post(probe_item_handler))).await;
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/probe/id_456")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"prompt":"hi"}"#))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(body_str.contains("id_456"), "id 必须取自 path: {body_str}");
+    assert!(body_str.contains("hi"), "prompt 应取自 body: {body_str}");
+}
+
+/// body 非法时给出明确的 400 业务错误，而不是甩一个框架的 `JsonRejection`
+#[tokio::test]
+async fn test_malformed_body_returns_bad_request() {
+    let app = make_router(|r| r.route("/probe/{id}", post(probe_item_handler))).await;
+
+    // 语法错误
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/probe/from_path")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"prompt":"#))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::BAD_REQUEST,
+        "非法 JSON body 应返回 400 而非框架级 422"
+    );
+
+    // 非对象 body（数组无法合并字段名）
+    let app = make_router(|r| r.route("/probe/{id}", post(probe_item_handler))).await;
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/probe/from_path")
+        .header("Content-Type", "application/json")
+        .body(Body::from("[1,2,3]"))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::BAD_REQUEST,
+        "非对象 body 应返回 400"
+    );
+}
+
+/// path 字段值必须覆盖 body 中的同名字段（防伪造 id）
+#[tokio::test]
+async fn test_path_value_overrides_body_id_when_body_omitted_or_conflicting() {
+    let app = make_router(|r| r.route("/probe/{id}", post(probe_item_handler))).await;
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/probe/real_id")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"id":"forged_id","prompt":"hi"}"#))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(body_str.contains("real_id"), "path 必须覆盖 body 的 id");
+    assert!(
+        !body_str.contains("forged_id"),
+        "body 里的 id 不应生效: {body_str}"
     );
 }

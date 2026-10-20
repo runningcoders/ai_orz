@@ -67,8 +67,10 @@ async fn create_http_tool(
 
 /// 调用 debug_call_tool，返回 (status, body)
 ///
-/// 注意：`DebugCallToolRequest` 未 derive `Default`，宏走 path+body 混合分支，
-/// JSON body 必须包含 `id` 字段（会被 path 值覆盖），否则反序列化失败返回 422。
+/// 注意：`DebugCallToolRequest` 未 derive `Default`，宏走 path+body 混合分支。
+/// body 里的 `id` 是冗余写法（path 值必定覆盖 body 同名键），留着仅为与其余调用方
+/// 保持字面一致——框架已不再要求 body 携带 path 字段（见
+/// `ai-orz-macros` 的 path/query/body 合并提取）。
 async fn debug_call_tool(
     app: &TestApp,
     jwt: &str,
