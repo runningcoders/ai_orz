@@ -11,6 +11,7 @@ use crate::pkg::tool_registry::http_fetch::HttpFetchToolFactory;
 use crate::pkg::tool_registry::lark_cli::LarkCliToolFactory;
 use crate::pkg::tool_registry::mark_artifact::MarkArtifactToolFactory;
 use crate::pkg::tool_registry::shell_exec::ShellExecToolFactory;
+use crate::pkg::tool_registry::skillhub_cli::SkillhubCliToolFactory;
 use crate::pkg::tool_registry::tavily_search::TavilySearchToolFactory;
 use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
@@ -47,6 +48,7 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
             ("shell_exec".to_string(), Box::new(ShellExecToolFactory)),
             ("lark_cli".to_string(), Box::new(LarkCliToolFactory)),
             ("gh_cli".to_string(), Box::new(GhCliToolFactory)),
+            ("skillhub_cli".to_string(), Box::new(SkillhubCliToolFactory)),
             (
                 "tavily_search".to_string(),
                 Box::new(TavilySearchToolFactory),

@@ -22,6 +22,7 @@ pub mod shell_env;
 pub mod shell_exec;
 pub mod shell_policy;
 pub mod shell_tool;
+pub mod skillhub_cli;
 pub mod tavily_search;
 pub mod tool_readiness;
 pub mod tool_security;
