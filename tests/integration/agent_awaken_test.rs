@@ -17,7 +17,7 @@ use sqlx::SqlitePool;
 
 // Part B: awaken Mock 测试依赖
 use ::common::enums::{
-    AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType, ToolProtocol,
+    AgentStatus, CallerType, MessageRole, MessageType, ModelCapability, ProviderType, ToolProtocol,
 };
 use ::common::error::Result as CommonResult;
 use ai_orz::models::agent::{Agent, AgentPo, AgentRuntimeConfig};
@@ -29,6 +29,8 @@ use ai_orz::models::tool::{Tool, ToolPo};
 use ai_orz::pkg::RequestContext;
 use ai_orz::pkg::tool_tracing::logger::ToolCallLogger;
 use ai_orz::service::dal::brain::BrainDal;
+use ai_orz::service::domain::message as message_domain;
+use ai_orz::service::domain::message::SendTaskAssignmentCommand;
 use ai_orz::service::domain::runtime::awakening::ThinkingOptions;
 use ai_orz::service::domain::runtime::new_with_all;
 use async_trait::async_trait;
@@ -201,6 +203,16 @@ async fn test_consumer_busy_agent_rejects_message(pool: SqlitePool) {
 /// - 不触发 LLM 调用
 /// - 返回 Ok（合法跳过，非错误）
 /// - Busy 状态被释放
+///
+/// ⚠️ **消息类型必须是 `TaskAssignment`**：任务级唤醒门闩（终态 / 依赖 / 唤醒预算）
+/// 只对「派给某个 Agent 去执行的活」生效（`applies_task_scope_gates` 白名单）。
+/// 普通对话（Text）即使带 task_id 也不受终态约束 —— 用户对着一个已完成的任务追问
+/// 「最后结果如何」必须还能得到回复。
+///
+/// 这条测试曾经用 `POST /messages/agents` 造 Text 消息并通过；收窄白名单（为了让
+/// `TaskDispatchNotification` 能落地唤醒 Owner）之后，Text 场景不再被跳过，测试会
+/// **真的调用 LLM**（打到 `api.openai.com`）。所以这里改用 TaskAssignment 消息，
+/// 测的仍是同一条业务规则。
 #[sqlx::test]
 async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -263,21 +275,38 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
         "InProgress → Completed should succeed"
     );
 
-    // 4. 发送带 task_id 的消息给 Agent
-    let send_req = json!({
-        "to_agent_id": agent_id,
-        "content": "Hello for completed task",
-        "task_id": task_id,
-    });
-    let (status, body) = app
-        .post_with_jwt("/api/v1/finance/messages/agents", &send_req, &jwt)
-        .await;
-    let msg_data = crate::common::assert_api_ok(status, &body);
-    let message_id = msg_data
-        .get("message_id")
-        .and_then(|v| v.as_str())
-        .expect("missing message_id")
-        .to_string();
+    // 4. 发送 TaskAssignment 消息给 Agent（不能用 POST /messages/agents：
+    //    那个接口只能产出 Text / AgentNotify / Mixed，而终态门闩只认 TaskAssignment）
+    let ctx = RequestContext::builder()
+        .organization_id(bs.organization_id.clone())
+        .user_id(bs.user_id.clone())
+        .caller_type(CallerType::User)
+        .agent_id(agent_id.clone())
+        .task_id(task_id.clone())
+        .build();
+    let assign_cmd = SendTaskAssignmentCommand {
+        task_id: &task_id,
+        task_title: "Test task for completed",
+        task_description: Some("Task that will be completed"),
+        from_id: &bs.user_id,
+        from_role: MessageRole::User,
+        to_agent_id: &agent_id,
+        project_id: Some(project_id.as_str()),
+    };
+    let assignment = message_domain::domain()
+        .delivery()
+        .send_task_assignment(ctx, assign_cmd)
+        .await
+        .expect("send task assignment should succeed");
+    let message_id = assignment.po.id.clone();
+
+    // 前提自检：类型漂移（比如将来 send_task_assignment 改了 type）会让本用例
+    // 变成「假的绿」——跳过其实来自别的原因，而不是终态门闩。这里钉死来源。
+    assert_eq!(
+        assignment.po.message_type,
+        MessageType::TaskAssignment,
+        "本用例依赖 TaskAssignment 类型：终态门闩只对它生效"
+    );
 
     // 5. 调用 Consumer 处理消息事件
     let consumer = MessageConsumer::new();
@@ -292,7 +321,7 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
         "from_role": 0,
         "to_id": agent_id,
         "to_role": 1,
-        "message_type": 0,
+        "message_type": MessageType::TaskAssignment as i32,
         "content": "",
         "created_at": 0
     });
