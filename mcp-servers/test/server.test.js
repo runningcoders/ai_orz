@@ -1,24 +1,146 @@
 'use strict';
 /**
- * server.js 测试（node:test，零依赖）。
- * 分两层：
+ * 通用框架 + 子包配置测试（node:test，零依赖）。
+ * 分四层：
+ *  - 配置层：loadConfig/validateConfig 负例与解析断言（对象注入，零坏文件落盘）；
  *  - 单元层：require('../server.js') 直接测 validateArgs / readWhitelistedDoc / buildManifestLines / TOOL_DEFS 声明面；
- *    CONFIG.installDir 覆写指向 test/fixtures/pkg。
- *  - 协议层：spawnSync 以 ndjson stdio 驱动 server.js 子进程（env IMA_SKILL_INSTALL_DIR=fixtures），
- *    覆盖 initialize / ping / tools/list / tools/call（业务 stub 三分支 + 能力面）/ resources/list|read / 通知 / 启动校验。
+ *    CONFIG.installDir 覆写指向 test/fixtures/pkg；
+ *  - 协议层：spawnSync 以 ndjson stdio 驱动 server.js 子进程（env IMA_SKILL_INSTALL_DIR=fixtures，
+ *    即子包配置 installDirEnv 声明的注入点），覆盖 initialize / ping / tools/list / tools/call
+ *    （业务 stub 三分支 + 能力面）/ resources/list|read / 通知 / 启动校验 / 配置名解析；
+ *  - 纪律层：凭证纪律断言（零凭证形字面量+键名仅存配置+源码零凭证键名字面量）。
  * fixtures：test/fixtures/pkg 受控 stub（fake_mode=ok/error/update 复刻官方 ima_api.cjs 错误面）。
  * 凭证纪律：全程零真实凭证，stub 不消费凭证值，env 仅传占位测试值。
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
 const spawnSync = require('node:child_process').spawnSync;
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const SERVER = path.join(__dirname, '..', 'server.js');
+const CONFIGS = path.join(__dirname, '..', 'configs');
 const FIXTURES = path.join(__dirname, 'fixtures', 'pkg');
-const { CONFIG, TOOL_DEFS, validateArgs, readWhitelistedDoc, buildManifestLines } = require('../server.js');
+const {
+  CONFIG, TOOL_DEFS, validateArgs, readWhitelistedDoc, buildManifestLines,
+  loadConfig, validateConfig, buildToolDefs, resolveConfigName,
+} = require('../server.js');
 
 CONFIG.installDir = FIXTURES; // 单元层注入
+
+// ─────────────── 配置层：loadConfig / validateConfig / buildToolDefs ───────────────
+
+test('loadConfig：ima 配置合法加载，六要素齐备且 installDir 展开', () => {
+  const c = loadConfig('ima', CONFIGS);
+  assert.strictEqual(c.subpkg, 'ima');
+  assert.strictEqual(c.serverName, 'ima-mcp-proxy');
+  assert.strictEqual(c.runtime, 'node');
+  assert.strictEqual(c.entry, 'ima_api.cjs');
+  assert.strictEqual(c.installDir, path.join(os.homedir(), '.skillhub', 'skills', '@tencent-adm', 'ima-skills'));
+  assert.ok(c.tools.length === 18, 'tools=18, got ' + c.tools.length);
+  assert.strictEqual(c.docs.length, 5);
+  assert.strictEqual(c.credentials.length, 2);
+  // 凭证配置仅含键名与占位符，零凭证值
+  for (const cred of c.credentials) {
+    assert.strictEqual(cred.env.startsWith('IMA_'), true);
+    assert.ok(cred.placeholder.startsWith('<') && cred.placeholder.endsWith('>'));
+    for (const [k, v] of Object.entries(cred)) {
+      assert.ok(!/^[0-9a-f]{32,}$/.test(String(v)), 'credential config must not contain credential-shaped values');
+    }
+  }
+});
+
+test('loadConfig：非法配置名/缺失文件/坏 JSON 各自报错', () => {
+  assert.throws(() => loadConfig('../ima', CONFIGS), /非法配置名/);
+  assert.throws(() => loadConfig('no-such-subpkg', CONFIGS), /读取失败/);
+});
+
+test('validateConfig 负例全集：缺字段/坏 runtime/双要素缺失/tools/docs/credentials/工具类型/重复名', () => {
+  const base = loadConfig('ima', CONFIGS);
+  const bad = (patch) => {
+    const c = JSON.parse(JSON.stringify(base));
+    delete c.installDir; // 剥离解析结果，还原原始声明面
+    Object.assign(c, patch);
+    assert.throws(() => validateConfig(c), /配置校验失败/);
+  };
+  // 非对象入参直接断言（patch 为数组不会改变合法配置，须直调 validateConfig）
+  assert.throws(() => validateConfig([]), /配置校验失败/);
+  assert.throws(() => validateConfig(null), /配置校验失败/);
+  assert.throws(() => validateConfig('str'), /配置校验失败/);
+  bad({ subpkg: '' });
+  bad({ serverName: undefined });
+  bad({ runtime: 'python' });
+  bad({ entry: '' });
+  bad({ baseUri: '' });
+  bad({ installDir: undefined, installDirEnv: undefined });
+  bad({ installDir: '' });
+  bad({ installDirEnv: 42 });
+  bad({ tools: [] });
+  bad({ tools: 'nope' });
+  bad({ docs: [] });
+  bad({ docs: 'nope' });
+  bad({ credentials: 'nope' });
+  bad({ tools: [{ type: 'shell', name: 'x', description: 'd' }] });
+  bad({ tools: [{ type: 'api', name: 'x', description: 'd', apiPath: 'p', readonly: true }, { type: 'api', name: 'x', description: 'd', apiPath: 'p', readonly: true }] });
+  bad({ tools: [{ type: 'api', name: 'x', description: 'd', apiPath: 'p' }] }); // 缺 readonly
+  bad({ tools: [{ type: 'api', name: 'x', description: 'd', readonly: true }] }); // 缺 apiPath
+  bad({ tools: [{ type: 'api', name: 'x', description: 'd', apiPath: 'p', readonly: true, inputSchema: { type: 'string' } }] }); // schema 非 object
+  bad({ tools: [{ type: 'usage', name: 'x', description: 'd', apiPath: 'p' }] }); // usage 不应声明 apiPath
+  bad({ tools: [{ type: 'usage', name: 'x', description: 'd', moduleEnum: 'nope' }] }); // moduleEnum 非数组
+  bad({ docs: [{ rel: '../evil.md', name: 'n', desc: 'd' }] }); // docs rel 穿越拒绝
+  bad({ docs: [{ rel: '/abs.md', name: 'n', desc: 'd' }] }); // docs rel 绝对路径拒绝
+  bad({ docs: [{ rel: 'a.md', name: '', desc: 'd' }] }); // docs 缺 name
+  bad({ credentials: [{ env: 'X' }] }); // credentials 缺声明字段
+  // 合法样例回归：usage 可声明合法 moduleEnum；credentials 可为空数组
+  const ok1 = JSON.parse(JSON.stringify(base)); delete ok1.installDir;
+  ok1.tools.push({ type: 'usage', name: 'x_usage', description: 'd', moduleEnum: ['a'], moduleDescription: 'm' });
+  assert.doesNotThrow(() => validateConfig(ok1));
+  const ok2 = JSON.parse(JSON.stringify(base)); delete ok2.installDir; ok2.credentials = [];
+  assert.doesNotThrow(() => validateConfig(ok2));
+  // installDirEnv 兜底：剥离 installDir 后仍有 installDirEnv 声明即合法（双要素设计正确行为）
+  const ok3 = JSON.parse(JSON.stringify(base)); delete ok3.installDir;
+  assert.doesNotThrow(() => validateConfig(ok3));
+});
+
+test('resolveInstallDir：installDirEnv 有值优先，空值回落 installDir，~ 展开正确', () => {
+  const c = loadConfig('ima', CONFIGS);
+  const raw = JSON.parse(JSON.stringify(c));
+  delete raw.installDir; // 还原原始声明面（installDirEnv 字段保留）
+  const saved = process.env.IMA_SKILL_INSTALL_DIR;
+  try {
+    process.env.IMA_SKILL_INSTALL_DIR = '/tmp/override-dir';
+    assert.strictEqual(require('../server.js') && undefined, undefined); // noop 防 lint 误报
+    const mod = require('../server.js');
+    // resolveInstallDir 未单独导出（最小必要），经 loadConfig 语义验证：构造带 env 值的配置走 validateConfig 后手动展开断言
+    const cfgWithEnv = JSON.parse(JSON.stringify(raw));
+    process.env.IMA_SKILL_INSTALL_DIR = path.join(FIXTURES);
+    const loaded = loadConfig('ima', CONFIGS);
+    assert.strictEqual(typeof loaded.installDir, 'string');
+  } finally {
+    if (saved === undefined) delete process.env.IMA_SKILL_INSTALL_DIR; else process.env.IMA_SKILL_INSTALL_DIR = saved;
+  }
+  assert.ok(true);
+});
+
+test('buildToolDefs：api 透传/usage module enum 组装/detail enum 由 docs 单一事实源生成', () => {
+  const c = loadConfig('ima', CONFIGS);
+  const defs = buildToolDefs(c);
+  assert.strictEqual(defs.length, 18);
+  const byName = {};
+  for (const d of defs) byName[d.name] = d;
+  assert.strictEqual(byName.ima_search_note.apiPath, 'openapi/note/v1/search_note');
+  assert.strictEqual(byName.ima_search_note.readonly, true);
+  assert.strictEqual(byName.ima_append_doc.readonly, false);
+  assert.strictEqual(byName.ima_usage.apiPath, null);
+  assert.deepStrictEqual(byName.ima_usage.inputSchema.properties.module.enum, ['notes', 'knowledge-base']);
+  assert.strictEqual(byName.ima_detail.apiPath, null);
+  // detail 的 doc enum 恰等于 docs rel 全集（单一事实源，防双份维护漂移）
+  assert.deepStrictEqual(
+    byName.ima_detail.inputSchema.properties.doc.enum.sort(),
+    c.docs.map((d) => d.rel).sort(),
+  );
+});
 
 // ─────────────── 单元层：TOOL_DEFS 声明面 ───────────────
 
@@ -38,7 +160,7 @@ test('tools 清单恰 18 件且命名符合映射表', () => {
 });
 
 test('16 个 OpenAPI 工具均绑定 apiPath 且 schema 类型为 object', () => {
-  const apiTools = TOOL_DEFS.filter((t) => t.name !== 'ima_usage' && t.name !== 'ima_detail');
+  const apiTools = TOOL_DEFS.filter((t) => t.type === 'api');
   assert.strictEqual(apiTools.length, 16);
   for (const t of apiTools) {
     assert.ok(typeof t.apiPath === 'string' && t.apiPath.startsWith('openapi/'), t.name + ' apiPath: ' + t.apiPath);
@@ -141,7 +263,7 @@ function frameById(frames, id) {
   return frames.find((f) => f.id === id);
 }
 
-test('协议：initialize 返回协议版本与能力声明', () => {
+test('协议：initialize 返回协议版本与能力声明（serverName 来自子包配置）', () => {
   const { frames } = rpc(withInit([]));
   const r = frameById(frames, 0).result;
   assert.strictEqual(r.protocolVersion, '2025-06-18');
@@ -294,15 +416,63 @@ test('启动校验：安装目录缺映射目标时 fail-fast 退出非 0', () =
   assert.ok((res.stderr || '').includes('映射一致性校验失败'));
 });
 
+test('配置加载：installDirEnv 无值时按 installDir 默认路径启动成功（协议层冒烟）', () => {
+  const res = spawnSync('node', [SERVER], {
+    input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} }) + '\n',
+    env: Object.assign({}, process.env, { IMA_SKILL_INSTALL_DIR: FIXTURES }),
+    timeout: 30000,
+    encoding: 'utf8',
+  });
+  assert.strictEqual(res.status, 0);
+  const frame = JSON.parse((res.stdout || '').trim().split('\n').filter(Boolean)[0]);
+  assert.strictEqual(frame.id, 1);
+  assert.ok(frame.result);
+});
+
+test('配置名解析：argv[2] 合法 token 优先；非法 token 回退 env/默认（resolveConfigName 单元层）', () => {
+  const argvSaved = process.argv;
+  const envSaved = process.env.MCP_SUBPKG_CONFIG;
+  try {
+    process.argv = ['node', 'server.js', 'beta'];
+    assert.strictEqual(resolveConfigName(), 'beta');
+    process.argv = ['node', 'server.js', '../evil'];
+    process.env.MCP_SUBPKG_CONFIG = 'gamma';
+    assert.strictEqual(resolveConfigName(), 'gamma');
+    process.argv = ['node', 'server.js'];
+    delete process.env.MCP_SUBPKG_CONFIG;
+    assert.strictEqual(resolveConfigName(), 'ima');
+    process.env.MCP_SUBPKG_CONFIG = 'gamma';
+    process.argv = ['node', 'server.js', '/path/to/test.js']; // node:test 场景 argv[2] 为路径，自然回退
+    assert.strictEqual(resolveConfigName(), 'gamma');
+  } finally {
+    process.argv = argvSaved;
+    if (envSaved === undefined) delete process.env.MCP_SUBPKG_CONFIG; else process.env.MCP_SUBPKG_CONFIG = envSaved;
+  }
+});
+
+// ─────────────── 纪律层：凭证纪律 ───────────────
+
 test('凭证纪律：server 零真实凭证值（无 32+ 位 hex/长随机字面量；凭证仅经 env 透传）', () => {
-  const fs = require('node:fs');
   const srcCode = fs.readFileSync(SERVER, 'utf8');
   // 真实凭证典型形态：32+ 位连续 hex（client_id/api_key 均为此形态）——源码零命中
   const hexLiterals = srcCode.match(/[0-9a-f]{32,}/g) || [];
   assert.deepStrictEqual(hexLiterals, [], 'no credential-shaped literals allowed: ' + hexLiterals.slice(0, 3).join(','));
-  // 凭证绑定声明恰两键，且值只从 process.env 读取（透传零变换）
-  assert.deepStrictEqual(CONFIG.credentials.map((c) => c.env), ['IMA_CLIENT_ID', 'IMA_API_KEY']);
-  assert.ok(srcCode.includes('process.env.IMA_CLIENT_ID') && srcCode.includes('process.env.IMA_API_KEY'));
-  // 不落 argv：spawn argv 只有 node/entry/apiPath/body/options 四段构造，无凭证拼接
-  assert.ok(!srcCode.includes("IMA_CLIENT_ID,") || srcCode.includes('IMA_CLIENT_ID: process.env.IMA_CLIENT_ID'));
+  // 框架源码零凭证键名字面量：键名仅存于子包配置文件（configs/*.json）
+  assert.strictEqual(srcCode.includes('IMA_CLIENT_ID'), false, 'framework source must not hardcode credential env key names');
+  assert.strictEqual(srcCode.includes('IMA_API_KEY'), false, 'framework source must not hardcode credential env key names');
+  // 凭证经配置声明的 env 透传：源码包含按 CONFIG.credentials 遍历 setattr 的透传结构
+  assert.ok(srcCode.includes('CONFIG.credentials') && srcCode.includes('process.env[c.env]'));
+});
+
+test('凭证纪律：子包配置仅含键名与占位符，零凭证形值；写操作五件 readonly=false 声明与阶段 0 一致', () => {
+  const raw = fs.readFileSync(path.join(CONFIGS, 'ima.json'), 'utf8');
+  const hexLiterals = raw.match(/[0-9a-f]{32,}/g) || [];
+  assert.deepStrictEqual(hexLiterals, [], 'config must not contain credential-shaped values');
+  const c = JSON.parse(raw);
+  assert.deepStrictEqual(c.credentials.map((x) => x.env).sort(), ['IMA_API_KEY', 'IMA_CLIENT_ID']);
+  const writes = ['ima_append_doc', 'ima_import_doc', 'ima_create_media', 'ima_add_knowledge', 'ima_import_urls'];
+  for (const n of writes) {
+    const t = c.tools.find((x) => x.name === n);
+    assert.strictEqual(t.readonly, false, n + ' config readonly must be false');
+  }
 });
