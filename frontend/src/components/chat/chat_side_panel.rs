@@ -41,7 +41,7 @@ use crate::utils::{
 };
 use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
-    GetTaskRequest, GetTaskResponse, TaskListItem, TaskQueryRequest,
+    GetTaskRequest, GetTaskResponse, PaginationParams, TaskListItem, TaskQueryRequest,
 };
 use common::enums::{ArtifactSourceType, AssigneeType, TaskStatus};
 use common::models::{AgentStats, ModelCallStats};
@@ -56,6 +56,15 @@ const REFRESH_DEBOUNCE_MS: u64 = 2000;
 /// 粒度随之取分钟桶（`stats_interval = minutely`）：60 分钟窗口若用天桶只会得到 1 个点，
 /// 用小时桶也只有 1~2 个点，都画不出曲线来。
 const RUNTIME_WINDOW_MINUTES: i64 = 60;
+
+/// 默认对话（游离）任务面板的容量上限
+///
+/// 拉取策略两段式：先拉未完成任务（进行中 + 待办），数量不足上限时再用
+/// **最近完成**的任务按 updated_at 倒序补齐至此数。
+/// 旧逻辑只展示未完成任务 ⇒ 任务一完成就从面板消失，用户来不及看；
+/// 补齐段让「刚消失的那个任务」仍留在面板上（带已完成徽标）。
+/// Archived 是用户主动归档的终态，刻意不进补齐池，不把刻意收起的再翻出来。
+const FLOATING_TASK_PANEL_LIMIT: usize = 20;
 
 /// 侧栏缩略图画布尺寸（桌面 w-96 侧栏内容区约 336px 宽，移动 w-80 约 272px，
 /// 取 300 保证两端都不溢出）
@@ -205,6 +214,11 @@ pub fn ChatSidePanel(
     // 请求侧带哨兵值（见 `utils::message::request_scope`）——后端把哨兵翻译成
     // `project_id IS NULL`，只返回未挂载任何项目的任务，与「默认对话 = 默认虚拟项目」
     // 的任务域口径一致。代际守卫与 `do_load` 同源，避免与项目加载的过期结果互相覆盖。
+    //
+    // 两段式拉取（2026-10-21 调整，取代 10-03「只展示未完成」的拍板）：
+    // ① 未完成任务（进行中 + 待办）优先，可操作的排最前；
+    // ② 不足 `FLOATING_TASK_PANEL_LIMIT` 条时，拉最近 Completed 倒序补齐——
+    //    任务刚完成时 updated_at 最新，正好落在补齐段顶部，解决「还没等看就消失」。
     let mut do_load_floating = move |debounce: bool| {
         let my_gen = load_gen() + 1;
         load_gen.set(my_gen);
@@ -216,21 +230,60 @@ pub fn ChatSidePanel(
                     return;
                 }
             }
-            let req = TaskQueryRequest {
+            // 第一段：未完成任务（进行中 + 待办），带 limit 上限
+            let unfinished_req = TaskQueryRequest {
                 project_id: request_scope(None),
-                // 2026-10-03 AMan 拍板：游离任务面板只展示「进行中 + 待办」，
-                // Completed/Archived 不再进入展示（Cancelled 由基线 status != 0 排除）。
                 status_in: Some(vec![TaskStatus::InProgress, TaskStatus::Pending]),
+                pagination: PaginationParams {
+                    limit: Some(FLOATING_TASK_PANEL_LIMIT),
+                    offset: None,
+                },
                 ..Default::default()
             };
-            let tasks_res = query_tasks(&req).await;
+            let unfinished = match query_tasks(&unfinished_req).await {
+                Ok(page) => page.items,
+                Err(e) => {
+                    if load_gen() != my_gen {
+                        return;
+                    }
+                    toast.error(format!("加载任务列表失败: {}", e));
+                    loading.set(false);
+                    return;
+                }
+            };
             if load_gen() != my_gen {
                 return;
             }
-            match tasks_res {
-                Ok(page) => tasks.set(page.items),
-                Err(e) => toast.error(format!("加载任务列表失败: {}", e)),
+            // 第二段：数量不足上限才拉补齐段（零增量请求的开销只发生在真需要时）
+            let mut merged = unfinished;
+            if merged.len() < FLOATING_TASK_PANEL_LIMIT {
+                let recent_req = TaskQueryRequest {
+                    project_id: request_scope(None),
+                    // 只补 Completed：Archived 是用户主动归档，不翻出来；
+                    // Cancelled 由后端基线 `status != 0` 排除
+                    status_in: Some(vec![TaskStatus::Completed]),
+                    pagination: PaginationParams {
+                        limit: Some(FLOATING_TASK_PANEL_LIMIT),
+                        offset: None,
+                    },
+                    ..Default::default()
+                };
+                match query_tasks(&recent_req).await {
+                    Ok(page) => {
+                        merged = merge_unfinished_with_recent(
+                            merged,
+                            page.items,
+                            FLOATING_TASK_PANEL_LIMIT,
+                        );
+                    }
+                    // 补齐失败不丢主数据：未完成列表已可用，仅提示补齐段缺失
+                    Err(e) => toast.error(format!("加载最近任务失败: {}", e)),
+                }
             }
+            if load_gen() != my_gen {
+                return;
+            }
+            tasks.set(merged);
             loading.set(false);
         });
     };
@@ -598,6 +651,38 @@ fn build_task_graph_data(
         })
         .collect();
     (nodes, edges)
+}
+
+/// 游离任务面板合并：未完成任务在前，不足 `limit` 条时用「最近任务」补齐
+///
+/// - 未完成段保持后端返回序（priority DESC, created_at DESC），不重排——可操作的最相关；
+/// - 补齐段按 `updated_at` 倒序（同值按 id 倒序，与后端 tie-break 同风格）：
+///   任务刚完成时 updated_at 最新，正好落在补齐段顶部；
+/// - 按 id 去重（补齐查询可能带回已在未完成段里的任务），并硬截断到 `limit`。
+///
+/// 后端 `query` 端点只支持 priority/created_at 排序，没有 updated_at 选项，
+/// 故补齐段在前端重排；窗口上限由 limit 保证，重排不会漏掉窗口外更「近」的任务。
+fn merge_unfinished_with_recent(
+    unfinished: Vec<TaskListItem>,
+    recent: Vec<TaskListItem>,
+    limit: usize,
+) -> Vec<TaskListItem> {
+    let mut merged = unfinished;
+    merged.truncate(limit);
+    if merged.len() >= limit {
+        return merged;
+    }
+    let mut fillers: Vec<TaskListItem> = recent
+        .into_iter()
+        .filter(|t| !merged.iter().any(|u| u.id == t.id))
+        .collect();
+    fillers.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| b.id.cmp(&a.id))
+    });
+    merged.extend(fillers.into_iter().take(limit - merged.len()));
+    merged
 }
 
 /// Tab 任务：任务依赖图（自有图引擎，hover 看节点详情 / 右上按钮放大）+ 任务列表，
@@ -1185,5 +1270,73 @@ mod tests {
         assert_eq!(groups[0].1.len(), 2);
         assert_eq!(groups[1].0, "t1");
         assert_eq!(groups[1].1.len(), 1);
+    }
+
+    #[test]
+    fn floating_panel_merge_fills_recent_by_updated_at_desc() {
+        // 未完成段原序在前；补齐段去重后按 updated_at 倒序（刚完成的排最前）
+        let unfinished = vec![
+            test_task_item("u1", "未完成甲", 2, 40, "a"),
+            test_task_item("u2", "未完成乙", 1, 0, "a"),
+        ];
+        let mut recent = vec![
+            test_task_item("u1", "未完成甲", 2, 40, "a"), // 与未完成段重复 → 去重
+            test_task_item("c1", "已完成旧", 3, 100, "a"),
+            test_task_item("c2", "刚完成", 3, 100, "a"),
+            test_task_item("c3", "完成中", 3, 100, "a"),
+        ];
+        recent[1].updated_at = 100;
+        recent[2].updated_at = 300;
+        recent[3].updated_at = 200;
+        let merged = merge_unfinished_with_recent(unfinished, recent, 5);
+        let ids: Vec<&str> = merged.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, vec!["u1", "u2", "c2", "c3", "c1"]);
+    }
+
+    #[test]
+    fn floating_panel_merge_caps_at_limit() {
+        let unfinished = vec![test_task_item("u1", "未完成", 2, 40, "a")];
+        let mut recent = vec![
+            test_task_item("c1", "完成近", 3, 100, "a"),
+            test_task_item("c2", "完成中", 3, 100, "a"),
+            test_task_item("c3", "完成远", 3, 100, "a"),
+        ];
+        recent[0].updated_at = 300;
+        recent[1].updated_at = 200;
+        recent[2].updated_at = 100;
+        let merged = merge_unfinished_with_recent(unfinished, recent, 2);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].id, "u1");
+        assert_eq!(merged[1].id, "c1");
+    }
+
+    #[test]
+    fn floating_panel_merge_skips_fill_when_unfinished_full() {
+        // 未完成段已满 limit：不发起补齐（请求侧同样短路，这里锁合并函数行为）
+        let unfinished: Vec<TaskListItem> = (0..3)
+            .map(|i| test_task_item(&format!("u{i}"), "未完成", 2, 40, "a"))
+            .collect();
+        let recent = vec![test_task_item("c1", "刚完成", 3, 100, "a")];
+        let merged = merge_unfinished_with_recent(unfinished, recent, 3);
+        assert_eq!(merged.len(), 3);
+        assert!(merged.iter().all(|t| t.id.starts_with('u')));
+    }
+
+    #[test]
+    fn floating_panel_merge_truncates_overlong_unfinished() {
+        // 防御性截断：未完成段超出 limit（请求侧已带 limit，双保险）
+        let unfinished: Vec<TaskListItem> = (0..5)
+            .map(|i| test_task_item(&format!("u{i}"), "未完成", 2, 40, "a"))
+            .collect();
+        let merged = merge_unfinished_with_recent(unfinished, Vec::new(), 3);
+        assert_eq!(merged.len(), 3);
+    }
+
+    #[test]
+    fn floating_panel_merge_handles_empty_recent() {
+        let unfinished = vec![test_task_item("u1", "未完成", 2, 40, "a")];
+        let merged = merge_unfinished_with_recent(unfinished, Vec::new(), 20);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].id, "u1");
     }
 }
