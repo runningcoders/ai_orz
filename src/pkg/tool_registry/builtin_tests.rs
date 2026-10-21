@@ -297,3 +297,56 @@ fn builtin_tool_schemas_are_llm_flattened() {
         offenders.join("\n")
     );
 }
+
+/// 护栏：所有内置工具的 `function.name`（wire name）必须落在跨 provider LCD 内
+/// （`^[a-zA-Z0-9_-]{1,128}$`，判定复用 `common::llm_schema::is_wire_tool_name`）。
+///
+/// 背景（2026-10-21 线上故障）：`ToolDescriptor::from` 原先直发 DB 的 `name`
+/// **显示名列**（"List Tool Tags" 带空格），MCP 工具名形如 `mcp.<uuid>.<tool>`
+/// （带点号）。GLM 端点宽松不报错，火山方舟严校验：tools 数组里任一名字违规即
+/// 整个请求 400 `InvalidParameter: tools.N.function.name: expected 1-128 ASCII
+/// letters, digits, underscores or hyphens`，且报错指不出是哪个工具 ⇒
+/// 该 Agent 每一轮模型调用全挂（当日 125 次）。
+///
+/// 出站收敛见 `ToolDescriptor::from` → `to_wire_tool_name(&po.id)`；
+/// 本测试守住「新工具 / 手写 create_po 绕过收敛」这条路，并额外断言 wire name
+/// 在注册表内唯一（sanitize 非单射，两个工具撞名会让模型永远调不到其中一个）。
+#[test]
+fn builtin_tool_wire_names_are_lcd_safe_and_unique() {
+    let registry = crate::pkg::tool_registry::get_registry();
+    let ids = registry.list_builtin_ids();
+    // 防空跑守卫 + 已知靶点在册。
+    // 锚点只选 #[register_handler_tool] 宏注册的工具（ctor 在库加载时注册）；
+    // GENERIC_BUILTIN_TOOLS 里那批 legacy 工具靠 register_all 注册，测试进程
+    // 不跑 main，故不在册——与 builtin_tool_schemas_are_llm_flattened 同范围。
+    assert!(ids.len() > 20, "内置工具数异常偏少: {}", ids.len());
+    for anchor in ["settle_memory", "send_message", "list_messages"] {
+        assert!(
+            registry.get_builtin_factory(anchor).is_some(),
+            "已知靶点 {anchor} 不在册，测试可能跑空"
+        );
+    }
+
+    let mut offenders = Vec::new();
+    let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for id in &ids {
+        let Some(factory) = registry.get_builtin_factory(id) else {
+            continue;
+        };
+        let po = factory.create_po();
+        let wire = common::llm_schema::to_wire_tool_name(&po.id);
+        if !common::llm_schema::is_wire_tool_name(&wire) {
+            offenders.push(format!("  {id}: wire name {wire:?} 超出 LCD"));
+        }
+        if let Some(prev) = seen.insert(wire.clone(), id.clone()) {
+            offenders.push(format!(
+                "  {id} 与 {prev} 的 wire name 撞名: {wire:?}（模型将永远调不到其中一个）"
+            ));
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "以下内置工具的 function.name 不合规:\n{}",
+        offenders.join("\n")
+    );
+}

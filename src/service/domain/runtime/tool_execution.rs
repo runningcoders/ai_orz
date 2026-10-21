@@ -206,13 +206,18 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
     ) -> Result<ToolExecutionResult> {
         let ctx = ctx.to_builder().agent_id(&agent_id).build();
 
-        // 先从绑定工具中查找
         let bound_tools = self
             .tool_dal
             .list_tools_for_agent_full(ctx.clone(), &agent_id)
             .await?;
 
-        let bound_tool = bound_tools.into_iter().find(|tool| tool.po.id == tool_id);
+        // 先从绑定工具中查找。
+        // 接受两种写法：po.id 原样（dispatch_manual_tool 内部转发填的就是它），
+        // 或 wire name（模型从 tools 数组里看到的 function.name，MCP 工具
+        // 点号已被 sanit 成下划线）——两条都命中同一个工具，不扩大授权面。
+        let bound_tool = bound_tools.into_iter().find(|tool| {
+            tool.po.id == tool_id || common::llm_schema::to_wire_tool_name(&tool.po.id) == tool_id
+        });
 
         // 如果绑定工具中没有，检查是否是神经工具或已安装工具包
         let tool = match bound_tool {
@@ -250,11 +255,13 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                     )
                     .await?;
 
-                // 在 SQL 过滤后的候选工具中按 ID 精确匹配
+                // 在 SQL 过滤后的候选工具中按 ID 精确匹配（同时接受 wire name 写法）
                 candidate_tools
                     .items
                     .into_iter()
-                    .find(|t| t.po.id == tool_id)
+                    .find(|t| {
+                        t.po.id == tool_id || common::llm_schema::to_wire_tool_name(&t.po.id) == tool_id
+                    })
                     .ok_or_else(|| {
                         if installed_tags.is_empty() {
                             common::error::Error::tool_call_failed(format!(

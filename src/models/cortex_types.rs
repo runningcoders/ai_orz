@@ -101,7 +101,12 @@ pub struct ToolDescriptor {
 impl From<&crate::models::tool::Tool> for ToolDescriptor {
     fn from(tool: &crate::models::tool::Tool) -> Self {
         ToolDescriptor {
-            name: tool.po.name.clone(),
+            // function.name 必须落在跨 provider LCD（^[a-zA-Z0-9_-]{1,128}$）内：
+            // DB 的 name 列是**人类显示名**（"List Tool Tags" 带空格），MCP 工具名
+            // 形如 mcp.<uuid>.<tool>（带点号），原样直发会被火山方舟等严端点 400
+            // （报错还指不出是哪个工具 ⇒ 该 Agent 每轮全挂）。从 id 现算 wire name；
+            // 回站匹配（think_loop）用同一函数，进出对称。
+            name: common::llm_schema::to_wire_tool_name(&tool.po.id),
             description: tool.po.description.clone(),
             // 内置工具的 schema 在注册时已收敛过，这里再跑一次是幂等的；
             // 真正需要它的是 HTTP 自建工具与外部 MCP 同步的 inputSchema（不可信输入）。

@@ -132,10 +132,13 @@ pub(crate) fn map_triggered_to_result(
 ///
 /// 处于 Settle / Compact 场景时，模型再调 `settle_memory` 即为自我递归，需拦截。
 /// 其他场景（含 Awaken）不拦截——主循环里 Agent 主动触发一次沉淀是合法需求。
+/// 入参 `tool_name` 是模型回传的 wire name（`to_wire_tool_name` 输出），
+/// 常量侧同样过一遍该函数，两侧禁各写一份字面量。
 fn is_recursive_settle_call(scene: common::enums::ThinkingScene, tool_name: &str) -> bool {
     use common::enums::ThinkingScene;
     matches!(scene, ThinkingScene::Settle | ThinkingScene::Compact)
-        && tool_name == super::compaction::RECURSIVE_SETTLE_TOOL
+        && tool_name
+            == common::llm_schema::to_wire_tool_name(super::compaction::RECURSIVE_SETTLE_TOOL)
 }
 
 /// 进度快照中单条消息摘要的最大字符数
@@ -187,12 +190,13 @@ pub(crate) fn build_policy_for_scene(
     let timeout_secs = config_resolve::think_timeout_secs(agent);
     // 无进展检测数据源：每个工具自身的运行时配置（po.config.no_progress_max_calls），
     // 未配置该键的工具不参与限制；token 预算 try_get 兜底（测试环境可能未初始化全局配置）
+    // key 用 wire name（与 tool_call_counts 的 tc.name 同空间，见回站匹配处）
     let tool_limits: std::collections::HashMap<String, usize> = agent
         .tools()
         .iter()
         .filter_map(|t| {
             t.po.config_no_progress_max_calls()
-                .map(|limit| (t.po.name.clone(), limit))
+                .map(|limit| (common::llm_schema::to_wire_tool_name(&t.po.id), limit))
         })
         .collect();
     let token_budget = crate::config::try_get()
@@ -558,7 +562,12 @@ impl RuntimeDomainImpl {
                             // 进度快照统计的是「尝试过哪些工具」：执行失败与工具不存在
                             // 同样要计入，它们对判断中断前的进展很关键。
                             round_tool_names.push(tc.name.clone());
-                            match agent.tools().iter().find(|t| t.po.name == tc.name) {
+                            // 回站匹配必须与出站（ToolDescriptor::from → to_wire_tool_name）
+                            // 同一函数：模型回传的是 wire name，不是 DB 显示名。
+                            // 对候选集逐个现算后比较，不依赖反推（sanitize 非单射）。
+                            match agent.tools().iter().find(|t| {
+                                common::llm_schema::to_wire_tool_name(&t.po.id) == tc.name
+                            }) {
                                 Some(tool) => {
                                     let call_result = match tool.po.control_mode {
                                         common::enums::tool::ControlMode::Auto => {

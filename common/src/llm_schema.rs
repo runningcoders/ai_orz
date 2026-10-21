@@ -21,10 +21,19 @@
 //!  "type":["string","null"],"enum":["Pending","Active",null]}
 //! ```
 //!
+//! # 不止 schema：`function.name` 同样要收敛
+//!
+//! tools 数组的 `function.name` 也受同一套逻辑管辖：DB 的 `tools.name` 是
+//! **人类显示名**（`List Tool Tags`，带空格 / 斜杠 / 括号），MCP 工具名
+//! 形如 `mcp.<server-uuid>.<tool>`（带点号），二者都超出最严端点
+//! （火山方舟）的 `^[a-zA-Z0-9_-]{1,128}$`。出站一律经
+//! [`to_wire_tool_name`] 从**工具 id** 派生，回站按同一函数现算后比较。
+//!
 //! # 落位
 //!
 //! - 生成侧（内置工具）：`schema_for_llm::<T>()`
 //! - 出站侧（用户自填 / 外部 MCP 同步的来源不走生成侧）：`to_llm_schema(Value)`
+//! - name 出站侧：`to_wire_tool_name(&tool.po.id)`（`ToolDescriptor::from`）
 //!
 //! 两处共用同一套规则，禁止各自漂移。
 
@@ -72,6 +81,75 @@ pub fn to_llm_schema(mut schema: Value) -> Value {
     flatten_value(&mut schema, 0);
     strip_root_noise(&mut schema);
     schema
+}
+
+// ==================== function.name 收敛 ====================
+
+/// `function.name` 的跨 provider 安全字符集：ASCII 字母、数字、下划线、连字符。
+///
+/// 实证（2026-10-21，火山方舟 `deepseek-v4.1-flash`）：tools 数组里任一工具的
+/// name 含空格 / 斜杠 / 括号 / 点号，整个请求 400 `InvalidParameter:
+/// tools.N.function.name: expected 1-128 ASCII letters, digits, underscores
+/// or hyphens`，且**报错指不出是哪个工具**。症状：该 Agent 持有的每一轮模型
+/// 调用全挂（毒工具效应——只要在册，与被不被调用无关）。
+/// OpenAI / GLM 端点宽松不报错，但那是运气不是设计：LCD 按最严端点收敛。
+const WIRE_NAME_MAX_LEN: usize = 128;
+
+/// 把工具标识符收敛成跨 provider 安全的 `function.name`。
+///
+/// 规则：
+/// - 非 `[a-zA-Z0-9_-]` 字符一律替换为 `_`（显示名空格、MCP 名前缀点号等）；
+/// - 超 128 字符截断，拼短哈希后缀防同批撞名；
+/// - 空结果兜底 `tool`（空 name 同样被端点拒）。
+///
+/// **不是单射**（`a.b` 与 `a_b` 同结果）—— 回站查找不依赖反推：调用方对
+/// 候选工具集逐个现算后比较，语义与原先按显示名精确匹配同构。
+/// 入参应传工具 **id**（天然唯一；内置 / MCP / 自建三来源都带得起来），
+/// **不要传 DB 的 `name` 显示名列**——那正是本函数要防的东西。
+pub fn to_wire_tool_name(tool_id: &str) -> String {
+    if tool_id.chars().count() <= WIRE_NAME_MAX_LEN {
+        let out: String = tool_id.chars().map(sanitize_wire_char).collect();
+        return if out.is_empty() {
+            "tool".to_string()
+        } else {
+            out
+        };
+    }
+    // 超长：保留前缀 + "_" + 8 位短哈希（1 + 8 + keep == MAX_LEN）
+    let keep = WIRE_NAME_MAX_LEN - 9;
+    let mut out: String = tool_id.chars().map(sanitize_wire_char).take(keep).collect();
+    out.push('_');
+    out.push_str(&format!("{:08x}", fnv1a32(tool_id)));
+    out
+}
+
+/// 校验 name 是否已落在 LCD 内。
+///
+/// 护栏测试与写入口必须共用这一个判定（禁另写一套，否则两侧规则各自漂移）。
+pub fn is_wire_tool_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= WIRE_NAME_MAX_LEN
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+fn sanitize_wire_char(c: char) -> char {
+    if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+        c
+    } else {
+        '_'
+    }
+}
+
+/// FNV-1a 32 位：仅用于超长 name 的截断后缀，纯函数无随机源，测试可复现。
+fn fnv1a32(s: &str) -> u32 {
+    let mut hash: u32 = 0x811c9dc5;
+    for b in s.as_bytes() {
+        hash ^= *b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
 }
 
 /// 套在 schemars `SchemaSettings` 上的官方扩展点
@@ -786,5 +864,106 @@ mod tests {
             serde_json::json!("#/$defs/Node")
         );
         assert!(out["$defs"]["Node"].is_object());
+    }
+}
+
+#[cfg(test)]
+mod wire_name_tests {
+    use super::{is_wire_tool_name, to_wire_tool_name};
+
+    #[test]
+    fn 合规标识符_恒等() {
+        // 内置工具 id 本就是 snake_case，一根头发都不许动
+        assert_eq!(to_wire_tool_name("list_tool_tags"), "list_tool_tags");
+        assert_eq!(to_wire_tool_name("settle_memory"), "settle_memory");
+        assert_eq!(to_wire_tool_name("fs_read"), "fs_read");
+    }
+
+    #[test]
+    fn 显示名非法字符_全部替换为下划线() {
+        // DB tools.name 是人类显示名：空格 / 斜杠 / 括号 / 撇号全超 LCD
+        assert_eq!(to_wire_tool_name("List Tool Tags"), "List_Tool_Tags");
+        assert_eq!(to_wire_tool_name("Feishu/Lark CLI"), "Feishu_Lark_CLI");
+        assert_eq!(
+            to_wire_tool_name("Search Web (Tavily)"),
+            "Search_Web__Tavily_"
+        );
+        assert_eq!(
+            to_wire_tool_name("List Agent's Tasks"),
+            "List_Agent_s_Tasks"
+        );
+        assert_eq!(to_wire_tool_name("GitHub CLI"), "GitHub_CLI");
+    }
+
+    #[test]
+    fn mcp_工具名_点号换下划线() {
+        // MCP 入库 id = mcp.<server-uuid>.<remote-tool>，点号不在 LCD 内
+        let wire = to_wire_tool_name("mcp.01a139fc-766a-7600-be25-0cc8cd9313c4.add_transaction");
+        assert_eq!(
+            wire,
+            "mcp_01a139fc-766a-7600-be25-0cc8cd9313c4_add_transaction"
+        );
+        assert!(is_wire_tool_name(&wire));
+    }
+
+    #[test]
+    fn 中文与纯符号_不出现原字符() {
+        assert_eq!(to_wire_tool_name("查询任务"), "____");
+        assert_eq!(to_wire_tool_name("!!!"), "___");
+        assert!(is_wire_tool_name(to_wire_tool_name("查询任务").as_str()));
+    }
+
+    #[test]
+    fn 空输入_兜底非空() {
+        assert_eq!(to_wire_tool_name(""), "tool");
+    }
+
+    #[test]
+    fn 超长名_截断到128且同输入可复现() {
+        let long = "a".repeat(200);
+        let wire = to_wire_tool_name(&long);
+        assert_eq!(wire.len(), 128);
+        assert_eq!(wire, to_wire_tool_name(&long));
+        assert!(is_wire_tool_name(&wire));
+    }
+
+    #[test]
+    fn 超长名_不同输入_后缀不撞() {
+        let a = to_wire_tool_name(&"a".repeat(200));
+        let b = to_wire_tool_name(&format!("{}b", "a".repeat(199)));
+        assert_ne!(a, b, "截断后缀必须把同前缀不同输入区分开");
+    }
+
+    #[test]
+    fn 输出恒落在_lcd_内() {
+        for raw in [
+            "list_tool_tags",
+            "List Tool Tags",
+            "Feishu/Lark CLI",
+            "mcp.01a139fc-766a-7600-be25-0cc8cd9313c4.add_transaction",
+            "查询任务",
+            "",
+            &"x".repeat(500),
+            "a b.c/d(e)f'g\"h",
+        ] {
+            let wire = to_wire_tool_name(raw);
+            assert!(
+                is_wire_tool_name(&wire),
+                "wire name 超出 LCD: {raw:?} -> {wire:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lcd_判定_双向() {
+        // 合规的放行
+        assert!(is_wire_tool_name("list_tool_tags"));
+        assert!(is_wire_tool_name("mcp_abc_def"));
+        assert!(is_wire_tool_name("a-b_c"));
+        // 违规的挡住
+        assert!(!is_wire_tool_name("List Tool Tags"));
+        assert!(!is_wire_tool_name("mcp.abc.def"));
+        assert!(!is_wire_tool_name(""));
+        assert!(!is_wire_tool_name(&"a".repeat(129)));
     }
 }
