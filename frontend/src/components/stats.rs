@@ -200,11 +200,14 @@ pub fn AgentStatsPanel(
 /// - **不显示 QPS**：单 Agent 的调用间隔以秒~分钟计，瞬时 QPS（最近 1 秒调用数）
 ///   在 60 分钟窗口下几乎恒为 0，占位却无信息量；窄侧栏把它换成缓存命中 / 思考
 ///   Token 两个更能反映成本与推理强度的读数（`AgentStatsPanel` 的宽容器仍保留 QPS）。
-/// - 读数分**左右两列**：左列「运行」= 唤醒次数 / 上下文长度，
-///   右列「模型调用」= 调用次数 / 输入 Token / 输出 Token / 缓存命中 / 思考。
+/// - 读数排成**一条「干活成本」流水**（唤醒 → 调用 → 输入/输出 Token → 缓存/思考 →
+///   上下文水位），落在单个 `grid-cols-2` 里按**行优先**流动：左右两列只是排布容器，
+///   不再承担「运行 / 模型调用」的语义分组，因此也不加小标题。旧版分栏的代价是新增
+///   读数全部挤进右列（左 2 项 / 右 5 项），视觉失衡且暗示了并不存在的分类边界。
 ///   不用 `StatGrid`（其 `lg:grid-cols-4` 在桌面视口下会把 384px 侧栏切成 4 列，
-///   数值溢出），这里固定一次性 2 列，且**列内纵向堆叠**、不再嵌套 2×2 网格，
-///   避免第三个读数落单留空位；数值统一用紧凑变体。
+///   数值溢出）；行距走 `gap-y-2`，数值统一用紧凑变体。
+/// - 缓存命中 / 思考 Token 各自 > 0 才入列，实际项数会浮动；grid 行优先填充天然容纳
+///   缺项，不会像「先填满一列再填下一列」那样塌出空位。
 /// - 趋势图按 320px 原生渲染，避免 600px 图被 CSS 缩放后文字过小。
 ///
 /// `context_length` 是**运行时内存指标**（最近一次 LLM 调用的 prompt token 数，不入库），
@@ -258,76 +261,79 @@ pub fn AgentStatsPanelCompact(
             }
             if has_data {
                 div { class: "space-y-3",
-                    div { class: "grid grid-cols-2 gap-x-3",
-                        if has_runtime || context_length.is_some() {
-                            div { class: "min-w-0 space-y-2",
-                                label { class: "form-label", "运行" }
-                                // 瞬时 QPS 已移除：单 Agent 在 60 分钟窗口下该值近乎恒 0，
-                                // 窄侧栏改放缓存命中 / 思考 Token（见组件级注释）
-                                if let Some(call) = runtime_summary {
-                                    CompactStat { label: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string() }
+                    // 单一 2 列网格 + 行优先流动：读数按「Agent 干活的成本链路」串成一条流水，
+                    // 左右两列只是排布位置，不再承担语义分组，故不再加「运行 / 模型调用」小标题。
+                    div { class: "grid grid-cols-2 gap-x-3 gap-y-2",
+                        if let Some(call) = runtime_summary {
+                            div { class: "min-w-0",
+                                CompactStat { label: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string() }
+                            }
+                        }
+                        if let Some(call) = model_summary {
+                            div { class: "min-w-0",
+                                CompactStat { label: "调用次数".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string() }
+                            }
+                        }
+                        if let Some(token) = token_summary {
+                            div { class: "min-w-0",
+                                CompactStat { label: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input) }
+                            }
+                            div { class: "min-w-0",
+                                CompactStat { label: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output) }
+                            }
+                            // 两个明细读数按「> 0 才显示」：provider 未上报时恒 0，
+                            // 与「真实 0 命中」不可区分，摆出来只是噪音
+                            if token.total_cached_tokens > 0 {
+                                div { class: "min-w-0",
+                                    CompactStat { label: "缓存命中".to_string(), icon: "⚡".to_string(), value: format_compact_count(token.total_cached_tokens) }
                                 }
-                                if let (Some(len), Some(threshold)) = (context_length, context_length_threshold)
-                                {
-                                    div { class: "w-fit pt-1",
-                                        RingProgress {
-                                            value: len,
-                                            max: threshold,
-                                            caption: Some("上下文".to_string()),
-                                            title: Some(format!(
-                                                "上下文 {} / 压缩阈值 {} tokens",
-                                                format_compact_count(len),
-                                                format_compact_count(threshold),
-                                            )),
-                                            size: None,
-                                        }
-                                    }
-                                } else if let Some(len) = context_length {
-                                    // 阈值缺失：只能给数值，但必须说明原因 + 给出修复入口
-                                    div { class: "min-w-0",
-                                        div { class: "hud-eyebrow mb-1", "上下文长度" }
-                                        div { class: "flex flex-wrap items-baseline gap-1.5",
-                                            span { class: "text-lg leading-none opacity-80", "🧠" }
-                                            span { class: "hud-stat hud-stat-sm",
-                                                "{format_compact_count(len)}"
-                                            }
-                                        }
-                                        div { class: "text-xs mt-1",
-                                            if let Some(pid) = model_provider_id.clone() {
-                                                Link {
-                                                    class: "link link-hover text-warning/90",
-                                                    // 文案取「单行不折行」的最长表述（实测 134px < 左列 176px），
-                                                    // 完整原因走 title，避免把侧栏撑成两行
-                                                    title: "模型供应商未配置最大上下文长度，压缩阈值无从计算（该 Agent 也不会自动压缩上下文）。点击前往配置。",
-                                                    to: crate::pages::Route::FinanceModelProviderDetail {
-                                                        id: pid,
-                                                    },
-                                                    "未配置最大上下文长度 →"
-                                                }
-                                            } else {
-                                                span { class: "text-warning/90", "未配置最大上下文长度" }
-                                            }
-                                        }
-                                    }
+                            }
+                            if token.total_reasoning_tokens > 0 {
+                                div { class: "min-w-0",
+                                    CompactStat { label: "思考 Token".to_string(), icon: "🧠".to_string(), value: format_compact_count(token.total_reasoning_tokens) }
                                 }
                             }
                         }
-                        if has_model {
-                            div { class: "min-w-0 space-y-2",
-                                label { class: "form-label", "模型调用" }
-                                if let Some(call) = model_summary {
-                                    CompactStat { label: "调用次数".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string() }
+                        // 上下文水位是**瞬时**读数（其余均为窗口累计量），排在流水末位以示区分
+                        if let (Some(len), Some(threshold)) = (context_length, context_length_threshold)
+                        {
+                            div { class: "w-fit pt-1",
+                                RingProgress {
+                                    value: len,
+                                    max: threshold,
+                                    caption: Some("上下文".to_string()),
+                                    title: Some(format!(
+                                        "上下文 {} / 压缩阈值 {} tokens",
+                                        format_compact_count(len),
+                                        format_compact_count(threshold),
+                                    )),
+                                    size: None,
                                 }
-                                if let Some(token) = token_summary {
-                                    CompactStat { label: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input) }
-                                    CompactStat { label: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output) }
-                                    // 两个明细读数按「> 0 才显示」：provider 未上报时恒 0，
-                                    // 与「真实 0 命中」不可区分，摆出来只是噪音
-                                    if token.total_cached_tokens > 0 {
-                                        CompactStat { label: "缓存命中".to_string(), icon: "⚡".to_string(), value: format_compact_count(token.total_cached_tokens) }
+                            }
+                        } else if let Some(len) = context_length {
+                            // 阈值缺失：只能给数值，但必须说明原因 + 给出修复入口
+                            div { class: "min-w-0",
+                                div { class: "hud-eyebrow mb-1", "上下文长度" }
+                                div { class: "flex flex-wrap items-baseline gap-1.5",
+                                    span { class: "text-lg leading-none opacity-80", "🧠" }
+                                    span { class: "hud-stat hud-stat-sm",
+                                        "{format_compact_count(len)}"
                                     }
-                                    if token.total_reasoning_tokens > 0 {
-                                        CompactStat { label: "思考 Token".to_string(), icon: "🧠".to_string(), value: format_compact_count(token.total_reasoning_tokens) }
+                                }
+                                div { class: "text-xs mt-1",
+                                    if let Some(pid) = model_provider_id.clone() {
+                                        Link {
+                                            class: "link link-hover text-warning/90",
+                                            // 文案取「单行不折行」的最长表述（实测 134px < 网格单元 176px），
+                                            // 完整原因走 title，避免把侧栏撑成两行
+                                            title: "模型供应商未配置最大上下文长度，压缩阈值无从计算（该 Agent 也不会自动压缩上下文）。点击前往配置。",
+                                            to: crate::pages::Route::FinanceModelProviderDetail {
+                                                id: pid,
+                                            },
+                                            "未配置最大上下文长度 →"
+                                        }
+                                    } else {
+                                        span { class: "text-warning/90", "未配置最大上下文长度" }
                                     }
                                 }
                             }
