@@ -34,6 +34,31 @@ pub trait BuiltinToolFactory: DynClone + Send + Sync {
     fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
         Vec::new()
     }
+
+    /// 就绪探测（生命周期方法①）：给定持久化 PO，判定本工具当前是否就绪
+    ///
+    /// **默认实现 = `Ready`**：非 CLI 型工具（`http_fetch`/`fs_*`/`shell_exec`/
+    /// 搜索类/`mark_artifact`）没有外部二进制依赖，天然就绪。CLI 型工具
+    /// （`lark_cli`/`gh_cli`/`skillhub_cli`/`browser`）覆盖为真实命令解析判定。
+    ///
+    /// 与 [`Self::credential_requirements`] 同款「工厂态静态声明 + 默认零破坏」
+    /// 形态：存量 11 个内置工厂无需任何改动即可编译通过。
+    fn probe_readiness(&self, po: &ToolPo) -> common::api::RuntimeReady {
+        let _ = po;
+        common::api::RuntimeReady::Ready
+    }
+
+    /// 自愈配置提议（生命周期方法②）：返回**修复后的 config JSON**，
+    /// `None` = 不可自愈（交人工）
+    ///
+    /// **只提议、不落库**：写库权归平台侧唯一修复器
+    /// （`ToolProviderManage::reconcile_builtin_tool_readiness`），由它决定
+    /// 「允许修什么 / 何时修 / 怎么留痕」。返回的多余字段会被平台按
+    /// allowlist 丢弃并 warn —— 自愈动作**严格限定单一字段 `config.command`**。
+    fn propose_self_heal(&self, po: &ToolPo) -> Option<serde_json::Value> {
+        let _ = po;
+        None
+    }
 }
 
 clone_trait_object!(BuiltinToolFactory);

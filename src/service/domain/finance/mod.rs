@@ -33,6 +33,9 @@ mod mcp_server_test;
 mod tool_provider_test;
 
 #[cfg(test)]
+mod tool_provider_readiness_test;
+
+#[cfg(test)]
 mod tool_authorization_test;
 
 use crate::models::attachment::{
@@ -74,13 +77,32 @@ pub async fn init_base_data() {
     let ctx = RequestContext::new_system();
     match domain()
         .tool_provider_manage()
-        .sync_builtin_tools(ctx)
+        .sync_builtin_tools(ctx.clone())
         .await
     {
-        Ok(inserted) => sys_info!(
-            "finance domain 基础数据初始化完成（内置工具同步，新增 {} 个）",
-            inserted
-        ),
+        Ok(inserted) => {
+            sys_info!(
+                "finance domain 基础数据初始化完成（内置工具同步，新增 {} 个）",
+                inserted
+            );
+            // 同步成功后追加就绪自愈：这是「每次启动必经」的位置，且已持有
+            // 系统 ctx（系统内部通道，天然不经过 admin handler 的字段禁改校验）。
+            // 失败只 warn 不阻断启动——自愈是增强，不是启动前置条件。
+            match domain()
+                .tool_provider_manage()
+                .reconcile_builtin_tool_readiness(ctx)
+                .await
+            {
+                Ok(healed) if healed > 0 => {
+                    sys_info!(
+                        "内置工具就绪自愈完成（本次修复 {} 个工具的命令路径）",
+                        healed
+                    )
+                }
+                Ok(_) => sys_info!("内置工具就绪自愈完成（无需修复）"),
+                Err(e) => sys_warn!("内置工具就绪自愈失败（不影响启动，候下次重试）: {}", e),
+            }
+        }
         Err(e) => sys_warn!("finance domain 基础数据初始化失败（内置工具同步）: {}", e),
     }
 }
@@ -778,6 +800,36 @@ pub trait ToolProviderManage: Send + Sync {
     /// 同步内置工具到 DB（将 builtin tools registry 中的工具写入 DB）
     /// 用于系统首次初始化时，让 DB 的 tools 表包含所有内置工具
     async fn sync_builtin_tools(&self, ctx: RequestContext) -> Result<usize>;
+
+    /// 内置工具就绪自愈（**平台侧唯一修复器**）：检测 CLI 型内置工具的就绪状态，
+    /// 对「命令不可解析但能被发现」的工具按护栏自动修正 `config.command`
+    ///
+    /// # 职责分工（通用底座 vs 平台策略）
+    ///
+    /// - 机制多态交给工具自己：`BuiltinToolFactory::probe_readiness`（怎么检测）
+    ///   与 `propose_self_heal`（怎么自愈）——新增 CLI 型工具零平台改动；
+    /// - 策略统一收敛在本方法：**允许修什么 / 何时修 / 怎么留痕**。
+    ///
+    /// # 六条 AND 闸门（任一不满足即跳过）
+    ///
+    /// 1. 工具存在且 `protocol == Builtin`；
+    /// 2. `status == Enabled`（禁用工具不动）；
+    /// 3. `probe_readiness` 为 `NotReady` 且 `reason == "cli_not_installed"`
+    ///    （只修「找不到命令」这一类，其它未就绪原因不擅自处理）；
+    /// 4. `propose_self_heal` 返回可用提议；
+    /// 5. 差异集**严格等于 `{config.command}`** 且新值与现值不同（幂等）；
+    /// 6. 7 天内无同类修复留痕（去重）且本次批量不超过 20 个。
+    ///
+    /// # 护栏
+    ///
+    /// - 只写 `config.command` 单字段，其它 config 键原样保留；
+    /// - 每次修复写一条 `tool_call_trace`（含 `old_command` → 一键回滚依据）；
+    /// - 修复后立刻失效就绪缓存，让新判定生产可见；
+    /// - **不代装、不 curl | bash、不改 PATH 环境、不实跑 CLI**（`--version`
+    ///   类实跑属显式授权事项，永不进自动链路）。
+    ///
+    /// 返回本次实际修复的工具数。日志器未就绪时整体跳过（无法留痕即不放行写）。
+    async fn reconcile_builtin_tool_readiness(&self, ctx: RequestContext) -> Result<usize>;
 
     /// 更新 Tool
     async fn update_tool(

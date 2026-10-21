@@ -350,3 +350,105 @@ fn builtin_tool_wire_names_are_lcd_safe_and_unique() {
         offenders.join("\n")
     );
 }
+
+// ==================== 生命周期双方法的默认实现契约 ====================
+//
+// 默认实现必须对**存量工具零破坏**：非 CLI 型天然 Ready、不自愈；
+// 11 个内置工厂都不覆盖也不影响编译与行为（这是「新增方法不强制改造」的保证）。
+
+/// 从 `GENERIC_BUILTIN_TOOLS` 直接取工厂（不依赖全局 registry 是否已注册）
+fn factory_of(id: &str) -> Box<dyn BuiltinToolFactory> {
+    super::GENERIC_BUILTIN_TOOLS
+        .iter()
+        .find(|(tool_id, _)| tool_id == id)
+        .map(|(_, factory)| factory.clone())
+        .unwrap_or_else(|| panic!("{} factory must exist in GENERIC_BUILTIN_TOOLS", id))
+}
+
+#[test]
+fn default_probe_readiness_is_ready_for_non_cli_tools() {
+    use common::api::RuntimeReady;
+
+    // http_fetch / fs_read / shell_exec 等非 CLI 型：默认就绪
+    for id in [
+        "http_fetch",
+        "fs_read",
+        "fs_write",
+        "shell_exec",
+        "mark_artifact",
+    ] {
+        let factory = factory_of(id);
+        let po = factory.create_po();
+        assert_eq!(
+            factory.probe_readiness(&po),
+            RuntimeReady::Ready,
+            "{} 是非 CLI 型，默认必须 Ready",
+            id
+        );
+    }
+}
+
+#[test]
+fn default_propose_self_heal_is_none_for_non_cli_tools() {
+    // 非 CLI 型没有「命令路径」可修 → 默认 None（不得凭空生成配置）
+    for id in ["http_fetch", "fs_read", "shell_exec", "tavily_search"] {
+        let factory = factory_of(id);
+        let po = factory.create_po();
+        assert!(
+            factory.propose_self_heal(&po).is_none(),
+            "{} 不应产生自愈提议",
+            id
+        );
+    }
+}
+
+#[test]
+fn every_cli_factory_implements_lifecycle_methods() {
+    use common::api::RuntimeReady;
+
+    // 四个 CLI 型工厂都必须覆盖 probe_readiness：判定要么 Ready、
+    // 要么是 cli_not_installed（绝不能落回「默认 Ready」掩盖问题）
+    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser"] {
+        let factory = factory_of(id);
+        let mut po = factory.create_po();
+        // 刻意写一个必然不可解析的命令
+        po.config = serde_json::json!({ "command": "/no/such/dir/no-such-cli-xyz" });
+        match factory.probe_readiness(&po) {
+            RuntimeReady::Ready => {
+                // 允许：环境里确实能通过默认布局/PATH 发现该工具的 bin 名
+            }
+            RuntimeReady::NotReady { reason, .. } => {
+                assert_eq!(
+                    reason, "cli_not_installed",
+                    "{} 的未就绪原因必须是 cli_not_installed 才可自愈",
+                    id
+                );
+            }
+            other => panic!("{} unexpected readiness: {:?}", id, other),
+        }
+    }
+}
+
+#[test]
+fn self_heal_proposal_is_always_single_command_field_or_none() {
+    // 红线守卫：任何工厂的自愈提议都只能含 command 一个字段
+    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser"] {
+        let factory = factory_of(id);
+        let mut po = factory.create_po();
+        po.config = serde_json::json!({ "command": "/no/such/dir/no-such-cli-xyz" });
+        if let Some(proposal) = factory.propose_self_heal(&po) {
+            let obj = proposal.as_object().expect("proposal must be object");
+            assert_eq!(obj.len(), 1, "{} proposal must be single-field", id);
+            assert!(
+                obj.contains_key("command"),
+                "{} must only propose command",
+                id
+            );
+            assert!(
+                obj["command"].as_str().is_some_and(|s| !s.is_empty()),
+                "{} proposed command must be non-empty string",
+                id
+            );
+        }
+    }
+}

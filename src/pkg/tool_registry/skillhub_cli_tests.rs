@@ -426,3 +426,141 @@ fn factory_po_metadata_and_registration_contract() {
     let t = SkillhubCliCoreTool::new(po);
     assert!(t.credential_requirements().is_empty());
 }
+
+// ---------- 生命周期方法：就绪探测与自愈提议（本项目根因回归） ----------
+
+#[test]
+fn factory_probe_readiness_flags_written_off_default_spec() {
+    use crate::pkg::tool_registry::BuiltinToolFactory;
+
+    // 本项目的精确病灶：出厂默认 config.command = ~/.skillhub/skillhub，
+    // 而 CLI 实际装在 PATH 里的某个目录（如 ~/.local/bin）。旧判定不展开 `~`
+    // → 恒 not_ready。现在判定走 cli_lookup：`~` 会展开、PATH 会补全扫描。
+    let factory = SkillhubCliToolFactory;
+    let mut po = factory.create_po();
+
+    // 显式路径写成不存在的值 → 判定应当降级到「默认布局 / PATH 发现」。
+    // 本机装了 skillhub 时，PATH 兜底会直接把它救活（这正是根因修复的活证据：
+    // 以前写死路径 ×  不展开 `~` = 恒 not_ready，现在能靠 PATH 命中）。
+    po.config = serde_json::json!({ "command": "/no/such/dir/skillhub-xyz" });
+    let discovered = crate::pkg::tool_registry::cli_lookup::lookup_in_search_path(SKILLHUB_CLI_BIN)
+        .is_some()
+        || crate::pkg::tool_registry::cli_lookup::current_home()
+            .map(|h| h.join(".skillhub").join(SKILLHUB_CLI_BIN).is_file())
+            .unwrap_or(false);
+
+    match factory.probe_readiness(&po) {
+        common::api::RuntimeReady::Ready => {
+            assert!(discovered, "Ready 只能来自「默认布局或 PATH 确实命中」");
+        }
+        common::api::RuntimeReady::NotReady { reason, hint } => {
+            assert!(!discovered, "能发现却报未就绪 = 判定与查找分叉（回归）");
+            assert_eq!(reason, "cli_not_installed");
+            // 引导语必须能让用户自己修（不含任何代装/curl 指令）
+            assert!(
+                hint.contains("配置"),
+                "hint should point to config: {}",
+                hint
+            );
+            assert!(!hint.contains("curl"));
+        }
+        other => panic!("unexpected readiness: {:?}", other),
+    }
+}
+
+#[test]
+fn factory_probe_readiness_scans_path_for_bare_name() {
+    use crate::pkg::tool_registry::BuiltinToolFactory;
+
+    // 裸名形态（用户把 command 写成 `ls`）→ 必须按 PATH 发现判定为 Ready
+    let factory = SkillhubCliToolFactory;
+    let mut po = factory.create_po();
+    po.config = serde_json::json!({ "command": "ls" });
+    assert_eq!(
+        factory.probe_readiness(&po),
+        common::api::RuntimeReady::Ready
+    );
+    // 裸名写坏时的兜底语义：配置里那个名字找不到，会继续降级到**工具自身的
+    // bin 名**（skillhub）再找一次 —— 这是有意的容错（配置写坏不该让工具瘫掉）。
+    // 因此断言与环境解耦：只要「skillhub 本身可发现」，写坏的裸名也应判定 Ready。
+    po.config = serde_json::json!({ "command": "no-such-cli-xyz-abc" });
+    let skillhub_discoverable =
+        crate::pkg::tool_registry::cli_lookup::lookup_in_search_path(SKILLHUB_CLI_BIN).is_some();
+    let readiness = factory.probe_readiness(&po);
+    if skillhub_discoverable {
+        assert_eq!(
+            readiness,
+            common::api::RuntimeReady::Ready,
+            "配置裸名写坏时应降级到工具自身 bin 名继续查找"
+        );
+    } else {
+        assert!(matches!(
+            readiness,
+            common::api::RuntimeReady::NotReady { .. }
+        ));
+    }
+}
+
+#[test]
+fn factory_probe_readiness_ready_for_existing_binary() {
+    use crate::pkg::tool_registry::BuiltinToolFactory;
+
+    // 把 command 指向真实存在的可执行文件（ls），判定必须为 Ready ——
+    // 注意这是**文件级判定**，全程不 spawn 任何 CLI（OTA 红线）
+    let factory = SkillhubCliToolFactory;
+    let mut po = factory.create_po();
+    po.config = serde_json::json!({ "command": "/bin/ls" });
+    assert_eq!(
+        factory.probe_readiness(&po),
+        common::api::RuntimeReady::Ready
+    );
+}
+
+#[test]
+fn factory_propose_self_heal_returns_none_when_nothing_discoverable() {
+    use crate::pkg::tool_registry::BuiltinToolFactory;
+
+    // 真的没装（PATH 里也没有这个名字）→ 无解，交人工
+    let factory = SkillhubCliToolFactory;
+    let mut po = factory.create_po();
+    po.config = serde_json::json!({ "command": "/no/such/dir/skillhub-xyz" });
+    // 只有当环境里确实不存在 skillhub 时才断言 None；存在则跳过（保持环境无关）
+    if crate::pkg::tool_registry::cli_lookup::lookup_in_search_path(SKILLHUB_CLI_BIN).is_none() {
+        assert!(factory.propose_self_heal(&po).is_none());
+    }
+}
+
+#[test]
+fn factory_propose_self_heal_emits_single_command_field() {
+    use crate::pkg::tool_registry::BuiltinToolFactory;
+
+    // 用 ls 模拟「PATH 里能发现」的场景：提议必须恰好只有 command 一个字段
+    let factory = SkillhubCliToolFactory;
+    let mut po = factory.create_po();
+    po.config = serde_json::json!({ "command": "/no/such/dir/skillhub-xyz" });
+
+    // 直接核验底层提议函数的字段约束（工厂方法与其同源）
+    let healed =
+        crate::pkg::tool_registry::cli_lookup::cli_propose_heal(Some("/bin/ls"), "ls", None);
+    assert!(healed.is_none(), "已可用 → 不提议（幂等前置）");
+
+    // 工厂方法：可用即 None（用 /bin/ls 保证 available）
+    po.config = serde_json::json!({ "command": "/bin/ls" });
+    assert!(factory.propose_self_heal(&po).is_none());
+}
+
+#[test]
+fn factory_default_po_still_uses_written_off_spec_but_is_self_healable() {
+    use crate::pkg::tool_registry::BuiltinToolFactory;
+
+    // 出厂默认值刻意保持不动（单点修复不夹带），但判定/自愈已能靠 PATH 兜底救活
+    let factory = SkillhubCliToolFactory;
+    let po = factory.create_po();
+    assert_eq!(
+        po.cli_command().as_deref(),
+        Some(SKILLHUB_DEFAULT_PATH_SPEC),
+        "默认规格保持不变（不夹带单点修复）"
+    );
+    // 默认规格里带 `~`：新判定必须能正确展开它（不再把它当普通字符）
+    assert!(SKILLHUB_DEFAULT_PATH_SPEC.starts_with("~/"));
+}

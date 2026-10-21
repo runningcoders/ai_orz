@@ -380,9 +380,12 @@ fn readiness_cache()
     READINESS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
-/// 清除指定工具的就绪缓存（测试专用；生产无主动失效调用方，依赖 TTL 自然过期）
-#[cfg(test)]
-pub(super) fn invalidate_readiness_cache(tool_id: &str) {
+/// 清除指定工具的就绪缓存
+///
+/// 【生产可见 2026-10-21】内置工具就绪自愈写入新 `command` 后必须立刻失效，
+/// 否则最长 30s 内列表仍显示旧判定（「修了但看起来没修」）。生产调用方：
+/// `ToolProviderManage::reconcile_builtin_tool_readiness`；测试沿用同一入口。
+pub(crate) fn invalidate_readiness_cache(tool_id: &str) {
     let prefix = format!("{}|", tool_id);
     readiness_cache()
         .lock()

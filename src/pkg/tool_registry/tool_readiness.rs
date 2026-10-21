@@ -12,8 +12,6 @@
 //! 分层说明：本模块零数据访问、零注册机制；引导文案常量与各工具 spawn 内
 //! 文案统一来源，避免两处漂移。
 
-use std::path::Path;
-
 use serde_json::{Value, json};
 
 use common::api::RuntimeReady;
@@ -21,16 +19,15 @@ use common::models::{CredentialKind, CredentialRequirement};
 
 // ==================== CLI 型判定纯函数 ====================
 
-/// 二进制可寻址：含路径分隔符（绝对/相对路径）直接判文件存在，纯名称扫 PATH
+/// 二进制可寻址：含路径分隔符（绝对/相对路径/`~` 前缀）直接判文件存在，
+/// 纯名称扫「父进程 PATH + 内置补全目录」
+///
+/// 【单点真源 2026-10-21】实现已下沉到 [`crate::pkg::tool_registry::cli_lookup`]：
+/// 判定侧与执行侧（`resolve_cli_path`）共用同一解析口径，消除
+/// 「未就绪但实际能跑通」的逻辑分叉。关键修复点 = **`~` 展开**：
+/// 旧实现把 `~` 当普通字符，`~/.skillhub/skillhub` 这类写死规格恒判 false。
 pub fn command_available(command: &str) -> bool {
-    let path = Path::new(command);
-    if path.is_absolute() || path.components().count() > 1 {
-        return path.is_file();
-    }
-    let Some(path_var) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path_var).any(|dir| dir.join(command).is_file())
+    crate::pkg::tool_registry::cli_lookup::command_available(command)
 }
 
 /// CLI 型就绪判定（不可寻址 → not_ready{cli_not_installed}）

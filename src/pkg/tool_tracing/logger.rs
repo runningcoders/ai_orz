@@ -60,6 +60,14 @@ impl ToolCallLogger {
         INSTANCE.get().expect("ToolCallLogger not initialized")
     }
 
+    /// 非 panic 版取单例：未初始化返回 `None`
+    ///
+    /// 供启动期「尽力而为」链路使用（如内置工具就绪自愈的留痕与 7 天去重）——
+    /// 这些链路失败只应降级（跳过留痕/去重），绝不因为日志器未就绪而中断启动。
+    pub fn try_get() -> Option<&'static Self> {
+        INSTANCE.get()
+    }
+
     /// Create a new ToolCallLogger instance (for direct use, prefer singleton)
     #[allow(dead_code)]
     pub fn new(base_data_path: PathBuf) -> Self {

@@ -404,6 +404,9 @@ mod tool_execution_test;
 pub use crate::service::dal::agent::{DefaultPromptBuilder, build_conversation_prompt};
 pub use cancel::CancelOutcome;
 pub(crate) use tool_call_query::status_from_dto;
+// 就绪缓存失效：内置工具自愈写库后必须立刻让新判定可见（finance 修复器调用）。
+// 就绪缓存本体留在 runtime（与 TTL 同处），只暴露这一个动作。
+pub(crate) use tool_execution::invalidate_readiness_cache;
 
 // ==================== 实现 ====================
 

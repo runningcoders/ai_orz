@@ -260,6 +260,26 @@ impl InitializeSystemTask {
             .await?;
         sys_info!("initialize_system: 同步 {} 个内置工具到 DB", tool_count);
 
+        // 同步后就绪自愈（与开机路径同一语义：失败仅 warn，不阻断初始化向导）
+        match finance::domain()
+            .tool_provider_manage()
+            .reconcile_builtin_tool_readiness(ctx.clone())
+            .await
+        {
+            Ok(healed) => {
+                sys_info!(
+                    "initialize_system: 内置工具就绪自愈完成（修复 {} 个）",
+                    healed
+                )
+            }
+            Err(e) => {
+                sys_warn!(
+                    "initialize_system: 内置工具就绪自愈失败（不阻断向导）: {}",
+                    e
+                )
+            }
+        }
+
         // Step: 导入预置技能
         self.set_step(step + 1, "正在导入预置技能");
         let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();

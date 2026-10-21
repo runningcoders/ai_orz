@@ -126,6 +126,30 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
     fn credential_requirements(&self) -> Vec<CredentialRequirement> {
         credential_requirements()
     }
+
+    /// 就绪探测（生命周期方法①）：CLI 型 → 命令可解析即就绪
+    ///
+    /// 判定口径与执行侧 `resolve_cli_path` 共用 [`crate::pkg::tool_registry::cli_lookup`]
+    /// 的同一解析函数（含 `~` 展开 + PATH 补全），消除「判定说未就绪、调用却能跑」的分叉。
+    fn probe_readiness(&self, po: &ToolPo) -> common::api::RuntimeReady {
+        let command = po.cli_command().or_else(|| self.create_po().cli_command());
+        crate::pkg::tool_registry::cli_lookup::cli_probe_readiness(
+            command.as_deref(),
+            LARK_CLI_BIN,
+            None,
+            po.cli_install_hint().as_deref().unwrap_or_default(),
+        )
+    }
+
+    /// 自愈配置提议（生命周期方法②）：只提议 `command` 单字段，不落库
+    fn propose_self_heal(&self, po: &ToolPo) -> Option<serde_json::Value> {
+        let command = po.cli_command().or_else(|| self.create_po().cli_command());
+        crate::pkg::tool_registry::cli_lookup::cli_propose_heal(
+            command.as_deref(),
+            LARK_CLI_BIN,
+            None,
+        )
+    }
 }
 
 /// lark_cli 工具核心实现
