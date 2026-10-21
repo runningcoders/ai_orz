@@ -195,16 +195,20 @@ impl BuiltinToolFactory for BrowserToolFactory {
         Box::new(BrowserCoreTool { po })
     }
 
-    /// 就绪探测（生命周期方法①）：CLI 型 → 命令可解析即就绪
+    /// 就绪探测（生命周期方法①）：**语义 = 当前 `config.command` 是否可寻址**
     ///
-    /// 判定口径与执行侧 `resolve_cli_path` 共用 [`crate::pkg::tool_registry::cli_lookup`]
-    /// 的同一解析函数（含 `~` 展开 + PATH 补全），消除「判定说未就绪、调用却能跑」的分叉。
+    /// 只回答「配置健康度」，**不做默认布局 / PATH 兜底** —— 兜底属于
+    /// [`Self::propose_self_heal`]（怎么修）与执行侧 `resolve_cli_path`（怎么跑）。
+    /// 实现直接复用运行时判定同一函数
+    /// [`crate::pkg::tool_registry::tool_readiness::cli_config_health_readiness`]，
+    /// 两处口径同源，不可能再分叉（2026-10-22 方案 A 定谳）。
+    ///
+    /// 组合语义：`NotReady` + 提议有解 = 「配置写错但可自愈」；
+    /// `NotReady` + 提议 `None` = 「真的没装，交人工」。
     fn probe_readiness(&self, po: &ToolPo) -> common::api::RuntimeReady {
         let command = po.cli_command().or_else(|| self.create_po().cli_command());
-        crate::pkg::tool_registry::cli_lookup::cli_probe_readiness(
+        crate::pkg::tool_registry::tool_readiness::cli_config_health_readiness(
             command.as_deref(),
-            DEFAULT_COMMAND,
-            None,
             po.cli_install_hint().as_deref().unwrap_or_default(),
         )
     }

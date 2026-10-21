@@ -330,18 +330,23 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for SkillhubCliToolFactory {
     }
     // credential_requirements：零凭证第一版——沿用 trait 默认空实现（不覆盖）
 
-    /// 就绪探测（生命周期方法①）——**本项目根因的修复落点**
+    /// 就绪探测（生命周期方法①）：**语义 = 当前 `config.command` 是否可寻址**
     ///
-    /// 历史缺陷：`SKILLHUB_DEFAULT_PATH_SPEC = "~/.skillhub/skillhub"` 里的 `~`
-    /// 在旧判定（`Path::new` 无展开）中是普通字符 → 恒定 not_ready，而执行侧
-    /// 自己有四步降级能跑通。现在判定与执行共用 `cli_lookup` 同一解析函数，
-    /// `~` 会展开、PATH 会补全扫描（`~/.local/bin` 在默认补全清单内）。
+    /// # 本项目根因的最终修复落点（2026-10-22 方案 A）
+    ///
+    /// 出厂默认 `SKILLHUB_DEFAULT_PATH_SPEC = "~/.skillhub/skillhub"` 在本机并不存在
+    /// （CLI 实际装在 `~/.local/bin/skillhub`，属默认补全清单目录）。历史两个缺陷叠加：
+    /// ①旧判定不展开 `~`（把 `~` 当普通字符 → 恒 not_ready）；
+    /// ②判定侧走四级降级（含 PATH 兜底）而运行时判定无兜底 → 探针 `Ready`（让修复器
+    /// 闸门「未就绪才修」跳过、配置永不纠正）、运行时 `NotReady`（前端长期未就绪）。
+    ///
+    /// 现在探针与运行时判定**同源同一函数**（`cli_binary_readiness` →
+    /// `command_available`）：配置不可寻址必报 `NotReady` → 闸门放行 →
+    /// [`Self::propose_self_heal`] 给出 `~/.local/bin/skillhub` → 配置被真正纠正。
     fn probe_readiness(&self, po: &ToolPo) -> common::api::RuntimeReady {
         let command = po.cli_command().or_else(|| self.create_po().cli_command());
-        crate::pkg::tool_registry::cli_lookup::cli_probe_readiness(
+        crate::pkg::tool_registry::tool_readiness::cli_config_health_readiness(
             command.as_deref(),
-            SKILLHUB_CLI_BIN,
-            Some(SKILLHUB_DEFAULT_PATH_SPEC),
             po.cli_install_hint().as_deref().unwrap_or_default(),
         )
     }

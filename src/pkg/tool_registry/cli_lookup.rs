@@ -217,10 +217,20 @@ pub fn resolve_cli_command(
 
 // ==================== 供 BuiltinToolFactory 默认实现复用的就绪探测/自愈提议 ====================
 
-/// 就绪探测：命令可解析 → `Ready`；否则 `NotReady{cli_not_installed}`
+/// 可达性判定（**不是** `probe_readiness` 的口径，勿再用作探针）：命令可解析 → `Ready`
 ///
-/// 与 `tool_readiness::cli_binary_readiness` 同一输出形态（reason/hint 语义一致），
-/// 只是判定口径改走 `resolve_cli_command`（含 `~` 展开与 PATH 补全兜底）。
+/// ⚠️ **口径警告（2026-10-22 方案 A/B 定谳）**：本函数走 `resolve_cli_command`
+/// 四级降级（含默认布局与 PATH 补全兜底），回答的是「**这个工具在这台机器上能不能
+/// 被找到并跑起来**」，属于「可达性 / 怎么跑」语义。
+///
+/// `BuiltinToolFactory::probe_readiness` 必须用
+/// [`crate::pkg::tool_registry::tool_readiness::cli_config_health_readiness`]
+/// （配置健康度，**不做兜底**）。历史教训：4 个 CLI 工厂曾用本函数做探针，于是
+/// 「配置写错但 PATH 能兜底」被判 `Ready` → 修复器闸门跳过 → 配置永不纠正，
+/// 而运行时仍报 `NotReady` → 前端长期「未就绪」。
+///
+/// 保留本函数供「可达性建议 / 诊断」类场景使用，输出形态与
+/// `tool_readiness::cli_binary_readiness` 一致（reason/hint 语义相同）。
 pub fn cli_probe_readiness(
     command: Option<&str>,
     bin_name: &str,

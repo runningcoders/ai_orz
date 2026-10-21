@@ -406,17 +406,14 @@ fn default_propose_self_heal_is_none_for_non_cli_tools() {
 fn every_cli_factory_implements_lifecycle_methods() {
     use common::api::RuntimeReady;
 
-    // 四个 CLI 型工厂都必须覆盖 probe_readiness：判定要么 Ready、
-    // 要么是 cli_not_installed（绝不能落回「默认 Ready」掩盖问题）
+    // 四个 CLI 型工厂都必须覆盖 probe_readiness，且**不得**落回「默认 Ready」
+    // 掩盖问题；配置不可寻址时必须是 cli_not_installed（否则修复器闸门不放行）
     for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser"] {
         let factory = factory_of(id);
         let mut po = factory.create_po();
         // 刻意写一个必然不可解析的命令
         po.config = serde_json::json!({ "command": "/no/such/dir/no-such-cli-xyz" });
         match factory.probe_readiness(&po) {
-            RuntimeReady::Ready => {
-                // 允许：环境里确实能通过默认布局/PATH 发现该工具的 bin 名
-            }
             RuntimeReady::NotReady { reason, .. } => {
                 assert_eq!(
                     reason, "cli_not_installed",
@@ -448,6 +445,101 @@ fn self_heal_proposal_is_always_single_command_field_or_none() {
                 obj["command"].as_str().is_some_and(|s| !s.is_empty()),
                 "{} proposed command must be non-empty string",
                 id
+            );
+        }
+    }
+}
+
+// ==================== 口径钉死（2026-10-22 方案 A+B）====================
+//
+// 背景：`probe_readiness` 曾走「四级降级解析」（含默认布局 / PATH 兜底），于是
+// 「config.command 写错但机器别处能找到」被判 Ready → 修复器「未就绪才修」闸门
+// 被跳过 → 配置永远不会被纠正；而运行时判定（无兜底）仍报 NotReady → 前端长期
+// 「未就绪」。下面两条测例把口径钉死，防止再退化。
+
+#[test]
+fn unaddressable_config_is_never_masked_by_path_fallback() {
+    use common::api::RuntimeReady;
+
+    // 探针语义 = 配置健康度：配置不可寻址 → **必须** NotReady，
+    // 哪怕该工具的 bin 名能在 PATH / 补全目录里找到（兜底只属于 propose_self_heal）
+    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser"] {
+        let factory = factory_of(id);
+        let mut po = factory.create_po();
+        // 含分隔符 + 必然不存在：任何环境都不会命中该路径
+        po.config = serde_json::json!({ "command": "/no/such/dir/no-such-cli-xyz" });
+
+        match factory.probe_readiness(&po) {
+            RuntimeReady::NotReady { reason, hint } => {
+                assert_eq!(reason, "cli_not_installed", "{}", id);
+                assert!(
+                    hint.contains("配置"),
+                    "{} 的引导语必须指向配置修改，实得: {}",
+                    id,
+                    hint
+                );
+                assert!(!hint.contains("curl"), "{} 引导语不得含代装指令", id);
+            }
+            other => panic!(
+                "{} 的 config.command 不可寻址时必须报 NotReady（PATH 兜底只属于 \
+                 propose_self_heal，若落在探针里会让修复器闸门永久跳过），实得 {:?}",
+                id, other
+            ),
+        }
+    }
+}
+
+#[test]
+fn probe_and_propose_stay_consistent_on_config_health() {
+    use common::api::RuntimeReady;
+
+    // 探针与提议必须自洽，三条不变式：
+    // ① probe == Ready ⇒ propose == None（已可用则无自愈动作，幂等前置）
+    // ② propose == Some(cfg) ⇒ cfg.command 本身必须**真可寻址**（不许提议另一个坏路径）
+    // ③ bin 名在「PATH + 补全目录」可兜底 ⇒ propose **必须**给解
+    //    （否则「配置写错但可修」会退化成「交人工」）
+    let cases = [
+        ("lark_cli", "lark-cli"),
+        ("gh_cli", "gh"),
+        ("skillhub_cli", "skillhub"),
+        ("browser", "agent-browser"),
+    ];
+    for (id, bin) in cases {
+        let factory = factory_of(id);
+        let mut po = factory.create_po();
+        po.config = serde_json::json!({ "command": "/no/such/dir/no-such-cli-xyz" });
+
+        let probe = factory.probe_readiness(&po);
+        let proposal = factory.propose_self_heal(&po);
+
+        assert!(
+            matches!(probe, RuntimeReady::NotReady { .. }),
+            "{} 配置不可寻址 → 探针必须 NotReady",
+            id
+        );
+        // ①
+        if probe == RuntimeReady::Ready {
+            assert!(proposal.is_none(), "{} 已就绪不应再提议自愈", id);
+        }
+        // ②
+        if let Some(cfg) = &proposal {
+            let proposed = cfg["command"]
+                .as_str()
+                .expect("proposal 只含 command 单字段");
+            assert!(
+                crate::pkg::tool_registry::cli_lookup::command_available(proposed),
+                "{} 提议的命令必须真可寻址（否则写库后依然未就绪），实得 {}",
+                id,
+                proposed
+            );
+        }
+        // ③
+        if crate::pkg::tool_registry::cli_lookup::command_available(bin) {
+            assert!(
+                proposal.is_some(),
+                "{} 的 bin 名 {} 可兜底命中 → propose 必须给解（否则误判为「交人工」）",
+                id,
+                bin
             );
         }
     }

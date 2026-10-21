@@ -49,6 +49,29 @@ pub fn cli_binary_readiness(command: &str, install_hint: &str, config_hint: &str
     }
 }
 
+/// 配置健康度探测 —— `BuiltinToolFactory::probe_readiness` 的**唯一口径**
+///
+/// # 语义边界（2026-10-22 定谳 · AMan 拍板方案 A）
+///
+/// - **回答什么**：当前持久化的 `config.command` 是否**可寻址**（配置健康度）。
+/// - **不回答什么**：工具最终能不能用。默认安装布局命中、PATH / 补全目录兜底
+///   都属于「怎么修」的范畴 —— 归 `propose_self_heal`（提议）与执行侧
+///   `resolve_cli_path`（跑起来）负责。
+/// - **为什么必须这么切**（本平台实锚教训）：探针若自带兜底，则「配置写错、但机器
+///   别处能找到」会判 `Ready` → 统一修复器的「未就绪才修」闸门直接跳过 →
+///   配置**永远不会被纠正**；而运行时判定（无兜底）仍报 `NotReady` → 前端长期
+///   「未就绪」。这正是 `skillhub_cli` 假故障的精确机制。
+///
+/// 实现**直接复用** [`cli_binary_readiness`]（运行时判定同一函数），保证探针与
+/// 运行时口径同源、不可能再分叉。
+pub fn cli_config_health_readiness(command: Option<&str>, install_hint: &str) -> RuntimeReady {
+    cli_binary_readiness(
+        command.unwrap_or_default(),
+        install_hint,
+        "或在工具配置中修改命令路径",
+    )
+}
+
 // ==================== key 型判定引导 ====================
 
 /// key 型未就绪引导（api_key_missing 的 hint 文案）：kind 是数据，文案是其纯函数

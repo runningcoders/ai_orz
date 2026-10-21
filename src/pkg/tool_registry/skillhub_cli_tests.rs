@@ -433,28 +433,21 @@ fn factory_po_metadata_and_registration_contract() {
 fn factory_probe_readiness_flags_written_off_default_spec() {
     use crate::pkg::tool_registry::BuiltinToolFactory;
 
-    // 本项目的精确病灶：出厂默认 config.command = ~/.skillhub/skillhub，
-    // 而 CLI 实际装在 PATH 里的某个目录（如 ~/.local/bin）。旧判定不展开 `~`
-    // → 恒 not_ready。现在判定走 cli_lookup：`~` 会展开、PATH 会补全扫描。
+    // 本项目的精确病灶：出厂默认 config.command = ~/.skillhub/skillhub 在本机不存在
+    // （CLI 实际装在 ~/.local/bin/skillhub）。
+    // 【口径定谳 2026-10-22 方案 A】探针只回答「配置是否可寻址」，**不做 PATH 兜底**：
+    // 兜底若留在探针里，「配置写错但 PATH 能找到」会判 Ready → 修复器闸门
+    // 「未就绪才修」被跳过 → 配置永远修不了（前端仍长期未就绪）。
     let factory = SkillhubCliToolFactory;
     let mut po = factory.create_po();
 
-    // 显式路径写成不存在的值 → 判定应当降级到「默认布局 / PATH 发现」。
-    // 本机装了 skillhub 时，PATH 兜底会直接把它救活（这正是根因修复的活证据：
-    // 以前写死路径 ×  不展开 `~` = 恒 not_ready，现在能靠 PATH 命中）。
     po.config = serde_json::json!({ "command": "/no/such/dir/skillhub-xyz" });
-    let discovered = crate::pkg::tool_registry::cli_lookup::lookup_in_search_path(SKILLHUB_CLI_BIN)
-        .is_some()
-        || crate::pkg::tool_registry::cli_lookup::current_home()
-            .map(|h| h.join(".skillhub").join(SKILLHUB_CLI_BIN).is_file())
-            .unwrap_or(false);
+    let discovered =
+        crate::pkg::tool_registry::cli_lookup::lookup_in_search_path(SKILLHUB_CLI_BIN).is_some();
 
+    // 配置不可寻址 → 无论 PATH 能否兜底，探针必须 NotReady
     match factory.probe_readiness(&po) {
-        common::api::RuntimeReady::Ready => {
-            assert!(discovered, "Ready 只能来自「默认布局或 PATH 确实命中」");
-        }
         common::api::RuntimeReady::NotReady { reason, hint } => {
-            assert!(!discovered, "能发现却报未就绪 = 判定与查找分叉（回归）");
             assert_eq!(reason, "cli_not_installed");
             // 引导语必须能让用户自己修（不含任何代装/curl 指令）
             assert!(
@@ -464,7 +457,40 @@ fn factory_probe_readiness_flags_written_off_default_spec() {
             );
             assert!(!hint.contains("curl"));
         }
-        other => panic!("unexpected readiness: {:?}", other),
+        other => panic!(
+            "配置不可寻址时探针必须 NotReady（PATH 兜底只属于 propose_self_heal），实得 {:?}",
+            other
+        ),
+    }
+
+    // 「能不能修」由 propose_self_heal 回答：PATH 可兜底时必须给出**可寻址**的解
+    if discovered {
+        let cfg = factory
+            .propose_self_heal(&po)
+            .expect("PATH 可兜底 → 必须提议自愈");
+        let proposed = cfg["command"].as_str().expect("proposal 只含 command");
+        assert!(
+            crate::pkg::tool_registry::cli_lookup::command_available(proposed),
+            "提议的命令必须真可寻址，实得 {}",
+            proposed
+        );
+    }
+
+    // 出厂默认规格的健康度 = 该路径是否真实存在（本机不存在 → NotReady → 闸门放行修复）
+    let spec_exists = crate::pkg::tool_registry::cli_lookup::current_home()
+        .map(|h| h.join(".skillhub").join(SKILLHUB_CLI_BIN).is_file())
+        .unwrap_or(false);
+    let default_readiness = factory.probe_readiness(&factory.create_po());
+    if spec_exists {
+        assert_eq!(default_readiness, common::api::RuntimeReady::Ready);
+    } else {
+        assert!(
+            matches!(
+                default_readiness,
+                common::api::RuntimeReady::NotReady { .. }
+            ),
+            "出厂规格 ~/.skillhub/skillhub 不存在时必须 NotReady（否则首启不会触发修复）"
+        );
     }
 }
 
@@ -480,25 +506,18 @@ fn factory_probe_readiness_scans_path_for_bare_name() {
         factory.probe_readiness(&po),
         common::api::RuntimeReady::Ready
     );
-    // 裸名写坏时的兜底语义：配置里那个名字找不到，会继续降级到**工具自身的
-    // bin 名**（skillhub）再找一次 —— 这是有意的容错（配置写坏不该让工具瘫掉）。
-    // 因此断言与环境解耦：只要「skillhub 本身可发现」，写坏的裸名也应判定 Ready。
+    // 裸名写坏 → **必须 NotReady**（口径定谳 2026-10-22 方案 A）：
+    // 旧行为「配置里那个名字找不到就降级到工具自身 bin 名再找一次、找到即 Ready」
+    // 正是让修复器闸门跳过、配置永不纠正的分叉源，已取消；
+    // 兜底改由 propose_self_heal 承担（提议 → 平台修复器写库）。
     po.config = serde_json::json!({ "command": "no-such-cli-xyz-abc" });
-    let skillhub_discoverable =
-        crate::pkg::tool_registry::cli_lookup::lookup_in_search_path(SKILLHUB_CLI_BIN).is_some();
-    let readiness = factory.probe_readiness(&po);
-    if skillhub_discoverable {
-        assert_eq!(
-            readiness,
-            common::api::RuntimeReady::Ready,
-            "配置裸名写坏时应降级到工具自身 bin 名继续查找"
-        );
-    } else {
-        assert!(matches!(
-            readiness,
+    assert!(
+        matches!(
+            factory.probe_readiness(&po),
             common::api::RuntimeReady::NotReady { .. }
-        ));
-    }
+        ),
+        "配置裸名不可寻址时必须 NotReady，不得用工具 bin 名兜底掩盖配置错误"
+    );
 }
 
 #[test]

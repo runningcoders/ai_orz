@@ -35,11 +35,27 @@ pub trait BuiltinToolFactory: DynClone + Send + Sync {
         Vec::new()
     }
 
-    /// 就绪探测（生命周期方法①）：给定持久化 PO，判定本工具当前是否就绪
+    /// 就绪探测（生命周期方法①）：给定持久化 PO，判定**当前配置是否健康**
+    ///
+    /// # 语义边界（写死，勿再漂移 —— 2026-10-22 方案 B）
+    ///
+    /// - **回答什么**：`po.config.command`（缺省时回落到工厂默认 PO 的命令）是否
+    ///   **可寻址**。即「**配置健康度**」，不是「工具可用性」。
+    /// - **不回答什么**：工具最终能不能用。默认安装布局命中、PATH / 补全目录兜底
+    ///   都属于「怎么修」—— 归 [`Self::propose_self_heal`]（提议）与执行侧
+    ///   `resolve_cli_path`（跑起来）负责。
+    /// - **为什么必须这样切**：探针若自带兜底，「配置写错但机器别处能找到」会判
+    ///   `Ready` → 平台修复器（`ToolProviderManage::reconcile_builtin_tool_readiness`）
+    ///   的「未就绪才修」闸门直接跳过 → 配置**永远不会被纠正**；而运行时判定
+    ///   （`tool_readiness::cli_binary_readiness`，无兜底）仍报 `NotReady` → 前端
+    ///   长期显示「未就绪」。这正是 `skillhub_cli` 假故障的精确机制。
+    ///   回归守卫见 `builtin_tests::unaddressable_config_is_never_masked_by_path_fallback`。
+    /// - **实现要求**：CLI 型覆盖实现**必须**复用
+    ///   [`crate::pkg::tool_registry::tool_readiness::cli_config_health_readiness`]
+    ///   （= 运行时判定同一函数，同源不可能再分叉），不得在探针里自行做降级解析。
     ///
     /// **默认实现 = `Ready`**：非 CLI 型工具（`http_fetch`/`fs_*`/`shell_exec`/
-    /// 搜索类/`mark_artifact`）没有外部二进制依赖，天然就绪。CLI 型工具
-    /// （`lark_cli`/`gh_cli`/`skillhub_cli`/`browser`）覆盖为真实命令解析判定。
+    /// 搜索类/`mark_artifact`）没有外部二进制依赖，天然就绪。
     ///
     /// 与 [`Self::credential_requirements`] 同款「工厂态静态声明 + 默认零破坏」
     /// 形态：存量 11 个内置工厂无需任何改动即可编译通过。
@@ -50,6 +66,11 @@ pub trait BuiltinToolFactory: DynClone + Send + Sync {
 
     /// 自愈配置提议（生命周期方法②）：返回**修复后的 config JSON**，
     /// `None` = 不可自愈（交人工）
+    ///
+    /// 与 [`Self::probe_readiness`] **互补而非同口径**：探针回答「配置是否健康」
+    /// （不做兜底），本方法回答「能不能修」（**允许**默认布局 / PATH / 补全目录兜底）。
+    /// 两者组合才回答「工具是否可用」：`NotReady` + `Some` = 写错可自愈；
+    /// `NotReady` + `None` = 真的没装，交人工。
     ///
     /// **只提议、不落库**：写库权归平台侧唯一修复器
     /// （`ToolProviderManage::reconcile_builtin_tool_readiness`），由它决定
