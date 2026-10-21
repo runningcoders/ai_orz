@@ -36,7 +36,10 @@ async fn setup_test_env(
             .with_agent_id(Some("agent-test".to_string()))
             .with_tokens_input((100 + i * 10) as u64)
             .with_tokens_output((50 + i * 5) as u64)
-            .with_total_tokens((150 + i * 15) as u64);
+            .with_total_tokens((150 + i * 15) as u64)
+            // token 明细列（缓存命中 / 思考）：随主 token 一并落盘，供 sum_tokens 断言
+            .with_cached_tokens((10 + i * 2) as u64)
+            .with_reasoning_tokens((5 + i) as u64);
         stats.record(tmp_ctx.clone(), event).await?;
     }
     stats.flush_all(tmp_ctx).await?;
@@ -61,6 +64,10 @@ async fn test_sum_tokens_basic() -> Result<()> {
     assert_eq!(result.total_calls, 5);
     assert_eq!(result.total_tokens_input, 100 + 110 + 120 + 130 + 140);
     assert_eq!(result.total_tokens_output, 50 + 55 + 60 + 65 + 70);
+    // 明细列：10/12/14/16/18 与 5/6/7/8/9；断言非 0 才能证明列真的被读出来
+    // （列缺失时 SUM 走 COALESCE=0，与「未上报」同形，0 断言形同虚设）
+    assert_eq!(result.total_cached_tokens, 10 + 12 + 14 + 16 + 18);
+    assert_eq!(result.total_reasoning_tokens, 5 + 6 + 7 + 8 + 9);
 
     Ok(())
 }

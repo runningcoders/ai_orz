@@ -110,6 +110,12 @@ pub async fn update_model_provider(
             cfg.supports_vision = Some(vision);
         });
     }
+    // 协议口味 partial update（None=不变更；编辑 UI 恒传当前选值）
+    if let Some(flavor) = params.api_flavor {
+        provider.po.update_config(|cfg| {
+            cfg.api_flavor = Some(flavor);
+        });
+    }
     // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = common::constants::utils::current_timestamp_ms();

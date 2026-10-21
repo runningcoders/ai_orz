@@ -53,6 +53,8 @@ pub async fn create_model_provider(
         access_mode: params.access_mode,
         // 批5：vision 能力位落 config；None=false（缺省保守降级）
         supports_vision: params.supports_vision,
+        // 协议口味落 config；None=未配置（生效时等价 Responses，见枚举定义）
+        api_flavor: params.api_flavor,
         ..Default::default()
     };
     provider_po.set_config(&config);

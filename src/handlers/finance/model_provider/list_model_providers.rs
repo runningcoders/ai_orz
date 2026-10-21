@@ -47,6 +47,8 @@ pub async fn list_model_providers(
             access_mode: provider.po.config().access_mode_or_default(),
             // 批5：恒返回按 config 解析后的 vision 能力位（缺省 false）
             supports_vision: provider.po.config().supports_vision_or_default(),
+            // 恒返回按 config 解析后的协议口味（缺省 Responses）
+            api_flavor: provider.po.config().api_flavor_or_default(),
         })
         .collect();
 

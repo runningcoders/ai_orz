@@ -73,6 +73,8 @@ pub async fn get_model_provider(
         access_mode: config.access_mode_or_default(),
         // 批5：恒返回按 config 解析后的 vision 能力位（缺省 false）
         supports_vision: config.supports_vision_or_default(),
+        // 恒返回按 config 解析后的协议口味（缺省 Responses）
+        api_flavor: config.api_flavor_or_default(),
         stats: provider.stats,
     })
 }

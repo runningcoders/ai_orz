@@ -107,6 +107,8 @@ impl BrainDal for CapturingBrainDal {
                 ChatMessage::Tool { content, .. } => Some(content.as_str()),
                 // 批4 P1 新变体穷举波及臂（测试 mock，编译器强制；行为=取 text part）
                 ChatMessage::UserMultimodal { text, .. } => Some(text.as_str()),
+                // Responses 新变体穷举波及臂：推理项不进 prompt 文本（密文更不可进）
+                ChatMessage::Reasoning { .. } => None,
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -114,6 +116,7 @@ impl BrainDal for CapturingBrainDal {
         Ok(crate::models::cortex_types::ThinkResult::Final {
             content: "mock response".to_string(),
             usage: crate::models::cortex_types::TokenUsage::default(),
+            reasoning_items: Vec::new(),
         })
     }
 

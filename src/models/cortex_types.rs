@@ -27,6 +27,8 @@ pub enum ThinkResult {
         content: String,
         /// 本次调用的 token 使用统计
         usage: TokenUsage,
+        /// 本轮产生的推理项，需由上层回传给下一轮（见 [`ReasoningItem`]）
+        reasoning_items: Vec<ReasoningItem>,
     },
     /// 工具调用请求（模型要求调用工具）
     ToolCall {
@@ -36,6 +38,8 @@ pub enum ThinkResult {
         tool_calls: Vec<ToolCallRequest>,
         /// 本次调用的 token 使用统计
         usage: TokenUsage,
+        /// 本轮产生的推理项，需由上层回传给下一轮（见 [`ReasoningItem`]）
+        reasoning_items: Vec<ReasoningItem>,
     },
 }
 
@@ -57,6 +61,37 @@ impl ThinkResult {
             ThinkResult::ToolCall { usage, .. } => usage,
         }
     }
+
+    /// 获取本轮产生的推理项（Responses 协议需要回传；Chat Completions 恒为空）
+    pub fn reasoning_items(&self) -> &[ReasoningItem] {
+        match self {
+            ThinkResult::Final {
+                reasoning_items, ..
+            } => reasoning_items,
+            ThinkResult::ToolCall {
+                reasoning_items, ..
+            } => reasoning_items,
+        }
+    }
+}
+
+/// 推理项（Responses API 的 `type:"reasoning"` output item）
+///
+/// 部分推理模型要求下一轮 `input` **原样回传**上一轮的 reasoning item，否则报 400。
+/// 承载它的 [`ChatMessage::Reasoning`] 作用域限定在单次 `run_think_loop` 内：
+/// messages 是该函数的局部变量，全仓库零处序列化持久化，故纯内存即可，
+/// 不需要存储载体、不需要 migration。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReasoningItem {
+    /// item id（形如 `rs_xxx`），回传时原样带上
+    pub id: Option<String>,
+    /// 摘要文本（可展示；与 encrypted_content 互斥地提供上下文）
+    pub summary: Vec<String>,
+    /// provider 私有的加密推理内容，仅可在**同一 provider** 回传。
+    ///
+    /// 红线：绝不进 `to_summary_text` / trace / 日志——它既长又是密文，
+    /// 对人与记忆均无价值，且经 RoundDigest → abort_summary 可能到达用户可见文本。
+    pub encrypted_content: Option<String>,
 }
 
 /// Token 使用统计
@@ -70,6 +105,13 @@ pub struct TokenUsage {
     pub output_tokens: u64,
     /// 总 token 数（某些 provider 直接返回，否则 input + output）
     pub total_tokens: Option<u64>,
+    /// 提示缓存命中的输入 token 数（`prompt_tokens_details.cached_tokens` /
+    /// Responses 的 `input_tokens_details.cached_tokens`）。
+    /// provider 不下发时为 0——**不代表未命中**，仅表示未上报。
+    pub cached_tokens: u64,
+    /// 思考/推理消耗的输出 token 数（`completion_tokens_details.reasoning_tokens` /
+    /// Responses 的 `output_tokens_details.reasoning_tokens`）。
+    pub reasoning_tokens: u64,
 }
 
 impl TokenUsage {
@@ -186,6 +228,17 @@ pub enum ChatMessage {
         /// 图像 parts（内置参数：≤4 张/单条，单图原始字节 ≤10MB，mime 白名单 image/*）
         images: Vec<ImagePart>,
     },
+    /// 推理项（Responses 协议专用：模型上一轮产出的 reasoning item，需原样回传）
+    ///
+    /// **仅对 Responses 协议生效**；Chat Completions 协议的 `messages_to_json`
+    /// 会跳过本变体（该协议无此概念，输出必然 400）。
+    ///
+    /// 作用域限定单次 `run_think_loop`（messages 是局部变量、零持久化），
+    /// 故跨轮次不会泄漏给其他 provider。
+    Reasoning {
+        /// 推理项内容
+        item: ReasoningItem,
+    },
 }
 
 impl ChatMessage {
@@ -217,6 +270,11 @@ impl ChatMessage {
             text: text.into(),
             images,
         }
+    }
+
+    /// 创建推理项消息（Responses 协议回传用）
+    pub fn reasoning(item: ReasoningItem) -> Self {
+        ChatMessage::Reasoning { item }
     }
 
     /// 将消息序列化为摘要文本（用于 think_loop 的 `RoundDigest.transcript` 轮次快照与兜底摘要）
@@ -272,6 +330,17 @@ impl ChatMessage {
                     "[user] {} [+{} images]",
                     truncate_str(text, max_content_len),
                     images.len()
+                )
+            }
+            ChatMessage::Reasoning { item } => {
+                // 红线：`encrypted_content` 是 provider 私有密文，**绝不进轮次快照**。
+                // 照抄 UserMultimodal 的 base64 排除约定：只留 id + 摘要计数。
+                // 通道风险：RoundDigest.transcript 经 abort_summary 可到达用户可见
+                // 文本与短期记忆，密文一旦进来就不可逆。
+                format!(
+                    "[reasoning] id={} ({} summary items, encrypted omitted)",
+                    item.id.as_deref().unwrap_or("-"),
+                    item.summary.len()
                 )
             }
         }
@@ -334,5 +403,42 @@ mod tests {
     fn to_summary_text_plain_user_unchanged() {
         let summary = ChatMessage::user("纯文本").to_summary_text(200);
         assert_eq!(summary, "[user] 纯文本");
+    }
+
+    #[test]
+    fn reasoning_serializes_with_role_tag() {
+        let msg = ChatMessage::reasoning(ReasoningItem {
+            id: Some("rs_abc".to_string()),
+            summary: vec!["先算总量".to_string()],
+            encrypted_content: Some("gAAAAABpaDWNMxMeLw".to_string()),
+        });
+        let v = serde_json::to_value(&msg).expect("serialize");
+        assert_eq!(v["role"], "reasoning");
+        assert_eq!(v["item"]["id"], "rs_abc");
+        assert_eq!(v["item"]["summary"][0], "先算总量");
+        assert_eq!(v["item"]["encrypted_content"], "gAAAAABpaDWNMxMeLw");
+    }
+
+    /// 红线守卫：密文不得进入轮次快照 / RoundDigest（照抄 base64 排除约定）。
+    ///
+    /// 泄漏通道：messages → RoundDigest.transcript → abort_summary → 用户可见文本
+    /// 与短期记忆。密文本身既长又不可读，进去了既浪费 token 又不可逆。
+    #[test]
+    fn to_summary_text_reasoning_omits_encrypted_content() {
+        let msg = ChatMessage::reasoning(ReasoningItem {
+            id: Some("rs_abc".to_string()),
+            summary: vec!["第一步".to_string(), "第二步".to_string()],
+            encrypted_content: Some("gAAAAABpaDWNMxMeLw_SUPER_SECRET".to_string()),
+        });
+        let summary = msg.to_summary_text(200);
+        assert!(
+            !summary.contains("gAAAAABpaDWNMxMeLw_SUPER_SECRET"),
+            "加密推理内容不得进入轮次快照"
+        );
+        assert!(!summary.contains("SUPER_SECRET"), "密文片段不得泄漏");
+        assert_eq!(
+            summary,
+            "[reasoning] id=rs_abc (2 summary items, encrypted omitted)"
+        );
     }
 }

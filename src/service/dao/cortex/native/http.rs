@@ -4,7 +4,7 @@
 //! 不再依赖 rig 的 client/agent 抽象。
 
 use crate::models::cortex_types::{
-    ChatMessage, ThinkResult, TokenUsage, ToolCallRequest, ToolDescriptor,
+    ChatMessage, ReasoningItem, ThinkResult, TokenUsage, ToolCallRequest, ToolDescriptor,
 };
 use crate::models::model_provider::{ModelProviderConfig, ModelProviderPo};
 use crate::pkg::RequestContext;
@@ -61,12 +61,16 @@ pub fn validate_provider_for_request(provider: &ModelProviderPo) -> Result<()> {
 }
 
 /// 将 ChatMessage 数组转换为 OpenAI API 格式的 JSON 数组
+///
+/// 用 `filter_map` 而非 `map`：Responses 协议专用的 `ChatMessage::Reasoning`
+/// 在本协议下必须丢弃（Chat Completions 无 reasoning item 概念，输出必然 400）。
+/// 正常链路不会产生该变体（只有 Responses DAO 才 push），命中即协议错配，需留痕。
 fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
     messages
         .iter()
-        .map(|m| match m {
-            ChatMessage::System { content } => json!({"role": "system", "content": content}),
-            ChatMessage::User { content } => json!({"role": "user", "content": content}),
+        .filter_map(|m| match m {
+            ChatMessage::System { content } => Some(json!({"role": "system", "content": content})),
+            ChatMessage::User { content } => Some(json!({"role": "user", "content": content})),
             // OpenAI vision 标准形态：content = [text part] + [image_url part × n]
             ChatMessage::UserMultimodal { text, images } => {
                 let mut parts = vec![json!({"type": "text", "text": text})];
@@ -78,7 +82,7 @@ fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
                         }
                     }));
                 }
-                json!({"role": "user", "content": parts})
+                Some(json!({"role": "user", "content": parts}))
             }
             ChatMessage::Assistant {
                 content,
@@ -106,13 +110,20 @@ fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
                             .collect::<Vec<_>>()
                     );
                 }
-                msg
+                Some(msg)
             }
             ChatMessage::Tool {
                 tool_call_id,
                 content,
-            } => {
-                json!({"role": "tool", "tool_call_id": tool_call_id, "content": content})
+            } => Some(json!({"role": "tool", "tool_call_id": tool_call_id, "content": content})),
+            // Responses 协议专用变体：本协议丢弃（见函数级注释）
+            ChatMessage::Reasoning { .. } => {
+                log_warn!(
+                    "[cortex_messages_to_json] reasoning message dropped: Chat Completions has no \
+                     reasoning item concept; check api_flavor routing (reasoning items must not \
+                     reach this protocol)"
+                );
+                None
             }
         })
         .collect()
@@ -178,14 +189,21 @@ pub async fn call_chat_completions(
         }
         ModelAccessMode::NonStream => parse_non_stream_response(resp).await?,
     };
-    Ok(finish_think_result(&ctx, acc))
+    // Chat Completions 协议无 reasoning item 概念，恒空
+    Ok(finish_think_result(&ctx, acc, Vec::new()))
 }
 
 /// 解析 provider 的下行调用访问模式（方案 §四）。
 ///
+/// `pub(crate)`：Responses 协议实现（同模块树）需要复用同一套「stream / non_stream
+/// 缺省兜底」判定，避免两处各写一份导致缺省口径漂移。
+///
 /// - 配置缺省（None）→ [`ModelAccessMode::Stream`]（= 存量行为，零变化）；
 /// - config JSON 解析失败（脏配置）→ 兜底 Stream + 告警日志，不中断推理。
-fn resolve_access_mode(ctx: &RequestContext, provider: &ModelProviderPo) -> ModelAccessMode {
+pub(crate) fn resolve_access_mode(
+    ctx: &RequestContext,
+    provider: &ModelProviderPo,
+) -> ModelAccessMode {
     match serde_json::from_str::<ModelProviderConfig>(&provider.config) {
         Ok(cfg) => cfg.access_mode_or_default(),
         Err(e) => {
@@ -318,20 +336,20 @@ fn parse_non_stream_body(text: &str) -> Result<StreamAccumulator> {
 ///
 /// 需要 `ctx` 仅为留痕：模型给出的 `arguments` 若不是合法 JSON，原文必须进日志
 /// （否则下游只能看到「参数整包为 null」，病因被永久掩盖，详见本函数内注释）。
-fn finish_think_result(ctx: &RequestContext, acc: StreamAccumulator) -> ThinkResult {
-    let usage = TokenUsage {
-        input_tokens: acc
-            .usage
-            .as_ref()
-            .and_then(|u| u.prompt_tokens)
-            .unwrap_or(0),
-        output_tokens: acc
-            .usage
-            .as_ref()
-            .and_then(|u| u.completion_tokens)
-            .unwrap_or(0),
-        total_tokens: acc.usage.as_ref().and_then(|u| u.total_tokens),
-    };
+///
+/// `reasoning_items`：Responses 协议独有的推理项（需上层回传给下一轮）；
+/// Chat Completions 恒传空 Vec。两条协议共用本函数，保证「有 tool_calls → ToolCall
+/// 否则 Final」的判定与参数解析只有一份实现。
+pub(crate) fn finish_think_result(
+    ctx: &RequestContext,
+    acc: StreamAccumulator,
+    reasoning_items: Vec<ReasoningItem>,
+) -> ThinkResult {
+    let usage = acc
+        .usage
+        .as_ref()
+        .map(Usage::to_token_usage)
+        .unwrap_or_default();
 
     if acc.saw_index_less_tool_call {
         log_warn!(
@@ -356,12 +374,14 @@ fn finish_think_result(ctx: &RequestContext, acc: StreamAccumulator) -> ThinkRes
             content: acc.saw_content.then_some(acc.content),
             tool_calls: calls,
             usage,
+            reasoning_items,
         };
     }
 
     ThinkResult::Final {
         content: acc.content,
         usage,
+        reasoning_items,
     }
 }
 
@@ -627,7 +647,7 @@ pub async fn call_embeddings_multimodal(
 /// 真实原因（超时 / 连接失败等）在 error source 链上；这里显式打标并追根，
 /// 避免日志只见 URL 不见原因。保持 Internal 错误码：传输失败是否可重试
 /// 仍由上层策略裁决，不在分类处改变语义。
-fn transport_error(kind: &str, e: reqwest::Error) -> Error {
+pub(crate) fn transport_error(kind: &str, e: reqwest::Error) -> Error {
     let tag = if e.is_timeout() {
         "timeout"
     } else if e.is_connect() {
@@ -656,7 +676,7 @@ fn error_root_cause(e: &reqwest::Error) -> String {
 ///
 /// 区分可重试（限流/服务端）与不可重试（鉴权/请求非法/内容过滤）错误，
 /// 供上游业务层（如 AOP 消费者）按需调用 `Error::is_retryable()` 决定是否重试。
-fn model_call_error(kind: &str, status: reqwest::StatusCode, text: &str) -> Error {
+pub(crate) fn model_call_error(kind: &str, status: reqwest::StatusCode, text: &str) -> Error {
     let detail = format!("{kind} failed ({}): {}", status, text);
     match status.as_u16() {
         // 限流：可重试
@@ -692,26 +712,30 @@ fn is_content_filtered(text: &str) -> bool {
 // ==================== 流式聚合结构 ====================
 
 /// SSE 流的聚合态：content 按 delta 累加、tool_calls 按 index 跨 chunk 合并
+///
+/// `pub(crate)` + 字段可见：Responses 协议不逐 delta 累加（改为读终态 envelope 的
+/// output 数组），但仍复用本结构与 [`finish_think_result`] 做「有 tool_calls →
+/// ToolCall 否则 Final」的判定与参数解析，保证两条协议只有一份实现。
 #[derive(Debug, Default)]
-struct StreamAccumulator {
-    content: String,
+pub(crate) struct StreamAccumulator {
+    pub(crate) content: String,
     // 区分「无内容」与「空字符串」（ToolCall.content 的 None/"" 语义对齐非流式）
-    saw_content: bool,
+    pub(crate) saw_content: bool,
     /// 是否收到 `[DONE]` 终止标记（流正常结束的证据之一，见 [`check_stream_end`]）
-    saw_done: bool,
+    pub(crate) saw_done: bool,
     /// 最后一次 outcome 标记：`stop` / `length` / `tool_calls` / `content_filter` 等
-    finish_reason: Option<String>,
+    pub(crate) finish_reason: Option<String>,
     /// 是否出现过「未带 index」的 tool_call delta（provider 不规范，需消歧，见 [`StreamAccumulator::resolve_tool_call_index`]）
-    saw_index_less_tool_call: bool,
-    tool_calls: BTreeMap<usize, AccumToolCall>,
-    usage: Option<Usage>,
+    pub(crate) saw_index_less_tool_call: bool,
+    pub(crate) tool_calls: BTreeMap<usize, AccumToolCall>,
+    pub(crate) usage: Option<Usage>,
 }
 
 #[derive(Debug, Default)]
-struct AccumToolCall {
-    id: String,
-    name: String,
-    arguments: String,
+pub(crate) struct AccumToolCall {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) arguments: String,
 }
 
 impl StreamAccumulator {
@@ -832,11 +856,55 @@ struct DeltaToolFunction {
     arguments: Option<String>,
 }
 
+///
+/// `pub(crate)`：Responses 侧把 `input_tokens/output_tokens` 折算进本结构，
+/// 从而与 Chat Completions 共用一条 `finish_think_result` 归并路径。
 #[derive(Debug, Deserialize)]
-struct Usage {
-    prompt_tokens: Option<u64>,
-    completion_tokens: Option<u64>,
-    total_tokens: Option<u64>,
+pub(crate) struct Usage {
+    pub(crate) prompt_tokens: Option<u64>,
+    pub(crate) completion_tokens: Option<u64>,
+    pub(crate) total_tokens: Option<u64>,
+    /// 输入 token 明细：`prompt_tokens_details.cached_tokens` = 提示缓存命中数。
+    /// 多数 provider 不下发 ⇒ Option（缺失是常态，不是异常）。
+    pub(crate) prompt_tokens_details: Option<PromptTokensDetails>,
+    /// 输出 token 明细：`completion_tokens_details.reasoning_tokens` = 思考/推理开销。
+    pub(crate) completion_tokens_details: Option<CompletionTokensDetails>,
+}
+
+/// 输入 token 明细（Chat Completions 命名；Responses 对应 `input_tokens_details`）
+#[derive(Debug, Deserialize)]
+pub(crate) struct PromptTokensDetails {
+    pub(crate) cached_tokens: Option<u64>,
+}
+
+/// 输出 token 明细（Chat Completions 命名；Responses 对应 `output_tokens_details`）
+#[derive(Debug, Deserialize)]
+pub(crate) struct CompletionTokensDetails {
+    pub(crate) reasoning_tokens: Option<u64>,
+}
+
+impl Usage {
+    /// 归并为上层契约 [`TokenUsage`]。
+    ///
+    /// 明细字段缺失按 0 计（不下发 ≠ 零消耗，但无从区分；统计侧按「未上报」理解，
+    /// 与 `input_tokens` 缺失按 0 的既有口径一致）。
+    fn to_token_usage(&self) -> TokenUsage {
+        TokenUsage {
+            input_tokens: self.prompt_tokens.unwrap_or(0),
+            output_tokens: self.completion_tokens.unwrap_or(0),
+            total_tokens: self.total_tokens,
+            cached_tokens: self
+                .prompt_tokens_details
+                .as_ref()
+                .and_then(|d| d.cached_tokens)
+                .unwrap_or(0),
+            reasoning_tokens: self
+                .completion_tokens_details
+                .as_ref()
+                .and_then(|d| d.reasoning_tokens)
+                .unwrap_or(0),
+        }
+    }
 }
 
 #[derive(Deserialize)]

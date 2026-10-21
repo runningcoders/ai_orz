@@ -274,6 +274,8 @@ mod tests {
             "remaining_tokens",
             "cost_per_token",
             "cached_tokens",
+            // 推理明细：缓存命中与思考开销同属用量可观测范畴
+            "reasoning_tokens",
         ] {
             assert!(match_key(key).is_none(), "expected {key} to be preserved");
         }

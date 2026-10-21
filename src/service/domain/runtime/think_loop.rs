@@ -428,7 +428,7 @@ impl RuntimeDomainImpl {
                 let round_duration_ms = round_start.elapsed().as_millis() as u64;
 
                 match result {
-                    ThinkResult::Final { content, usage } => {
+                    ThinkResult::Final { content, usage, .. } => {
                         // 累计 token 用量
                         total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
                         total_output_tokens =
@@ -463,13 +463,7 @@ impl RuntimeDomainImpl {
                                 false,
                                 0,
                             )
-                            .with_model_usage(
-                                model_provider_id.clone(),
-                                model_name.clone(),
-                                usage.input_tokens,
-                                usage.output_tokens,
-                                usage.total(),
-                            )
+                            .with_model_usage(model_provider_id.clone(), model_name.clone(), &usage)
                             .with_context(
                                 ctx.organization_id().cloned(),
                                 ctx.user_id().cloned(),
@@ -508,6 +502,7 @@ impl RuntimeDomainImpl {
                         content,
                         tool_calls,
                         usage,
+                        reasoning_items,
                     } => {
                         let tc_count = tool_calls.len();
                         total_tool_calls = total_tool_calls.saturating_add(tc_count);
@@ -527,6 +522,16 @@ impl RuntimeDomainImpl {
                         let round_start_idx = messages.len();
                         let digest_assistant_text = content.clone();
                         let mut round_tool_names: Vec<String> = Vec::with_capacity(tc_count);
+                        // Responses 协议：模型本轮产出的推理项必须**原样回传**给下一轮
+                        // （部分推理模型强制要求，否则 400）。顺序刻意排在助手消息之前，
+                        // 与 Responses 的 output 数组顺序（reasoning → message /
+                        // function_call）保持一致。Chat Completions 恒为空 Vec，零开销。
+                        //
+                        // 作用域限定单次 run_think_loop：messages 是本函数局部变量、
+                        // 零持久化，故跨轮次不会把密文泄漏给别的 provider。
+                        for item in reasoning_items {
+                            messages.push(ChatMessage::reasoning(item));
+                        }
                         // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
                         messages.push(ChatMessage::Assistant {
                             content,
@@ -638,13 +643,7 @@ impl RuntimeDomainImpl {
                                 true,
                                 tc_count,
                             )
-                            .with_model_usage(
-                                model_provider_id.clone(),
-                                model_name.clone(),
-                                usage.input_tokens,
-                                usage.output_tokens,
-                                usage.total(),
-                            )
+                            .with_model_usage(model_provider_id.clone(), model_name.clone(), &usage)
                             .with_context(
                                 ctx.organization_id().cloned(),
                                 ctx.user_id().cloned(),

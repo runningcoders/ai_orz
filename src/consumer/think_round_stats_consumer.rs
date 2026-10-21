@@ -62,7 +62,9 @@ impl Consumer for ThinkRoundStatsConsumer {
             .with_project_id(event.project_id.clone())
             .with_tokens_input(event.tokens_input)
             .with_tokens_output(event.tokens_output)
-            .with_total_tokens(event.total_tokens);
+            .with_total_tokens(event.total_tokens)
+            .with_cached_tokens(event.cached_tokens)
+            .with_reasoning_tokens(event.reasoning_tokens);
 
         if let Some(stats) = global_stats() {
             // ctx 已由框架从事件 carrier 还原（携带 log_id 等链路标识）

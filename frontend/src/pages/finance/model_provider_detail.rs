@@ -17,7 +17,7 @@ use common::api::{
     CallModelRequest, GetModelProviderRequest, SwitchEmbeddingProviderRequest,
     UpdateModelProviderRequest,
 };
-use common::enums::{ModelAccessMode, ModelCapability, ProviderType};
+use common::enums::{ChatApiFlavor, ModelAccessMode, ModelCapability, ProviderType};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
@@ -49,6 +49,22 @@ fn access_mode_label(m: &ModelAccessMode) -> &'static str {
     match m {
         ModelAccessMode::Stream => "流式",
         ModelAccessMode::NonStream => "非流式",
+    }
+}
+
+/// api_flavor → select 绑定键（编辑 Modal 回显；沿 access_mode_key 先例）
+fn api_flavor_key(f: &ChatApiFlavor) -> &'static str {
+    match f {
+        ChatApiFlavor::Responses => "responses",
+        ChatApiFlavor::ChatCompletions => "chat_completions",
+    }
+}
+
+/// api_flavor → 展示文案（详情信息格徽标）
+fn api_flavor_label(f: &ChatApiFlavor) -> &'static str {
+    match f {
+        ChatApiFlavor::Responses => "Responses",
+        ChatApiFlavor::ChatCompletions => "Chat Completions",
     }
 }
 
@@ -99,6 +115,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut edit_recommended_context_length = use_signal(String::new);
     let mut edit_access_mode = use_signal(|| "stream".to_string());
     let mut edit_supports_vision = use_signal(|| false); // 批5-P2：vision 能力开关（编辑 Modal）
+    // 协议口味（编辑 Modal 回显；初值 Responses 与 ChatApiFlavor::default() 同语义）
+    let mut edit_api_flavor = use_signal(|| "responses".to_string());
     let mut saving_meta = use_signal(|| false);
 
     // 当前提供商是否 Embedding：编辑表单的上下文长度必填校验与标签用它。
@@ -224,6 +242,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                         .unwrap_or_default();
                                     let edit_access_mode_init = access_mode_key(&p.access_mode).to_string();
                                     let edit_supports_vision_init = p.supports_vision; // 批5-P2：回显（Get 恒返回 bool 无 None 态）
+                                    let edit_api_flavor_init = api_flavor_key(&p.api_flavor).to_string();
                                     rsx! {
                                         if is_enabled {
                                             button { class: "btn hud-btn btn-outline btn-sm",
@@ -312,6 +331,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                 edit_recommended_context_length.set(edit_rec_ctx_init.clone());
                                                 edit_access_mode.set(edit_access_mode_init.clone());
                                                 edit_supports_vision.set(edit_supports_vision_init); // 批5-P2：回显 vision 开关
+                                                edit_api_flavor.set(edit_api_flavor_init.clone()); // 回显协议口味
                                                 show_edit_modal.set(true);
                                             },
                                             "✏️ 编辑"
@@ -398,6 +418,18 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     div {
                                         span { class: "badge hud-badge badge-ghost badge-sm",
                                             "{access_mode_label(&p.access_mode)}"
+                                        }
+                                    }
+                                }
+                            }
+                            if !p.capability.is_embedding() {
+                                div {
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "调用协议" }
+                                    }
+                                    div {
+                                        span { class: "badge hud-badge badge-ghost badge-sm",
+                                            "{api_flavor_label(&p.api_flavor)}"
                                         }
                                     }
                                 }
@@ -578,6 +610,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     "non_stream" => ModelAccessMode::NonStream,
                                     _ => ModelAccessMode::Stream,
                                 };
+                                let api_flavor = match edit_api_flavor().as_str() {
+                                    "chat_completions" => ChatApiFlavor::ChatCompletions,
+                                    _ => ChatApiFlavor::Responses,
+                                };
                                 let api_key = if edit_api_key().is_empty() { None } else { Some(edit_api_key()) };
                                 let base_url = if edit_base_url().trim().is_empty() { None } else { Some(edit_base_url()) };
                                 let description = if edit_description().trim().is_empty() { None } else { Some(edit_description()) };
@@ -611,6 +647,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     access_mode: Some(access_mode),
                                     // 批5-P2：vision 开关保存恒传当前选值（沿 access_mode「恒传当前选值」口径）
                                     supports_vision: Some(edit_supports_vision()),
+                                    // 协议口味保存恒传当前选值（同上口径，无 None 分支）
+                                    api_flavor: Some(api_flavor),
                                 };
                                 saving_meta.set(true);
                                 let reload_id = id_for_submit.clone();
@@ -673,6 +711,21 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                         }
                     }
                     if editing_is_agent {
+                        // 协议口味（仅对话模型有意义：Embedding 走 embed 端点、Decision 走小脑链路）
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "调用协议" } }
+                            select {
+                                class: "select select-bordered w-full",
+                                "data-testid": "mp-edit-api-flavor",
+                                value: "{edit_api_flavor}",
+                                onchange: move |e| edit_api_flavor.set(e.value()),
+                                option { value: "responses", "Responses（推荐）" }
+                                option { value: "chat_completions", "Chat Completions（兼容回退）" }
+                            }
+                            p { class: "text-xs text-base-content/60",
+                                "Responses 支持工具调用、推理项回传与上下文缓存；自建网关或老旧兼容层无 /responses 端点时改选 Chat Completions"
+                            }
+                        }
                         // 批5-P2：vision 能力开关（仅对话模型显示；Embedding/Decision 隐藏；
                         // 显示条件沿 editing_is_agent 派生——编辑 Modal 不在 p 作用域）
                         label { class: "flex cursor-pointer select-none items-center gap-2",
@@ -757,6 +810,25 @@ mod access_mode_tests {
         assert_eq!(access_mode_label(&ModelAccessMode::Stream), "流式");
         assert_eq!(access_mode_label(&ModelAccessMode::NonStream), "非流式");
     }
+
+    /// 协议口味映射锁定：绑定键必须与后端 serde snake_case 契约逐字一致
+    #[test]
+    fn api_flavor_key_maps_both_values() {
+        assert_eq!(api_flavor_key(&ChatApiFlavor::Responses), "responses");
+        assert_eq!(
+            api_flavor_key(&ChatApiFlavor::ChatCompletions),
+            "chat_completions"
+        );
+    }
+
+    #[test]
+    fn api_flavor_label_maps_both_values() {
+        assert_eq!(api_flavor_label(&ChatApiFlavor::Responses), "Responses");
+        assert_eq!(
+            api_flavor_label(&ChatApiFlavor::ChatCompletions),
+            "Chat Completions"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -798,5 +870,52 @@ mod batch5_p2_tests {
         assert_eq!(code.matches("\"支持图像\"").count(), 1);
         // P1 机械接线注释已由 P2 接管
         assert!(!code.contains("批5-P1 机械接线"));
+    }
+
+    /// 协议口味 UI 守卫：编辑 Modal 下拉 + 回显链 + 恒传 + 信息格徽标，各锚点唯一。
+    #[test]
+    fn api_flavor_edit_ui_anchors_present() {
+        let src = include_str!("model_provider_detail.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+
+        // 下拉与两个 option 各恰 1
+        assert_eq!(
+            code.matches("\"data-testid\": \"mp-edit-api-flavor\",")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches("option { value: \"responses\", \"Responses（推荐）\" }")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches(
+                "option { value: \"chat_completions\", \"Chat Completions（兼容回退）\" }"
+            )
+            .count(),
+            1
+        );
+        // 回显链：init 与 set 各恰 1（防「打开编辑不回显 → 保存覆盖成默认值」）
+        assert_eq!(
+            code.matches("let edit_api_flavor_init = api_flavor_key(&p.api_flavor).to_string();")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches("edit_api_flavor.set(edit_api_flavor_init.clone());")
+                .count(),
+            1
+        );
+        // 保存恒传当前选值恰 1
+        assert_eq!(code.matches("api_flavor: Some(api_flavor),").count(), 1);
+        // 信息格徽标恰 1（恒显，与列表页「仅回退态显徽标」不同：详情页要能看出主线）
+        assert_eq!(
+            code.matches("\"{api_flavor_label(&p.api_flavor)}\"")
+                .count(),
+            1
+        );
+        // 初值主线协议
+        assert!(code.contains("use_signal(|| \"responses\".to_string())"));
     }
 }

@@ -17,7 +17,9 @@ use common::api::{
     CallModelRequest, CreateModelProviderRequest, ListModelProvidersResponseItem,
     SwitchEmbeddingProviderRequest,
 };
-use common::enums::{ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType};
+use common::enums::{
+    ChatApiFlavor, ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType,
+};
 use dioxus_router::Link;
 
 #[component]
@@ -33,9 +35,15 @@ pub fn FinanceModelProviders() -> Element {
     // 访问模式（T1 方案 §五 / T2 设计 §4.1）：默认 stream；Embedding 切换隐藏但不清除
     let mut new_access_mode = use_signal(|| ModelAccessMode::Stream);
     let mut new_supports_vision = use_signal(|| false); // 批5-P2：vision 能力开关（创建 Modal，默认不勾选）
+    // 协议口味：默认 Responses（平台主线；与 ChatApiFlavor::default() 同语义）
+    let mut new_api_flavor = use_signal(|| ChatApiFlavor::Responses);
     let new_access_mode_str = match new_access_mode() {
         ModelAccessMode::Stream => "stream",
         ModelAccessMode::NonStream => "non_stream",
+    };
+    let new_api_flavor_str = match new_api_flavor() {
+        ChatApiFlavor::Responses => "responses",
+        ChatApiFlavor::ChatCompletions => "chat_completions",
     };
     let mut model_name = use_signal(String::new);
     let mut api_key = use_signal(String::new);
@@ -118,6 +126,10 @@ pub fn FinanceModelProviders() -> Element {
                 supports_vision: Some(
                     new_supports_vision() && new_capability() == ModelCapability::Agent as i32,
                 ),
+                // 协议口味：Create 恒传当前选值（默认 Responses）。隐藏态
+                //（Embedding/Decision 不走 chat 协议）沿用 access_mode 先例：
+                // 值保留但不上送，后端按缺省解析，无隐藏态残留。
+                api_flavor: Some(new_api_flavor()),
             };
             match create_model_provider(req).await {
                 Ok(resp) => {
@@ -131,6 +143,7 @@ pub fn FinanceModelProviders() -> Element {
                     recommended_context_length.set(String::new());
                     new_access_mode.set(ModelAccessMode::Stream);
                     new_supports_vision.set(false); // 批5-P2：重置 vision checkbox
+                    new_api_flavor.set(ChatApiFlavor::Responses); // 重置为主线协议
                     toast.success("创建成功");
                     if resp.rebuild_task_id.is_some() {
                         toast.info("已触发向量索引全量重建，期间语义搜索可能不完整");
@@ -263,6 +276,10 @@ pub fn FinanceModelProviders() -> Element {
                                                         }
                                                         if p.supports_vision {
                                                             span { class: "badge hud-badge badge-ghost badge-sm", "图像" }
+                                                        }
+                                                        // 主线协议（Responses）不显徽标，仅回退态显式标注
+                                                        if matches!(p.api_flavor, ChatApiFlavor::ChatCompletions) {
+                                                            span { class: "badge hud-badge badge-ghost badge-sm", "Chat API" }
                                                         }
                                                     }
                                                 }
@@ -466,6 +483,28 @@ pub fn FinanceModelProviders() -> Element {
                     }
                 }
                 if new_capability() == ModelCapability::Agent as i32 {
+                    // 协议口味（仅对话模型有意义：Embedding 走 embed 端点、Decision 走小脑链路）
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "调用协议" }
+                        }
+                        select {
+                            class: "select select-bordered w-full",
+                            "data-testid": "mp-create-api-flavor",
+                            value: "{new_api_flavor_str}",
+                            onchange: move |e| {
+                                new_api_flavor.set(match e.value().as_str() {
+                                    "chat_completions" => ChatApiFlavor::ChatCompletions,
+                                    _ => ChatApiFlavor::Responses,
+                                });
+                            },
+                            option { value: "responses", "Responses（推荐）" }
+                            option { value: "chat_completions", "Chat Completions（兼容回退）" }
+                        }
+                        p { class: "text-xs text-base-content/60",
+                            "Responses 支持工具调用、推理项回传与上下文缓存；自建网关或老旧兼容层无 /responses 端点时改选 Chat Completions"
+                        }
+                    }
                     // 批5-P2：vision 能力开关（仅对话模型显示；Embedding/Decision 隐藏，独立分支防 Decision 误显）
                     label { class: "flex cursor-pointer select-none items-center gap-2",
                         input {
@@ -676,5 +715,53 @@ mod batch5_p2_tests {
         ));
         // P1 机械接线注释已由 P2 接管
         assert!(!code.contains("批5-P1 机械接线"));
+    }
+
+    /// 协议口味 UI 守卫：创建 Modal 下拉存在且唯一、默认主线 Responses、
+    /// 列表仅回退态显徽标，且下拉位于「仅对话模型」分支内。
+    #[test]
+    fn api_flavor_ui_anchors_present_and_defaults_to_responses() {
+        let src = include_str!("model_providers.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+
+        // 下拉与两个 option 各恰 1（主线在前，回退在后）
+        assert_eq!(
+            code.matches("\"data-testid\": \"mp-create-api-flavor\",")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches("option { value: \"responses\", \"Responses（推荐）\" }")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches(
+                "option { value: \"chat_completions\", \"Chat Completions（兼容回退）\" }"
+            )
+            .count(),
+            1
+        );
+        // 默认主线协议：初值与重置值均为 Responses（与 ChatApiFlavor::default() 同语义）
+        assert!(code.contains("use_signal(|| ChatApiFlavor::Responses)"));
+        assert!(code.contains("new_api_flavor.set(ChatApiFlavor::Responses);"));
+        // 创建上送恰 1
+        assert_eq!(
+            code.matches("api_flavor: Some(new_api_flavor()),").count(),
+            1
+        );
+        // 列表仅回退态显徽标（主线不显，避免每行噪音）
+        assert_eq!(
+            code.matches("if matches!(p.api_flavor, ChatApiFlavor::ChatCompletions) {")
+                .count(),
+            1
+        );
+        // 下拉必须仍在唯一的「仅对话模型」分支内：Embedding 走 embed 端点、
+        // Decision 走小脑链路，二者都无 chat 协议语义（防分支复制导致误显）
+        assert_eq!(
+            code.matches("if new_capability() == ModelCapability::Agent as i32 {")
+                .count(),
+            1
+        );
     }
 }

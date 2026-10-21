@@ -423,6 +423,7 @@ impl BrainDal for CapturingBrainDal {
         Ok(ai_orz::models::cortex_types::ThinkResult::Final {
             content: "mock response".to_string(),
             usage: ai_orz::models::cortex_types::TokenUsage::default(),
+            reasoning_items: Vec::new(),
         })
     }
 
@@ -1113,6 +1114,7 @@ impl BrainDal for TwoPhaseMockBrainDal {
             Ok(ai_orz::models::cortex_types::ThinkResult::Final {
                 content: Self::phase2_response(),
                 usage: ai_orz::models::cortex_types::TokenUsage::default(),
+                reasoning_items: Vec::new(),
             })
         } else {
             // ===== 后续调用（完成后上下文压缩总结流程等）=====
@@ -1120,6 +1122,7 @@ impl BrainDal for TwoPhaseMockBrainDal {
             Ok(ai_orz::models::cortex_types::ThinkResult::Final {
                 content: "summary done".to_string(),
                 usage: ai_orz::models::cortex_types::TokenUsage::default(),
+                reasoning_items: Vec::new(),
             })
         }
     }

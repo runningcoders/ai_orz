@@ -98,6 +98,7 @@ impl CortexDao for MockCortexDao {
         Ok(ThinkResult::Final {
             content: "".to_string(),
             usage: crate::models::cortex_types::TokenUsage::default(),
+            reasoning_items: Vec::new(),
         })
     }
 
@@ -1398,6 +1399,7 @@ impl CortexDao for MockCortexVectorDao {
         Ok(ThinkResult::Final {
             content: "".to_string(),
             usage: crate::models::cortex_types::TokenUsage::default(),
+            reasoning_items: Vec::new(),
         })
     }
 

@@ -1,7 +1,9 @@
 //! 模型提供商实体
 
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
-use common::enums::{ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType};
+use common::enums::{
+    ChatApiFlavor, ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt;
@@ -52,6 +54,16 @@ pub struct ModelProviderConfig {
     /// 不以其作判定源）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supports_vision: Option<bool>,
+    /// Chat 协议口味（chat_completions=传统 /chat/completions；responses=Responses API）
+    ///
+    /// **与 provider_type 相互独立**（同 supports_vision 的裁定）：provider_type
+    /// 回答「哪家厂商」，api_flavor 回答「哪种 wire 协议」。同一厂商可能两种协议
+    /// 都提供（OpenAI 自家即如此），故协议不可编码进 ProviderType 枚举。
+    ///
+    /// None=未配置（生效时等价 ChatCompletions，保持存量行为）；存量 config JSON
+    /// 缺字段自动兼容，无 migration。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_flavor: Option<ChatApiFlavor>,
 }
 
 impl ModelProviderConfig {
@@ -63,6 +75,14 @@ impl ModelProviderConfig {
     /// 解析 vision 能力位（批5 口径）：字段缺省 → false（保守降级，保持存量行为）
     pub fn supports_vision_or_default(&self) -> bool {
         self.supports_vision.unwrap_or(false)
+    }
+
+    /// 解析 chat 协议口味：字段缺省 → Responses（平台主线协议）
+    ///
+    /// 未提供 `/responses` 端点的自建/老旧网关由用户显式配 `"chat_completions"`
+    /// 回退；**不做按 provider_type 的特判**（厂商 × 协议是正交两维）。
+    pub fn api_flavor_or_default(&self) -> ChatApiFlavor {
+        self.api_flavor.unwrap_or(ChatApiFlavor::Responses)
     }
 }
 
@@ -338,5 +358,41 @@ mod access_mode_config_tests {
             assert_eq!(back.supports_vision, Some(value));
             assert_eq!(back.supports_vision_or_default(), value);
         }
+    }
+
+    /// 存量 config JSON（无 api_flavor 字段）→ None，语义等价 Responses（主线协议）。
+    ///
+    /// 与上面 `supports_vision` 的「缺省=保守降级 false」相反：协议缺省取**能力更强**
+    /// 的一侧，因为 Responses 是主线（MCP / 知识库 / 联网搜索 / 缓存仅此协议提供），
+    /// 且主流实现均已覆盖。存量记录无需 migration，缺省即切换。
+    #[test]
+    fn legacy_config_without_api_flavor_defaults_to_responses() {
+        let cfg: ModelProviderConfig =
+            serde_json::from_str(r#"{"max_context_length":128000}"#).expect("legacy config");
+        assert_eq!(cfg.api_flavor, None);
+        assert_eq!(cfg.api_flavor_or_default(), ChatApiFlavor::Responses);
+    }
+
+    /// 显式 `chat_completions` 必须能覆盖缺省（自建/老旧网关的回退路径可用），
+    /// 且未设置时不得序列化（存量 JSON 零污染）
+    #[test]
+    fn explicit_chat_completions_overrides_default() {
+        let empty = ModelProviderConfig::default();
+        assert!(
+            !serde_json::to_string(&empty)
+                .unwrap()
+                .contains("api_flavor"),
+            "未设置时不得序列化 api_flavor 字段"
+        );
+
+        let cfg = ModelProviderConfig {
+            api_flavor: Some(ChatApiFlavor::ChatCompletions),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("chat_completions"), "json: {json}");
+        let back: ModelProviderConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.api_flavor, Some(ChatApiFlavor::ChatCompletions));
+        assert_eq!(back.api_flavor_or_default(), ChatApiFlavor::ChatCompletions);
     }
 }

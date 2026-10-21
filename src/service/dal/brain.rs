@@ -247,7 +247,7 @@ impl BrainDal for BrainDalImpl {
             provider.po.model_name,
         );
 
-        let dao = cortex::native::registry().get(provider.po.provider_type);
+        let dao = cortex::native::registry().get(&provider.po);
         let result = dao
             .think(
                 ctx,
@@ -289,7 +289,7 @@ impl BrainDal for BrainDalImpl {
                     provider.model_name,
                 );
 
-                let dao = cortex::native::registry().get(provider.provider_type);
+                let dao = cortex::native::registry().get(provider);
                 let result = dao.think(ctx.clone(), provider, messages, tools).await;
 
                 log_debug!(
@@ -362,6 +362,7 @@ impl BrainDal for BrainDalImpl {
                 Ok(ThinkResult::Final {
                     content,
                     usage: TokenUsage::default(),
+                    reasoning_items: Vec::new(),
                 })
             }
             AgentKind::Remote => {
@@ -412,6 +413,7 @@ impl BrainDal for BrainDalImpl {
                 Ok(ThinkResult::Final {
                     content,
                     usage: TokenUsage::default(),
+                    reasoning_items: Vec::new(),
                 })
             }
         }

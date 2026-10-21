@@ -112,6 +112,8 @@ impl CortexDao for ExternalCortexDao {
         Ok(ThinkResult::Final {
             content,
             usage: crate::models::cortex_types::TokenUsage::default(),
+            // 外部 Agent 经 A2A 桥接，无 Responses 推理项
+            reasoning_items: Vec::new(),
         })
     }
 

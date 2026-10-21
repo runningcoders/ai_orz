@@ -191,12 +191,14 @@ async fn finish_maps_tool_calls_with_content_and_usage() {
     acc.absorb(chunk_of(
         r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"t","arguments":"{\"a\":1}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}"#,
     ));
-    match finish_think_result(&ctx, acc) {
+    match finish_think_result(&ctx, acc, Vec::new()) {
         ThinkResult::ToolCall {
             content,
             tool_calls,
             usage,
+            reasoning_items,
         } => {
+            assert!(reasoning_items.is_empty(), "chat 协议不产出推理项");
             assert_eq!(content.as_deref(), Some("thinking..."));
             assert_eq!(tool_calls.len(), 1);
             assert_eq!(tool_calls[0].id, "c1");
@@ -215,8 +217,13 @@ async fn finish_maps_final_answer_with_default_usage() {
     let ctx = test_ctx();
     let mut acc = StreamAccumulator::default();
     acc.absorb(chunk_of(r#"{"choices":[{"delta":{"content":"hi"}}]}"#));
-    match finish_think_result(&ctx, acc) {
-        ThinkResult::Final { content, usage } => {
+    match finish_think_result(&ctx, acc, Vec::new()) {
+        ThinkResult::Final {
+            content,
+            usage,
+            reasoning_items,
+        } => {
+            assert!(reasoning_items.is_empty(), "chat 协议不产出推理项");
             assert_eq!(content, "hi");
             assert_eq!(usage.input_tokens, 0);
             assert_eq!(usage.output_tokens, 0);
@@ -325,7 +332,7 @@ async fn invalid_tool_arguments_degrade_to_null_and_keep_tool_identity() {
     acc.absorb(chunk_of(
         r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"t","arguments":"{oops"}}]}}]}"#,
     ));
-    match finish_think_result(&ctx, acc) {
+    match finish_think_result(&ctx, acc, Vec::new()) {
         ThinkResult::ToolCall { tool_calls, .. } => {
             assert_eq!(tool_calls[0].arguments, Value::Null);
             assert_eq!(tool_calls[0].name, "t");
@@ -456,12 +463,14 @@ async fn parses_non_stream_body_with_content_tool_calls_and_usage() {
 
     // 两路统一经 finish_think_result 组装
     let ctx = test_ctx();
-    match finish_think_result(&ctx, acc) {
+    match finish_think_result(&ctx, acc, Vec::new()) {
         ThinkResult::ToolCall {
             content,
             tool_calls,
             usage,
+            reasoning_items,
         } => {
+            assert!(reasoning_items.is_empty(), "chat 协议不产出推理项");
             assert_eq!(content.as_deref(), Some("let me check"));
             assert_eq!(tool_calls[0].id, "call_1");
             assert_eq!(tool_calls[0].name, "get_weather");

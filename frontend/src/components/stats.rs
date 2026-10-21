@@ -179,6 +179,11 @@ pub fn AgentStatsPanel(
                     if let Some(token) = mcs.token_summary {
                         StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input), subtitle: None }
                         StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output), subtitle: None }
+                        // 宽容器空间充足 → 两个明细读数**恒显**（含 0）：
+                        // 0 本身也是信息（provider 未上报 or 本模型不推理），
+                        // 与窄侧栏的「> 0 才显示」口径不同，见 `AgentStatsPanelCompact`
+                        StatsCard { title: "缓存命中 Token".to_string(), icon: "⚡".to_string(), value: format_compact_count(token.total_cached_tokens), subtitle: None }
+                        StatsCard { title: "思考 Token".to_string(), icon: "🧠".to_string(), value: format_compact_count(token.total_reasoning_tokens), subtitle: None }
                     }
                 }
             }
@@ -190,11 +195,13 @@ pub fn AgentStatsPanel(
 
 /// Agent 运行统计紧凑面板（无外壳版，聊天侧栏等窄容器用）
 ///
-/// 与 `AgentStatsPanel` 同口径（唤醒/QPS + 模型调用 + 输入/输出 Token + 三线趋势），
-/// 差异：
+/// 与 `AgentStatsPanel` 同口径（唤醒 + 模型调用 + Token + 三线趋势），差异：
 /// - 不带 HudPanel 外壳与工具分布环形图；
-/// - 读数分**左右两列**：左列「运行」= 唤醒次数 / 瞬时 QPS / 上下文长度，
-///   右列「模型调用」= 调用次数 / 输入 Token / 输出 Token。
+/// - **不显示 QPS**：单 Agent 的调用间隔以秒~分钟计，瞬时 QPS（最近 1 秒调用数）
+///   在 60 分钟窗口下几乎恒为 0，占位却无信息量；窄侧栏把它换成缓存命中 / 思考
+///   Token 两个更能反映成本与推理强度的读数（`AgentStatsPanel` 的宽容器仍保留 QPS）。
+/// - 读数分**左右两列**：左列「运行」= 唤醒次数 / 上下文长度，
+///   右列「模型调用」= 调用次数 / 输入 Token / 输出 Token / 缓存命中 / 思考。
 ///   不用 `StatGrid`（其 `lg:grid-cols-4` 在桌面视口下会把 384px 侧栏切成 4 列，
 ///   数值溢出），这里固定一次性 2 列，且**列内纵向堆叠**、不再嵌套 2×2 网格，
 ///   避免第三个读数落单留空位；数值统一用紧凑变体。
@@ -255,9 +262,10 @@ pub fn AgentStatsPanelCompact(
                         if has_runtime || context_length.is_some() {
                             div { class: "min-w-0 space-y-2",
                                 label { class: "form-label", "运行" }
+                                // 瞬时 QPS 已移除：单 Agent 在 60 分钟窗口下该值近乎恒 0，
+                                // 窄侧栏改放缓存命中 / 思考 Token（见组件级注释）
                                 if let Some(call) = runtime_summary {
                                     CompactStat { label: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string() }
-                                    CompactStat { label: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps) }
                                 }
                                 if let (Some(len), Some(threshold)) = (context_length, context_length_threshold)
                                 {
@@ -313,6 +321,14 @@ pub fn AgentStatsPanelCompact(
                                 if let Some(token) = token_summary {
                                     CompactStat { label: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input) }
                                     CompactStat { label: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output) }
+                                    // 两个明细读数按「> 0 才显示」：provider 未上报时恒 0，
+                                    // 与「真实 0 命中」不可区分，摆出来只是噪音
+                                    if token.total_cached_tokens > 0 {
+                                        CompactStat { label: "缓存命中".to_string(), icon: "⚡".to_string(), value: format_compact_count(token.total_cached_tokens) }
+                                    }
+                                    if token.total_reasoning_tokens > 0 {
+                                        CompactStat { label: "思考 Token".to_string(), icon: "🧠".to_string(), value: format_compact_count(token.total_reasoning_tokens) }
+                                    }
                                 }
                             }
                         }
@@ -443,6 +459,9 @@ pub fn ModelProviderStatsPanel(stats: Option<ModelCallStats>) -> Element {
                     if let Some(token) = s.token_summary {
                         StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_compact_count(token.total_tokens_input), subtitle: None }
                         StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_compact_count(token.total_tokens_output), subtitle: None }
+                        // 同上：宽容器恒显两个明细读数（0 = 未上报，也是有效信息）
+                        StatsCard { title: "缓存命中 Token".to_string(), icon: "⚡".to_string(), value: format_compact_count(token.total_cached_tokens), subtitle: None }
+                        StatsCard { title: "思考 Token".to_string(), icon: "🧠".to_string(), value: format_compact_count(token.total_reasoning_tokens), subtitle: None }
                     }
                 }
             }

@@ -32,6 +32,8 @@ fn unreachable_provider(name: &str) -> CreateModelProviderRequest {
         recommended_context_length: None,
         access_mode: None,
         supports_vision: None,
+        // 本文件专注连通性测试契约，协议口味走缺省
+        api_flavor: None,
     }
 }
 

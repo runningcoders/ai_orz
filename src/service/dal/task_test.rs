@@ -45,6 +45,7 @@ impl CortexDao for MockCortexDao {
         Ok(ThinkResult::Final {
             content: "Mock response".to_string(),
             usage: crate::models::cortex_types::TokenUsage::default(),
+            reasoning_items: Vec::new(),
         })
     }
 

@@ -1,3 +1,4 @@
+use crate::models::cortex_types::TokenUsage;
 use crate::pkg::aop::Event;
 use common::enums::EventTopic;
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,10 @@ pub struct ThinkRoundEvent {
     pub tokens_output: u64,
     /// 总 token 数
     pub total_tokens: u64,
+    /// 提示缓存命中的输入 token 数（provider 未上报时为 0）
+    pub cached_tokens: u64,
+    /// 思考/推理消耗的输出 token 数（provider 未上报时为 0）
+    pub reasoning_tokens: u64,
     /// 组织 ID
     pub organization_id: Option<String>,
     /// 用户 ID
@@ -64,6 +69,8 @@ impl ThinkRoundEvent {
             tokens_input: 0,
             tokens_output: 0,
             total_tokens: 0,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
             organization_id: None,
             user_id: None,
             task_id: None,
@@ -73,19 +80,22 @@ impl ThinkRoundEvent {
     }
 
     /// 链式设置模型提供商信息 + token 用量
+    ///
+    /// 收 `&TokenUsage` 而非散装的 u64：明细字段（缓存命中 / 思考开销）加入后
+    /// 再逐个传参会让签名持续膨胀，且调用侧容易漏传某一路。
     pub fn with_model_usage(
         mut self,
         model_provider_id: Option<String>,
         model_name: Option<String>,
-        tokens_input: u64,
-        tokens_output: u64,
-        total_tokens: u64,
+        usage: &TokenUsage,
     ) -> Self {
         self.model_provider_id = model_provider_id;
         self.model_name = model_name;
-        self.tokens_input = tokens_input;
-        self.tokens_output = tokens_output;
-        self.total_tokens = total_tokens;
+        self.tokens_input = usage.input_tokens;
+        self.tokens_output = usage.output_tokens;
+        self.total_tokens = usage.total();
+        self.cached_tokens = usage.cached_tokens;
+        self.reasoning_tokens = usage.reasoning_tokens;
         self
     }
 

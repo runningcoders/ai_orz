@@ -148,6 +148,8 @@ pub trait ModelProviderStatsDao: Send + Sync {
         query.aggregations = vec![
             StatAggregation::Sum("tokens_input".into()),
             StatAggregation::Sum("tokens_output".into()),
+            StatAggregation::Sum("cached_tokens".into()),
+            StatAggregation::Sum("reasoning_tokens".into()),
             StatAggregation::Count,
         ];
         query.interval = None;
@@ -157,6 +159,8 @@ pub trait ModelProviderStatsDao: Send + Sync {
                 total_tokens_input: 0,
                 total_tokens_output: 0,
                 total_calls: 0,
+                total_cached_tokens: 0,
+                total_reasoning_tokens: 0,
             });
         }
         let row = &rows[0];
@@ -170,6 +174,16 @@ pub trait ModelProviderStatsDao: Send + Sync {
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as u64,
             total_calls: row.get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
+            // 明细列由 `model_call.rs` 的 ALTER 幂等补出；存量行是 NULL，
+            // SUM 忽略 NULL 且外层有 COALESCE(...)=0，缺失即 0。
+            total_cached_tokens: row
+                .get("cached_tokens")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as u64,
+            total_reasoning_tokens: row
+                .get("reasoning_tokens")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as u64,
         })
     }
 

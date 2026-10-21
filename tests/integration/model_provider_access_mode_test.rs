@@ -28,6 +28,8 @@ fn chat_req(name: &str, access_mode: Option<ModelAccessMode>) -> CreateModelProv
         access_mode,
         // 本文件专注 access_mode 契约，vision 不参与断言：走缺省（None → 服务端落 false）
         supports_vision: None,
+        // 协议口味同样不参与断言：走缺省（None → 服务端解析为 Responses）
+        api_flavor: None,
     }
 }
 
@@ -135,5 +137,65 @@ async fn test_update_access_mode_none_means_no_change_and_some_sets(pool: Sqlite
     assert_eq!(
         get_detail(&app, &jwt, &id).await["access_mode"].as_str(),
         Some("stream")
+    );
+}
+
+/// 协议口味（api_flavor）端到端契约：
+///
+/// 创建不传 → 详情/列表恒返回 `responses`（主线协议，缺省即切换）；
+/// 显式 `chat_completions` 往返保形（自建网关的回退路径可用）；
+/// Update 语义沿 access_mode：None=不变更、Some=设置。
+#[sqlx::test]
+async fn test_api_flavor_defaults_to_responses_and_explicit_value_round_trips(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1) 缺省：创建不传 api_flavor → 解析为 responses（主线协议）
+    let id = create_provider(&app, &jwt, chat_req("Flavor-Default", None)).await;
+    let detail = get_detail(&app, &jwt, &id).await;
+    assert_eq!(
+        detail["api_flavor"].as_str(),
+        Some("responses"),
+        "缺省必须解析为 responses，detail: {detail}"
+    );
+
+    let (status, body) = app.get_with_jwt(PROVIDERS_PATH, &jwt).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let item = data["providers"]
+        .as_array()
+        .expect("providers array")
+        .iter()
+        .find(|p| p["id"].as_str() == Some(id.as_str()))
+        .expect("provider in list");
+    assert_eq!(item["api_flavor"].as_str(), Some("responses"));
+
+    // 2) 显式回退：chat_completions 必须落库并恒返回（serde snake_case 契约值）
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("{PROVIDERS_PATH}/{id}"),
+            &serde_json::json!({ "id": id, "api_flavor": "chat_completions" }),
+            &jwt,
+        )
+        .await;
+    assert_eq!(status, 200, "body: {body}");
+    assert_eq!(
+        get_detail(&app, &jwt, &id).await["api_flavor"].as_str(),
+        Some("chat_completions")
+    );
+
+    // 3) Update None=不变更：不带 api_flavor 的更新不得把回退态冲回主线
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("{PROVIDERS_PATH}/{id}"),
+            &serde_json::json!({ "id": id.clone() }),
+            &jwt,
+        )
+        .await;
+    assert_eq!(status, 200, "body: {body}");
+    assert_eq!(
+        get_detail(&app, &jwt, &id).await["api_flavor"].as_str(),
+        Some("chat_completions"),
+        "None 不得清除已有 api_flavor（否则用户显式回退会被静默冲掉）"
     );
 }

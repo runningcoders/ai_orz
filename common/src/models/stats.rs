@@ -102,6 +102,17 @@ pub struct TokenSumResult {
     pub total_tokens_output: u64,
     /// Total number of calls
     pub total_calls: u64,
+    /// 提示缓存命中的输入 token 总数（`input_tokens_details.cached_tokens`）。
+    ///
+    /// provider 未上报时恒为 0——与「真实 0 命中」不可区分，故展示层按「> 0 才显示」
+    /// 处理，避免出现一堆无信息量的 0 读数。
+    pub total_cached_tokens: u64,
+    /// 思考/推理消耗的输出 token 总数（`output_tokens_details.reasoning_tokens`）。
+    /// 语义同上：0 = 未上报或本模型不推理。
+    ///
+    /// ⚠️ 注意它是 `output_tokens` 的**子集**（多数 provider 把推理 token 计入输出），
+    /// 不要拿它与 `total_tokens_output` 相加当作总开销。
+    pub total_reasoning_tokens: u64,
 }
 
 /// 调用次数汇总（最通用的统计结果）

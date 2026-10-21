@@ -9,12 +9,13 @@ use crate::models::model_provider::{ModelProviderConfig, ModelProviderPo};
 use crate::models::vector::{VectorIndexParams, VectorPayload, Vectorizable};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
-use common::enums::ProviderType;
+use common::enums::{ChatApiFlavor, ProviderType};
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 pub mod http;
 pub mod openai;
+pub mod responses;
 
 /// no-vision 降级：provider 不支持视觉输入时把 `UserMultimodal` 降级为纯文本
 ///
@@ -147,12 +148,36 @@ pub trait CortexDao: Send + Sync {
 
 // ==================== Registry ====================
 
+/// 读取 provider 的 chat 协议口味（`config.api_flavor`）
+///
+/// 协议口味解析：config 正常 → `api_flavor_or_default()`（缺省 Responses）；
+/// config **解析失败** → [`ChatApiFlavor::ChatCompletions`]。
+///
+/// 两条路径刻意不同：解析失败意味着这条记录已损坏、无从得知用户意图，
+/// 此时选**覆盖面最广**的端点（`/chat/completions` 是 OpenAI 兼容网关的事实标准）
+/// 比选较新的 `/responses` 更可能让推理继续跑通；且该分支有 `log_warn!` 告警，
+/// 属显式降级路径，不是静默兜底。
+fn provider_api_flavor(provider: &ModelProviderPo) -> ChatApiFlavor {
+    match serde_json::from_str::<ModelProviderConfig>(&provider.config) {
+        Ok(cfg) => cfg.api_flavor_or_default(),
+        Err(e) => {
+            log_warn!(
+                "cortex api_flavor probe: provider config parse failed, fallback to chat_completions, provider_id={} error={}",
+                provider.id,
+                e
+            );
+            ChatApiFlavor::ChatCompletions
+        }
+    }
+}
+
 /// Cortex DAO 注册表
 ///
-/// 按 provider_type 路由到具体的 CortexDao 实现。
-/// 所有实现都是无状态单例。
+/// 路由是**两维正交**的：`config.api_flavor` 定 wire 协议（先判定，错了必然 400），
+/// `provider_type` 定厂商/端点。所有实现都是无状态单例。
 pub struct CortexDaoRegistry {
     openai_compatible: Arc<openai::OpenAiCompatibleCortexDao>,
+    responses: Arc<responses::ResponsesCortexDao>,
     // fastembed 和 external 在后续 Task 6 中添加
 }
 
@@ -160,11 +185,24 @@ impl CortexDaoRegistry {
     fn new() -> Self {
         Self {
             openai_compatible: Arc::new(openai::OpenAiCompatibleCortexDao::new()),
+            responses: Arc::new(responses::ResponsesCortexDao::new()),
         }
     }
 
-    /// 根据 provider_type 获取对应的 CortexDao
-    pub fn get(&self, provider_type: ProviderType) -> Arc<dyn CortexDao> {
+    /// 根据 provider 获取对应的 CortexDao
+    ///
+    /// 入参是完整的 `&ModelProviderPo` 而非 `ProviderType`：协议口味
+    /// (`config.api_flavor`) 与厂商 (`provider_type`) 是**正交两维**，
+    /// 前者只能从 config 读。
+    pub fn get(&self, provider: &ModelProviderPo) -> Arc<dyn CortexDao> {
+        match provider_api_flavor(provider) {
+            ChatApiFlavor::Responses => self.responses.clone(),
+            ChatApiFlavor::ChatCompletions => self.compatible_dao(provider.provider_type),
+        }
+    }
+
+    /// Chat Completions 协议下按厂商路由（历史行为，未改动）
+    fn compatible_dao(&self, provider_type: ProviderType) -> Arc<dyn CortexDao> {
         match provider_type {
             ProviderType::OpenAI
             | ProviderType::DeepSeek

@@ -39,6 +39,12 @@ pub struct ModelCallEvent {
     tokens_output: u64,
     #[metric]
     total_tokens: u64,
+    /// 提示缓存命中的输入 token 数（provider 未上报时为 0）
+    #[metric]
+    cached_tokens: u64,
+    /// 思考/推理消耗的输出 token 数（provider 未上报时为 0）
+    #[metric]
+    reasoning_tokens: u64,
 }
 
 impl ModelCallEvent {
@@ -57,6 +63,8 @@ impl ModelCallEvent {
             tokens_input: 0,
             tokens_output: 0,
             total_tokens: 0,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
         }
     }
 
@@ -109,6 +117,16 @@ impl ModelCallEvent {
         self.total_tokens = v;
         self
     }
+
+    pub fn with_cached_tokens(mut self, v: u64) -> Self {
+        self.cached_tokens = v;
+        self
+    }
+
+    pub fn with_reasoning_tokens(mut self, v: u64) -> Self {
+        self.reasoning_tokens = v;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -139,7 +157,9 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 call_count BIGINT,
                 tokens_input BIGINT,
                 tokens_output BIGINT,
-                total_tokens BIGINT
+                total_tokens BIGINT,
+                cached_tokens BIGINT,
+                reasoning_tokens BIGINT
             );
         "#;
         conn.execute(sql, []).map_err(|e| {
@@ -159,6 +179,23 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 e
             ))
         })?;
+        // 兼容已有 DuckDB 文件：补加 token 明细列（幂等）。
+        //
+        // 关键：CREATE TABLE IF NOT EXISTS 对**已存在**的 .duckdb 文件是 no-op，
+        // 新增列只能靠 ALTER 补，否则旧库查询报「未知列」。migrations/ 是 SQLite
+        // 专用（走 sqlx），DuckDB 不走那套 migration，靠本函数每次启动幂等执行。
+        for (col, ty) in [("cached_tokens", "BIGINT"), ("reasoning_tokens", "BIGINT")] {
+            conn.execute(
+                &format!("ALTER TABLE model_call_events ADD COLUMN IF NOT EXISTS {col} {ty}"),
+                [],
+            )
+            .map_err(|e| {
+                common::error::Error::internal(format!(
+                    "Failed to migrate model_call_events table ({col}): {}",
+                    e
+                ))
+            })?;
+        }
         Ok(())
     }
 
@@ -168,8 +205,9 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
             INSERT INTO model_call_events (
                 id, timestamp, agent_id, project_id, task_id,
                 model_provider_id, model_name, organization_id, caller_organization_id, user_id,
-                call_count, tokens_input, tokens_output, total_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                call_count, tokens_input, tokens_output, total_tokens,
+                cached_tokens, reasoning_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -188,6 +226,8 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 &event.tokens_input as &dyn ToSql,
                 &event.tokens_output as &dyn ToSql,
                 &event.total_tokens as &dyn ToSql,
+                &event.cached_tokens as &dyn ToSql,
+                &event.reasoning_tokens as &dyn ToSql,
             ],
         )
         .map_err(|e| {
@@ -203,8 +243,9 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 INSERT INTO model_call_events (
                     id, timestamp, agent_id, project_id, task_id,
                     model_provider_id, model_name, organization_id, caller_organization_id, user_id,
-                    call_count, tokens_input, tokens_output, total_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    call_count, tokens_input, tokens_output, total_tokens,
+                    cached_tokens, reasoning_tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
             conn.execute(
                 sql,
@@ -223,6 +264,8 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                     &event.tokens_input as &dyn ToSql,
                     &event.tokens_output as &dyn ToSql,
                     &event.total_tokens as &dyn ToSql,
+                    &event.cached_tokens as &dyn ToSql,
+                    &event.reasoning_tokens as &dyn ToSql,
                 ],
             )
             .map_err(|e| {

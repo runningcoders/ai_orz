@@ -1,7 +1,9 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
 use crate::api::PaginationParams;
-use crate::enums::{ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType};
+use crate::enums::{
+    ChatApiFlavor, ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType,
+};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -45,6 +47,13 @@ pub struct CreateModelProviderRequest {
     /// 系多模态 embedding 端点，不作判定源）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supports_vision: Option<bool>,
+    /// chat 协议口味：Responses（主线）/ ChatCompletions（回退）
+    ///
+    /// 选填：缺省 Responses（与 `ChatApiFlavor::default()` 同语义，见枚举定义）。
+    /// 自建网关 / 老旧 OpenAI 兼容层无 `/responses` 端点时显式传
+    /// `"chat_completions"` 回退。**不做按 provider_type 的特判。**
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_flavor: Option<ChatApiFlavor>,
 }
 
 /// Create Model Provider response
@@ -98,6 +107,8 @@ pub struct ModelProviderListItem {
     pub access_mode: ModelAccessMode,
     /// 是否支持图像输入（后端解析 config，缺省 false，恒返回）
     pub supports_vision: bool,
+    /// chat 协议口味（后端解析 config，缺省 Responses，恒返回）
+    pub api_flavor: ChatApiFlavor,
 }
 
 /// Get Model Provider request
@@ -159,6 +170,8 @@ pub struct GetModelProviderResponse {
     pub access_mode: ModelAccessMode,
     /// 是否支持图像输入（后端解析 config，缺省 false，恒返回）
     pub supports_vision: bool,
+    /// chat 协议口味（后端解析 config，缺省 Responses，恒返回）
+    pub api_flavor: ChatApiFlavor,
 }
 
 /// Update Model Provider request
@@ -204,6 +217,12 @@ pub struct UpdateModelProviderRequest {
     /// 恒传当前选值，无 None 分支歧义。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supports_vision: Option<bool>,
+    /// chat 协议口味
+    ///
+    /// None 表示不变更（partial update 语义沿 access_mode 先例）；编辑 UI 恒传
+    /// 当前选值。回退到传统协议需显式传 `"chat_completions"`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_flavor: Option<ChatApiFlavor>,
 }
 
 /// Update Model Provider response
