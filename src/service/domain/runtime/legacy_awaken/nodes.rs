@@ -172,6 +172,13 @@ impl ThinkNode for PrepareNode {
         let deps = &self.deps;
         let ctx = &deps.ctx;
 
+        crate::log_info!(
+            ctx,
+            "legacy_awaken",
+            "prepare node start, agent_id={}",
+            deps.agent.po.id
+        );
+
         let slot = deps
             .compaction
             .lock()
@@ -185,6 +192,14 @@ impl ThinkNode for PrepareNode {
                 .get_recent_context(ctx.clone(), &deps.agent.po.id, RECENT_MEMORIES_LIMIT)
                 .await?
         };
+
+        crate::log_info!(
+            ctx,
+            "legacy_awaken",
+            "recent context loaded, agent_id={}, n={}",
+            deps.agent.po.id,
+            recent.len()
+        );
 
         let ws = read_bus::<WorkspacePaths>(bus, ContextKey::Runtime)?;
         let skills = read_bus::<Vec<crate::models::skill::SkillPo>>(bus, ContextKey::Skills)?;
@@ -392,6 +407,15 @@ impl ThinkNode for DeliberateNode {
         let total_rounds = read_budget(bus).total_rounds;
         let max_rounds = deps.options.effective_max_rounds();
 
+        crate::log_info!(
+            &deps.ctx,
+            "legacy_awaken",
+            "deliberate node start, agent_id={}, max_rounds={}, total_rounds={}",
+            deps.agent.po.id,
+            max_rounds,
+            total_rounds
+        );
+
         let result = deps
             .backend
             .think(
@@ -412,6 +436,15 @@ impl ThinkNode for DeliberateNode {
             messages,
             rounds,
         } = map_think_result(result?, total_rounds);
+
+        crate::log_info!(
+            &deps.ctx,
+            "legacy_awaken",
+            "deliberate node done, agent_id={}, exit={}, rounds={}",
+            deps.agent.po.id,
+            exit,
+            rounds
+        );
 
         bus.insert(
             ContextKey::Budget,
@@ -487,6 +520,13 @@ impl ThinkNode for CompactNode {
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
         let deps = &self.deps;
+        crate::log_info!(
+            &deps.ctx,
+            "legacy_awaken",
+            "compact node start, agent_id={}, with_user_reply={}",
+            deps.agent.po.id,
+            self.with_user_reply
+        );
         let mut artifacts = read_artifacts(bus)?;
         let trace_ids = vec![deps.trace_id.clone()];
 
@@ -539,6 +579,13 @@ impl ThinkNode for CompactNode {
             bus.invalidate(ContextKey::Prompt);
         }
         write_artifacts(bus, &artifacts)?;
+        crate::log_info!(
+            &deps.ctx,
+            "legacy_awaken",
+            "compact node done, agent_id={}, with_user_reply={}",
+            deps.agent.po.id,
+            self.with_user_reply
+        );
         Ok(NodeOutcome::new(NodeSignal::Done))
     }
 }
@@ -589,6 +636,13 @@ impl ThinkNode for ConsolidateNode {
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
         let deps = &self.deps;
         let artifacts = read_artifacts(bus)?;
+        crate::log_info!(
+            &deps.ctx,
+            "legacy_awaken",
+            "consolidate node start, agent_id={}, exit={}",
+            deps.agent.po.id,
+            artifacts.exit
+        );
         let pack = read_bus::<PromptPack>(bus, ContextKey::Prompt)?;
         let budget = read_budget(bus);
         let duration_ms = deps.started_at.elapsed().as_millis() as u64;

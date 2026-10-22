@@ -252,10 +252,18 @@ impl AgentRuntimeStateManager {
     }
 
     /// 挂载思考运行时（consumer 创建后调用）
+    ///
+    /// ⚠️ 必须在 entry 不存在时也创建它：调用方（`init_think_runtime_and_policy`）
+    /// 在很多路径上**先于** `set_busy`/`set_resting` 执行（例如 `awaken` 里
+    /// `build_deps` 在 `run_legacy_awaken` 的 `set_busy` 之前）。若只在 entry
+    /// 已存在时才写入，这里会变成静默 no-op —— 于是 Agent 被 `set_busy` 标成
+    /// Busy（前端显示「思考中」），但 `think_runtime` 一直是 `None`，`cancel_thinking`
+    /// 读到 `None` 就返回 `NotThinking`（「当前没有在思考」）。这正是「显示忙碌却
+    /// 无法取消」的错配根因。改用 `entry().or_default()` 与 `set_busy`/`set_idle`
+    /// 同构，调用顺序不再影响挂载结果。
     pub fn set_think_runtime(&self, agent_id: &str, think_runtime: Arc<AgentThinkRuntime>) {
-        if let Some(mut entry) = self.states.get_mut(agent_id) {
-            entry.think_runtime = Some(think_runtime);
-        }
+        let mut entry = self.states.entry(agent_id.to_string()).or_default();
+        entry.think_runtime = Some(think_runtime);
     }
 
     /// 清理思考运行时（BusyGuard Drop 时调用）

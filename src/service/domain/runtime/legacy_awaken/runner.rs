@@ -39,6 +39,18 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
     let agent_id = deps.agent.po.id.clone();
     let message_id = deps.message.po.id.clone();
 
+    // 诊断留痕：与 `wake_agent_brain` 的 "brain woken" 成对。若现场只有 "brain woken"
+    // 而没有本行，说明冻结发生在 wake_brain 返回之后、进入图编排之前（例如 `awaken`
+    // 构造 Trace / 装配依赖阶段），而不是思考循环内部。
+    crate::log_info!(
+        &deps.ctx,
+        "legacy_awaken",
+        "run_legacy_awaken start, agent_id={}, message_id={}, shadow={}",
+        agent_id,
+        message_id,
+        deps.shadow
+    );
+
     // 影子模式不动运行时状态：跑完整链路但不留副作用，目的只是对照
     let _busy_guard = if deps.shadow {
         None
@@ -57,6 +69,13 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
         Some(BusyGuard::new(agent_id.clone()))
     };
 
+    crate::log_info!(
+        &deps.ctx,
+        "legacy_awaken",
+        "busy set + loop started published, agent_id={}",
+        agent_id
+    );
+
     let blueprint = legacy_awaken_blueprint()?;
     let nodes: Vec<Arc<dyn ThinkNode>> = vec![
         Arc::new(PrepareNode::new(Arc::clone(&deps))),
@@ -72,8 +91,24 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
         build_providers(Arc::clone(&deps)),
     )?;
 
+    crate::log_info!(
+        &deps.ctx,
+        "legacy_awaken",
+        "engine built, entering run_into, agent_id={}",
+        agent_id
+    );
+
     let mut run = new_run(&deps);
     if let Err(e) = engine.run_into(&mut run).await {
+        // 显式错误日志：此前本路径只发 AOP 事件、不打印 stderr，一次失败的唤醒
+        // 在日志里"毫无痕迹"，极易被误判为"卡住没进展"。先把原因打到 stdout。
+        crate::log_error!(
+            &deps.ctx,
+            "legacy_awaken",
+            "engine run_into failed, agent_id={}, error={}",
+            agent_id,
+            e
+        );
         return Err(finalize_error(deps, &run, e).await);
     }
     // 跑完不等于跑到底：见 [`ensure_consolidated`]

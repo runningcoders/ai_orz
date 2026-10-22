@@ -245,6 +245,14 @@ impl ContextProvider for BusinessProvider {
         let deps = &self.deps;
         let ctx = deps.ctx.clone();
 
+        crate::log_info!(
+            &ctx,
+            "legacy_awaken",
+            "business provider load start, agent_id={}, message_id={}",
+            deps.agent.po.id,
+            deps.message.po.id
+        );
+
         let thread = match super::super::awakening::fetch_message_thread(&ctx, &deps.message).await
         {
             Ok(items) => items,
@@ -260,8 +268,25 @@ impl ContextProvider for BusinessProvider {
             }
         };
 
+        crate::log_info!(
+            &ctx,
+            "legacy_awaken",
+            "message thread loaded, agent_id={}, n={}",
+            deps.agent.po.id,
+            thread.len()
+        );
+
         let (resource_lines, vision_parts) =
             super::super::awakening::resolve_current_message_resources(&ctx, &deps.message).await;
+
+        crate::log_info!(
+            &ctx,
+            "legacy_awaken",
+            "current message resources resolved, agent_id={}, resource_lines={}, vision_parts={}",
+            deps.agent.po.id,
+            resource_lines.len(),
+            vision_parts.len()
+        );
 
         // 更早记忆参考：仅在已压缩时使用（压缩成果里没有的延续性线索）
         // ⚠️ `MutexGuard` 不能跨 await（future 会丢 Send）：先取快照再 drop
