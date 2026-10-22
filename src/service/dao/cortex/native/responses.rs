@@ -255,19 +255,24 @@ fn messages_to_input(messages: &[ChatMessage]) -> Vec<Value> {
 }
 
 /// reasoning item 序列化为 Responses 的 input item
+///
+/// ⚠️ `summary` **恒输出**（空时为 `[]`），不得因空而省略 key：部分网关
+/// （modelhub 实测）会把「字段缺失」规范化成 `summary: null` 再校验，
+/// 报 400 `Invalid type for 'input[N].summary': expected an array of
+/// objects, but got null instead`。触发场景：`store=false` 时无
+/// `encrypted_content`、模型本轮未吐 summary 文本 ⇒ 上轮 reasoning item
+/// 回传时 summary 为空数组，是最常见的常态路径。
 fn reasoning_item_to_json(item: &ReasoningItem) -> Value {
     let mut v = json!({"type": "reasoning"});
     if let Some(id) = &item.id {
         v["id"] = json!(id);
     }
-    if !item.summary.is_empty() {
-        v["summary"] = json!(
-            item.summary
-                .iter()
-                .map(|s| json!({"type": "summary_text", "text": s}))
-                .collect::<Vec<_>>()
-        );
-    }
+    v["summary"] = json!(
+        item.summary
+            .iter()
+            .map(|s| json!({"type": "summary_text", "text": s}))
+            .collect::<Vec<_>>()
+    );
     if let Some(enc) = &item.encrypted_content {
         v["encrypted_content"] = json!(enc);
     }

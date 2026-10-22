@@ -174,6 +174,32 @@ fn input_reasoning_item_roundtrip() {
     assert_eq!(out[0]["encrypted_content"], "gAAA");
 }
 
+/// **核心守卫**：空 summary 必须输出 `"summary": []`，不得省略 key。
+///
+/// 部分网关（modelhub 实测）把字段缺失规范化成 `summary: null` 再校验，
+/// 报 400 `Invalid type for 'input[N].summary': expected an array of
+/// objects, but got null instead`。`store=false` + 模型未吐 summary 文本
+/// 正是常态路径，省略 key 会让该 provider 每轮全挂。
+#[test]
+fn input_reasoning_item_empty_summary_is_empty_array_not_missing() {
+    let item = ReasoningItem {
+        id: Some("rs_abc".to_string()),
+        summary: Vec::new(),
+        encrypted_content: None,
+    };
+    let out = messages_to_input(&[ChatMessage::reasoning(item)]);
+    assert_eq!(out[0]["type"], "reasoning");
+    assert_eq!(
+        out[0]["summary"],
+        json!([]),
+        "summary 缺失会被网关规范化成 null 而 400，必须显式给空数组"
+    );
+    assert!(
+        out[0].get("encrypted_content").is_none(),
+        "encrypted_content 为 None 时省略 key（该字段网关不强制）"
+    );
+}
+
 // ==================== 终态解析 ====================
 
 #[tokio::test]
