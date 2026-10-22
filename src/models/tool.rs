@@ -154,10 +154,20 @@ impl std::fmt::Debug for Tool {
 }
 
 // Manual Clone implementation - Agent derives Clone, but dyn Trait can't be cloned
-// In practice, Agent is wrapped in Arc when shared, so this unreachable is safe
+//
+// dyn Trait 本身不可 Clone，但 `CoreTool` 通过 `dyn_clone::clone_trait_object!`
+// 支持 `clone_box`，因此这里可以真正克隆而不是 `unreachable!`。
+// ⚠️ 曾经的 `unreachable!` 假设「Agent 总是包在 Arc 里、不会被 clone」，该假设
+// 在 `awaken` 构造 `AwakenInput`（`agent.clone()`）时不成立：只要 Agent 装了
+// 任意工具，唤醒一进入主体就 panic —— 表现为置忙后零进展、且无任何错误日志。
 impl Clone for Tool {
     fn clone(&self) -> Self {
-        unreachable!("Tool cannot be cloned due to dyn Trait object. Use Arc<Tool> for sharing.");
+        Self {
+            po: self.po.clone(),
+            our_tool: dyn_clone::clone_box(&*self.our_tool),
+            search_match: self.search_match.clone(),
+            stats: self.stats.clone(),
+        }
     }
 }
 
