@@ -389,6 +389,9 @@ pub mod cancel;
 mod cerebellum_router;
 mod compaction;
 mod intent_analyze;
+// `pub(crate)`：尚未接入调用方，先作为内部可用的**影子链路**存在；
+// 影子对比通过后再决定是否抬为对外入口。
+pub(crate) mod legacy_awaken;
 mod memory;
 mod think_loop;
 mod tool_call_query;
@@ -413,7 +416,10 @@ pub(crate) use tool_execution::invalidate_readiness_cache;
 /// Runtime Domain 实现
 ///
 /// 聚合所有运行时子功能实现
-struct RuntimeDomainImpl {
+/// ⚠️ `pub(crate)` 而非私有：`legacy_awaken` 编排要调用 `impl` 级方法
+///（`run_think_loop` / `query_past_memories`），必须能指名具体类型。
+/// 对外仍然只有 `RuntimeDomain` trait —— `domain()` 返回的是 trait object。
+pub(crate) struct RuntimeDomainImpl {
     brain_dal: Arc<dyn BrainDal>,
     tool_dal: Arc<dyn ToolDal>,
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
@@ -624,10 +630,20 @@ impl RuntimeDomain for RuntimeDomainImpl {
 
 use std::sync::OnceLock;
 
-static RUNTIME_DOMAIN: OnceLock<Arc<dyn RuntimeDomain>> = OnceLock::new();
+static RUNTIME_DOMAIN: OnceLock<Arc<RuntimeDomainImpl>> = OnceLock::new();
 
 /// 获取 Runtime Domain 单例
 pub fn domain() -> Arc<dyn RuntimeDomain> {
+    RUNTIME_DOMAIN.get().cloned().unwrap()
+}
+
+/// 获取具体类型句柄
+///
+/// ⚠️ 只给 runtime 域**内部**的子模块（目前是 `legacy_awaken` 编排）用：
+/// `run_think_loop` / `query_past_memories` 这类是 `impl` 级方法、不在 trait 里，
+/// 编排层要复用它们就必须拿到具体类型。**外部一律用 `domain()` 走 trait。**
+#[allow(dead_code)] // 接入点：`legacy_awaken::context::build_deps`（待 wiring）
+pub(crate) fn domain_impl() -> Arc<RuntimeDomainImpl> {
     RUNTIME_DOMAIN.get().cloned().unwrap()
 }
 

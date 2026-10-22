@@ -107,7 +107,9 @@ impl RuntimeDomainImpl {
     /// 【上一轮工作压缩结果】里，必须排除，否则同一份内容出现两次。
     ///
     /// 查询失败不阻断：参考块是锦上添花，缺了也能正常工作。
-    async fn query_past_memories(
+    // `pub(crate)`：`legacy_awaken` 编排的 MemoryProvider 复用同一查询口径
+    // （压缩后的「更早的记忆」参考块），不能各自再写一份。
+    pub(crate) async fn query_past_memories(
         &self,
         ctx: RequestContext,
         agent_id: &str,
@@ -1424,7 +1426,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 }
 
 /// 上报到 `AgentAwakeEvent.exit_reason` 的错误原因最大字符数。
-const AGENT_AWAKE_REASON_LIMIT: usize = 200;
+pub(crate) const AGENT_AWAKE_REASON_LIMIT: usize = 200;
 
 /// 消息链上下文：尾部最多保留的近期消息条数（链头永远保留，见 fetch_message_thread）。
 const MESSAGE_THREAD_RECENT_KEEP: usize = 6;
@@ -1438,7 +1440,10 @@ const MESSAGE_THREAD_QUERY_LIMIT: usize = 60;
 /// 尾部保留最近 [`MESSAGE_THREAD_RECENT_KEEP`] 条（时间正序，紧邻当前消息）；
 /// 中间被截断的部分由区块文案引导 Agent 用 list_messages 按 root_id 自行查询。
 /// 当前消息自身已由【当前消息】区块承载，这里排除避免重复。
-async fn fetch_message_thread(ctx: &RequestContext, message: &Message) -> Result<Vec<String>> {
+pub(crate) async fn fetch_message_thread(
+    ctx: &RequestContext,
+    message: &Message,
+) -> Result<Vec<String>> {
     use crate::service::dao::message::MessageQuery;
 
     let Some(root_id) = message.po.root_id.as_deref() else {
@@ -1486,7 +1491,7 @@ async fn fetch_message_thread(ctx: &RequestContext, message: &Message) -> Result
 }
 
 /// 截断错误原因文本，避免过长动态文本进入 metric 造成存储膨胀与聚合碎片化。
-fn truncate_reason(msg: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_reason(msg: &str, max_chars: usize) -> String {
     let trimmed = msg.trim();
     if trimmed.chars().count() <= max_chars {
         return trimmed.to_string();

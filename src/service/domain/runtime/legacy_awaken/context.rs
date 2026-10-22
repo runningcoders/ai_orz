@@ -1,0 +1,380 @@
+//! `legacy_awaken` 的上下文供给器 + 运行依赖容器
+//!
+//! ## ⚠️ 总线的承载边界（实测约束，写在这里避免后来人重踩）
+//!
+//! `ThinkBus` 只装 `serde_json::Value`，而 `Memory` / `Message` / `Agent` /
+//! `Project` / `Task` 这些业务实体**没有实现 Serialize**（只有 `Debug + Clone`）。
+//! 所以分工是：
+//!
+//! - **可无损 JSON 往返的** → 走 `ContextProvider` + 总线：工具描述符、技能、
+//!   工作空间路径、近期/更早记忆摘要、资源行、图像 parts、提示词、初始消息序列。
+//! - **不可序列化的实体** → 由节点在**构造期注入**依赖（`AwakenDeps`）直接持有，
+//!   不进总线。`Vec<Memory>`（短期记忆实体、`builder.history()` 要的就是它）
+//!   是唯一必须由 `PrepareNode` 亲自取的数。
+//!
+//! 这也是「两者轴的交替使用」的一个矛盾点：统一取数的价值在于消除散落查询，
+//! 而不是把所有东西都塞进总线。
+
+use crate::models::cortex_types::ToolDescriptor;
+use crate::models::memory::MemoryTrace;
+use crate::models::skill::SkillPo;
+use crate::pkg::agent_runtime_state::AgentThinkRuntime;
+use crate::pkg::paths;
+use crate::pkg::policy::Policy;
+use crate::pkg::request_context::RequestContext;
+use crate::pkg::think_path::{
+    ContextKey, ContextProvider, LoadDepth, LoadFailureMode, ProviderSet, Stimulus,
+};
+use crate::service::domain::runtime::RuntimeDomainImpl;
+use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkingOptions};
+use crate::{models::agent::Agent, models::message::Message};
+use common::error::Result;
+use common::error::err;
+use serde_json::{Value, json};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+/// 跨装配轮次共享的压缩状态
+///
+/// 压缩的产物要喂给**下一轮** `Prepare`（且下一轮不再查历史记忆），
+/// 因此它不是节点局部状态，而是 run 级共享槽位。
+#[derive(Debug, Default, Clone)]
+pub struct CompactionSlot {
+    /// 上一轮工作压缩结果
+    pub summary: Option<String>,
+    /// 压缩落库的那条记忆 id（组装「更早的记忆」时要排除）
+    pub memory_id: Option<String>,
+}
+
+/// 一次 legacy_awaken 的全部运行依赖
+///
+/// 节点通过持有它拿到「不可进总线」的强类型依赖。它是 Conductor 与节点之间
+/// 唯一的旁路通道——**只有无法 JSON 化的东西才放这里**，其余一律走总线。
+pub(crate) struct AwakenDeps {
+    pub domain: Arc<RuntimeDomainImpl>,
+    /// LLM 触碰点（思考 / 压缩）的可替换后端
+    ///
+    /// 生产注入 `LegacyBackend`；集成测试替换为脚本后端，从而在**不打模型**
+    /// 的前提下跑完真实流转。也是后续下沉 `run_think_loop` 的替换点。
+    pub backend: Arc<dyn super::backend::ThinkBackend>,
+    pub ctx: RequestContext,
+    pub agent: Arc<Agent>,
+    pub message: Arc<Message>,
+    pub options: Arc<ThinkingOptions>,
+    pub trace_id: String,
+    pub think_runtime: Arc<AgentThinkRuntime>,
+    pub policy: Box<dyn Policy>,
+    pub progress: ThinkLoopProgress,
+    pub trace: Mutex<MemoryTrace>,
+    pub compaction: Mutex<CompactionSlot>,
+    /// 影子模式：跑完整链路但**不落库、不发通知**，只够成「有机质春雨对比」。
+    pub shadow: bool,
+    pub started_at: Instant,
+}
+
+impl std::fmt::Debug for AwakenDeps {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AwakenDeps")
+            .field("agent_id", &self.agent.po.id)
+            .field("trace_id", &self.trace_id)
+            .field("shadow", &self.shadow)
+            .finish()
+    }
+}
+
+impl AwakenDeps {
+    /// 把入站消息包成 run 的刺激（零 I/O）
+    pub fn stimulus(&self) -> Stimulus {
+        Stimulus {
+            source: format!("{:?}", self.message.from_role()),
+            text: self.message.content().to_string(),
+            message_id: Some(self.message.po.id.clone()),
+        }
+    }
+}
+
+/// 工作空间路径（7 个）——原 `awakening.rs#L588-641` 的碎片
+#[derive(Debug)]
+pub struct WorkspaceProvider {
+    deps: Arc<AwakenDeps>,
+}
+
+impl WorkspaceProvider {
+    pub fn new(deps: Arc<AwakenDeps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait::async_trait]
+impl ContextProvider for WorkspaceProvider {
+    fn key(&self) -> ContextKey {
+        ContextKey::Runtime
+    }
+
+    async fn load(&self, _stimulus: &Stimulus, _depth: LoadDepth) -> Result<Value> {
+        let base = crate::config::get().base_data_path();
+        let uid = self.deps.ctx.uid();
+        let uid_ref = if uid.is_empty() {
+            None
+        } else {
+            Some(uid.as_str())
+        };
+        let agent_id = &self.deps.agent.po.id;
+        let default_workspace = paths::default_workspace(&base, uid_ref, Some(agent_id))
+            .to_string_lossy()
+            .to_string();
+        let user_home = if uid.is_empty() {
+            paths::users_root_dir(&base).to_string_lossy().to_string()
+        } else {
+            paths::user_home(&base, &uid).to_string_lossy().to_string()
+        };
+        let user_shared_workspace = if uid.is_empty() {
+            default_workspace.clone()
+        } else {
+            paths::user_shared_workspace(&base, &uid)
+                .to_string_lossy()
+                .to_string()
+        };
+        let user_agent_workspace = if uid.is_empty() {
+            None
+        } else {
+            Some(
+                paths::user_agent_workspace(&base, &uid, agent_id)
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        };
+        let agent_workspace = Some(
+            paths::agent_workspace(&base, agent_id)
+                .to_string_lossy()
+                .to_string(),
+        );
+        let project_workspace = match (&self.deps.options.project, !uid.is_empty()) {
+            (Some(project), true) => Some(
+                paths::user_project_workspace(&base, &uid, &project.po.id)
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+            _ => None,
+        };
+        Ok(json!({
+            "default": default_workspace,
+            "user_home": user_home,
+            "user_shared": user_shared_workspace,
+            "user_agent": user_agent_workspace,
+            "agent": agent_workspace,
+            "project": project_workspace,
+        }))
+    }
+}
+
+/// 工具描述符（OpenAI function calling 协议，可 JSON 往返）
+#[derive(Debug)]
+pub struct ToolsProvider {
+    tools: Vec<ToolDescriptor>,
+}
+
+impl ToolsProvider {
+    pub fn new(tools: Vec<ToolDescriptor>) -> Self {
+        Self { tools }
+    }
+}
+
+#[async_trait::async_trait]
+impl ContextProvider for ToolsProvider {
+    fn key(&self) -> ContextKey {
+        ContextKey::Tools
+    }
+
+    async fn load(&self, _stimulus: &Stimulus, _depth: LoadDepth) -> Result<Value> {
+        serde_json::to_value(&self.tools)
+            .map_err(|e| err!(Internal, "serialize tool descriptors failed: {e}"))
+    }
+}
+
+/// 已安装技能副本（装了就进 Prompt，无 tag 匹配）
+#[derive(Debug)]
+pub struct SkillsProvider {
+    skills: Vec<SkillPo>,
+}
+
+impl SkillsProvider {
+    pub fn new(skills: Vec<SkillPo>) -> Self {
+        Self { skills }
+    }
+}
+
+#[async_trait::async_trait]
+impl ContextProvider for SkillsProvider {
+    fn key(&self) -> ContextKey {
+        ContextKey::Skills
+    }
+
+    async fn load(&self, _stimulus: &Stimulus, _depth: LoadDepth) -> Result<Value> {
+        serde_json::to_value(&self.skills)
+            .map_err(|e| err!(Internal, "serialize skills failed: {e}"))
+    }
+}
+
+/// 业务上下文：消息链 + 当前消息资源/视像 + 更早记忆参考
+///
+/// 三块都是「一次 DAL 查询的产出」，高级降级；任一块失败不影响唤醒主流程。
+#[derive(Debug)]
+pub struct BusinessProvider {
+    deps: Arc<AwakenDeps>,
+}
+
+impl BusinessProvider {
+    pub fn new(deps: Arc<AwakenDeps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait::async_trait]
+impl ContextProvider for BusinessProvider {
+    fn key(&self) -> ContextKey {
+        ContextKey::Business
+    }
+
+    /// 取数失败不阻断：这些区块锦上添花，缺了也能正常工作
+    fn on_failure(&self) -> LoadFailureMode {
+        LoadFailureMode::Degrade
+    }
+
+    async fn load(&self, _stimulus: &Stimulus, _depth: LoadDepth) -> Result<Value> {
+        let deps = &self.deps;
+        let ctx = deps.ctx.clone();
+
+        let thread = match super::super::awakening::fetch_message_thread(&ctx, &deps.message).await
+        {
+            Ok(items) => items,
+            Err(e) => {
+                crate::log_warn!(
+                    &ctx,
+                    "legacy_awaken",
+                    "fetch message thread failed (message_id={}): {:?}",
+                    deps.message.po.id,
+                    e
+                );
+                Vec::new()
+            }
+        };
+
+        let (resource_lines, vision_parts) =
+            super::super::awakening::resolve_current_message_resources(&ctx, &deps.message).await;
+
+        // 更早记忆参考：仅在已压缩时使用（压缩成果里没有的延续性线索）
+        // ⚠️ `MutexGuard` 不能跨 await（future 会丢 Send）：先取快照再 drop
+        let compacted = deps
+            .compaction
+            .lock()
+            .map(|s| (s.summary.is_some(), s.memory_id.clone()))
+            .unwrap_or((false, None));
+        let past_memories = if compacted.0 {
+            deps.domain
+                .query_past_memories(ctx.clone(), &deps.agent.po.id, compacted.1.as_deref())
+                .await
+        } else {
+            Vec::new()
+        };
+
+        Ok(json!({
+            "message_thread": thread,
+            "resource_lines": resource_lines,
+            "vision_parts": vision_parts,
+            "past_memories": past_memories,
+        }))
+    }
+}
+
+/// 装配一次 legacy_awaken 的运行依赖
+///
+/// 这里用 `runtime::domain_impl()` 拿**具体类型**句柄而不是 trait object：
+/// 节点要调 `run_think_loop` / `query_past_memories` 这类 impl 级方法，
+/// 它们不在 `RuntimeDomain` trait 里。对外暴露的仍然只有 trait。
+#[allow(dead_code)] // 接入点：`runner::run_legacy_awaken`（待 wiring）
+pub(crate) fn build_deps(
+    ctx: RequestContext,
+    agent: Agent,
+    message: Message,
+    options: ThinkingOptions,
+    trace: MemoryTrace,
+    shadow: bool,
+) -> Arc<AwakenDeps> {
+    build_deps_with_backend(
+        Arc::new(super::backend::LegacyBackend),
+        ctx,
+        agent,
+        message,
+        options,
+        trace,
+        shadow,
+    )
+}
+
+/// 同上，但 LLM 后端可由调用方指定
+///
+/// 集成测试用它注入脚本后端：**在不打模型的前提下**跑完真实装配 + 真实收尾。
+/// 若直接裸调 `domain`，测试是否通过就取决于本机能否连上 OpenAI —— 那是假绿。
+pub(crate) fn build_deps_with_backend(
+    backend: Arc<dyn super::backend::ThinkBackend>,
+    ctx: RequestContext,
+    agent: Agent,
+    message: Message,
+    options: ThinkingOptions,
+    trace: MemoryTrace,
+    shadow: bool,
+) -> Arc<AwakenDeps> {
+    let trace_id = trace.id.clone();
+    let (think_runtime, policy) = super::super::awakening::init_think_runtime_and_policy(
+        &agent,
+        common::enums::ThinkingScene::Awaken,
+        &trace_id,
+    );
+    Arc::new(AwakenDeps {
+        domain: crate::service::domain::runtime::domain_impl(),
+        backend,
+        ctx,
+        agent: Arc::new(agent),
+        message: Arc::new(message),
+        options: Arc::new(options),
+        trace_id,
+        think_runtime,
+        policy,
+        progress: ThinkLoopProgress::new(),
+        trace: Mutex::new(trace),
+        compaction: Mutex::new(CompactionSlot::default()),
+        shadow,
+        started_at: Instant::now(),
+    })
+}
+
+/// 装配一条 legacy_awaken 的上下文供给器集合
+///
+/// 注意 **没有 Memory provider**：`Vec<Memory>` 不可序列化（见文件头说明），
+/// 历史记忆由 `PrepareNode` 亲自取。
+pub fn build_providers(deps: Arc<AwakenDeps>) -> ProviderSet {
+    let tools: Vec<ToolDescriptor> = deps
+        .agent
+        .tools()
+        .iter()
+        .map(crate::models::cortex_types::ToolDescriptor::from)
+        .collect();
+    let skills: Vec<SkillPo> = deps.agent.skills().iter().map(|s| s.po.clone()).collect();
+
+    ProviderSet::new()
+        .register(Arc::new(WorkspaceProvider::new(Arc::clone(&deps))))
+        .register(Arc::new(BusinessProvider::new(Arc::clone(&deps))))
+        .register(Arc::new(ToolsProvider::new(tools)))
+        .register(Arc::new(SkillsProvider::new(skills)))
+}
+
+/// 从总线读可序列化分区的统一报错
+pub fn read_bus<T: serde::de::DeserializeOwned>(
+    bus: &crate::pkg::think_path::ThinkBus,
+    key: ContextKey,
+) -> Result<T> {
+    let value = bus.get(key).cloned().unwrap_or(Value::Null);
+    serde_json::from_value(value)
+        .map_err(|e| err!(Internal, "decode bus key {} failed: {e}", key.as_str()))
+}

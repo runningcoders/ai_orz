@@ -26,6 +26,7 @@ pub use common::redaction;
 pub mod request_context;
 pub mod stats;
 pub mod storage;
+pub mod think_path;
 pub mod tool_log_retention;
 pub mod tool_registry;
 pub mod tool_tracing;
