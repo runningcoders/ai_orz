@@ -210,12 +210,29 @@ impl BrainDal for BrainDalImpl {
                     memories,
                 );
                 // 小脑装配（B2 二期）：Local Agent 注入默认小脑（status 单启用即默认）。
-                // 查询失败向上传播（装配期失败应显性暴露）；无启用记录 → None，
-                // 与无小脑的现状行为逐字节一致（运行时消费归 B3）。
-                brain.cerebellum = self
+                //
+                // ⚠️⚠️ 装配失败**不能阻断唤醒**（原写法是 `?`，已改）。小脑是
+                // **可选增强**（B3 快判断路由，命中与否都只是优化），主模型思考
+                // 完全不依赖它。用 `?` 会把「小脑查不到」升级成整个 `wake_brain`
+                // 失败 ⇒ Agent 置忙后零进展，而消费侧 `wake_agent_brain` 的
+                // `inspect_err` 只 set_idle 不打日志，现场只剩沉默。
+                // ⇒ 失败降级为 `None`（= 无小脑），主流程照常走普通思考。
+                brain.cerebellum = match self
                     .model_provider_dao
-                    .get_default_cerebellum_provider(ctx)
-                    .await?;
+                    .get_default_cerebellum_provider(ctx.clone())
+                    .await
+                {
+                    Ok(provider) => provider,
+                    Err(e) => {
+                        log_warn!(
+                            &ctx,
+                            "wake_brain",
+                            "load default cerebellum provider failed, degrade to no-cerebellum: {}",
+                            e
+                        );
+                        None
+                    }
+                };
                 Ok(brain)
             }
             AgentKind::Cli | AgentKind::Remote => {

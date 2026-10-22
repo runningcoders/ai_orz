@@ -422,6 +422,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // waking brain"，这行与它成对 —— 两行之间只剩 wake_brain 的两次 DB 读。
         // 「置忙后零进展」类故障里，哪行在场就把冻结窗口对半切开：
         // 只有上行 ⇒ 冻在 wake_brain；两行都在 ⇒ 冻在更下游。
+        //
         crate::log_info!(
             &ctx,
             "wake_agent_brain",
@@ -461,6 +462,18 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
 
+        crate::log_info!(
+            &ctx,
+            "awaken",
+            "awaken entered, agent_id={}, message_id={}, max_rounds={:?}, has_project={}, has_task={}, has_profile={}",
+            agent.po.id,
+            message.po.id,
+            options.max_thinking_rounds,
+            options.project.is_some(),
+            options.task.is_some(),
+            options.user_profile.is_some(),
+        );
+
         // 预先构造 MemoryTrace 拿到 trace_id（input / output 由收尾节点回填）
         let trace = MemoryTrace::new(
             agent.po.id.clone(),
@@ -470,6 +483,14 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             MemoryRole::System,
             String::new(),
             ctx.task_id().cloned(),
+        );
+
+        crate::log_info!(
+            &ctx,
+            "awaken",
+            "trace prepared, agent_id={}, trace_id={}",
+            agent.po.id,
+            trace.id
         );
 
         let input = super::legacy_awaken::context::AwakenInput {
@@ -486,10 +507,37 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             trace,
             shadow: false, // 非影子：该落库落库、该发事件发事件
         };
-        let outcome = super::legacy_awaken::runner::run_legacy_awaken(
-            super::legacy_awaken::context::build_deps(input),
-        )
-        .await?;
+        let deps = super::legacy_awaken::context::build_deps(input);
+        crate::log_info!(
+            &ctx,
+            "awaken",
+            "deps built, agent_id={}, trace_id={}, tools={}, skills={}",
+            agent.po.id,
+            deps.trace_id,
+            agent.tools().len(),
+            agent.skills().len(),
+        );
+
+        let outcome = super::legacy_awaken::runner::run_legacy_awaken(deps).await;
+        match &outcome {
+            Ok(o) => crate::log_info!(
+                &ctx,
+                "awaken",
+                "graph finished, agent_id={}, fingerprint={}, steps={}, exit={}",
+                agent.po.id,
+                o.fingerprint,
+                o.steps,
+                o.exit
+            ),
+            Err(e) => crate::log_error!(
+                &ctx,
+                "awaken",
+                "graph failed, agent_id={}, error={}",
+                agent.po.id,
+                e
+            ),
+        }
+        let outcome = outcome?;
 
         // 路径指纹：排查「这次为什么走到这条分支」成本最低的线索。
         // 一次唤醒可能经历 prepare#1>deliberate#1>compact#1>prepare#2>…，

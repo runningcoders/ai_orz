@@ -697,17 +697,56 @@ impl MessageConsumer {
             .as_ref()
             .map(|task| task.po.root_user_id.clone())
             .filter(|s| !s.is_empty());
-        if let Some(project_id) = &message.po.project_id
-            && let Ok(Some(project)) = self
+        // 项目上下文：缺失/失败都只是降级（不阻断唤醒），但原来的 `if let ... && let Ok(Some(..))`
+        // 把 Err 与 None 一起静默吞掉 —— 「置忙后零进展」现场因此少一段关键时间线。
+        // 拆开显式留痕：这三次 DB 读正好落在 brain woken 与 awaken 之间。
+        if let Some(project_id) = &message.po.project_id {
+            log_info!(
+                &ctx,
+                "handle_agent_message",
+                "loading project context, agent={}, project_id={}",
+                agent_id,
+                project_id
+            );
+            match self
                 .project_domain
                 .project_manage()
                 .get(ctx.clone(), project_id)
                 .await
-        {
-            if work_root_user_id.is_none() && !project.po.root_user_id.is_empty() {
-                work_root_user_id = Some(project.po.root_user_id.clone());
+            {
+                Ok(Some(project)) => {
+                    if work_root_user_id.is_none() && !project.po.root_user_id.is_empty() {
+                        work_root_user_id = Some(project.po.root_user_id.clone());
+                    }
+                    thinking_options = thinking_options.with_project(project);
+                    log_info!(
+                        &ctx,
+                        "handle_agent_message",
+                        "project context loaded, agent={}, project_id={}",
+                        agent_id,
+                        project_id
+                    );
+                }
+                Ok(None) => {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "project not found, agent={}, project_id={}, skip project context",
+                        agent_id,
+                        project_id
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "load project failed, agent={}, project_id={}, skip project context: {}",
+                        agent_id,
+                        project_id,
+                        e
+                    );
+                }
             }
-            thinking_options = thinking_options.with_project(project);
         }
         if let Some(task) = cached_task {
             thinking_options = thinking_options.with_task(task);
@@ -723,6 +762,13 @@ impl MessageConsumer {
             &message.po.from_id,
             work_root_user_id.as_deref(),
         ) {
+            log_info!(
+                &ctx,
+                "handle_agent_message",
+                "loading user profile, agent={}, user_id={}",
+                agent_id,
+                profile_user_id
+            );
             match crate::service::domain::organization::domain()
                 .user_manage()
                 .get_user_by_id(ctx.clone(), &profile_user_id)

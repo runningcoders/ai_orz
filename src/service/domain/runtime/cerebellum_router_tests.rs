@@ -305,3 +305,29 @@ fn test_degraded_reason_str() {
     assert_eq!(DegradedReason::NoCerebellum.as_str(), "no_cerebellum");
     assert_eq!(DegradedReason::Timeout.as_str(), "timeout");
 }
+
+// ---------- 小脑未配好 ⇒ 零调用降级（护栏） ----------
+
+/// 小脑是**可选增强**：provider 没真正配好（空 api_key）时必须降级到普通
+/// 思考流程，**且一次网络都不发**。
+///
+/// ⚠️ 这条护栏守的是「增强功能反向劫持主流程」—— 拿无效凭据去打网络最轻是
+/// 白等一个超时，最重是 panic 顺着 future 传播把整轮思考炸掉（底层
+/// `dao::cerebellum::dao()` 未初始化时是 `expect`）。两者都表现为
+/// 「Agent 置忙后零进展」，现场很难定位。
+#[tokio::test]
+async fn test_route_with_default_dao_degrades_on_empty_api_key() {
+    let ctx = test_ctx();
+    let mut provider = mock_provider();
+    provider.api_key = "  ".to_string();
+
+    let d =
+        route_with_default_dao(&ctx, &provider, true, "agent-1", "Test Agent", Some("你好")).await;
+
+    assert_eq!(
+        d,
+        RouteDecision::Skip {
+            reason: DegradedReason::NoCerebellum
+        }
+    );
+}

@@ -53,11 +53,23 @@ pub struct LegacyBackend;
 #[async_trait]
 impl ThinkBackend for LegacyBackend {
     async fn think(&self, deps: &AwakenDeps, input: ThinkInput) -> Result<ThinkLoopResult> {
+        crate::log_info!(
+            &deps.ctx,
+            "legacy_awaken",
+            "backend think start, agent_id={}, max_rounds={}, total_rounds={}, messages={}, tools={}",
+            deps.agent.po.id,
+            input.max_rounds,
+            input.total_rounds,
+            input.initial_messages.len(),
+            input.tools.len(),
+        );
+
         // 老链路每轮都要重设：BusyGuard 的 Drop 会清掉 think_runtime
         AgentRuntimeStateManager::global()
             .set_think_runtime(&deps.agent.po.id, deps.think_runtime.clone());
 
-        deps.domain
+        let result = deps
+            .domain
             .run_think_loop(
                 ThinkLoopParams::new(
                     deps.ctx.clone(),
@@ -71,7 +83,24 @@ impl ThinkBackend for LegacyBackend {
                 .with_monitoring(&deps.think_runtime, deps.policy.as_ref())
                 .with_progress(&deps.progress),
             )
-            .await
+            .await;
+
+        match &result {
+            Ok(_) => crate::log_info!(
+                &deps.ctx,
+                "legacy_awaken",
+                "backend think done, agent_id={}",
+                deps.agent.po.id
+            ),
+            Err(e) => crate::log_error!(
+                &deps.ctx,
+                "legacy_awaken",
+                "backend think failed, agent_id={}, error={}",
+                deps.agent.po.id,
+                e
+            ),
+        }
+        result
     }
 
     async fn compact(&self, deps: &AwakenDeps, input: CompactInput) -> Result<CompactOutcome> {

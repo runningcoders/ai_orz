@@ -280,6 +280,38 @@ pub async fn route_with_default_dao(
     agent_name: &str,
     last_user_message: Option<&str>,
 ) -> RouteDecision {
+    // ⚠️⚠️ 小脑是**可选增强**：下面两道前置门都是「零调用降级」，不碰网络。
+    // 小脑没配好 / 没配全，正确行为是走普通流程，绝不能让快判断把主循环拖住。
+
+    // 门 1：底层 CerebellumDao 单例未初始化 ⇒ 降级。
+    // `BrainDal::think_fast` 内部走的是 `dao::cerebellum::dao()`（未初始化即
+    // expect panic）。panic 会顺着 future 传播，把整轮思考连主模型一起炸掉 ——
+    // 用 `try_dao()` 先探测，未初始化就直接跳过，一次网络都不发。
+    if crate::service::dao::cerebellum::try_dao().is_none() {
+        log_warn!(
+            ctx,
+            "cerebellum_route",
+            "cerebellum dao not initialized, degrade to plain think loop",
+        );
+        return RouteDecision::Skip {
+            reason: DegradedReason::NoCerebellum,
+        };
+    }
+
+    // 门 2：provider 未真正配好（空 api_key）⇒ 降级。
+    // 拿一份无效凭据去打网络只会白等一个超时，且失败路径未必有日志。
+    if cerebellum.api_key.trim().is_empty() {
+        log_warn!(
+            ctx,
+            "cerebellum_route",
+            "cerebellum provider '{}' has empty api_key, degrade to plain think loop",
+            cerebellum.id,
+        );
+        return RouteDecision::Skip {
+            reason: DegradedReason::NoCerebellum,
+        };
+    }
+
     route(
         ctx,
         crate::service::dal::brain::dal(),

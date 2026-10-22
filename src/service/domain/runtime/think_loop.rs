@@ -289,6 +289,22 @@ impl RuntimeDomainImpl {
             .as_ref()
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?;
 
+        // 入口留痕（早于小脑路由）：「think loop entered」被小脑路由挡在后面，
+        // 小脑那一步一旦挂住/降级，现场就只剩 brain woken → 再无下文。
+        // 本行在路由之前，把这段盲区切成两半。
+        log_info!(
+            &ctx,
+            "think_loop",
+            "think loop entered (pre-cerebellum), scene={}, agent={}, has_cerebellum={}, enable_route={}, max_rounds={}, start_round={}, timeout_secs={}",
+            scene.as_str(),
+            agent.po.id,
+            brain.cerebellum.is_some(),
+            brain.runtime_config.enable_cerebellum_route,
+            max_rounds,
+            start_round,
+            timeout_secs,
+        );
+
         let think_future = async {
             let mut messages = initial_messages;
             // ---- B3 小脑快判断路由（单点接线；四场景自动全覆盖）----
@@ -302,6 +318,14 @@ impl RuntimeDomainImpl {
                     ChatMessage::UserMultimodal { text, .. } => Some(text.as_str()),
                     _ => None,
                 });
+                log_info!(
+                    &ctx,
+                    "think_loop",
+                    "cerebellum route start, agent={}, provider={}, enable={}",
+                    agent.po.id,
+                    cerebellum.id,
+                    rc.enable_cerebellum_route,
+                );
                 let decision = cerebellum_router::route_with_default_dao(
                     &ctx,
                     cerebellum,
@@ -311,6 +335,15 @@ impl RuntimeDomainImpl {
                     last_user_text,
                 )
                 .await;
+                log_info!(
+                    &ctx,
+                    "think_loop",
+                    "cerebellum route done, agent={}, direct={}, inject={}, skip={}",
+                    agent.po.id,
+                    matches!(decision, RouteDecision::Direct { .. }),
+                    matches!(decision, RouteDecision::Inject { .. }),
+                    matches!(decision, RouteDecision::Skip { .. }),
+                );
                 match decision {
                     // TRIVIAL 高置信直回：默认关；开则跳过主循环提前返回
                     RouteDecision::Direct {

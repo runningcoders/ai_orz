@@ -81,6 +81,16 @@ pub fn dao() -> Arc<dyn CerebellumDao> {
         .expect("CerebellumDao not initialized, call cerebellum::init() first")
 }
 
+/// 获取 Cerebellum DAO 单例（未初始化返回 `None`，不 panic）
+///
+/// ⚠️ **生产调用点（小脑快判断路由）必须用它，不能用 [`dao`]** —— 小脑是
+/// **可选增强**（B3 快判断路由，命中与否都只是优化），不是主流程的依赖项。
+/// 单例未初始化时正确行为是**降级跳过**，而不是 panic 掉整个思考循环：
+/// 小脑一挂就把主模型的完整思考一起拖垮，是典型的「增强功能反向劫持主流程」。
+pub fn try_dao() -> Option<Arc<dyn CerebellumDao>> {
+    CEREBELLUM_DAO.get().cloned()
+}
+
 /// 初始化 Cerebellum DAO 单例
 pub fn init() {
     let _ = CEREBELLUM_DAO.set(Arc::new(SystemOneCerebellumDao::new()));
