@@ -4,13 +4,12 @@
 //! - `wake_agent_brain`：装配 Brain
 //! - `awaken`：唤醒并跑完一次思考生命周期（**主体已迁到 `legacy_awaken` 图编排**，
 //!   这里只做入参/返回值转换，见方法注释）
-//! - `sleep_and_settle`：沉睡沉淀记忆
+//! - `settle_pending`：沉睡沉淀记忆（**主体已迁到 `legacy_settle` 图编排**）
 //! - `analyze_input_intent`：意图分析（stats 包裹 + 委托 inner）
 //!
 //! 共享类型在 `types.rs`，think loop 引擎在 `think_loop.rs`，
 //! 意图分析核心 + JSON 解析在 `intent_analyze.rs`，总结退出在 `summary.rs`。
 
-use super::types::ThinkLoopParams;
 use crate::enrich_ctx;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ImagePart, ToolDescriptor};
@@ -18,10 +17,7 @@ use crate::models::events::AgentLoopEvent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, AgentThinkRuntime};
-use crate::pkg::paths;
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::stats::AgentAwakeEvent;
-use crate::record_event;
 use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
@@ -155,7 +151,11 @@ impl RuntimeDomainImpl {
     /// - 条数远少于历史对话（5 vs 20），避免与【待沉淀的短期记忆】重复占用预算
     ///
     /// 查询失败不阻断沉淀流程——参考块是锦上添花，缺了也能正常工作。
-    async fn query_settled_reference(&self, ctx: RequestContext, agent_id: &str) -> Vec<String> {
+    pub(crate) async fn query_settled_reference(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Vec<String> {
         let result = self
             .memory()
             .query(
@@ -559,298 +559,66 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         })
     }
 
-    /// 让 Agent 进入沉睡模式，执行记忆沉淀（与 awaken 对称）
+    /// 扫描全部未沉淀短期记忆，按上下文预算分批沉淀（与 awaken 对称）
     ///
-    /// awaken 是醒来响应外部消息，sleep_and_settle 是沉睡整理内部记忆。
-    /// 流程：set_resting → 读取历史 → 拼装沉淀 Prompt → think → 写 Trace → set_idle
+    /// awaken 是醒来响应外部消息，本方法是沉睡整理内部记忆。
+    /// 主体在 [`legacy_settle`](super::legacy_settle) 图编排里：
+    /// `prepare`（取一批 + 装配 Prompt）→ `settle`（思考 + 写 Trace）→ 回环，
+    /// 直到没有未沉淀记忆才进 `finalize`。
     ///
-    /// 与 awaken 的关键差异：
-    /// - 状态用 Resting（而非 Busy），通过 BusyGuard 的 set_idle 恢复（语义一致）
-    /// - 统计事件的 message_id 为 None（沉淀无关联消息）
-    ///
-    /// **只服务「真正的睡觉」**（定时任务 `agent_rest` / 神经工具触发）：
-    /// 把近期未沉淀的短期记忆整理进知识图谱。
-    /// 主循环的上下文压缩走 `compact_context()`，不复用本方法——压缩要保持 Busy
-    /// 状态且复用主循环上下文，语义与成本模型都不同。
-    async fn sleep_and_settle(
+    /// # 返回
+    /// 本次真正沉淀的条数（仅 `Final` 终态的批次才计入，并被标记为 Settled）。
+    /// 溢出 / 超轮次 / 取消的批次一律不标记，记忆保持 Active 交给下一次。
+    async fn settle_pending(
         &self,
         ctx: RequestContext,
         agent: &Agent,
-        pending_memories_summary: &str,
         options: &ThinkingOptions,
-        trace_ids: &[String],
-    ) -> Result<AwakeningResult> {
-        let start_time = std::time::SystemTime::now();
-
-        // 使用 Resting 状态（而非 Busy），RAII guard 恢复 Idle
-        // BusyGuard 的 Drop 行为是 set_idle，与 Resting 恢复语义一致，直接复用
-        AgentRuntimeStateManager::global().set_resting(&agent.po.id);
-        let _rest_guard =
-            crate::service::domain::runtime::busy_guard::BusyGuard::new(agent.po.id.clone());
-
+        settle_limit: usize,
+    ) -> Result<usize> {
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
 
-        // Step 1: 取少量「已沉淀」记忆作为参考线索
-        //
-        // 刻意**不取**【历史对话】全量（原为最近 20 条短期记忆）：它与本次
-        // 【待沉淀的短期记忆】大面积重复（Active ≤ 20 条时完全重复），
-        // 白白吃掉上下文预算，还会让刚做完的预算自适应打折。
-        //
-        // 图谱里有什么、曾经沉淀过什么，技能已要求 Agent 用 search_memory 按需检索；
-        // 这里只留少量「顺手可见」的线索，用于衔接上次沉淀被预算截断的情况。
-        let settled_reference = self
-            .query_settled_reference(ctx.clone(), &agent.po.id)
-            .await;
-
-        // Step 2: 预先构造 MemoryTrace 拿到 trace_id
-        use common::enums::MemoryRole;
-        let mut trace = MemoryTrace::new(
-            agent.po.id.clone(),
-            ctx.log_id.clone(),
-            ctx.uid(),
-            ctx.organization_id.clone().unwrap_or_default(),
-            MemoryRole::System,
-            String::new(), // input 后续填充
-            ctx.task_id().cloned(),
-        );
-        let trace_id = trace.id.clone();
-
-        // 创建沉淀场景的思考运行时（覆盖 awaken 的，因为这是一个独立思考阶段）
-        let (think_runtime, policy) =
-            init_think_runtime_and_policy(agent, ThinkingScene::Settle, &trace_id);
-
-        // 发布循环启动事件（AOP 同步转发）
-        let _ = crate::pkg::aop::publish(
+        crate::log_info!(
             &ctx,
-            AgentLoopEvent::started(&agent.po.id, &trace_id, "settle", None),
-        )
-        .await;
-
-        // Step 3: 加载技能（已由 hr_domain.get_agent 加载到 agent）
-        // Settle 场景过滤：只保留记忆相关 skill（tags 含 neural 或 memory），
-        // 确保沉淀模式下只能接触记忆类工具。
-        // 睡觉是对自身知识的沉淀积累，不应触发消息流程导致异步唤醒自己。
-        let scene = options.scene;
-        let skill_pos = build_scene_skills(agent, scene);
-
-        // Step 4: 拼装 Prompt（复用 builder 挂载链路，调用 build_sleep_prompt 生成沉淀模板）
-        // 与 awaken 的区别：不构造虚拟 System Message，约束模板内聚在 builder.build_sleep_prompt
-        let mut builder = self.prompt_builder(agent);
-        builder.current_trace_id(&trace_id);
-        builder.system_prompt(agent);
-        builder.skills(&skill_pos);
-        let base = crate::config::get().base_data_path();
-        let uid = ctx.uid();
-        let uid_ref = if uid.is_empty() {
-            None
-        } else {
-            Some(uid.as_str())
-        };
-        let default_workspace = paths::default_workspace(&base, uid_ref, Some(&agent.po.id))
-            .to_string_lossy()
-            .to_string();
-        let user_home = if uid.is_empty() {
-            paths::users_root_dir(&base).to_string_lossy().to_string()
-        } else {
-            paths::user_home(&base, &uid).to_string_lossy().to_string()
-        };
-        let user_shared_workspace = if uid.is_empty() {
-            default_workspace.clone()
-        } else {
-            paths::user_shared_workspace(&base, &uid)
-                .to_string_lossy()
-                .to_string()
-        };
-        let user_agent_workspace = if uid.is_empty() {
-            None
-        } else {
-            Some(
-                paths::user_agent_workspace(&base, &uid, &agent.po.id)
-                    .to_string_lossy()
-                    .to_string(),
-            )
-        };
-        let agent_workspace = Some(
-            paths::agent_workspace(&base, &agent.po.id)
-                .to_string_lossy()
-                .to_string(),
+            "settle_pending",
+            "settle entered, agent_id={}, settle_limit={}, has_project={}",
+            agent.po.id,
+            settle_limit,
+            options.project.is_some(),
         );
-        let project_workspace = if let (Some(project), true) = (&options.project, !uid.is_empty()) {
-            Some(
-                paths::user_project_workspace(&base, &uid, &project.po.id)
-                    .to_string_lossy()
-                    .to_string(),
-            )
-        } else {
-            None
+
+        let input = super::legacy_settle::context::SettleInput {
+            // 节点要调 impl 级方法（`run_think_loop` / `query_settled_reference`），
+            // 必须拿到具体类型；trait 只给了 `&self`，字段全是 Arc，克隆一份即可。
+            //
+            // ⚠️ 不能退化成取全局单例：跑的是**调用方手上那个实例**的依赖，
+            // 否则测试注入的 stub DAL 会被单例顶掉。
+            domain: Arc::new(self.clone()),
+            ctx: ctx.clone(),
+            agent: agent.clone(),
+            options: options.clone(),
+            // 独立沉淀无父 trace；每批自己的 trace 在 prepare 节点里创建
+            trace_ids: Vec::new(),
+            settle_limit,
         };
-        builder.workspace_context(
-            default_workspace,
-            user_home,
-            user_shared_workspace,
-            user_agent_workspace,
-            agent_workspace,
-            project_workspace,
-        );
-        // 本体词表（design §5.4）：记忆图谱用词约定，三场景共用挂载点
-        mount_ontology_lexicon(&ctx, builder.as_mut()).await;
-        // 沉淀场景不装配 history（避免与待沉淀列表重复），只挂参考条目
-        builder.settled_reference(&settled_reference);
+        let deps = super::legacy_settle::context::build_deps(input);
+        let outcome = super::legacy_settle::runner::run_legacy_settle(deps).await?;
 
-        let prompt = builder.build_sleep_prompt(pending_memories_summary, trace_ids);
-        // P0-b：角色拆分版初始消息；prompt 仍保留用于 trace/stat 记录
-        let initial_messages =
-            builder.build_sleep_initial_messages(pending_memories_summary, trace_ids);
-
-        // Step 5: 调用大脑思考（带工具调用循环，与 awaken 对称）
-        // sleep 场景传递过滤后的记忆工具，Agent 可通过 function calling 调用记忆工具完成沉淀
-        // brain 由 run_think_loop 内部从 agent.brain 解析
-
-        // 构建 ToolDescriptor 列表（从 agent.tools 按场景过滤后派生，供模型 function calling）
-        let tool_descriptors = build_scene_tool_descriptors(agent, scene);
-
-        // 调用共享 think loop（轮次与超时由 ThinkLoopParams::new 按 Agent 配置填充）
-        let think_result = self
-            .run_think_loop(
-                ThinkLoopParams::new(
-                    ctx.clone(),
-                    agent,
-                    ThinkingScene::Settle,
-                    &trace_id,
-                    initial_messages,
-                    &tool_descriptors,
-                )
-                .with_monitoring(&think_runtime, policy.as_ref()),
-            )
-            .await;
-
-        // 展开 Result，失败时也记录事件
-        // sleep_and_settle 场景不处理 ContextOverflow/MaxRoundsExceeded/Cancelled（沉淀工具量小）
-        let raw_output = match think_result {
-            Ok(ThinkLoopResult::Final { content, .. }) => content,
-            Ok(ThinkLoopResult::ContextOverflow { .. })
-            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. })
-            | Ok(ThinkLoopResult::Cancelled { .. }) => {
-                // 沉淀场景理论不会触发（记忆工具量小），兜底处理
-                String::new()
-            }
-            Err(e) => {
-                let duration_ms = start_time
-                    .elapsed()
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0);
-                if let Err(stats_err) = record_event!(
-                    ctx,
-                    AgentAwakeEvent {
-                        agent_id: agent.po.id.clone(),
-                        project_id: None,
-                        task_id: None,
-                        organization_id: ctx.organization_id.clone(),
-                        user_id: Some(ctx.uid()),
-                        message_id: None,
-                        call_count: 1,
-                        duration_ms: duration_ms,
-                        status: format!("settle failed: {}", e),
-                        exit_reason: "error".to_string(),
-                    }
-                ) {
-                    log_warn!(
-                        &ctx,
-                        "sleep_and_settle",
-                        "record_event failed on error path, stats may be incomplete: {:?}",
-                        stats_err
-                    );
-                }
-                // 发布循环完成事件（失败）
-                let _ = crate::pkg::aop::publish(
-                    &ctx,
-                    AgentLoopEvent::finished(
-                        &agent.po.id,
-                        &trace_id,
-                        "settle",
-                        &format!("settle failed: {}", e),
-                        duration_ms,
-                        None,
-                    ),
-                )
-                .await;
-                return Err(e);
-            }
-        };
-
-        // Step 6: 回填 input 和 output，一次性写入完整 Trace
-        trace.input = prompt.clone();
-        trace.complete(raw_output.clone());
-
-        // 补充运行时元数据
-        trace.metadata.insert("scene".into(), "settle".into());
-        trace.metadata.insert(
-            "depended_trace_ids".into(),
-            serde_json::to_string(trace_ids).unwrap_or_default(),
-        );
-        if let Some(task_id) = ctx.task_id() {
-            trace.metadata.insert("task_id".into(), task_id.clone());
-        }
-        if let Some(project_id) = ctx.project_id() {
-            trace
-                .metadata
-                .insert("project_id".into(), project_id.clone());
-        }
-
-        self.memory()
-            .write_thinking_trace(ctx.clone(), trace)
-            .await?;
-
-        // Step 7: 记录沉淀统计事件
-        let duration_ms = start_time
-            .elapsed()
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        if let Err(stats_err) = record_event!(
-            ctx,
-            AgentAwakeEvent {
-                agent_id: agent.po.id.clone(),
-                project_id: None,
-                task_id: None,
-                organization_id: ctx.organization_id.clone(),
-                user_id: Some(ctx.uid()),
-                message_id: None,
-                call_count: 1,
-                duration_ms: duration_ms,
-                status: "settle success".to_string(),
-                exit_reason: "settle".to_string(),
-            }
-        ) {
-            log_warn!(
-                &ctx,
-                "sleep_and_settle",
-                "record_event failed on success path, stats may be incomplete: {:?}",
-                stats_err
-            );
-        }
-
-        // 发布循环完成事件（成功）
-        let _ = crate::pkg::aop::publish(
+        crate::log_info!(
             &ctx,
-            AgentLoopEvent::finished(
-                &agent.po.id,
-                &trace_id,
-                "settle",
-                "settle success",
-                duration_ms,
-                None,
-            ),
-        )
-        .await;
+            "settle_pending",
+            "settle finished, agent_id={}, fingerprint={}, steps={}, batches={}, attempts={}, settled={}, blocked={:?}",
+            outcome.agent_id,
+            outcome.fingerprint,
+            outcome.steps,
+            outcome.batches,
+            outcome.attempts,
+            outcome.settled_count,
+            outcome.blocked
+        );
 
-        // Step 8: 返回结果
-        Ok(AwakeningResult {
-            agent_id: agent.po.id.clone(),
-            trace_ids: vec![trace_id],
-            raw_input: prompt,
-            raw_output,
-        })
+        Ok(outcome.settled_count)
     }
 
     async fn analyze_input_intent(

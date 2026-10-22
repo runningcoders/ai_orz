@@ -252,30 +252,35 @@ pub trait RuntimeAwakening: Send + Sync {
         options: &crate::service::domain::runtime::awakening::ThinkingOptions,
     ) -> Result<AwakeningResult>;
 
-    /// 让 Agent 进入沉睡模式，执行记忆沉淀（与 awaken 对称）
+    /// 扫描全部未沉淀短期记忆，按上下文预算分批沉淀（与 awaken 对称）
     ///
-    /// awaken 是醒来响应外部消息，sleep_and_settle 是沉睡整理内部记忆。
-    /// 流程：set_resting → 装配 Brain → 拼装沉淀 Prompt → think → 写 Trace → set_idle
+    /// awaken 是醒来响应外部消息，本方法是沉睡整理内部记忆。
+    /// 主体在 [`legacy_settle`](crate::service::domain::runtime::legacy_settle) 图编排里：
+    /// `prepare`（取一批 + 装配 Prompt）→ `settle`（思考 + 写 Trace）→ 回环，
+    /// 直到没有未沉淀记忆才进 `finalize`。
     ///
     /// # 参数
     /// - ctx: 请求上下文（需含 agent_id）
     /// - agent: 已加载的 Agent（含 tools + skills，Brain 已装配）
-    /// - pending_memories_summary: 待沉淀短期记忆的编号摘要（约束模板由 builder.build_sleep_prompt 内聚）
-    /// - options: 沉睡场景选项（scene=Settle，工具过滤用）
-    /// - trace_ids: 本次沉淀所依赖的 trace 列表，传入 prompt 要求 Agent 调用
-    ///   save_short_term_memory 时填入 trace_ids 字段，保证记忆可追溯
+    /// - options: 沉睡场景选项（scene=Settle，决定工具/技能过滤）
+    /// - settle_limit: 单批条数上限提示（默认 [`PENDING_MAX_ITEMS`]），
+    ///   **实际批量由上下文预算决定**，不按条数切片
+    ///
+    /// # 返回
+    /// 本次真正沉淀的条数（仅 `Final` 终态的批次才计入，并被标记为 Settled）
     ///
     /// 注意：本方法**只服务真正的睡觉**（定时任务/神经工具触发的知识图谱沉淀）。
     /// 主循环上下文压缩请走 `compact_context()`——它复用主循环上下文且不触碰
     /// Agent 运行时状态，与本方法的语义和成本模型都不同。
-    async fn sleep_and_settle(
+    ///
+    /// [`PENDING_MAX_ITEMS`]: crate::service::domain::runtime::legacy_settle::pending::PENDING_MAX_ITEMS
+    async fn settle_pending(
         &self,
         ctx: RequestContext,
         agent: &Agent,
-        pending_memories_summary: &str,
         options: &crate::service::domain::runtime::awakening::ThinkingOptions,
-        trace_ids: &[String],
-    ) -> Result<AwakeningResult>;
+        settle_limit: usize,
+    ) -> Result<usize>;
 
     /// 专用输入分析函数：跑一轮 IntentAnalyze 小循环，
     /// 产出结构化意图理解结果，**不执行任何业务动作**
@@ -392,6 +397,8 @@ mod intent_analyze;
 // `pub(crate)`：尚未接入调用方，先作为内部可用的**影子链路**存在；
 // 影子对比通过后再决定是否抬为对外入口。
 pub(crate) mod legacy_awaken;
+// 沉淀链路与 awaken 共用同一套图引擎（`pkg::think_path`），单向依赖
+pub(crate) mod legacy_settle;
 mod memory;
 mod think_loop;
 mod tool_call_query;

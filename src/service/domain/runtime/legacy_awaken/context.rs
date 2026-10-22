@@ -93,15 +93,28 @@ impl AwakenDeps {
     }
 }
 
-/// 工作空间路径（7 个）——原 `awakening.rs#L588-641` 的碎片
+/// 工作空间路径（6 个）——原 `awakening.rs#L588-641` 的碎片
+///
+/// 只持有「拼路径需要的三样东西」而不是整个 `AwakenDeps`：
+/// `legacy_settle` 没有 `Message`，也要复用同一份路径口径，不能为此各写一份。
 #[derive(Debug)]
 pub struct WorkspaceProvider {
-    deps: Arc<AwakenDeps>,
+    ctx: RequestContext,
+    agent_id: String,
+    project_id: Option<String>,
 }
 
 impl WorkspaceProvider {
-    pub fn new(deps: Arc<AwakenDeps>) -> Self {
-        Self { deps }
+    pub fn new(
+        ctx: RequestContext,
+        agent_id: impl Into<String>,
+        project_id: Option<String>,
+    ) -> Self {
+        Self {
+            ctx,
+            agent_id: agent_id.into(),
+            project_id,
+        }
     }
 }
 
@@ -113,13 +126,13 @@ impl ContextProvider for WorkspaceProvider {
 
     async fn load(&self, _stimulus: &Stimulus, _depth: LoadDepth) -> Result<Value> {
         let base = crate::config::get().base_data_path();
-        let uid = self.deps.ctx.uid();
+        let uid = self.ctx.uid();
         let uid_ref = if uid.is_empty() {
             None
         } else {
             Some(uid.as_str())
         };
-        let agent_id = &self.deps.agent.po.id;
+        let agent_id = &self.agent_id;
         let default_workspace = paths::default_workspace(&base, uid_ref, Some(agent_id))
             .to_string_lossy()
             .to_string();
@@ -149,9 +162,9 @@ impl ContextProvider for WorkspaceProvider {
                 .to_string_lossy()
                 .to_string(),
         );
-        let project_workspace = match (&self.deps.options.project, !uid.is_empty()) {
-            (Some(project), true) => Some(
-                paths::user_project_workspace(&base, &uid, &project.po.id)
+        let project_workspace = match (&self.project_id, !uid.is_empty()) {
+            (Some(project_id), true) => Some(
+                paths::user_project_workspace(&base, &uid, project_id)
                     .to_string_lossy()
                     .to_string(),
             ),
@@ -394,8 +407,13 @@ pub fn build_providers(deps: Arc<AwakenDeps>) -> ProviderSet {
         .collect();
     let skills: Vec<SkillPo> = deps.agent.skills().iter().map(|s| s.po.clone()).collect();
 
+    let workspace = WorkspaceProvider::new(
+        deps.ctx.clone(),
+        deps.agent.po.id.clone(),
+        deps.options.project.as_ref().map(|p| p.po.id.clone()),
+    );
     ProviderSet::new()
-        .register(Arc::new(WorkspaceProvider::new(Arc::clone(&deps))))
+        .register(Arc::new(workspace))
         .register(Arc::new(BusinessProvider::new(Arc::clone(&deps))))
         .register(Arc::new(ToolsProvider::new(tools)))
         .register(Arc::new(SkillsProvider::new(skills)))

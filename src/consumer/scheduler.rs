@@ -158,10 +158,10 @@ impl CronTriggerConsumer {
 
         let ctx = RequestContext::new_system();
         // 不传 settle_limit 时用自适应上限：实际批量由上下文预算决定，
-        // 该字段仅作为条数上限提示（见 settle_memory::PENDING_MAX_ITEMS）。
+        // 该字段仅作为条数上限提示（见 legacy_settle::pending::PENDING_MAX_ITEMS）。
         let settle_limit = payload
             .settle_limit
-            .unwrap_or(crate::handlers::hr::agent::settle_memory::PENDING_MAX_ITEMS);
+            .unwrap_or(crate::service::domain::runtime::legacy_settle::pending::PENDING_MAX_ITEMS);
 
         // 解析本次要沉淀的 Agent 集合：指定 agent_id → 单个；缺省 → 全部有待沉淀记忆的 Agent
         let agent_ids: Vec<String> = match &payload.agent_id {

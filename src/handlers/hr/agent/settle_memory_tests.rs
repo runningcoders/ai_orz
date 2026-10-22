@@ -7,8 +7,9 @@
 //! 拆分命令见 `tools/split_inline_tests.py`。
 
 use super::*;
-use crate::models::agent::Agent;
 use crate::models::memory::{MemoryCreateParams, ShortTermMemoryIndexPo};
+use crate::service::dao::memory::MemoryQuery;
+use common::enums::{MemoryStatus, MemoryType};
 
 /// 初始化测试环境：config + 所有 DAO/DAL 单例 + Runtime Domain
 ///
@@ -140,90 +141,8 @@ async fn mark_pending_settled_noops_on_empty(pool: sqlx::SqlitePool) {
     );
 }
 
-/// 待沉淀队列按最早优先取，避免老记忆被新记忆挤出窗口
-#[sqlx::test]
-async fn build_pending_summary_uses_oldest_first(pool: sqlx::SqlitePool) {
-    let ctx = init_settle_test_env(pool);
-
-    seed(&ctx, "p-old", 0).await;
-    seed(&ctx, "p-mid", 10).await;
-    seed(&ctx, "p-new", 20).await;
-
-    // 条数上限压到 2，预算给足
-    let (summary, ids, truncated) = build_pending_memories_summary(&ctx, "agent-settle", 10_000, 2)
-        .await
-        .unwrap()
-        .expect("应有待沉淀记忆");
-
-    assert_eq!(ids, vec!["p-old".to_string(), "p-mid".to_string()]);
-    assert!(summary.contains("[id=p-old]"));
-    assert!(!summary.contains("[id=p-new]"));
-    // 候选集被 limit 截断，保守标记为仍有剩余
-    assert!(truncated);
-}
-
-/// 预算自适应：只要累计长度还在预算内就继续拼，而不是固定条数
-#[sqlx::test]
-async fn build_pending_summary_accumulates_within_budget(pool: sqlx::SqlitePool) {
-    let ctx = init_settle_test_env(pool);
-
-    for i in 0..5 {
-        seed(&ctx, &format!("b-{}", i), i).await;
-    }
-
-    // 预算充足 → 全部纳入
-    let (_summary, ids, truncated) =
-        build_pending_memories_summary(&ctx, "agent-settle", 100_000, PENDING_MAX_ITEMS)
-            .await
-            .unwrap()
-            .expect("应有待沉淀记忆");
-    assert_eq!(ids.len(), 5);
-    assert!(!truncated);
-
-    // 预算极小 → 只纳入能放下的前几条，并标记截断
-    let (summary, ids, truncated) =
-        build_pending_memories_summary(&ctx, "agent-settle", 60, PENDING_MAX_ITEMS)
-            .await
-            .unwrap()
-            .expect("应有待沉淀记忆");
-    assert!(truncated, "预算不足应标记截断");
-    assert!(ids.len() < 5, "预算不足应少纳入：实际 {}", ids.len());
-    assert!(summary.chars().count() <= 60 + 40, "不应明显超出预算");
-    // 仍按最早优先
-    assert_eq!(ids[0], "b-0");
-}
-
-/// 无待沉淀记忆时返回 None，调用方据此跳过
-#[sqlx::test]
-async fn build_pending_summary_returns_none_when_empty(pool: sqlx::SqlitePool) {
-    let ctx = init_settle_test_env(pool);
-    assert!(
-        build_pending_memories_summary(&ctx, "agent-settle", 10_000, PENDING_MAX_ITEMS)
-            .await
-            .unwrap()
-            .is_none()
-    );
-}
-
-/// 预算取法：拿不到模型配置时回落到兜底常量，且恒为正
-#[test]
-fn pending_budget_chars_falls_back_without_brain() {
-    let mut po = crate::models::agent::AgentPo::new(
-        "Test".to_string(),
-        vec!["assistant".to_string()],
-        "desc".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-001".to_string(),
-        "test-user".to_string(),
-    );
-    po.id = "agent-budget".to_string();
-    let agent = Agent::from_po(po);
-
-    // 无 brain → 兜底
-    assert_eq!(pending_budget_chars(&agent), DEFAULT_PENDING_BUDGET_CHARS);
-    assert!(pending_budget_chars(&agent) > 0);
-}
+// 待沉淀取数已下沉到 Domain（`legacy_settle/pending.rs`），
+// 其预算/取数测试也随实现一起迁移，见该模块的单元测试与集成测试。
 
 /// 定时触发路径的核心契约：Agent 正忙时**不能**「返回 0 了事」（旧行为 = 静默丢一天），
 /// 必须如实回 `Busy` 让调用方排期重试，且不得改写运行中的状态。

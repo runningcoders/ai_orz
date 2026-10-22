@@ -81,8 +81,8 @@ async fn test_system_cron_triggers_created(pool: SqlitePool) {
         agent_rest.payload
     );
     assert!(
-        agent_rest.payload.contains("\"settle_limit\":10"),
-        "agent_rest payload should contain settle_limit=10, got: {}",
+        agent_rest.payload.contains("\"settle_limit\":200"),
+        "agent_rest payload should use the adaptive hard cap (PENDING_MAX_ITEMS=200), got: {}",
         agent_rest.payload
     );
 

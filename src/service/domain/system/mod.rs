@@ -410,10 +410,41 @@ pub(crate) fn aop_stats_collector() -> Option<&'static AopStatsCollector> {
 
 // ==================== 系统级默认定时任务 ====================
 
+/// 系统默认 agent_rest 触发器名（创建与升级判定共用）
+const SYSTEM_AGENT_REST_NAME: &str = "系统默认-Agent 睡眠沉淀";
+
+/// 旧版系统默认 payload（`settle_limit=10`）
+///
+/// 仅用于识别「用户从未改过」的存量系统触发器并做一次性升级；
+/// 只要 payload 与它不完全一致（用户调过 limit / 改了 agent_id 等），一律不动。
+const LEGACY_AGENT_REST_PAYLOAD: &str = r#"{"action":"agent_rest","extra":{"settle_limit":10}}"#;
+
+/// 当前系统默认 payload
+///
+/// 不再人为限制 10 条：实际批量由 [`settle_memory`](crate::handlers::hr::agent::settle_memory)
+/// 的上下文预算自适应决定，这里的 `settle_limit` 只是硬上限（与 `PENDING_MAX_ITEMS` 同值）。
+fn agent_rest_payload() -> String {
+    format!(
+        r#"{{"action":"agent_rest","extra":{{"settle_limit":{}}}}}"#,
+        crate::service::domain::runtime::legacy_settle::pending::PENDING_MAX_ITEMS
+    )
+}
+
+/// 是否为「仍是旧默认 payload」的系统默认 agent_rest 触发器
+///
+/// 精确匹配名字 + payload，避免把用户改过的配置当成旧默认值覆盖掉。
+fn is_legacy_agent_rest(trigger: &CronTriggerPo) -> bool {
+    trigger.name == SYSTEM_AGENT_REST_NAME && trigger.payload == LEGACY_AGENT_REST_PAYLOAD
+}
+
 /// 确保系统级默认定时任务存在（幂等，已有同类型则跳过）
 ///
 /// 设计决策：如果用户已有同 action（agent_rest / project_followup）的触发器
 /// 则不重复添加。系统仅提供初始化默认值，用户可自行修改间隔或禁用。
+///
+/// 唯一的例外是**存量默认值的升级**：系统默认 agent_rest 若仍是旧版 payload
+/// （`settle_limit=10`），会就地更新为新默认值 —— 否则老环境永远停在 10 条，
+/// 改常量只对新装库生效。用户自定义过的 payload 不满足精确匹配，不会被覆盖。
 ///
 /// 通过 payload 字符串包含 `"agent_rest"` / `"project_followup"` 进行去重判断，
 /// 与 `CronTriggerConsumer::on_event` 解析 payload.action 的方式保持一致。
@@ -448,13 +479,13 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
         let mut trigger = CronTriggerPo::new(
             uuid::Uuid::now_v7().to_string(),
-            "系统默认-Agent 睡眠沉淀".into(),
+            SYSTEM_AGENT_REST_NAME.into(),
             TriggerType::Cron,
             next_run_at,
             Some("system".into()),
         );
         trigger.cron_expression = Some(expression.into());
-        trigger.payload = r#"{"action":"agent_rest","extra":{"settle_limit":10}}"#.into();
+        trigger.payload = agent_rest_payload();
         trigger.is_enabled = 1;
         cron_manager.create_trigger(ctx.clone(), &trigger).await?;
         sys_info!(
@@ -462,6 +493,18 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
             expression,
             timezone
         );
+    } else {
+        // 存量升级：只动「系统默认名字 + 旧默认 payload」这一种，用户改过的配置不碰
+        for trigger in existing.iter().filter(|t| is_legacy_agent_rest(t)) {
+            let mut upgraded = trigger.clone();
+            upgraded.payload = agent_rest_payload();
+            upgraded.touch(Some("system".into()));
+            cron_manager.update_trigger(ctx.clone(), &upgraded).await?;
+            sys_info!(
+                "已升级系统默认 agent_rest 触发器 payload: settle_limit 10 → {}",
+                crate::service::domain::runtime::legacy_settle::pending::PENDING_MAX_ITEMS
+            );
+        }
     }
 
     // 2. project_followup：默认每 1 小时执行一次项目进度巡检
@@ -549,4 +592,49 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod legacy_payload_tests {
+    use super::*;
+
+    fn trigger(name: &str, payload: &str) -> CronTriggerPo {
+        let mut t = CronTriggerPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            name.into(),
+            TriggerType::Cron,
+            common::constants::utils::current_timestamp_ms(),
+            Some("system".into()),
+        );
+        t.payload = payload.into();
+        t
+    }
+
+    #[test]
+    fn legacy_default_is_recognized() {
+        // 仅「系统默认名字 + 旧默认 payload」的精确组合会被升级
+        assert!(is_legacy_agent_rest(&trigger(
+            SYSTEM_AGENT_REST_NAME,
+            LEGACY_AGENT_REST_PAYLOAD
+        )));
+    }
+
+    #[test]
+    fn customized_payload_is_not_touched() {
+        // 用户调过 limit：payload 与旧默认不一致，不得覆盖
+        assert!(!is_legacy_agent_rest(&trigger(
+            SYSTEM_AGENT_REST_NAME,
+            r#"{"action":"agent_rest","extra":{"settle_limit":5}}"#
+        )));
+        // 同名但 payload 结构不同（如指定了 agent_id）
+        assert!(!is_legacy_agent_rest(&trigger(
+            SYSTEM_AGENT_REST_NAME,
+            r#"{"action":"agent_rest","extra":{"agent_id":"a1","settle_limit":10}}"#
+        )));
+        // 用户自定义名字即使是旧默认 payload 也不动
+        assert!(!is_legacy_agent_rest(&trigger(
+            "我的沉淀任务",
+            LEGACY_AGENT_REST_PAYLOAD
+        )));
+    }
 }
