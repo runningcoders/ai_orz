@@ -401,6 +401,8 @@ pub(crate) mod legacy_awaken;
 pub(crate) mod legacy_settle;
 mod memory;
 mod think_loop;
+// 轮级环图：think → dispatch → evaluate，由 think_loop 驱动（单向依赖）
+mod think_round;
 mod tool_call_query;
 mod tool_execution;
 mod types;

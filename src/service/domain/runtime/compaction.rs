@@ -293,7 +293,7 @@ impl RuntimeDomainImpl {
                     &tool_descriptors,
                 )
                 .with_rounds(COMPACT_MAX_ROUNDS, 0)
-                .with_monitoring(&think_runtime, policy.as_ref()),
+                .with_monitoring(&think_runtime, &policy),
             )
             .await;
 

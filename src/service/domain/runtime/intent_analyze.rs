@@ -150,7 +150,7 @@ impl RuntimeDomainImpl {
                     &tool_descriptors,
                 )
                 .with_rounds(config_resolve::intent_analyze_max_rounds(agent), 0)
-                .with_monitoring(&think_runtime, policy.as_ref()),
+                .with_monitoring(&think_runtime, &policy),
             )
             .await?;
 

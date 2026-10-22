@@ -1,24 +1,38 @@
 //! 共享 think loop 引擎
 //!
 //! `run_think_loop` 是 awaken / sleep_and_settle / summary / intent_analyze
-//! 共用的多轮思考循环，封装：超时控制 + 多轮迭代 + 工具调用分发 + 策略评估。
+//! 共用的多轮思考循环，封装：超时控制 + 小脑路由 + 轮级环图驱动。
+//!
+//! ## 轮级环图
+//!
+//! 每一轮思考不再是主循环里的一段直线代码，而是图上的三个节点：
+//!
+//! ```text
+//! think --tool_calls--> dispatch --done--> evaluate
+//!   ^                      （工具执行）        │
+//!   └──────────── continue ───────────────────┘
+//!   │
+//!   └── final ───────────────────────────> evaluate --exit--> 结束
+//! ```
+//!
+//! 拓扑定义在 [`think_round::blueprint`]，节点实现在 [`think_round::nodes`]。
+//! 本文件只保留小脑路由、超时控制与跨场景共用的策略/指标工具函数。
 
 use super::cerebellum_router::{self, RouteDecision};
+use super::think_round::{self, RoundRun};
+use super::types::ThinkLoopResult;
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ChatMessage, ThinkResult};
-use crate::models::events::ThinkRoundEvent;
+use crate::models::cortex_types::ChatMessage;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
-use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
+use crate::service::domain::runtime::RuntimeDomainImpl;
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 use std::sync::Arc;
 
-use super::types::{RoundDigest, ThinkLoopResult};
-
 // ==================== 策略映射 ====================
 
 /// 构造单轮策略评估用的 Metrics（错误路径与轮末评估点共用）
-fn round_metrics(
+pub(crate) fn round_metrics(
     round_number: usize,
     max_rounds: usize,
     elapsed_secs: u64,
@@ -45,7 +59,7 @@ fn round_metrics(
 ///
 /// think_loop 的统一退出裁决点：Final 完成 / 取消 / 溢出 / 预算耗尽等
 /// 所有退出情况都经此分派，优先级 = 策略组声明顺序。
-fn policy_exit(
+pub(crate) fn policy_exit(
     ctx: &crate::pkg::request_context::RequestContext,
     policy: Option<&dyn crate::pkg::policy::Policy>,
     metrics: &crate::pkg::policy::Metrics,
@@ -134,7 +148,10 @@ pub(crate) fn map_triggered_to_result(
 /// 其他场景（含 Awaken）不拦截——主循环里 Agent 主动触发一次沉淀是合法需求。
 /// 入参 `tool_name` 是模型回传的 wire name（`to_wire_tool_name` 输出），
 /// 常量侧同样过一遍该函数，两侧禁各写一份字面量。
-fn is_recursive_settle_call(scene: common::enums::ThinkingScene, tool_name: &str) -> bool {
+pub(crate) fn is_recursive_settle_call(
+    scene: common::enums::ThinkingScene,
+    tool_name: &str,
+) -> bool {
     use common::enums::ThinkingScene;
     matches!(scene, ThinkingScene::Settle | ThinkingScene::Compact)
         && tool_name
@@ -145,19 +162,19 @@ fn is_recursive_settle_call(scene: common::enums::ThinkingScene, tool_name: &str
 ///
 /// 兜底摘要是「信息保全」而非「信息复现」，超长的工具返回（搜索结果、文件全文）
 /// 截断即可 —— 真要回看细节还有 trace 的 JSONL 原文。
-const ROUND_DIGEST_MAX_CONTENT: usize = 800;
+pub(crate) const ROUND_DIGEST_MAX_CONTENT: usize = 800;
 
 /// 连续工具调用轮数的疲劳提示阈值：达到后注入一条 System 提醒，逼模型收尾
 ///
 /// 业界通用做法（OpenAI Assistants / LangChain max_iterations 同类机制）：
 /// 模型连续多轮只调工具不给最终回复时，大概率已陷入循环，注入提醒给一次自纠机会。
-const TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS: usize = 8;
+pub(crate) const TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS: usize = 8;
 
 /// LLM 连续失败重试预算：连续失败达到该次数即命中策略、终止循环
 ///
 /// 预算内立即重试（无退避，YAGNI）；命中后错误照常向上传播，
 /// 下游 abort_summary 走无 LLM 兜底存档（异常总结路径）。
-const LLM_ERROR_RETRY_BUDGET: u64 = 3;
+pub(crate) const LLM_ERROR_RETRY_BUDGET: u64 = 3;
 
 /// 按场景构造策略组（Or 关系：任一策略命中即退出循环）
 ///
@@ -178,7 +195,7 @@ pub(crate) fn build_policy_for_scene(
     agent: &Agent,
     _scene: ThinkingScene,
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
-) -> Box<dyn crate::pkg::policy::Policy> {
+) -> Arc<dyn crate::pkg::policy::Policy> {
     use super::types::config_resolve;
     use crate::pkg::policy::builtin::{
         ConsecutiveLlmErrorsPolicy, ContextOverflowPolicy, FinalAnswerPolicy, MaxRoundsPolicy,
@@ -225,7 +242,8 @@ pub(crate) fn build_policy_for_scene(
     AgentRuntimeStateManager::global()
         .record_context_length_threshold(&agent.po.id, overflow_threshold.unwrap_or(0));
 
-    policy_set! {
+    // 转为 Arc：轮级环图节点需要 `'static` 共享同一策略组
+    Arc::from(policy_set! {
         OR {
             UserCancelPolicy(cancel_flag),
             FinalAnswerPolicy(),
@@ -236,7 +254,7 @@ pub(crate) fn build_policy_for_scene(
             TokenBudgetPolicy(token_budget),
             ConsecutiveLlmErrorsPolicy(LLM_ERROR_RETRY_BUDGET),
         }
-    }
+    })
 }
 
 // ==================== 共享 think loop ====================
@@ -244,7 +262,7 @@ pub(crate) fn build_policy_for_scene(
 impl RuntimeDomainImpl {
     /// 执行 think 循环（awaken/sleep_and_settle/summary 共用）
     ///
-    /// 统一封装：超时控制 + 多轮迭代 + 工具调用分发。
+    /// 统一封装：小脑快判断路由 + 超时控制 + 轮级环图（think → dispatch → evaluate）。
     /// 每轮 think 后发布 ThinkRoundEvent（通过 AOP 同步转发）。
     ///
     /// # 退出条件（统一策略裁决）
@@ -284,10 +302,12 @@ impl RuntimeDomainImpl {
 
         // brain 统一在此解析：四个场景取的都是 agent.brain，
         // 不必让每个调用点各自判空一遍「大脑未唤醒」。
+        // 克隆一份 owned Brain：轮级环图节点是 'static，不能借用 params。
         let brain = agent
             .brain
             .as_ref()
-            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?;
+            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?
+            .clone();
 
         // 入口留痕（早于小脑路由）：「think loop entered」被小脑路由挡在后面，
         // 小脑那一步一旦挂住/降级，现场就只剩 brain woken → 再无下文。
@@ -374,28 +394,12 @@ impl RuntimeDomainImpl {
                     RouteDecision::Skip { .. } => {}
                 }
             }
-            // 提取模型提供商信息（所有轮次共用）
-            let (model_provider_id, model_name) = match brain.model_provider() {
-                Some(po) => (Some(po.id.clone()), Some(po.model_name.clone())),
-                None => (None, None),
-            };
+            // 提取模型提供商信息（入口日志用；事件发布由轮级节点自行取）
+            let model_provider_id = brain.model_provider().map(|po| po.id.clone());
             // 本次循环可用轮次 = max_rounds - start_round
             let available_rounds = max_rounds.saturating_sub(start_round);
             // 策略评估用的起始时间（用于 elapsed_secs）
             let loop_start = std::time::Instant::now();
-            // 累计 token 用量（用于策略评估 + 运行时快照上报）
-            let mut total_input_tokens: u64 = 0;
-            let mut total_output_tokens: u64 = 0;
-            let mut total_tool_calls: usize = 0;
-            // 无进展检测状态：按工具名累计调用次数（模型会换参数绕过指纹，按名字计数更鲁棒）
-            let mut tool_call_counts: std::collections::HashMap<String, usize> =
-                std::collections::HashMap::new();
-            // 连续工具调用轮计数 + 疲劳提示是否已注入（只注入一次）
-            let mut consecutive_tool_rounds: usize = 0;
-            let mut nudge_injected = false;
-            // LLM 连续失败计数（成功即清零；预算见 ConsecutiveLlmErrorsPolicy）
-            let mut llm_consecutive_errors: u64 = 0;
-            let scene_str = scene.as_str();
             // 入口留痕：这一行是「Agent 置忙但零进展」类故障的定位检查点。
             // 它缺失 ⇒ 冻结在上游（wake_brain / ThinkingOptions / 引擎启动）；
             // 它在而后续无日志 ⇒ 冻结在 LLM 调用本身。scene 字段区分
@@ -404,7 +408,7 @@ impl RuntimeDomainImpl {
                 &ctx,
                 "think_loop",
                 "think loop entered, scene={}, agent={}, max_rounds={}, start_round={}, available_rounds={}, provider={}",
-                scene_str,
+                scene.as_str(),
                 agent.po.id,
                 max_rounds,
                 start_round,
@@ -423,367 +427,33 @@ impl RuntimeDomainImpl {
                     max_rounds,
                     start_round,
                 );
+                return Ok(ThinkLoopResult::MaxRoundsExceeded {
+                    messages,
+                    total_rounds: max_rounds,
+                });
             }
-            for offset in 0..available_rounds {
-                // 循环开始前先检查 cancel_flag（避免无意义地调用 LLM）
-                if let Some(tr) = think_runtime
-                    && tr.is_cancelled()
-                {
-                    log_info!(
-                        &ctx,
-                        "think_loop",
-                        "cancel flag detected before round={}, exiting loop",
-                        start_round + offset
-                    );
-                    return Ok(ThinkLoopResult::Cancelled {
-                        messages,
-                        total_rounds: start_round + offset,
-                    });
-                }
 
-                let round = start_round + offset;
-                let round_start = std::time::Instant::now();
-                // LLM 调用 + 错误预算：失败不再直接传播，计入因子交由策略裁决——
-                // 预算内立即重试（无退避，YAGNI）；策略命中则传播错误，
-                // 下游 abort_summary 走无 LLM 兜底存档（异常总结路径）
-                let result = loop {
-                    match self
-                        .brain_dal()
-                        .think(ctx.clone(), brain, &messages, tool_descriptors)
-                        .await
-                    {
-                        Ok(r) => {
-                            llm_consecutive_errors = 0;
-                            break r;
-                        }
-                        Err(e) => {
-                            llm_consecutive_errors += 1;
-                            let metrics = round_metrics(
-                                round + 1,
-                                max_rounds,
-                                loop_start.elapsed().as_secs(),
-                                total_input_tokens.saturating_add(total_output_tokens),
-                                0,
-                                &tool_call_counts,
-                                llm_consecutive_errors,
-                            );
-                            if let Some(p) = policy
-                                && !p.evaluate(&metrics).is_empty()
-                            {
-                                log_info!(
-                                    &ctx,
-                                    "think_loop",
-                                    "llm error budget exhausted at round={}, propagating",
-                                    round + 1
-                                );
-                                return Err(e);
-                            }
-                            log_info!(
-                                &ctx,
-                                "think_loop",
-                                "llm call failed ({llm_consecutive_errors} consecutive), retrying"
-                            );
-                        }
-                    }
-                };
-                let round_duration_ms = round_start.elapsed().as_millis() as u64;
-
-                match result {
-                    ThinkResult::Final { content, usage, .. } => {
-                        // 累计 token 用量
-                        total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
-                        total_output_tokens =
-                            total_output_tokens.saturating_add(usage.output_tokens);
-                        // 上下文长度：本轮实际送进模型的 prompt token 数。
-                        // 纯内存指标（不入统计表），每轮覆盖，用于观察上下文思考强度。
-                        AgentRuntimeStateManager::global()
-                            .record_context_length(&agent.po.id, usage.input_tokens);
-                        // 上报最终轮运行时快照
-                        if let Some(tr) = think_runtime {
-                            tr.report_round(
-                                trace_id,
-                                scene,
-                                round + 1,
-                                max_rounds,
-                                total_input_tokens,
-                                total_output_tokens,
-                                total_input_tokens.saturating_add(total_output_tokens),
-                                total_tool_calls,
-                            );
-                            tr.finish();
-                        }
-                        // 发布 ThinkRoundEvent（无工具调用，最终轮）
-                        let _ = crate::pkg::aop::publish(
-                            &ctx,
-                            ThinkRoundEvent::new(
-                                &agent.po.id,
-                                trace_id,
-                                scene_str,
-                                round,
-                                round_duration_ms,
-                                false,
-                                0,
-                            )
-                            .with_model_usage(model_provider_id.clone(), model_name.clone(), &usage)
-                            .with_context(
-                                ctx.organization_id().cloned(),
-                                ctx.user_id().cloned(),
-                                ctx.task_id().cloned(),
-                                ctx.project_id().cloned(),
-                            ),
-                        )
-                        .await;
-                        // 统一评估点：Final 也经策略裁决（final_answer 命中 → 正常退出；
-                        // 若同轮取消/溢出等也命中，按声明顺序优先级分派）
-                        let metrics = round_metrics(
-                            round + 1,
-                            max_rounds,
-                            loop_start.elapsed().as_secs(),
-                            total_input_tokens.saturating_add(total_output_tokens),
-                            usage.input_tokens,
-                            &tool_call_counts,
-                            llm_consecutive_errors,
-                        )
-                        .with("output_kind", "final");
-                        if let Some(exit) = policy_exit(
-                            &ctx,
-                            policy,
-                            &metrics,
-                            &messages,
-                            round + 1,
-                            usage.input_tokens,
-                            Some(content.clone()),
-                        ) {
-                            return Ok(exit);
-                        }
-                        // fail-safe：自定义策略组未含 final_answer 时保持原行为
-                        return Ok(ThinkLoopResult::Final { content, messages });
-                    }
-                    ThinkResult::ToolCall {
-                        content,
-                        tool_calls,
-                        usage,
-                        reasoning_items,
-                    } => {
-                        let tc_count = tool_calls.len();
-                        total_tool_calls = total_tool_calls.saturating_add(tc_count);
-                        total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
-                        total_output_tokens =
-                            total_output_tokens.saturating_add(usage.output_tokens);
-                        // 上下文长度：本轮实际送进模型的 prompt token 数（同上，每轮覆盖）
-                        AgentRuntimeStateManager::global()
-                            .record_context_length(&agent.po.id, usage.input_tokens);
-                        consecutive_tool_rounds = consecutive_tool_rounds.saturating_add(1);
-                        // 按工具名累计调用次数（无进展检测数据源）
-                        for tc in &tool_calls {
-                            *tool_call_counts.entry(tc.name.clone()).or_insert(0) += 1;
-                        }
-                        // 进度快照：记录本轮起点与本轮模型输出，稍后据此截取本轮新增消息。
-                        // 必须在 push 之前取，push 会 move 掉 content / tool_calls。
-                        let round_start_idx = messages.len();
-                        let digest_assistant_text = content.clone();
-                        let mut round_tool_names: Vec<String> = Vec::with_capacity(tc_count);
-                        // Responses 协议：模型本轮产出的推理项必须**原样回传**给下一轮
-                        // （部分推理模型强制要求，否则 400）。顺序刻意排在助手消息之前，
-                        // 与 Responses 的 output 数组顺序（reasoning → message /
-                        // function_call）保持一致。Chat Completions 恒为空 Vec，零开销。
-                        //
-                        // 作用域限定单次 run_think_loop：messages 是本函数局部变量、
-                        // 零持久化，故跨轮次不会把密文泄漏给别的 provider。
-                        for item in reasoning_items {
-                            messages.push(ChatMessage::reasoning(item));
-                        }
-                        // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
-                        messages.push(ChatMessage::Assistant {
-                            content,
-                            tool_calls: Some(tool_calls.clone()),
-                        });
-                        // 按 control_mode 分发执行（D26 入口统一：Auto → call_tool
-                        // 协议路由（含凭据编排，Auto-MCP 亦可执行）；Manual →
-                        // dispatch_manual_tool 特殊工具转发）
-                        for tc in tool_calls {
-                            // 沉淀/压缩场景：拦截对 settle_memory 的递归调用。
-                            //
-                            // `settle_memory` 会直接触发一整套 sleep_and_settle，在沉淀或压缩
-                            // 循环里再调它属于自我递归（一次压缩可能放大成 N 次完整沉淀）。
-                            // 这里选择「运行时拦截」而非收窄工具白名单：工具仍对其他场景可见，
-                            // 且拦截时能即时给模型一句可理解的反馈，比静默过滤更容易让它改道。
-                            if is_recursive_settle_call(scene, &tc.name) {
-                                log_info!(
-                                    &ctx,
-                                    "think_loop",
-                                    "blocked recursive {} call in scene={}",
-                                    tc.name,
-                                    scene_str
-                                );
-                                messages.push(ChatMessage::tool(
-                                    tc.id,
-                                    "你当前已经在沉淀/压缩流程中，无需再调用 settle_memory —— \
-                                     重复调用会嵌套触发新的沉淀循环。\
-                                     请直接继续当前任务（写入短期记忆后输出 Final 文本结束）。"
-                                        .to_string(),
-                                ));
-                                continue;
-                            }
-                            // 进度快照统计的是「尝试过哪些工具」：执行失败与工具不存在
-                            // 同样要计入，它们对判断中断前的进展很关键。
-                            round_tool_names.push(tc.name.clone());
-                            // 回站匹配必须与出站（ToolDescriptor::from → to_wire_tool_name）
-                            // 同一函数：模型回传的是 wire name，不是 DB 显示名。
-                            // 对候选集逐个现算后比较，不依赖反推（sanitize 非单射）。
-                            match agent.tools().iter().find(|t| {
-                                common::llm_schema::to_wire_tool_name(&t.po.id) == tc.name
-                            }) {
-                                Some(tool) => {
-                                    let call_result = match tool.po.control_mode {
-                                        common::enums::tool::ControlMode::Auto => {
-                                            self.call_tool(ctx.clone(), tool, tc.arguments).await
-                                        }
-                                        common::enums::tool::ControlMode::Manual => {
-                                            self.dispatch_manual_tool(
-                                                ctx.clone(),
-                                                tool,
-                                                tc.arguments,
-                                            )
-                                            .await
-                                        }
-                                    };
-                                    match call_result {
-                                        Ok(result) => {
-                                            messages.push(ChatMessage::tool(
-                                                tc.id,
-                                                format!("{}", result.result),
-                                            ));
-                                        }
-                                        Err(e) => {
-                                            messages.push(ChatMessage::tool(
-                                                tc.id,
-                                                format!("Error: {}", e),
-                                            ));
-                                        }
-                                    }
-                                }
-                                None => {
-                                    messages.push(ChatMessage::tool(
-                                        tc.id,
-                                        format!("Error: tool {} not found", tc.name),
-                                    ));
-                                }
-                            }
-                        }
-
-                        // 记录本轮进度到快照。
-                        //
-                        // 位置刻意选在「工具执行完、策略评估前」：上下文溢出检测与策略
-                        // 命中（轮次耗尽 / token 预算 / 无进展）都会立即 return，
-                        // 放在这里才能保证每一轮已完成的工具调用都不漏记。
-                        //
-                        // 下一轮 `brain_dal().think()` 失败（429 限流等）时本轮已落袋，
-                        // 调用方才能凭快照生成兜底摘要。
-                        if let Some(progress) = progress {
-                            progress.record_round(RoundDigest {
-                                round: round + 1,
-                                assistant_text: digest_assistant_text,
-                                tool_names: round_tool_names,
-                                transcript: messages[round_start_idx..]
-                                    .iter()
-                                    .map(|m| m.to_summary_text(ROUND_DIGEST_MAX_CONTENT))
-                                    .collect(),
-                            });
-                        }
-
-                        // 发布 ThinkRoundEvent（有工具调用）
-                        let _ = crate::pkg::aop::publish(
-                            &ctx,
-                            ThinkRoundEvent::new(
-                                &agent.po.id,
-                                trace_id,
-                                scene_str,
-                                round,
-                                round_duration_ms,
-                                true,
-                                tc_count,
-                            )
-                            .with_model_usage(model_provider_id.clone(), model_name.clone(), &usage)
-                            .with_context(
-                                ctx.organization_id().cloned(),
-                                ctx.user_id().cloned(),
-                                ctx.task_id().cloned(),
-                                ctx.project_id().cloned(),
-                            ),
-                        )
-                        .await;
-
-                        // 疲劳提示：连续多轮只调工具不给最终回复时，注入 System 提醒给模型一次自纠机会
-                        // （只注入一次，避免 System 消息堆积）
-                        if consecutive_tool_rounds >= TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS
-                            && !nudge_injected
-                        {
-                            log_info!(
-                                &ctx,
-                                "think_loop",
-                                "no final response for {} consecutive tool rounds, injecting nudge",
-                                consecutive_tool_rounds
-                            );
-                            messages.push(ChatMessage::system(format!(
-                                "【系统提醒】你已经连续 {} 轮调用工具但尚未给出最终回复。请立即评估当前进度：\n\
-                                 1. 如果已有足够信息，直接输出最终文本回复用户，不要再调用任何工具；\n\
-                                 2. 如果任务确实无法完成（如检索始终无结果），直接向用户坦诚说明情况并停止；\n\
-                                 3. 不要再继续重复或无意义的工具调用。",
-                                consecutive_tool_rounds
-                            )));
-                            nudge_injected = true;
-                        }
-
-                        // 策略评估 + 运行时快照上报
-                        let total_tokens = total_input_tokens.saturating_add(total_output_tokens);
-                        let elapsed_secs = loop_start.elapsed().as_secs();
-
-                        // 上报运行时快照（每轮都更新，供前端实时查询）
-                        if let Some(tr) = think_runtime {
-                            tr.report_round(
-                                trace_id,
-                                scene,
-                                round + 1,
-                                max_rounds,
-                                total_input_tokens,
-                                total_output_tokens,
-                                total_tokens,
-                                total_tool_calls,
-                            );
-                        }
-
-                        // 统一评估点：任一策略命中即退出循环（含 ContextOverflowPolicy 收编
-                        // 原内联溢出检测；优先级 = build_policy_for_scene 声明顺序）
-                        let metrics = round_metrics(
-                            round + 1,
-                            max_rounds,
-                            elapsed_secs,
-                            total_tokens,
-                            usage.input_tokens,
-                            &tool_call_counts,
-                            llm_consecutive_errors,
-                        )
-                        .with("output_kind", "tool_calls");
-                        if let Some(exit) = policy_exit(
-                            &ctx,
-                            policy,
-                            &metrics,
-                            &messages,
-                            round + 1,
-                            usage.input_tokens,
-                            None,
-                        ) {
-                            return Ok(exit);
-                        }
-                    }
-                }
-            }
-            // 循环耗尽所有可用轮次，未得到 Final 回答
-            Ok(ThinkLoopResult::MaxRoundsExceeded {
-                messages,
-                total_rounds: max_rounds,
-            })
+            // 轮级环图：think → dispatch → evaluate，由引擎按节点信号驱动
+            think_round::run(
+                self.clone(),
+                RoundRun {
+                    ctx,
+                    agent,
+                    brain,
+                    scene,
+                    trace_id,
+                    messages,
+                    tool_descriptors,
+                    max_rounds,
+                    start_round,
+                    available_rounds,
+                    think_runtime,
+                    policy,
+                    progress,
+                    loop_start,
+                },
+            )
+            .await
         };
 
         // timeout_secs = 0 → 不限制；非 0 → 超时保护

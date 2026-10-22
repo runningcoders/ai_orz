@@ -165,7 +165,7 @@ impl ProgressSnapshot {
 /// ```rust,ignore
 /// let params = ThinkLoopParams::new(ctx, agent, scene, trace_id, initial_messages, &tools)
 ///     .with_rounds(max_rounds, start_round)
-///     .with_monitoring(&think_runtime, policy.as_ref());
+///     .with_monitoring(&think_runtime, &policy);
 /// let result = self.run_think_loop(params).await?;
 /// ```
 pub struct ThinkLoopParams<'a> {
@@ -191,14 +191,16 @@ pub struct ThinkLoopParams<'a> {
     /// 超时秒数，0 = 不限制
     pub timeout_secs: u64,
     /// 思考运行时快照上报点（None = 不上报，前端查不到进度）
-    pub think_runtime: Option<&'a Arc<AgentThinkRuntime>>,
+    ///
+    /// 持有所有权：轮级环图的节点是 `'static`，必须能脱离 `params` 借用存活。
+    pub think_runtime: Option<Arc<AgentThinkRuntime>>,
     /// 策略引擎接入点（None = 退化为旧行为，仅靠 max_rounds + timeout 控制）
-    pub policy: Option<&'a dyn crate::pkg::policy::Policy>,
+    pub policy: Option<Arc<dyn crate::pkg::policy::Policy>>,
     /// 进度快照收集点（None = 不记录）
     ///
     /// 传入后循环每轮会把「做了什么」写进快照。异常中断（`Err` / 超时）时
     /// 调用方靠它生成兜底总结 —— 这是目前唯一能在这两条路径上保留工作成果的手段。
-    pub progress: Option<&'a ThinkLoopProgress>,
+    pub progress: Option<ThinkLoopProgress>,
 }
 
 impl<'a> ThinkLoopParams<'a> {
@@ -244,11 +246,11 @@ impl<'a> ThinkLoopParams<'a> {
     /// 命中策略时也需要 runtime 上报最后一轮快照。
     pub fn with_monitoring(
         mut self,
-        think_runtime: &'a Arc<AgentThinkRuntime>,
-        policy: &'a dyn crate::pkg::policy::Policy,
+        think_runtime: &Arc<AgentThinkRuntime>,
+        policy: &Arc<dyn crate::pkg::policy::Policy>,
     ) -> Self {
-        self.think_runtime = Some(think_runtime);
-        self.policy = Some(policy);
+        self.think_runtime = Some(Arc::clone(think_runtime));
+        self.policy = Some(Arc::clone(policy));
         self
     }
 
@@ -256,8 +258,8 @@ impl<'a> ThinkLoopParams<'a> {
     ///
     /// 需要「异常中断也能留存工作成果」的调用方（目前是 awaken）应传入。
     /// 压缩 / 沉淀 / 意图识别这类内部小循环不传 —— 它们的产出本就只供内部使用。
-    pub fn with_progress(mut self, progress: &'a ThinkLoopProgress) -> Self {
-        self.progress = Some(progress);
+    pub fn with_progress(mut self, progress: &ThinkLoopProgress) -> Self {
+        self.progress = Some(progress.clone());
         self
     }
 }

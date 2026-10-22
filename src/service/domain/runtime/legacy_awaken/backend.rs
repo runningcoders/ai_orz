@@ -80,7 +80,7 @@ impl ThinkBackend for LegacyBackend {
                     &input.tools,
                 )
                 .with_rounds(input.max_rounds, input.total_rounds)
-                .with_monitoring(&deps.think_runtime, deps.policy.as_ref())
+                .with_monitoring(&deps.think_runtime, &deps.policy)
                 .with_progress(&deps.progress),
             )
             .await;

@@ -30,7 +30,7 @@ pub(crate) struct PendingBatch {
     /// 本批记忆 id（仅 `Final` 才标记 Settled）
     pub ids: Vec<String>,
     pub think_runtime: Arc<AgentThinkRuntime>,
-    pub policy: Box<dyn Policy>,
+    pub policy: Arc<dyn Policy>,
 }
 
 impl std::fmt::Debug for PendingBatch {

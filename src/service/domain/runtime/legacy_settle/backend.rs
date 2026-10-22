@@ -71,7 +71,7 @@ impl SettleBackend for LegacySettleBackend {
                     &input.tools,
                 )
                 .with_rounds(input.max_rounds, 0)
-                .with_monitoring(&batch.think_runtime, batch.policy.as_ref()),
+                .with_monitoring(&batch.think_runtime, &batch.policy),
             )
             .await;
 

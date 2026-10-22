@@ -63,7 +63,7 @@ pub(crate) struct AwakenDeps {
     pub options: Arc<ThinkingOptions>,
     pub trace_id: String,
     pub think_runtime: Arc<AgentThinkRuntime>,
-    pub policy: Box<dyn Policy>,
+    pub policy: Arc<dyn Policy>,
     pub progress: ThinkLoopProgress,
     pub trace: Mutex<MemoryTrace>,
     pub compaction: Mutex<CompactionSlot>,

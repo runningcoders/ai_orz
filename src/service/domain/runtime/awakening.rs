@@ -47,7 +47,7 @@ pub(super) fn init_think_runtime_and_policy(
     agent: &Agent,
     scene: ThinkingScene,
     trace_id: &str,
-) -> (Arc<AgentThinkRuntime>, Box<dyn crate::pkg::policy::Policy>) {
+) -> (Arc<AgentThinkRuntime>, Arc<dyn crate::pkg::policy::Policy>) {
     let think_runtime = Arc::new(AgentThinkRuntime::new(
         agent.po.id.clone(),
         trace_id.to_string(),
