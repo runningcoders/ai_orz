@@ -2,9 +2,10 @@
 //!
 //! 本文件只保留 `RuntimeAwakening` trait 的四大入口方法：
 //! - `wake_agent_brain`：装配 Brain
-//! - `awaken`：唤醒并执行思考（Phase 1 意图分析 + Phase 2 正式执行）
+//! - `awaken`：唤醒并跑完一次思考生命周期（**主体已迁到 `legacy_awaken` 图编排**，
+//!   这里只做入参/返回值转换，见方法注释）
 //! - `sleep_and_settle`：沉睡沉淀记忆
-//! - `analyze_input_intent`：意图分析（Phase 1，stats 包裹 + 委托 inner）
+//! - `analyze_input_intent`：意图分析（stats 包裹 + 委托 inner）
 //!
 //! 共享类型在 `types.rs`，think loop 引擎在 `think_loop.rs`，
 //! 意图分析核心 + JSON 解析在 `intent_analyze.rs`，总结退出在 `summary.rs`。
@@ -12,7 +13,7 @@
 use super::types::ThinkLoopParams;
 use crate::enrich_ctx;
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ChatMessage, ImagePart, ToolDescriptor};
+use crate::models::cortex_types::{ImagePart, ToolDescriptor};
 use crate::models::events::AgentLoopEvent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
@@ -22,11 +23,6 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::record_event;
 use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
-use crate::service::domain::runtime::abort_summary::{
-    AbortFinalizeParams, AbortKind, attach_abort_notice,
-};
-use crate::service::domain::runtime::compaction::{CompactOutcome, strip_summary_block};
-use crate::service::domain::runtime::types::ThinkLoopProgress;
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
@@ -428,6 +424,15 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         Ok(ctx)
     }
 
+    /// 唤醒 Agent：一次完整思考生命周期的执行入口
+    ///
+    /// ⚠️ 主体在 [`legacy_awaken`] 图编排里 —— 忙碌状态 / Trace / 压缩回环 /
+    /// 统计上报 / 异常兜底都在那儿。这里只剩三件事：
+    ///   1. 预生成 `MemoryTrace` 拿到 trace_id（压缩 / 总结 / 兜底存档的
+    ///      trace_ids 依赖列表都以它为锚点，编排内部不再自己造）；
+    ///   2. 把 trait 的借用视角（`&self` / `&Agent` / `&Message`）转成图需要的
+    ///      所有权 —— 节点是 `'static` 的 trait object，拿不到借用；
+    ///   3. 把执行摘要回填成 [`AwakeningResult`]。
     async fn awaken(
         &self,
         ctx: RequestContext,
@@ -435,650 +440,58 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         message: &Message,
         options: &ThinkingOptions,
     ) -> Result<AwakeningResult> {
-        let start_time = std::time::SystemTime::now();
-
-        // 设置 Agent 为忙碌状态
-        // 使用 RAII guard 确保 set_idle 一定被执行
-        // 修复：之前 set_busy 与 set_idle 之间多处 ? 提早返回（get_recent_context、
-        // brain 缺失等）会导致 Agent 永远 Busy，后续消息被 is_unavailable 挡住
-        AgentRuntimeStateManager::global().set_busy(
-            &agent.po.id,
-            &message.po.id,
-            message.po.task_id.as_deref(),
-            message.po.project_id.as_deref(),
-        );
-        let _busy_guard =
-            crate::service::domain::runtime::busy_guard::BusyGuard::new(agent.po.id.clone());
+        use common::enums::MemoryRole;
 
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
 
-        // Step 1: 预先构造 MemoryTrace 拿到 trace_id
-        // 调用方负责组装 trace，RuntimeMemory 负责写入和补全信息
-        use common::enums::MemoryRole;
-        let mut trace = MemoryTrace::new(
+        // 预先构造 MemoryTrace 拿到 trace_id（input / output 由收尾节点回填）
+        let trace = MemoryTrace::new(
             agent.po.id.clone(),
             ctx.log_id.clone(),
             ctx.uid(),
             ctx.organization_id.clone().unwrap_or_default(),
             MemoryRole::System,
-            String::new(), // input 后续填充
+            String::new(),
             ctx.task_id().cloned(),
         );
-        let trace_id = trace.id.clone();
 
-        // 创建思考运行时（与 Busy 状态绑定，BusyGuard Drop 时自动清理）
-        // 整个 awaken 流程（含 ContextOverflow 重试）共享同一个 think_runtime
-        let (think_runtime, policy) =
-            init_think_runtime_and_policy(agent, ThinkingScene::Awaken, &trace_id);
-
-        // Step 2: 发布循环启动事件（AOP 同步转发）
-        let _ = crate::pkg::aop::publish(
-            &ctx,
-            AgentLoopEvent::started(&agent.po.id, &trace_id, "awaken", Some(&message.po.id)),
-        )
-        .await;
-
-        // Step 2.5: 工具已由 hr_domain.get_agent(with_tools=true) 加载到 agent.tools
-        // 工具列表通过 OpenAI tools API 协议层传递（ToolDescriptor），不注入 Prompt
-
-        // Step 2.6: 技能已由 hr_domain.get_agent(with_skills=true) 加载到 agent.skills
-        // 技能只在 Agent 已安装的副本范围内（author_id = agent_id，排除 Expired）
-        // 已安装副本全部进 Prompt（装了就进，无 tag 匹配）；未安装的 Published 技能不展示，
-        // 由 Agent 通过 search_skill 神经工具发现 + install_skill_to_agent 安装后才会出现
-        let skill_pos: Vec<crate::models::skill::SkillPo> =
-            agent.skills().iter().map(|s| s.po.clone()).collect();
-
-        // Step 2.7: 消息链上下文（当前消息属于某条消息链时，拉取链头 + 最近几条）
-        // 拉取一次、跨压缩轮次复用（链内容在本次唤醒期间不变）；失败降级为空，不阻塞唤醒
-        let message_thread_items = match fetch_message_thread(&ctx, message).await {
-            Ok(items) => items,
-            Err(e) => {
-                crate::log_warn!(
-                    &ctx,
-                    "awaken",
-                    "fetch message thread failed (message_id={}): {:?}",
-                    message.po.id,
-                    e
-                );
-                Vec::new()
-            }
+        let input = super::legacy_awaken::context::AwakenInput {
+            // 节点要调 impl 级方法（`run_think_loop` / `query_past_memories`），
+            // 必须拿到具体类型；trait 只给了 `&self`，而字段全是 Arc，克隆一份即可。
+            //
+            // ⚠️ 不能退化成取全局单例：`awaken` 跑的必须是**调用方手上那个实例**
+            // 的依赖，否则测试注入的 stub DAL 会被单例顶掉。
+            domain: Arc::new(self.clone()),
+            ctx: ctx.clone(),
+            agent: agent.clone(),
+            message: message.clone(),
+            options: options.clone(),
+            trace,
+            shadow: false, // 非影子：该落库落库、该发事件发事件
         };
-
-        // 上一轮上下文压缩的产物。
-        //
-        // Some 时下一轮**不再查询历史记忆** —— 需要回顾的内容都在这份摘要里了，
-        // 再查一遍既浪费预算又会与摘要重复（详见 compaction 模块说明）。
-        // 若需要更早期的记忆，Agent 可用 search_memory 自行检索。
-        let mut compacted_context: Option<String> = None;
-        // 刚落库那条压缩记忆的 id：组装「更早的记忆」参考块时要排除它，
-        // 否则它的内容会在【上一轮工作压缩结果】和参考块里各出现一次。
-        let mut compacted_memory_id: Option<String> = None;
-
-        // Step 3: 调用大脑思考（带工具调用循环 + 上下文压缩）
-        // 统一走 BrainDal.think() 入口，方便审计、统计、监控
-        // brain 由 run_think_loop 内部从 agent.brain 解析（四个场景一致）
-
-        // 构建 ToolDescriptor 列表（从 agent.tools 直接派生，供模型 function calling）
-        let tool_descriptors: Vec<ToolDescriptor> =
-            agent.tools().iter().map(ToolDescriptor::from).collect();
-
-        // 上下文压缩循环：当 think loop 返回 ContextOverflow 时，
-        // 执行 sleep_and_settle 沉淀当前对话，然后重建 prompt 重新开始工作循环。
-        // 轮次限制由 max_rounds 控制（跨压缩累计），超过则进入总结退出流程。
-        let max_rounds = options.effective_max_rounds();
-        let mut total_rounds: usize = 0;
-
-        // 跟踪自上次压缩以来产生的 trace_id 列表（用于总结流程写入短期记忆）
-        // 初始化为 awaken 自身的 trace_id（预生成，Step 6 才写入完整内容）
-        let mut pending_trace_ids: Vec<String> = vec![trace_id.clone()];
-
-        // 循环进度快照：异常中断（Err / 超时）时唯一能拿到的「做了什么」。
-        //
-        // 它必须由调用方持有 —— `messages` 是 run_think_loop 的内部变量，
-        // `?` 传播（429 等）会 drop 它，超时时整个 future 连同它一起消失。
-        // 压缩成功后重置：那之前的工作已由 compress 归档，兜底只需覆盖压缩之后的进度。
-        let progress = ThinkLoopProgress::new();
-
-        let mut prompt;
-        let raw_output;
-        // 正常完成时保存对话历史，用于触发总结流程写入短期记忆
-        let mut final_messages: Option<Vec<ChatMessage>> = None;
-
-        // =============== 移除强制两阶段唤醒（Phase 1）===============
-        // 原 Phase 1 IntentAnalyze 有三个硬伤：
-        //   1) 每条消息多花 1~3 轮模型调用，简单问候也付出 2x 首字延迟/token 成本；
-        //   2) skip_memory_fetch = ia.is_some() 导致主循环首轮【历史对话】为空，
-        //      多轮指代消解（这/那/上次/那个）直接失败；
-        //   3) 唯一的潜在收益"澄清短路"只是 P4 TODO，从未启用；
-        //      保留的【输入理解结果】区块还反复写了"仅供参考，可以忽略"。
-        // 移除后，单 think_loop + System 角色的回复指引直接承担全部职责，
-        // 流程与成本模型恢复直观。`analyze_input_intent` 接口仍保留在 trait，
-        // 可在入站消息路由、跨 Agent 协作分发等需要结构化理解的场景独立复用。
-        // =============== Phase 1 移除结束 ===============
-
-        loop {
-            // 上下文来源二选一：
-            // - 刚做过压缩 → 直接用压缩结果，不再查历史记忆（避免与摘要重复占用预算）；
-            //   同时补少量「更早的记忆」作为连续性线索
-            // - 否则 → 取最近 20 条短期记忆，保证指代消解始终有上下文
-            let recent_memories: Vec<_> = match &compacted_context {
-                Some(_) => Vec::new(),
-                None => {
-                    self.memory()
-                        .get_recent_context(ctx.clone(), &agent.po.id, 20)
-                        .await?
-                }
-            };
-            let past_memories: Vec<String> = match &compacted_context {
-                Some(_) => {
-                    self.query_past_memories(
-                        ctx.clone(),
-                        &agent.po.id,
-                        compacted_memory_id.as_deref(),
-                    )
-                    .await
-                }
-                None => Vec::new(),
-            };
-
-            // 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
-            let mut builder = self.prompt_builder(agent);
-            builder.current_trace_id(&trace_id);
-            builder.system_prompt(agent);
-            builder.skills(&skill_pos);
-            let base = crate::config::get().base_data_path();
-            let uid = ctx.uid();
-            let uid_ref = if uid.is_empty() {
-                None
-            } else {
-                Some(uid.as_str())
-            };
-            let default_workspace = paths::default_workspace(&base, uid_ref, Some(&agent.po.id))
-                .to_string_lossy()
-                .to_string();
-            let user_home = if uid.is_empty() {
-                paths::users_root_dir(&base).to_string_lossy().to_string()
-            } else {
-                paths::user_home(&base, &uid).to_string_lossy().to_string()
-            };
-            let user_shared_workspace = if uid.is_empty() {
-                default_workspace.clone()
-            } else {
-                paths::user_shared_workspace(&base, &uid)
-                    .to_string_lossy()
-                    .to_string()
-            };
-            let user_agent_workspace = if uid.is_empty() {
-                None
-            } else {
-                Some(
-                    paths::user_agent_workspace(&base, &uid, &agent.po.id)
-                        .to_string_lossy()
-                        .to_string(),
-                )
-            };
-            let agent_workspace = Some(
-                paths::agent_workspace(&base, &agent.po.id)
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            let project_workspace =
-                if let (Some(project), true) = (&options.project, !uid.is_empty()) {
-                    Some(
-                        paths::user_project_workspace(&base, &uid, &project.po.id)
-                            .to_string_lossy()
-                            .to_string(),
-                    )
-                } else {
-                    None
-                };
-            builder.workspace_context(
-                default_workspace,
-                user_home,
-                user_shared_workspace,
-                user_agent_workspace,
-                agent_workspace,
-                project_workspace,
-            );
-            if let Some(project) = &options.project {
-                builder.project_context(project);
-            }
-            if let Some(task) = &options.task {
-                builder.task_context(task);
-            }
-            if let Some(user) = &options.user_profile {
-                builder.user_profile(user);
-            }
-            // 本体词表（design §5.4）：记忆图谱用词约定，三场景共用挂载点
-            mount_ontology_lexicon(&ctx, builder.as_mut()).await;
-            builder.history(&recent_memories);
-            // 压缩产物直接注入：告诉模型「这是你上一轮工作的压缩结果」，
-            // 无需再回顾历史记忆；需要更早的记忆时用 search_memory 检索。
-            if let Some(summary) = &compacted_context {
-                builder.compacted_context(summary);
-            }
-            if !past_memories.is_empty() {
-                builder.past_memories_reference(&past_memories);
-            }
-            // 批4：当前消息资源预解析（仅 from_role=User）——文本详情与图像 parts
-            // 同一次 DAL 查询双产出；【资源上下文】行与 vision parts 均须在
-            // builder.current_message 渲染前注入。历史通道（message_thread）零注入。
-            let (resource_lines, vision_parts) =
-                resolve_current_message_resources(&ctx, message).await;
-            if !resource_lines.is_empty() {
-                builder.set_resource_context_lines(resource_lines);
-            }
-            if !vision_parts.is_empty() {
-                builder.set_current_message_vision(vision_parts);
-            }
-            builder.current_message(message);
-            builder.message_thread(&message_thread_items);
-            prompt = builder.build();
-            // P0-b：用 System + User 双角色分离的初始消息（而非整段塞进一条 User），
-            // 配合 P0-a 的回复规则指引，让模型正确决定何时 Final 何时 ToolCall。
-            // `prompt` 仍保留用于 trace/stat 原始输入记录（raw_input 字段）。
-            let initial_messages = builder.build_initial_messages();
-
-            // 调用共享 think loop（传入累计轮次和上限）
-            // 注意：每次循环都重新设置 think_runtime，因为 sleep_and_settle 的 BusyGuard
-            // Drop 会清理 think_runtime（set_resting → set_idle 链路）
-            AgentRuntimeStateManager::global()
-                .set_think_runtime(&agent.po.id, think_runtime.clone());
-            let think_result = self
-                .run_think_loop(
-                    ThinkLoopParams::new(
-                        ctx.clone(),
-                        agent,
-                        ThinkingScene::Awaken,
-                        &trace_id,
-                        initial_messages,
-                        &tool_descriptors,
-                    )
-                    .with_rounds(max_rounds, total_rounds)
-                    .with_monitoring(&think_runtime, policy.as_ref())
-                    .with_progress(&progress),
-                )
-                .await;
-
-            match think_result {
-                Ok(ThinkLoopResult::Final { content, messages }) => {
-                    raw_output = content;
-                    final_messages = Some(messages);
-                    break;
-                }
-                Ok(ThinkLoopResult::ContextOverflow {
-                    messages,
-                    input_tokens,
-                    rounds_used,
-                }) => {
-                    total_rounds += rounds_used;
-
-                    log_info!(
-                        &ctx,
-                        "awaken",
-                        "context overflow (total_rounds={}, tokens={}), triggering compaction",
-                        total_rounds,
-                        input_tokens
-                    );
-
-                    // 上下文压缩：复用主循环完整上下文，尾部追加压缩指令。
-                    //
-                    // 不重建 Prompt 而选择「追加」的原因：追加前的前缀与上一次模型调用
-                    // 逐字节一致，可命中 provider 侧 prefix caching；同时模型看到的是
-                    // 完整原始对话，而非被按条截断过的二手摘要。
-                    //
-                    // 与 sleep_and_settle 的关键差异：**不操作 Agent 运行时状态**。
-                    // 压缩发生在 awaken 主循环内部，Agent 必须保持 Busy —— 若走
-                    // sleep_and_settle 会被切成 Resting 再掉成 Idle，导致主循环仍在
-                    // 思考时 `is_unavailable()` 返回 false，新消息可并发唤醒同一 Agent。
-                    match self
-                        .compact_context(
-                            ctx.clone(),
-                            &messages,
-                            agent,
-                            &trace_id,
-                            &pending_trace_ids,
-                            false,
-                        )
-                        .await
-                    {
-                        Ok(outcome) => {
-                            // 压缩成功：重置待沉淀范围，下次压缩/总结的边界 = 自本次压缩起
-                            pending_trace_ids = vec![trace_id.clone()];
-                            // 压缩前的轮次已归档，兜底快照同步重置，只覆盖之后的进度
-                            progress.reset();
-                            // 压缩结果直接交给下一轮，不再重新查询历史记忆
-                            compacted_context = outcome.compacted_summary;
-                            compacted_memory_id = outcome.compacted_memory_id;
-                        }
-                        Err(e) => {
-                            log_warn!(
-                                &ctx,
-                                "awaken",
-                                "compaction failed: {:?}, continuing with retry",
-                                e
-                            );
-                        }
-                    }
-                    // 压缩完成后循环继续：下一轮用【上一轮工作压缩结果】重建 prompt
-                    continue;
-                }
-                Ok(ThinkLoopResult::MaxRoundsExceeded {
-                    messages,
-                    total_rounds: rounds,
-                }) => {
-                    total_rounds = rounds;
-
-                    log_info!(
-                        &ctx,
-                        "awaken",
-                        "max rounds exceeded (total={}), entering compaction exit flow",
-                        total_rounds
-                    );
-
-                    // 轮次耗尽 → 走压缩流程。压缩本身就是一次完整总结，
-                    // 无需再跑一遍 awaken_for_summary：既省一次模型调用，
-                    // 也避免同一段对话被两套提示词重复总结。
-                    //
-                    // with_user_reply = true：压缩产出会作为 raw_output 发给用户，
-                    // 指令里要求模型最后用一句话说明进展与停止原因。
-                    let mut compact_trace_ids = pending_trace_ids.clone();
-                    if compact_trace_ids.last() != Some(&trace_id) {
-                        compact_trace_ids.push(trace_id.clone());
-                    }
-                    let compact_outcome = self
-                        .compact_context(
-                            ctx.clone(),
-                            &messages,
-                            agent,
-                            &trace_id,
-                            &compact_trace_ids,
-                            true,
-                        )
-                        .await
-                        .unwrap_or_else(|e| {
-                            log_warn!(&ctx, "awaken", "compaction exit failed: {:?}", e);
-                            CompactOutcome {
-                                final_text: String::new(),
-                                compacted_summary: None,
-                                compacted_memory_id: None,
-                            }
-                        });
-
-                    // 用 Final 文本作为 raw_output（会发送给用户）。
-                    // 摘要在 <compacted_summary> 标记内，属内部产物，发给用户前剥掉。
-                    let user_text = strip_summary_block(&compact_outcome.final_text);
-                    raw_output = if user_text.is_empty() {
-                        "任务因思考轮次耗尽而终止，已执行上下文压缩退出流程。".to_string()
-                    } else {
-                        user_text
-                    };
-                    break;
-                }
-                Ok(ThinkLoopResult::Cancelled {
-                    total_rounds: rounds,
-                    ..
-                }) => {
-                    // 用户取消：直接返回，不触发总结流程
-                    log_info!(
-                        &ctx,
-                        "awaken",
-                        "agent thinking cancelled by user, rounds={}",
-                        rounds
-                    );
-
-                    // 取消也走兜底存档：用户取消不代表做过的工作没价值 ——
-                    // 已经调用过的工具、查到的事实，下次接着做时仍然有用。
-                    let abort_outcome = self
-                        .finalize_abort(AbortFinalizeParams {
-                            ctx: ctx.clone(),
-                            agent,
-                            trace: trace.clone(),
-                            prompt: &prompt,
-                            user_message: &message.po.content,
-                            message_id: &message.po.id,
-                            progress: &progress,
-                            total_rounds: total_rounds.saturating_add(rounds),
-                            trace_ids: &pending_trace_ids,
-                            kind: AbortKind::Cancelled,
-                            error: None,
-                        })
-                        .await;
-                    log_info!(
-                        &ctx,
-                        "awaken",
-                        "cancelled abort-summary persisted: memory_id={:?}",
-                        abort_outcome.memory_id
-                    );
-
-                    let duration_ms = start_time
-                        .elapsed()
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-                    if let Err(stats_err) = record_event!(
-                        ctx,
-                        AgentAwakeEvent {
-                            agent_id: agent.po.id.clone(),
-                            project_id: ctx.project_id().cloned(),
-                            task_id: ctx.task_id().cloned(),
-                            organization_id: ctx.organization_id.clone(),
-                            user_id: Some(ctx.uid()),
-                            message_id: Some(message.po.id.clone()),
-                            call_count: 1,
-                            duration_ms: duration_ms,
-                            status: "cancelled".to_string(),
-                            exit_reason: "cancelled".to_string(),
-                        }
-                    ) {
-                        log_warn!(
-                            &ctx,
-                            "awaken",
-                            "record_event failed on cancel path: {:?}",
-                            stats_err
-                        );
-                    }
-                    let _ = crate::pkg::aop::publish(
-                        &ctx,
-                        AgentLoopEvent::finished(
-                            &agent.po.id,
-                            &trace_id,
-                            "awaken",
-                            "cancelled",
-                            duration_ms,
-                            Some(&message.po.id),
-                        ),
-                    )
-                    .await;
-                    return Ok(AwakeningResult {
-                        agent_id: agent.po.id.clone(),
-                        trace_ids: vec![trace_id.clone()],
-                        raw_input: prompt.clone(),
-                        raw_output: String::new(),
-                    });
-                }
-                Err(e) => {
-                    // think loop 执行失败
-                    //
-                    // 兜底总结：这条路径上 `messages` 已经随 `?` 传播被 drop（超时时
-                    // 连同 future 一起消失），能留下来的只有调用方持有的进度快照。
-                    // 更关键的是，429 / 5xx 这类错误意味着模型此刻不可用 ——
-                    // 再发起一次 compact_context 必然二次失败，所以这里只能走
-                    // 不依赖 LLM 的规则化存档（`abort_summary` 模块）。
-                    let abort_outcome = self
-                        .finalize_abort(AbortFinalizeParams {
-                            ctx: ctx.clone(),
-                            agent,
-                            trace: trace.clone(),
-                            prompt: &prompt,
-                            user_message: &message.po.content,
-                            message_id: &message.po.id,
-                            progress: &progress,
-                            total_rounds,
-                            trace_ids: &pending_trace_ids,
-                            kind: AbortKind::Error,
-                            error: Some(&e),
-                        })
-                        .await;
-
-                    let duration_ms = start_time
-                        .elapsed()
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-                    // 上报结构化「错误类型:错误码」，具体原因截取一段作为辅助信息，
-                    // 避免把完整动态错误文本塞进 metric 造成聚合碎片化。
-                    let status_code = format!("{:?}:{}", e.error_type, e.code());
-                    let reason = truncate_reason(&e.msg, AGENT_AWAKE_REASON_LIMIT);
-                    if let Err(stats_err) = record_event!(
-                        ctx,
-                        AgentAwakeEvent {
-                            agent_id: agent.po.id.clone(),
-                            project_id: ctx.project_id().cloned(),
-                            task_id: ctx.task_id().cloned(),
-                            organization_id: ctx.organization_id.clone(),
-                            user_id: Some(ctx.uid()),
-                            message_id: Some(message.po.id.clone()),
-                            call_count: 1,
-                            duration_ms: duration_ms,
-                            status: status_code,
-                            exit_reason: reason,
-                        }
-                    ) {
-                        log_warn!(
-                            &ctx,
-                            "awaken",
-                            "record_event failed on error path, stats may be incomplete: {:?}",
-                            stats_err
-                        );
-                    }
-                    let _ = crate::pkg::aop::publish(
-                        &ctx,
-                        AgentLoopEvent::finished(
-                            &agent.po.id,
-                            &trace_id,
-                            "awaken",
-                            &format!("failed: {}", e),
-                            duration_ms,
-                            Some(&message.po.id),
-                        ),
-                    )
-                    .await;
-                    // 错误语义不变（是否重试仍由消费者按 is_model_error 决定），
-                    // 只把进度概览挂在错误上，供失败通知告知用户「工作没白做」。
-                    return Err(attach_abort_notice(e, abort_outcome.brief));
-                }
-            }
-        }
-
-        // Step 5: 回填 input 和 output，一次性写入完整 Trace
-        trace.input = prompt.clone();
-        trace.complete(raw_output.clone());
-
-        // 补充运行时元数据，便于 trace 检索与场景区分
-        let exit_reason = if final_messages.is_some() {
-            "Final"
-        } else {
-            "MaxRoundsExceeded"
-        };
-        trace.metadata.insert("scene".into(), "awaken".into());
-        trace
-            .metadata
-            .insert("message_id".into(), message.po.id.clone());
-        trace
-            .metadata
-            .insert("exit_reason".into(), exit_reason.into());
-        trace
-            .metadata
-            .insert("rounds_used".into(), total_rounds.to_string());
-        if let Some(task_id) = ctx.task_id() {
-            trace.metadata.insert("task_id".into(), task_id.clone());
-        }
-        if let Some(project_id) = ctx.project_id() {
-            trace
-                .metadata
-                .insert("project_id".into(), project_id.clone());
-        }
-
-        // Step 6: 通过 RuntimeMemory 子模块写入
-        // 架构：awakening → RuntimeMemory → MemoryDal → MemoryDao
-        self.memory()
-            .write_thinking_trace(ctx.clone(), trace)
-            .await?;
-
-        // Step 6.5: 正常完成时压缩本次对话，写入短期记忆
-        // 仅在 Final 分支（正常完成）时触发，MaxRoundsExceeded 已在循环内执行过压缩
-        // 目的：将本次工作对话压缩为一条短期记忆，trace_ids 记录依赖的 trace 列表
-        if let Some(messages) = final_messages {
-            let _ = self
-                .compact_context(
-                    ctx.clone(),
-                    &messages,
-                    agent,
-                    &trace_id,
-                    &pending_trace_ids,
-                    false,
-                )
-                .await
-                .map_err(|e| {
-                    log_warn!(
-                        &ctx,
-                        "awaken",
-                        "post-completion compaction failed: {:?}, continuing (non-fatal)",
-                        e
-                    );
-                });
-            // 压缩失败不影响业务返回（awaken 已成功），仅记录警告
-        }
-
-        // Step 7: 记录 Agent 唤醒统计事件
-        // 统计写入失败不应阻塞业务返回（awaken 已成功），仅记录警告
-        let duration_ms = start_time
-            .elapsed()
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        if let Err(stats_err) = record_event!(
-            ctx,
-            AgentAwakeEvent {
-                agent_id: agent.po.id.clone(),
-                project_id: ctx.project_id().cloned(),
-                task_id: ctx.task_id().cloned(),
-                organization_id: ctx.organization_id.clone(),
-                user_id: Some(ctx.uid()),
-                message_id: Some(message.po.id.clone()),
-                call_count: 1,
-                duration_ms: duration_ms,
-                status: "success".to_string(),
-                exit_reason: exit_reason.to_lowercase(),
-            }
-        ) {
-            log_warn!(
-                &ctx,
-                "awaken",
-                "record_event failed on success path, stats may be incomplete: {:?}",
-                stats_err
-            );
-        }
-
-        // 发布循环完成事件（成功）
-        let _ = crate::pkg::aop::publish(
-            &ctx,
-            AgentLoopEvent::finished(
-                &agent.po.id,
-                &trace_id,
-                "awaken",
-                "success",
-                duration_ms,
-                Some(&message.po.id),
-            ),
+        let outcome = super::legacy_awaken::runner::run_legacy_awaken(
+            super::legacy_awaken::context::build_deps(input),
         )
-        .await;
+        .await?;
 
-        // Step 8: 返回结果
+        // 路径指纹：排查「这次为什么走到这条分支」成本最低的线索。
+        // 一次唤醒可能经历 prepare#1>deliberate#1>compact#1>prepare#2>…，
+        // 单看 exit_reason 看不出回环走了几次。
+        crate::log_info!(
+            &ctx,
+            "awaken",
+            "think path finished: {} steps={} exit={}",
+            outcome.fingerprint,
+            outcome.steps,
+            outcome.exit
+        );
+
         Ok(AwakeningResult {
-            agent_id: agent.po.id.clone(),
-            trace_ids: vec![trace_id],
-            raw_input: prompt,
-            raw_output,
+            agent_id: outcome.agent_id,
+            trace_ids: outcome.trace_ids,
+            raw_input: outcome.raw_input,
+            raw_output: outcome.raw_output,
         })
     }
 

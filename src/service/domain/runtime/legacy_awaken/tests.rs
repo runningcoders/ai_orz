@@ -4,9 +4,10 @@
 //! 全部藏在 `match think_result` 的分支里，漏一个分支就是静默丢路径；
 //! 现在是显式的边，可以被断言。
 
-use super::blueprint::legacy_awaken_blueprint;
+use super::blueprint::{MAX_LOOP_ROUNDS, legacy_awaken_blueprint};
 use super::nodes::{EXIT_MAX_ROUNDS, map_think_result, sample_results};
 use crate::pkg::think_path::ThinkPathBlueprint;
+use crate::service::domain::runtime::types::ThinkLoopResult;
 
 fn blueprint() -> ThinkPathBlueprint {
     legacy_awaken_blueprint().expect("legacy_awaken blueprint")
@@ -60,10 +61,15 @@ fn loop_nodes_budget_is_explicitly_loosened() {
             .find(|n| n.id == id)
             .and_then(|n| n.budget.max_activations)
     };
-    // 回环上的两个节点必须允许多次出现；其余默认一次
-    assert_eq!(budget_of("prepare"), Some(4));
-    assert_eq!(budget_of("deliberate"), Some(4));
-    assert_eq!(budget_of("compact"), Some(3));
+    // 回环上的节点必须允许多次出现；其余默认一次。
+    // ⚠️ 断言的是常量本身而不是抄下来的字面量 —— 抄一份数字到这里就是第三份真相：
+    // 改了蓝图而这里没改，测试照样绿，运行时却在别处静默停车。
+    assert_eq!(budget_of("prepare"), Some(MAX_LOOP_ROUNDS));
+    assert_eq!(budget_of("deliberate"), Some(MAX_LOOP_ROUNDS));
+    assert_eq!(
+        budget_of("compact"),
+        Some(MAX_LOOP_ROUNDS.saturating_sub(1))
+    );
     assert_eq!(budget_of("consolidate"), Some(1));
 }
 
@@ -78,7 +84,7 @@ fn every_deliberate_exit_signal_has_an_edge() {
     let bp = blueprint();
     let outs = edges_from(&bp, "deliberate");
     for result in sample_results(2) {
-        let mapped = map_think_result(result, 2, 10);
+        let mapped = map_think_result(result, 2);
         let tag = mapped.signal.tag().to_string();
         assert!(
             outs.iter()
@@ -97,7 +103,7 @@ fn every_deliberate_edge_signal_is_reachable() {
     let bp = blueprint();
     let produced: Vec<String> = sample_results(2)
         .into_iter()
-        .map(|r| map_think_result(r, 2, 10).signal.tag().to_string())
+        .map(|r| map_think_result(r, 2).signal.tag().to_string())
         .collect();
     for (to, on) in edges_from(&bp, "deliberate") {
         let Some(tag) = on else { continue };
@@ -138,8 +144,11 @@ fn consolidate_only_sees_exits_the_graph_can_deliver() {
         "compact reaches consolidate only via the prepare loop"
     );
 
-    // ForceCompact 会把 exit 改写成 max_rounds，这是 Consolidate 必见的一个值
-    assert_eq!(EXIT_MAX_ROUNDS, "max_rounds");
+    // ForceCompact 会把 exit 改写成 max_rounds，这是 Consolidate 必见的一个值。
+    // 断言的是**监控口径**：Trace 元数据用原值、统计事件用小写，合起来必须与
+    // 老 `awaken` 完全一致 —— 否则同一个退出原因会在看板上分裂成两个标签。
+    assert_eq!(EXIT_MAX_ROUNDS, "MaxRoundsExceeded");
+    assert_eq!(EXIT_MAX_ROUNDS.to_lowercase(), "maxroundsexceeded");
 }
 
 /// 轮次记账：`overflow` 必须把本轮消耗累加到总数上，否则回环会无限重开
@@ -157,7 +166,6 @@ fn overflow_accumulates_rounds_across_the_loop() {
             })
             .expect("overflow sample"),
         before,
-        10,
     );
     // 溢出信号是回环边，轮次必须累加 —— Budget 是唯一的进展护栏
     assert_eq!(mapped.signal.tag(), "overflow");
@@ -166,6 +174,51 @@ fn overflow_accumulates_rounds_across_the_loop() {
         "overflow must accumulate rounds, got {}",
         mapped.rounds
     );
+}
+
+/// 四种退出的轮次记账必须与老 `awaken` 逐位对齐
+///
+/// ⚠️ 这些数字**没有任何测试会替你看着**：写错一位不影响 Runners、不报错、
+/// 用户也感知不到，只是 Trace 的 `rounds_used` 和兜底存档里的「做了多少轮」
+/// 静默跑偏。所以它们只能靠这张表锁死。
+#[test]
+fn exit_mappings_keep_legacy_rounds_accounting() {
+    let before = 2;
+
+    // Final：老代码在此分支**不累加**（轮次信息只体现在策略心跳里）
+    let final_ = map_think_result(
+        sample_results(before)
+            .into_iter()
+            .find(|r| {
+                matches!(
+                    r,
+                    crate::service::domain::runtime::types::ThinkLoopResult::Final { .. }
+                )
+            })
+            .expect("final sample"),
+        before,
+    );
+    assert_eq!(final_.rounds, before, "Final 不应改动累计轮次");
+
+    // MaxRoundsExceeded：结果自带的就是累计值，**覆盖**而不是累加
+    let exhausted = map_think_result(
+        ThinkLoopResult::MaxRoundsExceeded {
+            messages: Vec::new(),
+            total_rounds: 7,
+        },
+        before,
+    );
+    assert_eq!(exhausted.rounds, 7, "轮次耗尽应直接采用自带的累计值");
+
+    // Cancelled：被打断的那一段也算做过（对齐 `total_rounds + rounds`）
+    let cancelled = map_think_result(
+        ThinkLoopResult::Cancelled {
+            messages: Vec::new(),
+            total_rounds: 3,
+        },
+        before,
+    );
+    assert_eq!(cancelled.rounds, before + 3, "取消应把已跑轮次累加进去");
 }
 
 #[test]

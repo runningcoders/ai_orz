@@ -16,11 +16,19 @@
 use crate::pkg::think_path::{PhaseId, ThinkPathBlueprint, ThinkPathBuilder};
 use common::error::Result;
 
-/// 压缩/思考回环的次数上限
+/// 「溢出 → 压缩 → 重装配」回环的次数上限
 ///
-/// 旧实现里是隐式常量（`COMPACT_MAX_ROUNDS`），这里是**显式写进蓝图的预算**——
-/// 它是终止性护栏，不是配置：图 + 回环必须靠它停下。
-const COMPACT_MAX_ROUNDS: usize = 3;
+/// ⚠️ 与 `compaction::COMPACT_MAX_ROUNDS` 不是一回事：那是**单次压缩内部**的
+/// 思考轮次预算，这是整条唤醒链能重来几次。
+///
+/// ⚠️ 这是**新引入的显式护栏**。老 `awaken` 的同一段循环没有任何次数限制，
+/// 只靠 `total_rounds >= max_rounds` 间接收敛；而图里有环就必须有停车点，
+/// 否则 `prepare → deliberate → compact → prepare` 永远可以继续排。
+///
+/// 8 是刻意放宽的值：真实场景溢出重来通常 1~3 次（每次都要先跑满一轮思考
+/// 再压一次），撑到 8 次基本已经是失控。万一真被耗尽，`runner` 会因为「没走到
+/// `consolidate`」而**报错**（而不是静默结束）——停车点收紧了，但不再是静默的。
+pub const MAX_LOOP_ROUNDS: usize = 8;
 
 pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
     let mut bp = ThinkPathBuilder::new("legacy_awaken")
@@ -39,11 +47,12 @@ pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
         .edge("deliberate", "consolidate", Some("cancelled"))
         .build()?;
 
-    // 只有「允许重复出现」的节点才显式放开预算，其余保持默认一次
+    // 只有「允许重复出现」的节点才显式放开预算，其余保持默认一次。
+    // `compact` 比 `prepare` 少一次：第 N 次 prepare 才有第 N-1 次压缩。
     for node in bp.nodes.iter_mut() {
         node.budget.max_activations = Some(match node.id.as_str() {
-            "prepare" | "deliberate" => COMPACT_MAX_ROUNDS + 1,
-            "compact" => COMPACT_MAX_ROUNDS,
+            "prepare" | "deliberate" => MAX_LOOP_ROUNDS,
+            "compact" => MAX_LOOP_ROUNDS.saturating_sub(1),
             _ => 1,
         });
     }

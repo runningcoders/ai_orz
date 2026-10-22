@@ -23,6 +23,13 @@ use std::sync::Arc;
 /// 历史短期记忆条数（与老链路一致）
 const RECENT_MEMORIES_LIMIT: usize = 20;
 
+/// 收尾节点的 id
+///
+/// ⚠️ 必须是单一真相：`ConsolidateNode::id()` 产出它、蓝图把它声明为终点、
+/// `runner` 的终止护栏凭它判断「这次跑到底了没有」。三处各写一份字面量时，
+/// 改名漏一处就会让护栏把正常结束误判成失败。
+pub(crate) const NODE_CONSOLIDATE: &str = "consolidate";
+
 // ==================== 出口信号与退出语义 ====================
 //
 // ⚠️⚠️ 这些常量不是为了「换个写法」，是为了消灭**四份互不相干的手写真相**：
@@ -40,10 +47,18 @@ pub(crate) const SIGNAL_MAX_ROUNDS: &str = "max_rounds";
 pub(crate) const SIGNAL_CANCELLED: &str = "cancelled";
 
 /// `Artifacts.exit` 的取值：`Consolidate` 凭它决定做什么收尾
-pub(crate) const EXIT_FINAL: &str = "final";
-pub(crate) const EXIT_OVERFLOW: &str = "overflow";
-pub(crate) const EXIT_MAX_ROUNDS: &str = "max_rounds";
+///
+/// ⚠️ 这组取值同时是 **Trace 元数据 `exit_reason`** 和 **`AgentAwakeEvent.exit_reason`**
+/// 的口径，必须与老 `awaken` 逐字节一致。换成「更好看」的写法会让同一份行为在
+/// 监控里分裂成两个标签（如 `max_rounds` vs `maxroundsexceeded`）—— 既不报错
+/// 也不会让测试失败，聚合却在静默失真。
+pub(crate) const EXIT_FINAL: &str = "Final";
+pub(crate) const EXIT_MAX_ROUNDS: &str = "MaxRoundsExceeded";
 pub(crate) const EXIT_CANCELLED: &str = "cancelled";
+
+/// 只有压缩回环内部使用（`overflow` → compact → prepare）：下一次思考的结果会
+/// 覆盖它，**永远不会被送到收尾节点**，因此不参与上面的监控口径。
+pub(crate) const EXIT_OVERFLOW: &str = "overflow";
 
 // ==================== 总线上的载荷结构 ====================
 
@@ -255,18 +270,18 @@ pub(crate) struct ExitMapping {
 /// 原先内联在 `async fn run` 里，`tests.rs` 只能靠一个手写字面量数组去断言
 /// 「这些 Tag 有对应的边」—— 那本身就是第三份真相，改了映射它还绿。
 /// 现在测试可以从四个变体直接推导出 Tag 再去蓝图里找边（见 `tests.rs`）。
-pub(crate) fn map_think_result(
-    result: ThinkLoopResult,
-    total_rounds: usize,
-    max_rounds: usize,
-) -> ExitMapping {
+pub(crate) fn map_think_result(result: ThinkLoopResult, total_rounds: usize) -> ExitMapping {
     match result {
+        // ⚠️ `rounds` 必须与老 `awaken` 同口径：Final 分支在老代码里**不更新**
+        // `total_rounds`（只有 overflow / max_rounds 才累加）。写回 `total_rounds`
+        // 才能保住跨压缩累计的值；写成 `max_rounds` 会让 trace 的 `rounds_used`
+        // 凭空变成上限值。
         ThinkLoopResult::Final { content, messages } => ExitMapping {
             signal: NodeSignal::Done,
             exit: EXIT_FINAL,
             content,
             messages,
-            rounds: max_rounds,
+            rounds: total_rounds,
         },
         ThinkLoopResult::ContextOverflow {
             messages,
@@ -289,12 +304,18 @@ pub(crate) fn map_think_result(
             messages,
             rounds,
         },
-        ThinkLoopResult::Cancelled { messages, .. } => ExitMapping {
+        // ⚠️ `rounds` 要与老 `awaken` 同口径：取消分支在那里是
+        // `total_rounds.saturating_add(rounds)` —— 被打断那一段也算做过。
+        // 只写回 `total_rounds` 会让存档少算一轮。
+        ThinkLoopResult::Cancelled {
+            messages,
+            total_rounds: rounds,
+        } => ExitMapping {
             signal: NodeSignal::Yield(SIGNAL_CANCELLED.into()),
             exit: EXIT_CANCELLED,
             content: String::new(),
             messages,
-            rounds: total_rounds,
+            rounds: total_rounds.saturating_add(rounds),
         },
     }
 }
@@ -390,7 +411,7 @@ impl ThinkNode for DeliberateNode {
             content,
             messages,
             rounds,
-        } = map_think_result(result?, total_rounds, max_rounds);
+        } = map_think_result(result?, total_rounds);
 
         bus.insert(
             ContextKey::Budget,
@@ -542,7 +563,7 @@ impl ConsolidateNode {
 #[async_trait]
 impl ThinkNode for ConsolidateNode {
     fn id(&self) -> NodeId {
-        NodeId::new("consolidate")
+        NodeId::new(NODE_CONSOLIDATE)
     }
 
     fn phase(&self) -> PhaseId {
@@ -670,10 +691,12 @@ impl ThinkNode for ConsolidateNode {
                 }
                 trace.clone()
             };
-            let _ = deps
-                .domain
+            // ⚠️ 与老 `awaken` 同口径：Trace 落库失败要 `?` 传播。
+            // 用 `let _ =` 吞掉会把「工作做完了但没留痕」变成一次**假装成功**的
+            // 正常返回 —— 用户拿到了回复，运维却查不到任何 trace。
+            deps.domain
                 .write_thinking_trace(deps.ctx.clone(), snapshot)
-                .await;
+                .await?;
 
             // 正常完成后压缩本次对话为短期记忆；max_rounds 路径已在 CompactNode 压过
             if artifacts.exit == EXIT_FINAL {
@@ -711,7 +734,8 @@ impl ThinkNode for ConsolidateNode {
                     call_count: 1,
                     duration_ms: duration_ms,
                     status: "success".to_string(),
-                    exit_reason: artifacts.exit.clone(),
+                    // 与老 `awaken` 同口径：统计标签是小写的 exit reason
+                    exit_reason: artifacts.exit.to_lowercase(),
                 }
             );
             let _ = crate::pkg::aop::publish(

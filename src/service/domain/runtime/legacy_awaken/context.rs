@@ -287,29 +287,32 @@ impl ContextProvider for BusinessProvider {
     }
 }
 
+/// 一次 legacy_awaken 的运行入参
+///
+/// 直接塞进函数签名会超参数个数阈值，但那不是主要动机 —— 真正的好处是
+/// 「调用方必须一次把唤醒所需的上下文备齐」：少一个字段就编译不过，
+/// 而不是靠八个参数的顺序去猜哪个是 ctx 哪个是 trace。
+pub(crate) struct AwakenInput {
+    /// 发起唤醒的那个 domain 实例（**不取全局单例**，见 `build_deps` 注释）
+    pub domain: Arc<RuntimeDomainImpl>,
+    pub ctx: RequestContext,
+    pub agent: Agent,
+    pub message: Message,
+    pub options: ThinkingOptions,
+    /// 预生成的 Trace（只为拿到 trace_id，内容由收尾节点回填）
+    pub trace: MemoryTrace,
+    pub shadow: bool,
+}
+
 /// 装配一次 legacy_awaken 的运行依赖
 ///
-/// 这里用 `runtime::domain_impl()` 拿**具体类型**句柄而不是 trait object：
-/// 节点要调 `run_think_loop` / `query_past_memories` 这类 impl 级方法，
-/// 它们不在 `RuntimeDomain` trait 里。对外暴露的仍然只有 trait。
-#[allow(dead_code)] // 接入点：`runner::run_legacy_awaken`（待 wiring）
-pub(crate) fn build_deps(
-    ctx: RequestContext,
-    agent: Agent,
-    message: Message,
-    options: ThinkingOptions,
-    trace: MemoryTrace,
-    shadow: bool,
-) -> Arc<AwakenDeps> {
-    build_deps_with_backend(
-        Arc::new(super::backend::LegacyBackend),
-        ctx,
-        agent,
-        message,
-        options,
-        trace,
-        shadow,
-    )
+/// `AwakenInput.domain` 由调用方显式传入，**不取全局单例**：
+/// `AwakenDeps.domain` 必须就是发起唤醒的那个 domain 实例，否则测试注入的
+/// stub DAL（以及未来的多实例场景）会被单例顶掉，链路悄悄跑到别的依赖上。
+/// trait 方法只拿到 `&self`，所以那里要的是**被再包一层 Arc 的克隆**
+///（`RuntimeDomainImpl` 全 Arc 字段，`Clone` 很廉价）。
+pub(crate) fn build_deps(input: AwakenInput) -> Arc<AwakenDeps> {
+    build_deps_with_backend(Arc::new(super::backend::LegacyBackend), input)
 }
 
 /// 同上，但 LLM 后端可由调用方指定
@@ -318,13 +321,17 @@ pub(crate) fn build_deps(
 /// 若直接裸调 `domain`，测试是否通过就取决于本机能否连上 OpenAI —— 那是假绿。
 pub(crate) fn build_deps_with_backend(
     backend: Arc<dyn super::backend::ThinkBackend>,
-    ctx: RequestContext,
-    agent: Agent,
-    message: Message,
-    options: ThinkingOptions,
-    trace: MemoryTrace,
-    shadow: bool,
+    input: AwakenInput,
 ) -> Arc<AwakenDeps> {
+    let AwakenInput {
+        domain,
+        ctx,
+        agent,
+        message,
+        options,
+        trace,
+        shadow,
+    } = input;
     let trace_id = trace.id.clone();
     let (think_runtime, policy) = super::super::awakening::init_think_runtime_and_policy(
         &agent,
@@ -332,7 +339,7 @@ pub(crate) fn build_deps_with_backend(
         &trace_id,
     );
     Arc::new(AwakenDeps {
-        domain: crate::service::domain::runtime::domain_impl(),
+        domain,
         backend,
         ctx,
         agent: Arc::new(agent),

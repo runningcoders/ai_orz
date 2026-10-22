@@ -16,7 +16,9 @@
 //! 而不是靠构造特定的 LLM 响应去「诱使」链路走到某个分支。
 
 use super::backend::{CompactInput, ThinkBackend, ThinkInput};
+use super::blueprint::MAX_LOOP_ROUNDS;
 use super::context::{AwakenDeps, build_deps_with_backend};
+use super::nodes::{EXIT_CANCELLED, EXIT_FINAL, EXIT_MAX_ROUNDS, NODE_CONSOLIDATE};
 use super::runner::run_legacy_awaken;
 use crate::models::agent::{Agent, AgentPo, AgentRuntimeConfig};
 use crate::models::brain::Brain;
@@ -131,15 +133,25 @@ fn init_env(pool: SqlitePool) -> crate::pkg::request_context::RequestContext {
         std::env::temp_dir().join("ai_orz_legacy_awaken_it"),
     );
 
-    // ⚠️ 顺序不能变：`user::init()` 依赖 dao 已就绪，而 `runtime::init()` 内部
-    // 取的是 user DAL 单例 —— 漏了这一步会在真实链路里 panic（unwrap on None）。
+    // ⚠️ 顺序不能变：`user::init()` 依赖 dao 已就绪，而 domain 内部取的
+    // 是 user DAL 单例 —— 漏了这一步会在真实链路里 panic（unwrap on None）。
     crate::service::dal::user::init();
 
-    // `AwakenDeps` 从 `domain_impl()` 拿具体类型句柄，依赖这里 set 进 OnceLock。
-    // LLM 触碰点已被 `ScriptedBackend` 顶掉，所以用真实（默认构造的）domain 即可。
-    crate::service::domain::runtime::init();
-
     crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
+}
+
+/// 本次用例专属的 domain 实例
+///
+/// ⚠️ 不能用全局单例：`AwakenDeps.domain` 必须绑在这个用例的 DB 池上，
+/// 而 `sqlx::test` 每例一个池、且用例之间**共享同一个进程**——单例一旦被
+/// 第一个用例 set 住，后面的用例就会拿着前任的连接跑（`RUNTIME_DOMAIN` 是
+/// OnceLock，`set` 第二次必然失败）。
+fn test_domain() -> std::sync::Arc<crate::service::domain::runtime::RuntimeDomainImpl> {
+    // `RuntimeDomainImpl` 其余依赖（tool / user / lark）在内部取全局单例，
+    // 所以 `dal::init_all()` 必须先跑完。
+    std::sync::Arc::new(crate::service::domain::runtime::RuntimeDomainImpl::new(
+        crate::service::dal::brain::dal(),
+    ))
 }
 
 fn make_agent(agent_id: &str) -> Agent {
@@ -217,15 +229,16 @@ async fn drive(
         String::new(),
         None,
     );
-    let deps = build_deps_with_backend(
-        backend,
+    let input = super::context::AwakenInput {
+        domain: test_domain(),
         ctx,
         agent,
-        make_message("帮我看下这个任务"),
-        ThinkingOptions::new(),
+        message: make_message("帮我看下这个任务"),
+        options: ThinkingOptions::new(),
         trace,
-        true, // shadow：集成测试不应产生落库副作用
-    );
+        shadow: true, // shadow：集成测试不应产生落库副作用
+    };
+    let deps = build_deps_with_backend(backend, input);
     run_legacy_awaken(deps)
         .await
         .expect("legacy_awaken should complete")
@@ -259,7 +272,7 @@ async fn final_answer_walks_prepare_deliberate_consolidate(pool: SqlitePool) {
     let outcome = drive(ctx, ScriptedBackend::new(vec![final_result("done")])).await;
 
     assert_eq!(outcome.fingerprint, "prepare#1>deliberate#1>consolidate#1");
-    assert_eq!(outcome.exit, "final");
+    assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "done");
     assert_eq!(outcome.steps, 3);
 }
@@ -287,7 +300,7 @@ async fn overflow_loops_back_and_rethinks(pool: SqlitePool) {
         outcome.fingerprint,
         "prepare#1>deliberate#1>compact#1>prepare#2>deliberate#2>consolidate#1"
     );
-    assert_eq!(outcome.exit, "final");
+    assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "recovered");
 }
 
@@ -306,7 +319,7 @@ async fn max_rounds_exits_via_force_compact(pool: SqlitePool) {
         outcome.fingerprint,
         "prepare#1>deliberate#1>force_compact#1>consolidate#1"
     );
-    assert_eq!(outcome.exit, "max_rounds");
+    assert_eq!(outcome.exit, EXIT_MAX_ROUNDS);
     // ForceCompact 的产物就是给用户的回复
     assert!(
         outcome.raw_output.contains("思考轮次耗尽"),
@@ -352,15 +365,16 @@ async fn deliberation_error_propagates(pool: SqlitePool) {
         String::new(),
         None,
     );
-    let deps = build_deps_with_backend(
-        Arc::new(FailingBackend),
+    let input = super::context::AwakenInput {
+        domain: test_domain(),
         ctx,
         agent,
-        make_message("帮我看下这个任务"),
-        ThinkingOptions::new(),
+        message: make_message("帮我看下这个任务"),
+        options: ThinkingOptions::new(),
         trace,
-        true,
-    );
+        shadow: true,
+    };
+    let deps = build_deps_with_backend(Arc::new(FailingBackend), input);
 
     let err = run_legacy_awaken(deps)
         .await
@@ -368,6 +382,64 @@ async fn deliberation_error_propagates(pool: SqlitePool) {
     assert!(
         format!("{err}").contains("deliberation boom"),
         "unexpected error: {err}"
+    );
+}
+
+/// 回环预算耗尽必须**报错**，而不是「跑完了但什么都没做」
+///
+/// 锁的是 `runner::ensure_consolidated`：引擎把「没有合法候选」当成正常结束，
+/// 而在有环的图里预算耗尽正是这种情形 —— 没有这道护栏，一次跑不完的唤醒会安静地
+/// `Ok` 返回（不写 Trace、不报统计、不发事件、用户拿不到回复），日志里一行错都没有。
+///
+/// ⚠️ 这是**替换引入的新失效模式**：老 `awaken` 的同一段循环没有次数上限，
+/// 所以老链路里不存在「走到一半不知道该去哪」的状态，也没有任何既有测试会替它看着。
+#[sqlx::test]
+async fn loop_budget_exhaustion_errors_instead_of_returning_ok(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    // 一路溢出：`prepare / deliberate` 各能出现 8 次、`compact` 7 次，
+    // 队列给够（多余的不会被消费），第 9 次 prepare 无处可去时应中断。
+    let backend = ScriptedBackend::new(
+        (0..MAX_LOOP_ROUNDS)
+            .map(|_| ThinkLoopResult::ContextOverflow {
+                messages: user_msg(),
+                input_tokens: 100,
+                rounds_used: 1,
+            })
+            .collect(),
+    )
+    .with_compacts(
+        (0..MAX_LOOP_ROUNDS)
+            .map(|i| compact_outcome(&format!("第 {i} 轮摘要"), ""))
+            .collect(),
+    );
+
+    let agent = make_agent(&format!("agent-{}", uuid::Uuid::now_v7()));
+    let trace = MemoryTrace::new(
+        agent.po.id.clone(),
+        String::new(),
+        "test-user".to_string(),
+        String::new(),
+        common::enums::MemoryRole::Assistant,
+        String::new(),
+        None,
+    );
+    let input = super::context::AwakenInput {
+        domain: test_domain(),
+        ctx,
+        agent,
+        message: make_message("帮我看下这个任务"),
+        options: ThinkingOptions::new(),
+        trace,
+        shadow: true,
+    };
+
+    let err = run_legacy_awaken(build_deps_with_backend(backend, input))
+        .await
+        .expect_err("回环耗尽必须冒泡成错误，不能返回 Ok");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains(NODE_CONSOLIDATE),
+        "错误信息应指明没走到收尾节点：{msg}"
     );
 }
 
@@ -383,7 +455,7 @@ async fn cancelled_shortcuts_to_consolidate(pool: SqlitePool) {
     let outcome = drive(ctx, Arc::clone(&backend)).await;
 
     assert_eq!(outcome.fingerprint, "prepare#1>deliberate#1>consolidate#1");
-    assert_eq!(outcome.exit, "cancelled");
+    assert_eq!(outcome.exit, EXIT_CANCELLED);
     // 取消不该碰压缩（没有活儿要沉淀）
     assert_eq!(backend.compact_calls.load(Ordering::SeqCst), 0);
 }

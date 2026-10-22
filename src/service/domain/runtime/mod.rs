@@ -637,16 +637,6 @@ pub fn domain() -> Arc<dyn RuntimeDomain> {
     RUNTIME_DOMAIN.get().cloned().unwrap()
 }
 
-/// 获取具体类型句柄
-///
-/// ⚠️ 只给 runtime 域**内部**的子模块（目前是 `legacy_awaken` 编排）用：
-/// `run_think_loop` / `query_past_memories` 这类是 `impl` 级方法、不在 trait 里，
-/// 编排层要复用它们就必须拿到具体类型。**外部一律用 `domain()` 走 trait。**
-#[allow(dead_code)] // 接入点：`legacy_awaken::context::build_deps`（待 wiring）
-pub(crate) fn domain_impl() -> Arc<RuntimeDomainImpl> {
-    RUNTIME_DOMAIN.get().cloned().unwrap()
-}
-
 /// 创建新的 Runtime Domain 实例（用于测试，每次测试创建独立实例保证隔离）
 pub fn new(brain_dal: Arc<dyn BrainDal>) -> Arc<dyn RuntimeDomain> {
     let domain = RuntimeDomainImpl::new(brain_dal);

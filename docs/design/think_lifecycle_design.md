@@ -598,7 +598,8 @@ src/service/domain/runtime/lifecycle/
 | 1 | 定义 `ContextKey` / `ThinkBus` / `ThinkNode` / `NodeContract` 骨架，不接业务 | 编译通过，无调用点 | 无 |
 | ~~1~~ | ✅ **已完成**（见 §十一）：骨架落在 `pkg/think_path/`，含仲裁三层、`RouterView` 与准入策略集，11 个单测通过 | — | — |
 | 2 | 抽 `ThinkBudget`：`think_loop.rs#L354-364` 七个计数器对象化入总线 | 现有测试全绿，**零行为变化** | 低 |
-| ~~3~~ | ✅ **已完成**：`legacy_awaken` 蓝图 5 节点 7 边（Prepare/Deliberate/Compact/ForceCompact/Consolidate），行为等价地委托 `run_think_loop`；尚未接线 | — | — |
+| ~~3~~ | ✅ **已完成**：`legacy_awaken` 蓝图 5 节点 7 边（Prepare/Deliberate/Compact/ForceCompact/Consolidate），行为等价地委托 `run_think_loop` | — | — |
+| ~~4~~ | ✅ **已完成（2026-10-22）**：`RuntimeAwakening::awaken` 主体换成图编排调用，老那条 650 行循环删除；`awaken` 只剩入参转换 + 结果回填 | 既有 4 个 `awaken` sqlx 用例（含 429 兜底存档）改走新链路仍全绿 | 见 §11.3 的取舍说明 |
 
 ### 9.1 测试现状（截至 first landing）
 
@@ -769,11 +770,29 @@ pub async fn run_into(&self, run: &mut ThinkRun) -> Result<()>
    护栏：补丁把所有候选都禁用时，仲裁**忽略 `disabled` 覆盖**，避免「改主意」把 run 掐死。
 3. **顾问只选不定**：见 §5.1。
 
-### 11.3 切换方式：影子对比（建议）
+### 11.3 切换方式：直接替换（实际采用）
 
-1. 新引擎跑完整 run，**结果不落库、不发送**，只写 `RunTrace` 与路径指纹。
-2. 与老链路结果做同消息对比（耗时 / token / 终止原因 / 是否有回复）。
-3. 按 Agent / 组织灰度切流，随时可回退到老链路。
+**没有走影子双跑**，原因要在变更前说清楚，否则后来人会把这次的取舍当成疏忽：
 
-口径提示：对比期间「新引擎无结果」不等于失败——要看 `RunTrace.fingerprint()`
+- 图编排与老 `awaken` 是**同一批实现函数的重排**（`ThinkBackend` 仍委托老函数），
+  双跑比的是同一份代码的两种调用方式，信息量很低；
+- 仓库里已有 4 个 `awaken` 的 `#[sqlx::test]`（技能注入 / 无技能 / 用户画像 /
+  429 兜底存档），它们天然就是这次替换的**回归基线** —— 改走新链路后仍全绿；
+- 真正有风险的是那些**测试覆盖不到的口径**：统计标签、Trace 元数据、
+  异常退出路径。这些逐个做了对齐而不是靠双跑兜底（详见下方「替换时的对齐项」）。
+
+如需灰度，仍可对单个 Agent/组织回退：保留调用 `run_legacy_awaken` 的那一行就够了。
+
+#### 替换时的对齐项（改动点必须与此表一致）
+
+| 口径 | 老 `awaken` | 新链路实现 |
+|------|------------|-----------|
+| Trace 元数据 `exit_reason` | `Final` / `MaxRoundsExceeded` | `EXIT_*` 常量，取值逐字节相同 |
+| `AgentAwakeEvent.exit_reason` | 小写形式（`maxroundsexceeded`） | `Artifacts.exit.to_lowercase()` |
+| Trace 落库失败 | `?` 传播 | `?` 传播（不能用 `let _ =` 吞） |
+| Final 的累计轮次 | 不更新 `total_rounds` | `map_think_result` 原样写回 |
+| 异常退出的 `total_rounds` | 累计轮次 | 从总线读 `BudgetState`，不是 `run.trace.steps` |
+| 溢出回环次数 | 无上限（只靠 max_rounds 间接收敛） | `MAX_LOOP_ROUNDS = 8`，耗尽即**报错**（非静默） |
+
+口径提示：若真要对比，期间「新引擎无结果」不等于失败——要看 `RunTrace.fingerprint()`
 落在哪里，而不是只看有没有产出。

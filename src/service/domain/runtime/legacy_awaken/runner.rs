@@ -1,7 +1,8 @@
-//! `legacy_awaken` 的运行入口（尚未接入调用方，供影子对比调用）
+//! `legacy_awaken` 的运行入口：**`RuntimeAwakening::awaken` 的真实执行体**
 //!
-//! 与老 `awaken` 的关系：**行为等价的重排**。忙碌状态、Trace、统计、AOP 事件
-//! 都能观察到 —— 所以它可以先于「替换」存在，用于同消息对比。
+//! 与被它替换掉的那个平铺 `awaken` 的关系：**行为等价的重排**。忙碌状态、
+//! Trace、压缩回环、统计上报、AOP 事件在这里必须一一对齐 —— 正因为这些语义
+//! 可观察，替换才有可对比性，回滚也才有明确的落点。
 //!
 //! ⚠️ 影子模式下**不碰 Agent 运行时状态**（不 `set_busy`）、不落库、不发事件：
 //! 影子跑的目的是对照，不能把排查过程变成新的副作用来源。
@@ -9,7 +10,8 @@
 use super::blueprint::legacy_awaken_blueprint;
 use super::context::{AwakenDeps, build_providers, read_bus};
 use super::nodes::{
-    Artifacts, CompactNode, ConsolidateNode, DeliberateNode, PrepareNode, PromptPack,
+    Artifacts, BudgetState, CompactNode, ConsolidateNode, DeliberateNode, NODE_CONSOLIDATE,
+    PrepareNode, PromptPack,
 };
 use crate::models::events::AgentLoopEvent;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -74,7 +76,39 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
     if let Err(e) = engine.run_into(&mut run).await {
         return Err(finalize_error(deps, &run, e).await);
     }
+    // 跑完不等于跑到底：见 [`ensure_consolidated`]
+    if let Err(e) = ensure_consolidated(&run) {
+        return Err(finalize_error(deps, &run, e).await);
+    }
     Ok(collect(deps, &run))
+}
+
+/// 终止护栏：一条唤醒图必须**结束在收尾节点**
+///
+/// ⚠️ 这不是防御性编程。引擎把「没有任何合法候选」当作正常结束（`select`
+/// 返回 `None` → `Ok(())`），而在有环的图里，**预算耗尽就是这种情形**。
+/// 不去识别它的话，一次跑不完的唤醒会安静地 `Ok` 返回：
+/// 不写 Trace、不报统计、不发循环完成事件、用户拿不到任何回复，
+/// 日志里也没有一行报错 —— 正是老链路「Match 漏一个分支」那种静默失效。
+///
+/// 转成 `Err` 之后至少还有兜底存档（`finalize_error`）：进度快照会以
+/// `loop_abort` 短期记忆落库，错误也照常冒泡给调用方决定重试与否。
+fn ensure_consolidated(run: &ThinkRun) -> Result<()> {
+    let finished = run
+        .trace
+        .occurrences
+        .last()
+        .is_some_and(|last| last.def.as_str() == NODE_CONSOLIDATE);
+    if finished {
+        return Ok(());
+    }
+    Err(common::error::err!(
+        Internal,
+        "legacy_awaken terminated without reaching `{NODE_CONSOLIDATE}`: run_id={} steps={} fingerprint={}",
+        run.run_id,
+        run.trace.steps,
+        run.trace.fingerprint()
+    ))
 }
 
 fn new_run(deps: &Arc<AwakenDeps>) -> ThinkRun {
@@ -103,6 +137,12 @@ async fn finalize_error(
         .map(|p| p.prompt)
         .unwrap_or_default();
     let duration_ms = deps.started_at.elapsed().as_millis() as u64;
+    // 与老 `awaken` 同口径：送出的是**累计思考轮次**，不是步数。
+    // 步数里包含 prepare / compact / consolidate，拿它当轮次会让存档里的
+    // 「做了多少轮」虚高。
+    let total_rounds = read_bus::<BudgetState>(&run.bus, ContextKey::Budget)
+        .map(|b| b.total_rounds)
+        .unwrap_or_default();
 
     let outcome = deps
         .domain
@@ -118,7 +158,7 @@ async fn finalize_error(
             user_message: deps.message.content(),
             message_id: &deps.message.po.id,
             progress: &deps.progress,
-            total_rounds: run.trace.steps,
+            total_rounds,
             trace_ids: std::slice::from_ref(&deps.trace_id),
             kind: super::super::abort_summary::AbortKind::Error,
             error: Some(&error),
@@ -175,41 +215,4 @@ fn collect(deps: Arc<AwakenDeps>, run: &ThinkRun) -> LegacyAwakenOutcome {
         exit: artifacts.exit,
         steps: run.trace.steps,
     }
-}
-
-/// 影子对比：与新链路共用入参，产出可直接比对的执行摘要
-pub async fn shadow_run(deps: Arc<AwakenDeps>) -> ShadowReport {
-    let started = std::time::Instant::now();
-    match run_legacy_awaken(deps).await {
-        Ok(outcome) => ShadowReport {
-            ok: true,
-            duration_ms: started.elapsed().as_millis() as u64,
-            fingerprint: outcome.fingerprint,
-            exit: outcome.exit,
-            steps: outcome.steps,
-            reply_len: outcome.raw_output.chars().count(),
-            error: None,
-        },
-        Err(e) => ShadowReport {
-            ok: false,
-            duration_ms: started.elapsed().as_millis() as u64,
-            fingerprint: String::new(),
-            exit: "error".to_string(),
-            steps: 0,
-            reply_len: 0,
-            error: Some(format!("{e}")),
-        },
-    }
-}
-
-/// 影子对比报告：与老链路同口径（耗时 / 指纹 / 退出原因 / 是否有产出）
-#[derive(Debug, Clone, Default)]
-pub struct ShadowReport {
-    pub ok: bool,
-    pub duration_ms: u64,
-    pub fingerprint: String,
-    pub exit: String,
-    pub steps: usize,
-    pub reply_len: usize,
-    pub error: Option<String>,
 }
