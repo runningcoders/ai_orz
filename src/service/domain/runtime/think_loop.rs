@@ -363,6 +363,34 @@ impl RuntimeDomainImpl {
             // LLM 连续失败计数（成功即清零；预算见 ConsecutiveLlmErrorsPolicy）
             let mut llm_consecutive_errors: u64 = 0;
             let scene_str = scene.as_str();
+            // 入口留痕：这一行是「Agent 置忙但零进展」类故障的定位检查点。
+            // 它缺失 ⇒ 冻结在上游（wake_brain / ThinkingOptions / 引擎启动）；
+            // 它在而后续无日志 ⇒ 冻结在 LLM 调用本身。scene 字段区分
+            // awaken / compact / settle 各自一次。
+            log_info!(
+                &ctx,
+                "think_loop",
+                "think loop entered, scene={}, agent={}, max_rounds={}, start_round={}, available_rounds={}, provider={}",
+                scene_str,
+                agent.po.id,
+                max_rounds,
+                start_round,
+                available_rounds,
+                model_provider_id.as_deref().unwrap_or("<none>"),
+            );
+            // 零可用轮次 = 配置把思考禁光了：循环体一次都不进，没有任何 LLM
+            // 请求、也不会有后续任何日志。不显式警告的话，「Agent 忙碌但
+            // 什么都没做」在现场只剩沉默 —— 而它的成因（max_rounds 解析为 0）
+            // 在另一台机器上完全可以由一份不同的 config / runtime_config 触发。
+            if available_rounds == 0 {
+                crate::log_warn!(
+                    &ctx,
+                    "think_loop",
+                    "no available rounds (max_rounds={} <= start_round={}), exiting without any LLM call",
+                    max_rounds,
+                    start_round,
+                );
+            }
             for offset in 0..available_rounds {
                 // 循环开始前先检查 cancel_flag（避免无意义地调用 LLM）
                 if let Some(tr) = think_runtime

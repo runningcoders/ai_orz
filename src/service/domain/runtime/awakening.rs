@@ -418,6 +418,22 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             None => ctx,
         };
 
+        // 入口留痕：消费侧调用本函数之前打的是 "brain not initialized, auto
+        // waking brain"，这行与它成对 —— 两行之间只剩 wake_brain 的两次 DB 读。
+        // 「置忙后零进展」类故障里，哪行在场就把冻结窗口对半切开：
+        // 只有上行 ⇒ 冻在 wake_brain；两行都在 ⇒ 冻在更下游。
+        crate::log_info!(
+            &ctx,
+            "wake_agent_brain",
+            "brain woken, agent_id={}, kind={:?}, model_provider={}",
+            agent.po.id,
+            brain.kind,
+            brain
+                .model_provider
+                .as_ref()
+                .map(|p| p.id.clone())
+                .unwrap_or_default(),
+        );
         agent.set_brain(brain);
 
         // 返回 enriched ctx（含 ModelProvider 字段：model_provider_id / model_name）
