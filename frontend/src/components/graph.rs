@@ -724,6 +724,76 @@ pub fn edge_geometry(
 /// SVG 版本身没有自适应：节点坐标由布局函数按画布尺寸算，画布一换尺寸内容就可能
 /// 出界。这里按节点卡片包围盒算一次 `(tx, ty, scale)`，使内容居中并完整可见。
 /// 参照 Canvas 版 `fit_viewport` 的口径（含 padding、scale 上限 1.0 不放大）。
+/// 给「同一对节点之间的多条边」分档弧线，其余边保持直线（存量视觉零变化）。
+///
+/// # 为什么需要它
+///
+/// 知识图谱等**非分层**图里，同一对节点之间可能存在多条边（不同关系类型各一条、
+/// 或双向各一条）。直线绘制时它们在几何上完全重合，视觉上只剩一条线，用户
+/// 无法看出「这里其实有两条关系」。
+///
+/// # 为什么按「参考方向」换算符号，而不是直接给相反符号
+///
+/// [`quadratic_control`] 的法线是相对**有向线段**的 left-hand normal：`B→A`
+/// 的法线自带一个负号。因此给 `A→B` 与 `B→A` 分配相反符号会「负负得正」，
+/// 两条曲线落到同一侧、几何依旧重合（思考路径图侧踩过的同一个坑）。
+/// 这里统一在**参考方向**（字典序小 → 大）坐标系里分配偏移量，再按每条边自身
+/// 方向换算回 `bulge`，保证任意方向组合下曲线都分居参考线两侧、互不重合。
+///
+/// # 刻意不做的事
+///
+/// - 单条边**不弯**：非分层图里弧线不承担避障（没有层级可绕），全弯只会更乱；
+///   只有「重合是确定问题」的多重边才复用弧线能力。
+/// - 不改 `weight` / `dash` / `width`：只动 `curve`，其余视觉仍由既有映射决定。
+/// - 不改自环：`EdgeCurve::Loop` 由调用方决定，本函数不覆盖。
+///
+/// # 参数
+///
+/// - `base`：相邻两档之间的法向偏移间距（px）。`n` 条边占据
+///   `[-(n-1)/2, +(n-1)/2] × base` 的位置，`n = 2` 时即 `±base/2`。
+pub fn assign_parallel_edge_curves(edges: &mut [GraphEdge], base: f64) {
+    if edges.is_empty() || base <= 0.0 {
+        return;
+    }
+    // 无序对 → 组内边下标（保持首次出现序：同一份数据每次渲染结果一致，不会跳）
+    let mut groups: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    let mut order: Vec<(String, String)> = Vec::new();
+    for (i, e) in edges.iter().enumerate() {
+        // 自环由 `EdgeCurve::Loop` 承载，不参与分档
+        if e.source == e.target {
+            continue;
+        }
+        let key = if e.source <= e.target {
+            (e.source.clone(), e.target.clone())
+        } else {
+            (e.target.clone(), e.source.clone())
+        };
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(i);
+    }
+    for key in order {
+        let idxs = &groups[&key];
+        let n = idxs.len();
+        if n < 2 {
+            continue;
+        }
+        for (rank, &idx) in idxs.iter().enumerate() {
+            // 参考方向坐标系里的偏移：n 条边对称铺在参考线两侧（中间那条直）
+            let offset = base * (rank as f64 - (n as f64 - 1.0) / 2.0);
+            let same_dir = edges[idx].source <= edges[idx].target;
+            let bulge = if same_dir { offset } else { -offset };
+            let edge = &mut edges[idx];
+            if bulge.abs() < f64::EPSILON {
+                edge.curve = None;
+            } else {
+                edge.curve = Some(EdgeCurve::Arc(bulge));
+            }
+        }
+    }
+}
+
 pub fn compute_fit_view(nodes: &[GraphNode], width: f64, height: f64) -> (f64, f64, f64) {
     if nodes.is_empty() || width <= 0.0 || height <= 0.0 {
         return (0.0, 0.0, 1.0);
@@ -2150,5 +2220,77 @@ mod tests {
         assert_eq!(global_node_label(long, 28.0).chars().count(), 12);
         // 短名称完整保留
         assert_eq!(global_node_label("短名", 28.0), "短名");
+    }
+
+    #[test]
+    fn parallel_edges_arc_to_opposite_sides_of_reference_line() {
+        // 同一对节点的双向两条边：直线绘制会几何完全重合，分档后必须分居两侧、等幅对称
+        let mk = |s: &str, t: &str| GraphEdge {
+            source: s.to_string(),
+            target: t.to_string(),
+            label: "相关".to_string(),
+            weight: None,
+            direction: "undirected".to_string(),
+            curve: None,
+            dash: None,
+            width: None,
+        };
+        let mut edges = vec![mk("a", "b"), mk("b", "a")];
+        assign_parallel_edge_curves(&mut edges, 30.0);
+        // 两条都是重合嫌疑方，都必须带弧
+        assert!(
+            edges
+                .iter()
+                .all(|e| matches!(e.curve, Some(EdgeCurve::Arc(_)))),
+            "{edges:?}"
+        );
+        let a = (100.0, 100.0);
+        let b = (300.0, 100.0);
+        let mut offsets = Vec::new();
+        for e in &edges {
+            let (from, to) = if e.source == "a" { (a, b) } else { (b, a) };
+            let Some(EdgeCurve::Arc(bulge)) = e.curve else {
+                unreachable!("上面已断言两条都是 Arc")
+            };
+            let ctrl = quadratic_control(from.0, from.1, to.0, to.1, bulge);
+            // 二次贝塞尔 t=0.5 点：(P0 + 2P1 + P2) / 4
+            let mid_y = (from.1 + 2.0 * ctrl.1 + to.1) / 4.0;
+            offsets.push(mid_y - 100.0);
+        }
+        // 参考线 y = 100：两条弧的中点必须分居两侧且等幅
+        assert!(offsets[0] * offsets[1] < 0.0, "{offsets:?}");
+        assert!((offsets[0] + offsets[1]).abs() < 1e-6, "{offsets:?}");
+        assert!(offsets[0].abs() > 1.0, "{offsets:?}");
+    }
+
+    #[test]
+    fn lone_edge_keeps_straight_and_self_loop_untouched() {
+        // 单条边保持直线（非分层图里弧线不承担避障，存量视觉零变化）；
+        // 自环由 EdgeCurve::Loop 承载，分档不得改写它
+        let mut edges = vec![
+            GraphEdge {
+                source: "a".to_string(),
+                target: "b".to_string(),
+                label: "相关".to_string(),
+                weight: None,
+                direction: "undirected".to_string(),
+                curve: None,
+                dash: None,
+                width: None,
+            },
+            GraphEdge {
+                source: "c".to_string(),
+                target: "c".to_string(),
+                label: "相关".to_string(),
+                weight: None,
+                direction: "undirected".to_string(),
+                curve: Some(EdgeCurve::Loop),
+                dash: None,
+                width: None,
+            },
+        ];
+        assign_parallel_edge_curves(&mut edges, 30.0);
+        assert_eq!(edges[0].curve, None);
+        assert_eq!(edges[1].curve, Some(EdgeCurve::Loop));
     }
 }

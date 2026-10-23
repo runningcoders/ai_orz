@@ -9,7 +9,8 @@ use crate::api::hr::{
 use crate::components::SearchableSelect;
 use crate::components::button::Button;
 use crate::components::graph::{
-    Graph, GraphEdge, GraphNode, calculate_layout, expand_layout, type_label,
+    Graph, GraphEdge, GraphNode, assign_parallel_edge_curves, calculate_layout, expand_layout,
+    type_label,
 };
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
 use crate::components::markdown::MarkdownRenderer;
@@ -37,6 +38,13 @@ fn match_type_label(match_type: &str) -> &str {
         other => other,
     }
 }
+
+/// 同一对节点多条关系边的弧线分档间距（px）
+///
+/// 知识图谱是**非分层图**：弧线在这里不承担避障（没有层级可绕），唯一确定的价值
+/// 是把「几何上完全重合的多条边」分开。取 30：n=2 时两侧各约 15px，在节点半径
+/// 7 的点线视图里刚好可辨、又不至于弯成麻花；单条边仍走直线保持存量视觉。
+const PARALLEL_EDGE_BASE: f64 = 30.0;
 
 /// 渲染风格：svg（兜底）或 canvas（HUD 驾驶舱风格）
 #[derive(Clone, Copy, PartialEq)]
@@ -170,6 +178,9 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
         }
     }
 
+    // 同一对节点之间的多条边（不同关系类型 / 双向）直线会完全重合 → 分档弧线区分；
+    // 单条边保持直线（非分层图的弧线不承担避障，全弯只会更乱）
+    assign_parallel_edge_curves(&mut edges, PARALLEL_EDGE_BASE);
     (nodes, edges)
 }
 
@@ -194,7 +205,7 @@ fn build_graph_from_global(resp: &GetKnowledgeGraphResponse) -> (Vec<GraphNode>,
             summary: None,
         })
         .collect();
-    let edges = resp
+    let mut edges: Vec<GraphEdge> = resp
         .edges
         .iter()
         .map(|e| GraphEdge {
@@ -210,6 +221,9 @@ fn build_graph_from_global(resp: &GetKnowledgeGraphResponse) -> (Vec<GraphNode>,
             width: None,
         })
         .collect();
+    // 同一对节点之间的多条边（不同关系类型 / 双向）直线会完全重合 → 分档弧线区分；
+    // 单条边保持直线（非分层图的弧线不承担避障，全弯只会更乱）
+    assign_parallel_edge_curves(&mut edges, PARALLEL_EDGE_BASE);
     (nodes, edges)
 }
 

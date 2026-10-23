@@ -37,6 +37,7 @@ use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::message::request_scope;
+use crate::utils::think_path_graph::{assign_edge_curves, relax_layout, spread_layout};
 use crate::utils::time::now_ms;
 use crate::utils::{
     avatar_status_ring, format_file_size, format_timestamp_opt as format_timestamp, priority_badge,
@@ -363,7 +364,7 @@ pub fn ChatSidePanel(
     // 弹窗关闭时不构建（空数据 + 不渲染），避免每次重渲染都白跑一遍布局。
     let graph_zoom_open_now = graph_zoom_open();
     let (zoom_nodes, zoom_edges) = if graph_zoom_open_now {
-        build_task_graph_data(&tasks_list, TASK_GRAPH_ZOOM_W, TASK_GRAPH_ZOOM_H)
+        build_task_graph_data(&tasks_list, TASK_GRAPH_ZOOM_W, TASK_GRAPH_ZOOM_H, false)
     } else {
         (Vec::new(), Vec::new())
     };
@@ -503,6 +504,8 @@ pub fn ChatSidePanel(
                     edges: zoom_edges,
                     svg_width: Some(TASK_GRAPH_ZOOM_W as u32),
                     svg_height: Some(TASK_GRAPH_ZOOM_H as u32),
+                    // 力传导松弛是无边界迭代：坐标可能超出画布，靠初始 fit 收景
+                    auto_fit: true,
                     on_node_click: move |_id: String| {},
                 }
             }
@@ -585,15 +588,30 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
     }
 }
 
-/// 任务列表 → 自有图引擎数据（缩略图与放大弹窗共用，含分层布局坐标）
+/// 任务列表 → 自有图引擎数据（缩略图与放大弹窗共用，含布局坐标）
 ///
 /// 依赖方向：A.dependencies 含 B ⇒ B 是 A 的前置 ⇒ 画 B → A（前置在上、依赖在下）。
-/// 布局复用工作台拓扑同款 `compute_layered_layout`（Kahn 分层，环上节点沉底）；
-/// 悬挂依赖（前置任务不在列表内，如已删除）直接过滤，不产生缺失端点的边。
+///
+/// # 布局管线（与思考路径图**同一条标准管线**，不再自己写一套）
+///
+/// 1. `compute_layered_layout`（Kahn 分层）只用来定「谁在第几层」——取 layer 序号，
+///    再按 `top_margin + layer * layer_height` 直接算出 y。不用它给的 y 是因为
+///    它的层距是按画布均分压出来的，下游按 y 聚层带时可能把两层并成一层。
+/// 2. `spread_layout`：按层带折叠排列，用卡片 / 点直径作间距下限，保证不重叠。
+/// 3. `relax_layout`：力传导松弛（知识图谱 / 工作台 Canvas 栈同款 `ForceLayout`），
+///    同层节点自然高低错落，不再排成一条横线。
+/// 4. `assign_edge_curves`：自环 → Loop；双向对 → 分居两侧；同层 / 向上回边 → 组内
+///    分档弧线；正常向下 → 直线。
+///
+/// # 参数
+///
+/// - `mini`：`true` = 缩略图点线态，`false` = 放大弹窗卡片态。两者节点视觉尺寸差
+///   一个量级，必须分别传，否则缩略图会被按卡片宽拉散 / 卡片态互相压住。
 fn build_task_graph_data(
     tasks: &[TaskListItem],
     width: f64,
     height: f64,
+    mini: bool,
 ) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let ids: std::collections::HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
     let task_ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
@@ -607,13 +625,13 @@ fn build_task_graph_data(
             .collect();
         deps_map.insert(t.id.clone(), in_graph_deps);
     }
-    // 层间距按画布高度取比例：缩略图 / 弹窗两档画布共用一套比例关系
+    // 层带：只取 layer 序号，y 自己算（保证不同层 y 必然不同）
     let config = LayeredLayoutConfig {
         width,
         height,
-        top_margin: height * 0.11,
-        layer_height: height * 0.22,
-        side_margin: width * 0.09,
+        top_margin: (height * 0.06).max(10.0),
+        layer_height: height * 0.30,
+        side_margin: (width * 0.06).max(10.0),
     };
     let positions = compute_layered_layout(&task_ids, &deps_map, &config);
     // 负责人展示名：Agent 分配对象（assignee_type=1）显示 ID 前 8 位（完整 ID 过长，
@@ -627,22 +645,24 @@ fn build_task_graph_data(
             t.assignee_id.clone()
         }
     };
-    let nodes = tasks
+    let mut nodes: Vec<GraphNode> = tasks
         .iter()
         .map(|t| {
-            // 布局缺失（理论上不会）兜底画布中心，不 panic
-            let (_, x, y) = positions
-                .get(&t.id)
-                .copied()
-                .unwrap_or((0, width / 2.0, height / 2.0));
+            // 布局缺失（理论上不会）兜底第 0 层，不 panic
+            let (layer, _, _) =
+                positions
+                    .get(&t.id)
+                    .copied()
+                    .unwrap_or((0, width / 2.0, height / 2.0));
             GraphNode {
                 id: t.id.clone(),
                 label: t.title.clone(),
                 description: t.description.clone().unwrap_or_default(),
                 // 状态 → 语义化 token：着色与 hover 标签都按状态区分（见 graph.rs 配色映射）
                 node_type: task_status_node_type(t.status).to_string(),
-                x,
-                y,
+                // x 先给画布中线：层内横向位置由 spread_layout / relax_layout 决定
+                x: width / 2.0,
+                y: config.top_margin + layer as f64 * config.layer_height,
                 tags: t.tags.clone(),
                 // hover 关键信息一行概览：状态 · 进度 · 负责人
                 //（node_hover_lines 通道自动携带，点线图下名称也由 hover 承载）
@@ -655,7 +675,7 @@ fn build_task_graph_data(
             }
         })
         .collect();
-    let edges = tasks
+    let mut edges: Vec<GraphEdge> = tasks
         .iter()
         .flat_map(|t| {
             t.dependencies
@@ -668,13 +688,17 @@ fn build_task_graph_data(
                     weight: None,
                     // 任务依赖图语义有向（前置 → 任务）：保持既有恒挂箭头行为零回退
                     direction: "directed".to_string(),
-                    // 直边 / 词表派生虚线 / 强度派生线宽（存量视觉零变化）
+                    // 曲率 / 虚线 / 线宽：曲率由下方 assign_edge_curves 统一决定
                     curve: None,
                     dash: None,
                     width: None,
                 })
         })
         .collect();
+    // 标准管线三步（顺序不可换：层距来自 spread_layout，弧线曲率依赖层距）
+    let layer_gap = spread_layout(&mut nodes, width, height, mini);
+    relax_layout(&mut nodes, &edges, width, height, mini, layer_gap);
+    assign_edge_curves(&nodes, &mut edges, layer_gap, mini);
     (nodes, edges)
 }
 
@@ -724,7 +748,7 @@ fn tasks_tab(
         return empty_hint("暂无任务");
     }
     // 缩略图与放大弹窗共用同一套图数据：仅画布尺寸不同
-    let (graph_nodes, raw_edges) = build_task_graph_data(tasks, TASK_GRAPH_W, TASK_GRAPH_H);
+    let (graph_nodes, raw_edges) = build_task_graph_data(tasks, TASK_GRAPH_W, TASK_GRAPH_H, true);
     rsx! {
         // 任务依赖图：位于任务列表上方
         HudPanel {
@@ -745,6 +769,8 @@ fn tasks_tab(
                 svg_height: Some(TASK_GRAPH_H as u32),
                 // 小地图模式：卡片只保留名称 + 连线，正文 / 标签省略，作缩略图预览
                 mini: Some(true),
+                // 力传导松弛是无边界迭代：与放大弹窗同口径，靠初始 fit 收景
+                auto_fit: true,
                 // 点节点 = 展开任务列表中对应项的详情
                 on_node_click: move |id: String| {
                     expanded_task_id.set(Some(id));
@@ -1248,7 +1274,7 @@ mod tests {
         // 点线图（mini）下节点不绘名称卡，任务名/状态/进度/负责人全量由 hover 承载：
         // summary 一行概览必须含三要素（node_hover_lines 通道自动携带）
         let tasks = vec![test_task_item("t1", "任务甲", 2, 40, "01J8ZKQ7X4M2")];
-        let (nodes, _edges) = build_task_graph_data(&tasks, TASK_GRAPH_W, TASK_GRAPH_H);
+        let (nodes, _edges) = build_task_graph_data(&tasks, TASK_GRAPH_W, TASK_GRAPH_H, true);
         assert_eq!(nodes.len(), 1);
         let summary = nodes[0].summary.as_deref().unwrap_or_default();
         assert!(summary.contains("进行中"), "{summary}");
@@ -1261,7 +1287,7 @@ mod tests {
         // 未分配 → 占位文案；用户分配对象（assignee_type=0）→ ID 原样展示
         let mut t = test_task_item("t1", "任务甲", 0, 0, "");
         let (nodes, _) =
-            build_task_graph_data(std::slice::from_ref(&t), TASK_GRAPH_W, TASK_GRAPH_H);
+            build_task_graph_data(std::slice::from_ref(&t), TASK_GRAPH_W, TASK_GRAPH_H, true);
         assert!(
             nodes[0]
                 .summary
@@ -1272,7 +1298,7 @@ mod tests {
         t.assignee_id = "user123".to_string();
         t.assignee_type = 0;
         let (nodes, _) =
-            build_task_graph_data(std::slice::from_ref(&t), TASK_GRAPH_W, TASK_GRAPH_H);
+            build_task_graph_data(std::slice::from_ref(&t), TASK_GRAPH_W, TASK_GRAPH_H, true);
         assert!(
             nodes[0]
                 .summary
