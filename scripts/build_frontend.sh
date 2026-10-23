@@ -60,16 +60,35 @@ if [ -n "$DX_OUTPUT_DIR" ]; then
     if [ -d public ]; then
         cp -r public/. "$REPO_ROOT/dist/"
     fi
-    # dx 输出目录会累积历史构建的 hash 资产，清理未被 index.html / js 引用的旧文件
-    # （wasm 仅被 js 引用，不在 index.html 中，两者都要检查）
+    # dx 输出目录会累积历史构建的 hash 资产，清理未被入口引用的旧文件
+    # 做法：从 index.html 出发沿文本产物（js/css/html…）做引用闭包——wasm 只被 js 引用，
+    # 且旧 js 也会引用旧 wasm，必须传递追溯，否则删掉旧 js 后旧 wasm 仍会被误判为「有引用」
+    # 性能：按文件一次 grep，避免「每个资产都对整个 assets/ 扫一遍」的 O(n²)（后者会反复读几十 MB wasm）
     if [ -d "$REPO_ROOT/dist/assets" ]; then
-        for f in "$REPO_ROOT"/dist/assets/*; do
-            name=$(basename "$f")
-            if ! grep -q "$name" "$REPO_ROOT/dist/index.html" \
-                && ! grep -rq "$name" "$REPO_ROOT/dist/assets/"; then
-                rm -f "$f"
-            fi
+        asset_names=$(mktemp)
+        referenced=$(mktemp)
+        scanned=$(mktemp)
+        ls -1 "$REPO_ROOT/dist/assets" > "$asset_names"
+        grep -hoF -f "$asset_names" "$REPO_ROOT/dist/index.html" 2>/dev/null | sort -u > "$referenced" || true
+        while true; do
+            pending=$(grep -vxF -f "$scanned" "$referenced" 2>/dev/null || true)
+            [ -z "$pending" ] && break
+            printf '%s\n' "$pending" >> "$scanned"
+            while IFS= read -r name; do
+                case "$name" in
+                    *.js|*.mjs|*.css|*.json|*.html|*.map|*.svg|*.txt)
+                        [ -f "$REPO_ROOT/dist/assets/$name" ] || continue
+                        grep -hoF -f "$asset_names" "$REPO_ROOT/dist/assets/$name" 2>/dev/null \
+                            | sort -u >> "$referenced" || true
+                        ;;
+                esac
+            done <<< "$pending"
+            sort -u -o "$referenced" "$referenced"
         done
+        while IFS= read -r name; do
+            grep -qxF "$name" "$referenced" || rm -f "$REPO_ROOT/dist/assets/$name"
+        done < "$asset_names"
+        rm -f "$asset_names" "$referenced" "$scanned"
     fi
     echo "✅ 前端编译产物已复制"
     echo "   来源: $DX_OUTPUT_DIR"
