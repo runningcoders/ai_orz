@@ -37,7 +37,7 @@ source_files:
 | `src/handlers/hr/agent/query_memory_traces.rs` | 列表 + 详情两个入口；`PREVIEW_MAX_CHARS=200` 按字符边界截断并追加 `…`；详情缺失返回 not_found |
 | `common/src/api/runtime.rs` | `QueryMemoryTracesRequest` / `MemoryTraceListItem` / `GetMemoryTraceRequest` / `MemoryTraceDetail` 单一事实源 |
 | `frontend/src/components/chat/memory_trace_detail.rs` | 详情组件：`PREVIEW_CHARS=400` 可展开；props 变化需 `key` 重挂载 |
-| [原始记忆追踪](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/原始记忆追踪.md) | ⭐ 本卡对应的人类百科长文（写入侧 + 查询链路 + 故障排查） |
+| [原始记忆追踪](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20%28Short-term%20Memory%29/原始记忆追踪.md) | ⭐ 本卡对应的人类百科长文（写入侧 + 查询链路 + 故障排查） |
 
 ## 3. 架构与设计约定
 

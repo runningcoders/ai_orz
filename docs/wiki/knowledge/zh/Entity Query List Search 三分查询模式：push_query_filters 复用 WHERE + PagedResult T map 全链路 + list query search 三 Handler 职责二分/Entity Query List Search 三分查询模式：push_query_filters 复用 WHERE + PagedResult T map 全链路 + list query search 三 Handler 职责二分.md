@@ -20,7 +20,7 @@ source_files:
 - common/src/api/tool.rs
 - common/src/api/skill.rs
 - src/service/dao/agent/sqlite.rs#L109-L382
-- src/service/dal/agent/mod.rsL193
+- src/service/dal/agent/mod.rs#L193
 - src/handlers/hr/agent/list_agents.rs#L1-L61
 - src/handlers/hr/agent/query_agents.rs#L1-L68
 - src/handlers/hr/agent/search_agents.rs#L1-L67

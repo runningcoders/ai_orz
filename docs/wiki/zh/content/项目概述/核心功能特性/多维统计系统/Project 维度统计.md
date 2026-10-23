@@ -307,6 +307,6 @@ Project 维度统计以 ProjectEvent 为核心，通过 DuckDB 统计表与 Proj
 ## 附录
 - 事件类型与触发时机参考：docs/stats_query_design.md
 - 工具调用与 Agent 唤醒统计参考：docs/stats_query_design.md
-- 项目状态与关系参考：docs/project_design.md
+- 项目状态与关系参考：docs/archive/design-archive/project_design.md
 
 [本节为补充材料，不直接分析具体文件]

@@ -12,7 +12,7 @@
 - [common/src/enums/agent_kind.rs](common/src/enums/agent_kind.rs)
 - [common/src/api/tool.rs](common/src/api/tool.rs)
 - [src/handlers/finance/tool/bind_tool_to_agent.rs](src/handlers/finance/tool/bind_tool_to_agent.rs)
-- [docs/project_management_design.md](docs/project_management_design.md)
+- [docs/archive/design-archive/project_management_design.md](docs/archive/design-archive/project_management_design.md)
 - [docs/message_interaction_design.md](docs/message_interaction_design.md)
 - [docs/stats_query_design.md](docs/stats_query_design.md)
 - [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)

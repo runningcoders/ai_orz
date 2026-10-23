@@ -219,13 +219,13 @@ Think --> End(["结束"])
 - [src/service/domain/runtime/awakening.rs:379-413](src/service/domain/runtime/awakening.rs#L379-L413)
 - [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL1044)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L1044)
 
 章节来源
 - [src/service/domain/runtime/awakening.rs:379-456](src/service/domain/runtime/awakening.rs#L379-L456)
 - [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL1044)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L1044)
 
 ### 核心记忆与其他记忆层的交互
 - 与短期/长期记忆
@@ -326,7 +326,7 @@ AW --> PB["PromptBuilder"]
   - query(query)：通用查询（agent_id/status/type）。
   - recommend_seed_nodes(agent_id, limit)：推荐知识图谱起点。
   - traverse_knowledge_graph(seed_node_ids, max_depth, max_breadth, strategy)：图谱遍历。
-  - settle_short_term_to_long_term(agent_id, limit)：短期沉淀为长期。
+  - load_and_settle(agent_id, limit)：短期沉淀为长期（Domain settle_pending 编排 + DAL mark_short_term_settled）。
   - rebuild_vectors()：重建向量索引。
 
 章节来源

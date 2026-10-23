@@ -5,7 +5,7 @@
 - [src/service/domain/organization/mod.rs](src/service/domain/organization/mod.rs)
 - [src/service/domain/organization/org.rs](src/service/domain/organization/org.rs)
 - [src/service/domain/organization/user.rs](src/service/domain/organization/user.rs)
-- [src/service/dal/organization.rs](src/service/dal/organization.rs)
+- [src/service/dal/organization/mod.rs](src/service/dal/organization/mod.rs)
 - [src/models/organization.rs](src/models/organization.rs)
 - [common/src/enums/organization.rs](common/src/enums/organization.rs)
 - [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs)
@@ -101,7 +101,7 @@ C2 --> DB
 - [src/handlers/organization/organizations/get_organization.rs:1-200](src/handlers/organization/organizations/get_organization.rs#L1-L200)
 - [src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L200)
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
 章节来源
 - [docs/organization_design.md:1-218](docs/organization_design.md#L1-L218)
@@ -122,7 +122,7 @@ C2 --> DB
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
 - [src/service/domain/organization/org.rs:1-134](src/service/domain/organization/org.rs#L1-L134)
 - [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
 ## 架构总览
 Organization 领域采用严格的四层单向调用，确保职责清晰与可测试性：
@@ -161,7 +161,7 @@ Handler-->>Client : 返回初始化结果
 图表来源
 - [src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200)
 - [src/service/domain/organization/org.rs:53-90](src/service/domain/organization/org.rs#L53-L90)
-- [src/service/dal/organization.rs:93-95](src/service/dal/organization.rs#L93-L95)
+- [src/service/dal/organization/mod.rs:93-95](src/service/dal/organization/mod.rs#L93-L95)
 
 ## 详细组件分析
 
@@ -355,13 +355,13 @@ M2["require_role.rs"] -.-> H
 
 图表来源
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 - [src/middleware/jwt_auth.rs:1-200](src/middleware/jwt_auth.rs#L1-L200)
 - [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
 
 章节来源
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
 ## 性能考虑
 - 查询优化

@@ -6,7 +6,7 @@ scope:
   - "common/src/enums/user_role.rs"
   - "src/service/domain/organization/**"
   - "src/service/domain/hr/agent.rs (入职 + 离职相关)"
-  - "src/service/dal/organization.rs"
+  - "src/service/dal/organization/mod.rs"
   - "src/service/dao/organization/**"
   - "src/service/dao/user/**"
   - "src/handlers/organization/**"
@@ -46,7 +46,7 @@ source_files:
   - src/service/dao/organization/sqlite.rs#L111-L147（get_org_config 读穿 + set_org_config 写穿双模式实现）
   - src/service/dao/organization/sqlite.rs#L247-L268（read_org_config_from_db：SQL 裸查询 + 空/非法 JSON 回退 OrganizationConfig::default()）
   - src/service/dao/organization/mod.rs#L29-L39（OrganizationDao trait 新增 get_org_config / set_org_config）
-  - src/service/dal/organization.rs#L55-L65 + #L123-L140（OrganizationDal trait + impl 新增 get_org_config / update_org_config 透传 DAO）
+  - src/service/dal/organization/mod.rs#L55-L65 + #L123-L140（OrganizationDal trait + impl 新增 get_org_config / update_org_config 透传 DAO）
   - src/service/domain/organization/mod.rs#L119-L129（OrganizationManage trait 新增 get_org_config / update_org_config）
   - src/service/domain/organization/org.rs#L148-L165（OrganizationManage impl 配置读写透传 DAL）
   - src/service/dal/message.rs#L156-L174（消息落库时检查 org_config.enable_message_vector，默认 false 跳过向量索引构建）

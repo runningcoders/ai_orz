@@ -85,7 +85,7 @@ source_files:
 | 【③ Wiki 长文 2】Agent 搜索与查询.md §AgentSearch 三场景 | list(无)/query(过滤)/search(关键词+向量) | docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 搜索与查询.md |
 | 【③ Wiki 长文 3】Agent 搜索与推荐.md §混合搜索 UI | 前端展示 match_type 徽标 | docs/wiki/zh/content/功能模块/AI Agent 管理/Agent 搜索与推荐.md |
 | 【平行卡】VectorStore + Vectorizable 统一索引 | 向量/fts5 底层基础设施 | docs/wiki/knowledge/zh/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity.md |
-| 【平行卡】记忆知识图谱搜索增强（tags 过滤 + 图谱遍历） | 记忆领域搜索扩展（tags 语义 + 图谱路径）| docs/wiki/knowledge/zh/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐.md |
+| 【平行卡】记忆知识图谱搜索增强（tags 过滤 + 图谱遍历） | 记忆领域搜索扩展（tags 语义 + 图谱路径）| docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS／DFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS／DFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md |
 
 ## §3 架构约定
 

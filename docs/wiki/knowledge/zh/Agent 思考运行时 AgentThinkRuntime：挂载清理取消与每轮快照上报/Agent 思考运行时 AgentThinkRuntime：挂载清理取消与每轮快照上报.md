@@ -38,7 +38,7 @@ AgentThinkRuntime 解决三个问题：(a) 前端/API 无法观测「正在思�
 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 每轮快照上报 + cancel 检查 | 每轮 loop 尾部：`think_runtime.write().unwrap().update_snapshot(round, elapsed, tokens, current_tool, None)`；UserCancelPolicy 命中 → update_snapshot.last_exit_reason = "user_cancel" 后 break |
 | [src/handlers/hr/agent/cancel_thinking.rs](src/handlers/hr/agent/cancel_thinking.rs) | HTTP 取消入口（POST /agents/{id}/cancel-thinking）| 参数鉴权 → 调 RuntimeDomain.awakening().cancel_think(ctx, agent_id) → StateManager.cancel_think() → ApiResponse { success: bool, was_thinking: bool }（前端用 was_thinking 判断 toast）|
 | 【Wiki 长文】运行时领域.md | 系统化上下文 §5 详细分析 §8 故障排查 | [运行时领域](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) |
-| 【平行卡】策略引擎框架（策略 UserCancelPolicy 读取 cancel_token）| 关联知识卡（不同切面）| [策略引擎框架卡](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md) |
+| 【平行卡】策略引擎框架（策略 UserCancelPolicy 读取 cancel_token）| 关联知识卡（不同切面）| [策略引擎框架卡](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层.md) |
 | 【① Design】thinking_task_policy_engine_design.md | 决策动机（为什么不用 BackgroundTask 体系接管）| [docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) |
 | 【② Plan】执行蓝图 | 完整落地步骤 | （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）|
 

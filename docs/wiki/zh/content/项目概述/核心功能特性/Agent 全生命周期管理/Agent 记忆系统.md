@@ -15,7 +15,7 @@
 - [mod.rs（存储门面）](src/pkg/storage/mod.rs)
 - [20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
 - [memory_test.rs（集成测试）](tests/integration/memory_test.rs)
-- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md)
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md)
 </cite>
 
 ## 目录
@@ -236,7 +236,7 @@ H->>H : 检查 Agent 状态(空闲)
 H->>M : 查询 Active 短期记忆(limit)
 M-->>H : 返回待沉淀列表
 H->>R : wake_agent_brain + sleep_and_settle
-R->>D : settle_short_term_to_long_term(agent_id, limit)
+R->>D : settle_pending(agent, options, settle_limit)
 D->>M : query_short_term(...)
 D->>D : 归纳摘要/建节点/建关系
 D->>M : 标记短期记忆为 Settled
@@ -376,7 +376,7 @@ Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全�
 #### ② Plan 落地快照
 - [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — 记忆写入工具拆分：save_short_term / save_long_term 替代 create_memory（Agent 唤醒工具列表只注入这两个专用工具）
 #### ④ RAG 原子知识卡
-- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — §4.1 红线 1 工具拆分红线（Agent 工具列表绝不注入 create_memory）
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — §4.1 红线 1 工具拆分红线（Agent 工具列表绝不注入 create_memory）
 
 
 ---

@@ -21,8 +21,8 @@ source_files:
 - src/service/domain/runtime/awakening.rs#L1322-L1355
 - src/service/domain/runtime/mod.rs#L203-L225
 - src/service/domain/runtime/think_loop.rs#L117-L160
-- src/service/dal/agent/mod.rsL1080
-- src/service/dal/agent/mod.rsL1715
+- src/service/dal/agent/mod.rs#L1080
+- src/service/dal/agent/mod.rs#L1715
 - src/models/prompt_builder.rs#L104-L123
 - src/models/cortex_types.rs (2026-09 增量：DeltaToolCall.index 改 Option + resolve_tool_call_index)
 - src/pkg/tool_registry/handler_adapter/mod.rs (2026-09 增量：check_stream_end + empty tool arguments 独立错误)
@@ -125,7 +125,7 @@ source_files:
 | 9 | **禁止 awaken 对 Phase1 analyze 结果 `?` 冒泡**：错误吞掉降级 None；用 `?` 会把意图分析服务不可用升级为整次唤醒失败，P0 故障 | 集成测试模拟 cortex panick → awaken 仍返回 200 且正常响应 | [awakening.rs awaken Phase1 串联 match 分支](src/service/domain/runtime/awakening.rs#L230-L280) |
 | 10 | **禁止 IntentAnalyze 的 is_tool_allowed 白名单包含执行类 tag**（send_message / lark_push / shell_exec / task_create / file_write）| thinking_scene_tool_whitelist 单元测试：IntentAnalyze 允许 neural/search tags、禁止 messaging/shell tags | [awakening.rs#L1322-L1355](src/service/domain/runtime/awakening.rs#L1322-L1355) |
 | 11 | **PromptBuilder 默认实现不写 Phase1 专用指令**：外部 Agent（RemoteAgent/CodexCli）默认回退 build()，内部两阶段仅 DefaultPromptBuilder 完整实现 build_intent_analyze_prompt() | grep 其他 PromptBuilder 实现，不应出现 Phase1 专用指令字符串 | [models/prompt_builder.rs#L104-L123](src/models/prompt_builder.rs#L104-L123) trait 默认实现 |
-| 12 | **INTENT_ANALYSIS_START 锚点必须存在于 Prompt 末尾**：6 级 JSON 解析 Level 4 靠此锚点定位后提取 JSON，删除则误匹配 Prompt 示例代码 {} 的概率极高 | build_intent_analyze_prompt 单元测试：含 INTENT_ANALYSIS_START 字符串 | [dal/agent.rs#L1667-L1715](src/service/dal/agent/mod.rsL1715) |
+| 12 | **INTENT_ANALYSIS_START 锚点必须存在于 Prompt 末尾**：6 级 JSON 解析 Level 4 靠此锚点定位后提取 JSON，删除则误匹配 Prompt 示例代码 {} 的概率极高 | build_intent_analyze_prompt 单元测试：含 INTENT_ANALYSIS_START 字符串 | [dal/agent.rs#L1667-L1715](src/service/dal/agent/mod.rs#L1715) |
 | 13 | **need_clarification=true 只做参考、当前不短路 Phase2**：短路是下一迭代功能；提前启用会导致每次都先问一句澄清再执行，响应翻倍 | awaken 入口 grep 不应有 send_message.*clarification 的短路 if 分支 | [awakening.rs awaken 入口 if need_clarification 检查位置](src/service/domain/runtime/awakening.rs#L200-L240) |
 | 14 | **Template Communication SOP 章节（方案 B）与代码级 Phase1（方案 A+）并行双保险**：不要删除 skill.md 末尾的「理解用户消息 SOP」章节；即便 Phase1 流程被禁用，沟通技能也能驱动 Agent 在普通 think loop 中自行按五步理解 | TEMPLATE_COMMUNICATION/skill.md grep 「SOP」命中 | [TEMPLATE_COMMUNICATION skill.md 末尾章节](src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) |
 | 15 | **DeltaToolCall.index 必须用 Option 类型并由 resolve_tool_call_index 消歧**（2026-09 新增）——多路 SSE fragment 并行到达时禁止直接拿 index（会把多路拼进第一路导致非法 JSON）；必须在 cortex_types.rs 内用 resolve_tool_call_index 方法先合并多路再输出统一 index | 单路 / 多路 SSE fragment 拼接测试断言生成的 tool_call JSON 合法；grep delta.index.unwrap_or_default 应不存在 | [cortex_types.rs DeltaToolCall](src/models/cortex_types.rs) |

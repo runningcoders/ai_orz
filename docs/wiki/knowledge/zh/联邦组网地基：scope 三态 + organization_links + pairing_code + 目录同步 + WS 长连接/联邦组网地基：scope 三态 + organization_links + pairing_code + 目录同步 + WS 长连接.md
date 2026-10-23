@@ -57,7 +57,7 @@ source_files:
 
 **本卡角色**：联邦组网的地基知识卡。覆盖 OrganizationScope 三态（Local/Linked/Remote）扩展组织表语义、organization_links 点对点连接契约表、配对码（pairing code）短时效单用途握手协议、目录推拉结合同步（推送保证时效 + cron 定时对账保证最终一致）、WS 长连接（pkg::ws 通用管理器 + adapter 模式业务解耦）四层。**定位：新增组织间组网能力、排查建联失败、调试目录同步卡住、理解 shadow upsert 静默写入时读。**
 
-- **DAL 层子模块拆分（2026-09 拆分重构，学习 agent/ / lark/ 模式）**：`src/service/dal/organization.rs` 单文件 → `src/service/dal/organization/` 4 个子模块。`OrganizationLinkDal`（link.rs）吸收 OrganizationLinkDao + FederationHttpClient，`OrganizationPairingDal`（pairing.rs）封装 OrganizationPairingDao，Domain 层不再直捅 DAO/HTTP。总 trait + 单例管理留在 mod.rs。详见 §3 DAL 子模块拆分模式。
+- **DAL 层子模块拆分（2026-09 拆分重构，学习 agent/ / lark/ 模式）**：`src/service/dal/organization/mod.rs` 单文件 → `src/service/dal/organization/` 4 个子模块。`OrganizationLinkDal`（link.rs）吸收 OrganizationLinkDao + FederationHttpClient，`OrganizationPairingDal`（pairing.rs）封装 OrganizationPairingDao，Domain 层不再直捅 DAO/HTTP。总 trait + 单例管理留在 mod.rs。详见 §3 DAL 子模块拆分模式。
 - **OrganizationScope 三态扩展（common/src/enums/organization.rs）**：`Local(0)` 本地组织（自建/自管，默认值）→ `Linked(1)` 已建联对端（organizations 表影子记录，scope=Linked 表示已建 organization_links 连接契约，双向可通信）→ `Remote(2)` 仅目录同步所得（影子记录，未建联，只读展示）。scope 决定"能否通信"——只有 Linked 可发跨组织命令。**集团=group_name 纯展示标签，不参与任何逻辑判断**（ADR D1，消解分布式一致性问题）。
 - **连接契约与实体分离（ADR D4）**：organizations 表描述组织本身（高频被全系统 join）；organization_links 表承载点对点连接的 endpoint + 双向凭证（access_token 明文出站 + peer_token_hash SHA256 入站校验）+ capabilities 连接级能力白名单 JSON。凭证不进 organizations 表，防止放大泄漏面。唯一约束 `(local_org_id, peer_org_id)` 保证两个组织间只有一条有效连接。
 - **配对码协议（ADR D5，复用邀请码范式）**：签发（用户侧 JWT）→ verify + 凭证交换（机器侧，配对码鉴权）→ create_link（双向凭证落库 + shadow upsert 对端影子记录 + 目录拉取）。**配对码 24 字符去 0/O/1/I 字符集 + 10 分钟 TTL + 用后即焚**。`OrganizationPairingDal::consume` 单条 UPDATE 原子完成四判定（哈希匹配 + 未消费 + 未过期 + 置 consumed_at），任何不匹配返回 None——上层统一转 `Error::unauthorized`，**不区分原因防枚举探测**（评审稿 §6.3）。
@@ -231,7 +231,7 @@ call_peer facade (发起方，domain/organization/org.rs)
 
 ### 2026-09：DAL 层子模块拆分（organization.rs → organization/ 目录）
 
-**拆分前**：`src/service/dal/organization.rs` 单文件 515 行，混合三类职责：① Organization CRUD + 影子静默 upsert（organizations 表）、② links 表 CRUD、③ 对端 HTTP 出站调用（verify_pairing_code / fetch_directory / push_directory / fetch_capabilities）。Domain 层 `OrganizationDomainImpl` 直接持有 `link_dao: Arc<OrganizationLinkDao>` + `pairing_dao: Arc<OrganizationPairingDao>` + `http_client: Arc<FederationHttpClient>` 三个字段，持久化与出站 HTTP 的边界跨 DAL 层被 Domain 吸收。
+**拆分前**：`src/service/dal/organization/mod.rs` 单文件 515 行，混合三类职责：① Organization CRUD + 影子静默 upsert（organizations 表）、② links 表 CRUD、③ 对端 HTTP 出站调用（verify_pairing_code / fetch_directory / push_directory / fetch_capabilities）。Domain 层 `OrganizationDomainImpl` 直接持有 `link_dao: Arc<OrganizationLinkDao>` + `pairing_dao: Arc<OrganizationPairingDao>` + `http_client: Arc<FederationHttpClient>` 三个字段，持久化与出站 HTTP 的边界跨 DAL 层被 Domain 吸收。
 
 **拆分后**（4 个子模块 + 总 trait，共 812 行）：
 

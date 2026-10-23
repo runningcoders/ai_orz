@@ -42,7 +42,7 @@
 - [src/models/memory.rs](src/models/memory.rs)
 
 **本文关联的文档（2026-10-23 增量）**
-- ③ Wiki 长文：[原始记忆追踪.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20(Short-term%20Memory)/原始记忆追踪.md) — MemoryTrace JSONL 与查询链路
+- ③ Wiki 长文：[原始记忆追踪.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20%28Short-term%20Memory%29/原始记忆追踪.md) — MemoryTrace JSONL 与查询链路
 - ③ Wiki 长文：[Runtime 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md) — 轨迹查询的 Domain 作用域门闩
 - ④ RAG 知识卡：[ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](docs/wiki/knowledge/zh/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板.md)
 - ④ RAG 知识卡：[记忆轨迹查询链路：MemoryTrace JSONL 分页扫描 + scope 守门 + 单条详情展开](docs/wiki/knowledge/zh/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开.md)
@@ -167,13 +167,13 @@ ReturnList --> End(["返回 PagedResult<AgentListItem>"])
 ```
 
 图表来源
-- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/query_agents.rs:1-68](src/handlers/hr/agent/query_agents.rs#L1-L68)
+- [src/handlers/hr/agent/list_agents.rs:1-61](src/handlers/hr/agent/list_agents.rs#L1-L61)
 
 章节来源
 - [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [src/handlers/hr/agent/list_agents.rs:1-61](src/handlers/hr/agent/list_agents.rs#L1-L61)
+- [src/handlers/hr/agent/query_agents.rs:1-68](src/handlers/hr/agent/query_agents.rs#L1-L68)
 - [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
 - [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs)
 - [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs)
@@ -427,14 +427,14 @@ DM -.-> M["Models(Agent/Skill/Memory)"]
   - 查询参数：pagination（page/page_size）
   - 行为：固定排除 Deleted 状态
   - 参考实现
-    - [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+    - [src/handlers/hr/agent/list_agents.rs:1-61](src/handlers/hr/agent/list_agents.rs#L1-L61)
 
 - 通用查询 Agent
   - 方法：POST /api/v1/hr/agents/query
   - 请求体：ids、keyword、status、roles、created_by、model_provider_id、runtime_state、pagination
   - 行为：组合过滤 + 分页
   - 参考实现
-    - [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+    - [src/handlers/hr/agent/query_agents.rs:1-68](src/handlers/hr/agent/query_agents.rs#L1-L68)
 
 - 获取/更新/删除/状态更新
   - 方法：GET/PUT/DELETE /api/v1/hr/agents/{id}；PATCH /api/v1/hr/agents/{id}/status

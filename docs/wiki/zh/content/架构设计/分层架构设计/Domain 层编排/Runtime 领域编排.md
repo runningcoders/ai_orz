@@ -46,7 +46,7 @@
 - 【① Design 决策快照】[thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) — trait 聚合与接口层数据流
 - 【② Plan 落地快照】占位：（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - 【④ RAG 原子知识卡】
-  - [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md)
+  - [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层.md)
   - [Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报](docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md)
   - [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件.md)
   - [思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路](docs/wiki/knowledge/zh/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路.md)
@@ -65,7 +65,7 @@
   - [ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](docs/wiki/knowledge/zh/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板.md) — 2026-10-23 增量：§5 轨迹查询领域编排
   - [记忆轨迹查询链路：MemoryTrace JSONL 分页扫描 + scope 守门 + 单条详情展开](docs/wiki/knowledge/zh/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开.md) — 2026-10-23 增量：§5 记忆轨迹任务作用域与分页
 - 【① Design 决策快照】[ontology_knowledge_sedimentation_design.md](docs/design/ontology_knowledge_sedimentation_design.md) — 2026-09-19 增量：本体与知识图谱合一（TBox/ABox）、三段沉淀闭环、漂移不物化、Prompt 词表注入设计决策
-- 【③ Wiki 关联长文（2026-10-23 增量）】[原始记忆追踪.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20(Short-term%20Memory)/原始记忆追踪.md) — 记忆轨迹 JSONL 结构与查询链路
+- 【③ Wiki 关联长文（2026-10-23 增量）】[原始记忆追踪.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20%28Short-term%20Memory%29/原始记忆追踪.md) — 记忆轨迹 JSONL 结构与查询链路
 </cite>
 
 ## 目录

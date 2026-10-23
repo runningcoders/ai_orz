@@ -10,7 +10,7 @@ scope:
 - src/service/dal/agent_a2a.rs
 - src/models/agent.rs
 - src/service/dao/organization_link/http.rs
-- src/service/dal/organization.rs（call_peer facade）
+- src/service/dal/organization/mod.rs（call_peer facade）
 - src/service/dal/message_channel.rs
 - src/service/dal/agent/runtime.rs
 source_files:
@@ -31,7 +31,7 @@ source_files:
 - docs/wiki/zh/content/功能模块/AI Agent 管理/AI Agent 管理.md
 - docs/wiki/zh/content/数据模型/Agent 和技能模型/Agent 实体.md
 - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
-- src/service/dal/organization.rs#L1-L515 (call_peer facade：先查 WS registry → publish federation.outbound，无活连接回退 HTTP)
+- src/service/dal/organization/mod.rs#L1-L515 (call_peer facade：先查 WS registry → publish federation.outbound，无活连接回退 HTTP)
 - docs/plan/跨组织业务调用方案.md#L100-L200 (delegation e2e 时序 + receptionist 接待模型)
 - 【关联卡】docs/wiki/knowledge/zh/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities.md
 

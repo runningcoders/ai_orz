@@ -241,11 +241,11 @@ DAL --> RESP["返回 AgentStats / ModelCallStats"]
 
 图表来源
 - [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL781)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L781)
 
 章节来源
 - [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL781)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L781)
 
 ### 可视化展示与报表
 - 前端组件：AgentStatsPanel 展示唤醒次数、平均/瞬时 QPS；同时展示模型调用的调用次数与 Token 用量。

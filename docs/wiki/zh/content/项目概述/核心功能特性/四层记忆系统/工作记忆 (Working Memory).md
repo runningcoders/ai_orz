@@ -10,7 +10,7 @@
 - [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [src/consumer/scheduler.rs](src/consumer/scheduler.rs)
 - [tests/integration/memory_test.rs](tests/integration/memory_test.rs)
-- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md)
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md)
 </cite>
 
 ## 目录
@@ -72,7 +72,7 @@ F["Scheduler<br/>agent_rest 定时任务"] --> A
 - 运行时状态管理器
   - AgentRuntimeStateManager：全局单例，管理每个 Agent 的 Idle/Busy/Resting 状态，提供原子 try_set_busy 避免并发唤醒冲突
 - DAL 记忆服务
-  - 提供 query/search/create/update/delete/traverse_knowledge_graph/rebuild_vectors/settle_short_term_to_long_term 等方法
+  - 提供 query/search/create/update/delete/traverse_knowledge_graph/rebuild_vectors/mark_short_term_settled 等方法
 - Domain 运行时记忆接口
   - RuntimeMemory：对外暴露 get_recent_context、write_thinking_trace、search/query/create/update/delete/traverse_graph 等
 - Handler 与调度器
@@ -374,4 +374,4 @@ R["AgentRuntimeStateManager"] --> H
 #### ② Plan 落地快照
 - [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — ThinkingOptions.for_scene(Settle) 仅 Working/Short 记忆参与上下文；Resting 状态清 Working 不影响 Long-term
 #### ④ RAG 原子知识卡
-- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — §3 休息触发机制（`Resting` 唯一来源 = 每日睡眠沉淀；上下文过载走 `compact_context` 不属于休息）
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — §3 休息触发机制（`Resting` 唯一来源 = 每日睡眠沉淀；上下文过载走 `compact_context` 不属于休息）

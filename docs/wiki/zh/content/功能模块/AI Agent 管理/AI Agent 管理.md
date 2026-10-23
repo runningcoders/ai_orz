@@ -8,7 +8,7 @@
 - [agent.rs](src/service/dal/agent/mod.rs)
 - [external_agent_design.md](docs/external_agent_design.md)
 - [message_interaction_design.md](docs/message_interaction_design.md)
-- [project_management_design.md](docs/project_management_design.md)
+- [project_management_design.md](docs/archive/design-archive/project_management_design.md)
 - [stats_query_design.md](docs/stats_query_design.md)
 - [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
@@ -48,7 +48,7 @@
 - 业务实体与运行时配置：src/models/agent.rs
 - DAL 层（数据访问与装配）：src/service/dal/agent/mod.rs
 - 运行时状态管理：src/pkg/agent_runtime_state.rs
-- 设计与流程文档：docs/external_agent_design.md、docs/message_interaction_design.md、docs/project_management_design.md、docs/stats_query_design.md（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
+- 设计与流程文档：docs/external_agent_design.md、docs/message_interaction_design.md、docs/archive/design-archive/project_management_design.md、docs/stats_query_design.md（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ```mermaid
 graph TB
@@ -91,7 +91,7 @@ DOC5 --> D1
 - [agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [agent.rs:186-328](src/models/agent.rs#L186-L328)
 - [agent.rs:330-553](src/models/agent.rs#L330-L553)
-- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rs#L193)
 - [agent_runtime_state.rs:11-132](src/pkg/agent_runtime_state.rs#L11-L132)
 
 章节来源
@@ -100,7 +100,7 @@ DOC5 --> D1
 - [agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [agent.rs:186-328](src/models/agent.rs#L186-L328)
 - [agent.rs:330-553](src/models/agent.rs#L330-L553)
-- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rs#L193)
 - [agent_runtime_state.rs:11-132](src/pkg/agent_runtime_state.rs#L11-L132)
 
 ## 核心组件
@@ -116,7 +116,7 @@ DOC5 --> D1
 - [agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)
 - [agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [agent.rs:186-328](src/models/agent.rs#L186-L328)
-- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rs#L193)
 - [agent_runtime_state.rs:31-132](src/pkg/agent_runtime_state.rs#L31-L132)
 
 ## 架构总览
@@ -142,12 +142,12 @@ CONSUMER-->>U : SSE 推送回复
 
 图表来源
 - [message_interaction_design.md:162-219](docs/message_interaction_design.md#L162-L219)
-- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rs#L193)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 章节来源
 - [message_interaction_design.md:162-219](docs/message_interaction_design.md#L162-L219)
-- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rs#L193)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 ## 详细组件分析
@@ -235,11 +235,11 @@ Reply --> End
 
 图表来源
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [project_management_design.md:567-601](docs/project_management_design.md#L567-L601)
+- [project_management_design.md:567-601](docs/archive/design-archive/project_management_design.md#L567-L601)
 
 章节来源
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [project_management_design.md:567-601](docs/project_management_design.md#L567-L601)
+- [project_management_design.md:567-601](docs/archive/design-archive/project_management_design.md#L567-L601)
 
 ### 记忆系统与沉淀（sleep_and_settle）
 - Settle 场景：仅加载记忆相关 skill 与工具，生成待沉淀摘要，调用 builder.build_sleep_prompt 形成沉淀提示
@@ -307,7 +307,7 @@ ADP-->>API : 返回 ok
 章节来源
 - [stats_query_design.md:195-451](docs/stats_query_design.md#L195-L451)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
-- [agent.rs:244-312](src/service/dal/agent/mod.rsL312)
+- [agent.rs:244-312](src/service/dal/agent/mod.rs#L312)
 
 ## 依赖关系分析
 - AgentDal 依赖多个 DAO：AgentDao、AgentVectorDao、AgentStatsDao、ToolStatsDao、ModelProviderStatsDao、CortexDao、ModelProviderDao
@@ -327,11 +327,11 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 ```
 
 图表来源
-- [agent.rs:196-204](src/service/dal/agent/mod.rsL204)
+- [agent.rs:196-204](src/service/dal/agent/mod.rs#L204)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 章节来源
-- [agent.rs:196-204](src/service/dal/agent/mod.rsL204)
+- [agent.rs:196-204](src/service/dal/agent/mod.rs#L204)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 ## 性能考量
@@ -341,10 +341,10 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 - 批量操作：搜索时按 chunk 批量获取 Po，减少 N+1 查询
 
 章节来源
-- [agent.rs:244-312](src/service/dal/agent/mod.rsL312)
-- [agent.rs:373-405](src/service/dal/agent/mod.rsL405)
+- [agent.rs:244-312](src/service/dal/agent/mod.rs#L312)
+- [agent.rs:373-405](src/service/dal/agent/mod.rs#L405)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:563-588](src/service/dal/agent/mod.rsL588)
+- [agent.rs:563-588](src/service/dal/agent/mod.rs#L588)
 
 ## 故障排查指南
 - 无法唤醒 Agent：检查运行时状态是否为 Busy/Resting；确认 try_set_busy 是否成功
@@ -354,7 +354,7 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 
 章节来源
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:244-312](src/service/dal/agent/mod.rsL312)
+- [agent.rs:244-312](src/service/dal/agent/mod.rs#L312)
 - [stats_query_design.md:416-451](docs/stats_query_design.md#L416-L451)
 - [external_agent_design.md:107-199](docs/external_agent_design.md#L107-L199)
 

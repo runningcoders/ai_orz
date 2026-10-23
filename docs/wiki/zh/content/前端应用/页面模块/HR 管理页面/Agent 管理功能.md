@@ -67,10 +67,10 @@ D --> DAL["DAL/DAO<br/>Agent/Skill/Tool 数据访问"]
 图表来源
 - [frontend/src/pages/hr/agents.rs:1-150](frontend/src/pages/hr/agents.rs#L1-L150)
 - [frontend/src/pages/hr/agent_detail.rs:1-120](frontend/src/pages/hr/agent_detail.rs#L1-L120)
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/list_agents.rs:1-61](src/handlers/hr/agent/list_agents.rs#L1-L61)
 - [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
 - [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:1-51](src/handlers/hr/agent/update_agent_status.rs#L1-L51)
 - [src/service/domain/hr/agent.rs:1-120](src/service/domain/hr/agent.rs#L1-L120)
 
 章节来源
@@ -131,10 +131,10 @@ H-->>FE : 返回新状态
 图表来源
 - [frontend/src/pages/hr/agents.rs:85-139](frontend/src/pages/hr/agents.rs#L85-L139)
 - [frontend/src/pages/hr/agent_detail.rs:134-236](frontend/src/pages/hr/agent_detail.rs#L134-L236)
-- [src/handlers/hr/agent/list_agents.rs:21-62](src/handlers/hr/agent/list_agents.rs#L21-L62)
+- [src/handlers/hr/agent/list_agents.rs:21-61](src/handlers/hr/agent/list_agents.rs#L21-L61)
 - [src/handlers/hr/agent/get_agent.rs:24-138](src/handlers/hr/agent/get_agent.rs#L24-L138)
 - [src/handlers/hr/agent/create_agent.rs:18-60](src/handlers/hr/agent/create_agent.rs#L18-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:24-129](src/handlers/hr/agent/update_agent_status.rs#L24-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:24-51](src/handlers/hr/agent/update_agent_status.rs#L24-L51)
 - [src/service/domain/hr/agent.rs:60-270](src/service/domain/hr/agent.rs#L60-L270)
 
 ## 详细组件分析
@@ -219,7 +219,7 @@ SSE-->>FE : 推送消息去重/替换乐观消息
 - [frontend/src/pages/hr/agent_detail.rs:134-236](frontend/src/pages/hr/agent_detail.rs#L134-L236)
 - [frontend/src/pages/hr/agent_detail.rs:238-324](frontend/src/pages/hr/agent_detail.rs#L238-L324)
 - [src/handlers/hr/agent/get_agent.rs:24-138](src/handlers/hr/agent/get_agent.rs#L24-L138)
-- [src/handlers/hr/agent/update_agent_status.rs:24-129](src/handlers/hr/agent/update_agent_status.rs#L24-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:24-51](src/handlers/hr/agent/update_agent_status.rs#L24-L51)
 
 章节来源
 - [frontend/src/pages/hr/agent_detail.rs:84-236](frontend/src/pages/hr/agent_detail.rs#L84-L236)
@@ -300,12 +300,12 @@ AutoInstall --> Done
 - [src/service/domain/hr/agent.rs:60-84](src/service/domain/hr/agent.rs#L60-L84)
 - [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
 - [src/handlers/hr/agent/create_agent.rs:18-60](src/handlers/hr/agent/create_agent.rs#L18-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:24-129](src/handlers/hr/agent/update_agent_status.rs#L24-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:24-51](src/handlers/hr/agent/update_agent_status.rs#L24-L51)
 
 章节来源
 - [src/service/domain/hr/agent.rs:60-270](src/service/domain/hr/agent.rs#L60-L270)
 - [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:1-51](src/handlers/hr/agent/update_agent_status.rs#L1-L51)
 
 ### 与技能包、工具绑定的关系管理界面
 - 工具包

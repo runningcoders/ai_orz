@@ -14,7 +14,7 @@ scope:
   - "src/service/dal/organization/contract.rs"
   - "src/service/dao/federation_contract/**"
   - "src/service/domain/organization/org.rs"
-  - "src/service/dal/organization.rs"
+  - "src/service/dal/organization/mod.rs"
   - "common/src/api/organization_link.rs"
   - "common/src/constants/http_header.rs"
   - "common/src/enums/organization.rs"
@@ -158,7 +158,7 @@ WS 运行期收到帧 → adapter 解析 → 关联 FederationIdentity → Feder
 ### 出站签名构造（对端组织发起调用时）
 
 ```
-call_peer facade (src/service/dal/organization.rs)
+call_peer facade (src/service/dal/organization/mod.rs)
   ↓
 crypto::build_signing_string(key_id, timestamp, nonce, "POST", "/a2a", request_body)
   ↓

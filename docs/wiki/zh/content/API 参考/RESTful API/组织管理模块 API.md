@@ -10,7 +10,7 @@
 - [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs)
 - [common/src/api/organization.rs](common/src/api/organization.rs)
 - [src/service/domain/organization/mod.rs](src/service/domain/organization/mod.rs)
-- [src/service/dal/organization.rs](src/service/dal/organization.rs)
+- [src/service/dal/organization/mod.rs](src/service/dal/organization/mod.rs)
 - [src/models/organization.rs](src/models/organization.rs)
 
 ### 本文关联的设计文档
@@ -73,7 +73,7 @@ L1 --> M1
 - [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
 - [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 - [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 章节来源
@@ -94,7 +94,7 @@ L1 --> M1
 
 章节来源
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 - [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 ## 架构总览
@@ -118,7 +118,7 @@ H-->>C : "ListOrganizationsResponse"
 图表来源
 - [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 - [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 ## 详细组件分析
@@ -144,7 +144,7 @@ MapDTO --> Resp["返回 ListOrganizationsResponse"]
 
 图表来源
 - [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
 章节来源
 - [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
@@ -176,7 +176,7 @@ H-->>C : "GetOrganizationResponse"
 
 图表来源
 - [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
 章节来源
 - [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
@@ -273,12 +273,12 @@ L --> M["Models(Po)"]
 
 图表来源
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 - [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 章节来源
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
 ## 性能考虑
 - 查询优化：

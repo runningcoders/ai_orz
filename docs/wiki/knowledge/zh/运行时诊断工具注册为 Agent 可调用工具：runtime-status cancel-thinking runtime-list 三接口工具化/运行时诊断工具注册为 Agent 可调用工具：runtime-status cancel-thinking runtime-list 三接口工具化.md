@@ -14,7 +14,7 @@ source_files:
 - src/handlers/runtime/runtime_list.rs#L1-L120
 - src/service/domain/runtime/management.rs#L1-L200
 - src/service/domain/runtime/awakening.rs#L1-L150
-- src/pkg/aop/think/registry.rs#L1-L100
+- src/pkg/aop/core/registry.rs#L1-L100
 - docs/design/runtime_design.md
 - docs/design/thinking_task_policy_engine_design.md
 - docs/archive/design-archive/tool_and_skill_system.md
@@ -56,7 +56,7 @@ d1d1013f 变更把原先「只供前端轮询面板」的 3 个 runtime 诊断 H
 | [src/handlers/runtime/runtime_list.rs](src/handlers/runtime/runtime_list.rs) | 前端列表 HTTP handler（保留原接口） | 查询活跃 think runtime；工具层复用同一 Query 流程 |
 | [src/service/domain/runtime/management.rs](src/service/domain/runtime/management.rs) | RuntimeDomain Management trait 实现（单一事实源） | `get_runtime_status(ctx, agent_id, trace_id) -> RuntimeStatusView`、`cancel_thinking(ctx, trace_id, reason) -> Result<()>`、`list_active_runtimes(ctx, org_id, pagination) -> PagedResult<RuntimeListView>`；**Handler 与 Tool 必须都调这里**，禁止各写一套查询逻辑（保证状态读取一致性） |
 | [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs) | 策略 evaluate 读取 cancel_token | UserCancelPolicy / 混合模式 hard 层每轮读 cancel_token，命中后 exit_reason 分「用户从前端取消」vs「Agent 自己调 cancel_thinking 工具」两种（reason 字段区分，日志前缀 `reason=user_cancel_frontend` vs `reason=cancel_by_agent_self`） |
-| [src/pkg/aop/think/registry.rs](src/pkg/aop/think/registry.rs) | 活跃 runtime 注册中心（内存 HashMap） | 所有 AgentAwakeEvent 启动时 register、结束时 unregister；runtime_list 工具 & handler 都从这里扫活跃键 + management.rs 补业务字段 |
+| [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs) | 活跃 runtime 注册中心（内存 HashMap） | 所有 AgentAwakeEvent 启动时 register、结束时 unregister；runtime_list 工具 & handler 都从这里扫活跃键 + management.rs 补业务字段 |
 | 【兄弟卡】策略引擎卡（Level3 兄弟）| PolicyMixed 与 cancel_token UserCancelPolicy | [策略引擎卡](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20混合模式支持/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20混合模式支持.md) |
 | 【兄弟卡】工具系统三层调用架构卡（Level3 兄弟）| register_handler_tool! 宏 + 三协议路由 | [工具系统三层调用卡](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) |
 | 【Wiki 长文】运行时领域.md | 系统化上下文 | [运行时领域](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) |

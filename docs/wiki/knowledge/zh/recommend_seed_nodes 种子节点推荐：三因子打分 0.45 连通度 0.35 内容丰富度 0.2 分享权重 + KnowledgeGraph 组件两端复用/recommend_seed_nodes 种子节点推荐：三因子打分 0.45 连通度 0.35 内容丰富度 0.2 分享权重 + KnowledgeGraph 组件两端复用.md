@@ -26,7 +26,7 @@ source_files:
   - docs/wiki/zh/content/功能模块/AI Agent 管理/记忆系统管理.md (③ Wiki 长文：种子节点推荐面板 + 点击定位画布)
   - docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md (③ Wiki 长文：推荐起点 + 画布渲染 + 链式探索三段)
   - 【平行卡】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md (下游：用户点推荐卡片后实际调用 traverse_knowledge_graph 展开邻域)
-  - 【总卡】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md (本卡是「recommend_seed_nodes 起点推荐」这一段的总-分细卡)
+  - 【总卡】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS／DFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS／DFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md (本卡是「recommend_seed_nodes 起点推荐」这一段的总-分细卡)
 ---
 
 ## §1 概述

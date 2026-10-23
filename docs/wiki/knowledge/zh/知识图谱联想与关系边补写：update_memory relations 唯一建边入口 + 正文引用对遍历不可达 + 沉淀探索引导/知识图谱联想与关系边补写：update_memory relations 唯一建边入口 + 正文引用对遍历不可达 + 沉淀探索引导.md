@@ -25,7 +25,7 @@ source_files:
   - src/handlers/hr/agent/save_long_term_memory.rs (节点+边同建路径：新节点用 save_long_term_memory，既有节点补边用 update_memory)
   - docs/wiki/zh/content/功能模块/AI Agent 管理/记忆系统管理.md
   - docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md
-  - 【关联卡·上游】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md
+  - 【关联卡·上游】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS／DFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS／DFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md
   - 【关联卡·下游】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md
   - src/handlers/hr/agent/mod.rs#L294-L420 (v1.2 增量 87c35228：两写入口共享 write_relations_with_receipt——is_placeholder_node_id L294（self/kn_self/kn_new_self 占位符逐项拒）/is_valid_node_id L303（kn_ 前缀）/静态校验→批内同键去重→端点批量 Active 预检→逐条独立落库；整批永不 Err，逐条 RelationWriteResult{key,status,relation_id,error_code,message,field})
   - common/src/api/neural_tools.rs (v1.2：RelationWriteResult / RelationWriteStatus；save_long_term_memory 与 update_memory 两 Response 挂 relations_result + property_issues_v2，skip 序列化默认空)

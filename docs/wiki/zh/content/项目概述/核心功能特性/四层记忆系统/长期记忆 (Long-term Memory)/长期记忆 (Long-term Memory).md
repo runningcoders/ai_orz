@@ -232,7 +232,7 @@ KnowledgeReferencePo <.. Memory : "引用"
 - 沉淀约束
   - 内循环只使用记忆工具，不发送消息；先检索再创建，优先更新旧节点；关系方向精确；及时纠错与拆分大节点；published 只标给值得他人优先参考的通用知识（它不控制可见性）。
 - 自动沉淀路径
-  - DAL 的 settle_short_term_to_long_term：查询 Active 短期记忆 → 创建知识节点 → 标记为 Settled。
+  - Domain 的 settle_pending（legacy_settle 三节点）→ DAL mark_short_term_settled：查询 Active 短期记忆 → 创建知识节点 → 标记为 Settled。
 
 ```mermaid
 flowchart TD
@@ -378,7 +378,7 @@ H-->>FE : 返回 MemoryResult[]
 
 ### 维护策略（定期整理、冲突解决、性能优化）
 - 定期整理
-  - 通过 settle_memory 或 CronTrigger agent_rest 周期性触发沉淀；DAL 提供 settle_short_term_to_long_term 自动沉淀路径。
+  - 通过 settle_memory 或 CronTrigger agent_rest 周期性触发沉淀；自动沉淀路径为 load_and_settle → settle_pending，DAL 只负责 mark_short_term_settled。
 - 冲突解决
   - 更新节点内容并补充 references；对矛盾认知建立 opposite 关系保留历史；拆分大节点降低噪声。
 - 性能优化

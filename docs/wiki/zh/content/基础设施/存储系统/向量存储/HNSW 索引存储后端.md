@@ -5,7 +5,7 @@
 - [hnsw.rs](src/pkg/storage/hnsw.rs)
 - [vector.rs](src/pkg/storage/vector.rs)
 - [lance.rs](src/pkg/storage/lance.rs)
-- [vector_search_architecture.md](docs/vector_search_architecture.md)
+- [vector_search_architecture.md](docs/archive/design-archive/vector_search_architecture.md)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [vector.rs（模型定义）](src/models/vector.rs)
 </cite>
@@ -54,7 +54,7 @@ VS --> LANCE
 
 章节来源
 - [vector.rs:1-74](src/pkg/storage/vector.rs#L1-L74)
-- [vector_search_architecture.md:161-206](docs/vector_search_architecture.md#L161-L206)
+- [vector_search_architecture.md:161-206](docs/archive/design-archive/vector_search_architecture.md#L161-L206)
 
 ## 核心组件
 - VectorStore trait：定义统一的向量存储接口，包括集合初始化、upsert、search、get、delete、clear_collection、flush 等。
@@ -239,7 +239,7 @@ Store->>FS : 兜底落盘
 章节来源
 - [vector.rs:76-235](src/pkg/storage/vector.rs#L76-L235)
 - [lance.rs:1-294](src/pkg/storage/lance.rs#L1-L294)
-- [vector_search_architecture.md:178-184](docs/vector_search_architecture.md#L178-L184)
+- [vector_search_architecture.md:178-184](docs/archive/design-archive/vector_search_architecture.md#L178-L184)
 
 ## 依赖关系分析
 - HnswStore 依赖 instant-distance 库提供 HnswMap/Builder/Search；使用 bincode 进行序列化；使用 tokio::sync::RwLock 保证并发安全；使用 chrono 记录时间戳。
@@ -283,7 +283,7 @@ VS --> MODELS["models/vector.rs"]
   - 针对 HnswStore 的性能评估，可设计压测脚本测量 upsert/search 耗时与重建频率，结合日志观察 dirty 标志变化与落盘周期。
 
 章节来源
-- [vector_search_architecture.md:425-463](docs/vector_search_architecture.md#L425-L463)
+- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L463)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 故障排查指南
@@ -301,7 +301,7 @@ VS --> MODELS["models/vector.rs"]
 - [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
 - [hnsw.rs:344-388](src/pkg/storage/hnsw.rs#L344-L388)
 - [hnsw.rs:403-430](src/pkg/storage/hnsw.rs#L403-L430)
-- [vector_search_architecture.md:448-463](docs/vector_search_architecture.md#L448-L463)
+- [vector_search_architecture.md:448-463](docs/archive/design-archive/vector_search_architecture.md#L448-L463)
 
 ## 结论
 HnswStore 提供了纯 Rust 的 HNSW 向量存储后端，具备懒重建、余弦距离、bincode 持久化与后台落盘能力，适合中小规模与零依赖场景。通过 VectorStore 抽象，上层可无缝切换后端。与 SQLite VSS 相比，HnswStore 更轻量、易部署；与 LanceDB 相比，后者更适合大规模生产负载。建议在业务侧合理拆分集合、控制过期策略与 top_k，并结合后台任务与兜底落盘保障数据一致性。
@@ -314,7 +314,7 @@ HnswStore 提供了纯 Rust 的 HNSW 向量存储后端，具备懒重建、余�
   - SqliteVssStore：[vector.rs:76-235](src/pkg/storage/vector.rs#L76-L235)
   - LanceVectorStore：[lance.rs:1-294](src/pkg/storage/lance.rs#L1-L294)
 - 架构与设计文档：
-  - 向量搜索架构：[vector_search_architecture.md:161-206](docs/vector_search_architecture.md#L161-L206)
+  - 向量搜索架构：[vector_search_architecture.md:161-206](docs/archive/design-archive/vector_search_architecture.md#L161-L206)
   - HNSW 增强计划：（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ---

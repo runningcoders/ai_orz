@@ -18,7 +18,7 @@
 - [error/code.rs（错误码）](common/src/error/code.rs)（2026-10-12：建边 5 码 + 属性 6 码）
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）](src/service/dao/memory/mod.rs)
-- [vector_search_architecture.md](docs/vector_search_architecture.md)
+- [vector_search_architecture.md](docs/archive/design-archive/vector_search_architecture.md)
 
 > **更新摘要 2026-10-12（base 2f42b407→a4525d6c）**：① save_long_term_memory / update_memory 请求新增 `properties: []`（`KnowledgePropertyParam`：term_key + 六型 tagged value text/number/boolean/date/reference/enum_value），响应新增 `property_issues_v2: []`（`PropertyIssueEntry{code,message,field}`，结构化；旧字段 `property_issues: []string` 并存）；建边响应新增 `relations_result: []`（`RelationWriteResult{key,status,relation_id,error_code,message,field}`，逐项 keyed 回执；`relation_ids` 收紧为成功边 ID）。② search_memory 请求新增 `property_filters: []`（`PropertyFilterParam{term_key,op: Eq|Gt|Gte|Lt|Le,value}`，与 seed_node_ids 互斥），结果节点新增 `properties: []`（`KnowledgePropertyItem` 仅回显 status=1 生效值）。错误码语义见 common/src/error/code.rs；数据模型与门禁全景见长文 [本体属性管理](../../../功能模块/知识图谱管理/本体属性管理.md)。
 </cite>
@@ -297,7 +297,7 @@ DAL --> DAO : "组合"
   - 沉淀周期调优：结合 Agent 空闲时段批量处理，降低峰值压力
 
 章节来源
-- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
+- [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 故障排查指南
@@ -340,4 +340,4 @@ DAL --> DAO : "组合"
 章节来源
 - [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
 - [query_memory.rs:21-75](src/handlers/hr/agent/query_memory.rs#L21-L75)
-- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
+- [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)

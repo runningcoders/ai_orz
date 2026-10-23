@@ -2,7 +2,7 @@
 
 <cite>
 **本文引用的文件**
-- [vector_search_architecture.md](docs/vector_search_architecture.md)
+- [vector_search_architecture.md](docs/archive/design-archive/vector_search_architecture.md)
 - [agent/mod.rs](src/service/dao/agent/mod.rs)
 - [search_agents.rs](src/handlers/hr/agent/search_agents.rs)
 - [dal/memory/graph.rs](src/service/dal/memory/graph.rs)
@@ -30,7 +30,7 @@
 本项目采用严格四层单向调用：Adapter（HTTP Handler / 公开回调 Handler / AOP Producer）→ Domain → DAL → DAO；PO 仅在 DAO/DAL 内部使用，Domain 层输入为 Command/Query，输出业务实体与事件；DAL 对外接口统一使用业务实体；service 层公共方法首参为 RequestContext；通用工具在 pkg 层；启动分两阶段初始化；技术栈包含 Axum + sqlx(SQLite, FTS5) + DuckDB(统计) + LanceDB/HNSW/InMemory 多后端向量存储。
 
 **章节来源**
-- [vector_search_architecture.md:1-529](docs/vector_search_architecture.md#L1-L529)
+- [vector_search_architecture.md:1-529](docs/archive/design-archive/vector_search_architecture.md#L1-L529)
 
 ## 项目结构
 围绕 Agent 搜索与推荐，涉及的关键路径如下：
@@ -83,7 +83,7 @@ M1 --> S2
 - [fts5.rs:1-44](src/pkg/storage/fts5.rs#L1-L44)
 
 **章节来源**
-- [vector_search_architecture.md:46-131](docs/vector_search_architecture.md#L46-L131)
+- [vector_search_architecture.md:46-131](docs/archive/design-archive/vector_search_architecture.md#L46-L131)
 
 ## 核心组件
 - Agent 搜索统一入参：支持关键词、查询向量、Top K、距离阈值与业务过滤条件复用
@@ -94,7 +94,7 @@ M1 --> S2
 
 **章节来源**
 - [agent/mod.rs:33-92](src/service/dao/agent/mod.rs#L33-L92)
-- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
+- [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
@@ -134,7 +134,7 @@ Handler-->>Client : 搜索结果
 - [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L68)
 - [agent/mod.rs:81-92](src/service/dao/agent/mod.rs#L81-L92)
 - [vector.rs:35-43](src/pkg/storage/vector.rs#L35-L43)
-- [vector_search_architecture.md:97-118](docs/vector_search_architecture.md#L97-L118)
+- [vector_search_architecture.md:97-118](docs/archive/design-archive/vector_search_architecture.md#L97-L118)
 
 ## 详细组件分析
 
@@ -161,12 +161,12 @@ Sort --> End(["返回分页结果"])
 
 **图表来源**
 - [agent/mod.rs:33-92](src/service/dao/agent/mod.rs#L33-L92)
-- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
+- [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
 
 **章节来源**
 - [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L68)
 - [agent/mod.rs:33-92](src/service/dao/agent/mod.rs#L33-L92)
-- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
+- [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
 
 ### 相似度计算与距离阈值
 - 相似度度量：余弦距离（或等价距离函数），由具体 VectorStore 实现决定
@@ -174,7 +174,7 @@ Sort --> End(["返回分页结果"])
 - 内容哈希：用于判断是否需要重建索引，避免重复向量化
 
 **章节来源**
-- [vector_search_architecture.md:161-203](docs/vector_search_architecture.md#L161-L203)
+- [vector_search_architecture.md:161-203](docs/archive/design-archive/vector_search_architecture.md#L161-L203)
 - [vector.rs:270-289](src/pkg/storage/vector.rs#L270-L289)
 
 ### 种子节点推荐算法
@@ -226,7 +226,7 @@ Truncate --> REnd(["返回推荐列表"])
   - 结合分页参数实现个性化展示
 
 **章节来源**
-- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
+- [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
 - [dal/memory/search.rs](src/service/dal/memory/search.rs)
 
 ## 依赖关系分析
@@ -251,7 +251,7 @@ B --> T["FTS5 工具"]
 - [fts5.rs:1-44](src/pkg/storage/fts5.rs#L1-L44)
 
 **章节来源**
-- [vector_search_architecture.md:46-131](docs/vector_search_architecture.md#L46-L131)
+- [vector_search_architecture.md:46-131](docs/archive/design-archive/vector_search_architecture.md#L46-L131)
 
 ## 性能考虑
 - 向量存储后端选择：
@@ -267,7 +267,7 @@ B --> T["FTS5 工具"]
 - 分页与限制：搜索场景限制最大返回数量，避免全量结果拖慢
 
 **章节来源**
-- [vector_search_architecture.md:120-158](docs/vector_search_architecture.md#L120-L158)
+- [vector_search_architecture.md:120-158](docs/archive/design-archive/vector_search_architecture.md#L120-L158)
 - [vector.rs:270-289](src/pkg/storage/vector.rs#L270-L289)
 
 ## 故障排查指南
@@ -289,5 +289,5 @@ Agent 搜索与推荐通过“FTS5 + 向量”的混合检索与“度数优先�
 - 种子节点推荐算法流程与数据来源见 DAL 实现
 
 **章节来源**
-- [vector_search_architecture.md:161-203](docs/vector_search_architecture.md#L161-L203)
+- [vector_search_architecture.md:161-203](docs/archive/design-archive/vector_search_architecture.md#L161-L203)
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)

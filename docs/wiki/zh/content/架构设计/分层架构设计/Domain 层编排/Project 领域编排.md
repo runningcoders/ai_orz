@@ -2,8 +2,8 @@
 
 <cite>
 **本文引用的文件**
-- [项目系统设计文档](docs/project_design.md)
-- [项目管理系统设计文档](docs/project_management_design.md)
+- [项目系统设计文档](docs/archive/design-archive/project_design.md)
+- [项目管理系统设计文档](docs/archive/design-archive/project_management_design.md)
 - [架构说明](docs/ARCHITECTURE.md)
 - [Project Domain 入口与接口定义](src/service/domain/project/mod.rs)
 - [Task 业务实现](src/service/domain/project/task.rs)
@@ -81,7 +81,7 @@ D2 --> DG
 - [任务图构建器:17-28](src/service/domain/project/task_graph.rs#L17-L28)
 
 章节来源
-- [项目管理系统设计文档:11-32](docs/project_management_design.md#L11-L32)
+- [项目管理系统设计文档:11-32](docs/archive/design-archive/project_management_design.md#L11-L32)
 - [架构说明:24-33](docs/ARCHITECTURE.md#L24-L33)
 
 ## 核心组件
@@ -127,7 +127,7 @@ Handler-->>Client : HTTP 响应
 - [Artifact DAL:95-98](src/service/dal/artifact.rs#L95-L98)
 
 章节来源
-- [项目管理系统设计文档:138-175](docs/project_management_design.md#L138-L175)
+- [项目管理系统设计文档:138-175](docs/archive/design-archive/project_management_design.md#L138-L175)
 - [架构说明:56-64](docs/ARCHITECTURE.md#L56-L64)
 
 ## 详细组件分析

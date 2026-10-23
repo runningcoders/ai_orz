@@ -73,13 +73,13 @@ source_files:
 | [agent.awakening 消费者（沉淀入口）](src/consumer/message.rs) | Async 消费 message.created **与** agent.settle.requested | 两类事件同队列同 `order_key=agent_id` → 同 Agent 串行（拆开消费者会让串行静默失效）；`handle_settle_request` 汇入 `settle_agent_exclusive`；`concurrency=4`；收尾按 topic 反查 producer（仅 `message.created` 声明 `.notify_producer()`，由 `MessageDalImpl::on_consumed` 翻 `messages.status`；`agent.settle.requested` 无底层行、不声明）；`Consumer::ack/nack` 与 `source` 已整体删除 |
 | [AgentSettleEvent 事件定义](src/models/events/agent_settle.rs#L1-L85) | 沉淀排队单元 | kind=`agent.settle.requested`；**order_key 必须是 agent_id**（与 message.created 对 Agent 接收者同源，保证沉淀不与同 Agent 消息并发） |
 | [try_set_resting 原子抢占](src/pkg/agent_runtime_state.rs#L353-L382) | 状态机保护 | Idle → Resting 返回 true；Busy/Resting → false 且不改状态；与 `try_set_busy` 同构，禁止拆成「先查询、后设状态」 |
-| [DAL settle_short_term_to_long_term 核心沉淀](src/service/dal/memory/store.rs) | 短期 → 长期核心算法 | ① 向量搜索相似节点（冲突检测）→ ② 命中：更新已有节点 + 合并关系（去重）→ ③ 未命中：新建节点 + 关系 → ④ 更新短期记忆 status=Settled |
-| [Runtime awaken_for_summary 总结退出](src/service/domain/runtime/summary.rs#L36-L80) | 轮次超限或任务完成的总结 | 与 Settle 场景工具白名单对齐（neural+memory+messaging+project_management）；结构化 Final 输出 + 标记退出原因 |
+| [DAL mark_short_term_settled 沉淀状态闭环](src/service/dal/memory/store.rs#L174-L226) | 短期记忆消化后置 Settled（软保留，不物理删除） | ④ 更新短期记忆 status=Settled；①②③ 的沉淀决策由 Domain `legacy_settle` 三节点（Prepare → Settle → Finalize）承担 |
+| [Runtime awaken_for_summary 总结退出](src/service/domain/runtime/compaction.rs) | 轮次超限或任务完成的总结 | 与 Settle 场景工具白名单对齐（neural+memory+messaging+project_management）；结构化 Final 输出 + 标记退出原因 |
 | [SystemDomain ensure_system_cron_triggers](src/service/domain/system/mod.rs#L415-L472) | 系统启动基础数据注入 | 幂等按 payload.contains("\"agent_rest\"") 检查；注入两条系统触发器：agent_rest Cron 每天 04:00 + project_followup 每 3600 秒间隔 |
 | [CronTriggerProducer 每分钟扫描](src/producer/cron_trigger.rs#L38-L87) | 到期触发器扫描 | 每分钟 tick：list_due(now, max=20) → 发布 AOP 事件 cron.trigger；失败只打 warn 不 panic |
 | [CronTriggerConsumer 调度分发](src/consumer/scheduler.rs#L39-L200) | Cron 事件消费路由 | 同步消费：payload JSON 解析 action → match agent_rest/project_followup；**agent_rest 只解析目标 Agent 并 publish AgentSettleEvent 后立即返回，不在本线程沉淀**（Sync 消费者跑在 cron poll 线程，长任务会堵住全部定时器） |
 | [系统定时任务集成测试](tests/integration/system_cron_triggers_test.rs) | 启动注入回归防护 | init_full_test_env 后断言两条触发器存在；防止未来有人误删 ensure_system_cron_triggers 代码 |
-| [Cron 表达式与系统时区](src/pkg/cron/mod.rs#L1-L60) | next_run_at 计算 | chrono-crate 解析 cron 表达式；system_timezone 获取；容器部署须挂载 /etc/timezone 或 TZ 环境变量 |
+| [Cron 表达式与系统时区](src/pkg/cron.rs#L1-L60) | next_run_at 计算 | chrono-crate 解析 cron 表达式；system_timezone 获取；容器部署须挂载 /etc/timezone 或 TZ 环境变量 |
 | [save_short_term_memory 神经工具](src/handlers/hr/agent/save_short_term_memory.rs#L19-L56) | 专用神经工具（参数极简） | 仅 summary/tags/task_id 三参数；注册 neural tag；Agent 唤醒工具列表含此项；create_memory 不注入 |
 | [save_long_term_memory 神经工具](src/handlers/hr/agent/save_long_term_memory.rs#L21-L108) | 专用神经工具（参数极简） | node + relations 一并创建；不存在的 target 跳过 warn；relations 上限保护 |
 | [四层记忆 PO 定义](src/models/memory.rs#L158-L320) | PO 实体 SSOT | ShortTermMemoryIndexPo（summary/tags/trace_ids/status）；LongTermKnowledgeNodePo（node_name/description/summary/tags/is_published）；MemoryStatus Forgotten(0)/Active(1)/Settled(2) |
@@ -148,7 +148,7 @@ source_files:
         · 6 步任务步骤：归纳→查图谱→创建/更新节点→建关系→评估共享→标记完成
         · 5 条认知要点：图谱是活的、记抽象不记细节、迭代不覆盖、published 跨 Agent 桥接
      → run_think_loop（最多 N 轮 + 超时）
-  Step 5：DAL.settle_short_term_to_long_term（LLM 产出后落库）
+  Step 5：落库（handler 写知识节点/引用 → DAL.mark_short_term_settled）
      → 向量搜索相似节点（memory:knowledge_node 集合，threshold=0.78）
         · 命中 → 更新已有节点的 summary/description/tags
                  合并已有关系（同方向+同类型关系去重不重复创建）
@@ -188,7 +188,7 @@ source_files:
 | 12 | **合并已有节点必须 MERGE 关系**：命中相似节点后更新 summary/description/tags，同时去重合并出入边；绝不能丢弃旧节点 relations 导致图谱断链 | 两次语义相似 settle，断言知识图谱关系最终是 MERGE 后的并集 | [dal/memory/store.rs](src/service/dal/memory/store.rs) |
 | 13 | **CronTriggerConsumer handle_agent_rest 永不 panic**：payload 缺字段、Agent 不存在、LLM 异常，全部 catch_unwind 打 warn 跳过；否则整条 Cron 消费者线程崩了，所有触发器都不再执行 | 故意构造空 payload 启动 consumer → 应只打 warn，不影响后续 project_followup 触发 | [consumer/scheduler.rs#L100-L127](src/consumer/scheduler.rs#L100-L127) handle_agent_rest 异常处理 |
 | 14 | **ensure_system_cron_triggers 绝不做 UPDATE**：系统重启只创建不存在的触发器；用户手工改 cron_expression（4点→5点）应保留，不能覆盖用户设置 | 用户改 cron_expression 为"0 0 5 * * *"→ 重启后 SELECT cron_expression 仍是 5 点 | [system/mod.rs ensure_system_cron_triggers](src/service/domain/system/mod.rs#L415-L472) 仅 INSERT 无 UPDATE |
-| 15 | **next_run_at 计算失败必须置 is_enabled=0**：cron 表达式非法或时区异常 → 触发器禁用 + 打 sys_error；否则该触发器永远占 max_events=20 的坑，其他正常触发器跑不起来 | 故意把 cron_expression 改成"* * * *" → 启动后该触发器 is_enabled=0 | [pkg/cron/mod.rs](src/pkg/cron/mod.rs#L1-L60) next_run_at 异常处理分支 |
+| 15 | **next_run_at 计算失败必须置 is_enabled=0**：cron 表达式非法或时区异常 → 触发器禁用 + 打 sys_error；否则该触发器永远占 max_events=20 的坑，其他正常触发器跑不起来 | 故意把 cron_expression 改成"* * * *" → 启动后该触发器 is_enabled=0 | [pkg/cron/mod.rs](src/pkg/cron.rs#L1-L60) next_run_at 异常处理分支 |
 | 16 | **触发器推进改为「消费确认后才 mark」**（2026-09-16 P3 修复，勿颠倒）：`mark_trigger_executed` 已从生产者 `tick()`（原 `poll()`）移入 `CronTriggerProducer::on_consumed` —— 只有消费者报 `Ok` 才会经 `finish_consumption` → `Ack` 回调到这里推进 `next_run_at`；且 `executed_at` 取**事件 `created_at`**（≈ 触发时刻）而非回调时刻，避免 `next_run_at` 被消费耗时越拖越后。`decide_retry` **恒 `Retry`**（绝不可 `Discard`：`Discard` 会 ack 且仍回调 `on_consumed`，反把「未执行」标成「已执行」）。旧版「先 publish 再无条件推进」已废弃——那会把消费者内部吞掉的失败当成已执行 | 读 `producer/cron_trigger.rs` 的 `on_consumed` / 纯函数 `fired_at_of`；`tests/integration/agent_settle_queue_test.rs` 锁定「Agent 忙也必须入队」 | [cron_trigger.rs](src/producer/cron_trigger.rs) Producer 回调 |
 | 17 | **沉淀期间 Agent 收到唤醒请求需排队或 429**：Resting 态 Handler 层做 429 兜底，与 BusyGuard 语义双重保证，禁止 Awake 和 Sleep 同时进入 | Resting 态下 awaken 请求应返回 429 「Agent 正休息」，或 MessageConsumer 重新入队不丢 | [consumer/message.rs](src/consumer/message.rs) try_set_busy 失败分支 |
 | 18 | **handle_agent_rest 的目标 Agent 解析**（2026-09-16 现状）：payload 带 `agent_id` → 只派发该 Agent；缺省 → 扫描全库 `MemoryStatus::Active` 短期记忆、按 `short_term_of(m).agent_id` 去重出 Agent 列表（上限 1000，防触达时下周期继续）。**禁止**在任何分支里「解析不出目标就静默 return 跳过」——那正是「沉淀从未成功 / 丢一天」的表现形式；解析不出应是**空列表**（真的无人待沉淀），而不是错误 | `tests/integration/agent_settle_queue_test.rs::test_agent_rest_dispatches_settle_request_when_agent_busy`（指定 agent_id 必须精确入队） | [consumer/scheduler.rs handle_agent_rest](src/consumer/scheduler.rs) |
@@ -204,7 +204,7 @@ source_files:
 | 新增休息触发来源（如连续失败 > N 次后主动沉淀） | ① 在触发点发布 `EventTopic::AgentSettleRequested`（`agent.settle.requested`，order_key = `agent_id`）→ ② 由 `MessageConsumer::handle_settle_request` → `settle_agent_exclusive` 串行消费，复用现有 `load_and_settle` 链路（零改动）。❌ 禁止在触发线程里直接跑 LLM 沉淀，也禁止另起独立消费者（会打散 order_key 串行闸门） | [consumer/message.rs handle_settle_request](src/consumer/message.rs) + [settle_memory.rs settle_agent_exclusive](src/handlers/hr/agent/settle_memory.rs) |
 | 沉淀任务步骤追加第 7 步（如「生成关联标签并推荐给 Agent 下次关注」） | DefaultPromptBuilder.build_sleep_prompt 的「你的任务」6 步编号段落末尾追加；同步更新 memory_design.md §认知要点章节保持文档对齐 | [dal/agent.rs build_sleep_prompt §你的任务](src/service/dal/agent/mod.rs) |
 | 新增 Cron 触发器类型（如每周报表导出 / 月度数据归档） | ① consumer/scheduler.rs 追加 `match payload.action { "export_report" => ... }` 分支 → ② 对应 Domain（如 FinanceDomain）新增 export_weekly_report(ctx) 方法 → ③ ensure_system_cron_triggers 中追加 INSERT 语句（cron 表达式按需求） | [consumer/scheduler.rs 分发 match](src/consumer/scheduler.rs#L53-L131) |
-| 沉淀策略可配置化（按 Agent 可配置冲突阈值 / 每天沉淀条数 / 是否发布为共享） | ① AgentRuntimeConfig 追加 memory_settle_config JSON 字段 → ② RuntimeAwakening 透传 options 到 sleep_and_settle → ③ DAL settle_short_term_to_long_term 读取 config 覆盖默认阈值 | [models/agent.rs AgentRuntimeConfig 定义](src/models/agent.rs) |
+| 沉淀策略可配置化（按 Agent 可配置冲突阈值 / 每天沉淀条数 / 是否发布为共享） | ① AgentRuntimeConfig 追加 memory_settle_config JSON 字段 → ② RuntimeAwakening 透传 options 到 sleep_and_settle → ③ settle_pending / legacy_settle 读取 config 覆盖默认阈值 | [models/agent.rs AgentRuntimeConfig 定义](src/models/agent.rs) |
 
 **§4.3 记忆会话目录化与轨迹查询（2026-10-23 增量）**
 

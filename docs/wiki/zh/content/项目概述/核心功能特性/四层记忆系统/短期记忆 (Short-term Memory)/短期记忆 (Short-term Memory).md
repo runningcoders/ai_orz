@@ -286,7 +286,7 @@ Trunc --> End
 ### 短期记忆创建流程（从 trace 到聚合摘要）
 - 阶段一：AppendTraces 写入每日 JSONL，返回 position（date_filename + line_number）
 - 阶段二：CreateShortTerm 构造 ShortTermMemoryIndexPo（含 trace_ids、summary、tags），写入 SQLite，自动触发 FTS5，尝试向量化
-- 阶段三（可选）：settle_short_term_to_long_term 将 Active 短期记忆沉淀为长期知识节点，标记为 Settled
+- 阶段三（可选）：load_and_settle（Domain settle_pending → legacy_settle 三节点）将 Active 短期记忆沉淀为长期知识节点，标记为 Settled
 
 ```mermaid
 sequenceDiagram
@@ -326,7 +326,7 @@ DAL-->>App : ShortTerm memory_id
 ### 生命周期管理与清理策略
 - 状态管理：MemoryStatus（Forgotten/Active/Settled），默认查询过滤 Forgotten，Settled 表示已沉淀
 - 软删除：forget_short_term_index 标记为 Forgotten，不参与检索但保留数据
-- 沉淀：settle_short_term_to_long_term 将 Active 短期记忆转为长期知识节点，并标记为 Settled
+- 沉淀：load_and_settle → settle_pending（legacy_settle 三节点）将 Active 短期记忆转为长期知识节点，并标记为 Settled（DAL mark_short_term_settled）
 - 向量重建：rebuild_vectors 根据当前 Provider 决定是否清空并重建集合
 
 ```mermaid

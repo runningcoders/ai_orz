@@ -190,7 +190,7 @@ data/
 
 ### 核心接口设计
 
-> RuntimeMemory trait 完整定义见：[src/service/domain/runtime/mod.rs::RuntimeMemory](src/service/domain/runtime/mod.rs#L84-L140)（当前实现已演进为 8+ 个能力方法：get_recent_context、write_thinking_trace、query_memory、create_short_term、settle_short_term_to_long_term 等；全部复用 PO/DAL 层定义实现「最薄封装 + 零重复」）
+> RuntimeMemory trait 完整定义见：[src/service/domain/runtime/mod.rs::RuntimeMemory](src/service/domain/runtime/mod.rs#L84-L140)（当前实现已演进为 8+ 个能力方法：get_recent_context、write_thinking_trace、query_memory、create_short_term、mark_short_term_settled 等；全部复用 PO/DAL 层定义实现「最薄封装 + 零重复」）
 
 ### 实现模式
 
@@ -426,7 +426,7 @@ DAO (数据访问) ← 单一数据源 CRUD
 - 需要查询历史/恢复时，使用 `query` 方法绕过过滤
 - 测试适配：cancel 后 get 返回 None 是预期行为
 
-> 📖 **完整重构记录和决策过程**：请参考 [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) 和 [project_management_design.md](./project_management_design.md)
+> 📖 **完整重构记录和决策过程**：请参考 [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) 和 [project_management_design.md](docs/archive/design-archive/project_management_design.md)
 
 ---
 

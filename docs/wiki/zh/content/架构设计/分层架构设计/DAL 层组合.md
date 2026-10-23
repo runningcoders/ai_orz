@@ -8,12 +8,12 @@
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dal/tool.rs](src/service/dal/tool.rs)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
-- [src/service/dal/organization.rs](src/service/dal/organization.rs)
+- [src/service/dal/organization/mod.rs](src/service/dal/organization/mod.rs)
 - [src/service/dal/user.rs](src/service/dal/user.rs)
 - [src/service/dao/mod.rs](src/service/dao/mod.rs)
 - [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
 - [src/service/dao/user_credential/mod.rs](src/service/dao/user_credential/mod.rs)
-- [src/service/dao/lark_message_channel/mod.rs](src/service/dao/lark_message_channel/mod.rs)
+- [src/service/dao/lark/mod.rs](src/service/dao/lark/mod.rs)
 - [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
 - [src/models/user_credential.rs](src/models/user_credential.rs)
 
@@ -106,12 +106,12 @@ DG --> S
 - UserDal：组合 UserCredentialDao、LarkMessageChannelDao，提供凭证 CRUD、默认凭证管理、Lark 消息通道配置与推送等能力。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL73)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L73)
 - [src/service/dal/message.rs:20-47](src/service/dal/message.rs#L20-L47)
 - [src/service/dal/project.rs:27-67](src/service/dal/project.rs#L27-L67)
 - [src/service/dal/tool.rs:20-59](src/service/dal/tool.rs#L20-L59)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
-- [src/service/dal/organization.rs:13-32](src/service/dal/organization.rs#L13-L32)
+- [src/service/dal/organization/mod.rs:13-32](src/service/dal/organization/mod.rs#L13-L32)
 - [src/service/dal/user.rs:28-73](src/service/dal/user.rs#L28-L73)
 
 ## 架构总览
@@ -142,12 +142,12 @@ Dal-->>Caller : PagedResult<Agent>
 ```
 
 图表来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
 - [src/service/dao/agent/mod.rs:63-90](src/service/dao/agent/mod.rs#L63-L90)
 - [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
 - [src/service/dao/agent/mod.rs:63-90](src/service/dao/agent/mod.rs#L63-L90)
 - [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
@@ -182,14 +182,14 @@ Merge --> End(["返回 PagedResult"])
 ```
 
 图表来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL73)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL355)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL455)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL738)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL800)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L73)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L355)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L455)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L738)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L800)
 
 ### MessageDal 保存与搜索
 - 组合点：MessageDao、MessageVectorDao、CortexDao、ModelProviderDao。
@@ -272,7 +272,7 @@ H-->>M : 完成
 - 关键流程：
   - search 支持 ShortTerm/KnowledgeNode/Relation 的多类型混合搜索与排序。
   - traverse_knowledge_graph 支持 BFS/DFS 遍历，限制深度与宽度。
-  - settle_short_term_to_long_term 将短期记忆沉淀为长期知识节点。
+  - load_and_settle 将短期记忆沉淀为长期知识节点（Domain `legacy_settle` 三节点编排，DAL 侧只提供 mark_short_term_settled）。
   - rebuild_vectors 分别检查 short_term/knowledge_node 集合的 provider 一致性并重建。
 - 优化点：
   - 批量查询关系与节点，应用层统计度数推荐种子节点。
@@ -288,8 +288,8 @@ H-->>M : 完成
   - CRUD 与计数方法直接委托 DAO。
 
 章节来源
-- [src/service/dal/organization.rs:13-32](src/service/dal/organization.rs#L13-L32)
-- [src/service/dal/organization.rs:82-125](src/service/dal/organization.rs#L82-L125)
+- [src/service/dal/organization/mod.rs:13-32](src/service/dal/organization/mod.rs#L13-L32)
+- [src/service/dal/organization/mod.rs:82-125](src/service/dal/organization/mod.rs#L82-L125)
 
 ## 依赖关系分析
 - DAL 对 DAO 的依赖为单向：DAL 组合多个 DAO，不反向依赖。
@@ -335,7 +335,7 @@ DAO_Org --> Store
 
 章节来源
 - [src/pkg/storage/mod.rs:64-102](src/pkg/storage/mod.rs#L64-L102)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L312)
 - [src/service/dal/project.rs:738-800](src/service/dal/project.rs#L738-L800)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
@@ -347,8 +347,8 @@ DAO_Org --> Store
 - 归档/删除清理：archive/delete 会清理向量索引；若清理失败仅 warn，检查向量存储权限。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL355)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL738)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L355)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L738)
 - [src/service/dal/message.rs:133-193](src/service/dal/message.rs#L133-L193)
 - [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
 
@@ -363,14 +363,14 @@ DAL 层通过组合模式将多个 DAO 协调为面向领域的服务，统一�
     - 调用 AgentDal::get_agent，options.with_stats=true 加载 AgentStats。
     - options.with_model_call_stats=true 加载 ModelCallStats。
     - 内部组合 AgentStatsDao 与 ModelProviderStatsDao。
-  - 参考路径：[src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL423)
+  - 参考路径：[src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L423)
 
 - 示例二：混合搜索 Agent（关键词 + 向量）
   - 步骤：
     - 若有 keyword，尝试构建查询向量并执行向量搜索。
     - 同时执行 FTS5 关键词搜索。
     - 合并结果，三态匹配（Hybrid/Vector/Keyword），综合排序与分页。
-  - 参考路径：[src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
+  - 参考路径：[src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
 
 - 示例三：消息保存并自动向量化
   - 步骤：
