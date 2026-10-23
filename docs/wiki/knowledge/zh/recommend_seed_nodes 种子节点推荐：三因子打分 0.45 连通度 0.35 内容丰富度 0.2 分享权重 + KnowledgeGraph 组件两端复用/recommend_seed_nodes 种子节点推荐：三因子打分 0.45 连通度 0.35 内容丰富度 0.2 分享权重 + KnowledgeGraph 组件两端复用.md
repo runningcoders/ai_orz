@@ -3,7 +3,7 @@ kind: RAG 原子知识卡
 name: recommend_seed_nodes 种子节点推荐：度数排序（入边+出边）Top N + published 度数持平决胜 + KnowledgeGraph 组件两端复用 + Agent 神经工具免绑定
 category: 记忆系统 / 前端组件复用
 scope:
-  - "src/service/dal/memory.rs"
+  - "src/service/dal/memory/mod.rs"
   - "src/handlers/hr/agent/recommend_seed_nodes.rs"
   - "src/models/memory.rs"
   - "common/src/api/neural_tools.rs"
@@ -11,8 +11,8 @@ scope:
   - "frontend/src/pages/hr/agent_detail.rs"
   - "frontend/src/components/graph_canvas.rs"
 source_files:
-  - src/service/dal/memory.rs#L139-L144 (MemoryDal trait：recommend_seed_nodes 签名 —— agent_id: Option<String>（None / 空串 = 蜂巢全域） + limit → Vec<SeedNodeRecommendation>)
-  - src/service/dal/memory.rs#L419-L489 (DAL 实现：① 查知识节点（status Active、排除 Forgotten、query limit 500 总池上限）② list_relations_batch 批量拉边 ③ HashMap 统计每节点入度/出度 ④ degree=入+出 倒序、度数持平 `is_published` 决胜 ⑤ truncate(limit))
+  - src/service/dal/memory/graph.rs#L139-L144 (MemoryDal trait：recommend_seed_nodes 签名 —— agent_id: Option<String>（None / 空串 = 蜂巢全域） + limit → Vec<SeedNodeRecommendation>)
+  - src/service/dao/memory/sqlite/relations.rs#L419-L489 (DAL 实现：① 查知识节点（status Active、排除 Forgotten、query limit 500 总池上限）② list_relations_batch 批量拉边 ③ HashMap 统计每节点入度/出度 ④ degree=入+出 倒序、度数持平 `is_published` 决胜 ⑤ truncate(limit))
   - src/models/memory.rs#L608-L617 (领域模型 SeedNodeRecommendation { node: LongTermKnowledgeNodePo, degree, incoming_count, outgoing_count })
   - src/handlers/hr/agent/recommend_seed_nodes.rs#L20-L27 (register_handler_tool(id="recommend_seed_nodes", neural, tags="memory") —— 免绑定神经工具，所有 Agent 自动装配)
   - src/handlers/hr/agent/recommend_seed_nodes.rs#L29-L43 (双入口：HTTP + 工具；limit = params.limit.unwrap_or(5).min(50) → runtime_domain().memory().recommend_seed_nodes → to_api 扁平化映射)
@@ -56,7 +56,7 @@ source_files:
 | graph_canvas.rs (前端组件) | 画布渲染 | 接收 `nodes + edges + levels`，独立 state，与推荐算法解耦 | 见文件 |
 
 **章节来源**
-- [memory.rs:L419-L489](src/service/dal/memory.rs#L419-L489)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [recommend_seed_nodes.rs:L20-L43](src/handlers/hr/agent/recommend_seed_nodes.rs#L20-L43)
 - [neural_tools.rs:L221-L257](common/src/api/neural_tools.rs#L221-L257)
 - [knowledge_graph.rs:L164](frontend/src/pages/hr/knowledge_graph.rs#L164)
@@ -131,8 +131,8 @@ source_files:
 
 | 症状 | 起点锚点 | 次级排查 |
 |------|---------|---------|
-| 全域图谱（HrKnowledgeGraph 未选 Agent）推荐卡片为空 | [memory.rs:L419-L489](src/service/dal/memory.rs#L419-L489) 检查候选查询 | 典型：知识库确实为空（无 Active 知识节点）。注意**不是** published 过滤导致（published 已不做门槛）；若库内有节点仍为空，检查 `status`/`exclude_status` 是否把节点误排除 |
-| 推荐顺序「看起来和关联数不符」 | [memory.rs:L455-L484](src/service/dal/memory.rs#L455-L484) 度数统计与排序 | 典型：只统计了单侧边（入或出）；或两条边指向同一对节点的重复统计；核对 `degree == incoming_count + outgoing_count` 自洽性 |
+| 全域图谱（HrKnowledgeGraph 未选 Agent）推荐卡片为空 | [dal/memory/graph.rs](src/service/dal/memory/graph.rs) 检查候选查询 | 典型：知识库确实为空（无 Active 知识节点）。注意**不是** published 过滤导致（published 已不做门槛）；若库内有节点仍为空，检查 `status`/`exclude_status` 是否把节点误排除 |
+| 推荐顺序「看起来和关联数不符」 | [dal/memory/graph.rs](src/service/dal/memory/graph.rs) 度数统计与排序 | 典型：只统计了单侧边（入或出）；或两条边指向同一对节点的重复统计；核对 `degree == incoming_count + outgoing_count` 自洽性 |
 | 同一 Agent 在路由页与详情页推荐结果不同 | [knowledge_graph.rs:L164](frontend/src/pages/hr/knowledge_graph.rs#L164) 两端调用参数 | 典型：两端 `limit` 不同（截断点不同）→ 节点集合有交集但顺序不保证；或 `agent_id` 一端 `None`（全域）一端 `Some(id)`（仅该 Agent），候选池本就不同 |
 | Agent 详情页切到知识图谱 Tab 卡顿/重复请求 | 检查 `use_effect` 是否每次切换都重拉 | [agent_detail.rs](frontend/src/pages/hr/agent_detail.rs) 确认传给 `KnowledgeGraph` 的 `agent_id` 是否每次 render 新建 String（依赖判定为变化 → 不停重拉）；应传稳定值 |
 | 新加的排序信号生效但前端看不到 | [neural_tools.rs:L221-L257](common/src/api/neural_tools.rs#L221-L257) | 典型：只改了 DAL 排序键但没在 `SeedNodeRecommendation` / `to_api` 里补字段回传；或前端卡片按固定字段渲染，新字段未接入展示 |

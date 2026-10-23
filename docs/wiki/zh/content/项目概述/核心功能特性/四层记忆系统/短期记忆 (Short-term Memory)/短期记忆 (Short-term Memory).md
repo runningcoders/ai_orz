@@ -3,9 +3,9 @@
 <cite>
 **本文引用的文件**
 - [src/models/memory.rs](src/models/memory.rs)
-- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/mod.rs](src/service/dao/memory/mod.rs)
-- [src/service/dao/memory/sqlite.rs](src/service/dao/memory/sqlite.rs)
+- [src/service/dao/memory/sqlite/short_term.rs](src/service/dao/memory/sqlite/short_term.rs)
 - [src/service/dao/memory/vector.rs](src/service/dao/memory/vector.rs)
 - [migrations/20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
 - [common/src/enums/memory.rs](common/src/enums/memory.rs)
@@ -51,14 +51,14 @@ E --> H["向量存储<br/>LanceDB/HNSW/InMemory/SqliteVss"]
 图表来源
 - [src/handlers/hr/agent/create_memory.rs:43-77](src/handlers/hr/agent/create_memory.rs#L43-L77)
 - [src/service/domain/runtime/memory.rs:14-79](src/service/domain/runtime/memory.rs#L14-L79)
-- [src/service/dal/memory.rs:190-276](src/service/dal/memory.rs#L190-L276)
-- [src/service/dao/memory/sqlite.rs:165-192](src/service/dao/memory/sqlite.rs#L165-L192)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 - [src/service/dao/memory/vector.rs:1-34](src/service/dao/memory/vector.rs#L1-L34)
 - [migrations/20260712000000_memory_fts5.sql:16-29](migrations/20260712000000_memory_fts5.sql#L16-L29)
 
 章节来源
 - [src/models/memory.rs:15-210](src/models/memory.rs#L15-L210)
-- [src/service/dal/memory.rs:1-177](src/service/dal/memory.rs#L1-L177)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/mod.rs:14-58](src/service/dao/memory/mod.rs#L14-L58)
 - [migrations/20260712000000_memory_fts5.sql:1-92](migrations/20260712000000_memory_fts5.sql#L1-L92)
 
@@ -74,9 +74,9 @@ E --> H["向量存储<br/>LanceDB/HNSW/InMemory/SqliteVss"]
 
 章节来源
 - [src/models/memory.rs:15-210](src/models/memory.rs#L15-L210)
-- [src/service/dal/memory.rs:190-276](src/service/dal/memory.rs#L190-L276)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/mod.rs:62-192](src/service/dao/memory/mod.rs#L62-L192)
-- [src/service/dao/memory/sqlite.rs:127-200](src/service/dao/memory/sqlite.rs#L127-L200)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 - [src/service/dao/memory/vector.rs:1-34](src/service/dao/memory/vector.rs#L1-L34)
 
 ## 架构总览
@@ -111,8 +111,8 @@ R-->>H : memory_id
 
 图表来源
 - [src/handlers/hr/agent/create_memory.rs:43-77](src/handlers/hr/agent/create_memory.rs#L43-L77)
-- [src/service/dal/memory.rs:1381-1390](src/service/dal/memory.rs#L1381-L1390)
-- [src/service/dao/memory/sqlite.rs:165-192](src/service/dao/memory/sqlite.rs#L165-L192)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 - [migrations/20260712000000_memory_fts5.sql:35-54](migrations/20260712000000_memory_fts5.sql#L35-L54)
 
 ## 详细组件分析
@@ -239,12 +239,12 @@ end
 ```
 
 图表来源
-- [src/service/dal/memory.rs:654-750](src/service/dal/memory.rs#L654-L750)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [src/service/dao/memory/vector.rs:1-34](src/service/dao/memory/vector.rs#L1-L34)
 
 章节来源
 - [src/models/memory.rs:186-210](src/models/memory.rs#L186-L210)
-- [src/service/dal/memory.rs:654-750](src/service/dal/memory.rs#L654-L750)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [src/service/dao/memory/vector.rs:1-34](src/service/dao/memory/vector.rs#L1-L34)
 
 ### 混合搜索算法与相似度计算
@@ -278,12 +278,10 @@ Trunc --> End
 ```
 
 图表来源
-- [src/service/dal/memory.rs:190-276](src/service/dal/memory.rs#L190-L276)
-- [src/service/dal/memory.rs:1074-1109](src/service/dal/memory.rs#L1074-L1109)
+- [src/service/dal/memory/search.rs](src/service/dal/memory/search.rs)
 
 章节来源
-- [src/service/dal/memory.rs:190-276](src/service/dal/memory.rs#L190-L276)
-- [src/service/dal/memory.rs:1074-1109](src/service/dal/memory.rs#L1074-L1109)
+- [src/service/dal/memory/search.rs](src/service/dal/memory/search.rs)
 
 ### 短期记忆创建流程（从 trace 到聚合摘要）
 - 阶段一：AppendTraces 写入每日 JSONL，返回 position（date_filename + line_number）
@@ -317,13 +315,13 @@ DAL-->>App : ShortTerm memory_id
 ```
 
 图表来源
-- [src/service/dal/memory.rs:1355-1390](src/service/dal/memory.rs#L1355-L1390)
-- [src/service/dao/memory/sqlite.rs:127-163](src/service/dao/memory/sqlite.rs#L127-L163)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
+- [src/service/dao/memory/sqlite/short_term.rs](src/service/dao/memory/sqlite/short_term.rs)
 - [migrations/20260712000000_memory_fts5.sql:35-54](migrations/20260712000000_memory_fts5.sql#L35-L54)
 
 章节来源
-- [src/service/dal/memory.rs:1355-1390](src/service/dal/memory.rs#L1355-L1390)
-- [src/service/dao/memory/sqlite.rs:127-163](src/service/dao/memory/sqlite.rs#L127-L163)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
+- [src/service/dao/memory/sqlite/short_term.rs](src/service/dao/memory/sqlite/short_term.rs)
 
 ### 生命周期管理与清理策略
 - 状态管理：MemoryStatus（Forgotten/Active/Settled），默认查询过滤 Forgotten，Settled 表示已沉淀
@@ -342,11 +340,11 @@ Forgotten --> Active : "恢复(可选)"
 
 图表来源
 - [common/src/enums/memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
-- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 
 章节来源
 - [common/src/enums/memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
-- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 
 ## 依赖关系分析
 - DAL 依赖：
@@ -374,11 +372,11 @@ VD --> VS["向量存储"]
 ```
 
 图表来源
-- [src/service/dal/memory.rs:41-68](src/service/dal/memory.rs#L41-L68)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/mod.rs:560-568](src/service/dao/memory/mod.rs#L560-L568)
 
 章节来源
-- [src/service/dal/memory.rs:41-68](src/service/dal/memory.rs#L41-L68)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/mod.rs:560-568](src/service/dao/memory/mod.rs#L560-L568)
 
 ## 性能考量
@@ -402,7 +400,7 @@ VD --> VS["向量存储"]
 章节来源
 - [src/service/dal/skill.rs:351-385](src/service/dal/skill.rs#L351-L385)
 - [migrations/20260712000000_memory_fts5.sql:35-54](migrations/20260712000000_memory_fts5.sql#L35-L54)
-- [src/service/dal/memory.rs:654-750](src/service/dal/memory.rs#L654-L750)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 结论
 短期记忆层通过“原始 trace 落盘 + 索引聚合 + FTS5 + 向量语义”的组合，实现了高效、可扩展的记忆检索能力。其分层清晰、职责明确，支持混合搜索与多后端向量存储降级，具备完整的生命周期管理与重建机制。在实际使用中，应合理配置搜索参数、定期维护向量索引，并结合业务需求进行沉淀与清理。
@@ -418,7 +416,7 @@ VD --> VS["向量存储"]
   - 行为：构造 ShortTermMemoryIndexPo，调用 DAL create(CreateShortTerm)，返回 memory_id
   - 参考实现
     - [src/handlers/hr/agent/create_memory.rs:43-77](src/handlers/hr/agent/create_memory.rs#L43-L77)
-    - [src/service/dal/memory.rs:1381-1390](src/service/dal/memory.rs#L1381-L1390)
+    - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 - 保存短期记忆（带 trace_ids）
   - 路径：POST /api/memory/save_short_term
@@ -432,7 +430,7 @@ VD --> VS["向量存储"]
   - 入参：agent_id、status、limit、memory_type=ShortTerm、task_id（可选）
   - 行为：DAL query(MemoryQuery)，返回 Memory 列表
   - 参考实现
-    - [src/service/dal/memory.rs:278-312](src/service/dal/memory.rs#L278-L312)
+    - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 - 搜索短期记忆（FTS5 关键词）
   - 路径：POST /api/memory/search
@@ -440,20 +438,20 @@ VD --> VS["向量存储"]
   - 行为：DAL search(MemorySearch)，若仅 keyword 则走 FTS5 MATCH + BM25
   - 参考实现
     - [tests/integration/memory_test.rs:332-371](tests/integration/memory_test.rs#L332-L371)
-    - [src/service/dal/memory.rs:190-276](src/service/dal/memory.rs#L190-L276)
+    - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 - 删除短期记忆
   - 路径：DELETE /api/memory/{id}
   - 行为：DAL delete(Memory{po=ShortTerm})，软删除索引并清理向量索引
   - 参考实现
-    - [src/service/dal/memory.rs:477-516](src/service/dal/memory.rs#L477-L516)
+    - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 章节来源
 - [src/handlers/hr/agent/create_memory.rs:43-77](src/handlers/hr/agent/create_memory.rs#L43-L77)
 - [src/handlers/hr/agent/save_short_term_memory.rs:30-57](src/handlers/hr/agent/save_short_term_memory.rs#L30-L57)
-- [src/service/dal/memory.rs:278-312](src/service/dal/memory.rs#L278-L312)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [tests/integration/memory_test.rs:332-371](tests/integration/memory_test.rs#L332-L371)
-- [src/service/dal/memory.rs:477-516](src/service/dal/memory.rs#L477-L516)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ---
 

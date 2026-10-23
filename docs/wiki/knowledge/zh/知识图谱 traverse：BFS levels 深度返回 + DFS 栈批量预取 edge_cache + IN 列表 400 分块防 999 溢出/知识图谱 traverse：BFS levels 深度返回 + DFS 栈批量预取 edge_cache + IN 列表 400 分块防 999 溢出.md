@@ -3,21 +3,21 @@ kind: RAG 原子知识卡
 name: 知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出
 category: 记忆系统 / 图谱遍历
 scope:
-- src/service/dal/memory.rs
+- src/service/dal/memory/mod.rs
 - src/service/dao/memory/**
 - src/handlers/hr/agent/traverse_graph.rs
 - common/src/api/memory.rs
 source_files:
-- src/service/dal/memory.rs#L139-L164 (MemoryDal trait：traverse_knowledge_graph 签名：seed_node_ids
+- src/service/dal/memory/graph.rs#L139-L164 (MemoryDal trait：traverse_knowledge_graph 签名：seed_node_ids
   + traversal_depth + traversal_strategy(enum BFS/DFS))
-- src/service/dal/memory.rs#L518-L577 (traverse_knowledge_graph 总入口：按 strategy enum
+- src/service/dal/memory/graph.rs#L518-L577 (traverse_knowledge_graph 总入口：按 strategy enum
   分发给 traverse_bfs / traverse_dfs；最后统一做可见性过滤（agent_id + published）)
-- 'src/service/dal/memory.rs#L805-L890 '
-- 'src/service/dal/memory.rs#L891-L990 '
-- 'src/service/dal/memory.rs#L653-L720 '
-- src/service/dal/memory.rs#L653-L720 (2026-09 增量：动态 SQL IN 列表闭括号修复)
-- src/service/dal/memory.rs (2026-09 增量：list_relations_batch 先查 IN 列表存在性再拼接，防止空 ids 拼接出非法 SQL)
-- 'src/service/dal/memory.rs#L721-L804 '
+- 'src/service/dal/memory/mod.rs#L805-L890 '
+- 'src/service/dal/memory/mod.rs#L891-L990 '
+- 'src/service/dal/memory/mod.rs#L653-L720 '
+- src/service/dal/memory/mod.rs#L653-L720 (2026-09 增量：动态 SQL IN 列表闭括号修复)
+- src/service/dao/memory/sqlite/relations.rs (2026-09 增量：list_relations_batch 先查 IN 列表存在性再拼接，防止空 ids 拼接出非法 SQL)
+- 'src/service/dal/memory/mod.rs#L721-L804 '
 - 'src/models/memory/knowledge_relation_po.rs '
 - 'common/src/api/memory.rs '
 - docs/archive/plan-archive/图谱遍历查询优化.md
@@ -41,7 +41,7 @@ source_files:
 **本卡角色**：知识图谱遍历底层实现的技术约束卡。覆盖 `MemoryDal::traverse_knowledge_graph` 对外统一入口签名、BFS/DFS 两种策略、针对 SQLite `SQLITE_MAX_VARIABLE_NUMBER = 999` 绑定参数上限做的 **IN 列表 400 分块**通用模式，以及 DFS「栈前沿批量预取 + edge_cache」改造修复的 DFS N+1 问题。**定位：排查图谱遍历慢/报 "too many SQL variables" 错 / 扩展新遍历策略时读。**
 
 - **对外统一签名**：`traverse_knowledge_graph(ctx, TraverseParams { seed_node_ids, traversal_depth, traversal_strategy }) → TraverseResponse { nodes, edges, ordered_levels }`。`ordered_levels: Vec<Vec<NodeId>>` 对应 BFS/DFS 的每一层/每一步节点序列，前端可以做动画播放（按 level 渐进展示节点）。
-- **IN 分块 400 普适规则**：凡 DAO SQL 中涉及 `ids IN (?, ?, ...)` 绑定参数列表，一律按 **400 个 ID 一块**分块逐次执行，结果拼接后按全局 created_at ASC 重排。原因：(1) 两个 IN 列表并存时（list_relations_batch: from_id IN + to_id IN），400×2=800 < 999；(2) 单 IN 列表 400 < 999，留 599 余量给未来 SQL 新增 bind；(3) 分块常量统一由 `src/service/dal/memory.rs` 顶部 `const IN_CHUNK_SIZE: usize = 400;` 管理，禁止散落各处 magic number。
+- **IN 分块 400 普适规则**：凡 DAO SQL 中涉及 `ids IN (?, ?, ...)` 绑定参数列表，一律按 **400 个 ID 一块**分块逐次执行，结果拼接后按全局 created_at ASC 重排。原因：(1) 两个 IN 列表并存时（list_relations_batch: from_id IN + to_id IN），400×2=800 < 999；(2) 单 IN 列表 400 < 999，留 599 余量给未来 SQL 新增 bind；(3) 分块常量统一由 `src/service/dao/memory/sqlite/relations.rs` 顶部 `const IN_CHUNK_SIZE: usize = 400;` 管理，禁止散落各处 magic number。
 - **DFS 改造收益**：旧 DFS 每 pop 一个节点查一次边（N+1 → 对宽前沿图 IO 爆炸），新 DFS 做法：栈上所有未 visited + 未 fetched 的节点一次性 batch 查边，结果塞 edge_cache（HashMap<NodeId, Vec<Edge>>），pop 时如果 cache 命中直接用未命中触发一次批量预取当前整个栈前沿。测试：10k 节点链 → 查询次数从 10k 降到 ≈ 25 次。
 
 ---
@@ -59,10 +59,7 @@ source_files:
 | common api/memory.rs | DTO | TraverseKnowledgeGraphResponse：nodes 是去重节点、edges 是去重关系带 weight、ordered_levels 是 BFS/DFS 分层顺序（严格按层，前端渲染顺序的唯一来源）| 见 common DTO |
 
 **章节来源**
-- [memory.rs:L518-L577](src/service/dal/memory.rs#L518-L577)
-- [memory.rs:L805-L890](src/service/dal/memory.rs#L805-L890)
-- [memory.rs:L891-L990](src/service/dal/memory.rs#L891-L990)
-- [memory.rs:L653-L804](src/service/dal/memory.rs#L653-L804)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ---
 
@@ -123,12 +120,12 @@ TraverseKnowledgeGraphResponse { nodes, edges, ordered_levels }
 
 | 症状 | 起点锚点 | 次级排查 |
 |------|---------|---------|
-| 图谱遍历偶尔报 "too many SQL variables (code 1 too many SQL variables)" | [memory.rs:L653-L804](src/service/dal/memory.rs#L653-L804) IN_CHUNK_SIZE 是否被改成 > 400 | 查调用方：是否有人绕过 list_relations_batch 直接写了 SQL？grep 整个 src/service/dao 下所有 `IN (` 后面接参数绑定的 SQL，统计每个 SQL 的 bind 数量 |
-| 小图（<50 节点）BFS 正常，大图（>5k 节点）DFS 慢到超时（>30s） | [memory.rs:L891-L990](src/service/dal/memory.rs#L891-L990) 检查 edge_cache 命中日志 | 确认「栈前沿批量预取」逻辑是否被误改回到每节点单查——典型：重构 DFS 时不小心删了 fetched_flag，导致每 pop 必触发一次批量预取（反向变成 worse） |
+| 图谱遍历偶尔报 "too many SQL variables (code 1 too many SQL variables)" | [dao/memory/sqlite/relations.rs](src/service/dao/memory/sqlite/relations.rs) IN_CHUNK_SIZE 是否被改成 > 400 | 查调用方：是否有人绕过 list_relations_batch 直接写了 SQL？grep 整个 src/service/dao 下所有 `IN (` 后面接参数绑定的 SQL，统计每个 SQL 的 bind 数量 |
+| 小图（<50 节点）BFS 正常，大图（>5k 节点）DFS 慢到超时（>30s） | [dal/memory/graph.rs](src/service/dal/memory/graph.rs) 检查 edge_cache 命中日志 | 确认「栈前沿批量预取」逻辑是否被误改回到每节点单查——典型：重构 DFS 时不小心删了 fetched_flag，导致每 pop 必触发一次批量预取（反向变成 worse） |
 | traverse 返回 nodes 数 = 0，明明 seed_node_ids 是正确的 | 先查这些 id 在 `long_term_knowledge_node` 里是否存在且 `status != Forgotten`（软删除的节点按设计不返回，挂在它身上的边也会一起丢弃） | 旧坑已修：以前是 `apply_visibility_filter` 用错 agent_id / 只认 published 节点导致「节点全被过滤、只剩边」；现在遍历不做归属过滤，若仍为空就是数据本身不在 |
 | ordered_levels 的 level 0 有节点，但前端画出来点都挤在同一个角落 | 检查 TraverseKnowledgeGraphResponse.ordered_levels 是否正确填 | 典型：traverse_bfs 中 visited set 没与 level 同步推进，BFS 层序错乱，levels[0] 把所有节点都标成 level 0。前端按 level 布局时 y 坐标都一样，挤成一根线 |
-| traverse 10 次有 1 次返回重复节点（同一 node_id 在 nodes Vec 出现两次） | [memory.rs:L721-L804](src/service/dal/memory.rs#L721-L804) fetch_nodes_by_ids 分块后的拼接逻辑 | 是否漏了 `dedup_by(|a,b| a.id == b.id)`？多块执行同一节点如果跨两块边界（第 399 个和 401 个刚好同一个 node_id 出现两次），不去重就会出现重复 |
-| 图谱遍历偶尔报 SQLite SQL 语法错误（no such column / syntax error near...） | [memory.rs:L653-L720](src/service/dal/memory.rs#L653-L720) list_relations_batch 动态 SQL 拼接 | 是否有分支路径跳过了闭括号？典型：空 ids 直接拼接出 `WHERE id IN ...`（无闭括号）；检查拼接路径是否有 `if ids.is_empty() { return Ok(vec![]) }` 前置守卫 |
+| traverse 10 次有 1 次返回重复节点（同一 node_id 在 nodes Vec 出现两次） | [dal/memory/graph.rs](src/service/dal/memory/graph.rs) fetch_nodes_by_ids 分块后的拼接逻辑 | 是否漏了 `dedup_by(|a,b| a.id == b.id)`？多块执行同一节点如果跨两块边界（第 399 个和 401 个刚好同一个 node_id 出现两次），不去重就会出现重复 |
+| 图谱遍历偶尔报 SQLite SQL 语法错误（no such column / syntax error near...） | [dao/memory/sqlite/relations.rs](src/service/dao/memory/sqlite/relations.rs) list_relations_batch 动态 SQL 拼接 | 是否有分支路径跳过了闭括号？典型：空 ids 直接拼接出 `WHERE id IN ...`（无闭括号）；检查拼接路径是否有 `if ids.is_empty() { return Ok(vec![]) }` 前置守卫 |
 
 ## §5 历史演进（f300b5c0..HEAD 增量）
 

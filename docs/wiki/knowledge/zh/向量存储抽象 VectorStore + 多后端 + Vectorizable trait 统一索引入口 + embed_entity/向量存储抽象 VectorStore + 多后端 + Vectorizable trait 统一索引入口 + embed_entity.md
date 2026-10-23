@@ -52,7 +52,7 @@ source_files:
   - 'src/handlers/finance/model_provider/rebuild_vectors_task.rs（RebuildVectorsTask：BackgroundTask 实现；遍历 7 域 agent/memory/skill/task/project/message/tool 调用各 DAL rebuild_vectors(ctx, progress)；新增 TaskProgressCounter 跨批次上报已处理条数；任务互斥——已有 Running 时返回 409）'
   - 'src/pkg/background_task/progress.rs（TaskProgressCounter：后台任务细粒度进度计数；Arc<AtomicUsize> + Relaxed Ordering；跨 await 可克隆零拷贝；语义与进度条 current_step/total_steps 正交）'
   - 'src/service/dal/mod.rs（VECTOR_REBUILD_PAGE_SIZE const = 200；各 DAL rebuild_vectors trait 签名统一：async fn rebuild_vectors(&self, ctx: RequestContext, progress: &TaskProgressCounter) -> Result<()>）'
-  - 'src/service/dal/memory.rs / message.rs / project.rs / skill.rs / task.rs / tool.rs（各域 rebuild_vectors：分页扫描——按 VECTOR_REBUILD_PAGE_SIZE=200 逐条取出实体 → 调用 try_build_vector_params_for_entity → embed → upsert → progress.advance(n)）'
+  - 'src/service/dal/memory/store.rs / message.rs / project.rs / skill.rs / task.rs / tool.rs（各域 rebuild_vectors：分页扫描——按 VECTOR_REBUILD_PAGE_SIZE=200 逐条取出实体 → 调用 try_build_vector_params_for_entity → embed → upsert → progress.advance(n)）'
   - 'src/service/dal/agent/impl.rs（AgentDalImpl 同步升级：rebuild_vectors(ctx, progress) 分页扫描 7 类实体）'
   - 'src/router.rs（system_routes() 新增 POST /vector-rebuild → handlers::system::vector_rebuild::rebuild_vectors_handler；路由层 require_role_middleware(UserRole::Admin)）'
   - 'common/src/api/system.rs（RebuildVectorsRequest 无参 DTO：derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)）'
@@ -125,7 +125,7 @@ source_files:
 | [handlers/finance/model_provider/rebuild_vectors_task.rs](src/handlers/finance/model_provider/rebuild_vectors_task.rs) | RebuildVectorsTask 后台任务（升级） | `BackgroundTask` impl；新增 `TaskProgressCounter progress` 字段；7 域 DAL `rebuild_vectors(ctx, &progress)` 调用；互斥 409；完成 result 含 `processed` 条数 |
 | [pkg/background_task/progress.rs](src/pkg/background_task/progress.rs) | **新增** TaskProgressCounter | `Arc<AtomicUsize>`；`new()` / `processed()` / `advance(count)`；Relaxed Ordering；跨 await 可克隆零拷贝 |
 | [service/dal/mod.rs](src/service/dal/mod.rs) | **扩展** VECTOR_REBUILD_PAGE_SIZE | `pub const VECTOR_REBUILD_PAGE_SIZE: usize = 200`；各 DAL rebuild_vectors trait 签名统一 |
-| [service/dal/memory.rs](src/service/dal/memory.rs) / [message.rs](src/service/dal/message.rs) / [project.rs](src/service/dal/project.rs) / [skill.rs](src/service/dal/skill.rs) / [task.rs](src/service/dal/task.rs) / [tool.rs](src/service/dal/tool.rs) | **扩展** 各域分页 rebuild_vectors | `rebuild_vectors(ctx, progress)` → 分页扫描（LIMIT 200 OFFSET page*200）→ `progress.advance(batch.len())` → embed + upsert |
+| [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs) / [message.rs](src/service/dal/message.rs) / [project.rs](src/service/dal/project.rs) / [skill.rs](src/service/dal/skill.rs) / [task.rs](src/service/dal/task.rs) / [tool.rs](src/service/dal/tool.rs) | **扩展** 各域分页 rebuild_vectors | `rebuild_vectors(ctx, progress)` → 分页扫描（LIMIT 200 OFFSET page*200）→ `progress.advance(batch.len())` → embed + upsert |
 | [service/dal/agent/impl.rs](src/service/dal/agent/impl.rs) | **扩展** AgentDalImpl rebuild_vectors | 同步升级：rebuild_vectors(ctx, progress) 分页扫描 |
 | [router.rs](src/router.rs) | **扩展** /vector-rebuild 路由 | `system_routes()` 新增 `"/vector-rebuild".post(handlers::system::vector_rebuild::rebuild_vectors_handler)`；路由层 require_role_middleware(UserRole::Admin) |
 | [common/src/api/system.rs](common/src/api/system.rs) | **扩展** RebuildVectorsRequest DTO | `#[derive(...)] pub struct RebuildVectorsRequest {}`（无参数） |

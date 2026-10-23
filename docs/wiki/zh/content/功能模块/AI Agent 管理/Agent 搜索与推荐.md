@@ -5,7 +5,7 @@
 - [vector_search_architecture.md](docs/vector_search_architecture.md)
 - [agent/mod.rs](src/service/dao/agent/mod.rs)
 - [search_agents.rs](src/handlers/hr/agent/search_agents.rs)
-- [memory.rs](src/service/dal/memory.rs)
+- [dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 - [recommend_seed_nodes.rs](src/handlers/hr/agent/recommend_seed_nodes.rs)
 - [fts5.rs](src/pkg/storage/fts5.rs)
 - [vector.rs](src/pkg/storage/vector.rs)
@@ -77,7 +77,7 @@ M1 --> S2
 **图表来源**
 - [search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
 - [recommend_seed_nodes.rs:1-55](src/handlers/hr/agent/recommend_seed_nodes.rs#L1-L55)
-- [memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [agent/mod.rs:33-92](src/service/dao/agent/mod.rs#L33-L92)
 - [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [fts5.rs:1-44](src/pkg/storage/fts5.rs#L1-L44)
@@ -95,7 +95,7 @@ M1 --> S2
 **章节来源**
 - [agent/mod.rs:33-92](src/service/dao/agent/mod.rs#L33-L92)
 - [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
-- [memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
 
@@ -199,11 +199,11 @@ Truncate --> REnd(["返回推荐列表"])
 ```
 
 **图表来源**
-- [memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
+- [dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 - [recommend_seed_nodes.rs:19-35](src/handlers/hr/agent/recommend_seed_nodes.rs#L19-L35)
 
 **章节来源**
-- [memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
+- [dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 - [recommend_seed_nodes.rs:1-55](src/handlers/hr/agent/recommend_seed_nodes.rs#L1-L55)
 
 ### 搜索 API 使用示例
@@ -227,7 +227,7 @@ Truncate --> REnd(["返回推荐列表"])
 
 **章节来源**
 - [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
-- [memory.rs:220-247](src/service/dal/memory.rs#L220-L247)
+- [dal/memory/search.rs](src/service/dal/memory/search.rs)
 
 ## 依赖关系分析
 - Handler 依赖 Domain，Domain 依赖 DAL，DAL 组合 Base DAO 与 Vector DAO
@@ -246,7 +246,7 @@ B --> T["FTS5 工具"]
 
 **图表来源**
 - [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L68)
-- [memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [fts5.rs:1-44](src/pkg/storage/fts5.rs#L1-L44)
 
@@ -278,7 +278,7 @@ B --> T["FTS5 工具"]
 
 **章节来源**
 - [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
-- [memory.rs:400-460](src/service/dal/memory.rs#L400-L460)
+- [dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 
 ## 结论
 Agent 搜索与推荐通过“FTS5 + 向量”的混合检索与“度数优先”的种子节点推荐，提供了高召回、高相关的发现能力。分层架构与存储抽象保证了可扩展性与可维护性；降级策略与内容哈希校验提升了鲁棒性与经济性。实际使用中可根据业务需求调整距离阈值、过滤条件与分页策略，以获得最佳体验。
@@ -290,4 +290,4 @@ Agent 搜索与推荐通过“FTS5 + 向量”的混合检索与“度数优先�
 
 **章节来源**
 - [vector_search_architecture.md:161-203](docs/vector_search_architecture.md#L161-L203)
-- [memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)

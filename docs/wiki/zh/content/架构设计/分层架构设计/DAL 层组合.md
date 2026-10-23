@@ -7,7 +7,7 @@
 - [src/service/dal/message.rs](src/service/dal/message.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dal/tool.rs](src/service/dal/tool.rs)
-- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/organization.rs](src/service/dal/organization.rs)
 - [src/service/dal/user.rs](src/service/dal/user.rs)
 - [src/service/dao/mod.rs](src/service/dao/mod.rs)
@@ -110,7 +110,7 @@ DG --> S
 - [src/service/dal/message.rs:20-47](src/service/dal/message.rs#L20-L47)
 - [src/service/dal/project.rs:27-67](src/service/dal/project.rs#L27-L67)
 - [src/service/dal/tool.rs:20-59](src/service/dal/tool.rs#L20-L59)
-- [src/service/dal/memory.rs:39-68](src/service/dal/memory.rs#L39-L68)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/organization.rs:13-32](src/service/dal/organization.rs#L13-L32)
 - [src/service/dal/user.rs:28-73](src/service/dal/user.rs#L28-L73)
 
@@ -279,12 +279,7 @@ H-->>M : 完成
   - 向量重建时按集合维度判断是否需要清空与重建。
 
 章节来源
-- [src/service/dal/memory.rs:39-68](src/service/dal/memory.rs#L39-L68)
-- [src/service/dal/memory.rs:189-276](src/service/dal/memory.rs#L189-L276)
-- [src/service/dal/memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
-- [src/service/dal/memory.rs:518-576](src/service/dal/memory.rs#L518-L576)
-- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 
 ### OrganizationDal 组织管理
 - 组合点：OrganizationDao。
@@ -342,7 +337,7 @@ DAO_Org --> Store
 - [src/pkg/storage/mod.rs:64-102](src/pkg/storage/mod.rs#L64-L102)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 - [src/service/dal/project.rs:738-800](src/service/dal/project.rs#L738-L800)
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 故障排查指南
 - 向量索引写入失败：log_warn 降级，主流程不受影响；检查 Embedding Provider 配置与向量后端可用性。
@@ -394,7 +389,7 @@ DAL 层通过组合模式将多个 DAO 协调为面向领域的服务，统一�
     - 查询 Agent 的活跃短期记忆。
     - 按主题分组聚合，创建知识节点与引用关系。
     - 标记短期记忆为已沉淀。
-  - 参考路径：[src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+  - 参考路径：[src/service/dal/memory/search.rs](src/service/dal/memory/search.rs)
 ---
 
 ### 本文关联的文档（2026-09-13 增量）

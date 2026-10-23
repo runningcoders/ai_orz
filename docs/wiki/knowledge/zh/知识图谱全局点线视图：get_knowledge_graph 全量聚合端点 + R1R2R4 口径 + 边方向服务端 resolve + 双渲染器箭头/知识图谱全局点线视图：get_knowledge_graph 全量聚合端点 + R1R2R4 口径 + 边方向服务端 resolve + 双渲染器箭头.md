@@ -4,7 +4,7 @@ name: 知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + 
 category: 知识图谱与记忆沉淀 / 全局图谱可视化
 scope:
   - "src/handlers/hr/agent/get_knowledge_graph.rs"
-  - "src/service/dal/memory.rs"
+  - "src/service/dal/memory/graph.rs"
   - "src/service/domain/runtime/**"
   - "src/models/memory.rs"
   - "src/router.rs"
@@ -20,7 +20,7 @@ source_files:
   - 'src/handlers/hr/agent/get_knowledge_graph.rs#L27-L64 (get_knowledge_graph handler：#[register_handler_tool(id="get_knowledge_graph", ..., neural, tags="memory")] + #[generate_http_handler]；调 runtime_domain().memory().get_knowledge_graph(ctx, params.agent_id) → 装配度数 + 逐边取方向 → GetKnowledgeGraphResponse)'
   - 'src/handlers/hr/agent/get_knowledge_graph.rs#L71-L104 (to_node_api / to_edge_api：全局视图字段裁剪（节点不含 node_description/summary/updated_at）+ 边 direction 由 edge_directions 映射兜底 "undirected")'
   - common/src/api/neural_tools.rs#L259-L318 (DTO：GetKnowledgeGraphParams{agent_id:Option<String>} / GetKnowledgeGraphResponse{nodes,edges,generated_at} / GraphNode{id,node_name,node_type,tags,agent_id,is_published,degree,incoming_count,outgoing_count,created_at} / GraphEdge{id,source,target,relation_type,direction,weight})
-  - 'src/service/dal/memory.rs#L514-L638 (DAL 实现：R1 全量活跃知识节点 MemoryQuery{KnowledgeNode,Active,exclude Forgotten,limit/offset=None 无 LIMIT 子句} → R2 严格双端活跃 active_ids 过滤悬挂边 → R4 degrees:HashMap<String,(in,out)> 只按生效边统计 → try_join! 并行拉 classes/relation_types/synonyms 装配 OntologyLexicon（含 relation_directions）→ 逐边 common::ontology::resolve 得 edge_directions)'
+  - 'src/service/dal/memory/graph.rs#L514-L638 (DAL 实现：R1 全量活跃知识节点 MemoryQuery{KnowledgeNode,Active,exclude Forgotten,limit/offset=None 无 LIMIT 子句} → R2 严格双端活跃 active_ids 过滤悬挂边 → R4 degrees:HashMap<String,(in,out)> 只按生效边统计 → try_join! 并行拉 classes/relation_types/synonyms 装配 OntologyLexicon（含 relation_directions）→ 逐边 common::ontology::resolve 得 edge_directions)'
   - src/models/memory.rs#L619-L638 (领域结构 KnowledgeGraphData{nodes,edges,degrees,edge_directions}；degrees 仅计生效边；edge_directions key=边 ID value="directed"/"undirected")
   - src/service/domain/runtime/mod.rs#L138-L143 (RuntimeMemory trait 新增 get_knowledge_graph)
   - src/service/domain/runtime/memory.rs#L103-L110 (MemoryDomain 一行委托 dal().get_knowledge_graph)
@@ -69,7 +69,7 @@ source_files:
 |------|------|---------|---------|
 | `src/handlers/hr/agent/get_knowledge_graph.rs` | Adapter（handler） | 神经工具 `get_knowledge_graph`（neural, tags=memory）+ HTTP；装配度数 + 逐边取方向 → 响应；字段裁剪在 `to_node_api` / `to_edge_api` | `#L27-L64` / `#L71-L104` |
 | `common/src/api/neural_tools.rs` | DTO（前后端 SSOT） | `GetKnowledgeGraphParams` / `GetKnowledgeGraphResponse` / `GraphNode` / `GraphEdge`（含 `direction`） | `#L259-L318` |
-| `src/service/dal/memory.rs` | DAL | `get_knowledge_graph`：R1 全量活跃知识节点 → R2 严格双端活跃 → R4 度数仅计生效边 → 逐边 resolve 方向 | `#L514-L638` |
+| `src/service/dal/memory/graph.rs` | DAL | `get_knowledge_graph`：R1 全量活跃知识节点 → R2 严格双端活跃 → R4 度数仅计生效边 → 逐边 resolve 方向 | `#L514-L638` |
 | `src/models/memory.rs` | 领域结构 | `KnowledgeGraphData { nodes, edges, degrees, edge_directions }` | `#L619-L638` |
 | `src/service/domain/runtime/mod.rs` + `memory.rs` | Domain | trait 新增 `get_knowledge_graph` + Domain 一行委托（不夹带业务） | `#L138-L143` / `#L103-L110` |
 | `src/router.rs` | 路由 | `POST /agents/get_knowledge_graph` | `#L763-L764` |

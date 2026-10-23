@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [memory.rs](src/models/memory.rs)
 - [memory.rs（枚举）](common/src/enums/memory.rs)
-- [memory.rs（DAL）](src/service/dal/memory.rs)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）](src/service/dao/memory/mod.rs)
 - [vector.rs（DAO 向量层）](src/service/dao/memory/vector.rs)
 - [memory.rs（Domain 运行时）](src/service/domain/runtime/memory.rs)
@@ -75,14 +75,14 @@ A2 --> V1
 - [search_memory.rs:1-222](src/handlers/hr/agent/search_memory.rs#L1-L222)
 - [settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
 - [memory.rs（Domain 运行时）:1-120](src/service/domain/runtime/memory.rs#L1-L120)
-- [memory.rs（DAL）:1-200](src/service/dal/memory.rs#L1-L200)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
 - [vector.rs（存储抽象）:1-200](src/pkg/storage/vector.rs#L1-L200)
 
 章节来源
 - [memory.rs:1-424](src/models/memory.rs#L1-L424)
 - [memory.rs（枚举）:1-212](common/src/enums/memory.rs#L1-L212)
-- [memory.rs（DAL）:1-200](src/service/dal/memory.rs#L1-L200)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
 - [vector.rs（存储抽象）:1-200](src/pkg/storage/vector.rs#L1-L200)
 
@@ -95,7 +95,7 @@ A2 --> V1
 
 章节来源
 - [memory.rs:158-320](src/models/memory.rs#L158-L320)
-- [memory.rs（DAL）:1000-1011](src/service/dal/memory.rs#L1000-L1011)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [20260712000000_memory_fts5.sql:1-92](migrations/20260712000000_memory_fts5.sql#L1-L92)
 
 ## 架构总览
@@ -131,7 +131,7 @@ H-->>U : 返回 memory_id
 图表来源
 - [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
 - [memory.rs（Domain 运行时）:91-94](src/service/domain/runtime/memory.rs#L91-L94)
-- [memory.rs（DAL）:104-111](src/service/dal/memory.rs#L104-L111)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:102-117](src/service/dao/memory/mod.rs#L102-L117)
 - [vector.rs（DAO 向量层）:36-51](src/service/dao/memory/vector.rs#L36-L51)
 - [vector.rs（存储抽象）:27-33](src/pkg/storage/vector.rs#L27-L33)
@@ -210,14 +210,14 @@ H-->>C : 返回 MemoryResult[]
 
 图表来源
 - [search_memory.rs:24-154](src/handlers/hr/agent/search_memory.rs#L24-L154)
-- [memory.rs（DAL）:74-81](src/service/dal/memory.rs#L74-L81)
+- [dal/memory/search.rs](src/service/dal/memory/search.rs)
 - [mod.rs（DAO 接口）:169-182](src/service/dao/memory/mod.rs#L169-L182)
 - [vector.rs（DAO 向量层）:67-79](src/service/dao/memory/vector.rs#L67-L79)
 - [vector.rs（存储抽象）:35-43](src/pkg/storage/vector.rs#L35-L43)
 
 章节来源
 - [search_memory.rs:24-154](src/handlers/hr/agent/search_memory.rs#L24-L154)
-- [memory.rs（DAL）:74-81](src/service/dal/memory.rs#L74-L81)
+- [dal/memory/search.rs](src/service/dal/memory/search.rs)
 - [mod.rs（DAO 接口）:169-182](src/service/dao/memory/mod.rs#L169-L182)
 - [vector.rs（DAO 向量层）:67-79](src/service/dao/memory/vector.rs#L67-L79)
 
@@ -246,12 +246,12 @@ R-->>H : 沉淀完成
 
 图表来源
 - [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [memory.rs（DAL）:578-606](src/service/dal/memory.rs#L578-L606)
+- [dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [mod.rs（DAO 接口）:162-167](src/service/dao/memory/mod.rs#L162-L167)
 
 章节来源
 - [settle_memory.rs:22-123](src/handlers/hr/agent/settle_memory.rs#L22-L123)
-- [memory.rs（DAL）:148-176](src/service/dal/memory.rs#L148-L176)
+- [dal/memory/store.rs](src/service/dal/memory/store.rs)
 
 ### 向量存储与全文搜索能力
 - 向量存储
@@ -280,7 +280,7 @@ R-->>H : 沉淀完成
 
 章节来源
 - [memory.rs（枚举）:12-30](common/src/enums/memory.rs#L12-L30)
-- [memory.rs（DAL）:171-176](src/service/dal/memory.rs#L171-L176)
+- [dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [vector.rs（存储抽象）:51-73](src/pkg/storage/vector.rs#L51-L73)
 
 ## 依赖关系分析
@@ -301,12 +301,12 @@ DAO_M --> FS["JSONL(原始追踪)"]
 ```
 
 图表来源
-- [memory.rs（DAL）:181-186](src/service/dal/memory.rs#L181-L186)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
 - [vector.rs（存储抽象）:1-74](src/pkg/storage/vector.rs#L1-L74)
 
 章节来源
-- [memory.rs（DAL）:181-186](src/service/dal/memory.rs#L181-L186)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
 - [vector.rs（存储抽象）:1-74](src/pkg/storage/vector.rs#L1-L74)
 

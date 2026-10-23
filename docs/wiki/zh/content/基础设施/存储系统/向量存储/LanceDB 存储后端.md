@@ -8,7 +8,7 @@
 - [src/models/vector.rs](src/models/vector.rs)
 - [common/src/config.rs](common/src/config.rs)
 - [docs/vector_search_architecture.md](docs/vector_search_architecture.md)
-- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 </cite>
@@ -187,12 +187,12 @@ end
 ```
 
 图表来源
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 
 章节来源
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 
@@ -217,7 +217,7 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 - [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
 - [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
 - [src/pkg/storage/lance.rs:10-14](src/pkg/storage/lance.rs#L10-L14)
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 
@@ -241,7 +241,7 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 章节来源
 - [src/pkg/storage/lance.rs:10-14](src/pkg/storage/lance.rs#L10-L14)
 - [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 - [docs/vector_search_architecture.md:178-184](docs/vector_search_architecture.md#L178-L184)
@@ -257,7 +257,7 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 - [src/pkg/storage/lance.rs:43-62](src/pkg/storage/lance.rs#L43-L62)
 - [src/pkg/storage/lance.rs:134-199](src/pkg/storage/lance.rs#L134-L199)
 - [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 

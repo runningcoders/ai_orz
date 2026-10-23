@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [memory.rs](src/models/memory.rs)
 - [memory.rs](common/src/enums/memory.rs)
-- [memory.rs](src/service/dal/memory.rs)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [memory.rs](src/service/domain/runtime/memory.rs)
 - [save_long_term_memory.rs](src/handlers/hr/agent/save_long_term_memory.rs)
 - [settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
@@ -75,7 +75,7 @@ O1 --> S2
 ```
 
 图表来源
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 - [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
 - [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
@@ -83,7 +83,7 @@ O1 --> S2
 - [query_memory.rs:21-74](src/handlers/hr/agent/query_memory.rs#L21-L74)
 
 章节来源
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 - [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
 - [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
@@ -108,7 +108,7 @@ O1 --> S2
 - [memory.rs:158-320](src/models/memory.rs#L158-L320)
 - [memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
 - [memory.rs:96-182](common/src/enums/memory.rs#L96-L182)
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 - [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
 - [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
@@ -144,7 +144,7 @@ H-->>U : 响应
 ```
 
 图表来源
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 - [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
 - [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
@@ -258,14 +258,12 @@ MarkSettled --> EndDone["结束沉淀完成"]
 
 图表来源
 - [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [memory.rs:148-177](src/service/dal/memory.rs#L148-L177)
-- [memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
 
 章节来源
 - [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [memory.rs:148-177](src/service/dal/memory.rs#L148-L177)
-- [memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
 
 ### 关系管理与图谱更新策略
@@ -297,7 +295,7 @@ H-->>A : 响应
 
 图表来源
 - [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 
 章节来源
 - [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
@@ -334,13 +332,13 @@ QueryExec --> Return["返回结果（published 只是标记，不参与筛选）
 图表来源
 - [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
 - [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
-- [memory.rs（DAL：private_agent_scope / drop_dangling_relations）](src/service/dal/memory.rs)
+- [dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
 
 章节来源
 - [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
 - [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
-- [memory.rs（DAL）](src/service/dal/memory.rs)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ### 查询 API 使用示例
 - 节点查询
@@ -371,12 +369,12 @@ H-->>FE : 返回 MemoryResult[]
 
 图表来源
 - [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/search.rs](src/service/dal/memory/search.rs)
 
 章节来源
 - [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
 - [query_memory.rs:21-74](src/handlers/hr/agent/query_memory.rs#L21-L74)
-- [memory.rs:88-102](src/service/dal/memory.rs#L88-L102)
+- [dal/memory/search.rs](src/service/dal/memory/search.rs)
 
 ### 维护策略（定期整理、冲突解决、性能优化）
 - 定期整理
@@ -402,12 +400,12 @@ SetMetaKN --> REnd
 ```
 
 图表来源
-- [memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [20260724000000_knowledge_node_tags.sql:1-77](migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
 - [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
 
 章节来源
-- [memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [20260724000000_knowledge_node_tags.sql:1-77](migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
 - [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
 
@@ -432,11 +430,11 @@ VDAO --> VS["向量存储"]
 ```
 
 图表来源
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 
 章节来源
-- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 
 ## 性能考虑
@@ -458,8 +456,7 @@ VDAO --> VS["向量存储"]
   - 检查 seed_node_ids 是否为空；调整 traversal_depth/breadth；确认关系存在且方向正确。
 
 章节来源
-- [memory.rs:392-475](src/service/dal/memory.rs#L392-L475)
-- [memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
 - [search_memory.rs:67-121](src/handlers/hr/agent/search_memory.rs#L67-L121)
 

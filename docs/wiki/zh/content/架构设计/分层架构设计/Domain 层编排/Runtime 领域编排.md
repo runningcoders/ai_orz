@@ -18,6 +18,14 @@
 - [src/handlers/hr/agent/runtime_status.rs](src/handlers/hr/agent/runtime_status.rs)
 - [src/handlers/hr/agent/runtime_list.rs](src/handlers/hr/agent/runtime_list.rs)
 - [src/handlers/hr/agent/cancel_thinking.rs](src/handlers/hr/agent/cancel_thinking.rs)
+- [src/handlers/hr/agent/query_think_traces.rs](src/handlers/hr/agent/query_think_traces.rs)
+- [src/handlers/hr/agent/query_memory_traces.rs](src/handlers/hr/agent/query_memory_traces.rs)
+- [src/service/domain/runtime/think_trace_query.rs](src/service/domain/runtime/think_trace_query.rs)
+- [src/service/domain/runtime/memory_trace_query.rs](src/service/domain/runtime/memory_trace_query.rs)
+- [src/pkg/think_trace.rs](src/pkg/think_trace.rs)
+- [src/service/dal/memory/trace.rs](src/service/dal/memory/trace.rs)
+- [src/service/dao/memory/sqlite/trace.rs](src/service/dao/memory/sqlite/trace.rs)
+- [frontend/src/components/chat/agent_trace_panel.rs](frontend/src/components/chat/agent_trace_panel.rs)
 - [src/models/events/think_round.rs](src/models/events/think_round.rs)
 - [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs)
 - [src/consumer/agent_loop_consumer.rs](src/consumer/agent_loop_consumer.rs)
@@ -31,6 +39,8 @@
 **更新摘要 2026-08-29**：① 补充 NoProgressPolicy 作为第六个内置策略（builtin.rs#L203-L262），退出条件从仅 MaxRounds 单一防线升级为纵深防御链（疲劳提示 8 轮 → NoProgressPolicy 20 次单工具触发 → 365 轮上限）；② PromptBuilder trait 从扁平 prompt 升级为 System/User 消息分层（ChatMessage::System 变体），首次符合 Chat Completions API 规范；③ agent.rs 拆分为 agent/mod.rs + agent/builder/*.rs 子模块；④ summary.rs 删除，新增 compaction.rs 上下文压缩模块；⑤ awaken() 移除 Phase 1 IntentAnalyze 强制调用（intent_analyze.rs 保留为独立工具，不再是 awaken 必经路径），简化为单阶段直接执行；⑥ PromptBuilder trait 新增 build_final_response_guidance() 方法，注入 §0-§5 回复规则（审题 SOP + 何时直接回复 + send_message 正确用途 + 闲聊豁免 + 检索空结果 + 禁止假忙），放在 System 消息尾部；⑦ 新增 recursive_settle_call 递归拦截（compaction.rs / think_loop.rs is_recursive_settle_call），防止 Agent 在上下文压缩过程中再次触发 settle_memory 导致无限递归。
 
 **更新摘要 2026-09-19**（commit 5b52c72c → 08c3e720，本体词表注入 + Prompt 前缀缓存优化）：① awakening.rs 唤醒入口新增 ontology_lexicon 词表注入调用链——OntologyDal::try_dal() 可选依赖降级 → load_lexicon_summary 三表 Active 全量 → builder.ontology_lexicon()（本体子系统未初始化自动跳过不阻断）；② PromptBuilder.build() 区块从 8 块重排为 11 块，按稳定性递减排序，本体词表固定为第 4 块；③ build_sleep_prompt / build_summary_prompt 静态指令块前置 + 易变数据（Trace/轮次/摘要/trace_ids）统一收尾，指令用"见文末【XXX】"引用；④ Project/Task Prompt 时间字段从 relative_duration（"5 小时前"）改为 format_datetime（"2026-09-15 10:30"），消除分钟级漂移导致的前缀缓存作废；⑤ 三个 *_initial_messages 变体补缓存友好注释防回退。cite 区补两个新 RAG 卡引用（本体词表治理卡 + PromptBuilder 前缀缓存优化卡），关联文档补 ontology_knowledge_sedimentation_design.md。
+
+**更新摘要 2026-10-23（BASE dccbb402 → HEAD 481a8bbb，思考/记忆轨迹查询链路）**：① Runtime 领域新增两个只读轨迹编排入口 `query_think_traces` / `query_memory_traces` + 单条详情 `get_memory_trace`，全部走 `think_trace_query.rs` / `memory_trace_query.rs` 的统一作用域门闩 `with_context_fields` / `with_context_scope`；② 门闩规则：User 调用时 Admin/SuperAdmin 可全量，普通组织成员必须显式 `agent_id`（think 还允许 `project_id`），Agent/System 必须以上下文作用域为准且不得与入参冲突；limit 上限 think=100 / memory=100，超限直接 bad_request；③ 思考轨迹来自 `pkg/think_trace.rs` 的每日 JSONL（`agents/{agent_id}/think_trace/YYYYMMDD.jsonl`），记忆轨迹来自 `dao/memory/sqlite/trace.rs` 扫描 `agents/{agent_id}/memory/YYYYMMDD.jsonl`；④ memory DAO/DAL 目录化后轨迹查询分别落在 `dao/memory/sqlite/trace.rs` 与 `dal/memory/trace.rs`。
 
 **本文关联三类文档**
 - 【① Design 决策快照】[thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) — trait 聚合与接口层数据流
@@ -52,7 +62,10 @@
 - [Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位](docs/wiki/knowledge/zh/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位.md)
   - [本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账](docs/wiki/knowledge/zh/本体词表漂移治理与%20Prompt%20注入：OntologyDal%20load_lexicon_summary%20+%20common%20纯函数解析%20+%20写后认证%20+%20DuckDB%20漂移记账/本体词表漂移治理与%20Prompt%20注入：OntologyDal%20load_lexicon_summary%20+%20common%20纯函数解析%20+%20写后认证%20+%20DuckDB%20漂移记账.md) — 2026-09-19 增量：Runtime 唤醒入口调 OntologyDal::try_dal() → load_lexicon_summary → builder.ontology_lexicon() 注入词表区块
   - [PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序）](docs/wiki/knowledge/zh/PromptBuilder%20工作空间与本体词表注入%20+%20前缀缓存优化：workspace_context,%20ontology_lexicon,%20稳定性递减排序/PromptBuilder%20工作空间与本体词表注入%20+%20前缀缓存优化：workspace_context,%20ontology_lexicon,%20稳定性递减排序.md) — 2026-09-19 增量：区块重排 8→11 + 场景 prompt 静态指令块前置 + 绝对时间优化 + 前缀缓存原则
+  - [ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](docs/wiki/knowledge/zh/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板.md) — 2026-10-23 增量：§5 轨迹查询领域编排
+  - [记忆轨迹查询链路：MemoryTrace JSONL 分页扫描 + scope 守门 + 单条详情展开](docs/wiki/knowledge/zh/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开.md) — 2026-10-23 增量：§5 记忆轨迹任务作用域与分页
 - 【① Design 决策快照】[ontology_knowledge_sedimentation_design.md](docs/design/ontology_knowledge_sedimentation_design.md) — 2026-09-19 增量：本体与知识图谱合一（TBox/ABox）、三段沉淀闭环、漂移不物化、Prompt 词表注入设计决策
+- 【③ Wiki 关联长文（2026-10-23 增量）】[原始记忆追踪.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20(Short-term%20Memory)/原始记忆追踪.md) — 记忆轨迹 JSONL 结构与查询链路
 </cite>
 
 ## 目录
@@ -228,6 +241,46 @@ Summary --> End
 - [src/pkg/policy/builtin.rs:Ln-Lm](src/pkg/policy/builtin.rs#L1-L180)（UserCancelPolicy 实现）
 - [src/models/events/think_round.rs](src/models/events/think_round.rs)
 
+### 轨迹查询领域编排（think-traces / memory-traces）
+- **统一作用域门闩**：`think_trace_query.rs` 与 `memory_trace_query.rs` 共享同一套判定模型——`TraceScopeFields` 描述本次查询的 agent_id/project_id/task_id/limit/max_limit/allow_project/noun，`with_context_fields` 按调用者身份收敛作用域，`with_context_scope` 只是带默认值的薄包装。
+- **User 调用**：Admin / SuperAdmin 可以不带作用域做全量视图；普通组织成员必须显式给出 `agent_id`（think 额外允许 `project_id`，`allow_project=true`），否则 400。`project_id` 在 memory 链路上被显式忽略（`allow_project=false`）。
+- **Agent / System 调用**：必须以 RequestContext 自带作用域为准（上下文 agent/project/task），若入参声明了与上下文不同的作用域则直接拒绝（`ensure_scope_does_not_conflict`），保持 fail-closed。
+- **limit 校验**：`ensure_limit` 统一比对 `max_limit`，think / memory 均为 `MAX_*_TRACE_QUERY_LIMIT = 100`，超限 bad_request；未传则回落到各链路默认值（think 20 / memory 20）。
+- **调用链**：Handler 只做 DTO → Query 转换；Domain 只做作用域门闩；think 轨迹直接读 `pkg/think_trace.rs` 的 JSONL 扫描器，memory 轨迹经 `dal/memory/trace.rs` 透传到 `dao/memory/sqlite/trace.rs`。HTTP 路由为 `GET /agents/think-traces`、`GET /agents/memory-traces`、`GET /agents/memory-traces/{trace_id}`，静态段全部排在 `/agents/{id}` 参数路由之前。
+- **前端消费**：Agent 详情「🧭 轨迹」Tab 使用 `AgentTracePanel`——左侧按 `PAGE_SIZE=20` 分页拉 `query_think_traces`，右侧上段按 `run_id`（= MemoryTrace.id）回查记忆详情，下段渲染 `ThinkRoundsTimeline`；仅 awaken / settle / compact 三类场景存在记忆条目。
+
+```mermaid
+sequenceDiagram
+participant H as "Handler"
+participant D as "Domain trace_query"
+participant P as "pkg/think_trace.rs"
+participant DAL as "dal/memory/trace.rs"
+participant DAO as "dao/memory/sqlite/trace.rs"
+H->>D : "query_think_traces(ctx, ThinkTraceQuery)"
+D->>D : "with_context_scope(allow_project=true)"
+D->>P : "think_trace::query"
+P-->>D : "PagedResult<ThinkTraceEntry>（含 rounds/routes）"
+H->>D : "query_memory_traces(ctx, MemoryTraceQuery)"
+D->>D : "with_context_scope(allow_project=false)"
+D->>DAL : "query_traces"
+DAL->>DAO : "query_traces_at"
+DAO-->>D : "PagedResult<MemoryTrace>"
+```
+
+图表来源
+- [think_trace_query.rs:35-159](src/service/domain/runtime/think_trace_query.rs#L35-L159)
+- [memory_trace_query.rs:15-33](src/service/domain/runtime/memory_trace_query.rs#L15-L33)
+- [think_trace.rs:203-266](src/pkg/think_trace.rs#L203-L266)
+- [dal/memory/trace.rs:11-26](src/service/dal/memory/trace.rs#L11-L26)
+- [agent_trace_panel.rs:24-120](frontend/src/components/chat/agent_trace_panel.rs#L24-L120)
+
+章节来源
+- [query_think_traces.rs:27-108](src/handlers/hr/agent/query_think_traces.rs#L27-L108)
+- [query_memory_traces.rs:31-108](src/handlers/hr/agent/query_memory_traces.rs#L31-L108)
+- [think_trace_query.rs:35-159](src/service/domain/runtime/think_trace_query.rs#L35-L159)
+- [memory_trace_query.rs:15-33](src/service/domain/runtime/memory_trace_query.rs#L15-L33)
+- [src/router.rs:654-668](src/router.rs#L654-L668)
+
 ### 记忆管理（RuntimeMemory）
 - 最近短期记忆：get_recent_context 通过 DAL 查询 ShortTerm 记忆，限制条数用于 prompt 历史注入。
 - 思考 Trace 写入：write_thinking_trace 统一补全 log_id/user_id/organization_id/task_id 后写入，并返回 Memory。
@@ -360,9 +413,12 @@ AG --> TE
 - 上下文溢出频繁：调整 ModelProvider 的 recommended_context_length 或 max_context_length，或优化 prompt 长度；可考虑把 ContextOverflowPolicy 从独立的 Or 策略升级为与 compact_context 的溢出阈值严格对齐（目前 run_think_loop 有独立溢出判断逻辑，后续可整合进策略引擎统一）。
 - 工具执行失败：查看 tool_execution 的错误映射逻辑，区分 MCP 超时/服务器不可用/工具禁用等情况；核对 ControlMode 与标签过滤。
 - 统计缺失：确认 AOP 事件发布成功，消费者正常注册；若统计写入失败，关注警告日志但不影响业务。
+- 轨迹列表为空或 400：先用调用者身份判断——普通组织成员不带 `agent_id` 一定 400（不是空列表）；Agent/System 调用若入参作用域与上下文不一致也会被拒绝，应改为使用上下文作用域或不传；确认 JSONL 目录分别为 `agents/{agent_id}/think_trace/` 与 `agents/{agent_id}/memory/`，且查询时间区间单位是秒。
+- 轨迹分页顺序抖动：think 按 `created_at desc, run_id desc`、memory 按 `created_at desc, id desc`；同一秒内的并列必须依赖第二排序键，前端翻页时不要自行重排。
 
 章节来源
 - [src/service/domain/runtime/busy_guard.rs:1-33](src/service/domain/runtime/busy_guard.rs#L1-L33)
+- [src/service/domain/runtime/think_trace_query.rs:35-159](src/service/domain/runtime/think_trace_query.rs#L35-L159)
 - [src/service/domain/runtime/awakening.rs:151-363](src/service/domain/runtime/awakening.rs#L151-L363)
 - [src/service/domain/runtime/tool_execution.rs:188-219](src/service/domain/runtime/tool_execution.rs#L188-L219)
 - [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)

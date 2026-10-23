@@ -12,7 +12,20 @@
 - [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
 - [src/handlers/hr/agent/update_agent_status.rs](src/handlers/hr/agent/update_agent_status.rs)
 - [src/service/domain/hr/agent.rs](src/service/domain/hr/agent.rs)
+- [frontend/src/components/chat/agent_trace_panel.rs](frontend/src/components/chat/agent_trace_panel.rs)
+- [frontend/src/components/chat/think_traces_tab.rs](frontend/src/components/chat/think_traces_tab.rs)
+- [frontend/src/components/chat/think_rounds_timeline.rs](frontend/src/components/chat/think_rounds_timeline.rs)
+- [frontend/src/components/chat/memory_trace_detail.rs](frontend/src/components/chat/memory_trace_detail.rs)
+- [frontend/src/api/hr.rs](frontend/src/api/hr.rs)
+- [src/handlers/hr/agent/query_think_traces.rs](src/handlers/hr/agent/query_think_traces.rs)
+- [src/handlers/hr/agent/query_memory_traces.rs](src/handlers/hr/agent/query_memory_traces.rs)
+
+**本文关联的文档（2026-10-23 增量）**
+- ③ Wiki 长文：[人力资源模块 API.md](docs/wiki/zh/content/API%20参考/RESTful%20API/人力资源模块%20API/人力资源模块%20API.md) — 轨迹四个端点
+- ④ RAG 知识卡：[ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](docs/wiki/knowledge/zh/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板.md)
 </cite>
+
+**更新摘要 2026-10-23（BASE dccbb402 → HEAD 481a8bbb）**：Agent 详情页新增第 7 个 Tab「🧭 轨迹」（Tab 索引注释 5=知识图谱 / 6=运行时 / 7=轨迹）。面板采用**主从联动**：宽屏 `lg:grid-cols-[20rem_minmax(0,1fr)]` 左侧 run 列表、右侧上段记忆条目 + 下段轮次时间线；窄屏退化为单列。数据源为 `query_think_traces`（PAGE_SIZE=20）+ 按 `run_id` 回查 `get_memory_trace`；仅 awaken / settle / compact 三类场景渲染记忆段。切换 Agent / 翻页用加载代际计数丢弃过期响应，选中 run 若不在新页则回落到首条。
 
 ## 目录
 1. [简介](#简介)
@@ -212,6 +225,49 @@ SSE-->>FE : 推送消息去重/替换乐观消息
 - [frontend/src/pages/hr/agent_detail.rs:84-236](frontend/src/pages/hr/agent_detail.rs#L84-L236)
 - [frontend/src/pages/hr/agent_detail.rs:326-560](frontend/src/pages/hr/agent_detail.rs#L326-L560)
 - [frontend/src/pages/hr/agent_detail.rs:561-800](frontend/src/pages/hr/agent_detail.rs#L561-L800)
+- [frontend/src/pages/hr/agent_detail.rs:472-473](frontend/src/pages/hr/agent_detail.rs#L472-L473)
+- [frontend/src/pages/hr/agent_detail.rs:1154](frontend/src/pages/hr/agent_detail.rs#L1154)
+- [frontend/src/pages/hr/agent_detail.rs:2123-2124](frontend/src/pages/hr/agent_detail.rs#L2123-L2124)
+
+### 详情页「🧭 轨迹」Tab：思考轨迹 + 记忆轨迹主从联动
+- 入口：详情页 Tab 列表第 7 项（索引注释 `5=知识图谱 6=运行时 7=轨迹`），内容区挂载 `AgentTracePanel { agent_id }`。
+- 布局：宽屏两栏 `lg:grid-cols-[20rem_minmax(0,1fr)]`；左栏为 run 分页列表（每页 20 条），右栏上段记忆条目、下段思考轮次时间线；窄屏自动退化为单列，记忆段仍在轮次上方。
+- 数据：run 列表来自 `GET /api/v1/hr/agents/think-traces?agent_id=`；选中 run 后，若 `scene` 属于 awaken / settle / compact，则用 `run_id`（= MemoryTrace.id）调 `GET /api/v1/hr/agents/memory-traces/{trace_id}?agent_id=` 拉完整 input/output。
+- 轮次时间线：逐轮展示轮次号、裁决徽章（final/continue/reflect/exit）、`in/out token · duration`、推理摘要、模型输出、工具调用（状态 ok/error/blocked/not_found/pending）；文本按 160 / 120 字符预览，超出用 `<details>` 展开。
+- 交互稳定性：加载代际 `load_gen` 丢弃过期响应；切换 Agent 或刷新会重置分页与选中；选中 run 不在新页时回落到首条；翻页按钮由 `page_bounds` 统一计算。
+
+```mermaid
+sequenceDiagram
+participant U as "用户"
+participant P as "AgentTracePanel"
+participant API1 as "query_think_traces"
+participant API2 as "get_memory_trace"
+participant T as "ThinkRoundsTimeline"
+U->>P : "打开「🧭 轨迹」Tab"
+P->>API1 : "GET /agents/think-traces?agent_id&limit=20"
+API1-->>P : "PagedResult<ThinkTraceListItem>"
+U->>P : "点选某条 run"
+alt scene in awaken / settle / compact
+P->>API2 : "GET /agents/memory-traces/{run_id}?agent_id"
+API2-->>P : "MemoryTraceDetail（完整 input/output）"
+end
+P->>T : "渲染 rounds（裁决/token/工具调用）"
+```
+
+图表来源
+- [agent_trace_panel.rs:24-120](frontend/src/components/chat/agent_trace_panel.rs#L24-L120)
+- [think_traces_tab.rs:60-140](frontend/src/components/chat/think_traces_tab.rs#L60-L140)
+- [think_rounds_timeline.rs:11-140](frontend/src/components/chat/think_rounds_timeline.rs#L11-L140)
+- [memory_trace_detail.rs:19-161](frontend/src/components/chat/memory_trace_detail.rs#L19-L161)
+- [api/hr.rs:430-463](frontend/src/api/hr.rs#L430-L463)
+
+章节来源
+- [frontend/src/pages/hr/agent_detail.rs:472-473](frontend/src/pages/hr/agent_detail.rs#L472-L473)
+- [frontend/src/pages/hr/agent_detail.rs:1154](frontend/src/pages/hr/agent_detail.rs#L1154)
+- [frontend/src/pages/hr/agent_detail.rs:2123-2124](frontend/src/pages/hr/agent_detail.rs#L2123-L2124)
+- [agent_trace_panel.rs:24-287](frontend/src/components/chat/agent_trace_panel.rs#L24-L287)
+- [think_rounds_timeline.rs:11-236](frontend/src/components/chat/think_rounds_timeline.rs#L11-L236)
+- [memory_trace_detail.rs:19-183](frontend/src/components/chat/memory_trace_detail.rs#L19-L183)
 
 ### 生命周期管理：创建、更新、删除、启用禁用
 - 创建 Agent
@@ -414,5 +470,19 @@ Agent 管理功能在前端与后端之间形成了清晰的职责划分与稳�
 1. frontend/src/components/model_provider_bubble.rs（新增）：ModelProviderBubble 组件——文本 chip 触发（tabindex=0 + onfocus），浮层展示提供商基础信息 + 最近 24h 精简统计（调用/平均 QPS/输入输出 Token），卡片底部跳模型提供商详情页
 2. frontend/src/components/avatar_bubble.rs：浮层定位工具 pub(crate) 开放复用（BubbleAnchor/resolve_anchor/viewport_size/focused_element/scroll_ancestor_rect/BubbleAlign）；resolve_anchor 签名泛化为触发盒实测 DomRect（5 参），删除 AvatarSize::px()
 3. frontend/src/pages/hr/agents.rs + agent_detail.rs：local Agent 的模型提供商字段从文本/Link 替换为 ModelProviderBubble（外部 Agent 保持纯文本）
-**数据源**：零后端改动，复用 get_model_provider(with_model_call_stats=true)（stats_interval=hourly，窗口 24h）
+**数据源**：零后端改动，复用 get_model_provider(with_model_call_stats=true）（stats_interval=hourly，窗口 24h）
 **涉及 RAG 卡**：模型提供商信息气泡卡（新增，Level 4 细卡）+ UI Design System 总卡
+
+---
+
+### 更新摘要（2026-10-23，BASE dccbb402→HEAD 481a8bbb）
+**主题**：详情页新增「🧭 轨迹」Tab（思考 + 记忆主从联动）
+**关键变更**：
+1. frontend/src/pages/hr/agent_detail.rs（增量）：Tab 索引扩到 7，按钮「🧭 轨迹」；内容区挂载 `AgentTracePanel { agent_id }`
+2. frontend/src/components/chat/agent_trace_panel.rs（新增）：左侧 run 分页列表 + 右侧记忆段 / 轮次时间线；`PAGE_SIZE=20`、`has_memory_entry` 限定 awaken/settle/compact、`load_gen` 代际丢弃过期响应、选中 run 回落首条
+3. frontend/src/components/chat/think_traces_tab.rs（新增）：独立思考轨迹 Tab（scene/via/occurrence/route 文案 + 分页边界），与轨迹面板共享 `page_bounds` / `scene_label`
+4. frontend/src/components/chat/think_rounds_timeline.rs（新增）：轮级时间线，裁决与工具状态徽章 + 长文本 `<details>` 折叠
+5. frontend/src/components/chat/memory_trace_detail.rs（新增）：记忆轨迹详情，400 字符预览 + 完整输入输出展开；props 变化需 `key` 强制重挂载
+
+**数据源**：`GET /api/v1/hr/agents/think-traces`（列表）+ `GET /api/v1/hr/agents/memory-traces/{trace_id}?agent_id=`（详情）
+**涉及 RAG 卡**：ThinkTrace 轮级轨迹卡（新增，Level 5）+ 记忆轨迹查询链路卡（新增，Level 5）

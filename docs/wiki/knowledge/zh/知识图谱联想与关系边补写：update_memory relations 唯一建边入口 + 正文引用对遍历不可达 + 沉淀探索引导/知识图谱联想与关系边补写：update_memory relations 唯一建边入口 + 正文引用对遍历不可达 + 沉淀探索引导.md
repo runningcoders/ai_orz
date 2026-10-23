@@ -9,7 +9,7 @@ scope:
   - "src/service/dal/agent/builder/default.rs"
   - "src/handlers/hr/agent/mod.rs"
   - "src/handlers/hr/agent/save_long_term_memory.rs"
-  - "src/service/dal/memory.rs"
+  - "src/service/dal/memory/graph.rs"
   - "src/service/dao/memory/*.rs"
 source_files:
   - common/src/api/neural_tools.rs#L172-L194 (UpdateMemoryParams：content/summary/tags/status/node_tags/relations；relations 注释即红线——给既有节点补边的唯一路径，正文提及/引用不算建边，遍历只认关系表)
@@ -21,7 +21,7 @@ source_files:
   - src/handlers/hr/agent/update_memory.rs#L303-L399 (回归：既有节点补边——词表外关系名「实现」原样保留 + weight 穿透 + 内容更新与建边同一次调用生效 + 用 search_memory 遍历验证边真实可见)
   - src/service/dal/agent/builder/default.rs#L840-L880 (awaken/settle 双场景 System 指引：闲聊/简单消息**不豁免检索，而是换个目的**做联想检索；§4 检索节奏「递进探索 ✅ / 同义重试 ❌」防死循环)
   - src/service/dal/agent/builder/default.rs#L780-L800 (沉淀场景引导：还缺资料 → 检索知识图谱，鼓励沿命中节点递进探索)
-  - src/service/dal/memory.rs (CreateRelations 落边路径：与 save_long_term_memory 共用同一建边入口)
+  - src/service/dal/memory/store.rs (CreateRelations 落边路径：与 save_long_term_memory 共用同一建边入口)
   - src/handlers/hr/agent/save_long_term_memory.rs (节点+边同建路径：新节点用 save_long_term_memory，既有节点补边用 update_memory)
   - docs/wiki/zh/content/功能模块/AI Agent 管理/记忆系统管理.md
   - docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md
@@ -52,7 +52,7 @@ source_files:
 |------|------|---------|------|
 | [common/src/api/neural_tools.rs](common/src/api/neural_tools.rs) | DTO 契约 | `UpdateMemoryParams.relations`、`KnowledgeRelationParam`（relation_type 原样、weight 可省） | `:L172-L194`, `:L413-L435` |
 | [src/handlers/hr/agent/update_memory.rs](src/handlers/hr/agent/update_memory.rs) | 建边入口 | relations 仅知识节点（否则 400）+ 更新成功后建边 + 回归测试 | `:L14-L20`, `:L46-L53`, `:L135-L157` |
-| [src/service/dal/memory.rs](src/service/dal/memory.rs) | 落边路径 | `CreateRelations`：与 `save_long_term_memory` 共用同一建边实现 | — |
+| [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs) | 落边路径 | `CreateRelations`：与 `save_long_term_memory` 共用同一建边实现 | — |
 | [src/handlers/hr/agent/mod.rs#L294-L420](src/handlers/hr/agent/mod.rs#L294-L420) | **v1.2 逐项回执** | write_relations_with_receipt：两写入口共享；占位符/kn_ 前缀静态校验 + 批内同键去重 + 端点批量 Active 预检 + 逐条独立落库 | `:L294-L420` |
 | [common/src/error/code.rs#L132-L156](common/src/error/code.rs#L132-L156) | **v1.2 错误码** | 建边 5 码：placeholder_node_id_rejected / invalid_node_id / source_node_not_found / target_node_not_found / duplicate_active_edge（+ internal 兜底） | — |
 | [src/service/dal/agent/builder/default.rs](src/service/dal/agent/builder/default.rs) | Prompt 引导 | 闲聊换目的检索 + 递进探索/同义重试节奏 + 沉淀沿节点探索 | `:L780-L880` |

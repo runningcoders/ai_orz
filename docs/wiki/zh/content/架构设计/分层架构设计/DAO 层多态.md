@@ -12,7 +12,7 @@
 - [src/service/dao/tool/mod.rs](src/service/dao/tool/mod.rs)
 - [src/service/dao/tool/sqlite.rs](src/service/dao/tool/sqlite.rs)
 - [src/service/dao/memory/mod.rs](src/service/dao/memory/mod.rs)
-- [src/service/dao/memory/sqlite.rs](src/service/dao/memory/sqlite.rs)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 </cite>
 
@@ -235,7 +235,7 @@ Exec --> End(["返回结果"])
 
 章节来源
 - [src/service/dao/memory/mod.rs:60-562](src/service/dao/memory/mod.rs#L60-L562)
-- [src/service/dao/memory/sqlite.rs:126-800](src/service/dao/memory/sqlite.rs#L126-L800)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 
 ## 依赖关系分析
 - 模块内依赖
@@ -338,4 +338,4 @@ AI Orz 的 DAO 层通过“接口 + 多实现”的多态设计，实现了存�
 - [src/service/dao/message/sqlite.rs:42-59](src/service/dao/message/sqlite.rs#L42-L59)
 - [src/service/dao/project/sqlite.rs:42-60](src/service/dao/project/sqlite.rs#L42-L60)
 - [src/service/dao/tool/sqlite.rs:58-87](src/service/dao/tool/sqlite.rs#L58-L87)
-- [src/service/dao/memory/sqlite.rs:66-83](src/service/dao/memory/sqlite.rs#L66-L83)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)

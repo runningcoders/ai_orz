@@ -18,7 +18,7 @@ scope:
   - "src/handlers/hr/agent/save_long_term_memory.rs"
   - "src/handlers/hr/agent/update_memory.rs"
   - "src/handlers/hr/agent/search_memory.rs"
-  - "src/service/dal/memory.rs"
+  - "src/service/dal/memory/properties.rs"
   - "src/service/dao/memory/*.rs"
   - "src/service/domain/hr/ontology.rs"
   - "src/models/ontology.rs"
@@ -33,8 +33,8 @@ source_files:
   - common/src/enums/ontology.rs
   - common/src/api/neural_tools.rs#L1-L120
   - src/handlers/hr/agent/mod.rs#L226-L420
-  - src/service/dal/memory.rs#L920-L1068
-  - src/service/dao/memory/sqlite.rs#L1729-L1900
+  - src/service/dal/memory/properties.rs#L920-L1068
+  - src/service/dao/memory/sqlite/properties.rs
   - src/service/domain/hr/ontology.rs#L65-L103
   - docs/design/ontology_knowledge_sedimentation_design.md
   - docs/wiki/zh/content/功能模块/知识图谱管理/本体属性管理.md
@@ -67,8 +67,8 @@ source_files:
 | [common/src/api/neural_tools.rs](common/src/api/neural_tools.rs) | 值侧工具 DTO | KnowledgePropertyParam（写入 tagged value）/ KnowledgePropertyItem（回显）/ PropertyFilterParam / PropertyIssueEntry{code,message,field} / RelationWriteResult（建边逐项回执，详见建边卡）；两 Response 挂 relations_result、property_issues_v2（skip 序列化默认空） |
 | [common/src/error/code.rs#L132-L186](common/src/error/code.rs#L132-L186) | 错误码词汇表 | 属性域 6 码（property_undefined / property_target_not_allowed / property_type_mismatch / property_cardinality_exceeded / property_number_out_of_range / property_not_in_enum_value） |
 | [src/handlers/hr/agent/mod.rs#L226-L420](src/handlers/hr/agent/mod.rs#L226-L420) | 两写入口共享实现 | save_node_properties(L226) / property_issue_strings(L248 V1) / property_issue_entries(L259 V2) / is_placeholder_node_id(L294 self/kn_self/kn_new_self) / is_valid_node_id(L303 kn_ 前缀) / write_relations_with_receipt(L323) |
-| [src/service/dal/memory.rs#L920-L1068](src/service/dal/memory.rs#L920-L1068) | 属性写编排 | save_entity_properties：门闩 0~4、批内占位 batch_taken 防同批重复、batch_upsert_properties 整批事务、single 重写触发 supersede |
-| [src/service/dao/memory/sqlite.rs#L1729-L1900](src/service/dao/memory/sqlite.rs#L1729-L1900) | 值表 DAO | upsert_property(L1729) / batch_upsert_properties(L1742) / list_active_properties(L1761) / list_active_properties_batch(L1785) / supersede_active_property(L252) / query_properties_by_value(L1862，property_filters 召回) |
+| [src/service/dao/memory/sqlite/properties.rs](src/service/dao/memory/sqlite/properties.rs) | 属性写编排 | save_entity_properties：门闩 0~4、批内占位 batch_taken 防同批重复、batch_upsert_properties 整批事务、single 重写触发 supersede |
+| [src/service/dao/memory/sqlite/properties.rs](src/service/dao/memory/sqlite/properties.rs) | 值表 DAO | upsert_property(L1729) / batch_upsert_properties(L1742) / list_active_properties(L1761) / list_active_properties_batch(L1785) / supersede_active_property(L252) / query_properties_by_value(L1862，property_filters 召回) |
 | [src/handlers/hr/agent/search_memory.rs](src/handlers/hr/agent/search_memory.rs) | 读侧 | property_filters 与 seed_node_ids 互斥校验（L109）；filters 独立召回通道；attach_properties 批量回显 status=1（L261） |
 | [src/service/domain/hr/ontology.rs#L65-L103](src/service/domain/hr/ontology.rs#L65-L103) | 定义侧 Domain 严格校验 | validate_property_definition：data_type/cardinality 非法、applies_to 拼错、value_range 形态不符 → 400；trait create_property(L330)/get/list/update/retire(L389) |
 | src/handlers/hr/ontology/{create,list,update,retire}_property.rs | 定义侧 4 handler | 管理端 CRUD；路由 src/router.rs#L786-L800；tag 分层：list = neural+ontology_management+ontology，写侧仅 ontology_management |

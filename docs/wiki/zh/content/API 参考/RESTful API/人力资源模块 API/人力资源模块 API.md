@@ -24,6 +24,10 @@
 - [src/handlers/hr/agent/query_memory.rs](src/handlers/hr/agent/query_memory.rs)
 - [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
 - [src/handlers/hr/agent/recommend_seed_nodes.rs](src/handlers/hr/agent/recommend_seed_nodes.rs)
+- [src/handlers/hr/agent/query_think_traces.rs](src/handlers/hr/agent/query_think_traces.rs)
+- [src/handlers/hr/agent/query_memory_traces.rs](src/handlers/hr/agent/query_memory_traces.rs)
+- [common/src/api/runtime.rs](common/src/api/runtime.rs)
+- [src/router.rs](src/router.rs)
 - [src/handlers/hr/skill/create_skill.rs](src/handlers/hr/skill/create_skill.rs)
 - [src/handlers/hr/skill/list_skills.rs](src/handlers/hr/skill/list_skills.rs)
 - [src/handlers/hr/skill/get_skill.rs](src/handlers/hr/skill/get_skill.rs)
@@ -36,7 +40,15 @@
 - [src/models/agent.rs](src/models/agent.rs)
 - [src/models/skill.rs](src/models/skill.rs)
 - [src/models/memory.rs](src/models/memory.rs)
+
+**本文关联的文档（2026-10-23 增量）**
+- ③ Wiki 长文：[原始记忆追踪.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20(Short-term%20Memory)/原始记忆追踪.md) — MemoryTrace JSONL 与查询链路
+- ③ Wiki 长文：[Runtime 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md) — 轨迹查询的 Domain 作用域门闩
+- ④ RAG 知识卡：[ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](docs/wiki/knowledge/zh/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板/ThinkTrace%20轮级轨迹：JSONL%20落盘%20+%20query_think_traces%20作用域守门%20+%20轮次时间线与轨迹面板.md)
+- ④ RAG 知识卡：[记忆轨迹查询链路：MemoryTrace JSONL 分页扫描 + scope 守门 + 单条详情展开](docs/wiki/knowledge/zh/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开/记忆轨迹查询链路：MemoryTrace%20JSONL%20分页扫描%20+%20scope%20守门%20+%20单条详情展开.md)
 </cite>
+
+**更新摘要 2026-10-23（BASE dccbb402 → HEAD 481a8bbb）**：人力资源模块新增 4 个**只读轨迹端点**（3 个 HTTP + 2 个神经工具签名，其中 `query_think_traces` / `query_memory_traces` 同时以 `register_handler_tool` 暴露给 Agent）——`GET /api/v1/hr/agents/think-traces`、`GET /api/v1/hr/agents/memory-traces`、`GET /api/v1/hr/agents/memory-traces/{trace_id}`。DTO 全部落在 `common/src/api/runtime.rs`（QueryThinkTracesRequest / ThinkTraceListItem / ThinkTraceRoundDto / QueryMemoryTracesRequest / MemoryTraceListItem / GetMemoryTraceRequest / MemoryTraceDetail），路由注册在 `src/router.rs` 静态段（必须先于 `/agents/{id}` 参数路由）。时间参数单位：think 为**毫秒**（started_after/started_before），memory 为**秒**（created_after/created_before），两链路不一致是历史字段语义，调用方不得混用。
 
 ## 目录
 1. [简介](#简介)
@@ -264,6 +276,51 @@ H-->>U : "200 OK"
 - [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
 - [src/handlers/hr/agent/recommend_seed_nodes.rs](src/handlers/hr/agent/recommend_seed_nodes.rs)
 - [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
+
+### 轨迹查询接口（思考轨迹 + 记忆轨迹）
+- `GET /api/v1/hr/agents/think-traces`：分页查询思考轨迹，返回 `PagedResult<ThinkTraceListItem>`；每条含 `rounds`（轮级明细）、`occurrences`（节点序列）、`routes`（选路记录），前端无需二次请求。
+  - Query 参数：`agent_id`（省略=跨 Agent）、`project_id`、`task_id`、`run_id`、`scene`（awaken/settle/summary/compact/intent-analyze）、`started_after`/`started_before`（毫秒）、`limit`/`offset`。
+  - 作用域：Admin/SuperAdmin 可全量；普通成员必须显式 `agent_id`（或 `project_id`）；limit ≤ 100，默认 20。
+- `GET /api/v1/hr/agents/memory-traces`：分页查询记忆轨迹，返回 `PagedResult<MemoryTraceListItem>`，input/output 只给 200 字符预览。
+  - Query 参数：`agent_id`、`task_id`、`log_id`、`trace_id`、`created_after`/`created_before`（**秒**）、`limit`/`offset`；limit ≤ 100，默认 20。
+  - 作用域：普通成员必须显式 `agent_id`；`project_id` 不支持（显式忽略）。
+- `GET /api/v1/hr/agents/memory-traces/{trace_id}?agent_id=`：读取单条完整记忆轨迹（`MemoryTraceDetail`），返回完整 `input` / `output` / `metadata`；未命中 not_found。
+- 路由注意：三个端点均为静态段，注册时必须排在 `/agents/{id}` 之前；`memory-traces/{trace_id}` 的 `agent_id` 在 Query 而非 Path，用于定位 `agents/{agent_id}/memory/`。
+- 神经工具：`query_think_traces` 与 `query_memory_traces` 同时通过 `register_handler_tool` 暴露给 Agent（tags=runtime,query），参数即上述 DTO。
+
+```mermaid
+sequenceDiagram
+participant C as "调用方"
+participant R as "router.rs（静态段）"
+participant H as "轨迹 Handler"
+participant D as "Domain 作用域门闩"
+participant S as "JSONL 扫描（think / memory）"
+C->>R : "GET /agents/think-traces?agent_id&limit"
+R->>H : "query_think_traces_handler"
+H->>D : "with_context_scope(max=100)"
+D->>S : "扫描 think_trace/*.jsonl"
+S-->>C : "PagedResult<ThinkTraceListItem>"
+C->>R : "GET /agents/memory-traces/{trace_id}?agent_id"
+R->>H : "get_memory_trace_handler"
+H->>D : "with_context_scope(max=100)"
+D->>S : "按 trace_id 精确读取 memory/*.jsonl"
+S-->>C : "MemoryTraceDetail"
+```
+
+图表来源
+- [src/router.rs:654-668](src/router.rs#L654-L668)
+- [query_think_traces.rs:27-48](src/handlers/hr/agent/query_think_traces.rs#L27-L48)
+- [query_memory_traces.rs:31-80](src/handlers/hr/agent/query_memory_traces.rs#L31-L80)
+- [common/src/api/runtime.rs:109-147](common/src/api/runtime.rs#L109-L147)
+- [common/src/api/runtime.rs:255-356](common/src/api/runtime.rs#L255-L356)
+
+章节来源
+- [query_think_traces.rs:27-108](src/handlers/hr/agent/query_think_traces.rs#L27-L108)
+- [query_memory_traces.rs:31-108](src/handlers/hr/agent/query_memory_traces.rs#L31-L108)
+- [src/router.rs:654-668](src/router.rs#L654-L668)
+- [common/src/api/runtime.rs](common/src/api/runtime.rs)
+- [think_trace_query.rs:35-159](src/service/domain/runtime/think_trace_query.rs#L35-L159)
+- [memory_trace_query.rs:15-33](src/service/domain/runtime/memory_trace_query.rs#L15-L33)
 
 ### Agent 生命周期与配置
 - 生命周期状态：面试中、运行中、休眠、已禁用、已删除等（由枚举定义）。

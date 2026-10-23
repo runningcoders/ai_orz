@@ -16,7 +16,7 @@
 - [neural_tools.rs（工具 DTO）](common/src/api/neural_tools.rs)（2026-10-12：KnowledgeProperty* / PropertyFilterParam / PropertyIssueEntry / RelationWriteResult）
 - [ontology_property.rs（属性纯函数）](common/src/ontology_property.rs)
 - [error/code.rs（错误码）](common/src/error/code.rs)（2026-10-12：建边 5 码 + 属性 6 码）
-- [memory.rs（DAL）](src/service/dal/memory.rs)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）](src/service/dao/memory/mod.rs)
 - [vector_search_architecture.md](docs/vector_search_architecture.md)
 
@@ -54,11 +54,11 @@ D --> E["数据库/向量后端"]
 ```
 
 图表来源
-- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 章节来源
-- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 ## 核心组件
@@ -104,7 +104,7 @@ Handler-->>Client : "SearchMemoryResponse"
 
 图表来源
 - [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 ## 详细组件分析
@@ -269,11 +269,11 @@ DAL --> DAO : "组合"
 ```
 
 图表来源
-- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 章节来源
-- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 ## 性能与优化
@@ -298,7 +298,7 @@ DAL --> DAO : "组合"
 
 章节来源
 - [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
-- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 故障排查指南
 - 缺少调用主体（用户 / Agent 上下文）

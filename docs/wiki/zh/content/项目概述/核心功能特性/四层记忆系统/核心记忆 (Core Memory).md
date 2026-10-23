@@ -3,7 +3,7 @@
 <cite>
 **本文引用的文件**
 - [src/models/memory.rs](src/models/memory.rs)
-- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/domain/runtime/memory.rs](src/service/domain/runtime/memory.rs)
 - [common/src/enums/memory.rs](common/src/enums/memory.rs)
 - [src/models/agent.rs](src/models/agent.rs)
@@ -44,7 +44,7 @@ M2["agent.rs<br/>AgentPo/运行时配置"]
 M3["prompt_builder.rs<br/>Prompt构建接口"]
 end
 subgraph "DAL层"
-D1["dal/memory.rs<br/>记忆DAL"]
+D1["dal/memory/mod.rs<br/>记忆DAL"]
 end
 subgraph "Domain层"
 R1["runtime/memory.rs<br/>RuntimeMemory"]
@@ -66,7 +66,7 @@ R1 --> E1
 
 图表来源
 - [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
-- [src/service/dal/memory.rs:1-800](src/service/dal/memory.rs#L1-L800)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
 - [src/service/domain/runtime/awakening.rs:354-456](src/service/domain/runtime/awakening.rs#L354-L456)
 - [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
@@ -74,7 +74,7 @@ R1 --> E1
 
 章节来源
 - [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
-- [src/service/dal/memory.rs:1-800](src/service/dal/memory.rs#L1-L800)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
 - [common/src/enums/memory.rs:1-212](common/src/enums/memory.rs#L1-L212)
 
@@ -100,7 +100,7 @@ R1 --> E1
 
 章节来源
 - [src/models/memory.rs:15-424](src/models/memory.rs#L15-L424)
-- [src/service/dal/memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/domain/runtime/memory.rs:10-119](src/service/domain/runtime/memory.rs#L10-L119)
 - [src/models/agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [src/models/agent.rs:330-427](src/models/agent.rs#L330-L427)
@@ -136,14 +136,14 @@ Runtime-->>Consumer : AwakeningResult
 - [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
 - [src/service/domain/runtime/awakening.rs:415-456](src/service/domain/runtime/awakening.rs#L415-L456)
 - [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
-- [src/service/dal/memory.rs:278-312](src/service/dal/memory.rs#L278-L312)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
 
 章节来源
 - [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
 - [src/service/domain/runtime/awakening.rs:415-456](src/service/domain/runtime/awakening.rs#L415-L456)
 - [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
-- [src/service/dal/memory.rs:278-312](src/service/dal/memory.rs#L278-L312)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
 
 ## 详细组件分析
@@ -188,9 +188,7 @@ Runtime-->>Consumer : AwakeningResult
   - 向量集合维护 model_provider_id，切换 Embedding Provider 时触发 rebuild_vectors。
 
 章节来源
-- [src/service/dal/memory.rs:104-177](src/service/dal/memory.rs#L104-L177)
-- [src/service/dal/memory.rs:377-516](src/service/dal/memory.rs#L377-L516)
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [common/src/enums/memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
 
 ### 唤醒过程中的加载流程与优先级
@@ -240,9 +238,7 @@ Think --> End(["结束"])
   - 支持从种子节点出发进行 BFS/DFS 遍历，返回节点与关系，用于推荐起点与探索。
 
 章节来源
-- [src/service/dal/memory.rs:190-276](src/service/dal/memory.rs#L190-L276)
-- [src/service/dal/memory.rs:518-576](src/service/dal/memory.rs#L518-L576)
-- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 依赖关系分析
 - 模块耦合
@@ -268,14 +264,14 @@ AW --> PB["PromptBuilder"]
 
 图表来源
 - [src/service/domain/runtime/memory.rs:10-119](src/service/domain/runtime/memory.rs#L10-L119)
-- [src/service/dal/memory.rs:41-68](src/service/dal/memory.rs#L41-L68)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/domain/runtime/awakening.rs:379-456](src/service/domain/runtime/awakening.rs#L379-L456)
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
 - [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
 
 章节来源
 - [src/service/domain/runtime/memory.rs:10-119](src/service/domain/runtime/memory.rs#L10-L119)
-- [src/service/dal/memory.rs:41-68](src/service/dal/memory.rs#L41-L68)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/domain/runtime/awakening.rs:379-456](src/service/domain/runtime/awakening.rs#L379-L456)
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
 - [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
@@ -291,9 +287,7 @@ AW --> PB["PromptBuilder"]
   - 唤醒时使用 BusyGuard 管理状态，避免重复唤醒；消费者层原子占用 Agent，防止 TOCTOU 竞态。
 
 章节来源
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
-- [src/service/dal/memory.rs:220-276](src/service/dal/memory.rs#L220-L276)
-- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
 
 ## 故障排查指南
@@ -308,8 +302,7 @@ AW --> PB["PromptBuilder"]
   - 处理：确认 BusyGuard 是否正确释放；检查 awaken 前失败路径是否清理状态。
 
 章节来源
-- [src/service/dal/memory.rs:400-460](src/service/dal/memory.rs#L400-L460)
-- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/domain/runtime/awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
 
 ## 结论
@@ -338,5 +331,4 @@ AW --> PB["PromptBuilder"]
 
 章节来源
 - [src/models/agent.rs:15-167](src/models/agent.rs#L15-L167)
-- [src/service/dal/memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
-- [src/service/dal/memory.rs:377-799](src/service/dal/memory.rs#L377-L799)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)

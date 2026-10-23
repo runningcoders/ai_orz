@@ -5,8 +5,8 @@
 - [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
 - [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
 - [migrations/20260810000000_users_preferences.sql](migrations/20260810000000_users_preferences.sql)
-- [src/service/dao/memory/sqlite.rs](src/service/dao/memory/sqlite.rs)
-- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/agent/sqlite.rs](src/service/dao/agent/sqlite.rs)
 - [src/service/dao/project/sqlite.rs](src/service/dao/project/sqlite.rs)
 - [src/service/dao/message/sqlite.rs](src/service/dao/message/sqlite.rs)
@@ -60,8 +60,7 @@ I --> J["避免 SQLite 999 参数绑定限制"]
 
 **图表来源**
 - [src/pkg/storage/mod.rs:56-122](src/pkg/storage/mod.rs#L56-L122)
-- [src/service/dao/memory/sqlite.rs:25-28](src/service/dao/memory/sqlite.rs#L25-L28)
-- [src/service/dao/memory/sqlite.rs:1287-1306](src/service/dao/memory/sqlite.rs#L1287-L1306)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 
 **章节来源**
 - [src/pkg/storage/mod.rs:56-122](src/pkg/storage/mod.rs#L56-L122)
@@ -78,8 +77,7 @@ I --> J["避免 SQLite 999 参数绑定限制"]
 
 **章节来源**
 - [src/pkg/storage/mod.rs:36-179](src/pkg/storage/mod.rs#L36-L179)
-- [src/service/dao/memory/sqlite.rs:25-28](src/service/dao/memory/sqlite.rs#L25-L28)
-- [src/service/dao/memory/sqlite.rs:1287-1306](src/service/dao/memory/sqlite.rs#L1287-L1306)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 
 ## 架构总览
 遵循严格四层单向调用：Adapter → Domain → DAL → DAO。PO 仅在 DAO/DAL 内部使用，Domain 输入为 Command/Query，输出为业务实体与事件。所有跨层传递使用 RequestContext.clone()。
@@ -103,8 +101,8 @@ D-->>H : 响应
 ```
 
 **图表来源**
-- [src/service/dao/memory/sqlite.rs:1287-1306](src/service/dao/memory/sqlite.rs#L1287-L1306)
-- [src/service/dal/memory.rs:997-1028](src/service/dal/memory.rs#L997-L1028)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 详细组件分析
 
@@ -172,13 +170,10 @@ Single --> Output
 ```
 
 **图表来源**
-- [src/service/dao/memory/sqlite.rs:1287-1306](src/service/dao/memory/sqlite.rs#L1287-L1306)
-- [src/service/dao/memory/sqlite.rs:131-179](src/service/dao/memory/sqlite.rs#L131-L179)
+- [src/service/dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 
 **章节来源**
-- [src/service/dao/memory/sqlite.rs:25-28](src/service/dao/memory/sqlite.rs#L25-L28)
-- [src/service/dao/memory/sqlite.rs:131-179](src/service/dao/memory/sqlite.rs#L131-L179)
-- [src/service/dao/memory/sqlite.rs:1287-1306](src/service/dao/memory/sqlite.rs#L1287-L1306)
+- [src/service/dal/memory/graph.rs](src/service/dal/memory/graph.rs)
 
 ### Agent DAO（SQLite）
 - 插入/更新/删除：使用 sqlx::query! 绑定字段，更新时写入 modified_by 与 updated_at；删除为软删除（status=0）。
@@ -243,7 +238,7 @@ DAO_Memory --> IN_CHUNK["IN_CLAUSE_CHUNK 常量"]
 
 **图表来源**
 - [src/pkg/storage/mod.rs:36-179](src/pkg/storage/mod.rs#L36-L179)
-- [src/service/dao/memory/sqlite.rs:25-28](src/service/dao/memory/sqlite.rs#L25-L28)
+- [src/service/dao/memory/sqlite/relations.rs](src/service/dao/memory/sqlite/relations.rs)
 
 **章节来源**
 - [tests/integration/core_crud_test.rs:1-37](tests/integration/core_crud_test.rs#L1-L37)
@@ -261,9 +256,8 @@ DAO_Memory --> IN_CHUNK["IN_CLAUSE_CHUNK 常量"]
 - **DFS 优化**：traverse_dfs 函数实现了栈预取批量缓存，避免逐节点 N+1 查询问题。
 
 **章节来源**
-- [src/service/dao/memory/sqlite.rs:25-28](src/service/dao/memory/sqlite.rs#L25-L28)
-- [src/service/dao/memory/sqlite.rs:1287-1306](src/service/dao/memory/sqlite.rs#L1287-L1306)
-- [src/service/dal/memory.rs:891-995](src/service/dal/memory.rs#L891-L995)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 故障排查指南
 - 启动失败：检查 Storage::new 中 SqlitePool 创建与迁移执行是否成功；确认数据库文件路径与权限。
@@ -276,8 +270,8 @@ DAO_Memory --> IN_CHUNK["IN_CLAUSE_CHUNK 常量"]
 
 **章节来源**
 - [src/service/dao/tool/sqlite.rs:121-176](src/service/dao/tool/sqlite.rs#L121-L176)
-- [src/service/dao/memory/sqlite.rs:1287-1306](src/service/dao/memory/sqlite.rs#L1287-L1306)
-- [src/service/dal/memory.rs:891-995](src/service/dal/memory.rs#L891-L995)
+- [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
+- [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 结论
 本项目基于 SQLx 的 SQLite DAO 实现了高内聚、低耦合的数据访问层，配合 FTS5 全文检索、严格的软删除策略与统一的查询构建器，满足 Agent、Project、Message、Tool、Memory 等实体的 CRUD、复杂查询与聚合需求。**最新优化**包括智能分块处理机制，有效解决了 SQLite 999 参数绑定限制问题，确保大规模数据操作的稳定性。Storage 门面统一管理连接池、迁移与向量后端，确保可移植性与可测试性。遵循四层单向调用与 RequestContext 传递规范，可在不破坏架构约束的前提下扩展自定义查询。
