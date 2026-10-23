@@ -68,8 +68,8 @@ pub fn ThinkPathGraphView(
     }
 
     // 缩略图与弹窗共用同一份映射函数，只是画布尺寸不同（曲率/布局随尺寸重算）
-    let mini = build_think_path_graph(&occurrences, &routes, MINI_W, MINI_H);
-    let zoom = build_think_path_graph(&occurrences, &routes, ZOOM_W, ZOOM_H);
+    let mini = build_think_path_graph(&occurrences, &routes, MINI_W, MINI_H, true);
+    let zoom = build_think_path_graph(&occurrences, &routes, ZOOM_W, ZOOM_H, false);
     let legend = edge_style_legend();
     let node_count = mini.nodes.len();
     let edge_count = mini.edges.len();
@@ -214,8 +214,8 @@ mod tests {
             occ("Deliberate", 1, 2),
             occ("Execute", 1, 3),
         ];
-        let mini = build_think_path_graph(&occs, &[], super::MINI_W, super::MINI_H);
-        let zoom = build_think_path_graph(&occs, &[], super::ZOOM_W, super::ZOOM_H);
+        let mini = build_think_path_graph(&occs, &[], super::MINI_W, super::MINI_H, true);
+        let zoom = build_think_path_graph(&occs, &[], super::ZOOM_W, super::ZOOM_H, false);
         assert_eq!(
             mini.nodes.len(),
             zoom.nodes.len(),
