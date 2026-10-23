@@ -8,7 +8,7 @@
 
 use super::backend::{SettleBackend, SettleThinkInput};
 use super::context::{PendingBatch, SettleDeps, SettleInput, build_deps_with_backend};
-use super::nodes::{NODE_FINALIZE, NODE_PREPARE, NODE_SETTLE};
+use super::nodes::{MARK_SETTLE_FAILED, NODE_FINALIZE, NODE_PREPARE, NODE_SETTLE};
 use super::pending::{PENDING_MAX_ITEMS, build_pending_memories_summary};
 use super::runner::{LegacySettleOutcome, run_legacy_settle};
 use crate::models::agent::{Agent, AgentPo, AgentRuntimeConfig};
@@ -92,6 +92,46 @@ impl SettleBackend for FailingBackend {
         _input: SettleThinkInput,
     ) -> Result<ThinkLoopResult> {
         Err(err!(Internal, "settle boom"))
+    }
+}
+
+/// 抢先标记后端：在 `think` 期间就把本批记忆置为已沉淀
+///
+/// 用来复现**标记未生效**这条被吞的路径：`mark_short_term_settled` 的内部
+/// `update_short_term_index` 失败只 `log_warn` 并最终 `Ok(marked)`，所以 settle
+/// 节点拿到的是 `Ok(0)` / `Ok(<ids.len())`，**不是 `Err`**。这里让记忆在 settle
+/// 节点标记之前就已非 Active，制造出同样的返回值。
+///
+/// ⚠️ 这是唯一能证明「标记未生效不会回环」的场景：修复前它会一路 `SIGNAL_NEXT`
+/// 把同一批记忆反复重打，直到 `MAX_SETTLE_BATCHES` 打满再 nack 重投。
+#[derive(Debug)]
+struct PreSettledBackend {
+    /// 抢先标记前 N 条（`None` = 本批全部 → settle 节点拿到 `Ok(0)`）
+    pre_mark: Option<usize>,
+    pub calls: AtomicUsize,
+    /// 最后一次 `think` 拿到的批次大小（便于断言批量，避免猜）
+    pub last_batch_len: AtomicUsize,
+}
+
+#[async_trait]
+impl SettleBackend for PreSettledBackend {
+    async fn think(
+        &self,
+        deps: &SettleDeps,
+        batch: &PendingBatch,
+        _input: SettleThinkInput,
+    ) -> Result<ThinkLoopResult> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.last_batch_len.store(batch.ids.len(), Ordering::SeqCst);
+        let ids: Vec<String> = match self.pre_mark {
+            Some(n) => batch.ids.iter().take(n).cloned().collect(),
+            None => batch.ids.clone(),
+        };
+        deps.domain
+            .memory()
+            .mark_short_term_settled(deps.ctx.clone(), &deps.agent.po.id, &ids)
+            .await?;
+        Ok(final_result("pre-settled"))
     }
 }
 
@@ -481,4 +521,112 @@ async fn backend_error_propagates(pool: SqlitePool) {
         MemoryStatus::Active,
         "失败批次不得翻状态"
     );
+}
+
+/// 标记未生效（`Ok(0)`）必须阻断本轮，**不得回环重打同一批**
+///
+/// ⚠️ 本模块最重要的护栏：`mark_short_term_settled` 会把 `update_short_term_index`
+/// 的失败吞成 `Ok(0)`（内部只 `log_warn`），修复前 settle 节点不看 `marked` 就
+/// `SIGNAL_NEXT`，于是同一批 Active 记忆被反复取回重打模型，直到
+/// `MAX_SETTLE_BATCHES` 打满 → `ensure_finalized` 报错 → nack 重投雪崩。
+#[sqlx::test]
+async fn mark_zero_blocks_run_instead_of_looping(pool: SqlitePool) {
+    let ctx = init_env(pool).await;
+    let domain = test_domain();
+    let agent_id = "agent-settle-mark-zero";
+
+    for i in 0..2 {
+        seed(
+            &domain,
+            &ctx,
+            agent_id,
+            &format!("mz-{i}"),
+            format!("素材{i}"),
+            i,
+        )
+        .await;
+    }
+
+    // 抢先标记本批全部 → settle 节点再标记时 `still_active` 为空 → `Ok(0)`
+    let backend = Arc::new(PreSettledBackend {
+        pre_mark: None,
+        calls: AtomicUsize::new(0),
+        last_batch_len: AtomicUsize::new(0),
+    });
+    let outcome = drive(
+        Arc::clone(&domain),
+        ctx.clone(),
+        make_agent(agent_id, None),
+        Arc::clone(&backend) as Arc<dyn SettleBackend>,
+    )
+    .await
+    .expect("blocked run still reaches finalize");
+
+    // 只打了一次模型就停：没有回环把同一批重打 64 遍
+    assert_eq!(backend.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        outcome.fingerprint,
+        format!("{NODE_PREPARE}#1>{NODE_SETTLE}#1>{NODE_FINALIZE}#1")
+    );
+    assert_eq!(outcome.blocked.as_deref(), Some(MARK_SETTLE_FAILED));
+    // 不得谎报：一条都没被本轮标记成功，就不能算进 memories
+    assert_eq!(outcome.settled_count, 0);
+    assert_eq!(outcome.batches, 0);
+}
+
+/// 部分标记（`Ok(marked) < ids.len()`）同样阻断，且只统计**真正标记**的条数
+#[sqlx::test]
+async fn partial_mark_blocks_run_and_counts_only_marked(pool: SqlitePool) {
+    let ctx = init_env(pool).await;
+    let domain = test_domain();
+    let agent_id = "agent-settle-partial-mark";
+
+    for i in 0..2 {
+        seed(
+            &domain,
+            &ctx,
+            agent_id,
+            &format!("mp-{i}"),
+            format!("素材{i}"),
+            i,
+        )
+        .await;
+    }
+
+    // 只抢先标记第 1 条 → settle 节点再标记时只剩第 2 条 → marked=1 < items=2
+    let backend = Arc::new(PreSettledBackend {
+        pre_mark: Some(1),
+        calls: AtomicUsize::new(0),
+        last_batch_len: AtomicUsize::new(0),
+    });
+    let outcome = drive(
+        Arc::clone(&domain),
+        ctx.clone(),
+        make_agent(agent_id, None),
+        Arc::clone(&backend) as Arc<dyn SettleBackend>,
+    )
+    .await
+    .expect("blocked run still reaches finalize");
+
+    // 先钉住批次大小，避免靠猜（两条短摘要远在预算内，应同批）
+    assert_eq!(
+        backend.last_batch_len.load(Ordering::SeqCst),
+        2,
+        "本批应含 2 条"
+    );
+    assert_eq!(backend.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(outcome.blocked.as_deref(), Some(MARK_SETTLE_FAILED));
+    // 顺序无关：两条最终都 Settled（1 条被后端抢先标记、1 条被 settle 节点标记），
+    // 证明本轮跑完就干净收尾、没有把同一批反复取回重打。
+    for id in ["mp-0", "mp-1"] {
+        assert_eq!(
+            status_of(&domain, &ctx, agent_id, id).await,
+            MemoryStatus::Settled,
+            "{id} 应已沉淀"
+        );
+    }
+    // 只累加**真正翻掉状态**的 1 条（节点自己标记的），而不是本批的 2 条
+    assert_eq!(outcome.settled_count, 1);
+    // 阻断分支不计入 batches（与成功批次区分）
+    assert_eq!(outcome.batches, 0);
 }

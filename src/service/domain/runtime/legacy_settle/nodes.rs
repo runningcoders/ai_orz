@@ -49,6 +49,12 @@ pub(crate) const SIGNAL_NEXT: &str = "next";
 pub(crate) const SIGNAL_EMPTY: &str = "empty";
 pub(crate) const SIGNAL_BLOCKED: &str = "blocked";
 
+/// 标记未生效的阻断原因（与 `EXIT_*` 平级，但来源是存储层而非模型侧退出信号）
+///
+/// ⚠️ 这个值同时是统计事件 `status` 与 AOP finished 事件的口径，
+/// 改动会影响监控看板，不要改写成更好看的形式。
+pub(crate) const MARK_SETTLE_FAILED: &str = "MarkSettledFailed";
+
 /// 取总数上限（防 `MutexGuard` 跨 await）
 fn lock_aggregate(deps: &SettleDeps) -> super::context::SettleAggregate {
     deps.aggregate.lock().map(|g| g.clone()).unwrap_or_default()
@@ -335,30 +341,66 @@ impl ThinkNode for SettleNode {
                     .await?;
 
                 // 终态才标记：无效沉淀不翻状态，记忆留给下一次
-                match deps
+                //
+                // ⚠️⚠️ 循环排空**只**依赖这里真正把状态翻掉：模型调用成功（`Final`）
+                // 不等于本批已沉淀。`mark_short_term_settled` 会把
+                // `update_short_term_index` 的失败吞成 `Ok(marked)`（内部仅 log_warn），
+                // 因此「标记没生效」绝大多数表现为 `Ok(0)` / `Ok(<ids.len())`，**不是 Err**。
+                // 不看 `marked` 就回环，等于把同一批 Active 记忆反复取回重打模型，
+                // 直到 MAX_SETTLE_BATCHES 打满 → ensure_finalized 报错 → nack 重投雪崩。
+                let marked = match deps
                     .domain
                     .mark_short_term_settled(deps.ctx.clone(), &deps.agent.po.id, &ids)
                     .await
                 {
-                    Ok(marked) => crate::log_info!(
+                    Ok(marked) => marked,
+                    Err(e) => {
+                        crate::log_warn!(
+                            &deps.ctx,
+                            "legacy_settle",
+                            "mark settled failed (will retry next run): {:?}",
+                            e
+                        );
+                        0
+                    }
+                };
+
+                // 统计只认**真正翻掉状态**的条数：谎报会让监控把「全批失败」看成成功。
+                // 即便本批随后被判为阻断，已标记成功的那些也确实沉淀了，必须如实计入。
+                if let Ok(mut agg) = deps.aggregate.lock() {
+                    agg.memories += marked;
+                }
+
+                // 标记未生效 ⇒ 本轮已无法再排空：走 blocked 干净收尾，绝不回环。
+                // 与 `EXIT_*` 阻断同源：继续跑只会反复选中同一批记忆。
+                if marked < ids.len() {
+                    crate::log_warn!(
                         &deps.ctx,
                         "legacy_settle",
-                        "batch settled, agent_id={}, items={}, marked={}",
+                        "batch settle incomplete, agent_id={}, items={}, marked={}, stopping run to avoid re-picking the same batch",
                         deps.agent.po.id,
                         ids.len(),
                         marked
-                    ),
-                    Err(e) => crate::log_warn!(
-                        &deps.ctx,
-                        "legacy_settle",
-                        "mark settled failed (non-fatal, will retry next run): {:?}",
-                        e
-                    ),
+                    );
+                    if let Ok(mut agg) = deps.aggregate.lock() {
+                        agg.blocked = Some(MARK_SETTLE_FAILED.to_string());
+                    }
+                    return Ok(NodeOutcome::new(NodeSignal::Yield(SIGNAL_BLOCKED.into())));
                 }
 
+                crate::log_info!(
+                    &deps.ctx,
+                    "legacy_settle",
+                    "batch settled, agent_id={}, items={}, marked={}",
+                    deps.agent.po.id,
+                    ids.len(),
+                    marked
+                );
+
+                // 注意：`agg.memories` 已在上面的统一块里按 `marked` 累加过，
+                // 这里只记批次数，避免重复累加导致监控谎报。
                 if let Ok(mut agg) = deps.aggregate.lock() {
                     agg.batches += 1;
-                    agg.memories += ids.len();
                 }
 
                 Ok(NodeOutcome::new(NodeSignal::Yield(SIGNAL_NEXT.into())))

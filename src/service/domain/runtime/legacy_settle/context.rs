@@ -51,9 +51,14 @@ pub(crate) struct SettleAggregate {
     pub batches: usize,
     /// 真正沉淀（标记 Settled）的记忆条数
     pub memories: usize,
-    /// 阻断本轮的原因（`ContextOverflow` / `MaxRoundsExceeded` / `Cancelled`）
+    /// 阻断本轮的原因（模型侧 `ContextOverflow` / `MaxRoundsExceeded` / `Cancelled`，
+    /// 或存储侧 `MarkSettledFailed`）
     ///
     /// 只要出现过阻断，本轮就此结束：继续跑只会反复选中同一批记忆。
+    ///
+    /// ⚠️ `MarkSettledFailed` 是最容易被漏掉的一种：`mark_short_term_settled`
+    /// 把 update 失败吞成 `Ok(marked)`，返回的是成功而非错误，必须靠
+    /// `marked < ids.len()` 主动判出来。
     pub blocked: Option<String>,
 }
 
