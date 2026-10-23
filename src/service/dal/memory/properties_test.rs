@@ -1,124 +1,12 @@
-//! tests 单元测试（拆分自 memory.rs）
-//!
-//! 文件瘦身：原 2209 行 → 2036 行，测试体 174 行。
-//! 用 `#[path]` 而非 mod.rs 注册：保住 `mod tests` 层级，
-//! 测试里 `use super::*` 仍能看到父模块的私有 use 与私有 helper。
-//!
-//! 拆分命令见 `tools/split_inline_tests.py`。
+//! Memory DAL 实体属性（ABox）测试：写入四道门闩（类型 / 载体 / 值域 / 基数）、
+//! 未定义术语兜底、版本化保留历史、批量回读只出生效值、按属性精确召回。
 
-use super::{dal, init};
-use crate::models::memory::{KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams};
-use crate::models::ontology::OntologyPropertyPo;
-use crate::pkg::RequestContext;
+use super::dal;
+use super::test_support::*;
 use common::enums::ontology::{PropertyDataType, PropertyTargetType};
-use common::enums::{KnowledgeRelationStatus, MemoryStatus};
 use common::ontology_property::{
     PropertyEntry, PropertyFilter, PropertyFilterOp, PropertyValue, PropertyWriteIssue,
 };
-
-fn node_po(id: &str, agent_id: &str) -> LongTermKnowledgeNodePo {
-    LongTermKnowledgeNodePo {
-        id: id.to_string(),
-        agent_id: agent_id.to_string(),
-        node_name: format!("节点-{id}"),
-        node_description: String::new(),
-        node_type: "concept".to_string(),
-        summary: String::new(),
-        tags: "[]".to_string(),
-        status: MemoryStatus::Active,
-        is_published: false,
-        created_at: 0,
-        updated_at: 0,
-    }
-}
-
-fn relation_po(id: &str, source: &str, target: &str) -> KnowledgeNodeRelationPo {
-    KnowledgeNodeRelationPo {
-        id: id.to_string(),
-        source_node_id: source.to_string(),
-        target_node_id: target.to_string(),
-        relation_type: "related".to_string(),
-        weight: None,
-        status: KnowledgeRelationStatus::Active,
-        created_at: 0,
-        updated_at: 0,
-    }
-}
-
-/// 造数：2 个活跃知识节点 + 1 条生效边 + 1 条悬挂边（关系表无外键，悬挂边可直接插入）
-async fn seed_graph(pool: sqlx::SqlitePool) -> RequestContext {
-    // dal::init() 会取用四个 DAO 单例，先按依赖顺序逐个初始化
-    //（生产路径由 bootstrap 统一完成，测试路径须自备；OnceLock.set 幂等可重复调）
-    crate::service::dao::memory::init();
-    crate::service::dao::memory::init_vector();
-    crate::service::dao::model_provider::init();
-    crate::service::dao::cortex::init();
-    // 三期 direction：get_knowledge_graph 聚合依赖 OntologyDao 单例
-    crate::service::dao::ontology::init();
-    init();
-    let ctx = crate::pkg::request_context_test_support::new_test_ctx("u1", pool.clone());
-    let d = dal();
-    for id in ["kn_a", "kn_b"].iter() {
-        d.create(
-            ctx.clone(),
-            MemoryCreateParams::CreateKnowledgeNode {
-                node: node_po(id, "agent_x"),
-                references: vec![],
-            },
-        )
-        .await
-        .expect("create knowledge node should succeed");
-    }
-    d.create(
-        ctx.clone(),
-        MemoryCreateParams::CreateRelations(vec![
-            // 生效边：kn_a → kn_b（走生产写入路径）
-            relation_po("kr_ab", "kn_a", "kn_b"),
-        ]),
-    )
-    .await
-    .expect("create relations should succeed");
-    // 悬挂边：target "kn_ghost" 不在活跃节点集（R2 应被过滤）。
-    // DAO 写入侧已在事务内拦截悬空端点（建边防线），这里模拟的是
-    // 「防线存在前的存量脏数据」，故绕过生产路径直接裸 SQL 植入。
-    sqlx::query(
-        r#"
-INSERT INTO knowledge_node_relation (
-    id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
-) VALUES ('kr_ghost', 'kn_a', 'kn_ghost', 'related', NULL, 1, 0, 0)
-"#,
-    )
-    .execute(&pool)
-    .await
-    .expect("seed dangling edge should succeed");
-    ctx
-}
-
-/// 全量图聚合口径：R1 仅知识节点 / R2 悬挂边被丢弃 / R4 度数仅计生效边
-#[sqlx::test]
-async fn get_knowledge_graph_returns_active_nodes_and_drops_dangling_edges(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
-
-    let data = dal()
-        .get_knowledge_graph(ctx, None)
-        .await
-        .expect("get_knowledge_graph should succeed");
-
-    // R1：仅活跃知识节点，不含短期记忆/trace
-    assert_eq!(data.nodes.len(), 2);
-    let mut ids: Vec<&str> = data.nodes.iter().map(|n| n.id.as_str()).collect();
-    ids.sort_unstable();
-    assert_eq!(ids, vec!["kn_a", "kn_b"]);
-
-    // R2：悬挂边（target 不在活跃节点集）被严格双端活跃过滤
-    assert_eq!(data.edges.len(), 1);
-    assert_eq!(data.edges[0].id, "kr_ab");
-
-    // R4：度数 = in + out，仅计生效边（悬挂边不计入）
-    assert_eq!(data.degrees.get("kn_a"), Some(&(0, 1)));
-    assert_eq!(data.degrees.get("kn_b"), Some(&(1, 0)));
-    assert!(!data.degrees.contains_key("kn_ghost"));
-}
 
 // ==================== 属性写入四道门闩（DB 级端到端） ====================
 //
@@ -126,48 +14,10 @@ async fn get_knowledge_graph_returns_active_nodes_and_drops_dangling_edges(pool:
 // 走**真实库**：定义进 `ontology_properties`、值进 `knowledge_property`，断言
 // 「判定」与「落库结果」一致——包括版本化后旧行仍在、反查通道取到正确 id。
 
-/// 造属性定义（TBox 直接插 DAO：管理页写入路径已在 Domain 层覆盖）
-fn property_po(
-    term_key: &str,
-    data_type: &str,
-    value_range: &str,
-    cardinality: &str,
-    applies_to: &str,
-) -> OntologyPropertyPo {
-    OntologyPropertyPo::new(
-        term_key,
-        format!("属性-{term_key}"),
-        format!("{term_key} 的语义描述"),
-        "[]",
-        applies_to,
-        data_type,
-        value_range,
-        cardinality,
-        None,
-        false,
-    )
-}
-
-async fn define_property(ctx: &RequestContext, po: &OntologyPropertyPo) {
-    crate::service::dao::ontology::dao()
-        .insert_property(ctx.clone(), po)
-        .await
-        .expect("insert property definition should succeed");
-}
-
-/// 含历史版本的物理行数（版本化「保留全历史」的直接证据）
-async fn count_property_rows(ctx: &RequestContext, target_id: &str) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM knowledge_property WHERE target_id = ?")
-        .bind(target_id)
-        .fetch_one(ctx.db_pool())
-        .await
-        .expect("count knowledge_property rows")
-}
-
 /// 门闩 2（类型错）**硬拦**：值不落库，报告里是一条 rejected
 #[sqlx::test]
 async fn save_entity_properties_rejects_type_mismatch(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
     define_property(&ctx, &property_po("confidence", "number", "", "single", "")).await;
 
     let report = dal()
@@ -197,7 +47,7 @@ async fn save_entity_properties_rejects_type_mismatch(pool: sqlx::SqlitePool) {
 /// 门闩 3（值域越界）是**软门禁**：照常落库，只在报告里留告警
 #[sqlx::test]
 async fn save_entity_properties_writes_out_of_range_with_warning(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
     define_property(
         &ctx,
         &property_po("confidence", "number", r#"{"min":0,"max":1}"#, "single", ""),
@@ -237,7 +87,7 @@ async fn save_entity_properties_writes_out_of_range_with_warning(pool: sqlx::Sql
 /// 门闩 1（载体不符）软门禁：记告警 + 照写（本体包容，写侧不裁决）
 #[sqlx::test]
 async fn save_entity_properties_warns_on_disallowed_target(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
     // applies_to 只允许挂边
     define_property(
         &ctx,
@@ -270,7 +120,7 @@ async fn save_entity_properties_warns_on_disallowed_target(pool: sqlx::SqlitePoo
 /// 门闩 0（本体未定义）兜底写入：按值自身类型落库，不丢数据
 #[sqlx::test]
 async fn save_entity_properties_falls_back_for_undefined_term(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
 
     let report = dal()
         .save_entity_properties(
@@ -304,7 +154,7 @@ async fn save_entity_properties_falls_back_for_undefined_term(pool: sqlx::Sqlite
 /// 版本化：单值属性重复写 = 旧行软取代 + 插新行，读侧只见新值、历史仍留
 #[sqlx::test]
 async fn save_entity_properties_supersedes_single_value_and_keeps_history(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
     define_property(&ctx, &property_po("confidence", "number", "", "single", "")).await;
     // ⚠️ dal() 返回临时 Arc：async trait 方法的 future 借用 &self，
     // 闭包里现取现用会撞 E0515（返回引用临时值），先绑定到局部变量再调两次
@@ -341,7 +191,7 @@ async fn save_entity_properties_supersedes_single_value_and_keeps_history(pool: 
 /// （search_memory attach_properties 消费链）不得再带出旧值。
 #[sqlx::test]
 async fn list_entity_properties_batch_returns_only_active_rows(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
     define_property(
         &ctx,
         &property_po("related_task_id", "reference", "", "many", ""),
@@ -394,7 +244,7 @@ async fn list_entity_properties_batch_returns_only_active_rows(pool: sqlx::Sqlit
 /// 门闩 4（基数）硬拦：管理员把 many 收紧为 single 后，已占的其他槽位堵住新写
 #[sqlx::test]
 async fn save_entity_properties_rejects_cardinality_overflow(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
     define_property(&ctx, &property_po("alias", "string", "", "many", "")).await;
 
     // many：两个槽位各一条
@@ -462,7 +312,7 @@ async fn save_entity_properties_rejects_cardinality_overflow(pool: sqlx::SqliteP
 /// 属性反查通道：数值范围条件精确召回载体 id（不是「在语义 top_k 里再筛」）
 #[sqlx::test]
 async fn query_entities_by_properties_recalls_by_numeric_range(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
+    let ctx = seed_graph_ctx(pool).await;
     define_property(
         &ctx,
         &property_po("confidence", "number", r#"{"min":0,"max":1}"#, "single", ""),
@@ -498,75 +348,4 @@ async fn query_entities_by_properties_recalls_by_numeric_range(pool: sqlx::Sqlit
         .expect("query should succeed");
     ids.sort();
     assert_eq!(ids, vec!["kn_a".to_string()], "只有高置信节点命中");
-}
-
-/// agent_id 归属筛选：无归属匹配节点 → 返回空图
-#[sqlx::test]
-async fn get_knowledge_graph_filters_by_agent_id(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
-
-    let data = dal()
-        .get_knowledge_graph(ctx, Some("agent_other".to_string()))
-        .await
-        .expect("get_knowledge_graph should succeed");
-
-    assert!(data.nodes.is_empty());
-    assert!(data.edges.is_empty());
-    assert!(data.degrees.is_empty());
-}
-
-/// 三期方案 a′：边方向服务端按词表 resolve 带出（edge_directions 与 edges 键集对齐；
-/// 词表外自拟词兜底 "undirected"，前端零词表映射不变式维持）
-#[sqlx::test]
-async fn get_knowledge_graph_resolves_edge_directions(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
-    // 词表注册 "related" = undirected（DDL 回填口径），"kr_ab" 边 relation_type="related"
-    let data = dal()
-        .get_knowledge_graph(ctx, None)
-        .await
-        .expect("get_knowledge_graph should succeed");
-    assert_eq!(data.edges.len(), 1);
-    assert_eq!(
-        data.edge_directions.get("kr_ab").map(String::as_str),
-        Some("undirected")
-    );
-    // 键集与生效边一一对应，零缺零余
-    let mut dir_keys: Vec<&str> = data.edge_directions.keys().map(String::as_str).collect();
-    dir_keys.sort_unstable();
-    let mut edge_keys: Vec<&str> = data.edges.iter().map(|e| e.id.as_str()).collect();
-    edge_keys.sort_unstable();
-    assert_eq!(dir_keys, edge_keys);
-}
-
-/// 三期方案 a′：directed 词带出 "directed"（contains 属 10 有逆词回填口径）
-#[sqlx::test]
-async fn get_knowledge_graph_carries_directed_direction_for_lexicon_hit(pool: sqlx::SqlitePool) {
-    let ctx = seed_graph(pool).await;
-    let d = dal();
-    d.create(
-        ctx.clone(),
-        MemoryCreateParams::CreateRelations(vec![KnowledgeNodeRelationPo {
-            id: "kr_dir".to_string(),
-            source_node_id: "kn_a".to_string(),
-            target_node_id: "kn_b".to_string(),
-            relation_type: "CONTAINS".to_string(), // 书写变体：经同义/归一命中词表
-            weight: None,
-            status: KnowledgeRelationStatus::Active,
-            created_at: 0,
-            updated_at: 0,
-        }]),
-    )
-    .await
-    .expect("create directed edge should succeed");
-
-    let data = d
-        .get_knowledge_graph(ctx, None)
-        .await
-        .expect("get_knowledge_graph should succeed");
-    // seed_graph 预置词表不含 contains——本用例词表为空，CONTAINS 应判 Drift 兜底 undirected；
-    // directed 命中路径由 common/src/ontology.rs resolve 单测覆盖（resolve_relation_carries_lexicon_direction）
-    assert_eq!(
-        data.edge_directions.get("kr_dir").map(String::as_str),
-        Some("undirected")
-    );
 }

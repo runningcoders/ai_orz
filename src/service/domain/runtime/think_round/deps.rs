@@ -38,6 +38,8 @@ pub(crate) struct RoundDeps {
     pub think_runtime: Option<Arc<AgentThinkRuntime>>,
     pub policy: Option<Arc<dyn Policy>>,
     pub progress: Option<ThinkLoopProgress>,
+    /// 是否启用 reflect 分支（Agent 运行时开关）
+    pub enable_reflect: bool,
     /// 事件上报用的模型标识
     pub model_provider_id: Option<String>,
     pub model_name: Option<String>,

@@ -4,17 +4,21 @@
 //! 切成三段。所有跨段状态经 [`RoundState`] 传递；节点之间互不引用后继。
 
 use super::blueprint::{
-    NODE_DISPATCH, NODE_EVALUATE, NODE_THINK, SIGNAL_CANCELLED, SIGNAL_CONTINUE, SIGNAL_EXIT,
-    SIGNAL_FINAL, SIGNAL_TOOL_CALLS,
+    NODE_DISPATCH, NODE_EVALUATE, NODE_REFLECT, NODE_THINK, SIGNAL_CANCELLED, SIGNAL_CONTINUE,
+    SIGNAL_EXIT, SIGNAL_FINAL, SIGNAL_REDIRECT, SIGNAL_REFLECT, SIGNAL_TOOL_CALLS,
 };
 use super::deps::RoundDeps;
-use super::state::{OutputKind, RoundState};
+use super::state::{
+    OutputKind, RoundState, TRACE_TEXT_MAX_CHARS, pending_tool_trace, tool_result_preview,
+    truncate_trace_text,
+};
 use crate::models::cortex_types::{ChatMessage, ThinkResult};
 use crate::models::events::ThinkRoundEvent;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::think_path::{
     ActivationBudget, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus, ThinkNode,
 };
+use crate::pkg::think_trace::ThinkTraceRound;
 use crate::service::domain::runtime::RuntimeToolExecution;
 use crate::service::domain::runtime::think_loop::{
     ROUND_DIGEST_MAX_CONTENT, TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS, is_recursive_settle_call,
@@ -38,9 +42,10 @@ enum Role {
     Think,
     Dispatch,
     Evaluate,
+    Reflect,
 }
 
-/// 轮级环图节点（三角色共用一个实现，避免三份样板）
+/// 轮级环图节点（各角色共用一个实现，避免多份样板）
 #[derive(Debug)]
 struct RoundNode {
     id: NodeId,
@@ -67,7 +72,7 @@ impl ThinkNode for RoundNode {
     fn phase(&self) -> PhaseId {
         match self.role {
             Role::Think => PhaseId::Deliberate,
-            Role::Dispatch | Role::Evaluate => PhaseId::Review,
+            Role::Dispatch | Role::Evaluate | Role::Reflect => PhaseId::Review,
         }
     }
 
@@ -76,10 +81,11 @@ impl ThinkNode for RoundNode {
             Role::Think => "调用模型进行一轮思考（含失败重试）",
             Role::Dispatch => "执行本轮工具调用并记录进度",
             Role::Evaluate => "策略裁决：继续下一轮或退出循环",
+            Role::Reflect => "自省：重复调用时注入换方向提示",
         }
     }
 
-    /// 三个节点都按「可用轮次」放开预算：环的终止性由轮次上限 + 图步数护栏保证
+    /// 各节点都按「可用轮次」放开预算：环的终止性由轮次上限 + 图步数护栏保证
     fn budget(&self) -> ActivationBudget {
         ActivationBudget {
             max_activations: self.deps.available_rounds,
@@ -92,13 +98,14 @@ impl ThinkNode for RoundNode {
             Role::Think => run_think(&self.deps).await,
             Role::Dispatch => run_dispatch(&self.deps).await,
             Role::Evaluate => run_evaluate(&self.deps).await,
+            Role::Reflect => run_reflect(&self.deps),
         }
     }
 }
 
-/// 按蓝图顺序构造节点池
+/// 按蓝图顺序构造节点池（reflect 仅在开关打开时加入）
 pub(crate) fn build_nodes(deps: &Arc<RoundDeps>) -> Vec<Arc<dyn ThinkNode>> {
-    vec![
+    let mut nodes: Vec<Arc<dyn ThinkNode>> = vec![
         Arc::new(RoundNode::new(NODE_THINK, Role::Think, Arc::clone(deps))),
         Arc::new(RoundNode::new(
             NODE_DISPATCH,
@@ -110,10 +117,79 @@ pub(crate) fn build_nodes(deps: &Arc<RoundDeps>) -> Vec<Arc<dyn ThinkNode>> {
             Role::Evaluate,
             Arc::clone(deps),
         )),
-    ]
+    ];
+    if deps.enable_reflect {
+        nodes.push(Arc::new(RoundNode::new(
+            NODE_REFLECT,
+            Role::Reflect,
+            Arc::clone(deps),
+        )));
+    }
+    nodes
 }
 
 // ==================== think ====================
+
+/// 从模型返回中提取可读推理摘要
+///
+/// 只取 `ReasoningItem.summary`（provider 主动给出的可读摘要）；
+/// `encrypted_content` 是私有密文，绝不进入轨迹（沿用 RoundDigest 的排除红线）。
+fn reasoning_summaries(result: &ThinkResult) -> Vec<String> {
+    result
+        .reasoning_items()
+        .iter()
+        .flat_map(|item| item.summary.iter())
+        .map(|s| truncate_trace_text(s, TRACE_TEXT_MAX_CHARS))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// 组装本轮轨迹明细（工具结果由 dispatch 回填）
+fn build_trace_round(
+    round: usize,
+    assistant_text: Option<String>,
+    reasoning: Vec<String>,
+    tool_calls: Vec<crate::pkg::think_trace::ThinkTraceToolCall>,
+    input_tokens: u64,
+    output_tokens: u64,
+    duration_ms: u64,
+) -> ThinkTraceRound {
+    ThinkTraceRound {
+        round: round + 1,
+        assistant_text,
+        reasoning,
+        tool_calls,
+        input_tokens,
+        output_tokens,
+        duration_ms,
+        decision: None,
+    }
+}
+
+/// 把非空文本截断为可落盘的预览
+fn assistant_preview(content: &str) -> Option<String> {
+    let preview = truncate_trace_text(content, TRACE_TEXT_MAX_CHARS);
+    if preview.is_empty() {
+        None
+    } else {
+        Some(preview)
+    }
+}
+
+/// 回填一条工具调用轨迹（工具执行期间只改本地副本，不持锁）
+fn mark_trace_tool(
+    traces: &mut [crate::pkg::think_trace::ThinkTraceToolCall],
+    index: usize,
+    call_id: Option<String>,
+    status: &str,
+    result: Option<String>,
+) {
+    if let Some(entry) = traces.get_mut(index) {
+        entry.call_id = call_id;
+        entry.status = status.to_string();
+        entry.result = result;
+    }
+}
 
 /// 调用模型一轮：取消检查 → LLM 重试预算 → 产出 Final / ToolCall
 async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
@@ -208,6 +284,9 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     };
     let round_duration_ms = round_start.elapsed().as_millis() as u64;
 
+    // 推理摘要必须在 match 前取出：`result` 之后会被 move 分解
+    let reasoning = reasoning_summaries(&result);
+
     match result {
         ThinkResult::Final { content, usage, .. } => {
             // 累计 token 用量
@@ -255,6 +334,15 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
 
             // 策略裁决交给 evaluate：这里只登记本轮产出
             let mut state = lock(&d.state)?;
+            state.trace_rounds.push(build_trace_round(
+                round,
+                assistant_preview(&content),
+                reasoning,
+                Vec::new(),
+                usage.input_tokens,
+                usage.output_tokens,
+                round_duration_ms,
+            ));
             state.messages = messages;
             state.total_input_tokens = total_input_tokens;
             state.total_output_tokens = total_output_tokens;
@@ -287,6 +375,15 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             // 本轮新增消息起点：必须在 push 之前取，push 会 move 掉 content / tool_calls
             let round_start_idx = messages.len();
             let digest_assistant_text = content.clone();
+            // 轨迹用的助手文本预览（digest_assistant_text 稍后会被移入 state）
+            let digest_assistant_text_for_trace =
+                assistant_preview(digest_assistant_text.as_deref().unwrap_or_default());
+            // usage 之后会被移入 state，token 数值先取出来给轨迹用
+            let (round_input_tokens, round_output_tokens) =
+                (usage.input_tokens, usage.output_tokens);
+            // 待执行的工具：先记 pending，dispatch 执行后回填 call_id / status / result
+            let tool_traces: Vec<crate::pkg::think_trace::ThinkTraceToolCall> =
+                tool_calls.iter().map(pending_tool_trace).collect();
             // Responses 协议：模型本轮产出的推理项必须原样回传给下一轮
             // （部分推理模型强制要求，否则 400）。顺序排在助手消息之前，
             // 与 Responses 的 output 数组顺序（reasoning → message / function_call）一致。
@@ -312,6 +409,15 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             state.pending_assistant_text = digest_assistant_text;
             state.pending_usage = Some(usage);
             state.pending_round_duration_ms = round_duration_ms;
+            state.trace_rounds.push(build_trace_round(
+                round,
+                digest_assistant_text_for_trace,
+                reasoning,
+                tool_traces,
+                round_input_tokens,
+                round_output_tokens,
+                round_duration_ms,
+            ));
             state.pending_tool_calls = tool_calls;
             state.last_round = round;
             state.last_input_tokens = last_input_tokens;
@@ -330,6 +436,7 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
 
     let (
         mut messages,
+        mut trace_tool_calls,
         pending_tool_calls,
         round_start_idx,
         round,
@@ -345,6 +452,12 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         let mut state = lock(&d.state)?;
         (
             std::mem::take(&mut state.messages),
+            // 本轮工具调用轨迹取出后本地回填，执行期间不持锁
+            state
+                .trace_rounds
+                .last_mut()
+                .map(|trace_round| std::mem::take(&mut trace_round.tool_calls))
+                .unwrap_or_default(),
             std::mem::take(&mut state.pending_tool_calls),
             state.round_start_idx,
             state.last_round,
@@ -363,7 +476,7 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     // 进度快照统计的是「尝试过哪些工具」：执行失败与工具不存在同样要计入
     let mut round_tool_names: Vec<String> = Vec::with_capacity(tc_count);
 
-    for tc in pending_tool_calls {
+    for (trace_idx, tc) in pending_tool_calls.into_iter().enumerate() {
         // 沉淀/压缩场景：拦截对 settle_memory 的递归调用。
         //
         // `settle_memory` 会直接触发一整套 sleep_and_settle，在沉淀或压缩
@@ -385,6 +498,13 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                  请直接继续当前任务（写入短期记忆后输出 Final 文本结束）。"
                     .to_string(),
             ));
+            mark_trace_tool(
+                &mut trace_tool_calls,
+                trace_idx,
+                None,
+                "blocked",
+                Some("已拦截：沉淀/压缩流程内不允许递归调用 settle_memory".to_string()),
+            );
             continue;
         }
         round_tool_names.push(tc.name.clone());
@@ -409,18 +529,41 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 };
                 match call_result {
                     Ok(result) => {
-                        messages.push(ChatMessage::tool(tc.id, format!("{}", result.result)));
+                        // call_id 是 think trace → tool_tracing 的关联键
+                        let call_id = result.trace_ref.call_id.clone();
+                        let content = format!("{}", result.result);
+                        mark_trace_tool(
+                            &mut trace_tool_calls,
+                            trace_idx,
+                            Some(call_id),
+                            "ok",
+                            Some(tool_result_preview(&content)),
+                        );
+                        messages.push(ChatMessage::tool(tc.id, content));
                     }
                     Err(e) => {
-                        messages.push(ChatMessage::tool(tc.id, format!("Error: {}", e)));
+                        let content = format!("Error: {}", e);
+                        mark_trace_tool(
+                            &mut trace_tool_calls,
+                            trace_idx,
+                            None,
+                            "error",
+                            Some(tool_result_preview(&content)),
+                        );
+                        messages.push(ChatMessage::tool(tc.id, content));
                     }
                 }
             }
             None => {
-                messages.push(ChatMessage::tool(
-                    tc.id,
-                    format!("Error: tool {} not found", tc.name),
-                ));
+                let content = format!("Error: tool {} not found", tc.name);
+                mark_trace_tool(
+                    &mut trace_tool_calls,
+                    trace_idx,
+                    None,
+                    "not_found",
+                    Some(tool_result_preview(&content)),
+                );
+                messages.push(ChatMessage::tool(tc.id, content));
             }
         }
     }
@@ -503,12 +646,86 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     }
 
     let mut state = lock(&d.state)?;
+    // 工具结果回填到 think 节点创建的那条轮级轨迹（与本轮 pending_tool_calls 同序）
+    if let Some(trace_round) = state.trace_rounds.last_mut() {
+        trace_round.tool_calls = trace_tool_calls;
+    }
     state.messages = messages;
     state.nudge_injected = nudge_injected;
     Ok(NodeSignal::Done.into())
 }
 
+// ==================== reflect ====================
+
+/// 同一工具累计调用达到该次数即视为可能陷入重复路径
+///
+/// 与 `TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS`（连续 8 轮只调工具的全局疲劳提示）
+/// 互补：这里按工具维度更早介入，且每个工具只提示一次。
+const REFLECT_REPEAT_THRESHOLD: usize = 3;
+
+/// 找出值得「换方向」的工具：累计次数达阈值且尚未自省过
+///
+/// 排序保证提示文案与自省记录稳定（次数降序，同次数按名字升序）。
+fn reflect_targets(state: &RoundState) -> Vec<(String, usize)> {
+    let mut targets: Vec<(String, usize)> = state
+        .tool_call_counts
+        .iter()
+        .filter(|(name, count)| {
+            **count >= REFLECT_REPEAT_THRESHOLD && !state.reflected_tools.contains(*name)
+        })
+        .map(|(name, count)| (name.clone(), *count))
+        .collect();
+    targets.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    targets
+}
+
+/// 自省节点：把「别再重复同一个工具」的提示注入下一轮上下文
+///
+/// 纯确定性、零 LLM 调用：只在 evaluate 已判定值得自省时进入，
+/// 因此不会增加任何额外模型成本。每个工具只提示一次，防止 System 消息堆积。
+fn run_reflect(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
+    let d = deps;
+    let mut state = lock(&d.state)?;
+    let targets = reflect_targets(&state);
+    if targets.is_empty() {
+        // 防御：evaluate 已确认非空才发 reflect 信号，正常不会走到这里
+        return Ok(NodeSignal::Yield(SIGNAL_REDIRECT.to_string()).into());
+    }
+
+    let round = state.last_round;
+    let summary = targets
+        .iter()
+        .map(|(name, count)| format!("{name}（{count} 次）"))
+        .collect::<Vec<_>>()
+        .join("、");
+    log_info!(
+        &d.ctx,
+        "think_loop",
+        "reflect: repeated tool calls at round={}: {}",
+        round + 1,
+        summary
+    );
+
+    state.messages.push(ChatMessage::system(format!(
+        "【系统提醒】检测到以下工具被反复调用：{summary}。请先判断是否陷入了重复路径：\n\
+         1. 如果这些调用没有带来新信息，请换一种工具，或换一个检索/执行方向；\n\
+         2. 如果已有足够信息，直接输出最终回复，不要再调用这些工具；\n\
+         3. 如果确实无法推进，向用户说明卡点与已尝试过的方案。"
+    )));
+    for (name, _) in &targets {
+        state.reflected_tools.insert(name.clone());
+    }
+    Ok(NodeSignal::Yield(SIGNAL_REDIRECT.to_string()).into())
+}
+
 // ==================== evaluate ====================
+
+/// 给本轮轨迹补上裁决结果（前端据此显示 final / continue / reflect / exit）
+fn set_trace_decision(state: &mut RoundState, decision: &str) {
+    if let Some(trace_round) = state.trace_rounds.last_mut() {
+        trace_round.decision = Some(decision.to_string());
+    }
+}
 
 /// 统一策略裁决：final 与 tool_calls 两套指标，命中即退出，否则继续下一轮
 async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
@@ -550,6 +767,7 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
 
     match kind {
         OutputKind::Final => {
+            set_trace_decision(&mut state, "final");
             state.result = Some(match exit {
                 Some(exit) => exit,
                 None => {
@@ -563,11 +781,45 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         }
         OutputKind::ToolCalls => {
             if let Some(exit) = exit {
+                set_trace_decision(&mut state, "exit");
                 state.result = Some(exit);
                 Ok(NodeSignal::Yield(SIGNAL_EXIT.to_string()).into())
+            } else if d.enable_reflect && !reflect_targets(&state).is_empty() {
+                set_trace_decision(&mut state, "reflect");
+                // 重复调用同一工具：插入自省节点，下一轮换方向
+                log_info!(
+                    &d.ctx,
+                    "think_loop",
+                    "evaluate: repeated tools detected at round={}, entering reflect",
+                    round + 1
+                );
+                Ok(NodeSignal::Yield(SIGNAL_REFLECT.to_string()).into())
             } else {
+                set_trace_decision(&mut state, "continue");
                 Ok(NodeSignal::Yield(SIGNAL_CONTINUE.to_string()).into())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 达到阈值且未自省过的工具才进自省名单；自省过的工具不重复提示
+    #[test]
+    fn reflect_targets_picks_repeated_unreflected_tools() {
+        let mut state = RoundState::new(vec![ChatMessage::system("hello")]);
+        state.tool_call_counts.insert("search".to_string(), 3);
+        state.tool_call_counts.insert("calc".to_string(), 2);
+
+        assert_eq!(
+            reflect_targets(&state),
+            vec![("search".to_string(), 3)],
+            "只有达到阈值且未自省的工具入选"
+        );
+
+        state.reflected_tools.insert("search".to_string());
+        assert!(reflect_targets(&state).is_empty(), "同一工具只提示一次");
     }
 }

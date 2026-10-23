@@ -72,6 +72,15 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub cerebellum_trivial_direct: bool,
 
+    /// 是否启用轮级自省节点（reflect）：默认关
+    ///
+    /// 打开后，同一工具累计调用达到阈值时，环图会在 evaluate 与下一轮 think
+    /// 之间插入 reflect 节点，向模型注入一次「换方向」提示。关闭时拓扑与
+    /// 老循环完全一致（think → dispatch → evaluate）。该开关只影响思考方向，
+    /// 不改变轮次上限、超时与策略优先级。
+    #[serde(default)]
+    pub enable_round_reflect: bool,
+
     /// 外部 Agent 执行配置（仅 Cli/Remote kind 时使用）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_config: Option<ExternalAgentConfig>,
@@ -125,6 +134,7 @@ impl Default for AgentRuntimeConfig {
             think_timeout_secs: 0,
             enable_cerebellum_route: true,
             cerebellum_trivial_direct: false,
+            enable_round_reflect: false,
             external_config: None,
         }
     }
@@ -720,6 +730,8 @@ mod tests {
         // 增强注入默认开 / TRIVIAL 直回默认关（T1 拍板）
         assert!(config.enable_cerebellum_route);
         assert!(!config.cerebellum_trivial_direct);
+        // 轮级自省默认关：默认拓扑与老循环一致
+        assert!(!config.enable_round_reflect);
     }
 
     #[test]

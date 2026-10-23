@@ -176,6 +176,8 @@ pub struct ThinkLoopParams<'a> {
     /// 思考场景：决定事件 scene 字段与策略组
     pub scene: ThinkingScene,
     /// 本次思考的 trace id（事件与运行时快照上报用）
+    ///
+    /// awaken / settle / compact 下即 MemoryTrace.id，两条记录靠这个 ID 关联。
     pub trace_id: &'a str,
     /// 起始消息
     ///

@@ -651,6 +651,21 @@ fn hr_routes() -> Router {
             "/agents/runtime-list",
             get(handlers::hr::agent::runtime_list_handler),
         )
+        // 思考轨迹分页查询：静态段必须排在 `/agents/{id}` 之前由 axum 优先级保证，
+        // 与 runtime-list 同属静态路由（参数路由不会抢占）
+        .route(
+            "/agents/think-traces",
+            get(handlers::hr::agent::query_think_traces_handler),
+        )
+        // 记忆轨迹：列表 + 详情（静态段与 think-traces 同族，均在参数路由之前）
+        .route(
+            "/agents/memory-traces",
+            get(handlers::hr::agent::query_memory_traces_handler),
+        )
+        .route(
+            "/agents/memory-traces/{trace_id}",
+            get(handlers::hr::agent::get_memory_trace_handler),
+        )
         .route(
             "/agents/{id}/runtime-status",
             get(handlers::hr::agent::runtime_status_handler),

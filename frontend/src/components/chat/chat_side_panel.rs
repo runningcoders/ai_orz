@@ -1,12 +1,15 @@
 //! 聊天信息侧栏（ChatSidePanel）
 //!
 //! 沟通页面右侧可收起的信息面板，按对话模式动态组装 Tab：
-//! - 项目对话：总览 / 任务 / 产物 / Agent（项目内 Agent 列表）/ 工具
-//! - 默认对话：Agent（前台）/ 任务（游离任务）/ 产物 / 工具
+//! - 项目对话：总览 / 任务 / 产物 / Agent（项目内 Agent 列表）/ 工具 / 思考
+//! - 默认对话：Agent（前台）/ 任务（游离任务）/ 产物 / 工具 / 思考
 //!
 //! 默认对话即「默认虚拟项目」：其任务域是**游离任务**（`project_id IS NULL`），
 //! 因此任务 Tab 直接复用项目模式的任务列表组件，只是数据源换成游离任务；
 //! 产物当前硬绑定真实项目（游离任务不可能有产物），故产物 Tab 先做空态占位。
+//!
+//! 思考 Tab 展示 `pkg/think_trace` 落盘的运行时轨迹：项目模式按 project_id
+//! 跨 Agent 聚合，默认对话按前台 Agent 过滤（与工具调用 Tab 同源口径）。
 //!
 //! 面板纯只读：数据加载复用现有项目/任务/产物/Agent API，
 //! 创建与编辑操作仍在跳转各自详情页完成。
@@ -22,6 +25,7 @@ use crate::api::project::{get_project, get_task, list_project_tasks, query_tasks
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
 use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
+use crate::components::chat::ThinkTracesTab;
 use crate::components::chat::ToolCallsTab;
 use crate::components::graph::{Graph, GraphEdge, GraphNode, task_status_node_type};
 use crate::components::hud::{HudPanel, HudProgress};
@@ -341,9 +345,9 @@ pub fn ChatSidePanel(
     };
 
     let tab_labels: Vec<&'static str> = if is_project_mode {
-        vec!["总览", "任务", "产物", "Agent", "工具"]
+        vec!["总览", "任务", "产物", "Agent", "工具", "思考"]
     } else {
-        vec!["Agent", "任务", "产物", "工具"]
+        vec!["Agent", "任务", "产物", "工具", "思考"]
     };
 
     // 工具调用 Tab 的刷新驱动：SSE tick + 手动刷新计数
@@ -403,6 +407,15 @@ pub fn ChatSidePanel(
                     refresh_tick: tool_tab_tick,
                 }
             },
+            // 思考轨迹：项目模式下按 project_id 跨 Agent 聚合（一行一个 run，
+            // 行头用 IdentityChip 标识发起 Agent），与工具调用 Tab 同源刷新
+            5 => rsx! {
+                ThinkTracesTab {
+                    project_id: pid_for_tab.clone(),
+                    agent_id: None,
+                    refresh_tick: tool_tab_tick,
+                }
+            },
             _ => rsx! {},
         }
     } else {
@@ -431,6 +444,14 @@ pub fn ChatSidePanel(
             2 => empty_hint("暂无产物"),
             3 => rsx! {
                 ToolCallsTab {
+                    project_id: None,
+                    agent_id: reception_agent_id.clone(),
+                    refresh_tick: tool_tab_tick,
+                }
+            },
+            // 默认对话：按前台 Agent 过滤其思考轨迹
+            4 => rsx! {
+                ThinkTracesTab {
                     project_id: None,
                     agent_id: reception_agent_id.clone(),
                     refresh_tick: tool_tab_tick,

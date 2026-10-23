@@ -17,16 +17,17 @@ use common::api::{
     ListInstalledToolPacksResponse, ListOntologyClassesRequest, ListOntologyClassesResponse,
     ListOntologyLexiconResponse, ListOntologyPropertiesRequest, ListOntologyPropertiesResponse,
     ListOntologyRelationTypesRequest, ListOntologyRelationTypesResponse,
-    ListOntologySynonymsRequest, ListOntologySynonymsResponse, OnboardAgentRequest, PagedResult,
-    QueryMemoryParams, QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse,
+    ListOntologySynonymsRequest, ListOntologySynonymsResponse, MemoryTraceDetail,
+    OnboardAgentRequest, PagedResult, QueryMemoryParams, QueryMemoryResponse,
+    QueryThinkTracesRequest, RecommendSeedNodesParams, RecommendSeedNodesResponse,
     RestoreSkillRequest, RestoreSkillResponse, RetireOntologyClassResponse,
     RetireOntologyPropertyResponse, RetireOntologyRelationTypeResponse, RuntimeStatusRequest,
     RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
     SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem, SkillQueryRequest,
-    StartAgentOffboardRequest, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
-    UpdateAgentStatusResponse, UpdateOntologyClassRequest, UpdateOntologyClassResponse,
-    UpdateOntologyPropertyRequest, UpdateOntologyPropertyResponse,
+    StartAgentOffboardRequest, ThinkTraceListItem, UnbindToolFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
+    UpdateAgentStatusRequest, UpdateAgentStatusResponse, UpdateOntologyClassRequest,
+    UpdateOntologyClassResponse, UpdateOntologyPropertyRequest, UpdateOntologyPropertyResponse,
     UpdateOntologyRelationTypeRequest, UpdateOntologyRelationTypeResponse,
     UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
 };
@@ -419,6 +420,45 @@ pub async fn cancel_thinking(
         &format!("/api/v1/hr/agents/{}/cancel-thinking", req.id),
         &(),
     )
+    .await
+}
+
+// ===== 思考轨迹 =====
+
+/// 分页查询轮级思考轨迹
+/// GET /api/v1/hr/agents/think-traces?agent_id=&project_id=&scene=&limit=&offset=
+pub async fn query_think_traces(
+    params: &QueryThinkTracesRequest,
+) -> Result<PagedResult<ThinkTraceListItem>, ApiError> {
+    let qs = super::build_query_string(&[
+        ("agent_id", params.agent_id.clone()),
+        ("project_id", params.project_id.clone()),
+        ("task_id", params.task_id.clone()),
+        ("scene", params.scene.clone()),
+        ("started_after", params.started_after.map(|v| v.to_string())),
+        (
+            "started_before",
+            params.started_before.map(|v| v.to_string()),
+        ),
+        ("limit", params.pagination.limit.map(|v| v.to_string())),
+        ("offset", params.pagination.offset.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/hr/agents/think-traces{}", qs)).await
+}
+
+// ===== 记忆轨迹 =====
+
+/// 读取单条记忆轨迹详情（完整 input/output）
+/// GET /api/v1/hr/agents/memory-traces/{trace_id}?agent_id=
+pub async fn get_memory_trace(
+    agent_id: &str,
+    trace_id: &str,
+) -> Result<MemoryTraceDetail, ApiError> {
+    let qs = super::build_query_string(&[("agent_id", Some(agent_id.to_string()))]);
+    api_get(&format!(
+        "/api/v1/hr/agents/memory-traces/{}{}",
+        trace_id, qs
+    ))
     .await
 }
 

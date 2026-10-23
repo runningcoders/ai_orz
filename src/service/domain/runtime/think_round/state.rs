@@ -6,8 +6,46 @@
 //! 与 `ThinkLoopProgress` 同一套路：节点顺序执行，锁只在同步片段内持有。
 
 use crate::models::cortex_types::{ChatMessage, TokenUsage, ToolCallRequest};
+use crate::pkg::think_trace::{ThinkTraceRound, ThinkTraceToolCall};
 use crate::service::domain::runtime::types::ThinkLoopResult;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+/// 思考文本落盘上限（字符数）：reasoning / assistant 文本可能很长，
+/// think trace 是列表扫描型数据，必须限制单条体积。
+pub(crate) const TRACE_TEXT_MAX_CHARS: usize = 2000;
+/// 工具入参 / 结果预览落盘上限（字符数）；完整内容在 tool_tracing 中
+pub(crate) const TRACE_TOOL_PREVIEW_MAX_CHARS: usize = 500;
+
+/// 按字符数截断（避免 UTF-8 边界 panic），超长时追加省略号
+pub(crate) fn truncate_trace_text(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}…")
+}
+
+/// 工具调用入参预览：序列化失败时退化为空对象
+pub(crate) fn tool_arguments_preview(arguments: &serde_json::Value) -> String {
+    let raw = serde_json::to_string(arguments).unwrap_or_else(|_| "{}".to_string());
+    truncate_trace_text(&raw, TRACE_TOOL_PREVIEW_MAX_CHARS)
+}
+
+/// 结果预览
+pub(crate) fn tool_result_preview(result: &str) -> String {
+    truncate_trace_text(result, TRACE_TOOL_PREVIEW_MAX_CHARS)
+}
+
+/// 为待执行工具构造 trace 记录（结果由 dispatch 回填）
+pub(crate) fn pending_tool_trace(tc: &ToolCallRequest) -> ThinkTraceToolCall {
+    ThinkTraceToolCall {
+        call_id: None,
+        name: tc.name.clone(),
+        arguments: tool_arguments_preview(&tc.arguments),
+        result: None,
+        status: "pending".to_string(),
+    }
+}
 
 /// 本轮模型的产出类型（决定 evaluate 用哪套策略指标）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +85,8 @@ pub(crate) struct RoundState {
     pub consecutive_tool_rounds: usize,
     /// 疲劳提示是否已注入（只注入一次）
     pub nudge_injected: bool,
+    /// 已做过「换方向」提示的工具（同一工具只提示一次，避免 System 消息堆积）
+    pub reflected_tools: HashSet<String>,
     /// LLM 连续失败次数（成功即清零）
     pub llm_consecutive_errors: u64,
 
@@ -71,6 +111,9 @@ pub(crate) struct RoundState {
     pub final_content: Option<String>,
     /// 最终退出结果（终止后由调用方取走）
     pub result: Option<ThinkLoopResult>,
+
+    /// 轮级明细（think 创建、dispatch 回填工具结果、evaluate 补裁决）
+    pub trace_rounds: Vec<ThinkTraceRound>,
 }
 
 impl RoundState {
@@ -84,6 +127,7 @@ impl RoundState {
             tool_call_counts: HashMap::new(),
             consecutive_tool_rounds: 0,
             nudge_injected: false,
+            reflected_tools: HashSet::new(),
             llm_consecutive_errors: 0,
             round_start_idx: 0,
             pending_tool_calls: Vec::new(),
@@ -95,6 +139,7 @@ impl RoundState {
             output_kind: None,
             final_content: None,
             result: None,
+            trace_rounds: Vec::new(),
         }
     }
 }

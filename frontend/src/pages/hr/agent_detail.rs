@@ -470,6 +470,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut saving_meta = use_signal(|| false);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     // Tab 切换信号：0=概览 1=工具与技能 2=工具关系 3=对话与记忆 4=关系图
+    // 5=知识图谱 6=运行时 7=轨迹（思考 + 记忆主从联动）
     let mut active_tab = use_signal(|| 0usize);
     // 状态切换/入职操作的 Agent ID（必须在顶层声明，不能在渲染分支中调用 use_signal）
     // 克隆一份避免 move 走组件参数 id（后续多处仍使用 id.clone()）
@@ -882,6 +883,7 @@ pub fn HrAgentDetail(id: String) -> Element {
             let tab4_class = if active_tab() == 4 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
             let tab5_class = if active_tab() == 5 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
             let tab6_class = if active_tab() == 6 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+            let tab7_class = if active_tab() == 7 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
 
             // 工具/技能列表：按 tag 维度聚合 + 包（tag）筛选 + 名称搜索。
             // 预计算过滤结果（rsx 之前），把"包=筛选器"作用于下方聚合列表：
@@ -1145,6 +1147,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 class: "{tab6_class}",
                                 onclick: move |_| active_tab.set(6),
                                 "⚡ 运行时"
+                            }
+                            button {
+                                class: "{tab7_class}",
+                                onclick: move |_| active_tab.set(7),
+                                "🧭 轨迹"
                             }
                         }
 
@@ -2111,6 +2118,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 crate::components::runtime_panel::RuntimePanel {
                                     agent_id: id.clone(),
                                 }
+                            },
+                            7 => rsx! {
+                                // === 轨迹：左侧 run 列表 + 右侧记忆段 / 轮次时间线（主从联动） ===
+                                crate::components::chat::AgentTracePanel { agent_id: id.clone() }
                             },
                             _ => rsx! {},
                         }}

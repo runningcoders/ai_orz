@@ -53,8 +53,12 @@ pub fn users_root_dir(base_data_path: &Path) -> PathBuf {
     base_data_path.join("users")
 }
 
+pub fn agents_root_dir(base_data_path: &Path) -> PathBuf {
+    base_data_path.join("agents")
+}
+
 pub fn agent_data_dir(base_data_path: &Path, agent_id: &str) -> PathBuf {
-    base_data_path.join("agents").join(agent_id)
+    agents_root_dir(base_data_path).join(agent_id)
 }
 
 pub fn agent_workspace(base_data_path: &Path, agent_id: &str) -> PathBuf {
@@ -137,6 +141,14 @@ pub fn tool_call_trace_dir(base_data_path: &Path) -> PathBuf {
 /// `{base}/tools/{tool_id}/logs` — 工具执行日志目录
 pub fn tool_logs_dir(base_data_path: &Path, tool_id: &str) -> PathBuf {
     tools_root_dir(base_data_path).join(tool_id).join("logs")
+}
+
+/// `{base}/agents/{agent_id}/think_trace` — 轮级思考图轨迹目录（按天分片）
+///
+/// 每次 think 循环一行 JSONL，记录节点 occurrence 序列与每次选路的候选/来源。
+/// 动态路由（reflect 分叉）出问题时，这是唯一能回放「为什么走了这一步」的依据。
+pub fn agent_think_trace_dir(base_data_path: &Path, agent_id: &str) -> PathBuf {
+    agent_data_dir(base_data_path, agent_id).join("think_trace")
 }
 
 // --- 技能目录（内置技能注册 / 落盘） ---

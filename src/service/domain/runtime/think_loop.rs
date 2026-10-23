@@ -5,14 +5,15 @@
 //!
 //! ## 轮级环图
 //!
-//! 每一轮思考不再是主循环里的一段直线代码，而是图上的三个节点：
+//! 每一轮思考不再是主循环里的一段直线代码，而是图上的节点：
 //!
 //! ```text
 //! think --tool_calls--> dispatch --done--> evaluate
-//!   ^                      （工具执行）        │
-//!   └──────────── continue ───────────────────┘
-//!   │
-//!   └── final ───────────────────────────> evaluate --exit--> 结束
+//!   ^                                       │
+//!   ├──────────── continue ─────────────────┤
+//!   └── redirect ── reflect <── reflect ────┘   （enable_round_reflect 开启时）
+//!
+//! think --final--> evaluate --exit--> 结束
 //! ```
 //!
 //! 拓扑定义在 [`think_round::blueprint`]，节点实现在 [`think_round::nodes`]。

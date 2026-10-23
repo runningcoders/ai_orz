@@ -139,6 +139,35 @@ pub struct DriftClassDetailRow {
     pub created_at: i64,
 }
 
+/// 记忆轨迹分页查询上限（与思考轨迹同口径，避免单次全量扫描返回过多明细）
+pub const MAX_MEMORY_TRACE_QUERY_LIMIT: usize = 100;
+
+/// 记忆轨迹默认分页大小
+pub const DEFAULT_MEMORY_TRACE_QUERY_LIMIT: usize = 20;
+
+/// MemoryTrace 分页查询条件
+///
+/// 记忆轨迹按日落在 `agents/{agent_id}/memory/YYYYMMDD.jsonl`，本查询只读文件、
+/// 不触碰 SQLite 索引。`agent_id` 为 `None` 时遍历全部 Agent 目录（Admin 全量视图）；
+/// `trace_id` 为**精确匹配**，详情弹窗用它取完整 input/output。
+#[derive(Debug, Clone, Default)]
+pub struct MemoryTraceQuery {
+    /// 按 Agent 过滤；None = 遍历全部 Agent
+    pub agent_id: Option<String>,
+    /// 按任务过滤（精确匹配）
+    pub task_id: Option<String>,
+    /// 按请求日志 ID 过滤（精确匹配）
+    pub log_id: Option<String>,
+    /// 按 trace ID 精确查询（详情）
+    pub trace_id: Option<String>,
+    /// 创建时间下界（秒，含）
+    pub created_after: Option<i64>,
+    /// 创建时间上界（秒，含）
+    pub created_before: Option<i64>,
+    /// 分页参数
+    pub pagination: PaginationParams,
+}
+
 /// ✅ 记忆搜索统一入参（关键词搜索 + 向量语义搜索共用）
 #[derive(Debug, Clone, Default)]
 pub struct MemorySearch {
@@ -195,6 +224,37 @@ pub trait MemoryDao: Send + Sync {
         ctx: RequestContext,
         traces: &[MemoryTrace],
     ) -> Result<Vec<MemoryTracePosition>>;
+
+    /// 分页查询记忆轨迹（只读每日 JSONL 文件）
+    ///
+    /// 与 `append_trace` 对称：写入按 Agent 分目录、按日落文件，读取同样按此布局
+    /// 扫描。结果按 `created_at` 倒序（同一秒内按 `id` 倒序保证分页顺序稳定）。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - query: 过滤条件 + 分页（limit 不得超过 [`MAX_MEMORY_TRACE_QUERY_LIMIT`]）
+    /// # 返回
+    /// - 分页结果（`total` 为过滤后的总条数）
+    async fn query_traces(
+        &self,
+        ctx: RequestContext,
+        query: MemoryTraceQuery,
+    ) -> Result<PagedResult<MemoryTrace>>;
+
+    /// 按 trace ID 精确读取单条记忆轨迹（详情，返回完整 input/output）
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - agent_id: 轨迹所属 Agent（定位文件目录，必填）
+    /// - trace_id: 轨迹 ID
+    /// # 返回
+    /// - 找到返回 Some(trace)，未找到返回 None
+    async fn get_trace(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_id: &str,
+    ) -> Result<Option<MemoryTrace>>;
 
     /// 创建短期记忆索引（仅写 SQLite，不接触文件）
     ///
@@ -861,7 +921,5 @@ pub fn dao() -> std::sync::Arc<dyn MemoryDao> {
     base_dao()
 }
 
-#[cfg(test)]
-mod sqlite_test;
 #[cfg(test)]
 mod vector_test;

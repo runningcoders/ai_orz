@@ -27,6 +27,7 @@ pub mod request_context;
 pub mod stats;
 pub mod storage;
 pub mod think_path;
+pub mod think_trace;
 pub mod tool_log_retention;
 pub mod tool_registry;
 pub mod tool_tracing;
@@ -87,6 +88,9 @@ pub async fn init_all(config: &AppConfig) {
 
     // Initialize tool call tracing logger (singleton factory)
     tool_tracing::logger::ToolCallLogger::init(config.base_data_path());
+
+    // 轮级思考图轨迹出口（未显式初始化时静默 no-op）
+    think_trace::init(config.base_data_path());
 
     sys_info!("All pkg modules initialized");
 }

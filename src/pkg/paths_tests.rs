@@ -57,6 +57,14 @@ fn users_root_dir_is_users_under_base() {
 }
 
 #[test]
+fn agents_root_dir_is_agents_under_base() {
+    assert_eq!(
+        agents_root_dir(Path::new("/data/.ai_orz")),
+        PathBuf::from("/data/.ai_orz/agents")
+    );
+}
+
+#[test]
 fn agent_data_dir_is_agent_rooted() {
     assert_eq!(
         agent_data_dir(Path::new("/data/.ai_orz"), "agent-007"),
@@ -182,6 +190,15 @@ fn tool_logs_dir_nests_tool_id_and_logs() {
     assert_eq!(
         tool_logs_dir(Path::new("/data/.ai_orz"), "shell_exec"),
         PathBuf::from("/data/.ai_orz/tools/shell_exec/logs")
+    );
+}
+
+/// 轮级思考图轨迹按 Agent 隔离，便于按 Agent 回放
+#[test]
+fn agent_think_trace_dir_is_under_agent_data() {
+    assert_eq!(
+        agent_think_trace_dir(Path::new("/data/.ai_orz"), "agent_01"),
+        PathBuf::from("/data/.ai_orz/agents/agent_01/think_trace")
     );
 }
 

@@ -105,8 +105,6 @@ pub(crate) mod mcp_server_test;
 #[cfg(test)]
 pub(crate) mod mcp_tool_test;
 #[cfg(test)]
-pub(crate) mod memory_test;
-#[cfg(test)]
 pub(crate) mod message_channel_test;
 #[cfg(test)]
 pub(crate) mod message_test;

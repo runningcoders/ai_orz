@@ -83,6 +83,35 @@ pub trait RuntimeDomain: Send + Sync + Debug {
         task_id_filter: Option<&str>,
         project_id_filter: Option<&str>,
     ) -> Vec<(String, crate::pkg::agent_runtime_state::AgentRuntimeInfo)>;
+
+    /// 分页查询轮级思考轨迹（Agent 维度可观测性）
+    ///
+    /// `agent_id` 缺省时跨 Agent 聚合（对话页多 Agent 列表）；作用域收窄在
+    /// Domain 层统一完成，REST 与神经工具共用（见 `think_trace_query`）。
+    async fn query_think_traces(
+        &self,
+        ctx: RequestContext,
+        query: crate::pkg::think_trace::ThinkTraceQuery,
+    ) -> Result<common::api::PagedResult<crate::pkg::think_trace::ThinkTraceEntry>>;
+
+    /// 分页查询记忆轨迹（原始思考闭环的 input/output）
+    ///
+    /// 记忆轨迹不带鉴权信息，作用域收窄同样在 Domain 层统一完成
+    /// （见 `memory_trace_query`）：Agent / System 必须由上下文提供 agent 或 task
+    /// 作用域，普通成员必须显式指定其一。
+    async fn query_memory_traces(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::memory::MemoryTraceQuery,
+    ) -> Result<common::api::PagedResult<MemoryTrace>>;
+
+    /// 按 trace ID 读取单条记忆轨迹详情（完整 input/output）
+    async fn get_memory_trace(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_id: &str,
+    ) -> Result<Option<MemoryTrace>>;
 }
 
 /// 记忆管理 trait
@@ -400,9 +429,11 @@ pub(crate) mod legacy_awaken;
 // 沉淀链路与 awaken 共用同一套图引擎（`pkg::think_path`），单向依赖
 pub(crate) mod legacy_settle;
 mod memory;
+mod memory_trace_query;
 mod think_loop;
 // 轮级环图：think → dispatch → evaluate，由 think_loop 驱动（单向依赖）
 mod think_round;
+mod think_trace_query;
 mod tool_call_query;
 mod tool_execution;
 mod types;
@@ -632,6 +663,50 @@ impl RuntimeDomain for RuntimeDomainImpl {
             task_id_filter,
             project_id_filter,
         )
+    }
+
+    async fn query_think_traces(
+        &self,
+        ctx: RequestContext,
+        query: crate::pkg::think_trace::ThinkTraceQuery,
+    ) -> Result<common::api::PagedResult<crate::pkg::think_trace::ThinkTraceEntry>> {
+        let query = think_trace_query::with_context_scope(ctx, query)?;
+        Ok(crate::pkg::think_trace::query(query)?)
+    }
+
+    async fn query_memory_traces(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::memory::MemoryTraceQuery,
+    ) -> Result<common::api::PagedResult<MemoryTrace>> {
+        let query = memory_trace_query::with_context_scope(ctx.clone(), query)?;
+        crate::service::dal::memory::dal()
+            .query_traces(ctx, query)
+            .await
+    }
+
+    async fn get_memory_trace(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_id: &str,
+    ) -> Result<Option<MemoryTrace>> {
+        let query = memory_trace_query::with_context_scope(
+            ctx.clone(),
+            crate::service::dao::memory::MemoryTraceQuery {
+                agent_id: Some(agent_id.to_string()),
+                trace_id: Some(trace_id.to_string()),
+                pagination: common::api::PaginationParams {
+                    limit: Some(1),
+                    offset: None,
+                },
+                ..Default::default()
+            },
+        )?;
+        let agent_id = query.agent_id.as_deref().unwrap_or(agent_id);
+        crate::service::dal::memory::dal()
+            .get_trace(ctx, agent_id, trace_id)
+            .await
     }
 }
 
