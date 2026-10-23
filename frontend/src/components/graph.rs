@@ -278,6 +278,32 @@ pub fn global_node_label(label: &str, radius: f64) -> String {
     }
 }
 
+/// 点线预览（`mini` 缩略图）的圆点半径：按**画布尺寸与节点数**自适应。
+///
+/// # 为什么不能再是常量 7px（AMan 第八轮反馈②「预览图里的圆点太小」）
+///
+/// 圆点是按用户坐标绘制的，`auto_fit` 之后再乘一次 `scale`：300×200 缩略图里
+/// 7px 半径 × 0.2~0.4 的 fit 缩放 = 视觉半径 1.4~2.8px，肉眼几乎看不见。
+/// 而「原来那个大小」是卡片态被 fit 缩小后的结果（一张 104~168px 宽的卡缩到
+/// 0.4 仍有 40px 视觉宽度），点线态按常量画自然对不上。
+///
+/// # 取值口径
+///
+/// 可用面积均分给节点后取等效边长（`sqrt(area / n)`，`area` 为画布面积的 72%），
+/// 乘 0.22 得到半径，clamp 在 `[6, 24]`：
+///
+/// - 300×200 / 4 节点 → ≈ 23px（缩略图里点径 ≈ 46px，与「原来」的观感对齐）；
+/// - 300×200 / 12 节点 → ≈ 13px；
+/// - 920×620 / 4 节点 → clamp 到 24px（放大弹窗走卡片态，不消费本函数）。
+///
+/// 布局侧（`utils::think_path_graph::spread_layout` / `relax_layout`）用同一函数
+/// 推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
+pub fn dot_node_radius(width: f64, height: f64, node_count: usize) -> f64 {
+    let n = node_count.max(1) as f64;
+    let area = (width.max(1.0) * height.max(1.0)) * 0.72;
+    ((area / n).sqrt() * 0.22).clamp(6.0, 24.0)
+}
+
 // 卡片几何 / 文案 / 配色的实现在 `components::node_card`（Canvas 与 SVG 共用一份；
 // 各画一套必然漂移：改了宽度忘改折行宽度 = 文字溢出卡片）。此处重导出保持调用点不变。
 use crate::components::edge_style;
@@ -719,11 +745,6 @@ pub fn edge_geometry(
     }
 }
 
-/// 初始自适应视图（`auto_fit` 打开时用）
-///
-/// SVG 版本身没有自适应：节点坐标由布局函数按画布尺寸算，画布一换尺寸内容就可能
-/// 出界。这里按节点卡片包围盒算一次 `(tx, ty, scale)`，使内容居中并完整可见。
-/// 参照 Canvas 版 `fit_viewport` 的口径（含 padding、scale 上限 1.0 不放大）。
 /// 给「同一对节点之间的多条边」分档弧线，其余边保持直线（存量视觉零变化）。
 ///
 /// # 为什么需要它
@@ -794,7 +815,28 @@ pub fn assign_parallel_edge_curves(edges: &mut [GraphEdge], base: f64) {
     }
 }
 
-pub fn compute_fit_view(nodes: &[GraphNode], width: f64, height: f64) -> (f64, f64, f64) {
+/// 初始自适应视图（`auto_fit` 打开时用）——**半尺寸由调用方给**。
+///
+/// SVG 版本身没有自适应：节点坐标由布局函数按画布尺寸算，画布一换尺寸内容就可能
+/// 出界。这里按节点包围盒算一次 `(tx, ty, scale)`，使内容居中并完整可见。
+/// 参照 Canvas 版 `fit_viewport` 的口径（含 padding、scale 上限 1.0 不放大）。
+///
+/// # 为什么半尺寸要作为参数（不要在这里自己按卡片算）
+///
+/// 同一份坐标在两种形态下占据的视觉面积差一个量级：卡片态是一张 104~168px 宽的
+/// 矩形卡，点线态是一个十几像素的圆点。若点线态仍按卡片宽高算包围盒，300×200
+/// 缩略图会被判成「内容严重超出」→ `scale` 压到 0.2~0.4 → 圆点视觉半径只剩
+/// 2~3px，与「点线图看不清」是同一个根因（AMan 第八轮反馈②）。故包围盒必须与
+/// 渲染形态同源。
+pub fn compute_fit_view_with<F>(
+    nodes: &[GraphNode],
+    width: f64,
+    height: f64,
+    half_of: F,
+) -> (f64, f64, f64)
+where
+    F: Fn(&GraphNode) -> (f64, f64),
+{
     if nodes.is_empty() || width <= 0.0 || height <= 0.0 {
         return (0.0, 0.0, 1.0);
     }
@@ -802,8 +844,7 @@ pub fn compute_fit_view(nodes: &[GraphNode], width: f64, height: f64) -> (f64, f
     let (mut min_x, mut min_y) = (f64::MAX, f64::MAX);
     let (mut max_x, mut max_y) = (f64::MIN, f64::MIN);
     for n in nodes {
-        let hw = node_box_width(n) / 2.0;
-        let hh = node_box_height(n) / 2.0;
+        let (hw, hh) = half_of(n);
         min_x = min_x.min(n.x - hw);
         max_x = max_x.max(n.x + hw);
         min_y = min_y.min(n.y - hh);
@@ -852,10 +893,57 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let svg_width = props.svg_width.unwrap_or(800).max(160);
     let svg_height = props.svg_height.unwrap_or(600).max(120);
+    // 小地图模式：卡片只保留名称（正文 / 标签省略），缩略图预览用
+    let mini = props.mini.unwrap_or(false);
+    // 全局点线模式（对齐 Canvas 全局模式）：圆点分支 + 跳过边标签 overlay
+    let global_mode = props.global_mode;
+    let global_degrees = props.node_degrees.clone().unwrap_or_default();
+    // 点线形态判定（单点 SSOT：边标签抑制 / 节点渲染 / 半尺寸 / fit 包围盒必须同源）
+    let dot_mode = dot_graph_mode(global_mode, mini);
+    // 缩略图圆点半径：按画布尺寸与节点数自适应（AMan 第八轮反馈②「圆点太小」）。
+    // 常量 7px 在 300×200 小画布上还要再乘一次 auto_fit 的 scale（0.2~0.4），
+    // 视觉半径只剩 2~3px；布局侧用同一函数推间距，保证点不压点。
+    let preview_dot_radius =
+        dot_node_radius(svg_width as f64, svg_height as f64, props.nodes.len());
+    // 点线态半径 SSOT：全局视图按连接度（度数本身有语义），缩略图按画布自适应
+    let node_radius_of = |id: &str| -> f64 {
+        if global_mode {
+            global_node_radius(global_degrees.get(id).copied().unwrap_or(0))
+        } else {
+            preview_dot_radius
+        }
+    };
+    // 节点半宽/半高（自环绕行半径、命中层、fit 包围盒共用；点线态按圆半径）
+    let node_half_sizes: HashMap<String, (f64, f64)> = props
+        .nodes
+        .iter()
+        .map(|n| {
+            let size = if dot_mode {
+                let r = node_radius_of(&n.id);
+                (r, r)
+            } else if mini {
+                (
+                    node_card::box_width(&n.label, 0) / 2.0,
+                    node_card::box_height(0, false) / 2.0,
+                )
+            } else {
+                (node_box_width(n) / 2.0, node_box_height(n) / 2.0)
+            };
+            (n.id.clone(), size)
+        })
+        .collect();
+
     // 初始视图：auto_fit 打开时按节点包围盒 fit 一次（参照 Canvas 版 fit_viewport），
-    // 否则维持 (0,0,1) —— 存量调用点（知识图谱 / 任务依赖图 / 全局点线）视觉零回归
+    // 否则维持 (0,0,1) —— 存量调用点（知识图谱 / 任务依赖图 / 全局点线）视觉零回归。
+    // ⚠️ 包围盒取「当前形态的半尺寸」而不是卡片宽高：点线态若按 104~168px 的卡算，
+    // 300×200 缩略图会被判成严重超出 → scale 压到 0.2~0.4，圆点再小一档。
     let initial_view = if props.auto_fit {
-        compute_fit_view(&props.nodes, svg_width as f64, svg_height as f64)
+        compute_fit_view_with(&props.nodes, svg_width as f64, svg_height as f64, |n| {
+            node_half_sizes
+                .get(&n.id)
+                .copied()
+                .unwrap_or((node_box_width(n) / 2.0, node_box_height(n) / 2.0))
+        })
     } else {
         (0.0, 0.0, 1.0)
     };
@@ -864,11 +952,6 @@ pub fn Graph(props: GraphProps) -> Element {
     let mut pan_start = use_signal(|| (0.0, 0.0));
     // hover 详情卡片目标（区别于点击选中；拖拽/平移中隐藏）
     let mut hovered = use_signal(|| None::<HoverTarget>);
-    // 小地图模式：卡片只保留名称（正文 / 标签省略），缩略图预览用
-    let mini = props.mini.unwrap_or(false);
-    // 全局点线模式（对齐 Canvas 全局模式）：圆点分支 + 跳过边标签 overlay
-    let global_mode = props.global_mode;
-    let global_degrees = props.node_degrees.clone().unwrap_or_default();
 
     #[allow(clippy::type_complexity)]
     let valid_edges: Vec<(GraphEdge, (f64, f64), (f64, f64))> = props
@@ -886,25 +969,6 @@ pub fn Graph(props: GraphProps) -> Element {
         })
         .collect();
 
-    // 节点半宽/半高（自环绕行半径与命中层都用；点线态给统一小半径）
-    let node_half_sizes: HashMap<String, (f64, f64)> = props
-        .nodes
-        .iter()
-        .map(|n| {
-            let size = if dot_graph_mode(global_mode, mini) {
-                (10.0, 10.0)
-            } else if mini {
-                (
-                    node_card::box_width(&n.label, 0) / 2.0,
-                    node_card::box_height(0, false) / 2.0,
-                )
-            } else {
-                (node_box_width(n) / 2.0, node_box_height(n) / 2.0)
-            };
-            (n.id.clone(), size)
-        })
-        .collect();
-
     // 自环绕行半径：节点半宽/半高取大者 + 8（弧线从卡片右缘绕出去，不压卡片本体）
     let loop_radius_of = |id: &str| -> f64 {
         node_half_sizes
@@ -916,8 +980,8 @@ pub fn Graph(props: GraphProps) -> Element {
     // 箭头落点形态：点线态（全局视图 / 缩略图）用圆半径，卡片态用矩形半宽/半高。
     // 卡片态若仍按圆半径回退，箭头会停在矩形内部被后绘卡片盖住（三修③）。
     let tip_shape_of = |id: &str| -> (f64, Option<(f64, f64)>) {
-        let radius = global_node_radius(global_degrees.get(id).copied().unwrap_or(0));
-        if dot_graph_mode(global_mode, mini) {
+        let radius = node_radius_of(id);
+        if dot_mode {
             (radius, None)
         } else {
             (radius, node_half_sizes.get(id).copied())
@@ -929,9 +993,27 @@ pub fn Graph(props: GraphProps) -> Element {
     // - 中点取自与渲染同一份几何（弧线上标签/hover 落在曲线中点，不是两端中点）；
     // - 全局点线态不绘边标签（对齐 Canvas 全局模式：点线承载类型着色）。
     let mut edge_mids: HashMap<(String, String), (f64, f64)> = HashMap::new();
-    let edge_label_overlays: Vec<(String, String, &'static str)> =
-        if dot_graph_mode(global_mode, mini) {
-            for (edge, (sx, sy), (tx, ty)) in valid_edges.iter() {
+    let edge_label_overlays: Vec<(String, String, &'static str)> = if dot_mode {
+        for (edge, (sx, sy), (tx, ty)) in valid_edges.iter() {
+            let (radius, half) = tip_shape_of(&edge.target);
+            let geo = edge_geometry(
+                edge,
+                (*sx, *sy),
+                (*tx, *ty),
+                radius,
+                half,
+                tip_shape_of(&edge.source).1,
+                loop_radius_of(&edge.source),
+            );
+            edge_mids
+                .entry((edge.source.clone(), edge.target.clone()))
+                .or_insert(geo.mid);
+        }
+        Vec::new()
+    } else {
+        valid_edges
+            .iter()
+            .filter_map(|(edge, (sx, sy), (tx, ty))| {
                 let (radius, half) = tip_shape_of(&edge.target);
                 let geo = edge_geometry(
                     edge,
@@ -945,41 +1027,22 @@ pub fn Graph(props: GraphProps) -> Element {
                 edge_mids
                     .entry((edge.source.clone(), edge.target.clone()))
                     .or_insert(geo.mid);
-            }
-            Vec::new()
-        } else {
-            valid_edges
-                .iter()
-                .filter_map(|(edge, (sx, sy), (tx, ty))| {
-                    let (radius, half) = tip_shape_of(&edge.target);
-                    let geo = edge_geometry(
-                        edge,
-                        (*sx, *sy),
-                        (*tx, *ty),
-                        radius,
-                        half,
-                        tip_shape_of(&edge.source).1,
-                        loop_radius_of(&edge.source),
-                    );
-                    edge_mids
-                        .entry((edge.source.clone(), edge.target.clone()))
-                        .or_insert(geo.mid);
-                    let label: String = edge.label.chars().take(10).collect();
-                    (!label.is_empty()).then(|| {
-                        (
-                            label,
-                            format!(
-                                "translate({}, {}) rotate({})",
-                                geo.mid.0,
-                                geo.mid.1,
-                                upright_angle(geo.mid_angle)
-                            ),
-                            get_edge_color(&edge.label),
-                        )
-                    })
+                let label: String = edge.label.chars().take(10).collect();
+                (!label.is_empty()).then(|| {
+                    (
+                        label,
+                        format!(
+                            "translate({}, {}) rotate({})",
+                            geo.mid.0,
+                            geo.mid.1,
+                            upright_angle(geo.mid_angle)
+                        ),
+                        get_edge_color(&edge.label),
+                    )
                 })
-                .collect()
-        };
+            })
+            .collect()
+    };
 
     let selected_id = props.selected_node_id.clone();
 
@@ -1245,12 +1308,17 @@ pub fn Graph(props: GraphProps) -> Element {
                     // 300×200 小画布内矩形卡互相覆盖的问题。任务名等关键信息
                     // 全量承载于 hover 详情（node_hover_lines 通道）与点选详情；
                     // 全局点线分支与放大弹窗矩形卡路径零改动。
-                    if dot_graph_mode(global_mode, mini) {
-                        // mini 无 node_degrees 供给（deps 全在 global_mode 调用点）：
-                        // degree=0 → 固定 7px 点半径，300×200 小画布下免绘名（半径 < 14）
-                        let degree = global_degrees.get(&node.id).copied().unwrap_or(0);
-                        let radius = global_node_radius(degree);
-                        let label = global_node_label(&node.label, radius);
+                    if dot_mode {
+                        // 点线态半径：全局视图按连接度（度数有语义），缩略图按画布自适应
+                        // （固定 7px 在 300×200 上再被 auto_fit 缩一次，肉眼几乎看不见）
+                        let radius = node_radius_of(&node.id);
+                        // 缩略图不绘名：300×200 里节点名会互相压住，明细走 hover 卡；
+                        // 全局视图按半径限绘（与 Canvas 全局模式同口径）
+                        let label = if global_mode {
+                            global_node_label(&node.label, radius)
+                        } else {
+                            String::new()
+                        };
                         // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
                         let hover_enter = HoverTarget::Node(node.id.clone());
                         let hover_leave = HoverTarget::Node(node.id.clone());
@@ -1666,6 +1734,16 @@ pub fn expand_layout(
 
 #[cfg(test)]
 mod tests {
+    /// 测试用卡片口径 fit（生产侧只暴露 `compute_fit_view_with`，形态由调用方定）
+    fn card_fit(nodes: &[GraphNode], width: f64, height: f64) -> (f64, f64, f64) {
+        compute_fit_view_with(nodes, width, height, |n| {
+            (
+                super::node_box_width(n) / 2.0,
+                super::node_box_height(n) / 2.0,
+            )
+        })
+    }
+
     use super::*;
     use crate::components::node_card::{NODE_TAG_MAX, text_width};
 
@@ -2182,7 +2260,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let (tx, ty, scale) = compute_fit_view(&nodes, 300.0, 200.0);
+        let (tx, ty, scale) = card_fit(&nodes, 300.0, 200.0);
         assert!(scale > 0.0 && scale <= 1.0, "fit 只缩小不放大: {scale}");
         for n in &nodes {
             let hw = node_box_width(n) / 2.0;
@@ -2206,8 +2284,60 @@ mod tests {
 
     #[test]
     fn fit_view_on_empty_or_degenerate_input_is_identity() {
-        assert_eq!(compute_fit_view(&[], 300.0, 200.0), (0.0, 0.0, 1.0));
-        assert_eq!(compute_fit_view(&[], 0.0, 0.0), (0.0, 0.0, 1.0));
+        assert_eq!(card_fit(&[], 300.0, 200.0), (0.0, 0.0, 1.0));
+        assert_eq!(card_fit(&[], 0.0, 0.0), (0.0, 0.0, 1.0));
+    }
+
+    /// 缩略图圆点半径必须跟画布尺寸与节点数走（AMan 第八轮反馈②「圆点太小」）
+    #[test]
+    fn dot_node_radius_scales_with_canvas_and_node_count() {
+        // 同一节点数：画布越大点越大
+        let small = dot_node_radius(300.0, 200.0, 4);
+        let big = dot_node_radius(920.0, 620.0, 4);
+        assert!(big > small, "大画布点半径应更大: {big} vs {small}");
+        // 同一画布：节点越多点越小
+        let few = dot_node_radius(300.0, 200.0, 3);
+        let many = dot_node_radius(300.0, 200.0, 12);
+        assert!(few > many, "节点多时点半径应更小: {few} vs {many}");
+        // 300×200 缩略图里不能退回常量 7px（那是「看不清」的根因）
+        assert!(
+            dot_node_radius(300.0, 200.0, 5) >= 12.0,
+            "缩略图点半径过小: {}",
+            dot_node_radius(300.0, 200.0, 5)
+        );
+        // 上下界：极小画布/极多节点不塌成 0，极大画布不失控
+        assert!(dot_node_radius(20.0, 20.0, 500) >= 6.0);
+        assert!(dot_node_radius(4000.0, 4000.0, 1) <= 24.0);
+    }
+
+    /// fit 包围盒必须取「当前形态的半尺寸」：点线态不能被卡片宽高拖小
+    #[test]
+    fn fit_view_in_dot_mode_uses_point_radius_not_card_box() {
+        let nodes = vec![
+            GraphNode {
+                id: "a".to_string(),
+                label: "A".to_string(),
+                x: 40.0,
+                y: 100.0,
+                ..Default::default()
+            },
+            GraphNode {
+                id: "b".to_string(),
+                label: "B".to_string(),
+                x: 260.0,
+                y: 100.0,
+                ..Default::default()
+            },
+        ];
+        // 卡片口径：单卡宽 104~168 → 内容宽 ≈ 220 + 168 = 388，300 画布必须缩
+        let (_, _, card_scale) = card_fit(&nodes, 300.0, 200.0);
+        // 点线口径：半径 14 → 内容宽 ≈ 220 + 28 = 248，300 画布不该缩
+        let (_, _, dot_scale) = compute_fit_view_with(&nodes, 300.0, 200.0, |_| (14.0, 14.0));
+        assert!(
+            dot_scale > card_scale,
+            "点线态不应被卡片宽高拖小: {dot_scale} vs {card_scale}"
+        );
+        assert_eq!(dot_scale, 1.0, "点线态在 300×200 里应保持原尺寸");
     }
 
     #[test]

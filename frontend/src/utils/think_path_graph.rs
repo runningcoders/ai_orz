@@ -379,7 +379,7 @@ pub fn layout_config(
 ///
 /// # 参数
 ///
-/// - `mini`：`true` = 点线形态（缩略图，节点是半径 7px 的点），`false` = 卡片形态（放大弹窗）。
+/// - `mini`：`true` = 点线形态（缩略图，节点圆点半径由 [`crate::components::graph::dot_node_radius`] 按画布与节点数算），`false` = 卡片形态（放大弹窗）。
 ///   两种形态的节点视觉尺寸差一个量级，用同一套间距会让点线图被拉得过散。
 ///
 /// # 返回
@@ -390,10 +390,10 @@ pub fn spread_layout(nodes: &mut [GraphNode], width: f64, height: f64, mini: boo
     /// 卡片形态：同层水平最小间隙 / 相邻层垂直最小间隙（px）
     const MIN_H_GAP: f64 = 26.0;
     const MIN_V_GAP: f64 = 30.0;
-    /// 点线形态：点直径 `global_node_radius(0)=7.0` × 2 = 14，取 18 留余量
+    /// 点线形态占位下限（实际点径取 `graph::dot_node_radius` × 2，随画布/节点数变）
     const MINI_DOT: f64 = 18.0;
-    const MINI_H_GAP: f64 = 18.0;
-    const MINI_V_GAP: f64 = 18.0;
+    /// 点与点之间的最小间隙（下限；实际取点径的一半）
+    const MINI_H_GAP: f64 = 12.0;
 
     if nodes.is_empty() {
         return 0.0;
@@ -419,7 +419,13 @@ pub fn spread_layout(nodes: &mut [GraphNode], width: f64, height: f64, mini: boo
 
     // 2) 节点视觉尺寸：卡片态取全图最宽/最高的那个做基准，保证任何一行都不重叠
     let (node_w, node_h, h_gap, v_gap) = if mini {
-        (MINI_DOT, MINI_DOT, MINI_H_GAP, MINI_V_GAP)
+        // 点线形态：点径与渲染侧同源（`graph::dot_node_radius`），画布越大 / 节点越少
+        // 点越大；占位 = 点径（直径），间隙 = 半径。用常量 18 会让「点画 46px、位留 18px」
+        // 直接互压，用同一函数推间距才能永远配套。
+        let dot = (crate::components::graph::dot_node_radius(width, height, nodes.len()) * 2.0)
+            .max(MINI_DOT);
+        let gap = (dot * 0.5).max(MINI_H_GAP);
+        (dot, dot, gap, gap)
     } else {
         let w = nodes
             .iter()
@@ -564,7 +570,9 @@ pub fn relax_layout(
         .enumerate()
         .map(|(i, n)| {
             let radius = if mini {
-                10.0
+                // 与渲染侧 / spread_layout 同源：点半径随画布与节点数自适应，
+                // 力传导的斥力与碰撞分离按这个半径算，才不会把点挤到一起
+                crate::components::graph::dot_node_radius(width, height, nodes.len())
             } else {
                 let w = crate::components::graph::node_box_width(n);
                 let h = crate::components::graph::node_box_height(n);
@@ -1447,6 +1455,40 @@ mod tests {
         ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
         for w in ys.windows(2) {
             assert!(w[1] - w[0] >= max_h, "相邻层中心距不足卡片高: {w:?}");
+        }
+    }
+
+    /// 缩略图点线形态：圆点必须「看得见 + 不互压」（AMan 第八轮反馈②）
+    ///
+    /// 旧实现点位按常量 18px 留、渲染按常量 7px 画；现在渲染与布局都走
+    /// `dot_node_radius`，本测试钉住「留的位 ≥ 画的点径」这条不变式。
+    #[test]
+    fn mini_points_are_readable_and_never_overlap() {
+        let mut nodes: Vec<GraphNode> = (0..4)
+            .map(|i| GraphNode {
+                id: format!("n{i}"),
+                label: format!("Step{i}"),
+                description: String::new(),
+                node_type: THINK_STEP_NODE_TYPE.to_string(),
+                x: 100.0 + i as f64 * 5.0,
+                y: 100.0,
+                tags: Vec::new(),
+                summary: None,
+            })
+            .collect();
+        spread_layout(&mut nodes, 300.0, 200.0, true);
+        let r = crate::components::graph::dot_node_radius(300.0, 200.0, nodes.len());
+        assert!(r >= 12.0, "缩略图圆点半径过小（{r}px），会看不清");
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                let dx = (nodes[i].x - nodes[j].x).abs();
+                let dy = (nodes[i].y - nodes[j].y).abs();
+                assert!(
+                    dx >= 2.0 * r - 1e-6 || dy >= 2.0 * r - 1e-6,
+                    "圆点重叠: {i} vs {j} dx={dx} dy={dy} 需 ≥ 直径 {}",
+                    2.0 * r
+                );
+            }
         }
     }
 
