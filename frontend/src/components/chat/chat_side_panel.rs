@@ -698,7 +698,7 @@ fn build_task_graph_data(
     // 标准管线三步（顺序不可换：层距来自 spread_layout，弧线曲率依赖层距）
     let layer_gap = spread_layout(&mut nodes, width, height, mini);
     relax_layout(&mut nodes, &edges, width, height, mini, layer_gap);
-    assign_edge_curves(&nodes, &mut edges, layer_gap, mini);
+    assign_edge_curves(&nodes, &mut edges, width, height, layer_gap, mini);
     (nodes, edges)
 }
 

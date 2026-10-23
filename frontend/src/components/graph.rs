@@ -287,21 +287,35 @@ pub fn global_node_label(label: &str, radius: f64) -> String {
 /// 而「原来那个大小」是卡片态被 fit 缩小后的结果（一张 104~168px 宽的卡缩到
 /// 0.4 仍有 40px 视觉宽度），点线态按常量画自然对不上。
 ///
-/// # 取值口径
+/// # 取值口径（AMan 第九轮反馈①：两个缩略图的点大小必须一致）
 ///
-/// 可用面积均分给节点后取等效边长（`sqrt(area / n)`，`area` 为画布面积的 72%），
-/// 乘 0.22 得到半径，clamp 在 `[6, 24]`：
+/// **基准只由画布短边定，节点数只做轻微阻尼**：
 ///
-/// - 300×200 / 4 节点 → ≈ 23px（缩略图里点径 ≈ 46px，与「原来」的观感对齐）；
-/// - 300×200 / 12 节点 → ≈ 13px；
-/// - 920×620 / 4 节点 → clamp 到 24px（放大弹窗走卡片态，不消费本函数）。
+/// ```text
+/// base = clamp(min(width, height) × 0.085, 7, 24)
+/// damp = (8 / max(n, 8)) ^ 0.35
+/// r    = clamp(base × damp, 6, 24)
+/// ```
+///
+/// 只有这样「同一块 300×200 缩略图、同一套渲染」下，任务依赖图（4 个任务）与
+/// 思考路径图（8 个节点）才会画出**一样大的点** —— 旧实现按 `画布面积 / n` 均分，
+/// 4 节点得 22.9px、8 节点得 16.2px，同一套 UI 里两个缩略图点径差了三分之一，
+/// 用户一眼就能看出「这两个图的节点大小怎么不一样」。
+///
+/// - 300×200：4 节点 / 8 节点**都是 17px**；12 节点 ≈ 14.8px；16 节点 ≈ 13.3px；
+/// - 920×620：短边 620 → base 触 24px 上限（放大弹窗走卡片态，不消费本函数）。
+///
+/// 节点数阻尼保留了「点多了自动收一点」的合理性（8 节点以内不再变化），但不再是
+/// 主变量：画布尺寸才是决定观感的那一维。
 ///
 /// 布局侧（`utils::think_path_graph::spread_layout` / `relax_layout`）用同一函数
 /// 推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
 pub fn dot_node_radius(width: f64, height: f64, node_count: usize) -> f64 {
+    let short = width.max(1.0).min(height.max(1.0));
+    let base = (short * 0.085).clamp(7.0, 24.0);
     let n = node_count.max(1) as f64;
-    let area = (width.max(1.0) * height.max(1.0)) * 0.72;
-    ((area / n).sqrt() * 0.22).clamp(6.0, 24.0)
+    let damp = (8.0 / n.max(8.0)).powf(0.35);
+    (base * damp).clamp(6.0, 24.0)
 }
 
 // 卡片几何 / 文案 / 配色的实现在 `components::node_card`（Canvas 与 SVG 共用一份；
@@ -2289,6 +2303,8 @@ mod tests {
     }
 
     /// 缩略图圆点半径必须跟画布尺寸与节点数走（AMan 第八轮反馈②「圆点太小」）
+    /// 缩略图圆点半径必须跟画布尺寸走，节点数只做**轻微阻尼**
+    /// （AMan 第八轮反馈②「圆点太小」+ 第九轮反馈①「两个缩略图点大小不一样」）
     #[test]
     fn dot_node_radius_scales_with_canvas_and_node_count() {
         // 同一节点数：画布越大点越大
@@ -2296,16 +2312,22 @@ mod tests {
         let big = dot_node_radius(920.0, 620.0, 4);
         assert!(big > small, "大画布点半径应更大: {big} vs {small}");
         // 同一画布：节点越多点越小
-        let few = dot_node_radius(300.0, 200.0, 3);
         let many = dot_node_radius(300.0, 200.0, 12);
-        assert!(few > many, "节点多时点半径应更小: {few} vs {many}");
+        assert!(small > many, "节点多时点半径应更小: {small} vs {many}");
+        // 关键守卫：任务图（4 个任务）与思考图（8 个节点）在同一块缩略图上点径必须相同
+        let tasks = dot_node_radius(300.0, 200.0, 4);
+        let thinks = dot_node_radius(300.0, 200.0, 8);
+        assert!(
+            (tasks - thinks).abs() < 1e-9,
+            "4 节点与 8 节点的点半径必须一致（同一套缩略图观感）: {tasks} vs {thinks}"
+        );
         // 300×200 缩略图里不能退回常量 7px（那是「看不清」的根因）
         assert!(
             dot_node_radius(300.0, 200.0, 5) >= 12.0,
             "缩略图点半径过小: {}",
             dot_node_radius(300.0, 200.0, 5)
         );
-        // 上下界：极小画布/极多节点不塌成 0，极大画布不失控
+        // 上下界：极小画布 / 极多节点不塌成 0，极大画布不失控
         assert!(dot_node_radius(20.0, 20.0, 500) >= 6.0);
         assert!(dot_node_radius(4000.0, 4000.0, 1) <= 24.0);
     }
