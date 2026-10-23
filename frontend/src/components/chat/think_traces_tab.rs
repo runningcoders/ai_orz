@@ -20,10 +20,10 @@ use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
 use common::api::{
-    PaginationParams, QueryThinkTracesRequest, ThinkTraceListItem, ThinkTraceOccurrenceDto,
-    ThinkTraceRouteDto,
+    PaginationParams, QueryThinkTracesRequest, ThinkTraceListItem, ThinkTraceRouteDto,
 };
 
+use super::ThinkPathGraphView;
 use super::memory_trace_detail::MemoryTraceDetail;
 use super::think_rounds_timeline::ThinkRoundsTimeline;
 
@@ -70,13 +70,11 @@ pub fn page_bounds(offset: usize, returned: usize, total: usize) -> (usize, usiz
     (start, end)
 }
 
-/// 节点 occurrence 单行文案：`步骤 step · node#seq`
-fn occurrence_label(o: &ThinkTraceOccurrenceDto) -> String {
-    format!("步骤 {} · {}#{}", o.step, o.node, o.seq)
-}
-
 /// 选路记录单行文案：`步骤 step: candidates → chosen（via）`
-fn route_label(r: &ThinkTraceRouteDto) -> String {
+///
+/// `pub` 供思考路径图组件（图/列表双视图的列表侧）复用：同一段文案两处各写一套
+/// 必然漂移（改了 via 的中文说法，另一处还是旧词）。
+pub fn route_label(r: &ThinkTraceRouteDto) -> String {
     let candidates = if r.candidates.is_empty() {
         "-".to_string()
     } else {
@@ -345,49 +343,12 @@ pub fn ThinkTracesTab(
                                     div { class: "p-2 border-t border-base-300 space-y-2",
                                         // 轮次时间线：模型每一轮想了什么、调了什么、如何裁决
                                         ThinkRoundsTimeline { rounds: rounds.clone() }
-                                        if !occurrences.is_empty() {
-                                            div {
-                                                label { class: "form-label", "节点序列" }
-                                                div { class: "flex flex-wrap gap-1",
-                                                    for o in occurrences.iter() {
-                                                        {
-                                                            let tip = o
-                                                                .signal
-                                                                .clone()
-                                                                .map(|s| format!("{}（signal: {}）", occurrence_label(o), s))
-                                                                .unwrap_or_else(|| occurrence_label(o));
-                                                            rsx! {
-                                                                span {
-                                                                    key: "{o.node}-{o.seq}",
-                                                                    class: "badge orz-tag badge-sm",
-                                                                    title: "{tip}",
-                                                                    "{o.node}#{o.seq}"
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        if !routes.is_empty() {
-                                            div {
-                                                label { class: "form-label", "选路记录" }
-                                                div { class: "space-y-1",
-                                                    for r in routes.iter() {
-                                                        {
-                                                            let reason = r.reason.clone();
-                                                            rsx! {
-                                                                div { class: "text-xs text-base-content/70",
-                                                                    div { class: "font-mono whitespace-pre-wrap break-all", "{route_label(r)}" }
-                                                                    if let Some(reason) = reason {
-                                                                        div { class: "text-base-content/50", "原因：{reason}" }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                        // 节点运行图（图/列表双视图 + 缩略图 + 放大弹窗）：
+                                        // 同名节点合成一卡带 ×N，转移边按 (from,to) 聚合，
+                                        // 列表侧保留作降级（老记录无 occurrences 亦不崩）
+                                        ThinkPathGraphView {
+                                            occurrences: occurrences.clone(),
+                                            routes: routes.clone(),
                                         }
                                         div { class: "text-xs text-base-content/50 font-mono break-all",
                                             "run: {run_id} · fp: {fingerprint}"

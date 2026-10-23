@@ -17,6 +17,7 @@ use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
 use common::api::{PaginationParams, QueryThinkTracesRequest, ThinkTraceListItem};
 
+use super::ThinkPathGraphView;
 use super::memory_trace_detail::MemoryTraceDetail;
 use super::think_rounds_timeline::ThinkRoundsTimeline;
 use super::think_traces_tab::{page_bounds, scene_label};
@@ -242,22 +243,24 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
                         }
                     }
 
+                    // 节点运行图：与聊天侧栏「思考」Tab 共用同一组件（两处各写一套必然漂移）
                     if sel.rounds.is_empty() {
                         div { class: "rounded-lg border border-base-300 bg-base-100 p-2 space-y-1",
                             label { class: "form-label", "节点序列" }
                             div { class: "text-xs text-base-content/60", "该轨迹未采集轮级明细，仅记录节点序列" }
-                            div { class: "flex flex-wrap gap-1",
-                                for o in sel.occurrences.iter() {
-                                    span {
-                                        key: "{o.node}-{o.seq}",
-                                        class: "badge orz-tag badge-sm",
-                                        title: "{o.signal.clone().unwrap_or_default()}",
-                                        "{o.node}#{o.seq}"
-                                    }
-                                }
+                            ThinkPathGraphView {
+                                occurrences: sel.occurrences.clone(),
+                                routes: sel.routes.clone(),
                             }
                         }
                     } else {
+                        div { class: "rounded-lg border border-base-300 bg-base-100 p-2 space-y-1",
+                            label { class: "form-label", "节点运行图" }
+                            ThinkPathGraphView {
+                                occurrences: sel.occurrences.clone(),
+                                routes: sel.routes.clone(),
+                            }
+                        }
                         div { class: "rounded-lg border border-base-300 bg-base-100 p-2",
                             ThinkRoundsTimeline { rounds: sel.rounds.clone() }
                         }

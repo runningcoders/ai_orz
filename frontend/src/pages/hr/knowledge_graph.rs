@@ -158,6 +158,11 @@ fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<Gr
                         // MemoryResult 数据源无方向字段：零词表映射不变式维持，暂兜底无向；
                         // TODO(backlog): 后端 direction 契约覆盖本地检索路径后改透传
                         direction: "undirected".to_string(),
+                        // 知识图谱存量视觉：直边 / 词表虚线 / 强度线宽（弧线能力已具备，
+                        // 是否启用属图谱侧独立决策，本单不改其呈现）
+                        curve: None,
+                        dash: None,
+                        width: None,
                     });
                 }
             }
@@ -200,6 +205,9 @@ fn build_graph_from_global(resp: &GetKnowledgeGraphResponse) -> (Vec<GraphNode>,
             // 后端 DTO（common GraphEdge）direction 已随 0ef6ba28 落地：联调兑现
             // TODO，透传服务端解析带出的方向值（前端零词表映射，方案 §五.5）
             direction: e.direction.clone(),
+            curve: None,
+            dash: None,
+            width: None,
         })
         .collect();
     (nodes, edges)

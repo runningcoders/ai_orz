@@ -47,6 +47,30 @@ pub struct GraphEdge {
     /// 方向性（方案 a′）：`"directed"` = 有向边，target 端绘制箭头；
     /// 其余（`"undirected"`）= 无向纯线。契约值由服务端解析带出，前端零词表映射纯透传。
     pub direction: String,
+    /// 曲线形态（`None` = 直线，等价 `EdgeCurve::Straight`）—— 公共引擎能力：
+    /// 任何 SVG 图都能按数据指定曲率，存量调用点补 `None` 即行为零变化。
+    pub curve: Option<EdgeCurve>,
+    /// 显式虚线样式（`None` = 按 `label` 的关系词表派生，存量图行为不变）
+    pub dash: Option<String>,
+    /// 显式线宽（`None` = 按 `weight` 派生；用于「按数据加粗」这类语义，
+    /// 避免借用 weight 污染 hover 里的强度读数）
+    pub width: Option<f64>,
+}
+
+/// 边曲线形态（公共引擎能力：直线 / 二次贝塞尔弧线 / 自环）
+///
+/// 为什么把曲率放在数据上而不是渲染时算：同一份图数据会被缩略图、放大弹窗、
+/// 导出等多个画布尺寸复用，曲率若依赖画布尺寸就会各画一套；放到 `GraphEdge`
+/// 上则一次算好、处处一致。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EdgeCurve {
+    /// 直线（默认）
+    Straight,
+    /// 二次贝塞尔弧线：值为「曲线中点相对两端连线的法向偏移量（px，带符号）」。
+    /// 符号决定绕行侧（`+` 走 left-hand normal 一侧），双向边用相反符号分居两侧。
+    Arc(f64),
+    /// 自环：从源节点右侧绕出的三次贝塞尔（半径由节点半宽决定，见 `edge_geometry`）
+    Loop,
 }
 
 /// 图元素 hover 目标（节点 ID / 边端点对），驱动 hover 详情卡片
@@ -83,11 +107,14 @@ fn hover_card_box(lines: &[String]) -> (f64, f64) {
 }
 
 /// 构建 hover 详情卡片数据（节点卡与边卡统一结构；锚点为元素屏幕坐标）
+#[allow(clippy::too_many_arguments)]
 fn build_hover_card(
     target: &HoverTarget,
     nodes: &[GraphNode],
     edges: &[GraphEdge],
     positions: &HashMap<String, (f64, f64)>,
+    // 边的曲线中点（弧线/自环的 hover 锚点必须落在曲线上，不能取两端中点）
+    edge_mids: &HashMap<(String, String), (f64, f64)>,
     scale: f64,
     pan_x: f64,
     pan_y: f64,
@@ -113,6 +140,11 @@ fn build_hover_card(
             let to = nodes.iter().find(|n| &n.id == target_id)?;
             let (fx, fy) = positions.get(source).copied().unwrap_or((from.x, from.y));
             let (gx, gy) = positions.get(target_id).copied().unwrap_or((to.x, to.y));
+            // 弧线 / 自环的锚点取曲线中点；直线回退两端中点（与旧行为一致）
+            let (ax, ay) = edge_mids
+                .get(&(source.clone(), target_id.clone()))
+                .copied()
+                .unwrap_or(((fx + gx) / 2.0, (fy + gy) / 2.0));
             let rel: &str = if edge.label.is_empty() {
                 "关联"
             } else {
@@ -131,8 +163,8 @@ fn build_hover_card(
                     lines
                 },
                 accent: get_edge_color(rel).to_string(),
-                anchor_x: (fx + gx) / 2.0 * scale + pan_x,
-                anchor_y: (fy + gy) / 2.0 * scale + pan_y,
+                anchor_x: ax * scale + pan_x,
+                anchor_y: ay * scale + pan_y,
                 offset: 14.0,
             })
         }
@@ -160,6 +192,12 @@ pub struct GraphProps {
     /// 节点连接度表（全局模式半径映射依据：id → degree，R4 in+out 仅活跃边）
     #[props(default)]
     pub node_degrees: Option<std::collections::HashMap<String, usize>>,
+    /// 初始自适应缩放（默认关，存量调用点行为零变化）
+    ///
+    /// SVG 版自身没有自适应：节点坐标由布局按画布尺寸算，画布换尺寸/节点尺寸不定时
+    /// 内容会跑出视野。打开后按节点包围盒算一次 fit 作初始视图，并作为「重置视图」目标态。
+    #[props(default = false)]
+    pub auto_fit: bool,
     on_node_click: EventHandler<String>,
 }
 
@@ -203,6 +241,8 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
         "task_completed" => "#10b981",
         // 归档用 slate-400 与兜底灰（#6b7280）区分，守卫测试才能兜住漏配
         "task_archived" => "#94a3b8",
+        // 思考路径图：节点是图引擎的执行单元（cyan-500，与记忆/任务色板可区分）
+        "think_step" => "#06b6d4",
         _ => NEUTRAL_NODE_FILL,
     }
 }
@@ -385,12 +425,7 @@ pub fn get_edge_dash(relation_type: &str) -> &'static str {
     }
 }
 
-/// 边是否使用流光动画（实线边都加流光，虚线边保持静态）
-fn edge_use_flow(relation_type: &str) -> bool {
-    get_edge_dash(relation_type) == "none"
-}
-
-/// 计算两点间距离（用于 stroke-dasharray 估算）
+/// 计算两点间距离（直线段长度）
 fn edge_length(sx: f64, sy: f64, tx: f64, ty: f64) -> f64 {
     ((tx - sx).powi(2) + (ty - sy).powi(2)).sqrt()
 }
@@ -401,12 +436,219 @@ fn calculate_edge_angle(sx: f64, sy: f64, tx: f64, ty: f64) -> f64 {
     dy.atan2(dx) * 180.0 / std::f64::consts::PI
 }
 
-fn get_label_transform(sx: f64, sy: f64, tx: f64, ty: f64) -> String {
-    let mid_x = (sx + tx) / 2.0;
-    let mid_y = (sy + ty) / 2.0;
-    let angle = calculate_edge_angle(sx, sy, tx, ty);
-    // 标签背景自带白底，直接压在边中点即可（此前的 -8 偏移会让标签漂离中点）
-    format!("translate({}, {}) rotate({})", mid_x, mid_y, angle)
+/// 二次贝塞尔控制点
+///
+/// 取两端中点为基准，沿连线法线偏移 `bulge * 2`：二次贝塞尔在 `t=0.5` 处的点
+/// 是 `(P0 + 2·P1 + P2) / 4`，故控制点偏移量恰为中点偏移量的两倍——
+/// 这样 `EdgeCurve::Arc(d)` 里的 `d` 就是**肉眼看到的弧高**，不是控制点距离。
+pub fn quadratic_control(sx: f64, sy: f64, tx: f64, ty: f64, bulge: f64) -> (f64, f64) {
+    let mx = (sx + tx) / 2.0;
+    let my = (sy + ty) / 2.0;
+    let dx = tx - sx;
+    let dy = ty - sy;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= f64::EPSILON {
+        // 退化（两端重合）：无方向可言，控制点落中点即可（不 panic、不除零）
+        return (mx, my);
+    }
+    // left-hand normal
+    let nx = -dy / len;
+    let ny = dx / len;
+    (mx + nx * bulge * 2.0, my + ny * bulge * 2.0)
+}
+
+/// 二次贝塞尔取点
+fn quadratic_at(p0: (f64, f64), p1: (f64, f64), p2: (f64, f64), t: f64) -> (f64, f64) {
+    let mt = 1.0 - t;
+    let a = mt * mt;
+    let b = 2.0 * mt * t;
+    let c = t * t;
+    (
+        a * p0.0 + b * p1.0 + c * p2.0,
+        a * p0.1 + b * p1.1 + c * p2.1,
+    )
+}
+
+/// 三次贝塞尔取点
+fn cubic_at(p0: (f64, f64), p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), t: f64) -> (f64, f64) {
+    let mt = 1.0 - t;
+    let a = mt * mt * mt;
+    let b = 3.0 * mt * mt * t;
+    let c = 3.0 * mt * t * t;
+    let d = t * t * t;
+    (
+        a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0,
+        a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1,
+    )
+}
+
+/// 折线近似长度（5 点采样：二次贝塞尔 3 段折线近似误差 < 2%，足够流光动画用）
+fn polyline_length(points: &[(f64, f64)]) -> f64 {
+    points
+        .windows(2)
+        .map(|w| edge_length(w[0].0, w[0].1, w[1].0, w[1].1))
+        .sum()
+}
+
+/// 曲线箭头终点：沿「控制点 → 终点」切线回退到目标半径外
+///
+/// ⚠️ 这是弧线改造最容易踩的坑：原来的 `arrow_tip_point` 只按「起点 → 终点」直线
+/// 向量回退，弧线上箭头会斜着插进节点（视觉上箭头方向与曲线末端切线不一致）。
+/// 曲线的末端切线方向是 `P2 - P1`（二次）或 `P3 - P2`（三次），所以回退基准
+/// 必须换成「最后一个控制点 → 终点」。
+pub fn curve_arrow_tip_point(
+    control: (f64, f64),
+    target: (f64, f64),
+    target_radius: f64,
+) -> (f64, f64) {
+    arrow_tip_point(control, target, target_radius)
+}
+
+/// 一次算全的边几何（路径 / 箭头终点 / 中点 / 中点切线角 / 路径长度）
+///
+/// 渲染的四处（视觉 path、透明命中 path、箭头终点、标签位置与旋转）必须取自
+/// **同一份几何**——分开各算一次，改曲率时必然漏改一处。
+#[derive(Debug, Clone, PartialEq)]
+pub struct EdgeGeometry {
+    /// 视觉路径（有向边终点已回退到目标半径外）
+    pub d: String,
+    /// 完整路径（到目标圆心；透明命中层用，命中区比视觉略长一点更宽松）
+    pub d_full: String,
+    /// 箭头终点（有向边返回回退后的点；无向边返回目标圆心）
+    pub tip: (f64, f64),
+    /// 曲线中点（hover 卡锚点 / 标签位置）
+    pub mid: (f64, f64),
+    /// 中点切线角度（度；标签沿曲线方向旋转）
+    pub mid_angle: f64,
+    /// 路径长度（px；供 `--len` 流光动画）
+    pub length: f64,
+}
+
+/// 计算一条边的几何（直线 / 弧线 / 自环统一出口）
+///
+/// - `target_radius`：目标节点半径（箭头回退距离，口径同 Canvas 版 `arrow_tip_point`）
+/// - `loop_radius`：自环绕行半径（调用方按节点半宽 + 8 传入）
+pub fn edge_geometry(
+    edge: &GraphEdge,
+    source: (f64, f64),
+    target: (f64, f64),
+    target_radius: f64,
+    loop_radius: f64,
+) -> EdgeGeometry {
+    let (sx, sy) = source;
+    let (tx, ty) = target;
+    let directed = edge.direction == "directed";
+    match edge.curve.unwrap_or(EdgeCurve::Straight) {
+        EdgeCurve::Straight => {
+            let tip = if directed {
+                arrow_tip_point(source, target, target_radius)
+            } else {
+                target
+            };
+            EdgeGeometry {
+                d: format!("M {sx} {sy} L {} {}", tip.0, tip.1),
+                d_full: format!("M {sx} {sy} L {tx} {ty}"),
+                tip,
+                mid: ((sx + tx) / 2.0, (sy + ty) / 2.0),
+                mid_angle: calculate_edge_angle(sx, sy, tx, ty),
+                length: edge_length(sx, sy, tx, ty),
+            }
+        }
+        EdgeCurve::Arc(bulge) => {
+            let p1 = quadratic_control(sx, sy, tx, ty, bulge);
+            let tip = if directed {
+                curve_arrow_tip_point(p1, target, target_radius)
+            } else {
+                target
+            };
+            let mid = quadratic_at(source, p1, target, 0.5);
+            let prev = quadratic_at(source, p1, target, 0.45);
+            let next = quadratic_at(source, p1, target, 0.55);
+            let samples = [
+                source,
+                quadratic_at(source, p1, target, 0.25),
+                mid,
+                quadratic_at(source, p1, target, 0.75),
+                target,
+            ];
+            EdgeGeometry {
+                d: format!("M {sx} {sy} Q {} {} {} {}", p1.0, p1.1, tip.0, tip.1),
+                d_full: format!("M {sx} {sy} Q {} {} {tx} {ty}", p1.0, p1.1),
+                tip,
+                mid,
+                mid_angle: calculate_edge_angle(prev.0, prev.1, next.0, next.1),
+                length: polyline_length(&samples),
+            }
+        }
+        EdgeCurve::Loop => {
+            // 自环：从卡片右缘绕出再绕回（起点/终点都在卡片右侧边缘，绕行半径 = 半宽 + 8）
+            let half_w = (loop_radius - 8.0).max(12.0);
+            let start = (sx + half_w, sy - 8.0);
+            let end = (sx + half_w, sy + 8.0);
+            let c1 = (sx + half_w + 34.0, sy - 22.0);
+            let c2 = (sx + half_w + 34.0, sy + 22.0);
+            // 自环回到自身卡片，回退量只留箭头间隙（半径传 0）
+            let tip = if directed {
+                curve_arrow_tip_point(c2, end, 0.0)
+            } else {
+                end
+            };
+            let mid = cubic_at(start, c1, c2, end, 0.5);
+            let prev = cubic_at(start, c1, c2, end, 0.45);
+            let next = cubic_at(start, c1, c2, end, 0.55);
+            let samples = [
+                start,
+                cubic_at(start, c1, c2, end, 0.25),
+                mid,
+                cubic_at(start, c1, c2, end, 0.75),
+                end,
+            ];
+            EdgeGeometry {
+                d: format!(
+                    "M {} {} C {} {}, {} {}, {} {}",
+                    start.0, start.1, c1.0, c1.1, c2.0, c2.1, tip.0, tip.1
+                ),
+                d_full: format!(
+                    "M {} {} C {} {}, {} {}, {} {}",
+                    start.0, start.1, c1.0, c1.1, c2.0, c2.1, end.0, end.1
+                ),
+                tip,
+                mid,
+                mid_angle: calculate_edge_angle(prev.0, prev.1, next.0, next.1),
+                length: polyline_length(&samples),
+            }
+        }
+    }
+}
+
+/// 初始自适应视图（`auto_fit` 打开时用）
+///
+/// SVG 版本身没有自适应：节点坐标由布局函数按画布尺寸算，画布一换尺寸内容就可能
+/// 出界。这里按节点卡片包围盒算一次 `(tx, ty, scale)`，使内容居中并完整可见。
+/// 参照 Canvas 版 `fit_viewport` 的口径（含 padding、scale 上限 1.0 不放大）。
+pub fn compute_fit_view(nodes: &[GraphNode], width: f64, height: f64) -> (f64, f64, f64) {
+    if nodes.is_empty() || width <= 0.0 || height <= 0.0 {
+        return (0.0, 0.0, 1.0);
+    }
+    let pad = 18.0;
+    let (mut min_x, mut min_y) = (f64::MAX, f64::MAX);
+    let (mut max_x, mut max_y) = (f64::MIN, f64::MIN);
+    for n in nodes {
+        let hw = node_box_width(n) / 2.0;
+        let hh = node_box_height(n) / 2.0;
+        min_x = min_x.min(n.x - hw);
+        max_x = max_x.max(n.x + hw);
+        min_y = min_y.min(n.y - hh);
+        max_y = max_y.max(n.y + hh);
+    }
+    let content_w = (max_x - min_x).max(1.0);
+    let content_h = (max_y - min_y).max(1.0);
+    let scale = ((width - 2.0 * pad) / content_w)
+        .min((height - 2.0 * pad) / content_h)
+        .clamp(0.2, 1.0);
+    let tx = (width - content_w * scale) / 2.0 - min_x * scale;
+    let ty = (height - content_h * scale) / 2.0 - min_y * scale;
+    (tx, ty, scale)
 }
 
 #[component]
@@ -440,14 +682,20 @@ pub fn Graph(props: GraphProps) -> Element {
     // 修复 M8：drag_moved 标记拖拽是否实际移动超过阈值，用于区分点击与拖拽
     let mut drag_moved = use_signal(|| false);
 
-    let mut view_transform = use_signal(|| (0.0, 0.0, 1.0));
+    let svg_width = props.svg_width.unwrap_or(800).max(160);
+    let svg_height = props.svg_height.unwrap_or(600).max(120);
+    // 初始视图：auto_fit 打开时按节点包围盒 fit 一次（参照 Canvas 版 fit_viewport），
+    // 否则维持 (0,0,1) —— 存量调用点（知识图谱 / 任务依赖图 / 全局点线）视觉零回归
+    let initial_view = if props.auto_fit {
+        compute_fit_view(&props.nodes, svg_width as f64, svg_height as f64)
+    } else {
+        (0.0, 0.0, 1.0)
+    };
+    let mut view_transform = use_signal(|| initial_view);
     let mut is_panning = use_signal(|| false);
     let mut pan_start = use_signal(|| (0.0, 0.0));
     // hover 详情卡片目标（区别于点击选中；拖拽/平移中隐藏）
     let mut hovered = use_signal(|| None::<HoverTarget>);
-
-    let svg_width = props.svg_width.unwrap_or(800).max(160);
-    let svg_height = props.svg_height.unwrap_or(600).max(120);
     // 小地图模式：卡片只保留名称（正文 / 标签省略），缩略图预览用
     let mini = props.mini.unwrap_or(false);
     // 全局点线模式（对齐 Canvas 全局模式）：圆点分支 + 跳过边标签 overlay
@@ -470,21 +718,79 @@ pub fn Graph(props: GraphProps) -> Element {
         })
         .collect();
 
-    // 边标签置顶数据：SVG 后画覆盖先画，标签组必须渲染在节点之后才不被卡片
-    // 遮挡；这里提前算好文本 / 变换 / 颜色，渲染段只做纯输出
-    // 全局点线态不绘边标签（对齐 Canvas 全局模式：点线承载类型着色，标签留给局部卡片态）
+    // 节点半宽/半高（自环绕行半径与命中层都用；点线态给统一小半径）
+    let node_half_sizes: HashMap<String, (f64, f64)> = props
+        .nodes
+        .iter()
+        .map(|n| {
+            let size = if dot_graph_mode(global_mode, mini) {
+                (10.0, 10.0)
+            } else if mini {
+                (
+                    node_card::box_width(&n.label, 0) / 2.0,
+                    node_card::box_height(0, false) / 2.0,
+                )
+            } else {
+                (node_box_width(n) / 2.0, node_box_height(n) / 2.0)
+            };
+            (n.id.clone(), size)
+        })
+        .collect();
+
+    // 自环绕行半径：节点半宽/半高取大者 + 8（弧线从卡片右缘绕出去，不压卡片本体）
+    let loop_radius_of = |id: &str| -> f64 {
+        node_half_sizes
+            .get(id)
+            .map(|(hw, hh)| hw.max(*hh) + 8.0)
+            .unwrap_or(48.0)
+    };
+
+    // 边标签置顶数据 + 边的曲线中点缓存（hover 锚点）
+    // - 标签必须渲染在节点之后：SVG 无 z-index、后画覆盖先画，否则被卡片遮挡；
+    // - 中点取自与渲染同一份几何（弧线上标签/hover 落在曲线中点，不是两端中点）；
+    // - 全局点线态不绘边标签（对齐 Canvas 全局模式：点线承载类型着色）。
+    let mut edge_mids: HashMap<(String, String), (f64, f64)> = HashMap::new();
     let edge_label_overlays: Vec<(String, String, &'static str)> =
         if dot_graph_mode(global_mode, mini) {
+            for (edge, (sx, sy), (tx, ty)) in valid_edges.iter() {
+                let radius =
+                    global_node_radius(global_degrees.get(&edge.target).copied().unwrap_or(0));
+                let geo = edge_geometry(
+                    edge,
+                    (*sx, *sy),
+                    (*tx, *ty),
+                    radius,
+                    loop_radius_of(&edge.source),
+                );
+                edge_mids
+                    .entry((edge.source.clone(), edge.target.clone()))
+                    .or_insert(geo.mid);
+            }
             Vec::new()
         } else {
             valid_edges
                 .iter()
                 .filter_map(|(edge, (sx, sy), (tx, ty))| {
+                    let radius =
+                        global_node_radius(global_degrees.get(&edge.target).copied().unwrap_or(0));
+                    let geo = edge_geometry(
+                        edge,
+                        (*sx, *sy),
+                        (*tx, *ty),
+                        radius,
+                        loop_radius_of(&edge.source),
+                    );
+                    edge_mids
+                        .entry((edge.source.clone(), edge.target.clone()))
+                        .or_insert(geo.mid);
                     let label: String = edge.label.chars().take(10).collect();
                     (!label.is_empty()).then(|| {
                         (
                             label,
-                            get_label_transform(*sx, *sy, *tx, *ty),
+                            format!(
+                                "translate({}, {}) rotate({})",
+                                geo.mid.0, geo.mid.1, geo.mid_angle
+                            ),
                             get_edge_color(&edge.label),
                         )
                     })
@@ -564,7 +870,9 @@ pub fn Graph(props: GraphProps) -> Element {
         let (tx, ty, scale) = *view_transform.read();
         let delta_y = e.delta().strip_units().y;
         let delta: f64 = if delta_y > 0.0 { 0.9 } else { 1.1 };
-        let new_scale = (scale * delta).clamp(0.5, 2.0);
+        // 上限 2.0 → 3.0：弧线/自环在放大后才看得清绕行细节；下限 0.2 兼容
+        // auto_fit 产生的更小初始缩放（否则一滚轮就跳到 0.5，视图跳变）
+        let new_scale = (scale * delta).clamp(0.2, 3.0);
         view_transform.set((tx, ty, new_scale));
     };
 
@@ -595,8 +903,9 @@ pub fn Graph(props: GraphProps) -> Element {
     let render_nodes = props.nodes.clone();
     let highlighted_ids = props.highlighted_node_ids.clone();
     // 修复 M8：on_click 已移到 handle_mouse_up，节点 mousedown 不再触发点击
+    // 重置语义 = 恢复初始态（auto_fit 打开时回到 fit 视图，而不是硬编码 (0,0,1)）
     let reset_view = move |_| {
-        view_transform.set((0.0, 0.0, 1.0));
+        view_transform.set(initial_view);
     };
 
     // hover 详情卡片数据（拖拽/平移中隐藏；节点卡与边卡统一结构，锚点为屏幕坐标）
@@ -609,6 +918,7 @@ pub fn Graph(props: GraphProps) -> Element {
                 &props.nodes,
                 &props.edges,
                 &node_positions.read(),
+                &edge_mids,
                 scale,
                 tx,
                 ty,
@@ -663,41 +973,46 @@ pub fn Graph(props: GraphProps) -> Element {
             for (edge, (sx, sy), (tx, ty)) in valid_edges.into_iter() {
                 {
                     let edge_color = get_edge_color(&edge.label);
-                    let edge_dash = get_edge_dash(&edge.label);
-                    let use_flow = edge_use_flow(&edge.label);
-                    // 线宽表达强度（颜色已被关系类型占用）；未标注走基准粗细
-                    let edge_width = edge_style::weight_style(edge.weight).0;
-                    let len = edge_length(sx, sy, tx, ty);
-                    let edge_class = if use_flow { "kg-edge-flow kg-edge-glow" } else { "kg-edge-glow" };
-                    let edge_style = format!("--len: {len}px; color: {edge_color};");
+                    // 虚线：边自带样式优先（思考路径图按 via 派生），否则按关系词表派生
+                    let edge_dash = edge
+                        .dash
+                        .clone()
+                        .unwrap_or_else(|| get_edge_dash(&edge.label).to_string());
+                    let use_flow = edge_dash == "none";
+                    // 线宽：边自带宽度优先（按数据加粗），否则按强度派生
+                    let edge_width = edge
+                        .width
+                        .unwrap_or_else(|| edge_style::weight_style(edge.weight).0);
                     // 方向性边（方案 a′）：directed 挂箭头（target 端），其余纯线
                     let edge_marker = if edge.direction == "directed" {
                         "url(#arrowhead)"
                     } else {
                         "none"
                     };
-
-                    // 整改（方案 a′）：directed 边线终点回退到 target 节点圆周外
-                    // GAP 处（半径与 Canvas 同源口径 global_node_radius），箭头尖端
-                    // （marker ref_x=10 恰落线终点）不再被后绘节点遮挡；undirected
-                    // 维持纯线到圆心零回归。透明命中层与交互逻辑零触碰。
-                    let (line_tx, line_ty) = if edge.direction == "directed" {
-                        let node_radius = global_node_radius(
-                            global_degrees.get(&edge.target).copied().unwrap_or(0),
-                        );
-                        arrow_tip_point((sx, sy), (tx, ty), node_radius)
-                    } else {
-                        (tx, ty)
-                    };
+                    // 统一几何：视觉路径 / 命中路径 / 箭头终点 / 路径长度同源
+                    // （directed 边终点沿末端切线回退到 target 半径外，箭头不再被后绘节点遮挡）
+                    let node_radius = global_node_radius(
+                        global_degrees.get(&edge.target).copied().unwrap_or(0),
+                    );
+                    let geo = edge_geometry(
+                        &edge,
+                        (sx, sy),
+                        (tx, ty),
+                        node_radius,
+                        loop_radius_of(&edge.source),
+                    );
+                    let len = geo.length;
+                    let edge_class = if use_flow { "kg-edge-flow kg-edge-glow" } else { "kg-edge-glow" };
+                    let edge_style = format!("--len: {len}px; color: {edge_color};");
+                    let path_d = geo.d.clone();
+                    let path_d_full = geo.d_full.clone();
                     // 事件闭包各自持有独立副本（move 捕获不能共享同一 String 字段）
                     let hover_enter = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
                     let hover_leave = HoverTarget::Edge(edge.source.clone(), edge.target.clone());
                     rsx! {
-                        line {
-                            x1: "{sx}",
-                            y1: "{sy}",
-                            x2: "{line_tx}",
-                            y2: "{line_ty}",
+                        path {
+                            d: "{path_d}",
+                            fill: "none",
                             stroke: "{edge_color}",
                             stroke_width: "{edge_width}",
                             stroke_dasharray: "{edge_dash}",
@@ -707,11 +1022,10 @@ pub fn Graph(props: GraphProps) -> Element {
                         }
 
                         // 透明命中层：放宽边的 hover 命中区（视觉样式不变）
-                        line {
-                            x1: "{sx}",
-                            y1: "{sy}",
-                            x2: "{tx}",
-                            y2: "{ty}",
+                        // ⚠️ 必须同步换成 path：留在 line 上会让弧线边 hover 不到
+                        path {
+                            d: "{path_d_full}",
+                            fill: "none",
                             stroke: "transparent",
                             stroke_width: "12",
                             style: "pointer-events: stroke; cursor: pointer;",
@@ -1357,6 +1671,156 @@ mod tests {
         assert!(dot_graph_mode(true, true));
         // 卡片态（放大弹窗 / 局部关系图）不进点线分支
         assert!(!dot_graph_mode(false, false));
+    }
+
+    // ==================== 弧线引擎守卫 ====================
+    // 目的：曲率/箭头切线/路径长度是同一份几何的三处消费点，任何一处算错
+    // 都会表现为「箭头插进节点」「流光动画节奏不对」这类只在人眼可见的回归。
+
+    fn edge_with(curve: Option<EdgeCurve>, direction: &str) -> GraphEdge {
+        GraphEdge {
+            source: "a".to_string(),
+            target: "b".to_string(),
+            label: "×2 · s1,2".to_string(),
+            weight: None,
+            direction: direction.to_string(),
+            curve,
+            dash: None,
+            width: None,
+        }
+    }
+
+    #[test]
+    fn straight_geometry_keeps_legacy_tip_and_length() {
+        let e = edge_with(None, "directed");
+        let geo = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 12.0, 48.0);
+        // 直线：终点回退口径必须与旧实现逐位一致（arrow_tip_point）
+        let legacy = arrow_tip_point((100.0, 100.0), (400.0, 100.0), 12.0);
+        assert!((geo.tip.0 - legacy.0).abs() < 1e-9 && (geo.tip.1 - legacy.1).abs() < 1e-9);
+        assert!(geo.d.starts_with("M 100 100 L"), "{}", geo.d);
+        assert!((geo.length - 300.0).abs() < 1e-9, "直线长度应为弦长");
+        assert!((geo.mid.0 - 250.0).abs() < 1e-9 && (geo.mid.1 - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn arc_geometry_bulges_by_declared_amount_at_mid() {
+        let e = edge_with(Some(EdgeCurve::Arc(20.0)), "undirected");
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, 48.0);
+        assert!(geo.d.contains('Q'), "弧线必须走二次贝塞尔: {}", geo.d);
+        // Arc(d) 的语义 = 曲线中点偏移量，中点 = (P0+2P1+P2)/4 恰为 d
+        assert!((geo.mid.0 - 50.0).abs() < 1e-9, "{}", geo.mid.0);
+        assert!(
+            (geo.mid.1 - 20.0).abs() < 1e-9,
+            "中点弧高应等于声明值: {}",
+            geo.mid.1
+        );
+        // 曲线必然比弦长（流光动画按路径长度算，用弦长会越走越快）
+        assert!(
+            geo.length > 100.0 + 1e-6,
+            "弧线长度应大于弦长: {}",
+            geo.length
+        );
+    }
+
+    #[test]
+    fn arc_arrow_tip_follows_end_tangent_not_chord() {
+        let e = edge_with(Some(EdgeCurve::Arc(30.0)), "directed");
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, 48.0);
+        let control = quadratic_control(0.0, 0.0, 100.0, 0.0, 30.0);
+        // ① 反推回去：tip 必须落在「控制点 → 终点」射线上（弧线末端切线方向）
+        let dx = 100.0 - control.0;
+        let dy = 0.0 - control.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        let expect = (
+            100.0 - dx / len * (12.0 + 2.0),
+            0.0 - dy / len * (12.0 + 2.0),
+        );
+        assert!(
+            (geo.tip.0 - expect.0).abs() < 1e-9 && (geo.tip.1 - expect.1).abs() < 1e-9,
+            "箭头终点必须沿末端切线回退: {:?} vs {:?}",
+            geo.tip,
+            expect
+        );
+        // ② 与「用直线向量回退」的旧口径必须有差别，否则说明切线逻辑没生效
+        let legacy = arrow_tip_point((0.0, 0.0), (100.0, 0.0), 12.0);
+        assert!(
+            (geo.tip.1 - legacy.1).abs() > 1.0,
+            "弧线箭头应明显偏离直线口径: {:?} vs {:?}",
+            geo.tip,
+            legacy
+        );
+    }
+
+    #[test]
+    fn loop_geometry_uses_cubic_and_bulges_right() {
+        let e = edge_with(Some(EdgeCurve::Loop), "directed");
+        let geo = edge_geometry(&e, (200.0, 200.0), (200.0, 200.0), 12.0, 48.0);
+        assert!(geo.d.contains('C'), "自环必须走三次贝塞尔: {}", geo.d);
+        assert!(geo.mid.0 > 200.0, "自环应绕到节点右侧: {}", geo.mid.0);
+        assert!(geo.length > 40.0, "自环绕行长度不应退化: {}", geo.length);
+    }
+
+    #[test]
+    fn mid_angle_stays_parallel_to_chord_for_arc_and_turns_for_loop() {
+        // 二次贝塞尔的中点切线**恒平行于两端连线**（平行四边形性质）：
+        // 弧顶标签仍沿「起点→终点」方向摆放，不会歪成别的角度。
+        let e = edge_with(Some(EdgeCurve::Arc(40.0)), "undirected");
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 100.0), 12.0, 48.0);
+        assert!((geo.mid_angle - 45.0).abs() < 1e-6, "{}", geo.mid_angle);
+        // 自环是三次贝塞尔：中点切线由控制点决定，在右侧绕行段近垂直
+        let loop_e = edge_with(Some(EdgeCurve::Loop), "undirected");
+        let loop_geo = edge_geometry(&loop_e, (200.0, 200.0), (200.0, 200.0), 12.0, 48.0);
+        assert!(
+            loop_geo.mid_angle.abs() > 45.0,
+            "自环中点切线应近垂直: {}",
+            loop_geo.mid_angle
+        );
+    }
+
+    #[test]
+    fn fit_view_keeps_all_nodes_inside_canvas() {
+        let nodes = vec![
+            GraphNode {
+                id: "a".to_string(),
+                label: "A".to_string(),
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            GraphNode {
+                id: "b".to_string(),
+                label: "B".to_string(),
+                x: 1000.0,
+                y: 800.0,
+                ..Default::default()
+            },
+        ];
+        let (tx, ty, scale) = compute_fit_view(&nodes, 300.0, 200.0);
+        assert!(scale > 0.0 && scale <= 1.0, "fit 只缩小不放大: {scale}");
+        for n in &nodes {
+            let hw = node_box_width(n) / 2.0;
+            let hh = node_box_height(n) / 2.0;
+            let left = (n.x - hw) * scale + tx;
+            let right = (n.x + hw) * scale + tx;
+            let top = (n.y - hh) * scale + ty;
+            let bottom = (n.y + hh) * scale + ty;
+            assert!(
+                left >= -0.01 && right <= 300.01,
+                "节点 {0} 横向出界: {left}~{right}",
+                n.id
+            );
+            assert!(
+                top >= -0.01 && bottom <= 200.01,
+                "节点 {0} 纵向出界: {top}~{bottom}",
+                n.id
+            );
+        }
+    }
+
+    #[test]
+    fn fit_view_on_empty_or_degenerate_input_is_identity() {
+        assert_eq!(compute_fit_view(&[], 300.0, 200.0), (0.0, 0.0, 1.0));
+        assert_eq!(compute_fit_view(&[], 0.0, 0.0), (0.0, 0.0, 1.0));
     }
 
     #[test]

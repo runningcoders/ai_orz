@@ -340,6 +340,8 @@ pub fn type_label(t: &str) -> &str {
         "task_completed" => "任务（已完成）",
         "task_archived" => "任务（已归档）",
         "task" => "任务",
+        // 思考路径图（graph::get_node_fill 的 think_step 配色对应中文标签）
+        "think_step" => "思考节点",
         "" => "未知",
         other => other,
     }

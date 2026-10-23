@@ -668,6 +668,10 @@ fn build_task_graph_data(
                     weight: None,
                     // 任务依赖图语义有向（前置 → 任务）：保持既有恒挂箭头行为零回退
                     direction: "directed".to_string(),
+                    // 直边 / 词表派生虚线 / 强度派生线宽（存量视觉零变化）
+                    curve: None,
+                    dash: None,
+                    width: None,
                 })
         })
         .collect();

@@ -9,6 +9,8 @@
 //! - `AgentTracePanel`: Agent 详情页轨迹面板（左侧 run 列表 + 右侧记忆段 / 轮次时间线主从联动）
 //! - `MemoryTraceDetail`: 单条记忆轨迹详情（input / output / metadata），面板与弹窗共用
 //! - `ThinkRoundsTimeline`: 思考轮次时间线（面板与思考轨迹 Tab 共用）
+//! - `ThinkPathGraphView`: 思考路径图视图（同名节点复用 + 转移边聚合 + 图/列表双视图 +
+//!   缩略图 + 放大弹窗；思考轨迹 Tab 与 Agent 轨迹面板共用同一组件，防两处漂移）
 //! - `ProjectAgentsTab`: 项目模式 Agent Tab —— 项目内 Agent 列表（assignee 推导）
 //!   与单 Agent 详情子页（复用 `AgentInfoTab`），面板内视图切换不走路由
 //! - `CancelThinkingButton`: 「停止思考」按钮（含二次确认），对话内取消目标 Agent
@@ -20,6 +22,7 @@ pub mod chat_side_panel;
 pub mod memory_trace_detail;
 pub mod message_bubble;
 pub mod project_agents_tab;
+pub mod think_path_graph_view;
 pub mod think_rounds_timeline;
 pub mod think_traces_tab;
 pub mod tool_calls_tab;
@@ -30,6 +33,7 @@ pub use cancel_thinking_button::{CancelThinkingButton, CancelThinkingStyle};
 pub use chat_side_panel::ChatSidePanel;
 pub use message_bubble::MessageBubble;
 pub use project_agents_tab::ProjectAgentsTab;
+pub use think_path_graph_view::ThinkPathGraphView;
 pub use think_traces_tab::ThinkTracesTab;
 pub use tool_calls_tab::ToolCallsTab;
 pub use typing_indicator::TypingIndicator;
