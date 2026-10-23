@@ -205,17 +205,17 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 
 | 文件 | 角色 | 关键结构/入口 |
 |------|------|-------------|
-| [pkg/adapter/message.rs](/src/pkg/adapter/message.rs) | 中台：trait + 注册中心 | MessageInboundAdapter ~L46；MessageAdapterCallback ~L36；MessageAdapterRegistry（start_all/stop_all/register）~L82 |
-| [pkg/adapter/mod.rs](/src/pkg/adapter/mod.rs) | 中台：父层 AdaptedMessage + AdapterRegistry 通用注册表 | AdaptedMessage ~L21；AdapterRegistry HashMap<ChannelType, Arc<dyn Any>> ~L47 |
-| [service/domain/message/inbound.rs](/src/service/domain/message/inbound.rs) | 【2026-09 新增】domain 层入站适配门面 | InboundSource 枚举（Lark/Wechat）L24；MessageInboundAdapt trait L36；impl 分发到 lark_dal.adapt_lark / wechat_dal.adapt_wechat L51 |
-| [service/domain/message/mod.rs](/src/service/domain/message/mod.rs) | domain 层：MessageDomainImpl 聚合含 lark_dal/wechat_dal | MessageDomainImpl struct 新增字段 L82；new() 构造注入 L45；inbound() trait 入口 L123 |
-| [dal/lark.rs](/src/service/dal/lark.rs) | Lark 渠道：MessageInboundAdapter 实现 + start 多应用聚合 | impl MessageInboundAdapter for LarkMessageChannelDal ~L632；start 内：query_enabled_lark_channels + 按 app_id 聚合去重 + resolve_channel_credentials + lark_dao 开 WS |
-| [dal/wechat/impl.rs](/src/service/dal/wechat/impl.rs) | 微信渠道：MessageInboundAdapter 实现（**瘦身**）| WechatDalImpl struct L37：已无自存 callback 字段；start(&self, _callback) L361：callback 不再持有，统一经 registry().current_callback() 取用 |
-| [dal/message_channel.rs](/src/service/dal/message_channel.rs) | 消息渠道 DAL：出站分发（对照参考）| push_to_channel ChannelType match 纯分发（入站走独立 trait）~L329 |
-| [consumer/lark_inbound.rs](/src/consumer/lark_inbound.rs) | 【简化后】无状态 Lark 入站 Consumer | `#[derive(Default)] LarkInboundConsumer` L19；on_event 两步：domain 门面适配 → registry 回调投递 L43-L72 |
-| [consumer/wechat_inbound.rs](/src/consumer/wechat_inbound.rs) | 【简化后】无状态微信入站 Consumer | 同上 L18-L79 |
-| [consumer/mod.rs](/src/consumer/mod.rs) | Consumer 注册中心：零参数构造 | init() 注册 LarkInboundConsumer::new() / WechatInboundConsumer::new() L21-L58；不再注入 DAL 弱引用 |
-| [producer/message_channel.rs](/src/producer/message_channel.rs) | AOP 消息通道生产者：注入回调 + start_all/stop_all + AdaptedMessage → NewMessageEvent 映射 | init 阶段注册回调（回调被中台 registry 登记，consumer 经 current_callback() 取用）|
+| [pkg/adapter/message.rs](src/pkg/adapter/message.rs) | 中台：trait + 注册中心 | MessageInboundAdapter ~L46；MessageAdapterCallback ~L36；MessageAdapterRegistry（start_all/stop_all/register）~L82 |
+| [pkg/adapter/mod.rs](src/pkg/adapter/mod.rs) | 中台：父层 AdaptedMessage + AdapterRegistry 通用注册表 | AdaptedMessage ~L21；AdapterRegistry HashMap<ChannelType, Arc<dyn Any>> ~L47 |
+| [service/domain/message/inbound.rs](src/service/domain/message/inbound.rs) | 【2026-09 新增】domain 层入站适配门面 | InboundSource 枚举（Lark/Wechat）L24；MessageInboundAdapt trait L36；impl 分发到 lark_dal.adapt_lark / wechat_dal.adapt_wechat L51 |
+| [service/domain/message/mod.rs](src/service/domain/message/mod.rs) | domain 层：MessageDomainImpl 聚合含 lark_dal/wechat_dal | MessageDomainImpl struct 新增字段 L82；new() 构造注入 L45；inbound() trait 入口 L123 |
+| [dal/lark.rs](src/service/dal/lark/mod.rs) | Lark 渠道：MessageInboundAdapter 实现 + start 多应用聚合 | impl MessageInboundAdapter for LarkMessageChannelDal ~L632；start 内：query_enabled_lark_channels + 按 app_id 聚合去重 + resolve_channel_credentials + lark_dao 开 WS |
+| [dal/wechat/impl.rs](src/service/dal/wechat/impl.rs) | 微信渠道：MessageInboundAdapter 实现（**瘦身**）| WechatDalImpl struct L37：已无自存 callback 字段；start(&self, _callback) L361：callback 不再持有，统一经 registry().current_callback() 取用 |
+| [dal/message_channel.rs](src/service/dal/message_channel.rs) | 消息渠道 DAL：出站分发（对照参考）| push_to_channel ChannelType match 纯分发（入站走独立 trait）~L329 |
+| [consumer/lark_inbound.rs](src/consumer/lark_inbound.rs) | 【简化后】无状态 Lark 入站 Consumer | `#[derive(Default)] LarkInboundConsumer` L19；on_event 两步：domain 门面适配 → registry 回调投递 L43-L72 |
+| [consumer/wechat_inbound.rs](src/consumer/wechat_inbound.rs) | 【简化后】无状态微信入站 Consumer | 同上 L18-L79 |
+| [consumer/mod.rs](src/consumer/mod.rs) | Consumer 注册中心：零参数构造 | init() 注册 LarkInboundConsumer::new() / WechatInboundConsumer::new() L21-L58；不再注入 DAL 弱引用 |
+| [producer/message_channel.rs](src/producer/message_channel.rs) | AOP 消息通道生产者：注入回调 + start_all/stop_all + AdaptedMessage → NewMessageEvent 映射 | init 阶段注册回调（回调被中台 registry 登记，consumer 经 current_callback() 取用）|
 | 【① Design】message_channel_design.md（入站+出站全链路架构）| 入站适配器中台 vs 出站 push_to_channel 双路径对称设计 | docs/archive/design-archive/message_channel_design.md |
 | 【③ Wiki 长文 1】消息渠道适配器.md | 新增入站渠道三步流程（用户视角） | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md |
 | 【③ Wiki 长文 2】多渠道消息系统.md | 入站+出站全链路图 | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md |
@@ -223,9 +223,9 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 | 【③ Wiki 长文 4】消息渠道管理.md | 前端管理员创建/绑定渠道到 open_id，lark_listen_inbound 开关 | docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md |
 | 【平行卡 1】身份凭证 Domain 统一 CRUD（飞书渠道凭证引用解析依赖）| 渠道只存 lark_credential_id 引用，不存明文凭证 | source_files[] 尾平行卡1 路径 |
 | 【平行卡 2】AES-256-GCM 敏感字段加密（凭证引用解析后拿到的 secret 要解密使用）| encrypt_channel_secret 闭包注入 | source_files[] 尾平行卡2 路径 |
-| [dal/message_channel.rs](/src/service/dal/message_channel.rs) (2026-09 增量：scope_project 双写落库断链修复 + CLEAR 哨兵) | MessageChannel DAO 清除绑定 | DAO 落库必须同时更新 scope_project + channel 双表的关联元数据（agent_id / user_id / credential_id 等）；新增 CLEAR_* sentinel 通用清除标记（禁止 handler 手动置空）|
-| [domain/finance/message_channel.rs](/src/service/domain/finance/message_channel.rs) (2026-09 增量) | domain 层清除逻辑 | 解除 Agent 绑定必须走通用清除哨兵而非手动 UPDATE 置空 agent_id，防止悬空引用残留 |
-| [models/message_channel.rs](/src/models/message_channel.rs) (2026-09 增量) | 模型层 CLEAR sentinel | 新增 CLEAR_AGENT_ID / CLEAR_USER_ID / CLEAR_CREDENTIAL_ID 等通用清除哨兵常量，DAO 层据此识别"清除"语义 vs 正常 NULL |
+| [dal/message_channel.rs](src/service/dal/message_channel.rs) (2026-09 增量：scope_project 双写落库断链修复 + CLEAR 哨兵) | MessageChannel DAO 清除绑定 | DAO 落库必须同时更新 scope_project + channel 双表的关联元数据（agent_id / user_id / credential_id 等）；新增 CLEAR_* sentinel 通用清除标记（禁止 handler 手动置空）|
+| [domain/finance/message_channel.rs](src/service/domain/finance/message_channel.rs) (2026-09 增量) | domain 层清除逻辑 | 解除 Agent 绑定必须走通用清除哨兵而非手动 UPDATE 置空 agent_id，防止悬空引用残留 |
+| [models/message_channel.rs](src/models/message_channel.rs) (2026-09 增量) | 模型层 CLEAR sentinel | 新增 CLEAR_AGENT_ID / CLEAR_USER_ID / CLEAR_CREDENTIAL_ID 等通用清除哨兵常量，DAO 层据此识别"清除"语义 vs 正常 NULL |
 
 ## §3 架构约定
 

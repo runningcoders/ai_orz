@@ -10,7 +10,7 @@
 - [common/src/enums/mcp_server.rs](common/src/enums/mcp_server.rs)
 - [src/pkg/tool_registry/mcp.rs](src/pkg/tool_registry/mcp.rs)
 - [src/service/dal/mcp_tool.rs](src/service/dal/mcp_tool.rs)
-- [docs/mcp_tool_design.md](docs/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [frontend/src/pages/finance/mcp_servers.rs](frontend/src/pages/finance/mcp_servers.rs)
 </cite>
 
@@ -181,14 +181,14 @@ Keep --> Done
 
 图表来源
 - [src/service/dal/mcp_tool.rs:143-185](src/service/dal/mcp_tool.rs#L143-L185)
-- [docs/mcp_tool_design.md:341-349](docs/mcp_tool_design.md#L341-L349)
-- [docs/mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md:1312-1327](docs/archive/design-archive/mcp_tool_design.md)
 
 章节来源
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 - [src/service/dal/mcp_tool.rs:143-185](src/service/dal/mcp_tool.rs#L143-L185)
-- [docs/mcp_tool_design.md:341-349](docs/mcp_tool_design.md#L341-L349)
-- [docs/mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md:1312-1327](docs/archive/design-archive/mcp_tool_design.md)
 
 ### 组件C：MCP协议握手与工具发现
 职责
@@ -289,7 +289,7 @@ M --> E["远端MCP服务器"]
 章节来源
 - [src/models/mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
 - [src/pkg/tool_registry/mcp.rs:107-140](src/pkg/tool_registry/mcp.rs#L107-L140)
-- [docs/mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
+- [docs/mcp_tool_design.md:1312-1327](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 结论
 MCP服务器管理处理器以清晰的四层架构实现了配置管理、工具同步与健康观察。当前实现强调安全性（脱敏）、稳定性（超时保护）与一致性（Stale/恢复策略）。未来可根据性能需求引入连接池、重连与健康检查，进一步提升大规模场景下的可用性与效率。

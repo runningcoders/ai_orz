@@ -104,12 +104,12 @@ let _guard = BusyGuard::new(agent_id.clone());
 
 | 文件 | 角色 | 关键结构/入口 |
 |------|------|-------------|
-| [pkg/agent_runtime_state.rs](/src/pkg/agent_runtime_state.rs) | 全局单例 + 三态 + 列表过滤 | AgentRuntimeInfo ~L16；set_busy/try_set_busy ~L282；set_resting ~L266；set_idle ~L340；list_runtime_agents 三过滤 ~L358；AgentThinkRuntime ~L105；单元测试 ~L473 |
-| [runtime/busy_guard.rs](/src/service/domain/runtime/busy_guard.rs) | RAII | Drop：先 clear_think_runtime，再 set_idle。全局唯一！|
-| [handlers/runtime_status.rs](/src/handlers/hr/agent/runtime_status.rs) | 单 Agent 状态接口 | domain().get_runtime_status → RuntimeStatusResponse |
-| [handlers/runtime_list.rs](/src/handlers/hr/agent/runtime_list.rs) | 列表三过滤接口 | domain().list_runtime_agents(state, task_id?, project_id?) |
-| [awakening.rs](/src/service/domain/runtime/awakening.rs) | awaken 内 set_busy + BusyGuard + sleep_and_settle 内 set_resting + BusyGuard | awaken 入口 set_busy + _guard ~L200；sleep_and_settle set_resting + _rest_guard ~L635 |
-| [consumer/message.rs](/src/consumer/message.rs) | consumer 多实例用 try_set_busy 防并发 | handle_agent_message try_set_busy → false 跳过唤醒 |
+| [pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs) | 全局单例 + 三态 + 列表过滤 | AgentRuntimeInfo ~L16；set_busy/try_set_busy ~L282；set_resting ~L266；set_idle ~L340；list_runtime_agents 三过滤 ~L358；AgentThinkRuntime ~L105；单元测试 ~L473 |
+| [runtime/busy_guard.rs](src/service/domain/runtime/busy_guard.rs) | RAII | Drop：先 clear_think_runtime，再 set_idle。全局唯一！|
+| [handlers/runtime_status.rs](src/handlers/hr/agent/runtime_status.rs) | 单 Agent 状态接口 | domain().get_runtime_status → RuntimeStatusResponse |
+| [handlers/runtime_list.rs](src/handlers/hr/agent/runtime_list.rs) | 列表三过滤接口 | domain().list_runtime_agents(state, task_id?, project_id?) |
+| [awakening.rs](src/service/domain/runtime/awakening.rs) | awaken 内 set_busy + BusyGuard + sleep_and_settle 内 set_resting + BusyGuard | awaken 入口 set_busy + _guard ~L200；sleep_and_settle set_resting + _rest_guard ~L635 |
+| [consumer/message.rs](src/consumer/message.rs) | consumer 多实例用 try_set_busy 防并发 | handle_agent_message try_set_busy → false 跳过唤醒 |
 | 【① Design 1】runtime_design.md §Agent 状态机 | Idle/Busy/Resting 三态设计 | docs/design/runtime_design.md |
 | 【① Design 2】thinking_task_policy_engine_design.md §103 | 业务上下文字段归属决策（task_id/project_id 放 runtime_info vs 其他地方） | docs/design/thinking_task_policy_engine_design.md |
 | 【③ Wiki 长文 1】思考运行时面板观测接口.md | 前端调用 runtime_status/runtime_list 的面板说明 | docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md |

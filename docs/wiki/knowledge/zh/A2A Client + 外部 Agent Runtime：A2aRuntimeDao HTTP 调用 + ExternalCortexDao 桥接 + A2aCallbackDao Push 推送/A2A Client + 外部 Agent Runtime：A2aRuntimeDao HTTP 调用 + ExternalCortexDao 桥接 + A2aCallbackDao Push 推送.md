@@ -76,7 +76,7 @@ source_files:
 | [dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs) | HTTP A2A 远程实现 | A2aRuntimeConfig(endpoint/agent_name/auth_token/timeout)；execute_a2a_send；call_a2a_jsonrpc 通用 JSON-RPC HTTP；REQUEST_ID_COUNTER 单调 |
 | [dao/agent_runtime/codex.rs](src/service/dao/agent_runtime/codex.rs) | CLI 子进程实现 | tokio::process::Command stdin/stdout 异步；work_dir/env/timeout 配置；prompt_template {prompt} 占位替换 |
 | [dao/cortex/external.rs](src/service/dao/cortex/external.rs) | ExternalCortexDao 桥接 | from_agent(agent: &AgentPo) -> Option<Self>（按 ExternalAgentConfig 构造 runtime_dao）；think() 提取 last user prompt → invoke → ThinkResult::Final |
-| [dal/agent_a2a.rs](src/service/dal/agent_a2a.rs) | A2aAgentDal 委托 | struct A2aAgentDal { base: Arc<dyn AgentDal> }；impl AgentDal 全方法委托 base；未重写 prompt_builder（Default）|
+| [dal/agent_a2a.rs](src/service/dal/agent/a2a.rs) | A2aAgentDal 委托 | struct A2aAgentDal { base: Arc<dyn AgentDal> }；impl AgentDal 全方法委托 base；未重写 prompt_builder（Default）|
 | [dal/message_channel.rs](src/service/dal/message_channel.rs) | A2A callback 业务组装 | `build_a2a_task(ctx, message, channel) -> Result<A2aTask>`（查项目 + 查消息历史 + 状态映射）；`map_project_status_to_a2a(ProjectStatus) -> A2aTaskState`；`a2a_callback_webhook_url(channel)`；调用 a2a_callback.push_task |
 | [dal/agent/runtime.rs](src/service/dal/agent/runtime.rs) | AgentRuntimeDal（全新） | `trait AgentRuntimeDal`；`fetch_remote_task(ctx, agent, remote_task_id) -> Result<A2aTask>`（tasks/get JSON-RPC） |
 | [dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs) | A2aCallbackDao trait（瘦身） | `push_task(ctx, webhook_url, &A2aTask) -> Result<()>`（纯 HTTP 出站，test_connection 删除） |

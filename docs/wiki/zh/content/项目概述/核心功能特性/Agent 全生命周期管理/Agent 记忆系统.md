@@ -13,7 +13,7 @@
 - [settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
 - [vector.rs（存储抽象）](src/pkg/storage/vector.rs)
 - [mod.rs（存储门面）](src/pkg/storage/mod.rs)
-- [20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 - [memory_test.rs（集成测试）](tests/integration/memory_test.rs)
 - [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md)
 </cite>
@@ -96,7 +96,7 @@ A2 --> V1
 章节来源
 - [memory.rs:158-320](src/models/memory.rs#L158-L320)
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
-- [20260712000000_memory_fts5.sql:1-92](migrations/20260712000000_memory_fts5.sql#L1-L92)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 
 ## 架构总览
 记忆系统采用分层解耦设计：
@@ -265,7 +265,7 @@ R-->>H : 沉淀完成
 章节来源
 - [vector.rs（DAO 向量层）:36-124](src/service/dao/memory/vector.rs#L36-L124)
 - [vector.rs（存储抽象）:18-74](src/pkg/storage/vector.rs#L18-L74)
-- [20260712000000_memory_fts5.sql:12-79](migrations/20260712000000_memory_fts5.sql#L12-L79)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 
 ### 记忆的生命周期管理与清理策略
 - 状态机
@@ -336,7 +336,7 @@ DAO_M --> FS["JSONL(原始追踪)"]
 
 章节来源
 - [memory_test.rs:486-522](tests/integration/memory_test.rs#L486-L522)
-- [20260712000000_memory_fts5.sql:12-79](migrations/20260712000000_memory_fts5.sql#L12-L79)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 - [vector.rs（存储抽象）:51-73](src/pkg/storage/vector.rs#L51-L73)
 
 ## 结论

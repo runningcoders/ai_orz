@@ -16,7 +16,7 @@
 - [src/pkg/tool_registry/http.rs](src/pkg/tool_registry/http.rs)
 - [src/service/dao/lark/ws.rs](src/service/dao/lark/ws.rs)
 - 【④ RAG 知识卡】[pkg 基建统一](docs/wiki/knowledge/zh/pkg%20基建统一：pkg/http%20+%20pkg/process/exec%20+%20pkg/ws%20单一原语/pkg%20基建统一：pkg/http%20+%20pkg/process/exec%20+%20pkg/ws%20单一原语.md) — HTTP + process + WS 三件套硬约束 §4 七条
-- 【关联长文】[内置工具系统](docs/wiki/zh/content/基础设施/工具注册表/内置工具系统.md) — shell_exec / http_fetch 内置工具走 pkg::process::exec / pkg::http::ssrf_guarded
+- 【关联长文】[内置工具系统](docs/wiki/zh/content/基础设施/工具注册表/内置工具系统/内置工具系统.md) — shell_exec / http_fetch 内置工具走 pkg::process::exec / pkg::http::ssrf_guarded
 - 【关联长文】[HTTP 工具](docs/wiki/zh/content/基础设施/工具注册表/HTTP%20工具.md) — HTTP 工具内置 builtin fetch_remote_content 走 pkg::http::presets
 - 【关联长文】[Shell 执行工具](docs/wiki/zh/content/基础设施/工具注册表/Shell%20执行工具.md) — shell_exec builtin 走 pkg::process::exec wait_with_output
 - 【关联卡】[联邦组网地基](docs/wiki/knowledge/zh/联邦组网地基：scope%20三态%20+%20organization_links%20+%20pairing_code%20+%20目录同步%20+%20WS%20长连接/联邦组网地基：scope%20三态%20+%20organization_links%20+%20pairing_code%20+%20目录同步%20+%20WS%20长连接.md) — 联邦 WS 长连接业务层消费 pkg::ws 通用管理器

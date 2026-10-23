@@ -5,7 +5,7 @@
 > 状态：v1.0（2026-08-20 最后更新）
 >
 > 关联文档：
-> - [AGENTS.md](../AGENTS.md) — Agent 快速入门手册
+> - [AGENTS.md](AGENTS.md) — Agent 快速入门手册
 > - [ARCHITECTURE.md](./ARCHITECTURE.md) — 架构总纲（实体关系、设计哲学）
 > - [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实践与避坑
 > - [DOCUMENTATION.md](./DOCUMENTATION.md) — 文档编写与维护规范
@@ -152,7 +152,7 @@ pub enum TaskStatus {
 - 提供 `from_i32()`/`to_i32()` 辅助方法
 - **权限类枚举例外**：UserRole 未知值落最低权限 `Member`，防提权
 
-参考实现：[task.rs](../common/src/enums/task.rs)
+参考实现：[task.rs](common/src/enums/task.rs)
 
 ### 5.2 纯领域型
 
@@ -162,7 +162,7 @@ pub enum TaskStatus {
 - 实现 `From<String>` 字符串匹配
 - ⚠️ `KnowledgeRelationType` 是**展示词表**，不是存储类型：`relation_type` 落库存写入方标注的**原文**，`From<String>` 只作归类（未知值落 `Custom`），**禁止用在写入路径** —— 词表外的原文会被塌成 `Custom` 而永久丢失
 
-参考实现：[memory.rs](../common/src/enums/memory.rs)
+参考实现：[memory.rs](common/src/enums/memory.rs)
 
 ### 5.2.1 API 字符串入参的解析契约（⚠️ 强制）
 
@@ -187,8 +187,8 @@ pub enum TaskStatus {
 只有**请求侧**出现「闭集字符串 → 枚举」的解析。详见
 [memory_design.md §16.4](memory_design.md)。
 
-参考实现：[memory.rs](../common/src/enums/memory.rs)、
-[search_memory.rs](../src/handlers/hr/agent/search_memory.rs)
+参考实现：[memory.rs](common/src/enums/memory.rs)、
+[search_memory.rs](src/handlers/hr/agent/search_memory.rs)
 
 ### 5.3 SQL 侧配合
 

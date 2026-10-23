@@ -13,8 +13,8 @@
 - [common/src/api/tool.rs](common/src/api/tool.rs)
 - [src/handlers/finance/tool/bind_tool_to_agent.rs](src/handlers/finance/tool/bind_tool_to_agent.rs)
 - [docs/archive/design-archive/project_management_design.md](docs/archive/design-archive/project_management_design.md)
-- [docs/message_interaction_design.md](docs/message_interaction_design.md)
-- [docs/stats_query_design.md](docs/stats_query_design.md)
+- [docs/message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
 - [AgentRuntimeInfo 状态机 + BusyGuard RAII：Idle/Busy/Resting 三态转换 + task_id/project_id 业务上下文 + 前端 runtime-list 过滤](docs/wiki/knowledge/zh/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md)
 - [src/handlers/hr/agent/association.rs](src/handlers/hr/agent/association.rs)
@@ -278,7 +278,7 @@ Stats --> End(["结束"])
   - AgentStateEvent：运行时状态变更（idle/busy/resting）
 - 统计查询
   - AgentStatsDao 提供唤醒次数、QPS、瞬时 QPS 等聚合查询
-  - 参考路径：[统计查询设计:195-252](docs/stats_query_design.md#L195-L252)、[AgentStatsDao 实现:160-200](src/service/dao/agent/mod.rs#L160-L200)
+  - 参考路径：[统计查询设计:195-252](docs/archive/design-archive/stats_query_design.md#L195-L252)、[AgentStatsDao 实现:160-200](src/service/dao/agent/mod.rs#L160-L200)
 - 日志与追踪
   - 使用 RequestContext.log_id 串联链路
   - 通过 AOP 同步转发事件，便于集中采集与可视化
@@ -290,7 +290,7 @@ Stats --> End(["结束"])
 章节来源
 - [src/service/domain/runtime/awakening.rs:218-323](src/service/domain/runtime/awakening.rs#L218-L323)
 - [src/service/domain/runtime/awakening.rs:624-739](src/service/domain/runtime/awakening.rs#L624-L739)
-- [docs/stats_query_design.md:195-252](docs/stats_query_design.md#L195-L252)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [src/service/dao/agent/mod.rs:160-200](src/service/dao/agent/mod.rs#L160-L200)
 
 ## 依赖关系分析

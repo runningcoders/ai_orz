@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
 - [src/pkg/storage/vector.rs](src/pkg/storage/vector.rs)
-- [migrations/20260505000000_vector_metadata.sql](migrations/20260505000000_vector_metadata.sql)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 - [common/src/config.rs](common/src/config.rs)
 - [src/models/vector.rs](src/models/vector.rs)
 - [src/service/dal/skill.rs](src/service/dal/skill.rs)
@@ -50,12 +50,12 @@ B --> J["SQLx Migrate 运行迁移"]
 图表来源
 - [src/pkg/storage/mod.rs:56-133](src/pkg/storage/mod.rs#L56-L133)
 - [src/pkg/storage/vector.rs:79-92](src/pkg/storage/vector.rs#L79-L92)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
 - [common/src/config.rs:100-203](common/src/config.rs#L100-L203)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ## 核心组件
 - Storage：统一入口，负责连接池、迁移、Stats 初始化与向量后端选择。
@@ -122,7 +122,7 @@ SqliteVssStore --> VirtualTable_vss_collection : "读写向量"
 图表来源
 - [src/pkg/storage/mod.rs:36-167](src/pkg/storage/mod.rs#L36-L167)
 - [src/pkg/storage/vector.rs:76-291](src/pkg/storage/vector.rs#L76-L291)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ## 详细组件分析
 
@@ -146,11 +146,11 @@ Note over Store,VSS : 元数据与向量解耦，便于过期与模型管理
 
 图表来源
 - [src/pkg/storage/vector.rs:94-124](src/pkg/storage/vector.rs#L94-L124)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/pkg/storage/vector.rs:83-124](src/pkg/storage/vector.rs#L83-L124)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ### 向量查询流程与相似度排序
 - 查询步骤：将查询向量序列化为 JSON，调用 vss_{collection}.embedding MATCH json(?)，JOIN 元数据表过滤过期项，按 distance 升序取 top_k。
@@ -197,10 +197,10 @@ INTEGER expire_at
 ```
 
 图表来源
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 章节来源
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ### 系统依赖要求与扩展加载过程
 - 系统依赖：需要 SQLite 编译或运行时加载 vss0 扩展（load_extension('vss0')）。
@@ -219,7 +219,7 @@ INTEGER expire_at
 - 执行时机：Storage::new 中通过 sqlx::migrate!("./migrations") 自动运行迁移，确保表结构就绪。
 
 章节来源
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 - [src/pkg/storage/mod.rs:72-76](src/pkg/storage/mod.rs#L72-L76)
 
 ### 配置项与后端选择
@@ -320,7 +320,7 @@ SqliteVssStore 通过 vss0 虚拟表与 vector_metadata 元数据表的协同，
 章节来源
 - [src/pkg/storage/mod.rs:56-133](src/pkg/storage/mod.rs#L56-L133)
 - [src/pkg/storage/vector.rs:83-92](src/pkg/storage/vector.rs#L83-L92)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ### 性能调优参数
 - 连接池：max_connections=5（默认，适合 SQLite 单文件写限制）。

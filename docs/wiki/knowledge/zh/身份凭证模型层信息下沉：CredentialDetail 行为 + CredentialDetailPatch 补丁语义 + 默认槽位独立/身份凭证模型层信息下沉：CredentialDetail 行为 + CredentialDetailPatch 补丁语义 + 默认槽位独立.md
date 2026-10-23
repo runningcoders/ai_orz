@@ -43,7 +43,7 @@ source_files:
 | 文件 | 角色 | 关键结构/入口 |
 |------|------|-------------|
 | [common/src/models/identity_credentials.rs](common/src/models/identity_credentials.rs) | 模型层核心（UserIdentityCredentials 顶层 + UserIdentityCredential 单条 + CredentialDetail 枚举 + Patch 枚举 + Impact）| 6 行为方法（kind/primary_id/normalized/validate/encrypt_sensitive/apply_patch）、3 默认槽位方法（set_default_for/clear_default_for/default_slot_mut）、2 凭证解析方法（resolve_lark_credential_ref/resolve_github_credential）、parse/to_column_value JSON 序列化 |
-| [common/src/enums/credential_kind.rs](common/src/enums/credential_kind.rs)（若存在；否则定义在 identity_credentials.rs 同文件顶部）| CredentialKind 枚举（LarkApp/GithubToken）| default_slot_mut match arm 对应；新增凭证类型时需新增一个枚举值（与 CredentialDetail 变体数一致）|
+| [common/src/enums/credential_kind.rs](common/src/models/identity_credentials.rs)（若存在；否则定义在 identity_credentials.rs 同文件顶部）| CredentialKind 枚举（LarkApp/GithubToken）| default_slot_mut match arm 对应；新增凭证类型时需新增一个枚举值（与 CredentialDetail 变体数一致）|
 | [src/models/user.rs](src/models/user.rs) | UserPo：identity_credentials 列定义（TEXT）| users.sql DDL 中 identity_credentials TEXT 默认空串（空串=无凭证），与 UserIdentityCredentials.to_column_value 输出一致；字段级读取走 UserDal.get_identity_credentials |
 | [src/service/dao/user/sqlite.rs](src/service/dao/user/sqlite.rs) | DAO 层：get_identity_credentials 读取原始列值 + save_identity_credentials 写回 | 纯列读写 + 反序列化封装（**禁止在 DAO 层做字段级校验**）|
 | [src/service/dal/user.rs](src/service/dal/user.rs) | DAL 层：save_identity_credentials 的事务/行级更新（并发安全） | 并发写凭证库时乐观锁：UPDATE users SET identity_credentials = $1, version = version+1 WHERE id = $2 AND version = $3；失败重试最多 3 次 |

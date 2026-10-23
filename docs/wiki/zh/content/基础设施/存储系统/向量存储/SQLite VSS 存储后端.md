@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [src/pkg/storage/vector.rs](src/pkg/storage/vector.rs)
 - [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
-- [migrations/20260505000000_vector_metadata.sql](migrations/20260505000000_vector_metadata.sql)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 - [src/models/vector.rs](src/models/vector.rs)
 - [common/src/config.rs](common/src/config.rs)
 - [src/service/dal/skill_test.rs](src/service/dal/skill_test.rs)
@@ -42,12 +42,12 @@ F --> H["vector_metadata 元数据表"]
 图表来源
 - [src/pkg/storage/mod.rs:79-92](src/pkg/storage/mod.rs#L79-L92)
 - [src/pkg/storage/vector.rs:76-92](src/pkg/storage/vector.rs#L76-L92)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
 - [src/pkg/storage/vector.rs:1-291](src/pkg/storage/vector.rs#L1-L291)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ## 核心组件
 - VectorStore Trait：定义初始化集合、upsert、search、get、delete、clear_collection、flush 等统一接口，支持多后端热插拔。
@@ -58,7 +58,7 @@ F --> H["vector_metadata 元数据表"]
 章节来源
 - [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [src/pkg/storage/vector.rs:76-291](src/pkg/storage/vector.rs#L76-L291)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 - [src/pkg/storage/mod.rs:49-133](src/pkg/storage/mod.rs#L49-L133)
 - [common/src/config.rs:90-114](common/src/config.rs#L90-L114)
 - [common/src/config.rs:178-203](common/src/config.rs#L178-L203)
@@ -90,7 +90,7 @@ Store-->>DAL : VectorSearchHit[]
 图表来源
 - [src/pkg/storage/vector.rs:94-123](src/pkg/storage/vector.rs#L94-L123)
 - [src/pkg/storage/vector.rs:126-173](src/pkg/storage/vector.rs#L126-L173)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ## 详细组件分析
 
@@ -104,7 +104,7 @@ Store-->>DAL : VectorSearchHit[]
 
 章节来源
 - [src/pkg/storage/vector.rs:85-91](src/pkg/storage/vector.rs#L85-L91)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ### upsert 操作的两步流程与设计考量
 - 第一步：INSERT OR REPLACE INTO vector_metadata ... RETURNING rowid，确保获取稳定的 rowid 并与后续向量行绑定。
@@ -200,7 +200,7 @@ SStore --> Meta["vector_metadata 表"]
 图表来源
 - [src/pkg/storage/mod.rs:79-92](src/pkg/storage/mod.rs#L79-L92)
 - [src/pkg/storage/vector.rs:245-262](src/pkg/storage/vector.rs#L245-L262)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/pkg/storage/mod.rs:79-92](src/pkg/storage/mod.rs#L79-L92)
@@ -232,7 +232,7 @@ SStore --> Meta["vector_metadata 表"]
 章节来源
 - [src/pkg/storage/vector.rs:245-262](src/pkg/storage/vector.rs#L245-L262)
 - [src/service/dal/skill_test.rs:167-176](src/service/dal/skill_test.rs#L167-L176)
-- [migrations/20260505000000_vector_metadata.sql:1-16](migrations/20260505000000_vector_metadata.sql#L1-L16)
+- [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ## 结论
 SqliteVssStore 通过 vss0 扩展与 vector_metadata 表的协作，实现了高效、可维护的向量相似性搜索。其两步 upsert 流程确保了数据一致性，search SQL 利用 MATCH 操作符与过期过滤提升查询质量。配合合理的配置与监控，可在生产环境中稳定运行。对于缺失 vss0 扩展的环境，可通过降级策略保障功能可用。

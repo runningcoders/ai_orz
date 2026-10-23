@@ -15,7 +15,7 @@
 - [src/models/events/message.rs](src/models/events/message.rs)
 - [src/models/events/agent_loop.rs](src/models/events/agent_loop.rs)
 - [src/consumer/mod.rs](src/consumer/mod.rs)
-- [docs/event_design.md](docs/event_design.md)
+- [docs/event_design.md](docs/archive/design-archive/event_design.md)
 </cite>
 
 ### 本文关联的三类文档（四类互引闭环）
@@ -229,7 +229,7 @@ end
 - [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
 - [src/pkg/aop/core/registry.rs:208-258](src/pkg/aop/core/registry.rs#L208-L258)
 - [src/pkg/aop/core/registry.rs:333-445](src/pkg/aop/core/registry.rs#L333-L445)
-- [docs/event_design.md:1-195](docs/event_design.md#L1-L195)
+- [docs/event_design.md](docs/archive/design-archive/event_design.md)
 
 ### 事件监控、指标与性能分析
 - 指标 Hook：AopMetricsHook 提供 on_publish/on_consume_start/on_consume_success/on_consume_failure 四个回调，零开销默认实现。

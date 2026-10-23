@@ -11,7 +11,7 @@
 >
 > 关联文档：
 > - [CODE_STANDARDS.md](./CODE_STANDARDS.md) — 编码规范 SSOT（分层边界、数据对象、Trait 位置权威定义）
-> - [AGENTS.md](../AGENTS.md) — Agent 快速入门手册
+> - [AGENTS.md](AGENTS.md) — Agent 快速入门手册
 > - [ARCHITECTURE.md](./ARCHITECTURE.md) — 唯一权威架构总纲
 
 > 记录日期：2024-04-28

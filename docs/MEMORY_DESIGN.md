@@ -5,7 +5,7 @@
 > 查阅场景：需要理解四层记忆分工哲学、休息沉淀自主沉淀模式、记忆聚焦（task_id）机制、混合搜索（FTS5+向量+图谱）策略、用户偏好双源三级安全守卫边界时打开；SQLite 表结构、DAO/DAL 方法签名、PO 字段级定义直接读代码。
 >
 > 关联文档：
-> - [AGENTS.md](../AGENTS.md) — 项目整体分层架构与开发规范
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与开发规范
 > - [design/runtime_design.md](./design/runtime_design.md) — 两阶段唤醒 Runtime（sleep_and_settle / awaken_for_summary 沉淀调用方）
 > - [archive/design-archive/vector_search_architecture.md](./archive/design-archive/vector_search_architecture.md) — 向量索引架构（记忆实体 Vectorizable trait 实现的上游约束）
 
@@ -477,7 +477,7 @@ MemoryPo (enum)
 - `batch_append_memory_traces(ctx, traces) -> Vec<ShortTermMemoryIndexPo>`
 
 **新增**：
-> 相关实现细节见：[dao/memory/sqlite 层](src/service/dao/memory/sqlite.rs)
+> 相关实现细节见：[dao/memory/sqlite 层](src/service/dao/memory/sqlite/mod.rs)
 
 ### 3. Schema 变更
 
@@ -598,7 +598,7 @@ pub trait MemoryDal: Send + Sync {
 
 ### 10. 典型业务调用顺序
 
-> 相关实现细节见：[dal/memory.rs + runtime/memory.rs](src/service/dal/memory.rs)
+> 相关实现细节见：[dal/memory.rs + runtime/memory.rs](src/service/dal/memory/mod.rs)
 
 ### 11. 改动范围清单
 
@@ -1142,12 +1142,12 @@ Agent 与用户交互的过程中会逐渐观察到用户的偏好（语言风�
 ### 5.1 新增记忆实体或扩展向量化范围
 当前 ShortTermMemoryIndexPo / LongTermKnowledgeNodePo 已实现 Vectorizable。若新增记忆层级或其他需要向量索引的 PO：
 1. 在 `src/models/vector.rs` 的 `Vectorizable` trait 中不改动；新增 PO 直接 `impl Vectorizable for XxxPo`，参考：[LongTermKnowledgeNodePo::vectorize_text](src/models/vector.rs)
-2. 对应 DAL 在 create/update 后调用统一的 `embed_entity(ctx, cortex, po)` 完成索引，禁止手动 `format!` 拼接文本，参考：[dal/memory.rs](src/service/dal/memory.rs)
+2. 对应 DAL 在 create/update 后调用统一的 `embed_entity(ctx, cortex, po)` 完成索引，禁止手动 `format!` 拼接文本，参考：[dal/memory.rs](src/service/dal/memory/mod.rs)
 3. 对应 SQL Schema 在 `migrations/` 下的迁移文件中新增表与列，保持 STRICT 模式与索引一致性，参考：[migrations 目录](migrations)
 
 ### 5.2 新增用户偏好沉淀来源或图谱节点类型
 如果未来扩展偏好来源或新增图谱节点 tag：
-1. 新来源沉淀沿用 `tag = user_preference:xxx` 的命名空间约定，保持查询时 json_each OR 过滤不变，参考：[memory query SQL](src/service/dao/memory/sqlite.rs)
+1. 新来源沉淀沿用 `tag = user_preference:xxx` 的命名空间约定，保持查询时 json_each OR 过滤不变，参考：[memory query SQL](src/service/dao/memory/sqlite/mod.rs)
 2. `UserProfile::merge_and_sanitize` 三级安全守卫保持不放宽，新增来源同样经过长度/模式过滤，参考：[dal/user.rs](src/service/dal/user.rs)
 3. 前端知识图谱可视化扩展节点类型时，复用现有多色边框渲染机制，参考：[frontend GraphCanvas 组件](frontend/src/components/graph_canvas.rs)
 

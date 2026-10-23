@@ -86,7 +86,7 @@ B --> RT
 
 **图表来源**
 - [frontend/src/pages/finance/tools.rs:114-123](frontend/src/pages/finance/tools.rs#L114-L123)
-- [frontend/src/components/create_http_tool.rs:144-188](frontend/src/components/create_http_tool.rs#L144-L188)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
 - [frontend/src/components/modal.rs:15-43](frontend/src/components/modal.rs#L15-L43)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
 - [src/router.rs:810-822](src/router.rs#L810-L822)
@@ -107,7 +107,7 @@ B --> RT
 - **后端进程列表接口**：通过 shell_list 处理器列出后台进程，逐条探活刷新 alive 状态，并按调用方 scope（用户/Agent）过滤可见范围。
 
 **章节来源**
-- [frontend/src/components/create_http_tool.rs:15-142](frontend/src/components/create_http_tool.rs#L15-L142)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
 - [src/handlers/system/process/shell_list.rs:10-49](src/handlers/system/process/shell_list.rs#L10-L49)
 - [common/src/api/system.rs:240-278](common/src/api/system.rs#L240-L278)
@@ -137,7 +137,7 @@ FE->>FE : 按 call_id join 运行中进程PID
 
 **图表来源**
 - [frontend/src/pages/finance/tools.rs:114-123](frontend/src/pages/finance/tools.rs#L114-L123)
-- [frontend/src/components/create_http_tool.rs:164-188](frontend/src/components/create_http_tool.rs#L164-L188)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
 - [src/handlers/system/process/shell_list.rs:19-49](src/handlers/system/process/shell_list.rs#L19-L49)
 - [src/router.rs:810-822](src/router.rs#L810-L822)
 - [frontend/src/components/chat/tool_calls_tab.rs:101-139](frontend/src/components/chat/tool_calls_tab.rs#L101-L139)
@@ -162,12 +162,12 @@ Result -- 是 --> Close["关闭弹窗并刷新列表"]
 ```
 
 **图表来源**
-- [frontend/src/components/create_http_tool.rs:85-142](frontend/src/components/create_http_tool.rs#L85-L142)
-- [frontend/src/components/create_http_tool.rs:164-188](frontend/src/components/create_http_tool.rs#L164-L188)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
 - [src/pkg/tool_registry/http.rs:369-443](src/pkg/tool_registry/http.rs#L369-L443)
 
 **章节来源**
-- [frontend/src/components/create_http_tool.rs:15-142](frontend/src/components/create_http_tool.rs#L15-L142)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
 - [src/pkg/tool_registry/http.rs:41-73](src/pkg/tool_registry/http.rs#L41-L73)
 
 ### 聊天信息侧栏与工具调用 Tab
@@ -254,7 +254,7 @@ Create --> RT["http.rs 运行时"]
 
 **图表来源**
 - [frontend/src/pages/finance/tools.rs:114-123](frontend/src/pages/finance/tools.rs#L114-L123)
-- [frontend/src/components/create_http_tool.rs:144-188](frontend/src/components/create_http_tool.rs#L144-L188)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
 - [frontend/src/components/modal.rs:15-43](frontend/src/components/modal.rs#L15-L43)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
 - [src/router.rs:810-822](src/router.rs#L810-L822)
@@ -278,7 +278,7 @@ Create --> RT["http.rs 运行时"]
 - **工具调用 Tab 无数据**：确认已选择项目或前台 Agent；检查 limit 与查询条件；确认 JSONL 扫描是否启用。
 
 **章节来源**
-- [frontend/src/components/create_http_tool.rs:85-142](frontend/src/components/create_http_tool.rs#L85-L142)
+- [frontend/src/components/create_http_tool.rs](frontend/src/components/create_tool_http.rs)
 - [src/handlers/system/process/shell_list.rs:19-49](src/handlers/system/process/shell_list.rs#L19-L49)
 - [frontend/src/components/chat/tool_calls_tab.rs:101-139](frontend/src/components/chat/tool_calls_tab.rs#L101-L139)
 

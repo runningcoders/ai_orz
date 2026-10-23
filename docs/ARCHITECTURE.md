@@ -11,7 +11,7 @@
 >
 > 关联文档：
 > - [CODE_STANDARDS.md](./CODE_STANDARDS.md) — 编码规范 SSOT（命名/分层/宏/错误/日志等全量规范）
-> - [AGENTS.md](../AGENTS.md) — Agent 快速入门手册（架构速览 + 开发规范路由表）
+> - [AGENTS.md](AGENTS.md) — Agent 快速入门手册（架构速览 + 开发规范路由表）
 > - [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实践与避坑（反模式/实例化展开）
 > - [docs/wiki/](./wiki/) — 代码现状百科，字段级实现细节以 wiki/源文件为准
 >

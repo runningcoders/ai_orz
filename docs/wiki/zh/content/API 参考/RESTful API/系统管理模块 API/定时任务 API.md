@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [common/src/api/cron_trigger.rs](common/src/api/cron_trigger.rs)
 - [common/src/enums/cron_trigger.rs](common/src/enums/cron_trigger.rs)
-- [migrations/20260711000000_cron_triggers.sql](migrations/20260711000000_cron_triggers.sql)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260420000000_initial.sql)
 - [src/models/cron_trigger.rs](src/models/cron_trigger.rs)
 - [src/service/dao/cron_trigger/mod.rs](src/service/dao/cron_trigger/mod.rs)
 - [src/service/dao/cron_trigger/sqlite.rs](src/service/dao/cron_trigger/sqlite.rs)
@@ -76,7 +76,7 @@ S --> DB
 - [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
 - [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
 - [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:1-25](migrations/20260711000000_cron_triggers.sql#L1-L25)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/handlers/system/cron_trigger/mod.rs:1-20](src/handlers/system/cron_trigger/mod.rs#L1-L20)
@@ -85,7 +85,7 @@ S --> DB
 - [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
 - [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
 - [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:1-25](migrations/20260711000000_cron_triggers.sql#L1-L25)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260420000000_initial.sql)
 
 ## 核心组件
 - HTTP Handlers：提供 REST 接口，负责请求校验、上下文传递与结果序列化。
@@ -152,7 +152,7 @@ H-->>U : 返回触发器详情
 章节来源
 - [common/src/enums/cron_trigger.rs:9-22](common/src/enums/cron_trigger.rs#L9-L22)
 - [src/models/cron_trigger.rs:10-27](src/models/cron_trigger.rs#L10-L27)
-- [migrations/20260711000000_cron_triggers.sql:4-19](migrations/20260711000000_cron_triggers.sql#L4-L19)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260420000000_initial.sql)
 
 ### 调度与执行流程
 - Producer 每 60 秒轮询，查询 next_run_at <= now 且 is_enabled=1 的触发器，发布 CronTriggerEvent，并立即更新 last_run_at 与下一次执行时间。
@@ -277,14 +277,14 @@ CO["Consumer"] --> DM
 - [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
 - [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
 - [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:21-24](migrations/20260711000000_cron_triggers.sql#L21-L24)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/handlers/system/cron_trigger/mod.rs:1-20](src/handlers/system/cron_trigger/mod.rs#L1-L20)
 - [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
 - [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
 - [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:21-24](migrations/20260711000000_cron_triggers.sql#L21-L24)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260420000000_initial.sql)
 
 ## 性能与调度特性
 - 轮询周期：Producer 默认每 60 秒轮询一次到期触发器。
@@ -296,7 +296,7 @@ CO["Consumer"] --> DM
 章节来源
 - [src/producer/cron_trigger.rs:38-87](src/producer/cron_trigger.rs#L38-L87)
 - [src/service/dao/cron_trigger/sqlite.rs:166-213](src/service/dao/cron_trigger/sqlite.rs#L166-L213)
-- [migrations/20260711000000_cron_triggers.sql:21-24](migrations/20260711000000_cron_triggers.sql#L21-L24)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260420000000_initial.sql)
 
 ## 故障排查指南
 - 创建失败（参数缺失）：检查 Once 是否提供 run_at，Interval 是否提供 interval_seconds。

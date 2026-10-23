@@ -18,7 +18,7 @@
 - [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
 - [src/router.rs](src/router.rs)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/mcp_tool_design.md](docs/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -398,5 +398,5 @@ H-->>FE : 创建成功
 
 图表来源
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:22-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L22-L47)
-- [docs/mcp_tool_design.md:250-275](docs/mcp_tool_design.md#L250-L275)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/router.rs:551-556](src/router.rs#L551-L556)

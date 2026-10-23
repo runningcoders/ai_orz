@@ -9,7 +9,7 @@
 - [mcp_tool.rs](common/src/api/mcp_tool.rs)
 - [sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
 - [list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
-- [mcp_tool_design.md](docs/mcp_tool_design.md)
+- [mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -70,7 +70,7 @@ H2 --> D1 --> L1 --> O1
 - [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
 
 章节来源
-- [mcp_tool_design.md:120-150](docs/mcp_tool_design.md#L120-L150)
+- [mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [mcp_tool.rs:1-85](src/service/dal/mcp_tool.rs#L1-L85)
 
 ## 核心组件
@@ -223,7 +223,7 @@ Dal->>TDao : 标记缺失工具为 Stale
 
 章节来源
 - [mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)
-- [mcp_tool_design.md:299-349](docs/mcp_tool_design.md#L299-L349)
+- [mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ### MCP 协议 JSON-RPC 通信与参数序列化
 - 通信方式：通过 rmcp 库以 stdio 通道与 MCP Server 交互，先 initialize，再调用 tools/list 或 tools/call。
@@ -292,7 +292,7 @@ Dal-->>Caller : (result, entry)
 
 章节来源
 - [mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
-- [mcp_tool_design.md:581-635](docs/mcp_tool_design.md#L581-L635)
+- [mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ### 配置管理与状态控制
 - McpServerConfig：
@@ -306,7 +306,7 @@ Dal-->>Caller : (result, entry)
 
 章节来源
 - [mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
-- [mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
+- [mcp_tool_design.md:1312-1327](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 依赖关系分析
 - DAL 与 DAO：
@@ -335,7 +335,7 @@ E --> F["rmcp/TokioChildProcess"]
 - [mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
 
 章节来源
-- [mcp_tool_design.md:152-186](docs/mcp_tool_design.md#L152-L186)
+- [mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [mcp_tool.rs:22-46](src/service/dal/mcp_tool.rs#L22-L46)
 
 ## 性能与可靠性
@@ -351,7 +351,7 @@ E --> F["rmcp/TokioChildProcess"]
 - 资源释放：每次调用后尝试关闭会话；关闭失败返回安全文案，避免泄露底层错误。
 
 章节来源
-- [mcp_tool_design.md:1346-1352](docs/mcp_tool_design.md#L1346-L1352)
+- [mcp_tool_design.md:1346-1352](docs/archive/design-archive/mcp_tool_design.md)
 - [mcp.rs:103-140](src/pkg/tool_registry/mcp.rs#L103-L140)
 - [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
 
@@ -397,7 +397,7 @@ MCP 工具在本项目中以“管理面 + 运行面”分离的方式实现，�
   - 说明：通过 McpToolDal.call_tool_by_id 或 call_tool，返回结果与调用记录。
 
 - 结果处理
-  - 参考：[mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
+  - 参考：[mcp_tool_design.md:1312-1327](docs/archive/design-archive/mcp_tool_design.md)
   - 说明：结果消息不复制 request args，超限结果使用安全 marker，携带 trace_ref 关联完整调用记录。
 
 章节来源
@@ -405,4 +405,4 @@ MCP 工具在本项目中以“管理面 + 运行面”分离的方式实现，�
 - [sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
 - [list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
 - [mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
-- [mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
+- [mcp_tool_design.md:1312-1327](docs/archive/design-archive/mcp_tool_design.md)

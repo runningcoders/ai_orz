@@ -8,7 +8,7 @@
 - [common/src/enums/mcp_server.rs](common/src/enums/mcp_server.rs)
 - [src/service/dal/mcp_tool.rs](src/service/dal/mcp_tool.rs)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
-- [docs/mcp_tool_design.md](docs/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -73,7 +73,7 @@ MTP --> TCDao --> RT --> MCP
 - [src/pkg/tool_registry/mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
 
 章节来源
-- [docs/mcp_tool_design.md:120-195](docs/mcp_tool_design.md#L120-L195)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/service/dal/mcp_tool.rs:1-85](src/service/dal/mcp_tool.rs#L1-L85)
 
 ## 核心组件
@@ -125,7 +125,7 @@ Domain-->>Handler : response
 - [src/pkg/tool_registry/mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
 
 章节来源
-- [docs/mcp_tool_design.md:196-321](docs/mcp_tool_design.md#L196-L321)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 详细组件分析
 
@@ -292,7 +292,7 @@ Runtime --> MCP["MCP Server"]
 - [src/pkg/tool_registry/mcp.rs:270-355](src/pkg/tool_registry/mcp.rs#L270-L355)
 
 章节来源
-- [docs/mcp_tool_design.md:152-195](docs/mcp_tool_design.md#L152-L195)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 性能与超时控制
 - 超时策略
@@ -359,6 +359,6 @@ Runtime --> MCP["MCP Server"]
   - 观察远端工具元数据变化频率，合理设置同步周期。
 
 章节来源
-- [docs/mcp_tool_design.md:323-349](docs/mcp_tool_design.md#L323-L349)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/pkg/tool_registry/mcp.rs:72-192](src/pkg/tool_registry/mcp.rs#L72-L192)
 - [src/service/dal/mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)

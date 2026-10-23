@@ -59,7 +59,7 @@ source_files:
 
 **章节来源**
 - [finance/attachment.rs:L1-L120](src/service/domain/finance/attachment.rs#L1-L120)
-- [pagination.rs:L1-L80](common/src/models/pagination.rs#L1-L80)
+- [pagination.rs](common/src/api/mod.rs)
 - [attachment_storage.md:L15-L50](docs/archive/design-archive/attachment_storage.md#L15-L50)
 
 ---

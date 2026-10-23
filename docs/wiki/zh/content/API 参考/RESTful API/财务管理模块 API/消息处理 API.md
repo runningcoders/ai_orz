@@ -12,9 +12,9 @@
 - [mod.rs](src/service/domain/message/mod.rs)
 - [message.rs](src/service/dal/message.rs)
 - [message_push.rs](src/service/dao/message_push.rs)
-- [message_channel_design.md](docs/message_channel_design.md)
+- [message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [message_interaction_design.md](docs/message_interaction_design.md)
+- [message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
 - [app.rs](tests/common/app.rs)
 </cite>
 
@@ -443,7 +443,7 @@ DP --> DAO_S["SsePushDao"]
 
 章节来源
 - [message.rs:131-193](src/service/dal/message.rs#L131-L193)
-- [message_channel_design.md:517-614](docs/message_channel_design.md#L517-L614)
+- [message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
 
 ### 优先级队列与重试机制
 - 优先级：Message.priority 默认 5，可在扩展中覆盖。

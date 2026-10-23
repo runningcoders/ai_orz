@@ -17,7 +17,7 @@
 - [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
 - [src/producer/a2a_polling.rs](src/producer/a2a_polling.rs)
 - [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
-- [docs/external_agent_design.md](docs/external_agent_design.md)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 </cite>
 
 ## 目录
@@ -260,7 +260,7 @@ CB-->>Ext : {ok : true}
 
 章节来源
 - [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
-- [docs/external_agent_design.md:107-199](docs/external_agent_design.md#L107-L199)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ### 映射器（A2A ↔ ai_orz）
 - 方向：
@@ -283,7 +283,7 @@ CB-->>Ext : {ok : true}
 
 章节来源
 - [src/service/dao/agent_runtime/a2a.rs:86-135](src/service/dao/agent_runtime/a2a.rs#L86-L135)
-- [docs/external_agent_design.md:17-28](docs/external_agent_design.md#L17-L28)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ## 依赖关系分析
 - Router 将 A2A 路由挂载到根路径，区分公开与受保护端点。
@@ -438,6 +438,6 @@ A2A 协议支持在本项目中实现了完整的 Server 与 Client 能力：Ser
   - 入站：外部 Agent 通过 /a2a/callback/:task_id 推送更新；或 A2aPollingProducer 每 30 秒轮询。
 
 章节来源
-- [docs/external_agent_design.md:17-28](docs/external_agent_design.md#L17-L28)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 - [src/service/dao/agent_runtime/a2a.rs:29-47](src/service/dao/agent_runtime/a2a.rs#L29-L47)
 - [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)

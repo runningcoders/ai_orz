@@ -7,7 +7,7 @@
 - [common/src/api/log_stats.rs](common/src/api/log_stats.rs)
 - [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
 - [src/service/dal/log_query.rs](src/service/dal/log_query.rs)
-- [docs/logging_design.md](docs/logging_design.md)
+- [docs/logging_design.md](docs/design/logging_design.md)
 
 > **2026-10-11 更新**：底层文件扫描改为**倒序**（`scan_lines_reverse`，src/service/dal/log_query.rs#L248，64KB 块反向读取），limit=10000 语义由「最旧 1 万条」变为「时间窗内最新 1 万条」；接口入参/出参不变。详见 [日志管理系统](../../../功能模块/系统管理/日志管理系统.md)。
 </cite>
@@ -232,8 +232,8 @@ H-->>C : "200 OK + 分页数据"
 
 章节来源
 - [src/service/dal/log_query.rs:1-23](src/service/dal/log_query.rs#L1-L23)
-- [docs/logging_design.md:106-127](docs/logging_design.md#L106-L127)
-- [docs/logging_design.md:132-165](docs/logging_design.md#L132-L165)
+- [docs/logging_design.md](docs/design/logging_design.md)
+- [docs/logging_design.md](docs/design/logging_design.md)
 
 ### 搜索语法与过滤规则
 - 关键词匹配

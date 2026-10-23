@@ -9,8 +9,8 @@
 - [common/src/enums/skill.rs](common/src/enums/skill.rs)
 - [src/models/agent.rs](src/models/agent.rs)
 - [src/models/skill.rs](src/models/skill.rs)
-- [docs/skill_design.md](docs/skill_design.md)
-- [docs/agent_onboarding_design.md](docs/agent_onboarding_design.md)
+- [docs/skill_design.md](docs/archive/design-archive/skill_design.md)
+- [docs/agent_onboarding_design.md](docs/archive/design-archive/agent_onboarding_design.md)
 - [src/handlers/hr/agent/install_skill_pack.rs](src/handlers/hr/agent/install_skill_pack.rs)
 - [src/handlers/hr/agent/uninstall_skill_pack.rs](src/handlers/hr/agent/uninstall_skill_pack.rs)
 - [src/handlers/hr/agent/list_installed_skill_packs.rs](src/handlers/hr/agent/list_installed_skill_packs.rs)
@@ -105,7 +105,7 @@ S1 --> SA
 
 章节来源
 - [src/service/domain/hr/mod.rs:1-152](src/service/domain/hr/mod.rs#L1-L152)
-- [docs/agent_onboarding_design.md:9-37](docs/agent_onboarding_design.md#L9-L37)
+- [docs/agent_onboarding_design.md](docs/archive/design-archive/agent_onboarding_design.md)
 
 ## 核心组件
 - HrDomain 单例与入口：提供 agent_manage() 与 skill_manage() 能力，统一 resolve_agent() 路由前台可用 Agent。
@@ -159,7 +159,7 @@ Handler-->>Client : "200 OK"
 - [src/service/domain/hr/agent.rs:414-499](src/service/domain/hr/agent.rs#L414-L499)
 
 章节来源
-- [docs/agent_onboarding_design.md:9-37](docs/agent_onboarding_design.md#L9-L37)
+- [docs/agent_onboarding_design.md](docs/archive/design-archive/agent_onboarding_design.md)
 
 ## 详细组件分析
 
@@ -189,7 +189,7 @@ Offboarded --> Offboarded : "幂等同状态"
 
 章节来源
 - [src/service/domain/hr/agent.rs:213-311](src/service/domain/hr/agent.rs#L213-L311)
-- [docs/agent_onboarding_design.md:74-106](docs/agent_onboarding_design.md#L74-L106)
+- [docs/agent_onboarding_design.md](docs/archive/design-archive/agent_onboarding_design.md)
 
 ### 技能包系统与 Agent-Skill 绑定
 - 技能包安装：按 tag 批量安装 Published 技能到 Agent 目录，幂等记录 installed_skill_packs。
@@ -215,7 +215,7 @@ MarkTag --> End(["结束"])
 
 章节来源
 - [src/service/domain/hr/agent.rs:414-653](src/service/domain/hr/agent.rs#L414-L653)
-- [docs/skill_design.md:84-106](docs/skill_design.md#L84-L106)
+- [docs/skill_design.md](docs/archive/design-archive/skill_design.md)
 
 ### Skill 定义、版本与依赖解析
 - 技能状态：Draft（草稿）、Published（已发布）、Expired（过期/软删除）。
@@ -225,7 +225,7 @@ MarkTag --> End(["结束"])
 
 章节来源
 - [common/src/enums/skill.rs:6-19](common/src/enums/skill.rs#L6-L19)
-- [docs/skill_design.md:12-63](docs/skill_design.md#L12-L63)
+- [docs/skill_design.md](docs/archive/design-archive/skill_design.md)
 - [src/models/skill.rs:20-49](src/models/skill.rs#L20-L49)
 
 ### 权限控制与资源隔离
@@ -245,7 +245,7 @@ MarkTag --> End(["结束"])
   - 文件写入与 DB 更新在同一 DAL 方法内组合，确保一致性。
 
 章节来源
-- [docs/skill_design.md:493-527](docs/skill_design.md#L493-L527)
+- [docs/skill_design.md](docs/archive/design-archive/skill_design.md)
 - [src/service/domain/hr/agent.rs:414-499](src/service/domain/hr/agent.rs#L414-L499)
 
 ### 性能优化建议
@@ -255,7 +255,7 @@ MarkTag --> End(["结束"])
 - 幂等设计：安装/卸载接口幂等，降低重试成本。
 
 章节来源
-- [docs/skill_design.md:461-491](docs/skill_design.md#L461-L491)
+- [docs/skill_design.md](docs/archive/design-archive/skill_design.md)
 - [src/models/skill.rs:126-150](src/models/skill.rs#L126-L150)
 
 ## 依赖关系分析
@@ -306,7 +306,7 @@ HrDomainImpl --> SkillDal : "依赖"
 - 事务一致性：install_to_agent 在 DAL 层原子复制文件并写入 DB；update_skill_file_content 先校验乐观锁再写文件与元数据。
 
 章节来源
-- [docs/skill_design.md:461-491](docs/skill_design.md#L461-L491)
+- [docs/skill_design.md](docs/archive/design-archive/skill_design.md)
 - [src/service/domain/hr/skill.rs:233-287](src/service/domain/hr/skill.rs#L233-L287)
 
 ## 故障排查指南

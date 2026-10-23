@@ -13,7 +13,7 @@
 - [common/src/api/mcp_server.rs](common/src/api/mcp_server.rs)
 - [src/models/mcp_server.rs](src/models/mcp_server.rs)
 - [src/service/domain/finance/mod.rs](src/service/domain/finance/mod.rs)
-- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 </cite>
 
 ## 目录
@@ -205,7 +205,7 @@ string updated_by
 ```
 
 图表来源
-- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 - [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
 
 章节来源

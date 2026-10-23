@@ -7,7 +7,7 @@
 - [src/service/dao/memory/mod.rs](src/service/dao/memory/mod.rs)
 - [src/service/dao/memory/sqlite/short_term.rs](src/service/dao/memory/sqlite/short_term.rs)
 - [src/service/dao/memory/vector.rs](src/service/dao/memory/vector.rs)
-- [migrations/20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 - [common/src/enums/memory.rs](common/src/enums/memory.rs)
 - [src/handlers/hr/agent/create_memory.rs](src/handlers/hr/agent/create_memory.rs)
 - [src/handlers/hr/agent/save_short_term_memory.rs](src/handlers/hr/agent/save_short_term_memory.rs)
@@ -54,13 +54,13 @@ E --> H["向量存储<br/>LanceDB/HNSW/InMemory/SqliteVss"]
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 - [src/service/dao/memory/vector.rs:1-34](src/service/dao/memory/vector.rs#L1-L34)
-- [migrations/20260712000000_memory_fts5.sql:16-29](migrations/20260712000000_memory_fts5.sql#L16-L29)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/models/memory.rs:15-210](src/models/memory.rs#L15-L210)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/mod.rs:14-58](src/service/dao/memory/mod.rs#L14-L58)
-- [migrations/20260712000000_memory_fts5.sql:1-92](migrations/20260712000000_memory_fts5.sql#L1-L92)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 
 ## 核心组件
 - MemoryTrace：原始记忆追踪，记录一次完整思考闭环（输入→输出），写入每日 JSONL 文件，不进入向量库
@@ -113,7 +113,7 @@ R-->>H : memory_id
 - [src/handlers/hr/agent/create_memory.rs:43-77](src/handlers/hr/agent/create_memory.rs#L43-L77)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
-- [migrations/20260712000000_memory_fts5.sql:35-54](migrations/20260712000000_memory_fts5.sql#L35-L54)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 
 ## 详细组件分析
 
@@ -203,11 +203,11 @@ TriggerAD --> DeleteFts["DELETE FROM fts WHERE rowid = old.rowid"]
 ```
 
 图表来源
-- [migrations/20260712000000_memory_fts5.sql:35-54](migrations/20260712000000_memory_fts5.sql#L35-L54)
-- [migrations/20260712000000_memory_fts5.sql:85-92](migrations/20260712000000_memory_fts5.sql#L85-L92)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 
 章节来源
-- [migrations/20260712000000_memory_fts5.sql:1-92](migrations/20260712000000_memory_fts5.sql#L1-L92)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 - [src/service/dao/memory/mod.rs:169-182](src/service/dao/memory/mod.rs#L169-L182)
 
 ### 向量嵌入生成与存储
@@ -317,7 +317,7 @@ DAL-->>App : ShortTerm memory_id
 图表来源
 - [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
 - [src/service/dao/memory/sqlite/short_term.rs](src/service/dao/memory/sqlite/short_term.rs)
-- [migrations/20260712000000_memory_fts5.sql:35-54](migrations/20260712000000_memory_fts5.sql#L35-L54)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/service/dal/memory/store.rs](src/service/dal/memory/store.rs)
@@ -399,7 +399,7 @@ VD --> VS["向量存储"]
 
 章节来源
 - [src/service/dal/skill.rs:351-385](src/service/dal/skill.rs#L351-L385)
-- [migrations/20260712000000_memory_fts5.sql:35-54](migrations/20260712000000_memory_fts5.sql#L35-L54)
+- [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 
 ## 结论

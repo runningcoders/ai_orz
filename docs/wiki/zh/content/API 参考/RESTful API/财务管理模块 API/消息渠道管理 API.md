@@ -12,7 +12,7 @@
 - [src/service/dao/message_channel/sqlite.rs](src/service/dao/message_channel/sqlite.rs) — 查询期默认软删除过滤（push_query_filters #L317-L345）
 - [src/models/message_channel.rs](src/models/message_channel.rs)
 - [common/src/enums/message_channel.rs](common/src/enums/message_channel.rs)
-- [migrations/20260508000000_message_channels.sql](migrations/20260508000000_message_channels.sql)
+- [migrations/20260508000000_message_channels.sql](migrations/20260420000000_initial.sql)
 - [docs/archive/design-archive/message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
 
 **本文关联的文档**
@@ -60,7 +60,7 @@ D --> F["DB: message_channels 表"]
 - [src/service/domain/finance/message_channel.rs:1-73](src/service/domain/finance/message_channel.rs#L1-L73)
 - [src/service/dal/message_channel.rs:1-127](src/service/dal/message_channel.rs#L1-L127)
 - [src/service/dao/message_channel/mod.rs:1-98](src/service/dao/message_channel/mod.rs#L1-L98)
-- [migrations/20260508000000_message_channels.sql:1-31](migrations/20260508000000_message_channels.sql#L1-L31)
+- [migrations/20260508000000_message_channels.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
@@ -119,7 +119,7 @@ Handler-->>Client : 200 + 脱敏详情
 - [src/service/domain/finance/message_channel.rs:1-73](src/service/domain/finance/message_channel.rs#L1-L73)
 - [src/service/dal/message_channel.rs:148-158](src/service/dal/message_channel.rs#L148-L158)
 - [src/service/dao/message_channel/sqlite.rs:20-55](src/service/dao/message_channel/sqlite.rs#L20-L55)
-- [migrations/20260508000000_message_channels.sql:5-23](migrations/20260508000000_message_channels.sql#L5-L23)
+- [migrations/20260508000000_message_channels.sql](migrations/20260420000000_initial.sql)
 
 ## 详细组件分析
 
@@ -173,12 +173,12 @@ integer updated_at
 ```
 
 图表来源
-- [migrations/20260508000000_message_channels.sql:5-31](migrations/20260508000000_message_channels.sql#L5-L31)
+- [migrations/20260508000000_message_channels.sql](migrations/20260420000000_initial.sql)
 - [src/models/message_channel.rs:115-155](src/models/message_channel.rs#L115-L155)
 
 章节来源
 - [src/models/message_channel.rs:197-255](src/models/message_channel.rs#L197-L255)
-- [migrations/20260508000000_message_channels.sql:1-31](migrations/20260508000000_message_channels.sql#L1-L31)
+- [migrations/20260508000000_message_channels.sql](migrations/20260420000000_initial.sql)
 
 ### 管理面 API 清单
 - 受保护路由（示例）：
@@ -337,7 +337,7 @@ DL --> AC["DAO(A2aCallbackDao)"]
 
 章节来源
 - [src/service/dao/message_channel/sqlite.rs:92-130](src/service/dao/message_channel/sqlite.rs#L92-L130)
-- [migrations/20260508000000_message_channels.sql:25-31](migrations/20260508000000_message_channels.sql#L25-L31)
+- [migrations/20260508000000_message_channels.sql](migrations/20260420000000_initial.sql)
 - [src/service/dal/message_channel.rs:289-313](src/service/dal/message_channel.rs#L289-L313)
 
 ## 故障排查指南

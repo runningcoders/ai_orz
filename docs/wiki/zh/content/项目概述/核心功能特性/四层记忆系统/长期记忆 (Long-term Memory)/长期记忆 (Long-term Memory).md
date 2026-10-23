@@ -11,8 +11,8 @@
 - [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
 - [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
 - [knowledge_graph.rs](frontend/src/pages/hr/knowledge_graph.rs)
-- [20260724000000_knowledge_node_tags.sql](migrations/20260724000000_knowledge_node_tags.sql)
-- [20260731000001_knowledge_node_is_published.sql](migrations/20260731000001_knowledge_node_is_published.sql)
+- `20260724000000_knowledge_node_tags.sql`
+- [20260731000001_knowledge_node_is_published.sql](migrations/20260420000000_initial.sql)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [TEMPLATE_MEMORY_COGNITION/skill.md](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md)
 </cite>
@@ -333,7 +333,7 @@ QueryExec --> Return["返回结果（published 只是标记，不参与筛选）
 - [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
 - [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
 - [dal/memory/store.rs](src/service/dal/memory/store.rs)
-- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
+- [20260731000001_knowledge_node_is_published.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
@@ -401,13 +401,13 @@ SetMetaKN --> REnd
 
 图表来源
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
-- [20260724000000_knowledge_node_tags.sql:1-77](migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
-- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
+- `20260724000000_knowledge_node_tags.sql:1-77`
+- [20260731000001_knowledge_node_is_published.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
-- [20260724000000_knowledge_node_tags.sql:1-77](migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
-- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
+- `20260724000000_knowledge_node_tags.sql:1-77`
+- [20260731000001_knowledge_node_is_published.sql](migrations/20260420000000_initial.sql)
 
 ## 依赖关系分析
 - 模块耦合

@@ -24,7 +24,7 @@
 - [src/middleware/require_role.rs](src/middleware/require_role.rs)
 - [common/src/enums/user.rs](common/src/enums/user.rs)
 - [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
-- [docs/organization_design.md](docs/organization_design.md)
+- [docs/organization_design.md](docs/archive/design-archive/organization_design.md)
 - [src/service/dao/organization_link/mod.rs](src/service/dao/organization_link/mod.rs)
 - [src/service/dao/organization_pairing/mod.rs](src/service/dao/organization_pairing/mod.rs)
 - [src/models/organization_link.rs](src/models/organization_link.rs)
@@ -104,7 +104,7 @@ C2 --> DB
 - [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
 章节来源
-- [docs/organization_design.md:1-218](docs/organization_design.md#L1-L218)
+- [docs/organization_design.md](docs/archive/design-archive/organization_design.md)
 
 ## 核心组件
 - 领域入口与单例
@@ -386,7 +386,7 @@ M2["require_role.rs"] -.-> H
   - 结合集成测试验证关键流程（如 Auth/CRUD/消息投递）
 
 章节来源
-- [docs/organization_design.md:160-218](docs/organization_design.md#L160-L218)
+- [docs/organization_design.md](docs/archive/design-archive/organization_design.md)
 
 ## 结论
 Organization 领域通过清晰的四层架构与严格的单向依赖，实现了组织与用户管理的稳定编排。核心能力包括：
@@ -409,4 +409,4 @@ Organization 领域通过清晰的四层架构与严格的单向依赖，实现�
 
 章节来源
 - [migrations/20260420000000_initial.sql:1-200](migrations/20260420000000_initial.sql#L1-L200)
-- [docs/organization_design.md:89-103](docs/organization_design.md#L89-L103)
+- [docs/organization_design.md](docs/archive/design-archive/organization_design.md)

@@ -14,7 +14,7 @@
 - [src/consumer/task_event_consumer.rs](src/consumer/task_event_consumer.rs)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [docs/external_agent_design.md](docs/external_agent_design.md)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 - [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合.md)
 </cite>
 
@@ -116,7 +116,7 @@ PD --> DB
 - [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
 - [src/pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
 - [src/service/domain/runtime/mod.rs:33-49](src/service/domain/runtime/mod.rs#L33-L49)
-- [docs/external_agent_design.md:152-199](docs/external_agent_design.md#L152-L199)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ## 架构总览
 多 Agent 协作的核心流程是“消息驱动 + 事件编排 + 状态机控制”。外部或内部消息进入后，经 AOP 事件中心路由到对应 Consumer；Consumer 根据角色与上下文调度 Domain；Domain 协调 DAL/DAO 完成持久化与外部调用；Agent 的运行时状态由 AgentRuntimeStateManager 统一管理，确保并发安全与可观测性。
@@ -230,13 +230,13 @@ MD-->>Local : SSE/渠道投递
 - [common/src/api/a2a.rs:1-47](common/src/api/a2a.rs#L1-L47)
 - [src/handlers/a2a/callback.rs:47-158](src/handlers/a2a/callback.rs#L47-L158)
 - [src/service/dao/agent_runtime/a2a.rs:1-47](src/service/dao/agent_runtime/a2a.rs#L1-L47)
-- [docs/external_agent_design.md:152-199](docs/external_agent_design.md#L152-L199)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 章节来源
 - [common/src/api/a2a.rs:1-47](common/src/api/a2a.rs#L1-L47)
 - [src/handlers/a2a/callback.rs:47-158](src/handlers/a2a/callback.rs#L47-L158)
 - [src/service/dao/agent_runtime/a2a.rs:1-47](src/service/dao/agent_runtime/a2a.rs#L1-L47)
-- [docs/external_agent_design.md:152-199](docs/external_agent_design.md#L152-L199)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ### 任务进度同步、冲突解决与一致性保证
 - 进度同步
@@ -253,7 +253,7 @@ MD-->>Local : SSE/渠道投递
 - [src/consumer/task_event_consumer.rs:1-46](src/consumer/task_event_consumer.rs#L1-L46)
 - [src/consumer/message.rs:198-244](src/consumer/message.rs#L198-L244)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [docs/external_agent_design.md:176-199](docs/external_agent_design.md#L176-L199)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ### 依赖关系与并行执行优化
 - 依赖关系
@@ -346,7 +346,7 @@ MessageConsumer --> MessageDomain : "投递/工具结果回写"
 - [src/consumer/message.rs:114-141](src/consumer/message.rs#L114-L141)
 - [src/consumer/message.rs:180-196](src/consumer/message.rs#L180-L196)
 - [src/consumer/message.rs:359-389](src/consumer/message.rs#L359-L389)
-- [docs/external_agent_design.md:176-199](docs/external_agent_design.md#L176-L199)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ## 监控与调试
 - 事件与日志

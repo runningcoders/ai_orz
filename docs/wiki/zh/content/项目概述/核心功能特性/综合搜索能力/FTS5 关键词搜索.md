@@ -3,8 +3,8 @@
 <cite>
 **本文引用的文件**
 - [fts5.rs](src/pkg/storage/fts5.rs)
-- [20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
-- [20260712000001_entity_fts5.sql](migrations/20260712000001_entity_fts5.sql)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
+- `20260712000001_entity_fts5.sql`
 - [sqlite.rs（消息 DAO）](src/service/dao/message/sqlite.rs)
 - [sqlite.rs（技能 DAO）](src/service/dao/skill/sqlite.rs)
 - [sqlite.rs（工具 DAO）](src/service/dao/tool/sqlite.rs)
@@ -49,7 +49,7 @@ DAO --> DB["SQLite + FTS5<br/>migrations/*_fts5.sql"]
 - [router.rs:329-401](src/router.rs#L329-L401)
 - [search_skills.rs:14-49](src/handlers/hr/skill/search_skills.rs#L14-L49)
 - [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
-- [20260712000001_entity_fts5.sql:18-66](migrations/20260712000001_entity_fts5.sql#L18-L66)
+- `20260712000001_entity_fts5.sql:18-66`
 
 章节来源
 - [router.rs:329-401](src/router.rs#L329-L401)
@@ -63,8 +63,8 @@ DAO --> DB["SQLite + FTS5<br/>migrations/*_fts5.sql"]
 
 章节来源
 - [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
-- [20260712000000_memory_fts5.sql:12-92](migrations/20260712000000_memory_fts5.sql#L12-L92)
-- [20260712000001_entity_fts5.sql:14-246](migrations/20260712000001_entity_fts5.sql#L14-L246)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
+- `20260712000001_entity_fts5.sql:14-246`
 - [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
 - [vector.rs:120-125](src/models/vector.rs#L120-L125)
 
@@ -143,12 +143,12 @@ AGENTS ||--o{ AGENTS_FTS : "rowid 关联"
 ```
 
 图表来源
-- [20260712000000_memory_fts5.sql:12-92](migrations/20260712000000_memory_fts5.sql#L12-L92)
-- [20260712000001_entity_fts5.sql:14-246](migrations/20260712000001_entity_fts5.sql#L14-L246)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
+- `20260712000001_entity_fts5.sql:14-246`
 
 章节来源
-- [20260712000000_memory_fts5.sql:12-92](migrations/20260712000000_memory_fts5.sql#L12-L92)
-- [20260712000001_entity_fts5.sql:14-246](migrations/20260712000001_entity_fts5.sql#L14-L246)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
+- `20260712000001_entity_fts5.sql:14-246`
 
 ### 搜索实现与 MATCH 查询
 - 统一模式：DAO 层使用 QueryBuilder 动态拼装 SQL，核心步骤如下：
@@ -212,8 +212,8 @@ DAO-->>DAO : 映射为 PO 列表含 fts_rank
   - 对于大表重建，建议在低峰期执行，并结合事务与批处理优化。
 
 章节来源
-- [20260712000000_memory_fts5.sql:32-92](migrations/20260712000000_memory_fts5.sql#L32-L92)
-- [20260712000001_entity_fts5.sql:68-246](migrations/20260712000001_entity_fts5.sql#L68-L246)
+- [20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
+- `20260712000001_entity_fts5.sql:68-246`
 
 ### 缓存机制
 - 当前代码未显式实现 FTS5 查询结果的缓存层。如需提升热点查询性能，可在 DAL 层引入内存缓存（如 LRU）或 Redis 缓存，结合 key 设计（keyword + filters + page）与过期策略。
@@ -295,7 +295,7 @@ DAL --> DAO_A
 
 章节来源
 - [sqlite.rs（消息 DAO）:440-458](src/service/dao/message/sqlite.rs#L440-L458)
-- [20260712000001_entity_fts5.sql:6-10](migrations/20260712000001_entity_fts5.sql#L6-L10)
+- `20260712000001_entity_fts5.sql:6-10`
 
 ## 结论
 本项目通过统一的 escape_fts5_keyword 与标准化的 DAO 层搜索实现，结合 FTS5 虚拟表与触发器，实现了稳定高效的关键词搜索能力。BM25 相关性排序与分页控制保障了结果质量与性能。未来可在此基础上引入缓存、更精细的监控与调优策略，进一步提升搜索体验。

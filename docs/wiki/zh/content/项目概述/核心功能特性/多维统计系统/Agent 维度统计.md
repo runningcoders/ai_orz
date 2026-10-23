@@ -6,7 +6,7 @@
 - [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs)
 - [src/models/events/think_round.rs](src/models/events/think_round.rs)
 - [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
-- [docs/stats_query_design.md](docs/stats_query_design.md)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
 - [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
@@ -77,11 +77,11 @@ F --> H
 图表来源
 - [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
 - [src/consumer/think_round_stats_consumer.rs:29-72](src/consumer/think_round_stats_consumer.rs#L29-L72)
-- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 
 章节来源
 - [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
-- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 
 ## 核心组件
 - AgentAwakeEvent：用于记录 Agent 每次唤醒（消息消费触发）的调用次数、耗时、状态等指标，绑定专用表 agent_awake_events。
@@ -95,7 +95,7 @@ F --> H
 - [src/pkg/stats/agent_awake.rs:12-198](src/pkg/stats/agent_awake.rs#L12-L198)
 - [src/models/events/think_round.rs:1-124](src/models/events/think_round.rs#L1-L124)
 - [src/consumer/think_round_stats_consumer.rs:1-73](src/consumer/think_round_stats_consumer.rs#L1-L73)
-- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
 - [frontend/src/components/stats.rs:303-425](frontend/src/components/stats.rs#L303-L425)
 
@@ -133,7 +133,7 @@ H-->>F : JSON
 图表来源
 - [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
 - [src/consumer/think_round_stats_consumer.rs:29-72](src/consumer/think_round_stats_consumer.rs#L29-L72)
-- [docs/stats_query_design.md:300-361](docs/stats_query_design.md#L300-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 
 ## 详细组件分析
 
@@ -240,11 +240,11 @@ DAL --> RESP["返回 AgentStats / ModelCallStats"]
 ```
 
 图表来源
-- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L781)
 
 章节来源
-- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L781)
 
 ### 可视化展示与报表
@@ -280,12 +280,12 @@ F["前端"] --> H
 图表来源
 - [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
 - [src/consumer/think_round_stats_consumer.rs:29-72](src/consumer/think_round_stats_consumer.rs#L29-L72)
-- [docs/stats_query_design.md:300-361](docs/stats_query_design.md#L300-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 
 章节来源
 - [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
 - [src/consumer/think_round_stats_consumer.rs:1-73](src/consumer/think_round_stats_consumer.rs#L1-L73)
-- [docs/stats_query_design.md:300-361](docs/stats_query_design.md#L300-L361)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 
 ## 性能考量
 - 事件落库非阻塞：统计写入失败仅记录警告，不阻塞业务主流程（awaken 成功/失败路径均容错）。
@@ -305,7 +305,7 @@ F["前端"] --> H
 章节来源
 - [src/pkg/stats/agent_awake.rs:106-198](src/pkg/stats/agent_awake.rs#L106-L198)
 - [src/consumer/think_round_stats_consumer.rs:43-70](src/consumer/think_round_stats_consumer.rs#L43-L70)
-- [docs/stats_query_design.md:222-250](docs/stats_query_design.md#L222-L250)
+- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [frontend/src/components/stats.rs:342-368](frontend/src/components/stats.rs#L342-L368)
 
 ## 结论

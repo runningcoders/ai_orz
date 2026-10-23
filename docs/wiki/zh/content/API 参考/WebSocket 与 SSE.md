@@ -10,8 +10,8 @@
 - [src/handlers/a2a/send_subscribe.rs](src/handlers/a2a/send_subscribe.rs)
 - [src/service/dao/lark/ws.rs](src/service/dao/lark/ws.rs)
 - [frontend/src/utils/message.rs](frontend/src/utils/message.rs)
-- [docs/message_interaction_design.md](docs/message_interaction_design.md)
-- [docs/testing_guidelines.md](docs/testing_guidelines.md)
+- [docs/message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
+- [docs/testing_guidelines.md](docs/archive/design-archive/testing_guidelines.md)
 </cite>
 
 ## 目录
@@ -63,7 +63,7 @@ WS --> HANDLER["LarkEventHandler"]
 - [src/service/dao/lark/ws.rs:152-228](src/service/dao/lark/ws.rs#L152-L228)
 
 章节来源
-- [docs/message_interaction_design.md:162-245](docs/message_interaction_design.md#L162-L245)
+- [docs/message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
 
 ## 核心组件
 - SSE 订阅端点：负责从认证上下文提取用户 ID，创建并维护 SSE 流，封装清理逻辑，设置 keep-alive 心跳。
@@ -270,7 +270,7 @@ WS->>LARK : 关闭连接
 - 错误处理：SSE 流中通过 event("error") 传递错误信息；客户端需捕获并重试。
 
 章节来源
-- [docs/message_interaction_design.md:162-245](docs/message_interaction_design.md#L162-L245)
+- [docs/message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
 - [frontend/src/utils/message.rs:42-84](frontend/src/utils/message.rs#L42-L84)
 
 ## 依赖关系分析
@@ -316,7 +316,7 @@ L["Lark WS"] --> NET["tokio_tungstenite/reqwest"]
 - 日志定位：关注 lark ws 相关日志（连接、心跳、接收错误），以及 SSE 推送计数。
 
 章节来源
-- [docs/testing_guidelines.md:479-499](docs/testing_guidelines.md#L479-L499)
+- [docs/testing_guidelines.md](docs/archive/design-archive/testing_guidelines.md)
 
 ## 结论
 本项目通过分层架构清晰分离了实时通信的职责：SSE 用于浏览器侧的消息与任务状态推送，WebSocket 用于第三方平台的事件入站。基于内存广播通道的推送机制具备低延迟与高吞吐特性，配合严格的生命周期管理与心跳策略，保障了连接的稳定性与资源可控。建议在大规模部署时关注广播通道容量、连接数上限与监控指标，持续优化性能与可观测性。

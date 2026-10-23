@@ -13,7 +13,7 @@
 - [router.rs](src/router.rs)
 - [message.rs（API DTOs）](common/src/api/message.rs)
 - [a2a.rs（A2A运行时DAO）](src/service/dao/agent_runtime/a2a.rs)
-- [external_agent_design.md](docs/external_agent_design.md)
+- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 - [message_channel.rs（生产者）](src/producer/message_channel.rs)
 </cite>
 
@@ -292,11 +292,11 @@ Local->>Local : 调用Domain发送用户消息/更新任务状态
 
 图表来源
 - [a2a.rs:150-195](src/service/dao/agent_runtime/a2a.rs#L150-L195)
-- [external_agent_design.md:107-188](docs/external_agent_design.md#L107-L188)
+- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 章节来源
 - [a2a.rs:150-195](src/service/dao/agent_runtime/a2a.rs#L150-L195)
-- [external_agent_design.md:107-188](docs/external_agent_design.md#L107-L188)
+- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ### 消息路由与消息通道生产者
 - 路由规则

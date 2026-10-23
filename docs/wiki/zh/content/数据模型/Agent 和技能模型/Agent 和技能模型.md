@@ -12,7 +12,7 @@
 - [src/models/mcp_server.rs](src/models/mcp_server.rs)
 - [common/src/enums/mcp_server.rs](common/src/enums/mcp_server.rs)
 - [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
-- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 - [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
 - [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
 - [src/service/domain/hr/mod.rs](src/service/domain/hr/mod.rs)
@@ -313,13 +313,13 @@ API-->>FE : 同步完成
 ```
 
 图表来源
-- [migrations/20260623000000_mcp_servers.sql:4-20](migrations/20260623000000_mcp_servers.sql#L4-L20)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 - [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
 - [src/models/mcp_server.rs:224-280](src/models/mcp_server.rs#L224-L280)
 - [src/pkg/tool_registry/mod.rs:92-100](src/pkg/tool_registry/mod.rs#L92-L100)
 
 章节来源
-- [migrations/20260623000000_mcp_servers.sql:4-20](migrations/20260623000000_mcp_servers.sql#L4-L20)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 - [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
 - [src/models/mcp_server.rs:224-280](src/models/mcp_server.rs#L224-L280)
 - [src/pkg/tool_registry/mod.rs:92-100](src/pkg/tool_registry/mod.rs#L92-L100)
@@ -438,4 +438,4 @@ Skills --> Parent["父技能(SkillPo.parent_skill_id)"]
 
 章节来源
 - [migrations/20260420000000_initial.sql:39-244](migrations/20260420000000_initial.sql#L39-L244)
-- [migrations/20260623000000_mcp_servers.sql:4-20](migrations/20260623000000_mcp_servers.sql#L4-L20)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)

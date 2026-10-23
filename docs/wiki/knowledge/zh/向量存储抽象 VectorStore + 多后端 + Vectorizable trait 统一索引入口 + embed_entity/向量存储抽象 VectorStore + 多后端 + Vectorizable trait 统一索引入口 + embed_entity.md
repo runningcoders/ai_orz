@@ -105,7 +105,7 @@ source_files:
 | [pkg/storage/mem_vector.rs](src/pkg/storage/mem_vector.rs) | InMemoryVectorStore 实现（dev 默认）| HashMap 存 collection；payload + filter 内存求值 + update_payload；Bincode + fs 懒持久化 |
 | [pkg/storage/lance.rs](src/pkg/storage/lance.rs) | LanceVectorStore（生产推荐） | payload 平铺列随向量落库；upsert + search/get 读写 payload；SQL `only_if` 谓词下推；update_payload 取回旧行重写 |
 | [pkg/storage/hnsw.rs](src/pkg/storage/hnsw.rs) | HnswStore（ANN 高维） | filter take×4 放大补偿过滤命中率下降；update_payload |
-| [pkg/storage/sqlite_vss.rs](src/pkg/storage/sqlite_vss.rs) | SqliteVssStore（与主 DB 同文件） | 建表/upsert 落 payload 列；get/search 读侧解析 payload |
+| [pkg/storage/sqlite_vss.rs](src/pkg/storage/vector.rs) | SqliteVssStore（与主 DB 同文件） | 建表/upsert 落 payload 列；get/search 读侧解析 payload |
 | [models/vector.rs](src/models/vector.rs) | Vectorizable trait + 三底座结构 + MatchType + SearchMatchInfo | `trait Vectorizable`（含扩展：vector_payload/vector_id/reindex_decision）；`VectorPayload`/`VectorFilter`/`ReindexDecision`（三态 Skip/PayloadOnly/FullReindex）；MatchType；SearchMatchInfo |
 | [pkg/storage/fts5.rs](src/pkg/storage/fts5.rs) | FTS5 关键词转义 | `escape_fts5_keyword(keyword) -> String`（短语匹配；含 6 组单元测试覆盖空串/转义/空格/特殊字符）|
 | [dao/cortex/native/mod.rs](src/service/dao/cortex/native/mod.rs) | cortex 向量生成 | `embed(ctx, provider, texts: &[String]) -> Vec<Vec<f32>>` 主入口；`embed_text_for_search(ctx, provider, keyword) -> VectorIndexParams` 搜索场景专用（带 hash + 模型信息）|

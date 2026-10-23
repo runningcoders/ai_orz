@@ -6,7 +6,7 @@
 - [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
 - [src/pkg/tool_registry/http_tests.rs](src/pkg/tool_registry/http_tests.rs)
 - [common/src/constants/http_header.rs](common/src/constants/http_header.rs)
-- [docs/generic_builtin_tools_design.md](docs/generic_builtin_tools_design.md)
+- [docs/generic_builtin_tools_design.md](docs/archive/design-archive/generic_builtin_tools_design.md)
 </cite>
 
 ## 目录
@@ -216,7 +216,7 @@ Return --> End
 - [src/pkg/tool_registry/tool_security.rs:17-170](src/pkg/tool_registry/tool_security.rs#L17-L170)
 - [src/pkg/tool_registry/tool_security.rs:172-231](src/pkg/tool_registry/tool_security.rs#L172-L231)
 - [src/pkg/tool_registry/http.rs:369-559](src/pkg/tool_registry/http.rs#L369-L559)
-- [docs/generic_builtin_tools_design.md:281-310](docs/generic_builtin_tools_design.md#L281-L310)
+- [docs/generic_builtin_tools_design.md](docs/archive/design-archive/generic_builtin_tools_design.md)
 
 ### 认证方式与头部设置
 - 认证方式：通过 headers 模板注入，例如 Authorization、X-Api-Key 等；敏感头在响应中被脱敏。

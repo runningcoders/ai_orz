@@ -3,8 +3,8 @@
 <cite>
 **本文引用的文件**
 - [src/pkg/tool_registry/gh_cli.rs](src/pkg/tool_registry/gh_cli.rs)
-- [src/service/domain/github_integration/pr.rs](src/service/domain/github_integration/pr.rs)
-- [frontend/src/pages/integrations/github.rs](frontend/src/pages/integrations/github.rs)
+- [src/service/domain/github_integration/pr.rs](src/pkg/tool_registry/gh_cli.rs)
+- [frontend/src/pages/integrations/github.rs](frontend/src/pages/finance/identity_github.rs)
 
 ### 本文关联的三类文档（四类互引闭环）
 
@@ -66,8 +66,8 @@ GitHub 集成（d04cd9a3 变更）是 AI Orz 外部集成体系的首个完整�
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [src/service/domain/github_integration/mod.rs](src/service/domain/github_integration/mod.rs)
-- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/integrations/github.rs#L1-L300)
+- [src/service/domain/github_integration/mod.rs](src/pkg/tool_registry/gh_cli.rs)
+- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/finance/identity_github.rs#L1-L300)
 
 ## 核心数据结构与 API
 ### GhCliSubcommand 枚举（白名单）
@@ -104,7 +104,7 @@ gh_cli 工具 invoke 返回值 = Handler API 返回值，由单测 `gh_cli_tool_
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
 - [common/src/api/github_integration.rs#L1-L150](common/src/api/github_integration.rs#L1-L150)
-- [src/service/domain/identity_credential/crud.rs#L200-L280](src/service/domain/identity_credential/crud.rs#L200-L280)
+- [src/service/domain/identity_credential/crud.rs#L200-L280](src/service/domain/finance/identity_credential.rs#L200-L280)
 
 ## 架构原理与流程
 ### 三层调用架构对齐
@@ -135,7 +135,7 @@ invoke(subcommand, args)
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [src/service/domain/github_integration/repo.rs#L1-L180](src/service/domain/github_integration/repo.rs#L1-L180)
+- [src/service/domain/github_integration/repo.rs#L1-L180](src/pkg/tool_registry/gh_cli.rs#L1-L180)
 
 ## 边界与行为红线
 ### 安全红线
@@ -151,7 +151,7 @@ invoke(subcommand, args)
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/integrations/github.rs#L1-L300)
+- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/finance/identity_github.rs#L1-L300)
 
 ## 详细实现分析
 ### GhCliTool.invoke 核心流程
@@ -213,7 +213,7 @@ frontend/src/pages/integrations/github.rs 使用 Dioxus router，三个 Tab 以 
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/integrations/github.rs#L1-L300)
+- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/finance/identity_github.rs#L1-L300)
 
 ## 代码组织与扩展点
 ### 目录结构
@@ -246,7 +246,7 @@ common/src/api/github_integration.rs       ← 前后端共用 DTO
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [src/service/domain/github_integration/mod.rs](src/service/domain/github_integration/mod.rs)
+- [src/service/domain/github_integration/mod.rs](src/pkg/tool_registry/gh_cli.rs)
 
 ## 运维与监控
 ### 指标
@@ -266,7 +266,7 @@ common/src/api/github_integration.rs       ← 前后端共用 DTO
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [src/service/domain/github_integration/repo.rs#L1-L180](src/service/domain/github_integration/repo.rs#L1-L180)
+- [src/service/domain/github_integration/repo.rs#L1-L180](src/pkg/tool_registry/gh_cli.rs#L1-L180)
 
 ## 常见故障排查
 ### Troubleshooting 1：gh_cli 工具错误 "gh CLI not installed"
@@ -286,11 +286,11 @@ common/src/api/github_integration.rs       ← 前后端共用 DTO
 2. 修复：在 gh_cli.rs resolve_github_pat 中 scope 使用与 Handler 对称的 `user_then_org(ctx.uid(), ctx.org_id)`：先查用户级，没找到再查 org 级（且 org 级凭证要求 Agent 的角色是 Member，符合共享语义）。
 3. 源码位置：
    - [src/pkg/tool_registry/gh_cli.rs#L100-L130](src/pkg/tool_registry/gh_cli.rs#L100-L130)（resolve_github_pat 段）
-   - [src/service/domain/identity_credential/crud.rs#L200-L250](src/service/domain/identity_credential/crud.rs#L200-L250)（get_by_type scope 过滤段）
+   - [src/service/domain/identity_credential/crud.rs#L200-L250](src/service/domain/finance/identity_credential.rs#L200-L250)（get_by_type scope 过滤段）
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [src/service/domain/identity_credential/crud.rs#L200-L280](src/service/domain/identity_credential/crud.rs#L200-L280)
+- [src/service/domain/identity_credential/crud.rs#L200-L280](src/service/domain/finance/identity_credential.rs#L200-L280)
 
 ## 最佳实践
 1. **优先用 org 级凭证共享**：小团队在 /integrations/github 保存 GITHUB_PAT 时 scope=Org 级，所有 org 内 Agent 都能通过 user_then_org fallback 拿到；避免每个用户单独存一遍 PAT。
@@ -300,7 +300,7 @@ common/src/api/github_integration.rs       ← 前后端共用 DTO
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/integrations/github.rs#L1-L300)
+- [frontend/src/pages/integrations/github.rs#L1-L300](frontend/src/pages/finance/identity_github.rs#L1-L300)
 
 ## 结论与未来方向
 GitHub 集成通过 gh CLI 子进程 + 身份凭证统一链路复用，实现了「工具、API、前端 UI」三层对称的完整 GitHub 联动能力。选型上刻意避开了 octocrab crate 直接调 REST API，利用 gh CLI 成熟的 pagination / retry / GHES 兼容能力，减少了代码量与边界 case。
@@ -312,4 +312,4 @@ GitHub 集成通过 gh CLI 子进程 + 身份凭证统一链路复用，实现�
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [src/service/domain/github_integration/pr.rs#L1-L200](src/service/domain/github_integration/pr.rs#L1-L200)
+- [src/service/domain/github_integration/pr.rs#L1-L200](src/pkg/tool_registry/gh_cli.rs#L1-L200)

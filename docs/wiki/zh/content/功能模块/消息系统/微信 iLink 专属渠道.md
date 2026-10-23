@@ -23,7 +23,7 @@
   - [wechat_channel_integration_design.md](docs/design/wechat_channel_integration_design.md) — iLink 协议设计 + 分层架构（如有）
   - [message_channel_design.md](docs/archive/design-archive/message_channel_design.md) — 消息渠道入站适配中台架构
 - 【② Plan 落地快照】（如有）
-  - [微信 iLink 专属渠道闭环.md](docs/plan/微信%20iLink%20专属渠道闭环.md) — 阶段一完整闭环落地快照
+  - [微信 iLink 专属渠道闭环.md](docs/wiki/knowledge/zh/微信%20iLink%20专属渠道闭环：wechat_dal%20+%20ilink_dao%20+%20inbound_state%20+%20授权流程/微信%20iLink%20专属渠道闭环：wechat_dal%20+%20ilink_dao%20+%20inbound_state%20+%20授权流程.md) — 阶段一完整闭环落地快照
 - 【④ RAG 原子知识卡】
   - [微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程](docs/wiki/knowledge/zh/微信%20iLink%20专属渠道闭环：wechat_dal%20+%20ilink_dao%20+%20inbound_state%20+%20授权流程/微信%20iLink%20专属渠道闭环：wechat_dal%20+%20ilink_dao%20+%20inbound_state%20+%20授权流程.md) — 本长文对应的 RAG 摘要卡
   - [InboundState 入站运行状态：动态游标 + 会话滚动刷新](docs/wiki/knowledge/zh/InboundState%20入站运行状态：动态游标%20+%20会话滚动刷新/InboundState%20入站运行状态：动态游标%20+%20会话滚动刷新.md) — 运行时状态持久化模型

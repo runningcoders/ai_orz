@@ -7,7 +7,7 @@
 - [common/src/api/mcp_server.rs](common/src/api/mcp_server.rs)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
 - [src/pkg/tool_registry/mcp_tests.rs](src/pkg/tool_registry/mcp_tests.rs)
-- [docs/mcp_tool_design.md](docs/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -65,11 +65,11 @@ MDP --> R --> C
 
 图表来源
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [docs/mcp_tool_design.md:196-321](docs/mcp_tool_design.md#L196-L321)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/pkg/tool_registry/mcp.rs:72-192](src/pkg/tool_registry/mcp.rs#L72-L192)
 
 章节来源
-- [docs/mcp_tool_design.md:120-195](docs/mcp_tool_design.md#L120-L195)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/pkg/tool_registry/mcp.rs:1-26](src/pkg/tool_registry/mcp.rs#L1-L26)
 
 ## 核心组件
@@ -116,11 +116,11 @@ Handler-->>Client : { synced }
 
 图表来源
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [docs/mcp_tool_design.md:303-349](docs/mcp_tool_design.md#L303-L349)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/pkg/tool_registry/mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
 
 章节来源
-- [docs/mcp_tool_design.md:303-389](docs/mcp_tool_design.md#L303-L389)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 详细组件分析
 
@@ -204,7 +204,7 @@ Close --> End(["结束"])
 - upsert 规则：不存在则创建；已存在需校验协议与绑定一致；保留 created_at/created_by/status，更新 updated_by。
 
 章节来源
-- [docs/mcp_tool_design.md:303-349](docs/mcp_tool_design.md#L303-L349)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/pkg/tool_registry/mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
 
 ### 运行时调用与协议路由
@@ -213,8 +213,8 @@ Close --> End(["结束"])
 - 执行路径：McpCoreTool.call -> McpClientRuntime.call_tool -> rmcp tools/call。
 
 章节来源
-- [docs/mcp_tool_design.md:581-611](docs/mcp_tool_design.md#L581-L611)
-- [docs/mcp_tool_design.md:713-766](docs/mcp_tool_design.md#L713-L766)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 依赖关系分析
 - Handler 仅做 DTO 转换，调用 Finance Domain。
@@ -233,11 +233,11 @@ MD --> RT["McpClientRuntime"]
 ```
 
 图表来源
-- [docs/mcp_tool_design.md:152-195](docs/mcp_tool_design.md#L152-L195)
-- [docs/mcp_tool_design.md:391-438](docs/mcp_tool_design.md#L391-L438)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 章节来源
-- [docs/mcp_tool_design.md:152-195](docs/mcp_tool_design.md#L152-L195)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 性能与连接管理
 - 当前实现为每调用新建 stdio 会话，适合低频调用；高并发场景建议后续引入 session cache 与连接复用。
@@ -248,7 +248,7 @@ MD --> RT["McpClientRuntime"]
 章节来源
 - [src/pkg/tool_registry/mcp.rs:107-192](src/pkg/tool_registry/mcp.rs#L107-L192)
 - [src/models/mcp_server.rs:117-123](src/models/mcp_server.rs#L117-L123)
-- [docs/mcp_tool_design.md:1346-1352](docs/mcp_tool_design.md#L1346-L1352)
+- [docs/mcp_tool_design.md:1346-1352](docs/archive/design-archive/mcp_tool_design.md)
 
 ## 故障恢复与错误处理
 - 错误脱敏：MCP 下层错误统一映射为安全错误，不输出 command/env/headers/url/credential。
@@ -275,7 +275,7 @@ MD --> RT["McpClientRuntime"]
 章节来源
 - [src/models/mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
 - [src/pkg/tool_registry/mcp_tests.rs:157-217](src/pkg/tool_registry/mcp_tests.rs#L157-L217)
-- [docs/mcp_tool_design.md:323-349](docs/mcp_tool_design.md#L323-L349)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 
 ## MCP 服务器搭建与调试
 - 搭建步骤：
@@ -305,7 +305,7 @@ MD --> RT["McpClientRuntime"]
 
 章节来源
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [docs/mcp_tool_design.md:637-663](docs/mcp_tool_design.md#L637-L663)
+- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
 - [src/pkg/tool_registry/mcp_tests.rs:283-318](src/pkg/tool_registry/mcp_tests.rs#L283-L318)
 
 ## 结论

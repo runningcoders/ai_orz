@@ -132,7 +132,7 @@ search_memory (Handler / 神经工具)
 
 | 扩展需求 | 改动位置（N 处同步） | 参考锚点 |
 |---------|---------------------|---------|
-| 新增 FTS5 可索引字段（如 extra_tags） | ① migration：重建 FTS 虚拟表（ALTER 不支持）+ 触发器追加 → ② DAO search 方法 MATCH 字段列表追加 → ③ Vectorizable::vectorize_text 追加对应字段（确保向量语义对齐） | [migrations/20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql) |
+| 新增 FTS5 可索引字段（如 extra_tags） | ① migration：重建 FTS 虚拟表（ALTER 不支持）+ 触发器追加 → ② DAO search 方法 MATCH 字段列表追加 → ③ Vectorizable::vectorize_text 追加对应字段（确保向量语义对齐） | [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql) |
 | 新增第四路搜索（tags 精确集合匹配） | ① MemoryDao 新增 list_by_tags_exact(tags) 原子方法 → ② DAL search() 顶部先取候选集 → ③ 与现有三路结果求交集（不破坏原有 Hybrid/Vector/Keyword 排序规则） | [dao/memory/mod.rs](src/service/dao/memory/mod.rs) trait 追加方法 |
 | 推荐策略新增维度（如时间衰减热度 / PageRank） | ① 在 DAL 排序键里追加第二/第三排序键（**禁止恢复加权求和**）→ ② 如需回传则给 `SeedNodeRecommendation` 加明确命名字段（如 `recent_hits`，不恢复 `reasons`）→ ③ 前端 `KnowledgeGraph` 组件零改动 | [dal/memory/graph.rs](src/service/dal/memory/graph.rs) |
 | traverse 新增策略（如 Personalized PageRank 随机游走） | ① TraversalStrategy 枚举追加 PPR 变体 → ② DAL traverse_knowledge_graph match 追加分支 → ③ neural_tools.rs SearchMemoryParams.traversal_strategy 枚举同步 → ④ 前端 KnowledgeGraph 策略切换下拉 | common/src/enums/memory.rs TraversalStrategy 定义位置 |

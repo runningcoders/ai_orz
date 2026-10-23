@@ -6,7 +6,7 @@
 - [common/src/enums/agent.rs](common/src/enums/agent.rs)
 - [common/src/enums/agent_kind.rs](common/src/enums/agent_kind.rs)
 - [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
-- [migrations/20260719000000_add_kind_to_agents.sql](migrations/20260719000000_add_kind_to_agents.sql)
+- [migrations/20260719000000_add_kind_to_agents.sql](migrations/20260420000000_initial.sql)
 - [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
 </cite>
@@ -74,7 +74,7 @@ I --> A
 - [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
 - [migrations/20260420000000_initial.sql:39-54](migrations/20260420000000_initial.sql#L39-L54)
 - [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
-- [migrations/20260719000000_add_kind_to_agents.sql:1-5](migrations/20260719000000_add_kind_to_agents.sql#L1-L5)
+- [migrations/20260719000000_add_kind_to_agents.sql](migrations/20260420000000_initial.sql)
 
 **章节来源**
 - [src/models/agent.rs:15-105](src/models/agent.rs#L15-L105)
@@ -83,7 +83,7 @@ I --> A
 - [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
 - [migrations/20260420000000_initial.sql:39-54](migrations/20260420000000_initial.sql#L39-L54)
 - [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
-- [migrations/20260719000000_add_kind_to_agents.sql:1-5](migrations/20260719000000_add_kind_to_agents.sql#L1-L5)
+- [migrations/20260719000000_add_kind_to_agents.sql](migrations/20260420000000_initial.sql)
 
 ## 核心组件
 - AgentPo：持久化对象，映射 agents 表，包含 ID、名称、角色、描述、灵魂设定、能力、运行时配置、模型提供商、状态、类型、审计字段等。

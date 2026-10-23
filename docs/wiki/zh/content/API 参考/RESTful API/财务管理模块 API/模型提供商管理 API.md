@@ -21,9 +21,9 @@
 - [src/models/user_credential.rs](src/models/user_credential.rs)
 - [src/service/dao/user_credential/mod.rs](src/service/dao/user_credential/mod.rs)
 - [src/service/dao/user_credential/sqlite.rs](src/service/dao/user_credential/sqlite.rs)
-- [common/src/api/tavily_integration.rs](common/src/api/tavily_integration.rs)
-- [src/handlers/finance/tavily_integration/create_credential.rs](src/handlers/finance/tavily_integration/create_credential.rs)
-- [src/handlers/finance/tavily_integration/get_status.rs](src/handlers/finance/tavily_integration/get_status.rs)
+- [common/src/api/tavily_integration.rs](common/src/api/generic_token_integration.rs)
+- [src/handlers/finance/tavily_integration/create_credential.rs](src/handlers/finance/generic_token_integration/create_credential.rs)
+- [src/handlers/finance/tavily_integration/get_status.rs](src/handlers/finance/generic_token_integration/get_status.rs)
 - [docs/plan/用户身份凭证独立表落地.md](docs/plan/用户身份凭证独立表落地.md)
 </cite>
 
@@ -415,7 +415,7 @@ R --> T["RebuildVectorsTask"]
 - [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
 - [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
 - [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
-- [common/src/api/tavily_integration.rs:1-107](common/src/api/tavily_integration.rs#L1-L107)
+- [common/src/api/tavily_integration.rs](common/src/api/generic_token_integration.rs)
 - [src/service/domain/finance/identity_credential.rs:1-454](src/service/domain/finance/identity_credential.rs#L1-L454)
 ---
 

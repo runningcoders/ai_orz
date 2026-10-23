@@ -142,7 +142,7 @@ source_files:
 **章节来源**
 - [message/delivery.rs:L1-L150](src/service/domain/message/delivery.rs#L1-L150)
 - [consumer/message.rs:L1-L80](src/consumer/message.rs#L1-L80)
-- [middleware/sse.rs](src/middleware/sse.rs)
+- [middleware/sse.rs](src/middleware/sse_headers.rs)
 
 ---
 

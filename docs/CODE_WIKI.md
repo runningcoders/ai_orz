@@ -10,7 +10,7 @@
 > - 需要字段级实现细节 → 跳 [wiki/](./wiki/) 自动生成内容或直接打开对应源文件
 >
 > 关联文档：
-> - [AGENTS.md](../AGENTS.md) — 架构规范与开发约定强制执行手册
+> - [AGENTS.md](AGENTS.md) — 架构规范与开发约定强制执行手册
 > - [ARCHITECTURE.md](./ARCHITECTURE.md) — 唯一权威架构总纲（概念/关系/分层边界）
 
 > 🎯 **本文档是代码认知的入口页**，不再是全景正文。
@@ -53,7 +53,7 @@
 
 - 架构全貌 → [ARCHITECTURE.md](./ARCHITECTURE.md) + [wiki/](./wiki/)
 - 分层规范与避坑 → [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md)
-- 强制开发规范 → [../AGENTS.md](../AGENTS.md)
+- 强制开发规范 → [../AGENTS.md](AGENTS.md)
 - 某子系统的设计动机 → [design/](./design/) 对应文档
 
 ### Wiki 主分类导航（IDE 生成，随代码演进）

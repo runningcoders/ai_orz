@@ -9,8 +9,8 @@
 - [src/service/dal/message_channel.rs](src/service/dal/message_channel.rs)
 - [src/consumer/message.rs](src/consumer/message.rs)
 - [tests/integration/message_delivery_test.rs](tests/integration/message_delivery_test.rs)
-- [docs/message_channel_design.md](docs/message_channel_design.md)
-- [docs/message_interaction_design.md](docs/message_interaction_design.md)
+- [docs/message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
+- [docs/message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
 </cite>
 
 ## 目录
@@ -64,8 +64,8 @@ MSG_DAL --> DB
 - [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
 
 章节来源
-- [docs/message_interaction_design.md:223-245](docs/message_interaction_design.md#L223-L245)
-- [docs/message_channel_design.md:424-474](docs/message_channel_design.md#L424-L474)
+- [docs/message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
+- [docs/message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
 
 ## 核心组件
 - 消息领域接口与命令对象：定义 send_to_agent/send_to_user/send_tool_call_request/send_tool_call_result/send_task_assignment/deliver_message 等入口，以及对应 Command 参数对象，避免参数膨胀。
@@ -182,7 +182,7 @@ Update --> Aggregate["聚合 DeliveryResult"]
 
 章节来源
 - [src/service/dal/message_channel.rs:62-126](src/service/dal/message_channel.rs#L62-L126)
-- [docs/message_channel_design.md:424-474](docs/message_channel_design.md#L424-L474)
+- [docs/message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
 
 ### SSE 实时推送
 - 订阅：subscribe_sse 建立连接并注册 receiver。
@@ -238,7 +238,7 @@ MsgDal --> DB[("SQLite")]
 - [src/service/dal/message_channel.rs:29-58](src/service/dal/message_channel.rs#L29-L58)
 
 章节来源
-- [docs/message_channel_design.md:424-474](docs/message_channel_design.md#L424-L474)
+- [docs/message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
 
 ## 性能与可靠性
 - 并发与顺序：

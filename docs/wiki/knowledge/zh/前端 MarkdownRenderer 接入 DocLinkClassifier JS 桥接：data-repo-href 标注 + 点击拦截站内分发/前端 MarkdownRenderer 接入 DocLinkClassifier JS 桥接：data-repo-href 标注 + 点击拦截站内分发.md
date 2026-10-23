@@ -43,8 +43,8 @@ fcb08db6 变更把前端 Dioxus Markdown 渲染组件统一接入 DocLinkClassif
 | [common/src/doc_link.rs](common/src/doc_link.rs) | 分类器（单一事实源，前后端共用）| 与 T6 卡完全相同；前端 utils/doc_link.rs 里 `use common::doc_link::{classify, normalize_to_repo_relative, LinkKind}`——**没有重写一份**！前端只是把分类结果进一步转成 ClickBehaviour + Render attribute。|
 | [frontend/src/components/markdown.rs: 安全过滤段](#L220-L270) | XSS 安全过滤（Tag::Link 之外）| HTML sanitize：pulldown_cmark Event::Html / Event::InlineHtml 默认直接跳过（不渲染，防止 `<script>` 注入）；img 标签 `src=` 协议白名单 https/http/data:image，其他协议（file:/ftp:/javascript:）直接丢掉 img；Mermaid 代码块识别 ```` ```mermaid```` → 渲染成 `<div class="mermaid-diagram" data-mermaid-src>`，避免 mermaid.js 处理 `<script>` 标记。 |
 | 【Level3 兄弟卡】DocLinkClassifier 工具链总卡 | 分类器 + lint + migrate | [DocLinkClassifier 工具链卡](docs/wiki/knowledge/zh/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链.md) |
-| 【Wiki 长文】前端 Markdown 渲染与站内链接分发.md | 系统化上下文 + Troubleshooting | [前端 Markdown 渲染与站内链接分发](docs/wiki/zh/content/架构设计/前端系统/前端%20Markdown%20渲染与站内链接分发.md) |
-| 【Wiki 长文】前端应用.md（旧总览）| 增量补充 cite 互引 | [前端应用](docs/wiki/zh/content/前端系统/前端应用.md) |
+| 【Wiki 长文】前端 Markdown 渲染与站内链接分发.md | 系统化上下文 + Troubleshooting | 前端 Markdown 渲染与站内链接分发 |
+| 【Wiki 长文】前端应用.md（旧总览）| 增量补充 cite 互引 | [前端应用](docs/wiki/zh/content/前端应用/前端应用.md) |
 | 【② Plan】docs-link-unification-and-classifier | 7 章落地快照（真实）| （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）|
 
 ## §3 架构约定

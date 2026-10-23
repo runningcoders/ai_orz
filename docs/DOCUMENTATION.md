@@ -5,7 +5,7 @@
 > 触发场景：编写 / 修改 / 归档任何 docs/ 文档、新增 Wiki 长文或 RAG 知识卡、修正文档引用路径时打开
 >
 > 关联文档：
-> - [AGENTS.md](../AGENTS.md) — Agent 快速入门手册（文档规范速记指向本文）
+> - [AGENTS.md](AGENTS.md) — Agent 快速入门手册（文档规范速记指向本文）
 > - [CODE_STANDARDS.md](./CODE_STANDARDS.md) — 编码规范 SSOT
 > - [ai-orz-wiki-maintainer](./skills/ai-orz-wiki-maintainer.md) / [ai-orz-doc-maintainer](./skills/ai-orz-doc-maintainer.md) — 本规范的两个执行技能
 
@@ -23,7 +23,7 @@
 > 触发场景：[一句话告诉 Agent 何时打开，否则直接读代码]
 >
 > 关联文档：
-> - [上层权威文档](../../AGENTS.md) — 关联点
+> - [上层权威文档](AGENTS.md) — 关联点
 > - [横向文档](../design/xxx.md) — 关联点
 ```
 
@@ -43,7 +43,7 @@
 | 代码（无行号） | `[描述](路径)` | `[初始迁移](migrations/20260420000000_initial.sql)` |
 | 文档互引 | `[描述](docs/...md)` | `[日志设计](docs/design/logging_design.md)` |
 | Wiki 长文 | `[描述](docs/wiki/zh/content/...md)` | `[日志系统](docs/wiki/zh/content/功能模块/系统管理/日志管理系统.md)` |
-| RAG 卡 | `[描述](docs/wiki/knowledge/zh/...md)` | `[日志宏卡](docs/wiki/knowledge/zh/日志系统/日志宏设计.md)` |
+| RAG 卡 | `[描述](docs/wiki/knowledge/zh/...md)` | `[日志宏卡](docs/wiki/knowledge/zh/基于%20tracing%20的结构化日志系统（宏%20+%20文件滚动%20+%20JSONL%20查询）/基于%20tracing%20的结构化日志系统（宏%20+%20文件滚动%20+%20JSONL%20查询）.md)` |
 | 外部链接 | 直接写 http(s) | `[sqlx](https://docs.rs/sqlx)` |
 
 **三环境行为**：
@@ -246,7 +246,7 @@ Step 0 5 级判定结果 →
 | 七、后续扩展路径 | **4 步模板**：common 模型 / domain 分发 / handler 目录 / 前端 |
 
 **红线（功能完成时强制执行）**：删除 writing-plans 产生的 Task/Step checkbox、失败测试代码块、所有实现代码块、`cargo test/build` 命令；只保留以上 7 节概述（目标 ≈ 150 行级）。
-**参考实例**：[docs/plan/身份凭证Domain统一CRUD重构.md](./plan/身份凭证Domain统一CRUD重构.md)
+**参考实例**：[docs/plan/身份凭证Domain统一CRUD重构.md](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md)
 
 ---
 

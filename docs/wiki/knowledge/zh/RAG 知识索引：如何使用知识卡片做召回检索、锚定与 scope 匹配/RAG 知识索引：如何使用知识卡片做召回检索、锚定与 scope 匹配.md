@@ -31,8 +31,8 @@ AI Orz 在 `docs/` 下维护**四类文档完整链路、显式互引、绝不�
 | `docs/wiki/knowledge/zh/AI Orz 多 Agent 执行框架…/` | 顶层模块 1：覆盖 Rust 后端 + Dioxus 前端，含 概述/技术栈/架构/编码规范/特殊配置命令 5 张标准模块卡 |
 | `docs/wiki/knowledge/zh/AI Orz 多模块工作区…/` | 顶层模块 2：覆盖 workspace 结构，含 E2E 子模块 |
 | `docs/wiki/knowledge/zh/<中文描述>/<同名>.md` | 44+ 张独立单主题知识卡（日志/错误/策略/工具/存储/向量/CI等），每张 YAML Front Matter 5 字段 + 4 标准章节 + **source_files[] 强制含对应 wiki 长文相对仓库根路径** |
-| `[四类文档互引闭环管理](docs/wiki/zh/content/架构设计/文档体系规范/四类文档互引闭环管理/四类文档互引闭环管理.md)` | ⭐【v2.0 显式互引】本卡对应的人类百科长文（知识卡④→长文③的第二跳入口），告诉人类/Agent 四类文档如何互引、怎么写占位路径、防死锁规则 |
-| `[RAG 知识卡索引机制](docs/wiki/zh/content/基础设施/知识库与知识图谱/RAG 知识卡索引机制/RAG 知识卡索引机制.md)` | ⭐【v2.0 显式互引】本主题的另一组长文，讲解 chunk 方式、scope 匹配算法、召回打分权重等更深入的索引机制细节 |
+| `四类文档互引闭环管理` | ⭐【v2.0 显式互引】本卡对应的人类百科长文（知识卡④→长文③的第二跳入口），告诉人类/Agent 四类文档如何互引、怎么写占位路径、防死锁规则 |
+| `RAG 知识卡索引机制` | ⭐【v2.0 显式互引】本主题的另一组长文，讲解 chunk 方式、scope 匹配算法、召回打分权重等更深入的索引机制细节 |
 | `docs/skills/ai-orz-wiki-maintainer.md` + `.trae/skills/ai-orz-wiki-maintainer/SKILL.md` | 知识库维护 Skill（wiki 侧）：负责长文③ + 卡④同步，强制写 `<cite>` 区 + `source_files[]` 的四类互引路径 |
 | `docs/skills/ai-orz-doc-maintainer.md` + `.trae/skills/ai-orz-doc-maintainer/SKILL.md` | 知识库维护 Skill（doc 侧）：负责 design① + plan② 生命周期，强制写「关联文档」的 wiki/RAG 占位路径 |
 

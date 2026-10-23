@@ -76,7 +76,7 @@ source_files:
 **章节来源**
 - [env.rs:L1-L120](tests/common/env.rs#L1-L120)
 - [testing_guidelines.md:L1-L80](docs/archive/design-archive/testing_guidelines.md#L1-L80)
-- [ci.yml](.github/workflows/ci.yml)
+- `ci.yml`
 
 ---
 

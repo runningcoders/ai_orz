@@ -15,7 +15,7 @@
 - [src/router.rs](src/router.rs)
 - [common/src/config.rs](common/src/config.rs)
 - [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
-- [docs/external_agent_design.md](docs/external_agent_design.md)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 </cite>
 
 ## 目录
@@ -239,7 +239,7 @@ end
 
 **章节来源**
 - [src/handlers/a2a/callback.rs:17-197](src/handlers/a2a/callback.rs#L17-L197)
-- [docs/external_agent_design.md:107-188](docs/external_agent_design.md#L107-L188)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ### 映射器（A2A ↔ 内部实体）
 - 状态映射：ProjectStatus → A2aTaskState。
@@ -307,7 +307,7 @@ R --> CFG["config.rs"]
 - [src/handlers/a2a/send_task.rs:32-127](src/handlers/a2a/send_task.rs#L32-L127)
 - [src/handlers/a2a/send_subscribe.rs:35-124](src/handlers/a2a/send_subscribe.rs#L35-L124)
 - [src/handlers/a2a/callback.rs:17-197](src/handlers/a2a/callback.rs#L17-L197)
-- [docs/external_agent_design.md:118-188](docs/external_agent_design.md#L118-L188)
+- [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 - [common/src/config.rs:21-59](common/src/config.rs#L21-L59)
 
 ## 故障排查指南

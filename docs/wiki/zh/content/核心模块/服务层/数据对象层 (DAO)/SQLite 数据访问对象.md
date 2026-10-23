@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
 - [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
-- [migrations/20260810000000_users_preferences.sql](migrations/20260810000000_users_preferences.sql)
+- `migrations/20260810000000_users_preferences.sql`
 - [src/service/dao/memory/sqlite/mod.rs](src/service/dao/memory/sqlite/mod.rs)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dao/agent/sqlite.rs](src/service/dao/agent/sqlite.rs)
@@ -65,7 +65,7 @@ I --> J["避免 SQLite 999 参数绑定限制"]
 **章节来源**
 - [src/pkg/storage/mod.rs:56-122](src/pkg/storage/mod.rs#L56-L122)
 - [migrations/20260420000000_initial.sql:10-273](migrations/20260420000000_initial.sql#L10-L273)
-- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
+- `migrations/20260810000000_users_preferences.sql:1-13`
 
 ## 核心组件
 - Storage 门面：集中管理 SqlitePool、向量存储后端、Stats，并提供 sqlite()/sqlite_pool()/vector()/stats() 等访问器；支持全局单例 init/get 用于无 ctx 场景。
@@ -216,7 +216,7 @@ Single --> Output
 
 **章节来源**
 - [migrations/20260420000000_initial.sql:10-273](migrations/20260420000000_initial.sql#L10-L273)
-- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
+- `migrations/20260810000000_users_preferences.sql:1-13`
 
 ## 依赖关系分析
 - Storage 依赖 sqlx 连接池与向量存储后端，DAO 通过 RequestContext.db_pool() 获取连接。
@@ -286,5 +286,5 @@ DAO_Memory --> IN_CHUNK["IN_CLAUSE_CHUNK 常量"]
 **章节来源**
 - [src/pkg/storage/mod.rs:56-122](src/pkg/storage/mod.rs#L56-L122)
 - [migrations/20260420000000_initial.sql:1-273](migrations/20260420000000_initial.sql#L1-L273)
-- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
+- `migrations/20260810000000_users_preferences.sql:1-13`
 - [tests/integration/core_crud_test.rs:1-37](tests/integration/core_crud_test.rs#L1-L37)

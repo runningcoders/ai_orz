@@ -106,9 +106,9 @@ source_files:
 | migrations/20260830000000_add_org_config.sql | DB 迁移 | `ALTER TABLE organizations ADD COLUMN config TEXT NOT NULL DEFAULT '{}'`；后续新增组织级配置项只需追加 JSON 字段，无需改表结构 | `:L1-L8` |
 
 **章节来源**
-- [user_role.rs:L1-L60](common/src/enums/user_role.rs#L1-L60)
+- [user_role.rs](common/src/enums/user.rs)
 - [domain/organization/user.rs:L1-L150](src/service/domain/organization/user.rs#L1-L150)
-- [middleware/auth.rs:L1-L100](src/middleware/auth.rs#L1-L100)
+- [middleware/auth.rs](src/middleware/jwt_auth.rs)
 
 ---
 

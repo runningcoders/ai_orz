@@ -10,7 +10,7 @@
 - [src/models/user.rs](src/models/user.rs)
 - [src/service/domain/organization/user.rs](src/service/domain/organization/user.rs)
 - [common/src/enums/user.rs](common/src/enums/user.rs)
-- [migrations/20260810000000_users_preferences.sql](migrations/20260810000000_users_preferences.sql)
+- `migrations/20260810000000_users_preferences.sql`
 - [frontend/src/pages/user/profile.rs](frontend/src/pages/user/profile.rs)
 </cite>
 
@@ -73,7 +73,7 @@ J["Frontend<br/>Profile Page"] -.-> C
 - [common/src/api/user.rs:1-228](common/src/api/user.rs#L1-L228)
 - [src/models/user.rs:1-146](src/models/user.rs#L1-L146)
 - [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
-- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
+- `migrations/20260810000000_users_preferences.sql:1-13`
 - [frontend/src/pages/user/profile.rs:1-148](frontend/src/pages/user/profile.rs#L1-L148)
 
 章节来源
@@ -268,7 +268,7 @@ UserPo --> UserStatus : "使用"
 - **访问控制**：只允许用户本人通过 update_current_user 修改，Agent 无写入路径
 
 章节来源
-- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
+- `migrations/20260810000000_users_preferences.sql:1-13`
 
 ### 前端界面增强
 - **个人资料页面**：新增"我的偏好"区块，支持 Markdown 格式编辑与展示
@@ -413,7 +413,7 @@ H2-->>C : "UpdateCurrentUserResponse"
 
 章节来源
 - [frontend/src/pages/user/profile.rs:81-112](frontend/src/pages/user/profile.rs#L81-L112)
-- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
+- `migrations/20260810000000_users_preferences.sql:1-13`
 
 ### 扩展建议（头像上传）
 - 头像上传：建议复用附件/资源管理模块，新增头像专用用途标识与访问控制

@@ -91,10 +91,10 @@ source_files:
 
 | 文件 | 角色 | 关键结构/入口 |
 |------|------|-------------|
-| [dal/lark.rs](/src/service/dal/lark.rs) | DAL：Lark 渠道入站总入口（MessageInboundAdapter 实现）| LarkMessageChannelDal struct ~L122；fn start() ~L650+（按 app_id 聚合 + resolve_channel_credentials）；resolve_channel_credentials 三级引用解析；LarkAdapterHandler 桥接事件；listener_stats 透传指标 |
-| [dao/lark/http.rs](/src/service/dao/lark/http.rs) | DAO：Lark WS Token Source | LarkWsTokenSource ~L236；ws_token() 自动拉取短期 token（共享 per-app 缓存） |
-| [dao/lark/ws.rs](/src/service/dao/lark)（对应 ws 文件）| DAO：WebSocket 连接 + 事件订阅 + 指数退避重连 | start_listener(app, credentials, handler)；心跳 + auto_reconnect；LarkEventHandler trait |
-| [models/message_channel.rs](/src/models/message_channel.rs) | ChannelConfig 飞书相关 6 字段 | lark_credential_id 引用 + lark_identity_mode + lark_open_id 绑定 + lark_user_name + lark_listen_inbound 开关 ~L206 |
+| [dal/lark.rs](src/service/dal/lark/mod.rs) | DAL：Lark 渠道入站总入口（MessageInboundAdapter 实现）| LarkMessageChannelDal struct ~L122；fn start() ~L650+（按 app_id 聚合 + resolve_channel_credentials）；resolve_channel_credentials 三级引用解析；LarkAdapterHandler 桥接事件；listener_stats 透传指标 |
+| [dao/lark/http.rs](src/service/dao/lark/http.rs) | DAO：Lark WS Token Source | LarkWsTokenSource ~L236；ws_token() 自动拉取短期 token（共享 per-app 缓存） |
+| [dao/lark/ws.rs](src/service/dao/lark)（对应 ws 文件）| DAO：WebSocket 连接 + 事件订阅 + 指数退避重连 | start_listener(app, credentials, handler)；心跳 + auto_reconnect；LarkEventHandler trait |
+| [models/message_channel.rs](src/models/message_channel.rs) | ChannelConfig 飞书相关 6 字段 | lark_credential_id 引用 + lark_identity_mode + lark_open_id 绑定 + lark_user_name + lark_listen_inbound 开关 ~L206 |
 | 【① Design 1】lark_cli_integration.md（§飞书私信入站 + 指标）| 为什么 WS 而非飞书事件回调（回调需要公网 IP，WS 适合私有化）；按 app_id 聚合动机 | docs/archive/design-archive/lark_cli_integration.md |
 | 【① Design 2】message_channel_design.md（§入站链路）| 身份引用路径、入站出站对称 | docs/archive/design-archive/message_channel_design.md |
 | 【② Plan】飞书集成二期.md（真实路径）| 飞书私信入站落地计划与执行结果 | docs/archive/plan-archive/lark-cli_集成二期.md |

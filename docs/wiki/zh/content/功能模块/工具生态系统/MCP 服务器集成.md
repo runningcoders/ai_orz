@@ -11,7 +11,7 @@
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
 - [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
 - [src/service/domain/finance/mcp_server.rs](src/service/domain/finance/mcp_server.rs)
-- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 </cite>
 
 ## 目录
@@ -81,7 +81,7 @@ L2 --> DB
 - [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
 - [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
 - [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
-- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 
 章节来源
 - [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
@@ -91,7 +91,7 @@ L2 --> DB
 - [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
 - [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
 - [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
-- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 
 ## 核心组件
 - MCP Server 实体与配置：定义传输类型、状态、连接配置及脱敏能力

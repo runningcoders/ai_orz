@@ -3,22 +3,22 @@
 <cite>
 **本文引用的文件**
 - [common/src/models/identity_credentials.rs](common/src/models/identity_credentials.rs)
-- [common/src/enums/credential_kind.rs](common/src/enums/credential_kind.rs)
+- [common/src/enums/credential_kind.rs](common/src/models/identity_credentials.rs)
 - [src/service/domain/finance/mod.rs](src/service/domain/finance/mod.rs)（IdentityCredentialManage trait + Commands）
 - [src/service/domain/finance/identity_credential.rs](src/service/domain/finance/identity_credential.rs)（统一 CRUD 实现）
 - [src/service/dal/user.rs](src/service/dal/user.rs)（get_identity_credentials / save_identity_credentials）
-- [src/service/dal/lark.rs](src/service/dal/lark.rs)（渠道引用检查 + WS 移交）
+- [src/service/dal/lark.rs](src/service/dal/lark/mod.rs)（渠道引用检查 + WS 移交）
 - [src/service/dal/message_channel.rs](src/service/dal/message_channel.rs)（飞书渠道凭证引用解析）
 - [src/models/user.rs](src/models/user.rs)（identity_credentials TEXT 列）
-- [src/pkg/crypto.rs](src/pkg/crypto.rs)（AES-256-GCM encrypt_channel_secret / decrypt）
-- [src/pkg/config.rs](src/pkg/config.rs)（MASTER_KEY 加载）
+- [src/pkg/crypto.rs](src/pkg/crypto/mod.rs)（AES-256-GCM encrypt_channel_secret / decrypt）
+- [src/pkg/config.rs](src/config.rs)（MASTER_KEY 加载）
 - [src/pkg/tool_registry/lark_cli.rs](src/pkg/tool_registry/lark_cli.rs)（clear_cli_config）
 - [src/pkg/tool_registry/gh_cli.rs](src/pkg/tool_registry/gh_cli.rs)（clear_gh_auth）
 - [src/handlers/finance/lark_integration/](src/handlers/finance/lark_integration/)（lark 凭证 CRUD 4 Handler）
 - [src/handlers/finance/github_integration/](src/handlers/finance/github_integration/)（github 凭证 CRUD 4 Handler）
 - [src/handlers/finance/generic_token_integration/](src/handlers/finance/generic_token_integration/)（GenericToken 通用令牌 CRUD Handler）
 - [common/src/api/generic_token_integration.rs](common/src/api/generic_token_integration.rs)（通用令牌 DTO）
-- [migrations/20260812000000_users_identity_credentials.sql](migrations/20260812000000_users_identity_credentials.sql)
+- [migrations/20260812000000_users_identity_credentials.sql](migrations/20260420000000_initial.sql)
 - [tests/integration/lark_integration_test.rs](tests/integration/lark_integration_test.rs)
 - [tests/integration/github_integration_test.rs](tests/integration/github_integration_test.rs)
 
@@ -95,7 +95,7 @@ PO（UserPo identity_credentials TEXT 列）→ SQLite
 - [src/service/domain/finance/mod.rs:Ln-Lm](src/service/domain/finance/mod.rs#L117-L143)（FinanceDomain trait 聚合）
 - [src/service/domain/finance/identity_credential.rs:1-Lm](src/service/domain/finance/identity_credential.rs#L1-L200)（统一 CRUD）
 - [common/src/models/identity_credentials.rs:1-Lm](common/src/models/identity_credentials.rs#L1-L150)（模型层结构）
-- [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto.rs#L1-L120)（加密原语）
+- [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto/mod.rs#L1-L120)（加密原语）
 
 **章节来源**
 - [docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md §二 架构思路](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md#L30-L56)
@@ -112,7 +112,7 @@ PO（UserPo identity_credentials TEXT 列）→ SQLite
 **章节来源**
 - [common/src/models/identity_credentials.rs:13-Lm](common/src/models/identity_credentials.rs#L13-L137)
 - [src/service/domain/finance/identity_credential.rs:34-Lm](src/service/domain/finance/identity_credential.rs#L34-L196)
-- [src/pkg/crypto.rs](src/pkg/crypto.rs)
+- [src/pkg/crypto.rs](src/pkg/crypto/mod.rs)
 - [src/handlers/finance/lark_integration/create_credential.rs](src/handlers/finance/lark_integration/create_credential.rs)
 
 ## 架构总览
@@ -142,7 +142,7 @@ DB --> CH --> DEC
 **图表来源**
 - [src/service/domain/finance/identity_credential.rs:50-Lm](src/service/domain/finance/identity_credential.rs#L50-L150)
 - [common/src/models/identity_credentials.rs:61-Lm](common/src/models/identity_credentials.rs#L61-L120)
-- [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto.rs#L1-L120)
+- [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto/mod.rs#L1-L120)
 
 **章节来源**
 - [docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md §五 验收清单 + §六 执行结果摘要](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md#L108-L128)
@@ -187,8 +187,8 @@ DB --> CH --> DEC
 - **密文格式 = 版本前缀（v1:）+ base64(nonce 12B || ciphertext || tag 16B)**：nonce 每次随机（roundtrip 可过但密文绝不固定）；tag 校验失败立即解密失败（不返回坏明文）。未来升级算法：加 v2: 前缀分支，完全向后兼容。
 
 **章节来源**
-- [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto.rs#L1-L120)
-- [src/pkg/config.rs:Ln-Lm](src/pkg/config.rs#L1-L80)（MASTER_KEY 加载校验）
+- [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto/mod.rs#L1-L120)
+- [src/pkg/config.rs:Ln-Lm](src/config.rs#L1-L80)（MASTER_KEY 加载校验）
 - [docs/archive/design-archive/message_channel_design.md §2](docs/archive/design-archive/message_channel_design.md#L100-L150)（为什么选 AES-256-GCM）
 
 ## 依赖关系分析
@@ -237,7 +237,7 @@ LK --> U
 - **现象：从旧版本升级后所有飞书凭证都报「解密失败」，新建的凭证正常**：
   原因：MASTER_KEY 变更导致老密文解密 tag 不匹配（因为密钥变了）；或密文版本前缀改造前无前缀，现在 decrypt 只接受 `v1:` 前缀的密文 → 老的无前缀密文直接报「格式错误」。
   修复：① 主密钥变更场景必须走「双密钥期迁移方案」（decrypt 尝试新 key → 失败尝试旧 key → 成功后立即用新 key 重新加密并异步更新回 DB，批量迁移脚本）；② 加兼容分支：`if !ciphertext.starts_with("v1:")` 尝试 v0 分支（无前缀的 base64 密文）解密 + 自动重加密成 v1: 格式更新 DB，一次性平滑迁移。
-  章节来源：[pkg/crypto.rs decrypt_channel_secret](src/pkg/crypto.rs#L1-L120)
+  章节来源：[pkg/crypto.rs decrypt_channel_secret](src/pkg/crypto/mod.rs#L1-L120)
 
 - **现象：GithubToken 凭证删除后，gh_cli 工具对话仍能调用 Github API（登录态没清干净）**：
   原因：delete_credential 的前置检查「github_was_active 快照」步骤位置错误（在 remove_by_id 之后才做）→ resolve_github_credential 返回 None → github_was_active = false → 清登录态 never called。

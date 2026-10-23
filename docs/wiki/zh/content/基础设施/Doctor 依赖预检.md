@@ -5,9 +5,9 @@
 > 触发场景：新环境初始化、CI 环境准备、本地开发环境诊断
 >
 > 关联文档：
-> - 上层权威文档：[AGENTS.md](../../AGENTS.md) — 依赖管理约定
-> - 横向文档：[基础设施](../基础设施.md)
-> - 设计文档：[timestamp_convention.md](../../../design/timestamp_convention.md)
+> - 上层权威文档：[AGENTS.md](AGENTS.md) — 依赖管理约定
+> - 横向文档：[基础设施](docs/wiki/zh/content/基础设施/基础设施.md)
+> - 设计文档：[timestamp_convention.md](docs/design/timestamp_convention.md)
 > - RAG 知识卡：[Doctor 依赖预检](../../../knowledge/zh/Doctor%20依赖预检/Doctor%20依赖预检.md)
 
 ## 一、概述
@@ -173,10 +173,10 @@ check_dependency() {
 
 ## 九、参考
 
-- [脚本入口](../../../../scripts/check_deps.sh)
-- [Makefile 目标](../../../../Makefile)
-- [启动脚本](../../../../scripts/start.sh)
-- [RAG 知识卡](../../../../knowledge/zh/Doctor%20依赖预检/Doctor%20依赖预检.md)
+- [脚本入口](scripts/check_deps.sh)
+- [Makefile 目标](Makefile)
+- [启动脚本](scripts/start.sh)
+- [RAG 知识卡](docs/wiki/knowledge/zh/Doctor%20依赖预检/Doctor%20依赖预检.md)
 
 ## 十、附录
 

@@ -7,7 +7,7 @@
 - [src/pkg/tool_registry/builtin.rs](src/pkg/tool_registry/builtin.rs)
 - [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
 - [src/pkg/tool_registry/fs_tests.rs](src/pkg/tool_registry/fs_tests.rs)
-- [docs/generic_builtin_tools_design.md](docs/generic_builtin_tools_design.md)
+- [docs/generic_builtin_tools_design.md](docs/archive/design-archive/generic_builtin_tools_design.md)
 </cite>
 
 ## 目录
@@ -291,4 +291,4 @@ fs_write 提供了安全、原子、易用的文件写入能力，适用于报�
 章节来源
 - [src/pkg/tool_registry/tool_security.rs:329-419](src/pkg/tool_registry/tool_security.rs#L329-L419)
 - [src/pkg/tool_registry/tool_security.rs:421-487](src/pkg/tool_registry/tool_security.rs#L421-L487)
-- [docs/generic_builtin_tools_design.md:399-442](docs/generic_builtin_tools_design.md#L399-L442)
+- [docs/generic_builtin_tools_design.md](docs/archive/design-archive/generic_builtin_tools_design.md)
