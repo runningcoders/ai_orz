@@ -407,11 +407,84 @@ fn sse_completed_is_terminal() {
 fn sse_error_event_is_failed() {
     let line = r#"data: {"type":"error","code":"rate_limit","message":"slow down"}"#;
     match parse_responses_sse_line(line).expect("parse") {
-        ResponsesSse::Failed(msg) => {
+        ResponsesSse::Failed(e) => {
+            let s = format!("{e}");
             assert!(
-                msg.contains("rate_limit") && msg.contains("slow down"),
-                "{msg}"
+                s.contains("rate_limit") && s.contains("slow down"),
+                "错误需带出 code/message：{s}"
             );
+        }
+        _ => panic!("error 事件必须判为 Failed"),
+    }
+}
+
+/// **核心守卫**：流内限流必须落到 `ModelRateLimited`，不得退化为 `Internal`
+///
+/// 退化的后果远比「文案不对」严重：`Internal` 不被 `is_model_error()` 认可，
+/// AOP 消费者会按普通故障 nack 重投（见 `src/consumer/message.rs`）——在上游限流
+/// 期间反复重试等于火上浇油，且**不会通知用户**；而 HTTP 429 路径是「不重试 +
+/// 告知用户」。同一故障两种行为，由本组用例锁死为同口径。
+#[test]
+fn sse_error_event_rate_limit_maps_to_model_rate_limited() {
+    let line = r#"data: {"type":"error","code":"rate_limit_exceeded","message":"slow down"}"#;
+    match parse_responses_sse_line(line).expect("parse") {
+        ResponsesSse::Failed(e) => {
+            assert!(
+                matches!(e.code_enum(), ErrorCode::ModelRateLimited),
+                "流内限流必须归为 ModelRateLimited，实际 {:?}",
+                e.code()
+            );
+            assert!(e.is_model_error(), "限流必须被识别为模型类错误");
+            assert!(e.is_retryable(), "限流可重试");
+        }
+        _ => panic!("error 事件必须判为 Failed"),
+    }
+}
+
+/// 流内 `response.failed` 事件同样是限流入口，与 `error` 事件同口径
+#[test]
+fn sse_response_failed_rate_limit_maps_to_model_rate_limited() {
+    let line = r#"data: {"type":"response.failed","response":{"status":"failed","error":{"code":"rate_limit","message":"quota"}}}"#;
+    match parse_responses_sse_line(line).expect("parse") {
+        ResponsesSse::Failed(e) => {
+            assert!(
+                matches!(e.code_enum(), ErrorCode::ModelRateLimited),
+                "response.failed 限流必须归为 ModelRateLimited，实际 {:?}",
+                e.code()
+            );
+        }
+        _ => panic!("response.failed 必须判为 Failed"),
+    }
+}
+
+/// 非流式 / 终态 `status:"failed"` 是两条访问模式的汇合点，同样不得漏判
+#[tokio::test]
+async fn non_stream_failed_status_rate_limit_maps_to_model_rate_limited() {
+    let o = obj(json!({
+        "status": "failed",
+        "error": {"code": "rate_limit", "message": "quota exceeded"}
+    }));
+    let e = parse_response_object(&ctx(), o).expect_err("failed 必须失败");
+    assert!(
+        matches!(e.code_enum(), ErrorCode::ModelRateLimited),
+        "非流式 failed 限流必须归为 ModelRateLimited，实际 {:?}",
+        e.code()
+    );
+    assert!(e.is_model_error(), "限流必须被识别为模型类错误");
+}
+
+/// 反向护栏：非限流错误**不得**被误判为限流（否则会错误地改变 AOP 的重投语义）
+#[test]
+fn sse_error_event_non_rate_limit_stays_internal() {
+    let line = r#"data: {"type":"error","code":"server_error","message":"boom"}"#;
+    match parse_responses_sse_line(line).expect("parse") {
+        ResponsesSse::Failed(e) => {
+            assert!(
+                matches!(e.code_enum(), ErrorCode::Internal),
+                "非限流错误不得被误判为限流，实际 {:?}",
+                e.code()
+            );
+            assert!(!e.is_model_error());
         }
         _ => panic!("error 事件必须判为 Failed"),
     }

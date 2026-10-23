@@ -33,7 +33,7 @@ use crate::service::dao::cortex::native::http::{
 };
 use async_trait::async_trait;
 use common::enums::ModelAccessMode;
-use common::error::{Result, err};
+use common::error::{Error, ErrorCode, Result, err};
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -379,10 +379,7 @@ fn parse_response_object(ctx: &RequestContext, obj: ResponseObject) -> Result<Th
         }
         Some("failed") => {
             let (code, message) = error_fields(obj.error.as_ref());
-            return Err(err!(
-                Internal,
-                "responses failed: code={code} message={message}"
-            ));
+            return Err(responses_error("responses failed", &code, &message));
         }
         other => {
             return Err(err!(
@@ -466,6 +463,46 @@ fn error_fields(e: Option<&ResponsesError>) -> (String, String) {
     }
 }
 
+/// 把 Responses 协议层的错误信息分类为具体错误码
+///
+/// 覆盖三条路径：流内 `error` 事件、流内 `response.failed`、非流式
+/// `status:"failed"`（三者此前一律 `err!(Internal, ...)`）。
+///
+/// ⚠️ 与 HTTP 层 [`model_call_error`] 同口径：**限流必须落到 `ModelRateLimited`**。
+/// 退化为 `Internal` 的后果远不止文案不对——`is_model_error()` 不认 `Internal`，
+/// AOP 消费者会按普通故障 nack 重投（见 `src/consumer/message.rs`），在上游限流
+/// 期间反复重试等于火上浇油，且不会通知用户；而 HTTP 429 路径却是「不重试 +
+/// 告知用户」。同一故障两种行为，正是此处要消除的分歧。
+fn responses_error(kind: &str, code: &str, message: &str) -> Error {
+    if is_rate_limited(code, message) {
+        return Error::new(
+            ErrorCode::ModelRateLimited,
+            format!("{kind} rate limited: code={code} message={message}"),
+        );
+    }
+    err!(Internal, "{kind}: code={code} message={message}")
+}
+
+/// 判断 Responses 错误是否为限流
+///
+/// `code` 是上游**机器生成的枚举**（非模型自由文本），优先按封闭词表全等匹配；
+/// 仅在上游不返回 code（此处缺省为 `-`）时才回退到 message 特征串（小写包含）。
+fn is_rate_limited(code: &str, message: &str) -> bool {
+    const RATE_LIMIT_CODES: [&str; 5] = [
+        "rate_limit",
+        "rate_limit_exceeded",
+        "rate_limited",
+        "rate-limit",
+        "too_many_requests",
+    ];
+    let code = code.trim().to_ascii_lowercase();
+    if RATE_LIMIT_CODES.contains(&code.as_str()) {
+        return true;
+    }
+    let msg = message.to_ascii_lowercase();
+    msg.contains("rate limit") || msg.contains("rate_limit") || msg.contains("too many requests")
+}
+
 /// Responses 的 usage 折算为内部 [`Usage`]（字段命名对齐 Chat Completions），
 /// 从而共用 `finish_think_result` 里那条 `TokenUsage` 归并路径。
 fn responses_usage_to_usage(u: &ResponsesUsage) -> Usage {
@@ -495,8 +532,11 @@ enum ResponsesSse {
     Ignore,
     /// 终态事件，携带响应对象
     Terminal(ResponseObject),
-    /// 失败终态，携带可直接上报的错误描述
-    Failed(String),
+    /// 失败终态，携带**已分类**的错误（限流 → `ModelRateLimited`，否则 `Internal`）
+    ///
+    /// 直接带 [`Error`] 而非格式化字符串：分类逻辑收口在 [`responses_error`]，
+    /// 消费侧无条件 `Err(e)`，杜绝「同一故障在不同路径得到不同错误码」。
+    Failed(Error),
 }
 
 /// 消费 Responses 事件流，**只取终态 envelope**（见模块级注释）
@@ -525,7 +565,7 @@ where
             match parse_responses_sse_line(&line)? {
                 ResponsesSse::Ignore => {}
                 ResponsesSse::Terminal(obj) => return Ok(obj),
-                ResponsesSse::Failed(msg) => return Err(err!(Internal, "{}", msg)),
+                ResponsesSse::Failed(e) => return Err(e),
             }
         }
     }
@@ -534,7 +574,7 @@ where
         let line = String::from_utf8_lossy(&buf);
         match parse_responses_sse_line(&line)? {
             ResponsesSse::Terminal(obj) => return Ok(obj),
-            ResponsesSse::Failed(msg) => return Err(err!(Internal, "{}", msg)),
+            ResponsesSse::Failed(e) => return Err(e),
             ResponsesSse::Ignore => {}
         }
     }
@@ -571,8 +611,10 @@ fn parse_responses_sse_line(line: &str) -> Result<ResponsesSse> {
         "response.failed" => {
             let obj = terminal_object(&value, kind)?;
             let (code, message) = error_fields(obj.error.as_ref());
-            Ok(ResponsesSse::Failed(format!(
-                "responses stream failed: code={code} message={message}"
+            Ok(ResponsesSse::Failed(responses_error(
+                "responses stream failed",
+                &code,
+                &message,
             )))
         }
         // 带外错误事件（`response.failed` 是生成失败，`error` 是传输/流层错误）
@@ -587,8 +629,10 @@ fn parse_responses_sse_line(line: &str) -> Result<ResponsesSse> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("-")
                 .to_string();
-            Ok(ResponsesSse::Failed(format!(
-                "responses error event: code={code} message={message}"
+            Ok(ResponsesSse::Failed(responses_error(
+                "responses error event",
+                &code,
+                &message,
             )))
         }
         // 其余事件一律忽略：终态 envelope 已含完整 output，delta 在本实现里无消费者。
