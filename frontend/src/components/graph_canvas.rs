@@ -96,6 +96,56 @@ fn to_canvas_node(
     canvas
 }
 
+/// 同一对节点多条关系边的弧线分档间距（px）
+///
+/// 口径同 SVG 版（`knowledge_graph.rs::PARALLEL_EDGE_BASE`）：知识图谱是**非分层
+/// 图**，弧线不承担避障（没有层级可绕），唯一确定的价值是把「几何上完全重合的
+/// 多条边」分开——Canvas 没有弧线图元，多条边画在同一直线上互相覆盖，用户只能
+/// 看见一条。取 30：n=2 时两侧各约 15px，在点线态小圆点上也刚好可辨。
+const PARALLEL_EDGE_BASE: f64 = 30.0;
+
+/// 同对节点（无序对）多条边 → 弧线分档：只写 `bulge`，控制点由渲染层按**当前
+/// 节点位置每帧重算**（力导向下节点一直在动，构建期采样会过期）
+///
+/// 分组与符号口径同 SVG 版 `graph::assign_parallel_edge_curves`：按首次出现序
+/// 稳定分档（同一份数据每次渲染结果一致，不会跳），符号决定绕行侧。
+fn assign_parallel_edge_bulges(edges: &mut [CanvasEdge]) {
+    if edges.is_empty() {
+        return;
+    }
+    // 无序对 → 组内边下标（保持首次出现序）
+    let mut groups: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    let mut order: Vec<(String, String)> = Vec::new();
+    for (i, e) in edges.iter().enumerate() {
+        if e.from_id == e.to_id {
+            continue; // 自环不参与分档
+        }
+        let key = if e.from_id <= e.to_id {
+            (e.from_id.clone(), e.to_id.clone())
+        } else {
+            (e.to_id.clone(), e.from_id.clone())
+        };
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(i);
+    }
+    for key in order {
+        let idxs = &groups[&key];
+        let n = idxs.len();
+        if n < 2 {
+            continue;
+        }
+        for (rank, &idx) in idxs.iter().enumerate() {
+            // n 条边对称铺在参考线两侧（中间那条直）
+            let offset = PARALLEL_EDGE_BASE * (rank as f64 - (n as f64 - 1.0) / 2.0);
+            let same_dir = edges[idx].from_id <= edges[idx].to_id;
+            let bulge = if same_dir { offset } else { -offset };
+            edges[idx].bulge = (bulge.abs() > f64::EPSILON).then_some(bulge);
+        }
+    }
+}
+
 /// 知识图谱 Canvas 组件
 ///
 /// 与 SVG 版 `Graph` 视觉对等（共用 `node_card` 的几何与文案），节点数多时走 Canvas。
@@ -123,7 +173,7 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
         })
         .collect();
 
-    let canvas_edges: Vec<CanvasEdge> = props
+    let mut canvas_edges: Vec<CanvasEdge> = props
         .edges
         .iter()
         .map(|e| CanvasEdge {
@@ -138,8 +188,12 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
             weight: e.weight,
             // 方向性透传（方案 a′）：SVG/Canvas 渲染层按它决定挂不挂箭头
             directional: e.direction == "directed",
+            points: None,
+            bulge: None,
         })
         .collect();
+    // 同对节点多条关系边 → 弧线分档（否则多条边重合为一条，只能看见一条）
+    assign_parallel_edge_bulges(&mut canvas_edges);
 
     let on_click = props.on_node_click;
 

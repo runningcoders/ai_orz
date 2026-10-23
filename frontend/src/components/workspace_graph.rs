@@ -7,8 +7,9 @@
 //!
 //! 节点颜色按状态区分（见颜色规范表），点击节点跳转对应详情页。
 
-use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene};
+use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene, card_size};
 use crate::components::node_card;
+use crate::utils::dagre_layout::{DagreEdge, DagreNode, dagre_layout};
 use common::api::{AgentListItem, ProjectListItem, TaskListItem};
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
@@ -219,7 +220,7 @@ fn build_global_view(
 /// 构建 ProjectDetail 视图的节点和边
 ///
 /// 选中 Project 的 Task 节点 + 关联 Agent 节点，Task → Agent 边
-/// Task 节点使用 Kahn 拓扑排序分层布局，展示 DAG 依赖关系
+/// Task 节点使用 dagre 分层布局，展示 DAG 依赖关系
 fn build_project_detail_view(
     project_id: &str,
     project: &ProjectListItem,
@@ -228,27 +229,21 @@ fn build_project_detail_view(
     graph_width: f64,
     graph_height: f64,
 ) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
-    use crate::components::layered_layout::{LayeredLayoutConfig, compute_layered_layout};
-
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
     let project_node_id = format!("project:{}", project.id);
 
-    // 中心 Project 节点（layer=0，位于顶部）
-    nodes.push({
-        let mut n = workspace_node(
-            project_node_id.clone(),
-            project.name.clone(),
-            project_status_color(project.status),
-            "project",
-            35.0,
-            project.description.as_deref(),
-            project.tags.clone(),
-        );
-        n.layer = Some(0);
-        n
-    });
+    // 中心 Project 节点（坐标由函数末尾的 dagre 布局写回）
+    nodes.push(workspace_node(
+        project_node_id.clone(),
+        project.name.clone(),
+        project_status_color(project.status),
+        "project",
+        35.0,
+        project.description.as_deref(),
+        project.tags.clone(),
+    ));
 
     // 该 Project 的 Task 节点
     let project_tasks: Vec<&TaskListItem> = tasks
@@ -256,53 +251,22 @@ fn build_project_detail_view(
         .filter(|t| t.project_id.as_deref() == Some(project_id))
         .collect();
 
-    // 构建 Task ID 列表和依赖映射（仅同项目内的依赖）
+    // 同项目内的 Task ID 集合（跨项目依赖不入图：与本项目无关的依赖画上来
+    // 只会多出悬空端点）
     let task_ids: Vec<String> = project_tasks.iter().map(|t| t.id.clone()).collect();
     let task_id_set: std::collections::HashSet<&str> =
         task_ids.iter().map(|s| s.as_str()).collect();
-    let mut deps_map: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-    for t in &project_tasks {
-        let in_project_deps: Vec<String> = t
-            .dependencies
-            .iter()
-            .filter(|d| task_id_set.contains(d.as_str()))
-            .cloned()
-            .collect();
-        deps_map.insert(t.id.clone(), in_project_deps);
-    }
 
-    // 计算分层布局（Task 节点从 layer=1 开始，给 Project 留 layer=0）
-    let config = LayeredLayoutConfig {
-        width: graph_width,
-        height: graph_height,
-        top_margin: 160.0,
-        layer_height: 80.0,
-        side_margin: 60.0,
-    };
-    let task_positions = compute_layered_layout(&task_ids, &deps_map, &config);
-
-    // 添加 Task 节点（位置来自分层布局，layer +1 因为 Project 占了 layer 0）
     for t in &project_tasks {
-        let (layer, x, y) = task_positions
-            .get(&t.id)
-            .copied()
-            .unwrap_or((0, 350.0, 160.0));
-        nodes.push({
-            let mut n = workspace_node(
-                format!("task:{}", t.id),
-                t.title.clone(),
-                task_status_color(t.status),
-                "task",
-                20.0,
-                t.description.as_deref(),
-                task_tags(t),
-            );
-            n.x = x;
-            n.y = y;
-            n.layer = Some(layer + 1);
-            n
-        });
+        nodes.push(workspace_node(
+            format!("task:{}", t.id),
+            t.title.clone(),
+            task_status_color(t.status),
+            "task",
+            20.0,
+            t.description.as_deref(),
+            task_tags(t),
+        ));
         // Project → Task 边
         edges.push(CanvasEdge {
             from_id: project_node_id.clone(),
@@ -356,6 +320,54 @@ fn build_project_detail_view(
         }
     }
 
+    // ---- dagre 分层布局（取代旧「Kahn 初排 + 层约束力松弛」两层皮）----
+    //
+    // 旧链路的问题：Kahn 均分定初始坐标（层距写死 80px、不知卡片宽高）→ 力导向
+    // 带 layer 约束松弛，稳态不重叠但排布随机不可复现、边仍是穿卡直线、数据变化
+    // 后新旧布局坐标系不一致。dagre 一次给出：按传入尺寸算的层距/同层距（同层
+    // 不重叠由坐标层面保证）+ 边 waypoints 折线路由（绕开中间卡）。
+    //
+    // 尺寸按「看到的形状」传：信息卡用实际卡宽高（`canvas_scene::card_size`，
+    // 与碰撞避让同一份几何，不许各算一套），圆点（simple 降级态）用直径。
+    let dagre_nodes: Vec<DagreNode> = nodes
+        .iter()
+        .map(|n| {
+            let (w, h) = if n.is_card() {
+                card_size(n)
+            } else {
+                (n.radius * 2.0, n.radius * 2.0)
+            };
+            DagreNode {
+                id: n.id.clone(),
+                width: w,
+                height: h,
+            }
+        })
+        .collect();
+    let dagre_edges: Vec<DagreEdge> = edges
+        .iter()
+        .map(|e| DagreEdge {
+            source: e.from_id.clone(),
+            target: e.to_id.clone(),
+        })
+        .collect();
+    let layout = dagre_layout(&dagre_nodes, &dagre_edges, graph_width, graph_height, false);
+
+    // 写回节点坐标
+    for n in &mut nodes {
+        if let Some((x, y)) = layout.positions.get(&n.id) {
+            n.x = *x;
+            n.y = *y;
+        }
+    }
+    // 写回边路由：dagre waypoints → 静态折线（渲染层走 `CanvasEdge::points`）。
+    // 自环本项目不会出现；真出现时 dagre 不产路由，边退化为直线兜底。
+    for e in &mut edges {
+        let key = (e.from_id.clone(), e.to_id.clone());
+        if let Some(pts) = layout.routes.get(&key) {
+            e.points = Some(pts.clone());
+        }
+    }
     (nodes, edges)
 }
 
@@ -681,7 +693,10 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
                     nodes: nodes,
                     edges: edges,
                     transparent: props.auto_size,
-                    enable_force_layout: true,
+                    // ProjectDetail 走 dagre 静态布局：坐标即权威，力导向会把
+                    // 精心算好并 fit 进画布的坐标重新推散（无边界 + 碰撞只保不
+                    // 重叠，不保 fit）。其余视图没有静态布局，仍靠力导向松弛。
+                    enable_force_layout: !matches!(&view, WorkspaceView::ProjectDetail(_)),
                     enable_data_flow_particles: true,
                     enable_glow_particles: true,
                     enable_background_particles: true,
@@ -787,5 +802,100 @@ mod tests {
             updated_at: 0,
             dependencies: Vec::new(),
         }
+    }
+
+    /// ProjectDetail 走 dagre：坐标全部落进画布、卡片两两不重叠、依赖边有
+    /// 折线路由、前置任务排在依赖者上方
+    ///
+    /// 回归旧 Kahn 两层皮（层距写死 80px + 力导向松弛）：坐标不再随机、
+    /// 不再有「同层槽宽 < 卡宽」的互压，边不再穿卡。
+    #[test]
+    fn project_detail_dagre_layout_fits_canvas_without_overlap() {
+        let project = ProjectListItem {
+            id: "p1".to_string(),
+            name: "订单中台".to_string(),
+            description: Some("支撑订单全链路".to_string()),
+            status: 1,
+            priority: 0,
+            tags: vec!["核心".to_string()],
+            root_user_id: "u".to_string(),
+            owner_agent_id: None,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let agent = AgentListItem {
+            id: "a1".to_string(),
+            name: "客服 Agent".to_string(),
+            roles: vec!["客服".to_string()],
+            description: Some("处理售后咨询".to_string()),
+            kind: "local".to_string(),
+            model_provider_id: String::new(),
+            status: 1,
+            created_at: 0,
+            runtime_state: 0,
+        };
+        // 链式依赖：t1 ← t2 ← t3（t2 依赖 t1，t3 依赖 t2），t1 分配给 a1
+        let mut t1 = sample_task(0);
+        t1.id = "t1".to_string();
+        t1.title = "梳理订单状态机".to_string();
+        t1.description = Some("把创建、支付、履约、售后的状态流转定义清楚，避免二义性".to_string());
+        t1.project_id = Some("p1".to_string());
+        t1.assignee_id = "a1".to_string();
+        let mut t2 = sample_task(50);
+        t2.id = "t2".to_string();
+        t2.title = "实现状态机引擎".to_string();
+        t2.description = Some("按定义好的状态流转实现引擎与持久化".to_string());
+        t2.project_id = Some("p1".to_string());
+        t2.dependencies = vec!["t1".to_string()];
+        let mut t3 = sample_task(0);
+        t3.id = "t3".to_string();
+        t3.title = "接入存量订单回放".to_string();
+        t3.description = Some("用历史订单回放验证状态机正确性".to_string());
+        t3.project_id = Some("p1".to_string());
+        t3.dependencies = vec!["t2".to_string()];
+
+        let (nodes, edges) =
+            build_project_detail_view("p1", &project, &[agent], &[t1, t2, t3], 800.0, 600.0);
+
+        // 节点：project + 3 task + 1 agent
+        assert_eq!(nodes.len(), 5);
+        // 全部落进画布（dagre 包围盒映射 + margin 24）
+        for n in &nodes {
+            assert!((0.0..=800.0).contains(&n.x), "{} x={} 飞出画布", n.id, n.x);
+            assert!((0.0..=600.0).contains(&n.y), "{} y={} 飞出画布", n.id, n.y);
+        }
+        // 依赖方向：前置在上（y 更小）
+        let y_of = |id: &str| nodes.iter().find(|n| n.id == id).unwrap().y;
+        assert!(y_of("project:p1") < y_of("task:t1"));
+        assert!(y_of("task:t1") < y_of("task:t2"));
+        assert!(y_of("task:t2") < y_of("task:t3"));
+        // 卡片两两不重叠（矩形判据：水平或垂直至少一个方向分离）
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                let (a, b) = (&nodes[i], &nodes[j]);
+                let (aw, ah) = if a.is_card() {
+                    card_size(a)
+                } else {
+                    (a.radius * 2.0, a.radius * 2.0)
+                };
+                let (bw, bh) = if b.is_card() {
+                    card_size(b)
+                } else {
+                    (b.radius * 2.0, b.radius * 2.0)
+                };
+                let separated =
+                    (a.x - b.x).abs() >= (aw + bw) / 2.0 || (a.y - b.y).abs() >= (ah + bh) / 2.0;
+                assert!(separated, "{} 与 {} 重叠", a.id, b.id);
+            }
+        }
+        // 依赖边有折线路由（waypoints ≥ 2 点）
+        let dep = edges
+            .iter()
+            .find(|e| e.from_id == "task:t1" && e.to_id == "task:t2")
+            .expect("t1 → t2 依赖边应在场");
+        assert!(
+            dep.points.as_ref().is_some_and(|p| p.len() >= 2),
+            "依赖边应带 dagre 折线路由"
+        );
     }
 }

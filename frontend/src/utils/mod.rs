@@ -9,8 +9,10 @@
 //! - `number`: 数值紧凑格式化（大数进位 k/M、定点小数去尾零）
 //! - `local_store`: 通用 localStorage 组件层（统一前缀 / 类型化读写 / 版本兼容 / 结构体集中）
 //! - `think_path_graph`: 思考路径图映射（occurrences/routes → 去重节点 + 聚合转移边，纯函数）
+//! - `dagre_layout`: dagre 分层布局适配（任务依赖图 / 思考轨迹图共用：Sugiyama 布局 + 画布映射）
 
 pub mod avatar;
+pub mod dagre_layout;
 pub mod doc_link;
 pub mod file;
 pub mod local_store;

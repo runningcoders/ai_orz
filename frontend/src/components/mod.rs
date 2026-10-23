@@ -25,7 +25,6 @@ pub mod hud;
 pub mod hud_palette;
 pub mod identity_chip;
 pub mod kanban_canvas;
-pub mod layered_layout;
 pub mod markdown;
 pub mod mcp_server_edit_modal;
 pub mod mention_picker;

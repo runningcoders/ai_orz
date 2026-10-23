@@ -131,6 +131,9 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
             weight: None,
             // Agent 关系图边无方向语义：保持无向现状零回退（方案 a′ 扩围编译兼容行）
             directional: false,
+            // 直线边：Agent 关系图无平行边分档、无 dagre 路由
+            points: None,
+            bulge: None,
         })
         .collect();
 

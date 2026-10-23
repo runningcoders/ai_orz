@@ -15,7 +15,9 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::edge_style;
-use crate::components::force_layout::{ForceLayout, ForceLayoutConfig, circle_initial_layout};
+use crate::components::force_layout::{
+    ForceLayout, ForceLayoutConfig, circle_initial_layout_sized,
+};
 use crate::components::hud_palette;
 use crate::components::node_card;
 use crate::components::particles::{
@@ -87,6 +89,16 @@ pub struct CanvasEdge {
     /// 方向性（方案 a′）：`true` = 有向边，target 端绘制箭头；`false` = 无向纯线。
     /// Default = `false`，既有无向关系图经 `..Default::default()` 构造零波及。
     pub directional: bool,
+    /// 静态折线 waypoints（世界坐标，≥2 点）：dagre 边路由的输出，绕开中间节点，
+    /// 取代「中心到中心直线穿过第三张卡」。`Some` 时按折线绘制。
+    ///
+    /// ⚠️ 与 `bulge` 互斥时 `bulge` 优先（见 [`edge_geometry`]）：平行边分档是
+    /// 视觉纠偏，dagre 路由是结构纠偏，两者不会同时用在一条边上。
+    pub points: Option<Vec<(f64, f64)>>,
+    /// 平行边弧线偏移（px，带符号）：同一对节点多条边时按组内序分居参考线两侧，
+    /// 符号决定绕行侧（口径同 SVG 版 `graph::assign_parallel_edge_curves`）。
+    /// 控制点随节点位置**每帧重算**——力导向下节点一直在动，构建期采样会过期。
+    pub bulge: Option<f64>,
 }
 
 /// 画布视口变换：世界坐标 ↔ 屏幕坐标
@@ -264,7 +276,8 @@ fn nearest_edge(
         let from = nodes.iter().find(|n| n.id == e.from_id);
         let to = nodes.iter().find(|n| n.id == e.to_id);
         if let (Some(f), Some(t)) = (from, to) {
-            let d = point_to_segment_distance(x, y, f.x, f.y, t.x, t.y);
+            // 与绘制同源：弧线/折线按各自几何算距离，不然「看得见摸不着」
+            let d = edge_hit_distance(e, f, t, x, y);
             if d <= threshold {
                 let better = match best {
                     Some((bd, _)) => d < bd,
@@ -704,7 +717,118 @@ fn draw_circle_node(
     }
 }
 
-/// 默认渲染器：圆形 / 矩形信息卡双形态节点 + 直线连线 + 边 hover 高亮
+/// 边的绘制几何（由边上字段决定；节点位置只参与弧线控制点计算）
+///
+/// 三形态共用一个绘制入口 [`stroke_edge_path`]，渲染层不为每种形态各写一遍：
+/// - `Straight`：source 中心 → target 中心（默认，存量行为零变化）
+/// - `Arc`：二次贝塞尔弧线（同对节点多条平行边分居两侧；bulge 即法向偏移）
+/// - `Polyline`：静态折线（dagre waypoints，绕开中间节点）
+enum EdgeGeometry<'a> {
+    Straight,
+    Arc(f64),
+    Polyline(&'a [(f64, f64)]),
+}
+
+fn edge_geometry(edge: &CanvasEdge) -> EdgeGeometry<'_> {
+    if let Some(b) = edge.bulge
+        && b.abs() > f64::EPSILON
+    {
+        EdgeGeometry::Arc(b)
+    } else if let Some(pts) = edge.points.as_deref()
+        && pts.len() >= 2
+    {
+        EdgeGeometry::Polyline(pts)
+    } else {
+        EdgeGeometry::Straight
+    }
+}
+
+/// 弧线控制点：中点 + left-hand 法向 × bulge×2（与 SVG 版 `graph::quadratic_control`
+/// 同式同符号，两个渲染器的弧线视觉一致）
+fn edge_arc_control(from: &CanvasNode, to: &CanvasNode, bulge: f64) -> (f64, f64) {
+    crate::components::graph::quadratic_control(from.x, from.y, to.x, to.y, bulge)
+}
+
+/// 按几何形态描边一条边（节点后绘，中心端被卡片盖住，无需起点收缩）
+fn stroke_edge_path(
+    ctx: &CanvasRenderingContext2d,
+    edge: &CanvasEdge,
+    from: &CanvasNode,
+    to: &CanvasNode,
+) {
+    ctx.begin_path();
+    match edge_geometry(edge) {
+        EdgeGeometry::Straight => {
+            ctx.move_to(from.x, from.y);
+            ctx.line_to(to.x, to.y);
+        }
+        EdgeGeometry::Arc(b) => {
+            let (cx, cy) = edge_arc_control(from, to, b);
+            ctx.move_to(from.x, from.y);
+            ctx.quadratic_curve_to(cx, cy, to.x, to.y);
+        }
+        EdgeGeometry::Polyline(pts) => {
+            ctx.move_to(pts[0].0, pts[0].1);
+            for p in &pts[1..] {
+                ctx.line_to(p.0, p.1);
+            }
+        }
+    }
+    ctx.stroke();
+}
+
+/// 边「到达 target 之前的那一点」：直线 = source 圆心；弧线 = 控制点；折线 =
+/// 倒数第二个 waypoint。箭头方向与 tip 回退都以它为基准——弧线/折线的末端切线
+/// 与 source→target 中心线**不同**，恒按中心线画箭头会飘在曲线外面。
+fn edge_arrival_from(edge: &CanvasEdge, from: &CanvasNode, to: &CanvasNode) -> (f64, f64) {
+    match edge_geometry(edge) {
+        EdgeGeometry::Straight => (from.x, from.y),
+        EdgeGeometry::Arc(b) => edge_arc_control(from, to, b),
+        EdgeGeometry::Polyline(pts) => pts[pts.len() - 2],
+    }
+}
+
+/// 二次贝塞尔取点（弧线 hover 命中检测用：采样成折线段取最小距离，
+/// 不需要解析解）
+fn quad_point(p0: (f64, f64), c: (f64, f64), p1: (f64, f64), t: f64) -> (f64, f64) {
+    let u = 1.0 - t;
+    (
+        u * u * p0.0 + 2.0 * u * t * c.0 + t * t * p1.0,
+        u * u * p0.1 + 2.0 * u * t * c.1 + t * t * p1.1,
+    )
+}
+
+/// 鼠标点到边的距离（世界坐标）：直线取一次，折线取各段最小值，
+/// 弧线按 12 段采样取最小（hover 阈值是屏幕 10px，粗采样足够）
+fn edge_hit_distance(edge: &CanvasEdge, from: &CanvasNode, to: &CanvasNode, x: f64, y: f64) -> f64 {
+    match edge_geometry(edge) {
+        EdgeGeometry::Straight => point_to_segment_distance(x, y, from.x, from.y, to.x, to.y),
+        EdgeGeometry::Arc(b) => {
+            let (cx, cy) = edge_arc_control(from, to, b);
+            let mut best = f64::MAX;
+            let mut prev = (from.x, from.y);
+            const STEPS: usize = 12;
+            for i in 1..=STEPS {
+                let t = i as f64 / STEPS as f64;
+                let p = quad_point((from.x, from.y), (cx, cy), (to.x, to.y), t);
+                best = best.min(point_to_segment_distance(x, y, prev.0, prev.1, p.0, p.1));
+                prev = p;
+            }
+            best
+        }
+        EdgeGeometry::Polyline(pts) => {
+            let mut best = f64::MAX;
+            for w in pts.windows(2) {
+                best = best.min(point_to_segment_distance(
+                    x, y, w[0].0, w[0].1, w[1].0, w[1].1,
+                ));
+            }
+            best
+        }
+    }
+}
+
+/// 默认渲染器：圆形 / 矩形信息卡双形态节点 + 直线/弧线/折线连线 + 边 hover 高亮
 #[derive(Clone, Copy)]
 pub struct DefaultRenderer;
 
@@ -764,19 +888,18 @@ impl CanvasRenderer for DefaultRenderer {
             let from = nodes.iter().find(|n| n.id == edge.from_id);
             let to = nodes.iter().find(|n| n.id == edge.to_id);
             if let (Some(from), Some(to)) = (from, to) {
-                ctx.begin_path();
-                ctx.move_to(from.x, from.y);
-                ctx.line_to(to.x, to.y);
-                ctx.stroke();
+                stroke_edge_path(ctx, edge, from, to);
 
                 // 方向性边箭头原语（方案 a′）：directed 边在 target 端补小三角，
-                // 方向沿 source→target，尺寸随线宽派生，填充色复用边色保持一致。
+                // 方向沿「接近 target 的真实来向」（弧线取控制点、折线取倒数第二个
+                // waypoint，见 `edge_arrival_from`），尺寸随线宽派生，填充色复用边色。
                 // Canvas 几何活在世界坐标系，viewport 缩放对整幅画面等比生效，
                 // 箭头与世界坐标同尺度、随视图缩放同步缩放，无需单独换算。
-                let tip = arrow_tip_point((from.x, from.y), (to.x, to.y), to.radius);
+                let arrival = edge_arrival_from(edge, from, to);
+                let tip = arrow_tip_point(arrival, (to.x, to.y), to.radius);
                 if edge.directional {
-                    let dx = to.x - from.x;
-                    let dy = to.y - from.y;
+                    let dx = to.x - arrival.0;
+                    let dy = to.y - arrival.1;
                     let len = (dx * dx + dy * dy).sqrt();
                     if len > f64::EPSILON {
                         let (ux, uy) = (dx / len, dy / len);
@@ -822,10 +945,18 @@ impl CanvasRenderer for DefaultRenderer {
                 .unwrap_or((edge_style::EDGE_BASE_WIDTH, 1.0));
             ctx.set_stroke_style_str("#f97316");
             ctx.set_line_width((edge_width + 1.5).max(3.0));
-            ctx.begin_path();
-            ctx.move_to(from.x, from.y);
-            ctx.line_to(to.x, to.y);
-            ctx.stroke();
+            // 与原线同几何（弧线/折线也走同一条路径），高亮才压得准
+            if let Some(edge) = edges
+                .iter()
+                .find(|e| &e.from_id == from_id && &e.to_id == to_id)
+            {
+                stroke_edge_path(ctx, edge, from, to);
+            } else {
+                ctx.begin_path();
+                ctx.move_to(from.x, from.y);
+                ctx.line_to(to.x, to.y);
+                ctx.stroke();
+            }
         }
     }
 
@@ -1021,8 +1152,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut is_stable_sync = is_stable;
     let mut birth_death_sync = birth_death;
     use_effect(use_reactive(
-        (&props.nodes, &props.width, &props.height),
-        move |(props_nodes, sync_width, sync_height)| {
+        (
+            &props.nodes,
+            &props.width,
+            &props.height,
+            &props.enable_force_layout,
+        ),
+        move |(props_nodes, sync_width, sync_height, sync_force)| {
             let current = nodes_state_sync.peek().clone();
             let current_ids: std::collections::HashSet<&str> =
                 current.iter().map(|n| n.id.as_str()).collect();
@@ -1034,26 +1170,35 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             let mut merged: Vec<CanvasNode> = Vec::with_capacity(props_nodes.len());
             for new_node in &props_nodes {
                 if let Some(existing) = current.iter().find(|n| n.id == new_node.id) {
-                    // 保留已有节点位置，其余外观字段整体以新 props 为准。
-                    // ⚠️ 用 `..new_node.clone()` 而不是逐个列字段：这份列表历史上漏过一次
-                    // （新增卡片字段后 props 一更新就丢，表现为「首帧是卡片、重渲染后塌成圆点」）。
-                    merged.push(CanvasNode {
-                        x: existing.x,
-                        y: existing.y,
-                        ..new_node.clone()
-                    });
+                    if sync_force {
+                        // 保留已有节点位置，其余外观字段整体以新 props 为准。
+                        // ⚠️ 用 `..new_node.clone()` 而不是逐个列字段：这份列表历史上漏过一次
+                        // （新增卡片字段后 props 一更新就丢，表现为「首帧是卡片、重渲染后塌成圆点」）。
+                        merged.push(CanvasNode {
+                            x: existing.x,
+                            y: existing.y,
+                            ..new_node.clone()
+                        });
+                    } else {
+                        // 静态布局（dagre）：props 坐标即权威坐标。若照样保留旧位置，
+                        // 数据变化后「新节点按新坐标落、老节点停在旧布局上」——两次
+                        // 布局的缩放比不同，叠在一起恰恰是最难看的互压。
+                        merged.push(new_node.clone());
+                    }
                 } else {
                     merged.push(new_node.clone());
                 }
             }
-            // 新增节点位置为 0,0 时用圆形布局初始化
+            // 新增节点位置为 0,0 时用圆形布局初始化（尺寸感知：按等效半径分弧槽）
             let has_uninit = merged.iter().any(|n| n.x == 0.0 && n.y == 0.0);
             if has_uninit {
-                let positions = circle_initial_layout(
-                    merged.len(),
+                let radii: Vec<f64> = merged.iter().map(|n| n.radius).collect();
+                let positions = circle_initial_layout_sized(
+                    &radii,
                     sync_width / 2.0,
                     sync_height / 2.0,
                     (sync_width.min(sync_height) / 3.0).max(100.0),
+                    30.0,
                 );
                 for (i, node) in merged.iter_mut().enumerate() {
                     if node.x == 0.0 && node.y == 0.0 {
@@ -1103,8 +1248,9 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let render_width = props.width;
     let render_height = props.height;
     let enable_force = props.enable_force_layout;
-    // 供鼠标事件做边命中检测（与渲染同源，每帧从 signal 读取）
-    let edges_static = edges_state;
+    // 供鼠标事件做边命中检测（与渲染同源，每帧从 signal 读取）；
+    // 拖拽静态折线边时要写回（平移关联 waypoints），故声明为 mut
+    let mut edges_static = edges_state;
     let mut nodes_state_c = nodes_state;
     let edges_state_c = edges_state;
     let mut force_layout_c = force_layout;
@@ -1448,11 +1594,35 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                     // 拖拽中：更新节点位置
                     let offset = *drag_offset.read();
                     let mut nodes = nodes_state.read().clone();
+                    let mut delta = (0.0, 0.0);
                     if let Some(node) = nodes.iter_mut().find(|n| &n.id == drag_id) {
-                        node.x = wx - offset.0;
-                        node.y = wy - offset.1;
+                        let (nx, ny) = (wx - offset.0, wy - offset.1);
+                        delta = (nx - node.x, ny - node.y);
+                        node.x = nx;
+                        node.y = ny;
                     }
                     nodes_state.set(nodes);
+                    // 静态折线边（dagre waypoints）不随节点位置重算：按同一位移
+                    // 平移所有关联边，否则线留在原处、与拖走的节点脱节。
+                    // 弧线的控制点每帧由节点位置重算，无需在此处理。
+                    if delta.0.abs() > f64::EPSILON || delta.1.abs() > f64::EPSILON {
+                        let mut edges = edges_static.read().clone();
+                        let mut touched = false;
+                        for e in edges.iter_mut() {
+                            if (e.from_id == *drag_id || e.to_id == *drag_id)
+                                && let Some(pts) = e.points.as_mut()
+                            {
+                                for p in pts.iter_mut() {
+                                    p.0 += delta.0;
+                                    p.1 += delta.1;
+                                }
+                                touched = true;
+                            }
+                        }
+                        if touched {
+                            edges_static.set(edges);
+                        }
+                    }
                     is_stable.set(false);
                 } else {
                     // 非拖拽：更新 hover 状态
@@ -1818,5 +1988,91 @@ mod tests {
         assert_eq!(src.matches("is_stable_c.set(true);").count(), 1);
         // 问题 8 注释锚点在场
         assert_eq!(src.matches("// 问题 8：撤销早期 fit").count(), 1);
+    }
+
+    // ---------- 边几何（直线 / 弧线 / 折线） ----------
+
+    fn edge(from_id: &str, to_id: &str) -> CanvasEdge {
+        CanvasEdge {
+            from_id: from_id.to_string(),
+            to_id: to_id.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// 默认仍是直线：存量行为零变化（不传 points/bulge）
+    #[test]
+    fn edge_geometry_defaults_to_straight() {
+        let e = edge("a", "b");
+        assert!(matches!(edge_geometry(&e), EdgeGeometry::Straight));
+        // points 只有 1 个点不算折线（防御性：退化为直线而不是画一个点）
+        let mut e1 = edge("a", "b");
+        e1.points = Some(vec![(0.0, 0.0)]);
+        assert!(matches!(edge_geometry(&e1), EdgeGeometry::Straight));
+    }
+
+    /// bulge 优先于 points：平行边分档是视觉纠偏，dagre 路由是结构纠偏
+    #[test]
+    fn bulge_takes_precedence_over_points() {
+        let mut e = edge("a", "b");
+        e.points = Some(vec![(0.0, 0.0), (50.0, 0.0), (50.0, 50.0)]);
+        e.bulge = Some(20.0);
+        assert!(matches!(edge_geometry(&e), EdgeGeometry::Arc(_)));
+    }
+
+    /// 弧线控制点弯向 left-hand normal（与 SVG 版 `quadratic_control` 同符号：
+    /// +x 方向的 left-hand normal 是 +y），箭头「到达方向」取控制点而非 source
+    /// 圆心——末端切线 ≠ 中心线
+    #[test]
+    fn arc_arrival_direction_uses_control_point() {
+        let mut a = node("a");
+        a.x = 0.0;
+        a.y = 0.0;
+        let mut b = node("b");
+        b.x = 100.0;
+        b.y = 0.0;
+        let mut e = edge("a", "b");
+        e.bulge = Some(40.0);
+        let arrival = edge_arrival_from(&e, &a, &b);
+        assert!(
+            (arrival.0 - 50.0).abs() < 1e-9,
+            "控制点应在中点垂线上: {arrival:?}"
+        );
+        assert!(
+            arrival.1 > 0.0,
+            "正 bulge 弯向 +y（left-hand normal）: {arrival:?}"
+        );
+        // 命中距离跟着曲线走：曲线顶点（50, 40）上距离≈0，而同一点到中心线
+        // （y=0）距离是 40——弧线不能按直线判定
+        let d = edge_hit_distance(&e, &a, &b, 50.0, 40.0);
+        assert!(d < 1.0, "弧线顶点应命中: {d}");
+    }
+
+    /// 折线命中按 waypoints 各段算：L 形折线上的点命中，同一条中心线附近
+    /// （但远离折线）的点不命中——「看得见才摸得着」
+    #[test]
+    fn polyline_hit_uses_waypoint_segments() {
+        let mut a = node("a");
+        a.x = 0.0;
+        a.y = 0.0;
+        let mut b = node("b");
+        b.x = 100.0;
+        b.y = 100.0;
+        let mut e = edge("a", "b");
+        // L 形：(0,0) → (100,0) → (100,100)
+        e.points = Some(vec![(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)]);
+        assert!(edge_hit_distance(&e, &a, &b, 95.0, 50.0) < 6.0);
+        // 点 (20,20) 在 source→target 对角线（中心线）上，但离折线 20px：
+        // 按中心线判定会误命中山寨直线，按折线判定必须落空
+        let d_poly = edge_hit_distance(&e, &a, &b, 20.0, 20.0);
+        let d_line = point_to_segment_distance(20.0, 20.0, a.x, a.y, b.x, b.y);
+        assert!(d_poly > 15.0, "远离折线的点不应命中: {d_poly}");
+        assert!(
+            d_poly > d_line + 10.0,
+            "折线距离应远大于中心线距离: {d_poly} vs {d_line}"
+        );
+        // 到达方向取倒数第二个 waypoint
+        let arrival = edge_arrival_from(&e, &a, &b);
+        assert!((arrival.0 - 100.0).abs() < 1e-9 && arrival.1.abs() < 1e-9);
     }
 }

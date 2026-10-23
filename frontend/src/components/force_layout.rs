@@ -204,16 +204,34 @@ impl ForceLayout {
     }
 }
 
-/// 给定节点数量，生成圆形初始布局（均匀分布在一个圆上）
-pub fn circle_initial_layout(
-    node_count: usize,
+/// 尺寸感知的圆形初始布局：按各节点等效半径分配弧长槽位
+///
+/// `circle_initial_layout` 按**个数**均分角度，不看节点大小——168px 宽的卡片
+/// 在 200px 半径的圆上（槽距 ~125px）头几帧必然互压，要靠随后的力学模拟慢慢
+/// 推开（表现为「开图闪一下挤成一坨」）。这里按 `Σ(2r + gap)` 定圆周长度，
+/// 大卡片占大弧槽，初始态即不重叠；半径下限仍由调用方给（`min_radius`）。
+///
+/// 角度均分改弧长正比分：`slot_i = (2·r_i + gap) / R`，相邻槽心的弧距即
+/// `r_i + r_{i+1} + gap`，与两圆相切公式一致。
+pub fn circle_initial_layout_sized(
+    radii: &[f64],
     center_x: f64,
     center_y: f64,
-    radius: f64,
+    min_radius: f64,
+    gap: f64,
 ) -> Vec<(f64, f64)> {
-    let mut positions = Vec::with_capacity(node_count);
-    for i in 0..node_count {
-        let angle = (i as f64 / node_count as f64) * std::f64::consts::TAU;
+    if radii.is_empty() {
+        return Vec::new();
+    }
+    let total_arc: f64 = radii.iter().map(|r| 2.0 * r.max(0.0) + gap).sum();
+    // 半径 = 总弧长 / 圆周；下限兜底小图（几个小圆点不必撑成大圆）
+    let radius = (total_arc / std::f64::consts::TAU).max(min_radius).max(1.0);
+    let mut positions = Vec::with_capacity(radii.len());
+    let mut acc = 0.0;
+    for r in radii {
+        let slot = (2.0 * r.max(0.0) + gap) / radius;
+        let angle = acc + slot / 2.0;
+        acc += slot;
         positions.push((
             center_x + radius * angle.cos(),
             center_y + radius * angle.sin(),
@@ -323,12 +341,39 @@ mod tests {
         assert!(!layout.is_stable(100.0, 1.0), "大位移应判为不稳定");
     }
 
+    /// 尺寸感知初始布局：大卡片必须占大弧槽，相邻中心距 ≥ 两等效半径和
+    ///（回归「开图头几帧卡片互压」：按个数均分角度时 168px 宽卡在 200px 半径
+    /// 圆上槽距仅 ~125px）
     #[test]
-    fn test_circle_initial_layout() {
-        let positions = circle_initial_layout(4, 400.0, 300.0, 100.0);
-        assert_eq!(positions.len(), 4);
-        assert!((positions[0].0 - 500.0).abs() < 0.01);
-        assert!((positions[0].1 - 300.0).abs() < 0.01);
+    fn test_circle_initial_layout_sized_keeps_cards_apart() {
+        // 3 张 168×74 卡片（等效半径 84）+ 2 个小圆点（半径 12）
+        let radii = [84.0, 84.0, 84.0, 12.0, 12.0];
+        let positions = circle_initial_layout_sized(&radii, 400.0, 300.0, 100.0, 24.0);
+        assert_eq!(positions.len(), radii.len());
+        // 相邻（含首尾环绕）中心距 ≥ r_i + r_j（相切），gap 只增加余量
+        for i in 0..positions.len() {
+            let j = (i + 1) % positions.len();
+            let d = ((positions[i].0 - positions[j].0).powi(2)
+                + (positions[i].1 - positions[j].1).powi(2))
+            .sqrt();
+            let need = radii[i] + radii[j];
+            assert!(
+                d >= need - 1.0,
+                "相邻节点应至少相切: pair=({i},{j}) dist={d:.1} need={need:.1}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_circle_initial_layout_sized_edge_cases() {
+        assert!(circle_initial_layout_sized(&[], 0.0, 0.0, 100.0, 24.0).is_empty());
+        // 单个节点：半径下限兜底，不除零
+        let one = circle_initial_layout_sized(&[7.0], 400.0, 300.0, 100.0, 24.0);
+        assert_eq!(one.len(), 1);
+        // 半径不得小于下限（几个小圆点不该被撑成占满画布的大圆）
+        let dots = circle_initial_layout_sized(&[7.0; 4], 400.0, 300.0, 100.0, 24.0);
+        let r = ((dots[0].0 - 400.0).powi(2) + (dots[0].1 - 300.0).powi(2)).sqrt();
+        assert!((r - 100.0).abs() < 0.01, "小图应保留下限半径: {r}");
     }
 
     #[test]

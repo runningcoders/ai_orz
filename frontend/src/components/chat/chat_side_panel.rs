@@ -27,17 +27,16 @@ use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
 use crate::components::chat::ThinkTracesTab;
 use crate::components::chat::ToolCallsTab;
-use crate::components::graph::{Graph, GraphEdge, GraphNode, task_status_node_type};
+use crate::components::graph::{EdgeCurve, Graph, GraphEdge, GraphNode, task_status_node_type};
 use crate::components::hud::{HudPanel, HudProgress};
 use crate::components::identity_chip::IdentityChip;
-use crate::components::layered_layout::{LayeredLayoutConfig, compute_layered_layout};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
+use crate::utils::dagre_layout::{DagreEdge, DagreNode, dagre_layout};
 use crate::utils::message::request_scope;
-use crate::utils::think_path_graph::{assign_edge_curves, relax_layout, spread_layout};
 use crate::utils::time::now_ms;
 use crate::utils::{
     avatar_status_ring, format_file_size, format_timestamp_opt as format_timestamp, priority_badge,
@@ -592,21 +591,25 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
 ///
 /// 依赖方向：A.dependencies 含 B ⇒ B 是 A 的前置 ⇒ 画 B → A（前置在上、依赖在下）。
 ///
-/// # 布局管线（与思考路径图**同一条标准管线**，不再自己写一套）
+/// # 布局管线（dagre 分层布局，2026-10-24 替换旧四步自研管线）
 ///
-/// 1. `compute_layered_layout`（Kahn 分层）只用来定「谁在第几层」——取 layer 序号，
-///    再按 `top_margin + layer * layer_height` 直接算出 y。不用它给的 y 是因为
-///    它的层距是按画布均分压出来的，下游按 y 聚层带时可能把两层并成一层。
-/// 2. `spread_layout`：按层带折叠排列，用卡片 / 点直径作间距下限，保证不重叠。
-/// 3. `relax_layout`：力传导松弛（知识图谱 / 工作台 Canvas 栈同款 `ForceLayout`），
-///    同层节点自然高低错落，不再排成一条横线。
-/// 4. `assign_edge_curves`：自环 → Loop；双向对 → 分居两侧；同层 / 向上回边 → 组内
-///    分档弧线；正常向下 → 直线。
+/// 旧管线（Kahn 分层 → spread → 力导向松弛 → 弧线避障）有三个结构性问题：
+/// 同层均分不知卡片宽度（宽卡同层必互压）、弧线避障是 O(边×节点) 局部启发式
+/// （密集边仍穿卡）、成环数据要靠破环补丁。dagre（Sugiyama 框架工业实现）
+/// 一次做完四件事，详见 `utils::dagre_layout`：
+///
+/// 1. 节点按**实际视觉尺寸**喂 dagre（卡片态逐节点 `node_box_width/height`，
+///    点线态统一点径）——同层不重叠由坐标层面保证；
+/// 2. 边产出 waypoints 折线（`EdgeCurve::Polyline`）——边不穿卡由路由层面保证；
+/// 3. 自环不进 dagre（dagre 不布局 `source==target`），走 `EdgeCurve::Loop`；
+/// 4. 输出包围盒等比缩放 + 居中映射进画布——任何规模完整落进画布，
+///    「飞出画布 / 贴边」从根上消失。
 ///
 /// # 参数
 ///
 /// - `mini`：`true` = 缩略图点线态，`false` = 放大弹窗卡片态。两者节点视觉尺寸差
-///   一个量级，必须分别传，否则缩略图会被按卡片宽拉散 / 卡片态互相压住。
+///   一个量级，间距与节点尺寸分别按态传入，否则缩略图会被按卡片宽拉散 /
+///   卡片态互相压住。
 fn build_task_graph_data(
     tasks: &[TaskListItem],
     width: f64,
@@ -614,26 +617,6 @@ fn build_task_graph_data(
     mini: bool,
 ) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let ids: std::collections::HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
-    let task_ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-    let mut deps_map: HashMap<String, Vec<String>> = HashMap::new();
-    for t in tasks {
-        let in_graph_deps: Vec<String> = t
-            .dependencies
-            .iter()
-            .filter(|d| ids.contains(d.as_str()))
-            .cloned()
-            .collect();
-        deps_map.insert(t.id.clone(), in_graph_deps);
-    }
-    // 层带：只取 layer 序号，y 自己算（保证不同层 y 必然不同）
-    let config = LayeredLayoutConfig {
-        width,
-        height,
-        top_margin: (height * 0.06).max(10.0),
-        layer_height: height * 0.30,
-        side_margin: (width * 0.06).max(10.0),
-    };
-    let positions = compute_layered_layout(&task_ids, &deps_map, &config);
     // 负责人展示名：Agent 分配对象（assignee_type=1）显示 ID 前 8 位（完整 ID 过长，
     // hover 详情另有 ID 行），其余 / 未分配显示占位文案（任务列表页同款口径）
     let assignee_name = |t: &TaskListItem| -> String {
@@ -645,36 +628,29 @@ fn build_task_graph_data(
             t.assignee_id.clone()
         }
     };
+    // 1. 节点（坐标先占位画布中心，实际位置由 dagre 布局写回）
     let mut nodes: Vec<GraphNode> = tasks
         .iter()
-        .map(|t| {
-            // 布局缺失（理论上不会）兜底第 0 层，不 panic
-            let (layer, _, _) =
-                positions
-                    .get(&t.id)
-                    .copied()
-                    .unwrap_or((0, width / 2.0, height / 2.0));
-            GraphNode {
-                id: t.id.clone(),
-                label: t.title.clone(),
-                description: t.description.clone().unwrap_or_default(),
-                // 状态 → 语义化 token：着色与 hover 标签都按状态区分（见 graph.rs 配色映射）
-                node_type: task_status_node_type(t.status).to_string(),
-                // x 先给画布中线：层内横向位置由 spread_layout / relax_layout 决定
-                x: width / 2.0,
-                y: config.top_margin + layer as f64 * config.layer_height,
-                tags: t.tags.clone(),
-                // hover 关键信息一行概览：状态 · 进度 · 负责人
-                //（node_hover_lines 通道自动携带，点线图下名称也由 hover 承载）
-                summary: Some(format!(
-                    "{} · 进度 {}% · 负责人 {}",
-                    task_status_text(t.status),
-                    t.progress,
-                    assignee_name(t)
-                )),
-            }
+        .map(|t| GraphNode {
+            id: t.id.clone(),
+            label: t.title.clone(),
+            description: t.description.clone().unwrap_or_default(),
+            // 状态 → 语义化 token：着色与 hover 标签都按状态区分（见 graph.rs 配色映射）
+            node_type: task_status_node_type(t.status).to_string(),
+            x: width / 2.0,
+            y: height / 2.0,
+            tags: t.tags.clone(),
+            // hover 关键信息一行概览：状态 · 进度 · 负责人
+            //（node_hover_lines 通道自动携带，点线图下名称也由 hover 承载）
+            summary: Some(format!(
+                "{} · 进度 {}% · 负责人 {}",
+                task_status_text(t.status),
+                t.progress,
+                assignee_name(t)
+            )),
         })
         .collect();
+    // 2. 边（前置 → 任务；样式字段不变，曲率由 dagre waypoints 写回）
     let mut edges: Vec<GraphEdge> = tasks
         .iter()
         .flat_map(|t| {
@@ -688,17 +664,58 @@ fn build_task_graph_data(
                     weight: None,
                     // 任务依赖图语义有向（前置 → 任务）：保持既有恒挂箭头行为零回退
                     direction: "directed".to_string(),
-                    // 曲率 / 虚线 / 线宽：曲率由下方 assign_edge_curves 统一决定
                     curve: None,
                     dash: None,
                     width: None,
                 })
         })
         .collect();
-    // 标准管线三步（顺序不可换：层距来自 spread_layout，弧线曲率依赖层距）
-    let layer_gap = spread_layout(&mut nodes, width, height, mini);
-    relax_layout(&mut nodes, &edges, width, height, mini, layer_gap);
-    assign_edge_curves(&nodes, &mut edges, width, height, layer_gap, mini);
+    // 3. dagre 布局：节点尺寸按态取（卡片态逐节点算，点线态统一点径）
+    let dot =
+        (crate::components::graph::dot_node_radius(width, height, nodes.len()) * 2.0).max(18.0);
+    let dagre_nodes: Vec<DagreNode> = nodes
+        .iter()
+        .map(|n| {
+            let (w, h) = if mini {
+                (dot, dot)
+            } else {
+                (
+                    crate::components::graph::node_box_width(n),
+                    crate::components::graph::node_box_height(n),
+                )
+            };
+            DagreNode {
+                id: n.id.clone(),
+                width: w,
+                height: h,
+            }
+        })
+        .collect();
+    let dagre_edges: Vec<DagreEdge> = edges
+        .iter()
+        .map(|e| DagreEdge {
+            source: e.source.clone(),
+            target: e.target.clone(),
+        })
+        .collect();
+    let layout = dagre_layout(&dagre_nodes, &dagre_edges, width, height, mini);
+    // 4. 写回节点坐标
+    for n in &mut nodes {
+        if let Some((x, y)) = layout.positions.get(&n.id) {
+            n.x = *x;
+            n.y = *y;
+        }
+    }
+    // 5. 写回边曲率：自环 → Loop（dagre 不布局）；其余 → waypoints 折线；
+    //    无路由（理论不可达）保持直线兜底
+    for e in &mut edges {
+        let key = (e.source.clone(), e.target.clone());
+        if layout.self_loops.contains(&key) {
+            e.curve = Some(EdgeCurve::Loop);
+        } else if let Some(pts) = layout.routes.get(&key) {
+            e.curve = Some(EdgeCurve::Polyline(pts.clone()));
+        }
+    }
     (nodes, edges)
 }
 

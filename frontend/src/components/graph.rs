@@ -62,7 +62,7 @@ pub struct GraphEdge {
 /// 为什么把曲率放在数据上而不是渲染时算：同一份图数据会被缩略图、放大弹窗、
 /// 导出等多个画布尺寸复用，曲率若依赖画布尺寸就会各画一套；放到 `GraphEdge`
 /// 上则一次算好、处处一致。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EdgeCurve {
     /// 直线（默认）
     Straight,
@@ -71,6 +71,10 @@ pub enum EdgeCurve {
     Arc(f64),
     /// 自环：从源节点右侧绕出的三次贝塞尔（半径由节点半宽决定，见 `edge_geometry`）
     Loop,
+    /// 折线（dagre 边路由 waypoints）：折线经过的点（画布坐标，**不含起终点**，
+    /// 方向 source→target）。用于分层图（任务依赖图 / 思考轨迹图）的 dummy node
+    /// 边路由——取代旧弧线避障启发式，边不穿卡由路由层面保证。
+    Polyline(Vec<(f64, f64)>),
 }
 
 /// 图元素 hover 目标（节点 ID / 边端点对），驱动 hover 详情卡片
@@ -332,11 +336,8 @@ pub fn global_node_label(label: &str, radius: f64) -> String {
 /// 观感几乎等于没动。现在基准取 0.12（= 24px @ 200 短边），既统一（3/4/8 节点同值）
 /// 又回到「原来那个大小」；节点数阻尼只在 8 个以上才收一点，避免 20+ 节点糊成一团。
 ///
-/// 布局侧（`utils::think_path_graph::spread_layout` / `relax_layout`）用同一函数
-/// 推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
-///
-/// 布局侧（`utils::think_path_graph::spread_layout` / `relax_layout`）用同一函数
-/// 推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
+/// 布局侧（`utils::dagre_layout` 点线态取 `dot_node_radius × 2` 作节点尺寸）
+/// 用同一函数推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
 pub fn dot_node_radius(width: f64, height: f64, node_count: usize) -> f64 {
     let short = width.max(1.0).min(height.max(1.0));
     let base = (short * 0.12).clamp(10.0, 28.0);
@@ -492,6 +493,19 @@ pub fn get_edge_dash(relation_type: &str) -> &'static str {
     }
 }
 
+/// 边标签字号（衬底度量 / 渲染同源，改这里要同步 rsx 里的 font_size）
+const EDGE_LABEL_PX: f64 = 10.0;
+
+/// 边标签衬底宽度：文本度量 + 左右各 3px padding（`edge_label_overlays` 置顶层用）
+///
+/// ⚠️ 必须走 `node_card::text_width`（CJK≈字号、ASCII≈0.55×字号）而不是「字符数 ×
+/// 固定系数」：旧实现 `7.0×n + 4` 只覆盖 ASCII，中文标签每字 ≈10px，衬底左侧会
+/// 超出白底 3px——用户看到的就是「文字缺一角」；且旧写法右缘比左缘多 4px，衬底
+/// 整体右偏。与卡片折行共用一套估算，SVG / Canvas 口径一致。
+pub fn edge_label_box_width(label: &str) -> f64 {
+    node_card::text_width(label, EDGE_LABEL_PX) + 6.0
+}
+
 /// 计算两点间距离（直线段长度）
 fn edge_length(sx: f64, sy: f64, tx: f64, ty: f64) -> f64 {
     ((tx - sx).powi(2) + (ty - sy).powi(2)).sqrt()
@@ -582,6 +596,34 @@ fn polyline_length(points: &[(f64, f64)]) -> f64 {
         .windows(2)
         .map(|w| edge_length(w[0].0, w[0].1, w[1].0, w[1].1))
         .sum()
+}
+
+/// 折线中点与中点切线角（沿**弧长**参数化，不是按下标取中间点）
+///
+/// 折线各段长度不均（dagre 的 dummy node 通道可长可短），下标中点会落在视觉中点
+/// 之外；标签锚点 / 旋转角必须取弧长一半处，与弧线的 `quadratic_at(0.5)` 口径一致。
+fn polyline_mid(points: &[(f64, f64)]) -> ((f64, f64), f64) {
+    if points.len() < 2 {
+        return (points[0], 0.0);
+    }
+    let total = polyline_length(points);
+    let mut acc = 0.0;
+    for w in points.windows(2) {
+        let seg = edge_length(w[0].0, w[0].1, w[1].0, w[1].1);
+        if seg > 0.0 && acc + seg >= total / 2.0 {
+            let t = (total / 2.0 - acc) / seg;
+            let mid = (
+                w[0].0 + (w[1].0 - w[0].0) * t,
+                w[0].1 + (w[1].1 - w[0].1) * t,
+            );
+            return (mid, calculate_edge_angle(w[0].0, w[0].1, w[1].0, w[1].1));
+        }
+        acc += seg;
+    }
+    (
+        points[points.len() / 2],
+        calculate_edge_angle(points[0].0, points[0].1, points[1].0, points[1].1),
+    )
 }
 
 /// 曲线箭头终点：沿「控制点 → 终点」切线回退到目标半径外
@@ -701,7 +743,9 @@ pub fn edge_geometry(
         }
         None => from,
     };
-    match edge.curve.unwrap_or(EdgeCurve::Straight) {
+    // as_ref 而非 unwrap_or：EdgeCurve 含 Vec（Polyline），整体不再 Copy；
+    // 渲染热路径避免每帧 clone 折线点
+    match edge.curve.as_ref().unwrap_or(&EdgeCurve::Straight) {
         EdgeCurve::Straight => {
             let start = start_of(source, target);
             let tip = if directed {
@@ -719,6 +763,7 @@ pub fn edge_geometry(
             }
         }
         EdgeCurve::Arc(bulge) => {
+            let bulge = *bulge;
             let p1 = quadratic_control(sx, sy, tx, ty, bulge);
             // 起点沿「源中心 → 控制点」出射方向收缩（与终点「控制点 → 终点」切线口径对称）
             let start = start_of(source, p1);
@@ -780,6 +825,55 @@ pub fn edge_geometry(
                 tip,
                 mid,
                 mid_angle: calculate_edge_angle(prev.0, prev.1, next.0, next.1),
+                length: polyline_length(&samples),
+            }
+        }
+        EdgeCurve::Polyline(pts) => {
+            if pts.is_empty() {
+                // 防御性兜底（dagre_layout 保证 pts.len() >= 2 才插入）：退化为直线
+                let start = start_of(source, target);
+                let tip = if directed {
+                    tip_of(source, target)
+                } else {
+                    target
+                };
+                return EdgeGeometry {
+                    d: format!("M {} {} L {} {}", start.0, start.1, tip.0, tip.1),
+                    d_full: format!("M {} {} L {tx} {ty}", start.0, start.1),
+                    tip,
+                    mid: ((start.0 + tx) / 2.0, (start.1 + ty) / 2.0),
+                    mid_angle: calculate_edge_angle(start.0, start.1, tx, ty),
+                    length: edge_length(start.0, start.1, tx, ty),
+                };
+            }
+            // dagre 边路由：起点 = 源中心沿「源中心 → 首个 waypoint」收缩到源卡片外缘；
+            // 终点 = 「末个 waypoint → 目标中心」切线与目标边界的交点（箭头落在 target 端）。
+            let first = pts[0];
+            let last = pts[pts.len() - 1];
+            let start = start_of(source, first);
+            let tip = if directed {
+                tip_of(last, target)
+            } else {
+                target
+            };
+            let mut d = format!("M {} {}", start.0, start.1);
+            for (x, y) in pts.iter() {
+                d.push_str(&format!(" L {x} {y}"));
+            }
+            let mut d_full = d.clone();
+            d_full.push_str(&format!(" L {tx} {ty}"));
+            // 采样序列：起点 → 各 waypoint → 目标中心（与 d_full 同源，mid/length 一致）
+            let samples: Vec<(f64, f64)> = std::iter::once(start)
+                .chain(pts.iter().copied())
+                .chain(std::iter::once(target))
+                .collect();
+            let (mid, mid_angle) = polyline_mid(&samples);
+            EdgeGeometry {
+                d,
+                d_full,
+                tip,
+                mid,
+                mid_angle,
                 length: polyline_length(&samples),
             }
         }
@@ -1034,7 +1128,9 @@ pub fn Graph(props: GraphProps) -> Element {
     // - 中点取自与渲染同一份几何（弧线上标签/hover 落在曲线中点，不是两端中点）；
     // - 全局点线态不绘边标签（对齐 Canvas 全局模式：点线承载类型着色）。
     let mut edge_mids: HashMap<(String, String), (f64, f64)> = HashMap::new();
-    let edge_label_overlays: Vec<(String, String, &'static str)> = if dot_mode {
+    // (标签, transform, 边色, 衬底宽, 衬底 x)：衬底几何在这里算好——rsx 的 for 是
+    // 宏语法节点，体内不能写 let，宽度计算必须留在 Rust 侧
+    let edge_label_overlays: Vec<(String, String, &'static str, f64, f64)> = if dot_mode {
         for (edge, (sx, sy), (tx, ty)) in valid_edges.iter() {
             let (radius, half) = tip_shape_of(&edge.target);
             let geo = edge_geometry(
@@ -1070,6 +1166,9 @@ pub fn Graph(props: GraphProps) -> Element {
                     .or_insert(geo.mid);
                 let label: String = edge.label.chars().take(10).collect();
                 (!label.is_empty()).then(|| {
+                    // 衬底宽按文本度量算（中文每字 ≈10px，旧「字符数×7px」会让文字
+                    // 左侧超出白底——「缺一角」观感）；x 取半宽负值保证左右对称
+                    let box_w = edge_label_box_width(&label);
                     (
                         label,
                         format!(
@@ -1079,6 +1178,8 @@ pub fn Graph(props: GraphProps) -> Element {
                             upright_angle(geo.mid_angle)
                         ),
                         get_edge_color(&edge.label),
+                        box_w,
+                        -(box_w / 2.0),
                     )
                 })
             })
@@ -1599,15 +1700,18 @@ pub fn Graph(props: GraphProps) -> Element {
             }
 
             // 边标签置顶层：SVG 无 z-index、后画覆盖先画，节点卡片不再遮挡关系名；
-            // 宽度按字符数（此前用字节数，中文标签底框会偏宽）
-            for (label, transform, edge_color) in edge_label_overlays.iter() {
+            // 衬底宽度走 text_width 度量（edge_label_box_width）：中文标签每字
+            // ≈10px，旧「字符数×7px」估算下左侧超出白底，观感即「文字缺一角」
+            for (label, transform, edge_color, label_box_w, label_box_x) in
+                edge_label_overlays.iter()
+            {
                 g {
                     transform: "{transform}",
                     style: "pointer-events: none;",
                     rect {
-                        x: "-{label.chars().count() as f64 * 3.5}",
+                        x: "{label_box_x}",
                         y: "-7",
-                        width: "{label.chars().count() as f64 * 7.0 + 4.0}",
+                        width: "{label_box_w}",
                         height: "14",
                         rx: "2",
                         fill: "rgba(255, 255, 255, 0.9)",
@@ -1618,7 +1722,7 @@ pub fn Graph(props: GraphProps) -> Element {
                         x: "0",
                         y: "2",
                         text_anchor: "middle",
-                        font_size: "10",
+                        font_size: "{EDGE_LABEL_PX}",
                         fill: "#374151",
                         font_weight: "500",
                         "{label}"
@@ -1912,6 +2016,28 @@ mod tests {
         }
         // 关系类型缺失时的兜底标签「关联」有确定的语义色，不落中性 —— 否则存量空类型边会全灰
         assert_ne!(get_edge_color("关联"), NEUTRAL_EDGE_COLOR);
+    }
+
+    /// 边标签衬底必须完整包住文本且左右对称（中文标签「缺一角」事故的守卫）：
+    /// 衬底半宽 = 字宽/2 + 3，最坏情况（全中文）下文字两侧仍各有 3px 白底。
+    #[test]
+    fn edge_label_box_covers_text_with_symmetric_padding() {
+        for label in ["前置", "导致", "via前置", "a", "is_prerequisite_of"] {
+            let text_w = node_card::text_width(label, EDGE_LABEL_PX);
+            let box_w = edge_label_box_width(label);
+            assert!(
+                box_w >= text_w + 6.0 - 1e-9,
+                "标签 `{label}` 衬底 {box_w} 应 ≥ 字宽 {text_w} + 6px padding"
+            );
+            // 对称性：x = -box_w/2，文字（text_anchor: middle）两侧余量相等
+            let half = box_w / 2.0;
+            assert!(
+                (half - text_w / 2.0 - 3.0).abs() < 1e-9,
+                "标签 `{label}` 左右 padding 应各 3px"
+            );
+        }
+        // 全中文最坏场景：2 字 20px 字宽 → 衬底 26px（旧实现只有 18px，左侧缺 3px）
+        assert!((edge_label_box_width("前置") - 26.0).abs() < 1e-9);
     }
 
     /// `MemoryType` 的每个具体取值都必须有节点填充色（`all` 是查询侧伪类型，不参与着色）。

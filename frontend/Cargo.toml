@@ -38,3 +38,7 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 base64 = "0.22"
 # query string 值 percent-encoding：纯 Rust 无 std 依赖，wasm 兼容
 urlencoding = "2"
+# dagre 分层布局（任务依赖图 / 思考轨迹图）：Sugiyama 框架工业实现——acyclic 破环、
+# network simplex 分层、Brandes-Köpf 坐标（节点尺寸感知）、dummy node 边路由。
+# 依赖仅 petgraph + indexmap，wasm32-unknown-unknown 编译验证通过。
+dagre-dgl-rs = "0.1.1"
