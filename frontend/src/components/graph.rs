@@ -228,6 +228,24 @@ pub fn task_status_node_type(status: i32) -> &'static str {
 
 /// 节点填充颜色（key = `MemoryResult.memory_type` 的 snake_case 取值，或
 /// `task_status_node_type` 的任务状态 token）
+/// 思考路径图「行为」节点类型 token 的前缀（完整形态 `think_step:{slot}`）。
+///
+/// 为什么要带槽位：一张思考轨迹图里每个节点都是**一个不同的行为**（think /
+/// dispatch / evaluate …），但它们的节点类型原本都是同一个 `think_step`，于是
+/// `get_node_fill` 只能给出同一个颜色 —— AMan 第十轮反馈③「这三个节点都用的是
+/// 同一种颜色呀，不同的行为是不是应该用不同的颜色」。槽位由
+/// `utils::think_path_graph::assign_color_slots` 分配（稳定哈希 + 组内贪心去重），
+/// 本文件只负责「槽位 → 颜色」的映射。
+pub const THINK_STEP_COLOR_PREFIX: &str = "think_step:";
+
+/// 思考路径图行为调色板（8 色，彼此可分辨且与任务状态色板不冲突）。
+///
+/// 槽位 = 索引；同图内由 `assign_color_slots` 保证不撞色，同一行为在任何 trace 里
+/// 落在同一个起点槽位（改色板顺序会换色，但不会造成同图撞色）。
+pub const THINK_STEP_COLORS: &[&str] = &[
+    "#06b6d4", "#8b5cf6", "#f59e0b", "#10b981", "#3b82f6", "#ef4444", "#ec4899", "#84cc16",
+];
+
 pub fn get_node_fill(node_type: &str) -> &'static str {
     match node_type {
         "knowledge_node" => "#3b82f6",
@@ -243,6 +261,14 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
         "task_archived" => "#94a3b8",
         // 思考路径图：节点是图引擎的执行单元（cyan-500，与记忆/任务色板可区分）
         "think_step" => "#06b6d4",
+        // 思考路径图（带槽位）：`think_step:{slot}` → 按行为取色，
+        // 让「think / dispatch / evaluate」在同一张图里一眼可分（AMan 第十轮反馈③）
+        t if t.starts_with(THINK_STEP_COLOR_PREFIX) => {
+            let slot = t[THINK_STEP_COLOR_PREFIX.len()..]
+                .parse::<usize>()
+                .unwrap_or(0);
+            THINK_STEP_COLORS[slot % THINK_STEP_COLORS.len()]
+        }
         _ => NEUTRAL_NODE_FILL,
     }
 }
@@ -287,35 +313,36 @@ pub fn global_node_label(label: &str, radius: f64) -> String {
 /// 而「原来那个大小」是卡片态被 fit 缩小后的结果（一张 104~168px 宽的卡缩到
 /// 0.4 仍有 40px 视觉宽度），点线态按常量画自然对不上。
 ///
-/// # 取值口径（AMan 第九轮反馈①：两个缩略图的点大小必须一致）
-///
-/// **基准只由画布短边定，节点数只做轻微阻尼**：
+/// # 取值口径（第十轮修正：系数 0.085 → 0.12，把「原来那个大小」还回去）
 ///
 /// ```text
-/// base = clamp(min(width, height) × 0.085, 7, 24)
+/// base = clamp(min(width, height) × 0.12, 10, 28)
 /// damp = (8 / max(n, 8)) ^ 0.35
-/// r    = clamp(base × damp, 6, 24)
+/// r    = clamp(base × damp, 10, 28)
 /// ```
 ///
-/// 只有这样「同一块 300×200 缩略图、同一套渲染」下，任务依赖图（4 个任务）与
-/// 思考路径图（8 个节点）才会画出**一样大的点** —— 旧实现按 `画布面积 / n` 均分，
-/// 4 节点得 22.9px、8 节点得 16.2px，同一套 UI 里两个缩略图点径差了三分之一，
-/// 用户一眼就能看出「这两个图的节点大小怎么不一样」。
+/// - 300×200：3 / 4 / 8 节点**都是 24px**；12 节点 ≈ 20.9px；16 节点 ≈ 19.2px；
+/// - 920×620：短边 620 → base 顶到 28px 上限（放大弹窗走卡片态，不消费本函数）。
 ///
-/// - 300×200：4 节点 / 8 节点**都是 17px**；12 节点 ≈ 14.8px；16 节点 ≈ 13.3px；
-/// - 920×620：短边 620 → base 触 24px 上限（放大弹窗走卡片态，不消费本函数）。
+/// # 为什么第九轮的 0.085 是错的（AMan 第十轮反馈①「跟上次改之前没有任何变化」）
 ///
-/// 节点数阻尼保留了「点多了自动收一点」的合理性（8 节点以内不再变化），但不再是
-/// 主变量：画布尺寸才是决定观感的那一维。
+/// 0.085 × 200 = **17px**，而更早那版按 `面积 / n` 均分在 3~4 节点时是 **22.9~24px**
+/// —— 也就是说第九轮为了「两个缩略图点径统一」，把点从 24px 压到了 17px，
+/// 统一是统一了，但把用户当时说「蛮合适」的尺寸改小了一整档，3 节点场景下
+/// 观感几乎等于没动。现在基准取 0.12（= 24px @ 200 短边），既统一（3/4/8 节点同值）
+/// 又回到「原来那个大小」；节点数阻尼只在 8 个以上才收一点，避免 20+ 节点糊成一团。
+///
+/// 布局侧（`utils::think_path_graph::spread_layout` / `relax_layout`）用同一函数
+/// 推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
 ///
 /// 布局侧（`utils::think_path_graph::spread_layout` / `relax_layout`）用同一函数
 /// 推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
 pub fn dot_node_radius(width: f64, height: f64, node_count: usize) -> f64 {
     let short = width.max(1.0).min(height.max(1.0));
-    let base = (short * 0.085).clamp(7.0, 24.0);
+    let base = (short * 0.12).clamp(10.0, 28.0);
     let n = node_count.max(1) as f64;
     let damp = (8.0 / n.max(8.0)).powf(0.35);
-    (base * damp).clamp(6.0, 24.0)
+    (base * damp).clamp(10.0, 28.0)
 }
 
 // 卡片几何 / 文案 / 配色的实现在 `components::node_card`（Canvas 与 SVG 共用一份；
@@ -2323,13 +2350,24 @@ mod tests {
         );
         // 300×200 缩略图里不能退回常量 7px（那是「看不清」的根因）
         assert!(
-            dot_node_radius(300.0, 200.0, 5) >= 12.0,
+            dot_node_radius(300.0, 200.0, 5) >= 23.0,
             "缩略图点半径过小: {}",
             dot_node_radius(300.0, 200.0, 5)
         );
         // 上下界：极小画布 / 极多节点不塌成 0，极大画布不失控
-        assert!(dot_node_radius(20.0, 20.0, 500) >= 6.0);
-        assert!(dot_node_radius(4000.0, 4000.0, 1) <= 24.0);
+        // 3 节点（真实思考轨迹的常见规模）与 4 节点（任务图）也必须同值
+        assert!(
+            (dot_node_radius(300.0, 200.0, 3) - dot_node_radius(300.0, 200.0, 4)).abs() < 1e-9,
+            "3 节点与 4 节点点径必须一致"
+        );
+        // 300×200 缩略图必须回到「原来那个大小」（24px，AMan 第十轮反馈①）
+        assert!(
+            (dot_node_radius(300.0, 200.0, 3) - 24.0).abs() < 1e-9,
+            "缩略图点半径应为 24px，实际 {}",
+            dot_node_radius(300.0, 200.0, 3)
+        );
+        assert!(dot_node_radius(20.0, 20.0, 500) >= 10.0);
+        assert!(dot_node_radius(4000.0, 4000.0, 1) <= 28.0);
     }
 
     /// fit 包围盒必须取「当前形态的半尺寸」：点线态不能被卡片宽高拖小

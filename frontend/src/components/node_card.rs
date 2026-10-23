@@ -342,6 +342,8 @@ pub fn type_label(t: &str) -> &str {
         "task" => "任务",
         // 思考路径图（graph::get_node_fill 的 think_step 配色对应中文标签）
         "think_step" => "思考节点",
+        // 思考路径图（带行为槽位 `think_step:{slot}`，槽位只影响配色不影响类型名）
+        t if t.starts_with("think_step:") => "思考节点",
         "" => "未知",
         other => other,
     }

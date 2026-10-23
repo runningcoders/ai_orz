@@ -143,6 +143,36 @@ pub fn dedup_nodes(occurrences: &[ThinkTraceOccurrenceDto]) -> Vec<String> {
     out
 }
 
+/// 给每个行为分配一个颜色槽位（`graph::THINK_STEP_COLORS` 的下标）。
+///
+/// 规则：以行为名的 FNV-1a 哈希取起点槽位（→ 同一行为在任何 trace 里同色，跨记录
+/// 对照不用重新认色），再在色板内贪心向后找空槽（→ 同一张图里不同行为绝不撞色）。
+///
+/// 为什么不直接「按出现顺序 0,1,2…」：那样同一个行为在不同 trace 里会换颜色
+/// （think 今天是青、明天是紫），反而更难对照。哈希定起点 + 组内去重两头都顾。
+fn assign_color_slots(aggs: &[ThinkNodeAgg]) -> HashMap<String, usize> {
+    let n = crate::components::graph::THINK_STEP_COLORS.len().max(1);
+    let mut used: Vec<usize> = Vec::with_capacity(aggs.len());
+    let mut out: HashMap<String, usize> = HashMap::with_capacity(aggs.len());
+    for a in aggs {
+        let mut h: u64 = 1469598103934665603;
+        for b in a.node.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(1099511628211);
+        }
+        let mut slot = (h % n as u64) as usize;
+        for _ in 0..n {
+            if !used.contains(&slot) {
+                break;
+            }
+            slot = (slot + 1) % n;
+        }
+        used.push(slot);
+        out.insert(a.node.clone(), slot);
+    }
+    out
+}
+
 /// 单节点聚合（次数 / 步号 / signal 集合 / hover 明细）
 pub fn aggregate_nodes(occurrences: &[ThinkTraceOccurrenceDto]) -> Vec<ThinkNodeAgg> {
     let mut order: Vec<String> = Vec::new();
@@ -616,6 +646,9 @@ pub fn relax_layout(
     } else {
         layer_gap
     };
+    // 单层：没有层序可保护（典型场景=所有转移都逆向 / 无转移），y 完全交给
+    //「等距错落」策略，不再被分层约束拉住
+    let single_band = band_centers.len() == 1;
     let cfg = ForceLayoutConfig {
         repulsion: if mini { 1500.0 } else { 6000.0 },
         attraction: 0.06,
@@ -625,7 +658,7 @@ pub fn relax_layout(
         // 层约束从 0.30 降到 0.12：0.30 时 y 一直被死死拉回层中心，力传导给出的
         // 错落一写回就被抹平（这正是「看不出力导向」的成因）。层序由下面的
         // y 夹紧（不越行）保证，不靠这个系数。
-        layer_attraction: 0.12,
+        layer_attraction: if single_band { 0.0 } else { 0.12 },
         layer_height: layer_step.max(1.0),
         layer_top_margin: band_centers.first().copied().unwrap_or(0.0),
     };
@@ -665,6 +698,12 @@ pub fn relax_layout(
         .collect();
     let jitter_caps: Vec<f64> = (0..band_centers.len())
         .map(|band| {
+            if single_band {
+                // 单层不再受 `layer_gap × 0.24`（≈8px）约束 —— 那条约 8px 的上限
+                // 正是「三个点仍然排在一条横线上」的直接原因。这里直接放到画布
+                // 可用高度：想错落多少就错落多少，只要不出画布。
+                return (height / 2.0 - band_half[band] - 10.0).max(0.0);
+            }
             let mut room = layer_gap;
             if band > 0 {
                 room = room.min(
@@ -702,11 +741,24 @@ pub fn relax_layout(
         }
         (h % 1000) as f64 / 1000.0 - 0.5
     };
+    //
+    // 单层时改成「按序号等距铺开」而不是哈希抖动：确定性、均匀，3 个节点必然得到
+    // 「上 / 中 / 下」三点，不会因为两个哈希同侧而看着仍像一条线。
+    let count = nodes.len();
     for (i, n) in nodes.iter_mut().enumerate() {
         let band = band_of[i];
         let base = band_centers[band];
         let cap = jitter_caps[band];
-        let dy = (c_nodes[i].y - base) + jitter_of(&n.id) * cap * 0.6;
+        let dy = if single_band {
+            let t = if count <= 1 {
+                0.0
+            } else {
+                (i as f64 - (count as f64 - 1.0) / 2.0) / ((count as f64 - 1.0) / 2.0)
+            };
+            t * cap
+        } else {
+            (c_nodes[i].y - base) + jitter_of(&n.id) * cap * 0.6
+        };
         n.y = base + dy.clamp(-cap, cap);
         n.x = c_nodes[i].x;
     }
@@ -795,14 +847,46 @@ pub fn build_think_path_graph(
     for id in &node_ids {
         deps_map.insert(id.clone(), Vec::new());
     }
+    // 分层依赖 = 「按首次出现序严格向前」的转移（AMan 第十轮反馈②）
+    //
+    // 旧实现把所有转移都喂给 `compute_layered_layout`，而思考轨迹几乎必然成环
+    //——真实数据：`think → dispatch → evaluate → think`，本机 116 条轨迹里 95 条
+    // 都是这种三节点环。Kahn 拓扑把它们全部判成「环上节点」→ 一并沉到最后一层 →
+    // `spread_layout` 收到的是「三个 y 完全相同」→ 只能排成一横排。
+    // 用户看到的「三个大点堆在一条横线上」，**不是力导向没生效，而是力传导开始
+    // 之前就已经被压成一行了**（这一点必须诚实说明）。
+    //
+    // 破环规则：只有「源节点首次出现早于目标节点」的转移才参与分层。分层 DAG 因此
+    // 严格按流程先后递增（think=0 → dispatch=1 → evaluate=2），逆向的那条
+    //（evaluate → think）仍作为边渲染、由 `assign_edge_curves` 画成绕行弧线 ——
+    // 回环语义保住，层级也拿到了。
+    let first_seq: HashMap<&str, usize> = aggs
+        .iter()
+        .map(|a| (a.node.as_str(), a.first_seq))
+        .collect();
     for t in &transitions {
+        if t.source == t.target {
+            continue;
+        }
+        let fs = first_seq
+            .get(t.source.as_str())
+            .copied()
+            .unwrap_or(usize::MAX);
+        let ft = first_seq
+            .get(t.target.as_str())
+            .copied()
+            .unwrap_or(usize::MAX);
+        if fs >= ft {
+            continue; // 逆向 / 同序：不参与分层（边照画，弧线绕行）
+        }
         if let Some(preds) = deps_map.get_mut(&t.target)
-            && t.source != t.target
             && !preds.iter().any(|p| p == &t.source)
         {
             preds.push(t.source.clone());
         }
     }
+    // 行为配色：每个节点（= 一个行为）拿一个颜色槽位，同图不撞色
+    let color_slots = assign_color_slots(&aggs);
     let config = layout_config(width, height);
     let positions =
         crate::components::layered_layout::compute_layered_layout(&node_ids, &deps_map, &config);
@@ -815,11 +899,14 @@ pub fn build_think_path_graph(
                     .get(&a.node)
                     .copied()
                     .unwrap_or((0, width / 2.0, height / 2.0));
+            let slot = color_slots.get(&a.node).copied().unwrap_or(0);
             GraphNode {
                 id: a.node.clone(),
                 label: a.node.clone(),
                 description: node_detail(a),
-                node_type: THINK_STEP_NODE_TYPE.to_string(),
+                // 行为槽位编进类型 token（`think_step:{slot}`）→ 同一张图里
+                // think / dispatch / evaluate 一眼可分（AMan 第十轮反馈③）
+                node_type: format!("{THINK_STEP_NODE_TYPE}:{slot}"),
                 x,
                 y,
                 tags: a.signals.clone(),
@@ -1413,20 +1500,30 @@ mod tests {
 
     /// 同一层的节点必须错落（力传导松弛的 y 抖动），不能又退回一条水平线
     #[test]
-    fn same_layer_nodes_are_staggered_not_collinear() {
-        // A→B→C→A 成环 ⇒ 三节点同层
+    fn cyclic_trace_is_unrolled_into_ordered_layers() {
+        // 真实数据形状：think → dispatch → evaluate → think（本机 116 条轨迹里 95 条）
+        // 破环后必须按首次出现序展开成三层；旧实现三者互为首尾 → 全部沉底 → 一条横线
+        //（AMan 第十轮反馈②「这三个节点还是一排呀」）。
         let occs = vec![
-            occ("A", 1, 1, None),
-            occ("B", 1, 2, None),
-            occ("C", 1, 3, None),
-            occ("A", 2, 4, None),
+            occ("think", 1, 1, Some("tool_calls")),
+            occ("dispatch", 1, 2, Some("done")),
+            occ("evaluate", 1, 3, Some("continue")),
+            occ("think", 2, 4, Some("final")),
+            occ("evaluate", 2, 5, Some("exit")),
         ];
-        let g = build_think_path_graph(&occs, &[], 920.0, 620.0, false);
-        let mut ys: Vec<f64> = g.nodes.iter().map(|n| n.y).collect();
-        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let span = *ys.last().unwrap() - *ys.first().unwrap();
-        assert!(span > 0.5, "同层节点应上下错落，实际共线: {ys:?}");
-        assert!(span < 60.0, "错落幅度不应大到看不出同层: {ys:?}");
+        let g = build_think_path_graph(&occs, &[], 300.0, 200.0, true);
+        let y = |id: &str| g.nodes.iter().find(|n| n.id == id).unwrap().y;
+        assert!(y("think") < y("dispatch"), "think 应排在 dispatch 之上");
+        assert!(
+            y("dispatch") < y("evaluate"),
+            "dispatch 应排在 evaluate 之上"
+        );
+        let dot = crate::components::graph::dot_node_radius(300.0, 200.0, 3) * 2.0;
+        assert!(
+            y("dispatch") - y("think") >= dot,
+            "相邻层间距 {} 应大于点直径 {dot}",
+            y("dispatch") - y("think")
+        );
     }
 
     /// 双向边必须**几何分居参考线两侧**（旧实现按 source<=target 取反符号，
@@ -1494,38 +1591,53 @@ mod tests {
         assert_eq!(g.nodes.len(), 1, "同名节点只出现一次");
         assert_eq!(g.nodes[0].summary.as_deref(), Some("×2 · step 1,2"));
         assert_eq!(g.nodes[0].tags, vec!["ready", "done"]);
-        assert_eq!(g.nodes[0].node_type, THINK_STEP_NODE_TYPE);
+        assert!(
+            g.nodes[0]
+                .node_type
+                .starts_with(crate::components::graph::THINK_STEP_COLOR_PREFIX),
+            "行为节点类型 token 应带颜色槽位: {}",
+            g.nodes[0].node_type
+        );
     }
 
     /// 同层多条回边（环沉底场景）：弧度必须两两不同，否则曲线完全重合
     #[test]
     fn same_layer_back_edges_get_distinct_arc_bulges() {
-        // A→B→C→A 成环 ⇒ 三个节点全部沉到同一层，三条边都在层内
-        let occs = vec![
-            occ("A", 1, 1, None),
-            occ("B", 1, 2, None),
-            occ("C", 1, 3, None),
-            occ("A", 2, 4, None),
+        // 破环之后分层图里已不会出现「同层回边」，但 `assign_edge_curves` 的分档
+        // 能力仍须守住（手工造三个同层节点 + 三条同层边）：弧度必须两两不同，
+        // 否则三条曲线几何重合 = 用户说的「线叠在一起」。
+        let mk_node = |id: &str, x: f64| GraphNode {
+            id: id.to_string(),
+            label: id.to_string(),
+            description: String::new(),
+            node_type: THINK_STEP_NODE_TYPE.to_string(),
+            x,
+            y: 300.0,
+            tags: Vec::new(),
+            summary: None,
+        };
+        let nodes = vec![
+            mk_node("A", 300.0),
+            mk_node("B", 450.0),
+            mk_node("C", 600.0),
         ];
-        let g = build_think_path_graph(&occs, &[], 920.0, 620.0, false);
-        assert_eq!(g.edges.len(), 3, "环上三条边");
-        let ys: Vec<f64> = g.nodes.iter().map(|n| n.y).collect();
-        let span = ys.iter().copied().fold(f64::MIN, f64::max)
-            - ys.iter().copied().fold(f64::MAX, f64::min);
-        assert!(
-            span < 120.0,
-            "环上节点仍应在同一层带内（错落幅度有限）: span={span}"
-        );
-        assert!(
-            span > 0.5,
-            "同层节点应上下错落而不是排成一条线: span={span}"
-        );
-
+        let mk_edge = |s: &str, t: &str| GraphEdge {
+            source: s.to_string(),
+            target: t.to_string(),
+            label: String::new(),
+            weight: None,
+            direction: "directed".to_string(),
+            curve: Some(EdgeCurve::Straight),
+            dash: None,
+            width: None,
+        };
+        let mut edges = vec![mk_edge("A", "B"), mk_edge("B", "C"), mk_edge("C", "A")];
+        assign_edge_curves(&nodes, &mut edges, 920.0, 620.0, 120.0, false);
         let mut bulges: Vec<f64> = Vec::new();
-        for e in &g.edges {
+        for e in &edges {
             match e.curve {
                 Some(EdgeCurve::Arc(v)) => bulges.push(v.abs()),
-                other => panic!("同层回边应为弧线: {other:?}"),
+                other => panic!("同层边应为弧线: {other:?}"),
             }
         }
         assert_eq!(bulges.len(), 3);
@@ -1617,6 +1729,80 @@ mod tests {
     ///
     /// 旧实现点位按常量 18px 留、渲染按常量 7px 画；现在渲染与布局都走
     /// `dot_node_radius`，本测试钉住「留的位 ≥ 画的点径」这条不变式。
+    #[test]
+    fn single_layer_nodes_are_staggered_vertically() {
+        // 单层兜底：即使所有节点同层（无层序可依），也必须上下错落，而不是
+        //「三个大点堆在一条横线上」（AMan 第十轮反馈②）。
+        let mk = |id: &str, x: f64| GraphNode {
+            id: id.to_string(),
+            label: id.to_string(),
+            description: String::new(),
+            node_type: THINK_STEP_NODE_TYPE.to_string(),
+            x,
+            y: 100.0,
+            tags: Vec::new(),
+            summary: None,
+        };
+        let mut nodes = vec![
+            mk("think", 60.0),
+            mk("dispatch", 150.0),
+            mk("evaluate", 240.0),
+        ];
+        let edges: Vec<GraphEdge> = Vec::new();
+        relax_layout(&mut nodes, &edges, 300.0, 200.0, true, 48.0);
+        let ys: Vec<f64> = nodes.iter().map(|n| n.y).collect();
+        let span = ys.iter().copied().fold(f64::MIN, f64::max)
+            - ys.iter().copied().fold(f64::MAX, f64::min);
+        let dot = crate::components::graph::dot_node_radius(300.0, 200.0, 3) * 2.0;
+        assert!(
+            span >= dot * 1.5,
+            "单层节点必须上下错落（span={span}，点直径={dot}）: {ys:?}"
+        );
+        // 不许出画布
+        assert!(
+            ys.iter()
+                .all(|y| *y >= dot / 2.0 && *y <= 200.0 - dot / 2.0),
+            "错落不得越出画布: {ys:?}"
+        );
+    }
+
+    #[test]
+    fn think_behaviors_get_distinct_colors() {
+        // 同一张图里不同行为必须不同色（AMan 第十轮反馈③「三个节点都用的是同一种颜色」）
+        let occs = vec![
+            occ("think", 1, 1, None),
+            occ("dispatch", 1, 2, None),
+            occ("evaluate", 1, 3, None),
+        ];
+        let g = build_think_path_graph(&occs, &[], 300.0, 200.0, true);
+        let fills: Vec<&str> = g
+            .nodes
+            .iter()
+            .map(|n| crate::components::graph::get_node_fill(&n.node_type))
+            .collect();
+        let mut uniq = fills.clone();
+        uniq.sort_unstable();
+        uniq.dedup();
+        assert_eq!(uniq.len(), fills.len(), "行为节点撞色: {fills:?}");
+        assert!(
+            g.nodes.iter().all(|n| n
+                .node_type
+                .starts_with(crate::components::graph::THINK_STEP_COLOR_PREFIX)),
+            "行为节点类型 token 应带颜色槽位"
+        );
+        // 槽位必须稳定：同一行为再算一次仍是同一个槽位（同一份数据每次渲染同色）
+        let g2 = build_think_path_graph(&occs, &[], 920.0, 620.0, false);
+        let slot = |x: &ThinkPathGraph, id: &str| {
+            x.nodes
+                .iter()
+                .find(|n| n.id == id)
+                .unwrap()
+                .node_type
+                .clone()
+        };
+        assert_eq!(slot(&g, "think"), slot(&g2, "think"));
+    }
+
     #[test]
     fn mini_points_are_readable_and_never_overlap() {
         let mut nodes: Vec<GraphNode> = (0..4)
