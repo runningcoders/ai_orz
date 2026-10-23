@@ -11,7 +11,6 @@ source_files:
     - docs/wiki/knowledge/zh/AI Orz 多 Agent 执行框架（Rust 后端 + Dioxus 前端）/概述.md
     - docs/wiki/knowledge/zh/AI Orz 多 Agent 执行框架（Rust 后端 + Dioxus 前端）/技术栈.md
     - docs/wiki/knowledge/zh/基于 tracing 的结构化日志系统（宏 + 文件滚动 + JSONL 查询）/基于 tracing 的结构化日志系统（宏 + 文件滚动 + JSONL 查询）.md
-    - docs/wiki/knowledge/zh/_index.yaml
     - docs/skills/ai-orz-wiki-maintainer.md
     - docs/skills/ai-orz-doc-maintainer.md
     - docs/DOCUMENTATION.md
@@ -29,7 +28,6 @@ AI Orz 在 `docs/` 下维护**四类文档完整链路、显式互引、绝不�
 
 | 文件 | 职责 |
 |---|---|
-| `docs/wiki/knowledge/zh/_index.yaml` | 知识卡顶层模块导出索引（schema_version=1），声明 2 个顶层模块（AI Orz 多 Agent 执行框架 / 多模块工作区）与 1 个子模块（Playwright E2E） |
 | `docs/wiki/knowledge/zh/AI Orz 多 Agent 执行框架…/` | 顶层模块 1：覆盖 Rust 后端 + Dioxus 前端，含 概述/技术栈/架构/编码规范/特殊配置命令 5 张标准模块卡 |
 | `docs/wiki/knowledge/zh/AI Orz 多模块工作区…/` | 顶层模块 2：覆盖 workspace 结构，含 E2E 子模块 |
 | `docs/wiki/knowledge/zh/<中文描述>/<同名>.md` | 44+ 张独立单主题知识卡（日志/错误/策略/工具/存储/向量/CI等），每张 YAML Front Matter 5 字段 + 4 标准章节 + **source_files[] 强制含对应 wiki 长文相对仓库根路径** |
