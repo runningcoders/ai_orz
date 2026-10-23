@@ -46,14 +46,14 @@ DAL --> FS["日志文件<br/>ai_orz.log.YYYY-MM-DD"]
 ```
 
 图表来源
-- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L118)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L28)
+- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L117)
 - [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
 - [src/service/dal/log_query.rs:100-210](src/service/dal/log_query.rs#L100-L210)
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L118)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L28)
+- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L117)
 - [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
 - [src/service/dal/log_query.rs:100-210](src/service/dal/log_query.rs#L100-L210)
 
@@ -70,7 +70,7 @@ DAL --> FS["日志文件<br/>ai_orz.log.YYYY-MM-DD"]
   - LogQueryRequest、LogStatsQueryParams、LogEntry、LogPageResult、LogLevelDistributionResponse、LogTimeSeriesResponse。
 
 章节来源
-- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L76)
 - [src/service/dal/log_query.rs:34-82](src/service/dal/log_query.rs#L34-L82)
 - [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
 
@@ -127,8 +127,8 @@ H-->>C : "200 OK + 分页数据"
   - 文件扫描：仅扫描最近 MAX_SCAN_DAYS 天的日志文件，文件名需符合 ai_orz.log.YYYY-MM-DD。
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
-- [common/src/api/log_stats.rs:52-77](common/src/api/log_stats.rs#L52-L77)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L28)
+- [common/src/api/log_stats.rs:52-77](common/src/api/log_stats.rs#L52-L76)
 - [src/service/dal/log_query.rs:120-210](src/service/dal/log_query.rs#L120-L210)
 - [src/service/dal/log_query.rs:217-258](src/service/dal/log_query.rs#L217-L258)
 
@@ -277,12 +277,12 @@ Common --> Domain
 图表来源
 - [src/handlers/system/logs/query_logs.rs:13-28](src/handlers/system/logs/query_logs.rs#L13-L28)
 - [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
-- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L76)
 
 章节来源
 - [src/handlers/system/logs/query_logs.rs:13-28](src/handlers/system/logs/query_logs.rs#L13-L28)
 - [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
-- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L76)
 
 ## 性能考虑
 - 扫描上限
@@ -334,9 +334,9 @@ AI Orz 的日志查询与统计功能以 tracing JSON 为基础，通过 Handler
   - 日志时序统计（按小时桶），支持 start_time、end_time。
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L118)
-- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L28)
+- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L117)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L76)
 
 ### 数据结构参考
 - LogQueryRequest：查询参数集合。
@@ -347,7 +347,7 @@ AI Orz 的日志查询与统计功能以 tracing JSON 为基础，通过 Handler
 - LogTimeSeriesResponse：时序响应。
 
 章节来源
-- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L77)
+- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L76)
 - [src/service/dal/log_query.rs:34-82](src/service/dal/log_query.rs#L34-L82)
 
 ### 日志轮转与存储策略

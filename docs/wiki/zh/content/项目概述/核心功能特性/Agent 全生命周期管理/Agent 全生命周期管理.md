@@ -74,7 +74,7 @@ HR --> DAL
 - [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
 - [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
 - [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L749)
 - [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
 - [pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
 
@@ -83,7 +83,7 @@ HR --> DAL
 - [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
 - [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
 - [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L749)
 - [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
 - [pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
 
@@ -109,7 +109,7 @@ HR --> DAL
 - [models/agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
 - [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L749)
 - [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
 - [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
 
@@ -145,7 +145,7 @@ end
 - [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
 - [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
 - [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L749)
 - [pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 ## 详细组件分析
@@ -282,13 +282,13 @@ end
 图表来源
 - [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
 - [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L749)
 - [pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 章节来源
 - [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
 - [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L749)
 
 ### Agent 间通信机制
 - 消息路由策略

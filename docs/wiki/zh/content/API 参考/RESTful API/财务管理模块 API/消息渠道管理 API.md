@@ -80,7 +80,7 @@ D --> F["DB: message_channels 表"]
   - DAO：SQLite 持久化与具体渠道推送实现。
 
 章节来源
-- [common/src/enums/message_channel.rs:1-122](common/src/enums/message_channel.rs#L1-L122)
+- [common/src/enums/message_channel.rs:1-122](common/src/enums/message_channel.rs#L1-L121)
 - [src/models/message_channel.rs:1-260](src/models/message_channel.rs#L1-L260)
 - [common/src/api/message_channel.rs:1-315](common/src/api/message_channel.rs#L1-L315)
 - [src/service/domain/finance/message_channel.rs:1-73](src/service/domain/finance/message_channel.rs#L1-L73)
@@ -138,11 +138,11 @@ Deleted --> [*]
 ```
 
 图表来源
-- [common/src/enums/message_channel.rs:82-122](common/src/enums/message_channel.rs#L82-L122)
+- [common/src/enums/message_channel.rs:82-122](common/src/enums/message_channel.rs#L82-L121)
 - [src/models/message_channel.rs:67-107](src/models/message_channel.rs#L67-L107)
 
 章节来源
-- [common/src/enums/message_channel.rs:1-122](common/src/enums/message_channel.rs#L1-L122)
+- [common/src/enums/message_channel.rs:1-122](common/src/enums/message_channel.rs#L1-L121)
 - [src/models/message_channel.rs:19-113](src/models/message_channel.rs#L19-L113)
 
 ### 渠道配置与存储

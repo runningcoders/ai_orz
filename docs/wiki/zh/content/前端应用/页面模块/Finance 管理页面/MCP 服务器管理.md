@@ -65,15 +65,15 @@ D --> R["运行时: mcp.rs<br/>stdio 客户端/会话/脱敏"]
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 - [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L98)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 - [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [common/src/api/mcp_server.rs:1-179](common/src/api/mcp_server.rs#L1-L179)
-- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L49)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
+- [common/src/api/mcp_server.rs:1-179](common/src/api/mcp_server.rs#L1-L174)
+- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L48)
 - [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
 - [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 
@@ -97,11 +97,11 @@ D --> R["运行时: mcp.rs<br/>stdio 客户端/会话/脱敏"]
   - 详情页：查看脱敏配置、触发同步、切换状态、删除
 
 章节来源
-- [common/src/api/mcp_server.rs:1-179](common/src/api/mcp_server.rs#L1-L179)
-- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L49)
+- [common/src/api/mcp_server.rs:1-179](common/src/api/mcp_server.rs#L1-L174)
+- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L48)
 - [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
-- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L98)
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 - [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
@@ -133,7 +133,7 @@ AD-->>FE : "JSON 响应"
 图表来源
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L98)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 - [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
@@ -201,13 +201,13 @@ AD-->>FE : "成功/失败提示"
 
 图表来源
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L26)
+- [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L25)
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 - [docs/mcp_tool_design.md:1320-1327](docs/archive/design-archive/mcp_tool_design.md)
 
 章节来源
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L26)
+- [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L25)
 - [docs/mcp_tool_design.md:1320-1327](docs/archive/design-archive/mcp_tool_design.md)
 
 ### 连接状态监控与失效策略
@@ -308,14 +308,14 @@ F["Frontend"] --> H
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L98)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L98)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 

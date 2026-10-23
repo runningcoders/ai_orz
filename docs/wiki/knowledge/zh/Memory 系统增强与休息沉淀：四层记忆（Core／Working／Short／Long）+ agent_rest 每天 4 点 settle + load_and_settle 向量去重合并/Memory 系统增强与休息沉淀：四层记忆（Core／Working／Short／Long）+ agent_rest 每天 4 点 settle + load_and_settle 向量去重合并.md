@@ -68,10 +68,10 @@ source_files:
 
 | 文件锚点（点击跳转） | 角色 | 核心契约 / 红线 |
 |---------------------|------|-----------------|
-| [Handler settle_agent_exclusive 定时沉淀入口](src/handlers/hr/agent/settle_memory.rs#L232-L262) | 定时触发链路入口（抢占式） | `try_set_resting` 抢占 → 失败回 `SettleAttempt::Busy`（调用方重排）→ 成功则挂 BusyGuard 兜底释放 → 汇入 `settle_body` |
-| [Handler load_and_settle 神经工具入口](src/handlers/hr/agent/settle_memory.rs#L204-L231) | 神经工具 `settle_memory` 入口 | 保留「Agent 忙则 return 0」预检查（该路径上 Agent 天然 Busy，抢占式判定会永远失败）→ 汇入 `settle_body` |
+| [Handler settle_agent_exclusive 定时沉淀入口](src/handlers/hr/agent/settle_memory.rs#L193-L193) | 定时触发链路入口（抢占式） | `try_set_resting` 抢占 → 失败回 `SettleAttempt::Busy`（调用方重排）→ 成功则挂 BusyGuard 兜底释放 → 汇入 `settle_body` |
+| [Handler load_and_settle 神经工具入口](src/handlers/hr/agent/settle_memory.rs#L193-L193) | 神经工具 `settle_memory` 入口 | 保留「Agent 忙则 return 0」预检查（该路径上 Agent 天然 Busy，抢占式判定会永远失败）→ 汇入 `settle_body` |
 | [agent.awakening 消费者（沉淀入口）](src/consumer/message.rs) | Async 消费 message.created **与** agent.settle.requested | 两类事件同队列同 `order_key=agent_id` → 同 Agent 串行（拆开消费者会让串行静默失效）；`handle_settle_request` 汇入 `settle_agent_exclusive`；`concurrency=4`；收尾按 topic 反查 producer（仅 `message.created` 声明 `.notify_producer()`，由 `MessageDalImpl::on_consumed` 翻 `messages.status`；`agent.settle.requested` 无底层行、不声明）；`Consumer::ack/nack` 与 `source` 已整体删除 |
-| [AgentSettleEvent 事件定义](src/models/events/agent_settle.rs#L1-L85) | 沉淀排队单元 | kind=`agent.settle.requested`；**order_key 必须是 agent_id**（与 message.created 对 Agent 接收者同源，保证沉淀不与同 Agent 消息并发） |
+| [AgentSettleEvent 事件定义](src/models/events/agent_settle.rs#L1-L81) | 沉淀排队单元 | kind=`agent.settle.requested`；**order_key 必须是 agent_id**（与 message.created 对 Agent 接收者同源，保证沉淀不与同 Agent 消息并发） |
 | [try_set_resting 原子抢占](src/pkg/agent_runtime_state.rs#L353-L382) | 状态机保护 | Idle → Resting 返回 true；Busy/Resting → false 且不改状态；与 `try_set_busy` 同构，禁止拆成「先查询、后设状态」 |
 | [DAL mark_short_term_settled 沉淀状态闭环](src/service/dal/memory/store.rs#L174-L226) | 短期记忆消化后置 Settled（软保留，不物理删除） | ④ 更新短期记忆 status=Settled；①②③ 的沉淀决策由 Domain `legacy_settle` 三节点（Prepare → Settle → Finalize）承担 |
 | [Runtime awaken_for_summary 总结退出](src/service/domain/runtime/compaction.rs) | 轮次超限或任务完成的总结 | 与 Settle 场景工具白名单对齐（neural+memory+messaging+project_management）；结构化 Final 输出 + 标记退出原因 |

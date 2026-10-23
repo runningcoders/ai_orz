@@ -78,8 +78,8 @@ DAL --> FS["文件系统<br/>base_data_path/backups/*"]
   - 支持重建索引（防御性）
 
 章节来源
-- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
-- [src/handlers/system/backup/list_backups.rs:1-22](src/handlers/system/backup/list_backups.rs#L1-L22)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L25)
+- [src/handlers/system/backup/list_backups.rs:1-22](src/handlers/system/backup/list_backups.rs#L1-L20)
 - [src/handlers/system/backup/delete_backup.rs:1-25](src/handlers/system/backup/delete_backup.rs#L1-L25)
 - [src/handlers/system/backup/restore_backup.rs:1-35](src/handlers/system/backup/restore_backup.rs#L1-L35)
 - [src/service/domain/system/mod.rs:261-277](src/service/domain/system/mod.rs#L261-L277)
@@ -121,7 +121,7 @@ H-->>C : 200 text/plain + 脚本
 
 图表来源
 - [src/router.rs:634-646](src/router.rs#L634-L646)
-- [src/handlers/system/backup/create_backup.rs:16-26](src/handlers/system/backup/create_backup.rs#L16-L26)
+- [src/handlers/system/backup/create_backup.rs:16-26](src/handlers/system/backup/create_backup.rs#L16-L25)
 - [src/handlers/system/backup/restore_backup.rs:18-35](src/handlers/system/backup/restore_backup.rs#L18-L35)
 - [src/service/domain/system/mod.rs:261-277](src/service/domain/system/mod.rs#L261-L277)
 - [src/service/dal/backup.rs:100-243](src/service/dal/backup.rs#L100-L243)
@@ -175,7 +175,7 @@ H-->>C : 200 text/plain + 脚本
   }
 
 章节来源
-- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L25)
 - [src/service/dal/backup.rs:21-34](src/service/dal/backup.rs#L21-L34)
 - [src/service/dal/backup.rs:100-152](src/service/dal/backup.rs#L100-L152)
 
@@ -198,7 +198,7 @@ H-->>C : 200 text/plain + 脚本
 - 主体：[BackupInfo, ...]
 
 章节来源
-- [src/handlers/system/backup/list_backups.rs:1-22](src/handlers/system/backup/list_backups.rs#L1-L22)
+- [src/handlers/system/backup/list_backups.rs:1-22](src/handlers/system/backup/list_backups.rs#L1-L20)
 - [src/service/dal/backup.rs:154-174](src/service/dal/backup.rs#L154-L174)
 
 ### 删除备份
@@ -296,7 +296,7 @@ DAL --> FS["文件系统"]
 章节来源
 - [src/service/dal/backup.rs:100-152](src/service/dal/backup.rs#L100-L152)
 - [src/service/dal/backup.rs:154-174](src/service/dal/backup.rs#L154-L174)
-- [src/service/dal/backup.rs:358-394](src/service/dal/backup.rs#L358-L394)
+- [src/service/dal/backup.rs:358-394](src/service/dal/backup.rs#L358-L393)
 
 ## 故障排查指南
 - 403 Forbidden：确认当前用户角色为 SuperAdmin；检查路由层与 handler 内权限校验
@@ -329,4 +329,4 @@ DAL --> FS["文件系统"]
 章节来源
 - [src/handlers/system/backup/mod.rs:19-32](src/handlers/system/backup/mod.rs#L19-L32)
 - [src/service/dal/backup.rs:198-243](src/service/dal/backup.rs#L198-L243)
-- [frontend/src/pages/system/backup.rs:1-322](frontend/src/pages/system/backup.rs#L1-L322)
+- [frontend/src/pages/system/backup.rs:1-322](frontend/src/pages/system/backup.rs#L1-L312)

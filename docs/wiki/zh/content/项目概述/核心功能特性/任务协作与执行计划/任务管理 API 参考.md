@@ -46,11 +46,11 @@ E --> F["数据库/向量存储"]
 ```
 
 图表来源
-- [src/handlers/project/task/mod.rs:1-28](src/handlers/project/task/mod.rs#L1-L28)
-- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L86)
+- [src/handlers/project/task/mod.rs:1-28](src/handlers/project/task/mod.rs#L1-L27)
+- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L85)
 
 章节来源
-- [src/handlers/project/task/mod.rs:1-28](src/handlers/project/task/mod.rs#L1-L28)
+- [src/handlers/project/task/mod.rs:1-28](src/handlers/project/task/mod.rs#L1-L27)
 
 ## 核心组件
 - DTO 与枚举：任务请求/响应、分页、状态、分配对象类型等定义于 common/api/task.rs。
@@ -83,7 +83,7 @@ Handler-->>Client : "GetTaskResponse"
 ```
 
 图表来源
-- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L86)
+- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L85)
 - [src/handlers/project/task/get_task.rs:1-47](src/handlers/project/task/get_task.rs#L1-L47)
 
 ## 详细端点说明
@@ -107,7 +107,7 @@ Handler-->>Client : "GetTaskResponse"
 - 常见错误：InvalidRequest（缺少上下文或必填字段）、业务校验失败。
 
 章节来源
-- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L86)
+- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L85)
 - [common/src/api/task.rs:10-36](common/src/api/task.rs#L10-L36)
 
 ### 获取任务详情
@@ -132,7 +132,7 @@ Handler-->>Client : "GetTaskResponse"
 - 适用场景：简单列表展示。
 
 章节来源
-- [src/handlers/project/task/list_tasks.rs:1-38](src/handlers/project/task/list_tasks.rs#L1-L38)
+- [src/handlers/project/task/list_tasks.rs:1-38](src/handlers/project/task/list_tasks.rs#L1-L37)
 - [common/src/api/task.rs:92-99](common/src/api/task.rs#L92-L99)
 
 ### 通用任务查询（复杂条件）
@@ -143,7 +143,7 @@ Handler-->>Client : "GetTaskResponse"
 - 适用场景：组合过滤、关键词检索、多条件筛选。
 
 章节来源
-- [src/handlers/project/task/query_tasks.rs:1-45](src/handlers/project/task/query_tasks.rs#L1-L45)
+- [src/handlers/project/task/query_tasks.rs:1-45](src/handlers/project/task/query_tasks.rs#L1-L44)
 - [common/src/api/task.rs:254-272](common/src/api/task.rs#L254-L272)
 
 ### 任务搜索（语义+FTS5）
@@ -154,7 +154,7 @@ Handler-->>Client : "GetTaskResponse"
 - 特性：FTS5 + 向量语义混合搜索，适合自然语言关键词检索。
 
 章节来源
-- [src/handlers/project/task/search_tasks.rs:1-45](src/handlers/project/task/search_tasks.rs#L1-L45)
+- [src/handlers/project/task/search_tasks.rs:1-45](src/handlers/project/task/search_tasks.rs#L1-L44)
 - [common/src/api/task.rs:274-295](common/src/api/task.rs#L274-L295)
 
 ### 按 Agent 列出任务
@@ -165,7 +165,7 @@ Handler-->>Client : "GetTaskResponse"
 - 用途：查看某 Agent 被分配的任务集合。
 
 章节来源
-- [src/handlers/project/task/list_agent_tasks.rs:1-39](src/handlers/project/task/list_agent_tasks.rs#L1-L39)
+- [src/handlers/project/task/list_agent_tasks.rs:1-39](src/handlers/project/task/list_agent_tasks.rs#L1-L38)
 - [common/src/api/task.rs:64-76](common/src/api/task.rs#L64-L76)
 
 ### 按项目列出任务
@@ -176,7 +176,7 @@ Handler-->>Client : "GetTaskResponse"
 - 用途：查看某项目下的任务集合。
 
 章节来源
-- [src/handlers/project/task/list_project_tasks.rs:1-38](src/handlers/project/task/list_project_tasks.rs#L1-L38)
+- [src/handlers/project/task/list_project_tasks.rs:1-38](src/handlers/project/task/list_project_tasks.rs#L1-L37)
 - [common/src/api/task.rs:78-90](common/src/api/task.rs#L78-L90)
 
 ### 更新任务基本信息
@@ -199,7 +199,7 @@ Handler-->>Client : "GetTaskResponse"
 - 常见错误：非法状态转移、任务不存在。
 
 章节来源
-- [src/handlers/project/task/update_task_status.rs:1-41](src/handlers/project/task/update_task_status.rs#L1-L41)
+- [src/handlers/project/task/update_task_status.rs:1-41](src/handlers/project/task/update_task_status.rs#L1-L40)
 - [common/src/api/task.rs:219-232](common/src/api/task.rs#L219-L232)
 
 ### 更新任务进度
@@ -209,7 +209,7 @@ Handler-->>Client : "GetTaskResponse"
 - 响应：GetTaskResponse
 
 章节来源
-- [src/handlers/project/task/update_task_progress.rs:1-30](src/handlers/project/task/update_task_progress.rs#L1-L30)
+- [src/handlers/project/task/update_task_progress.rs:1-30](src/handlers/project/task/update_task_progress.rs#L1-L29)
 - [common/src/api/task.rs:234-245](common/src/api/task.rs#L234-L245)
 
 ### 标记任务完成
@@ -220,7 +220,7 @@ Handler-->>Client : "GetTaskResponse"
 - 说明：将任务状态转换为 Completed；若非可完成状态则失败。
 
 章节来源
-- [src/handlers/project/task/mark_done.rs:1-40](src/handlers/project/task/mark_done.rs#L1-L40)
+- [src/handlers/project/task/mark_done.rs:1-40](src/handlers/project/task/mark_done.rs#L1-L39)
 
 ## 依赖关系分析
 - Handler 依赖 common/api 中的 DTO 与 enums。
@@ -242,15 +242,15 @@ R["response.rs"] --> |映射| DTO["common/api/task.rs"]
 ```
 
 图表来源
-- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L86)
+- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L85)
 - [src/handlers/project/task/get_task.rs:1-47](src/handlers/project/task/get_task.rs#L1-L47)
-- [src/handlers/project/task/list_tasks.rs:1-38](src/handlers/project/task/list_tasks.rs#L1-L38)
-- [src/handlers/project/task/query_tasks.rs:1-45](src/handlers/project/task/query_tasks.rs#L1-L45)
-- [src/handlers/project/task/search_tasks.rs:1-45](src/handlers/project/task/search_tasks.rs#L1-L45)
+- [src/handlers/project/task/list_tasks.rs:1-38](src/handlers/project/task/list_tasks.rs#L1-L37)
+- [src/handlers/project/task/query_tasks.rs:1-45](src/handlers/project/task/query_tasks.rs#L1-L44)
+- [src/handlers/project/task/search_tasks.rs:1-45](src/handlers/project/task/search_tasks.rs#L1-L44)
 - [src/handlers/project/task/update_task.rs:1-41](src/handlers/project/task/update_task.rs#L1-L41)
-- [src/handlers/project/task/update_task_status.rs:1-41](src/handlers/project/task/update_task_status.rs#L1-L41)
-- [src/handlers/project/task/update_task_progress.rs:1-30](src/handlers/project/task/update_task_progress.rs#L1-L30)
-- [src/handlers/project/task/mark_done.rs:1-40](src/handlers/project/task/mark_done.rs#L1-L40)
+- [src/handlers/project/task/update_task_status.rs:1-41](src/handlers/project/task/update_task_status.rs#L1-L40)
+- [src/handlers/project/task/update_task_progress.rs:1-30](src/handlers/project/task/update_task_progress.rs#L1-L29)
+- [src/handlers/project/task/mark_done.rs:1-40](src/handlers/project/task/mark_done.rs#L1-L39)
 - [src/handlers/project/task/response.rs:1-60](src/handlers/project/task/response.rs#L1-L60)
 - [common/src/api/task.rs:1-299](common/src/api/task.rs#L1-L299)
 

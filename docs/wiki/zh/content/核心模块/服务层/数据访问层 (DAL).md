@@ -89,13 +89,13 @@ Domain-->>Adapter : "响应 DTO"
 ```
 
 图示来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L350)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:109-139](src/service/dao/agent/sqlite.rs#L109-L139)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 章节来源
 - [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:148-186](AGENTS.md#L148-L186)
+- [AGENTS.md:148-186](AGENTS.md#L148-L164)
 
 ## 详细组件分析
 
@@ -123,15 +123,15 @@ Page --> End
 ```
 
 图示来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:141-256](src/service/dao/agent/sqlite.rs#L141-L256)
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L350)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L459)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L738)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L800)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ### Agent DAO：SQLite 查询构建器与 FTS5
 - 查询构建器：COUNT 与 LIST 复用 push_query_filters，确保 WHERE 条件一致；支持 ids/status/exclude_status/created_by/model_provider_id/roles 等过滤。
@@ -227,9 +227,9 @@ AgentDalImpl --> ModelProviderDao
 
 章节来源
 - [src/service/dao/agent/sqlite.rs:109-139](src/service/dao/agent/sqlite.rs#L109-L139)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L312)
-- [AGENTS.md:585-755](AGENTS.md#L585-L755)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [AGENTS.md:585-755](AGENTS.md#L164-L164)
 
 ## 故障排查指南
 - 向量搜索失败：检查 Embedding Provider 是否存在；查看日志中的 vector_search/vector_index 降级告警；必要时重建向量索引。
@@ -238,10 +238,10 @@ AgentDalImpl --> ModelProviderDao
 - 统计查询失败：stats 查询失败应降级记录，不影响主流程；检查 DuckDB 或内存收集器是否正常初始化。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L540)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:141-170](src/service/dao/agent/sqlite.rs#L141-L170)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L405)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ## 结论
 DAL 层通过 DAO 多态与 DAL 继承/组合，实现了高内聚、低耦合的业务数据访问能力。统一的查询构建器、分页规范与混合搜索策略，保障了可扩展性与性能。RequestContext 作为横切关注点，贯穿认证、日志、存储与统计，提升了可观测性与可维护性。
@@ -254,7 +254,7 @@ DAL 层通过 DAO 多态与 DAL 继承/组合，实现了高内聚、低耦合�
 - 异步与错误处理：所有 DAO/DAL 方法为 async；中间步骤失败采用 warn 降级，确保主流程可用；统计/向量等非关键路径失败不应阻塞核心流程。
 
 章节来源
-- [AGENTS.md:395-452](AGENTS.md#L395-L452)
-- [AGENTS.md:499-583](AGENTS.md#L499-L583)
-- [AGENTS.md:585-755](AGENTS.md#L585-L755)
+- [AGENTS.md:395-452](AGENTS.md#L164-L164)
+- [AGENTS.md:499-583](AGENTS.md#L164-L164)
+- [AGENTS.md:585-755](AGENTS.md#L164-L164)
 - [docs/ARCHITECTURE.md:398-487](docs/ARCHITECTURE.md#L398-L487)

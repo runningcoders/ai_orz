@@ -66,7 +66,7 @@ D --> I["bincode 持久化<br/>hnsw_index/*.bincode"]
 - [hnsw.rs:149-166](src/pkg/storage/hnsw.rs#L149-L166)
 
 章节来源
-- [mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
+- [mod.rs:1-212](src/pkg/storage/mod.rs#L1-L211)
 - [vector_search_architecture.md:161-206](docs/archive/design-archive/vector_search_architecture.md#L161-L206)
 
 ## 核心组件
@@ -114,7 +114,7 @@ H-->>DAL : VectorSearchHit[]
 - [hnsw.rs:377-388](src/pkg/storage/hnsw.rs#L377-L388)
 
 章节来源
-- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L463)
+- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L439)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 详细组件分析
@@ -233,7 +233,7 @@ Domain-->>API : RebuildProgressResponse
 
 章节来源
 - [hnsw.rs:107-125](src/pkg/storage/hnsw.rs#L107-L125)
-- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L463)
+- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L439)
 
 ### 向量数据结构与元信息
 - VectorRow：包含 id、vector、meta（content_hash、embedding_model、indexed_at、expire_at）
@@ -290,7 +290,7 @@ DAL --> VectorTrait["VectorStore trait"]
 章节来源
 - [hnsw.rs:221-301](src/pkg/storage/hnsw.rs#L221-L301)
 - [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
-- [vector_search_architecture.md:448-463](docs/archive/design-archive/vector_search_architecture.md#L448-L463)
+- [vector_search_architecture.md:448-463](docs/archive/design-archive/vector_search_architecture.md#L439-L439)
 
 ## 结论
 HNSW 在本项目中以 lazy rebuild 策略实现了高性能近似最近邻搜索，结合 bincode 持久化与后台落盘，兼顾了开发体验与生产可靠性。虽然当前未暴露 M/efConstruction/efSearch 参数，但通过合理的数据规模控制与监控，可满足大多数业务场景。未来如需精细调优，可扩展 Builder 配置或替换底层库。

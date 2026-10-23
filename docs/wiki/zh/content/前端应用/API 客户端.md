@@ -69,7 +69,7 @@ J --> K["工具调用Tab<br/>tool_calls_tab.rs"]
 - [frontend/src/api/mod.rs:28-35](frontend/src/api/mod.rs#L28-L35)
 - [frontend/src/config.rs:76-79](frontend/src/config.rs#L76-L79)
 - [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
-- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L269-L269)
 
 章节来源
 - [frontend/src/api/mod.rs:1-433](frontend/src/api/mod.rs#L1-L433)
@@ -92,7 +92,7 @@ J --> K["工具调用Tab<br/>tool_calls_tab.rs"]
 - [frontend/src/config.rs:12-85](frontend/src/config.rs#L12-L85)
 - [frontend/src/store/auth.rs:13-57](frontend/src/store/auth.rs#L13-L57)
 - [common/src/api/mod.rs:6-73](common/src/api/mod.rs#L6-L73)
-- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L269-L269)
 
 ## 架构总览
 前端通过业务 API 模块调用统一请求封装，统一封装负责：
@@ -211,7 +211,7 @@ UI->>UI : 跳转 /login
 - [frontend/src/api/organization.rs:13-61](frontend/src/api/organization.rs#L13-L61)
 - [frontend/src/api/project.rs:16-162](frontend/src/api/project.rs#L16-L162)
 - [frontend/src/api/hr.rs:25-310](frontend/src/api/hr.rs#L25-L310)
-- [frontend/src/api/system.rs:1-356](frontend/src/api/system.rs#L1-L356)
+- [frontend/src/api/system.rs:1-356](frontend/src/api/system.rs#L1-L269)
 
 ### 分页与查询参数构造
 - 分页：build_pagination_url 将 PaginationParams(limit/offset) 转为 query string。
@@ -274,11 +274,11 @@ pub struct ShellStatusResponse {
 - **进程详情组件**：共享组件，支持弹窗展示进程详细信息和操作按钮
 
 章节来源
-- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L269-L269)
 - [common/src/api/system.rs:240-328](common/src/api/system.rs#L240-L328)
-- [src/handlers/system/process/shell_list.rs:1-144](src/handlers/system/process/shell_list.rs#L1-L144)
-- [src/handlers/system/process/shell_status.rs:1-39](src/handlers/system/process/shell_status.rs#L1-L39)
-- [src/handlers/system/process/shell_kill.rs:1-31](src/handlers/system/process/shell_kill.rs#L1-L31)
+- [src/handlers/system/process/shell_list.rs:1-144](src/handlers/system/process/shell_list.rs#L1-L143)
+- [src/handlers/system/process/shell_status.rs:1-39](src/handlers/system/process/shell_status.rs#L1-L38)
+- [src/handlers/system/process/shell_kill.rs:1-31](src/handlers/system/process/shell_kill.rs#L1-L30)
 
 ### 项目详情接口增强 - with_progress_summary 支持
 
@@ -351,7 +351,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 图表来源
 - [frontend/Cargo.toml:11-25](frontend/Cargo.toml#L11-L25)
 - [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
-- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L269-L269)
 
 章节来源
 - [frontend/Cargo.toml:1-26](frontend/Cargo.toml#L1-L26)
@@ -383,7 +383,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 章节来源
 - [frontend/src/api/mod.rs:38-85](frontend/src/api/mod.rs#L38-L85)
 - [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
-- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L269-L269)
 
 ## 结论
 该 API 客户端以统一封装为核心，结合共享 DTO 与配置管理，实现了稳定、一致的 HTTP 交互体验。通过集中式错误处理与 401 拦截，提升了用户体验与安全性。各业务模块清晰分层，便于扩展与维护。建议在生产环境中结合缓存与重试策略进一步优化性能与鲁棒性。
@@ -494,7 +494,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
   - 终止进程：POST /api/v1/system/processes/{pid}/kill
 
 章节来源
-- [frontend/src/api/system.rs:1-356](frontend/src/api/system.rs#L1-L356)
+- [frontend/src/api/system.rs:1-356](frontend/src/api/system.rs#L1-L269)
 - [src/router.rs:739-751](src/router.rs#L739-L751)
 
 ### 统一响应与分页

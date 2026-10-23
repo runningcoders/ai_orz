@@ -56,18 +56,18 @@ Callback --> Events["事件标签工具<br/>src/models/events/a2a_task_update.rs
 
 图表来源
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 - [src/handlers/a2a/send_subscribe.rs:1-212](src/handlers/a2a/send_subscribe.rs#L1-L212)
 - [src/handlers/a2a/callback.rs:1-198](src/handlers/a2a/callback.rs#L1-L198)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
-- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L36)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
+- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L35)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 - [src/router.rs:12-59](src/router.rs#L12-L59)
 
 ## 核心组件
@@ -82,14 +82,14 @@ Callback --> Events["事件标签工具<br/>src/models/events/a2a_task_update.rs
 - 外部调用：通过 DAO 层以 JSON-RPC 2.0 调用支持 A2A 的远程 Agent。
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 - [src/handlers/a2a/send_subscribe.rs:1-212](src/handlers/a2a/send_subscribe.rs#L1-L212)
 - [src/handlers/a2a/callback.rs:1-198](src/handlers/a2a/callback.rs#L1-L198)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
 - [src/service/dao/agent_runtime/a2a.rs:1-195](src/service/dao/agent_runtime/a2a.rs#L1-L195)
 
 ## 架构总览
@@ -149,10 +149,10 @@ OkCancel --> End
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 
 ### Agent 卡片发现
 - 端点：GET /.well-known/agent.json（公开，无需 JWT）。
@@ -160,7 +160,7 @@ OkCancel --> End
 - 用途：外部系统发现 A2A Server 能力与接入点。
 
 章节来源
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
 - [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
 
 ### 任务发送（tasks/send）
@@ -194,7 +194,7 @@ H-->>Client : A2aTask(working)
 
 图表来源
 - [src/handlers/a2a/send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
-- [src/handlers/a2a/mapper.rs:86-99](src/handlers/a2a/mapper.rs#L86-L99)
+- [src/handlers/a2a/mapper.rs:86-99](src/handlers/a2a/mapper.rs#L86-L97)
 
 章节来源
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
@@ -204,14 +204,14 @@ H-->>Client : A2aTask(working)
 - 注意：session_id 不持久化，get 时不返回。
 
 章节来源
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
 - [src/handlers/a2a/mapper.rs:57-84](src/handlers/a2a/mapper.rs#L57-L84)
 
 ### 任务取消（tasks/cancel）
 - 流程：查询 Project → 归档（对应 canceled）→ 重新查询 → 列出 Messages/Artifacts → 构建 A2aTask。
 
 章节来源
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 
 ### SSE 流式提交（tasks/sendSubscribe）
 - 流程：同 tasks/send 创建 Project 与 Message，随后订阅用户 SSE 通道；当收到消息更新时，推送完整 A2aTask。
@@ -244,11 +244,11 @@ Log --> Out(["返回 ok"])
 
 图表来源
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
-- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L36)
+- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L35)
 
 章节来源
 - [src/handlers/a2a/callback.rs:1-198](src/handlers/a2a/callback.rs#L1-L198)
-- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L36)
+- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L35)
 
 ### 实体映射（Mapper）
 - 作用：隔离 A2A 协议与内部领域模型，确保 Domain 层零侵入。
@@ -260,7 +260,7 @@ Log --> Out(["返回 ok"])
   - 从 A2aMessage 提取文本（仅 Text part）
 
 章节来源
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
 - [common/src/api/a2a.rs:147-265](common/src/api/a2a.rs#L147-L265)
 
 ### 外部 Agent 通信（A2A 客户端）
@@ -292,13 +292,13 @@ Handlers --> Events["models/events/a2a_task_update.rs"]
 
 图表来源
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
-- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L36)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
+- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L35)
 
 章节来源
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 
 ## 性能考量
 - 异步提交：tasks/send 立即返回 working，避免阻塞等待 Agent 执行，提升吞吐。
@@ -364,7 +364,7 @@ A2A 协议处理器以清晰的层次划分与严格的中间件顺序，实现�
   - 回调：远程 Agent 推送更新，增量同步消息并推进状态。
 
 章节来源
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
 - [src/handlers/a2a/send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
 - [src/handlers/a2a/get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
 - [src/handlers/a2a/cancel_task.rs:17-53](src/handlers/a2a/cancel_task.rs#L17-L53)

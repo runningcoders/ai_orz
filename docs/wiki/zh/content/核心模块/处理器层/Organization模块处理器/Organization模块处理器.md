@@ -88,7 +88,7 @@ C --> E
 
 章节来源
 - [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
-- [src/middleware/require_role.rs:1-39](src/middleware/require_role.rs#L1-L39)
+- [src/middleware/require_role.rs:1-39](src/middleware/require_role.rs#L1-L38)
 - [src/handlers/organization/auth/login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
 - [src/handlers/organization/auth/logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
 - [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
@@ -232,7 +232,7 @@ RequireRoleMiddleware ..> JwtAuthMiddleware : "依赖已解析的 RequestContext
 
 章节来源
 - [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
-- [src/middleware/require_role.rs:1-39](src/middleware/require_role.rs#L1-L39)
+- [src/middleware/require_role.rs:1-39](src/middleware/require_role.rs#L1-L38)
 - [src/pkg/jwt.rs:1-159](src/pkg/jwt.rs#L1-L159)
 
 ### 多租户数据隔离与 RBAC 权限模型

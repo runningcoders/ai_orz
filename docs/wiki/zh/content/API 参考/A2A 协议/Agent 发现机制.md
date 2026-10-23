@@ -192,12 +192,12 @@ J-->>C : JsonRpcResponse.success/error
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 - [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 ### 任务提交流程（tasks/send）
@@ -259,7 +259,7 @@ I --> J
 
 章节来源
 - [src/router.rs:21-59](src/router.rs#L21-L59)
-- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 ## 依赖关系分析
@@ -284,14 +284,14 @@ Send --> Types
 图表来源
 - [src/router.rs:21-59](src/router.rs#L21-L59)
 - [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
-- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 - [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
 - [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 章节来源
 - [src/router.rs:21-59](src/router.rs#L21-L59)
-- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 - [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
 - [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
@@ -328,7 +328,7 @@ Send --> Types
 章节来源
 - [tests/integration/a2a_flow_test.rs:24-65](tests/integration/a2a_flow_test.rs#L24-L65)
 - [tests/integration/a2a_flow_test.rs:67-200](tests/integration/a2a_flow_test.rs#L67-L200)
-- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 ## 结论
@@ -351,6 +351,6 @@ Send --> Types
   - 响应：JsonRpcResponse.success(result=A2aTask)。
 
 章节来源
-- [common/src/api/a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
+- [common/src/api/a2a.rs:147-306](common/src/api/a2a.rs#L147-L305)
 - [tests/integration/a2a_flow_test.rs:67-200](tests/integration/a2a_flow_test.rs#L67-L200)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）

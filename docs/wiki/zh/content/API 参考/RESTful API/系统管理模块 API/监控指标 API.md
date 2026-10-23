@@ -54,7 +54,7 @@ D_SYS --> PROJ["ProjectDomain"]
 
 图表来源
 - [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 - [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
 - [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
@@ -62,7 +62,7 @@ D_SYS --> PROJ["ProjectDomain"]
 
 章节来源
 - [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 - [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
@@ -85,9 +85,9 @@ D_SYS --> PROJ["ProjectDomain"]
 章节来源
 - [src/handlers/health.rs:4-15](src/handlers/health.rs#L4-L15)
 - [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
-- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L77)
+- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L76)
 
 ## 架构总览
 监控数据流分为两条路径：
@@ -182,7 +182,7 @@ H-->>C : JSON 列表
 - [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
 - [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
@@ -261,7 +261,7 @@ H3["handlers/system/health_metrics.rs"] --> D3["service/domain/hr|project|task"]
 ```
 
 图表来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 - [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 - [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
@@ -270,7 +270,7 @@ H3["handlers/system/health_metrics.rs"] --> D3["service/domain/hr|project|task"]
 - [src/consumer/aop_stats_collector.rs:43-195](src/consumer/aop_stats_collector.rs#L43-L195)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 - [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 
@@ -293,7 +293,7 @@ H3["handlers/system/health_metrics.rs"] --> D3["service/domain/hr|project|task"]
   - 若 backend_online=true 但某项计数异常，检查对应 Domain 计数逻辑与 DAO 查询条件。
 
 章节来源
-- [src/handlers/system/aop.rs:43-145](src/handlers/system/aop.rs#L43-L145)
+- [src/handlers/system/aop.rs:43-145](src/handlers/system/aop.rs#L43-L144)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 - [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 
@@ -347,7 +347,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
   - 响应：事件详情（含 payload）；不存在返回 404。
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 
 ### AOP 实时统计
 - GET /api/v1/system/aop/stats/overview
@@ -381,7 +381,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
   - LogTimeSeriesResponse：points(interval_start, count)
 
 章节来源
-- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L77)
+- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L76)
 
 ### 监控指标类型与聚合
 - 通用统计模型

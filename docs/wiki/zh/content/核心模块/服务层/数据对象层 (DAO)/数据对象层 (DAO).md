@@ -74,7 +74,7 @@ L --> N
 
 章节来源
 - [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
-- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
+- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L211)
 
 ## 核心组件
 - 存储门面 Storage：封装 SqlitePool、VectorStore、Stats，负责迁移、后端选择与 Stats 初始化。
@@ -88,7 +88,7 @@ L --> N
 - [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [src/service/dao/cortex/mod.rs:1-82](src/service/dao/cortex/mod.rs#L1-L82)
 - [src/service/dao/cortex/native/mod.rs:19-88](src/service/dao/cortex/native/mod.rs#L19-L88)
-- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L24)
 
 ## 架构总览
 DAO 层采用“接口 + 实现”的适配器模式：
@@ -321,11 +321,11 @@ Cortex --> Err
 - [src/service/dao/message/sqlite.rs:71-527](src/service/dao/message/sqlite.rs#L71-L527)
 - [src/service/dao/memory/mod.rs:66-486](src/service/dao/memory/mod.rs#L66-L486)
 - [src/service/dao/cortex/mod.rs:24-45](src/service/dao/cortex/mod.rs#L24-L45)
-- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L24)
 
 章节来源
 - [src/service/dao/mod.rs:29-55](src/service/dao/mod.rs#L29-L55)
-- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L24)
 
 ## 性能考量
 - SQLite 连接池：max_connections=5，适合单文件写并发有限场景。
@@ -356,7 +356,7 @@ Cortex --> Err
 - [src/service/dao/message/sqlite.rs:429-447](src/service/dao/message/sqlite.rs#L429-L447)
 - [src/pkg/storage/vector.rs:254-257](src/pkg/storage/vector.rs#L254-L257)
 - [src/pkg/storage/mod.rs:164-178](src/pkg/storage/mod.rs#L164-L178)
-- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L24)
 
 ## 结论
 DAO 层通过清晰的接口抽象、SQLite 持久化、向量搜索适配器与外部模型 API 路由，实现了高内聚、低耦合的数据访问层。结合 FTS5 全文检索、多后端向量存储与统一错误模型，提供了类型安全、可扩展且高性能的数据访问能力。遵循四层单向调用与 RequestContext 上下文传递，确保代码可测试性与可维护性。

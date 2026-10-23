@@ -202,9 +202,9 @@ H-->>C : "InstallSkillToAgentResponse"
 - [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
 - [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
 - [src/handlers/hr/skill/delete_skill.rs:1-34](src/handlers/hr/skill/delete_skill.rs#L1-L34)
-- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L31)
-- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L37)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L35)
+- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L30)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L36)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L34)
 
 ### 参数验证与错误处理
 - 通用校验：

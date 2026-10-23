@@ -30,7 +30,7 @@
 本项目采用严格四层单向调用：Adapter（HTTP Handler / 公开回调 Handler / AOP Producer）→ Domain → DAL → DAO；PO 仅在 DAO/DAL 内部使用，Domain 层输入为 Command/Query，输出业务实体与事件；DAL 对外接口统一使用业务实体；service 层公共方法首参为 RequestContext；通用工具在 pkg 层；启动分两阶段初始化；技术栈包含 Axum + sqlx(SQLite, FTS5) + DuckDB(统计) + LanceDB/HNSW/InMemory 多后端向量存储。
 
 **章节来源**
-- [vector_search_architecture.md:1-529](docs/archive/design-archive/vector_search_architecture.md#L1-L529)
+- [vector_search_architecture.md:1-529](docs/archive/design-archive/vector_search_architecture.md#L1-L439)
 
 ## 项目结构
 围绕 Agent 搜索与推荐，涉及的关键路径如下：
@@ -75,7 +75,7 @@ M1 --> S2
 ```
 
 **图表来源**
-- [search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
+- [search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L67)
 - [recommend_seed_nodes.rs:1-55](src/handlers/hr/agent/recommend_seed_nodes.rs#L1-L55)
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [agent/mod.rs:33-92](src/service/dao/agent/mod.rs#L33-L92)
@@ -131,7 +131,7 @@ Handler-->>Client : 搜索结果
 ```
 
 **图表来源**
-- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L68)
+- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L67)
 - [agent/mod.rs:81-92](src/service/dao/agent/mod.rs#L81-L92)
 - [vector.rs:35-43](src/pkg/storage/vector.rs#L35-L43)
 - [vector_search_architecture.md:97-118](docs/archive/design-archive/vector_search_architecture.md#L97-L118)
@@ -164,7 +164,7 @@ Sort --> End(["返回分页结果"])
 - [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
 
 **章节来源**
-- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L68)
+- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L67)
 - [agent/mod.rs:33-92](src/service/dao/agent/mod.rs#L33-L92)
 - [vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
 
@@ -214,7 +214,7 @@ Truncate --> REnd(["返回推荐列表"])
 请求体字段参考 SearchAgentsRequest，响应为 PagedResult<AgentListItem>。
 
 **章节来源**
-- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L68)
+- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L67)
 - [agent.rs:295-316](common/src/api/agent.rs#L295-L316)
 
 ### 排序策略与个性化定制
@@ -245,7 +245,7 @@ B --> T["FTS5 工具"]
 ```
 
 **图表来源**
-- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L68)
+- [search_agents.rs:15-68](src/handlers/hr/agent/search_agents.rs#L15-L67)
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [fts5.rs:1-44](src/pkg/storage/fts5.rs#L1-L44)

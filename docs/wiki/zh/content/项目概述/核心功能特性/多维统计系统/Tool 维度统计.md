@@ -90,7 +90,7 @@ Frontend --> Handler
 - [src/consumer/tool_exec_log_consumer.rs:1-52](src/consumer/tool_exec_log_consumer.rs#L1-L52)
 - [src/pkg/stats/tool_call.rs:1-228](src/pkg/stats/tool_call.rs#L1-L228)
 - [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L814)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/handlers/finance/tool/response.rs:1-46](src/handlers/finance/tool/response.rs#L1-L46)
 - [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
 
@@ -100,7 +100,7 @@ Frontend --> Handler
 - [src/consumer/tool_exec_log_consumer.rs:1-52](src/consumer/tool_exec_log_consumer.rs#L1-L52)
 - [src/pkg/stats/tool_call.rs:1-228](src/pkg/stats/tool_call.rs#L1-L228)
 - [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L814)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/handlers/finance/tool/response.rs:1-46](src/handlers/finance/tool/response.rs#L1-L46)
 - [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
 
@@ -117,7 +117,7 @@ Frontend --> Handler
 - [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
 - [src/pkg/stats/tool_call.rs:1-228](src/pkg/stats/tool_call.rs#L1-L228)
 - [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L814)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
 
 ## 架构总览
@@ -221,7 +221,7 @@ Build --> End(["返回 ToolStats"])
 - 失败降级：查询失败仅 warn 日志，不阻塞主流程
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L814)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ### 查询限制与上下文约束
 - 工具调用查询需具备 scoped RequestContext（agent/project/task），防止越权
@@ -274,7 +274,7 @@ Handler --> Front["前端"]
 - [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
 - [src/pkg/stats/tool_call.rs:121-228](src/pkg/stats/tool_call.rs#L121-L228)
 - [src/service/dao/tool/mod.rs:129-239](src/service/dao/tool/mod.rs#L129-L239)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L814)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/handlers/finance/tool/response.rs:27-46](src/handlers/finance/tool/response.rs#L27-L46)
 
 章节来源
@@ -282,7 +282,7 @@ Handler --> Front["前端"]
 - [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
 - [src/pkg/stats/tool_call.rs:121-228](src/pkg/stats/tool_call.rs#L121-L228)
 - [src/service/dao/tool/mod.rs:129-239](src/service/dao/tool/mod.rs#L129-L239)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L814)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/handlers/finance/tool/response.rs:27-46](src/handlers/finance/tool/response.rs#L27-L46)
 
 ## 性能与优化

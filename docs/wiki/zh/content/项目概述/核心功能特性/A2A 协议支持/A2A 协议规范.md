@@ -83,7 +83,7 @@ C --> ART
 - [src/handlers/a2a/agent_card.rs:13-35](src/handlers/a2a/agent_card.rs#L13-L35)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 
 ## 核心组件
 - JSON-RPC 2.0 请求/响应与错误对象：定义于 common/api/a2a，包含标准错误码常量。

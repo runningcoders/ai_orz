@@ -323,7 +323,7 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
 章节来源
 - [common/src/enums/cron_trigger.rs:9-22](common/src/enums/cron_trigger.rs#L9-L22)
 - [common/src/api/cron_trigger.rs:45-76](common/src/api/cron_trigger.rs#L45-L76)
-- [src/handlers/system/cron_trigger/response.rs:64-80](src/handlers/system/cron_trigger/response.rs#L64-L80)
+- [src/handlers/system/cron_trigger/response.rs:64-80](src/handlers/system/cron_trigger/response.rs#L28-L28)
 
 ### 接口清单
 - 创建触发器
@@ -367,7 +367,7 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
 - [src/handlers/system/cron_trigger/delete_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/delete_cron_trigger.rs#L11-L22)
 - [src/handlers/system/cron_trigger/pause_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/pause_cron_trigger.rs#L11-L22)
 - [src/handlers/system/cron_trigger/resume_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/resume_cron_trigger.rs#L11-L22)
-- [src/handlers/system/cron_trigger/response.rs:8-62](src/handlers/system/cron_trigger/response.rs#L8-L62)
+- [src/handlers/system/cron_trigger/response.rs:8-62](src/handlers/system/cron_trigger/response.rs#L8-L28)
 
 ### 请求与响应示例
 - 创建一次性触发器
@@ -393,7 +393,7 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
 
 章节来源
 - [tests/integration/system_cron_triggers_test.rs:70-100](tests/integration/system_cron_triggers_test.rs#L70-L100)
-- [src/handlers/system/cron_trigger/response.rs:82-105](src/handlers/system/cron_trigger/response.rs#L82-L105)
+- [src/handlers/system/cron_trigger/response.rs:82-105](src/handlers/system/cron_trigger/response.rs#L28-L28)
 
 ### Cron 表达式语法说明
 - 当前版本未启用 Cron 表达式触发类型；创建或更新时使用 TriggerType::Cron 将返回 UnsupportedOperation。

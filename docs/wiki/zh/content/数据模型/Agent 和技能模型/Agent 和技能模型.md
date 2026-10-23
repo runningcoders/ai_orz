@@ -221,7 +221,7 @@ Update --> Done
 
 章节来源
 - [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
-- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L78)
 - [src/service/domain/hr/mod.rs:249-392](src/service/domain/hr/mod.rs#L249-L392)
 
 ### Tool 实体与注册模式

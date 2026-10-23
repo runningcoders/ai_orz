@@ -113,7 +113,7 @@ Handler-->>Client : "调试响应"
 
 图表来源
 - [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
-- [src/handlers/finance/tool/debug_call_tool.rs:1-35](src/handlers/finance/tool/debug_call_tool.rs#L1-L35)
+- [src/handlers/finance/tool/debug_call_tool.rs:1-35](src/handlers/finance/tool/debug_call_tool.rs#L1-L34)
 - [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
 - [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
 - [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
@@ -307,7 +307,7 @@ RT-->>Exec : "序列化结果或错误"
 章节来源
 - [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
 - [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
-- [src/handlers/finance/tool/debug_call_tool.rs:1-35](src/handlers/finance/tool/debug_call_tool.rs#L1-L35)
+- [src/handlers/finance/tool/debug_call_tool.rs:1-35](src/handlers/finance/tool/debug_call_tool.rs#L1-L34)
 
 ## 依赖关系分析
 - Handler 依赖领域服务，领域服务依赖 DAL/DAO，DAL/DAO 依赖模型与工具注册中心。

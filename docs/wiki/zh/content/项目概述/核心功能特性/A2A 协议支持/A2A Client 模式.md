@@ -64,16 +64,16 @@ D --> |HTTP JSON-RPC| C
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
-- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L272)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
+- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L147)
 - [src/service/dao/agent_runtime/a2a.rs:1-458](src/service/dao/agent_runtime/a2a.rs#L1-L458)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 
 ## 核心组件
 - 协议与数据模型（common/src/api/a2a.rs）
@@ -103,14 +103,14 @@ D --> |HTTP JSON-RPC| C
   - 基于标签记录已同步消息数，避免重复推送
 
 章节来源
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
 - [src/service/dao/agent_runtime/a2a.rs:1-458](src/service/dao/agent_runtime/a2a.rs#L1-L458)
-- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L272)
+- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L147)
 
 ## 架构总览
 A2A 客户端与服务端通过 JSON-RPC 2.0 在 HTTP 上交互。客户端发起 tasks/send 提交任务，服务端立即返回 working 状态的任务；随后通过 tasks/get 轮询或订阅 SSE/Push 获取结果；必要时通过 tasks/cancel 取消任务。对于“作为 A2A 客户端调用外部 Agent”的场景，DAO 层提供了统一的远程调用封装，便于上层业务复用。
@@ -135,10 +135,10 @@ end
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 
 ## 详细组件分析
 
@@ -170,10 +170,10 @@ OkCancel --> End
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 
 ### 任务发送（tasks/send）
 - 行为：创建项目（对应 A2A Task），写入用户消息，启动项目流转至进行中，立即返回 working 状态的 A2aTask。
@@ -195,7 +195,7 @@ S-->>C : {result : A2aTask(status : working)}
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
 
 章节来源
@@ -220,11 +220,11 @@ G-->>C : {result : A2aTask}
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
 
 章节来源
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
 
 ### 任务取消（tasks/cancel）
 - 行为：归档项目（对应 canceled），重新查询并返回最新任务视图。
@@ -243,11 +243,11 @@ X-->>C : {result : A2aTask(status : canceled)}
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 
 章节来源
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 
 ### 远程调用 DAO（作为 A2A 客户端调用外部 Agent）
 - 功能：封装 HTTP JSON-RPC 调用，支持 tasks/send 与 tasks/get。
@@ -301,10 +301,10 @@ L9 --> End
 ```
 
 图表来源
-- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L272)
+- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L147)
 
 章节来源
-- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L272)
+- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L147)
 
 ## 依赖关系分析
 - handlers/a2a/jsonrpc.rs 依赖 common::api::a2a 的类型与错误码，并调用 send_task、get_task、cancel_task。
@@ -326,18 +326,18 @@ JsonRpc --> Common
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
-- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L272)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
+- [src/producer/a2a_polling.rs:1-272](src/producer/a2a_polling.rs#L1-L147)
 - [src/service/dao/agent_runtime/a2a.rs:1-458](src/service/dao/agent_runtime/a2a.rs#L1-L458)
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
 
 章节来源
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [src/service/dao/agent_runtime/a2a.rs:1-458](src/service/dao/agent_runtime/a2a.rs#L1-L458)
 
 ## 性能与可靠性
@@ -391,7 +391,7 @@ A2A Client 模式通过 JSON-RPC 2.0 在 HTTP 上实现了标准化的 Agent 间
 - 错误：遵循 JSON-RPC 标准错误码
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 
 ### 请求与响应结构
@@ -421,10 +421,10 @@ A2A Client 模式通过 JSON-RPC 2.0 在 HTTP 上实现了标准化的 Agent 间
   - 返回：A2aTask（status.state=canceled）
 
 章节来源
-- [common/src/api/a2a.rs:267-306](common/src/api/a2a.rs#L267-L306)
+- [common/src/api/a2a.rs:267-306](common/src/api/a2a.rs#L267-L305)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
-- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L55)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L48)
+- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L54)
 
 ### 完整调用流程示例（概念性）
 - 初始化客户端：配置 endpoint、auth_token、超时。

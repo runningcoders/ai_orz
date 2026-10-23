@@ -228,7 +228,7 @@ Merge --> Out(["返回搜索结果"])
 - 输出：DeleteMemoryResponse.memory_id
 
 章节来源
-- [delete_memory.rs:11-55](src/handlers/hr/agent/delete_memory.rs#L11-L55)
+- [delete_memory.rs:11-55](src/handlers/hr/agent/delete_memory.rs#L11-L54)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 暴露的统一接口（create/query/search/traverse_graph/update/delete）
@@ -318,7 +318,7 @@ DAL --> DAO : "组合"
 
 章节来源
 - [create_memory.rs:21-41](src/handlers/hr/agent/create_memory.rs#L21-L41)
-- [delete_memory.rs:20-55](src/handlers/hr/agent/delete_memory.rs#L20-L55)
+- [delete_memory.rs:20-55](src/handlers/hr/agent/delete_memory.rs#L20-L54)
 - [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
 - [settle_memory.rs:74-155](src/handlers/hr/agent/settle_memory.rs#L74-L155)
 

@@ -74,7 +74,7 @@ L2 --> DB
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 - [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
@@ -84,7 +84,7 @@ L2 --> DB
 - [migrations/20260623000000_mcp_servers.sql](migrations/20260420000000_initial.sql)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 - [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
@@ -105,7 +105,7 @@ L2 --> DB
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 - [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
 - [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 - [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
 
@@ -316,7 +316,7 @@ ErrHttp --> Return
 - 工具列表：GET /api/v1/mcp-servers/{server_id}/tools
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 - [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
 
@@ -341,14 +341,14 @@ DalTool --> Registry["MCP Tool Registry"]
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 - [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
 - [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
 - [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 - [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)

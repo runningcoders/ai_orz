@@ -135,7 +135,7 @@ DAL_Skill --> DAO_SQLite
 **章节来源**
 - [common/src/api/skill.rs:11-465](common/src/api/skill.rs#L11-L465)
 - [src/models/skill.rs:20-193](src/models/skill.rs#L20-L193)
-- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L78)
 - [src/service/domain/hr/mod.rs:317-392](src/service/domain/hr/mod.rs#L317-L392)
 
 ## 架构总览
@@ -329,12 +329,12 @@ H-->>C : {tags : [...]}
 ```
 
 **图表来源**
-- [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L28)
+- [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L27)
 - [src/service/dal/skill.rs:692-694](src/service/dal/skill.rs#L692-L694)
 - [src/service/dao/skill/sqlite.rs:261-273](src/service/dao/skill/sqlite.rs#L261-L273)
 
 **章节来源**
-- [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L28)
+- [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L27)
 - [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
 - [src/service/dao/skill/sqlite.rs:261-273](src/service/dao/skill/sqlite.rs#L261-L273)
 
@@ -405,11 +405,11 @@ Expired --> [*] : "删除"
 ```
 
 **图表来源**
-- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L78)
 - [src/service/domain/hr/mod.rs:249-290](src/service/domain/hr/mod.rs#L249-L290)
 
 **章节来源**
-- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L78)
 - [src/service/domain/hr/mod.rs:249-290](src/service/domain/hr/mod.rs#L249-L290)
 
 ## 依赖关系分析

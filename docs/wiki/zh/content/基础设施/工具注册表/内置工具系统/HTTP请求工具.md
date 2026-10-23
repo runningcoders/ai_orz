@@ -299,7 +299,7 @@ HTTP请求工具通过内置与数据库注册两种模式，提供了安全、�
   - 输入：{"url": "https://example.com"}
   - 行为：仅HTTPS，禁止本地网络，禁止重定向，默认超时与响应大小限制。
   - 输出：{status, headers, content_length, body}
-  - 参考测试用例路径：[src/pkg/tool_registry/http_fetch.rs:155-243](src/pkg/tool_registry/http_fetch.rs#L155-L243)
+  - 参考测试用例路径：[src/pkg/tool_registry/http_fetch.rs:155-243](src/pkg/tool_registry/http_fetch.rs#L155-L195)
 
 - 数据库注册HTTP工具（GET）
   - 配置示例（ToolPo.config）：
@@ -337,7 +337,7 @@ HTTP请求工具通过内置与数据库注册两种模式，提供了安全、�
   - 利用common/http_header.rs中的标准头注入追踪与上下文信息。
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:155-243](src/pkg/tool_registry/http_fetch.rs#L155-L243)
+- [src/pkg/tool_registry/http_fetch.rs:155-243](src/pkg/tool_registry/http_fetch.rs#L155-L195)
 - [src/pkg/tool_registry/http_tests.rs:53-98](src/pkg/tool_registry/http_tests.rs#L53-L98)
 - [src/pkg/tool_registry/http.rs:174-178](src/pkg/tool_registry/http.rs#L174-L178)
 - [common/src/constants/http_header.rs:1-20](common/src/constants/http_header.rs#L1-L20)

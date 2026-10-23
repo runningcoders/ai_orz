@@ -97,7 +97,7 @@ Handler-->>Client : "JSON 响应"
 图表来源
 - [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
 - [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
-- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L31)
+- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L30)
 
 ## 详细组件分析
 
@@ -188,7 +188,7 @@ H-->>Client : "200 OK + SkillDetail"
 - 错误处理：不存在时返回 NotFound。
 
 章节来源
-- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L31)
+- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L30)
 - [src/handlers/hr/skill/response.rs:21-38](src/handlers/hr/skill/response.rs#L21-L38)
 
 ### 列出 Skill（GET /api/v1/skills）
@@ -224,7 +224,7 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：InstallSkillToAgentResponse（含 agent_id、source_skill_id、skill）。
 
 章节来源
-- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L37)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L36)
 - [common/src/api/skill.rs:173-193](common/src/api/skill.rs#L173-L193)
 
 ### 从 Agent 卸载 Skill（DELETE /api/v1/hr/agents/{agent_id}/skills/{skill_id}）
@@ -233,7 +233,7 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：UninstallSkillFromAgentResponse（含 agent_id、skill_id、deleted）。
 
 章节来源
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L35)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L34)
 - [common/src/api/skill.rs:445-465](common/src/api/skill.rs#L445-L465)
 
 ### 列出 Skill 文件（GET /api/v1/skills/{skill_id}/files）
@@ -242,7 +242,7 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：ListSkillFilesResponse。
 
 章节来源
-- [src/handlers/hr/skill/list_skill_files.rs:1-44](src/handlers/hr/skill/list_skill_files.rs#L1-L44)
+- [src/handlers/hr/skill/list_skill_files.rs:1-44](src/handlers/hr/skill/list_skill_files.rs#L1-L43)
 - [common/src/api/skill.rs:195-208](common/src/api/skill.rs#L195-L208)
 
 ### 读取 Skill 文件内容（GET /api/v1/skills/{skill_id}/files/{filename}）
@@ -251,7 +251,7 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：GetSkillFileContentResponse。
 
 章节来源
-- [src/handlers/hr/skill/get_skill_file_content.rs:1-39](src/handlers/hr/skill/get_skill_file_content.rs#L1-L39)
+- [src/handlers/hr/skill/get_skill_file_content.rs:1-39](src/handlers/hr/skill/get_skill_file_content.rs#L1-L38)
 - [common/src/api/skill.rs:210-227](common/src/api/skill.rs#L210-L227)
 
 ### 更新 Skill 文件内容（PUT /api/v1/skills/{skill_id}/files/{filename}）
@@ -260,7 +260,7 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：UpdateSkillFileContentResponse。
 
 章节来源
-- [src/handlers/hr/skill/update_skill_file_content.rs:1-35](src/handlers/hr/skill/update_skill_file_content.rs#L1-L35)
+- [src/handlers/hr/skill/update_skill_file_content.rs:1-35](src/handlers/hr/skill/update_skill_file_content.rs#L1-L34)
 - [common/src/api/skill.rs:229-249](common/src/api/skill.rs#L229-L249)
 
 ### 标签系统（GET /api/v1/skills/tags）

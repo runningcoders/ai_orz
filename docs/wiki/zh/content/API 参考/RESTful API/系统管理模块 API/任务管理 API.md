@@ -52,17 +52,17 @@ Reg --> Tasks["任务集合<br/>Arc<dyn BackgroundTask>"]
 
 图示来源
 - [src/router.rs:603-739](src/router.rs#L603-L739)
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
-- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L26)
-- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L48)
-- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L131)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
+- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L25)
+- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L47)
+- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L130)
 
 章节来源
 - [src/router.rs:603-739](src/router.rs#L603-L739)
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
-- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L26)
-- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L48)
-- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L131)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
+- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L25)
+- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L47)
+- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L130)
 
 ## 核心组件
 - 后台任务契约与注册中心
@@ -76,8 +76,8 @@ Reg --> Tasks["任务集合<br/>Arc<dyn BackgroundTask>"]
 
 章节来源
 - [src/pkg/background_task/mod.rs:1-80](src/pkg/background_task/mod.rs#L1-L80)
-- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L131)
-- [common/src/api/background_task.rs:1-128](common/src/api/background_task.rs#L1-L128)
+- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L130)
+- [common/src/api/background_task.rs:1-128](common/src/api/background_task.rs#L1-L127)
 
 ## 架构总览
 任务从业务侧实现 BackgroundTask 并通过 registry.register 启动执行；Handler 通过 registry 暴露查询与清理能力。
@@ -110,9 +110,9 @@ H-->>C : 200/404
 ```
 
 图示来源
-- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L48)
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
-- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L26)
+- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L47)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
+- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L25)
 - [src/pkg/background_task/registry.rs:25-92](src/pkg/background_task/registry.rs#L25-L92)
 
 ## 详细组件分析
@@ -133,7 +133,7 @@ H-->>C : 200/404
   - 按类型/状态筛选查看历史任务
 
 章节来源
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
 - [src/router.rs:104-136](src/router.rs#L104-L136)
 - [src/router.rs:603-739](src/router.rs#L603-L739)
 - [common/src/api/background_task.rs:94-112](common/src/api/background_task.rs#L94-L112)
@@ -151,7 +151,7 @@ H-->>C : 200/404
   - 展示步骤消息、当前步骤、总步骤、开始/结束时间、错误信息、结果
 
 章节来源
-- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L26)
+- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L25)
 - [src/router.rs:603-739](src/router.rs#L603-L739)
 - [common/src/api/background_task.rs:86-92](common/src/api/background_task.rs#L86-L92)
 - [common/src/error/types.rs:170-173](common/src/error/types.rs#L170-L173)
@@ -171,7 +171,7 @@ H-->>C : 200/404
   - 清理仅针对内存中的任务注册表
 
 章节来源
-- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L48)
+- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L47)
 - [src/pkg/background_task/registry.rs:94-123](src/pkg/background_task/registry.rs#L94-L123)
 - [common/src/api/background_task.rs:114-127](common/src/api/background_task.rs#L114-L127)
 
@@ -235,16 +235,16 @@ Reg --> Trait["mod.rs BackgroundTask"]
 
 图示来源
 - [src/router.rs:603-739](src/router.rs#L603-L739)
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
-- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L26)
-- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L48)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
+- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L25)
+- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L47)
 - [src/pkg/background_task/mod.rs:1-80](src/pkg/background_task/mod.rs#L1-L80)
-- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L131)
+- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L130)
 
 章节来源
 - [src/router.rs:603-739](src/router.rs#L603-L739)
 - [src/pkg/background_task/mod.rs:1-80](src/pkg/background_task/mod.rs#L1-L80)
-- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L131)
+- [src/pkg/background_task/registry.rs:1-131](src/pkg/background_task/registry.rs#L1-L130)
 
 ## 性能与资源限制
 - 列表查询
@@ -261,7 +261,7 @@ Reg --> Trait["mod.rs BackgroundTask"]
   - 定期清理已完成任务，保持注册表规模可控
 
 章节来源
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
 - [src/pkg/background_task/registry.rs:94-123](src/pkg/background_task/registry.rs#L94-L123)
 
 ## 故障排查指南
@@ -316,7 +316,7 @@ Reg --> Trait["mod.rs BackgroundTask"]
   - 响应：{ "tasks": [...], "total": 12 }
 
 章节来源
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
 - [src/router.rs:603-739](src/router.rs#L603-L739)
 - [common/src/api/background_task.rs:94-112](common/src/api/background_task.rs#L94-L112)
 
@@ -333,7 +333,7 @@ Reg --> Trait["mod.rs BackgroundTask"]
   - 响应：{ "task_id": "abc123", "task_type": "rebuild_vectors", "status": "running", "current_step": 3, "total_steps": 5, "step_message": "正在重建索引", "started_at": 1710000000000, "finished_at": null, "error": null, "result": null }
 
 章节来源
-- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L26)
+- [src/handlers/system/task_progress.rs:1-26](src/handlers/system/task_progress.rs#L1-L25)
 - [src/router.rs:603-739](src/router.rs#L603-L739)
 - [common/src/api/background_task.rs:86-92](common/src/api/background_task.rs#L86-L92)
 
@@ -350,7 +350,7 @@ Reg --> Trait["mod.rs BackgroundTask"]
   - 响应：{ "cleaned": 12 }
 
 章节来源
-- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L48)
+- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L47)
 - [src/router.rs:603-739](src/router.rs#L603-L739)
 - [common/src/api/background_task.rs:114-127](common/src/api/background_task.rs#L114-L127)
 
@@ -366,6 +366,6 @@ Reg --> Trait["mod.rs BackgroundTask"]
   - 前端分页加载任务列表，减少单次传输数据量
 
 章节来源
-- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L41)
-- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L48)
+- [src/handlers/system/task_list.rs:1-41](src/handlers/system/task_list.rs#L1-L40)
+- [src/handlers/system/task_cleanup.rs:1-48](src/handlers/system/task_cleanup.rs#L1-L47)
 - [src/pkg/background_task/registry.rs:94-123](src/pkg/background_task/registry.rs#L94-L123)

@@ -57,14 +57,14 @@ HK --> C
 ```
 
 图表来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 - [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 - [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 - [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
 
@@ -81,7 +81,7 @@ HK --> C
 - [src/pkg/aop/core/metrics_hook.rs:16-89](src/pkg/aop/core/metrics_hook.rs#L16-L89)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 - [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 
 ## 架构总览
@@ -260,7 +260,7 @@ API-->>Client : 响应体
 - [src/consumer/aop_stats_collector.rs:74-111](src/consumer/aop_stats_collector.rs#L74-L111)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 
 ## 依赖关系分析
@@ -291,7 +291,7 @@ API --> COL
 - [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
 
 章节来源
-- [common/src/api/log_stats.rs:1-77](common/src/api/log_stats.rs#L1-L77)
+- [common/src/api/log_stats.rs:1-77](common/src/api/log_stats.rs#L1-L76)
 
 ## 性能与高可用设计
 - 性能特性
@@ -324,7 +324,7 @@ API --> COL
   - 修复消费者逻辑错误，确保成功/失败路径均正确上报Hook。
 
 章节来源
-- [src/handlers/system/aop.rs:43-145](src/handlers/system/aop.rs#L43-L145)
+- [src/handlers/system/aop.rs:43-145](src/handlers/system/aop.rs#L43-L144)
 - [src/pkg/aop/core/registry.rs:333-444](src/pkg/aop/core/registry.rs#L333-L444)
 
 ## 结论
@@ -346,7 +346,7 @@ AOP监控系统以“事件驱动+内存统计”为核心，提供低侵入、�
   - GET /api/v1/system/aop/stats/distribution?group_by={consumer|status|kind}&status=...
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 
 ### 自定义监控指标配置
@@ -377,4 +377,4 @@ AOP监控系统以“事件驱动+内存统计”为核心，提供低侵入、�
   - 结合日志统计DTO结构（如common/src/api/log_stats.rs）统一输出格式，便于对接现有监控平台。
 
 章节来源
-- [common/src/api/log_stats.rs:1-77](common/src/api/log_stats.rs#L1-L77)
+- [common/src/api/log_stats.rs:1-77](common/src/api/log_stats.rs#L1-L76)

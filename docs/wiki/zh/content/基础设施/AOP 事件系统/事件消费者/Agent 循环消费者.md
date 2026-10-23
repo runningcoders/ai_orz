@@ -71,7 +71,7 @@ REG --> |Async 入队| Q
 - [agent_loop_consumer.rs:26-43](src/consumer/agent_loop_consumer.rs#L26-L43)
 - [consumer.rs:6-13](src/pkg/aop/core/consumer.rs#L6-L13)
 - [registry.rs:394-435](src/pkg/aop/core/registry.rs#L394-L435)
-- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L775-L804)
+- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L749-L749)
 
 章节来源
 - [mod.rs（consumer 注册）:16-37](src/consumer/mod.rs#L16-L37)
@@ -114,7 +114,7 @@ Producer->>State : set_idle(agent_id) via BusyGuard drop
 ```
 
 图表来源
-- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L775-L804)
+- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L749-L749)
 - [agent_loop.rs:25-59](src/models/events/agent_loop.rs#L25-L59)
 - [agent_loop_consumer.rs:43-74](src/consumer/agent_loop_consumer.rs#L43-L74)
 - [busy_guard.rs:21-32](src/service/domain/runtime/busy_guard.rs#L21-L32)
@@ -189,12 +189,12 @@ RT->>ST : set_idle(agent_id) via BusyGuard
 
 图表来源
 - [message.rs:290-317](src/consumer/message.rs#L290-L317)
-- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L775-L804)
+- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L749-L749)
 - [busy_guard.rs:21-32](src/service/domain/runtime/busy_guard.rs#L21-L32)
 - [agent_runtime_state.rs:85-119](src/pkg/agent_runtime_state.rs#L85-L119)
 
 章节来源
-- [awakening.rs:775-829](src/service/domain/runtime/awakening.rs#L775-L829)
+- [awakening.rs:775-829](src/service/domain/runtime/awakening.rs#L749-L749)
 - [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 ### 状态转换与并发安全

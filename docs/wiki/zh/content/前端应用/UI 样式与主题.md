@@ -22,7 +22,7 @@
 - [frontend/styles/input.css#L877-L890](frontend/styles/input.css#L877-L890) — 长文本区 .detail-longtext（2026-09-30 增量：max-height 32rem + overflow-y:auto + overscroll-behavior:contain，长 Markdown 独立成块内部滚动，不再撑坏同页 detail-grid 短字段网格）
 - [frontend/styles/input.css#L1464-L1483](frontend/styles/input.css#L1464-L1483) — 聊天气泡尖角贴顶（2026-09-30 增量：`.chat-bubble::before { bottom:auto; top:0 }` + `scaleY(-1)` 垂直翻转，chat-end 保留 rotateY(180deg)，抹平角由底角换顶角）
 - [frontend/styles/input.css#L2111-L2229](frontend/styles/input.css#L2111-L2229) — 项目内 Agent 列表两段布局（2026-09-30 增量：.project-agent-item 上下两段 + 行间 20% 分隔线 + .project-agent-item-body/desc/tasks-btn/detail/tasks）
-- [frontend/src/utils/local_store.rs#L1-L270](frontend/src/utils/local_store.rs#L1-L270) — 通用 localStorage 组件层（2026-09-30 增量：KEY_PREFIX 统一前缀 + 类型化读写 + Versioned 版本包装 + 存量迁移 + UnreadBadges）
+- [frontend/src/utils/local_store.rs#L1-L270](frontend/src/utils/local_store.rs#L1-L232) — 通用 localStorage 组件层（2026-09-30 增量：KEY_PREFIX 统一前缀 + 类型化读写 + Versioned 版本包装 + 存量迁移 + UnreadBadges）
 - [frontend/src/pages/message/chat.rs#L2523-L2536](frontend/src/pages/message/chat.rs#L2523-L2536) — 未读角标胶囊形红底渲染（2026-09-30 增量：unread_badge）
 
 ### 本文关联的三类文档（四类互引闭环）
@@ -126,7 +126,7 @@ B --> H
 - [frontend/src/components/button.rs:1-50](frontend/src/components/button.rs#L1-L50)
 - [frontend/src/components/modal.rs:1-44](frontend/src/components/modal.rs#L1-L44)
 - [frontend/src/components/toast.rs:1-104](frontend/src/components/toast.rs#L1-L104)
-- [frontend/src/components/state.rs:1-50](frontend/src/components/state.rs#L1-L50)
+- [frontend/src/components/state.rs:1-50](frontend/src/components/state.rs#L1-L48)
 - [frontend/src/components/graph.rs:323-450](frontend/src/components/graph.rs#L323-L450)
 - [frontend/src/components/canvas_scene.rs:519-578](frontend/src/components/canvas_scene.rs#L519-L578)
 - [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
@@ -200,9 +200,9 @@ W --> A["最终渲染结果"]
 - **移动端优化**：触摸目标大小优化、输入框字体大小调整、导航菜单折叠等。
 
 **章节来源**
-- [frontend/index.html:241-247](frontend/index.html#L241-L247)
+- [frontend/index.html:241-247](frontend/index.html#L81-L81)
 - [frontend/src/pages/workspace.rs:724-743](frontend/src/pages/workspace.rs#L724-L743)
-- [frontend/index.html:307-310](frontend/index.html#L307-L310)
+- [frontend/index.html:307-310](frontend/index.html#L81-L81)
 
 ### 可访问性支持
 - **语义化标签**：使用 dialog、form、button、table、thead/tbody/th/td 等语义元素，便于屏幕阅读器识别。
@@ -230,7 +230,7 @@ W --> A["最终渲染结果"]
 
 **章节来源**
 - [frontend/styles/input.css:1-45](frontend/styles/input.css#L1-L45)
-- [frontend/index.html:8-417](frontend/index.html#L8-L417)
+- [frontend/index.html:8-417](frontend/index.html#L8-L81)
 
 ### 常用样式模式与动画效果
 - **HUD 流光条**：左侧竖条 + 流动高光，用于未读消息提示。
@@ -241,7 +241,7 @@ W --> A["最终渲染结果"]
 **章节来源**
 - [frontend/styles/input.css:74-202](frontend/styles/input.css#L74-L202)
 - [frontend/index.html:14-29](frontend/index.html#L14-L29)
-- [frontend/index.html:401-410](frontend/index.html#L401-L410)
+- [frontend/index.html:401-410](frontend/index.html#L81-L81)
 
 ### 交互状态实现方式
 - **拖拽与命中检测**：CanvasScene 中 mousedown/mousemove/mouseup/onmouseleave 实现节点拖拽与 hover 高亮；选中节点触发光晕。
@@ -327,7 +327,7 @@ M --> O
 - [frontend/package.json:4-11](frontend/package.json#L4-L11)
 - [frontend/Dioxus.toml:5-6](frontend/Dioxus.toml#L5-L6)
 - [frontend/src/components/canvas_scene.rs:519-578](frontend/src/components/canvas_scene.rs#L519-L578)
-- [frontend/index.html:241-247](frontend/index.html#L241-L247)
+- [frontend/index.html:241-247](frontend/index.html#L81-L81)
 - [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
 
 ## 故障排查指南

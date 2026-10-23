@@ -97,9 +97,9 @@ C2 --> DB
 
 图表来源
 - [src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200)
-- [src/handlers/organization/auth/login.rs:1-200](src/handlers/organization/auth/login.rs#L1-L200)
-- [src/handlers/organization/organizations/get_organization.rs:1-200](src/handlers/organization/organizations/get_organization.rs#L1-L200)
-- [src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L200)
+- [src/handlers/organization/auth/login.rs:1-200](src/handlers/organization/auth/login.rs#L1-L79)
+- [src/handlers/organization/organizations/get_organization.rs:1-200](src/handlers/organization/organizations/get_organization.rs#L1-L54)
+- [src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L70)
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
 - [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 
@@ -230,13 +230,13 @@ Login-->>Client : 返回令牌(由JWT中间件处理)
 ```
 
 图表来源
-- [src/handlers/organization/auth/login.rs:1-200](src/handlers/organization/auth/login.rs#L1-L200)
+- [src/handlers/organization/auth/login.rs:1-200](src/handlers/organization/auth/login.rs#L1-L79)
 - [src/service/domain/organization/user.rs:85-117](src/service/domain/organization/user.rs#L85-L117)
 
 章节来源
 - [src/service/domain/organization/user.rs:85-117](src/service/domain/organization/user.rs#L85-L117)
 - [src/middleware/jwt_auth.rs:1-200](src/middleware/jwt_auth.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L38)
 - [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
 
 ### 权限模型与继承
@@ -261,11 +261,11 @@ F --> |否| H["拒绝"]
 
 图表来源
 - [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L38)
 
 章节来源
 - [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L38)
 
 ### 组织管理与成员关系维护
 - 组织管理：
@@ -319,17 +319,17 @@ OrganizationPo <.. UserPo : "多对一(组织-用户)"
   - 参考路径：[src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200), [src/service/domain/organization/org.rs:53-90](src/service/domain/organization/org.rs#L53-L90)
 - 用户邀请与加入
   - 步骤：校验用户名唯一性 → 创建用户并绑定组织 → 设置角色 → 返回用户信息
-  - 参考路径：[src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L200), [src/service/domain/organization/user.rs:43-46](src/service/domain/organization/user.rs#L43-L46)
+  - 参考路径：[src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L70), [src/service/domain/organization/user.rs:43-46](src/service/domain/organization/user.rs#L43-L46)
 - 权限分配与继承
   - 步骤：路由层最小权限校验 → 敏感操作二次校验 → 执行变更
-  - 参考路径：[src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200), [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
+  - 参考路径：[src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L38), [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
 
 章节来源
 - [src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200)
 - [src/service/domain/organization/org.rs:53-90](src/service/domain/organization/org.rs#L53-L90)
-- [src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L200)
+- [src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L70)
 - [src/service/domain/organization/user.rs:43-46](src/service/domain/organization/user.rs#L43-L46)
-- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L38)
 - [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
 
 ## 依赖关系分析
@@ -357,7 +357,7 @@ M2["require_role.rs"] -.-> H
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
 - [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
 - [src/middleware/jwt_auth.rs:1-200](src/middleware/jwt_auth.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L38)
 
 章节来源
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)

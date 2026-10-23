@@ -73,7 +73,7 @@ F --> G
 - [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
 - [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
 - [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 - [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
 - [src/router.rs:12-37](src/router.rs#L12-L37)
 - [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
@@ -82,7 +82,7 @@ F --> G
 - [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
 - [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
 - [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 - [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
 - [src/router.rs:12-37](src/router.rs#L12-L37)
 - [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
@@ -111,7 +111,7 @@ F --> G
 - [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
 - [frontend/src/api/mod.rs:87-174](frontend/src/api/mod.rs#L87-L174)
 - [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
-- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 
 ## 架构总览
 后端 HTTP 工具以“配置驱动 + 安全前置校验”的方式组织：ToolPo 中存储 HttpToolConfig，运行时解析并执行；所有外部网络访问必须通过安全工具库的 SSRF 防护、域名策略与 DNS 固定。前端则通过统一客户端封装简化调用，集中处理认证、错误与上传。
@@ -281,10 +281,10 @@ Dao-->>Domain : Ok 或 Error
 ```
 
 **图表来源**
-- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 
 **章节来源**
-- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 
 ## 依赖关系分析
 - 后端 HTTP 工具依赖安全工具库进行 SSRF 防护、响应限制与头部脱敏。
@@ -303,7 +303,7 @@ Router --> Headers["http_header.rs"]
 **图表来源**
 - [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
 - [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 - [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
 - [src/router.rs:12-37](src/router.rs#L12-L37)
 - [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
@@ -311,7 +311,7 @@ Router --> Headers["http_header.rs"]
 **章节来源**
 - [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
 - [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 - [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
 - [src/router.rs:12-37](src/router.rs#L12-L37)
 - [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
@@ -380,7 +380,7 @@ Router --> Headers["http_header.rs"]
   - 内置 Fetch 工具调用：[src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
   - 前端 API 客户端调用：[frontend/src/api/mod.rs:87-174](frontend/src/api/mod.rs#L87-L174)
   - 前端 multipart 上传：[frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
-  - A2A 回调 DAO 调用：[src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+  - A2A 回调 DAO 调用：[src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L85)
 - 配置项说明
   - HttpToolConfig 字段：method/url/headers/query/body/timeout_ms/response_max_bytes/allowed_status_codes/response_json_pointer/allowed_domains/blocked_domains/allow_local_network。
   - 默认与硬上限：DEFAULT_TIMEOUT_MS/HARD_TIMEOUT_MS、DEFAULT_RESPONSE_MAX_BYTES/HARD_RESPONSE_MAX_BYTES。

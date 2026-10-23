@@ -65,7 +65,7 @@ source_files:
 - [mod.rs:L1-L60](src/pkg/stats/mod.rs#L1-L60)
 - [runtime/mod.rs:L1-L80](src/pkg/stats/runtime/mod.rs#L1-L80)
 - [collector.rs:L1-L100](src/pkg/stats/collector.rs#L1-L100)
-- [aop_stats.rs:L1-L80](src/service/domain/system/aop_stats.rs#L1-L80)
+- [aop_stats.rs:L1-L80](src/service/domain/system/aop_stats.rs#L1-L52)
 
 ---
 

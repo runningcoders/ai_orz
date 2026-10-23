@@ -95,7 +95,7 @@ D2 --> DG
 - [Project Domain 入口与接口定义:63-105](src/service/domain/project/mod.rs#L63-L105)
 - [Task 业务实现:18-526](src/service/domain/project/task.rs#L18-L526)
 - [Artifact 业务实现:16-532](src/service/domain/project/artifact.rs#L16-L532)
-- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L67)
+- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L65)
 - [Project DAL:213-221](src/service/dal/project.rs#L213-L221)
 - [Task DAL:211-219](src/service/dal/task.rs#L211-L219)
 - [Artifact DAL:95-98](src/service/dal/artifact.rs#L95-L98)
@@ -174,7 +174,7 @@ B --> D["任务D"]
 - [任务图构建器:31-54](src/service/domain/project/task_graph.rs#L31-L54)
 
 章节来源
-- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L67)
+- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L65)
 
 ### 工件创建与版本控制编排
 - 创建工件：支持附件引用型与生成内容型；项目级与任务级两种归属。
@@ -300,7 +300,7 @@ Project 领域通过清晰的层次划分与统一的编排入口，实现了项
 
 章节来源
 - [Task 业务实现:51-109](src/service/domain/project/task.rs#L51-L109)
-- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L67)
+- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L65)
 
 ### 工件关联管理
 - 输入：project_id、task_id（可选）、name、description、file_type、file_meta、tags、created_by。

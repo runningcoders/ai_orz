@@ -104,7 +104,7 @@ D --> K["环境变量过滤<br/>allowed_env + 敏感词过滤"]
 章节来源
 - [src/pkg/tool_registry/shell_exec.rs:20-166](src/pkg/tool_registry/shell_exec.rs#L20-L166)
 - [src/pkg/process/mod.rs:24-124](src/pkg/process/mod.rs#L24-L124)
-- [src/service/domain/system/process.rs:227-249](src/service/domain/system/process.rs#L227-L249)
+- [src/service/domain/system/process.rs:227-249](src/service/domain/system/process.rs#L93-L93)
 - [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
 - [src/pkg/tool_registry/mod.rs:29-108](src/pkg/tool_registry/mod.rs#L29-L108)
 
@@ -390,7 +390,7 @@ ShellExecCoreTool --> ProcessManager : "权限控制"
 - [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
 - [src/pkg/tool_registry/shell_exec.rs:151-166](src/pkg/tool_registry/shell_exec.rs#L151-L166)
 - [src/pkg/process/mod.rs:57-124](src/pkg/process/mod.rs#L57-L124)
-- [src/service/domain/system/process.rs:227-249](src/service/domain/system/process.rs#L227-L249)
+- [src/service/domain/system/process.rs:227-249](src/service/domain/system/process.rs#L93-L93)
 
 章节来源
 - [src/pkg/tool_registry/mod.rs:29-108](src/pkg/tool_registry/mod.rs#L29-L108)
@@ -535,4 +535,4 @@ POST /api/v1/system/processes/{pid}/kill
 
 章节来源
 - [src/pkg/tool_registry/shell_tests.rs:169-326](src/pkg/tool_registry/shell_tests.rs#L169-L326)
-- [src/service/domain/system/process.rs:92-229](src/service/domain/system/process.rs#L92-L229)
+- [src/service/domain/system/process.rs:92-229](src/service/domain/system/process.rs#L92-L93)

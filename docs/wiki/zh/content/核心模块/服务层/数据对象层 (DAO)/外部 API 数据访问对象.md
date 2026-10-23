@@ -285,7 +285,7 @@ Cortex --> Prov["ModelProviderPo"]
 
 章节来源
 - [common/src/config.rs:490-549](common/src/config.rs#L490-L549)
-- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L24)
 
 ## 性能与并发
 - 连接复用

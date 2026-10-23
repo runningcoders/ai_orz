@@ -97,7 +97,7 @@ H8 --> L2
 图表来源
 - [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
 - [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L51)
 
 章节来源
 - [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
@@ -225,7 +225,7 @@ Resp --> End(["结束"])
 - 响应：PagedResult<AgentListItem>。
 
 章节来源
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
 - [common/src/api/agent.rs:254-268](common/src/api/agent.rs#L254-L268)
 
 ### 通用查询 Agent（POST /api/v1/hr/agents/query）
@@ -234,7 +234,7 @@ Resp --> End(["结束"])
 - 响应：PagedResult<AgentListItem>。
 
 章节来源
-- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L68)
 - [common/src/api/agent.rs:270-293](common/src/api/agent.rs#L270-L293)
 
 ### 搜索 Agent（POST /api/v1/hr/agents/search）
@@ -243,7 +243,7 @@ Resp --> End(["结束"])
 - 响应：PagedResult<AgentListItem>。
 
 章节来源
-- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
+- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L67)
 - [common/src/api/agent.rs:295-316](common/src/api/agent.rs#L295-L316)
 
 ### 更新 Agent 状态（PUT /api/v1/agents/{id}/status）
@@ -252,7 +252,7 @@ Resp --> End(["结束"])
 - 响应：UpdateAgentStatusResponse（同 GetAgentResponse 结构）。
 
 章节来源
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L51)
 - [common/src/api/agent.rs:205-216](common/src/api/agent.rs#L205-L216)
 - [common/src/api/agent.rs:318-319](common/src/api/agent.rs#L318-L319)
 
@@ -268,9 +268,9 @@ Resp --> End(["结束"])
   - 响应：ListInstalledToolPacksResponse（agent_id、installed_tags）。
 
 章节来源
-- [src/handlers/hr/agent/install_tool_pack.rs:1-41](src/handlers/hr/agent/install_tool_pack.rs#L1-L41)
-- [src/handlers/hr/agent/uninstall_tool_pack.rs:1-41](src/handlers/hr/agent/uninstall_tool_pack.rs#L1-L41)
-- [src/handlers/hr/agent/list_installed_tool_packs.rs:1-32](src/handlers/hr/agent/list_installed_tool_packs.rs#L1-L32)
+- [src/handlers/hr/agent/install_tool_pack.rs:1-41](src/handlers/hr/agent/install_tool_pack.rs#L1-L40)
+- [src/handlers/hr/agent/uninstall_tool_pack.rs:1-41](src/handlers/hr/agent/uninstall_tool_pack.rs#L1-L40)
+- [src/handlers/hr/agent/list_installed_tool_packs.rs:1-32](src/handlers/hr/agent/list_installed_tool_packs.rs#L1-L31)
 - [common/src/api/agent.rs:321-378](common/src/api/agent.rs#L321-L378)
 
 ### 技能包安装/卸载/查询
@@ -285,9 +285,9 @@ Resp --> End(["结束"])
   - 响应：ListSkillPacksResponse。
 
 章节来源
-- [src/handlers/hr/agent/install_skill_pack.rs:1-34](src/handlers/hr/agent/install_skill_pack.rs#L1-L34)
-- [src/handlers/hr/agent/uninstall_skill_pack.rs:1-35](src/handlers/hr/agent/uninstall_skill_pack.rs#L1-L35)
-- [src/handlers/hr/agent/list_installed_skill_packs.rs:1-29](src/handlers/hr/agent/list_installed_skill_packs.rs#L1-L29)
+- [src/handlers/hr/agent/install_skill_pack.rs:1-34](src/handlers/hr/agent/install_skill_pack.rs#L1-L33)
+- [src/handlers/hr/agent/uninstall_skill_pack.rs:1-35](src/handlers/hr/agent/uninstall_skill_pack.rs#L1-L34)
+- [src/handlers/hr/agent/list_installed_skill_packs.rs:1-29](src/handlers/hr/agent/list_installed_skill_packs.rs#L1-L28)
 
 ### 运行时配置与状态管理
 - 运行时配置（AgentRuntimeConfig）
@@ -326,11 +326,11 @@ M["uninstall_skill_pack.rs"] --> B
 
 图表来源
 - [src/handlers/hr/agent/get_agent.rs:99-104](src/handlers/hr/agent/get_agent.rs#L99-L104)
-- [src/handlers/hr/agent/update_agent_status.rs:91-95](src/handlers/hr/agent/update_agent_status.rs#L91-L95)
+- [src/handlers/hr/agent/update_agent_status.rs:91-95](src/handlers/hr/agent/update_agent_status.rs#L51-L51)
 
 章节来源
 - [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L51)
 
 ## 性能考量
 - 列表与查询默认排除 Deleted，减少无效数据扫描。

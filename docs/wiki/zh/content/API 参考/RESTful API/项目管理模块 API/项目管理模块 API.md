@@ -55,7 +55,7 @@ D_Proj --> DAL_Art["DAL: ArtifactDal"]
 
 章节来源
 - [router.rs:145-240](src/router.rs#L145-L240)
-- [mod.rs（项目处理器入口）:1-6](src/handlers/project/mod.rs#L1-L6)
+- [mod.rs（项目处理器入口）:1-6](src/handlers/project/mod.rs#L1-L5)
 
 ## 核心组件
 - 项目领域（ProjectDomain）：聚合项目管理、任务管理、工件管理能力，对外暴露统一 trait 与单例访问。
@@ -177,12 +177,12 @@ H-->>C : CreateArtifactResponse
 
 图表来源
 - [create_artifact.rs:22-53](src/handlers/project/artifact/create_artifact.rs#L22-L53)
-- [create_artifact.rs:55-146](src/handlers/project/artifact/create_artifact.rs#L55-L146)
+- [create_artifact.rs:55-146](src/handlers/project/artifact/create_artifact.rs#L55-L145)
 - [mod.rs（领域层入口）:361-498](src/service/domain/project/mod.rs#L361-L498)
 
 章节来源
 - [create_artifact.rs:22-53](src/handlers/project/artifact/create_artifact.rs#L22-L53)
-- [create_artifact.rs:55-146](src/handlers/project/artifact/create_artifact.rs#L55-L146)
+- [create_artifact.rs:55-146](src/handlers/project/artifact/create_artifact.rs#L55-L145)
 - [mod.rs（领域层入口）:361-498](src/service/domain/project/mod.rs#L361-L498)
 
 ### 复杂查询与关联数据加载
@@ -293,7 +293,7 @@ D --> DAL_A["ArtifactDal"]
 
 章节来源
 - [router.rs:200-213](src/router.rs#L200-L213)
-- [task/mod.rs:1-28](src/handlers/project/task/mod.rs#L1-L28)
+- [task/mod.rs:1-28](src/handlers/project/task/mod.rs#L1-L27)
 - [mod.rs（领域层入口）:352-359](src/service/domain/project/mod.rs#L352-L359)
 
 ### 工件创建示例（附件类型）
@@ -313,7 +313,7 @@ D --> DAL_A["ArtifactDal"]
 - 领域调用：ArtifactDomain.artifact_manage().create_generated_artifact(...)
 
 章节来源
-- [create_artifact.rs:103-146](src/handlers/project/artifact/create_artifact.rs#L103-L146)
+- [create_artifact.rs:103-146](src/handlers/project/artifact/create_artifact.rs#L103-L145)
 - [mod.rs（领域层入口）:465-480](src/service/domain/project/mod.rs#L465-L480)
 
 ### 复杂查询与搜索

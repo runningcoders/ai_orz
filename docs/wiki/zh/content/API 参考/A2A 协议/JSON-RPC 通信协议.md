@@ -81,12 +81,12 @@ Domain --> DB["SQLite"]
 
 章节来源
 - [a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
-- [a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
+- [a2a.rs:147-306](common/src/api/a2a.rs#L147-L305)
 - [jsonrpc.rs:21-75](src/handlers/a2a/jsonrpc.rs#L21-L75)
 - [send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
 - [get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
 - [cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
-- [mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 - [router.rs:21-56](src/router.rs#L21-L56)
 
 ## 架构总览
@@ -226,7 +226,7 @@ G-->>H : A2aTask
 - [mapper.rs:57-84](src/handlers/a2a/mapper.rs#L57-L84)
 
 章节来源
-- [get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
+- [get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
 
 ### 任务取消（tasks/cancel）
 - 查询项目确保存在。
@@ -263,7 +263,7 @@ C-->>H : A2aTask
 - [mapper.rs:57-84](src/handlers/a2a/mapper.rs#L57-L84)
 
 章节来源
-- [cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 
 ### 消息映射器（mapper）
 - project_status_to_a2a_state：将内部 ProjectStatus 映射为 A2A TaskState（Active/PendingReview→Submitted，InProgress→Working，Completed→Completed，Archived→Canceled，Deleted→Failed）。
@@ -306,10 +306,10 @@ Mapper --> A2aArtifact : "转换"
 ```
 
 图表来源
-- [mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 章节来源
-- [mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
+- [mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
 
 ### 协议类型与错误码
 - JSON-RPC 请求：包含 jsonrpc、id、method、params。
@@ -322,7 +322,7 @@ Mapper --> A2aArtifact : "转换"
 
 章节来源
 - [a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
-- [a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
+- [a2a.rs:147-306](common/src/api/a2a.rs#L147-L305)
 
 ### 路由与中间件
 - /.well-known/agent.json：公开发现端点，仅需要 RequestContext。
@@ -358,8 +358,8 @@ Router["router.rs"] --> Handler
 
 章节来源
 - [send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 
 ## 性能考虑
 - 异步提交：tasks/send 立即返回 working 状态，不阻塞等待 Agent 回复，降低请求延迟。
@@ -442,4 +442,4 @@ A2A JSON-RPC 通信层以标准化协议与清晰的分层架构实现了外部 
 - 执行方式：使用 sqlx::test 运行，确保 SQLite 环境就绪。
 
 章节来源
-- [integration_test.rs:1-135](src/handlers/a2a/integration_test.rs#L1-L135)
+- [integration_test.rs:1-135](src/handlers/a2a/integration_test.rs#L1-L90)

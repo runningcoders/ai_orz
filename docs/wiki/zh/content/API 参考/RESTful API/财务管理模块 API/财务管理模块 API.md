@@ -65,8 +65,8 @@ E --> I["models/model_provider.rs"]
 
 图表来源
 - [src/handlers/finance/mod.rs:1-15](src/handlers/finance/mod.rs#L1-L15)
-- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L20)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/message/mod.rs:1-17](src/handlers/finance/message/mod.rs#L1-L17)
 - [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
 - [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
@@ -163,7 +163,7 @@ CallDomain --> Resp["返回 CREATED + 附件详情"]
 章节来源
 - [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
 - [src/handlers/finance/attachment/get_attachment_content.rs:12-37](src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
-- [src/models/attachment.rs:9-186](src/models/attachment.rs#L9-L186)
+- [src/models/attachment.rs:9-186](src/models/attachment.rs#L9-L185)
 
 ### MCP 服务器管理
 - 创建 MCP 服务器
@@ -411,7 +411,7 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
 章节来源
 - [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
 - [src/handlers/finance/attachment/get_attachment_content.rs:12-37](src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
-- [src/models/attachment.rs:9-186](src/models/attachment.rs#L9-L186)
+- [src/models/attachment.rs:9-186](src/models/attachment.rs#L9-L185)
 
 ### MCP 服务器管理
 - 创建 MCP 服务器

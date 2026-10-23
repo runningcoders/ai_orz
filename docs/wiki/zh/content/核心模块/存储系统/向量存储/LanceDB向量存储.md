@@ -50,7 +50,7 @@ D --> H["InMemoryVectorStore(内存)"]
 - [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 
 章节来源
-- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
+- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L211)
 - [src/pkg/storage/vector.rs:1-74](src/pkg/storage/vector.rs#L1-L74)
 
 ## 核心组件
@@ -231,7 +231,7 @@ SVS --> SQLX["sqlx/vss0"]
 
 章节来源
 - [src/service/dao/message/vector.rs:1-84](src/service/dao/message/vector.rs#L1-L84)
-- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
+- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L211)
 
 ## 性能与优化
 

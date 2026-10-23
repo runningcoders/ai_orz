@@ -81,7 +81,7 @@ HR_T --> CT
 
 **图示来源**
 - [frontend/src/components/markdown.rs:1-206](frontend/src/components/markdown.rs#L1-L206)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 - [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
 - [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
 - [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
@@ -89,7 +89,7 @@ HR_T --> CT
 
 **章节来源**
 - [frontend/src/components/markdown.rs:1-206](frontend/src/components/markdown.rs#L1-L206)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 - [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
 - [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
 - [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
@@ -105,7 +105,7 @@ HR_T --> CT
 
 **章节来源**
 - [frontend/src/components/markdown.rs:35-206](frontend/src/components/markdown.rs#L35-L206)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 - [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
 
 ## 架构总览
@@ -133,7 +133,7 @@ IDX-->>FE : 替换为SVG
 - [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
 - [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
 - [frontend/src/components/markdown.rs:61-115](frontend/src/components/markdown.rs#L61-L115)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 
 ## 详细组件分析
 
@@ -160,7 +160,7 @@ Replace --> End
 
 **图示来源**
 - [frontend/src/components/markdown.rs:35-115](frontend/src/components/markdown.rs#L35-L115)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 
 **章节来源**
 - [frontend/src/components/markdown.rs:35-206](frontend/src/components/markdown.rs#L35-L206)
@@ -296,14 +296,14 @@ HR_T["task/response.rs"] --> CT["common::api::GetTaskResponse"]
 
 **图示来源**
 - [frontend/src/components/markdown.rs:125-165](frontend/src/components/markdown.rs#L125-L165)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 - [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
 - [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
 - [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 **章节来源**
 - [frontend/src/components/markdown.rs:125-165](frontend/src/components/markdown.rs#L125-L165)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 - [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
 - [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
 - [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
@@ -331,7 +331,7 @@ HR_T["task/response.rs"] --> CT["common::api::GetTaskResponse"]
 
 **章节来源**
 - [frontend/src/components/markdown.rs:125-206](frontend/src/components/markdown.rs#L125-L206)
-- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/index.html:421-477](frontend/index.html#L81-L81)
 - [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
 - [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
 - [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)

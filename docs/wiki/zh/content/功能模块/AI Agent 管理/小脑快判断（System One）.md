@@ -13,7 +13,7 @@
 - [src/models/brain.rs#L16-L76](src/models/brain.rs#L16-L76) — Brain 新增 cerebellum 字段与构造器
 - [src/models/agent.rs#L80-L148](src/models/agent.rs#L80-L148) — AgentRuntimeConfig 双开关
 - [common/src/enums/provider.rs#L14-L56](common/src/enums/provider.rs#L14-L56) — ProviderType::Jev=8 / ModelCapability::Decision=2
-- [src/service/domain/runtime/cerebellum_router.rs#L295-L596](src/service/domain/runtime/cerebellum_router.rs#L295-L596) — 路由三分类单元测试
+- [src/service/domain/runtime/cerebellum_router.rs#L295-L596](src/service/domain/runtime/cerebellum_router.rs#L295-L328) — 路由三分类单元测试
 
 **更新摘要（2026-09-30，base b82d3f7f→8fa050d0）**：本次区间引入「小脑快判断（Cerebellum）」能力全链路。新增 System One 协议 DTO（`src/models/cerebellum_types.rs`）与 `SystemOneCerebellumDao` client（`src/service/dao/cerebellum/`），新增 `ProviderType::Jev=8` / `ModelCapability::Decision=2` 两个尾部追加枚举变体，新增默认小脑获取（`get_default_cerebellum_provider`）与 Brain 注入（`brain.cerebellum`），并在 think 循环首轮前落地运行时快判断路由三分类（`cerebellum_router.rs` 的 Direct/Inject/Skip + `think_loop.rs` 单点接线）。这是本主题首篇长文。
 

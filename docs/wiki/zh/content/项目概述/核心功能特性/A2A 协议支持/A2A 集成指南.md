@@ -59,7 +59,7 @@ Cancel --> Domain
 
 章节来源
 - [src/router.rs:12-58](src/router.rs#L12-L58)
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 
 ## 核心组件
 - 协议实体：AgentCard、JsonRpcRequest/Response、A2aTask、A2aMessage、A2aArtifact 等，定义于 common/src/api/a2a.rs
@@ -74,13 +74,13 @@ Cancel --> Domain
 - 配置：A2aServerConfig（enabled、protocol_version、endpoint、card_path）
 
 章节来源
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
 - [common/src/config.rs:512-549](common/src/config.rs#L512-L549)
 
 ## 架构总览
@@ -115,7 +115,7 @@ H-->>C : JSON-RPC Response
 - 错误处理：未知方法返回 METHOD_NOT_FOUND；参数解析失败返回 INVALID_PARAMS；内部错误返回 INTERNAL_ERROR
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 
 ### 实体映射层（mapper.rs）
 - 职责：将 ai_orz 内部实体（ProjectStatus、Message、Artifact）转换为 A2A 协议实体（A2aTaskState、A2aMessage、A2aArtifact），并构建 A2aTask
@@ -141,20 +141,20 @@ H-->>C : JSON-RPC Response
 - 流程：根据 task_id（=project_id）查询 Project → 查询关联 Messages → 查询关联 Artifacts → 构建 A2aTask 返回
 
 章节来源
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
 
 ### tasks/cancel（cancel_task.rs）
 - 流程：查询 Project → 归档 Project（对应 canceled 状态）→ 重新查询最新状态 → 查询 Messages + Artifacts → 构建 A2aTask 返回
 
 章节来源
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 
 ### Agent Card（agent_card.rs）
 - 公开端点：GET /.well-known/agent.json，无需 JWT
 - 返回组织级能力描述（名称、版本、能力声明、技能列表、默认输入/输出模式）
 
 章节来源
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
 
 ### 路由与中间件（router.rs）
 - 公开路由：/.well-known/agent.json（仅 RequestContext）
@@ -189,14 +189,14 @@ CONFIG["配置<br/>common/src/config.rs"] --> ROUTER
 ```
 
 图表来源
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/router.rs:12-58](src/router.rs#L12-L58)
 - [common/src/config.rs:512-549](common/src/config.rs#L512-L549)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 - [src/router.rs:12-58](src/router.rs#L12-L58)
 
 ## 性能考虑
@@ -292,7 +292,7 @@ ai_orz 作为 A2A Server 提供了标准化的 JSON-RPC 2.0 接口，支持外�
 
 章节来源
 - [src/router.rs:21-58](src/router.rs#L21-L58)
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 
 ### 集成场景示例代码路径
 - 同步调用：tasks/send（立即返回 working，轮询 tasks/get）

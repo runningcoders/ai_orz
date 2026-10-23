@@ -307,7 +307,7 @@ ADP-->>API : 返回 ok
 章节来源
 - [stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
-- [agent.rs:244-312](src/service/dal/agent/mod.rs#L312)
+- [agent.rs:244-312](src/service/dal/agent/mod.rs#L228)
 
 ## 依赖关系分析
 - AgentDal 依赖多个 DAO：AgentDao、AgentVectorDao、AgentStatsDao、ToolStatsDao、ModelProviderStatsDao、CortexDao、ModelProviderDao
@@ -341,10 +341,10 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 - 批量操作：搜索时按 chunk 批量获取 Po，减少 N+1 查询
 
 章节来源
-- [agent.rs:244-312](src/service/dal/agent/mod.rs#L312)
-- [agent.rs:373-405](src/service/dal/agent/mod.rs#L405)
+- [agent.rs:244-312](src/service/dal/agent/mod.rs#L228)
+- [agent.rs:373-405](src/service/dal/agent/mod.rs#L228)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:563-588](src/service/dal/agent/mod.rs#L588)
+- [agent.rs:563-588](src/service/dal/agent/mod.rs#L228)
 
 ## 故障排查指南
 - 无法唤醒 Agent：检查运行时状态是否为 Busy/Resting；确认 try_set_busy 是否成功
@@ -354,7 +354,7 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 
 章节来源
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:244-312](src/service/dal/agent/mod.rs#L312)
+- [agent.rs:244-312](src/service/dal/agent/mod.rs#L228)
 - [stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
 - [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 

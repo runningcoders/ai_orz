@@ -62,11 +62,11 @@ DAL --> DAO
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/service/domain/finance/mod.rs:92-115](src/service/domain/finance/mod.rs#L92-L115)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/service/domain/finance/mod.rs:92-115](src/service/domain/finance/mod.rs#L92-L115)
 
 ## 核心组件
@@ -78,7 +78,7 @@ DAL --> DAO
   - models::mcp_server 中的传输类型、状态枚举、配置结构与持久化对象。
 
 章节来源
-- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L179)
+- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L174)
 - [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
 - [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
@@ -210,7 +210,7 @@ string updated_by
 
 章节来源
 - [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
-- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L179)
+- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L174)
 
 ## 依赖关系分析
 - 处理器依赖领域层：通过 domain().mcp_server_manage() 获取接口实现。
@@ -228,11 +228,11 @@ Model --> DTO
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/response.rs:1-89](src/handlers/finance/mcp_server/response.rs#L1-L89)
+- [src/handlers/finance/mcp_server/response.rs:1-89](src/handlers/finance/mcp_server/response.rs#L1-L86)
 - [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 章节来源
-- [src/handlers/finance/mcp_server/response.rs:1-89](src/handlers/finance/mcp_server/response.rs#L1-L89)
+- [src/handlers/finance/mcp_server/response.rs:1-89](src/handlers/finance/mcp_server/response.rs#L1-L86)
 - [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 ## 性能与可用性
@@ -311,8 +311,8 @@ MCP 服务器管理 API 提供了完整的 CRUD 与状态管理能力，支持 s
   - 响应：UpdateMcpServerStatusResponse
 
 章节来源
-- [common/src/api/mcp_server.rs:34-179](common/src/api/mcp_server.rs#L34-L179)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [common/src/api/mcp_server.rs:34-179](common/src/api/mcp_server.rs#L34-L174)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 
 ### 配置项说明
 - 传输类型

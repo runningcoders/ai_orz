@@ -70,7 +70,7 @@ L1 --> M1
 图表来源
 - [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
 - [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L70)
 - [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
 - [src/service/dal/organization/mod.rs:1-126](src/service/dal/organization/mod.rs#L1-L126)
@@ -208,11 +208,11 @@ H-->>C : "CreateUserResponse"
 ```
 
 图表来源
-- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L70)
 - [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
 
 章节来源
-- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L70)
 
 ### 登录接口
 - 路径与方法：POST /organization/auth/login
@@ -302,7 +302,7 @@ L --> M["Models(Po)"]
 
 章节来源
 - [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L70)
 - [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
 
 ## 结论
@@ -340,7 +340,7 @@ L --> M["Models(Po)"]
   - 注意：必须在已认证的组织上下文中调用
 
 章节来源
-- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L70)
 
 ### 登录
 - 请求：POST /organization/auth/login

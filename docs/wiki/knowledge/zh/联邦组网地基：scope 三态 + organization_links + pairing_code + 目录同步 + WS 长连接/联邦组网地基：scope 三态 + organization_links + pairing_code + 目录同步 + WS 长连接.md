@@ -96,7 +96,7 @@ source_files:
 - [organization.rs:L1-L183](common/src/enums/organization.rs#L1-L183)
 - [org.rs:L1-L1294](src/service/domain/organization/org.rs#L1-L1294)
 - [mod.rs:L1-L177](src/service/dal/organization/mod.rs#L1-L177)
-- [link.rs:L1-L198](src/service/dal/organization/link.rs#L1-L198)
+- [link.rs:L1-L198](src/service/dal/organization/link.rs#L1-L196)
 - [pairing.rs:L1-L75](src/service/dal/organization/pairing.rs#L1-L75)
 
 ---

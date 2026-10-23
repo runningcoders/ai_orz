@@ -45,7 +45,7 @@ F --> H["vector_metadata 元数据表"]
 - [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 章节来源
-- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
+- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L211)
 - [src/pkg/storage/vector.rs:1-291](src/pkg/storage/vector.rs#L1-L291)
 - [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 

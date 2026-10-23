@@ -87,7 +87,7 @@ MTP --> TCDao --> RT --> MCP
 - [src/pkg/tool_registry/mcp.rs:28-48](src/pkg/tool_registry/mcp.rs#L28-L48)
 - [src/pkg/tool_registry/mcp.rs:50-198](src/pkg/tool_registry/mcp.rs#L50-L198)
 - [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
-- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L179)
+- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L174)
 
 ## 架构总览
 MCP 工具集成分为两条主线：
@@ -262,8 +262,8 @@ Dal->>CallDao : execute(ctx, tool, args)
 
 章节来源
 - [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
-- [common/src/enums/mcp_server.rs:7-49](common/src/enums/mcp_server.rs#L7-L49)
-- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L179)
+- [common/src/enums/mcp_server.rs:7-49](common/src/enums/mcp_server.rs#L7-L48)
+- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L174)
 
 ## 依赖关系分析
 - 模块耦合

@@ -87,14 +87,14 @@ HDelete --> DStore
 ```
 
 图表来源
-- [src/handlers/system/seed/list.rs:1-20](src/handlers/system/seed/list.rs#L1-L20)
-- [src/handlers/system/seed/get_file.rs:1-18](src/handlers/system/seed/get_file.rs#L1-L18)
-- [src/handlers/system/seed/save.rs:1-171](src/handlers/system/seed/save.rs#L1-L171)
-- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L162)
-- [src/handlers/system/seed/diff.rs:1-31](src/handlers/system/seed/diff.rs#L1-L31)
-- [src/handlers/system/seed/apply_default.rs:1-160](src/handlers/system/seed/apply_default.rs#L1-L160)
-- [src/handlers/system/seed/get_default.rs:1-17](src/handlers/system/seed/get_default.rs#L1-L17)
-- [src/handlers/system/seed/delete_file.rs:1-20](src/handlers/system/seed/delete_file.rs#L1-L20)
+- [src/handlers/system/seed/list.rs:1-20](src/handlers/system/seed/list.rs#L1-L19)
+- [src/handlers/system/seed/get_file.rs:1-18](src/handlers/system/seed/get_file.rs#L1-L17)
+- [src/handlers/system/seed/save.rs:1-171](src/handlers/system/seed/save.rs#L1-L170)
+- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L161)
+- [src/handlers/system/seed/diff.rs:1-31](src/handlers/system/seed/diff.rs#L1-L30)
+- [src/handlers/system/seed/apply_default.rs:1-160](src/handlers/system/seed/apply_default.rs#L1-L159)
+- [src/handlers/system/seed/get_default.rs:1-17](src/handlers/system/seed/get_default.rs#L1-L16)
+- [src/handlers/system/seed/delete_file.rs:1-20](src/handlers/system/seed/delete_file.rs#L1-L19)
 
 章节来源
 - [src/handlers/system/seed/mod.rs:1-675](src/handlers/system/seed/mod.rs#L1-L675)
@@ -153,7 +153,7 @@ T-->>C : 完成结果(LoadSeedResponse)
 ```
 
 图表来源
-- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L162)
+- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L161)
 - [src/handlers/system/seed/mod.rs:420-671](src/handlers/system/seed/mod.rs#L420-L671)
 
 ## 详细组件分析
@@ -166,7 +166,7 @@ T-->>C : 完成结果(LoadSeedResponse)
 - 响应体：data[] + total
 
 章节来源
-- [src/handlers/system/seed/list.rs:1-20](src/handlers/system/seed/list.rs#L1-L20)
+- [src/handlers/system/seed/list.rs:1-20](src/handlers/system/seed/list.rs#L1-L19)
 - [common/src/api/seed.rs:7-31](common/src/api/seed.rs#L7-L31)
 
 ### 读取种子文件
@@ -177,7 +177,7 @@ T-->>C : 完成结果(LoadSeedResponse)
 - 响应体：name、content（字符串）、size
 
 章节来源
-- [src/handlers/system/seed/get_file.rs:1-18](src/handlers/system/seed/get_file.rs#L1-L18)
+- [src/handlers/system/seed/get_file.rs:1-18](src/handlers/system/seed/get_file.rs#L1-L17)
 - [common/src/api/seed.rs:33-50](common/src/api/seed.rs#L33-L50)
 
 ### 保存种子文件（导出）
@@ -214,11 +214,11 @@ T-->>C : 完成结果(SaveSeedResponse)
 ```
 
 图表来源
-- [src/handlers/system/seed/save.rs:1-171](src/handlers/system/seed/save.rs#L1-L171)
+- [src/handlers/system/seed/save.rs:1-171](src/handlers/system/seed/save.rs#L1-L170)
 - [src/handlers/system/seed/mod.rs:277-409](src/handlers/system/seed/mod.rs#L277-L409)
 
 章节来源
-- [src/handlers/system/seed/save.rs:1-171](src/handlers/system/seed/save.rs#L1-L171)
+- [src/handlers/system/seed/save.rs:1-171](src/handlers/system/seed/save.rs#L1-L170)
 - [common/src/api/seed.rs:52-68](common/src/api/seed.rs#L52-L68)
 
 ### 加载种子文件（导入）
@@ -247,12 +247,12 @@ Apply --> End
 ```
 
 图表来源
-- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L162)
+- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L161)
 - [src/handlers/system/seed/mod.rs:420-671](src/handlers/system/seed/mod.rs#L420-L671)
 - [common/src/api/seed.rs:70-114](common/src/api/seed.rs#L70-L114)
 
 章节来源
-- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L162)
+- [src/handlers/system/seed/load.rs:1-162](src/handlers/system/seed/load.rs#L1-L161)
 - [common/src/api/seed.rs:70-114](common/src/api/seed.rs#L70-L114)
 
 ### 差异对比（文件 vs DB）
@@ -263,7 +263,7 @@ Apply --> End
 - 响应体：SeedDiff（包含 meta、users/model_providers/agents/skills 的条目差异）
 
 章节来源
-- [src/handlers/system/seed/diff.rs:1-31](src/handlers/system/seed/diff.rs#L1-L31)
+- [src/handlers/system/seed/diff.rs:1-31](src/handlers/system/seed/diff.rs#L1-L30)
 - [common/src/api/seed.rs:131-148](common/src/api/seed.rs#L131-L148)
 
 ### 应用默认模板
@@ -275,7 +275,7 @@ Apply --> End
 - 流程：加载内置默认模板 → 调用 apply_snapshot_to_db_with_progress
 
 章节来源
-- [src/handlers/system/seed/apply_default.rs:1-160](src/handlers/system/seed/apply_default.rs#L1-L160)
+- [src/handlers/system/seed/apply_default.rs:1-160](src/handlers/system/seed/apply_default.rs#L1-L159)
 - [common/src/api/seed.rs:150-158](common/src/api/seed.rs#L150-L158)
 
 ### 获取默认模板
@@ -286,7 +286,7 @@ Apply --> End
 - 响应体：SeedSnapshot
 
 章节来源
-- [src/handlers/system/seed/get_default.rs:1-17](src/handlers/system/seed/get_default.rs#L1-L17)
+- [src/handlers/system/seed/get_default.rs:1-17](src/handlers/system/seed/get_default.rs#L1-L16)
 - [common/src/api/seed.rs:160-163](common/src/api/seed.rs#L160-L163)
 
 ### 删除种子文件
@@ -297,7 +297,7 @@ Apply --> End
 - 响应体：success
 
 章节来源
-- [src/handlers/system/seed/delete_file.rs:1-20](src/handlers/system/seed/delete_file.rs#L1-L20)
+- [src/handlers/system/seed/delete_file.rs:1-20](src/handlers/system/seed/delete_file.rs#L1-L19)
 - [common/src/api/seed.rs:116-129](common/src/api/seed.rs#L116-L129)
 
 ## 依赖关系分析
@@ -452,15 +452,15 @@ D --> DI["diff"]
 
 - 系统初始化
   - 步骤：获取默认模板 → 应用默认模板（strategy=PreserveIds/RegenerateIds）→ 校验结果
-  - 参考：[get_default:1-17](src/handlers/system/seed/get_default.rs#L1-L17)、[apply_default:1-160](src/handlers/system/seed/apply_default.rs#L1-L160)
+  - 参考：[get_default:1-17](src/handlers/system/seed/get_default.rs#L1-L16)、[apply_default:1-160](src/handlers/system/seed/apply_default.rs#L1-L159)
 
 - 配置管理
   - 步骤：导出当前配置 → 保存种子文件 → 对比差异 → 按需导入
-  - 参考：[save:1-171](src/handlers/system/seed/save.rs#L1-L171)、[diff:1-31](src/handlers/system/seed/diff.rs#L1-L31)、[load:1-162](src/handlers/system/seed/load.rs#L1-L162)
+  - 参考：[save:1-171](src/handlers/system/seed/save.rs#L1-L170)、[diff:1-31](src/handlers/system/seed/diff.rs#L1-L30)、[load:1-162](src/handlers/system/seed/load.rs#L1-L161)
 
 - 环境部署
   - 步骤：在新环境加载目标种子文件（strategy=RegenerateIds）→ 校验导入结果
-  - 参考：[load:1-162](src/handlers/system/seed/load.rs#L1-L162)
+  - 参考：[load:1-162](src/handlers/system/seed/load.rs#L1-L161)
 
 ### 回滚机制建议
 - 使用 PreserveIds 策略进行回滚，确保 ID 一致

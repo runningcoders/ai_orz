@@ -44,13 +44,13 @@ D --> F["消息投递与通知"]
 ```
 
 图表来源
-- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L6)
+- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L5)
 - [common/src/api/project.rs:1-255](common/src/api/project.rs#L1-L255)
 - [common/src/api/task.rs:1-299](common/src/api/task.rs#L1-L299)
-- [common/src/api/artifact.rs:1-269](common/src/api/artifact.rs#L1-L269)
+- [common/src/api/artifact.rs:1-269](common/src/api/artifact.rs#L1-L268)
 
 章节来源
-- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L6)
+- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L5)
 
 ## 核心组件
 - 项目处理器：创建、获取、列表、搜索、更新、状态流转。
@@ -60,7 +60,7 @@ D --> F["消息投递与通知"]
 章节来源
 - [common/src/api/project.rs:10-255](common/src/api/project.rs#L10-L255)
 - [common/src/api/task.rs:10-299](common/src/api/task.rs#L10-L299)
-- [common/src/api/artifact.rs:9-269](common/src/api/artifact.rs#L9-L269)
+- [common/src/api/artifact.rs:9-269](common/src/api/artifact.rs#L9-L268)
 
 ## 架构总览
 本项目采用严格的分层架构：
@@ -138,8 +138,8 @@ H-->>C : "GetProjectResponse"
 - [common/src/api/project.rs:192-205](common/src/api/project.rs#L192-L205)
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
-- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L43)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
+- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L42)
 - [common/src/api/project.rs:10-255](common/src/api/project.rs#L10-L255)
 
 ### 任务处理器
@@ -210,9 +210,9 @@ H-->>C : "GetTaskResponse"
 - [common/src/api/task.rs:234-245](common/src/api/task.rs#L234-L245)
 
 章节来源
-- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L86)
-- [src/handlers/project/task/update_task_status.rs:1-41](src/handlers/project/task/update_task_status.rs#L1-L41)
-- [src/handlers/project/task/update_task_progress.rs:1-30](src/handlers/project/task/update_task_progress.rs#L1-L30)
+- [src/handlers/project/task/create_task.rs:1-86](src/handlers/project/task/create_task.rs#L1-L85)
+- [src/handlers/project/task/update_task_status.rs:1-41](src/handlers/project/task/update_task_status.rs#L1-L40)
+- [src/handlers/project/task/update_task_progress.rs:1-30](src/handlers/project/task/update_task_progress.rs#L1-L29)
 - [common/src/api/task.rs:10-299](common/src/api/task.rs#L10-L299)
 
 ### 工件处理器
@@ -283,10 +283,10 @@ H-->>C : "ArtifactDetail"
 - [common/src/api/artifact.rs:195-216](common/src/api/artifact.rs#L195-L216)
 
 章节来源
-- [src/handlers/project/artifact/create_artifact.rs:1-146](src/handlers/project/artifact/create_artifact.rs#L1-L146)
+- [src/handlers/project/artifact/create_artifact.rs:1-146](src/handlers/project/artifact/create_artifact.rs#L1-L145)
 - [src/handlers/project/artifact/get_artifact_content.rs:1-68](src/handlers/project/artifact/get_artifact_content.rs#L1-L68)
-- [src/handlers/project/artifact/update_artifact.rs:1-54](src/handlers/project/artifact/update_artifact.rs#L1-L54)
-- [common/src/api/artifact.rs:9-269](common/src/api/artifact.rs#L9-L269)
+- [src/handlers/project/artifact/update_artifact.rs:1-54](src/handlers/project/artifact/update_artifact.rs#L1-L53)
+- [common/src/api/artifact.rs:9-269](common/src/api/artifact.rs#L9-L268)
 
 ## 依赖关系分析
 - Handler 对 Domain 的依赖是单向的，且不直接访问 DAL/DAO。
@@ -312,7 +312,7 @@ D1 --> DAL["DAL/DAO"]
 - [src/handlers/project/artifact/update_artifact.rs:21-53](src/handlers/project/artifact/update_artifact.rs#L21-L53)
 
 章节来源
-- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L6)
+- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L5)
 
 ## 性能考量
 - 分页与过滤：列表与查询接口均支持分页参数，避免全量拉取；建议前端合理设置 limit/offset。
@@ -385,7 +385,7 @@ Project 模块通过清晰的 Handler-Domain-DAL/DAO 分层，实现了项目、
 章节来源
 - [common/src/api/project.rs:10-255](common/src/api/project.rs#L10-L255)
 - [common/src/api/task.rs:10-299](common/src/api/task.rs#L10-L299)
-- [common/src/api/artifact.rs:9-269](common/src/api/artifact.rs#L9-L269)
+- [common/src/api/artifact.rs:9-269](common/src/api/artifact.rs#L9-L268)
 - [src/handlers/project/projects/create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
 - [src/handlers/project/projects/update_project_status.rs:21-42](src/handlers/project/projects/update_project_status.rs#L21-L42)
 - [src/handlers/project/task/create_task.rs:21-85](src/handlers/project/task/create_task.rs#L21-L85)

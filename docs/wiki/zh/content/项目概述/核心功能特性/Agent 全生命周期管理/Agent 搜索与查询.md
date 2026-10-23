@@ -47,16 +47,16 @@ DAO_VEC --> VStore["向量存储(LanceDB/HNSW/InMemory/SqliteVss)"]
 ```
 
 图表来源
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L68)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/mod.rs:12-46](src/service/dao/agent/mod.rs#L12-L46)
 - [src/service/dao/agent/sqlite.rs:141-200](src/service/dao/agent/sqlite.rs#L141-L200)
 
 章节来源
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L68)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/mod.rs:12-46](src/service/dao/agent/mod.rs#L12-L46)
 - [src/service/dao/agent/sqlite.rs:141-200](src/service/dao/agent/sqlite.rs#L141-L200)
 
@@ -102,7 +102,7 @@ H-->>C : 分页结果
 
 图表来源
 - [src/handlers/hr/agent/query_agents.rs:24-44](src/handlers/hr/agent/query_agents.rs#L24-L44)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L455)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:109-139](src/service/dao/agent/sqlite.rs#L109-L139)
 
 ## 详细组件分析
@@ -147,11 +147,11 @@ Page --> End
 ```
 
 图表来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:141-200](src/service/dao/agent/sqlite.rs#L141-L200)
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:141-200](src/service/dao/agent/sqlite.rs#L141-L200)
 
 ### 运行时状态过滤与分页
@@ -159,8 +159,8 @@ Page --> End
 - 当存在 runtime_state 过滤时，先查全量（去除分页），过滤后再应用分页。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L242)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L455)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ### 评分与排序规则
 - 匹配类型优先级：Hybrid（同时命中向量与关键词）> Vector（仅向量）> Keyword/None（仅关键词或未命中）。
@@ -170,7 +170,7 @@ Page --> End
 - 总结果上限：搜索场景限制为 20 条，避免无限分页。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ### 推荐算法与智能推荐
 - 当前代码中未实现显式的“推荐”接口；但混合搜索的匹配类型与评分可作为推荐的基础信号。
@@ -178,7 +178,7 @@ Page --> End
 - 建议扩展点：在 DAL 层聚合 stats（唤醒次数、工具调用、模型调用）后，对搜索结果进行二次打分与排序。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L831)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/mod.rs:128-204](src/service/dao/agent/mod.rs#L128-L204)
 
 ### 索引与向量化
@@ -187,9 +187,9 @@ Page --> End
 - 重建向量：支持清空集合并按当前 Embedding Provider 重建，元数据记录 provider_id 以判断是否需要重建。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L336)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L738)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L879)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:141-200](src/service/dao/agent/sqlite.rs#L141-L200)
 
 ## 依赖关系分析
@@ -225,9 +225,9 @@ DAL --> DAO_MP["ModelProvider DAO"]
 - 统计查询失败降级，不阻塞主流程。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L542)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L879)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ## 故障排查指南
 - 向量搜索失败：检查 Embedding Provider 配置与向量存储后端可用性；日志会 warn 降级。
@@ -236,8 +236,8 @@ DAL --> DAO_MP["ModelProvider DAO"]
 - 统计查询失败：stats 查询失败不影响 Agent 加载，查看日志定位 DuckDB/统计表问题。
 
 章节来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L542)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L831)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dao/agent/sqlite.rs:141-153](src/service/dao/agent/sqlite.rs#L141-L153)
 
 ## 结论
@@ -266,5 +266,5 @@ DAL --> DAO_MP["ModelProvider DAO"]
 章节来源
 - [src/handlers/hr/agent/list_agents.rs:21-36](src/handlers/hr/agent/list_agents.rs#L21-L36)
 - [src/handlers/hr/agent/query_agents.rs:24-44](src/handlers/hr/agent/query_agents.rs#L24-L44)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L455)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)

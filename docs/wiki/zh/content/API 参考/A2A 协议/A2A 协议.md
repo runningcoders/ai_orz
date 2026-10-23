@@ -88,14 +88,14 @@ R -.-> Cfg
 
 **图表来源**
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
 - [common/src/config.rs:21-59](common/src/config.rs#L21-L59)
 
 **章节来源**
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
 - [common/src/config.rs:21-59](common/src/config.rs#L21-L59)
 
 ## 核心组件
@@ -110,15 +110,15 @@ R -.-> Cfg
 - 映射器：A2A 实体与内部实体的双向转换。
 
 **章节来源**
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
-- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
-- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
+- [src/handlers/a2a/get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L48)
+- [src/handlers/a2a/cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L54)
 - [src/handlers/a2a/send_subscribe.rs:1-212](src/handlers/a2a/send_subscribe.rs#L1-L212)
 - [src/handlers/a2a/callback.rs:1-198](src/handlers/a2a/callback.rs#L1-L198)
-- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
+- [src/handlers/a2a/mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L97)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
 
 ## 架构总览
 A2A 协议通过 HTTP 暴露，分为公开端点（Agent Card、回调）与受保护端点（JSON-RPC、SSE）。所有业务逻辑调用 Domain 层完成，A2A 概念不出现在 Domain 层。
@@ -170,7 +170,7 @@ end
 - capabilities.streaming 当前为 false；push_notifications 为 true。
 
 **章节来源**
-- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L37)
+- [src/handlers/a2a/agent_card.rs:1-37](src/handlers/a2a/agent_card.rs#L1-L36)
 - [common/src/api/a2a.rs:12-62](common/src/api/a2a.rs#L12-L62)
 - [src/router.rs:21-26](src/router.rs#L21-L26)
 
@@ -249,7 +249,7 @@ end
 - 提取文本：从 A2aMessage.parts 中提取 Text 内容。
 
 **章节来源**
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 ### 安全验证、身份认证与访问控制
 - Agent Card：公开路由，无需认证。
@@ -287,13 +287,13 @@ R --> CFG["config.rs"]
 **图表来源**
 - [src/router.rs:21-56](src/router.rs#L21-L56)
 - [src/handlers/a2a/jsonrpc.rs:22-93](src/handlers/a2a/jsonrpc.rs#L22-L93)
-- [src/handlers/a2a/mapper.rs:57-99](src/handlers/a2a/mapper.rs#L57-L99)
+- [src/handlers/a2a/mapper.rs:57-99](src/handlers/a2a/mapper.rs#L57-L97)
 - [common/src/config.rs:21-59](common/src/config.rs#L21-L59)
 
 **章节来源**
 - [src/router.rs:21-56](src/router.rs#L21-L56)
 - [src/handlers/a2a/jsonrpc.rs:22-93](src/handlers/a2a/jsonrpc.rs#L22-L93)
-- [src/handlers/a2a/mapper.rs:57-99](src/handlers/a2a/mapper.rs#L57-L99)
+- [src/handlers/a2a/mapper.rs:57-99](src/handlers/a2a/mapper.rs#L57-L97)
 - [common/src/config.rs:21-59](common/src/config.rs#L21-L59)
 
 ## 性能与可靠性

@@ -99,7 +99,7 @@ HS-->>FE : JSON响应
 
 **图表来源**
 - [src/router.rs:292-413](src/router.rs#L292-L413)
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
 - [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
 - [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
 
@@ -145,12 +145,12 @@ API-->>A : 渲染表格
 **图表来源**
 - [frontend/src/pages/hr/agents.rs:84-139](frontend/src/pages/hr/agents.rs#L84-L139)
 - [src/router.rs:292-324](src/router.rs#L292-L324)
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
 
 **章节来源**
 - [frontend/src/pages/hr/agents.rs:1-649](frontend/src/pages/hr/agents.rs#L1-L649)
 - [frontend/src/pages/hr/agent_detail.rs:1-800](frontend/src/pages/hr/agent_detail.rs#L1-L800)
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
 - [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
 
 ### 技能管理系统（浏览、安装卸载、版本控制）

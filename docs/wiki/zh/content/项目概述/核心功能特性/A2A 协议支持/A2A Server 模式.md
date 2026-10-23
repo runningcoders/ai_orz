@@ -74,15 +74,15 @@ Cancel --> Project
 
 图表来源
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/agent_card.rs:9-36](src/handlers/a2a/agent_card.rs#L9-L36)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
-- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L55)
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L48)
+- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L54)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 - [src/router.rs:12-59](src/router.rs#L12-L59)
 
 ## 核心组件
@@ -98,13 +98,13 @@ Cancel --> Project
 - 映射层：mapper.rs 负责 A2A ↔ ai_orz 实体转换，domain 层不感知 A2A。
 
 章节来源
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
-- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L55)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L48)
+- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L54)
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 ## 架构总览
 A2A Server 严格遵循四层单向调用：Adapter（HTTP Handler / 公开回调 Handler / AOP Producer）→ Domain → DAL → DAO。Handler 层完成 A2A 协议实体与内部实体的转换，Domain 层零侵入。
@@ -134,9 +134,9 @@ J-->>C : 映射为 A2aTask
 
 图表来源
 - [src/router.rs:21-38](src/router.rs#L21-L38)
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L48)
 
 ## 详细组件分析
 
@@ -175,10 +175,10 @@ DoCancel --> Resp
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 
 ### 任务生命周期：tasks/send
 - 流程要点：
@@ -218,7 +218,7 @@ H-->>Client : 返回 working 的 A2aTask
 - 使用 mapper.build_a2a_task 转换为 A2aTask 返回
 
 章节来源
-- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L48)
 - [src/handlers/a2a/mapper.rs:57-84](src/handlers/a2a/mapper.rs#L57-L84)
 
 ### 任务取消：tasks/cancel
@@ -228,7 +228,7 @@ H-->>Client : 返回 working 的 A2aTask
 - 返回 canceled 状态的 A2aTask
 
 章节来源
-- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L55)
+- [src/handlers/a2a/cancel_task.rs:17-55](src/handlers/a2a/cancel_task.rs#L17-L54)
 
 ### SSE 流式推送：tasks/sendSubscribe
 - 端点：POST /a2a/subscribe（JWT 保护）
@@ -263,7 +263,7 @@ H-->>Client : 返回 working 的 A2aTask
 - extract_text_from_a2a_message：拼接所有 Text part，忽略 File/Data
 
 章节来源
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 ## 依赖关系分析
 - 路由层：router.rs 统一注册 A2A 相关路由，区分公开与受保护中间件顺序（jwt_auth → request_context）
@@ -285,7 +285,7 @@ H2 -.-> Cfg
 
 图表来源
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/agent_card.rs:9-36](src/handlers/a2a/agent_card.rs#L9-L36)
 - [src/handlers/a2a/send_subscribe.rs:1-101](src/handlers/a2a/send_subscribe.rs#L1-L101)
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
@@ -315,7 +315,7 @@ H2 -.-> Cfg
 - 回调失败：检查 task_id 与本地任务标签一致性；确认回调路径正确且未被防火墙拦截
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
 
 ## 结论

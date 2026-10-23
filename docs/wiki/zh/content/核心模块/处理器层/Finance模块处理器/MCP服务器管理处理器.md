@@ -62,7 +62,7 @@ L2 --> MCP["MCP客户端<br/>pkg/tool_registry/mcp.rs"]
 - [src/pkg/tool_registry/mcp.rs:107-140](src/pkg/tool_registry/mcp.rs#L107-L140)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 - [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
@@ -88,7 +88,7 @@ L2 --> MCP["MCP客户端<br/>pkg/tool_registry/mcp.rs"]
 - [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 - [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
-- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L49)
+- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L48)
 - [src/pkg/tool_registry/mcp.rs:107-140](src/pkg/tool_registry/mcp.rs#L107-L140)
 
 ## 架构总览
@@ -257,7 +257,7 @@ M --> E["远端MCP服务器"]
 - [src/pkg/tool_registry/mcp.rs:107-140](src/pkg/tool_registry/mcp.rs#L107-L140)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 
 ## 性能与可靠性

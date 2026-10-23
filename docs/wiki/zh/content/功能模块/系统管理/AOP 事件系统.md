@@ -106,7 +106,7 @@ Q --> IMQ
 - 指标 Hook AopMetricsHook：零侵入采集 publish/consume_start/success/failure 等生命周期指标。
 
 章节来源
-- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L17)
 - [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)
 - [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
 - [src/pkg/aop/core/registry.rs:11-19](src/pkg/aop/core/registry.rs#L11-L19)
@@ -169,7 +169,7 @@ end
 - 事件模块组织：src/models/events 下按领域划分事件类型，统一导出。
 
 章节来源
-- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L17)
 - [src/models/events/message.rs:1-53](src/models/events/message.rs#L1-L53)
 - [src/models/events/agent_loop.rs:1-79](src/models/events/agent_loop.rs#L1-L79)
 - [src/models/events/mod.rs:1-21](src/models/events/mod.rs#L1-L21)
@@ -347,7 +347,7 @@ Event <.. AgentLoopEvent
 - [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
 - [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
 - [src/pkg/aop/queue/in_memory.rs:41-49](src/pkg/aop/queue/in_memory.rs#L41-L49)
-- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L17)
 - [src/models/events/message.rs:1-53](src/models/events/message.rs#L1-L53)
 - [src/models/events/agent_loop.rs:1-79](src/models/events/agent_loop.rs#L1-L79)
 
@@ -357,7 +357,7 @@ Event <.. AgentLoopEvent
 - [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
 - [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
 - [src/pkg/aop/queue/in_memory.rs:41-49](src/pkg/aop/queue/in_memory.rs#L41-L49)
-- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L17)
 
 ## 性能与扩展性
 - 并发模型：

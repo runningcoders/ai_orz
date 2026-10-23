@@ -92,9 +92,9 @@ D2 --> DAL
 - [common/src/api/agent.rs:1-394](common/src/api/agent.rs#L1-L394)
 - [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
 - [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L68)
+- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L67)
 - [src/handlers/hr/agent/update_agent.rs:1-87](src/handlers/hr/agent/update_agent.rs#L1-L87)
 - [src/handlers/hr/agent/delete_agent.rs:1-35](src/handlers/hr/agent/delete_agent.rs#L1-L35)
 - [src/handlers/hr/agent/create_external_agent.rs:1-124](src/handlers/hr/agent/create_external_agent.rs#L1-L124)
@@ -190,7 +190,7 @@ H-->>C : "GetAgentResponse"
   - 列表项包含运行时状态（来自 runtime_info）
 
 章节来源
-- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L61)
 - [common/src/api/agent.rs:254-268](common/src/api/agent.rs#L254-L268)
 
 ### 通用查询 Agent（query_agents）
@@ -202,7 +202,7 @@ H-->>C : "GetAgentResponse"
   - 将查询条件映射为 AgentQuery
 
 章节来源
-- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L68)
 - [common/src/api/agent.rs:270-293](common/src/api/agent.rs#L270-L293)
 
 ### 搜索 Agent（search_agents）
@@ -214,7 +214,7 @@ H-->>C : "GetAgentResponse"
   - 适合“语义相关性”场景
 
 章节来源
-- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
+- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L67)
 - [common/src/api/agent.rs:295-316](common/src/api/agent.rs#L295-L316)
 
 ### 更新 Agent（update_agent）
@@ -322,7 +322,7 @@ C --> D["DAL/DAO"]
 图表来源
 - [common/src/api/agent.rs:1-394](common/src/api/agent.rs#L1-L394)
 - [common/src/enums/agent.rs:1-152](common/src/enums/agent.rs#L1-L152)
-- [common/src/enums/agent_kind.rs:1-152](common/src/enums/agent_kind.rs#L1-L152)
+- [common/src/enums/agent_kind.rs:1-152](common/src/enums/agent_kind.rs#L1-L151)
 - [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
 
 章节来源

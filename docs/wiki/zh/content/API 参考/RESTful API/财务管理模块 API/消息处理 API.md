@@ -65,7 +65,7 @@ DALP --> DAO2["SsePushDao<br/>service/dao/message_push.rs"]
 - [send_message_to_agent.rs:1-98](src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
 - [list_messages.rs:1-122](src/handlers/finance/message/list_messages.rs#L1-L122)
 - [search_messages.rs:1-79](src/handlers/finance/message/search_messages.rs#L1-L79)
-- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L92)
 - [mod.rs:32-66](src/service/domain/message/mod.rs#L32-L66)
 - [message.rs:20-122](src/service/dal/message.rs#L20-L122)
 - [message_push.rs:1-58](src/service/dao/message_push.rs#L1-L58)
@@ -123,7 +123,7 @@ CH-->>C : data : JSON
 - [send_message.rs:1-41](src/handlers/finance/message/send_message.rs#L1-L41)
 - [send_message_to_agent.rs:1-98](src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
 - [search_messages.rs:1-79](src/handlers/finance/message/search_messages.rs#L1-L79)
-- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L92)
 - [message.rs:131-193](src/service/dal/message.rs#L131-L193)
 - [message.rs:393-564](src/service/dal/message.rs#L393-L564)
 - [message_push.rs:1-58](src/service/dao/message_push.rs#L1-L58)
@@ -278,11 +278,11 @@ Note over H,S : 客户端断开 → stream drop → unsubscribe
 ```
 
 图表来源
-- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L92)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 章节来源
-- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L92)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 消息模型与事件
@@ -423,7 +423,7 @@ DP --> DAO_S["SsePushDao"]
 
 章节来源
 - [common/src/api/message.rs:7-172](common/src/api/message.rs#L7-L172)
-- [subscribe_sse.rs:52-93](src/handlers/finance/message/subscribe_sse.rs#L52-L93)
+- [subscribe_sse.rs:52-93](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
 
 ### 消息格式与模板
 - 文本消息：content 存储完整文本。

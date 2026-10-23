@@ -48,7 +48,7 @@ D --> G["统一响应 ApiResponse<T>"]
 - [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
 
 章节来源
-- [src/handlers/mod.rs:1-11](src/handlers/mod.rs#L1-L11)
+- [src/handlers/mod.rs:1-11](src/handlers/mod.rs#L1-L10)
 - [src/router.rs:12-136](src/router.rs#L12-L136)
 - [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
 
@@ -149,8 +149,8 @@ Resp-->>Client : JSON 响应
   - 产物路由：[artifact_routes:215-240](src/router.rs#L215-L240)
 
 章节来源
-- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L6)
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L5)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 - [src/router.rs:145-240](src/router.rs#L145-L240)
 
 ### System 模块 Handler 组织结构与职责
@@ -214,7 +214,7 @@ Resp-->>Client : JSON 响应
 
 章节来源
 - [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 - [src/router.rs:292-413](src/router.rs#L292-L413)
 
 ### 异步操作与事务管理建议

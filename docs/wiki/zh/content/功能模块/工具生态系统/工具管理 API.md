@@ -60,9 +60,9 @@ DAL --> DB["SQLite / DuckDB / LanceDB"]
 - [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
 - [src/handlers/finance/tool/list_tools.rs:1-40](src/handlers/finance/tool/list_tools.rs#L1-L40)
 - [src/handlers/finance/tool/search_tools.rs:1-53](src/handlers/finance/tool/search_tools.rs#L1-L53)
-- [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L47)
+- [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L38)
 - [src/handlers/finance/tool/update_tool.rs:1-83](src/handlers/finance/tool/update_tool.rs#L1-L83)
-- [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L35)
+- [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L34)
 
 章节来源
 - [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
@@ -104,9 +104,9 @@ H-->>C : "JSON 响应"
 - [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
 - [src/handlers/finance/tool/list_tools.rs:1-40](src/handlers/finance/tool/list_tools.rs#L1-L40)
 - [src/handlers/finance/tool/search_tools.rs:1-53](src/handlers/finance/tool/search_tools.rs#L1-L53)
-- [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L47)
+- [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L38)
 - [src/handlers/finance/tool/update_tool.rs:1-83](src/handlers/finance/tool/update_tool.rs#L1-L83)
-- [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L35)
+- [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L34)
 
 ## 详细组件分析
 
@@ -125,7 +125,7 @@ H-->>C : "JSON 响应"
   - 查询参数：with_stats、stats_time_start、stats_time_end
   - 响应：GetToolResponse（包含协议、控制模式、配置、参数 Schema、标签、启用状态、状态、创建/更新时间、可选统计）
   - 章节来源
-    - [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L47)
+    - [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L38)
     - [common/src/api/tool.rs:45-103](common/src/api/tool.rs#L45-L103)
 
 - 列出工具
@@ -160,7 +160,7 @@ H-->>C : "JSON 响应"
   - 响应：DeleteToolResponse（success）
   - 说明：软删除。
   - 章节来源
-    - [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L35)
+    - [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L34)
     - [common/src/api/tool.rs:105-118](common/src/api/tool.rs#L105-L118)
 
 ### 工具状态管理与控制模式
@@ -234,9 +234,9 @@ H --> I["SQLite/DuckDB/LanceDB"]
 - [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
 - [src/handlers/finance/tool/list_tools.rs:1-40](src/handlers/finance/tool/list_tools.rs#L1-L40)
 - [src/handlers/finance/tool/search_tools.rs:1-53](src/handlers/finance/tool/search_tools.rs#L1-L53)
-- [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L47)
+- [src/handlers/finance/tool/get_tool.rs:1-47](src/handlers/finance/tool/get_tool.rs#L1-L38)
 - [src/handlers/finance/tool/update_tool.rs:1-83](src/handlers/finance/tool/update_tool.rs#L1-L83)
-- [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L35)
+- [src/handlers/finance/tool/delete_tool.rs:1-35](src/handlers/finance/tool/delete_tool.rs#L1-L34)
 
 章节来源
 - [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
@@ -259,7 +259,7 @@ H --> I["SQLite/DuckDB/LanceDB"]
 章节来源
 - [src/handlers/finance/tool/create_tool.rs:21-35](src/handlers/finance/tool/create_tool.rs#L21-L35)
 - [src/handlers/finance/tool/update_tool.rs:22-42](src/handlers/finance/tool/update_tool.rs#L22-L42)
-- [src/handlers/finance/tool/get_tool.rs:22-43](src/handlers/finance/tool/get_tool.rs#L22-L43)
+- [src/handlers/finance/tool/get_tool.rs:22-43](src/handlers/finance/tool/get_tool.rs#L22-L38)
 - [src/handlers/finance/tool/delete_tool.rs:22-31](src/handlers/finance/tool/delete_tool.rs#L22-L31)
 
 ## 结论
@@ -283,7 +283,7 @@ H --> I["SQLite/DuckDB/LanceDB"]
 
 章节来源
 - [src/handlers/finance/tool/update_tool.rs:22-42](src/handlers/finance/tool/update_tool.rs#L22-L42)
-- [src/handlers/finance/tool/get_tool.rs:22-43](src/handlers/finance/tool/get_tool.rs#L22-L43)
+- [src/handlers/finance/tool/get_tool.rs:22-43](src/handlers/finance/tool/get_tool.rs#L22-L38)
 
 ### 限流策略
 - 建议对 search、list、debug call 等高频接口实施限流；可在路由层或中间件层实现。

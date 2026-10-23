@@ -65,7 +65,7 @@ DAL --> DB["数据库"]
 - [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 章节来源
-- [src/main.rs:1-5](src/main.rs#L1-L5)
+- [src/main.rs:1-5](src/main.rs#L1-L4)
 - [src/router.rs:12-740](src/router.rs#L12-L740)
 - [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
 
@@ -283,12 +283,12 @@ J-->>C : "JsonRpcResponse(result|error)"
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 - [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L93)
 - [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 
 #### A2A 任务提交（tasks/send）
@@ -375,11 +375,11 @@ H3 --> DomainSys["System 领域"]
 
 图表来源
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 
 章节来源
 - [src/router.rs:12-59](src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 
 ## 性能与速率限制
 - 异步处理：

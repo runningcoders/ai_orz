@@ -72,8 +72,8 @@ H2 --> DTO
 - [src/models/user.rs:1-98](src/models/user.rs#L1-L98)
 
 章节来源
-- [src/handlers/user/mod.rs:1-5](src/handlers/user/mod.rs#L1-L5)
-- [src/handlers/user/profile/mod.rs:1-8](src/handlers/user/profile/mod.rs#L1-L8)
+- [src/handlers/user/mod.rs:1-5](src/handlers/user/mod.rs#L1-L4)
+- [src/handlers/user/profile/mod.rs:1-8](src/handlers/user/profile/mod.rs#L1-L7)
 
 ## 核心组件
 - 身份认证中间件：支持 Cookie 与 Bearer 双模式，验证后将用户标识注入请求头，供后续 RequestContext 构建使用。

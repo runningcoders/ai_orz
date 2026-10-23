@@ -55,7 +55,7 @@ source_files:
 | [dao/email/mod.rs](src/service/dao/email/mod.rs) | EmailDao trait + 单例 | 六方法：push/test_connection/start_polling/stop_polling/stop_all_polling/is_polling；OnceLock EMAIL_DAO 全局单例；init() 在 service::init_all 内注入 |
 | [dal/email/mod.rs + impl.rs](src/service/dal/email/mod.rs) | Email DAL 层 | trait + impl：create/update/delete/get_status/set_default_credential + to_email_imap_credentials 解密 EmailBot detail → EmailImapCredentials；启停 IMAP 轮询（channel create 触发 start） |
 | [api/email_integration.rs](common/src/api/email_integration.rs) | Handler DTO | CreateCredentialRequest{email_address, smtp_host, smtp_port, imap_host, imap_port, username, password} / CredentialStatusResponse / SetDefaultRequest；路由 /finance/email-integration/credentials/* |
-| [identity_credentials.rs](common/src/models/identity_credentials.rs#L1400-L1611) | CredentialDetail::EmailBot | 7 字段 + normalize trim + validate 邮箱@ + port≠0 + encrypt_sensitive 仅加密 password + primary_id 返回邮箱地址 + primary_secret 返回密码 |
+| [identity_credentials.rs](common/src/models/identity_credentials.rs#L1060-L1060) | CredentialDetail::EmailBot | 7 字段 + normalize trim + validate 邮箱@ + port≠0 + encrypt_sensitive 仅加密 password + primary_id 返回邮箱地址 + primary_secret 返回密码 |
 | [models/events/email.rs](src/models/events/email.rs) | DomainEvent 枚举 | EmailInboundEvent{FromEmail, EmailContent, EmailCredentials} + EmailPushEvent |
 | [consumer/email_inbound.rs](src/consumer/email_inbound.rs) | 入站事件消费者 | 订阅 EmailInboundEvent → 消息 DAL 持久化（MessagePo）→ publish message.received 触发 Agent 唤醒 |
 | [domain/finance/message_channel.rs](src/service/domain/finance/message_channel.rs#L14-L30) | 渠道 Domain | create_message_channel 时 email_credential_id 绑定 → 调 EmailDal.start_polling 自动启动 IMAP 入站；update/delete 时同步启停 |

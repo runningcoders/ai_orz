@@ -283,7 +283,7 @@ VS --> MODELS["models/vector.rs"]
   - 针对 HnswStore 的性能评估，可设计压测脚本测量 upsert/search 耗时与重建频率，结合日志观察 dirty 标志变化与落盘周期。
 
 章节来源
-- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L463)
+- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L439)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 故障排查指南
@@ -301,7 +301,7 @@ VS --> MODELS["models/vector.rs"]
 - [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
 - [hnsw.rs:344-388](src/pkg/storage/hnsw.rs#L344-L388)
 - [hnsw.rs:403-430](src/pkg/storage/hnsw.rs#L403-L430)
-- [vector_search_architecture.md:448-463](docs/archive/design-archive/vector_search_architecture.md#L448-L463)
+- [vector_search_architecture.md:448-463](docs/archive/design-archive/vector_search_architecture.md#L439-L439)
 
 ## 结论
 HnswStore 提供了纯 Rust 的 HNSW 向量存储后端，具备懒重建、余弦距离、bincode 持久化与后台落盘能力，适合中小规模与零依赖场景。通过 VectorStore 抽象，上层可无缝切换后端。与 SQLite VSS 相比，HnswStore 更轻量、易部署；与 LanceDB 相比，后者更适合大规模生产负载。建议在业务侧合理拆分集合、控制过期策略与 top_k，并结合后台任务与兜底落盘保障数据一致性。

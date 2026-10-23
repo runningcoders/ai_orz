@@ -221,15 +221,15 @@ DAL-->>Handler : Ok(())
 ```
 
 图示来源
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L721)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L738)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 章节来源
 - [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L721)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L738)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ### RequestContext 跨层传递机制
 - 构建与注入：中间件从请求头提取 log_id、user_id、username、organization_id、user_role、caller_type，创建 RequestContext 并注入到请求扩展；响应头写回 log_id。
@@ -278,7 +278,7 @@ Svc-->>Client : 响应含 log_id
 - 向量索引降级：向量化失败仅 warn 降级，不阻塞主流程，确保可用性。
 
 章节来源
-- [docs/ARCHITECTURE.md:516-537](docs/ARCHITECTURE.md#L516-L537)
+- [docs/ARCHITECTURE.md:516-537](docs/ARCHITECTURE.md#L516-L534)
 - [src/models/task.rs:210-214](src/models/task.rs#L210-L214)
 - [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
 - [src/service/dal/task.rs:223-255](src/service/dal/task.rs#L223-L255)
@@ -313,7 +313,7 @@ DAL -.-> S["Stats"]
 
 章节来源
 - [docs/ARCHITECTURE.md:412-433](docs/ARCHITECTURE.md#L412-L433)
-- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L242)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
 
 ## 故障排查指南
@@ -337,4 +337,4 @@ AI Orz 系统通过严格的 PO 与业务实体分层，实现了清晰的职责
 
 章节来源
 - [docs/ARCHITECTURE.md:366-395](docs/ARCHITECTURE.md#L366-L395)
-- [docs/ARCHITECTURE.md:562-577](docs/ARCHITECTURE.md#L562-L577)
+- [docs/ARCHITECTURE.md:562-577](docs/ARCHITECTURE.md#L534-L534)

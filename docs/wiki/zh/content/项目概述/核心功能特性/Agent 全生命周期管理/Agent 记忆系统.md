@@ -71,7 +71,7 @@ A2 --> V1
 ```
 
 图表来源
-- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L57)
 - [search_memory.rs:1-222](src/handlers/hr/agent/search_memory.rs#L1-L222)
 - [settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
 - [memory.rs（Domain 运行时）:1-120](src/service/domain/runtime/memory.rs#L1-L120)
@@ -129,7 +129,7 @@ H-->>U : 返回 memory_id
 ```
 
 图表来源
-- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L57)
 - [memory.rs（Domain 运行时）:91-94](src/service/domain/runtime/memory.rs#L91-L94)
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）:102-117](src/service/dao/memory/mod.rs#L102-L117)
@@ -348,7 +348,7 @@ Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全�
 
 - 添加短期记忆
   - 调用 save_short_term_memory，传入 summary、tags、trace_ids、task_id 等，返回 memory_id。
-  - 参考路径：[保存短期记忆 Handler:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+  - 参考路径：[保存短期记忆 Handler:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L57)
 
 - 查询历史记忆
   - 调用 search_memory，支持 keyword、query_vector、top_k、filters（agent_id、memory_type、tags、task_id、include_shared）。
@@ -365,7 +365,7 @@ Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全�
   - 监控与降级：当向量服务不可用时，优先回退到关键词检索，保证可用性。
 
 章节来源
-- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L57)
 - [search_memory.rs:1-222](src/handlers/hr/agent/search_memory.rs#L1-L222)
 - [settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
 

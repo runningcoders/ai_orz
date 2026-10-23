@@ -74,7 +74,7 @@ source_files:
 | tools/src/bin/inline_test_lint.rs 内联测试体量门禁 | 测试组织门禁 | 扫 src/common/tools，非 `*_test(s).rs` 源文件里顶层 `#[cfg(test)] mod xxx {` 跨度 > 200 行即 fail；已拆分形态 `#[path = "x_tests.rs"] mod tests;` 不统计；`INLINE_TEST_MAX_LINES` 覆盖阈值，`// inline-test-allow: <n>` 豁免 | `:L1-L60` |
 
 **章节来源**
-- [env.rs:L1-L120](tests/common/env.rs#L1-L120)
+- [env.rs:L1-L120](tests/common/env.rs#L1-L109)
 - [testing_guidelines.md:L1-L80](docs/archive/design-archive/testing_guidelines.md#L1-L80)
 - `ci.yml`
 

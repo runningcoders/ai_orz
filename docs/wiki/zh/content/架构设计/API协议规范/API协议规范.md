@@ -84,7 +84,7 @@ Handlers --> Domain["Domain/DAL/DAO"]
 - [common/src/api/mod.rs:6-83](common/src/api/mod.rs#L6-L83)
 - [docs/design/pagination_and_count_convention.md:25-44](docs/design/pagination_and_count_convention.md#L25-L44)
 - [common/src/error/code.rs:5-146](common/src/error/code.rs#L5-L146)
-- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L24)
 - [common/src/constants/http_header.rs:1-20](common/src/constants/http_header.rs#L1-L20)
 - [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
 
@@ -144,7 +144,7 @@ H-->>C : "ApiResponse<PagedResult<T>>"
 
 **章节来源**
 - [common/src/error/code.rs:5-146](common/src/error/code.rs#L5-L146)
-- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L24)
 - [docs/design/api_protocol_convention.md:14-30](docs/design/api_protocol_convention.md#L14-L30)
 
 ### 认证与权限

@@ -88,9 +88,9 @@ D1 --> E1
 
 图表来源
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L41)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L49)
 - [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
 - [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
 - [src/models/model_provider.rs:1-248](src/models/model_provider.rs#L1-L248)
@@ -147,7 +147,7 @@ H-->>C : SwitchEmbeddingProviderResponse
 
 图表来源
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
 - [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
 - [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
 - [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
@@ -176,12 +176,12 @@ Handler-->>Client : TestConnectionResponse/CallModelResponse
 
 图表来源
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L41)
 - [src/service/domain/finance/model_provider.rs:93-101](src/service/domain/finance/model_provider.rs#L93-L101)
 
 章节来源
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L41)
 - [src/service/domain/finance/model_provider.rs:93-101](src/service/domain/finance/model_provider.rs#L93-L101)
 
 ### 切换嵌入提供商与向量重建
@@ -209,12 +209,12 @@ Progress --> End(["结束"])
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
 - [src/service/domain/finance/model_provider.rs:103-147](src/service/domain/finance/model_provider.rs#L103-L147)
 - [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-193](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L193)
 
 章节来源
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
 - [src/service/domain/finance/model_provider.rs:103-147](src/service/domain/finance/model_provider.rs#L103-L147)
 - [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
 
@@ -233,10 +233,10 @@ Handler-->>Client : RebuildProgressResponse
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L49)
 
 章节来源
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L49)
 
 ### 领域与数据访问层要点
 - 领域层：
@@ -412,9 +412,9 @@ R --> T["RebuildVectorsTask"]
 章节来源
 - [common/src/api/model_provider.rs:9-391](common/src/api/model_provider.rs#L9-L391)
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L41)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L49)
 - [common/src/api/tavily_integration.rs](common/src/api/generic_token_integration.rs)
 - [src/service/domain/finance/identity_credential.rs:1-454](src/service/domain/finance/identity_credential.rs#L1-L454)
 ---

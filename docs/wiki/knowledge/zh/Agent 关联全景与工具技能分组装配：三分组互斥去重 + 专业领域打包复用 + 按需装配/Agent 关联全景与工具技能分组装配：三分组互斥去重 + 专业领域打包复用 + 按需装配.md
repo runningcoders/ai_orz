@@ -64,7 +64,7 @@ source_files:
 
 **章节来源**
 - [agent.rs#L101-L189](common/src/api/agent.rs#L101-L189)
-- [association.rs#L1-L146](src/handlers/hr/agent/association.rs#L1-L146)
+- [association.rs#L1-L146](src/handlers/hr/agent/association.rs#L1-L76)
 - [hr/agent.rs#L654-L845](src/service/domain/hr/agent.rs#L654-L845)
 - [response.rs#L16-L50](src/handlers/finance/tool/response.rs#L16-L50)
 

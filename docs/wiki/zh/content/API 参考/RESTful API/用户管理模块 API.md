@@ -69,16 +69,16 @@ J["Frontend<br/>Profile Page"] -.-> C
 
 **图表来源**
 - [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L194)
 - [common/src/api/user.rs:1-228](common/src/api/user.rs#L1-L228)
-- [src/models/user.rs:1-146](src/models/user.rs#L1-L146)
+- [src/models/user.rs:1-146](src/models/user.rs#L1-L145)
 - [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
 - `migrations/20260810000000_users_preferences.sql:1-13`
 - [frontend/src/pages/user/profile.rs:1-148](frontend/src/pages/user/profile.rs#L1-L148)
 
 章节来源
 - [src/handlers/user/mod.rs:1-4](src/handlers/user/mod.rs#L1-L4)
-- [src/handlers/user/profile/mod.rs:1-8](src/handlers/user/profile/mod.rs#L1-L8)
+- [src/handlers/user/profile/mod.rs:1-8](src/handlers/user/profile/mod.rs#L1-L7)
 
 ## 核心组件
 - 请求/响应 DTO
@@ -212,7 +212,7 @@ Handler-->>Client : "UpdateCurrentUserResponse"
 - [src/service/domain/organization/user.rs:48-51](src/service/domain/organization/user.rs#L48-L51)
 
 章节来源
-- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L194)
 - [common/src/api/user.rs:42-60](common/src/api/user.rs#L42-L60)
 
 ### 数据模型与枚举
@@ -258,7 +258,7 @@ UserPo --> UserStatus : "使用"
 - [common/src/enums/user.rs:114-147](common/src/enums/user.rs#L114-L147)
 
 章节来源
-- [src/models/user.rs:1-146](src/models/user.rs#L1-L146)
+- [src/models/user.rs:1-146](src/models/user.rs#L1-L145)
 - [common/src/enums/user.rs:1-212](common/src/enums/user.rs#L1-L212)
 
 ### 数据库迁移与存储
@@ -307,15 +307,15 @@ M --> P["Preferences Field"]
 
 **图表来源**
 - [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L194)
 - [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
 - [common/src/api/user.rs:1-228](common/src/api/user.rs#L1-L228)
-- [src/models/user.rs:1-146](src/models/user.rs#L1-L146)
+- [src/models/user.rs:1-146](src/models/user.rs#L1-L145)
 - [common/src/enums/user.rs:1-212](common/src/enums/user.rs#L1-L212)
 
 章节来源
 - [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L194)
 - [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
 
 ## 性能考虑

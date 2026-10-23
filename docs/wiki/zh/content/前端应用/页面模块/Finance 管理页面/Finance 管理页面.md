@@ -121,10 +121,10 @@ API-->>UI : 渲染/提示/刷新
 图表来源
 - [frontend/src/api/finance.rs:24-332](frontend/src/api/finance.rs#L24-L332)
 - [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L20)
 
 ## 详细组件分析
 
@@ -202,12 +202,12 @@ API-->>UI : 刷新列表/提示
 - [frontend/src/pages/finance/mcp_servers.rs:48-99](frontend/src/pages/finance/mcp_servers.rs#L48-L99)
 - [frontend/src/pages/finance/mcp_servers.rs:208-222](frontend/src/pages/finance/mcp_servers.rs#L208-L222)
 - [frontend/src/api/finance.rs:205-235](frontend/src/api/finance.rs#L205-L235)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 
 章节来源
 - [frontend/src/pages/finance/mcp_servers.rs:1-306](frontend/src/pages/finance/mcp_servers.rs#L1-L306)
 - [frontend/src/api/finance.rs:205-235](frontend/src/api/finance.rs#L205-L235)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 
 ### 模型提供商管理
 - 功能要点
@@ -306,12 +306,12 @@ API-->>UI : 提示/刷新
 - [frontend/src/pages/finance/attachments.rs:41-73](frontend/src/pages/finance/attachments.rs#L41-L73)
 - [frontend/src/pages/finance/attachments.rs:162-183](frontend/src/pages/finance/attachments.rs#L162-L183)
 - [frontend/src/api/finance.rs:237-282](frontend/src/api/finance.rs#L237-L282)
-- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L20)
 
 章节来源
 - [frontend/src/pages/finance/attachments.rs:1-187](frontend/src/pages/finance/attachments.rs#L1-L187)
 - [frontend/src/api/finance.rs:237-282](frontend/src/api/finance.rs#L237-L282)
-- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L20)
 
 ## 依赖关系分析
 - 前端依赖

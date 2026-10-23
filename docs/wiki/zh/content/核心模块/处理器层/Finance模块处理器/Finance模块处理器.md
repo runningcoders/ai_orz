@@ -135,12 +135,12 @@ F --> G["DAL/DAO层<br/>持久化与外部服务"]
 
 **章节来源**
 - [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/mcp_tool/mod.rs:1-20](src/handlers/finance/mcp_tool/mod.rs#L1-L20)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
+- [src/handlers/finance/mcp_tool/mod.rs:1-20](src/handlers/finance/mcp_tool/mod.rs#L1-L11)
 - [src/handlers/finance/message/mod.rs:1-17](src/handlers/finance/message/mod.rs#L1-L17)
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 - [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/handlers/finance/lark_integration/mod.rs:1-18](src/handlers/finance/lark_integration/mod.rs#L1-L18)
+- [src/handlers/finance/lark_integration/mod.rs:1-18](src/handlers/finance/lark_integration/mod.rs#L1-L17)
 - [src/handlers/finance/tavily_integration/mod.rs:1-12](src/handlers/finance/generic_token_integration/mod.rs)
 
 ## 架构总览
@@ -234,7 +234,7 @@ H-->>Client : "CreateMcpServerResponse"
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 
 **章节来源**
-- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L23)
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 - [src/router.rs:525-548](src/router.rs#L525-L548)
 
@@ -365,14 +365,14 @@ H-->>Client : "LarkBindStartResponse"
 
 **图表来源**
 - [src/handlers/finance/lark_integration/create_credential.rs:1-34](src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
-- [src/handlers/finance/lark_integration/auth_start.rs:1-28](src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
-- [src/handlers/finance/lark_integration/bind_start.rs:1-27](src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
+- [src/handlers/finance/lark_integration/auth_start.rs:1-28](src/handlers/finance/lark_integration/auth_start.rs#L1-L27)
+- [src/handlers/finance/lark_integration/bind_start.rs:1-27](src/handlers/finance/lark_integration/bind_start.rs#L1-L26)
 
 **章节来源**
-- [src/handlers/finance/lark_integration/mod.rs:1-18](src/handlers/finance/lark_integration/mod.rs#L1-L18)
+- [src/handlers/finance/lark_integration/mod.rs:1-18](src/handlers/finance/lark_integration/mod.rs#L1-L17)
 - [src/handlers/finance/lark_integration/create_credential.rs:1-34](src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
-- [src/handlers/finance/lark_integration/auth_start.rs:1-28](src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
-- [src/handlers/finance/lark_integration/bind_start.rs:1-27](src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
+- [src/handlers/finance/lark_integration/auth_start.rs:1-28](src/handlers/finance/lark_integration/auth_start.rs#L1-L27)
+- [src/handlers/finance/lark_integration/bind_start.rs:1-27](src/handlers/finance/lark_integration/bind_start.rs#L1-L26)
 - [src/handlers/finance/lark_integration/get_status.rs:1-102](src/handlers/finance/lark_integration/get_status.rs#L1-L102)
 
 ## 依赖分析

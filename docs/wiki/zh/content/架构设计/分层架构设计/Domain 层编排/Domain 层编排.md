@@ -63,7 +63,7 @@ I["domain::init_all_base_data()"] --> J["system::init_base_data()"]
 章节来源
 - [src/service/domain/mod.rs:1-42](src/service/domain/mod.rs#L1-L42)
 - [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](AGENTS.md#L150-L186)
+- [AGENTS.md:150-186](AGENTS.md#L150-L164)
 
 ## 核心组件
 - 领域单例与装配：各域通过 OnceLock 持有 Arc<dyn Trait> 的领域实例，构造时注入所需 DAL（如 AgentDal、ToolDal、SkillDal、ModelProviderDal、MessageChannelDal、McpServerDal、McpToolDal、BrainDal、AttachmentDal、ProjectDal、TaskDal、ArtifactDal、CronTriggerDal、BackupDal、LogQueryDal）。
@@ -77,7 +77,7 @@ I["domain::init_all_base_data()"] --> J["system::init_base_data()"]
 - [src/service/domain/project/mod.rs:63-89](src/service/domain/project/mod.rs#L63-L89)
 - [src/service/domain/system/mod.rs:20-32](src/service/domain/system/mod.rs#L20-L32)
 - [src/models/events/mod.rs:1-21](src/models/events/mod.rs#L1-L21)
-- [AGENTS.md:284-288](AGENTS.md#L284-L288)
+- [AGENTS.md:284-288](AGENTS.md#L164-L164)
 
 ## 架构总览
 Domain 层遵循严格单向调用：Adapter → Domain → DAL → DAO。Domain 不直接访问 DAO，仅组合多个 DAL 完成业务编排；DAL 负责 PO ↔ 业务实体转换与单一数据源操作；DAO 专注持久化与外部出站调用。
@@ -100,11 +100,11 @@ Dald --> DAO
 
 图表来源
 - [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](AGENTS.md#L150-L186)
+- [AGENTS.md:150-186](AGENTS.md#L150-L164)
 
 章节来源
 - [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](AGENTS.md#L150-L186)
+- [AGENTS.md:150-186](AGENTS.md#L150-L164)
 
 ## 详细组件分析
 
@@ -316,7 +316,7 @@ end
 
 章节来源
 - [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](AGENTS.md#L150-L186)
+- [AGENTS.md:150-186](AGENTS.md#L150-L164)
 
 ## 性能与可维护性
 - 性能特性：
@@ -332,8 +332,8 @@ end
   - 单元测试隔离：每个模块对应测试文件，使用独立临时 SQLite，互不干扰。
 
 章节来源
-- [AGENTS.md:585-755](AGENTS.md#L585-L755)
-- [AGENTS.md:562-577](AGENTS.md#L562-L577)
+- [AGENTS.md:585-755](AGENTS.md#L164-L164)
+- [AGENTS.md:562-577](AGENTS.md#L164-L164)
 - [src/service/domain/hr/agent.rs:313-397](src/service/domain/hr/agent.rs#L313-L397)
 - [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
 
@@ -352,7 +352,7 @@ end
 章节来源
 - [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
 - [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
-- [AGENTS.md:453-498](AGENTS.md#L453-L498)
+- [AGENTS.md:453-498](AGENTS.md#L164-L164)
 
 ## 结论
 Domain 层作为业务编排核心，通过组合多个 DAL 完成复杂业务流程，集中封装业务规则与状态机，并以领域事件与统计埋点支撑可观测性。HR、Finance、Project、System 四大域职责清晰、边界明确，遵循严格分层与单向依赖，具备良好的可测试性与可维护性。未来可在跨 DAL 事务、更多领域事件与状态机扩展方面持续完善。
@@ -365,6 +365,6 @@ Domain 层作为业务编排核心，通过组合多个 DAL 完成复杂业务�
 
 章节来源
 - [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](AGENTS.md#L150-L186)
-- [AGENTS.md:585-755](AGENTS.md#L585-L755)
-- [AGENTS.md:453-498](AGENTS.md#L453-L498)
+- [AGENTS.md:150-186](AGENTS.md#L150-L164)
+- [AGENTS.md:585-755](AGENTS.md#L164-L164)
+- [AGENTS.md:453-498](AGENTS.md#L164-L164)

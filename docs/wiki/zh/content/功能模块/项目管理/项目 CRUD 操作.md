@@ -61,8 +61,8 @@ L1 --> P3
 ```
 
 图表来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
-- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L41)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
+- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L40)
 - [src/service/domain/project/mod.rs:91-226](src/service/domain/project/mod.rs#L91-L226)
 - [src/service/dal/project.rs:90-209](src/service/dal/project.rs#L90-L209)
 

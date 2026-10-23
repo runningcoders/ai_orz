@@ -77,7 +77,7 @@ L --> A
 - [src/service/dal/attachment.rs:45-85](src/service/dal/attachment.rs#L45-L85)
 
 章节来源
-- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L20)
 
 ## 核心组件
 - 模型与实体

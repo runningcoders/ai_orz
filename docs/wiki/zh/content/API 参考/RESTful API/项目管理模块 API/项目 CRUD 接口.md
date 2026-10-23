@@ -67,19 +67,19 @@ L1 --> L2
 ```
 
 图表来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 - [src/handlers/project/projects/get_project.rs:1-54](src/handlers/project/projects/get_project.rs#L1-L54)
-- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L44)
-- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L44)
-- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L44)
-- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L41)
-- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L43)
+- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L43)
+- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L43)
+- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L43)
+- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L40)
+- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L42)
 - [src/service/domain/project/service.rs](src/service/domain/project/service.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dao/project/sqlite.rs](src/service/dao/project/sqlite.rs)
 
 章节来源
-- [src/handlers/project/projects/mod.rs:1-20](src/handlers/project/projects/mod.rs#L1-L20)
+- [src/handlers/project/projects/mod.rs:1-20](src/handlers/project/projects/mod.rs#L1-L19)
 
 ## 核心组件
 - HTTP Handler：负责鉴权上下文提取、参数校验、调用 Domain 并映射为 API 响应。
@@ -88,13 +88,13 @@ L1 --> L2
 - DAO：SQLite 持久化实现，包含 FTS5 全文索引与向量检索集成。
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 - [src/handlers/project/projects/get_project.rs:1-54](src/handlers/project/projects/get_project.rs#L1-L54)
-- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L44)
-- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L44)
-- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L44)
-- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L41)
-- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L43)
+- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L43)
+- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L43)
+- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L43)
+- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L40)
+- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L42)
 - [src/service/domain/project/service.rs](src/service/domain/project/service.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dao/project/sqlite.rs](src/service/dao/project/sqlite.rs)
@@ -120,7 +120,7 @@ H-->>C : "CreateProjectResponse"
 ```
 
 图表来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 - [src/service/domain/project/service.rs](src/service/domain/project/service.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dao/project/sqlite.rs](src/service/dao/project/sqlite.rs)
@@ -162,13 +162,13 @@ Handler-->>Client : "GetProjectResponse"
 ```
 
 图表来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 - [src/service/domain/project/service.rs](src/service/domain/project/service.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dao/project/sqlite.rs](src/service/dao/project/sqlite.rs)
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 
 ### 获取项目详情
 - 路由：GET /api/v1/projects/{id}
@@ -184,7 +184,7 @@ Handler-->>Client : "GetProjectResponse"
 - 返回：PagedResult<ProjectListItem>
 
 章节来源
-- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L44)
+- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L43)
 
 ### 通用查询
 - 路由：POST /api/v1/projects/query
@@ -192,7 +192,7 @@ Handler-->>Client : "GetProjectResponse"
 - 适用场景：复杂组合过滤与条件筛选。
 
 章节来源
-- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L44)
+- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L43)
 
 ### 搜索项目
 - 路由：POST /api/v1/projects/search
@@ -200,7 +200,7 @@ Handler-->>Client : "GetProjectResponse"
 - 特性：FTS5 全文 + 向量语义混合搜索，适合“语义相关性”检索。
 
 章节来源
-- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L44)
+- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L43)
 
 ### 更新项目基本信息
 - 路由：PUT /api/v1/projects/{id}
@@ -208,7 +208,7 @@ Handler-->>Client : "GetProjectResponse"
 - 行为：以 modified_by=ctx.uid() 更新基础信息。
 
 章节来源
-- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L41)
+- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L40)
 
 ### 更新项目状态（状态流转）
 - 路由：PUT /api/v1/projects/{id}/status
@@ -216,7 +216,7 @@ Handler-->>Client : "GetProjectResponse"
 - 注意：状态流转需符合领域约束，非法转换将报错。
 
 章节来源
-- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L43)
+- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L42)
 
 ### 响应映射
 - to_list_item：映射项目列表项字段（id、name、description、status、priority、tags、root_user_id、owner_agent_id、时间戳）。
@@ -241,7 +241,7 @@ D -.-> M["models/project"]
 ```
 
 图表来源
-- [src/handlers/project/projects/mod.rs:1-20](src/handlers/project/projects/mod.rs#L1-L20)
+- [src/handlers/project/projects/mod.rs:1-20](src/handlers/project/projects/mod.rs#L1-L19)
 - [src/service/domain/project/service.rs](src/service/domain/project/service.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dao/project/sqlite.rs](src/service/dao/project/sqlite.rs)
@@ -249,7 +249,7 @@ D -.-> M["models/project"]
 - [src/models/project.rs](src/models/project.rs)
 
 章节来源
-- [src/handlers/project/projects/mod.rs:1-20](src/handlers/project/projects/mod.rs#L1-L20)
+- [src/handlers/project/projects/mod.rs:1-20](src/handlers/project/projects/mod.rs#L1-L19)
 - [common/src/enums/project.rs](common/src/enums/project.rs)
 - [src/models/project.rs](src/models/project.rs)
 
@@ -266,10 +266,10 @@ D -.-> M["models/project"]
 - 搜索无结果：确认 keyword 与 filters 是否正确，必要时先用 query 缩小范围再 search。
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
-- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L44)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
+- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L43)
 - [src/handlers/project/projects/get_project.rs:1-54](src/handlers/project/projects/get_project.rs#L1-L54)
-- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L43)
+- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L42)
 
 ## 结论
 本项目管理模块严格遵循四层架构，Handler 只做透传与映射，Domain 承载业务规则与状态流转，DAL/DAO 负责数据访问与检索优化。通过 list/query/search 的组合，既能满足简单列表，也能支撑复杂过滤与语义搜索；get_project 的可选加载机制有效平衡了功能与性能。
@@ -321,13 +321,13 @@ D -.-> M["models/project"]
   - 响应：GetProjectResponse
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 - [src/handlers/project/projects/get_project.rs:1-54](src/handlers/project/projects/get_project.rs#L1-L54)
-- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L44)
-- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L44)
-- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L44)
-- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L41)
-- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L43)
+- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L43)
+- [src/handlers/project/projects/query_projects.rs:1-44](src/handlers/project/projects/query_projects.rs#L1-L43)
+- [src/handlers/project/projects/search_projects.rs:1-44](src/handlers/project/projects/search_projects.rs#L1-L43)
+- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L40)
+- [src/handlers/project/projects/update_project_status.rs:1-43](src/handlers/project/projects/update_project_status.rs#L1-L42)
 - [common/src/api/project.rs](common/src/api/project.rs)
 
 ### 项目状态与优先级（枚举）
@@ -348,7 +348,7 @@ D -.-> M["models/project"]
   - 若缺少用户上下文，将返回 InvalidRequest
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L46)
 
 ### 示例：权限控制与关联数据加载
 - 权限控制：
@@ -359,5 +359,5 @@ D -.-> M["models/project"]
   - 建议在详情页按需开启，避免不必要的性能开销
 
 章节来源
-- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L44)
+- [src/handlers/project/projects/list_projects.rs:1-44](src/handlers/project/projects/list_projects.rs#L1-L43)
 - [src/handlers/project/projects/get_project.rs:1-54](src/handlers/project/projects/get_project.rs#L1-L54)

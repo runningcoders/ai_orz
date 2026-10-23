@@ -239,7 +239,7 @@ EventQueue <|.. InMemoryEventQueue : "实现"
 - 可用于扩展周期性任务（如清理、重建索引等）
 
 章节来源
-- [src/pkg/aop/core/scheduler.rs:1-9](src/pkg/aop/core/scheduler.rs#L1-L9)
+- [src/pkg/aop/core/scheduler.rs:1-9](src/pkg/aop/core/scheduler.rs#L1-L8)
 
 ### 事件流转图（从生产到消费）
 ```mermaid

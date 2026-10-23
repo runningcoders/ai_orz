@@ -85,11 +85,11 @@ P_POLL --> D_PRJ
 - [src/handlers/a2a/send_subscribe.rs:36-124](src/handlers/a2a/send_subscribe.rs#L36-L124)
 - [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
 - [src/handlers/a2a/callback.rs:17-197](src/handlers/a2a/callback.rs#L17-L197)
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L147)
 - [src/service/dao/agent_runtime/a2a.rs:86-135](src/service/dao/agent_runtime/a2a.rs#L86-L135)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L27)
 - [src/router.rs:21-56](src/router.rs#L21-L56)
 
 ## 核心组件
@@ -103,7 +103,7 @@ P_POLL --> D_PRJ
 - 配置：common/src/config.rs 提供 a2a_server 开关与协议版本等配置。
 
 章节来源
-- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L305)
 - [src/handlers/a2a/jsonrpc.rs:22-75](src/handlers/a2a/jsonrpc.rs#L22-L75)
 - [src/handlers/a2a/send_task.rs:32-127](src/handlers/a2a/send_task.rs#L32-L127)
 - [src/handlers/a2a/get_task.rs:18-48](src/handlers/a2a/get_task.rs#L18-L48)
@@ -111,7 +111,7 @@ P_POLL --> D_PRJ
 - [src/handlers/a2a/send_subscribe.rs:36-124](src/handlers/a2a/send_subscribe.rs#L36-L124)
 - [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
 - [src/handlers/a2a/callback.rs:17-197](src/handlers/a2a/callback.rs#L17-L197)
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 - [common/src/config.rs:22-59](common/src/config.rs#L22-L59)
 
 ## 架构总览
@@ -259,7 +259,7 @@ CB-->>Ext : {ok : true}
 - 优势：天然支持重试，避免单点推送失败导致数据不一致。
 
 章节来源
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L147)
 - [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 
 ### 映射器（A2A ↔ ai_orz）
@@ -271,7 +271,7 @@ CB-->>Ext : {ok : true}
 - 作用：确保 Domain 层无 A2A 概念，转换集中管理。
 
 章节来源
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 ### A2A Client（出站 DAO）
 - 组件：A2aRuntimeDao，通过 HTTP JSON-RPC 2.0 调用远程 Agent。
@@ -316,7 +316,7 @@ POLL["producer/a2a_polling.rs"] --> DAO["service/dao/agent_runtime/a2a.rs"]
 - [src/handlers/a2a/get_task.rs:18-48](src/handlers/a2a/get_task.rs#L18-L48)
 - [src/handlers/a2a/cancel_task.rs:18-54](src/handlers/a2a/cancel_task.rs#L18-L54)
 - [src/handlers/a2a/callback.rs:17-197](src/handlers/a2a/callback.rs#L17-L197)
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L147)
 - [src/service/dao/agent_runtime/a2a.rs:86-135](src/service/dao/agent_runtime/a2a.rs#L86-L135)
 
 ## 性能与可靠性
@@ -348,7 +348,7 @@ POLL["producer/a2a_polling.rs"] --> DAO["service/dao/agent_runtime/a2a.rs"]
 章节来源
 - [src/handlers/a2a/jsonrpc.rs:22-75](src/handlers/a2a/jsonrpc.rs#L22-L75)
 - [src/handlers/a2a/callback.rs:17-197](src/handlers/a2a/callback.rs#L17-L197)
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L147)
 
 ## 结论
 A2A 协议支持在本项目中实现了完整的 Server 与 Client 能力：Server 通过 JSON-RPC 暴露统一入口，Client 通过 HTTP 调用远程 A2A 服务；任务生命周期通过 Project/Message/Artifact 领域模型统一管理；回调与轮询双通道保障可靠性；映射器与 Domain 解耦确保扩展性与可维护性。建议在生产环境开启 Push 回调并保留 Poll 兜底，结合 SSE 提升用户体验。
@@ -440,4 +440,4 @@ A2A 协议支持在本项目中实现了完整的 Server 与 Client 能力：Ser
 章节来源
 - [docs/external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
 - [src/service/dao/agent_runtime/a2a.rs:29-47](src/service/dao/agent_runtime/a2a.rs#L29-L47)
-- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L147)

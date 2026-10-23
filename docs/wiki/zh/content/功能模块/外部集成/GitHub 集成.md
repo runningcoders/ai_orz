@@ -103,7 +103,7 @@ gh_cli 工具 invoke 返回值 = Handler API 返回值，由单测 `gh_cli_tool_
 
 章节来源
 - [src/pkg/tool_registry/gh_cli.rs#L1-L260](src/pkg/tool_registry/gh_cli.rs#L1-L260)
-- [common/src/api/github_integration.rs#L1-L150](common/src/api/github_integration.rs#L1-L150)
+- [common/src/api/github_integration.rs#L1-L150](common/src/api/github_integration.rs#L1-L120)
 - [src/service/domain/identity_credential/crud.rs#L200-L280](src/service/domain/finance/identity_credential.rs#L200-L280)
 
 ## 架构原理与流程

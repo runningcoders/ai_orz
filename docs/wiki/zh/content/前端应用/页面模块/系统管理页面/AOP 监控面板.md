@@ -78,8 +78,8 @@ PKG_AOP --> HOOK
 - [src/consumer/aop_stats_hook.rs:1-33](src/consumer/aop_stats_hook.rs#L1-L33)
 - [src/handlers/system/aop.rs:1-41](src/handlers/system/aop.rs#L1-L41)
 - [src/handlers/system/aop_stats.rs:1-41](src/handlers/system/aop_stats.rs#L1-L41)
-- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L53)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L27)
+- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L52)
 - [frontend/src/pages/system/aop.rs:1-100](frontend/src/pages/system/aop.rs#L1-L100)
 - [frontend/src/components/stats.rs:64-116](frontend/src/components/stats.rs#L64-L116)
 
@@ -98,8 +98,8 @@ PKG_AOP --> HOOK
 章节来源
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 - [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L53)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L27)
+- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L52)
 - [src/handlers/system/aop.rs:1-41](src/handlers/system/aop.rs#L1-L41)
 - [src/handlers/system/aop_stats.rs:1-41](src/handlers/system/aop_stats.rs#L1-L41)
 - [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
@@ -144,7 +144,7 @@ Handler-->>Frontend : "JSON"
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 - [src/consumer/aop_stats_collector.rs:61-196](src/consumer/aop_stats_collector.rs#L61-L196)
 - [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
-- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L52)
 - [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
 
 ## 详细组件分析
@@ -190,8 +190,8 @@ Handler-->>Frontend : "JSON"
   - GET /api/v1/system/aop/stats/distribution（分布）
 
 章节来源
-- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L53)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L27)
+- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L52)
 - [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
 - [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
 - [common/src/api/system.rs:69-104](common/src/api/system.rs#L69-L104)
@@ -243,8 +243,8 @@ SystemDomainImpl --> Registry : "队列监控"
 图示来源
 - [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
 - [src/consumer/aop_stats_hook.rs:14-82](src/consumer/aop_stats_hook.rs#L14-L82)
-- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L27)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L52)
 - [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
 
 ### 序列图（API 工作流）
@@ -276,7 +276,7 @@ H-->>FE : "JSON"
 
 图示来源
 - [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
-- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L52)
 - [src/consumer/aop_stats_collector.rs:74-196](src/consumer/aop_stats_collector.rs#L74-L196)
 
 ### 流程图（统计聚合算法）
@@ -316,7 +316,7 @@ HK --> C
 - [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 - [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L52)
 - [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
 - [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
 
@@ -324,7 +324,7 @@ HK --> C
 - [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 - [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L52)
 - [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
 - [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
 

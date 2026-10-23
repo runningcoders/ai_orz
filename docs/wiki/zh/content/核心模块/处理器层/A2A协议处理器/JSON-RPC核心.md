@@ -73,11 +73,11 @@ Mapper --> Response["JsonRpcResponse<br/>成功/错误封装"]
 - 配置开关：通过 AppConfig.a2a_server.enabled 控制 A2A Server 是否启用。
 
 **章节来源**
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
 - [src/handlers/a2a/get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
 - [src/handlers/a2a/cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 - [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 - [common/src/config.rs:510-548](common/src/config.rs#L510-L548)
 
@@ -148,7 +148,7 @@ OkCancel --> End
 - [src/handlers/a2a/jsonrpc.rs:21-75](src/handlers/a2a/jsonrpc.rs#L21-L75)
 
 **章节来源**
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 - [common/src/config.rs:510-548](common/src/config.rs#L510-L548)
 
@@ -266,10 +266,10 @@ class Mapper {
 ```
 
 **图示来源**
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 **章节来源**
-- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [src/handlers/a2a/mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L97)
 
 ### JSON-RPC 消息格式与错误码
 - 请求：JsonRpcRequest{jsonrpc:"2.0", id, method, params}
@@ -342,10 +342,10 @@ Handlers --> Errors["common/error/code.rs"]
 - 集成测试：参考 integration_test 初始化环境与用例，验证 resolve_agent、get/cancel 不存在场景。
 
 **章节来源**
-- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L93)
 - [src/handlers/a2a/get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
 - [src/handlers/a2a/cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
-- [src/handlers/a2a/integration_test.rs:91-134](src/handlers/a2a/integration_test.rs#L91-L134)
+- [src/handlers/a2a/integration_test.rs:91-134](src/handlers/a2a/integration_test.rs#L90-L90)
 
 ## 结论
 A2A 的 JSON-RPC 核心在 ai_orz 中以清晰的层次划分实现：路由层负责中间件与端点注册，JSON-RPC 入口负责协议解析与分发，方法处理器专注业务流程，mapper 隔离协议与内部实体。错误码与异常处理遵循统一规范，便于客户端识别与调试。当前实现覆盖 tasks/send/get/cancel 与通知机制，具备良好扩展性以支持批量请求与更多 A2A 特性。
@@ -383,4 +383,4 @@ A2A 的 JSON-RPC 核心在 ai_orz 中以清晰的层次划分实现：路由层�
 - [src/handlers/a2a/send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
 - [src/handlers/a2a/get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
 - [src/handlers/a2a/cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
-- [common/src/api/a2a.rs:267-306](common/src/api/a2a.rs#L267-L306)
+- [common/src/api/a2a.rs:267-306](common/src/api/a2a.rs#L267-L305)
