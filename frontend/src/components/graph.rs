@@ -564,13 +564,23 @@ pub struct EdgeGeometry {
 /// 计算一条边的几何（直线 / 弧线 / 自环统一出口）
 ///
 /// - `target_radius`：目标节点半径（箭头回退距离，口径同 Canvas 版 `arrow_tip_point`）
+/// - `target_half`：目标节点矩形半宽/半高（卡片态箭头落点；`None` = 点线态走圆口径）
+/// - `source_half`：源节点矩形半宽/半高（**起点收缩**；`None` = 从卡片中心起笔）
 /// - `loop_radius`：自环绕行半径（调用方按节点半宽 + 8 传入）
+///
+/// # 起点为什么也必须收缩（AMan 第五轮反馈①「放大后线穿过节点卡片」）
+///
+/// 三修只把**终点**推出了卡外，`d` 仍从 `source`（= 源卡片**中心**）起笔 —— 整条线
+/// 斜穿源卡片本体。缩略图缩小后看不出来，放大到 920×620 就一眼可见。这里把起点也按
+/// `rect_tip_point` 沿出射方向推到源矩形外缘（同样外推 `ARROW_TIP_GAP`）；弧线的出射
+/// 方向取「源中心 → 控制点」，与终点「控制点 → 终点」的切线口径对称。
 pub fn edge_geometry(
     edge: &GraphEdge,
     source: (f64, f64),
     target: (f64, f64),
     target_radius: f64,
     target_half: Option<(f64, f64)>,
+    source_half: Option<(f64, f64)>,
     loop_radius: f64,
 ) -> EdgeGeometry {
     let (sx, sy) = source;
@@ -582,38 +592,59 @@ pub fn edge_geometry(
         Some(half) => rect_tip_point(from, to, half),
         None => curve_arrow_tip_point(from, to, target_radius),
     };
+    // 起点收缩：把「源卡片中心」沿出射方向推到源矩形外缘。`rect_tip_point` 的语义是
+    // 「从 to 沿反方向回退」，故交换参数（from = 出射指向的点、to = 源中心）即得交点。
+    let start_of = |from: (f64, f64), towards: (f64, f64)| match source_half {
+        Some(half) => {
+            let dx = towards.0 - from.0;
+            let dy = towards.1 - from.1;
+            // 出射方向不可靠（指向点就落在卡片内部）时不收缩，避免起点被推到卡片对侧
+            if (dx * dx + dy * dy).sqrt() < (half.0 * half.0 + half.1 * half.1).sqrt() {
+                from
+            } else {
+                rect_tip_point(towards, from, half)
+            }
+        }
+        None => from,
+    };
     match edge.curve.unwrap_or(EdgeCurve::Straight) {
         EdgeCurve::Straight => {
+            let start = start_of(source, target);
             let tip = if directed {
                 tip_of(source, target)
             } else {
                 target
             };
             EdgeGeometry {
-                d: format!("M {sx} {sy} L {} {}", tip.0, tip.1),
-                d_full: format!("M {sx} {sy} L {tx} {ty}"),
+                d: format!("M {} {} L {} {}", start.0, start.1, tip.0, tip.1),
+                d_full: format!("M {} {} L {tx} {ty}", start.0, start.1),
                 tip,
-                mid: ((sx + tx) / 2.0, (sy + ty) / 2.0),
-                mid_angle: calculate_edge_angle(sx, sy, tx, ty),
-                length: edge_length(sx, sy, tx, ty),
+                mid: ((start.0 + tx) / 2.0, (start.1 + ty) / 2.0),
+                mid_angle: calculate_edge_angle(start.0, start.1, tx, ty),
+                length: edge_length(start.0, start.1, tx, ty),
             }
         }
         EdgeCurve::Arc(bulge) => {
             let p1 = quadratic_control(sx, sy, tx, ty, bulge);
+            // 起点沿「源中心 → 控制点」出射方向收缩（与终点「控制点 → 终点」切线口径对称）
+            let start = start_of(source, p1);
             let tip = if directed { tip_of(p1, target) } else { target };
-            let mid = quadratic_at(source, p1, target, 0.5);
-            let prev = quadratic_at(source, p1, target, 0.45);
-            let next = quadratic_at(source, p1, target, 0.55);
+            let mid = quadratic_at(start, p1, target, 0.5);
+            let prev = quadratic_at(start, p1, target, 0.45);
+            let next = quadratic_at(start, p1, target, 0.55);
             let samples = [
-                source,
-                quadratic_at(source, p1, target, 0.25),
+                start,
+                quadratic_at(start, p1, target, 0.25),
                 mid,
-                quadratic_at(source, p1, target, 0.75),
+                quadratic_at(start, p1, target, 0.75),
                 target,
             ];
             EdgeGeometry {
-                d: format!("M {sx} {sy} Q {} {} {} {}", p1.0, p1.1, tip.0, tip.1),
-                d_full: format!("M {sx} {sy} Q {} {} {tx} {ty}", p1.0, p1.1),
+                d: format!(
+                    "M {} {} Q {} {} {} {}",
+                    start.0, start.1, p1.0, p1.1, tip.0, tip.1
+                ),
+                d_full: format!("M {} {} Q {} {} {tx} {ty}", start.0, start.1, p1.0, p1.1),
                 tip,
                 mid,
                 mid_angle: calculate_edge_angle(prev.0, prev.1, next.0, next.1),
@@ -811,6 +842,7 @@ pub fn Graph(props: GraphProps) -> Element {
                     (*tx, *ty),
                     radius,
                     half,
+                    tip_shape_of(&edge.source).1,
                     loop_radius_of(&edge.source),
                 );
                 edge_mids
@@ -829,6 +861,7 @@ pub fn Graph(props: GraphProps) -> Element {
                         (*tx, *ty),
                         radius,
                         half,
+                        tip_shape_of(&edge.source).1,
                         loop_radius_of(&edge.source),
                     );
                     edge_mids
@@ -1049,6 +1082,7 @@ pub fn Graph(props: GraphProps) -> Element {
                         (tx, ty),
                         node_radius,
                         node_half,
+                        tip_shape_of(&edge.source).1,
                         loop_radius_of(&edge.source),
                     );
                     let len = geo.length;
@@ -1743,7 +1777,7 @@ mod tests {
     #[test]
     fn straight_geometry_keeps_legacy_tip_and_length() {
         let e = edge_with(None, "directed");
-        let geo = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 12.0, None, 48.0);
+        let geo = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 12.0, None, None, 48.0);
         // 直线：终点回退口径必须与旧实现逐位一致（arrow_tip_point）
         let legacy = arrow_tip_point((100.0, 100.0), (400.0, 100.0), 12.0);
         assert!((geo.tip.0 - legacy.0).abs() < 1e-9 && (geo.tip.1 - legacy.1).abs() < 1e-9);
@@ -1755,7 +1789,7 @@ mod tests {
     #[test]
     fn arc_geometry_bulges_by_declared_amount_at_mid() {
         let e = edge_with(Some(EdgeCurve::Arc(20.0)), "undirected");
-        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, None, 48.0);
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, None, None, 48.0);
         assert!(geo.d.contains('Q'), "弧线必须走二次贝塞尔: {}", geo.d);
         // Arc(d) 的语义 = 曲线中点偏移量，中点 = (P0+2P1+P2)/4 恰为 d
         assert!((geo.mid.0 - 50.0).abs() < 1e-9, "{}", geo.mid.0);
@@ -1775,7 +1809,7 @@ mod tests {
     #[test]
     fn arc_arrow_tip_follows_end_tangent_not_chord() {
         let e = edge_with(Some(EdgeCurve::Arc(30.0)), "directed");
-        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, None, 48.0);
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, None, None, 48.0);
         let control = quadratic_control(0.0, 0.0, 100.0, 0.0, 30.0);
         // ① 反推回去：tip 必须落在「控制点 → 终点」射线上（弧线末端切线方向）
         let dx = 100.0 - control.0;
@@ -1804,7 +1838,7 @@ mod tests {
     #[test]
     fn loop_geometry_uses_cubic_and_bulges_right() {
         let e = edge_with(Some(EdgeCurve::Loop), "directed");
-        let geo = edge_geometry(&e, (200.0, 200.0), (200.0, 200.0), 12.0, None, 48.0);
+        let geo = edge_geometry(&e, (200.0, 200.0), (200.0, 200.0), 12.0, None, None, 48.0);
         assert!(geo.d.contains('C'), "自环必须走三次贝塞尔: {}", geo.d);
         assert!(geo.mid.0 > 200.0, "自环应绕到节点右侧: {}", geo.mid.0);
         assert!(geo.length > 40.0, "自环绕行长度不应退化: {}", geo.length);
@@ -1815,16 +1849,95 @@ mod tests {
         // 二次贝塞尔的中点切线**恒平行于两端连线**（平行四边形性质）：
         // 弧顶标签仍沿「起点→终点」方向摆放，不会歪成别的角度。
         let e = edge_with(Some(EdgeCurve::Arc(40.0)), "undirected");
-        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 100.0), 12.0, None, 48.0);
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 100.0), 12.0, None, None, 48.0);
         assert!((geo.mid_angle - 45.0).abs() < 1e-6, "{}", geo.mid_angle);
         // 自环是三次贝塞尔：中点切线由控制点决定，在右侧绕行段近垂直
         let loop_e = edge_with(Some(EdgeCurve::Loop), "undirected");
-        let loop_geo = edge_geometry(&loop_e, (200.0, 200.0), (200.0, 200.0), 12.0, None, 48.0);
+        let loop_geo = edge_geometry(
+            &loop_e,
+            (200.0, 200.0),
+            (200.0, 200.0),
+            12.0,
+            None,
+            None,
+            48.0,
+        );
         assert!(
             loop_geo.mid_angle.abs() > 45.0,
             "自环中点切线应近垂直: {}",
             loop_geo.mid_angle
         );
+    }
+
+    // ==================== 起点收缩守卫（第五轮反馈①） ====================
+    // 放大后「线穿过节点卡片」的根因是 `d` 从源卡片**中心**起笔：终点收了、起点没收。
+    // 以下把「起点必须落在源矩形外缘」钉死。
+
+    /// 从 `d` 里取第一个坐标（`M x y`）
+    fn first_point(d: &str) -> (f64, f64) {
+        let mut it = d.split_whitespace();
+        assert_eq!(it.next(), Some("M"), "路径必须以 M 起笔: {d}");
+        let x: f64 = it.next().unwrap().parse().unwrap();
+        let y: f64 = it.next().unwrap().parse().unwrap();
+        (x, y)
+    }
+
+    #[test]
+    fn edge_geometry_clips_source_to_card_boundary() {
+        let e = edge_with(None, "directed");
+        let half = (60.0, 30.0);
+        let geo = edge_geometry(
+            &e,
+            (100.0, 100.0),
+            (400.0, 100.0),
+            7.0,
+            None,
+            Some(half),
+            48.0,
+        );
+        // 水平出射撞右缘：起点 = 中心 + 半宽 + GAP(2)
+        assert!(
+            geo.d.starts_with("M 162 100 L"),
+            "起点必须收缩到源卡片右缘外: {}",
+            geo.d
+        );
+        // 命中路径同口径（否则透明命中层仍从卡片中心画出去）
+        assert!(
+            geo.d_full.starts_with("M 162 100 L"),
+            "命中路径也必须从起点起笔: {}",
+            geo.d_full
+        );
+        // 点线态（source_half = None）保持原口径：从中心起笔
+        let dot = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 7.0, None, None, 48.0);
+        assert!(dot.d.starts_with("M 100 100 L"), "{}", dot.d);
+    }
+
+    #[test]
+    fn arc_geometry_clips_source_along_start_tangent() {
+        let e = edge_with(Some(EdgeCurve::Arc(30.0)), "directed");
+        let half = (60.0, 30.0);
+        let geo = edge_geometry(
+            &e,
+            (100.0, 100.0),
+            (400.0, 100.0),
+            7.0,
+            None,
+            Some(half),
+            48.0,
+        );
+        // 弧线起点沿「源中心 → 控制点」出射，必须已离开卡片中心并落在源矩形之外
+        let (x, y) = first_point(&geo.d);
+        assert!(
+            (x - 100.0).abs() > 1.0 || (y - 100.0).abs() > 1.0,
+            "弧线起点不得仍在卡片中心: {x}, {y}"
+        );
+        assert!(
+            (x - 100.0).abs() >= 60.0 - 0.5 || (y - 100.0).abs() >= 30.0 - 0.5,
+            "弧线起点必须落在源矩形之外: {x}, {y}"
+        );
+        // 无起点信息时退回旧口径（起点 = 中心）
+        let dot = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 7.0, None, None, 48.0);
+        assert_eq!(first_point(&dot.d), (100.0, 100.0));
     }
 
     // ==================== 卡片态箭头落点守卫 ====================
@@ -1835,7 +1948,15 @@ mod tests {
     fn card_target_keeps_arrow_tip_outside_rect_on_horizontal_hit() {
         let e = edge_with(None, "directed");
         let half = (84.0, 45.0);
-        let geo = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 7.0, Some(half), 48.0);
+        let geo = edge_geometry(
+            &e,
+            (100.0, 100.0),
+            (400.0, 100.0),
+            7.0,
+            Some(half),
+            None,
+            48.0,
+        );
         // 水平入射撞左缘：tip.x = 400 - 84 - GAP(2)
         assert!(
             (geo.tip.0 - (400.0 - 84.0 - 2.0)).abs() < 1e-9,
@@ -1862,7 +1983,15 @@ mod tests {
         let e = edge_with(None, "directed");
         let half = (84.0, 45.0);
         // 垂直入射：撞上缘（不是左右缘）
-        let v = edge_geometry(&e, (200.0, 0.0), (200.0, 300.0), 7.0, Some(half), 48.0);
+        let v = edge_geometry(
+            &e,
+            (200.0, 0.0),
+            (200.0, 300.0),
+            7.0,
+            Some(half),
+            None,
+            48.0,
+        );
         assert!(
             (v.tip.1 - (300.0 - 45.0 - 2.0)).abs() < 1e-9,
             "垂直入射箭头应停在上缘外 GAP 处: {:?}",
@@ -1870,7 +1999,15 @@ mod tests {
         );
         assert!((v.tip.0 - 200.0).abs() < 1e-9);
         // 斜向入射：撞最近的那条边，tip 必须落在矩形之外（至少一轴超出半宽/半高）
-        let d = edge_geometry(&e, (0.0, 300.0), (400.0, 100.0), 7.0, Some(half), 48.0);
+        let d = edge_geometry(
+            &e,
+            (0.0, 300.0),
+            (400.0, 100.0),
+            7.0,
+            Some(half),
+            None,
+            48.0,
+        );
         let dx = (d.tip.0 - 400.0).abs();
         let dy = (d.tip.1 - 100.0).abs();
         assert!(
@@ -1884,7 +2021,15 @@ mod tests {
     fn arc_arrow_on_card_target_also_stays_outside_rect() {
         // 弧线走「控制点 → 终点」切线求交，矩形口径同样生效
         let e = edge_with(Some(EdgeCurve::Arc(30.0)), "directed");
-        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 7.0, Some((40.0, 20.0)), 48.0);
+        let geo = edge_geometry(
+            &e,
+            (0.0, 0.0),
+            (100.0, 0.0),
+            7.0,
+            Some((40.0, 20.0)),
+            None,
+            48.0,
+        );
         let dx = (geo.tip.0 - 100.0).abs();
         let dy = (geo.tip.1 - 0.0).abs();
         assert!(

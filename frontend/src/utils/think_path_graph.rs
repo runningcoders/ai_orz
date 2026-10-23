@@ -355,7 +355,7 @@ pub fn layout_config(
     }
 }
 
-/// 布局松散化：按节点**视觉尺寸**重排同层水平间距与层间距，返回实际层距
+/// 布局松散化：按节点**视觉尺寸**重排层内水平间距与层间距，返回实际层中心距
 ///
 /// # 为什么必须在 `compute_layered_layout` 之后再排一次
 ///
@@ -371,10 +371,21 @@ pub fn layout_config(
 /// 这里以节点视觉尺寸为下限重排：宁可内容略微超出画布、交给 `compute_fit_view` 等比缩小，
 /// 也不让卡片互相压住（等比缩小时「间距/尺寸」的比值不变，重叠却是硬伤）。
 ///
+/// # 层内折行（AMan 第五轮反馈④「不要排成一条线，尽量利用上下宽度」）
+///
+/// 旧实现每层只做**一维横排**：同层 8 个节点会被摊成一条长横线——横向挤到槽宽下限、
+/// 纵向却大片空白。现在先按可用宽算出「一横排最多几列」，超出的折成第二行、第三行……
+/// 层高随之变成 `单卡高 + (行数-1)·(卡高 + 行间隙)`，上下宽度被真正用起来。
+///
 /// # 参数
 ///
 /// - `mini`：`true` = 点线形态（缩略图，节点是半径 7px 的点），`false` = 卡片形态（放大弹窗）。
 ///   两种形态的节点视觉尺寸差一个量级，用同一套间距会让点线图被拉得过散。
+///
+/// # 返回
+///
+/// 相邻单行层的**层中心距**（层间隙 + 卡片高，上限画布高 0.32），供 `assign_edge_curves`
+/// 定弧线曲率分档。实际层中心距在被上限截断时可能更大，故消费方视为「不小于」。
 pub fn spread_layout(nodes: &mut [GraphNode], width: f64, height: f64, mini: bool) -> f64 {
     /// 卡片形态：同层水平最小间隙 / 相邻层垂直最小间隙（px）
     const MIN_H_GAP: f64 = 26.0;
@@ -388,7 +399,8 @@ pub fn spread_layout(nodes: &mut [GraphNode], width: f64, height: f64, mini: boo
         return 0.0;
     }
 
-    // 1) 按 y 分行（同层 y 相同；容差 1px 吸收浮点误差）
+    // 1) 按 y 分行（同层 y 相同；容差 1px 吸收浮点误差）——沿用拓扑分层结果，本函数只
+    //    决定「层内怎么摆、层间多高」
     let mut rows: Vec<(f64, Vec<usize>)> = Vec::new();
     let mut order: Vec<usize> = (0..nodes.len()).collect();
     order.sort_by(|&a, &b| {
@@ -420,50 +432,65 @@ pub fn spread_layout(nodes: &mut [GraphNode], width: f64, height: f64, mini: boo
         (w, h, MIN_H_GAP, MIN_V_GAP)
     };
 
-    // 3) 水平：槽宽 = 节点宽 + 间隙；以画布中线为轴左右展开（同层整体居中）
+    // 3) 层内折行：一横排最多几列 = floor((可用宽 + 间隙) / (卡宽 + 间隙))
     let usable_w = (width * 0.88).max(1.0);
-    let max_spacing = node_w + usable_w * 0.35; // 上限：防止两三个节点被拉到画布两端
-    for (_, idxs) in rows.iter_mut() {
+    let usable_h = (height * 0.88).max(1.0);
+    let max_cols = (((usable_w + h_gap) / (node_w + h_gap)).floor() as usize).max(1);
+    // 槽宽上限：防止两三个节点被拉到画布两端
+    let col_cap = node_w + usable_w * 0.35;
+
+    let mut layers: Vec<(Vec<usize>, f64)> = Vec::with_capacity(rows.len());
+    for (_, mut idxs) in rows {
         idxs.sort_by(|&a, &b| {
             nodes[a]
                 .x
                 .partial_cmp(&nodes[b].x)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        let count = idxs.len();
-        if count == 1 {
-            nodes[idxs[0]].x = width / 2.0;
-            continue;
-        }
-        let spacing = (usable_w / count as f64)
-            .max(node_w + h_gap)
-            .min(max_spacing);
-        let total = spacing * (count as f64 - 1.0);
-        let start = width / 2.0 - total / 2.0;
-        for (i, &idx) in idxs.iter().enumerate() {
-            nodes[idx].x = start + i as f64 * spacing;
-        }
+        let cols = idxs.len().min(max_cols).max(1);
+        let inner_rows = idxs.len().div_ceil(cols).max(1);
+        let layer_h = node_h + (inner_rows as f64 - 1.0) * (node_h + v_gap);
+        layers.push((idxs, layer_h));
     }
 
-    // 4) 垂直：层距下限 = 卡片高 + 间隙，上限 = 画布高 0.24（再多就是空耗，不如让整体居中）
-    let rows_n = rows.len();
-    let usable_h = (height * 0.88).max(1.0);
-    let gap = if rows_n > 1 {
-        (usable_h / (rows_n - 1) as f64)
-            .max(node_h + v_gap)
-            .min(height * 0.24)
+    // 4) 垂直：可用高先喂给「层内容高」，剩余空白均分给层间隙；内容超出画布时允许溢出
+    //    （交给 `compute_fit_view` 等比缩小），但绝不把卡片压到一起。
+    let content_h: f64 = layers.iter().map(|(_, h)| *h).sum();
+    let gaps = layers.len().saturating_sub(1) as f64;
+    let gap = if gaps > 0.0 {
+        ((usable_h - content_h) / gaps)
+            .max(v_gap)
+            .min(height * 0.30) // 上限：再多就是空耗，不如让整体居中
     } else {
         0.0
     };
-    let start_y = height / 2.0 - gap * (rows_n as f64 - 1.0) / 2.0;
-    for (k, (_, idxs)) in rows.iter().enumerate() {
-        let y = start_y + k as f64 * gap;
-        for &idx in idxs.iter() {
-            nodes[idx].y = y;
+    let total_h = content_h + gap * gaps;
+    let mut cursor = height / 2.0 - total_h / 2.0;
+
+    // 5) 写回坐标：层内逐行居中，行内按槽宽展开
+    for (idxs, layer_h) in layers {
+        let count = idxs.len();
+        let cols = count.min(max_cols).max(1);
+        let spacing = (usable_w / cols as f64).max(node_w + h_gap).min(col_cap);
+        let inner_rows = count.div_ceil(cols);
+        for r in 0..inner_rows {
+            let begin = r * cols;
+            let end = (begin + cols).min(count);
+            if begin >= end {
+                continue;
+            }
+            let y = cursor + node_h / 2.0 + r as f64 * (node_h + v_gap);
+            let total_w = spacing * ((end - begin) as f64 - 1.0);
+            let start_x = width / 2.0 - total_w / 2.0;
+            for (k, &idx) in idxs[begin..end].iter().enumerate() {
+                nodes[idx].x = start_x + k as f64 * spacing;
+                nodes[idx].y = y;
+            }
         }
+        cursor += layer_h + gap;
     }
 
-    gap
+    ((gap + node_h).min(height * 0.32)).max(node_h)
 }
 
 /// 思考路径图构建结果
@@ -565,7 +592,7 @@ pub fn build_think_path_graph(
     // 返回的层距随重排结果变，供弧线曲率分档使用
     let layer_gap = spread_layout(&mut nodes, width, height, mini);
     // 曲率：回边 / 双向成对边走弧线，自环绕行；同层多条回边按组内序分档（详见函数文档）
-    assign_edge_curves(&nodes, &mut edges, layer_gap);
+    assign_edge_curves(&nodes, &mut edges, layer_gap, mini);
 
     ThinkPathGraph {
         nodes,
@@ -577,6 +604,13 @@ pub fn build_think_path_graph(
 
 /// 曲率分派：自环 / 双向对 / 同层回边 → 弧线，其余直线
 ///
+/// # 双向边为什么必须**同号**（AMan 第五轮反馈②「双向线用了完全一样的弧度」）
+///
+/// `quadratic_control` 的法线是相对于**有向线段**的 left-hand normal —— 反向边的法线
+/// 本身也反向（`N_BA = -N_AB`）。旧实现按 `source <= target` 取相反符号，负负得正，
+/// 两条曲线落在**同一侧**、几何完全重合。组内统一取同一符号即可让它们各自按自己的
+/// left-hand 分居参考线两侧，等幅且对称。
+///
 /// # 为什么要按「组内序」分档，而不是给同一类边同一个弧度
 ///
 /// 同一层上常有多条回边（环上的 A→B、B→C、C→A 会全部沉到同一层）。旧实现给它们统一的
@@ -584,13 +618,25 @@ pub fn build_think_path_graph(
 /// 这里把同层回边按源节点 x 排序成一组，弧度在 `(0, max_bulge]` 内均匀铺开：
 /// 组内任意两条弧度必不相同，曲线随节点横向位置呈扇形展开，各自可辨。
 ///
+/// # 弧向避障（启发式，AMan 第五轮反馈③「尽量不穿过卡片」）
+///
+/// 每条弧线都有两个可选的弯向（`+bulge` / `-bulge`）。取曲线中点（二次贝塞尔 `t=0.5`，
+/// 即「两端中点 + bulge·N」）检测是否落进任何**第三方**卡片矩形（半宽/半高 + 4px 余量）：
+/// 当前弯向撞卡、反向不撞，就整条换到反向。这是 O(边数 × 节点数) 的**局部**启发式，
+/// **不是全局路由** —— 多条线在密集区间同时交错时仍可能有个别穿卡，属已知边界。
+///
 /// - 自环（`source == target`）→ `EdgeCurve::Loop`；
-/// - 双向对（同一无序对存在两条边）→ 相反符号弧线，分居连线两侧；
+/// - 双向对（同一无序对存在两条边）→ 组内**同号**弧线，分居参考线两侧；
 /// - 同层 / 向上回边 → 组内均匀分档弧线；
 /// - 正常向下 → 直线。
 ///
 /// 曲率上限 `layer_gap * 0.55`：再大就会顶到相邻层的卡片。
-pub fn assign_edge_curves(nodes: &[GraphNode], edges: &mut [GraphEdge], layer_gap: f64) {
+pub fn assign_edge_curves(
+    nodes: &[GraphNode],
+    edges: &mut [GraphEdge],
+    layer_gap: f64,
+    mini: bool,
+) {
     let pos: HashMap<&str, (f64, f64)> =
         nodes.iter().map(|n| (n.id.as_str(), (n.x, n.y))).collect();
     // 无序对 → 方向数（>1 说明双向）
@@ -620,6 +666,33 @@ pub fn assign_edge_curves(nodes: &[GraphNode], edges: &mut [GraphEdge], layer_ga
 
     let x_of = |id: &str| pos.get(id).map(|p| p.0).unwrap_or(0.0);
     let y_of = |id: &str| pos.get(id).map(|p| p.1).unwrap_or(0.0);
+
+    // 卡片矩形（含 4px 余量）：弧线中点落进去就要换侧
+    let half_of = |n: &GraphNode| -> (f64, f64) {
+        if mini {
+            (11.0, 11.0)
+        } else {
+            (
+                crate::components::graph::node_box_width(n) / 2.0 + 4.0,
+                crate::components::graph::node_box_height(n) / 2.0 + 4.0,
+            )
+        }
+    };
+    // 弧线中点是否压到第三方卡片（排除边自身的两端）
+    let blocked = |from: (f64, f64), to: (f64, f64), bulge: f64, skip: (&str, &str)| -> bool {
+        let p1 = crate::components::graph::quadratic_control(from.0, from.1, to.0, to.1, bulge);
+        let mid = (
+            (from.0 + 2.0 * p1.0 + to.0) / 4.0,
+            (from.1 + 2.0 * p1.1 + to.1) / 4.0,
+        );
+        nodes.iter().any(|n| {
+            if n.id.as_str() == skip.0 || n.id.as_str() == skip.1 {
+                return false;
+            }
+            let (hw, hh) = half_of(n);
+            (mid.0 - n.x).abs() < hw && (mid.1 - n.y).abs() < hh
+        })
+    };
 
     // 1) 分类
     let kinds: Vec<Kind> = edges
@@ -671,16 +744,62 @@ pub fn assign_edge_curves(nodes: &[GraphNode], edges: &mut [GraphEdge], layer_ga
         }
     }
 
-    // 3) 写回
+    // 3) 双向对：组级一次符号决策（组内同号），顺带做弧向避障
+    let mut pair_members: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        if e.source == e.target {
+            continue;
+        }
+        let key = if e.source <= e.target {
+            (e.source.clone(), e.target.clone())
+        } else {
+            (e.target.clone(), e.source.clone())
+        };
+        if pair_dirs.get(&key).copied().unwrap_or(0) > 1 {
+            pair_members.entry(key).or_default().push(i);
+        }
+    }
+    let mut pair_sign: HashMap<(String, String), f64> = HashMap::new();
+    for (key, idxs) in &pair_members {
+        let rep = *idxs.iter().min().unwrap();
+        let s = edges[rep].source.clone();
+        let t = edges[rep].target.clone();
+        let (Some(from), Some(to)) = (pos.get(s.as_str()).copied(), pos.get(t.as_str()).copied())
+        else {
+            continue;
+        };
+        let skip = (s.as_str(), t.as_str());
+        let sign = if blocked(from, to, base, skip) && !blocked(from, to, -base, skip) {
+            -1.0
+        } else {
+            1.0
+        };
+        pair_sign.insert(key.clone(), sign);
+    }
+
+    // 4) 写回
     for (i, e) in edges.iter_mut().enumerate() {
+        let (s, t) = (e.source.clone(), e.target.clone());
         e.curve = Some(match kinds[i] {
             Kind::Loop => EdgeCurve::Loop,
             Kind::Pair => {
-                // 按节点名定号，保证两个方向落在不同侧
-                let sign = if e.source <= e.target { 1.0 } else { -1.0 };
-                EdgeCurve::Arc(sign * base)
+                // 组内同号：A→B 与 B→A 各自按 left-hand 弯，自然分居参考线两侧
+                let key = if s <= t {
+                    (s.clone(), t.clone())
+                } else {
+                    (t.clone(), s.clone())
+                };
+                EdgeCurve::Arc(pair_sign.get(&key).copied().unwrap_or(1.0) * base)
             }
-            Kind::Back(_) => EdgeCurve::Arc(back_bulge.get(&i).copied().unwrap_or(base * 0.6)),
+            Kind::Back(_) => {
+                let v = back_bulge.get(&i).copied().unwrap_or(base * 0.6);
+                // 弧顶撞到第三方卡片、反向不撞时整条翻向（绝对值不变，组内仍两两不等）
+                let from = (x_of(&s), y_of(&s));
+                let to = (x_of(&t), y_of(&t));
+                let flip = blocked(from, to, v, (s.as_str(), t.as_str()))
+                    && !blocked(from, to, -v, (s.as_str(), t.as_str()));
+                EdgeCurve::Arc(if flip { -v } else { v })
+            }
             Kind::Straight => EdgeCurve::Straight,
         });
     }
@@ -857,14 +976,24 @@ mod tests {
         assert_eq!(via_phrase("other"), "");
     }
 
+    /// 双向边必须**几何分居参考线两侧**（旧实现按 source<=target 取反符号，
+    /// 与 left-hand normal 的方向反转两次抵消 → 两条曲线完全重合）
     #[test]
-    fn bidir_edges_get_opposite_arc_signs() {
+    fn bidirectional_pair_arcs_land_on_opposite_sides() {
         let occs = vec![
             occ("A", 1, 1, None),
             occ("B", 1, 2, None),
             occ("A", 2, 3, None),
         ];
-        let g = build_think_path_graph(&occs, &[], 300.0, 200.0, false);
+        let g = build_think_path_graph(&occs, &[], 920.0, 620.0, false);
+        let pos = |id: &str| {
+            let n = g.nodes.iter().find(|n| n.id == id).unwrap();
+            (n.x, n.y)
+        };
+        let (ax, ay) = pos("A");
+        let (bx, by) = pos("B");
+        let lens = ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt();
+        assert!(lens > 1.0, "两个节点不应重合");
         let ab = g
             .edges
             .iter()
@@ -875,17 +1004,23 @@ mod tests {
             .iter()
             .find(|e| e.source == "B" && e.target == "A")
             .unwrap();
-        match (ab.curve, ba.curve) {
-            (Some(EdgeCurve::Arc(x)), Some(EdgeCurve::Arc(y))) => {
-                assert!(x * y < 0.0, "双向边弧线必须分居两侧: {x} / {y}");
-                assert!(
-                    (x + y).abs() < 1e-9,
-                    "双向边弧度必须等幅反向（否则两条曲线不对称）: {x} / {y}"
-                );
-                assert!(x.abs() > 0.0, "双向边必须真的弯出去: {x}");
-            }
-            other => panic!("双向边应为相反符号弧线: {other:?}"),
-        }
+        let (x, y) = match (ab.curve, ba.curve) {
+            (Some(EdgeCurve::Arc(x)), Some(EdgeCurve::Arc(y))) => (x, y),
+            other => panic!("双向边应为弧线: {other:?}"),
+        };
+        // 两条边的控制点相对参考线 A→B 的法向投影：left-hand normal 对反向边自带负号，
+        // 故 proj(A→B) = 2x、proj(B→A) = -2y。分居两侧 ⇔ 两者异号。
+        let proj_ab = 2.0 * x;
+        let proj_ba = -2.0 * y;
+        assert!(
+            proj_ab * proj_ba < 0.0,
+            "双向边必须分居参考线两侧（不能重合）: {proj_ab} / {proj_ba}"
+        );
+        assert!(
+            (proj_ab.abs() - proj_ba.abs()).abs() < 1e-9,
+            "双向边弧度应等幅对称: {proj_ab} / {proj_ba}"
+        );
+        assert!(x.abs() > 0.0, "双向边必须真的弯出去: {x}");
     }
 
     #[test]
@@ -941,10 +1076,10 @@ mod tests {
         assert!(bulges.iter().all(|v| *v > 0.0 && *v <= 200.0));
     }
 
-    /// 同层卡片不得横向重叠：相邻中心距 ≥ 最宽卡片宽
+    /// 同层卡片不得重叠：**同一行内**相邻中心距 ≥ 最宽卡片宽；一排放不下必须折行
     #[test]
     fn spread_layout_separates_same_layer_cards() {
-        let mut nodes: Vec<GraphNode> = (0..6)
+        let mut nodes: Vec<GraphNode> = (0..8)
             .map(|i| GraphNode {
                 id: format!("n{i}"),
                 label: "Deliberate".to_string(), // 长名 → 卡片接近最大宽度
@@ -961,18 +1096,33 @@ mod tests {
             .map(crate::components::graph::node_box_width)
             .fold(0.0_f64, f64::max);
         spread_layout(&mut nodes, 920.0, 620.0, false);
-        let mut xs: Vec<f64> = nodes.iter().map(|n| n.x).collect();
-        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        for w in xs.windows(2) {
-            assert!(
-                w[1] - w[0] >= max_w,
-                "同层相邻卡片中心距 {} 小于卡片宽 {}（会重叠）",
-                w[1] - w[0],
-                max_w
-            );
+        // 8 个卡（每卡 ~104px + 26 间隙）在 920px 画布上一排只放得下 6 个 → 必须折行
+        let mut ys: Vec<f64> = nodes.iter().map(|n| n.y).collect();
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let min_y = *ys.first().unwrap();
+        let max_y = *ys.last().unwrap();
+        ys.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+        assert!(ys.len() >= 2, "同层卡片一排放不下时必须折行: {ys:?}");
+        // 行内不重叠：同一 y 的卡片按 x 排序后中心距 ≥ 卡片宽
+        for row_y in &ys {
+            let mut xs: Vec<f64> = nodes
+                .iter()
+                .filter(|n| (n.y - *row_y).abs() < 1e-9)
+                .map(|n| n.x)
+                .collect();
+            xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            for w in xs.windows(2) {
+                assert!(
+                    w[1] - w[0] >= max_w,
+                    "同行相邻卡片中心距 {} 小于卡片宽 {}（会重叠）",
+                    w[1] - w[0],
+                    max_w
+                );
+            }
         }
-        // 单层内容整体垂直居中于画布（620/2 = 310），不是保持原始 y
-        assert!((nodes.iter().map(|n| n.y).fold(f64::MAX, f64::min) - 310.0).abs() < 1e-9);
+        // 单层内容整体垂直居中于画布（620/2 = 310）
+        let mid = (min_y + max_y) / 2.0;
+        assert!((mid - 310.0).abs() < 1e-9, "单层内容应垂直居中: {mid}");
     }
 
     /// 层距不得小于卡片高（旧实现会把层距压到 81px，而卡片高 74px）
@@ -1001,5 +1151,79 @@ mod tests {
         for w in ys.windows(2) {
             assert!(w[1] - w[0] >= max_h, "相邻层中心距不足卡片高: {w:?}");
         }
+    }
+
+    /// 多层时必须把上下宽度用起来：层中心距 ≥ 卡片高 + 最小垂直间隙
+    #[test]
+    fn spread_layout_uses_vertical_space() {
+        let mut nodes: Vec<GraphNode> = (0..3)
+            .map(|i| GraphNode {
+                id: format!("n{i}"),
+                label: format!("Step{i}"),
+                description: String::new(),
+                node_type: THINK_STEP_NODE_TYPE.to_string(),
+                x: 460.0,
+                y: 120.0 + i as f64 * 40.0,
+                tags: Vec::new(),
+                summary: None,
+            })
+            .collect();
+        let max_h = nodes
+            .iter()
+            .map(crate::components::graph::node_box_height)
+            .fold(0.0_f64, f64::max);
+        let layer_gap = spread_layout(&mut nodes, 920.0, 620.0, false);
+        assert!(
+            layer_gap >= max_h + 29.0,
+            "层中心距 {layer_gap} 应 ≥ 卡片高 {max_h} + 最小间隙 30"
+        );
+        // 实际层中心距不小于返回值（返回值只做上限截断，用于弧线曲率分档）
+        let mut ys: Vec<f64> = nodes.iter().map(|n| n.y).collect();
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!(
+            ys[1] - ys[0] >= layer_gap - 1e-9,
+            "实际层距 {} 不得小于返回的 layer_gap {layer_gap}",
+            ys[1] - ys[0]
+        );
+    }
+
+    /// 同层节点多时折行：8 个长名卡在 920px 画布上不能摊成一条横线
+    #[test]
+    fn spread_layout_wraps_many_nodes_into_rows() {
+        let mut nodes: Vec<GraphNode> = (0..8)
+            .map(|i| GraphNode {
+                id: format!("n{i}"),
+                label: "Deliberate".to_string(),
+                description: String::new(),
+                node_type: THINK_STEP_NODE_TYPE.to_string(),
+                x: 100.0 + i as f64 * 8.0,
+                y: 310.0,
+                tags: Vec::new(),
+                summary: None,
+            })
+            .collect();
+        let max_w = nodes
+            .iter()
+            .map(crate::components::graph::node_box_width)
+            .fold(0.0_f64, f64::max);
+        spread_layout(&mut nodes, 920.0, 620.0, false);
+        let mut ys: Vec<f64> = nodes.iter().map(|n| n.y).collect();
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        ys.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+        assert!(ys.len() >= 2, "8 个同层卡必须折行: {ys:?}");
+        for row_y in &ys {
+            let mut xs: Vec<f64> = nodes
+                .iter()
+                .filter(|n| (n.y - *row_y).abs() < 1e-9)
+                .map(|n| n.x)
+                .collect();
+            xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            for w in xs.windows(2) {
+                assert!(w[1] - w[0] >= max_w, "同行重叠: {w:?} < {max_w}");
+            }
+        }
+        // 折行后整层仍横向居中（不偏向一侧）
+        let cx = nodes.iter().map(|n| n.x).sum::<f64>() / nodes.len() as f64;
+        assert!((cx - 460.0).abs() < 1e-9, "折行后应整体居中: {cx}");
     }
 }
