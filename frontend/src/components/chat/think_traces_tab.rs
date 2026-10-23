@@ -341,15 +341,18 @@ pub fn ThinkTracesTab(
                                 }
                                 if is_expanded {
                                     div { class: "p-2 border-t border-base-300 space-y-2",
-                                        // 轮次时间线：模型每一轮想了什么、调了什么、如何裁决
-                                        ThinkRoundsTimeline { rounds: rounds.clone() }
-                                        // 节点运行图（图/列表双视图 + 缩略图 + 放大弹窗）：
-                                        // 同名节点合成一卡带 ×N，转移边按 (from,to) 聚合，
-                                        // 列表侧保留作降级（老记录无 occurrences 亦不崩）
+                                        // 节点运行图放最上方：它是这次 run 的总览（几个节点、
+                                        // 怎么转移），必须第一眼看到。此前排在轮次时间线之后，
+                                        // 时间线一长就把图顶到下面去了（AMan 体验反馈①）。
+                                        // 图/列表双视图 + 缩略图 + 放大弹窗：同名节点合成一卡
+                                        // 带 ×N，转移边按 (from,to) 聚合，列表侧保留作降级
+                                        // （老记录无 occurrences 亦不崩）
                                         ThinkPathGraphView {
                                             occurrences: occurrences.clone(),
                                             routes: routes.clone(),
                                         }
+                                        // 轮次时间线：模型每一轮想了什么、调了什么、如何裁决
+                                        ThinkRoundsTimeline { rounds: rounds.clone() }
                                         div { class: "text-xs text-base-content/50 font-mono break-all",
                                             "run: {run_id} · fp: {fingerprint}"
                                         }

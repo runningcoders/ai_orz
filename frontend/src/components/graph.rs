@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use std::collections::HashMap;
 
-use super::canvas_scene::arrow_tip_point;
+use super::canvas_scene::{ARROW_TIP_GAP, arrow_tip_point};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphNode {
@@ -504,6 +504,43 @@ pub fn curve_arrow_tip_point(
     arrow_tip_point(control, target, target_radius)
 }
 
+/// 矩形卡片态箭头落点：沿「入射方向 × 轴对齐矩形边界」求交，再外推 `ARROW_TIP_GAP`
+///
+/// # 为什么不能沿用圆口径（本项目三修③的根因）
+///
+/// `arrow_tip_point` 按「离目标中心 `radius + GAP`」回退，这在圆形节点上正确。但卡片
+/// 路径的节点是矩形（半宽 52~84、半高 25~45），而边几何传入的 `target_radius` 在卡片态
+/// 恒为 `global_node_radius(0) = 7.0`（无度数信息），于是箭头终点只离矩形中心 9px，
+/// **落在矩形内部**，被后绘制的卡片完全盖住 —— 视觉上就是「有连线没箭头」。
+///
+/// 求交口径：从矩形中心 `to` 沿入射反方向走，先撞哪条边由 `hw / |dx|` 与 `hh / |dy|`
+/// 的较小者决定（水平入射撞左右缘、垂直入射撞上下缘、斜向撞最近的那条），再沿同一
+/// 射线外推 `ARROW_TIP_GAP`，箭头尖端就停在卡片外缘之外。
+pub fn rect_tip_point(from: (f64, f64), to: (f64, f64), half: (f64, f64)) -> (f64, f64) {
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= f64::EPSILON {
+        // 退化（起终点重合）：无入射方向可言，直接给中心（不 panic、不除零）
+        return to;
+    }
+    let hw = half.0.max(1.0);
+    let hh = half.1.max(1.0);
+    // t 的量纲是「向量倍数」：交点 = to - d * t
+    let tx = if dx.abs() > f64::EPSILON {
+        hw / dx.abs()
+    } else {
+        f64::MAX
+    };
+    let ty = if dy.abs() > f64::EPSILON {
+        hh / dy.abs()
+    } else {
+        f64::MAX
+    };
+    let t = tx.min(ty) + ARROW_TIP_GAP / len;
+    (to.0 - dx * t, to.1 - dy * t)
+}
+
 /// 一次算全的边几何（路径 / 箭头终点 / 中点 / 中点切线角 / 路径长度）
 ///
 /// 渲染的四处（视觉 path、透明命中 path、箭头终点、标签位置与旋转）必须取自
@@ -533,15 +570,22 @@ pub fn edge_geometry(
     source: (f64, f64),
     target: (f64, f64),
     target_radius: f64,
+    target_half: Option<(f64, f64)>,
     loop_radius: f64,
 ) -> EdgeGeometry {
     let (sx, sy) = source;
     let (tx, ty) = target;
     let directed = edge.direction == "directed";
+    // 箭头落点：卡片态走矩形边界求交（否则箭头藏在后绘卡片下面），
+    // 点线态 / 无卡片信息时退回与 Canvas 同源的圆口径。
+    let tip_of = |from: (f64, f64), to: (f64, f64)| match target_half {
+        Some(half) => rect_tip_point(from, to, half),
+        None => curve_arrow_tip_point(from, to, target_radius),
+    };
     match edge.curve.unwrap_or(EdgeCurve::Straight) {
         EdgeCurve::Straight => {
             let tip = if directed {
-                arrow_tip_point(source, target, target_radius)
+                tip_of(source, target)
             } else {
                 target
             };
@@ -556,11 +600,7 @@ pub fn edge_geometry(
         }
         EdgeCurve::Arc(bulge) => {
             let p1 = quadratic_control(sx, sy, tx, ty, bulge);
-            let tip = if directed {
-                curve_arrow_tip_point(p1, target, target_radius)
-            } else {
-                target
-            };
+            let tip = if directed { tip_of(p1, target) } else { target };
             let mid = quadratic_at(source, p1, target, 0.5);
             let prev = quadratic_at(source, p1, target, 0.45);
             let next = quadratic_at(source, p1, target, 0.55);
@@ -745,6 +785,17 @@ pub fn Graph(props: GraphProps) -> Element {
             .unwrap_or(48.0)
     };
 
+    // 箭头落点形态：点线态（全局视图 / 缩略图）用圆半径，卡片态用矩形半宽/半高。
+    // 卡片态若仍按圆半径回退，箭头会停在矩形内部被后绘卡片盖住（三修③）。
+    let tip_shape_of = |id: &str| -> (f64, Option<(f64, f64)>) {
+        let radius = global_node_radius(global_degrees.get(id).copied().unwrap_or(0));
+        if dot_graph_mode(global_mode, mini) {
+            (radius, None)
+        } else {
+            (radius, node_half_sizes.get(id).copied())
+        }
+    };
+
     // 边标签置顶数据 + 边的曲线中点缓存（hover 锚点）
     // - 标签必须渲染在节点之后：SVG 无 z-index、后画覆盖先画，否则被卡片遮挡；
     // - 中点取自与渲染同一份几何（弧线上标签/hover 落在曲线中点，不是两端中点）；
@@ -753,13 +804,13 @@ pub fn Graph(props: GraphProps) -> Element {
     let edge_label_overlays: Vec<(String, String, &'static str)> =
         if dot_graph_mode(global_mode, mini) {
             for (edge, (sx, sy), (tx, ty)) in valid_edges.iter() {
-                let radius =
-                    global_node_radius(global_degrees.get(&edge.target).copied().unwrap_or(0));
+                let (radius, half) = tip_shape_of(&edge.target);
                 let geo = edge_geometry(
                     edge,
                     (*sx, *sy),
                     (*tx, *ty),
                     radius,
+                    half,
                     loop_radius_of(&edge.source),
                 );
                 edge_mids
@@ -771,13 +822,13 @@ pub fn Graph(props: GraphProps) -> Element {
             valid_edges
                 .iter()
                 .filter_map(|(edge, (sx, sy), (tx, ty))| {
-                    let radius =
-                        global_node_radius(global_degrees.get(&edge.target).copied().unwrap_or(0));
+                    let (radius, half) = tip_shape_of(&edge.target);
                     let geo = edge_geometry(
                         edge,
                         (*sx, *sy),
                         (*tx, *ty),
                         radius,
+                        half,
                         loop_radius_of(&edge.source),
                     );
                     edge_mids
@@ -991,14 +1042,13 @@ pub fn Graph(props: GraphProps) -> Element {
                     };
                     // 统一几何：视觉路径 / 命中路径 / 箭头终点 / 路径长度同源
                     // （directed 边终点沿末端切线回退到 target 半径外，箭头不再被后绘节点遮挡）
-                    let node_radius = global_node_radius(
-                        global_degrees.get(&edge.target).copied().unwrap_or(0),
-                    );
+                    let (node_radius, node_half) = tip_shape_of(&edge.target);
                     let geo = edge_geometry(
                         &edge,
                         (sx, sy),
                         (tx, ty),
                         node_radius,
+                        node_half,
                         loop_radius_of(&edge.source),
                     );
                     let len = geo.length;
@@ -1693,7 +1743,7 @@ mod tests {
     #[test]
     fn straight_geometry_keeps_legacy_tip_and_length() {
         let e = edge_with(None, "directed");
-        let geo = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 12.0, 48.0);
+        let geo = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 12.0, None, 48.0);
         // 直线：终点回退口径必须与旧实现逐位一致（arrow_tip_point）
         let legacy = arrow_tip_point((100.0, 100.0), (400.0, 100.0), 12.0);
         assert!((geo.tip.0 - legacy.0).abs() < 1e-9 && (geo.tip.1 - legacy.1).abs() < 1e-9);
@@ -1705,7 +1755,7 @@ mod tests {
     #[test]
     fn arc_geometry_bulges_by_declared_amount_at_mid() {
         let e = edge_with(Some(EdgeCurve::Arc(20.0)), "undirected");
-        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, 48.0);
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, None, 48.0);
         assert!(geo.d.contains('Q'), "弧线必须走二次贝塞尔: {}", geo.d);
         // Arc(d) 的语义 = 曲线中点偏移量，中点 = (P0+2P1+P2)/4 恰为 d
         assert!((geo.mid.0 - 50.0).abs() < 1e-9, "{}", geo.mid.0);
@@ -1725,7 +1775,7 @@ mod tests {
     #[test]
     fn arc_arrow_tip_follows_end_tangent_not_chord() {
         let e = edge_with(Some(EdgeCurve::Arc(30.0)), "directed");
-        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, 48.0);
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 12.0, None, 48.0);
         let control = quadratic_control(0.0, 0.0, 100.0, 0.0, 30.0);
         // ① 反推回去：tip 必须落在「控制点 → 终点」射线上（弧线末端切线方向）
         let dx = 100.0 - control.0;
@@ -1754,7 +1804,7 @@ mod tests {
     #[test]
     fn loop_geometry_uses_cubic_and_bulges_right() {
         let e = edge_with(Some(EdgeCurve::Loop), "directed");
-        let geo = edge_geometry(&e, (200.0, 200.0), (200.0, 200.0), 12.0, 48.0);
+        let geo = edge_geometry(&e, (200.0, 200.0), (200.0, 200.0), 12.0, None, 48.0);
         assert!(geo.d.contains('C'), "自环必须走三次贝塞尔: {}", geo.d);
         assert!(geo.mid.0 > 200.0, "自环应绕到节点右侧: {}", geo.mid.0);
         assert!(geo.length > 40.0, "自环绕行长度不应退化: {}", geo.length);
@@ -1765,15 +1815,87 @@ mod tests {
         // 二次贝塞尔的中点切线**恒平行于两端连线**（平行四边形性质）：
         // 弧顶标签仍沿「起点→终点」方向摆放，不会歪成别的角度。
         let e = edge_with(Some(EdgeCurve::Arc(40.0)), "undirected");
-        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 100.0), 12.0, 48.0);
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 100.0), 12.0, None, 48.0);
         assert!((geo.mid_angle - 45.0).abs() < 1e-6, "{}", geo.mid_angle);
         // 自环是三次贝塞尔：中点切线由控制点决定，在右侧绕行段近垂直
         let loop_e = edge_with(Some(EdgeCurve::Loop), "undirected");
-        let loop_geo = edge_geometry(&loop_e, (200.0, 200.0), (200.0, 200.0), 12.0, 48.0);
+        let loop_geo = edge_geometry(&loop_e, (200.0, 200.0), (200.0, 200.0), 12.0, None, 48.0);
         assert!(
             loop_geo.mid_angle.abs() > 45.0,
             "自环中点切线应近垂直: {}",
             loop_geo.mid_angle
+        );
+    }
+
+    // ==================== 卡片态箭头落点守卫 ====================
+    // 三修③：卡片节点是矩形，箭头终点若按「离中心 radius + GAP」回退就会落进
+    // 矩形内部、被后绘卡片盖住。以下三例把「箭头必须停在矩形外」钉死。
+
+    #[test]
+    fn card_target_keeps_arrow_tip_outside_rect_on_horizontal_hit() {
+        let e = edge_with(None, "directed");
+        let half = (84.0, 45.0);
+        let geo = edge_geometry(&e, (100.0, 100.0), (400.0, 100.0), 7.0, Some(half), 48.0);
+        // 水平入射撞左缘：tip.x = 400 - 84 - GAP(2)
+        assert!(
+            (geo.tip.0 - (400.0 - 84.0 - 2.0)).abs() < 1e-9,
+            "水平入射箭头应停在左缘外 GAP 处: {:?}",
+            geo.tip
+        );
+        assert!(
+            (geo.tip.1 - 100.0).abs() < 1e-9,
+            "水平入射不应偏移 y: {:?}",
+            geo.tip
+        );
+        // 旧圆口径只回退 7 + 2 = 9px，这里必须已明显越过左缘
+        assert!(
+            geo.tip.0 < 400.0 - 84.0,
+            "箭头不得落进矩形内部: {:?}",
+            geo.tip
+        );
+        // 命中路径仍到中心（hover 区更宽松，与视觉分离是有意的）
+        assert!(geo.d_full.contains("L 400 100"), "{}", geo.d_full);
+    }
+
+    #[test]
+    fn card_target_intersects_top_and_left_edges_by_direction() {
+        let e = edge_with(None, "directed");
+        let half = (84.0, 45.0);
+        // 垂直入射：撞上缘（不是左右缘）
+        let v = edge_geometry(&e, (200.0, 0.0), (200.0, 300.0), 7.0, Some(half), 48.0);
+        assert!(
+            (v.tip.1 - (300.0 - 45.0 - 2.0)).abs() < 1e-9,
+            "垂直入射箭头应停在上缘外 GAP 处: {:?}",
+            v.tip
+        );
+        assert!((v.tip.0 - 200.0).abs() < 1e-9);
+        // 斜向入射：撞最近的那条边，tip 必须落在矩形之外（至少一轴超出半宽/半高）
+        let d = edge_geometry(&e, (0.0, 300.0), (400.0, 100.0), 7.0, Some(half), 48.0);
+        let dx = (d.tip.0 - 400.0).abs();
+        let dy = (d.tip.1 - 100.0).abs();
+        assert!(
+            dx >= 84.0 || dy >= 45.0,
+            "斜向入射箭头必须落在矩形边界之外: {:?}",
+            d.tip
+        );
+    }
+
+    #[test]
+    fn arc_arrow_on_card_target_also_stays_outside_rect() {
+        // 弧线走「控制点 → 终点」切线求交，矩形口径同样生效
+        let e = edge_with(Some(EdgeCurve::Arc(30.0)), "directed");
+        let geo = edge_geometry(&e, (0.0, 0.0), (100.0, 0.0), 7.0, Some((40.0, 20.0)), 48.0);
+        let dx = (geo.tip.0 - 100.0).abs();
+        let dy = (geo.tip.1 - 0.0).abs();
+        assert!(
+            dx >= 40.0 || dy >= 20.0,
+            "弧线箭头必须落在矩形边界之外: {:?}",
+            geo.tip
+        );
+        assert!(
+            (geo.tip.1 - 0.0).abs() > 0.5,
+            "弧线箭头应带末端切线偏移: {:?}",
+            geo.tip
         );
     }
 

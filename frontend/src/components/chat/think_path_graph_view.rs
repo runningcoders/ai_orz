@@ -106,10 +106,11 @@ pub fn ThinkPathGraphView(
                         edges: mini.edges.clone(),
                         svg_width: Some(MINI_W as u32),
                         svg_height: Some(MINI_H as u32),
-                        // 缩略图用卡片形态 + auto_fit：思考轨迹的图节点通常只有 3~8 个，
-                        // fit 之后卡片完整可读；若走 mini 点线形态，半径 < 14 会免绘名称
-                        // （global_node_label 守卫），缩略图退化成一堆没有名字的点 —— 看结构
-                        // 还不如看列表，故这里刻意不用 mini。
+                        // 缩略图走 mini 点线形态（与任务依赖图小图同款口径）：
+                        // 300×200 里塞矩形卡片必然互相压住，压成一团既看不出拓扑、
+                        // 也认不出节点；点线形态至少把「几个节点、怎么连、什么类型色」
+                        // 看干净，名称与明细交给 hover 卡，完整卡片在放大弹窗里看。
+                        mini: true,
                         auto_fit: true,
                         on_node_click: move |_id: String| {},
                     }
