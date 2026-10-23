@@ -493,6 +493,186 @@ pub fn spread_layout(nodes: &mut [GraphNode], width: f64, height: f64, mini: boo
     ((gap + node_h).min(height * 0.32)).max(node_h)
 }
 
+/// 力导向松弛：在 `spread_layout` 的分层结果上跑**力传导布局**，让节点上下错落
+///
+/// # 为什么直接复用现成算法（AMan 第六轮反馈②「别自己写了，直接用人家的」）
+///
+/// `spread_layout` 只解决「不重叠」：它把同层节点摊成一条**规整的一横排**（y 完全相同、
+/// 横向等距）。规整反而难看 —— 所有线从同一水平线落到同一水平线，缺少错落感。
+/// 力传导布局（`components/force_layout.rs`，知识图谱 / 工作台的 Canvas 栈一直在用）
+/// 本来就是为这件事写的：斥力 + 碰撞分离 + 连线弹簧 + 分层约束力，天然产出「大致在
+/// 同一层、但不齐平」的有机分布。这里不新写算法，直接把节点转成 `CanvasNode` 跑它的
+/// `ForceLayout::step`，跑完把坐标搬回来。
+///
+/// # 安全兜底（只保证「不重叠 + 层序可读」，不改变力传导给出的位置）
+///
+/// - **y 夹在所属层带内**（抖动上限 `layer_gap × 0.18`，再夹到 12px）：层序仍是可读的
+///   拓扑顺序，只是同层节点高低错开；上限同时保证相邻层带不会因为抖动贴到一起。
+/// - **x 写回后按卡片宽做一次最小间距校正 + 整层居中**：纯「不许重叠」的硬保证。
+/// - 层带内若力传导给出完全相同的 y（对称场景），补一个由节点 id 派生的**确定性**微抖，
+///   避免又退回「排成一条线」（同一份数据每次渲染位置一致，不会跳）。
+///
+/// # 返回
+///
+/// 原样返回 `layer_gap`：层带中心距仍由 `spread_layout` 决定，松弛只改层内分布。
+pub fn relax_layout(
+    nodes: &mut [GraphNode],
+    edges: &[GraphEdge],
+    width: f64,
+    height: f64,
+    mini: bool,
+    layer_gap: f64,
+) -> f64 {
+    use crate::components::canvas_scene::{CanvasEdge, CanvasNode};
+    use crate::components::force_layout::{ForceLayout, ForceLayoutConfig};
+
+    if nodes.len() < 2 {
+        return layer_gap;
+    }
+
+    // 1) 恢复层带：`spread_layout` 的输出按 y 聚成若干带（容差 = 半个层距）
+    let band_tol = (layer_gap * 0.5).max(1.0);
+    let mut band_centers: Vec<f64> = Vec::new();
+    let mut band_of: Vec<usize> = vec![0; nodes.len()];
+    {
+        let mut order: Vec<usize> = (0..nodes.len()).collect();
+        order.sort_by(|&a, &b| {
+            nodes[a]
+                .y
+                .partial_cmp(&nodes[b].y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for i in order {
+            let y = nodes[i].y;
+            let idx = match band_centers.iter().position(|c| (y - *c).abs() <= band_tol) {
+                Some(p) => p,
+                None => {
+                    band_centers.push(y);
+                    band_centers.len() - 1
+                }
+            };
+            band_of[i] = idx;
+        }
+    }
+    if band_centers.is_empty() {
+        return layer_gap;
+    }
+
+    // 2) 转成 CanvasNode / CanvasEdge，交给力传导
+    let mut c_nodes: Vec<CanvasNode> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let radius = if mini {
+                10.0
+            } else {
+                let w = crate::components::graph::node_box_width(n);
+                let h = crate::components::graph::node_box_height(n);
+                w.max(h) / 2.0
+            };
+            CanvasNode {
+                id: n.id.clone(),
+                x: n.x,
+                y: n.y,
+                radius,
+                label: n.label.clone(),
+                color: String::new(),
+                node_type: None,
+                layer: Some(band_of[i] as i32),
+                summary: None,
+                description: String::new(),
+                tags: Vec::new(),
+                highlighted: false,
+            }
+        })
+        .collect();
+    let c_edges: Vec<CanvasEdge> = edges
+        .iter()
+        .filter(|e| e.source != e.target)
+        .map(|e| CanvasEdge {
+            from_id: e.source.clone(),
+            to_id: e.target.clone(),
+            ..Default::default()
+        })
+        .collect();
+
+    let cfg = ForceLayoutConfig {
+        repulsion: if mini { 1500.0 } else { 6000.0 },
+        attraction: 0.06,
+        ideal_length: if mini { 70.0 } else { 150.0 },
+        damping: 0.85,
+        max_step: 6.0,
+        // 层约束给得比较硬：错落要，但层序不能被拉乱（可读性优先于「自由」）
+        layer_attraction: 0.30,
+        layer_height: layer_gap.max(1.0),
+        layer_top_margin: band_centers.first().copied().unwrap_or(0.0),
+    };
+    let mut layout = ForceLayout::new(cfg);
+    for _ in 0..240 {
+        let d = layout.step(&mut c_nodes, &c_edges, width, height);
+        if layout.is_stable(d, 0.8) {
+            break;
+        }
+    }
+
+    // 3) 写回：y 夹在层带内（错落但不越层），x 用力传导结果
+    let jitter_cap = (layer_gap * 0.18).clamp(4.0, 12.0);
+    let jitter_of = |id: &str| -> f64 {
+        // FNV-1a：确定性哈希 → 同一份数据每次渲染的错落位置一致
+        let mut h: u64 = 1469598103934665603;
+        for b in id.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(1099511628211);
+        }
+        (h % 1000) as f64 / 1000.0 - 0.5
+    };
+    for (i, n) in nodes.iter_mut().enumerate() {
+        let base = band_centers[band_of[i]];
+        let dy = (c_nodes[i].y - base) + jitter_of(&n.id) * jitter_cap * 0.6;
+        n.y = base + dy.clamp(-jitter_cap, jitter_cap);
+        n.x = c_nodes[i].x;
+    }
+
+    // 4) 安全兜底：层内按卡片宽做最小间距校正，再整层横向居中
+    let (node_w, h_gap) = if mini {
+        (18.0, 18.0)
+    } else {
+        (
+            nodes
+                .iter()
+                .map(crate::components::graph::node_box_width)
+                .fold(0.0_f64, f64::max),
+            26.0,
+        )
+    };
+    let need = node_w + h_gap;
+    for band in 0..band_centers.len() {
+        let mut idxs: Vec<usize> = (0..nodes.len()).filter(|&i| band_of[i] == band).collect();
+        if idxs.is_empty() {
+            continue;
+        }
+        idxs.sort_by(|&a, &b| {
+            nodes[a]
+                .x
+                .partial_cmp(&nodes[b].x)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for k in 1..idxs.len() {
+            let prev = nodes[idxs[k - 1]].x;
+            if nodes[idxs[k]].x - prev < need {
+                nodes[idxs[k]].x = prev + need;
+            }
+        }
+        let first = nodes[*idxs.first().unwrap()].x;
+        let last = nodes[*idxs.last().unwrap()].x;
+        let shift = width / 2.0 - (first + last) / 2.0;
+        for &i in &idxs {
+            nodes[i].x += shift;
+        }
+    }
+    layer_gap
+}
+
 /// 思考路径图构建结果
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThinkPathGraph {
@@ -591,6 +771,8 @@ pub fn build_think_path_graph(
     // 布局松散化：按节点实际视觉尺寸重排（详见 `spread_layout` 文档），
     // 返回的层距随重排结果变，供弧线曲率分档使用
     let layer_gap = spread_layout(&mut nodes, width, height, mini);
+    // 错落：复用知识图谱同款力传导布局做层内松弛（不再手写「一横排」）
+    let layer_gap = relax_layout(&mut nodes, &edges, width, height, mini, layer_gap);
     // 曲率：回边 / 双向成对边走弧线，自环绕行；同层多条回边按组内序分档（详见函数文档）
     assign_edge_curves(&nodes, &mut edges, layer_gap, mini);
 
@@ -618,12 +800,16 @@ pub fn build_think_path_graph(
 /// 这里把同层回边按源节点 x 排序成一组，弧度在 `(0, max_bulge]` 内均匀铺开：
 /// 组内任意两条弧度必不相同，曲线随节点横向位置呈扇形展开，各自可辨。
 ///
-/// # 弧向避障（启发式，AMan 第五轮反馈③「尽量不穿过卡片」）
+/// # 弯向选择：先躲人，再往外弯（AMan 第五/六轮反馈「不要往别人的点上弯，往外弯」）
 ///
-/// 每条弧线都有两个可选的弯向（`+bulge` / `-bulge`）。取曲线中点（二次贝塞尔 `t=0.5`，
-/// 即「两端中点 + bulge·N」）检测是否落进任何**第三方**卡片矩形（半宽/半高 + 4px 余量）：
-/// 当前弯向撞卡、反向不撞，就整条换到反向。这是 O(边数 × 节点数) 的**局部**启发式，
-/// **不是全局路由** —— 多条线在密集区间同时交错时仍可能有个别穿卡，属已知边界。
+/// 每条弧线都有两个可选的弯向（`+bulge` / `-bulge`），弧顶位置 = 两端中点 + bulge·N。
+/// 对两个方向各算一次「弧顶到最近第三方卡片矩形外沿的余量」（负值=已经压进卡片），
+/// 取余量大的那一侧；两侧余量之差小于 1px（等价于都空、或都被压）时，改用
+/// **远离全图重心**的一侧 —— 也就是画面上「往外弯」。这样大片空白会被用上，
+/// 而不是把弧顶塞进节点堆里。
+///
+/// 仍是 O(边数 × 节点数) 的**局部**启发式，**不是全局路由/正交布线**：多条线在密集
+/// 区间同时交错时仍可能有个别穿卡，属已知边界（要彻底解决需引入真正的图布局库）。
 ///
 /// - 自环（`source == target`）→ `EdgeCurve::Loop`；
 /// - 双向对（同一无序对存在两条边）→ 组内**同号**弧线，分居参考线两侧；
@@ -667,6 +853,34 @@ pub fn assign_edge_curves(
     let x_of = |id: &str| pos.get(id).map(|p| p.0).unwrap_or(0.0);
     let y_of = |id: &str| pos.get(id).map(|p| p.1).unwrap_or(0.0);
 
+    // 层带：把节点按 y 聚成若干带（容差 = 半个层距）后编组。
+    // 为什么不用 `y.round()`：力传导松弛后同层节点的 y 已错开几像素到十几像素，
+    // 取整会把同一条层带拆成多个组，组内每条边各占一个弧度、反而退化成同值。
+    let band_tol = (layer_gap * 0.5).max(1.0);
+    let mut band_id: HashMap<&str, usize> = HashMap::new();
+    {
+        let mut centers: Vec<f64> = Vec::new();
+        let mut order: Vec<usize> = (0..nodes.len()).collect();
+        order.sort_by(|&a, &b| {
+            nodes[a]
+                .y
+                .partial_cmp(&nodes[b].y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for i in order {
+            let y = nodes[i].y;
+            let idx = match centers.iter().position(|c| (y - *c).abs() <= band_tol) {
+                Some(p) => p,
+                None => {
+                    centers.push(y);
+                    centers.len() - 1
+                }
+            };
+            band_id.insert(nodes[i].id.as_str(), idx);
+        }
+    }
+    let band_of = |id: &str| band_id.get(id).copied().unwrap_or(0);
+
     // 卡片矩形（含 4px 余量）：弧线中点落进去就要换侧
     let half_of = |n: &GraphNode| -> (f64, f64) {
         if mini {
@@ -678,20 +892,46 @@ pub fn assign_edge_curves(
             )
         }
     };
-    // 弧线中点是否压到第三方卡片（排除边自身的两端）
-    let blocked = |from: (f64, f64), to: (f64, f64), bulge: f64, skip: (&str, &str)| -> bool {
+    // 弧顶到最近**第三方**卡片的余量（负值 = 已经压进卡片本体）
+    // 用「到矩形的切比雪夫距离」近似：两个方向都越界才算真正有余量
+    let clearance = |from: (f64, f64), to: (f64, f64), bulge: f64, skip: (&str, &str)| -> f64 {
         let p1 = crate::components::graph::quadratic_control(from.0, from.1, to.0, to.1, bulge);
         let mid = (
             (from.0 + 2.0 * p1.0 + to.0) / 4.0,
             (from.1 + 2.0 * p1.1 + to.1) / 4.0,
         );
-        nodes.iter().any(|n| {
-            if n.id.as_str() == skip.0 || n.id.as_str() == skip.1 {
-                return false;
-            }
-            let (hw, hh) = half_of(n);
-            (mid.0 - n.x).abs() < hw && (mid.1 - n.y).abs() < hh
-        })
+        nodes
+            .iter()
+            .filter(|n| n.id.as_str() != skip.0 && n.id.as_str() != skip.1)
+            .map(|n| {
+                let (hw, hh) = half_of(n);
+                let dx = (mid.0 - n.x).abs() - hw;
+                let dy = (mid.1 - n.y).abs() - hh;
+                dx.max(dy)
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+    // 全图重心：两侧余量相当时用它定「往外弯」的方向
+    let (cx, cy) = {
+        let n = nodes.len().max(1) as f64;
+        (
+            nodes.iter().map(|x| x.x).sum::<f64>() / n,
+            nodes.iter().map(|x| x.y).sum::<f64>() / n,
+        )
+    };
+    // 选弧向：优先余量大的一侧（不往别人的点上弯）；余量差 < 1px 视为平票 →
+    // 选「远离全图重心」的一侧（往外弯）。返回 +1.0 / -1.0，绝对值由调用方给。
+    let pick_sign = |from: (f64, f64), to: (f64, f64), v: f64, skip: (&str, &str)| -> f64 {
+        let cp = clearance(from, to, v, skip);
+        let cn = clearance(from, to, -v, skip);
+        if (cp - cn).abs() > 1.0 {
+            return if cp > cn { 1.0 } else { -1.0 };
+        }
+        let outward = |b: f64| {
+            let p1 = crate::components::graph::quadratic_control(from.0, from.1, to.0, to.1, b);
+            (p1.0 - cx).powi(2) + (p1.1 - cy).powi(2)
+        };
+        if outward(v) >= outward(-v) { 1.0 } else { -1.0 }
     };
 
     // 1) 分类
@@ -709,8 +949,10 @@ pub fn assign_edge_curves(
             if pair_dirs.get(&key).copied().unwrap_or(0) > 1 {
                 return Kind::Pair;
             }
-            if y_of(&e.target) <= y_of(&e.source) + 1.0 {
-                Kind::Back(y_of(&e.source).round() as i64)
+            // 同层判定用「层距的一半」作阈值：松弛后同层节点 y 会错开 ≤2×12px，
+            // 仍远小于半个层距；相邻层的最小差是层距减去两边抖动，必定过半。
+            if y_of(&e.target) - y_of(&e.source) < layer_gap * 0.5 {
+                Kind::Back(band_of(&e.source) as i64)
             } else {
                 Kind::Straight
             }
@@ -769,11 +1011,7 @@ pub fn assign_edge_curves(
             continue;
         };
         let skip = (s.as_str(), t.as_str());
-        let sign = if blocked(from, to, base, skip) && !blocked(from, to, -base, skip) {
-            -1.0
-        } else {
-            1.0
-        };
+        let sign = pick_sign(from, to, base, skip);
         pair_sign.insert(key.clone(), sign);
     }
 
@@ -793,12 +1031,11 @@ pub fn assign_edge_curves(
             }
             Kind::Back(_) => {
                 let v = back_bulge.get(&i).copied().unwrap_or(base * 0.6);
-                // 弧顶撞到第三方卡片、反向不撞时整条翻向（绝对值不变，组内仍两两不等）
+                // 弯向由 pick_sign 定（优先空的一侧 / 平票往外弯）；绝对值不变 → 组内仍两两不等
                 let from = (x_of(&s), y_of(&s));
                 let to = (x_of(&t), y_of(&t));
-                let flip = blocked(from, to, v, (s.as_str(), t.as_str()))
-                    && !blocked(from, to, -v, (s.as_str(), t.as_str()));
-                EdgeCurve::Arc(if flip { -v } else { v })
+                let sign = pick_sign(from, to, v, (s.as_str(), t.as_str()));
+                EdgeCurve::Arc(sign * v)
             }
             Kind::Straight => EdgeCurve::Straight,
         });
@@ -976,6 +1213,59 @@ mod tests {
         assert_eq!(via_phrase("other"), "");
     }
 
+    /// 卡片绝不重叠：力传导松弛后同层有最小水平间距、层间有最小垂直间隙
+    #[test]
+    fn relaxed_layout_keeps_every_card_apart() {
+        let occs = vec![
+            occ("Triage", 1, 1, None),
+            occ("Prepare", 1, 2, None),
+            occ("Deliberate", 1, 3, None),
+            occ("Act", 1, 4, None),
+            occ("Evaluate", 1, 5, None),
+            occ("Triage", 2, 6, None),
+        ];
+        let g = build_think_path_graph(&occs, &[], 920.0, 620.0, false);
+        assert!(g.nodes.len() >= 5, "至少 5 个节点: {}", g.nodes.len());
+        for i in 0..g.nodes.len() {
+            for j in (i + 1)..g.nodes.len() {
+                let a = &g.nodes[i];
+                let b = &g.nodes[j];
+                let need_x = (crate::components::graph::node_box_width(a)
+                    + crate::components::graph::node_box_width(b))
+                    / 2.0;
+                let need_y = (crate::components::graph::node_box_height(a)
+                    + crate::components::graph::node_box_height(b))
+                    / 2.0;
+                let dx = (a.x - b.x).abs();
+                let dy = (a.y - b.y).abs();
+                assert!(
+                    dx >= need_x - 0.5 || dy >= need_y - 0.5,
+                    "卡片 {} 与 {} 重叠: dx={dx:.1} (需 ≥{need_x:.1}) dy={dy:.1} (需 ≥{need_y:.1})",
+                    a.id,
+                    b.id
+                );
+            }
+        }
+    }
+
+    /// 同一层的节点必须错落（力传导松弛的 y 抖动），不能又退回一条水平线
+    #[test]
+    fn same_layer_nodes_are_staggered_not_collinear() {
+        // A→B→C→A 成环 ⇒ 三节点同层
+        let occs = vec![
+            occ("A", 1, 1, None),
+            occ("B", 1, 2, None),
+            occ("C", 1, 3, None),
+            occ("A", 2, 4, None),
+        ];
+        let g = build_think_path_graph(&occs, &[], 920.0, 620.0, false);
+        let mut ys: Vec<f64> = g.nodes.iter().map(|n| n.y).collect();
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let span = *ys.last().unwrap() - *ys.first().unwrap();
+        assert!(span > 0.5, "同层节点应上下错落，实际共线: {ys:?}");
+        assert!(span < 60.0, "错落幅度不应大到看不出同层: {ys:?}");
+    }
+
     /// 双向边必须**几何分居参考线两侧**（旧实现按 source<=target 取反符号，
     /// 与 left-hand normal 的方向反转两次抵消 → 两条曲线完全重合）
     #[test]
@@ -1059,7 +1349,14 @@ mod tests {
         let ys: Vec<f64> = g.nodes.iter().map(|n| n.y).collect();
         let span = ys.iter().copied().fold(f64::MIN, f64::max)
             - ys.iter().copied().fold(f64::MAX, f64::min);
-        assert!(span < 1.0, "环上节点应同层（y 相同）: span={span}");
+        assert!(
+            span < 120.0,
+            "环上节点仍应在同一层带内（错落幅度有限）: span={span}"
+        );
+        assert!(
+            span > 0.5,
+            "同层节点应上下错落而不是排成一条线: span={span}"
+        );
 
         let mut bulges: Vec<f64> = Vec::new();
         for e in &g.edges {

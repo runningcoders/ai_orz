@@ -436,6 +436,33 @@ fn calculate_edge_angle(sx: f64, sy: f64, tx: f64, ty: f64) -> f64 {
     dy.atan2(dx) * 180.0 / std::f64::consts::PI
 }
 
+/// 边标签朝向归一：**文字永远正立**（AMan 第六轮反馈③）
+///
+/// 边的 `mid_angle` 是中段切线角，方向随 `source → target` 走：`A→B` 朝右（≈0°），
+/// `B→A` 朝左（≈180°）。直接拿它 `rotate()` 就会出现「同一条线的两个方向，一个正着写、
+/// 一个倒着写」—— 一张图里两种朝向，读起来别扭且和布局是否合适无关（任何布局下
+/// 反向边的切线角都在 180° 附近）。
+///
+/// 这里把角度折进 `(-90°, 90°]`：倒置的标签翻转 180° 后仍与线同向（沿线的姿态不变），
+/// 但阅读方向统一为正立。这是图可视化领域的通行做法（标签恒水平可读），不依赖布局算法。
+pub fn upright_angle(angle: f64) -> f64 {
+    let mut a = angle % 360.0;
+    if a > 180.0 {
+        a -= 360.0;
+    }
+    if a <= -180.0 {
+        a += 360.0;
+    }
+    if a > 90.0 {
+        a - 180.0
+    } else if a <= -90.0 {
+        // 含 -90 边界：折进 (-90, 90] 才是「正立」的闭区间口径
+        a + 180.0
+    } else {
+        a
+    }
+}
+
 /// 二次贝塞尔控制点
 ///
 /// 取两端中点为基准，沿连线法线偏移 `bulge * 2`：二次贝塞尔在 `t=0.5` 处的点
@@ -873,7 +900,9 @@ pub fn Graph(props: GraphProps) -> Element {
                             label,
                             format!(
                                 "translate({}, {}) rotate({})",
-                                geo.mid.0, geo.mid.1, geo.mid_angle
+                                geo.mid.0,
+                                geo.mid.1,
+                                upright_angle(geo.mid_angle)
                             ),
                             get_edge_color(&edge.label),
                         )
@@ -1842,6 +1871,27 @@ mod tests {
         assert!(geo.d.contains('C'), "自环必须走三次贝塞尔: {}", geo.d);
         assert!(geo.mid.0 > 200.0, "自环应绕到节点右侧: {}", geo.mid.0);
         assert!(geo.length > 40.0, "自环绕行长度不应退化: {}", geo.length);
+    }
+
+    #[test]
+    fn upright_angle_keeps_labels_readable_in_both_directions() {
+        // 正向/反向边的切线角互换 180°，标签旋转角必须落在 (-90°, 90°] 内
+        for raw in [
+            0.0, 45.0, 90.0, 135.0, 180.0, -135.0, -180.0, 179.9, -179.9, 270.0,
+        ] {
+            let a = upright_angle(raw);
+            assert!(
+                a > -90.0 && a <= 90.0,
+                "标签角度必须落在 (-90, 90] 才正立: raw={raw} → {a}"
+            );
+        }
+        // 同一条线的两个方向（0° / 180°）归一后是同一种朝向
+        assert!((upright_angle(180.0) - 0.0).abs() < 1e-9);
+        assert!((upright_angle(-180.0) - 0.0).abs() < 1e-9);
+        // 斜线只翻不转：45° 保持 45°，135° 翻成 -45°，斜率不同侧但都正立
+        assert!((upright_angle(45.0) - 45.0).abs() < 1e-9);
+        assert!((upright_angle(135.0) + 45.0).abs() < 1e-9);
+        assert!((upright_angle(-135.0) - 45.0).abs() < 1e-9);
     }
 
     #[test]
