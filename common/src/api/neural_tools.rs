@@ -743,6 +743,15 @@ pub struct SaveLongTermMemoryParams {
     pub tags: Option<Vec<String>>,
     /// 关联关系列表。
     pub relations: Option<Vec<KnowledgeRelationParam>>,
+    /// 本节点的**来源短期记忆 id 列表**（沉淀场景必填）。
+    ///
+    /// 语义：本节点是从哪些短期记忆归纳出来的。框架据此展开每条短期记忆的
+    /// `trace_ids`，按「一个 trace 一行」写入 `knowledge_reference`，从而让知识节点
+    /// 能顺着「短期记忆 → 原始 trace → JSONL 文件+行号」追回当时的原始记录。
+    ///
+    /// ⚠️ 不填 = 本节点在图谱里无源头（与 `relations` 不同，这里没有框架兜底：
+    /// 框架不知道「哪个节点来自哪条记忆」，只能靠调用方声明）。
+    pub source_short_term_ids: Option<Vec<String>>,
     /// 节点属性列表（结构化字段，如「模型名」「生效时间」「置信度」）。
     ///
     /// 只有**可复用、可比较、需要被结构化过滤**的事实才适合放这里；

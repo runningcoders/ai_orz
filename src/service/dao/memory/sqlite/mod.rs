@@ -32,6 +32,7 @@ use common::enums::ontology::PropertyTargetType;
 use common::error::Result;
 use common::ontology_property::PropertyFilter;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
@@ -52,7 +53,7 @@ mod short_term;
 mod trace;
 
 #[cfg(test)]
-pub(crate) use trace::query_traces_at;
+pub(crate) use trace::{query_traces_at, resolve_trace_positions_at};
 
 #[cfg(test)]
 mod drift_test;
@@ -132,6 +133,7 @@ memory_dao_impl! {
     batch_append_traces(ctx: RequestContext, traces: &[MemoryTrace]) -> Result<Vec<MemoryTracePosition>>,
     query_traces(ctx: RequestContext, query: MemoryTraceQuery) -> Result<PagedResult<MemoryTrace>>,
     get_trace(ctx: RequestContext, agent_id: &str, trace_id: &str) -> Result<Option<MemoryTrace>>,
+    resolve_trace_positions(ctx: RequestContext, agent_id: &str, trace_ids: &[String]) -> Result<HashMap<String, MemoryTracePosition>>,
     create_short_term_index(ctx: RequestContext, index: ShortTermMemoryIndexPo) -> Result<()>,
     update_short_term_index(ctx: RequestContext, index: ShortTermMemoryIndexPo) -> Result<()>,
     forget_short_term_index(ctx: RequestContext, id: &str) -> Result<()>,

@@ -8,9 +8,18 @@ use crate::pkg::paths;
 use crate::service::dao::memory::MemoryTraceQuery;
 use common::api::{PagedResult, PaginationParams};
 use common::error::Result;
+use serde::Deserialize;
 use serde_json;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+
+/// 只解 `id` 的探测结构：定位 trace 落盘位置时无需把整条 input/output 反序列化出来
+/// （input 是完整 Prompt，单条可达几十 KB，全量解析会让一次扫描放大成 O(行数 × 载荷)）。
+#[derive(Deserialize)]
+struct TraceIdProbe {
+    id: String,
+}
 
 // ==================== MemoryTrace 文件读取 ====================
 
@@ -192,6 +201,80 @@ fn matches_trace_query(trace: &MemoryTrace, query: &MemoryTraceQuery) -> bool {
     true
 }
 
+/// 按 trace_id 集合解析各自的落盘物理位置（一次扫描，全部命中即提前返回）
+///
+/// 与 [`query_traces_at`] 的分工（**别用后者来定位**）：
+/// - `query_traces_at` 是**列表/详情查询**，受分页上限约束（`MAX_MEMORY_TRACE_QUERY_LIMIT`），
+///   且 `MemoryTrace.position` 带 `#[serde(skip)]`、查询侧不回填 ⇒ **拿不到行号**；
+/// - 本函数是**精确定位**：给定一组 trace_id 直接回各自的 `(date_path, line_number)`，
+///   不受分页上限约束。它服务的正是「知识节点 → 短期记忆 → trace → 原始记录」这条引用链——
+///   `KnowledgeReferencePo` 有了 date_path + line_number 才能 `read_memory_reference` 读回原文。
+///
+/// 未命中的 trace_id **缺席于结果**而不报错：trace 可能因日志轮转/清理而读不到，
+/// 但「引用过它」这个事实仍然成立，引用关系照写，只是没有物理坐标。
+pub(crate) fn resolve_trace_positions_at(
+    base_data_path: &Path,
+    agent_id: &str,
+    trace_ids: &[String],
+) -> Result<HashMap<String, MemoryTracePosition>> {
+    let mut wanted: HashSet<&str> = trace_ids.iter().map(String::as_str).collect();
+    let mut found = HashMap::with_capacity(wanted.len());
+    if wanted.is_empty() {
+        return Ok(found);
+    }
+
+    for dir in memory_trace_dirs(base_data_path, Some(agent_id))? {
+        for path in jsonl_files(&dir)? {
+            let Some(date) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            let date_filename = format!("{date}.jsonl");
+            let file = match std::fs::File::open(&path) {
+                Ok(file) => file,
+                Err(err) => {
+                    log_warn!(
+                        "跳过无法打开的记忆轨迹文件: file={}, err={}",
+                        path.display(),
+                        err
+                    );
+                    continue;
+                }
+            };
+            for (line_number, line) in BufReader::new(file).lines().enumerate() {
+                let line = match line {
+                    Ok(line) => line,
+                    Err(err) => {
+                        log_warn!("读取记忆轨迹行失败: file={}, err={}", path.display(), err);
+                        break;
+                    }
+                };
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let Ok(probe) = serde_json::from_str::<TraceIdProbe>(&line) else {
+                    log_warn!("跳过无法解析的记忆轨迹行: file={}", path.display());
+                    continue;
+                };
+                if !wanted.remove(probe.id.as_str()) {
+                    continue;
+                }
+                found.insert(
+                    probe.id.clone(),
+                    MemoryTracePosition {
+                        trace_id: probe.id,
+                        date_filename: date_filename.clone(),
+                        line_number: line_number as u64,
+                    },
+                );
+                if wanted.is_empty() {
+                    return Ok(found);
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
 impl MemoryDaoSqliteImpl {
     pub(super) async fn append_trace(
         &self,
@@ -262,5 +345,15 @@ impl MemoryDaoSqliteImpl {
             )
             .await?;
         Ok(page.items.into_iter().next())
+    }
+
+    pub(super) async fn resolve_trace_positions(
+        &self,
+        _ctx: RequestContext,
+        agent_id: &str,
+        trace_ids: &[String],
+    ) -> Result<HashMap<String, MemoryTracePosition>> {
+        let base = config::get().base_data_path();
+        resolve_trace_positions_at(&base, agent_id, trace_ids)
     }
 }

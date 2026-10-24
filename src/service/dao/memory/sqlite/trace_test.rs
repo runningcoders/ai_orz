@@ -3,7 +3,7 @@
 use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo};
 use crate::service::dao::memory::MemoryTraceQuery;
 use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
-use crate::service::dao::memory::sqlite::query_traces_at;
+use crate::service::dao::memory::sqlite::{query_traces_at, resolve_trace_positions_at};
 use chrono::TimeZone;
 use common::enums::{MemoryRole, MemoryStatus};
 use sqlx::SqlitePool;
@@ -358,4 +358,73 @@ fn test_query_traces_skips_corrupted_lines() {
     .unwrap();
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].id, "trace-ok");
+}
+
+/// 按 trace_id 定位物理坐标：命中回（日期文件, 行号），未命中缺席
+///
+/// 这是「知识节点 → 短期记忆 → trace」引用链能落地的前提：`knowledge_reference`
+/// 有了 date_path + line_number 才能回读原始记录，而 `query_traces` **拿不到行号**
+/// （`position` 带 `#[serde(skip)]`，只有写入侧回填）——本函数正是补这个缺口。
+#[test]
+fn test_resolve_trace_positions_locates_line_number() {
+    let tmp = tempfile::tempdir().unwrap();
+    let agent_id = "agent-pos-1";
+    let dir = tmp.path().join("agents").join(agent_id).join("memory");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let make = |id: &str| {
+        let mut trace = MemoryTrace::new(
+            agent_id.to_string(),
+            "log-1".to_string(),
+            "user-1".to_string(),
+            "org-1".to_string(),
+            MemoryRole::User,
+            format!("payload of {id}"),
+            None,
+        );
+        trace.id = id.to_string();
+        trace
+    };
+
+    // 同日 3 条 → 验证行号是文件内 0-based；次日 1 条 → 验证能跨文件命中
+    let ids: Vec<String> = (0..3).map(|i| format!("trace-{i}")).collect();
+    let body: Vec<String> = ids
+        .iter()
+        .map(|id| serde_json::to_string(&make(id)).unwrap())
+        .collect();
+    std::fs::write(dir.join("20260101.jsonl"), body.join("\n") + "\n").unwrap();
+    std::fs::write(
+        dir.join("20260102.jsonl"),
+        serde_json::to_string(&make("trace-next-day")).unwrap() + "\n",
+    )
+    .unwrap();
+
+    let found = resolve_trace_positions_at(tmp.path(), agent_id, &ids).unwrap();
+    assert_eq!(found.len(), 3, "三条同日 trace 都应命中");
+    assert_eq!(found[&ids[0]].date_filename, "20260101.jsonl");
+    assert_eq!(found[&ids[0]].line_number, 0);
+    assert_eq!(found[&ids[2]].line_number, 2, "行号是文件内 0-based");
+
+    let cross =
+        resolve_trace_positions_at(tmp.path(), agent_id, &["trace-next-day".to_string()]).unwrap();
+    assert_eq!(cross["trace-next-day"].date_filename, "20260102.jsonl");
+    assert_eq!(cross["trace-next-day"].line_number, 0);
+
+    // 未命中缺席而非报错：引用关系本身仍成立，只是没有物理坐标
+    let partial = resolve_trace_positions_at(
+        tmp.path(),
+        agent_id,
+        &[ids[0].clone(), "trace-missing".to_string()],
+    )
+    .unwrap();
+    assert_eq!(partial.len(), 1);
+    assert!(partial.contains_key(&ids[0]));
+    assert!(!partial.contains_key("trace-missing"));
+
+    // 空入参直接返回空，不做无谓扫盘
+    assert!(
+        resolve_trace_positions_at(tmp.path(), agent_id, &[])
+            .unwrap()
+            .is_empty()
+    );
 }

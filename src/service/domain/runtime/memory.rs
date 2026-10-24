@@ -1,6 +1,8 @@
 //! Runtime Memory 具体实现
 
-use crate::models::memory::{KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryTrace};
+use crate::models::memory::{
+    KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryTrace, MemoryTracePosition,
+};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
@@ -78,6 +80,18 @@ impl RuntimeMemory for RuntimeDomainImpl {
     async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
         dal().query(ctx, query).await
+    }
+
+    async fn resolve_trace_positions(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, MemoryTracePosition>> {
+        use crate::service::dal::memory::dal;
+        dal()
+            .resolve_trace_positions(ctx, agent_id, trace_ids)
+            .await
     }
 
     async fn mark_short_term_settled(

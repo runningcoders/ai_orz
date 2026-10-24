@@ -17,7 +17,8 @@
 //! **固有 impl** 中，本文件用 `memory_dal_impl!` 生成唯一的 trait impl 做 1:1 转发。
 
 use crate::models::memory::{
-    KnowledgeNodeRelationPo, KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryPo, MemoryTrace,
+    KnowledgeNodeRelationPo, KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryPo,
+    MemoryTrace, MemoryTracePosition,
 };
 use crate::pkg::RequestContext;
 use crate::pkg::background_task::TaskProgressCounter;
@@ -32,7 +33,7 @@ use common::api::PagedResult;
 use common::enums::ontology::PropertyTargetType;
 use common::error::Result;
 use common::ontology_property::{PropertyEntry, PropertyFilter, PropertySaveReport};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 mod graph;
@@ -158,6 +159,18 @@ pub trait MemoryDal: Send + Sync {
         agent_id: &str,
         trace_id: &str,
     ) -> Result<Option<MemoryTrace>>;
+
+    /// 📍 按 trace ID 集合批量解析落盘物理位置（`date_path` + `line_number`）
+    ///
+    /// 与 `query_traces` 分工不同：后者是列表/详情查询（受分页上限约束、结果不带
+    /// `position`），本方法是**精确定位**，供知识节点引用链落地用。
+    /// 未命中的 trace_id 缺席于结果，不报错。
+    async fn resolve_trace_positions(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_ids: &[String],
+    ) -> Result<HashMap<String, MemoryTracePosition>>;
 
     /// 🎯 推荐知识图谱起点节点
     ///
@@ -439,6 +452,8 @@ memory_dal_impl! {
     query(ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>>,
     query_traces(ctx: RequestContext, query: MemoryTraceQuery) -> Result<PagedResult<MemoryTrace>>,
     get_trace(ctx: RequestContext, agent_id: &str, trace_id: &str) -> Result<Option<MemoryTrace>>,
+    resolve_trace_positions(ctx: RequestContext, agent_id: &str, trace_ids: &[String])
+        -> Result<HashMap<String, MemoryTracePosition>>,
     recommend_seed_nodes(ctx: RequestContext, agent_id: Option<String>, limit: usize)
         -> Result<Vec<crate::models::memory::SeedNodeRecommendation>>,
     get_knowledge_graph(ctx: RequestContext, agent_id: Option<String>)

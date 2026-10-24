@@ -13,6 +13,7 @@ use common::enums::{MemoryStatus, MemoryType};
 use common::error::Result;
 use common::ontology_property::PropertyFilter;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ==================== 查询参数结构体 ====================
 
@@ -255,6 +256,23 @@ pub trait MemoryDao: Send + Sync {
         agent_id: &str,
         trace_id: &str,
     ) -> Result<Option<MemoryTrace>>;
+
+    /// 按 trace_id 集合**批量解析落盘物理位置**（`date_path` + `line_number`）
+    ///
+    /// 与 `query_traces` 的分工（**别用 `query_traces` 来做这件事**）：
+    /// - `query_traces` 是列表/详情查询，受 `MAX_MEMORY_TRACE_QUERY_LIMIT` 分页上限约束，
+    ///   且返回的 trace **不带** `position`（写入侧才回填）⇒ 拿不到行号；
+    /// - 本方法是精确定位，不受分页上限约束，服务于「知识节点 → 短期记忆 → trace」引用链。
+    ///
+    /// # 返回
+    /// `trace_id → MemoryTracePosition`。**未命中的 trace_id 缺席于结果**（不报错）：
+    /// trace 可能因轮转/清理读不到，但引用关系本身仍成立。
+    async fn resolve_trace_positions(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_ids: &[String],
+    ) -> Result<HashMap<String, MemoryTracePosition>>;
 
     /// 创建短期记忆索引（仅写 SQLite，不接触文件）
     ///

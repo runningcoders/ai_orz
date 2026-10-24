@@ -165,6 +165,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             relations: None,
             properties: None,
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await
@@ -181,6 +182,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             relations: None,
             properties: None,
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await
@@ -300,6 +302,7 @@ async fn update_memory_attaches_and_supersedes_properties(pool: sqlx::SqlitePool
             relations: None,
             properties: None,
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await
@@ -403,6 +406,7 @@ async fn seed_node(ctx: &RequestContext, name: &str) -> String {
             relations: None,
             properties: None,
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await
@@ -463,6 +467,7 @@ async fn mixed_batch_relations_receipt_has_keys_and_real_ids(pool: sqlx::SqliteP
             ]),
             properties: None,
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await
@@ -569,6 +574,7 @@ async fn placeholder_relations_fail_per_item_without_any_edge(pool: sqlx::Sqlite
             ]),
             properties: None,
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await
@@ -707,6 +713,7 @@ async fn property_issues_v2_structured_with_error_codes(pool: sqlx::SqlitePool) 
                 },
             ]),
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await
@@ -768,6 +775,7 @@ async fn clean_properties_yield_empty_v1_and_omitted_v2(pool: sqlx::SqlitePool) 
                 ordinal: 0,
             }]),
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await

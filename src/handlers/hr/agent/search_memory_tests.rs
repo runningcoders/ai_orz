@@ -339,6 +339,7 @@ async fn relation_type_outside_vocabulary_stays_verbatim(pool: sqlx::SqlitePool)
             }]),
             properties: None,
             task_id: None,
+            source_short_term_ids: None,
         },
     )
     .await

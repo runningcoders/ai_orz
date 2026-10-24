@@ -14,7 +14,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::models::agent::Agent;
-use crate::models::memory::{KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryTrace};
+use crate::models::memory::{
+    KnowledgePropertyPo, Memory, MemoryCreateParams, MemoryTrace, MemoryTracePosition,
+};
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
@@ -142,6 +144,18 @@ pub trait RuntimeMemory: Send + Sync {
 
     /// 通用关系型查询
     async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>>;
+
+    /// 按 trace ID 集合批量解析落盘物理位置（`date_path` + `line_number`）
+    ///
+    /// 服务于「知识节点 → 短期记忆 → trace → 原始记录」引用链：
+    /// `KnowledgeReferencePo` 有了物理坐标才能回读当时的原始记录。
+    /// 未命中的 trace_id 缺席于结果（不报错）。
+    async fn resolve_trace_positions(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, MemoryTracePosition>>;
 
     /// 批量把短期记忆标记为「已沉淀」（`Active` → `Settled`）
     ///
