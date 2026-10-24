@@ -807,6 +807,10 @@ mod tests {
     }
 
     /// 双向对（A→B→A）：dagre 把两条边分别路由，折线几何不重合
+    ///
+    /// ⚠️ 旧断言只看「首点距 > 1px」——两条**完全重合**的路径首点恰好差一个边界量，
+    /// 于是这条守卫一直假绿，而真实症状是**两条边与两个边标签压在同一处**
+    /// （用户截图）。这里改成断言弧长中点分开（中点即边标签落点）。
     #[test]
     fn bidirectional_pair_gets_two_distinct_routes() {
         let occs = vec![
@@ -829,9 +833,33 @@ mod tests {
         else {
             panic!("双向对应各自走折线路由: {:?} / {:?}", ab.curve, ba.curve);
         };
-        // 两条折线不重合：首点距离 > 1px（dagre 对反向边分别路由）
-        let d = ((p1[0].0 - p2[0].0).powi(2) + (p1[0].1 - p2[0].1).powi(2)).sqrt();
-        assert!(d > 1.0, "双向边折线重合: 首点距 {d}");
+        // 两条折线的弧长中点必须分开：中点就是边标签的落点，重合即标签叠成一坨
+        let mid = |pts: &Vec<(f64, f64)>| {
+            let total: f64 = pts
+                .windows(2)
+                .map(|w| ((w[0].0 - w[1].0).powi(2) + (w[0].1 - w[1].1).powi(2)).sqrt())
+                .sum();
+            let mut acc = 0.0;
+            for w in pts.windows(2) {
+                let seg = ((w[0].0 - w[1].0).powi(2) + (w[0].1 - w[1].1).powi(2)).sqrt();
+                if acc + seg >= total / 2.0 {
+                    let t = if seg < f64::EPSILON {
+                        0.0
+                    } else {
+                        (total / 2.0 - acc) / seg
+                    };
+                    return (
+                        w[0].0 + (w[1].0 - w[0].0) * t,
+                        w[0].1 + (w[1].1 - w[0].1) * t,
+                    );
+                }
+                acc += seg;
+            }
+            pts[0]
+        };
+        let (m1, m2) = (mid(p1), mid(p2));
+        let d = ((m1.0 - m2.0).powi(2) + (m1.1 - m2.1).powi(2)).sqrt();
+        assert!(d >= 20.0, "双向边折线重合（边标签会叠在一起）: 中点距 {d}");
     }
 
     /// 缩略图点线态：节点全部落进 300×200 画布（不飞出 / 不贴边）

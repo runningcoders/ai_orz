@@ -749,6 +749,23 @@ fn edge_arc_control(from: &CanvasNode, to: &CanvasNode, bulge: f64) -> (f64, f64
     crate::components::graph::quadratic_control(from.x, from.y, to.x, to.y, bulge)
 }
 
+/// 折线的首/末点收回到「实际节点半径 + 箭头间隙」：
+/// dagre 边界交点（距心 = 节点半尺寸）被 `dagre_layout` 的 scale 放大后，
+/// 首/末点可能落在卡片外（scale>1）或卡片内（scale<1）；统一收缩/外推到
+/// `node.radius + ARROW_TIP_GAP`，与 `arrow_tip_point` 同一落点，保证线接到卡片、
+/// 箭头不被线端盖过。中间 waypoints 保留绕卡路由。
+/// 对称于 SVG 版 `graph::edge_geometry` 的 `rect_tip_point`/`start_of` 修复。
+fn polyline_card_endpoints(
+    pts: &[(f64, f64)],
+    from: &CanvasNode,
+    to: &CanvasNode,
+) -> ((f64, f64), (f64, f64)) {
+    let n = pts.len();
+    let first = arrow_tip_point(pts[1], (from.x, from.y), from.radius);
+    let last = arrow_tip_point(pts[n - 2], (to.x, to.y), to.radius);
+    (first, last)
+}
+
 /// 按几何形态描边一条边（节点后绘，中心端被卡片盖住，无需起点收缩）
 fn stroke_edge_path(
     ctx: &CanvasRenderingContext2d,
@@ -768,10 +785,12 @@ fn stroke_edge_path(
             ctx.quadratic_curve_to(cx, cy, to.x, to.y);
         }
         EdgeGeometry::Polyline(pts) => {
-            ctx.move_to(pts[0].0, pts[0].1);
-            for p in &pts[1..] {
+            let (first, last) = polyline_card_endpoints(pts, from, to);
+            ctx.move_to(first.0, first.1);
+            for p in &pts[1..pts.len() - 1] {
                 ctx.line_to(p.0, p.1);
             }
+            ctx.line_to(last.0, last.1);
         }
     }
     ctx.stroke();
@@ -2074,5 +2093,34 @@ mod tests {
         // 到达方向取倒数第二个 waypoint
         let arrival = edge_arrival_from(&e, &a, &b);
         assert!((arrival.0 - 100.0).abs() < 1e-9 && arrival.1.abs() < 1e-9);
+    }
+
+    /// 折线首/末点收回到卡片边：dagre scale>1 会把边界交点推到卡片外，
+    /// 线不能停在缩放后的远处端点（否则戳出箭头尖），必须落到节点半径处。
+    #[test]
+    fn polyline_endpoints_reach_card_boundary() {
+        let mut a = node("a");
+        a.x = 0.0;
+        a.y = 0.0;
+        a.radius = 40.0;
+        let mut b = node("b");
+        b.x = 200.0;
+        b.y = 0.0;
+        b.radius = 40.0;
+        // 水平边：dagre 边界交点是 (±half,0) 被 scale=2 放大 → (±80,0)
+        let pts = vec![(-80.0, 0.0), (100.0, 0.0), (280.0, 0.0)];
+        let (first, last) = polyline_card_endpoints(&pts, &a, &b);
+        // 首点距 a 中心 = radius + GAP，方向朝 b（+x）
+        assert!(
+            (first.0 - (a.radius + ARROW_TIP_GAP)).abs() < 1e-6,
+            "首点应收到卡片边: {first:?}"
+        );
+        assert!(first.1.abs() < 1e-6);
+        // 末点距 b 中心 = radius + GAP，方向朝 a（-x）
+        assert!(
+            (last.0 - (b.x - (b.radius + ARROW_TIP_GAP))).abs() < 1e-6,
+            "末点应收到卡片边: {last:?}"
+        );
+        assert!(last.1.abs() < 1e-6);
     }
 }

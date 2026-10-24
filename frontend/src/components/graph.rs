@@ -333,17 +333,23 @@ pub fn global_node_label(label: &str, radius: f64) -> String {
 /// 0.085 × 200 = **17px**，而更早那版按 `面积 / n` 均分在 3~4 节点时是 **22.9~24px**
 /// —— 也就是说第九轮为了「两个缩略图点径统一」，把点从 24px 压到了 17px，
 /// 统一是统一了，但把用户当时说「蛮合适」的尺寸改小了一整档，3 节点场景下
-/// 观感几乎等于没动。现在基准取 0.12（= 24px @ 200 短边），既统一（3/4/8 节点同值）
+/// 观感几乎等于没动。此后基准取 0.12（= 24px @ 200 短边），统一（3/4/8 节点同值）
 /// 又回到「原来那个大小」；节点数阻尼只在 8 个以上才收一点，避免 20+ 节点糊成一团。
+/// **2026-10-24 再下调为 0.08（= 16px @ 200 短边，直径 32px）**：dagre 布局放开 scale
+/// 铺满画布后，用户反馈点仍「非常大」，要求直径至少缩短 1/3（48px → 32px）。
 ///
 /// 布局侧（`utils::dagre_layout` 点线态取 `dot_node_radius × 2` 作节点尺寸）
 /// 用同一函数推节点占位与间距，保证「画多大点」与「留多大位」永远一致，不会点压点。
 pub fn dot_node_radius(width: f64, height: f64, node_count: usize) -> f64 {
     let short = width.max(1.0).min(height.max(1.0));
-    let base = (short * 0.12).clamp(10.0, 28.0);
+    // 基准 0.08（= 16px @ 200 短边 → 直径 32px，比第十轮的 24px / 直径 48px **缩短
+    // 1/3**）、上限 20。用户明确要求「直径至少缩短 1/3」：dagre 放开 scale 铺满画布
+    // 后点距已经拉开，点再小也不影响辨识，反而让连线更清晰（仍随画布放大、
+    // 节点数轻阻尼，3/4/8 节点仍同值）。
+    let base = (short * 0.08).clamp(10.0, 20.0);
     let n = node_count.max(1) as f64;
     let damp = (8.0 / n.max(8.0)).powf(0.35);
-    (base * damp).clamp(10.0, 28.0)
+    (base * damp).clamp(10.0, 20.0)
 }
 
 // 卡片几何 / 文案 / 配色的实现在 `components::node_card`（Canvas 与 SVG 共用一份；
@@ -734,8 +740,12 @@ pub fn edge_geometry(
         Some(half) => {
             let dx = towards.0 - from.0;
             let dy = towards.1 - from.1;
-            // 出射方向不可靠（指向点就落在卡片内部）时不收缩，避免起点被推到卡片对侧
-            if (dx * dx + dy * dy).sqrt() < (half.0 * half.0 + half.1 * half.1).sqrt() {
+            // 出射方向不可靠（指向点落在卡片**内部**）时不收缩，避免起点被推到卡片对侧。
+            // ⚠️ 判据必须是「是否落在矩形内」，不能拿矩形**对角线**比距离——对角线
+            // （≈92px）远大于半宽/半高，卡片下方几十 px 的路点会被误判成「在内部」，
+            // 起点就留在卡片中心（线从卡心起笔）。
+            let inside = dx.abs() <= half.0 && dy.abs() <= half.1;
+            if inside {
                 from
             } else {
                 rect_tip_point(towards, from, half)
@@ -860,11 +870,16 @@ pub fn edge_geometry(
             for (x, y) in pts.iter() {
                 d.push_str(&format!(" L {x} {y}"));
             }
+            // ⚠️ 必须补到箭头落点：dagre 的边界求交点（离节点中心 = 节点半尺寸）在
+            // `dagre_layout` 里被整体缩放过（scale > 1 时离卡片更远），只画到
+            // pts 末点会在卡片前**裂开一截**——用户截图「线没指到卡片上」的根因。
+            d.push_str(&format!(" L {} {}", tip.0, tip.1));
             let mut d_full = d.clone();
             d_full.push_str(&format!(" L {tx} {ty}"));
-            // 采样序列：起点 → 各 waypoint → 目标中心（与 d_full 同源，mid/length 一致）
+            // 采样序列：起点 → 各 waypoint → 箭头落点 → 目标中心（与 d_full 同源，mid/length 一致）
             let samples: Vec<(f64, f64)> = std::iter::once(start)
                 .chain(pts.iter().copied())
+                .chain(std::iter::once(tip))
                 .chain(std::iter::once(target))
                 .collect();
             let (mid, mid_angle) = polyline_mid(&samples);
@@ -2277,6 +2292,49 @@ mod tests {
         assert!(dot.d.starts_with("M 100 100 L"), "{}", dot.d);
     }
 
+    /// dagre 折线：路径必须一直画到箭头落点（目标卡片外缘）
+    ///
+    /// dagre 的边界求交点（离节点中心 = 节点半尺寸）在 `dagre_layout` 里被整体
+    /// 缩放过（`scale > 1` 时离卡片更远），只画到折线末点会在卡片前**裂开一截**——
+    /// 用户截图「线没指到卡片上」的根因。
+    #[test]
+    fn polyline_path_reaches_target_card_boundary() {
+        let e = edge_with(
+            Some(EdgeCurve::Polyline(vec![(100.0, 160.0), (100.0, 300.0)])),
+            "directed",
+        );
+        let half = (84.0, 37.0);
+        let geo = edge_geometry(
+            &e,
+            (100.0, 100.0),
+            (100.0, 400.0),
+            7.0,
+            Some(half),
+            Some(half),
+            48.0,
+        );
+        // 路径末点 = 箭头落点
+        assert!(
+            geo.d.ends_with(&format!("L {} {}", geo.tip.0, geo.tip.1)),
+            "折线必须画到箭头落点: {} / tip={:?}",
+            geo.d,
+            geo.tip
+        );
+        // 箭头落点 = 目标卡片上缘外 GAP
+        assert!(
+            (geo.tip.1 - (400.0 - 37.0 - 2.0)).abs() < 1e-6,
+            "箭头落点应在目标卡片上缘外: {:?}",
+            geo.tip
+        );
+        // 起点同样必须收进源卡片外缘：旧判据拿矩形**对角线**比距离，
+        // 卡片下方几十 px 的路点会被误判成「方向不可靠」→ 起点留在卡心
+        let s = first_point(&geo.d);
+        assert!(
+            (s.1 - 100.0).abs() >= 37.0,
+            "折线起点必须落在源卡片外缘: {s:?}"
+        );
+    }
+
     #[test]
     fn arc_geometry_clips_source_along_start_tangent() {
         let e = edge_with(Some(EdgeCurve::Arc(30.0)), "directed");
@@ -2476,7 +2534,7 @@ mod tests {
         );
         // 300×200 缩略图里不能退回常量 7px（那是「看不清」的根因）
         assert!(
-            dot_node_radius(300.0, 200.0, 5) >= 23.0,
+            dot_node_radius(300.0, 200.0, 5) >= 15.0,
             "缩略图点半径过小: {}",
             dot_node_radius(300.0, 200.0, 5)
         );
@@ -2486,10 +2544,10 @@ mod tests {
             (dot_node_radius(300.0, 200.0, 3) - dot_node_radius(300.0, 200.0, 4)).abs() < 1e-9,
             "3 节点与 4 节点点径必须一致"
         );
-        // 300×200 缩略图必须回到「原来那个大小」（24px，AMan 第十轮反馈①）
+        // 300×200 缩略图基准 16px（第十轮 24px → 2026-10-24 按「直径缩短 1/3」下调）
         assert!(
-            (dot_node_radius(300.0, 200.0, 3) - 24.0).abs() < 1e-9,
-            "缩略图点半径应为 24px，实际 {}",
+            (dot_node_radius(300.0, 200.0, 3) - 16.0).abs() < 1e-9,
+            "缩略图点半径应为 16px，实际 {}",
             dot_node_radius(300.0, 200.0, 3)
         );
         assert!(dot_node_radius(20.0, 20.0, 500) >= 10.0);

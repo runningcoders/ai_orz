@@ -22,12 +22,19 @@
 //!
 //! dagre 输出自己的坐标系（从 0 起算）。这里按包围盒**等比缩放 + 居中**映射进
 //! 画布（四周留 margin）：任何规模的图都完整落进画布，「节点飞出 / 贴边」从根上
-//! 消失。缩放上限 1.0（小图不放大，与 SVG 侧 `compute_fit_view_with` 的
-//! `scale 夹 0.2~1.0` 同口径）。
+//! 消失。缩放上限 **2.5**：小图也会放大铺满画布（此前上限 1.0，导致 4 节点图缩在
+//! 中间一小簇、点挤成一团、连线缝隙仅十几 px 看不见）。放大**只作用于坐标**，节点
+//! 按原尺寸绘制，所以间距被拉开而点不会跟着变大。
 
 use std::collections::{HashMap, HashSet};
 
 use dagre_dgl_rs::{EdgeLabel, Graph, GraphLabel, NodeLabel, layout};
+
+/// 同组平行边（含双向对）的错开间距（px）
+///
+/// dagre 把同一对节点的多条边路由到**同一条**路径（双向对更是逐点重合），不挪开就会
+/// 边叠边、标签叠标签。24px 略大于边标签衬底高度，保证两条标签不互相压住。
+const PARALLEL_EDGE_GAP: f64 = 24.0;
 
 /// 喂给 dagre 的节点（含视觉尺寸：卡片态逐节点算宽高，点线态统一点径）
 #[derive(Debug, Clone)]
@@ -205,6 +212,51 @@ pub fn dagre_layout(
         raw_routes.push(((e.source.clone(), e.target.clone()), pts));
     }
 
+    // ---- 同组平行边（含双向对）横向错开 ----
+    //
+    // dagre 对同一对节点的多条边给出**完全重合**的折线：正向边 A→B 与被 acyclic
+    // 反转的 B→A 走同一条路径（只是点的顺序反过来）。于是两条边叠在一起、两个边
+    // 标签也压在**同一处**（用户截图：两条标签糊成一坨，箭头叠着两个方向）。
+    // 这里按「垂直于首条边走向」把同组边逐条错开：两个方向各偏一侧，线与标签
+    // 自然分开。错开量对全组统一，整体平移不改变折线形状。
+    {
+        let mut groups: HashMap<(String, String), Vec<usize>> = HashMap::new();
+        for (i, ((s, t), _)) in raw_routes.iter().enumerate() {
+            let key = if s <= t {
+                (s.clone(), t.clone())
+            } else {
+                (t.clone(), s.clone())
+            };
+            groups.entry(key).or_default().push(i);
+        }
+        for (_, idxs) in groups {
+            if idxs.len() < 2 {
+                continue;
+            }
+            let (ref_s, ref_t) = raw_routes[idxs[0]].0.clone();
+            let a = center_of(&ref_s);
+            let b = center_of(&ref_t);
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < f64::EPSILON {
+                continue;
+            }
+            // 垂直于首条边走向的单位向量
+            let perp = (-dy / len, dx / len);
+            let n = idxs.len() as f64;
+            for (k, &i) in idxs.iter().enumerate() {
+                let off = (k as f64 - (n - 1.0) / 2.0) * PARALLEL_EDGE_GAP;
+                if off.abs() < f64::EPSILON {
+                    continue;
+                }
+                for p in raw_routes[i].1.iter_mut() {
+                    p.0 += perp.0 * off;
+                    p.1 += perp.1 * off;
+                }
+            }
+        }
+    }
+
     // ---- 包围盒（节点矩形 + 所有 waypoint）→ 等比缩放 + 居中 ----
     let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
     for (_, (x, y), w, h) in &raw_nodes {
@@ -233,8 +285,12 @@ pub fn dagre_layout(
     let bbox_h = (max_y - min_y).max(1.0);
     let avail_w = (width - 2.0 * spacing.margin).max(1.0);
     let avail_h = (height - 2.0 * spacing.margin).max(1.0);
-    // 上限 1.0：小图不放大（与 SVG fit_view 同口径）；下限 0.05：极端密集图保底可读
-    let scale = (avail_w / bbox_w).min(avail_h / bbox_h).clamp(0.05, 1.0);
+    // 上限 2.5：小图**放大**铺满画布（此前锁 1.0，4 节点图缩在中间一小簇、
+    // 点挤成一团、连线缝隙只剩十几 px 看不见）；下限 0.05：极端密集图保底可读。
+    // 放大只作用于坐标（节点本身按原尺寸绘制），所以点不会跟着变大，间距被拉开。
+    // 2.5 而非 2.0：点径按「直径缩短 1/3」下调后 bbox 更小，4 节点缩略图 fit 比约
+    // 2.31，卡在 2.0 会填不满画布。
+    let scale = (avail_w / bbox_w).min(avail_h / bbox_h).clamp(0.05, 2.5);
     let offset_x = (width - bbox_w * scale) / 2.0 - min_x * scale;
     let offset_y = (height - bbox_h * scale) / 2.0 - min_y * scale;
     let map = |p: (f64, f64)| (p.0 * scale + offset_x, p.1 * scale + offset_y);
@@ -385,5 +441,72 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 小图必须放大铺满画布（此前 scale 锁 1.0，4 节点缩在中间一小簇）
+    #[test]
+    fn small_graph_scales_up_to_fill_canvas() {
+        let dot = 40.0;
+        let mk = |id: &str| DagreNode {
+            id: id.to_string(),
+            width: dot,
+            height: dot,
+        };
+        let nodes = vec![mk("a"), mk("b"), mk("c"), mk("d")];
+        let edges = vec![edge("a", "d"), edge("b", "d"), edge("c", "d")];
+        let out = dagre_layout(&nodes, &edges, 300.0, 200.0, true);
+        let xs: Vec<f64> = ["a", "b", "c"]
+            .iter()
+            .map(|id| out.positions[*id].0)
+            .collect();
+        let span = xs.iter().cloned().fold(f64::MIN, f64::max)
+            - xs.iter().cloned().fold(f64::MAX, f64::min);
+        // 同层三点中心跨度：scale=1.0 时约 104（挤成一簇），放大后应 > 150
+        assert!(
+            span > 150.0,
+            "small graph not spread to fill canvas: span={span}"
+        );
+    }
+
+    /// 折线弧长中点（用于比较两条折线是否重合）
+    fn polyline_mid(pts: &[(f64, f64)]) -> (f64, f64) {
+        let total: f64 = pts.windows(2).map(|w| dist(w[0], w[1])).sum();
+        if total < f64::EPSILON {
+            return pts[0];
+        }
+        let mut acc = 0.0;
+        for w in pts.windows(2) {
+            let seg = dist(w[0], w[1]);
+            if acc + seg >= total / 2.0 {
+                let t = if seg < f64::EPSILON {
+                    0.0
+                } else {
+                    (total / 2.0 - acc) / seg
+                };
+                return (
+                    w[0].0 + (w[1].0 - w[0].0) * t,
+                    w[0].1 + (w[1].1 - w[0].1) * t,
+                );
+            }
+            acc += seg;
+        }
+        pts[pts.len() - 1]
+    }
+
+    /// 双向对（A→B + B→A）：dagre 把两条边路由到**同一条**路径，必须错开，
+    /// 否则两条边与两个边标签完全重叠（用户截图：标签糊成一坨）
+    #[test]
+    fn bidirectional_pair_routes_are_separated() {
+        let nodes = vec![node("a"), node("b")];
+        let mut edges = vec![edge("a", "b")];
+        edges.push(edge("b", "a"));
+        let out = dagre_layout(&nodes, &edges, 920.0, 620.0, false);
+        let ab = &out.routes[&("a".to_string(), "b".to_string())];
+        let ba = &out.routes[&("b".to_string(), "a".to_string())];
+        let sep = dist(polyline_mid(ab), polyline_mid(ba));
+        assert!(
+            sep >= PARALLEL_EDGE_GAP * 0.9,
+            "双向边折线仍重合: 中点间距 {sep}"
+        );
     }
 }
