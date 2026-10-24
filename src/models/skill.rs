@@ -6,6 +6,13 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+/// 技能描述中的「触发条件 / 内容概要」分隔符。
+///
+/// 约定写法：`<何时该读>必读全文：<读了有什么>`，例如
+/// 「写记忆、建图谱或检索记忆前必读全文：Soul 出发的四层记忆模型…」。
+/// 库内约 2/3 的技能遵循该约定；不遵循的退化为原单行摘要，不会渲染出错。
+pub(crate) const TRIGGER_SEPARATOR: &str = "必读全文";
+
 /// 技能附属文件信息（纯数据结构，DAO 层使用）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillFile {
@@ -91,7 +98,36 @@ impl SkillPo {
     /// 缺失时 Agent 每次读全文都需先 search_skill / list_skills 多绕一轮；
     /// 有了 id 可直接 get_skill(skill_id) 一步按需读取全文（读自身副本无条件放行）。
     pub fn to_prompt_summary(&self) -> String {
-        format!("- {}（id: {}）：{}", self.name, self.id, self.description)
+        // 触发条件前置：约定 description 用「…必读全文：…」把「何时该读」与「读了有什么」
+        // 隔开，这里按该约定切成两行渲染。
+        //
+        // 为什么要拆：单行摘要里触发条件埋在长句中，模型扫不到——实测全库 trace 里
+        // get_skill / search_skill 等技能类工具调用次数为 0，而「记忆认知」技能明确写着
+        // 「写记忆、建图谱或检索记忆前必读全文」，save_short_term_memory 却调了 2800+ 次
+        // 一次全文都没读。拆成两行让「何时读」可竖向扫读，是触发条件能被看到的前提。
+        //
+        // 不拆数据模型：description 保持自由文本，无分隔符的技能退化为原单行格式。
+        match self.description.split_once(TRIGGER_SEPARATOR) {
+            Some((trigger, rest)) => {
+                let trigger = trigger.trim();
+                // 分隔符后可能紧跟全角/半角冒号与空格
+                let rest = rest.trim_start_matches(['：', ':', ' ', '\n']).trim();
+                if trigger.is_empty() {
+                    return format!("- {}（id: {}）：{}", self.name, self.id, self.description);
+                }
+                if rest.is_empty() {
+                    return format!(
+                        "- {}（id: {}）\n  ⚠️ 读全文的时机：{}",
+                        self.name, self.id, trigger
+                    );
+                }
+                format!(
+                    "- {}（id: {}）\n  ⚠️ 读全文的时机：{}\n  全文含：{}",
+                    self.name, self.id, trigger, rest
+                )
+            }
+            None => format!("- {}（id: {}）：{}", self.name, self.id, self.description),
+        }
     }
 
     /// 获取标签列表
@@ -211,5 +247,51 @@ impl Skill {
             .iter()
             .find(|f| f.filename == filename)
             .and_then(|f| f.content.as_deref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn po(description: &str) -> SkillPo {
+        SkillPo {
+            name: "记忆认知".to_string(),
+            id: "skill-1".to_string(),
+            description: description.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// 有「必读全文」分隔符 → 拆成「何时读 / 全文含」两行，触发条件可竖扫
+    #[test]
+    fn summary_splits_trigger_from_content() {
+        let s = po("写记忆、建图谱前必读全文：四层记忆模型与图谱模式").to_prompt_summary();
+        assert!(s.contains("⚠️ 读全文的时机：写记忆、建图谱前"), "{s}");
+        assert!(s.contains("全文含：四层记忆模型与图谱模式"), "{s}");
+        // 分隔符本身不应再出现在渲染结果里（已被语义标签取代）
+        assert!(!s.contains(TRIGGER_SEPARATOR), "{s}");
+    }
+
+    /// 无分隔符 → 退化为原单行格式，不能渲染出错或丢内容
+    #[test]
+    fn summary_falls_back_to_single_line_without_trigger() {
+        let s = po("通用接待 SOP：接待四步").to_prompt_summary();
+        assert_eq!(s, "- 记忆认知（id: skill-1）：通用接待 SOP：接待四步");
+    }
+
+    /// 只有触发条件、没有内容概要 → 不渲染空的「全文含：」行
+    #[test]
+    fn summary_omits_empty_content_line() {
+        let s = po("开始沉淀前必读全文").to_prompt_summary();
+        assert!(s.contains("读全文的时机：开始沉淀前"), "{s}");
+        assert!(!s.contains("全文含"), "{s}");
+    }
+
+    /// 分隔符在开头（无触发条件内容）→ 退化为单行，避免出现空标签
+    #[test]
+    fn summary_degrades_when_trigger_is_empty() {
+        let s = po("必读全文：只有内容没有时机").to_prompt_summary();
+        assert_eq!(s, "- 记忆认知（id: skill-1）：必读全文：只有内容没有时机");
     }
 }

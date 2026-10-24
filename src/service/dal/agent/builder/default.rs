@@ -222,6 +222,26 @@ impl DefaultPromptBuilder {
         s.push('\n');
         s
     }
+
+    /// 行动前的「读技能」提醒：拼在【当前消息】之后、模型动手之前。
+    ///
+    /// 为什么单独加这一句：技能正文是**按需加载**的（Prompt 里只有一行摘要、全文要
+    /// Agent 自己 `get_skill` 取）。实测全库 trace 里 get_skill / search_skill 等技能类
+    /// 工具调用次数为 **0**——「记忆认知」技能明写「写记忆、建图谱或检索记忆前必读全文」，
+    /// 而 save_short_term_memory 调了 2800+ 次，一次全文都没读。
+    ///
+    /// 说明触发条件写得再清楚也没用：模型在行动时刻不会回头扫第 2/3 区块的技能区。
+    /// 这句把提醒从**信息区**挪到**决策点**。仅当有技能时拼装——没技能时提醒读技能
+    /// 是无意义的噪声，还会让「请回复」的收尾格式分叉。
+    fn skill_recall_nudge(&self) -> String {
+        if self.skills.is_empty() {
+            return String::new();
+        }
+        "\n\n【动手前 · 先看技能】上面技能区每条都标了「⚠️ 读全文的时机」：\
+         命中任一条就先用 get_skill(技能 id) 读它的全文再动手——\
+         全文里有此刻该用的操作口径，只凭摘要容易按自己的习惯蛮干。\n"
+            .to_string()
+    }
 }
 
 /// 按预算装入一个词表段落：段首（header + 首行）装不下则整段让位
@@ -1080,6 +1100,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         }
         if let Some(msg) = &self.current_message {
             s.push_str(msg);
+            // 提醒放在决策点（当前消息之后）而不是信息区，见 skill_recall_nudge 注释
+            s.push_str(&self.skill_recall_nudge());
             s.push_str("\n\n请回复：");
         }
         s
@@ -1141,6 +1163,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         // 13. 当前用户消息
         if let Some(msg) = &self.current_message {
             result.push_str(msg);
+            // 与 awaken_user_part 同一口径，见 skill_recall_nudge 注释
+            result.push_str(&self.skill_recall_nudge());
             result.push_str("\n\n请回复：");
         }
 
@@ -1579,5 +1603,28 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         user.push_str("请开始理解并输出最终 JSON：");
 
         vec![ChatMessage::system(system), ChatMessage::user(user)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 没有技能时不拼装提醒：此时提醒读技能是无意义噪声，还会让「请回复」收尾分叉
+    #[test]
+    fn skill_recall_nudge_is_empty_without_skills() {
+        let builder = DefaultPromptBuilder::default();
+        assert!(builder.skill_recall_nudge().is_empty());
+    }
+
+    /// 有技能时必须提醒，且点名 get_skill（技能正文是按需加载，不提醒模型不会去读）
+    #[test]
+    fn skill_recall_nudge_points_to_get_skill() {
+        let mut builder = DefaultPromptBuilder::default();
+        builder.skills.push(SkillPo::default());
+        let nudge = builder.skill_recall_nudge();
+        assert!(!nudge.is_empty());
+        assert!(nudge.contains("get_skill"), "{nudge}");
+        assert!(nudge.contains("读全文的时机"), "{nudge}");
     }
 }
