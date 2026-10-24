@@ -14,9 +14,10 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "update_skill",
     name = "Update Skill",
-    description = "Update a skill's metadata (name, description, tags, category, status) and optionally replace its content from inline text, an HTTPS URL, or attachments; individual files can also be deleted via file_deletes. Returns the updated skill detail.",
+    description = "Update a skill's metadata (name, description, tags, category, status) and optionally replace its content from inline text, an HTTPS URL, or attachments; individual files can also be deleted via file_deletes. Returns the updated skill detail. Status notes: in an agent context, setting status=Expired retires the skill — it is removed from your own skill set and no longer appears in your prompt, while the record stays recoverable (restore_skill); use this instead of deleting when a skill is outdated, unneeded, or wrong. Setting status=Published is rejected for agents (publishing goes through the shared library).",
     params = "common::api::UpdateSkillRequest",
-    tags = "skill_management"
+    // 见 create_skill 同名注释：self_evolution 是自进化专用面，与通用技能管理分开。
+    tags = "skill_management,self_evolution"
 )]
 #[generate_http_handler]
 pub async fn update_skill(

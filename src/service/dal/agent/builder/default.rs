@@ -1162,7 +1162,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-3. 技能区块（sleep_and_settle 调用前已过滤只保留记忆相关）
+        // 2-3. 技能区块（过滤口径见 ThinkingScene::is_tool_allowed 的 Settle 分支：
+        // neural / memory / skill_management 三类）
         result.push_str(&self.build_skills_sections());
 
         // 4-7. 通用上下文区块（词表 + 画像 + 项目上下文 + 任务上下文 + 工作空间）
@@ -1189,7 +1190,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("## 沉淀约束（重要）\n\n");
         result.push_str("- **不要发送消息**：睡觉是对自身知识的沉淀积累，不应依赖外部信息\n");
         result.push_str("- **不要调用消息类工具**（send_message / send_task_assignment_message 等），避免触发消息流程导致异步唤醒自己\n");
-        result.push_str("- **只使用记忆类工具**：search_memory / save_long_term_memory / update_memory / query_memory / save_short_term_memory\n");
+        // 放通面是 self_evolution（create_skill / update_skill），不是整个 skill_management：
+        // 后者含 Remove Skill（无归属校验、不可撤销）等破坏性工具，沉淀这种无人值守的
+        // 内循环不该拿到。所以这里只列写能力，删除/卸载类工具根本不在工具表里。
+        result.push_str("- **只使用记忆类与自进化类工具**：记忆类（search_memory / save_long_term_memory / update_memory / query_memory / save_short_term_memory）+ 自进化类（create_skill / update_skill，把经验沉淀成技能）\n");
         result.push_str("- 这是一个内循环：你与自己的记忆对话，不是与外部世界交互\n\n");
         result.push_str("## 你的任务\n\n");
         result.push_str("请用已有工具自主完成沉淀：\n\n");
@@ -1204,6 +1208,11 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("   - 新知识 → save_long_term_memory 创建节点\n");
         result.push_str("   - 已有相似节点 → update_memory 更新节点内容\n");
         result.push_str("   - 过大且可拆分的旧节点 → 拆分为子节点 + 概述父节点 + contains 关系\n");
+        result.push_str("   - **声明来源**（每次 save_long_term_memory 都要做）：把本次归纳所依据的短期记忆 id 填入 source_short_term_ids，即文末【待沉淀的短期记忆】里每条的 [id=...]，可填多条\n");
+        result.push_str("     节点只存摘要，原始细节住在 trace 里；只有声明了来源，框架才能把「节点 → 短期记忆 → 原始 trace」这条链写进库，日后从节点就能追回当时的原始记录\n");
+        result.push_str(
+            "     ⚠️ 不填 = 该节点成为无源头的孤岛断言，无法回溯它是从哪次经历里归纳出来的\n",
+        );
         result.push_str("4. **建立关系**（联想必须落成显式边，两条路径）：\n");
         result.push_str("   - 新建节点 → save_long_term_memory 的 relations 参数顺带建边\n");
         result.push_str("   - 更新既有节点 → update_memory 的 relations 参数补边\n");
@@ -1220,14 +1229,55 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         // 注意：技能文档里的同类说明**不改**——技能可能被其它框架复用，那里未必有
         // 框架兜底，仍然需要 Agent 自行处理状态；只有在 AI Orz 这套沉淀 prompt 下
         // 才由框架接管。
+        // 技能沉淀：与图谱分工——图谱存「是什么 / 为什么」（抽象知识与关系），
+        // 技能存「怎么做」（可复用的操作路径）。二者在同一批经验里一起产出，
+        // 并用 node_type=skill 的节点 + distilled_from 边互相索引：
+        // 技能正文不进图谱，但「有这个技能、它从哪些知识提炼而来」在图谱里。
+        // 只写框架口径（参数怎么填、归属与状态由框架决定），方法论（什么值得成技能、
+        // 何时算成熟、怎么发布）交给「自我进化」技能——两者重复会在改一处漏一处时漂移。
+        result.push_str("6. **技能沉淀**（把「怎么做」固化下来）：\n");
         result.push_str(
-            "6. **状态无需处理**：本次待沉淀短期记忆的状态变更由框架在沉淀结束后统一完成，\n",
+            "   浮现出可复用的操作路径 / 做事方式时，沉淀成技能；已有同类就 `update_skill` 迭代，不要建重复技能。三件事一起做：\n",
+        );
+        result.push_str(
+            "   - **建技能**：`create_skill`，正文写在 content_input.content（skill.md）\n",
+        );
+        result.push_str(
+            "     ⚠️ **不要传 status**：Agent 创建的技能一律落到你的私有草稿（Draft），传 Published 会被服务端拒绝。它会自动出现在你的技能区里，下次干活就能用\n",
+        );
+        result.push_str(
+            "   - **图谱登记**：`save_long_term_memory` 建一个 `node_type=skill` 的节点，**只写摘要**，正文留在技能里不进图谱\n",
+        );
+        result.push_str(
+            "   - **建边**：该节点用 `distilled_from`（提炼自）连回源知识节点，源节点侧可用 `produces`（产出）指回\n",
+        );
+        result.push_str(
+            "   - 同样要填 `source_short_term_ids`（这条技能所依据的短期记忆），让技能节点也有可回溯的源头\n",
+        );
+        // 淘汰/遗忘：只写框架口径（Expired 的语义与可逆性），判据交给自我进化技能。
+        //
+        // 为什么是 Expired 而不是 delete_skill：resolve_agent_skills 用
+        // exclude_status=Expired 过滤 ⇒ 标 Expired 即移出 Agent 技能池、不再进 Prompt，
+        // 效果等同「忘掉」；而记录保留、restore_skill 可恢复。delete_skill 不可逆，
+        // 且它是 skill_management 面（不在沉淀白名单内），沉淀这种无人值守的内循环
+        // 不该拿到不可逆动作。
+        result.push_str(
+            "   - **淘汰 / 遗忘**：发现自己的某个技能已过时、不再需要或本来就是错的 → `update_skill` 把它设为 `Expired`。它会即刻移出你的技能区（不再进你的 Prompt），但记录保留、日后可恢复——**忘掉也是进化的一种，但要留得下回头路**\n",
+        );
+        result.push_str(
+            "   - ⚠️ 不要用 `delete_skill` 之类的方式永久删除技能：删除不可撤销，错了就真没了\n",
+        );
+        result.push_str(
+            "   - **什么该成技能、什么时候算成熟、该淘汰什么、怎么发布 → 详见「自我进化」技能**（沉淀图谱是主业，技能沉淀是机会主义的，不要为了建而建）\n",
+        );
+        result.push_str(
+            "7. **状态无需处理**：本次待沉淀短期记忆的状态变更由框架在沉淀结束后统一完成，\n",
         );
         result.push_str(
             "   **你不要**调用 update_memory 去修改它们的 status（重复操作没有意义）。\n",
         );
         result.push_str("   你只需专注把内容整合进知识图谱；若某条确实不适合沉淀，忽略它即可。\n");
-        result.push_str("7. **强制写入沉淀摘要**（必须执行）：沉淀完成后，**必须**调用 save_short_term_memory 将本次沉淀的摘要写入短期记忆，参数要求：\n");
+        result.push_str("8. **强制写入沉淀摘要**（必须执行）：沉淀完成后，**必须**调用 save_short_term_memory 将本次沉淀的摘要写入短期记忆，参数要求：\n");
         result.push_str("   - `summary`：本次沉淀提炼的核心经验摘要（不是细节流水账）\n");
         result.push_str("   - `content`：详细内容（可选，记录沉淀出的关键知识点列表）\n");
         result.push_str("   - `tags`：标签列表（如 `[\"settled\", \"consolidation\"]`）\n");
@@ -1235,6 +1285,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("## 认知要点\n\n");
         result.push_str("- 图谱是活的，每次沉淀都是迭代优化，不是机械合并\n");
         result.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
+        result.push_str(
+            "- **图谱记「是什么 / 为什么」，技能记「怎么做」**：抽象知识与关系进图谱，可复用的操作路径沉淀成技能；图谱里只留技能节点的摘要与 distilled_from 来源边，正文永远住在技能里\n",
+        );
         result.push_str("- 沉淀时多问「为什么」：这批记忆背后的共性规律与本质是什么？\n");
         result.push_str(
             "  跨节点的联想（把看似无关的知识连起来）往往比新建节点更有价值——新边是图谱的增量智慧\n",

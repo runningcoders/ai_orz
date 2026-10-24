@@ -12,7 +12,19 @@ pub enum ThinkingScene {
     /// 唤醒场景：响应外部消息，加载全部工具
     #[default]
     Awaken,
-    /// 沉睡场景：沉淀记忆，只加载记忆相关工具（neural/memory tag）
+    /// 沉睡场景：沉淀记忆，加载记忆相关工具（neural/memory tag）+ 自进化工具
+    /// （self_evolution tag：create_skill / update_skill）
+    ///
+    /// 放通自进化的理由：沉淀的产出不只知识图谱，还有「怎么做」的技能。
+    /// 图谱存抽象知识与关系，技能存可复用的操作路径；二者在沉淀里一起产出，
+    /// 并通过 `node_type=skill` 的知识节点 + `distilled_from` 边互相索引。
+    ///
+    /// ⚠️ **放通的是 self_evolution 而不是整个 skill_management**：后者含
+    /// Remove Skill（无归属校验、不可撤销）、Uninstall Skill Pack 等运维/破坏性工具，
+    /// 沉淀这种无人值守的内循环不该拿到它们。需要哪个写能力就给哪个打
+    /// self_evolution tag，白名单不按"整个管理面"开放。
+    ///
+    /// ⚠️ 与 Compact 不同：Compact 只压缩出一条短期记忆，不放通技能写工具。
     Settle,
     /// 总结退出场景：思考轮次耗尽后总结当前工作，允许消息和任务管理工具
     /// （neural + memory + messaging + project_management tag）
@@ -27,7 +39,8 @@ pub enum ThinkingScene {
     ///   压缩发生在 awaken 主循环内部，Agent 始终保持 Busy。
     /// - **目标是「一条」短期记忆**，不是知识图谱沉淀：不查图谱、不建关系、不改记忆状态。
     ///
-    /// 工具策略与 Settle 一致（neural/memory 放行，不额外收窄），
+    /// 工具策略比 Settle 更窄（仅 neural/memory，不放通 skill_management）：
+    /// 压缩的产出是「一条短期记忆」，不该在压缩途中创建或修改技能。
     /// 目的由提示词说明；`settle_memory` 的递归调用由 think loop 运行时拦截。
     Compact,
     /// 意图识别 + 上下文补充阶段
@@ -53,16 +66,24 @@ impl ThinkingScene {
     /// 判断工具是否在此场景可用
     ///
     /// - Awaken 场景：全部可用
-    /// - Settle 场景：只有 tags 含 "neural" 或 "memory" 的工具可用
-    /// - Compact 场景：与 Settle 相同（不额外收窄，目的由提示词说明）
+    /// - Settle 场景：tags 含 "neural" / "memory" / "self_evolution" 的工具可用
+    ///   （自进化用于沉淀期产出技能，见 Settle 变体注释）
+    /// - Compact 场景：只有 tags 含 "neural" 或 "memory" 的工具可用（比 Settle 更窄）
     /// - Summary 场景：允许 neural / memory / messaging / project_management
     /// - IntentAnalyze 场景：允许 tags 包含 neural/memory/query/search/analyze（理解类工具）
+    ///
+    /// ⚠️ 本函数同时被用于**技能过滤**（`legacy_settle/context.rs` 的 build_providers）：
+    /// 给 Settle 加 tag 会连带把同 tag 的技能加载进沉淀 Prompt。当前库内
+    /// self_evolution 的根技能只有 TEMPLATE_SELF_EVOLUTION（自带 neural），
+    /// 即过滤前后无差异；若将来新增纯 self_evolution 的父技能，需重新评估
+    /// 沉淀 Prompt 的体量。
     pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
         match self {
             ThinkingScene::Awaken => true,
-            ThinkingScene::Settle | ThinkingScene::Compact => {
-                tags.iter().any(|t| t == "neural" || t == "memory")
-            }
+            ThinkingScene::Settle => tags
+                .iter()
+                .any(|t| t == "neural" || t == "memory" || t == "self_evolution"),
+            ThinkingScene::Compact => tags.iter().any(|t| t == "neural" || t == "memory"),
             ThinkingScene::Summary => tags.iter().any(|t| {
                 t == "neural" || t == "memory" || t == "messaging" || t == "project_management"
             }),
@@ -73,6 +94,52 @@ impl ThinkingScene {
                     || t.contains("search")
                     || t.contains("analyze")
             }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ThinkingScene;
+
+    /// 沉淀场景必须能写技能：沉淀的产出既有知识图谱节点，也有「怎么做」的技能。
+    ///
+    /// 护栏意义：白名单一旦被误收窄回 neural/memory，沉淀 Prompt 里的技能沉淀步骤
+    /// 会变成「有指令、无工具」，模型只能干看着，静默降级为只沉淀图谱。
+    /// ⚠️ 放通面是 self_evolution（写能力最小集），**不是**整个 skill_management：
+    /// 后者含 Remove Skill（无归属校验、不可撤销）等破坏性工具，沉淀这种无人值守
+    /// 的内循环不该拿到。这条断言同时把「按整个管理面放通」这条退路堵死。
+    #[test]
+    fn settle_allows_self_evolution_but_not_plain_skill_management() {
+        let scene = ThinkingScene::Settle;
+        for tag in ["self_evolution", "neural", "memory"] {
+            assert!(
+                scene.is_tool_allowed(&[tag.to_string()]),
+                "Settle 场景应放通 {tag}"
+            );
+        }
+        assert!(
+            !scene.is_tool_allowed(&["skill_management".to_string()]),
+            "Settle 场景不应放通整个 skill_management 面（含删除/卸载类工具）"
+        );
+    }
+
+    /// 压缩场景比沉淀更窄：压缩的产出是一条短期记忆，不该在压缩途中建/改技能。
+    ///
+    /// 护栏意义：Compact 与 Settle 曾共用同一 match 分支，给 Settle 加 tag 会连带
+    /// 放通 Compact；两者必须保持可分别演进。
+    #[test]
+    fn compact_does_not_allow_self_evolution_tools() {
+        let scene = ThinkingScene::Compact;
+        assert!(
+            !scene.is_tool_allowed(&["self_evolution".to_string()]),
+            "Compact 场景不应放通 self_evolution"
+        );
+        for tag in ["neural", "memory"] {
+            assert!(
+                scene.is_tool_allowed(&[tag.to_string()]),
+                "Compact 场景应放通 {tag}"
+            );
         }
     }
 }

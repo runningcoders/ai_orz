@@ -18,7 +18,10 @@ use common::error::{Result, bail_err, err};
     name = "Create Skill",
     description = "Create a new skill with optional content sourced from inline text (stored as skill.md), an HTTPS URL, or previously uploaded attachments. Owned by the calling agent when invoked in an agent context (agent-private skill, stored under the agent's skill directory), otherwise owned by the current user. Returns the created skill detail. Fails if the name is empty or a referenced attachment does not exist.",
     params = "common::api::CreateSkillRequest",
-    tags = "skill_management"
+    // self_evolution 是「Agent 自进化」专用面：只有沉淀/自进化场景需要它，
+    // 与 skill_management（通用技能管理，含删除/装卸等运维动作）分开，
+    // 使 Settle 场景只需放通自进化这一类，而不必放通整个技能管理的破坏性工具。
+    tags = "skill_management,self_evolution"
 )]
 #[generate_http_handler]
 pub async fn create_skill(
