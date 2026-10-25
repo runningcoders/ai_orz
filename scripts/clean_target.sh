@@ -12,7 +12,7 @@
 #   走 fnmatch，不认 {16} 量词 → 哈希副本一个都匹配不上，从未真正删过。
 #
 # 【三个子命令】危险级别递增，按需取用：
-#   stale [天数]   删 mtime 超过 N 天（默认 7）的旧哈希**可执行副本**（deps 内
+#   stale [天数]   删 mtime 超过 N 天（默认 3）的旧哈希**可执行副本**（deps 内
 #                  无扩展名可执行文件）与 .profraw。「先清理再编译」钩子用的
 #                  就是它（make prod / build / package 编译前自动执行）：
 #                  旧哈希副本当前构建永不复用，删了最多触发一次重链接
@@ -22,19 +22,19 @@
 #   all            cargo clean 前后端全量（下次编译为完整冷构建，慎用）。
 #
 # 用法：
-#   ./scripts/clean_target.sh stale [天数]    （等价 make clean-stale [DAYS=7]）
+#   ./scripts/clean_target.sh stale [天数]    （等价 make clean-stale [DAYS=3]）
 #   ./scripts/clean_target.sh slim            （等价 make clean-slim）
 #   ./scripts/clean_target.sh all             （等价 make clean）
 #
 # 环境变量：
-#   AI_ORZ_STALE_DAYS   stale 子命令的默认天数（默认 7）
+#   AI_ORZ_STALE_DAYS   stale 子命令的默认天数（默认 3）
 
 set -eu
 
 # shellcheck source=./lib/common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
-STALE_DAYS="${AI_ORZ_STALE_DAYS:-7}"
+STALE_DAYS="${AI_ORZ_STALE_DAYS:-3}"
 
 report_size() {
     du -sh "$REPO_ROOT/target" "$REPO_ROOT/frontend/target" 2>/dev/null || true

@@ -58,7 +58,7 @@ scripts/
 > **target/ 为什么会涨到几百 G**：deps 里的产物带构建指纹哈希，源码每次变更都会
 > 重链出**新哈希副本**而旧副本 cargo 永不回收——测试二进制单个 300~800M，无上限增长。
 > `make prod` / `make build` / `make package` 编译前自动跑 `clean_target.sh stale`
-> （删 7 天前的旧可执行副本 + profraw，**依赖热缓存不动**；`AI_ORZ_STALE_DAYS` 可调），
+> （删 3 天前的旧可执行副本 + profraw，**依赖热缓存不动**；`AI_ORZ_STALE_DAYS` 可调），
 > 删掉的副本当前构建永不复用，最多触发一次重链接。手动深度瘦身 `make clean-slim`，
 > 彻底重置 `make clean`。
 

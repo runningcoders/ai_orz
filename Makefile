@@ -145,7 +145,7 @@ package: ## 编译并打包正式发布物（tar.gz：二进制 + dist/ + 运维
 
 # ===== 磁盘治理 =====
 
-clean-stale: ## 删 DAYS 天前（默认 7）的旧构建副本：可执行副本+profraw，依赖热缓存不动（make prod/build 编译前自动执行）
+clean-stale: ## 删 DAYS 天前（默认 3）的旧构建副本：可执行副本+profraw，依赖热缓存不动（make prod/build 编译前自动执行）
 	./scripts/ai_orz.sh clean-target stale $(DAYS)
 
 clean-slim: ## 瘦身 target：清增量缓存+30 天前陈旧快照，保留近期依赖缓存（下次编译仅几十秒）

@@ -73,7 +73,7 @@ cmd_build() {
     fi
     setup_path
     cd "$REPO_ROOT"
-    # 先清理再编译：删 7 天前的旧哈希副本（deps 里带构建指纹，源码每次变更都
+    # 先清理再编译：删 3 天前的旧哈希副本（deps 里带构建指纹，源码每次变更都
     # 重链新副本而旧副本 cargo 永不回收，target 会无上限增长，见 clean_target.sh 头注）。
     # 旧副本当前构建永不复用，删了最多触发一次重链接；依赖热缓存不动。
     # 窗口可用 AI_ORZ_STALE_DAYS 调；清理失败不阻断编译（产物缺失时 cargo 会重链）。
