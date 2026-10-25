@@ -52,6 +52,21 @@ setup_path() {
     export PATH
 }
 
+# ===== 编译前产物清理 =====
+# 所有编译入口（build / prod / package / build-fe / clippy / test / coverage / dev）
+# 编译前统一调用本函数，实现在 scripts/clean_target.sh（唯一实现，接口只有这一处）。
+#
+# 为什么要清：deps 里的产物文件名带构建指纹哈希，源码每次变更都重链出**新副本**，
+# 旧副本 cargo 永不回收——测试二进制单个 300~800M，target 会无上限增长。
+# 清掉的是「当前构建永不复用」的旧可执行副本 + profraw 运行时数据，依赖 rlib/rmeta
+# 热缓存不动，所以最多触发一次重链接（分钟级），不会退化成冷构建。
+# 发布包不含 clean_target.sh（无需编译），缺失时静默跳过；清理失败也不阻断编译。
+clean_stale_artifacts() {
+    [ -x "$SCRIPTS_DIR/clean_target.sh" ] || return 0
+    "$SCRIPTS_DIR/clean_target.sh" stale >/dev/null 2>&1 ||
+        warn "⚠️ 编译前产物清理失败（忽略，继续编译）"
+}
+
 # ===== 输出助手 =====
 # 统一前缀，省得每个脚本各写一套 echo 颜色拼接
 info() { echo "$1"; }

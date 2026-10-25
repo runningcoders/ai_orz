@@ -70,6 +70,9 @@ preflight() {
 cmd_dev() {
     cd "$REPO_ROOT"
 
+    # 先清理再编译：前后端 dev server 各编译一次，统一在启动前清掉 1 天前的旧副本
+    clean_stale_artifacts
+
     # 后端必须先启动：前端 dev server 通过 dx 反代 /api/* 到后端 3000，
     # 且前端启动后的身份回填 / Directory 预载等「默认依赖拉取」依赖后端已就绪，
     # 后端未起好会导致拉取失败、页面回落默认值显示异常。
@@ -141,6 +144,8 @@ cmd_dev() {
 
 cmd_backend() {
     cd "$REPO_ROOT"
+    # 先清理再编译：删 1 天前的旧哈希副本（开发态每次 cargo run 都会重链）
+    clean_stale_artifacts
     echo "📦 启动后端开发服务器..."
     echo "   地址: ${BLUE}http://localhost:3000${NC}"
     echo ""
@@ -152,6 +157,8 @@ cmd_frontend() {
     trap restore_dx_backend_override EXIT
     print_backend_hint
     cd "$REPO_ROOT/frontend"
+    # 先清理再编译：删 1 天前的旧哈希副本（dx serve 每次都会重链 wasm）
+    clean_stale_artifacts
     echo "🎨 启动前端开发服务器..."
     echo "   地址: ${BLUE}http://localhost:8080${NC}"
     echo ""

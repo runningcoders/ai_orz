@@ -49,7 +49,7 @@ scripts/
 | 停止 / 重启 | `make stop` / `make restart` | `stop` / `restart` | `prod.sh` |
 | 状态 / 日志 | `make status` / `make logs` | `status` / `logs` | `prod.sh` |
 | 残留进程清理 | `make clean-proc` | `clean [--dry-run]` | `cleanup.sh` |
-| target 磁盘治理 | `make clean-stale [DAYS=]` / `clean-slim` / `clean` | `clean-target stale \| slim \| all` | `clean_target.sh`（`make prod`/`build`/`package` 编译前自动跑 `stale`） |
+| target 磁盘治理 | `make clean-stale [DAYS=]` / `clean-slim` / `clean` | `clean-target stale \| slim \| all` | `clean_target.sh`（所有编译指令经 `clean_stale_artifacts` 自动跑 `stale`） |
 | 依赖预检 | `make doctor` | `doctor [模式] [--fix]` | `check_deps.sh` |
 | 代码门禁 | `make lint` / `make ci` | `check lint` / `check ci` | `check.sh` |
 | 发布打包 | `make package` | `package [版本]` | `package.sh`（消费 `prod.sh build` 产物，**不**搬运到部署根） |
@@ -57,10 +57,11 @@ scripts/
 
 > **target/ 为什么会涨到几百 G**：deps 里的产物带构建指纹哈希，源码每次变更都会
 > 重链出**新哈希副本**而旧副本 cargo 永不回收——测试二进制单个 300~800M，无上限增长。
-> `make prod` / `make build` / `make package` 编译前自动跑 `clean_target.sh stale`
-> （删 3 天前的旧可执行副本 + profraw，**依赖热缓存不动**；`AI_ORZ_STALE_DAYS` 可调），
-> 删掉的副本当前构建永不复用，最多触发一次重链接。手动深度瘦身 `make clean-slim`，
-> 彻底重置 `make clean`。
+> **所有编译指令**（`make build` / `prod` / `package` / `build-fe` / `dev` / `run` /
+> `serve` / `test` / `lint` / `ci` / `coverage`）编译前都会自动跑
+> `clean_target.sh stale`（`common.sh::clean_stale_artifacts` 统一调用）：删 1 天前的
+> 旧可执行副本 + profraw，**依赖热缓存不动**（`AI_ORZ_STALE_DAYS` 可调）。删掉的副本
+> 当前构建永不复用，最多触发一次重链接。手动深度瘦身 `make clean-slim`，彻底重置 `make clean`。
 
 ## 四、两条硬规则
 

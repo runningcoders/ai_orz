@@ -15,6 +15,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 cd "$REPO_ROOT/frontend"
 export BACKEND_API_URL=${BACKEND_API_URL:-http://localhost:3000}
 
+# 先清理再编译：删 1 天前的旧哈希副本（前端 wasm 产物同样按指纹累积）
+clean_stale_artifacts
+
 # dx build 在 wasm-opt 失败时仍会生成产物，忽略此错误
 dx build --release 2>&1 || true
 

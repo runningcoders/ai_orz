@@ -57,6 +57,7 @@ cmd_fmt_check() {
 # common / tools / ai-orz-macros 的 lint 会被静默跳过。
 # frontend 由 clippy-fe 以 wasm32 口径全量覆盖（实际运行目标），此处排除以免 native 重复编译。
 cmd_clippy() {
+    clean_stale_artifacts
     if ! cargo clippy --workspace --exclude frontend --all-targets -- -D warnings; then
         err "✗ clippy 检查未通过。"
         exit 1
@@ -65,6 +66,7 @@ cmd_clippy() {
 }
 
 cmd_clippy_fe() {
+    clean_stale_artifacts
     if ! (cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings); then
         err "✗ 前端 clippy 未通过。"
         exit 1
@@ -135,11 +137,15 @@ cmd_lint() {
 
 # ===== 测试 =====
 cmd_test_be() {
+    clean_stale_artifacts
     cargo test --workspace --exclude frontend --lib
     cargo test --workspace --exclude frontend --test '*'
 }
 
-cmd_test_fe() { (cd frontend && cargo test); }
+cmd_test_fe() {
+    clean_stale_artifacts
+    (cd frontend && cargo test)
+}
 
 cmd_test() { cmd_test_be; cmd_test_fe; }
 
@@ -147,6 +153,7 @@ cmd_ci() { cmd_lint; step "test（后端 + 前端）"; cmd_test; }
 
 # ===== 覆盖率 =====
 cmd_coverage() {
+    clean_stale_artifacts
     local under="${FAIL_UNDER:-45}"
     local ignore="(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)"
     cargo llvm-cov --workspace --tests --no-clean --no-fail-fast --ignore-filename-regex "$ignore"
