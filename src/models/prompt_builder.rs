@@ -235,6 +235,33 @@ pub trait PromptBuilder: Send + Sync {
         String::new()
     }
 
+    /// 渲染【相关知识】区块（思考图 retrieve 节点命中的知识摘要行）
+    ///
+    /// 重点前置（design §3.2）：检索命中的知识紧随意图区块注入本轮 Prompt。
+    /// 命中行为空 → 不渲染任何区块，返回 ""。
+    /// 默认实现为空（其他 Builder 不渲染此区块）。
+    fn render_retrieved_knowledge_section(&self) -> String {
+        String::new()
+    }
+
+    /// 渲染【思维方法】区块（retrieve 节点召回的 thinking_method 类技能）
+    ///
+    /// 方法技能教「怎么想」，与知识区块同属阶段相关上下文。
+    /// 空切片 → 不渲染任何区块，返回 ""。
+    /// 默认实现为空（其他 Builder 不渲染此区块）。
+    fn render_method_skills_section(&self) -> String {
+        String::new()
+    }
+
+    /// 渲染【上一轮思考摘要】区块（思考图 discover 回环产出）
+    ///
+    /// 检索回环的衔接线索：告诉模型上一轮已尝试与已知的结论。
+    /// 未注入或空串 → 不渲染任何区块，返回 ""。
+    /// 默认实现为空（其他 Builder 不渲染此区块）。
+    fn render_prior_thinking_summary_section(&self) -> String {
+        String::new()
+    }
+
     /// 构建最终的 Prompt 字符串
     ///
     /// 使用 `&self` 而非 `self`，支持重复构建和 trait object 使用。
@@ -302,6 +329,33 @@ pub trait PromptBuilder: Send + Sync {
         &mut self,
         _analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
     ) {
+    }
+
+    /// 注入【相关知识】检索命中摘要行（仅 awaken 场景，思考图 retrieve 节点产出）
+    ///
+    /// 每条一行已截断的摘要，build 时渲染成【相关知识】区块放在意图区块之后。
+    /// 空切片不渲染区块。
+    /// 默认实现为空（不影响 sleep / summary 等场景）。
+    fn retrieved_knowledge(&mut self, hits: &[String]) {
+        let _ = hits;
+    }
+
+    /// 注入【思维方法】命中技能（仅 awaken 场景，thinking_method 类方法技能召回）
+    ///
+    /// retrieve 节点按意图关键词召回的方法技能，build 时渲染成【思维方法】区块。
+    /// 空切片不渲染区块。
+    /// 默认实现为空（不影响 sleep / summary 等场景）。
+    fn method_skills(&mut self, skills: &[SkillPo]) {
+        let _ = skills;
+    }
+
+    /// 注入【上一轮思考摘要】（仅 awaken 场景，思考图 discover 回环产出）
+    ///
+    /// 检索回环的衔接线索：discover 节点对上一轮思考的概括，
+    /// build 时渲染成【上一轮思考摘要】区块。
+    /// 默认实现为空（不影响 sleep / summary 等场景）。
+    fn prior_thinking_summary(&mut self, summary: &str) {
+        let _ = summary;
     }
 
     // ==================== 角色分离版初始消息（供 think_loop 使用） ====================

@@ -11,7 +11,8 @@
 //! 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
 //! 7. 【工作空间与路径约定】 ← 静态路径配置
 //! 8. 【历史对话】          ← 随对话增长（追加式，前缀稳定）
-//! 9. 【输入理解结果】+【消息链上下文】 ← 会话内恒定/追加，置于易变区块前保前缀缓存
+//! 9. 【输入理解结果】+【相关知识】/【思维方法】/【上一轮思考摘要】+【消息链上下文】
+//!    ← 会话内恒定/阶段相关上下文，置于易变区块前保前缀缓存
 //! 10. 【工具失败警告】      ← 低频统计快照
 //! 11. 【trace_id + 当前消息】← 每次变化
 //!
@@ -57,7 +58,8 @@ const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
 /// 6. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
 /// 7. 【工作空间与路径约定】 ← 静态路径配置
 /// 8. 【历史对话】          ← 随对话增长（追加式，前缀稳定）
-/// 9. 【输入理解结果】+【消息链上下文】 ← 会话内恒定/追加，置于易变区块前保前缀缓存
+/// 9. 【输入理解结果】+【相关知识】/【思维方法】/【上一轮思考摘要】+【消息链上下文】
+///    ← 会话内恒定/阶段相关上下文，置于易变区块前保前缀缓存
 /// 10. 【工具失败警告】      ← 低频统计快照
 /// 11. 【trace_id + 当前消息】← 每次变化
 ///
@@ -110,6 +112,12 @@ pub struct DefaultPromptBuilder {
     tool_failures: Vec<(String, u64)>,
     /// 意图分析结果（IntentAnalyze 阶段产出），供 build() 时渲染参考区块使用
     pub intent_analysis: Option<crate::service::domain::runtime::awakening::IntentAnalysis>,
+    /// 检索命中知识摘要行（仅 awaken 场景：思考图 retrieve 节点产出，重点前置）
+    retrieved_knowledge_lines: Vec<String>,
+    /// 命中的思维方法技能（仅 awaken 场景：retrieve 节点召回的 thinking_method 类技能）
+    method_skills: Vec<SkillPo>,
+    /// 上一轮思考摘要（仅 awaken 场景：思考图 discover 回环产出的衔接线索）
+    prior_thinking_summary: Option<String>,
     /// 工作空间上下文：默认工作目录
     workspace_default: Option<String>,
     /// 工作空间上下文：用户 HOME 目录
@@ -837,6 +845,66 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s
     }
 
+    /// 渲染【相关知识】区块（思考图 retrieve 节点命中的知识摘要行）
+    ///
+    /// 重点前置（design §3.2）：检索命中的知识紧随意图区块注入，让模型带着
+    /// 相关背景动手。命中行为空 → 不渲染任何区块，返回 ""。
+    fn render_retrieved_knowledge_section(&self) -> String {
+        if self.retrieved_knowledge_lines.is_empty() {
+            return String::new();
+        }
+        let mut s = String::new();
+        s.push_str("【相关知识】\n");
+        s.push_str("以下是本轮按你的意图检索命中的知识摘要（仅供参考，以你当下判断为准）：\n");
+        for line in &self.retrieved_knowledge_lines {
+            s.push_str("- ");
+            s.push_str(line);
+            s.push('\n');
+        }
+        s.push('\n');
+        s
+    }
+
+    /// 渲染【思维方法】区块（retrieve 节点召回的 thinking_method 类技能）
+    ///
+    /// 方法技能教「怎么想」，与知识区块同属阶段相关上下文；渲染复用
+    /// `SkillPo::to_prompt_summary`（与技能区块同一口径，含 id 便于按需读全文）。
+    /// 空切片 → 不渲染任何区块，返回 ""。
+    fn render_method_skills_section(&self) -> String {
+        if self.method_skills.is_empty() {
+            return String::new();
+        }
+        let mut s = String::new();
+        s.push_str("【思维方法】\n");
+        s.push_str("以下是本轮召回的思维方式技能，动手前建议先参考：\n");
+        for skill in &self.method_skills {
+            s.push_str(&skill.to_prompt_summary());
+            s.push('\n');
+        }
+        s.push('\n');
+        s
+    }
+
+    /// 渲染【上一轮思考摘要】区块（思考图 discover 回环产出的衔接线索）
+    ///
+    /// 告诉模型上一轮已尝试与已知的结论，避免重复劳动。
+    /// 未注入或空串 → 不渲染任何区块，返回 ""。
+    fn render_prior_thinking_summary_section(&self) -> String {
+        let Some(summary) = self
+            .prior_thinking_summary
+            .as_deref()
+            .filter(|s| !s.is_empty())
+        else {
+            return String::new();
+        };
+        let mut s = String::new();
+        s.push_str("【上一轮思考摘要】\n");
+        s.push_str("以下是上一轮思考已尝试与已知的结论，在此基础上继续，不要重复已做过的事：\n");
+        s.push_str(summary.trim());
+        s.push_str("\n\n");
+        s
+    }
+
     // ==================== P0-a：最终回复指引（注入 System 消息，防止工具调用死循环）====================
 
     /// 生成【回复规则指引】段落——直接拼入 System 消息末尾，
@@ -1084,6 +1152,21 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         let intent_section = self.render_intent_analysis_section();
         if !intent_section.is_empty() {
             s.push_str(&intent_section);
+        }
+        // 思考图阶段相关上下文（design §3.2 重点前置）：retrieve 节点命中的知识与
+        // 方法技能、discover 产出的上一轮思考摘要——紧随意图区块同段，置于易变区块
+        // （警告/Trace/当前消息）之前，与「稳定性递减」的排布口径一致
+        let retrieved_section = self.render_retrieved_knowledge_section();
+        if !retrieved_section.is_empty() {
+            s.push_str(&retrieved_section);
+        }
+        let method_section = self.render_method_skills_section();
+        if !method_section.is_empty() {
+            s.push_str(&method_section);
+        }
+        let prior_section = self.render_prior_thinking_summary_section();
+        if !prior_section.is_empty() {
+            s.push_str(&prior_section);
         }
         // 消息链上下文：紧贴【当前消息】语义群，链头稳定、尾部追加
         self.push_message_thread(&mut s);
@@ -1432,6 +1515,18 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
     ) {
         self.intent_analysis = Some(analysis.clone());
+    }
+
+    fn retrieved_knowledge(&mut self, hits: &[String]) {
+        self.retrieved_knowledge_lines = hits.to_vec();
+    }
+
+    fn method_skills(&mut self, skills: &[SkillPo]) {
+        self.method_skills = skills.to_vec();
+    }
+
+    fn prior_thinking_summary(&mut self, summary: &str) {
+        self.prior_thinking_summary = Some(summary.to_string());
     }
 
     // ==================== 角色分离版初始消息（覆盖 trait 默认实现）====================

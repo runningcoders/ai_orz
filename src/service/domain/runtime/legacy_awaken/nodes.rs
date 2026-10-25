@@ -157,12 +157,15 @@ impl ThinkNode for PrepareNode {
                 (ContextKey::Runtime, LoadDepth::Shallow),
                 (ContextKey::Skills, LoadDepth::Shallow),
                 (ContextKey::Business, LoadDepth::Full),
+                (ContextKey::Intent, LoadDepth::Shallow),
             ],
             reads: vec![
                 ContextKey::Runtime,
                 ContextKey::Tools,
                 ContextKey::Skills,
                 ContextKey::Business,
+                ContextKey::Intent,
+                ContextKey::Knowledge,
             ],
             writes: vec![ContextKey::Prompt, ContextKey::Budget],
         }
@@ -204,6 +207,15 @@ impl ThinkNode for PrepareNode {
         let ws = read_bus::<WorkspacePaths>(bus, ContextKey::Runtime)?;
         let skills = read_bus::<Vec<crate::models::skill::SkillPo>>(bus, ContextKey::Skills)?;
         let biz = read_bus::<BusinessContext>(bus, ContextKey::Business)?;
+        // 思考图上游产物：分区缺失 = 空产物（intent 降级为空结构、首轮无 discover
+        // 摘要都是合法路径），unwrap_or_default 吞错是有意的——图语义允许降级装配
+        let intent = read_bus::<crate::service::domain::runtime::types::IntentAnalysis>(
+            bus,
+            ContextKey::Intent,
+        )
+        .unwrap_or_default();
+        let pack = read_bus::<super::context::RetrievalPack>(bus, ContextKey::Knowledge)
+            .unwrap_or_default();
 
         let mut builder = deps.domain.prompt_builder(&deps.agent);
         builder.current_trace_id(&deps.trace_id);
@@ -228,6 +240,19 @@ impl ThinkNode for PrepareNode {
         }
         super::super::awakening::mount_ontology_lexicon(ctx, builder.as_mut()).await;
         builder.history(&recent);
+        // 思考图上游产物注入（重点前置的短聚焦装配）：意图理解 + 检索命中的
+        // 知识/方法技能 + 上一轮思考摘要；空集合跳过——builder 对空输入不渲染
+        // 区块，prompt 与思考图未产出时保持一致
+        builder.intent_analysis(&intent);
+        if !pack.knowledge_hits.is_empty() {
+            builder.retrieved_knowledge(&pack.knowledge_hits);
+        }
+        if !pack.method_skills.is_empty() {
+            builder.method_skills(&pack.method_skills);
+        }
+        if let Some(summary) = &pack.prior_thinking_summary {
+            builder.prior_thinking_summary(summary);
+        }
         if let Some(summary) = &slot.summary {
             builder.compacted_context(summary);
         }

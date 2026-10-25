@@ -1376,3 +1376,119 @@ fn neural_only_orders_blocks_not_visibility() {
     assert!(prompt.contains("神经方法论"), "neural 副本可见");
     assert!(prompt.contains("普通方法论"), "非 neural 副本同样可见");
 }
+
+// ==================== 思考图阶段相关上下文（Task 5）====================
+
+/// 空输入不渲染区块：三个 setter 空切片/空串输入时 render 均返回空串，
+/// 完整 awaken 装配（build_initial_messages）的 User 部分也不出现对应区块头
+#[test]
+fn thinking_graph_sections_render_nothing_on_empty_inputs() {
+    let agent = make_simple_agent();
+    let message = make_simple_message("帮我查下订单");
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-tg-empty");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+    builder.retrieved_knowledge(&[]);
+    builder.method_skills(&[]);
+    builder.prior_thinking_summary("");
+
+    // 三个 render 函数对空输入一律返回 ""
+    assert!(
+        builder.render_retrieved_knowledge_section().is_empty(),
+        "空知识命中不应渲染【相关知识】区块"
+    );
+    assert!(
+        builder.render_method_skills_section().is_empty(),
+        "空技能召回不应渲染【思维方法】区块"
+    );
+    assert!(
+        builder.render_prior_thinking_summary_section().is_empty(),
+        "空串摘要不应渲染【上一轮思考摘要】区块"
+    );
+
+    // 完整 awaken 装配（角色分离版）同样不出现三个区块头
+    let messages = builder.build_initial_messages();
+    let ChatMessage::User { content } = &messages[1] else {
+        panic!("期望 User 消息");
+    };
+    assert!(!content.contains("【相关知识】"));
+    assert!(!content.contains("【思维方法】"));
+    assert!(!content.contains("【上一轮思考摘要】"));
+}
+
+/// 有输入时输出含三个区块标题与内容行，且区块落在【当前消息】之前（重点前置）
+#[test]
+fn thinking_graph_sections_render_titles_and_content() {
+    use crate::models::skill::SkillPo;
+    use common::enums::skill::SkillAuthorType;
+
+    let agent = make_simple_agent();
+    let message = make_simple_message("上次那个方案结果呢？");
+
+    let method = SkillPo::new(
+        "method-001".to_string(),
+        "问题求解策略".to_string(),
+        "陌生域先检索再动手".to_string(),
+        vec!["thinking_method".to_string()],
+        "method".to_string(),
+        String::new(),
+        "agent-test-001".to_string(),
+        SkillAuthorType::Agent,
+        "skills/method-001".to_string(),
+    );
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-tg-full");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+    builder.retrieved_knowledge(&["2026-10-01 短期记忆：项目X 方案A 已评审通过".to_string()]);
+    builder.method_skills(&[method]);
+    builder.prior_thinking_summary("已检索过「部署流程」，整理出三步方案");
+
+    // 知识区块：标题 + 命中行
+    let knowledge = builder.render_retrieved_knowledge_section();
+    assert!(
+        knowledge.contains("【相关知识】"),
+        "应包含【相关知识】标题。Output:\n{}",
+        knowledge
+    );
+    assert!(knowledge.contains("- 2026-10-01 短期记忆：项目X 方案A 已评审通过"));
+
+    // 方法技能区块：标题 + name + description（to_prompt_summary 口径）
+    let methods = builder.render_method_skills_section();
+    assert!(
+        methods.contains("【思维方法】"),
+        "应包含【思维方法】标题。Output:\n{}",
+        methods
+    );
+    assert!(methods.contains("问题求解策略"));
+    assert!(methods.contains("陌生域先检索再动手"));
+
+    // 思考摘要区块：标题 + 摘要正文
+    let prior = builder.render_prior_thinking_summary_section();
+    assert!(
+        prior.contains("【上一轮思考摘要】"),
+        "应包含【上一轮思考摘要】标题。Output:\n{}",
+        prior
+    );
+    assert!(prior.contains("已检索过「部署流程」"));
+
+    // awaken 完整装配（角色分离版）：三个区块都进 User 消息，且位于【当前消息】之前
+    let messages = builder.build_initial_messages();
+    let ChatMessage::User { content } = &messages[1] else {
+        panic!("期望 User 消息");
+    };
+    let idx_knowledge = find_block(content, "【相关知识】").expect("应渲染【相关知识】区块头");
+    let idx_method = find_block(content, "【思维方法】").expect("应渲染【思维方法】区块头");
+    let idx_prior =
+        find_block(content, "【上一轮思考摘要】").expect("应渲染【上一轮思考摘要】区块头");
+    let idx_msg = find_block(content, "【当前消息】").expect("应包含【当前消息】区块头");
+    assert!(idx_knowledge < idx_msg, "【相关知识】应在【当前消息】之前");
+    assert!(idx_method < idx_msg, "【思维方法】应在【当前消息】之前");
+    assert!(
+        idx_prior < idx_msg,
+        "【上一轮思考摘要】应在【当前消息】之前"
+    );
+}
