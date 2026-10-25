@@ -17,7 +17,8 @@
 #   ./scripts/prod.sh restart    停止后启动（不重新构建、不搬运）
 #
 # 【编译 / 搬运 / 启动 —— 三段分离】
-#   build   只管「在仓库里把产物编译出来」（dist/ + target/release/ai_orz），不碰部署根。
+#   build   只管「在仓库里把产物编译出来」（dist/ + target/release/ai_orz，编译前先
+#           跑 clean_target.sh stale 清理旧哈希副本），不碰部署根。
 #   install 只管「把编译产物搬运到部署根」（<部署根>/bin/ai_orz、<部署根>/dist）。
 #   start   只管「启动」（仓库模式用部署根产物；产物缺失或落后于仓库构建时明确告警，不静默搬运）。
 #   于是同一次 build 的产物有两条互不干扰的消费路径：
@@ -72,6 +73,11 @@ cmd_build() {
     fi
     setup_path
     cd "$REPO_ROOT"
+    # 先清理再编译：删 7 天前的旧哈希副本（deps 里带构建指纹，源码每次变更都
+    # 重链新副本而旧副本 cargo 永不回收，target 会无上限增长，见 clean_target.sh 头注）。
+    # 旧副本当前构建永不复用，删了最多触发一次重链接；依赖热缓存不动。
+    # 窗口可用 AI_ORZ_STALE_DAYS 调；清理失败不阻断编译（产物缺失时 cargo 会重链）。
+    "$SCRIPTS_DIR/clean_target.sh" stale || warn "⚠️ 编译前清理失败（忽略，继续编译）"
     echo "🔨 构建 release（前端 dist/ + 后端二进制）..."
     "$SCRIPTS_DIR/build_frontend.sh"
     echo ""

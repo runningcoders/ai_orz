@@ -145,23 +145,14 @@ package: ## 编译并打包正式发布物（tar.gz：二进制 + dist/ + 运维
 
 # ===== 磁盘治理 =====
 
-clean-slim: ## 瘦身 target：清增量缓存+陈旧快照，保留依赖缓存（下次编译仅几十秒）
-	@echo "== 当前 target 体积 =="
-	@du -sh target frontend/target 2>/dev/null || true
-	@echo ""
-	@echo "== 清理增量编译缓存（膨胀主因，可安全删除）=="
-	rm -rf target/debug/incremental target/wasm32-unknown-unknown/debug/incremental \
-		target/wasm32-unknown-unknown/release/incremental 2>/dev/null || true
-	find target -name "*.fingerprint" -type d -name "incremental" -exec rm -rf {} + 2>/dev/null || true
-	@echo "== 清理 30 天未访问的陈旧 deps 快照（带哈希后缀的旧版本）=="
-	find target/debug/deps target/wasm32-unknown-unknown -name "*-[0-9a-f]\{16\}.*" -atime +30 -delete 2>/dev/null || true
-	@echo ""
-	@echo "== 清理后体积 =="
-	@du -sh target frontend/target 2>/dev/null || true
+clean-stale: ## 删 DAYS 天前（默认 7）的旧构建副本：可执行副本+profraw，依赖热缓存不动（make prod/build 编译前自动执行）
+	./scripts/ai_orz.sh clean-target stale $(DAYS)
+
+clean-slim: ## 瘦身 target：清增量缓存+30 天前陈旧快照，保留近期依赖缓存（下次编译仅几十秒）
+	./scripts/ai_orz.sh clean-target slim
 
 clean: ## 全量清理 target（下次编译为完整冷构建，慎用）
-	cargo clean
-	cd frontend && cargo clean
+	./scripts/ai_orz.sh clean-target all
 
 # ===== E2E =====
 

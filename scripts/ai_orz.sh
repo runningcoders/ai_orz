@@ -44,6 +44,7 @@ ai_orz - 脚本统一入口
 
 治理
   clean              清理残留进程与端口占用（--dry-run 只列不杀）
+  clean-target       target 磁盘治理：stale [天数] / slim / all（build 编译前自动跑 stale）
   doctor             依赖预检（[dev|frontend|backend|build|prod] [--fix]）
   check              代码门禁：fmt / clippy / clippy-fe / test / lint / ci ...
   migrate            call_trace 存储布局迁移（默认 dry-run，--apply 落盘）
@@ -116,6 +117,9 @@ case "$CMD" in
     # ===== 治理 =====
     clean|clean-proc|cleanup)
         "$SCRIPTS_DIR/cleanup.sh" "$@"
+        ;;
+    clean-target)
+        "$SCRIPTS_DIR/clean_target.sh" "$@"
         ;;
     doctor|deps|check-deps)
         if [ $# -eq 0 ]; then

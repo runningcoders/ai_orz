@@ -25,6 +25,8 @@ scripts/
 ├── build_frontend.sh   【实现】前端 dx build --release → dist/（Dockerfile 也复用它）
 ├── cleanup.sh          【实现】残留进程与端口占用清理（--dry-run 只列不杀）；
 │                       后端走 `service.sh::graceful_stop`（与 make stop 同一条链路）
+├── clean_target.sh     【实现】target/ 磁盘治理：stale [天数] / slim / all（哈希副本
+│                       清理一处实现；`prod.sh build` 编译前自动跑 stale）
 ├── check_deps.sh       【实现】依赖预检（[模式] [--fix]）
 ├── check.sh            【实现】代码门禁：fmt / clippy / clippy-fe / test / lint / ci / coverage
 ├── package.sh          【实现】发布物打包（CI release.yml 直接调用）
@@ -40,17 +42,25 @@ scripts/
 |------|------|-----------|----------|
 | 开发全栈 | `make dev` | `dev` | `run.sh dev` |
 | 仅后端 / 仅前端 | `make run` / `make serve` | `backend` / `frontend` | `run.sh` |
-| 全量 release 构建 | `make build` | `build` | `prod.sh build`（内含 `build_frontend.sh`）：只编译，产物留在仓库内 `target/release/ai_orz` + `dist/` |
+| 全量 release 构建 | `make build` | `build` | `prod.sh build`（内含 `build_frontend.sh` + 编译前 `clean_target.sh stale`）：只编译，产物留在仓库内 `target/release/ai_orz` + `dist/` |
 | 搬运到部署根 | `make install` | `install` | `prod.sh install`：把 build 产物搬到 `<部署根>/bin` 与 `<部署根>/dist`（`make prod` 已内含） |
 | 仅前端构建 | `make build-fe` | `build-fe` | `build_frontend.sh` |
 | 构建 + 搬运 + 后台启动 | `make prod` | `prod` | `prod.sh build` + `prod.sh install` + `cleanup.sh` + `prod.sh start` |
 | 停止 / 重启 | `make stop` / `make restart` | `stop` / `restart` | `prod.sh` |
 | 状态 / 日志 | `make status` / `make logs` | `status` / `logs` | `prod.sh` |
 | 残留进程清理 | `make clean-proc` | `clean [--dry-run]` | `cleanup.sh` |
+| target 磁盘治理 | `make clean-stale [DAYS=]` / `clean-slim` / `clean` | `clean-target stale \| slim \| all` | `clean_target.sh`（`make prod`/`build`/`package` 编译前自动跑 `stale`） |
 | 依赖预检 | `make doctor` | `doctor [模式] [--fix]` | `check_deps.sh` |
 | 代码门禁 | `make lint` / `make ci` | `check lint` / `check ci` | `check.sh` |
 | 发布打包 | `make package` | `package [版本]` | `package.sh`（消费 `prod.sh build` 产物，**不**搬运到部署根） |
 | 数据迁移 | — | `migrate [--apply]` | `migrate_tool_call_trace.sh` |
+
+> **target/ 为什么会涨到几百 G**：deps 里的产物带构建指纹哈希，源码每次变更都会
+> 重链出**新哈希副本**而旧副本 cargo 永不回收——测试二进制单个 300~800M，无上限增长。
+> `make prod` / `make build` / `make package` 编译前自动跑 `clean_target.sh stale`
+> （删 7 天前的旧可执行副本 + profraw，**依赖热缓存不动**；`AI_ORZ_STALE_DAYS` 可调），
+> 删掉的副本当前构建永不复用，最多触发一次重链接。手动深度瘦身 `make clean-slim`，
+> 彻底重置 `make clean`。
 
 ## 四、两条硬规则
 
