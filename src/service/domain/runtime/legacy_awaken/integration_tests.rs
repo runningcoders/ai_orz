@@ -39,7 +39,7 @@ use common::enums::{AgentStatus, MessageRole, MessageType, ModelCapability, Prov
 use common::error::{Result, err};
 use sqlx::SqlitePool;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 // ==================== 脚本化的 LLM 后端 ====================
@@ -52,9 +52,13 @@ struct ScriptedBackend {
     thinks: Mutex<VecDeque<ThinkLoopResult>>,
     compacts: Mutex<VecDeque<CompactOutcome>>,
     discovers: Mutex<VecDeque<String>>,
+    intents: Mutex<VecDeque<IntentAnalysis>>,
+    /// analyze_intent 直接报错（意图降级路径）；队列与它互斥使用
+    fail_intent: AtomicBool,
     pub think_calls: AtomicUsize,
     pub compact_calls: AtomicUsize,
     pub discover_calls: AtomicUsize,
+    pub intent_calls: AtomicUsize,
 }
 
 impl std::fmt::Debug for ScriptedBackend {
@@ -72,12 +76,18 @@ impl std::fmt::Debug for ScriptedBackend {
                 "discovers_left",
                 &self.discovers.lock().map(|q| q.len()).unwrap_or(0),
             )
+            .field(
+                "intents_left",
+                &self.intents.lock().map(|q| q.len()).unwrap_or(0),
+            )
+            .field("fail_intent", &self.fail_intent.load(Ordering::SeqCst))
             .field("think_calls", &self.think_calls.load(Ordering::SeqCst))
             .field("compact_calls", &self.compact_calls.load(Ordering::SeqCst))
             .field(
                 "discover_calls",
                 &self.discover_calls.load(Ordering::SeqCst),
             )
+            .field("intent_calls", &self.intent_calls.load(Ordering::SeqCst))
             .finish()
     }
 }
@@ -88,9 +98,12 @@ impl ScriptedBackend {
             thinks: Mutex::new(thinks.into()),
             compacts: Mutex::new(VecDeque::new()),
             discovers: Mutex::new(VecDeque::new()),
+            intents: Mutex::new(VecDeque::new()),
+            fail_intent: AtomicBool::new(false),
             think_calls: AtomicUsize::new(0),
             compact_calls: AtomicUsize::new(0),
             discover_calls: AtomicUsize::new(0),
+            intent_calls: AtomicUsize::new(0),
         })
     }
 
@@ -105,6 +118,20 @@ impl ScriptedBackend {
         if let Ok(mut q) = self.discovers.lock() {
             *q = texts.into();
         }
+        self
+    }
+
+    /// 编排 analyze_intent 的返回序列（真意图：带 key_terms，retrieve 会真正查库）
+    fn with_intents(self: Arc<Self>, analyses: Vec<IntentAnalysis>) -> Arc<Self> {
+        if let Ok(mut q) = self.intents.lock() {
+            *q = analyses.into();
+        }
+        self
+    }
+
+    /// 让 analyze_intent 报错：意图降级路径（intent 节点写空意图继续走）
+    fn with_failing_intent(self: Arc<Self>) -> Arc<Self> {
+        self.fail_intent.store(true, Ordering::SeqCst);
         self
     }
 }
@@ -146,9 +173,19 @@ impl ThinkBackend for ScriptedBackend {
         _deps: &AwakenDeps,
         _input: IntentInput,
     ) -> Result<IntentAnalysis> {
-        // canned 空意图：key_terms 为空 → retrieve 差集为空短路，链路行为与
-        // 骨架期等价。需要编排具体意图的用例由后续任务扩成序列。
-        Ok(IntentAnalysis::default())
+        self.intent_calls.fetch_add(1, Ordering::SeqCst);
+        // 意图降级路径：Err 由 intent 节点兜成空意图继续走
+        if self.fail_intent.load(Ordering::SeqCst) {
+            return Err(err!(Internal, "scripted intent failure"));
+        }
+        // 队列空 → 默认空意图（key_terms 为空 → retrieve 短路），照既有用例口径；
+        // 需要真意图（retrieve 真正查库）的用例用 with_intents 编排
+        let front = self
+            .intents
+            .lock()
+            .map(|mut q| q.pop_front())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().pop_front());
+        Ok(front.unwrap_or_default())
     }
 
     async fn discover(&self, _deps: &AwakenDeps, _input: DiscoverInput) -> Result<String> {
@@ -394,6 +431,114 @@ async fn max_rounds_exits_via_force_compact(pool: SqlitePool) {
         "unexpected reply: {}",
         outcome.raw_output
     );
+}
+
+// ==================== 新拓扑全链路 ====================
+
+/// happy path（真意图版）：intent 带 key_terms → retrieve **真正查库**（visited 记账）
+///
+/// 与 `final_answer_walks_prepare_deliberate_consolidate`（空意图、retrieve 短路）
+/// 互补：那条锁走线，这条锁「有词可查时机械检索真的发生」（含 DAL 查询路径）。
+#[sqlx::test]
+async fn happy_path_runs_intent_retrieve_deliberate(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend =
+        ScriptedBackend::new(vec![final_result("done")]).with_intents(vec![IntentAnalysis {
+            key_terms: vec!["测试".to_string()],
+            summary: "用户要测试".to_string(),
+            ..Default::default()
+        }]);
+
+    // 手动装配（不走 drive）：跑完还要检查 run 级检索状态的 visited 记账
+    let deps = make_deps(ctx, backend.clone());
+    let outcome = run_legacy_awaken(Arc::clone(&deps))
+        .await
+        .expect("happy path must complete");
+
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+    );
+    assert_eq!(outcome.exit, EXIT_FINAL);
+    assert_eq!(outcome.raw_output, "done");
+    assert_eq!(backend.intent_calls.load(Ordering::SeqCst), 1);
+    // visited 记账证明 retrieve 真查了词（而非空意图短路）
+    let queried = deps
+        .retrieval
+        .lock()
+        .map(|s| s.queried_terms.clone())
+        .unwrap_or_default();
+    assert_eq!(queried, vec!["测试".to_string()]);
+}
+
+/// 新发现回环：max_rounds → discover 有新词 → retrieve#2 → prepare#2 → 再思考完成
+///
+/// 新拓扑的核心增量（design §3.2「新发现循环边」）：轮次耗尽不再直接压缩退出，
+/// 而是先问 discover「有没有值得再查的线索」——有就带着新词回检索装配再想一轮。
+#[sqlx::test]
+async fn discovery_loop_retrieves_again(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(vec![
+        ThinkLoopResult::MaxRoundsExceeded {
+            messages: user_msg(),
+            total_rounds: 8,
+        },
+        final_result("recovered after loop"),
+    ])
+    .with_intents(vec![IntentAnalysis {
+        key_terms: vec!["初始词".to_string()],
+        ..Default::default()
+    }])
+    .with_discovers(vec![
+        r#"{"new_key_terms":["新线索"],"prior_thinking_summary":"轨迹里出现了未检索的线索"}"#
+            .to_string(),
+    ]);
+
+    let deps = make_deps(ctx, backend.clone());
+    let outcome = run_legacy_awaken(Arc::clone(&deps))
+        .await
+        .expect("discovery loop must complete");
+
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>retrieve#2>prepare#2>deliberate#2>consolidate#1"
+    );
+    assert_eq!(outcome.exit, EXIT_FINAL);
+    assert_eq!(outcome.raw_output, "recovered after loop");
+    assert_eq!(backend.discover_calls.load(Ordering::SeqCst), 1);
+    // 回环新词被 retrieve 消费并记账（初始词 + 新线索各查一次）
+    let queried = deps
+        .retrieval
+        .lock()
+        .map(|s| s.queried_terms.clone())
+        .unwrap_or_default();
+    assert_eq!(queried, vec!["初始词".to_string(), "新线索".to_string()]);
+    assert_eq!(
+        deps.retrieval
+            .lock()
+            .map(|s| s.discovery_rounds)
+            .unwrap_or(0),
+        1,
+        "new_findings 路径必须计一轮软预算"
+    );
+}
+
+/// 意图分析失败 → 降级为空意图照常走完链路（intent 是增强，不是闸门）
+#[sqlx::test]
+async fn intent_failure_degrades_and_continues(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(vec![final_result("still done")]).with_failing_intent();
+
+    let outcome = drive(ctx, backend.clone()).await;
+
+    // 降级不炸链路：走线与空意图 happy path 完全一致，照常收尾
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+    );
+    assert_eq!(outcome.exit, EXIT_FINAL);
+    assert_eq!(outcome.raw_output, "still done");
+    assert_eq!(backend.intent_calls.load(Ordering::SeqCst), 1);
 }
 
 // ==================== 失败路径 ====================
