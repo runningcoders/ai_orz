@@ -11,15 +11,17 @@
 //!
 //! ⚠️ 缝的开法是「按语义切」，不是「把函数原样搬过来」：
 //! `think` = 跑一轮完整思考（工具循环 + 退出策略裁决），
-//! `compact` = 把对话压成短期记忆。这两个是 `legacy_awaken` 里唯二的
-//! LLM 触碰点，其余 Provision（装配）与 Consolidate（收尾）都是纯 I/O，
-//! 保持真实实现才有测试价值。
+//! `compact` = 把对话压成短期记忆，
+//! `analyze_intent` = 两阶段唤醒的 Phase 1（IntentAnalyze 场景小循环），
+//! `discover` = 新发现识别（短聚焦单轮无工具）。
+//! 这四个是 `legacy_awaken` 里全部的 LLM 触碰点，其余 Provision（装配）与
+//! Consolidate（收尾）都是纯 I/O，保持真实实现才有测试价值。
 
 use super::context::AwakenDeps;
 use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::domain::runtime::compaction::CompactOutcome;
-use crate::service::domain::runtime::types::{ThinkLoopParams, ThinkLoopResult};
+use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopParams, ThinkLoopResult};
 use async_trait::async_trait;
 use common::enums::ThinkingScene;
 use common::error::Result;
@@ -40,10 +42,34 @@ pub struct CompactInput {
     pub with_user_reply: bool,
 }
 
+/// 一次「意图识别」的输入（其余上下文由 `AwakenDeps` 携带）
+pub struct IntentInput {
+    /// 意图分析子 trace id（形如 `intent-{主 trace_id}`）
+    pub trace_id: String,
+}
+
+/// 一次「新发现识别」的输入：短聚焦 prompt，单轮无工具
+///
+/// 调用方（discover 节点）由后续任务接入，接入前暂无构造点
+#[allow(dead_code)]
+pub struct DiscoverInput {
+    pub trace_id: String,
+    pub prompt: String,
+}
+
 #[async_trait]
 pub trait ThinkBackend: Send + Sync + std::fmt::Debug {
     async fn think(&self, deps: &AwakenDeps, input: ThinkInput) -> Result<ThinkLoopResult>;
     async fn compact(&self, deps: &AwakenDeps, input: CompactInput) -> Result<CompactOutcome>;
+    /// 意图识别（两阶段唤醒 Phase 1）：产出结构化 `IntentAnalysis`
+    async fn analyze_intent(&self, deps: &AwakenDeps, input: IntentInput)
+    -> Result<IntentAnalysis>;
+    /// 新发现识别：短聚焦单轮无工具思考，返回模型的原始文本
+    /// （JSON 解析由 discover 节点负责，缝里不做）
+    ///
+    /// 调用方（discover 节点）由后续任务接入
+    #[allow(dead_code)]
+    async fn discover(&self, deps: &AwakenDeps, input: DiscoverInput) -> Result<String>;
 }
 
 /// 生产后端：转调 `RuntimeDomainImpl` 的老函数，行为与 `awaken` 完全等价
@@ -114,5 +140,55 @@ impl ThinkBackend for LegacyBackend {
                 input.with_user_reply,
             )
             .await
+    }
+
+    async fn analyze_intent(
+        &self,
+        deps: &AwakenDeps,
+        input: IntentInput,
+    ) -> Result<IntentAnalysis> {
+        // 只做转调：started/finished 事件包裹由 IntentNode 负责（含降级语义），
+        // 避免缝里先发一份「成功」事件、节点又降级，监控口径分裂。
+        deps.domain
+            .analyze_input_intent_inner(
+                deps.ctx.clone(),
+                &deps.agent,
+                &deps.message,
+                &deps.options,
+                &input.trace_id,
+            )
+            .await
+    }
+
+    async fn discover(&self, deps: &AwakenDeps, input: DiscoverInput) -> Result<String> {
+        // 与 think 同口径：独立小循环前重设 think_runtime
+        // （BusyGuard 的 Drop 会清掉，老链路每轮都要重设）
+        AgentRuntimeStateManager::global()
+            .set_think_runtime(&deps.agent.po.id, deps.think_runtime.clone());
+
+        let result = deps
+            .domain
+            .run_think_loop(
+                ThinkLoopParams::new(
+                    deps.ctx.clone(),
+                    &deps.agent,
+                    ThinkingScene::Awaken,
+                    &input.trace_id,
+                    vec![ChatMessage::user(input.prompt)],
+                    &[],
+                )
+                .with_rounds(1, 0),
+            )
+            .await?;
+
+        match result {
+            ThinkLoopResult::Final { content, .. } => Ok(content),
+            // 单轮无工具的小循环拿不到 Final 即视为模型抖动，
+            // 交由 discover 节点降级退出（no_new_findings），不炸主流程
+            _ => Err(common::error::err!(
+                Internal,
+                "discover loop ended without Final"
+            )),
+        }
     }
 }

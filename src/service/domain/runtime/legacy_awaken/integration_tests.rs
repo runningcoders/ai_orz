@@ -15,13 +15,14 @@
 //! 编排层之所以要 `backend` 这个缝，价值正在于此：**用退出信号驱动流转**，
 //! 而不是靠构造特定的 LLM 响应去「诱使」链路走到某个分支。
 //!
-//! ⚠️ 蓝图已扩成完整思考图（entry=`intent`），但 `intent` / `retrieve` /
-//! `discover` 尚是直通骨架（真正实现由后续任务替换）——指纹里的
-//! `intent#1>retrieve#1` 前缀与 max_rounds 路径上的 `discover#1` 都是骨架占位。
+//! ⚠️ 蓝图已扩成完整思考图（entry=`intent`）：`intent` / `retrieve` 已是真正实现
+//! （脚本后端 canned 返回空意图 → 检索短路，行为与骨架期等价）；
+//! `discover` 尚是直通骨架（真正实现由后续任务替换）——max_rounds 路径上的
+//! `discover#1` 仍是骨架占位。
 
-use super::backend::{CompactInput, ThinkBackend, ThinkInput};
+use super::backend::{CompactInput, DiscoverInput, IntentInput, ThinkBackend, ThinkInput};
 use super::blueprint::MAX_LOOP_ROUNDS;
-use super::context::{AwakenDeps, build_deps_with_backend};
+use super::context::{AwakenDeps, RetrievalPack, build_deps_with_backend, read_bus};
 use super::nodes::{EXIT_CANCELLED, EXIT_FINAL, EXIT_MAX_ROUNDS, NODE_CONSOLIDATE};
 use super::runner::run_legacy_awaken;
 use crate::models::agent::{Agent, AgentPo, AgentRuntimeConfig};
@@ -31,8 +32,9 @@ use crate::models::file::FileMeta;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::models::model_provider::ModelProviderPo;
+use crate::pkg::think_path::{ContextKey, LoadDepth, NodeSignal, ThinkBus, ThinkNode};
 use crate::service::domain::runtime::compaction::CompactOutcome;
-use crate::service::domain::runtime::types::{ThinkLoopResult, ThinkingOptions};
+use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult, ThinkingOptions};
 use async_trait::async_trait;
 use common::enums::{AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType};
 use common::error::{Result, err};
@@ -119,6 +121,21 @@ impl ThinkBackend for ScriptedBackend {
                 "scripted backend exhausted: compact() was called more times than scripted"
             )
         })
+    }
+
+    async fn analyze_intent(
+        &self,
+        _deps: &AwakenDeps,
+        _input: IntentInput,
+    ) -> Result<IntentAnalysis> {
+        // canned 空意图：key_terms 为空 → retrieve 差集为空短路，链路行为与
+        // 骨架期等价。需要编排具体意图的用例由后续任务扩成序列。
+        Ok(IntentAnalysis::default())
+    }
+
+    async fn discover(&self, _deps: &AwakenDeps, _input: DiscoverInput) -> Result<String> {
+        // canned「无新发现」JSON：与 discover 骨架的恒退出行为等价
+        Ok(r#"{"new_key_terms":[],"prior_thinking_summary":""}"#.to_string())
     }
 }
 
@@ -218,11 +235,13 @@ fn make_message(content: &str) -> Message {
     )
 }
 
-/// 组装一条链路并跑完；`shadow=true` 保证不落库、不发事件
-async fn drive(
+/// 组装一次链路的运行依赖（`drive` 与节点级用例共用同一装配口径）
+///
+/// `shadow=true` 保证不落库、不发通知；后端由调用方注入（脚本/失败后端）。
+fn make_deps(
     ctx: crate::pkg::request_context::RequestContext,
-    backend: Arc<ScriptedBackend>,
-) -> super::runner::LegacyAwakenOutcome {
+    backend: Arc<dyn ThinkBackend>,
+) -> Arc<AwakenDeps> {
     let agent = make_agent(&format!("agent-{}", uuid::Uuid::now_v7()));
     let trace = MemoryTrace::new(
         agent.po.id.clone(),
@@ -242,7 +261,15 @@ async fn drive(
         trace,
         shadow: true, // shadow：集成测试不应产生落库副作用
     };
-    let deps = build_deps_with_backend(backend, input);
+    build_deps_with_backend(backend, input)
+}
+
+/// 组装一条链路并跑完
+async fn drive(
+    ctx: crate::pkg::request_context::RequestContext,
+    backend: Arc<ScriptedBackend>,
+) -> super::runner::LegacyAwakenOutcome {
+    let deps = make_deps(ctx, backend);
     run_legacy_awaken(deps)
         .await
         .expect("legacy_awaken should complete")
@@ -350,6 +377,18 @@ impl ThinkBackend for FailingBackend {
     async fn compact(&self, _deps: &AwakenDeps, _input: CompactInput) -> Result<CompactOutcome> {
         Err(err!(Internal, "compaction boom"))
     }
+
+    async fn analyze_intent(
+        &self,
+        _deps: &AwakenDeps,
+        _input: IntentInput,
+    ) -> Result<IntentAnalysis> {
+        Err(err!(Internal, "intent analyze boom"))
+    }
+
+    async fn discover(&self, _deps: &AwakenDeps, _input: DiscoverInput) -> Result<String> {
+        Err(err!(Internal, "discover boom"))
+    }
 }
 
 /// 思考失败必须向上冒泡，不能被吞掉变成「正常结束」
@@ -362,26 +401,7 @@ impl ThinkBackend for FailingBackend {
 #[sqlx::test]
 async fn deliberation_error_propagates(pool: SqlitePool) {
     let ctx = init_env(pool);
-    let agent = make_agent(&format!("agent-{}", uuid::Uuid::now_v7()));
-    let trace = MemoryTrace::new(
-        agent.po.id.clone(),
-        String::new(),
-        "test-user".to_string(),
-        String::new(),
-        common::enums::MemoryRole::Assistant,
-        String::new(),
-        None,
-    );
-    let input = super::context::AwakenInput {
-        domain: test_domain(),
-        ctx,
-        agent,
-        message: make_message("帮我看下这个任务"),
-        options: ThinkingOptions::new(),
-        trace,
-        shadow: true,
-    };
-    let deps = build_deps_with_backend(Arc::new(FailingBackend), input);
+    let deps = make_deps(ctx, Arc::new(FailingBackend));
 
     let err = run_legacy_awaken(deps)
         .await
@@ -420,27 +440,8 @@ async fn loop_budget_exhaustion_errors_instead_of_returning_ok(pool: SqlitePool)
             .collect(),
     );
 
-    let agent = make_agent(&format!("agent-{}", uuid::Uuid::now_v7()));
-    let trace = MemoryTrace::new(
-        agent.po.id.clone(),
-        String::new(),
-        "test-user".to_string(),
-        String::new(),
-        common::enums::MemoryRole::Assistant,
-        String::new(),
-        None,
-    );
-    let input = super::context::AwakenInput {
-        domain: test_domain(),
-        ctx,
-        agent,
-        message: make_message("帮我看下这个任务"),
-        options: ThinkingOptions::new(),
-        trace,
-        shadow: true,
-    };
-
-    let err = run_legacy_awaken(build_deps_with_backend(backend, input))
+    let deps = make_deps(ctx, backend);
+    let err = run_legacy_awaken(deps)
         .await
         .expect_err("回环耗尽必须冒泡成错误，不能返回 Ok");
     let msg = format!("{err}");
@@ -468,4 +469,30 @@ async fn cancelled_shortcuts_to_consolidate(pool: SqlitePool) {
     assert_eq!(outcome.exit, EXIT_CANCELLED);
     // 取消不该碰压缩（没有活儿要沉淀）
     assert_eq!(backend.compact_calls.load(Ordering::SeqCst), 0);
+}
+
+// ==================== 节点级行为：意图降级 / 检索短路 ====================
+
+/// 意图识别失败必须降级为空产物继续走图，而不是把 Err 甩给引擎
+///
+/// 与 `deliberation_error_propagates` 的口径相反：思考（deliberate）失败要冒泡，
+/// 意图识别失败只是「没有 Phase 1」，链路照常（老 awakening 行为的同一约定）。
+#[sqlx::test]
+async fn intent_node_writes_bus_and_degrades(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let deps = make_deps(ctx, Arc::new(FailingBackend));
+
+    let node = super::intent_node::IntentNode::new(Arc::clone(&deps));
+    let mut bus = ThinkBus::new();
+    let outcome = node
+        .run(&mut bus)
+        .await
+        .expect("intent node must not fail on backend error");
+
+    assert!(matches!(outcome.signal, NodeSignal::Done));
+    // 降级产物是「空结构字段」而不是「没有分区」：下游统一按空意图处理
+    let ia = read_bus::<IntentAnalysis>(&bus, ContextKey::Intent)
+        .expect("bus[Intent] must be present after degradation");
+    assert!(ia.key_terms.is_empty());
+    assert_eq!(ia.intent_type, "");
 }
