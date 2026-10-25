@@ -57,6 +57,10 @@ static EMBEDDED_SKILL_FILES: &[(&str, &str)] = &[
         "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md",
         include_str!("skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md"),
     ),
+    (
+        "skills/TEMPLATE_PROBLEM_SOLVING/skill.md",
+        include_str!("skills/TEMPLATE_PROBLEM_SOLVING/skill.md"),
+    ),
 ];
 
 /// 读取编译期内嵌的文件内容
@@ -169,9 +173,15 @@ mod tests {
     }
 
     #[test]
+    fn test_read_embedded_file_problem_solving() {
+        let content = read_embedded_file("skills/TEMPLATE_PROBLEM_SOLVING/skill.md").unwrap();
+        assert!(content.contains("问题求解策略"));
+    }
+
+    #[test]
     fn test_list_embedded_skill_files_count() {
         let files = list_embedded_skill_files();
-        assert_eq!(files.len(), 11);
+        assert_eq!(files.len(), 12);
         assert!(files.contains(&"skills/TEMPLATE_TOOL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_SKILL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_MEMORY_COGNITION/skill.md".to_string()));
@@ -183,5 +193,6 @@ mod tests {
         assert!(files.contains(&"skills/TEMPLATE_USER_RECEPTION/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_SELF_EVOLUTION/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_PROBLEM_SOLVING/skill.md".to_string()));
     }
 }

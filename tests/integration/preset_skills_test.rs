@@ -279,7 +279,7 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .iter()
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
-    assert_eq!(count_after_first, 10, "第一次初始化后应有 10 个预置技能");
+    assert_eq!(count_after_first, 11, "第一次初始化后应有 11 个预置技能");
 
     // 第二次 bootstrap — 应更新而非重复创建
     let bs2 = crate::common::factories::bootstrap_system(&app).await;
@@ -290,8 +290,8 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
     assert_eq!(
-        count_after_second, 10,
-        "第二次初始化后仍应只有 10 个预置技能（idempotent）"
+        count_after_second, 11,
+        "第二次初始化后仍应只有 11 个预置技能（idempotent）"
     );
 
     // author_id 应更新为第二个 owner

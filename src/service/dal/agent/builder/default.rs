@@ -1272,6 +1272,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str(
             "   - **图谱登记**：`save_long_term_memory` 建一个 `node_type=skill` 的节点，**只写摘要**，正文留在技能里不进图谱\n",
         );
+        // 约定出处：docs/design/thinking_graph_engine_design.md §3.6 —— skill 节点 node_tags 须追加技能 category（思维方法类即 thinking_method），检索侧按 tag 才能召回技能节点
+        result.push_str(
+            "   - **登记 tag**：该节点的 `node_tags` 在既有 tags 基础上**追加该技能的 category**（如思维方法类技能追加 `thinking_method`）——日后检索侧按 tag 召回技能节点全靠这一步登记\n",
+        );
         result.push_str(
             "   - **建边**：该节点用 `distilled_from`（提炼自）连回源知识节点，源节点侧可用 `produces`（产出）指回\n",
         );

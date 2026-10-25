@@ -291,6 +291,24 @@
           "ref_path": "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md"
         }
       ]
+    },
+    {
+      "id": "TEMPLATE_PROBLEM_SOLVING",
+      "name": "问题求解策略",
+      "description": "接到任务不知从哪下手、或要进入陌生领域动手前必读全文：先判定熟悉域还是陌生域（经历 / 概念 / 路径三判据，拿不准按陌生域处理），熟悉域→规划执行（拆步骤、逐步验证、及时收敛），陌生域→检索先行（先查知识图谱与记忆再动手，零命中是有效结论而不是臆造的理由）；含常见误诊对照与最佳实践",
+      "tags": ["thinking_method"],
+      "category": "thinking_method",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/TEMPLATE_PROBLEM_SOLVING",
+      "files": [
+        {
+          "path": "skill.md",
+          "ref_path": "skills/TEMPLATE_PROBLEM_SOLVING/skill.md"
+        }
+      ]
     }
   ],
   "ontology": {
