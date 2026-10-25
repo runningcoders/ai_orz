@@ -467,6 +467,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut edit_intent_analyze_max_rounds = use_signal(String::new);
     let mut edit_summary_max_rounds = use_signal(String::new);
     let mut edit_think_timeout_secs = use_signal(String::new);
+    let mut edit_compaction_threshold_tokens = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     // Tab 切换信号：0=概览 1=工具与技能 2=工具关系 3=对话与记忆 4=关系图
@@ -1097,6 +1098,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     edit_think_timeout_secs.set(
                                         rc.map(|r| r.think_timeout_secs.to_string()).unwrap_or_else(|| "0".to_string()),
                                     );
+                                    edit_compaction_threshold_tokens.set(
+                                        rc.map(|r| r.compaction_threshold_tokens.to_string()).unwrap_or_else(|| "256".to_string()),
+                                    );
                                     show_edit_modal.set(true);
                                 }
                             },
@@ -1317,6 +1321,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         span { class: "text-base-content/60", "0（不限制）" }
                                                     } else {
                                                         "{rc.think_timeout_secs} 秒"
+                                                    }
+                                                }
+                                            }
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "记忆分流阈值" }
+                                                span { class: "text-sm",
+                                                    if rc.compaction_threshold_tokens == 0 {
+                                                        span { class: "text-base-content/60", "0（系统默认）" }
+                                                    } else {
+                                                        "{rc.compaction_threshold_tokens} token"
                                                     }
                                                 }
                                             }
@@ -2242,6 +2256,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 .trim()
                                                 .parse::<u64>()
                                                 .unwrap_or(0);
+                                            let compaction_threshold_tokens = edit_compaction_threshold_tokens()
+                                                .trim()
+                                                .parse::<usize>()
+                                                .unwrap_or(0);
                                             let req = UpdateAgentRequest {
                                                 id: id_for_submit.clone(),
                                                 name: Some(name),
@@ -2256,6 +2274,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     intent_analyze_max_rounds,
                                                     summary_max_rounds,
                                                     think_timeout_secs,
+                                                    compaction_threshold_tokens,
                                                 }),
                                             };
                                             saving_meta.set(true);
@@ -2506,6 +2525,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         value: "{edit_think_timeout_secs}",
                                         oninput: move |e| edit_think_timeout_secs.set(e.value()),
                                         placeholder: "0 = 不限制" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "记忆分流阈值" }
+                                        span { class: "label-text-alt text-base-content/60", "估算 token 数，0 = 跟随系统" }
+                                    }
+                                    input { class: "input input-bordered w-full", r#type: "number",
+                                        value: "{edit_compaction_threshold_tokens}",
+                                        oninput: move |e| edit_compaction_threshold_tokens.set(e.value()),
+                                        placeholder: "256" }
                                 }
                             }
                         }

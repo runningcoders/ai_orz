@@ -64,6 +64,13 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub think_timeout_secs: u64,
 
+    /// 记忆分流阈值（本轮问答估算 token 数）
+    ///
+    /// 不存在「不压缩」场景，只有阈值大小之别：默认就是有效值 256，
+    /// 0 不是合法业务值（历史数据缺字段时由 serde default 兜底为 256）。
+    #[serde(default = "default_compaction_threshold_tokens")]
+    pub compaction_threshold_tokens: usize,
+
     /// 是否启用小脑路由（B3 运行时快判断）：关闭=全域静默跳过（Agent 级回滚开关）
     #[serde(default = "default_true")]
     pub enable_cerebellum_route: bool,
@@ -132,6 +139,7 @@ impl Default for AgentRuntimeConfig {
             intent_analyze_max_rounds: 0,
             summary_max_rounds: 0,
             think_timeout_secs: 0,
+            compaction_threshold_tokens: common::config::DEFAULT_COMPACTION_THRESHOLD_TOKENS,
             enable_cerebellum_route: true,
             cerebellum_trivial_direct: false,
             enable_round_reflect: false,
@@ -194,6 +202,11 @@ fn default_max_thinking_depth() -> i32 {
 
 fn default_true() -> bool {
     true
+}
+
+// 记忆分流阈值默认值，与 common 层的系统配置默认值同源，避免双端漂移
+fn default_compaction_threshold_tokens() -> usize {
+    common::config::DEFAULT_COMPACTION_THRESHOLD_TOKENS
 }
 
 /// Agent 业务对象（DAL 层）

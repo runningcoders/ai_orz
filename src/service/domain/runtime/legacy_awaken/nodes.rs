@@ -7,13 +7,14 @@
 //! 节点间只通过总线通信，唯一的例外是 `AwakenDeps`（不可序列化的强类型依赖）。
 
 use super::context::{AwakenDeps, read_bus};
+use crate::models::cortex_types::ChatMessage;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
 };
 use crate::service::domain::runtime::RuntimeMemory;
-use crate::service::domain::runtime::types::ThinkLoopResult;
+use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult};
 use async_trait::async_trait;
 use common::error::Result;
 use serde::{Deserialize, Serialize};
@@ -46,6 +47,15 @@ pub(crate) const SIGNAL_OVERFLOW: &str = "overflow";
 pub(crate) const SIGNAL_MAX_ROUNDS: &str = "max_rounds";
 pub(crate) const SIGNAL_CANCELLED: &str = "cancelled";
 
+/// `Intent` 命中简单直答时产出的信号：蓝图边直接连到 `consolidate`
+pub(crate) const SIGNAL_DIRECT: &str = "direct";
+
+/// `Intent` 判定信息不足、需要向用户澄清时产出的信号：同样直连 `consolidate`
+///
+/// 澄清问题在意图阶段已经写清楚，再进检索/装配/执行只会白跑一次 LLM——
+/// 而这次调用恰恰拿不到任何新信息（缺的是用户输入，不是知识）。
+pub(crate) const SIGNAL_CLARIFY: &str = "clarify";
+
 /// `Artifacts.exit` 的取值：`Consolidate` 凭它决定做什么收尾
 ///
 /// ⚠️ 这组取值同时是 **Trace 元数据 `exit_reason`** 和 **`AgentAwakeEvent.exit_reason`**
@@ -55,6 +65,18 @@ pub(crate) const SIGNAL_CANCELLED: &str = "cancelled";
 pub(crate) const EXIT_FINAL: &str = "Final";
 pub(crate) const EXIT_MAX_ROUNDS: &str = "MaxRoundsExceeded";
 pub(crate) const EXIT_CANCELLED: &str = "cancelled";
+
+/// 意图阶段直答（`IntentAnalysis.direct_answer` 非空）的退出来由
+///
+/// 这条路径没有进 `deliberate`，因此也不做后置压缩；监控里它与 `Final` 必须
+/// 分开计数，否则「省了一次 LLM 调用」的收益会被混进正常唤醒里看不出来。
+pub(crate) const EXIT_DIRECT: &str = "Direct";
+
+/// 意图阶段判定信息不足、向用户提问后的退出来由
+///
+/// 与 `Direct` 分开计数：一个是我们替用户省了检索，一个是缺用户输入只能等——
+/// 混在一个标签里会让「直答命中率」虚高。
+pub(crate) const EXIT_CLARIFY: &str = "Clarify";
 
 /// 只有压缩回环内部使用（`overflow` → compact → prepare）：下一次思考的结果会
 /// 覆盖它，**永远不会被送到收尾节点**，因此不参与上面的监控口径。
@@ -108,7 +130,8 @@ fn read_artifacts(bus: &ThinkBus) -> Result<Artifacts> {
     read_bus::<Artifacts>(bus, ContextKey::Artifacts)
 }
 
-fn write_artifacts(bus: &mut ThinkBus, artifacts: &Artifacts) -> Result<()> {
+/// 写 Artifacts 到总线（`Intent` 直答分支与各思考节点共用同一份编码逻辑）
+pub(super) fn write_artifacts(bus: &mut ThinkBus, artifacts: &Artifacts) -> Result<()> {
     let value = serde_json::to_value(artifacts)
         .map_err(|e| common::error::err!(Internal, "encode artifacts failed: {e}"))?;
     bus.insert(ContextKey::Artifacts, LoadDepth::Full, value);
@@ -578,12 +601,13 @@ impl ThinkNode for CompactNode {
         {
             Ok(outcome) => {
                 if self.with_user_reply {
-                    let text = super::super::compaction::strip_summary_block(&outcome.final_text);
-                    artifacts.content = if text.is_empty() {
-                        "任务因思考轮次耗尽而终止，已执行上下文压缩退出流程。".to_string()
-                    } else {
-                        text
-                    };
+                    // 只认 `<user_reply>` 标记：没有标记就兜底，绝不把摘要区块
+                    // （内部口吻的「已完成/待办」）当成回复发给用户。
+                    artifacts.content =
+                        super::super::compaction::extract_user_reply(&outcome.final_text)
+                            .unwrap_or_else(|| {
+                                "任务因思考轮次耗尽而终止，已执行上下文压缩退出流程。".to_string()
+                            });
                     artifacts.exit = EXIT_MAX_ROUNDS.to_string();
                 } else {
                     deps.progress.reset();
@@ -661,6 +685,7 @@ impl ThinkNode for ConsolidateNode {
                 ContextKey::Prompt,
                 ContextKey::Artifacts,
                 ContextKey::Budget,
+                ContextKey::Intent,
             ],
             writes: vec![ContextKey::Artifacts],
         }
@@ -678,6 +703,8 @@ impl ThinkNode for ConsolidateNode {
         );
         let pack = read_bus::<PromptPack>(bus, ContextKey::Prompt)?;
         let budget = read_budget(bus);
+        // 意图分析可能被跳过（外部直调）或降级，读不到就按默认空结构处理
+        let intent = read_bus::<IntentAnalysis>(bus, ContextKey::Intent).unwrap_or_default();
         let duration_ms = deps.started_at.elapsed().as_millis() as u64;
 
         let mut artifacts = artifacts;
@@ -785,15 +812,76 @@ impl ThinkNode for ConsolidateNode {
                 .write_thinking_trace(deps.ctx.clone(), snapshot)
                 .await?;
 
-            // 正常完成后压缩本次对话为短期记忆；max_rounds 路径已在 CompactNode 压过
-            if artifacts.exit == EXIT_FINAL {
+            // 正常完成后按「估算 token 数」分流记忆：短问答原文记账，长内容交给模型总结
+            //
+            // 分流不再看 exit / intent_type：直答、澄清、闲聊、任务一律守同一个阈值。
+            // 判据是策略引擎里的 `CompactionThresholdPolicy`（阈值来自
+            // `[agent].compaction_threshold_tokens`），以后要加「小脑」判断就往
+            // 策略组里加一条，调用方不动。
+            //
+            // ⚠️ 不压缩 ≠ 不写记忆：唤醒时注入的近期对话读的就是短期记忆，
+            // 这里不补一条，下一轮追问在历史里就看不到刚才那轮，表现为「聊过就忘」。
+            let turn_tokens = super::super::compaction::estimate_turn_tokens(
+                deps.message.content(),
+                &artifacts.content,
+            );
+            let compaction_policy = super::super::compaction::build_compaction_policy(&deps.agent);
+            let should_compress = compaction_policy.is_triggered(
+                &crate::pkg::policy::Metrics::new().with("turn_tokens", turn_tokens as u64),
+            );
+            crate::log_info!(
+                &deps.ctx,
+                "legacy_awaken",
+                "post-completion compaction decision: {}, turn_tokens={}, exit={}, intent_type={}",
+                compaction_policy.condition_desc(),
+                turn_tokens,
+                artifacts.exit,
+                intent.intent_type
+            );
+
+            if !should_compress {
+                let quick_memory_id = deps
+                    .domain
+                    .persist_turn_memory(
+                        deps.ctx.clone(),
+                        &deps.agent.po.id,
+                        deps.message.content(),
+                        &artifacts.content,
+                        &deps.trace_id,
+                    )
+                    .await;
+                crate::log_info!(
+                    &deps.ctx,
+                    "legacy_awaken",
+                    "quick-store turn memory (below threshold), exit={}, turn_tokens={}, quick_memory_id={:?}",
+                    artifacts.exit,
+                    turn_tokens,
+                    quick_memory_id
+                );
+            } else if artifacts.exit != EXIT_MAX_ROUNDS {
+                // max_rounds 路径已在 CompactNode / force_compact 压过，不能重复压。
+                //
+                // 直答 / 澄清没进主循环，`artifacts.messages` 为空：用「用户原文 +
+                // 本轮回复」合成最小对话，压缩语义与正常路径一致（压缩指令本身
+                // 会要求排除人设/技能/历史等每轮重拼的样板）。
+                let messages = if artifacts.messages.is_empty() {
+                    vec![
+                        ChatMessage::user(deps.message.content()),
+                        ChatMessage::Assistant {
+                            content: Some(artifacts.content.clone()),
+                            tool_calls: None,
+                        },
+                    ]
+                } else {
+                    artifacts.messages.clone()
+                };
                 let trace_ids = vec![deps.trace_id.clone()];
                 let _ = deps
                     .backend
                     .compact(
                         deps,
                         super::backend::CompactInput {
-                            messages: artifacts.messages.clone(),
+                            messages,
                             trace_ids: trace_ids.clone(),
                             with_user_reply: false,
                         },

@@ -55,6 +55,113 @@ pub(crate) const RECURSIVE_SETTLE_TOOL: &str = "settle_memory";
 /// 框架落库时给压缩记忆打的标签（便于后续识别/统计这类记忆）
 const COMPACTION_TAG: &str = "compaction";
 
+/// 框架轻量落档时打的标签（跳过 LLM 压缩的那部分轮次）
+const QUICK_TURN_TAG: &str = "quick_turn";
+
+/// 轻量落档写入时的硬上限（兜底，不是分流阈值）
+///
+/// 分流由策略引擎按估算 token 数决定（见 [`build_compaction_policy`]）；
+/// 这里兜一个字符上限，避免极端长原文在阈值配置过大时长期占用后续 prompt。
+const QUICK_TURN_HARD_CAP_CHARS: usize = 1200;
+
+/// 按字符（非字节）截断，保留字符边界
+fn truncate_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let end = text
+        .char_indices()
+        .nth(max)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len());
+    format!("{}…", &text[..end])
+}
+
+/// 是否 CJK 字符（中日韩表意文字 / 假名 / 谚文 / 全角标点）
+///
+/// 只用于 token 估算：CJK 一字约等于 1 token，拉丁文约 4 字符 1 token。
+fn is_cjk(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{3040}'..='\u{30FF}'
+            | '\u{AC00}'..='\u{D7AF}'
+            | '\u{FF00}'..='\u{FFEF}'
+    )
+}
+
+/// 估算一段文本的 token 数（不引真实 tokenizer，够策略分级用）
+///
+/// 规则：CJK 按 1 token/字；其余（拉丁字母/数字/ASCII 标点）按 4 字符/token，
+/// 向上取整。混合文本按字符逐类累加，避免同一段中英夹杂时估算失真。
+pub(crate) fn estimate_tokens(text: &str) -> usize {
+    let mut cjk = 0usize;
+    let mut other = 0usize;
+    for ch in text.chars() {
+        if is_cjk(ch) {
+            cjk += 1;
+        } else {
+            other += 1;
+        }
+    }
+    cjk + other.div_ceil(4)
+}
+
+/// 估算「用户消息 + 助手回复」的合计 token 数（记忆分流依据）
+pub(crate) fn estimate_turn_tokens(user_message: &str, reply: &str) -> usize {
+    estimate_tokens(user_message.trim()) + estimate_tokens(reply.trim())
+}
+
+/// 构造记忆分流策略组（命中 = 本轮值得走 LLM 压缩）
+///
+/// 策略组现在是单条阈值策略，但保留组形态：后续加「小脑」判断（如
+/// 语义重要性、任务类型）时直接往组里加，调用方无需改动。
+pub(crate) fn build_compaction_policy(agent: &Agent) -> Arc<dyn crate::pkg::policy::Policy> {
+    use crate::pkg::policy::builtin::CompactionThresholdPolicy;
+    use crate::pkg::policy::policy_set;
+
+    // 不存在「不压缩」场景：即使配置被误填成 0（策略引擎里 0 = 未启用），
+    // 也至少保证按 1 处理，绝不静默退化成「全部原文记账」。
+    let threshold = super::types::config_resolve::compaction_threshold_tokens(agent).max(1);
+    Arc::from(policy_set! {
+        CompactionThresholdPolicy(threshold as u64)
+    })
+}
+
+/// 轻量落档的摘要文本（纯函数，便于单测）
+///
+/// 保留「用户说了什么 + 助手回了什么」的原始对照即可：它是下一轮唤醒
+/// 注入【历史对话】时的可见内容，丢掉任何一侧都会让上下文断片。
+/// 两侧全空返回 `None`（没有可记的东西，不写空记忆）。
+///
+/// 阈值内的短对话**保留全文**（"直接记下来"要名副其实）；只有超过硬上限的
+/// 极长内容（仅直答/澄清可能触发）才两侧均分截断兜底。
+fn build_quick_turn_summary(user_message: &str, reply: &str) -> Option<String> {
+    let user = user_message.trim();
+    let reply = reply.trim();
+    if user.is_empty() && reply.is_empty() {
+        return None;
+    }
+
+    let total = user.chars().count() + reply.chars().count();
+    let (user, reply) = if total <= QUICK_TURN_HARD_CAP_CHARS {
+        (user.to_string(), reply.to_string())
+    } else {
+        let half = QUICK_TURN_HARD_CAP_CHARS / 2;
+        (
+            truncate_chars(user, half),
+            truncate_chars(reply, QUICK_TURN_HARD_CAP_CHARS - half),
+        )
+    };
+
+    Some(if reply.is_empty() {
+        format!("用户：{user}")
+    } else {
+        format!("用户：{user}\n助手：{reply}")
+    })
+}
+
 /// 压缩摘要的起止标记
 ///
 /// 压缩产出由**框架**落库（不交给模型调工具），因此要求模型把摘要包在标记里，
@@ -62,6 +169,13 @@ const COMPACTION_TAG: &str = "compaction";
 /// 结构化输出一旦不完整就整体解析失败，标记法至少能保住开头到结尾之间的内容。
 const SUMMARY_OPEN: &str = "<compacted_summary>";
 const SUMMARY_CLOSE: &str = "</compacted_summary>";
+
+/// 「给用户的一句话」的起止标记（仅轮次耗尽场景）
+///
+/// 与摘要区块**物理分离**：摘要永不发给用户，回复只认这个标记。
+/// 这样即使模型漏打摘要标记，也不可能把内部摘要当回复泄漏出去。
+const USER_REPLY_OPEN: &str = "<user_reply>";
+const USER_REPLY_CLOSE: &str = "</user_reply>";
 
 /// 构造压缩指令（作为伪 User 消息追加到现有对话尾部）
 ///
@@ -106,32 +220,40 @@ fn compact_instruction(with_user_reply: bool) -> String {
     s.push_str("- 只写**这一轮**的事，历史记忆不必复述\n");
 
     if with_user_reply {
-        s.push_str(
-            "\n摘要之后，另起一段**用一句话**告诉用户：你进行到了哪一步、为什么停在这里。\n\
-             这条文本会直接发送给用户（摘要部分不会）。\n",
-        );
+        s.push_str(&format!(
+            "\n摘要区块**之外**，再用 `{}` 与 `{}` 包住**一句话**，告诉用户：\
+             你进行到了哪一步、为什么停在这里。\n\
+             这份文本会**直接发送给用户**（摘要区块不会）；没有这个标记就等于没有回复。\n",
+            USER_REPLY_OPEN, USER_REPLY_CLOSE
+        ));
+        s.push_str(USER_REPLY_OPEN);
+        s.push('\n');
+        s.push_str("进行到了哪一步、为什么停在这里（一句话）\n");
+        s.push_str(USER_REPLY_CLOSE);
+        s.push('\n');
     } else {
         s.push_str("\n除摘要外不要输出其它内容。\n");
     }
     s
 }
 
-/// 去掉 Final 文本里的摘要区块，只留面向用户的正文
+/// 从压缩 Final 中提取「给用户的一句话」
 ///
-/// `with_user_reply` 场景下模型会同时输出摘要与「给用户的一句话」，
-/// 摘要是内部产物，不该发给用户，这里把它剥掉。
-pub(crate) fn strip_summary_block(final_text: &str) -> String {
-    let Some(start) = final_text.find(SUMMARY_OPEN) else {
-        return final_text.trim().to_string();
-    };
-    let after = &final_text[start..];
-    let end = after
-        .find(SUMMARY_CLOSE)
-        .map(|i| i + SUMMARY_CLOSE.len())
-        .unwrap_or(after.len());
-    format!("{}{}", &final_text[..start], &after[end..])
-        .trim()
-        .to_string()
+/// **只认显式标记**：摘要区块与回复区块物理分离，杜绝「模型漏打摘要标记时，
+/// 整段内部摘要被当成回复发给用户」——那是最坏情况（用户收到的是
+/// 「已完成的工作 / 还没做完的待办」这种内部口吻）。
+///
+/// 没有 `<user_reply>` 标记返回 `None`，调用方用兜底文案：宁可少说一句，
+/// 也不把内部产物泄漏到用户侧。
+pub(crate) fn extract_user_reply(final_text: &str) -> Option<String> {
+    let start = final_text.find(USER_REPLY_OPEN)? + USER_REPLY_OPEN.len();
+    let rest = &final_text[start..];
+    let end = rest.find(USER_REPLY_CLOSE).unwrap_or(rest.len());
+    let reply = rest[..end].trim();
+    if reply.is_empty() {
+        return None;
+    }
+    Some(reply.to_string())
 }
 
 /// 从压缩循环的 Final 文本里解析出压缩摘要
@@ -182,6 +304,60 @@ impl RuntimeDomainImpl {
         trace_ids: &[String],
         parent_trace_id: &str,
     ) -> Option<String> {
+        self.insert_short_term(
+            ctx,
+            agent_id,
+            summary,
+            &[COMPACTION_TAG],
+            trace_ids,
+            parent_trace_id,
+        )
+        .await
+    }
+
+    /// 轻量落档：不调模型，把本轮问答机械写进短期记忆
+    ///
+    /// 直答 / 澄清 / 闲聊路径跳过了 LLM 压缩，但**不能跳过记忆写入**：
+    /// 唤醒时注入的「近期对话」读的就是短期记忆（`get_recent_context`）——
+    /// 这里不留一条，下一轮追问在历史里看不到刚才那轮，表现为「聊过就忘」。
+    ///
+    /// 质量刻意低于压缩摘要（原文截断、不做归纳）：它只负责「别丢上下文」，
+    /// 真正的经验沉淀仍由休息沉淀与显式 `save_short_term_memory` 负责。
+    ///
+    /// 返回落库的 memory_id；内容全空或落库失败返回 `None`（不阻断收尾）。
+    pub(crate) async fn persist_turn_memory(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        user_message: &str,
+        reply: &str,
+        trace_id: &str,
+    ) -> Option<String> {
+        let summary = build_quick_turn_summary(user_message, reply)?;
+        self.insert_short_term(
+            ctx,
+            agent_id,
+            &summary,
+            &[QUICK_TURN_TAG],
+            &[trace_id.to_string()],
+            trace_id,
+        )
+        .await
+    }
+
+    /// 短期记忆索引的统一落库口径（压缩摘要与轻量落档共用）
+    ///
+    /// `trace_ids` / `tags` 由框架填写而非模型：模型经常漏填，交给它就等于
+    /// 放弃可追溯性。落库失败只记 warn，不阻断调用方后续流程。
+    async fn insert_short_term(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        summary: &str,
+        tags: &[&str],
+        trace_ids: &[String],
+        parent_trace_id: &str,
+    ) -> Option<String> {
         let now = common::constants::utils::current_timestamp_ms();
         let memory_id = uuid::Uuid::now_v7().to_string();
         let index = ShortTermMemoryIndexPo {
@@ -190,7 +366,7 @@ impl RuntimeDomainImpl {
             task_id: ctx.task_id().cloned(),
             role: "assistant".to_string(),
             summary: summary.to_string(),
-            tags: serde_json::to_string(&vec![COMPACTION_TAG]).unwrap_or_else(|_| "[]".to_string()),
+            tags: serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string()),
             trace_ids: serde_json::to_string(trace_ids).unwrap_or_else(|_| "[]".to_string()),
             status: MemoryStatus::Active,
             created_at: now,
@@ -209,7 +385,7 @@ impl RuntimeDomainImpl {
                     "compact",
                     parent_trace_id = %parent_trace_id,
                     error = ?e,
-                    "框架写入压缩记忆失败"
+                    "框架写入短期记忆失败"
                 );
                 None
             }
@@ -405,10 +581,82 @@ mod tests {
     }
 
     #[test]
-    fn compact_instruction_with_user_reply_adds_sentence() {
+    fn compact_instruction_with_user_reply_demands_marker() {
         let s = compact_instruction(true);
-        assert!(s.contains("告诉用户"));
-        assert!(s.contains("用一句话"));
+        assert!(s.contains(USER_REPLY_OPEN));
+        assert!(s.contains(USER_REPLY_CLOSE));
+        assert!(s.contains("直接发送给用户"));
+        // 无回复场景不该出现回复标记
+        assert!(!compact_instruction(false).contains(USER_REPLY_OPEN));
+    }
+
+    /// 轻量落档必须同时留下「用户说了什么」和「助手回了什么」
+    ///
+    /// 它是跳过压缩后下一轮唤醒能看到的唯一上下文，任一侧丢失都会断片。
+    #[test]
+    fn quick_turn_summary_keeps_both_sides() {
+        let s = build_quick_turn_summary("  你好  ", " 你好，我是助手 ").expect("非空");
+        assert_eq!(s, "用户：你好\n助手：你好，我是助手");
+    }
+
+    /// 阈值内的短对话保留**全文**，不做任何截断
+    ///
+    /// 这是「按长度分流」的核心承诺：短内容就是原文记账，
+    /// 一旦仍按单侧 200 字截断，用户说的后半句就丢了，等于白记。
+    #[test]
+    fn quick_turn_summary_keeps_short_turn_verbatim() {
+        let user: String = (0..300).map(|_| '问').collect();
+        let reply: String = (0..80).map(|_| '答').collect();
+        let s = build_quick_turn_summary(&user, &reply).expect("非空");
+        assert_eq!(s, format!("用户：{user}\n助手：{reply}"));
+        assert!(!s.ends_with('…'), "阈值内不应截断: {s}");
+    }
+
+    /// 超过硬上限的极长内容两侧均分截断兜底
+    ///
+    /// 只有直答/澄清（没有 messages 可压缩）才可能走到这里；兜底是为了
+    /// 不让一条原文长期占用后续 ~20 轮 prompt 预算。
+    #[test]
+    fn quick_turn_summary_caps_extremely_long_turn() {
+        let long: String = (0..QUICK_TURN_HARD_CAP_CHARS + 50).map(|_| '字').collect();
+        let s = build_quick_turn_summary(&long, "").expect("非空");
+        assert!(s.starts_with("用户："));
+        assert!(s.ends_with('…'), "超硬上限应带省略号: {s}");
+        assert!(!s.contains('\n'), "没有回复时不应出现助手行");
+        // 截断按字符而非字节：中文不能切在半个字上
+        assert_eq!(
+            s.chars().count(),
+            "用户：".chars().count() + QUICK_TURN_HARD_CAP_CHARS / 2 + 1
+        );
+    }
+
+    #[test]
+    fn quick_turn_summary_rejects_all_empty() {
+        assert!(build_quick_turn_summary("   ", "\n").is_none());
+    }
+
+    /// 中文按 1 token/字，英文按 4 字符/token，混合文本逐类累加
+    #[test]
+    fn estimate_tokens_counts_cjk_and_latin_separately() {
+        // 纯中文：一字一 token
+        assert_eq!(estimate_tokens("你好世界"), 4);
+        // 纯英文：4 字符一 token（向上取整）
+        assert_eq!(estimate_tokens("abcd"), 1);
+        assert_eq!(estimate_tokens("abcde"), 2);
+        // 混合：5 汉字 + 8 拉丁字符 = 5 + 2
+        assert_eq!(estimate_tokens("你好世界啊abcdefgh"), 7);
+        // 空白不特殊处理，仍按拉丁字符计入
+        assert_eq!(estimate_tokens("   "), 1);
+        assert_eq!(estimate_tokens(""), 0);
+    }
+
+    /// 分流依据是「用户 + 助手」的合计，不是单侧
+    ///
+    /// 反例：2000 字报错 + 一句「改第 42 行」，只看回复会被误判成短对话。
+    #[test]
+    fn estimate_turn_tokens_sums_both_sides() {
+        assert_eq!(estimate_turn_tokens("你好", "世界"), 4);
+        assert_eq!(estimate_turn_tokens("  ", "  "), 0);
     }
 
     #[test]
@@ -436,14 +684,32 @@ mod tests {
     }
 
     #[test]
-    fn strip_summary_block_removes_internal_summary() {
-        let text =
-            format!("{SUMMARY_OPEN}\n内部摘要\n{SUMMARY_CLOSE}\n已完成三件事，因轮次耗尽停止。");
-        assert_eq!(strip_summary_block(&text), "已完成三件事，因轮次耗尽停止。");
+    fn extract_user_reply_takes_marked_sentence_only() {
+        let text = format!(
+            "{SUMMARY_OPEN}\n内部摘要：已完成 A，待办 B\n{SUMMARY_CLOSE}\n\
+             {USER_REPLY_OPEN}\n已完成三件事，因轮次耗尽停止。\n{USER_REPLY_CLOSE}"
+        );
+        assert_eq!(
+            extract_user_reply(&text),
+            Some("已完成三件事，因轮次耗尽停止。".to_string())
+        );
     }
 
+    /// 最关键的一条防线：模型漏打任何标记时，**绝不能**把内部摘要当回复
+    ///
+    /// 旧实现 `strip_summary_block` 在无标记时原样返回整段，用户会收到
+    /// 「已完成的工作 / 还没做完的待办」这种内部口吻的摘要。
     #[test]
-    fn strip_summary_block_keeps_text_without_marker() {
-        assert_eq!(strip_summary_block("只是一句话"), "只是一句话");
+    fn extract_user_reply_never_leaks_summary() {
+        // 只有摘要、没有回复标记
+        let summary_only = format!("{SUMMARY_OPEN}\n已完成 A，待办 B\n{SUMMARY_CLOSE}");
+        assert_eq!(extract_user_reply(&summary_only), None);
+
+        // 完全没标记：无法区分是「纯摘要」还是「纯回复」，一律不发给用户
+        assert_eq!(extract_user_reply("已完成 A，待办 B"), None);
+
+        // 标记内为空
+        let empty = format!("{USER_REPLY_OPEN}\n  \n{USER_REPLY_CLOSE}");
+        assert_eq!(extract_user_reply(&empty), None);
     }
 }

@@ -341,6 +341,19 @@ pub(crate) mod config_resolve {
         }
         config::get().agent.think_timeout_secs
     }
+
+    /// 记忆分流阈值（本轮问答估算 token 数）
+    ///
+    /// 低于它原文写入短期记忆，达到/超过才交给 LLM 压缩。
+    /// **不存在「不压缩」场景**，所以 `AgentRuntimeConfig` 的默认值就是 256，
+    /// 不是 0；只有显式填 0 才表示「跟随系统配置」。
+    pub fn compaction_threshold_tokens(agent: &Agent) -> usize {
+        let rc = agent.po.get_runtime_config();
+        if rc.compaction_threshold_tokens > 0 {
+            return rc.compaction_threshold_tokens;
+        }
+        config::get().agent.compaction_threshold_tokens
+    }
 }
 
 // ==================== 场景选项 ====================
@@ -421,7 +434,8 @@ impl ThinkingOptions {
 /// 由 `RuntimeAwakening::analyze_input_intent()` 输出，供：
 /// - awaken 正式阶段 PromptBuilder 渲染【输入理解结果】区块
 /// - 外部入站适配器（飞书/WS/HTTP 回调）路由消息前的预分析
-/// - 澄清短路判断（need_clarification=true 时，可选择不进入执行阶段直接追问）
+/// - 简单问题直答：`direct_answer` 非空时图从 `intent` 直连 `consolidate`，
+///   跳过 retrieve / prepare / deliberate（省掉一次完整 LLM 调用）
 ///
 /// 说明：除了 confidence 用 f32，其余均为自由文本/数组，不做强枚举约束，
 /// 避免未来新意图类型导致编译期改动；解析失败时降级为 Default::default()
@@ -445,10 +459,23 @@ pub struct IntentAnalysis {
     /// 检索补充上下文摘要（search_memory/recommend_seed_nodes 结果）
     #[serde(default)]
     pub retrieved_context: Vec<String>,
-    /// 需要进一步追问澄清的问题（空列表表示理解充分）
+    /// 需要进一步追问澄清的问题（空列表 = 理解充分）
     #[serde(default)]
     pub need_clarification: Vec<String>,
+    /// 简单问题直答：给用户的最终答复（空串 = 必须走完整唤醒链路）
+    ///
+    /// 意图阶段判定「无需检索 / 工具 / 澄清即可作答」时填写。非空即视为直答，
+    /// 图会从 `intent` 直接进 `consolidate`；`summary` 仍只放理解结论，不混入答复。
+    #[serde(default)]
+    pub direct_answer: String,
     /// 一句话总结：Agent 最终确认自己理解用户想要什么
     #[serde(default)]
     pub summary: String,
+}
+
+impl IntentAnalysis {
+    /// 是否在意图阶段就给出了最终答复（非空即直答）
+    pub fn has_direct_answer(&self) -> bool {
+        !self.direct_answer.trim().is_empty()
+    }
 }

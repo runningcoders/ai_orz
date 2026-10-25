@@ -110,17 +110,18 @@ fn build_intent_analyze_prompt_contains_sop_and_schema() {
         prompt.chars().take(500).collect::<String>()
     );
 
-    // 2. 包含全部 7 个字段名（JSON Schema 说明）
-    let seven_fields = [
+    // 2. 包含全部 8 个字段名（JSON Schema 说明）
+    let schema_fields = [
         "intent_type",
         "confidence",
         "key_terms",
         "resolutions",
         "retrieved_context",
         "need_clarification",
+        "direct_answer",
         "summary",
     ];
-    for field in &seven_fields {
+    for field in &schema_fields {
         assert!(
             prompt.contains(field),
             "Prompt 应包含字段名 '{}' 但未找到。Output 片段:\n{}",
@@ -140,6 +141,8 @@ fn build_intent_analyze_prompt_contains_sop_and_schema() {
     );
 
     // 4. 包含 SOP 五步走的 Step 1~5 标识
+    //    以及直答前置判断（命中后跳过 Step 1~5 的短路出口）
+    assert!(prompt.contains("直答前置判断"));
     assert!(prompt.contains("Step 1：意图识别"));
     assert!(prompt.contains("Step 2：指代与上下文消歧"));
     assert!(prompt.contains("Step 3：关键词抽取与联想扩展"));
@@ -225,6 +228,7 @@ fn render_intent_analysis_section_truncation_rules() {
         resolutions: huge_res,
         retrieved_context: huge_ctx,
         need_clarification: huge_clarify,
+        direct_answer: String::new(),
         summary: huge_summary,
     };
 
@@ -283,6 +287,7 @@ fn build_prompt_contains_input_understanding_before_current_message() {
         resolutions: vec!["\"上次那个文档\" → doc_id=doc_789".into()],
         retrieved_context: vec!["2026-08-12 短期记忆：doc_789 版本 v2".into()],
         need_clarification: vec![],
+        direct_answer: String::new(),
         summary: "用户想修改 doc_789 文档".into(),
     };
 

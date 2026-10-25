@@ -79,6 +79,7 @@ pub async fn update_agent(
             rc.intent_analyze_max_rounds = rc_info.intent_analyze_max_rounds;
             rc.summary_max_rounds = rc_info.summary_max_rounds;
             rc.think_timeout_secs = rc_info.think_timeout_secs;
+            rc.compaction_threshold_tokens = rc_info.compaction_threshold_tokens;
             agent.po.set_runtime_config(&rc);
         }
     }
@@ -111,6 +112,7 @@ pub async fn update_agent(
             intent_analyze_max_rounds: rc.intent_analyze_max_rounds,
             summary_max_rounds: rc.summary_max_rounds,
             think_timeout_secs: rc.think_timeout_secs,
+            compaction_threshold_tokens: rc.compaction_threshold_tokens,
         })
     };
 

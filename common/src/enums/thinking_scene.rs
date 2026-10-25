@@ -9,7 +9,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThinkingScene {
-    /// 唤醒场景：响应外部消息，加载全部工具
+    /// 唤醒场景：加载业务工具，但**裁剪「管平台」而不是「干活」的管理面**
+    ///
+    /// 实测 Reception Agent 绑了 97 个工具，其中 tool_management 14、skill_management 14、
+    /// ontology_management 11，近一半是运维/管理面。全量注入既吃 token、拉高首字延迟，
+    /// 也会诱导模型在闲聊时去调管理工具。
+    ///
+    /// 规则：**所有** tag 都落在管理面时才排除（无 tag 的一律保留）。这样
+    /// `["neural","skill_management"]` 这类常驻工具、`["collaboration","hr_specialist"]`
+    /// 这类业务协作工具都不会被误伤。
     #[default]
     Awaken,
     /// 沉睡场景：沉淀记忆，加载记忆相关工具（neural/memory tag）+ 自进化工具
@@ -65,7 +73,7 @@ impl ThinkingScene {
 
     /// 判断工具是否在此场景可用
     ///
-    /// - Awaken 场景：全部可用
+    /// - Awaken 场景：排除**纯管理面**工具（见 `is_management_only`），业务/常驻工具全放通
     /// - Settle 场景：tags 含 "neural" / "memory" / "self_evolution" 的工具可用
     ///   （自进化用于沉淀期产出技能，见 Settle 变体注释）
     /// - Compact 场景：只有 tags 含 "neural" 或 "memory" 的工具可用（比 Settle 更窄）
@@ -79,7 +87,7 @@ impl ThinkingScene {
     /// 沉淀 Prompt 的体量。
     pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
         match self {
-            ThinkingScene::Awaken => true,
+            ThinkingScene::Awaken => !is_management_only(tags),
             ThinkingScene::Settle => tags
                 .iter()
                 .any(|t| t == "neural" || t == "memory" || t == "self_evolution"),
@@ -96,6 +104,28 @@ impl ThinkingScene {
             }),
         }
     }
+}
+
+/// tag **全部**落在平台管理面（运维/配置类），用于 Awaken 场景裁剪
+///
+/// 无 tag 视为「没分类的业务工具」保留——误删业务工具的代价远大于多注入几个描述。
+fn is_management_only(tags: &[String]) -> bool {
+    !tags.is_empty()
+        && tags.iter().all(|t| {
+            matches!(
+                t.as_str(),
+                "admin"
+                    | "tool_management"
+                    | "skill_management"
+                    | "agent_management"
+                    | "hr_specialist"
+                    | "ontology_management"
+                    // `internal` 在当前库里只与 tool_management 同时出现（Send Tool Call
+                    // Message / Request Tool Execution）。它表示「不直接面客」，作为
+                    // 管理面共同标记参与判定；带任一业务 tag 的工具仍会保留。
+                    | "internal"
+            )
+        })
 }
 
 #[cfg(test)]
@@ -140,6 +170,39 @@ mod tests {
                 scene.is_tool_allowed(&[tag.to_string()]),
                 "Compact 场景应放通 {tag}"
             );
+        }
+    }
+
+    /// Awaken 只裁剪**纯管理面**，业务工具与常驻工具必须全留。
+    ///
+    /// 护栏意义：曾把 `agent_management` / `hr_specialist` 也写进「一律排除」，
+    /// 会让协作类工具（同时带 collaboration/reception tag）被误伤；判据必须是
+    /// 「全部 tag 都在管理面」而不是「命中任一管理 tag」。
+    #[test]
+    fn awaken_trims_management_plane_only() {
+        let scene = ThinkingScene::Awaken;
+        for tags in [
+            vec!["tool_management".to_string()],
+            vec!["skill_management".to_string()],
+            vec!["ontology_management".to_string()],
+            vec!["tool_management".to_string(), "internal".to_string()],
+            vec!["admin".to_string(), "tool_management".to_string()],
+        ] {
+            assert!(!scene.is_tool_allowed(&tags), "应裁剪管理面: {tags:?}");
+        }
+        for tags in [
+            vec![],
+            vec!["neural".to_string()],
+            vec!["neural".to_string(), "skill_management".to_string()],
+            vec!["project_management".to_string()],
+            vec![
+                "collaboration".to_string(),
+                "agent_management".to_string(),
+                "hr_specialist".to_string(),
+                "reception".to_string(),
+            ],
+        ] {
+            assert!(scene.is_tool_allowed(&tags), "不应误伤: {tags:?}");
         }
     }
 }

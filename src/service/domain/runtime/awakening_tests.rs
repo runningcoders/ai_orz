@@ -654,6 +654,7 @@ fn intent_analysis_json_roundtrip() {
         resolutions: vec!["\"上次那个方案\" → project=123, task=456".into()],
         retrieved_context: vec!["2026-08-10 方案 A/B 比较结论，推荐方案 A（相似度 0.88）".into()],
         need_clarification: vec![],
+        direct_answer: String::new(),
         summary: "用户想知道项目 X 方案 A 的当前推进进度".into(),
     };
 

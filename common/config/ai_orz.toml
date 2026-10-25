@@ -72,6 +72,9 @@ summary_max_rounds = 365
 think_timeout_secs = 0
 # 单次唤醒 Token 预算（input+output 累计），0 = 不启用
 token_budget = 0
+# 记忆分流阈值：本轮问答估算 token 数（中文≈汉字数，英文≈4 字符/token）
+# 低于它原文写入短期记忆，达到/超过才交给模型压缩
+compaction_threshold_tokens = 256
 
 # 工具运行日志配置（shell_exec 等工具的运行时输出清理策略）
 [tool_log]

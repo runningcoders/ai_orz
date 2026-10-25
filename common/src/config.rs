@@ -90,25 +90,42 @@ pub struct AppConfig {
 /// 约定：Agent 级配置值为 0 时，回退到此处系统默认值。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
-    /// 单次唤醒最大思考轮次（跨压缩累计），默认 120
+    /// 单次唤醒最大思考轮次（跨压缩累计）
+    ///
+    /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].max_thinking_rounds`；
+    /// 代码里的 `Default` 只是「配置文件缺项时的兜底」，不要在注释里复述数字。
     #[serde(default = "default_agent_max_thinking_rounds")]
     pub max_thinking_rounds: usize,
 
-    /// 意图识别阶段最大思考轮次，默认 10
+    /// 意图识别阶段最大思考轮次
+    ///
+    /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].intent_analyze_max_rounds`；
+    /// 配置文件缺项时用 `Default` 兜底。
     #[serde(default = "default_agent_intent_analyze_max_rounds")]
     pub intent_analyze_max_rounds: usize,
 
-    /// 总结退出阶段最大思考轮次，默认 20
+    /// 总结退出阶段最大思考轮次
+    ///
+    /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].summary_max_rounds`；
+    /// 配置文件缺项时用 `Default` 兜底。
     #[serde(default = "default_agent_summary_max_rounds")]
     pub summary_max_rounds: usize,
 
-    /// 思考超时（秒），0 = 不限制，默认 0
+    /// 思考超时（秒），0 = 不限制
     #[serde(default)]
     pub think_timeout_secs: u64,
 
-    /// 单次唤醒 Token 预算（input+output 累计），0 = 不启用，默认 0
+    /// 单次唤醒 Token 预算（input+output 累计），0 = 不启用
     #[serde(default)]
     pub token_budget: u64,
+
+    /// 记忆分流阈值（本轮问答估算 token 数）
+    ///
+    /// 低于它 → 原文写入短期记忆；达到/超过 → 交给 LLM 压缩成摘要。
+    /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].compaction_threshold_tokens`；
+    /// 配置文件缺项时用 `Default` 兜底。
+    #[serde(default = "default_agent_compaction_threshold_tokens")]
+    pub compaction_threshold_tokens: usize,
 }
 
 impl Default for AgentConfig {
@@ -119,6 +136,7 @@ impl Default for AgentConfig {
             summary_max_rounds: 365,
             think_timeout_secs: 0,
             token_budget: 0,
+            compaction_threshold_tokens: 256,
         }
     }
 }
@@ -133,6 +151,17 @@ fn default_agent_intent_analyze_max_rounds() -> usize {
 
 fn default_agent_summary_max_rounds() -> usize {
     365
+}
+
+/// 记忆分流阈值默认值（本轮问答估算 token 数）
+///
+/// 后端 `AgentRuntimeConfig` 与前后端 DTO `AgentRuntimeConfigInfo` 共用，
+/// 避免默认值在两端漂移。**不存在「不压缩」场景**，只有阈值大小之别，
+/// 因此默认值就是一个有效阈值，而不是 0（0 在策略引擎里表示「未启用」）。
+pub const DEFAULT_COMPACTION_THRESHOLD_TOKENS: usize = 256;
+
+fn default_agent_compaction_threshold_tokens() -> usize {
+    DEFAULT_COMPACTION_THRESHOLD_TOKENS
 }
 
 /// JWT 配置

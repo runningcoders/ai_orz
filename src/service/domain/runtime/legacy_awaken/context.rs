@@ -26,8 +26,10 @@ use crate::pkg::think_path::{
     ContextKey, ContextProvider, LoadDepth, LoadFailureMode, ProviderSet, Stimulus,
 };
 use crate::service::domain::runtime::RuntimeDomainImpl;
+use crate::service::domain::runtime::awakening::build_scene_tool_descriptors;
 use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkingOptions};
 use crate::{models::agent::Agent, models::message::Message};
+use common::enums::ThinkingScene;
 use common::error::Result;
 use common::error::err;
 use serde_json::{Value, json};
@@ -436,12 +438,10 @@ pub(crate) fn build_deps_with_backend(
 /// 注意 **没有 Memory provider**：`Vec<Memory>` 不可序列化（见文件头说明），
 /// 历史记忆由 `PrepareNode` 亲自取。
 pub fn build_providers(deps: Arc<AwakenDeps>) -> ProviderSet {
-    let tools: Vec<ToolDescriptor> = deps
-        .agent
-        .tools()
-        .iter()
-        .map(crate::models::cortex_types::ToolDescriptor::from)
-        .collect();
+    // awaken 不复用 `agent.tools()` 全量：按场景裁掉纯管理面工具，
+    // 避免 97 个描述符整段灌进 Prompt（详见 `ThinkingScene::Awaken` 注释）。
+    let tools: Vec<ToolDescriptor> =
+        build_scene_tool_descriptors(&deps.agent, ThinkingScene::Awaken);
     let skills: Vec<SkillPo> = deps.agent.skills().iter().map(|s| s.po.clone()).collect();
 
     let workspace = WorkspaceProvider::new(

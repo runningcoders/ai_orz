@@ -192,6 +192,17 @@ pub struct AgentRuntimeConfigInfo {
     pub summary_max_rounds: usize,
     /// 思考超时秒数（0 = 不限制）
     pub think_timeout_secs: u64,
+    /// 记忆分流阈值（本轮问答估算 token 数）
+    ///
+    /// 低于它原文写入短期记忆，达到/超过才交给模型压缩。
+    /// **不存在「不压缩」场景**，所以默认就是有效阈值 256。
+    #[serde(default = "default_compaction_threshold_tokens")]
+    pub compaction_threshold_tokens: usize,
+}
+
+/// serde 默认值函数，供 `#[serde(default = ...)]` 引用。
+pub fn default_compaction_threshold_tokens() -> usize {
+    crate::config::DEFAULT_COMPACTION_THRESHOLD_TOKENS
 }
 
 /// 获取 Agent 响应

@@ -7,6 +7,10 @@
 
 use super::backend::IntentInput;
 use super::context::AwakenDeps;
+use super::nodes::{
+    Artifacts, EXIT_CLARIFY, EXIT_DIRECT, PromptPack, SIGNAL_CLARIFY, SIGNAL_DIRECT,
+    write_artifacts,
+};
 use crate::models::events::AgentLoopEvent;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
@@ -50,7 +54,12 @@ impl ThinkNode for IntentNode {
         NodeContract {
             requires: vec![],
             reads: vec![],
-            writes: vec![ContextKey::Intent],
+            // 直答分支还要补 Prompt / Artifacts 给收尾节点（见 run 内注释）
+            writes: vec![
+                ContextKey::Intent,
+                ContextKey::Prompt,
+                ContextKey::Artifacts,
+            ],
         }
     }
 
@@ -118,6 +127,94 @@ impl ThinkNode for IntentNode {
         let value = serde_json::to_value(&analysis)
             .map_err(|e| common::error::err!(Internal, "encode intent analysis failed: {e}"))?;
         bus.insert(ContextKey::Intent, LoadDepth::Full, value);
+
+        // 简单问题直答：图上是 `intent --direct--> consolidate`，跳过
+        // retrieve / prepare / deliberate 三个节点，省掉一次完整 LLM 调用。
+        if analysis.has_direct_answer() {
+            crate::log_info!(
+                &deps.ctx,
+                "legacy_awaken",
+                "intent direct answer hit, skip retrieve/prepare/deliberate, agent_id={}",
+                deps.agent.po.id
+            );
+            return short_circuit(
+                bus,
+                EXIT_DIRECT,
+                SIGNAL_DIRECT,
+                analysis.direct_answer.clone(),
+                "[直答路径] 意图阶段判定为简单问题，跳过检索与装配直接作答。",
+            );
+        }
+
+        // 信息不足需要澄清：图上 `intent --clarify--> consolidate`。
+        // 缺的是用户输入而不是知识，往下走只会白跑一次 LLM。
+        let questions: Vec<&str> = analysis
+            .need_clarification
+            .iter()
+            .map(|q| q.trim())
+            .filter(|q| !q.is_empty())
+            .collect();
+        if !questions.is_empty() {
+            crate::log_info!(
+                &deps.ctx,
+                "legacy_awaken",
+                "intent clarification hit, skip retrieve/prepare/deliberate, questions={}",
+                questions.len()
+            );
+            return short_circuit(
+                bus,
+                EXIT_CLARIFY,
+                SIGNAL_CLARIFY,
+                build_clarification_reply(&questions),
+                "[澄清路径] 意图阶段判定信息不足，跳过检索与装配直接向用户提问。",
+            );
+        }
+
         Ok(NodeOutcome::new(NodeSignal::Done))
     }
+}
+
+/// 意图阶段的短路退出：不检索、不装配、不执行，带着面向用户的文本直接收尾
+///
+/// 直答与澄清共用。收尾节点要求 Prompt + Artifacts，这里补一份最小占位
+/// （Prompt 只用于 Trace 的 input，不会被任何节点再读）。
+fn short_circuit(
+    bus: &mut ThinkBus,
+    exit: &str,
+    signal: &str,
+    reply: String,
+    prompt_note: &str,
+) -> Result<NodeOutcome> {
+    let pack = PromptPack {
+        prompt: prompt_note.to_string(),
+        initial_messages: Vec::new(),
+    };
+    let pack_value = serde_json::to_value(&pack).map_err(|e| {
+        common::error::err!(Internal, "encode short-circuit prompt pack failed: {e}")
+    })?;
+    bus.insert(ContextKey::Prompt, LoadDepth::Full, pack_value);
+    write_artifacts(
+        bus,
+        &Artifacts {
+            exit: exit.to_string(),
+            content: reply,
+            messages: Vec::new(),
+        },
+    )?;
+    Ok(NodeOutcome::new(NodeSignal::Yield(signal.to_string())))
+}
+
+/// 把意图阶段给出的澄清点拼成一句面向用户的追问
+///
+/// 单条直接问，多条列成编号清单（比一段连写更容易逐条回答）。
+/// 入参已过滤空串，因此至少一条。
+fn build_clarification_reply(questions: &[&str]) -> String {
+    if questions.len() == 1 {
+        return format!("为了准确处理，我需要先确认一下：{}", questions[0]);
+    }
+    let mut reply = String::from("为了准确处理，我需要先确认几点：\n");
+    for (i, q) in questions.iter().enumerate() {
+        reply.push_str(&format!("{}. {}\n", i + 1, q));
+    }
+    reply.trim_end().to_string()
 }

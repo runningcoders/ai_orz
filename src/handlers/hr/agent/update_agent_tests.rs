@@ -53,6 +53,7 @@ fn build_rc_info(rounds: usize) -> AgentRuntimeConfigInfo {
         intent_analyze_max_rounds: 3,
         summary_max_rounds: 3,
         think_timeout_secs: 120,
+        compaction_threshold_tokens: 256,
     }
 }
 

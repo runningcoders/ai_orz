@@ -59,8 +59,9 @@ pub(super) fn init_think_runtime_and_policy(
 
 /// 按场景过滤工具，构建 ToolDescriptor 列表
 ///
-/// sleep_and_settle / intent_analyze / summary 中重复出现的工具过滤逻辑。
-/// awaken 场景不过滤（用全量工具），不调用此函数。
+/// sleep_and_settle / intent_analyze / summary / awaken 共用的工具过滤逻辑。
+/// awaken 也走这里：它只裁掉纯管理面工具（见 `ThinkingScene::Awaken`），
+/// 不再无脑全量注入。
 pub(super) fn build_scene_tool_descriptors(
     agent: &Agent,
     scene: ThinkingScene,

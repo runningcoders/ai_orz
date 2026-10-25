@@ -576,13 +576,24 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str(
             "   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍，每一步都要有实质思考，不要跳过\n",
         );
-        result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory（关键词语义检索，traversal_depth>0 时同步展开知识图谱关联网络）+ 一次 query_memory 或 recommend_seed_nodes（100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
+        result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory（关键词语义检索，traversal_depth>0 时同步展开知识图谱关联网络）+ 一次 query_memory 或 recommend_seed_nodes（「直答前置判断」命中时全额豁免；100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
         result.push_str("   3. 关键词联想要充分展开，联想扩展词与基础关键词一起写入 key_terms\n");
-        result.push_str("   4. 最终输出严格的 JSON 对象，字段完整可被解析\n\n");
+        result.push_str("   4. 最终输出严格的 JSON 对象，字段完整可被解析\n");
+        result.push_str("   5. 「直答前置判断」命中时，直接把给用户的答复写进 direct_answer，并跳过下方 Step 1~5\n\n");
         result.push_str("❌ 严格禁止做（任何违反都将导致此阶段结果作废）：\n");
         result.push_str("   1. 严禁执行任何行动/工具调用——禁止调用 send_message / send_task_assignment_message / send_message_to_agent：不准给任何用户/Agent 发消息\n");
         result.push_str("   2. 严禁编造无来源信息——禁止调用 create_task / update_task / create_project / update_project / update_memory 状态写入类工具；不准改动任何系统状态（只有 save_short_term_memory 内部记忆写入是允许的，若你需要临时记录东西）\n");
-        result.push_str("   3. 如果信息不足必须 need_clarification=true 并把澄清话术写进 resolutions——禁止做任何外部 API 调用、shell 执行、文件读写类工具；禁止直接回答用户问题（哪怕你 100% 知道答案），不准在 Final 里写对用户的回复\n\n");
+        result.push_str("   3. 如果信息不足必须把澄清问题写进 need_clarification——禁止做任何外部 API 调用、shell 执行、文件读写类工具；除「直答前置判断」命中的简单问题外，禁止把对用户的回复写进 Final（哪怕你 100% 知道答案）\n\n");
+
+        result.push_str("## 直答前置判断（先做这一步，命中则其余步骤全部跳过）\n\n");
+        result.push_str("如果【当前消息】完全满足以下**全部**条件，可以直接在意图阶段作答：\n");
+        result.push_str("- 是简单问题或闲聊：问候/客套/常识/概念解释/简单事实/单步操作指引\n");
+        result.push_str("- 不依赖长期记忆、知识图谱、项目或任务状态、用户偏好\n");
+        result.push_str("- 不需要调用任何工具（不查库、不读写文件、不发消息、不改状态）\n");
+        result.push_str("- 没有指代歧义，无需向用户澄清\n");
+        result.push_str("- 你能用 1~3 句话给出确定、完整、无需后续跟进的答复\n\n");
+        result.push_str("命中时：跳过下方 Step 1~5，把答复写进 direct_answer，其余字段按真实判断填写（key_terms / retrieved_context / need_clarification 留空，summary 写一句话理解结论）；不要为了凑字段编造检索结果。\n");
+        result.push_str("只要有任何一条不满足（包括「把握不准」），direct_answer 必须留空，正常走 Step 1~5。\n\n");
 
         result.push_str("## 理解 SOP 五步走（在思考中严格按此顺序执行）\n\n");
         result.push_str("### Step 1：意图识别\n");
@@ -672,6 +683,12 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("- 回顾 Step 1~4 的全部产出，检查是否有信息缺口\n");
         result.push_str("- 如果消歧失败 / 混合型意图优先级不清 / 需求边界不明 / 需要用户决策\n");
         result.push_str("  → 把要问用户的具体问题逐条写进 need_clarification（问题尽量用选择题形式，不要开放式）\n");
+        result.push_str(
+            "  → 澄清即本轮终态：这些问题的原文会**直接作为给用户的回复**发出，跳过检索与执行\n",
+        );
+        result.push_str(
+            "  → 因此每条必须独立可读、自成一句，不要写「如上次所说」这类依赖上下文的表述\n",
+        );
         result.push_str("- 如果理解充分 → need_clarification = []\n\n");
         result.push_str("5.2 形成理解结论：\n");
         result.push_str("- 在思考中用 1~2 句话总结：我理解用户想要 XXX，相关的背景信息有 YYY\n");
@@ -682,7 +699,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("你输出的【最终 Final 内容】必须严格符合以下格式：\n");
         result.push_str("- Final block MUST start with `--- INTENT_ANALYSIS_START ---` followed by pure JSON and end with `--- INTENT_ANALYSIS_END ---`\n");
         result
-            .push_str("- 中间 JSON 对象必须严格符合以下 schema（7 个字段全包含，不要省略）：\n\n");
+            .push_str("- 中间 JSON 对象必须严格符合以下 schema（8 个字段全包含，不要省略）：\n\n");
         result.push_str("JSON Schema 字段说明：\n");
         result.push_str("- intent_type：字符串，取值为 Question | TaskRequest | Confirm | FollowUp | ClarificationResponse | Chat | Mixed\n");
         result.push_str("- confidence：数字，0.0 到 1.0，你对自己意图判断的置信度\n");
@@ -694,6 +711,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str(
             "- need_clarification：字符串数组，需要向用户澄清的具体问题（空列表 = 理解充分）\n",
         );
+        result.push_str("- direct_answer：字符串，只在「直答前置判断」命中时填写给用户的最终答复；其余情况必须为空字符串 \"\"\n");
         result.push_str("- summary：字符串，一句话总结你最终理解的用户需求\n\n");
         result.push_str("示例 JSON（请严格模仿此结构，字段名和类型必须一致）：\n");
         result.push_str("--- INTENT_ANALYSIS_START ---\n");
@@ -706,11 +724,13 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         );
         result.push_str("  \"retrieved_context\": [\"2026-08-10 短期记忆：项目X 方案 A/B 比较，推荐方案 A（相似度 0.88）\"],\n");
         result.push_str("  \"need_clarification\": [],\n");
+        result.push_str("  \"direct_answer\": \"\",\n");
         result.push_str(
             "  \"summary\": \"用户想知道项目 X 中之前讨论过的方案 A 的当前推进进度与结果\"\n",
         );
         result.push_str("}\n");
         result.push_str("--- INTENT_ANALYSIS_END ---\n\n");
+        result.push_str("直答示例（仅命中「直答前置判断」时）：\"direct_answer\": \"你好，我是你的接待助手，有什么可以帮你？\"，其余数组留空。\n\n");
 
         result.push_str("===== 【输入理解阶段】指令结束 =====\n\n");
 

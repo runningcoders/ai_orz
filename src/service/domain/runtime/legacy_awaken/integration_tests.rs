@@ -22,7 +22,9 @@
 use super::backend::{CompactInput, DiscoverInput, IntentInput, ThinkBackend, ThinkInput};
 use super::blueprint::MAX_LOOP_ROUNDS;
 use super::context::{AwakenDeps, RetrievalPack, build_deps_with_backend, read_bus};
-use super::nodes::{EXIT_CANCELLED, EXIT_FINAL, EXIT_MAX_ROUNDS, NODE_CONSOLIDATE};
+use super::nodes::{
+    EXIT_CANCELLED, EXIT_CLARIFY, EXIT_DIRECT, EXIT_FINAL, EXIT_MAX_ROUNDS, NODE_CONSOLIDATE,
+};
 use super::runner::run_legacy_awaken;
 use crate::models::agent::{Agent, AgentPo, AgentRuntimeConfig};
 use crate::models::brain::Brain;
@@ -481,6 +483,79 @@ async fn happy_path_runs_intent_retrieve_deliberate(pool: SqlitePool) {
     assert_eq!(queried, vec!["测试".to_string()]);
 }
 
+/// 简单问题直答：intent 命中 `direct_answer` → 直连 consolidate，跳过三节点
+///
+/// 护栏意义：直答一旦回归成「必须走满五节点」，用户一句寒暄又要付两次完整
+/// LLM 调用（实测 48s + 32s）。这里同时锁「不进 deliberate」「不做后置压缩」。
+#[sqlx::test]
+async fn direct_answer_skips_retrieve_prepare_deliberate(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(Vec::new()).with_intents(vec![IntentAnalysis {
+        intent_type: "Chat".to_string(),
+        direct_answer: "你好，我是接待助手。".to_string(),
+        summary: "用户打招呼".to_string(),
+        ..Default::default()
+    }]);
+
+    let deps = make_deps(ctx, backend.clone());
+    let outcome = run_legacy_awaken(Arc::clone(&deps))
+        .await
+        .expect("direct answer must complete");
+
+    assert_eq!(outcome.fingerprint, "intent#1>consolidate#1");
+    assert_eq!(outcome.exit, EXIT_DIRECT);
+    assert_eq!(outcome.raw_output, "你好，我是接待助手。");
+    assert_eq!(
+        backend.think_calls.load(Ordering::SeqCst),
+        0,
+        "直答不应进入 deliberate"
+    );
+    assert_eq!(
+        backend.compact_calls.load(Ordering::SeqCst),
+        0,
+        "直答/闲聊不做后置压缩"
+    );
+}
+
+/// 信息不足澄清：intent 命中 `need_clarification` → 直连 consolidate
+///
+/// 缺的是用户输入而不是知识，继续检索/思考只是空转一轮——这里锁住
+/// 「澄清即终态」以及问题原文确实被拼成了面向用户的回复。
+#[sqlx::test]
+async fn clarification_skips_retrieve_prepare_deliberate(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(Vec::new()).with_intents(vec![IntentAnalysis {
+        intent_type: "TaskRequest".to_string(),
+        need_clarification: vec!["你要改哪份文档？".to_string(), "改哪一部分？".to_string()],
+        summary: "用户要改文档，信息不足".to_string(),
+        ..Default::default()
+    }]);
+
+    let deps = make_deps(ctx, backend.clone());
+    let outcome = run_legacy_awaken(Arc::clone(&deps))
+        .await
+        .expect("clarification must complete");
+
+    assert_eq!(outcome.fingerprint, "intent#1>consolidate#1");
+    assert_eq!(outcome.exit, EXIT_CLARIFY);
+    assert!(outcome.raw_output.contains("你要改哪份文档？"));
+    assert!(
+        outcome.raw_output.contains("\n2. 改哪一部分？"),
+        "多条澄清应渲染成编号清单: {}",
+        outcome.raw_output
+    );
+    assert_eq!(
+        backend.think_calls.load(Ordering::SeqCst),
+        0,
+        "澄清不应进入 deliberate"
+    );
+    assert_eq!(
+        backend.compact_calls.load(Ordering::SeqCst),
+        0,
+        "澄清不做后置压缩"
+    );
+}
+
 /// 新发现回环：max_rounds → discover 有新词 → retrieve#2 → prepare#2 → 再思考完成
 ///
 /// 新拓扑的核心增量（design §3.2「新发现循环边」）：轮次耗尽不再直接压缩退出，
@@ -557,7 +632,10 @@ async fn graph_level_loop_converges_via_discover_soft_budget(pool: SqlitePool) {
             r#"{"new_key_terms":["线索甲"],"prior_thinking_summary":"第一轮"}"#.to_string(),
             r#"{"new_key_terms":["线索乙"],"prior_thinking_summary":"第二轮"}"#.to_string(),
         ])
-        .with_compacts(vec![compact_outcome("回环耗尽摘要", "已尽力收尾")]);
+        .with_compacts(vec![compact_outcome(
+            "回环耗尽摘要",
+            "<user_reply>已尽力收尾</user_reply>",
+        )]);
 
     let deps = make_deps(ctx, backend.clone());
     let outcome = run_legacy_awaken(Arc::clone(&deps))

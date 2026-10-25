@@ -11,7 +11,7 @@
 //! - UserCancelPolicy：状态源是 `Arc<AtomicBool>` 而非 Metrics
 //! - NoProgressPolicy：多键聚合 + 工具差异化限流
 //!
-//! 8 个内置策略：
+//! 9 个内置策略：
 //! - MaxRoundsPolicy：轮次上限（保留专用：阈值来自 Metrics 双键）
 //! - TimeoutPolicy：超时（ThresholdPolicy 薄包装）
 //! - ContextOverflowPolicy：上下文溢出（ThresholdPolicy 薄包装）
@@ -20,6 +20,7 @@
 //! - FinalAnswerPolicy：模型输出 Final（FieldEqualsPolicy 薄包装）
 //! - ConsecutiveLlmErrorsPolicy：LLM 连续失败预算（ThresholdPolicy 薄包装）
 //! - NoProgressPolicy：单工具调用上限（保留专用：多键聚合 + 工具差异化）
+//! - CompactionThresholdPolicy：记忆分流阈值（ThresholdPolicy 薄包装）
 //!
 //! 薄包装保留原类型名与 `new` 签名：think_loop 的 `policy_set!` 与引擎测试
 //! 的调用点零改动，包装仅做参数翻译 + Policy 委托（`impl_policy_delegate!`）。
@@ -347,6 +348,31 @@ impl TokenBudgetPolicy {
 }
 
 impl_policy_delegate!(TokenBudgetPolicy);
+
+/// 记忆分流策略（ThresholdPolicy 薄包装：`turn_tokens >= threshold`）
+///
+/// 命中 = 本轮问答值得花一次 LLM 压缩；未命中 = 原文机械记账即可。
+/// 阈值来自 `[agent].compaction_threshold_tokens`（Agent 级可覆盖）。
+///
+/// 选它而不是在调用点写 `if`：`condition_desc()` 能把
+/// 「本轮问答 token >= 256」带进日志与前端，后续换「小脑」判断时
+/// 只需替换策略组，调用方不动。
+pub struct CompactionThresholdPolicy(ThresholdPolicy);
+
+impl CompactionThresholdPolicy {
+    pub fn new(threshold_tokens: u64) -> Self {
+        Self(ThresholdPolicy::new(
+            "compaction_threshold",
+            "CompactionThreshold",
+            "turn_tokens",
+            threshold_tokens,
+            "本轮问答 token",
+            "",
+        ))
+    }
+}
+
+impl_policy_delegate!(CompactionThresholdPolicy);
 
 /// 无进展策略：按工具差异化限制累计调用次数
 ///

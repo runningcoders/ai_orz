@@ -1,21 +1,32 @@
 //! `legacy_awaken` 蓝图：把老 awaitaken 的控制流写成完整思考图
 //!
 //! ```text
-//! intent ──done──▶ retrieve ──done──▶ prepare ──done──▶ deliberate
-//!                      ▲                                 ├─done──────▶ consolidate
-//!                      │                                 ├─cancelled─▶ consolidate
-//!                      │                                 └─overflow──▶ compact ──done──▶ prepare
-//!                      └────────── new_findings ── discover ◀── max_rounds
-//!                                                     └─no_new_findings─▶ force_compact ──done──▶ consolidate
+//! intent ──done────▶ retrieve ──done──▶ prepare ──done──▶ deliberate
+//!   │                    ▲                                 ├─done──────▶ consolidate
+//!   │                    │                                 ├─cancelled─▶ consolidate
+//!   │                    │                                 └─overflow──▶ compact ──done──▶ prepare
+//!   │                    └────────── new_findings ── discover ◀── max_rounds
+//!   │                                                    └─no_new_findings─▶ force_compact ──done──▶ consolidate
+//!   └─direct / clarify────────────────────────────────────────────────────────▶ consolidate
 //! ```
 //!
 //! 主链 =「意图识别 → 检索 → 装配 → 执行」，`deliberate` 之后按退出的不同分岔。
+//!
 //! 三条循环/退出边对应思考图的三种「再来一次或收手」：
 //! - `overflow` → **压缩回环**：`compact → prepare` 重装配后再思考（既有语义）
 //! - `max_rounds` → **新发现回环**：`discover` 从思考轨迹里判断是否出现值得
 //!   再检索的新线索——有 → `discover → retrieve` 重新检索装配（new_findings）；
 //!   无 → `discover → force_compact` 压缩退出（no_new_findings）
 //! - `cancelled` → 直接进收尾（走兜底存档）
+//!
+//! 另有两条 `intent --direct / clarify--> consolidate` 短路：
+//!
+//! - **直答**：意图阶段已给出最终答复（`IntentAnalysis.direct_answer`），
+//!   跳过检索/装配/执行直接收尾；
+//! - **澄清**：意图阶段判定信息不足（`need_clarification` 非空），
+//!   问题原文直接作为回复发出——缺的是用户输入，检索再多也补不上。
+//!
+//! 两条都会省掉一次完整 LLM 调用。
 //!
 //! discover 节点自带软预算（`MAX_DISCOVERY_ROUNDS`，见 discover_node.rs），
 //! 蓝图硬预算 = 软预算 + 1：多出的那一次激活留给软预算先判——**零模型调用**
@@ -24,7 +35,9 @@
 //! 先撞硬预算的「无合法候选 → run 终止」，唤醒链会以 Internal 收场。
 
 use super::discover_node::MAX_DISCOVERY_ROUNDS;
-use super::nodes::{SIGNAL_CANCELLED, SIGNAL_MAX_ROUNDS, SIGNAL_OVERFLOW};
+use super::nodes::{
+    SIGNAL_CANCELLED, SIGNAL_CLARIFY, SIGNAL_DIRECT, SIGNAL_MAX_ROUNDS, SIGNAL_OVERFLOW,
+};
 use crate::pkg::think_path::types::SIGNAL_DONE;
 use crate::pkg::think_path::{PhaseId, ThinkPathBlueprint, ThinkPathBuilder};
 use common::error::Result;
@@ -75,6 +88,8 @@ pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
         )
         .node_with("consolidate", PhaseId::Consolidate, 0, "收尾落档")
         .edge("intent", "retrieve", Some(SIGNAL_DONE))
+        .edge("intent", "consolidate", Some(SIGNAL_DIRECT))
+        .edge("intent", "consolidate", Some(SIGNAL_CLARIFY))
         .edge("retrieve", "prepare", Some(SIGNAL_DONE))
         .edge("prepare", "deliberate", Some(SIGNAL_DONE))
         .edge("deliberate", "consolidate", Some(SIGNAL_DONE))

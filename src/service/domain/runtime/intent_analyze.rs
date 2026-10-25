@@ -26,7 +26,8 @@ impl RuntimeDomainImpl {
     /// analyze_input_intent 的核心实现（由 trait 方法委托，外层负责 stats 包裹）
     ///
     /// 流程：构造 IntentAnalyze 场景 → 读短期记忆 → 过滤技能 → 拼 Prompt →
-    /// think loop（最多 2 轮）→ 解析 IntentAnalysis JSON
+    /// think loop（轮次上限 = `[agent].intent_analyze_max_rounds`，见
+    /// `common/config/ai_orz.toml`）→ 解析 IntentAnalysis JSON
     pub(crate) async fn analyze_input_intent_inner(
         &self,
         ctx: RequestContext,
@@ -321,14 +322,20 @@ fn try_lenient_parse(s: &str) -> Option<IntentAnalysis> {
     let resolutions = extract_str_arr("resolutions");
     let retrieved_context = extract_str_arr("retrieved_context");
     let need_clarification = extract_str_arr("need_clarification");
+    let direct_answer = val
+        .get("direct_answer")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let summary = val
         .get("summary")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
-    // 至少要有 intent_type 或 summary 任一非空，才算解析出有效结果
-    if intent_type.is_empty() && summary.is_empty() {
+    // 至少要有 intent_type / summary / 直答答复任一非空，才算解析出有效结果
+    if intent_type.is_empty() && summary.is_empty() && direct_answer.is_empty() {
         return None;
     }
 
@@ -339,6 +346,7 @@ fn try_lenient_parse(s: &str) -> Option<IntentAnalysis> {
         resolutions,
         retrieved_context,
         need_clarification,
+        direct_answer,
         summary,
     })
 }

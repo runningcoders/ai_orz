@@ -284,6 +284,10 @@ fn thinking_graph_blueprint_wires_full_loop() {
     };
     // 主链
     assert!(has("intent", "retrieve", "done"));
+    // 简单问题直答：intent 直接收尾（跳过 retrieve/prepare/deliberate）
+    assert!(has("intent", "consolidate", "direct"));
+    // 信息不足澄清：同样收尾等用户补充，不必往下跑一轮空转
+    assert!(has("intent", "consolidate", "clarify"));
     assert!(has("retrieve", "prepare", "done"));
     assert!(has("prepare", "deliberate", "done"));
     assert!(has("deliberate", "consolidate", "done"));
