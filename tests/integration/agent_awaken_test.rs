@@ -1014,20 +1014,21 @@ async fn test_real_llm_awaken_full_flow(pool: SqlitePool) {
         .await;
 }
 
-// ==================== Part D: A+ P3 两阶段唤醒集成测试 ====================
-// （Task 4 集成测试 bonus）
+// ==================== Part D: 思考图（entry=intent）唤醒集成测试 ====================
 //
-// 思路：复用 CapturingBrainDal 模式，实现「两阶段 Mock」：
-//   - 第 1 次 think() 调用（Phase 1：analyze_input_intent）→ 返回合法 IntentAnalysis JSON
-//   - 第 2 次 think() 调用（Phase 2：正式 awaken 思考）→ 返回 Final 响应，并捕获 Prompt
-// 断言：(i) Phase 2 的 Prompt 中出现【输入理解结果】区块；
-//       (ii) awaken 返回成功且 raw_output 为 Phase 2 的 mock 响应。
+// 思路：复用 CapturingBrainDal 模式，实现「按调用次序分流」的 Mock。
+// 思考图把意图分析（IntentAnalyze 子循环）恢复为 entry 节点，think() 的调用次序为：
+//   - 第 1 次 think() 调用（IntentNode → analyze_input_intent）→ 返回合法空意图 JSON
+//   - 第 2 次 think() 调用（DeliberateNode → 主 awaken 思考）→ 返回 Final 响应，并捕获 Prompt
+//   - 第 3+ 次 think() 调用（ConsolidateNode → 完成后上下文压缩总结）→ 返回简单 Final
+// 断言：(i) awaken 返回成功且 raw_output 为主流程（第 2 次）的 mock 响应；
+//       (ii) 主流程 Prompt 包含【当前消息】区块且包含用户原始消息。
 
-/// 两阶段 Mock Cortex：按调用次序返回不同的 ThinkResult
+/// 思考图 Mock Cortex：按调用次序返回不同的 ThinkResult
 struct TwoPhaseMockBrainDal {
     /// 原子计数器：记录 think() 被调用的次数
     call_count: Arc<Mutex<usize>>,
-    /// 捕获主 awaken 流程（第一次 think 调用）的 Prompt（供断言使用）
+    /// 捕获主 awaken 流程（第 2 次 think 调用）的 Prompt（供断言使用）
     captured_phase2_prompt: Arc<Mutex<Option<String>>>,
 }
 
@@ -1042,7 +1043,14 @@ impl TwoPhaseMockBrainDal {
         }
     }
 
-    /// 主 awaken 流程（单阶段）返回的最终响应
+    /// 意图分析（IntentAnalyze）子循环返回的空意图 JSON
+    ///
+    /// key_terms 为空 → RetrieveNode 差集为空短路；其余字段走 serde default。
+    fn intent_analysis_response() -> String {
+        r#"{"intent_type":""}"#.to_string()
+    }
+
+    /// 主 awaken 流程返回的最终响应
     fn phase2_response() -> String {
         "两阶段唤醒集成测试成功：已收到 Phase 1 理解结果并进入正式执行阶段。".to_string()
     }
@@ -1107,9 +1115,17 @@ impl BrainDal for TwoPhaseMockBrainDal {
         drop(count);
 
         if this_call == 1 {
-            // ===== 单阶段主 awaken 流程（Phase 1 两阶段唤醒已移除）=====
+            // ===== IntentNode：意图分析子循环（IntentAnalyze 场景）=====
+            // 返回合法空意图 JSON（解析成功 → 空结构，RetrieveNode 对空词短路）
+            Ok(ai_orz::models::cortex_types::ThinkResult::Final {
+                content: Self::intent_analysis_response(),
+                usage: ai_orz::models::cortex_types::TokenUsage::default(),
+                reasoning_items: Vec::new(),
+            })
+        } else if this_call == 2 {
+            // ===== DeliberateNode：主 awaken 流程 =====
             // 捕获主流程 Prompt 并返回最终响应；后续因「完成后上下文压缩」触发的
-            // 二次 think() 不再覆盖捕获的 Prompt（其末尾 User 消息是压缩指令）。
+            // think() 不再覆盖捕获的 Prompt（其末尾 User 消息是压缩指令）。
             *self.captured_phase2_prompt.lock().unwrap() = Some(prompt);
             Ok(ai_orz::models::cortex_types::ThinkResult::Final {
                 content: Self::phase2_response(),
@@ -1117,7 +1133,7 @@ impl BrainDal for TwoPhaseMockBrainDal {
                 reasoning_items: Vec::new(),
             })
         } else {
-            // ===== 后续调用（完成后上下文压缩总结流程等）=====
+            // ===== 后续调用（ConsolidateNode 完成后上下文压缩总结流程等）=====
             // 返回简单 Final，不再覆盖主流程捕获的 Prompt
             Ok(ai_orz::models::cortex_types::ThinkResult::Final {
                 content: "summary done".to_string(),
@@ -1144,14 +1160,15 @@ impl BrainDal for TwoPhaseMockBrainDal {
     }
 }
 
-/// 集成测试：awaken 单阶段 Happy Path
+/// 集成测试：思考图（entry=intent）唤醒 Happy Path
 ///
-/// 对齐「移除强制两阶段唤醒（Phase 1）」的重构结果：awaken 现在走单 think_loop，
-/// 由 System 角色的回复规则指引承担全部职责。本测试验证：
+/// 思考图把意图分析恢复为 entry 节点：awaken 先跑 IntentAnalyze 子循环（第 1 次
+/// think），再跑主思考（第 2 次 think）。本测试验证：
 ///   (i)  awaken 最终返回成功且 raw_output = TwoPhaseMockBrainDal::phase2_response()
-///   (ii) 主流程 Prompt 包含【当前消息】区块，且**不再**包含 Phase 1 的【输入理解结果】区块
-///        → 间接证明 Phase 1 两阶段唤醒已移除
-///   (iii)think() 至少被调用 1 次（单阶段主流程；实际为主流程 + 完成后上下文压缩共 2 次）
+///   (ii) 主流程 Prompt 包含【当前消息】区块与用户原始消息；且**暂不**包含
+///        【输入理解结果】区块 → prepare 节点消费 bus[Intent] 属后续任务，
+///        当前主 Prompt 仍由 BusinessProvider 独立装配
+///   (iii)think() 至少被调用 2 次（意图分析 + 主流程；实际再加完成后上下文压缩共 3 次）
 #[sqlx::test]
 async fn awaken_single_stage_happy_path(pool: SqlitePool) {
     let ctx = crate::common::init_full_test_env(pool).await;
@@ -1184,7 +1201,7 @@ async fn awaken_single_stage_happy_path(pool: SqlitePool) {
         .awaken(ctx.clone(), &agent, &message, &opts)
         .await;
 
-    // 断言 (iii)：最终返回成功且 raw_output 为 Phase 2 的响应
+    // 断言 (i)：最终返回成功且 raw_output 为主流程（第 2 次 think）的响应
     match result {
         Ok(awakening_result) => {
             assert_eq!(
@@ -1194,18 +1211,18 @@ async fn awaken_single_stage_happy_path(pool: SqlitePool) {
             assert_eq!(
                 awakening_result.raw_output,
                 TwoPhaseMockBrainDal::phase2_response(),
-                "awaken 的最终输出应为 Phase 2 Mock 响应"
+                "awaken 的最终输出应为主流程 Mock 响应"
             );
             assert!(
                 !awakening_result.raw_input.is_empty(),
-                "raw_input（即 Phase 2 Prompt）不应为空"
+                "raw_input（即主流程 Prompt）不应为空"
             );
         }
         Err(e) => panic!("awaken_single_stage_happy_path 应成功，但返回 Err: {:?}", e),
     }
 
-    // 断言 (ii)：主流程 Prompt 包含【当前消息】区块，且不再包含 Phase 1 的【输入理解结果】区块
-    // → 证明 Phase 1 两阶段唤醒已移除，单 think_loop 承担全部职责
+    // 断言 (ii)：主流程 Prompt 包含【当前消息】区块与用户原始消息；
+    // 暂不包含【输入理解结果】区块（prepare 消费 bus[Intent] 属后续任务）
     let main_prompt = captured_p2_prompt
         .lock()
         .unwrap()
@@ -1220,7 +1237,7 @@ async fn awaken_single_stage_happy_path(pool: SqlitePool) {
     );
     assert!(
         !main_prompt.contains("【输入理解结果"),
-        "主流程 Prompt 不应再包含 Phase 1 的【输入理解结果】区块（两阶段唤醒已移除）"
+        "主流程 Prompt 暂不应包含【输入理解结果】区块（prepare 消费 bus[Intent] 属后续任务）"
     );
     // 主流程 Prompt 应包含用户原始消息
     assert!(
@@ -1228,12 +1245,12 @@ async fn awaken_single_stage_happy_path(pool: SqlitePool) {
         "主流程 Prompt 应包含用户原始消息"
     );
 
-    // 断言 (iii)：think() 至少被调用 1 次（单阶段主流程）；
-    // 实际为主流程 + 完成后上下文压缩共 2 次，此处只断言下限以对准单阶段语义
+    // 断言 (iii)：think() 至少被调用 2 次（意图分析 + 主流程）；
+    // 实际再加完成后上下文压缩共 3 次，此处只断言下限
     let calls = *call_count.lock().unwrap();
     assert!(
-        calls >= 1,
-        "think() 至少应被调用 1 次（单阶段主流程），实际仅 {} 次",
+        calls >= 2,
+        "think() 至少应被调用 2 次（意图分析 + 主流程），实际仅 {} 次",
         calls
     );
 }

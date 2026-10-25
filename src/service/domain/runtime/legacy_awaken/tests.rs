@@ -308,3 +308,33 @@ fn thinking_graph_blueprint_wires_full_loop() {
     assert_eq!(budget("discover"), Some(2));
     assert_eq!(budget("prepare"), Some(MAX_LOOP_ROUNDS));
 }
+
+// ==================== retrieve_node::diff_terms 纯函数 ====================
+
+/// visited 差集：去重 + 剔除已查词（discover 回环下不重复检索的关键）
+#[test]
+fn diff_terms_dedupes_and_drops_visited() {
+    let candidates = vec!["a".to_string(), "a".to_string(), "b".to_string()];
+    let queried = vec!["a".to_string()];
+    // 重复的 a、已查过的 a 都被剔掉，只留新词 b
+    assert_eq!(
+        super::retrieve_node::diff_terms(&candidates, &queried),
+        vec!["b".to_string()]
+    );
+}
+
+/// 候选词先 trim：空串 / 纯空白剔除，避免拼出 `keyword = "  "` 这类空查询
+#[test]
+fn diff_terms_trims_and_skips_blank() {
+    let candidates = vec![
+        " b ".to_string(),
+        String::new(),
+        "  ".to_string(),
+        "a".to_string(),
+    ];
+    // " b " trim 成 b；空串与纯空白不产生条目；顺序保持候选原序
+    assert_eq!(
+        super::retrieve_node::diff_terms(&candidates, &[]),
+        vec!["b".to_string(), "a".to_string()]
+    );
+}

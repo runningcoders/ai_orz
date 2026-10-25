@@ -496,3 +496,81 @@ async fn intent_node_writes_bus_and_degrades(pool: SqlitePool) {
     assert!(ia.key_terms.is_empty());
     assert_eq!(ia.intent_type, "");
 }
+
+/// visited 全命中过 → 差集为空 → 短路写空 pack，不产生检索动作
+///
+/// 回环语义的哨兵：discover 回环重新进 retrieve 时，已查过的词不二次检索。
+#[sqlx::test]
+async fn retrieve_node_short_circuits_on_no_new_terms(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let deps = make_deps(ctx, ScriptedBackend::new(vec![]));
+
+    // 预置意图产物：全部关键词都已检索过
+    let ia = IntentAnalysis {
+        key_terms: vec!["已检索".to_string()],
+        ..Default::default()
+    };
+    let mut bus = ThinkBus::new();
+    bus.insert(
+        ContextKey::Intent,
+        LoadDepth::Full,
+        serde_json::to_value(&ia).expect("encode intent"),
+    );
+    deps.retrieval
+        .lock()
+        .map(|mut s| s.queried_terms = vec!["已检索".to_string()])
+        .unwrap_or(());
+
+    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+    let outcome = node
+        .run(&mut bus)
+        .await
+        .expect("retrieve node must not fail");
+
+    assert!(matches!(outcome.signal, NodeSignal::Done));
+    let pack = read_bus::<RetrievalPack>(&bus, ContextKey::Knowledge)
+        .expect("bus[Knowledge] must be present");
+    assert!(pack.query_terms.is_empty());
+    assert!(pack.knowledge_hits.is_empty());
+    assert!(pack.method_skills.is_empty());
+    assert!(pack.prior_thinking_summary.is_none());
+}
+
+/// 有新词 → 机械检索路径走通：查库（空库零命中合法）+ visited 记账
+#[sqlx::test]
+async fn retrieve_node_records_new_terms_and_queries(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let deps = make_deps(ctx, ScriptedBackend::new(vec![]));
+
+    let ia = IntentAnalysis {
+        key_terms: vec!["新线索".to_string()],
+        ..Default::default()
+    };
+    let mut bus = ThinkBus::new();
+    bus.insert(
+        ContextKey::Intent,
+        LoadDepth::Full,
+        serde_json::to_value(&ia).expect("encode intent"),
+    );
+
+    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+    let outcome = node
+        .run(&mut bus)
+        .await
+        .expect("retrieve node must not fail");
+
+    assert!(matches!(outcome.signal, NodeSignal::Done));
+    let pack = read_bus::<RetrievalPack>(&bus, ContextKey::Knowledge)
+        .expect("bus[Knowledge] must be present");
+    assert_eq!(pack.query_terms, vec!["新线索".to_string()]);
+    // 空库：零命中是合法结果（检索是增强，不是闸门）
+    assert!(pack.knowledge_hits.is_empty());
+    assert!(pack.method_skills.is_empty());
+    // visited 记账：同词下次差集为空 → 短路（上一条用例锁的行为）
+    let queried = deps
+        .retrieval
+        .lock()
+        .map(|s| s.queried_terms.clone())
+        .unwrap_or_default();
+    assert_eq!(queried, vec!["新线索".to_string()]);
+}
