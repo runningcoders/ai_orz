@@ -338,3 +338,38 @@ fn diff_terms_trims_and_skips_blank() {
         vec!["b".to_string(), "a".to_string()]
     );
 }
+
+// ==================== discover_node::parse_discovery_json 纯函数 ====================
+
+/// 宽容解析三层：markdown 代码块包裹 / 混入脏字段 / 纯散文 → 全部有兜底
+///
+/// 关键契约：**全失败不报错**（返回 default = 无新息，走退出路径）——
+/// 模型输出抖动不该炸主流程（discover 是增强，不是闸门）。
+#[test]
+fn parse_discovery_json_lenient() {
+    // Layer 2 生效：markdown 代码块包裹 + 前后散文
+    let wrapped = concat!(
+        "经过分析：\n```json\n",
+        r#"{"new_key_terms":["新线索"],"prior_thinking_summary":"已尝试检索"}"#,
+        "\n```\n以上。"
+    );
+    let outcome = super::discover_node::parse_discovery_json(wrapped);
+    assert_eq!(outcome.new_key_terms, vec!["新线索".to_string()]);
+    assert_eq!(outcome.prior_thinking_summary, "已尝试检索");
+
+    // Layer 3 生效：数组混入非字符串（数字/布尔照 intent 先例转字符串，null 丢弃）
+    let dirty =
+        r#"{"new_key_terms":["a",42,true,null],"prior_thinking_summary":"s","confidence":"high"}"#;
+    let outcome = super::discover_node::parse_discovery_json(dirty);
+    assert_eq!(
+        outcome.new_key_terms,
+        vec!["a".to_string(), "42".to_string(), "true".to_string()]
+    );
+    assert_eq!(outcome.prior_thinking_summary, "s");
+
+    // 纯散文（无任何 JSON）→ default：空 new_key_terms，不 panic 不报错
+    let prose = "我认为没有任何新线索了，可以直接收尾。";
+    let outcome = super::discover_node::parse_discovery_json(prose);
+    assert!(outcome.new_key_terms.is_empty());
+    assert_eq!(outcome.prior_thinking_summary, "");
+}

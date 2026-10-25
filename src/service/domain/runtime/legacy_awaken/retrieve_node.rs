@@ -131,8 +131,18 @@ impl ThinkNode for RetrieveNode {
             .map(|s| s.queried_terms.clone())
             .unwrap_or_else(|poisoned| poisoned.into_inner().queried_terms.clone());
 
-        // 3. visited 差集为空 → 无新息不查库：写空 pack 短路（保留旧 pack 的思考摘要）
-        let new_terms = diff_terms(&ia.key_terms, &queried_snapshot);
+        // 3. 候选词 = intent 关键词 + discover 回环写入的新词（design §3.2：retrieve
+        //    的输入是「IntentAnalysis.key_terms **或 discover 新词**」）。
+        //    discover 先写「新词 + 思考摘要」的过渡 pack，由本次 retrieve 覆写成
+        //    完整产物（见 RetrievalPack 契约）；旧 pack 里已被检索过的词会被
+        //    差集自然剔除。visited 差集为空 → 无新息不查库：写空 pack 短路
+        //    （保留旧 pack 的思考摘要）
+        let mut candidates = read_bus::<RetrievalPack>(bus, ContextKey::Knowledge)
+            .ok()
+            .map(|p| p.query_terms)
+            .unwrap_or_default();
+        candidates.extend(ia.key_terms.iter().cloned());
+        let new_terms = diff_terms(&candidates, &queried_snapshot);
         if new_terms.is_empty() {
             let prior = read_bus::<RetrievalPack>(bus, ContextKey::Knowledge)
                 .ok()

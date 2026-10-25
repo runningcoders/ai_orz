@@ -73,9 +73,7 @@ pub struct RetrievalState {
 
 /// discover 节点的模型输出契约
 ///
-/// TODO(Task 6)：`parse_discovery_json` 落地后本类型才有真正的构造方，
-/// 到时移除下方的 `expect`（它会在第一个构造方出现时报「期望未兑现」）。
-#[expect(dead_code)]
+/// 构造方是 `discover_node::parse_discovery_json`（宽容解析，全失败给 default）。
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DiscoveryOutcome {
     pub new_key_terms: Vec<String>,

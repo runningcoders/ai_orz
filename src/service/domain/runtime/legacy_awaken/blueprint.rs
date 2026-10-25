@@ -17,8 +17,9 @@
 //!   无 → `discover → force_compact` 压缩退出（no_new_findings）
 //! - `cancelled` → 直接进收尾（走兜底存档）
 //!
-//! 骨架阶段（intent/retrieve/discover 的真正实现落地前）：intent/retrieve 直通，
-//! discover 恒走 no_new_findings——图形状先行，链路行为与旧拓扑等价。
+//! discover 节点自带软预算（`MAX_DISCOVERY_ROUNDS`，见 discover_node.rs），
+//! 与下方 `discover` 的蓝图硬预算同值双层：软预算先到省一次模型调用，
+//! 硬预算兜底（即使软预算判断被绕过，引擎也不会排出第 3 个 discover）。
 
 use super::nodes::{SIGNAL_CANCELLED, SIGNAL_MAX_ROUNDS, SIGNAL_OVERFLOW};
 use crate::pkg::think_path::types::SIGNAL_DONE;

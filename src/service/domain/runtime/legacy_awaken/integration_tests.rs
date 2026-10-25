@@ -15,10 +15,9 @@
 //! 编排层之所以要 `backend` 这个缝，价值正在于此：**用退出信号驱动流转**，
 //! 而不是靠构造特定的 LLM 响应去「诱使」链路走到某个分支。
 //!
-//! ⚠️ 蓝图已扩成完整思考图（entry=`intent`）：`intent` / `retrieve` 已是真正实现
-//! （脚本后端 canned 返回空意图 → 检索短路，行为与骨架期等价）；
-//! `discover` 尚是直通骨架（真正实现由后续任务替换）——max_rounds 路径上的
-//! `discover#1` 仍是骨架占位。
+//! ⚠️ 蓝图已扩成完整思考图（entry=`intent`）：intent / retrieve / discover
+//! 均已是真正实现——intent 降级为空意图时 retrieve 短路，discover 产出
+//! 新词时回 retrieve 再检索，无新词时走 force_compact 压缩退出。
 
 use super::backend::{CompactInput, DiscoverInput, IntentInput, ThinkBackend, ThinkInput};
 use super::blueprint::MAX_LOOP_ROUNDS;
@@ -52,8 +51,10 @@ use std::sync::{Arc, Mutex};
 struct ScriptedBackend {
     thinks: Mutex<VecDeque<ThinkLoopResult>>,
     compacts: Mutex<VecDeque<CompactOutcome>>,
+    discovers: Mutex<VecDeque<String>>,
     pub think_calls: AtomicUsize,
     pub compact_calls: AtomicUsize,
+    pub discover_calls: AtomicUsize,
 }
 
 impl std::fmt::Debug for ScriptedBackend {
@@ -67,8 +68,16 @@ impl std::fmt::Debug for ScriptedBackend {
                 "compacts_left",
                 &self.compacts.lock().map(|q| q.len()).unwrap_or(0),
             )
+            .field(
+                "discovers_left",
+                &self.discovers.lock().map(|q| q.len()).unwrap_or(0),
+            )
             .field("think_calls", &self.think_calls.load(Ordering::SeqCst))
             .field("compact_calls", &self.compact_calls.load(Ordering::SeqCst))
+            .field(
+                "discover_calls",
+                &self.discover_calls.load(Ordering::SeqCst),
+            )
             .finish()
     }
 }
@@ -78,14 +87,23 @@ impl ScriptedBackend {
         Arc::new(Self {
             thinks: Mutex::new(thinks.into()),
             compacts: Mutex::new(VecDeque::new()),
+            discovers: Mutex::new(VecDeque::new()),
             think_calls: AtomicUsize::new(0),
             compact_calls: AtomicUsize::new(0),
+            discover_calls: AtomicUsize::new(0),
         })
     }
 
     fn with_compacts(self: Arc<Self>, outcomes: Vec<CompactOutcome>) -> Arc<Self> {
         if let Ok(mut q) = self.compacts.lock() {
             *q = outcomes.into();
+        }
+        self
+    }
+
+    fn with_discovers(self: Arc<Self>, texts: Vec<String>) -> Arc<Self> {
+        if let Ok(mut q) = self.discovers.lock() {
+            *q = texts.into();
         }
         self
     }
@@ -134,8 +152,20 @@ impl ThinkBackend for ScriptedBackend {
     }
 
     async fn discover(&self, _deps: &AwakenDeps, _input: DiscoverInput) -> Result<String> {
-        // canned「无新发现」JSON：与 discover 骨架的恒退出行为等价
-        Ok(r#"{"new_key_terms":[],"prior_thinking_summary":""}"#.to_string())
+        // 与 thinks/compacts 同口径：队列耗尽 = 测试写错（discover 被调用了
+        // 却没编排返回值），而不是链路的错
+        self.discover_calls.fetch_add(1, Ordering::SeqCst);
+        let front = self
+            .discovers
+            .lock()
+            .map(|mut q| q.pop_front())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().pop_front());
+        front.ok_or_else(|| {
+            err!(
+                Internal,
+                "scripted backend exhausted: discover() was called more times than scripted"
+            )
+        })
     }
 }
 
@@ -338,14 +368,18 @@ async fn overflow_loops_back_and_rethinks(pool: SqlitePool) {
     assert_eq!(outcome.raw_output, "recovered");
 }
 
-/// 轮次耗尽：`max_rounds` → `discover`（骨架期恒无新词）→ `force_compact` → 收尾
+/// 轮次耗尽：`max_rounds` → `discover`（无新词）→ `force_compact` → 收尾
 #[sqlx::test]
 async fn max_rounds_exits_via_force_compact(pool: SqlitePool) {
     let ctx = init_env(pool);
     let backend = ScriptedBackend::new(vec![ThinkLoopResult::MaxRoundsExceeded {
         messages: user_msg(),
         total_rounds: 10,
-    }]);
+    }])
+    // discover 真实现会调后端：canned「无新发现」JSON → 走 force_compact
+    .with_discovers(vec![
+        r#"{"new_key_terms":[],"prior_thinking_summary":""}"#.to_string(),
+    ]);
 
     let outcome = drive(ctx, backend).await;
 
@@ -573,4 +607,176 @@ async fn retrieve_node_records_new_terms_and_queries(pool: SqlitePool) {
         .map(|s| s.queried_terms.clone())
         .unwrap_or_default();
     assert_eq!(queried, vec!["新线索".to_string()]);
+}
+
+// ==================== 节点级行为：discover 回环 ====================
+
+/// discover 软预算尽 → 直接 no_new_findings，模型一次都不被调
+///
+/// 锁的是软预算先于模型调用：省一次 discover 开销（蓝图硬预算是兜底，
+/// 软预算的价值就是「不到万不得已不花这一次调用」）。
+#[sqlx::test]
+async fn discover_node_yields_no_new_findings_when_budget_exhausted(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    // discovers 队列留空：一旦被调会报「script exhausted」——但软预算先退出，
+    // discover_calls 必须是 0 才算软预算真正生效
+    let backend = ScriptedBackend::new(vec![]);
+    let deps = make_deps(ctx, backend.clone());
+    deps.retrieval
+        .lock()
+        .map(|mut s| s.discovery_rounds = 2)
+        .unwrap_or(());
+
+    let node = super::discover_node::DiscoverNode::new(Arc::clone(&deps));
+    let mut bus = ThinkBus::new();
+    let outcome = node
+        .run(&mut bus)
+        .await
+        .expect("discover node must not fail on exhausted budget");
+
+    assert!(matches!(
+        &outcome.signal,
+        NodeSignal::Yield(tag) if tag == "no_new_findings"
+    ));
+    assert_eq!(
+        backend.discover_calls.load(Ordering::SeqCst),
+        0,
+        "软预算尽时不得调模型"
+    );
+    // 退出不计轮次：状态原样（不像 new_findings 路径那样 +1）
+    let rounds = deps
+        .retrieval
+        .lock()
+        .map(|s| s.discovery_rounds)
+        .unwrap_or(0);
+    assert_eq!(rounds, 2);
+}
+
+/// 有新词 → Yield(new_findings) + 写「新词 + 思考摘要」过渡 pack + 轮次记账
+///
+/// 过渡 pack 是 discover → retrieve 的接力棒（design §3.4）：retrieve 会把它
+/// 覆写成完整检索产物，prior_thinking_summary 透传到 prepare 消费。
+#[sqlx::test]
+async fn discover_node_writes_pack_and_yields_new_findings(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(vec![]).with_discovers(vec![
+        // 新词里混一个已查过的词：验证 visited 差集去重
+        r#"{"new_key_terms":["新线索","已检索"],"prior_thinking_summary":"已尝试检索并整理出三步方案"}"#
+            .to_string(),
+    ]);
+    let deps = make_deps(ctx, backend.clone());
+    deps.retrieval
+        .lock()
+        .map(|mut s| s.queried_terms = vec!["已检索".to_string()])
+        .unwrap_or(());
+
+    // 预置思考轨迹（Artifacts）：discover 的模型输入来自这里
+    let artifacts = super::nodes::Artifacts {
+        exit: super::nodes::EXIT_MAX_ROUNDS.to_string(),
+        content: String::new(),
+        messages: vec![
+            ChatMessage::user("帮我看下这个任务"),
+            ChatMessage::Assistant {
+                content: Some("查了三个工具都没找到".to_string()),
+                tool_calls: None,
+            },
+        ],
+    };
+    let mut bus = ThinkBus::new();
+    bus.insert(
+        ContextKey::Artifacts,
+        LoadDepth::Full,
+        serde_json::to_value(&artifacts).expect("encode artifacts"),
+    );
+
+    let node = super::discover_node::DiscoverNode::new(Arc::clone(&deps));
+    let outcome = node
+        .run(&mut bus)
+        .await
+        .expect("discover node must not fail");
+
+    assert!(matches!(
+        &outcome.signal,
+        NodeSignal::Yield(tag) if tag == "new_findings"
+    ));
+    assert_eq!(backend.discover_calls.load(Ordering::SeqCst), 1);
+    // 过渡 pack：只有差集后的新词 + 思考摘要，命中/技能留空（retrieve 覆写）
+    let pack = read_bus::<RetrievalPack>(&bus, ContextKey::Knowledge)
+        .expect("bus[Knowledge] must be present after discovery");
+    assert_eq!(pack.query_terms, vec!["新线索".to_string()]);
+    assert_eq!(
+        pack.prior_thinking_summary.as_deref(),
+        Some("已尝试检索并整理出三步方案")
+    );
+    assert!(pack.knowledge_hits.is_empty());
+    assert!(pack.method_skills.is_empty());
+    // 轮次记账：new_findings 才计 1（软预算的递增点）
+    let rounds = deps
+        .retrieval
+        .lock()
+        .map(|s| s.discovery_rounds)
+        .unwrap_or(0);
+    assert_eq!(rounds, 1);
+}
+
+/// discover 回环词必须被 retrieve 真正检索：过渡 pack 的 query_terms 是唯一新息
+///
+/// 这是回环接力的关键一环：retrieve 若只看 intent 关键词，discover 的新词
+/// 永远不会被检索（intent 词早已在 visited 里，差集恒空）——回环形同虚设。
+#[sqlx::test]
+async fn retrieve_node_consumes_discovery_pack_terms(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let deps = make_deps(ctx, ScriptedBackend::new(vec![]));
+
+    // 模拟 discover 已写过渡 pack：query_terms = 回环新词，prior = 思考摘要
+    let discovery_pack = RetrievalPack {
+        query_terms: vec!["回环新词".to_string()],
+        knowledge_hits: Vec::new(),
+        method_skills: Vec::new(),
+        prior_thinking_summary: Some("上一轮已整理三步方案".to_string()),
+    };
+    let mut bus = ThinkBus::new();
+    bus.insert(
+        ContextKey::Knowledge,
+        LoadDepth::Full,
+        serde_json::to_value(&discovery_pack).expect("encode discovery pack"),
+    );
+    // intent 词已全部检索过：若无 pack 接力，差集为空 → 短路（上一组用例锁的行为）
+    let ia = IntentAnalysis {
+        key_terms: vec!["已查".to_string()],
+        ..Default::default()
+    };
+    bus.insert(
+        ContextKey::Intent,
+        LoadDepth::Full,
+        serde_json::to_value(&ia).expect("encode intent"),
+    );
+    deps.retrieval
+        .lock()
+        .map(|mut s| s.queried_terms = vec!["已查".to_string()])
+        .unwrap_or(());
+
+    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+    let outcome = node
+        .run(&mut bus)
+        .await
+        .expect("retrieve node must not fail");
+
+    assert!(matches!(outcome.signal, NodeSignal::Done));
+    let pack = read_bus::<RetrievalPack>(&bus, ContextKey::Knowledge)
+        .expect("bus[Knowledge] must be present");
+    // 回环新词被真正检索（成为完整 pack 的 query_terms），而非短路
+    assert_eq!(pack.query_terms, vec!["回环新词".to_string()]);
+    // discover 的思考摘要透传：prepare 要消费的衔接线索
+    assert_eq!(
+        pack.prior_thinking_summary.as_deref(),
+        Some("上一轮已整理三步方案")
+    );
+    // visited 记账：回环新词从此不再重复检索
+    let queried = deps
+        .retrieval
+        .lock()
+        .map(|s| s.queried_terms.clone())
+        .unwrap_or_default();
+    assert!(queried.contains(&"回环新词".to_string()));
 }

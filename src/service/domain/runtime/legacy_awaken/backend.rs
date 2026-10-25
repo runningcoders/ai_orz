@@ -49,9 +49,6 @@ pub struct IntentInput {
 }
 
 /// 一次「新发现识别」的输入：短聚焦 prompt，单轮无工具
-///
-/// 调用方（discover 节点）由后续任务接入，接入前暂无构造点
-#[allow(dead_code)]
 pub struct DiscoverInput {
     pub trace_id: String,
     pub prompt: String,
@@ -66,9 +63,6 @@ pub trait ThinkBackend: Send + Sync + std::fmt::Debug {
     -> Result<IntentAnalysis>;
     /// 新发现识别：短聚焦单轮无工具思考，返回模型的原始文本
     /// （JSON 解析由 discover 节点负责，缝里不做）
-    ///
-    /// 调用方（discover 节点）由后续任务接入
-    #[allow(dead_code)]
     async fn discover(&self, deps: &AwakenDeps, input: DiscoverInput) -> Result<String>;
 }
 
