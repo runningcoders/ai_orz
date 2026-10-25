@@ -9,10 +9,13 @@
 
 use super::blueprint::legacy_awaken_blueprint;
 use super::context::{AwakenDeps, build_providers, read_bus};
+use super::discover_node::DiscoverNode;
+use super::intent_node::IntentNode;
 use super::nodes::{
     Artifacts, BudgetState, CompactNode, ConsolidateNode, DeliberateNode, NODE_CONSOLIDATE,
     PrepareNode, PromptPack,
 };
+use super::retrieve_node::RetrieveNode;
 use crate::models::events::AgentLoopEvent;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::stats::AgentAwakeEvent;
@@ -78,10 +81,13 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
 
     let blueprint = legacy_awaken_blueprint()?;
     let nodes: Vec<Arc<dyn ThinkNode>> = vec![
+        Arc::new(IntentNode::new(Arc::clone(&deps))),
+        Arc::new(RetrieveNode::new(Arc::clone(&deps))),
         Arc::new(PrepareNode::new(Arc::clone(&deps))),
         Arc::new(DeliberateNode::new(Arc::clone(&deps))),
         Arc::new(CompactNode::overflow(Arc::clone(&deps))),
         Arc::new(CompactNode::forced(Arc::clone(&deps))),
+        Arc::new(DiscoverNode::new(Arc::clone(&deps))),
         Arc::new(ConsolidateNode::new(Arc::clone(&deps))),
     ];
     let engine = ThinkPathEngine::new(

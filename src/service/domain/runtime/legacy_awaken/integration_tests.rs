@@ -14,6 +14,10 @@
 //!
 //! 编排层之所以要 `backend` 这个缝，价值正在于此：**用退出信号驱动流转**，
 //! 而不是靠构造特定的 LLM 响应去「诱使」链路走到某个分支。
+//!
+//! ⚠️ 蓝图已扩成完整思考图（entry=`intent`），但 `intent` / `retrieve` /
+//! `discover` 尚是直通骨架（真正实现由后续任务替换）——指纹里的
+//! `intent#1>retrieve#1` 前缀与 max_rounds 路径上的 `discover#1` 都是骨架占位。
 
 use super::backend::{CompactInput, ThinkBackend, ThinkInput};
 use super::blueprint::MAX_LOOP_ROUNDS;
@@ -271,10 +275,13 @@ async fn final_answer_walks_prepare_deliberate_consolidate(pool: SqlitePool) {
     let ctx = init_env(pool);
     let outcome = drive(ctx, ScriptedBackend::new(vec![final_result("done")])).await;
 
-    assert_eq!(outcome.fingerprint, "prepare#1>deliberate#1>consolidate#1");
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+    );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "done");
-    assert_eq!(outcome.steps, 3);
+    assert_eq!(outcome.steps, 5);
 }
 
 /// 溢出回环：`overflow` → 压缩 → **重装配** → 再思考 → 完成
@@ -298,13 +305,13 @@ async fn overflow_loops_back_and_rethinks(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "prepare#1>deliberate#1>compact#1>prepare#2>deliberate#2>consolidate#1"
+        "intent#1>retrieve#1>prepare#1>deliberate#1>compact#1>prepare#2>deliberate#2>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "recovered");
 }
 
-/// 轮次耗尽：`max_rounds` → `force_compact` → 收尾，产物即回复
+/// 轮次耗尽：`max_rounds` → `discover`（骨架期恒无新词）→ `force_compact` → 收尾
 #[sqlx::test]
 async fn max_rounds_exits_via_force_compact(pool: SqlitePool) {
     let ctx = init_env(pool);
@@ -317,7 +324,7 @@ async fn max_rounds_exits_via_force_compact(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "prepare#1>deliberate#1>force_compact#1>consolidate#1"
+        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>force_compact#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_MAX_ROUNDS);
     // ForceCompact 的产物就是给用户的回复
@@ -454,7 +461,10 @@ async fn cancelled_shortcuts_to_consolidate(pool: SqlitePool) {
 
     let outcome = drive(ctx, Arc::clone(&backend)).await;
 
-    assert_eq!(outcome.fingerprint, "prepare#1>deliberate#1>consolidate#1");
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+    );
     assert_eq!(outcome.exit, EXIT_CANCELLED);
     // 取消不该碰压缩（没有活儿要沉淀）
     assert_eq!(backend.compact_calls.load(Ordering::SeqCst), 0);

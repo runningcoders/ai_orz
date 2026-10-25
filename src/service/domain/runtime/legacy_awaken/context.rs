@@ -46,6 +46,42 @@ pub struct CompactionSlot {
     pub memory_id: Option<String>,
 }
 
+/// 检索产物（总线 ContextKey::Knowledge 分区的载荷）
+///
+/// retrieve 写入完整字段；discover 回环时先写入「新词 + 思考摘要」，
+/// 由下一次 retrieve 覆写为完整产物——两写者按节点顺序串行，无并发。
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RetrievalPack {
+    /// 本次实际用于检索的词（差集后的新词）
+    pub query_terms: Vec<String>,
+    /// 知识命中摘要行（每条一行，已截断）
+    pub knowledge_hits: Vec<String>,
+    /// 命中的思维方法技能（category=thinking_method）
+    pub method_skills: Vec<SkillPo>,
+    /// discover 产出的上一轮思考摘要（首轮为 None）
+    pub prior_thinking_summary: Option<String>,
+}
+
+/// run 级检索状态：跨节点累积，visited 去重的唯一真相
+#[derive(Debug, Default, Clone)]
+pub struct RetrievalState {
+    /// 已检索过的词（含 intent key_terms 与历次 discover 新词）
+    pub queried_terms: Vec<String>,
+    /// discover 已执行的循环次数（软预算，蓝图预算是硬护栏）
+    pub discovery_rounds: usize,
+}
+
+/// discover 节点的模型输出契约
+///
+/// TODO(Task 6)：`parse_discovery_json` 落地后本类型才有真正的构造方，
+/// 到时移除下方的 `expect`（它会在第一个构造方出现时报「期望未兑现」）。
+#[expect(dead_code)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DiscoveryOutcome {
+    pub new_key_terms: Vec<String>,
+    pub prior_thinking_summary: String,
+}
+
 /// 一次 legacy_awaken 的全部运行依赖
 ///
 /// 节点通过持有它拿到「不可进总线」的强类型依赖。它是 Conductor 与节点之间
@@ -67,6 +103,8 @@ pub(crate) struct AwakenDeps {
     pub progress: ThinkLoopProgress,
     pub trace: Mutex<MemoryTrace>,
     pub compaction: Mutex<CompactionSlot>,
+    /// run 级检索状态：visited 词集合 + discover 轮次软预算（见 [`RetrievalState`]）
+    pub retrieval: Mutex<RetrievalState>,
     /// 影子模式：跑完整链路但**不落库、不发通知**，只够成「有机质春雨对比」。
     pub shadow: bool,
     pub started_at: Instant,
@@ -389,6 +427,7 @@ pub(crate) fn build_deps_with_backend(
         progress: ThinkLoopProgress::new(),
         trace: Mutex::new(trace),
         compaction: Mutex::new(CompactionSlot::default()),
+        retrieval: Mutex::new(RetrievalState::default()),
         shadow,
         started_at: Instant::now(),
     })

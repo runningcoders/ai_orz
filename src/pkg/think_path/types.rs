@@ -92,7 +92,7 @@ impl PhaseId {
     ];
 }
 
-/// 数据总线分区键（八分区，防总线变成上帝对象）
+/// 数据总线分区键（十分区，防总线变成上帝对象）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ContextKey {
     Memory,
@@ -102,6 +102,10 @@ pub enum ContextKey {
     Business,
     Prompt,
     Budget,
+    /// 意图识别产物（IntentAnalysis）
+    Intent,
+    /// 检索产物（RetrievalPack：知识命中 + 方法技能 + 思考摘要）
+    Knowledge,
     Artifacts,
 }
 
@@ -115,11 +119,13 @@ impl ContextKey {
             Self::Business => "business",
             Self::Prompt => "prompt",
             Self::Budget => "budget",
+            Self::Intent => "intent",
+            Self::Knowledge => "knowledge",
             Self::Artifacts => "artifacts",
         }
     }
 
-    pub const ALL: [ContextKey; 8] = [
+    pub const ALL: [ContextKey; 10] = [
         Self::Memory,
         Self::Tools,
         Self::Skills,
@@ -127,6 +133,8 @@ impl ContextKey {
         Self::Business,
         Self::Prompt,
         Self::Budget,
+        Self::Intent,
+        Self::Knowledge,
         Self::Artifacts,
     ];
 

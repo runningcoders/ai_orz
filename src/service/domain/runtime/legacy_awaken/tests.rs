@@ -24,13 +24,16 @@ fn edges_from(bp: &ThinkPathBlueprint, from: &str) -> Vec<(String, Option<String
 #[test]
 fn entry_and_nodes_are_declared() {
     let bp = blueprint();
-    assert_eq!(bp.entry, "prepare");
+    assert_eq!(bp.entry, "intent");
     let ids: Vec<&str> = bp.nodes.iter().map(|n| n.id.as_str()).collect();
     for expected in [
+        "intent",
+        "retrieve",
         "prepare",
         "deliberate",
         "compact",
         "force_compact",
+        "discover",
         "consolidate",
     ] {
         assert!(ids.contains(&expected), "{expected} missing: {ids:?}");
@@ -245,15 +248,63 @@ fn every_exit_route_reaches_consolidate() {
     }
 }
 
-/// 回到 `prepare` 的边只有压缩回环一条
+/// 进入 `prepare` 的边只有两条：retrieve 的首装 + compact 的回环
+///
+/// `prepare` 是最贵的节点之一（全量装配），任何新的入边都意味着一次
+/// 额外的全量重装配成本，必须是有意为之——这是防意外回环的哨兵。
 #[test]
-fn only_compaction_loops_back_to_prepare() {
+fn prepare_is_fed_only_by_retrieve_or_compaction() {
     let bp = blueprint();
-    let back: Vec<&str> = bp
+    let mut feeds: Vec<&str> = bp
         .edges
         .iter()
         .filter(|e| e.to == "prepare")
         .map(|e| e.from.as_str())
         .collect();
-    assert_eq!(back, vec!["compact"]);
+    feeds.sort_unstable();
+    assert_eq!(feeds, vec!["compact", "retrieve"]);
+}
+
+/// 完整思考图的走线锁：主链、压缩回环、新发现回环、无新息退出一次性断言
+///
+/// 与上面按信号穷举的用例互补：那些锁「deliberate 的每个信号有边可走」，
+/// 这里锁「三条循环边各自接到正确的下一跳」——边接错节点时那些用例
+/// 照样绿（信号有边即可），只有这里会红。
+#[test]
+fn thinking_graph_blueprint_wires_full_loop() {
+    let bp = blueprint();
+    assert_eq!(bp.entry, "intent");
+    let has = |from: &str, to: &str, on: &str| {
+        bp.edges
+            .iter()
+            .any(|e| e.from == from && e.to == to && e.on.as_deref() == Some(on))
+    };
+    // 主链
+    assert!(has("intent", "retrieve", "done"));
+    assert!(has("retrieve", "prepare", "done"));
+    assert!(has("prepare", "deliberate", "done"));
+    assert!(has("deliberate", "consolidate", "done"));
+    // 既有压缩回环
+    assert!(has("deliberate", "compact", "overflow"));
+    assert!(has("compact", "prepare", "done"));
+    // 新发现循环边：max_rounds 进 discover，有新词回 retrieve，无新词走压缩退出
+    assert!(has("deliberate", "discover", "max_rounds"));
+    assert!(has("discover", "retrieve", "new_findings"));
+    assert!(has("discover", "force_compact", "no_new_findings"));
+    assert!(has("force_compact", "consolidate", "done"));
+    assert!(has("deliberate", "consolidate", "cancelled"));
+    // 节点数：intent/retrieve/prepare/deliberate/compact/force_compact/discover/consolidate
+    assert_eq!(bp.nodes.len(), 8);
+    // 预算：retrieve/discover 显式放开
+    let budget = |id: &str| {
+        bp.nodes
+            .iter()
+            .find(|n| n.id == id)
+            .unwrap()
+            .budget
+            .max_activations
+    };
+    assert_eq!(budget("retrieve"), Some(3));
+    assert_eq!(budget("discover"), Some(2));
+    assert_eq!(budget("prepare"), Some(MAX_LOOP_ROUNDS));
 }

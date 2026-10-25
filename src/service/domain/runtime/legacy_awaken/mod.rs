@@ -22,7 +22,10 @@
 pub mod backend;
 pub mod blueprint;
 pub mod context;
+pub mod discover_node;
+pub mod intent_node;
 pub mod nodes;
+pub mod retrieve_node;
 pub mod runner;
 
 #[cfg(test)]
