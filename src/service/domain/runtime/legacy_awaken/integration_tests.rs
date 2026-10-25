@@ -55,6 +55,8 @@ struct ScriptedBackend {
     intents: Mutex<VecDeque<IntentAnalysis>>,
     /// analyze_intent 直接报错（意图降级路径）；队列与它互斥使用
     fail_intent: AtomicBool,
+    /// 每次 think() 收到的 (max_rounds, start_round)：锁「周期满额重启」口径
+    pub think_round_inputs: Mutex<Vec<(usize, usize)>>,
     pub think_calls: AtomicUsize,
     pub compact_calls: AtomicUsize,
     pub discover_calls: AtomicUsize,
@@ -100,6 +102,7 @@ impl ScriptedBackend {
             discovers: Mutex::new(VecDeque::new()),
             intents: Mutex::new(VecDeque::new()),
             fail_intent: AtomicBool::new(false),
+            think_round_inputs: Mutex::new(Vec::new()),
             think_calls: AtomicUsize::new(0),
             compact_calls: AtomicUsize::new(0),
             discover_calls: AtomicUsize::new(0),
@@ -138,8 +141,15 @@ impl ScriptedBackend {
 
 #[async_trait]
 impl ThinkBackend for ScriptedBackend {
-    async fn think(&self, _deps: &AwakenDeps, _input: ThinkInput) -> Result<ThinkLoopResult> {
+    async fn think(&self, _deps: &AwakenDeps, input: ThinkInput) -> Result<ThinkLoopResult> {
         self.think_calls.fetch_add(1, Ordering::SeqCst);
+        // 记录轮次口径：P2 回归锁靠它断言「每个周期满额重启」
+        match self.think_round_inputs.lock() {
+            Ok(mut q) => q.push((input.max_rounds, input.start_round)),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .push((input.max_rounds, input.start_round)),
+        }
         let front = self
             .thinks
             .lock()
@@ -520,6 +530,86 @@ async fn discovery_loop_retrieves_again(pool: SqlitePool) {
             .unwrap_or(0),
         1,
         "new_findings 路径必须计一轮软预算"
+    );
+}
+
+/// 图级回环收敛回归锁（P1+P2）
+///
+/// - P1（discover 双层预算）：软预算 2 轮用尽后，第 3 次 discover 激活必须由
+///   软预算**零模型调用**优雅退出（no_new_findings → force_compact 收尾），
+///   而不是被蓝图硬预算拦成「无合法候选 → run 终止 → ensure_consolidated 报
+///   Internal」——两层同值时后者必然发生。
+/// - P2（周期满额重启）：deliberate 每周期 start_round=0 满额跑——累计轮次
+///   只进 BudgetState 做统计口径，不回灌成下一周期的起始限制（回环幻影：
+///   老口径下轮次耗尽后的回环会零 LLM 调用秒退）。
+///
+/// 编排：三次 deliberate 全部轮次耗尽，两次 discover 出新词把回环吃满，
+/// 第 3 次 discover 撞软预算退出 → force_compact 收尾。
+#[sqlx::test]
+async fn graph_level_loop_converges_via_discover_soft_budget(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let exhausted = || ThinkLoopResult::MaxRoundsExceeded {
+        messages: user_msg(),
+        total_rounds: 10,
+    };
+    let backend = ScriptedBackend::new(vec![exhausted(), exhausted(), exhausted()])
+        .with_discovers(vec![
+            r#"{"new_key_terms":["线索甲"],"prior_thinking_summary":"第一轮"}"#.to_string(),
+            r#"{"new_key_terms":["线索乙"],"prior_thinking_summary":"第二轮"}"#.to_string(),
+        ])
+        .with_compacts(vec![compact_outcome("回环耗尽摘要", "已尽力收尾")]);
+
+    let deps = make_deps(ctx, backend.clone());
+    let outcome = run_legacy_awaken(Arc::clone(&deps))
+        .await
+        .expect("图级回环必须由软预算收敛，而不是 Internal 终止");
+
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>retrieve#2>prepare#2>\
+deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compact#1>consolidate#1"
+    );
+    assert_eq!(outcome.exit, EXIT_MAX_ROUNDS);
+    assert_eq!(outcome.raw_output, "已尽力收尾");
+    // P1 锁：3 次 discover 激活只有 2 次模型调用（第 3 次软预算零调用退出）
+    assert_eq!(backend.discover_calls.load(Ordering::SeqCst), 2);
+    // P2 锁：3 次 deliberate 全部满额重启（start_round=0），max_rounds 口径一致
+    let inputs = backend
+        .think_round_inputs
+        .lock()
+        .map(|q| q.clone())
+        .unwrap_or_default();
+    assert_eq!(inputs.len(), 3);
+    let max_rounds = inputs[0].0;
+    assert!(max_rounds > 0, "effective_max_rounds 应为正数");
+    for (i, (m, start)) in inputs.iter().enumerate() {
+        assert_eq!(
+            *m,
+            max_rounds,
+            "第 {} 次 deliberate 的 max_rounds 应一致",
+            i + 1
+        );
+        assert_eq!(
+            *start,
+            0,
+            "第 {} 次 deliberate 应满额重启（start_round=0）",
+            i + 1
+        );
+    }
+    // 两次 new_findings 各计一轮软预算；回环新词全部被 retrieve 消费记账
+    let queried = deps
+        .retrieval
+        .lock()
+        .map(|s| s.queried_terms.clone())
+        .unwrap_or_default();
+    assert_eq!(queried, vec!["线索甲".to_string(), "线索乙".to_string()]);
+    assert_eq!(
+        deps.retrieval
+            .lock()
+            .map(|s| s.discovery_rounds)
+            .unwrap_or(0),
+        2,
+        "两次 new_findings 各计一轮软预算"
     );
 }
 

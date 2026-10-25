@@ -18,9 +18,12 @@
 //! - `cancelled` → 直接进收尾（走兜底存档）
 //!
 //! discover 节点自带软预算（`MAX_DISCOVERY_ROUNDS`，见 discover_node.rs），
-//! 与下方 `discover` 的蓝图硬预算同值双层：软预算先到省一次模型调用，
-//! 硬预算兜底（即使软预算判断被绕过，引擎也不会排出第 3 个 discover）。
+//! 蓝图硬预算 = 软预算 + 1：多出的那一次激活留给软预算先判——**零模型调用**
+//! 优雅退出（no_new_findings → force_compact 收尾）；硬预算只是兜底（软预算
+//! 判断被绕过时引擎也不会排出更下一个 discover）。两层同值时软预算永远
+//! 先撞硬预算的「无合法候选 → run 终止」，唤醒链会以 Internal 收场。
 
+use super::discover_node::MAX_DISCOVERY_ROUNDS;
 use super::nodes::{SIGNAL_CANCELLED, SIGNAL_MAX_ROUNDS, SIGNAL_OVERFLOW};
 use crate::pkg::think_path::types::SIGNAL_DONE;
 use crate::pkg::think_path::{PhaseId, ThinkPathBlueprint, ThinkPathBuilder};
@@ -85,14 +88,18 @@ pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
         .build()?;
 
     // 只有「允许重复出现」的节点才显式放开预算，其余保持默认一次。
+    // 卡点哲学：图维度看回环总数（激活预算 + max_steps 护栏），周期内部的
+    // 轮次分配由 think loop 自决（每周期满额重启，见 nodes.rs DeliberateNode）。
     // `compact` 比 `prepare` 少一次：第 N 次 prepare 才有第 N-1 次压缩；
-    // `retrieve` / `discover` 是新发现回环的两个常客：3 次检索、2 次再识别。
+    // `retrieve` / `discover` 是新发现回环的配对预算：N 轮再识别 = N 次新词
+    // 回检索 + 1 次初始检索，discover 再多 1 次激活留给软预算优雅退出。
+    // retrieve 若不跟着 discover 一起调，第 N+1 次回检索会先撞「无合法候选」。
     for node in bp.nodes.iter_mut() {
         node.budget.max_activations = Some(match node.id.as_str() {
             "prepare" | "deliberate" => MAX_LOOP_ROUNDS,
             "compact" => MAX_LOOP_ROUNDS.saturating_sub(1),
-            "retrieve" => 3,
-            "discover" => 2,
+            "retrieve" => MAX_DISCOVERY_ROUNDS + 1,
+            "discover" => MAX_DISCOVERY_ROUNDS + 1,
             _ => 1,
         });
     }

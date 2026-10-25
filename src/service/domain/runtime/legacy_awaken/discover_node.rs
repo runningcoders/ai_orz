@@ -23,11 +23,14 @@ use std::sync::Arc;
 /// 节点 id：蓝图声明、runner 注册、轨迹指纹三处共用的同一真相
 pub(crate) const NODE_DISCOVER: &str = "discover";
 
-/// discover 软预算：最多 2 轮「再检索」（蓝图 ActivationBudget=2 是硬护栏）
+/// discover 软预算：最多 2 轮「再检索」
 ///
-/// 两道防线同值：软预算先到时直接退出（省一次模型调用），蓝图预算兜底
-/// （即使软预算判断被绕过，引擎也不会排出第 3 个 discover）。
-const MAX_DISCOVERY_ROUNDS: usize = 2;
+/// 双层防线（蓝图硬预算 = 软预算 + 1，见 blueprint.rs）：软预算先到时直接
+/// 退出——第 3 次激活**零模型调用**走 no_new_findings 优雅收尾；硬预算只是
+/// 兜底（软预算判断被绕过时引擎也不会排出第 4 个 discover）。硬预算必须比
+/// 软预算大 1：同值时软预算的优雅退出永远先撞硬预算的「无合法候选 →
+/// run 终止」，整条唤醒链会以 Internal 收场而不是 force_compact。
+pub(crate) const MAX_DISCOVERY_ROUNDS: usize = 2;
 
 /// 轨迹行数上限（防 prompt 失控：30 行 × 每行 200 chars）
 const MAX_TRAIL_LINES: usize = 30;

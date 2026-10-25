@@ -31,7 +31,13 @@ pub struct ThinkInput {
     pub initial_messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDescriptor>,
     pub max_rounds: usize,
-    pub total_rounds: usize,
+    /// 本次思考的起始轮次编号（`run_think_loop` 的 start_round）
+    ///
+    /// 图维度卡点哲学：回环收敛由图级预算（ActivationBudget + max_steps）负责，
+    /// 周期内部自决——每个思考周期满额重启，这里恒传 0。累计轮次走
+    /// `BudgetState.total_rounds`（收尾回复与统计口径），不回灌成下一周期的
+    /// 起始限制。
+    pub start_round: usize,
 }
 
 /// 一次「压缩」的输入
@@ -76,10 +82,10 @@ impl ThinkBackend for LegacyBackend {
         crate::log_info!(
             &deps.ctx,
             "legacy_awaken",
-            "backend think start, agent_id={}, max_rounds={}, total_rounds={}, messages={}, tools={}",
+            "backend think start, agent_id={}, max_rounds={}, start_round={}, messages={}, tools={}",
             deps.agent.po.id,
             input.max_rounds,
-            input.total_rounds,
+            input.start_round,
             input.initial_messages.len(),
             input.tools.len(),
         );
@@ -99,7 +105,7 @@ impl ThinkBackend for LegacyBackend {
                     input.initial_messages,
                     &input.tools,
                 )
-                .with_rounds(input.max_rounds, input.total_rounds)
+                .with_rounds(input.max_rounds, input.start_round)
                 .with_monitoring(&deps.think_runtime, &deps.policy)
                 .with_progress(&deps.progress),
             )

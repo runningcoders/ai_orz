@@ -312,10 +312,9 @@ pub(crate) struct ExitMapping {
 /// 现在测试可以从四个变体直接推导出 Tag 再去蓝图里找边（见 `tests.rs`）。
 pub(crate) fn map_think_result(result: ThinkLoopResult, total_rounds: usize) -> ExitMapping {
     match result {
-        // ⚠️ `rounds` 必须与老 `awaken` 同口径：Final 分支在老代码里**不更新**
-        // `total_rounds`（只有 overflow / max_rounds 才累加）。写回 `total_rounds`
-        // 才能保住跨压缩累计的值；写成 `max_rounds` 会让 trace 的 `rounds_used`
-        // 凭空变成上限值。
+        // ⚠️ Final 分支不更新累计轮次（与老 `awaken` 同口径）：本轮思考「正常
+        // 完成」，周期内消耗的轮次属于正常心跳，收尾统计只累计走到
+        // 溢出/耗尽/取消的轮次。
         ThinkLoopResult::Final { content, messages } => ExitMapping {
             signal: NodeSignal::Done,
             exit: EXIT_FINAL,
@@ -323,6 +322,9 @@ pub(crate) fn map_think_result(result: ThinkLoopResult, total_rounds: usize) -> 
             messages,
             rounds: total_rounds,
         },
+        // 周期满额重启（start_round=0）后，结果自带的是**本周期**轮次而非
+        // 跨周期累计值，三个非 Final 分支一律累加到总线累计值上——
+        // Trace 的 rounds_used / 兜底存档的「做了多少轮」都读这个口径。
         ThinkLoopResult::ContextOverflow {
             messages,
             rounds_used,
@@ -342,7 +344,7 @@ pub(crate) fn map_think_result(result: ThinkLoopResult, total_rounds: usize) -> 
             exit: EXIT_MAX_ROUNDS,
             content: String::new(),
             messages,
-            rounds,
+            rounds: total_rounds.saturating_add(rounds),
         },
         // ⚠️ `rounds` 要与老 `awaken` 同口径：取消分支在那里是
         // `total_rounds.saturating_add(rounds)` —— 被打断那一段也算做过。
@@ -388,6 +390,9 @@ pub(crate) fn sample_results(total_rounds: usize) -> Vec<ThinkLoopResult> {
 ///
 /// 第一版内部仍是 `run_think_loop`（480 行，含小脑路由、工具二分、8 个退出策略），
 /// 此处只负责把它出现的结果翻译成**节点信号** —— 跳转让边决定，而不是栗子 Match 外传。
+///
+/// 轮次预算哲学：卡点在**图维度**（激活预算 + max_steps），周期内部自决——
+/// 每个思考周期满额重启（start_round=0），累计轮次只用于收尾回复与统计口径。
 #[derive(Debug)]
 pub struct DeliberateNode {
     deps: Arc<AwakenDeps>,
@@ -449,7 +454,10 @@ impl ThinkNode for DeliberateNode {
                     initial_messages: pack.initial_messages,
                     tools,
                     max_rounds,
-                    total_rounds,
+                    // 图维度卡点：回环收敛由图级预算（ActivationBudget +
+                    // max_steps）负责，周期内部自决——每周期满额重启，
+                    // 累计轮次只进 BudgetState 做收尾回复与统计口径
+                    start_round: 0,
                 },
             )
             .await;

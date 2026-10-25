@@ -5,6 +5,7 @@
 //! 现在是显式的边，可以被断言。
 
 use super::blueprint::{MAX_LOOP_ROUNDS, legacy_awaken_blueprint};
+use super::discover_node::MAX_DISCOVERY_ROUNDS;
 use super::nodes::{EXIT_MAX_ROUNDS, map_think_result, sample_results};
 use crate::pkg::think_path::ThinkPathBlueprint;
 use crate::service::domain::runtime::types::ThinkLoopResult;
@@ -179,7 +180,8 @@ fn overflow_accumulates_rounds_across_the_loop() {
     );
 }
 
-/// 四种退出的轮次记账必须与老 `awaken` 逐位对齐
+/// 四种退出的轮次记账：周期满额重启（start_round=0）后，结果自带的是本周期
+/// 轮次，除 Final 外一律**累加**到总线累计值上
 ///
 /// ⚠️ 这些数字**没有任何测试会替你看着**：写错一位不影响 Runners、不报错、
 /// 用户也感知不到，只是 Trace 的 `rounds_used` 和兜底存档里的「做了多少轮」
@@ -203,7 +205,8 @@ fn exit_mappings_keep_legacy_rounds_accounting() {
     );
     assert_eq!(final_.rounds, before, "Final 不应改动累计轮次");
 
-    // MaxRoundsExceeded：结果自带的就是累计值，**覆盖**而不是累加
+    // MaxRoundsExceeded：周期满额重启后结果自带**本周期**轮次，累加
+    // （覆盖会把前面周期吃掉的轮次从统计口径里抹掉）
     let exhausted = map_think_result(
         ThinkLoopResult::MaxRoundsExceeded {
             messages: Vec::new(),
@@ -211,7 +214,7 @@ fn exit_mappings_keep_legacy_rounds_accounting() {
         },
         before,
     );
-    assert_eq!(exhausted.rounds, 7, "轮次耗尽应直接采用自带的累计值");
+    assert_eq!(exhausted.rounds, before + 7, "轮次耗尽应累加本周期轮次");
 
     // Cancelled：被打断的那一段也算做过（对齐 `total_rounds + rounds`）
     let cancelled = map_think_result(
@@ -304,8 +307,10 @@ fn thinking_graph_blueprint_wires_full_loop() {
             .budget
             .max_activations
     };
-    assert_eq!(budget("retrieve"), Some(3));
-    assert_eq!(budget("discover"), Some(2));
+    // 回环配对预算：N 轮再识别 = N 次新词回检索 + 1 次初始检索；discover 再多
+    // 1 次激活留给软预算优雅退出（硬预算 = 软预算 + 1，见 blueprint.rs）
+    assert_eq!(budget("retrieve"), Some(MAX_DISCOVERY_ROUNDS + 1));
+    assert_eq!(budget("discover"), Some(MAX_DISCOVERY_ROUNDS + 1));
     assert_eq!(budget("prepare"), Some(MAX_LOOP_ROUNDS));
 }
 
