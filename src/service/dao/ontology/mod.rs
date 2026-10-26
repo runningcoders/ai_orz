@@ -11,7 +11,8 @@
 //! - 同义映射是解释规则非事实数据，物理删除、无退役语义。
 
 use crate::models::ontology::{
-    OntologyClassPo, OntologyPropertyPo, OntologyRelationTypePo, OntologySynonymMappingPo,
+    OntologyClassPo, OntologyClassRelationPo, OntologyPropertyPo, OntologyRelationTypePo,
+    OntologySynonymMappingPo,
 };
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{StatAggregation, StatEvent, StatFilter, Stats};
@@ -65,6 +66,20 @@ pub struct OntologySynonymQuery {
     pub target_key: Option<String>,
     /// 关键词（raw_term / target_key LIKE 模糊匹配）
     pub keyword: Option<String>,
+    pub pagination: PaginationParams,
+}
+
+/// 骨架三元组查询参数
+#[derive(Debug, Clone, Default)]
+pub struct OntologyClassRelationQuery {
+    /// 按主语类过滤
+    pub subject_class_key: Option<String>,
+    /// 按关系类型过滤
+    pub relation_key: Option<String>,
+    /// 按宾语类过滤
+    pub object_class_key: Option<String>,
+    /// 按状态过滤（None = 不过滤，含退役）
+    pub status: Option<OntologyStatus>,
     pub pagination: PaginationParams,
 }
 
@@ -150,6 +165,44 @@ pub trait OntologyDao: Send + Sync {
 
     /// 退役（软删除 status=0；幂等：不存在或已退役均静默成功）
     async fn retire_relation_type(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // ==================== 骨架三元组（TBox：类-关系-类） ====================
+
+    /// 插入三元组（UNIQUE(subject, relation, object)，冲突返回 Conflict）
+    async fn insert_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelationPo,
+    ) -> Result<()>;
+
+    async fn find_class_relation_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyClassRelationPo>>;
+
+    /// 分页组合查询（count 内嵌）
+    async fn query_class_relations(
+        &self,
+        ctx: RequestContext,
+        query: OntologyClassRelationQuery,
+    ) -> Result<common::api::PagedResult<OntologyClassRelationPo>>;
+
+    /// 全量三元组（含退役；骨架视图与运行时约束匹配需要全貌）
+    async fn list_all_class_relations(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<OntologyClassRelationPo>>;
+
+    /// 全量更新（允许改三个 key；唯一约束冲突返回 Conflict）
+    async fn update_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelationPo,
+    ) -> Result<()>;
+
+    /// 退役（软删除 status=0；幂等：不存在或已退役均静默成功）
+    async fn retire_class_relation(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     // ==================== 同义映射 ====================
 

@@ -10,11 +10,14 @@
 //! 业务校验（term_key 非空 / 引用完整性）在 Domain 层完成；归一化由 DAO 写入侧单点完成。
 
 pub mod create_class;
+pub mod create_class_relation;
 pub mod create_property;
 pub mod create_relation_type;
 pub mod create_synonym;
 pub mod delete_synonym;
 pub mod get_drift_dashboard;
+pub mod get_skeleton;
+pub mod list_class_relations;
 pub mod list_classes;
 pub mod list_drift_class_details;
 pub mod list_drift_relation_details;
@@ -23,18 +26,23 @@ pub mod list_properties;
 pub mod list_relation_types;
 pub mod list_synonyms;
 pub mod retire_class;
+pub mod retire_class_relation;
 pub mod retire_property;
 pub mod retire_relation_type;
 pub mod update_class;
+pub mod update_class_relation;
 pub mod update_property;
 pub mod update_relation_type;
 
 pub use create_class::create_ontology_class_handler;
+pub use create_class_relation::create_ontology_class_relation_handler;
 pub use create_property::create_ontology_property_handler;
 pub use create_relation_type::create_ontology_relation_type_handler;
 pub use create_synonym::create_ontology_synonym_handler;
 pub use delete_synonym::delete_ontology_synonym_handler;
 pub use get_drift_dashboard::get_ontology_drift_dashboard_handler;
+pub use get_skeleton::get_ontology_skeleton_handler;
+pub use list_class_relations::list_ontology_class_relations_handler;
 pub use list_classes::list_ontology_classes_handler;
 pub use list_drift_class_details::list_ontology_drift_class_details_handler;
 pub use list_drift_relation_details::list_ontology_drift_relation_details_handler;
@@ -43,17 +51,21 @@ pub use list_properties::list_ontology_properties_handler;
 pub use list_relation_types::list_ontology_relation_types_handler;
 pub use list_synonyms::list_ontology_synonyms_handler;
 pub use retire_class::retire_ontology_class_handler;
+pub use retire_class_relation::retire_ontology_class_relation_handler;
 pub use retire_property::retire_ontology_property_handler;
 pub use retire_relation_type::retire_ontology_relation_type_handler;
 pub use update_class::update_ontology_class_handler;
+pub use update_class_relation::update_ontology_class_relation_handler;
 pub use update_property::update_ontology_property_handler;
 pub use update_relation_type::update_ontology_relation_type_handler;
 
 use crate::models::ontology::{
-    OntologyClassPo, OntologyPropertyPo, OntologyRelationTypePo, OntologySynonymMappingPo,
+    OntologyClassPo, OntologyClassRelationPo, OntologyPropertyPo, OntologyRelationTypePo,
+    OntologySynonymMappingPo,
 };
 use common::api::ontology::{
-    OntologyClassItem, OntologyPropertyItem, OntologyRelationTypeItem, OntologySynonymItem,
+    OntologyClassItem, OntologyClassRelationItem, OntologyPropertyItem, OntologyRelationTypeItem,
+    OntologySynonymItem,
 };
 use common::ontology::TermKind;
 use common::ontology_property::parse_applies_to;
@@ -68,6 +80,7 @@ pub(super) fn class_item(po: OntologyClassPo) -> OntologyClassItem {
         display_name: po.display_name,
         description: po.description,
         required_fields,
+        parent_term_key: po.parent_term_key,
         status: po.status,
         created_at: po.created_at,
         updated_at: po.updated_at,
@@ -105,21 +118,33 @@ pub(super) fn property_item(po: OntologyPropertyPo) -> OntologyPropertyItem {
     }
 }
 
-/// 关系类型 Entity → 列表项 DTO（domain/range JSON 数组字符串还原为清单）
+/// 关系类型 Entity → 列表项 DTO（骨架约束已迁至三元组表，本 DTO 不再含 domain/range）
 pub(super) fn relation_type_item(po: OntologyRelationTypePo) -> OntologyRelationTypeItem {
-    // 先借调解析器再 move 字段，避免 partial move
-    let domain_classes = po.parse_domain_classes();
-    let range_classes = po.parse_range_classes();
     OntologyRelationTypeItem {
         id: po.id,
         term_key: po.term_key,
         display_name: po.display_name,
         description: po.description,
-        domain_classes,
-        range_classes,
         weight_base: po.weight_base,
         inverse_key: po.inverse_key,
         direction: po.direction,
+        status: po.status,
+        created_at: po.created_at,
+        updated_at: po.updated_at,
+    }
+}
+
+/// 骨架三元组 Entity → 列表项 DTO
+pub(super) fn class_relation_item(po: OntologyClassRelationPo) -> OntologyClassRelationItem {
+    // 先借调判据再 move 字段，避免 partial move
+    let required = po.is_required();
+    OntologyClassRelationItem {
+        id: po.id,
+        subject_class_key: po.subject_class_key,
+        relation_key: po.relation_key,
+        object_class_key: po.object_class_key,
+        cardinality: po.cardinality,
+        required,
         status: po.status,
         created_at: po.created_at,
         updated_at: po.updated_at,

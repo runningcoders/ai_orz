@@ -13,19 +13,22 @@
 //! （PO↔Entity 转换已在 DAL 完成），不触碰 DAO / PO（CODE_STANDARDS §2 分层红线）。
 
 use crate::models::ontology::{
-    OntologyClass, OntologyClassPo, OntologyProperty, OntologyPropertyPo, OntologyRelationType,
-    OntologyRelationTypePo, OntologySynonymMapping, OntologySynonymMappingPo,
+    OntologyClass, OntologyClassPo, OntologyClassRelation, OntologyClassRelationPo,
+    OntologyProperty, OntologyPropertyPo, OntologyRelationType, OntologyRelationTypePo,
+    OntologySynonymMapping, OntologySynonymMappingPo,
 };
 use crate::pkg::RequestContext;
 use crate::service::dal::ontology::{active_all_pagination, warn_if_lexicon_truncated};
 use crate::service::dao::ontology::{
-    OntologyClassQuery, OntologyPropertyQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
+    OntologyClassQuery, OntologyClassRelationQuery, OntologyPropertyQuery,
+    OntologyRelationTypeQuery, OntologySynonymQuery,
 };
 use crate::service::domain::hr::{HrDomainImpl, OntologyDomain};
 use common::api::ontology::{
-    GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
-    ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
-    ListDriftRelationDetailsResponse, PresetOntologySyncItem, PresetOntologySyncStrategy,
+    GetDriftDashboardRequest, GetDriftDashboardResponse, GetOntologySkeletonResponse,
+    ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
+    ListDriftRelationDetailsResponse, OntologyClassItem, OntologyClassRelationItem,
+    OntologyRelationTypeItem, PresetOntologySyncItem, PresetOntologySyncStrategy,
     PreviewPresetOntologyResponse,
 };
 use common::enums::OntologyStatus;
@@ -33,14 +36,15 @@ use common::enums::ontology::{Cardinality, PropertyDataType, PropertyTargetType}
 use common::error::{Result, bail_err, err};
 use common::ontology::{
     LexiconGapReport, MAX_TERM_KEY_LEN, OntologyCertifyReport, OntologyLexiconApplyReport,
-    OntologyLexiconSummary, PresetOntologyClass, PresetOntologyLexicon, PresetOntologyProperty,
-    PresetOntologyRelationType, PresetOntologySynonym, TermKind, normalize,
+    OntologyLexiconSummary, PresetOntologyClass, PresetOntologyClassRelation,
+    PresetOntologyLexicon, PresetOntologyProperty, PresetOntologyRelationType,
+    PresetOntologySynonym, TermKind, normalize,
 };
 use common::ontology_property::parse_applies_to;
 
 /// 校验 JSON 数组字符串合法性（空串 = 空清单，合法）
 ///
-/// `required_fields` / `domain_classes` / `range_classes` 三处共用；
+/// `required_fields` / 属性的 `domain_classes` 等 JSON 数组字段共用；
 /// models 层 parse 助手对非法 JSON 静默返空，写侧在 Domain 强化校验。
 fn validate_json_list(raw: &str, field: &str) -> Result<Vec<String>> {
     if raw.is_empty() {
@@ -103,7 +107,7 @@ fn validate_property_definition(po: &OntologyPropertyPo) -> Result<()> {
 }
 
 impl HrDomainImpl {
-    /// 校验 JSON 数组字段引用的实体类全部存在（domain_classes / range_classes 共用）
+    /// 校验 JSON 数组字段引用的实体类全部存在（属性 domain_classes 等共用）
     ///
     /// 引用的是语义锚点 term_key（非 id）；预置注入与手动 CRUD 共用本方法，
     /// 保证「手动创建」与「seed 注入」两条写入路径的引用完整性口径一致。
@@ -114,23 +118,178 @@ impl HrDomainImpl {
         field: &str,
     ) -> Result<()> {
         for key in validate_json_list(json, field)? {
-            // 退役词（Retired）仅保留历史引用可解释，写侧不允许新引用
-            match self
+            self.validate_class_ref(ctx, &key, field).await?;
+        }
+        Ok(())
+    }
+
+    /// 校验单个实体类引用存在且未退役
+    async fn validate_class_ref(&self, ctx: &RequestContext, key: &str, field: &str) -> Result<()> {
+        // 退役词（Retired）仅保留历史引用可解释，写侧不允许新引用
+        match self
+            .ontology_dal
+            .find_class_by_term_key(ctx.clone(), key)
+            .await?
+        {
+            None => bail_err!(InvalidRequest, "{} 引用的实体类 {} 不存在", field, key),
+            Some(class) if class.po.status != OntologyStatus::Active => bail_err!(
+                InvalidRequest,
+                "{} 引用的实体类 {} 已退役，不允许新引用",
+                field,
+                key
+            ),
+            Some(_) => Ok(()),
+        }
+    }
+
+    /// 校验实体类父级指针：父类存在且 Active、禁止自指与成环
+    ///
+    /// 环检测沿父链向上逐级查库（词表量级小，最多十几次点查），命中自身即拒绝。
+    async fn validate_class_parent(
+        &self,
+        ctx: &RequestContext,
+        class_key: &str,
+        parent_key: Option<&str>,
+    ) -> Result<()> {
+        let Some(parent_key) = parent_key else {
+            return Ok(());
+        };
+        let class_key = normalize(class_key);
+        let parent_key = normalize(parent_key);
+        if parent_key.is_empty() {
+            bail_err!(InvalidRequest, "parent_term_key 不能为空串（根类请留空）");
+        }
+        if parent_key == class_key {
+            bail_err!(InvalidRequest, "实体类不能以自身为父类");
+        }
+        self.validate_class_ref(ctx, &parent_key, "parent_term_key")
+            .await?;
+
+        // 环检测：从父类沿 parent 链上溯，回到自身即成环
+        let mut current = Some(parent_key);
+        let mut visited = std::collections::HashSet::new();
+        while let Some(key) = current {
+            if !visited.insert(key.clone()) {
+                // 已存在环（历史脏数据），写入新边会加深环，直接拒绝
+                bail_err!(InvalidRequest, "实体类继承链存在环，拒绝写入");
+            }
+            if key == class_key {
+                bail_err!(
+                    InvalidRequest,
+                    "实体类继承链成环：{} 的祖先链回到了自身",
+                    class_key
+                );
+            }
+            current = self
                 .ontology_dal
                 .find_class_by_term_key(ctx.clone(), &key)
                 .await?
-            {
-                None => bail_err!(InvalidRequest, "{} 引用的实体类 {} 不存在", field, key),
-                Some(class) if class.po.status != OntologyStatus::Active => bail_err!(
-                    InvalidRequest,
-                    "{} 引用的实体类 {} 已退役，不允许新引用",
-                    field,
-                    key
-                ),
-                Some(_) => {}
-            }
+                .and_then(|class| class.po.parent_term_key)
+                .map(|p| normalize(&p));
         }
         Ok(())
+    }
+
+    /// 校验骨架三元组三个 key：关系词与两侧实体类必须存在且 Active（`*` 通配放行）
+    async fn validate_class_relation_refs(
+        &self,
+        ctx: &RequestContext,
+        relation: &OntologyClassRelationPo,
+    ) -> Result<()> {
+        let relation_key = normalize(&relation.relation_key);
+        if relation_key.is_empty() {
+            bail_err!(InvalidRequest, "骨架三元组 relation_key 不能为空");
+        }
+        match self
+            .ontology_dal
+            .find_relation_type_by_term_key(ctx.clone(), &relation_key)
+            .await?
+        {
+            None => bail_err!(
+                InvalidRequest,
+                "骨架三元组引用的关系类型 {} 不存在",
+                relation_key
+            ),
+            Some(entity) if entity.po.status != OntologyStatus::Active => bail_err!(
+                InvalidRequest,
+                "骨架三元组引用的关系类型 {} 已退役，不允许新引用",
+                relation_key
+            ),
+            Some(_) => {}
+        }
+
+        for (key, field) in [
+            (&relation.subject_class_key, "subject_class_key"),
+            (&relation.object_class_key, "object_class_key"),
+        ] {
+            if normalize(key) == common::ontology::WILDCARD_CLASS {
+                continue;
+            }
+            self.validate_class_ref(ctx, key, field).await?;
+        }
+
+        if relation.cardinality.parse::<Cardinality>().is_err() {
+            bail_err!(
+                InvalidRequest,
+                "骨架三元组 cardinality 取值非法: {}（合法值: {}）",
+                relation.cardinality,
+                Cardinality::ACCEPTED_VALUES
+            );
+        }
+        Ok(())
+    }
+}
+
+/// 实体类 Entity → DTO（骨架视图组装用）
+fn class_to_dto(class: OntologyClass) -> OntologyClassItem {
+    let po = class.into_po();
+    // 先解析再 move 字段，避免 partial move
+    let required_fields = po.parse_required_fields();
+    OntologyClassItem {
+        id: po.id,
+        term_key: po.term_key,
+        display_name: po.display_name,
+        description: po.description,
+        required_fields,
+        parent_term_key: po.parent_term_key,
+        status: po.status,
+        created_at: po.created_at,
+        updated_at: po.updated_at,
+    }
+}
+
+/// 关系类型 Entity → DTO（骨架视图组装用）
+fn relation_type_to_dto(relation_type: OntologyRelationType) -> OntologyRelationTypeItem {
+    let po = relation_type.into_po();
+    OntologyRelationTypeItem {
+        id: po.id,
+        term_key: po.term_key,
+        display_name: po.display_name,
+        description: po.description,
+        weight_base: po.weight_base,
+        inverse_key: po.inverse_key,
+        direction: po.direction,
+        status: po.status,
+        created_at: po.created_at,
+        updated_at: po.updated_at,
+    }
+}
+
+/// 骨架三元组 Entity → DTO（骨架视图组装用）
+fn class_relation_to_dto(relation: OntologyClassRelation) -> OntologyClassRelationItem {
+    let po = relation.into_po();
+    // 先解析再 move 字段，避免 partial move
+    let required = po.is_required();
+    OntologyClassRelationItem {
+        id: po.id,
+        subject_class_key: po.subject_class_key,
+        relation_key: po.relation_key,
+        object_class_key: po.object_class_key,
+        cardinality: po.cardinality,
+        required,
+        status: po.status,
+        created_at: po.created_at,
+        updated_at: po.updated_at,
     }
 }
 
@@ -152,6 +311,8 @@ impl OntologyDomain for HrDomainImpl {
             );
         }
         validate_json_list(&class.po.required_fields, "required_fields")?;
+        self.validate_class_parent(&ctx, &term_key, class.po.parent_term_key.as_deref())
+            .await?;
         self.ontology_dal.insert_class(ctx, class).await
     }
 
@@ -170,14 +331,20 @@ impl OntologyDomain for HrDomainImpl {
     async fn update_class(&self, ctx: RequestContext, class: &OntologyClass) -> Result<()> {
         validate_json_list(&class.po.required_fields, "required_fields")?;
         // DAO update 按 id 行更新、不存在静默成功；NotFound 语义由 Domain 补齐
-        if self
+        let Some(existing) = self
             .ontology_dal
             .find_class_by_id(ctx.clone(), &class.po.id)
             .await?
-            .is_none()
-        {
+        else {
             return Err(err!(NotFound, "实体类 {} 不存在", class.po.id));
-        }
+        };
+        // 父级变更校验（term_key 不可变，用存量 term_key 做自指/环检测）
+        self.validate_class_parent(
+            &ctx,
+            existing.term_key(),
+            class.po.parent_term_key.as_deref(),
+        )
+        .await?;
         self.ontology_dal.update_class(ctx, class).await
     }
 
@@ -204,10 +371,6 @@ impl OntologyDomain for HrDomainImpl {
                 MAX_TERM_KEY_LEN
             );
         }
-        self.validate_class_refs(&ctx, &relation_type.po.domain_classes, "domain_classes")
-            .await?;
-        self.validate_class_refs(&ctx, &relation_type.po.range_classes, "range_classes")
-            .await?;
         self.ontology_dal
             .insert_relation_type(ctx, relation_type)
             .await
@@ -242,11 +405,7 @@ impl OntologyDomain for HrDomainImpl {
         {
             return Err(err!(NotFound, "关系类型 {} 不存在", relation_type.po.id));
         }
-        // 引用校验同新增（trait 契约；term_key 不可变由 DAO UPDATE 语句保证）
-        self.validate_class_refs(&ctx, &relation_type.po.domain_classes, "domain_classes")
-            .await?;
-        self.validate_class_refs(&ctx, &relation_type.po.range_classes, "range_classes")
-            .await?;
+        // term_key 不可变由 DAO UPDATE 语句保证；骨架约束已迁至三元组表，本表不再校验引用
         self.ontology_dal
             .update_relation_type(ctx, relation_type)
             .await
@@ -254,6 +413,115 @@ impl OntologyDomain for HrDomainImpl {
 
     async fn retire_relation_type(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.ontology_dal.retire_relation_type(ctx, id).await
+    }
+
+    // ==================== B2. 本体骨架三元组 ====================
+
+    async fn create_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()> {
+        self.validate_class_relation_refs(&ctx, &relation.po)
+            .await?;
+        self.ontology_dal.insert_class_relation(ctx, relation).await
+    }
+
+    async fn get_class_relation(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyClassRelation>> {
+        self.ontology_dal.find_class_relation_by_id(ctx, id).await
+    }
+
+    async fn list_class_relations(
+        &self,
+        ctx: RequestContext,
+        query: OntologyClassRelationQuery,
+    ) -> Result<common::api::PagedResult<OntologyClassRelation>> {
+        self.ontology_dal.query_class_relations(ctx, query).await
+    }
+
+    async fn update_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()> {
+        if self
+            .ontology_dal
+            .find_class_relation_by_id(ctx.clone(), &relation.po.id)
+            .await?
+            .is_none()
+        {
+            return Err(err!(NotFound, "骨架三元组 {} 不存在", relation.po.id));
+        }
+        self.validate_class_relation_refs(&ctx, &relation.po)
+            .await?;
+        self.ontology_dal.update_class_relation(ctx, relation).await
+    }
+
+    async fn retire_class_relation(&self, ctx: RequestContext, id: &str) -> Result<()> {
+        self.ontology_dal.retire_class_relation(ctx, id).await
+    }
+
+    // ==================== B3. 本体骨架视图 ====================
+
+    async fn get_skeleton(&self, ctx: RequestContext) -> Result<GetOntologySkeletonResponse> {
+        // 骨架视图一次性返回三段全貌：词表量级为个位数十词，分页无意义
+        let pagination = active_all_pagination();
+        let classes = self
+            .ontology_dal
+            .query_classes(
+                ctx.clone(),
+                OntologyClassQuery {
+                    status: Some(OntologyStatus::Active),
+                    keyword: None,
+                    pagination: pagination.clone(),
+                },
+            )
+            .await?;
+        warn_if_lexicon_truncated(&ctx, "实体类", classes.items.len());
+
+        let relation_types = self
+            .ontology_dal
+            .query_relation_types(
+                ctx.clone(),
+                OntologyRelationTypeQuery {
+                    status: Some(OntologyStatus::Active),
+                    keyword: None,
+                    pagination: pagination.clone(),
+                },
+            )
+            .await?;
+        warn_if_lexicon_truncated(&ctx, "关系类型", relation_types.items.len());
+
+        let class_relations = self
+            .ontology_dal
+            .query_class_relations(
+                ctx.clone(),
+                OntologyClassRelationQuery {
+                    status: Some(OntologyStatus::Active),
+                    pagination,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        warn_if_lexicon_truncated(&ctx, "骨架三元组", class_relations.items.len());
+
+        Ok(GetOntologySkeletonResponse {
+            classes: classes.items.into_iter().map(class_to_dto).collect(),
+            relation_types: relation_types
+                .items
+                .into_iter()
+                .map(relation_type_to_dto)
+                .collect(),
+            class_relations: class_relations
+                .items
+                .into_iter()
+                .map(class_relation_to_dto)
+                .collect(),
+        })
     }
 
     // ==================== C. 同义映射 ====================
@@ -412,8 +680,9 @@ impl OntologyDomain for HrDomainImpl {
     ///
     /// - `OnlyMissing`：term_key / raw_term 已存在（含退役行）即跳过，与历史行为一致；
     /// - `Overwrite`：已存在**非退役**条目按 seed 幂等覆写业务字段（display_name /
-    ///   description / required_fields / domain_classes / range_classes / weight_base /
-    ///   inverse_key / direction），term_key / id / status / created_at 永不触碰，
+    ///   description / required_fields / parent_term_key / weight_base /
+    ///   inverse_key / direction，骨架三元组仅覆写 cardinality / required），
+    ///   term_key / id / status / created_at 永不触碰，
     ///   退役行整体跳过（不覆写不复活），用户自拟词（库有 seed 无）不受影响；
     ///   同义映射 (raw, kind) 已存在则覆写 target_key（无退役语义，一律执行动作）。
     ///
@@ -438,12 +707,16 @@ impl OntologyDomain for HrDomainImpl {
                 None => {
                     let required_fields =
                         serde_json::to_string(&p.required_fields).unwrap_or_default();
-                    let po = OntologyClassPo::new(
+                    let mut po = OntologyClassPo::new(
                         key.clone(),
                         &p.display_name,
                         &p.description,
                         required_fields,
                     );
+                    po.parent_term_key = p.parent_term_key.clone();
+                    // 预置快照父级引用不存在 / 成环 = 快照残缺，fail fast 不静默
+                    self.validate_class_parent(&ctx, &key, po.parent_term_key.as_deref())
+                        .await?;
                     self.ontology_dal
                         .insert_class(ctx.clone(), &OntologyClass::from_po(po))
                         .await?;
@@ -460,6 +733,7 @@ impl OntologyDomain for HrDomainImpl {
                         po.display_name = p.display_name.clone();
                         po.description = p.description.clone();
                         po.required_fields = required_fields;
+                        po.parent_term_key = p.parent_term_key.clone();
                         self.update_class(ctx.clone(), &OntologyClass::from_po(po))
                             .await?;
                         report.updated_classes.push(key);
@@ -480,20 +754,10 @@ impl OntologyDomain for HrDomainImpl {
                 .await?;
             match existing {
                 None => {
-                    let domain_classes =
-                        serde_json::to_string(&p.domain_classes).unwrap_or_default();
-                    let range_classes = serde_json::to_string(&p.range_classes).unwrap_or_default();
-                    // 预置快照引用不存在的实体类 = 快照残缺，fail fast 不静默
-                    self.validate_class_refs(&ctx, &domain_classes, "domain_classes")
-                        .await?;
-                    self.validate_class_refs(&ctx, &range_classes, "range_classes")
-                        .await?;
                     let po = OntologyRelationTypePo::new(
                         key.clone(),
                         &p.display_name,
                         &p.description,
-                        domain_classes,
-                        range_classes,
                         p.weight_base.unwrap_or(1.0),
                         p.inverse_key.clone(),
                         p.direction.as_str(),
@@ -507,21 +771,10 @@ impl OntologyDomain for HrDomainImpl {
                     if strategy == PresetOntologySyncStrategy::Overwrite
                         && local.po.status == OntologyStatus::Active
                     {
-                        let domain_classes =
-                            serde_json::to_string(&p.domain_classes).unwrap_or_default();
-                        let range_classes =
-                            serde_json::to_string(&p.range_classes).unwrap_or_default();
-                        // 引用校验与新建路径同口径 fail fast
-                        self.validate_class_refs(&ctx, &domain_classes, "domain_classes")
-                            .await?;
-                        self.validate_class_refs(&ctx, &range_classes, "range_classes")
-                            .await?;
                         // 保留 id / term_key / status / created_at 原值，仅覆写业务字段
                         let mut po = local.po.clone();
                         po.display_name = p.display_name.clone();
                         po.description = p.description.clone();
-                        po.domain_classes = domain_classes;
-                        po.range_classes = range_classes;
                         po.weight_base = p.weight_base.unwrap_or(1.0);
                         po.inverse_key = p.inverse_key.clone();
                         po.direction = p.direction.clone();
@@ -530,6 +783,64 @@ impl OntologyDomain for HrDomainImpl {
                         report.updated_relation_types.push(key);
                     } else {
                         // 仅补缺跳过；覆盖式下退役行整体跳过
+                        report.skipped += 1;
+                    }
+                }
+            }
+        }
+
+        // B2. 骨架三元组：依赖 classes 与 relation_types 已先行注入；
+        //     (subject, relation, object) 天然唯一，存在时仅覆盖式更新边级约束
+        for p in &preset.class_relations {
+            let subject = normalize(&p.subject_class_key);
+            let relation = normalize(&p.relation_key);
+            let object = normalize(&p.object_class_key);
+            let po = OntologyClassRelationPo::new(
+                subject.clone(),
+                relation.clone(),
+                object.clone(),
+                p.cardinality.clone(),
+                p.required,
+            );
+            // 快照残缺 fail fast：三个 key 必须存在且 Active（`*` 通配放行）
+            self.validate_class_relation_refs(&ctx, &po).await?;
+
+            let existing = self
+                .ontology_dal
+                .query_class_relations(
+                    ctx.clone(),
+                    OntologyClassRelationQuery {
+                        subject_class_key: Some(subject.clone()),
+                        relation_key: Some(relation.clone()),
+                        object_class_key: Some(object.clone()),
+                        status: None,
+                        pagination: common::api::PaginationParams::default(),
+                    },
+                )
+                .await?
+                .items
+                .into_iter()
+                .next();
+            match existing {
+                None => {
+                    self.ontology_dal
+                        .insert_class_relation(ctx.clone(), &OntologyClassRelation::from_po(po))
+                        .await?;
+                    report.inserted_class_relations += 1;
+                }
+                Some(local) => {
+                    if strategy == PresetOntologySyncStrategy::Overwrite
+                        && local.po.status == OntologyStatus::Active
+                    {
+                        // 三元组以三个 key 为身份，覆写只动边级约束（基数 / 必填）
+                        let mut po = local.po.clone();
+                        po.cardinality = p.cardinality.clone();
+                        po.required = i32::from(p.required);
+                        self.ontology_dal
+                            .update_class_relation(ctx.clone(), &OntologyClassRelation::from_po(po))
+                            .await?;
+                        report.updated_class_relations += 1;
+                    } else {
                         report.skipped += 1;
                     }
                 }
@@ -732,6 +1043,9 @@ impl OntologyDomain for HrDomainImpl {
             if entity.po.required_fields != seed_required {
                 diff_fields.push("required_fields".to_string());
             }
+            if entity.po.parent_term_key != p.parent_term_key {
+                diff_fields.push("parent_term_key".to_string());
+            }
             // 退役行整体跳过不覆写，diff 不进入影响面（retired 标记承载跳过语义）
             if retired {
                 diff_fields.clear();
@@ -781,20 +1095,12 @@ impl OntologyDomain for HrDomainImpl {
             } else {
                 overwrite_count += 1;
             }
-            let seed_domain = serde_json::to_string(&p.domain_classes).unwrap_or_default();
-            let seed_range = serde_json::to_string(&p.range_classes).unwrap_or_default();
             let mut diff_fields: Vec<String> = Vec::new();
             if entity.po.display_name != p.display_name {
                 diff_fields.push("display_name".to_string());
             }
             if entity.po.description != p.description {
                 diff_fields.push("description".to_string());
-            }
-            if entity.po.domain_classes != seed_domain {
-                diff_fields.push("domain_classes".to_string());
-            }
-            if entity.po.range_classes != seed_range {
-                diff_fields.push("range_classes".to_string());
             }
             if entity.po.weight_base != p.weight_base.unwrap_or(1.0) {
                 diff_fields.push("weight_base".to_string());
@@ -835,7 +1141,8 @@ impl OntologyDomain for HrDomainImpl {
             items,
             missing_count: gaps.missing_classes.len()
                 + gaps.missing_relation_types.len()
-                + gaps.missing_synonyms,
+                + gaps.missing_synonyms
+                + gaps.missing_class_relations,
             existing_count: gaps.skipped,
             overwrite_count,
             retired_count,
@@ -843,7 +1150,7 @@ impl OntologyDomain for HrDomainImpl {
     }
 
     async fn export_lexicon(&self, ctx: RequestContext) -> Result<PresetOntologyLexicon> {
-        let (classes, relation_types, properties, synonyms) = tokio::try_join!(
+        let (classes, relation_types, class_relations, properties, synonyms) = tokio::try_join!(
             self.ontology_dal.query_classes(
                 ctx.clone(),
                 OntologyClassQuery {
@@ -858,6 +1165,14 @@ impl OntologyDomain for HrDomainImpl {
                     status: Some(OntologyStatus::Active),
                     keyword: None,
                     pagination: active_all_pagination(),
+                },
+            ),
+            self.ontology_dal.query_class_relations(
+                ctx.clone(),
+                OntologyClassRelationQuery {
+                    status: Some(OntologyStatus::Active),
+                    pagination: active_all_pagination(),
+                    ..Default::default()
                 },
             ),
             self.ontology_dal.query_properties(
@@ -883,9 +1198,9 @@ impl OntologyDomain for HrDomainImpl {
 
         warn_if_lexicon_truncated(&ctx, "实体类", classes.items.len());
         warn_if_lexicon_truncated(&ctx, "关系类型", relation_types.items.len());
+        warn_if_lexicon_truncated(&ctx, "骨架三元组", class_relations.items.len());
         warn_if_lexicon_truncated(&ctx, "属性定义", properties.items.len());
         warn_if_lexicon_truncated(&ctx, "同义映射", synonyms.items.len());
-
         Ok(PresetOntologyLexicon {
             classes: classes
                 .items
@@ -899,6 +1214,7 @@ impl OntologyDomain for HrDomainImpl {
                         display_name: po.display_name,
                         description: po.description,
                         required_fields,
+                        parent_term_key: po.parent_term_key,
                     }
                 })
                 .collect(),
@@ -907,17 +1223,29 @@ impl OntologyDomain for HrDomainImpl {
                 .into_iter()
                 .map(|r| {
                     let po = r.po;
-                    let domain_classes = po.parse_domain_classes();
-                    let range_classes = po.parse_range_classes();
                     PresetOntologyRelationType {
                         term_key: po.term_key,
                         display_name: po.display_name,
                         description: po.description,
-                        domain_classes,
-                        range_classes,
                         weight_base: Some(po.weight_base),
                         inverse_key: po.inverse_key,
                         direction: po.direction,
+                    }
+                })
+                .collect(),
+            class_relations: class_relations
+                .items
+                .into_iter()
+                .map(|r| {
+                    let po = r.po;
+                    // 先解析再 move 字段，避免 partial move
+                    let required = po.is_required();
+                    PresetOntologyClassRelation {
+                        subject_class_key: po.subject_class_key,
+                        relation_key: po.relation_key,
+                        object_class_key: po.object_class_key,
+                        cardinality: po.cardinality,
+                        required,
                     }
                 })
                 .collect(),
@@ -1032,6 +1360,30 @@ impl OntologyDomain for HrDomainImpl {
                 report.skipped += 1;
             } else {
                 report.missing_synonyms += 1;
+            }
+        }
+
+        for p in &preset.class_relations {
+            let subject = normalize(&p.subject_class_key);
+            let relation = normalize(&p.relation_key);
+            let object = normalize(&p.object_class_key);
+            let existing = self
+                .ontology_dal
+                .query_class_relations(
+                    ctx.clone(),
+                    OntologyClassRelationQuery {
+                        subject_class_key: Some(subject),
+                        relation_key: Some(relation),
+                        object_class_key: Some(object),
+                        status: None,
+                        pagination: common::api::PaginationParams::default(),
+                    },
+                )
+                .await?;
+            if existing.items.is_empty() {
+                report.missing_class_relations += 1;
+            } else {
+                report.skipped += 1;
             }
         }
 

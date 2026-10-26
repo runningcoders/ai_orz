@@ -5,8 +5,8 @@ mod tests {
     use crate::service::domain::system::seed::defs::*;
     use crate::service::domain::system::seed::diff::*;
     use common::ontology::{
-        PresetOntologyClass, PresetOntologyLexicon, PresetOntologyRelationType,
-        PresetOntologySynonym, TermKind,
+        PresetOntologyClass, PresetOntologyClassRelation, PresetOntologyLexicon,
+        PresetOntologyRelationType, PresetOntologySynonym, TermKind,
     };
     use std::collections::{HashMap, HashSet};
 
@@ -43,7 +43,7 @@ mod tests {
         }
     }
 
-    /// 构造最小词表（1 节点类 + 1 关系词），供 ontology diff 测试
+    /// 构造最小词表（1 节点类 + 1 关系词 + 1 骨架三元组），供 ontology diff 测试
     fn make_test_lexicon() -> PresetOntologyLexicon {
         PresetOntologyLexicon {
             classes: vec![PresetOntologyClass {
@@ -51,16 +51,22 @@ mod tests {
                 display_name: "概念".to_string(),
                 description: String::new(),
                 required_fields: vec![],
+                parent_term_key: None,
             }],
             relation_types: vec![PresetOntologyRelationType {
                 term_key: "related".to_string(),
                 display_name: "相关".to_string(),
                 description: String::new(),
-                domain_classes: vec![],
-                range_classes: vec![],
                 weight_base: Some(1.0),
                 inverse_key: None,
                 direction: "undirected".to_string(),
+            }],
+            class_relations: vec![PresetOntologyClassRelation {
+                subject_class_key: "concept".to_string(),
+                relation_key: "related".to_string(),
+                object_class_key: "concept".to_string(),
+                cardinality: "many".to_string(),
+                required: false,
             }],
             properties: vec![],
             synonym_mappings: vec![],

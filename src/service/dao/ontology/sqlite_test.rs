@@ -26,8 +26,6 @@ fn create_test_relation(term_key: &str, display_name: &str) -> OntologyRelationT
         term_key,
         display_name,
         format!("{} 的语义说明", display_name),
-        r#"["document"]"#,
-        String::new(),
         1.0,
         None,
         "undirected",
@@ -225,7 +223,6 @@ async fn test_relation_type_crud_roundtrip(pool: SqlitePool) {
     assert_eq!(found.term_key, "contains");
     assert_eq!(found.weight_base, 1.0);
     assert_eq!(found.inverse_key, None);
-    assert_eq!(found.parse_domain_classes(), vec!["document".to_string()]);
 
     let by_term_key = dao
         .find_relation_type_by_term_key(ctx.clone(), "contains")
@@ -233,11 +230,11 @@ async fn test_relation_type_crud_roundtrip(pool: SqlitePool) {
         .unwrap();
     assert_eq!(by_term_key.unwrap().id, relation.id);
 
-    // 更新：权重 / 逆向关系词 / 约束
+    // 更新：权重 / 逆向关系词 / 方向
     let mut updated = found.clone();
     updated.weight_base = 1.5;
     updated.inverse_key = Some("contained_by".to_string());
-    updated.range_classes = r#"["concept"]"#.to_string();
+    updated.direction = "directed".to_string();
     dao.update_relation_type(ctx.clone(), &updated)
         .await
         .unwrap();
@@ -248,10 +245,7 @@ async fn test_relation_type_crud_roundtrip(pool: SqlitePool) {
         .unwrap();
     assert_eq!(after_update.weight_base, 1.5);
     assert_eq!(after_update.inverse_key, Some("contained_by".to_string()));
-    assert_eq!(
-        after_update.parse_range_classes(),
-        vec!["concept".to_string()]
-    );
+    assert_eq!(after_update.direction, "directed");
 
     // 退役 + 幂等
     dao.retire_relation_type(ctx.clone(), &relation.id)

@@ -18,7 +18,8 @@ mod skill_test;
 
 use crate::models::agent::Agent;
 use crate::models::ontology::{
-    OntologyClass, OntologyProperty, OntologyRelationType, OntologySynonymMapping,
+    OntologyClass, OntologyClassRelation, OntologyProperty, OntologyRelationType,
+    OntologySynonymMapping,
 };
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
@@ -34,12 +35,13 @@ use crate::service::dal::tool as tool_dal;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::dao::ontology::{
-    OntologyClassQuery, OntologyPropertyQuery, OntologyRelationTypeQuery, OntologySynonymQuery,
+    OntologyClassQuery, OntologyClassRelationQuery, OntologyPropertyQuery,
+    OntologyRelationTypeQuery, OntologySynonymQuery,
 };
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::api::ontology::{
-    GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
-    ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
+    GetDriftDashboardRequest, GetDriftDashboardResponse, GetOntologySkeletonResponse,
+    ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
     ListDriftRelationDetailsResponse, PresetOntologySyncStrategy, PreviewPresetOntologyResponse,
 };
 use common::api::{AgentMatchCriteria, match_scores};
@@ -799,9 +801,9 @@ pub trait OntologyDomain: Send + Sync {
     /// 退役实体类（幂等软删除：不存在或已退役均静默成功）
     async fn retire_class(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
-    // B. 关系类型 CRUD（domain/range 引用的实体类必须存在）
+    // B. 关系类型 CRUD（骨架约束已下沉到 class_relations 三元组表）
 
-    /// 新增关系类型（校验 domain_classes / range_classes 引用；term_key 唯一冲突 → Conflict）
+    /// 新增关系类型（term_key 唯一冲突 → Conflict）
     async fn create_relation_type(
         &self,
         ctx: RequestContext,
@@ -831,6 +833,44 @@ pub trait OntologyDomain: Send + Sync {
 
     /// 退役关系类型（幂等软删除）
     async fn retire_relation_type(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // B2. 本体骨架三元组（类-关系-类；第 5 段词表）
+
+    /// 新增骨架三元组（三个 key 必须存在且 Active，`*` 通配除外；唯一冲突 → Conflict）
+    async fn create_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()>;
+
+    /// 按 ID 查骨架三元组
+    async fn get_class_relation(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyClassRelation>>;
+
+    /// 骨架三元组分页组合查询
+    async fn list_class_relations(
+        &self,
+        ctx: RequestContext,
+        query: OntologyClassRelationQuery,
+    ) -> Result<common::api::PagedResult<OntologyClassRelation>>;
+
+    /// 全量更新骨架三元组（不存在 → NotFound；引用校验同新增）
+    async fn update_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()>;
+
+    /// 退役骨架三元组（幂等软删除）
+    async fn retire_class_relation(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // B3. 本体骨架视图
+
+    /// 读取骨架视图（活跃类 + 活跃关系类型 + 活跃三元组，单次全量返回）
+    async fn get_skeleton(&self, ctx: RequestContext) -> Result<GetOntologySkeletonResponse>;
 
     // C. 同义映射管理（raw_term 入库前归一化；target 必须存在于对应词表）
 
@@ -884,7 +924,7 @@ pub trait OntologyDomain: Send + Sync {
 
     // D. seed 预置注入（缺省仅补缺；Overwrite 覆盖式同步见 apply_default_lexicon_with_strategy）
 
-    /// 幂等注入预置词表（三段逐条补缺），返回注入报告
+    /// 幂等注入预置词表（五段逐条补缺），返回注入报告
     async fn apply_default_lexicon(
         &self,
         ctx: RequestContext,
@@ -895,8 +935,9 @@ pub trait OntologyDomain: Send + Sync {
     ///
     /// - `OnlyMissing`：与 [`Self::apply_default_lexicon`] 逐字节一致（薄委托）；
     /// - `Overwrite`：对已存在**非退役**条目按 seed 幂等覆写（业务字段=display_name /
-    ///   description / required_fields / domain_classes / range_classes / weight_base /
-    ///   inverse_key / direction），term_key / id / status / created_at 永不触碰，
+    ///   description / required_fields / parent_term_key / weight_base /
+    ///   inverse_key / direction，骨架三元组仅覆写 cardinality / required），
+    ///   term_key / id / status / created_at 永不触碰，
     ///   退役行整体跳过，用户自拟词（库有 seed 无）不受影响；`updated` 计数=
     ///   执行覆写动作的条目数（非实际字段变化数，TL 口径③）。
     async fn apply_default_lexicon_with_strategy(

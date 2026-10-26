@@ -1,13 +1,16 @@
 //! 本体（Ontology）词表管理相关 API DTO
 //!
-//! DTO 单一事实源（前后端共用），覆盖四组接口契约：
+//! DTO 单一事实源（前后端共用），覆盖五组接口契约：
 //!
-//! 1. **词表 CRUD**：实体类（`ontology_classes`）与关系类型
-//!    （`ontology_relation_types`）的新增 / 编辑 / 退役（软删除）。
-//! 2. **同义映射管理**：`ontology_synonym_mappings` 的增删查。
-//! 3. **漂移看板**：Top N 漂移词 / 词表覆盖率 / 漂移节点数（SQLite 读路径
+//! 1. **词表 CRUD**：实体类（`ontology_classes`，含 `parent_term_key` 继承链）
+//!    与关系类型（`ontology_relation_types`）的新增 / 编辑 / 退役（软删除）。
+//! 2. **本体骨架**：实体类继承链 + `ontology_class_relations` 三元组
+//!    （主语类 - 关系词 - 宾语类，含基数 / 必填 / 状态）。约束语义：某关系无
+//!    三元组 = 不约束；单侧为空用通配符 `*`；子类沿祖先链解析（纯函数、零物化）。
+//! 3. **同义映射管理**：`ontology_synonym_mappings` 的增删查。
+//! 4. **漂移看板**：Top N 漂移词 / 词表覆盖率 / 漂移节点数（SQLite 读路径
 //!    惰性聚合，"现在时"）+ 漂移趋势（DuckDB 事件流，"历史时"）+ 明细下钻。
-//! 4. **seed 预置词表同步**：preview / sync 对（仅补缺，无覆盖策略——
+//! 5. **seed 预置词表同步**：preview / sync 对（仅补缺，无覆盖策略——
 //!    本体是共享约定，seed 不允许覆盖管理页的本地修改）。
 //!
 //! 词条种类复用 [`crate::ontology::TermKind`]（单一事实源），JSON 形态为
@@ -37,6 +40,8 @@ pub struct OntologyClassItem {
     pub description: String,
     /// 实体必填属性清单
     pub required_fields: Vec<String>,
+    /// 父类 term_key（None = 根类）；骨架有效约束沿继承链向上解析
+    pub parent_term_key: Option<String>,
     /// 状态（正常 / 退役）
     pub status: OntologyStatus,
     /// 创建时间戳（秒）
@@ -77,6 +82,9 @@ pub struct CreateOntologyClassRequest {
     /// 实体必填属性清单
     #[serde(default)]
     pub required_fields: Vec<String>,
+    /// 父类 term_key（None = 根类）
+    #[serde(default)]
+    pub parent_term_key: Option<String>,
 }
 
 /// 创建实体类响应
@@ -97,6 +105,9 @@ pub struct UpdateOntologyClassRequest {
     /// 实体必填属性清单
     #[serde(default)]
     pub required_fields: Vec<String>,
+    /// 父类 term_key（None = 清空父级 / 根类）
+    #[serde(default)]
+    pub parent_term_key: Option<String>,
 }
 
 /// 更新实体类响应
@@ -272,10 +283,6 @@ pub struct OntologyRelationTypeItem {
     pub display_name: String,
     /// 语义描述
     pub description: String,
-    /// 允许的源实体类 key 清单（空 = 不限）
-    pub domain_classes: Vec<String>,
-    /// 允许的目标实体类 key 清单（空 = 不限）
-    pub range_classes: Vec<String>,
     /// 边权重基数（写入图谱边 `weight` 时的基准值）
     pub weight_base: f64,
     /// 反向关系 key（None = 无对称反向词）
@@ -319,12 +326,6 @@ pub struct CreateOntologyRelationTypeRequest {
     pub display_name: String,
     /// 语义描述
     pub description: String,
-    /// 允许的源实体类 key 清单（空 = 不限）
-    #[serde(default)]
-    pub domain_classes: Vec<String>,
-    /// 允许的目标实体类 key 清单（空 = 不限）
-    #[serde(default)]
-    pub range_classes: Vec<String>,
     /// 边权重基数（None = 默认 1.0）
     #[serde(default)]
     pub weight_base: Option<f64>,
@@ -348,12 +349,6 @@ pub struct UpdateOntologyRelationTypeRequest {
     pub display_name: String,
     /// 语义描述
     pub description: String,
-    /// 允许的源实体类 key 清单（空 = 不限）
-    #[serde(default)]
-    pub domain_classes: Vec<String>,
-    /// 允许的目标实体类 key 清单（空 = 不限）
-    #[serde(default)]
-    pub range_classes: Vec<String>,
     /// 边权重基数
     pub weight_base: f64,
     /// 反向关系 key（None = 无对称反向词）
@@ -374,6 +369,128 @@ pub struct RetireOntologyRelationTypeRequest {
 
 /// 退役关系类型响应
 pub type RetireOntologyRelationTypeResponse = OntologyRelationTypeItem;
+
+// ==================== 本体骨架（类-关系-类三元组） ====================
+
+/// 骨架三元组条目（列表项 + 创建 / 更新的返回体）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OntologyClassRelationItem {
+    /// 条目 ID
+    pub id: String,
+    /// 主语实体类 term_key
+    pub subject_class_key: String,
+    /// 关系类型 term_key
+    pub relation_key: String,
+    /// 宾语实体类 term_key（`*` 表示不限）
+    pub object_class_key: String,
+    /// 边基数（"single" / "many"）
+    pub cardinality: String,
+    /// 是否必填
+    pub required: bool,
+    /// 状态（正常 / 退役）
+    pub status: OntologyStatus,
+    /// 创建时间戳（秒）
+    pub created_at: i64,
+    /// 更新时间戳（秒）
+    pub updated_at: i64,
+}
+
+/// 列出骨架三元组请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListOntologyClassRelationsRequest {
+    /// 按主语类筛选
+    #[serde(default)]
+    #[param(source = "query")]
+    pub subject_class_key: Option<String>,
+    /// 按关系类型筛选
+    #[serde(default)]
+    #[param(source = "query")]
+    pub relation_key: Option<String>,
+    /// 按宾语类筛选
+    #[serde(default)]
+    #[param(source = "query")]
+    pub object_class_key: Option<String>,
+    /// 按状态筛选（None = 全部，含退役）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub status: Option<OntologyStatus>,
+    /// 分页参数
+    #[serde(flatten)]
+    #[param(source = "query")]
+    pub pagination: PaginationParams,
+}
+
+/// 列出骨架三元组响应（分页）
+pub type ListOntologyClassRelationsResponse = PagedResult<OntologyClassRelationItem>;
+
+/// 创建骨架三元组请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct CreateOntologyClassRelationRequest {
+    /// 主语实体类 term_key（`*` = 不限）
+    pub subject_class_key: String,
+    /// 关系类型 term_key
+    pub relation_key: String,
+    /// 宾语实体类 term_key（`*` = 不限）
+    pub object_class_key: String,
+    /// 边基数（缺省 many）
+    #[serde(default)]
+    pub cardinality: Option<String>,
+    /// 是否必填
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// 创建骨架三元组响应
+pub type CreateOntologyClassRelationResponse = OntologyClassRelationItem;
+
+/// 更新骨架三元组请求（允许改三个 key；唯一约束冲突报错）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateOntologyClassRelationRequest {
+    /// 条目 ID
+    pub id: String,
+    /// 主语实体类 term_key
+    pub subject_class_key: String,
+    /// 关系类型 term_key
+    pub relation_key: String,
+    /// 宾语实体类 term_key
+    pub object_class_key: String,
+    /// 边基数（"single" / "many"）
+    pub cardinality: String,
+    /// 是否必填
+    pub required: bool,
+}
+
+/// 更新骨架三元组响应
+pub type UpdateOntologyClassRelationResponse = OntologyClassRelationItem;
+
+/// 退役骨架三元组请求（软删除 status=0）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RetireOntologyClassRelationRequest {
+    /// 条目 ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 退役骨架三元组响应
+pub type RetireOntologyClassRelationResponse = OntologyClassRelationItem;
+
+/// 读取本体骨架视图请求（空参数）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetOntologySkeletonRequest {}
+
+/// 本体骨架视图（管理页「本体骨架」tab 的单次全量返回）
+///
+/// 只返回活跃词：骨架描述的是「当前生效的本体约定」，退役词与退役三元组
+/// 仍保留在库中供历史解析，但不进入当前视图。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct GetOntologySkeletonResponse {
+    /// 活跃实体类（含 parent_term_key）
+    pub classes: Vec<OntologyClassItem>,
+    /// 活跃关系类型
+    pub relation_types: Vec<OntologyRelationTypeItem>,
+    /// 活跃骨架三元组
+    pub class_relations: Vec<OntologyClassRelationItem>,
+}
 
 // ==================== 同义映射管理 ====================
 

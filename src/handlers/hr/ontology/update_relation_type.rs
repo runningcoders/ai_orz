@@ -12,7 +12,7 @@ use common::error::{Result, err};
 #[register_handler_tool(
     id = "update_ontology_relation_type",
     name = "Update Ontology Relation Type",
-    description = "Update a relation-type lexicon entry's display name, description, domain/range class constraints, weight_base, and inverse_key. The term_key is immutable - to rename, retire the old entry and create a new one. Referenced classes must exist. Fails with NotFound if the entry does not exist.",
+    description = "Update a relation-type lexicon entry's display name, description, weight_base, and inverse_key. Skeleton constraints (class-to-class triples) are managed separately. The term_key is immutable - to rename, retire the old entry and create a new one. Fails with NotFound if the entry does not exist.",
     params = "common::api::UpdateOntologyRelationTypeRequest",
     tags = "ontology_management"
 )]
@@ -28,8 +28,6 @@ pub async fn update_ontology_relation_type(
         .ok_or_else(|| err!(NotFound, "关系类型 {} 不存在", params.id))?;
     entity.po.display_name = params.display_name;
     entity.po.description = params.description;
-    entity.po.domain_classes = serde_json::to_string(&params.domain_classes).unwrap_or_default();
-    entity.po.range_classes = serde_json::to_string(&params.range_classes).unwrap_or_default();
     entity.po.weight_base = params.weight_base;
     entity.po.inverse_key = params.inverse_key;
     domain()

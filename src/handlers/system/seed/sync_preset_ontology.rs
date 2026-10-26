@@ -57,10 +57,11 @@ pub async fn sync_preset_ontology(
     params: SyncPresetOntologyRequest,
 ) -> Result<SyncPresetOntologyResponse> {
     let snapshot = default::embedded_default_snapshot();
-    // ⚠️ `total` 必须覆盖**四类**词条：漏算 properties 会让「created + skipped 对账」
-    // 恒等式在第二次同步时崩掉（skipped 含属性、total 不含）。
+    // ⚠️ `total` 必须覆盖**五类**词条：漏算任何一段都会让「created + skipped 对账」
+    // 恒等式在第二次同步时崩掉（skipped 含该类、total 不含）。
     let total = snapshot.ontology.classes.len()
         + snapshot.ontology.relation_types.len()
+        + snapshot.ontology.class_relations.len()
         + snapshot.ontology.synonym_mappings.len()
         + snapshot.ontology.properties.len();
     let report = hr::domain()
@@ -73,9 +74,11 @@ pub async fn sync_preset_ontology(
         strategy = ?params.strategy,
         inserted_classes = report.inserted_classes.len(),
         inserted_relation_types = report.inserted_relation_types.len(),
+        inserted_class_relations = report.inserted_class_relations,
         inserted_synonyms = report.inserted_synonyms,
         updated_classes = report.updated_classes.len(),
         updated_relation_types = report.updated_relation_types.len(),
+        updated_class_relations = report.updated_class_relations,
         updated_synonyms = report.updated_synonyms,
         skipped = report.skipped,
         "预置本体词表同步完成"
@@ -83,10 +86,12 @@ pub async fn sync_preset_ontology(
     Ok(SyncPresetOntologyResponse {
         created: report.inserted_classes.len()
             + report.inserted_relation_types.len()
+            + report.inserted_class_relations
             + report.inserted_synonyms
             + report.inserted_properties.len(),
         updated: report.updated_classes.len()
             + report.updated_relation_types.len()
+            + report.updated_class_relations
             + report.updated_synonyms
             + report.updated_properties.len(),
         skipped: report.skipped,

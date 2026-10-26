@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE ontology_relation_types\nSET display_name = ?, description = ?,\n    weight_base = ?, inverse_key = ?, direction = ?, updated_at = ?\nWHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "a7b1f94afa6aa8141f61341b89782069033b79e66248ec7841c023ebea3010d7"
+}

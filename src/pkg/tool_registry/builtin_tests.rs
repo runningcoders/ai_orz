@@ -75,6 +75,8 @@ fn ontology_consumer_tools_carry_ontology_tag() {
         "list_ontology_relation_types",
         "list_ontology_properties",
         "list_ontology_synonyms",
+        "list_ontology_class_relations",
+        "get_ontology_skeleton",
         "list_ontology_lexicon",
         "get_ontology_drift_dashboard",
         "list_ontology_drift_class_details",
@@ -103,9 +105,9 @@ fn ontology_consumer_tools_carry_ontology_tag() {
     }
 }
 
-/// 护栏：本体**消费侧全集**（读侧 8 + 记忆/图谱/沉淀 5）必须恒带 `neural`。
+/// 护栏：本体**消费侧全集**（读侧 10 + 记忆/图谱/沉淀 5）必须恒带 `neural`。
 ///
-/// 这条直接决定「普通员工要不要装 `ontology` 包」的答案：消费侧 13 个工具全部
+/// 这条直接决定「普通员工要不要装 `ontology` 包」的答案：消费侧 15 个工具全部
 /// 出生自带 ⇒ **任何 Agent 不装 ontology 包也能用**，`ontology` 在这里只是主题
 /// 归类 tag（`install_tool_pack("ontology")` 的批量授权面），**不是可达性前提**。
 ///
@@ -121,6 +123,8 @@ fn ontology_consumer_tools_are_neural_reachable() {
         "list_ontology_relation_types",
         "list_ontology_properties",
         "list_ontology_synonyms",
+        "list_ontology_class_relations",
+        "get_ontology_skeleton",
         "list_ontology_lexicon",
         "get_ontology_drift_dashboard",
         "list_ontology_drift_class_details",
@@ -168,6 +172,8 @@ fn ontology_read_tools_are_neural_reachable() {
         "list_ontology_relation_types",
         "list_ontology_properties",
         "list_ontology_synonyms",
+        "list_ontology_class_relations",
+        "get_ontology_skeleton",
         "list_ontology_lexicon",
         "get_ontology_drift_dashboard",
         "list_ontology_drift_class_details",
@@ -206,6 +212,9 @@ fn ontology_write_tools_are_not_neural() {
         "create_ontology_relation_type",
         "update_ontology_relation_type",
         "retire_ontology_relation_type",
+        "create_ontology_class_relation",
+        "update_ontology_class_relation",
+        "retire_ontology_class_relation",
         "create_ontology_property",
         "update_ontology_property",
         "retire_ontology_property",

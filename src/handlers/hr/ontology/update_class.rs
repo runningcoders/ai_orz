@@ -10,7 +10,7 @@ use common::error::{Result, err};
 #[register_handler_tool(
     id = "update_ontology_class",
     name = "Update Ontology Class",
-    description = "Update an entity-class lexicon entry's display name, description, and required_fields. The term_key is immutable - to rename, retire the old entry and create a new one so historical parsing chains are preserved. Fails with NotFound if the entry does not exist.",
+    description = "Update an entity-class lexicon entry's display name, description, required_fields, and parent_term_key. The term_key is immutable - to rename, retire the old entry and create a new one so historical parsing chains are preserved. parent_term_key sets the inheritance parent (null clears it = root class); it must reference an existing active class and must not create a cycle. Fails with NotFound if the entry does not exist.",
     params = "common::api::UpdateOntologyClassRequest",
     tags = "ontology_management"
 )]
@@ -27,6 +27,7 @@ pub async fn update_ontology_class(
     entity.po.display_name = params.display_name;
     entity.po.description = params.description;
     entity.po.required_fields = serde_json::to_string(&params.required_fields).unwrap_or_default();
+    entity.po.parent_term_key = params.parent_term_key;
     domain()
         .ontology_domain()
         .update_class(ctx.clone(), &entity)

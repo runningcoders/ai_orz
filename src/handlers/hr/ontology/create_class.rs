@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "create_ontology_class",
     name = "Create Ontology Class",
-    description = "Create an entity-class lexicon entry (a node type in the knowledge graph). term_key is the lowercase snake_case canonical key and must be unique; it cannot be changed after creation (retire + re-create instead). required_fields lists the mandatory attributes for entities of this class. Fails with Conflict if term_key already exists.",
+    description = "Create an entity-class lexicon entry (a node type in the knowledge graph). term_key is the lowercase snake_case canonical key and must be unique; it cannot be changed after creation (retire + re-create instead). required_fields lists the mandatory attributes for entities of this class. parent_term_key optionally points to an existing active class as the inheritance parent (omit/null = root class). Fails with Conflict if term_key already exists.",
     params = "common::api::CreateOntologyClassRequest",
     tags = "ontology_management"
 )]
@@ -20,12 +20,13 @@ pub async fn create_ontology_class(
     ctx: RequestContext,
     params: CreateOntologyClassRequest,
 ) -> Result<CreateOntologyClassResponse> {
-    let po = OntologyClassPo::new(
+    let mut po = OntologyClassPo::new(
         params.term_key,
         params.display_name,
         params.description,
         serde_json::to_string(&params.required_fields).unwrap_or_default(),
     );
+    po.parent_term_key = params.parent_term_key;
     domain()
         .ontology_domain()
         .create_class(ctx, &OntologyClass::from_po(po.clone()))

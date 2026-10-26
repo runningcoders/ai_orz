@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, term_key, display_name, description, required_fields,\n       status AS \"status: _\", created_at, updated_at\nFROM ontology_classes ORDER BY term_key ASC\n            ",
+  "query": "\nSELECT id, subject_class_key, relation_key, object_class_key,\n       cardinality, \"required\" AS \"required!: i32\", \"status\" AS \"status: _\",\n       created_at, updated_at\nFROM ontology_class_relations\nORDER BY subject_class_key ASC, relation_key ASC, object_class_key ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -9,38 +9,43 @@
         "type_info": "Text"
       },
       {
-        "name": "term_key",
+        "name": "subject_class_key",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "display_name",
+        "name": "relation_key",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "description",
+        "name": "object_class_key",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "required_fields",
+        "name": "cardinality",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "status: _",
+        "name": "required!: i32",
         "ordinal": 5,
         "type_info": "Integer"
       },
       {
-        "name": "created_at",
+        "name": "status: _",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 8,
         "type_info": "Integer"
       }
     ],
@@ -55,8 +60,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "813c2e61030b5bf6997ca8745992346302684ce2336e7d88a5e2e2c59836a40b"
+  "hash": "8a3b77f8ab99bf4a9e65ae0173ecee8fe9e9c9f10b45920dbbcc8ec261611d09"
 }

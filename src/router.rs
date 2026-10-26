@@ -831,6 +831,26 @@ fn hr_routes() -> Router {
             delete(handlers::hr::ontology::retire_ontology_relation_type_handler),
         )
         .route(
+            "/ontology/skeleton",
+            get(handlers::hr::ontology::get_ontology_skeleton_handler),
+        )
+        .route(
+            "/ontology/class-relations",
+            post(handlers::hr::ontology::create_ontology_class_relation_handler),
+        )
+        .route(
+            "/ontology/class-relations",
+            get(handlers::hr::ontology::list_ontology_class_relations_handler),
+        )
+        .route(
+            "/ontology/class-relations/{id}",
+            put(handlers::hr::ontology::update_ontology_class_relation_handler),
+        )
+        .route(
+            "/ontology/class-relations/{id}",
+            delete(handlers::hr::ontology::retire_ontology_class_relation_handler),
+        )
+        .route(
             "/ontology/synonyms",
             post(handlers::hr::ontology::create_ontology_synonym_handler),
         )

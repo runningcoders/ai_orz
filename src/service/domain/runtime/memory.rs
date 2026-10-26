@@ -131,7 +131,17 @@ impl RuntimeMemory for RuntimeDomainImpl {
         // 写路径单管道（design 决策 #16）：原文落库成功后的唯一动作是 publish
         // 词条事件——不打点、不解析、不调 domain/dal，认证与漂移记账全在消费侧
         let written = extract_written_terms(&ctx, &params);
+        // 骨架软门禁需要写边两端节点的类型，落库前先留一份边清单（写入后校验）
+        let edges_for_skeleton = match &params {
+            MemoryCreateParams::CreateRelations(relations) => Some(relations.clone()),
+            _ => None,
+        };
         let results = dal().create(ctx.clone(), params).await?;
+
+        if let Some(edges) = edges_for_skeleton {
+            // 软门禁：类型不匹配只留痕（log + 漂移打点），绝不阻断/回滚写入
+            apply_skeleton_soft_gate(&ctx, &edges).await;
+        }
 
         if let Some((agent_id, terms)) = written {
             // publish 返回 ()：投递失败已在 registry 内 sys_error! 兜底落日志，无需调用侧处理
@@ -212,6 +222,112 @@ impl RuntimeMemory for RuntimeDomainImpl {
     ) -> Result<Vec<String>> {
         use crate::service::dal::memory::dal;
         dal().query_entities_by_properties(ctx, filters).await
+    }
+}
+
+/// 骨架软门禁：对本次写入的知识边按「类-关系-类」骨架做类型校验
+///
+/// 设计契约：
+/// - **软门禁**：Mismatch 只留痕（warn 日志 + `ontology_drift` 打点 kind=`skeleton`），
+///   绝不阻断或回滚已落库的边——骨架是治理信号，不是写入门闩
+/// - 无任何三元组约束时 `check` 返回 `Unconstrained`，不产生噪声
+/// - 两端节点缺失（并发删除等）时跳过；骨架加载失败只降级为一条 warn
+/// - 只做大小写/空白归一（`normalize`），不做同义映射（同义归并走异步认证链路）
+async fn apply_skeleton_soft_gate(
+    ctx: &RequestContext,
+    edges: &[crate::models::memory::KnowledgeNodeRelationPo],
+) {
+    use crate::models::memory::MemoryPo;
+    use common::ontology::{SkeletonVerdict, normalize};
+
+    if edges.is_empty() {
+        return;
+    }
+
+    let node_ids: Vec<String> = edges
+        .iter()
+        .flat_map(|e| [e.source_node_id.clone(), e.target_node_id.clone()])
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let nodes = match crate::service::dal::memory::dal()
+        .query(
+            ctx.clone(),
+            MemoryQuery {
+                ids: Some(node_ids),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(nodes) => nodes,
+        Err(e) => {
+            crate::log_warn!(
+                ctx,
+                "memory_skeleton_gate",
+                "加载边端点失败，跳过校验: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let node_types: std::collections::HashMap<String, String> = nodes
+        .into_iter()
+        .filter_map(|m| match m.po {
+            MemoryPo::KnowledgeNode(node) => Some((node.id, normalize(&node.node_type))),
+            _ => None,
+        })
+        .collect();
+
+    let skeleton = match crate::service::dal::ontology::dal()
+        .load_skeleton(ctx.clone())
+        .await
+    {
+        Ok(skeleton) => skeleton,
+        Err(e) => {
+            crate::log_warn!(
+                ctx,
+                "memory_skeleton_gate",
+                "加载本体骨架失败，跳过校验: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    for edge in edges {
+        let (Some(subject), Some(object)) = (
+            node_types.get(&edge.source_node_id),
+            node_types.get(&edge.target_node_id),
+        ) else {
+            continue;
+        };
+        let relation = normalize(&edge.relation_type);
+        if skeleton.check(&relation, subject, object) != SkeletonVerdict::Mismatch {
+            continue;
+        }
+
+        let triple = format!("{subject} -[{relation}]-> {object}");
+        crate::log_warn!(
+            ctx,
+            "memory_skeleton_gate",
+            "骨架类型不匹配（软门禁，写入保留）: {}",
+            triple
+        );
+
+        // 漂移打点失败不阻塞主流程（与词元认证消费者同一兜底口径）
+        if let Some(stats) = crate::pkg::stats::global_stats() {
+            let stats_event =
+                crate::pkg::stats::OntologyDriftEvent::new(chrono::Utc::now().timestamp())
+                    .with_agent_id(ctx.agent_id().cloned().unwrap_or_default())
+                    .with_kind("skeleton".to_string())
+                    .with_raw_term(triple);
+            if let Err(e) = stats.record(ctx.clone(), stats_event).await {
+                crate::log_warn!(ctx, "memory_skeleton_gate", "骨架漂移打点失败: {}", e);
+            }
+        }
     }
 }
 

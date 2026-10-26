@@ -15,30 +15,32 @@
 //! 下钻 Modal：漂移词的关系（边）明细 + 节点明细。
 
 use common::api::{
-    CreateOntologyClassRequest, CreateOntologyPropertyRequest, CreateOntologyRelationTypeRequest,
-    CreateOntologySynonymRequest, DriftClassDetail, DriftRelationDetail, GetDriftDashboardRequest,
-    GetDriftDashboardResponse, ListDriftClassDetailsRequest, ListDriftRelationDetailsRequest,
+    CreateOntologyClassRelationRequest, CreateOntologyClassRequest, CreateOntologyPropertyRequest,
+    CreateOntologyRelationTypeRequest, CreateOntologySynonymRequest, DriftClassDetail,
+    DriftRelationDetail, GetDriftDashboardRequest, GetDriftDashboardResponse,
+    GetOntologySkeletonResponse, ListDriftClassDetailsRequest, ListDriftRelationDetailsRequest,
     ListOntologyClassesRequest, ListOntologyLexiconResponse, ListOntologyPropertiesRequest,
     ListOntologyRelationTypesRequest, ListOntologySynonymsRequest, OntologyClassItem,
-    OntologyPropertyItem, OntologyRelationTypeItem, OntologySynonymItem, PaginationParams,
-    PresetOntologySyncStrategy, PreviewPresetOntologyResponse, SyncPresetOntologyRequest,
-    SyncPresetOntologyResponse, UpdateOntologyClassRequest, UpdateOntologyPropertyRequest,
-    UpdateOntologyRelationTypeRequest,
+    OntologyClassRelationItem, OntologyPropertyItem, OntologyRelationTypeItem, OntologySynonymItem,
+    PaginationParams, PresetOntologySyncStrategy, PreviewPresetOntologyResponse,
+    SyncPresetOntologyRequest, SyncPresetOntologyResponse, UpdateOntologyClassRelationRequest,
+    UpdateOntologyClassRequest, UpdateOntologyPropertyRequest, UpdateOntologyRelationTypeRequest,
 };
 use common::enums::OntologyStatus;
 use common::enums::ontology::{Cardinality, PropertyDataType, PropertyTargetType};
-use common::ontology::TermKind;
+use common::ontology::{TermKind, WILDCARD_CLASS};
 use common::ontology_property::ValueRange;
 use dioxus::prelude::*;
 
 use crate::api::hr::{
-    create_ontology_class, create_ontology_property, create_ontology_relation_type,
-    create_ontology_synonym, delete_ontology_synonym, get_ontology_drift_dashboard,
-    list_ontology_classes, list_ontology_drift_class_details, list_ontology_drift_relation_details,
-    list_ontology_lexicon, list_ontology_properties, list_ontology_relation_types,
-    list_ontology_synonyms, retire_ontology_class, retire_ontology_property,
-    retire_ontology_relation_type, update_ontology_class, update_ontology_property,
-    update_ontology_relation_type,
+    create_ontology_class, create_ontology_class_relation, create_ontology_property,
+    create_ontology_relation_type, create_ontology_synonym, delete_ontology_synonym,
+    get_ontology_drift_dashboard, get_ontology_skeleton, list_ontology_classes,
+    list_ontology_drift_class_details, list_ontology_drift_relation_details, list_ontology_lexicon,
+    list_ontology_properties, list_ontology_relation_types, list_ontology_synonyms,
+    retire_ontology_class, retire_ontology_class_relation, retire_ontology_property,
+    retire_ontology_relation_type, update_ontology_class, update_ontology_class_relation,
+    update_ontology_property, update_ontology_relation_type,
 };
 use crate::api::seed::{preview_preset_ontology, sync_preset_ontology};
 use crate::components::confirm_dialog::ConfirmDialog;
@@ -164,11 +166,186 @@ fn kind_badge(kind: TermKind) -> Element {
     }
 }
 
+// ===== 骨架图布局参数（环形布局，类多时仍可读） =====
+const SKELETON_CANVAS_W: f64 = 820.0;
+const SKELETON_CANVAS_H: f64 = 520.0;
+const SKELETON_NODE_R: f64 = 30.0;
+
+/// 第 index / total 个节点的环形坐标（从正上方顺时针铺开）
+fn skeleton_node_pos(index: usize, total: usize) -> (f64, f64) {
+    let cx = SKELETON_CANVAS_W / 2.0;
+    let cy = SKELETON_CANVAS_H / 2.0;
+    if total <= 1 {
+        return (cx, cy);
+    }
+    let radius = (SKELETON_CANVAS_H / 2.0) - SKELETON_NODE_R - 46.0;
+    let angle =
+        -std::f64::consts::FRAC_PI_2 + 2.0 * std::f64::consts::PI * index as f64 / total as f64;
+    (cx + radius * angle.cos(), cy + radius * angle.sin())
+}
+
+/// 渲染骨架图：类为节点（环形布局），继承链为虚线，类-关系-类三元组为带箭头实线
+fn render_skeleton_graph(
+    classes: &[OntologyClassItem],
+    class_relations: &[OntologyClassRelationItem],
+    selected: Option<String>,
+    on_select: EventHandler<String>,
+) -> Element {
+    let mut positions: std::collections::HashMap<&str, (f64, f64)> =
+        std::collections::HashMap::new();
+    for (i, c) in classes.iter().enumerate() {
+        positions.insert(c.term_key.as_str(), skeleton_node_pos(i, classes.len()));
+    }
+
+    // 继承边（父 → 子，虚线）
+    let inheritance_edges: Vec<(f64, f64, f64, f64)> = classes
+        .iter()
+        .filter_map(|c| {
+            let parent = c.parent_term_key.as_deref()?;
+            let from = positions.get(parent)?;
+            let to = positions.get(c.term_key.as_str())?;
+            Some((from.0, from.1, to.0, to.1))
+        })
+        .collect();
+
+    // 关系边（仅两侧都是具体类时连边；通配符侧无法定位）
+    struct RelEdge {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        label: String,
+    }
+    let relation_edges: Vec<RelEdge> = class_relations
+        .iter()
+        .filter_map(|r| {
+            let from = positions.get(r.subject_class_key.as_str())?;
+            let to = positions.get(r.object_class_key.as_str())?;
+            Some(RelEdge {
+                x1: from.0,
+                y1: from.1,
+                x2: to.0,
+                y2: to.1,
+                label: r.relation_key.clone(),
+            })
+        })
+        .collect();
+
+    rsx! {
+        svg {
+            class: "block w-full h-auto",
+            view_box: "0 0 {SKELETON_CANVAS_W} {SKELETON_CANVAS_H}",
+            defs {
+                marker {
+                    id: "skeleton-arrow",
+                    view_box: "0 0 10 10",
+                    ref_x: "8",
+                    ref_y: "5",
+                    marker_width: "6",
+                    marker_height: "6",
+                    orient: "auto-start-reverse",
+                    path { d: "M 0 0 L 10 5 L 0 10 z", fill: "currentColor" }
+                }
+            }
+            // 继承边：虚线，自父指向子
+            for (i, (x1, y1, x2, y2)) in inheritance_edges.iter().enumerate() {
+                line {
+                    key: "inh-{i}",
+                    x1: "{x1}",
+                    y1: "{y1}",
+                    x2: "{x2}",
+                    y2: "{y2}",
+                    stroke: "currentColor",
+                    stroke_width: "1",
+                    stroke_dasharray: "5 5",
+                    opacity: "0.35",
+                }
+            }
+            // 关系边：实线 + 箭头 + 关系词标签
+            for (i, e) in relation_edges.iter().enumerate() {
+                line {
+                    key: "rel-{i}",
+                    x1: "{e.x1}",
+                    y1: "{e.y1}",
+                    x2: "{e.x2}",
+                    y2: "{e.y2}",
+                    stroke: "currentColor",
+                    stroke_width: "1.5",
+                    opacity: "0.55",
+                    "marker-end": "url(#skeleton-arrow)",
+                }
+                text {
+                    x: "{(e.x1 + e.x2) / 2.0}",
+                    y: "{(e.y1 + e.y2) / 2.0 - 4.0}",
+                    text_anchor: "middle",
+                    font_size: "10",
+                    fill: "currentColor",
+                    opacity: "0.7",
+                    "{e.label}"
+                }
+            }
+            // 类节点
+            for (i, c) in classes.iter().enumerate() {
+                {
+                    let (x, y) = skeleton_node_pos(i, classes.len());
+                    let is_selected = selected.as_deref() == Some(c.term_key.as_str());
+                    let has_parent = c.parent_term_key.is_some();
+                    let key = c.term_key.clone();
+                    rsx! {
+                        g {
+                            key: "node-{c.id}",
+                            class: "cursor-pointer",
+                            onclick: move |_| on_select.call(key.clone()),
+                            circle {
+                                cx: "{x}",
+                                cy: "{y}",
+                                r: "{SKELETON_NODE_R}",
+                                fill: if is_selected { "var(--color-primary, #6366f1)" } else { "var(--color-base-200, #e5e7eb)" },
+                                stroke: "currentColor",
+                                stroke_width: if is_selected { "2.5" } else { "1" },
+                                opacity: if is_selected { "0.95" } else { "0.9" },
+                            }
+                            text {
+                                x: "{x}",
+                                y: "{y + 4.0}",
+                                text_anchor: "middle",
+                                font_size: "10",
+                                fill: if is_selected { "#fff" } else { "currentColor" },
+                                "{c.term_key}"
+                            }
+                            text {
+                                x: "{x}",
+                                y: "{y + SKELETON_NODE_R + 14.0}",
+                                text_anchor: "middle",
+                                font_size: "11",
+                                fill: "currentColor",
+                                opacity: "0.75",
+                                "{c.display_name}"
+                            }
+                            text {
+                                x: "{x}",
+                                y: "{y - SKELETON_NODE_R - 8.0}",
+                                text_anchor: "middle",
+                                font_size: "9",
+                                fill: "currentColor",
+                                opacity: "0.45",
+                                if has_parent { "子类" } else { "根类" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// 页面子标签
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum OntologyTab {
     /// 总览：词表注入视图 + 漂移看板
     Overview,
+    /// 本体骨架：实体类继承链 + 类-关系-类三元组
+    Skeleton,
     /// 实体类词表
     Classes,
     /// 关系类型词表
@@ -183,6 +360,7 @@ impl OntologyTab {
     fn label(self) -> &'static str {
         match self {
             OntologyTab::Overview => "总览",
+            OntologyTab::Skeleton => "本体骨架",
             OntologyTab::Classes => "实体类词表",
             OntologyTab::Relations => "关系类型词表",
             OntologyTab::Properties => "属性定义",
@@ -242,6 +420,12 @@ pub fn HrOntologyLexicon() -> Element {
     let mut drill_loading = use_signal(|| false);
     let mut drill_seq = use_signal(|| 0u64);
 
+    // ===== 本体骨架（继承链 + 三元组） =====
+    let mut skeleton = use_signal(|| None::<GetOntologySkeletonResponse>);
+    let mut skeleton_loading = use_signal(|| false);
+    let mut skeleton_seq = use_signal(|| 0u64);
+    let mut skeleton_selected_class = use_signal(|| None::<String>);
+
     // ===== 实体类表单 Modal =====
     let mut show_class_modal = use_signal(|| false);
     let mut class_edit_id = use_signal(|| None::<String>);
@@ -249,6 +433,7 @@ pub fn HrOntologyLexicon() -> Element {
     let mut class_form_name = use_signal(String::new);
     let mut class_form_desc = use_signal(String::new);
     let mut class_form_fields = use_signal(String::new);
+    let mut class_form_parent = use_signal(String::new);
     let mut class_saving = use_signal(|| false);
 
     // ===== 关系类型表单 Modal =====
@@ -257,11 +442,20 @@ pub fn HrOntologyLexicon() -> Element {
     let mut relation_form_key = use_signal(String::new);
     let mut relation_form_name = use_signal(String::new);
     let mut relation_form_desc = use_signal(String::new);
-    let mut relation_form_domain = use_signal(String::new);
-    let mut relation_form_range = use_signal(String::new);
     let mut relation_form_weight = use_signal(String::new);
     let mut relation_form_inverse = use_signal(String::new);
     let mut relation_saving = use_signal(|| false);
+
+    // ===== 骨架三元组表单 Modal =====
+    let mut show_triple_modal = use_signal(|| false);
+    let mut triple_edit_id = use_signal(|| None::<String>);
+    let mut triple_form_subject = use_signal(String::new);
+    let mut triple_form_relation = use_signal(String::new);
+    let mut triple_form_object = use_signal(String::new);
+    let mut triple_form_cardinality = use_signal(|| "many".to_string());
+    let mut triple_form_required = use_signal(|| false);
+    let mut triple_saving = use_signal(|| false);
+    let mut triple_retire_id = use_signal(|| None::<String>);
 
     // ===== 属性定义表单 Modal =====
     let mut show_property_modal = use_signal(|| false);
@@ -487,6 +681,29 @@ pub fn HrOntologyLexicon() -> Element {
         });
     };
 
+    // 骨架一次性全量拉取（词表量级小），供图视图与三元组清单共用
+    let mut fetch_skeleton = move || {
+        skeleton_seq.set(skeleton_seq() + 1);
+        let seq = skeleton_seq();
+        skeleton_loading.set(true);
+        spawn(async move {
+            match get_ontology_skeleton().await {
+                Ok(data) => {
+                    if skeleton_seq() == seq {
+                        skeleton.set(Some(data));
+                        skeleton_loading.set(false);
+                    }
+                }
+                Err(e) => {
+                    if skeleton_seq() == seq {
+                        toast.error(format!("加载本体骨架失败：{e}"));
+                        skeleton_loading.set(false);
+                    }
+                }
+            }
+        });
+    };
+
     let mut fetch_dashboard = move || {
         dashboard_loading.set(true);
         spawn(async move {
@@ -631,6 +848,7 @@ pub fn HrOntologyLexicon() -> Element {
             return;
         }
         let required_fields = split_list(&class_form_fields());
+        let parent_term_key = non_empty(&class_form_parent());
         class_saving.set(true);
         spawn(async move {
             let res = match edit_id {
@@ -640,6 +858,7 @@ pub fn HrOntologyLexicon() -> Element {
                         display_name,
                         description: class_form_desc(),
                         required_fields,
+                        parent_term_key,
                     })
                     .await
                 }
@@ -649,6 +868,7 @@ pub fn HrOntologyLexicon() -> Element {
                         display_name,
                         description: class_form_desc(),
                         required_fields,
+                        parent_term_key,
                     })
                     .await
                 }
@@ -663,6 +883,7 @@ pub fn HrOntologyLexicon() -> Element {
                     });
                     show_class_modal.set(false);
                     fetch_classes(false);
+                    fetch_skeleton();
                     fetch_dashboard();
                     fetch_lexicon();
                 }
@@ -679,6 +900,7 @@ pub fn HrOntologyLexicon() -> Element {
                     Ok(_) => {
                         toast.success("实体类已退役");
                         fetch_classes(false);
+                        fetch_skeleton();
                         fetch_dashboard();
                         fetch_lexicon();
                     }
@@ -702,8 +924,6 @@ pub fn HrOntologyLexicon() -> Element {
             toast.warning("规范词 key 不能为空（小写 snake_case）");
             return;
         }
-        let domain_classes = split_list(&relation_form_domain());
-        let range_classes = split_list(&relation_form_range());
         let inverse_key = non_empty(&relation_form_inverse());
         let weight_text = relation_form_weight().trim().to_string();
         // 编辑分支权重必填且须可解析：非法值显式拒绝而非静默回退 1.0
@@ -721,8 +941,6 @@ pub fn HrOntologyLexicon() -> Element {
                         id,
                         display_name,
                         description: relation_form_desc(),
-                        domain_classes,
-                        range_classes,
                         weight_base,
                         inverse_key,
                     })
@@ -734,8 +952,6 @@ pub fn HrOntologyLexicon() -> Element {
                         term_key: relation_form_key().trim().to_string(),
                         display_name,
                         description: relation_form_desc(),
-                        domain_classes,
-                        range_classes,
                         weight_base,
                         inverse_key,
                         direction: None,
@@ -753,6 +969,7 @@ pub fn HrOntologyLexicon() -> Element {
                     });
                     show_relation_modal.set(false);
                     fetch_relations(false);
+                    fetch_skeleton();
                     fetch_dashboard();
                     fetch_lexicon();
                 }
@@ -769,8 +986,88 @@ pub fn HrOntologyLexicon() -> Element {
                     Ok(_) => {
                         toast.success("关系类型已退役");
                         fetch_relations(false);
+                        fetch_skeleton();
                         fetch_dashboard();
                         fetch_lexicon();
+                    }
+                    Err(e) => toast.error(format!("退役失败：{e}")),
+                }
+            });
+        }
+    };
+
+    // ===== 骨架三元组写入 =====
+
+    let mut open_triple_create = move |subject: String| {
+        triple_edit_id.set(None);
+        triple_form_subject.set(if subject.is_empty() {
+            WILDCARD_CLASS.to_string()
+        } else {
+            subject
+        });
+        triple_form_relation.set(String::new());
+        triple_form_object.set(WILDCARD_CLASS.to_string());
+        triple_form_cardinality.set("many".to_string());
+        triple_form_required.set(false);
+        show_triple_modal.set(true);
+    };
+
+    let mut handle_save_triple = move || {
+        let subject = triple_form_subject().trim().to_string();
+        let relation = triple_form_relation().trim().to_string();
+        let object = triple_form_object().trim().to_string();
+        if subject.is_empty() || relation.is_empty() || object.is_empty() {
+            toast.warning("主语类、关系词、宾语类都不能为空（不限用 *）");
+            return;
+        }
+        let cardinality_text = triple_form_cardinality();
+        let required = triple_form_required();
+        let edit_id = triple_edit_id();
+        triple_saving.set(true);
+        spawn(async move {
+            let res = match edit_id {
+                Some(id) => {
+                    update_ontology_class_relation(UpdateOntologyClassRelationRequest {
+                        id,
+                        subject_class_key: subject,
+                        relation_key: relation,
+                        object_class_key: object,
+                        cardinality: cardinality_text.clone(),
+                        required,
+                    })
+                    .await
+                }
+                None => {
+                    create_ontology_class_relation(CreateOntologyClassRelationRequest {
+                        subject_class_key: subject,
+                        relation_key: relation,
+                        object_class_key: object,
+                        cardinality: Some(cardinality_text),
+                        required,
+                    })
+                    .await
+                }
+            };
+            triple_saving.set(false);
+            match res {
+                Ok(_) => {
+                    toast.success("骨架三元组已保存");
+                    show_triple_modal.set(false);
+                    fetch_skeleton();
+                }
+                Err(e) => toast.error(format!("保存失败：{e}")),
+            }
+        });
+    };
+
+    let mut handle_retire_triple = move || {
+        if let Some(id) = triple_retire_id() {
+            triple_retire_id.set(None);
+            spawn(async move {
+                match retire_ontology_class_relation(&id).await {
+                    Ok(_) => {
+                        toast.success("骨架三元组已退役");
+                        fetch_skeleton();
                     }
                     Err(e) => toast.error(format!("退役失败：{e}")),
                 }
@@ -937,6 +1234,7 @@ pub fn HrOntologyLexicon() -> Element {
             fetch_relations(true);
             fetch_properties(true);
             fetch_synonyms(true);
+            fetch_skeleton();
             fetch_dashboard();
             fetch_lexicon();
         });
@@ -961,6 +1259,7 @@ pub fn HrOntologyLexicon() -> Element {
                     div { class: "flex flex-wrap gap-2 mb-4",
                         for tab in [
                             OntologyTab::Overview,
+                            OntologyTab::Skeleton,
                             OntologyTab::Classes,
                             OntologyTab::Relations,
                             OntologyTab::Properties,
@@ -1148,6 +1447,270 @@ pub fn HrOntologyLexicon() -> Element {
                         }
                     }
 
+                    if active_tab() == OntologyTab::Skeleton {
+                        // ==================== 本体骨架 ====================
+                        HudSection {
+                            eyebrow: Some("SKELETON".to_string()),
+                            title: "本体骨架".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-primary btn-sm",
+                                    onclick: move |_| open_triple_create(String::new()),
+                                    "+ 新增三元组"
+                                }
+                                button { class: "btn hud-btn btn-ghost btn-sm",
+                                    onclick: move |_| fetch_skeleton(),
+                                    "刷新"
+                                }
+                            }),
+                            if skeleton_loading() && skeleton().is_none() {
+                                Loading { size: "md" }
+                            } else if let Some(s) = skeleton() {
+                                {
+                                    let inheritance_count =
+                                        s.classes.iter().filter(|c| c.parent_term_key.is_some()).count();
+                                    let wildcard_count = s
+                                        .class_relations
+                                        .iter()
+                                        .filter(|r| {
+                                            r.subject_class_key == WILDCARD_CLASS
+                                                || r.object_class_key == WILDCARD_CLASS
+                                        })
+                                        .count();
+                                    rsx! {
+                                        div { class: "grid grid-cols-2 md:grid-cols-4 gap-3 mb-3",
+                                            div { class: "rounded-xl border border-base-300 bg-base-100/40 p-3",
+                                                div { class: "text-xs opacity-60", "实体类" }
+                                                div { class: "text-2xl font-semibold", "{s.classes.len()}" }
+                                            }
+                                            div { class: "rounded-xl border border-base-300 bg-base-100/40 p-3",
+                                                div { class: "text-xs opacity-60", "继承边" }
+                                                div { class: "text-2xl font-semibold", "{inheritance_count}" }
+                                            }
+                                            div { class: "rounded-xl border border-base-300 bg-base-100/40 p-3",
+                                                div { class: "text-xs opacity-60", "关系类型" }
+                                                div { class: "text-2xl font-semibold", "{s.relation_types.len()}" }
+                                            }
+                                            div { class: "rounded-xl border border-base-300 bg-base-100/40 p-3",
+                                                div { class: "text-xs opacity-60", "骨架三元组" }
+                                                div { class: "text-2xl font-semibold", "{s.class_relations.len()}" }
+                                                div { class: "text-[11px] opacity-50", "其中通配 {wildcard_count} 条" }
+                                            }
+                                        }
+                                        div { class: "grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-3",
+                                            div { class: "rounded-xl border border-base-300 bg-base-100/40 p-2 overflow-x-auto",
+                                                if s.classes.is_empty() {
+                                                    EmptyState {
+                                                        icon: Some("🕸️".to_string()),
+                                                        message: "暂无实体类，先去「实体类词表」新增或同步预置词表".to_string(),
+                                                    }
+                                                } else {
+                                                    { render_skeleton_graph(
+                                                        &s.classes,
+                                                        &s.class_relations,
+                                                        skeleton_selected_class(),
+                                                        EventHandler::new(move |key: String| skeleton_selected_class.set(Some(key))),
+                                                    ) }
+                                                }
+                                            }
+                                            div { class: "rounded-xl border border-base-300 bg-base-100/40 p-4 space-y-3",
+                                                if let Some(sel) = skeleton_selected_class() {
+                                                    {
+                                                        let selected_class = s.classes.iter().find(|c| c.term_key == sel).cloned();
+                                                        let children: Vec<OntologyClassItem> = s
+                                                            .classes
+                                                            .iter()
+                                                            .filter(|c| c.parent_term_key.as_deref() == Some(sel.as_str()))
+                                                            .cloned()
+                                                            .collect();
+                                                        let related: Vec<OntologyClassRelationItem> = s
+                                                            .class_relations
+                                                            .iter()
+                                                            .filter(|r| r.subject_class_key == sel || r.object_class_key == sel)
+                                                            .cloned()
+                                                            .collect();
+                                                        let sel_for_child = sel.clone();
+                                                        let sel_for_rel = sel.clone();
+                                                        rsx! {
+                                                            div { class: "flex items-center justify-between gap-2",
+                                                                div {
+                                                                    div { class: "font-mono text-sm", "{sel}" }
+                                                                    div { class: "text-xs opacity-60",
+                                                                        "{selected_class.as_ref().map(|c| c.display_name.clone()).unwrap_or_default()}"
+                                                                    }
+                                                                }
+                                                                button { class: "btn hud-btn btn-ghost btn-xs",
+                                                                    onclick: move |_| skeleton_selected_class.set(None),
+                                                                    "取消选中"
+                                                                }
+                                                            }
+                                                            if let Some(c) = selected_class {
+                                                                div { class: "text-xs space-y-1",
+                                                                    div {
+                                                                        span { class: "opacity-60", "父类：" }
+                                                                        if let Some(parent) = c.parent_term_key.clone() {
+                                                                            span { class: "font-mono", "{parent}" }
+                                                                        } else {
+                                                                            span { class: "opacity-50", "无（根类）" }
+                                                                        }
+                                                                    }
+                                                                    div {
+                                                                        span { class: "opacity-60", "必填属性：" }
+                                                                        if c.required_fields.is_empty() {
+                                                                            span { class: "opacity-50", "-" }
+                                                                        } else {
+                                                                            span { class: "font-mono", "{c.required_fields.join(\", \")}" }
+                                                                        }
+                                                                    }
+                                                                    div { class: "opacity-60 line-clamp-3", "{c.description}" }
+                                                                }
+                                                            }
+                                                            div { class: "text-xs",
+                                                                div { class: "opacity-60 mb-1", "子类（{children.len()}）" }
+                                                                if children.is_empty() {
+                                                                    div { class: "opacity-50", "无" }
+                                                                } else {
+                                                                    div { class: "flex flex-wrap gap-1",
+                                                                        for ch in children {
+                                                                            span { key: "{ch.id}", class: "badge orz-tag badge-sm font-mono", "{ch.term_key}" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            div { class: "text-xs",
+                                                                div { class: "opacity-60 mb-1", "关联约束（{related.len()}）" }
+                                                                if related.is_empty() {
+                                                                    div { class: "opacity-50", "无" }
+                                                                } else {
+                                                                    div { class: "space-y-1",
+                                                                        for r in related {
+                                                                            div { key: "{r.id}", class: "font-mono text-[11px] truncate",
+                                                                                "{r.subject_class_key} -[{r.relation_key}]-> {r.object_class_key}"
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            div { class: "flex flex-wrap gap-2 pt-1",
+                                                                button { class: "btn hud-btn btn-primary btn-xs",
+                                                                    onclick: move |_| {
+                                                                        class_edit_id.set(None);
+                                                                        class_form_key.set(String::new());
+                                                                        class_form_name.set(String::new());
+                                                                        class_form_desc.set(String::new());
+                                                                        class_form_fields.set(String::new());
+                                                                        class_form_parent.set(sel_for_child.clone());
+                                                                        show_class_modal.set(true);
+                                                                    },
+                                                                    "新建子类"
+                                                                }
+                                                                button { class: "btn hud-btn btn-ghost btn-xs",
+                                                                    onclick: move |_| open_triple_create(sel_for_rel.clone()),
+                                                                    "为它加关系"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    EmptyState {
+                                                        icon: Some("👆".to_string()),
+                                                        message: "点击左侧节点查看继承链与约束".to_string(),
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        div { class: "mt-4",
+                                            h4 { class: "font-semibold mb-2 text-sm", "类-关系-类 骨架三元组" }
+                                            if s.class_relations.is_empty() {
+                                                EmptyState {
+                                                    icon: Some("🔗".to_string()),
+                                                    message: "暂无骨架三元组：无三元组 = 该关系不被约束".to_string(),
+                                                }
+                                            } else {
+                                                div { class: "overflow-x-auto",
+                                                    table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                                        colgroup {
+                                                            col {}
+                                                            col {}
+                                                            col {}
+                                                            col { class: "w-[88px]" }
+                                                            col { class: "w-[64px]" }
+                                                            col { class: "w-[120px]" }
+                                                        }
+                                                        thead {
+                                                            tr {
+                                                                th { "主语类" }
+                                                                th { "关系词" }
+                                                                th { "宾语类" }
+                                                                th { "基数" }
+                                                                th { "必填" }
+                                                                th { "操作" }
+                                                            }
+                                                        }
+                                                        tbody {
+                                                            for r in s.class_relations.iter().cloned() {
+                                                                {
+                                                                    let edit_id = r.id.clone();
+                                                                    let edit_subject = r.subject_class_key.clone();
+                                                                    let edit_relation = r.relation_key.clone();
+                                                                    let edit_object = r.object_class_key.clone();
+                                                                    let edit_cardinality = r.cardinality.clone();
+                                                                    let edit_required = r.required;
+                                                                    let retire_id = r.id.clone();
+                                                                    rsx! {
+                                                                        tr { key: "{r.id}",
+                                                                            td { class: "font-mono text-xs truncate", "{r.subject_class_key}" }
+                                                                            td { class: "font-mono text-xs truncate", "{r.relation_key}" }
+                                                                            td { class: "font-mono text-xs truncate", "{r.object_class_key}" }
+                                                                            td {
+                                                                                span { class: "badge badge-ghost badge-sm", "{r.cardinality}" }
+                                                                            }
+                                                                            td {
+                                                                                if r.required {
+                                                                                    span { class: "badge badge-warning badge-sm", "是" }
+                                                                                } else {
+                                                                                    span { class: "opacity-50", "否" }
+                                                                                }
+                                                                            }
+                                                                            td {
+                                                                                div { class: "flex gap-2 items-center",
+                                                                                    button { class: "btn hud-btn btn-ghost btn-sm",
+                                                                                        onclick: move |_| {
+                                                                                            triple_edit_id.set(Some(edit_id.clone()));
+                                                                                            triple_form_subject.set(edit_subject.clone());
+                                                                                            triple_form_relation.set(edit_relation.clone());
+                                                                                            triple_form_object.set(edit_object.clone());
+                                                                                            triple_form_cardinality.set(edit_cardinality.clone());
+                                                                                            triple_form_required.set(edit_required);
+                                                                                            show_triple_modal.set(true);
+                                                                                        },
+                                                                                        "编辑"
+                                                                                    }
+                                                                                    button { class: "btn hud-btn btn-error btn-sm",
+                                                                                        onclick: move |_| triple_retire_id.set(Some(retire_id.clone())),
+                                                                                        "退役"
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                EmptyState {
+                                    icon: Some("🕸️".to_string()),
+                                    message: "骨架加载失败，请点击右上角刷新重试".to_string(),
+                                }
+                            }
+                        }
+                    }
+
                     if active_tab() == OntologyTab::Classes {
                         // ==================== 实体类词表 ====================
                         HudSection {
@@ -1161,6 +1724,7 @@ pub fn HrOntologyLexicon() -> Element {
                                         class_form_name.set(String::new());
                                         class_form_desc.set(String::new());
                                         class_form_fields.set(String::new());
+                                        class_form_parent.set(String::new());
                                         show_class_modal.set(true);
                                     },
                                     "+ 新增实体类"
@@ -1211,6 +1775,7 @@ pub fn HrOntologyLexicon() -> Element {
                                             col {}
                                             col {}
                                             col {}
+                                            col { class: "w-[120px]" }
                                             col {}
                                             col { class: "w-[88px]" }
                                             col { class: "w-[140px]" }
@@ -1221,6 +1786,7 @@ pub fn HrOntologyLexicon() -> Element {
                                                 th { "规范词" }
                                                 th { "展示名" }
                                                 th { "描述" }
+                                                th { "父类" }
                                                 th { "必填属性" }
                                                 th { "状态" }
                                                 th { "更新时间" }
@@ -1248,6 +1814,13 @@ pub fn HrOntologyLexicon() -> Element {
                                                                     span { class: "font-mono text-xs block truncate", title: "{c.required_fields.join(\", \")}", "{c.required_fields.join(\", \")}" }
                                                                 }
                                                             }
+                                                            td {
+                                                                if let Some(parent) = c.parent_term_key.clone() {
+                                                                    span { class: "font-mono text-xs block truncate", title: "{parent}", "{parent}" }
+                                                                } else {
+                                                                    span { class: "opacity-50", "根类" }
+                                                                }
+                                                            }
                                                             td { {status_badge(c.status)} }
                                                             td { class: "whitespace-nowrap", "{format_datetime(c.updated_at * 1000)}" }
                                                             td {
@@ -1259,6 +1832,7 @@ pub fn HrOntologyLexicon() -> Element {
                                                                             class_form_name.set(edit_item.display_name.clone());
                                                                             class_form_desc.set(edit_item.description.clone());
                                                                             class_form_fields.set(edit_item.required_fields.join(", "));
+                                                                            class_form_parent.set(edit_item.parent_term_key.clone().unwrap_or_default());
                                                                             show_class_modal.set(true);
                                                                         },
                                                                         "编辑"
@@ -1318,8 +1892,6 @@ pub fn HrOntologyLexicon() -> Element {
                                         relation_form_key.set(String::new());
                                         relation_form_name.set(String::new());
                                         relation_form_desc.set(String::new());
-                                        relation_form_domain.set(String::new());
-                                        relation_form_range.set(String::new());
                                         relation_form_weight.set(String::new());
                                         relation_form_inverse.set(String::new());
                                         show_relation_modal.set(true);
@@ -1372,7 +1944,6 @@ pub fn HrOntologyLexicon() -> Element {
                                             col {}
                                             col {}
                                             col {}
-                                            col {}
                                             col { class: "w-[72px]" }
                                             col {}
                                             col { class: "w-[88px]" }
@@ -1384,7 +1955,6 @@ pub fn HrOntologyLexicon() -> Element {
                                                 th { "规范词" }
                                                 th { "展示名" }
                                                 th { "描述" }
-                                                th { "域 → 值域" }
                                                 th { "权重" }
                                                 th { "反向词" }
                                                 th { "状态" }
@@ -1397,16 +1967,6 @@ pub fn HrOntologyLexicon() -> Element {
                                                 {
                                                     let edit_item = r.clone();
                                                     let retire_id = r.id.clone();
-                                                    let domain_label = if r.domain_classes.is_empty() {
-                                                        "不限".to_string()
-                                                    } else {
-                                                        r.domain_classes.join(", ")
-                                                    };
-                                                    let range_label = if r.range_classes.is_empty() {
-                                                        "不限".to_string()
-                                                    } else {
-                                                        r.range_classes.join(", ")
-                                                    };
                                                     rsx! {
                                                         tr { key: "{r.id}",
                                                             td { span { class: "font-mono text-sm block truncate", title: "{r.term_key}", "{r.term_key}" } }
@@ -1414,13 +1974,6 @@ pub fn HrOntologyLexicon() -> Element {
                                                             td {
                                                                 div { class: "line-clamp-2", title: "{r.description}",
                                                                     "{r.description}"
-                                                                }
-                                                            }
-                                                            td {
-                                                                div { class: "text-xs truncate", title: "{domain_label} → {range_label}",
-                                                                    span { class: "font-mono", "{domain_label}" }
-                                                                    span { class: "opacity-50 mx-1", "→" }
-                                                                    span { class: "font-mono", "{range_label}" }
                                                                 }
                                                             }
                                                             td { "{r.weight_base}" }
@@ -1441,8 +1994,6 @@ pub fn HrOntologyLexicon() -> Element {
                                                                             relation_form_key.set(edit_item.term_key.clone());
                                                                             relation_form_name.set(edit_item.display_name.clone());
                                                                             relation_form_desc.set(edit_item.description.clone());
-                                                                            relation_form_domain.set(edit_item.domain_classes.join(", "));
-                                                                            relation_form_range.set(edit_item.range_classes.join(", "));
                                                                             relation_form_weight.set(format!("{}", edit_item.weight_base));
                                                                             relation_form_inverse.set(edit_item.inverse_key.clone().unwrap_or_default());
                                                                             show_relation_modal.set(true);
@@ -1847,6 +2398,24 @@ pub fn HrOntologyLexicon() -> Element {
                             placeholder: "逗号分隔，如：name, contact；留空 = 无必填属性"
                         }
                     }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "父类（继承）" } }
+                        select { class: "select select-bordered hud-select w-full",
+                            value: "{class_form_parent}",
+                            onchange: move |e| class_form_parent.set(e.value()),
+                            option { value: "", "无（作为根类）" }
+                            if let Some(s) = skeleton() {
+                                for c in s.classes.iter() {
+                                    option { value: "{c.term_key}", "{c.display_name}（{c.term_key}）" }
+                                }
+                            } else {
+                                for c in classes().iter() {
+                                    option { value: "{c.term_key}", "{c.display_name}（{c.term_key}）" }
+                                }
+                            }
+                        }
+                        span { class: "label-text-alt opacity-60", "父类必须存在且启用，禁止自指与成环；子类自动继承祖先的骨架约束" }
+                    }
                 }
             }
 
@@ -1893,22 +2462,6 @@ pub fn HrOntologyLexicon() -> Element {
                         }
                     }
                     div { class: "form-control w-full",
-                        label { class: "label", span { class: "label-text font-medium", "允许的源实体类（域）" } }
-                        input { class: "input input-bordered hud-input w-full font-mono",
-                            value: "{relation_form_domain}",
-                            oninput: move |e| relation_form_domain.set(e.value()),
-                            placeholder: "逗号分隔的实体类 key；留空 = 不限"
-                        }
-                    }
-                    div { class: "form-control w-full",
-                        label { class: "label", span { class: "label-text font-medium", "允许的目标实体类（值域）" } }
-                        input { class: "input input-bordered hud-input w-full font-mono",
-                            value: "{relation_form_range}",
-                            oninput: move |e| relation_form_range.set(e.value()),
-                            placeholder: "逗号分隔的实体类 key；留空 = 不限"
-                        }
-                    }
-                    div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "边权重基数" } }
                         input { class: "input input-bordered hud-input w-full",
                             r#type: "number",
@@ -1928,6 +2481,113 @@ pub fn HrOntologyLexicon() -> Element {
                         }
                     }
                 }
+            }
+
+            // ==================== 骨架三元组 新增/编辑 Modal ====================
+            Modal {
+                title: if triple_edit_id().is_some() { "编辑骨架三元组".to_string() } else { "新增骨架三元组".to_string() },
+                show: show_triple_modal(),
+                on_close: move |_| show_triple_modal.set(false),
+                width_class: Some("max-w-xl".to_string()),
+                footer: rsx! {
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_triple_modal.set(false), "取消" }
+                    button {
+                        class: "btn hud-btn btn-primary",
+                        disabled: triple_saving(),
+                        onclick: move |_| handle_save_triple(),
+                        if triple_saving() { span { class: "loading loading-spinner loading-xs" } }
+                        "保存"
+                    }
+                },
+                div { class: "space-y-4",
+                    p { class: "text-xs opacity-60",
+                        "三元组表达「主语类 -关系词-> 宾语类」的骨架约束：某关系无任何三元组 = 不约束；单侧留空时用 * 通配；子类沿继承链自动匹配父类约束。"
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "主语类" } }
+                        input { class: "input input-bordered hud-input w-full font-mono",
+                            value: "{triple_form_subject}",
+                            list: "skeleton-class-options",
+                            oninput: move |e| triple_form_subject.set(e.value()),
+                            placeholder: "实体类 term_key，或 * 表示不限"
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "关系词" } }
+                        input { class: "input input-bordered hud-input w-full font-mono",
+                            value: "{triple_form_relation}",
+                            list: "skeleton-relation-options",
+                            oninput: move |e| triple_form_relation.set(e.value()),
+                            placeholder: "关系类型 term_key"
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "宾语类" } }
+                        input { class: "input input-bordered hud-input w-full font-mono",
+                            value: "{triple_form_object}",
+                            list: "skeleton-class-options",
+                            oninput: move |e| triple_form_object.set(e.value()),
+                            placeholder: "实体类 term_key，或 * 表示不限"
+                        }
+                    }
+                    div { class: "grid grid-cols-2 gap-4",
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "基数" } }
+                            select { class: "select select-bordered hud-select w-full",
+                                value: "{triple_form_cardinality}",
+                                onchange: move |e| triple_form_cardinality.set(e.value()),
+                                option { value: "many", "many（多值）" }
+                                option { value: "single", "single（单值）" }
+                            }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "是否必填" } }
+                            label { class: "label cursor-pointer justify-start gap-3 rounded-lg border border-base-300 px-3 py-2",
+                                input { r#type: "checkbox", class: "checkbox checkbox-sm",
+                                    checked: triple_form_required(),
+                                    onchange: move |e| triple_form_required.set(e.checked()),
+                                }
+                                span { class: "text-sm", "该关系为必填约束" }
+                            }
+                        }
+                    }
+                    datalist { id: "skeleton-class-options",
+                        option { value: "{WILDCARD_CLASS}" }
+                        if let Some(s) = skeleton() {
+                            for c in s.classes.iter() {
+                                option { value: "{c.term_key}" }
+                            }
+                        } else {
+                            for c in classes().iter() {
+                                option { value: "{c.term_key}" }
+                            }
+                        }
+                    }
+                    datalist { id: "skeleton-relation-options",
+                        if let Some(s) = skeleton() {
+                            for r in s.relation_types.iter() {
+                                option { value: "{r.term_key}" }
+                            }
+                        } else {
+                            for r in relations().iter() {
+                                option { value: "{r.term_key}" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ==================== 退役骨架三元组 确认 Modal ====================
+            Modal {
+                title: "退役骨架三元组".to_string(),
+                show: triple_retire_id().is_some(),
+                on_close: move |_| triple_retire_id.set(None),
+                width_class: Some("max-w-md".to_string()),
+                footer: rsx! {
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| triple_retire_id.set(None), "取消" }
+                    button { class: "btn hud-btn btn-error", onclick: move |_| handle_retire_triple(), "确认退役" }
+                },
+                p { class: "text-sm", "退役后该三元组不再参与骨架约束（软删除，可重新创建）。确认继续？" }
             }
 
             // ==================== 属性定义 新增/编辑 Modal ====================

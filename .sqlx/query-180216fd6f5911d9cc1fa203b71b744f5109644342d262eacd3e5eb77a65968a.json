@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, term_key, display_name, description, required_fields,\n       status AS \"status: _\", created_at, updated_at\nFROM ontology_classes WHERE term_key = ?\n            ",
+  "query": "\nSELECT id, term_key, display_name, description, required_fields, parent_term_key,\n       status AS \"status: _\", created_at, updated_at\nFROM ontology_classes WHERE id = ?\n            ",
   "describe": {
     "columns": [
       {
@@ -29,18 +29,23 @@
         "type_info": "Text"
       },
       {
-        "name": "status: _",
+        "name": "parent_term_key",
         "ordinal": 5,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "status: _",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 8,
         "type_info": "Integer"
       }
     ],
@@ -53,10 +58,11 @@
       false,
       false,
       false,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "47204ef8b9cd85455b336504b72144d852014f987586c51cc4835cbe5ae4a0f2"
+  "hash": "180216fd6f5911d9cc1fa203b71b744f5109644342d262eacd3e5eb77a65968a"
 }

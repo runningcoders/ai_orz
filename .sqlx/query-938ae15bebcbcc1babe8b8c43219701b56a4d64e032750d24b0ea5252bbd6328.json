@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE ontology_class_relations SET status = 0, updated_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "938ae15bebcbcc1babe8b8c43219701b56a4d64e032750d24b0ea5252bbd6328"
+}

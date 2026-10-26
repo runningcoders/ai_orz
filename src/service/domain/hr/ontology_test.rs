@@ -10,8 +10,8 @@
 use super::{HrDomain, domain};
 use crate::models::memory::{KnowledgeNodeRelationPo, LongTermKnowledgeNodePo};
 use crate::models::ontology::{
-    OntologyClass, OntologyClassPo, OntologyRelationType, OntologyRelationTypePo,
-    OntologySynonymMapping, OntologySynonymMappingPo,
+    OntologyClass, OntologyClassPo, OntologyClassRelation, OntologyClassRelationPo,
+    OntologyRelationType, OntologyRelationTypePo, OntologySynonymMapping, OntologySynonymMappingPo,
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::ontology::{
@@ -22,8 +22,8 @@ use common::api::ontology::GetDriftDashboardRequest;
 use common::enums::KnowledgeRelationStatus;
 use common::enums::MemoryStatus;
 use common::ontology::{
-    PresetOntologyClass, PresetOntologyLexicon, PresetOntologyRelationType, PresetOntologySynonym,
-    TermKind,
+    PresetOntologyClass, PresetOntologyClassRelation, PresetOntologyLexicon,
+    PresetOntologyRelationType, PresetOntologySynonym, TermKind,
 };
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -69,7 +69,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn HrDomain>, RequestContext) {
 
 /// 预置词表 fixture：带书写形变体（大写 / 空白）验证归一化口径
 ///
-/// 2 实体类 + 1 关系类型（引用第一个类）+ 1 同义映射 = 4 条。
+/// 2 实体类 + 1 关系类型 + 1 骨架三元组 + 1 同义映射 = 5 条。
 fn preset_lexicon() -> PresetOntologyLexicon {
     PresetOntologyLexicon {
         classes: vec![
@@ -78,23 +78,30 @@ fn preset_lexicon() -> PresetOntologyLexicon {
                 display_name: "智能体".to_string(),
                 description: "自主执行单元".to_string(),
                 required_fields: vec!["name".to_string()],
+                parent_term_key: None,
             },
             PresetOntologyClass {
                 term_key: "document".to_string(),
                 display_name: "文档".to_string(),
                 description: "知识载体".to_string(),
                 required_fields: vec![],
+                parent_term_key: None,
             },
         ],
         relation_types: vec![PresetOntologyRelationType {
             term_key: "contains".to_string(),
             display_name: "包含".to_string(),
             description: "组成关系".to_string(),
-            domain_classes: vec!["agent".to_string()],
-            range_classes: vec!["document".to_string()],
             weight_base: Some(1.5),
             inverse_key: Some("contained_by".to_string()),
             direction: "directed".to_string(),
+        }],
+        class_relations: vec![PresetOntologyClassRelation {
+            subject_class_key: "agent".to_string(),
+            relation_key: "contains".to_string(),
+            object_class_key: "document".to_string(),
+            cardinality: "many".to_string(),
+            required: false,
         }],
         properties: vec![],
         synonym_mappings: vec![PresetOntologySynonym {
@@ -145,24 +152,30 @@ async fn test_create_class_validates_key_and_json(pool: SqlitePool) {
     assert_eq!(found.po.required_fields, r#"["a","b"]"#);
 }
 
-/// create_relation_type：引用不存在的实体类拒绝；类就位后成功
+/// create_class_relation：引用缺失实体类 fail fast；引用完整时创建成功
 #[sqlx::test]
-async fn test_create_relation_type_validates_class_refs(pool: SqlitePool) {
+async fn test_create_class_relation_validates_class_refs(pool: SqlitePool) {
     let (hr, ctx) = init_test_env(pool);
     let onto = hr.ontology_domain();
 
-    let bad = OntologyRelationType::from_po(OntologyRelationTypePo::new(
+    // 关系词先落库，确保失败原因确定是「实体类缺失」而非「关系词缺失」
+    let relation_type = OntologyRelationType::from_po(OntologyRelationTypePo::new(
         "depends",
         "依赖",
         "依赖关系",
-        r#"["ghost"]"#,
-        "[]",
         1.0,
         None,
         "directed",
     ));
+    onto.create_relation_type(ctx.clone(), &relation_type)
+        .await
+        .unwrap();
+
+    let bad = OntologyClassRelation::from_po(OntologyClassRelationPo::new(
+        "ghost", "depends", "*", "many", false,
+    ));
     let err = onto
-        .create_relation_type(ctx.clone(), &bad)
+        .create_class_relation(ctx.clone(), &bad)
         .await
         .unwrap_err();
     assert!(
@@ -172,23 +185,17 @@ async fn test_create_relation_type_validates_class_refs(pool: SqlitePool) {
 
     let class = OntologyClass::from_po(OntologyClassPo::new("agent", "智能体", "x", "[]"));
     onto.create_class(ctx.clone(), &class).await.unwrap();
-    let ok = OntologyRelationType::from_po(OntologyRelationTypePo::new(
-        "depends",
-        "依赖",
-        "依赖关系",
-        r#"["agent"]"#,
-        r#"["agent"]"#,
-        1.0,
-        None,
-        "directed",
+    let ok = OntologyClassRelation::from_po(OntologyClassRelationPo::new(
+        "agent", "depends", "*", "many", false,
     ));
-    onto.create_relation_type(ctx.clone(), &ok).await.unwrap();
+    onto.create_class_relation(ctx.clone(), &ok).await.unwrap();
     let found = onto
-        .get_relation_type(ctx.clone(), &ok.po.id)
+        .get_class_relation(ctx.clone(), &ok.po.id)
         .await
         .unwrap()
         .expect("引用完整时创建成功");
-    assert_eq!(found.po.term_key, "depends");
+    assert_eq!(found.po.subject_class_key, "agent");
+    assert_eq!(found.po.object_class_key, "*");
 }
 
 /// update_class / update_relation_type：目标 id 不存在返回 NotFound（DAO 静默成功语义由 Domain 补齐）
@@ -205,7 +212,7 @@ async fn test_update_missing_entity_returns_not_found(pool: SqlitePool) {
     );
 
     let rt = OntologyRelationType::from_po(OntologyRelationTypePo::new(
-        "depends", "依赖", "x", "[]", "[]", 1.0, None, "directed",
+        "depends", "依赖", "x", 1.0, None, "directed",
     ));
     let err = onto
         .update_relation_type(ctx.clone(), &rt)
@@ -291,6 +298,7 @@ async fn test_apply_default_lexicon_idempotent(pool: SqlitePool) {
         "term_key 归一化后按序插入"
     );
     assert_eq!(first.inserted_relation_types, ["contains"]);
+    assert_eq!(first.inserted_class_relations, 1);
     assert_eq!(first.inserted_synonyms, 1);
     assert_eq!(first.skipped, 0);
 
@@ -304,7 +312,7 @@ async fn test_apply_default_lexicon_idempotent(pool: SqlitePool) {
         "二次注入不再新增关系类型"
     );
     assert_eq!(second.inserted_synonyms, 0, "二次注入不再新增同义映射");
-    assert_eq!(second.skipped, 4, "三段合计 4 条全部跳过");
+    assert_eq!(second.skipped, 5, "四段合计 5 条全部跳过");
 
     // 库内行数不变（「重复调用 0 重复行」的直接证据）
     let classes = onto
@@ -345,11 +353,16 @@ async fn test_apply_default_lexicon_rejects_missing_ref(pool: SqlitePool) {
             term_key: "depends".to_string(),
             display_name: "依赖".to_string(),
             description: "依赖关系".to_string(),
-            domain_classes: vec!["ghost".to_string()],
-            range_classes: vec![],
             weight_base: None,
             inverse_key: None,
             direction: "directed".to_string(),
+        }],
+        class_relations: vec![PresetOntologyClassRelation {
+            subject_class_key: "ghost".to_string(),
+            relation_key: "depends".to_string(),
+            object_class_key: "*".to_string(),
+            cardinality: "many".to_string(),
+            required: false,
         }],
         properties: vec![],
         synonym_mappings: vec![],
@@ -614,7 +627,7 @@ async fn test_drift_dashboard_coverage_lifecycle(pool: SqlitePool) {
         .await
         .unwrap();
     assert_eq!(second.inserted_synonyms, 2, "幂等注入只补新增同义映射");
-    assert_eq!(second.skipped, 4, "已有 4 条全部跳过");
+    assert_eq!(second.skipped, 5, "已有 5 条词表条目全部跳过");
 
     // 看板口径二：解析以当前词表为参数，历史漂移自动愈合
     let dashboard = onto
@@ -648,8 +661,6 @@ async fn test_create_relation_type_directed_with_inverse_key_ok(pool: SqlitePool
         "contains",
         "包含",
         "组成关系",
-        r#"["agent"]"#,
-        r#"["agent"]"#,
         1.0,
         Some("contained_by".to_string()),
         "directed",

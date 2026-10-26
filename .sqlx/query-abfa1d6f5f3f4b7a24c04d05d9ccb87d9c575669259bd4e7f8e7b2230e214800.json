@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, term_key, display_name, description, domain_classes, range_classes,\n       weight_base, inverse_key, direction, status AS \"status: _\", created_at, updated_at\nFROM ontology_relation_types ORDER BY term_key ASC\n            ",
+  "query": "\nSELECT id, term_key, display_name, description, required_fields, parent_term_key,\n       status AS \"status: _\", created_at, updated_at\nFROM ontology_classes WHERE term_key = ?\n            ",
   "describe": {
     "columns": [
       {
@@ -24,52 +24,35 @@
         "type_info": "Text"
       },
       {
-        "name": "domain_classes",
+        "name": "required_fields",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "range_classes",
+        "name": "parent_term_key",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "weight_base",
-        "ordinal": 6,
-        "type_info": "Float"
-      },
-      {
-        "name": "inverse_key",
-        "ordinal": 7,
-        "type_info": "Text"
-      },
-      {
-        "name": "direction",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
         "name": "status: _",
-        "ordinal": 9,
+        "ordinal": 6,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 10,
+        "ordinal": 7,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 11,
+        "ordinal": 8,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
-      false,
-      false,
       false,
       false,
       false,
@@ -78,9 +61,8 @@
       true,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "543e8d3fd80506a6748a08147d21966cf230d2f65c9da0edc637b26e4a545fb6"
+  "hash": "abfa1d6f5f3f4b7a24c04d05d9ccb87d9c575669259bd4e7f8e7b2230e214800"
 }

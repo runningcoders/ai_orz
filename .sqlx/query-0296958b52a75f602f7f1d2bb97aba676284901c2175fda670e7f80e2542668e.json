@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO ontology_relation_types (id, term_key, display_name, description, weight_base, inverse_key, direction, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "0296958b52a75f602f7f1d2bb97aba676284901c2175fda670e7f80e2542668e"
+}

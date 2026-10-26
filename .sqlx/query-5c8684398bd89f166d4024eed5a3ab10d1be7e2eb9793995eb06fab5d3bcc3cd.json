@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE ontology_classes\nSET display_name = ?, description = ?, required_fields = ?, parent_term_key = ?, updated_at = ?\nWHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "5c8684398bd89f166d4024eed5a3ab10d1be7e2eb9793995eb06fab5d3bcc3cd"
+}

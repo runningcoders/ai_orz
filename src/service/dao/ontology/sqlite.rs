@@ -1,12 +1,13 @@
 //! Ontology DAO SQLite 实现
 
 use crate::models::ontology::{
-    OntologyClassPo, OntologyPropertyPo, OntologyRelationTypePo, OntologySynonymMappingPo,
+    OntologyClassPo, OntologyClassRelationPo, OntologyPropertyPo, OntologyRelationTypePo,
+    OntologySynonymMappingPo,
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::ontology::{
-    OntologyClassQuery, OntologyDao, OntologyPropertyQuery, OntologyRelationTypeQuery,
-    OntologySynonymQuery,
+    OntologyClassQuery, OntologyClassRelationQuery, OntologyDao, OntologyPropertyQuery,
+    OntologyRelationTypeQuery, OntologySynonymQuery,
 };
 use common::constants::utils::current_timestamp;
 use common::error::Result;
@@ -62,12 +63,13 @@ impl OntologyDao for OntologyDaoSqliteImpl {
         let term_key = normalize(&class.term_key);
         let status = class.status.to_i32();
         if let Err(e) = sqlx::query!(
-            "INSERT INTO ontology_classes (id, term_key, display_name, description, required_fields, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO ontology_classes (id, term_key, display_name, description, required_fields, parent_term_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             class.id,
             term_key,
             class.display_name,
             class.description,
             class.required_fields,
+            class.parent_term_key,
             status,
             class.created_at,
             class.updated_at
@@ -91,7 +93,7 @@ impl OntologyDao for OntologyDaoSqliteImpl {
         let class = sqlx::query_as!(
             OntologyClassPo,
             r#"
-SELECT id, term_key, display_name, description, required_fields,
+SELECT id, term_key, display_name, description, required_fields, parent_term_key,
        status AS "status: _", created_at, updated_at
 FROM ontology_classes WHERE id = ?
             "#,
@@ -112,7 +114,7 @@ FROM ontology_classes WHERE id = ?
         let class = sqlx::query_as!(
             OntologyClassPo,
             r#"
-SELECT id, term_key, display_name, description, required_fields,
+SELECT id, term_key, display_name, description, required_fields, parent_term_key,
        status AS "status: _", created_at, updated_at
 FROM ontology_classes WHERE term_key = ?
             "#,
@@ -136,7 +138,7 @@ FROM ontology_classes WHERE term_key = ?
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
-            r#"SELECT id, term_key, display_name, description, required_fields, status, created_at, updated_at FROM ontology_classes WHERE 1=1"#,
+            r#"SELECT id, term_key, display_name, description, required_fields, parent_term_key, status, created_at, updated_at FROM ontology_classes WHERE 1=1"#,
         );
         push_class_filters(&mut list_builder, &query);
         list_builder.push(" ORDER BY term_key ASC");
@@ -157,7 +159,7 @@ FROM ontology_classes WHERE term_key = ?
         let classes = sqlx::query_as!(
             OntologyClassPo,
             r#"
-SELECT id, term_key, display_name, description, required_fields,
+SELECT id, term_key, display_name, description, required_fields, parent_term_key,
        status AS "status: _", created_at, updated_at
 FROM ontology_classes ORDER BY term_key ASC
             "#
@@ -173,12 +175,13 @@ FROM ontology_classes ORDER BY term_key ASC
         sqlx::query!(
             r#"
 UPDATE ontology_classes
-SET display_name = ?, description = ?, required_fields = ?, updated_at = ?
+SET display_name = ?, description = ?, required_fields = ?, parent_term_key = ?, updated_at = ?
 WHERE id = ?
             "#,
             class.display_name,
             class.description,
             class.required_fields,
+            class.parent_term_key,
             now,
             class.id
         )
@@ -211,13 +214,11 @@ WHERE id = ?
         let term_key = normalize(&relation_type.term_key);
         let status = relation_type.status.to_i32();
         if let Err(e) = sqlx::query!(
-            "INSERT INTO ontology_relation_types (id, term_key, display_name, description, domain_classes, range_classes, weight_base, inverse_key, direction, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO ontology_relation_types (id, term_key, display_name, description, weight_base, inverse_key, direction, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             relation_type.id,
             term_key,
             relation_type.display_name,
             relation_type.description,
-            relation_type.domain_classes,
-            relation_type.range_classes,
             relation_type.weight_base,
             relation_type.inverse_key,
             relation_type.direction,
@@ -244,7 +245,7 @@ WHERE id = ?
         let relation_type = sqlx::query_as!(
             OntologyRelationTypePo,
             r#"
-SELECT id, term_key, display_name, description, domain_classes, range_classes,
+SELECT id, term_key, display_name, description,
        weight_base, inverse_key, direction, status AS "status: _", created_at, updated_at
 FROM ontology_relation_types WHERE id = ?
             "#,
@@ -265,7 +266,7 @@ FROM ontology_relation_types WHERE id = ?
         let relation_type = sqlx::query_as!(
             OntologyRelationTypePo,
             r#"
-SELECT id, term_key, display_name, description, domain_classes, range_classes,
+SELECT id, term_key, display_name, description,
        weight_base, inverse_key, direction, status AS "status: _", created_at, updated_at
 FROM ontology_relation_types WHERE term_key = ?
             "#,
@@ -289,7 +290,7 @@ FROM ontology_relation_types WHERE term_key = ?
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
-            r#"SELECT id, term_key, display_name, description, domain_classes, range_classes, weight_base, inverse_key, direction, status, created_at, updated_at FROM ontology_relation_types WHERE 1=1"#,
+            r#"SELECT id, term_key, display_name, description, weight_base, inverse_key, direction, status, created_at, updated_at FROM ontology_relation_types WHERE 1=1"#,
         );
         push_relation_type_filters(&mut list_builder, &query);
         list_builder.push(" ORDER BY term_key ASC");
@@ -313,7 +314,7 @@ FROM ontology_relation_types WHERE term_key = ?
         let relation_types = sqlx::query_as!(
             OntologyRelationTypePo,
             r#"
-SELECT id, term_key, display_name, description, domain_classes, range_classes,
+SELECT id, term_key, display_name, description,
        weight_base, inverse_key, direction, status AS "status: _", created_at, updated_at
 FROM ontology_relation_types ORDER BY term_key ASC
             "#
@@ -333,14 +334,12 @@ FROM ontology_relation_types ORDER BY term_key ASC
         sqlx::query!(
             r#"
 UPDATE ontology_relation_types
-SET display_name = ?, description = ?, domain_classes = ?, range_classes = ?,
+SET display_name = ?, description = ?,
     weight_base = ?, inverse_key = ?, direction = ?, updated_at = ?
 WHERE id = ?
             "#,
             relation_type.display_name,
             relation_type.description,
-            relation_type.domain_classes,
-            relation_type.range_classes,
             relation_type.weight_base,
             relation_type.inverse_key,
             relation_type.direction,
@@ -357,6 +356,171 @@ WHERE id = ?
         let now = current_timestamp();
         sqlx::query!(
             "UPDATE ontology_relation_types SET status = 0, updated_at = ? WHERE id = ?",
+            now,
+            id
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(())
+    }
+
+    // ==================== 骨架三元组（TBox：类-关系-类） ====================
+
+    async fn insert_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelationPo,
+    ) -> Result<()> {
+        // DAO 写入单点归一：三个 term_key 落库前收敛到规范形
+        let subject_class_key = normalize(&relation.subject_class_key);
+        let relation_key = normalize(&relation.relation_key);
+        let object_class_key = normalize(&relation.object_class_key);
+        let status = relation.status.to_i32();
+        if let Err(e) = sqlx::query!(
+            r#"
+INSERT INTO ontology_class_relations (
+    id, subject_class_key, relation_key, object_class_key,
+    cardinality, "required", "status", created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+"#,
+            relation.id,
+            subject_class_key,
+            relation_key,
+            object_class_key,
+            relation.cardinality,
+            relation.required,
+            status,
+            relation.created_at,
+            relation.updated_at
+        )
+        .execute(ctx.db_pool())
+        .await
+        {
+            return Err(map_unique_conflict(
+                e,
+                format!(
+                    "骨架三元组 {}-[{}]->{} 已存在",
+                    subject_class_key, relation_key, object_class_key
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn find_class_relation_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyClassRelationPo>> {
+        let relation = sqlx::query_as!(
+            OntologyClassRelationPo,
+            r#"
+SELECT id, subject_class_key, relation_key, object_class_key,
+       cardinality, "required" AS "required!: i32", "status" AS "status: _",
+       created_at, updated_at
+FROM ontology_class_relations WHERE id = ?
+            "#,
+            id
+        )
+        .fetch_optional(ctx.db_pool())
+        .await?;
+        Ok(relation)
+    }
+
+    async fn query_class_relations(
+        &self,
+        ctx: RequestContext,
+        query: OntologyClassRelationQuery,
+    ) -> Result<common::api::PagedResult<OntologyClassRelationPo>> {
+        let pool = ctx.db_pool();
+
+        let mut count_builder =
+            QueryBuilder::new("SELECT COUNT(*) FROM ontology_class_relations WHERE 1=1");
+        push_class_relation_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = QueryBuilder::new(
+            r#"SELECT id, subject_class_key, relation_key, object_class_key, cardinality, "required", "status", created_at, updated_at FROM ontology_class_relations WHERE 1=1"#,
+        );
+        push_class_relation_filters(&mut list_builder, &query);
+        list_builder
+            .push(" ORDER BY subject_class_key ASC, relation_key ASC, object_class_key ASC");
+        push_pagination(&mut list_builder, &query.pagination);
+
+        let items = list_builder
+            .build_query_as::<OntologyClassRelationPo>()
+            .fetch_all(pool)
+            .await?;
+
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
+    }
+
+    async fn list_all_class_relations(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<OntologyClassRelationPo>> {
+        let relations = sqlx::query_as!(
+            OntologyClassRelationPo,
+            r#"
+SELECT id, subject_class_key, relation_key, object_class_key,
+       cardinality, "required" AS "required!: i32", "status" AS "status: _",
+       created_at, updated_at
+FROM ontology_class_relations
+ORDER BY subject_class_key ASC, relation_key ASC, object_class_key ASC
+            "#
+        )
+        .fetch_all(ctx.db_pool())
+        .await?;
+        Ok(relations)
+    }
+
+    async fn update_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelationPo,
+    ) -> Result<()> {
+        // status 不在可更新列内（生命周期只由 insert/retire 驱动）
+        let subject_class_key = normalize(&relation.subject_class_key);
+        let relation_key = normalize(&relation.relation_key);
+        let object_class_key = normalize(&relation.object_class_key);
+        let now = current_timestamp();
+        if let Err(e) = sqlx::query!(
+            r#"
+UPDATE ontology_class_relations
+SET subject_class_key = ?, relation_key = ?, object_class_key = ?,
+    cardinality = ?, "required" = ?, updated_at = ?
+WHERE id = ?
+            "#,
+            subject_class_key,
+            relation_key,
+            object_class_key,
+            relation.cardinality,
+            relation.required,
+            now,
+            relation.id
+        )
+        .execute(ctx.db_pool())
+        .await
+        {
+            return Err(map_unique_conflict(
+                e,
+                format!(
+                    "骨架三元组 {}-[{}]->{} 已存在",
+                    subject_class_key, relation_key, object_class_key
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn retire_class_relation(&self, ctx: RequestContext, id: &str) -> Result<()> {
+        // 软删除 status=0；幂等：不存在或已退役均静默成功
+        let now = current_timestamp();
+        sqlx::query!(
+            "UPDATE ontology_class_relations SET status = 0, updated_at = ? WHERE id = ?",
             now,
             id
         )
@@ -787,6 +951,33 @@ fn push_property_sql_filters<'args>(
             .push(" ESCAPE '\\' OR description LIKE ")
             .push_bind(pattern)
             .push(" ESCAPE '\\')");
+    }
+}
+
+/// 骨架三元组查询 WHERE 构造（count 与 list 复用同一套）
+fn push_class_relation_filters<'args>(
+    builder: &mut QueryBuilder<'args, sqlx::Sqlite>,
+    query: &'args OntologyClassRelationQuery,
+) {
+    if let Some(subject) = &query.subject_class_key {
+        builder
+            .push(" AND subject_class_key = ")
+            .push_bind(normalize(subject));
+    }
+    if let Some(relation) = &query.relation_key {
+        builder
+            .push(" AND relation_key = ")
+            .push_bind(normalize(relation));
+    }
+    if let Some(object) = &query.object_class_key {
+        builder
+            .push(" AND object_class_key = ")
+            .push_bind(normalize(object));
+    }
+    if let Some(status) = query.status {
+        builder
+            .push(" AND \"status\" = ")
+            .push_bind(status.to_i32());
     }
 }
 

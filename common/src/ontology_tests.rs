@@ -455,3 +455,94 @@ fn preset_relation_type_direction_defaults_to_undirected() {
     let out = serde_json::to_string(&preset).expect("serialize");
     assert!(out.contains("\"direction\":\"directed\""));
 }
+
+// ==================== 本体骨架判定 ====================
+
+/// 构造骨架：concept 为根，document / agent / task 均继承 concept
+fn fixture_skeleton() -> OntologySkeleton {
+    let parents = [
+        ("concept", None),
+        ("document", Some("concept")),
+        ("agent", Some("concept")),
+        ("task", Some("concept")),
+        ("runbook", Some("document")),
+    ]
+    .into_iter()
+    .map(|(k, p)| (k.to_string(), p.map(str::to_string)))
+    .collect();
+    let triples = [(
+        "contains".to_string(),
+        vec![
+            ("document".to_string(), "concept".to_string()),
+            ("*".to_string(), "task".to_string()),
+        ],
+    )]
+    .into_iter()
+    .collect();
+    OntologySkeleton { parents, triples }
+}
+
+#[test]
+fn skeleton_relation_without_triples_is_unconstrained() {
+    let skeleton = fixture_skeleton();
+    assert_eq!(
+        skeleton.check("depends", "document", "task"),
+        SkeletonVerdict::Unconstrained
+    );
+    assert!(skeleton.check("depends", "document", "task").is_allowed());
+}
+
+#[test]
+fn skeleton_matches_direct_triple() {
+    let skeleton = fixture_skeleton();
+    assert_eq!(
+        skeleton.check("contains", "document", "agent"),
+        SkeletonVerdict::Matched
+    );
+}
+
+#[test]
+fn skeleton_matches_via_inheritance_chain() {
+    let skeleton = fixture_skeleton();
+    // runbook 继承 document，concept 是所有类祖先 → 沿继承链命中
+    assert_eq!(
+        skeleton.check("contains", "runbook", "agent"),
+        SkeletonVerdict::Matched
+    );
+}
+
+#[test]
+fn skeleton_matches_wildcard_side() {
+    let skeleton = fixture_skeleton();
+    // 第二条三元组主语为 '*'：任意类 → task
+    assert_eq!(
+        skeleton.check("contains", "agent", "task"),
+        SkeletonVerdict::Matched
+    );
+}
+
+#[test]
+fn skeleton_reports_mismatch_when_no_triple_matches() {
+    let skeleton = fixture_skeleton();
+    assert_eq!(
+        skeleton.check("contains", "agent", "agent"),
+        SkeletonVerdict::Mismatch
+    );
+    assert!(!skeleton.check("contains", "agent", "agent").is_allowed());
+}
+
+#[test]
+fn skeleton_ancestor_chain_includes_self_and_terminates_on_cycle() {
+    let skeleton = OntologySkeleton {
+        parents: [
+            ("a".to_string(), Some("b".to_string())),
+            ("b".to_string(), Some("a".to_string())),
+        ]
+        .into_iter()
+        .collect(),
+        triples: HashMap::new(),
+    };
+    let chain = skeleton.ancestor_chain("a");
+    assert!(chain.contains("a") && chain.contains("b"));
+    assert_eq!(chain.len(), 2);
+}

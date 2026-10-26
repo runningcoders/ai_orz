@@ -14,7 +14,7 @@ use common::ontology::Direction;
 #[register_handler_tool(
     id = "create_ontology_relation_type",
     name = "Create Ontology Relation Type",
-    description = "Create a relation-type lexicon entry (an edge type in the knowledge graph). term_key is the lowercase snake_case canonical key and must be unique; it cannot be changed after creation. domain_classes / range_classes constrain the head/tail entity classes (empty = unconstrained, keys must exist); inverse_key optionally links a symmetric reverse relation; direction is the edge orientation, either 'directed' or 'undirected' (default undirected) - directed edges render an arrowhead at the target end, and undirected entries must not declare inverse_key. Fails with Conflict if term_key already exists, or InvalidRequest if referenced classes do not exist or direction is invalid / conflicts with inverse_key.",
+    description = "Create a relation-type lexicon entry (an edge type in the knowledge graph). term_key is the lowercase snake_case canonical key and must be unique; it cannot be changed after creation. Skeleton constraints (which class may connect to which class) are managed separately via class-relation triples, not on the relation type. inverse_key optionally links a symmetric reverse relation; direction is the edge orientation, either 'directed' or 'undirected' (default undirected) - directed edges render an arrowhead at the target end, and undirected entries must not declare inverse_key. Fails with Conflict if term_key already exists, or InvalidRequest if direction is invalid / conflicts with inverse_key.",
     params = "common::api::CreateOntologyRelationTypeRequest",
     tags = "ontology_management"
 )]
@@ -47,8 +47,6 @@ pub async fn create_ontology_relation_type(
         params.term_key,
         params.display_name,
         params.description,
-        serde_json::to_string(&params.domain_classes).unwrap_or_default(),
-        serde_json::to_string(&params.range_classes).unwrap_or_default(),
         params.weight_base.unwrap_or(1.0),
         params.inverse_key,
         &direction,

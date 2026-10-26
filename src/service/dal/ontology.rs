@@ -10,14 +10,16 @@
 //! 零改动零感知；DAL 之间禁止互引，本模块只依赖 DAO 层。
 
 use crate::models::ontology::{
-    OntologyClass, OntologyProperty, OntologyRelationType, OntologySynonymMapping,
+    OntologyClass, OntologyClassRelation, OntologyProperty, OntologyRelationType,
+    OntologySynonymMapping,
 };
 use crate::pkg::RequestContext;
 use crate::pkg::stats::OntologyDriftEvent;
 use crate::service::dao::memory::MemoryDao;
 use crate::service::dao::ontology::{
-    OntologyClassQuery, OntologyDao, OntologyDriftQuery, OntologyDriftTermRow,
-    OntologyPropertyQuery, OntologyRelationTypeQuery, OntologyStatsDao, OntologySynonymQuery,
+    OntologyClassQuery, OntologyClassRelationQuery, OntologyDao, OntologyDriftQuery,
+    OntologyDriftTermRow, OntologyPropertyQuery, OntologyRelationTypeQuery, OntologyStatsDao,
+    OntologySynonymQuery,
 };
 use async_trait::async_trait;
 use common::api::ontology::{
@@ -30,8 +32,8 @@ use common::enums::OntologyStatus;
 use common::error::Result;
 use common::ontology::{
     Direction, LexiconPropertySummary, LexiconSynonymSummary, LexiconTermSummary,
-    OntologyCertifyReport, OntologyLexicon, OntologyLexiconSummary, ResolvedTerm, TermKind,
-    resolve,
+    OntologyCertifyReport, OntologyLexicon, OntologyLexiconSummary, OntologySkeleton, ResolvedTerm,
+    TermKind, resolve,
 };
 use std::sync::Arc;
 
@@ -289,6 +291,51 @@ pub trait OntologyDal: Send + Sync {
 
     /// 退役关系类型（软删除 status=0；幂等）
     async fn retire_relation_type(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    // ---- 骨架三元组（TBox：类-关系-类） ----
+
+    /// 插入骨架三元组（UNIQUE(主语, 关系, 宾语)，冲突返回 Conflict）
+    async fn insert_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()>;
+
+    /// 按 ID 查骨架三元组
+    async fn find_class_relation_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyClassRelation>>;
+
+    /// 骨架三元组分页组合查询（count 内嵌）
+    async fn query_class_relations(
+        &self,
+        ctx: RequestContext,
+        query: OntologyClassRelationQuery,
+    ) -> Result<PagedResult<OntologyClassRelation>>;
+
+    /// 全量骨架三元组（含退役）
+    async fn list_all_class_relations(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<OntologyClassRelation>>;
+
+    /// 全量更新骨架三元组
+    async fn update_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()>;
+
+    /// 退役骨架三元组（软删除 status=0；幂等）
+    async fn retire_class_relation(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    /// 加载骨架约束结构（只取 Active 类与 Active 三元组，供运行时软门禁判定）
+    ///
+    /// 与 [`Self::load_lexicon`] 同为「全量载入 + 内存判定」哲学：对象/骨架词表
+    /// 量级小，且继承链解析需全貌，不做逐边 SQL 查询。
+    async fn load_skeleton(&self, ctx: RequestContext) -> Result<OntologySkeleton>;
 
     // ---- 同义映射 ----
 
@@ -817,6 +864,104 @@ impl OntologyDal for OntologyDalImpl {
 
     async fn retire_relation_type(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.ontology_dao.retire_relation_type(ctx, id).await
+    }
+
+    // ---- 骨架三元组（PO ↔ Entity 转换在 DAL 收口，PO 不上浮） ----
+
+    async fn insert_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()> {
+        self.ontology_dao
+            .insert_class_relation(ctx, &relation.clone().into_po())
+            .await
+    }
+
+    async fn find_class_relation_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OntologyClassRelation>> {
+        Ok(self
+            .ontology_dao
+            .find_class_relation_by_id(ctx, id)
+            .await?
+            .map(OntologyClassRelation::from_po))
+    }
+
+    async fn query_class_relations(
+        &self,
+        ctx: RequestContext,
+        query: OntologyClassRelationQuery,
+    ) -> Result<PagedResult<OntologyClassRelation>> {
+        Ok(self
+            .ontology_dao
+            .query_class_relations(ctx, query)
+            .await?
+            .map(OntologyClassRelation::from_po))
+    }
+
+    async fn list_all_class_relations(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<OntologyClassRelation>> {
+        Ok(self
+            .ontology_dao
+            .list_all_class_relations(ctx)
+            .await?
+            .into_iter()
+            .map(OntologyClassRelation::from_po)
+            .collect())
+    }
+
+    async fn update_class_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &OntologyClassRelation,
+    ) -> Result<()> {
+        self.ontology_dao
+            .update_class_relation(ctx, &relation.clone().into_po())
+            .await
+    }
+
+    async fn retire_class_relation(&self, ctx: RequestContext, id: &str) -> Result<()> {
+        self.ontology_dao.retire_class_relation(ctx, id).await
+    }
+
+    async fn load_skeleton(&self, ctx: RequestContext) -> Result<OntologySkeleton> {
+        let (classes, relations) = tokio::try_join!(
+            self.ontology_dao.list_all_classes(ctx.clone()),
+            self.ontology_dao.list_all_class_relations(ctx)
+        )?;
+
+        let parents = classes
+            .into_iter()
+            .filter(|po| po.status == OntologyStatus::Active)
+            .map(|po| {
+                (
+                    common::ontology::normalize(&po.term_key),
+                    po.parent_term_key.map(|p| common::ontology::normalize(&p)),
+                )
+            })
+            .collect();
+
+        let mut triples: std::collections::HashMap<String, Vec<(String, String)>> =
+            std::collections::HashMap::new();
+        for relation in relations {
+            if relation.status != OntologyStatus::Active {
+                continue;
+            }
+            triples
+                .entry(common::ontology::normalize(&relation.relation_key))
+                .or_default()
+                .push((
+                    common::ontology::normalize(&relation.subject_class_key),
+                    common::ontology::normalize(&relation.object_class_key),
+                ));
+        }
+
+        Ok(OntologySkeleton { parents, triples })
     }
 
     async fn insert_synonym(

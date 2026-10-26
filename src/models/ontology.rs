@@ -28,6 +28,8 @@ pub struct OntologyClassPo {
     pub description: String,
     /// 实体类必备字段清单（JSON 数组字符串），写后校验的判据之一
     pub required_fields: String,
+    /// 父类 term_key（可空 = 根类）；骨架有效约束沿继承链向上解析
+    pub parent_term_key: Option<String>,
     /// 条目状态（1 正常 / 0 退役；退役 ≠ 删除，历史存量引用仍可解释）
     pub status: OntologyStatus,
     /// 创建时间戳（秒级）
@@ -51,6 +53,7 @@ impl OntologyClassPo {
             display_name: display_name.into(),
             description: description.into(),
             required_fields: required_fields.into(),
+            parent_term_key: None,
             status: OntologyStatus::default(),
             created_at: now,
             updated_at: now,
@@ -109,10 +112,6 @@ pub struct OntologyRelationTypePo {
     pub display_name: String,
     /// 语义说明（这条关系表达什么、头尾各是什么）
     pub description: String,
-    /// 头实体类约束（JSON 数组字符串；空数组 = 不约束）
-    pub domain_classes: String,
-    /// 尾实体类约束（JSON 数组字符串；空数组 = 不约束）
-    pub range_classes: String,
     /// 关系权重基线，映射到图谱边 `weight` 的校准参考
     pub weight_base: f64,
     /// 逆向关系词（如 contains ↔ contained_by），可空
@@ -134,8 +133,6 @@ impl OntologyRelationTypePo {
         term_key: impl Into<String>,
         display_name: impl Into<String>,
         description: impl Into<String>,
-        domain_classes: impl Into<String>,
-        range_classes: impl Into<String>,
         weight_base: f64,
         inverse_key: Option<String>,
         direction: &str,
@@ -146,8 +143,6 @@ impl OntologyRelationTypePo {
             term_key: term_key.into(),
             display_name: display_name.into(),
             description: description.into(),
-            domain_classes: domain_classes.into(),
-            range_classes: range_classes.into(),
             weight_base,
             inverse_key,
             direction: direction.to_string(),
@@ -155,16 +150,6 @@ impl OntologyRelationTypePo {
             created_at: now,
             updated_at: now,
         }
-    }
-
-    /// 解析头实体类约束；空串或非法 JSON 视为不约束
-    pub fn parse_domain_classes(&self) -> Vec<String> {
-        serde_json::from_str(&self.domain_classes).unwrap_or_default()
-    }
-
-    /// 解析尾实体类约束；空串或非法 JSON 视为不约束
-    pub fn parse_range_classes(&self) -> Vec<String> {
-        serde_json::from_str(&self.range_classes).unwrap_or_default()
     }
 }
 
@@ -198,6 +183,96 @@ impl OntologyRelationType {
     /// 条目状态
     pub fn status(&self) -> OntologyStatus {
         self.po.status
+    }
+}
+
+// ==================== 骨架三元组（TBox：类-关系-类） ====================
+
+/// 本体骨架三元组 PO（TBox：一条「主语类 → 关系 → 宾语类」约束）
+///
+/// 替代此前压在 `ontology_relation_types.domain_classes / range_classes` 两个
+/// JSON 数组里的骨架信息：独立成行后才能按任意一侧反查、承载边级基数/必填。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct OntologyClassRelationPo {
+    /// 唯一 ID
+    pub id: String,
+    /// 主语实体类 term_key
+    pub subject_class_key: String,
+    /// 关系类型 term_key
+    pub relation_key: String,
+    /// 宾语实体类 term_key（`*` 表示不限）
+    pub object_class_key: String,
+    /// 边基数（"single" / "many"）
+    pub cardinality: String,
+    /// 是否必填（0 可选 / 1 必填）
+    pub required: i32,
+    /// 条目状态（1 正常 / 0 退役）
+    pub status: OntologyStatus,
+    /// 创建时间戳（秒级）
+    pub created_at: i64,
+    /// 更新时间戳（秒级）
+    pub updated_at: i64,
+}
+
+impl OntologyClassRelationPo {
+    /// 创建三元组（id / status / 时间戳自动填充）
+    pub fn new(
+        subject_class_key: impl Into<String>,
+        relation_key: impl Into<String>,
+        object_class_key: impl Into<String>,
+        cardinality: impl Into<String>,
+        required: bool,
+    ) -> Self {
+        let now = common::constants::utils::current_timestamp();
+        Self {
+            id: uuid::Uuid::now_v7().to_string(),
+            subject_class_key: subject_class_key.into(),
+            relation_key: relation_key.into(),
+            object_class_key: object_class_key.into(),
+            cardinality: cardinality.into(),
+            required: i32::from(required),
+            status: OntologyStatus::default(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// 是否必填
+    pub fn is_required(&self) -> bool {
+        self.required != 0
+    }
+}
+
+/// 骨架三元组 Entity（Domain 层及以上唯一可见形态）
+#[derive(Debug, Clone)]
+pub struct OntologyClassRelation {
+    pub po: OntologyClassRelationPo,
+}
+
+impl OntologyClassRelation {
+    /// 从 PO 创建业务实体
+    pub fn from_po(po: OntologyClassRelationPo) -> Self {
+        Self { po }
+    }
+
+    /// 转回 PO（DAO 写入用；往返无损）
+    pub fn into_po(self) -> OntologyClassRelationPo {
+        self.po
+    }
+
+    /// 主语实体类 term_key
+    pub fn subject_class_key(&self) -> &str {
+        &self.po.subject_class_key
+    }
+
+    /// 关系类型 term_key
+    pub fn relation_key(&self) -> &str {
+        &self.po.relation_key
+    }
+
+    /// 宾语实体类 term_key
+    pub fn object_class_key(&self) -> &str {
+        &self.po.object_class_key
     }
 }
 
@@ -447,8 +522,6 @@ mod tests {
             "contains",
             "包含",
             "整体包含部分",
-            r#"["document"]"#,
-            "".to_string(),
             1.0,
             Some("contained_by".to_string()),
             "directed",
@@ -456,9 +529,18 @@ mod tests {
         let entity = OntologyRelationType::from_po(po.clone());
         assert_eq!(entity.term_key(), "contains");
         assert_eq!(entity.into_po(), po);
-        assert_eq!(po.parse_domain_classes(), vec!["document".to_string()]);
-        assert!(po.parse_range_classes().is_empty());
         assert_eq!(po.direction, "directed");
+    }
+
+    #[test]
+    fn class_relation_po_entity_roundtrip_lossless() {
+        let po = OntologyClassRelationPo::new("document", "contains", "concept", "many", true);
+        let entity = OntologyClassRelation::from_po(po.clone());
+        assert_eq!(entity.subject_class_key(), "document");
+        assert_eq!(entity.relation_key(), "contains");
+        assert_eq!(entity.object_class_key(), "concept");
+        assert!(po.is_required());
+        assert_eq!(entity.into_po(), po);
     }
 
     #[test]

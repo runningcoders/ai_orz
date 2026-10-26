@@ -239,6 +239,95 @@ pub fn resolve(lexicon: &OntologyLexicon, kind: TermKind, raw_term: &str) -> Res
     }
 }
 
+// ==================== 本体骨架（类-关系-类约束解析） ====================
+
+/// 通配类 key：三元组中表示该侧不限实体类
+pub const WILDCARD_CLASS: &str = "*";
+
+/// 骨架约束判定结论（三分支互斥完备，与漂移软门禁同一哲学）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkeletonVerdict {
+    /// 该关系没有任何三元组 = 不约束（放行）
+    Unconstrained,
+    /// 命中三元组（含继承链 / 通配匹配，放行）
+    Matched,
+    /// 有关系三元组但均不匹配（软门禁：仅记漂移，不阻断写入）
+    Mismatch,
+}
+
+impl SkeletonVerdict {
+    /// 是否允许写入（未约束与命中均放行，仅 Mismatch 需告警）
+    pub fn is_allowed(self) -> bool {
+        !matches!(self, Self::Mismatch)
+    }
+}
+
+/// 本体骨架约束结构（纯数据，无 IO）
+///
+/// 由 DAL 从 `ontology_classes.parent_term_key` 与
+/// `ontology_class_relations` 全量构建；词表量级为个位数十词，全量载入成本可忽略。
+/// 继承链解析与通配匹配都在本结构上做，**零物化**——父类改指针后下一次判定自动生效。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OntologySkeleton {
+    /// term_key → 父类 term_key（None = 根类）；key 均已归一化
+    pub parents: HashMap<String, Option<String>>,
+    /// 关系词 → 允许的 (主语类, 宾语类) 清单（`*` 通配）；key 均已归一化
+    pub triples: HashMap<String, Vec<(String, String)>>,
+}
+
+impl OntologySkeleton {
+    /// 骨架是否为空（无类、无三元组）
+    pub fn is_empty(&self) -> bool {
+        self.parents.is_empty() && self.triples.is_empty()
+    }
+
+    /// 计算某类自身 + 全部祖先（返回归一化后的集合）
+    ///
+    /// DAG 由 Domain 写侧保证；此处仍用集合去重天然终止环（脏数据不 panic 不死循环）。
+    pub fn ancestor_chain(&self, class_key: &str) -> HashSet<String> {
+        let mut chain = HashSet::new();
+        let mut current = Some(normalize(class_key));
+        while let Some(key) = current {
+            if !chain.insert(key.clone()) {
+                break;
+            }
+            current = self.parents.get(&key).and_then(|p| p.clone());
+        }
+        chain
+    }
+
+    /// 判定一条边是否被骨架允许
+    ///
+    /// 判定顺序：
+    /// 1. 关系词无任何三元组 → [`SkeletonVerdict::Unconstrained`]；
+    /// 2. 任一元组的主语 / 宾语命中实际类（`*` 或祖先链包含）→
+    ///    [`SkeletonVerdict::Matched`]；
+    /// 3. 其余 → [`SkeletonVerdict::Mismatch`]。
+    pub fn check(
+        &self,
+        relation_key: &str,
+        subject_class_key: &str,
+        object_class_key: &str,
+    ) -> SkeletonVerdict {
+        let Some(triples) = self.triples.get(&normalize(relation_key)) else {
+            return SkeletonVerdict::Unconstrained;
+        };
+        if triples.is_empty() {
+            return SkeletonVerdict::Unconstrained;
+        }
+        let subjects = self.ancestor_chain(subject_class_key);
+        let objects = self.ancestor_chain(object_class_key);
+        for (subject, object) in triples {
+            let subject_hit = subject == WILDCARD_CLASS || subjects.contains(subject);
+            let object_hit = object == WILDCARD_CLASS || objects.contains(object);
+            if subject_hit && object_hit {
+                return SkeletonVerdict::Matched;
+            }
+        }
+        SkeletonVerdict::Mismatch
+    }
+}
+
 // ==================== 认证报告（certify 聚合） ====================
 
 /// 单条词条的认证结论（kind + 解析分支）
@@ -349,6 +438,9 @@ pub struct PresetOntologyClass {
     /// 实体必填属性清单
     #[serde(default)]
     pub required_fields: Vec<String>,
+    /// 父类 term_key（None = 根类）；沿继承链向上解析骨架有效约束
+    #[serde(default)]
+    pub parent_term_key: Option<String>,
 }
 
 /// 预置关系类型条目（字段对齐 `CreateOntologyRelationTypeRequest`）
@@ -360,12 +452,6 @@ pub struct PresetOntologyRelationType {
     pub display_name: String,
     /// 语义描述
     pub description: String,
-    /// 允许的源实体类 key 清单（空 = 不限）
-    #[serde(default)]
-    pub domain_classes: Vec<String>,
-    /// 允许的目标实体类 key 清单（空 = 不限）
-    #[serde(default)]
-    pub range_classes: Vec<String>,
     /// 边权重基数（None = 默认 1.0）
     #[serde(default)]
     pub weight_base: Option<f64>,
@@ -381,6 +467,31 @@ pub struct PresetOntologyRelationType {
 /// 旧 seed 快照（无 direction 字段）反序列化兜底值，与 DDL DEFAULT 同口径
 fn default_preset_direction() -> String {
     "undirected".to_string()
+}
+
+/// 预置骨架三元组条目（本体第 5 段：类-关系-类）
+///
+/// `subject_class_key` / `object_class_key` 允许 `*` 通配（表示该侧不限类）；
+/// 注入前由 Domain 校验两侧实体类与关系词均存在（`*` 除外）。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PresetOntologyClassRelation {
+    /// 主语实体类 key（`*` = 不限）
+    pub subject_class_key: String,
+    /// 关系类型 key
+    pub relation_key: String,
+    /// 宾语实体类 key（`*` = 不限）
+    pub object_class_key: String,
+    /// 边基数（"single" / "many"；缺省 many）
+    #[serde(default = "default_preset_relation_cardinality")]
+    pub cardinality: String,
+    /// 是否必填
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// 旧 seed 快照（无 cardinality 字段）反序列化兜底值，与 DDL DEFAULT 同口径
+fn default_preset_relation_cardinality() -> String {
+    "many".to_string()
 }
 
 /// 预置属性定义条目（本体第 4 段）
@@ -461,6 +572,9 @@ pub struct PresetOntologyLexicon {
     /// 关系类型条目
     #[serde(default)]
     pub relation_types: Vec<PresetOntologyRelationType>,
+    /// 骨架三元组条目（类-关系-类；依赖 classes 与 relation_types 先注入）
+    #[serde(default)]
+    pub class_relations: Vec<PresetOntologyClassRelation>,
     /// 属性定义条目（本体第 4 段）
     #[serde(default)]
     pub properties: Vec<PresetOntologyProperty>,
@@ -470,15 +584,16 @@ pub struct PresetOntologyLexicon {
 }
 
 impl PresetOntologyLexicon {
-    /// 四段条目总数（预览响应 total 口径）
+    /// 五段条目总数（预览响应 total 口径）
     pub fn total_count(&self) -> usize {
         self.classes.len()
             + self.relation_types.len()
+            + self.class_relations.len()
             + self.properties.len()
             + self.synonym_mappings.len()
     }
 
-    /// 词表是否为空（四段均无条目）
+    /// 词表是否为空（五段均无条目）
     pub fn is_empty(&self) -> bool {
         self.total_count() == 0
     }
@@ -634,6 +749,9 @@ pub struct OntologyLexiconApplyReport {
     pub inserted_properties: Vec<String>,
     /// 新增同义映射条数
     pub inserted_synonyms: usize,
+    /// 新增骨架三元组条数（无显示名，按计数呈现）
+    #[serde(default)]
+    pub inserted_class_relations: usize,
     /// 覆写实体类 term_key 清单（覆盖策略下执行覆写动作的实体类，按注入顺序）
     #[serde(default)]
     pub updated_classes: Vec<String>,
@@ -646,7 +764,10 @@ pub struct OntologyLexiconApplyReport {
     /// 覆写同义映射条数
     #[serde(default)]
     pub updated_synonyms: usize,
-    /// 跳过条目数（term_key / raw_term 已存在，四段合计）
+    /// 覆写骨架三元组条数
+    #[serde(default)]
+    pub updated_class_relations: usize,
+    /// 跳过条目数（term_key / raw_term 已存在，五段合计）
     pub skipped: usize,
 }
 
@@ -666,7 +787,10 @@ pub struct LexiconGapReport {
     pub missing_properties: Vec<String>,
     /// 缺失同义映射条数（仅计数不列明细：raw→target 映射无显示名，前端以「N 条」呈现）
     pub missing_synonyms: usize,
-    /// 已存在条目数（四段合计，注入时将跳过）
+    /// 缺失骨架三元组条数（`subject-relation-object` 无显示名，仅计数）
+    #[serde(default)]
+    pub missing_class_relations: usize,
+    /// 已存在条目数（五段合计，注入时将跳过）
     pub skipped: usize,
 }
 #[cfg(test)]

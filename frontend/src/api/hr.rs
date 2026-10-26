@@ -3,31 +3,34 @@
 use common::api::{
     AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CancelThinkingRequest,
     CancelThinkingResponse, CompleteAgentOffboardRequest, CreateAgentRequest, CreateAgentResponse,
-    CreateExternalAgentRequest, CreateExternalAgentResponse, CreateOntologyClassRequest,
-    CreateOntologyClassResponse, CreateOntologyPropertyRequest, CreateOntologyPropertyResponse,
+    CreateExternalAgentRequest, CreateExternalAgentResponse, CreateOntologyClassRelationRequest,
+    CreateOntologyClassRelationResponse, CreateOntologyClassRequest, CreateOntologyClassResponse,
+    CreateOntologyPropertyRequest, CreateOntologyPropertyResponse,
     CreateOntologyRelationTypeRequest, CreateOntologyRelationTypeResponse,
     CreateOntologySynonymRequest, CreateOntologySynonymResponse, CreateSkillRequest,
     CreateSkillResponse, DeleteOntologySynonymResponse, DeleteSkillResponse, GetAgentRequest,
     GetAgentResponse, GetDriftDashboardRequest, GetDriftDashboardResponse, GetKnowledgeGraphParams,
-    GetKnowledgeGraphResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
-    GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
-    ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
-    ListDriftRelationDetailsResponse, ListExpiredAgentSkillsRequest,
-    ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
+    GetKnowledgeGraphResponse, GetOntologySkeletonResponse, GetReceptionAgentResponse,
+    GetSkillFileContentRequest, GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest,
+    ListAgentsRequest, ListDriftClassDetailsRequest, ListDriftClassDetailsResponse,
+    ListDriftRelationDetailsRequest, ListDriftRelationDetailsResponse,
+    ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
     ListInstalledToolPacksResponse, ListOntologyClassesRequest, ListOntologyClassesResponse,
     ListOntologyLexiconResponse, ListOntologyPropertiesRequest, ListOntologyPropertiesResponse,
     ListOntologyRelationTypesRequest, ListOntologyRelationTypesResponse,
     ListOntologySynonymsRequest, ListOntologySynonymsResponse, MemoryTraceDetail,
     OnboardAgentRequest, PagedResult, QueryMemoryParams, QueryMemoryResponse,
     QueryThinkTracesRequest, RecommendSeedNodesParams, RecommendSeedNodesResponse,
-    RestoreSkillRequest, RestoreSkillResponse, RetireOntologyClassResponse,
-    RetireOntologyPropertyResponse, RetireOntologyRelationTypeResponse, RuntimeStatusRequest,
-    RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
-    SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem, SkillQueryRequest,
-    StartAgentOffboardRequest, ThinkTraceListItem, UnbindToolFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
-    UpdateAgentStatusRequest, UpdateAgentStatusResponse, UpdateOntologyClassRequest,
-    UpdateOntologyClassResponse, UpdateOntologyPropertyRequest, UpdateOntologyPropertyResponse,
+    RestoreSkillRequest, RestoreSkillResponse, RetireOntologyClassRelationResponse,
+    RetireOntologyClassResponse, RetireOntologyPropertyResponse,
+    RetireOntologyRelationTypeResponse, RuntimeStatusRequest, RuntimeStatusResponse,
+    SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse, SearchSkillsRequest,
+    SelectAgentCareerRequest, SkillListItem, SkillQueryRequest, StartAgentOffboardRequest,
+    ThinkTraceListItem, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
+    UpdateAgentStatusResponse, UpdateOntologyClassRelationRequest,
+    UpdateOntologyClassRelationResponse, UpdateOntologyClassRequest, UpdateOntologyClassResponse,
+    UpdateOntologyPropertyRequest, UpdateOntologyPropertyResponse,
     UpdateOntologyRelationTypeRequest, UpdateOntologyRelationTypeResponse,
     UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
 };
@@ -631,6 +634,42 @@ pub async fn retire_ontology_property(
 /// GET /api/v1/hr/ontology/lexicon
 pub async fn list_ontology_lexicon() -> Result<ListOntologyLexiconResponse, ApiError> {
     api_get("/api/v1/hr/ontology/lexicon").await
+}
+
+// ===== 本体骨架（类-关系-类三元组 + 继承链） =====
+
+/// 本体骨架全量视图（活跃实体类 / 关系类型 / 骨架三元组）
+/// GET /api/v1/hr/ontology/skeleton
+pub async fn get_ontology_skeleton() -> Result<GetOntologySkeletonResponse, ApiError> {
+    api_get("/api/v1/hr/ontology/skeleton").await
+}
+
+/// 新增骨架三元组（主语类 - 关系词 - 宾语类；`*` 表示该侧不限）
+/// POST /api/v1/hr/ontology/class-relations
+pub async fn create_ontology_class_relation(
+    req: CreateOntologyClassRelationRequest,
+) -> Result<CreateOntologyClassRelationResponse, ApiError> {
+    api_post("/api/v1/hr/ontology/class-relations", &req).await
+}
+
+/// 更新骨架三元组（三个 key 均可改；唯一约束冲突报错）
+/// PUT /api/v1/hr/ontology/class-relations/{id}
+pub async fn update_ontology_class_relation(
+    req: UpdateOntologyClassRelationRequest,
+) -> Result<UpdateOntologyClassRelationResponse, ApiError> {
+    api_put(
+        &format!("/api/v1/hr/ontology/class-relations/{}", req.id),
+        &req,
+    )
+    .await
+}
+
+/// 退役骨架三元组（软删除 status=Retired）
+/// DELETE /api/v1/hr/ontology/class-relations/{id}
+pub async fn retire_ontology_class_relation(
+    id: &str,
+) -> Result<RetireOntologyClassRelationResponse, ApiError> {
+    api_delete_with_response(&format!("/api/v1/hr/ontology/class-relations/{}", id)).await
 }
 
 /// 漂移看板（Top N 漂移词 / 关系覆盖率 / 漂移节点占比，SQLite 读路径惰性聚合）

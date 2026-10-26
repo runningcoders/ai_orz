@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO ontology_class_relations (\n    id, subject_class_key, relation_key, object_class_key,\n    cardinality, \"required\", \"status\", created_at, updated_at\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "224377571c4e7276bb1d0306654498addbeec960454906d36458b18457795eda"
+}
