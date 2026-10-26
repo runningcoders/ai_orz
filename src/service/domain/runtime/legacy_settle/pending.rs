@@ -10,10 +10,10 @@
 //!
 //! ## 批量策略（用户拍板）
 //!
-//! - **只按字符预算分批**：累计长度还在预算内就继续拼，不按条数切片；
+//! - **只按 token 预算分批**：累计 token 数还在预算内就继续拼，不按条数切片；
 //! - 条数上限 [`PENDING_MAX_ITEMS`] 只是 DB 防爆的硬护栏；
-//! - 预算 = 模型「推荐/最佳上下文长度」的 40%；未知时用
-//!   `max_context_length * 60%` 再乘 40%，完全未知用兜底常量；
+//! - 预算 = 模型「推荐/最佳上下文长度」的 40%，并封顶
+//!   [`MAX_PENDING_BUDGET_TOKENS`]；未知时按默认窗口 20 万 token 计算；
 //! - 排序**最早优先**：沉淀是队列语义，先进先出；按最近优先会让持续产生的新
 //!   记忆把老记忆永远挤出窗口。
 
@@ -22,6 +22,7 @@ use crate::models::memory::{Memory, MemoryPo, ShortTermMemoryIndexPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
 use crate::service::domain::runtime::RuntimeMemory;
+use crate::service::domain::runtime::compaction::estimate_tokens;
 use common::enums::{MemoryStatus, MemoryType};
 use common::error::Result;
 
@@ -29,6 +30,12 @@ use common::error::Result;
 ///
 /// ⚠️ 这是**硬护栏**不是批量策略：真正的批量由上下文预算决定。
 pub(crate) const PENDING_MAX_ITEMS: usize = 200;
+
+/// 模型未配置上下文长度时的默认窗口（token）
+///
+/// 用户口径：没有单独配置就按 20 万 token 的推荐上下文计算。它同时是**有效窗口上限** ——
+/// 推荐 50 万的模型也按 20 万算，避免单批塞进 20 万 token。
+const DEFAULT_CONTEXT_TOKENS: usize = 200_000;
 
 /// 待沉淀列表最多占用「可用上下文」的比例
 ///
@@ -39,8 +46,14 @@ const PENDING_BUDGET_RATIO: f64 = 0.4;
 /// 上下文长度未知时，`max_context_length` 的可用比例（与 think_loop 的压缩阈值同源）
 const CONTEXT_USABLE_RATIO: f64 = 0.6;
 
-/// 上下文长度完全未知时的待沉淀字符预算兜底
-const DEFAULT_PENDING_BUDGET_CHARS: usize = 12_000;
+/// 单批待沉淀列表的 token 硬上限（= 默认窗口 20 万 × 40%）
+///
+/// 40% 只是**理论上界**：推荐上下文 50 万 token 的模型按 40% 会得到 20 万 token
+/// 的批次，再叠加 System（人设 + 技能）、工具描述、多轮工具往返（读代码等）与
+/// 模型输出，很容易顶到 `ContextOverflowPolicy` 的阈值 —— 溢出批次会被整体阻断
+/// （记忆保持 Active 等下一轮重试），等于白跑一次模型调用。
+/// 单批封顶 8 万 token：既够模型认真读完一整批素材，又给工具往返留足余量。
+const MAX_PENDING_BUDGET_TOKENS: usize = 80_000;
 
 /// 取出短期记忆索引（只读）
 ///
@@ -53,40 +66,39 @@ pub(crate) fn short_term_of(mem: &Memory) -> Option<&ShortTermMemoryIndexPo> {
     }
 }
 
-/// 计算待沉淀列表可用的字符预算
+/// 计算待沉淀列表可用的 token 预算
 ///
-/// 优先级：模型推荐上下文长度 > `max_context_length * 60%` > 兜底常量，
-/// 与 `run_think_loop` 的压缩阈值取法保持一致。
+/// 取数优先级与 `run_think_loop` 的压缩阈值一致：推荐上下文长度 >
+/// `max_context_length * 60%` > 默认窗口；结果乘 40% 后再封顶
+/// [`MAX_PENDING_BUDGET_TOKENS`]。
 ///
-/// # 为什么按「字符」而不是「token」
+/// # 为什么按 token 而不是字符
 ///
-/// 项目没有 tokenizer，硬造一个 risk 大于收益。这里保守假设
-/// **1 字符 ≈ 1 token**（中文密集场景的上界）：对英文内容会明显偏保守，
-/// 但绝不会把上下文撑爆 —— 沉淀场景宁可少处理几条，也不能劣化模型表现。
-fn pending_budget_chars(agent: &Agent) -> usize {
-    let Some(brain) = agent.brain.as_ref() else {
-        return DEFAULT_PENDING_BUDGET_CHARS;
-    };
-    let Some(provider) = brain.model_provider() else {
-        return DEFAULT_PENDING_BUDGET_CHARS;
-    };
-
-    let config = provider.config();
-    let context_tokens = config
-        .recommended_context_length
-        .filter(|&v| v > 0)
-        .map(|v| v as f64)
-        .or_else(|| {
+/// 预算的消费方是模型上下文窗口，单位本来就是 token。字符口径必须假设
+/// 「1 字符 ≈ 1 token」—— 对中文成立，对英文会低报到 1/4，同一条规则在两种语言下
+/// 差 4 倍，而且无法与 `ContextOverflowPolicy` 直接比较。这里复用压缩分流用的
+/// [`estimate_tokens`]（CJK 1 token/字，其余 4 字符/token），全项目只有一份估算口径。
+fn pending_budget_tokens(agent: &Agent) -> usize {
+    let context_tokens = agent
+        .brain
+        .as_ref()
+        .and_then(|brain| brain.model_provider())
+        .and_then(|provider| {
+            let config = provider.config();
             config
-                .max_context_length
+                .recommended_context_length
                 .filter(|&v| v > 0)
-                .map(|v| v as f64 * CONTEXT_USABLE_RATIO)
-        });
+                .map(|v| v as usize)
+                .or_else(|| {
+                    config
+                        .max_context_length
+                        .filter(|&v| v > 0)
+                        .map(|v| (v as f64 * CONTEXT_USABLE_RATIO) as usize)
+                })
+        })
+        .unwrap_or(DEFAULT_CONTEXT_TOKENS);
 
-    match context_tokens {
-        Some(tokens) => (tokens * PENDING_BUDGET_RATIO) as usize,
-        None => DEFAULT_PENDING_BUDGET_CHARS,
-    }
+    ((context_tokens as f64 * PENDING_BUDGET_RATIO) as usize).min(MAX_PENDING_BUDGET_TOKENS)
 }
 
 /// 构建待沉淀短期记忆的编号摘要（按上下文预算自适应批量）
@@ -103,7 +115,7 @@ pub(crate) async fn build_pending_memories_summary(
     ctx: &RequestContext,
     memory: &dyn RuntimeMemory,
     agent_id: &str,
-    budget_chars: usize,
+    budget_tokens: usize,
     max_items: usize,
 ) -> Result<Option<(String, Vec<String>, bool)>> {
     // 1. 取候选集：未沉淀（Active）、最早优先，最多 PENDING_MAX_ITEMS 条
@@ -128,9 +140,10 @@ pub(crate) async fn build_pending_memories_summary(
         return Ok(None);
     }
 
-    // 2. 按预算累加（约束模板由 builder.build_sleep_prompt 注入）
-    let budget = budget_chars.max(1);
+    // 2. 按 token 预算累加（约束模板由 builder.build_sleep_prompt 注入）
+    let budget = budget_tokens.max(1);
     let mut summary = String::new();
+    let mut used_tokens = 0usize;
     let mut ids = Vec::new();
     let mut truncated = false;
 
@@ -139,9 +152,10 @@ pub(crate) async fn build_pending_memories_summary(
             continue;
         };
         let line = format!("{}. [id={}] {}\n", ids.len() + 1, index.id, index.summary);
+        let line_tokens = estimate_tokens(&line);
 
         // 预算用尽：停下，剩下的留给下一批
-        if !summary.is_empty() && summary.chars().count() + line.chars().count() > budget {
+        if !summary.is_empty() && used_tokens + line_tokens > budget {
             truncated = true;
             break;
         }
@@ -151,6 +165,7 @@ pub(crate) async fn build_pending_memories_summary(
             break;
         }
 
+        used_tokens += line_tokens;
         summary.push_str(&line);
         ids.push(index.id.clone());
     }
@@ -167,11 +182,12 @@ pub(crate) async fn build_pending_memories_summary(
     crate::log_info!(
         ctx,
         "legacy_settle",
-        "agent_id={}, 候选 {} 条，本批纳入 {} 条，预算 {} 字符，仍有剩余={}",
+        "agent_id={}, 候选 {} 条，本批纳入 {} 条，预算 {} token（估算用量 {} token），仍有剩余={}",
         agent_id,
         candidates.len(),
         ids.len(),
         budget,
+        used_tokens,
         truncated
     );
 
@@ -183,18 +199,16 @@ pub(crate) fn batch_item_cap(settle_limit: usize) -> usize {
     settle_limit.clamp(1, PENDING_MAX_ITEMS)
 }
 
-/// 计算一次 run 的字符预算（对外只暴露这一个入口）
-pub(crate) fn settle_budget_chars(agent: &Agent) -> usize {
-    pending_budget_chars(agent).max(1)
+/// 计算一次 run 的 token 预算（对外只暴露这一个入口）
+pub(crate) fn settle_budget_tokens(agent: &Agent) -> usize {
+    pending_budget_tokens(agent).max(1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 预算取法：拿不到模型配置时回落到兜底常量，且恒为正
-    #[test]
-    fn pending_budget_chars_falls_back_without_brain() {
+    fn agent_with_provider_config(config: &str) -> Agent {
         let mut po = crate::models::agent::AgentPo::new(
             "Test".to_string(),
             vec!["assistant".to_string()],
@@ -205,26 +219,6 @@ mod tests {
             "test-user".to_string(),
         );
         po.id = "agent-budget".to_string();
-        let agent = Agent::from_po(po);
-
-        // 无 brain → 兜底
-        assert_eq!(pending_budget_chars(&agent), DEFAULT_PENDING_BUDGET_CHARS);
-        assert!(pending_budget_chars(&agent) > 0);
-    }
-
-    /// 用户拍板：预算 = 推荐上下文长度的 40%
-    #[test]
-    fn pending_budget_is_forty_percent_of_recommended_context() {
-        let mut po = crate::models::agent::AgentPo::new(
-            "Test".to_string(),
-            vec!["assistant".to_string()],
-            "desc".to_string(),
-            vec![],
-            "".to_string(),
-            "provider-001".to_string(),
-            "test-user".to_string(),
-        );
-        po.id = "agent-budget-ratio".to_string();
         let mut agent = Agent::from_po(po);
 
         let provider = crate::models::model_provider::ModelProviderPo {
@@ -236,7 +230,7 @@ mod tests {
             api_key: "fake-key".to_string(),
             base_url: None,
             description: None,
-            config: r#"{"recommended_context_length":1000}"#.to_string(),
+            config: config.to_string(),
             status: common::enums::ModelProviderStatus::Normal,
             created_by: "test-user".to_string(),
             modified_by: "test-user".to_string(),
@@ -250,8 +244,47 @@ mod tests {
             provider,
             vec![],
         ));
+        agent
+    }
 
-        assert_eq!(pending_budget_chars(&agent), 400);
+    /// 拿不到模型配置时按默认窗口 20 万 token × 40% 计算，且恒为正
+    #[test]
+    fn pending_budget_falls_back_to_default_context_without_brain() {
+        let mut po = crate::models::agent::AgentPo::new(
+            "Test".to_string(),
+            vec!["assistant".to_string()],
+            "desc".to_string(),
+            vec![],
+            "".to_string(),
+            "provider-001".to_string(),
+            "test-user".to_string(),
+        );
+        po.id = "agent-budget".to_string();
+        let agent = Agent::from_po(po);
+
+        assert_eq!(pending_budget_tokens(&agent), MAX_PENDING_BUDGET_TOKENS);
+        assert!(pending_budget_tokens(&agent) > 0);
+    }
+
+    /// 用户拍板：预算 = 推荐上下文长度的 40%（token）
+    #[test]
+    fn pending_budget_is_forty_percent_of_recommended_context() {
+        let agent = agent_with_provider_config(r#"{"recommended_context_length":1000}"#);
+        assert_eq!(pending_budget_tokens(&agent), 400);
+    }
+
+    /// 推荐上下文再大，单批也不超过硬上限（避免 20 万 token 的批次顶到溢出阈值）
+    #[test]
+    fn pending_budget_is_capped_for_huge_context() {
+        let agent = agent_with_provider_config(r#"{"recommended_context_length":500000}"#);
+        assert_eq!(pending_budget_tokens(&agent), MAX_PENDING_BUDGET_TOKENS);
+    }
+
+    /// 没有推荐值时，用 `max_context_length * 60%` 再乘 40%
+    #[test]
+    fn pending_budget_uses_usable_part_of_max_context() {
+        let agent = agent_with_provider_config(r#"{"max_context_length":100000}"#);
+        assert_eq!(pending_budget_tokens(&agent), 24_000);
     }
 
     /// 条数提示与硬上限取小，且不小于 1

@@ -159,6 +159,18 @@ pub(crate) fn is_recursive_settle_call(
             == common::llm_schema::to_wire_tool_name(super::compaction::RECURSIVE_SETTLE_TOOL)
 }
 
+/// 判断是否为「沉淀过程中往待沉淀队列写新短期记忆」的工具调用
+///
+/// 只拦 [`ThinkingScene::Settle`]：待沉淀队列是本轮的输入，写回去等于自续料，
+/// `prepare` 永远取得到 → 回环排不空。压缩场景的产出**就是**一条短期记忆，必须放行；
+/// 主循环写短期记忆是正常记账，同样放行。
+pub(crate) fn is_settle_queue_write(scene: common::enums::ThinkingScene, tool_name: &str) -> bool {
+    use common::enums::ThinkingScene;
+    scene == ThinkingScene::Settle
+        && tool_name
+            == common::llm_schema::to_wire_tool_name(super::compaction::SHORT_TERM_WRITE_TOOL)
+}
+
 /// 进度快照中单条消息摘要的最大字符数
 ///
 /// 兜底摘要是「信息保全」而非「信息复现」，超长的工具返回（搜索结果、文件全文）
@@ -531,6 +543,30 @@ mod tests {
         assert!(is_recursive_settle_call(
             ThinkingScene::Compact,
             "settle_memory"
+        ));
+    }
+
+    #[test]
+    fn short_term_write_blocked_in_settle_only() {
+        // 沉淀场景写短期记忆 = 给待沉淀队列自续料，回环永远排不空
+        assert!(is_settle_queue_write(
+            ThinkingScene::Settle,
+            "save_short_term_memory"
+        ));
+        // 压缩的产出就是一条短期记忆，必须放行
+        assert!(!is_settle_queue_write(
+            ThinkingScene::Compact,
+            "save_short_term_memory"
+        ));
+        // 主循环正常记账，不拦
+        assert!(!is_settle_queue_write(
+            ThinkingScene::Awaken,
+            "save_short_term_memory"
+        ));
+        // 沉淀里写图谱/技能才是正事
+        assert!(!is_settle_queue_write(
+            ThinkingScene::Settle,
+            "save_long_term_memory"
         ));
     }
 

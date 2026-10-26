@@ -686,8 +686,8 @@ fn sleep_prompt_section_order() {
     let prompt = builder.build_sleep_prompt("待沉淀内容", &["t-1".to_string()]);
 
     let idx_sys_rules = prompt
-        .find("【沉淀场景补充规则】")
-        .expect("System 应包含沉淀补充规则");
+        .find("【沉淀工作模式触发】")
+        .expect("System 应包含沉淀指令块");
     let idx_ref = prompt
         .find("【近期已沉淀记忆（仅供参考）】")
         .expect("应包含参考区块");

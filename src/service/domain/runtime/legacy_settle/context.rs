@@ -8,7 +8,7 @@
 //! `batch`，`settle` 消费掉它再回环 —— 它不能进总线（含 `MemoryTrace` /
 //! `Box<dyn Policy>` 等不可序列化对象）。
 
-use super::pending::{PENDING_MAX_ITEMS, batch_item_cap, settle_budget_chars};
+use super::pending::{PENDING_MAX_ITEMS, batch_item_cap, settle_budget_tokens};
 use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::skill::SkillPo;
@@ -77,8 +77,8 @@ pub(crate) struct SettleDeps {
     pub trace_ids: Vec<String>,
     /// 单批条数上限提示（实际批量由上下文预算决定）
     pub settle_limit: usize,
-    /// 本次 run 单批记忆摘要的字符预算
-    pub budget_chars: usize,
+    /// 本次 run 单批记忆摘要的 token 预算
+    pub budget_tokens: usize,
     /// 当前批次：`prepare` 写入、`settle` 消费
     pub batch: Mutex<Option<PendingBatch>>,
     pub aggregate: Mutex<SettleAggregate>,
@@ -91,7 +91,7 @@ impl std::fmt::Debug for SettleDeps {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SettleDeps")
             .field("agent_id", &self.agent.po.id)
-            .field("budget_chars", &self.budget_chars)
+            .field("budget_tokens", &self.budget_tokens)
             .field("settle_limit", &self.settle_limit)
             .finish()
     }
@@ -147,7 +147,7 @@ pub(crate) fn build_deps_with_backend(
         trace_ids,
         settle_limit,
     } = input;
-    let budget_chars = settle_budget_chars(&agent);
+    let budget_tokens = settle_budget_tokens(&agent);
     Arc::new(SettleDeps {
         domain,
         backend,
@@ -156,13 +156,27 @@ pub(crate) fn build_deps_with_backend(
         options: Arc::new(options),
         trace_ids,
         settle_limit: settle_limit.min(PENDING_MAX_ITEMS),
-        budget_chars,
+        budget_tokens,
         batch: Mutex::new(None),
         aggregate: Mutex::new(SettleAggregate::default()),
         run_anchor: Mutex::new(None),
         started_at: Instant::now(),
     })
 }
+
+/// 沉淀场景额外放通的**只读佐证工具**（按工具 id 白名单）
+///
+/// `ThinkingScene::Settle` 的 tag 白名单只有 `neural` / `memory` / `self_evolution`，
+/// 但沉淀经常需要回看原始代码、查外部资料来确认记忆里的结论是否成立。这里按 id
+/// 放通三类只读能力：
+/// - `fs_read`：回看工作区代码 / 文档
+/// - `tavily_search` / `doubao_search` / `http_fetch`：查外部资料
+///
+/// 为什么不用 tag：`fs` tag 同时覆盖 `fs_write`，加 tag 会连带放通写盘；
+/// `shell_exec` 可执行任意命令，同样不能进白名单。沉淀是无人值守的内循环，
+/// 只给它「读」的能力，不给「写」和「执行」。
+pub(crate) const SETTLE_READONLY_TOOLS: &[&str] =
+    &["fs_read", "tavily_search", "doubao_search", "http_fetch"];
 
 /// 装配沉淀链路的上下文供给器集合
 ///
@@ -178,7 +192,15 @@ pub fn build_providers(deps: Arc<SettleDeps>) -> ProviderSet {
         .agent
         .tools()
         .iter()
-        .filter(|t| deps.options.scene.is_tool_allowed(&t.po.get_tags()))
+        // 场景 tag 面 + 沉淀专用的只读佐证 id 白名单（fs_read / tavily_search / http_fetch）
+        .filter(|t| {
+            deps.options.scene.is_tool_allowed(&t.po.get_tags())
+                || SETTLE_READONLY_TOOLS.contains(&t.po.id.as_str())
+        })
+        // 沉淀场景不把「写短期记忆」摆给模型：待沉淀队列是本轮的**输入**，
+        // 写回去等于自续料（见 think_loop::is_settle_queue_write）。
+        // 运行时已有拦截兜底，这里再把它从工具表移除，省掉一次注定被驳回的调用轮次。
+        .filter(|t| t.po.id != crate::service::domain::runtime::compaction::SHORT_TERM_WRITE_TOOL)
         .map(ToolDescriptor::from)
         .collect();
     let skills: Vec<SkillPo> = deps

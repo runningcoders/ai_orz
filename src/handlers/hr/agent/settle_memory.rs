@@ -172,7 +172,7 @@ pub async fn settle_memory(
     if agent_id.is_empty() {
         bail_err!(InvalidRequest, "settle_memory 需要 agent 上下文");
     }
-    // 不传 limit 时用自适应上限：实际批量由上下文预算决定（见 pending_budget_chars），
+    // 不传 limit 时用自适应上限：实际批量由 token 预算决定（见 settle_budget_tokens），
     // limit 仅作为条数上限提示，供调用方按需压小（如调优或限流）。
     let limit = params.limit.unwrap_or(PENDING_MAX_ITEMS);
 

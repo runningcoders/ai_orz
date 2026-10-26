@@ -40,9 +40,9 @@ pub async fn run_legacy_settle(deps: Arc<SettleDeps>) -> Result<LegacySettleOutc
     crate::log_info!(
         &deps.ctx,
         "legacy_settle",
-        "run_legacy_settle start, agent_id={}, budget_chars={}, item_cap={}, trace_ids={}",
+        "run_legacy_settle start, agent_id={}, budget_tokens={}, item_cap={}, trace_ids={}",
         agent_id,
-        deps.budget_chars,
+        deps.budget_tokens,
         deps.item_cap(),
         deps.trace_ids.len()
     );

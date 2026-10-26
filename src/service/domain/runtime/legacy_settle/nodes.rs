@@ -108,9 +108,9 @@ impl ThinkNode for PrepareNode {
         crate::log_info!(
             ctx,
             "legacy_settle",
-            "prepare node start, agent_id={}, budget_chars={}, item_cap={}",
+            "prepare node start, agent_id={}, budget_tokens={}, item_cap={}",
             agent_id,
-            deps.budget_chars,
+            deps.budget_tokens,
             deps.item_cap()
         );
 
@@ -119,7 +119,7 @@ impl ThinkNode for PrepareNode {
             ctx,
             deps.domain.memory(),
             &agent_id,
-            deps.budget_chars,
+            deps.budget_tokens,
             deps.item_cap(),
         )
         .await?

@@ -1312,123 +1312,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         // 9. 沉淀指令块（触发头 + 约束 + 任务 + 认知要点，完全静态，置于易变数据之前）
         // 跳过 tool_failures（沉淀不调外部工具）
-        result.push_str("【沉淀工作模式触发】\n\n");
-        result.push_str("你收到这个消息是因为触发了沉淀流程（类似人脑的睡眠整理记忆）。请进入沉淀工作模式，对文末【待沉淀的短期记忆】进行归纳整理：\n\n");
-        result.push_str("## 沉淀约束（重要）\n\n");
-        result.push_str("- **不要发送消息**：睡觉是对自身知识的沉淀积累，不应依赖外部信息\n");
-        result.push_str("- **不要调用消息类工具**（send_message / send_task_assignment_message 等），避免触发消息流程导致异步唤醒自己\n");
-        // 放通面是 self_evolution（create_skill / update_skill），不是整个 skill_management：
-        // 后者含 Remove Skill（无归属校验、不可撤销）等破坏性工具，沉淀这种无人值守的
-        // 内循环不该拿到。所以这里只列写能力，删除/卸载类工具根本不在工具表里。
-        result.push_str("- **只使用记忆类与自进化类工具**：记忆类（search_memory / save_long_term_memory / update_memory / query_memory / save_short_term_memory）+ 自进化类（create_skill / update_skill，把经验沉淀成技能）\n");
-        result.push_str("- 这是一个内循环：你与自己的记忆对话，不是与外部世界交互\n\n");
-        result.push_str("## 你的任务\n\n");
-        result.push_str("请用已有工具自主完成沉淀：\n\n");
-        result.push_str("1. **归纳总结**：对上述短期记忆进行归纳，提炼核心概念、抽象经验、可复用模式（不要记具体细节）\n");
-        result.push_str(
-            "2. **查询已有图谱**：用 search_memory 检查是否已有相关知识点（避免重复节点）；\n",
-        );
-        result.push_str(
-            "   检索时带着联想——这条经验与哪些既有节点相关？看似无关的节点之间是否存在深层关联？\n",
-        );
-        result.push_str("3. **创建/更新节点**：\n");
-        result.push_str("   - 新知识 → save_long_term_memory 创建节点\n");
-        result.push_str("   - 已有相似节点 → update_memory 更新节点内容\n");
-        result.push_str("   - 过大且可拆分的旧节点 → 拆分为子节点 + 概述父节点 + contains 关系\n");
-        result.push_str("   - **声明来源**（每次 save_long_term_memory 都要做）：把本次归纳所依据的短期记忆 id 填入 source_short_term_ids，即文末【待沉淀的短期记忆】里每条的 [id=...]，可填多条\n");
-        result.push_str("     节点只存摘要，原始细节住在 trace 里；只有声明了来源，框架才能把「节点 → 短期记忆 → 原始 trace」这条链写进库，日后从节点就能追回当时的原始记录\n");
-        result.push_str(
-            "     ⚠️ 不填 = 该节点成为无源头的孤岛断言，无法回溯它是从哪次经历里归纳出来的\n",
-        );
-        result.push_str("4. **建立关系**（联想必须落成显式边，两条路径）：\n");
-        result.push_str("   - 新建节点 → save_long_term_memory 的 relations 参数顺带建边\n");
-        result.push_str("   - 更新既有节点 → update_memory 的 relations 参数补边\n");
-        result.push_str("   （related/contains/depends 等规范词优先；都不贴切就直接写你判断的关系名，会被原样保存与展示，不会被替换成「自定义」）；每条关系可带 weight（0~1）表示关联强度，知识图谱按它调边的粗细与浓淡，拿不准就省略、不要随手填一个中间值\n");
-        result.push_str("   ⚠️ 正文里提及 / 引用其他节点**不等于建边**——图谱遍历只认关系表，正文引用对检索不可达\n");
-        result.push_str("   - **新建节点不要零边入库**：孤岛节点多数不是真的无关联，只是缺一次关联检索——创建后若还没边，用它的核心概念换几个角度再 search_memory 查几轮，能连就连上；确认无关联再孤立\n");
-        result.push_str("5. **评估重要性**：对「值得其他 Agent 优先参考」的通用方法论 / 模式 / 概念，用 update_memory 的 node_tags 字段加 'published' 标签——它标记的是**重要性/影响力**（用于图谱推荐起点的排序），**不是**可见性开关：知识节点在蜂巢内本就全局共享\n");
-        // 状态闭环由框架负责：不再要求 Agent 自己改 status
-        //
-        // 背景：原步骤 6 要求 Agent 调 update_memory 把短期记忆 status 改为 settled，
-        // 但模型经常漏调，导致同一批记忆在下次沉淀时被反复处理。现改为沉淀结束后
-        // 由框架统一置位（见 MemoryDal::mark_short_term_settled）。
-        //
-        // 注意：技能文档里的同类说明**不改**——技能可能被其它框架复用，那里未必有
-        // 框架兜底，仍然需要 Agent 自行处理状态；只有在 AI Orz 这套沉淀 prompt 下
-        // 才由框架接管。
-        // 技能沉淀：与图谱分工——图谱存「是什么 / 为什么」（抽象知识与关系），
-        // 技能存「怎么做」（可复用的操作路径）。二者在同一批经验里一起产出，
-        // 并用 node_type=skill 的节点 + distilled_from 边互相索引：
-        // 技能正文不进图谱，但「有这个技能、它从哪些知识提炼而来」在图谱里。
-        // 只写框架口径（参数怎么填、归属与状态由框架决定），方法论（什么值得成技能、
-        // 何时算成熟、怎么发布）交给「自我进化」技能——两者重复会在改一处漏一处时漂移。
-        result.push_str("6. **技能沉淀**（把「怎么做」固化下来）：\n");
-        result.push_str(
-            "   浮现出可复用的操作路径 / 做事方式时，沉淀成技能；已有同类就 `update_skill` 迭代，不要建重复技能。三件事一起做：\n",
-        );
-        result.push_str(
-            "   - **建技能**：`create_skill`，正文写在 content_input.content（skill.md）\n",
-        );
-        result.push_str(
-            "     ⚠️ **不要传 status**：Agent 创建的技能一律落到你的私有草稿（Draft），传 Published 会被服务端拒绝。它会自动出现在你的技能区里，下次干活就能用\n",
-        );
-        result.push_str(
-            "   - **图谱登记**：`save_long_term_memory` 建一个 `node_type=skill` 的节点，**只写摘要**，正文留在技能里不进图谱\n",
-        );
-        // 约定出处：docs/design/thinking_graph_engine_design.md §3.6 —— skill 节点 node_tags 须追加技能 category（思维方法类即 thinking_method），检索侧按 tag 才能召回技能节点
-        result.push_str(
-            "   - **登记 tag**：该节点的 `node_tags` 在既有 tags 基础上**追加该技能的 category**（如思维方法类技能追加 `thinking_method`）——日后检索侧按 tag 召回技能节点全靠这一步登记\n",
-        );
-        result.push_str(
-            "   - **建边**：该节点用 `distilled_from`（提炼自）连回源知识节点，源节点侧可用 `produces`（产出）指回\n",
-        );
-        result.push_str(
-            "   - 同样要填 `source_short_term_ids`（这条技能所依据的短期记忆），让技能节点也有可回溯的源头\n",
-        );
-        // 淘汰/遗忘：只写框架口径（Expired 的语义与可逆性），判据交给自我进化技能。
-        //
-        // 为什么是 Expired 而不是 delete_skill：resolve_agent_skills 用
-        // exclude_status=Expired 过滤 ⇒ 标 Expired 即移出 Agent 技能池、不再进 Prompt，
-        // 效果等同「忘掉」；而记录保留、restore_skill 可恢复。delete_skill 不可逆，
-        // 且它是 skill_management 面（不在沉淀白名单内），沉淀这种无人值守的内循环
-        // 不该拿到不可逆动作。
-        result.push_str(
-            "   - **淘汰 / 遗忘**：发现自己的某个技能已过时、不再需要或本来就是错的 → `update_skill` 把它设为 `Expired`。它会即刻移出你的技能区（不再进你的 Prompt），但记录保留、日后可恢复——**忘掉也是进化的一种，但要留得下回头路**\n",
-        );
-        result.push_str(
-            "   - ⚠️ 不要用 `delete_skill` 之类的方式永久删除技能：删除不可撤销，错了就真没了\n",
-        );
-        result.push_str(
-            "   - **什么该成技能、什么时候算成熟、该淘汰什么、怎么发布 → 详见「自我进化」技能**（沉淀图谱是主业，技能沉淀是机会主义的，不要为了建而建）\n",
-        );
-        result.push_str(
-            "7. **状态无需处理**：本次待沉淀短期记忆的状态变更由框架在沉淀结束后统一完成，\n",
-        );
-        result.push_str(
-            "   **你不要**调用 update_memory 去修改它们的 status（重复操作没有意义）。\n",
-        );
-        result.push_str("   你只需专注把内容整合进知识图谱；若某条确实不适合沉淀，忽略它即可。\n");
-        result.push_str("8. **强制写入沉淀摘要**（必须执行）：沉淀完成后，**必须**调用 save_short_term_memory 将本次沉淀的摘要写入短期记忆，参数要求：\n");
-        result.push_str("   - `summary`：本次沉淀提炼的核心经验摘要（不是细节流水账）\n");
-        result.push_str("   - `content`：详细内容（可选，记录沉淀出的关键知识点列表）\n");
-        result.push_str("   - `tags`：标签列表（如 `[\"settled\", \"consolidation\"]`）\n");
-        result.push_str("   - `trace_ids`：**必须填入**文末【依赖的 Trace ID 列表】中的全部 ID（本次沉淀依赖的 trace 列表，用于记忆追溯）\n\n");
-        result.push_str("## 认知要点\n\n");
-        result.push_str("- 图谱是活的，每次沉淀都是迭代优化，不是机械合并\n");
-        result.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
-        result.push_str(
-            "- **图谱记「是什么 / 为什么」，技能记「怎么做」**：抽象知识与关系进图谱，可复用的操作路径沉淀成技能；图谱里只留技能节点的摘要与 distilled_from 来源边，正文永远住在技能里\n",
-        );
-        result.push_str("- 沉淀时多问「为什么」：这批记忆背后的共性规律与本质是什么？\n");
-        result.push_str(
-            "  跨节点的联想（把看似无关的知识连起来）往往比新建节点更有价值——新边是图谱的增量智慧\n",
-        );
-        result.push_str("- 新老知识交替不是覆盖是迭代，推翻时用 opposite 关系保留痕迹\n");
-        result.push_str(
-            "- 知识节点在蜂巢内全局共享（无需标记即对所有 Agent 可见）；published 标签标记其中值得优先参考的高价值节点，以此为桥梁发现跨 Agent 的知识网络\n",
-        );
-        result.push_str("- 详见\"记忆认知\"技能的沉淀机制和新老知识交替章节\n\n");
-        result.push_str("开始沉淀吧。\n\n");
+        push_sleep_instructions(&mut result);
 
         // 10. 易变数据收尾（每轮沉淀运行都变化，置于最后使前缀缓存作废面最小）
         if let Some(trace_id) = &self.current_trace_id {
@@ -1437,11 +1321,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("【待沉淀的短期记忆】\n");
         result.push_str(pending_memories_summary);
         result.push_str("\n\n");
-        result.push_str(
-            "【依赖的 Trace ID 列表】（调用 save_short_term_memory 时填入 trace_ids 字段）\n",
-        );
+        result.push_str("【依赖的 Trace ID 列表】（本次沉淀所依据的原始思考记录）\n");
         if trace_ids.is_empty() {
-            result.push_str("- （本次运行无依赖 trace，填 `[]`）\n");
+            result.push_str("- （本次运行无依赖 trace）\n");
         } else {
             for tid in trace_ids {
                 result.push_str(&format!("- {}\n", tid));
@@ -1450,7 +1332,6 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         result
     }
-
     /// 总结退出场景扁平 Prompt
     ///
     /// 区块按稳定性递减排序：人设→技能→上下文→历史对话→**完全静态的指令块**（触发头 +
@@ -1569,12 +1450,17 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         }
     }
 
-    /// 沉淀场景：System（人设+技能+沉淀规范简版指引）
-    /// + User（上下文+历史+本轮用户原始消息+待沉淀摘要+Trace）
+    /// 沉淀场景：System（人设+技能+**完整沉淀指令块**）
+    /// + User（上下文+已沉淀参考+Trace+待沉淀摘要+依赖 trace 列表）
     ///
-    /// 缓存友好排布：System 消息跨次沉淀运行完全静态（人设/技能/规则逐字节相同，
+    /// 缓存友好排布：System 消息跨次沉淀运行完全静态（人设/技能/指令逐字节相同，
     /// 是前缀缓存的主要命中面），易变数据（Trace/待沉淀摘要/trace 列表）全部收尾在
     /// User 消息末尾——后续新增区块保持「静态前、易变后」，不要插入到 System。
+    ///
+    /// ⚠️ System 里的指令块**必须**走 [`Self::push_sleep_instructions`]，不要在这里
+    /// 另写一套「简版规则」：这里才是模型真正读到的输入，`build_sleep_prompt` 只用于
+    /// Trace 记录。曾经这里写的是「调用 save_short_term_memory 把对话摘要写入短期记忆」，
+    /// 于是沉淀每批都往待沉淀队列再生一条，回环永远排不空。
     fn build_sleep_initial_messages(
         &self,
         pending_memories_summary: &str,
@@ -1586,29 +1472,22 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             system.push_str("\n\n");
         }
         system.push_str(&self.build_skills_sections());
-        system.push_str("【沉淀场景补充规则】\n");
-        system.push_str("- 你的任务是：调用 save_short_term_memory 把对话摘要写入短期记忆\n");
-        system.push_str(
-            "- 不需要给用户发消息；写完记忆后直接输出「沉淀完成」类 Final 文本结束即可\n",
-        );
-        system.push_str("- 同一语义的写入工具不要重复调用超过 1 次\n\n");
+        push_sleep_instructions(&mut system);
 
         let mut user = String::new();
         user.push_str(&self.build_common_context_sections());
-        // 沉淀场景**不放**【历史对话】：它与【待沉淀的短期记忆摘要】大面积重复
+        // 沉淀场景**不放**【历史对话】：它与【待沉淀的短期记忆】大面积重复
         // （Active ≤ 20 条时完全重复），白白吃掉上下文预算。
         // 图谱里已有什么由 Agent 用 search_memory 按需检索，这里只给少量参考线索。
         self.push_settled_reference(&mut user);
         if let Some(trace_id) = &self.current_trace_id {
             user.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
         }
-        user.push_str("【待沉淀的短期记忆摘要】\n");
+        user.push_str("【待沉淀的短期记忆】\n");
         user.push_str(pending_memories_summary);
         user.push('\n');
         if !trace_ids.is_empty() {
-            user.push_str(
-                "【依赖的 Trace ID 列表】（调用 save_short_term_memory 时填入 trace_ids 字段）\n",
-            );
+            user.push_str("【依赖的 Trace ID 列表】（本次沉淀所依据的原始思考记录）\n");
             for tid in trace_ids {
                 user.push_str(&format!("- {}\n", tid));
             }
@@ -1723,6 +1602,150 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         vec![ChatMessage::system(system), ChatMessage::user(user)]
     }
+}
+
+/// 沉淀指令块：**跨次沉淀运行逐字节静态**，必须置于易变数据之前以保前缀缓存
+///
+/// `build_sleep_prompt`（Trace/统计记录）与 `build_sleep_initial_messages`
+/// （**模型真实输入**）共用这一份。此前两者各写一套，真实输入那份退化成
+/// 「调用 save_short_term_memory 把对话摘要写入短期记忆」——沉淀每处理一批就
+/// 往待沉淀队列里再生一条，`prepare` 永远取得到，回环永不结束（实测一次夜间
+/// 沉淀因此跑出 520 轮模型调用、持续 2.5 小时）。沉淀任务的指令文本只允许有一份。
+fn push_sleep_instructions(out: &mut String) {
+    out.push_str("【沉淀工作模式触发】\n\n");
+    out.push_str("你收到这个消息是因为触发了沉淀流程（类似人脑的睡眠整理记忆）。请进入沉淀工作模式，对文末【待沉淀的短期记忆】进行归纳整理：\n\n");
+    out.push_str("## 沉淀约束（重要）\n\n");
+    out.push_str("- **不要发送消息**：沉淀不对外发消息、不唤醒他人；需要佐证时只做只读查询（看代码 / 查资料），不要依赖外部交互\n");
+    out.push_str("- **不要调用消息类工具**（send_message / send_task_assignment_message 等），避免触发消息流程导致异步唤醒自己\n");
+    // 放通面是 self_evolution（create_skill / update_skill），不是整个 skill_management：
+    // 后者含 Remove Skill（无归属校验、不可撤销）等破坏性工具，沉淀这种无人值守的
+    // 内循环不该拿到。所以这里只列写能力，删除/卸载类工具根本不在工具表里。
+    out.push_str("- **工具面**：记忆类（search_memory / save_long_term_memory / update_memory / query_memory）+ 自进化类（create_skill / update_skill，把经验沉淀成技能）+ 只读佐证类（fs_read 看代码、tavily_search / doubao_search / http_fetch 查资料）。写盘、执行命令、发消息类工具不在工具表里\n");
+    out.push_str("- **禁止写入新的短期记忆**：待沉淀队列是本轮的输入，再写一条就是给自己续料（禁止 save_short_term_memory 与 create_memory(memory_type='short_term')，详见任务第 8 条）\n");
+    out.push_str(
+        "- 这是一个内循环：主体是你与自己的记忆；外部资料只用于佐证，不产生新的对话或任务\n\n",
+    );
+    out.push_str("## 你的任务\n\n");
+    out.push_str("请用已有工具自主完成沉淀：\n\n");
+    // 先判「值不值得沉淀」再谈产出：沉淀不是「每批必须交作业」。
+    // 缺了这一条时，模型会把任务读成「每批都要建节点」，为凑产出而制造
+    // 低价值节点 / 重复节点，反而把图谱写脏。空产出是合法且常见的结果。
+    out.push_str("0. **先判断这一批值不值得沉淀**（最重要的一步）：\n");
+    out.push_str("   沉淀的目标是把**可复用的抽象知识**固化进图谱，不是「每批必须产出节点」。扫完【待沉淀的短期记忆】后，\n");
+    out.push_str("   如果判断没有值得长期保留的内容（日常流水、一次性细节、已经沉淀过的同类内容、没有抽象价值的过程记录），\n");
+    out.push_str("   **本轮什么都不做就是成功**：不调任何工具，直接说明「本批无需沉淀」即可结束，框架会把本批标记为已沉淀。\n");
+    out.push_str(
+        "   宁可空手而归，也不要为了「有产出」而造节点——凑数的节点会把图谱写脏，比不沉淀更糟。\n\n",
+    );
+    out.push_str("1. **归纳总结**：对上述短期记忆进行归纳，提炼核心概念、抽象经验、可复用模式（不要记具体细节）；\n");
+    out.push_str(
+        "   涉及代码或外部事实的结论，先用 fs_read / tavily_search / doubao_search / http_fetch 核实；查不到就写得保守些，不要把猜测写成断言\n",
+    );
+    out.push_str(
+        "2. **查询已有图谱**：用 search_memory 检查是否已有相关知识点（避免重复节点）；\n",
+    );
+    out.push_str(
+        "   检索时带着联想——这条经验与哪些既有节点相关？看似无关的节点之间是否存在深层关联？\n",
+    );
+    out.push_str("3. **创建/更新节点**（仅在确有值得沉淀的知识时；没有就跳过本条）：\n");
+    out.push_str("   - 新知识 → save_long_term_memory 创建节点\n");
+    out.push_str("   - 已有相似节点 → update_memory 更新节点内容\n");
+    out.push_str("   - 过大且可拆分的旧节点 → 拆分为子节点 + 概述父节点 + contains 关系\n");
+    out.push_str("   - **声明来源**（每次 save_long_term_memory 都要做）：把本次归纳所依据的短期记忆 id 填入 source_short_term_ids，即文末【待沉淀的短期记忆】里每条的 [id=...]，可填多条\n");
+    out.push_str("     节点只存摘要，原始细节住在 trace 里；只有声明了来源，框架才能把「节点 → 短期记忆 → 原始 trace」这条链写进库，日后从节点就能追回当时的原始记录\n");
+    out.push_str("     ⚠️ 不填 = 该节点成为无源头的孤岛断言，无法回溯它是从哪次经历里归纳出来的\n");
+    out.push_str("4. **建立关系**（联想必须落成显式边，两条路径）：\n");
+    out.push_str("   - 新建节点 → save_long_term_memory 的 relations 参数顺带建边\n");
+    out.push_str("   - 更新既有节点 → update_memory 的 relations 参数补边\n");
+    out.push_str("   （related/contains/depends 等规范词优先；都不贴切就直接写你判断的关系名，会被原样保存与展示，不会被替换成「自定义」）；每条关系可带 weight（0~1）表示关联强度，知识图谱按它调边的粗细与浓淡，拿不准就省略、不要随手填一个中间值\n");
+    out.push_str(
+        "   ⚠️ 正文里提及 / 引用其他节点**不等于建边**——图谱遍历只认关系表，正文引用对检索不可达\n",
+    );
+    out.push_str("   - **新建节点不要零边入库**：孤岛节点多数不是真的无关联，只是缺一次关联检索——创建后若还没边，用它的核心概念换几个角度再 search_memory 查几轮，能连就连上；确认无关联再孤立\n");
+    out.push_str("5. **评估重要性**：对「值得其他 Agent 优先参考」的通用方法论 / 模式 / 概念，用 update_memory 的 node_tags 字段加 'published' 标签——它标记的是**重要性/影响力**（用于图谱推荐起点的排序），**不是**可见性开关：知识节点在蜂巢内本就全局共享\n");
+    // 状态闭环由框架负责：不再要求 Agent 自己改 status
+    //
+    // 背景：原步骤 6 要求 Agent 调 update_memory 把短期记忆 status 改为 settled，
+    // 但模型经常漏调，导致同一批记忆在下次沉淀时被反复处理。现改为沉淀结束后
+    // 由框架统一置位（见 MemoryDal::mark_short_term_settled）。
+    //
+    // 注意：技能文档里的同类说明**不改**——技能可能被其它框架复用，那里未必有
+    // 框架兜底，仍然需要 Agent 自行处理状态；只有在 AI Orz 这套沉淀 prompt 下
+    // 才由框架接管。
+    // 技能沉淀：与图谱分工——图谱存「是什么 / 为什么」（抽象知识与关系），
+    // 技能存「怎么做」（可复用的操作路径）。二者在同一批经验里一起产出，
+    // 并用 node_type=skill 的节点 + distilled_from 边互相索引：
+    // 技能正文不进图谱，但「有这个技能、它从哪些知识提炼而来」在图谱里。
+    // 只写框架口径（参数怎么填、归属与状态由框架决定），方法论（什么值得成技能、
+    // 何时算成熟、怎么发布）交给「自我进化」技能——两者重复会在改一处漏一处时漂移。
+    out.push_str("6. **技能沉淀**（把「怎么做」固化下来）：\n");
+    out.push_str(
+            "   浮现出可复用的操作路径 / 做事方式时，沉淀成技能；已有同类就 `update_skill` 迭代，不要建重复技能。三件事一起做：\n",
+        );
+    out.push_str("   - **建技能**：`create_skill`，正文写在 content_input.content（skill.md）\n");
+    out.push_str(
+            "     ⚠️ **不要传 status**：Agent 创建的技能一律落到你的私有草稿（Draft），传 Published 会被服务端拒绝。它会自动出现在你的技能区里，下次干活就能用\n",
+        );
+    out.push_str(
+            "   - **图谱登记**：`save_long_term_memory` 建一个 `node_type=skill` 的节点，**只写摘要**，正文留在技能里不进图谱\n",
+        );
+    // 约定出处：docs/design/thinking_graph_engine_design.md §3.6 —— skill 节点 node_tags 须追加技能 category（思维方法类即 thinking_method），检索侧按 tag 才能召回技能节点
+    out.push_str(
+            "   - **登记 tag**：该节点的 `node_tags` 在既有 tags 基础上**追加该技能的 category**（如思维方法类技能追加 `thinking_method`）——日后检索侧按 tag 召回技能节点全靠这一步登记\n",
+        );
+    out.push_str(
+            "   - **建边**：该节点用 `distilled_from`（提炼自）连回源知识节点，源节点侧可用 `produces`（产出）指回\n",
+        );
+    out.push_str(
+            "   - 同样要填 `source_short_term_ids`（这条技能所依据的短期记忆），让技能节点也有可回溯的源头\n",
+        );
+    // 淘汰/遗忘：只写框架口径（Expired 的语义与可逆性），判据交给自我进化技能。
+    //
+    // 为什么是 Expired 而不是 delete_skill：resolve_agent_skills 用
+    // exclude_status=Expired 过滤 ⇒ 标 Expired 即移出 Agent 技能池、不再进 Prompt，
+    // 效果等同「忘掉」；而记录保留、restore_skill 可恢复。delete_skill 不可逆，
+    // 且它是 skill_management 面（不在沉淀白名单内），沉淀这种无人值守的内循环
+    // 不该拿到不可逆动作。
+    out.push_str(
+            "   - **淘汰 / 遗忘**：发现自己的某个技能已过时、不再需要或本来就是错的 → `update_skill` 把它设为 `Expired`。它会即刻移出你的技能区（不再进你的 Prompt），但记录保留、日后可恢复——**忘掉也是进化的一种，但要留得下回头路**\n",
+        );
+    out.push_str(
+        "   - ⚠️ 不要用 `delete_skill` 之类的方式永久删除技能：删除不可撤销，错了就真没了\n",
+    );
+    out.push_str(
+            "   - **什么该成技能、什么时候算成熟、该淘汰什么、怎么发布 → 详见「自我进化」技能**（沉淀图谱是主业，技能沉淀是机会主义的，不要为了建而建）\n",
+        );
+    out.push_str("7. **状态无需处理**：本次待沉淀短期记忆的状态变更由框架在沉淀结束后统一完成，\n");
+    out.push_str("   **你不要**调用 update_memory 去修改它们的 status（重复操作没有意义）。\n");
+    out.push_str("   你只需专注把内容整合进知识图谱；若某条确实不适合沉淀，忽略它即可。\n");
+    // 第 8 条曾是「强制调用 save_short_term_memory 写入沉淀摘要」，这是夜间沉淀
+    // 跑不完的直接原因：队列的输入被自己不断再生。产出已经由框架写进 Trace，
+    // 沉淀不需要（也不允许）再记一笔短期记忆。
+    out.push_str(
+        "8. **不要写新的短期记忆**（禁止执行）：沉淀的产出只进知识图谱（必要时加技能）。\n",
+    );
+    out.push_str("   不要调用 save_short_term_memory 或 create_memory(memory_type='short_term') 再写一条「沉淀摘要」：\n");
+    out.push_str(
+        "   待沉淀的短期记忆是本轮的**输入**，框架在本批处理完就把它标记为已沉淀；你再写一条，\n",
+    );
+    out.push_str("   下一轮 prepare 会立刻取到它，沉淀就永远结束不了（曾因此把一次夜间沉淀拖成 520 轮模型调用）。\n");
+    out.push_str("   本次沉淀做了什么、沉淀出哪些节点，框架已经写进 Trace，不需要你另记一笔。\n\n");
+    out.push_str("## 认知要点\n\n");
+    out.push_str("- 图谱是活的，每次沉淀都是迭代优化，不是机械合并\n");
+    out.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
+    out.push_str(
+            "- **图谱记「是什么 / 为什么」，技能记「怎么做」**：抽象知识与关系进图谱，可复用的操作路径沉淀成技能；图谱里只留技能节点的摘要与 distilled_from 来源边，正文永远住在技能里\n",
+        );
+    out.push_str("- 沉淀时多问「为什么」：这批记忆背后的共性规律与本质是什么？\n");
+    out.push_str(
+        "  跨节点的联想（把看似无关的知识连起来）往往比新建节点更有价值——新边是图谱的增量智慧\n",
+    );
+    out.push_str("- 新老知识交替不是覆盖是迭代，推翻时用 opposite 关系保留痕迹\n");
+    out.push_str(
+            "- 知识节点在蜂巢内全局共享（无需标记即对所有 Agent 可见）；published 标签标记其中值得优先参考的高价值节点，以此为桥梁发现跨 Agent 的知识网络\n",
+        );
+    out.push_str("- 详见\"记忆认知\"技能的沉淀机制和新老知识交替章节\n\n");
+    out.push_str("开始沉淀吧。\n\n");
 }
 
 #[cfg(test)]

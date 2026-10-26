@@ -22,7 +22,7 @@ use crate::pkg::think_trace::ThinkTraceRound;
 use crate::service::domain::runtime::RuntimeToolExecution;
 use crate::service::domain::runtime::think_loop::{
     ROUND_DIGEST_MAX_CONTENT, TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS, is_recursive_settle_call,
-    policy_exit, round_metrics,
+    is_settle_queue_write, policy_exit, round_metrics,
 };
 use crate::service::domain::runtime::types::{RoundDigest, ThinkLoopResult};
 use async_trait::async_trait;
@@ -495,7 +495,7 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 tc.id,
                 "你当前已经在沉淀/压缩流程中，无需再调用 settle_memory —— \
                  重复调用会嵌套触发新的沉淀循环。\
-                 请直接继续当前任务（写入短期记忆后输出 Final 文本结束）。"
+                 请直接继续当前任务（完成当前工作后输出 Final 文本结束）。"
                     .to_string(),
             ));
             mark_trace_tool(
@@ -504,6 +504,38 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 None,
                 "blocked",
                 Some("已拦截：沉淀/压缩流程内不允许递归调用 settle_memory".to_string()),
+            );
+            continue;
+        }
+        // 沉淀场景：拦截往待沉淀队列写新短期记忆。
+        //
+        // 待沉淀队列是本轮的**输入**：框架刚把本批标记 Settled，若模型又写一条，
+        // 回环的 `prepare` 会立刻取到它 → 队列永远扫不空，最终打满
+        // `MAX_SETTLE_BATCHES` 并触发整轮重投（实测把一次夜间沉淀拖成 520 轮
+        // 模型调用、持续 2.5 小时）。与上面同样选择运行时拦截：工具在其它场景
+        // （主循环 / 压缩）必须可用，且拦截能把「产出该进图谱」即时告诉模型。
+        if is_settle_queue_write(d.scene, &tc.name) {
+            log_info!(
+                &ctx,
+                "think_loop",
+                "blocked short-term write tool {} in scene={}",
+                tc.name,
+                d.scene.as_str()
+            );
+            messages.push(ChatMessage::tool(
+                tc.id,
+                "沉淀期间不要写新的短期记忆：待沉淀队列是本轮沉淀的输入，再写一条会让\
+                 队列永远排不空。请把这次沉淀的结论写进知识图谱\
+                 （save_long_term_memory / update_memory）或沉淀成技能；\
+                 本次沉淀的 Trace 由框架记录，无需另记摘要。"
+                    .to_string(),
+            ));
+            mark_trace_tool(
+                &mut trace_tool_calls,
+                trace_idx,
+                None,
+                "blocked",
+                Some("已拦截：沉淀期间禁止写入新的短期记忆（防止待沉淀队列自续料）".to_string()),
             );
             continue;
         }

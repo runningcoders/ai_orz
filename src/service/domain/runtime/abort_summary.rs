@@ -47,8 +47,8 @@ pub const ABORT_NOTICE_FIELD: &str = "abort_notice";
 
 /// 兜底摘要的字符预算
 ///
-/// 与 `settle_memory::DEFAULT_PENDING_BUDGET_CHARS` 同量级。短期记忆最终要进 Prompt，
-/// 无上限的存档会把下一轮上下文直接撑爆 —— 宁可截断，也不能劣化模型表现。
+/// 短期记忆最终要进 Prompt，无上限的存档会把下一轮上下文直接撑爆 ——
+/// 宁可截断，也不能劣化模型表现。这里按字符计，与沉淀批次的 token 预算相互独立。
 const SUMMARY_BUDGET_CHARS: usize = 12_000;
 
 /// 用户原始消息的截断上限

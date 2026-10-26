@@ -52,6 +52,15 @@ const COMPACT_MAX_ROUNDS: usize = 3;
 /// 直接跳过执行并回一条提示，避免「压缩里再触发一次完整沉淀」的雪崩。
 pub(crate) const RECURSIVE_SETTLE_TOOL: &str = "settle_memory";
 
+/// 短期记忆写入工具（沉淀场景禁止调用）
+///
+/// 待沉淀队列是本轮沉淀的**输入**：沉淀期间再写一条，框架刚把本批标记 Settled，
+/// 回环的 `prepare` 又会立刻取到新写的这条 → 队列永远排不空，直到打满
+/// `MAX_SETTLE_BATCHES` 并把整轮沉淀判失败重投（实测一次夜间沉淀因此跑了
+/// 520 轮模型调用、耗时 2.5 小时）。压缩场景**不拦**：它的产出本来就是一条
+/// 短期记忆。
+pub(crate) const SHORT_TERM_WRITE_TOOL: &str = "save_short_term_memory";
+
 /// 框架落库时给压缩记忆打的标签（便于后续识别/统计这类记忆）
 const COMPACTION_TAG: &str = "compaction";
 

@@ -327,7 +327,7 @@ async fn pending_summary_uses_oldest_first(pool: SqlitePool) {
     assert!(truncated);
 }
 
-/// 预算自适应：累计长度还在预算内就继续拼，而不是固定条数
+/// 预算自适应：累计 token 数还在预算内就继续拼，而不是固定条数
 #[sqlx::test]
 async fn pending_summary_accumulates_within_budget(pool: SqlitePool) {
     let ctx = init_env(pool).await;
@@ -359,12 +359,12 @@ async fn pending_summary_accumulates_within_budget(pool: SqlitePool) {
     assert_eq!(ids.len(), 5);
     assert!(!truncated);
 
-    // 预算极小 → 只纳入能放下的前几条，并标记截断
+    // 预算极小（20 token）→ 只纳入能放下的前几条，并标记截断
     let (summary, ids, truncated) = build_pending_memories_summary(
         &ctx,
         domain.memory(),
         "agent-settle",
-        60,
+        20,
         PENDING_MAX_ITEMS,
     )
     .await
@@ -404,7 +404,7 @@ async fn settles_every_pending_memory_across_batches(pool: SqlitePool) {
     let domain = test_domain();
     let agent_id = "agent-settle-multi";
 
-    // 预算 = 1000 * 40% = 400 字符；每条摘要 ~250 字符 → 每批只装得下一条
+    // 预算 = 1000 * 40% = 400 token；每条摘要 ~245 token → 每批只装得下一条
     let long_summary = "沉淀素材".repeat(60);
     for i in 0..3 {
         seed(

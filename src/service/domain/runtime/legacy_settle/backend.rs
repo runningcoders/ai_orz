@@ -59,6 +59,10 @@ impl SettleBackend for LegacySettleBackend {
         AgentRuntimeStateManager::global()
             .set_think_runtime(&deps.agent.po.id, Arc::clone(&batch.think_runtime));
 
+        // ⚠️ 沉淀**不调用** `compact_context`（全项目只有 awaken 主循环会调用）：
+        // 批内素材必须原样进模型。一旦压缩，既会多出一条短期记忆（把待沉淀队列
+        // 变成自续料），又会丢掉沉淀所需的原始细节。上下文溢出时策略直接返回
+        // `ContextOverflow`，本批记忆保持 Active 交给下一次沉淀重试。
         let result = deps
             .domain
             .run_think_loop(
