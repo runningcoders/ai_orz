@@ -10,7 +10,7 @@ use super::*;
 use crate::models::vector::{
     FilterValue, VectorField, VectorFilter, VectorIndexParams, VectorPayload,
 };
-use crate::pkg::storage::vector::VectorStore;
+use crate::pkg::storage::vector::{VectorMaintenanceOptions, VectorStore};
 
 fn params(agent: &str, published: bool, dim: usize) -> VectorIndexParams {
     let payload = VectorPayload {
@@ -158,4 +158,69 @@ async fn test_missing_table_ops_do_not_create_table() {
     // 关键断言：没有建出任何表（历史上这里会出现维度=0 的 ghost 表）
     let names = store.db.table_names().execute().await.unwrap();
     assert!(names.is_empty(), "不应创建任何表，实际: {:?}", names);
+}
+
+/// merge_insert 语义：同一 id 二次 upsert 应原地更新内容，行数保持不变
+/// （回归：旧实现「先 delete 再 add」会在表里留下两个版本，行数表面上仍是 1，
+/// 但版本数与 manifest 体积持续膨胀）。
+#[tokio::test(flavor = "multi_thread")]
+async fn test_upsert_merge_insert_updates_in_place() {
+    let dir = std::env::temp_dir().join(format!("lance_merge_test_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = LanceVectorStore::new(&dir).unwrap();
+    store.init_collection("merge", 4).await.unwrap();
+
+    store
+        .upsert("merge", "same", &params("agent-1", false, 4))
+        .await
+        .unwrap();
+    let first = store.get("merge", "same").await.unwrap().unwrap();
+    assert_eq!(first.meta.content_hash, "h-agent-1-false");
+
+    // 同一 id 再写一次：内容更新，不能新增重复行
+    store
+        .upsert("merge", "same", &params("agent-2", true, 4))
+        .await
+        .unwrap();
+    let second = store.get("merge", "same").await.unwrap().unwrap();
+    assert_eq!(second.meta.content_hash, "h-agent-2-true");
+    assert_eq!(
+        second.payload.agent_id.as_deref(),
+        Some("agent-2"),
+        "payload 也应随 merge_insert 一起更新"
+    );
+
+    let table = store.open_existing_table("merge").await.unwrap().unwrap();
+    assert_eq!(table.count_rows(None).await.unwrap(), 1);
+}
+
+/// maintain：合并碎片 + 回收旧版本，多行写入后仍可正常 count/search
+#[tokio::test(flavor = "multi_thread")]
+async fn test_maintain_keeps_table_usable() {
+    let dir = std::env::temp_dir().join(format!("lance_maint_test_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = LanceVectorStore::new(&dir).unwrap();
+    store.init_collection("maint", 4).await.unwrap();
+
+    for i in 0..3 {
+        store
+            .upsert("maint", &format!("id-{i}"), &params("agent-1", false, 4))
+            .await
+            .unwrap();
+    }
+
+    let report = store
+        .maintain(VectorMaintenanceOptions::default())
+        .await
+        .unwrap();
+    assert!(report.collections >= 1, "应至少维护 1 张表");
+    assert_eq!(report.failed, 0);
+
+    let table = store.open_existing_table("maint").await.unwrap().unwrap();
+    assert_eq!(table.count_rows(None).await.unwrap(), 3);
+    let hits = store
+        .search("maint", &[1.0, 1.0, 1.0, 1.0], 10, None)
+        .await
+        .unwrap();
+    assert_eq!(hits.len(), 3);
 }

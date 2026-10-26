@@ -471,6 +471,9 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     let has_pending_redelivery = existing
         .iter()
         .any(|t| t.payload.contains("\"pending_notification_redelivery\""));
+    let has_vector_maintenance = existing
+        .iter()
+        .any(|t| t.payload.contains("\"vector_maintenance\""));
 
     // 1. agent_rest：每天凌晨 4 点执行一次睡眠沉淀（Cron 表达式，系统时区）
     if !has_agent_rest {
@@ -589,6 +592,32 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         trigger.is_enabled = 1;
         cron_manager.create_trigger(ctx.clone(), &trigger).await?;
         sys_info!("已创建系统级定时任务: pending_notification_redelivery (interval: 300s)");
+    }
+
+    // 6. vector_maintenance：每天凌晨 5:30 整理向量库（合并碎片 + 回收旧版本）
+    //
+    // LanceDB 每次写入都会新增版本，长期运行后 `_versions/` 会膨胀到远超真实数据；
+    // 碎片不合并还会让查询退化为全表扫描。与工具日志清理错开半小时，避免同时占用磁盘。
+    if !has_vector_maintenance {
+        let expression = "30 5 * * *"; // 每天 05:30（分 时 日 月 周）
+        let timezone = crate::pkg::cron::system_timezone();
+        let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
+        let mut trigger = CronTriggerPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            "系统默认-向量库整理".into(),
+            TriggerType::Cron,
+            next_run_at,
+            Some("system".into()),
+        );
+        trigger.cron_expression = Some(expression.into());
+        trigger.payload = r#"{"action":"vector_maintenance","extra":{}}"#.into();
+        trigger.is_enabled = 1;
+        cron_manager.create_trigger(ctx.clone(), &trigger).await?;
+        sys_info!(
+            "已创建系统级定时任务: vector_maintenance (cron: {} {})",
+            expression,
+            timezone
+        );
     }
 
     Ok(())

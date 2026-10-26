@@ -22,7 +22,7 @@ pub use fts5::{
 
 /// 向量存储抽象 Trait
 pub mod vector;
-pub use vector::{SqliteVssStore, VectorStore};
+pub use vector::{SqliteVssStore, VectorMaintenanceOptions, VectorMaintenanceReport, VectorStore};
 
 /// 纯 Rust 内存向量存储
 mod mem_vector;

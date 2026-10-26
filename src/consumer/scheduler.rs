@@ -117,6 +117,7 @@ impl Consumer for CronTriggerConsumer {
                 self.handle_pending_notification_redelivery().await?
             }
             "tool_log_cleanup" => self.handle_tool_log_cleanup().await?,
+            "vector_maintenance" => self.handle_vector_maintenance().await?,
             "directory_reconcile" => self.handle_directory_reconcile().await?,
             _ => {
                 sys_warn!(
@@ -566,6 +567,35 @@ impl CronTriggerConsumer {
             report.removed_files,
             report.freed_bytes,
             report.skipped_dirs
+        );
+        Ok(())
+    }
+
+    /// vector_maintenance 动作：合并向量表碎片并回收超过保留窗口的旧版本
+    ///
+    /// LanceDB 每次写入都会产生新版本（manifest 只追加不回收），长期运行后
+    /// `_versions/` 会远大于真实数据；碎片不合并还会让查询退化为全量扫描。
+    /// 保留窗口由 [`crate::pkg::storage::VectorMaintenanceOptions::default`] 决定。
+    async fn handle_vector_maintenance(&self) -> Result<()> {
+        let report = match crate::pkg::storage::get()
+            .vector()
+            .maintain(crate::pkg::storage::VectorMaintenanceOptions::default())
+            .await
+        {
+            Ok(report) => report,
+            Err(e) => {
+                log_error!("vector_maintenance 执行失败: {}", e);
+                return Err(e);
+            }
+        };
+
+        log_info!(
+            "vector_maintenance 完成: collections={}, failed={}, fragments_removed={}, bytes_removed={}, old_versions_removed={}",
+            report.collections,
+            report.failed,
+            report.fragments_removed,
+            report.bytes_removed,
+            report.old_versions_removed
         );
         Ok(())
     }

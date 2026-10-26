@@ -17,6 +17,35 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 
+/// 向量库维护参数
+#[derive(Debug, Clone)]
+pub struct VectorMaintenanceOptions {
+    /// 保留多久以内的版本历史（更早的版本会被回收）
+    pub prune_older_than: std::time::Duration,
+    /// 是否删除未经事务验证的文件（仅离线维护时开启）
+    pub delete_unverified: bool,
+}
+
+impl Default for VectorMaintenanceOptions {
+    fn default() -> Self {
+        Self {
+            prune_older_than: std::time::Duration::from_secs(24 * 3600),
+            delete_unverified: false,
+        }
+    }
+}
+
+/// 一次整库维护的汇总结果
+#[derive(Debug, Default, Clone)]
+pub struct VectorMaintenanceReport {
+    pub collections: usize,
+    pub failed: usize,
+    pub fragments_removed: usize,
+    pub fragments_added: usize,
+    pub bytes_removed: u64,
+    pub old_versions_removed: u64,
+}
+
 /// 向量存储抽象 Trait
 ///
 /// 所有向量存储后端都实现此 Trait，支持可插拔切换
@@ -68,6 +97,16 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
     /// 刷新所有脏数据到持久化存储（仅 Hnsw 后端有实际操作）
     async fn flush(&self) -> Result<()> {
         Ok(())
+    }
+
+    /// 整理本存储（合并碎片 + 回收旧版本）
+    ///
+    /// 默认空实现：内存型存储无需维护。
+    async fn maintain(
+        &self,
+        _options: VectorMaintenanceOptions,
+    ) -> Result<VectorMaintenanceReport> {
+        Ok(VectorMaintenanceReport::default())
     }
 
     /// 获取集合的 model_provider_id（用于判断是否需要重建索引）

@@ -20,12 +20,15 @@ use async_trait::async_trait;
 use common::error::Result;
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::table::{CompactionOptions, OptimizeAction};
 use lancedb::{Connection, DistanceType, Table, connect};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Arc as StdArc;
 use tokio::sync::RwLock;
+
+use super::{VectorMaintenanceOptions, VectorMaintenanceReport};
 
 /// LanceDB 向量存储
 ///
@@ -406,12 +409,6 @@ impl super::VectorStore for LanceVectorStore {
 
         let now = chrono::Utc::now().timestamp();
 
-        // 先删除旧数据（id 单引号转义，防注入）
-        table
-            .delete(&format!("id = '{}'", escape_sql_str(id)))
-            .await
-            .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
-
         // payload 平铺列 + payload_hash 随向量一起落库
         let batch = row_to_batch(
             id,
@@ -424,13 +421,21 @@ impl super::VectorStore for LanceVectorStore {
             &params.payload,
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], lance_schema(dimensions));
-
-        table
-            .add(batches)
-            .execute()
+        // 单事务 merge_insert：按 id 命中则整行更新，未命中则插入。
+        // 相比「先 delete 再 add」只产生一个版本，避免 manifest 元数据 O(n²) 放大。
+        let mut builder = table.merge_insert(&["id"]);
+        builder
+            .when_matched_update_all(None)
+            .when_not_matched_insert_all();
+        builder
+            .execute(Box::new(RecordBatchIterator::new(
+                vec![Ok(batch)],
+                lance_schema(dimensions),
+            )))
             .await
-            .map_err(|e| common::error::Error::internal(format!("LanceDB add error: {}", e)))?;
+            .map_err(|e| {
+                common::error::Error::internal(format!("LanceDB merge_insert error: {}", e))
+            })?;
 
         Ok(())
     }
@@ -480,12 +485,10 @@ impl super::VectorStore for LanceVectorStore {
             return Ok(()); // 行不存在：no-op
         };
 
-        // 2. delete + 重写（仅 payload 与 payload_hash 变化）
-        table
-            .delete(&filter_sql)
-            .await
-            .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
-
+        // 2. 单事务 merge_insert 覆盖（仅 payload 与 payload_hash 变化）
+        //
+        // 与 upsert 同理：delete + add 会提交两个版本，manifest 元数据随写入次数
+        // O(n²) 膨胀；按 id 合并只产生一个版本。
         let dimensions = vector.len() as i32;
         let now = chrono::Utc::now().timestamp();
         let batch = row_to_batch(
@@ -498,12 +501,19 @@ impl super::VectorStore for LanceVectorStore {
             meta.expire_at,
             payload,
         )?;
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], lance_schema(dimensions));
-        table
-            .add(batches)
-            .execute()
+        let mut builder = table.merge_insert(&["id"]);
+        builder
+            .when_matched_update_all(None)
+            .when_not_matched_insert_all();
+        builder
+            .execute(Box::new(RecordBatchIterator::new(
+                vec![Ok(batch)],
+                lance_schema(dimensions),
+            )))
             .await
-            .map_err(|e| common::error::Error::internal(format!("LanceDB add error: {}", e)))?;
+            .map_err(|e| {
+                common::error::Error::internal(format!("LanceDB merge_insert error: {}", e))
+            })?;
         Ok(())
     }
 
@@ -617,6 +627,75 @@ impl super::VectorStore for LanceVectorStore {
         tables.remove(&table_name);
 
         Ok(())
+    }
+
+    async fn maintain(&self, options: VectorMaintenanceOptions) -> Result<VectorMaintenanceReport> {
+        let names = self.db.table_names().execute().await.map_err(|e| {
+            common::error::Error::internal(format!("LanceDB table names error: {}", e))
+        })?;
+
+        let mut report = VectorMaintenanceReport::default();
+        // lancedb 0.26 的 Prune.older_than 是 chrono::Duration，这里做一次转换
+        let prune_older_than =
+            chrono::Duration::from_std(options.prune_older_than).map_err(|e| {
+                common::error::Error::internal(format!("向量库维护: 保留窗口非法: {}", e))
+            })?;
+
+        for name in names {
+            let table = match self.db.open_table(&name).execute().await {
+                Ok(t) => t,
+                Err(e) => {
+                    log_error!("向量库维护: 打开表失败 table={}, err={}", name, e);
+                    report.failed += 1;
+                    continue;
+                }
+            };
+
+            // ① 合并碎片（先压缩，再回收才能尽量释放旧版本）
+            let compact = match table
+                .optimize(OptimizeAction::Compact {
+                    options: CompactionOptions::default(),
+                    remap_options: None,
+                })
+                .await
+            {
+                Ok(stats) => stats,
+                Err(e) => {
+                    log_error!("向量库维护: 合并碎片失败 table={}, err={}", name, e);
+                    report.failed += 1;
+                    continue;
+                }
+            };
+            if let Some(m) = compact.compaction {
+                report.fragments_removed += m.fragments_removed;
+                report.fragments_added += m.fragments_added;
+            }
+
+            // ② 回收早于保留窗口的旧版本
+            let prune = match table
+                .optimize(OptimizeAction::Prune {
+                    older_than: Some(prune_older_than),
+                    delete_unverified: Some(options.delete_unverified),
+                    error_if_tagged_old_versions: Some(false),
+                })
+                .await
+            {
+                Ok(stats) => stats,
+                Err(e) => {
+                    log_error!("向量库维护: 回收旧版本失败 table={}, err={}", name, e);
+                    report.failed += 1;
+                    continue;
+                }
+            };
+            if let Some(p) = prune.prune {
+                report.bytes_removed += p.bytes_removed;
+                report.old_versions_removed += p.old_versions;
+            }
+
+            report.collections += 1;
+        }
+
+        Ok(report)
     }
 }
 #[cfg(test)]
