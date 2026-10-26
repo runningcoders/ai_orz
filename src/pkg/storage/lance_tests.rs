@@ -209,12 +209,18 @@ async fn test_maintain_keeps_table_usable() {
             .unwrap();
     }
 
+    // 维护前：upsert 已把表句柄写入缓存
+    assert!(!store.tables.read().await.is_empty());
+
     let report = store
         .maintain(VectorMaintenanceOptions::default())
         .await
         .unwrap();
     assert!(report.collections >= 1, "应至少维护 1 张表");
     assert_eq!(report.failed, 0);
+
+    // 维护后：缓存必须清空，否则读路径会一直停留在维护前的 dataset 快照
+    assert!(store.tables.read().await.is_empty());
 
     let table = store.open_existing_table("maint").await.unwrap().unwrap();
     assert_eq!(table.count_rows(None).await.unwrap(), 3);

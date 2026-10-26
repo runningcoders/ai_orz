@@ -695,6 +695,11 @@ impl super::VectorStore for LanceVectorStore {
             report.collections += 1;
         }
 
+        // 维护用的是新建 Table 句柄，缓存里的旧句柄仍停留在维护前的 dataset 快照。
+        // 这里清空缓存，让后续访问重新打开表并加载最新版本；否则读路径会一直走旧碎片布局，
+        // 且旧碎片被 prune 回收后可能读到已删除的文件。
+        self.tables.write().await.clear();
+
         Ok(report)
     }
 }
