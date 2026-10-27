@@ -104,6 +104,7 @@ dependencies = [
 name = "ai_orz"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "aes-gcm",
  "ai-orz-macros",
  "anyhow",

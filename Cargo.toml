@@ -73,6 +73,8 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # 敏感数据加密（渠道凭证落库）
 aes-gcm = "0.10"
 base64 = "0.22"
+# 微信 iLink 入站图片解密（AES-128-ECB；aes-gcm 不提供 ECB 模式）
+aes = "0.8"
 
 # 联邦身份密钥（Ed25519 签名 / did:key，S1 密钥底座；纯 Rust 无 C 依赖）
 ed25519-dalek = "2.2"

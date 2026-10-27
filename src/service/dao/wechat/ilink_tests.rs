@@ -632,3 +632,172 @@ async fn test_inbound_state_writer_trait_object() {
         Arc::new(MemWriter(tokio::sync::Mutex::new(Vec::new())));
     writer.save("ch_1", &InboundState::default()).await;
 }
+
+// ==================== 入站图片解密 ====================
+
+/// AES-128-ECB 已知向量（openssl 生成）：
+/// key = 000102...0f，明文 `0123456789abcdef`，PKCS7 补满 16 字节
+const AES_VECTOR_CIPHERTEXT: &str =
+    "281567ab2f4cf0d73d3198225b8b8393954f64f2e4e86e9eee82d20216684899";
+
+/// 测试用任意长度 hex 解码（生产侧 `decode_hex_key` 只接受 16 字节密钥）
+fn hex_bytes(value: &str) -> Vec<u8> {
+    value
+        .as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| (hex_nibble(pair[0]).unwrap() << 4) | hex_nibble(pair[1]).unwrap())
+        .collect()
+}
+
+#[test]
+fn test_decrypt_aes_128_ecb_known_vector() {
+    let key = decode_hex_key("000102030405060708090a0b0c0d0e0f").unwrap();
+    let ciphertext = hex_bytes(AES_VECTOR_CIPHERTEXT);
+    assert_eq!(ciphertext.len(), 32);
+    let plaintext = decrypt_aes_128_ecb(&ciphertext, &key).unwrap();
+    assert_eq!(plaintext, b"0123456789abcdef");
+}
+
+#[test]
+fn test_decrypt_rejects_wrong_key_padding() {
+    // 错误密钥 → 末字节 0xa3 非法填充，必须报错而非返回垃圾字节
+    let key = [0u8; 16];
+    let ciphertext = hex_bytes(AES_VECTOR_CIPHERTEXT);
+    assert!(decrypt_aes_128_ecb(&ciphertext, &key).is_err());
+}
+
+#[test]
+fn test_decrypt_rejects_non_block_aligned() {
+    let key = [0u8; 16];
+    assert!(decrypt_aes_128_ecb(b"not-block", &key).is_err());
+    assert!(decrypt_aes_128_ecb(&[], &key).is_err());
+}
+
+#[test]
+fn test_decode_hex_key_validation() {
+    assert_eq!(
+        decode_hex_key("000102030405060708090a0b0c0d0e0f")
+            .unwrap()
+            .len(),
+        16
+    );
+    // 长度不是 32 个字符
+    assert!(decode_hex_key("00").is_err());
+    // 非十六进制字符
+    assert!(decode_hex_key("zz0102030405060708090a0b0c0d0e0f").is_err());
+}
+
+#[test]
+fn test_resolve_image_aes_key_prefers_hex() {
+    let image = IlinkImageItem {
+        aeskey: Some("000102030405060708090a0b0c0d0e0f".to_string()),
+        media: Some(crate::models::events::wechat::IlinkCdnMedia {
+            aes_key: Some("AAECAwQFBgcICQoLDA0ODw==".to_string()),
+            ..Default::default()
+        }),
+    };
+    let key = resolve_image_aes_key(&image).unwrap().unwrap();
+    assert_eq!(key, (0u8..16).collect::<Vec<_>>());
+}
+
+#[test]
+fn test_resolve_image_aes_key_falls_back_to_base64() {
+    let image = IlinkImageItem {
+        aeskey: None,
+        media: Some(crate::models::events::wechat::IlinkCdnMedia {
+            aes_key: Some("AAECAwQFBgcICQoLDA0ODw==".to_string()),
+            ..Default::default()
+        }),
+    };
+    let key = resolve_image_aes_key(&image).unwrap().unwrap();
+    assert_eq!(key, (0u8..16).collect::<Vec<_>>());
+}
+
+/// 官方兼容形态：base64 解出 32 个 hex 字符，再按 hex 取 16 字节
+#[test]
+fn test_resolve_image_aes_key_base64_of_hex() {
+    // base64("000102030405060708090a0b0c0d0e0f") =
+    // MDAwMTAyMDMwNDA1MDYwNzA4MDkwYTBiMGMwZDBlMGY=
+    let image = IlinkImageItem {
+        aeskey: None,
+        media: Some(crate::models::events::wechat::IlinkCdnMedia {
+            aes_key: Some("MDAwMTAyMDMwNDA1MDYwNzA4MDkwYTBiMGMwZDBlMGY=".to_string()),
+            ..Default::default()
+        }),
+    };
+    let key = resolve_image_aes_key(&image).unwrap().unwrap();
+    assert_eq!(key, (0u8..16).collect::<Vec<_>>());
+}
+
+#[test]
+fn test_resolve_image_aes_key_missing_or_invalid() {
+    // 两个字段都缺失 → 无密钥（按 CDN 明文处理）
+    let image = IlinkImageItem::default();
+    assert_eq!(resolve_image_aes_key(&image).unwrap(), None);
+
+    // base64 长度不是 16/32 字节 → 报错
+    let image = IlinkImageItem {
+        aeskey: None,
+        media: Some(crate::models::events::wechat::IlinkCdnMedia {
+            aes_key: Some("AAEC".to_string()),
+            ..Default::default()
+        }),
+    };
+    assert!(resolve_image_aes_key(&image).is_err());
+}
+
+#[test]
+fn test_sniff_image_mime() {
+    assert_eq!(
+        sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]),
+        Some("image/jpeg")
+    );
+    assert_eq!(
+        sniff_image_mime(&[0x89, b'P', b'N', b'G', 0x0D]),
+        Some("image/png")
+    );
+    assert_eq!(sniff_image_mime(b"GIF89a"), Some("image/gif"));
+    let mut webp = *b"RIFF\0\0\0\0WEBPVP8 ";
+    assert_eq!(sniff_image_mime(&webp), Some("image/webp"));
+    webp[0] = b'X';
+    assert_eq!(sniff_image_mime(&webp), None);
+    assert_eq!(sniff_image_mime(b"BM123456"), Some("image/bmp"));
+    assert_eq!(sniff_image_mime(b"not-an-image"), None);
+}
+
+/// `full_url` 可信性：仅 https + `weixin.qq.com` 或其子域（防 SSRF）
+#[test]
+fn test_trusted_full_url() {
+    // 官方 CDN 子域 / 主域
+    assert!(trusted_full_url("https://novac2c.cdn.weixin.qq.com/c2c/x").is_some());
+    assert!(trusted_full_url("https://weixin.qq.com/a").is_some());
+    // 非 https
+    assert!(trusted_full_url("http://novac2c.cdn.weixin.qq.com/c2c/x").is_none());
+    // 非 weixin.qq.com（含前缀伪装域名）
+    assert!(trusted_full_url("https://evil.example.com/x").is_none());
+    assert!(
+        trusted_full_url("https://weixin.qq.com.evil.example/x").is_none(),
+        "后缀匹配必须带点，不能把 weixin.qq.com.evil.example 当子域"
+    );
+    assert!(trusted_full_url("https://127.0.0.1/x").is_none());
+    // 非法 URL
+    assert!(trusted_full_url("not a url").is_none());
+}
+
+/// 不可信 / 缺失 `full_url` 时回退到官方 CDN 拼接地址
+#[test]
+fn test_cdn_download_url_fallback() {
+    let media = crate::models::events::wechat::IlinkCdnMedia {
+        encrypt_query_param: Some("a+b/c=".to_string()),
+        ..Default::default()
+    };
+    let url = cdn_download_url(&media).unwrap();
+    assert!(url.as_str().starts_with(wechat_ilink::ILINK_CDN_BASE_URL));
+    assert!(url.as_str().contains("encrypted_query_param="));
+
+    // 两个地址都不可用 → 报错（而非静默空请求）
+    let empty = crate::models::events::wechat::IlinkCdnMedia::default();
+    assert!(cdn_download_url(&empty).is_err());
+}

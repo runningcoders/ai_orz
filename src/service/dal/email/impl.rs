@@ -267,6 +267,8 @@ impl EmailDalImpl {
             external_key: Some(external_key),
             // 邮件无话题概念
             thread_id: None,
+            // 邮件附件暂不转内部附件（本次仅支持 IM 渠道图片）
+            attachments: Vec::new(),
         }))
     }
 }

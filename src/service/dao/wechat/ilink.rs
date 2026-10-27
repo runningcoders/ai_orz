@@ -15,18 +15,21 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use aes::Aes128;
+use aes::cipher::{BlockDecrypt, KeyInit};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
 use common::error::{Result, err};
 use common::models::inbound_state::InboundState;
 
+use crate::models::events::wechat::{IlinkCdnMedia, IlinkImageItem};
 use crate::models::events::{IlinkMessage, WechatInboundEvent};
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::pkg::wechat_ilink;
 
-use super::ILINK_DEFAULT_BASE_URL;
+use super::{ILINK_DEFAULT_BASE_URL, IlinkDownloadedImage};
 
 // ==================== 凭证 ====================
 
@@ -485,6 +488,296 @@ fn parse_send_response(body: &str) -> Result<Option<String>> {
         Value::Number(n) => Some(n.to_string()),
         _ => None,
     }))
+}
+
+// ==================== 入站图片下载 ====================
+
+/// CDN 是否可信域名：仅 `https` + `weixin.qq.com` 或其子域
+///
+/// `full_url` 来自消息体（对端可控），直接请求会形成 SSRF 面；不可信时
+/// 一律回退到 `{CDN}/download?encrypted_query_param=...` 的官方拼接地址。
+fn trusted_full_url(full_url: &str) -> Option<reqwest::Url> {
+    let url = reqwest::Url::parse(full_url).ok()?;
+    if url.scheme() != "https" {
+        return None;
+    }
+    let host = url.host_str()?;
+    let trusted = host == "weixin.qq.com" || host.ends_with(".weixin.qq.com");
+    trusted.then_some(url)
+}
+
+/// 按 `encrypt_query_param` 拼官方 CDN 下载地址（`full_url` 缺失或不可信时的回退）
+fn cdn_download_url(media: &IlinkCdnMedia) -> Result<reqwest::Url> {
+    let param = media
+        .encrypt_query_param
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| {
+            err!(
+                InvalidRequest,
+                "ilink 图片消息缺少下载地址（full_url / encrypt_query_param 均不可用）"
+            )
+        })?;
+    let mut url = reqwest::Url::parse(&format!("{}/download", wechat_ilink::ILINK_CDN_BASE_URL))
+        .map_err(|e| err!(Internal, "ilink CDN 地址构造失败: {}", e))?;
+    // 交给 Url 编码，避免 query 值里的 `+` / `=` / `/` 破坏请求
+    url.query_pairs_mut()
+        .append_pair("encrypted_query_param", param);
+    Ok(url)
+}
+
+/// 下载并解密入站图片（对齐官方 `media/media-download.ts` + `cdn/pic-decrypt.ts`）
+///
+/// CDN 为公开读，**不带** bot 令牌（与官方普通 fetch 一致）。步骤：
+/// 1. `full_url`（仅 https + `*.weixin.qq.com` 可信）优先，否则按
+///    `encrypt_query_param` 拼 CDN 下载地址；
+/// 2. 流式拉取密文（边读边限流，上限 [`crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES`]）；
+/// 3. 取密钥（`image_item.aeskey` **hex** 优先，其次 `media.aes_key` **base64**）；
+/// 4. AES-128-ECB 解密 + 去 PKCS7 填充；
+/// 5. 按魔数嗅探 MIME。
+pub async fn download_image(image: &IlinkImageItem) -> Result<IlinkDownloadedImage> {
+    let media = image
+        .media
+        .as_ref()
+        .ok_or_else(|| err!(InvalidRequest, "ilink 图片消息缺少 media 字段"))?;
+
+    let url = match media
+        .full_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        Some(full) => match trusted_full_url(full) {
+            Some(url) => url,
+            None => {
+                log_warn!(
+                    "ilink 图片 full_url 不可信（仅允许 https + *.weixin.qq.com），回退 CDN: {}",
+                    short_token(full)
+                );
+                cdn_download_url(media)?
+            }
+        },
+        None => cdn_download_url(media)?,
+    };
+
+    let resp = client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| http_err("cdn download_image", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        let snippet: String = body.chars().take(200).collect();
+        return Err(err!(
+            ThirdPartyError,
+            "ilink CDN 图片下载失败: status={} body={}",
+            status.as_u16(),
+            snippet
+        ));
+    }
+    let limit = crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES;
+    if let Some(len) = resp.content_length()
+        && len as usize > limit
+    {
+        return Err(err!(
+            InvalidRequest,
+            "ilink 图片过大（密文）: bytes={} limit={}",
+            len,
+            limit
+        ));
+    }
+    // 流式读取：content_length 缺失（chunked）时也能在超限处立刻中止，
+    // 避免先全量缓冲再校验导致无界内存占用。
+    let mut ciphertext: Vec<u8> = Vec::new();
+    let mut resp = resp;
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| http_err("cdn download_image", e))?
+    {
+        if ciphertext.len() + chunk.len() > limit {
+            return Err(err!(
+                InvalidRequest,
+                "ilink 图片过大（密文）: limit={}",
+                limit
+            ));
+        }
+        ciphertext.extend_from_slice(&chunk);
+    }
+    if ciphertext.is_empty() {
+        return Err(err!(ThirdPartyError, "ilink CDN 图片响应为空"));
+    }
+
+    // 无密钥时与官方一致：按 CDN 明文处理（部分图片不加密）
+    let plaintext = match resolve_image_aes_key(image)? {
+        Some(key) => decrypt_aes_128_ecb(&ciphertext, &key)?,
+        None => ciphertext,
+    };
+    if plaintext.len() > limit {
+        return Err(err!(
+            InvalidRequest,
+            "ilink 图片过大（明文）: bytes={} limit={}",
+            plaintext.len(),
+            limit
+        ));
+    }
+    let mime_type = sniff_image_mime(&plaintext).ok_or_else(|| {
+        err!(
+            ThirdPartyError,
+            "ilink 图片解密后不是可识别的图片格式 bytes={}",
+            plaintext.len()
+        )
+    })?;
+
+    log_info!(
+        "ilink 入站图片下载成功 mime={} bytes={}",
+        mime_type,
+        plaintext.len()
+    );
+    Ok(IlinkDownloadedImage {
+        bytes: plaintext,
+        mime_type: mime_type.to_string(),
+    })
+}
+
+/// 解析图片 AES 密钥（16 字节）：`image_item.aeskey`（hex）优先，其次 `media.aes_key`
+///
+/// `media.aes_key` 按官方两种形态兼容：
+/// - base64(16 字节原始密钥) —— 图片常见形态
+/// - base64(32 个 hex 字符) —— 语音/文件/视频常见形态，需再按 hex 解一次
+///
+/// 返回 `Ok(None)` 表示消息未携带密钥（官方按 CDN 明文下载）。
+fn resolve_image_aes_key(image: &IlinkImageItem) -> Result<Option<Vec<u8>>> {
+    if let Some(hex) = image
+        .aeskey
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        return decode_hex_key(hex).map(Some);
+    }
+    let Some(encoded) = image
+        .media
+        .as_ref()
+        .and_then(|m| m.aes_key.as_deref())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    else {
+        return Ok(None);
+    };
+    use base64::Engine as _;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|e| err!(InvalidRequest, "ilink 图片 aes_key 非合法 base64: {}", e))?;
+    if decoded.len() == 16 {
+        return Ok(Some(decoded));
+    }
+    if decoded.len() == 32
+        && let Ok(hex) = std::str::from_utf8(&decoded)
+        && hex.bytes().all(|b| hex_nibble(b).is_some())
+    {
+        return decode_hex_key(hex).map(Some);
+    }
+    Err(err!(
+        InvalidRequest,
+        "ilink 图片 aes_key 长度不合法: bytes={}",
+        decoded.len()
+    ))
+}
+
+/// hex 密钥解码（仅接受 32 个十六进制字符 = 16 字节）
+fn decode_hex_key(value: &str) -> Result<Vec<u8>> {
+    if value.len() != 32 {
+        return Err(err!(
+            InvalidRequest,
+            "ilink 图片 aeskey 长度不合法: chars={}",
+            value.chars().count()
+        ));
+    }
+    let bytes = value.as_bytes();
+    let mut key = Vec::with_capacity(16);
+    for pair in bytes.as_chunks::<2>().0 {
+        let hi = hex_nibble(pair[0])
+            .ok_or_else(|| err!(InvalidRequest, "ilink 图片 aeskey 含非十六进制字符"))?;
+        let lo = hex_nibble(pair[1])
+            .ok_or_else(|| err!(InvalidRequest, "ilink 图片 aeskey 含非十六进制字符"))?;
+        key.push((hi << 4) | lo);
+    }
+    Ok(key)
+}
+
+/// 单个十六进制字符 → 半字节
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// AES-128-ECB 解密并去除 PKCS7 填充
+///
+/// 手写分块解密 + 填充校验：iLink 的 ECB 只作媒体脱敏，无需引入 `cipher` 的
+/// `block-padding` feature（避免为一个填充规则多加一条依赖）。
+fn decrypt_aes_128_ecb(ciphertext: &[u8], key: &[u8]) -> Result<Vec<u8>> {
+    if !ciphertext.len().is_multiple_of(16) {
+        return Err(err!(
+            ThirdPartyError,
+            "ilink 图片密文长度非 16 的倍数: bytes={}",
+            ciphertext.len()
+        ));
+    }
+    let cipher = Aes128::new_from_slice(key).map_err(|_| {
+        err!(
+            InvalidRequest,
+            "ilink 图片 AES 密钥长度不合法: bytes={}",
+            key.len()
+        )
+    })?;
+    let mut buffer = ciphertext.to_vec();
+    for chunk in buffer.as_chunks_mut::<16>().0 {
+        let block = aes::cipher::generic_array::GenericArray::from_mut_slice(chunk);
+        cipher.decrypt_block(block);
+    }
+    let padding = *buffer.last().unwrap_or(&0) as usize;
+    if padding == 0 || padding > 16 || padding > buffer.len() {
+        return Err(err!(
+            ThirdPartyError,
+            "ilink 图片解密失败: PKCS7 填充不合法"
+        ));
+    }
+    let marker = padding as u8;
+    if !buffer[buffer.len() - padding..]
+        .iter()
+        .all(|byte| *byte == marker)
+    {
+        return Err(err!(
+            ThirdPartyError,
+            "ilink 图片解密失败: PKCS7 填充字节不一致（密钥可能错误）"
+        ));
+    }
+    buffer.truncate(buffer.len() - padding);
+    Ok(buffer)
+}
+
+/// 图片格式嗅探（只看魔数；未知返回 None）
+fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some("image/png")
+    } else if bytes.starts_with(b"GIF8") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"BM") {
+        Some("image/bmp")
+    } else {
+        None
+    }
 }
 
 // ==================== 会话启停通知 ====================

@@ -33,6 +33,12 @@ use std::sync::OnceLock;
 /// iLink 接入域默认值（登录响应 `baseurl` 优先，不硬编码假设）
 pub const ILINK_DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
 
+/// 媒体 CDN 默认域（官方插件 `cdn-url.ts` 的 `DEFAULT_CDN_BASE_URL`）
+///
+/// 图片等媒体字节**不在**接入域上提供，而是走 CDN：`{CDN}/download?encrypted_query_param=...`。
+/// 消息里带 `full_url` 时以它为准；缺失才用本常量拼接。
+pub const ILINK_CDN_BASE_URL: &str = "https://novac2c.cdn.weixin.qq.com/c2c";
+
 // ==================== 协议常量（iLink 协议 SSOT）====================
 //
 // 取值全部出自官方插件（见文件头「协议来源」）：
@@ -58,7 +64,7 @@ pub const MESSAGE_STATE_FINISH: i64 = 2;
 pub const MESSAGE_ITEM_TYPE_NONE: i64 = 0;
 /// 消息条目类型：文本
 pub const MESSAGE_ITEM_TYPE_TEXT: i64 = 1;
-/// 消息条目类型：图片（阶段一不处理）
+/// 消息条目类型：图片（入站已支持下载解密）
 pub const MESSAGE_ITEM_TYPE_IMAGE: i64 = 2;
 /// 消息条目类型：语音（阶段一不处理）
 pub const MESSAGE_ITEM_TYPE_VOICE: i64 = 3;

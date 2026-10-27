@@ -10,10 +10,11 @@ use std::sync::{Arc, OnceLock};
 use common::error::{Result, err};
 use tokio::sync::RwLock;
 
+use super::IlinkDownloadedImage;
 use super::WechatDao;
 use super::ilink::{
     CursorStore, IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry,
-    SessionGuard, send_text, short_token,
+    SessionGuard, download_image, send_text, short_token,
 };
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -156,6 +157,22 @@ impl WechatDao for WechatDaoHttpImpl {
             message_id.as_deref().unwrap_or("<none>")
         );
         Ok(message_id)
+    }
+
+    async fn download_image(
+        &self,
+        ctx: RequestContext,
+        image: &crate::models::events::wechat::IlinkImageItem,
+    ) -> Result<IlinkDownloadedImage> {
+        let downloaded = download_image(image).await?;
+        log_info!(
+            &ctx,
+            "wechat_image_download",
+            "入站图片下载完成 mime={} bytes={}",
+            downloaded.mime_type,
+            downloaded.bytes.len()
+        );
+        Ok(downloaded)
     }
 
     async fn test_connection(

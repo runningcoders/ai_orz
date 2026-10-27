@@ -146,6 +146,87 @@ fn test_message_filters() {
     assert_eq!(msg.text(), None);
 }
 
+/// 图片消息：`type=2` + `image_item`（含 hex aeskey 与 CDN media）
+#[test]
+fn test_parse_ilink_image_message() {
+    let image = r#"{
+        "from_user_id": "peer_wx_1",
+        "to_user_id": "bot_1",
+        "message_id": "7400000000000000456",
+        "message_type": 1,
+        "message_state": 2,
+        "item_list": [{
+            "type": 2,
+            "image_item": {
+                "aeskey": "000102030405060708090a0b0c0d0e0f",
+                "media": {
+                    "encrypt_query_param": "opaque_param",
+                    "aes_key": "AAECAwQFBgcICQoLDA0ODw==",
+                    "full_url": "https://cdn.example.com/x"
+                }
+            }
+        }]
+    }"#;
+    let msg: IlinkMessage = serde_json::from_str(image).unwrap();
+    assert!(msg.is_user());
+    assert!(msg.is_finished());
+    // 图片消息无文本
+    assert_eq!(msg.text(), None);
+
+    let item = msg.image().expect("应解析出图片条目");
+    assert_eq!(
+        item.aeskey.as_deref(),
+        Some("000102030405060708090a0b0c0d0e0f")
+    );
+    let media = item.media.as_ref().expect("应解析出 CDN media");
+    assert_eq!(media.encrypt_query_param.as_deref(), Some("opaque_param"));
+    assert_eq!(media.aes_key.as_deref(), Some("AAECAwQFBgcICQoLDA0ODw=="));
+    assert_eq!(media.full_url.as_deref(), Some("https://cdn.example.com/x"));
+
+    assert_eq!(msg.item_list[0].item_type(), 2);
+
+    // Value 往返（AOP 队列以 serde_json::Value 传输）
+    let value = serde_json::to_value(&msg).unwrap();
+    let back: IlinkMessage = serde_json::from_value(value).unwrap();
+    assert_eq!(back, msg);
+}
+
+/// 文本消息不含图片；`type=2` 但无 `image_item` 时 `image()` 返回 None
+#[test]
+fn test_text_message_has_no_image() {
+    let msg: IlinkMessage = serde_json::from_str(&sample_message_json()).unwrap();
+    assert_eq!(msg.image(), None);
+    assert!(msg.images().is_empty());
+    assert_eq!(msg.item_list[0].item_type(), 1);
+}
+
+/// 多图消息：`images()` 按 item_list 顺序返回全部图片，`image()` 取首张
+#[test]
+fn test_images_collects_all_image_items() {
+    let msg: IlinkMessage = serde_json::from_str(
+        r#"{
+            "message_type": 1,
+            "message_state": 2,
+            "item_list": [
+                {"type": 2, "image_item": {"aeskey": "k1"}},
+                {"type": 1, "text_item": {"text": "看图"}},
+                {"type": 2, "image_item": {"aeskey": "k2"}},
+                {"type": 2}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let images = msg.images();
+    assert_eq!(images.len(), 2, "只收集带 image_item 的图片条目");
+    assert_eq!(images[0].aeskey.as_deref(), Some("k1"));
+    assert_eq!(images[1].aeskey.as_deref(), Some("k2"));
+    assert_eq!(
+        msg.image().and_then(|i| i.aeskey.as_deref()),
+        Some("k1"),
+        "image() 应返回首张图片"
+    );
+}
+
 /// AOP 信封：Event 语义（kind/id/order_key）
 #[test]
 fn test_wechat_inbound_event_semantics() {

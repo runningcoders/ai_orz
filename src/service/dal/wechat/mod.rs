@@ -53,6 +53,7 @@ pub fn init() {
         crate::service::dal::message_channel::dal(),
         crate::service::dao::wechat::dao(),
         crate::service::dao::user_credential::dao(),
+        crate::service::dao::message::dao(),
     );
     // 注册到消息入站适配中台
     if let Err(e) = crate::pkg::adapter::message::registry().register(instance.clone()) {
@@ -74,10 +75,12 @@ pub fn new_with_credential_dao(
     message_channel_dal: Arc<dyn crate::service::dal::message_channel::MessageChannelDal>,
     wechat_dao: Arc<dyn crate::service::dao::wechat::WechatDao>,
     credential_dao: Arc<dyn crate::service::dao::user_credential::UserCredentialDao>,
+    message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
 ) -> Arc<WechatDalImpl> {
     Arc::new(WechatDalImpl::new(
         message_channel_dal,
         wechat_dao,
         credential_dao,
+        message_dao,
     ))
 }

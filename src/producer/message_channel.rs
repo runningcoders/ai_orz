@@ -6,9 +6,11 @@ use common::enums::{CallerType, ChannelType, MessageRole, MessageType};
 use common::error::{Result, err};
 use std::sync::Arc;
 
+use crate::models::attachment::AttachmentUpload;
 use crate::pkg::RequestContext;
 use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::MessageAdapterCallback;
+use crate::service::domain::finance::FinanceDomain;
 use crate::service::domain::hr::HrDomain;
 use crate::service::domain::message::{
     DeliverMessageCommand, DeliveryOptions, MessageDomain, SendToAgentCommand,
@@ -17,6 +19,8 @@ use crate::service::domain::message::{
 struct MessageChannelProducer {
     hr_domain: Arc<dyn HrDomain>,
     message_domain: Arc<dyn MessageDomain>,
+    /// 附件资产管理（渠道入站图片落库为内部 Attachment）
+    finance_domain: Arc<dyn FinanceDomain>,
 }
 
 impl MessageChannelProducer {
@@ -24,7 +28,30 @@ impl MessageChannelProducer {
         Self {
             hr_domain: crate::service::domain::hr::domain(),
             message_domain: crate::service::domain::message::domain(),
+            finance_domain: crate::service::domain::finance::domain(),
         }
+    }
+}
+
+/// 将入站附件以 markdown 引用（`[图片](attachment:{id})`）并入消息正文
+///
+/// 渠道入站不再生成独立附件消息（避免每条附件各自唤醒 Agent），附件信息全部
+/// 收敛到文本根消息的正文里，由唤醒侧 `resolve_current_message_resources` 解析。
+/// 纯图片消息的 `[图片]` 占位会被引用整体替代，避免正文出现重复占位。
+fn compose_content_with_attachment_refs(base: &str, attachment_ids: &[String]) -> String {
+    if attachment_ids.is_empty() {
+        return base.to_string();
+    }
+    let refs = attachment_ids
+        .iter()
+        .map(|id| format!("[图片](attachment:{id})"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let base = base.trim();
+    if base.is_empty() || base == "[图片]" {
+        refs
+    } else {
+        format!("{base}\n\n{refs}")
     }
 }
 
@@ -142,11 +169,45 @@ impl MessageAdapterCallback for MessageChannelProducer {
             return Ok(());
         };
 
+        // 渠道附件落库：先转为内部 Attachment 资产，随后以正文引用并入文本消息
+        // （单条失败只丢该附件并留痕，不阻断文本消息入站 —— 与下载失败的降级口径一致）
+        let mut attachment_ids: Vec<String> = Vec::new();
+        for attachment in &msg.attachments {
+            let upload = AttachmentUpload {
+                original_name: attachment.file_name.clone(),
+                mime_type: attachment.mime_type.clone(),
+                purpose: "message".to_string(),
+                bytes: attachment.bytes.clone(),
+            };
+            match self
+                .finance_domain
+                .attachment_manage()
+                .create_attachment(ctx.clone(), upload)
+                .await
+            {
+                Ok(created) => attachment_ids.push(created.po.id),
+                Err(e) => log_warn!(
+                    &ctx,
+                    "message_channel_producer",
+                    "create inbound attachment failed (dropped): from={} channel={:?} name={} err={}",
+                    msg.from_id,
+                    msg.channel_type,
+                    attachment.file_name,
+                    e
+                ),
+            }
+        }
+        // 附件以正文引用（`[图片](attachment:{id})`）随文本消息一起投递，不再生成
+        // 独立附件消息：旁路附件消息同样是 to_role=Agent，会各自发布事件唤醒一次
+        // Agent，导致「一条图文入站触发 N+1 次唤醒」。引用由唤醒侧
+        // `resolve_current_message_resources` 解析，视觉输入与文字在同一轮到达。
+        let content = compose_content_with_attachment_refs(&msg.content, &attachment_ids);
+
         let cmd = SendToAgentCommand {
             from_id: &msg.from_id,
             from_role: msg.from_role,
             to_agent_id: &to_agent_id,
-            content: &msg.content,
+            content: &content,
             project_id: msg.project_id.as_deref(),
             task_id: msg.task_id.as_deref(),
             reply_to_id: msg.reply_to_id.as_deref(),
@@ -156,20 +217,40 @@ impl MessageAdapterCallback for MessageChannelProducer {
             message_type: MessageType::Text,
         };
 
-        let message = self
+        let message = match self
             .message_domain
             .delivery()
             .send_to_agent(ctx.clone(), cmd)
             .await
-            .map_err(|e| {
-                err!(
+        {
+            Ok(message) => message,
+            Err(e) => {
+                // 投递失败会由 AOP 重投：清理本次刚落库的附件，避免重试累积孤儿资产
+                for attachment_id in &attachment_ids {
+                    if let Err(clean_err) = self
+                        .finance_domain
+                        .attachment_manage()
+                        .delete_attachment(ctx.clone(), attachment_id)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "message_channel_producer",
+                            "cleanup inbound attachment failed: id={} err={}",
+                            attachment_id,
+                            clean_err
+                        );
+                    }
+                }
+                return Err(err!(
                     Internal,
                     "message channel producer send_to_agent failed from={} to_agent={}: {}",
                     msg.from_id,
                     to_agent_id,
                     e
-                )
-            })?;
+                ));
+            }
+        };
 
         // 渠道入站消息实时上屏：网页端对它**没有本地乐观气泡**（只有网页自发的
         // 消息才有），不推就永远看不到。出口只开 SSE —— 走渠道投递会把这条消息
@@ -229,4 +310,42 @@ pub async fn shutdown() -> Result<()> {
     let registry = crate::pkg::adapter::message::registry();
     registry.stop_all().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compose_content_with_attachment_refs;
+
+    #[test]
+    fn test_compose_content_without_attachments() {
+        assert_eq!(compose_content_with_attachment_refs("你好", &[]), "你好");
+        // 无附件时连占位都不改写
+        assert_eq!(
+            compose_content_with_attachment_refs("[图片]", &[]),
+            "[图片]"
+        );
+    }
+
+    #[test]
+    fn test_compose_content_text_with_attachments() {
+        let ids = vec!["att_1".to_string(), "att_2".to_string()];
+        assert_eq!(
+            compose_content_with_attachment_refs("看这两张", &ids),
+            "看这两张\n\n[图片](attachment:att_1) [图片](attachment:att_2)"
+        );
+    }
+
+    #[test]
+    fn test_compose_content_image_only_replaces_placeholder() {
+        let ids = vec!["att_1".to_string()];
+        // 纯图片消息的 `[图片]` 占位整体被引用替代，避免正文重复
+        assert_eq!(
+            compose_content_with_attachment_refs("[图片]", &ids),
+            "[图片](attachment:att_1)"
+        );
+        assert_eq!(
+            compose_content_with_attachment_refs("  ", &ids),
+            "[图片](attachment:att_1)"
+        );
+    }
 }

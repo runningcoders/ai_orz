@@ -102,13 +102,15 @@ pub struct LarkEventMessage {
     /// 会话类型：`p2p`（私信）或 `group`（群聊）
     #[serde(default)]
     pub chat_type: String,
-    /// 消息类型：`text`/`image`/`file` 等，本期只处理 `text`
+    /// 消息类型：`text`/`image`/`post`/`file` 等，本期处理 `text`、`image` 与 `post`
     #[serde(default)]
     pub message_type: String,
     /// 消息内容（JSON 字符串）
     ///
     /// 文本消息：`{"text":"消息内容"}`
-    /// 富文本等其他类型保留为原始字符串，由上层判断后丢弃。
+    /// 图片消息：`{"image_key":"img_v3_xxx"}`
+    /// 富文本消息：`{"title":"...","content":[[{"tag":"text",...},{"tag":"img",...}]]}`
+    /// 或按语言包一层（`{"zh_cn":{...}}`）
     #[serde(default)]
     pub content: String,
     /// 消息原始扩展字段（保留未识别字段）
@@ -120,6 +122,28 @@ pub struct LarkEventMessage {
 pub struct LarkTextContent {
     #[serde(default)]
     pub text: String,
+}
+
+/// 图片消息内容（`message_type == "image"`）
+///
+/// 飞书图片消息 content 形如 `{"image_key":"img_v3_xxx"}`，只携带资源键；
+/// 实际字节需用事件里的 `message_id` + image_key 调资源下载接口获取。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LarkImageContent {
+    #[serde(default)]
+    pub image_key: String,
+}
+
+/// 富文本消息（`message_type == "post"`）解析结果
+///
+/// 飞书富文本是**图文混排**的唯一单条形态（纯文本/纯图片各有独立 message_type）。
+/// 解析后正文与图片资源键分离：正文作为内部消息内容，图片走附件链路。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LarkPostParsed {
+    /// 正文（标题 + 各段落，段落间以换行分隔）
+    pub text: String,
+    /// 图片资源键（按出现顺序，已去重）
+    pub image_keys: Vec<String>,
 }
 
 // ==================== AOP 入站事件 ====================
@@ -172,6 +196,16 @@ impl LarkMessageEvent {
         self.event.message.message_type == "text"
     }
 
+    /// 是否为图片消息
+    pub fn is_image(&self) -> bool {
+        self.event.message.message_type == "image"
+    }
+
+    /// 是否为富文本消息（图文混排）
+    pub fn is_post(&self) -> bool {
+        self.event.message.message_type == "post"
+    }
+
     /// 解析文本消息内容
     pub fn parse_text(&self) -> Option<String> {
         if !self.is_text() {
@@ -181,10 +215,123 @@ impl LarkMessageEvent {
         Some(parsed.text)
     }
 
+    /// 解析图片消息的 `image_key`（非图片消息或内容缺失时返回 `None`）
+    pub fn parse_image_key(&self) -> Option<String> {
+        if !self.is_image() {
+            return None;
+        }
+        let parsed: LarkImageContent = serde_json::from_str(&self.event.message.content).ok()?;
+        let key = parsed.image_key.trim();
+        (!key.is_empty()).then(|| key.to_string())
+    }
+
+    /// 解析富文本消息（非 `post` 或内容非法时返回 `None`）
+    ///
+    /// 飞书 `post` 的 content 有两种下发形态：直挂 `content` 数组，或按语言
+    /// 包一层（`zh_cn` / `en_us` …）；本方法统一归一后抽取正文与图片键。
+    /// 支持的标签：`text` / `a`（取 text，缺失用 href）/ `at`（`@用户`）/ `img`。
+    pub fn parse_post(&self) -> Option<LarkPostParsed> {
+        if !self.is_post() {
+            return None;
+        }
+        let value: Value = serde_json::from_str(&self.event.message.content).ok()?;
+        let body = locate_post_body(&value)?;
+
+        let mut lines: Vec<String> = Vec::new();
+        if let Some(title) = body
+            .get("title")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+        {
+            lines.push(title.to_string());
+        }
+
+        let mut image_keys: Vec<String> = Vec::new();
+        for paragraph in body.get("content")?.as_array()? {
+            let mut line = String::new();
+            for element in paragraph.as_array().into_iter().flatten() {
+                match element.get("tag").and_then(Value::as_str) {
+                    Some("text") => line.push_str(
+                        element
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    ),
+                    Some("a") => {
+                        // 链接：展示锚文本，缺失时退回 href
+                        let label = element
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|text| !text.is_empty())
+                            .or_else(|| element.get("href").and_then(Value::as_str));
+                        if let Some(label) = label {
+                            line.push_str(label);
+                        }
+                    }
+                    Some("at") => {
+                        // 提及：优先展示用户名，缺失时退回 user_id
+                        let name = element
+                            .get("user_name")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|name| !name.is_empty())
+                            .or_else(|| element.get("user_id").and_then(Value::as_str));
+                        if let Some(name) = name {
+                            line.push('@');
+                            line.push_str(name);
+                        }
+                    }
+                    Some("img") => {
+                        if let Some(key) = element
+                            .get("image_key")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|key| !key.is_empty())
+                            && !image_keys.iter().any(|existing| existing == key)
+                        {
+                            image_keys.push(key.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let line = line.trim();
+            if !line.is_empty() {
+                lines.push(line.to_string());
+            }
+        }
+
+        Some(LarkPostParsed {
+            text: lines.join("\n"),
+            image_keys,
+        })
+    }
+
     /// 发送者 open_id
     pub fn sender_open_id(&self) -> &str {
         &self.event.sender.sender_id.open_id
     }
+}
+
+/// 定位富文本正文：兼容「直挂 content 数组」与「按语言包一层」两种下发形态
+///
+/// 语言优先级 `zh_cn` → `en_us` → 任意含 `content` 数组的语言。
+fn locate_post_body(value: &Value) -> Option<&Value> {
+    let has_content = |body: &Value| body.get("content").and_then(Value::as_array).is_some();
+    if has_content(value) {
+        return Some(value);
+    }
+    let object = value.as_object()?;
+    for locale in ["zh_cn", "en_us"] {
+        if let Some(body) = object.get(locale)
+            && has_content(body)
+        {
+            return Some(body);
+        }
+    }
+    object.values().find(|body| has_content(body))
 }
 #[cfg(test)]
 #[path = "lark_tests.rs"]

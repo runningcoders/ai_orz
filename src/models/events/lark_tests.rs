@@ -179,3 +179,103 @@ fn test_lark_inbound_event_roundtrip() {
     assert_eq!(back.event.header.event_id, "evt_xxx");
     assert_eq!(back.event.parse_text(), Some("你好".to_string()));
 }
+
+/// 图片消息：content 只携带 `image_key`，无文本
+const P2P_IMAGE_EVENT: &str = r#"{
+    "schema": "2.0",
+    "header": {
+        "event_id": "evt_img",
+        "event_type": "im.message.receive_v1",
+        "create_time": "1700000000000",
+        "app_id": "cli_xxx"
+    },
+    "event": {
+        "sender": {"sender_id": {"open_id": "ou_xxx"}, "sender_type": "open_id"},
+        "message": {
+            "message_id": "msg_img",
+            "create_time": "1700000000000",
+            "chat_id": "oc_xxx",
+            "chat_type": "p2p",
+            "message_type": "image",
+            "content": "{\"image_key\":\"img_v3_xxx\"}"
+        }
+    }
+}"#;
+
+#[test]
+fn test_parse_image_event() {
+    let event: LarkMessageEvent = serde_json::from_str(P2P_IMAGE_EVENT).unwrap();
+    assert!(event.is_image());
+    assert!(!event.is_text());
+    assert_eq!(event.parse_image_key(), Some("img_v3_xxx".to_string()));
+    assert_eq!(event.parse_text(), None);
+}
+
+/// 非图片消息不得误判为图片，`image_key` 也不应解析出值
+#[test]
+fn test_text_event_is_not_image() {
+    let event: LarkMessageEvent = serde_json::from_str(P2P_TEXT_EVENT).unwrap();
+    assert!(!event.is_image());
+    assert_eq!(event.parse_image_key(), None);
+}
+
+/// 富文本（图文混排）：语言包形态（zh_cn）+ 标题 + text/a/at/img 混合
+const P2P_POST_EVENT: &str = r#"{
+    "schema": "2.0",
+    "header": {
+        "event_id": "evt_post",
+        "event_type": "im.message.receive_v1",
+        "create_time": "1700000000000",
+        "app_id": "cli_xxx"
+    },
+    "event": {
+        "sender": {"sender_id": {"open_id": "ou_xxx"}, "sender_type": "open_id"},
+        "message": {
+            "message_id": "msg_post",
+            "create_time": "1700000000000",
+            "chat_id": "oc_xxx",
+            "chat_type": "p2p",
+            "message_type": "post",
+            "content": "{\"zh_cn\":{\"title\":\"周报\",\"content\":[[{\"tag\":\"text\",\"text\":\"本周完成\"},{\"tag\":\"at\",\"user_name\":\"张三\",\"user_id\":\"ou_1\"},{\"tag\":\"text\",\"text\":\"的评审\"}],[{\"tag\":\"a\",\"text\":\"需求文档\",\"href\":\"https://example.com/doc\"}],[{\"tag\":\"img\",\"image_key\":\"img_v3_a\"},{\"tag\":\"img\",\"image_key\":\"img_v3_b\"}],[{\"tag\":\"img\",\"image_key\":\"img_v3_a\"}]]}}"
+        }
+    }
+}"#;
+
+#[test]
+fn test_parse_post_event_locale_wrapped() {
+    let event: LarkMessageEvent = serde_json::from_str(P2P_POST_EVENT).unwrap();
+    assert!(event.is_post());
+    assert!(!event.is_text());
+    assert!(!event.is_image());
+
+    let parsed = event.parse_post().unwrap();
+    assert_eq!(parsed.text, "周报\n本周完成@张三的评审\n需求文档");
+    // 图片按出现顺序收集并去重；纯图片段落不产生空行
+    assert_eq!(parsed.image_keys, vec!["img_v3_a", "img_v3_b"]);
+}
+
+/// 富文本：content 直挂（无语言包）+ 无标题 + 纯图片段落
+#[test]
+fn test_parse_post_event_flat_content() {
+    let raw = P2P_POST_EVENT.replace(
+        "\"content\": \"{\\\"zh_cn\\\":{\\\"title\\\":\\\"周报\\\",\\\"content\\\":[[{\\\"tag\\\":\\\"text\\\",\\\"text\\\":\\\"本周完成\\\"},{\\\"tag\\\":\\\"at\\\",\\\"user_name\\\":\\\"张三\\\",\\\"user_id\\\":\\\"ou_1\\\"},{\\\"tag\\\":\\\"text\\\",\\\"text\\\":\\\"的评审\\\"}],[{\\\"tag\\\":\\\"a\\\",\\\"text\\\":\\\"需求文档\\\",\\\"href\\\":\\\"https://example.com/doc\\\"}],[{\\\"tag\\\":\\\"img\\\",\\\"image_key\\\":\\\"img_v3_a\\\"},{\\\"tag\\\":\\\"img\\\",\\\"image_key\\\":\\\"img_v3_b\\\"}],[{\\\"tag\\\":\\\"img\\\",\\\"image_key\\\":\\\"img_v3_a\\\"}]]}}\"",
+        "\"content\": \"{\\\"title\\\":\\\"\\\",\\\"content\\\":[[{\\\"tag\\\":\\\"img\\\",\\\"image_key\\\":\\\"img_v3_c\\\"}]]}\"",
+    );
+    let event: LarkMessageEvent = serde_json::from_str(&raw).unwrap();
+    let parsed = event.parse_post().unwrap();
+    assert_eq!(parsed.text, "");
+    assert_eq!(parsed.image_keys, vec!["img_v3_c"]);
+}
+
+/// 非 post 消息不解析富文本；post 内容非法时返回 None（由适配层降级跳过）
+#[test]
+fn test_parse_post_only_for_post_type() {
+    let text_event: LarkMessageEvent = serde_json::from_str(P2P_TEXT_EVENT).unwrap();
+    assert!(!text_event.is_post());
+    assert_eq!(text_event.parse_post(), None);
+
+    let raw = P2P_POST_EVENT.replace("\"content\": \"{\\\"zh_cn\\\"", "\"content\": \"not-json");
+    let broken: LarkMessageEvent = serde_json::from_str(&raw).unwrap();
+    assert!(broken.is_post());
+    assert_eq!(broken.parse_post(), None);
+}

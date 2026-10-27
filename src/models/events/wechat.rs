@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::pkg::wechat_ilink::{
-    MESSAGE_STATE_FINISH, MESSAGE_STATE_GENERATING, MESSAGE_STATE_NEW, MESSAGE_TYPE_BOT,
-    MESSAGE_TYPE_NONE, MESSAGE_TYPE_USER,
+    MESSAGE_ITEM_TYPE_IMAGE, MESSAGE_ITEM_TYPE_TEXT, MESSAGE_STATE_FINISH,
+    MESSAGE_STATE_GENERATING, MESSAGE_STATE_NEW, MESSAGE_TYPE_BOT, MESSAGE_TYPE_NONE,
+    MESSAGE_TYPE_USER,
 };
 
 // ==================== 协议枚举（数字主 + 字符串兼容）====================
@@ -174,7 +175,7 @@ pub struct IlinkMessage {
     /// 会话上下文令牌（滚动刷新；回消息时必须回传最新值）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_token: Option<String>,
-    /// 消息条目（文本 / 图片 / 视频 / 文件 / 语音；阶段一只处理文本）
+    /// 消息条目（文本 / 图片 / 视频 / 文件 / 语音；本期处理文本与图片）
     #[serde(default)]
     pub item_list: Vec<IlinkMessageItem>,
 }
@@ -182,15 +183,37 @@ pub struct IlinkMessage {
 /// iLink 消息内容条目
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct IlinkMessageItem {
-    /// 条目类型（协议为数字，`1=文本`；保留原始值防协议漂移）
+    /// 条目类型（协议为数字，`1=文本` / `2=图片`；保留原始值防协议漂移）
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub kind: Option<Value>,
     /// item 级消息 ID（官方 `MessageItem.msg_id`；顶层 `message_id` 缺失时作幂等兜底）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub msg_id: Option<Value>,
-    /// 文本条目（非文本消息为 None，由上层按需扩展）
+    /// 文本条目（非文本消息为 None）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_item: Option<IlinkTextItem>,
+    /// 图片条目（官方 `MessageItem.image_item`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_item: Option<IlinkImageItem>,
+}
+
+impl IlinkMessageItem {
+    /// 条目类型（数字主 + 字符串兼容；未知返回 0）
+    pub fn item_type(&self) -> i64 {
+        self.kind
+            .as_ref()
+            .map(|value| {
+                parse_wire_enum(
+                    value,
+                    &[
+                        ("TEXT", MESSAGE_ITEM_TYPE_TEXT),
+                        ("IMAGE", MESSAGE_ITEM_TYPE_IMAGE),
+                    ],
+                    0,
+                )
+            })
+            .unwrap_or(0)
+    }
 }
 
 /// iLink 文本条目
@@ -213,6 +236,33 @@ impl IlinkTextItem {
     pub fn value(&self) -> Option<&str> {
         self.text.as_deref().or(self.content.as_deref())
     }
+}
+
+/// iLink CDN 媒体定位（官方 `CDNMedia`）
+///
+/// 图片/语音/文件/视频共用：CDN 上的密文由 `aes_key` 解密。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct IlinkCdnMedia {
+    /// 加密查询参数（拼 `{CDN}/download?encrypted_query_param=...`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypt_query_param: Option<String>,
+    /// AES 密钥（**base64** 编码的 16 字节；与 [`IlinkImageItem::aeskey`] 二选一）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aes_key: Option<String>,
+    /// 完整下载 URL（存在时优先于 `encrypt_query_param` 拼接）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_url: Option<String>,
+}
+
+/// iLink 图片条目（官方 `ImageItem`）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct IlinkImageItem {
+    /// AES 密钥（**hex** 编码的 16 字节；官方优先使用该字段）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aeskey: Option<String>,
+    /// CDN 定位 + 备用密钥
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<IlinkCdnMedia>,
 }
 
 /// `Value` → 幂等键字符串（数字走 `to_string`，与字符串形态归一）
@@ -246,6 +296,20 @@ impl IlinkMessage {
             .filter_map(|t| t.value())
             .map(|t| t.trim().to_string())
             .find(|t| !t.is_empty())
+    }
+
+    /// 提取全部图片条目（保持 item_list 原顺序；无图片返回空 Vec）
+    pub fn images(&self) -> Vec<&IlinkImageItem> {
+        self.item_list
+            .iter()
+            .filter(|item| item.item_type() == MESSAGE_ITEM_TYPE_IMAGE)
+            .filter_map(|item| item.image_item.as_ref())
+            .collect()
+    }
+
+    /// 提取首个图片条目（无图片返回 None）
+    pub fn image(&self) -> Option<&IlinkImageItem> {
+        self.images().into_iter().next()
     }
 
     /// 幂等键：顶层 `message_id`（服务端权威）→ `client_id`（对端生成）→ item `msg_id`

@@ -11,7 +11,7 @@
 use super::error::{LarkResponse, from_reqwest, validate_config};
 use super::token::{SharedTokenCache, shared as shared_token_cache};
 use super::ws::WsState;
-use super::{LarkAppCredentials, LarkDao, LarkReply};
+use super::{LarkAppCredentials, LarkDao, LarkImageResource, LarkReply};
 use crate::models::events::LarkMessageEvent;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -29,6 +29,8 @@ const API_BASE: &str = "https://open.feishu.cn";
 const PATH_TOKEN: &str = "/open-apis/auth/v3/tenant_access_token/internal";
 const PATH_SEND_MESSAGE: &str = "/open-apis/im/v1/messages";
 const PATH_REPLY_MESSAGE: &str = "/open-apis/im/v1/messages/{message_id}/reply";
+/// 消息资源下载（`?type=image`）：`{message_id}` 为消息 ID，`{file_key}` 为 image_key
+const PATH_MESSAGE_RESOURCE: &str = "/open-apis/im/v1/messages/{message_id}/resources/{file_key}";
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -357,6 +359,113 @@ impl LarkDao for LarkDaoHttpImpl {
             message_id
         );
         Ok(message_id)
+    }
+
+    async fn download_image_resource(
+        &self,
+        ctx: RequestContext,
+        credentials: &LarkAppCredentials,
+        message_id: &str,
+        file_key: &str,
+    ) -> Result<LarkImageResource> {
+        let token = self
+            .get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
+            .await?;
+        let url = format!(
+            "{}{}",
+            API_BASE,
+            PATH_MESSAGE_RESOURCE
+                .replace("{message_id}", message_id)
+                .replace("{file_key}", file_key)
+        );
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&token)
+            .query(&[("type", "image")])
+            .send()
+            .await
+            .map_err(|e| from_reqwest("download_image_resource", e))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            // 飞书错误响应是 JSON（code/msg），只留前 300 字符避免灌日志
+            let body = resp.text().await.unwrap_or_default();
+            let snippet: String = body.chars().take(300).collect();
+            return Err(err!(
+                ThirdPartyError,
+                "lark download_image_resource failed: status={} message_id={} body={}",
+                status.as_u16(),
+                message_id,
+                snippet
+            ));
+        }
+
+        // MIME 以响应头为准；非 image/* 或缺失时按常见图片类型兜底
+        let mime_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.split(';').next().unwrap_or(v).trim().to_string())
+            .filter(|v| v.starts_with("image/"))
+            .unwrap_or_else(|| "image/jpeg".to_string());
+
+        if let Some(len) = resp.content_length()
+            && len as usize > crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES
+        {
+            return Err(err!(
+                InvalidRequest,
+                "lark image too large: message_id={} bytes={} limit={}",
+                message_id,
+                len,
+                crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES
+            ));
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        let mut resp = resp;
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| from_reqwest("download_image_resource", e))?
+        {
+            // 边读边限流：content-length 缺失（chunked）时也不能把整包读进内存
+            if bytes.len() + chunk.len() > crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES {
+                return Err(err!(
+                    InvalidRequest,
+                    "lark image exceeds size limit: message_id={} limit={}",
+                    message_id,
+                    crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if bytes.is_empty() {
+            return Err(err!(
+                ThirdPartyError,
+                "lark download_image_resource returned empty body: message_id={}",
+                message_id
+            ));
+        }
+        if bytes.len() > crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES {
+            return Err(err!(
+                InvalidRequest,
+                "lark image too large: message_id={} bytes={} limit={}",
+                message_id,
+                bytes.len(),
+                crate::pkg::adapter::MAX_INBOUND_ATTACHMENT_BYTES
+            ));
+        }
+
+        log_info!(
+            &ctx,
+            "lark_image_download",
+            "入站图片下载成功 message_id={} file_key={} mime={} bytes={}",
+            message_id,
+            file_key,
+            mime_type,
+            bytes.len()
+        );
+        Ok(LarkImageResource { bytes, mime_type })
     }
 
     async fn test_connection(

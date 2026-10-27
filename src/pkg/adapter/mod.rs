@@ -20,6 +20,47 @@ use std::sync::{Arc, RwLock};
 
 // ==================== 适配结果 ====================
 
+/// 渠道入站附件单文件大小上限（10MB）
+///
+/// 与运行时视觉注入的单图准入上限（`awakening` 的 `MAX_IMAGE_BYTES`）保持一致：
+/// 超过该值的图片即使落库也不会被注入模型，提前在下载侧拒绝可省内存与磁盘。
+pub const MAX_INBOUND_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+
+/// 单条入站消息携带图片数上限（4 张）
+///
+/// 与运行时视觉注入的「单条 ≤ 4 张」准入一致：图文混排消息（飞书 `post`）
+/// 可能一次带很多图，超出部分只下载前 4 张，其余留日志丢弃。
+pub const MAX_INBOUND_IMAGES_PER_MESSAGE: usize = 4;
+
+/// 按图片 MIME 给出文件扩展名（不含点；未知类型按 `jpg`）
+///
+/// 渠道侧拿不到原始文件名，落库前需按真实 MIME 生成带正确扩展名的文件名，
+/// 否则附件会以错误扩展名存储（下游按文件名推断类型时失真）。
+pub fn image_extension_for_mime(mime_type: &str) -> &'static str {
+    match mime_type.split(';').next().unwrap_or_default().trim() {
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        _ => "jpg",
+    }
+}
+
+/// 渠道入站附件（图片等二进制资源）
+///
+/// 渠道 DAL 完成协议侧下载后填入 [`AdaptedMessage::attachments`]；producer 负责
+/// 落库为内部 Attachment 资产，再以 `attachment_ids` 交给消息投递链路。
+/// 本结构只承载字节与元数据，不含任何渠道协议字段（保持 pkg 层纯净）。
+#[derive(Debug, Clone)]
+pub struct AdaptedAttachment {
+    /// 原始文件名（渠道未提供时由适配层按 MIME 推断生成）
+    pub file_name: String,
+    /// MIME 类型（如 `image/jpeg`）
+    pub mime_type: String,
+    /// 文件字节
+    pub bytes: Vec<u8>,
+}
+
 /// 适配后的内部消息（owned）
 ///
 /// 由各渠道 DAL 的 adapt 方法返回，consumer 据此构造 `SendToAgentCommand`
@@ -59,6 +100,10 @@ pub struct AdaptedMessage {
     /// 渠道自身的「话题/线程」平台侧 ID，随消息落库到 `messages.thread_id`。
     /// 同一话题内所有消息共享同一值；普通私信与非话题回复为 `None`。
     pub thread_id: Option<String>,
+    /// 渠道入站附件（图片等），由 producer 落库后随文本消息一并投递
+    ///
+    /// 无附件时为**空 Vec**（不设 `Option`：消费侧遍历即可，无额外分支）。
+    pub attachments: Vec<AdaptedAttachment>,
 }
 
 // ==================== 注册中心 ====================

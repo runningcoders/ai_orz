@@ -105,10 +105,20 @@ pub struct LarkReply {
     pub in_thread: bool,
 }
 
+/// 飞书消息资源（图片等）下载结果
+#[derive(Debug, Clone)]
+pub struct LarkImageResource {
+    /// 资源字节
+    pub bytes: Vec<u8>,
+    /// MIME 类型（取自响应 `Content-Type`，缺省按 `image/jpeg`）
+    pub mime_type: String,
+}
+
 /// 飞书渠道 DAO 接口
 ///
 /// 职责：
 /// - `push`：推送消息到飞书用户（出站，凭证由 DAL 解析后传入）
+/// - `download_image_resource`：按 message_id + image_key 下载入站图片资源
 /// - `test_connection`：测试渠道凭证是否可用
 /// - `start_event_listener`：按应用启动 WebSocket 长连接接收事件（入站）
 /// - `stop_event_listener` / `stop_all_event_listeners`：停止事件监听
@@ -138,6 +148,19 @@ pub trait LarkDao: Send + Sync {
         credentials: &LarkAppCredentials,
         reply: Option<&LarkReply>,
     ) -> Result<Option<String>>;
+
+    /// 下载入站图片资源
+    ///
+    /// 对应 `GET /open-apis/im/v1/messages/{message_id}/resources/{file_key}?type=image`。
+    /// `credentials` 由 DAL 层解析传入；`file_key` 即图片消息 content 中的 `image_key`。
+    /// 返回字节与 MIME；超时 / 超限 / 非 2xx 均返回错误，由调用方决定降级策略。
+    async fn download_image_resource(
+        &self,
+        ctx: RequestContext,
+        credentials: &LarkAppCredentials,
+        message_id: &str,
+        file_key: &str,
+    ) -> Result<LarkImageResource>;
 
     /// 测试飞书渠道凭证是否可用（获取 tenant_access_token）
     ///

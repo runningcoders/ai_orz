@@ -19,8 +19,8 @@ use crate::models::events::WechatInboundEvent;
 use crate::models::message_channel::MessageChannel;
 use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
-use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::{MessageAdapterCallback, MessageInboundAdapter};
+use crate::pkg::adapter::{AdaptedAttachment, AdaptedMessage};
 use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::dao::wechat::WechatDao;
 use crate::service::dao::wechat::ilink::IlinkChannelCredentials;
@@ -32,8 +32,8 @@ use super::WechatListenerDal;
 
 /// 微信 DAL 实现
 ///
-/// 组合基础 MessageChannelDal + WechatDao + UserCredentialDao，提供微信
-/// 私信接入所需的数据访问、消息转换、以及入站长轮询生命周期管理。
+/// 组合基础 MessageChannelDal + WechatDao + UserCredentialDao + MessageDao，提供
+/// 微信私信接入所需的数据访问、消息转换、以及入站长轮询生命周期管理。
 pub struct WechatDalImpl {
     /// 基础消息渠道 DAL（渠道配置 + 消息分发）
     message_channel_dal: Arc<dyn crate::service::dal::message_channel::MessageChannelDal>,
@@ -41,6 +41,8 @@ pub struct WechatDalImpl {
     wechat_dao: Arc<dyn WechatDao>,
     /// 用户凭证 DAO（凭证引用解析：渠道 wechat_credential_id → user_credentials 行）
     credential_dao: Arc<dyn crate::service::dao::user_credential::UserCredentialDao>,
+    /// 消息 DAO（入站幂等查重：external_key 反查已落库消息）
+    message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
     /// 监听运行状态标记
     running: RwLock<bool>,
 }
@@ -56,11 +58,13 @@ impl WechatDalImpl {
         message_channel_dal: Arc<dyn crate::service::dal::message_channel::MessageChannelDal>,
         wechat_dao: Arc<dyn WechatDao>,
         credential_dao: Arc<dyn crate::service::dao::user_credential::UserCredentialDao>,
+        message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
     ) -> Self {
         Self {
             message_channel_dal,
             wechat_dao,
             credential_dao,
+            message_dao,
             running: RwLock::new(false),
         }
     }
@@ -95,16 +99,19 @@ impl WechatDalImpl {
     /// 将 iLink 入站消息适配为内部 `AdaptedMessage`
     ///
     /// 适配流程：
-    /// 1. 事件过滤：仅处理对端用户（USER）完整（FINISH）文本消息，过滤 BOT 回声
+    /// 1. 事件过滤：仅处理对端用户（USER）完整（FINISH）文本或图片消息，过滤 BOT 回声
     /// 2. 渠道定位：信封自带 channel_id（轮询按 channel 隔离）直查
     /// 3. peer 校验：渠道 `wechat_peer_id` 未配置时自动回填（首次入站），
     ///    已配置但不一致则跳过（一个 channel = 一个对端）
-    /// 4. 用户映射：渠道的 user_id 作为 from_id
+    /// 4. 幂等查重：`external_key` 反查已落库消息，重复投递在下载/落附件前跳过
+    /// 5. 图片下载：逐张 CDN 拉取 + AES-128-ECB 解密（上限
+    ///    [`crate::pkg::adapter::MAX_INBOUND_IMAGES_PER_MESSAGE`]），失败降级为纯文本
+    /// 6. 用户映射：渠道的 user_id 作为 from_id
     ///
     /// **不做 Agent 路由**：返回的 `AdaptedMessage.to_agent_id` 取渠道显式绑定，
     /// 未绑定时为 `None`，由 producer 层档位链路由。
     ///
-    /// 返回 `None` 表示事件被过滤（非文本 / 渠道不可用 / peer 不匹配）。
+    /// 返回 `None` 表示事件被过滤（非文本/图片 / 渠道不可用 / peer 不匹配）。
     pub async fn adapt_wechat(
         &self,
         ctx: RequestContext,
@@ -127,16 +134,30 @@ impl WechatDalImpl {
             );
             return Ok(None);
         }
-        let Some(content) = message.text() else {
+        let text = message.text();
+        let images = message.images();
+        if text.is_none() && images.is_empty() {
             log_info!(
                 &ctx,
                 "wechat_adapt",
-                "skip non-text message: channel_id={} message_key={}",
+                "skip non-text/image message: channel_id={} message_key={}",
                 event.channel_id,
                 event.message_key
             );
             return Ok(None);
-        };
+        }
+        // 图片消息无文本：用占位符维持气泡与消息链，实际内容由附件承载
+        let content = text.unwrap_or_else(|| "[图片]".to_string());
+
+        // 平台侧消息 ID（`message_id` 优先，回落 `client_id`）→ 落 `messages.external_key`，
+        // 与飞书 `lark:{message_id}`、邮件 `email:<Message-ID>` 口径齐平。
+        //
+        // 语义边界：iLink 协议没有线程/回复字段，因此微信侧的 `external_key` 是
+        // 「渠道消息平台 ID 存档」这一扩展语义，**不承担反查父消息**的职责
+        // （见 `AdaptedMessage.external_key` 的字段文档）。
+        let external_key = message
+            .platform_message_id()
+            .map(|id| format!("wechat:{id}"));
 
         // 2. 渠道定位（信封自带 channel_id，直查）
         let Some(channel) = self
@@ -213,7 +234,83 @@ impl WechatDalImpl {
             _ => {}
         }
 
-        // 4. 用户映射 + 渠道绑定 Agent（可选）
+        // 4. 幂等查重：iLink 游标可能回退/同批重拉（见 consumer 的消费确认说明），
+        // 重复消息必须在图片下载与附件落库**之前**跳过，否则会重复下载并留下
+        // 无人引用的孤儿 Attachment（幂等吸收发生在更下游的 send_to_agent）。
+        if let Some(key) = external_key.as_deref() {
+            match self
+                .message_dao
+                .find_id_by_external_key(ctx.clone(), key)
+                .await
+            {
+                Ok(Some(existing_id)) => {
+                    log_info!(
+                        &ctx,
+                        "wechat_adapt",
+                        "duplicate inbound message skipped: channel_id={} message_key={} existing_message_id={}",
+                        event.channel_id,
+                        event.message_key,
+                        existing_id
+                    );
+                    return Ok(None);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    // 反查失败不阻断入站（降级为不去重）：宁可小概率重复，
+                    // 不可让一次 DB 抖动吞掉消息。
+                    log_warn!(
+                        &ctx,
+                        "wechat_adapt",
+                        "dedup lookup failed (degrade to no-dedup): channel_id={} key={} err={}",
+                        event.channel_id,
+                        key,
+                        e
+                    );
+                }
+            }
+        }
+
+        // 5. 图片下载（CDN + AES-128-ECB）：逐张处理，失败只降级该张，不阻断入站
+        let mut attachments = Vec::new();
+        let image_limit = crate::pkg::adapter::MAX_INBOUND_IMAGES_PER_MESSAGE;
+        if images.len() > image_limit {
+            log_warn!(
+                &ctx,
+                "wechat_adapt",
+                "too many images, truncate: channel_id={} message_key={} count={} limit={}",
+                event.channel_id,
+                event.message_key,
+                images.len(),
+                image_limit
+            );
+        }
+        let base = message
+            .platform_message_id()
+            .unwrap_or_else(|| event.message_key.clone());
+        for (index, image) in images.iter().take(image_limit).enumerate() {
+            match self.wechat_dao.download_image(ctx.clone(), image).await {
+                Ok(downloaded) => {
+                    let extension =
+                        crate::pkg::adapter::image_extension_for_mime(&downloaded.mime_type);
+                    attachments.push(AdaptedAttachment {
+                        file_name: format!("wechat_image_{base}_{index}.{extension}"),
+                        mime_type: downloaded.mime_type,
+                        bytes: downloaded.bytes,
+                    });
+                }
+                Err(e) => log_warn!(
+                    &ctx,
+                    "wechat_adapt",
+                    "image download failed (degrade to text placeholder): channel_id={} message_key={} index={} err={}",
+                    event.channel_id,
+                    event.message_key,
+                    index,
+                    e
+                ),
+            }
+        }
+
+        // 6. 用户映射 + 渠道绑定 Agent（可选）
         let from_id = channel.user_id().to_string();
         let to_agent_id = channel.agent_id().map(|s| s.to_string());
 
@@ -228,16 +325,6 @@ impl WechatDalImpl {
             to_agent_id
         );
 
-        // 平台侧消息 ID（`message_id` 优先，回落 `client_id`）→ 落 `messages.external_key`，
-        // 与飞书 `lark:{message_id}`、邮件 `email:<Message-ID>` 口径齐平。
-        //
-        // 语义边界：iLink 协议没有线程/回复字段，因此微信侧的 `external_key` 是
-        // 「渠道消息平台 ID 存档」这一扩展语义，**不承担反查父消息**的职责
-        // （见 `AdaptedMessage.external_key` 的字段文档）。
-        let external_key = message
-            .platform_message_id()
-            .map(|id| format!("wechat:{id}"));
-
         Ok(Some(AdaptedMessage {
             from_id,
             from_role: common::enums::MessageRole::User,
@@ -250,6 +337,7 @@ impl WechatDalImpl {
             external_key,
             // 微信侧无话题概念
             thread_id: None,
+            attachments,
         }))
     }
 }

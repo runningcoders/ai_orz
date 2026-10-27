@@ -15,6 +15,15 @@ use self::ilink::IlinkChannelCredentials;
 /// iLink 接入域默认值（登录响应 baseurl 优先）
 pub use crate::pkg::wechat_ilink::ILINK_DEFAULT_BASE_URL;
 
+/// 入站图片下载结果（CDN 密文解密后的明文字节）
+#[derive(Debug, Clone)]
+pub struct IlinkDownloadedImage {
+    /// 解密后的图片字节
+    pub bytes: Vec<u8>,
+    /// 按魔数嗅探的 MIME（`image/jpeg` / `image/png` / `image/gif` / `image/webp`）
+    pub mime_type: String,
+}
+
 /// 微信渠道 DAO 接口
 ///
 /// 分层约束：DAO 不做凭证解析——出站与轮询启动均由 DAL 层按渠道
@@ -36,6 +45,17 @@ pub trait WechatDao: Send + Sync {
         channel: &MessageChannel,
         credentials: &IlinkChannelCredentials,
     ) -> std::result::Result<Option<String>, common::error::Error>;
+
+    /// 下载入站图片（CDN 拉取 + AES-128-ECB 解密 + MIME 嗅探）
+    ///
+    /// CDN 为公开读，不需要 bot 令牌；`full_url` 优先，缺失时按
+    /// `encrypt_query_param` 拼接。超过单文件上限或解密失败返回错误，
+    /// 由 DAL 层决定降级策略。
+    async fn download_image(
+        &self,
+        ctx: RequestContext,
+        image: &crate::models::events::wechat::IlinkImageItem,
+    ) -> std::result::Result<IlinkDownloadedImage, common::error::Error>;
 
     /// 测试微信渠道凭证可用性（凭证完整性校验；真实连通性待联调补协议探测）
     async fn test_connection(

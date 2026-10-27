@@ -35,8 +35,8 @@ use crate::models::events::LarkMessageEvent;
 use crate::models::message_channel::MessageChannel;
 use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
-use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::{MessageAdapterCallback, MessageInboundAdapter};
+use crate::pkg::adapter::{AdaptedAttachment, AdaptedMessage};
 use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dao::lark::{LarkAppCredentials, LarkDao};
 use crate::service::dao::message_channel::MessageChannelQuery;
@@ -175,15 +175,17 @@ impl LarkDalImpl {
     /// 将飞书消息事件适配为内部 `AdaptedMessage`
     ///
     /// 适配流程：
-    /// 1. 事件过滤：仅处理 P2P 文本消息
-    /// 2. 解析消息内容：飞书文本消息 content JSON
+    /// 1. 事件过滤：仅处理 P2P / 群聊的文本、图片或富文本消息
+    /// 2. 解析消息内容：文本取 content JSON；图片取 `image_key` 并置 `[图片]` 占位；
+    ///    富文本（`post`，图文混排）取标题 + 正文 + 全部 `image_key`
     /// 3. 渠道查找：按 app_id + sender open_id 二维定位归属渠道
-    /// 4. 用户映射：渠道的 user_id 作为 from_id
+    /// 4. 图片下载：按渠道凭证逐张下载资源字节，失败只丢该图、不阻断入站
+    /// 5. 用户映射：渠道的 user_id 作为 from_id
     ///
     /// **不做 Agent 路由**：返回的 `AdaptedMessage.to_agent_id` 为 `None`，
     /// consumer 层根据渠道绑定 agent_id 或 feishu_reception 角色策略自行决定。
     ///
-    /// 返回 `None` 表示事件被过滤（非 P2P/群聊、非文本、未绑定渠道、内容为空），
+    /// 返回 `None` 表示事件被过滤（非 P2P/群聊、非文本/图片、未绑定渠道、内容为空），
     /// consumer 可据此决定是否推送"未绑定/不可用"提示。
     pub async fn adapt_lark(
         &self,
@@ -191,18 +193,20 @@ impl LarkDalImpl {
         app_id: &str,
         event: &LarkMessageEvent,
     ) -> Result<Option<AdaptedMessage>> {
-        // 1. 事件过滤：仅处理 P2P / 群聊文本消息
+        // 1. 事件过滤：仅处理 P2P / 群聊的文本或图片消息
         //
         // 群聊消息同样放行：未绑定用户在下方第 3 步「渠道查找」按 open_id 被过滤，
         // 因此实际只接收「绑定用户」的群消息（沿用 open_id 绑定，最小改动），
         // 群内其他成员的发言不会触发接待。
-        if !(event.is_p2p() || event.is_group()) || !event.is_text() {
-            // info 而非 debug：默认级别下「群里 @ 机器人 / 发图片」必须留痕，
+        let is_image = event.is_image();
+        let is_post = event.is_post();
+        if !(event.is_p2p() || event.is_group()) || !(event.is_text() || is_image || is_post) {
+            // info 而非 debug：默认级别下「群里 @ 机器人 / 发文件」必须留痕，
             // 否则症状（没反应）与「上游没数据」完全同形（微信侧同规）
             log_info!(
                 &ctx,
                 "lark_adapt",
-                "skip non-p2p/group/text event: event_id={} chat_type={} msg_type={}",
+                "skip unsupported event: event_id={} chat_type={} msg_type={}",
                 event.header.event_id,
                 event.event.message.chat_type,
                 event.event.message.message_type
@@ -210,19 +214,75 @@ impl LarkDalImpl {
             return Ok(None);
         }
 
-        // 2. 解析消息内容
-        let content = match event.parse_text() {
-            Some(t) => t,
-            None => {
-                log_info!(
-                    &ctx,
-                    "lark_adapt",
-                    "skip event with unparseable text content: event_id={}",
-                    event.header.event_id
-                );
-                return Ok(None);
+        // 2. 解析消息内容：纯图片 / 富文本可能无文本，用占位符维持气泡与消息链
+        let (content, mut image_keys): (String, Vec<String>) = if is_post {
+            match event.parse_post() {
+                Some(post) => {
+                    let text = post.text.trim().to_string();
+                    if text.is_empty() && post.image_keys.is_empty() {
+                        log_info!(
+                            &ctx,
+                            "lark_adapt",
+                            "skip empty post event: event_id={}",
+                            event.header.event_id
+                        );
+                        return Ok(None);
+                    }
+                    let content = if text.is_empty() {
+                        "[图片]".to_string()
+                    } else {
+                        text
+                    };
+                    (content, post.image_keys)
+                }
+                None => {
+                    log_info!(
+                        &ctx,
+                        "lark_adapt",
+                        "skip post event with unparseable content: event_id={}",
+                        event.header.event_id
+                    );
+                    return Ok(None);
+                }
+            }
+        } else if is_image {
+            match event.parse_image_key() {
+                Some(key) => ("[图片]".to_string(), vec![key]),
+                None => {
+                    log_info!(
+                        &ctx,
+                        "lark_adapt",
+                        "skip image event with missing image_key: event_id={}",
+                        event.header.event_id
+                    );
+                    return Ok(None);
+                }
+            }
+        } else {
+            match event.parse_text() {
+                Some(t) => (t, Vec::new()),
+                None => {
+                    log_info!(
+                        &ctx,
+                        "lark_adapt",
+                        "skip event with unparseable text content: event_id={}",
+                        event.header.event_id
+                    );
+                    return Ok(None);
+                }
             }
         };
+        if image_keys.len() > crate::pkg::adapter::MAX_INBOUND_IMAGES_PER_MESSAGE {
+            log_warn!(
+                &ctx,
+                "lark_adapt",
+                "post event has too many images, keep first {}: event_id={} total={}",
+                crate::pkg::adapter::MAX_INBOUND_IMAGES_PER_MESSAGE,
+                event.header.event_id,
+                image_keys.len()
+            );
+            image_keys.truncate(crate::pkg::adapter::MAX_INBOUND_IMAGES_PER_MESSAGE);
+        }
         if content.trim().is_empty() {
             // 空内容此前完全无日志——「发了空消息没反应」查无此事
             log_info!(
@@ -290,6 +350,61 @@ impl LarkDalImpl {
             }
         };
         let from_id = channel.user_id().to_string();
+
+        // 3.5 图片资源下载（需渠道凭证）：失败只丢该张图片，不阻断入站
+        // 一个 post 富文本可含多张图片，凭证只解析一次，逐个下载。
+        let mut attachments: Vec<AdaptedAttachment> = Vec::new();
+        if !image_keys.is_empty() {
+            let message_id = event.event.message.message_id.as_str();
+            match self
+                .resolve_channel_credentials(ctx.clone(), &channel)
+                .await
+            {
+                Some(credentials) => {
+                    for (index, image_key) in image_keys.iter().enumerate() {
+                        match self
+                            .lark_dao
+                            .download_image_resource(
+                                ctx.clone(),
+                                &credentials,
+                                message_id,
+                                image_key,
+                            )
+                            .await
+                        {
+                            Ok(resource) => {
+                                let extension = crate::pkg::adapter::image_extension_for_mime(
+                                    &resource.mime_type,
+                                );
+                                attachments.push(AdaptedAttachment {
+                                    file_name: format!(
+                                        "lark_image_{message_id}_{index}.{extension}"
+                                    ),
+                                    mime_type: resource.mime_type,
+                                    bytes: resource.bytes,
+                                });
+                            }
+                            Err(e) => log_warn!(
+                                &ctx,
+                                "lark_adapt",
+                                "image download failed (skip this image): event_id={} message_id={} image_key={} err={}",
+                                event.header.event_id,
+                                message_id,
+                                image_key,
+                                e
+                            ),
+                        }
+                    }
+                }
+                None => log_warn!(
+                    &ctx,
+                    "lark_adapt",
+                    "image download skipped: channel credential unresolved channel_id={} event_id={}",
+                    channel.po.id,
+                    event.header.event_id
+                ),
+            }
+        }
 
         // 4. 渠道绑定的 agent_id（可选，未绑定时 consumer 层做路由）
         let to_agent_id = channel.agent_id().map(|s| s.to_string());
@@ -367,6 +482,7 @@ impl LarkDalImpl {
                 .thread_id
                 .clone()
                 .filter(|s| !s.is_empty()),
+            attachments,
         }))
     }
 }

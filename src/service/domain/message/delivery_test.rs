@@ -152,6 +152,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
         message_channel_dal.clone(),
         crate::service::dao::wechat::dao(),
         crate::service::dao::user_credential::dao(),
+        crate::service::dao::message::dao(),
     );
     // 邮件入站适配 DAL（构造独立实例，不依赖单例 init 顺序）
     let email_dal = crate::service::dal::email::new_with_dao(
