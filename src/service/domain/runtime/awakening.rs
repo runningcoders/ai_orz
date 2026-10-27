@@ -60,8 +60,9 @@ pub(super) fn init_think_runtime_and_policy(
 /// 按场景过滤工具，构建 ToolDescriptor 列表
 ///
 /// sleep_and_settle / intent_analyze / summary / awaken 共用的工具过滤逻辑。
-/// awaken 也走这里：它只裁掉纯管理面工具（见 `ThinkingScene::Awaken`），
-/// 不再无脑全量注入。
+/// awaken 场景**绑定即权限**，绑定到该 Agent 的工具全量注入（见
+/// `ThinkingScene::is_tool_allowed`）；其余内部循环场景仍按 tag 白名单收敛，
+/// 作为无人值守时的安全护栏。
 pub(super) fn build_scene_tool_descriptors(
     agent: &Agent,
     scene: ThinkingScene,
@@ -69,10 +70,7 @@ pub(super) fn build_scene_tool_descriptors(
     agent
         .tools()
         .iter()
-        .filter(|t| {
-            let tags = t.po.get_tags();
-            scene.is_tool_allowed(&tags)
-        })
+        .filter(|t| scene.is_tool_allowed(&t.po.get_tags()))
         .map(ToolDescriptor::from)
         .collect()
 }

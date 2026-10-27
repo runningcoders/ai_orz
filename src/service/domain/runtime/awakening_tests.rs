@@ -31,6 +31,76 @@ use uuid::Uuid;
 
 use super::truncate_reason;
 
+/// Awaken 场景**绑定即权限**：Agent 绑定的工具全量注入，不按 tag 裁剪。
+///
+/// 护栏意义：曾按 tag 裁掉管理面工具，导致招聘官在思考循环里拿不到管理工具，
+/// 连创建/上下架 Agent 都做不到；前台看到技能管理指令却调不到工具。
+/// 这里锁死「招聘官与业务 Agent 都拿到自己绑定的全部工具」。
+#[test]
+fn build_scene_tool_descriptors_keeps_all_bound_tools_on_awaken() {
+    use super::build_scene_tool_descriptors;
+    use crate::models::tool::{Tool, ToolPo};
+    use common::enums::{ThinkingScene, ToolProtocol};
+
+    let tool = |name: &str, tags: &[&str]| {
+        Tool::from_po_for_management(ToolPo::new(
+            name.to_string(),
+            name.to_string(),
+            String::new(),
+            ToolProtocol::Builtin,
+            serde_json::Value::Null,
+            None,
+            tags.iter().map(|t| t.to_string()).collect(),
+            None,
+        ))
+    };
+    let build_agent = |role: &str| {
+        Agent::from_po_with_tools(
+            AgentPo::new(
+                role.to_string(),
+                vec![role.to_string()],
+                String::new(),
+                Vec::new(),
+                String::new(),
+                String::new(),
+                "test".to_string(),
+            ),
+            vec![
+                tool("create_agent", &["agent_management", "hr_specialist"]),
+                tool("create_skill", &["skill_management"]),
+                tool("search_memory", &["memory"]),
+            ],
+        )
+    };
+    let names = |agent: &Agent| -> Vec<String> {
+        build_scene_tool_descriptors(agent, ThinkingScene::Awaken)
+            .into_iter()
+            .map(|d| d.name)
+            .collect()
+    };
+
+    // 招聘官：管理工具必须都在
+    let hr_tools = names(&build_agent("hr_specialist"));
+    assert!(hr_tools.contains(&"create_agent".to_string()));
+    assert!(hr_tools.contains(&"create_skill".to_string()));
+    assert!(hr_tools.contains(&"search_memory".to_string()));
+
+    // 业务 Agent：绑了什么就给什么，不再按 tag 裁剪
+    let business_tools = names(&build_agent("reception"));
+    assert!(business_tools.contains(&"create_agent".to_string()));
+    assert!(business_tools.contains(&"create_skill".to_string()));
+    assert!(business_tools.contains(&"search_memory".to_string()));
+
+    // 内部循环场景仍按白名单收敛（安全护栏不回归）
+    let compact_agent = build_agent("reception");
+    let compact_tools: Vec<String> =
+        build_scene_tool_descriptors(&compact_agent, ThinkingScene::Compact)
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
+    assert_eq!(compact_tools, vec!["search_memory".to_string()]);
+}
+
 #[test]
 fn truncate_reason_respects_limit_and_trims() {
     // 长文本：超过上限应被截断并追加 "..."

@@ -9,15 +9,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThinkingScene {
-    /// 唤醒场景：加载业务工具，但**裁剪「管平台」而不是「干活」的管理面**
+    /// 唤醒场景：**绑定即权限**，绑定到该 Agent 的工具全量注入，不做 Prompt 层裁剪
     ///
-    /// 实测 Reception Agent 绑了 97 个工具，其中 tool_management 14、skill_management 14、
-    /// ontology_management 11，近一半是运维/管理面。全量注入既吃 token、拉高首字延迟，
-    /// 也会诱导模型在闲聊时去调管理工具。
+    /// 早期曾按 tag 裁掉「管理面」工具以降 token，但工具的执行授权本身来自
+    /// 绑定（`agent_tools` + `installed_tags`）。在 Prompt 层再裁一遍会造成
+    /// 「已授权却看不见」的信息差：招聘官拿不到 create_agent、前台看到技能管理
+    /// 指令却调不到对应工具，模型只能干看着或编造。
     ///
-    /// 规则：**所有** tag 都落在管理面时才排除（无 tag 的一律保留）。这样
-    /// `["neural","skill_management"]` 这类常驻工具、`["collaboration","hr_specialist"]`
-    /// 这类业务协作工具都不会被误伤。
+    /// 因此这里一律放通。控制 Prompt 体积应在上游做——精细化工具包 tag、
+    /// 按角色推荐绑定，而不是在运行时把已装好的工具藏起来。
     #[default]
     Awaken,
     /// 沉睡场景：沉淀记忆，加载记忆相关工具（neural/memory tag）+ 自进化工具
@@ -73,7 +73,7 @@ impl ThinkingScene {
 
     /// 判断工具是否在此场景可用
     ///
-    /// - Awaken 场景：排除**纯管理面**工具（见 `is_management_only`），业务/常驻工具全放通
+    /// - Awaken 场景：**全量放通**（绑定即权限，见 `Awaken` 变体注释）
     /// - Settle 场景：tags 含 "neural" / "memory" / "self_evolution" 的工具可用
     ///   （自进化用于沉淀期产出技能，见 Settle 变体注释）
     /// - Compact 场景：只有 tags 含 "neural" 或 "memory" 的工具可用（比 Settle 更窄）
@@ -87,7 +87,7 @@ impl ThinkingScene {
     /// 沉淀 Prompt 的体量。
     pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
         match self {
-            ThinkingScene::Awaken => !is_management_only(tags),
+            ThinkingScene::Awaken => true,
             ThinkingScene::Settle => tags
                 .iter()
                 .any(|t| t == "neural" || t == "memory" || t == "self_evolution"),
@@ -104,28 +104,6 @@ impl ThinkingScene {
             }),
         }
     }
-}
-
-/// tag **全部**落在平台管理面（运维/配置类），用于 Awaken 场景裁剪
-///
-/// 无 tag 视为「没分类的业务工具」保留——误删业务工具的代价远大于多注入几个描述。
-fn is_management_only(tags: &[String]) -> bool {
-    !tags.is_empty()
-        && tags.iter().all(|t| {
-            matches!(
-                t.as_str(),
-                "admin"
-                    | "tool_management"
-                    | "skill_management"
-                    | "agent_management"
-                    | "hr_specialist"
-                    | "ontology_management"
-                    // `internal` 在当前库里只与 tool_management 同时出现（Send Tool Call
-                    // Message / Request Tool Execution）。它表示「不直接面客」，作为
-                    // 管理面共同标记参与判定；带任一业务 tag 的工具仍会保留。
-                    | "internal"
-            )
-        })
 }
 
 #[cfg(test)]
@@ -173,36 +151,30 @@ mod tests {
         }
     }
 
-    /// Awaken 只裁剪**纯管理面**，业务工具与常驻工具必须全留。
+    /// Awaken 场景**绑定即权限**：无论 tag 是什么（管理面 / 业务面 / 空 tag）都放通。
     ///
-    /// 护栏意义：曾把 `agent_management` / `hr_specialist` 也写进「一律排除」，
-    /// 会让协作类工具（同时带 collaboration/reception tag）被误伤；判据必须是
-    /// 「全部 tag 都在管理面」而不是「命中任一管理 tag」。
+    /// 护栏意义：曾在 Prompt 层裁掉「纯管理面」工具，结果招聘官拿不到
+    /// create_agent / 技能与工具管理工具，本职工作做不了；前台的技能管理指令
+    /// 也变成「有指令、无工具」。工具的执行授权本来就来自绑定，再在 Prompt 层
+    /// 藏一遍只是人为制造信息差。控制 Prompt 体积靠上游精细化工具包 tag，
+    /// 不靠运行时裁剪。这条断言把「重新加回裁剪」的退路堵死。
     #[test]
-    fn awaken_trims_management_plane_only() {
+    fn awaken_allows_all_bound_tools() {
         let scene = ThinkingScene::Awaken;
         for tags in [
+            vec![],
+            vec!["neural".to_string()],
             vec!["tool_management".to_string()],
             vec!["skill_management".to_string()],
             vec!["ontology_management".to_string()],
             vec!["tool_management".to_string(), "internal".to_string()],
-            vec!["admin".to_string(), "tool_management".to_string()],
-        ] {
-            assert!(!scene.is_tool_allowed(&tags), "应裁剪管理面: {tags:?}");
-        }
-        for tags in [
-            vec![],
-            vec!["neural".to_string()],
-            vec!["neural".to_string(), "skill_management".to_string()],
-            vec!["project_management".to_string()],
             vec![
                 "collaboration".to_string(),
                 "agent_management".to_string(),
                 "hr_specialist".to_string(),
-                "reception".to_string(),
             ],
         ] {
-            assert!(scene.is_tool_allowed(&tags), "不应误伤: {tags:?}");
+            assert!(scene.is_tool_allowed(&tags), "Awaken 应全量放通: {tags:?}");
         }
     }
 }
