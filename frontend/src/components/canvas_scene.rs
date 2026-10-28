@@ -984,6 +984,22 @@ pub struct DefaultRenderer;
 /// [`arrow_tip_point`]，守卫测试同覆盖（方案 a′ 整改）。
 pub(crate) const ARROW_TIP_GAP: f64 = 2.0;
 
+/// 箭头长度 = `max(线宽 × 该系数, ARROW_MIN_LEN)`（世界坐标 px）
+///
+/// 旧值 `2.5×`（下限 5px）在基准线宽 1.5 时只有 5px 长、4px 宽，再乘视口
+/// 0.66 后只剩 3px —— 肉眼看不出方向。按 SVG 版 `arrowhead`（10×strokeWidth）
+/// 同一量级取 7×，并给未加权边一个 12px 的下限。
+const ARROW_LEN_PER_WIDTH: f64 = 7.0;
+/// 箭头长度下限（世界坐标 px）：不受线宽影响的细边也保证可辨
+const ARROW_MIN_LEN: f64 = 12.0;
+/// 箭头底宽 = 长度 × 该系数（0.45 → 底宽为长度的 0.9 倍，接近等边三角形观感）
+const ARROW_HALF_RATIO: f64 = 0.45;
+
+/// 线宽 → 箭头长度（世界坐标 px）
+fn arrow_size(width: f64) -> f64 {
+    (width * ARROW_LEN_PER_WIDTH).max(ARROW_MIN_LEN)
+}
+
 /// directed 边箭头尖端回退点：tip = target 圆心沿 source→target 反向回退
 /// `radius + ARROW_TIP_GAP`，恰落节点圆周外 GAP 处——箭头尖端不再被后绘
 /// 节点遮挡（review 整改项）。零长度向量守卫回退 target 圆心本身。
@@ -1054,8 +1070,8 @@ fn draw_one_edge(
         return;
     }
     let (ux, uy) = (dx / len, dy / len);
-    let size = (width * 2.5).max(5.0);
-    let half = size * 0.42;
+    let size = arrow_size(width);
+    let half = size * ARROW_HALF_RATIO;
     let (base_x, base_y) = (tip.0 - ux * size, tip.1 - uy * size);
     let (px, py) = (-uy, ux);
     ctx.begin_path();
@@ -2122,6 +2138,23 @@ mod tests {
             arrow_tip_point(from, from, radius),
             from,
             "零长度向量应回退圆心"
+        );
+    }
+
+    /// 箭头尺寸守卫：旧实现 `2.5×` 线宽、下限 5px，乘视口 0.66 后约 3px，
+    /// 方向几乎看不出来。基准线宽必须拿到 12px 下限，粗边再随线宽放大。
+    #[test]
+    fn arrow_size_is_visible_and_scales_with_width() {
+        assert_eq!(
+            arrow_size(crate::components::edge_style::EDGE_BASE_WIDTH),
+            ARROW_MIN_LEN,
+            "基准线宽的箭头应取到下限，不再退化到 5px"
+        );
+        assert!(arrow_size(2.3) > ARROW_MIN_LEN, "加权粗边应比下限更大");
+        assert!(arrow_size(3.8) > arrow_size(2.3), "箭头随线宽单调放大");
+        assert!(
+            arrow_size(ARROW_MIN_LEN) * ARROW_HALF_RATIO * 2.0 >= 8.0,
+            "箭头底宽不应细成一条线"
         );
     }
 
