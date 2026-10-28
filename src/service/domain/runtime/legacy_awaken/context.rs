@@ -481,7 +481,7 @@ fn append_attachment_description_guidance(message: &Message, lines: &mut Vec<Str
     }
 
     lines.push(format!(
-        "附件摘要要求：资源行已带「摘要」的附件可直接复用，无需重复识别；没有摘要的附件请在识别后调用工具 `save_attachment_description` 写入——`attachment_id` 取资源行括号内的附件 id；`content` 写客观内容摘要，`usage` 写结合用户文字推断的用途，`message_id` 填当前消息 ID `{}`。摘要不准确时可再次调用覆盖；需要完整摘要或用途时用 `get_attachment` 查询（`get_attachment_content` 取文件内容）。",
+        "附件摘要要求：资源行已带「摘要」的附件**默认直接复用**，不必重复识别；但如果结合当前用户文字或上下文判断摘要可能失准（与附件实际内容不符，或用途已随本次意图变化），应重新识别并调用工具 `save_attachment_description` 覆盖。没有摘要的附件请在识别后调用该工具写入——`attachment_id` 取资源行括号内的附件 id；`content` 写客观内容摘要，`usage` 写结合当前用户文字推断的用途，`message_id` 填当前消息 ID `{}`。调用再次发生即覆盖旧摘要；需要完整摘要或用途时用 `get_attachment` 查询（`get_attachment_content` 取文件内容）。",
         message.po.id
     ));
 }
