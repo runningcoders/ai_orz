@@ -4,8 +4,10 @@
 //! - 斥力：所有节点对互相排斥（库仑力，反比于距离平方）
 //! - 碰撞分离：节点有实际尺寸时按等效半径保持最小中心距（见下方常量注释）
 //! - 吸引力：有连线的节点对互相吸引（胡克定律，正比于距离）
+//! - 质心引力：所有节点被弱弹簧拉向**全图质心**（软边界，见 `gravity`）
 //! - 阻尼：每帧速度衰减，防止振荡
-//! - 无边界：节点可停留在可视区之外（类无边记），「适应 / 重置」负责找回内容
+//! - 无硬边界墙：节点可滑出画布矩形（类无边记），但质心引力保证整体有界，
+//!   离散节点不会无限漂移；「适应 / 重置」负责找回内容
 
 use crate::components::canvas_scene::{CanvasEdge, CanvasNode};
 
@@ -35,6 +37,11 @@ pub struct ForceLayoutConfig {
     pub layer_height: f64,
     /// 分层布局的顶部留白
     pub layer_top_margin: f64,
+    /// 质心引力强度（软边界）：每帧把节点按 `(质心 - 位置) × gravity` 拉回
+    ///
+    /// 取当前全图节点均值作质心，所有引力合力恒为 0 —— 只把离散点收回、
+    /// 不会让整图平移。0 表示关闭（旧的无边界行为）。
+    pub gravity: f64,
 }
 
 impl Default for ForceLayoutConfig {
@@ -48,6 +55,7 @@ impl Default for ForceLayoutConfig {
             layer_attraction: 0.15,
             layer_height: 80.0,
             layer_top_margin: 80.0,
+            gravity: 0.002,
         }
     }
 }
@@ -86,6 +94,7 @@ impl ForceLayout {
     ///
     /// `width` / `height` 仅保留为 API 形参（调用方按画布显示尺寸传入）：
     /// 布局本身不感知画布边界，节点坐标是无限世界坐标，画布只是取景窗口。
+    /// 整体有界由质心引力保证（见 `gravity`），不靠画布边界 clamp。
     pub fn step(
         &mut self,
         nodes: &mut [CanvasNode],
@@ -172,6 +181,23 @@ impl ForceLayout {
                 let target_y = cfg.layer_top_margin + (layer as f64) * cfg.layer_height;
                 let dy = target_y - nodes[i].y;
                 forces[i].1 += cfg.layer_attraction * dy;
+            }
+        }
+
+        // 2.6 质心引力（软边界）：向全图质心施加弱弹簧。质心取当前节点均值，
+        // 引力合力恒为 0（不会让整图平移），只把离散点 / 离散组件收回来 ——
+        // 斥力按 1/d² 衰减、引力按 d 线性增长，二者必有平衡距离，
+        // 因此「无边界墙」下整体仍然有界，孤立节点不会无限漂移。
+        if cfg.gravity > 0.0 {
+            let (mut cx, mut cy) = (0.0, 0.0);
+            for node in nodes.iter() {
+                cx += node.x;
+                cy += node.y;
+            }
+            let (cx, cy) = (cx / n as f64, cy / n as f64);
+            for i in 0..n {
+                forces[i].0 += (cx - nodes[i].x) * cfg.gravity;
+                forces[i].1 += (cy - nodes[i].y) * cfg.gravity;
             }
         }
 
@@ -296,6 +322,9 @@ mod tests {
             layer_attraction: 0.15,
             layer_height: 80.0,
             layer_top_margin: 80.0,
+            // 关掉软边界：本测试只验证胡克吸引力，质心引力会让两端同时内收，
+            // 干扰「距离是否真的缩短」的判定基准
+            gravity: 0.0,
         };
         let mut layout = ForceLayout::new(config);
 
@@ -331,6 +360,68 @@ mod tests {
             nodes[0].x < 5.0,
             "节点应能滑出画布边界（无边界墙）: x={}",
             nodes[0].x
+        );
+    }
+
+    /// 软边界（质心引力）：离群很远的孤立节点必须被拉回，不能无限扩散。
+    ///
+    /// 回归「力导向布局没有边界，一旦产生离散的点就会无限扩散，不好找到」：
+    /// 斥力按 1/d² 衰减、质心引力按 d 线性增长，二者必有平衡距离 ——
+    /// 不需要画布边界墙，整体也是有界的。
+    #[test]
+    fn test_gravity_pulls_stray_node_back() {
+        let mut nodes = vec![
+            make_node("a", 0.0, 0.0),
+            make_node("b", 100.0, 0.0),
+            make_node("c", 0.0, 100.0),
+            make_node("stray", 1500.0, 1500.0),
+        ];
+        let edges: Vec<CanvasEdge> = vec![];
+        let mut layout = ForceLayout::new(ForceLayoutConfig::default());
+
+        let dist = |nodes: &[CanvasNode]| {
+            ((nodes[3].x - nodes[0].x).powi(2) + (nodes[3].y - nodes[0].y).powi(2)).sqrt()
+        };
+        let before = dist(&nodes);
+        for _ in 0..600 {
+            layout.step(&mut nodes, &edges, 800.0, 600.0);
+        }
+        let after = dist(&nodes);
+
+        assert!(
+            after < before * 0.5,
+            "离散节点应被质心引力拉回: before={before:.1}, after={after:.1}"
+        );
+    }
+
+    /// 质心引力只收缩、不整体平移：对称布局下引力合力为 0，质心保持不动。
+    #[test]
+    fn test_gravity_keeps_centroid_fixed() {
+        // 只留质心引力（其余力全关），验证它收缩而非搬运整图
+        let config = ForceLayoutConfig {
+            repulsion: 0.0,
+            attraction: 0.0,
+            ideal_length: 0.0,
+            damping: 0.9,
+            max_step: 50.0,
+            layer_attraction: 0.0,
+            layer_height: 0.0,
+            layer_top_margin: 0.0,
+            gravity: 0.05,
+        };
+        let mut nodes = vec![make_node("a", -400.0, 0.0), make_node("b", 400.0, 0.0)];
+        let edges: Vec<CanvasEdge> = vec![];
+        let mut layout = ForceLayout::new(config);
+
+        for _ in 0..40 {
+            layout.step(&mut nodes, &edges, 800.0, 600.0);
+        }
+        let gap = (nodes[1].x - nodes[0].x).abs();
+        assert!(gap < 800.0, "质心引力应把两端内收: gap={gap:.1}");
+        assert!(
+            (nodes[0].x + nodes[1].x).abs() < 1e-6,
+            "对称布局的质心不应平移: sum={:.3}",
+            nodes[0].x + nodes[1].x
         );
     }
 

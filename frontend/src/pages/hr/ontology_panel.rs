@@ -43,12 +43,14 @@ use crate::api::hr::{
     update_ontology_property, update_ontology_relation_type,
 };
 use crate::api::seed::{preview_preset_ontology, sync_preset_ontology};
+use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene, card_size};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudPanel, HudSection, PageHeader, StatGrid, StatReadout};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::dagre_layout::{DagreEdge, DagreNode, dagre_layout};
 use crate::utils::number::{format_compact_count, format_relevance};
 use crate::utils::time::format_datetime;
 
@@ -166,174 +168,357 @@ fn kind_badge(kind: TermKind) -> Element {
     }
 }
 
-// ===== 骨架图布局参数（环形布局，类多时仍可读） =====
-const SKELETON_CANVAS_W: f64 = 820.0;
-const SKELETON_CANVAS_H: f64 = 520.0;
-const SKELETON_NODE_R: f64 = 30.0;
+// ===== 骨架图：dagre 分层布局（复用 CanvasScene 渲染引擎） =====
+//
+// 布局交给 dagre（Sugiyama）：继承边 + 类-关系-类三元组全部参与有向布局，
+// 节点尺寸取自真实卡片宽高，同层由坐标层面保证不重叠，跨层边按 dummy node
+// 路由绕开卡片。坐标一次算好并关闭力导向，选中某类只筛选**渲染**的边，
+// 节点布局不随选中跳动。
+//
+// 世界尺寸怎么定：dagre 适配层会把坐标等比缩放塞进给定画布，世界设小了
+// 密集图会被整体压扁（卡片坐标间距缩到小于卡片宽 → 互压）。所以先丢进一个
+// 超大画布探测自然包围盒，再按「自然尺寸 + 余量」定世界大小。
 
-/// 第 index / total 个节点的环形坐标（从正上方顺时针铺开）
-fn skeleton_node_pos(index: usize, total: usize) -> (f64, f64) {
-    let cx = SKELETON_CANVAS_W / 2.0;
-    let cy = SKELETON_CANVAS_H / 2.0;
-    if total <= 1 {
-        return (cx, cy);
+/// 世界最小尺寸（小图按此铺开，dagre 会等比放大铺满）
+const SKELETON_MIN_WORLD_W: f64 = 1200.0;
+const SKELETON_MIN_WORLD_H: f64 = 700.0;
+/// 探测画布尺寸（只用于读取自然包围盒，不参与最终渲染）
+const SKELETON_PROBE_WORLD: f64 = 1_000_000.0;
+/// dagre 适配层坐标映射的缩放上限（见 utils::dagre_layout，探测结果需按此还原）
+const SKELETON_DAGRE_MAX_SCALE: f64 = 2.5;
+/// 世界尺寸余量：探测包围盒只覆盖卡片中心，还原后需补回卡片自身宽高
+const SKELETON_WORLD_SLACK: f64 = 160.0;
+/// 同一对类的多条平行关系（含双向）错开间距
+const SKELETON_PARALLEL_GAP: f64 = 24.0;
+/// 节点卡片配色（按词表序稳定轮转，仅用于区分卡片，不表达语义）
+const SKELETON_PALETTE: [&str; 6] = [
+    "#22d3ee", "#818cf8", "#34d399", "#fbbf24", "#f472b6", "#60a5fa",
+];
+
+/// 无向对的字典序 key：同一对类的正反向关系共用一条 dagre 边与路由
+fn skeleton_pair_key(a: &str, b: &str) -> (String, String) {
+    if a <= b {
+        (a.to_string(), b.to_string())
+    } else {
+        (b.to_string(), a.to_string())
     }
-    let radius = (SKELETON_CANVAS_H / 2.0) - SKELETON_NODE_R - 46.0;
-    let angle =
-        -std::f64::consts::FRAC_PI_2 + 2.0 * std::f64::consts::PI * index as f64 / total as f64;
-    (cx + radius * angle.cos(), cy + radius * angle.sin())
 }
 
-/// 渲染骨架图：类为节点（环形布局），继承链为虚线，类-关系-类三元组为带箭头实线
+/// 布局结果包围盒（含卡片半宽高与边 waypoints），用于反推自然世界尺寸
+fn skeleton_layout_extent(
+    positions: &std::collections::HashMap<String, (f64, f64)>,
+    routes: &std::collections::HashMap<(String, String), Vec<(f64, f64)>>,
+    nodes: &[CanvasNode],
+) -> (f64, f64) {
+    let (mut min_x, mut min_y) = (f64::MAX, f64::MAX);
+    let (mut max_x, mut max_y) = (f64::MIN, f64::MIN);
+    for n in nodes {
+        let Some(&(x, y)) = positions.get(&n.id) else {
+            continue;
+        };
+        let (w, h) = card_size(n);
+        min_x = min_x.min(x - w / 2.0);
+        max_x = max_x.max(x + w / 2.0);
+        min_y = min_y.min(y - h / 2.0);
+        max_y = max_y.max(y + h / 2.0);
+    }
+    for pts in routes.values() {
+        for (x, y) in pts {
+            min_x = min_x.min(*x);
+            max_x = max_x.max(*x);
+            min_y = min_y.min(*y);
+            max_y = max_y.max(*y);
+        }
+    }
+    if min_x > max_x || min_y > max_y {
+        return (0.0, 0.0);
+    }
+    (max_x - min_x, max_y - min_y)
+}
+
+/// 组装 CanvasScene 节点：卡片承载「名称 + term_key + 描述 + 父类 / 必填 / 关联数」
+fn skeleton_canvas_nodes(
+    classes: &[OntologyClassItem],
+    class_relations: &[OntologyClassRelationItem],
+) -> Vec<CanvasNode> {
+    let mut relation_counts: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
+    for rel in class_relations {
+        *relation_counts
+            .entry(rel.subject_class_key.as_str())
+            .or_default() += 1;
+        *relation_counts
+            .entry(rel.object_class_key.as_str())
+            .or_default() += 1;
+    }
+    classes
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let mut tags = vec![match c.parent_term_key.as_deref() {
+                Some(parent) => format!("父 {parent}"),
+                None => "根类".to_string(),
+            }];
+            if !c.required_fields.is_empty() {
+                tags.push(format!("必填 {}", c.required_fields.len()));
+            }
+            let relation_count = relation_counts
+                .get(c.term_key.as_str())
+                .copied()
+                .unwrap_or(0);
+            if relation_count > 0 {
+                tags.push(format!("关联 {relation_count}"));
+            }
+            let mut node = CanvasNode {
+                id: c.term_key.clone(),
+                x: 0.0,
+                y: 0.0,
+                radius: 0.0,
+                label: if c.display_name.is_empty() {
+                    c.term_key.clone()
+                } else {
+                    c.display_name.clone()
+                },
+                color: SKELETON_PALETTE[i % SKELETON_PALETTE.len()].to_string(),
+                node_type: Some("ontology_class".to_string()),
+                layer: None,
+                summary: Some(c.term_key.clone()),
+                description: c.description.clone(),
+                tags,
+                highlighted: false,
+            };
+            // 卡片节点的等效半径 = 外接圆半径（箭头回退与力导向碰撞都以它为准）
+            let (w, h) = card_size(&node);
+            node.radius = w.max(h) / 2.0;
+            node
+        })
+        .collect()
+}
+
+/// 基数文案（词表口径 single / many → 单值 / 多值）
+fn skeleton_cardinality_label(cardinality: &str) -> &'static str {
+    match cardinality {
+        "single" => "单值",
+        "many" => "多值",
+        _ => "未设",
+    }
+}
+
+/// 组装 CanvasScene 连线（全量）：继承边 + 所有两侧都是具体类的三元组
+///
+/// 全量参与 dagre 布局，选中某类时只在渲染层筛选边——否则布局会随选中重排。
+fn skeleton_canvas_edges(
+    classes: &[OntologyClassItem],
+    class_relations: &[OntologyClassRelationItem],
+    relation_types: &[OntologyRelationTypeItem],
+) -> Vec<CanvasEdge> {
+    let known: std::collections::HashSet<&str> =
+        classes.iter().map(|c| c.term_key.as_str()).collect();
+    let mut edges = Vec::new();
+
+    // 继承边：父 → 子（无父的根类没有入边）
+    for c in classes {
+        let Some(parent) = c.parent_term_key.as_deref() else {
+            continue;
+        };
+        if !known.contains(parent) {
+            continue;
+        }
+        edges.push(CanvasEdge {
+            from_id: parent.to_string(),
+            to_id: c.term_key.clone(),
+            tag: Some("继承".to_string()),
+            description: Some("子类继承父类：骨架约束沿祖先链向上解析".to_string()),
+            weight: Some(0.45),
+            directional: true,
+            ..Default::default()
+        });
+    }
+
+    // 关系边：仅两侧都是具体类时连边（通配符侧无法定位）
+    for rel in class_relations {
+        if !known.contains(rel.subject_class_key.as_str())
+            || !known.contains(rel.object_class_key.as_str())
+        {
+            continue;
+        }
+        let display = relation_types
+            .iter()
+            .find(|r| r.term_key == rel.relation_key)
+            .map(|r| r.display_name.clone())
+            .unwrap_or_else(|| rel.relation_key.clone());
+        edges.push(CanvasEdge {
+            from_id: rel.subject_class_key.clone(),
+            to_id: rel.object_class_key.clone(),
+            tag: Some(rel.relation_key.clone()),
+            description: Some(format!(
+                "{} · {} · {} · {} → {}",
+                display,
+                skeleton_cardinality_label(&rel.cardinality),
+                if rel.required { "必填" } else { "可选" },
+                rel.subject_class_key,
+                rel.object_class_key
+            )),
+            weight: None,
+            directional: true,
+            bulge: None,
+            points: None,
+        });
+    }
+
+    edges
+}
+
+/// 把 dagre 路由回写到边上；同一对类的多条关系按垂直于对向的向量错开
+///
+/// dagre 对同一对节点只给一条路由（正反向共用），平行关系若共用同一条折线会
+/// 完全重叠、标签糊成一团。这里按无向对分组，逐条平移 `SKELETON_PARALLEL_GAP`。
+/// 自环 / 无路由的边退回 `bulge` 弧线（有错开量才画得出）。
+fn skeleton_apply_routes(
+    edges: &mut [CanvasEdge],
+    positions: &std::collections::HashMap<String, (f64, f64)>,
+    routes: &std::collections::HashMap<(String, String), Vec<(f64, f64)>>,
+) {
+    let mut groups: std::collections::HashMap<(String, String), Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        groups
+            .entry(skeleton_pair_key(&e.from_id, &e.to_id))
+            .or_default()
+            .push(i);
+    }
+    for (key, idxs) in groups {
+        let perp = match (positions.get(&key.0), positions.get(&key.1)) {
+            (Some(a), Some(b)) => {
+                let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < f64::EPSILON {
+                    None
+                } else {
+                    Some((-dy / len, dx / len))
+                }
+            }
+            _ => None,
+        };
+        let n = idxs.len();
+        for (k, &i) in idxs.iter().enumerate() {
+            let off = if n > 1 {
+                (k as f64 - (n.saturating_sub(1)) as f64 / 2.0) * SKELETON_PARALLEL_GAP
+            } else {
+                0.0
+            };
+            let Some(route) = routes.get(&key) else {
+                edges[i].bulge = if off.abs() > f64::EPSILON {
+                    Some(off)
+                } else {
+                    None
+                };
+                continue;
+            };
+            let mut pts = route.clone();
+            // 反向边（B→A）复用同一条路由，点序倒过来才能对齐首尾方向
+            if edges[i].from_id != key.0 {
+                pts.reverse();
+            }
+            if off.abs() > f64::EPSILON
+                && let Some((px, py)) = perp
+            {
+                for p in &mut pts {
+                    p.0 += px * off;
+                    p.1 += py * off;
+                }
+            }
+            edges[i].points = Some(pts);
+            edges[i].bulge = None;
+        }
+    }
+}
+
+/// 渲染骨架图：dagre 分层坐标 + CanvasScene（关闭力导向）
+///
+/// 卡片承载类名 / term_key / 描述与「父类、必填、关联数」标签；连线按关系词着色，
+/// 悬停出关系明细。选中某个类时只保留与它相关的三元组边（布局坐标不重算）。
 fn render_skeleton_graph(
     classes: &[OntologyClassItem],
     class_relations: &[OntologyClassRelationItem],
+    relation_types: &[OntologyRelationTypeItem],
     selected: Option<String>,
     on_select: EventHandler<String>,
 ) -> Element {
-    let mut positions: std::collections::HashMap<&str, (f64, f64)> =
-        std::collections::HashMap::new();
-    for (i, c) in classes.iter().enumerate() {
-        positions.insert(c.term_key.as_str(), skeleton_node_pos(i, classes.len()));
-    }
+    let mut nodes = skeleton_canvas_nodes(classes, class_relations);
+    let mut edges = skeleton_canvas_edges(classes, class_relations, relation_types);
 
-    // 继承边（父 → 子，虚线）
-    let inheritance_edges: Vec<(f64, f64, f64, f64)> = classes
+    // dagre 输入：卡片真实宽高 + 每个无向对只喂一条边（平行边在渲染层错开）
+    let dagre_nodes: Vec<DagreNode> = nodes
         .iter()
-        .filter_map(|c| {
-            let parent = c.parent_term_key.as_deref()?;
-            let from = positions.get(parent)?;
-            let to = positions.get(c.term_key.as_str())?;
-            Some((from.0, from.1, to.0, to.1))
+        .map(|n| {
+            let (width, height) = card_size(n);
+            DagreNode {
+                id: n.id.clone(),
+                width,
+                height,
+            }
         })
         .collect();
-
-    // 关系边（仅两侧都是具体类时连边；通配符侧无法定位）
-    struct RelEdge {
-        x1: f64,
-        y1: f64,
-        x2: f64,
-        y2: f64,
-        label: String,
+    let mut seen_pairs: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+    let mut dagre_edges = Vec::new();
+    for e in &edges {
+        if e.from_id == e.to_id {
+            continue; // dagre 不布局自环
+        }
+        let key = skeleton_pair_key(&e.from_id, &e.to_id);
+        if seen_pairs.insert(key.clone()) {
+            dagre_edges.push(DagreEdge {
+                source: key.0,
+                target: key.1,
+            });
+        }
     }
-    let relation_edges: Vec<RelEdge> = class_relations
-        .iter()
-        .filter_map(|r| {
-            let from = positions.get(r.subject_class_key.as_str())?;
-            let to = positions.get(r.object_class_key.as_str())?;
-            Some(RelEdge {
-                x1: from.0,
-                y1: from.1,
-                x2: to.0,
-                y2: to.1,
-                label: r.relation_key.clone(),
-            })
+
+    // 先探测自然包围盒（大画布会把坐标等比放大到上限），再按自然尺寸定世界
+    let probe = dagre_layout(
+        &dagre_nodes,
+        &dagre_edges,
+        SKELETON_PROBE_WORLD,
+        SKELETON_PROBE_WORLD,
+        false,
+    );
+    let (extent_w, extent_h) = skeleton_layout_extent(&probe.positions, &probe.routes, &nodes);
+    let world_w =
+        (extent_w / SKELETON_DAGRE_MAX_SCALE + SKELETON_WORLD_SLACK).max(SKELETON_MIN_WORLD_W);
+    let world_h =
+        (extent_h / SKELETON_DAGRE_MAX_SCALE + SKELETON_WORLD_SLACK).max(SKELETON_MIN_WORLD_H);
+
+    let layout = dagre_layout(&dagre_nodes, &dagre_edges, world_w, world_h, false);
+    for n in &mut nodes {
+        if let Some(&(x, y)) = layout.positions.get(&n.id) {
+            n.x = x;
+            n.y = y;
+        }
+    }
+    skeleton_apply_routes(&mut edges, &layout.positions, &layout.routes);
+    // 选中只在渲染层筛边：继承边常驻，三元组只留与选中类相关的
+    let selected_for_render = selected.as_deref();
+    let render_edges: Vec<CanvasEdge> = edges
+        .into_iter()
+        .filter(|e| match selected_for_render {
+            Some(sel) => e.tag.as_deref() == Some("继承") || e.from_id == sel || e.to_id == sel,
+            None => true,
         })
         .collect();
 
     rsx! {
-        svg {
-            class: "block w-full h-auto",
-            view_box: "0 0 {SKELETON_CANVAS_W} {SKELETON_CANVAS_H}",
-            defs {
-                marker {
-                    id: "skeleton-arrow",
-                    view_box: "0 0 10 10",
-                    ref_x: "8",
-                    ref_y: "5",
-                    marker_width: "6",
-                    marker_height: "6",
-                    orient: "auto-start-reverse",
-                    path { d: "M 0 0 L 10 5 L 0 10 z", fill: "currentColor" }
-                }
-            }
-            // 继承边：虚线，自父指向子
-            for (i, (x1, y1, x2, y2)) in inheritance_edges.iter().enumerate() {
-                line {
-                    key: "inh-{i}",
-                    x1: "{x1}",
-                    y1: "{y1}",
-                    x2: "{x2}",
-                    y2: "{y2}",
-                    stroke: "currentColor",
-                    stroke_width: "1",
-                    stroke_dasharray: "5 5",
-                    opacity: "0.35",
-                }
-            }
-            // 关系边：实线 + 箭头 + 关系词标签
-            for (i, e) in relation_edges.iter().enumerate() {
-                line {
-                    key: "rel-{i}",
-                    x1: "{e.x1}",
-                    y1: "{e.y1}",
-                    x2: "{e.x2}",
-                    y2: "{e.y2}",
-                    stroke: "currentColor",
-                    stroke_width: "1.5",
-                    opacity: "0.55",
-                    "marker-end": "url(#skeleton-arrow)",
-                }
-                text {
-                    x: "{(e.x1 + e.x2) / 2.0}",
-                    y: "{(e.y1 + e.y2) / 2.0 - 4.0}",
-                    text_anchor: "middle",
-                    font_size: "10",
-                    fill: "currentColor",
-                    opacity: "0.7",
-                    "{e.label}"
-                }
-            }
-            // 类节点
-            for (i, c) in classes.iter().enumerate() {
-                {
-                    let (x, y) = skeleton_node_pos(i, classes.len());
-                    let is_selected = selected.as_deref() == Some(c.term_key.as_str());
-                    let has_parent = c.parent_term_key.is_some();
-                    let key = c.term_key.clone();
-                    rsx! {
-                        g {
-                            key: "node-{c.id}",
-                            class: "cursor-pointer",
-                            onclick: move |_| on_select.call(key.clone()),
-                            circle {
-                                cx: "{x}",
-                                cy: "{y}",
-                                r: "{SKELETON_NODE_R}",
-                                fill: if is_selected { "var(--color-primary, #6366f1)" } else { "var(--color-base-200, #e5e7eb)" },
-                                stroke: "currentColor",
-                                stroke_width: if is_selected { "2.5" } else { "1" },
-                                opacity: if is_selected { "0.95" } else { "0.9" },
-                            }
-                            text {
-                                x: "{x}",
-                                y: "{y + 4.0}",
-                                text_anchor: "middle",
-                                font_size: "10",
-                                fill: if is_selected { "#fff" } else { "currentColor" },
-                                "{c.term_key}"
-                            }
-                            text {
-                                x: "{x}",
-                                y: "{y + SKELETON_NODE_R + 14.0}",
-                                text_anchor: "middle",
-                                font_size: "11",
-                                fill: "currentColor",
-                                opacity: "0.75",
-                                "{c.display_name}"
-                            }
-                            text {
-                                x: "{x}",
-                                y: "{y - SKELETON_NODE_R - 8.0}",
-                                text_anchor: "middle",
-                                font_size: "9",
-                                fill: "currentColor",
-                                opacity: "0.45",
-                                if has_parent { "子类" } else { "根类" }
-                            }
-                        }
-                    }
-                }
+        div { class: "relative w-full h-[560px]",
+            CanvasScene {
+                width: world_w,
+                height: world_h,
+                nodes,
+                edges: render_edges,
+                transparent: true,
+                enable_force_layout: false,
+                selected_node_id: selected,
+                on_node_click: move |key: String| on_select.call(key),
             }
         }
     }
@@ -1507,6 +1692,7 @@ pub fn HrOntologyLexicon() -> Element {
                                                     { render_skeleton_graph(
                                                         &s.classes,
                                                         &s.class_relations,
+                                                        &s.relation_types,
                                                         skeleton_selected_class(),
                                                         EventHandler::new(move |key: String| skeleton_selected_class.set(Some(key))),
                                                     ) }

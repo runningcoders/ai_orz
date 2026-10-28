@@ -8,6 +8,7 @@
 
 use dioxus::prelude::*;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
@@ -23,6 +24,11 @@ use crate::components::node_card;
 use crate::components::particles::{
     BackgroundParticles, BirthDeathParticles, DataFlowParticles, GlowParticles, ParticleSystem,
 };
+
+/// hover 聚焦时非相关元素的透明度：保留轮廓（仍能看出图的结构），但不抢焦点
+const HOVER_DIM_ALPHA: f64 = 0.18;
+/// 聚焦边相对常规的亮度增益（同色加亮 + 稍粗，与「压暗的其余边」形成对比）
+const HOVER_FOCUS_ALPHA_BOOST: f64 = 1.35;
 
 /// Canvas 渲染节点（通用数据结构，业务场景填充字段）
 ///
@@ -263,16 +269,18 @@ fn point_to_segment_distance(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f6
     ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
 }
 
-/// 找距离鼠标最近且在阈值内的边，返回 (from_id, to_id)
+/// 找距离鼠标最近且在阈值内的边，返回它在 `edges` 中的**下标**
+///
+/// 返回下标而不是端点对：平行边共享端点对，只有下标能区分鼠标下是哪一条曲线。
 fn nearest_edge(
     edges: &[CanvasEdge],
     nodes: &[CanvasNode],
     x: f64,
     y: f64,
     threshold: f64,
-) -> Option<(String, String)> {
-    let mut best: Option<(f64, (String, String))> = None;
-    for e in edges {
+) -> Option<usize> {
+    let mut best: Option<(f64, usize)> = None;
+    for (idx, e) in edges.iter().enumerate() {
         let from = nodes.iter().find(|n| n.id == e.from_id);
         let to = nodes.iter().find(|n| n.id == e.to_id);
         if let (Some(f), Some(t)) = (from, to) {
@@ -284,12 +292,12 @@ fn nearest_edge(
                     None => true,
                 };
                 if better {
-                    best = Some((d, (e.from_id.clone(), e.to_id.clone())));
+                    best = Some((d, idx));
                 }
             }
         }
     }
-    best.map(|(_, pair)| pair)
+    best.map(|(_, idx)| idx)
 }
 
 /// hover 卡片统一规格：内边距 / 行高 / 字号（节点卡与边卡共用）
@@ -399,6 +407,80 @@ fn draw_edge_tooltip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, edge: &Canv
     draw_hover_card_anchored(ctx, &lines, accent, x, y, 0.0);
 }
 
+/// hover 聚焦：hover 节点 / 边时，与它相关、应保持高亮的节点与边
+///
+/// 通用能力，不依赖业务数据：hover 节点 → 该节点 + 一跳邻居 + 所有相邻边；
+/// hover 边 → 边的两端点 + 同一对端点间的全部边（含平行边与反向边）。
+/// 其余元素按 [`HOVER_DIM_ALPHA`] 压暗，用来把「这张图里跟它有关的部分」一眼圈出来。
+#[derive(Debug, Clone, Default)]
+pub struct HoverFocus {
+    nodes: HashSet<String>,
+    /// 无向端点对（与边方向无关，正反向共用）
+    pairs: HashSet<(String, String)>,
+}
+
+impl HoverFocus {
+    /// 是否处于聚焦态（未 hover 任何节点/边时为 false，整图正常亮度）
+    pub fn is_active(&self) -> bool {
+        !self.nodes.is_empty()
+    }
+
+    /// 节点是否属于聚焦范围
+    pub fn contains_node(&self, id: &str) -> bool {
+        self.nodes.contains(id)
+    }
+
+    /// 边是否属于聚焦范围（只看两端点构成的无向对）
+    pub fn contains_edge(&self, edge: &CanvasEdge) -> bool {
+        self.pairs
+            .contains(&unordered_pair(&edge.from_id, &edge.to_id))
+    }
+}
+
+/// 端点对的无向 key（字典序）
+fn unordered_pair(a: &str, b: &str) -> (String, String) {
+    if a <= b {
+        (a.to_string(), b.to_string())
+    } else {
+        (b.to_string(), a.to_string())
+    }
+}
+
+/// 由当前 hover 状态推导聚焦集合
+///
+/// `hovered_edge` 传**具体那条边**而不是端点对：同一对节点可能有多条平行边，
+/// 只记端点对会让「hover 的曲线」与「被加亮的曲线」对不上号。
+fn hover_focus(
+    edges: &[CanvasEdge],
+    hovered_node: Option<&str>,
+    hovered_edge: Option<&CanvasEdge>,
+) -> HoverFocus {
+    let mut focus = HoverFocus::default();
+    if let Some(id) = hovered_node {
+        focus.nodes.insert(id.to_string());
+        for e in edges {
+            let other = if e.from_id == id {
+                Some(e.to_id.as_str())
+            } else if e.to_id == id {
+                Some(e.from_id.as_str())
+            } else {
+                None
+            };
+            if let Some(other) = other {
+                focus.nodes.insert(other.to_string());
+                focus.pairs.insert(unordered_pair(&e.from_id, &e.to_id));
+            }
+        }
+        return focus;
+    }
+    if let Some(e) = hovered_edge {
+        focus.nodes.insert(e.from_id.clone());
+        focus.nodes.insert(e.to_id.clone());
+        focus.pairs.insert(unordered_pair(&e.from_id, &e.to_id));
+    }
+    focus
+}
+
 /// Canvas 渲染器 trait：业务场景实现此 trait 定义渲染逻辑
 pub trait CanvasRenderer {
     /// 清空画布
@@ -415,22 +497,28 @@ pub trait CanvasRenderer {
         nodes: &[CanvasNode],
     );
 
-    /// 带交互状态的连线渲染（hover 边提示），默认委托给 draw_edges
+    /// 带交互状态的连线渲染（hover 边提示 + hover 聚焦压暗），默认委托给 draw_edges
+    ///
+    /// `hovered_edge` 是被 hover 边在 `edges` 里的**下标**：同一对节点常有平行边，
+    /// 只传端点对无法区分「鼠标下是哪一条」。
+    /// `focus` 由组件按当前 hover 推导（见 [`hover_focus`]），渲染器只需按它决定
+    /// 「加亮 / 正常 / 压暗」，无需自己算关联关系。
     fn draw_edges_with_state(
         &self,
         ctx: &CanvasRenderingContext2d,
         edges: &[CanvasEdge],
         nodes: &[CanvasNode],
-        hovered_edge: &Option<(String, String)>,
+        hovered_edge: &Option<usize>,
+        focus: &HoverFocus,
     ) {
-        let _ = hovered_edge;
+        let _ = (hovered_edge, focus);
         self.draw_edges(ctx, edges, nodes);
     }
 
     /// 命中检测：给定画布坐标，返回命中的节点 ID（None 表示空白处）
     fn hit_test(&self, nodes: &[CanvasNode], x: f64, y: f64) -> Option<String>;
 
-    /// 带交互状态的节点渲染（hover/选中/拖拽），默认委托给 draw_nodes
+    /// 带交互状态的节点渲染（hover/选中/拖拽 + hover 聚焦压暗），默认委托给 draw_nodes
     ///
     /// 只负责节点**本体**；hover 详情卡属于浮层，见 [`CanvasRenderer::draw_overlays`]。
     fn draw_nodes_with_state(
@@ -440,8 +528,9 @@ pub trait CanvasRenderer {
         hovered: &Option<String>,
         selected: &Option<String>,
         dragging: &Option<String>,
+        focus: &HoverFocus,
     ) {
-        let _ = (hovered, selected, dragging);
+        let _ = (hovered, selected, dragging, focus);
         self.draw_nodes(ctx, nodes);
     }
 
@@ -514,13 +603,17 @@ fn now_secs() -> f64 {
 ///
 /// `glow` 覆盖 hover / 拖拽 / 搜索命中三种「临时突出」——它们视觉诉求一致
 /// （更亮 + 类型色外发光），分开传只会让参数表变长。
+/// `dimmed` 是 hover 聚焦的相反面（非相关节点压暗），由组件统一推导。
 fn draw_card_node(
     ctx: &CanvasRenderingContext2d,
     node: &CanvasNode,
     is_selected: bool,
     glow: bool,
+    dimmed: bool,
 ) {
     let now = now_secs();
+    let dim_alpha = if dimmed { HOVER_DIM_ALPHA } else { 1.0 };
+    ctx.set_global_alpha(dim_alpha);
     let (bw, bh) = card_size(node);
     let bx = node.x - bw / 2.0;
     let by = node.y - bh / 2.0;
@@ -568,7 +661,11 @@ fn draw_card_node(
     } else {
         ctx.set_shadow_blur(0.0);
     }
-    ctx.set_global_alpha(if is_selected || glow { 1.0 } else { 0.94 });
+    ctx.set_global_alpha(if is_selected || glow {
+        dim_alpha
+    } else {
+        0.94 * dim_alpha
+    });
     ctx.set_fill_style_str("rgba(17, 24, 39, 0.94)");
     round_rect_path(ctx, bx, by, bw, bh, node_card::NODE_BOX_R);
     ctx.fill();
@@ -585,7 +682,7 @@ fn draw_card_node(
     round_rect_path(ctx, bx, by, bw, bh, node_card::NODE_BOX_R);
     ctx.stroke();
     ctx.set_shadow_blur(0.0);
-    ctx.set_global_alpha(1.0);
+    ctx.set_global_alpha(dim_alpha);
 
     // 左侧类型色竖条（取代圆形的整体填充，保留类型辨识度）
     ctx.set_fill_style_str(accent);
@@ -643,6 +740,8 @@ fn draw_card_node(
             tx += w + node_card::NODE_TAG_GAP;
         }
     }
+    // 恢复全局透明度：绘制循环里后续元素不能被上一张卡片的压暗状态影响
+    ctx.set_global_alpha(1.0);
 }
 
 /// 绘制圆形节点（只有名称 + 类型的场景）
@@ -654,7 +753,10 @@ fn draw_circle_node(
     is_hovered: bool,
     is_selected: bool,
     is_dragging: bool,
+    dimmed: bool,
 ) {
+    let dim_alpha = if dimmed { HOVER_DIM_ALPHA } else { 1.0 };
+    ctx.set_global_alpha(dim_alpha);
     // 选中光晕
     if is_selected {
         ctx.set_fill_style_str("rgba(59, 130, 246, 0.2)");
@@ -715,6 +817,7 @@ fn draw_circle_node(
         let name: String = node.label.chars().take(max_chars).collect();
         let _ = ctx.fill_text(&name, node.x, node.y);
     }
+    ctx.set_global_alpha(1.0);
 }
 
 /// 边的绘制几何（由边上字段决定；节点位置只参与弧线控制点计算）
@@ -871,13 +974,82 @@ pub(crate) fn arrow_tip_point(from: (f64, f64), to: (f64, f64), target_radius: f
     (to.0 - dx * back, to.1 - dy * back)
 }
 
+/// 画一条边（路径 + 可选箭头），`alpha_scale` / `emphasize` 承载 hover 聚焦的压暗/加亮
+///
+/// 颜色只表达**语义**，不表达强度：
+///   not_ready / ready → 语义色（关系图的「可用性」语义）
+///   其余 tag → 视为关系类型，按 tag 哈希稳定取色（知识图谱的 relation type）
+///   None → 中性灰（对不表达关系的连线零侵入）
+/// 强度另走粗细 + 浓淡两个未被占用的通道（`edge_style::weight_style`）。
+fn draw_one_edge(
+    ctx: &CanvasRenderingContext2d,
+    edge: &CanvasEdge,
+    nodes: &[CanvasNode],
+    alpha_scale: f64,
+    emphasize: bool,
+) {
+    // 取 String 而不是 &str：`tag_color` 返回临时值，分支里 `.as_str()`
+    // 会在 match 结束时就释放（E0716），借用活不过这一行
+    let (hex, base_alpha) = match edge.tag.as_deref() {
+        Some("not_ready") => ("#f97316".to_string(), 0.9),
+        Some("ready") => ("#94a3b8".to_string(), 0.55),
+        Some(tag) => (tag_color(tag), 0.5),
+        None => ("#6b7280".to_string(), 0.4),
+    };
+    let (weight_width, weight_alpha) = edge_style::weight_style(edge.weight);
+    let width = weight_width + if emphasize { 0.8 } else { 0.0 };
+    // 压暗态允许低于常规下限（0.15），否则 0.18 的倍率会被抬回去、看不出压暗
+    let alpha_floor = if alpha_scale < 1.0 { 0.02 } else { 0.15 };
+    let color = hud_palette::hex_to_rgba(
+        &hex,
+        (base_alpha * weight_alpha * alpha_scale).clamp(alpha_floor, 1.0),
+    );
+    ctx.set_stroke_style_str(&color);
+    ctx.set_line_width(width);
+    let from = nodes.iter().find(|n| n.id == edge.from_id);
+    let to = nodes.iter().find(|n| n.id == edge.to_id);
+    let (Some(from), Some(to)) = (from, to) else {
+        return;
+    };
+    stroke_edge_path(ctx, edge, from, to);
+
+    // 方向性边箭头原语（方案 a′）：directed 边在 target 端补小三角，
+    // 方向沿「接近 target 的真实来向」（弧线取控制点、折线取倒数第二个
+    // waypoint，见 `edge_arrival_from`），尺寸随线宽派生，填充色复用边色。
+    // Canvas 几何活在世界坐标系，viewport 缩放对整幅画面等比生效，
+    // 箭头与世界坐标同尺度、随视图缩放同步缩放，无需单独换算。
+    if !edge.directional {
+        return;
+    }
+    let arrival = edge_arrival_from(edge, from, to);
+    let tip = arrow_tip_point(arrival, (to.x, to.y), to.radius);
+    let dx = to.x - arrival.0;
+    let dy = to.y - arrival.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= f64::EPSILON {
+        return;
+    }
+    let (ux, uy) = (dx / len, dy / len);
+    let size = (width * 2.5).max(5.0);
+    let half = size * 0.42;
+    let (base_x, base_y) = (tip.0 - ux * size, tip.1 - uy * size);
+    let (px, py) = (-uy, ux);
+    ctx.begin_path();
+    ctx.move_to(tip.0, tip.1);
+    ctx.line_to(base_x + px * half, base_y + py * half);
+    ctx.line_to(base_x - px * half, base_y - py * half);
+    ctx.close_path();
+    ctx.set_fill_style_str(&color);
+    ctx.fill();
+}
+
 impl CanvasRenderer for DefaultRenderer {
     fn clear(&self, ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
         ctx.clear_rect(0.0, 0.0, width, height);
     }
 
     fn draw_nodes(&self, ctx: &CanvasRenderingContext2d, nodes: &[CanvasNode]) {
-        self.draw_nodes_with_state(ctx, nodes, &None, &None, &None);
+        self.draw_nodes_with_state(ctx, nodes, &None, &None, &None, &HoverFocus::default());
     }
 
     fn draw_edges(
@@ -887,55 +1059,7 @@ impl CanvasRenderer for DefaultRenderer {
         nodes: &[CanvasNode],
     ) {
         for edge in edges {
-            // 颜色只表达**语义**，不表达强度：
-            //   not_ready / ready → 语义色（关系图的「可用性」语义）
-            //   其余 tag → 视为关系类型，按 tag 哈希稳定取色（知识图谱的 relation type）
-            //   None → 中性灰（对不表达关系的连线零侵入）
-            // 强度另走粗细 + 浓淡两个未被占用的通道（`edge_style::weight_style`）
-            // 取 String 而不是 &str：`tag_color` 返回临时值，分支里 `.as_str()`
-            // 会在 match 结束时就释放（E0716），借用活不过这一行
-            let (hex, base_alpha) = match edge.tag.as_deref() {
-                Some("not_ready") => ("#f97316".to_string(), 0.9),
-                Some("ready") => ("#94a3b8".to_string(), 0.55),
-                Some(tag) => (tag_color(tag), 0.5),
-                None => ("#6b7280".to_string(), 0.4),
-            };
-            let (width, alpha_scale) = edge_style::weight_style(edge.weight);
-            let color = hud_palette::hex_to_rgba(&hex, (base_alpha * alpha_scale).clamp(0.15, 1.0));
-            ctx.set_stroke_style_str(&color);
-            ctx.set_line_width(width);
-            let from = nodes.iter().find(|n| n.id == edge.from_id);
-            let to = nodes.iter().find(|n| n.id == edge.to_id);
-            if let (Some(from), Some(to)) = (from, to) {
-                stroke_edge_path(ctx, edge, from, to);
-
-                // 方向性边箭头原语（方案 a′）：directed 边在 target 端补小三角，
-                // 方向沿「接近 target 的真实来向」（弧线取控制点、折线取倒数第二个
-                // waypoint，见 `edge_arrival_from`），尺寸随线宽派生，填充色复用边色。
-                // Canvas 几何活在世界坐标系，viewport 缩放对整幅画面等比生效，
-                // 箭头与世界坐标同尺度、随视图缩放同步缩放，无需单独换算。
-                let arrival = edge_arrival_from(edge, from, to);
-                let tip = arrow_tip_point(arrival, (to.x, to.y), to.radius);
-                if edge.directional {
-                    let dx = to.x - arrival.0;
-                    let dy = to.y - arrival.1;
-                    let len = (dx * dx + dy * dy).sqrt();
-                    if len > f64::EPSILON {
-                        let (ux, uy) = (dx / len, dy / len);
-                        let size = (width * 2.5).max(5.0);
-                        let half = size * 0.42;
-                        let (base_x, base_y) = (tip.0 - ux * size, tip.1 - uy * size);
-                        let (px, py) = (-uy, ux);
-                        ctx.begin_path();
-                        ctx.move_to(tip.0, tip.1);
-                        ctx.line_to(base_x + px * half, base_y + py * half);
-                        ctx.line_to(base_x - px * half, base_y - py * half);
-                        ctx.close_path();
-                        ctx.set_fill_style_str(&color);
-                        ctx.fill();
-                    }
-                }
-            }
+            draw_one_edge(ctx, edge, nodes, 1.0, false);
         }
     }
 
@@ -944,38 +1068,39 @@ impl CanvasRenderer for DefaultRenderer {
         ctx: &CanvasRenderingContext2d,
         edges: &[CanvasEdge],
         nodes: &[CanvasNode],
-        hovered_edge: &Option<(String, String)>,
+        hovered_edge: &Option<usize>,
+        focus: &HoverFocus,
     ) {
-        self.draw_edges(ctx, edges, nodes);
+        // hover 聚焦：相关边保持（略加亮），无关边压暗；聚焦来自 hover 节点时
+        // 相关边只加亮不加粗到橙色，橙色只留给真正被 hover 的那一条
+        let focus_active = focus.is_active();
+        for edge in edges {
+            let is_focused = focus_active && focus.contains_edge(edge);
+            let alpha_scale = if focus_active && !is_focused {
+                HOVER_DIM_ALPHA
+            } else if is_focused {
+                HOVER_FOCUS_ALPHA_BOOST
+            } else {
+                1.0
+            };
+            draw_one_edge(ctx, edge, nodes, alpha_scale, is_focused);
+        }
         // 被 hover 的边重描一遍（橙色加粗）：详情卡负责「这条是什么关系」，
-        // 高亮负责「指的是哪一条」——两者缺一都会让人对不上号
-        if let Some((from_id, to_id)) = hovered_edge
+        // 高亮负责「指的是哪一条」——两者缺一都会让人对不上号。
+        // 按下标取边：平行边共享端点对，按下标才能高亮鼠标下那一条。
+        if let Some(edge) = hovered_edge.and_then(|idx| edges.get(idx))
             && let (Some(from), Some(to)) = (
-                nodes.iter().find(|n| &n.id == from_id),
-                nodes.iter().find(|n| &n.id == to_id),
+                nodes.iter().find(|n| n.id == edge.from_id),
+                nodes.iter().find(|n| n.id == edge.to_id),
             )
         {
             // 高亮线必须**盖得住**原线：线宽现在随强度变化（最粗 3.8），
             // 固定 3.0 会在粗线上露边，看起来像「高亮后反而细了」
-            let (edge_width, _) = edges
-                .iter()
-                .find(|e| &e.from_id == from_id && &e.to_id == to_id)
-                .map(|e| edge_style::weight_style(e.weight))
-                .unwrap_or((edge_style::EDGE_BASE_WIDTH, 1.0));
+            let (edge_width, _) = edge_style::weight_style(edge.weight);
             ctx.set_stroke_style_str("#f97316");
             ctx.set_line_width((edge_width + 1.5).max(3.0));
             // 与原线同几何（弧线/折线也走同一条路径），高亮才压得准
-            if let Some(edge) = edges
-                .iter()
-                .find(|e| &e.from_id == from_id && &e.to_id == to_id)
-            {
-                stroke_edge_path(ctx, edge, from, to);
-            } else {
-                ctx.begin_path();
-                ctx.move_to(from.x, from.y);
-                ctx.line_to(to.x, to.y);
-                ctx.stroke();
-            }
+            stroke_edge_path(ctx, edge, from, to);
         }
     }
 
@@ -1004,23 +1129,24 @@ impl CanvasRenderer for DefaultRenderer {
         hovered: &Option<String>,
         selected: &Option<String>,
         dragging: &Option<String>,
+        focus: &HoverFocus,
     ) {
+        let focus_active = focus.is_active();
         for node in nodes {
             let is_hovered = hovered.as_deref() == Some(node.id.as_str());
             let is_selected = selected.as_deref() == Some(node.id.as_str());
             let is_dragging = dragging.as_deref() == Some(node.id.as_str());
+            let is_focused = focus_active && focus.contains_node(&node.id);
+            // hover 节点自身不压暗；与它相关的一跳邻居用 glow 圈出来
+            let dimmed = focus_active && !is_focused;
+            let glow = is_hovered || is_dragging || node.highlighted || is_focused;
 
             if node.is_card() {
-                // hover / 拖拽 / 搜索命中同为「突出」——卡片是唯一的视觉载体，
-                // 不像圆形那样还有半径放大可用
-                draw_card_node(
-                    ctx,
-                    node,
-                    is_selected,
-                    is_hovered || is_dragging || node.highlighted,
-                );
+                // hover / 拖拽 / 搜索命中 / hover 关联预览同为「突出」——卡片是唯一的
+                // 视觉载体，不像圆形那样还有半径放大可用
+                draw_card_node(ctx, node, is_selected, glow, dimmed);
             } else {
-                draw_circle_node(ctx, node, is_hovered, is_selected, is_dragging);
+                draw_circle_node(ctx, node, is_hovered, is_selected, is_dragging, dimmed);
             }
         }
     }
@@ -1144,8 +1270,9 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut drag_offset: Signal<(f64, f64)> = use_signal(|| (0.0, 0.0));
     let mut hovered_id: Signal<Option<String>> = use_signal(|| None);
     let mut selected_id: Signal<Option<String>> = use_signal(|| None);
-    // 边 hover：记录命中边的 (from_id, to_id)，用于绘制关系标签/描述提示
-    let mut hovered_edge: Signal<Option<(String, String)>> = use_signal(|| None);
+    // 边 hover：记录命中边在 edges 里的**下标**（平行边共享端点对，下标才唯一），
+    // 用于高亮鼠标下那一条 + 绘制关系标签/描述提示
+    let mut hovered_edge: Signal<Option<usize>> = use_signal(|| None);
 
     // 视口：Ctrl/⌘+滚轮缩放 + 空白处拖拽平移。渲染循环每帧读取，因此改它无需触发组件重渲染。
     let mut viewport: Signal<Viewport> = use_signal(Viewport::default);
@@ -1408,7 +1535,11 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             let hovered = hovered_id_c.read().clone();
             let selected = selected_id_c.read().clone();
             let dragging = dragging_id_c.read().clone();
+            let hovered_edge_index = *hovered_edge_c.read();
+            let hovered_edge_data = hovered_edge_index.and_then(|idx| edges_inner.get(idx));
             let vp = *viewport_c.read();
+            // hover 聚焦：hover 节点 → 一跳邻域；hover 边 → 两端点 + 同对边
+            let focus = hover_focus(&edges_inner, hovered.as_deref(), hovered_edge_data);
 
             renderer_c.clear(&ctx, width, height);
 
@@ -1423,12 +1554,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             let _ = ctx.translate(vp.pan_x, vp.pan_y);
             let _ = ctx.scale(vp.scale, vp.scale);
 
-            // 2. 连线（携带边 hover 状态，供自定义渲染器绘制边详情卡片）
+            // 2. 连线（携带边 hover 状态与聚焦集合，供自定义渲染器绘制边详情卡片）
             renderer_c.draw_edges_with_state(
                 &ctx,
                 &edges_inner,
                 &nodes,
-                &hovered_edge_c.read().clone(),
+                &hovered_edge_index,
+                &focus,
             );
 
             // 3. 数据流粒子（在连线上方，节点下方）
@@ -1442,7 +1574,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             }
 
             // 5. 节点
-            renderer_c.draw_nodes_with_state(&ctx, &nodes, &hovered, &selected, &dragging);
+            renderer_c.draw_nodes_with_state(&ctx, &nodes, &hovered, &selected, &dragging, &focus);
 
             // 6. 诞生/消亡粒子（在节点层之上，比节点醒目）
             if enable_bd {
@@ -1457,13 +1589,10 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             renderer_c.draw_overlays(&ctx, &nodes, &hovered, &dragging, vp);
 
             // 7.5 边 hover 提示（展示关系标签/描述），锚点换算到屏幕坐标
-            if let Some((ef, et)) = hovered_edge_c.read().clone()
-                && let Some(edge) = edges_inner
-                    .iter()
-                    .find(|e| e.from_id == ef && e.to_id == et)
+            if let Some(edge) = hovered_edge_data
                 && let (Some(f), Some(t)) = (
-                    nodes.iter().find(|n| n.id == ef),
-                    nodes.iter().find(|n| n.id == et),
+                    nodes.iter().find(|n| n.id == edge.from_id),
+                    nodes.iter().find(|n| n.id == edge.to_id),
                 )
             {
                 let (fx, fy) = vp.world_to_screen(f.x, f.y);
@@ -1662,7 +1791,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                             wy,
                             10.0 / vp.scale,
                         );
-                        if hovered_edge.read().clone() != he {
+                        if *hovered_edge.read() != he {
                             hovered_edge.set(he);
                         }
                     } else if hovered_edge.read().is_some() {
