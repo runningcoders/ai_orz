@@ -3,7 +3,8 @@
 //! 包级函数 `embed_entity` / `embed_text_for_search` 按 provider 路由到
 //! `native::CortexDao` 实现。调用方负责获取 provider（如从 model_provider_dao 查询）。
 //!
-//! 路由是**两维正交**的：provider_type 定厂商/端点，config.api_flavor 定 wire 协议；
+//! 路由按**调用面**分流：`think()` 面由 `config.api_flavor` 定 wire 协议、
+//! `provider_type` 定端点；`embed()` 面与 chat 协议无关，只看 `provider_type`。
 //! 两者都只能从 `&ModelProviderPo` 读到，故 registry 入口收 provider 而非枚举值。
 
 pub mod external;
@@ -33,7 +34,7 @@ pub async fn embed_entity(
     provider: &ModelProviderPo,
     entity: &dyn Vectorizable,
 ) -> Result<VectorIndexParams> {
-    let dao = native::registry().get(provider);
+    let dao = native::registry().embed_dao(provider);
     dao.embed_entity(ctx, provider, entity).await
 }
 
@@ -43,7 +44,7 @@ pub async fn embed_text_for_search(
     provider: &ModelProviderPo,
     text: &str,
 ) -> Result<VectorIndexParams> {
-    let dao = native::registry().get(provider);
+    let dao = native::registry().embed_dao(provider);
     dao.embed_text_for_search(ctx, provider, text).await
 }
 
@@ -68,7 +69,7 @@ impl CortexDao for CortexDispatcher {
         messages: &[ChatMessage],
         tools: &[ToolDescriptor],
     ) -> Result<ThinkResult> {
-        let dao = native::registry().get(provider);
+        let dao = native::registry().chat_dao(provider);
         dao.think(ctx, provider, messages, tools).await
     }
 
@@ -78,7 +79,7 @@ impl CortexDao for CortexDispatcher {
         provider: &ModelProviderPo,
         texts: &[String],
     ) -> Result<Vec<Vec<f32>>> {
-        let dao = native::registry().get(provider);
+        let dao = native::registry().embed_dao(provider);
         dao.embed(ctx, provider, texts).await
     }
 }

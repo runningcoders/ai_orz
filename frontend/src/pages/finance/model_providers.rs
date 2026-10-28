@@ -53,8 +53,22 @@ pub fn FinanceModelProviders() -> Element {
     let mut recommended_context_length = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
+    // 能力派生标志：rsx 与提交逻辑共用，避免同一表达式散落多处后各自漂移
+    let is_agent_cap = new_capability() == ModelCapability::Agent as i32;
+    let is_embedding_cap = new_capability() == ModelCapability::Embedding as i32;
+    let is_decision_cap = new_capability() == ModelCapability::Decision as i32;
+    // Base URL 占位符随类型变化：方舟与 OpenAI 根地址不同，且都只填根路径
+    let base_url_placeholder = match provider_type() {
+        ProviderType::Doubao | ProviderType::DoubaoVision => {
+            "https://ark.cn-beijing.volces.com/api/v3"
+        }
+        ProviderType::FastEmbed => "本地模型无需填写",
+        _ => "https://api.openai.com/v1",
+    };
+
     let mut show_test_modal = use_signal(|| false);
     let mut test_provider_id = use_signal(String::new);
+    let mut test_capability = use_signal(|| ModelCapability::Agent);
     let mut test_prompt = use_signal(|| "你好，请介绍一下自己".to_string());
     let mut test_response = use_signal(String::new);
     let mut test_loading = use_signal(|| false);
@@ -86,7 +100,7 @@ pub fn FinanceModelProviders() -> Element {
                 return;
             }
             // 对话模型必填上下文长度：缺失 → 压缩阈值算不出来 → Agent 永不压缩（静默降级）
-            let is_embedding = new_capability() == ModelCapability::Embedding as i32;
+            let is_embedding = is_embedding_cap;
             if !is_embedding
                 && max_context_length()
                     .trim()
@@ -123,13 +137,11 @@ pub fn FinanceModelProviders() -> Element {
                 }),
                 // 批5-P2：vision 能力开关随创建上送；checkbox 仅 capability==Agent 显示，
                 // 隐藏态（Embedding/Decision）保守上送 false（沿 access_mode 先例防隐藏态残留）
-                supports_vision: Some(
-                    new_supports_vision() && new_capability() == ModelCapability::Agent as i32,
-                ),
-                // 协议口味：Create 恒传当前选值（默认 Responses）。隐藏态
-                //（Embedding/Decision 不走 chat 协议）沿用 access_mode 先例：
-                // 值保留但不上送，后端按缺省解析，无隐藏态残留。
-                api_flavor: Some(new_api_flavor()),
+                supports_vision: Some(is_agent_cap && new_supports_vision()),
+                // 协议口味只对对话模型有意义：Embedding 走 /embeddings、Decision 走小脑链路。
+                // 非 Agent 下传 None（不落盘），避免把无关配置写进 config 后被误读——
+                // 历史缺陷正是「Embedding 也写 api_flavor=Responses」导致向量化被路由错协议。
+                api_flavor: is_agent_cap.then_some(new_api_flavor()),
             };
             match create_model_provider(req).await {
                 Ok(resp) => {
@@ -150,10 +162,12 @@ pub fn FinanceModelProviders() -> Element {
                     } else if resp.status == ModelProviderStatus::Disabled as i32 {
                         toast.info("已创建为未启用状态；在列表点「启用」并确认切换后生效");
                     }
-                    // Embedding（FastEmbed 等向量模型）无对话端点，连接测试必失败，跳过
-                    let should_test_connection =
-                        new_capability() != ModelCapability::Embedding as i32;
+                    // FastEmbed 是本地模型、无远程端点，创建后无法做连通性测试；
+                    // 其余能力（Agent/Embedding/Decision）后端各有对应探针
+                    let should_test_connection = provider_type() != ProviderType::FastEmbed;
                     new_capability.set(0);
+                    // 类型随能力一起回到默认，避免下次创建继承「向量专用类型 + Agent」非法组合
+                    provider_type.set(ProviderType::OpenAI);
                     match list_model_providers().await {
                         Ok(list) => providers.set(list.providers),
                         Err(e) => toast.error(&e),
@@ -259,6 +273,7 @@ pub fn FinanceModelProviders() -> Element {
                                         let id_detail = id.clone();
                                         let id_toggle = id.clone();
                                         let is_embedding = p.capability.is_embedding();
+                                        let p_capability = p.capability;
                                         let is_enabled = p.status == 1;
                                         let toggle_id = id.clone();
                                         let toggle_name = pname.clone();
@@ -370,7 +385,18 @@ pub fn FinanceModelProviders() -> Element {
                                                     button { class: "btn hud-btn btn-outline btn-sm",
                                                         onclick: move |_| {
                                                             test_provider_id.set(id_test.clone());
-                                                            test_prompt.set("你好，请介绍一下自己".to_string());
+                                                            test_capability.set(p_capability);
+                                                            test_prompt.set(match p_capability {
+                                                                ModelCapability::Embedding => {
+                                                                    "connectivity test".to_string()
+                                                                }
+                                                                ModelCapability::Decision => {
+                                                                    "这是一次连通性测试".to_string()
+                                                                }
+                                                                ModelCapability::Agent => {
+                                                                    "你好，请介绍一下自己".to_string()
+                                                                }
+                                                            });
                                                             test_response.set(String::new());
                                                             show_test_modal.set(true);
                                                         },
@@ -419,7 +445,7 @@ pub fn FinanceModelProviders() -> Element {
                     }
                     select { class: "select select-bordered w-full", value: "{provider_type_str}",
                         onchange: move |e| {
-                            provider_type.set(match e.value().as_str() {
+                            let pt = match e.value().as_str() {
                                 "deepseek" => ProviderType::DeepSeek,
                                 "qwen" => ProviderType::Qwen,
                                 "doubao" => ProviderType::Doubao,
@@ -427,18 +453,44 @@ pub fn FinanceModelProviders() -> Element {
                                 "custom" => ProviderType::Custom,
                                 "fastembed" => ProviderType::FastEmbed,
                                 "doubao_vision" => ProviderType::DoubaoVision,
-    "jev" => ProviderType::Jev,
+                                "jev" => ProviderType::Jev,
                                 _ => ProviderType::OpenAI,
-                            });
+                            };
+                            provider_type.set(pt);
+                            // 类型 → 能力联动：向量专用端点与决策模型只有唯一合法用途，
+                            // 选类型即锁定能力，避免出现「DoubaoVision + Agent」这类非法组合
+                            match pt {
+                                ProviderType::DoubaoVision | ProviderType::FastEmbed => {
+                                    new_capability.set(ModelCapability::Embedding as i32)
+                                }
+                                ProviderType::Jev => {
+                                    new_capability.set(ModelCapability::Decision as i32)
+                                }
+                                _ => {}
+                            }
                         },
-                        option { value: "openai", "OpenAI" }
-                        option { value: "custom", "OpenAI 兼容" }
-                        option { value: "deepseek", "DeepSeek" }
-                        option { value: "doubao", "豆包" }
-                        option { value: "doubao_vision", "豆包 Vision (多模态 Embedding)" }
-                        option { value: "qwen", "通义千问" }
-                        option { value: "ollama", "Ollama" }
-                        option { value: "jev", "Jev（小脑决策模型）" }
+                        // 类型选项按能力过滤：Jev 仅决策、向量专用端点仅 Embedding
+                        if is_agent_cap {
+                            option { value: "openai", "OpenAI" }
+                            option { value: "custom", "OpenAI 兼容" }
+                            option { value: "deepseek", "DeepSeek" }
+                            option { value: "doubao", "豆包" }
+                            option { value: "qwen", "通义千问" }
+                            option { value: "ollama", "Ollama" }
+                        }
+                        if is_embedding_cap {
+                            option { value: "openai", "OpenAI" }
+                            option { value: "custom", "OpenAI 兼容" }
+                            option { value: "deepseek", "DeepSeek" }
+                            option { value: "doubao", "豆包" }
+                            option { value: "doubao_vision", "豆包 Vision (多模态 Embedding)" }
+                            option { value: "qwen", "通义千问" }
+                            option { value: "ollama", "Ollama" }
+                            option { value: "fastembed", "FastEmbed（本地向量模型）" }
+                        }
+                        if is_decision_cap {
+                            option { value: "jev", "Jev（小脑决策模型）" }
+                        }
                     }
                 }
                 div { class: "form-control w-full",
@@ -452,6 +504,26 @@ pub fn FinanceModelProviders() -> Element {
                         onchange: move |e| {
                             if let Ok(v) = e.value().parse::<i32>() {
                                 new_capability.set(v);
+                                // 能力 → 类型纠正：切到决策锁定 Jev；切出决策时 Jev 必须让位；
+                                // 向量专用端点（DoubaoVision/FastEmbed）在 Agent 下非法
+                                match ModelCapability::from_i32(v) {
+                                    ModelCapability::Decision => provider_type.set(ProviderType::Jev),
+                                    ModelCapability::Embedding => {
+                                        if provider_type() == ProviderType::Jev {
+                                            provider_type.set(ProviderType::OpenAI);
+                                        }
+                                    }
+                                    ModelCapability::Agent => {
+                                        if matches!(
+                                            provider_type(),
+                                            ProviderType::Jev | ProviderType::FastEmbed
+                                        ) {
+                                            provider_type.set(ProviderType::OpenAI);
+                                        } else if provider_type() == ProviderType::DoubaoVision {
+                                            provider_type.set(ProviderType::Doubao);
+                                        }
+                                    }
+                                }
                             }
                         },
                         option { value: "0", "Agent（对话 / 思考）" }
@@ -459,7 +531,7 @@ pub fn FinanceModelProviders() -> Element {
                         option { value: "2", "小脑/决策" }
                     }
                 }
-                if new_capability() != ModelCapability::Embedding as i32 {
+                if !is_embedding_cap {
                     div { class: "form-control w-full",
                         label { class: "label",
                             span { class: "label-text font-medium", "访问模式" }
@@ -482,7 +554,7 @@ pub fn FinanceModelProviders() -> Element {
                         }
                     }
                 }
-                if new_capability() == ModelCapability::Agent as i32 {
+                if is_agent_cap {
                     // 协议口味（仅对话模型有意义：Embedding 走 embed 端点、Decision 走小脑链路）
                     div { class: "form-control w-full",
                         label { class: "label",
@@ -526,7 +598,7 @@ pub fn FinanceModelProviders() -> Element {
                 div { class: "form-control w-full",
                     label { class: "label",
                         span { class: "label-text font-medium",
-                            if new_capability() == ModelCapability::Embedding as i32 {
+                            if is_embedding_cap {
                                 "API Key（FastEmbed 无需填写）"
                             } else {
                                 "API Key *"
@@ -541,7 +613,10 @@ pub fn FinanceModelProviders() -> Element {
                         span { class: "label-text font-medium", "Base URL" }
                     }
                     input { class: "input input-bordered w-full", value: "{base_url}",
-                        oninput: move |e| base_url.set(e.value()), placeholder: "https://api.openai.com/v1" }
+                        oninput: move |e| base_url.set(e.value()), placeholder: "{base_url_placeholder}" }
+                    p { class: "text-xs text-base-content/60",
+                        "只填 API 根地址，勿包含 /embeddings、/chat/completions 等端点路径（系统会自动拼接）"
+                    }
                 }
                 div { class: "form-control w-full",
                     label { class: "label",
@@ -554,7 +629,7 @@ pub fn FinanceModelProviders() -> Element {
                     div { class: "form-control w-full",
                         label { class: "label",
                             span { class: "label-text font-medium",
-                                if new_capability() == ModelCapability::Embedding as i32 {
+                                if is_embedding_cap {
                                     "最大上下文长度"
                                 } else {
                                     "最大上下文长度 *"
@@ -589,21 +664,46 @@ pub fn FinanceModelProviders() -> Element {
             footer: rsx! {
                 button { class: "btn hud-btn btn-ghost", onclick: move |_| show_test_modal.set(false), "关闭" }
                 button { class: "btn hud-btn btn-primary", disabled: test_loading(), onclick: handle_test_send,
-                    if test_loading() { "发送中..." } else { "发送" }
+                    if test_loading() {
+                        "测试中..."
+                    } else if test_capability() == ModelCapability::Embedding {
+                        "开始测试"
+                    } else {
+                        "发送"
+                    }
                 }
             },
             div { class: "space-y-4",
-                div { class: "form-control w-full",
-                    label { class: "label",
-                        span { class: "label-text font-medium", "Prompt" }
+                if test_capability() == ModelCapability::Embedding {
+                    // 向量模型没有对话端点：用固定短句探测，结果展示维度与耗时
+                    p { class: "text-sm text-base-content/70",
+                        "向量模型没有对话端点，将使用固定短句做向量化连通测试，返回向量维度与耗时。"
                     }
-                    textarea { class: "textarea textarea-bordered w-full", rows: "4", value: "{test_prompt}",
-                        oninput: move |e| test_prompt.set(e.value()) }
+                } else {
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium",
+                                if test_capability() == ModelCapability::Decision {
+                                    "待判定内容"
+                                } else {
+                                    "Prompt"
+                                }
+                            }
+                        }
+                        textarea { class: "textarea textarea-bordered w-full", rows: "4", value: "{test_prompt}",
+                            oninput: move |e| test_prompt.set(e.value()) }
+                    }
                 }
                 if !test_response().is_empty() {
                     div { class: "form-control w-full",
                         label { class: "label",
-                            span { class: "label-text font-medium", "响应" }
+                            span { class: "label-text font-medium",
+                                if test_capability() == ModelCapability::Agent {
+                                    "响应"
+                                } else {
+                                    "测试结果"
+                                }
+                            }
                         }
                         textarea { class: "textarea textarea-bordered w-full", rows: "6", readonly: true, value: "{test_response}" }
                     }
@@ -699,20 +799,14 @@ mod batch5_p2_tests {
             .find("checked: new_supports_vision(),")
             .expect("vision checkbox");
         assert!(hint_pos < cb_pos, "vision checkbox 应位于访问模式块之后");
-        // Agent 独立分支恰 1（防 Decision 误显）
-        assert_eq!(
-            code.matches("if new_capability() == ModelCapability::Agent as i32 {")
-                .count(),
-            1
-        );
+        // Agent 分支恰 2（类型选项分组 + 表单独立分支，防 Decision 误显）
+        assert_eq!(code.matches("if is_agent_cap {").count(), 2);
         // 列表徽标：图像 badge 恰 1（true 显 false 隐）
         assert_eq!(code.matches("if p.supports_vision {").count(), 1);
         assert_eq!(code.matches("\"图像\"").count(), 1);
         // 提交上送恰 1 且带 Agent 守卫
         assert_eq!(code.matches("supports_vision: Some(").count(), 1);
-        assert!(code.contains(
-            "new_supports_vision() && new_capability() == ModelCapability::Agent as i32"
-        ));
+        assert!(code.contains("is_agent_cap && new_supports_vision()"));
         // P1 机械接线注释已由 P2 接管
         assert!(!code.contains("批5-P1 机械接线"));
     }
@@ -745,9 +839,10 @@ mod batch5_p2_tests {
         // 默认主线协议：初值与重置值均为 Responses（与 ChatApiFlavor::default() 同语义）
         assert!(code.contains("use_signal(|| ChatApiFlavor::Responses)"));
         assert!(code.contains("new_api_flavor.set(ChatApiFlavor::Responses);"));
-        // 创建上送恰 1
+        // 创建上送恰 1：仅 Agent 能力下传，非 Agent 传 None（不落盘）
         assert_eq!(
-            code.matches("api_flavor: Some(new_api_flavor()),").count(),
+            code.matches("api_flavor: is_agent_cap.then_some(new_api_flavor()),")
+                .count(),
             1
         );
         // 列表仅回退态显徽标（主线不显，避免每行噪音）
@@ -758,10 +853,35 @@ mod batch5_p2_tests {
         );
         // 下拉必须仍在唯一的「仅对话模型」分支内：Embedding 走 embed 端点、
         // Decision 走小脑链路，二者都无 chat 协议语义（防分支复制导致误显）
+        // 2 = 类型选项分组 + 表单 Agent 分支
+        assert_eq!(code.matches("if is_agent_cap {").count(), 2);
+    }
+
+    /// 类型 ↔ 能力联动守卫：选向量专用类型自动切 Embedding、选 Jev 自动切 Decision；
+    /// 类型下拉按能力过滤且补回 FastEmbed option（历史缺陷：onchange 分支有、option 缺失）。
+    #[test]
+    fn provider_type_capability_linkage_anchors_present() {
+        let src = include_str!("model_providers.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+
+        // 类型 → 能力联动分支存在
+        assert!(code.contains("ProviderType::DoubaoVision | ProviderType::FastEmbed => {"));
+        assert!(code.contains("ProviderType::Jev => {"));
+        assert!(
+            code.contains("new_capability.set(ModelCapability::Embedding as i32)"),
+            "向量专用类型必须自动切 Embedding"
+        );
+        assert!(
+            code.contains("new_capability.set(ModelCapability::Decision as i32)"),
+            "Jev 必须自动切 Decision"
+        );
+        // FastEmbed 选项存在（此前只有 onchange 分支，没有 option）
         assert_eq!(
-            code.matches("if new_capability() == ModelCapability::Agent as i32 {")
+            code.matches("option { value: \"fastembed\", \"FastEmbed（本地向量模型）\" }")
                 .count(),
             1
         );
+        // 类型选项按能力分组过滤：决策组恰 1，Embedding 组至少 1
+        assert_eq!(code.matches("if is_decision_cap {").count(), 1);
     }
 }

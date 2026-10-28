@@ -95,6 +95,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut pending_delete_id = use_signal(String::new);
 
     let mut show_test_modal = use_signal(|| false);
+    let mut test_capability = use_signal(|| ModelCapability::Agent);
     let mut test_prompt = use_signal(|| "你好，请介绍一下自己".to_string());
     let mut test_response = use_signal(String::new);
     let mut test_loading = use_signal(|| false);
@@ -133,6 +134,20 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
         .as_ref()
         .and_then(|r| r.as_ref().ok())
         .is_some_and(|p| p.capability == ModelCapability::Agent);
+
+    // 当前提供商是否决策模型：编辑 Modal 的类型选项按能力过滤用它
+    let editing_is_decision = provider_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .is_some_and(|p| p.capability == ModelCapability::Decision);
+
+    // Base URL 占位符随类型变化：方舟与 OpenAI 根地址不同，且都只填根路径
+    let edit_base_url_placeholder = match edit_provider_type().as_str() {
+        "Doubao" | "DoubaoVision" => "https://ark.cn-beijing.volces.com/api/v3",
+        "FastEmbed" => "本地模型无需填写",
+        _ => "https://api.openai.com/v1",
+    };
 
     // 加载由上方 use_resource（rid 响应式）负责，无需 use_effect
 
@@ -223,6 +238,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             div { class: "flex gap-2",
                                 {
                                     let is_embedding = p.capability.is_embedding();
+                                    let provider_capability = p.capability;
                                     let is_enabled = p.status == 1;
                                     let provider_id = p.id.clone();
                                     let provider_name = p.name.clone();
@@ -351,13 +367,23 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             },
                                             "测试连接"
                                         }
-                                        button { class: "btn hud-btn btn-outline btn-sm",
-                                            onclick: move |_| {
-                                                test_prompt.set("你好，请介绍一下自己".to_string());
-                                                test_response.set(String::new());
-                                                show_test_modal.set(true);
-                                            },
-                                            "调用测试"
+                                        // 向量模型没有对话端点：「测试连接」已是完整的向量化探针，
+                                        // 不再重复提供语义等价的「调用测试」入口
+                                        if !is_embedding {
+                                            button { class: "btn hud-btn btn-outline btn-sm",
+                                                onclick: move |_| {
+                                                    test_capability.set(provider_capability);
+                                                    test_prompt.set(match provider_capability {
+                                                        ModelCapability::Decision => {
+                                                            "这是一次连通性测试".to_string()
+                                                        }
+                                                        _ => "你好，请介绍一下自己".to_string(),
+                                                    });
+                                                    test_response.set(String::new());
+                                                    show_test_modal.set(true);
+                                                },
+                                                "调用测试"
+                                            }
                                         }
                                         button { class: "btn hud-btn btn-error btn-sm",
                                             onclick: {
@@ -434,7 +460,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     }
                                 }
                             }
-                            if p.supports_vision {
+                            // 向量模型不参与视觉输入，徽标即便存量 supports_vision=true 也不展示
+                            if !p.capability.is_embedding() && p.supports_vision {
                                 div {
                                     label { class: "label",
                                         span { class: "label-text font-medium", "图像输入" }
@@ -501,21 +528,46 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     footer: rsx! {
                         button { class: "btn hud-btn btn-ghost", onclick: move |_| show_test_modal.set(false), "关闭" }
                         button { class: "btn hud-btn btn-primary", disabled: test_loading(), onclick: handle_test_send,
-                            if test_loading() { "发送中..." } else { "发送" }
+                            if test_loading() {
+                                "测试中..."
+                            } else if test_capability() == ModelCapability::Embedding {
+                                "开始测试"
+                            } else {
+                                "发送"
+                            }
                         }
                     },
                     div { class: "space-y-4",
-                        div { class: "form-control w-full",
-                            label { class: "label",
-                                span { class: "label-text font-medium", "Prompt" }
+                        if test_capability() == ModelCapability::Embedding {
+                            // 向量模型没有对话端点：用固定短句探测，结果展示维度与耗时
+                            p { class: "text-sm text-base-content/70",
+                                "向量模型没有对话端点，将使用固定短句做向量化连通测试，返回向量维度与耗时。"
                             }
-                            textarea { class: "textarea textarea-bordered w-full", rows: "4", value: "{test_prompt}",
-                                oninput: move |e| test_prompt.set(e.value()) }
+                        } else {
+                            div { class: "form-control w-full",
+                                label { class: "label",
+                                    span { class: "label-text font-medium",
+                                        if test_capability() == ModelCapability::Decision {
+                                            "待判定内容"
+                                        } else {
+                                            "Prompt"
+                                        }
+                                    }
+                                }
+                                textarea { class: "textarea textarea-bordered w-full", rows: "4", value: "{test_prompt}",
+                                    oninput: move |e| test_prompt.set(e.value()) }
+                            }
                         }
                         if !test_response().is_empty() {
                             div { class: "form-control w-full",
                                 label { class: "label",
-                                    span { class: "label-text font-medium", "响应" }
+                                    span { class: "label-text font-medium",
+                                        if test_capability() == ModelCapability::Agent {
+                                            "响应"
+                                        } else {
+                                            "测试结果"
+                                        }
+                                    }
                                 }
                                 textarea { class: "textarea textarea-bordered w-full", rows: "6", readonly: true, value: "{test_response}" }
                             }
@@ -645,10 +697,14 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     recommended_context_length: Some(rec_ctx),
                                     // 访问模式：Update 恒传当前选值（T2 §4.2/S3，无 None 分支）
                                     access_mode: Some(access_mode),
-                                    // 批5-P2：vision 开关保存恒传当前选值（沿 access_mode「恒传当前选值」口径）
-                                    supports_vision: Some(edit_supports_vision()),
-                                    // 协议口味保存恒传当前选值（同上口径，无 None 分支）
-                                    api_flavor: Some(api_flavor),
+                                    // 批5-P2：vision 开关随保存上送，仅对话模型生效；
+                                    // 非对话模型（Embedding/Decision）隐藏该开关，保守上送 false 防隐藏态残留
+                                    supports_vision: Some(
+                                        editing_is_agent && edit_supports_vision(),
+                                    ),
+                                    // 协议口味只对对话模型有意义：Embedding 走 /embeddings、Decision 走小脑链路，
+                                    // 非 Agent 传 None（不落盘），避免把无关配置写进 config 后被误读
+                                    api_flavor: editing_is_agent.then_some(api_flavor),
                                 };
                                 saving_meta.set(true);
                                 let reload_id = id_for_submit.clone();
@@ -683,15 +739,28 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             class: "select select-bordered w-full",
                             value: "{edit_provider_type}",
                             onchange: move |e| edit_provider_type.set(e.value()),
-                            option { value: "OpenAI", "OpenAI" }
-                            option { value: "DeepSeek", "DeepSeek" }
-                            option { value: "Qwen", "通义千问" }
-                            option { value: "Doubao", "豆包" }
-                            option { value: "Ollama", "Ollama" }
-                            option { value: "Custom", "自定义" }
-                            option { value: "FastEmbed", "FastEmbed" }
-                            option { value: "DoubaoVision", "豆包 Vision (多模态)" }
-                            option { value: "Jev", "Jev（小脑决策模型）" }
+                            // 类型选项按能力过滤：Jev 仅决策、向量专用端点仅 Embedding
+                            if editing_is_agent {
+                                option { value: "OpenAI", "OpenAI" }
+                                option { value: "DeepSeek", "DeepSeek" }
+                                option { value: "Qwen", "通义千问" }
+                                option { value: "Doubao", "豆包" }
+                                option { value: "Ollama", "Ollama" }
+                                option { value: "Custom", "自定义" }
+                            }
+                            if editing_is_embedding {
+                                option { value: "OpenAI", "OpenAI" }
+                                option { value: "DeepSeek", "DeepSeek" }
+                                option { value: "Qwen", "通义千问" }
+                                option { value: "Doubao", "豆包" }
+                                option { value: "DoubaoVision", "豆包 Vision (多模态 Embedding)" }
+                                option { value: "Ollama", "Ollama" }
+                                option { value: "Custom", "自定义" }
+                                option { value: "FastEmbed", "FastEmbed（本地向量模型）" }
+                            }
+                            if editing_is_decision {
+                                option { value: "Jev", "Jev（小脑决策模型）" }
+                            }
                         }
                     }
                     if !editing_is_embedding {
@@ -751,7 +820,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "Base URL" } }
                         input { class: "input input-bordered w-full", value: "{edit_base_url}",
-                            oninput: move |e| edit_base_url.set(e.value()), placeholder: "https://api.openai.com/v1" }
+                            oninput: move |e| edit_base_url.set(e.value()), placeholder: "{edit_base_url_placeholder}" }
+                        p { class: "text-xs text-base-content/60",
+                            "只填 API 根地址，勿包含 /embeddings、/chat/completions 等端点路径（系统会自动拼接）"
+                        }
                     }
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "描述" } }
@@ -859,14 +931,18 @@ mod batch5_p2_tests {
                 .count(),
             1
         );
-        // 保存恒传当前选值（沿 access_mode 口径）
+        // 保存仅对话模型落盘（非 Agent → None）
         assert_eq!(
-            code.matches("supports_vision: Some(edit_supports_vision()),")
+            code.matches("editing_is_agent && edit_supports_vision()")
                 .count(),
             1
         );
-        // 信息格徽标恰 1（true 显 false 隐）
-        assert_eq!(code.matches("if p.supports_vision {").count(), 1);
+        // 信息格徽标恰 1（true 显 false 隐，且向量模型不展示）
+        assert_eq!(
+            code.matches("if !p.capability.is_embedding() && p.supports_vision {")
+                .count(),
+            1
+        );
         assert_eq!(code.matches("\"支持图像\"").count(), 1);
         // P1 机械接线注释已由 P2 接管
         assert!(!code.contains("批5-P1 机械接线"));
@@ -907,8 +983,12 @@ mod batch5_p2_tests {
                 .count(),
             1
         );
-        // 保存恒传当前选值恰 1
-        assert_eq!(code.matches("api_flavor: Some(api_flavor),").count(), 1);
+        // 保存仅对话模型落盘恰 1（非 Agent → None）
+        assert_eq!(
+            code.matches("api_flavor: editing_is_agent.then_some(api_flavor),")
+                .count(),
+            1
+        );
         // 信息格徽标恰 1（恒显，与列表页「仅回退态显徽标」不同：详情页要能看出主线）
         assert_eq!(
             code.matches("\"{api_flavor_label(&p.api_flavor)}\"")

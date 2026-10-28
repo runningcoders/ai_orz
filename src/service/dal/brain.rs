@@ -6,7 +6,7 @@
 
 use crate::models::agent::{AgentPo, ExternalAgentConfig};
 use crate::models::brain::Brain;
-use crate::models::cerebellum_types::{CerebellumQuestion, ThinkFastResult};
+use crate::models::cerebellum_types::{CerebellumQuestion, QuestionType, ThinkFastResult};
 use crate::models::cortex_types::{ThinkResult, TokenUsage, ToolDescriptor};
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::models::vector::{VectorIndexParams, Vectorizable};
@@ -16,7 +16,7 @@ use crate::service::dao::cortex;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
-use common::enums::AgentKind;
+use common::enums::{AgentKind, ModelCapability};
 use common::error::{Result, err};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -259,24 +259,87 @@ impl BrainDal for BrainDalImpl {
         log_debug!(
             ctx.clone(),
             "brain_test_connection",
-            "test_connection start, provider_id={}, model={}",
+            "test_connection start, provider_id={}, model={}, capability={:?}",
             provider.po.id,
             provider.po.model_name,
+            provider.capability(),
         );
 
-        let dao = cortex::native::registry().get(&provider.po);
-        let result = dao
-            .think(
-                ctx,
-                &provider.po,
-                &[crate::models::cortex_types::ChatMessage::user(prompt)],
-                &[],
-            )
-            .await?;
+        // 能力决定探针形态：向量化模型没有 chat 端点，小脑模型不兼容 OpenAI 协议，
+        // 统一按 Agent 路径发 think 只会在上游换来一个与配置无关的 400。
+        match provider.capability() {
+            ModelCapability::Embedding => {
+                // 固定短句 + 维度校验：向量模型能连通的最小证据就是「返回非空向量」
+                let start = std::time::Instant::now();
+                let dao = cortex::native::registry().embed_dao(&provider.po);
+                let vectors = dao
+                    .embed(ctx, &provider.po, &["connectivity test".to_string()])
+                    .await?;
+                let dim = vectors.first().map(Vec::len).unwrap_or(0);
+                if dim == 0 {
+                    return Err(err!(
+                        Internal,
+                        "embedding test returned empty vector (model={})",
+                        provider.po.model_name
+                    ));
+                }
+                Ok(format!(
+                    "向量化连通成功：维度 {dim}，耗时 {} ms",
+                    start.elapsed().as_millis()
+                ))
+            }
+            ModelCapability::Decision => {
+                let start = std::time::Instant::now();
+                let questions = BTreeMap::from([(
+                    "connectivity".to_string(),
+                    CerebellumQuestion {
+                        question_type: QuestionType::Noul,
+                        instructions: format!("这是一次连通性测试，输入内容：{prompt}"),
+                        criteria: None,
+                    },
+                )]);
+                let result = crate::service::dao::cerebellum::try_dao()
+                    .ok_or_else(|| {
+                        err!(
+                            Internal,
+                            "cerebellum dao not initialized; cannot test decision provider"
+                        )
+                    })?
+                    .think_fast(
+                        ctx,
+                        &provider.po,
+                        serde_json::json!({ "prompt": prompt }),
+                        questions,
+                    )
+                    .await?;
+                let noul = result.answers.get("connectivity").and_then(|a| a.as_noul());
+                Ok(match noul {
+                    Some(p) => format!(
+                        "小脑判定连通成功：noul={p:.3}，耗时 {} ms",
+                        start.elapsed().as_millis()
+                    ),
+                    None => format!(
+                        "小脑判定连通成功（未返回 noul 答案），耗时 {} ms",
+                        start.elapsed().as_millis()
+                    ),
+                })
+            }
+            ModelCapability::Agent => {
+                let dao = cortex::native::registry().chat_dao(&provider.po);
+                let result = dao
+                    .think(
+                        ctx,
+                        &provider.po,
+                        &[crate::models::cortex_types::ChatMessage::user(prompt)],
+                        &[],
+                    )
+                    .await?;
 
-        match result {
-            ThinkResult::Final { content, .. } => Ok(content),
-            ThinkResult::ToolCall { content, .. } => Ok(content.unwrap_or_default()),
+                match result {
+                    ThinkResult::Final { content, .. } => Ok(content),
+                    ThinkResult::ToolCall { content, .. } => Ok(content.unwrap_or_default()),
+                }
+            }
         }
     }
 
@@ -306,7 +369,7 @@ impl BrainDal for BrainDalImpl {
                     provider.model_name,
                 );
 
-                let dao = cortex::native::registry().get(provider);
+                let dao = cortex::native::registry().chat_dao(provider);
                 let result = dao.think(ctx.clone(), provider, messages, tools).await;
 
                 log_debug!(

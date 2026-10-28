@@ -27,7 +27,7 @@ use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::pkg::http::presets;
 use crate::service::dao::cortex::native::http::{
-    self, AccumToolCall, CompletionTokensDetails, PromptTokensDetails, StreamAccumulator, Usage,
+    AccumToolCall, CompletionTokensDetails, PromptTokensDetails, StreamAccumulator, Usage,
     default_base_url, finish_think_result, model_call_error, resolve_access_mode, resolve_base_url,
     transport_error, validate_provider_for_request,
 };
@@ -72,16 +72,6 @@ impl super::CortexDao for ResponsesCortexDao {
         tools: &[ToolDescriptor],
     ) -> Result<ThinkResult> {
         call_responses(ctx, &self.client, provider, messages, tools).await
-    }
-
-    async fn embed(
-        &self,
-        _ctx: RequestContext,
-        provider: &ModelProviderPo,
-        texts: &[String],
-    ) -> Result<Vec<Vec<f32>>> {
-        // Embeddings 端点与 chat 协议无关（Responses 只替代 chat 推理），直接复用。
-        http::call_embeddings(&self.client, provider, texts).await
     }
 }
 

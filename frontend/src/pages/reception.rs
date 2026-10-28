@@ -97,6 +97,25 @@ pub fn Reception() -> Element {
     let mut embedding_api_key = use_signal(String::new);
     let mut embedding_base_url = use_signal(String::new);
 
+    // 向量模型占位符随服务商类型变化：方舟多模态与本地模型的模型名/根地址完全不同，
+    // 统一用 FastEmbed 示例会把用户引向错误配置（本次修复唤醒链路的同一类瑕疵）
+    let embedding_model_placeholder = match embedding_provider_type() {
+        7 => "例如：doubao-embedding-vision",
+        3 => "例如：doubao-embedding-large-text-240715",
+        0 => "例如：text-embedding-3-small",
+        _ => "例如：BAAI/bge-small-en-v1.5",
+    };
+    let embedding_base_url_placeholder = match embedding_provider_type() {
+        7 | 3 => "https://ark.cn-beijing.volces.com/api/v3",
+        6 => "本地模型无需填写",
+        _ => "自定义代理地址（可选）",
+    };
+    let embedding_api_key_placeholder = match embedding_provider_type() {
+        6 => "FastEmbed 无需填写",
+        7 | 3 => "方舟 API Key",
+        _ => "sk-...",
+    };
+
     let mut auth = use_context::<Signal<AuthState>>();
 
     // 页面加载：登录态自检 + 初始化状态检查
@@ -1079,7 +1098,7 @@ pub fn Reception() -> Element {
                                                                 "data-testid": "init-embedding-model-name",
                                                                 value: "{embedding_model_name}",
                                                                 oninput: move |e| embedding_model_name.set(e.value()),
-                                                                placeholder: "例如：BAAI/bge-small-en-v1.5",
+                                                                placeholder: "{embedding_model_placeholder}",
                                                             }
                                                         }
 
@@ -1090,7 +1109,7 @@ pub fn Reception() -> Element {
                                                                 r#type: "password",
                                                                 value: "{embedding_api_key}",
                                                                 oninput: move |e| embedding_api_key.set(e.value()),
-                                                                placeholder: "FastEmbed 无需填写",
+                                                                placeholder: "{embedding_api_key_placeholder}",
                                                             }
                                                         }
 
@@ -1101,7 +1120,10 @@ pub fn Reception() -> Element {
                                                                 r#type: "text",
                                                                 value: "{embedding_base_url}",
                                                                 oninput: move |e| embedding_base_url.set(e.value()),
-                                                                placeholder: "自定义代理地址（可选）",
+                                                                placeholder: "{embedding_base_url_placeholder}",
+                                                            }
+                                                            p { class: "text-xs text-base-content/60",
+                                                                "只填 API 根地址，勿包含 /embeddings 等端点路径（系统会自动拼接）"
                                                             }
                                                         }
                                                     }

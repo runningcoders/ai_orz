@@ -10,7 +10,7 @@ use crate::models::vector::{VectorIndexParams, VectorPayload, Vectorizable};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::{ChatApiFlavor, ProviderType};
-use common::error::Result;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 pub mod http;
@@ -90,12 +90,21 @@ pub trait CortexDao: Send + Sync {
     ) -> Result<ThinkResult>;
 
     /// 文本转向量（原始向量）
+    ///
+    /// 默认实现显式失败：只有厂商实现（[`CortexDaoRegistry::embed_dao`] 选出的
+    /// OpenAI 兼容 DAO）具备向量化能力。chat 协议实现（如 Responses DAO）不提供
+    /// 该能力，也不应被路由到 —— 默认失败把「误路由」变成可见错误而非静默走错端点。
     async fn embed(
         &self,
-        ctx: RequestContext,
-        provider: &ModelProviderPo,
-        texts: &[String],
-    ) -> Result<Vec<Vec<f32>>>;
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
+        Err(err!(
+            UnsupportedOperation,
+            "this CortexDao does not support embeddings; route via CortexDaoRegistry::embed_dao"
+        ))
+    }
 
     /// 向量化实体（返回完整 VectorIndexParams，用于索引场景）
     async fn embed_entity(
@@ -173,8 +182,16 @@ fn provider_api_flavor(provider: &ModelProviderPo) -> ChatApiFlavor {
 
 /// Cortex DAO 注册表
 ///
-/// 路由是**两维正交**的：`config.api_flavor` 定 wire 协议（先判定，错了必然 400），
-/// `provider_type` 定厂商/端点。所有实现都是无状态单例。
+/// 路由按**调用面**分两个入口，而不是一条规则套所有方法：
+/// - [`Self::chat_dao`]：`think()` 面，`config.api_flavor` 先定 wire 协议
+///   （错了必然 400），`provider_type` 再定厂商/端点；
+/// - [`Self::embed_dao`]：`embed()` 面，Embeddings 端点与 chat wire 协议无关，
+///   `api_flavor` **不参与**路由，只看 `provider_type`。
+///
+/// 这条拆分修的是「配置了 Responses 协议的向量模型被错误路由到 Responses DAO」
+/// 的历史缺陷（典型现象：方舟 vision embedding 走 `/embeddings` 报
+/// 「该模型不能使用该 API」，而真正的 `/embeddings/multimodal` 分支不可达）。
+/// 所有实现都是无状态单例。
 pub struct CortexDaoRegistry {
     openai_compatible: Arc<openai::OpenAiCompatibleCortexDao>,
     responses: Arc<responses::ResponsesCortexDao>,
@@ -189,20 +206,30 @@ impl CortexDaoRegistry {
         }
     }
 
-    /// 根据 provider 获取对应的 CortexDao
+    /// 获取思考（`think()`）面 DAO
     ///
     /// 入参是完整的 `&ModelProviderPo` 而非 `ProviderType`：协议口味
     /// (`config.api_flavor`) 与厂商 (`provider_type`) 是**正交两维**，
     /// 前者只能从 config 读。
-    pub fn get(&self, provider: &ModelProviderPo) -> Arc<dyn CortexDao> {
+    pub fn chat_dao(&self, provider: &ModelProviderPo) -> Arc<dyn CortexDao> {
         match provider_api_flavor(provider) {
             ChatApiFlavor::Responses => self.responses.clone(),
-            ChatApiFlavor::ChatCompletions => self.compatible_dao(provider.provider_type),
+            ChatApiFlavor::ChatCompletions => self.provider_type_dao(provider.provider_type),
         }
     }
 
-    /// Chat Completions 协议下按厂商路由（历史行为，未改动）
-    fn compatible_dao(&self, provider_type: ProviderType) -> Arc<dyn CortexDao> {
+    /// 获取向量化（`embed()`）面 DAO
+    ///
+    /// **刻意忽略 `config.api_flavor`**：`/embeddings` 是独立端点，与 chat 走
+    /// `/chat/completions` 还是 `/responses` 无关。若沿用 chat 的协议口味来选 DAO，
+    /// 配了 Responses 的向量模型会被路由到 Responses DAO —— 它不提供向量化能力，
+    /// 且 DoubaoVision 的 `/embeddings/multimodal` 分支永远不可达。
+    pub fn embed_dao(&self, provider: &ModelProviderPo) -> Arc<dyn CortexDao> {
+        self.provider_type_dao(provider.provider_type)
+    }
+
+    /// 按厂商路由到具体实现（chat_completions 与 embeddings 共用同一张厂商表）
+    fn provider_type_dao(&self, provider_type: ProviderType) -> Arc<dyn CortexDao> {
         match provider_type {
             ProviderType::OpenAI
             | ProviderType::DeepSeek
@@ -216,12 +243,12 @@ impl CortexDaoRegistry {
                 // TODO Task 6: 返回 FastEmbedCortexDao
                 self.openai_compatible.clone() // 临时 fallback
             }
-            // jev（System One 决策模型）不兼容 OpenAI 协议，不属于 cortex chat 路由；
+            // jev（System One 决策模型）不兼容 OpenAI 协议，不属于 cortex 路由；
             // 一期未接运行时，正常业务不会走到此分支。误用时显式报错而非静默
             // fallback（防 FastEmbed「枚举已挂、实现悬空」反例扩散到 Jev）。
             ProviderType::Jev => {
                 panic!(
-                    "Jev/System One is a cerebellum decision model, not a cortex chat provider; use dao::cerebellum::dao() for fast decisions"
+                    "Jev/System One is a cerebellum decision model, not a cortex chat/embedding provider; use dao::cerebellum::dao() for fast decisions"
                 )
             }
         }
