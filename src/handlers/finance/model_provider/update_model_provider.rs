@@ -16,7 +16,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_model_provider",
     name = "Update Provider Config",
-    description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. For chat (non-embedding) models max_context_length cannot be cleared (it backs the context-compaction threshold). Returns the updated provider, plus rebuild_task_id when an active embedding provider's config changed and a vector rebuild was scheduled. Fails if not found.",
+    description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. For chat (non-embedding) models max_context_length cannot be cleared (it backs the context-compaction threshold). Returns the updated provider, plus rebuild_task_id only when the active embedding provider's model_name changed (vector space is model-determined; credential/endpoint edits do not rebuild). Fails if not found.",
     params = "common::api::UpdateModelProviderRequest",
     tags = "admin"
 )]
@@ -35,24 +35,18 @@ pub async fn update_model_provider(
 
     let ctx = enrich_ctx!(&ctx, &provider);
 
-    // Embedding 配置变化检测：仅「使用中(Normal)」的配置变化需要重建向量索引；
+    // 向量重建触发条件：仅「使用中(Normal)」Embedding 且 **模型 id（model_name）** 变化。
+    // 向量空间由模型本身决定；api_key / base_url 只是接入参数（换 key、换代理不改变
+    // 维度与语义），对它们也触发重建等于每次保存都白跑一次全量重建。
     // Disabled 的编辑不重建（启用切换时 switch 全量重建兜底）。
     // 注意：status 判断必须用更新前的值（在 params.status 应用前记录）。
     let was_enabled_embedding =
         provider.po.capability.is_embedding() && provider.po.status == ModelProviderStatus::Normal;
-    let embedding_config_changed = was_enabled_embedding
-        && (params
+    let embedding_model_changed = was_enabled_embedding
+        && params
             .model_name
             .as_deref()
-            .is_some_and(|v| v != provider.po.model_name)
-            || params
-                .api_key
-                .as_deref()
-                .is_some_and(|v| v != provider.po.api_key)
-            || params
-                .base_url
-                .as_deref()
-                .is_some_and(|v| provider.po.base_url.as_deref() != Some(v)));
+            .is_some_and(|v| v != provider.po.model_name);
 
     // Update fields
     if let Some(name) = params.name {
@@ -125,9 +119,9 @@ pub async fn update_model_provider(
         .update_model_provider(ctx.clone(), &provider)
         .await?;
 
-    // 使用中 Embedding 的配置变化 → 向量空间变化，注册全量重建。
+    // 使用中 Embedding 的模型 id 变化 → 向量空间变化，注册全量重建。
     // 本路径触发的重建不软删旧 provider（同模型原地改配置），与 switch 语义不同，属预期。
-    let rebuild_task_id = if embedding_config_changed {
+    let rebuild_task_id = if embedding_model_changed {
         let task = Arc::new(RebuildVectorsTask::new(ctx));
         Some(registry().register(task).await)
     } else {

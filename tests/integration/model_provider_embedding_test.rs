@@ -4,8 +4,9 @@
 //! - 首个 Embedding 创建 → 直接启用（Normal），并注册全量向量重建（后补场景）
 //! - 已有启用的 Embedding 时再创建 → 成功但落库为未启用（Disabled=2），不注册重建
 //! - 启用 Disabled 的 Embedding → 409 switch_required → 走 switch 完成切换确认
-//! - 编辑 Normal 的 Embedding 配置（model_name/api_key/base_url）→ 注册重建；
-//!   编辑 Disabled 的 → 不注册（启用切换时 switch 全量重建兜底）
+//! - 编辑 Normal 的 Embedding **模型 id（model_name）** → 注册重建；
+//!   编辑 Disabled 的 → 不注册（启用切换时 switch 全量重建兜底）；
+//!   编辑 Normal 的接入参数（api_key/base_url）→ 不注册（向量空间不变）
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -222,6 +223,42 @@ async fn test_update_enabled_embedding_model_triggers_rebuild(pool: SqlitePool) 
             .and_then(|v| v.as_str())
             .is_some(),
         "model_name change on enabled embedding should trigger rebuild"
+    );
+}
+
+/// 编辑使用中（Normal）embedding 的接入参数（api_key/base_url）→ 不触发重建：
+/// 向量空间由模型 id 决定，换凭证 / 换代理不改变向量维度与语义。
+#[sqlx::test]
+async fn test_update_enabled_embedding_credentials_no_rebuild(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
+
+    let (status, body) = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-Cred"), &jwt)
+        .await;
+    let id = crate::common::assert_api_ok(status, &body)
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("id")
+        .to_string();
+
+    let update = serde_json::json!({
+        "id": id,
+        "api_key": "rotated-key",
+        "base_url": "https://example.com/v1",
+    });
+    let (status, body) = app
+        .put_with_jwt(&format!("{}/{}", PROVIDERS_PATH, id), &update, &jwt)
+        .await;
+    assert_eq!(status, 200);
+    assert!(
+        crate::common::assert_api_ok(status, &body)
+            .get("rebuild_task_id")
+            .is_none(),
+        "credential/endpoint edits on enabled embedding must NOT trigger rebuild"
     );
 }
 

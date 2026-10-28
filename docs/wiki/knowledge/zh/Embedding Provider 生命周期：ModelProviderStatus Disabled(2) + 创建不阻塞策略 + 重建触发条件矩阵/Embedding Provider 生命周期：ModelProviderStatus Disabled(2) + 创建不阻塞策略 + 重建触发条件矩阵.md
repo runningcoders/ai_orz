@@ -32,7 +32,7 @@ source_files:
 
   - src/handlers/finance/model_provider/create_model_provider.rs#L1-L90 (回读落库状态；首个 Normal Embedding 创建注册 RebuildVectorsTask；响应含 status + rebuild_task_id + 上下文长度；Config 含 max_context_length/recommended_context_length)
 
-  - src/handlers/finance/model_provider/update_model_provider.rs#L1-L145 (was_enabled_embedding 用更新前值判断；embedding_config_changed 仅 Normal Embedding 配置变化触发重建；Disabled 编辑不重建；上下文长度 partial update 三态逻辑)
+  - src/handlers/finance/model_provider/update_model_provider.rs#L1-L145 (was_enabled_embedding 用更新前值判断；embedding_model_changed 仅 Normal Embedding 的 model_name 变化触发重建；Disabled 编辑与 api_key/base_url 变更不重建；上下文长度 partial update 三态逻辑)
 
   - src/handlers/finance/model_provider/switch_embedding.rs#L1-L55 (切换：软删旧 provider + 启用新 + 全量重建)
 
@@ -112,7 +112,7 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 | [src/models/model_provider.rs](src/models/model_provider.rs) | PO + Entity | `ModelProviderPo` 含 `status: ModelProviderStatus`；`ModelProvider::new()` 默认 `Normal` |
 | [src/service/domain/finance/model_provider.rs](src/service/domain/finance/model_provider.rs) | Domain 核心逻辑 | `create_model_provider`：Embedding 降级 Disabled；`update_model_provider`：409 switch_required；`switch_embedding_provider`：软删旧+启用新 |
 | [src/handlers/finance/model_provider/create_model_provider.rs](src/handlers/finance/model_provider/create_model_provider.rs) | 创建 Handler | 回读落库状态；首个 Normal Embedding 注册重建；响应含 status + rebuild_task_id |
-| [src/handlers/finance/model_provider/update_model_provider.rs](src/handlers/finance/model_provider/update_model_provider.rs) | 更新 Handler | `embedding_config_changed` 检测；仅 Normal Embedding 配置变化触发重建 |
+| [src/handlers/finance/model_provider/update_model_provider.rs](src/handlers/finance/model_provider/update_model_provider.rs) | 更新 Handler | `embedding_model_changed` 检测；仅 Normal Embedding 的 model_name 变化触发重建 |
 | [src/handlers/finance/model_provider/switch_embedding.rs](src/handlers/finance/model_provider/switch_embedding.rs) | 切换 Handler | 软删旧 provider + 启用新 + 注册 RebuildVectorsTask |
 | [src/handlers/finance/model_provider/rebuild_vectors_task.rs](src/handlers/finance/model_provider/rebuild_vectors_task.rs) | 重建后台任务 | 顺序重建 7 类实体（agent/memory/skill/task/project/message/tool）的向量索引 |
 | [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs) | 初始化 Handler | 动态步骤数 `3 + chat + embedding`；条件化创建 provider；入口边界校验 |
@@ -144,7 +144,8 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 
 | 场景 | 是否注册重建 | 原因 |
 |------|-------------|------|
-| 编辑 Normal Embedding 的 model_name/api_key/base_url | ✅ | 向量空间变化，使用中的索引需重建 |
+| 编辑 Normal Embedding 的 model_name（模型 id） | ✅ | 向量空间由模型决定，使用中的索引需重建 |
+| 编辑 Normal Embedding 的 api_key/base_url/name | ❌ | 接入参数变化，向量维度与语义不变，重建无意义 |
 | 编辑 Disabled Embedding | ❌ | 未生效，启用时 switch 全量重建兜底 |
 
 ### 3.3 初始化动态步骤数
@@ -171,7 +172,7 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 ## §4 硬约束与回归红线
 
 1. ❌ **禁止 Embedding 创建阻塞**：已有启用 Embedding 时新创建必须降级为 Disabled(2)，不得返回 409/错误；违反 = 用户无法配置备用模型。
-2. ❌ **禁止 Disabled Embedding 编辑触发重建**：只有使用中(Normal) Embedding 的 `model_name`/`api_key`/`base_url` 变化才触发重建；违反 = 无谓的全量重建浪费资源。
+2. ❌ **禁止非模型 id 变更触发重建**：只有使用中(Normal) Embedding 的 `model_name`（模型 id）变化才触发重建；`api_key`/`base_url` 等接入参数变化不得重建；违反 = 每次保存配置都白跑一次全量重建。
 3. ❌ **禁止在 Domain 层绕过 switch 直接启用 Embedding**：将 Disabled 改为 Normal 必须走 `update_model_provider` 的 409 `embedding_provider_switch_required` 守卫，强制前端弹确认 modal 告知用户后果。
 4. ✅ **初始化步骤数必须动态计算**：`total_steps = 3 + chat + embedding`，不得硬编码 4/5；违反 = 前端进度条显示错误。
 5. ✅ **初始化响应 chat_provider_id 必须为 Option**：未配置对话模型时响应中为 null，不得返回空字符串或随机 ID。

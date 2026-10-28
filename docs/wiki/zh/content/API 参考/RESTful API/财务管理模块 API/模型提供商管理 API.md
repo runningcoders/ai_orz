@@ -241,7 +241,7 @@ Handler-->>Client : RebuildProgressResponse
 ### 领域与数据访问层要点
 - 领域层：
   - 创建：Embedding 采用「创建不阻塞 + 启用时切换」策略——已有启用 Embedding 时新创建降级为 Disabled(2)，首个创建直接 Normal 启用
-  - 更新：仅使用中(Normal) Embedding 的 model_name/api_key/base_url 变化触发重建；Disabled 编辑不触发（启用时 switch 全量重建兜底）
+  - 更新：仅使用中(Normal) Embedding 的 model_name（模型 id）变化触发重建；api_key/base_url 等接入参数变更与 Disabled 编辑不触发（启用时 switch 全量重建兜底）
   - 切换嵌入提供商：先禁用旧，再启用新，必要时触发重建
   - 连接测试：委托底层 brain_dal.test_connection
 - ModelProviderStatus 枚举：Deleted=0(软删除) / Normal=1(启用) / Disabled=2(未启用)
