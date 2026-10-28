@@ -415,7 +415,11 @@ fn factory_po_metadata_and_registration_contract() {
     assert_eq!(po.id, "skillhub_cli");
     assert_eq!(po.control_mode, ControlMode::Auto);
     assert_eq!(po.protocol, ToolProtocol::Builtin);
-    assert_eq!(po.get_tags(), vec!["skillhub"]);
+    // tag 双挂（AMan 2026-10-27 拍板）：`skillhub` 保留独立包，
+    // `skill_management` 让技能管理工具包唤醒时一并注入本 CLI。
+    // 锁住顺序与内容，防有人「顺手」删掉其中一个台阶（删 skill_management
+    // 等于把技能分发 CLI 从所有在职 Agent 的工具面里悄悄摘掉）。
+    assert_eq!(po.get_tags(), vec!["skillhub", "skill_management"]);
     // config.command 默认 `~/.skillhub/skillhub`（方案 v2 口径）
     assert_eq!(
         po.cli_command().as_deref(),

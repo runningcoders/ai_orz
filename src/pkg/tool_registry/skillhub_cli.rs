@@ -318,7 +318,17 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for SkillhubCliToolFactory {
                 command: Some(SKILLHUB_DEFAULT_PATH_SPEC.to_string()),
                 ..Default::default()
             }),
-            tags: serde_json::to_string(&vec!["skillhub".to_string()]).unwrap_or_default(),
+            // tag 双挂：`skillhub` 保留独立包（订阅式最小面），
+            // `skill_management` 让「技能管理」工具包连同技能分发 CLI 一并唤醒注入
+            // （AMan 2026-10-27 拍板：skillhub_cli 归入技能管理域）。
+            // 必须写在代码侧：`sync_builtin_tools_to_db` 视 tags 为**代码所有权字段**
+            // （每次启动 sync 以代码定义为准刷新 name/description/control_mode/
+            //  parameters_schema/tags），运行时 update_tool 改 tags 会在下次启动被覆盖回去。
+            tags: serde_json::to_string(&vec![
+                "skillhub".to_string(),
+                "skill_management".to_string(),
+            ])
+            .unwrap_or_default(),
             ..Default::default()
         };
         po.fill_defaults_for_builtin();
