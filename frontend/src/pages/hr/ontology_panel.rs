@@ -369,14 +369,39 @@ fn skeleton_canvas_edges(
     edges
 }
 
-/// 把 dagre 路由回写到边上；同一对类的多条关系按垂直于对向的向量错开
+/// 折线按**局部法向**整体平移：每个顶点的法向取其前后两段方向的平均，
+/// 平移后的折线与原路由通道保持平行。
+///
+/// 不能用「两端点连线的全局垂线」平推：折线一旦有拐（dagre 绕卡路由必有），
+/// 全局垂线在拐角处会把整条折线推离自己的通道，看起来线头乱飞、甚至压到别的
+/// 卡片上；按局部法向平移则任何形状都只是「平行地挪开一档」。
+fn skeleton_offset_route(pts: &[(f64, f64)], off: f64) -> Vec<(f64, f64)> {
+    if off.abs() <= f64::EPSILON || pts.len() < 2 {
+        return pts.to_vec();
+    }
+    let n = pts.len();
+    pts.iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let prev = if i == 0 { *p } else { pts[i - 1] };
+            let next = if i + 1 >= n { *p } else { pts[i + 1] };
+            let (dx, dy) = (next.0 - prev.0, next.1 - prev.1);
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < f64::EPSILON {
+                return *p;
+            }
+            (p.0 - dy / len * off, p.1 + dx / len * off)
+        })
+        .collect()
+}
+
+/// 把 dagre 路由回写到边上；同一对类的多条关系按**局部法向**错开
 ///
 /// dagre 对同一对节点只给一条路由（正反向共用），平行关系若共用同一条折线会
 /// 完全重叠、标签糊成一团。这里按无向对分组，逐条平移 `SKELETON_PARALLEL_GAP`。
 /// 自环 / 无路由的边退回 `bulge` 弧线（有错开量才画得出）。
 fn skeleton_apply_routes(
     edges: &mut [CanvasEdge],
-    positions: &std::collections::HashMap<String, (f64, f64)>,
     routes: &std::collections::HashMap<(String, String), Vec<(f64, f64)>>,
 ) {
     let mut groups: std::collections::HashMap<(String, String), Vec<usize>> =
@@ -388,18 +413,6 @@ fn skeleton_apply_routes(
             .push(i);
     }
     for (key, idxs) in groups {
-        let perp = match (positions.get(&key.0), positions.get(&key.1)) {
-            (Some(a), Some(b)) => {
-                let (dx, dy) = (b.0 - a.0, b.1 - a.1);
-                let len = (dx * dx + dy * dy).sqrt();
-                if len < f64::EPSILON {
-                    None
-                } else {
-                    Some((-dy / len, dx / len))
-                }
-            }
-            _ => None,
-        };
         let n = idxs.len();
         for (k, &i) in idxs.iter().enumerate() {
             let off = if n > 1 {
@@ -415,18 +428,10 @@ fn skeleton_apply_routes(
                 };
                 continue;
             };
-            let mut pts = route.clone();
-            // 反向边（B→A）复用同一条路由，点序倒过来才能对齐首尾方向
+            // 先按 key 方向错开再反转：同组所有边共用一套法向，正反向才会分居两侧
+            let mut pts = skeleton_offset_route(route, off);
             if edges[i].from_id != key.0 {
                 pts.reverse();
-            }
-            if off.abs() > f64::EPSILON
-                && let Some((px, py)) = perp
-            {
-                for p in &mut pts {
-                    p.0 += px * off;
-                    p.1 += py * off;
-                }
             }
             edges[i].points = Some(pts);
             edges[i].bulge = None;
@@ -497,7 +502,7 @@ fn render_skeleton_graph(
             n.y = y;
         }
     }
-    skeleton_apply_routes(&mut edges, &layout.positions, &layout.routes);
+    skeleton_apply_routes(&mut edges, &layout.routes);
     // 选中只在渲染层筛边：继承边常驻，三元组只留与选中类相关的
     let selected_for_render = selected.as_deref();
     let render_edges: Vec<CanvasEdge> = edges

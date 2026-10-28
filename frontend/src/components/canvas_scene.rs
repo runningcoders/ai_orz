@@ -852,21 +852,45 @@ fn edge_arc_control(from: &CanvasNode, to: &CanvasNode, bulge: f64) -> (f64, f64
     crate::components::graph::quadratic_control(from.x, from.y, to.x, to.y, bulge)
 }
 
-/// 折线的首/末点收回到「实际节点半径 + 箭头间隙」：
+/// 端点 / 箭头收回到节点**可见边界**：卡片按矩形求交，圆点按半径 + 间隙
+///
+/// 卡片节点的 `radius` 是**外接圆**半径（力导向碰撞避让用它），若线头也按它
+/// 回退，斜向/纵向连线下线头会停在卡片外几十 px（168×74 的卡纵向差 47px），
+/// 看起来就是「线头没连到节点上」。这里对卡片改走矩形边界求交（与 SVG 版
+/// `graph::rect_tip_point` 同源），圆点保持原半径口径。
+///
+/// `towards` 是决定出射方向的参考点（折线的下一 waypoint / 另一端点 / 弧线
+/// 控制点）；它落在卡片内部时方向不可靠，退回中心由后绘卡片盖住。
+fn node_boundary_point(towards: (f64, f64), node: &CanvasNode) -> (f64, f64) {
+    let center = (node.x, node.y);
+    if node.is_card() {
+        let (w, h) = card_size(node);
+        let (hw, hh) = (w / 2.0, h / 2.0);
+        if (towards.0 - node.x).abs() <= hw && (towards.1 - node.y).abs() <= hh {
+            return center;
+        }
+        crate::components::graph::rect_tip_point(towards, center, (hw, hh))
+    } else {
+        arrow_tip_point(towards, center, node.radius)
+    }
+}
+
+/// 折线的首/末点收回到节点实际边界（卡片 = 矩形，圆点 = 圆周 + 箭头间隙）
+///
 /// dagre 边界交点（距心 = 节点半尺寸）被 `dagre_layout` 的 scale 放大后，
-/// 首/末点可能落在卡片外（scale>1）或卡片内（scale<1）；统一收缩/外推到
-/// `node.radius + ARROW_TIP_GAP`，与 `arrow_tip_point` 同一落点，保证线接到卡片、
-/// 箭头不被线端盖过。中间 waypoints 保留绕卡路由。
-/// 对称于 SVG 版 `graph::edge_geometry` 的 `rect_tip_point`/`start_of` 修复。
+/// 首/末点可能落在卡片外（scale>1）或卡片内（scale<1）；统一收回边界，
+/// 与箭头落点同源，保证线接到卡片、箭头不被线端盖过。中间 waypoints
+/// 保留绕卡路由。对称于 SVG 版 `graph::edge_geometry` 的 `rect_tip_point` 修复。
 fn polyline_card_endpoints(
     pts: &[(f64, f64)],
     from: &CanvasNode,
     to: &CanvasNode,
 ) -> ((f64, f64), (f64, f64)) {
     let n = pts.len();
-    let first = arrow_tip_point(pts[1], (from.x, from.y), from.radius);
-    let last = arrow_tip_point(pts[n - 2], (to.x, to.y), to.radius);
-    (first, last)
+    (
+        node_boundary_point(pts[1], from),
+        node_boundary_point(pts[n - 2], to),
+    )
 }
 
 /// 按几何形态描边一条边（节点后绘，中心端被卡片盖住，无需起点收缩）
@@ -1022,7 +1046,7 @@ fn draw_one_edge(
         return;
     }
     let arrival = edge_arrival_from(edge, from, to);
-    let tip = arrow_tip_point(arrival, (to.x, to.y), to.radius);
+    let tip = node_boundary_point(arrival, to);
     let dx = to.x - arrival.0;
     let dy = to.y - arrival.1;
     let len = (dx * dx + dy * dy).sqrt();
@@ -2251,5 +2275,48 @@ mod tests {
             "末点应收到卡片边: {last:?}"
         );
         assert!(last.1.abs() < 1e-6);
+    }
+
+    /// 卡片端点的收回距离必须按**矩形半宽/半高**，不能按外接圆半径。
+    ///
+    /// 回归「线头没有连到正确的位置」：`radius` 是碰撞用的外接圆半径，纵向连线
+    /// 若按它回退，线头会停在卡片上下方几十 px（宽卡尤其明显）。
+    #[test]
+    fn polyline_endpoints_clip_to_card_rect_not_circumcircle() {
+        let mut a = node("甲方类");
+        a.x = 0.0;
+        a.y = 0.0;
+        a.description = "父类卡片正文".to_string();
+        let (w, h) = card_size(&a);
+        a.radius = w.max(h) / 2.0;
+        let mut b = node("乙方类");
+        b.x = 0.0;
+        b.y = 600.0;
+        b.description = "子类卡片正文".to_string();
+        let (bw, bh) = card_size(&b);
+        b.radius = bw.max(bh) / 2.0;
+        assert!(
+            a.radius > h / 2.0 && b.radius > bh / 2.0,
+            "测试前提：卡片外接圆半径应大于半高（否则两口径无差）"
+        );
+
+        // 纵向折线：方向参考点分别在源下方 / 目标上方
+        let pts = vec![
+            (0.0, -b.radius * 2.0),
+            (0.0, 300.0),
+            (0.0, 600.0 + b.radius * 2.0),
+        ];
+        let (first, last) = polyline_card_endpoints(&pts, &a, &b);
+        assert!(
+            (first.1 - (h / 2.0 + ARROW_TIP_GAP)).abs() < 1e-6,
+            "首点应落在卡片下边缘外 {ARROW_TIP_GAP}px: {first:?} (半高 {})",
+            h / 2.0
+        );
+        assert!(
+            (last.1 - (b.y - bh / 2.0 - ARROW_TIP_GAP)).abs() < 1e-6,
+            "末点应落在卡片上边缘外 {ARROW_TIP_GAP}px: {last:?} (半高 {})",
+            bh / 2.0
+        );
+        assert!(first.0.abs() < 1e-6 && last.0.abs() < 1e-6);
     }
 }
