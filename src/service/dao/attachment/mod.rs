@@ -1,7 +1,7 @@
 //! Attachment DAO layer
 //! DAO 只负责 AttachmentPo 持久化和给定相对路径的基础文件读写。
 
-use crate::models::attachment::AttachmentPo;
+use crate::models::attachment::{AttachmentDescriptionUpdate, AttachmentPo};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::api::PaginationParams;
@@ -42,6 +42,14 @@ pub trait AttachmentDao: Send + Sync + std::fmt::Debug {
 
     /// 更新文件元数据。
     async fn update_file_metadata(&self, ctx: RequestContext, id: &str, size: i64) -> Result<()>;
+
+    /// 写入附件摘要元信息（关键词索引由 attachments_fts 触发器同步）。
+    async fn update_description(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: &AttachmentDescriptionUpdate,
+    ) -> Result<()>;
 
     /// 软删除。
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;

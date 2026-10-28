@@ -243,17 +243,8 @@ pub(super) async fn resolve_current_message_resources(
         return (lines, images);
     }
 
-    let mut att_ids: Vec<String> = Vec::new();
-    if message.file_meta().is_some() {
-        // 旁路文件消息：content = attachment id
-        att_ids.push(message.content().to_string());
-    }
-    let (ref_atts, ref_arts) = collect_resource_ref_ids(message.content());
-    for id in ref_atts {
-        if !att_ids.contains(&id) {
-            att_ids.push(id);
-        }
-    }
+    let att_ids = collect_current_message_attachment_ids(message);
+    let (_, ref_arts) = collect_resource_ref_ids(message.content());
     if att_ids.is_empty() && ref_arts.is_empty() {
         return (lines, images);
     }
@@ -277,10 +268,7 @@ pub(super) async fn resolve_current_message_resources(
         let po = &att.po;
         let mime = po.mime_type.clone();
         let size = po.size;
-        lines.push(format!(
-            "附件「{}」 · {} · {} 字节",
-            po.original_name, mime, size
-        ));
+        lines.push(attachment_resource_line(po, att_id));
         if let Err(reason) = image_part_admission(&mime, size, images.len()) {
             lines.push(format!("  （{reason}）"));
             continue;
@@ -306,12 +294,7 @@ pub(super) async fn resolve_current_message_resources(
         match artifact_dal.find_by_id(ctx.clone(), art_id).await {
             Ok(Some(art)) => {
                 let po = &art.po;
-                let raw_desc = po.description.trim();
-                let desc: String = if raw_desc.chars().count() > 64 {
-                    format!("{}…", raw_desc.chars().take(64).collect::<String>())
-                } else {
-                    raw_desc.to_string()
-                };
+                let desc = prompt_excerpt(&po.description, 64);
                 lines.push(format!(
                     "产物「{}」 · {} · {desc}",
                     po.name, po.file_meta.0.mime_type
@@ -329,6 +312,22 @@ pub(super) async fn resolve_current_message_resources(
     (lines, images)
 }
 
+/// 当前消息引用的附件 ID（纯收集，不做存在性解析）：
+/// 旁路文件消息优先（content = attachment id），再按协议引用顺序去重追加。
+pub(super) fn collect_current_message_attachment_ids(message: &Message) -> Vec<String> {
+    let mut att_ids: Vec<String> = Vec::new();
+    if message.file_meta().is_some() {
+        att_ids.push(message.content().to_string());
+    }
+    let (ref_atts, _) = collect_resource_ref_ids(message.content());
+    for id in ref_atts {
+        if !att_ids.contains(&id) {
+            att_ids.push(id);
+        }
+    }
+    att_ids
+}
+
 /// 协议引用 id 收集（纯函数，供单测）：attachment/artifact 分桶、去重保序；
 /// mention 等其余 scheme 不在资源上下文范围
 fn collect_resource_ref_ids(content: &str) -> (Vec<String>, Vec<String>) {
@@ -344,6 +343,30 @@ fn collect_resource_ref_ids(content: &str) -> (Vec<String>, Vec<String>) {
         }
     }
     (att_ids, art_ids)
+}
+
+/// 附件资源行：名称 + id + mime + 大小；已写入摘要时附带截断预览，
+/// 让模型能直接判断是否需要重新识别/覆盖，无需额外查询。
+fn attachment_resource_line(po: &crate::models::attachment::AttachmentPo, att_id: &str) -> String {
+    let mut line = format!(
+        "附件「{}」 (id: {att_id}) · {} · {} 字节",
+        po.original_name, po.mime_type, po.size
+    );
+    let description = po.description.trim();
+    if !description.is_empty() {
+        line.push_str(&format!(" · 摘要：{}", prompt_excerpt(description, 64)));
+    }
+    line
+}
+
+/// 资源行摘录：trim 后超长截断并加省略号（附件与产物行统一口径）
+fn prompt_excerpt(text: &str, max_chars: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() > max_chars {
+        format!("{}…", trimmed.chars().take(max_chars).collect::<String>())
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// 图像上限校验（纯函数，供单测）：mime 白名单 image/* + 单图 ≤10MB + 单条 ≤4 张；

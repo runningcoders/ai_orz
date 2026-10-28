@@ -900,6 +900,10 @@ fn finance_routes() -> Router {
             get(handlers::finance::attachment::list_attachments::list_attachments_handler),
         )
         .route(
+            "/attachments/description",
+            post(handlers::finance::attachment::save_attachment_description::save_attachment_description_handler),
+        )
+        .route(
             "/attachments/{id}/content",
             get(handlers::finance::attachment::get_attachment_content::get_attachment_content_handler),
         )

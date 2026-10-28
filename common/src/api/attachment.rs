@@ -40,6 +40,18 @@ pub struct AttachmentDetail {
     pub size: u64,
     /// 用途标记。
     pub purpose: String,
+    /// 附件内容摘要（描述「看到了什么」；未写入时为空字符串）。
+    pub description: String,
+    /// 附件用途摘要（结合用户文字推断的用途）。
+    pub description_usage: String,
+    /// 摘要来源（如 agent_tool）。
+    pub description_source: String,
+    /// 产出摘要的模型标识。
+    pub description_model: String,
+    /// 产出摘要时的消息 ID。
+    pub description_message_id: String,
+    /// 摘要写入时间戳（毫秒，0 表示未写入）。
+    pub described_at: i64,
     /// 文件资产所属用户 ID。
     pub root_user_id: String,
     /// 上传人 ID。
@@ -107,6 +119,22 @@ pub struct CreateTextAttachmentRequest {
 
 /// JSON 创建小型 UTF-8 文本 Attachment 响应。
 pub type CreateTextAttachmentResponse = AttachmentDetail;
+
+/// 写入附件摘要请求（Agent 识别附件后调用）。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Params)]
+pub struct SaveAttachmentDescriptionRequest {
+    /// 目标 Attachment ID。
+    pub attachment_id: String,
+    /// 附件内容摘要：客观描述「看到了什么」。
+    pub content: String,
+    /// 结合用户文字推断的用途（可选）。
+    pub usage: Option<String>,
+    /// 产出摘要的当前消息 ID（可选，便于溯源）。
+    pub message_id: Option<String>,
+}
+
+/// 写入附件摘要响应。
+pub type SaveAttachmentDescriptionResponse = AttachmentDetail;
 
 /// Attachment 文本内容响应，组合 Attachment metadata 与文本内容。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

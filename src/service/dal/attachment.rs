@@ -2,7 +2,9 @@
 //!
 //! 职责：上传编排、文件名/路径生成、文件类型推断、元数据与文件写入组合。
 
-use crate::models::attachment::{Attachment, AttachmentPo, AttachmentUpload, TextAttachmentCreate};
+use crate::models::attachment::{
+    Attachment, AttachmentDescriptionUpdate, AttachmentPo, AttachmentUpload, TextAttachmentCreate,
+};
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment;
 use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery};
@@ -71,6 +73,14 @@ pub trait AttachmentDal: Send + Sync {
 
     /// 删除 Attachment（软删除元数据，不物理删除文件）。
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    /// 写入附件摘要元信息（覆盖旧值；关键词索引由 DAO 触发器同步）。
+    async fn describe_attachment(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: AttachmentDescriptionUpdate,
+    ) -> Result<Attachment>;
 
     /// 读取 Attachment 文件 bytes。
     fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>>;
@@ -169,6 +179,32 @@ impl AttachmentDal for AttachmentDalImpl {
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.attachment_dao.delete(ctx, id).await
+    }
+
+    async fn describe_attachment(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: AttachmentDescriptionUpdate,
+    ) -> Result<Attachment> {
+        let attachment = self
+            .attachment_dao
+            .find_by_id(ctx.clone(), id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Attachment {} not found", id))?;
+
+        // 归属校验：系统上下文（cron / 内部任务）放行，其余仅允许资产所有者写入。
+        let is_system = ctx.caller_type() == common::enums::CallerType::System;
+        if !is_system && attachment.root_user_id != ctx.uid() {
+            bail_err!(NotFound, "Attachment {} not found", id);
+        }
+
+        self.attachment_dao
+            .update_description(ctx.clone(), id, &update)
+            .await?;
+        self.get_by_id(ctx, id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Attachment {} not found", id))
     }
 
     fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>> {

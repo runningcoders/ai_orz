@@ -3,8 +3,8 @@
 //! 通用上传文件资产管理，归属 Finance Domain。
 
 use crate::models::attachment::{
-    Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
-    AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
+    Attachment, AttachmentDescriptionUpdate, AttachmentGetOptions, AttachmentReadResult,
+    AttachmentTextContent, AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
@@ -137,6 +137,30 @@ impl AttachmentManage for FinanceDomainImpl {
 
     async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.attachment_dal.delete(ctx, id).await
+    }
+
+    async fn describe_attachment(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: AttachmentDescriptionUpdate,
+    ) -> Result<Attachment> {
+        let description = update.description.trim().to_string();
+        if description.is_empty() {
+            bail_err!(InvalidRequest, "附件摘要内容不能为空");
+        }
+        let usage = update.usage.trim().to_string();
+        self.attachment_dal
+            .describe_attachment(
+                ctx,
+                id,
+                AttachmentDescriptionUpdate {
+                    description,
+                    usage,
+                    ..update
+                },
+            )
+            .await
     }
 }
 

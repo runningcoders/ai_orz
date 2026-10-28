@@ -3,8 +3,8 @@
 //! 通用上传文件资产 CRUD 测试，属于 Finance Domain。
 
 use crate::models::attachment::{
-    Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
-    AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
+    Attachment, AttachmentDescriptionUpdate, AttachmentGetOptions, AttachmentReadResult,
+    AttachmentTextContent, AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
@@ -42,6 +42,11 @@ fn init_test_env(
     crate::service::dao::a2a_callback::init();
     // user dao：dal::message_channel 注入飞书凭证引用解析依赖
     crate::service::dao::user::init();
+    // user_credential dao：dal::message_channel 构造时取该单例
+    crate::service::dao::user_credential::init();
+    // message / project dao：dal::message_channel 构造时取该单例
+    crate::service::dao::message::init();
+    crate::service::dao::project::init();
     crate::service::dal::model_provider::init();
     crate::service::dal::message_channel::init();
     crate::service::dal::mcp_server::init();
@@ -173,6 +178,74 @@ async fn test_get_attachment_hides_cross_root_user_assets(pool: SqlitePool) -> R
         .await?;
 
     assert!(found.is_none());
+    Ok(())
+}
+
+fn description_update(description: &str, usage: &str) -> AttachmentDescriptionUpdate {
+    AttachmentDescriptionUpdate {
+        description: description.to_string(),
+        usage: usage.to_string(),
+        source: "agent_tool".to_string(),
+        model: "test-model".to_string(),
+        message_id: "msg-1".to_string(),
+        described_at: 1000,
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_describe_attachment_writes_metadata_and_rejects_empty(
+    pool: SqlitePool,
+) -> Result<()> {
+    let (_temp_dir, domain, ctx) = init_test_env(pool);
+    let attachment = domain
+        .attachment_manage()
+        .create_attachment(ctx.clone(), create_upload())
+        .await?;
+
+    let described = domain
+        .attachment_manage()
+        .describe_attachment(
+            ctx.clone(),
+            attachment.id(),
+            description_update(" 技能安装说明 ", " 用户想安装技能 "),
+        )
+        .await?;
+
+    assert_eq!(described.po.description, "技能安装说明");
+    assert_eq!(described.po.description_usage, "用户想安装技能");
+    assert_eq!(described.po.description_source, "agent_tool");
+    assert_eq!(described.po.description_model, "test-model");
+    assert_eq!(described.po.description_message_id, "msg-1");
+    assert_eq!(described.po.described_at, 1000);
+
+    let rejected = domain
+        .attachment_manage()
+        .describe_attachment(ctx, attachment.id(), description_update("   ", ""))
+        .await
+        .unwrap_err();
+    assert_eq!(rejected.http_status(), 400);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_describe_attachment_rejects_cross_root_user(pool: SqlitePool) -> Result<()> {
+    let (_temp_dir, domain, owner_ctx) = init_test_env(pool.clone());
+    let attachment = domain
+        .attachment_manage()
+        .create_attachment(owner_ctx, create_upload())
+        .await?;
+    let other_ctx = crate::pkg::request_context_test_support::new_test_ctx("other-user", pool);
+
+    let result = domain
+        .attachment_manage()
+        .describe_attachment(
+            other_ctx,
+            attachment.id(),
+            description_update("越权写入", ""),
+        )
+        .await;
+
+    assert!(result.is_err());
     Ok(())
 }
 

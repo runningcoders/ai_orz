@@ -270,6 +270,42 @@ fn message_tools_are_neural_reachable() {
     }
 }
 
+/// 护栏：附件**读侧 + 摘要写侧**工具必须对每个 Agent 可达（`neural` + `attachment`）。
+///
+/// 背景：7 个 attachment 工具原先一律只挂 `file_management`，而该 tag 既不在
+/// `BASE_AGENT_PACKS`、也不在任何 Agent 的 `installed_tags` ⇒ 它们**全是死工具**。
+/// 而 Awaken 会往资源行里写「附件 id + 摘要预览」，提示词也要求模型「没有摘要时
+/// 调用 `save_attachment_description` 写入」——工具不可达 ⇒ 引导全是空话：
+/// 模型看得见附件名与 id，却既读不到元信息、也写不了摘要，附件摘要链路只剩写入
+/// 数据库的 schema，没有任何生产者。
+///
+/// 分层与 ontology 同构：读侧 + 摘要写侧 `neural`（出生可达）并归入 `attachment`
+/// 主题包；管理写侧（create/update/delete/list）保留 `file_management`，需装包授权。
+#[test]
+fn attachment_read_and_describe_tools_are_agent_reachable() {
+    let registry = crate::pkg::tool_registry::get_registry();
+    for id in [
+        "get_attachment",
+        "get_attachment_content",
+        "save_attachment_description",
+    ] {
+        let factory = registry
+            .get_builtin_factory(id)
+            .unwrap_or_else(|| panic!("builtin tool {} not registered", id));
+        let tags = factory.create_po().get_tags();
+        assert!(
+            tags.iter().any(|t| t == "neural"),
+            "{id} 是附件读侧/摘要写侧工具，必须带 neural tag（否则不在任何 Agent 的工具面里，\
+             Awaken 资源行与提示词里的附件引导会变成静默空话）。实际 tags={tags:?}"
+        );
+        assert!(
+            tags.iter().any(|t| t == "attachment"),
+            "{id} 必须归入 attachment 主题工具包（否则 install_tool_pack(\"attachment\") \
+             装不到它，Agent 拿到的是半套附件能力）。实际 tags={tags:?}"
+        );
+    }
+}
+
 /// 护栏：所有内置工具的参数 schema 必须是「LLM 友好」形状（无 `$ref`/`anyOf`/`oneOf`）。
 ///
 /// 背景：模型在属性层看不到 `type`/`enum` 时，会把枚举值写成**未加引号的裸标识符**

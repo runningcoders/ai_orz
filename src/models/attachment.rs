@@ -25,6 +25,18 @@ pub struct AttachmentPo {
     pub size: i64,
     /// 用途标记。
     pub purpose: String,
+    /// 附件内容摘要（Agent 识别后写入，描述「看到了什么」）。
+    pub description: String,
+    /// 附件用途摘要（结合用户文字推断的用途）。
+    pub description_usage: String,
+    /// 摘要来源（如 agent_tool）。
+    pub description_source: String,
+    /// 产出摘要的模型标识。
+    pub description_model: String,
+    /// 产出摘要时的消息 ID。
+    pub description_message_id: String,
+    /// 摘要写入时间戳（毫秒）；0 表示未写入。
+    pub described_at: i64,
     /// 状态：0=已删除，1=正常。
     pub status: i32,
     /// 文件资产所属用户。
@@ -101,6 +113,23 @@ pub struct TextContentUpdate {
     pub expected_updated_at: Option<i64>,
 }
 
+/// 附件摘要写入命令。
+#[derive(Debug, Clone)]
+pub struct AttachmentDescriptionUpdate {
+    /// 内容摘要（看到了什么）。
+    pub description: String,
+    /// 用途摘要（结合用户文字推断的用途）。
+    pub usage: String,
+    /// 摘要来源（如 agent_tool）。
+    pub source: String,
+    /// 产出摘要的模型标识。
+    pub model: String,
+    /// 产出摘要时的消息 ID。
+    pub message_id: String,
+    /// 摘要写入时间戳（毫秒）。
+    pub described_at: i64,
+}
+
 /// Attachment 文本内容业务返回对象。
 #[derive(Debug, Clone)]
 pub struct AttachmentTextContent {
@@ -167,6 +196,12 @@ impl AttachmentPo {
             file_type,
             size,
             purpose,
+            description: String::new(),
+            description_usage: String::new(),
+            description_source: String::new(),
+            description_model: String::new(),
+            description_message_id: String::new(),
+            described_at: 0,
             status: 1,
             root_user_id,
             created_by: created_by.clone(),

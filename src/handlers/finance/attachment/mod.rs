@@ -6,6 +6,7 @@ pub mod delete_attachment;
 pub mod get_attachment;
 pub mod get_attachment_content;
 pub mod list_attachments;
+pub mod save_attachment_description;
 pub mod update_attachment_content;
 pub mod upload_attachment;
 
@@ -16,5 +17,6 @@ pub use delete_attachment::delete_attachment;
 pub use get_attachment::get_attachment;
 pub use get_attachment_content::get_attachment_content;
 pub use list_attachments::list_attachments;
+pub use save_attachment_description::save_attachment_description;
 pub use update_attachment_content::update_attachment_content;
 pub use upload_attachment::upload_attachment;

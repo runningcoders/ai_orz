@@ -1,7 +1,7 @@
 //! SQLite implementation of Attachment DAO
 
 use super::{AttachmentDao, AttachmentQuery};
-use crate::models::attachment::AttachmentPo;
+use crate::models::attachment::{AttachmentDescriptionUpdate, AttachmentPo};
 use crate::pkg::RequestContext;
 use crate::pkg::paths;
 use common::api::PagedResult;
@@ -116,7 +116,7 @@ INSERT INTO attachments (id, original_name, stored_name, relative_path, mime_typ
         let pool = ctx.db_pool();
         let attachment = sqlx::query_as::<_, AttachmentPo>(
             r#"
-SELECT id, original_name, stored_name, relative_path, mime_type, file_type, size, purpose, status, root_user_id, created_by, modified_by, created_at, updated_at
+SELECT id, original_name, stored_name, relative_path, mime_type, file_type, size, purpose, description, description_usage, description_source, description_model, description_message_id, described_at, status, root_user_id, created_by, modified_by, created_at, updated_at
 FROM attachments
 WHERE id = ? AND "status" != 0
 "#,
@@ -140,7 +140,7 @@ WHERE id = ? AND "status" != 0
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
-            r#"SELECT id, original_name, stored_name, relative_path, mime_type, file_type, size, purpose, status, root_user_id, created_by, modified_by, created_at, updated_at FROM attachments WHERE "status" != 0"#,
+            r#"SELECT id, original_name, stored_name, relative_path, mime_type, file_type, size, purpose, description, description_usage, description_source, description_model, description_message_id, described_at, status, root_user_id, created_by, modified_by, created_at, updated_at FROM attachments WHERE "status" != 0"#,
         );
         push_query_filters(&mut list_builder, &query);
         list_builder.push(" ORDER BY created_at DESC");
@@ -193,6 +193,34 @@ UPDATE attachments SET size = ?, modified_by = ?, updated_at = ? WHERE id = ? AN
 "#,
         )
         .bind(size)
+        .bind(modified_by)
+        .bind(now)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn update_description(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: &AttachmentDescriptionUpdate,
+    ) -> Result<()> {
+        let pool = ctx.db_pool();
+        let now = common::constants::utils::current_timestamp_ms();
+        let modified_by = ctx.caller_id_or_system();
+        sqlx::query(
+            r#"
+UPDATE attachments SET description = ?, description_usage = ?, description_source = ?, description_model = ?, description_message_id = ?, described_at = ?, modified_by = ?, updated_at = ? WHERE id = ? AND "status" != 0
+"#,
+        )
+        .bind(&update.description)
+        .bind(&update.usage)
+        .bind(&update.source)
+        .bind(&update.model)
+        .bind(&update.message_id)
+        .bind(update.described_at)
         .bind(modified_by)
         .bind(now)
         .bind(id)

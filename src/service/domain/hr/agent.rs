@@ -347,7 +347,8 @@ impl HrDomainImpl {
     }
 }
 
-/// 【第一阶段：出生自带】创建 Agent 时默认安装的基础包 tags（工具包与技能包共用同一集合）。
+/// 【第一阶段：出生自带】创建 Agent 时默认安装的基础包 tags（工具包与技能包共用同一集合，
+/// `attachment` 例外：它只有工具侧，技能侧探测为空会自动跳过）。
 ///
 /// ⚠️ 判据是「**是否与角色/岗位无关**」，**不是「是否已经学会」** —— `neural` 这个名字
 /// 容易把人带偏（包括把「方法论塞进 neural」理解成「无条件占用上下文」）。
@@ -371,13 +372,20 @@ impl HrDomainImpl {
 /// 这与「工具不在工具面里」同构 —— 都不报错，是这个项目最难查的一类故障。
 ///
 /// - `neural`：神经工具/技能（工具侧=可达性，技能侧=出生自带 + 置前 + 不可卸载）；
-/// - `skill_management` / `tool_management`：Agent 自治骨架，能管理自己的技能与工具。
+/// - `skill_management` / `tool_management`：Agent 自治骨架，能管理自己的技能与工具；
+/// - `attachment`：附件读取 + 摘要写入（**仅工具侧**，无同名技能包）。附件是用户消息
+///   可直接引用的一类入参，与岗位无关 ⇒ 归出生自带，而不是组织入职包。
 ///
 /// 显式安装让每个 Agent 都持有一份自己的副本/绑定，无需加载侧再兜底；
-/// 这三个包在卸载时受保护（见 uninstall_tool_pack / uninstall_skill_pack）；
+/// 这些包在卸载时受保护（见 uninstall_tool_pack / uninstall_skill_pack）；
 /// 仅当库里已有对应已发布资源时才安装（见 train_agent 守卫）；
 /// 缺失时可通过 train_agent（POST /agents/{id}/train）补装。
-const BASE_AGENT_PACKS: &[&str] = &["neural", "skill_management", "tool_management"];
+const BASE_AGENT_PACKS: &[&str] = &[
+    "neural",
+    "skill_management",
+    "tool_management",
+    "attachment",
+];
 
 /// 【第三阶段：组织指定】入职时「组织要求你会」的包 tags。
 ///

@@ -10,12 +10,15 @@ use super::response::to_content_response;
 use common::error::{bail_err, err};
 
 /// 读取 Attachment UTF-8 文本内容
+///
+/// `neural` 必需：与 `get_attachment` 同属附件读侧，必须对每个 Agent 可达。
 #[register_handler_tool(
     id = "get_attachment_content",
     name = "Read Attachment Content",
-    description = "Read an attachment's UTF-8 text content together with its metadata. Only text files are supported (for example txt, md, json, yaml, csv, or source code) — binary attachments are rejected. Content is limited to 64 KB; use get_attachment for metadata only.",
+    description = "Read an attachment's UTF-8 text content together with its metadata, including the recorded AI summary (description / description_usage; empty description means no summary yet). Only text files are supported (for example txt, md, json, yaml, csv, or source code) — binary attachments are rejected. Content is limited to 64 KB; use get_attachment for metadata only.",
     params = "common::api::GetAttachmentContentRequest",
-    tags = "file_management"
+    neural,
+    tags = "attachment"
 )]
 #[generate_http_handler]
 pub async fn get_attachment_content(

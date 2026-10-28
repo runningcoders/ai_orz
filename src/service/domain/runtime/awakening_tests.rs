@@ -844,3 +844,66 @@ mod vision_resource_tests {
         assert!(image_part_admission("image/png", 100, 4).is_err());
     }
 }
+
+mod attachment_resource_tests {
+    use super::super::attachment_resource_line;
+    use crate::models::attachment::AttachmentPo;
+    use common::enums::FileType;
+
+    fn make_po(description: &str) -> AttachmentPo {
+        let mut po = AttachmentPo::new(
+            "att_1".to_string(),
+            "截图.png".to_string(),
+            "stored_1.png".to_string(),
+            "u1/stored_1.png".to_string(),
+            "image/png".to_string(),
+            FileType::Image,
+            125_952,
+            "user_upload".to_string(),
+            "u1".to_string(),
+            "u1".to_string(),
+        );
+        po.description = description.to_string();
+        po
+    }
+
+    /// 未记录摘要：行里只有「名称 + id + mime + 大小」，不带「摘要：」字样。
+    ///
+    /// 这个分支是模型判断「要不要调 `save_attachment_description`」的依据：
+    /// 若把空串也渲染成「摘要：」，模型会误以为已识别过而跳过写入。
+    #[test]
+    fn attachment_line_without_description_has_no_summary_marker() {
+        let line = attachment_resource_line(&make_po(""), "att_1");
+        assert_eq!(
+            line,
+            "附件「截图.png」 (id: att_1) · image/png · 125952 字节"
+        );
+        assert!(!line.contains("摘要："));
+    }
+
+    /// 已记录摘要：行尾追加截断预览，模型可直接复用、无需额外查询。
+    #[test]
+    fn attachment_line_with_description_appends_summary() {
+        let line = attachment_resource_line(&make_po("一张登录页面截图"), "att_1");
+        assert_eq!(
+            line,
+            "附件「截图.png」 (id: att_1) · image/png · 125952 字节 · 摘要：一张登录页面截图"
+        );
+    }
+
+    /// 超长摘要按 64 字符截断并加省略号（与产物行同一口径）。
+    #[test]
+    fn attachment_line_truncates_long_description() {
+        let long = "很".repeat(80);
+        let line = attachment_resource_line(&make_po(&long), "att_1");
+        assert!(line.ends_with(&format!("摘要：{}…", "很".repeat(64))));
+        assert!(!line.contains(&"很".repeat(65)));
+    }
+
+    /// 空白字符只有 trim 后才判定为空，避免把「空格摘要」当作已识别。
+    #[test]
+    fn attachment_line_treats_whitespace_description_as_empty() {
+        let line = attachment_resource_line(&make_po("   \n "), "att_1");
+        assert!(!line.contains("摘要："));
+    }
+}

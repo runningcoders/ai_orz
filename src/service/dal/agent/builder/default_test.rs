@@ -93,7 +93,7 @@ fn resource_context_block_rendered_into_current_message() {
 
     let mut b2 = DefaultPromptBuilder::new();
     b2.set_resource_context_lines(vec![
-        "附件「截图.png」 · image/png · 125952 字节".to_string(),
+        "附件「截图.png」 (id: att_1) · image/png · 125952 字节".to_string(),
         "产物「调研报告」 · text/plain · 核心结论…".to_string(),
     ]);
     b2.current_message(&make_text_message("引用了产物"));

@@ -327,8 +327,9 @@ impl ContextProvider for BusinessProvider {
             thread.len()
         );
 
-        let (resource_lines, vision_parts) =
+        let (mut resource_lines, vision_parts) =
             super::super::awakening::resolve_current_message_resources(&ctx, &deps.message).await;
+        append_attachment_description_guidance(&deps.message, &mut resource_lines);
 
         crate::log_info!(
             &ctx,
@@ -464,4 +465,23 @@ pub fn read_bus<T: serde::de::DeserializeOwned>(
     let value = bus.get(key).cloned().unwrap_or(Value::Null);
     serde_json::from_value(value)
         .map_err(|e| err!(Internal, "decode bus key {} failed: {e}", key.as_str()))
+}
+
+/// 当前消息携带附件时，向资源上下文追加「写摘要」引导行
+///
+/// 意图分析阶段看不到附件内容（资源只在 Awaken 注入），因此引导必须挂在
+/// Awaken 的资源区：模型识别完附件后即可调用 `save_attachment_description`
+/// 把摘要落到附件元信息（供后续搜索与兜底复用）。
+fn append_attachment_description_guidance(message: &Message, lines: &mut Vec<String>) {
+    if message.from_role() != common::enums::MessageRole::User {
+        return;
+    }
+    if super::super::awakening::collect_current_message_attachment_ids(message).is_empty() {
+        return;
+    }
+
+    lines.push(format!(
+        "附件摘要要求：资源行已带「摘要」的附件可直接复用，无需重复识别；没有摘要的附件请在识别后调用工具 `save_attachment_description` 写入——`attachment_id` 取资源行括号内的附件 id；`content` 写客观内容摘要，`usage` 写结合用户文字推断的用途，`message_id` 填当前消息 ID `{}`。摘要不准确时可再次调用覆盖；需要完整摘要或用途时用 `get_attachment` 查询（`get_attachment_content` 取文件内容）。",
+        message.po.id
+    ));
 }

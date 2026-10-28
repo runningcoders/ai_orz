@@ -1,4 +1,4 @@
-use crate::models::attachment::AttachmentPo;
+use crate::models::attachment::{AttachmentDescriptionUpdate, AttachmentPo};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery, new_with_attachments_dir};
 use common::enums::FileType;
@@ -160,5 +160,66 @@ async fn test_reject_path_traversal(pool: SqlitePool) -> Result<()> {
     let result = dao.write_file("../escape.md", b"bad");
 
     assert!(result.is_err());
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_update_description_and_fts_sync(pool: SqlitePool) -> Result<()> {
+    let (_temp_dir, dao, ctx) = init_test_env(pool);
+    let attachment = create_test_attachment("attachment-1", "skill.md", "skill");
+    dao.insert(ctx.clone(), &attachment).await?;
+
+    let first = AttachmentDescriptionUpdate {
+        description: "一份关于安装步骤的说明文档".to_string(),
+        usage: "用户希望按照文档安装技能".to_string(),
+        source: "agent_tool".to_string(),
+        model: "test-model".to_string(),
+        message_id: "msg-1".to_string(),
+        described_at: 1000,
+    };
+    dao.update_description(ctx.clone(), &attachment.id, &first)
+        .await?;
+
+    let found = dao.find_by_id(ctx.clone(), &attachment.id).await?.unwrap();
+    assert_eq!(found.description, first.description);
+    assert_eq!(found.description_usage, first.usage);
+    assert_eq!(found.description_source, "agent_tool");
+    assert_eq!(found.description_model, "test-model");
+    assert_eq!(found.description_message_id, "msg-1");
+    assert_eq!(found.described_at, 1000);
+
+    let pool = ctx.db_pool();
+    let hits_old: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM attachments_fts WHERE attachments_fts MATCH ?")
+            .bind("安装步骤")
+            .fetch_one(pool)
+            .await?;
+    assert_eq!(hits_old, 1);
+
+    // 覆盖写入：摘要换新，旧关键词不再命中，新关键词命中
+    let second = AttachmentDescriptionUpdate {
+        description: "部署清单：三条上线检查项".to_string(),
+        usage: String::new(),
+        ..first
+    };
+    dao.update_description(ctx.clone(), &attachment.id, &second)
+        .await?;
+
+    let found = dao.find_by_id(ctx.clone(), &attachment.id).await?.unwrap();
+    assert_eq!(found.description, second.description);
+    assert_eq!(found.description_usage, "");
+
+    let hits_old: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM attachments_fts WHERE attachments_fts MATCH ?")
+            .bind("安装步骤")
+            .fetch_one(pool)
+            .await?;
+    assert_eq!(hits_old, 0);
+    let hits_new: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM attachments_fts WHERE attachments_fts MATCH ?")
+            .bind("部署清单")
+            .fetch_one(pool)
+            .await?;
+    assert_eq!(hits_new, 1);
     Ok(())
 }

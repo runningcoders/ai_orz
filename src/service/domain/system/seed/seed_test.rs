@@ -338,7 +338,8 @@ mod tests {
         );
 
         // 组织默认要求（SSOT = seed 的 organization.config）：初始化时按此写入
-        // organizations.config，project_management 是「同名双重身份」包，两侧都要配
+        // organizations.config，project_management 是「同名双重身份」包，两侧都要配。
+        // 注意：附件（attachment）走 BASE_AGENT_PACKS 出生自带，与组织/岗位无关，不在这里。
         let onboard = snapshot
             .organization
             .config

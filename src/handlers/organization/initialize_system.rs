@@ -173,6 +173,7 @@ impl InitializeSystemTask {
         // project_management 的工具包与技能包。它是「同名双重身份」包，两个字段都要配：
         // 工具包负责授权（项目/任务/产物工具靠 installed_tags 放行），
         // 技能包负责把技能副本放进 Agent 池子（进 Prompt 的前置门）。
+        // 附件能力不在此列：它走 BASE_AGENT_PACKS 出生自带，与组织/岗位无关。
         // 组织管理员可在「组织信息」页随时调整；需改默认值则改 seed 文件。
         let seed_org_config =
             crate::service::domain::system::seed::default::embedded_default_snapshot()

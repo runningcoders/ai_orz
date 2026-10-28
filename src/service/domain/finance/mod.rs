@@ -39,8 +39,8 @@ mod tool_provider_readiness_test;
 mod tool_authorization_test;
 
 use crate::models::attachment::{
-    Attachment, AttachmentGetOptions, AttachmentTextContent, AttachmentUpload,
-    TextAttachmentCreate, TextContentUpdate,
+    Attachment, AttachmentDescriptionUpdate, AttachmentGetOptions, AttachmentTextContent,
+    AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
 };
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
@@ -688,6 +688,14 @@ pub trait AttachmentManage: Send + Sync {
 
     /// 删除上传文件资产。
     async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    /// 写入附件摘要元信息（覆盖旧值；关键词索引自动同步）。
+    async fn describe_attachment(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: AttachmentDescriptionUpdate,
+    ) -> Result<Attachment>;
 }
 
 /// MCP Server 管理 trait
