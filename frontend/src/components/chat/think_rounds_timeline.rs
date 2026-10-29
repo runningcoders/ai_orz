@@ -8,9 +8,10 @@
 use dioxus::prelude::*;
 
 use common::api::ThinkTraceRoundDto;
+use common::enums::ThinkingIntensity;
 
 use crate::components::thinking_intensity_field::thinking_intensity_label;
-use crate::utils::number::format_compact_count;
+use crate::utils::number::{format_compact_count, format_decimal};
 
 /// 思考文本预览长度（字符）：超出部分折叠
 const TEXT_PREVIEW_CHARS: usize = 160;
@@ -74,6 +75,43 @@ fn tool_status_class(status: &str) -> &'static str {
     }
 }
 
+/// 思考强度 → DaisyUI badge 配色（绿 → 黄 → 红，与分数从低到高同向）
+fn intensity_class(intensity: Option<ThinkingIntensity>) -> &'static str {
+    match intensity {
+        None => "badge badge-xs badge-ghost",
+        Some(i) if i.score() <= 33 => "badge badge-xs badge-success badge-soft",
+        Some(i) if i.score() <= 66 => "badge badge-xs badge-warning badge-soft",
+        Some(_) => "badge badge-xs badge-error badge-soft",
+    }
+}
+
+/// 耗时 → 合适单位（<1s 用 ms，<1min 用 s，<1h 用 m/s，更长用 h/m）
+fn format_duration(ms: u64) -> String {
+    if ms < 1_000 {
+        return format!("{ms}ms");
+    }
+    let total_seconds = ms / 1_000;
+    if total_seconds < 60 {
+        return format!("{}s", format_decimal(ms as f64 / 1_000.0, 1));
+    }
+    let total_minutes = total_seconds / 60;
+    if total_minutes < 60 {
+        let seconds = total_seconds % 60;
+        return if seconds == 0 {
+            format!("{total_minutes}m")
+        } else {
+            format!("{total_minutes}m {seconds}s")
+        };
+    }
+    let hours = total_minutes / 60;
+    let minutes = total_minutes % 60;
+    if minutes == 0 {
+        format!("{hours}h")
+    } else {
+        format!("{hours}h {minutes}m")
+    }
+}
+
 /// 思考轮次时间线
 ///
 /// 强度按轮记录（同一 run 内目前各轮相同，未来可逐轮动态调整）。
@@ -103,7 +141,7 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                         let output_text = format_compact_count(r.output_tokens);
                         let cached_text = format_compact_count(r.cached_tokens);
                         let reasoning_text = format_compact_count(r.reasoning_tokens);
-                        let duration_text = format!("{}ms", r.duration_ms);
+                        let duration_text = format_duration(r.duration_ms);
                         let intensity_text = r
                             .thinking_intensity
                             .map(thinking_intensity_label)
@@ -112,44 +150,49 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                             div {
                                 key: "{round_no}",
                                 class: "rounded-md border border-base-300 bg-base-200/40 p-2 space-y-1.5",
-                                // 第一行：轮次身份 + 裁决 + 思考强度；耗时靠右独立成标签
-                                div { class: "flex items-center gap-1.5 flex-wrap",
-                                    span { class: "text-xs font-semibold", "第 {round_no} 轮" }
-                                    if let Some(decision) = decision.clone() {
-                                        span { class: decision_class(&decision), "{decision_label(&decision)}" }
+                                // 顶行：左侧轮次/裁决 → 中间 token 2×2 → 右侧强度/耗时上下两行
+                                div { class: "flex flex-wrap items-start gap-2",
+                                    div { class: "flex items-center gap-1.5 flex-wrap shrink-0",
+                                        span { class: "text-xs font-semibold whitespace-nowrap", "第 {round_no} 轮" }
+                                        if let Some(decision) = decision.clone() {
+                                            span { class: decision_class(&decision), "{decision_label(&decision)}" }
+                                        }
                                     }
-                                    span {
-                                        class: "badge badge-xs badge-ghost font-mono",
-                                        title: "本轮实际下发的思考强度（0–100 分；未启用时请求体不下发）",
-                                        "{intensity_text}"
+                                    // token 明细 2×2（缓存/思考未上报时为 0）
+                                    div { class: "grid grid-cols-2 gap-1",
+                                        span {
+                                            class: "badge badge-xs badge-info badge-soft font-mono justify-start min-w-[60px]",
+                                            title: "本轮输入（prompt）token",
+                                            "入 {input_text}"
+                                        }
+                                        span {
+                                            class: "badge badge-xs badge-accent badge-soft font-mono justify-start min-w-[60px]",
+                                            title: "本轮输出（completion）token；含思考 token",
+                                            "出 {output_text}"
+                                        }
+                                        span {
+                                            class: "badge badge-xs badge-success badge-soft font-mono justify-start min-w-[60px]",
+                                            title: "提示缓存命中的输入 token；provider 未上报时为 0，不代表未命中",
+                                            "缓存 {cached_text}"
+                                        }
+                                        span {
+                                            class: "badge badge-xs badge-warning badge-soft font-mono justify-start min-w-[60px]",
+                                            title: "思考/推理消耗的 token，已包含在输出 token 内",
+                                            "思考 {reasoning_text}"
+                                        }
                                     }
-                                    span {
-                                        class: "badge badge-xs badge-ghost font-mono ml-auto",
-                                        title: "本轮模型调用耗时",
-                                        "{duration_text}"
-                                    }
-                                }
-                                // 第二行：本轮 token 明细（缓存/思考未上报时为 0）
-                                div { class: "flex items-center gap-1.5 flex-wrap",
-                                    span {
-                                        class: "badge badge-xs badge-info badge-soft font-mono",
-                                        title: "本轮输入（prompt）token",
-                                        "入 {input_text}"
-                                    }
-                                    span {
-                                        class: "badge badge-xs badge-accent badge-soft font-mono",
-                                        title: "本轮输出（completion）token；含思考 token",
-                                        "出 {output_text}"
-                                    }
-                                    span {
-                                        class: "badge badge-xs badge-success badge-soft font-mono",
-                                        title: "提示缓存命中的输入 token；provider 未上报时为 0，不代表未命中",
-                                        "缓存 {cached_text}"
-                                    }
-                                    span {
-                                        class: "badge badge-xs badge-warning badge-soft font-mono",
-                                        title: "思考/推理消耗的 token，已包含在输出 token 内",
-                                        "思考 {reasoning_text}"
+                                    // 右端两行：上强度标签、下耗时
+                                    div { class: "ml-auto flex flex-col items-end gap-1 shrink-0",
+                                        span {
+                                            class: intensity_class(r.thinking_intensity),
+                                            title: "本轮实际下发的思考强度（0–100 分；未启用时请求体不下发）",
+                                            "{intensity_text}"
+                                        }
+                                        span {
+                                            class: "text-[11px] text-base-content/50 font-mono",
+                                            title: "本轮模型调用耗时",
+                                            "{duration_text}"
+                                        }
                                     }
                                 }
                                 // 推理摘要：先给预览，超长折叠
@@ -253,6 +296,25 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duration_scales_to_readable_units() {
+        assert_eq!(format_duration(420), "420ms");
+        assert_eq!(format_duration(1_000), "1s");
+        assert_eq!(format_duration(1_500), "1.5s");
+        assert_eq!(format_duration(61_000), "1m 1s");
+        assert_eq!(format_duration(600_000), "10m");
+        assert_eq!(format_duration(3_600_000), "1h");
+        assert_eq!(format_duration(3_720_000), "1h 2m");
+    }
+
+    #[test]
+    fn intensity_class_covers_tiers() {
+        assert!(intensity_class(None).contains("badge-ghost"));
+        assert!(intensity_class(Some(ThinkingIntensity::new(10))).contains("badge-success"));
+        assert!(intensity_class(Some(ThinkingIntensity::new(50))).contains("badge-warning"));
+        assert!(intensity_class(Some(ThinkingIntensity::new(90))).contains("badge-error"));
+    }
 
     #[test]
     fn preview_text_truncates_by_chars() {
