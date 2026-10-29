@@ -10,8 +10,21 @@
 //! - 上层（awakening）负责「做」→ 执行 ToolCallRequest
 //! - brain dal 透传 ThinkResult
 
+use common::enums::ThinkingIntensity;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// 一次模型调用的控制参数（调用方意图）
+///
+/// 只装「本次调用想怎么跑」的旋钮。`access_mode` 这类由 Provider 配置派生的
+/// 下行协议差异仍由 cortex DAO 内部解析，避免 Domain 层重复读配置。
+/// 后续 `temperature` / `max_output_tokens` / `tool_choice` 等统一加在这里，
+/// 避免 `think` 签名继续膨胀。
+#[derive(Debug, Clone, Default)]
+pub struct ModelCallOptions {
+    /// 思考强度（平台 0–100 分）；None = 请求体不下发该字段（能力开关关闭）
+    pub thinking_intensity: Option<ThinkingIntensity>,
+}
 
 /// 模型思考结果
 ///

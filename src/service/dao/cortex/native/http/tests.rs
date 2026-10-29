@@ -381,7 +381,13 @@ fn provider_with_config(config: &str) -> ModelProviderPo {
 #[test]
 fn stream_body_keeps_stream_fields() {
     let provider = provider_with_config("{}");
-    let body = build_chat_request_body(&provider, &[], &[], ModelAccessMode::Stream, None);
+    let body = build_chat_request_body(
+        &provider,
+        &[],
+        &[],
+        ModelAccessMode::Stream,
+        &crate::models::cortex_types::ModelCallOptions::default(),
+    );
     assert_eq!(body["stream"], serde_json::json!(true));
     assert_eq!(
         body["stream_options"]["include_usage"],
@@ -393,7 +399,13 @@ fn stream_body_keeps_stream_fields() {
 #[test]
 fn non_stream_body_omits_stream_fields_and_keeps_tools() {
     let provider = provider_with_config("{}");
-    let body = build_chat_request_body(&provider, &[], &[], ModelAccessMode::NonStream, None);
+    let body = build_chat_request_body(
+        &provider,
+        &[],
+        &[],
+        ModelAccessMode::NonStream,
+        &crate::models::cortex_types::ModelCallOptions::default(),
+    );
     assert!(
         body.get("stream").is_none(),
         "non_stream 请求体不得携带 stream 字段: {body}"
@@ -410,7 +422,13 @@ fn non_stream_body_omits_stream_fields_and_keeps_tools() {
         description: "d".to_string(),
         parameters: serde_json::json!({"type": "object"}),
     }];
-    let body = build_chat_request_body(&provider, &[], &tools, ModelAccessMode::NonStream, None);
+    let body = build_chat_request_body(
+        &provider,
+        &[],
+        &tools,
+        ModelAccessMode::NonStream,
+        &crate::models::cortex_types::ModelCallOptions::default(),
+    );
     assert!(
         body.get("tools").is_some(),
         "tools 不得因访问模式丢失: {body}"
@@ -426,7 +444,9 @@ fn thinking_intensity_omitted_when_provider_unconfigured() {
         &[],
         &[],
         ModelAccessMode::NonStream,
-        Some(common::enums::ThinkingIntensity::MAX),
+        &crate::models::cortex_types::ModelCallOptions {
+            thinking_intensity: Some(common::enums::ThinkingIntensity::MAX),
+        },
     );
     assert!(
         body.get("reasoning_effort").is_none(),
@@ -438,7 +458,13 @@ fn thinking_intensity_omitted_when_provider_unconfigured() {
 #[test]
 fn thinking_intensity_uses_provider_default() {
     let provider = provider_with_config(r#"{"thinking_intensity":50}"#);
-    let body = build_chat_request_body(&provider, &[], &[], ModelAccessMode::NonStream, None);
+    let body = build_chat_request_body(
+        &provider,
+        &[],
+        &[],
+        ModelAccessMode::NonStream,
+        &crate::models::cortex_types::ModelCallOptions::default(),
+    );
     assert_eq!(body["reasoning_effort"], serde_json::json!("medium"));
 }
 
@@ -451,7 +477,9 @@ fn thinking_intensity_override_wins() {
         &[],
         &[],
         ModelAccessMode::NonStream,
-        Some(common::enums::ThinkingIntensity::MAX),
+        &crate::models::cortex_types::ModelCallOptions {
+            thinking_intensity: Some(common::enums::ThinkingIntensity::MAX),
+        },
     );
     assert_eq!(body["reasoning_effort"], serde_json::json!("high"));
 }

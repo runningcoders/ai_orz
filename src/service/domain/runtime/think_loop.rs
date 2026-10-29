@@ -311,6 +311,7 @@ impl RuntimeDomainImpl {
             think_runtime,
             policy,
             progress,
+            thinking_intensity_offset,
         } = params;
 
         // brain 统一在此解析：四个场景取的都是 agent.brain，
@@ -454,6 +455,7 @@ impl RuntimeDomainImpl {
                     agent,
                     brain,
                     scene,
+                    thinking_intensity_offset,
                     trace_id,
                     messages,
                     tool_descriptors,

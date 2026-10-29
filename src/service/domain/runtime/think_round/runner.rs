@@ -11,14 +11,14 @@ use super::nodes;
 use super::state::RoundState;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
-use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ModelCallOptions, ToolDescriptor};
 use crate::pkg::agent_runtime_state::AgentThinkRuntime;
 use crate::pkg::policy::Policy;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::think_path::{Arbiter, ProviderSet, Stimulus, ThinkPathEngine, ThinkRun};
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkLoopResult};
-use common::enums::{ThinkingIntensity, ThinkingScene};
+use common::enums::ThinkingScene;
 use common::error::Result;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -32,6 +32,8 @@ pub(crate) struct RoundRun<'a> {
     pub agent: &'a Agent,
     pub brain: Brain,
     pub scene: ThinkingScene,
+    /// 意图识别后对后续阶段叠加的思考强度偏移（分）
+    pub thinking_intensity_offset: i32,
     pub trace_id: &'a str,
     pub messages: Vec<ChatMessage>,
     pub tool_descriptors: &'a [ToolDescriptor],
@@ -51,6 +53,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         agent,
         brain,
         scene,
+        thinking_intensity_offset,
         trace_id,
         messages,
         tool_descriptors,
@@ -73,7 +76,8 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
     let enable_reflect = brain.runtime_config.enable_round_reflect;
 
     // 三层思考强度（0–100）：Provider 基准（能力开关）→ Agent 覆盖 → 场景偏移
-    let thinking_intensity = resolve_thinking_intensity(&brain, scene);
+    // → 意图识别产出的动态偏移
+    let call_options = resolve_call_options(&brain, scene, thinking_intensity_offset);
 
     let deps = Arc::new(RoundDeps {
         domain,
@@ -81,7 +85,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         agent: agent.clone(),
         brain,
         scene,
-        thinking_intensity,
+        call_options,
         trace_id: trace_id.to_string(),
         tool_descriptors: tool_descriptors.to_vec(),
         max_rounds,
@@ -163,22 +167,30 @@ fn persist_trace(deps: &RoundDeps, run: &ThinkRun) {
     }
 }
 
-/// 解析本次思考的最终思考强度（0–100 分）
+/// 解析本次思考的模型调用参数（当前只有思考强度）
 ///
-/// 优先级：`Agent 显式 > Provider 基准`，再叠加场景偏移并饱和钳制到 [0, 100]。
+/// 优先级：`Agent 显式 > Provider 基准`，再叠加「场景偏移 + 意图动态偏移」并
+/// 饱和钳制到 [0, 100]。
 ///
 /// ⚠️ Provider 未配置 `thinking_intensity` 时返回 None（能力开关关闭）：
-/// 请求体完全不下发该字段，Agent 覆盖与场景偏移均不生效——保持存量行为是
-/// 第一优先级，避免给不支持该参数的端点注入字段导致 400。
-fn resolve_thinking_intensity(brain: &Brain, scene: ThinkingScene) -> Option<ThinkingIntensity> {
-    let provider_base = brain
+/// 请求体完全不下发该字段，Agent 覆盖、场景偏移与动态偏移均不生效——保持存量
+/// 行为是第一优先级，避免给不支持该参数的端点注入字段导致 400。
+fn resolve_call_options(
+    brain: &Brain,
+    scene: ThinkingScene,
+    dynamic_offset: i32,
+) -> ModelCallOptions {
+    let thinking_intensity = brain
         .model_provider()
-        .and_then(|po| po.config().thinking_intensity)?;
-    let base = brain
-        .runtime_config
-        .thinking_intensity
-        .unwrap_or(provider_base);
-    Some(base.offset(scene.thinking_intensity_offset()))
+        .and_then(|po| po.config().thinking_intensity)
+        .map(|provider_base| {
+            let base = brain
+                .runtime_config
+                .thinking_intensity
+                .unwrap_or(provider_base);
+            base.offset(scene.thinking_intensity_offset() + dynamic_offset)
+        });
+    ModelCallOptions { thinking_intensity }
 }
 
 /// 选路来源的可读名（落盘后按字符串聚合，避免 Debug 输出随枚举改名漂移）
@@ -194,7 +206,7 @@ fn via_str(via: crate::pkg::think_path::RouteVia) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_thinking_intensity;
+    use super::resolve_call_options;
     use crate::models::agent::AgentRuntimeConfig;
     use crate::models::brain::Brain;
     use crate::models::model_provider::ModelProviderPo;
@@ -232,14 +244,16 @@ mod tests {
         )
     }
 
+    /// 取本次调用的思考强度（None = 能力开关关闭）
+    fn intensity(brain: &Brain, scene: ThinkingScene, dynamic: i32) -> Option<ThinkingIntensity> {
+        resolve_call_options(brain, scene, dynamic).thinking_intensity
+    }
+
     /// Provider 未配置 = 能力开关关闭：Agent 覆盖与场景偏移都不生效
     #[test]
     fn provider_unconfigured_disables_whole_chain() {
         let brain = brain_with("{}", Some(ThinkingIntensity::MAX));
-        assert_eq!(
-            resolve_thinking_intensity(&brain, ThinkingScene::Awaken),
-            None
-        );
+        assert_eq!(intensity(&brain, ThinkingScene::Awaken, 0), None);
     }
 
     /// 外部 Agent 无 provider → 同样关闭
@@ -252,10 +266,7 @@ mod tests {
             AgentRuntimeConfig::default(),
             Vec::new(),
         );
-        assert_eq!(
-            resolve_thinking_intensity(&brain, ThinkingScene::Awaken),
-            None
-        );
+        assert_eq!(intensity(&brain, ThinkingScene::Awaken, 0), None);
     }
 
     /// Agent 显式覆盖优先于 Provider 基准
@@ -263,35 +274,47 @@ mod tests {
     fn agent_override_wins_over_provider_default() {
         let brain = brain_with(r#"{"thinking_intensity":30}"#, Some(ThinkingIntensity::MAX));
         assert_eq!(
-            resolve_thinking_intensity(&brain, ThinkingScene::Awaken),
+            intensity(&brain, ThinkingScene::Awaken, 0),
             Some(ThinkingIntensity::MAX)
         );
     }
 
-    /// 场景偏移在基准分数上叠加并饱和钳制到 [0, 100]
+    /// 场景偏移 + 意图动态偏移在基准分数上叠加，并饱和钳制到 [0, 100]
     #[test]
-    fn scene_offset_clamps_at_bounds() {
-        // 基准 10 + Settle(-20) → 钳制到 0
+    fn offsets_stack_and_clamp_at_bounds() {
+        // 基准 10 + Awaken(0) + 动态 -20 → 钳制到 0
         assert_eq!(
-            resolve_thinking_intensity(
+            intensity(
                 &brain_with(r#"{"thinking_intensity":10}"#, None),
-                ThinkingScene::Settle
+                ThinkingScene::Awaken,
+                -20
             ),
             Some(ThinkingIntensity::MIN)
         );
-        // 基准 80 + IntentAnalyze(-20) → 60，跨档到 medium
+        // 基准 80 + Awaken(0) + 动态 +20 → 钳制到 100
         assert_eq!(
-            resolve_thinking_intensity(
+            intensity(
                 &brain_with(r#"{"thinking_intensity":80}"#, None),
-                ThinkingScene::IntentAnalyze
+                ThinkingScene::Awaken,
+                20
             ),
-            Some(ThinkingIntensity::new(60))
+            Some(ThinkingIntensity::MAX)
         );
-        // 默认基准 50 + Awaken(0) → 50
+        // 基准 50 + Awaken(0) + 动态 -10 → 40
         assert_eq!(
-            resolve_thinking_intensity(
+            intensity(
                 &brain_with(r#"{"thinking_intensity":50}"#, None),
-                ThinkingScene::Awaken
+                ThinkingScene::Awaken,
+                -10
+            ),
+            Some(ThinkingIntensity::new(40))
+        );
+        // 默认基准 50 + Awaken(0) + 动态 0 → 50
+        assert_eq!(
+            intensity(
+                &brain_with(r#"{"thinking_intensity":50}"#, None),
+                ThinkingScene::Awaken,
+                0
             ),
             Some(ThinkingIntensity::DEFAULT)
         );

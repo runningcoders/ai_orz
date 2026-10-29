@@ -170,7 +170,7 @@ async fn test_think_cli_cat() {
             &provider,
             &[ChatMessage::user("hello world")],
             &[],
-            None,
+            &crate::models::cortex_types::ModelCallOptions::default(),
         )
         .await;
     assert!(result.is_ok(), "expected ok, got {:?}", result);

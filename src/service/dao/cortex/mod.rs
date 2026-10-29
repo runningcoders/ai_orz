@@ -17,7 +17,7 @@ pub use native::{CortexDao, CortexDaoRegistry, init, registry};
 // 便捷入口：按 provider.provider_type 路由到 native::CortexDao 实现。
 // 调用方负责获取 provider（如从 model_provider_dao 查询）。
 
-use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ModelCallOptions, ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
@@ -68,11 +68,10 @@ impl CortexDao for CortexDispatcher {
         provider: &ModelProviderPo,
         messages: &[ChatMessage],
         tools: &[ToolDescriptor],
-        thinking_intensity: Option<common::enums::ThinkingIntensity>,
+        options: &ModelCallOptions,
     ) -> Result<ThinkResult> {
         let dao = native::registry().chat_dao(provider);
-        dao.think(ctx, provider, messages, tools, thinking_intensity)
-            .await
+        dao.think(ctx, provider, messages, tools, options).await
     }
 
     async fn embed(

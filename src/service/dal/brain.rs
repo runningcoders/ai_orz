@@ -7,7 +7,7 @@
 use crate::models::agent::{AgentPo, ExternalAgentConfig};
 use crate::models::brain::Brain;
 use crate::models::cerebellum_types::{CerebellumQuestion, QuestionType, ThinkFastResult};
-use crate::models::cortex_types::{ThinkResult, TokenUsage, ToolDescriptor};
+use crate::models::cortex_types::{ModelCallOptions, ThinkResult, TokenUsage, ToolDescriptor};
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
@@ -16,7 +16,7 @@ use crate::service::dao::cortex;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
-use common::enums::{AgentKind, ModelCapability, ThinkingIntensity};
+use common::enums::{AgentKind, ModelCapability};
 use common::error::{Result, err};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -109,7 +109,7 @@ pub trait BrainDal: Send + Sync {
         brain: &Brain,
         messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
-        thinking_intensity: Option<ThinkingIntensity>,
+        options: &ModelCallOptions,
     ) -> Result<ThinkResult>;
 
     /// 小脑快判断：单次亚秒级 System One decision 调用（B3 运行时路由消费面）
@@ -333,9 +333,9 @@ impl BrainDal for BrainDalImpl {
                         &provider.po,
                         &[crate::models::cortex_types::ChatMessage::user(prompt)],
                         &[],
-                        // 连通性测试不经过思考循环：override=None，
+                        // 连通性测试不经过思考循环：options 内 thinking_intensity=None，
                         // 由请求体构建层回退到 provider 默认档位
-                        None,
+                        &ModelCallOptions::default(),
                     )
                     .await?;
 
@@ -353,7 +353,7 @@ impl BrainDal for BrainDalImpl {
         brain: &Brain,
         messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
-        thinking_intensity: Option<ThinkingIntensity>,
+        options: &ModelCallOptions,
     ) -> Result<ThinkResult> {
         let start = std::time::Instant::now();
 
@@ -376,7 +376,7 @@ impl BrainDal for BrainDalImpl {
 
                 let dao = cortex::native::registry().chat_dao(provider);
                 let result = dao
-                    .think(ctx.clone(), provider, messages, tools, thinking_intensity)
+                    .think(ctx.clone(), provider, messages, tools, options)
                     .await;
 
                 log_debug!(

@@ -447,7 +447,12 @@ impl ThinkNode for DeliberateNode {
                 (ContextKey::Prompt, LoadDepth::Full),
                 (ContextKey::Tools, LoadDepth::Shallow),
             ],
-            reads: vec![ContextKey::Prompt, ContextKey::Tools, ContextKey::Budget],
+            reads: vec![
+                ContextKey::Prompt,
+                ContextKey::Tools,
+                ContextKey::Budget,
+                ContextKey::Intent,
+            ],
             writes: vec![ContextKey::Artifacts, ContextKey::Budget],
         }
     }
@@ -460,13 +465,20 @@ impl ThinkNode for DeliberateNode {
         let total_rounds = read_budget(bus).total_rounds;
         let max_rounds = deps.options.effective_max_rounds();
 
+        // 意图阶段可能被跳过/降级：读不到就按默认空结构处理（偏移 0，即老口径）
+        let intent = read_bus::<IntentAnalysis>(bus, ContextKey::Intent).unwrap_or_default();
+        let thinking_intensity_offset = intent.thinking_intensity_offset();
+
         crate::log_info!(
             &deps.ctx,
             "legacy_awaken",
-            "deliberate node start, agent_id={}, max_rounds={}, total_rounds={}",
+            "deliberate node start, agent_id={}, max_rounds={}, total_rounds={}, intent_type={}, confidence={}, intensity_offset={}",
             deps.agent.po.id,
             max_rounds,
-            total_rounds
+            total_rounds,
+            intent.intent_type,
+            intent.confidence,
+            thinking_intensity_offset,
         );
 
         let result = deps
@@ -481,6 +493,7 @@ impl ThinkNode for DeliberateNode {
                     // max_steps）负责，周期内部自决——每周期满额重启，
                     // 累计轮次只进 BudgetState 做收尾回复与统计口径
                     start_round: 0,
+                    thinking_intensity_offset,
                 },
             )
             .await;

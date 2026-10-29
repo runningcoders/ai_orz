@@ -250,7 +250,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 &d.brain,
                 &messages,
                 &d.tool_descriptors,
-                d.thinking_intensity,
+                &d.call_options,
             )
             .await
         {

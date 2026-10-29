@@ -92,7 +92,7 @@ impl CortexDao for ExternalCortexDao {
         _provider: &ModelProviderPo,
         messages: &[ChatMessage],
         _tools: &[ToolDescriptor],
-        _thinking_intensity: Option<common::enums::ThinkingIntensity>,
+        _options: &crate::models::cortex_types::ModelCallOptions,
     ) -> Result<ThinkResult> {
         // 外部 agent 不支持多轮工具调用，提取最后一条 user 消息作为 prompt
         let prompt = messages

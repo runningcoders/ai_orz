@@ -87,7 +87,7 @@ pub trait CortexDao: Send + Sync {
         provider: &ModelProviderPo,
         messages: &[ChatMessage],
         tools: &[ToolDescriptor],
-        thinking_intensity: Option<common::enums::ThinkingIntensity>,
+        options: &crate::models::cortex_types::ModelCallOptions,
     ) -> Result<ThinkResult>;
 
     /// 文本转向量（原始向量）

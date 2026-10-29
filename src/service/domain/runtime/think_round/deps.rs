@@ -8,13 +8,13 @@
 use super::state::RoundState;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
-use crate::models::cortex_types::ToolDescriptor;
+use crate::models::cortex_types::{ModelCallOptions, ToolDescriptor};
 use crate::pkg::agent_runtime_state::AgentThinkRuntime;
 use crate::pkg::policy::Policy;
 use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkLoopResult};
-use common::enums::{ThinkingIntensity, ThinkingScene};
+use common::enums::ThinkingScene;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -27,8 +27,8 @@ pub(crate) struct RoundDeps {
     /// 已唤醒的大脑（思考调用直接持有，避免每轮再判空）
     pub brain: Brain,
     pub scene: ThinkingScene,
-    /// 本次思考的最终强度分数（Provider 能力开关关闭时为 None，不下发该字段）
-    pub thinking_intensity: Option<ThinkingIntensity>,
+    /// 本次思考的模型调用参数（思考强度已按三层规则解析，能力开关关闭时为 None）
+    pub call_options: ModelCallOptions,
     pub trace_id: String,
     pub tool_descriptors: Vec<ToolDescriptor>,
     /// 总轮次上限（跨压缩累计）

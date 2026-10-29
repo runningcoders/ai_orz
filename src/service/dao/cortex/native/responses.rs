@@ -70,17 +70,9 @@ impl super::CortexDao for ResponsesCortexDao {
         provider: &ModelProviderPo,
         messages: &[ChatMessage],
         tools: &[ToolDescriptor],
-        thinking_intensity: Option<common::enums::ThinkingIntensity>,
+        options: &crate::models::cortex_types::ModelCallOptions,
     ) -> Result<ThinkResult> {
-        call_responses(
-            ctx,
-            &self.client,
-            provider,
-            messages,
-            tools,
-            thinking_intensity,
-        )
-        .await
+        call_responses(ctx, &self.client, provider, messages, tools, options).await
     }
 }
 
@@ -91,7 +83,7 @@ pub async fn call_responses(
     provider: &ModelProviderPo,
     messages: &[ChatMessage],
     tools: &[ToolDescriptor],
-    thinking_intensity: Option<common::enums::ThinkingIntensity>,
+    options: &crate::models::cortex_types::ModelCallOptions,
 ) -> Result<ThinkResult> {
     validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
@@ -99,7 +91,7 @@ pub async fn call_responses(
 
     // 与 chat 侧同源：缺省/脏 config 兜底 stream，不中断推理
     let access_mode = resolve_access_mode(&ctx, provider);
-    let body = build_responses_body(provider, messages, tools, access_mode, thinking_intensity);
+    let body = build_responses_body(provider, messages, tools, access_mode, options);
 
     log_debug!(
         ctx.clone(),
@@ -152,7 +144,7 @@ fn build_responses_body(
     messages: &[ChatMessage],
     tools: &[ToolDescriptor],
     access_mode: ModelAccessMode,
-    thinking_intensity: Option<common::enums::ThinkingIntensity>,
+    options: &crate::models::cortex_types::ModelCallOptions,
 ) -> Value {
     let mut body = json!({
         "model": provider.model_name,
@@ -167,7 +159,7 @@ fn build_responses_body(
     // 思考强度：Provider 未配置视为能力开关关闭，整条链路不下发；
     // 配置后以调用方 override 优先，否则回退 provider 基准分数。
     // 平台 0–100 分在此按下游三档（low/medium/high）转换为 wire 值。
-    if let Some(intensity) = resolve_intensity(provider, thinking_intensity) {
+    if let Some(intensity) = resolve_intensity(provider, options.thinking_intensity) {
         body["reasoning"] = json!({ "effort": intensity.to_reasoning_effort_wire() });
     }
     if access_mode == ModelAccessMode::Stream {

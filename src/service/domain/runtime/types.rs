@@ -203,6 +203,11 @@ pub struct ThinkLoopParams<'a> {
     /// 传入后循环每轮会把「做了什么」写进快照。异常中断（`Err` / 超时）时
     /// 调用方靠它生成兜底总结 —— 这是目前唯一能在这两条路径上保留工作成果的手段。
     pub progress: Option<ThinkLoopProgress>,
+    /// 意图识别产出的「后续阶段思考强度动态偏移」（分）
+    ///
+    /// 叠加在场景偏移之上（`场景偏移 + 动态偏移`），由调用方在拿到
+    /// `IntentAnalysis` 后填入；意图阶段缺失/降级时保持 0，行为与未改造前一致。
+    pub thinking_intensity_offset: i32,
 }
 
 impl<'a> ThinkLoopParams<'a> {
@@ -232,6 +237,7 @@ impl<'a> ThinkLoopParams<'a> {
             think_runtime: None,
             policy: None,
             progress: None,
+            thinking_intensity_offset: 0,
         }
     }
 
@@ -262,6 +268,16 @@ impl<'a> ThinkLoopParams<'a> {
     /// 压缩 / 沉淀 / 意图识别这类内部小循环不传 —— 它们的产出本就只供内部使用。
     pub fn with_progress(mut self, progress: &ThinkLoopProgress) -> Self {
         self.progress = Some(progress.clone());
+        self
+    }
+
+    /// 叠加意图识别产出的动态思考强度偏移（分）
+    ///
+    /// 仅主循环（Awaken 场景）使用：意图阶段判定后，用这个偏移让后续几个
+    /// 步骤的思考强度随「任务难度 / 置信度」浮动。内部小循环（压缩/沉淀/
+    /// 意图识别自身）不传，保持 0。
+    pub fn with_thinking_intensity_offset(mut self, offset: i32) -> Self {
+        self.thinking_intensity_offset = offset;
         self
     }
 }
@@ -477,5 +493,128 @@ impl IntentAnalysis {
     /// 是否在意图阶段就给出了最终答复（非空即直答）
     pub fn has_direct_answer(&self) -> bool {
         !self.direct_answer.trim().is_empty()
+    }
+
+    /// 意图识别产出的「后续阶段思考强度动态偏移」（分）
+    ///
+    /// 目标：让「这一步要花多少思考」由意图本身决定，而不是所有会话都用同一个分数。
+    ///
+    /// 规则（确定性启发式，先覆盖能明确判断的三种情形，其余保持 0）：
+    /// - **低置信（< 0.5）** → `+20`：连意图都没把握，后续更需要深度推理，
+    ///   提高预算避免「没想明白就草率作答」
+    /// - **任务 / 代码 / 计划类** → `+10`：多步执行、易出错，适度提强度
+    /// - **简单且高置信（≥ 0.8）** → `-10`：闲聊/问答/确认，降强度更快更省
+    /// - **其余** → `0`
+    ///
+    /// 结果再叠加场景偏移后由 `ThinkingIntensity::offset` 饱和钳制到 [0, 100]，
+    /// 因此这里不需要自带边界；但总幅度刻意压在 ±20 内 —— 动态偏移是「微调」，
+    /// 不该盖过用户在 Provider/Agent 上的显式配置。
+    pub fn thinking_intensity_offset(&self) -> i32 {
+        if self.confidence < 0.5 {
+            return 20;
+        }
+
+        let ty = self.intent_type.trim().to_ascii_lowercase();
+        let is_task_like = [
+            "task",
+            "task_request",
+            "code",
+            "coding",
+            "plan",
+            "planning",
+            "mixed",
+            "任务",
+            "代码",
+            "编程",
+            "计划",
+            "混合",
+        ]
+        .iter()
+        .any(|k| ty.contains(k));
+        if is_task_like {
+            return 10;
+        }
+
+        let is_simple_like = [
+            "chat",
+            "question",
+            "followup",
+            "follow_up",
+            "confirm",
+            "闲聊",
+            "聊天",
+            "问答",
+            "确认",
+            "追问",
+        ]
+        .iter()
+        .any(|k| ty.contains(k));
+        if self.confidence >= 0.8 && is_simple_like {
+            return -10;
+        }
+
+        0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IntentAnalysis;
+
+    fn intent(intent_type: &str, confidence: f32) -> IntentAnalysis {
+        IntentAnalysis {
+            intent_type: intent_type.to_string(),
+            confidence,
+            ..Default::default()
+        }
+    }
+
+    /// 低置信优先：连意图都没把握时一律提强度（即使类型看着像闲聊）
+    #[test]
+    fn low_confidence_raises_intensity() {
+        assert_eq!(intent("Chat", 0.3).thinking_intensity_offset(), 20);
+        assert_eq!(intent("", 0.0).thinking_intensity_offset(), 20);
+    }
+
+    /// 任务/代码/计划类：多步执行，适度提强度
+    #[test]
+    fn task_like_raises_intensity() {
+        for ty in [
+            "TaskRequest",
+            "Coding",
+            "Plan",
+            "Mixed",
+            "任务",
+            "代码",
+            "编程",
+        ] {
+            assert_eq!(
+                intent(ty, 0.9).thinking_intensity_offset(),
+                10,
+                "intent_type={ty} 应命中任务类"
+            );
+        }
+    }
+
+    /// 简单且高置信：降强度更快更省
+    #[test]
+    fn simple_high_confidence_lowers_intensity() {
+        for ty in [
+            "Chat", "Question", "FollowUp", "Confirm", "闲聊", "问答", "确认",
+        ] {
+            assert_eq!(
+                intent(ty, 0.9).thinking_intensity_offset(),
+                -10,
+                "intent_type={ty} 应命中简单类"
+            );
+        }
+    }
+
+    /// 简单类但置信不足，或不认识的类型：保持基准
+    #[test]
+    fn ambiguous_or_unknown_intent_keeps_base() {
+        assert_eq!(intent("Chat", 0.6).thinking_intensity_offset(), 0);
+        assert_eq!(intent("Unknown", 0.9).thinking_intensity_offset(), 0);
+        assert_eq!(intent("", 0.9).thinking_intensity_offset(), 0);
     }
 }

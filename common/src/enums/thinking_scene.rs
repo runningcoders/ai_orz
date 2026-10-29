@@ -77,15 +77,18 @@ impl ThinkingScene {
     /// 再饱和钳制（见 `ThinkingIntensity::offset`），本方法不关心基准值本身。
     ///
     /// - Awaken：0（主循环需要完整推理能力，保持基准）
-    /// - IntentAnalyze：-20（只做意图理解，降低思考深度更快更省）
-    /// - Settle：-20（沉淀以归纳为主，降低思考深度）
+    /// - IntentAnalyze：0（意图识别是全程第一步，此时还不知道后续难度，
+    ///   保持基准；真正的强度调节由意图结论驱动后续阶段的动态偏移）
+    /// - Settle：+30（沉淀是无人值守的内循环，语义上更像「潜意识消化」，
+    ///   需要更大的思考深度去归纳、关联与抽象；这是目前唯一显式提强度的场景，
+    ///   等小脑接管后由其按上下文动态给出偏移）
     /// - Summary：0（总结质量直接影响用户可见结果，保持基准）
     /// - Compact：0（压缩要保持信息完整，保持基准）
     pub fn thinking_intensity_offset(&self) -> i32 {
         match self {
             ThinkingScene::Awaken => 0,
-            ThinkingScene::IntentAnalyze => -20,
-            ThinkingScene::Settle => -20,
+            ThinkingScene::IntentAnalyze => 0,
+            ThinkingScene::Settle => 30,
             ThinkingScene::Summary => 0,
             ThinkingScene::Compact => 0,
         }
@@ -198,15 +201,12 @@ mod tests {
         }
     }
 
-    /// 场景偏移口径：轻量理解/沉淀降 20 分，其余保持基准（未配置 = 0）
+    /// 场景偏移口径：仅沉淀提 30 分（潜意识消化需要更深归纳），其余保持基准
     #[test]
     fn thinking_intensity_offset_matches_scene_intent() {
         assert_eq!(ThinkingScene::Awaken.thinking_intensity_offset(), 0);
-        assert_eq!(
-            ThinkingScene::IntentAnalyze.thinking_intensity_offset(),
-            -20
-        );
-        assert_eq!(ThinkingScene::Settle.thinking_intensity_offset(), -20);
+        assert_eq!(ThinkingScene::IntentAnalyze.thinking_intensity_offset(), 0);
+        assert_eq!(ThinkingScene::Settle.thinking_intensity_offset(), 30);
         assert_eq!(ThinkingScene::Summary.thinking_intensity_offset(), 0);
         assert_eq!(ThinkingScene::Compact.thinking_intensity_offset(), 0);
     }

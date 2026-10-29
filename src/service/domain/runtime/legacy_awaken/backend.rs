@@ -38,6 +38,10 @@ pub struct ThinkInput {
     /// `BudgetState.total_rounds`（收尾回复与统计口径），不回灌成下一周期的
     /// 起始限制。
     pub start_round: usize,
+    /// 意图识别产出的动态思考强度偏移（分），叠加在场景偏移之上
+    ///
+    /// 缺失/降级意图阶段时为 0，等价于未改造前的固定口径。
+    pub thinking_intensity_offset: i32,
 }
 
 /// 一次「压缩」的输入
@@ -107,7 +111,8 @@ impl ThinkBackend for LegacyBackend {
                 )
                 .with_rounds(input.max_rounds, input.start_round)
                 .with_monitoring(&deps.think_runtime, &deps.policy)
-                .with_progress(&deps.progress),
+                .with_progress(&deps.progress)
+                .with_thinking_intensity_offset(input.thinking_intensity_offset),
             )
             .await;
 

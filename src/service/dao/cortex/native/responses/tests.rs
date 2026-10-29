@@ -56,7 +56,7 @@ fn request_body_has_store_false_and_flat_tools() {
         &[ChatMessage::user("hi")],
         &tools,
         ModelAccessMode::Stream,
-        None,
+        &crate::models::cortex_types::ModelCallOptions::default(),
     );
     // 脱敏：默认服务端会留存 payload，必须显式关掉
     assert_eq!(body["store"], serde_json::json!(false));
@@ -88,7 +88,13 @@ fn request_body_non_stream_omits_stream_flag() {
         created_at: 0,
         updated_at: 0,
     };
-    let body = build_responses_body(&provider, &[], &[], ModelAccessMode::NonStream, None);
+    let body = build_responses_body(
+        &provider,
+        &[],
+        &[],
+        ModelAccessMode::NonStream,
+        &crate::models::cortex_types::ModelCallOptions::default(),
+    );
     assert!(body.get("stream").is_none());
 }
 
@@ -120,7 +126,9 @@ fn reasoning_omitted_when_provider_unconfigured() {
         &[],
         &[],
         ModelAccessMode::NonStream,
-        Some(common::enums::ThinkingIntensity::MAX),
+        &crate::models::cortex_types::ModelCallOptions {
+            thinking_intensity: Some(common::enums::ThinkingIntensity::MAX),
+        },
     );
     assert!(
         body.get("reasoning").is_none(),
@@ -132,7 +140,13 @@ fn reasoning_omitted_when_provider_unconfigured() {
 #[test]
 fn reasoning_uses_provider_default_effort() {
     let provider = provider_with_config(r#"{"thinking_intensity":50}"#);
-    let body = build_responses_body(&provider, &[], &[], ModelAccessMode::NonStream, None);
+    let body = build_responses_body(
+        &provider,
+        &[],
+        &[],
+        ModelAccessMode::NonStream,
+        &crate::models::cortex_types::ModelCallOptions::default(),
+    );
     assert_eq!(body["reasoning"]["effort"], json!("medium"));
 }
 
@@ -145,7 +159,9 @@ fn reasoning_override_wins() {
         &[],
         &[],
         ModelAccessMode::NonStream,
-        Some(common::enums::ThinkingIntensity::MAX),
+        &crate::models::cortex_types::ModelCallOptions {
+            thinking_intensity: Some(common::enums::ThinkingIntensity::MAX),
+        },
     );
     assert_eq!(body["reasoning"]["effort"], json!("high"));
 }

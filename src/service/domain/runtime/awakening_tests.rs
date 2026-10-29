@@ -163,7 +163,7 @@ impl BrainDal for CapturingBrainDal {
         _brain: &Brain,
         messages: &[crate::models::cortex_types::ChatMessage],
         _tools: &[crate::models::cortex_types::ToolDescriptor],
-        _thinking_intensity: Option<common::enums::ThinkingIntensity>,
+        _options: &crate::models::cortex_types::ModelCallOptions,
     ) -> common::error::Result<crate::models::cortex_types::ThinkResult> {
         // 把所有初始消息的 content 按顺序拼接（等价旧版扁平 build() 输出），
         // 保证原有断言（soul 是否注入 / skills 是否出现 / user_profile 是否携带）
@@ -253,7 +253,7 @@ impl BrainDal for FailingBrainDal {
         _brain: &Brain,
         _messages: &[crate::models::cortex_types::ChatMessage],
         _tools: &[crate::models::cortex_types::ToolDescriptor],
-        _thinking_intensity: Option<common::enums::ThinkingIntensity>,
+        _options: &crate::models::cortex_types::ModelCallOptions,
     ) -> common::error::Result<crate::models::cortex_types::ThinkResult> {
         Err(common::error::Error::new(
             common::error::ErrorCode::ModelRateLimited,

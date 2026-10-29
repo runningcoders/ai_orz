@@ -144,7 +144,7 @@ pub async fn call_chat_completions(
     provider: &ModelProviderPo,
     messages: &[ChatMessage],
     tools: &[ToolDescriptor],
-    thinking_intensity: Option<common::enums::ThinkingIntensity>,
+    options: &crate::models::cortex_types::ModelCallOptions,
 ) -> Result<ThinkResult> {
     validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
@@ -154,7 +154,7 @@ pub async fn call_chat_completions(
     let access_mode = resolve_access_mode(&ctx, provider);
 
     // 构建请求体：按访问模式分流 stream 字段，model/messages/tools 两路一致
-    let body = build_chat_request_body(provider, messages, tools, access_mode, thinking_intensity);
+    let body = build_chat_request_body(provider, messages, tools, access_mode, options);
 
     log_debug!(
         ctx,
@@ -244,7 +244,7 @@ fn build_chat_request_body(
     messages: &[ChatMessage],
     tools: &[ToolDescriptor],
     access_mode: ModelAccessMode,
-    thinking_intensity: Option<common::enums::ThinkingIntensity>,
+    options: &crate::models::cortex_types::ModelCallOptions,
 ) -> Value {
     let mut body = json!({
         "model": provider.model_name,
@@ -252,7 +252,7 @@ fn build_chat_request_body(
     });
     // 思考强度：Provider 未配置视为能力开关关闭，连 override 也不下发；
     // 平台分数按下游三档（low/medium/high）转换后下发
-    if let Some(intensity) = resolve_intensity(provider, thinking_intensity) {
+    if let Some(intensity) = resolve_intensity(provider, options.thinking_intensity) {
         body["reasoning_effort"] = json!(intensity.to_reasoning_effort_wire());
     }
     if access_mode == ModelAccessMode::Stream {
