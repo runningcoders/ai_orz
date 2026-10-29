@@ -217,6 +217,25 @@ fn entry_parses_legacy_line_without_new_fields() {
 }
 
 #[test]
+fn round_round_trips_thinking_intensity() {
+    let mut trace = entry("run-2", "agent-a", 1_000);
+    trace.rounds = vec![ThinkTraceRound {
+        round: 1,
+        thinking_intensity: Some(ThinkingIntensity::new(50)),
+        ..Default::default()
+    }];
+
+    let json = serde_json::to_string(&trace).unwrap();
+    // 扣在轮上而非 run 上：未来逐轮动态调整时存储结构无需变更
+    assert!(json.contains("\"thinking_intensity\":50"), "json: {json}");
+    let parsed: ThinkTraceEntry = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        parsed.rounds[0].thinking_intensity,
+        Some(ThinkingIntensity::new(50))
+    );
+}
+
+#[test]
 fn entry_round_trips_round_details() {
     let mut trace = entry("run-1", "agent-a", 1_000);
     trace.rounds = vec![ThinkTraceRound {
@@ -234,6 +253,7 @@ fn entry_round_trips_round_details() {
         output_tokens: 45,
         duration_ms: 900,
         decision: Some("continue".to_string()),
+        thinking_intensity: Some(ThinkingIntensity::new(42)),
     }];
 
     let json = serde_json::to_string(&trace).unwrap();

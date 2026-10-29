@@ -26,6 +26,7 @@ use crate::service::domain::runtime::think_loop::{
 };
 use crate::service::domain::runtime::types::{RoundDigest, ThinkLoopResult};
 use async_trait::async_trait;
+use common::enums::ThinkingIntensity;
 use common::error::{Result, err};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -145,6 +146,10 @@ fn reasoning_summaries(result: &ThinkResult) -> Vec<String> {
 }
 
 /// 组装本轮轨迹明细（工具结果由 dispatch 回填）
+///
+/// `thinking_intensity` 必须是**本轮实际传给模型的调用参数快照**，而不是 run 级
+/// 默认值——未来按轮动态调整强度时，轨迹仍需如实反映每一轮实际下发的值。
+#[allow(clippy::too_many_arguments)]
 fn build_trace_round(
     round: usize,
     assistant_text: Option<String>,
@@ -153,6 +158,7 @@ fn build_trace_round(
     input_tokens: u64,
     output_tokens: u64,
     duration_ms: u64,
+    thinking_intensity: Option<ThinkingIntensity>,
 ) -> ThinkTraceRound {
     ThinkTraceRound {
         round: round + 1,
@@ -163,6 +169,7 @@ fn build_trace_round(
         output_tokens,
         duration_ms,
         decision: None,
+        thinking_intensity,
     }
 }
 
@@ -240,6 +247,10 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     // ---- LLM 调用 + 错误预算 ----
     // 失败不再直接传播，计入因子交由策略裁决：预算内立即重试（无退避，YAGNI），
     // 策略命中则传播错误，下游 abort_summary 走无 LLM 兜底存档（异常总结路径）。
+    //
+    // 本轮调用参数快照：轨迹按轮记录实际下发值。未来若支持逐轮动态调整
+    // （如按上下文长度/重试次数收敛强度），只需在这里产出不同的参数。
+    let round_call_options = d.call_options.clone();
     let round_start = std::time::Instant::now();
     let result = loop {
         match d
@@ -250,7 +261,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 &d.brain,
                 &messages,
                 &d.tool_descriptors,
-                &d.call_options,
+                &round_call_options,
             )
             .await
         {
@@ -348,6 +359,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 usage.input_tokens,
                 usage.output_tokens,
                 round_duration_ms,
+                round_call_options.thinking_intensity,
             ));
             state.messages = messages;
             state.total_input_tokens = total_input_tokens;
@@ -423,6 +435,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 round_input_tokens,
                 round_output_tokens,
                 round_duration_ms,
+                round_call_options.thinking_intensity,
             ));
             state.pending_tool_calls = tool_calls;
             state.last_round = round;

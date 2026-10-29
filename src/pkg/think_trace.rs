@@ -14,6 +14,7 @@
 use crate::pkg::daily_jsonl::DailyJsonlWriter;
 use crate::pkg::paths;
 use common::api::{PagedResult, PaginationParams};
+use common::enums::ThinkingIntensity;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -129,6 +130,11 @@ pub struct ThinkTraceRound {
     /// 本轮的裁决结果：final / continue / reflect / exit
     #[serde(default)]
     pub decision: Option<String>,
+    /// 本轮调用模型时实际下发的思考强度（0–100 分）；
+    /// None = Provider 未启用该能力（请求体不下发）。按轮记录而非按 run，
+    /// 未来支持逐轮动态调整时无需改存储结构。
+    #[serde(default)]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// 单轮内的一次工具调用

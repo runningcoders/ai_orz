@@ -7,6 +7,8 @@ use dioxus::prelude::*;
 
 use common::api::ThinkTraceRoundDto;
 
+use crate::components::thinking_intensity_field::thinking_intensity_label;
+
 /// 思考文本预览长度（字符）：超出部分折叠
 const TEXT_PREVIEW_CHARS: usize = 160;
 
@@ -70,6 +72,8 @@ fn tool_status_class(status: &str) -> &'static str {
 }
 
 /// 思考轮次时间线
+///
+/// 强度按轮记录（同一 run 内目前各轮相同，未来可逐轮动态调整）。
 #[component]
 pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
     if rounds.is_empty() {
@@ -98,6 +102,10 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                             r.output_tokens,
                             r.duration_ms,
                         );
+                        let intensity_text = r
+                            .thinking_intensity
+                            .map(thinking_intensity_label)
+                            .unwrap_or_else(|| "思考·未启用".to_string());
                         rsx! {
                             div {
                                 key: "{round_no}",
@@ -106,6 +114,11 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                     span { class: "text-xs font-semibold", "第 {round_no} 轮" }
                                     if let Some(decision) = decision.clone() {
                                         span { class: decision_class(&decision), "{decision_label(&decision)}" }
+                                    }
+                                    span {
+                                        class: "badge badge-xs badge-ghost font-mono",
+                                        title: "本轮实际下发的思考强度（0–100 分；未启用时请求体不下发）",
+                                        "{intensity_text}"
                                     }
                                     span { class: "text-[11px] text-base-content/50 flex-1 text-right", "{usage}" }
                                 }

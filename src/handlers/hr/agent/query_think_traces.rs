@@ -82,6 +82,7 @@ fn to_list_item(entry: ThinkTraceEntry) -> ThinkTraceListItem {
                 output_tokens: r.output_tokens,
                 duration_ms: r.duration_ms,
                 decision: r.decision,
+                thinking_intensity: r.thinking_intensity,
             })
             .collect(),
         occurrences: entry

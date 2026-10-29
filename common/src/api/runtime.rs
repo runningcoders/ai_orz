@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{PagedResult, PaginationParams};
+use crate::enums::ThinkingIntensity;
 
 /// GET /agents/{id}/runtime-status 请求（path 参数：id）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
@@ -200,6 +201,9 @@ pub struct ThinkTraceRoundDto {
     pub duration_ms: u64,
     /// 裁决结果：final / continue / reflect / exit
     pub decision: Option<String>,
+    /// 本轮调用模型时实际下发的思考强度（0–100 分）；None = Provider 未启用该能力
+    #[serde(default)]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// 单轮内的一次工具调用
