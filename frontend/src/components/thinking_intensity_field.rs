@@ -1,18 +1,22 @@
 //! 思考强度（0–100 分）配置控件
 //!
-//! 平台内部统一 0–100 分刻度；下游厂商的 wire 形式（当前三档 `low`/`medium`/`high`）
-//! 由 Provider 配置决定，转换集中在 [`ThinkingIntensity::to_reasoning_effort_wire`]。
+//! 平台内部统一 0–100 分刻度；下游厂商的 wire 形式（完整六档
+//! `minimal`/`low`/`medium`/`high`/`xhigh`/`max`）由 Provider 配置决定，
+//! 转换集中在 [`ThinkingIntensity::to_reasoning_effort_wire`]。
 //! 本控件只负责「启用开关 + 滑块 + 当前生效档位提示」，分值状态由调用方持有。
 
 use common::enums::ThinkingIntensity;
 use dioxus::prelude::*;
 
-/// 分数 → 下游三档文案（与 `to_reasoning_effort_wire` 同源，避免 UI 自行切档）
+/// 分数 → 下游六档文案（与 `to_reasoning_effort_wire` 同源，避免 UI 自行切档）
 pub fn thinking_intensity_tier_label(intensity: ThinkingIntensity) -> &'static str {
     match intensity.to_reasoning_effort_wire() {
+        "minimal" => "极低",
         "low" => "低",
         "medium" => "中",
-        _ => "高",
+        "high" => "高",
+        "xhigh" => "超高",
+        _ => "最高",
     }
 }
 
@@ -74,7 +78,7 @@ pub fn ThinkingIntensityField(
                 }
                 p { class: "mt-1 text-xs text-base-content/60",
                     "下游当前生效档位：{thinking_intensity_tier_label(ThinkingIntensity::new(score))}"
-                    "（0–33 = 低 / 34–66 = 中 / 67–100 = 高）"
+                    "（0–16 = 极低 / 17–33 = 低 / 34–50 = 中 / 51–66 = 高 / 67–83 = 超高 / 84–100 = 最高）"
                 }
             } else {
                 p { class: "mt-1 text-xs text-base-content/60",

@@ -251,7 +251,7 @@ fn build_chat_request_body(
         "messages": messages_to_json(messages),
     });
     // 思考强度：Provider 未配置视为能力开关关闭，连 override 也不下发；
-    // 平台分数按下游三档（low/medium/high）转换后下发
+    // 平台分数按下游完整六档（minimal/low/medium/high/xhigh/max）转换后下发
     if let Some(intensity) = resolve_intensity(provider, options.thinking_intensity) {
         body["reasoning_effort"] = json!(intensity.to_reasoning_effort_wire());
     }

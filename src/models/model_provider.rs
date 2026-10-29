@@ -70,7 +70,7 @@ pub struct ModelProviderConfig {
     /// `None` = 未配置：请求体**完全不下发** reasoning_effort / reasoning 字段，
     /// 保持存量行为；此时 Agent 覆盖值与场景偏移均不生效（能力开关优先）。
     /// 非 None 时作为基准分数，再叠加 Agent 覆盖与场景偏移，请求下游前按
-    /// 下游支持的形式转换（当前为 low/medium/high 三档）。
+    /// 下游支持的形式转换（完整六档 minimal/low/medium/high/xhigh/max）。
     ///
     /// 只应对支持该字段的端点配置；不支持的网关保持 None，否则会被拒收。
     ///

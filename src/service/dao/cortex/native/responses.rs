@@ -158,7 +158,7 @@ fn build_responses_body(
     });
     // 思考强度：Provider 未配置视为能力开关关闭，整条链路不下发；
     // 配置后以调用方 override 优先，否则回退 provider 基准分数。
-    // 平台 0–100 分在此按下游三档（low/medium/high）转换为 wire 值。
+    // 平台 0–100 分在此按下游完整六档（minimal/low/medium/high/xhigh/max）转换为 wire 值。
     if let Some(intensity) = resolve_intensity(provider, options.thinking_intensity) {
         body["reasoning"] = json!({ "effort": intensity.to_reasoning_effort_wire() });
     }

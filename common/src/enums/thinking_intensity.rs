@@ -8,7 +8,9 @@
 //!   未配置的场景为 0）
 //!
 //! 最终值 = clamp(基准 + 偏移, 0, 100)。真正请求下游模型时，才按下游支持的形式做转换
-//! （目前为三档 `low`/`medium`/`high`，见 [`ThinkingIntensity::to_reasoning_effort_wire`]）；
+//! （完整六档 `minimal`/`low`/`medium`/`high`/`xhigh`/`max`，见
+//! [`ThinkingIntensity::to_reasoning_effort_wire`]）。`none` 不在强度档位内：
+//! 平台的 `Option::None` 已经表达「不下发该字段」（走厂商默认），无需再发 `none`。
 //! 未来厂商若支持分数，只需在此处扩展转换分支，上层配置与存储不变。
 
 use schemars::JsonSchema;
@@ -24,12 +26,17 @@ impl ThinkingIntensity {
     pub const MIN: Self = Self(0);
     /// 最高强度
     pub const MAX: Self = Self(100);
-    /// 平台默认基准（中强度，落在三档下游的 medium 区间）
+    /// 平台默认基准（中强度，落在六档下游的 medium 区间）
     pub const DEFAULT: Self = Self(50);
 
-    /// 三档下游的 `medium` 区间上界（0–33 low / 34–66 medium / 67–100 high）
-    const LEVELS3_LOW_MAX: u8 = 33;
-    const LEVELS3_MEDIUM_MAX: u8 = 66;
+    /// 六档下游的区间上界（与 OpenAI `reasoning_effort` 规范对齐）：
+    /// 0–16 minimal / 17–33 low / 34–50 medium / 51–66 high /
+    /// 67–83 xhigh / 84–100 max
+    const LEVELS_MINIMAL_MAX: u8 = 16;
+    const LEVELS_LOW_MAX: u8 = 33;
+    const LEVELS_MEDIUM_MAX: u8 = 50;
+    const LEVELS_HIGH_MAX: u8 = 66;
+    const LEVELS_XHIGH_MAX: u8 = 83;
 
     /// 由分数构造，超过 100 饱和钳制
     pub fn new(score: u8) -> Self {
@@ -48,17 +55,25 @@ impl ThinkingIntensity {
         Self((self.0 as i32 + delta).clamp(Self::MIN.0 as i32, Self::MAX.0 as i32) as u8)
     }
 
-    /// 转换为下游三档支持（`reasoning_effort`）的 wire 字符串
+    /// 转换为下游完整六档支持（`reasoning_effort`）的 wire 字符串
     ///
+    /// 与 OpenAI 规范逐字对齐：`minimal` / `low` / `medium` / `high` / `xhigh` / `max`。
+    /// `none` 不在此列——平台用 `Option::None` 表达「不下发」。
     /// 未来下游支持分数时，在此增加分支（或按 provider 声明的能力选择转换），
     /// 上层 Agent/场景/存储无需改动。
     pub fn to_reasoning_effort_wire(self) -> &'static str {
-        if self.0 <= Self::LEVELS3_LOW_MAX {
+        if self.0 <= Self::LEVELS_MINIMAL_MAX {
+            "minimal"
+        } else if self.0 <= Self::LEVELS_LOW_MAX {
             "low"
-        } else if self.0 <= Self::LEVELS3_MEDIUM_MAX {
+        } else if self.0 <= Self::LEVELS_MEDIUM_MAX {
             "medium"
-        } else {
+        } else if self.0 <= Self::LEVELS_HIGH_MAX {
             "high"
+        } else if self.0 <= Self::LEVELS_XHIGH_MAX {
+            "xhigh"
+        } else {
+            "max"
         }
     }
 }
@@ -89,17 +104,23 @@ mod tests {
         );
     }
 
-    /// 三档阈值边界：0–33 low / 34–66 medium / 67–100 high。
+    /// 六档阈值边界：0–16 minimal / 17–33 low / 34–50 medium /
+    /// 51–66 high / 67–83 xhigh / 84–100 max。
     #[test]
-    fn levels3_thresholds_cover_all_buckets() {
+    fn levels6_thresholds_cover_all_buckets() {
         for (score, wire) in [
-            (0u8, "low"),
+            (0u8, "minimal"),
+            (16, "minimal"),
+            (17, "low"),
             (33, "low"),
             (34, "medium"),
             (50, "medium"),
-            (66, "medium"),
-            (67, "high"),
-            (100, "high"),
+            (51, "high"),
+            (66, "high"),
+            (67, "xhigh"),
+            (83, "xhigh"),
+            (84, "max"),
+            (100, "max"),
         ] {
             assert_eq!(
                 ThinkingIntensity::new(score).to_reasoning_effort_wire(),

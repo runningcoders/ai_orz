@@ -136,7 +136,7 @@ fn reasoning_omitted_when_provider_unconfigured() {
     );
 }
 
-/// Provider 配置后：Responses 使用嵌套 `reasoning.effort` 结构，分数按三档转换
+/// Provider 配置后：Responses 使用嵌套 `reasoning.effort` 结构，分数按六档转换
 #[test]
 fn reasoning_uses_provider_default_effort() {
     let provider = provider_with_config(r#"{"thinking_intensity":50}"#);
@@ -150,7 +150,7 @@ fn reasoning_uses_provider_default_effort() {
     assert_eq!(body["reasoning"]["effort"], json!("medium"));
 }
 
-/// Provider 配置后：override 优先，分数按三档转换
+/// Provider 配置后：override 优先，分数按六档转换
 #[test]
 fn reasoning_override_wins() {
     let provider = provider_with_config(r#"{"thinking_intensity":10}"#);
@@ -163,7 +163,7 @@ fn reasoning_override_wins() {
             thinking_intensity: Some(common::enums::ThinkingIntensity::MAX),
         },
     );
-    assert_eq!(body["reasoning"]["effort"], json!("high"));
+    assert_eq!(body["reasoning"]["effort"], json!("max"));
 }
 
 // ==================== input 转换 ====================

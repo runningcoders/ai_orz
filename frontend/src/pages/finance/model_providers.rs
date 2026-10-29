@@ -42,7 +42,7 @@ pub fn FinanceModelProviders() -> Element {
     // 协议口味：默认 Responses（平台主线；与 ChatApiFlavor::default() 同语义）
     let mut new_api_flavor = use_signal(|| ChatApiFlavor::Responses);
     // 思考强度：默认不启用（None = 请求体不下发该字段，保持存量行为）；
-    // 启用后平台统一 0–100 分，下游三档由 Provider 配置推导
+    // 启用后平台统一 0–100 分，下游六档由 Provider 配置推导
     let mut new_thinking_intensity_enabled = use_signal(|| false);
     let mut new_thinking_intensity = use_signal(|| ThinkingIntensity::DEFAULT.score());
     let new_access_mode_str = match new_access_mode() {
