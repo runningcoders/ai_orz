@@ -31,6 +31,9 @@ pub struct ModelCallEvent {
     caller_organization_id: Option<String>,
     #[tag]
     user_id: Option<String>,
+    /// 调用场景（chat / embedding），用于区分不同用途与计价的模型调用
+    #[tag]
+    call_kind: Option<String>,
     #[metric]
     call_count: u64,
     #[metric]
@@ -59,6 +62,7 @@ impl ModelCallEvent {
             organization_id: None,
             caller_organization_id: None,
             user_id: None,
+            call_kind: Some("chat".to_string()),
             call_count: 1,
             tokens_input: 0,
             tokens_output: 0,
@@ -100,6 +104,11 @@ impl ModelCallEvent {
 
     pub fn with_user_id(mut self, v: Option<String>) -> Self {
         self.user_id = v;
+        self
+    }
+
+    pub fn with_call_kind(mut self, v: Option<String>) -> Self {
+        self.call_kind = v;
         self
     }
 
@@ -154,6 +163,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 organization_id VARCHAR,
                 caller_organization_id VARCHAR,
                 user_id VARCHAR,
+                call_kind VARCHAR DEFAULT 'chat',
                 call_count BIGINT,
                 tokens_input BIGINT,
                 tokens_output BIGINT,
@@ -168,17 +178,25 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 e
             ))
         })?;
-        // 兼容已有 DuckDB 文件：补加审计维度列（幂等）
-        conn.execute(
-            "ALTER TABLE model_call_events ADD COLUMN IF NOT EXISTS caller_organization_id VARCHAR",
-            [],
-        )
-        .map_err(|e| {
-            common::error::Error::internal(format!(
-                "Failed to migrate model_call_events table: {}",
-                e
-            ))
-        })?;
+        // 兼容已有 DuckDB 文件：补加审计维度列（幂等）。
+        // call_kind 带 DEFAULT 'chat'，保证历史数据仍被现有对话统计口径命中。
+        for (col, ty, default) in [
+            ("caller_organization_id", "VARCHAR", ""),
+            ("call_kind", "VARCHAR", " DEFAULT 'chat'"),
+        ] {
+            conn.execute(
+                &format!(
+                    "ALTER TABLE model_call_events ADD COLUMN IF NOT EXISTS {col} {ty}{default}"
+                ),
+                [],
+            )
+            .map_err(|e| {
+                common::error::Error::internal(format!(
+                    "Failed to migrate model_call_events table ({col}): {}",
+                    e
+                ))
+            })?;
+        }
         // 兼容已有 DuckDB 文件：补加 token 明细列（幂等）。
         //
         // 关键：CREATE TABLE IF NOT EXISTS 对**已存在**的 .duckdb 文件是 no-op，
@@ -205,9 +223,9 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
             INSERT INTO model_call_events (
                 id, timestamp, agent_id, project_id, task_id,
                 model_provider_id, model_name, organization_id, caller_organization_id, user_id,
-                call_count, tokens_input, tokens_output, total_tokens,
+                call_kind, call_count, tokens_input, tokens_output, total_tokens,
                 cached_tokens, reasoning_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -222,6 +240,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 &event.organization_id as &dyn ToSql,
                 &event.caller_organization_id as &dyn ToSql,
                 &event.user_id as &dyn ToSql,
+                &event.call_kind as &dyn ToSql,
                 &event.call_count as &dyn ToSql,
                 &event.tokens_input as &dyn ToSql,
                 &event.tokens_output as &dyn ToSql,
@@ -243,9 +262,9 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 INSERT INTO model_call_events (
                     id, timestamp, agent_id, project_id, task_id,
                     model_provider_id, model_name, organization_id, caller_organization_id, user_id,
-                    call_count, tokens_input, tokens_output, total_tokens,
+                    call_kind, call_count, tokens_input, tokens_output, total_tokens,
                     cached_tokens, reasoning_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
             conn.execute(
                 sql,
@@ -260,6 +279,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                     &event.organization_id as &dyn ToSql,
                     &event.caller_organization_id as &dyn ToSql,
                     &event.user_id as &dyn ToSql,
+                    &event.call_kind as &dyn ToSql,
                     &event.call_count as &dyn ToSql,
                     &event.tokens_input as &dyn ToSql,
                     &event.tokens_output as &dyn ToSql,

@@ -72,6 +72,87 @@ async fn test_sum_tokens_basic() -> Result<()> {
     Ok(())
 }
 
+/// 默认统计口径只包含对话调用；向量化调用仅在显式指定 `call_kind=embedding`
+/// 时可查（向量模型详情页使用）。
+#[tokio::test]
+async fn test_call_kind_excludes_embedding_by_default() -> Result<()> {
+    const PROVIDER_ID: &str = "provider-call-kind-test";
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let stats = Stats::open(db_path.to_str().unwrap(), 100).await?;
+    stats.initialize_default()?;
+
+    let pool = SqlitePool::connect("sqlite::memory:").await?;
+    let tmp_ctx = request_context_test_support::new_test_ctx("tmp-user", pool.clone());
+    let now = Utc::now().timestamp_millis();
+
+    // 2 条对话调用：每次 100 输入 token
+    for i in 0..2 {
+        let event = ModelCallEvent::new(now - (2 - i) * 1000)
+            .with_model_provider_id(Some(PROVIDER_ID.to_string()))
+            .with_tokens_input(100)
+            .with_total_tokens(100);
+        stats.record(tmp_ctx.clone(), event).await?;
+    }
+    // 3 条向量化调用：每次 10 输入 token
+    for i in 0..3 {
+        let event = ModelCallEvent::new(now - (3 - i) * 1000)
+            .with_call_kind(Some("embedding".to_string()))
+            .with_model_provider_id(Some(PROVIDER_ID.to_string()))
+            .with_tokens_input(10)
+            .with_total_tokens(10);
+        stats.record(tmp_ctx.clone(), event).await?;
+    }
+    stats.flush_all(tmp_ctx).await?;
+
+    let ctx = request_context_test_support::new_test_ctx_with_stats("test-user", pool, stats);
+    let dao = stats_new();
+
+    let chat = dao
+        .sum_tokens(
+            ctx.clone(),
+            ModelProviderStatsQuery {
+                model_provider_id: Some(PROVIDER_ID.to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(chat.total_calls, 2, "默认口径不应计入向量化调用");
+    assert_eq!(chat.total_tokens_input, 200);
+
+    let embedding = dao
+        .sum_tokens(
+            ctx.clone(),
+            ModelProviderStatsQuery {
+                model_provider_id: Some(PROVIDER_ID.to_string()),
+                call_kind: Some("embedding".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(embedding.total_calls, 3, "sum_tokens 按事件条数计数");
+    assert_eq!(embedding.total_tokens_input, 30);
+    assert_eq!(embedding.total_tokens_output, 0);
+
+    // 一次 HTTP 请求一条事件：multimodal 逐条请求时调用次数与事件条数一致
+    let points = dao
+        .query_model_call_time_series(
+            ctx,
+            ModelProviderStatsQuery {
+                model_provider_id: Some(PROVIDER_ID.to_string()),
+                call_kind: Some("embedding".to_string()),
+                time_range: Some((now - 10_000_000, now + 10_000_000)),
+                interval: Some(StatsInterval::Minutely),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(points.iter().map(|p| p.call_count).sum::<u64>(), 3);
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_query_model_call_time_series() -> Result<()> {
     let model_provider_id = "provider-ts-test";

@@ -75,6 +75,20 @@ impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
             query.filters.insert(0, user_filter);
         }
 
+        // 默认只统计对话调用：向量化 token 不计入工作台 / Agent / 项目 / 任务等
+        // 既有看板口径，只有向量模型详情页会显式传 call_kind = "embedding"。
+        let call_kind = query
+            .call_kind
+            .clone()
+            .unwrap_or_else(|| "chat".to_string());
+        query.filters.insert(
+            0,
+            StatFilter::Equals {
+                key: "call_kind".to_string(),
+                value: JsonValue::String(call_kind),
+            },
+        );
+
         let stats = ctx.stats();
         let table_name = self.model_call_table_name(stats);
 

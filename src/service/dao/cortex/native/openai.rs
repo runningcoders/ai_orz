@@ -3,6 +3,7 @@
 use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
+use crate::pkg::stats::ModelCallEvent;
 use crate::service::dao::cortex::native::http;
 use async_trait::async_trait;
 use common::enums::ProviderType;
@@ -44,15 +45,38 @@ impl super::CortexDao for OpenAiCompatibleCortexDao {
 
     async fn embed(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         provider: &ModelProviderPo,
         texts: &[String],
     ) -> Result<Vec<Vec<f32>>> {
-        // DoubaoVision 走 /embeddings/multimodal
-        if provider.provider_type == ProviderType::DoubaoVision {
-            return http::call_embeddings_multimodal(&self.client, provider, texts).await;
+        // DoubaoVision 走 /embeddings/multimodal；其他 provider 走标准 /embeddings
+        let outcome = if provider.provider_type == ProviderType::DoubaoVision {
+            http::call_embeddings_multimodal(&self.client, provider, texts).await?
+        } else {
+            http::call_embeddings(&self.client, provider, texts).await?
+        };
+
+        // 向量模型被上层多处调用，统一在最底层收口打点：
+        // 一次 HTTP 请求一条事件；provider 未上报 usage 时 token 为 0，仅计调用次数。
+        let now = chrono::Utc::now().timestamp_millis();
+        for usage in &outcome.usages {
+            let event = ModelCallEvent::new(now)
+                .with_call_kind(Some("embedding".to_string()))
+                .with_agent_id(ctx.agent_id.clone())
+                .with_project_id(ctx.project_id.clone())
+                .with_task_id(ctx.task_id.clone())
+                .with_model_provider_id(Some(provider.id.clone()))
+                .with_model_name(Some(provider.model_name.clone()))
+                .with_organization_id(ctx.organization_id.clone())
+                .with_user_id(ctx.user_id.clone())
+                .with_tokens_input(usage.input_tokens)
+                .with_tokens_output(usage.output_tokens)
+                .with_total_tokens(usage.total())
+                .with_cached_tokens(usage.cached_tokens)
+                .with_reasoning_tokens(usage.reasoning_tokens);
+            let _ = crate::record_event!(ctx, event);
         }
-        // 其他 provider 走标准 /embeddings
-        http::call_embeddings(&self.client, provider, texts).await
+
+        Ok(outcome.vectors)
     }
 }

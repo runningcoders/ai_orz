@@ -535,12 +535,20 @@ fn check_stream_end(acc: &StreamAccumulator) -> Result<()> {
     Ok(())
 }
 
+/// 向量化调用结果（向量 + 每个 HTTP 请求对应的 token 用量）
+pub struct EmbeddingOutcome {
+    pub vectors: Vec<Vec<f32>>,
+    /// 每个 HTTP 请求对应一条 usage（multimodal 逐条请求）；
+    /// provider 未上报时为空用量，仅统计调用次数。
+    pub usages: Vec<TokenUsage>,
+}
+
 /// 调用标准 Embeddings API
 pub async fn call_embeddings(
     client: &reqwest::Client,
     provider: &ModelProviderPo,
     texts: &[String],
-) -> Result<Vec<Vec<f32>>> {
+) -> Result<EmbeddingOutcome> {
     validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
     let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
@@ -572,11 +580,19 @@ pub async fn call_embeddings(
         .await
         .map_err(|e| err!(Internal, "embeddings response parse failed: {}", e))?;
 
-    Ok(resp_body
-        .data
-        .into_iter()
-        .map(|d| d.embedding.into_iter().map(|x| x as f32).collect())
-        .collect())
+    Ok(EmbeddingOutcome {
+        vectors: resp_body
+            .data
+            .into_iter()
+            .map(|d| d.embedding.into_iter().map(|x| x as f32).collect())
+            .collect(),
+        usages: vec![
+            resp_body
+                .usage
+                .map(|u| u.to_token_usage())
+                .unwrap_or_default(),
+        ],
+    })
 }
 
 /// 调用豆包 Vision 多模态 Embeddings API
@@ -589,12 +605,13 @@ pub async fn call_embeddings_multimodal(
     client: &reqwest::Client,
     provider: &ModelProviderPo,
     texts: &[String],
-) -> Result<Vec<Vec<f32>>> {
+) -> Result<EmbeddingOutcome> {
     validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
     let url = format!("{}/embeddings/multimodal", base_url.trim_end_matches('/'));
 
     let mut results = Vec::with_capacity(texts.len());
+    let mut usages = Vec::with_capacity(texts.len());
     for text in texts {
         let body = json!({
             "model": provider.model_name,
@@ -634,9 +651,19 @@ pub async fn call_embeddings_multimodal(
                 .map(|x| x as f32)
                 .collect(),
         );
+
+        usages.push(
+            resp_body
+                .usage
+                .map(|u| u.to_token_usage())
+                .unwrap_or_default(),
+        );
     }
 
-    Ok(results)
+    Ok(EmbeddingOutcome {
+        vectors: results,
+        usages,
+    })
 }
 
 // ==================== 错误分类 ====================
@@ -910,6 +937,8 @@ impl Usage {
 #[derive(Deserialize)]
 struct EmbeddingResponse {
     data: Vec<EmbeddingData>,
+    /// provider 未上报 usage 时为 None（按 0 token 记录，仅统计调用次数）
+    usage: Option<Usage>,
 }
 
 #[derive(Deserialize)]
@@ -920,6 +949,8 @@ struct EmbeddingData {
 #[derive(Deserialize)]
 struct MultimodalEmbeddingResponse {
     data: MultimodalEmbeddingData,
+    /// provider 未上报 usage 时为 None（按 0 token 记录，仅统计调用次数）
+    usage: Option<Usage>,
 }
 
 #[derive(Deserialize)]

@@ -27,6 +27,59 @@ async fn test_open_and_create_default_table() -> Result<()> {
     Ok(())
 }
 
+/// 旧库迁移：`call_kind` 列不存在时幂等补列并回填 `chat`，
+/// 避免升级后历史对话统计被新口径（默认只查 chat）漏掉。
+#[test]
+fn test_model_call_table_migrates_call_kind_with_chat_default() -> Result<()> {
+    let dir = tempdir()?;
+    let mut conn = Connection::open(dir.path().join("migration.db"))
+        .map_err(|e| common::error::Error::internal(e.to_string()))?;
+    conn.execute_batch(
+        r#"
+        CREATE TABLE model_call_events (
+            id UUID PRIMARY KEY,
+            timestamp BIGINT,
+            agent_id VARCHAR,
+            project_id VARCHAR,
+            task_id VARCHAR,
+            model_provider_id VARCHAR,
+            model_name VARCHAR,
+            organization_id VARCHAR,
+            caller_organization_id VARCHAR,
+            user_id VARCHAR,
+            call_count BIGINT,
+            tokens_input BIGINT,
+            tokens_output BIGINT,
+            total_tokens BIGINT,
+            cached_tokens BIGINT,
+            reasoning_tokens BIGINT
+        );
+        "#,
+    )
+    .map_err(|e| common::error::Error::internal(e.to_string()))?;
+
+    let id = Uuid::now_v7().to_string();
+    conn.execute(
+        "INSERT INTO model_call_events (id, timestamp, call_count) VALUES (?, ?, 1)",
+        [
+            &id as &dyn ToSql,
+            &Utc::now().timestamp_millis() as &dyn ToSql,
+        ],
+    )
+    .map_err(|e| common::error::Error::internal(e.to_string()))?;
+
+    ModelCallStatTable.create_table(&mut conn)?;
+
+    let call_kind: String = conn
+        .query_row("SELECT call_kind FROM model_call_events", [], |row| {
+            row.get(0)
+        })
+        .map_err(|e| common::error::Error::internal(e.to_string()))?;
+    assert_eq!(call_kind, "chat");
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_record_single_event() -> Result<()> {
     crate::pkg::storage::test_support::init_for_test().await;

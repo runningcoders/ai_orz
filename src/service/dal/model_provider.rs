@@ -8,7 +8,7 @@ use crate::service::dao::model_provider::{
     ModelProviderDao, ModelProviderQuery, ModelProviderStatsDao, ModelProviderStatsQuery,
 };
 use common::api::PagedResult;
-use common::enums::ModelProviderStatus;
+use common::enums::{ModelCapability, ModelProviderStatus};
 use common::error::Result;
 use common::models::{ModelCallStats, StatsFetchOptions, StatsInterval, TimeSeriesPoint};
 use serde_json::Value as JsonValue;
@@ -102,10 +102,14 @@ pub trait ModelProviderDal: Send + Sync {
     // ==================== 统计查询 ====================
 
     /// 获取 ModelProvider 统计数据（按 options 控制返回哪些维度）
+    ///
+    /// `call_kind` 决定统计口径：对话 Provider 用 `chat`，向量 Provider 用
+    /// `embedding`，避免两类调用在详情页混算。
     async fn get_stats(
         &self,
         ctx: RequestContext,
         model_provider_id: &str,
+        call_kind: &str,
         options: StatsFetchOptions,
     ) -> Result<ModelCallStats>;
 
@@ -170,7 +174,14 @@ impl ModelProviderDal for ModelProviderDalImpl {
                     interval: options.stats_interval,
                 };
 
-                match self.get_stats(ctx.clone(), id, stats_options).await {
+                let call_kind = match provider.po.capability {
+                    ModelCapability::Embedding => "embedding",
+                    _ => "chat",
+                };
+                match self
+                    .get_stats(ctx.clone(), id, call_kind, stats_options)
+                    .await
+                {
                     Ok(stats) => {
                         provider.stats = Some(stats);
                     }
@@ -250,10 +261,12 @@ impl ModelProviderDal for ModelProviderDalImpl {
         &self,
         ctx: RequestContext,
         model_provider_id: &str,
+        call_kind: &str,
         options: StatsFetchOptions,
     ) -> Result<ModelCallStats> {
         let query = ModelProviderStatsQuery {
             model_provider_id: Some(model_provider_id.to_string()),
+            call_kind: Some(call_kind.to_string()),
             time_range: options.time_range,
             interval: options.interval,
             ..Default::default()

@@ -82,6 +82,9 @@ pub struct ModelProviderStatsQuery {
     pub task_id: Option<String>,
     /// User ID（可选，按触发用户维度过滤；Agent 自主思考等无用户上下文的调用不计入）
     pub user_id: Option<String>,
+    /// 调用场景（可选）：chat / embedding。None 时默认只查 chat，
+    /// 向量化统计仅由向量模型详情页显式指定。
+    pub call_kind: Option<String>,
     /// 额外过滤条件
     pub filters: Vec<StatFilter>,
     /// 时间范围（毫秒，None 表示不限）
