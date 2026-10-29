@@ -16,7 +16,7 @@ use crate::service::dao::cortex;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
-use common::enums::{AgentKind, ModelCapability};
+use common::enums::{AgentKind, ModelCapability, ThinkingIntensity};
 use common::error::{Result, err};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -109,6 +109,7 @@ pub trait BrainDal: Send + Sync {
         brain: &Brain,
         messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
+        thinking_intensity: Option<ThinkingIntensity>,
     ) -> Result<ThinkResult>;
 
     /// 小脑快判断：单次亚秒级 System One decision 调用（B3 运行时路由消费面）
@@ -332,6 +333,9 @@ impl BrainDal for BrainDalImpl {
                         &provider.po,
                         &[crate::models::cortex_types::ChatMessage::user(prompt)],
                         &[],
+                        // 连通性测试不经过思考循环：override=None，
+                        // 由请求体构建层回退到 provider 默认档位
+                        None,
                     )
                     .await?;
 
@@ -349,6 +353,7 @@ impl BrainDal for BrainDalImpl {
         brain: &Brain,
         messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
+        thinking_intensity: Option<ThinkingIntensity>,
     ) -> Result<ThinkResult> {
         let start = std::time::Instant::now();
 
@@ -370,7 +375,9 @@ impl BrainDal for BrainDalImpl {
                 );
 
                 let dao = cortex::native::registry().chat_dao(provider);
-                let result = dao.think(ctx.clone(), provider, messages, tools).await;
+                let result = dao
+                    .think(ctx.clone(), provider, messages, tools, thinking_intensity)
+                    .await;
 
                 log_debug!(
                     ctx.clone(),

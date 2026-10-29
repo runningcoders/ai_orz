@@ -6,7 +6,7 @@ use crate::models::tool::Tool;
 use crate::models::vector::{SearchMatchInfo, VectorPayload, Vectorizable};
 use crate::pkg::agent_runtime_state::AgentRuntimeInfo;
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
-use common::enums::AgentStatus;
+use common::enums::{AgentStatus, ThinkingIntensity};
 use common::models::{AgentStats, ModelCallStats};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -91,6 +91,13 @@ pub struct AgentRuntimeConfig {
     /// 外部 Agent 执行配置（仅 Cli/Remote kind 时使用）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_config: Option<ExternalAgentConfig>,
+
+    /// 思考强度覆盖（0–100 分，None = 跟随 Provider 基准）
+    ///
+    /// 仅在 Provider 已配置 `thinking_intensity` 时生效（Provider 侧未配置视为
+    /// 能力开关关闭，整条链路不下发该字段）。生效后作为基准分数，再叠加场景偏移。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// 外部 Agent 执行配置
@@ -144,6 +151,7 @@ impl Default for AgentRuntimeConfig {
             cerebellum_trivial_direct: false,
             enable_round_reflect: false,
             external_config: None,
+            thinking_intensity: None,
         }
     }
 }

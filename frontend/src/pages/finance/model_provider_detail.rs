@@ -10,6 +10,9 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ModelProviderStatsPanel;
+use crate::components::thinking_intensity_field::{
+    ThinkingIntensityField, thinking_intensity_label,
+};
 use crate::components::time_range_picker::{TimeRange, TimeRangePicker};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -17,7 +20,9 @@ use common::api::{
     CallModelRequest, GetModelProviderRequest, SwitchEmbeddingProviderRequest,
     UpdateModelProviderRequest,
 };
-use common::enums::{ChatApiFlavor, ModelAccessMode, ModelCapability, ProviderType};
+use common::enums::{
+    ChatApiFlavor, ModelAccessMode, ModelCapability, ProviderType, ThinkingIntensity,
+};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
@@ -118,6 +123,9 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut edit_supports_vision = use_signal(|| false); // 批5-P2：vision 能力开关（编辑 Modal）
     // 协议口味（编辑 Modal 回显；初值 Responses 与 ChatApiFlavor::default() 同语义）
     let mut edit_api_flavor = use_signal(|| "responses".to_string());
+    // 思考强度（编辑 Modal 回显；默认不启用 = 请求体不下发该字段）
+    let mut edit_thinking_intensity_enabled = use_signal(|| false);
+    let mut edit_thinking_intensity = use_signal(|| ThinkingIntensity::DEFAULT.score());
     let mut saving_meta = use_signal(|| false);
 
     // 当前提供商是否 Embedding：编辑表单的上下文长度必填校验与标签用它。
@@ -259,6 +267,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     let edit_access_mode_init = access_mode_key(&p.access_mode).to_string();
                                     let edit_supports_vision_init = p.supports_vision; // 批5-P2：回显（Get 恒返回 bool 无 None 态）
                                     let edit_api_flavor_init = api_flavor_key(&p.api_flavor).to_string();
+                                    let edit_thinking_intensity_init = p.thinking_intensity;
                                     rsx! {
                                         if is_enabled {
                                             button { class: "btn hud-btn btn-outline btn-sm",
@@ -348,6 +357,13 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                 edit_access_mode.set(edit_access_mode_init.clone());
                                                 edit_supports_vision.set(edit_supports_vision_init); // 批5-P2：回显 vision 开关
                                                 edit_api_flavor.set(edit_api_flavor_init.clone()); // 回显协议口味
+                                                // 回显思考强度：未配置 = 开关关闭，滑块落在平台默认分
+                                                edit_thinking_intensity_enabled
+                                                    .set(edit_thinking_intensity_init.is_some());
+                                                edit_thinking_intensity.set(
+                                                    edit_thinking_intensity_init
+                                                        .map_or(ThinkingIntensity::DEFAULT.score(), |v| v.score()),
+                                                );
                                                 show_edit_modal.set(true);
                                             },
                                             "✏️ 编辑"
@@ -456,6 +472,21 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     div {
                                         span { class: "badge hud-badge badge-ghost badge-sm",
                                             "{api_flavor_label(&p.api_flavor)}"
+                                        }
+                                    }
+                                }
+                            }
+                            // 思考强度仅对话模型展示；未配置（能力开关关闭）不显示
+                            if !p.capability.is_embedding() {
+                                if let Some(intensity) = p.thinking_intensity {
+                                    div {
+                                        label { class: "label",
+                                            span { class: "label-text font-medium", "思考强度" }
+                                        }
+                                        div {
+                                            span { class: "badge hud-badge badge-ghost badge-sm",
+                                                "{thinking_intensity_label(intensity)}"
+                                            }
                                         }
                                     }
                                 }
@@ -705,6 +736,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     // 协议口味只对对话模型有意义：Embedding 走 /embeddings、Decision 走小脑链路，
                                     // 非 Agent 传 None（不落盘），避免把无关配置写进 config 后被误读
                                     api_flavor: editing_is_agent.then_some(api_flavor),
+                                    // 思考强度整体替换（None = 不启用）；非对话模型不落盘
+                                    thinking_intensity: (editing_is_agent
+                                        && edit_thinking_intensity_enabled())
+                                    .then(|| ThinkingIntensity::new(edit_thinking_intensity())),
                                 };
                                 saving_meta.set(true);
                                 let reload_id = id_for_submit.clone();
@@ -794,6 +829,15 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             p { class: "text-xs text-base-content/60",
                                 "Responses 支持工具调用、推理项回传与上下文缓存；自建网关或老旧兼容层无 /responses 端点时改选 Chat Completions"
                             }
+                        }
+                        // 思考强度（Provider 默认值；不启用时请求体完全不下发该字段）
+                        ThinkingIntensityField {
+                            enabled: edit_thinking_intensity_enabled(),
+                            score: edit_thinking_intensity(),
+                            label: "思考强度".to_string(),
+                            testid: "mp-edit-thinking-intensity".to_string(),
+                            on_toggle: move |v| edit_thinking_intensity_enabled.set(v),
+                            on_score: move |v| edit_thinking_intensity.set(v),
                         }
                         // 批5-P2：vision 能力开关（仅对话模型显示；Embedding/Decision 隐藏；
                         // 显示条件沿 editing_is_agent 派生——编辑 Modal 不在 p 作用域）

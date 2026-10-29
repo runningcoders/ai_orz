@@ -3,6 +3,7 @@
 use crate::api::PaginationParams;
 use crate::enums::{
     ChatApiFlavor, ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType,
+    ThinkingIntensity,
 };
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -54,6 +55,13 @@ pub struct CreateModelProviderRequest {
     /// `"chat_completions"` 回退。**不做按 provider_type 的特判。**
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_flavor: Option<ChatApiFlavor>,
+    /// 默认思考强度（0–100 分，选填；None = 不启用该字段）
+    ///
+    /// **兼任能力开关**：None 时请求体完全不下发 reasoning_effort /
+    /// reasoning 字段（保持存量行为），Agent 覆盖与场景偏移均不生效。
+    /// 只应对支持该字段的端点配置；具体下发值由平台按下游支持形式转换。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// Create Model Provider response
@@ -109,6 +117,9 @@ pub struct ModelProviderListItem {
     pub supports_vision: bool,
     /// chat 协议口味（后端解析 config，缺省 Responses，恒返回）
     pub api_flavor: ChatApiFlavor,
+    /// 默认思考强度（0–100 分，后端读取 config；None = 未配置，不启用该字段）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// Get Model Provider request
@@ -172,6 +183,9 @@ pub struct GetModelProviderResponse {
     pub supports_vision: bool,
     /// chat 协议口味（后端解析 config，缺省 Responses，恒返回）
     pub api_flavor: ChatApiFlavor,
+    /// 默认思考强度（0–100 分，后端读取 config；None = 未配置，不启用该字段）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// Update Model Provider request
@@ -223,6 +237,12 @@ pub struct UpdateModelProviderRequest {
     /// 当前选值。回退到传统协议需显式传 `"chat_completions"`。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_flavor: Option<ChatApiFlavor>,
+    /// 默认思考强度（0–100 分，**整体替换**：None = 不启用）
+    ///
+    /// 与其他字段的 partial update 不同：本字段允许清空（回退到「不下发」的
+    /// 存量行为），编辑 UI 恒传当前选值，故不做「None=不变更」语义。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// Update Model Provider response

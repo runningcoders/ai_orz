@@ -295,6 +295,7 @@ mod tests {
             _brain: &Brain,
             _messages: &[crate::models::cortex_types::ChatMessage],
             _tools: &[crate::models::cortex_types::ToolDescriptor],
+            _thinking_intensity: Option<common::enums::ThinkingIntensity>,
         ) -> Result<crate::models::cortex_types::ThinkResult> {
             unimplemented!("not needed by tool execution routing tests")
         }

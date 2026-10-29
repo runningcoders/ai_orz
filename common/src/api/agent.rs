@@ -1,7 +1,7 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
 use crate::api::{PagedResult, PaginationParams, skill::SkillListItem, tool::ToolListItem};
-use crate::enums::{AgentRuntimeState, AgentStatus};
+use crate::enums::{AgentRuntimeState, AgentStatus, ThinkingIntensity};
 use crate::models::{AgentStats, ModelCallStats};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -198,6 +198,12 @@ pub struct AgentRuntimeConfigInfo {
     /// **不存在「不压缩」场景**，所以默认就是有效阈值 256。
     #[serde(default = "default_compaction_threshold_tokens")]
     pub compaction_threshold_tokens: usize,
+    /// 思考强度覆盖（0–100 分，None = 跟随 Provider 基准）
+    ///
+    /// 仅在 Provider 已配置 `thinking_intensity` 时生效（Provider 未配置视为
+    /// 能力开关关闭，整条链路不下发该字段）；生效后叠加场景偏移。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 /// serde 默认值函数，供 `#[serde(default = ...)]` 引用。

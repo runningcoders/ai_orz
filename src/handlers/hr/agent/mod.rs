@@ -176,6 +176,7 @@ pub fn build_status_response(agent: &Agent) -> UpdateAgentStatusResponse {
             summary_max_rounds: rc.summary_max_rounds,
             think_timeout_secs: rc.think_timeout_secs,
             compaction_threshold_tokens: rc.compaction_threshold_tokens,
+            thinking_intensity: rc.thinking_intensity,
         })
     };
 

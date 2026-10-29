@@ -55,6 +55,8 @@ pub async fn create_model_provider(
         supports_vision: params.supports_vision,
         // 协议口味落 config；None=未配置（生效时等价 Responses，见枚举定义）
         api_flavor: params.api_flavor,
+        // 思考强度（0–100）落 config；None=不启用（请求体不下发该字段，保持存量行为）
+        thinking_intensity: params.thinking_intensity,
         ..Default::default()
     };
     provider_po.set_config(&config);

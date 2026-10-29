@@ -61,5 +61,6 @@ pub async fn query_model_providers(
         supports_vision: provider.po.config().supports_vision_or_default(),
         // 恒返回按 config 解析后的协议口味（缺省 Responses）
         api_flavor: provider.po.config().api_flavor_or_default(),
+        thinking_intensity: provider.po.config().thinking_intensity,
     }))
 }

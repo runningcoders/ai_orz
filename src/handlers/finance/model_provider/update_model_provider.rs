@@ -110,6 +110,11 @@ pub async fn update_model_provider(
             cfg.api_flavor = Some(flavor);
         });
     }
+    // 思考强度**整体替换**（None=不启用）：本字段要能清空回退到「不下发」，
+    // 无法沿用其余字段的 partial update 语义；编辑 UI 恒传当前选值。
+    provider.po.update_config(|cfg| {
+        cfg.thinking_intensity = params.thinking_intensity;
+    });
     // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = common::constants::utils::current_timestamp_ms();

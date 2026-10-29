@@ -30,6 +30,8 @@ fn chat_req(name: &str, access_mode: Option<ModelAccessMode>) -> CreateModelProv
         supports_vision: None,
         // 协议口味同样不参与断言：走缺省（None → 服务端解析为 Responses）
         api_flavor: None,
+        // 推理强度不参与本文件断言：走缺省（None = 不下发）
+        thinking_intensity: None,
     }
 }
 

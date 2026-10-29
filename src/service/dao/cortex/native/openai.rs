@@ -39,8 +39,17 @@ impl super::CortexDao for OpenAiCompatibleCortexDao {
         provider: &ModelProviderPo,
         messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
+        thinking_intensity: Option<common::enums::ThinkingIntensity>,
     ) -> Result<ThinkResult> {
-        http::call_chat_completions(ctx, &self.client, provider, messages, tools).await
+        http::call_chat_completions(
+            ctx,
+            &self.client,
+            provider,
+            messages,
+            tools,
+            thinking_intensity,
+        )
+        .await
     }
 
     async fn embed(

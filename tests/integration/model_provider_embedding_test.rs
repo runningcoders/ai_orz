@@ -37,6 +37,8 @@ fn embedding_req(name: &str) -> CreateModelProviderRequest {
         supports_vision: None,
         // Embedding 走 embed 端点，不经过 chat 协议：走缺省
         api_flavor: None,
+        // Embedding 无推理强度概念：走缺省（= 能力开关关闭）
+        thinking_intensity: None,
     }
 }
 

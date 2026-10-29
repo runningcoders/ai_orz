@@ -54,6 +54,7 @@ fn build_rc_info(rounds: usize) -> AgentRuntimeConfigInfo {
         summary_max_rounds: 3,
         think_timeout_secs: 120,
         compaction_threshold_tokens: 256,
+        thinking_intensity: Some(common::enums::ThinkingIntensity::MAX),
     }
 }
 
@@ -90,6 +91,11 @@ async fn test_human_update_all_fields(pool: sqlx::SqlitePool) {
     assert_eq!(resp.model_provider_id, "provider-new");
     assert_eq!(resp.runtime_config.as_ref().unwrap().max_thinking_rounds, 8);
     assert_eq!(resp.runtime_config.as_ref().unwrap().max_thinking_depth, 42);
+    // 思考强度覆盖项透传（Update 语义为整体替换）
+    assert_eq!(
+        resp.runtime_config.as_ref().unwrap().thinking_intensity,
+        Some(common::enums::ThinkingIntensity::MAX)
+    );
 }
 
 /// Agent 自改：description / capabilities / soul 生效；基础设施字段静默忽略

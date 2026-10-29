@@ -245,7 +245,13 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         match d
             .domain
             .brain_dal()
-            .think(ctx.clone(), &d.brain, &messages, &d.tool_descriptors)
+            .think(
+                ctx.clone(),
+                &d.brain,
+                &messages,
+                &d.tool_descriptors,
+                d.thinking_intensity,
+            )
             .await
         {
             Ok(result) => {

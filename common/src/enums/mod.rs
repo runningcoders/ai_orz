@@ -17,6 +17,8 @@ pub mod project;
 pub mod provider;
 pub mod skill;
 pub mod task;
+/// 思考强度（0–100 分，平台内部统一刻度）
+pub mod thinking_intensity;
 /// 思考场景枚举（awaken/settle/summary/intent-analyze）
 pub mod thinking_scene;
 pub mod tool;
@@ -44,6 +46,7 @@ pub use project::ProjectStatus;
 pub use provider::{ChatApiFlavor, ModelAccessMode, ModelCapability, ProviderType};
 pub use skill::{SkillAuthorType, SkillStatus};
 pub use task::{AssigneeType, TaskStatus};
+pub use thinking_intensity::ThinkingIntensity;
 pub use thinking_scene::ThinkingScene;
 pub use tool::{ControlMode, ToolProtocol, ToolStatus};
 pub use user::{UserRole, UserStatus};

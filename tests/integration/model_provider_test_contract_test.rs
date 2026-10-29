@@ -34,6 +34,8 @@ fn unreachable_provider(name: &str) -> CreateModelProviderRequest {
         supports_vision: None,
         // 本文件专注连通性测试契约，协议口味走缺省
         api_flavor: None,
+        // 连通性测试契约不涉及推理强度：走缺省
+        thinking_intensity: None,
     }
 }
 

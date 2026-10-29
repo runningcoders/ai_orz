@@ -144,6 +144,7 @@ pub async fn call_chat_completions(
     provider: &ModelProviderPo,
     messages: &[ChatMessage],
     tools: &[ToolDescriptor],
+    thinking_intensity: Option<common::enums::ThinkingIntensity>,
 ) -> Result<ThinkResult> {
     validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
@@ -153,7 +154,7 @@ pub async fn call_chat_completions(
     let access_mode = resolve_access_mode(&ctx, provider);
 
     // 构建请求体：按访问模式分流 stream 字段，model/messages/tools 两路一致
-    let body = build_chat_request_body(provider, messages, tools, access_mode);
+    let body = build_chat_request_body(provider, messages, tools, access_mode, thinking_intensity);
 
     log_debug!(
         ctx,
@@ -219,6 +220,21 @@ pub(crate) fn resolve_access_mode(
     }
 }
 
+/// 解析本次请求要下发的思考强度（0–100 分）
+///
+/// **Provider 未配置 `thinking_intensity` 视为能力开关关闭**：直接返回 None，
+/// 请求体完全不下发该字段（调用方传入的 override 也不生效），保持存量行为。
+/// Provider 已配置时，调用方 override（Agent 覆盖 + 场景偏移后的最终分数）优先，
+/// 否则回退 provider 基准分数（连通性测试等不经过思考循环的调用走此分支）。
+/// 具体 wire 值在请求体构建处按下游支持形式转换。
+pub(crate) fn resolve_intensity(
+    provider: &ModelProviderPo,
+    override_intensity: Option<common::enums::ThinkingIntensity>,
+) -> Option<common::enums::ThinkingIntensity> {
+    let provider_intensity = provider.config().thinking_intensity?;
+    Some(override_intensity.unwrap_or(provider_intensity))
+}
+
 /// 构建 Chat Completions 请求体（方案 §四：按访问模式分流 stream 字段）。
 ///
 /// model/messages/tools 两路一致；stream 模式附加 `stream` + `stream_options`
@@ -228,11 +244,17 @@ fn build_chat_request_body(
     messages: &[ChatMessage],
     tools: &[ToolDescriptor],
     access_mode: ModelAccessMode,
+    thinking_intensity: Option<common::enums::ThinkingIntensity>,
 ) -> Value {
     let mut body = json!({
         "model": provider.model_name,
         "messages": messages_to_json(messages),
     });
+    // 思考强度：Provider 未配置视为能力开关关闭，连 override 也不下发；
+    // 平台分数按下游三档（low/medium/high）转换后下发
+    if let Some(intensity) = resolve_intensity(provider, thinking_intensity) {
+        body["reasoning_effort"] = json!(intensity.to_reasoning_effort_wire());
+    }
     if access_mode == ModelAccessMode::Stream {
         body["stream"] = json!(true);
         body["stream_options"] = json!({ "include_usage": true });

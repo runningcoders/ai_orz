@@ -102,6 +102,7 @@ impl CortexDao for MockCortexDao {
         _provider: &ModelProviderPo,
         _messages: &[crate::models::cortex_types::ChatMessage],
         _tools: &[ToolDescriptor],
+        _thinking_intensity: Option<common::enums::ThinkingIntensity>,
     ) -> Result<ThinkResult> {
         Ok(ThinkResult::Final {
             content: "".to_string(),
@@ -299,6 +300,7 @@ impl CortexDao for MockCortexVectorDao {
         _provider: &ModelProviderPo,
         _messages: &[crate::models::cortex_types::ChatMessage],
         _tools: &[ToolDescriptor],
+        _thinking_intensity: Option<common::enums::ThinkingIntensity>,
     ) -> Result<ThinkResult> {
         Ok(ThinkResult::Final {
             content: "".to_string(),

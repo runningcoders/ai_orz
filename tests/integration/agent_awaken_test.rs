@@ -401,6 +401,7 @@ impl BrainDal for CapturingBrainDal {
         _brain: &Brain,
         messages: &[ai_orz::models::cortex_types::ChatMessage],
         _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
+        _thinking_intensity: Option<::common::enums::ThinkingIntensity>,
     ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
         // 从 messages 中提取最后一条 user 消息作为 prompt 捕获
         let prompt = messages
@@ -765,6 +766,7 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
             _brain: &Brain,
             _messages: &[ai_orz::models::cortex_types::ChatMessage],
             _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
+            _thinking_intensity: Option<::common::enums::ThinkingIntensity>,
         ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
             Err(::common::error::Error::internal("mock think failure"))
         }
@@ -1096,6 +1098,7 @@ impl BrainDal for TwoPhaseMockBrainDal {
         _brain: &Brain,
         messages: &[ai_orz::models::cortex_types::ChatMessage],
         _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
+        _thinking_intensity: Option<::common::enums::ThinkingIntensity>,
     ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
         // 提取最后一条 user message 作为 prompt（与 CapturingBrainDal 一致）
         let prompt = messages

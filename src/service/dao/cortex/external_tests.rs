@@ -165,7 +165,13 @@ async fn test_think_cli_cat() {
     let ctx = RequestContext::new_system();
     let provider = mock_provider();
     let result = cortex
-        .think(ctx, &provider, &[ChatMessage::user("hello world")], &[])
+        .think(
+            ctx,
+            &provider,
+            &[ChatMessage::user("hello world")],
+            &[],
+            None,
+        )
         .await;
     assert!(result.is_ok(), "expected ok, got {:?}", result);
     match result.unwrap() {

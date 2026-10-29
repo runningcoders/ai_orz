@@ -56,6 +56,7 @@ fn request_body_has_store_false_and_flat_tools() {
         &[ChatMessage::user("hi")],
         &tools,
         ModelAccessMode::Stream,
+        None,
     );
     // 脱敏：默认服务端会留存 payload，必须显式关掉
     assert_eq!(body["store"], serde_json::json!(false));
@@ -87,8 +88,66 @@ fn request_body_non_stream_omits_stream_flag() {
         created_at: 0,
         updated_at: 0,
     };
-    let body = build_responses_body(&provider, &[], &[], ModelAccessMode::NonStream);
+    let body = build_responses_body(&provider, &[], &[], ModelAccessMode::NonStream, None);
     assert!(body.get("stream").is_none());
+}
+
+fn provider_with_config(config: &str) -> crate::models::model_provider::ModelProviderPo {
+    crate::models::model_provider::ModelProviderPo {
+        id: "p".to_string(),
+        name: "p".to_string(),
+        provider_type: common::enums::ProviderType::OpenAI,
+        model_name: "gpt".to_string(),
+        capability: common::enums::ModelCapability::Agent,
+        api_key: String::new(),
+        base_url: None,
+        description: None,
+        config: config.to_string(),
+        status: common::enums::ModelProviderStatus::Normal,
+        created_by: "system".to_string(),
+        modified_by: "system".to_string(),
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+/// Provider 未配置 = 能力开关关闭：override 也不能激活该字段
+#[test]
+fn reasoning_omitted_when_provider_unconfigured() {
+    let provider = provider_with_config("{}");
+    let body = build_responses_body(
+        &provider,
+        &[],
+        &[],
+        ModelAccessMode::NonStream,
+        Some(common::enums::ThinkingIntensity::MAX),
+    );
+    assert!(
+        body.get("reasoning").is_none(),
+        "provider 未配置时不得下发 reasoning: {body}"
+    );
+}
+
+/// Provider 配置后：Responses 使用嵌套 `reasoning.effort` 结构，分数按三档转换
+#[test]
+fn reasoning_uses_provider_default_effort() {
+    let provider = provider_with_config(r#"{"thinking_intensity":50}"#);
+    let body = build_responses_body(&provider, &[], &[], ModelAccessMode::NonStream, None);
+    assert_eq!(body["reasoning"]["effort"], json!("medium"));
+}
+
+/// Provider 配置后：override 优先，分数按三档转换
+#[test]
+fn reasoning_override_wins() {
+    let provider = provider_with_config(r#"{"thinking_intensity":10}"#);
+    let body = build_responses_body(
+        &provider,
+        &[],
+        &[],
+        ModelAccessMode::NonStream,
+        Some(common::enums::ThinkingIntensity::MAX),
+    );
+    assert_eq!(body["reasoning"]["effort"], json!("high"));
 }
 
 // ==================== input 转换 ====================

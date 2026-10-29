@@ -11,6 +11,9 @@ use crate::api::finance::{
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::components::thinking_intensity_field::{
+    ThinkingIntensityField, thinking_intensity_label,
+};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
@@ -19,6 +22,7 @@ use common::api::{
 };
 use common::enums::{
     ChatApiFlavor, ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType,
+    ThinkingIntensity,
 };
 use dioxus_router::Link;
 
@@ -37,6 +41,10 @@ pub fn FinanceModelProviders() -> Element {
     let mut new_supports_vision = use_signal(|| false); // 批5-P2：vision 能力开关（创建 Modal，默认不勾选）
     // 协议口味：默认 Responses（平台主线；与 ChatApiFlavor::default() 同语义）
     let mut new_api_flavor = use_signal(|| ChatApiFlavor::Responses);
+    // 思考强度：默认不启用（None = 请求体不下发该字段，保持存量行为）；
+    // 启用后平台统一 0–100 分，下游三档由 Provider 配置推导
+    let mut new_thinking_intensity_enabled = use_signal(|| false);
+    let mut new_thinking_intensity = use_signal(|| ThinkingIntensity::DEFAULT.score());
     let new_access_mode_str = match new_access_mode() {
         ModelAccessMode::Stream => "stream",
         ModelAccessMode::NonStream => "non_stream",
@@ -142,6 +150,9 @@ pub fn FinanceModelProviders() -> Element {
                 // 非 Agent 下传 None（不落盘），避免把无关配置写进 config 后被误读——
                 // 历史缺陷正是「Embedding 也写 api_flavor=Responses」导致向量化被路由错协议。
                 api_flavor: is_agent_cap.then_some(new_api_flavor()),
+                // 思考强度（仅对话模型有意义）：非 Agent 或未启用均传 None（不启用该能力开关）
+                thinking_intensity: (is_agent_cap && new_thinking_intensity_enabled())
+                    .then(|| ThinkingIntensity::new(new_thinking_intensity())),
             };
             match create_model_provider(req).await {
                 Ok(resp) => {
@@ -156,6 +167,8 @@ pub fn FinanceModelProviders() -> Element {
                     new_access_mode.set(ModelAccessMode::Stream);
                     new_supports_vision.set(false); // 批5-P2：重置 vision checkbox
                     new_api_flavor.set(ChatApiFlavor::Responses); // 重置为主线协议
+                    new_thinking_intensity_enabled.set(false); // 重置为不启用
+                    new_thinking_intensity.set(ThinkingIntensity::DEFAULT.score());
                     toast.success("创建成功");
                     if resp.rebuild_task_id.is_some() {
                         toast.info("已触发向量索引全量重建，期间语义搜索可能不完整");
@@ -295,6 +308,12 @@ pub fn FinanceModelProviders() -> Element {
                                                         // 主线协议（Responses）不显徽标，仅回退态显式标注
                                                         if matches!(p.api_flavor, ChatApiFlavor::ChatCompletions) {
                                                             span { class: "badge hud-badge badge-ghost badge-sm", "Chat API" }
+                                                        }
+                                                        // 思考强度仅在已配置（能力开关开启）时标注
+                                                        if let Some(intensity) = p.thinking_intensity {
+                                                            span { class: "badge hud-badge badge-ghost badge-sm",
+                                                                {thinking_intensity_label(intensity)}
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -576,6 +595,15 @@ pub fn FinanceModelProviders() -> Element {
                         p { class: "text-xs text-base-content/60",
                             "Responses 支持工具调用、推理项回传与上下文缓存；自建网关或老旧兼容层无 /responses 端点时改选 Chat Completions"
                         }
+                    }
+                    // 思考强度（Provider 默认值；不启用时请求体完全不下发该字段）
+                    ThinkingIntensityField {
+                        enabled: new_thinking_intensity_enabled(),
+                        score: new_thinking_intensity(),
+                        label: "思考强度".to_string(),
+                        testid: "mp-create-thinking-intensity".to_string(),
+                        on_toggle: move |v| new_thinking_intensity_enabled.set(v),
+                        on_score: move |v| new_thinking_intensity.set(v),
                     }
                     // 批5-P2：vision 能力开关（仅对话模型显示；Embedding/Decision 隐藏，独立分支防 Decision 误显）
                     label { class: "flex cursor-pointer select-none items-center gap-2",

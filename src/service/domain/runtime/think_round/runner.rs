@@ -18,7 +18,7 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::think_path::{Arbiter, ProviderSet, Stimulus, ThinkPathEngine, ThinkRun};
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkLoopResult};
-use common::enums::ThinkingScene;
+use common::enums::{ThinkingIntensity, ThinkingScene};
 use common::error::Result;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -72,12 +72,16 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
     // reflect 分支由 Agent 运行时开关控制；关闭时拓扑与老循环完全一致
     let enable_reflect = brain.runtime_config.enable_round_reflect;
 
+    // 三层思考强度（0–100）：Provider 基准（能力开关）→ Agent 覆盖 → 场景偏移
+    let thinking_intensity = resolve_thinking_intensity(&brain, scene);
+
     let deps = Arc::new(RoundDeps {
         domain,
         ctx,
         agent: agent.clone(),
         brain,
         scene,
+        thinking_intensity,
         trace_id: trace_id.to_string(),
         tool_descriptors: tool_descriptors.to_vec(),
         max_rounds,
@@ -159,6 +163,24 @@ fn persist_trace(deps: &RoundDeps, run: &ThinkRun) {
     }
 }
 
+/// 解析本次思考的最终思考强度（0–100 分）
+///
+/// 优先级：`Agent 显式 > Provider 基准`，再叠加场景偏移并饱和钳制到 [0, 100]。
+///
+/// ⚠️ Provider 未配置 `thinking_intensity` 时返回 None（能力开关关闭）：
+/// 请求体完全不下发该字段，Agent 覆盖与场景偏移均不生效——保持存量行为是
+/// 第一优先级，避免给不支持该参数的端点注入字段导致 400。
+fn resolve_thinking_intensity(brain: &Brain, scene: ThinkingScene) -> Option<ThinkingIntensity> {
+    let provider_base = brain
+        .model_provider()
+        .and_then(|po| po.config().thinking_intensity)?;
+    let base = brain
+        .runtime_config
+        .thinking_intensity
+        .unwrap_or(provider_base);
+    Some(base.offset(scene.thinking_intensity_offset()))
+}
+
 /// 选路来源的可读名（落盘后按字符串聚合，避免 Debug 输出随枚举改名漂移）
 fn via_str(via: crate::pkg::think_path::RouteVia) -> &'static str {
     use crate::pkg::think_path::RouteVia;
@@ -167,5 +189,111 @@ fn via_str(via: crate::pkg::think_path::RouteVia) -> &'static str {
         RouteVia::Deterministic => "deterministic",
         RouteVia::Advisor => "advisor",
         RouteVia::Fallback => "fallback",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_thinking_intensity;
+    use crate::models::agent::AgentRuntimeConfig;
+    use crate::models::brain::Brain;
+    use crate::models::model_provider::ModelProviderPo;
+    use common::enums::{AgentKind, ThinkingIntensity, ThinkingScene};
+
+    fn provider(config: &str) -> ModelProviderPo {
+        ModelProviderPo {
+            id: "prov".to_string(),
+            name: "prov".to_string(),
+            provider_type: common::enums::ProviderType::OpenAI,
+            model_name: "gpt".to_string(),
+            capability: common::enums::ModelCapability::Agent,
+            api_key: String::new(),
+            base_url: None,
+            description: None,
+            config: config.to_string(),
+            status: common::enums::ModelProviderStatus::Normal,
+            created_by: "system".to_string(),
+            modified_by: "system".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn brain_with(config: &str, agent_intensity: Option<ThinkingIntensity>) -> Brain {
+        Brain::new_local(
+            "agent".to_string(),
+            "agent".to_string(),
+            AgentRuntimeConfig {
+                thinking_intensity: agent_intensity,
+                ..Default::default()
+            },
+            provider(config),
+            Vec::new(),
+        )
+    }
+
+    /// Provider 未配置 = 能力开关关闭：Agent 覆盖与场景偏移都不生效
+    #[test]
+    fn provider_unconfigured_disables_whole_chain() {
+        let brain = brain_with("{}", Some(ThinkingIntensity::MAX));
+        assert_eq!(
+            resolve_thinking_intensity(&brain, ThinkingScene::Awaken),
+            None
+        );
+    }
+
+    /// 外部 Agent 无 provider → 同样关闭
+    #[test]
+    fn external_agent_without_provider_returns_none() {
+        let brain = Brain::new_external(
+            AgentKind::Cli,
+            "agent".to_string(),
+            "agent".to_string(),
+            AgentRuntimeConfig::default(),
+            Vec::new(),
+        );
+        assert_eq!(
+            resolve_thinking_intensity(&brain, ThinkingScene::Awaken),
+            None
+        );
+    }
+
+    /// Agent 显式覆盖优先于 Provider 基准
+    #[test]
+    fn agent_override_wins_over_provider_default() {
+        let brain = brain_with(r#"{"thinking_intensity":30}"#, Some(ThinkingIntensity::MAX));
+        assert_eq!(
+            resolve_thinking_intensity(&brain, ThinkingScene::Awaken),
+            Some(ThinkingIntensity::MAX)
+        );
+    }
+
+    /// 场景偏移在基准分数上叠加并饱和钳制到 [0, 100]
+    #[test]
+    fn scene_offset_clamps_at_bounds() {
+        // 基准 10 + Settle(-20) → 钳制到 0
+        assert_eq!(
+            resolve_thinking_intensity(
+                &brain_with(r#"{"thinking_intensity":10}"#, None),
+                ThinkingScene::Settle
+            ),
+            Some(ThinkingIntensity::MIN)
+        );
+        // 基准 80 + IntentAnalyze(-20) → 60，跨档到 medium
+        assert_eq!(
+            resolve_thinking_intensity(
+                &brain_with(r#"{"thinking_intensity":80}"#, None),
+                ThinkingScene::IntentAnalyze
+            ),
+            Some(ThinkingIntensity::new(60))
+        );
+        // 默认基准 50 + Awaken(0) → 50
+        assert_eq!(
+            resolve_thinking_intensity(
+                &brain_with(r#"{"thinking_intensity":50}"#, None),
+                ThinkingScene::Awaken
+            ),
+            Some(ThinkingIntensity::DEFAULT)
+        );
     }
 }

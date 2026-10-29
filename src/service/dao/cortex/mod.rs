@@ -68,9 +68,11 @@ impl CortexDao for CortexDispatcher {
         provider: &ModelProviderPo,
         messages: &[ChatMessage],
         tools: &[ToolDescriptor],
+        thinking_intensity: Option<common::enums::ThinkingIntensity>,
     ) -> Result<ThinkResult> {
         let dao = native::registry().chat_dao(provider);
-        dao.think(ctx, provider, messages, tools).await
+        dao.think(ctx, provider, messages, tools, thinking_intensity)
+            .await
     }
 
     async fn embed(

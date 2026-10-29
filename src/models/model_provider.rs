@@ -3,6 +3,7 @@
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::{
     ChatApiFlavor, ModelAccessMode, ModelCapability, ModelProviderStatus, ProviderType,
+    ThinkingIntensity,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -64,6 +65,18 @@ pub struct ModelProviderConfig {
     /// 缺字段自动兼容，无 migration。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_flavor: Option<ChatApiFlavor>,
+    /// 默认思考强度（0–100 分，**兼任能力开关**）
+    ///
+    /// `None` = 未配置：请求体**完全不下发** reasoning_effort / reasoning 字段，
+    /// 保持存量行为；此时 Agent 覆盖值与场景偏移均不生效（能力开关优先）。
+    /// 非 None 时作为基准分数，再叠加 Agent 覆盖与场景偏移，请求下游前按
+    /// 下游支持的形式转换（当前为 low/medium/high 三档）。
+    ///
+    /// 只应对支持该字段的端点配置；不支持的网关保持 None，否则会被拒收。
+    ///
+    /// 存量 config JSON 缺字段自动兼容，无 migration。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_intensity: Option<ThinkingIntensity>,
 }
 
 impl ModelProviderConfig {
@@ -394,5 +407,34 @@ mod access_mode_config_tests {
         let back: ModelProviderConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.api_flavor, Some(ChatApiFlavor::ChatCompletions));
         assert_eq!(back.api_flavor_or_default(), ChatApiFlavor::ChatCompletions);
+    }
+
+    /// 存量 config JSON（无 thinking_intensity 字段）→ None = 能力开关关闭（保持现状不下发）
+    #[test]
+    fn legacy_config_without_thinking_intensity_stays_disabled() {
+        let cfg: ModelProviderConfig =
+            serde_json::from_str(r#"{"max_context_length":128000}"#).expect("legacy config");
+        assert_eq!(cfg.thinking_intensity, None);
+    }
+
+    /// thinking_intensity 仅在已设置时序列化，且 roundtrip 按分数保形
+    #[test]
+    fn thinking_intensity_roundtrips_and_none_is_not_serialized() {
+        let empty = ModelProviderConfig::default();
+        assert!(
+            !serde_json::to_string(&empty)
+                .unwrap()
+                .contains("thinking_intensity"),
+            "未设置时不得序列化 thinking_intensity 字段"
+        );
+
+        let cfg = ModelProviderConfig {
+            thinking_intensity: Some(ThinkingIntensity::MAX),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"thinking_intensity\":100"), "json: {json}");
+        let back: ModelProviderConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.thinking_intensity, Some(ThinkingIntensity::MAX));
     }
 }

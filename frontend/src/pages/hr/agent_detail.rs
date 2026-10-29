@@ -12,6 +12,9 @@ use crate::components::model_provider_bubble::ModelProviderBubble;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::AgentStatsPanel;
+use crate::components::thinking_intensity_field::{
+    ThinkingIntensityField, thinking_intensity_label,
+};
 use crate::components::time_range_picker::{TimeRange, TimeRangePicker};
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
@@ -38,7 +41,7 @@ use common::api::{
     UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
     UpdateAgentStatusRequest,
 };
-use common::enums::{AgentStatus, AssigneeType, SkillStatus};
+use common::enums::{AgentStatus, AssigneeType, SkillStatus, ThinkingIntensity};
 use dioxus::dioxus_core::{Runtime, current_scope_id};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
@@ -468,6 +471,9 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut edit_summary_max_rounds = use_signal(String::new);
     let mut edit_think_timeout_secs = use_signal(String::new);
     let mut edit_compaction_threshold_tokens = use_signal(String::new);
+    // 思考强度覆盖（未启用 = 不覆盖，跟随 Provider 基准）
+    let mut edit_thinking_intensity_enabled = use_signal(|| false);
+    let mut edit_thinking_intensity = use_signal(|| ThinkingIntensity::DEFAULT.score());
     let mut saving_meta = use_signal(|| false);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     // Tab 切换信号：0=概览 1=工具与技能 2=工具关系 3=对话与记忆 4=关系图
@@ -1101,6 +1107,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     edit_compaction_threshold_tokens.set(
                                         rc.map(|r| r.compaction_threshold_tokens.to_string()).unwrap_or_else(|| "256".to_string()),
                                     );
+                                    // 回显思考强度：未覆盖 = 开关关闭，滑块落在平台默认分
+                                    let intensity = rc.and_then(|r| r.thinking_intensity);
+                                    edit_thinking_intensity_enabled.set(intensity.is_some());
+                                    edit_thinking_intensity.set(
+                                        intensity.map_or(ThinkingIntensity::DEFAULT.score(), |v| v.score()),
+                                    );
                                     show_edit_modal.set(true);
                                 }
                             },
@@ -1331,6 +1343,19 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         span { class: "text-base-content/60", "0（系统默认）" }
                                                     } else {
                                                         "{rc.compaction_threshold_tokens} token"
+                                                    }
+                                                }
+                                            }
+                                            // 思考强度仅本地 Agent 有意义（外部 Agent 不经过思考循环）
+                                            if a.kind == "local" {
+                                                div {
+                                                    span { class: "block text-sm text-base-content/70 mb-1", "思考强度" }
+                                                    span { class: "text-sm",
+                                                        if let Some(intensity) = rc.thinking_intensity {
+                                                            "{thinking_intensity_label(intensity)}"
+                                                        } else {
+                                                            span { class: "text-base-content/60", "跟随 Provider" }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -2275,6 +2300,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     summary_max_rounds,
                                                     think_timeout_secs,
                                                     compaction_threshold_tokens,
+                                                    // 思考强度整体替换：开关关闭显式回传 None（清空覆盖）
+                                                    thinking_intensity: edit_thinking_intensity_enabled()
+                                                        .then(|| ThinkingIntensity::new(edit_thinking_intensity())),
                                                 }),
                                             };
                                             saving_meta.set(true);
@@ -2535,6 +2563,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         value: "{edit_compaction_threshold_tokens}",
                                         oninput: move |e| edit_compaction_threshold_tokens.set(e.value()),
                                         placeholder: "256" }
+                                }
+                                ThinkingIntensityField {
+                                    enabled: edit_thinking_intensity_enabled(),
+                                    score: edit_thinking_intensity(),
+                                    label: "思考强度覆盖".to_string(),
+                                    testid: "agent-edit-thinking-intensity".to_string(),
+                                    on_toggle: move |v| edit_thinking_intensity_enabled.set(v),
+                                    on_score: move |v| edit_thinking_intensity.set(v),
                                 }
                             }
                         }

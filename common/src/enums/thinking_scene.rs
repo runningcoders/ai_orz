@@ -71,6 +71,26 @@ impl ThinkingScene {
         }
     }
 
+    /// 思考强度场景偏移量（分数，在 Agent / Provider 基准分数上做 ±N 分调整）
+    ///
+    /// 未特别配置的场景返回 0（走基准值）。偏移由调用方叠加到基准分数后
+    /// 再饱和钳制（见 `ThinkingIntensity::offset`），本方法不关心基准值本身。
+    ///
+    /// - Awaken：0（主循环需要完整推理能力，保持基准）
+    /// - IntentAnalyze：-20（只做意图理解，降低思考深度更快更省）
+    /// - Settle：-20（沉淀以归纳为主，降低思考深度）
+    /// - Summary：0（总结质量直接影响用户可见结果，保持基准）
+    /// - Compact：0（压缩要保持信息完整，保持基准）
+    pub fn thinking_intensity_offset(&self) -> i32 {
+        match self {
+            ThinkingScene::Awaken => 0,
+            ThinkingScene::IntentAnalyze => -20,
+            ThinkingScene::Settle => -20,
+            ThinkingScene::Summary => 0,
+            ThinkingScene::Compact => 0,
+        }
+    }
+
     /// 判断工具是否在此场景可用
     ///
     /// - Awaken 场景：**全量放通**（绑定即权限，见 `Awaken` 变体注释）
@@ -176,5 +196,18 @@ mod tests {
         ] {
             assert!(scene.is_tool_allowed(&tags), "Awaken 应全量放通: {tags:?}");
         }
+    }
+
+    /// 场景偏移口径：轻量理解/沉淀降 20 分，其余保持基准（未配置 = 0）
+    #[test]
+    fn thinking_intensity_offset_matches_scene_intent() {
+        assert_eq!(ThinkingScene::Awaken.thinking_intensity_offset(), 0);
+        assert_eq!(
+            ThinkingScene::IntentAnalyze.thinking_intensity_offset(),
+            -20
+        );
+        assert_eq!(ThinkingScene::Settle.thinking_intensity_offset(), -20);
+        assert_eq!(ThinkingScene::Summary.thinking_intensity_offset(), 0);
+        assert_eq!(ThinkingScene::Compact.thinking_intensity_offset(), 0);
     }
 }

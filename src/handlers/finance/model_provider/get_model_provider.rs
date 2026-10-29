@@ -75,6 +75,8 @@ pub async fn get_model_provider(
         supports_vision: config.supports_vision_or_default(),
         // 恒返回按 config 解析后的协议口味（缺省 Responses）
         api_flavor: config.api_flavor_or_default(),
+        // 思考强度（0–100）：None=未配置（不启用该字段）
+        thinking_intensity: config.thinking_intensity,
         stats: provider.stats,
     })
 }
