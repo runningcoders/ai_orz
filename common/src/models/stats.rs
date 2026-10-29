@@ -89,6 +89,12 @@ pub struct TimeSeriesPoint {
     pub tokens_input: u64,
     /// Total output tokens
     pub tokens_output: u64,
+    /// 提示缓存命中的输入 token 合计（provider 未上报时为 0）
+    #[serde(default)]
+    pub tokens_cached: u64,
+    /// 思考/推理消耗的输出 token 合计（`tokens_output` 的子集；未上报时为 0）
+    #[serde(default)]
+    pub tokens_reasoning: u64,
     /// Number of calls
     pub call_count: u64,
 }

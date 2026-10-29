@@ -138,6 +138,7 @@ impl ModelProviderStatsDaoDuckDbImpl {
                     &query.filters,
                     interval,
                     time_range,
+                    &["cached_tokens", "reasoning_tokens"],
                 )
                 .await?;
 

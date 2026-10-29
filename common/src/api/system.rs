@@ -606,6 +606,12 @@ pub struct ModelUsageMetrics {
     pub total_tokens_input: u64,
     /// 输出 Token 合计
     pub total_tokens_output: u64,
+    /// 提示缓存命中的输入 Token 合计（provider 未上报时为 0）
+    #[serde(default)]
+    pub total_tokens_cached: u64,
+    /// 思考/推理消耗的输出 Token 合计（输出 Token 的子集；未上报时为 0）
+    #[serde(default)]
+    pub total_tokens_reasoning: u64,
 }
 
 /// 工具调用窗口读数

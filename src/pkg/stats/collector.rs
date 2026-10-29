@@ -520,6 +520,10 @@ impl Stats {
     /// Query time series data with specified interval
     ///
     /// If table_name is None, defaults to "default_events".
+    ///
+    /// `extra_metrics` 追加额外求和的指标列（如 `cached_tokens` / `reasoning_tokens`），
+    /// 结果写回 [`TimeSeriesPoint`] 的固定字段。不传时这两项恒为 0；
+    /// 只有确有该列的专用表才能声明，否则 SQL 会因未知列报错。
     pub async fn query_time_series(
         &self,
         ctx: RequestContext,
@@ -527,6 +531,7 @@ impl Stats {
         filters: &[StatFilter],
         interval: StatsInterval,
         time_range: (i64, i64),
+        extra_metrics: &[&str],
     ) -> Result<Vec<TimeSeriesPoint>> {
         let table = table_name.unwrap_or("default_events");
         let table_meta = self
@@ -544,12 +549,21 @@ impl Stats {
 
         let tokens_input_col = table_meta.metric_sql("tokens_input");
         let tokens_output_col = table_meta.metric_sql("tokens_output");
+        let mut extra_cols = String::new();
+        for metric in extra_metrics {
+            extra_cols.push_str(&format!(
+                ",
+                COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS {}",
+                table_meta.metric_sql(metric),
+                metric
+            ));
+        }
 
         let sql = format!(
             "SELECT
                 {} AS interval_start,
                 COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_input,
-                COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_output,
+                COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_output{extra_cols},
                 COUNT(*) AS call_count
              FROM {}
              WHERE timestamp >= ? AND timestamp <= ?",
@@ -586,6 +600,14 @@ impl Stats {
                 .get("tokens_output")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as u64;
+            let tokens_cached = obj
+                .get("cached_tokens")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as u64;
+            let tokens_reasoning = obj
+                .get("reasoning_tokens")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as u64;
             let call_count = obj
                 .get("call_count")
                 .and_then(|v| v.as_f64())
@@ -595,6 +617,8 @@ impl Stats {
                 interval_start,
                 tokens_input,
                 tokens_output,
+                tokens_cached,
+                tokens_reasoning,
                 call_count,
             });
         }

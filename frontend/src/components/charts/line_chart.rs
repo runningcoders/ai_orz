@@ -856,6 +856,8 @@ mod tests {
             interval_start,
             tokens_input: 0,
             tokens_output: 0,
+            tokens_cached: 0,
+            tokens_reasoning: 0,
             call_count: 0,
         }
     }

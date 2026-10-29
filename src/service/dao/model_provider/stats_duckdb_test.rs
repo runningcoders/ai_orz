@@ -171,6 +171,11 @@ async fn test_query_model_call_time_series() -> Result<()> {
     assert!(!points.is_empty());
     let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
     assert_eq!(total_calls, 3);
+    // 缓存/思考明细随时序一并聚合（3 条事件：cached = 10+12+14，reasoning = 5+6+7）
+    let total_cached: u64 = points.iter().map(|p| p.tokens_cached).sum();
+    let total_reasoning: u64 = points.iter().map(|p| p.tokens_reasoning).sum();
+    assert_eq!(total_cached, 36);
+    assert_eq!(total_reasoning, 18);
 
     Ok(())
 }

@@ -101,6 +101,8 @@ pub async fn get_workspace_metrics(
             total_calls: points.iter().map(|p| p.call_count).sum(),
             total_tokens_input: points.iter().map(|p| p.tokens_input).sum(),
             total_tokens_output: points.iter().map(|p| p.tokens_output).sum(),
+            total_tokens_cached: points.iter().map(|p| p.tokens_cached).sum(),
+            total_tokens_reasoning: points.iter().map(|p| p.tokens_reasoning).sum(),
         },
         Err(e) => {
             log_error!(&ctx, "get_workspace_metrics", "model stats degraded: {}", e);

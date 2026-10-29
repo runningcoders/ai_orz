@@ -1126,6 +1126,8 @@ pub fn Workspace(view: Option<String>) -> Element {
                                 {runtime_metric("模型调用", format_compact_count(m.model.total_calls), Some("primary"))}
                                 {runtime_metric("输入 Token", format_compact_count(m.model.total_tokens_input), Some("info"))}
                                 {runtime_metric("输出 Token", format_compact_count(m.model.total_tokens_output), Some("accent"))}
+                                {runtime_metric("缓存 Token", format_compact_count(m.model.total_tokens_cached), Some("success"))}
+                                {runtime_metric("思考 Token", format_compact_count(m.model.total_tokens_reasoning), Some("warning"))}
                                 {runtime_metric("吞吐 Token/s", format_decimal(model_throughput, 1), None)}
                                 {runtime_metric("工具调用", format_compact_count(m.tool.total_calls), Some("info"))}
                                 {runtime_metric("工具失败", format_compact_count(m.tool.failed_calls), Some("error"))}

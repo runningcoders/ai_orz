@@ -309,6 +309,8 @@ fn parse_time_series_point(row: &JsonValue) -> TimeSeriesPoint {
                 interval_start: 0,
                 tokens_input: 0,
                 tokens_output: 0,
+                tokens_cached: 0,
+                tokens_reasoning: 0,
                 call_count: 0,
             };
         }
@@ -325,6 +327,14 @@ fn parse_time_series_point(row: &JsonValue) -> TimeSeriesPoint {
             .unwrap_or(0.0) as u64,
         tokens_output: obj
             .get("tokens_output")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as u64,
+        tokens_cached: obj
+            .get("tokens_cached")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as u64,
+        tokens_reasoning: obj
+            .get("tokens_reasoning")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0) as u64,
         call_count: obj

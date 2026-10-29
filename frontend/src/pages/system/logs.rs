@@ -284,6 +284,8 @@ pub fn SystemLogs() -> Element {
                                     interval_start: p.interval_start,
                                     tokens_input: 0,
                                     tokens_output: 0,
+                                    tokens_cached: 0,
+                                    tokens_reasoning: 0,
                                     call_count: p.count,
                                 }).collect::<Vec<_>>(),
                                 width: Some(500.0),
