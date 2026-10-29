@@ -1,7 +1,7 @@
 //! 思考轮次时间线（ThinkTracesTab / Agent 轨迹面板共用）
 //!
-//! 逐轮展示：轮次编号 + 裁决徽章 + 思考强度/耗时（第一行）+ token 明细（第二行）
-//! 以及推理摘要、模型输出、工具调用。
+//! 逐轮展示：左侧轮次 + 裁决（竖排撑满两行）、中间 token 明细 2×2、
+//! 右侧思考强度与耗时上下两行，以及推理摘要、模型输出、工具调用。
 //!
 //! 长文本先给预览，超出部分用原生 `<details>` 展开全文。
 
@@ -152,8 +152,9 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                 class: "rounded-md border border-base-300 bg-base-200/40 p-2 space-y-1.5",
                                 // 顶行：左侧轮次/裁决 → 中间 token 2×2 → 右侧强度/耗时上下两行
                                 div { class: "flex flex-wrap items-start gap-2",
-                                    div { class: "flex items-center gap-1.5 flex-wrap shrink-0",
-                                        span { class: "text-xs font-semibold whitespace-nowrap", "第 {round_no} 轮" }
+                                    // 轮次 + 裁决竖排，撑满两行高度（与右侧 token 网格等高）
+                                    div { class: "flex flex-col items-start justify-center gap-1 shrink-0 self-stretch",
+                                        span { class: "text-sm font-semibold whitespace-nowrap leading-none", "第 {round_no} 轮" }
                                         if let Some(decision) = decision.clone() {
                                             span { class: decision_class(&decision), "{decision_label(&decision)}" }
                                         }
