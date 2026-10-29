@@ -251,6 +251,8 @@ fn entry_round_trips_round_details() {
         }],
         input_tokens: 120,
         output_tokens: 45,
+        cached_tokens: 30,
+        reasoning_tokens: 12,
         duration_ms: 900,
         decision: Some("continue".to_string()),
         thinking_intensity: Some(ThinkingIntensity::new(42)),

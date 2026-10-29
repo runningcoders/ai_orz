@@ -197,6 +197,12 @@ pub struct ThinkTraceRoundDto {
     pub input_tokens: u64,
     /// 本轮输出 token
     pub output_tokens: u64,
+    /// 本轮提示缓存命中的输入 token（provider 未上报时为 0）
+    #[serde(default)]
+    pub cached_tokens: u64,
+    /// 本轮思考/推理消耗的输出 token（`output_tokens` 的子集；未上报时为 0）
+    #[serde(default)]
+    pub reasoning_tokens: u64,
     /// 本轮 LLM 调用耗时（毫秒）
     pub duration_ms: u64,
     /// 裁决结果：final / continue / reflect / exit

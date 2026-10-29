@@ -1,6 +1,8 @@
 //! 思考轮次时间线（ThinkTracesTab / Agent 轨迹面板共用）
 //!
-//! 逐轮展示：轮次编号 + 裁决徽章 + token/耗时 + 推理摘要 + 模型输出 + 工具调用。
+//! 逐轮展示：轮次编号 + 裁决徽章 + 思考强度/耗时（第一行）+ token 明细（第二行）
+//! 以及推理摘要、模型输出、工具调用。
+//!
 //! 长文本先给预览，超出部分用原生 `<details>` 展开全文。
 
 use dioxus::prelude::*;
@@ -8,6 +10,7 @@ use dioxus::prelude::*;
 use common::api::ThinkTraceRoundDto;
 
 use crate::components::thinking_intensity_field::thinking_intensity_label;
+use crate::utils::number::format_compact_count;
 
 /// 思考文本预览长度（字符）：超出部分折叠
 const TEXT_PREVIEW_CHARS: usize = 160;
@@ -96,12 +99,11 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                             .is_some_and(|t| needs_expand(t, TEXT_PREVIEW_CHARS));
                         let reasoning = r.reasoning.clone();
                         let tools = r.tool_calls.clone();
-                        let usage = format!(
-                            "in {} / out {} · {}ms",
-                            r.input_tokens,
-                            r.output_tokens,
-                            r.duration_ms,
-                        );
+                        let input_text = format_compact_count(r.input_tokens);
+                        let output_text = format_compact_count(r.output_tokens);
+                        let cached_text = format_compact_count(r.cached_tokens);
+                        let reasoning_text = format_compact_count(r.reasoning_tokens);
+                        let duration_text = format!("{}ms", r.duration_ms);
                         let intensity_text = r
                             .thinking_intensity
                             .map(thinking_intensity_label)
@@ -110,7 +112,8 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                             div {
                                 key: "{round_no}",
                                 class: "rounded-md border border-base-300 bg-base-200/40 p-2 space-y-1.5",
-                                div { class: "flex items-center gap-2 flex-wrap",
+                                // 第一行：轮次身份 + 裁决 + 思考强度；耗时靠右独立成标签
+                                div { class: "flex items-center gap-1.5 flex-wrap",
                                     span { class: "text-xs font-semibold", "第 {round_no} 轮" }
                                     if let Some(decision) = decision.clone() {
                                         span { class: decision_class(&decision), "{decision_label(&decision)}" }
@@ -120,7 +123,34 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                         title: "本轮实际下发的思考强度（0–100 分；未启用时请求体不下发）",
                                         "{intensity_text}"
                                     }
-                                    span { class: "text-[11px] text-base-content/50 flex-1 text-right", "{usage}" }
+                                    span {
+                                        class: "badge badge-xs badge-ghost font-mono ml-auto",
+                                        title: "本轮模型调用耗时",
+                                        "{duration_text}"
+                                    }
+                                }
+                                // 第二行：本轮 token 明细（缓存/思考未上报时为 0）
+                                div { class: "flex items-center gap-1.5 flex-wrap",
+                                    span {
+                                        class: "badge badge-xs badge-info badge-soft font-mono",
+                                        title: "本轮输入（prompt）token",
+                                        "入 {input_text}"
+                                    }
+                                    span {
+                                        class: "badge badge-xs badge-accent badge-soft font-mono",
+                                        title: "本轮输出（completion）token；含思考 token",
+                                        "出 {output_text}"
+                                    }
+                                    span {
+                                        class: "badge badge-xs badge-success badge-soft font-mono",
+                                        title: "提示缓存命中的输入 token；provider 未上报时为 0，不代表未命中",
+                                        "缓存 {cached_text}"
+                                    }
+                                    span {
+                                        class: "badge badge-xs badge-warning badge-soft font-mono",
+                                        title: "思考/推理消耗的 token，已包含在输出 token 内",
+                                        "思考 {reasoning_text}"
+                                    }
                                 }
                                 // 推理摘要：先给预览，超长折叠
                                 if !reasoning.is_empty() {

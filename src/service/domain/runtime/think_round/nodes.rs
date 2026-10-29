@@ -157,6 +157,8 @@ fn build_trace_round(
     tool_calls: Vec<crate::pkg::think_trace::ThinkTraceToolCall>,
     input_tokens: u64,
     output_tokens: u64,
+    cached_tokens: u64,
+    reasoning_tokens: u64,
     duration_ms: u64,
     thinking_intensity: Option<ThinkingIntensity>,
 ) -> ThinkTraceRound {
@@ -167,6 +169,8 @@ fn build_trace_round(
         tool_calls,
         input_tokens,
         output_tokens,
+        cached_tokens,
+        reasoning_tokens,
         duration_ms,
         decision: None,
         thinking_intensity,
@@ -358,6 +362,8 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 Vec::new(),
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.cached_tokens,
+                usage.reasoning_tokens,
                 round_duration_ms,
                 round_call_options.thinking_intensity,
             ));
@@ -397,8 +403,17 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             let digest_assistant_text_for_trace =
                 assistant_preview(digest_assistant_text.as_deref().unwrap_or_default());
             // usage 之后会被移入 state，token 数值先取出来给轨迹用
-            let (round_input_tokens, round_output_tokens) =
-                (usage.input_tokens, usage.output_tokens);
+            let (
+                round_input_tokens,
+                round_output_tokens,
+                round_cached_tokens,
+                round_reasoning_tokens,
+            ) = (
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cached_tokens,
+                usage.reasoning_tokens,
+            );
             // 待执行的工具：先记 pending，dispatch 执行后回填 call_id / status / result
             let tool_traces: Vec<crate::pkg::think_trace::ThinkTraceToolCall> =
                 tool_calls.iter().map(pending_tool_trace).collect();
@@ -434,6 +449,8 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 tool_traces,
                 round_input_tokens,
                 round_output_tokens,
+                round_cached_tokens,
+                round_reasoning_tokens,
                 round_duration_ms,
                 round_call_options.thinking_intensity,
             ));

@@ -80,6 +80,8 @@ fn to_list_item(entry: ThinkTraceEntry) -> ThinkTraceListItem {
                     .collect(),
                 input_tokens: r.input_tokens,
                 output_tokens: r.output_tokens,
+                cached_tokens: r.cached_tokens,
+                reasoning_tokens: r.reasoning_tokens,
                 duration_ms: r.duration_ms,
                 decision: r.decision,
                 thinking_intensity: r.thinking_intensity,
