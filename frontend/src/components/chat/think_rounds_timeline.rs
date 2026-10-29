@@ -159,8 +159,8 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                             span { class: decision_class(&decision), "{decision_label(&decision)}" }
                                         }
                                     }
-                                    // token 明细 2×2（缓存/思考未上报时为 0）
-                                    div { class: "grid grid-cols-2 gap-1",
+                                    // token 明细 2×2（缓存/思考未上报时为 0），靠右贴近强度/耗时
+                                    div { class: "grid grid-cols-2 gap-1 ml-auto",
                                         span {
                                             class: "badge badge-xs badge-info badge-soft font-mono justify-start min-w-[60px]",
                                             title: "本轮输入（prompt）token",
@@ -183,7 +183,7 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                         }
                                     }
                                     // 右端两行：上强度标签、下耗时
-                                    div { class: "ml-auto flex flex-col items-end gap-1 shrink-0",
+                                    div { class: "flex flex-col items-end gap-1 shrink-0",
                                         span {
                                             class: intensity_class(r.thinking_intensity),
                                             title: "本轮实际下发的思考强度（0–100 分；未启用时请求体不下发）",
