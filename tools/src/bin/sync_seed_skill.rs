@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ai_orz_tools::seed_sync::{self, SeedFileSource, SeedSkillDef};
+use ai_orz_tools::seed_sync::{self, SeedSkillDef};
 use rusqlite::Connection;
 
 const USAGE: &str = "\
@@ -120,19 +120,46 @@ fn resolve_data_root(
     )
 }
 
-// ==================== seed 定义（引用内容已落盘为文本） ====================
+// ==================== seed 定义（正文在仓库的 skills/<ID>/ 目录下） ====================
 
 struct SeedSkill {
     id: String,
     name: String,
     description: String,
     tags: Vec<String>,
+    /// 技能目录下的全部文件（相对路径 + 字节；二进制附件原样同步）
     files: Vec<SeedFile>,
 }
 
 struct SeedFile {
     path: String,
-    content: String,
+    bytes: Vec<u8>,
+}
+
+/// 递归收集目录下的文件（相对路径用 `/` 分隔，与技能包内条目名一致）
+fn collect_files(base: &Path, dir: &Path, out: &mut Vec<SeedFile>) -> Result<(), String> {
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("读取 {} 失败: {e}", dir.display()))?
+    {
+        let entry = entry.map_err(|e| format!("读取 {} 的目录项失败: {e}", dir.display()))?;
+        let path = entry.path();
+        if entry
+            .file_type()
+            .map_err(|e| format!("读取 {} 类型失败: {e}", path.display()))?
+            .is_dir()
+        {
+            collect_files(base, &path, out)?;
+            continue;
+        }
+        let rel = path
+            .strip_prefix(base)
+            .map_err(|e| format!("计算相对路径失败: {e}"))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let bytes =
+            std::fs::read(&path).map_err(|e| format!("读取 {} 失败: {e}", path.display()))?;
+        out.push(SeedFile { path: rel, bytes });
+    }
+    Ok(())
 }
 
 fn load_seed_skills(repo_root: &Path) -> Result<Vec<SeedSkill>, String> {
@@ -145,24 +172,20 @@ fn load_seed_skills(repo_root: &Path) -> Result<Vec<SeedSkill>, String> {
 
     let mut out = Vec::with_capacity(defs.len());
     for def in defs {
-        for s in &def.skipped {
-            println!("   ⚠️  跳过 {}::{}", def.id, s);
+        // 技能正文的真源是技能目录（编译期内嵌，运行时打成技能包），主文件只记元信息
+        let skill_dir = dir.join("skills").join(&def.id);
+        if !skill_dir.is_dir() {
+            return Err(format!(
+                "{} 登记了技能 {}，但缺目录 {}（正文无处可取）",
+                json_path.display(),
+                def.id,
+                skill_dir.display()
+            ));
         }
-        let mut files = Vec::with_capacity(def.files.len());
-        for f in &def.files {
-            let content = match &f.source {
-                SeedFileSource::Content(c) => c.clone(),
-                SeedFileSource::Ref(rp) => {
-                    let p = dir.join(rp);
-                    std::fs::read_to_string(&p)
-                        .map_err(|e| format!("读取 {} 失败: {e}", p.display()))?
-                }
-            };
-            files.push(SeedFile {
-                path: f.path.clone(),
-                content,
-            });
-        }
+        let mut files = Vec::new();
+        collect_files(&skill_dir, &skill_dir, &mut files)?;
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+
         out.push(SeedSkill {
             id: def.id,
             name: def.name,
@@ -189,8 +212,8 @@ struct FilePlan {
     /// 相对数据根的路径，便于阅读
     rel: String,
     abs: PathBuf,
-    old: Option<String>,
-    new: String,
+    old: Option<Vec<u8>>,
+    new: Vec<u8>,
 }
 
 struct RowPlan {
@@ -213,7 +236,10 @@ impl RowPlan {
     fn changed(&self) -> bool {
         self.desc_changed()
             || self.tags_changed()
-            || self.files.iter().any(|f| f.old.as_deref() != Some(&f.new))
+            || self
+                .files
+                .iter()
+                .any(|f| f.old.as_deref() != Some(f.new.as_slice()))
     }
 }
 
@@ -252,12 +278,12 @@ fn build_row_plan(seed: &SeedSkill, row: TargetRow, data_root: &Path) -> RowPlan
         .map(|f| {
             let rel = format!("{}/{}", row.content_path, f.path);
             let abs = data_root.join(&rel);
-            let old = std::fs::read_to_string(&abs).ok();
+            let old = std::fs::read(&abs).ok();
             FilePlan {
                 rel,
                 abs,
                 old,
-                new: f.content.clone(),
+                new: f.bytes.clone(),
             }
         })
         .collect();
@@ -309,7 +335,7 @@ fn render(plans: &[RowPlan]) -> String {
             }
         ));
         for f in &p.files {
-            let unchanged = f.old.as_deref() == Some(&f.new);
+            let unchanged = f.old.as_deref() == Some(f.new.as_slice());
             s.push_str(&format!(
                 "   [{}] {}\n",
                 if unchanged { "=" } else { "改" },
@@ -369,7 +395,7 @@ fn apply(plans: &[RowPlan], db_path: &Path) -> Result<Summary, String> {
             continue;
         }
         for f in &p.files {
-            if f.old.as_deref() == Some(&f.new) {
+            if f.old.as_deref() == Some(f.new.as_slice()) {
                 continue;
             }
             if let Some(parent) = f.abs.parent() {
@@ -491,7 +517,7 @@ fn run(argv: &[String]) -> Result<(), String> {
         .map(|p| {
             p.files
                 .iter()
-                .filter(|f| f.old.as_deref() != Some(&f.new))
+                .filter(|f| f.old.as_deref() != Some(f.new.as_slice()))
                 .count()
         })
         .sum();

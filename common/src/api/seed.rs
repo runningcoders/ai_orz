@@ -12,7 +12,7 @@ pub struct ListSeedsRequest {}
 /// 单个 seed 文件信息
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SeedFileInfo {
-    /// 文件名（不含路径，含 .json 后缀）
+    /// 文件名（不含路径，含 .zip 后缀）
     pub name: String,
     /// 文件大小（字节）
     pub size: u64,
@@ -34,7 +34,7 @@ pub struct ListSeedsResponse {
 /// 读取 seed 文件请求
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetSeedFileRequest {
-    /// 文件名（含 .json 后缀）
+    /// 文件名（含 .zip 后缀）
     #[param(source = "path")]
     pub name: String,
 }
@@ -42,7 +42,7 @@ pub struct GetSeedFileRequest {
 /// 读取 seed 文件响应（返回完整 JSON 内容）
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetSeedFileResponse {
-    /// 文件名（含 .json 后缀）
+    /// 文件名（含 .zip 后缀）
     pub name: String,
     /// 文件完整 JSON 内容
     pub content: String,
@@ -53,7 +53,7 @@ pub struct GetSeedFileResponse {
 /// 保存当前组织配置到文件请求
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct SaveSeedRequest {
-    /// 文件名（不含路径，会自动加 .json 后缀）
+    /// 文件名（不含路径，会自动加 .zip 后缀）
     pub name: String,
     /// 描述（可选，写入快照 metadata）
     pub description: Option<String>,
@@ -62,7 +62,7 @@ pub struct SaveSeedRequest {
 /// 保存响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SaveSeedResponse {
-    /// 文件名（含 .json 后缀）
+    /// 文件名（含 .zip 后缀）
     pub name: String,
     /// 文件大小（字节）
     pub size: u64,
@@ -71,7 +71,7 @@ pub struct SaveSeedResponse {
 /// 加载 seed 文件请求
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct LoadSeedRequest {
-    /// 文件名（含 .json 后缀）
+    /// 文件名（含 .zip 后缀）
     #[param(source = "path")]
     pub name: String,
     /// 导入策略
@@ -117,7 +117,7 @@ pub struct LoadSeedResponse {
 /// 删除 seed 文件请求
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteSeedFileRequest {
-    /// 文件名（含 .json 后缀）
+    /// 文件名（含 .zip 后缀）
     #[param(source = "path")]
     pub name: String,
 }
@@ -132,7 +132,7 @@ pub struct DeleteSeedFileResponse {
 /// Diff 请求（文件 vs DB）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DiffSeedRequest {
-    /// 文件名（含 .json 后缀）
+    /// 文件名（含 .zip 后缀）
     #[param(source = "path")]
     pub name: String,
 }

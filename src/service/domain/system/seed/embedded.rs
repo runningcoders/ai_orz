@@ -8,6 +8,9 @@
 //!
 //! 新增预置技能文件时，在此处添加对应的 include_str! 静态变量和 match 分支。
 
+/// 内嵌文件路径前缀（`skills/<技能 ID>/<包内相对路径>`）
+pub const SKILL_REF_PREFIX: &str = "skills/";
+
 /// 内嵌的预置技能文件注册表
 ///
 /// 每个条目：(相对路径, 文件内容)
@@ -63,136 +66,60 @@ static EMBEDDED_SKILL_FILES: &[(&str, &str)] = &[
     ),
 ];
 
-/// 读取编译期内嵌的文件内容
+/// 全部内嵌技能文件条目（`(相对路径, 文件内容)`）
 ///
-/// # 参数
-/// ref_path - 相对 seed 目录的路径（如 "skills/TEMPLATE_TOOL_MANAGEMENT/skill.md"）
-///
-/// # 返回
-/// - Ok(String) - 文件内容
-/// - Err(String) - 文件未在编译期注册
-pub fn read_embedded_file(ref_path: &str) -> Result<String, String> {
+/// 默认快照的技能包由此在运行时按技能分组打成 zip：正文仍以 md 形式留在仓库里
+/// 可读可 diff，产物不入库，包格式与导出快照一致。
+pub fn embedded_skill_files() -> &'static [(&'static str, &'static str)] {
     EMBEDDED_SKILL_FILES
-        .iter()
-        .find(|(path, _)| *path == ref_path)
-        .map(|(_, content)| (*content).to_string())
-        .ok_or_else(|| {
-            format!(
-                "编译期内嵌文件不存在: {}（请在 embedded.rs 注册）",
-                ref_path
-            )
-        })
-}
-
-/// 列出所有编译期内嵌的 skills 目录下文件路径
-///
-/// 用于调试和验证编译期嵌入是否完整
-pub fn list_embedded_skill_files() -> Vec<String> {
-    EMBEDDED_SKILL_FILES
-        .iter()
-        .map(|(path, _)| path.to_string())
-        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// 每个预置技能目录都必须内嵌根引导文件，且正文带该技能的特征标记
+    ///
+    /// 表驱动替代原先 12 个单技能用例：新增/删除预置技能时改这张表即可。漏注册
+    /// 会在这里先炸——比初始化时报「缺少技能包」更早、也更直观。
     #[test]
-    fn test_read_embedded_file_tool_management() {
-        let content = read_embedded_file("skills/TEMPLATE_TOOL_MANAGEMENT/skill.md").unwrap();
-        assert!(!content.is_empty());
-    }
+    fn every_embedded_skill_has_main_file_with_expected_marker() {
+        const MAIN: &str = "skill.md";
+        let markers: &[(&str, Option<&str>)] = &[
+            ("TEMPLATE_TOOL_MANAGEMENT", None),
+            ("TEMPLATE_SKILL_MANAGEMENT", None),
+            ("TEMPLATE_MEMORY_COGNITION", None),
+            ("TEMPLATE_COMMUNICATION", None),
+            ("TEMPLATE_PROJECT_MANAGEMENT", None),
+            ("GIT_BRANCH_WORKFLOW", Some("Git Branch Workflow")),
+            ("TEMPLATE_AGENT_RECRUITMENT", Some("Agent 招聘")),
+            ("TEMPLATE_USER_RECEPTION", Some("用户接待")),
+            ("TEMPLATE_SELF_EVOLUTION", Some("自我进化")),
+            ("TEMPLATE_ONTOLOGY_COGNITION", Some("本体认知")),
+            ("TEMPLATE_PROJECT_CONTEXT_COGNITION", Some("项目上下文认知")),
+            ("TEMPLATE_PROBLEM_SOLVING", Some("问题求解策略")),
+        ];
 
-    #[test]
-    fn test_read_embedded_file_skill_management() {
-        let content = read_embedded_file("skills/TEMPLATE_SKILL_MANAGEMENT/skill.md").unwrap();
-        assert!(!content.is_empty());
-    }
+        for (skill_id, marker) in markers {
+            let path = format!("{}{}/{}", SKILL_REF_PREFIX, skill_id, MAIN);
+            let content = embedded_skill_files()
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, c)| *c)
+                .unwrap_or_else(|| panic!("预置技能 {skill_id} 的 {MAIN} 未在 embedded.rs 注册"));
+            assert!(!content.trim().is_empty(), "预置技能 {skill_id} 正文为空");
+            if let Some(marker) = marker {
+                assert!(
+                    content.contains(marker),
+                    "预置技能 {skill_id} 正文缺少特征标记 {marker}"
+                );
+            }
+        }
 
-    #[test]
-    fn test_read_embedded_file_memory_cognition() {
-        let content = read_embedded_file("skills/TEMPLATE_MEMORY_COGNITION/skill.md").unwrap();
-        assert!(!content.is_empty());
-    }
-
-    #[test]
-    fn test_read_embedded_file_communication() {
-        let content = read_embedded_file("skills/TEMPLATE_COMMUNICATION/skill.md").unwrap();
-        assert!(!content.is_empty());
-    }
-
-    #[test]
-    fn test_read_embedded_file_project_management() {
-        let content = read_embedded_file("skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md").unwrap();
-        assert!(!content.is_empty());
-    }
-
-    #[test]
-    fn test_read_embedded_file_git_branch_workflow() {
-        let content = read_embedded_file("skills/GIT_BRANCH_WORKFLOW/skill.md").unwrap();
-        assert!(content.contains("Git Branch Workflow"));
-    }
-
-    #[test]
-    fn test_read_embedded_file_agent_recruitment() {
-        let content = read_embedded_file("skills/TEMPLATE_AGENT_RECRUITMENT/skill.md").unwrap();
-        assert!(content.contains("Agent 招聘"));
-    }
-
-    #[test]
-    fn test_read_embedded_file_user_reception() {
-        let content = read_embedded_file("skills/TEMPLATE_USER_RECEPTION/skill.md").unwrap();
-        assert!(content.contains("用户接待"));
-    }
-
-    #[test]
-    fn test_read_embedded_file_self_evolution() {
-        let content = read_embedded_file("skills/TEMPLATE_SELF_EVOLUTION/skill.md").unwrap();
-        assert!(content.contains("自我进化"));
-    }
-
-    #[test]
-    fn test_read_embedded_file_ontology_cognition() {
-        let content = read_embedded_file("skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md").unwrap();
-        assert!(content.contains("本体认知"));
-    }
-
-    #[test]
-    fn test_read_embedded_file_project_context_cognition() {
-        let content =
-            read_embedded_file("skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md").unwrap();
-        assert!(content.contains("项目上下文认知"));
-    }
-
-    #[test]
-    fn test_read_embedded_file_not_found() {
-        let result = read_embedded_file("skills/nonexistent/skill.md");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("不存在"));
-    }
-
-    #[test]
-    fn test_read_embedded_file_problem_solving() {
-        let content = read_embedded_file("skills/TEMPLATE_PROBLEM_SOLVING/skill.md").unwrap();
-        assert!(content.contains("问题求解策略"));
-    }
-
-    #[test]
-    fn test_list_embedded_skill_files_count() {
-        let files = list_embedded_skill_files();
-        assert_eq!(files.len(), 12);
-        assert!(files.contains(&"skills/TEMPLATE_TOOL_MANAGEMENT/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_SKILL_MANAGEMENT/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_MEMORY_COGNITION/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_COMMUNICATION/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md".to_string()));
-        assert!(files.contains(&"skills/GIT_BRANCH_WORKFLOW/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_AGENT_RECRUITMENT/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_USER_RECEPTION/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_SELF_EVOLUTION/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md".to_string()));
-        assert!(files.contains(&"skills/TEMPLATE_PROBLEM_SOLVING/skill.md".to_string()));
+        assert_eq!(
+            embedded_skill_files().len(),
+            markers.len(),
+            "内嵌文件条目数与预置技能清单不一致（多注册/漏注册）"
+        );
     }
 }

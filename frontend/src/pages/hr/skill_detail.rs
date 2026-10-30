@@ -179,6 +179,51 @@ pub fn HrSkillDetail(id: String) -> Element {
         .and_then(|r| r.as_ref().err())
         .map(|e| format!("文件列表加载失败: {}", e));
 
+    // 选中文件的元信息（附件只暴露路径，不再经接口取内容）
+    let selected_meta = files_list
+        .as_ref()
+        .and_then(|fs| fs.iter().find(|f| f.filename == selected_file()).cloned());
+    let selected_is_main = selected_meta.as_ref().is_some_and(|m| m.is_main);
+    let selected_abs_path = selected_meta
+        .as_ref()
+        .map(|m| m.abs_path.clone())
+        .unwrap_or_default();
+    let selected_executable = selected_meta.as_ref().is_some_and(|m| m.executable);
+    let selected_size = selected_meta.as_ref().map(|m| m.file_size).unwrap_or(0);
+    let copy_path = selected_abs_path.clone();
+
+    // 删除附件：file_deletes 走 update_skill（禁删主文件由后端兜底）。
+    // 用 Rc 包装：for 循环里每个列表项都要持有一份回调，普通闭包无法 Clone。
+    let on_delete_file: std::rc::Rc<dyn Fn(String)> = {
+        let id = id.clone();
+        std::rc::Rc::new(move |filename: String| {
+            let skill_id = id.clone();
+            let fname = filename.clone();
+            spawn(async move {
+                let req = UpdateSkillRequest {
+                    skill_id,
+                    name: None,
+                    description: None,
+                    tags: None,
+                    category: None,
+                    status: None,
+                    content_input: None,
+                    file_deletes: Some(vec![fname.clone()]),
+                };
+                match update_skill(req).await {
+                    Ok(_) => {
+                        toast.success(format!("已删除附件 {}", fname));
+                        selected_file.set(String::new());
+                        file_content.set(String::new());
+                        file_content_dirty.set(false);
+                        files_res.restart();
+                    }
+                    Err(e) => toast.error(format!("删除失败: {}", e)),
+                }
+            });
+        })
+    };
+
     rsx! {
         AppLayout {
             div { class: "mb-6 flex items-center justify-between",
@@ -235,35 +280,60 @@ pub fn HrSkillDetail(id: String) -> Element {
                                         for f in files_list.as_ref().unwrap().iter() {
                                             {
                                                 let fname = f.filename.clone();
+                                                let is_main = f.is_main;
+                                                let executable = f.executable;
                                                 let active = selected_file() == fname;
                                                 let click_skill_id = id.clone();
+                                                let delete_cb = on_delete_file.clone();
+                                                let delete_name = f.filename.clone();
                                                 rsx! {
                                                     li {
-                                                        button {
-                                                            class: if active { "active" } else { "" },
-                                                            onclick: move |_| {
-                                                                let skill_id = click_skill_id.clone();
-                                                                let filename = fname.clone();
-                                                                selected_file.set(filename.clone());
-                                                                file_content.set(String::new());
-                                                                file_content_dirty.set(false);
-                                                                file_content_loading.set(true);
-                                                                spawn(async move {
-                                                                    let req = GetSkillFileContentRequest {
-                                                                        skill_id,
-                                                                        filename,
-                                                                    };
-                                                                    match get_skill_file_content(req).await {
-                                                                        Ok(resp) => file_content.set(resp.content),
-                                                                        Err(e) => toast.error(format!("加载文件内容失败: {}", e)),
+                                                        div { class: "flex items-center gap-1",
+                                                            button {
+                                                                class: if active { "active flex-1" } else { "flex-1" },
+                                                                onclick: move |_| {
+                                                                    let skill_id = click_skill_id.clone();
+                                                                    let filename = fname.clone();
+                                                                    selected_file.set(filename.clone());
+                                                                    file_content.set(String::new());
+                                                                    file_content_dirty.set(false);
+                                                                    // 附件内容不经接口返回：只选中、展示路径，
+                                                                    // 由 Agent 用 read_file / shell 工具按路径访问
+                                                                    if !is_main {
+                                                                        return;
                                                                     }
-                                                                    file_content_loading.set(false);
-                                                                });
-                                                            },
-                                                            div { class: "flex justify-between items-center w-full",
-                                                                span { class: "font-mono text-sm truncate", "{f.filename}" }
-                                                                span { class: "text-xs text-base-content/50",
-                                                                    "{crate::utils::format_file_size(f.file_size)}"
+                                                                    file_content_loading.set(true);
+                                                                    spawn(async move {
+                                                                        let req = GetSkillFileContentRequest {
+                                                                            skill_id,
+                                                                            filename,
+                                                                        };
+                                                                        match get_skill_file_content(req).await {
+                                                                            Ok(resp) => file_content.set(resp.content),
+                                                                            Err(e) => toast.error(format!("加载文件内容失败: {}", e)),
+                                                                        }
+                                                                        file_content_loading.set(false);
+                                                                    });
+                                                                },
+                                                                div { class: "flex justify-between items-center w-full",
+                                                                    span { class: "font-mono text-sm truncate",
+                                                                        "{f.filename}"
+                                                                        if is_main { " · 主文件" } else if executable { " · 可执行" }
+                                                                    }
+                                                                    span { class: "text-xs text-base-content/50",
+                                                                        "{crate::utils::format_file_size(f.file_size)}"
+                                                                    }
+                                                                }
+                                                            }
+                                                            if !is_main {
+                                                                button {
+                                                                    class: "btn hud-btn btn-ghost btn-xs",
+                                                                    title: "删除该附件",
+                                                                    onclick: move |_| {
+                                                                        let cb = delete_cb.clone();
+                                                                        cb(delete_name.clone());
+                                                                    },
+                                                                    "🗑"
                                                                 }
                                                             }
                                                         }
@@ -277,6 +347,42 @@ pub fn HrSkillDetail(id: String) -> Element {
                                 div { class: "md:col-span-2",
                                     if selected_file().is_empty() {
                                         EmptyState { icon: "👈".to_string(), message: "请选择左侧文件查看内容".to_string() }
+                                    } else if !selected_is_main {
+                                        // 附件：接口只给路径。内容由 Agent 用 read_file 按需读、
+                                        // 脚本类用 shell 工具按同一路径执行——接口回传二进制
+                                        // 既读不了，大文件还会撑爆上下文。
+                                        div { class: "flex flex-col gap-3",
+                                            div { class: "flex justify-between items-center",
+                                                span { class: "font-mono text-sm text-base-content/70",
+                                                    "附件: {selected_file()}"
+                                                }
+                                                span { class: "text-xs text-base-content/50",
+                                                    "{crate::utils::format_file_size(selected_size)}"
+                                                }
+                                            }
+                                            div { class: "rounded-lg border border-base-300 bg-base-200 p-3",
+                                                div { class: "text-xs text-base-content/50 mb-1",
+                                                    "绝对路径（Agent 用 read_file 读取 / shell 执行）"
+                                                }
+                                                div { class: "flex items-start gap-2",
+                                                    code { class: "font-mono text-sm break-all flex-1", "{selected_abs_path}" }
+                                                    button {
+                                                        class: "btn hud-btn btn-ghost btn-sm",
+                                                        onclick: move |_| {
+                                                            copy_to_clipboard(&copy_path.clone(), toast);
+                                                        },
+                                                        "📋 复制"
+                                                    }
+                                                }
+                                            }
+                                            div { class: "text-xs text-base-content/60",
+                                                if selected_executable {
+                                                    "带可执行位：Agent 可直接用 shell 工具按上述路径执行。"
+                                                } else {
+                                                    "内容不通过接口返回：请让 Agent 用 read_file 工具按上述路径按需读取。"
+                                                }
+                                            }
+                                        }
                                     } else if file_content_loading() {
                                         Loading {}
                                     } else {
@@ -378,6 +484,22 @@ pub fn HrSkillDetail(id: String) -> Element {
                 }
             }
         }
+    }
+}
+
+/// 复制文本到剪贴板（附件路径复制用），通过 toast 反馈结果
+fn copy_to_clipboard(content: &str, toast: crate::store::toast::ToastState) {
+    if let Some(window) = web_sys::window() {
+        let clipboard = window.navigator().clipboard();
+        let promise = clipboard.write_text(content);
+        wasm_bindgen_futures::spawn_local(async move {
+            match wasm_bindgen_futures::JsFuture::from(promise).await {
+                Ok(_) => toast.info("路径已复制到剪贴板"),
+                Err(_) => toast.error("复制失败"),
+            }
+        });
+    } else {
+        toast.error("剪贴板不可用");
     }
 }
 

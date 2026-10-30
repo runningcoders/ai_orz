@@ -1,6 +1,6 @@
 use common::api::{SkillDetail, SkillFileItem, SkillListItem};
 
-use crate::models::skill::{Skill, SkillFile};
+use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillFile};
 
 /// 技能 → 列表项 DTO（领域打包方法）。
 ///
@@ -44,6 +44,8 @@ fn to_file_item(file: &SkillFile) -> SkillFileItem {
     SkillFileItem {
         filename: file.filename.clone(),
         file_size: file.file_size,
-        has_content: file.content.is_some(),
+        is_main: file.filename.eq_ignore_ascii_case(SKILL_MAIN_FILE),
+        abs_path: file.abs_path.to_string_lossy().to_string(),
+        executable: file.executable,
     }
 }

@@ -134,12 +134,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_TOOL_MANAGEMENT",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_TOOL_MANAGEMENT/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_TOOL_MANAGEMENT.zip"
     },
     {
       "id": "TEMPLATE_SKILL_MANAGEMENT",
@@ -155,12 +150,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_SKILL_MANAGEMENT",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_SKILL_MANAGEMENT/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_SKILL_MANAGEMENT.zip"
     },
     {
       "id": "TEMPLATE_MEMORY_COGNITION",
@@ -176,12 +166,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_MEMORY_COGNITION",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_MEMORY_COGNITION/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_MEMORY_COGNITION.zip"
     },
     {
       "id": "TEMPLATE_ONTOLOGY_COGNITION",
@@ -197,12 +182,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_ONTOLOGY_COGNITION",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_ONTOLOGY_COGNITION.zip"
     },
     {
       "id": "TEMPLATE_COMMUNICATION",
@@ -219,12 +199,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_COMMUNICATION",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_COMMUNICATION/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_COMMUNICATION.zip"
     },
     {
       "id": "TEMPLATE_PROJECT_MANAGEMENT",
@@ -239,12 +214,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_PROJECT_MANAGEMENT",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_PROJECT_MANAGEMENT.zip"
     },
     {
       "id": "GIT_BRANCH_WORKFLOW",
@@ -260,12 +230,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/GIT_BRANCH_WORKFLOW",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/GIT_BRANCH_WORKFLOW/skill.md"
-        }
-      ]
+      "package": "skills/GIT_BRANCH_WORKFLOW.zip"
     },
     {
       "id": "TEMPLATE_AGENT_RECRUITMENT",
@@ -281,12 +246,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_AGENT_RECRUITMENT",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_AGENT_RECRUITMENT/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_AGENT_RECRUITMENT.zip"
     },
     {
       "id": "TEMPLATE_USER_RECEPTION",
@@ -302,12 +262,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_USER_RECEPTION",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_USER_RECEPTION/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_USER_RECEPTION.zip"
     },
     {
       "id": "TEMPLATE_SELF_EVOLUTION",
@@ -323,12 +278,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_SELF_EVOLUTION",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_SELF_EVOLUTION/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_SELF_EVOLUTION.zip"
     },
     {
       "id": "TEMPLATE_PROJECT_CONTEXT_COGNITION",
@@ -344,12 +294,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_PROJECT_CONTEXT_COGNITION.zip"
     },
     {
       "id": "TEMPLATE_PROBLEM_SOLVING",
@@ -364,12 +309,7 @@
       "author_type": 0,
       "status": 1,
       "content_path": "skills/TEMPLATE_PROBLEM_SOLVING",
-      "files": [
-        {
-          "path": "skill.md",
-          "ref_path": "skills/TEMPLATE_PROBLEM_SOLVING/skill.md"
-        }
-      ]
+      "package": "skills/TEMPLATE_PROBLEM_SOLVING.zip"
     }
   ],
   "ontology": {

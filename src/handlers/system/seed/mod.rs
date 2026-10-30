@@ -38,7 +38,7 @@ pub use sync_preset_skills::preview_preset_skills_handler;
 pub use sync_preset_skills::sync_preset_skills_handler;
 
 use crate::pkg::RequestContext;
-use crate::service::domain::system::seed::defs::*;
+use crate::service::domain::system::seed::{bundle, defs::*};
 use common::error::{Error, Result};
 use std::collections::HashMap;
 
@@ -213,11 +213,15 @@ pub enum PresetSkillAction {
 ///
 /// `apply_preset_skills` 的单技能核心（后台任务逐技能执行以便上报进度），
 /// 参数语义与 `apply_preset_skills` 一致。
+///
+/// `packages`：快照压缩包里的技能包（key = 压缩包内相对路径，即 `SkillDef.package`）。
+/// 主文件只登记 `package` 名，正文与附件整体从包里还原；取不到包一律报错。
 pub async fn apply_single_preset_skill(
     ctx: RequestContext,
     skill_def: &SkillDef,
     author_id_override: Option<&str>,
     skip_existing: bool,
+    packages: &HashMap<String, Vec<u8>>,
 ) -> Result<PresetSkillAction> {
     use crate::service::domain::hr;
 
@@ -255,12 +259,20 @@ pub async fn apply_single_preset_skill(
     skill_po.status = common::enums::SkillStatus::from(skill_def.status);
     let skill = crate::models::skill::Skill::from_po(skill_po);
 
-    // 动态解析每个文件为 SkillFileImport（content > local_path > ref_path > url）
-    let mut imports: Vec<crate::service::domain::hr::SkillFileImport> = Vec::new();
-    for file_def in &skill_def.files {
-        let import = resolve_skill_file_import(file_def).await?;
-        imports.push(import);
-    }
+    // 技能内容只有一条通路：整包还原（zip magic 触发解包，子目录与可执行位一并保真）
+    let bytes = packages.get(&skill_def.package).ok_or_else(|| {
+        Error::bad_request(format!(
+            "快照缺少技能包 {}（技能 {}）：压缩包可能已损坏，请重新导出",
+            skill_def.package, skill_def.id
+        ))
+    })?;
+    let imports = vec![crate::service::domain::hr::SkillFileImport {
+        target_path: None,
+        source_abs_path: None,
+        content_bytes: Some(bytes.clone()),
+        suggested_name: None,
+        executable: None,
+    }];
 
     if existing.is_some() {
         let params = crate::service::domain::hr::UpdateSkillParams {
@@ -296,8 +308,8 @@ pub async fn apply_single_preset_skill(
 
 /// 导入预置技能到共享库
 ///
-/// 从 SeedSnapshot 的 skills 列表中读取技能定义，
-/// 动态解析文件内容（content > ref_path > url）并写入 DB + 文件系统。
+/// 从 SeedSnapshot 的 skills 列表中读取技能元信息，按 `package` 取技能包整包还原到
+/// DB + 文件系统。
 ///
 /// # 参数
 /// - ctx：请求上下文
@@ -306,6 +318,7 @@ pub async fn apply_single_preset_skill(
 ///   owner；apply_snapshot_to_db 传 None 保留模板原始值）。已存在的技能一律继承现有
 ///   author_id，避免被 default.json 的 `TEMPLATE_ADMIN` 占位值覆盖。
 /// - skip_existing：true 时跳过已存在的技能（对应 ImportStrategy::SkipExisting）
+/// - packages：快照压缩包里的技能包（key = `SkillDef.package`）
 ///
 /// # 返回
 /// 各类操作计数
@@ -314,12 +327,19 @@ pub async fn apply_preset_skills(
     skills: &[SkillDef],
     author_id_override: Option<&str>,
     skip_existing: bool,
+    packages: &HashMap<String, Vec<u8>>,
 ) -> Result<SkillApplyResult> {
     let mut result = SkillApplyResult::default();
 
     for skill_def in skills {
-        match apply_single_preset_skill(ctx.clone(), skill_def, author_id_override, skip_existing)
-            .await?
+        match apply_single_preset_skill(
+            ctx.clone(),
+            skill_def,
+            author_id_override,
+            skip_existing,
+            packages,
+        )
+        .await?
         {
             PresetSkillAction::Created => result.created += 1,
             PresetSkillAction::Updated => result.updated += 1,
@@ -329,79 +349,16 @@ pub async fn apply_preset_skills(
     Ok(result)
 }
 
-/// 解析 SkillFileDef 为 SkillFileImport
+/// 把一个技能整体打包成技能包（zip），供快照压缩包携带。
 ///
-/// 优先级：content > local_path > ref_path > url
-async fn resolve_skill_file_import(
-    file_def: &SkillFileDef,
-) -> Result<crate::service::domain::hr::SkillFileImport> {
-    use crate::service::domain::hr::SkillFileImport;
-    // 1. content 优先级最高
-    if let Some(content) = &file_def.content {
-        return Ok(SkillFileImport {
-            target_path: Some(file_def.path.clone()),
-            source_abs_path: None,
-            content_bytes: Some(content.as_bytes().to_vec()),
-            suggested_name: None,
-        });
-    }
-
-    // 2. local_path：运行时本地路径 → 0 拷贝
-    if let Some(local_path) = &file_def.local_path {
-        let abs = std::path::PathBuf::from(local_path);
-        if !abs.exists() {
-            return Err(Error::bad_request(format!(
-                "技能文件 {} 的 local_path 不存在: {}",
-                file_def.path, local_path
-            )));
-        }
-        return Ok(SkillFileImport {
-            target_path: Some(file_def.path.clone()),
-            source_abs_path: Some(abs),
-            content_bytes: None,
-            suggested_name: None,
-        });
-    }
-
-    // 3. ref_path：编译期内嵌文件
-    if let Some(ref_path) = &file_def.ref_path {
-        let content = crate::service::domain::system::seed::embedded::read_embedded_file(ref_path)
-            .map_err(Error::internal)?;
-        return Ok(SkillFileImport {
-            target_path: Some(file_def.path.clone()),
-            source_abs_path: None,
-            content_bytes: Some(content.into_bytes()),
-            suggested_name: None,
-        });
-    }
-
-    // 4. url：运行时抓取（委托 utils::fetch_remote_content，共享 SSRF + 大小限制）
-    if let Some(url) = &file_def.url {
-        let content = crate::pkg::utils::fetch_remote_content::fetch_remote_text(
-            url,
-            &crate::pkg::utils::fetch_remote_content::FetchOptions::default(),
-        )
-        .await?;
-        return Ok(SkillFileImport {
-            target_path: Some(file_def.path.clone()),
-            source_abs_path: None,
-            content_bytes: Some(content.into_bytes()),
-            suggested_name: None,
-        });
-    }
-
-    Err(Error::bad_request(format!(
-        "技能文件 {} 未指定内容来源（content/local_path/ref_path/url 均为空）",
-        file_def.path
-    )))
-}
-
-/// 导出技能文件列表为 SkillFileDef
-///
-/// 读取技能目录下的所有文件，将内容内嵌到 content 字段。
-/// 导出时统一使用 content 来源（不使用 ref_path/url），保证快照自包含可迁移。
-async fn export_skill_files(ctx: RequestContext, skill_id: &str) -> Result<Vec<SkillFileDef>> {
-    use crate::service::domain::hr;
+/// 内容全部按**字节**保真（图片 / 二进制可执行件不再走 UTF-8 解码），
+/// 并把可执行位写进 unix mode——导入侧解包即可直接执行脚本。
+/// 技能无文件时产出空包：主文件 `package` 恒有值，导入侧取不到包一律报错。
+async fn pack_skill_package(
+    ctx: RequestContext,
+    skill_id: &str,
+) -> Result<crate::service::domain::system::seed::bundle::SkillPackage> {
+    use crate::service::domain::{hr, system::seed::bundle};
 
     let files = hr::domain()
         .skill_manage()
@@ -409,28 +366,48 @@ async fn export_skill_files(ctx: RequestContext, skill_id: &str) -> Result<Vec<S
         .await?
         .unwrap_or_default();
 
-    let mut defs = Vec::with_capacity(files.len());
+    let mut entries = Vec::with_capacity(files.len());
     for file in files {
-        // 优先使用 list_skill_files 已预读的 content；否则按需读取
-        let content = if file.content.is_some() {
-            file.content
-        } else {
-            hr::domain()
-                .skill_manage()
-                .get_skill_file_content(ctx.clone(), skill_id, &file.filename)
-                .await
-                .ok()
-                .flatten()
-        };
-        defs.push(SkillFileDef {
+        // 系统内部导出通路：按字节读，附件不被「只直出主文件」的接口契约挡住
+        let bytes = hr::domain()
+            .skill_manage()
+            .read_skill_file_bytes(ctx.clone(), skill_id, &file.filename)
+            .await?
+            .ok_or_else(|| {
+                Error::internal(format!(
+                    "技能附件读取失败，快照无法自包含: {}",
+                    file.filename
+                ))
+            })?;
+        entries.push(bundle::SkillFileEntry {
             path: file.filename,
-            content,
-            local_path: None,
-            ref_path: None,
-            url: None,
+            bytes,
+            executable: file.executable,
         });
     }
-    Ok(defs)
+
+    Ok(bundle::SkillPackage {
+        name: bundle::skill_package_name(skill_id),
+        bytes: bundle::pack_skill_zip(&entries)?,
+    })
+}
+
+/// 按快照主文件导出全部技能包
+///
+/// 逐个技能调用 `pack_skill_package`，包名与主文件登记的 `skill_def.package` 同源。
+pub async fn export_skill_packages(
+    ctx: RequestContext,
+    snapshot: &SeedSnapshot,
+) -> Result<Vec<crate::service::domain::system::seed::bundle::SkillPackage>> {
+    use crate::service::domain::system::seed::bundle::SkillPackage;
+
+    let mut packages: Vec<SkillPackage> = Vec::with_capacity(snapshot.skills.len());
+    for skill_def in &snapshot.skills {
+        let pkg = pack_skill_package(ctx.clone(), &skill_def.id).await?;
+        debug_assert_eq!(pkg.name, skill_def.package);
+        packages.push(pkg);
+    }
+    Ok(packages)
 }
 
 /// 从当前 DB 组装 SeedSnapshot（编排各 domain）
@@ -550,7 +527,8 @@ pub async fn assemble_snapshot_from_db_with_progress(
         .await?;
     let mut skill_defs: Vec<SkillDef> = Vec::with_capacity(skills.items.len());
     for s in skills.items {
-        let files = export_skill_files(ctx.clone(), &s.po.id).await?;
+        // 主文件只记元信息 + 技能包引用：技能内容（含二进制附件）整体走压缩包。
+        // package 恒有值（空技能带空包），导入侧不再有「没登记包」的分支。
         skill_defs.push(SkillDef {
             id: s.po.id.clone(),
             name: s.po.name.clone(),
@@ -562,7 +540,7 @@ pub async fn assemble_snapshot_from_db_with_progress(
             author_type: s.po.author_type.to_i32(),
             status: s.po.status.to_i32(),
             content_path: s.po.content_path.clone(),
-            files,
+            package: bundle::skill_package_name(&s.po.id),
         });
     }
 
@@ -601,8 +579,17 @@ pub async fn apply_snapshot_to_db(
     snapshot: &SeedSnapshot,
     strategy: common::api::seed::ImportStrategy,
     sensitive_values: &HashMap<String, String>,
+    packages: &HashMap<String, Vec<u8>>,
 ) -> Result<common::api::seed::LoadSeedResponse> {
-    apply_snapshot_to_db_with_progress(ctx, snapshot, strategy, sensitive_values, &|_, _| {}).await
+    apply_snapshot_to_db_with_progress(
+        ctx,
+        snapshot,
+        strategy,
+        sensitive_values,
+        packages,
+        &|_, _| {},
+    )
+    .await
 }
 
 /// 带进度回调的 `apply_snapshot_to_db`
@@ -614,6 +601,7 @@ pub async fn apply_snapshot_to_db_with_progress(
     snapshot: &SeedSnapshot,
     strategy: common::api::seed::ImportStrategy,
     sensitive_values: &HashMap<String, String>,
+    packages: &HashMap<String, Vec<u8>>,
     progress: &(dyn Fn(usize, &str) + Send + Sync),
 ) -> Result<common::api::seed::LoadSeedResponse> {
     use crate::service::domain::{finance, hr, organization};
@@ -896,6 +884,7 @@ pub async fn apply_snapshot_to_db_with_progress(
         &snapshot.skills,
         None,
         matches!(strategy, ImportStrategy::SkipExisting),
+        packages,
     )
     .await?;
     created += skill_result.created;

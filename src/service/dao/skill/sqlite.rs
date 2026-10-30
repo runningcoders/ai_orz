@@ -3,9 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::models::skill::{SkillFile, SkillPo};
+use crate::models::skill::{SKILL_MAIN_FILE, SkillFile, SkillPo};
 use crate::pkg::RequestContext;
 use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
+use crate::pkg::utils::fs_perm::{is_executable, mark_executable};
 use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 use async_trait::async_trait;
 use common::enums::SkillStatus;
@@ -450,14 +451,13 @@ ORDER BY updated_at DESC
     }
 
     fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>> {
-        const SMALL_FILE_THRESHOLD: u64 = 64 * 1024; // 64KB 以下的文件直接预读内容
         let dir = self.skill_dir(skill);
         if !dir.exists() {
             return Ok(Vec::new());
         }
 
         let mut files = Vec::new();
-        self.collect_files(&dir, &dir, &mut files, SMALL_FILE_THRESHOLD)?;
+        self.collect_files(&dir, &dir, &mut files)?;
 
         // 按文件名排序，让 skill.md 排在前面
         files.sort_by(|a, b| a.filename.cmp(&b.filename));
@@ -561,14 +561,13 @@ impl SkillDaoSqliteImpl {
         base_dir: &Path,
         current_dir: &Path,
         files: &mut Vec<SkillFile>,
-        small_file_threshold: u64,
     ) -> Result<()> {
         for entry in std::fs::read_dir(current_dir)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
             let path = entry.path();
             if file_type.is_dir() {
-                self.collect_files(base_dir, &path, files, small_file_threshold)?;
+                self.collect_files(base_dir, &path, files)?;
                 continue;
             }
 
@@ -584,8 +583,11 @@ impl SkillDaoSqliteImpl {
             let metadata = entry.metadata()?;
             let file_size = metadata.len();
 
-            // 小文件直接读取内容；非 UTF-8 小文件保留为 None，避免列表接口因二进制附件失败。
-            let content = if file_size <= small_file_threshold {
+            // 只有根引导文件 skill.md 预读内容：它是「怎么读这份技能」的说明书，
+            // 必须随接口直出。其余附件（含二进制 / 大文件）一律只给路径，
+            // 由调用方用 read_file / shell 工具按需访问——接口回传二进制既读不了
+            // 又撑爆上下文。
+            let content = if filename.eq_ignore_ascii_case(SKILL_MAIN_FILE) {
                 std::fs::read_to_string(&path).ok()
             } else {
                 None
@@ -595,13 +597,56 @@ impl SkillDaoSqliteImpl {
                 filename,
                 file_size,
                 content,
+                abs_path: path,
+                executable: is_executable(&metadata),
             });
         }
 
         Ok(())
     }
 
+    /// 递归复制目录内容：子目录逐层创建，文件复制后同步可执行位。
+    fn copy_dir_recursive(source_dir: &Path, target_dir: &Path) -> Result<()> {
+        for entry in std::fs::read_dir(source_dir)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            let target_path = target_dir.join(entry.file_name());
+
+            if file_type.is_dir() {
+                std::fs::create_dir_all(&target_path)?;
+                Self::copy_dir_recursive(&entry.path(), &target_path)?;
+                continue;
+            }
+
+            if !file_type.is_file() {
+                continue;
+            }
+
+            std::fs::copy(entry.path(), &target_path).map_err(|e| {
+                err!(
+                    Internal,
+                    "复制技能文件失败: {}: {}",
+                    entry.path().display(),
+                    e
+                )
+            })?;
+
+            if let Ok(metadata) = entry.metadata()
+                && is_executable(&metadata)
+            {
+                mark_executable(&target_path);
+            }
+        }
+
+        Ok(())
+    }
+
     /// 递归拷贝技能目录（用于 install_to_agent）
+    ///
+    /// **必须递归**：技能包允许带子目录附件（`scripts/` `assets/`），只拷顶层会让
+    /// 「Agent 副本缺件」——源技能里写着 `scripts/run.sh`，副本里没有，Agent 按
+    /// `abs_path` 去读或执行必然失败，且这类缺失在 UI 上看不出来。
+    /// 可执行位同时要带过去，否则脚本类附件在副本里跑不起来。
     fn copy_skill_dir(&self, src: &SkillPo, target: &SkillPo) -> Result<()> {
         let source_dir = self.skill_dir(src);
         let target_dir = self.skill_dir(target);
@@ -615,18 +660,7 @@ impl SkillDaoSqliteImpl {
         // 创建目标目录
         std::fs::create_dir_all(&target_dir)?;
 
-        // 遍历源目录并拷贝所有文件
-        for entry in std::fs::read_dir(&source_dir)? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            if file_type.is_file() {
-                let target_file = target_dir.join(entry.file_name());
-                std::fs::copy(entry.path(), target_file)?;
-            }
-            // 暂时不递归子目录，需要时再扩展
-        }
-
-        Ok(())
+        Self::copy_dir_recursive(&source_dir, &target_dir)
     }
 }
 

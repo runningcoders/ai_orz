@@ -82,6 +82,7 @@ pub async fn update_skill(
                 source_abs_path: None,
                 content_bytes: Some(content.as_bytes().to_vec()),
                 suggested_name: None,
+                executable: None,
             });
         }
 
@@ -124,6 +125,7 @@ pub async fn update_skill(
                     source_abs_path: Some(abs_path),
                     content_bytes: None,
                     suggested_name: Some(attachment.po.original_name.clone()),
+                    executable: None,
                 });
             }
         }

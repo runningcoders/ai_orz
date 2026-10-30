@@ -22,6 +22,19 @@ async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     ctx
 }
 
+/// 把快照里的技能导出成技能包 map（导入侧按 `SkillDef.package` 取包）
+async fn export_packages(
+    ctx: crate::pkg::RequestContext,
+    snapshot: &crate::service::domain::system::seed::defs::SeedSnapshot,
+) -> HashMap<String, Vec<u8>> {
+    super::export_skill_packages(ctx, snapshot)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|p| (p.name, p.bytes))
+        .collect()
+}
+
 /// 准备测试数据：1 个组织 + 1 个 SuperAdmin + 1 个 chat provider + 1 个 embedding provider + 1 个 Agent
 async fn prepare_test_data(ctx: &crate::pkg::RequestContext) -> String {
     use crate::models::agent::{Agent, AgentPo};
@@ -164,12 +177,14 @@ async fn test_apply_snapshot_with_preserve_ids_round_trip(pool: SqlitePool) {
     let mut modified = snapshot.clone();
     modified.agents[0].name = "修改后的 Agent".to_string();
 
-    // 导入
+    // 导入（技能包随快照一起走：主文件只有元信息）
+    let packages = export_packages(ctx.clone(), &modified).await;
     let result = super::apply_snapshot_to_db(
         ctx,
         &modified,
         common::api::seed::ImportStrategy::PreserveIds,
         &sensitive,
+        &packages,
     )
     .await
     .unwrap();
@@ -189,10 +204,12 @@ async fn test_apply_snapshot_dry_run_returns_diff_without_writing(pool: SqlitePo
         .await
         .unwrap();
 
+    // DryRun 只算 diff，不导入技能 ⇒ 空包 map 即可
     let result = super::apply_snapshot_to_db(
         ctx,
         &snapshot,
         common::api::seed::ImportStrategy::DryRun,
+        &HashMap::new(),
         &HashMap::new(),
     )
     .await
@@ -220,6 +237,7 @@ async fn test_apply_default_template_creates_template_entities(pool: SqlitePool)
         .unwrap();
 
     let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+    let packages = crate::service::domain::system::seed::default::embedded_default_skill_packages();
 
     let mut sensitive = HashMap::new();
     sensitive.insert(
@@ -243,6 +261,7 @@ async fn test_apply_default_template_creates_template_entities(pool: SqlitePool)
         &snapshot,
         common::api::seed::ImportStrategy::PreserveIds,
         &sensitive,
+        packages,
     )
     .await
     .unwrap();
@@ -288,11 +307,12 @@ async fn test_apply_snapshot_rejects_chat_provider_without_context_length(pool: 
     }
 
     // 注意：此处 sensitive_values 为空——快照中的实体均已存在，敏感字段校验应放行，
-    // 从而让失败原因唯一地落在上下文长度校验上。
+    // 从而让失败原因唯一地落在上下文长度校验上（Provider 阶段就失败，够不到技能导入）。
     let err = super::apply_snapshot_to_db(
         ctx,
         &snapshot,
         common::api::seed::ImportStrategy::PreserveIds,
+        &HashMap::new(),
         &HashMap::new(),
     )
     .await
@@ -566,4 +586,195 @@ async fn test_sync_preset_ontology_default_is_only_missing(pool: SqlitePool) {
     assert_eq!(report2.created, 0);
     assert_eq!(report2.updated, 0);
     assert_eq!(report2.skipped, report2.total);
+}
+
+/// 端到端：导出（主文件只记元信息 + 技能包）→ 打整包 → 拆包 → 导入还原
+///
+/// 这条把「主文件不再内嵌内容」和「技能包整包搬运」两条约定钉在一起：
+/// 只要 assemble 填的 package 名与打包侧不一致，这里就会失败。
+#[sqlx::test]
+async fn test_skill_content_round_trip_through_bundle(pool: SqlitePool) {
+    use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillFile, SkillPo};
+    use crate::service::domain::hr::{CreateSkillParams, SkillFileImport, UpdateSkillParams};
+    use crate::service::domain::system::seed::bundle;
+    use common::enums::skill::SkillAuthorType;
+
+    let ctx = init_test_env(pool).await;
+    let org_id = prepare_test_data(&ctx).await;
+
+    // 1. 建一个带二进制附件 + 可执行脚本的技能
+    let skill_id = format!("PKGSRC{}", uuid::Uuid::now_v7());
+    let po = SkillPo::new(
+        skill_id.clone(),
+        "整包往返技能".to_string(),
+        "带二进制附件".to_string(),
+        vec!["test".to_string()],
+        "coding".to_string(),
+        String::new(),
+        "TEMPLATE_ADMIN".to_string(),
+        SkillAuthorType::User,
+        format!("skills/{skill_id}"),
+    );
+    let mut skill = Skill::from_po(po);
+    skill.files.push(SkillFile {
+        filename: SKILL_MAIN_FILE.to_string(),
+        file_size: 8,
+        content: Some("# 引导\n".to_string()),
+        abs_path: std::path::PathBuf::new(),
+        executable: false,
+    });
+
+    let binary: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x01, 0x80];
+    let hr = crate::service::domain::hr::domain();
+    hr.skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+    hr.skill_manage()
+        .update_skill(
+            ctx.clone(),
+            UpdateSkillParams {
+                skill: &skill,
+                imports: vec![
+                    SkillFileImport {
+                        target_path: Some("scripts/run.sh".to_string()),
+                        source_abs_path: None,
+                        content_bytes: Some(b"echo hi".to_vec()),
+                        suggested_name: None,
+                        executable: Some(true),
+                    },
+                    SkillFileImport {
+                        target_path: Some("assets/blob.bin".to_string()),
+                        source_abs_path: None,
+                        content_bytes: Some(binary.clone()),
+                        suggested_name: None,
+                        executable: None,
+                    },
+                ],
+                file_deletes: Vec::new(),
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    // 2. 导出：主文件只记元信息，内容登记到技能包
+    let snapshot = super::assemble_snapshot_from_db(ctx.clone(), &org_id, None)
+        .await
+        .unwrap();
+    let skill_def = snapshot
+        .skills
+        .iter()
+        .find(|s| s.id == skill_id)
+        .expect("快照应包含源技能");
+    assert_eq!(
+        skill_def.package,
+        bundle::skill_package_name(&skill_id),
+        "package 名必须由 skill_id 推导"
+    );
+
+    // 3. 打整包 → 拆包
+    let packages = super::export_skill_packages(ctx.clone(), &snapshot)
+        .await
+        .unwrap();
+    assert_eq!(packages.len(), 1);
+    let bundle_bytes = bundle::build_bundle(&snapshot, &packages).unwrap();
+    let (loaded, loaded_packages) = bundle::read_bundle(&bundle_bytes).unwrap();
+
+    // 4. 删掉磁盘上的附件，再用包导回（证明内容确实来自包，而不是本来就在）
+    hr.skill_manage()
+        .update_skill(
+            ctx.clone(),
+            UpdateSkillParams {
+                skill: &skill,
+                imports: vec![],
+                file_deletes: vec!["scripts/run.sh", "assets/blob.bin"],
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        hr.skill_manage()
+            .list_skill_files(ctx.clone(), &skill_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .len(),
+        1,
+        "删附件后应只剩主文件"
+    );
+
+    super::apply_snapshot_to_db(
+        ctx.clone(),
+        &loaded,
+        common::api::seed::ImportStrategy::PreserveIds,
+        &HashMap::new(),
+        &loaded_packages,
+    )
+    .await
+    .unwrap();
+
+    // 5. 校验还原结果：文件齐全、二进制字节一致、可执行位在
+    let files = hr
+        .skill_manage()
+        .list_skill_files(ctx.clone(), &skill_id)
+        .await
+        .unwrap()
+        .unwrap();
+    for name in [SKILL_MAIN_FILE, "scripts/run.sh", "assets/blob.bin"] {
+        assert!(
+            files.iter().any(|f| f.filename == name),
+            "整包导入后应存在 {name}"
+        );
+    }
+    assert_eq!(
+        hr.skill_manage()
+            .read_skill_file_bytes(ctx.clone(), &skill_id, "assets/blob.bin")
+            .await
+            .unwrap()
+            .unwrap(),
+        binary,
+        "二进制附件必须字节级还原"
+    );
+    let sh = files
+        .iter()
+        .find(|f| f.filename == "scripts/run.sh")
+        .unwrap();
+    assert!(sh.executable, "脚本可执行位必须还原");
+}
+
+/// 主文件登记了技能包但压缩包里没有 → 必须明确失败，不能静默导入一个空技能
+///
+/// 静默降级是旧实现的病根（附件读失败被吞成空内容），这里把兜底堵死。
+#[sqlx::test]
+async fn test_apply_skill_rejects_missing_package(pool: SqlitePool) {
+    use crate::service::domain::system::seed::bundle;
+    use crate::service::domain::system::seed::defs::SkillDef;
+
+    let ctx = init_test_env(pool).await;
+    let _org_id = prepare_test_data(&ctx).await;
+
+    let skill_def = SkillDef {
+        id: "PKGMISSING0001".to_string(),
+        name: "缺包技能".to_string(),
+        description: String::new(),
+        tags: vec![],
+        category: "coding".to_string(),
+        parent_skill_id: String::new(),
+        author_id: "TEMPLATE_ADMIN".to_string(),
+        author_type: 0,
+        status: 1,
+        content_path: "skills/pkgmissing".to_string(),
+        package: bundle::skill_package_name("PKGMISSING0001"),
+    };
+
+    let err = super::apply_single_preset_skill(ctx, &skill_def, None, false, &HashMap::new())
+        .await
+        .expect_err("缺包必须失败");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("缺少技能包"),
+        "错误应说明缺的是哪个技能包: {msg}"
+    );
 }

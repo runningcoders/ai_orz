@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 
 use crate::api::finance::upload_attachment;
 use crate::store::toast::use_toast;
-use common::api::{SkillContentInput, SkillFileInput};
+use common::api::{SkillContentInput, SkillFileInput, default_target_path};
 
 /// 附件条目（前端临时状态：上传后保留 attachment_id + target_path）
 #[derive(Clone, PartialEq)]
@@ -234,7 +234,10 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
 
                                             match upload_attachment(form).await {
                                                 Ok(detail) => {
-                                                    let target_path = filename.clone();
+                                                    // 预填默认归位路径（与后端导入推断同源 SSOT）：
+                                                    // 图片→assets/、脚本→scripts/、md→skill.md
+                                                    let target_path =
+                                                        default_target_path(&filename);
                                                     attachments.with_mut(|list| {
                                                         list.push(AttachmentEntry {
                                                             attachment_id: detail.id.clone(),

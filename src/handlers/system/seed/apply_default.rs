@@ -133,11 +133,15 @@ impl SeedApplyDefaultTask {
         let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
 
         // Step 1-4: 应用到 DB（进度回调更新 current_step；DryRun 在 step 1 完成）
+        // 技能包由编译期内嵌的技能正文在运行时打成，与导出快照同格式
+        let packages =
+            crate::service::domain::system::seed::default::embedded_default_skill_packages();
         super::apply_snapshot_to_db_with_progress(
             ctx,
             &snapshot,
             params.strategy,
             &params.sensitive_values,
+            packages,
             &|step, msg| self.set_step(step, msg),
         )
         .await

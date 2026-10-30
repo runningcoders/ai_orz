@@ -1,9 +1,9 @@
 //! Skill API DTO contract tests.
 
 use super::{
-    ApiResponse, CreateSkillRequest, InstallSkillToAgentResponse, SkillContentInput, SkillDetail,
-    SkillFileInput, SkillFileItem, SkillListItem, SkillSearchQuery, UpdateSkillFileContentRequest,
-    UpdateSkillRequest,
+    ApiResponse, CreateSkillRequest, InstallSkillToAgentResponse, SKILL_MAIN_FILE,
+    SkillContentInput, SkillDetail, SkillFileInput, SkillFileItem, SkillListItem, SkillSearchQuery,
+    UpdateSkillFileContentRequest, UpdateSkillRequest, default_target_path,
 };
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
@@ -63,7 +63,9 @@ fn skill_detail_contains_content_but_list_item_does_not() {
         files: vec![SkillFileItem {
             filename: "skill.md".to_string(),
             file_size: 16,
-            has_content: true,
+            is_main: true,
+            abs_path: "/data/skills/skill-1/skill.md".to_string(),
+            executable: false,
         }],
         created_at: 1,
         updated_at: 2,
@@ -224,4 +226,20 @@ fn update_skill_file_content_request_supports_optimistic_lock() {
     assert_eq!(decoded.filename, "skill.md");
     assert_eq!(decoded.content, "Updated content");
     assert_eq!(decoded.expected_updated_at, Some(1234567890));
+}
+
+/// 附件默认归位规则（前端上传预填 + 后端导入推断共用同一份 SSOT）。
+#[test]
+fn default_target_path_organizes_by_extension() {
+    assert_eq!(default_target_path("logo.png"), "assets/logo.png");
+    assert_eq!(default_target_path("a.JPG"), "assets/a.JPG");
+    assert_eq!(default_target_path("deploy.sh"), "scripts/deploy.sh");
+    assert_eq!(default_target_path("run.py"), "scripts/run.py");
+    // Markdown 一律归位到根引导文件（技能只有一个主文件）
+    assert_eq!(default_target_path("guide.md"), SKILL_MAIN_FILE);
+    assert_eq!(default_target_path("README.md"), SKILL_MAIN_FILE);
+    // 其他类型保持原名平铺
+    assert_eq!(default_target_path("data.json"), "data.json");
+    // 无扩展名不崩、不误归位
+    assert_eq!(default_target_path("Makefile"), "Makefile");
 }

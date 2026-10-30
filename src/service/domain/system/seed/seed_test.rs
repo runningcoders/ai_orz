@@ -243,30 +243,102 @@ mod tests {
         assert!(!result.is_empty());
     }
 
+    /// 技能包：字节保真 + unix mode 保真（二进制附件与可执行件不能被文本通道破坏）
+    #[test]
+    fn skill_package_preserves_bytes_and_unix_mode() {
+        use crate::service::domain::system::seed::bundle::{self, SkillFileEntry};
+
+        let binary: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x01, 0x80];
+        let entries = vec![
+            SkillFileEntry {
+                path: "skill.md".to_string(),
+                bytes: b"# main".to_vec(),
+                executable: false,
+            },
+            SkillFileEntry {
+                path: "scripts/run.sh".to_string(),
+                bytes: b"echo hi".to_vec(),
+                executable: true,
+            },
+            SkillFileEntry {
+                path: "assets/blob.bin".to_string(),
+                bytes: binary.clone(),
+                executable: false,
+            },
+        ];
+
+        let zip_bytes = bundle::pack_skill_zip(&entries).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_bytes)).unwrap();
+        assert_eq!(archive.len(), 3);
+
+        for entry in &entries {
+            let mut file = archive.by_name(&entry.path).unwrap();
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut file, &mut buf).unwrap();
+            assert_eq!(buf, entry.bytes, "{} 字节必须原样保真", entry.path);
+            let exec = file.unix_mode().is_some_and(|m| m & 0o111 != 0);
+            assert_eq!(exec, entry.executable, "{} 可执行位必须保真", entry.path);
+        }
+    }
+
+    /// 整体压缩包：主文件 + 技能包可拆回，主文件单独可读（预览 / diff 用）
+    #[test]
+    fn bundle_round_trip_exposes_manifest_and_packages() {
+        use crate::service::domain::system::seed::bundle;
+
+        let snapshot = make_test_snapshot("BundleRoundTrip");
+        let pkg_name = bundle::skill_package_name("SKILL1");
+        assert_eq!(pkg_name, "skills/SKILL1.zip");
+
+        let bytes = bundle::build_bundle(
+            &snapshot,
+            &[bundle::SkillPackage {
+                name: pkg_name.clone(),
+                bytes: vec![0x50, 0x4B, 0x03, 0x04, 0x00],
+            }],
+        )
+        .unwrap();
+
+        let (decoded, packages) = bundle::read_bundle(&bytes).unwrap();
+        assert_eq!(decoded.organization.name, "BundleRoundTrip");
+        assert_eq!(packages.get(&pkg_name).map(|v| v.len()), Some(5));
+        assert_eq!(packages.len(), 1, "主文件不应混进技能包 map");
+
+        let manifest = bundle::read_manifest(&bytes).unwrap();
+        assert!(manifest.contains("BundleRoundTrip"));
+    }
+
+    /// 产物是压缩包：写入 .zip，read_file 取回的是包内 seed.json
     #[tokio::test]
-    async fn test_store_write_read_delete_round_trip() {
-        let dir = std::env::temp_dir().join("ai_orz_seed_store_test");
+    async fn test_store_bundle_round_trip() {
+        use crate::service::domain::system::seed::bundle;
+
+        let dir = std::env::temp_dir().join("ai_orz_seed_store_bundle_test");
         let _ = std::fs::remove_dir_all(&dir);
 
         let name = "test-snapshot";
-        let content = r#"{"version": "1.0.0"}"#;
+        let snapshot = make_test_snapshot("BundleRoundTrip");
+        let bundle_bytes = bundle::build_bundle(&snapshot, &[]).unwrap();
 
-        let size = crate::service::domain::system::seed::store::write_file(&dir, name, content)
-            .await
-            .unwrap();
-        assert_eq!(size, content.len() as u64);
+        let size =
+            crate::service::domain::system::seed::store::write_file(&dir, name, &bundle_bytes)
+                .await
+                .unwrap();
+        assert_eq!(size, bundle_bytes.len() as u64);
 
+        // read_file 返回包内主文件文本，且能反序列化回同一份快照
         let resp = crate::service::domain::system::seed::store::read_file(&dir, name)
             .await
             .unwrap();
-        assert_eq!(resp.content, content);
-        assert_eq!(resp.name, "test-snapshot.json");
+        assert_eq!(resp.name, "test-snapshot.zip");
+        let decoded: SeedSnapshot = serde_json::from_str(&resp.content).unwrap();
+        assert_eq!(decoded.organization.name, "BundleRoundTrip");
 
         let files = crate::service::domain::system::seed::store::list_files(&dir)
             .await
             .unwrap();
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "test-snapshot.json");
+        assert_eq!(files[0].name, "test-snapshot.zip");
 
         crate::service::domain::system::seed::store::delete_file(&dir, name)
             .await
@@ -298,15 +370,17 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_seed_filename_appends_json_extension() {
+    fn test_validate_seed_filename_appends_zip_extension() {
+        // 新产物是压缩包：无名后缀默认补 .zip
         let name = crate::service::domain::system::seed::store::validate_seed_filename("snapshot")
             .unwrap();
-        assert_eq!(name, "snapshot.json");
+        assert_eq!(name, "snapshot.zip");
 
+        // 显式 .zip 后缀原样保留
         let name =
-            crate::service::domain::system::seed::store::validate_seed_filename("snapshot.json")
+            crate::service::domain::system::seed::store::validate_seed_filename("snapshot.zip")
                 .unwrap();
-        assert_eq!(name, "snapshot.json");
+        assert_eq!(name, "snapshot.zip");
     }
 
     #[test]
@@ -513,98 +587,82 @@ mod tests {
             assert_eq!(skill.status, 1); // Published
             assert_eq!(skill.author_id, "TEMPLATE_ADMIN");
             assert_eq!(skill.author_type, 0); // User
-            assert!(!skill.files.is_empty(), "预置技能必须有 files");
-            assert_eq!(skill.files[0].path, "skill.md");
-            assert!(skill.files[0].ref_path.is_some());
+            // 纯元信息：正文不进主文件，只登记技能包名（由编译期内嵌正文现打）
+            assert_eq!(
+                skill.package,
+                crate::service::domain::system::seed::bundle::skill_package_name(&skill.id),
+                "预置技能 {} 的 package 名必须由 skill_id 推导",
+                skill.id
+            );
         }
     }
 
-    // ===== SkillFileDef 三来源测试（Task 1） =====
-
+    /// 默认快照登记的每个技能包都必须能从编译期内嵌正文打包出来，且正文逐字节一致。
+    ///
+    /// 双向护栏：
+    /// - 正向：default.json 写了 `package` 但 embedded.rs 没注册正文 ⇒ 初始化会直接
+    ///   报「缺少技能包」被打断；
+    /// - 反向：embedded.rs 注册了正文但 default.json 没登记 ⇒ 该技能正文永远进不了库，
+    ///   装出来的是空壳。
     #[test]
-    fn test_skill_file_def_content_source() {
-        let file = SkillFileDef {
-            path: "skill.md".to_string(),
-            content: Some("# 内容".to_string()),
-            local_path: None,
-            ref_path: None,
-            url: None,
-        };
-        let json = serde_json::to_string(&file).unwrap();
-        let de: SkillFileDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(de.content.as_ref().unwrap(), "# 内容");
-        assert!(de.local_path.is_none());
-        assert!(de.ref_path.is_none());
-        assert!(de.url.is_none());
-    }
+    fn test_default_snapshot_packages_resolve_from_embedded_files() {
+        use crate::service::domain::system::seed::embedded;
+        use std::io::{Cursor, Read as _};
 
-    #[test]
-    fn test_skill_file_def_ref_path_source() {
-        let file = SkillFileDef {
-            path: "skill.md".to_string(),
-            content: None,
-            local_path: None,
-            ref_path: Some("skills/platform_guide/skill.md".to_string()),
-            url: None,
-        };
-        let json = serde_json::to_string(&file).unwrap();
-        let de: SkillFileDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            de.ref_path.as_ref().unwrap(),
-            "skills/platform_guide/skill.md"
-        );
-    }
+        let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+        let packages =
+            crate::service::domain::system::seed::default::embedded_default_skill_packages();
+        assert!(!snapshot.skills.is_empty(), "默认快照技能列表为空");
 
-    #[test]
-    fn test_skill_file_def_url_source() {
-        let file = SkillFileDef {
-            path: "skill.md".to_string(),
-            content: None,
-            local_path: None,
-            ref_path: None,
-            url: Some("https://example.com/guide.md".to_string()),
-        };
-        let json = serde_json::to_string(&file).unwrap();
-        let de: SkillFileDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(de.url.as_ref().unwrap(), "https://example.com/guide.md");
-    }
+        let declared: std::collections::HashSet<&str> =
+            snapshot.skills.iter().map(|s| s.id.as_str()).collect();
 
-    #[test]
-    fn test_skill_def_with_files_roundtrip() {
-        let skill = SkillDef {
-            id: "test_skill".to_string(),
-            name: "测试技能".to_string(),
-            description: "用于测试".to_string(),
-            tags: vec!["neural".to_string()],
-            category: "system".to_string(),
-            parent_skill_id: String::new(),
-            author_id: "TEMPLATE_ADMIN".to_string(),
-            author_type: 0,
-            status: 1,
-            content_path: "skills/test_skill".to_string(),
-            files: vec![SkillFileDef {
-                path: "skill.md".to_string(),
-                content: Some("# 测试".to_string()),
-                local_path: None,
-                ref_path: None,
-                url: None,
-            }],
-        };
-        let json = serde_json::to_string(&skill).unwrap();
-        let de: SkillDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(de.files.len(), 1);
-    }
+        for skill in &snapshot.skills {
+            let name = skill.package.as_str();
+            let bytes = packages
+                .get(name)
+                .unwrap_or_else(|| panic!("预置技能 {} 的技能包 {} 未打包", skill.id, name));
 
-    #[test]
-    fn test_skill_def_backward_compat_no_files() {
-        let json = r#"{
-            "id": "old_skill", "name": "旧", "description": "",
-            "tags": [], "category": "x", "parent_skill_id": "",
-            "author_id": "u", "author_type": 0, "status": 1,
-            "content_path": "skills/old"
-        }"#;
-        let skill: SkillDef = serde_json::from_str(json).unwrap();
-        assert!(skill.files.is_empty());
+            // 包内根引导文件必须与编译期内嵌正文一致
+            let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+                .unwrap_or_else(|e| panic!("技能包 {} 解包失败: {e}", name));
+            let mut file = archive
+                .by_name(crate::models::skill::SKILL_MAIN_FILE)
+                .unwrap_or_else(|_| panic!("技能包 {} 内缺少根引导文件", name));
+            let mut content = String::new();
+            file.read_to_string(&mut content).unwrap();
+            let expected = {
+                let path = format!(
+                    "{}{}/{}",
+                    embedded::SKILL_REF_PREFIX,
+                    skill.id,
+                    crate::models::skill::SKILL_MAIN_FILE
+                );
+                embedded::embedded_skill_files()
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .map(|(_, c)| *c)
+                    .unwrap_or_else(|| panic!("预置技能 {} 正文未内嵌", skill.id))
+            };
+            assert_eq!(
+                content, expected,
+                "预置技能 {} 包内正文与内嵌正文不一致",
+                skill.id
+            );
+        }
+
+        // 反向：内嵌正文里的每个技能目录都必须在主文件里登记
+        for (path, _) in embedded::embedded_skill_files() {
+            let rest = path
+                .strip_prefix(embedded::SKILL_REF_PREFIX)
+                .expect("内嵌路径必须以 skills/ 开头");
+            let skill_id = rest.split('/').next().unwrap_or(rest);
+            assert!(
+                declared.contains(skill_id),
+                "内嵌技能正文 {} 未在 default.json 登记（正文进不了库）",
+                path
+            );
+        }
     }
 
     // ===== 本体词表段（Task P3-1）=====

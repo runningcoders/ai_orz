@@ -150,6 +150,7 @@ impl SyncPresetSkillsTask {
     /// 新建技能的 author 记到当前操作者名下；已存在技能继承原作者。
     async fn run_steps(&self) -> Result<SyncPresetSkillsResponse> {
         let snapshot = default::embedded_default_snapshot();
+        let packages = default::embedded_default_skill_packages();
         let operator_id = self.ctx.uid();
         let skip_existing = matches!(self.params.strategy, PresetSkillSyncStrategy::OnlyMissing);
 
@@ -164,6 +165,7 @@ impl SyncPresetSkillsTask {
                 skill_def,
                 Some(operator_id.as_str()),
                 skip_existing,
+                packages,
             )
             .await?
             {

@@ -143,12 +143,17 @@ impl SeedSaveTask {
         )
         .await?;
 
-        // Step 6: 写入文件
+        // Step 6: 打包技能包（主文件只记元信息，正文与附件整体进压缩包）
+        self.set_step(Self::TOTAL_STEPS, "正在打包技能");
+        let packages = super::export_skill_packages(ctx.clone(), &snapshot).await?;
+
+        // Step 7: 写入文件（seed.json + 技能包的整体压缩包）
         self.set_step(Self::TOTAL_STEPS, "正在写入文件");
-        let content = serde_json::to_string_pretty(&snapshot)?;
+        let bundle =
+            crate::service::domain::system::seed::bundle::build_bundle(&snapshot, &packages)?;
         let dir = crate::service::domain::system::seed::store::seeds_dir();
         let size =
-            crate::service::domain::system::seed::store::write_file(&dir, &params.name, &content)
+            crate::service::domain::system::seed::store::write_file(&dir, &params.name, &bundle)
                 .await?;
 
         Ok(SaveSeedResponse {

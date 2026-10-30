@@ -284,11 +284,14 @@ impl InitializeSystemTask {
         // Step: 导入预置技能
         self.set_step(step + 1, "正在导入预置技能");
         let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+        let packages =
+            crate::service::domain::system::seed::default::embedded_default_skill_packages();
         let skill_result = crate::handlers::system::seed::apply_preset_skills(
             ctx.clone(),
             &snapshot.skills,
             Some(&user_id),
             false,
+            packages,
         )
         .await?;
         sys_info!(

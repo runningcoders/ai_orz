@@ -575,7 +575,7 @@ pub fn SystemSeed() -> Element {
                     r#type: "text",
                     value: "{save_name}",
                     oninput: move |e| save_name.set(e.value()),
-                    placeholder: "例如：my_org_snapshot（无需 .json 后缀）",
+                    placeholder: "例如：my_org_snapshot（无需 .zip 后缀）",
                 }
             }
             div { class: "form-control w-full py-2",

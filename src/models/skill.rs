@@ -13,15 +13,30 @@ use sqlx::FromRow;
 /// 库内约 2/3 的技能遵循该约定；不遵循的退化为原单行摘要，不会渲染出错。
 pub(crate) const TRIGGER_SEPARATOR: &str = "必读全文";
 
+/// 技能主文件名（根引导文件）。
+///
+/// 契约：**只有这个文件的内容会经接口返回**；其余附件一律只暴露路径，
+/// 由调用方（Agent）用 `read_file` / shell 工具按需自行读取或执行。
+/// 理由：附件可能是二进制（图片 / 模板 / 压缩包），也可能很大，经接口回传
+/// 既撑爆上下文又读不了二进制；暴露绝对路径后 Agent 能自由组合工具处理。
+pub const SKILL_MAIN_FILE: &str = common::api::SKILL_MAIN_FILE;
+
 /// 技能附属文件信息（纯数据结构，DAO 层使用）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillFile {
-    /// 文件名（相对于技能目录）
+    /// 文件名（相对于技能目录，含子目录前缀如 `scripts/run.sh`）
     pub filename: String,
     /// 文件大小（字节）
     pub file_size: u64,
-    /// 文件内容（小文件直接预读，大文件按需加载）
+    /// 文件内容（**仅根 `skill.md` 预读**；其余附件恒为 None）
     pub content: Option<String>,
+    /// 文件在磁盘上的绝对路径。
+    ///
+    /// 供 Agent 用 `read_file` / shell 工具按路径自行读取或执行（位于
+    /// `base_data_path` 作用域内，已过 fs 工具的路径校验）。
+    pub abs_path: std::path::PathBuf,
+    /// 是否带可执行位（脚本类附件，可用 shell 工具直接执行）
+    pub executable: bool,
 }
 
 /// Skill 持久化对象
@@ -237,7 +252,7 @@ impl Skill {
     pub fn main_content(&self) -> Option<&str> {
         self.files
             .iter()
-            .find(|f| f.filename == "skill.md")
+            .find(|f| f.filename == SKILL_MAIN_FILE)
             .and_then(|f| f.content.as_deref())
     }
 

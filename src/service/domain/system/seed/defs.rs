@@ -118,7 +118,11 @@ pub struct AgentDef {
     pub kind: i32,
 }
 
-/// Skill 定义（元数据 + 文件内容来源）
+/// Skill 定义（元数据 + 技能包引用）
+///
+/// **内容不在主文件里**：技能正文与附件整体打包进快照压缩包的 `skills/<id>.zip`，
+/// 主文件只留元信息 + `package` 引用。原因：附件可以是图片 / 二进制可执行件，
+/// 塞进 JSON（哪怕 base64）既让主文件膨胀到不可读，也无法保住可执行位。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillDef {
     pub id: String,
@@ -133,41 +137,11 @@ pub struct SkillDef {
     /// 相对 base_data_path 的技能目录路径（导入时复制目录）
     pub content_path: String,
 
-    /// 技能文件列表（skill.md 主文件 + 附加文件）
-    /// 每个文件可通过 content / ref_path / url 指定内容来源
-    /// 优先级：content > ref_path > url
-    #[serde(default)]
-    pub files: Vec<SkillFileDef>,
-}
-
-/// Skill 文件定义（支持多种内容来源）
-///
-/// 优先级：content > local_path > ref_path > url
-/// - content：直接内嵌文本内容
-/// - local_path：运行时本地文件绝对路径（区别于 ref_path 的编译期 embedded），走零拷贝
-/// - ref_path：引用 seed 目录下编译期内嵌文件的相对路径（如 "skills/platform_guide/skill.md"）
-/// - url：运行时从 HTTPS URL 抓取内容
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
-pub struct SkillFileDef {
-    /// 写入到技能目录的相对路径（如 "skill.md"、"references/guide.md"）
-    pub path: String,
-
-    /// 内嵌的文件内容（优先级最高）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-
-    /// 运行时本地文件绝对路径（区别于 ref_path 编译期 embedded）。
-    /// 指定时走 SkillFileImport.source_abs_path 0 拷贝路径。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_path: Option<String>,
-
-    /// 引用 seed 目录下编译期内嵌文件的相对路径
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ref_path: Option<String>,
-
-    /// 文件内容的 URL 来源（运行时抓取，必须 HTTPS）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
+    /// 技能包在快照压缩包内的相对路径（`skills/<id>.zip`）
+    ///
+    /// 导入侧按它从压缩包取包，整体 zip 解包还原（子目录、二进制字节、可执行位一并保真）。
+    /// 恒有值：技能无文件时也是一个空包，导入侧取不到包一律报错（不许退化成空技能）。
+    pub package: String,
 }
 
 // ==================== Diff 结构 ====================

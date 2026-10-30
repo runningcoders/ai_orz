@@ -15,7 +15,9 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
 
 /// 初始化 HR Domain 所有依赖
 /// 初始化顺序：config -> dao -> dal -> domain
-fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestContext, TempDir) {
+pub(crate) fn init_test_env(
+    pool: SqlitePool,
+) -> (std::sync::Arc<dyn HrDomain>, RequestContext, TempDir) {
     // 初始化 config 使用临时目录
     let temp_dir = TempDir::new().unwrap();
     let base_path = temp_dir.path().to_path_buf();
@@ -69,7 +71,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
 }
 
 /// 创建测试 Skill
-fn create_test_skill(name: &str) -> Skill {
+pub(crate) fn create_test_skill(name: &str) -> Skill {
     let skill_po = SkillPo::new(
         format!(
             "{}--{}",
@@ -377,6 +379,7 @@ async fn test_update_skill_imports_attachment_file_content(pool: SqlitePool) {
             source_abs_path: None,
             content_bytes: Some(b"# Guide".to_vec()),
             suggested_name: None,
+            executable: None,
         }],
         file_deletes: Vec::new(),
         remote_source: None,
@@ -405,7 +408,19 @@ async fn test_update_skill_imports_attachment_file_content(pool: SqlitePool) {
         .iter()
         .find(|file| file.filename == "references/guide.md")
         .expect("imported file should be listed");
-    assert_eq!(imported.content.as_deref(), Some("# Guide"));
+    // 附件不再随接口回传内容：只给路径，由 Agent 用 read_file 工具按需读取
+    assert_eq!(imported.content, None);
+    assert!(
+        imported.abs_path.exists(),
+        "附件必须暴露可访问的绝对路径: {}",
+        imported.abs_path.display()
+    );
+    assert!(imported.abs_path.ends_with("references/guide.md"));
+    // 内容确实落盘（Agent 按路径能读到）
+    assert_eq!(
+        std::fs::read_to_string(&imported.abs_path).unwrap(),
+        "# Guide"
+    );
 }
 
 #[sqlx::test]
@@ -433,6 +448,7 @@ async fn test_update_skill_rejects_unsafe_import_target_path(pool: SqlitePool) {
                 source_abs_path: None,
                 content_bytes: Some(b"bad".to_vec()),
                 suggested_name: None,
+                executable: None,
             }],
             file_deletes: Vec::new(),
             remote_source: None,
@@ -918,6 +934,7 @@ async fn test_publish_agent_root_skill_creates_writeback_copy(pool: SqlitePool) 
         source_abs_path: None,
         content_bytes: Some("# Doubao Search\n正文".as_bytes().to_vec()),
         suggested_name: None,
+        executable: None,
     }];
     let ctx_admin = ctx
         .to_builder()

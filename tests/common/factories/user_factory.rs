@@ -279,11 +279,14 @@ async fn try_reuse_existing() -> Result<BootstrappedSystem> {
         .storage(ai_orz::pkg::storage::get().clone())
         .build();
     let snapshot = ai_orz::service::domain::system::seed::default::embedded_default_snapshot();
+    let packages =
+        ai_orz::service::domain::system::seed::default::embedded_default_skill_packages();
     ai_orz::handlers::system::seed::apply_preset_skills(
         admin_ctx,
         &snapshot.skills,
         Some(&user_id),
         false,
+        packages,
     )
     .await?;
 

@@ -1,5 +1,8 @@
 //! Skill management API request/response DTOs - shared between backend and frontend
 
+/// 技能主文件名（根引导文件）——唯一经接口直出内容的技能文件。
+pub const SKILL_MAIN_FILE: &str = "skill.md";
+
 use crate::api::{PagedResult, PaginationParams};
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
@@ -206,15 +209,43 @@ pub struct SkillFileInput {
     pub target_path: String,
 }
 
+/// 附件未指定 target_path 时的默认归位规则（前后端 / 后端导入共用 SSOT）。
+///
+/// 图片 → `assets/`、脚本 → `scripts/`、Markdown → `skill.md`、其余保持原名。
+/// 前端上传后预填这个值，后端导入推断链第 4 级也走它，避免双标漂移
+/// （前端把 `a.png` 归到 `assets/a.png`、后端却按原名平铺）。
+pub fn default_target_path(original_name: &str) -> String {
+    let ext = original_name
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => format!("assets/{}", original_name),
+        "py" | "js" | "sh" | "ts" => format!("scripts/{}", original_name),
+        "md" => SKILL_MAIN_FILE.to_string(),
+        _ => original_name.to_string(),
+    }
+}
+
 /// Skill 文件摘要。
+///
+/// **访问契约（前后端 / Agent 共用）**：接口只直出根 `skill.md` 的内容
+/// （`is_main=true`，走 `get_skill_file_content` 或 `SkillDetail.content`）；
+/// 其余附件**不经过接口回传内容**，只给 `abs_path`，由 Agent 用 `read_file`
+/// 工具按需读、用 shell 工具按需执行（技能包里的脚本/可执行文件）。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillFileItem {
-    /// 文件名。
+    /// 文件名（相对技能目录，可含子目录前缀，如 `scripts/run.sh`）。
     pub filename: String,
     /// 文件大小（字节）。
     pub file_size: u64,
-    /// 是否已预读内容。
-    pub has_content: bool,
+    /// 是否为根引导文件 `skill.md`（唯一可通过接口直读内容的文件）。
+    pub is_main: bool,
+    /// 文件在磁盘上的绝对路径，供 read_file / shell 工具按需访问。
+    pub abs_path: String,
+    /// 是否带可执行位（脚本类附件可用 shell 工具执行）。
+    pub executable: bool,
 }
 
 /// Skill 列表项响应。

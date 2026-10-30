@@ -14,6 +14,8 @@ mod agent_test;
 #[cfg(test)]
 mod ontology_test;
 #[cfg(test)]
+mod skill_attachment_test;
+#[cfg(test)]
 mod skill_test;
 
 use crate::models::agent::Agent;
@@ -607,6 +609,10 @@ pub struct SkillFileImport {
     pub content_bytes: Option<Vec<u8>>,
     /// 弱线索名（附件 original_name；target=None 时推断用）
     pub suggested_name: Option<String>,
+    /// 显式可执行位（seed 快照往返用，保全无扩展名的二进制可执行附件）。
+    ///
+    /// None 时仍按扩展名推断（py/js/sh/ts）；Some(true/false) 直接覆盖推断结果。
+    pub executable: Option<bool>,
 }
 
 /// 技能创建复合参数
@@ -635,6 +641,7 @@ impl<'a> CreateSkillParams<'a> {
                     source_abs_path: None,
                     content_bytes: Some(c.as_bytes().to_vec()),
                     suggested_name: None,
+                    executable: None,
                 })
             })
             .collect();
@@ -749,13 +756,30 @@ pub trait SkillManage: Send + Sync {
         skill_id: &str,
     ) -> Result<Option<Vec<crate::models::skill::SkillFile>>>;
 
-    /// 读取 Skill 指定文件内容，返回 UTF-8 文本
+    /// 读取 Skill 根引导文件 `skill.md` 内容，返回 UTF-8 文本。
+    ///
+    /// **访问契约**：这是唯一经接口直出内容的技能文件。其余附件只暴露
+    /// `abs_path`（见 `list_skill_files`），由调用方用 read_file / shell 工具
+    /// 按需访问——经接口回传二进制读不了，大文件还会撑爆上下文。
+    /// 传非 `skill.md` 文件名返回 `InvalidRequest` 并附带路径提示。
     async fn get_skill_file_content(
         &self,
         ctx: RequestContext,
         skill_id: &str,
         filename: &str,
     ) -> Result<Option<String>>;
+
+    /// 读取 Skill 任意文件的**原始字节**（**系统内部用途**：seed 快照导出等）。
+    ///
+    /// 与 `get_skill_file_content` 的区别有二：① 不做「仅主文件」限制；② 返回
+    /// 字节而非 UTF-8 字符串——附件可能是图片 / 二进制可执行件，按文本读必然失败。
+    /// 禁止注册为 HTTP/Agent 工具，对外一律走 `get_skill_file_content` + `abs_path`。
+    async fn read_skill_file_bytes(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        filename: &str,
+    ) -> Result<Option<Vec<u8>>>;
 
     /// 创建或更新 Skill 指定文件内容
     /// 如果 skill 不存在返回 NotFound，如果乐观锁不匹配返回 Conflict

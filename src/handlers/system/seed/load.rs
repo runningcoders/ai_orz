@@ -129,13 +129,13 @@ impl SeedLoadTask {
         let ctx = self.ctx.clone();
         let params = self.params.clone();
 
-        // 读取并解析 seed 文件（不单独计数，apply 阶段从 step 1 开始）
+        // 读取快照（不单独计数，apply 阶段从 step 1 开始）
         *self.step_message.lock().unwrap() = "正在读取文件".to_string();
         let dir = crate::service::domain::system::seed::store::seeds_dir();
-        let file_resp =
-            crate::service::domain::system::seed::store::read_file(&dir, &params.name).await?;
-        let snapshot: crate::service::domain::system::seed::defs::SeedSnapshot =
-            serde_json::from_str(&file_resp.content)?;
+        let raw = crate::service::domain::system::seed::store::read_raw(&dir, &params.name).await?;
+
+        // 快照是压缩包：拆出主文件元信息 + 各技能包
+        let (snapshot, packages) = crate::service::domain::system::seed::bundle::read_bundle(&raw)?;
 
         // Step 1-4: 应用到 DB（进度回调更新 current_step；DryRun 在 step 1 完成）
         super::apply_snapshot_to_db_with_progress(
@@ -143,6 +143,7 @@ impl SeedLoadTask {
             &snapshot,
             params.strategy,
             &params.sensitive_values,
+            &packages,
             &|step, msg| self.set_step(step, msg),
         )
         .await

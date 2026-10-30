@@ -151,7 +151,9 @@ impl DefaultPromptBuilder {
             return String::new();
         }
         let mut s = format!(
-            "【{}】（以下是技能索引摘要，需要某技能的完整内容时，用 get_skill 工具传入对应 id 即可读取全文；更新自己的副本用 update_skill）\n",
+            "【{}】（以下是技能索引摘要，需要某技能的完整内容时，用 get_skill 工具传入对应 id 即可读取全文；更新自己的副本用 update_skill。\
+             技能除根 skill.md 外还可能带脚本/模板等附件：用 list_skill_files 取到路径后，\
+             用 read_file 工具按需读、用 shell 工具按路径执行——附件内容不通过接口返回）\n",
             title
         );
         for skill in skills {

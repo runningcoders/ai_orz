@@ -59,35 +59,19 @@ fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Result<String, Stri
 
 // ==================== default.json ====================
 
-/// 技能文件的内容来源（只保留「随仓库走」的两种；`local_path` / `url` 需人工同步）
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SeedFileSource {
-    /// 定义里直接内嵌的文本
-    Content(String),
-    /// 引用 seed 目录下的编译期内嵌文件（相对 `src/service/domain/system/seed/`）
-    Ref(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SeedFileDef {
-    /// 写入技能目录的相对路径（如 `skill.md`）
-    pub path: String,
-    pub source: SeedFileSource,
-}
-
+/// `default.json` 里的技能元信息
+///
+/// 技能正文不在主文件里：它们在仓库的 `skills/<ID>/` 目录下，由调用方按 id 定位后
+/// 整目录读取（编译期 `include_str!`/`include_bytes!` 内嵌，运行时打成技能包）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeedSkillDef {
     pub id: String,
     pub name: String,
     pub description: String,
     pub tags: Vec<String>,
-    /// 随仓库走的文件；**不含** `local_path` / `url` 来源
-    pub files: Vec<SeedFileDef>,
-    /// 不支持自动同步的文件说明（供调用方提示；格式 `path（原因）`）
-    pub skipped: Vec<String>,
 }
 
-/// 解析 `seed/default.json` 的 `skills` 数组
+/// 解析 `seed/default.json` 的 `skills` 数组（只要元信息）
 pub fn parse_seed_json(text: &str) -> Result<Vec<SeedSkillDef>, String> {
     let root: serde_json::Value =
         serde_json::from_str(text).map_err(|e| format!("解析 default.json 失败: {e}"))?;
@@ -98,45 +82,12 @@ pub fn parse_seed_json(text: &str) -> Result<Vec<SeedSkillDef>, String> {
 
     let mut out = Vec::with_capacity(arr.len());
     for item in arr {
-        let id = item
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| "default.json 里有 skill 缺 id 字段".to_string())?
-            .to_string();
-
-        let mut files = Vec::new();
-        let mut skipped = Vec::new();
-        for f in item
-            .get("files")
-            .and_then(serde_json::Value::as_array)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-        {
-            let path = f
-                .get("path")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            // 优先级与 seed/defs.rs 一致：content > local_path > ref_path > url
-            let source = if let Some(c) = f.get("content").and_then(serde_json::Value::as_str) {
-                SeedFileSource::Content(c.to_string())
-            } else if let Some(rp) = f.get("ref_path").and_then(serde_json::Value::as_str) {
-                SeedFileSource::Ref(rp.to_string())
-            } else if f.get("local_path").is_some() {
-                skipped.push(format!("{path}（local_path 运行时本地文件，不在仓库内）"));
-                continue;
-            } else if f.get("url").is_some() {
-                skipped.push(format!("{path}（url 运行时抓取）"));
-                continue;
-            } else {
-                skipped.push(format!("{path}（未给 content / ref_path 来源）"));
-                continue;
-            };
-            files.push(SeedFileDef { path, source });
-        }
-
         out.push(SeedSkillDef {
-            id,
+            id: item
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "default.json 里有 skill 缺 id 字段".to_string())?
+                .to_string(),
             name: item
                 .get("name")
                 .and_then(serde_json::Value::as_str)
@@ -156,8 +107,6 @@ pub fn parse_seed_json(text: &str) -> Result<Vec<SeedSkillDef>, String> {
                         .collect()
                 })
                 .unwrap_or_default(),
-            files,
-            skipped,
         });
     }
     Ok(out)
@@ -237,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_seed_json_reads_inline_and_ref_files() {
+    fn parse_seed_json_reads_skill_metadata() {
         let json = r#"{
           "skills": [
             {
@@ -245,48 +194,16 @@ mod tests {
               "name": "示例",
               "description": "说明",
               "tags": ["neural"],
-              "files": [
-                { "path": "skill.md", "ref_path": "skills/TEMPLATE_X/skill.md" },
-                { "path": "notes.md", "content": "内嵌" }
-              ]
+              "package": "skills/TEMPLATE_X.zip"
             }
           ]
         }"#;
         let defs = parse_seed_json(json).unwrap();
         assert_eq!(defs.len(), 1);
-        let d = &defs[0];
-        assert_eq!(d.id, "TEMPLATE_X");
-        assert_eq!(d.tags, vec!["neural"]);
-        assert_eq!(d.files.len(), 2);
-        assert_eq!(
-            d.files[0].source,
-            SeedFileSource::Ref("skills/TEMPLATE_X/skill.md".to_string())
-        );
-        assert_eq!(
-            d.files[1].source,
-            SeedFileSource::Content("内嵌".to_string())
-        );
-        assert!(d.skipped.is_empty());
-    }
-
-    #[test]
-    fn parse_seed_json_skips_unsupported_sources_with_reason() {
-        let json = r#"{
-          "skills": [
-            {
-              "id": "TEMPLATE_Y",
-              "files": [
-                { "path": "a.md", "local_path": "/abs/a.md" },
-                { "path": "b.md", "url": "https://example.com/b.md" }
-              ]
-            }
-          ]
-        }"#;
-        let defs = parse_seed_json(json).unwrap();
-        assert!(defs[0].files.is_empty(), "不支持来源不应进入同步清单");
-        assert_eq!(defs[0].skipped.len(), 2);
-        assert!(defs[0].skipped[0].contains("local_path"));
-        assert!(defs[0].skipped[1].contains("url"));
+        assert_eq!(defs[0].id, "TEMPLATE_X");
+        assert_eq!(defs[0].name, "示例");
+        assert_eq!(defs[0].description, "说明");
+        assert_eq!(defs[0].tags, vec!["neural"]);
     }
 
     #[test]

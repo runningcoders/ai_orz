@@ -2004,6 +2004,7 @@ fn skill_imports(content: &str) -> Vec<SkillFileImport> {
         source_abs_path: None,
         content_bytes: Some(content.as_bytes().to_vec()),
         suggested_name: None,
+        executable: None,
     }]
 }
 

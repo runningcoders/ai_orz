@@ -6,11 +6,11 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetSkillFileContentRequest, GetSkillFileContentResponse};
 use common::error::{Result, bail_err};
 
-/// Read the text content of a specific file from a skill
+/// Read the content of the root skill.md (the only file served through the API)
 #[register_handler_tool(
     id = "get_skill_file_content",
-    name = "Read Skill File Content",
-    description = "Read the UTF-8 text content of a single file inside a skill, such as its main skill.md. Fails with NotFound if the skill or file does not exist — call list_skill_files first to discover valid filenames.",
+    name = "Read Skill Main File",
+    description = "Read the content of a skill's root skill.md — the entry guide that explains how to use the skill. This is the ONLY file served through the API: any other attachment is rejected with InvalidRequest, use list_skill_files to get its abs_path and read it with the read_file tool (or run it with the shell tool if it is a script).",
     params = "common::api::GetSkillFileContentRequest",
     tags = "skill_management"
 )]

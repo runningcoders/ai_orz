@@ -570,14 +570,20 @@ async fn test_list_files_with_content(_pool: SqlitePool) -> Result<()> {
     assert_eq!(files[0].filename, "skill.md");
     assert_eq!(files[1].filename, "small.txt");
 
-    // 小文件应该自动预读了内容
+    // 只有根引导文件 skill.md 预读内容（接口直出）；附件只给路径，
+    // 由 Agent 用 read_file 工具按需读取——回传附件内容既撑上下文又读不了二进制
     assert!(files[0].content.is_some());
-    assert!(files[1].content.is_some());
     assert_eq!(
         files[0].content.as_ref().unwrap(),
         "# Main Skill\n\nContent here."
     );
-    assert_eq!(files[1].content.as_ref().unwrap(), "This is a small file.");
+    assert_eq!(files[1].content, None, "附件不随接口回传内容");
+    assert!(files[1].abs_path.exists(), "附件必须暴露可访问路径");
+    assert!(files[1].abs_path.ends_with("small.txt"));
+    assert_eq!(
+        std::fs::read_to_string(&files[1].abs_path)?,
+        "This is a small file."
+    );
 
     Ok(())
 }

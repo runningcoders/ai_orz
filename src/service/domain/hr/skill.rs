@@ -1,8 +1,9 @@
 //! Skill 管理具体方法实现
 
-use crate::models::skill::{Skill, SkillPo};
+use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillPo};
 use crate::pkg::RequestContext;
 use crate::pkg::utils::fetch_remote_content::{FetchOptions, fetch_remote_content};
+use crate::pkg::utils::fs_perm::{is_script_filename, mark_executable};
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::{
     CreateSkillParams, HrDomainImpl, SkillFileImport, SkillManage, UpdateSkillParams,
@@ -366,8 +367,51 @@ impl SkillManage for HrDomainImpl {
         self.ensure_skill_access(&ctx, &po, SkillAccessIntent::Read)
             .await?;
 
+        // 接口只直出「根引导文件」：skill.md 说明这份技能怎么用，必须一次拿全。
+        // 其余附件（二进制模板 / 脚本 / 大文件）一律不经接口回传——先用
+        // list_skill_files 拿到 abs_path，再用 read_file / shell 工具按需访问。
+        // 经接口传二进制既读不了（read_to_string 直接报错）又撑爆上下文。
+        if !filename.eq_ignore_ascii_case(SKILL_MAIN_FILE) {
+            let abs = self
+                .skill_dal
+                .file_abs_path(&po, filename)
+                .display()
+                .to_string();
+            bail_err!(
+                InvalidRequest,
+                "技能附件内容不通过接口返回：请先用 list_skill_files 取得路径，再用 read_file 工具按需读取（{}）。\
+                 仅根引导文件 {} 支持接口直读；脚本类附件可用 shell 工具按同一路径执行。",
+                abs,
+                SKILL_MAIN_FILE
+            );
+        }
+
         let content = self.skill_dal.read_file(&po, filename)?;
         Ok(Some(content))
+    }
+
+    async fn read_skill_file_bytes(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        filename: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        let Some(po) = self
+            .skill_dal
+            .get_po_by_id(ctx.clone(), skill_id.to_string())
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        self.ensure_skill_access(&ctx, &po, SkillAccessIntent::Read)
+            .await?;
+
+        // 按字节读：附件可能是图片 / 二进制可执行件，走 read_to_string 必然失败。
+        let abs = self.skill_dal.file_abs_path(&po, filename);
+        let bytes = std::fs::read(&abs)
+            .map_err(|e| err!(NotFound, "技能文件不存在或不可读: {}", filename).with_source(e))?;
+        Ok(Some(bytes))
     }
 
     async fn update_skill_file_content(
@@ -537,6 +581,7 @@ impl HrDomainImpl {
                 source_abs_path: Some(tmp_path),
                 content_bytes: None,
                 suggested_name: None,
+                executable: None,
             });
         }
 
@@ -603,19 +648,19 @@ impl HrDomainImpl {
     }
 
     /// 统一处理技能文件包导入（PATH 分支 + BYTES 分支 + zip 解包 + 5 级 target 推断）。
+    ///
+    /// 全程带 [`ImportBudget`] 累计校验：文件数与合计字节在**写入过程中**累加，
+    /// 而非只看请求体——zip 解包后的条目数远大于请求里的 1 个 URL/附件，
+    /// 只校验入口会让「1 个 zip 塞 5000 个文件」畅通无阻。
     fn process_skill_package(&self, po: &SkillPo, imports: &[SkillFileImport]) -> Result<()> {
+        let mut budget = ImportBudget::default();
         for import in imports {
-            if let Some(src_path) = &import.source_abs_path {
+            if import.source_abs_path.is_some() {
                 // PATH 分支
-                self.process_path_source(
-                    po,
-                    src_path,
-                    &import.target_path,
-                    &import.suggested_name,
-                )?;
-            } else if let Some(bytes) = &import.content_bytes {
+                self.process_path_source(po, import, &mut budget)?;
+            } else if import.content_bytes.is_some() {
                 // BYTES 分支
-                self.process_bytes_source(po, bytes, &import.target_path, &import.suggested_name)?;
+                self.process_bytes_source(po, import, &mut budget)?;
             } else {
                 bail_err!(
                     InvalidRequest,
@@ -630,10 +675,10 @@ impl HrDomainImpl {
     fn process_path_source(
         &self,
         po: &SkillPo,
-        src_path: &Path,
-        target_path: &Option<String>,
-        suggested_name: &Option<String>,
+        import: &SkillFileImport,
+        budget: &mut ImportBudget,
     ) -> Result<()> {
+        let src_path = import.source_abs_path.as_ref().expect("PATH 分支必有路径");
         // 读前 4B 做 zip magic 检测
         let mut file = std::fs::File::open(src_path)?;
         let mut header = [0u8; 4];
@@ -646,11 +691,19 @@ impl HrDomainImpl {
             let file = std::fs::File::open(src_path)?;
             let mut archive = zip::ZipArchive::new(file)
                 .map_err(|e| err!(InvalidRequest, "zip 解包失败: {}", e))?;
-            self.unpack_zip_archive(po, &mut archive)?;
+            self.unpack_zip_archive(po, &mut archive, budget)?;
         } else {
             // 单文件
-            let target = resolve_target(target_path, Some(src_path), None, suggested_name)?;
-            if target != "skill.md" {
+            let target = resolve_target(
+                &import.target_path,
+                Some(src_path),
+                None,
+                &import.suggested_name,
+            )?;
+            let size = std::fs::metadata(src_path).map(|m| m.len()).unwrap_or(0);
+            budget.record(size)?;
+
+            if !target.eq_ignore_ascii_case(SKILL_MAIN_FILE) {
                 validate_skill_import_target_path(&target)?;
             }
             let target_abs = self.skill_dal.file_abs_path(po, &target);
@@ -665,6 +718,7 @@ impl HrDomainImpl {
                     let _ = std::fs::remove_file(src_path);
                 }
             }
+            self.apply_executable_bit(&target_abs, &target, import.executable);
         }
         Ok(())
     }
@@ -673,25 +727,35 @@ impl HrDomainImpl {
     fn process_bytes_source(
         &self,
         po: &SkillPo,
-        bytes: &[u8],
-        target_path: &Option<String>,
-        suggested_name: &Option<String>,
+        import: &SkillFileImport,
+        budget: &mut ImportBudget,
     ) -> Result<()> {
+        let bytes = import.content_bytes.as_ref().expect("BYTES 分支必有内容");
         if bytes.len() >= 4 && bytes[0..4] == [0x50, 0x4B, 0x03, 0x04] {
             let cursor = std::io::Cursor::new(bytes);
             let mut archive = zip::ZipArchive::new(cursor)
                 .map_err(|e| err!(InvalidRequest, "zip 解包失败: {}", e))?;
-            self.unpack_zip_archive(po, &mut archive)?;
+            self.unpack_zip_archive(po, &mut archive, budget)?;
         } else {
-            let target = resolve_target(target_path, None, Some(bytes), suggested_name)?;
-            if target != "skill.md" {
+            let target = resolve_target(
+                &import.target_path,
+                None,
+                Some(bytes),
+                &import.suggested_name,
+            )?;
+            budget.record(bytes.len() as u64)?;
+
+            let is_main = target.eq_ignore_ascii_case(SKILL_MAIN_FILE);
+            if !is_main {
                 validate_skill_import_target_path(&target)?;
             }
-            if target == "skill.md" {
+            if is_main {
                 let content = String::from_utf8_lossy(bytes);
                 self.skill_dal.write_file(po, &target, &content)?;
             } else {
                 self.skill_dal.write_file_bytes(po, &target, bytes)?;
+                let abs = self.skill_dal.file_abs_path(po, &target);
+                self.apply_executable_bit(&abs, &target, import.executable);
             }
         }
         Ok(())
@@ -702,6 +766,7 @@ impl HrDomainImpl {
         &self,
         po: &SkillPo,
         archive: &mut zip::ZipArchive<R>,
+        budget: &mut ImportBudget,
     ) -> Result<()> {
         for i in 0..archive.len() {
             let mut file = archive
@@ -713,6 +778,9 @@ impl HrDomainImpl {
                 continue;
             }
 
+            // zip 条目自带 unix mode 时按其 x 位判定，否则按扩展名兜底
+            let zip_executable = file.unix_mode().is_some_and(|mode| mode & 0o111 != 0);
+
             if name.ends_with("/skill.md") {
                 bail_err!(
                     InvalidRequest,
@@ -721,28 +789,109 @@ impl HrDomainImpl {
                 );
             }
 
-            if name == "skill.md" {
+            budget.record(file.size())?;
+
+            if name == SKILL_MAIN_FILE {
                 let mut buf = Vec::new();
                 std::io::Read::read_to_end(&mut file, &mut buf)
                     .map_err(|e| err!(InvalidRequest, "zip skill.md 读取失败: {}", e))?;
                 let content = String::from_utf8_lossy(&buf);
-                self.skill_dal.write_file(po, "skill.md", &content)?;
+                self.skill_dal.write_file(po, SKILL_MAIN_FILE, &content)?;
             } else {
                 validate_skill_import_target_path(&name)?;
                 let mut buf = Vec::new();
                 std::io::Read::read_to_end(&mut file, &mut buf)
                     .map_err(|e| err!(InvalidRequest, "zip 条目 {} 读取失败: {}", name, e))?;
                 self.skill_dal.write_file_bytes(po, &name, &buf)?;
+                if zip_executable || is_script_filename(&name) {
+                    mark_executable(&self.skill_dal.file_abs_path(po, &name));
+                }
             }
+        }
+        Ok(())
+    }
+
+    /// 落盘后补可执行位（PATH / BYTES 单文件通路共用）。
+    ///
+    /// `explicit` 来自导入源（seed 快照往返的 `executable` 标记），优先于扩展名推断；
+    /// 为 None 时退回扩展名推断，保证脚本类附件导入即可直接执行。
+    fn apply_executable_bit(&self, abs_path: &Path, target: &str, explicit: Option<bool>) {
+        let should_mark = explicit.unwrap_or_else(|| is_script_filename(target));
+        if should_mark {
+            mark_executable(abs_path);
+        }
+    }
+}
+
+/// 单技能文件数上限（zip 解包 / 附件 / 文本合计）。
+const MAX_SKILL_FILES: usize = 100;
+/// 单技能合计字节上限（10MB，zip 解包后累计）。
+const MAX_SKILL_TOTAL_BYTES: u64 = 10 * 1024 * 1024;
+
+/// 导入预算累加器：文件数与合计字节在**写入过程中**累计，超限立即拒绝。
+///
+/// 为什么不能在入口只校验 imports 长度：一个 zip 条目可以是成百上千个文件，
+/// 入口计数永远是 1；同理 content_bytes 之外的 PATH 分支体积要读元数据才知道。
+#[derive(Debug, Default)]
+struct ImportBudget {
+    files: usize,
+    bytes: u64,
+}
+
+impl ImportBudget {
+    fn record(&mut self, size: u64) -> Result<()> {
+        self.files += 1;
+        self.bytes = self.bytes.saturating_add(size);
+        if self.files > MAX_SKILL_FILES {
+            bail_err!(
+                InvalidRequest,
+                "单技能文件数超限（上限 {} 个）：请拆分技能或合并附件",
+                MAX_SKILL_FILES
+            );
+        }
+        if self.bytes > MAX_SKILL_TOTAL_BYTES {
+            bail_err!(
+                InvalidRequest,
+                "单技能合计大小超限（上限 {} 字节）：附件过大请改用外部链接",
+                MAX_SKILL_TOTAL_BYTES
+            );
         }
         Ok(())
     }
 }
 
-/// 校验 target_path 安全性：禁止绝对路径、`..`、`\`、控制字符。
+/// 校验 target_path 安全性：仅允许 `[a-zA-Z0-9._-/]`，禁止绝对路径、`..`、`\`、控制字符。
+///
+/// 白名单为什么必要：光挡 `..` 挡不住 `scripts/;rm -rf` 这类注入到 shell 的
+/// 文件名——技能附件是要给 Agent 用 shell 工具执行的，文件名最终会进命令行，
+/// 所以字符集必须收敛到「路径里真正可能用到的那几个」。
 pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<()> {
     if target_path.trim().is_empty() {
         bail_err!(InvalidRequest, "Skill import target_path 不能为空");
+    }
+
+    // 字符白名单：字母数字（含中文等非 ASCII）+ `. _ - /`。
+    //
+    // 目的是挡住会注入 shell 命令行的元字符（`;` `$()` 反引号 空格 引号），
+    // 不是要禁止非 ASCII——中文附件名不是注入风险，而整包导入（seed 技能包）
+    // 若因中文名被拒，整个技能就导入不了。
+    if !target_path
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+    {
+        bail_err!(
+            InvalidRequest,
+            "Skill import target_path 含非法字符（仅允许字母数字与 . _ - /）: {}",
+            target_path
+        );
+    }
+
+    if target_path.contains("//") {
+        bail_err!(
+            InvalidRequest,
+            "Skill import target_path 不能含连续斜杠: {}",
+            target_path
+        );
     }
 
     let path = Path::new(target_path);
@@ -829,15 +978,11 @@ fn resolve_target(
 }
 
 /// 特定场景默认组织：图片 → assets/、脚本 → scripts/、md → skill.md
+///
+/// 规则本体在 `common::api::skill::default_target_path`（前端上传预填共用同一份），
+/// 这里只做委托，避免前后端归位结果漂移。
 fn apply_default_organization(name: &str) -> String {
-    let lower = name.to_lowercase();
-    let ext = lower.rsplit('.').next().unwrap_or("");
-    match ext {
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => format!("assets/{}", name),
-        "py" | "js" | "sh" | "ts" => format!("scripts/{}", name),
-        "md" => "skill.md".to_string(),
-        _ => name.to_string(),
-    }
+    common::api::default_target_path(name)
 }
 
 /// 检测 bytes 是否可能是 Markdown（YAML frontmatter 或 # 开头）
