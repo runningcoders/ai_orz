@@ -1,6 +1,6 @@
 use common::api::{SkillDetail, SkillFileItem, SkillListItem};
 
-use crate::models::skill::{Skill, SkillFile, is_main_skill_file};
+use crate::models::skill::{Skill, SkillFile};
 
 /// 技能 → 列表项 DTO（领域打包方法）。
 ///
@@ -44,7 +44,8 @@ fn to_file_item(file: &SkillFile) -> SkillFileItem {
     SkillFileItem {
         filename: file.filename.clone(),
         file_size: file.file_size,
-        is_main: is_main_skill_file(&file.filename),
+        // is_main 由 DAO 扫盘时按磁盘实况标注（旧包的主文件可能不叫 skill.md）
+        is_main: file.is_main,
         abs_path: file.abs_path.to_string_lossy().to_string(),
         executable: file.executable,
     }

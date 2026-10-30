@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::models::skill::{SKILL_MAIN_FILE, SkillFile, SkillPo, is_main_skill_file};
+use crate::models::skill::{
+    MainFilePick, SKILL_MAIN_FILE, SkillFile, SkillPo, is_main_skill_file, pick_main_file,
+};
 use crate::pkg::RequestContext;
 use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use crate::pkg::utils::fs_perm::{is_executable, mark_executable};
@@ -434,20 +436,16 @@ ORDER BY updated_at DESC
     // ========== 文件操作 ==========
 
     fn read_main_content(&self, skill: &SkillPo) -> Result<String> {
-        let path = self.main_content_path(skill);
-        if !path.exists() {
+        let Some(path) = self.resolve_main_file(skill) else {
             return Ok(String::new());
-        }
+        };
         let content = std::fs::read_to_string(path)?;
         Ok(content)
     }
 
     fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<()> {
-        let dir = self.skill_dir(skill);
-        std::fs::create_dir_all(&dir)?;
-        let path = self.main_content_path(skill);
-        std::fs::write(path, content)?;
-        Ok(())
+        // 走 write_file：主文件路径连同目录创建、历史大小写变体收敛都在一处收口
+        self.write_file(skill, SKILL_MAIN_FILE, content)
     }
 
     fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>> {
@@ -456,8 +454,12 @@ ORDER BY updated_at DESC
             return Ok(Vec::new());
         }
 
+        // 先按磁盘实况定位主文件：旧包的主文件可能叫 SKILL.md / README.md，
+        // 只按 `filename` 字面判定的话，它们会被当成普通附件、正文直出为空。
+        let main_path = self.resolve_main_file(skill);
+
         let mut files = Vec::new();
-        self.collect_files(&dir, &dir, &mut files)?;
+        self.collect_files(&dir, &dir, main_path.as_deref(), &mut files)?;
 
         // 按文件名排序，让 skill.md 排在前面
         files.sort_by(|a, b| a.filename.cmp(&b.filename));
@@ -465,7 +467,14 @@ ORDER BY updated_at DESC
     }
 
     fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String> {
-        let path = self.file_path(skill, filename);
+        // 主文件的名字按磁盘实况解析：调用方传的一律是 canonical 名 `skill.md`
+        // （见 get_skill_file_content / frontmatter 回写），磁盘上却可能是 `SKILL.md`。
+        let path = if is_main_skill_file(filename) {
+            self.resolve_main_file(skill)
+                .unwrap_or_else(|| self.file_path(skill, filename))
+        } else {
+            self.file_path(skill, filename)
+        };
         if !path.exists() {
             bail_err!(ResourceNotFound, "File not found: {}", filename);
         }
@@ -478,7 +487,15 @@ ORDER BY updated_at DESC
     }
 
     fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()> {
-        let path = self.file_path(skill, filename);
+        // 主文件写入统一收敛到小写常量：任何大小写变体都归位成 `skill.md`，
+        // 并顺带清掉同名不同大小写的历史残留（见 collapse_main_case_variants）。
+        let target = if is_main_skill_file(filename) {
+            self.collapse_main_case_variants(skill);
+            SKILL_MAIN_FILE.to_string()
+        } else {
+            filename.to_string()
+        };
+        let path = self.file_path(skill, &target);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -546,11 +563,58 @@ ORDER BY updated_at DESC
 // ===== SkillDaoSqliteImpl 辅助方法 =====
 
 impl SkillDaoSqliteImpl {
-    /// 获取技能主文件（skill.md）的完整路径
-    fn main_content_path(&self, skill: &SkillPo) -> PathBuf {
-        // 主文件名恒为小写字面量：导入侧会把命中主文件的条目归一化到这里
-        // （外部包的 `SKILL.md` 也落成 `skill.md`），因此可按常量直拼。
-        self.file_abs_path(skill, SKILL_MAIN_FILE)
+    /// **读取侧**主文件定位：按磁盘实况解析，兼容历史包。
+    ///
+    /// 为什么不能一路按常量直拼：旧包（以及从别的机器拷过来的包）里主文件可能叫
+    /// `SKILL.md`（外部包惯例大写）、`Skill.md`，也可能根本没有 `skill.md` 而只有
+    /// 一个 `main.md` / `README.md`。拼常量的结果是 `path.exists()` 为假 ⇒ 正文按
+    /// 「没有主文件」返回空，而同一份文件换个名字就一切正常——正是本次要修的症状。
+    ///
+    /// 解析规则与**导入侧完全相同**（`pick_main_file`），读写不分叉是本 bug 类的根因。
+    /// 多个候选 md 时不猜，返回 None（退化为无正文），导入侧则由入口明确报错。
+    fn resolve_main_file(&self, skill: &SkillPo) -> Option<PathBuf> {
+        let dir = self.skill_dir(skill);
+        let canonical = dir.join(SKILL_MAIN_FILE);
+        if canonical.is_file() {
+            return Some(canonical);
+        }
+        let names = Self::root_file_names(&dir).ok()?;
+        match pick_main_file(&names) {
+            MainFilePick::Main(name) | MainFilePick::Fallback(name) => Some(dir.join(name)),
+            MainFilePick::None | MainFilePick::Ambiguous(_) => None,
+        }
+    }
+
+    /// 根级普通文件名列表（非递归）。目录遍历失败视为「无主文件」，
+    /// 与历史上 `path.exists()` 为假的处理保持一致（返回空正文而非报错）。
+    fn root_file_names(dir: &Path) -> Result<Vec<String>> {
+        let mut names = Vec::new();
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            names.push(entry.file_name().to_string_lossy().to_string());
+        }
+        Ok(names)
+    }
+
+    /// 写入主文件前，删掉**同名不同大小写**的历史残留（只有大小写敏感 FS 才会并存）。
+    ///
+    /// 不收敛会怎样：磁盘上同时存在 `SKILL.md` 与 `skill.md` 时，两个都会被判成主
+    /// 文件（身份判定本就忽略大小写），而 `main_content()` 取的是排序第一个——大写
+    /// 排在前面，于是用户改完正文读到的还是旧内容，且文件列表里出现两个主文件。
+    /// 清掉变体后主文件恒只有一个。失败不阻断写入（残留最多是冗余，不会丢新内容）。
+    fn collapse_main_case_variants(&self, skill: &SkillPo) {
+        let dir = self.skill_dir(skill);
+        let Ok(names) = Self::root_file_names(&dir) else {
+            return;
+        };
+        for name in names {
+            if name != SKILL_MAIN_FILE && is_main_skill_file(&name) {
+                let _ = std::fs::remove_file(dir.join(name));
+            }
+        }
     }
 
     /// 获取技能中指定文件的完整路径（内部别名，trait 已暴露 file_abs_path）
@@ -562,6 +626,7 @@ impl SkillDaoSqliteImpl {
         &self,
         base_dir: &Path,
         current_dir: &Path,
+        main_path: Option<&Path>,
         files: &mut Vec<SkillFile>,
     ) -> Result<()> {
         for entry in std::fs::read_dir(current_dir)? {
@@ -569,7 +634,7 @@ impl SkillDaoSqliteImpl {
             let file_type = entry.file_type()?;
             let path = entry.path();
             if file_type.is_dir() {
-                self.collect_files(base_dir, &path, files)?;
+                self.collect_files(base_dir, &path, main_path, files)?;
                 continue;
             }
 
@@ -585,11 +650,15 @@ impl SkillDaoSqliteImpl {
             let metadata = entry.metadata()?;
             let file_size = metadata.len();
 
-            // 只有根引导文件 skill.md 预读内容：它是「怎么读这份技能」的说明书，
-            // 必须随接口直出。其余附件（含二进制 / 大文件）一律只给路径，
-            // 由调用方用 read_file / shell 工具按需访问——接口回传二进制既读不了
-            // 又撑爆上下文。
-            let content = if is_main_skill_file(&filename) {
+            // 只有主文件预读内容：它是「怎么读这份技能」的说明书，必须随接口直出。
+            // 其余附件（含二进制 / 大文件）一律只给路径，由调用方用 read_file /
+            // shell 工具按需访问——接口回传二进制既读不了又撑爆上下文。
+            //
+            // 主文件身份**按磁盘解析结果**判定，而非只看名字是否与 `skill.md` 相等：
+            // 历史包的主文件可能叫 `SKILL.md` / `README.md`（写入侧的归一化够不着
+            // 它们），只看名字会把正文当成附件漏掉。
+            let is_main = Some(path.as_path()) == main_path || is_main_skill_file(&filename);
+            let content = if is_main {
                 std::fs::read_to_string(&path).ok()
             } else {
                 None
@@ -600,6 +669,7 @@ impl SkillDaoSqliteImpl {
                 file_size,
                 content,
                 abs_path: path,
+                is_main,
                 executable: is_executable(&metadata),
             });
         }

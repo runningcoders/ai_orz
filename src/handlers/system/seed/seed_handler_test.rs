@@ -621,6 +621,7 @@ async fn test_skill_content_round_trip_through_bundle(pool: SqlitePool) {
         file_size: 8,
         content: Some("# 引导\n".to_string()),
         abs_path: std::path::PathBuf::new(),
+        is_main: true,
         executable: false,
     });
 

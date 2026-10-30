@@ -5,6 +5,7 @@ use common::enums::skill::SkillAuthorType;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::path::Path;
 
 /// 技能描述中的「触发条件 / 内容概要」分隔符。
 ///
@@ -36,6 +37,63 @@ pub fn is_main_skill_file(filename: &str) -> bool {
     filename.eq_ignore_ascii_case(SKILL_MAIN_FILE)
 }
 
+/// 主文件挑选结果（`pick_main_file` 的返回值，读写两侧共用一套口径）。
+///
+/// 为什么单独定义一个enum，而不是让调用方各自 `find`：
+/// **归一化只在写入时起作用，磁盘上早先装好的旧包名字不会自动跟着改**
+/// （历史上的包可能有 `SKILL.md`、`main.md`、`README.md`）。读取侧必须能按磁盘
+/// 实况认出主文件，否则「文件也在磁盘上、但接口 content 恒空」的老毛病会在这些
+/// 旧包上原样复现——而它们恰恰是所有环境里最容易被忽略的一批（Linux 大小写敏感
+/// FS 上是必现，macOS 上因为 FS 不敏感反而查不出来）。
+#[derive(Debug, PartialEq, Eq)]
+pub enum MainFilePick<'a> {
+    /// 根目录有正主（`skill.md` 的任意大小写变体）。
+    /// 写入侧应归位成小写常量落盘，读取侧按返回的原名读即可。
+    Main(&'a str),
+    /// 没有正主、但根目录**恰好一个** `.md` → 兜底认它。
+    /// 这是外部/手工打的技能包的常见形态（主文件叫 `main.md` / `README.md`）。
+    Fallback(&'a str),
+    /// 根目录没有 md：纯附件包（往已有技能追加文件时的合法形态）。
+    None,
+    /// 根目录有多个 md：歧义不可自动解。
+    /// 读取侧**不猜**（退化为无正文），导入侧报错要求打包方显式提供 `skill.md`——
+    /// 任选其一等于静默猜错，宁可让入口拿到明确报错。
+    Ambiguous(Vec<&'a str>),
+}
+
+/// 在技能根目录的条目名集合里挑选主文件（`names` 为相对根目录的条目名，含子目录前缀）。
+///
+/// 三档规则（顺序敏感）：
+/// 1. 存在 `skill.md`（忽略大小写）→ [`MainFilePick::Main`]；
+/// 2. 无正主、根目录恰好一个 `.md`（子目录里的不算，扩展名忽略大小写）→ [`MainFilePick::Fallback`]；
+/// 3. 其余 → 无 md 为 [`MainFilePick::None`]，多个 md 为 [`MainFilePick::Ambiguous`]。
+pub fn pick_main_file(names: &[String]) -> MainFilePick<'_> {
+    if let Some(main) = names
+        .iter()
+        .find(|n| is_main_skill_file(n))
+        .map(String::as_str)
+    {
+        return MainFilePick::Main(main);
+    }
+
+    let markdowns: Vec<&str> = names
+        .iter()
+        .filter(|n| {
+            !n.contains('/')
+                && Path::new(n)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        })
+        .map(String::as_str)
+        .collect();
+
+    match markdowns.as_slice() {
+        [] => MainFilePick::None,
+        [only] => MainFilePick::Fallback(only),
+        many => MainFilePick::Ambiguous(many.to_vec()),
+    }
+}
+
 /// 技能附属文件信息（纯数据结构，DAO 层使用）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillFile {
@@ -50,6 +108,14 @@ pub struct SkillFile {
     /// 供 Agent 用 `read_file` / shell 工具按路径自行读取或执行（位于
     /// `base_data_path` 作用域内，已过 fs 工具的路径校验）。
     pub abs_path: std::path::PathBuf,
+    /// 是否为根引导文件（这份技能的正文入口）。
+    ///
+    /// 由 DAO 扫盘时**按磁盘实况**标注（解析逻辑见 [`pick_main_file`]）：历史
+    /// 包的主文件可能叫 `SKILL.md` / `main.md` / `README.md`，只按 `filename`
+    /// 字面判定的话，这些旧包会「列得出来、却拿不到正文」。
+    ///
+    /// 为什么不用 Option：接口是只读投影，非主就是 false，没有第三种状态。
+    pub is_main: bool,
     /// 是否带可执行位（脚本类附件，可用 shell 工具直接执行）
     pub executable: bool,
 }
@@ -264,10 +330,14 @@ impl Skill {
     }
 
     /// 获取主文件内容（如果已加载）
+    ///
+    /// 优先用 DAO 标注的 `is_main`：旧包的主文件名字可能不合 `skill.md` 的字面，
+    /// 只看名字会把它们漏掉。手工构造（测试 / fixture）的实体没有该标记，
+    /// 退化为按名字判定，两条路都成立。
     pub fn main_content(&self) -> Option<&str> {
         self.files
             .iter()
-            .find(|f| is_main_skill_file(&f.filename))
+            .find(|f| f.is_main || is_main_skill_file(&f.filename))
             .and_then(|f| f.content.as_deref())
     }
 
@@ -276,8 +346,9 @@ impl Skill {
         self.files
             .iter()
             .find(|f| {
-                is_main_skill_file(&f.filename) && is_main_skill_file(filename)
-                    || f.filename == filename
+                f.filename == filename
+                    || (f.is_main || is_main_skill_file(&f.filename))
+                        && is_main_skill_file(filename)
             })
             .and_then(|f| f.content.as_deref())
     }
@@ -326,5 +397,66 @@ mod tests {
     fn summary_degrades_when_trigger_is_empty() {
         let s = po("必读全文：只有内容没有时机").to_prompt_summary();
         assert_eq!(s, "- 记忆认知（id: skill-1）：必读全文：只有内容没有时机");
+    }
+
+    fn names(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// 正主在（任意大小写）→ Main，且返回磁盘上的**原名**（读取侧要拿它去拼路径）
+    #[test]
+    fn pick_prefers_exact_main_and_keeps_original_name() {
+        assert_eq!(
+            pick_main_file(&names(&["skill.md", "README.md"])),
+            MainFilePick::Main("skill.md")
+        );
+        assert_eq!(
+            pick_main_file(&names(&["SKILL.md", "assets/a.png"])),
+            MainFilePick::Main("SKILL.md"),
+            "历史包里的 SKILL.md 必须被认出来，否则旧包永远读不到正文"
+        );
+        assert_eq!(
+            pick_main_file(&names(&["assets/a.png", "Skill.MD"])),
+            MainFilePick::Main("Skill.MD")
+        );
+    }
+
+    /// 无正主 + 根目录恰好一个 md → Fallback（外部/手工包的常见形态）
+    #[test]
+    fn pick_falls_back_to_the_lone_root_markdown() {
+        assert_eq!(
+            pick_main_file(&names(&["main.md", "assets/note.md", "scripts/run.sh"])),
+            MainFilePick::Fallback("main.md"),
+            "子目录里的 md 不参与兜底"
+        );
+        assert_eq!(
+            pick_main_file(&names(&["README.MD"])),
+            MainFilePick::Fallback("README.MD"),
+            "扩展名大小写同样要忽略"
+        );
+    }
+
+    /// 多个根级 md → Ambiguous：读取侧不猜、导入侧报错
+    #[test]
+    fn pick_reports_ambiguity_instead_of_guessing() {
+        assert_eq!(
+            pick_main_file(&names(&["main.md", "README.md"])),
+            MainFilePick::Ambiguous(vec!["main.md", "README.md"])
+        );
+        assert_eq!(
+            pick_main_file(&names(&["sub/skill.md", "assets/a.png"])),
+            MainFilePick::None,
+            "子目录里的 skill.md 不是根引导文件，不能拿来当主文件"
+        );
+    }
+
+    /// 零 md（纯附件包）→ None：往已有技能追加文件时合法
+    #[test]
+    fn pick_returns_none_for_assets_only() {
+        assert_eq!(
+            pick_main_file(&names(&["assets/logo.png", "scripts/run.sh"])),
+            MainFilePick::None
+        );
+        assert_eq!(pick_main_file(&[]), MainFilePick::None);
     }
 }

@@ -1,6 +1,8 @@
 //! Skill 管理具体方法实现
 
-use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillPo, is_main_skill_file};
+use crate::models::skill::{
+    MainFilePick, SKILL_MAIN_FILE, Skill, SkillPo, is_main_skill_file, pick_main_file,
+};
 use crate::pkg::RequestContext;
 use crate::pkg::utils::fetch_remote_content::{FetchOptions, fetch_remote_content};
 use crate::pkg::utils::fs_perm::{is_script_filename, mark_executable};
@@ -802,8 +804,9 @@ impl HrDomainImpl {
             // zip 条目自带 unix mode 时按其 x 位判定，否则按扩展名兜底
             let zip_executable = file.unix_mode().is_some_and(|mode| mode & 0o111 != 0);
 
-            // 主文件必须在 zip 根目录：带目录前缀说明包结构不对，落盘后 DAO 层
-            // 按小写常量拼路径会读不到（大小写同理，故忽略大小写判定）。
+            // 主文件必须在 zip 根目录：带目录前缀说明包结构不对，落盘后读取侧
+            // 按根目录解析主文件（见 pick_main_file）找不到它（大小写同理，故忽略
+            // 大小写判定）。
             if name.contains('/') && is_main_skill_file(name.rsplit('/').next().unwrap_or_default())
             {
                 bail_err!(
@@ -868,32 +871,22 @@ impl HrDomainImpl {
 ///
 /// 「零个 md」不在此列（返回 `Ok(None)`）：纯附件包（如只含 `assets/` 的更新包）
 /// 用于往已有技能追加文件时完全合法，强加主文件要求会误伤。
+///
+/// 同一套规则也用于**读取侧**（DAO `resolve_main_file`）：写入侧的归一化够不到早已
+/// 装好的旧包，读取侧必须能按磁盘实况认出主文件。
 fn pick_fallback_main(names: &[String]) -> Result<Option<String>> {
-    if names.iter().any(|n| is_main_skill_file(n)) {
-        return Ok(None); // 已有正主，无需兜底
-    }
-
-    let root_mds: Vec<&String> = names
-        .iter()
-        .filter(|n| {
-            !n.contains('/')
-                && std::path::Path::new(n)
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-        })
-        .collect();
-
-    match root_mds.as_slice() {
-        [] => Ok(None), // 纯附件包：不要求主文件
-        [only] => Ok(Some((*only).clone())),
-        many => bail_err!(
+    // 口径与读取侧同源（`pick_main_file`）：新包按它归位落盘、旧包按它认出主文件，
+    // 两边分叉正是「导入成功却读不到正文」的成因。
+    match pick_main_file(names) {
+        // 已有正主（任意大小写）→ 写盘分支会归一化，无需兜底
+        MainFilePick::Main(_) => Ok(None),
+        MainFilePick::Fallback(only) => Ok(Some(only.to_string())),
+        MainFilePick::None => Ok(None), // 纯附件包：不要求主文件
+        MainFilePick::Ambiguous(many) => bail_err!(
             InvalidRequest,
             "技能包根目录存在多个 Markdown 文件（{}），无法确定哪个是主文件：\
              请在 zip 根目录显式提供 {}（其余说明文档请放到子目录）",
-            many.iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .join("、"),
+            many.join("、"),
             SKILL_MAIN_FILE
         ),
     }
@@ -1027,11 +1020,12 @@ fn resolve_target(
 
 /// 命中主文件身份时归一化为小写 `skill.md`。
 ///
-/// 外部包常写 `SKILL.md`、用户显式 target_path 也可能写成任意大小写；而 DAO 层
-/// 主文件路径（含 `read_main_content` / `write_main_content`）按小写常量直拼——
-/// 不归一化的话，`get_skill` 的正文、`update_skill_file_content`、`read_main_content`
-/// 在 Linux（大小写敏感 FS）上会一起去读不存在的 `skill.md`，症状是「文件在、
-/// 却到处读不到」。macOS 上因为 FS 本身不敏感，同一份操作却正常，极易漏测。
+/// 外部包常写 `SKILL.md`、用户显式 target_path 也可能写成任意大小写；写入侧若不
+/// 收敛，磁盘上就会出现大小写各异的主文件，而 macOS 文件系统本身不敏感，同一份
+/// 操作在 macOS 正常、在 Linux 才暴露，极易漏测。
+///
+/// 注意归一化只覆盖 **本条写入**：磁盘上早已装好的旧包不会跟着改名，所以读取侧
+/// 另有兼容逻辑（DAO `resolve_main_file` 按磁盘实况解析），两者互补而非替代。
 fn normalize_main_target(target: &str) -> String {
     if is_main_skill_file(target) {
         SKILL_MAIN_FILE.to_string()

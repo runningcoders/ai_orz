@@ -23,6 +23,7 @@ fn skill_with_main(name: &str) -> Skill {
         file_size: 8,
         content: Some("# 引导\n".to_string()),
         abs_path: std::path::PathBuf::new(),
+        is_main: true,
         executable: false,
     });
     skill

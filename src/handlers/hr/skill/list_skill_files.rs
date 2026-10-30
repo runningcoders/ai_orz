@@ -1,6 +1,5 @@
 //! Handler: GET /api/v1/skills/{skill_id}/files - 列出 Skill 所有文件
 
-use crate::models::skill::is_main_skill_file;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -35,7 +34,8 @@ pub async fn list_skill_files(
                 .map(|f| common::api::SkillFileItem {
                     filename: f.filename.clone(),
                     file_size: f.file_size,
-                    is_main: is_main_skill_file(&f.filename),
+                    // is_main 由 DAO 扫盘时按磁盘实况标注（旧包的主文件可能不叫 skill.md）
+                    is_main: f.is_main,
                     abs_path: f.abs_path.to_string_lossy().to_string(),
                     executable: f.executable,
                 })
