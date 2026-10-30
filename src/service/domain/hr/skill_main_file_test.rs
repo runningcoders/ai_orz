@@ -14,7 +14,7 @@
 //!   「根目录唯一 md 兜底当主文件」，需连带改这里）。
 
 use super::skill_test::{create_test_skill, init_test_env};
-use super::{CreateSkillParams, SkillFileImport};
+use super::{CreateSkillParams, SkillFileImport, UpdateSkillParams};
 use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillPo, is_main_skill_file};
 use crate::service::domain::system::seed::bundle::{SkillFileEntry, pack_skill_zip};
 use common::enums::skill::SkillAuthorType;
@@ -201,9 +201,12 @@ async fn zip_fallback_picks_lone_markdown_as_main(pool: SqlitePool) {
     );
 }
 
-/// ③ 边界：根级有多个 `.md` 候选时**不猜**主文件（多个 md 任选 = 静默猜错）。
+/// ③ 边界：根级有多个 `.md` 且没有正主时**报错要求提供 skill.md**。
+///
+/// 歧义是打包方的信息缺失，必须在入口说清——静默降级会重演「导入成功却读不到正文」
+/// 的老毛病（调用方拿到成功响应，只能事后排查）。
 #[sqlx::test]
-async fn fallback_skips_when_multiple_root_markdowns(pool: SqlitePool) {
+async fn ambiguous_root_markdowns_rejected_with_guidance(pool: SqlitePool) {
     let (domain, ctx, _temp) = init_test_env(pool.clone());
     let skill = create_test_skill("PkgAmbiguous");
 
@@ -221,7 +224,7 @@ async fn fallback_skips_when_multiple_root_markdowns(pool: SqlitePool) {
     ])
     .unwrap();
 
-    domain
+    let err = domain
         .skill_manage()
         .create_skill(
             ctx.clone(),
@@ -238,23 +241,87 @@ async fn fallback_skips_when_multiple_root_markdowns(pool: SqlitePool) {
             },
         )
         .await
+        .expect_err("多个根级 md 无法确定主文件时必须报错");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains(SKILL_MAIN_FILE),
+        "报错必须指明要提供哪个文件名，实际: {msg}"
+    );
+    assert!(
+        msg.contains("main.md") && msg.contains("README.md"),
+        "报错应列出冲突候选，便于打包方定位，实际: {msg}"
+    );
+
+    // 且必须原子：失败后不应留下半成品技能记录
+    assert!(
+        domain
+            .skill_manage()
+            .get_skill(ctx.clone(), skill.id())
+            .await
+            .unwrap()
+            .is_some(),
+        "本次解包发生在 create 之后，技能行存在但不应带文件"
+    );
+    let files = domain
+        .skill_manage()
+        .list_skill_files(ctx.clone(), skill.id())
+        .await
+        .unwrap()
+        .unwrap_or_default();
+    assert!(
+        files.is_empty(),
+        "歧义包应整体拒绝，不应落任何半成品文件，实际: {files:?}"
+    );
+}
+
+/// ③ 边界：纯附件包（零个 md）不要求主文件——用于往已有技能追加文件时必须放行。
+#[sqlx::test]
+async fn assets_only_package_is_allowed(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgAssetsOnly");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
         .unwrap();
 
-    let loaded = domain
+    let zip_bytes = pack_skill_zip(&[SkillFileEntry {
+        path: "assets/logo.png".to_string(),
+        bytes: vec![0x89, 0x50, 0x4E, 0x47],
+        executable: false,
+    }])
+    .unwrap();
+
+    domain
         .skill_manage()
-        .get_skill(ctx.clone(), skill.id())
+        .update_skill(
+            ctx.clone(),
+            UpdateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: None,
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: None,
+                    executable: None,
+                }],
+                file_deletes: Vec::new(),
+                remote_source: None,
+            },
+        )
+        .await
+        .expect("纯附件包不应因缺少主文件被拒");
+
+    let files = domain
+        .skill_manage()
+        .list_skill_files(ctx.clone(), skill.id())
         .await
         .unwrap()
         .unwrap();
-
     assert!(
-        loaded.main_content().is_none(),
-        "根目录多个 .md 时不应猜主文件：任选其一会把真正的主内容埋成附件"
-    );
-    assert_eq!(
-        loaded.files.len(),
-        2,
-        "两个候选文件都应原样落盘，调用方需显式提供 skill.md"
+        files.iter().any(|f| f.filename == "assets/logo.png"),
+        "附件应正常落盘，实际: {files:?}"
     );
 }
 

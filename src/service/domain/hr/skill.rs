@@ -787,7 +787,7 @@ impl HrDomainImpl {
                 names.push(name);
             }
         }
-        let fallback_main = pick_fallback_main(&names);
+        let fallback_main = pick_fallback_main(&names)?;
 
         for i in 0..archive.len() {
             let mut file = archive
@@ -851,31 +851,52 @@ impl HrDomainImpl {
     }
 }
 
-/// 兜底认主文件：zip 根目录**没有** `skill.md` 时，若根目录恰好**只有**一个 `.md`，
-/// 就把它认作主文件（随后被归位写成小写 `skill.md`）。
+/// 判定 zip 包的主文件取哪个条目；无法确定时**明确报错**要求提供正主。
 ///
-/// 存在理由：外部/手工打的技能包主文件未必叫 `skill.md`（常见 `main.md`、
-/// `README.md`）。不作兜底的话，包能导入成功、文件也在磁盘上，但 `get_skill`
-/// 的正文恒为空，只能按路径去 read_file——现象很像一个 bug，实则只是命名不合契约。
+/// 三档规则（顺序重要）：
+/// 1. 根目录有 `skill.md`（忽略大小写）→ 它就是正主，无需兜底；
+/// 2. 没有正主、但根目录**恰好只有一个** `.md` → 兜底认它为主文件并归位；
+/// 3. 没有正主、且根目录有**多个** `.md` → 歧义不可自动解，**报错要求提供 `skill.md`**。
 ///
-/// 为什么要求「只有一个」：多个候选时任选其一等于静默猜错，可能把真正的主内容
-/// 埋成附件。这种情况宁可不认主文件，让调用方显式提供 `skill.md`。
-fn pick_fallback_main(names: &[String]) -> Option<String> {
+/// 第 2 档存在理由：外部/手工打的技能包主文件未必叫 `skill.md`（常见 `main.md`、
+/// `README.md`）。不作兜底的话，包能导入成功、文件也在磁盘上，但 `get_skill` 的
+/// 正文恒为空，只能按路径去 read_file——现象很像一个 bug，实则只是命名不合契约。
+///
+/// 第 3 档为什么不退回「不认主文件」：那种静默降级正是本次缺陷的成因之一——
+/// 调用方拿到成功响应，却读到空正文，只能事后排查。歧义是**打包方的信息缺失**，
+/// 该由打包方在入口得到明确报错并补上 `skill.md`，不该让读取侧沉默兜着。
+///
+/// 「零个 md」不在此列（返回 `Ok(None)`）：纯附件包（如只含 `assets/` 的更新包）
+/// 用于往已有技能追加文件时完全合法，强加主文件要求会误伤。
+fn pick_fallback_main(names: &[String]) -> Result<Option<String>> {
     if names.iter().any(|n| is_main_skill_file(n)) {
-        return None; // 已有正主，无需兜底
+        return Ok(None); // 已有正主，无需兜底
     }
 
-    let mut candidates = names.iter().filter(|n| {
-        !n.contains('/')
-            && std::path::Path::new(n)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-    });
-    let first = candidates.next()?;
-    if candidates.next().is_some() {
-        return None; // 多个候选：不猜
+    let root_mds: Vec<&String> = names
+        .iter()
+        .filter(|n| {
+            !n.contains('/')
+                && std::path::Path::new(n)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        })
+        .collect();
+
+    match root_mds.as_slice() {
+        [] => Ok(None), // 纯附件包：不要求主文件
+        [only] => Ok(Some((*only).clone())),
+        many => bail_err!(
+            InvalidRequest,
+            "技能包根目录存在多个 Markdown 文件（{}），无法确定哪个是主文件：\
+             请在 zip 根目录显式提供 {}（其余说明文档请放到子目录）",
+            many.iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("、"),
+            SKILL_MAIN_FILE
+        ),
     }
-    Some(first.clone())
 }
 
 /// 单技能文件数上限（zip 解包 / 附件 / 文本合计）。
