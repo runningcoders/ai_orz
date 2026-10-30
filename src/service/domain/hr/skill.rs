@@ -1,6 +1,6 @@
 //! Skill 管理具体方法实现
 
-use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillPo};
+use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillPo, is_main_skill_file};
 use crate::pkg::RequestContext;
 use crate::pkg::utils::fetch_remote_content::{FetchOptions, fetch_remote_content};
 use crate::pkg::utils::fs_perm::{is_script_filename, mark_executable};
@@ -371,7 +371,7 @@ impl SkillManage for HrDomainImpl {
         // 其余附件（二进制模板 / 脚本 / 大文件）一律不经接口回传——先用
         // list_skill_files 拿到 abs_path，再用 read_file / shell 工具按需访问。
         // 经接口传二进制既读不了（read_to_string 直接报错）又撑爆上下文。
-        if !filename.eq_ignore_ascii_case(SKILL_MAIN_FILE) {
+        if !is_main_skill_file(filename) {
             let abs = self
                 .skill_dal
                 .file_abs_path(&po, filename)
@@ -590,7 +590,10 @@ impl HrDomainImpl {
 
         // 3. Frontmatter Meta Merge + Vectors Refresh
         // 从最终写入的 skill.md 提取 YAML frontmatter，若 Po 字段为空/默认则覆盖
-        if let Ok(md_content) = self.skill_dal.read_file(po, "skill.md")
+        //
+        // 读小写常量即可命中：导入侧已把任何大小写的主文件归一化成 `skill.md`。
+        // read_file 失败（如技能确实没有主文件）不影响创建结果，静默跳过补字段。
+        if let Ok(md_content) = self.skill_dal.read_file(po, SKILL_MAIN_FILE)
             && let Some(fm) = parse_frontmatter(&md_content)
         {
             let mut updated_po = po.clone();
@@ -706,7 +709,7 @@ impl HrDomainImpl {
             let size = std::fs::metadata(src_path).map(|m| m.len()).unwrap_or(0);
             budget.record(size)?;
 
-            if !target.eq_ignore_ascii_case(SKILL_MAIN_FILE) {
+            if !is_main_skill_file(&target) {
                 validate_skill_import_target_path(&target)?;
             }
             let target_abs = self.skill_dal.file_abs_path(po, &target);
@@ -748,7 +751,7 @@ impl HrDomainImpl {
             )?;
             budget.record(bytes.len() as u64)?;
 
-            let is_main = target.eq_ignore_ascii_case(SKILL_MAIN_FILE);
+            let is_main = is_main_skill_file(&target);
             if !is_main {
                 validate_skill_import_target_path(&target)?;
             }
@@ -771,6 +774,21 @@ impl HrDomainImpl {
         archive: &mut zip::ZipArchive<R>,
         budget: &mut ImportBudget,
     ) -> Result<()> {
+        // 先整体登记条目名，用于在写盘**之前**决定是否兜底认主文件——
+        // 一旦按原名写下去就来不及归位了（返回值要去写盘分支里改名）。
+        let mut names: Vec<String> = Vec::with_capacity(archive.len());
+        for i in 0..archive.len() {
+            let name = archive
+                .by_index(i)
+                .map_err(|e| err!(InvalidRequest, "zip 读取条目失败: {}", e))?
+                .name()
+                .to_string();
+            if !name.ends_with('/') {
+                names.push(name);
+            }
+        }
+        let fallback_main = pick_fallback_main(&names);
+
         for i in 0..archive.len() {
             let mut file = archive
                 .by_index(i)
@@ -784,7 +802,10 @@ impl HrDomainImpl {
             // zip 条目自带 unix mode 时按其 x 位判定，否则按扩展名兜底
             let zip_executable = file.unix_mode().is_some_and(|mode| mode & 0o111 != 0);
 
-            if name.ends_with("/skill.md") {
+            // 主文件必须在 zip 根目录：带目录前缀说明包结构不对，落盘后 DAO 层
+            // 按小写常量拼路径会读不到（大小写同理，故忽略大小写判定）。
+            if name.contains('/') && is_main_skill_file(name.rsplit('/').next().unwrap_or_default())
+            {
                 bail_err!(
                     InvalidRequest,
                     "skill.md 必须在 zip 根目录，不应有目录前缀: {}",
@@ -794,7 +815,11 @@ impl HrDomainImpl {
 
             budget.record(file.size())?;
 
-            if name == SKILL_MAIN_FILE {
+            // 忽略大小写识别主文件（或命中兜底认主的那个文件），
+            // 并归一化写成小写 skill.md（见 normalize_main_target）
+            let is_main =
+                is_main_skill_file(&name) || fallback_main.as_deref() == Some(name.as_str());
+            if is_main {
                 let mut buf = Vec::new();
                 std::io::Read::read_to_end(&mut file, &mut buf)
                     .map_err(|e| err!(InvalidRequest, "zip skill.md 读取失败: {}", e))?;
@@ -824,6 +849,33 @@ impl HrDomainImpl {
             mark_executable(abs_path);
         }
     }
+}
+
+/// 兜底认主文件：zip 根目录**没有** `skill.md` 时，若根目录恰好**只有**一个 `.md`，
+/// 就把它认作主文件（随后被归位写成小写 `skill.md`）。
+///
+/// 存在理由：外部/手工打的技能包主文件未必叫 `skill.md`（常见 `main.md`、
+/// `README.md`）。不作兜底的话，包能导入成功、文件也在磁盘上，但 `get_skill`
+/// 的正文恒为空，只能按路径去 read_file——现象很像一个 bug，实则只是命名不合契约。
+///
+/// 为什么要求「只有一个」：多个候选时任选其一等于静默猜错，可能把真正的主内容
+/// 埋成附件。这种情况宁可不认主文件，让调用方显式提供 `skill.md`。
+fn pick_fallback_main(names: &[String]) -> Option<String> {
+    if names.iter().any(|n| is_main_skill_file(n)) {
+        return None; // 已有正主，无需兜底
+    }
+
+    let mut candidates = names.iter().filter(|n| {
+        !n.contains('/')
+            && std::path::Path::new(n)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+    });
+    let first = candidates.next()?;
+    if candidates.next().is_some() {
+        return None; // 多个候选：不猜
+    }
+    Some(first.clone())
 }
 
 /// 单技能文件数上限（zip 解包 / 附件 / 文本合计）。
@@ -939,6 +991,35 @@ pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<()>
 /// 4. 特定场景默认组织 → 图片 assets/、脚本 scripts/、md skill.md
 /// 5. 全失败 → 报错
 fn resolve_target(
+    target_path: &Option<String>,
+    source_abs_path: Option<&Path>,
+    content_bytes: Option<&[u8]>,
+    suggested_name: &Option<String>,
+) -> Result<String> {
+    Ok(normalize_main_target(&resolve_target_inner(
+        target_path,
+        source_abs_path,
+        content_bytes,
+        suggested_name,
+    )?))
+}
+
+/// 命中主文件身份时归一化为小写 `skill.md`。
+///
+/// 外部包常写 `SKILL.md`、用户显式 target_path 也可能写成任意大小写；而 DAO 层
+/// 主文件路径（含 `read_main_content` / `write_main_content`）按小写常量直拼——
+/// 不归一化的话，`get_skill` 的正文、`update_skill_file_content`、`read_main_content`
+/// 在 Linux（大小写敏感 FS）上会一起去读不存在的 `skill.md`，症状是「文件在、
+/// 却到处读不到」。macOS 上因为 FS 本身不敏感，同一份操作却正常，极易漏测。
+fn normalize_main_target(target: &str) -> String {
+    if is_main_skill_file(target) {
+        SKILL_MAIN_FILE.to_string()
+    } else {
+        target.to_string()
+    }
+}
+
+fn resolve_target_inner(
     target_path: &Option<String>,
     source_abs_path: Option<&Path>,
     content_bytes: Option<&[u8]>,

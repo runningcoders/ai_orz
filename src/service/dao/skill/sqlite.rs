@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::models::skill::{SKILL_MAIN_FILE, SkillFile, SkillPo};
+use crate::models::skill::{SKILL_MAIN_FILE, SkillFile, SkillPo, is_main_skill_file};
 use crate::pkg::RequestContext;
 use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use crate::pkg::utils::fs_perm::{is_executable, mark_executable};
@@ -548,7 +548,9 @@ ORDER BY updated_at DESC
 impl SkillDaoSqliteImpl {
     /// 获取技能主文件（skill.md）的完整路径
     fn main_content_path(&self, skill: &SkillPo) -> PathBuf {
-        self.file_abs_path(skill, "skill.md")
+        // 主文件名恒为小写字面量：导入侧会把命中主文件的条目归一化到这里
+        // （外部包的 `SKILL.md` 也落成 `skill.md`），因此可按常量直拼。
+        self.file_abs_path(skill, SKILL_MAIN_FILE)
     }
 
     /// 获取技能中指定文件的完整路径（内部别名，trait 已暴露 file_abs_path）
@@ -587,7 +589,7 @@ impl SkillDaoSqliteImpl {
             // 必须随接口直出。其余附件（含二进制 / 大文件）一律只给路径，
             // 由调用方用 read_file / shell 工具按需访问——接口回传二进制既读不了
             // 又撑爆上下文。
-            let content = if filename.eq_ignore_ascii_case(SKILL_MAIN_FILE) {
+            let content = if is_main_skill_file(&filename) {
                 std::fs::read_to_string(&path).ok()
             } else {
                 None

@@ -16,6 +16,8 @@ mod ontology_test;
 #[cfg(test)]
 mod skill_attachment_test;
 #[cfg(test)]
+mod skill_main_file_test;
+#[cfg(test)]
 mod skill_test;
 
 use crate::models::agent::Agent;

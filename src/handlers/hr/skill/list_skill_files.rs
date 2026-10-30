@@ -1,6 +1,6 @@
 //! Handler: GET /api/v1/skills/{skill_id}/files - 列出 Skill 所有文件
 
-use crate::models::skill::SKILL_MAIN_FILE;
+use crate::models::skill::is_main_skill_file;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -35,7 +35,7 @@ pub async fn list_skill_files(
                 .map(|f| common::api::SkillFileItem {
                     filename: f.filename.clone(),
                     file_size: f.file_size,
-                    is_main: f.filename.eq_ignore_ascii_case(SKILL_MAIN_FILE),
+                    is_main: is_main_skill_file(&f.filename),
                     abs_path: f.abs_path.to_string_lossy().to_string(),
                     executable: f.executable,
                 })

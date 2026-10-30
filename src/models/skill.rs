@@ -21,6 +21,21 @@ pub(crate) const TRIGGER_SEPARATOR: &str = "必读全文";
 /// 既撑爆上下文又读不了二进制；暴露绝对路径后 Agent 能自由组合工具处理。
 pub const SKILL_MAIN_FILE: &str = common::api::SKILL_MAIN_FILE;
 
+/// 判定 `filename` 是否为根引导文件 `skill.md`（**大小写不敏感**）。
+///
+/// 为什么必须忽略大小写：外部技能包（如 Anthropic Agent Skills 规范）的主文件
+/// 常写作 `SKILL.md`，macOS/Windows 默认文件系统本身就大小写不敏感。若这里用
+/// 严格相等，会出现「包已成功导入、文件也在磁盘上、但接口读正文返回空」——
+/// 而同样的包换个小写名就正常，是典型的偶发难查。
+///
+/// 全仓**只此一处**判定主文件身份：判定散落到各层后，只要有一处写成 `==`
+/// （历史上 `main_content()` 就是），就会出现「别处都认、唯独接口取不到正文」
+/// 的半通不通状态。同时导入侧会把命中的主文件**归一化为小写**落盘
+/// （见 `process_skill_package`），让 DAO 层 `skill.md` 路径拼装恒稳成立。
+pub fn is_main_skill_file(filename: &str) -> bool {
+    filename.eq_ignore_ascii_case(SKILL_MAIN_FILE)
+}
+
 /// 技能附属文件信息（纯数据结构，DAO 层使用）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillFile {
@@ -252,7 +267,7 @@ impl Skill {
     pub fn main_content(&self) -> Option<&str> {
         self.files
             .iter()
-            .find(|f| f.filename == SKILL_MAIN_FILE)
+            .find(|f| is_main_skill_file(&f.filename))
             .and_then(|f| f.content.as_deref())
     }
 
@@ -260,7 +275,10 @@ impl Skill {
     pub fn file_content(&self, filename: &str) -> Option<&str> {
         self.files
             .iter()
-            .find(|f| f.filename == filename)
+            .find(|f| {
+                is_main_skill_file(&f.filename) && is_main_skill_file(filename)
+                    || f.filename == filename
+            })
             .and_then(|f| f.content.as_deref())
     }
 }
