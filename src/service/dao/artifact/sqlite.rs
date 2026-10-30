@@ -3,13 +3,11 @@
 use super::{ArtifactDao, ArtifactQuery};
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
-use crate::pkg::paths;
 use common::api::PagedResult;
 use common::enums::{ArtifactSourceType, FileType};
 use common::error::{Result, bail_err};
 use sqlx::QueryBuilder;
 use sqlx::types::Json;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
@@ -37,26 +35,6 @@ pub fn init() {
 
 #[derive(Debug)]
 struct ArtifactDaoSqliteImpl;
-
-impl ArtifactDaoSqliteImpl {
-    fn resolve_generated_content_path(&self, artifact: &ArtifactPo) -> Result<PathBuf> {
-        // Use Config's built-in method to get the correct path:
-        // {base_data_dir}/artifacts/projects/{project_id}/{artifact_id}/{file_path}
-        let base = crate::config::get().base_data_path();
-        let dir_path = paths::artifact_project_dir(&base, &artifact.project_id).join(&artifact.id);
-        let path = dir_path.join(&artifact.file_meta.0.file_path);
-
-        // Check for path traversal (double-check)
-        if !path.starts_with(paths::artifacts_dir(&base)) {
-            bail_err!(
-                InvalidRequest,
-                "Invalid artifact file path: path traversal attempt detected"
-            );
-        }
-
-        Ok(path)
-    }
-}
 
 #[async_trait::async_trait]
 impl ArtifactDao for ArtifactDaoSqliteImpl {
@@ -294,7 +272,7 @@ WHERE id = ?
             return Ok(None);
         }
 
-        let file_path = self.resolve_generated_content_path(artifact)?;
+        let file_path = artifact.file_abs_path(&crate::config::get().base_data_path())?;
 
         if !file_path.exists() {
             return Ok(None);
@@ -320,7 +298,7 @@ WHERE id = ?
             );
         }
 
-        let file_path = self.resolve_generated_content_path(artifact)?;
+        let file_path = artifact.file_abs_path(&crate::config::get().base_data_path())?;
 
         // Ensure parent directory exists
         if let Some(parent) = file_path.parent() {

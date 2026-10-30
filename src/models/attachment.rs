@@ -2,9 +2,46 @@
 //!
 //! Attachment 是通用上传文件资产，归属 Finance Domain 管理。
 
+use std::path::{Component, Path, PathBuf};
+
 use common::enums::FileType;
+use common::error::{Result, bail_err};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+
+/// 在附件根目录 [`attachments_dir`] 下把相对路径解析为绝对路径。
+///
+/// ## 这里是附件路径推导的唯一真相
+///
+/// DAO 的读写/存在性判断，以及所有第三方持有的实体，都必须从这里取路径。
+/// 分头拼串一旦不一致，症状同样是「写到 A、读到 B」的静默串档。
+///
+/// ## 为什么这里是 `attachments_dir` 而不是全局 base
+///
+/// 附件根目录是**可注入的**（`dao::attachment::new_with_attachments_dir`），
+/// 测试用它隔离临时目录。因此本函数必须收 ROOT 作为参数，由调用方给出「实际
+/// 生效的存储根」——**禁止**在这里读全局配置，否则注入场景会算到真实目录。
+///
+/// ## 安全
+///
+/// `relative_path` 来自 DB / 外部输入：绝对路径、含 `..` 或任何非 Normal 组件
+/// 一律拒绝（这里不依赖 `Path::starts_with`——它不规范化 `..`，拦不住穿越）。
+pub fn attachment_file_abs_path(attachments_dir: &Path, relative_path: &str) -> Result<PathBuf> {
+    if relative_path.trim().is_empty() {
+        bail_err!(InvalidRequest, "附件相对路径不能为空");
+    }
+    let path = Path::new(relative_path);
+    if path.is_absolute() {
+        bail_err!(InvalidRequest, "附件路径不能是绝对路径");
+    }
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => {}
+            _ => bail_err!(InvalidRequest, "附件路径包含非法路径片段"),
+        }
+    }
+    Ok(attachments_dir.join(path))
+}
 
 /// AttachmentPo 持久化对象。
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -169,6 +206,13 @@ impl Attachment {
     pub fn root_user_id(&self) -> &str {
         &self.po.root_user_id
     }
+
+    /// 获取附件实体文件在磁盘上的绝对路径。
+    ///
+    /// 等价于 [`AttachmentPo::file_abs_path`]，供持有 `Attachment` 的调用方直接使用。
+    pub fn file_abs_path(&self, attachments_dir: &Path) -> Result<PathBuf> {
+        self.po.file_abs_path(attachments_dir)
+    }
 }
 
 impl AttachmentPo {
@@ -216,5 +260,73 @@ impl AttachmentPo {
         self.status = 0;
         self.modified_by = modified_by;
         self.updated_at = common::constants::utils::current_timestamp_ms();
+    }
+
+    /// 获取附件实体文件在磁盘上的绝对路径。
+    ///
+    /// 详见 [`attachment_file_abs_path`]：`attachments_dir` 必须由调用方给出实际
+    /// 生效的存储根（可注入），不要在本层取全局配置。
+    pub fn file_abs_path(&self, attachments_dir: &Path) -> Result<PathBuf> {
+        attachment_file_abs_path(attachments_dir, &self.relative_path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn root() -> PathBuf {
+        PathBuf::from("/srv/ai_orz/attachments")
+    }
+
+    #[test]
+    fn resolves_under_given_attachments_root() {
+        let abs = attachment_file_abs_path(&root(), "user-1/report.md").unwrap();
+        assert_eq!(abs, root().join("user-1/report.md"));
+    }
+
+    /// 解析只相对**传入的**根目录，不得偷偷读全局配置——DAO 的测试隔离依赖这条。
+    #[test]
+    fn honors_injected_root() {
+        let injected = PathBuf::from("/tmp/unit-xyz");
+        let abs = attachment_file_abs_path(&injected, "a.txt").unwrap();
+        assert!(abs.starts_with(&injected));
+        assert_ne!(
+            abs,
+            attachment_file_abs_path(&root(), "a.txt").unwrap(),
+            "不同 root 必须给出不同结果"
+        );
+    }
+
+    /// relative_path 来自 DB / 外部输入，逃逸写法必须被拒。
+    #[test]
+    fn rejects_traversal_and_absolute_paths() {
+        for evil in ["../secret.txt", "/etc/passwd", "a/../../b.txt", ""] {
+            assert!(
+                attachment_file_abs_path(&root(), evil).is_err(),
+                "应拒绝非法附件路径: {evil:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn po_delegates_to_shared_resolver() {
+        let po = AttachmentPo::new(
+            "att-1".to_string(),
+            "a.txt".to_string(),
+            "stored".to_string(),
+            "user-1/a.txt".to_string(),
+            "text/plain".to_string(),
+            FileType::Document,
+            8,
+            String::new(),
+            "user-1".to_string(),
+            "user-1".to_string(),
+        );
+        assert_eq!(
+            po.file_abs_path(&root()).unwrap(),
+            attachment_file_abs_path(&root(), "user-1/a.txt").unwrap()
+        );
     }
 }

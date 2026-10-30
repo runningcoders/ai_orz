@@ -3,6 +3,7 @@
 
 pub mod create_skill;
 pub mod delete_skill;
+pub mod file_import_sources;
 pub mod get_skill;
 pub mod get_skill_file_content;
 pub mod install_skill_to_agent;

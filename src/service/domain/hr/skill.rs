@@ -560,7 +560,7 @@ impl HrDomainImpl {
     /// 内容源处理流水线（create/update 共享同一份代码）。
     ///
     /// 1. URL download 到 tmp → 合并进 imports
-    /// 2. 统一 process_skill_package（zip 解包 / 5 级 target 推断 / rename 0 拷贝 / copy 降级 / write bytes 兜底）
+    /// 2. 统一 process_skill_package（zip 解包 / 5 级 target 推断 / 单文件 copy 保留源 / write bytes 兜底）
     /// 3. Frontmatter Meta Merge + Vectors Refresh
     async fn apply_content_sources(
         &self,
@@ -671,7 +671,10 @@ impl HrDomainImpl {
         Ok(())
     }
 
-    /// PATH 分支：源文件在磁盘上，优先 rename 0 拷贝。
+    /// PATH 分支：源文件在磁盘上。
+    ///
+    /// zip 源 → 逐条目解包写盘；单文件 → copy 落盘且**保留源文件**
+    /// （Attachment / Artifact 是被 DB 持有的引用实体，不能被导入动作搬空）。
     fn process_path_source(
         &self,
         po: &SkillPo,
@@ -710,14 +713,14 @@ impl HrDomainImpl {
             if let Some(parent) = target_abs.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            // 尝试 rename（0 拷贝），失败则 copy + delete（跨 fs 降级）
-            match std::fs::rename(src_path, &target_abs) {
-                Ok(()) => {}
-                Err(_) => {
-                    std::fs::copy(src_path, &target_abs)?;
-                    let _ = std::fs::remove_file(src_path);
-                }
-            }
+            // 一律 copy，源文件必须留在原位。
+            //
+            // 历史实现先 try rename（当时称「0 拷贝」）、失败降级 copy + remove_file(src_path)：
+            // 两条路**都会把源文件吃掉**。但 Attachment / Artifact 都是有 DB 行、且可被消息
+            // 与任务引用的实体，导入技能不该把它们搬空——否则同一来源二次导入、或后续
+            // 再读该附件/产物都会直接落空。体量已被 ImportBudget（≤10MB）封顶，
+            // copy 的额外成本可忽略，安全优先于这一次省下的 rename。
+            std::fs::copy(src_path, &target_abs)?;
             self.apply_executable_bit(&target_abs, &target, import.executable);
         }
         Ok(())

@@ -69,7 +69,10 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
                     attachments()
                         .iter()
                         .map(|a| SkillFileInput {
-                            attachment_id: a.attachment_id.clone(),
+                            attachment_id: Some(a.attachment_id.clone()),
+                            // UI 目前只走「上传附件」一种来源；artifact_id 供任务产出
+                            // 的技能包由 Agent 工具调用直接传入，不由本编辑器产生。
+                            artifact_id: None,
                             target_path: a.target_path.clone(),
                         })
                         .collect(),

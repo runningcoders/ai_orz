@@ -1,7 +1,7 @@
 //! 文件可执行位工具（技能包脚本附件专用）
 //!
 //! 技能包允许携带脚本类附件（`scripts/*.sh`、`*.py`），Agent 需要能从
-//! `list_skill_files` 拿到的路径直接执行。导入（zip 解包 / 附件 rename）与
+//! `list_skill_files` 拿到的路径直接执行。导入（zip 解包 / 附件 copy）与
 //! 副本复制两条通路都要保证可执行位不丢，因此判定与设置收敛到一处。
 
 use std::path::Path;

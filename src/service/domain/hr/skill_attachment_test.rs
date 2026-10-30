@@ -486,3 +486,67 @@ async fn zip_package_import_restores_binary_and_exec_bit(pool: SqlitePool) {
         assert!(is_executable(&std::fs::metadata(&f.abs_path).unwrap()));
     }
 }
+
+/// 导入不得吞掉源文件（PATH 分支的 copy 语义护栏）。
+///
+/// 背景：这里曾经「先 rename(move)、失败才 copy + remove_file(src_path)」——
+/// 两条路**都会把源文件删掉**。而 Attachment / Artifact 都是有 DB 行、且可被消息
+/// 与任务引用的实体，导入技能不该把它们搬空：否则同一来源二次导入、或后续再读
+/// 该附件/产物都会直接落空。现已改为一律 copy 并保留原位，本用例钉死该性质。
+#[sqlx::test]
+async fn import_from_path_copies_and_keeps_source(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+
+    let skill = skill_with_main("PathImportKeepsSource");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    let src_path =
+        std::env::temp_dir().join(format!("skill_import_src_{}.md", uuid::Uuid::now_v7()));
+    std::fs::write(&src_path, "# 源文件内容\n").unwrap();
+
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx.clone(),
+            UpdateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: Some("references/source.md".to_string()),
+                    source_abs_path: Some(src_path.clone()),
+                    content_bytes: None,
+                    suggested_name: None,
+                    executable: None,
+                }],
+                file_deletes: Vec::new(),
+                remote_source: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    // ① 技能里确实落到了 target_path
+    let files = domain
+        .skill_manage()
+        .list_skill_files(ctx.clone(), skill.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        files.iter().any(|f| f.filename == "references/source.md"),
+        "源文件应被导入为 references/source.md"
+    );
+
+    // ② 关键点：源文件仍在原位且内容完好（copy 而非 move）
+    assert!(
+        src_path.exists(),
+        "导入后源文件必须仍在原位：Attachment / Artifact 是被引用实体，不能被导入动作搬空"
+    );
+    let kept = std::fs::read_to_string(&src_path).unwrap();
+    assert_eq!(kept, "# 源文件内容\n", "源文件内容不应被截断或改动");
+
+    std::fs::remove_file(&src_path).unwrap();
+}

@@ -598,12 +598,16 @@ pub trait AgentManage: Send + Sync {
 /// 所有外部来源（手填文本 / URL 下载 / 附件上传）由 Handler 适配翻译为此结构，
 /// Domain 层 `process_skill_package` 纯函数统一处理。
 ///
-/// 来源优先级：source_abs_path 路径优先 > content_bytes 内存内容（路径优先 = 0 拷贝优先）
+/// 来源优先级：source_abs_path 路径优先 > content_bytes 内存内容。
+///
+/// 注意「路径优先」已**不再等于 0 拷贝 rename**：源文件通常是 Attachment / Artifact
+/// 这类被 DB 行持有、且可被消息与任务引用的实体，导入一律 copy 并保留原位
+/// （理由见 `process_skill_package` 的 PATH 分支注释）。
 #[derive(Debug, Clone, Default)]
 pub struct SkillFileImport {
     /// 最终在技能目录里的相对路径；None 时走 5 级降级推断链
     pub target_path: Option<String>,
-    /// 来源 A：磁盘绝对路径（优先级高，可 0 拷贝 rename）
+    /// 来源 A：磁盘绝对路径（优先级高；导入时 copy 落盘，源文件保留原位）
     pub source_abs_path: Option<std::path::PathBuf>,
     /// 来源 B：内存内容 bytes（次优先级；无路径时用，省临时文件）
     pub content_bytes: Option<Vec<u8>>,

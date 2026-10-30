@@ -1,20 +1,19 @@
 //! Handler: PUT /api/v1/skills/{skill_id} - Update skill metadata and content
 
-use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
-use crate::service::domain::finance::domain as finance_domain;
 use crate::service::domain::hr::{SkillFileImport, UpdateSkillParams, domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateSkillRequest, UpdateSkillResponse, validate_filenames_path_safety};
 use common::error::{Result, bail_err, err};
 
+use super::file_import_sources::to_skill_file_imports;
 use super::response::to_detail;
 
 /// Update an existing skill's metadata and content from text, URL, or file attachments.
 #[register_handler_tool(
     id = "update_skill",
     name = "Update Skill",
-    description = "Update a skill's metadata (name, description, tags, category, status) and optionally replace its content from inline text, an HTTPS URL, or attachments; individual files can also be deleted via file_deletes. Returns the updated skill detail. Status notes: in an agent context, setting status=Expired retires the skill — it is removed from your own skill set and no longer appears in your prompt, while the record stays recoverable (restore_skill); use this instead of deleting when a skill is outdated, unneeded, or wrong. Setting status=Published is rejected for agents (publishing goes through the shared library).",
+    description = "Update a skill's metadata (name, description, tags, category, status) and optionally replace its content from inline text, an HTTPS URL, or existing files referenced by attachment_id or artifact_id (each content_input.files item takes exactly one id; skill zip packages are unpacked into the skill directory, single files are copied with sources left untouched); individual files can also be deleted via file_deletes. Returns the updated skill detail. Status notes: in an agent context, setting status=Expired retires the skill — it is removed from your own skill set and no longer appears in your prompt, while the record stays recoverable (restore_skill); use this instead of deleting when a skill is outdated, unneeded, or wrong. Setting status=Published is rejected for agents (publishing goes through the shared library).",
     params = "common::api::UpdateSkillRequest",
     // 见 create_skill 同名注释：self_evolution 是自进化专用面，与通用技能管理分开。
     tags = "skill_management,self_evolution"
@@ -87,47 +86,7 @@ pub async fn update_skill(
         }
 
         if let Some(files) = &ci.files {
-            for file in files {
-                if file.attachment_id.trim().is_empty() {
-                    bail_err!(InvalidRequest, "attachment_id 不能为空");
-                }
-
-                let attachment = finance_domain()
-                    .attachment_manage()
-                    .get_attachment(
-                        ctx.clone(),
-                        &file.attachment_id,
-                        AttachmentGetOptions {
-                            include_file_content: false,
-                        },
-                    )
-                    .await?
-                    .ok_or_else(|| {
-                        err!(
-                            InvalidRequest,
-                            "附件 {} 不存在或无权访问",
-                            file.attachment_id
-                        )
-                    })?;
-
-                let abs_path = finance_domain()
-                    .attachment_manage()
-                    .file_abs_path(&attachment)?;
-
-                let target_path = if file.target_path.trim().is_empty() {
-                    None
-                } else {
-                    Some(file.target_path.clone())
-                };
-
-                imports.push(SkillFileImport {
-                    target_path,
-                    source_abs_path: Some(abs_path),
-                    content_bytes: None,
-                    suggested_name: Some(attachment.po.original_name.clone()),
-                    executable: None,
-                });
-            }
+            imports.extend(to_skill_file_imports(ctx.clone(), files).await?);
         }
 
         if let Some(url) = &ci.url

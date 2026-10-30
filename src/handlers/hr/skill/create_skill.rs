@@ -1,14 +1,13 @@
 //! Handler: POST /api/v1/skills - 创建新 Skill
 
-use crate::models::attachment::AttachmentGetOptions;
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
-use crate::service::domain::finance::domain as finance_domain;
 use crate::service::domain::hr::{CreateSkillParams, SkillFileImport, domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateSkillRequest, CreateSkillResponse};
 use common::enums::skill::SkillAuthorType;
 
+use super::file_import_sources::to_skill_file_imports;
 use super::response::to_detail;
 use common::error::{Result, bail_err, err};
 
@@ -16,7 +15,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "create_skill",
     name = "Create Skill",
-    description = "Create a new skill with optional content sourced from inline text (stored as skill.md), an HTTPS URL, or previously uploaded attachments. Owned by the calling agent when invoked in an agent context (agent-private skill, stored under the agent's skill directory), otherwise owned by the current user. Returns the created skill detail. Fails if the name is empty or a referenced attachment does not exist.",
+    description = "Create a new skill with optional content sourced from inline text (stored as skill.md), an HTTPS URL, or existing files referenced by attachment_id or artifact_id. Each content_input.files item takes exactly one id: use attachment_id for uploaded attachments, artifact_id for files produced inside a task (skill zip packages are unpacked into the skill directory; single files are copied, sources are left untouched). Owned by the calling agent when invoked in an agent context (agent-private skill, stored under the agent's skill directory), otherwise owned by the current user. Returns the created skill detail. Fails if the name is empty, a file item lacks exactly one source id, or a referenced attachment/artifact does not exist.",
     params = "common::api::CreateSkillRequest",
     // self_evolution 是「Agent 自进化」专用面：只有沉淀/自进化场景需要它，
     // 与 skill_management（通用技能管理，含删除/装卸等运维动作）分开，
@@ -99,47 +98,7 @@ pub async fn create_skill(
         }
 
         if let Some(files) = &ci.files {
-            for file in files {
-                if file.attachment_id.trim().is_empty() {
-                    bail_err!(InvalidRequest, "attachment_id 不能为空");
-                }
-
-                let attachment = finance_domain()
-                    .attachment_manage()
-                    .get_attachment(
-                        ctx.clone(),
-                        &file.attachment_id,
-                        AttachmentGetOptions {
-                            include_file_content: false,
-                        },
-                    )
-                    .await?
-                    .ok_or_else(|| {
-                        err!(
-                            InvalidRequest,
-                            "附件 {} 不存在或无权访问",
-                            file.attachment_id
-                        )
-                    })?;
-
-                let abs_path = finance_domain()
-                    .attachment_manage()
-                    .file_abs_path(&attachment)?;
-
-                let target_path = if file.target_path.trim().is_empty() {
-                    None
-                } else {
-                    Some(file.target_path.clone())
-                };
-
-                imports.push(SkillFileImport {
-                    target_path,
-                    source_abs_path: Some(abs_path),
-                    content_bytes: None,
-                    suggested_name: Some(attachment.po.original_name.clone()),
-                    executable: None,
-                });
-            }
+            imports.extend(to_skill_file_imports(ctx.clone(), files).await?);
         }
 
         if let Some(url) = &ci.url

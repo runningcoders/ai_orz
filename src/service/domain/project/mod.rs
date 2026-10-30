@@ -491,6 +491,7 @@ pub trait ArtifactManage: Send + Sync {
     /// Read artifact content bytes from storage (only for generated-content artifacts).
     async fn read_content(&self, ctx: RequestContext, artifact: &Artifact) -> Result<Vec<u8>>;
 
+    /// Resolves the artifact file to an on-disk absolute path (generated-content only).
     /// Update artifact content and/or metadata (partial update).
     ///
     /// Only fields that are `Some` will be updated. Content update only applies

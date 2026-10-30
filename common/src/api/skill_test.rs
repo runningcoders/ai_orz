@@ -103,7 +103,8 @@ fn update_skill_request_accepts_attachment_file_imports() {
     let request = UpdateSkillRequest {
         content_input: Some(SkillContentInput {
             files: Some(vec![SkillFileInput {
-                attachment_id: "attachment-1".to_string(),
+                attachment_id: Some("attachment-1".to_string()),
+                artifact_id: None,
                 target_path: "references/guide.md".to_string(),
             }]),
             ..Default::default()
@@ -122,7 +123,8 @@ fn update_skill_request_accepts_attachment_file_imports() {
         .files
         .expect("files should deserialize");
     assert_eq!(files.len(), 1);
-    assert_eq!(files[0].attachment_id, "attachment-1");
+    assert_eq!(files[0].attachment_id.as_deref(), Some("attachment-1"));
+    assert_eq!(files[0].artifact_id, None);
     assert_eq!(files[0].target_path, "references/guide.md");
 }
 
@@ -187,7 +189,8 @@ fn create_skill_request_accepts_content_input_files() {
         content_input: Some(SkillContentInput {
             content: Some("# Main Content".to_string()),
             files: Some(vec![SkillFileInput {
-                attachment_id: "att-1".to_string(),
+                attachment_id: Some("att-1".to_string()),
+                artifact_id: None,
                 target_path: "prompt.md".to_string(),
             }]),
             ..Default::default()
@@ -242,4 +245,82 @@ fn default_target_path_organizes_by_extension() {
     assert_eq!(default_target_path("data.json"), "data.json");
     // 无扩展名不崩、不误归位
     assert_eq!(default_target_path("Makefile"), "Makefile");
+}
+
+/// 文件条目来源必须「有且仅有一个」：attachment_id 与 artifact_id 二选一。
+#[test]
+fn skill_file_source_is_exclusive_and_required() {
+    let input = |att: Option<&str>, art: Option<&str>| SkillContentInput {
+        files: Some(vec![SkillFileInput {
+            attachment_id: att.map(|s| s.to_string()),
+            artifact_id: art.map(|s| s.to_string()),
+            target_path: "assets/x.png".to_string(),
+        }]),
+        ..Default::default()
+    };
+
+    // 两个都给：无法确定该读哪一份
+    let err = input(Some("att-1"), Some("art-1"))
+        .validate_files_single_source()
+        .unwrap_err();
+    assert!(err.contains("二选一"), "互斥须明确提示二选一: {err}");
+
+    // 两个都空：不是「没传文件」，而是这个文件压根没说清来源
+    let err = input(None, None)
+        .validate_files_single_source()
+        .unwrap_err();
+    assert!(err.contains("缺少来源"), "应提示缺少来源: {err}");
+
+    // 空串 / 纯空白视同未提供，不能当作有效来源蒙混过关
+    let err = input(Some("   "), None)
+        .validate_files_single_source()
+        .unwrap_err();
+    assert!(err.contains("缺少来源"), "空白 id 应视同未提供: {err}");
+
+    // 二选一各自成立
+    assert!(
+        input(Some("att-1"), None)
+            .validate_files_single_source()
+            .is_ok()
+    );
+    assert!(
+        input(None, Some("art-1"))
+            .validate_files_single_source()
+            .is_ok()
+    );
+
+    // 新校验必须并入 validate_all，否则 handler 只调用 validate_all 时会漏掉
+    assert!(input(Some("att-1"), Some("art-1")).validate_all().is_err());
+    assert!(input(None, None).validate_all().is_err());
+    assert!(input(None, Some("art-1")).validate_all().is_ok());
+}
+
+/// 向后兼容：存量调用方只发 attachment_id（没有 artifact_id 字段），必须仍能解析。
+///
+/// `attachment_id` 由 `String` 改 `Option<String>` 是本次最大的断裂风险面，
+/// 这条用例钉住「老 payload 不被打挂」。
+#[test]
+fn legacy_file_payload_without_artifact_id_still_deserializes() {
+    let legacy = r#"{"attachment_id":"att-legacy","target_path":"assets/logo.png"}"#;
+    let decoded: SkillFileInput = serde_json::from_str(legacy).unwrap();
+    assert_eq!(decoded.attachment_id.as_deref(), Some("att-legacy"));
+    assert_eq!(decoded.artifact_id, None);
+    assert!(decoded.has_attachment());
+}
+
+/// 新通路：只给 artifact_id（任务中生成的技能包）可正常往返。
+#[test]
+fn artifact_only_file_input_roundtrips() {
+    let file = SkillFileInput {
+        attachment_id: None,
+        artifact_id: Some("art-1".to_string()),
+        target_path: "skill.md".to_string(),
+    };
+    let json = serde_json::to_string(&file).unwrap();
+    assert!(json.contains("art-1"), "序列化应带上 artifact_id: {json}");
+
+    let back: SkillFileInput = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.artifact_id.as_deref(), Some("art-1"));
+    assert!(back.has_artifact());
+    assert!(!back.has_attachment());
 }

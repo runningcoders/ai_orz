@@ -1,13 +1,15 @@
 //! SQLite implementation of Attachment DAO
 
 use super::{AttachmentDao, AttachmentQuery};
-use crate::models::attachment::{AttachmentDescriptionUpdate, AttachmentPo};
+use crate::models::attachment::{
+    AttachmentDescriptionUpdate, AttachmentPo, attachment_file_abs_path,
+};
 use crate::pkg::RequestContext;
 use crate::pkg::paths;
 use common::api::PagedResult;
-use common::error::{Result, bail_err};
+use common::error::Result;
 use sqlx::{QueryBuilder, SqlitePool};
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -48,23 +50,13 @@ impl AttachmentDaoSqliteImpl {
         Self { attachments_dir }
     }
 
+    /// 解析 relative_path → 绝对路径，并做输入合法性校验。
+    ///
+    /// 校验与拼串的唯一真相处在模型层（[`attachment_file_abs_path`]）；这里只是把
+    /// DAO **实例注入的** `attachments_dir` 传进去——不能退化成读全局配置，否则会
+    /// 算到真实目录（测试隔离依赖这个注入）。
     fn resolve_relative_path(&self, relative_path: &str) -> Result<PathBuf> {
-        if relative_path.trim().is_empty() {
-            bail_err!(InvalidRequest, "附件相对路径不能为空");
-        }
-        let path = Path::new(relative_path);
-        if path.is_absolute() {
-            bail_err!(InvalidRequest, "附件路径不能是绝对路径");
-        }
-        for component in path.components() {
-            match component {
-                Component::Normal(_) => {}
-                _ => {
-                    bail_err!(InvalidRequest, "附件路径包含非法路径片段");
-                }
-            }
-        }
-        Ok(self.attachments_dir.join(path))
+        attachment_file_abs_path(&self.attachments_dir, relative_path)
     }
 }
 
@@ -247,10 +239,6 @@ UPDATE attachments SET description = ?, description_usage = ?, description_sourc
         self.resolve_relative_path(relative_path)
             .map(|path| path.exists())
             .unwrap_or(false)
-    }
-
-    fn file_abs_path(&self, relative_path: &str) -> Result<PathBuf> {
-        self.resolve_relative_path(relative_path)
     }
 }
 

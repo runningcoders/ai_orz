@@ -19,7 +19,7 @@ pub struct SkillContentInput {
     pub content: Option<String>,
     /// HTTPS URL（单 md 或技能 zip 包，zip 解压后 skill.md 须在根目录）。
     pub url: Option<String>,
-    /// 附件文件装配列表（attachment_id + target_path 映射）。
+    /// 文件装配列表（每项 = attachment_id 或 artifact_id 二选一 + target_path 映射）。
     pub files: Option<Vec<SkillFileInput>>,
 }
 
@@ -35,11 +35,11 @@ pub enum SkillContentKind {
     DirectText,
     /// 仅 URL。
     RemoteUrl,
-    /// 仅附件。
+    /// 仅文件来源（附件 attachment 或任务产物 artifact）。
     Attachments,
     /// 文本 + URL 同时提供（文本优先，URL 被忽略）。
     MixedContentOverridesUrl,
-    /// 附件 + 文本同时提供（两者均处理）。
+    /// 文件来源（附件 / 产物）+ 文本同时提供（两者均处理）。
     MixedTextAttachments,
 }
 
@@ -110,11 +110,38 @@ impl SkillContentInput {
         Ok(())
     }
 
-    /// 综合校验（URL HTTPS + target 唯一 + 路径安全）。
+    /// 校验每个文件条目**有且仅有一个来源**（attachment_id / artifact_id）。
+    ///
+    /// 两个都给 → 无法确定该读哪一份；两个都空 → 下游只能报语义含糊的
+    /// “无内容来源”。在入口一次说清，Agent 与前端拿到都可据此改参重试。
+    pub fn validate_files_single_source(&self) -> Result<(), String> {
+        if let Some(files) = &self.files {
+            for (idx, f) in files.iter().enumerate() {
+                let n = idx + 1;
+                match (f.has_attachment(), f.has_artifact()) {
+                    (true, true) => {
+                        return Err(format!(
+                            "第 {n} 个文件同时提供了 attachment_id 与 artifact_id，二者只能二选一"
+                        ));
+                    }
+                    (false, false) => {
+                        return Err(format!(
+                            "第 {n} 个文件缺少来源：必须提供 attachment_id 或 artifact_id 之一"
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 综合校验（URL HTTPS + target 唯一 + 路径安全 + 来源唯一）。
     pub fn validate_all(&self) -> Result<(), String> {
         self.validate_url_https_only()?;
         self.validate_files_unique_target()?;
         self.validate_files_path_safety()?;
+        self.validate_files_single_source()?;
         Ok(())
     }
 }
@@ -201,10 +228,18 @@ pub struct UpdateSkillRequestOriginal {
 }
 
 /// Skill 附加文件导入输入。
+///
+/// 文件来源二选一（**有且仅有一个**）：`attachment_id`（通用附件）或 `artifact_id`
+/// （任务产出物）。任务过程中生成的技能 zip 包属于后者，不经由附件中转。
+///
+/// 两者同时给出、或同时为空，都由 [`SkillContentInput::validate_files_single_source`]
+/// 在入口拦下——不要让调用方走到下游才撞低级报错。
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct SkillFileInput {
-    /// 已上传的通用 Attachment ID。
-    pub attachment_id: String,
+    /// 已上传的通用 Attachment ID（与 artifact_id 二选一）。
+    pub attachment_id: Option<String>,
+    /// 任务产出 Artifact ID（与 attachment_id 二选一；须为 GeneratedContent 型）。
+    pub artifact_id: Option<String>,
     /// 导入到 Skill 内容目录下的目标相对路径。
     pub target_path: String,
 }
@@ -225,6 +260,22 @@ pub fn default_target_path(original_name: &str) -> String {
         "py" | "js" | "sh" | "ts" => format!("scripts/{}", original_name),
         "md" => SKILL_MAIN_FILE.to_string(),
         _ => original_name.to_string(),
+    }
+}
+
+impl SkillFileInput {
+    /// 是否提供了 attachment_id（空串 / 纯空白视同未提供）。
+    pub fn has_attachment(&self) -> bool {
+        self.attachment_id
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
+    }
+
+    /// 是否提供了 artifact_id（空串 / 纯空白视同未提供）。
+    pub fn has_artifact(&self) -> bool {
+        self.artifact_id
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
     }
 }
 
