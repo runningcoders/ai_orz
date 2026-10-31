@@ -38,6 +38,10 @@ source_files:
   - src/service/domain/hr/ontology.rs#L65-L103
   - docs/design/ontology_knowledge_sedimentation_design.md
   - docs/wiki/zh/content/功能模块/知识图谱管理/本体属性管理.md
+  - src/router.rs#L844-L856 (ontology_class_relations 全套 CRUD 路由：create/list/update/retire)
+  - src/models/ontology.rs#L31 (ontology_classes.parent_class：父类 term_key，可空=根类，约束沿继承链向上解析)
+  - src/service/dal/ontology.rs#L1145 (compute_property_domain_coverage：属性域覆盖率，低于阈值 L2 标红)
+  - src/service/dal/ontology.rs#L1222 (compute_property_effectiveness：属性有效性众数占比，超阈值 L1 标黄)
   - 【Level 3 兄弟卡】docs/wiki/knowledge/zh/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账.md
 ---
 
@@ -55,6 +59,12 @@ source_files:
 **读取**：`search_memory` 结果经 `attach_properties` 批量回显（仅 status=1）；新增 `property_filters[]`（`{term_key, op: Eq|Gt|Gte|Lt|Le, value}`，AND 语义）作为**独立召回通道**——先 `query_properties_by_value` 解析出命中 node id 集合，再与 query 语义召回取**交集**（不是在语义 top_k 上二次过滤）；比较算子（非 Eq）要求 number 值；与 `seed_node_ids` 互斥（种子恒返回，属性过滤无法生效）。
 
 **定义 CRUD 与授权分层**：4 个管理端 handler（create/list/update/retire_property），`list_ontology_properties` 工具标签 = `neural` + `ontology_management` + `ontology`（Agent 读词表要能唤醒），写侧三个仅 `ontology_management`；TOOL_REGISTRY 三条护栏测试锁死边界（13 个消费侧工具：读 8 + 写 5）。
+
+## §1.5 本体骨架一等公民化（继承链 + 类关系三元组）+ 属性域覆盖率 / 有效性统计
+
+**本体骨架一等公民化（5b2b9195 等）**：本体 `classes` 表新增 `parent_class`（父类 term_key，可空 = 根类），骨架有效约束沿继承链向上解析；新增 `ontology_class_relations` 表 + 全套 CRUD handler（create/list/update/retire，路由见 router.rs#L844-L856）——描述**类与类之间**的关系（三元组），与实例节点间的 `knowledge_relation` 区分。此前属性只能用 `attribute_of` / `value_of` 两条关系词「用边模拟属性」，现由本卡描述的独立属性层替代（见 §1 写入/回显）。
+
+**属性域覆盖率 / 属性有效性统计（只读聚合，漂移看板展示）**：`dal/ontology.rs::compute_property_domain_coverage` 按 (term_key, node_type) 聚合 ABox 挂载量，对照 TBox 属性定义算覆盖率，低于 `PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD`（L2 告警，看板标红）即提示；`compute_property_effectiveness` 按 (term_key, node_type, 取值) 算众数占比（mode_ratio），超过阈值（L1 提示）标黄——某属性在某实体类上已近常量（默认值取众数、并列取字典序最小）。两者均为**只读聚合，不阻断写入**（属性域是声明式软门禁，写入期只记账）。
 
 ## §2 关键文件路径表格（读代码直接跳）
 
@@ -108,6 +118,8 @@ source_files:
 13. ✅ 预置属性 4 条（confidence number 0~1 node+relation / effective_from date / source string many / status enum 五值适 task/project 节点）随 seed 仅补缺注入；新增预置定义走 seed 快照不走启动注入
 14. ✅ 三基础员工的本体能力通过 installed_tags/skill_packs（含 ontology）+ 神经技能 TEMPLATE_ONTOLOGY_COGNITION 装配；PromptBuilder 技能区块「装了就进」，不在 builder 侧二次 tag 过滤
 15. ✅ seed_node_ids 召回的节点恒返回（中心节点不丢）——这也是属性过滤不得与种子展开共用的根因
+16. ✅ 本体骨架继承链：`ontology_classes.parent_class` 可空 = 根类，骨架有效约束沿继承链向上解析；类关系三元组走独立 `ontology_class_relations` 表 CRUD（router.rs#L844-L856），与实例节点间的 knowledge_relation 严格分离
+17. ✅ 属性域覆盖率（L2 阈值标红）/ 属性有效性（众数占比 L1 标黄）仅作只读聚合告警，不得因此阻断属性写入或节点/边创建——属性域是声明式软门禁，写入期只记账
 
 ## §5 历史演进
 

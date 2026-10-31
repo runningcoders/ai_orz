@@ -43,7 +43,7 @@ source_files:
 
 > ⚠️ **定位更新（2026-08-29）**：本卡描述的"两阶段"设计是 v3.9 快照。HEAD 代码中 awaken() 已简化为**单阶段直接执行**——Phase 1 IntentAnalyze 不再是 awaken 必经路径。intent_analyze.rs 和 analyze_input_intent trait 保留，定位为**未来入站路由/多 Agent 协作分发的独立工具**，而非 awaken 内的强制前置步骤。下文仍保留 v3.9 快照原貌供历史参考。
 
-**定位**：Agent 唤醒流程的「先理解再执行」两阶段串联——Phase1 `IntentAnalyze` 专用子循环（神经+记忆+检索工具白名单，最多 2 轮 think loop）产出结构化 7 字段 `IntentAnalysis`，Phase2 `Awaken` 把理解结果渲染成 Prompt 【输入理解结果】区块后再进入正式干活；含 6 级 JSON 解析降级兜底绝不阻塞主流程。
+**定位**：Agent 唤醒流程的「先理解再执行」两阶段串联——Phase1 `IntentAnalyze` 专用子循环（神经+记忆+检索工具白名单，轮次由 `intent_analyze_max_rounds` 配置、系统默认 3、Agent 可覆盖；0 取系统配置）产出结构化 7 字段 `IntentAnalysis`，Phase2 `Awaken` 把理解结果渲染成 Prompt 【输入理解结果】区块后再进入正式干活；含 6 级 JSON 解析降级兜底绝不阻塞主流程。
 
 **解决三类存量痛点**（对应 Design §1.1）：
 1. 短消息/指代密集型输入无显式意图识别 → 消歧失败直接答偏
@@ -57,7 +57,7 @@ source_files:
 | 文件锚点（点击跳转） | 角色 | 核心契约 / 红线 |
 |---------------------|------|-----------------|
 | [IntentAnalysis 7 字段定义](src/service/domain/runtime/types.rs#L178-L195) | **结构体契约（SSOT）** | intent_type / confidence / key_terms / resolutions / retrieved_context / need_clarification / summary；Agent 自由填值不做强枚举，解析失败退化为 `Default::default()` |
-| [Phase1 analyze_input_intent_inner 实现](src/service/domain/runtime/intent_analyze.rs#L27-L80) | Phase1 子循环入口 | ThinkingScene=IntentAnalyze；工具白名单 neural/memory/query/search；最多 2 轮；Final 解析为 JSON |
+| [Phase1 analyze_input_intent_inner 实现](src/service/domain/runtime/intent_analyze.rs#L27-L80) | Phase1 子循环入口 | ThinkingScene=IntentAnalyze；工具白名单 neural/memory/query/search；轮次上限由 intent_analyze_max_rounds 配置（默认 3）；Final 解析为 JSON |
 | [RuntimeDomain trait 方法签名](src/service/domain/runtime/mod.rs#L205-L225) | 领域层对外契约 | `analyze_input_intent(ctx, agent, message, options) -> Result<IntentAnalysis>`；可独立复用于：消息路由预分析 / 澄清追问 / Agent 协作消息分发 |
 | [Phase2 awaken 两阶段串联](src/service/domain/runtime/awakening.rs#L150-L180) | 正式执行入口 | awaken 内部先调 analyze_input_intent → need_clarification 先渲染 Prompt → 正式 think loop；【输入理解结果】区块明确标注「仅供参考，不一致可推翻」 |
 | [共享 run_think_loop 引擎](src/service/domain/runtime/think_loop.rs#L117-L160) | 两阶段复用的思考内核 | 超时控制 / 多轮迭代 / 策略评估 / 工具调用分发；Phase1 与 Phase2 走同一内核仅 scene 参数不同 |
@@ -115,7 +115,7 @@ source_files:
 | # | 红线 | 验证方式 | 代码锚点 |
 |---|------|---------|---------|
 | 1 | IntentAnalysis 字段**绝对不强枚举** intent_type，允许 Agent 自由字符串扩展；解析失败用 Default | grep `enum IntentType` 应不存在；结构体 derive(Default) | [types.rs#L178-L195](src/service/domain/runtime/types.rs#L178-L195) |
-| 2 | Phase1 think loop 轮次**最多 2 轮**，超过强制截断 Final；不得与 Phase2 共享同一 think_runtime | options.max_rounds 上限；AgentThinkRuntime 独立注册清理 | [intent_analyze.rs#L40-L60](src/service/domain/runtime/intent_analyze.rs#L40-L60) |
+| 2 | Phase1 think loop 轮次上限由 `intent_analyze_max_rounds` 配置（系统默认 3，Agent 可覆盖；0 取系统配置），超过强制截断 Final；不得与 Phase2 共享同一 think_runtime | options.max_rounds 取自 config_resolve::intent_analyze_max_rounds(agent)；AgentThinkRuntime 独立注册清理 | [intent_analyze.rs#L40-L60](src/service/domain/runtime/intent_analyze.rs#L40-L60) |
 | 3 | `need_clarification` 字段**当前阶段绝不做短路 send_message**，仅渲染为 Phase2 Prompt 提示；短路机制为 P4 可选未来路径 | grep `send_message.*clarification` 在 awaken.rs 应为零 | [awakening.rs#L200-L240](src/service/domain/runtime/awakening.rs#L200-L240) |
 | 4 | retrieved_context 字段渲染到 Prompt 时**最多 10 条，每条最多 200 字**；Token 安全网硬编码截断 | DefaultPromptBuilder.intent_analysis() 实现 | [dal/agent.rs](src/service/dal/agent/mod.rs) intent_analysis 方法 |
 | 5 | 降级 Level 5/6 必须打 `log_warn!(&ctx, "intent_analyze_degrade", ...)` 含降级级别与原始 snippet 前 100 字 | grep `log_warn.*intent_analyze_degrade` | [intent_analyze.rs#L70-L80](src/service/domain/runtime/intent_analyze.rs#L70-L80) |

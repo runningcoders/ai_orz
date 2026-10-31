@@ -7,7 +7,7 @@ scope:
   - "frontend/src/components/canvas_scene.rs"
   - "frontend/src/components/graph.rs"
   - "frontend/src/components/force_layout.rs"
-  - "frontend/src/components/layered_layout.rs"
+  - "frontend/src/utils/dagre_layout.rs"
   - "frontend/src/components/relation_graph.rs"
   - "frontend/src/components/workspace_graph.rs"
   - "frontend/src/components/chart_scene.rs"
@@ -27,7 +27,7 @@ source_files:
   - frontend/src/components/canvas_scene.rs (CanvasScene Trait：统一 Scene 生命周期 fn setup(ctx) / fn update(dt_secs) / fn draw(&2DContext) / fn handle_event(event)；GraphScene / ChartScene / WorkspaceScene 三实现)
   - 'frontend/src/components/graph.rs (Graph 数据结构：节点 nodes: Vec<Node{id,label,x,y,attr}> + 边 edges: Vec<Edge{src,dst,weight}>；Vec<id> 索引而非 HashMap，查邻接用 edges 遍历)'
   - frontend/src/components/force_layout.rs#L1-L100 (ForceLayout 力导向算法：每 tick 算斥力（所有节点对库仑力）+ 引力（边胡克力）+ 中心拉力；alpha 冷却 0.99^tick；300 帧后停止节省 CPU)
-  - frontend/src/components/layered_layout.rs (LayeredLayout 分层布局：按 knowledge node depth 或 category 分层；Sugiyama 四阶段简易版，去除交叉最小化，用在 Agent 依赖树和项目任务 DAG)
+  - frontend/src/utils/dagre_layout.rs (dagre 分层布局适配层：任务依赖图 / 思维轨迹图 / 工作台 ProjectDetail 真 DAG 共用；dagre-dgl-rs 0.1.1（Sugiyama 框架工业实现）——acyclic 破环 + network simplex 分层 + 节点尺寸感知坐标 + dummy node 边路由；包围盒等比缩放+居中映射进画布，scale 上限 2.5)
   - frontend/src/components/chart_scene.rs#L1-L60 (ChartScene 统一图表场景：折线 LineChart 数据点 + 时间轴 + 坐标轴 + 鼠标 hover 十字准星 + tooltip；Donut 饼图多环)
   - frontend/src/components/charts/line_chart.rs (LineChart 组件：内部用 ChartScene；props: points: Vec<TimeSeriesPoint{ts, value}> + series: String + color；点数据 > 500 自动降采样 200 点防渲染卡顿；轴刻度两处自适应：Y 轴数值走 utils/number.rs::format_compact_axis（K/M/B 三级进位、≤5 字符），X 轴 x_axis_time_format() 按**桶宽**（min_step_ms() 取相邻 interval_start 最小正间隔）选 TimestampFormat：桶宽 ≥1 天→Date、细于一天且同自然日→TimeOfDay、细于一天但跨天→DateTime，单点/空数组→Date；标签个数按画布可用宽度反推 sample_indices() 并贴边夹取；12 单元测试覆盖)
   - frontend/src/components/gauge.rs (Gauge 仪表盘：240° 圆弧刻度 + 指针 + 0-100 值映射；HUD 风格橙光描边；AopGauge 同组件 + 双刻度（队列长度 + 延迟毫秒）)'
@@ -65,7 +65,7 @@ source_files:
 
   - frontend/src/components/chat/chat_side_panel.rs (2026-09-18 增量：任务依赖图前端自绘 build_task_graph_data + 缩略图 300x200 点击弹 Modal 放大 920x620 + 悬挂依赖边过滤)
   - frontend/src/components/graph.rs (2026-09-18 增量：svg_width/svg_height 可配 props（clamp 最小 160/120）+ task_status_node_type 任务状态语义化 token + NEUTRAL_NODE_FILL/NEUTRAL_EDGE_COLOR 兜底色 + 4 条守卫测试)
-  - frontend/src/components/layered_layout.rs (2026-09-18 增量：y 自适应——层距压缩 min(layer_height, usable_height/max_layer) + 深链垂直居中，修复深链 DAG 纵向溢出)
+  - frontend/src/utils/dagre_layout.rs (2026-10-24 增量：取代旧「Kahn 分层 + 力导向松弛」两层皮；包围盒缩放+居中适配画布，深链 DAG 完整落进画布不溢出；scale 上限 2.5 小图铺满)
   - frontend/src/components/node_card.rs (2026-09-18 增量：type_label 补 5 个任务状态中文文案)
 
   - 【平行卡 3】docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md（TimeRangePicker 消费方：统计看板时间筛选）
@@ -96,7 +96,7 @@ source_files:
 **本卡角色**：前端 HUD 驾驶舱风格 Canvas 可视化体系知识卡。覆盖 GraphCanvas（知识图谱 Canvas 渲染 + 力导向/分层两布局）、ChartScene 统一图表场景（LineChart 时序折线/DonutChart 甜甜圈）、仪表盘 Gauge/AopGauge 双刻度、HudPalette 橙光调色板 + draw_glow_stroke 光晕工具。**定位：新增图表类型、调整图谱布局卡顿、排查 HUD 橙光效果被主题色覆盖、调力导向 alpha 冷却参数时读。**
 
 - **CanvasScene Trait 统一渲染管线（所有可视化共享）**（canvas_scene.rs）：① setup() 创建时初始化数据 + 分配缓存顶点数组；② update(dt: f32) 每帧 tick 传 dt 秒（ForceLayout alpha 冷却/Particles 位移用）；③ draw(&ctx: &CanvasRenderingContext2d) 纯绘制；④ handle_event(event: CanvasEvent) 处理鼠标拖拽/滚轮缩放。GraphScene/ChartScene/GaugeScene 都 impl CanvasScene，统一 dioxus::use_effect 注册 requestAnimationFrame 循环。帧率策略：后台 tab（document.hidden=true）→ 自动降到 2fps（不退出循环），前台 tab 60fps；Graph 节点数 < 100 用 60fps，>500 用 20fps（自动 clamp）。
-- **GraphCanvas 图谱双布局 + 两端复用**（graph_canvas.rs + HR 知识图谱页 + Workspace 工作台页）：ForceLayout 力导向用于自由探索（知识图谱 HR 页）：所有节点对算 1/r² 斥力 + 胡克力边引力 + center(0,0) 中心拉力；alpha 冷却系数 α_t = 0.99^t，300 帧后 α<0.01 → stop。LayeredLayout 分层用于结构化视图（任务 DAG/Agent 工具依赖）：先算 depth 层号（BFS）→ 层内等分 x → 层间按 y 等分；不做连线交叉最小化（性能优先，仅按 edge weight 重排）。两端复用：HR 页和 Workspace 页都用同一 GraphCanvas 组件，仅 props 的 layout_mode="force" | "layered" + 数据来源不同；种子节点推荐 recommend_seed_nodes 返回的 node.score → 映射到节点颜色（HUD_ORANGE 高分→HUD_BLUE 低分）+ 外发光 draw_glow_stroke。
+- **GraphCanvas 图谱双布局 + 两端复用**（graph_canvas.rs + HR 知识图谱页 + Workspace 工作台页）：ForceLayout 力导向用于自由探索（知识图谱 HR 页 + Agent 关系图）：所有节点对算 1/r² 斥力 + 胡克力边引力 + center(0,0) 中心拉力；alpha 冷却系数 α_t = 0.99^t，300 帧后 α<0.01 → stop。结构化 DAG（任务依赖图 / 思维轨迹图 / 工作台 ProjectDetail）统一走 dagre-dgl-rs 0.1.1 分层布局（frontend/src/utils/dagre_layout.rs，取代旧自研 LayeredLayout：节点尺寸感知、自带 acyclic 破环与 dummy node 边路由）：SVG 侧由 graph.rs 调用、Canvas 侧由 workspace_graph.rs 调用，均按包围盒缩放 + 居中落进画布（scale 上限 2.5）；GraphCanvas 本身仅保留 force 一种 layout_mode（无向知识图谱自由探索），不再有 layered 模式。种子节点推荐 recommend_seed_nodes 返回的 node.score → 映射到节点颜色（HUD_ORANGE 高分→HUD_BLUE 低分）+ 外发光 draw_glow_stroke。
 - **HUD 风格橙光调色板（HudPalette）+ 仪表盘 Gauge**（hud_palette.rs + gauge.rs）：4 主色 HUD_ORANGE/HUD_BLUE/HUD_GREEN/HUD_RED；draw_glow_stroke 实现：先 `ctx.shadow_blur = 8.0` + `ctx.shadow_color = HUD_ORANGE` → 画一次描边（光晕）→ reset shadow → 画第二次正常描边（实线）；这样 CSS 不会被 DaisyUI 主题覆盖（是 Canvas 2D API，不是 DOM）。仪表盘 Gauge：value 0-100 → 映射到 240° 圆弧起点角度 150° 到终点 390°；指针三角箭头 + 刻度 20 条（每 20 一条长刻度）；AopGauge（aop_gauge.rs）同 Gauge 组件 + 上半圆环 AOP 队列延迟毫秒 + 下半圆环消费者阻塞数 双刻度，System AOP 页用。HudPalette 新增 HUD_SECONDARY(#22d3ee 青蓝) + HUD_TERTIARY(#a78bfa 紫) 两色，支撑 LineChart 同轴三条曲线（输入/输出/total）冷暖和对比色区分。
 - **聊天侧栏 Agent Tab 消费图表组件**（chat_side_panel.rs + stats.rs）：LineChart 组件从「主要在统计仪表盘」扩展到聊天侧栏 Agent 运行统计 Tab；AgentStatsPanelCompact 紧凑面板（320x180 原生渲染），展示唤醒次数 + Token 消耗（input/output/total）三线趋势；HudPalette 橙光光晕风格 + 次色/第三色区分曲线；聊天侧栏 Tab 按需加载（共享轮询高频链路零额外开销，统计仅在 Tab 挂载时触发）。
 - **节点名称完整展示（2026-09-26，e963af78 / b1f4c4fa）**：知识图谱数据构建层 `node_display_name` 取消 14 字符截断，label 保持完整——hover 详情卡、SVG 兜底与边端点名不再拿到残缺文本；截断只留在渲染处 `node_card::title` 单行收窄，失去调用方的 `node_card::truncate_chars` 已删除。
@@ -111,7 +111,7 @@ source_files:
 
 **聊天引用块即时显示 + 宽度以本条消息为上限**（2026-09-11 增量）：chat.rs 消息列表中带引用（reference_id）的消息，即时渲染引用块（气泡上方显示被引用的消息摘要），无需 hover 才弹出；引用块宽度严格限制为「本条消息气泡宽度」，不再溢出撑破消息列表布局。
 
-**任务依赖图前端自绘 + 放大弹窗（2026-09-18 增量，commit a7134bb7）**：聊天侧栏任务列表新增 DAG 依赖图——`chat_side_panel.rs::build_task_graph_data(tasks, w, h)` 纯前端从任务列表构建 GraphNode/GraphEdge（前置任务不在列表内的**悬挂依赖直接丢弃**，不产生缺失端点的边；`with_task_graph` 后端产物图改为不传，依赖图不再依赖后端生成），复用 graph.rs 的 LayeredLayout 分层渲染 SVG。缩略图 300x200，点击弹 Modal 放大 920x620（`graph_zoom_open` signal 状态放主组件，弹窗 top layer 渲染不受侧栏 overflow 裁剪），两个视图共用同一构建函数仅尺寸不同。graph.rs 配套扩展：① `svg_width`/`svg_height` 可配置 props（默认 800/600，clamp 最小 160/120）；② `task_status_node_type(status)` 把任务状态数值转语义化 token（cancelled/pending/in_progress/completed/archived），`get_node_fill` 配 5 个语义色（cancelled 红 / pending 蓝 / in_progress 琥珀 / completed 绿 / archived 灰）+ `NEUTRAL_NODE_FILL`/`NEUTRAL_EDGE_COLOR` 兜底色；③ 4 条守卫测试（relation 标签 / 任务状态 / memory 类型全覆盖，未知标签回落中性色）。配套 **layered_layout.rs y 自适应**：深链 DAG 层距压缩为 `min(config.layer_height, usable_height/max_layer)` + 垂直居中（`v_offset`），修复深链任务图纵向溢出画布把最后几层裁掉；环上节点沉底（无入度为 0 节点时 layer=0、bottom=1）。node_card.rs 同步补 5 个任务状态中文 type_label（如 task_in_progress → "任务（进行中）"）。
+**任务依赖图前端自绘 + 放大弹窗（2026-09-18 增量，commit a7134bb7）**：聊天侧栏任务列表新增 DAG 依赖图——`chat_side_panel.rs::build_task_graph_data(tasks, w, h)` 纯前端从任务列表构建 GraphNode/GraphEdge（前置任务不在列表内的**悬挂依赖直接丢弃**，不产生缺失端点的边；`with_task_graph` 后端产物图改为不传，依赖图不再依赖后端生成），复用 graph.rs 的 dagre 分层布局渲染 SVG（取代旧自研 LayeredLayout）。缩略图 300x200，点击弹 Modal 放大 920x620（`graph_zoom_open` signal 状态放主组件，弹窗 top layer 渲染不受侧栏 overflow 裁剪），两个视图共用同一构建函数仅尺寸不同。graph.rs 配套扩展：① `svg_width`/`svg_height` 可配置 props（默认 800/600，clamp 最小 160/120）；② `task_status_node_type(status)` 把任务状态数值转语义化 token（cancelled/pending/in_progress/completed/archived），`get_node_fill` 配 5 个语义色（cancelled 红 / pending 蓝 / in_progress 琥珀 / completed 绿 / archived 灰）+ `NEUTRAL_NODE_FILL`/`NEUTRAL_EDGE_COLOR` 兜底色；③ 4 条守卫测试（relation 标签 / 任务状态 / memory 类型全覆盖，未知标签回落中性色）。配套 **dagre 包围盒缩放适配画布**（取代旧 layered_layout.rs 的 y 自适应）：深链 DAG 经包围盒等比缩放 + 居中完整落进画布（scale 上限 2.5），修复深链任务图纵向溢出把末层裁掉；dagre 原生破环处理环上节点。node_card.rs 同步补 5 个任务状态中文 type_label（如 task_in_progress → "任务（进行中）"）。
 
 ---
 
@@ -122,7 +122,7 @@ source_files:
 | canvas_scene.rs CanvasScene Trait | 统一渲染管线 | setup/update/draw/handle_event 四方法抽象；use_canvas_animation Hook 注册 RAF 循环；dt 自动算 RAF delta | 见 Trait 定义 |
 | graph_canvas.rs GraphCanvas 组件 | 图谱渲染入口 | dioxus props { graph: KnowledgeGraphDto, layout_mode: Force/Layered, on_node_click: EventHandler<NodeId> }；内部 GraphScene impl CanvasScene；鼠标拖拽节点修改 x/y（mutable） | `:L1-L80` |
 | force_layout.rs ForceLayout | 力导向算法 | pub fn tick(&mut self, graph: &mut Graph, dt: f32)；斥力 O(n²) 每对节点；引力 O(e) 每条边；α_t+1 = α_t × 0.99；α < 0.01 直接 return skip | `:L1-L100` |
-| layered_layout.rs LayeredLayout | 分层布局 | 拓扑排序算 depth；层内按节点 weight 降序排 x 等分；层间 y = depth × row_height（120px 默认）；跨层边用三次贝塞尔曲线 | 见 layout fn |
+| dagre_layout.rs DagreLayout | DAG 分层布局 | dagre-dgl-rs 0.1.1 适配层（任务依赖图 / 思维轨迹图 / ProjectDetail 真 DAG 共用）：acyclic 破环 + network simplex 分层 + 节点尺寸感知坐标（同层不重叠）+ dummy node 边路由（waypoints 折线）；包围盒缩放居中，scale 上限 2.5 | frontend/src/utils/dagre_layout.rs |
 | chart_scene.rs ChartScene | 图表统一基类 | 算 data_bounds(min/max) → draw_axes(x轴/y轴刻度 + 网格线) → draw_tooltip_hover（鼠标位置 x 映射数据点）；LineChartScene/DonutChartScene 继承数据结构 | `:L1-L60` |
 | charts/line_chart.rs LineChart | 折线组件 | props.points.len() > 500 → LTTB（Largest-Triangle-Three-Buckets）降采样到 200 点；两条线画不同色 series；hover 十字准星 + tooltip | 见 LineChart impl |
 | gauge.rs Gauge 仪表盘 | HUD 风格仪表盘 | 240° 圆弧 + 指针三角 + 刻度；draw_glow_stroke 双遍描边（shadow blur=8 → 橙光晕）；DaisyUI 主题切换不影响 Canvas 色值 | 见 draw fn |
@@ -201,7 +201,7 @@ HR 知识图谱页面加载：
 24. **边强度只准走「粗细 + 不透明度」，颜色留给语义；未标注（`None`）≠ 强度 0**（2026-09-17 新增）：强度映射 SSOT 在 `edge_style.rs`（`weight_style` → `(线宽, 不透明度系数)`、`weight_label` → hover 读数），Canvas 与 SVG 两条路径只许引用、禁止各写一套系数（同一个强度在两个视图里粗细不同 = 用户以为数据变了）。三条红线：①**颜色通道已被关系类型/状态语义占用**（`tag_color` 哈希取色、关系图 ready/not_ready 语义色），拿颜色表达强度会和语义色打架；②`None`（未标注）渲染**基准线宽**，只有 `Some(0.0)` 才是最细最淡——把未标注当 0 会让存量关系整片塌到最细，看起来像「所有关联都很弱」，那是伪造语义；③hover 只在**标注过**时渲染 `强度: N%`，未标注整行不渲染（写「强度 0%」会被读成「明确很弱」），共享的 `canvas_scene` 因此不会给 Agent 关系图平添噪音。配套：写入侧缺省**不落默认值**（补 0.5 会把「没标」变成「标了中等强度」），归一化规则 `KnowledgeRelationParam::normalized_weight`（越界夹紧、NaN/Inf 丢弃）必须与前端 `edge_style::normalize` 同口径。反向教训：想让图谱边先「有差异」再谈准确，去派生权重（共现证据数）是走不通的——`knowledge_reference` 恒为空表（两条节点写入路径都传 `references: vec![]`）。
 25. **任务状态新增取值必须同步 `task_status_node_type` + `get_node_fill`，守卫测试兜底**（2026-09-18 新增）：`graph.rs` 的 `task_status_node_types_all_have_semantic_colors` 守卫测试枚举全部状态值断言非 `NEUTRAL_NODE_FILL`——新增 TaskStatus 枚举项若漏改颜色映射表直接测试失败，而不是静默画成中性灰被当成「未知类型」；同理 relation 标签（`vocabulary_relation_labels_all_have_semantic_colors`）与 memory 类型（`memory_type_values_all_have_node_colors`）各有守卫，未知值统一回落中性色常量。
 26. **SVG 渲染尺寸必须走 `svg_width`/`svg_height` props，禁止 fork 组件改常量**（2026-09-18 新增）：同一 Graph 渲染组件被缩略图（300x200）与放大弹窗（920x620）复用，尺寸 clamp 最小 160/120 防负值/过小；新增消费方传 props 即可，严禁复制组件副本改写死尺寸。
-27. **layered_layout 深链必须压缩层距适配画布高度**（2026-09-18 新增）：层距 = `min(config.layer_height, usable_height/max_layer)` + 垂直居中偏移 `v_offset`，禁止固定 layer_height 直排——深链任务图会纵向溢出画布把最后几层裁掉；环（无入度为 0 节点）整体沉到最底层（layer=0、bottom=1）。守卫测试：深链分层各层 y 不超画布 + 浅链垂直居中。
+27. **DAG 布局必须完整落进画布（dagre 包围盒缩放）**（取代旧 layered_layout）：dagre 输出坐标按包围盒等比缩放 + 居中映射进画布（四周留 margin），scale 上限 2.5——深链 DAG 不得纵向溢出裁掉末层、小图也须铺满（此前上限 1.0 导致 4 节点缩成一簇）；禁止在适配层再手写层距压缩（dagre 坐标层面已保证同层不重叠）。守卫测试：深链 DAG 各层不超画布 + 浅链垂直居中。
 28. **依赖图构建必须过滤悬挂依赖边**（2026-09-18 新增）：前置任务不在当前任务列表内（已删除/跨项目）时直接丢弃该边，禁止产出缺失端点的 GraphEdge——SVG/Canvas 对未知节点索引会 panic 或画出飞线；任务依赖图缩略图与放大弹窗共用 `build_task_graph_data`，过滤逻辑只写一处。
 29. **节点名称在数据构建层禁止截断，截断只准留在渲染处 `title()`**（2026-09-26 新增，e963af78 / b1f4c4fa）：`node_display_name`（`frontend/src/pages/hr/knowledge_graph.rs`）必须原样返回 name / 兜底正文首行，**禁止**在数据层调 `truncate_chars`——label 一旦残缺，hover 详情卡、SVG 兜底与边端点名三处同时拿到残缺文本（用户看到的 hover 标题被生硬截断）。截断职责单点收敛在渲染处 `node_card::title` 单行收窄；`node_card::truncate_chars` 已删除（失去调用方），`graph.rs` 重导出列表同步移除。守卫测试 `display_name_keeps_full_name_without_truncation` 兜底。
 30. **有向边箭头必须是双渲染器一致的条件挂载，半径公式必须双渲染器同源**（2026-09-30 新增，412c2e90 / f7ad05e8）：SVG 渲染器（`graph.rs`）的 `marker_end` 按 `edge.direction == "directed"` **条件挂载**（undirected 纯线），Canvas 渲染器（`canvas_scene.rs` 的 `draw_edges` 箭头原语）对 `CanvasEdge.directional` 为真的边在 target 端画小三角 —— **禁止只在单渲染器上加箭头**，否则同一份数据在 SVG/Canvas 下有无箭头不一致 = 视觉漂移（用户以为方向语义丢失）；`global_node_radius` / `global_node_label` 是度数→半径/限绘的**唯一 SSOT**（`graph.rs`），`graph_canvas.rs` 必须调用它、禁止另抄系数（一处改一处漏 = 两种渲染器同度数点大小不同）。箭头/半径的构造在共享基础设施层完成，业务适配层只透传 `direction`→`directional`，禁止各写一套几何。

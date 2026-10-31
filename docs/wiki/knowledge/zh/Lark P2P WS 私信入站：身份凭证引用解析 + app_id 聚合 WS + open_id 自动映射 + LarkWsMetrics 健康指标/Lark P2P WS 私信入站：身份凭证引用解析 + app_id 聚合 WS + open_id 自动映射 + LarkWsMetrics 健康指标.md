@@ -78,7 +78,7 @@ source_files:
 - 从 AdaptedMessage(Lark, open_id=ou_xxx) → 查 `MessageChannel WHERE channel_type=Lark AND config_json.lark_open_id = 'ou_xxx' AND status=启用`：
   - 找到 → 得到 channel.user_id（系统内部用户）+ channel.agent_id（该渠道绑定的 Agent）
   - 构造内部 MessagePo：sender=user_id, receiver=agent_id, channel_type=Lark, channel_ref_id=Some(channel.id)
-  - publish AOP 事件 `NewMessageCreated` → 消息消费者 consumer/message.rs → try_set_busy → awaken → 正常进入 Agent 两阶段唤醒
+  - publish AOP 事件 `NewMessageCreated` → 消息消费者 consumer/message.rs → try_set_busy → awaken → 正常进入 Agent 唤醒（Awaken 单阶段执行；IntentAnalyze 为可选入口节点）
   - 结果：用户在飞书端发一句「把昨天的会议纪要发给我」→ 几秒后 Agent 自动在飞书端回复（回复走 MessageDomain deliver 出站 → LarkDao.push → HTTP API 回飞书）
 - 没找到渠道（open_id 没绑定）→ log_warn("收到未绑定的飞书入站消息") 丢弃；可选后续 vNext 把该消息投递到系统管理员渠道做人工审核。
 

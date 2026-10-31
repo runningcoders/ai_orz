@@ -1,6 +1,7 @@
 # 本体论驱动知识沉淀设计（Ontology-Driven Knowledge Sedimentation）
 
 > 🎯 **本文档定位**：将本体论（Ontology）落地为知识图谱沉淀方法论的整体设计快照——本体骨架（TBox）与知识图谱（ABox）合一、三段沉淀闭环、惰性解析、漂移记账 + 人工归纳、双层统计；设计评审定稿，接口细节以实际代码为准。
+> 📌 **设计定稿后的增量（本文未覆盖，见「本体属性层」知识卡）**：① 本体骨架一等公民化——`ontology_classes.parent_class` 继承链（约束沿继承链向上解析）+ 独立 `ontology_class_relations` 表描述类与类之间的关系三元组（区别于实例知识边）；② 属性域覆盖率（`compute_property_domain_coverage`，低于阈值 L2 看板标红）与属性有效性统计（`compute_property_effectiveness`，众数占比超阈值 L1 标黄）——两者均为只读聚合，不阻断写入。
 > 状态：v1.0（2026-09-18 设计评审定稿，未开始实现）
 > 触发场景：需要理解本体与知识图谱的关系取舍、本体表结构与词表维护机制、漂移判定为何不物化、DAL 组合方向、published 认证门禁语义、DuckDB 漂移事件设计时打开；字段级实现直接读代码。
 >

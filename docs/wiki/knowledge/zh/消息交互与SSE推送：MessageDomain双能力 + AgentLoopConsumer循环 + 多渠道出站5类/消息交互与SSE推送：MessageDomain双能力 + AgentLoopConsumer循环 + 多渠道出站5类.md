@@ -57,7 +57,7 @@ source_files:
   类业务消费者注册.md
 - migrations/20260909000004_add_external_key_to_messages.sql (reply_to + external_key 字段 migration)
 - src/models/message.rs (MessagePo reply_to + external_key + federation_contract)
-- src/service/domain/runtime/awakening.rs (两阶段唤醒后注入 reply_to 上下文)
+- src/service/domain/runtime/awakening.rs (唤醒后注入 reply_to 上下文)
 - src/service/dal/lark/impl.rs + src/service/dao/lark/http.rs (飞书 thread_id ↔ external_key 双向映射)
 - 【平行卡 3】docs/wiki/knowledge/zh/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 +
   TaskEventConsumer 依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 +
@@ -99,7 +99,7 @@ source_files:
 
 **95a0b1bf 修复：统一回复通道 + from_role 三路分发**：`MessageConsumer.handle_agent_message` 在 awaken() 返回 raw_output 非空时，按入口消息的 `from_role` 自动生成回复——User 入口 → `delivery.send_to_user(reply_to=原消息.id, to_user_id=原消息.from_id)`；Agent 入口 → `delivery.send_to_agent(from_role=Agent, to_agent_id=原消息.from_id)`；System 入口 → 跳过（系统消息无对话对象）。从此 Agent 不需要自己调用 send_message 工具回复当前对话用户，Framework 层兜底，彻底解决"必须猜 to_user_id 才能结束任务"的心理陷阱。
 
-**消息链与话题讨论区（external_key + reply_to）**：messages 表新增 reply_to（回复链）与 external_key（话题讨论区关联键）字段（migration `20260909000004_add_external_key_to_messages.sql`）。出站推送时 dao/lark/http.rs 把 external_key 自动翻译为飞书 thread_id（双向映射：入站 thread_id → external_key 存入表，出站 external_key → thread_id 发给飞书）。src/service/domain/runtime/awakening.rs 在两阶段唤醒（IntentAnalyze → Awaken）完成后注入 reply_to 上下文到 Agent prompt，使 Agent 生成的回复自动挂在原消息下形成回复链。scheduler/consumer 三个生产端各加 1 行携带 reply_to 字段。
+**消息链与话题讨论区（external_key + reply_to）**：messages 表新增 reply_to（回复链）与 external_key（话题讨论区关联键）字段（migration `20260909000004_add_external_key_to_messages.sql`）。出站推送时 dao/lark/http.rs 把 external_key 自动翻译为飞书 thread_id（双向映射：入站 thread_id → external_key 存入表，出站 external_key → thread_id 发给飞书）。src/service/domain/runtime/awakening.rs 在唤醒（Awaken 单阶段执行；IntentAnalyze 为可选入口节点）完成后注入 reply_to 上下文到 Agent prompt，使 Agent 生成的回复自动挂在原消息下形成回复链。scheduler/consumer 三个生产端各加 1 行携带 reply_to 字段。
 
 **默认会话哨兵 project_id + @ 修复 + 气泡 chip（2026-09-13 增量）**：
 - **默认会话哨兵 project_id**：前端聊天页 `frontend/src/pages/message/chat.rs` 引入哨兵值区分两种查询语义——`project_id = None` 表示「不过滤，返回用户所有会话」；`project_id = Some(DEFAULT_SESSION_SENTINEL)` 表示「只返回默认会话的消息」。消除了旧代码中 `if project_id.is_none()` 二义性。
@@ -125,11 +125,11 @@ source_files:
 | dao/lark/http.rs 飞书卡片出站 | LarkDao | push_interactive_card：user_id↔open_id 映射表查 → Markdown→飞书卡片 header+elements 转换 + 回复按钮 (open url 跳回本系统 /message/:id) | `:L50-L120` |
 | dao/webhook/http.rs Webhook 出站 HMAC | WebhookDao | 签名 sign=HMAC_SHA256(timestamp + body, secret_hex).to_hex()；Header 带 X-Timestamp（毫秒）+ X-Signature；超时 10s；失败 3 次退避 5/20/60s | 见 webhook.rs |
 | models/message.rs MessagePo | 消息实体 | reply_to（回复链，可空，指向同 messages 表） + external_key（话题讨论区关联键，用于跨渠道映射线程） + federation_contract 字段 | 见 src/models/message.rs |
-| awakening.rs Runtime 两阶段唤醒 | 注入 reply_to 上下文 | IntentAnalyze → Awaken 完成后，把入口消息的 reply_to 注入 Agent prompt，使 Agent 回复自动挂链 | 见 src/service/domain/runtime/awakening.rs |
+| awakening.rs Runtime 唤醒（Awaken 单阶段；IntentAnalyze 可选） | 注入 reply_to 上下文 | Awaken 完成后，把入口消息的 reply_to 注入 Agent prompt，使 Agent 回复自动挂链 | 见 src/service/domain/runtime/awakening.rs |
 | dal/lark/impl.rs + dao/lark/http.rs 飞书双向映射 | external_key ↔ thread_id | 入站：飞书 thread_id → 存 messages.external_key；出站：external_key → 翻译为飞书 thread_id 发送（缺失映射降级为单条消息） | 见 src/service/dao/lark/http.rs |
 | domain/message/mod.rs MessageDomain 扩展 | 回复链能力 | MessageDelivery send_* 新增 reply_to + external_key 参数；落库时带链；SSE 事件 payload 追加 reply_to | 见 src/service/domain/message/mod.rs |
 | consumer/message.rs MessageConsumer | AOP 消费消息 + Agent 回复三路分发 | Sync ConsumeMode；message.created → 拉 channel_subscriptions → 循环 push；**handle_agent_message 三路分发**（2026-09-23 增量：统一走 delivery.send_to_user/send_to_agent + 收件人角色⟷ID 一致性门闩——from_role=Agent 必传 from_agent_id / 落 to_role=Agent 投递 / from_role=User 必传 from_user_id / 落 to_role=User 投递；杜绝"Agent from_role 传 User to_id"导致 All delivery channels failed 死信；Agent neural 工具可达性：确保 Agent 自动回复链路能触达 send_message 工具） + 既有 2026-09-15 重构 `routes_to_system_fallback` / `resolve_profile_user_id` | `:L1-L80` |
-| consumer/agent_loop.rs AgentLoopConsumer | AOP 消费消息 | MessageConsumer 之后的同级消费者（注册顺序在后）；message.to_id 是 agent_id → BusyGuard 查 state；Idle=AOP publish agent.wake 事件触发两阶段唤醒；Busy/Resting=把事件挂 agent.pending_message Vec，下次唤醒一次性消费 | `:L1-L100` |
+| consumer/agent_loop.rs AgentLoopConsumer | AOP 消费消息 | MessageConsumer 之后的同级消费者（注册顺序在后）；message.to_id 是 agent_id → BusyGuard 查 state；Idle=AOP publish agent.wake 事件触发唤醒（Awaken 单阶段）；Busy/Resting=把事件挂 agent.pending_message Vec，下次唤醒一次性消费 | `:L1-L100` |
 | middleware/sse.rs SSE 广播中间件 | Axum 订阅 | BroadcastChannel: Arc<RwLock HashMap<user_id, Vec<mpsc::Sender<Event>>>>；new_user 注册 handler；heartbeat 15s tokio spawn 独立 loop；last_event_id 补发查询 | 见 sse.rs |
 | consumer/scheduler.rs CronTriggerConsumer | Cron 定时触发器 | 身份分层中继（2026-09-15 增量）：原来统一 from_role=System，现在按被触达事项归属选身份——项目有 root_user_id 时 from_role=User / from_id=root_user_id（Agent Final 自然回到用户），A2A 项目无归属时才落 System | 见 src/consumer/scheduler.rs |
 | consumer/task_event_consumer.rs TaskEventConsumer | 任务事件触发器 | 与 CronTrigger 同样的身份分层中继逻辑 + `consumer::enrich_org_from_project_user` 补齐系统触发 ctx 的组织上下文 | 见 src/consumer/task_event_consumer.rs |
@@ -169,7 +169,7 @@ AOP 事件被两个消费者按注册顺序依次消费：
 [Consumer 2: AgentLoopConsumer (Sync)]
   → 如果 message.to 是 Agent（agent_id）：
      → BusyGuard.try_acquire(state)
-        Idle → AOP publish(AgentWakeEvent) → Runtime 两阶段唤醒
+        Idle → AOP publish(AgentWakeEvent) → Runtime 唤醒（Awaken 单阶段）
                 → 唤醒时读取 agent.pending_messages（Busy 期间缓存的消息）
         Busy → 把此消息 push 进 agent.pending_messages Vec（下次唤醒处理）
         Resting → 不唤醒（resting 期间让 agent_rest 沉淀记忆完成再响应）
