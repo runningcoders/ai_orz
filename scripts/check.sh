@@ -76,6 +76,9 @@ cmd_clippy_fe() {
 
 cmd_docs_lint() { cargo run -p ai-orz-tools --bin docs_lint; }
 
+# wiki 索引一致性门禁：docs/wiki/INDEX.md 必须与目录一致（新增/删除/改名页面后跑 make wiki-index）
+cmd_wiki_lint() { python3 tools/wiki_index.py --check; }
+
 # 内联测试体量门禁：禁止 >200 行的巨型内联 `#[cfg(test)] mod tests`。
 # 拆分用 `python3 tools/split_inline_tests.py <file>`（工具会自动处理
 # #[path] 声明、私有 use 可见性、mod.rs 命名等细节）。
@@ -208,6 +211,7 @@ case "$CMD" in
     clippy) cmd_clippy ;;
     clippy-fe) cmd_clippy_fe ;;
     docs-lint) cmd_docs_lint ;;
+    wiki-lint) cmd_wiki_lint ;;
     inline-test-lint) cmd_inline_test_lint ;;
     docs-migrate) cmd_docs_migrate ;;
     seed-sync) cmd_seed_sync ;;

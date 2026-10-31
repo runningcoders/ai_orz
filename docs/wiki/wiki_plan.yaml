@@ -1,3 +1,8 @@
+# ⚠️ 本文件原来的 repowiki 生成链路已下线（Qoder IDE 插件，2026-11 起不可用）。
+# docs/wiki/ 现为**团队手工增量维护**，本文件不再是「生成配置」，降级为两份约定：
+#   1) scope.exclude —— 哪些内容不进 wiki（构建产物 / 机器缓存 / 第三方补丁）
+#   2) notes        —— 架构叙事基线（写 wiki 页面或让 Agent 生成内容时须遵守的口径）
+# 索引与门禁见 tools/wiki_index.py（make wiki-index 重建 / make wiki-lint 校验）。
 version: 1
 
 scope:
@@ -53,6 +58,25 @@ repowiki:
         质量门槛：clippy -D warnings 零容忍（后端 + 前端 wasm32），
         cargo-llvm-cov 覆盖率门槛 PR 38% / main 45%，
         集成测试位于 tests/integration/（33 个，覆盖 Auth/CRUD/消息投递/向量降级/A2A/预置技能/Cron）。
+    - text: >-
+        本体（ontology）是知识图谱的 TBox，不是某个业务域的内部细节：受控词表（实体类 / 关系类型 /
+        同义映射）、属性定义（data_type / value_range / cardinality / domain_classes）、骨架三元组
+        （class -[relation]-> class，含继承链）三层；写侧在属性写入链路设 0→1→1.5→2+3→4 五道门闩
+        （只有类型错与基数冲突硬拒，其余软记账后照写），读侧提供漂移看板（词频 / 关系覆盖率 /
+        属性域覆盖率，阈值 0.95）与属性有效性（众数占比 >0.90 标黄）。它横跨 Adapter → Domain →
+        DAL → DAO + common 契约 + 前端，描述架构时须单列子系统。
+    - text: >-
+        思维轨迹（think_trace）是 Runtime 的一等产物：思考循环每轮向
+        agents/{agent_id}/think_trace/{YYYYMMDD}.jsonl 追加一行（与记忆 JSONL 共用 DailyJsonlWriter
+        但目录独立、生命周期独立），查询侧 query_think_traces 按 agent 分页读回，前端以「轮次时间线 +
+        思考图 + 轨迹面板」三处消费；思考编排由 pkg/think_path 图引擎承担（七相位 Stimulus / Reflex /
+        Triage / Prepare / Deliberate / Consolidate / Review，十分区 ContextKey）。相位只做契约模板与
+        可视化分组，不构成执行顺序。
+    - text: >-
+        认知架构是分层的，不是一次模型调用：Cortex（dao/cortex）负责慢思考与工具调用；Cerebellum
+        （dao/cerebellum，System One）在首轮前做亚秒级快判断（800ms 超时、置信度 0.85 阈值、三层降级
+        一律静默跳过）；反射弧（think_path 的 Reflex 相位）靠零 I/O 短路处理琐碎刺激；Brain 是容器
+        （model provider + 小脑 provider + 记忆列表）。描述 Agent Runtime 时必须体现这三层分工。
 
 knowledgecard:
   notes:

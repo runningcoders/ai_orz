@@ -6,7 +6,7 @@
 
 | 目录 / 文档 | 回答的问题 | 性质与维护方式 |
 |-------------|-----------|----------------|
-| [wiki/](./wiki/) | **是什么**：代码现状百科 | IDE 生成（源自 `.qoder/repowiki`），随代码演进再生成；**阅读第一站** |
+| [wiki/](./wiki/) | **是什么**：代码现状百科 | **团队手工增量维护**（原 repowiki 生成链路已下线）；全量索引 [wiki/INDEX.md](./wiki/INDEX.md)、维护办法 [wiki/README.md](./wiki/README.md)；**阅读第一站** |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | **权威纲要**：核心概念与实体关系 | 手工维护，唯一权威架构总纲 |
 | [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) | **怎么做**：分层实践与避坑 | 手工维护，开发必读 |
 | [CODE_WIKI.md](./CODE_WIKI.md) | **从哪开始**：模块速查 + 导航 | 入口页 |
@@ -17,7 +17,7 @@
 
 ## 维护规则
 
-1. 代码现状变化 → 再生成 wiki；**不**回头改 design/ 旧文（不一致时以 wiki 为准）
+1. 代码现状变化 → 增量修订 wiki 对应页并 `make wiki-index` 重建索引（`make wiki-lint` 校验）；**不**回头改 design/ 旧文（不一致时以 wiki 为准）
 2. 开发规范变化 → 更新根目录 AGENTS.md 与 LAYERED 实践文档
 3. 架构核心概念变化 → 更新 ARCHITECTURE.md
 4. 新功能设计 → 先写 design/ 新文档，落地后由 wiki 承接现状描述

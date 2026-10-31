@@ -52,6 +52,15 @@ clippy: ## clippy -D warnings（CI lint job 口径，需 protoc）
 clippy-fe: ## 前端 wasm32 clippy（CI frontend job 口径）
 	./scripts/check.sh clippy-fe
 
+wiki-index: ## 重建 docs/wiki/INDEX.md（新增/删除/改名 wiki 页面后必跑）
+	python3 tools/wiki_index.py --write
+
+wiki-lint: ## wiki 索引一致性门禁：INDEX.md 必须与目录一致（docs/wiki 已转手工维护）
+	python3 tools/wiki_index.py --check
+
+wiki-stale: ## 诊断：列出 wiki 里引用的、已不存在的代码路径（不参与门禁）
+	python3 tools/wiki_index.py --stale
+
 docs-lint: ## 文档链接规范门禁：file:// 伪协议/绝对路径/冒号行号（AGENTS §2.1.2）
 	./scripts/check.sh docs-lint
 

@@ -111,8 +111,8 @@ Organization ──┬── User
 | **查询规范** | [pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md) | 分页 + 通用 count |
 | **记忆设计** | [memory_design.md](./docs/memory_design.md) | 四层记忆系统 |
 | **脚本地图** | [scripts/README.md](./scripts/README.md) | 运维脚本入口、职责划分与「一处实现」规则 |
-| **Wiki 百科** | [docs/wiki/](./docs/wiki/) | 9 大板块 375 篇（功能实现细节）|
-| **RAG 知识卡** | [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/) | 118 张原子卡（第一召回层）|
+| **Wiki 百科** | [docs/wiki/](./docs/wiki/) | 10 大类 377 篇长文 + 120 张 RAG 卡（手工维护；索引 [docs/wiki/INDEX.md](./docs/wiki/INDEX.md)）|
+| **RAG 知识卡** | [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/) | 120 张原子卡（第一召回层）|
 
 ---
 
