@@ -22,4 +22,4 @@
 3. 架构核心概念变化 → 更新 ARCHITECTURE.md
 4. 新功能设计 → 先写 design/ 新文档，落地后由 wiki 承接现状描述
 5. 被取代的方案 → 移入 archive/，原位置不留副本
-6. 架构图等可视化产物放 diagrams/，重新生成后覆盖同名文件；`index.html` 是 GitHub Pages 落地页、`.nojekyll` 关闭 Jekyll 渲染，二者属站点基建，不参与四象限文档体系。站点已上线：https://runningcoders.github.io/ai_orz/ （图表直达 https://runningcoders.github.io/ai_orz/diagrams/ai-orz-architecture.html ）
+6. 架构图等可视化产物放 diagrams/，重新生成后覆盖同名文件；`index.html` 是 GitHub Pages 落地页、`.nojekyll` 关闭 Jekyll 渲染，二者属站点基建，不参与四象限文档体系。站点已上线：https://runningcoders.github.io/ai_orz/ （图表直达 https://runningcoders.github.io/ai_orz/diagrams/ai-orz-architecture.html ）；**新增图表须登记入口**：在本文四象限表 `diagrams/` 行与站点首页 `index.html` 各补一条可点击入口（图与入口一一对应）

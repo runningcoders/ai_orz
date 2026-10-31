@@ -10,28 +10,90 @@
   * { box-sizing: border-box; }
   body { margin:0; padding:48px 20px; background:var(--bg); color:var(--fg);
          font:16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-  main { max-width:760px; margin:0 auto; }
+  main { max-width:1080px; margin:0 auto; }
   h1 { font-size:28px; margin:0 0 8px; }
   p.lead { color:var(--muted); margin:0 0 28px; }
+  h2 { font-size:15px; font-weight:600; color:var(--muted); margin:32px 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  .card h3 { font-size:17px; margin:0 0 2px; }
+  .card p.q { color:var(--muted); font-size:13px; margin:0 0 10px; }
   ul { list-style:none; padding:0; margin:0; }
-  li { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  li { padding:8px 0; border-top:1px solid var(--line); }
+  li:first-child { border-top:none; padding-top:0; }
+  li:last-child { padding-bottom:0; }
   a { color:var(--link); text-decoration:none; font-weight:600; }
   a:hover { text-decoration:underline; }
-  span.desc { display:block; color:var(--muted); font-weight:400; font-size:14px; margin-top:4px; }
+  span.desc { display:block; color:var(--muted); font-weight:400; font-size:13px; margin-top:2px; }
   footer { margin-top:32px; color:var(--muted); font-size:13px; }
 </style>
 </head>
 <body>
 <main>
   <h1>AI Orz 文档站</h1>
-  <p class="lead">docs/ 目录的 GitHub Pages 入口（纯静态直出，不启用 Jekyll）。</p>
-  <ul>
-    <li><a href="./diagrams/ai-orz-architecture.html">架构总览图</a><span class="desc">交互式 HTML：请求主链路 / 异步运行时 / 存储三条阅读视图</span></li>
-    <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/README.md">docs/ 文档地图</a><span class="desc">四象限分工与维护规则（Markdown 回 GitHub 阅读）</span></li>
-    <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/ARCHITECTURE.md">架构总纲</a><span class="desc">核心概念与实体关系的唯一权威纲要</span></li>
-    <li><a href="https://github.com/runningcoders/ai_orz">GitHub 仓库</a><span class="desc">源码、Issue 与提交历史</span></li>
-  </ul>
-  <footer>本站仅提供静态资源直出；docs/ 中的 Markdown 请在 GitHub 上阅读。</footer>
+  <p class="lead">docs/ 的四象限文档结构一览（纯静态直出，.nojekyll 关闭 Jekyll）。按「问题类型」选入口；Markdown 与目录入口指向 GitHub 的渲染页与目录页。</p>
+
+  <h2>四象限文档入口</h2>
+  <div class="grid">
+    <section class="card">
+      <h3>① 是什么 · 代码现状百科</h3>
+      <p class="q">IDE 生成（源自 .qoder/repowiki），随代码演进再生成；阅读第一站</p>
+      <ul>
+        <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/wiki">wiki/ · 进入代码现状百科</a><span class="desc">回答「是什么」：文件 / 模块 / 子系统的现状描述</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h3>② 为什么 · 设计决策</h3>
+      <p class="q">决策快照，写定后不追赶现状；与实现不一致时以 wiki/ 现状为准</p>
+      <ul>
+        <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/design">design/ · 进入设计决策目录</a><span class="desc">回答「为什么」：决策当时的上下文、备选与取舍</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h3>③ 要去哪 · 规划与状态</h3>
+      <p class="q">按阶段追加的规划与落地状态快照</p>
+      <ul>
+        <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/plan">plan/ · 进入规划与状态目录</a><span class="desc">回答「要去哪」：阶段计划、落地进度与结果</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h3>④ 被什么取代 · 历史归档</h3>
+      <p class="q">只进不出；归档方案仍在档可被指称，不作现状依据</p>
+      <ul>
+        <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/archive">archive/ · 进入历史归档目录</a><span class="desc">回答「被什么取代」：已被替代的方案原文</span></li>
+      </ul>
+    </section>
+  </div>
+
+  <h2>权威纲要与导航</h2>
+  <div class="card">
+    <ul>
+      <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/ARCHITECTURE.md">ARCHITECTURE.md · 权威纲要</a><span class="desc">核心概念与实体关系的唯一权威架构总纲（手工维护）</span></li>
+      <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/LAYERED_ARCHITECTURE_PRACTICE.md">LAYERED_ARCHITECTURE_PRACTICE.md · 分层实践</a><span class="desc">怎么做：分层实践与避坑，开发必读</span></li>
+      <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/CODE_WIKI.md">CODE_WIKI.md · 代码认知入口</a><span class="desc">从哪开始：模块速查 + 文档导航</span></li>
+    </ul>
+  </div>
+
+  <h2>长什么样 · 可视化产物</h2>
+  <div class="card">
+    <ul>
+      <li><a href="./diagrams/ai-orz-architecture.html">架构总览图（本站在线渲染）</a><span class="desc">交互式 HTML：请求主链路 / 异步运行时 / 存储三条阅读视图，点开即渲染可交互</span></li>
+      <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/diagrams">diagrams/ · 可视化产物目录</a><span class="desc">自包含 HTML（archify 依据代码生成），重新生成后覆盖同名文件</span></li>
+    </ul>
+  </div>
+
+  <h2>索引与仓库</h2>
+  <div class="card">
+    <ul>
+      <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/README.md">docs/README.md · 文档地图与维护规则</a><span class="desc">四象限表 + 维护规则（本页结构以其为准）</span></li>
+      <li><a href="https://github.com/runningcoders/ai_orz">GitHub 仓库</a><span class="desc">源码、Issue 与提交历史</span></li>
+    </ul>
+  </div>
+
+  <footer>本站为 docs/ 静态资源直出；Markdown 与目录入口指向 GitHub 的文件 / 目录页（Pages 只直出静态文件，不渲染 Markdown）。</footer>
 </main>
 </body>
 </html>
