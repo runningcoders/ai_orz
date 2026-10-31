@@ -274,10 +274,21 @@ pub(crate) fn property_issue_entries(report: &PropertySaveReport) -> Vec<Propert
                 PropertyWriteIssue::CardinalityExceeded => ErrorCode::PropertyCardinalityExceeded,
                 PropertyWriteIssue::TargetNotAllowed => ErrorCode::PropertyTargetNotAllowed,
                 PropertyWriteIssue::UndefinedProperty => ErrorCode::PropertyUndefined,
+                PropertyWriteIssue::DomainClassNotAllowed { .. } => {
+                    ErrorCode::PropertyDomainClassNotAllowed
+                }
             };
             let mut field = serde_json::json!({ "term_key": i.term_key });
             if let PropertyWriteIssue::TypeMismatch { expected } = &i.kind {
                 field["expected"] = serde_json::Value::String(expected.as_str().to_string());
+            }
+            if let PropertyWriteIssue::DomainClassNotAllowed {
+                node_type,
+                domain_classes,
+            } = &i.kind
+            {
+                field["node_type"] = serde_json::Value::String(node_type.clone());
+                field["domain_classes"] = serde_json::json!(domain_classes);
             }
             PropertyIssueEntry {
                 code: code.code_str().to_string(),

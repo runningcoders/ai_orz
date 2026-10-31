@@ -3,6 +3,7 @@
 
 use super::dal;
 use super::test_support::*;
+use crate::models::ontology::OntologyPropertyPo;
 use common::enums::ontology::{PropertyDataType, PropertyTargetType};
 use common::ontology_property::{
     PropertyEntry, PropertyFilter, PropertyFilterOp, PropertyValue, PropertyWriteIssue,
@@ -348,4 +349,240 @@ async fn query_entities_by_properties_recalls_by_numeric_range(pool: sqlx::Sqlit
         .expect("query should succeed");
     ids.sort();
     assert_eq!(ids, vec!["kn_a".to_string()], "只有高置信节点命中");
+}
+
+// ==================== 门闩 1.5：实体类域（domain_classes 软门禁） ====================
+//
+// `domain_classes` 此前只在「属性定义保存」与「list 过滤」被读，写入链路零校验，
+// 于是「属性挂到不相关实体类」长期零告警。这组用例锁定四种形态：域内放行、
+// 域外记账但**照写**、空清单不限、无法判定（载体是边 / 节点不存在）跳过，
+// 外加一条「载体门闩行为不变」的防回归。
+
+/// 造带实体类域的属性定义（`property_po` 的 domain_classes 恒为 "[]"）
+fn domain_scoped_property(
+    term_key: &str,
+    domain_classes: &[&str],
+    applies_to: &str,
+) -> OntologyPropertyPo {
+    let mut po = property_po(term_key, "string", "", "single", applies_to);
+    po.domain_classes = serde_json::to_string(domain_classes).expect("序列化 domain_classes");
+    po
+}
+
+/// ① 域内写：清单命中 ⇒ 无 issue，值落库
+#[sqlx::test]
+async fn save_entity_properties_allows_in_domain_class(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    // kn_a 的 node_type = "concept"，属性只声明给 concept
+    define_property(
+        &ctx,
+        &domain_scoped_property("phase_note", &["concept"], ""),
+    )
+    .await;
+
+    let report = dal()
+        .save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Node,
+            "kn_a",
+            vec![PropertyEntry {
+                term_key: "phase_note".to_string(),
+                value: PropertyValue::Text("一期".to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("save should succeed");
+
+    assert_eq!(report.accepted, 1);
+    assert!(report.is_clean(), "域内写不该有 issue: {:?}", report.issues);
+    let rows = dal()
+        .list_entity_properties(ctx, PropertyTargetType::Node, "kn_a")
+        .await
+        .expect("list should succeed");
+    assert_eq!(
+        rows[0].value(),
+        Some(PropertyValue::Text("一期".to_string()))
+    );
+}
+
+/// ② 域外写（**软门禁核心证据**）：issue 带 node_type 与允许清单，但值仍写入成功
+#[sqlx::test]
+async fn save_entity_properties_warns_on_disallowed_domain_class(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    // kn_a 是 concept，而属性只声明给 pattern
+    define_property(
+        &ctx,
+        &domain_scoped_property("pattern_hint", &["pattern"], ""),
+    )
+    .await;
+
+    let report = dal()
+        .save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Node,
+            "kn_a",
+            vec![PropertyEntry {
+                term_key: "pattern_hint".to_string(),
+                value: PropertyValue::Text("先落库再补边".to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("save should succeed");
+
+    assert_eq!(report.accepted, 1, "实体类域不符是软门禁，照常写入");
+    assert_eq!(report.rejected().count(), 0, "不拒写");
+    assert_eq!(report.issues.len(), 1, "只该有实体类域一条告警");
+    match &report.issues[0].kind {
+        PropertyWriteIssue::DomainClassNotAllowed {
+            node_type,
+            domain_classes,
+        } => {
+            assert_eq!(node_type, "concept", "issue 应带上被写入的实体类");
+            assert_eq!(
+                domain_classes
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                vec!["pattern"],
+                "issue 应带上属性定义声明的允许清单"
+            );
+        }
+        other => panic!("应为 DomainClassNotAllowed，实际 {other:?}"),
+    }
+    // 值真的在库里：软门禁是「记账照写」，不是「写进去再删掉」
+    let rows = dal()
+        .list_entity_properties(ctx, PropertyTargetType::Node, "kn_a")
+        .await
+        .expect("list should succeed");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].value(),
+        Some(PropertyValue::Text("先落库再补边".to_string()))
+    );
+}
+
+/// ③ 域清单为空 = 不限实体类：任何节点都不告警（与 allows_target 同语义）
+#[sqlx::test]
+async fn save_entity_properties_skips_domain_check_when_domain_classes_empty(
+    pool: sqlx::SqlitePool,
+) {
+    let ctx = seed_graph_ctx(pool).await;
+    define_property(&ctx, &property_po("open_note", "string", "", "single", "")).await;
+
+    let report = dal()
+        .save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Node,
+            "kn_a",
+            vec![PropertyEntry {
+                term_key: "open_note".to_string(),
+                value: PropertyValue::Text("不限实体类".to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("save should succeed");
+
+    assert_eq!(report.accepted, 1);
+    assert!(
+        report.is_clean(),
+        "空清单 = 不限，不该有 issue: {:?}",
+        report.issues
+    );
+}
+
+/// ④ 载体是边 ⇒ 跳过实体类判定（拿不到 node_type，无法判定不误报）
+#[sqlx::test]
+async fn save_entity_properties_skips_domain_check_for_relation_target(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    // 显式允许挂边；domain_classes 只声明给 pattern，写边时也不得告警
+    define_property(
+        &ctx,
+        &domain_scoped_property("edge_hint", &["pattern"], r#"["node","relation"]"#),
+    )
+    .await;
+
+    let report = dal()
+        .save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Relation,
+            "kr_ab",
+            vec![PropertyEntry {
+                term_key: "edge_hint".to_string(),
+                value: PropertyValue::Text("边属性".to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("save should succeed");
+
+    assert_eq!(report.accepted, 1);
+    assert!(
+        report.is_clean(),
+        "边属性不做实体类判定: {:?}",
+        report.issues
+    );
+}
+
+/// ⑤ 既有载体门闩行为不变：applies_to 只允许边时，写节点仍只报 TargetNotAllowed
+#[sqlx::test]
+async fn save_entity_properties_keeps_target_gate_behaviour(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    define_property(
+        &ctx,
+        &property_po("since", "date", "", "single", r#"["relation"]"#),
+    )
+    .await;
+
+    let report = dal()
+        .save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Node,
+            "kn_a",
+            vec![PropertyEntry {
+                term_key: "since".to_string(),
+                value: PropertyValue::Date("2026-10-31".to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("save should succeed");
+
+    assert_eq!(report.accepted, 1, "载体不符仍是软门禁，照写");
+    assert_eq!(report.issues.len(), 1, "只该有载体一条告警");
+    assert!(matches!(
+        report.issues[0].kind,
+        PropertyWriteIssue::TargetNotAllowed
+    ));
+    assert_eq!(report.rejected().count(), 0);
+}
+
+/// ⑥ 节点不存在（创建期 / 已删）⇒ 无法判定实体类域，跳过不误报
+#[sqlx::test]
+async fn save_entity_properties_skips_domain_check_for_unknown_target(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    define_property(
+        &ctx,
+        &domain_scoped_property("pattern_hint", &["pattern"], ""),
+    )
+    .await;
+
+    let report = dal()
+        .save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Node,
+            "kn_not_created",
+            vec![PropertyEntry {
+                term_key: "pattern_hint".to_string(),
+                value: PropertyValue::Text("节点还没建".to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("save should succeed");
+
+    assert_eq!(report.accepted, 1, "节点不存在不阻断写入");
+    assert!(report.is_clean(), "查不到节点时不告警: {:?}", report.issues);
 }

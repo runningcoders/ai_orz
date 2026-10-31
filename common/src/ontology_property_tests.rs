@@ -471,6 +471,14 @@ fn only_type_mismatch_and_cardinality_reject_write() {
     assert!(!PropertyWriteIssue::NotInEnumValue.rejects_write());
     assert!(!PropertyWriteIssue::TargetNotAllowed.rejects_write());
     assert!(!PropertyWriteIssue::UndefinedProperty.rejects_write());
+    assert!(
+        !PropertyWriteIssue::DomainClassNotAllowed {
+            node_type: "pattern".to_string(),
+            domain_classes: vec!["concept".to_string()],
+        }
+        .rejects_write(),
+        "实体类域不符是软门禁（L1 记账），不拒写"
+    );
 }
 
 #[test]
@@ -485,10 +493,24 @@ fn every_issue_has_a_human_readable_reason() {
         PropertyWriteIssue::CardinalityExceeded,
         PropertyWriteIssue::TargetNotAllowed,
         PropertyWriteIssue::UndefinedProperty,
+        PropertyWriteIssue::DomainClassNotAllowed {
+            node_type: "pattern".to_string(),
+            domain_classes: vec!["concept".to_string(), "fact".to_string()],
+        },
     ];
     for k in kinds {
         assert!(!k.describe().is_empty(), "{k:?} 缺少文案");
     }
+    // 文案要能直接归因：node_type 与允许清单都得带出来
+    let msg = PropertyWriteIssue::DomainClassNotAllowed {
+        node_type: "pattern".to_string(),
+        domain_classes: vec!["concept".to_string()],
+    }
+    .describe();
+    assert!(
+        msg.contains("pattern") && msg.contains("concept"),
+        "实体类域文案缺上下文: {msg}"
+    );
 }
 
 #[test]

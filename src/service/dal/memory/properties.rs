@@ -37,6 +37,19 @@ impl MemoryDalImpl {
             .list_active_properties(ctx.clone(), target_type, target_id)
             .await?;
 
+        // 门闩 1.5 的判定原料：目标节点的实体类（node_type）。
+        // 整批 entries 写的是同一个 target_id，故**循环外只查一次**，不让 IO 随
+        // 条数放大。载体是边时没有实体类；节点查不到（创建期 / 已删）也没得判
+        // ——两种情形一律取 None，后续跳过判定，不误报。
+        let node_type = if target_type == PropertyTargetType::Node {
+            self.memory_dao
+                .get_knowledge_node(ctx.clone(), target_id)
+                .await?
+                .map(|node| node.node_type)
+        } else {
+            None
+        };
+
         let mut issues: Vec<PropertyIssue> = Vec::new();
         let mut to_write: Vec<KnowledgePropertyPo> = Vec::new();
         // 批内占位：同一批次重复写同一属性也要计入基数
@@ -84,6 +97,26 @@ impl MemoryDalImpl {
                 issues.push(PropertyIssue {
                     term_key: term_key.clone(),
                     kind: PropertyWriteIssue::TargetNotAllowed,
+                });
+            }
+
+            // —— 门闩 1.5：实体类域（`domain_classes`）——（软门禁，记录后照写）
+            // 「属性挂错实体类」多半是声明漏了或节点类型填错，属认知分歧，
+            // 与载体不符同口径处理：只记账、不拦写。未定义属性（门闩 0 已记过一条）
+            // 与无法判定（节点不存在 / 载体是边）一律跳过，避免重复或空告警。
+            let domain_violation = match (def_map.get(&term_key), node_type.as_deref()) {
+                (Some(def), Some(node_type)) if !def.allows_domain_class(node_type) => {
+                    Some((node_type.to_string(), def.parse_domain_classes()))
+                }
+                _ => None,
+            };
+            if let Some((node_type, domain_classes)) = domain_violation {
+                issues.push(PropertyIssue {
+                    term_key: term_key.clone(),
+                    kind: PropertyWriteIssue::DomainClassNotAllowed {
+                        node_type,
+                        domain_classes,
+                    },
                 });
             }
 

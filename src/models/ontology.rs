@@ -375,6 +375,16 @@ impl OntologyPropertyPo {
         common::ontology_property::allows_target(&self.applies_to(), target)
     }
 
+    /// 该属性是否允许挂到指定实体类（`domain_classes`；空清单 = 不限）
+    ///
+    /// 与 [`Self::allows_target`] 同语义：声明为空 = 未声明 = 不限定；
+    /// 非空清单必须命中。判定是纯计算，取数（属性定义 / 节点类型）由调用方完成
+    /// ——DAL 写入链路据此做**软门禁**：实体类域不符只记 issue，照常写入。
+    pub fn allows_domain_class(&self, class_key: &str) -> bool {
+        let classes = self.parse_domain_classes();
+        classes.is_empty() || classes.iter().any(|c| c == class_key)
+    }
+
     /// 解析值类型；脏数据兜底退 `string`（与本体软门禁同口径，不 panic 不阻断）
     pub fn data_type(&self) -> common::enums::ontology::PropertyDataType {
         common::enums::ontology::PropertyDataType::parse_or_default(&self.data_type)

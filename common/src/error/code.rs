@@ -184,6 +184,11 @@ define_error_codes! {
             http: 400,
             code: "property_undefined",
         }
+        PropertyDomainClassNotAllowed {
+            type: Validation,
+            http: 400,
+            code: "property_domain_class_not_allowed",
+        }
         Internal {
             type: System,
             http: 500,

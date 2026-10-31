@@ -339,7 +339,7 @@ pub struct PropertyEntry {
 
 /// 一条属性写入的判定问题
 ///
-/// 「值域 / 载体 / 未定义」三类沿用本体层**软门禁**哲学：记录后照常写入，
+/// 「值域 / 载体 / 实体类域 / 未定义」四类沿用本体层**软门禁**哲学：记录后照常写入，
 /// 不阻断调用方——本体是包容的抽象，认知分歧不该由写侧裁决。
 /// 只有「类型错」是**写错**（值形态与声明不符，没有解释空间），硬拦。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -360,6 +360,17 @@ pub enum PropertyWriteIssue {
     TargetNotAllowed,
     /// 本体尚未定义该属性 → 记录后按值自身类型写入
     UndefinedProperty,
+    /// 实体类不在属性定义声明的实体类清单内 → 记录后写入
+    ///
+    /// 与 [`Self::TargetNotAllowed`] **刻意不复用**：后者是「属性不允许挂到该载体」
+    /// （载体门闩 `applies_to`），本条是「该类实体不在属性域」（`domain_classes`）。
+    /// 两者混用会让写入者分不清该改哪一侧声明，破坏可归因性。
+    DomainClassNotAllowed {
+        /// 被写入的实体（节点类型）term_key
+        node_type: String,
+        /// 属性定义声明的允许实体类清单（回执据此归因）
+        domain_classes: Vec<String>,
+    },
 }
 
 impl PropertyWriteIssue {
@@ -368,6 +379,8 @@ impl PropertyWriteIssue {
     /// 与「是否报错」是两件事：被拒的条只进报告，不中断整批——批量写入
     /// 的既有哲学是「一条坏不连累一批」。
     pub fn rejects_write(&self) -> bool {
+        // 显式列举「硬拦」而非「软类白名单」：新增软变体（如实体类域不符）
+        // 默认落 false，不会被误当成写错
         matches!(self, Self::TypeMismatch { .. } | Self::CardinalityExceeded)
     }
 
@@ -382,6 +395,17 @@ impl PropertyWriteIssue {
             Self::CardinalityExceeded => "超出属性基数（单值属性不可挂多条）".to_string(),
             Self::TargetNotAllowed => "属性定义不允许挂到该载体".to_string(),
             Self::UndefinedProperty => "本体尚未定义该属性".to_string(),
+            Self::DomainClassNotAllowed {
+                node_type,
+                domain_classes,
+            } => {
+                let allowed = if domain_classes.is_empty() {
+                    "未声明".to_string()
+                } else {
+                    domain_classes.join(" / ")
+                };
+                format!("属性定义不允许挂到该实体类（node_type={node_type}，允许={allowed}）")
+            }
         }
     }
 }
