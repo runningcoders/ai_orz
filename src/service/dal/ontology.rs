@@ -15,7 +15,7 @@ use crate::models::ontology::{
 };
 use crate::pkg::RequestContext;
 use crate::pkg::stats::OntologyDriftEvent;
-use crate::service::dao::memory::{MemoryDao, PropertyDomainFreqRow};
+use crate::service::dao::memory::{MemoryDao, PropertyDomainFreqRow, PropertyValueFreqRow};
 use crate::service::dao::ontology::{
     OntologyClassQuery, OntologyClassRelationQuery, OntologyDao, OntologyDriftQuery,
     OntologyDriftTermRow, OntologyPropertyQuery, OntologyRelationTypeQuery, OntologyStatsDao,
@@ -24,9 +24,10 @@ use crate::service::dao::ontology::{
 use async_trait::async_trait;
 use common::api::ontology::{
     DomainOutlierItem, DriftClassDetail, DriftCoverage, DriftRelationDetail, DriftWordItem,
-    GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
-    ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
-    ListDriftRelationDetailsResponse, PropertyDomainCoverage,
+    GetDriftDashboardRequest, GetDriftDashboardResponse, GetPropertyEffectivenessRequest,
+    GetPropertyEffectivenessResponse, ListDriftClassDetailsRequest, ListDriftClassDetailsResponse,
+    ListDriftRelationDetailsRequest, ListDriftRelationDetailsResponse, PropertyDomainCoverage,
+    PropertyEffectivenessItem,
 };
 use common::api::{PagedResult, PaginationParams};
 use common::enums::OntologyStatus;
@@ -34,7 +35,7 @@ use common::error::Result;
 use common::ontology::{
     Direction, LexiconPropertySummary, LexiconSynonymSummary, LexiconTermSummary,
     OntologyCertifyReport, OntologyLexicon, OntologyLexiconSummary, OntologySkeleton, ResolvedTerm,
-    TermKind, resolve,
+    TermKind, normalize, resolve,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -146,6 +147,17 @@ pub trait OntologyDal: Send + Sync {
         ctx: RequestContext,
         request: GetDriftDashboardRequest,
     ) -> Result<GetDriftDashboardResponse>;
+
+    /// 属性有效性统计：按 `(term_key, node_type)` 分组算众数占比（`mode_ratio`），
+    /// 占比严格大于阈值（0.90）的分组标黄（`flagged`）
+    ///
+    /// 只读聚合：SQL 按 `(term_key, node_type, 取值)` 计数，分组/众数/占比/过滤/
+    /// 排序/截断全在纯函数 [`compute_property_effectiveness`] 内完成（可单测锁定边界）。
+    async fn get_property_effectiveness(
+        &self,
+        ctx: RequestContext,
+        request: GetPropertyEffectivenessRequest,
+    ) -> Result<GetPropertyEffectivenessResponse>;
 
     /// 漂移词下钻：关系（边）明细——透传 [`MemoryDao::detail_relations_by_term`]
     /// 并把 DAO 瘦投影行转为 [`DriftRelationDetail`] DTO（`PagedResult::map` 保 total）
@@ -669,6 +681,20 @@ impl OntologyDal for OntologyDalImpl {
         })
     }
 
+    async fn get_property_effectiveness(
+        &self,
+        ctx: RequestContext,
+        request: GetPropertyEffectivenessRequest,
+    ) -> Result<GetPropertyEffectivenessResponse> {
+        // 过滤条件下推到 SQL（走 term_key / node_type 索引），分组统计留在纯函数：
+        // 纯函数侧同样按同一口径过滤一遍，保证「不依赖 SQL 也能单测过滤语义」
+        let rows = self
+            .memory_dao
+            .property_value_freq(ctx, request.term_key.clone(), request.node_type.clone())
+            .await?;
+        Ok(compute_property_effectiveness(&rows, &request))
+    }
+
     async fn list_drift_relation_details(
         &self,
         ctx: RequestContext,
@@ -1172,5 +1198,138 @@ pub(crate) fn compute_property_domain_coverage(
         alert: coverage_ratio < PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD,
         threshold: PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD,
         out_of_domain_by_class: outliers,
+    }
+}
+
+/// 属性有效性统计默认返回分组数（与 `GetPropertyEffectivenessRequest.limit` 的 None 语义一致）
+const DEFAULT_PROPERTY_EFFECTIVENESS_LIMIT: usize = 100;
+
+/// 属性有效性「众数占比」标黄阈值（L1 提示：某属性在某实体类上已近常量）
+///
+/// 语义不是「值错了」，而是「这个属性在该实体类上没有区分度」：声明里写着 enum
+/// 多值，实际用法却退化成单一取值——要么该属性对该类无意义（该收窄 domain_classes），
+/// 要么该类内部其实该拆子类。严格大于才标黄：恰好 90% 仍留 10% 变化，属正常使用。
+pub const PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD: f64 = 0.90;
+
+/// 分组内取值分布累加器（纯函数内部结构，不出本模块）
+struct EffectivenessGroup {
+    /// 该组合的生效值总条数
+    total: u64,
+    /// 取值 → 条数
+    values: HashMap<String, u64>,
+}
+
+/// 属性有效性纯函数：取值频次行 → 分组统计（众数 / 占比 / 标黄）
+///
+/// 口径（已拍板，改动须先评审）：
+///
+/// - **默认值 = 众数**，不是枚举首值：`lifecycle_status` 在 fact 上用得最多的是
+///   「现行有效」，按首值（「进行中」）算会把方向算反。
+/// - 并列众数（count 相同）取**字典序最小**的取值，保证同一份数据反复查询结果一致。
+/// - `mode_ratio = mode_count / total`；`non_default_ratio = 1 - mode_ratio`。
+/// - `flagged = mode_ratio > 阈值`（**严格大于**；恰好 0.90 不标黄）。
+/// - `limit` 默认 [`DEFAULT_PROPERTY_EFFECTIVENESS_LIMIT`]；`total_groups` 是截断
+///   前的分组数，不受 `limit` 影响。
+/// - `total = 0` 不会产出条目（SQL GROUP BY 天然不产空组，这里仍防御）——
+///   「空集不产生条目」是显式契约，避免前端渲染一行 0/0 的 NaN 占比。
+///
+/// 纯计算：不取数、不打日志、不读时钟，便于单测锁定全部判定边界。
+pub(crate) fn compute_property_effectiveness(
+    rows: &[PropertyValueFreqRow],
+    request: &GetPropertyEffectivenessRequest,
+) -> GetPropertyEffectivenessResponse {
+    let term_filter = request
+        .term_key
+        .as_deref()
+        .map(normalize)
+        .filter(|s| !s.is_empty());
+    let node_filter = request
+        .node_type
+        .as_deref()
+        .map(normalize)
+        .filter(|s| !s.is_empty());
+
+    let mut groups: HashMap<(String, String), EffectivenessGroup> = HashMap::new();
+    for row in rows {
+        if term_filter
+            .as_deref()
+            .is_some_and(|term| row.term_key != term)
+        {
+            continue;
+        }
+        if node_filter
+            .as_deref()
+            .is_some_and(|class| row.node_type != class)
+        {
+            continue;
+        }
+        // COUNT(*) 恒非负，这里只作脏数据防御（不 panic）
+        let count = row.count.max(0) as u64;
+        if count == 0 {
+            continue;
+        }
+        let group = groups
+            .entry((row.term_key.clone(), row.node_type.clone()))
+            .or_insert_with(|| EffectivenessGroup {
+                total: 0,
+                values: HashMap::new(),
+            });
+        group.total += count;
+        *group.values.entry(row.value_text.clone()).or_insert(0) += count;
+    }
+
+    let mut items: Vec<PropertyEffectivenessItem> = groups
+        .into_iter()
+        .filter_map(|((term_key, node_type), group)| {
+            if group.total == 0 {
+                return None;
+            }
+            let distinct_values = group.values.len() as u64;
+            // 并列众数取字典序最小：count 大者胜；count 相同时取值小者胜
+            // （max_by 尾部平局保留先出现者，故比较器在平局时反转取值比较方向）
+            let (mode_value, mode_count) = group
+                .values
+                .into_iter()
+                .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))?;
+            let mode_ratio = mode_count as f64 / group.total as f64;
+            Some(PropertyEffectivenessItem {
+                term_key,
+                node_type,
+                total: group.total,
+                distinct_values,
+                mode_value,
+                mode_count,
+                mode_ratio,
+                non_default_ratio: 1.0 - mode_ratio,
+                flagged: mode_ratio > PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD,
+            })
+        })
+        .collect();
+
+    // min_mode_ratio 过滤：非有限值（NaN / ±inf）视为「不筛」，避免一个坏参数把结果清空
+    if let Some(min) = request.min_mode_ratio.filter(|v| v.is_finite()) {
+        items.retain(|item| item.mode_ratio >= min);
+    }
+
+    // 排序：占比降序（最「常量」的排前面）→ term_key 升序 → node_type 升序
+    items.sort_by(|a, b| {
+        b.mode_ratio
+            .partial_cmp(&a.mode_ratio)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.term_key.cmp(&b.term_key))
+            .then_with(|| a.node_type.cmp(&b.node_type))
+    });
+
+    let total_groups = items.len() as u64;
+    items.truncate(
+        request
+            .limit
+            .unwrap_or(DEFAULT_PROPERTY_EFFECTIVENESS_LIMIT),
+    );
+
+    GetPropertyEffectivenessResponse {
+        items,
+        total_groups,
+        threshold: PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD,
     }
 }

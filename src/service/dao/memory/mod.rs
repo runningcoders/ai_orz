@@ -123,6 +123,23 @@ pub struct PropertyDomainFreqRow {
     pub count: i64,
 }
 
+/// 属性取值频次聚合投影行（属性有效性统计专用瘦投影，非 PO）
+///
+/// 一个 `(term_key, node_type, value)` 三元组一行：`value_text` 是**统一序列化后**
+/// 的取值文本表示（泛化表四选一值列 → 同一把尺子），`count` 是该取值在该组合上
+/// 的生效条数。众数 / 占比 / 标黄由 DAL 纯函数计算——SQL 只负责计数。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+pub struct PropertyValueFreqRow {
+    /// 属性语义锚点（`knowledge_property.term_key`）
+    pub term_key: String,
+    /// 挂载节点的实体类（`long_term_knowledge_node.node_type`）
+    pub node_type: String,
+    /// 取值文本表示（value_text / value_num / value_bool / value_ref 统一序列化）
+    pub value_text: String,
+    /// 该取值的生效条数
+    pub count: i64,
+}
+
 /// 漂移关系（边）明细投影行（看板下钻专用瘦投影，非 PO）
 ///
 /// 不携带权重/状态等关系本体字段，只回明细卡片所需最小列集；`agent_id` 取
@@ -814,6 +831,30 @@ pub trait MemoryDao: Send + Sync {
     /// - 聚合行列表，按 `count` 降序、`term_key` / `node_type` 升序
     async fn property_domain_freq(&self, ctx: RequestContext)
     -> Result<Vec<PropertyDomainFreqRow>>;
+
+    /// 属性取值分布聚合：生效属性值按 `(term_key, node_type, 取值)` 分组计数
+    ///
+    /// 与 [`Self::property_domain_freq`] 同一 strict 口径（`p.target_type = 'node'`
+    /// + `p.status = 1` + `n.status = 1`），区别是本方法在组合内**再按取值分组**，
+    /// 供上层算众数占比（属性有效性）。
+    ///
+    /// 值载体统一序列化成文本后再分组（`value_text` 原文 / `value_num` 整数化去尾零 /
+    /// `value_bool` → `true`/`false` / `value_ref` 原文 / 全 NULL → 空串），
+    /// 避免同一语义值因落在不同列被拆成多组。注意 `knowledge_property` **无
+    /// `value_date` 列**——date 型落 `value_text`，无需额外分支。
+    ///
+    /// # 参数
+    /// - term_key: 可选属性过滤（None / 空串 = 不过滤；入口经 `normalize` 归一）
+    /// - node_type: 可选实体类过滤（同上）
+    ///
+    /// # 返回
+    /// - 聚合行列表，按 `term_key` / `node_type` / `count` 降序 / `value_text` 升序
+    async fn property_value_freq(
+        &self,
+        ctx: RequestContext,
+        term_key: Option<String>,
+        node_type: Option<String>,
+    ) -> Result<Vec<PropertyValueFreqRow>>;
 
     /// 关系明细下钻：按关系词**归一化**匹配生效边（`LOWER(TRIM(relation_type)) = LOWER(TRIM(?))`）
     ///

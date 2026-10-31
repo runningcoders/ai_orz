@@ -1,6 +1,6 @@
 //! 本体（Ontology）词表管理相关 API DTO
 //!
-//! DTO 单一事实源（前后端共用），覆盖五组接口契约：
+//! DTO 单一事实源（前后端共用），覆盖六组接口契约：
 //!
 //! 1. **词表 CRUD**：实体类（`ontology_classes`，含 `parent_term_key` 继承链）
 //!    与关系类型（`ontology_relation_types`）的新增 / 编辑 / 退役（软删除）。
@@ -12,6 +12,9 @@
 //!    惰性聚合，"现在时"）+ 漂移趋势（DuckDB 事件流，"历史时"）+ 明细下钻。
 //! 5. **seed 预置词表同步**：preview / sync 对（仅补缺，无覆盖策略——
 //!    本体是共享约定，seed 不允许覆盖管理页的本地修改）。
+//! 6. **属性有效性统计**：按 `(term_key, node_type)` 聚合取值分布，以**众数**
+//!    （占比最高的取值，而非枚举首值）作默认值口径，`mode_ratio > 0.90` 标黄——
+//!    识别「某属性在某实体类上事实上已退化成常量」的信号。
 //!
 //! 词条种类复用 [`crate::ontology::TermKind`]（单一事实源），JSON 形态为
 //! 小写 `"class"` / `"relation"`，与统计事件 kind 口径一致。
@@ -658,6 +661,67 @@ pub struct GetDriftDashboardResponse {
     pub total_node_count: u64,
     /// 属性值域覆盖率（L2 阈值告警维度；只增字段，向后兼容）
     pub property_domain_coverage: PropertyDomainCoverage,
+}
+
+// ==================== 属性有效性统计 ====================
+
+/// 属性有效性统计请求
+///
+/// 按 `(属性 × 实体类)` 分组统计取值分布，用**众数**（占比最高的取值）作为
+/// 「默认值」口径——不是枚举首值。原因：`lifecycle_status` 在 fact 上用得最多
+/// 的是「现行有效」而不是首个枚举值，按首值算会把方向算反。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetPropertyEffectivenessRequest {
+    /// 按属性筛选（None = 全部；入口归一化后与落库规范形比对）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub term_key: Option<String>,
+    /// 按实体类筛选（None = 全部；同样归一化后比对）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub node_type: Option<String>,
+    /// 只保留 `mode_ratio >= 该值` 的分组（None = 不筛；NaN / 无穷视为不筛）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub min_mode_ratio: Option<f64>,
+    /// 返回分组条数上限（None = 默认 100）
+    #[serde(default)]
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+}
+
+/// 单个 `(属性 × 实体类)` 组合的有效性条目
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PropertyEffectivenessItem {
+    /// 属性语义锚点（`knowledge_property.term_key`）
+    pub term_key: String,
+    /// 实体类（`long_term_knowledge_node.node_type`）
+    pub node_type: String,
+    /// 该组合的生效属性值总条数
+    pub total: u64,
+    /// 不同取值的个数（同一取值跨值载体合并后计数）
+    pub distinct_values: u64,
+    /// 众数取值（并列时取字典序最小，保证同一份数据反复查询结果一致）
+    pub mode_value: String,
+    /// 众数出现条数
+    pub mode_count: u64,
+    /// 众数占比 = `mode_count / total`
+    pub mode_ratio: f64,
+    /// 非众数占比 = `1 - mode_ratio`（即「真正在变化的值」的占比）
+    pub non_default_ratio: f64,
+    /// 是否标黄：`mode_ratio > threshold`（严格大于，恰好等于不标）
+    pub flagged: bool,
+}
+
+/// 属性有效性统计响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetPropertyEffectivenessResponse {
+    /// 分组条目（`mode_ratio` 降序 → `term_key` 升序 → `node_type` 升序，按 limit 截断）
+    pub items: Vec<PropertyEffectivenessItem>,
+    /// 过滤后命中的分组总数（截断前，便于前端提示「还有多少组未展示」）
+    pub total_groups: u64,
+    /// 本次判定所用阈值（回显，便于看板解释标黄来源）
+    pub threshold: f64,
 }
 
 /// 漂移趋势请求（DuckDB 事件流聚合，"历史时"视角）

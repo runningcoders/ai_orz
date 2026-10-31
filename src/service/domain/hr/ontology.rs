@@ -26,6 +26,7 @@ use crate::service::dao::ontology::{
 use crate::service::domain::hr::{HrDomainImpl, OntologyDomain};
 use common::api::ontology::{
     GetDriftDashboardRequest, GetDriftDashboardResponse, GetOntologySkeletonResponse,
+    GetPropertyEffectivenessRequest, GetPropertyEffectivenessResponse,
     ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
     ListDriftRelationDetailsResponse, OntologyClassItem, OntologyClassRelationItem,
     OntologyRelationTypeItem, PresetOntologySyncItem, PresetOntologySyncStrategy,
@@ -1433,6 +1434,17 @@ impl OntologyDomain for HrDomainImpl {
         request: GetDriftDashboardRequest,
     ) -> Result<GetDriftDashboardResponse> {
         self.ontology_dal.get_drift_dashboard(ctx, request).await
+    }
+
+    async fn get_property_effectiveness(
+        &self,
+        ctx: RequestContext,
+        request: GetPropertyEffectivenessRequest,
+    ) -> Result<GetPropertyEffectivenessResponse> {
+        // 薄透传：聚合与判定全在 DAL（含纯函数），Domain 不做二次加工
+        self.ontology_dal
+            .get_property_effectiveness(ctx, request)
+            .await
     }
 
     async fn list_drift_relation_details(

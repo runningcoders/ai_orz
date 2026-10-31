@@ -24,7 +24,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::paths;
 use crate::service::dao::memory::{
     DriftClassDetailRow, DriftRelationDetailRow, MemoryQuery, MemorySearch, MemoryTraceQuery,
-    PropertyDomainFreqRow, TermFrequencyRow,
+    PropertyDomainFreqRow, PropertyValueFreqRow, TermFrequencyRow,
 };
 use async_trait::async_trait;
 use common::api::{PagedResult, PaginationParams};
@@ -48,6 +48,7 @@ pub const MAX_WORD_FREQ_ROWS: i64 = 1000;
 mod drift;
 mod knowledge;
 mod properties;
+mod property_effectiveness;
 mod relations;
 mod short_term;
 mod trace;
@@ -172,6 +173,7 @@ memory_dao_impl! {
     word_freq_relations(ctx: RequestContext, agent_id: Option<String>) -> Result<Vec<TermFrequencyRow>>,
     word_freq_nodes(ctx: RequestContext, agent_id: Option<String>) -> Result<Vec<TermFrequencyRow>>,
     property_domain_freq(ctx: RequestContext) -> Result<Vec<PropertyDomainFreqRow>>,
+    property_value_freq(ctx: RequestContext, term_key: Option<String>, node_type: Option<String>) -> Result<Vec<PropertyValueFreqRow>>,
     detail_relations_by_term(ctx: RequestContext, raw_term: &str, agent_id: Option<String>, pagination: PaginationParams) -> Result<PagedResult<DriftRelationDetailRow>>,
     detail_nodes_by_term(ctx: RequestContext, raw_term: &str, agent_id: Option<String>, pagination: PaginationParams) -> Result<PagedResult<DriftClassDetailRow>>,
     publish_nodes_by_type(ctx: RequestContext, node_type_normalized: &str) -> Result<u64>,

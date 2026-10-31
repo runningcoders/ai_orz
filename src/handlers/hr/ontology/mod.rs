@@ -5,6 +5,7 @@
 //! - 同义映射：漂移修复规则（raw_term 归一化入库，UNIQUE(raw_term, target_kind)）
 //! - 词表视图：神经技能提示词注入裁剪视图（常驻神经工具）
 //! - 漂移看板：Top N 漂移词 / 覆盖率 / 明细下钻
+//! - 属性有效性统计：按（属性 × 实体类）的取值众数占比，> 阈值标黄
 //!
 //! 分层：handler 只做 DTO ↔ Entity 转换与调用编排（CODE_STANDARDS §7 双宏），
 //! 业务校验（term_key 非空 / 引用完整性）在 Domain 层完成；归一化由 DAO 写入侧单点完成。
@@ -16,6 +17,7 @@ pub mod create_relation_type;
 pub mod create_synonym;
 pub mod delete_synonym;
 pub mod get_drift_dashboard;
+pub mod get_property_effectiveness;
 pub mod get_skeleton;
 pub mod list_class_relations;
 pub mod list_classes;
@@ -41,6 +43,7 @@ pub use create_relation_type::create_ontology_relation_type_handler;
 pub use create_synonym::create_ontology_synonym_handler;
 pub use delete_synonym::delete_ontology_synonym_handler;
 pub use get_drift_dashboard::get_ontology_drift_dashboard_handler;
+pub use get_property_effectiveness::get_property_effectiveness_handler;
 pub use get_skeleton::get_ontology_skeleton_handler;
 pub use list_class_relations::list_ontology_class_relations_handler;
 pub use list_classes::list_ontology_classes_handler;

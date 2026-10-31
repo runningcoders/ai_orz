@@ -876,6 +876,10 @@ fn hr_routes() -> Router {
             get(handlers::hr::ontology::get_ontology_drift_dashboard_handler),
         )
         .route(
+            "/ontology/properties/effectiveness",
+            get(handlers::hr::ontology::get_property_effectiveness_handler),
+        )
+        .route(
             "/ontology/drift/relations",
             get(handlers::hr::ontology::list_ontology_drift_relation_details_handler),
         )

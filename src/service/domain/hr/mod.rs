@@ -47,6 +47,7 @@ use crate::service::dao::ontology::{
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::api::ontology::{
     GetDriftDashboardRequest, GetDriftDashboardResponse, GetOntologySkeletonResponse,
+    GetPropertyEffectivenessRequest, GetPropertyEffectivenessResponse,
     ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
     ListDriftRelationDetailsResponse, PresetOntologySyncStrategy, PreviewPresetOntologyResponse,
 };
@@ -1051,6 +1052,13 @@ pub trait OntologyDomain: Send + Sync {
         ctx: RequestContext,
         request: GetDriftDashboardRequest,
     ) -> Result<GetDriftDashboardResponse>;
+
+    /// 属性有效性统计：按 `(属性 × 实体类)` 聚合取值分布，众数占比 > 阈值标黄
+    async fn get_property_effectiveness(
+        &self,
+        ctx: RequestContext,
+        request: GetPropertyEffectivenessRequest,
+    ) -> Result<GetPropertyEffectivenessResponse>;
 
     /// 漂移词下钻：关系（边）明细
     async fn list_drift_relation_details(
