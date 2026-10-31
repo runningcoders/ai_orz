@@ -15,7 +15,7 @@ use crate::models::ontology::{
 };
 use crate::pkg::RequestContext;
 use crate::pkg::stats::OntologyDriftEvent;
-use crate::service::dao::memory::MemoryDao;
+use crate::service::dao::memory::{MemoryDao, PropertyDomainFreqRow};
 use crate::service::dao::ontology::{
     OntologyClassQuery, OntologyClassRelationQuery, OntologyDao, OntologyDriftQuery,
     OntologyDriftTermRow, OntologyPropertyQuery, OntologyRelationTypeQuery, OntologyStatsDao,
@@ -23,9 +23,10 @@ use crate::service::dao::ontology::{
 };
 use async_trait::async_trait;
 use common::api::ontology::{
-    DriftClassDetail, DriftCoverage, DriftRelationDetail, DriftWordItem, GetDriftDashboardRequest,
-    GetDriftDashboardResponse, ListDriftClassDetailsRequest, ListDriftClassDetailsResponse,
-    ListDriftRelationDetailsRequest, ListDriftRelationDetailsResponse,
+    DomainOutlierItem, DriftClassDetail, DriftCoverage, DriftRelationDetail, DriftWordItem,
+    GetDriftDashboardRequest, GetDriftDashboardResponse, ListDriftClassDetailsRequest,
+    ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
+    ListDriftRelationDetailsResponse, PropertyDomainCoverage,
 };
 use common::api::{PagedResult, PaginationParams};
 use common::enums::OntologyStatus;
@@ -35,6 +36,7 @@ use common::ontology::{
     OntologyCertifyReport, OntologyLexicon, OntologyLexiconSummary, OntologySkeleton, ResolvedTerm,
     TermKind, resolve,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // ==================== Factory + Singleton ====================
@@ -582,6 +584,17 @@ impl OntologyDal for OntologyDalImpl {
             .memory_dao
             .word_freq_nodes(ctx.clone(), request.agent_id)
             .await?;
+        // 属性域覆盖率（L2）：ABox 挂载量按 (term_key, node_type) 聚合，
+        // 再与 TBox 属性定义的 domain_classes 比对——纯函数，只读，不改写入链路。
+        // 属性定义取全量（含退役）：退役 ≠ 删除，历史属性值仍需可解释。
+        let property_rows = self.memory_dao.property_domain_freq(ctx.clone()).await?;
+        let property_definitions: Vec<OntologyProperty> = self
+            .ontology_dao
+            .list_all_properties(ctx)
+            .await?
+            .into_iter()
+            .map(OntologyProperty::from_po)
+            .collect();
 
         let mut canonical_relations = 0u64;
         let mut via_synonym_relations = 0u64;
@@ -648,6 +661,11 @@ impl OntologyDal for OntologyDalImpl {
             },
             drift_node_count,
             total_node_count,
+            property_domain_coverage: compute_property_domain_coverage(
+                &property_definitions,
+                &property_rows,
+                top_n,
+            ),
         })
     }
 
@@ -1080,3 +1098,79 @@ impl OntologyDal for OntologyDalImpl {
 
 /// Top N 漂移词默认数量（与 `GetDriftDashboardRequest.top_n` 的 None 语义一致）
 const DEFAULT_TOP_N: usize = 20;
+
+/// 属性域覆盖率告警阈值（L2：覆盖率低于该值即看板标红）
+///
+/// 属性域是声明式约束，写入期只记账不阻断（软门禁），因此偶发的少量域外挂载
+/// 属可归因信号；一旦低于 95%，说明域外已成批出现——该扩域（改声明）或该纠偏
+/// （改写入），两者都不能再拖。恰好等于阈值不告警（`<` 而非 `<=`）。
+pub const PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD: f64 = 0.95;
+
+/// 属性域覆盖率纯函数：TBox 属性定义 × ABox 聚合行 → 覆盖率 + 域外明细
+///
+/// 判定语义与写入期软门禁 `OntologyPropertyPo::allows_domain_class` 严格一致：
+///
+/// - `domain_classes` 为空 → **不限** → 计入域内（不是「全部域外」）
+/// - 含该 `node_type` → 域内；否则 → 域外
+/// - `term_key` 无属性定义 → 域外（幽灵属性，`node_type` 保留在明细里供归因）
+/// - `total_values = 0` → `coverage_ratio = 1.0`（空库不判告警）
+///
+/// 纯计算：不取数、不打日志、不读时钟，便于单测锁定全部判定边界。
+pub(crate) fn compute_property_domain_coverage(
+    definitions: &[OntologyProperty],
+    rows: &[PropertyDomainFreqRow],
+    top_n: usize,
+) -> PropertyDomainCoverage {
+    let by_term: HashMap<&str, &OntologyProperty> = definitions
+        .iter()
+        .map(|def| (def.term_key(), def))
+        .collect();
+
+    let mut total_values = 0u64;
+    let mut in_domain = 0u64;
+    let mut out_of_domain = 0u64;
+    let mut outliers: Vec<DomainOutlierItem> = Vec::new();
+
+    for row in rows {
+        // COUNT(*) 恒非负，这里只作脏数据防御（不 panic）
+        let count = row.count.max(0) as u64;
+        total_values += count;
+        let allowed = by_term
+            .get(row.term_key.as_str())
+            .is_some_and(|def| def.po.allows_domain_class(&row.node_type));
+        if allowed {
+            in_domain += count;
+        } else {
+            out_of_domain += count;
+            outliers.push(DomainOutlierItem {
+                term_key: row.term_key.clone(),
+                node_type: row.node_type.clone(),
+                count,
+            });
+        }
+    }
+
+    outliers.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.term_key.cmp(&b.term_key))
+            .then_with(|| a.node_type.cmp(&b.node_type))
+    });
+    outliers.truncate(top_n);
+
+    let coverage_ratio = if total_values == 0 {
+        1.0
+    } else {
+        in_domain as f64 / total_values as f64
+    };
+
+    PropertyDomainCoverage {
+        total_values,
+        in_domain,
+        out_of_domain,
+        coverage_ratio,
+        alert: coverage_ratio < PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD,
+        threshold: PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD,
+        out_of_domain_by_class: outliers,
+    }
+}

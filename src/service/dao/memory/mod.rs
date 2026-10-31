@@ -108,6 +108,21 @@ pub struct TermFrequencyRow {
     pub agent_count: i64,
 }
 
+/// 属性域覆盖率聚合投影行（看板专用瘦投影，非 PO）
+///
+/// 一个 `(term_key, node_type)` 组合一行：`count` 是该组合上的**生效属性值**条数。
+/// 是否域外由上层用 TBox 属性定义的 `domain_classes` 判定——聚合 SQL 只按
+/// `target_type = 'node'` 与双方 status 过滤计数，不 JOIN 词表。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+pub struct PropertyDomainFreqRow {
+    /// 属性语义锚点（`knowledge_property.term_key`）
+    pub term_key: String,
+    /// 挂载节点的实体类（`long_term_knowledge_node.node_type`）
+    pub node_type: String,
+    /// 该组合的生效属性值条数
+    pub count: i64,
+}
+
 /// 漂移关系（边）明细投影行（看板下钻专用瘦投影，非 PO）
 ///
 /// 不携带权重/状态等关系本体字段，只回明细卡片所需最小列集；`agent_id` 取
@@ -787,6 +802,18 @@ pub trait MemoryDao: Send + Sync {
         ctx: RequestContext,
         agent_id: Option<String>,
     ) -> Result<Vec<TermFrequencyRow>>;
+
+    /// 属性值域聚合：生效属性值按 `(term_key, node_type)` 分组计数
+    ///
+    /// 只统计**挂在存活节点上的生效值**（strict 口径）：`p.target_type = 'node'`
+    /// （边属性不在本维度）、`p.status = 1`（被取代的历史值不计）、
+    /// `n.status = 1`（已遗忘节点上的悬挂值不计）。是否域外由上层用词表判定，
+    /// SQL 只负责计数。
+    ///
+    /// # 返回
+    /// - 聚合行列表，按 `count` 降序、`term_key` / `node_type` 升序
+    async fn property_domain_freq(&self, ctx: RequestContext)
+    -> Result<Vec<PropertyDomainFreqRow>>;
 
     /// 关系明细下钻：按关系词**归一化**匹配生效边（`LOWER(TRIM(relation_type)) = LOWER(TRIM(?))`）
     ///

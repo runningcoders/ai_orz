@@ -2,7 +2,9 @@
 
 use super::{MAX_WORD_FREQ_ROWS, MemoryDaoSqliteImpl};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::{DriftClassDetailRow, DriftRelationDetailRow, TermFrequencyRow};
+use crate::service::dao::memory::{
+    DriftClassDetailRow, DriftRelationDetailRow, PropertyDomainFreqRow, TermFrequencyRow,
+};
 use common::api::{PagedResult, PaginationParams};
 use common::error::Result;
 use common::ontology::normalize;
@@ -170,6 +172,36 @@ WHERE node_type = ? AND is_published = 0 AND status != 0
         .execute(&pool)
         .await?;
         Ok(result.rows_affected())
+    }
+
+    /// 属性域覆盖率聚合：生效属性值按 `(term_key, node_type)` 分组计数
+    pub(super) async fn property_domain_freq(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<PropertyDomainFreqRow>> {
+        let pool = self.pool(ctx);
+        // strict 口径三条，缺一不可（否则覆盖率会被脏数据稀释）：
+        //   - p.target_type = 'node'：边属性（relation）不属于本维度
+        //   - p.status = 1：被取代的历史值不计
+        //   - n.status = 1：已遗忘节点上的悬挂值不计（与 word_freq_nodes 的 status != 0 同源）
+        // 运行时 `query_as::<_, Row>` 而非编译期 `query_as!`：与本文件既有聚合
+        // （word_freq_*）同口径，避免为一处静态 SQL 引入 `.sqlx` 离线产物刷新。
+        let rows = sqlx::query_as::<_, PropertyDomainFreqRow>(
+            r#"
+SELECT p.term_key AS term_key,
+       n.node_type AS node_type,
+       COUNT(*) AS count
+FROM knowledge_property p
+JOIN long_term_knowledge_node n ON n.id = p.target_id
+WHERE p.target_type = 'node' AND p."status" = 1 AND n."status" = 1
+GROUP BY p.term_key, n.node_type
+ORDER BY count DESC, p.term_key ASC, n.node_type ASC
+LIMIT ?"#,
+        )
+        .bind(MAX_WORD_FREQ_ROWS)
+        .fetch_all(&pool)
+        .await?;
+        Ok(rows)
     }
 }
 

@@ -8,7 +8,7 @@
 //!    （主语类 - 关系词 - 宾语类，含基数 / 必填 / 状态）。约束语义：某关系无
 //!    三元组 = 不约束；单侧为空用通配符 `*`；子类沿祖先链解析（纯函数、零物化）。
 //! 3. **同义映射管理**：`ontology_synonym_mappings` 的增删查。
-//! 4. **漂移看板**：Top N 漂移词 / 词表覆盖率 / 漂移节点数（SQLite 读路径
+//! 4. **漂移看板**：Top N 漂移词 / 词表覆盖率 / 漂移节点数 / 属性域覆盖率（SQLite 读路径
 //!    惰性聚合，"现在时"）+ 漂移趋势（DuckDB 事件流，"历史时"）+ 明细下钻。
 //! 5. **seed 预置词表同步**：preview / sync 对（仅补缺，无覆盖策略——
 //!    本体是共享约定，seed 不允许覆盖管理页的本地修改）。
@@ -608,6 +608,43 @@ pub struct DriftCoverage {
     pub coverage_ratio: f64,
 }
 
+/// 属性域外挂载明细（单个 term_key × node_type 组合）
+///
+/// 看板「域外 Top N」的下钻入口：谁在什么实体类上越界挂了多少条。
+/// `term_key` 无属性定义（TBox 未声明）同样落在这里——归因靠 `node_type` 保留现场。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DomainOutlierItem {
+    /// 属性语义锚点（本体 `ontology_properties.term_key`）
+    pub term_key: String,
+    /// 实际挂载到的实体类（`long_term_knowledge_node.node_type`）
+    pub node_type: String,
+    /// 该组合的生效属性值条数
+    pub count: u64,
+}
+
+/// 属性值域覆盖率（L2 阈值告警维度）
+///
+/// 与 [`DriftCoverage`]（关系维度词表覆盖率）并列：关系维度看「边的词在不在词表」，
+/// 本维度看「属性的值有没有挂到声明允许的实体类上」。`domain_classes` 为空视为
+/// **不限**（计入域内），与写入期软门禁 `allows_domain_class` 严格同语义。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PropertyDomainCoverage {
+    /// 参与统计的生效属性值总数（挂节点、双方 status 均有效）
+    pub total_values: u64,
+    /// 域内条数（含 `domain_classes` 为空 = 不限的属性）
+    pub in_domain: u64,
+    /// 域外条数（含 `term_key` 无属性定义的幽灵属性）
+    pub out_of_domain: u64,
+    /// 覆盖率 = in_domain / total_values（total_values = 0 时为 1.0）
+    pub coverage_ratio: f64,
+    /// 是否触发 L2 告警（`coverage_ratio < threshold`，等于阈值不告警）
+    pub alert: bool,
+    /// 本次判定所用阈值（回显，便于看板解释红线来源）
+    pub threshold: f64,
+    /// 域外明细（count 降序，截断 top_n）
+    pub out_of_domain_by_class: Vec<DomainOutlierItem>,
+}
+
 /// 漂移看板响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetDriftDashboardResponse {
@@ -619,6 +656,8 @@ pub struct GetDriftDashboardResponse {
     pub drift_node_count: u64,
     /// 节点总数
     pub total_node_count: u64,
+    /// 属性值域覆盖率（L2 阈值告警维度；只增字段，向后兼容）
+    pub property_domain_coverage: PropertyDomainCoverage,
 }
 
 /// 漂移趋势请求（DuckDB 事件流聚合，"历史时"视角）

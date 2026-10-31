@@ -111,6 +111,8 @@ pub(crate) mod message_test;
 #[cfg(test)]
 pub(crate) mod model_provider_test;
 #[cfg(test)]
+pub(crate) mod ontology_domain_coverage_test;
+#[cfg(test)]
 pub(crate) mod organization_test;
 #[cfg(test)]
 pub(crate) mod project_test;
