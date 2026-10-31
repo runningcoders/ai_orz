@@ -147,6 +147,10 @@ fn reasoning_summaries(result: &ThinkResult) -> Vec<String> {
 
 /// 组装本轮轨迹明细（工具结果由 dispatch 回填）
 ///
+/// `round` 收的是**唤醒级 0 基绝对轮次**（`d.wake_round_index`），对外写 1 基。
+/// 这样一次唤醒里第二个思考周期写进轨迹的轮次是 11、12…… 而不是重新从 1 数起
+/// ——「明明第 10 轮就该结束，轨迹里却还有第 11 轮」正是老口径每周期重置造成的。
+///
 /// `thinking_intensity` 必须是**本轮实际传给模型的调用参数快照**，而不是 run 级
 /// 默认值——未来按轮动态调整强度时，轨迹仍需如实反映每一轮实际下发的值。
 #[allow(clippy::too_many_arguments)]
@@ -275,11 +279,14 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             }
             Err(e) => {
                 llm_consecutive_errors += 1;
+                // 唤醒级口径：轮次 / token / 时长都带上前几个周期的已用量
+                let local_tokens = total_input_tokens.saturating_add(total_output_tokens);
+                d.sync_usage(d.wake_rounds(round), local_tokens);
                 let metrics = round_metrics(
-                    round + 1,
+                    d.wake_rounds(round),
                     d.max_rounds,
-                    d.loop_start.elapsed().as_secs(),
-                    total_input_tokens.saturating_add(total_output_tokens),
+                    d.wake_elapsed_secs(),
+                    d.wake_tokens(local_tokens),
                     0,
                     &tool_call_counts,
                     llm_consecutive_errors,
@@ -291,7 +298,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                         &ctx,
                         "think_loop",
                         "llm error budget exhausted at round={}, propagating",
-                        round + 1
+                        d.wake_rounds(round)
                     );
                     return Err(e);
                 }
@@ -322,7 +329,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 tr.report_round(
                     &d.trace_id,
                     d.scene,
-                    round + 1,
+                    d.wake_rounds(round),
                     d.max_rounds,
                     total_input_tokens,
                     total_output_tokens,
@@ -338,7 +345,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                     &d.agent.po.id,
                     &d.trace_id,
                     d.scene.as_str(),
-                    round,
+                    d.wake_round_index(round),
                     round_duration_ms,
                     false,
                     0,
@@ -356,7 +363,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             // 策略裁决交给 evaluate：这里只登记本轮产出
             let mut state = lock(&d.state)?;
             state.trace_rounds.push(build_trace_round(
-                round,
+                d.wake_round_index(round),
                 assistant_preview(&content),
                 reasoning,
                 Vec::new(),
@@ -443,7 +450,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             state.pending_usage = Some(usage);
             state.pending_round_duration_ms = round_duration_ms;
             state.trace_rounds.push(build_trace_round(
-                round,
+                d.wake_round_index(round),
                 digest_assistant_text_for_trace,
                 reasoning,
                 tool_traces,
@@ -643,7 +650,7 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     // 放在这里才能保证每一轮已完成的工具调用都不漏记。
     if let Some(progress) = &d.progress {
         progress.record_round(RoundDigest {
-            round: round + 1,
+            round: d.wake_rounds(round),
             assistant_text: digest_assistant_text,
             tool_names: round_tool_names,
             transcript: messages[round_start_idx..]
@@ -660,7 +667,7 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             &d.agent.po.id,
             &d.trace_id,
             d.scene.as_str(),
-            round,
+            d.wake_round_index(round),
             round_duration_ms,
             true,
             tc_count,
@@ -704,7 +711,7 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         tr.report_round(
             &d.trace_id,
             d.scene,
-            round + 1,
+            d.wake_rounds(round),
             d.max_rounds,
             total_input_tokens,
             total_output_tokens,
@@ -770,7 +777,7 @@ fn run_reflect(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         &d.ctx,
         "think_loop",
         "reflect: repeated tool calls at round={}: {}",
-        round + 1,
+        d.wake_rounds(round),
         summary
     );
 
@@ -805,13 +812,16 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     };
 
     let round = state.last_round;
+    // 唤醒级口径：轮次 / token / 时长都带上前几个周期的已用量
+    let local_tokens = state
+        .total_input_tokens
+        .saturating_add(state.total_output_tokens);
+    d.sync_usage(d.wake_rounds(round), local_tokens);
     let metrics = round_metrics(
-        round + 1,
+        d.wake_rounds(round),
         d.max_rounds,
-        d.loop_start.elapsed().as_secs(),
-        state
-            .total_input_tokens
-            .saturating_add(state.total_output_tokens),
+        d.wake_elapsed_secs(),
+        d.wake_tokens(local_tokens),
         state.last_input_tokens,
         &state.tool_call_counts,
         state.llm_consecutive_errors,
@@ -828,7 +838,7 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         d.policy.as_deref(),
         &metrics,
         &state.messages,
-        round + 1,
+        d.wake_rounds(round),
         state.last_input_tokens,
         final_content,
     );
@@ -842,7 +852,11 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                     // fail-safe：自定义策略组未含 final_answer 时保持原行为
                     let content = state.final_content.clone().unwrap_or_default();
                     let messages = std::mem::take(&mut state.messages);
-                    ThinkLoopResult::Final { content, messages }
+                    ThinkLoopResult::Final {
+                        content,
+                        messages,
+                        rounds_used: d.wake_rounds(round),
+                    }
                 }
             });
             Ok(NodeSignal::Yield(SIGNAL_EXIT.to_string()).into())
@@ -859,7 +873,7 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                     &d.ctx,
                     "think_loop",
                     "evaluate: repeated tools detected at round={}, entering reflect",
-                    round + 1
+                    d.wake_rounds(round)
                 );
                 Ok(NodeSignal::Yield(SIGNAL_REFLECT.to_string()).into())
             } else {

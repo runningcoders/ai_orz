@@ -28,10 +28,13 @@ pub struct AgentRuntimeConfig {
     #[serde(default = "default_max_thinking_depth")]
     pub max_thinking_depth: i32,
 
-    /// 单次唤醒最大思考轮次（跨压缩累计）
+    /// 单次唤醒的思考**总**轮次（跨压缩 / 跨周期累计）
     ///
     /// 0 = 使用系统配置（[agent].max_thinking_rounds）。
     /// 非 0 = Agent 级覆盖值。
+    ///
+    /// **语义**：一次唤醒内所有思考周期共享这一份预算 —— 溢出压缩后重来的那一段
+    /// 不是重新领满额，而是接着用剩下的（可用量 = 本值 − 已消耗）。
     #[serde(default)]
     pub max_thinking_rounds: usize,
 
@@ -49,12 +52,15 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub installed_skill_packs: Vec<String>,
 
-    /// 意图识别阶段最大思考轮次
+    /// 意图识别阶段的思考轮次（场景级，独立于唤醒总预算）
     /// 0 = 使用系统配置（[agent].intent_analyze_max_rounds）。
     #[serde(default)]
     pub intent_analyze_max_rounds: usize,
 
-    /// 总结退出阶段最大思考轮次
+    /// 收尾总结阶段的思考轮次（场景级，独立于唤醒总预算）
+    ///
+    /// 作用点：轮次预算耗尽后 `CompactNode(with_user_reply = true)` 那一段，
+    /// 产物剥掉摘要标记后作为最终回复发给用户。
     /// 0 = 使用系统配置（[agent].summary_max_rounds）。
     #[serde(default)]
     pub summary_max_rounds: usize,

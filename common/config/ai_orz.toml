@@ -61,16 +61,23 @@ enabled = true
 secret_key = "ai-orz-default-secret-key-change-me"
 
 # Agent 运行时配置（系统级默认值，可被单个 Agent 的 runtime_config 覆盖）
+#
+# 预算分三层，不要混用：
+#   ① 唤醒级（跨压缩 / 跨周期累计）：max_thinking_rounds / think_timeout_secs / token_budget
+#      —— 一次唤醒内所有思考周期**共享**一份，前面多用后面就少用。
+#   ② 场景级（固定小预算，独立于①）：intent_analyze_max_rounds / summary_max_rounds
+#      —— 意图识别、轮次耗尽后的收尾总结，各自只给几轮。
+#   ③ 任务级：max_thinking_depth（单任务内最多唤醒几次，在 Agent runtime_config 里）
 [agent]
-# 单次唤醒最大思考轮次（跨压缩累计）
+# 单次唤醒的思考总轮次（跨压缩累计；不是每个周期各一份）
 max_thinking_rounds = 365
-# 意图识别阶段最大思考轮次
-intent_analyze_max_rounds = 365
-# 总结退出阶段最大思考轮次
-summary_max_rounds = 365
-# 思考超时（秒），0 = 不限制
+# 意图识别阶段轮次（场景级；通常 1 轮出结构化结果，3 轮是容错）
+intent_analyze_max_rounds = 3
+# 轮次耗尽后「收尾总结」的轮次（场景级；产物会作为最终回复发给用户）
+summary_max_rounds = 3
+# 单次唤醒思考超时（秒，跨周期累计），0 = 不限制
 think_timeout_secs = 0
-# 单次唤醒 Token 预算（input+output 累计），0 = 不启用
+# 单次唤醒 Token 预算（input+output 累计，跨周期），0 = 不启用
 token_budget = 0
 # 记忆分流阈值：本轮问答估算 token 数（中文≈汉字数，英文≈4 字符/token）
 # 低于它原文写入短期记忆，达到/超过才交给模型压缩

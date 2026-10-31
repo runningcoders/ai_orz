@@ -116,6 +116,7 @@ pub(crate) fn map_triggered_to_result(
                 return ThinkLoopResult::Final {
                     content: final_content.unwrap_or_default(),
                     messages,
+                    rounds_used: round_number,
                 };
             }
             "context_overflow" => {
@@ -312,7 +313,12 @@ impl RuntimeDomainImpl {
             policy,
             progress,
             thinking_intensity_offset,
+            usage,
         } = params;
+
+        // 唤醒级用量：None = 本次循环独立计量（compact / intent / settle）
+        let usage = usage.unwrap_or_else(super::types::WakeUsage::shared);
+        let base = super::types::WakeUsage::snapshot(&usage);
 
         // brain 统一在此解析：四个场景取的都是 agent.brain，
         // 不必让每个调用点各自判空一遍「大脑未唤醒」。
@@ -338,6 +344,14 @@ impl RuntimeDomainImpl {
             start_round,
             timeout_secs,
         );
+
+        // 唤醒级时长预算：本周期只能用到剩余额度（跨周期累计耗时见 base）。
+        // 放在 async 块外：外层 tokio::time::timeout 与块内的早退判定共用同一个值。
+        let remaining_timeout = if timeout_secs == 0 {
+            0
+        } else {
+            timeout_secs.saturating_sub(base.elapsed_secs)
+        };
 
         let think_future = async {
             let mut messages = initial_messages;
@@ -391,7 +405,12 @@ impl RuntimeDomainImpl {
                                 "cerebellum trivial direct short-circuit, confidence={}",
                                 confidence
                             );
-                            return Ok(ThinkLoopResult::Final { content, messages });
+                            return Ok(ThinkLoopResult::Final {
+                                content,
+                                messages,
+                                // 小脑直回没跑思考轮次：绝对轮次停在起点
+                                rounds_used: start_round,
+                            });
                         }
                         // 直回开关关 → 不直回也不注入（保守口径）
                     }
@@ -447,6 +466,20 @@ impl RuntimeDomainImpl {
                 });
             }
 
+            if timeout_secs > 0 && remaining_timeout == 0 {
+                crate::log_warn!(
+                    &ctx,
+                    "think_loop",
+                    "wake timeout budget exhausted (limit={}s, spent={}s), exiting without any LLM call",
+                    timeout_secs,
+                    base.elapsed_secs,
+                );
+                return Ok(ThinkLoopResult::MaxRoundsExceeded {
+                    messages,
+                    total_rounds: start_round,
+                });
+            }
+
             // 轮级环图：think → dispatch → evaluate，由引擎按节点信号驱动
             think_round::run(
                 self.clone(),
@@ -466,23 +499,30 @@ impl RuntimeDomainImpl {
                     policy,
                     progress,
                     loop_start,
+                    usage,
+                    base,
                 },
             )
             .await
         };
 
-        // timeout_secs = 0 → 不限制；非 0 → 超时保护
+        // timeout_secs = 0 → 不限制；非 0 → 只等剩余额度（前几个周期已吃掉的时间要扣掉）
         if timeout_secs == 0 {
             think_future.await
         } else {
-            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), think_future)
-                .await
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(remaining_timeout),
+                think_future,
+            )
+            .await
             {
                 Ok(inner) => inner,
                 Err(_elapsed) => Err(err!(
                     Internal,
-                    "brain think timeout after {}s",
-                    timeout_secs
+                    "brain think timeout after {}s (wake budget {}s, already spent {}s)",
+                    remaining_timeout,
+                    timeout_secs,
+                    base.elapsed_secs
                 )),
             }
         }

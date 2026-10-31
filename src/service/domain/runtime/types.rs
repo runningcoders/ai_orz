@@ -151,6 +151,48 @@ impl ProgressSnapshot {
 
 // ==================== think loop 入参 ====================
 
+/// 单次唤醒的用量计量（**跨思考周期累计**，绝对值口径）
+///
+/// 唤醒链里一次任务可能经历多个思考周期（溢出→压缩→重来），每个周期都是一次
+/// 独立的 `run_think_loop`。预算必须跨周期累计，否则「上限 10 轮」会变成
+/// 「每个周期各 10 轮」，实际可用量被放大成 `周期数 × 上限` —— 这正是
+/// 重构前 `start_round` 恒传 0 造成的口径偏差。
+///
+/// 三个字段都由 `start_round` + 本周期的本地增量算出，由思考循环每轮写回，
+/// 调用方（`DeliberateNode`）在周期结束后读出来落进 `BudgetState`。
+///
+/// - `rounds`：已开始的思考轮次数（绝对编号，1 基）
+/// - `tokens`：已消耗 token（input + output）
+/// - `elapsed_secs`：已消耗墙钟秒数
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WakeUsage {
+    pub rounds: usize,
+    pub tokens: u64,
+    pub elapsed_secs: u64,
+}
+
+impl WakeUsage {
+    /// 新建一个「本场景独立计量」的空表（compact / intent / settle / 测试用）
+    pub fn shared() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self::default()))
+    }
+
+    /// 读取当前快照（锁中毒时退回零值：计量失败不应拖垮思考）
+    pub fn snapshot(meter: &Arc<Mutex<Self>>) -> Self {
+        match meter.lock() {
+            Ok(guard) => *guard,
+            Err(_) => Self::default(),
+        }
+    }
+
+    /// 覆盖写回（同上，锁中毒时静默丢弃）
+    pub fn store(meter: &Arc<Mutex<Self>>, value: Self) {
+        if let Ok(mut guard) = meter.lock() {
+            *guard = value;
+        }
+    }
+}
+
 /// 思考循环入参
 ///
 /// `run_think_loop` 是 awaken / sleep_and_settle / compact_context / intent_analyze
@@ -208,6 +250,14 @@ pub struct ThinkLoopParams<'a> {
     /// 叠加在场景偏移之上（`场景偏移 + 动态偏移`），由调用方在拿到
     /// `IntentAnalysis` 后填入；意图阶段缺失/降级时保持 0，行为与未改造前一致。
     pub thinking_intensity_offset: i32,
+    /// 唤醒级用量计量器（跨周期累计）
+    ///
+    /// - `Some`：awaken 传入 run 级共享表 ⇒ 轮次/token/时长在周期之间累计，
+    ///   策略阈值（`max_thinking_rounds` / `token_budget` / `think_timeout_secs`）
+    ///   比较的是**整次唤醒**的已用量，而不是单周期。
+    /// - `None`：compact / intent / settle 等固定开销场景 ⇒ 本次循环自建零表，
+    ///   计量口径仍是单周期（这些场景没有「再来一次」的回环）。
+    pub usage: Option<Arc<Mutex<WakeUsage>>>,
 }
 
 impl<'a> ThinkLoopParams<'a> {
@@ -238,13 +288,27 @@ impl<'a> ThinkLoopParams<'a> {
             policy: None,
             progress: None,
             thinking_intensity_offset: 0,
+            usage: None,
         }
     }
 
     /// 覆盖轮次参数：总上限 + 本次循环的起始轮次
+    ///
+    /// ⚠️ awaken 主链的 `start_round` **不是常数 0**：必须传「本次唤醒已消耗的
+    /// 轮次数」（见 [`WakeUsage`]），否则轮次上限会被每个周期重新发放一次。
     pub fn with_rounds(mut self, max_rounds: usize, start_round: usize) -> Self {
         self.max_rounds = max_rounds;
         self.start_round = start_round;
+        self
+    }
+
+    /// 接入唤醒级用量计量器（跨周期累计）
+    ///
+    /// 传入后，本次循环的指标（`round_number` / `total_tokens` / `elapsed_secs`）
+    /// 都是**整次唤醒的绝对值**，策略阈值直接按唤醒级预算比较；循环内每轮
+    /// 会把新用量写回该表，供下一个周期接着算。
+    pub fn with_usage(mut self, usage: &Arc<Mutex<WakeUsage>>) -> Self {
+        self.usage = Some(Arc::clone(usage));
         self
     }
 
@@ -304,6 +368,11 @@ pub enum ThinkLoopResult {
     Final {
         content: String,
         messages: Vec<crate::models::cortex_types::ChatMessage>,
+        /// 本次循环结束时的**绝对轮次**（= 起始轮次 + 本循环跑掉的轮次）
+        ///
+        /// 必须随结果一起回传：唤醒级轮次记账以它为准，而不是另设一份侧信道
+        /// 计量表 —— 后者对「不经过 run_think_loop 的后端」永远不增长。
+        rounds_used: usize,
     },
     ContextOverflow {
         messages: Vec<crate::models::cortex_types::ChatMessage>,
@@ -329,7 +398,10 @@ pub(crate) mod config_resolve {
     use crate::config;
     use crate::models::agent::Agent;
 
-    /// 单次唤醒最大思考轮次（awaken + sleep_and_settle 共用）
+    /// 单次唤醒的思考**总**轮次上限（跨压缩 / 跨周期累计）
+    ///
+    /// 这里是「轮次预算」的唯一解析入口：awaken 主链把它当作整次唤醒的天花板，
+    /// 每个周期的可用量 = 该值 − 已消耗（见 [`WakeUsage`]）。
     pub fn max_thinking_rounds(agent: &Agent) -> usize {
         let rc = agent.po.get_runtime_config();
         if rc.max_thinking_rounds > 0 {
@@ -345,6 +417,18 @@ pub(crate) mod config_resolve {
             return rc.intent_analyze_max_rounds;
         }
         config::get().agent.intent_analyze_max_rounds
+    }
+
+    /// 收尾总结阶段最大思考轮次（轮次耗尽后的「给用户一个交代」那一段）
+    ///
+    /// 消费者是 `CompactNode(with_user_reply=true)`：它复用压缩场景的 prompt 与
+    /// 工具白名单，但预算是独立的一份 —— 用户看到的「总结轮次」配置项指的就是这里。
+    pub fn summary_max_rounds(agent: &Agent) -> usize {
+        let rc = agent.po.get_runtime_config();
+        if rc.summary_max_rounds > 0 {
+            return rc.summary_max_rounds;
+        }
+        config::get().agent.summary_max_rounds
     }
 
     /// 思考超时（秒），0 = 不限制

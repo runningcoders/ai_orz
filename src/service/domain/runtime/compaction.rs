@@ -40,11 +40,14 @@ use std::sync::Arc;
 use super::awakening::build_scene_tool_descriptors;
 use super::think_loop::build_policy_for_scene;
 
-/// 压缩场景的思考轮次上限
+/// 压缩场景的思考轮次上限（**溢出回环 / 正常收尾存档**用）
 ///
 /// 压缩只需调用一次 `save_short_term_memory` 再输出 Final，给 3 轮足够容错
 /// （工具参数写错时模型还有自纠机会）；同时它挡在用户等待的关键路径上，不宜给大预算。
-const COMPACT_MAX_ROUNDS: usize = 3;
+///
+/// ⚠️ 「轮次耗尽后的收尾回复」走的是另一份预算（Agent 的 `summary_max_rounds`），
+/// 不消费本常量 —— 那条路径是唯一一次向用户交付结果的机会，允许配得更宽。
+pub(crate) const COMPACT_MAX_ROUNDS: usize = 3;
 
 /// 压缩场景允许递归调用的工具白名单守卫
 ///
@@ -406,7 +409,9 @@ impl RuntimeDomainImpl {
     /// # 与 sleep_and_settle 的差异
     /// - 复用 `work_messages` 全量上下文（追加指令而非重建），命中 prefix caching
     /// - **不操作 Agent 运行时状态**（不 set_resting / set_busy / set_idle）
-    /// - 轮次预算固定为 [`COMPACT_MAX_ROUNDS`]，与 Agent 的 max_thinking_rounds 无关
+    /// - 轮次预算是**场景级**的，不从唤醒总轮次里扣：
+    ///   溢出回环 → [`COMPACT_MAX_ROUNDS`]；轮次耗尽的收尾回复（`with_user_reply`）
+    ///   → Agent 的 `summary_max_rounds`（至少 1 轮）
     ///
     /// # 产物去向
     /// - 摘要由**框架**写入短期记忆（trace_ids / tags 由框架填写，不依赖模型）
@@ -428,6 +433,16 @@ impl RuntimeDomainImpl {
     ) -> Result<CompactOutcome> {
         let scene = ThinkingScene::Compact;
         let start_time = std::time::Instant::now();
+
+        // 场景内轮次预算（不从唤醒总轮次里扣）：
+        // - 溢出回环 / 正常收尾存档 → 固定小预算
+        // - 轮次耗尽的收尾回复 → Agent 的 `summary_max_rounds`（这是最后一次
+        //   向用户交付结果的机会，允许单独放宽；`.max(1)` 保证它至少能说话）
+        let max_rounds = if with_user_reply {
+            super::types::config_resolve::summary_max_rounds(agent).max(1)
+        } else {
+            COMPACT_MAX_ROUNDS
+        };
 
         // 1. 构造压缩 trace（不写 Agent 状态，仅用于审计追溯）
         let mut trace = MemoryTrace::new(
@@ -465,7 +480,7 @@ impl RuntimeDomainImpl {
         )
         .await;
 
-        // 5. 执行压缩循环（小轮次预算，与 Agent 的 max_thinking_rounds 无关）
+        // 5. 执行压缩循环（场景内小预算：与 Agent 的唤醒级 max_thinking_rounds 无关）
         let tool_descriptors = build_scene_tool_descriptors(agent, scene);
         let result = self
             .run_think_loop(
@@ -477,7 +492,7 @@ impl RuntimeDomainImpl {
                     messages,
                     &tool_descriptors,
                 )
-                .with_rounds(COMPACT_MAX_ROUNDS, 0)
+                .with_rounds(max_rounds, 0)
                 .with_monitoring(&think_runtime, &policy),
             )
             .await;

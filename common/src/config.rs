@@ -90,24 +90,29 @@ pub struct AppConfig {
 /// 约定：Agent 级配置值为 0 时，回退到此处系统默认值。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
-    /// 单次唤醒最大思考轮次（跨压缩累计）
+    /// 单次唤醒的思考**总**轮次上限（跨压缩 / 跨周期累计）
     ///
     /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].max_thinking_rounds`；
     /// 代码里的 `Default` 只是「配置文件缺项时的兜底」，不要在注释里复述数字。
+    ///
+    /// 语义：一次唤醒内所有思考周期**共享**这一份预算（前面多用，后面少用），
+    /// 不是每个周期各发一份。场景级固定开销（压缩 / 意图 / 收尾总结）不从这里扣。
     #[serde(default = "default_agent_max_thinking_rounds")]
     pub max_thinking_rounds: usize,
 
-    /// 意图识别阶段最大思考轮次
+    /// 意图识别阶段的思考轮次上限（场景级，独立于唤醒总预算）
     ///
     /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].intent_analyze_max_rounds`；
-    /// 配置文件缺项时用 `Default` 兜底。
+    /// 配置文件缺项时用 `Default` 兜底。意图识别通常 1 轮就出结构化结果，
+    /// 给几轮只是容错，不该配成「几乎无限」。
     #[serde(default = "default_agent_intent_analyze_max_rounds")]
     pub intent_analyze_max_rounds: usize,
 
-    /// 总结退出阶段最大思考轮次
+    /// 收尾总结阶段的思考轮次上限（场景级）
     ///
-    /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].summary_max_rounds`；
-    /// 配置文件缺项时用 `Default` 兜底。
+    /// 轮次预算耗尽后，`CompactNode(with_user_reply = true)` 会跑这一段，
+    /// 产物剥掉摘要标记后**作为给用户的最终回复**。这是一个独立的、很小的预算：
+    /// 它不消费唤醒总轮次，但同样挡在用户等待的关键路径上。
     #[serde(default = "default_agent_summary_max_rounds")]
     pub summary_max_rounds: usize,
 
@@ -132,8 +137,11 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             max_thinking_rounds: 365,
-            intent_analyze_max_rounds: 365,
-            summary_max_rounds: 365,
+            // 场景级小预算：意图识别 / 收尾总结都只需 1 轮出结果，3 轮是容错上限。
+            // 老默认 365 让这两个「几乎不会重试」的场景拿到了实质无限额，
+            // 一旦模型反复调工具就会把成本挂在这里，且没有任何配置能看出来。
+            intent_analyze_max_rounds: 3,
+            summary_max_rounds: 3,
             think_timeout_secs: 0,
             token_budget: 0,
             compaction_threshold_tokens: 256,
@@ -146,11 +154,11 @@ fn default_agent_max_thinking_rounds() -> usize {
 }
 
 fn default_agent_intent_analyze_max_rounds() -> usize {
-    365
+    3
 }
 
 fn default_agent_summary_max_rounds() -> usize {
-    365
+    3
 }
 
 /// 记忆分流阈值默认值（本轮问答估算 token 数）

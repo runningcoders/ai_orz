@@ -14,12 +14,12 @@ use crate::pkg::think_path::{
     ThinkNode,
 };
 use crate::service::domain::runtime::RuntimeMemory;
-use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult};
+use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult, WakeUsage};
 use async_trait::async_trait;
 use common::error::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// 历史短期记忆条数（与老链路一致）
 const RECENT_MEMORIES_LIMIT: usize = 20;
@@ -110,7 +110,14 @@ pub struct PromptPack {
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct BudgetState {
+    /// 本次唤醒已消耗的思考轮次（跨压缩 / 跨周期累计）
     pub total_rounds: usize,
+    /// 本次唤醒已消耗的 token（input + output）
+    #[serde(default)]
+    pub total_tokens: u64,
+    /// 本次唤醒已消耗的墙钟秒数
+    #[serde(default)]
+    pub elapsed_secs: u64,
 }
 
 /// 退出来由与本轮的产出：Consolidate 全靠它决定做什么收尾
@@ -299,9 +306,8 @@ impl ThinkNode for PrepareNode {
             .map_err(|e| common::error::err!(Internal, "encode prompt pack failed: {e}"))?;
         bus.insert(ContextKey::Prompt, LoadDepth::Full, value);
 
-        let budget = BudgetState {
-            total_rounds: read_budget(bus).total_rounds,
-        };
+        // 预算状态原样透传（轮次 / token / 时长三项都是唤醒级累计值，Prepare 不改写）
+        let budget = read_budget(bus);
         bus.insert(
             ContextKey::Budget,
             LoadDepth::Shallow,
@@ -316,6 +322,11 @@ impl ThinkNode for PrepareNode {
 // ==================== Deliberate：跑一轮思考 ====================
 
 /// 一次翻译的产物：`Deliberate` 把 `ThinkLoopResult` 翻译成节点信号 + 语义标签
+///
+/// ⚠️ `rounds` 是**绝对轮次**（本次唤醒累计到第几轮），四个分支一律原样透传：
+/// 唤醒级累计后，`start_round` 已带上前几个周期的量，任何分支再做加法都会重复计。
+/// 老实现按周期重置 `start_round`，才有「Final 不累加 / overflow 累加 /
+/// max_rounds 覆盖 / cancelled 累加」那套分支特异加减法 —— 已随重置语义一起废弃。
 #[derive(Debug, Clone)]
 pub(crate) struct ExitMapping {
     pub signal: NodeSignal,
@@ -323,7 +334,7 @@ pub(crate) struct ExitMapping {
     pub exit: &'static str,
     pub content: String,
     pub messages: Vec<crate::models::cortex_types::ChatMessage>,
-    /// 回写 `ContextKey::Budget` 的累计轮次
+    /// 绝对轮次（回写 `ContextKey::Budget`）
     pub rounds: usize,
 }
 
@@ -333,21 +344,19 @@ pub(crate) struct ExitMapping {
 /// 原先内联在 `async fn run` 里，`tests.rs` 只能靠一个手写字面量数组去断言
 /// 「这些 Tag 有对应的边」—— 那本身就是第三份真相，改了映射它还绿。
 /// 现在测试可以从四个变体直接推导出 Tag 再去蓝图里找边（见 `tests.rs`）。
-pub(crate) fn map_think_result(result: ThinkLoopResult, total_rounds: usize) -> ExitMapping {
+pub(crate) fn map_think_result(result: ThinkLoopResult) -> ExitMapping {
     match result {
-        // ⚠️ Final 分支不更新累计轮次（与老 `awaken` 同口径）：本轮思考「正常
-        // 完成」，周期内消耗的轮次属于正常心跳，收尾统计只累计走到
-        // 溢出/耗尽/取消的轮次。
-        ThinkLoopResult::Final { content, messages } => ExitMapping {
+        ThinkLoopResult::Final {
+            content,
+            messages,
+            rounds_used,
+        } => ExitMapping {
             signal: NodeSignal::Done,
             exit: EXIT_FINAL,
             content,
             messages,
-            rounds: total_rounds,
+            rounds: rounds_used,
         },
-        // 周期满额重启（start_round=0）后，结果自带的是**本周期**轮次而非
-        // 跨周期累计值，三个非 Final 分支一律累加到总线累计值上——
-        // Trace 的 rounds_used / 兜底存档的「做了多少轮」都读这个口径。
         ThinkLoopResult::ContextOverflow {
             messages,
             rounds_used,
@@ -357,41 +366,39 @@ pub(crate) fn map_think_result(result: ThinkLoopResult, total_rounds: usize) -> 
             exit: EXIT_OVERFLOW,
             content: String::new(),
             messages,
-            rounds: total_rounds.saturating_add(rounds_used),
+            rounds: rounds_used,
         },
         ThinkLoopResult::MaxRoundsExceeded {
             messages,
-            total_rounds: rounds,
+            total_rounds,
         } => ExitMapping {
             signal: NodeSignal::Yield(SIGNAL_MAX_ROUNDS.into()),
             exit: EXIT_MAX_ROUNDS,
             content: String::new(),
             messages,
-            rounds: total_rounds.saturating_add(rounds),
+            rounds: total_rounds,
         },
-        // ⚠️ `rounds` 要与老 `awaken` 同口径：取消分支在那里是
-        // `total_rounds.saturating_add(rounds)` —— 被打断那一段也算做过。
-        // 只写回 `total_rounds` 会让存档少算一轮。
         ThinkLoopResult::Cancelled {
             messages,
-            total_rounds: rounds,
+            total_rounds,
         } => ExitMapping {
             signal: NodeSignal::Yield(SIGNAL_CANCELLED.into()),
             exit: EXIT_CANCELLED,
             content: String::new(),
             messages,
-            rounds: total_rounds.saturating_add(rounds),
+            rounds: total_rounds,
         },
     }
 }
 
 /// 每个 `ThinkLoopResult` 变体一个样例：测试用它穷举，而不是手写字面量数组
 #[cfg(test)]
-pub(crate) fn sample_results(total_rounds: usize) -> Vec<ThinkLoopResult> {
+pub(crate) fn sample_results() -> Vec<ThinkLoopResult> {
     vec![
         ThinkLoopResult::Final {
             content: "ok".to_string(),
             messages: Vec::new(),
+            rounds_used: 2,
         },
         ThinkLoopResult::ContextOverflow {
             messages: Vec::new(),
@@ -400,11 +407,11 @@ pub(crate) fn sample_results(total_rounds: usize) -> Vec<ThinkLoopResult> {
         },
         ThinkLoopResult::MaxRoundsExceeded {
             messages: Vec::new(),
-            total_rounds,
+            total_rounds: 3,
         },
         ThinkLoopResult::Cancelled {
             messages: Vec::new(),
-            total_rounds,
+            total_rounds: 2,
         },
     ]
 }
@@ -414,16 +421,26 @@ pub(crate) fn sample_results(total_rounds: usize) -> Vec<ThinkLoopResult> {
 /// 第一版内部仍是 `run_think_loop`（480 行，含小脑路由、工具二分、8 个退出策略），
 /// 此处只负责把它出现的结果翻译成**节点信号** —— 跳转让边决定，而不是栗子 Match 外传。
 ///
-/// 轮次预算哲学：卡点在**图维度**（激活预算 + max_steps），周期内部自决——
-/// 每个思考周期满额重启（start_round=0），累计轮次只用于收尾回复与统计口径。
+/// ## 轮次预算：一次唤醒 = 一个池子
+///
+/// `max_thinking_rounds` 是**整次唤醒**的上限（跨压缩、跨周期累计）。
+/// 每个周期的起始轮次 = 已消耗轮次（`BudgetState.total_rounds`），因此：
+/// - 前面周期多用了，后面周期的可用量自动变少（无需再乘一个「周期数」）；
+/// - 轨迹里的轮次编号连续递增，不再每个周期从 1 重新数；
+/// - 场景内部的固定开销（压缩 / 意图 / 收尾总结）各有独立小预算，不从这个池子里扣。
 #[derive(Debug)]
 pub struct DeliberateNode {
     deps: Arc<AwakenDeps>,
+    /// 唤醒级用量表（轮次 / token / 时长），跨周期唯一载体
+    usage: Arc<Mutex<WakeUsage>>,
 }
 
 impl DeliberateNode {
     pub fn new(deps: Arc<AwakenDeps>) -> Self {
-        Self { deps }
+        Self {
+            deps,
+            usage: WakeUsage::shared(),
+        }
     }
 }
 
@@ -489,11 +506,11 @@ impl ThinkNode for DeliberateNode {
                     initial_messages: pack.initial_messages,
                     tools,
                     max_rounds,
-                    // 图维度卡点：回环收敛由图级预算（ActivationBudget +
-                    // max_steps）负责，周期内部自决——每周期满额重启，
-                    // 累计轮次只进 BudgetState 做收尾回复与统计口径
-                    start_round: 0,
+                    // 跨周期累计：上一周期吃到第几轮，这一周期就从第几轮接着算。
+                    // 可用量 = max_rounds - total_rounds，由 `run_think_loop` 自行折算。
+                    start_round: total_rounds,
                     thinking_intensity_offset,
+                    usage: Arc::clone(&self.usage),
                 },
             )
             .await;
@@ -504,21 +521,36 @@ impl ThinkNode for DeliberateNode {
             content,
             messages,
             rounds,
-        } = map_think_result(result?, total_rounds);
+        } = map_think_result(result?);
+
+        // 轮次以**结果**为权威：后端可能不经过 `run_think_loop`（脚本后端 /
+        // 外部执行器），计量表不会增长；token 与时长只有计量表知道，取表值。
+        // 三者都取 max，保证单调不倒退。
+        let spent = WakeUsage::snapshot(&self.usage);
+        let spent = WakeUsage {
+            rounds: rounds.max(total_rounds).max(spent.rounds),
+            ..spent
+        };
 
         crate::log_info!(
             &deps.ctx,
             "legacy_awaken",
-            "deliberate node done, agent_id={}, exit={}, rounds={}",
+            "deliberate node done, agent_id={}, exit={}, rounds={}, tokens={}, elapsed={}s",
             deps.agent.po.id,
             exit,
-            rounds
+            spent.rounds,
+            spent.tokens,
+            spent.elapsed_secs
         );
 
         bus.insert(
             ContextKey::Budget,
             LoadDepth::Shallow,
-            json!({ "total_rounds": rounds }),
+            json!({
+                "total_rounds": spent.rounds,
+                "total_tokens": spent.tokens,
+                "elapsed_secs": spent.elapsed_secs,
+            }),
         );
         write_artifacts(
             bus,

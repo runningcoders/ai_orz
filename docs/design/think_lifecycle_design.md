@@ -790,9 +790,47 @@ pub async fn run_into(&self, run: &mut ThinkRun) -> Result<()>
 | Trace 元数据 `exit_reason` | `Final` / `MaxRoundsExceeded` | `EXIT_*` 常量，取值逐字节相同 |
 | `AgentAwakeEvent.exit_reason` | 小写形式（`maxroundsexceeded`） | `Artifacts.exit.to_lowercase()` |
 | Trace 落库失败 | `?` 传播 | `?` 传播（不能用 `let _ =` 吞） |
-| Final 的累计轮次 | 不更新 `total_rounds` | `map_think_result` 原样写回 |
+| 轮次记账 | 每周期 `start_round = 0`，四个分支各写一套加减法 | 唤醒级 `WakeUsage` 计量表：`start_round = 已消耗`，分支统一（见 §12） |
 | 异常退出的 `total_rounds` | 累计轮次 | 从总线读 `BudgetState`，不是 `run.trace.steps` |
 | 溢出回环次数 | 无上限（只靠 max_rounds 间接收敛） | `MAX_LOOP_ROUNDS = 8`，耗尽即**报错**（非静默） |
 
 口径提示：若真要对比，期间「新引擎无结果」不等于失败——要看 `RunTrace.fingerprint()`
 落在哪里，而不是只看有没有产出。
+
+## 12. 预算模型：一次唤醒 = 一个池子
+
+三层，**不要混用**：任务级管「唤醒几次」，唤醒级管「一共能想多久」，场景级管
+「某个固定动作最多几步」。
+
+| 层级 | 配置 / 常量 | 语义 | 作用点 |
+|------|------------|------|--------|
+| 任务级 | `max_thinking_depth` | 单任务内唤醒次数上限 | `consumer/wake_gate_policy` |
+| 唤醒级 | `max_thinking_rounds` | 思考**总**轮次（跨压缩 / 跨周期累计） | `DeliberateNode` 的 `start_round` |
+| 唤醒级 | `think_timeout_secs` | 思考**总**时长 | `run_think_loop` 的 tokio 超时（只等剩余额度） |
+| 唤醒级 | `token_budget` | 思考**总** token（input+output） | `TokenBudgetPolicy` |
+| 场景级 | `intent_analyze_max_rounds` | 意图识别轮次 | `intent_analyze` |
+| 场景级 | `summary_max_rounds` | 轮次耗尽后「收尾回复」的轮次 | `CompactNode(with_user_reply = true)` |
+| 场景级常量 | `COMPACT_MAX_ROUNDS = 3` | 每次压缩（溢出回环）轮次 | `compact_context` |
+| 场景级常量 | `MAX_LOOP_ROUNDS = 8` | 一次唤醒最多 8 个思考周期 / 7 次压缩 | `legacy_awaken_blueprint` |
+
+### 12.1 三条硬规则
+
+1. **每周期可用量 = 总预算 − 已消耗**。
+   `types::WakeUsage` 是唯一计量表：`rounds` / `tokens` / `elapsed_secs` 都存
+   **整次唤醒的绝对值**，思考循环每轮写回，`DeliberateNode` 周期结束后落进
+   `BudgetState` 供收尾与统计读取。
+2. **场景级预算不从唤醒池里扣**。压缩、意图、收尾都是固定开销，各有独立小预算；
+   把它们配小只会让对应场景失败，不会缩短主循环能跑多久。
+3. **退出分支不做轮次加减法**。`ExitMapping` 不携带轮次、`map_think_result` 只映射
+   信号。老口径（Final 不累加 / overflow 累加 / max_rounds 覆盖 / cancelled 累加）
+   存在的唯一理由就是「每周期重置 `start_round`」，已随累计语义一起废弃。
+
+### 12.2 可观测结果
+
+- 轨迹轮次编号**连续**：第二个周期从第 11 轮开始，而不是重新从 1 数。
+- 单次唤醒的轮次总量上限 = `max_thinking_rounds`（所有思考周期**共享同一个池子**，不乘周期数）。
+  `MAX_LOOP_ROUNDS = 8` 是**独立的周期数护栏**（最多 8 个思考周期 / 7 次压缩），
+  保证即使轮次计量异常也不会死循环——它不是轮次乘数，与 `max_thinking_rounds` 互不相乘。
+- 轮次 / 超时 / token / 无进展四个闸门都映射为 `MaxRoundsExceeded`，
+  前端提示统一是「达到最大轮次」——排查时要看 `policy triggered` 日志里的策略 id，
+  不能只看用户可见文案。

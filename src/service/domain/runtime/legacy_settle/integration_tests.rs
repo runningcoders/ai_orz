@@ -265,6 +265,8 @@ fn final_result(content: &str) -> ThinkLoopResult {
     ThinkLoopResult::Final {
         content: content.to_string(),
         messages: Vec::new(),
+        // 脚本后端不跑真实循环：按「1 轮出 Final」记账
+        rounds_used: 1,
     }
 }
 

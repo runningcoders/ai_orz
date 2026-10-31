@@ -1086,13 +1086,21 @@ Phase 3 的核心目标是让 Agent 在多回合对话中能够：
 
 ### 21.2 核心机制
 
-#### 21.2.1 轮次限制检查（两层机制）
+#### 21.2.1 预算与轮次限制检查（三层机制）
 
-系统采用**两层轮次限制**，分别在不同层级保护 Agent 不陷入无限循环：
+系统采用**三层预算**，从三个正交维度约束 Agent 的资源消耗，防止无限循环或失控：
+
+- **任务级**：`max_thinking_depth` —— 单任务内最多被唤醒几次（consumer 层把关）
+- **唤醒级**：`max_thinking_rounds` / `think_timeout_secs` / `token_budget` —— 单次唤醒总共能想多少轮 / 多久 / 多少 token（跨压缩、跨周期累计共享一个池子）
+- **场景级**：`intent_analyze_max_rounds` / `summary_max_rounds` / `COMPACT_MAX_ROUNDS` —— 某个固定动作（意图识别 / 收尾总结 / 单次压缩）最多几步，**独立于唤醒池，不从总预算里扣**
+
+下文先讲任务级与唤醒级这两个硬闸门（唤醒次数 / 思考轮次），场景级见本节末尾。
 
 **第一层：consumer 层单任务内唤醒次数上限（`max_thinking_depth`）**
 
-**设计原则**：在消费者层实现，利用统计模块按 `agent_id + task_id` 查询 `agent_awake_events` 的累计条数（每次唤醒记 1 条），与 Agent 配置的 `max_thinking_depth`（默认 365，与系统配置 `[agent].max_thinking_rounds` 对齐）对比。防止 Agent 在无限消息循环中空转。
+**设计原则**：在消费者层实现，利用统计模块按 `agent_id + task_id` 查询 `agent_awake_events` 的累计条数（每次唤醒记 1 条），与 Agent 配置的 `max_thinking_depth`（默认 365，取自 `common::api::DEFAULT_MAX_THINKING_DEPTH`）对比。防止 Agent 在无限消息循环中空转。
+
+> ⚠️ **它和唤醒级的 `max_thinking_rounds` 是两个独立维度**：前者数「唤醒次数」，后者数「单次唤醒内的思考轮次」，只是默认值恰好都是 365，绝不是「对齐」或联动关系。
 
 > ⚠️ **口径澄清**：这里统计的是**单任务内的唤醒次数**，不是工具调用数、也不是思考轮次；单次唤醒内的思考轮次由第二层的 `max_thinking_rounds` 单独把关。
 
@@ -1153,9 +1161,15 @@ awaken() 调用 run_think_loop()
 **关键代码位置**：`src/service/domain/runtime/awakening.rs` → `run_think_loop()` + `awaken_for_summary()`；`src/service/domain/runtime/config_resolve.rs` → 配置解析
 
 **设计要点**：
-- 轮次计数跨上下文压缩累计：每次 `ContextOverflow` 后压缩并重试，`total_rounds += rounds_used`
-- 默认值 365 轮（v3.8 调大，先收集运行数据再优化），可通过 `AgentRuntimeConfig.max_thinking_rounds` 或 `ai_orz.toml` 配置
-- v3.8 同步配置化的还有：`intent_analyze_max_rounds`（意图识别阶段轮次）、`summary_max_rounds`（总结退出轮次）、`think_timeout_secs`（思考超时，0=不限）
+- **一次唤醒 = 一个池子**：每个思考周期的 `start_round` = 本次唤醒已消耗轮次（`BudgetState.total_rounds`），
+  可用量 = `max_thinking_rounds − 已消耗`；溢出压缩后重来的周期**不重发满额预算**。
+  计量口径统一收在 `types::WakeUsage`（轮次 / token / 时长），思考循环每轮写回。
+- 时长与 token 同口径：`think_timeout_secs` 是整次唤醒的总时长（每个周期只等剩余额度），
+  `token_budget` 是整次唤醒的总 token。
+- 默认值 365 轮，可通过 `AgentRuntimeConfig.max_thinking_rounds` 或 `ai_orz.toml` 配置
+- 场景级小预算（**独立于唤醒池，不从总轮次里扣**）：
+  `intent_analyze_max_rounds`（意图识别，默认 3）、`summary_max_rounds`（轮次耗尽后的收尾回复，默认 3）；
+  压缩固定 3 轮（`COMPACT_MAX_ROUNDS`）、一次唤醒最多 8 个思考周期 / 7 次压缩（`MAX_LOOP_ROUNDS`）
 - 未来任务可在分配时预估写入，覆盖默认值
 
 #### 21.2.1a 总结退出流程（MaxRoundsExceeded + 正常 Final 完成的统一总结）

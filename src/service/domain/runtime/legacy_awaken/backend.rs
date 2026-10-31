@@ -21,27 +21,30 @@ use super::context::AwakenDeps;
 use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::domain::runtime::compaction::CompactOutcome;
-use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopParams, ThinkLoopResult};
+use crate::service::domain::runtime::types::{
+    IntentAnalysis, ThinkLoopParams, ThinkLoopResult, WakeUsage,
+};
 use async_trait::async_trait;
 use common::enums::ThinkingScene;
 use common::error::Result;
+use std::sync::{Arc, Mutex};
 
 /// 一次「思考」的输入：全部由总线 + `AwakenDeps` 装配而来，后端不自行取数
 pub struct ThinkInput {
     pub initial_messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDescriptor>,
     pub max_rounds: usize,
-    /// 本次思考的起始轮次编号（`run_think_loop` 的 start_round）
+    /// 本次思考的起始轮次编号（= 本次唤醒已消耗的轮次）
     ///
-    /// 图维度卡点哲学：回环收敛由图级预算（ActivationBudget + max_steps）负责，
-    /// 周期内部自决——每个思考周期满额重启，这里恒传 0。累计轮次走
-    /// `BudgetState.total_rounds`（收尾回复与统计口径），不回灌成下一周期的
-    /// 起始限制。
+    /// 唤醒级预算：`max_thinking_rounds` 是整次唤醒的天花板，本周期可用量
+    /// = `max_rounds - start_round`。传 0 会把上限按周期数放大（历史缺陷）。
     pub start_round: usize,
     /// 意图识别产出的动态思考强度偏移（分），叠加在场景偏移之上
     ///
     /// 缺失/降级意图阶段时为 0，等价于未改造前的固定口径。
     pub thinking_intensity_offset: i32,
+    /// 唤醒级用量表（思考循环每轮写回，跨周期累计）
+    pub usage: Arc<Mutex<WakeUsage>>,
 }
 
 /// 一次「压缩」的输入
@@ -49,6 +52,9 @@ pub struct CompactInput {
     pub messages: Vec<ChatMessage>,
     pub trace_ids: Vec<String>,
     /// `true` = 压缩产物剥掉摘要标记后作为给用户的回复（轮次耗尽退出）
+    ///
+    /// 它也决定本轮的思考轮次预算：`false` → 压缩固定 3 轮；
+    /// `true` → Agent 的 `summary_max_rounds`（见 `compact_context`）。
     pub with_user_reply: bool,
 }
 
@@ -110,6 +116,7 @@ impl ThinkBackend for LegacyBackend {
                     &input.tools,
                 )
                 .with_rounds(input.max_rounds, input.start_round)
+                .with_usage(&input.usage)
                 .with_monitoring(&deps.think_runtime, &deps.policy)
                 .with_progress(&deps.progress)
                 .with_thinking_intensity_offset(input.thinking_intensity_offset),

@@ -184,11 +184,11 @@ pub struct AgentRuntimeConfigInfo {
     /// 最大思考深度（**单任务内唤醒次数上限**；达到即停止唤醒并通知来源方）
     #[serde(default = "default_max_thinking_depth")]
     pub max_thinking_depth: i32,
-    /// 单次唤醒最大思考轮次（0 = 使用系统配置）
+    /// 单次唤醒的思考**总**轮次（跨压缩 / 跨周期累计；0 = 使用系统配置）
     pub max_thinking_rounds: usize,
-    /// 意图识别阶段最大思考轮次（0 = 使用系统配置）
+    /// 意图识别阶段的思考轮次（场景级；0 = 使用系统配置）
     pub intent_analyze_max_rounds: usize,
-    /// 总结退出阶段最大思考轮次（0 = 使用系统配置）
+    /// 轮次耗尽后「收尾总结」的思考轮次（场景级；产物即最终回复；0 = 使用系统配置）
     pub summary_max_rounds: usize,
     /// 思考超时秒数（0 = 不限制）
     pub think_timeout_secs: u64,

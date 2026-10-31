@@ -1293,11 +1293,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         h3 { class: "text-lg font-semibold mb-3", "运行时参数" }
                                         div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4",
                                             div {
-                                                span { class: "block text-sm text-base-content/70 mb-1", "最大思考深度" }
+                                                span { class: "block text-sm text-base-content/70 mb-1", "单任务唤醒次数" }
                                                 span { class: "text-sm", "{rc.max_thinking_depth}" }
                                             }
                                             div {
-                                                span { class: "block text-sm text-base-content/70 mb-1", "最大思考轮次" }
+                                                span { class: "block text-sm text-base-content/70 mb-1", "思考总轮次（单次唤醒累计）" }
                                                 span { class: "text-sm",
                                                     if rc.max_thinking_rounds == 0 {
                                                         span { class: "text-base-content/60", "0（系统默认）" }
@@ -1317,7 +1317,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                             }
                                             div {
-                                                span { class: "block text-sm text-base-content/70 mb-1", "总结轮次" }
+                                                span { class: "block text-sm text-base-content/70 mb-1", "收尾总结轮次" }
                                                 span { class: "text-sm",
                                                     if rc.summary_max_rounds == 0 {
                                                         span { class: "text-base-content/60", "0（系统默认）" }
@@ -2506,7 +2506,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 div { class: "pt-2 border-t border-base-300" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
-                                        span { class: "label-text font-medium", "最大思考深度" }
+                                        span { class: "label-text font-medium", "单任务唤醒次数" }
                                         span { class: "label-text-alt text-base-content/60", "单任务内唤醒次数上限" }
                                     }
                                     input { class: "input input-bordered w-full", r#type: "number",
@@ -2516,7 +2516,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
-                                        span { class: "label-text font-medium", "最大思考轮次" }
+                                        span { class: "label-text font-medium", "思考总轮次（单次唤醒累计）" }
                                         span { class: "label-text-alt text-base-content/60", "0 = 系统默认" }
                                     }
                                     input { class: "input input-bordered w-full", r#type: "number",
@@ -2536,7 +2536,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
-                                        span { class: "label-text font-medium", "总结轮次" }
+                                        span { class: "label-text font-medium", "收尾总结轮次" }
                                         span { class: "label-text-alt text-base-content/60", "0 = 系统默认" }
                                     }
                                     input { class: "input input-bordered w-full", r#type: "number",

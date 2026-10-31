@@ -17,7 +17,7 @@ use crate::pkg::policy::Policy;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::think_path::{Arbiter, ProviderSet, Stimulus, ThinkPathEngine, ThinkRun};
 use crate::service::domain::runtime::RuntimeDomainImpl;
-use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkLoopResult};
+use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkLoopResult, WakeUsage};
 use common::enums::ThinkingScene;
 use common::error::Result;
 use std::sync::{Arc, Mutex};
@@ -44,6 +44,10 @@ pub(crate) struct RoundRun<'a> {
     pub policy: Option<Arc<dyn Policy>>,
     pub progress: Option<ThinkLoopProgress>,
     pub loop_start: Instant,
+    /// 唤醒级用量表：本周期每轮要把累计值写回（跨周期预算的唯一载体）
+    pub usage: Arc<Mutex<WakeUsage>>,
+    /// 进入本周期前的已用量（本次循环的计量起点）
+    pub base: WakeUsage,
 }
 
 /// 装配并驱动轮级环图，返回循环终止结果
@@ -64,6 +68,8 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         policy,
         progress,
         loop_start,
+        usage,
+        base,
     } = input;
 
     // 模型标识：事件上报用；与老循环「每轮共用同一份」的口径一致
@@ -99,6 +105,8 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         model_name,
         state: Arc::new(Mutex::new(RoundState::new(messages))),
         loop_start,
+        usage,
+        base,
     });
 
     let blueprint = blueprint::round_blueprint(available_rounds, enable_reflect)?;

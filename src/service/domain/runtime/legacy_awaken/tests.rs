@@ -8,7 +8,7 @@ use super::blueprint::{MAX_LOOP_ROUNDS, legacy_awaken_blueprint};
 use super::discover_node::MAX_DISCOVERY_ROUNDS;
 use super::nodes::{EXIT_MAX_ROUNDS, map_think_result, sample_results};
 use crate::pkg::think_path::ThinkPathBlueprint;
-use crate::service::domain::runtime::types::ThinkLoopResult;
+use crate::service::domain::runtime::types::{ThinkLoopResult, WakeUsage};
 
 fn blueprint() -> ThinkPathBlueprint {
     legacy_awaken_blueprint().expect("legacy_awaken blueprint")
@@ -87,8 +87,8 @@ fn loop_nodes_budget_is_explicitly_loosened() {
 fn every_deliberate_exit_signal_has_an_edge() {
     let bp = blueprint();
     let outs = edges_from(&bp, "deliberate");
-    for result in sample_results(2) {
-        let mapped = map_think_result(result, 2);
+    for result in sample_results() {
+        let mapped = map_think_result(result);
         let tag = mapped.signal.tag().to_string();
         assert!(
             outs.iter()
@@ -105,9 +105,9 @@ fn every_deliberate_exit_signal_has_an_edge() {
 #[test]
 fn every_deliberate_edge_signal_is_reachable() {
     let bp = blueprint();
-    let produced: Vec<String> = sample_results(2)
+    let produced: Vec<String> = sample_results()
         .into_iter()
-        .map(|r| map_think_result(r, 2).signal.tag().to_string())
+        .map(|r| map_think_result(r).signal.tag().to_string())
         .collect();
     for (to, on) in edges_from(&bp, "deliberate") {
         let Some(tag) = on else { continue };
@@ -155,76 +155,59 @@ fn consolidate_only_sees_exits_the_graph_can_deliver() {
     assert_eq!(EXIT_MAX_ROUNDS.to_lowercase(), "maxroundsexceeded");
 }
 
-/// 轮次记账：`overflow` 必须把本轮消耗累加到总数上，否则回环会无限重开
+/// 唤醒级轮次记账：四个退出分支一律**原样透传绝对轮次**，不再做分支加减法
+///
+/// 老口径（每周期 `start_round = 0`）必须在映射里区分「Final 不累加 / overflow
+/// 累加 / max_rounds 覆盖 / cancelled 累加」四套加减法——任何一套写错都会让
+/// Trace 的 `rounds_used` 与兜底存档静默跑偏，且没有任何测试会替你发现。
+///
+/// 改成唤醒级累计后，`start_round` 已带上前几个周期的量，四个分支统一
+/// 「结果里是多少就是多少」。这条测试盯的正是「有没有人把累加加回来」。
 #[test]
-fn overflow_accumulates_rounds_across_the_loop() {
-    let before = 2;
-    let mapped = map_think_result(
-        sample_results(before)
-            .into_iter()
-            .find(|r| {
-                matches!(
-                    r,
-                    crate::service::domain::runtime::types::ThinkLoopResult::ContextOverflow { .. }
-                )
-            })
-            .expect("overflow sample"),
-        before,
-    );
-    // 溢出信号是回环边，轮次必须累加 —— Budget 是唯一的进展护栏
-    assert_eq!(mapped.signal.tag(), "overflow");
-    assert!(
-        mapped.rounds > before,
-        "overflow must accumulate rounds, got {}",
-        mapped.rounds
-    );
+fn exit_mappings_passthrough_absolute_rounds() {
+    for result in sample_results() {
+        let expected = match &result {
+            ThinkLoopResult::Final { rounds_used, .. } => *rounds_used,
+            ThinkLoopResult::ContextOverflow { rounds_used, .. } => *rounds_used,
+            ThinkLoopResult::MaxRoundsExceeded { total_rounds, .. } => *total_rounds,
+            ThinkLoopResult::Cancelled { total_rounds, .. } => *total_rounds,
+        };
+        let mapped = map_think_result(result);
+        assert_eq!(
+            mapped.rounds, expected,
+            "轮次必须与结果携带的绝对轮次一致（禁止再叠加基准值）"
+        );
+    }
 }
 
-/// 四种退出的轮次记账：周期满额重启（start_round=0）后，结果自带的是本周期
-/// 轮次，除 Final 外一律**累加**到总线累计值上
+/// 唤醒级用量：两个周期共用一个计量表，第二轮必须接着第一轮算
 ///
-/// ⚠️ 这些数字**没有任何测试会替你看着**：写错一位不影响 Runners、不报错、
-/// 用户也感知不到，只是 Trace 的 `rounds_used` 和兜底存档里的「做了多少轮」
-/// 静默跑偏。所以它们只能靠这张表锁死。
+/// 这是「轮次上限平摊到整次唤醒」的核心契约：可用量 = 总预算 − 已用，
+/// 而不是每个周期各自重发一份满额预算。
 #[test]
-fn exit_mappings_keep_legacy_rounds_accounting() {
-    let before = 2;
+fn wake_usage_accumulates_across_cycles() {
+    let meter = WakeUsage::shared();
+    assert_eq!(WakeUsage::snapshot(&meter), WakeUsage::default());
 
-    // Final：老代码在此分支**不累加**（轮次信息只体现在策略心跳里）
-    let final_ = map_think_result(
-        sample_results(before)
-            .into_iter()
-            .find(|r| {
-                matches!(
-                    r,
-                    crate::service::domain::runtime::types::ThinkLoopResult::Final { .. }
-                )
-            })
-            .expect("final sample"),
-        before,
-    );
-    assert_eq!(final_.rounds, before, "Final 不应改动累计轮次");
+    // 周期 1：跑了 6 轮 / 1200 token / 45s
+    let cycle1 = WakeUsage {
+        rounds: 6,
+        tokens: 1200,
+        elapsed_secs: 45,
+    };
+    WakeUsage::store(&meter, cycle1);
+    let base = WakeUsage::snapshot(&meter);
+    assert_eq!(base, cycle1);
 
-    // MaxRoundsExceeded：周期满额重启后结果自带**本周期**轮次，累加
-    // （覆盖会把前面周期吃掉的轮次从统计口径里抹掉）
-    let exhausted = map_think_result(
-        ThinkLoopResult::MaxRoundsExceeded {
-            messages: Vec::new(),
-            total_rounds: 7,
-        },
-        before,
+    // 周期 2 进来时看到的是**累计值**：总预算 10 → 只剩 4 轮
+    let total_rounds: usize = 10;
+    assert_eq!(
+        total_rounds.saturating_sub(base.rounds),
+        4,
+        "第二轮只能拿到剩余 4 轮，不能重发满额 10 轮"
     );
-    assert_eq!(exhausted.rounds, before + 7, "轮次耗尽应累加本周期轮次");
-
-    // Cancelled：被打断的那一段也算做过（对齐 `total_rounds + rounds`）
-    let cancelled = map_think_result(
-        ThinkLoopResult::Cancelled {
-            messages: Vec::new(),
-            total_rounds: 3,
-        },
-        before,
-    );
-    assert_eq!(cancelled.rounds, before + 3, "取消应把已跑轮次累加进去");
+    // 时长 / token 同口径：策略比较的是累计用量与总预算
+    assert!(base.elapsed_secs > 0 && base.tokens > 0);
 }
 
 #[test]

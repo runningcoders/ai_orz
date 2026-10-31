@@ -321,6 +321,15 @@ fn make_deps(
     ctx: crate::pkg::request_context::RequestContext,
     backend: Arc<dyn ThinkBackend>,
 ) -> Arc<AwakenDeps> {
+    make_deps_with_options(ctx, backend, ThinkingOptions::new())
+}
+
+/// 同 [`make_deps`]，但可指定思考选项（用于把唤醒预算配小）
+fn make_deps_with_options(
+    ctx: crate::pkg::request_context::RequestContext,
+    backend: Arc<dyn ThinkBackend>,
+    options: ThinkingOptions,
+) -> Arc<AwakenDeps> {
     let agent = make_agent(&format!("agent-{}", uuid::Uuid::now_v7()));
     let trace = MemoryTrace::new(
         agent.po.id.clone(),
@@ -336,7 +345,7 @@ fn make_deps(
         ctx,
         agent,
         message: make_message("帮我看下这个任务"),
-        options: ThinkingOptions::new(),
+        options,
         trace,
         shadow: true, // shadow：集成测试不应产生落库副作用
     };
@@ -362,6 +371,9 @@ fn final_result(content: &str) -> ThinkLoopResult {
     ThinkLoopResult::Final {
         content: content.to_string(),
         messages: user_msg(),
+        // 脚本后端不经过真实思考循环：按「跑完 1 轮就 Final」记账，
+        // 与真实链路「rounds_used = 绝对轮次」的口径一致。
+        rounds_used: 1,
     }
 }
 
@@ -614,20 +626,20 @@ async fn discovery_loop_retrieves_again(pool: SqlitePool) {
 ///   软预算**零模型调用**优雅退出（no_new_findings → force_compact 收尾），
 ///   而不是被蓝图硬预算拦成「无合法候选 → run 终止 → ensure_consolidated 报
 ///   Internal」——两层同值时后者必然发生。
-/// - P2（周期满额重启）：deliberate 每周期 start_round=0 满额跑——累计轮次
-///   只进 BudgetState 做统计口径，不回灌成下一周期的起始限制（回环幻影：
-///   老口径下轮次耗尽后的回环会零 LLM 调用秒退）。
+/// - P2（唤醒级累计）：deliberate 的 `start_round` 逐周期递增（0 / 10 / 20），
+///   总预算 `max_rounds` 不变——每次回环都从**剩余额度**里继续，而不是重新领满。
 ///
 /// 编排：三次 deliberate 全部轮次耗尽，两次 discover 出新词把回环吃满，
 /// 第 3 次 discover 撞软预算退出 → force_compact 收尾。
 #[sqlx::test]
 async fn graph_level_loop_converges_via_discover_soft_budget(pool: SqlitePool) {
     let ctx = init_env(pool);
-    let exhausted = || ThinkLoopResult::MaxRoundsExceeded {
+    // 绝对轮次口径：每次周期结束报的是「唤醒累计到第几轮」（10 / 20 / 30）
+    let exhausted = |total_rounds: usize| ThinkLoopResult::MaxRoundsExceeded {
         messages: user_msg(),
-        total_rounds: 10,
+        total_rounds,
     };
-    let backend = ScriptedBackend::new(vec![exhausted(), exhausted(), exhausted()])
+    let backend = ScriptedBackend::new(vec![exhausted(10), exhausted(20), exhausted(30)])
         .with_discovers(vec![
             r#"{"new_key_terms":["线索甲"],"prior_thinking_summary":"第一轮"}"#.to_string(),
             r#"{"new_key_terms":["线索乙"],"prior_thinking_summary":"第二轮"}"#.to_string(),
@@ -651,7 +663,8 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
     assert_eq!(outcome.raw_output, "已尽力收尾");
     // P1 锁：3 次 discover 激活只有 2 次模型调用（第 3 次软预算零调用退出）
     assert_eq!(backend.discover_calls.load(Ordering::SeqCst), 2);
-    // P2 锁：3 次 deliberate 全部满额重启（start_round=0），max_rounds 口径一致
+    // P2 锁：3 次 deliberate 的起始轮次依次累加（唤醒级累计，不再每周期重置），
+    // 总预算 max_rounds 保持不变
     let inputs = backend
         .think_round_inputs
         .lock()
@@ -664,13 +677,13 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
         assert_eq!(
             *m,
             max_rounds,
-            "第 {} 次 deliberate 的 max_rounds 应一致",
+            "第 {} 次 deliberate 的 max_rounds（总预算）应一致",
             i + 1
         );
         assert_eq!(
             *start,
-            0,
-            "第 {} 次 deliberate 应满额重启（start_round=0）",
+            i * 10,
+            "第 {} 次 deliberate 的起始轮次应累计（脚本每次报 10 轮）",
             i + 1
         );
     }
@@ -688,6 +701,43 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
             .unwrap_or(0),
         2,
         "两次 new_findings 各计一轮软预算"
+    );
+}
+
+/// 唤醒总轮次已耗尽时，`discover` 必须**零模型调用**直接退出
+///
+/// 改成唤醒级累计后，「轮次耗尽 → discover 再判断有没有新线索」已经没有意义：
+/// 就算找到新线索，回环也领不到任何思考轮次。老口径下这一次判断要白打一次模型
+/// —— 用户看到的「明明已经第 10 轮了，还在第 11 轮思考」就是它。
+#[sqlx::test]
+async fn discover_is_skipped_when_wake_round_budget_is_spent(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    // 预算 5 轮，脚本直接报「已用满 5 轮」（绝对值口径）
+    let backend = ScriptedBackend::new(vec![ThinkLoopResult::MaxRoundsExceeded {
+        messages: user_msg(),
+        total_rounds: 5,
+    }])
+    .with_compacts(vec![compact_outcome(
+        "轮次耗尽摘要",
+        "<user_reply>已经尽力了</user_reply>",
+    )]);
+
+    let deps = make_deps_with_options(
+        ctx,
+        backend.clone(),
+        ThinkingOptions::new().with_max_thinking_rounds(5),
+    );
+    let outcome = run_legacy_awaken(deps).await.expect("应正常收尾");
+
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>force_compact#1>consolidate#1"
+    );
+    assert_eq!(outcome.exit, EXIT_MAX_ROUNDS);
+    assert_eq!(
+        backend.discover_calls.load(Ordering::SeqCst),
+        0,
+        "总预算耗尽时 discover 不应再打模型"
     );
 }
 

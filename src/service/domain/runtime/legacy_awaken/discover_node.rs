@@ -10,7 +10,7 @@
 
 use super::blueprint::{SIGNAL_NEW_FINDINGS, SIGNAL_NO_NEW_FINDINGS};
 use super::context::{AwakenDeps, DiscoveryOutcome, RetrievalPack, read_bus};
-use super::nodes::Artifacts;
+use super::nodes::{Artifacts, BudgetState};
 use super::retrieve_node::diff_terms;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
@@ -159,6 +159,8 @@ impl ThinkNode for DiscoverNode {
                 ContextKey::Artifacts,
                 ContextKey::Knowledge,
                 ContextKey::Intent,
+                // 唤醒总轮次耗尽时零模型调用直接退出（见 run 的 2.5 步）
+                ContextKey::Budget,
             ],
             writes: vec![ContextKey::Knowledge],
         }
@@ -185,6 +187,22 @@ impl ThinkNode for DiscoverNode {
                 "discover node budget exhausted, agent_id={}, discovery_rounds={}",
                 deps.agent.po.id,
                 state_snapshot.discovery_rounds
+            );
+            return Ok(no_exit());
+        }
+
+        // 2.5 唤醒总轮次已耗尽 → 回环没有意义：再检索也领不到思考预算，
+        //     只会白打一次模型（轨迹里那条「第 11 轮」）。直接走退出压缩。
+        let budget = read_bus::<BudgetState>(bus, ContextKey::Budget).unwrap_or_default();
+        let total_cap = deps.options.effective_max_rounds();
+        if budget.total_rounds >= total_cap {
+            crate::log_info!(
+                &deps.ctx,
+                "legacy_awaken",
+                "discover skipped: wake round budget exhausted, agent_id={}, used={}, cap={}",
+                deps.agent.po.id,
+                budget.total_rounds,
+                total_cap
             );
             return Ok(no_exit());
         }
