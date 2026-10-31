@@ -37,6 +37,10 @@ pub(super) fn to_detail(skill: &Skill) -> SkillDetail {
         files: skill.files.iter().map(to_file_item).collect(),
         created_at: skill.po.created_at,
         updated_at: skill.po.updated_at,
+        // 默认 false：只有详情入口（`get_skill`）知道调用方角色，由它覆写成真实值。
+        // 其它入口（create/update/publish/restore）返回的详情不参与「按钮是否显示」，
+        // 保守取 false 可以避免「改完描述后按钮突然出现在普通成员面前」。
+        can_publish: false,
     }
 }
 

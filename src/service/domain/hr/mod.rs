@@ -766,12 +766,14 @@ pub trait SkillManage: Send + Sync {
     /// → Published」的跃迁，只留本方法承担状态跃迁 + 回写副作用。
     ///
     /// - 前置：状态为 Draft（已 Published 幂等返回；Expired 要求先 `restore_skill`）。
-    /// - 拒绝：Agent 上下文（自进化只在自己的副本里发生）、Agent 安装副本（`parent`
-    ///   非空，发布要回到根技能做）。
+    /// - 拒绝：Agent 安装副本（`parent` 非空，发布要回到根技能做）。
     /// - 副作用：作者为 Agent 的**根技能**发布后，为作者 Agent 回写一条本地工作副本
     ///   （Draft / parent=源 id）；回写失败只告警降级，不阻断发布。
-    /// - 权限：作者本人 / Admin / SuperAdmin /（作者是 Agent 时）Agent 创建者
-    ///   （复用 `ensure_skill_access`）。
+    /// - 权限分两条路：
+    ///   - 用户上下文（`ensure_skill_access`）：Admin / SuperAdmin 可发布任意技能，
+    ///     普通用户只能发布自己的；
+    ///   - Agent 上下文（技能发布收口人，靠 admin 工具包获得该工具）：只能发布**由
+    ///     Agent 创作**的技能（含自己的与同侪的），用户创作的技能一律 Forbidden。
     async fn publish_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill>;
 
     // D. Skill 文件独立操作

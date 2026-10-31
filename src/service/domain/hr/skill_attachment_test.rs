@@ -200,10 +200,16 @@ async fn agent_copy_keeps_subdirectory_attachments(pool: SqlitePool) {
         .await
         .unwrap();
 
-    // 发布后安装到 Agent（install_to_agent 要求源为 Published）
+    // 发布后安装到 Agent（install_to_agent 要求源为 Published）。
+    // 发布门槛是 Admin+，此处用管理员 ctx（默认测试 ctx 无 role = 普通成员）。
+    let publisher = ctx
+        .to_builder()
+        .user_id("publisher".to_string())
+        .user_role(1)
+        .build();
     domain
         .skill_manage()
-        .publish_skill(ctx.clone(), skill.id())
+        .publish_skill(publisher, skill.id())
         .await
         .unwrap();
 

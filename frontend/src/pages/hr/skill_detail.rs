@@ -247,8 +247,9 @@ pub fn HrSkillDetail(id: String) -> Element {
                     title: Some(s.name.clone()),
                     actions: Some(rsx!{
                         // 发布（Draft → Published）：走独立接口，语义与 update 分开。
-                        // 草稿台此前没有发布入口（update 只改元数据，且已拒绝状态跃迁）。
-                        if s.status == common::enums::SkillStatus::Draft {
+                        // 显隐由后端 `can_publish` 决定（仅 Admin/SuperAdmin；普通成员
+                        // 的草稿要由管理员或收口人 Agent 审核发布），前端不猜角色。
+                        if s.status == common::enums::SkillStatus::Draft && s.can_publish {
                             button {
                                 class: "btn hud-btn btn-primary btn-sm mr-2",
                                 disabled: publishing(),

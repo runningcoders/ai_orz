@@ -364,6 +364,14 @@ pub struct SkillDetail {
     pub created_at: i64,
     /// 更新时间戳。
     pub updated_at: i64,
+    /// 当前调用方是否有权发布**这个**技能。
+    ///
+    /// 发布门槛：仅 Admin / SuperAdmin 用户（详见 `models::skill::can_publish_by_role`）。
+    /// 前端据此决定是否显示「发布」按钮——普通成员的技能只能留在 Draft，由管理员或
+    /// 收口人 Agent 审核后发布。默认 `false`：拿不到判定依据时宁可不显示按钮，
+    /// 也不要让用户点出一个 403。
+    #[serde(default)]
+    pub can_publish: bool,
 }
 
 /// 创建 Skill 响应。

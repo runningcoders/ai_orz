@@ -72,6 +72,19 @@ pub async fn create_skill(
         &skill_po.parent_skill_id,
         params.status,
     )?;
+    // 发布闸门同样覆盖「创建即发布」：否则普通成员直接 create 一条 Published 就
+    // 绕过了 `publish_skill` 的审核收口。Agent 上下文已由上一行拒绝；系统/预置链路
+    // 走 domain 直调（`apply_preset_skills`），不经本 handler，因此不受此限。
+    if params.status == Some(common::enums::SkillStatus::Published)
+        && !crate::models::skill::can_publish_by_role(ctx.user_role())
+    {
+        bail_err!(
+            Forbidden,
+            "仅管理员及以上可以创建即发布的技能（当前角色={:?}）；\
+             普通成员请先创建草稿，再由管理员或收口人 Agent 审核发布",
+            ctx.user_role()
+        );
+    }
     if let Some(status) = params.status {
         skill_po.status = status;
     }

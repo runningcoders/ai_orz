@@ -321,6 +321,10 @@ impl SkillManage for HrDomainImpl {
     ///
     /// 与 `update_skill` 的分工：update 只改元数据 / 内容，**不允许**「非 Published
     /// → Published」的跃迁（见 `update_skill` 的 0.5 守卫）；发布的一切副作用都在这里。
+    ///
+    /// 审核收口语义：Agent 产出的草稿由「收口人」发布——收口人可以是用户管理员
+    /// （任意技能），也可以是装了 `admin` 工具包的 Agent（仅 Agent 创作的技能）。
+    /// 普通 Agent 不需要、也不应该为了发布自己的草稿去装 admin 包。
     async fn publish_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill> {
         let Some(mut skill) = self
             .skill_dal
@@ -330,19 +334,42 @@ impl SkillManage for HrDomainImpl {
             bail_err!(NotFound, "Skill {} not found", skill_id);
         };
 
-        // ① Agent 上下文一律拒绝：发布是共享库治理动作，Agent 的自进化只发生在
-        //    自己的 Draft 副本里。这一条必须放在 ensure_skill_access 之前——后者对
-        //    「作者是自身」的 Agent 写操作是放行的，靠它拦不住自我发布。
-        if let Some(agent_id) = ctx.agent_id() {
-            bail_err!(
+        // ① 权限分两条路：
+        //
+        //    **用户上下文** → 仅 Admin / SuperAdmin 可发布（作者本人也不例外）。
+        //    发布是技能进共享库的闸门，属治理动作；普通成员的技能只能留在 Draft，
+        //    由管理员或收口人 Agent 审核后发布。注意这里**不放行** `ensure_skill_access`
+        //    的作者分支——「作者能改」与「作者能发布」是两种权利。
+        //
+        //    **Agent 上下文** → 收口人审核语义：只允许发布**由 Agent 创作**的技能
+        //    （自己产出的、以及别的 Agent 产出的草稿），用户创作的技能不碰。「发布
+        //    别人的技能」是用户管理员及以上的权限，不下放给 Agent。
+        //
+        //    谁能**调到**这个工具是另一道门：`publish_skill` 只挂 `admin` 工具包，
+        //    装在哪些 Agent 上由 `install_tool_pack` 决定，没装的 Agent 工具表里根本
+        //    没有它。而 `ctx.agent_id()` 只在内部工具调用链路里注入（中间件不读请求头）。
+        match ctx.agent_id() {
+            Some(agent_id) => ensure_err!(
+                matches!(skill.po.author_type, SkillAuthorType::Agent),
                 Forbidden,
-                "Agent {} 不允许发布技能（发布属共享库治理）；请由技能创建者在控制台发布",
-                agent_id
-            );
+                "Agent {} 只能发布由 Agent 创作的技能（当前作者类型={:?}，作者={}）；\
+                 用户创作的技能请由用户管理员发布",
+                agent_id,
+                skill.po.author_type,
+                skill.po.author_id
+            ),
+            None => {
+                ensure_err!(
+                    crate::models::skill::can_publish_by_role(ctx.user_role()),
+                    Forbidden,
+                    "仅管理员及以上可以发布技能（当前角色={:?}）；\
+                     普通成员请将草稿提交给管理员或收口人 Agent 审核发布",
+                    ctx.user_role()
+                );
+                self.ensure_skill_access(&ctx, &skill.po, SkillAccessIntent::Write)
+                    .await?
+            }
         }
-
-        self.ensure_skill_access(&ctx, &skill.po, SkillAccessIntent::Write)
-            .await?;
 
         // ② Agent 安装副本（parent 非空）不能发布：它只是源技能的本地工作副本，
         //    发布必须回到根技能，否则共享库里会出现一条没有来源的重复技能。

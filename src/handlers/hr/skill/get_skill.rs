@@ -18,6 +18,8 @@ use super::response::to_detail;
 )]
 #[generate_http_handler]
 pub async fn get_skill(ctx: RequestContext, params: GetSkillRequest) -> Result<GetSkillResponse> {
+    // 角色要在 ctx 被消费前取出来（详情 DTO 需要它判定「发布」按钮是否显示）
+    let can_publish = crate::models::skill::can_publish_by_role(ctx.user_role());
     let skill = domain()
         .skill_manage()
         .get_skill(ctx, &params.skill_id)
@@ -26,5 +28,8 @@ pub async fn get_skill(ctx: RequestContext, params: GetSkillRequest) -> Result<G
             common::error::Error::not_found(format!("Skill {} not found", params.skill_id))
         })?;
 
-    Ok(to_detail(&skill))
+    let mut detail = to_detail(&skill);
+    // 与 `publish_skill` 的领域校验同源（`can_publish_by_role`），前端只按它显隐按钮。
+    detail.can_publish = can_publish;
+    Ok(detail)
 }

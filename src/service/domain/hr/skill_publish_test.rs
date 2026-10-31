@@ -6,14 +6,25 @@
 //! - **幂等**：重复发布不报错、不重复回写；
 //! - **入口唯一**：`update_skill` 拒绝「非 Published → Published」的跃迁，但仍允许
 //!   对**已是 Published** 的技能刷新内容（系统 seed 的预置同步依赖这一点）；
-//! - **边界**：Agent 上下文、Agent 安装副本、Expired 技能一律拒绝。
+//! - **边界**：Agent 上下文的收口范围只到「由 Agent 创作的技能」——同侪草稿可发布
+//!   （审核收口），用户创作的技能一律 Forbidden；Agent 安装副本与 Expired 技能拒绝。
 
 use super::skill_test::{create_test_skill, init_test_env};
 use super::{CreateSkillParams, UpdateSkillParams};
 use crate::pkg::RequestContext;
+use crate::pkg::request_context_test_support::new_test_agent_ctx;
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
 use sqlx::SqlitePool;
+
+/// 发布门槛是 Admin 及以上；`init_test_env` 的默认 ctx 没有 user_role（=普通成员），
+/// 所以「应当发布成功」的用例统一用这个管理员 ctx。
+fn admin_ctx(ctx: &RequestContext) -> RequestContext {
+    ctx.to_builder()
+        .user_id("publisher".to_string())
+        .user_role(1)
+        .build()
+}
 
 /// 正路：Draft → Published，状态真正落库。
 #[sqlx::test]
@@ -30,7 +41,7 @@ async fn publish_transitions_draft_to_published(pool: SqlitePool) {
 
     let published = domain
         .skill_manage()
-        .publish_skill(ctx.clone(), skill.id())
+        .publish_skill(admin_ctx(&ctx), skill.id())
         .await
         .expect("草稿发布应成功");
     assert_eq!(published.po.status, SkillStatus::Published);
@@ -131,9 +142,59 @@ async fn publish_is_idempotent(pool: SqlitePool) {
     );
 }
 
-/// 边界①：Agent 上下文即使作者是自身，也不允许发布（发布属共享库治理）。
+/// 收口人①：Agent 上下文（装了 admin 工具包的那些）可以发布**别的 Agent** 产出的
+/// 草稿——这就是「审核后发布」，发布完其他 Agent 才能安装使用。
+///
+/// 回写副作用必须落在**作者** Agent 身上（不是收口人），否则副本会挂错人。
 #[sqlx::test]
-async fn publish_rejects_agent_context(pool: SqlitePool) {
+async fn publish_allows_reviewer_agent_for_peer_agent_draft(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let mut skill = create_test_skill("PeerAgentDraft");
+    skill.po.author_type = SkillAuthorType::Agent;
+    skill.po.author_id = "agent-author".to_string();
+
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    // 收口人 Agent 与作者不是同一个
+    let reviewer_ctx = new_test_agent_ctx("agent-reviewer", pool.clone());
+    let published = domain
+        .skill_manage()
+        .publish_skill(reviewer_ctx, skill.id())
+        .await
+        .expect("收口人应能发布同侪 Agent 的草稿");
+    assert_eq!(published.po.status, SkillStatus::Published);
+
+    let author_copies = domain
+        .skill_manage()
+        .list_for_agent(ctx.clone(), "agent-author")
+        .await
+        .unwrap();
+    assert!(
+        author_copies
+            .iter()
+            .any(|s| s.po.parent_skill_id == skill.id()),
+        "回写副本应归作者 Agent，而不是收口人"
+    );
+    let reviewer_copies = domain
+        .skill_manage()
+        .list_for_agent(ctx, "agent-reviewer")
+        .await
+        .unwrap();
+    assert!(
+        !reviewer_copies
+            .iter()
+            .any(|s| s.po.parent_skill_id == skill.id()),
+        "收口人不应因发布而获得该作者技能的副本"
+    );
+}
+
+/// 收口人②：Agent 上下文可以发布**自己的**技能。
+#[sqlx::test]
+async fn publish_allows_agent_context_for_own_skill(pool: SqlitePool) {
     let (domain, ctx, _temp) = init_test_env(pool.clone());
     let mut skill = create_test_skill("AgentSelfPublish");
     skill.po.author_type = SkillAuthorType::Agent;
@@ -145,15 +206,51 @@ async fn publish_rejects_agent_context(pool: SqlitePool) {
         .await
         .unwrap();
 
-    let agent_ctx: RequestContext = ctx.to_builder().agent_id("agent-self".to_string()).build();
+    let agent_ctx = new_test_agent_ctx("agent-self", pool.clone());
+    let published = domain
+        .skill_manage()
+        .publish_skill(agent_ctx, skill.id())
+        .await
+        .expect("Agent 应能发布自己创作的技能");
+    assert_eq!(published.po.status, SkillStatus::Published);
+
+    // 发布副作用同样生效：为作者 Agent 回写工作副本
+    let copies = domain
+        .skill_manage()
+        .list_for_agent(ctx, "agent-self")
+        .await
+        .unwrap();
+    assert!(
+        copies.iter().any(|s| s.po.parent_skill_id == skill.id()),
+        "Agent 自发布也应回写工作副本"
+    );
+}
+
+/// 边界：Agent 上下文**不能**发布用户创作的技能。
+///
+/// 「发布别人的技能」是用户管理员及以上的权限，不下放给 Agent；Agent 的收口范围
+/// 只有 Agent 自己的产出。
+#[sqlx::test]
+async fn publish_rejects_agent_context_for_user_authored_skill(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    // 作者是用户 admin（create_test_skill 的默认作者）
+    let skill = create_test_skill("UserOwnedSkill");
+
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    let agent_ctx = new_test_agent_ctx("agent-self", pool.clone());
     let err = domain
         .skill_manage()
         .publish_skill(agent_ctx, skill.id())
         .await
-        .expect_err("Agent 上下文必须被拒绝");
+        .expect_err("Agent 不得发布用户创作的技能");
     assert!(
-        err.to_string().contains("不允许发布"),
-        "报错应说明 Agent 不能发布: {err}"
+        err.to_string().contains("只能发布由 Agent 创作"),
+        "报错应说明 Agent 的收口范围: {err}"
     );
 
     let reloaded = domain
@@ -232,7 +329,7 @@ async fn publish_rejects_expired_skill(pool: SqlitePool) {
 
     let err = domain
         .skill_manage()
-        .publish_skill(ctx, skill.id())
+        .publish_skill(admin_ctx(&ctx), skill.id())
         .await
         .expect_err("过期技能不能直接发布");
     assert!(
@@ -340,4 +437,74 @@ async fn update_skill_still_allows_content_refresh_on_published_skill(pool: Sqli
         .unwrap();
     assert_eq!(reloaded.po.name, "PublishedRefreshV2");
     assert_eq!(reloaded.po.status, SkillStatus::Published);
+}
+
+/// 权限①：普通成员（Member）**连自己的技能也不能发布**。
+///
+/// 发布是进共享库的闸门，属治理动作而非作者权利；作者能改（`update_skill` 放行），
+/// 但能不能进共享库由管理员或收口人 Agent 决定。
+#[sqlx::test]
+async fn publish_rejects_member_role_even_for_own_skill(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("MemberOwnSkill");
+
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    // author_id = "admin"（create_test_skill 默认），这里以作者本人身份尝试
+    let member = ctx
+        .to_builder()
+        .user_id("admin".to_string())
+        .user_role(2)
+        .build();
+    let err = domain
+        .skill_manage()
+        .publish_skill(member, skill.id())
+        .await
+        .expect_err("普通成员不得发布技能");
+    assert!(
+        err.to_string().contains("仅管理员及以上"),
+        "报错应指明发布门槛: {err}"
+    );
+
+    let reloaded = domain
+        .skill_manage()
+        .get_skill(ctx, skill.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reloaded.po.status, SkillStatus::Draft, "被拒绝不得改动状态");
+}
+
+/// 权限②：**无角色**（Guest / 内部链路）不得因为 `UserRole::default()` 是
+/// SuperAdmin 而被当成管理员。
+///
+/// `init_test_env` 返回的 ctx 正是这种形状（有 user_id、无 user_role）。
+#[sqlx::test]
+async fn publish_rejects_missing_role(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("NoRolePublish");
+
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    assert!(
+        ctx.user_role().is_none(),
+        "前提：默认测试 ctx 不带 user_role"
+    );
+    let err = domain
+        .skill_manage()
+        .publish_skill(ctx.clone(), skill.id())
+        .await
+        .expect_err("无角色不得发布（严禁 default=SuperAdmin 提权）");
+    assert!(
+        err.to_string().contains("仅管理员及以上"),
+        "报错应指明发布门槛: {err}"
+    );
 }

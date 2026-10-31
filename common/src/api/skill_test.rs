@@ -69,6 +69,7 @@ fn skill_detail_contains_content_but_list_item_does_not() {
         }],
         created_at: 1,
         updated_at: 2,
+        can_publish: false,
     };
 
     let response: ApiResponse<SkillDetail> = ApiResponse::success(detail);
@@ -166,6 +167,7 @@ fn install_skill_to_agent_response_returns_installed_skill_detail() {
                 files: vec![],
                 created_at: 1,
                 updated_at: 2,
+                can_publish: false,
             },
         });
 

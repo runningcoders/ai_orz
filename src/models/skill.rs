@@ -37,6 +37,24 @@ pub fn is_main_skill_file(filename: &str) -> bool {
     filename.eq_ignore_ascii_case(SKILL_MAIN_FILE)
 }
 
+/// 该用户角色是否有「发布技能」的资格（**仅 Admin / SuperAdmin**）。
+///
+/// 发布是技能进共享库的唯一闸门，因此权限定位为治理动作而非作者权利：
+/// 普通成员（作者本人也不例外）只能把技能留在 Draft，由管理员或收口人 Agent
+/// 审核后发布。这与「创建/编辑」的权利不同——后者是作者本人和 Agent 创建者的。
+///
+/// ⚠️ `None`（无角色，如 Guest / 系统内部链路）必须判**否**：
+/// `UserRole::default()` 是 `SuperAdmin`，若写成 `UserRole::from(role.unwrap_or_default())`
+/// 就会把「没有身份」当成超级管理员（历史上 `From<i32>` 的非法值落 default 就是这么
+/// 提权的）。宁可拒绝，也不要默认放行。
+pub fn can_publish_by_role(user_role: Option<i32>) -> bool {
+    use common::enums::user::UserRole;
+    match user_role {
+        Some(role) => matches!(UserRole::from(role), UserRole::SuperAdmin | UserRole::Admin),
+        None => false,
+    }
+}
+
 /// 主文件挑选结果（`pick_main_file` 的返回值，读写两侧共用一套口径）。
 ///
 /// 为什么单独定义一个enum，而不是让调用方各自 `find`：
@@ -363,6 +381,20 @@ impl Skill {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 发布门槛：只有 Admin(1) / SuperAdmin(0) 通过。
+    ///
+    /// 最要紧的是两个「否」：`None`（无角色）与非法值必须拒绝——
+    /// `UserRole::default()` 是 SuperAdmin，任何「unwrap_or_default」式写法都会
+    /// 把匿名/未认证调用提权成超级管理员。
+    #[test]
+    fn can_publish_by_role_requires_admin_or_above() {
+        assert!(can_publish_by_role(Some(0)), "SuperAdmin 应可发布");
+        assert!(can_publish_by_role(Some(1)), "Admin 应可发布");
+        assert!(!can_publish_by_role(Some(2)), "Member 不可发布");
+        assert!(!can_publish_by_role(Some(99)), "非法角色按最小权限拒绝");
+        assert!(!can_publish_by_role(None), "无角色不得默认成管理员");
+    }
 
     fn po(description: &str) -> SkillPo {
         SkillPo {
