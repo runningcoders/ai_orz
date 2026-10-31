@@ -1130,7 +1130,7 @@ const DEFAULT_TOP_N: usize = 20;
 /// 属性域是声明式约束，写入期只记账不阻断（软门禁），因此偶发的少量域外挂载
 /// 属可归因信号；一旦低于 95%，说明域外已成批出现——该扩域（改声明）或该纠偏
 /// （改写入），两者都不能再拖。恰好等于阈值不告警（`<` 而非 `<=`）。
-pub const PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD: f64 = 0.95;
+pub(crate) const PROPERTY_DOMAIN_COVERAGE_ALERT_THRESHOLD: f64 = 0.95;
 
 /// 属性域覆盖率纯函数：TBox 属性定义 × ABox 聚合行 → 覆盖率 + 域外明细
 ///
@@ -1209,7 +1209,7 @@ const DEFAULT_PROPERTY_EFFECTIVENESS_LIMIT: usize = 100;
 /// 语义不是「值错了」，而是「这个属性在该实体类上没有区分度」：声明里写着 enum
 /// 多值，实际用法却退化成单一取值——要么该属性对该类无意义（该收窄 domain_classes），
 /// 要么该类内部其实该拆子类。严格大于才标黄：恰好 90% 仍留 10% 变化，属正常使用。
-pub const PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD: f64 = 0.90;
+pub(crate) const PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD: f64 = 0.90;
 
 /// 分组内取值分布累加器（纯函数内部结构，不出本模块）
 struct EffectivenessGroup {

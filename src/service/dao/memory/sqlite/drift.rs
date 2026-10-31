@@ -179,7 +179,7 @@ WHERE node_type = ? AND is_published = 0 AND status != 0
         &self,
         ctx: RequestContext,
     ) -> Result<Vec<PropertyDomainFreqRow>> {
-        let pool = self.pool(ctx);
+        let pool = self.pool(ctx.clone());
         // strict 口径三条，缺一不可（否则覆盖率会被脏数据稀释）：
         //   - p.target_type = 'node'：边属性（relation）不属于本维度
         //   - p.status = 1：被取代的历史值不计
@@ -201,6 +201,16 @@ LIMIT ?"#,
         .bind(MAX_WORD_FREQ_ROWS)
         .fetch_all(&pool)
         .await?;
+        // `LIMIT` 是组级截断：命中上限说明分组数已失控，此时 `total_values`
+        // 会被静默低估（比行级截断温和，但同样不能让调用方毫无察觉）
+        if rows.len() as i64 >= MAX_WORD_FREQ_ROWS {
+            log_warn!(
+                ctx,
+                "ontology_dao",
+                "属性域覆盖聚合命中组数上限 {}，覆盖率分母可能被低估",
+                MAX_WORD_FREQ_ROWS
+            );
+        }
         Ok(rows)
     }
 }

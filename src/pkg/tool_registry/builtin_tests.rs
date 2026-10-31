@@ -81,6 +81,7 @@ fn ontology_consumer_tools_carry_ontology_tag() {
         "get_ontology_drift_dashboard",
         "list_ontology_drift_class_details",
         "list_ontology_drift_relation_details",
+        "get_property_effectiveness",
         // agent handler 的本体语义消费方（词表主消费点 / 属性检索 / 遍历 / 沉淀）
         "save_long_term_memory",
         "update_memory",
@@ -129,6 +130,7 @@ fn ontology_consumer_tools_are_neural_reachable() {
         "get_ontology_drift_dashboard",
         "list_ontology_drift_class_details",
         "list_ontology_drift_relation_details",
+        "get_property_effectiveness",
         // 写记忆 / 检索 / 遍历 / 沉淀（本体词表的主消费点）
         "save_long_term_memory",
         "update_memory",
@@ -178,6 +180,7 @@ fn ontology_read_tools_are_neural_reachable() {
         "get_ontology_drift_dashboard",
         "list_ontology_drift_class_details",
         "list_ontology_drift_relation_details",
+        "get_property_effectiveness",
     ] {
         let factory = registry
             .get_builtin_factory(id)

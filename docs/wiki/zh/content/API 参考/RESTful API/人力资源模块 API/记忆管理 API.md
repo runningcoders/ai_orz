@@ -15,7 +15,7 @@
 - [memory.rs（枚举）](common/src/enums/memory.rs)
 - [neural_tools.rs（工具 DTO）](common/src/api/neural_tools.rs)（2026-10-12：KnowledgeProperty* / PropertyFilterParam / PropertyIssueEntry / RelationWriteResult）
 - [ontology_property.rs（属性纯函数）](common/src/ontology_property.rs)
-- [error/code.rs（错误码）](common/src/error/code.rs)（2026-10-12：建边 5 码 + 属性 6 码）
+- [error/code.rs（错误码）](common/src/error/code.rs)（2026-10-12：建边 5 码 + 属性 7 码）
 - [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [mod.rs（DAO 接口）](src/service/dao/memory/mod.rs)
 - [vector_search_architecture.md](docs/archive/design-archive/vector_search_architecture.md)

@@ -51,6 +51,13 @@ FROM (
     JOIN long_term_knowledge_node n ON n.id = p.target_id
     WHERE p.target_type = 'node' AND p."status" = 1 AND n."status" = 1"#;
 
+/// 聚合返回行数的防御观察阈值：正常量级为数百行（现网 411 行），超过即脏数据信号
+///
+/// **刻意不加 SQL LIMIT**：本聚合的行是「取值分布明细」，行级截断会让
+/// `total` 被计小（看板得出「一切正常」的错误结论），比看板侧的组级截断更危险。
+/// 超过阈值只在日志留痕，不改变返回结果。
+pub(super) const PROPERTY_VALUE_FREQ_WARN_ROWS: usize = 5000;
+
 /// 聚合尾部：闭合子查询 + 分组 + 确定性排序（过滤条件插在两者之间）
 pub(super) const PROPERTY_VALUE_FREQ_SQL_TAIL: &str = r#"
 )
@@ -68,7 +75,7 @@ impl MemoryDaoSqliteImpl {
         term_key: Option<String>,
         node_type: Option<String>,
     ) -> Result<Vec<PropertyValueFreqRow>> {
-        let pool = self.pool(ctx);
+        let pool = self.pool(ctx.clone());
         let mut builder = QueryBuilder::new(PROPERTY_VALUE_FREQ_SQL);
         // 过滤条件在入库规范形上比对：入口先 normalize，与写入侧单点归一同一口径
         if let Some(term) = term_key.as_deref().map(normalize).filter(|s| !s.is_empty()) {
@@ -88,6 +95,16 @@ impl MemoryDaoSqliteImpl {
             .build_query_as::<PropertyValueFreqRow>()
             .fetch_all(&pool)
             .await?;
+        // 只观察不改结果：行数异常说明取值分布炸开了，聚合值仍须完整返回
+        if rows.len() >= PROPERTY_VALUE_FREQ_WARN_ROWS {
+            log_warn!(
+                ctx,
+                "ontology_dao",
+                "属性取值分布聚合返回 {} 行（≥ 观察阈值 {}），请检查属性取值是否已失控",
+                rows.len(),
+                PROPERTY_VALUE_FREQ_WARN_ROWS
+            );
+        }
         Ok(rows)
     }
 }

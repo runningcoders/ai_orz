@@ -579,7 +579,11 @@ pub struct GetDriftDashboardRequest {
     #[serde(default)]
     #[param(source = "query")]
     pub top_n: Option<usize>,
-    /// 按 Agent 过滤（None = 全组织）
+    /// 按 Agent 过滤漂移**词**（None = 全组织）
+    ///
+    /// ⚠️ 作用范围仅限词频聚合（漂移词 / 漂移节点）；响应里的
+    /// `property_domain_coverage` 是**全局口径**，不受本参数影响——属性值表无
+    /// agent 列，按 agent 切分会把「该属性在全组织是否已退化成常量」拆碎。
     #[serde(default)]
     #[param(source = "query")]
     pub agent_id: Option<String>,
@@ -660,6 +664,9 @@ pub struct GetDriftDashboardResponse {
     /// 节点总数
     pub total_node_count: u64,
     /// 属性值域覆盖率（L2 阈值告警维度；只增字段，向后兼容）
+    ///
+    /// 全局口径：不按请求的 `agent_id` 过滤（属性值表无 agent 列，
+    /// 归属需 join 节点；切分会把「属性是否已退化成常量」这个全局判断拆碎）。
     pub property_domain_coverage: PropertyDomainCoverage,
 }
 

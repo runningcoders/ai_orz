@@ -70,7 +70,9 @@ fn single_value_group_is_flagged_as_constant() {
 
 #[test]
 fn real_distribution_keeps_group_unflagged() {
-    // 现网 fact 基线形态：多值共存 → 众数占比明显 < 0.90 → 不标黄
+    // 多值分布（mode_ratio < 0.90）不标黄：60/68 = 0.882 < 0.90
+    // ⚠️ 别把「fact 基线不标黄」当前提：现网 fact/lifecycle_status 实测
+    // 73/78 = 0.9359 > 0.90，恰恰是标黄的典型。本用例验的是阈值下侧的判定。
     let rows = vec![
         row("lifecycle_status", "fact", "现行有效", 60),
         row("lifecycle_status", "fact", "进行中", 7),

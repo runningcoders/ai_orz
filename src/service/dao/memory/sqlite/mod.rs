@@ -63,6 +63,8 @@ mod fts_test;
 #[cfg(test)]
 mod knowledge_test;
 #[cfg(test)]
+mod property_effectiveness_test;
+#[cfg(test)]
 mod relations_test;
 #[cfg(test)]
 mod short_term_test;

@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "get_ontology_drift_dashboard",
     name = "Get Ontology Drift Dashboard",
-    description = "Get the ontology drift dashboard: top N drifted raw terms (with frequency and distinct-agent multi-source signals), relation-dimension lexicon coverage (canonical hits + synonym merges vs all relations), , node drift statistics, and property-domain coverage statistics (in-domain/out-of-domain property value counts, coverage ratio and an L2 threshold alert). Lazily aggregated from SQLite read paths and self-heals as the lexicon evolves. Filter by agent_id optionally.",
+    description = "Get the ontology drift dashboard: top N drifted raw terms (with frequency and distinct-agent multi-source signals), relation-dimension lexicon coverage (canonical hits + synonym merges vs all relations), node drift statistics, and property-domain coverage statistics (in-domain/out-of-domain property value counts, coverage ratio and an L2 threshold alert). Lazily aggregated from SQLite read paths and self-heals as the lexicon evolves. Filter by agent_id optionally.",
     params = "common::api::GetDriftDashboardRequest",
     neural,
     tags = "ontology_management,ontology"
