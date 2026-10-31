@@ -147,6 +147,7 @@ ai_orz/
 
 > 📌 **内容脉络（四象限）**：wiki/ 回答「是什么」（现状百科，阅读第一站）；design/ 回答「为什么」（历史决策快照）；plan/ 回答「要去哪」；archive/ 存放已归档方案。
 
+- [docs/diagrams/ai-orz-architecture.html](./docs/diagrams/ai-orz-architecture.html) — **架构总览图**（交互式 HTML：请求主链路 / 异步运行时 / 存储三条阅读视图；克隆后本地用浏览器直接打开即可交互。说明：GitHub 网页对 `.html` 只显示源码、不渲染，属平台限制）
 - [AGENTS.md](./AGENTS.md) — AI 开发规范总览 + 完整文档索引
 - [docs/wiki/](./docs/wiki/) — **知识库入口**（代码现状百科，IDE 生成随代码演进）
 - [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) — 代码认知入口页（模块速查 + 文档导航）

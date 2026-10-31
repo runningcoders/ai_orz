@@ -4,7 +4,9 @@
 //! docs/ 核心文档 + wiki 到 public/docs/ 时生成），点击条目按需 fetch 对应
 //! Markdown 文件，用 MarkdownRenderer 组件渲染（自动触发 ```mermaid 图的 JS 替换）。
 //!
-//! 分区顺序（由 build.rs 保证）：总览 → 知识卡片 → 代码 Wiki → 其他文档
+//! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 知识卡片 → 代码 Wiki → 其他文档
+//! 图表类条目（index.json 中 `type: "html"`）不走 Markdown 渲染，
+//! 直接以新标签页打开静态文件（如 /docs/diagrams/xxx.html）。
 //! 其他文档分区默认收起，整体可折叠；Wiki/知识卡片保留目录层级嵌套折叠树。
 
 use std::collections::HashSet;
@@ -25,6 +27,10 @@ use crate::store::toast::{ToastState, use_toast};
 struct DocEntry {
     title: String,
     path: String,
+    /// 条目类型：缺省为 Markdown；`html` 表示自包含 HTML 资源（如架构图），
+    /// 由 build.rs 生成 index.json 时标注，前端以新标签页直链打开。
+    #[serde(default, rename = "type")]
+    kind: String,
 }
 
 /// 目录分组节点（wiki 树中的目录，children 可继续嵌套分组或文档）
@@ -191,6 +197,19 @@ fn encode_doc_path(path: &str) -> String {
         .join("/")
 }
 
+/// 是否为静态 HTML 资源（不走 Markdown 渲染）
+fn is_html_entry(entry: &DocEntry) -> bool {
+    entry.kind == "html" || entry.path.ends_with(".html")
+}
+
+/// 在新标签页打开 /docs/ 下的静态资源（图表 HTML 自身即可交互）
+fn open_static_in_new_tab(path: &str) {
+    let url = format!("/docs/{}", encode_doc_path(path));
+    if let Some(win) = web_sys::window() {
+        let _ = win.open_with_url_and_target(&url, "_blank");
+    }
+}
+
 /// 判断该 section 是否需要默认收起（目前「其他文档」默认收起）
 fn section_default_collapsed(label: &str) -> bool {
     label == "其他文档"
@@ -203,6 +222,11 @@ async fn load_doc(
     mut loading: Signal<bool>,
     toast: ToastState,
 ) {
+    // 图表 HTML 无法按 Markdown 渲染：直接新标签页打开，不进入加载/选中态
+    if path.ends_with(".html") {
+        open_static_in_new_tab(&path);
+        return;
+    }
     selected.set(Some(path.clone()));
     loading.set(true);
     match fetch_static_text(&format!("/docs/{}", encode_doc_path(&path))).await {
@@ -233,11 +257,12 @@ pub fn SystemDocs() -> Element {
             match fetch_static_text("/docs/index.json").await {
                 Ok(text) => match serde_json::from_str::<DocIndex>(&text) {
                     Ok(idx) => {
-                        let first = idx
-                            .sections
-                            .first()
-                            .and_then(|s| s.docs.first())
-                            .map(|d| d.path.clone());
+                        let first = idx.sections.iter().find_map(|s| {
+                            s.docs
+                                .iter()
+                                .find(|d| !is_html_entry(d))
+                                .map(|d| d.path.clone())
+                        });
                         index.set(Some(idx));
                         if let Some(path) = first {
                             load_doc(path, selected, markdown, loading_doc, toast).await;
@@ -367,25 +392,36 @@ pub fn SystemDocs() -> Element {
                                                 ul { class: "menu menu-sm p-0 mt-1",
                                                     for doc in section.docs.iter() {
                                                         li { key: "{doc.path}",
-                                                            a {
-                                                                class: if selected_opt.as_deref() == Some(doc.path.as_str()) {
-                                                                    "active"
-                                                                } else {
-                                                                    ""
-                                                                },
-                                                                onclick: {
-                                                                    let path = doc.path.clone();
-                                                                    move |_| {
-                                                                        spawn(load_doc(
-                                                                            path.clone(),
-                                                                            selected,
-                                                                            markdown,
-                                                                            loading_doc,
-                                                                            toast,
-                                                                        ));
-                                                                    }
-                                                                },
-                                                                "{doc.title}"
+                                                            if is_html_entry(doc) {
+                                                                a {
+                                                                    class: "flex items-center justify-between",
+                                                                    href: "/docs/{encode_doc_path(&doc.path)}",
+                                                                    target: "_blank",
+                                                                    rel: "noopener",
+                                                                    span { "{doc.title}" }
+                                                                    span { class: "text-xs opacity-60", "↗" }
+                                                                }
+                                                            } else {
+                                                                a {
+                                                                    class: if selected_opt.as_deref() == Some(doc.path.as_str()) {
+                                                                        "active"
+                                                                    } else {
+                                                                        ""
+                                                                    },
+                                                                    onclick: {
+                                                                        let path = doc.path.clone();
+                                                                        move |_| {
+                                                                            spawn(load_doc(
+                                                                                path.clone(),
+                                                                                selected,
+                                                                                markdown,
+                                                                                loading_doc,
+                                                                                toast,
+                                                                            ));
+                                                                        }
+                                                                    },
+                                                                    "{doc.title}"
+                                                                }
                                                             }
                                                         }
                                                     }

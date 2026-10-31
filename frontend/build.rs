@@ -60,6 +60,21 @@ fn short_id(rel: &str) -> String {
     format!("{:032x}", h)
 }
 
+/// 读取 HTML 文档 `<title>` 作为目录展示标题（失败时由调用方回退文件名）
+fn html_title(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let content = String::from_utf8_lossy(&bytes);
+    let start = content.find("<title>")? + "<title>".len();
+    let rest = &content[start..];
+    let end = rest.find("</title>")?;
+    let title = rest[..end].trim();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title.to_string())
+    }
+}
+
 /// 文档中心静态资源：将仓库 docs/ 中的核心文档复制到 public/docs/，
 /// 并生成目录清单 index.json 供前端文档中心页面运行时 fetch。
 ///
@@ -72,6 +87,7 @@ fn short_id(rel: &str) -> String {
 /// - docs/wiki/knowledge/zh/（知识卡片，层级结构 → 哈希路径）
 /// - docs/wiki/zh/content/（代码 Wiki，层级结构 → 哈希路径）
 /// - docs/design/、docs/plan/、docs/archive/（扁平列表 → 哈希路径）
+/// - docs/diagrams/（图表 HTML，保留原相对路径直出，供前端新标签页打开）
 fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let docs_src = Path::new(&manifest_dir).join("../docs");
@@ -269,6 +285,64 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
             });
             sections.push(serde_json::json!({ "label": "其他文档", "docs": other_docs }));
         }
+    }
+
+    // ---- 分区 5：图表资源（docs/diagrams/ 下的 .html，保留原相对路径直出）----
+    // 图表是自包含 HTML，前端无法按 Markdown 渲染：保留 diagrams/xxx.html 原路径，
+    // 由前端以新标签页直链 /docs/diagrams/xxx.html 打开（见 pages/system/docs.rs）。
+    let mut diagrams_section: Option<serde_json::Value> = None;
+    {
+        let diagrams_src = docs_src.join("diagrams");
+        if diagrams_src.is_dir() {
+            // 监听目录本身，新增/删除图表文件时可触发重新构建
+            println!("cargo:rerun-if-changed={}", diagrams_src.display());
+            let mut html_files: Vec<std::path::PathBuf> = Vec::new();
+            let mut stack = vec![diagrams_src];
+            while let Some(current) = stack.pop() {
+                for entry in fs::read_dir(&current)? {
+                    let path = entry?.path();
+                    if path.is_dir() {
+                        stack.push(path);
+                    } else if path.extension().is_some_and(|ext| ext == "html") {
+                        html_files.push(path);
+                    }
+                }
+            }
+            html_files.sort();
+            let mut diagrams: Vec<serde_json::Value> = Vec::new();
+            for path in html_files {
+                let Ok(rel) = path.strip_prefix(&docs_src) else {
+                    continue;
+                };
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let dest = dest_root.join(&rel_str);
+                if let Some(parent) = dest.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                fs::copy(&path, &dest)?;
+                println!("cargo:rerun-if-changed={}", path.display());
+                let title = html_title(&path).unwrap_or_else(|| {
+                    Path::new(&rel_str)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| rel_str.clone())
+                });
+                diagrams.push(serde_json::json!({
+                    "title": title,
+                    "path": rel_str,
+                    "type": "html"
+                }));
+            }
+            if !diagrams.is_empty() {
+                diagrams_section = Some(serde_json::json!({ "label": "架构图", "docs": diagrams }));
+            }
+        }
+    }
+
+    // 「架构图」分区固定在总览之后展示（无总览时置顶），保证文档中心首屏可见
+    if let Some(section) = diagrams_section {
+        let pos = sections.len().min(1);
+        sections.insert(pos, section);
     }
 
     let index = serde_json::json!({ "sections": sections });

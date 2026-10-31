@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Orz 文档站</title>
+<style>
+  :root { color-scheme: light dark; --fg:#1f2328; --muted:#59636e; --bg:#ffffff; --card:#f6f8fa; --link:#0969da; --line:#d1d9e0; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --muted:#9198a1; --bg:#0d1117; --card:#161b22; --link:#2f81f7; --line:#30363d; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:48px 20px; background:var(--bg); color:var(--fg);
+         font:16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width:760px; margin:0 auto; }
+  h1 { font-size:28px; margin:0 0 8px; }
+  p.lead { color:var(--muted); margin:0 0 28px; }
+  ul { list-style:none; padding:0; margin:0; }
+  li { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  a { color:var(--link); text-decoration:none; font-weight:600; }
+  a:hover { text-decoration:underline; }
+  span.desc { display:block; color:var(--muted); font-weight:400; font-size:14px; margin-top:4px; }
+  footer { margin-top:32px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI Orz 文档站</h1>
+  <p class="lead">docs/ 目录的 GitHub Pages 入口（纯静态直出，不启用 Jekyll）。</p>
+  <ul>
+    <li><a href="./diagrams/ai-orz-architecture.html">架构总览图</a><span class="desc">交互式 HTML：请求主链路 / 异步运行时 / 存储三条阅读视图</span></li>
+    <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/README.md">docs/ 文档地图</a><span class="desc">四象限分工与维护规则（Markdown 回 GitHub 阅读）</span></li>
+    <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/ARCHITECTURE.md">架构总纲</a><span class="desc">核心概念与实体关系的唯一权威纲要</span></li>
+    <li><a href="https://github.com/runningcoders/ai_orz">GitHub 仓库</a><span class="desc">源码、Issue 与提交历史</span></li>
+  </ul>
+  <footer>本站仅提供静态资源直出；docs/ 中的 Markdown 请在 GitHub 上阅读。</footer>
+</main>
+</body>
+</html>
