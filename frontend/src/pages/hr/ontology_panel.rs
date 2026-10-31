@@ -18,13 +18,14 @@ use common::api::{
     CreateOntologyClassRelationRequest, CreateOntologyClassRequest, CreateOntologyPropertyRequest,
     CreateOntologyRelationTypeRequest, CreateOntologySynonymRequest, DriftClassDetail,
     DriftRelationDetail, GetDriftDashboardRequest, GetDriftDashboardResponse,
-    GetOntologySkeletonResponse, ListDriftClassDetailsRequest, ListDriftRelationDetailsRequest,
-    ListOntologyClassesRequest, ListOntologyLexiconResponse, ListOntologyPropertiesRequest,
-    ListOntologyRelationTypesRequest, ListOntologySynonymsRequest, OntologyClassItem,
-    OntologyClassRelationItem, OntologyPropertyItem, OntologyRelationTypeItem, OntologySynonymItem,
-    PaginationParams, PresetOntologySyncStrategy, PreviewPresetOntologyResponse,
-    SyncPresetOntologyRequest, SyncPresetOntologyResponse, UpdateOntologyClassRelationRequest,
-    UpdateOntologyClassRequest, UpdateOntologyPropertyRequest, UpdateOntologyRelationTypeRequest,
+    GetOntologySkeletonResponse, GetPropertyEffectivenessRequest, GetPropertyEffectivenessResponse,
+    ListDriftClassDetailsRequest, ListDriftRelationDetailsRequest, ListOntologyClassesRequest,
+    ListOntologyLexiconResponse, ListOntologyPropertiesRequest, ListOntologyRelationTypesRequest,
+    ListOntologySynonymsRequest, OntologyClassItem, OntologyClassRelationItem,
+    OntologyPropertyItem, OntologyRelationTypeItem, OntologySynonymItem, PaginationParams,
+    PresetOntologySyncStrategy, PreviewPresetOntologyResponse, SyncPresetOntologyRequest,
+    SyncPresetOntologyResponse, UpdateOntologyClassRelationRequest, UpdateOntologyClassRequest,
+    UpdateOntologyPropertyRequest, UpdateOntologyRelationTypeRequest,
 };
 use common::enums::OntologyStatus;
 use common::enums::ontology::{Cardinality, PropertyDataType, PropertyTargetType};
@@ -35,12 +36,12 @@ use dioxus::prelude::*;
 use crate::api::hr::{
     create_ontology_class, create_ontology_class_relation, create_ontology_property,
     create_ontology_relation_type, create_ontology_synonym, delete_ontology_synonym,
-    get_ontology_drift_dashboard, get_ontology_skeleton, list_ontology_classes,
-    list_ontology_drift_class_details, list_ontology_drift_relation_details, list_ontology_lexicon,
-    list_ontology_properties, list_ontology_relation_types, list_ontology_synonyms,
-    retire_ontology_class, retire_ontology_class_relation, retire_ontology_property,
-    retire_ontology_relation_type, update_ontology_class, update_ontology_class_relation,
-    update_ontology_property, update_ontology_relation_type,
+    get_ontology_drift_dashboard, get_ontology_skeleton, get_property_effectiveness,
+    list_ontology_classes, list_ontology_drift_class_details, list_ontology_drift_relation_details,
+    list_ontology_lexicon, list_ontology_properties, list_ontology_relation_types,
+    list_ontology_synonyms, retire_ontology_class, retire_ontology_class_relation,
+    retire_ontology_property, retire_ontology_relation_type, update_ontology_class,
+    update_ontology_class_relation, update_ontology_property, update_ontology_relation_type,
 };
 use crate::api::seed::{preview_preset_ontology, sync_preset_ontology};
 use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene, card_size};
@@ -60,6 +61,8 @@ const PAGE_SIZE: usize = 20;
 const DRILL_DETAIL_LIMIT: usize = 20;
 /// 看板 Top 漂移词数量
 const DASHBOARD_TOP_N: usize = 10;
+/// 属性有效性统计默认返回分组上限
+const EFFECTIVENESS_DEFAULT_LIMIT: usize = 100;
 
 /// 状态筛选下拉值 → OntologyStatus
 fn parse_status_filter(v: &str) -> Option<OntologyStatus> {
@@ -86,6 +89,15 @@ fn parse_term_kind(v: &str) -> TermKind {
     } else {
         TermKind::Relation
     }
+}
+
+/// 比率（0.0~1.0）→ 百分比文本（保留 1 位小数）
+///
+/// 覆盖率 / 众数占比 / 非众数占比 统一走这里，避免各处自拼格式导致口径不一。
+/// 注意：`text-error` / `text-success` 等语义类必须写成字面量，不能动态拼接，
+/// 否则 Tailwind JIT 扫描不到。
+fn format_ratio_percent(v: f64) -> String {
+    format!("{:.1}%", v * 100.0)
 }
 
 /// trim 后非空才保留
@@ -610,6 +622,14 @@ pub fn HrOntologyLexicon() -> Element {
     let mut drill_loading = use_signal(|| false);
     let mut drill_seq = use_signal(|| 0u64);
 
+    // ===== 属性有效性统计（属性 × 实体类 众数占比，> 阈值标黄） =====
+    let mut effectiveness = use_signal(|| None::<GetPropertyEffectivenessResponse>);
+    let mut effectiveness_loading = use_signal(|| false);
+    let mut effectiveness_seq = use_signal(|| 0u64);
+    let mut effectiveness_term_filter = use_signal(String::new);
+    let mut effectiveness_node_filter = use_signal(String::new);
+    let mut effectiveness_limit = use_signal(|| EFFECTIVENESS_DEFAULT_LIMIT.to_string());
+
     // ===== 本体骨架（继承链 + 三元组） =====
     let mut skeleton = use_signal(|| None::<GetOntologySkeletonResponse>);
     let mut skeleton_loading = use_signal(|| false);
@@ -911,6 +931,49 @@ pub fn HrOntologyLexicon() -> Element {
                 }
             }
             dashboard_loading.set(false);
+        });
+    };
+
+    let mut fetch_effectiveness = move || {
+        effectiveness_seq.set(effectiveness_seq() + 1);
+        let seq = effectiveness_seq();
+        effectiveness_loading.set(true);
+        let limit_text = effectiveness_limit().trim().to_string();
+        let limit = if limit_text.is_empty() {
+            None
+        } else {
+            match limit_text.parse::<usize>() {
+                Ok(v) if v > 0 => Some(v),
+                _ => {
+                    toast.warning("条数上限须为正整数，已回退后端默认值".to_string());
+                    None
+                }
+            }
+        };
+        spawn(async move {
+            let req = GetPropertyEffectivenessRequest {
+                term_key: non_empty(&effectiveness_term_filter()),
+                node_type: non_empty(&effectiveness_node_filter()),
+                min_mode_ratio: None,
+                limit,
+            };
+            match get_property_effectiveness(req).await {
+                Ok(data) => {
+                    if effectiveness_seq() == seq {
+                        effectiveness.set(Some(data));
+                    }
+                }
+                Err(e) => {
+                    if effectiveness_seq() == seq {
+                        // 清掉旧数据：失败后展示失败占位，避免残留过期统计误导
+                        effectiveness.set(None);
+                        toast.error(format!("加载属性有效性统计失败：{e}"));
+                    }
+                }
+            }
+            if effectiveness_seq() == seq {
+                effectiveness_loading.set(false);
+            }
         });
     };
 
@@ -1427,6 +1490,7 @@ pub fn HrOntologyLexicon() -> Element {
             fetch_skeleton();
             fetch_dashboard();
             fetch_lexicon();
+            fetch_effectiveness();
         });
     });
 
@@ -1580,6 +1644,28 @@ pub fn HrOntologyLexicon() -> Element {
                                             }
                                         )),
                                     }
+                                    {
+                                        let cov = &d.property_domain_coverage;
+                                        let is_alert = cov.alert;
+                                        let coverage_text = format_ratio_percent(cov.coverage_ratio);
+                                        let coverage_delta = format!(
+                                            "域内 {} · 域外 {} · 阈值 {}",
+                                            cov.in_domain,
+                                            cov.out_of_domain,
+                                            format_ratio_percent(cov.threshold)
+                                        );
+                                        let coverage_accent =
+                                            if is_alert { "error" } else { "success" };
+                                        rsx! {
+                                            StatReadout {
+                                                label: "属性域覆盖率".to_string(),
+                                                value: coverage_text,
+                                                icon: Some("🧮".to_string()),
+                                                accent: Some(coverage_accent.to_string()),
+                                                delta: Some(coverage_delta),
+                                            }
+                                        }
+                                    }
                                 } else if dashboard_loading() {
                                     Loading { size: "md" }
                                 } else {
@@ -1590,6 +1676,86 @@ pub fn HrOntologyLexicon() -> Element {
                                 }
                             }
                             if let Some(d) = dashboard() {
+                                {
+                                    let cov = &d.property_domain_coverage;
+                                    let is_alert = cov.alert;
+                                    let total_values = cov.total_values;
+                                    let in_domain = cov.in_domain;
+                                    let out_of_domain = cov.out_of_domain;
+                                    let coverage_text = format_ratio_percent(cov.coverage_ratio);
+                                    let threshold_text = format_ratio_percent(cov.threshold);
+                                    let outliers = cov.out_of_domain_by_class.clone();
+                                    let card_class = if is_alert {
+                                        "rounded-xl border border-error/60 bg-error/10 p-3 mb-3"
+                                    } else {
+                                        "rounded-xl border border-base-300 bg-base-100/40 p-3 mb-3"
+                                    };
+                                    rsx! {
+                                        div { class: "{card_class}",
+                                            div { class: "flex flex-wrap items-center justify-between gap-2",
+                                                div { class: "flex items-center gap-2",
+                                                    span { class: "text-xs font-semibold uppercase tracking-wider opacity-60", "属性域覆盖率" }
+                                                    if is_alert {
+                                                        span { class: "badge hud-badge badge-error badge-sm", "⚠️ 低于阈值告警" }
+                                                    } else {
+                                                        span { class: "badge hud-badge badge-success badge-sm", "域内良好" }
+                                                    }
+                                                }
+                                                div { class: "text-xs font-mono opacity-70",
+                                                    "L2 阈值 {threshold_text}（覆盖率 < 阈值即标红）"
+                                                }
+                                            }
+                                            div { class: "grid grid-cols-2 md:grid-cols-4 gap-3 mt-3",
+                                                div { class: "rounded-lg border border-base-300 bg-base-100/40 p-2",
+                                                    div { class: "text-xs opacity-60", "覆盖率" }
+                                                    div { class: if is_alert { "text-xl font-semibold text-error" } else { "text-xl font-semibold text-success" }, "{coverage_text}" }
+                                                }
+                                                div { class: "rounded-lg border border-base-300 bg-base-100/40 p-2",
+                                                    div { class: "text-xs opacity-60", "属性值总数" }
+                                                    div { class: "text-xl font-semibold", "{total_values}" }
+                                                }
+                                                div { class: "rounded-lg border border-base-300 bg-base-100/40 p-2",
+                                                    div { class: "text-xs opacity-60", "域内" }
+                                                    div { class: "text-xl font-semibold", "{in_domain}" }
+                                                }
+                                                div { class: "rounded-lg border border-base-300 bg-base-100/40 p-2",
+                                                    div { class: "text-xs opacity-60", "域外" }
+                                                    div { class: if is_alert { "text-xl font-semibold text-error" } else { "text-xl font-semibold" }, "{out_of_domain}" }
+                                                }
+                                            }
+                                            if outliers.is_empty() {
+                                                EmptyState {
+                                                    icon: Some("✨".to_string()),
+                                                    message: "无域外挂载：属性值全部落在声明允许的实体类上".to_string(),
+                                                }
+                                            } else {
+                                                div { class: "mt-3",
+                                                    div { class: "text-xs font-semibold uppercase tracking-wider opacity-60 mb-1", "域外明细（按条数降序，后端已截断 Top N）" }
+                                                    div { class: "overflow-x-auto",
+                                                        table { class: "table hud-table table-sm table-zebra w-full",
+                                                            thead {
+                                                                tr {
+                                                                    th { "属性 key" }
+                                                                    th { "实体类" }
+                                                                    th { class: "w-[120px]", "域外条数" }
+                                                                }
+                                                            }
+                                                            tbody {
+                                                                for it in outliers.iter() {
+                                                                    tr { key: "{it.term_key}:{it.node_type}",
+                                                                        td { span { class: "font-mono text-sm", "{it.term_key}" } }
+                                                                        td { span { class: "badge hud-badge badge-ghost badge-sm font-mono", "{it.node_type}" } }
+                                                                        td { class: "font-mono", "{it.count}" }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 if d.top_drift_words.is_empty() {
                                     EmptyState {
                                         icon: Some("✨".to_string()),
@@ -1632,6 +1798,131 @@ pub fn HrOntologyLexicon() -> Element {
                                             }
                                         }
                                     }
+                                }
+                            }
+                        }
+                        // ==================== 属性有效性（属性 × 实体类 众数占比） ====================
+                        HudSection {
+                            eyebrow: Some("EFFECTIVENESS".to_string()),
+                            title: "属性有效性".to_string(),
+                            actions: Some(rsx! {
+                                button { class: "btn hud-btn btn-ghost btn-sm",
+                                    onclick: move |_| fetch_effectiveness(),
+                                    "刷新"
+                                }
+                            }),
+                            div { class: "flex flex-wrap items-end gap-2 mb-3",
+                                div { class: "flex flex-col gap-1 min-w-[160px] flex-[2]",
+                                    label { class: "label", span { class: "label-text", "属性 key" } }
+                                    input { class: "input input-bordered hud-input w-full font-mono",
+                                        value: "{effectiveness_term_filter}",
+                                        oninput: move |e| effectiveness_term_filter.set(e.value()),
+                                        onkeydown: move |evt| {
+                                            if evt.key() == Key::Enter {
+                                                fetch_effectiveness();
+                                            }
+                                        },
+                                        placeholder: "如 lifecycle_status（回车查询）"
+                                    }
+                                }
+                                div { class: "flex flex-col gap-1 min-w-[140px]",
+                                    label { class: "label", span { class: "label-text", "实体类" } }
+                                    input { class: "input input-bordered hud-input w-full font-mono",
+                                        value: "{effectiveness_node_filter}",
+                                        oninput: move |e| effectiveness_node_filter.set(e.value()),
+                                        onkeydown: move |evt| {
+                                            if evt.key() == Key::Enter {
+                                                fetch_effectiveness();
+                                            }
+                                        },
+                                        placeholder: "如 fact"
+                                    }
+                                }
+                                div { class: "flex flex-col gap-1 w-[140px]",
+                                    label { class: "label", span { class: "label-text", "条数上限" } }
+                                    input { r#type: "number",
+                                        class: "input input-bordered hud-input w-full font-mono",
+                                        value: "{effectiveness_limit}",
+                                        oninput: move |e| effectiveness_limit.set(e.value()),
+                                        placeholder: "默认 100"
+                                    }
+                                }
+                                button { class: "btn hud-btn btn-primary btn-sm",
+                                    onclick: move |_| fetch_effectiveness(),
+                                    "查询"
+                                }
+                            }
+                            if effectiveness_loading() {
+                                Loading { size: "md" }
+                            } else if let Some(eff) = effectiveness() {
+                                {
+                                    let threshold_text = format_ratio_percent(eff.threshold);
+                                    let total_groups = eff.total_groups;
+                                    let items = eff.items.clone();
+                                    rsx! {
+                                        div { class: "text-xs opacity-70 mb-2 font-mono",
+                                            "命中分组 {total_groups} 组 · 标黄阈值 {threshold_text}（众数占比 > 阈值即标黄）"
+                                        }
+                                        if items.is_empty() {
+                                            EmptyState {
+                                                icon: Some("📭".to_string()),
+                                                message: "当前过滤条件下无属性值统计".to_string(),
+                                            }
+                                        } else {
+                                            div { class: "overflow-x-auto",
+                                                table { class: "table hud-table table-fixed table-zebra table-pin-rows w-full",
+                                                    colgroup {
+                                                        col { class: "w-[150px]" }
+                                                        col { class: "w-[110px]" }
+                                                        col { class: "w-[72px]" }
+                                                        col { class: "w-[80px]" }
+                                                        col {}
+                                                        col { class: "w-[96px]" }
+                                                        col { class: "w-[104px]" }
+                                                        col { class: "w-[92px]" }
+                                                    }
+                                                    thead {
+                                                        tr {
+                                                            th { "属性 key" }
+                                                            th { "实体类" }
+                                                            th { "条数" }
+                                                            th { "取值数" }
+                                                            th { "众数取值" }
+                                                            th { "众数占比" }
+                                                            th { "非众数占比" }
+                                                            th { "状态" }
+                                                        }
+                                                    }
+                                                    tbody {
+                                                        for it in items.iter() {
+                                                            tr { key: "{it.term_key}:{it.node_type}",
+                                                                class: if it.flagged { "bg-warning/15" } else { "" },
+                                                                td { span { class: "font-mono text-sm block truncate", title: "{it.term_key}", "{it.term_key}" } }
+                                                                td { span { class: "badge hud-badge badge-ghost badge-sm font-mono", "{it.node_type}" } }
+                                                                td { class: "font-mono", "{it.total}" }
+                                                                td { class: "font-mono", "{it.distinct_values}" }
+                                                                td { span { class: "font-mono text-sm block truncate", title: "{it.mode_value}", "{it.mode_value}" } }
+                                                                td { class: "font-mono", "{format_ratio_percent(it.mode_ratio)}" }
+                                                                td { class: "font-mono opacity-70", "{format_ratio_percent(it.non_default_ratio)}" }
+                                                                td {
+                                                                    if it.flagged {
+                                                                        span { class: "badge hud-badge badge-warning badge-sm", "⚠️ 单一值" }
+                                                                    } else {
+                                                                        span { class: "badge hud-badge badge-ghost badge-sm", "有效" }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                EmptyState {
+                                    icon: Some("⚠️".to_string()),
+                                    message: "属性有效性统计加载失败，请点击右上角刷新重试".to_string(),
                                 }
                             }
                         }

@@ -10,11 +10,12 @@ use common::api::{
     CreateOntologySynonymRequest, CreateOntologySynonymResponse, CreateSkillRequest,
     CreateSkillResponse, DeleteOntologySynonymResponse, DeleteSkillResponse, GetAgentRequest,
     GetAgentResponse, GetDriftDashboardRequest, GetDriftDashboardResponse, GetKnowledgeGraphParams,
-    GetKnowledgeGraphResponse, GetOntologySkeletonResponse, GetReceptionAgentResponse,
-    GetSkillFileContentRequest, GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest,
-    ListAgentsRequest, ListDriftClassDetailsRequest, ListDriftClassDetailsResponse,
-    ListDriftRelationDetailsRequest, ListDriftRelationDetailsResponse,
-    ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
+    GetKnowledgeGraphResponse, GetOntologySkeletonResponse, GetPropertyEffectivenessRequest,
+    GetPropertyEffectivenessResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
+    GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
+    ListDriftClassDetailsRequest, ListDriftClassDetailsResponse, ListDriftRelationDetailsRequest,
+    ListDriftRelationDetailsResponse, ListExpiredAgentSkillsRequest,
+    ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
     ListInstalledToolPacksResponse, ListOntologyClassesRequest, ListOntologyClassesResponse,
     ListOntologyLexiconResponse, ListOntologyPropertiesRequest, ListOntologyPropertiesResponse,
     ListOntologyRelationTypesRequest, ListOntologyRelationTypesResponse,
@@ -722,4 +723,22 @@ pub async fn list_ontology_drift_class_details(
         ("offset", req.pagination.offset.map(|v| v.to_string())),
     ]);
     api_get(&format!("/api/v1/hr/ontology/drift/classes{}", qs)).await
+}
+
+/// 属性有效性统计（按 属性 × 实体类 计算众数占比，mode_ratio > 阈值即标黄）
+/// GET /api/v1/hr/ontology/properties/effectiveness?term_key=&node_type=&min_mode_ratio=&limit=
+pub async fn get_property_effectiveness(
+    req: GetPropertyEffectivenessRequest,
+) -> Result<GetPropertyEffectivenessResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("term_key", req.term_key.clone()),
+        ("node_type", req.node_type.clone()),
+        ("min_mode_ratio", req.min_mode_ratio.map(|v| v.to_string())),
+        ("limit", req.limit.map(|v| v.to_string())),
+    ]);
+    api_get(&format!(
+        "/api/v1/hr/ontology/properties/effectiveness{}",
+        qs
+    ))
+    .await
 }
