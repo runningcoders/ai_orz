@@ -19,6 +19,30 @@ struct AttachmentEntry {
     size: usize,
 }
 
+impl AttachmentEntry {
+    /// 目标路径输入框的提示语。
+    ///
+    /// zip 是**技能包**：对它 `target_path` 不表示「落盘到哪」，而是「包内哪个条目是
+    /// 主文件」（后端见 `resolve_declared_main`），所以提示语不能写成通用目标路径。
+    fn target_hint(&self) -> &'static str {
+        if is_skill_package(&self.filename) {
+            "包内主文件（可选）"
+        } else {
+            "目标路径"
+        }
+    }
+}
+
+/// 是否是技能包（zip）。
+///
+/// 后端按 zip **magic bytes** 判定，前端只能看扩展名——这里只用于「预填值 / 提示语」
+/// 这类展示决策，不参与任何校验（真伪由后端解包时定）。
+fn is_skill_package(filename: &str) -> bool {
+    std::path::Path::new(filename)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+}
+
 #[derive(Props, Clone, PartialEq)]
 pub struct SkillContentInputEditorProps {
     /// 当前内容输入（用于回显，更新场景传入已有值）
@@ -155,7 +179,7 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
                                         input {
                                             class: "input input-bordered input-sm w-40",
                                             value: "{att.target_path}",
-                                            placeholder: "目标路径",
+                                            placeholder: att.target_hint(),
                                             oninput: move |e| {
                                                 let v = e.value();
                                                 attachments.with_mut(|list| {
@@ -238,9 +262,18 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
                                             match upload_attachment(form).await {
                                                 Ok(detail) => {
                                                     // 预填默认归位路径（与后端导入推断同源 SSOT）：
-                                                    // 图片→assets/、脚本→scripts/、md→skill.md
-                                                    let target_path =
-                                                        default_target_path(&filename);
+                                                    // 图片→assets/、脚本→scripts/、md→skill.md。
+                                                    //
+                                                    // zip 技能包例外：`target_path` 对它表示
+                                                    // 「包内哪个条目是主文件」，没有默认落盘名可言。
+                                                    // `default_target_path` 对未知扩展名会原样回显
+                                                    // 文件名（即包名），而包名不是包内条目，预填进去
+                                                    // 等于给后端一个假指令，故留空。
+                                                    let target_path = if is_skill_package(&filename) {
+                                                        String::new()
+                                                    } else {
+                                                        default_target_path(&filename)
+                                                    };
                                                     attachments.with_mut(|list| {
                                                         list.push(AttachmentEntry {
                                                             attachment_id: detail.id.clone(),
@@ -262,7 +295,7 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
                             }
                         }
                         p { class: "text-xs text-base-content/50",
-                            "上传的文件将作为附件导入技能目录。每个文件可指定目标路径（相对路径）。"
+                            "上传的文件将作为附件导入技能目录。每个文件可指定目标路径（相对路径）；上传 zip 技能包时该字段改为指定「包内主文件」（如 main.md，留空则自动识别 skill.md）。"
                         }
                     }
                 },

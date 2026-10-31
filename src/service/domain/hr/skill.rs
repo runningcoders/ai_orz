@@ -2,6 +2,7 @@
 
 use crate::models::skill::{
     MainFilePick, SKILL_MAIN_FILE, Skill, SkillPo, is_main_skill_file, pick_main_file,
+    root_markdown_names,
 };
 use crate::pkg::RequestContext;
 use crate::pkg::utils::fetch_remote_content::{FetchOptions, fetch_remote_content};
@@ -699,7 +700,7 @@ impl HrDomainImpl {
             let file = std::fs::File::open(src_path)?;
             let mut archive = zip::ZipArchive::new(file)
                 .map_err(|e| err!(InvalidRequest, "zip 解包失败: {}", e))?;
-            self.unpack_zip_archive(po, &mut archive, budget)?;
+            self.unpack_zip_archive(po, &mut archive, budget, declared_main_for_package(import))?;
         } else {
             // 单文件
             let target = resolve_target(
@@ -743,7 +744,7 @@ impl HrDomainImpl {
             let cursor = std::io::Cursor::new(bytes);
             let mut archive = zip::ZipArchive::new(cursor)
                 .map_err(|e| err!(InvalidRequest, "zip 解包失败: {}", e))?;
-            self.unpack_zip_archive(po, &mut archive, budget)?;
+            self.unpack_zip_archive(po, &mut archive, budget, declared_main_for_package(import))?;
         } else {
             let target = resolve_target(
                 &import.target_path,
@@ -769,14 +770,21 @@ impl HrDomainImpl {
         Ok(())
     }
 
-    /// zip 解包：skill.md 必须在根目录，其他文件逐一校验+写入。
+    /// zip 解包：主文件必须在根目录（或由 `declared_main` 指定），其他文件逐一校验+写入。
+    ///
+    /// `declared_main` = 调用方 `target_path` 里**真正的指定意图**，由
+    /// [`declared_main_for_package`] 过滤掉「包名回显」后给出：对**包**这个字段不再
+    /// 表示「落盘到哪」，而是「包内哪个条目是主文件」（单文件导入里仍是目标名，见
+    /// `resolve_target`）。有了它，多 md 的歧义包不必再硬失败——上一版只能报错要求
+    /// 补 `skill.md`，对别人打好的包无从下手。
     fn unpack_zip_archive<R: std::io::Read + std::io::Seek>(
         &self,
         po: &SkillPo,
         archive: &mut zip::ZipArchive<R>,
         budget: &mut ImportBudget,
+        declared_main: Option<&str>,
     ) -> Result<()> {
-        // 先整体登记条目名，用于在写盘**之前**决定是否兜底认主文件——
+        // 先整体登记条目名，用于在写盘**之前**决定哪个是主文件——
         // 一旦按原名写下去就来不及归位了（返回值要去写盘分支里改名）。
         let mut names: Vec<String> = Vec::with_capacity(archive.len());
         for i in 0..archive.len() {
@@ -789,7 +797,17 @@ impl HrDomainImpl {
                 names.push(name);
             }
         }
-        let fallback_main = pick_fallback_main(&names)?;
+        // 调用方显式指定时，用它消歧；没指定才走「正主 → 唯一 md 兜底 → 歧义报错」
+        let designated = declared_main
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(|declared| resolve_declared_main(&names, declared))
+            .transpose()?;
+        let fallback_main = if designated.is_some() {
+            None
+        } else {
+            pick_fallback_main(&names)?
+        };
 
         for i in 0..archive.len() {
             let mut file = archive
@@ -818,10 +836,11 @@ impl HrDomainImpl {
 
             budget.record(file.size())?;
 
-            // 忽略大小写识别主文件（或命中兜底认主的那个文件），
+            // 忽略大小写识别主文件、兜底认主的那个文件、或调用方指定的那个条目，
             // 并归一化写成小写 skill.md（见 normalize_main_target）
-            let is_main =
-                is_main_skill_file(&name) || fallback_main.as_deref() == Some(name.as_str());
+            let is_main = designated.as_deref() == Some(name.as_str())
+                || fallback_main.as_deref() == Some(name.as_str())
+                || is_main_skill_file(&name);
             if is_main {
                 let mut buf = Vec::new();
                 std::io::Read::read_to_end(&mut file, &mut buf)
@@ -852,6 +871,86 @@ impl HrDomainImpl {
             mark_executable(abs_path);
         }
     }
+}
+
+/// 取包来源的「指定主文件」；`target_path` 若只是**包自身文件名的回显**，视同未指定。
+///
+/// 前端上传时用 `default_target_path(文件名)` 预填 `target_path`，而 zip 的扩展名不在
+/// 归位映射表里 ⇒ 原样回填**包名**（`pkg.zip`）。包名不可能是包内条目，照直当「指定
+/// 主文件」用的话，每个从前端上传的包都会撞「指定的主文件不在包内」——把界面的预填
+/// 回显当成指令，等于让 UI 的省事变成后端的硬错误。
+///
+/// 判据只认「指定名 == 包名」（忽略大小写）：真要指定包内条目，写的一定是条目名
+/// （`main.md`），不会与包名相同。
+fn declared_main_for_package(import: &SkillFileImport) -> Option<&str> {
+    let declared = import
+        .target_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())?;
+    if import
+        .suggested_name
+        .as_deref()
+        .is_some_and(|pkg| pkg.trim().eq_ignore_ascii_case(declared))
+    {
+        return None;
+    }
+    Some(declared)
+}
+
+/// 解析调用方在 `target_path` 里**指定的包内主文件**，返回它在 zip 里的条目名。
+///
+/// 三条硬校验（任一不满足即报错，绝不静默降级）：
+/// 1. 包内必须真有这个条目（忽略大小写匹配，外部包常写 `SKILL.md` 而调用方写小写）；
+/// 2. 必须在 zip 根目录——落盘后读取侧只扫根目录（见 `pick_main_file`），
+///    子目录里的文件永远当不了主文件；
+/// 3. 不能与包内已有的 `skill.md` 冲突：两者并存时旧的那个会被当附件落盘、却仍被
+///    判成主文件（身份判定忽略大小写），`main_content()` 取排序靠前的大写 ⇒ 读到
+///    旧内容。冲突是调用方的信息，必须由调用方解决，不能替他猜。
+///
+/// 命中的条目随后会被**归位写成小写 `skill.md`**（与唯一 md 兜底同口径）：保留原名
+/// 的话，包里还有其他 md 时读取侧会判成歧义，指定了也照样读不到正文。
+fn resolve_declared_main(names: &[String], declared: &str) -> Result<String> {
+    let hit = names
+        .iter()
+        .find(|n| n.as_str() == declared || n.eq_ignore_ascii_case(declared))
+        .cloned();
+    let Some(hit) = hit else {
+        let candidates = root_markdown_names(names);
+        let hint = if candidates.is_empty() {
+            "（包内根目录没有任何 Markdown 文件）".to_string()
+        } else {
+            format!("（包内根目录 md：{}）", candidates.join("、"))
+        };
+        bail_err!(
+            InvalidRequest,
+            "target_path 指定的主文件 {} 不在包内{}",
+            declared,
+            hint
+        );
+    };
+
+    if hit.contains('/') {
+        bail_err!(
+            InvalidRequest,
+            "target_path 指定的主文件必须在 zip 根目录，不应有目录前缀: {}",
+            hit
+        );
+    }
+
+    if let Some(existing) = names.iter().find(|n| is_main_skill_file(n))
+        && *existing != hit
+    {
+        bail_err!(
+            InvalidRequest,
+            "包内已存在主文件 {}，不能再指定 {} 为主文件：请删掉包里的 {}，或去掉 target_path",
+            existing,
+            declared,
+            existing
+        );
+    }
+
+    Ok(hit)
 }
 
 /// 判定 zip 包的主文件取哪个条目；无法确定时**明确报错**要求提供正主。
@@ -885,7 +984,7 @@ fn pick_fallback_main(names: &[String]) -> Result<Option<String>> {
         MainFilePick::Ambiguous(many) => bail_err!(
             InvalidRequest,
             "技能包根目录存在多个 Markdown 文件（{}），无法确定哪个是主文件：\
-             请在 zip 根目录显式提供 {}（其余说明文档请放到子目录）",
+             请用 target_path 指定包内哪个文件是主文件，或在 zip 根目录显式提供 {}（其余说明文档请放到子目录）",
             many.join("、"),
             SKILL_MAIN_FILE
         ),

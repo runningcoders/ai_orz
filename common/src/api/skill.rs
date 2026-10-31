@@ -241,6 +241,13 @@ pub struct SkillFileInput {
     /// 任务产出 Artifact ID（与 attachment_id 二选一；须为 GeneratedContent 型）。
     pub artifact_id: Option<String>,
     /// 导入到 Skill 内容目录下的目标相对路径。
+    ///
+    /// 两种语义（由来源形态决定）：
+    /// - **单文件**：落盘名（如 `scripts/run.sh`；md 不写时按 `default_target_path` 推断）；
+    /// - **zip 技能包**：**指定包内哪个条目是主文件**（如 `main.md`），该条目会被归位
+    ///   写成小写 `skill.md`。包内没有 `skill.md`、或根目录有多个 md 时用它消歧。
+    ///
+    /// 指定的条目必须存在于包内（忽略大小写）且位于 zip 根目录，否则入口报错。
     pub target_path: String,
 }
 

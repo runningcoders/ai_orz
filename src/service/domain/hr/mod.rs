@@ -607,7 +607,11 @@ pub trait AgentManage: Send + Sync {
 /// （理由见 `process_skill_package` 的 PATH 分支注释）。
 #[derive(Debug, Clone, Default)]
 pub struct SkillFileImport {
-    /// 最终在技能目录里的相对路径；None 时走 5 级降级推断链
+    /// 最终在技能目录里的相对路径；None 时走 5 级降级推断链。
+    ///
+    /// 来源是 **zip 技能包**时语义不同：它表示「指定包内哪个条目为主文件」
+    /// （见 `resolve_declared_main`），命中条目归位写成小写 `skill.md`；
+    /// 单文件来源里仍是落盘目标名。
     pub target_path: Option<String>,
     /// 来源 A：磁盘绝对路径（优先级高；导入时 copy 落盘，源文件保留原位）
     pub source_abs_path: Option<std::path::PathBuf>,

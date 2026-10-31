@@ -206,7 +206,373 @@ async fn zip_fallback_picks_lone_markdown_as_main(pool: SqlitePool) {
     );
 }
 
-/// ③ 边界：根级有多个 `.md` 且没有正主时**报错要求提供 skill.md**。
+/// ③ 出口：根级多个 md 的歧义包，可用 `target_path` **指定包内哪个条目是主文件**。
+///
+/// 上一版只能报错要求补 `skill.md`——对别人打好的包无从下手（改不了包内容）。
+/// 指定后被指定的条目归位成小写 `skill.md`、正文直出；其余 md 仍是普通附件。
+#[sqlx::test]
+async fn declared_main_file_resolves_ambiguous_package(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgDeclared");
+
+    let zip_bytes = pack_skill_zip(&[
+        SkillFileEntry {
+            path: "main.md".to_string(),
+            bytes: MAIN_BODY.as_bytes().to_vec(),
+            executable: false,
+        },
+        SkillFileEntry {
+            path: "README.md".to_string(),
+            bytes: "# 只是说明文档\n".as_bytes().to_vec(),
+            executable: false,
+        },
+    ])
+    .unwrap();
+
+    domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: Some("main.md".to_string()),
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: None,
+                    executable: None,
+                }],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect("显式指定主文件后，多 md 的包不该再被拒绝");
+
+    let loaded = domain
+        .skill_manage()
+        .get_skill(ctx.clone(), skill.id())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        loaded
+            .main_content()
+            .unwrap_or_default()
+            .contains("这里是技能正文。"),
+        "被指定的 main.md 应成为正文并直出"
+    );
+    // 归位：磁盘上恒为小写 skill.md（保留原名会让读侧判成歧义，指定了也读不到）
+    let names: Vec<String> = loaded.files.iter().map(|f| f.filename.clone()).collect();
+    assert!(
+        names.contains(&SKILL_MAIN_FILE.to_string()) && !names.contains(&"main.md".to_string()),
+        "指定的主文件应归位成小写 skill.md，实际: {names:?}"
+    );
+    assert!(
+        names.contains(&"README.md".to_string()),
+        "未被指定的 md 仍是普通附件，不应被丢掉"
+    );
+}
+
+/// ③ 出口的硬校验之一：指定包内不存在的文件 → 报错并列出候选，不静默降级。
+#[sqlx::test]
+async fn declared_main_file_must_exist_in_package(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgDeclaredMissing");
+
+    let zip_bytes = pack_skill_zip(&[
+        SkillFileEntry {
+            path: "main.md".to_string(),
+            bytes: "# 候选一\n".as_bytes().to_vec(),
+            executable: false,
+        },
+        SkillFileEntry {
+            path: "README.md".to_string(),
+            bytes: "# 候选二\n".as_bytes().to_vec(),
+            executable: false,
+        },
+    ])
+    .unwrap();
+
+    let err = domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: Some("guide.md".to_string()),
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: None,
+                    executable: None,
+                }],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect_err("指定包内没有的文件必须报错");
+
+    let msg = err.to_string();
+    assert!(msg.contains("guide.md"), "报错要指名哪个文件不存在: {msg}");
+    assert!(
+        msg.contains("main.md") && msg.contains("README.md"),
+        "报错应列出包内候选，便于调用方改正: {msg}"
+    );
+}
+
+/// ③ 出口的硬校验之二：指定子目录里的文件 → 报错（读取侧只扫根目录，指定了也读不到）。
+#[sqlx::test]
+async fn declared_main_file_must_live_in_package_root(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgDeclaredNested");
+
+    let zip_bytes = pack_skill_zip(&[SkillFileEntry {
+        path: "docs/guide.md".to_string(),
+        bytes: "# 藏在子目录\n".as_bytes().to_vec(),
+        executable: false,
+    }])
+    .unwrap();
+
+    let err = domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: Some("docs/guide.md".to_string()),
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: None,
+                    executable: None,
+                }],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect_err("子目录条目不能当主文件");
+
+    assert!(
+        err.to_string().contains("根目录"),
+        "报错应说明主文件必须在 zip 根目录: {}",
+        err
+    );
+}
+
+/// ③ 出口的硬校验之三：包内已有 `skill.md` 却又指定别的 → 报错，不静默二选一。
+#[sqlx::test]
+async fn declared_main_file_conflicts_with_existing_skill_md(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgDeclaredConflict");
+
+    let zip_bytes = pack_skill_zip(&[
+        SkillFileEntry {
+            path: "SKILL.md".to_string(),
+            bytes: MAIN_BODY.as_bytes().to_vec(),
+            executable: false,
+        },
+        SkillFileEntry {
+            path: "main.md".to_string(),
+            bytes: "# 另一个候选\n".as_bytes().to_vec(),
+            executable: false,
+        },
+    ])
+    .unwrap();
+
+    let err = domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: Some("main.md".to_string()),
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: None,
+                    executable: None,
+                }],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect_err("包内已有正主时再指定另一个必须报错");
+
+    assert!(
+        err.to_string().contains("SKILL.md"),
+        "报错应指出冲突的包内主文件: {}",
+        err
+    );
+}
+
+/// ③ 指定名大小写不敏感：包里写 `SKILL.md`、调用方写 `skill.md` 也能命中。
+#[sqlx::test]
+async fn declared_main_file_matches_case_insensitively(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgDeclaredCase");
+
+    let zip_bytes = pack_skill_zip(&[
+        SkillFileEntry {
+            path: "SKILL.md".to_string(),
+            bytes: MAIN_BODY.as_bytes().to_vec(),
+            executable: false,
+        },
+        SkillFileEntry {
+            path: "main.md".to_string(),
+            bytes: "# 候选二\n".as_bytes().to_vec(),
+            executable: false,
+        },
+    ])
+    .unwrap();
+
+    domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: Some("skill.md".to_string()),
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: None,
+                    executable: None,
+                }],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect("大小写不敏感匹配到包内 SKILL.md，不视为冲突");
+
+    let loaded = domain
+        .skill_manage()
+        .get_skill(ctx.clone(), skill.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        loaded
+            .main_content()
+            .unwrap_or_default()
+            .contains("这里是技能正文。")
+    );
+    // 另一个候选保持附件身份，且磁盘上主文件唯一
+    let mains: Vec<&str> = loaded
+        .files
+        .iter()
+        .filter(|f| f.is_main)
+        .map(|f| f.filename.as_str())
+        .collect();
+    assert_eq!(mains, vec![SKILL_MAIN_FILE], "主文件必须唯一");
+}
+
+/// ③ 反例护栏：`target_path` 只是**包名回显**时，不能当「指定包内主文件」用。
+///
+/// 前端上传时会用 `default_target_path(文件名)` 预填 `target_path`，zip 的扩展名不在
+/// 归位表里 ⇒ 原样回填包名（`pkg.zip`）。若照直当指定，每个从前端上传的包都会报
+/// 「指定的主文件 pkg.zip 不在包内」——把预填回显当指令，等于让 UI 的省事变成硬错误。
+#[sqlx::test]
+async fn package_name_echo_in_target_path_is_not_a_declaration(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgNameEcho");
+
+    let zip_bytes = pack_skill_zip(&[
+        SkillFileEntry {
+            path: "SKILL.md".to_string(),
+            bytes: MAIN_BODY.as_bytes().to_vec(),
+            executable: false,
+        },
+        SkillFileEntry {
+            path: "assets/logo.svg".to_string(),
+            bytes: b"<svg/>".to_vec(),
+            executable: false,
+        },
+    ])
+    .unwrap();
+
+    domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    // 前端预填回显：target_path == 包自身文件名
+                    target_path: Some("pkg.zip".to_string()),
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: Some("pkg.zip".to_string()),
+                    executable: None,
+                }],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect("包名回显不含指定意图，应照常按包内正主解包");
+
+    let loaded = domain
+        .skill_manage()
+        .get_skill(ctx.clone(), skill.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        loaded
+            .main_content()
+            .unwrap_or_default()
+            .contains("这里是技能正文。"),
+        "正文应来自包内 skill.md（大小写不敏感），与 target_path 回显无关"
+    );
+}
+
+/// ③ 反例护栏之二：回显不是指令 ⇒ 多 md 的歧义包**仍然报错**，不因预填值而蒙对。
+#[sqlx::test]
+async fn package_name_echo_does_not_silence_ambiguity(pool: SqlitePool) {
+    let (domain, ctx, _temp) = init_test_env(pool.clone());
+    let skill = create_test_skill("PkgNameEchoAmbiguous");
+
+    let zip_bytes = pack_skill_zip(&[
+        SkillFileEntry {
+            path: "main.md".to_string(),
+            bytes: MAIN_BODY.as_bytes().to_vec(),
+            executable: false,
+        },
+        SkillFileEntry {
+            path: "README.md".to_string(),
+            bytes: "# 说明\n".as_bytes().to_vec(),
+            executable: false,
+        },
+    ])
+    .unwrap();
+
+    let err = domain
+        .skill_manage()
+        .create_skill(
+            ctx.clone(),
+            CreateSkillParams {
+                skill: &skill,
+                imports: vec![SkillFileImport {
+                    target_path: Some("pkg.zip".to_string()),
+                    source_abs_path: None,
+                    content_bytes: Some(zip_bytes),
+                    suggested_name: Some("pkg.zip".to_string()),
+                    executable: None,
+                }],
+                remote_source: None,
+            },
+        )
+        .await
+        .expect_err("回显不是指定，歧义必须照旧报错");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("target_path") && msg.contains("main.md"),
+        "报错应提示可用 target_path 指定并列出候选: {msg}"
+    );
+}
+
+/// ③ 边界：根级有多个 `.md` 且没有正主、也没指定时**报错要求提供 skill.md**。
 ///
 /// 歧义是打包方的信息缺失，必须在入口说清——静默降级会重演「导入成功却读不到正文」
 /// 的老毛病（调用方拿到成功响应，只能事后排查）。

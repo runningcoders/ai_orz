@@ -76,7 +76,19 @@ pub fn pick_main_file(names: &[String]) -> MainFilePick<'_> {
         return MainFilePick::Main(main);
     }
 
-    let markdowns: Vec<&str> = names
+    match root_markdown_names(names).as_slice() {
+        [] => MainFilePick::None,
+        [only] => MainFilePick::Fallback(only),
+        many => MainFilePick::Ambiguous(many.to_vec()),
+    }
+}
+
+/// 根级 Markdown 文件名（子目录条目不算；扩展名忽略大小写，如 `README.MD`）。
+///
+/// 拆出来是为了让「兜底挑选」与「报错时列出候选 / 校验指定名是否存在」共用同一
+/// 个「什么算根级 md」的口径——各处自己写一遍 `.filter(...)` 迟早会长歪。
+pub fn root_markdown_names(names: &[String]) -> Vec<&str> {
+    names
         .iter()
         .filter(|n| {
             !n.contains('/')
@@ -85,13 +97,7 @@ pub fn pick_main_file(names: &[String]) -> MainFilePick<'_> {
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
         })
         .map(String::as_str)
-        .collect();
-
-    match markdowns.as_slice() {
-        [] => MainFilePick::None,
-        [only] => MainFilePick::Fallback(only),
-        many => MainFilePick::Ambiguous(many.to_vec()),
-    }
+        .collect()
 }
 
 /// 技能附属文件信息（纯数据结构，DAO 层使用）
