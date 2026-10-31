@@ -560,6 +560,10 @@ pub struct UpdateSkillRequest {
     /// 新技能分类。
     pub category: Option<String>,
     /// 新技能状态。
+    ///
+    /// **不接受 Published**：「非 Published → Published」的跃迁会被拒绝，
+    /// 发布请走 [`PublishSkillRequest`]（`POST /skills/{skill_id}/publish`）。
+    /// 发布是单一入口，因为它附带 Agent 根技能的回写副本副作用。
     pub status: Option<SkillStatus>,
     /// 内容输入源（文本 / URL / 附件三选一或组合）。
     pub content_input: Option<SkillContentInput>,
@@ -708,3 +712,24 @@ pub struct RestoreSkillRequest {
 
 /// 恢复技能响应（返回恢复后的 SkillDetail，用于前端局部刷新）。
 pub type RestoreSkillResponse = SkillDetail;
+
+/// 发布技能请求（Draft → Published）。
+///
+/// 发布是**共享库治理动作**，收敛为唯一入口：`update_skill` 不再接受
+/// 「非 Published → Published」的跃迁（会被拒绝），必须走本接口。
+/// 独立入口的理由有两条，缺一不可：
+/// - 发布带副作用（Agent 自有根技能发布后，要为作者 Agent 回写一条本地工作副本）；
+///   塞进通用 update 会让「改个描述」的请求也走发布逻辑；
+/// - 前端需要一个语义明确的按钮，`update_skill(status=Published)` 既不可见也不可解释。
+///
+/// 权限：技能作者本人 / Admin / SuperAdmin /（作者为 Agent 时）该 Agent 的创建者。
+/// **Agent 上下文一律拒绝**（Agent 的自进化只发生在自己的 Draft 副本里）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct PublishSkillRequest {
+    /// Skill ID。
+    #[param(source = "path")]
+    pub skill_id: String,
+}
+
+/// 发布技能响应（返回发布后的 SkillDetail，用于前端局部刷新）。
+pub type PublishSkillResponse = SkillDetail;

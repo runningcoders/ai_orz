@@ -201,19 +201,9 @@ async fn agent_copy_keeps_subdirectory_attachments(pool: SqlitePool) {
         .unwrap();
 
     // 发布后安装到 Agent（install_to_agent 要求源为 Published）
-    let mut published = skill.clone();
-    published.po.status = common::enums::SkillStatus::Published;
     domain
         .skill_manage()
-        .update_skill(
-            ctx.clone(),
-            UpdateSkillParams {
-                skill: &published,
-                imports: Vec::new(),
-                file_deletes: Vec::new(),
-                remote_source: None,
-            },
-        )
+        .publish_skill(ctx.clone(), skill.id())
         .await
         .unwrap();
 

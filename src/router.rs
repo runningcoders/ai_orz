@@ -750,6 +750,11 @@ fn hr_routes() -> Router {
             "/skills/{skill_id}/restore",
             post(handlers::hr::skill::restore_skill_handler),
         )
+        // 发布（Draft → Published）：独立入口，update_skill 不再接受该状态跃迁
+        .route(
+            "/skills/{skill_id}/publish",
+            post(handlers::hr::skill::publish_skill_handler),
+        )
         .route(
             "/skills/{skill_id}/files",
             get(handlers::hr::skill::list_skill_files_handler),

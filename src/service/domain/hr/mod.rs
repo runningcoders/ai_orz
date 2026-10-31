@@ -18,6 +18,8 @@ mod skill_attachment_test;
 #[cfg(test)]
 mod skill_main_file_test;
 #[cfg(test)]
+mod skill_publish_test;
+#[cfg(test)]
 mod skill_test;
 
 use crate::models::agent::Agent;
@@ -757,6 +759,20 @@ pub trait SkillManage: Send + Sync {
     /// 权限：作者本人 / Admin / SuperAdmin /（作者是 Agent 时）Agent 创建者
     /// （复用 ensure_skill_access）。
     async fn restore_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill>;
+
+    /// 发布技能（Draft → Published）。
+    ///
+    /// 发布是**共享库治理动作**，收敛为唯一入口：`update_skill` 拒绝「非 Published
+    /// → Published」的跃迁，只留本方法承担状态跃迁 + 回写副作用。
+    ///
+    /// - 前置：状态为 Draft（已 Published 幂等返回；Expired 要求先 `restore_skill`）。
+    /// - 拒绝：Agent 上下文（自进化只在自己的副本里发生）、Agent 安装副本（`parent`
+    ///   非空，发布要回到根技能做）。
+    /// - 副作用：作者为 Agent 的**根技能**发布后，为作者 Agent 回写一条本地工作副本
+    ///   （Draft / parent=源 id）；回写失败只告警降级，不阻断发布。
+    /// - 权限：作者本人 / Admin / SuperAdmin /（作者是 Agent 时）Agent 创建者
+    ///   （复用 `ensure_skill_access`）。
+    async fn publish_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill>;
 
     // D. Skill 文件独立操作
     /// 列出 Skill 所有文件，返回文件列表摘要

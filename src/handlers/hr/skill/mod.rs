@@ -12,6 +12,7 @@ pub mod list_expired_agent_skills;
 pub mod list_skill_files;
 pub mod list_skill_tags;
 pub mod list_skills;
+pub mod publish_skill;
 pub mod query_skills;
 pub mod response;
 pub mod restore_skill;
@@ -31,6 +32,7 @@ pub use list_expired_agent_skills::list_expired_agent_skills_handler;
 pub use list_skill_files::list_skill_files_handler;
 pub use list_skill_tags::list_skill_tags_handler;
 pub use list_skills::list_skills_handler;
+pub use publish_skill::publish_skill_handler;
 pub use query_skills::query_skills_handler;
 pub use restore_skill::restore_skill_handler;
 pub use search_skill::search_skill_handler;
@@ -43,10 +45,15 @@ pub use update_skill_file_content::update_skill_file_content_handler;
 
 /// Agent 上下文禁止将技能状态直接设置为正式发布（Published）。
 ///
-/// M2 修复 C：发布动作收敛为共享库根技能的单一入口（用户上下文），
-/// 防止 Agent 安装副本或自有草稿通过 create/update 直改 status 被刷成
-/// Published，混入共享库与 Agent 持有列表。
-/// Agent 上下文携带 status=Published 时拒绝（InvalidRequest），其余组合放行。
+/// M2 修复 C：发布动作收敛为共享库根技能的单一入口（用户上下文）。
+/// 自本轮起，这个入口收敛为独立接口 `publish_skill`（`POST /skills/{skill_id}/publish`）：
+/// - `update_skill` 传 `status=Published` 且构成跃迁（非 Published → Published）→
+///   领域层直接拒绝，提示改走发布接口；
+/// - Agent 上下文无论目标技能形态（create / update）→ 一律拒绝。
+///
+/// `create_skill` 仍允许用户上下文直接创建 Published（初始化/预置链路依赖它，且
+/// 「创建即发布」没有回写副作用）；本函数继续作为入口级的友好报错，领域层另有
+/// 同样口径的硬校验兜底。
 pub(crate) fn validate_agent_skill_status_change(
     is_agent_context: bool,
     author_type: common::enums::skill::SkillAuthorType,

@@ -54,7 +54,7 @@ impl SkillManage for HrDomainImpl {
 
     async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<()> {
         // 资源级权限校验（管理员 / 作者 / Agent 创建者 / Agent 上下文仅限自身记录）
-        // 0. 快照发布前原值（N2 回写判定需要更新前 status：handler 传入的 po
+        // 0. 快照发布前原值（状态跃迁判定需要更新前 status：handler 传入的 po
         //    已是改后值，domain 入口自查最稳，handler 层零改动）
         let before = self
             .skill_dal
@@ -63,6 +63,25 @@ impl SkillManage for HrDomainImpl {
 
         self.ensure_skill_access(&ctx, &params.skill.po, SkillAccessIntent::Write)
             .await?;
+
+        // 0.5 发布已收敛到独立入口（`publish_skill`）：这里只拦「跃迁」，不再回写。
+        //     两个理由：
+        //     - 发布带副作用（Agent 根技能要回写工作副本），塞在通用 update 里会让
+        //       「改个描述」的请求也触碰发布逻辑；
+        //     - 单一入口后 update 侧必须拒绝跃迁，否则可以绕过回写把技能刷成 Published。
+        //     只拦**跃迁**而非「值」：系统 seed 走 update 刷新预置技能内容时，技能本来
+        //     就是 Published（状态不变），按值拦会误伤整条预置同步链路。
+        //     ⚠ 必须放在写库**之前**：放后面的话状态已落库，报错也改不回去（拒绝
+        //     变成「失败但生效」，比不做还坏）。
+        if let Some(before_po) = before.as_ref()
+            && before_po.status != SkillStatus::Published
+            && params.skill.po.status == SkillStatus::Published
+        {
+            bail_err!(
+                InvalidRequest,
+                "更新接口不允许把技能改为 Published；发布请调用 publish_skill 接口"
+            );
+        }
 
         // 1. 更新元数据
         self.skill_dal.update(ctx.clone(), params.skill).await?;
@@ -79,37 +98,6 @@ impl SkillManage for HrDomainImpl {
         // 3. 处理文件删除：调用 DAL 删除指定文件（禁删 skill.md，canonicalize 双防）
         for filename in params.file_deletes {
             self.skill_dal.delete_file(&params.skill.po, filename)?;
-        }
-
-        // 4. 发布回写（N2 修复）：Agent 自有根技能「非 Published → Published」
-        //    转换完成后，为作者 Agent 补建 1 条指向已发布技能的本地工作副本
-        //    （Draft / parent=源 id / author=作者 Agent）。回写失败仅告警降级，
-        //    不阻断发布主流程（副本缺失可由幂等补偿函数重放补齐，N5 复用）；
-        //    源不存在（before=None，如并发删除）不触发。
-        if let Some(before_po) = before.as_ref() {
-            let is_publish_transition = before_po.status != SkillStatus::Published
-                && params.skill.po.status == SkillStatus::Published;
-            let is_agent_root_skill = matches!(params.skill.po.author_type, SkillAuthorType::Agent)
-                && params.skill.po.parent_skill_id.is_empty();
-            if is_publish_transition
-                && is_agent_root_skill
-                && let Err(e) = self
-                    .skill_dal
-                    .publish_writeback_copy(
-                        ctx.clone(),
-                        &params.skill.po.id,
-                        &params.skill.po.author_id,
-                    )
-                    .await
-            {
-                log_warn!(
-                    &ctx,
-                    "skill_writeback",
-                    skill_id = %params.skill.po.id,
-                    error = ?e,
-                    "发布回写失败，已降级（不阻断发布主流程，可由补偿函数重放补齐）"
-                );
-            }
         }
 
         Ok(())
@@ -327,6 +315,88 @@ impl SkillManage for HrDomainImpl {
 
         self.skill_dal.update(ctx, &skill).await?;
         Ok(skill)
+    }
+
+    /// 发布技能（Draft → Published）：状态跃迁 + Agent 根技能回写工作副本。
+    ///
+    /// 与 `update_skill` 的分工：update 只改元数据 / 内容，**不允许**「非 Published
+    /// → Published」的跃迁（见 `update_skill` 的 0.5 守卫）；发布的一切副作用都在这里。
+    async fn publish_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill> {
+        let Some(mut skill) = self
+            .skill_dal
+            .get_by_id(ctx.clone(), skill_id.to_string())
+            .await?
+        else {
+            bail_err!(NotFound, "Skill {} not found", skill_id);
+        };
+
+        // ① Agent 上下文一律拒绝：发布是共享库治理动作，Agent 的自进化只发生在
+        //    自己的 Draft 副本里。这一条必须放在 ensure_skill_access 之前——后者对
+        //    「作者是自身」的 Agent 写操作是放行的，靠它拦不住自我发布。
+        if let Some(agent_id) = ctx.agent_id() {
+            bail_err!(
+                Forbidden,
+                "Agent {} 不允许发布技能（发布属共享库治理）；请由技能创建者在控制台发布",
+                agent_id
+            );
+        }
+
+        self.ensure_skill_access(&ctx, &skill.po, SkillAccessIntent::Write)
+            .await?;
+
+        // ② Agent 安装副本（parent 非空）不能发布：它只是源技能的本地工作副本，
+        //    发布必须回到根技能，否则共享库里会出现一条没有来源的重复技能。
+        ensure_err!(
+            !(matches!(skill.po.author_type, SkillAuthorType::Agent)
+                && !skill.po.parent_skill_id.is_empty()),
+            InvalidRequest,
+            "Skill {} 是 Agent 安装副本，不能直接发布；请发布其根技能",
+            skill.po.id
+        );
+
+        // ③ 幂等：已 Published 直接返回（重复点击不刷新 updated_at、不重复回写）
+        if skill.po.status == SkillStatus::Published {
+            return Ok(skill);
+        }
+
+        // ④ 过期技能必须先 restore：不允许「Expired → Published」直接复活，
+        //    否则 restore 的显式把关就被绕过了。
+        ensure_err!(
+            !matches!(skill.po.status, SkillStatus::Expired),
+            Conflict,
+            "Skill {} 已过期（Expired），请先调用 restore_skill 恢复为 Draft 再发布",
+            skill.po.id
+        );
+
+        skill.po.status = SkillStatus::Published;
+        skill.po.modifier_id = ctx.uid().to_string();
+        skill.po.updated_at = current_timestamp_ms();
+        self.skill_dal.update(ctx.clone(), &skill).await?;
+
+        // ⑤ 发布回写（N2）：Agent 自有根技能 Draft→Published 后，为作者 Agent 补建
+        //    一条指向已发布技能的本地工作副本（Draft / parent=源 id / author=Agent）。
+        //    失败仅告警降级，不阻断发布主流程（副本缺失可由幂等补偿重放补齐）。
+        if matches!(skill.po.author_type, SkillAuthorType::Agent)
+            && skill.po.parent_skill_id.is_empty()
+            && let Err(e) = self
+                .skill_dal
+                .publish_writeback_copy(ctx.clone(), &skill.po.id, &skill.po.author_id)
+                .await
+        {
+            log_warn!(
+                &ctx,
+                "skill_writeback",
+                skill_id = %skill.po.id,
+                error = ?e,
+                "发布回写失败，已降级（不阻断发布主流程，可由补偿函数重放补齐）"
+            );
+        }
+
+        // ⑥ 返回磁盘实况（files 由 DAL 现扫，避免调用方拿到更新前快照）
+        self.skill_dal
+            .get_by_id(ctx, skill.po.id.clone())
+            .await?
+            .ok_or_else(|| err!(NotFound, "Skill {} not found", skill.po.id))
     }
 
     async fn list_skill_files(

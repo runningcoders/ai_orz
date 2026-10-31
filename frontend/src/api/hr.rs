@@ -19,16 +19,16 @@ use common::api::{
     ListOntologyLexiconResponse, ListOntologyPropertiesRequest, ListOntologyPropertiesResponse,
     ListOntologyRelationTypesRequest, ListOntologyRelationTypesResponse,
     ListOntologySynonymsRequest, ListOntologySynonymsResponse, MemoryTraceDetail,
-    OnboardAgentRequest, PagedResult, QueryMemoryParams, QueryMemoryResponse,
-    QueryThinkTracesRequest, RecommendSeedNodesParams, RecommendSeedNodesResponse,
-    RestoreSkillRequest, RestoreSkillResponse, RetireOntologyClassRelationResponse,
-    RetireOntologyClassResponse, RetireOntologyPropertyResponse,
-    RetireOntologyRelationTypeResponse, RuntimeStatusRequest, RuntimeStatusResponse,
-    SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse, SearchSkillsRequest,
-    SelectAgentCareerRequest, SkillListItem, SkillQueryRequest, StartAgentOffboardRequest,
-    ThinkTraceListItem, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
-    UpdateAgentStatusResponse, UpdateOntologyClassRelationRequest,
+    OnboardAgentRequest, PagedResult, PublishSkillRequest, PublishSkillResponse, QueryMemoryParams,
+    QueryMemoryResponse, QueryThinkTracesRequest, RecommendSeedNodesParams,
+    RecommendSeedNodesResponse, RestoreSkillRequest, RestoreSkillResponse,
+    RetireOntologyClassRelationResponse, RetireOntologyClassResponse,
+    RetireOntologyPropertyResponse, RetireOntologyRelationTypeResponse, RuntimeStatusRequest,
+    RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
+    SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem, SkillQueryRequest,
+    StartAgentOffboardRequest, ThinkTraceListItem, UnbindToolFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
+    UpdateAgentStatusRequest, UpdateAgentStatusResponse, UpdateOntologyClassRelationRequest,
     UpdateOntologyClassRelationResponse, UpdateOntologyClassRequest, UpdateOntologyClassResponse,
     UpdateOntologyPropertyRequest, UpdateOntologyPropertyResponse,
     UpdateOntologyRelationTypeRequest, UpdateOntologyRelationTypeResponse,
@@ -255,6 +255,18 @@ pub async fn list_expired_agent_skills(
 pub async fn restore_skill(req: RestoreSkillRequest) -> Result<RestoreSkillResponse, ApiError> {
     api_post(
         &format!("/api/v1/hr/skills/{}/restore", req.skill_id),
+        &serde_json::json!({}),
+    )
+    .await
+}
+
+/// 发布技能（Draft → Published）。
+///
+/// 发布是共享库治理动作，独立于 `update_skill`：update 侧已拒绝「非 Published →
+/// Published」的跃迁（否则可绕过发布回写）。仅用户上下文可调用。
+pub async fn publish_skill(req: PublishSkillRequest) -> Result<PublishSkillResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/hr/skills/{}/publish", req.skill_id),
         &serde_json::json!({}),
     )
     .await

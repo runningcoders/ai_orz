@@ -5,7 +5,8 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 
 use crate::api::hr::{
-    get_skill, get_skill_file_content, list_skill_files, update_skill, update_skill_file_content,
+    get_skill, get_skill_file_content, list_skill_files, publish_skill, update_skill,
+    update_skill_file_content,
 };
 use crate::components::code_editor::CodeEditor;
 use crate::components::markdown::MarkdownRenderer;
@@ -15,8 +16,8 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    GetSkillFileContentRequest, SkillContentInput, UpdateSkillFileContentRequest,
-    UpdateSkillRequest,
+    GetSkillFileContentRequest, PublishSkillRequest, SkillContentInput,
+    UpdateSkillFileContentRequest, UpdateSkillRequest,
 };
 
 #[component]
@@ -56,6 +57,8 @@ pub fn HrSkillDetail(id: String) -> Element {
     let mut edit_category = use_signal(String::new);
     let mut edit_content_input = use_signal(|| Option::<SkillContentInput>::None);
     let mut saving_meta = use_signal(|| false);
+    // 发布中（独立接口：Draft → Published，见 skill_detail 头部按钮）
+    let mut publishing = use_signal(|| false);
 
     // 保存文件内容
     let on_save_file = {
@@ -224,6 +227,10 @@ pub fn HrSkillDetail(id: String) -> Element {
         })
     };
 
+    // 发布按钮的 move 闭包独占一份 id：与下方文件列表 / 删除按钮的 id 所有权分开，
+    // 否则 `id` 会被第一个 move 闭包按值捕获，后续借用直接报 E0382。
+    let publish_id = id.clone();
+
     rsx! {
         AppLayout {
             div { class: "mb-6 flex items-center justify-between",
@@ -239,6 +246,33 @@ pub fn HrSkillDetail(id: String) -> Element {
                 HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
                     title: Some(s.name.clone()),
                     actions: Some(rsx!{
+                        // 发布（Draft → Published）：走独立接口，语义与 update 分开。
+                        // 草稿台此前没有发布入口（update 只改元数据，且已拒绝状态跃迁）。
+                        if s.status == common::enums::SkillStatus::Draft {
+                            button {
+                                class: "btn hud-btn btn-primary btn-sm mr-2",
+                                disabled: publishing(),
+                                onclick: move |_| {
+                                    let skill_id = publish_id.clone();
+                                    publishing.set(true);
+                                    spawn(async move {
+                                        let req = PublishSkillRequest { skill_id: skill_id.clone() };
+                                        match publish_skill(req).await {
+                                            Ok(_) => {
+                                                toast.success("技能已发布");
+                                                match get_skill(&skill_id).await {
+                                                    Ok(updated) => skill_res.set(Some(Ok(updated))),
+                                                    Err(e) => toast.error(format!("加载 Skill 失败: {}", e)),
+                                                }
+                                            }
+                                            Err(e) => toast.error(format!("发布失败: {}", e)),
+                                        }
+                                        publishing.set(false);
+                                    });
+                                },
+                                if publishing() { "发布中…" } else { "🚀 发布" }
+                            }
+                        }
                         button { class: "btn hud-btn btn-ghost btn-sm", onclick: on_open_edit, "✏️ 编辑" }
                     }),
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",

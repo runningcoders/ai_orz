@@ -926,9 +926,7 @@ async fn test_publish_agent_root_skill_creates_writeback_copy(pool: SqlitePool) 
         .await
         .unwrap();
 
-    // 用户上下文发布：Draft → Published（Admin bypass），附带 skill.md 内容
-    let mut published = skill.clone();
-    published.po.status = SkillStatus::Published;
+    // 先写正文（仍是 Draft），再由独立发布入口 Draft → Published（Admin bypass）
     let imports = vec![SkillFileImport {
         target_path: Some("skill.md".to_string()),
         source_abs_path: None,
@@ -946,12 +944,17 @@ async fn test_publish_agent_root_skill_creates_writeback_copy(pool: SqlitePool) 
         .update_skill(
             ctx_admin.clone(),
             UpdateSkillParams {
-                skill: &published,
+                skill: &skill,
                 imports,
                 file_deletes: vec![],
                 remote_source: None,
             },
         )
+        .await
+        .unwrap();
+    domain
+        .skill_manage()
+        .publish_skill(ctx_admin.clone(), skill.id())
         .await
         .unwrap();
 
@@ -1026,20 +1029,10 @@ async fn test_publish_writeback_is_idempotent(pool: SqlitePool) {
             .unwrap()
     };
 
-    // 第一次发布
-    let mut published = skill.clone();
-    published.po.status = SkillStatus::Published;
+    // 第一次发布（独立发布入口）
     domain
         .skill_manage()
-        .update_skill(
-            ctx_admin.clone(),
-            UpdateSkillParams {
-                skill: &published,
-                imports: vec![],
-                file_deletes: vec![],
-                remote_source: None,
-            },
-        )
+        .publish_skill(ctx_admin.clone(), skill.id())
         .await
         .unwrap();
     assert_eq!(
@@ -1064,19 +1057,9 @@ async fn test_publish_writeback_is_idempotent(pool: SqlitePool) {
         )
         .await
         .unwrap();
-    let mut published_again = skill.clone();
-    published_again.po.status = SkillStatus::Published;
     domain
         .skill_manage()
-        .update_skill(
-            ctx_admin,
-            UpdateSkillParams {
-                skill: &published_again,
-                imports: vec![],
-                file_deletes: vec![],
-                remote_source: None,
-            },
-        )
+        .publish_skill(ctx_admin, skill.id())
         .await
         .unwrap();
     assert_eq!(
@@ -1086,7 +1069,7 @@ async fn test_publish_writeback_is_idempotent(pool: SqlitePool) {
     );
 }
 
-/// 负向语义：User 技能发布不回写；安装副本（parent 非空）状态变更不回写。
+/// 负向语义：User 技能发布不回写；安装副本（parent 非空）发布被拒绝。
 #[sqlx::test]
 async fn test_publish_no_writeback_for_user_skill_and_installed_copy(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env(pool);
@@ -1103,19 +1086,9 @@ async fn test_publish_no_writeback_for_user_skill_and_installed_copy(pool: Sqlit
         .create_skill(ctx.clone(), CreateSkillParams::from_skill(&user_skill))
         .await
         .unwrap();
-    let mut published = user_skill.clone();
-    published.po.status = SkillStatus::Published;
     domain
         .skill_manage()
-        .update_skill(
-            ctx_admin.clone(),
-            UpdateSkillParams {
-                skill: &published,
-                imports: vec![],
-                file_deletes: vec![],
-                remote_source: None,
-            },
-        )
+        .publish_skill(ctx_admin.clone(), user_skill.id())
         .await
         .unwrap();
     let copies = domain
@@ -1149,21 +1122,17 @@ async fn test_publish_no_writeback_for_user_skill_and_installed_copy(pool: Sqlit
         .create_skill(ctx.clone(), CreateSkillParams::from_skill(&installed_copy))
         .await
         .unwrap();
-    let mut copy_published = installed_copy.clone();
-    copy_published.po.status = SkillStatus::Published;
-    domain
+    // 安装副本（parent 非空）现在直接拒绝发布：发布必须回到根技能，否则共享库
+    // 会出现一条没有来源的重复技能——比「悄悄不回写」更安全的失败方式。
+    let err = domain
         .skill_manage()
-        .update_skill(
-            ctx_admin,
-            UpdateSkillParams {
-                skill: &copy_published,
-                imports: vec![],
-                file_deletes: vec![],
-                remote_source: None,
-            },
-        )
+        .publish_skill(ctx_admin, installed_copy.id())
         .await
-        .unwrap();
+        .expect_err("安装副本不能发布");
+    assert!(
+        err.to_string().contains("安装副本"),
+        "报错应指出这是安装副本: {err}"
+    );
     let nested = domain
         .skill_manage()
         .query_skills(
@@ -1176,5 +1145,5 @@ async fn test_publish_no_writeback_for_user_skill_and_installed_copy(pool: Sqlit
         )
         .await
         .unwrap();
-    assert!(nested.items.is_empty(), "安装副本状态变更不应触发回写");
+    assert!(nested.items.is_empty(), "被拒绝的发布不应留下回写副本");
 }
