@@ -6,16 +6,20 @@
 
 use crate::models::agent::{AgentPo, ExternalAgentConfig};
 use crate::models::brain::Brain;
-use crate::models::cerebellum_types::{CerebellumQuestion, QuestionType, ThinkFastResult};
 use crate::models::cortex_types::{ModelCallOptions, ThinkResult, TokenUsage, ToolDescriptor};
-use crate::models::model_provider::{ModelProvider, ModelProviderPo};
+use crate::models::model_provider::ModelProvider;
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
+use crate::pkg::policy::{DecisionAnswers, DecisionRequest, DecisionValue, QuestionSpec};
 use crate::service::dao::agent_runtime;
 use crate::service::dao::cortex;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
+use common::api::cerebellum::{
+    CerebellumAnswer, CerebellumQuestion, CerebellumUsage, DegradedReason, QuestionCriteria,
+    QuestionType,
+};
 use common::enums::{AgentKind, ModelCapability};
 use common::error::{Result, err};
 use serde_json::Value;
@@ -56,6 +60,41 @@ pub fn new(
         model_provider_dao,
         http_client,
     })
+}
+
+// ==================== 决策结果 ====================
+
+/// 一次小脑决策的出口：答案 + 降级原因 + 计量
+///
+/// ⚠️ 刻意**不是** `Result`：小脑是可选增强，任何失败都收敛为
+/// `degraded = Some(..)` + 空 `answers`。调用方拿不到 `Err`，
+/// 也就无法用一个 `?` 把「没配小脑」升级成主流程故障——
+/// 这正是 `wake_brain` 里「小脑装配失败不能阻断唤醒」的同一条原则。
+#[derive(Debug, Clone)]
+pub struct DecisionOutcome {
+    /// 各题结论；空表 = 无结论（调用方按「未命中」处理，**不得当作「否」**）
+    pub answers: DecisionAnswers,
+    /// 降级原因；`None` = 正常拿到结论
+    pub degraded: Option<DegradedReason>,
+    /// 本次调用耗时（毫秒，计量用）
+    pub latency_ms: u64,
+    /// token 用量（降级时为零值）
+    pub usage: CerebellumUsage,
+}
+
+impl DecisionOutcome {
+    /// 降级结果：空答案 + 指定原因
+    ///
+    /// 零调用路径（provider 未装配 / api_key 空 / 请求为空）统一走这里，
+    /// 保证「降级」在类型上与「拿到结论但为空」无法混淆。
+    fn degraded(reason: DegradedReason, latency_ms: u64) -> Self {
+        Self {
+            answers: DecisionAnswers::new(),
+            degraded: Some(reason),
+            latency_ms,
+            usage: CerebellumUsage::default(),
+        }
+    }
 }
 
 // ==================== DAL 接口 ====================
@@ -112,19 +151,22 @@ pub trait BrainDal: Send + Sync {
         options: &ModelCallOptions,
     ) -> Result<ThinkResult>;
 
-    /// 小脑快判断：单次亚秒级 System One decision 调用（B3 运行时路由消费面）
+    /// 小脑决策：把一批决策请求交给外部决策模型，返回结构化结论
     ///
-    /// 与 cortex 消费模式同构：DAO 不作为字段持有，方法体内联获取
-    /// `dao::cerebellum::dao()` 单例透传（快判断无状态、全配置随
-    /// `&ModelProviderPo` 传入）。domain 层 cerebellum_router 仅依赖
-    /// BrainDal 唯一思考门面，禁止直连 DAO。
-    async fn think_fast(
+    /// 本方法是 domain 层**唯一**的小脑入口，禁止 Domain 直连 DAO：
+    /// provider 选择（取 `brain.cerebellum`）、协议双向转换、非空门禁、
+    /// 超时、降级与计量全部收敛在这里。上层只看到
+    /// `DecisionRequest` / `DecisionAnswers` 这一对纯数据契约，
+    /// 不感知 `CerebellumQuestion` 等协议 DTO。
+    ///
+    /// ⚠️ **永不返回 `Err`**：小脑是可选增强，失败一律收敛进
+    /// `DecisionOutcome::degraded`，主流程零阻断。
+    async fn decide(
         &self,
         ctx: RequestContext,
-        provider: &ModelProviderPo,
-        state: Value,
-        questions: BTreeMap<String, CerebellumQuestion>,
-    ) -> Result<ThinkFastResult>;
+        brain: &Brain,
+        requests: Vec<DecisionRequest>,
+    ) -> DecisionOutcome;
 
     /// 向量化实体（domain 层入口）
     ///
@@ -165,6 +207,72 @@ fn extract_last_user_prompt(messages: &[crate::models::cortex_types::ChatMessage
             _ => None,
         })
         .unwrap_or("")
+}
+
+/// `DecisionRequest` → 协议 DTO
+///
+/// Pick / Grade / Presence 与 choice / score / noul 一一对应。
+/// 这里唯一需要「翻译」的地方就是题型映射——策略只需声明语义，协议细节留在 DAL。
+///
+/// `pub(super)`：仅为了让 `dal::brain_test` 能对这组映射做契约测试
+/// （`Presence` 误带 criteria 会让**整批**请求 400，是本层最典型的静默雷）。
+pub(super) fn to_protocol(req: DecisionRequest) -> (Value, BTreeMap<String, CerebellumQuestion>) {
+    let questions = req
+        .questions
+        .into_iter()
+        .map(|(qid, spec)| {
+            let question = match spec {
+                QuestionSpec::Pick {
+                    instructions,
+                    options,
+                } => CerebellumQuestion {
+                    question_type: QuestionType::Choice,
+                    instructions,
+                    criteria: Some(QuestionCriteria::Choices(options)),
+                },
+                QuestionSpec::Grade {
+                    instructions,
+                    levels,
+                } => CerebellumQuestion {
+                    question_type: QuestionType::Score,
+                    instructions,
+                    criteria: Some(QuestionCriteria::Levels(levels)),
+                },
+                QuestionSpec::Presence { instructions } => CerebellumQuestion {
+                    question_type: QuestionType::Noul,
+                    instructions,
+                    criteria: None,
+                },
+            };
+            (qid, question)
+        })
+        .collect();
+    (req.state, questions)
+}
+
+/// 协议答案 → 引擎结论
+///
+/// 三个变体一一对应，无损耗。`score` 的 `legend` / `probabilities` 不搬运：
+/// 策略判据只看分数与置信度，多带的字段只会让契约变形。
+pub(super) fn to_decision_value(answer: &CerebellumAnswer) -> DecisionValue {
+    match answer {
+        CerebellumAnswer::Choice {
+            choice,
+            confidence,
+            probabilities,
+        } => DecisionValue::Pick {
+            chosen: choice.clone(),
+            confidence: *confidence,
+            weights: probabilities.clone(),
+        },
+        CerebellumAnswer::Score {
+            score, confidence, ..
+        } => DecisionValue::Grade {
+            score: *score,
+            confidence: *confidence,
+        },
+        CerebellumAnswer::Noul { noul } => DecisionValue::Presence { value: *noul },
+    }
 }
 
 /// Brain DAL 实现
@@ -506,18 +614,134 @@ impl BrainDal for BrainDalImpl {
         }
     }
 
-    async fn think_fast(
+    async fn decide(
         &self,
         ctx: RequestContext,
-        provider: &ModelProviderPo,
-        state: Value,
-        questions: BTreeMap<String, CerebellumQuestion>,
-    ) -> Result<ThinkFastResult> {
-        // 与 cortex 消费同构：DAO 不上字段，方法体内联获取单例透传
-        // （快判断无状态，全配置随 &ModelProviderPo 传入）
-        crate::service::dao::cerebellum::dao()
-            .think_fast(ctx, provider, state, questions)
-            .await
+        brain: &Brain,
+        requests: Vec<DecisionRequest>,
+    ) -> DecisionOutcome {
+        let started = std::time::Instant::now();
+        let elapsed_ms = || started.elapsed().as_millis() as u64;
+
+        // 门 1：请求为空 = 本轮没有决策诉求（策略组 prepare 全返回空）。
+        // 这是**正常无操作**，不是降级——`degraded: None` + 空答案。
+        if requests.is_empty() {
+            return DecisionOutcome {
+                answers: DecisionAnswers::new(),
+                degraded: None,
+                latency_ms: 0,
+                usage: CerebellumUsage::default(),
+            };
+        }
+
+        // 门 2：小脑未装配（外部 Agent 恒 None；Local 无启用 provider 亦为 None）
+        let Some(provider) = brain.cerebellum.as_ref() else {
+            return DecisionOutcome::degraded(DegradedReason::NoProvider, elapsed_ms());
+        };
+
+        // 门 3：api_key 空 ⇒ 零调用降级。拿空凭据打网络最轻是白等一个超时，
+        // 最重是错误顺着 future 传播进主循环。
+        if provider.api_key.trim().is_empty() {
+            log_warn!(
+                ctx,
+                "brain_decide",
+                "cerebellum provider api_key is empty, degrade: provider_id={}",
+                provider.id
+            );
+            return DecisionOutcome::degraded(DegradedReason::NoProvider, elapsed_ms());
+        }
+
+        // 门 4：DAO 单例未初始化 ⇒ 零调用降级。
+        // `dao()` 未初始化是 `expect` panic，会顺着 future 把整轮思考一起炸掉。
+        let Some(dao) = crate::service::dao::cerebellum::try_dao() else {
+            log_warn!(
+                ctx,
+                "brain_decide",
+                "cerebellum dao not initialized, degrade"
+            );
+            return DecisionOutcome::degraded(DegradedReason::NoProvider, elapsed_ms());
+        };
+
+        // 单一超时预算：provider.config.timeout_ms 优先，缺省 800。
+        // 整个批次共享——多场景同轮触发时不该各付一次超时。
+        let timeout_ms =
+            crate::service::dao::cerebellum::client::resolve_timeout_ms(&ctx, provider);
+
+        // 场景口径：`DecisionRequest.scene` 是唯一能区分「谁问的」的信息，
+        // 降级 / 超时日志里必须带上它，否则多场景并存后无法定位是哪一处
+        // 在反复失败（agent 侧只看得到「小脑降级」一条）。
+        let scenes: Vec<&'static str> = requests.iter().map(|r| r.scene).collect();
+
+        // 当前逐条发送（每场景一个 state）。协议支持一次请求内多题并行，
+        // 但不同场景的 state 不同，跨场景合并在协议层没有干净的表示；
+        // 同 scene 且 state 相同的合并留作后续优化，此处不为它发明 state 结构。
+        let batch = async {
+            let mut answers = DecisionAnswers::new();
+            let mut usage = CerebellumUsage::default();
+            for req in requests {
+                // 空题请求必然是装配侧的 bug：服务端会以 400 打回，并因
+                // client 的「任一题不合法即整批失败」把同批其它场景一起带走。
+                // 这里直接丢弃该条，只坏它自己。
+                if req.questions.is_empty() {
+                    log_warn!(
+                        ctx,
+                        "brain_decide",
+                        "empty questions in decision request, skipped: scene={}",
+                        req.scene
+                    );
+                    continue;
+                }
+                let (state, questions) = to_protocol(req);
+                let result = dao
+                    .think_fast(ctx.clone(), provider, state, questions)
+                    .await?;
+                usage.input_tokens += result.usage.input_tokens;
+                usage.output_tokens += result.usage.output_tokens;
+                for (qid, answer) in result.answers {
+                    // qid 命名空间是全局的（`Metrics::decision(qid)` 不带 scene），
+                    // 两个场景用了同一个 qid 会静默互相覆盖。覆盖留在明面上。
+                    if answers.get(&qid).is_some() {
+                        log_warn!(
+                            ctx,
+                            "brain_decide",
+                            "duplicate decision qid across scenes, later one wins: qid={}",
+                            qid
+                        );
+                    }
+                    answers = answers.with(qid, to_decision_value(&answer));
+                }
+            }
+            Ok::<_, common::error::Error>((answers, usage))
+        };
+
+        match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), batch).await {
+            Err(_) => {
+                log_warn!(
+                    ctx,
+                    "brain_decide",
+                    "cerebellum decide timeout: {}ms, scenes={:?}",
+                    timeout_ms,
+                    scenes
+                );
+                DecisionOutcome::degraded(DegradedReason::Timeout, elapsed_ms())
+            }
+            Ok(Err(e)) => {
+                log_warn!(
+                    ctx,
+                    "brain_decide",
+                    error = ?e,
+                    scenes = ?scenes,
+                    "cerebellum decide failed"
+                );
+                DecisionOutcome::degraded(DegradedReason::CallError, elapsed_ms())
+            }
+            Ok(Ok((answers, usage))) => DecisionOutcome {
+                answers,
+                degraded: None,
+                latency_ms: elapsed_ms(),
+                usage,
+            },
+        }
     }
 
     async fn embed_entity(

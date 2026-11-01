@@ -96,6 +96,7 @@ pub mod attachment;
 mod attachment_test;
 pub mod auth;
 pub mod background_task;
+pub mod cerebellum;
 pub mod cron_trigger;
 pub mod email_integration;
 pub mod external_agent;
@@ -143,6 +144,7 @@ pub use background_task::{
     CleanupTasksRequest, CleanupTasksResponse, GetTaskProgressRequest, ListBackgroundTasksRequest,
     ListBackgroundTasksResponse, TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType,
 };
+pub use cerebellum::*;
 pub use cron_trigger::*;
 pub use email_integration::*;
 pub use external_agent::*;

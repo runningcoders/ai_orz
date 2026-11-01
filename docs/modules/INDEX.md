@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 524 篇 / 10,388,177 B**，分布于 15 个模块。
+**合计 525 篇 / 10,422,278 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -15,7 +15,7 @@
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 0 | 35 | 35 | 644,551 |
 | [01-组织与权限](#01-组织与权限) | 1 | 4 | 36 | 41 | 825,307 |
-| [02-Agent运行时](#02-agent运行时) | 4 | 1 | 19 | 24 | 648,773 |
+| [02-Agent运行时](#02-agent运行时) | 5 | 1 | 19 | 25 | 682,874 |
 | [03-记忆系统](#03-记忆系统) | 0 | 0 | 13 | 13 | 289,578 |
 | [04-对话与消息](#04-对话与消息) | 3 | 4 | 21 | 28 | 658,772 |
 | [05-任务与项目](#05-任务与项目) | 1 | 0 | 53 | 54 | 932,831 |
@@ -133,14 +133,15 @@
 
 ### 02-Agent运行时
 
-#### A 设计（design，4 篇）
+#### A 设计（design，5 篇）
 
 | # | 页面 | 状态 | 字节 |
 |---:|---|---|---:|
-| 1 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 141,847 |
-| 2 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
-| 3 | [思考图引擎改造设计（Awaken 主思考路径节点化）](<02-Agent运行时/A-设计/thinking_graph_engine_design.md>) | 落地中 | 10,207 |
-| 4 | [Agent 思考运行时 + 策略引擎设计](<02-Agent运行时/A-设计/thinking_task_policy_engine_design.md>) | 现行 | 47,909 |
+| 1 | [决策型策略设计（策略引擎承载小脑场景）](<02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md>) | 现行 | 24,529 |
+| 2 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 141,847 |
+| 3 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
+| 4 | [思考图引擎改造设计（Awaken 主思考路径节点化）](<02-Agent运行时/A-设计/thinking_graph_engine_design.md>) | 落地中 | 10,207 |
+| 5 | [Agent 思考运行时 + 策略引擎设计](<02-Agent运行时/A-设计/thinking_task_policy_engine_design.md>) | 现行 | 47,909 |
 
 #### B 落地方案（plan，1 篇）
 
@@ -161,12 +162,12 @@
 | 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 15,988 |
 | 8 | [ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](<02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md>) | 6,388 |
 | 9 | [小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类](<02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md>) | 17,916 |
-| 10 | [小脑快判断（System One）](<02-Agent运行时/C-知识/小脑快判断（System One）.md>) | 27,948 |
+| 10 | [小脑快判断（System One）](<02-Agent运行时/C-知识/小脑快判断（System One）.md>) | 30,789 |
 | 11 | [工具绑定管理](<02-Agent运行时/C-知识/工具绑定管理.md>) | 15,638 |
 | 12 | [思考循环异常退出兜底总结与错误上报结构化](<02-Agent运行时/C-知识/思考循环异常退出兜底总结与错误上报结构化/思考循环异常退出兜底总结与错误上报结构化.md>) | 4,735 |
 | 13 | [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](<02-Agent运行时/C-知识/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md>) | 13,082 |
 | 14 | [技能包管理](<02-Agent运行时/C-知识/技能包管理.md>) | 30,153 |
-| 15 | [策略引擎与 Shell 拦截层](<02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md>) | 25,043 |
+| 15 | [策略引擎与 Shell 拦截层](<02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md>) | 31,774 |
 | 16 | [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层](<02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md>) | 15,127 |
 | 17 | [记忆系统管理](<02-Agent运行时/C-知识/记忆系统管理.md>) | 36,127 |
 | 18 | [运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化](<02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md>) | 13,270 |

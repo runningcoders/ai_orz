@@ -428,6 +428,26 @@ pub(super) fn drop_dangling_relations(memories: &mut Vec<Memory>) {
     });
 }
 
+/// 应用结果条数上限：**只约束实体条目，关系边不占名额**
+///
+/// 边是节点的派生视图（见 `search_relations_internal`），且图批次不变式要求
+/// 「边两端必须同在批内」。若边参与名额争夺，它按排序键恒排最后，`limit`
+/// 一旦小于「实体数 + 边数」就会被整批砍掉 —— 调用方拿到一堆孤立节点，
+/// 前端画不出连线、LLM 也看不到「谁和谁有关系」。
+///
+/// 就地过滤并保持原顺序；`limit == 0` 表示实体全清、边全留。
+pub(super) fn apply_entity_limit(memories: &mut Vec<Memory>, limit: usize) {
+    let mut kept = 0usize;
+    memories.retain(|m| match &m.po {
+        MemoryPo::Relation(_) => true,
+        _ if kept < limit => {
+            kept += 1;
+            true
+        }
+        _ => false,
+    });
+}
+
 // ==================== Trait 桥接 ====================
 //
 // E0119：同一 trait 对同一具体类型只能有一个 `impl` 块，因此业务实现分散为

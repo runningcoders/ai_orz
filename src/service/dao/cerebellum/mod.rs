@@ -12,10 +12,10 @@
 
 pub mod client;
 
-use crate::models::cerebellum_types::{CerebellumQuestion, ThinkFastResult};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::api::cerebellum::{CerebellumQuestion, ThinkFastResult};
 use common::error::Result;
 use serde_json::Value;
 use std::collections::BTreeMap;

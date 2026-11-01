@@ -7,33 +7,37 @@
 //! 拆分命令见 `tools/split_inline_tests.py`。
 
 use super::*;
-use crate::models::cerebellum_types::CerebellumUsage;
+use crate::models::model_provider::ModelProviderPo;
+use crate::pkg::policy::{DecisionAnswers, DecisionRequest, DecisionValue, Metrics};
+use crate::service::dal::brain::DecisionOutcome;
 use async_trait::async_trait;
-use common::error::{Result, err};
-use std::time::Duration as StdDuration;
+use common::api::cerebellum::CerebellumUsage;
+use common::error::Result;
+use std::collections::BTreeMap;
 
-// ---------- mock BrainDal（实现全 trait 方法，仅 think_fast 生效） ----------
+// ---------- mock BrainDal（实现全 trait 方法，仅 decide 生效） ----------
 
+/// `outcome = None` 表示模拟调用失败（CallError）
 struct MockBrainDal {
-    result: Option<Result<ThinkFastResult>>,
-    delay_ms: u64,
+    outcome: Option<DecisionOutcome>,
 }
 
 #[async_trait]
 impl BrainDal for MockBrainDal {
-    async fn think_fast(
+    async fn decide(
         &self,
         _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-        _state: serde_json::Value,
-        _questions: BTreeMap<String, CerebellumQuestion>,
-    ) -> Result<ThinkFastResult> {
-        if self.delay_ms > 0 {
-            tokio::time::sleep(StdDuration::from_millis(self.delay_ms)).await;
-        }
-        match &self.result {
-            Some(r) => r.clone(),
-            None => Err(err!(Internal, "mock error")),
+        _brain: &Brain,
+        _requests: Vec<DecisionRequest>,
+    ) -> DecisionOutcome {
+        match &self.outcome {
+            Some(outcome) => outcome.clone(),
+            None => DecisionOutcome {
+                answers: DecisionAnswers::new(),
+                degraded: Some(DegradedReason::CallError),
+                latency_ms: 0,
+                usage: CerebellumUsage::default(),
+            },
         }
     }
 
@@ -96,18 +100,32 @@ fn mock_provider() -> ModelProviderPo {
     )
 }
 
-fn choice_result(choice: &str, confidence: f32) -> ThinkFastResult {
-    let mut answers = BTreeMap::new();
-    answers.insert(
-        ROUTE_QUESTION_ID.to_string(),
-        CerebellumAnswer::Choice {
-            choice: choice.to_string(),
-            confidence,
-            probabilities: BTreeMap::new(),
-        },
+/// 测试用 Brain（cerebellum 缺省 None；需要时由调用方注入）
+fn mock_brain(cerebellum: Option<ModelProviderPo>) -> Brain {
+    let mut brain = Brain::new_local(
+        "agent-1".to_string(),
+        "Test Agent".to_string(),
+        Default::default(),
+        mock_provider(),
+        vec![],
     );
-    ThinkFastResult {
-        answers,
+    brain.cerebellum = cerebellum;
+    brain
+}
+
+/// 成功结论：Pick(choice, confidence)
+fn pick_outcome(choice: &str, confidence: f32) -> DecisionOutcome {
+    DecisionOutcome {
+        answers: DecisionAnswers::new().with(
+            route_policy().primary_qid(),
+            DecisionValue::Pick {
+                chosen: choice.to_string(),
+                confidence,
+                weights: BTreeMap::new(),
+            },
+        ),
+        degraded: None,
+        latency_ms: 10,
         usage: CerebellumUsage {
             input_tokens: 100,
             output_tokens: 10,
@@ -115,20 +133,32 @@ fn choice_result(choice: &str, confidence: f32) -> ThinkFastResult {
     }
 }
 
+/// 降级结论（DAL 侧判定的失败原因）
+fn degraded_outcome(reason: DegradedReason) -> DecisionOutcome {
+    DecisionOutcome {
+        answers: DecisionAnswers::new(),
+        degraded: Some(reason),
+        latency_ms: 5,
+        usage: CerebellumUsage::default(),
+    }
+}
+
 async fn run_with(
-    result: Option<Result<ThinkFastResult>>,
-    delay_ms: u64,
+    outcome: Option<DecisionOutcome>,
     enabled: bool,
     user_msg: Option<&str>,
 ) -> RouteDecision {
+    // 全局 Storage 单例：`test_ctx()` 走 `RequestContext::new`，其 builder
+    // 在未显式注入 storage 时回退到全局单例 ⇒ 必须先初始化，否则单跑
+    // 本模块时 panic「Storage 尚未初始化」。全量跑时靠其它用例先初始化
+    // 侥幸通过，属测试隔离缺陷（与业务无关）。
+    crate::pkg::storage::test_support::init_for_test().await;
     let ctx = test_ctx();
     route(
         &ctx,
-        Arc::new(MockBrainDal { result, delay_ms }),
-        &mock_provider(),
+        Arc::new(MockBrainDal { outcome }),
+        &mock_brain(None),
         enabled,
-        "agent-1",
-        "Test Agent",
         user_msg,
     )
     .await
@@ -143,8 +173,7 @@ fn test_ctx() -> RequestContext {
 #[tokio::test]
 async fn test_route_trivial_direct() {
     let d = run_with(
-        Some(Ok(choice_result(CHOICE_TRIVIAL_DIRECT, 0.95))),
-        0,
+        Some(pick_outcome(CHOICE_TRIVIAL_DIRECT, 0.95)),
         true,
         Some("在吗"),
     )
@@ -161,8 +190,7 @@ async fn test_route_trivial_direct() {
 #[tokio::test]
 async fn test_route_cortex_needed_injects() {
     let d = run_with(
-        Some(Ok(choice_result(CHOICE_CORTEX_NEEDED, 0.92))),
-        0,
+        Some(pick_outcome(CHOICE_CORTEX_NEEDED, 0.92)),
         true,
         Some("帮我查一下上个月的报销数据"),
     )
@@ -179,8 +207,7 @@ async fn test_route_cortex_needed_injects() {
 #[tokio::test]
 async fn test_route_low_confidence_skips() {
     let d = run_with(
-        Some(Ok(choice_result(CHOICE_CORTEX_NEEDED, 0.5))),
-        0,
+        Some(pick_outcome(CHOICE_CORTEX_NEEDED, 0.5)),
         true,
         Some("随便聊聊"),
     )
@@ -197,18 +224,18 @@ async fn test_route_low_confidence_skips() {
 
 #[tokio::test]
 async fn test_route_disabled_skips_without_call() {
-    let d = run_with(None, 0, false, Some("在吗")).await;
+    let d = run_with(None, false, Some("在吗")).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
-            reason: DegradedReason::NoCerebellum
+            reason: DegradedReason::Disabled
         }
     );
 }
 
 #[tokio::test]
 async fn test_route_no_user_message_skips() {
-    let d = run_with(None, 0, true, None).await;
+    let d = run_with(None, true, None).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -219,7 +246,7 @@ async fn test_route_no_user_message_skips() {
 
 #[tokio::test]
 async fn test_route_call_error_skips() {
-    let d = run_with(None, 0, true, Some("在吗")).await;
+    let d = run_with(None, true, Some("在吗")).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -230,10 +257,9 @@ async fn test_route_call_error_skips() {
 
 #[tokio::test]
 async fn test_route_timeout_skips() {
-    // 850ms > 800ms 预算 → Timeout 降级
+    // 超时判定已下沉到 DAL（单一超时预算），router 只把 degraded 翻成 Skip
     let d = run_with(
-        Some(Ok(choice_result(CHOICE_CORTEX_NEEDED, 0.95))),
-        850,
+        Some(degraded_outcome(DegradedReason::Timeout)),
         true,
         Some("在吗"),
     )
@@ -248,27 +274,20 @@ async fn test_route_timeout_skips() {
 
 #[tokio::test]
 async fn test_route_unsupported_answer_skips() {
-    // 非 choice 答案
-    let mut answers = BTreeMap::new();
-    answers.insert(
-        ROUTE_QUESTION_ID.to_string(),
-        CerebellumAnswer::Score {
-            score: 3.0,
-            probabilities: BTreeMap::new(),
-            legend: vec![],
-            confidence: 0.99,
-        },
-    );
-    let d = run_with(
-        Some(Ok(ThinkFastResult {
-            answers,
-            usage: CerebellumUsage::default(),
-        })),
-        0,
-        true,
-        Some("在吗"),
-    )
-    .await;
+    // 非 Pick 结论（如 Grade）→ UnsupportedAnswer
+    let outcome = DecisionOutcome {
+        answers: DecisionAnswers::new().with(
+            route_policy().primary_qid(),
+            DecisionValue::Grade {
+                score: 3.0,
+                confidence: 0.99,
+            },
+        ),
+        degraded: None,
+        latency_ms: 5,
+        usage: CerebellumUsage::default(),
+    };
+    let d = run_with(Some(outcome), true, Some("在吗")).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -279,9 +298,22 @@ async fn test_route_unsupported_answer_skips() {
 
 // ---------- 纯函数翻译边界 ----------
 
+/// 把一条结论装进事实桶（translate 只看桶，不看原始 answers）
+fn metrics_with(value: DecisionValue) -> Metrics {
+    let policy = route_policy();
+    Metrics::new().with_decisions(Arc::new(
+        DecisionAnswers::new().with(policy.primary_qid(), value),
+    ))
+}
+
 #[test]
 fn test_translate_unknown_choice_skips() {
-    let d = translate(&choice_result("unknown_choice", 0.99), 10);
+    let metrics = metrics_with(DecisionValue::Pick {
+        chosen: "unknown_choice".to_string(),
+        confidence: 0.99,
+        weights: BTreeMap::new(),
+    });
+    let d = translate(&route_policy(), &metrics);
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -292,7 +324,8 @@ fn test_translate_unknown_choice_skips() {
 
 #[test]
 fn test_translate_missing_answer_skips() {
-    let d = translate(&ThinkFastResult::default(), 10);
+    // 没问出来（None）必须走 Skip —— 绝不能默认成 Direct 或 Inject
+    let d = translate(&route_policy(), &Metrics::new());
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -302,33 +335,25 @@ fn test_translate_missing_answer_skips() {
 }
 
 #[test]
-fn test_degraded_reason_str() {
-    assert_eq!(DegradedReason::NoCerebellum.as_str(), "no_cerebellum");
-    assert_eq!(DegradedReason::Timeout.as_str(), "timeout");
-}
-
-// ---------- 小脑未配好 ⇒ 零调用降级（护栏） ----------
-
-/// 小脑是**可选增强**：provider 没真正配好（空 api_key）时必须降级到普通
-/// 思考流程，**且一次网络都不发**。
-///
-/// ⚠️ 这条护栏守的是「增强功能反向劫持主流程」—— 拿无效凭据去打网络最轻是
-/// 白等一个超时，最重是 panic 顺着 future 传播把整轮思考炸掉（底层
-/// `dao::cerebellum::dao()` 未初始化时是 `expect`）。两者都表现为
-/// 「Agent 置忙后零进展」，现场很难定位。
-#[tokio::test]
-async fn test_route_with_default_dao_degrades_on_empty_api_key() {
-    let ctx = test_ctx();
-    let mut provider = mock_provider();
-    provider.api_key = "  ".to_string();
-
-    let d =
-        route_with_default_dao(&ctx, &provider, true, "agent-1", "Test Agent", Some("你好")).await;
-
+fn test_translate_low_confidence_skips() {
+    // 有结论但置信不足：与「压根没答」要区分开（观测口径不同）
+    let metrics = metrics_with(DecisionValue::Pick {
+        chosen: CHOICE_TRIVIAL_DIRECT.to_string(),
+        confidence: CEREBELLUM_ROUTE_CONFIDENCE_THRESHOLD - 0.1,
+        weights: BTreeMap::new(),
+    });
     assert_eq!(
-        d,
+        translate(&route_policy(), &metrics),
         RouteDecision::Skip {
-            reason: DegradedReason::NoCerebellum
+            reason: DegradedReason::LowConfidence
         }
     );
+}
+
+#[test]
+fn test_degraded_reason_str() {
+    // 「没配小脑」与「被开关关掉」必须是两个口径——排查时才能区分配置缺失与人为关闭
+    assert_eq!(DegradedReason::NoProvider.as_str(), "no_provider");
+    assert_eq!(DegradedReason::Disabled.as_str(), "disabled");
+    assert_eq!(DegradedReason::Timeout.as_str(), "timeout");
 }

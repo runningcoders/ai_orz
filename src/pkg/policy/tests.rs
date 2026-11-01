@@ -1,5 +1,6 @@
 use super::*;
 use builtin::*;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -667,4 +668,233 @@ fn test_field_equals_policy_exact_match_only() {
     // 通用元信息
     assert_eq!(policy.id(), "eq");
     assert_eq!(policy.required_metrics(), vec!["output".to_string()]);
+}
+
+// ==================== 决策型策略（prepare + Metrics.decisions）====================
+
+/// 决策型测试策略：本地不可判，靠 `DecisionPolicy` 骨架读答案
+///
+/// 刻意保持「judge 只读 answers」的形态——它代表所有决策型策略。
+/// 与阈值策略混进同一个策略组时，组合语义必须仍然正确。
+struct PickGatePolicy {
+    accept: &'static str,
+    threshold: f32,
+    /// 本轮是否发起决策（false = 不声明请求）
+    ask: bool,
+}
+
+impl PickGatePolicy {
+    fn new(accept: &'static str, threshold: f32) -> Self {
+        Self {
+            accept,
+            threshold,
+            ask: true,
+        }
+    }
+
+    /// 不发起决策的变体（验证「未声明 → 未命中」）
+    fn silent(accept: &'static str, threshold: f32) -> Self {
+        Self {
+            accept,
+            threshold,
+            ask: false,
+        }
+    }
+}
+
+impl Policy for PickGatePolicy {
+    fn id(&self) -> &str {
+        "pick_gate"
+    }
+    fn name(&self) -> &str {
+        "PickGate"
+    }
+    fn condition_desc(&self) -> &str {
+        "决策判定（测试桩）"
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec![]
+    }
+
+    // 决策型策略统一走 DecisionPolicy 的骨架
+    fn prepare(&self, metrics: &Metrics) -> Vec<DecisionRequest> {
+        self.decision_prepare(metrics)
+    }
+
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        self.decision_evaluate(metrics)
+    }
+}
+
+impl DecisionPolicy for PickGatePolicy {
+    fn scene(&self) -> &'static str {
+        "test"
+    }
+
+    fn request(&self, _metrics: &Metrics) -> Option<DecisionRequest> {
+        self.ask.then(|| DecisionRequest {
+            scene: "test",
+            state: serde_json::json!({ "probe": 0 }),
+            questions: BTreeMap::new(),
+        })
+    }
+
+    fn judge(&self, _metrics: &Metrics, answers: &DecisionAnswers) -> Vec<String> {
+        match answers.get(&self.primary_qid()) {
+            Some(DecisionValue::Pick {
+                chosen, confidence, ..
+            }) if *confidence >= self.threshold && chosen == self.accept => {
+                vec![self.id().to_string()]
+            }
+            _ => vec![],
+        }
+    }
+}
+
+fn pick_answers(chosen: &str, confidence: f32) -> Arc<DecisionAnswers> {
+    Arc::new(DecisionAnswers::new().with(
+        "test.primary",
+        DecisionValue::Pick {
+            chosen: chosen.to_string(),
+            confidence,
+            weights: BTreeMap::new(),
+        },
+    ))
+}
+
+#[test]
+fn test_threshold_policy_prepare_is_empty_by_default() {
+    // 现有阈值策略不声明任何决策请求：引擎对它们零开销
+    let policy = TokenBudgetPolicy::new(100);
+    assert!(policy.prepare(&Metrics::new()).is_empty());
+    assert!(
+        FieldEqualsPolicy::new("eq", "等值", "o", "x", "d")
+            .prepare(&Metrics::new())
+            .is_empty()
+    );
+}
+
+#[test]
+fn test_decision_policy_not_triggered_without_answers() {
+    // 无决策结论（未声明 / 网关降级）⇒ 未命中。
+    // 这是最关键的一条：不允许把「没问出来」压成「判断为否」以外的任何假设。
+    let policy = PickGatePolicy::new("yes", 0.85);
+    assert_eq!(policy.evaluate(&Metrics::new()), Vec::<String>::new());
+    assert!(!Metrics::new().has_decisions());
+}
+
+#[test]
+fn test_decision_policy_confidence_threshold() {
+    let policy = PickGatePolicy::new("yes", 0.85);
+
+    // 选对了但置信不足：未命中
+    let low = Metrics::new().with_decisions(pick_answers("yes", 0.5));
+    assert_eq!(policy.evaluate(&low), Vec::<String>::new());
+
+    // 置信够但选项不是期望项：未命中
+    let wrong = Metrics::new().with_decisions(pick_answers("no", 0.95));
+    assert_eq!(policy.evaluate(&wrong), Vec::<String>::new());
+
+    // 两者都满足：命中
+    let ok = Metrics::new().with_decisions(pick_answers("yes", 0.9));
+    assert_eq!(policy.evaluate(&ok), vec!["pick_gate".to_string()]);
+    assert!(ok.has_decisions());
+}
+
+#[test]
+fn test_group_prepare_collects_all_children() {
+    // 收集阶段与 And/Or 无关：每个子判断都需要自己的资料
+    let and_group = PolicyBuilder::new()
+        .with_policy(PickGatePolicy::new("yes", 0.85))
+        .with_policy(PickGatePolicy::new("yes", 0.85))
+        .build();
+    assert_eq!(and_group.prepare(&Metrics::new()).len(), 2);
+
+    let or_group = PolicyBuilder::new()
+        .with_policy(PickGatePolicy::new("yes", 0.85))
+        .with_policy(TokenBudgetPolicy::new(1))
+        .or();
+    // 阈值策略不贡献请求，只有决策策略贡献 1 条
+    assert_eq!(or_group.prepare(&Metrics::new()).len(), 1);
+
+    // 不发起决策的策略零请求
+    assert!(
+        PickGatePolicy::silent("yes", 0.85)
+            .prepare(&Metrics::new())
+            .is_empty()
+    );
+}
+
+#[test]
+fn test_decision_policy_builds_request_and_prefixes_qid() {
+    let policy = PickGatePolicy::new("yes", 0.85);
+
+    // qid 默认带场景前缀，避免跨场景撞名
+    assert_eq!(policy.scene(), "test");
+    assert_eq!(policy.qid("rank"), "test.rank");
+    assert_eq!(policy.primary_qid(), "test.primary");
+
+    // 骨架把「可选请求」摊平成批次
+    let reqs = policy.prepare(&Metrics::new());
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].scene, "test");
+}
+
+#[test]
+fn test_mixed_and_group_requires_both_decisions() {
+    // AND：本地阈值命中 + 决策命中 ⇒ 才整体命中
+    let group = PolicyBuilder::new()
+        .with_policy(TokenBudgetPolicy::new(1))
+        .with_policy(PickGatePolicy::new("yes", 0.85))
+        .build();
+
+    // 本地命中、决策缺失 ⇒ 未命中（决策策略贡献空列表，AND 短路）
+    let local_only = Metrics::new().with("total_tokens", 5u64);
+    assert_eq!(group.evaluate(&local_only), Vec::<String>::new());
+
+    // 两者都满足 ⇒ 命中，两个 id 都在
+    let both = Metrics::new()
+        .with("total_tokens", 5u64)
+        .with_decisions(pick_answers("yes", 0.9));
+    let hits = group.evaluate(&both);
+    assert!(hits.contains(&"token_budget".to_string()));
+    assert!(hits.contains(&"pick_gate".to_string()));
+}
+
+#[test]
+fn test_mixed_or_group_either_hits() {
+    // OR：本地命中或决策命中任一即可
+    let group = PolicyBuilder::new()
+        .with_policy(TokenBudgetPolicy::new(1))
+        .with_policy(PickGatePolicy::new("yes", 0.85))
+        .or();
+
+    // 仅本地命中
+    assert_eq!(
+        group.evaluate(&Metrics::new().with("total_tokens", 5u64)),
+        vec!["token_budget".to_string()]
+    );
+
+    // 仅决策命中
+    assert_eq!(
+        group.evaluate(&Metrics::new().with_decisions(pick_answers("yes", 0.9))),
+        vec!["pick_gate".to_string()]
+    );
+
+    // 都没命中
+    assert_eq!(group.evaluate(&Metrics::new()), Vec::<String>::new());
+}
+
+#[test]
+fn test_decision_answers_missing_key_is_none() {
+    // 表里没有该题 ⇒ None（区别于「存在但为否」）
+    let answers = pick_answers("yes", 0.9);
+    assert!(answers.get("test.primary").is_some());
+    assert!(answers.get("other").is_none());
+    assert!(!answers.is_empty());
+    assert_eq!(answers.len(), 1);
+
+    let metrics = Metrics::new().with_decisions(answers);
+    assert!(metrics.decision("test.primary").is_some());
+    assert!(metrics.decision("other").is_none());
 }

@@ -12,7 +12,7 @@ use crate::pkg::think_path::{
     ThinkNode,
 };
 use crate::service::dal::memory::TraversalStrategy;
-use crate::service::dao::memory::MemorySearch;
+use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::domain::runtime::RuntimeMemory;
 use crate::service::domain::runtime::types::IntentAnalysis;
 use async_trait::async_trait;
@@ -22,8 +22,20 @@ use std::sync::Arc;
 /// 节点 id：蓝图声明、runner 注册、轨迹指纹三处共用的同一真相
 pub(crate) const NODE_RETRIEVE: &str = "retrieve";
 
-/// 知识命中条数上限（机械 Top-K）
-const KNOWLEDGE_TOP_K: i32 = 5;
+/// 渲染预算：进 prompt 的知识节点条数（机械 Top-K）
+///
+/// 这是**消费端**的宽度，与召回宽度解耦：多召回、少渲染，中间那道筛
+/// 由精选（开关打开时）或排序（关闭时）完成。
+pub(crate) const KNOWLEDGE_TOP_K: usize = 5;
+
+/// 召回宽度相对渲染预算的倍数
+///
+/// 召回是「便宜但漏一次就没了」的一侧：一次 FTS + 一次向量查询的成本远低于
+/// 漏召回的代价，所以候选池按渲染预算的整数倍放宽，再由精选/排序收回 5 条。
+///
+/// 3 倍（= 15 条）是当前取值：足够让精选有取舍空间，又不至于让一次 Pick 的
+/// 选项列表长到模型只看前几个。调大这一个是单点操作，不需要动结构。
+const RECALL_WIDTH_FACTOR: usize = 3;
 
 /// 关系边命中条数上限
 ///
@@ -35,7 +47,11 @@ const RELATION_TOP_K: usize = 4;
 const METHOD_SKILLS_TOP_K: usize = 2;
 
 /// 图谱扩展的种子节点数（从关键词命中里取前 N 个知识节点）
-const GRAPH_SEED_TOP_K: usize = 3;
+///
+/// 与 [`KNOWLEDGE_TOP_K`] 对齐而不是取更小的常数：进 prompt 的每个知识节点
+/// 都值得当一次种子——种子只是 SQL 的 `IN` 条件，加一个的边际成本可以忽略，
+/// 而漏掉一个就等于那部分图谱结构永远进不了上下文。
+const GRAPH_SEED_TOP_K: usize = KNOWLEDGE_TOP_K;
 
 /// 图谱扩展深度：固定一跳
 ///
@@ -72,12 +88,15 @@ pub(crate) fn diff_terms(candidates: &[String], queried: &[String]) -> Vec<Strin
 /// 存在于 PO 变体里——短期记忆取 summary、知识节点取 node_name + 描述、
 /// 关系边取「源 --关系--> 目标」。
 ///
-/// ⚠️ 关键词路不受 `top_k` 约束（`search` 只在**向量召回**用 top_k，FTS 命中
-/// 全量返回），所以这里必须自己截断，否则几十行噪声会整段灌进 prompt。
+/// ⚠️ 调用方已经把召回宽度收敛到 `filters.limit`（向量路与 FTS 路同口径），
+/// 这里仍要截断：`limit` 是**候选池**大小，prompt 预算是另一回事。
 ///
 /// `neighbors` 只用于**边两端的取名**，不渲染正文：扩展到一跳邻居的意义是
 /// 「看清谁和谁有关系」，把邻居描述也塞进来就又回到噪声问题了——需要正文时
 /// Agent 可以自己再检索。
+///
+/// 边有两个来源：检索路（命中节点的全部出入边）与图谱扩展路（种子一跳邻域）。
+/// 两者大范围重叠，按 id 去重后**按结构信号排序**再截断——不调模型。
 fn build_knowledge_lines(
     memories: &[Memory],
     neighbors: &[Memory],
@@ -120,7 +139,44 @@ fn build_knowledge_lines(
             _ => {}
         }
     }
-    for m in relations {
+    // 边池 = 检索带出的边 + 图谱扩展带出的边（同一 id 只留一次）
+    let hit_ids: std::collections::HashSet<&str> = memories
+        .iter()
+        .filter(|m| !matches!(m.po, MemoryPo::Relation(_)))
+        .filter_map(memory_id)
+        .collect();
+    let mut relation_pool: Vec<&Memory> = Vec::new();
+    let mut seen_relation: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for m in memories.iter().chain(relations.iter()) {
+        if let MemoryPo::Relation(r) = &m.po
+            && seen_relation.insert(r.id.as_str())
+        {
+            relation_pool.push(m);
+        }
+    }
+
+    // 结构排序（零成本，不调模型）：两端都命中的边信息量最高——
+    // 「A 依赖 B」只有 A、B 都在本轮上下文里才闭环；远端没命中时
+    // 那条边只能靠邻居取名，读者拿到的是半条信息。其次是边自身的 weight。
+    relation_pool.sort_by(|a, b| {
+        let key = |m: &Memory| match &m.po {
+            MemoryPo::Relation(r) => (
+                hit_ids.contains(r.source_node_id.as_str())
+                    && hit_ids.contains(r.target_node_id.as_str()),
+                r.weight.unwrap_or(0.0),
+            ),
+            _ => (false, 0.0),
+        };
+        let (both_a, weight_a) = key(a);
+        let (both_b, weight_b) = key(b);
+        both_b.cmp(&both_a).then_with(|| {
+            weight_b
+                .partial_cmp(&weight_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    });
+
+    for m in relation_pool.into_iter().take(RELATION_TOP_K) {
         if let MemoryPo::Relation(r) = &m.po {
             let (Some(src), Some(dst)) = (
                 node_names.get(r.source_node_id.as_str()),
@@ -132,10 +188,53 @@ fn build_knowledge_lines(
         }
     }
 
-    node_lines.truncate(KNOWLEDGE_TOP_K as usize);
-    relation_lines.truncate(RELATION_TOP_K);
+    node_lines.truncate(KNOWLEDGE_TOP_K);
     node_lines.extend(relation_lines);
     node_lines
+}
+
+/// 召回宽度（候选池大小），与渲染预算 [`KNOWLEDGE_TOP_K`] 成固定倍数
+///
+/// 与精选开关**无关**：精选只决定「从候选池里留下哪几条」，不该反过来决定
+/// 「先从库里捞多少条」。旧实现在关闭精选时把候选池收到 5，于是同一个库里
+/// 同一句话，开不开精选会看到两种排序结果；统一口径后关掉精选只是少了那道
+/// 语义筛选，召回面的宽度不变。
+pub(crate) fn recall_width() -> usize {
+    KNOWLEDGE_TOP_K * RECALL_WIDTH_FACTOR
+}
+
+/// 小脑精选：关闭 / 无大脑 / 降级 → 原样返回（老路径，取前 Top-K 条）
+///
+/// 精选是增强不是闸门：任何失败都退回「按召回序截断」，绝不把召回清空。
+///
+/// ⚠️ 关系边不参与精选：边的判据文本只有关系类型（`depends_on`），模型无从
+/// 判断相关性，却要占掉一个选项位；而且精选只该决定「哪些实体进 prompt」，
+/// 边由渲染侧按结构信号排序。所以先按 PO 分离，只排实体、边原样跟随。
+async fn rerank_if_enabled(
+    deps: &AwakenDeps,
+    question: &str,
+    memories: Vec<Memory>,
+) -> Vec<Memory> {
+    let Some(brain) = deps.agent.brain.as_ref() else {
+        return memories;
+    };
+    if !brain.runtime_config.enable_memory_rerank {
+        return memories;
+    }
+
+    let (edges, entities): (Vec<Memory>, Vec<Memory>) = memories
+        .into_iter()
+        .partition(|m| matches!(m.po, MemoryPo::Relation(_)));
+
+    let ranked: Vec<Memory> =
+        match super::memory_relevance::rank_with_default_dao(&deps.ctx, brain, question, &entities)
+            .await
+        {
+            // 宽召回不能反过来把 prompt 撑爆：降级时按机械 Top-K 截断
+            None => entities.into_iter().take(KNOWLEDGE_TOP_K).collect(),
+            Some(kept) => kept,
+        };
+    ranked.into_iter().chain(edges).collect()
 }
 
 /// 一跳图谱扩展的产物
@@ -225,7 +324,7 @@ async fn expand_graph(deps: &AwakenDeps, memories: &[Memory]) -> GraphExpansion 
 }
 
 /// 取记忆实体 id（PO 变体各自的 id 字段同名，但没有统一 trait）
-fn memory_id(m: &Memory) -> Option<&str> {
+pub(super) fn memory_id(m: &Memory) -> Option<&str> {
     match &m.po {
         MemoryPo::Trace(t) => Some(t.id.as_str()),
         MemoryPo::ShortTerm(st) => Some(st.id.as_str()),
@@ -235,7 +334,7 @@ fn memory_id(m: &Memory) -> Option<&str> {
 }
 
 /// 截取前 `max` 个字符（按字符而不是字节，避免把中文切坏）
-fn truncate_chars(text: &str, max: usize) -> String {
+pub(super) fn truncate_chars(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
@@ -330,20 +429,31 @@ impl ThinkNode for RetrieveNode {
         }
 
         // 4. 知识混合检索：失败降级为空命中（检索是增强，不是闸门）
+        //
+        // 召回宽度必须**同时**给两个字段：`top_k` 只管向量路，关键词路（FTS）
+        // 的条数由 `filters.limit` 决定（DAO 缺省 50）。只设 `top_k` 会让
+        // 「宽召回 N 条」的语义脱钩——候选池变成 N + 50，小脑精选的输入分布不可控。
         let keyword = new_terms.join(" ");
+        let width = recall_width();
         let knowledge_hits = match deps
             .domain
             .search(
                 deps.ctx.clone(),
                 MemorySearch {
-                    keyword: Some(keyword),
-                    top_k: Some(KNOWLEDGE_TOP_K),
+                    keyword: Some(keyword.clone()),
+                    top_k: Some(width as i32),
+                    filters: MemoryQuery {
+                        limit: Some(width),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             )
             .await
         {
             Ok(memories) => {
+                // 宽召回 → 小脑精选（关闭 / 降级 → 原样，仍是老路径）
+                let memories = rerank_if_enabled(deps, &keyword, memories).await;
                 // 以命中节点为种子拉一跳邻域：关键词只按词面召回，
                 // 关联边全靠撞运气——这里补一次便宜的图谱扩展。
                 let graph = expand_graph(deps, &memories).await;
@@ -446,16 +556,37 @@ mod tests {
     }
 
     fn relation(src: &str, dst: &str, kind: &str) -> Memory {
+        relation_with_weight(src, dst, kind, None)
+    }
+
+    /// id 由「两端 + 关系类型」唯一决定：测试里要能构造同端点不同类型的两条边
+    fn relation_with_weight(src: &str, dst: &str, kind: &str, weight: Option<f32>) -> Memory {
         Memory::new(MemoryPo::Relation(KnowledgeNodeRelationPo {
-            id: format!("rel-{src}-{dst}"),
+            id: format!("rel-{src}-{dst}-{kind}"),
             source_node_id: src.to_string(),
             target_node_id: dst.to_string(),
             relation_type: kind.to_string(),
-            weight: None,
+            weight,
             status: KnowledgeRelationStatus::Active,
             created_at: 0,
             updated_at: 0,
         }))
+    }
+
+    /// 召回面必须显著宽于渲染面，否则精选没有取舍空间
+    ///
+    /// 并固定「召回宽度与精选开关无关」这条口径：`recall_width` 不接 deps，
+    /// 开不开精选看到的是同一个候选池。
+    #[test]
+    fn recall_width_is_a_multiple_of_render_budget() {
+        let width = recall_width();
+        assert!(
+            width >= KNOWLEDGE_TOP_K * 2,
+            "召回宽度 {width} 至少要 2 倍渲染预算 {}",
+            KNOWLEDGE_TOP_K
+        );
+        // 候选池只有 1 条时精选会直接跳过（RankPolicy 不发单选项的题）
+        assert!(width > 1);
     }
 
     /// 图谱扩展的核心价值：邻居节点只用来给边取名，正文不进 prompt
@@ -486,7 +617,7 @@ mod tests {
         assert_eq!(lines, vec!["- A：a".to_string()]);
     }
 
-    /// 关键词路不受 search.top_k 约束，必须在渲染侧硬截断
+    /// 渲染预算：候选再多也只在 prompt 里占 5 个节点位
     #[test]
     fn node_and_relation_budgets_are_enforced() {
         let nodes: Vec<Memory> = (0..9)
@@ -500,9 +631,61 @@ mod tests {
 
         assert_eq!(
             lines.len(),
-            KNOWLEDGE_TOP_K as usize + RELATION_TOP_K,
+            KNOWLEDGE_TOP_K + RELATION_TOP_K,
             "应为 5 个节点 + 4 条边"
         );
-        assert!(lines[KNOWLEDGE_TOP_K as usize].contains("--rel-->"));
+        assert!(lines[KNOWLEDGE_TOP_K].contains("--rel-->"));
+    }
+
+    /// 边池 = 检索路 + 图谱路，同一条边只渲染一次
+    ///
+    /// 两条路大范围重叠（都是命中节点的出入边），不去重会让 prompt 里
+    /// 同一条关系重复出现，白占边预算。
+    #[test]
+    fn edges_from_both_paths_are_merged_without_duplicates() {
+        let edge = relation("k1", "k2", "depends_on");
+        // 检索结果里带了这条边，图谱扩展又拉回来同一条
+        let hits = vec![node("k1", "A", "a"), node("k2", "B", "b"), edge.clone()];
+        let graph_edges = vec![edge];
+
+        let lines = build_knowledge_lines(&hits, &[], &graph_edges);
+
+        let edge_lines: Vec<&String> = lines.iter().filter(|l| l.contains("-->")).collect();
+        assert_eq!(edge_lines.len(), 1, "同一条边只渲染一次: {lines:?}");
+    }
+
+    /// 两端都命中的边优先于「weight 更高但远端没命中」的边
+    ///
+    /// 「A 依赖 B」只有 A、B 都在本轮上下文里才闭环；远端缺席时读者拿到的是
+    /// 半条信息，weight 再高也不该挤掉完整的那条。
+    #[test]
+    fn edge_with_both_ends_hit_outranks_heavier_dangling_edge() {
+        let hits = vec![node("k1", "A", "a"), node("k2", "B", "b")];
+        // k9 只在邻居里（用于取名），不算命中
+        let neighbors = vec![node("k9", "远端", "d")];
+        let relations = vec![
+            relation_with_weight("k1", "k9", "weak_link", Some(0.95)),
+            relation_with_weight("k1", "k2", "strong_link", Some(0.10)),
+        ];
+
+        let lines = build_knowledge_lines(&hits, &neighbors, &relations);
+
+        assert!(lines[2].contains("strong_link"), "完整边应排前: {lines:?}");
+        assert!(lines[3].contains("weak_link"));
+    }
+
+    /// 同样两端命中的两条边，按 weight 降序
+    #[test]
+    fn edges_of_equal_completeness_are_ordered_by_weight() {
+        let hits = vec![node("k1", "A", "a"), node("k2", "B", "b")];
+        let relations = vec![
+            relation_with_weight("k1", "k2", "light", Some(0.1)),
+            relation_with_weight("k1", "k2", "heavy", Some(0.9)),
+        ];
+
+        let lines = build_knowledge_lines(&hits, &[], &relations);
+
+        assert!(lines[2].contains("heavy"), "weight 高的排前: {lines:?}");
+        assert!(lines[3].contains("light"));
     }
 }

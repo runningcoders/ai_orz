@@ -1,18 +1,35 @@
 //! 策略引擎（通用判断框架，不感知业务语义）
 //!
 //! 设计要点：
-//! - Policy trait：evaluate 返回命中的策略 id 列表（空 = 未命中）
-//! - Metrics：HashMap 封装，think_loop 每轮构造
-//! - PolicyGroup：本身实现 Policy，支持 And/Or 嵌套组合
-//! - PolicyBuilder：with + build(And) / or(Or)
-//! - action()：命中后可选携带的通用处置动作（Deny/Confirm/Audit），
+//! - [`Policy`]：evaluate 返回命中的策略 id 列表（空 = 未命中）
+//! - [`Metrics`]：HashMap 封装的本轮事实桶，每轮构造
+//! - `PolicyGroup`：本身实现 Policy，支持 And/Or 嵌套组合
+//! - `action()`：命中后可选携带的通用处置动作（Deny/Confirm/Audit），
 //!   默认 None = 策略仅输出命中、动作由业务侧映射（原行为）；
 //!   新领域（如 shell 拦截）可覆写 action() 声明式携带动作。
+//!
+//! 策略是分方向的：**同一方向上的策略共享一套骨架**，不同方向各自扩展，
+//! 但都长在 [`Policy`] 这棵树上，而不是彼此无关的平行 trait。
+//! 当前唯一的分支是「需要外部决策」：[`DecisionPolicy`] 继承 [`Policy`]，
+//! 把「问什么 → 读答案 → 判命中」固定成默认实现，场景只填三个点。
+//! 决策契约（请求/答案的数据形状 + 事实桶）在本模块的 [`decision`] 子模块，
+//! 执行在 DAL。
+//!
+//! 为什么契约不单独开一个 `pkg::decision` 包：`Metrics` 本身就是策略的输入桶
+//! （`Policy::evaluate(&Metrics)`），决策契约也只有策略和它的执行方（DAL）在认。
+//! 拆成同级包会让同一个概念分居两个目录，且多出一条 `policy → decision` 的
+//! 包内依赖——合并成子模块后对外路径仍是 `pkg::policy::{DecisionRequest, Metrics}`。
 
 pub mod builtin;
+pub mod decision;
+pub mod forms;
 
-use serde::Serialize;
-use std::collections::HashMap;
+pub use decision::{
+    DecisionAnswers, DecisionRequest, DecisionValue, Grade, Metrics, PickOne, QuestionSpec,
+};
+pub use forms::{
+    Candidate, KEY_CANDIDATES, KEY_QUESTION, PickOnePolicy, PresencePolicy, RankPolicy, ScorePolicy,
+};
 
 /// 引擎级通用处置动作（命中后可选携带）
 ///
@@ -49,6 +66,10 @@ impl PolicyAction {
 /// - is_triggered 是 trait 级默认方法，基于 evaluate 判断
 /// - action 是 trait 级默认方法（默认 None）：策略可选择命中后携带
 ///   通用处置动作；未覆写时动作映射仍由业务侧处理（向后兼容）
+/// - `prepare` 是可选能力：策略若需外部决策，覆写它声明请求
+///   （默认空 = 纯本地可算）。需要外部决策的策略**不要直接实现本 trait**，
+///   而是实现 [`DecisionPolicy`] —— 那是本 trait 在「做决策」方向上的分支，
+///   骨架（prepare/evaluate）已经写好，只需填场景相关部分。
 pub trait Policy: Send + Sync + 'static {
     /// 策略唯一 ID（如 "max_rounds" / "timeout" / "context_overflow"）
     fn id(&self) -> &str;
@@ -61,6 +82,19 @@ pub trait Policy: Send + Sync + 'static {
 
     /// 声明关注的算子名称（文档化依赖，开发时可校验 Metrics 是否包含）
     fn required_metrics(&self) -> Vec<String>;
+
+    /// 阶段一（可选）：声明本次判断需要的外部决策请求
+    ///
+    /// 默认返回空 = 纯本地可算（内置阈值策略零改动）。
+    /// 决策型策略在此声明「我要问什么」，编排层收集后批量执行，
+    /// 答案写入 `Metrics::decisions`，再由 `evaluate` 消费。
+    ///
+    /// ⚠️ 本方法**不执行任何 I/O**：执行发生在编排层（唯一 async 点）。
+    /// 策略在这里只产出契约，因此仍可纯函数单测。
+    fn prepare(&self, metrics: &Metrics) -> Vec<DecisionRequest> {
+        let _ = metrics;
+        vec![]
+    }
 
     /// 评估：返回命中的策略 id 列表
     /// 空列表 = 未命中，非空 = 命中（可能多个策略同时命中）
@@ -82,56 +116,165 @@ pub trait Policy: Send + Sync + 'static {
     }
 }
 
-/// 运行时算子集合（HashMap 封装，灵活传递）
+/// 决策型策略：通用策略在「需要外部决策」这一方向上的分支
 ///
-/// think_loop 每轮构造，传给策略引擎
-/// 策略通过 required_metrics 声明依赖，运行时从 Metrics 中取值
-#[derive(Debug, Clone, Default)]
-pub struct Metrics {
-    data: HashMap<String, serde_json::Value>,
-}
+/// 它把一次外部决策的完整生命周期收拢成骨架，场景只回答三件事：
+///
+/// 1. [`scene`](DecisionPolicy::scene)：我是谁（日志/计量口径，也是 qid 命名空间）
+/// 2. [`request`](DecisionPolicy::request)：这一轮要问什么（纯函数，无 I/O）
+/// 3. [`judge`](DecisionPolicy::judge)：答案落到我身上算不算命中（纯函数）
+///
+/// 其余都由默认实现完成：
+/// - `prepare`（[`decision_prepare`](DecisionPolicy::decision_prepare)）：
+///   把 `request` 的可选结果摊平成批次；
+/// - `evaluate`（[`decision_evaluate`](DecisionPolicy::decision_evaluate)）：
+///   没拿到答案 → 未命中，拿到了 → 交给 `judge`；
+/// - [`pick_ranked`](DecisionPolicy::pick_ranked)：一次 Pick 的全选项概率
+///   按阈值 + 上限截成保留集（「重排」型场景的通用取值逻辑）。
+///
+/// 💡 实现者仍须写 `impl Policy`（trait 继承不继承默认体），
+/// 把 `prepare` / `evaluate` 两行转发到骨架即可，描述类方法按场景填。
+/// 这样所有「做决策」的策略都在这一个分支下，既能被 `PolicyGroup` 组合、
+/// 也能被编排层统一用 `prepare → decide → evaluate` 驱动。
+pub trait DecisionPolicy: Policy {
+    /// 场景标识（日志/计量口径，也是 qid 命名空间前缀）
+    ///
+    /// ⚠️ qid 必须带场景前缀（如 `memory_relevance.primary`）：
+    /// 所有场景的答案落在同一张表里，裸 id 会跨场景静默覆盖。
+    fn scene(&self) -> &'static str;
 
-impl Metrics {
-    pub fn new() -> Self {
-        Self::default()
+    /// 构造本轮决策请求；`None` = 本轮无需决策（一次调用都不发）
+    ///
+    /// ⚠️ 纯函数：不执行 I/O。执行发生在编排层（唯一 async 点）。
+    fn request(&self, metrics: &Metrics) -> Option<DecisionRequest>;
+
+    /// 答案 → 命中信号（纯函数）
+    ///
+    /// 只有确实拿到答案时才会被调用（空答案由骨架拦截），
+    /// 因此这里可以放心读 `answers`；但仍需区分题型/字段是否可用。
+    fn judge(&self, metrics: &Metrics, answers: &DecisionAnswers) -> Vec<String>;
+
+    /// 场景内的题 id（统一加前缀，避免跨场景撞名字）
+    fn qid(&self, name: &str) -> String {
+        format!("{}.{}", self.scene(), name)
     }
 
-    /// 链式添加算子
-    pub fn with(mut self, key: &str, value: impl Serialize) -> Self {
-        if let Ok(v) = serde_json::to_value(value) {
-            self.data.insert(key.to_string(), v);
+    /// 主问题 id：`request` 与取值逻辑共用同一道题
+    fn primary_qid(&self) -> String {
+        self.qid("primary")
+    }
+
+    /// 骨架①：把场景请求摊平成批次（`Policy::prepare` 的转发目标）
+    fn decision_prepare(&self, metrics: &Metrics) -> Vec<DecisionRequest> {
+        self.request(metrics).into_iter().collect()
+    }
+
+    /// 骨架②：答案注入后的判定（`Policy::evaluate` 的转发目标）
+    ///
+    /// 「没问」与「问了没答」都算未命中，绝不压成「判断为否」。
+    fn decision_evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        match metrics.decisions() {
+            Some(answers) if !answers.is_empty() => self.judge(metrics, answers),
+            _ => Vec::new(),
         }
-        self
     }
 
-    pub fn get_u64(&self, key: &str) -> Option<u64> {
-        self.data.get(key).and_then(|v| v.as_u64())
+    /// 形态读取①：单选结论（置信度达标才算拿到）
+    ///
+    /// 与 [`pick_ranked`](Self::pick_ranked) 的分工：那个要「全序」，这个只要「选中项」。
+    /// `None` = 没答 / 形态不符 / 置信度不足，调用方按「没有判断」处理。
+    fn pick_one(&self, metrics: &Metrics, min_confidence: f32) -> Option<PickOne> {
+        match metrics.decision(&self.primary_qid())? {
+            DecisionValue::Pick {
+                chosen, confidence, ..
+            } if *confidence >= min_confidence => Some(PickOne {
+                option: chosen.clone(),
+                confidence: *confidence,
+            }),
+            _ => None,
+        }
     }
 
-    pub fn get_bool(&self, key: &str) -> Option<bool> {
-        self.data.get(key).and_then(|v| v.as_bool())
+    /// 形态读取②：分级结论（分数 + 置信度）
+    ///
+    /// `None` = 没答 / 形态不符 / 置信度不足。
+    fn grade(&self, metrics: &Metrics, min_confidence: f32) -> Option<Grade> {
+        match metrics.decision(&self.primary_qid())? {
+            DecisionValue::Grade { score, confidence } if *confidence >= min_confidence => {
+                Some(Grade {
+                    score: *score,
+                    confidence: *confidence,
+                })
+            }
+            _ => None,
+        }
     }
 
-    pub fn get_f64(&self, key: &str) -> Option<f64> {
-        self.data.get(key).and_then(|v| v.as_f64())
+    /// 形态读取③：存在性概率（`noul` 不带置信度，所以只给阈值判断）
+    fn presence(&self, metrics: &Metrics) -> Option<f32> {
+        match metrics.decision(&self.primary_qid())? {
+            DecisionValue::Presence { value } => Some(*value),
+            _ => None,
+        }
     }
 
-    /// 读取字符串算子（shell 拦截等文本类策略使用）
-    pub fn get_str(&self, key: &str) -> Option<&str> {
-        self.data.get(key).and_then(|v| v.as_str())
-    }
+    /// 骨架③：一次 Pick 的全选项概率 → 保留集（按相关性降序）
+    ///
+    /// - `options`：合法选项 id，**顺序即语义序**（同分兜底 + 幻觉过滤）
+    /// - `threshold`：低于此权重视为不相关
+    /// - `keep`：保留上限
+    ///
+    /// 返回 `None` = 答案不可用（没答 / 不是 Pick / 权重表为空 / 无合法 id），
+    /// 调用方必须退回老路径，不得当成「全部不相关」。
+    /// 被模型选中的那条**无条件保留**：整批权重都偏低时也不清空召回。
+    fn pick_ranked(
+        &self,
+        metrics: &Metrics,
+        options: &[String],
+        threshold: f32,
+        keep: usize,
+    ) -> Option<Vec<String>> {
+        let qid = self.primary_qid();
+        let Some(DecisionValue::Pick {
+            chosen, weights, ..
+        }) = metrics.decision(&qid)
+        else {
+            return None;
+        };
+        if weights.is_empty() || keep == 0 {
+            return None;
+        }
 
-    /// 读取字符串列表算子（如路径白名单）
-    pub fn get_str_list(&self, key: &str) -> Vec<String> {
-        self.data
-            .get(key)
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default()
+        // 模型可能编造 id：只认选项集内的，顺序按选项原序兜底
+        let rank_of: std::collections::HashMap<&str, usize> = options
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.as_str(), i))
+            .collect();
+        let mut ranked: Vec<(&String, f32)> = weights
+            .iter()
+            .filter(|(id, _)| rank_of.contains_key(id.as_str()))
+            .map(|(id, w)| (id, *w))
+            .collect();
+        if ranked.is_empty() {
+            return None;
+        }
+        ranked.sort_by(|a, b| {
+            let by_weight = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
+            let pos = |id: &str| rank_of.get(id).copied().unwrap_or(usize::MAX);
+            by_weight.then_with(|| pos(a.0.as_str()).cmp(&pos(b.0.as_str())))
+        });
+
+        let mut kept: Vec<String> = Vec::new();
+        for (id, weight) in ranked {
+            if kept.len() >= keep {
+                break;
+            }
+            if weight >= threshold || id.as_str() == chosen.as_str() {
+                kept.push(id.clone());
+            }
+        }
+        (!kept.is_empty()).then_some(kept)
     }
 }
 
@@ -156,6 +299,7 @@ pub struct PolicyGroup {
 }
 
 impl PolicyGroup {
+    /// 按关系组合一组策略
     pub fn new(policies: Vec<Box<dyn Policy>>, relation: PolicyRelation) -> Self {
         let connector = match relation {
             PolicyRelation::And => "And",
@@ -225,6 +369,17 @@ impl Policy for PolicyGroup {
         self.required_metrics.clone()
     }
 
+    /// 收集全部子策略的决策请求
+    ///
+    /// 与 And / Or 关系无关：每个子判断都需要自己的资料，
+    /// 组合语义只在命中合并阶段生效（`evaluate` 已天然处理）。
+    fn prepare(&self, metrics: &Metrics) -> Vec<DecisionRequest> {
+        self.policies
+            .iter()
+            .flat_map(|p| p.prepare(metrics))
+            .collect()
+    }
+
     fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
         match self.relation {
             PolicyRelation::And => {
@@ -284,6 +439,7 @@ pub struct PolicyBuilder {
 }
 
 impl PolicyBuilder {
+    /// 空构造器
     pub fn new() -> Self {
         Self {
             policies: Vec::new(),

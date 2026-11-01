@@ -376,10 +376,8 @@ impl RuntimeDomainImpl {
                 );
                 let decision = cerebellum_router::route_with_default_dao(
                     &ctx,
-                    cerebellum,
+                    &brain,
                     rc.enable_cerebellum_route,
-                    &brain.agent_id,
-                    &brain.agent_name,
                     last_user_text,
                 )
                 .await;

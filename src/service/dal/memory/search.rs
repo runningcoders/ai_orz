@@ -1,6 +1,6 @@
 //! 混合搜索与关系型查询（关键词 + 向量语义 + 结果聚合排序）
 
-use super::{MemoryDalImpl, drop_dangling_relations};
+use super::{MemoryDalImpl, apply_entity_limit, drop_dangling_relations};
 use crate::models::memory::{LongTermKnowledgeNodePo, Memory, MemoryPo, ShortTermMemoryIndexPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams};
 use crate::pkg::RequestContext;
@@ -111,8 +111,11 @@ impl MemoryDalImpl {
         });
 
         // 5. 应用 limit
+        //
+        // ⚠️ 只约束实体条目（知识节点 / 短期记忆），关系边不占名额。
+        // 边数量本身由 `drop_dangling_relations` 与命中节点数间接约束。
         if let Some(limit) = search.filters.limit {
-            results.truncate(limit);
+            apply_entity_limit(&mut results, limit);
         }
 
         Ok(results)

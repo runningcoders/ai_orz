@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 524,
-  "total_bytes": 10388177,
+  "total": 525,
+  "total_bytes": 10422278,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -607,12 +607,33 @@
     {
       "id": "02-Agent运行时",
       "counts": {
-        "A-设计": 4,
+        "A-设计": 5,
         "B-落地方案": 1,
         "C-知识": 19
       },
-      "total": 24,
+      "total": 25,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md",
+          "name": "cerebellum_decision_strategy_design",
+          "title": "决策型策略设计（策略引擎承载小脑场景）",
+          "bytes": 24529,
+          "status": "现行",
+          "scope": [
+            "src/pkg/policy/mod.rs",
+            "src/pkg/policy/builtin.rs",
+            "common/src/api/cerebellum.rs",
+            "src/service/dal/brain.rs",
+            "src/service/domain/runtime/cerebellum_router.rs",
+            "src/service/domain/runtime/think_loop.rs"
+          ],
+          "related": [
+            "02-Agent运行时/A-设计/thinking_task_policy_engine_design.md",
+            "02-Agent运行时/A-设计/runtime_design.md",
+            "02-Agent运行时/C-知识/小脑快判断（System One）.md"
+          ]
+        },
         {
           "tier": "A-设计",
           "path": "02-Agent运行时/A-设计/runtime_design.md",
@@ -776,7 +797,7 @@
           "path": "02-Agent运行时/C-知识/小脑快判断（System One）.md",
           "name": "小脑快判断（System One）",
           "title": "小脑快判断（System One）",
-          "bytes": 27948
+          "bytes": 30789
         },
         {
           "tier": "C-知识",
@@ -811,7 +832,7 @@
           "path": "02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md",
           "name": "策略引擎与 Shell 拦截层",
           "title": "策略引擎与 Shell 拦截层",
-          "bytes": 25043
+          "bytes": 31774
         },
         {
           "tier": "C-知识",

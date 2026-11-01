@@ -5,6 +5,14 @@
 //! - `CerebellumAnswer`: 类型化决策输出（带概率）
 //! - `CerebellumRequest` / `CerebellumResponse`: 请求/响应包络
 //! - `CerebellumUsage` / `ThinkFastResult`: token 用量与快判断结果
+//! - `DegradedReason`: 降级口径（跨 DAL / Domain 共享，前端可展示）——
+//!   非线路格式，但同样需要跨层与跨端同一份词表，故一并放这里
+//!
+//! 📍 **为什么在 common**：这是**跨进程共享的协议线格式**（小脑服务商的
+//! REST 请求/响应），与服务端实现无关。放 common 使前端可复用同一套结构
+//! 渲染决策摘要与调试面板，避免前后端各自维护一份必然漂移的口径。
+//! ⚠️ 与本文件区分：`pkg::policy` 的 `DecisionRequest` / `DecisionValue` 是
+//! **进程内策略引擎抽象**，不是协议 DTO，**不要**搬到这里。
 //!
 //! 协议口径（官方公开文档，多来源交叉实证；未经真实端点实测，
 //! 连通性 Spike 顺延至凭据到位后二期启动前集中纠偏）：
@@ -15,7 +23,7 @@
 //! - score：criteria 为有序等级数组（2~10 级），输出 {type,score,probabilities,legend,confidence}
 //! - noul：仅 instructions，输出 {type,noul}（0~1 概率，无 confidence）
 
-use common::error::{Result, err};
+use crate::error::{Result, err};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -40,7 +48,7 @@ pub enum QuestionType {
 }
 
 /// 问题评估准则（choice=选项对象 / score=有序等级数组；noul 不携带）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum QuestionCriteria {
     /// choice：选项对象（键=选项标识，值=选项描述），≤255 项
@@ -52,6 +60,7 @@ pub enum QuestionCriteria {
 /// 单个类型化问题（System One 请求侧）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CerebellumQuestion {
+    /// 题型（noul / choice / score），决定 criteria 的合法形态
     #[serde(rename = "type")]
     pub question_type: QuestionType,
     /// 问题指令（三类问题必有）
@@ -123,8 +132,10 @@ pub struct CerebellumRequest {
 /// token 用量
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CerebellumUsage {
+    /// 输入 token 数
     #[serde(default)]
     pub input_tokens: u64,
+    /// 输出 token 数
     #[serde(default)]
     pub output_tokens: u64,
 }
@@ -135,20 +146,30 @@ pub struct CerebellumUsage {
 pub enum CerebellumAnswer {
     /// choice：选中项 + 各选项概率
     Choice {
+        /// 选中的选项标识（必须出现在请求 criteria 的键集内）
         choice: String,
+        /// 该选择的置信度（0~1）
         confidence: f32,
+        /// 各选项的概率分布（键 = 选项标识）
         probabilities: BTreeMap<String, f32>,
     },
     /// score：概率加权分数（可落在两级之间）
     Score {
+        /// 概率加权分数（可落在两级之间，不一定是整数）
         score: f32,
+        /// 各等级的概率分布
         probabilities: BTreeMap<String, f32>,
+        /// 等级标签（低→高），响应可选回显
         #[serde(default)]
         legend: Vec<String>,
+        /// 该评分的置信度（0~1）
         confidence: f32,
     },
     /// noul：0~1 概率（无 confidence）
-    Noul { noul: f32 },
+    Noul {
+        /// 0~1 概率（**无 confidence**：要带置信度的二值判断请用 choice）
+        noul: f32,
+    },
 }
 
 impl CerebellumAnswer {
@@ -185,9 +206,12 @@ impl CerebellumAnswer {
 /// 由 client 层容错跳过，不拖垮整批结果。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CerebellumResponse {
+    /// 实际执行的模型标识（服务端回显，可缺省）
     #[serde(default)]
     pub model: String,
+    /// qid → 类型化答案（单题解析失败由 client 层容错跳过）
     pub answers: BTreeMap<String, CerebellumAnswer>,
+    /// token 用量（缺失时容错为零值）
     #[serde(default)]
     pub usage: CerebellumUsage,
 }
@@ -200,6 +224,48 @@ pub struct ThinkFastResult {
     /// 本次调用 token 用量
     pub usage: CerebellumUsage,
 }
+/// 小脑链路降级原因
+///
+/// 全链路共享：DAL 侧判定（provider / 调用失败 / 超时）与 Domain 侧判定
+/// （业务开关 / 上下文 / 判据）产出不同变体。**「没配小脑」与「被开关关掉」
+/// 必须是两个变体**——否则日志与前端无法区分配置缺失和人为关闭，排查时
+/// 会把「有人关了开关」误读成「环境没配」。
+///
+/// ⚠️ 降级 ≠ 判断为否：任何变体都只能让决策策略走「未命中」，
+/// 不允许压成「否」（与 `pkg::policy::Metrics::decision` 的约定同源）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DegradedReason {
+    /// 小脑 provider 未装配，或已装配但 api_key 为空（DAL 侧判定）
+    NoProvider,
+    /// 业务开关关闭（Domain 侧判定，如 `enable_cerebellum_route = false`）
+    Disabled,
+    /// 上下文不足，无法构造请求（如没有用户消息）
+    NoUserMessage,
+    /// 调用失败：网络 / 协议 / 服务端错误
+    CallError,
+    /// 超时（超出 provider 配置的 timeout_ms，缺省 800ms）
+    Timeout,
+    /// 低置信：低于该场景声明的置信阈值
+    LowConfidence,
+    /// 答案形态不符合预期（题型不符 / 未知选项）
+    UnsupportedAnswer,
+}
+
+impl DegradedReason {
+    /// 稳定字符串口径（日志与前端展示用，禁止作为业务分支判断依据）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DegradedReason::NoProvider => "no_provider",
+            DegradedReason::Disabled => "disabled",
+            DegradedReason::NoUserMessage => "no_user_message",
+            DegradedReason::CallError => "call_error",
+            DegradedReason::Timeout => "timeout",
+            DegradedReason::LowConfidence => "low_confidence",
+            DegradedReason::UnsupportedAnswer => "unsupported_answer",
+        }
+    }
+}
+
 #[cfg(test)]
-#[path = "cerebellum_types_tests.rs"]
+#[path = "cerebellum_tests.rs"]
 mod cerebellum_protocol_tests;

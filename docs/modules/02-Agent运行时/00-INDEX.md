@@ -6,10 +6,11 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 24 篇：A 设计 4 · B 落地方案 1 · C 知识 19。
+本模块共 25 篇：A 设计 5 · B 落地方案 1 · C 知识 19。
 
 ## A 设计（design）
 
+- [决策型策略设计（策略引擎承载小脑场景）](<A-设计/cerebellum_decision_strategy_design.md>) — `现行`
 - [Runtime Domain 设计](<A-设计/runtime_design.md>) — `现行`
 - [思考生命周期设计（Think Lifecycle）](<A-设计/think_lifecycle_design.md>) — `现行`
 - [思考图引擎改造设计（Awaken 主思考路径节点化）](<A-设计/thinking_graph_engine_design.md>) — `落地中`

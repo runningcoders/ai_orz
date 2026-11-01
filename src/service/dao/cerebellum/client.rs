@@ -8,11 +8,11 @@
 //!   单个答案解析失败 → 容错跳过（协议版本演进容忍，不拖垮整批结果）；
 //!   config 解析失败 → 超时兜底默认值（与 cortex resolve_access_mode 同款容错口径）
 
-use crate::models::cerebellum_types::{
-    CerebellumAnswer, CerebellumQuestion, CerebellumRequest, CerebellumUsage, ThinkFastResult,
-};
 use crate::models::model_provider::{ModelProviderConfig, ModelProviderPo};
 use crate::pkg::RequestContext;
+use common::api::cerebellum::{
+    CerebellumAnswer, CerebellumQuestion, CerebellumRequest, CerebellumUsage, ThinkFastResult,
+};
 use common::error::{Error, ErrorCode, Result, err};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -21,7 +21,7 @@ use std::time::Duration;
 use super::{DEFAULT_CEREBELLUM_TIMEOUT_MS, DEFAULT_SYSTEM_ONE_BASE_URL};
 
 /// 解析请求超时（毫秒）：config.timeout_ms 优先；缺省 / 脏 config 兜底默认值
-fn resolve_timeout_ms(ctx: &RequestContext, provider: &ModelProviderPo) -> u64 {
+pub(crate) fn resolve_timeout_ms(ctx: &RequestContext, provider: &ModelProviderPo) -> u64 {
     match serde_json::from_str::<ModelProviderConfig>(&provider.config) {
         Ok(cfg) => cfg.timeout_ms.unwrap_or(DEFAULT_CEREBELLUM_TIMEOUT_MS),
         Err(e) => {
@@ -260,8 +260,11 @@ mod cerebellum_client_tests {
         assert!(resolve_endpoint(&po).is_err());
     }
 
-    #[test]
-    fn timeout_uses_config_then_default() {
+    #[tokio::test]
+    async fn timeout_uses_config_then_default() {
+        // RequestContext::new_system() 依赖全局 Storage 单例（builder 未显式
+        // 注入 storage 时回退全局），故先初始化——同其它 DAO 测试的约定。
+        crate::pkg::storage::test_support::init_for_test().await;
         let ctx = RequestContext::new_system();
         assert_eq!(
             resolve_timeout_ms(&ctx, &provider("{}")),

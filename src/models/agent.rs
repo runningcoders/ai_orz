@@ -85,6 +85,14 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub cerebellum_trivial_direct: bool,
 
+    /// 检索结果小脑精选（宽召回 → 小脑重排 → 权重阈值截断）：默认关
+    ///
+    /// 只控制「要不要用小脑筛」，不控制召回宽度：候选池恒为渲染预算的 3 倍
+    /// （`retrieve_node::recall_width`），开关只决定这池子里哪几条进 prompt。
+    /// 关闭或小脑降级时按召回序取前 5 条，prompt 预算不变。
+    #[serde(default)]
+    pub enable_memory_rerank: bool,
+
     /// 是否启用轮级自省节点（reflect）：默认关
     ///
     /// 打开后，同一工具累计调用达到阈值时，环图会在 evaluate 与下一轮 think
@@ -155,6 +163,7 @@ impl Default for AgentRuntimeConfig {
             compaction_threshold_tokens: common::config::DEFAULT_COMPACTION_THRESHOLD_TOKENS,
             enable_cerebellum_route: true,
             cerebellum_trivial_direct: false,
+            enable_memory_rerank: false,
             enable_round_reflect: false,
             external_config: None,
             thinking_intensity: None,

@@ -300,16 +300,12 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
-        async fn think_fast(
+        async fn decide(
             &self,
             _ctx: RequestContext,
-            _provider: &crate::models::model_provider::ModelProviderPo,
-            _state: serde_json::Value,
-            _questions: std::collections::BTreeMap<
-                String,
-                crate::models::cerebellum_types::CerebellumQuestion,
-            >,
-        ) -> Result<crate::models::cerebellum_types::ThinkFastResult> {
+            _brain: &crate::models::brain::Brain,
+            _requests: Vec<crate::pkg::policy::DecisionRequest>,
+        ) -> crate::service::dal::brain::DecisionOutcome {
             unimplemented!("not needed by tool execution routing tests")
         }
 

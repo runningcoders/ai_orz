@@ -39,6 +39,7 @@ pub mod blueprint;
 pub mod context;
 pub mod discover_node;
 pub mod intent_node;
+pub mod memory_relevance;
 pub mod nodes;
 pub mod retrieve_node;
 pub mod runner;

@@ -2,9 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/policy/mod.rs](src/pkg/policy/mod.rs) — Policy trait 完整定义 + PolicyAction 枚举 + Metrics + PolicyGroup + PolicyBuilder + policy_set! 宏
-- [src/pkg/policy/builtin.rs](src/pkg/policy/builtin.rs) — 7 个内置策略：MaxRounds / Timeout / ContextOverflow / UserCancel / TokenBudget / FinalAnswer / ConsecutiveLlmErrors / NoProgress
+- [src/pkg/policy/mod.rs](src/pkg/policy/mod.rs) — Policy trait 完整定义 + PolicyAction 枚举 + PolicyGroup + PolicyBuilder + policy_set! 宏 + 决策分支 DecisionPolicy（默认骨架）
+- [src/pkg/policy/builtin.rs](src/pkg/policy/builtin.rs) — 11 个内置策略：MaxRounds / Timeout / ContextOverflow / UserCancel / TokenBudget / FinalAnswer / ConsecutiveLlmErrors / NoProgress / Threshold / FieldEquals / CompactionThreshold
 - [src/pkg/policy/tests.rs](src/pkg/policy/tests.rs) — PolicyAction 动作测试 + policy_set! 宏 DSL 测试 + 内置策略组合测试
+- [src/pkg/policy/decision/mod.rs](src/pkg/policy/decision/mod.rs) — 决策契约：DecisionRequest / QuestionSpec / DecisionValue / DecisionAnswers / Metrics（含 decisions 答案口）
+- [src/pkg/policy/forms/mod.rs](src/pkg/policy/forms/mod.rs) — 四种决策形态实现类：RankPolicy / PickOnePolicy / ScorePolicy / PresencePolicy（+ Candidate）
+- [src/service/dal/brain.rs](src/service/dal/brain.rs) — BrainDal::decide（唯一执行点：请求 → 协议 → 答案，永不 Err）
+- [src/service/domain/runtime/cerebellum_router.rs](src/service/domain/runtime/cerebellum_router.rs) — PickOnePolicy 的第一个生产用例（三分类翻译）
+- [src/service/domain/runtime/legacy_awaken/memory_relevance.rs](src/service/domain/runtime/legacy_awaken/memory_relevance.rs) — RankPolicy 的第一个生产用例（检索结果精选）
 - [src/pkg/tool_registry/shell_policy.rs](src/pkg/tool_registry/shell_policy.rs) — ShellRulePolicy 声明式结构 + CommandMatcher 四 matcher + RULE_DEFS 5 条静态规则表 + evaluate 入口
 - [src/pkg/tool_registry/shell_exec.rs#L266-L342](src/pkg/tool_registry/shell_exec.rs#L266-L342) — shell_exec call 内 shell_policy::evaluate + env 注入
 - [src/pkg/tool_registry/shell_tool.rs#L122-L178](src/pkg/tool_registry/shell_tool.rs#L122-L178) — shell_tool execute_shell_call 内 shell_policy::evaluate
@@ -54,9 +59,13 @@ PolicyAction 三值枚举（Deny/Confirm/Audit）让策略可携带处置动作�
 
 ```
 pkg/policy/
-├── mod.rs            Policy trait + PolicyAction + Metrics + PolicyGroup + PolicyBuilder + policy_set! 宏
-├── builtin.rs        7 个内置策略（think_loop 用） + ShellRulePolicy（shell_policy 用，独立文件）
-└── tests.rs          单测：PolicyAction 动作 / policy_set! 宏 DSL / 内置策略组合
+├── mod.rs            Policy trait + PolicyAction + PolicyGroup + PolicyBuilder + policy_set! 宏 + DecisionPolicy
+├── builtin.rs        11 个内置策略（think_loop 用） + ShellRulePolicy（shell_policy 用，独立文件）
+├── decision/         决策契约（纯数据，只依赖 serde）
+│   └── mod.rs        DecisionRequest / QuestionSpec / DecisionValue / DecisionAnswers / Metrics
+├── forms/             四种决策形态实现类（业务只做两端映射）
+│   └── mod.rs        RankPolicy / PickOnePolicy / ScorePolicy / PresencePolicy + Candidate
+└── tests.rs          单测：PolicyAction 动作 / policy_set! 宏 DSL / 内置策略组合 / 决策骨架
 pkg/tool_registry/
 ├── shell_policy.rs   ShellRulePolicy 实现 + CommandMatcher + RULE_DEFS 5 条规则表 + evaluate 入口
 ├── shell_exec.rs     shell_exec 内置工具（call 内 evaluate + env 注入）
@@ -73,11 +82,13 @@ src/service/domain/runtime/
 |------|------|------|
 | Policy trait | src/pkg/policy/mod.rs#L52-L83 | 基础判断单元；id/name/condition_desc/required_metrics/evaluate/is_triggered/action；action 默认 None |
 | PolicyAction | src/pkg/policy/mod.rs#L21-L43 | 三值枚举 Deny/Confirm/Audit + is_blocking() + reason() 辅助 |
-| Metrics | src/pkg/policy/mod.rs#L89-L136 | HashMap 封装 with/get_u64/get_bool/get_f64/get_str/get_str_list |
+| Metrics | src/pkg/policy/decision/mod.rs | HashMap 封装 with/get_u64/get_bool/get_f64/get_str/get_str_list/get_as + `decisions()` / `decision(qid)` 答案口 |
 | PolicyGroup | src/pkg/policy/mod.rs#L149-L276 | 自身实现 Policy；And 全部命中 / Or 任一命中；自动聚合 action（And 全部命中取首个 Some，Or 按声明顺序取首个命中且携带动作的） |
 | PolicyBuilder | src/pkg/policy/mod.rs#L282-L328 | with_policy + build(And) / or(Or)；消除手工 Box::new 样板 |
 | policy_set! 宏 | src/pkg/policy/mod.rs#L375-L431 | 纯 OR `policy_set! { OR { A(), B() } }` / 纯 AND `policy_set! { AND { A(), B() } }` / 混合模式（平铺策略参与外层 AND，OR/AND {} 子组内部按指定关系） |
-| 内置策略 builtin | src/pkg/policy/builtin.rs#L1-L361 | 8 个：MaxRounds / Timeout / ContextOverflow / UserCancel / TokenBudget / FinalAnswer / ConsecutiveLlmErrors / NoProgress |
+| 内置策略 builtin | src/pkg/policy/builtin.rs | 11 个：MaxRounds / Timeout / ContextOverflow / UserCancel / TokenBudget / FinalAnswer / ConsecutiveLlmErrors / NoProgress / Threshold / FieldEquals / CompactionThreshold |
+| DecisionPolicy | src/pkg/policy/mod.rs | 决策型策略分支（super trait = Policy）；固定「问什么 → 读答案 → 判命中」骨架，场景只填 scene/request/judge |
+| 决策形态 | src/pkg/policy/forms/mod.rs | RankPolicy（Pick→有序保留集）/ PickOnePolicy（Pick→选中项）/ ScorePolicy（Grade→分数）/ PresencePolicy（Presence→概率）；`impl Policy` 由宏生成 |
 | ShellRulePolicy | src/pkg/tool_registry/shell_policy.rs#L76-L177 | 声明式结构（id/name/condition_desc/matcher/action/reason）；实现 Policy trait 并覆写 action() 返回 PolicyAction |
 | RULE_DEFS | src/pkg/tool_registry/shell_policy.rs#L180-L231 | 5 条静态规则：工作目录越界 Confirm / 身份边界越界 Confirm / 破坏性 fs Confirm / git push-reset-clean Confirm / git commit Audit |
 | CommandMatcher | src/pkg/tool_registry/shell_policy.rs#L45-L62 | 四 matcher：ScopeOutsideAllowedPaths / ScopeIdentityBoundary / Regex / Subcommand |
@@ -340,7 +351,9 @@ pub fn evaluate(input: ShellPolicyInput<'_>) -> ShellPolicyVerdict {
 
 **env 注入是结构性出口步骤**：两条执行链路都注入 AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID（不可绕），供 git commit-msg hook（pkg/git_workspace.rs）读取追加 Task-Id / Agent-Id trailer。git commit 这条 Audit 规则正是产物锚点产生时刻的审计标记。
 
-### 6. 8 个内置策略一览
+### 6. 内置策略一览
+
+think_loop 装配的 8 个：
 
 | 策略 | id | 评估因子 | 条件 | 禁用条件 | think_loop 映射 |
 |------|----|----------|------|----------|-----------------|
@@ -353,11 +366,71 @@ pub fn evaluate(input: ShellPolicyInput<'_>) -> ShellPolicyVerdict {
 | ConsecutiveLlmErrorsPolicy | llm_error_budget | llm_consecutive_errors | errors ≥ budget | budget=0 | 传播错误 |
 | NoProgressPolicy | no_progress | tool_calls.{name} | 任一受限工具达上限 | tool_limits 空 | MaxRoundsExceeded |
 
+另 3 个是通用构造器，供不同场景参数化复用（不自带固定 id）：
+
+| 策略 | 评估因子 | 用法 |
+|------|----------|------|
+| ThresholdPolicy | 任意数值 key | `new(id, name, metric_key, threshold, label, unit)`——条件描述由构造参数拼出 |
+| FieldEqualsPolicy | 任意字符串 key | `new(id, name, metric_key, expected, desc)`——字段全等即命中 |
+| CompactionThresholdPolicy | `turn_tokens` | 包装 `ThresholdPolicy`，id 固定 `compaction_threshold`（就地压缩触发） |
+
+### 7. 决策型策略分支：DecisionPolicy 与四形态
+
+上面 11 个都是**本地可算**的策略（真值全在 `Metrics` 里）。当判断依据只能由外部模型给（小脑 System One）时，用 [`DecisionPolicy`](src/pkg/policy/mod.rs) 这个分支——它仍是 `Policy`，所以能直接进 `PolicyGroup`，组合语义不变。
+
+```rust
+pub trait DecisionPolicy: Policy {
+    // —— 场景必须实现：我是谁 / 问什么 / 算不算命中 ——
+    fn scene(&self) -> &'static str;
+    fn request(&self, metrics: &Metrics) -> Option<DecisionRequest>;
+    fn judge(&self, metrics: &Metrics, answers: &DecisionAnswers) -> Vec<String>;
+
+    // —— 默认实现（骨架）：请求摊平 / 无答案语义 / qid 前缀 / 按权重取回 ——
+    fn qid(&self, name: &str) -> String;              // "{scene}.{name}"
+    fn primary_qid(&self) -> String;                  // "{scene}.primary"
+    fn decision_prepare(&self, m: &Metrics) -> Vec<DecisionRequest>;  // 把 Option 摊平成批次
+    fn decision_evaluate(&self, m: &Metrics) -> Vec<String>;          // 无答案 → 未命中；有答案 → judge
+    fn pick_ranked(&self, m: &Metrics, options: &[&str], threshold: f32, keep: usize) -> Option<Vec<String>>;
+    fn pick_one(&self, m: &Metrics, min_confidence: f32) -> Option<PickOne>;
+    fn grade(&self, m: &Metrics) -> Option<Grade>;
+    fn presence(&self, m: &Metrics) -> Option<f32>;
+}
+```
+
+**关键约束：答案缺失 ≠ 判断为否。** `Metrics::decision(qid)` 返回 `None` 表示「没问 / 问了没答 / 形态不符」，调用方禁止 `unwrap_or(false)` 或 `unwrap_or_default()` —— 把未知压成否定会静默改变主流程（小脑降级时把「没判断出来」当成「判断为不需要」）。
+
+#### 四种形态（`pkg/policy/forms/`）
+
+排序 / 单选 / 打分 / 概率这四类的输入输出是确定的，因此直接提供可用的实现类，业务只做两端映射：
+
+| 形态 | 题型 | 业务提供 | 拿到 | 自带护栏 |
+|------|------|----------|------|----------|
+| `RankPolicy` | `Pick`（全选项权重） | `Candidate{id, text}` 列表 | `ranked()`：按权重降序的保留集 | 候选 < 2 不发；阈值 + 上限截断；模型编造 id 丢弃；被选中的那条不因低权重被清空 |
+| `PickOnePolicy` | `Pick` | 固定选项 + `with_state_keys` 声明透传字段 | `chosen()`：选中项 + 置信度 | 选项为空不发；置信不足视为未命中 |
+| `ScorePolicy` | `Grade` | 2~10 级等级表 | `grade()`：分数 + 置信度 | 等级数越界不发 |
+| `PresencePolicy` | `Presence` | 上下文 | `presence()`：0~1 概率 | — |
+
+多选不单独算一种：排序后按阈值截断就是多选，`RankPolicy::ranked` 一个方法覆盖。四者的 `impl Policy` 由文件内 `impl_policy_for_form!` 宏生成（纯样板），**业务侧零 impl**。
+
+#### 两个生产用例
+
+| 场景 | 形态 | 业务侧剩余代码 |
+|------|------|----------------|
+| 检索结果精选（`legacy_awaken/memory_relevance.rs`） | `RankPolicy` | `Memory → Candidate` 与 `id → Memory` 两头映射 |
+| 琐碎请求路由（`cerebellum_router.rs`） | `PickOnePolicy` | 选中项 → `Direct` / `Inject` / `Skip` 三分类翻译 |
+
+#### 执行在哪
+
+策略只产出请求契约（`prepare` 是纯函数），**执行唯一发生在 DAL**：`BrainDal::decide(ctx, brain, Vec<DecisionRequest>) -> DecisionOutcome`（永不返回 `Result`——可选增强的失败在类型上无法升级为主流程错误）。答案经 `Metrics::with_decisions` 写回，再由 `evaluate` 消费。当前 `think_loop` 的 `policy_exit` 还没接线，生产上只有节点内的两个直接调用。
+
 ## 依赖关系分析
 
 ```
 pkg/policy ← pkg/tool_registry/shell_policy  (ShellRulePolicy 实现 Policy)
 pkg/policy ← service/domain/runtime/think_loop  (build_policy_for_scene 用 policy_set!)
+pkg/policy/forms → pkg/policy/decision  (形态消费决策契约；同包内单向)
+pkg/policy/forms ← cerebellum_router / legacy_awaken::memory_relevance  (RankPolicy / PickOnePolicy 的生产用例)
+service/dal/brain ← pkg/policy/decision  (decide 只认请求/答案数据结构，不认 trait)
 shell_policy ← shell_exec / shell_tool  (双执行通道同 evaluate)
 shell_policy ← pkg/git_workspace  (env 键 ENV_TASK_ID / ENV_AGENT_ID)
 git_workspace ← shell_exec call 内 ensure_workspace_repo
@@ -413,6 +486,7 @@ think_loop → brain_dal → LLM 调用失败 → ConsecutiveLlmErrorsPolicy
 2. **声明顺序即优先级**——Or 组 evaluate 按声明顺序返回命中列表，PolicyGroup.action 按声明顺序上浮首个 Some，map_triggered_to_result 按列表顺序分派
 3. **action() 默认 None 向后兼容**——旧内置策略不覆写 action()，think_loop 按命中 id 自行映射 ThinkLoopResult；ShellRulePolicy 覆写 action() 返回 PolicyAction，evaluate 短路执行
 4. **废弃 PolicyMixed 硬软分层**——本轮迭代简化为单一 Or 组 + 统一 policy_exit，Final 轮也走策略裁决（FinalAnswerPolicy），不再分层处理
+5. **决策型策略是 Policy 的一个分支，不是平行 trait**——`DecisionPolicy: Policy` 把「请求摊平 / 缺答案语义 / 答案取用」写成默认实现，排序/单选/打分/概率四形态直接给实现类，业务只做两端映射；执行集中在 `BrainDal::decide`，策略本身保持纯函数可测
 
 ## 附录：policy_set! 宏 DSL 速查
 

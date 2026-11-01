@@ -1,9 +1,10 @@
 //! Memory DAL 查询侧测试：`query` 关系型查询（含 task / status 过滤）
 //! 与 `search` 关键词、混合、向量阈值、关系搜索。
 
+use super::apply_entity_limit;
 use super::test_support::*;
 use crate::models::memory::{
-    KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo,
+    KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, Memory, MemoryCreateParams, MemoryPo,
     ShortTermMemoryIndexPo,
 };
 use crate::models::vector::MatchType;
@@ -11,6 +12,80 @@ use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use common::enums::{KnowledgeRelationStatus, MemoryStatus};
 use common::error::Result;
 use sqlx::SqlitePool;
+
+// ========== limit 口径（纯函数，不需要数据库） ==========
+
+fn limit_fixture_node(id: &str) -> Memory {
+    Memory::new(MemoryPo::KnowledgeNode(LongTermKnowledgeNodePo {
+        id: id.to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: id.to_string(),
+        node_description: "desc".to_string(),
+        node_type: "concept".to_string(),
+        summary: String::new(),
+        tags: "[]".to_string(),
+        status: MemoryStatus::Active,
+        is_published: false,
+        created_at: 0,
+        updated_at: 0,
+    }))
+}
+
+fn limit_fixture_relation(id: &str, src: &str, dst: &str) -> Memory {
+    Memory::new(MemoryPo::Relation(KnowledgeNodeRelationPo {
+        id: id.to_string(),
+        source_node_id: src.to_string(),
+        target_node_id: dst.to_string(),
+        relation_type: "depends_on".to_string(),
+        weight: None,
+        status: KnowledgeRelationStatus::Active,
+        created_at: 0,
+        updated_at: 0,
+    }))
+}
+
+/// `limit` 只约束实体：边不占名额
+///
+/// 若边参与名额争夺，它按排序键恒排最后，`limit` 小于「实体数 + 边数」时
+/// 会被整批砍掉 —— 调用方拿到一堆孤立节点，图批次不变式名存实亡。
+#[test]
+fn entity_limit_truncates_entities_but_keeps_relations() {
+    let mut results = vec![
+        limit_fixture_node("n1"),
+        limit_fixture_node("n2"),
+        limit_fixture_node("n3"),
+        limit_fixture_relation("r1", "n1", "n2"),
+    ];
+
+    apply_entity_limit(&mut results, 1);
+
+    let entities = results
+        .iter()
+        .filter(|m| !matches!(m.po, MemoryPo::Relation(_)))
+        .count();
+    let edges = results
+        .iter()
+        .filter(|m| matches!(m.po, MemoryPo::Relation(_)))
+        .count();
+    assert_eq!(entities, 1, "实体应被截到 limit");
+    assert_eq!(edges, 1, "边不占名额，应保留");
+    // 过滤是就地保留，不打乱原顺序
+    assert!(matches!(results[0].po, MemoryPo::KnowledgeNode(_)));
+    assert!(matches!(results[1].po, MemoryPo::Relation(_)));
+}
+
+#[test]
+fn entity_limit_zero_keeps_only_relations() {
+    let mut results = vec![
+        limit_fixture_node("n1"),
+        limit_fixture_relation("r1", "n1", "n2"),
+    ];
+
+    apply_entity_limit(&mut results, 0);
+
+    assert_eq!(results.len(), 1);
+    assert!(matches!(results[0].po, MemoryPo::Relation(_)));
+}
 
 // ========== query 方法测试 ==========
 
