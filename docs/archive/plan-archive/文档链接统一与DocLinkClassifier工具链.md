@@ -5,9 +5,9 @@
 触发场景：文档中 ❌ `file:///Users/...` 硬编码本机绝对路径（换环境断链）、行号冒号 :15-42 与 fragment #L15-L42 混用、前端文档中心点击站内链接 404、CI 无链接格式门禁导致劣币驱逐良币
 关联文档段：
 - 对应 design 文档：暂无对应 design 文档（强烈建议补写）
-- Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md](docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md)
-- RAG 卡真实路径 1：[docs/wiki/knowledge/zh/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md](docs/wiki/knowledge/zh/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链.md)
-- RAG 卡真实路径 2：[docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md](docs/wiki/knowledge/zh/前端%20MarkdownRenderer%20接入%20DocLinkClassifier%20JS%20桥接：data-repo-href%20标注%20+%20点击拦截站内分发/前端%20MarkdownRenderer%20接入%20DocLinkClassifier%20JS%20桥接：data-repo-href%20标注%20+%20点击拦截站内分发.md)
+- Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md](docs/modules/12-基础设施与部署/C-知识/文档链接质量门禁.md)
+- RAG 卡真实路径 1：[docs/wiki/knowledge/zh/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md](docs/modules/06-工具与技能/C-知识/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md)
+- RAG 卡真实路径 2：[docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md](docs/modules/11-前端应用/C-知识/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md)
 
 ---
 
@@ -97,9 +97,9 @@ CI: cargo run -p ai-orz-tools --bin docs_lint    window.open(data-repo-href,
 | CI workflow | [.github/workflows/rust.yml](.github/workflows/rust.yml) | clippy step 后新增 Docs link lint step：cargo run -p ai-orz-tools --bin docs_lint |
 
 ⭐ **落地索引（四类互引）**
-- Wiki 长文：[docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md](docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md)
-- RAG 卡 1（工具链）：[docs/wiki/knowledge/zh/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md](docs/wiki/knowledge/zh/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链.md)
-- RAG 卡 2（前端桥接）：[docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md](docs/wiki/knowledge/zh/前端%20MarkdownRenderer%20接入%20DocLinkClassifier%20JS%20桥接：data-repo-href%20标注%20+%20点击拦截站内分发/前端%20MarkdownRenderer%20接入%20DocLinkClassifier%20JS%20桥接：data-repo-href%20标注%20+%20点击拦截站内分发.md)
+- Wiki 长文：[docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md](docs/modules/12-基础设施与部署/C-知识/文档链接质量门禁.md)
+- RAG 卡 1（工具链）：[docs/wiki/knowledge/zh/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md](docs/modules/06-工具与技能/C-知识/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md)
+- RAG 卡 2（前端桥接）：[docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md](docs/modules/11-前端应用/C-知识/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md)
 
 ---
 

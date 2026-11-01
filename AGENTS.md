@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：3 分钟了解项目是什么、代码怎么组织、去哪找规范。
 >
-> 功能现状以 [docs/wiki/](./docs/wiki/) 为准；编码规范全文见 [docs/CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)；文档维护细则见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)。
+> 功能现状以 [docs/modules/](./docs/modules/) 为准；**实现功能需求前先读 [docs/AGENT_GUIDE.md](./docs/AGENT_GUIDE.md)**（流程 / 模块路由表 / 设计 status 语义 / 反模式）；编码规范全文见 [docs/CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)；文档维护细则见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)。
 
 ---
 
@@ -19,15 +19,15 @@
 | 域 | 一句话说明 |
 |----|-----------|
 | 👥 组织权限 | 多级组织 + 角色并查集继承 + JWT 双模式 + 偏好双源沉淀 |
-| 🤖 Agent | 全生命周期 + 两阶段唤醒（IntentAnalyze → Awaken）+ 策略引擎 |
+| 🤖 Agent | 全生命周期 + 两阶段唤醒（IntentAnalyze 输入理解 → 图引擎 awaken）+ 策略引擎 |
 | 🧠 记忆 | 四层记忆 + 休息沉淀 + 知识图谱 + 种子推荐 |
 | 💬 对话消息 | SSE 实时推送 + 多渠道入站（飞书 WS / 微信 iLink / 邮件 IMAP）+ 5 类出站骨架 |
 | 📋 任务项目 | 任务状态机 + 进度追踪 + TaskGraph DAG + 项目聚合上下文 |
-| 🛠️ 工具技能 | 三层调用架构 + 11 份预置技能（7 个神经技能常驻）+ 技能副本自我进化 + MCP 集成 |
+| 🛠️ 工具技能 | 三层调用架构 + 12 份预置技能（7 个神经技能常驻）+ 技能副本自我进化 + MCP 集成 |
 | 🔌 外部 Agent | A2A 协议 Client/Server + 异步回调 |
 | 🔎 搜索 | FTS5 + 向量 + 图谱三位一体混合搜索 |
 | 📊 统计监控 | DuckDB 五维统计 + 运行时观测 + 系统健康仪表盘 |
-| 🚀 异步基建 | AOP 事件中心 + 8 类消费者 + cron 定时触发器 |
+| 🚀 异步基建 | AOP 事件中心 + 15 类消费者 + cron 定时触发器 |
 | 🎨 前端 | Dioxus 44 路由 + HUD Canvas + Markdown/Mermaid 全链路 |
 
 ---
@@ -98,67 +98,82 @@ Organization ──┬── User
 
 | 分类 | 文档 | 场景 |
 |------|------|------|
+| **实现需求入口** | [AGENT_GUIDE.md](./docs/AGENT_GUIDE.md) | 实现功能需求前的五步流程 + 15 模块路由表 + 设计 status 语义 + 反模式 |
+| **知识库运维手册** | [docs/README.md](./docs/README.md) | 常用命令 / 查询配方（按 `scope` 反查设计）/ 维护场景 / 元数据规范 |
+| **知识库机器索引** | [INDEX.json](./docs/modules/INDEX.json) | 全库三层索引（含 status/scope），反查「改这个文件该读哪篇设计」 |
 | **编码规范 SSOT** | [CODE_STANDARDS.md](./docs/CODE_STANDARDS.md) | 所有编码规则（命名/分层/宏/错误/日志等） |
 | **架构总纲** | [ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 实体关系、设计哲学、核心概念 |
 | **分层实践** | [LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | 适配层架构 + 反模式避坑 |
 | **文档维护** | [DOCUMENTATION.md](./docs/DOCUMENTATION.md) | 四类文档编写/引用/图谱法则 |
-| **API 协议** | [api_protocol_convention.md](./docs/design/api_protocol_convention.md) | common DTO 单一事实源 |
-| **SQL 规范** | [sqlx_guide.md](./docs/design/sqlx_guide.md) | SQLx 0.8 + SQLite 工程规范 |
-| **日志规范** | [logging_design.md](./docs/design/logging_design.md) | 统一宏 + tracing 语法 |
-| **Runtime** | [runtime_design.md](./docs/design/runtime_design.md) | Agent 唤醒 + 工具二分 |
-| **策略引擎** | [thinking_task_policy_engine_design.md](./docs/design/thinking_task_policy_engine_design.md) | Policy trait + policy_set! 宏 |
-| **前端架构** | [frontend_architecture.md](./docs/design/frontend_architecture.md) | Dioxus + 44 路由 |
-| **查询规范** | [pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md) | 分页 + 通用 count |
+| **API 协议** | [api_protocol_convention.md](./docs/modules/13-数据模型/A-设计/api_protocol_convention.md) | common DTO 单一事实源 |
+| **SQL 规范** | [sqlx_guide.md](./docs/modules/12-基础设施与部署/A-设计/sqlx_guide.md) | SQLx 0.8 + SQLite 工程规范 |
+| **日志规范** | [logging_design.md](./docs/modules/12-基础设施与部署/A-设计/logging_design.md) | 统一宏 + tracing 语法 |
+| **Runtime** | [runtime_design.md](./docs/modules/02-Agent运行时/A-设计/runtime_design.md) | Agent 唤醒 + 工具二分 |
+| **策略引擎** | [thinking_task_policy_engine_design.md](./docs/modules/02-Agent运行时/A-设计/thinking_task_policy_engine_design.md) | Policy trait + policy_set! 宏 |
+| **前端架构** | [frontend_architecture.md](./docs/modules/11-前端应用/A-设计/frontend_architecture.md) | Dioxus + 44 路由 |
+| **查询规范** | [pagination_and_count_convention.md](./docs/modules/13-数据模型/A-设计/pagination_and_count_convention.md) | 分页 + 通用 count |
 | **记忆设计** | [memory_design.md](./docs/memory_design.md) | 四层记忆系统 |
 | **脚本地图** | [scripts/README.md](./scripts/README.md) | 运维脚本入口、职责划分与「一处实现」规则 |
-| **Wiki 百科** | [docs/wiki/](./docs/wiki/) | 10 大类 377 篇长文 + 120 张 RAG 卡（手工维护；索引 [docs/wiki/INDEX.md](./docs/wiki/INDEX.md)）|
-| **RAG 知识卡** | [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/) | 120 张原子卡（第一召回层）|
+| **模块知识** | [docs/modules/](./docs/modules/) | 15 个能力域模块，每模块 A-设计/B-落地方案/C-知识；全量索引 [docs/modules/INDEX.md](./docs/modules/INDEX.md)（自动生成）|
+| **RAG 知识卡** | [docs/modules/](./docs/modules/) | 原子卡现位于各模块 C-知识/（第一召回层）|
 
 ---
 
-## 五、RAG 查询操作指令
+## 五、知识库检索操作指令
 
 **查询前 5 步**（强制执行）：
 
-1. **scope 预过滤** → 用每张卡 YAML `scope[]` glob 匹配当前上下文关注的文件集
-2. **读命中知识卡 ④** → §4 硬约束 → §2 关键文件表 → §3 架构约定 → §1 概述
-3. **强制跳 Wiki 长文 ③** → 从 `source_files[]` 找 `docs/wiki/zh/content/...` 链接，读 §5 分析 + §8 故障排查
-4. **跳源码锚点** → 按 `相对路径#Ln-Lm` 读真实代码
-5. **按需补跳** → ① Design（为什么）/ ② Plan（怎么做）
+1. **scope 预过滤** → 用 `docs/modules/INDEX.json` 的 `scope[]`（或知识卡 YAML 的 `scope[]`）匹配当前关注的文件集；`jq` 现成命令见 [docs/README.md §六 查询配方](./docs/README.md)
+2. **读命中 RAG 知识卡**（`C-知识/<卡名>/<卡名>.md`）→ §4 硬约束 → §2 关键文件表 → §3 架构约定 → §1 概述
+3. **强制跳模块长文** → 从卡的 `source_files[]` 找同模块 `C-知识/*.md` 现状长文，读 §5 分析 + §8 故障排查
+4. **跳源码锚点** → 按 `相对路径#Lx-Ly` 读真实代码
+5. **按需补跳** → `A-设计`（为什么，**只认 `status: 现行`**）/ `B-落地方案`（做到哪了，无权威性）
 
-**阅读链路**：`④ RAG 知识卡 → ③ Wiki 长文 → 源码 → ① Design → ② Plan`（禁止跳过 ③）
+**阅读链路**：`RAG 知识卡 → C-知识长文 → 源码 → A-设计 → B-落地方案`（禁止跳过第 3 步）
 
-**同主题多卡**：全部召回、并行阅读、不做去重。完全重复（scope 互为子集 + §4 重叠率 > 90%）→ 走合并流程。
+> **第 3 步为什么不能跳**：RAG 卡是原子切片，只看卡会漏掉跨切片的调用链与故障排查；长文是唯一把"局部正确"串成"系统正确"的地方。
 
-**元问题第一跳**：[RAG 知识索引卡](docs/wiki/knowledge/zh/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D.md)
+**同主题多卡**：全部召回、并行阅读、不做去重。完全重复（scope 互为子集 + §4 重叠率 > 90%）→ 走合并流程（见 [DOCUMENTATION.md §3](./docs/DOCUMENTATION.md)）。
+
+**元问题第一跳**：[RAG 知识索引卡](<docs/modules/08-搜索/C-知识/RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配/RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配.md>)
 
 ---
 
 ## 六、文档规范速记
 
-**全量细则见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)**：
+**操作手册见 [docs/README.md](./docs/README.md)**（命令 / 查询配方 / 维护场景 / 元数据规范）；**编写与查重全量细则见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)**：
 
 - 路径引用一律 `相对仓库根路径 + #Lx-Ly`；禁 `file://` 伪协议、绝对路径、冒号行号
-- 新增 Wiki/RAG 卡 → 先触发 `ai-orz-wiki-maintainer` 过 5 级查重
-- 新增 design/plan → 触发 `ai-orz-doc-maintainer`
-- 引用单向：③④ 活文档 → ①② 快照 + 源码
+- **`A-设计` / `B-落地方案` 顶部必带 YAML frontmatter**（`kind/module/name/title/status/scope/related`），缺则 `make wiki-meta` 直接失败
+- 新增 RAG 知识卡（各模块 `C-知识/`）→ 先按 [DOCUMENTATION.md §3](./docs/DOCUMENTATION.md) 的 5 级算法查重，再决定合并还是新建
+- 引用单向：`C-知识`（活文档）→ `A-设计`/`B-落地方案`（快照）+ 源码；**新增快照文档不得反向链接 `C-知识`**
 - 归档件只加归档头，正文永不修改
 
 **文件落位**：
 
-| 象限 | 目录 | 命名 |
+| 类型 | 目录 | 命名 |
 |------|------|------|
-| 功能设计 | `docs/design/` | 英文 snake_case（如 `runtime_design.md`）|
-| 长期规范 | `docs/design/` | 英文 snake_case（`*_guide.md` / `*_convention.md`）|
-| 落地快照 | `docs/plan/` | 中文主题名（如 `身份凭证Domain统一CRUD重构.md`）|
+| 功能设计（为什么） | `docs/modules/<模块>/A-设计/` | 英文 snake_case（如 `runtime_design.md`）|
+| 长期规范（编码/协议约定） | `docs/modules/<模块>/A-设计/` | 英文 snake_case（`*_guide.md` / `*_convention.md`）|
+| 落地方案（做到哪了） | `docs/modules/<模块>/B-落地方案/` | 中文主题名（如 `身份凭证Domain统一CRUD重构.md`）|
+| 现状长文 + RAG 卡（是什么） | `docs/modules/<模块>/C-知识/` | 中文主题名；RAG 卡自带同名子目录 |
+| 跨模块总纲 | `docs/` 根目录 | `ARCHITECTURE.md` / `CODE_STANDARDS.md` / `LAYERED_ARCHITECTURE_PRACTICE.md` 等 |
 | 归档 | `docs/archive/{design,plan}-archive/` | 保留原文件名 |
 
+**改完必跑的收尾**：
+
+```bash
+make wiki-index && make wiki-check    # 重建索引 + 门禁（索引产物一起提交）
+```
+
 **红线**：
-- ❌ 在 `docs/` 下自创新目录
+- ❌ 在 `docs/` 下自创新目录（模块 = 能力域，不是随手建文件夹）
+- ❌ **手改 `INDEX.md` / `INDEX.json` / 各 `00-INDEX.md`**（全是 `make wiki-index` 的派生物）
+- ❌ **改了代码不回填对应 `C-知识`**（知识库腐化的唯一来源）
 - ❌ plan 文件名带日期前缀
 - ❌ 归档件散放在 `docs/archive/` 根目录
-- ❌ design 用中文命名 / plan 用英文命名
+- ❌ `A-设计` 用中文命名 / `B-落地方案` 用英文命名
 
 ---
 
-*规范与约定看 [CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)，功能现状看 [wiki](./docs/wiki/)，设计决策看 [docs/design/](./docs/design/)，文档维护细则看 [DOCUMENTATION.md](./docs/DOCUMENTATION.md)*
+*实现需求先读 [AGENT_GUIDE.md](./docs/AGENT_GUIDE.md)；规范与约定看 [CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)；功能现状看 [docs/modules/](./docs/modules/)；设计决策看各模块 `A-设计/`；文档操作看 [docs/README.md](./docs/README.md)，编写细则看 [DOCUMENTATION.md](./docs/DOCUMENTATION.md)*

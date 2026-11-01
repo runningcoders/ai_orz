@@ -1,0 +1,267 @@
+---
+kind: rag_card
+name: Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt
+  Token 熔断
+category: 基础设施
+scope:
+- src/service/domain/hr/skill.rs
+- src/service/domain/hr/agent.rs
+- src/service/domain/system/seed/**
+- src/service/dal/skill*.rs
+- src/handlers/hr/agent/install_skill_pack.rs
+- src/handlers/hr/agent/sync_packs.rs
+- src/handlers/hr/agent/association.rs
+- src/handlers/hr/skill/*.rs
+- src/handlers/system/seed/sync_preset_skills.rs
+- src/models/skill.rs
+- frontend/src/pages/hr/skills.rs
+- frontend/src/pages/hr/agent_detail.rs
+- common/src/enums/tool_tag.rs
+- common/src/api/hr.rs
+- common/src/api/agent.rs
+- common/src/api/skill.rs
+- common/src/api/seed.rs
+- common/src/constants/agent_roles.rs
+- src/service/dal/agent/builder/default.rs
+- src/pkg/tool_registry/builtin.rs
+- src/handlers/organization/initialize_system.rs
+source_files:
+- src/models/skill.rs#L9-L100
+- src/models/skill.rs#L88-L92
+- src/service/domain/system/seed/mod.rs#L1-L16
+- src/service/domain/system/seed/default.rs#L1-L9
+- src/service/domain/hr/skill.rs#L16-L190
+- src/service/domain/hr/skill.rs#L12-L60
+- src/service/domain/hr/agent.rs#L419-L520
+- src/service/domain/hr/agent.rs#L457-L485
+- src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_SKILL_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md
+- src/models/skill.rs#L22-L160
+- src/handlers/hr/agent/install_skill_pack.rs#L1-L33
+- src/handlers/hr/skill/install_skill_pack.rs#L19-L85
+- src/handlers/hr/agent/sync_packs.rs#L1-L25
+- src/service/domain/hr/agent.rs#L84-L133
+- src/service/domain/hr/agent.rs#L135-L290
+- src/service/domain/hr/skill.rs#L203-L228
+- src/service/dal/skill/mod.rs
+- frontend/src/pages/hr/agent_management.rsx
+- frontend/src/components/hr/agent_form.rsx
+- docs/archive/design-archive/skill_design.md
+- docs/archive/design-archive/skill_system_enhancement_design.md
+- docs/archive/plan-archive/Agent管理集成测试.md
+- docs/archive/plan-archive/预置基础技能导入重构.md
+- docs/modules/06-工具与技能/C-知识/技能系统.md
+- docs/modules/02-Agent运行时/C-知识/技能包管理.md
+- docs/modules/06-工具与技能/C-知识/技能与工具绑定.md
+- docs/modules/13-数据模型/C-知识/Agent 和技能模型.md
+- docs/modules/11-前端应用/C-知识/技能管理系统.md
+- docs/modules/12-基础设施与部署/C-知识/系统初始化.md
+- docs/modules/00-总览与架构/C-知识/HR 领域编排.md
+- src/handlers/system/seed/sync_preset_skills.rs#L1-L266
+- common/src/api/seed.rs#L165-L237
+- docs/modules/12-基础设施与部署/C-知识/种子数据管理.md
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md (2026-09-14 新增：项目上下文认知模板)
+- src/service/domain/system/seed/skills/TEMPLATE_SELF_EVOLUTION/skill.md (2026-09-14 新增：自我进化模板)
+- src/service/domain/hr/skill.rs (2026-09 增量：Agent 技能可见性收紧 + 自装自建幂等 + 副本同步断链修复)
+- src/service/dal/skill/mod.rs (2026-09 增量：scope_project 隔离落库 + 搜索短词元兜底)
+- src/handlers/hr/skill/search_skill.rs / search_skills.rs (2026-09 增量：短词元兜底查询)
+- frontend/src/components/chat/*.rs (2026-09 增量：副本同步复选框 × 3 fix)
+- src/service/dal/skill.rs#L184-L189 (2026-09-25 增量：publish_writeback_copy trait 声明)
+- src/service/dal/skill.rs#L814-L901 (2026-09-25 增量：publish_writeback_copy 实现——幂等查重 + 纯建副本 + 向量索引补偿)
+- src/service/dal/skill.rs#L351-L359 (2026-09-25 增量：list_for_agent 持有语义收紧 retain 谓词)
+- src/service/dal/skill.rs#L947-L962 (2026-09-25 增量：list_published_by_tag 加 has_parent=false 只认根技能)
+- src/service/domain/hr/skill.rs#L51-L110 (2026-09-25 增量：update_skill 发布回写 N2——非 Published→Published 为作者 Agent 补建副本)
+- src/service/domain/hr/agent.rs#L59-L91 (2026-09-25 增量：resolve_agent_skills 同谓词收紧)
+- src/handlers/hr/skill/mod.rs#L49-L74 (2026-09-25 增量：validate_agent_skill_status_change 发布收敛单一入口)
+- src/handlers/hr/skill/create_skill.rs#L66-L72 (2026-09-25 增量：create 即发布拦截)
+- src/handlers/hr/skill/update_skill.rs#L56-L62 (2026-09-25 增量：update 直改 Published 拦截)
+- frontend/src/pages/hr/skills.rs#L384-L395 + #L546-L552 (2026-09-25 增量：列表列宽约束 + 描述列弹性压缩)
+- frontend/src/pages/hr/agent_detail.rs#L1832-L1840 (2026-09-25 增量：安装入口搜索仅列 Published)
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md（2026-09-27~28 增量：description 语义收敛——plan_snapshot / requirement_change 产物链）
+- src/service/domain/system/seed/skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md（2026-10-11 新增第 11 份预置技能：神经技能，tags = neural + ontology；写图谱前教四选一判别 + 选词四规 + 软退役守则）
+- src/service/domain/system/seed/default.json（2026-10-11：第三基础员工 TEMPLATE_KNOWLEDGE_GRAPH_AGENT，role knowledge_graph_specialist；前台/招聘官 runtime_config 补 installed_tags/skill_packs 含 ontology，status 2→3；ontology.properties 4 条预置属性）
+- common/src/constants/agent_roles.rs（2026-10-11：KnowledgeGraphSpecialist 角色常量）
+- src/service/dal/agent/builder/default.rs#L408-L440（2026-10-11：build_skills_sections「装了就进」——神经技能置前，其余已安装技能不再做 tag 二次匹配兜底）
+- src/pkg/tool_registry/builtin.rs（2026-10-11：ontology tag 护栏三测试，13 个消费侧工具：读 8 + 写 5）
+- src/handlers/organization/initialize_system.rs（2026-10-11：仍只自动创建前台 Agent；图谱专家/招聘官不自动创建，复用行沿状态推进）
+
+---
+
+# §1 概述（一句话定位 + 解决什么问题）
+
+**2026-10-11 增量（本体属性特性配套预置体系重构，4b4e9e7a）**：① 预置技能 10 → **11 套**：新增神经技能 **TEMPLATE_ONTOLOGY_COGNITION**（tags `neural`+`ontology`，常驻所有 Agent 唤醒上下文，教模型本体四选一判别/选词/软退役与「事实进 properties 不进正文」）；② 新增第三基础员工 **TEMPLATE_KNOWLEDGE_GRAPH_AGENT**（知识图谱专家，role `knowledge_graph_specialist`），与前台/招聘官成套，runtime_config 显式声明 installed_tags/skill_packs（含 ontology），status 统一推进到 3；③ PromptBuilder 技能区块改「**装了就进**」语义——`build_skills_sections` 神经技能置前后，其余技能区块只反映 Agent 实际持有，**取消 builder 侧按 tag 的二次兜底匹配**（区块内容 = 持有事实，避免「没装也提示」）；④ TOOL_REGISTRY 加 ontology tag 护栏三测试锁定消费侧工具标签（读 8 + 写 5）；⑤ initialize_system 仍只自动创建前台 Agent，图谱专家/招聘官靠 seed 同步/复用推进，不自动入职。
+
+**2026-09-25 增量（M2 持有关系收紧 + N2 发布回写）**：三处「技能发布 / 持有」语义收敛——① **M2-A 持有语义收紧**：`list_for_agent` 与 `resolve_agent_skills` 统一 retain 谓词「安装副本（parent 非空）或自有非正式发布技能（status != Published）」，共享库正式发布版根技能不再计入 Agent 持有列表 / 关联全景 / wake 路径；② **M2-B 安装源收紧**：`list_published_by_tag` 加 `has_parent=false`，共享库安装源只能来自正式发布的**根技能**，防止 Published 脏副本被当作二级副本源；③ **M2-C 发布收敛单一入口**：handler 层新增 `validate_agent_skill_status_change`，Agent 上下文或 Agent 安装副本禁止通过 create/update 直接把 status 刷成 Published（InvalidRequest）；发布能力进一步收敛为**独立接口** `publish_skill`（`POST /skills/{id}/publish`，注册为内置工具且只挂 `admin` 工具包，由护栏 `publish_skill_tool_is_gated_by_admin_pack_only` 锁定——刻意不挂 `skill_management`，否则发布权扩散到所有技能管理 Agent）；`update_skill` 仅保留「拦跃迁」语义、不再承担回写。④ **N2 发布回写**：Agent 自有根技能「非 Published→Published」后，`SkillDal::publish_writeback_copy` 为作者 Agent 补建 1 条本地工作副本（幂等查重 + 纯建副本 + 向量索引补偿），失败仅降级不阻断发布。前端配套：技能列表列宽约束 + 描述列弹性压缩（N4）、安装入口搜索仅列 Published（N3）、技能包卸载确认弹窗复用 Modal 进 top-layer。
+
+**2026-09-14 增量**：Skill 权限体系从「管理员/作者/Agent创建者」三级扩展为**Agent 上下文独立分支**——新增 `SkillAccessIntent::Read/Write` 双意图参数，`ensure_skill_access` 在 Agent 上下文下短路判定：Write 仅限 `author_id == agent_id`（自己的技能副本），Read 放行 Published 共享技能（跨 Agent 只读访问能力）。预置技能从 8 套扩展到 **10 套**（新增 TEMPLATE_PROJECT_CONTEXT_COGNITION 项目上下文认知 + TEMPLATE_SELF_EVOLUTION 自我进化模板）。Agent 工具绑定装配增加 **按 name 排序** 确保确定性（L151：`all_tools.sort_by(|a, b| a.po.name.cmp(&b.po.name))`），解决两条来源链（关联表 / 标签查询）返回顺序不稳定问题。
+
+**2026-09-12 增量**：`install_skill_pack` 的 tag 分发维度新增三个**工具角色标签**——agent_management（Agent 生命周期管理）、hr_specialist（招聘官/HR 专家）、reception（用户接待）。其中 reception 作为「同名双身份包」同时被 Seed 默认模板（TEMPLATE_USER_RECEPTION）和 HR 域 onboarding Handler 的默认技能包引用，保证 `find_by_tag(SkillTag::Reception)` 统一命中模板；embedded.rs 新增 TEMPLATE_AGENT_RECRUITMENT + TEMPLATE_USER_RECEPTION 两套编译期嵌入技能文件（EMBEDDED_SKILL_FILES 从 6 套扩展到 8 套）；install_default_skill_packs 顺序中追加 agent_management / hr_specialist / reception 三个角色技能包。
+
+**2026-09-10 增量**：前端技能库管理页（`frontend/src/pages/hr/skills.rs` 大改 371 行）升级——从扁平列表改为树形层级展示 + 分页（每页 20 条）+ 默认筛选"已发布"状态。skill 卡片支持按 agent 类型 tag 分组折叠展示（如 Communication/Agent 技能集 → Memory/Cognition 技能集 → 工具绑定集）。对应前端 API 层 `frontend/src/api/hr.rs` 新增 list_skills_paginated 接口（带 status/tag/pagination 查询参数），navbar 路由注册技能管理页面入口。
+
+**2026-09-11 增量**：技能列表展开控件从文字按钮改为纯图标 + tooltip（沿用 workspace.rs / finance tools.rs 折叠控件视觉语汇）；已确认无副本的行展开后显示箭头但 `visibility:hidden`（占位对齐 + 移出无障碍树）；空副本锁死 bug 修复——展开后 toggle 不再 disabled，收起后箭头隐藏
+
+**2026-09-07 增量**：seed 预置技能同步增强——两套新接口 `GET /api/v1/system/seed/preset-skills/preview`（预览影响清单：seed vs 技能库逐技能对比 + 已安装副本数量统计）与 `POST /api/v1/system/seed/preset-skills/sync`（后台任务同步）。两种策略：Overwrite（覆盖重置同 ID 技能元数据 + 文件）/ OnlyMissing（仅补缺）。可选 `sync_installed_copies`：把 parent_skill_id 指向预置技能的 Agent 私有副本一并对齐（副本 Draft 状态保持不变）。匹配键是技能 ID（`TEMPLATE_*` / `GIT_BRANCH_WORKFLOW`），不是名称。同步走通用后台任务（`pkg::background_task`），前端轮询 `/system/tasks/{task_id}/progress`。
+
+**定位**：技能系统四层增强——① 5 套 TEMPLATE 预置技能包（Communication/MemoryCognition/ProjectManagement/SkillManagement/ToolManagement，每个 skill.md 结构化 6 字段 + `include_str!` 嵌入式注入 HRDomain init）；② `install_skill_pack` 幂等 Tag 批量分发（按 SkillTag 标签分组已发布技能 → 批量 find_by_tag → 为 Agent 逐个 create_agent_skill_private → 重名跳过 warn）；③ Agent 入职流程绑定（onboard_agent 调 install_default_skill_packs：默认 5 套全装，安装失败不阻断入职只打 warn + 记录缺失清单）；④ Prompt Token 熔断与分层注入（Core Role + System Capabilities + Skills Prompt + Current Task 四层，每层有独立 Token 预算上限，超限自动从 Current Task 开始反向裁剪）。
+
+**解决三类存量缺口**（对应 Design §1.1）：
+1. **缺批量安装 + 标签分发能力**：只能逐个技能绑定 Agent，10 个技能要 10 次 API；没技能包/tag 维度管理
+2. **冷启动无默认技能**：新 Agent 创建后技能面板空空如也，用户手工逐个点绑定体验极差；缺少默认 5 套「行业通用技能集」
+3. **Prompt 过长导致 LLM 拒绝服务**：N 多技能 Prompt 注入无上限 → Token 爆表 429 或 LLM 忽略系统提示；缺少分层预算 + 熔断裁剪机制
+
+---
+
+# §2 关键文件与核心锚点速查表
+
+| 文件锚点（点击跳转） | 角色 | 核心契约 / 红线 |
+|---------------------|------|-----------------|
+| [HRDomain skill 操作（update/install_to_agent）](src/service/domain/hr/skill.rs#L16-L190) | 技能包 CRUD 领域契约 | update_skill（含 tag 同步 + Prompt 重计算）；install_to_agent（幂等：同 agent_id+name 已存在 skip；is_system 权限校验）；find_by_tag 批量查询 |
+| [AgentDomain install_skill_pack 主入口](src/service/domain/hr/agent.rs#L419-L520) | 技能包批量安装实现 | ① SkillDomain.find_by_tag(tag) 查出已发布技能 → ② for_each create_agent_skill_private（拷贝 payload + 版本）→ ③ 重名/已绑定 skip warn → ④ 返回 {installed, skipped, total} 统计；事务保证部分成功不回滚 |
+| [5 套 TEMPLATE 预置 skill.md 文件](src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) | 技能模板嵌入式注入 | skill.md 6 字段结构（name / description / tags[] / prompt_template / system_constraints / usage_scenarios）；include_str! 编译期嵌入；HRDomain init_base_data 幂等插入 |
+| [SkillPo + Prompt 摘要 to_prompt_summary](src/models/skill.rs#L22-L160) | 技能实体 SSOT + Prompt 注入 | SkillPo 字段（skill_id/agent_id/name/prompt_template/prompt_summary/version/tags/is_published/is_system）；to_prompt_summary 生成 Prompt 注入格式（"### 技能 {name}\n{prompt_template}..."） |
+| [Handler install_skill_pack HTTP 接口](src/handlers/hr/agent/install_skill_pack.rs) | 前端技能包管理入口 | InstallSkillPackRequest{agent_id, tag, skill_ids(Option)}；skill_ids 缺省走 tag 全量；返回统计清单 installed/skipped/total |
+| [技能系统增强 Design 四层架构](docs/archive/design-archive/skill_system_enhancement_design.md) | 为什么 / 决策 6 条 | §决策 2：按 tag 安装 vs 按 id 列表安装；§决策 4：入职默认绑定哪些包；§决策 5：Prompt 分层预算分配 |
+| [Agent集成测试 Plan 落地快照](docs/archive/plan-archive/Agent管理集成测试.md) | 怎么做 + 结果 | §技能安装幂等 §入职绑定失败降级 §Prompt Token 预算断言 |
+| [技能系统 Wiki 长文](docs/modules/06-工具与技能/C-知识/技能系统.md) | 人类百科 | §5 技能包管理 §8 故障排查（安装失败 / 重名 / Token 超限裁剪日志定位） |
+| [前端技能库管理页 skills.rs](frontend/src/pages/hr/skills.rs) | 技能库树形 + 分页展示 | 371 行重构：树形层级（agent tag 分组折叠）+ 分页（每页 20）+ 默认筛选已发布；skill 卡片支持按 agent 类型 tag 分组 |
+| [前端 API 层 hr.rs](frontend/src/api/hr.rs) | 技能列表 API | 新增 list_skills_paginated(status, tag, page, page_size)；调用后端分页查询接口 |
+| [navbar 路由注册](frontend/src/layouts/navbar.rs) | 技能管理页入口 | 导航栏新增技能管理菜单项，路由到 /hr/skills |
+| [ensure_skill_access Agent 上下文分支](src/service/domain/hr/skill.rs#L385-L450) (2026-09-14 增量) | Agent 自进化权限边界 | 新增 SkillAccessIntent::Read/Write；Agent 上下文 Write 仅限 author_id==agent_id；Read 放行 Published 共享技能；独立短路不走用户侧条件 |
+| [两个新 TEMPLATE 模板](src/service/domain/system/seed/skills/TEMPLATE_PROJECT_CONTEXT_COGNITION/skill.md) + [TEMPLATE_SELF_EVOLUTION](src/service/domain/system/seed/skills/TEMPLATE_SELF_EVOLUTION/skill.md) (2026-09-14 新增) | 新增预置技能模板 | 项目上下文认知 + 自我进化；保持 6 字段结构（name/description/tags/prompt_template/system_constraints/usage_scenarios） |
+| [domain/hr/skill.rs](src/service/domain/hr/skill.rs) (2026-09 增量：可见性 + 副本同步) | Agent 技能可见性收紧 + 副本同步断链修复 | Agent 侧技能可见性必须 scope_project 匹配 + Agent 身份有权访问（禁止跨组织串台）；副本同步刷新走 train_agent 进修流程幂等执行 |
+| [dal/skill/mod.rs](src/service/dal/skill.rs) (2026-09 增量：短词元兜底) | 技能搜索 DAO 层兜底 | 搜索技能短词元（≤3 字符）必须走 DAO 层兜底查询（FTS5 前缀 + 向量），handler 层禁止提前返回空结果 |
+| [handlers/hr/skill/search_skill.rs / search_skills.rs](src/handlers/hr/skill/search_skill.rs) (2026-09 增量：短词元兜底 handler) | 技能搜索 handler 层 | 短词元（≤3 字符）兜底查询透传到 DAO 层 FTS5 + 向量 |
+| [frontend/src/components/chat/*.rs](frontend/src/components/chat/) (2026-09 增量) | 前端副本同步复选框 | × 3 fix：进修刷新过期副本 + 同步计数去虚报 + 复选框状态管理 |
+| [SkillDal::publish_writeback_copy 声明](src/service/dal/skill.rs#L184-L189) + [实现](src/service/dal/skill.rs#L814-L901) (2026-09-25 新增：N2 发布回写) | 发布回写自身副本补偿 | Agent 自有根技能发布为 Published 后，为作者 Agent 补建本地工作副本（Draft / parent=源 id / author=作者 Agent）；幂等查重（同 Agent 指向本源且状态 != Expired 已有副本 → 跳过）；纯建副本直调 DAO install_to_agent；向量索引 best-effort 补偿失败仅 warn |
+| [SkillDal::list_for_agent 持有语义收紧](src/service/dal/skill.rs#L351-L359) + [AgentDomain::resolve_agent_skills 同谓词](src/service/domain/hr/agent.rs#L59-L91) (2026-09-25 新增：M2-A) | Agent 实际持有技能全集 | retain 谓词「安装副本（parent 非空）或 自有非正式发布技能（status != Published）」；共享库正式发布版根技能（author_id 指向本 Agent、parent 空、Published）属共享库资产，不计入持有列表 / 关联全景 / wake 路径 |
+| [SkillDal::list_published_by_tag 安装源收紧](src/service/dal/skill.rs#L947-L962) (2026-09-25 新增：M2-B) | 共享库安装源只认根技能 | 查询加 `has_parent: Some(false)`；防止 Published 状态的 Agent 副本（历史脏数据）被当作安装源复制出二级副本 |
+| [validate_agent_skill_status_change 状态变更守卫](src/handlers/hr/skill/mod.rs#L49-L74) + [create 拦截](src/handlers/hr/skill/create_skill.rs#L66-L72) + [update 拦截](src/handlers/hr/skill/update_skill.rs#L56-L62) (2026-09-25 新增：M2-C) | 发布收敛单一入口 | Agent 上下文（无论形态）或 Agent 安装副本（author=Agent 且 parent 非空）携带 status=Published → InvalidRequest；发布只走共享库根技能（用户上下文）单一入口 |
+| [SkillManage::publish_skill 发布回写](src/service/domain/hr/skill.rs) (发布能力收口为独立接口) | 发布 + 回写领域编排 | 独立 `publish_skill` 入口：仅 Admin/SuperAdmin 可发；安装副本拒发、已 Published 幂等、Expired 要求先 restore；落库后调 publish_writeback_copy 为作者 Agent 补建工作副本（失败仅 log_warn 降级不阻断发布主流程）；`update_skill` 不再回写 |
+| [前端技能列表列宽约束](frontend/src/pages/hr/skills.rs#L384-L395) + [colgroup 弹性列](frontend/src/pages/hr/skills.rs#L546-L552) (2026-09-25 增量) | 技能库列表布局 | 描述列 min-w-0 + truncate 弹性压缩（N4）、标签列 max-w、操作列 whitespace-nowrap、table-fixed + colgroup 百分比列宽，删除按钮无需横向滚动即可见 |
+| [前端安装入口搜索仅列 Published](frontend/src/pages/hr/agent_detail.rs#L1832-L1840) (2026-09-25 增量：N3) | 安装入口技能搜索 | SearchSkillsRequest 补 `status: Some(SkillStatus::Published)`，排除他人 Draft 副本与非正式发布技能 |
+| [前端技能包卸载确认弹窗复用 Modal](frontend/src/pages/hr/agent_detail.rs#L2477-L2490) (2026-09-25 增量) | 弹窗进 top-layer | 技能包卸载确认复用 Modal 组件（原生 dialog.showModal 进 top layer），修复被局部堆叠上下文裁剪的黑边问题 |
+
+---
+
+# §3 架构约定与数据流（业务语义层面，不贴实现代码）
+
+**入职绑定技能包端到端流程**：
+```
+新 Agent 创建 → onboard_agent 生命周期
+  → Step 1：创建 Agent Po + 角色 + 默认 ModelProvider
+  → Step 2：install_default_skill_packs(ctx, agent_id)
+       顺序安装 5 套：
+         ① COMMUNICATION      (tag = "Communication")
+         ② MEMORY_COGNITION   (tag = "MemoryCognition")
+         ③ PROJECT_MANAGEMENT (tag = "ProjectManagement")
+         ④ SKILL_MANAGEMENT   (tag = "SkillManagement")
+         ⑤ TOOL_MANAGEMENT    (tag = "ToolManagement")
+       每套 install_skill_pack：
+         → SkillDomain.find_by_tag(tag, is_published=true)
+         → 技能为空？log_warn 记入 skipped，不中断
+         → for 每个 skill：
+              create_agent_skill_private(agent_id, skill)
+                → 同 agent_id + name 已存在？→ skip
+                → 否则 INSERT（拷贝 prompt_template/prompt_summary/version/tags）
+       某套安装失败？catch_unwind → log_error → 继续下一套
+       最终返回 installed_count + skipped_skills[] 清单
+  → Step 3：返回入职完成，技能已绑定
+
+Prompt Token 熔断分层架构（唤醒时组装）：
+  ┌──────────────────────────────────────────────────────────┐
+  │ Layer 1：Core Role（固定不变，永不裁剪）                  │ 预算上限：≈2K Token
+  │ Agent 角色设定、身份、工作模式、对外沟通风格              │
+  ├──────────────────────────────────────────────────────────┤
+  │ Layer 2：System Capabilities（固定不变，永不裁剪）        │ 预算上限：≈3K Token
+  │ 可用工具清单（只列名称 + 一描，不含 Prompt）、            │
+  │ 记忆能力说明、策略引擎约束                                │
+  ├──────────────────────────────────────────────────────────┤
+  │ Layer 3：Skills Prompt（熔断层 1，超限先按重要度裁剪）     │ 预算上限：≈4K Token
+  │ 按优先级从高到低注入 to_prompt_summary（SKILL_PRIORITY 表）│
+  │ 超限按序跳过最后几个技能 + log_warn 记录                  │
+  │ SOP：skill_mgmt(必装，管理其他技能)                       │
+  │      → tool_mgmt(必装，知道自己会什么工具)                 │
+  │      → memory(必装，基础记忆沉淀)                         │
+  │      → comm(必装，基础沟通)                               │
+  │      → project(可选，若项目相关场景才启用)                 │
+  ├──────────────────────────────────────────────────────────┤
+  │ Layer 4：Current Task / Context（熔断层 2，超限最先裁剪） │ 预算上限：≈8K Token
+  │ WorkingMemory、当前对话历史、ShortTerm 摘要、当前意图分析 │
+  │ 超限时裁剪 30 轮历史 → 20 → 10 → 5 逐步降级              │
+  └──────────────────────────────────────────────────────────┘
+          四层总和上限 ≈ 17K Token（默认 128K 上下文绰绰有余）
+          任何单层超出预算 → 自动裁剪下一层 + 打熔断日志
+```
+
+**技能包幂等核心规则**（3 条行为红线）：
+1. **按 tag 安装不等于全量覆盖**：已绑定的同名 skill 不重复创建（仅跳过不报错）；新 skill 增量追加；已绑定的 skill 不会因按 tag 重装而被「解绑」
+2. **安装部分失败不回滚**：10 个技能装到第 6 个报错，前 5 个保留，6-10 记到 skipped[]，用户可在技能面板手动重试
+3. **技能与工具严格解绑**：技能是「Prompt 片段 + 使用说明」，不是工具集合；Agent 有无权限用某个工具由 ToolBinding 表决定，安装技能不会自动授予工具权限（反过来也一样）
+
+**（2026-09 增量追加）Agent 技能可见性 + 副本同步 + 搜索兜底约定**：
+1. **Agent 侧技能可见性必须 scope_project 匹配 + Agent 身份双检查**：禁止跨组织（scope_project 不同）技能串台；Agent 只能看到 Published 共享技能 + 自己 author_id 的私有草稿
+2. **技能副本同步刷新必须走 train_agent 进修流程**：幂等执行、不直接覆盖运行期已变更的技能副本；同步前先刷新过期副本、去重虚报计数
+3. **搜索短词元（≤3 字符）必须 DAO 层兜底**：DAO 层同时走 FTS5 前缀匹配 + 向量语义；handler 层收到短词元禁止提前返回空结果（短词元可能命中核心业务词如 "ai" "ml"）
+
+---
+
+# §4 硬约束 / 必守红线 / 扩展入口
+
+**§4.1 必守红线（27 条，违反 = FAIL）**
+
+| # | 红线 | 验证方式 | 代码锚点 |
+|---|------|---------|---------|
+| 1 | **10 套 TEMPLATE 名常量严格对齐**：`TEMPLATE_COMMUNICATION` / `TEMPLATE_MEMORY_COGNITION` / `TEMPLATE_PROJECT_MANAGEMENT` / `TEMPLATE_PROJECT_CONTEXT_COGNITION` / `TEMPLATE_SELF_EVOLUTION` / `TEMPLATE_SKILL_MANAGEMENT` / `TEMPLATE_TOOL_MANAGEMENT` / `TEMPLATE_AGENT_RECRUITMENT` / `TEMPLATE_USER_RECEPTION` / `TEMPLATE_NEURAL_RECEPTION` 10 个常量名必须等于对应目录名 + skill.md `name` 字段 + SkillTag 枚举名；任一处不一致按模板找不到 = 安装为空 | 集成测试 10 套常量名 = 目录名 = skill.md name 字段 = SkillTag 枚举名（4 处全等） | [system/seed/skills/mod.rs 常量定义](src/service/domain/system/seed/embedded.rs) + common/src/enums/tool_tag.rs SkillTag 枚举 |
+| 2 | **install_skill_pack 幂等性**：同一 agent_id + tag 连续调用 N 次，installed_count 第 2 次起必须为 0；数据库 AgentSkill 总数不增长（不产生重复行） | 连续两次 install 断言第二次 installed=0 且 COUNT 无变化 | [domain/hr/agent.rs install_skill_pack 重名 skip 分支](src/service/domain/hr/agent.rs#L450-L470) |
+| 3 | **入职绑定失败不阻断入职**：5 套中任一套出错只打 log_warn + 记录缺失清单；Agent 必须成功创建 + 返回成功响应；onboard_agent 失败不返回 Err | 故意让某套安装抛错集成测试：Agent 仍创建成功 + 响应 200 + 日志含缺失清单 | [domain/hr/agent.rs onboard_agent install 包裹 catch_unwind](src/service/domain/hr/agent.rs#L470-L490) |
+| 4 | **System 技能发布红线**：is_system=true 预置技能禁止普通管理员 EDIT/DELETE；仅超级管理员可改；修改后 prompt_template 变 → Prompt Hash 变 → Agent 私有副本版本自动+1 重新发布时才升级 | 普通管理员账号调 update_skill is_system=true → 权限错误 | [domain/hr/skill.rs update_skill 权限分支](src/service/domain/hr/skill.rs#L35-L80) |
+| 5 | **Skill 与 Tool 严格解绑红线**：install_skill_pack 内部绝不调用 create_tool_binding / 任何工具相关 DAO；技能安装成功后 Agent 的 ToolBinding 列表 COUNT 不变 | install_skill_pack 前后查 ToolBinding COUNT 断言相等 | [domain/hr/agent.rs install_skill_pack 内部 grep 工具关键字应为 0](src/service/domain/hr/agent.rs#L419-L520) |
+| 6 | **Prompt Token 熔断永不抛错**：即使总 Token 超限（极端场景 50 个技能），也仅裁剪 + 打 log_warn，绝不中断 awaken 流程；Layer1+Layer2 总和必须 ≤ 5K（预算保障永不裁剪）；Layer3 注入按优先级排序后超出部分逐个跳过 | 构造 50 个超长 Prompt 技能后调用 awaken 断言 200 OK 且日志有熔断记录 | [dal/agent.rs build_full_prompt 裁剪循环](src/service/dal/agent/mod.rs) Prompt Builder 组装 |
+| 7 | **find_by_tag 必须按 published 过滤**：未发布技能绝不通过 install_skill_pack 分发到 Agent；技能包「草稿态」不应污染正式安装 | 技能 status=Draft 时 find_by_tag 不返回；install 断言 installed_count=0 | [dao/skill/sqlite.rs find_by_tag WHERE 条件](src/service/dao/skill/sqlite.rs) |
+| 8 | **Agent 私有技能深度拷贝**：create_agent_skill_private 必须拷贝 prompt_template + prompt_summary + tags 全量字段；禁止用 skill_id 外键引用（Agent 必须独立可定制不被全局更新牵连） | 全局 skill 更新 prompt_template 后 Agent 私有副本字段不变（断言相等旧值） | [domain/hr/skill.rs install_to_agent INSERT 列清单](src/service/domain/hr/skill.rs#L141-L190) |
+| 9 | **TEMPLATE skill.md 必须有完整 6 字段**：name / description / tags[] / prompt_template / system_constraints / usage_scenarios；解析失败时 init_base_data 跳过打 log_error 不 panic 中断启动 | 5 套 TEMPLATE skill.md grep 6 字段完整无缺；故意破坏字段启动打 log_error 返回正常 | [domain/system/seed/skills/ 每个 skill.md 结构](src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) |
+| 10 | **import_default_skills_if_empty 必须在 init_base_data 内调**：consumer::init、handler、外部 migration 一律禁止；测试环境 init_full_test_env 走同样顺序 | grep import_default_skills_if_empty 调用点仅在 domain::init_base_data | [system/seed/mod.rs](src/service/domain/system/seed/mod.rs) 注入链路 |
+| 11 | **写文件必须过 content_path + 防路径穿越**：SkillDal::write_file 先 target = base_data_path().join(content_path).join(filename) → canonicalize → 检查 target.starts_with(base_data_path())；否则 ErrorCode::PathTraversal | 故意构造 `../../etc/passwd` 文件名应返回 PathTraversal 错误 | [dal/skill/mod.rs](src/service/dal/skill.rs) write_file 方法 |
+| 12 | **Draft 副本 id 必须重生成**：禁止直接复用 Published skill.id，否则多 Agent 安装同模板 UNIQUE 冲突；正确做法：`format!("{}-{}", published.id, agent_id_short_hash)` | 集成测试两个不同 Agent 安装同模板，断言 skills 表两条不同 id 记录 | [domain/hr/skill.rs install_to_agent](src/service/domain/hr/skill.rs#L141-L190) id 生成逻辑 |
+| 13 | **to_prompt_summary 禁止超过 200 字符/条**：超过则 clippy/测试告警；详细内容塞 skill.md 正文，唤醒时不放 | 5 套模板 to_prompt_summary 断言单条 ≤ 200 字 | [models/skill.rs to_prompt_summary](src/models/skill.rs#L88-L92) |
+| 14 | **TEMPLATE_ 前缀模板技能绝不允许硬删除**：即使过时也 SkillStatus=Expired 软标记，DELETE 会破坏历史 Draft 副本的 parent_skill_id FK 约束 | 单元测试对某 TEMPLATE 调 delete 应返回错误或降级为 Expired | [domain/hr/skill.rs update_skill 权限分支](src/service/domain/hr/skill.rs#L35-L80) Expired 分支 |
+| 15 | **Expired 技能独立查询 + 恢复 409 边界**：list_for_agent 必须 exclude Expired（保持「有效技能列表」语义）；restore_skill 把 Expired 改 Draft，若当前 status ≠ Expired 必须返回 Conflict 409；权限复用 ensure_skill_access（作者 / Admin / SuperAdmin / Agent 作者为创建者均可） | 对 Draft 技能调 restore → 409；Expired 恢复后能 list_for_agent 查到 | [domain/hr/skill.rs restore_skill](src/service/domain/hr/skill.rs#L203-L228) |
+| 16 | **sync_agent_packs 是 create_agent 包同步唯一入口**：create_agent 不再逐个 handler 调 install，拆为 2 显式步骤 → Step 2 直接调 sync_agent_packs(ctx, agent_id) 一次同步 BASE_AGENT_PACKS（neural/skill_management/tool_management）+ 已安装技能包增量补全；单个包失败 warn 不阻塞 | grep create_agent 不再包含逐次 install_skill_pack 调用；sync_packs.rs 为 HTTP 入口 + agent.rs 为 domain 实现 | [domain/hr/agent.rs create_agent](src/service/domain/hr/agent.rs#L94-L133) + [sync_agent_packs](src/service/domain/hr/agent.rs#L135-L290) |
+| 17 | **Agent 上下文写操作严格仅限自身 author_id**：`ensure_skill_access` 在 Agent 上下文（ctx.agent_id 存在）下短路判定，Write 操作 bail_err 禁止修改他人技能或 Published 技能，Agent 只能进化自己的技能副本 | Agent 调 update_skill 传入非自己 author_id 的技能 → 返回权限错误；调 update 自己的技能副本成功 | [domain/hr/skill.rs ensure_skill_access Agent 分支](src/service/domain/hr/skill.rs#L385-L450) |
+| 18 | **Agent 上下文读操作放行 Published 共享技能**：SkillAccessIntent::Read 在 Agent 上下文下额外允许访问 `status == Published` 的技能（跨 Agent 只读），保障「隐藏技能按需读」能力；但仍不可 Read 其他 Agent 的私有草稿 | Agent 调 read 他人 PrivateDraft 技能 → 403；调 read Published 技能 → 200 | [domain/hr/skill.rs ensure_skill_access Read 分支](src/service/domain/hr/skill.rs#L385-L450) |
+| 19 | **Agent 工具绑定装配必须按 name 排序**：`agent.rs` 中 `resolve_agent_tools` 装配后调用 `sort_by(|a, b| a.po.name.cmp(&b.po.name))`，确保两条来源链（关联表 / 标签查询）返回顺序稳定，LLM tools 前缀缓存才能命中 | 多次调用 resolve_agent_tools 返回的 tools Vec 顺序完全一致；断言 assert_eq!(first, second) | [domain/hr/agent.rs resolve_agent_tools L151](src/service/domain/hr/agent.rs#L84-L133) |
+| 20 | **Agent 侧技能可见性必须同时满足 scope_project 匹配 + Agent 身份有权访问**（2026-09 新增）——禁止跨组织（scope_project 不同）技能串台；Agent 只能看到 Published 共享技能 + 自己 author_id 的私有草稿 | Agent A 跨 scope 查 Agent B 的私有草稿 → 403；查同 scope 的 Published → 200 | [domain/hr/skill.rs ensure_skill_access scope 分支](src/service/domain/hr/skill.rs) |
+| 21 | **技能副本同步刷新必须走进修（train_agent）流程幂等执行**（2026-09 新增）——禁止直接覆盖运行期已变更的技能副本；同步前先刷新过期副本、去重虚报计数 | 副本同步刷新前后 COUNT 只增量不翻倍；已修改的私有副本内容保持不变 | [domain/hr/skill.rs 副本同步逻辑](src/service/domain/hr/skill.rs) |
+| 22 | **搜索技能短词元（≤3 字符）必须走 DAO 层兜底查询**（2026-09 新增）——DAO 同时 FTS5 前缀 + 向量；handler 层禁止提前返回空结果 | 搜索 "ai" "ml" 应返回多条相关技能；handler 层 grep 不应有 `if query.len() < 3 { return Ok(vec![]) }` | [dal/skill/mod.rs + handlers/hr/skill/search_skill.rs](src/service/dal/skill.rs) |
+| 23 | **Agent 持有技能全集谓词收紧**（2026-09-25 新增 M2-A）：`list_for_agent` 与 `resolve_agent_skills` 必须用同一 retain 谓词「parent_skill_id 非空 或 status != Published」；共享库正式发布版根技能（author_id 指向本 Agent、parent 空、Published）**禁止**进入 Agent 持有列表 / 关联全景 / wake 路径 | Agent 持有列表断言无「parent 空 + Published」条目；两处谓词同源（改一处必须同步另一处） | [dal/skill.rs list_for_agent](src/service/dal/skill.rs#L351-L359) + [domain/hr/agent.rs resolve_agent_skills](src/service/domain/hr/agent.rs#L59-L91) |
+| 24 | **共享库安装源必须是正式发布根技能**（2026-09-25 新增 M2-B）：`list_published_by_tag` 查询必须带 `has_parent: Some(false)`；Published 脏副本（历史数据）禁止作为安装源复制出二级副本 | 构造 Published 副本调 list_published_by_tag 不返回；对应安装断言不产生二级副本 | [dal/skill.rs list_published_by_tag](src/service/dal/skill.rs#L947-L962) |
+| 25 | **发布收敛为共享库根技能单一入口**（2026-09-25 新增 M2-C）：Agent 上下文（无论目标形态）或 Agent 安装副本（author=Agent 且 parent 非空）禁止经 create/update 直改 status=Published → InvalidRequest；服务端守卫 `validate_agent_skill_status_change` 双条件（is_agent_context / author+parent）必须在 create_skill 与 update_skill 均调用 | Agent ctx 调 create/update 带 status=Published → InvalidRequest；用户 ctx + Agent 自有草稿根技能发布 → 放行 | [handlers/hr/skill/mod.rs](src/handlers/hr/skill/mod.rs#L49-L74) + [create_skill.rs](src/handlers/hr/skill/create_skill.rs#L66-L72) + [update_skill.rs](src/handlers/hr/skill/update_skill.rs#L56-L62) |
+| 26 | **发布经独立接口 `publish_skill` + 回写副本幂等不阻断发布**：发布能力从 `update_skill` 收敛为独立内置工具 `publish_skill`（HTTP `POST /skills/{id}/publish`，只挂 `admin` 工具包，护栏 `publish_skill_tool_is_gated_by_admin_pack_only` 锁死）；仅 Admin/SuperAdmin 可发，安装副本拒发、已 Published 幂等、Expired 须先 restore。落库后 `publish_writeback_copy` 为作者 Agent 补建本地工作副本：幂等查重（同 Agent 指向本源且状态 != Expired 已有副本 → 跳过返回 None）；回写失败仅 log_warn 降级，禁止上抛中断发布主流程 | 重复发布不产生重复副本；回写失败发布仍成功（响应 200）；发布后作者 Agent 持有 1 条 Draft 工作副本；普通技能管理 Agent（无 admin 包）调 publish_skill 被工具门禁拒绝 | [dal/skill.rs publish_writeback_copy](src/service/dal/skill.rs#L814-L901) + [domain/hr/skill.rs publish_skill](src/service/domain/hr/skill.rs) + [handlers/hr/skill/publish_skill.rs](src/handlers/hr/skill/publish_skill.rs) |
+
+| 27 | **`publish_skill` 只允许挂 `admin` 工具包、禁止挂 `skill_management`**：发布权是敏感操作，收口到「显式装了 admin 包的 Agent」；若顺手加 `skill_management`，发布权会扩散到所有技能管理 Agent（破坏「只有收口人能发布」的边界）。护栏 `publish_skill_tool_is_gated_by_admin_pack_only` 单测断言 tags == ["admin"] | 给 publish_skill 工厂加 skill_management → 护栏测试失败 | [handlers/hr/skill/publish_skill.rs#L62-L78](src/handlers/hr/skill/publish_skill.rs#L62-L78) |
+
+**§4.2 扩展入口速查**
+
+| 扩展需求 | 改动位置（N 处同步） | 参考锚点 |
+|---------|---------------------|---------|
+| 新增第 6 套 TEMPLATE（如 CodeReview / DataAnalysis 行业专用） | ① 新建 TEMPLATE_XXX 目录 + skill.md（6 字段结构对齐）→ ② seed/skills/mod.rs 追加常量 + include_str! → ③ HRDomain init_base_data INSERT 追加（幂等 LIKE 检查）→ ④ install_default_skill_packs 追加对应 install_skill_pack(tag) → ⑤ Prompt 预算 Layer3 SKILL_PRIORITY 表追加优先级 | [seed/skills/mod.rs 模板注册](src/service/domain/system/seed/embedded.rs) |
+| Prompt 熔断层新增「按需加载技能」机制（大技能包只在特定 ThinkingScene 注入） | ① DefaultPromptBuilder 追加 build_scene_skills_prompt(scene, available_skills) → ② awakening.rs 场景匹配时替换默认 Layer3 注入（Awaken 全部 + IntentAnalyze 只 neural/memory）→ ③ SKILL_PRIORITY 表按场景拆 AWAKE_PRIORITY / INTENT_PRIORITY / SETTLE_PRIORITY | [awakening.rs 工具白名单 is_tool_allowed](src/service/domain/runtime/awakening.rs) |
+| 技能版本升级通知（Agent 私有技能落后全局版本 N 个时提醒管理员升级） | ① AgentSkillPo 追加 global_skill_version 字段（记录安装时的全局版本号）→ ② SkillDomain.update_skill 时版本号+1 → ③ 新增 Handler list_outdated_agent_skills(skill_id) 查所有落后版本 Agent → ④ 前端技能详情页展示「落后版本 N 个，点此批量升级」 | [models/skill.rs AgentSkillPo 字段定义](src/models/skill.rs#L22-L120) |
+| 技能包分享导入导出（跨组织迁移，含 Prompt 模板 + 标签 + 使用场景） | ① Handlers 新增 export_skill_pack(skill_ids) / import_skill_pack(zip) → ② 定义 SkillPackArchiveFormat{version, skills[]} YAML 结构 → ③ 导入时 name+tag 冲突走「重命名 / 覆盖 / 跳过」三选一策略 → ④ 导入事务完整（半成功能回滚） | handlers/hr/skill/ 新增目录 |
+
+## §5 历史演进（f300b5c0..HEAD 增量）
+
+| commit | 事件 | 变更内容 |
+|--------|------|---------|
+| fc0ac32c | 副本同步断链修复 | 进修刷新过期副本 + 同步计数去虚报；禁止直接覆盖运行期已变更的技能副本 |
+| 2467e6a9 | Agent 技能可见性收紧 + 自装自建幂等 | Agent 侧技能可见性必须 scope_project 匹配 + Agent 身份双检查；搜索短词元（≤3 字符）DAO 层兜底 |
+| 12de2c0a + bc348d6a + ed03c10f | 前端副本同步复选框 × 3 fix | frontend/src/components/chat/*.rs 复选框状态管理 + 同步流程 UI 修复 |
+| e77e9f6d | M2 持有关系收紧（A/B/C） | Agent 实际持有技能谓词收紧（list_for_agent + resolve_agent_skills）；安装源只认根技能（list_published_by_tag has_parent=false）；发布收敛单一入口（validate_agent_skill_status_change 双拦截） |
+| cf4e38bd | N2 发布回写自身副本 | SkillDal::publish_writeback_copy + update_skill 发布回写编排；幂等查重 + 纯建副本 + 向量索引补偿，失败仅降级不阻断发布 |
+| f36d6a68 + 490d3deb + 13fd2389 + d02e6d9d | 前端技能管理 4 fix | 安装入口搜索仅列 Published（N3）+ 卸载确认弹窗复用 Modal 进 top-layer + 列表列宽约束 + 描述列弹性压缩（N4） |
+| 76ac4f5e + 382247b2 + 84a61c27 | 预置技能语义收敛与精简 | TEMPLATE_PROJECT_MANAGEMENT description 收敛（plan_snapshot / requirement_change 产物链，替换不追加）；全量 10 份 skill.md 信息密度精简（93KB→79KB） |
+| 4b4e9e7a（2026-10-11） | 本体属性配套预置体系重构 | 新增神经技能 TEMPLATE_ONTOLOGY_COGNITION（第 11 套，neural+ontology）；新增第三基础员工知识图谱专家（成套 runtime_config，status→3）；build_skills_sections 改「装了就进」去掉 tag 二次兜底；TOOL_REGISTRY ontology 护栏三测试；initialize_system 只建前台口径明确 |

@@ -6,8 +6,8 @@
 > 查阅场景：新增 UI 组件或页面时回看「组件类映射表 + 主题系统」两处即可，无需通读全文
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 项目架构规范 §1.2 前端技术栈说明
-> - [frontend_architecture.md](../design/frontend_architecture.md) — 前端架构设计 §CSS 方案章节
-> - [ui_design_system.md](../design/ui_design_system.md) — UI 设计系统规范
+> - [frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md) — 前端架构设计 §CSS 方案章节
+> - [ui_design_system.md](docs/modules/11-前端应用/A-设计/ui_design_system.md) — UI 设计系统规范
 
 ---
 

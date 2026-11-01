@@ -5,8 +5,8 @@
 触发场景：用户消息含大量指代消歧、跨任务上下文、短消息语义不清导致 Agent 误执行；需要前置理解阶段兜底
 关联文档段：
 - 对应 design 文档：[docs/archive/design-archive/intent_aware_two_stage_awaken_design.md](docs/archive/design-archive/intent_aware_two_stage_awaken_design.md)
-- Wiki 长文真实路径：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md)（两阶段唤醒章节）
-- RAG 卡真实路径：[docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md](docs/wiki/knowledge/zh/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联.md)
+- Wiki 长文真实路径：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/modules/02-Agent运行时/C-知识/运行时领域.md)（两阶段唤醒章节）
+- RAG 卡真实路径：[docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md](docs/modules/02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
 
 ---
 
@@ -77,8 +77,8 @@ awaken() 流程：
 | 集成测试 | [tests/intent_analyze_two_stage.rs](tests/intent_analyze_two_stage.rs) | analyze_input_intent 集成测试 + PromptBuilder 渲染字符串断言 |
 
 ⭐ **落地索引（四类互引）**
-- Wiki 长文：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md)
-- RAG 卡：[docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md](docs/wiki/knowledge/zh/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联.md)
+- Wiki 长文：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/modules/02-Agent运行时/C-知识/运行时领域.md)
+- RAG 卡：[docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md](docs/modules/02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
 
 ---
 

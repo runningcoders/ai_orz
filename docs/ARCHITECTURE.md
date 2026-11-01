@@ -61,7 +61,7 @@ ai_orz/
     │   ├── pages/              # 页面模块（按 organization/hr/finance/project/message/system/user 分组）
     │   └── store/              # 全局状态管理（AuthState + token 持久化）
     └── ...
-    > 前端详细架构请查看 [docs/design/frontend_architecture.md](./design/frontend_architecture.md)
+    > 前端详细架构请查看 [docs/design/frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md)
 ```
 
 **common crate 设计原则：**
@@ -275,7 +275,7 @@ data/
 
 治理口径（当前实测）：属性域覆盖率 **1,103 / 1,227 = 0.8989**（阈值 0.95 → 告警）；属性有效性 91 组中 **51 组** 众数占比超过 0.90（标黄）。
 
-专题图：[docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html)；长文见 [docs/wiki/zh/content/架构设计/本体子系统架构.md](docs/wiki/zh/content/架构设计/本体子系统架构.md)
+专题图：[docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html)；长文见 [docs/wiki/zh/content/架构设计/本体子系统架构.md](docs/modules/00-总览与架构/C-知识/本体子系统架构.md)
 
 ---
 
@@ -312,7 +312,7 @@ data/
 - **落盘不阻塞主流程**：写轨迹失败不影响本轮回答（可观测性优先于强一致）。
 - **作用域即权限**：查询入口按 agent / project / task 收口，不做「全库随便翻」。
 
-专题图：[docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html)；长文见 [docs/wiki/zh/content/架构设计/思维轨迹架构.md](docs/wiki/zh/content/架构设计/思维轨迹架构.md)
+专题图：[docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html)；长文见 [docs/wiki/zh/content/架构设计/思维轨迹架构.md](docs/modules/00-总览与架构/C-知识/思维轨迹架构.md)
 
 ---
 

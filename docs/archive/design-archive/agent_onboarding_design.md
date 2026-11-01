@@ -8,9 +8,9 @@
 > - [consumer_architecture.md](./consumer_architecture.md) — 事件驱动架构（入职/离职事件广播）
 > - 【② Plan 落地】[预置基础技能导入重构.md](../plan/预置基础技能导入重构.md) — 5 套 TEMPLATE skill packs 编译期嵌入 + install_skill_pack 幂等
 > - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — 入职第三步 凭证 AES256-GCM 加密绑定
-> - 【③ Wiki 长文】[Agent 全生命周期管理.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/Agent%20全生命周期管理.md) — 入职五步流程章节
-> - 【③ Wiki 长文】[技能与工具绑定.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/技能与工具绑定.md) — 第二步技能 + 第四步工具
-> - 【④ RAG 卡 1】[组织权限与用户偏好](docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步.md) — §3 HR::onboard_agent 五步时序 §红线 4 原子回滚
+> - 【③ Wiki 长文】[Agent 全生命周期管理.md](docs/modules/05-任务与项目/C-知识/Agent 全生命周期管理.md) — 入职五步流程章节
+> - 【③ Wiki 长文】[技能与工具绑定.md](docs/modules/06-工具与技能/C-知识/技能与工具绑定.md) — 第二步技能 + 第四步工具
+> - 【④ RAG 卡 1】[组织权限与用户偏好](docs/modules/01-组织与权限/C-知识/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md) — §3 HR::onboard_agent 五步时序 §红线 4 原子回滚
 > - 【④ RAG 卡 2】[技能系统 Seed 预置导入与 Agent 入职绑定](docs/wiki/knowledge/zh/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断.md) — 入职第二步 install_skill_pack 流程
 
 ## 模块概述

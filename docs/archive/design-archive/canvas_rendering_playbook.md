@@ -9,9 +9,9 @@
 > - 【② Plan 落地】[统计图表Phase2.md](../plan/统计图表Phase2.md) — DonutChart 多环 + Dashboard 指标卡片组合
 > - 【② Plan 落地】[统计图表第三期.md](../plan/统计图表第三期.md) — AopGauge 双刻度仪表盘 + 种子节点推荐高亮外发光
 > - 【② Plan 落地】[知识图谱推荐起点与组件复用重构.md](../plan/知识图谱推荐起点与组件复用重构.md) — GraphCanvas 组件两端复用 HR/Workspace 双页面
-> - 【③ Wiki 百科】[图表组件.md](docs/wiki/zh/content/前端应用/组件系统/图表组件/图表组件.md) — LineChart/DonutChart/Gauge 三组件使用模式
-> - 【③ Wiki 百科】[业务组件.md](docs/wiki/zh/content/前端应用/组件系统/业务组件.md) — GraphCanvas/RuntimePanel 等 HUD 风格组件总览
-> - 【④ RAG 知识卡】[Canvas HUD 可视化](docs/wiki/knowledge/zh/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95.md) — §CanvasScene Trait 4 方法 §ForceLayout α 冷却 §7 条红线
+> - 【③ Wiki 百科】[图表组件.md](docs/modules/11-前端应用/C-知识/图表组件.md) — LineChart/DonutChart/Gauge 三组件使用模式
+> - 【③ Wiki 百科】[业务组件.md](docs/modules/11-前端应用/C-知识/业务组件.md) — GraphCanvas/RuntimePanel 等 HUD 风格组件总览
+> - 【④ RAG 知识卡】[Canvas HUD 可视化](docs/modules/08-搜索/C-知识/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md) — §CanvasScene Trait 4 方法 §ForceLayout α 冷却 §7 条红线
 
 > 最后更新：2026-07-24
 > 适用范围：Dioxus + web-sys Canvas 2D 渲染栈，用于指导后续页面从 SVG/DOM 迁移到 Canvas，或新建 Canvas 场景化页面。
@@ -315,7 +315,7 @@ web-sys = { version = "0.3.103", features = [
 ## 6. 相关文档
 
 - [frontend_roadmap.md](docs/frontend_roadmap.md) — 前端整体路线图，含游戏化重构五阶段路径
-- [frontend_architecture.md](docs/design/frontend_architecture.md) — 前端架构设计
+- [frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md) — 前端架构设计
 - 实施计划：
   - [2026-07-24-canvas-rendering-infrastructure.md](docs/superpowers/plans/2026-07-24-canvas-rendering-infrastructure.md)
   - [2026-07-24-canvas-dynamic-rendering.md](docs/superpowers/plans/2026-07-24-canvas-dynamic-rendering.md)

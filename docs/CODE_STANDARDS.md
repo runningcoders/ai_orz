@@ -206,7 +206,7 @@ pub enum TaskStatus {
 - **测试使用 `#[sqlx::test]`**，每个测试独立内存数据库
 - **测试隔离原则**：无状态组件可使用单例（OnceLock）；有状态内存组件必须每次新建实例
 
-详见：[sqlx_guide.md](./design/sqlx_guide.md)
+详见：[sqlx_guide.md](docs/modules/12-基础设施与部署/A-设计/sqlx_guide.md)
 
 ---
 
@@ -266,7 +266,7 @@ log_error!(&ctx, "update_project", "db error: {:?}", err);
 
 **禁止的写法**：直接调用 `tracing::info!`；传 ctx 值而非 `&ctx`；Operation 传变量（必须是字符串字面量）。
 
-详见：[logging_design.md](./design/logging_design.md)
+详见：[logging_design.md](docs/modules/12-基础设施与部署/A-设计/logging_design.md)
 
 ---
 
@@ -310,7 +310,7 @@ pub trait Vectorizable: Send + Sync {
 - ❌ Handler 层把 `PagedResult` 当 `Vec` 用（应取 `.items`）
 - ❌ count 独立拼 WHERE；`count_by_xxx` 独立实现 SQL
 
-详见：[pagination_and_count_convention.md](./design/pagination_and_count_convention.md)
+详见：[pagination_and_count_convention.md](docs/modules/13-数据模型/A-设计/pagination_and_count_convention.md)
 
 ---
 
@@ -500,7 +500,7 @@ record_event!(&ctx, ModelCallEvent {
 - ❌ pkg 定义校验规则后前端复制等价实现（pkg 不能被 wasm 引用正是下沉 common 的理由）
 - ❌ 同一规则双端各写一份 match / 矩阵（三处以上重复必然漂移，凭据规则落地时 api-key 连字符已被复制错过一次）
 
-详见：[api_protocol_convention.md](./design/api_protocol_convention.md)
+详见：[api_protocol_convention.md](docs/modules/13-数据模型/A-设计/api_protocol_convention.md)
 
 ---
 

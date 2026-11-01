@@ -12,10 +12,10 @@
 >   - [统计图表第三期.md](统计图表第三期.md) — AOP 事件统计面板集成 RuntimeStatsCollector 内存滑动窗口
 >   - [通用后台任务模块与Seed异步化重构.md](通用后台任务模块与Seed异步化重构.md) — 姊妹：任务进度百分比可视化面板
 >   - [HNSW持久化与索引重建异步化重构.md](HNSW持久化与索引重建异步化重构.md) — 向量重建进度后续可接同款折线图组件
-> - Wiki 长文真实路径：[docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md](docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md) — 五维度总览卡片入口
+> - Wiki 长文真实路径：[docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md](docs/modules/05-任务与项目/C-知识/多维统计系统.md) — 五维度总览卡片入口
 > - Wiki 长文真实路径：[docs/wiki/zh/content/前端应用/组件系统/可视化组件/HUD Canvas 图表组件族.md](docs/wiki/zh/content/前端应用/组件系统/可视化组件/HUD%20Canvas%20图表组件族.md) — ChartRenderer trait + hud_palette + LineChart/Dount/Gauge 复用
-> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md](docs/wiki/knowledge/zh/统计查询%20API%20与前端仪表盘：DuckDB%205%20维表查询%20+%20RuntimeStats%20内存滑动聚合%20+%20StatsHandler%20REST%20API%20+%20前端%20Line/Donut/Gauge%20展示/统计查询%20API%20与前端仪表盘：DuckDB%205%20维表查询%20+%20RuntimeStats%20内存滑动聚合%20+%20StatsHandler%20REST%20API%20+%20前端%20Line/Donut/Gauge%20展示.md)
-> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md](docs/wiki/knowledge/zh/Canvas%20HUD%20可视化：GraphCanvas%20知识图谱%20+%20图表场景LineDonut%20+%20仪表盘Gauge双版%20+%20HudPalette橙光光晕/Canvas%20HUD%20可视化：GraphCanvas%20知识图谱%20+%20图表场景LineDonut%20+%20仪表盘Gauge双版%20+%20HudPalette橙光光晕.md)
+> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md](docs/modules/09-统计与监控/C-知识/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md)
+> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md](docs/modules/08-搜索/C-知识/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md)
 
 ---
 

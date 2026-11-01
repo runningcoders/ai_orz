@@ -10,13 +10,13 @@
 > - [memory_search_enhancement_design.md](./memory_search_enhancement_design.md) — 记忆搜索扩展（tags 过滤/图谱遍历/种子节点推荐）
 > - [entity_list_query_search_design.md](./entity_list_query_search_design.md) — list/query/search 三接口职责边界
 > - 【② Plan 落地】（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
-> - 【③ Wiki 长文】[存储系统.md](docs/wiki/zh/content/基础设施/存储系统/存储系统.md) — §VectorStore 多后端 + 混合检索合并排序
-> - 【③ Wiki 长文】[基础设施.md](docs/wiki/zh/content/基础设施/基础设施.md) — §可插拔向量后端初始化流程
-> - 【③ Wiki 长文】[记忆和向量系统.md](docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md) — 7 类 PO Vectorizable 实现列表
-> - 【③ Wiki 长文】[记忆系统架构.md](docs/wiki/zh/content/架构设计/记忆系统架构.md) — §记忆搜索扩展层
-> - 【③ Wiki 长文】[Agent 搜索与查询.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 搜索与查询.md) — §AgentSearch 三场景 list/query/search
+> - 【③ Wiki 长文】[存储系统.md](docs/modules/12-基础设施与部署/C-知识/存储系统.md) — §VectorStore 多后端 + 混合检索合并排序
+> - 【③ Wiki 长文】[基础设施.md](docs/modules/12-基础设施与部署/C-知识/基础设施.md) — §可插拔向量后端初始化流程
+> - 【③ Wiki 长文】[记忆和向量系统.md](docs/modules/13-数据模型/C-知识/记忆和向量系统.md) — 7 类 PO Vectorizable 实现列表
+> - 【③ Wiki 长文】[记忆系统架构.md](docs/modules/00-总览与架构/C-知识/记忆系统架构.md) — §记忆搜索扩展层
+> - 【③ Wiki 长文】[Agent 搜索与查询.md](docs/modules/05-任务与项目/C-知识/Agent 搜索与查询.md) — §AgentSearch 三场景 list/query/search
 > - 【④ RAG 卡 3 张】
->   - [向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity](docs/wiki/knowledge/zh/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity.md) — 向量基础设施 + 统一 embed_entity 工厂
+>   - [向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity](docs/modules/08-搜索/C-知识/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md) — 向量基础设施 + 统一 embed_entity 工厂
 >   - [三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）](docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md) — 6 实体 search 同构模式 + 加权融合排序
 >   - [记忆领域搜索增强：FTS5 tags 语义过滤 + knowledge graph traverse 图谱遍历 + recommend_seed_nodes 种子节点推荐](docs/wiki/knowledge/zh/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐.md) — tags 过滤 + BFS 遍历 + 推荐
 

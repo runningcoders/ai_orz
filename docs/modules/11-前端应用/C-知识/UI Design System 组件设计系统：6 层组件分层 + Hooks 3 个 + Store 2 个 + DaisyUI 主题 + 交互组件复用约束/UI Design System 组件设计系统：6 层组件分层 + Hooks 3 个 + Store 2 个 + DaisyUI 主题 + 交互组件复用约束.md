@@ -1,0 +1,185 @@
+---
+kind: knowledge_card
+name: UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束
+category: 前端可视化
+scope:
+- frontend/src/components/**/*.rs
+- frontend/src/hooks/**/*.rs
+- frontend/src/store/**/*.rs
+- frontend/src/layouts/**/*.rs
+- frontend/styles/**/*.css
+- frontend/src/pages/**/*.rs
+- frontend/src/utils**/*.rs
+source_files:
+- frontend/src/components/button.rs#L1-L49
+- frontend/src/components/modal.rs#L1-L43
+- frontend/src/components/toast.rs#L1-L103
+- frontend/src/components/state.rs
+- frontend/src/components/stats.rs
+- frontend/src/components/graph.rs
+- frontend/src/components/graph_canvas.rs
+- frontend/src/components/hud.rs#L1-L262
+- frontend/src/hooks/use_resource.rs#L1-L40
+- frontend/src/hooks/use_workspace_data.rs
+- frontend/src/store/auth.rs#L1-L100
+- frontend/src/store/toast.rs#L1-L100
+- frontend/src/layouts/app_layout.rs#L1-L27
+- frontend/src/layouts/navbar.rs#L1-L80
+- frontend/styles/input.css:L1-L120
+- frontend/styles/input.css#L1249-L1550
+- frontend/styles/input.css（2026-09-12 增量：输入框 +0.5rem 纵向留白 py-2 + Loading 组件统一 class）
+- frontend/src/pages/workspace.rs（2026-09-12 增量：MMORPG 式三段底部横幅重构）
+- frontend/src/pages/hr/agents.rs（2026-09-12 增量：同步弹窗 Loading 组件统一）
+- frontend/src/pages/settings.rs
+- frontend/src/pages/hr/agent_detail.rs#L60-L78
+- frontend/src/pages/hr/agent_detail.rs#L720-L730
+- frontend/src/pages/message/chat.rs
+- frontend/src/utils/mod.rs
+- frontend/src/utils/status.rs
+- frontend/src/hooks/mod.rs
+- docs/modules/11-前端应用/A-设计/ui_design_system.md
+- docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
+- docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md
+- docs/modules/11-前端应用/C-知识/组件系统.md
+- docs/modules/11-前端应用/C-知识/UI 样式与主题.md
+- docs/modules/00-总览与架构/C-知识/前端架构设计.md
+- docs/modules/11-前端应用/C-知识/前端应用.md
+- frontend/src/utils/local_store.rs#L1-L270（2026-09-26 增量：通用 localStorage 组件层 —— KEY_PREFIX 统一前缀 + keys/legacy 常量集中定义 + get_json/set_json/remove 类型化读写 + Versioned 版本包装 + get_json_with_legacy/get_string_with_legacy 存量一次性迁移 + UnreadBadges 结构集中）
+- frontend/src/config.rs（2026-09-26 增量：load/save/clear_saved 改走 local_store，旧键 ai_orz_config 兼容迁移）
+- frontend/src/store/auth.rs#L1-L90（2026-09-26 增量：键名收敛至 local_store::keys，is_logged_in/restore_role/restore_string 走 get_json_with_legacy/get_string_with_legacy）
+- frontend/src/hooks/mod.rs（2026-09-26 增量：get_saved_theme / ThemeController::set 走 local_store 读写主题）
+- frontend/styles/input.css#L1447-L1468（2026-09-25 增量：聊天气泡 chat-bubble 尖角贴顶翻转 —— scaleY(-1) 覆盖块 + 抹平角换顶角 + 底角恢复 var(--radius-field)）
+- frontend/src/pages/message/chat.rs（2026-09-26 增量：项目列表未读角标 —— local_store::UnreadBadges 计数 + 进会话清零 + 默认对话哨兵键 default）
+- frontend/styles/input.css#L877-L890（2026-09-30 增量：`.detail-longtext` 长文本限高内部滚动 —— 详情页长可变量字段独立成块，不再撑坏 .detail-grid）
+
+---
+
+# §1 概述与定位
+
+本知识卡沉淀 AI Orz 前端（Dioxus 0.7 WebAssembly）的 **Design System 组件设计系统**规范，覆盖 6 层组件分层架构、3 个自定义 Hooks、2 个全局 Store、DaisyUI 5 主题体系、以及交互组件的复用约束。项目已从 Mistral 设计系统内联样式迁移到 **Tailwind CSS v4 + DaisyUI v5** 组件库实现（2026-07-25 里程碑），自定义 `orz-light` 主题承袭 Mistral 暖色基因（品牌橙 + 暖象牙底色），同时开放 30+ 内置主题供用户切换。
+
+**2026-09-12 增量**：DaisyUI 主题系统瘦身——从 31 个内置主题**删除 7 个无用皮肤**（bumblebee / emerald / forest / wireframe / black / sun / winter），仅保留自研双主题 `orz-light`（暖色驾驶舱）+ `orz-dark`（深色驾驶舱）+ 少量精选内置主题（lemonade / caribou）。同步 `hooks/mod.rs` 的 `AVAILABLE_THEMES` 数组，禁止 UI 选择器展示已删除主题。输入框视觉升级：`.hud-input` 新增**静息态发丝边**（1px 渐变描边 + 微妙发光层 `box-shadow: 0 0 0 1px rgba(250, 82, 15, 0.08)`）+ **聚焦态流动光带边框**（`hud-input:focus-within` 触发 `hud-signal` keyframes 从左至右扫过输入框边缘，橙光 1.2s 循环一次，呼应 HUD 驾驶舱流光风格），彻底替换之前普通的 1px gray-300 描边。
+
+**2026-09-12 增量（c632f4bf→HEAD）**：输入框控件**加 0.5rem 纵向留白**（`.hud-input` 类追加 `py-2`），与上下控件保持呼吸感，避免表单元素贴得过密；**同步弹窗进度指示改用统一 Loading 组件**（`frontend/src/pages/hr/agents.rs` 预置 Agent 同步弹窗中，之前使用自定义 spinner，现在改用 DaisyUI `loading loading-spinner` 或 HUD 原子组件中的 Loading 原语，与全站其他弹窗进度指示风格统一）；**工作台底部横幅重构为 MMORPG 式三段布局**（`frontend/src/pages/workspace.rs`）——将原来简陋的单条底部横幅拆解为三个功能分区（左上状态/中间对话/右下工具提示），类 MMORPG 游戏 UI 的 HUD 风格，左侧显示当前视图状态与上下文锚点、中间是可交互的对话框入口、右下是快捷工具提示条，整体通过 Tailwind `flex justify-between items-end` + 各自独立的 `HudCallout`/`HudCard` 容器实现。
+
+**2026-09-26 增量（17cb0056 / 9e093e79 / 924d900d）**：两处前端体验修复。① **localStorage 收敛为通用组件层** `frontend/src/utils/local_store.rs`——此前各业务散点直调 localStorage，键名两套、编码三种并存；组件层统一 `ai_orz:` 前缀（`keys` 模块集中定义 Key、`legacy` 模块收旧键），类型化接口 `get_json`/`set_json`/`remove`（值内嵌 `{"v":1,"data":...}` 版本包装），错误分层 `LocalStoreError`（调用方决定兜底），并提供 `get_json_with_legacy`/`get_string_with_legacy` 在**新键未命中时回退旧键旧编码、命中即回写新键**完成一次性迁移（防登录态/配置丢失）；`config.rs` / `store/auth.rs` / `hooks/mod.rs`（主题）全部改走组件层。② **DaisyUI `chat-bubble` 尖角贴顶翻转**（`frontend/styles/input.css`）——头像已按产品决策对齐消息起始位置（顶边），而 DaisyUI 5.7.0 的 `.chat-bubble::before` 尖角硬编码贴气泡底边导致与头像脱钩；用 `scaleY(-1)` 覆盖块把尖角翻到顶边并垂直翻转（抹平圆角由底角换到顶角、底角恢复 `var(--radius-field)`），`chat-end` 保留 `rotateY(180deg)` 水平镜像。
+
+# §2 关键文件表
+
+| 角色 | 路径 | 关键锚点 |
+|------|------|----------|
+| Button 组件（5 variants） | frontend/src/components/button.rs | L1-L49 `ButtonVariant` 枚举（Primary/Accent/Secondary/Danger/Ghost）映射到 DaisyUI 类；`btn-sm` 尺寸控制；统一事件透传 |
+| Modal 模态框 | frontend/src/components/modal.rs | L1-L43 DaisyUI `modal modal-open` 类；点击遮罩关闭 + `modal-action` footer 插槽；右上角 `✕` 关闭按钮 |
+| Toast 通知系统 | frontend/src/components/toast.rs | L1-L103 全局容器 `toast toast-top toast-end z-[9999]`；4 种类型（Success/Error/Warning/Info）映射 alert 类；滑入+离开动画；底部进度条；自动 dismiss 生命周期 |
+| State 状态指示器 | frontend/src/components/state.rs | Loading/Success/Error/Empty 四态组件，配合 use_resource 使用 |
+| Stats 统计指标卡 | frontend/src/components/stats.rs | Agent/Tool/Skill 等实体详情页的指标数字展示 + 环比趋势箭头 |
+| Graph SVG 图 | frontend/src/components/graph.rs | 关系图 SVG 原生渲染（兜底 Canvas 方案）；节点/边/标签绘制 |
+| GraphCanvas 知识图谱 Canvas | frontend/src/components/graph_canvas.rs | HUD 风格 Canvas 渲染栈；节点选中态扫描环、未选中呼吸光晕、边流光、四角 HUD 装饰 |
+| use_resource Hook | frontend/src/hooks/use_resource.rs | L1-L40 资源三态（Loading/Ready/Failed）封装；自动首次触发 + reload 手动刷新；fetcher 闭包异步加载 |
+| use_workspace_data Hook | frontend/src/hooks/use_workspace_data.rs | Workspace 侧边栏频道/会话聚合数据加载 |
+| use_require_auth Hook（布局内引用） | frontend/src/layouts/app_layout.rs | AppLayout 中调用 use_require_auth 守卫；未登录显示 loading 或重定向登录 |
+| use_breakpoint Hook（Navbar 内引用） | frontend/src/layouts/navbar.rs | 响应式断点判断：桌面显示完整导航，移动端汉堡抽屉 |
+| Auth Store | frontend/src/store/auth.rs | L1-L100 localStorage 持久化登录态标志位 + role；HttpOnly Cookie JWT 持有；mark_logged_in / save_role / clear_login_state / logout / is_logged_in；`AuthState {logged_in, username, role, org_id}` |
+| Toast Store | frontend/src/store/toast.rs | L1-L100 `ToastState` Copy 结构体：Signal<Vec<ToastItem>> + next_id；success/error/warning/info 四接口；dismiss 移除；默认时长 3000-5000ms |
+| AppLayout 主布局 | frontend/src/layouts/app_layout.rs | L1-L27 权限守卫 use_require_auth → Navbar + main（container mx-auto px-4 py-6 max-w-7xl）结构 |
+| Navbar 顶部导航 | frontend/src/layouts/navbar.rs | L1-L80 品牌 + 桌面导航（对话/消息搜索/工作台/HR/Finance/Project/System）+ 移动端汉堡抽屉；登出流程：先调后端 logout API 清 cookie，再清前端 store |
+| Tailwind + DaisyUI 主题配置 | frontend/styles/input.css | L1-L120 `@import "tailwindcss"` + `@plugin "daisyui"` 声明 31 主题；`[data-theme="orz-light"]` 自定义 oklch 色值；HUD 流光条 keyframes `.hud-streak`；知识图谱 `.kg-bg` 背景网格 |
+| HUD 原子组件集合（全站统一） | frontend/src/components/hud.rs | L1-L262 10+ 个 HUD 原语：`HudPanel`（基础发丝边面板）、`HudCard`（带 tone primary/accent/success/neutral 切换）、`HudSection`/`HudProgress`/`HudCallout`/`HudDivider`/`HudTable`/`HudTabs`/`PageHeader`/`StatReadout`/`StatGrid`。全站 40+ 页面已迁移，替代散落的非 HUD 风格卡片/徽章/标签页 |
+| HUD CSS 皮肤块 | frontend/styles/input.css | L1249-L1550 `.hud-panel`（渐变发丝边 + backdrop-blur）、`.hud-panel.hud-tone-*` 四色变体、`.hud-signal` 流光条 keyframes、`.hud-stat` 等宽数字、`.hud-progress` 系列、`.hud-divider`/`.hud-table`/`.hud-modal`/`.hud-input`、`.badge.hud-badge`（L1507-L1549，backdrop-blur + glow 光晕）、`.hud-glass`/`.hud-collapse-btn` |
+| Settings 设置页（HUD 收口示例） | frontend/src/pages/settings.rs | 主题选择 UI + 全站 HUD 收口后新增组织级配置区，统一 HudCard + HudPanel 容器风格 |
+| Agent 详情页（HUD 收口示例） | frontend/src/pages/hr/agent_detail.rs | 工具与技能全景改用 HudCard + HudPanel，指标卡统一 StatReadout |
+| 聊天页（HUD 收口示例） | frontend/src/pages/message/chat.rs | 气泡 + 消息侧面板 HUD 统一，进度条改用 HudProgress，提示条改用 HudCallout |
+| Design 规范文档 | docs/modules/11-前端应用/A-设计/ui_design_system.md | Mistral 暖色系设计原则 + DaisyUI 5 迁移落地章节；HUD 驾驶舱效果说明；组件清单参考 |
+| Plan 统计图表基础设施 | docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md | charts/ 子目录组件（donut_chart/line_chart）落地计划与复用约束 |
+| Plan 知识图谱组件复用 | docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md | Graph/GraphCanvas/KanbanCanvas/WorkspaceGraph/CanvasScene 复用层级划分 |
+| localStorage 通用组件层 | frontend/src/utils/local_store.rs | L1-L270 `KEY_PREFIX` + `keys`/`legacy` 常量集中 + `get_json`/`set_json`/`remove` 类型化 + `Versioned` 版本包装（`{"v":1,"data":...}`）+ `get_json_with_legacy`/`get_string_with_legacy` 存量迁移 + `LocalStoreError` + `UnreadBadges`/`UNREAD_DEFAULT_KEY` |
+| 聊天气泡尖角贴顶 | frontend/styles/input.css | L1447-L1468 `.chat .chat-bubble::before { bottom:auto; top:0 }` + `.chat-start/.chat-end` `transform: scaleY(-1)`（`chat-end` 保留 `rotateY(180deg)`）+ 抹平角由底角换顶角、底角恢复 `var(--radius-field)` |
+
+# §3 架构与约定
+
+## 3.1 6 层组件分层架构
+
+```
+Layer 6 - Page Level（页面级）
+  frontend/src/pages/**/*         业务页面模块，组合 Layer 1-5 组件
+
+Layer 5 - Layout Level（布局级）
+  frontend/src/layouts/
+    ├─ app_layout.rs              AppLayout：权限守卫 + Navbar + Main 容器
+    └─ navbar.rs                  Navbar：品牌/导航/用户菜单（响应式断点）
+
+Layer 4 - Composite Business（复合业务组件）
+  frontend/src/components/
+    ├─ chat/                      Chat 域：ChatSidePanel/MessageBubble/TypingIndicator/ToolCallsTab
+    ├─ charts/                    Chart 域：DonutChart/LineChart
+    ├─ canvas_scene.rs / chart_scene.rs  Canvas 场景管理
+    ├─ graph.rs / graph_canvas.rs / kanban_canvas.rs  图渲染：SVG/Canvas/Force 布局
+    ├─ workspace_graph.rs / relation_graph.rs  关系图变体
+    └─ runtime_panel.rs / process_detail.rs / artifact_meta_modal.rs / task_progress.rs  业务复合组件
+
+Layer 3 - Interactive Basic（基础交互组件）
+  frontend/src/components/
+    ├─ button.rs                  Button（5 variants + size）
+    ├─ modal.rs                   Modal（遮罩/关闭按钮/footer）
+    ├─ confirm_dialog.rs          ConfirmDialog（确认对话框，基于 Modal）
+    ├─ toast.rs                   Toast（全局通知容器 + 单条）
+    ├─ code_editor.rs             CodeEditor 代码编辑
+    ├─ markdown.rs                MarkdownRenderer 渲染
+    ├─ searchable_select.rs       可搜索下拉
+    └─ create_http_tool.rs        HTTP Tool 创建表单子组件
+
+Layer 2 - Display Basic（基础展示组件）
+  frontend/src/components/
+    ├─ state.rs                   State 指示器（Loading/Success/Error/Empty）
+    ├─ stats.rs                   Stats 指标卡（数字+趋势）
+    ├─ gauge.rs / aop_gauge.rs    仪表盘
+    └─ hud_palette.rs             HUD 调色板
+
+Layer 1 - Foundation（基础层，非 Rust 组件）
+  frontend/styles/input.css       Tailwind + DaisyUI 主题 + 自定义动画+HUD 类
+  frontend/src/store/*.rs         全局状态（Auth/Toast）
+  frontend/src/hooks/*.rs         自定义 Hooks（use_resource/use_workspace_data 等）
+```
+
+**新增组件必须先判断所属层级：** Layer 3 及以下必须通用可复用（不出现具体业务字段名）；Layer 4 可组合 Layer 1-3 但应保持页面无关。
+
+## 3.2 DaisyUI 5 主题体系
+
+- **CSS 框架**: Tailwind CSS v4.1（`@import "tailwindcss"` + `@theme` 配置）
+- **组件库**: DaisyUI v5（`@plugin "daisyui"` 引入）
+- **默认主题**: `orz-light`（Mistral 暖色系基因），CSS 变量值：
+  - Primary: `oklch(0.63 0.24 50)` ≈ Mistral Orange `#fa520f`
+  - Base 100: `oklch(0.98 0.02 85)` ≈ Warm Ivory `#fffaeb`
+  - Secondary: 暖橙色；Accent: 金色；Radius 统一阶（0.375rem/0.5rem）
+- **30+ 内置主题切换**: 设置 `<html data-theme="xxx">` 即可生效，切换入口在 Navbar 用户菜单
+- **HUD 高级视觉特效**: 自定义 `.hud-streak` 流光条 + `.kg-bg` 知识图谱背景，配合动画 keyframes
+
+## 3.3 Hooks（3 个自定义）+ Store（2 个全局）
+
+**Hooks 3 个：**
+1. `use_resource<T>` → `(Signal<ResourceState<T>>, impl FnMut())`：统一数据加载三态（Loading/Ready/Failed），自动首次加载，返回 reload 句柄
+2. `use_require_auth()` → `bool`：AppLayout 权限守卫，检查登录态并回填用户信息
+3. `use_breakpoint()` → `bool`：响应式判断（true = 移动端），控制 Navbar 抽屉模式
+
+**Store 2 个：**
+1. `AuthState`（auth.rs）：`Signal` 驱动的 Copy 结构体；localStorage 持久化 logged_in 标志位+role；HttpOnly Cookie JWT 持有（前端不直接持有 token）；`logout()` 函数级登出流程
+2. `ToastState`（toast.rs）：双 Signal 设计（toasts: Signal<Vec<ToastItem>> + next_id: Signal<u64>），因此 ToastState 整体是 Copy 类型可安全 move 到任意闭包；`success()/error()/warning()/info()` 四方法
+
+# §4 硬约束与红线
+
+1. **禁止自定义 CSS 组件类红线**：自 DaisyUI 迁移完成后，**禁止**新增自定义 CSS 类实现通用组件（如自定义 `.my-button`）；通用交互组件统一使用 DaisyUI 类名（`btn`/`modal`/`toast`/`alert`/`card`/`table` 等）。特殊 HUD 视觉效果除外（`.hud-streak`/`.kg-bg` 在 input.css 中已有定义）
+2. **Button Variant 映射一致性红线**：所有 Button 组件必须走 `button.rs:ButtonVariant` 枚举映射到 DaisyUI 类：Primary→btn-primary、Accent→btn-secondary、Secondary→btn-outline、Danger→btn-error、Ghost→btn-ghost。**禁止**在页面组件内直接手写 `btn btn-primary` 类跳过 Button 组件
+3. **Toast 全局唯一容器红线**：`ToastContainer` 组件**必须**且只能在根组件（App）中实例化一次；任何页面需要 Toast 时调用 `use_toast().success(...)` 接口，**禁止**在页面内部手动渲染 Toast
+4. **Auth HttpOnly Cookie 红线**：前端 JWT 基于 HttpOnly Cookie 持有，**禁止**在 localStorage、sessionStorage、内存 Signal 中存储真实 JWT token；AuthState 中仅保存登录状态标志位和角色信息。登出必须同时执行：(a) 调用后端 logout API 使 cookie 失效；(b) 清 localStorage 标志；(c) 重置内存 AuthState Signal
+5. **Graph/GraphCanvas 选择红线**：关系图渲染优先使用 `GraphCanvas`（Canvas HUD 风格高性能），`graph.rs` 仅作为 SVG 兜底方案。两组件接受相同的节点/边数据结构输入，保证切换不重写调用方
+6. **use_resource 非重写红线**：任何需要异步加载数据的场景**必须**使用 `use_resource` Hook，禁止在页面组件中手写 `use_signal + spawn + use_effect` 裸实现三态管理；use_resource 覆盖 Loading/Ready/Failed 三态 + 竞态防护模式
+7. **DaisyUI 类名非简写红线**：在 `frontend/src/**/*.rs` 中使用 DaisyUI 类名必须使用全称（如 `btn-primary` 而非自定义缩写）；禁止通过 `@apply` 批量封装为新类——直接内联在 class 字符串中，便于工具类 grep
+8. **响应式断点单一来源红线**：所有桌面/移动端布局差异判断必须走 `use_breakpoint()` Hook，**禁止**在各处手写 `window.inner_width < 768` 独立判断；断点阈值统一在 use_breakpoint 实现中维护
+9. **全站 HUD 原子组件收口红线**（Level 2 合并到主卡）：全站所有卡片/徽章/标签/提示条/进度条/分割线/表格/标签页 **必须** 使用 `components/hud.rs` 原语（`HudPanel`/`HudCard`/`HudCallout`/`HudProgress`/`HudDivider`/`HudTable`/`HudTabs`）或 `input.css` 的 `.hud-*` CSS 变体（`.badge.hud-badge`/`.hud-modal`/`.hud-input`）。**禁止** 自定义非 HUD 风格的卡片容器、徽章或标签页。40+ 前端页面已完成迁移。
+10. **HudBadge 玻璃光晕约束**：所有徽章类视觉 **必须** 使用 `.badge.hud-badge` 皮肤（带 `backdrop-blur` + `glow` 光晕，见 `frontend/styles/input.css#L1507-L1549`），保持 HUD 驾驶舱视觉一致性。禁用旧版无光晕裸 `badge`。
+11. **hud-tone 旧变体移除红线**：前端页面已废弃 hud-tone 独立变体，统一收口为 `HudCard { tone: Some("primary"|"accent"|"success"|"neutral") }`。**禁止** 新增 `.hud-tone-*` 类名直写或自定义 tone 变体。
+12. **SkillCard 状态 HUD + Agent 详情页 tab 拆分约束**：SkillCard 必须支持 Expired 状态（badge 颜色 `badge-error` + 操作区「恢复」按钮）；Agent 详情页（agent_detail.rs）拆为工具 tab + 技能 tab，工具关系图并入工具 tab 上部总览；TextMetrics measure_text（web-sys crate）替代字符数估算，Canvas 文本测量精度升级
+13. **Loading 组件统一红线**（2026-09-12 新增，Ref 6dbad9b2）：全站所有进度指示/加载状态**禁止**自定义 spinner（如纯 CSS 动画、svg circle+animation 硬写），**必须**使用统一的 DaisyUI `loading` 类（`loading loading-spinner` / `loading loading-dots` / `loading loading-ring` 等）或 HUD 原子组件中的 Loading 原语。例外情况须在 HUD 原语中新增对应变体（如定制颜色或尺寸），而非页面自行实现。当前已统一：预置 Agent 同步弹窗（agents.rs）、工作台底部横幅加载状态（workspace.rs）、各类导入/导出进度弹窗
+14. **localStorage 只能走组件层红线**（2026-09-26 新增，17cb0056）：`frontend/src/**` 中**禁止**再出现 `utils::local_storage()` 直调或散点自造键名（`storage.get/set_item/remove_item("xxx")`）；所有持久化**必须**经 `frontend/src/utils/local_store.rs`——键名挂 `keys` 模块常量（`ai_orz:` 前缀，模块内测试 `all_keys_use_unified_prefix` 兜底校验）、读写走 `get_json`/`set_json`/`remove`（版本包装统一）、存量迁移走 `get_json_with_legacy`/`get_string_with_legacy`（读旧成功即回写新键）。新增业务持久化结构体集中定义在组件层（如 `UnreadBadges`），键名必须三者一致（`keys` 常量、`legacy` 旧键、迁移调用点）
+15. **聊天气泡尖角必须贴顶翻转且分方位覆盖**（2026-09-25 新增，924d900d）：DaisyUI 的 `.chat-bubble::before` 尖角默认贴底边，而产品决策把头像对齐到消息起始（顶）边，故**必须**用 `frontend/styles/input.css` 的覆盖块把尖角 `top:0` + `scaleY(-1)` 翻到顶边。`chat-end` 的水平镜像由原生 `rotateY(180deg)` 提供，**覆盖 `transform` 时必须保留 `rotateY(180deg)`**（否则右侧尖角翻错方向）——故必须分 `.chat-start` / `.chat-end` 两方位分别写，禁止只写一条 `.chat .chat-bubble::before` 破坏右侧镜像；抹平圆角同步由底角换到对应顶角、底角恢复 `var(--radius-field)`
+16. **详情页长文本必须独立成块限高红线**（2026-09-30 新增）：详情页的长可变量字段（如 `description`）**禁止**与固定宽度的短字段同处 `.detail-grid`（`repeat(auto-fit, minmax(200px, 1fr))`）——长文会把单元格撑高，并经 `align-items: stretch` 连带拉高同排短字段、把后续面板挤出首屏。**必须**独立成块（`HudPanel` + eyebrow `DESCRIPTION`）并用 `.detail-longtext`（`max-height: 32rem` + `overflow-y: auto` + `overscroll-behavior: contain`）限高内部滚动：短文本不出滚动条、超长文本 Markdown 在块内滚动；空描述仍渲染面板 + 灰字「暂无描述」。锚点：frontend/styles/input.css#L877-L890

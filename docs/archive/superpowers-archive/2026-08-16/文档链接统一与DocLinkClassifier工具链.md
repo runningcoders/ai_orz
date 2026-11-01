@@ -467,8 +467,8 @@ git commit -m "feat(common): add DocLinkClassifier (#Lx-Ly primary format, legac
 | 代码（行范围） | `[描述](路径#L起始-L结束)` | `[日志初始化](src/pkg/logging.rs#L15-L42)` |
 | 代码（单行） | `[描述](路径#L行)` | `[UserRole 定义](common/src/enums/user.rs#L8)` |
 | 代码（无行号） | `[描述](路径)` | `[初始迁移](migrations/20260420000000_initial.sql)` |
-| 文档互引 | `[描述](docs/...md)` | `[日志设计](docs/design/logging_design.md)` |
-| Wiki 长文 | `[描述](docs/wiki/zh/content/...md)` | `[日志系统](docs/wiki/zh/content/功能模块/系统管理/日志管理系统.md)` |
+| 文档互引 | `[描述](docs/...md)` | `[日志设计](docs/modules/12-基础设施与部署/A-设计/logging_design.md)` |
+| Wiki 长文 | `[描述](docs/wiki/zh/content/...md)` | `[日志系统](docs/modules/12-基础设施与部署/C-知识/日志管理系统.md)` |
 | RAG 卡 | `[描述](docs/wiki/knowledge/zh/...md)` | `[日志宏卡](docs/wiki/knowledge/zh/日志系统/日志宏设计.md)` |
 | 外部链接 | 直接写 http(s) | `[sqlx](https://docs.rs/sqlx)` |
 

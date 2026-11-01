@@ -1,0 +1,150 @@
+---
+kind: knowledge_card
+name: 统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示
+category: 前端可视化
+scope:
+  - src/pkg/stats/**/*.rs
+  - src/pkg/stats/runtime/**/*.rs
+  - src/service/dal/stats.rs
+  - src/service/dao/**/stats_duckdb.rs
+  - src/handlers/system/**/*stats*.rs
+  - frontend/src/components/**/*.{ts,tsx}
+  - frontend/src/pages/**/*系统管理*.{ts,tsx}
+  - frontend/src/components/stats.rs
+  - frontend/src/components/time_range_picker.rs
+source_files:
+  - src/pkg/stats/mod.rs#L31-L171
+  - src/pkg/stats/runtime/mod.rs#L33-L178
+  - src/handlers/system/aop_stats.rs#L1-L72
+  - src/service/dao/model_provider/stats_duckdb.rs
+  - src/service/dal/stats.rs
+  - frontend/src/components
+  - src/handlers/finance/model_provider/token_stats.rs
+  - src/service/domain/finance/model_provider.rs
+  - src/pkg/stats/collector.rs
+  - src/pkg/stats/default.rs
+  - common/src/models/stats.rs
+  - common/src/api/model_provider.rs
+  - common/src/api/user.rs
+  - frontend/src/components/stats.rs
+  - frontend/src/components/time_range_picker.rs (2026-09-11 新增：通用时间区间筛选组件)
+  - frontend/src/components/ring_progress.rs (2026-09-11 新增：通用环形进度组件)
+  - frontend/src/api/finance.rs
+  - frontend/src/pages/user/profile.rs (2026-09-11 增量：用户页统计兜底——无数据时显示空态)
+  - frontend/src/pages/system/aop.rs (2026-09-11 增量：统计看板引入 TimeRangePicker)
+  - src/handlers/user/profile/get_current_user.rs (2026-09-11 增量：用户统计兜底)
+  - docs/archive/design-archive/stats_module_design.md
+  - docs/archive/design-archive/stats_query_design.md
+  - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
+  - docs/modules/09-统计与监控/C-知识/统计与监控.md
+  - docs/modules/05-任务与项目/C-知识/多维统计系统.md
+  - docs/modules/09-统计与监控/C-知识/系统监控与健康检查.md
+  - src/handlers/finance/tool/runtime_stats.rs (2026-09-14 新增：组织级工具运行时统计 Handler)
+  - common/src/api/tool.rs ToolRuntimeStatsRequest + ToolRuntimeStatsResponse (2026-09-14 新增：统计查询 DTO)
+  - common/src/models/stats.rs (2026-09-14 增量：统计响应类型扩展)
+  - frontend/src/utils/number.rs (2026-09-14 新增：数字格式化工具；2026-09-15 扩展：轴刻度 format_compact_axis)
+  - frontend/src/utils/status.rs (2026-09-14 新增：状态环/徽章 SSOT)
+  - frontend/src/components/charts/line_chart.rs (2026-09-15 增量：轴刻度自适应——Y 轴 format_compact_axis，X 轴 x_axis_time_format + 画布宽度反推标签个数)
+  - frontend/src/pages/workspace.rs (2026-09-14 增量：顶栏统计图换数字读数 + 组织级统计)
+  - common/src/models/stats.rs (2026-09-15 增量：StatsInterval Minutely + STATS_MAX_BUCKETS=512 + clamp_interval_to_span + bucket_ms + bucket_count + INTERVAL_LADDER)
+---
+
+## §1 概述与定位
+
+本知识卡描述 ai_orz 项目的统计查询与仪表盘全链路架构，覆盖 DuckDB 持久化多维查询（5 实体 Stats DAO 全实体覆盖）、RuntimeStatsCollector 内存滑动窗口聚合（AOP 旁路采集）、Stats REST API 三端点（overview/time-series/distribution）、前端图表组件（Line 折线/Donut 环形/Gauge 仪表盘）四大层级。触发读取场景：新增实体统计查询接口、排查时序聚合或 QPS 计算、新增前端统计图表组件、理解双层选型（持久化 vs 内存）决策时。
+
+**Token 消耗时序看板（finance 域归位）**：GET /api/v1/finance/model-providers/token-stats 分钟级三线（tokens_input/tokens_output/call_count）时间序列；数据源 DuckDB `model_call_events` 表；按 `organization_id` 组织隔离（DAL 层注入 filter）；批次刷盘故最近 1-2 分钟数据未 flush，曲线末端偏低属预期表现——前端按固定间隔轮询即可，不要因"最后一点无数据"报 bug。finance 域归位：handler 从原来的 system/aop_stats 独立出来，归属 ModelProviderStatsDao → model_provider domain → finance handler，对齐「模型调用 → finance 领域」的业务归属。
+
+**周期落盘收口 + 可空 JSON 兼容 + 用户页统计兜底**（2026-09-11 增量）：stats 周期落盘（batch flush timer）从原来的独立调度器（`pkg/stats/runtime` 内部定时器）收口到统计库自身初始化（`pkg/stats/default.rs`）——Stats::open() 时启动后台 flush task，stats 单例生命周期与 DuckDB 连接绑定；**可空 JSON 兼容**：`model_call_events` 表的 `call_summary` / `token_summary` 字段从 NOT NULL 改为 nullable，兼容旧数据（迁移前的事件无这些字段）；**用户页统计兜底**：`get_current_user` handler 统计查询返回空结果时，前端 profile 页显示「暂无数据」空态卡片而非 error toast，避免新用户首次访问看到红色报错。
+
+**TimeRangePicker 通用时间区间筛选组件**（2026-09-11 新增）：`frontend/src/components/time_range_picker.rs` 通用日期范围筛选，props: `start/end` + 预设快捷按钮（近 1h / 6h / 24h / 7d / 30d）；所有统计看板统一引入——AOP 系统页、ModelProvider Token 时序、用户页统计。
+
+**2026-09-14 增量**：Workspace 顶栏统计图升级为**数字读数模式**——从图表可视化切换为数字统计卡（工具总数 / 今日调用次数 / 成功率 / 平均耗时），配套 `frontend/src/utils/number.rs` 大数格式化工具（千分位 + compact 缩写）。后端新增组织级工具运行时统计接口 `GET /api/v1/finance/tools/runtime-stats`（DuckDB tool_call_events 表按 organization_id 过滤聚合），补全了"组织整体工具"维度的查询能力。`frontend/src/utils/status.rs` 统一 Agent 状态环、项目状态徽章等视觉组件的 SSOT。
+
+**2026-09-15 增量（commit 1f485e47）**：前端统计图**轴刻度自适应**——`line_chart.rs` 的 Y 轴走 `format_compact_axis`（K/M/B 三级进位，字符数恒 ≤5），X 轴标签格式由桶宽决定、标签个数由画布可用宽度反推。数字格式化进一步收敛到 `frontend/src/utils/number.rs` 单一入口，禁止各处组件硬编码千分位/缩写逻辑。
+
+**2026-09-15 增量（commit 53a95907）**：统计粒度新增 **Minutely 分钟档**（StatsInterval 三档齐全），配套 `STATS_MAX_BUCKETS=512` 桶数护栏 + `clamp_interval_to_span()` 服务端自动收敛（超限逐级回退 Minutely → Hourly → Daily）。Tool 侧 `stats_interval` DTO 删除——Tool 详情页只提供窗口内聚合值，不含时序曲线（时序查询走 DuckDB Stats DAO）。
+
+## §2 关键文件表
+
+| 文件 | 角色 | 核心入口/约束 |
+|------|------|---------------|
+| [pkg/stats/mod.rs](src/pkg/stats/mod.rs) | Stats 顶层（DuckDB 持久化版） | `Stats::open()` + `batch_size` 批量写入；`record_event!` 宏三种模式（自动表/结构体/显式表）；global_stats() 无 ctx 单例访问；5 张专用表：default_events/model_call_events/tool_call_events/agent_awake_events/project_events/task_events |
+| [pkg/stats/runtime/mod.rs](src/pkg/stats/runtime/mod.rs) | RuntimeStatsCollector 内存版 | WINDOW_MINUTES=60 滑动窗口；泛型 K 维度键（Clone+Eq+Hash+Send+Sync）；record(key, Option<duration>)：None 只计数 Some 计数+累计耗时；snapshot() 深拷贝返回 RuntimeStatsSnapshot + buckets 升序桶 + total_counts 全生命周期；evict_old_buckets 每分钟淘汰 |
+| [handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs) | AOP 实时统计 HTTP 接口 | 3 端点：GET overview（5 指标 total_published/consumed/success/failed/avg_duration_ms）；GET time-series（event_kind/consumer_name/status 过滤 + bucket 聚合）；GET distribution（group_by=event_kind/consumer_name/status + status 过滤） |
+| [stats_module_design.md](docs/archive/design-archive/stats_module_design.md) | Stats 双层互补框架设计 | StatEvent + StatTable 双 trait；专用表 is_dedicated_table() + column_sql()/metric_sql() 表自描述；query_aggregation 通用聚合；query_time_series 时序；双路径选型铁律表 |
+| [stats_query_design.md](docs/archive/design-archive/stats_query_design.md) | 统计查询 Domain 层设计 | 5 Stats DAO 全实体覆盖：Agent/Project/Task/Tool/ModelProvider；StatsFetchOptions 按需动态注入模式（列表默认不加载，详情页按需开）；DAL 层统一 get_stats(id, options) + get_model_call_stats(id, options) |
+| [统计图表Phase1基础设施与时序图展示重构.md](docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md) | 统计 Phase1 Plan 快照 | DuckDB 建表 + record_event! 宏自动推断；前端图表组件封装（LineChart/DonutChart/GaugeChart 三组件） |
+| [多维统计系统.md](docs/modules/05-任务与项目/C-知识/多维统计系统.md) | 五维度总览 Wiki | Agent/Project/Task/ModelProvider/Tool 五维度统计卡片入口 |
+| [src/handlers/finance/model_provider/token_stats.rs](src/handlers/finance/model_provider/token_stats.rs) | Token 消耗时序新 handler | GET /api/v1/finance/model-providers/token-stats；model_call_time_series 默认 60min；批次刷盘预期声明 | `:L1-L32` |
+| [src/service/dao/model_provider/stats_duckdb.rs](src/service/dao/model_provider/stats_duckdb.rs) | DAO 扩展 | 时间序列聚合 + 按分钟 bucket + user_id 过滤注入 | 见文件 |
+| [src/service/domain/finance/model_provider.rs](src/service/domain/finance/model_provider.rs) | Domain 新方法 | `model_call_time_series(ctx, minutes)` + `get_model_call_stats_for_user(ctx, user_id, options)` | 见文件 |
+| [src/pkg/stats/collector.rs](src/pkg/stats/collector.rs) | 时间序列聚合 | StatsInterval::Minutely 新增 + StatParam send+sync 修复 + query_time_series 支持分钟截断 | 见文件 |
+| [common/src/models/stats.rs](common/src/models/stats.rs) | 新 models | StatsInterval.Minutely + TimeSeriesPoint + TokenSumResult | 见文件 |
+| [common/src/models/stats.rs](common/src/models/stats.rs) (v1.5 增量) | 服务端护栏 | STATS_MAX_BUCKETS=512 桶数硬上限 + clamp_interval_to_span() 超限逐级回退（Minutely→Hourly→Daily）+ bucket_ms()/bucket_count()/INTERVAL_LADDER | 见文件 |
+| [src/pkg/stats/default.rs](src/pkg/stats/default.rs) (v1.2 增量) | 周期落盘收口 | Stats::open() 时启动后台 flush task；批次刷盘定时器与 DuckDB 连接生命周期绑定；收口原来的独立调度器 | 见文件 |
+| [src/service/dao/model_provider/stats_duckdb.rs](src/service/dao/model_provider/stats_duckdb.rs) (v1.2 增量) | 可空 JSON 兼容 | `call_summary` / `token_summary` 字段 nullable；查询时用 `COALESCE(call_summary, '{}')` 兼容旧数据 | 见文件 |
+| [frontend/src/components/time_range_picker.rs](frontend/src/components/time_range_picker.rs) (v1.2 新增) | 通用时间筛选组件 | props: start/end + 预设快捷按钮（1h/6h/24h/7d/30d） | 见文件 |
+| [frontend/src/pages/user/profile.rs](frontend/src/pages/user/profile.rs) (v1.2 增量) | 用户页统计兜底 | 统计查询返回空结果时显示空态卡片；不再 error toast | 见文件 |
+| 【平行卡】docs/wiki/knowledge/zh/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md | RingProgress + TimeRangePicker 上游组件 | HUD 卡定义了 RingProgress 和 TimeRangePicker 通用组件，本卡消费这些组件 |
+| [src/handlers/finance/tool/runtime_stats.rs](src/handlers/finance/tool/runtime_stats.rs) (v1.3 新增) | 组织级工具统计 Handler | GET /api/v1/finance/tools/runtime-stats；DuckDB tool_call_events 按 org_id 过滤聚合；返回 ToolRuntimeStatsResponse |
+| [frontend/src/utils/number.rs](frontend/src/utils/number.rs) (v1.3 新增) | 数字格式化工具 | 千分位 + compact 大数缩写（1.5K / 2.3M）+ 小数精度控制；顶栏统计卡复用 |
+| [frontend/src/utils/status.rs](frontend/src/utils/status.rs) (v1.3 新增) | 状态 SSOT | Agent 状态环、项目/任务状态徽章的颜色、图标、文案统一出口；避免前端各处散落硬编码 |
+| [frontend/src/pages/workspace.rs](frontend/src/pages/workspace.rs) (v1.3 增量) | 工作空间顶栏 | 统计图换数字读数卡；引入 number.rs 格式化 + status.rs 状态组件 |
+| [frontend/src/components/charts/line_chart.rs](frontend/src/components/charts/line_chart.rs) (v1.4 增量) | 折线图组件 | Y 轴 `format_compact_axis`（K/M/B 三级进位，字符数 ≤5）；X 轴 `x_axis_time_format` 按桶宽决定格式，标签个数由画布可用宽度反推 |
+
+## §3 架构与约定
+
+```
+前端仪表盘 (4 种视图)
+├─ 总览卡：5 指标卡片（Published/Consumed/Success/Failed/AvgDuration）
+├─ 折线图：LineChart — 60 分钟时序 buckets（每分钟一个点）
+├─ 环形图：DonutChart — 维度分布（按 event_kind/consumer_name/status 分组）
+└─ 仪表盘：GaugeChart — 当前吞吐率 + 成功率
+     ▲ REST API (JSON)
+Stats Handlers (3 端点)
+├─ GET  /system/aop/stats/overview      — 5 指标，AopStatsOverviewResponse
+├─ GET  /system/aop/stats/time-series   — points[] interval_start + call_count
+└─ GET  /system/aop/stats/distribution  — items[] label + value
+     ▲ Domain → DAL → DAO
+├─ DuckDB 持久化版（5 表）：default_events / model_call_events / tool_call_events / agent_awake_events / project_events / task_events
+│   ├─ Stats.query_aggregation()   — 通用聚合 COUNT/SUM/AVG + group_by + 过滤
+│   └─ Stats.query_time_series()   — 时序截断 timestamp/interval_ms + 聚合
+└─ RuntimeStatsCollector 内存版（滑动 60min）
+    ├─ AopStatsCollector wrap RuntimeStatsCollector<(event_kind, consumer_name, status)>
+    ├─ record() → bucket 计数 + 可选累计耗时
+    └─ snapshot() → overview() 在快照基础上业务聚合（按 status 分类）
+```
+
+**核心机制要点：**
+
+1. **双层选型铁律表**：需跨重启保留历史、需要复杂 SQL 聚合过滤、数据量大且有长期价值 → DuckDB 持久化版。实时监控前端轮询、60 分钟内窗口足够、重启重置可接受、数据无持久化价值（AOP 事件、连接数、队列深度）→ RuntimeStatsCollector 内存版。禁止反过来：业务事件落内存版导致重启丢失。
+
+2. **record_event! 宏三种调用模式**：最简模式 `record_event!(ctx, ModelCallEvent{...})` → 自动根据事件类型找注册的表 + 自动填充当前时间戳；结构体模式 `record_event!(ctx, event_expr)` → 直接传已构造事件；显式表模式 `record_event!(ctx, &MyTable, ModelCallEvent{...})` → 兼容自定义表。内部使用 ctx.stats_opt() 安全获取 Stats，未初始化时优雅跳过不 panic。
+
+3. **5 Stats DAO 全实体覆盖 + 按需注入**：AgentStatsDao（agent_awake_events，call_summary）、ProjectStatsDao、TaskStatsDao、ToolStatsDao（tool_call_events，支持 agent_id 过滤）、ModelProviderStatsDao（model_call_events，全维度过滤 call_summary+token_summary+time_series）。每个实体详情页通过 FetchOptions.with_stats 控制是否加载统计，列表接口默认不加载，避免无谓 DuckDB 聚合。
+
+4. **RuntimeStatsCollector 滑动窗口算法**：WINDOW_MINUTES=60 常量；VecDeque 按分钟桶升序存储；每次 record 先 evict_old_buckets（cutoff = 当前分钟 - 60*60000），淘汰旧桶只保最近 60 分钟；total_counts/total_duration_ms/total_completed 三总计数器不受滑动窗口限制，全生命周期进程级累计，重启才重置。
+
+5. **前端四图表组件映射**：总览卡 = 5 指标映射 GET overview 的 5 字段；LineChart 折线 = GET time-series 的 points[]（X 轴 interval_start 格式化，Y 轴 call_count）；DonutChart 环形 = GET distribution 的 items[]（label+value 做饼图）；GaugeChart 仪表盘 = overview 的 success/total 算成功率 + instant_qps 从最近 1 秒桶计算。
+
+## §4 硬约束与红线
+
+1. **双层选型不违反**：禁止业务事件（ModelCall/ToolCall/Project/Task）落内存版导致重启丢失；禁止 AOP 吞吐/连接数落 DuckDB 持久化造成磁盘 IO 浪费。
+2. **record_event! 必须走 stats_opt()**：禁止直接 ctx.stats() 遇到未初始化 panic，所有宏调用内部用 stats_opt() 未初始化时 Ok(()) 跳过。
+3. **StatsFetchOptions 按需不默认**：列表接口默认关闭统计，禁止默认 with_stats=true 导致大列表触发 N×DuckDB 聚合。
+4. **滑动窗口 WINDOW_MINUTES 不随意调大**：默认 60，超过会导致内存膨胀（60桶~38KB，扩大需评估内存占用）。
+5. **5 实体 Stats DAO 全边界清晰**：ModelProviderStatsDao 是模型调用领域唯一 DAO（call+token+time_series 全能力），其他 4 个 DAO 只负责自身 call_summary，禁止交叉职责。
+6. **StatTable 表自描述不硬编码**：新增专用表必须覆盖 is_dedicated_table()=true + 继承 column_sql/metric_sql 自动切直接字段引用，禁止查询构建层 if table_name 判断。
+7. **.batch_size 批量写入不设 1**：每个表有独立缓冲队列，batch_size=1 会导致每条事件都刷 DuckDB，严重降低写入性能。
+8. **snapshot() 必须返回深拷贝**：调用方释放读锁后安全聚合，禁止返回 &Inner 引用导致锁竞争。
+9. **duration Option 语义固定**：None=只计数不计时（published/processing 状态），Some=计数+累计耗时（success/failed 等终止状态），禁止在框架层硬编码状态判断。
+10. **前端图表组件禁止硬编码 API URL**：所有统计接口调用统一封装到前端 api/stats client，禁止组件内部 fetch 写死 path。
+11. **批次刷盘预期**：Token 消耗时序看板（model_call_events）的统计事件走 Stats 批次刷盘（缓冲满才 flush），故最近 1-2 分钟数据可能尚未落库，前端曲线末端偏低属正常表现。前端按固定间隔（30s~60s）轮询即可，不要因"最后一点无数据"报 bug 或做特殊兜底。
+12. **周期落盘必须收口到 Stats::open() 初始化**（v1.2 新增）：stats 批次刷盘定时器在 `pkg/stats/default.rs:Stats::open()` 中启动，与 DuckDB 连接生命周期绑定；禁止在 RuntimeStatsCollector 或其他独立模块再启动 flush task——多定时器会导致双重 flush 竞争 + 刷盘间隔不一致。
+13. **可空 JSON 字段查询必须用 COALESCE 兜底**（v1.2 新增）：`model_call_events.call_summary` / `token_summary` 已改为 nullable（兼容旧数据），所有查询构建时必须用 `COALESCE(field, '{}')` 转换为有效 JSON 对象再 JSON 解析；禁止假设 NOT NULL 直接 `.json_extract()`——旧数据会返回 NULL 导致 json_extract 报错。
+14. **统计空结果前端必须降级为空态**（v1.2 新增）：所有统计查询接口返回空结果时，前端必须显示「暂无数据」空态卡片/空态 SVG（如折线图只显示坐标轴 + 空坐标系），**禁止** error toast 或 crash。新用户首次访问 profile 页、新 Agent 还没产生任何调用等场景必然出现空数据。
+15. **组织级工具统计必须按 org_id 过滤 DuckDB 查询**（v1.3 新增）：runtime_stats Handler 的 DuckDB 查询必须带 `WHERE organization_id = ?` 条件，禁止跨组织聚合工具调用数据（多组织隔离红线）
+16. **数字格式化统一走 frontend/src/utils/number.rs**（v1.3 新增）：所有前端统计卡、图表 tooltip 的数字展示（含大数值缩写、千分位、小数精度）统一调用 number.rs 的函数，禁止组件内硬编码格式化逻辑
+17. **STATS_MAX_BUCKETS=512 是服务端强制护栏**（v1.5 新增）：禁止前端假设请求的粒度会原样执行；所有时序查询返回的桶数上限为 512
+18. **Tool 侧 stats_interval 已删除**（v1.5 新增）：ToolStats 只提供窗口内聚合值（调用次数/失败次数/平均耗时），时序曲线查询需单独走 DuckDB Stats DAO + TimeSeriesPoint API

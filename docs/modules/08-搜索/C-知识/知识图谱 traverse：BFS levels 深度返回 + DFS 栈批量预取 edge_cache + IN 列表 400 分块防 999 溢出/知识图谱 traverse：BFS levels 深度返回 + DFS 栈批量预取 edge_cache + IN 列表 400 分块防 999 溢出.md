@@ -1,0 +1,136 @@
+---
+kind: RAG 原子知识卡
+name: 知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出
+category: 记忆系统 / 图谱遍历
+scope:
+- src/service/dal/memory/mod.rs
+- src/service/dao/memory/**
+- src/handlers/hr/agent/traverse_graph.rs
+- common/src/api/memory.rs
+source_files:
+- src/service/dal/memory/graph.rs#L139-L164 (MemoryDal trait：traverse_knowledge_graph 签名：seed_node_ids
+  + traversal_depth + traversal_strategy(enum BFS/DFS))
+- src/service/dal/memory/graph.rs#L518-L577 (traverse_knowledge_graph 总入口：按 strategy enum
+  分发给 traverse_bfs / traverse_dfs；最后统一做可见性过滤（agent_id + published）)
+- 'src/service/dal/memory/mod.rs#L805-L890 '
+- 'src/service/dal/memory/mod.rs#L891-L990 '
+- 'src/service/dal/memory/mod.rs#L653-L720 '
+- src/service/dal/memory/mod.rs#L653-L720 (2026-09 增量：动态 SQL IN 列表闭括号修复)
+- src/service/dao/memory/sqlite/relations.rs (2026-09 增量：list_relations_batch 先查 IN 列表存在性再拼接，防止空 ids 拼接出非法 SQL)
+- 'src/service/dal/memory/mod.rs#L721-L804 '
+- 'src/models/memory/knowledge_relation_po.rs '
+- 'common/src/api/memory.rs '
+- docs/archive/plan-archive/图谱遍历查询优化.md
+- docs/archive/design-archive/memory_search_enhancement_design.md
+- ''
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md
+- docs/modules/03-记忆系统/C-知识/长期记忆 (Long-term Memory).md (Long-term Memory)/知识关系管理.md（知识关系 PO
+  与 relation_type 枚举（因果/关联/前置/后置/引用））
+- docs/modules/00-总览与架构/C-知识/记忆系统架构.md
+- 【平行卡 1】docs/modules/08-搜索/C-知识/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历
+  + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 +
+  recommend_seed_nodes 三因子推荐.md
+- 【平行卡 2】docs/modules/11-前端应用/C-知识/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md：三因子打分 0.45 连通度 0.35 内容丰富度
+  0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35
+  内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md
+
+--->
+> ⚠️ 疑似过期 / 已重构：本文档引用的以下代码路径在当前代码库中已失效（`tools/wiki_index.py --stale` 体检发现）。使用前请核对现行实现：
+> - `common/src/api/memory.rs`：memory API 已重构（相关逻辑在 src/service/dao/memory/）
+
+## §1 概述
+
+**本卡角色**：知识图谱遍历底层实现的技术约束卡。覆盖 `MemoryDal::traverse_knowledge_graph` 对外统一入口签名、BFS/DFS 两种策略、针对 SQLite `SQLITE_MAX_VARIABLE_NUMBER = 999` 绑定参数上限做的 **IN 列表 400 分块**通用模式，以及 DFS「栈前沿批量预取 + edge_cache」改造修复的 DFS N+1 问题。**定位：排查图谱遍历慢/报 "too many SQL variables" 错 / 扩展新遍历策略时读。**
+
+- **对外统一签名**：`traverse_knowledge_graph(ctx, TraverseParams { seed_node_ids, traversal_depth, traversal_strategy }) → TraverseResponse { nodes, edges, ordered_levels }`。`ordered_levels: Vec<Vec<NodeId>>` 对应 BFS/DFS 的每一层/每一步节点序列，前端可以做动画播放（按 level 渐进展示节点）。
+- **IN 分块 400 普适规则**：凡 DAO SQL 中涉及 `ids IN (?, ?, ...)` 绑定参数列表，一律按 **400 个 ID 一块**分块逐次执行，结果拼接后按全局 created_at ASC 重排。原因：(1) 两个 IN 列表并存时（list_relations_batch: from_id IN + to_id IN），400×2=800 < 999；(2) 单 IN 列表 400 < 999，留 599 余量给未来 SQL 新增 bind；(3) 分块常量统一由 `src/service/dao/memory/sqlite/relations.rs` 顶部 `const IN_CHUNK_SIZE: usize = 400;` 管理，禁止散落各处 magic number。
+- **DFS 改造收益**：旧 DFS 每 pop 一个节点查一次边（N+1 → 对宽前沿图 IO 爆炸），新 DFS 做法：栈上所有未 visited + 未 fetched 的节点一次性 batch 查边，结果塞 edge_cache（HashMap<NodeId, Vec<Edge>>），pop 时如果 cache 命中直接用未命中触发一次批量预取当前整个栈前沿。测试：10k 节点链 → 查询次数从 10k 降到 ≈ 25 次。
+
+---
+
+## §2 关键文件与职责表
+
+| 文件 | 角色 | 内容摘要 | 锚点 |
+|------|------|---------|------|
+| memory.rs (trait) | 对外签名 | TraverseParams 三参数：seed_node_ids(起始点数组；None = 从 recommend_seed_nodes 里先取 Top5) / traversal_depth(默认 3，>5 强制 truncate 防爆炸) / traversal_strategy(BFS/DFS) | `:L139-L164` |
+| memory.rs (impl 总入口) | 策略分发 | 按 strategy enum dispatch → BFS 调 traverse_bfs / DFS 调 traverse_dfs → 结果 nodes + edges 过 `apply_visibility_filter(agent_id + published_flag)` 共享过滤 | `:L518-L577` |
+| memory.rs (traverse_bfs) | BFS 分层实现 | queue<(node_id, level)> + visited HashSet；每 pop 一批同 level 节点 → fetch_nodes_by_ids 批量 → edges IN_CHUNK_SIZE 拉 → 推入 ordered_levels[level] | `:L805-L890` |
+| memory.rs (traverse_dfs) | DFS 栈批量预取 | stack + edge_cache<NodeId, Vec<Edge>> + fetched_flag HashSet<NodeId>；每次 edge_cache miss 时，「当前栈上所有未 fetched 的节点」→ IN_CHUNK_SIZE 批量查，结果进 cache | `:L891-L990` |
+| memory.rs (list_relations_batch) | 关系批量查 + IN 分块 + Active 过滤 + 闭括号修复 | from_ids + to_ids 两 Vec → 按 IN_CHUNK_SIZE=400 zip 分块 → 每块 SQL "WHERE from_id IN (...) OR to_id IN (...) AND status = Active" → 全部块 UNION ALL 拼接后按 created_at ASC 重排；**2026-09-18 增量 1**：KnowledgeRelationStatus 字段，查询默认只取 Active 边；**2026-09 增量 2（6a529bf5）**：动态 SQL 拼接 IN 列表必须用闭括号包裹（测试断言 SELECT ... WHERE id IN (...) 而不是 SELECT ... WHERE id IN ... 无闭括号）；list_relations_batch 先查 IN 列表存在性再拼接，防止空 ids 产生非法 SQL | `:L653-L720` |
+| memory.rs (fetch_nodes_by_ids) | 节点批量查 + IN 分块 | ids Vec → IN_CHUNK_SIZE 400 分块 → 每块 query_knowledge_nodes(Query { ids: chunk, .. }) → 结果去重 → 共享可见性过滤 | `:L721-L804` |
+| common api/memory.rs | DTO | TraverseKnowledgeGraphResponse：nodes 是去重节点、edges 是去重关系带 weight、ordered_levels 是 BFS/DFS 分层顺序（严格按层，前端渲染顺序的唯一来源）| 见 common DTO |
+
+**章节来源**
+- [dal/memory/mod.rs](src/service/dal/memory/mod.rs)
+
+---
+
+## §3 架构约定与扩展模式
+
+### 3.1 遍历数据流向
+
+```
+Handler / Domain 调用方
+  │  TraverseKnowledgeGraphParams { seed_node_ids, depth, strategy }
+  ▼
+traverse_knowledge_graph() (总入口)
+  ├─ seed_node_ids 未传 → 内部先 recommend_seed_nodes(ctx, agent_id, limit=5) 取 Top5 作为默认起点
+  ├─ strategy == BFS → traverse_bfs()
+  │     ├─ queue<(id, level)> 队列推进
+  │     ├─ per-level fetch_nodes_by_ids() (IN_CHUNK_SIZE 400 分块)
+  │     └─ per-level list_relations_batch() (IN_CHUNK_SIZE 400 分块)
+  └─ strategy == DFS → traverse_dfs()
+        ├─ stack + visited + fetched_flag + edge_cache
+        └─ cache miss → 栈前沿批量预取（一次性拉当前栈上所有未 fetched 的节点的边）
+  ▼
+  共享出口：apply_visibility_filter()
+        ├─ 仅保留：node.agent_id == 传入 agent_id  OR  node.is_published = true
+        └─ 对应的 edge 两端节点都保留的 edge 才保留（否则孤立孤立端要被剔除）
+  ▼
+TraverseKnowledgeGraphResponse { nodes, edges, ordered_levels }
+```
+
+### 3.2 扩展模式：加第 3 种遍历策略（如 Dijkstra 最短带权路径）
+
+1. **扩展点 1**：在 `common/src/enums/`（或 `common/src/api/memory.rs` 内）给 `TraversalStrategy` enum 加新变体 `Dijkstra { weight_field: RelationWeight }`。
+2. **扩展点 2**：在 `memory.rs (DAL impl)` 总入口 `traverse_knowledge_graph` 的 match 加新分支，调用新建的 `traverse_dijkstra()` 私有函数。
+3. **扩展点 3**：**复用 IN_CHUNK_SIZE 400 的 list_relations_batch + fetch_nodes_by_ids**，不要重写 SQL（重写就会丢分块）。
+4. **扩展点 4**：在 `图谱遍历查询优化.md` Plan 附录追加新策略的测试场景，特别是极端：一条 10k 节点长链 + 一个 100 边扇出的 hub 节点——验证不会触发 "too many SQL variables"（防回归）。
+
+### 3.3 动态 SQL IN 列表拼接约定（2026-09 新增）
+
+凡 DAO / DAL 层动态拼接 `WHERE ids IN (?)` 或 `WHERE from_id IN (?) OR to_id IN (?)` 类 SQL 片段：
+- **必须用闭括号包裹** IN 参数列表——测试断言：`SELECT ... WHERE id IN (?, ?, ...)`，而不是 `SELECT ... WHERE id IN ?` 或 `SELECT ... WHERE id IN ...`
+- **拼接前先查 IN 列表非空**：空 ids 直接返回空结果集，不进入 SQL 拼接流程（否则会产生 `WHERE id IN ()` 非法语法）
+- 这条约定不只适用于 `list_relations_batch`，而是 memory DAO / 其他 domain DAO 所有动态 IN 拼接的统一红线
+
+---
+
+## §4 硬约束与故障排查
+
+### 4.1 必守红线
+
+1. **红线 1**：**所有 `IN (?, ?, ...)` 列表必须走 IN_CHUNK_SIZE=400 分块**，不管你目测 IDs 有多短——代码评审里看到 ids.len() 小就不走分块的，一律打回。理由：上线后数据量一涨，那天刚好 ids 破 999，所有遍历全部报 "too many SQL variables" 炸库。
+2. **红线 2**：**traversal_depth > 5 必须强制 truncate**，哪怕调用方明确传了 depth=100。图谱里一个连通分量上万节点，深度 10 的 BFS 能一次性把内存拉爆。
+3. **红线 3**：**层级里的节点必须同时在 nodes Vec 里出现**，前端按层级渲染时找不到节点只能画成占位卡。组装收敛在 `build_memories` / `build_graph_memories`（后者额外过 `drop_dangling_relations`），不要绕过它自己拼结果集。（历史实现叫 `apply_visibility_filter`，已随「蜂巢可见性」删除——归属不再是过滤维度。）
+4. **红线 4**：list_relations_batch / fetch_nodes_by_ids **分块后必须做全局去重 + created_at ASC 重排序**。否则前端每次刷新同一个 traverse 参数，返回的 edges 顺序会因为 SQLite IN 查出来顺序不稳定而抖动，画布上节点位置每次刷新都跳，体验极差。
+5. **红线 5**：**禁返回端点缺失的边**。层级（`traversal_depth`）是**节点维度**的概念——第 0 层 = 种子节点，沿一条边走到新节点算 +1 层；边只是连接两个「已在本批结果里的节点」的线，端点缺失的边没有意义（前端只能把缺失端点画成「未命名节点」：无名称/无正文/hover 无内容；LLM 拿到的只是「A → ?」的半条信息）。落地：DAL 单点闸 `drop_dangling_relations`，`search` 与 `traverse_knowledge_graph` 两条路径共用；前端 `build_graph_from_results` 是第二道防线（不画端点缺失的边，且**不给端点造占位节点**）。
+6. **红线 6**：**种子节点恒返回，且遍历不施加归属筛选**（2026-09-17 用户拍板）。①种子是调用方**点名**要的节点（前端点击展开的中心节点 / 关键词命中的起点），取回时不做任何归属过滤——中心节点缺席整张展开图就没意义；②知识节点是**蜂巢共享资产**，任何 Agent 都能看到全部知识节点，`published` 只是「重要性/影响力」标记，**不是可见性门槛**；③隔离属性只作用于**短期记忆**：作用域缺省回退 `ctx.agent_id()`（`private_agent_scope`），Agent 调用天然只看自己的便签；ctx 也没有归属（人类浏览）时保持不过滤的既有行为。**禁**在 handler 用 `ctx.agent_id()` 回退去收窄知识节点——那会让 Agent 的检索静默收窄成「只看自己」。
+7. **红线 7（2026-09 新增）**：**动态 SQL 拼接 IN 列表必须用闭括号包裹**——测试断言：`SELECT ... WHERE id IN (?, ?, ...)`，禁止 `SELECT ... WHERE id IN ?` 或 `SELECT ... WHERE id IN ...`（无闭括号非法语法）；list_relations_batch 必须先查 IN 列表存在性（非空）再拼接 SQL，空 ids 直接返回空结果集
+
+### 4.2 故障排查路径
+
+| 症状 | 起点锚点 | 次级排查 |
+|------|---------|---------|
+| 图谱遍历偶尔报 "too many SQL variables (code 1 too many SQL variables)" | [dao/memory/sqlite/relations.rs](src/service/dao/memory/sqlite/relations.rs) IN_CHUNK_SIZE 是否被改成 > 400 | 查调用方：是否有人绕过 list_relations_batch 直接写了 SQL？grep 整个 src/service/dao 下所有 `IN (` 后面接参数绑定的 SQL，统计每个 SQL 的 bind 数量 |
+| 小图（<50 节点）BFS 正常，大图（>5k 节点）DFS 慢到超时（>30s） | [dal/memory/graph.rs](src/service/dal/memory/graph.rs) 检查 edge_cache 命中日志 | 确认「栈前沿批量预取」逻辑是否被误改回到每节点单查——典型：重构 DFS 时不小心删了 fetched_flag，导致每 pop 必触发一次批量预取（反向变成 worse） |
+| traverse 返回 nodes 数 = 0，明明 seed_node_ids 是正确的 | 先查这些 id 在 `long_term_knowledge_node` 里是否存在且 `status != Forgotten`（软删除的节点按设计不返回，挂在它身上的边也会一起丢弃） | 旧坑已修：以前是 `apply_visibility_filter` 用错 agent_id / 只认 published 节点导致「节点全被过滤、只剩边」；现在遍历不做归属过滤，若仍为空就是数据本身不在 |
+| ordered_levels 的 level 0 有节点，但前端画出来点都挤在同一个角落 | 检查 TraverseKnowledgeGraphResponse.ordered_levels 是否正确填 | 典型：traverse_bfs 中 visited set 没与 level 同步推进，BFS 层序错乱，levels[0] 把所有节点都标成 level 0。前端按 level 布局时 y 坐标都一样，挤成一根线 |
+| traverse 10 次有 1 次返回重复节点（同一 node_id 在 nodes Vec 出现两次） | [dal/memory/graph.rs](src/service/dal/memory/graph.rs) fetch_nodes_by_ids 分块后的拼接逻辑 | 是否漏了 `dedup_by(|a,b| a.id == b.id)`？多块执行同一节点如果跨两块边界（第 399 个和 401 个刚好同一个 node_id 出现两次），不去重就会出现重复 |
+| 图谱遍历偶尔报 SQLite SQL 语法错误（no such column / syntax error near...） | [dao/memory/sqlite/relations.rs](src/service/dao/memory/sqlite/relations.rs) list_relations_batch 动态 SQL 拼接 | 是否有分支路径跳过了闭括号？典型：空 ids 直接拼接出 `WHERE id IN ...`（无闭括号）；检查拼接路径是否有 `if ids.is_empty() { return Ok(vec![]) }` 前置守卫 |
+
+## §5 历史演进（f300b5c0..HEAD 增量）
+
+| commit | 事件 | 变更内容 |
+|--------|------|---------|
+| 6a529bf5 | 动态 SQL IN 列表缺闭括号修复 | list_relations_batch 动态 SQL 拼接 IN 列表必须用闭括号包裹（`WHERE id IN (?, ?, ...)`），禁止无闭括号；空 ids 先返回空结果集再拼接 |

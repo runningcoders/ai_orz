@@ -6,8 +6,8 @@
 > 查阅场景：新增 HUD 风格图表组件或集成新图表时回看「DonutSlice 数据结构 + HUD 绘图约定」两处即可，无需通读全文
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 项目架构规范 §1.2 前端技术栈（HUD Canvas 可视化）
-> - [frontend_architecture.md](../design/frontend_architecture.md) — 前端架构 §图表渲染章节
-> - [ui_design_system.md](../design/ui_design_system.md) — UI 设计系统 HUD 风格规范
+> - [frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md) — 前端架构 §图表渲染章节
+> - [ui_design_system.md](docs/modules/11-前端应用/A-设计/ui_design_system.md) — UI 设计系统 HUD 风格规范
 
 ---
 

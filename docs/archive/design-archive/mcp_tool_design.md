@@ -7,9 +7,9 @@
 > - [tool_design.md](./tool_design.md) — 通用工具调用架构（ToolProtocol/ControlMode 上游设计）
 > - [runtime_design.md](./runtime_design.md) — Agent 唤醒执行 Runtime（Tool 执行链路的调用方）
 > - 【② Plan 落地】[前端工具与进程管理.md](../plan/前端工具与进程管理.md) — 前端 MCP Server 配置面板
-> - 【③ Wiki 长文】[工具生态系统.md](docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md) — 工具系统全景
-> - 【③ Wiki 长文】[工具注册表.md](docs/wiki/zh/content/基础设施/工具注册表/工具注册表.md) — MCP 工具子板块入口
-> - 【④ RAG 卡】[工具系统三层调用架构](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) — §3 §MCP 协议选择铁律
+> - 【③ Wiki 长文】[工具生态系统.md](docs/modules/06-工具与技能/C-知识/工具生态系统.md) — 工具系统全景
+> - 【③ Wiki 长文】[工具注册表.md](docs/modules/06-工具与技能/C-知识/工具注册表.md) — MCP 工具子板块入口
+> - 【④ RAG 卡】[工具系统三层调用架构](docs/modules/06-工具与技能/C-知识/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) — §3 §MCP 协议选择铁律
 > - 占位：待 MCP 运行面最小闭环独立 plan（v3.1 计划安排）落地后回填真实 Plan 路径
 > - 占位：待 MCP 专用 Wiki 长文（MCP 子系统独立设计说明书）同步后回填真实 Wiki 长文路径
 > - 占位：待 MCP 专用 RAG 知识卡（MCP Server/Tool 双层建模 + Stale 管理）wiki-maintainer 同步后回填真实 RAG 卡路径

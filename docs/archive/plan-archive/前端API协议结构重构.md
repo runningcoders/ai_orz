@@ -6,8 +6,8 @@
 > 查阅场景：新增前端 API 方法时回看「改造原则 + 通用改造模式」两处即可，无需通读全文
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 项目架构规范 §4.11 前后端 API 协议规范
-> - [api_protocol_convention.md](../design/api_protocol_convention.md) — DTO 契约规范（common 单一事实源）
-> - [frontend_architecture.md](../design/frontend_architecture.md) — 前端架构设计
+> - [api_protocol_convention.md](docs/modules/13-数据模型/A-设计/api_protocol_convention.md) — DTO 契约规范（common 单一事实源）
+> - [frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md) — 前端架构设计
 
 ---
 

@@ -22,6 +22,7 @@ FAIL_UNDER ?= 45
 
 .DEFAULT_GOAL := help
 .PHONY: help fmt fmt-check clippy clippy-fe docs-lint inline-test-lint docs-migrate seed-sync lint test test-be test-fe ci coverage e2e \
+        wiki-index wiki-lint wiki-meta wiki-stale wiki-check \
         dev serve run build build-fe install prod prod-stop stop prod-status status prod-log logs restart \
         clean-proc clean clean-slim doctor package hooks
 
@@ -52,14 +53,21 @@ clippy: ## clippy -D warnings（CI lint job 口径，需 protoc）
 clippy-fe: ## 前端 wasm32 clippy（CI frontend job 口径）
 	./scripts/check.sh clippy-fe
 
-wiki-index: ## 重建 docs/wiki/INDEX.md（新增/删除/改名 wiki 页面后必跑）
+wiki-index: ## 重建知识库索引（INDEX.md + INDEX.json + 各模块 00-INDEX.md）
 	python3 tools/wiki_index.py --write
 
-wiki-lint: ## wiki 索引一致性门禁：INDEX.md 必须与目录一致（docs/wiki 已转手工维护）
+wiki-lint: ## 索引一致性门禁：三类索引都必须与目录一致
 	python3 tools/wiki_index.py --check
 
-wiki-stale: ## 诊断：列出 wiki 里引用的、已不存在的代码路径（不参与门禁）
+wiki-meta: ## 元数据门禁：A-设计/B-落地方案 必须带完整 frontmatter
+	python3 tools/wiki_index.py --meta
+
+wiki-stale: ## 诊断：列出文档里引用的、已不存在的代码路径（不参与门禁）
 	python3 tools/wiki_index.py --stale
+
+wiki-check: ## 知识库门禁聚合：wiki-lint + wiki-meta
+	python3 tools/wiki_index.py --check
+	python3 tools/wiki_index.py --meta
 
 docs-lint: ## 文档链接规范门禁：file:// 伪协议/绝对路径/冒号行号（AGENTS §2.1.2）
 	./scripts/check.sh docs-lint
@@ -86,8 +94,10 @@ test-fe: ## 前端测试（CI frontend job 口径）
 
 # ===== 聚合门禁 =====
 
-lint: ## 全部静态检查（前后端）：fmt + clippy + clippy-fe + docs-lint + inline-test-lint
+lint: ## 全部静态检查（前后端 + 文档）：fmt + clippy + clippy-fe + docs-lint + inline-test-lint + wiki-check
 	./scripts/check.sh lint
+	python3 tools/wiki_index.py --check
+	python3 tools/wiki_index.py --meta
 
 ci: ## 本地模拟 CI 全部门禁（= lint + 全量测试，不含 coverage）
 	./scripts/check.sh ci

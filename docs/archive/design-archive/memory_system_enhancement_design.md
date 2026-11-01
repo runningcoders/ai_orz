@@ -15,14 +15,14 @@
 > - 【② Plan 落地快照（Batch11 精确新增）】
 >   - [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — sleep_and_settle 沉淀约束 + ThinkingOptions 统一参数 + 双层工具过滤
 > - 【③ Wiki 长文 ≥4 篇（Batch11 精确对齐）】
->   - [记忆沉淀机制.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/记忆沉淀机制.md) — 沉淀调度完整链路 + CronTrigger 生产者/消费者 + Resting 状态机
->   - [四层记忆系统.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/四层记忆系统.md) — 四层认知模型总入口（Core/Working/Short/Long 边界 + agent_rest 定时沉淀章节）
->   - [Agent 记忆系统.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/Agent%20记忆系统.md) — Agent 视角下的记忆生命周期 + 入职/休息/沉淀环节联动
->   - [工作记忆 (Working Memory).md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/工作记忆%20(Working%20Memory).md) — 小憩时清 Working 上下文边界 + 上下文过载触发小憩
+>   - [记忆沉淀机制.md](docs/modules/03-记忆系统/C-知识/记忆沉淀机制.md) — 沉淀调度完整链路 + CronTrigger 生产者/消费者 + Resting 状态机
+>   - [四层记忆系统.md](docs/modules/03-记忆系统/C-知识/四层记忆系统.md) — 四层认知模型总入口（Core/Working/Short/Long 边界 + agent_rest 定时沉淀章节）
+>   - [Agent 记忆系统.md](docs/modules/03-记忆系统/C-知识/Agent 记忆系统.md) — Agent 视角下的记忆生命周期 + 入职/休息/沉淀环节联动
+>   - [工作记忆 (Working Memory).md](docs/modules/03-记忆系统/C-知识/工作记忆 (Working Memory).md) — 小憩时清 Working 上下文边界 + 上下文过载触发小憩
 > - 【④ RAG 原子知识卡（Batch11 精确对应 1 张 + 横向关联 3 张）】
 >   - [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — 三合一总卡（工具拆分 + Cron 定时框架 + 沉淀冲突合并 0.78 阈值 + 双层工具过滤）
 >   - [记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐](docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md) — 阶段二搜索能力（记忆沉淀依赖的相似节点向量搜索底座）
->   - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联.md) — 复用同一 run_think_loop 引擎（Settle 场景共用）
+>   - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/modules/02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md) — 复用同一 run_think_loop 引擎（Settle 场景共用）
 
 ---
 

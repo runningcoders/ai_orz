@@ -4,9 +4,9 @@
 状态：v1.0（2026-08-16，落地快照）
 触发场景：前端运行时面板需要按任务/项目维度展示运行中 Agent；AOP 统计事件需要业务上下文关联
 关联文档段：
-- 对应 design 文档：[docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) 第 103 行「业务上下文字段归属」决策
-- Wiki 长文真实路径：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md)
-- RAG 卡真实路径：[docs/wiki/knowledge/zh/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md](docs/wiki/knowledge/zh/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视.md)
+- 对应 design 文档：[docs/design/thinking_task_policy_engine_design.md](docs/modules/02-Agent运行时/A-设计/thinking_task_policy_engine_design.md) 第 103 行「业务上下文字段归属」决策
+- Wiki 长文真实路径：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/modules/02-Agent运行时/C-知识/运行时领域.md)
+- RAG 卡真实路径：[docs/wiki/knowledge/zh/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md](docs/modules/05-任务与项目/C-知识/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md)
 
 ---
 
@@ -62,8 +62,8 @@ set_busy(agent_id, message_id, task_id?, project_id?)
 | 集成测试 | [tests/integration/agent_awaken_test.rs](tests/integration/agent_awaken_test.rs#L158-L728) | 两处 set_busy 调用补 None 参数 |
 
 ⭐ **落地索引（四类互引）**
-- Wiki 长文：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md)
-- RAG 卡：[docs/wiki/knowledge/zh/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md](docs/wiki/knowledge/zh/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视.md)
+- Wiki 长文：[docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md](docs/modules/02-Agent运行时/C-知识/运行时领域.md)
+- RAG 卡：[docs/wiki/knowledge/zh/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md](docs/modules/05-任务与项目/C-知识/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md)
 
 ---
 

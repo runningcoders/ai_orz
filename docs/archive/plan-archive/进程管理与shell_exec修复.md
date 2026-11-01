@@ -12,10 +12,10 @@
 > - 姊妹 Plan 与规范：
 >   - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲（分层边界 + pkg 基础设施约定）
 >   - [前端工具与进程管理.md](前端工具与进程管理.md) — 前端进程管理页面 + shell_list API 配套前端消费端
-> - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md) — shell_exec/shell_status/shell_kill 进程管理双露工具
-> - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md](docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md) — 工具系统全景，含进程管理器位置
-> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤.md](docs/wiki/knowledge/zh/进程列表通过%20shell_list%20LLM%20工具双暴露，复用%20Agent%20scope%20过滤/进程列表通过%20shell_list%20LLM%20工具双暴露，复用%20Agent%20scope%20过滤.md)
-> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页.md](docs/wiki/knowledge/zh/进程详情采用共享组件%20+%20Modal%20弹窗，不新建独立路由页/进程详情采用共享组件%20+%20Modal%20弹窗，不新建独立路由页.md)
+> - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/modules/06-工具与技能/C-知识/运行时诊断工具组.md) — shell_exec/shell_status/shell_kill 进程管理双露工具
+> - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md](docs/modules/06-工具与技能/C-知识/工具生态系统.md) — 工具系统全景，含进程管理器位置
+> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤.md](docs/modules/06-工具与技能/C-知识/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤.md)
+> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页.md](docs/modules/11-前端应用/C-知识/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页.md)
 
 ---
 

@@ -11,11 +11,11 @@
 > - 【① Design 设计总纲（Batch11 精确对应 1 篇）】
 >   - [skill_system_enhancement_design.md](../archive/design-archive/skill_system_enhancement_design.md) — 技能系统增强（决策 4 安装幂等 + 决策 6 唤醒注入 Token 熔断粒度）
 > - 【③ Wiki 长文 ≥3 篇（Batch11 精确对齐主题④）】
->   - [技能系统.md](docs/wiki/zh/content/功能模块/技能系统.md) — Skill 6 字段结构 + Prompt 四层熔断分层测试断言
->   - [技能包管理.md](docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md) — 技能包幂等安装测试流程（第二次 installed=0）
->   - [HR 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/HR%20领域编排.md) — HRDomain.skill / HRDomain.agent 入职绑定集成测试目标
+>   - [技能系统.md](docs/modules/06-工具与技能/C-知识/技能系统.md) — Skill 6 字段结构 + Prompt 四层熔断分层测试断言
+>   - [技能包管理.md](docs/modules/02-Agent运行时/C-知识/技能包管理.md) — 技能包幂等安装测试流程（第二次 installed=0）
+>   - [HR 领域编排.md](docs/modules/00-总览与架构/C-知识/HR 领域编排.md) — HRDomain.skill / HRDomain.agent 入职绑定集成测试目标
 > - 【④ RAG 原子知识卡（Batch11 精确对应 1 张）】
->   - [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断.md) — §4.1 必守红线 9 条（install 幂等/入职不阻断/熔断永不抛错）对应集成测试断言清单
+>   - [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/modules/06-工具与技能/C-知识/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md) — §4.1 必守红线 9 条（install 幂等/入职不阻断/熔断永不抛错）对应集成测试断言清单
 
 ---
 

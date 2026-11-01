@@ -4,13 +4,13 @@
 状态：v1.0（2026-08-16，落地快照）
 触发场景：前端运行时面板需要 HTTP 入口获取数据；取消思考需要后端接口；统计分析需要按退出原因（success/cancelled/error/overflow/max_rounds）维度聚合分析
 关联文档段：
-- 对应 design 文档：[docs/design/runtime_design.md](docs/design/runtime_design.md) 第 25.13 节（v3.8 增量：运行时 API + exit_reason）
+- 对应 design 文档：[docs/design/runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) 第 25.13 节（v3.8 增量：运行时 API + exit_reason）
 - Wiki 长文真实路径：
-  - [docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md)（运行时 3 接口组化说明）
-  - [docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/思考轮次统计消费者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/思考轮次统计消费者.md)（exit_reason 统计说明）
+  - [docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/modules/06-工具与技能/C-知识/运行时诊断工具组.md)（运行时 3 接口组化说明）
+  - [docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/思考轮次统计消费者.md](docs/modules/12-基础设施与部署/C-知识/思考轮次统计消费者.md)（exit_reason 统计说明）
 - RAG 卡真实路径：
-  - [docs/wiki/knowledge/zh/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md](docs/wiki/knowledge/zh/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路.md)
-  - [docs/wiki/knowledge/zh/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md](docs/wiki/knowledge/zh/运行时诊断工具注册为%20Agent%20可调用工具：runtime-status%20cancel-thinking%20runtime-list%20三接口工具化/运行时诊断工具注册为%20Agent%20可调用工具：runtime-status%20cancel-thinking%20runtime-list%20三接口工具化.md)
+  - [docs/wiki/knowledge/zh/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md](docs/modules/10-异步基建(AOP)/C-知识/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md)
+  - [docs/wiki/knowledge/zh/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md](docs/modules/02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md)
 
 ---
 
@@ -90,10 +90,10 @@ DuckDB agent_awake_events 表新增 exit_reason VARCHAR 列
 | pkg 测试扩展 | [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs) 测试模块 | 新增 5 个 list_runtime_agents UT：无过滤 / by_state / by_task_id / by_project_id / 组合过滤 |
 
 ⭐ **落地索引（四类互引）**
-- Wiki 长文 1（运行时诊断工具）：[docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md)
-- Wiki 长文 2（思考轮次统计）：[docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/思考轮次统计消费者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/思考轮次统计消费者.md)
-- RAG 卡 1（exit_reason 事件链路）：[docs/wiki/knowledge/zh/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md](docs/wiki/knowledge/zh/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路.md)
-- RAG 卡 2（三接口工具化）：[docs/wiki/knowledge/zh/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md](docs/wiki/knowledge/zh/运行时诊断工具注册为%20Agent%20可调用工具：runtime-status%20cancel-thinking%20runtime-list%20三接口工具化/运行时诊断工具注册为%20Agent%20可调用工具：runtime-status%20cancel-thinking%20runtime-list%20三接口工具化.md)
+- Wiki 长文 1（运行时诊断工具）：[docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/modules/06-工具与技能/C-知识/运行时诊断工具组.md)
+- Wiki 长文 2（思考轮次统计）：[docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/思考轮次统计消费者.md](docs/modules/12-基础设施与部署/C-知识/思考轮次统计消费者.md)
+- RAG 卡 1（exit_reason 事件链路）：[docs/wiki/knowledge/zh/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md](docs/modules/10-异步基建(AOP)/C-知识/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md)
+- RAG 卡 2（三接口工具化）：[docs/wiki/knowledge/zh/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md](docs/modules/02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md)
 
 ---
 

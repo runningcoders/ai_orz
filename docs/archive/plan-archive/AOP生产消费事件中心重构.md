@@ -12,8 +12,8 @@
 >   - [message_channel_design.md](../archive/design-archive/message_channel_design.md) — 消息渠道系统骨架（消息出站链路）
 > - Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件中心设计与实现.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/AOP%20事件中心设计与实现.md) — 统一 publish 入口 + Registry 订阅者注册 + Queue 队列实现
 > - Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者概览.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者概览.md) — 8 类消费者定位与并发策略
-> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md](docs/wiki/knowledge/zh/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册.md)
-> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md](docs/wiki/knowledge/zh/Domain%20内部事件与消费者全链路：8%20类%20DomainEvent%20枚举%20+%208%20类%20Consumer%20业务消费%20+%20AOP%20Producer%20投递入口%20+%20Registry%20订阅/Domain%20内部事件与消费者全链路：8%20类%20DomainEvent%20枚举%20+%208%20类%20Consumer%20业务消费%20+%20AOP%20Producer%20投递入口%20+%20Registry%20订阅.md)
+> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md](docs/modules/10-异步基建(AOP)/C-知识/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md)
+> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md](docs/modules/10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md)
 
 ---
 

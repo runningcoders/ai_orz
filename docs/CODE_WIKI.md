@@ -70,4 +70,4 @@ wiki 位于 `docs/wiki/`（**真实目录，非软链接**；原 `../.qoder/repo
 | 数据模型 | [zh/content/数据模型](./wiki/zh/content/数据模型) | Agent+技能、消息+记忆、项目+任务、系统模型、文件+存储 |
 | 前端应用 | [zh/content/前端应用](./wiki/zh/content/前端应用) | 页面模块、组件系统、钩子、API 客户端、UI 样式与主题、前端架构 |
 | API 参考 | [zh/content/API 参考](./wiki/zh/content/API%20参考) | RESTful 各业务域、A2A 协议、WebSocket/SSE、认证授权、错误码 |
-| 测试与运维 | [zh/content/测试指南](./wiki/zh/content/测试指南) / [开发指南](./wiki/zh/content/开发指南.md) / [故障排除与监控](./wiki/zh/content/故障排除与监控.md) / [配置与部署](./wiki/zh/content/配置与部署.md) | E2E 基础设施、开发规范、排障手册、部署方法 |
+| 测试与运维 | [zh/content/测试指南](./wiki/zh/content/测试指南) / [开发指南](docs/modules/00-总览与架构/C-知识/开发指南.md) / [故障排除与监控](docs/modules/09-统计与监控/C-知识/故障排除与监控.md) / [配置与部署](docs/modules/12-基础设施与部署/C-知识/配置与部署.md) | E2E 基础设施、开发规范、排障手册、部署方法 |
