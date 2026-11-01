@@ -160,6 +160,7 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                         }
                                     }
                                     // token 明细 2×2（缓存/思考未上报时为 0），靠右贴近强度/耗时
+                                    // 按标签字数分列：左列「入/出」单字，右列「缓存/思考」两字，列内宽度一致更齐
                                     div { class: "grid grid-cols-2 gap-1 ml-auto",
                                         span {
                                             class: "badge badge-xs badge-info badge-soft font-mono justify-start min-w-[60px]",
@@ -167,14 +168,14 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                             "入 {input_text}"
                                         }
                                         span {
-                                            class: "badge badge-xs badge-accent badge-soft font-mono justify-start min-w-[60px]",
-                                            title: "本轮输出（completion）token；含思考 token",
-                                            "出 {output_text}"
-                                        }
-                                        span {
                                             class: "badge badge-xs badge-success badge-soft font-mono justify-start min-w-[60px]",
                                             title: "提示缓存命中的输入 token；provider 未上报时为 0，不代表未命中",
                                             "缓存 {cached_text}"
+                                        }
+                                        span {
+                                            class: "badge badge-xs badge-accent badge-soft font-mono justify-start min-w-[60px]",
+                                            title: "本轮输出（completion）token；含思考 token",
+                                            "出 {output_text}"
                                         }
                                         span {
                                             class: "badge badge-xs badge-warning badge-soft font-mono justify-start min-w-[60px]",
