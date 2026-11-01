@@ -52,21 +52,37 @@
   <div class="grid">
     <section class="card hero">
       <h3>架构总览 · 容器级 <span class="chip">从这里开始</span></h3>
-      <p class="q">系统由哪些容器组成、请求怎么流；细节下沉到下面三张专题子图</p>
+      <p class="q">系统由哪些容器组成、请求怎么流；细节下沉到下面十五张专题子图</p>
       <ul>
-        <li><a href="./diagrams/ai-orz-architecture.html">打开架构总览图</a><span class="desc">本站在线渲染，点开即可交互</span></li>
+        <li><a href="./diagrams/ai-orz-architecture.html">打开架构总览图</a><span class="desc">本站在线渲染 · 总览 / 存储 / 质量门禁</span></li>
       </ul>
     </section>
 
-    <section class="card">
+    <section class="card ">
       <h3>思维轨迹与思考图 · 组件级</h3>
-      <p class="q">Agent 怎么「想」：唤醒 → 三层预算思考循环 → 图引擎 → 轮级轨迹落盘 → 前端时间线</p>
+      <p class="q">Agent 怎么「想」：唤醒 → 三层预算思考循环 → 七相位图引擎 → 轮级轨迹落盘 → 前端时间线</p>
       <ul>
         <li><a href="./diagrams/ai-orz-think-path.html">打开专题子图</a><span class="desc">一轮思考 · 轨迹链路 · 认知分层</span></li>
       </ul>
     </section>
 
-    <section class="card">
+    <section class="card ">
+      <h3>工具与技能 · 组件级</h3>
+      <p class="q">Agent 怎么「动手」：三层调用（think_loop → domain 编排 → DAL → Builtin / HTTP / MCP）+ 凭据编排 + 策略拦截与六态授权 + 技能包装配</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-tools.html">打开专题子图</a><span class="desc">三层调用 · 策略与授权 · 注册与装配</span></li>
+      </ul>
+    </section>
+
+    <section class="card ">
+      <h3>异步基建 · AOP 事件中心</h3>
+      <p class="q">事件从哪来、谁消费：pkg/aop 六 Trait + Registry 单例 + 7 类业务消费者 + 3 类 tick 生产者 + context_carrier 链路贯穿</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-aop.html">打开专题子图</a><span class="desc">一次事件流转 · 启动顺序 · 生产者与兜底</span></li>
+      </ul>
+    </section>
+
+    <section class="card ">
       <h3>记忆子系统 · 组件级</h3>
       <p class="q">Core / Working / Short-term / Long-term 四层 + 两条 JSONL + 向量与全文索引 + 睡眠沉淀</p>
       <ul>
@@ -74,17 +90,90 @@
       </ul>
     </section>
 
-    <section class="card">
+    <section class="card ">
       <h3>本体子系统 · 组件级</h3>
-      <p class="q">受控词表 TBox / 属性定义与五道门闩 / 骨架三元组 / 漂移与有效性治理</p>
+      <p class="q">受控词表 TBox / 属性定义与门闩 / 骨架三元组 / 漂移与有效性治理</p>
       <ul>
         <li><a href="./diagrams/ai-orz-ontology.html">打开专题子图</a><span class="desc">读侧链路 · 写入门闩 · 治理面</span></li>
       </ul>
     </section>
+
+    <section class="card ">
+      <h3>组织与权限 · 含联邦组网</h3>
+      <p class="q">谁能做什么：Organization 多级 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 5 类型 + 配对码建联与跨组织签名</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-org-federation.html">打开专题子图</a><span class="desc">组织与角色 · 认证与凭证 · 联邦组网</span></li>
+      </ul>
+    </section>
+
+    <section class="card ">
+      <h3>任务与项目 · 状态机与 DAG</h3>
+      <p class="q">活怎么流转：TaskStatus 四态 + progress 自动联动 + dependencies DAG + execution_plan / result 增量 + Project 五字段按需注入</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-task-project.html">打开专题子图</a><span class="desc">任务状态机 · DAG 与唤醒 · 项目聚合</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>对话与消息 · 组件级</h3>
+      <p class="q">消息怎么进来、怎么出去：渠道入站归一化 → 路由策略 → MessageDomain（builder / delivery）→ DAL/DAO → SSE 推送与 Agent 唤醒</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-messaging.html">打开专题子图</a><span class="desc">入站与路由 · 编排与投递 · 存储与唤醒</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>外部 Agent · A2A 协议</h3>
+      <p class="q">外部 Agent 怎么接：Agent Card 发现 + JSON-RPC 四方法（send / get / cancel / 订阅）+ 协议映射与回调 + 30s 轮询兜底 + 联邦签名</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-a2a.html">打开专题子图</a><span class="desc">协议入口 · 结果与兜底 · 联邦与长连接</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>搜索 · 三路召回</h3>
+      <p class="q">怎么找得到：FTS5 全文 + 向量检索 + 图谱遍历三路召回，属性精确过滤走独立通道，读宽写窄</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-search.html">打开专题子图</a><span class="desc">工具入口 · 三路召回 · 存储面</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>统计与监控 · 指标聚合</h3>
+      <p class="q">数字从哪来：业务事件 → AOP 同步消费 → ToolCall / ThinkRound / Task / ModelCall 四类指标落库 → 监控 API 与看板</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-stats.html">打开专题子图</a><span class="desc">采集 · 聚合 · 读取与看板</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>前端应用 · Dioxus WASM</h3>
+      <p class="q">界面怎么搭：入口 → 路由与布局 → 页面模块 → HUD 组件与 API 客户端；build.rs 把 docs 与静态资源打进 dist</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-frontend.html">打开专题子图</a><span class="desc">应用骨架 · 页面与组件 · 数据与产物</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>基础设施与部署</h3>
+      <p class="q">怎么跑起来、怎么发出去：配置 → 连接池与迁移 → 路径与 JSONL → 后台任务与定时器；单二进制 + dist 静态托管 + tar.gz</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-infra.html">打开专题子图</a><span class="desc">启动与配置 · 运行期资源 · 构建与发布</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>数据模型 · 核心表 ER 图</h3>
+      <p class="q">数据长什么样：身份（users / organizations / agents）· 工作（projects / tasks / messages）· 知识图谱（节点 / 关系 / 属性），字段取自现网 SQLite 实际 schema</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-data-model.html">打开数据模型 ER 图</a><span class="desc">身份与组织 · 任务与消息 · 知识图谱三件套</span></li>
+      </ul>
+    </section>
+    <section class="card ">
+      <h3>测试与门禁 · 五道关</h3>
+      <p class="q">怎么保证不坏：fmt / clippy / test / docs_lint / inline-test-lint 五道门禁，CI 与本地同一套口径</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-testing.html">打开专题子图</a><span class="desc">门禁组合 · 测试分层 · 文档与索引</span></li>
+      </ul>
+    </section>
   </div>
   <div class="note">
-    图内工具栏支持 <b>缩放</b>、<b>查找节点</b>、<b>追踪有向路径</b>（沿箭头看一条调用链是怎么走的）。
-    也可以按 <code>0</code> 重置视图、<code>+/-</code> 缩放。图是自包含 HTML，克隆仓库后本地打开效果一致。
+    共 <b>16 张自包含交互图</b>（1 张容器级总图 + 14 张子系统组件图 + 1 张数据模型 ER 图），每张图内 3 个视图可切换。
+    工具栏支持 <b>缩放</b>、<b>查找节点</b>、<b>追踪有向路径</b>（沿箭头看一条调用链是怎么走的）；也可以按 <code>0</code> 重置、<code>+/-</code> 缩放。
+    克隆仓库后本地打开效果一致；图的清单与选型理由见 <a href="https://github.com/runningcoders/ai_orz/blob/main/docs/diagrams/README.md">docs/diagrams/README.md</a>。
   </div>
 
   <h2>② 按目的进入文档</h2>
@@ -147,23 +236,23 @@
   <h2>④ 15 个能力域模块</h2>
   <div class="card">
     <table>
-      <thead><tr><th>模块</th><th>篇数</th><th>入口</th></tr></thead>
+      <thead><tr><th>模块</th><th>篇数</th><th>入口</th><th>架构图</th></tr></thead>
       <tbody>
-        <tr><td>00-总览与架构</td><td class="n">36</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/00-总览与架构/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>01-组织与权限</td><td class="n">42</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/01-组织与权限/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>02-Agent运行时</td><td class="n">25</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/02-Agent运行时/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>03-记忆系统</td><td class="n">14</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/03-记忆系统/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>04-对话与消息</td><td class="n">29</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/04-对话与消息/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>05-任务与项目</td><td class="n">55</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/05-任务与项目/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>06-工具与技能</td><td class="n">62</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/06-工具与技能/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>07-外部Agent(A2A)</td><td class="n">21</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/07-外部Agent%28A2A%29/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>08-搜索</td><td class="n">25</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/08-搜索/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>09-统计与监控</td><td class="n">11</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/09-统计与监控/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>10-异步基建(AOP)</td><td class="n">34</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/10-异步基建%28AOP%29/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>11-前端应用</td><td class="n">52</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/11-前端应用/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>12-基础设施与部署</td><td class="n">85</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/12-基础设施与部署/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>13-数据模型</td><td class="n">43</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/13-数据模型/00-INDEX.md">00-INDEX</a></td></tr>
-        <tr><td>14-测试</td><td class="n">5</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/14-测试/00-INDEX.md">00-INDEX</a></td></tr>
+        <tr><td>00-总览与架构</td><td class="n">36</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/00-总览与架构/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-architecture.html">总览</a> · <a href="./diagrams/ai-orz-ontology.html">本体</a></td></tr>
+        <tr><td>01-组织与权限</td><td class="n">42</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/01-组织与权限/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-org-federation.html">组织 · 联邦</a></td></tr>
+        <tr><td>02-Agent运行时</td><td class="n">25</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/02-Agent运行时/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-think-path.html">思维轨迹</a></td></tr>
+        <tr><td>03-记忆系统</td><td class="n">14</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/03-记忆系统/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-memory.html">记忆</a></td></tr>
+        <tr><td>04-对话与消息</td><td class="n">29</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/04-对话与消息/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-messaging.html">对话 · 消息</a></td></tr>
+        <tr><td>05-任务与项目</td><td class="n">55</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/05-任务与项目/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-task-project.html">任务 · DAG</a></td></tr>
+        <tr><td>06-工具与技能</td><td class="n">62</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/06-工具与技能/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-tools.html">工具 · 技能</a></td></tr>
+        <tr><td>07-外部Agent(A2A)</td><td class="n">21</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/07-外部Agent%28A2A%29/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-a2a.html">A2A · 联邦</a></td></tr>
+        <tr><td>08-搜索</td><td class="n">25</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/08-搜索/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-search.html">搜索</a></td></tr>
+        <tr><td>09-统计与监控</td><td class="n">11</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/09-统计与监控/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-stats.html">统计 · 监控</a></td></tr>
+        <tr><td>10-异步基建(AOP)</td><td class="n">34</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/10-异步基建%28AOP%29/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-aop.html">事件中心</a></td></tr>
+        <tr><td>11-前端应用</td><td class="n">52</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/11-前端应用/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-frontend.html">前端</a></td></tr>
+        <tr><td>12-基础设施与部署</td><td class="n">85</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/12-基础设施与部署/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-infra.html">基础设施</a></td></tr>
+        <tr><td>13-数据模型</td><td class="n">43</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/13-数据模型/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-data-model.html">数据模型 ER</a></td></tr>
+        <tr><td>14-测试</td><td class="n">5</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/14-测试/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-testing.html">测试 · 门禁</a></td></tr>
       </tbody>
     </table>
   </div>
@@ -173,7 +262,7 @@
     <ul>
       <li><a href="https://github.com/runningcoders/ai_orz">GitHub 仓库</a><span class="desc">源码、Issue 与提交历史</span></li>
       <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules">docs/modules/</a><span class="desc">知识库主体：15 个模块 × 三层</span></li>
-      <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/diagrams">docs/diagrams/</a><span class="desc">架构图源文件（自包含 HTML，更新后覆盖同名文件）</span></li>
+      <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/diagrams">docs/diagrams/</a><span class="desc">16 张架构图源文件（自包含 HTML）+ 图目录清单 README</span></li>
     </ul>
   </div>
 

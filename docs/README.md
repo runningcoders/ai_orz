@@ -273,7 +273,7 @@ make wiki-index && make wiki-check && make docs-lint
 3. 架构核心概念变化 → 更新 `ARCHITECTURE.md`。
 4. 新功能设计 → 先写模块 `A-设计/` 新文档（**带 frontmatter**），落地后由 `C-知识/` 承接现状描述。
 5. 被取代的方案 → 原 `A-设计` 标 `status: 已废弃` 并互链替代文档；只把**纯历史存档**移入 `archive/`。
-6. 架构图等可视化产物放 `diagrams/`，重新生成后覆盖同名文件；`index.html` 是 GitHub Pages 落地页、`.nojekyll` 关闭 Jekyll 渲染，二者属站点基建，不参与文档体系。
+6. 架构图等可视化产物放 `diagrams/`，重新生成后覆盖同名文件，清单与选型理由见 [`diagrams/README.md`](./diagrams/README.md)；`index.html` 是 GitHub Pages 落地页、`.nojekyll` 关闭 Jekyll 渲染，二者属站点基建，不参与文档体系。
 7. **三类索引与模块 `00-INDEX.md` 全自动生成，禁止手改**；新增/删除/改名文档后必跑 `make wiki-index`。
 8. 提交前自检：`make wiki-check`（索引一致性 + 元数据完整性）。
 9. **不复述原则。** 全局性的平台定位 / 技术栈 / 架构总述只在 `00-总览与架构` 与根目录主文档里写一次，其他文档引用即可——方向文档只对齐自己的设计，避免同一段话在 N 篇里漂移。

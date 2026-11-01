@@ -13,11 +13,23 @@
 > - [CODE_STANDARDS.md](./CODE_STANDARDS.md) — 编码规范 SSOT（命名/分层/宏/错误/日志等全量规范）
 > - [AGENTS.md](AGENTS.md) — Agent 快速入门手册（架构速览 + 开发规范路由表）
 > - [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实践与避坑（反模式/实例化展开）
-> - [docs/wiki/](./wiki/) — 代码现状百科，字段级实现细节以 wiki/源文件为准
+> - [docs/modules/](./modules/) — 15 个能力域知识库，字段级实现细节以 modules/源文件为准
 > - [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) — 容器级架构总图（模块清单 + 专题子图索引）
 > - [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) — 本体子系统专题图
 > - [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) — 思维轨迹 / 思考图专题图
 > - [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) — 记忆子系统专题图
+> - [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) — 工具与技能专题图（三层调用 / 授权 / 技能装配）
+> - [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) — 异步基建专题图（AOP 生产消费事件中心）
+> - [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) — 组织与权限专题图（含联邦组网）
+> - [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) — 任务与项目专题图（状态机 / DAG / 制品）
+> - [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) — 对话与消息专题图（渠道入站 / 消息编排 / SSE）
+> - [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) — 外部 Agent 接入专题图（A2A JSON-RPC / 轮询兜底 / 联邦签名）
+> - [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) — 搜索专题图（三路召回 / 属性过滤 / 存储面）
+> - [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) — 统计与监控专题图（事件采集 / 聚合 / 看板）
+> - [docs/diagrams/ai-orz-frontend.html](docs/diagrams/ai-orz-frontend.html) — 前端应用专题图（Dioxus WASM / 页面 / API 客户端）
+> - [docs/diagrams/ai-orz-infra.html](docs/diagrams/ai-orz-infra.html) — 基础设施与部署专题图（启动装配 / 存储 / 发布）
+> - [docs/diagrams/ai-orz-data-model.html](docs/diagrams/ai-orz-data-model.html) — 数据模型 ER 图（三族九表 / 字段来自现网 schema）
+> - [docs/diagrams/ai-orz-testing.html](docs/diagrams/ai-orz-testing.html) — 测试与门禁专题图（五道关 / 测试分层 / 文档机检）
 >
 //! > 最后更新：2026-10-31
 
@@ -316,7 +328,7 @@ data/
 
 ---
 
-## 🗺️ 专题子图导航（2026-10-31 新增）
+## 🗺️ 专题子图导航（2026-10-31 建立，2026-11-01 扩充至 16 张）
 
 总图只到**容器级**（有哪些模块、怎么连）；单个子系统的设计下沉到专题图，图内均有 3 个视图可切换：
 
@@ -326,6 +338,18 @@ data/
 | [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) | 本体子系统：四条能力线 + 五道门闩 + 治理看板 | 读侧 / 写入门闩 / 治理面 |
 | [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：唤醒 → 快判断 → 轮次 → 相位 → 落盘 → 查询 → 前端 | 一轮思考 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
+| [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
+| [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 7 消费者 + 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
+| [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) | 组织与权限：多级组织 + 角色继承 + 双模式认证 + 联邦组网 | 组织与角色 / 认证与凭证 / 联邦组网 |
+| [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：四态状态机 + DAG 唤醒 + 制品聚合 | 任务状态机 / DAG 与唤醒 / 项目聚合 |
+| [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + MessageDomain（builder / delivery）+ SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
+| [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) | 外部 Agent：Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 | 协议入口 / 结果与兜底 / 联邦与长连接 |
+| [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) | 搜索：FTS5 + 向量 + 图谱三路召回 + 属性精确过滤 | 工具入口 / 三路召回 / 存储面 |
+| [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) | 统计与监控：事件采集 → AOP 消费 → 四类指标落库 → 监控 API | 采集 / 聚合 / 读取与看板 |
+| [docs/diagrams/ai-orz-frontend.html](docs/diagrams/ai-orz-frontend.html) | 前端应用：Dioxus WASM 入口 / 路由 / 页面 / HUD / API 客户端 + build.rs | 应用骨架 / 页面与组件 / 数据与产物 |
+| [docs/diagrams/ai-orz-infra.html](docs/diagrams/ai-orz-infra.html) | 基础设施：配置 → 连接池与迁移 → 路径与 JSONL → 后台任务 → 发布 | 启动与配置 / 运行期资源 / 构建与发布 |
+| [docs/diagrams/ai-orz-data-model.html](docs/diagrams/ai-orz-data-model.html) | 数据模型（ER 图）：三族九表，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 |
+| [docs/diagrams/ai-orz-testing.html](docs/diagrams/ai-orz-testing.html) | 测试与门禁：fmt / clippy / test / docs_lint / inline-lint 五道关 | 门禁组合 / 测试分层 / 文档与索引 |
 
 ---
 
