@@ -122,7 +122,10 @@ enum DocNode {
         title: String,
         /// 文件 stem，仅用于识别「同名目录包同名文件」
         name: String,
+        /// 站内副本路径（`modules/{hash}.md`）
         short_path: String,
+        /// 原始仓库相对路径（`docs/modules/<模块>/.../<文件>.md`），渲染期归一化 `./` 链接用
+        repo_path: String,
     },
     Dir {
         name: String,
@@ -174,20 +177,10 @@ fn walk_dir_hierarchical(
             if let Some(parent) = dest.parent() {
                 let _ = fs::create_dir_all(parent);
             }
-            // 导入期把 `./` `../` 相对链接归一化为「相对仓库根」：
-            // 文档中心里的 md 是 hash 短名副本，原写法在这里必然解析错（GitHub 也解析不了
-            // `blob/main/./x.md`）。非 UTF-8 等异常文件退回原样复制，不阻断构建。
+            // 原样复制字节：`./` `../` 的归一化放到渲染期做（需要原文位置，
+            // 由 index.json 的 repo_path 提供），打包期不改文档内容。
             let repo_path = format!("docs/{rel_str}");
-            match fs::read_to_string(&path) {
-                Ok(md) => {
-                    let rewritten =
-                        common::doc_link::rewrite_markdown_relative_links(&md, &repo_path);
-                    fs::write(&dest, rewritten)?;
-                }
-                Err(_) => {
-                    let _ = fs::copy(&path, &dest);
-                }
-            }
+            fs::copy(&path, &dest)?;
             println!("cargo:rerun-if-changed={}", path.display());
             let name = Path::new(&rel_str)
                 .file_stem()
@@ -198,6 +191,7 @@ fn walk_dir_hierarchical(
                 title,
                 name,
                 short_path,
+                repo_path,
             });
         }
     }
@@ -207,9 +201,12 @@ fn walk_dir_hierarchical(
 fn node_to_json(node: &DocNode) -> serde_json::Value {
     match node {
         DocNode::File {
-            title, short_path, ..
+            title,
+            short_path,
+            repo_path,
+            ..
         } => {
-            serde_json::json!({ "title": title, "path": short_path })
+            serde_json::json!({ "title": title, "path": short_path, "repo_path": repo_path })
         }
         DocNode::Dir { name, children } => {
             let children_json: Vec<serde_json::Value> = children.iter().map(node_to_json).collect();
@@ -225,8 +222,8 @@ fn node_to_json(node: &DocNode) -> serde_json::Value {
 /// 避免深嵌套目录名导致的路径超长问题。
 /// 原始标题和目录结构仅用于前端 UI 展示。
 ///
-/// 复制时对 Markdown 做一次**链接归一化**（`common::doc_link::rewrite_markdown_relative_links`）：
-/// 把 `./` `../` 形式改写成「相对仓库根」，前端便只需按约定拼 GitHub URL，不必猜原文位置。
+/// 复制时**不改文档内容**：每条文档在 index.json 里带上原始 `repo_path`，
+/// 渲染期据此归一化 `./` `../` 链接并决定站内打开还是跳 GitHub。
 ///
 /// 收录范围：
 /// - docs/ 根目录的纲要文档（路径短，保留原名）
@@ -266,21 +263,14 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
         for (file, title) in root_docs {
             let src = docs_src.join(file);
             if src.exists() {
-                // 根纲要同样做导入期链接归一化：仓库路径是 `docs/<file>`（不是 `<file>`），
-                // 否则 `./modules/INDEX.md` 会被解到仓库根而不是 docs/ 下
+                // 原样复制 + 记录原始仓库路径：根纲要的 `./modules/INDEX.md` 以
+                // `docs/<file>` 为基准，归一化留给渲染期，避免打包期改内容
                 let repo_path = format!("docs/{file}");
-                match fs::read_to_string(&src) {
-                    Ok(md) => {
-                        let rewritten =
-                            common::doc_link::rewrite_markdown_relative_links(&md, &repo_path);
-                        fs::write(dest_root.join(file), rewritten)?;
-                    }
-                    Err(_) => {
-                        fs::copy(&src, dest_root.join(file))?;
-                    }
-                }
+                fs::copy(&src, dest_root.join(file))?;
                 println!("cargo:rerun-if-changed={}", src.display());
-                overview_docs.push(serde_json::json!({ "title": title, "path": file }));
+                overview_docs.push(
+                    serde_json::json!({ "title": title, "path": file, "repo_path": repo_path }),
+                );
             }
         }
         if !overview_docs.is_empty() {

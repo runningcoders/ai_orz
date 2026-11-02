@@ -21,6 +21,8 @@
 - 扩展了 XSS 防护机制
 - 增强了跨页面统一渲染能力
 
+**2026-11-02 增量更新（Mermaid 主题与重绘修复）**：主题判定不再看 `data-theme` 名称是否含 `dark`（当前 `orz-hud` / `orz-light` 都不含，导致深色主题下边线与标签文字不可见），改为按 `color-scheme` → `--color-base-100` 亮度推断 dark/default；SVG 颜色在渲染时固化，故新增 `MutationObserver` 监听 `data-theme` 变化后重绘所有 `.mermaid-diagram`（源码存入容器 `__mermaidSrc`）；`mermaid.render` 全局状态不可并发，所有渲染改为串行队列 + 容器 token 丢弃过期结果；`MarkdownRenderer` / `MermaidDiagram` 的 mermaid 效果改用 `use_reactive` 订阅 `html` / `code`，修复任务依赖图数据刷新后旧图不重绘。
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -96,9 +98,9 @@ HR_T --> CT
 - [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 核心组件
-- **MarkdownRenderer**：基于 pulldown-cmark 将 Markdown 转为 HTML，启用表格、删除线、任务列表扩展；**新增安全特性**：原始 HTML 事件降级为文本，确保 dangerous_inner_html 注入安全；按 content 缓存 HTML；含 mermaid 代码块时延迟扫描并调用 window.__renderMermaid。
-- **MermaidDiagram**：接收裸 Mermaid 字符串，DOM 挂载后调用 window.__renderMermaidCode 渲染为 SVG。
-- **index.html 桥接**：懒加载 mermaid.esm.min.mjs，暴露 __renderMermaid（容器内代码块替换）与 __renderMermaidCode（裸字符串渲染），主题跟随 DaisyUI data-theme。
+- **MarkdownRenderer**：基于 pulldown-cmark 将 Markdown 转为 HTML，启用表格、删除线、任务列表扩展；**安全特性**：原始 HTML 事件降级为文本，确保 dangerous_inner_html 注入安全；按 `content` 做内容寻址缓存；含 mermaid 代码块时由 `use_reactive` 驱动的 `use_effect` 调用 window.__renderMermaid。
+- **MermaidDiagram**：接收裸 Mermaid 字符串，`use_reactive` 感知 code 变化后调用 window.__renderMermaidCode 渲染为 SVG。
+- **index.html 桥接**：懒加载 mermaid.esm.min.mjs，暴露 __renderMermaid（容器内代码块替换）、__renderMermaidCode（裸字符串渲染）与 __rerenderMermaid（主题切换重绘）；所有渲染串行排队，主题按 `--color-base-100` 亮度判定 dark/default，并监听 data-theme 变化重绘。
 - **样式系统**：.markdown-body 复用 DaisyUI 主题变量，适配多主题；compact 模式用于紧凑场景。
 
 **更新** 新增了完整的 XSS 防护机制，通过 pulldown-cmark 的事件映射将所有原始 HTML 转换为纯文本，防止潜在的脚本注入攻击。
@@ -139,9 +141,9 @@ IDX-->>FE : 替换为SVG
 
 ### MarkdownRenderer 与 Mermaid 集成
 - **解析策略**：启用 TABLES、STRIKETHROUGH、TASKLISTS；**安全增强**：原始 HTML 事件转 Text，避免 XSS。
-- **缓存策略**：use_memo 按 content 缓存 HTML，避免长列表重复解析。
-- **Mermaid 注入**：检测 language-mermaid 后延迟扫描，调用 window.__renderMermaid 替换为 SVG。
-- **独立渲染**：MermaidDiagram 直接调用 window.__renderMermaidCode 渲染裸字符串。
+- **缓存策略**：`MdCache`（`use_hook` + `Rc<RefCell>`）按 content / 目录快照 / 文档路径做失效键，命中时直接复用 HTML。
+- **Mermaid 注入**：`use_effect(use_reactive(&html))` 在 content 变化后调用 window.__renderMermaid，把 `pre code.language-mermaid` 替换为 `.mermaid-diagram`（源码存入容器 `__mermaidSrc`，供主题切换重绘）。
+- **独立渲染**：MermaidDiagram 用 `use_reactive(&code)` 感知数据刷新，再调用 window.__renderMermaidCode 渲染裸字符串。
 
 ```mermaid
 flowchart TD

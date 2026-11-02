@@ -8,8 +8,10 @@ scope:
   - "frontend/src/layouts/app_layout.rs"
   - "common/src/doc_link.rs"
 source_files:
-  - frontend/src/components/markdown.rs#L1-L340
-  - frontend/src/utils/doc_link.rs#L1-L180
+  - frontend/src/components/markdown.rs
+  - frontend/src/utils/doc_link.rs
+  - frontend/src/pages/system/docs.rs
+  - frontend/build.rs
   - frontend/src/layouts/app_layout.rs#L80-L160
   - frontend/src/hooks/use_require_auth.rs#L1-L100
   - common/src/doc_link.rs#L1-L320
@@ -33,6 +35,8 @@ fcb08db6 变更把前端 Dioxus Markdown 渲染组件统一接入 DocLinkClassif
 
 新方案链路：`MarkdownRenderer 组件` → pulldown-cmark 解析 Event 流 → 遇到 `Event::Start(Tag::Link(_, target, _))` 时 **先调 DocLinkClassifier::classify(&target)** → 拿到 LinkKind 后进行：① 渲染 `<a>` 时加入 `data-repo-href="{normalize后的标准形式}"`、`data-link-kind="{VariantName}"` 两个自定义属性（便于 e2e 和 CSS targetting）② `href` 对于站内用 `javascript:;`（空）或真实 Router Link，对于代码/design/plan 外部仓库文档先放 `#`，由**全局 click 拦截器**在 `app_layout.rs` 里统一处理点击 → 读 data-repo-href + data-link-kind → 按 8 类策略分发（Wiki 跳路由、代码跳 GitHub 新窗口、ExternalHttp 新窗口、FileProtocol/Legacy 直接禁止点击 + toast 提示 migrate）。
 
+**2026-11-02 增量更新（归一化移到渲染期）**：打包期（`frontend/build.rs`）不再改写 Markdown 内容——原样复制副本，并在 `index.json` 每条文档写入原始 `repo_path`。文档中心渲染时把 `repo_path` + 「仓库路径 → 站内副本」映射交给 `MarkdownRenderer`（`DocRenderContext`），用 `common::doc_link::normalize_repo_relative` 把 `./` `../` 归一化为仓库根相对：命中收录映射的 Markdown 打 `data-doc-path` / `data-doc-repo` + `class="doc-link-internal"`，由 `docs.rs` 拦截后原地切换；未收录文档（archive 等）与源码文件仍退化为 GitHub blob（`data-repo-href` + index.html JS 桥）。当前实现位于 `frontend/src/utils/doc_link.rs`，不再依赖本卡早期设想的 `app_layout.rs` 全局委托。
+
 ## §2 关键文件路径表格（读代码直接跳）
 
 | 文件 | 角色 | 关键结构/宏/入口 |
@@ -54,8 +58,8 @@ fcb08db6 变更把前端 Dioxus Markdown 渲染组件统一接入 DocLinkClassif
 本卡与 [DocLinkClassifier 工具链卡](docs/modules/06-工具与技能/C-知识/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md) 构成 **工具链后端 + 前端渲染** 互补视角；按 §2.1.3 Level 3 也互相对标。
 
 1. **前端 classify 绝不重写（直接 use common::doc_link）**：前端 utils/doc_link.rs 中 **不允许** 自己 `Regex::new(r"file://")` 分类——必须调用 common 同一个函数，保证前端「点击认为是 LegacyColon」= docs_lint「扫出违规 LegacyColon」= docs_migrate「迁移该 LegacyColon」三者一致。如果分类漂移，**唯一修法 = 改 common/src/doc_link.rs**。
-2. **点击处理全局委托 vs 单元素 onclick**：只允许 AppLayout mounted 钩子挂 document click event listener（委托）；**禁止** MarkdownRenderer 组件在每个 `<a>` 上都写 onclick={move |_| ...}——Dioxus 为 1000 个 a 生成 1000 个闭包 scope 会内存暴涨、Markdown 文档 1MB 以上时渲染卡顿严重（fcb08db6 变更前旧方案卡顿的直接原因）。事件委托 = 1 个 listener，且支持异步插入 DOM（未来 SSE 推送 Markdown 增量时也生效）。
-3. **data-repo-href = 单一标准化 URL 真相**：`<a>` 渲染后 `data-repo-href` 属性值必须 = `normalize_to_repo_relative(target)` 后的结果（前端/后端/CI 通用形式）；点击拦截器逻辑**不再次 parse**，直接根据 `data-link-kind` 枚举名做分发（if kind == "RepoRelative" { 新窗口 GitHub } else if kind == "WikiLong" { 路由 } ...）。classify 逻辑在渲染时做一次（CPU 成本高），点击时只是 string compare kind（O(1)）。
+2. **点击处理用事件委托，禁止单元素 onclick**：站内文档切换由文档中心内容容器（`docs.rs` 的 `div.markdown-body`）挂**一个** onclick，用 `target.closest("a.doc-link-internal")` 命中后分发；GitHub 兜底仍由 `index.html` 的 document 级 JS 桥处理。**禁止** MarkdownRenderer 组件在每个 `<a>` 上都写 onclick={move |_| ...}——Dioxus 为 1000 个 a 生成 1000 个闭包 scope 会内存暴涨、Markdown 文档 1MB 以上时渲染卡顿严重（fcb08db6 变更前旧方案卡顿的直接原因）。委托 = 每页 1 个 listener，且支持异步插入 DOM（未来 SSE 推送 Markdown 增量时也生效）。
+3. **data-repo-href = 单一标准化 URL 真相**：`<a>` 渲染后 `data-repo-href` 属性值必须 = `normalize_repo_relative(target)` 后的结果（前端/后端/CI 通用形式）；点击拦截器逻辑**不再次 parse**，直接按分类结果分发。已收录 Markdown 走 `data-doc-path`（站内副本）+ `data-doc-repo`（原始仓库路径）+ `class="doc-link-internal"`，未收录/源码走 `data-repo-href` + `class="doc-link-intercept"`。classify 逻辑在渲染时做一次（CPU 成本高），点击时只是属性读取 + O(1) 分发。
 4. **站内跳转用 Dioxus Router Link（如果可能）**：InternalRouter 类的链接，MarkdownRenderer 直接渲染 `<Link to={to} class="doc-link" data-repo-href=...>`（Dioxus Router 组件）而非裸 `<a href="javascript:;">` + 拦截器 push——Link 组件有 active class 高亮（导航栏内的 Markdown 链接高亮激活状态正确）。**只有无法在渲染时决定跳转目标（如跨系统跳转需要后端查 slug）**时才退回 `<a>` + 拦截器。
 5. **代码链接（RepoRelative 到 src/** 或 migrations/ 的路径）= 统一 GitHub new window**：前端不会把 Rust 源码渲染成代码浏览页（功能未实现前）→ 一律 window.open `https://github.com/ai-orz/ai_orz/blob/<HEAD_SHA|branch>/<path>#<Lx-Ly>`。branch/commit 来源前端通过 env var `GIT_COMMIT_SHA`（build.rs 注入）+ fallback "main"，保证新窗口打开的是**用户当前构建版本对应的源码**（不会出现 main 分支和本地代码不同步 → 行号错位）。
 

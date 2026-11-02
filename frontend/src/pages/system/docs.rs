@@ -10,24 +10,31 @@
 //! 各分区默认展开、可整体折叠；能力域知识库为「模块 → A/B/C 层 → 文档」三级折叠树。
 //! `docs/archive/` 历史件不收录（文档中心只回答「现在是什么」）。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::components::hud::HudPanel;
 use crate::components::hud::PageHeader;
+use dioxus::html::events::MouseEvent;
 use dioxus::prelude::*;
 use serde::Deserialize;
+use wasm_bindgen::JsCast;
 
 use crate::api::fetch_static_text;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::{ToastState, use_toast};
+use crate::utils::doc_link::DocRenderContext;
 
 /// 文档条目（叶子节点；wiki 树中也可能出现在 children 里）
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 struct DocEntry {
     title: String,
     path: String,
+    /// 原始仓库路径（如 `docs/AGENT_GUIDE.md`），渲染期归一化 `./` `../` 链接的基准
+    #[serde(default)]
+    repo_path: String,
     /// 条目类型：缺省为 Markdown；`html` 表示自包含 HTML 资源（如架构图），
     /// 由 build.rs 生成 index.json 时标注，前端以新标签页直链打开。
     #[serde(default, rename = "type")]
@@ -193,6 +200,39 @@ fn group_matches(group: &DocGroup, filter: &str) -> bool {
     })
 }
 
+/// 递归收集「仓库路径 → 站内副本」映射（渲染期站内链接分发用）
+fn collect_repo_pages(children: &[DocGroupChild], out: &mut HashMap<String, String>) {
+    for child in children {
+        match child {
+            DocGroupChild::Doc(doc) => {
+                if !doc.repo_path.is_empty() {
+                    out.insert(doc.repo_path.clone(), doc.path.clone());
+                }
+            }
+            DocGroupChild::Group(group) => collect_repo_pages(&group.children, out),
+        }
+    }
+}
+
+/// 从目录清单构建全量映射（总览 + 能力域知识库）
+fn build_repo_pages(index: &DocIndex) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for section in &index.sections {
+        for doc in &section.docs {
+            if !doc.repo_path.is_empty() {
+                map.insert(doc.repo_path.clone(), doc.path.clone());
+            }
+        }
+        collect_repo_pages(&section.groups, &mut map);
+    }
+    map
+}
+
+/// 空 repo_path（历史 index.json）按「无上下文」处理
+fn repo_opt(repo_path: &str) -> Option<String> {
+    (!repo_path.is_empty()).then(|| repo_path.to_string())
+}
+
 fn encode_doc_path(path: &str) -> String {
     path.split('/')
         .map(|seg| String::from(js_sys::encode_uri_component(seg)))
@@ -215,7 +255,9 @@ fn open_static_in_new_tab(path: &str) {
 
 async fn load_doc(
     path: String,
+    repo_path: Option<String>,
     mut selected: Signal<Option<String>>,
+    mut current_repo: Signal<Option<String>>,
     mut markdown: Signal<Option<String>>,
     mut loading: Signal<bool>,
     toast: ToastState,
@@ -226,6 +268,7 @@ async fn load_doc(
         return;
     }
     selected.set(Some(path.clone()));
+    current_repo.set(repo_path);
     loading.set(true);
     match fetch_static_text(&format!("/docs/{}", encode_doc_path(&path))).await {
         Ok(md) => markdown.set(Some(md)),
@@ -242,6 +285,9 @@ pub fn SystemDocs() -> Element {
     let toast = use_toast();
     let mut index: Signal<Option<DocIndex>> = use_signal(|| None);
     let selected: Signal<Option<String>> = use_signal(|| None);
+    // 当前文档的原始仓库路径 + 全量「仓库路径 → 站内副本」映射（渲染期链接分发用）
+    let current_repo: Signal<Option<String>> = use_signal(|| None);
+    let mut repo_pages: Signal<Option<Rc<HashMap<String, String>>>> = use_signal(|| None);
     let markdown: Signal<Option<String>> = use_signal(|| None);
     let loading_doc = use_signal(|| false);
     let mut filter: Signal<String> = use_signal(String::new);
@@ -255,15 +301,26 @@ pub fn SystemDocs() -> Element {
             match fetch_static_text("/docs/index.json").await {
                 Ok(text) => match serde_json::from_str::<DocIndex>(&text) {
                     Ok(idx) => {
+                        let pages = Rc::new(build_repo_pages(&idx));
                         let first = idx.sections.iter().find_map(|s| {
                             s.docs
                                 .iter()
                                 .find(|d| !is_html_entry(d))
-                                .map(|d| d.path.clone())
+                                .map(|d| (d.path.clone(), repo_opt(&d.repo_path)))
                         });
                         index.set(Some(idx));
-                        if let Some(path) = first {
-                            load_doc(path, selected, markdown, loading_doc, toast).await;
+                        repo_pages.set(Some(pages));
+                        if let Some((path, repo)) = first {
+                            load_doc(
+                                path,
+                                repo,
+                                selected,
+                                current_repo,
+                                markdown,
+                                loading_doc,
+                                toast,
+                            )
+                            .await;
                         }
                     }
                     Err(e) => toast.error(format!("解析文档目录失败: {}", e)),
@@ -314,6 +371,16 @@ pub fn SystemDocs() -> Element {
                 .collect()
         })
         .unwrap_or_default();
+
+    // 当前文档上下文：原文位置 + 收录映射；未命中映射的链接在渲染期退化 GitHub
+    let doc_ctx = current_repo
+        .read()
+        .clone()
+        .zip(repo_pages.read().clone())
+        .map(|(doc_repo_path, repo_to_page)| DocRenderContext {
+            doc_repo_path,
+            repo_to_page,
+        });
 
     rsx! {
         AppLayout {
@@ -392,10 +459,13 @@ pub fn SystemDocs() -> Element {
                                                                     },
                                                                     onclick: {
                                                                         let path = doc.path.clone();
+                                                                        let repo = repo_opt(&doc.repo_path);
                                                                         move |_| {
                                                                             spawn(load_doc(
                                                                                 path.clone(),
+                                                                                repo.clone(),
                                                                                 selected,
+                                                                                current_repo,
                                                                                 markdown,
                                                                                 loading_doc,
                                                                                 toast,
@@ -426,7 +496,9 @@ pub fn SystemDocs() -> Element {
                                                             FlatEntry::Doc { entry: doc, .. } => {
                                                                 spawn(load_doc(
                                                                     doc.path.clone(),
+                                                                    repo_opt(&doc.repo_path),
                                                                     selected,
+                                                                    current_repo,
                                                                     markdown,
                                                                     loading_doc,
                                                                     toast,
@@ -451,8 +523,48 @@ pub fn SystemDocs() -> Element {
                                         Loading { size: "md" }
                                     }
                                 } else if let Some(md) = markdown_opt.as_ref() {
-                                    div { class: "markdown-body max-w-none overflow-x-auto",
-                                        MarkdownRenderer { content: md.clone() }
+                                    div {
+                                        class: "markdown-body max-w-none overflow-x-auto",
+                                        // 文档互链：渲染期已标 data-doc-path，这里拦截后原地切换
+                                        onclick: move |evt: MouseEvent| {
+                                            let data = evt.data();
+                                            let Some(web_evt) =
+                                                data.downcast::<web_sys::MouseEvent>()
+                                            else {
+                                                return;
+                                            };
+                                            let Some(target) = web_evt.target() else {
+                                                return;
+                                            };
+                                            let Ok(target) = target.dyn_into::<web_sys::Element>()
+                                            else {
+                                                return;
+                                            };
+                                            let Ok(Some(anchor)) =
+                                                target.closest("a.doc-link-internal")
+                                            else {
+                                                return;
+                                            };
+                                            let Some(page) =
+                                                anchor.get_attribute("data-doc-path")
+                                            else {
+                                                return;
+                                            };
+                                            evt.prevent_default();
+                                            spawn(load_doc(
+                                                page,
+                                                anchor.get_attribute("data-doc-repo"),
+                                                selected,
+                                                current_repo,
+                                                markdown,
+                                                loading_doc,
+                                                toast,
+                                            ));
+                                        },
+                                        MarkdownRenderer {
+                                            content: md.clone(),
+                                            doc_ctx: doc_ctx.clone()
+                                        }
                                     }
                                 } else {
                                     div { class: "text-center opacity-60 py-12",

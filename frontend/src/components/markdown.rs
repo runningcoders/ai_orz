@@ -30,6 +30,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use dioxus::prelude::*;
 
 use crate::store::directory::Directory;
+use crate::utils::doc_link::DocRenderContext;
 use crate::utils::mention::transform_mentions;
 use crate::utils::message::NameMap;
 
@@ -47,7 +48,7 @@ fn next_container_id(prefix: &str) -> String {
 ///
 /// 不带名称上下文：提及 chip 用消息文本里的快照名，见 [`render_markdown_with_names`]。
 pub fn render_markdown(md: &str) -> String {
-    render_markdown_with_names(md, None)
+    render_markdown_inner(md, None, None)
 }
 
 /// Markdown → HTML，带 Agent 名称上下文
@@ -59,6 +60,22 @@ pub fn render_markdown(md: &str) -> String {
 /// 事件流统一交给 [`transform_mentions`]：它同时承担源文 HTML 转义
 /// 与 `[@名](agent:id)` 提及链接 → chip 的替换，调用方无需再单独做转义映射。
 pub fn render_markdown_with_names(md: &str, agents: Option<&NameMap>) -> String {
+    render_markdown_inner(md, agents, None)
+}
+
+/// Markdown → HTML，带文档上下文（文档中心专用）
+///
+/// 上下文提供当前文档的仓库路径与「仓库路径 → 站内副本」映射，
+/// 渲染期据此把 `./` `../` 归一化并决定站内切换 / 远程 GitHub 分发。
+pub fn render_markdown_doc(md: &str, doc_ctx: &DocRenderContext) -> String {
+    render_markdown_inner(md, None, Some(doc_ctx))
+}
+
+fn render_markdown_inner(
+    md: &str,
+    agents: Option<&NameMap>,
+    doc_ctx: Option<&DocRenderContext>,
+) -> String {
     let mut options = pulldown_cmark::Options::empty();
     options.insert(pulldown_cmark::Options::ENABLE_TABLES);
     options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
@@ -67,8 +84,12 @@ pub fn render_markdown_with_names(md: &str, agents: Option<&NameMap>) -> String 
     let events = transform_mentions(parser, agents);
     let mut html_out = String::new();
     pulldown_cmark::html::push_html(&mut html_out, events.into_iter());
-    // 站内链接预拼 data-repo-href（index.html 全局点击拦截 JS 桥用，AGENTS §2.1.2）
-    crate::utils::doc_link::post_process_doc_links(&html_out, crate::utils::doc_link::BLOB_BASE)
+    // 站内链接分发：文档上下文存在时归一化 `./` 并站内切换，否则预拼 data-repo-href
+    crate::utils::doc_link::post_process_doc_links(
+        &html_out,
+        crate::utils::doc_link::BLOB_BASE,
+        doc_ctx,
+    )
 }
 
 /// `MarkdownRenderer` 每实例的渲染缓存（内容寻址）
@@ -82,6 +103,8 @@ struct MdCache {
     content: String,
     /// 上次解析使用的目录快照（None = 无目录上下文）。仅目录失配重算时克隆一次，命中路径零克隆
     names: Option<NameMap>,
+    /// 上次解析使用的文档仓库路径（None = 非文档中心场景）
+    doc_repo_path: Option<String>,
     /// 上次解析产物
     html: String,
 }
@@ -94,7 +117,11 @@ struct MdCache {
 /// 内容寻缓存：`content` / 目录任一变化必重算（修复知识图谱详情「内容」栏切换不更新），
 /// 都未变化则直接复用缓存（chat / 长列表高频父渲染下不丢性能）。
 #[component]
-pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool) -> Element {
+pub fn MarkdownRenderer(
+    content: String,
+    #[props(default = false)] compact: bool,
+    #[props(default)] doc_ctx: Option<DocRenderContext>,
+) -> Element {
     // 全局名称目录：命中时 Agent 提及用实时名渲染。
     // 文档中心等未提供 provider 的页面 try_consume_context 返回 None，自动回退到快照名。
     let directory = try_consume_context::<Signal<Directory>>();
@@ -124,41 +151,44 @@ pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool
             }
             None => c.names.is_none(),
         };
-        if c.content != content || !names_match {
+        // 文档切换时原文位置变化 → 相对链接归一化的基准也变，必须重算
+        let doc_path = doc_ctx.as_ref().map(|ctx| ctx.doc_repo_path.as_str());
+        let doc_match = c.doc_repo_path.as_deref() == doc_path;
+        if c.content != content || !names_match || !doc_match {
             // 目录快照仅在失配时重新克隆：流式场景 content 每 token 失效一次，
             // 目录未变时不应付出整表克隆的代价。
             if !names_match {
                 c.names = directory.as_ref().map(|sig| sig.read().agents.clone());
             }
-            c.html = match directory.as_ref() {
-                Some(sig) => {
+            if !doc_match {
+                c.doc_repo_path = doc_path.map(str::to_string);
+            }
+            c.html = match (directory.as_ref(), doc_ctx.as_ref()) {
+                (Some(sig), _) => {
                     let d = sig.read();
                     render_markdown_with_names(&content, Some(&d.agents))
                 }
-                None => render_markdown(&content),
+                (None, Some(ctx)) => render_markdown_doc(&content, ctx),
+                (None, None) => render_markdown(&content),
             };
             c.content = content.clone();
         }
         c.html.clone()
     };
-    // use_effect 只订阅 signal、无法跟踪普通值：渲染期把最新 html 同步进 signal，
-    // 供下方 mermaid 效果在内容变化后重新触发。signal 初值即首帧计算结果
-    // （use_signal 初始化闭包），消除「空 → 首值」多出的一次重渲染；
-    // 后续帧渲染期仍无条件 set 同步，值相等时由 vdom diff 保证无 DOM 变更。
-    let mut html_signal = use_signal(|| html.clone());
-    html_signal.set(html.clone());
     let container_id = use_hook(|| next_container_id("md"));
     // 含 ```mermaid 代码块时，挂载后（use_effect 已在 DOM 挂载后运行）直接调用 JS 渲染层替换为 SVG。
+    // use_effect 只订阅 signal、无法跟踪普通 prop，这里用 use_reactive 把 html 转成
+    // 反应式依赖：内容变化（含文档切换、流式追加）才重跑，未变化时零额外调用。
     // 不再用 spawn + 30ms sleep 延迟：该 future 会在所属组件卸载时被 drop，
     // 而 TimeoutFuture 底层 Closure::once 在「已入队未触发」时卸载会触发
     // "closure invoked recursively or after being dropped"（工作台 SSE 流式气泡高频复现）。
     {
         let id = container_id.clone();
-        use_effect(move || {
-            if html_signal.read().contains("language-mermaid") {
+        use_effect(dioxus::hooks::use_reactive(&html, move |html: String| {
+            if html.contains("language-mermaid") {
                 render_mermaid_blocks_now(&id);
             }
-        });
+        }));
     }
     let class = if compact {
         "markdown-body markdown-compact max-w-none"
@@ -182,14 +212,14 @@ pub fn MermaidDiagram(code: String) -> Element {
     let container_id = use_hook(|| next_container_id("mermaid"));
     {
         let id = container_id.clone();
-        let code = code.clone();
-        use_effect(move || {
+        // code 是普通 prop，use_effect 无法感知其变化（任务依赖图刷新后旧图不更新）；
+        // use_reactive 把 code 转成反应式依赖，对内容变化重新渲染。
+        use_effect(dioxus::hooks::use_reactive(&code, move |code: String| {
             let id = id.clone();
-            let code = code.clone();
             spawn(async move {
                 render_mermaid_code_now(&id, &code);
             });
-        });
+        }));
     }
     rsx! {
         div {
@@ -304,18 +334,26 @@ mod tests {
             1
         );
         assert_eq!(
-            code.matches("if c.content != content || !names_match {")
+            code.matches("if c.content != content || !names_match || !doc_match {")
                 .count(),
             1
         );
         assert_eq!(code.matches("c.html.clone()").count(), 1);
-        // signal 初值即首帧计算结果（无「空 → 首值」多渲染），渲染期维持同步
-        assert_eq!(code.matches("use_signal(|| html.clone())").count(), 1);
-        assert_eq!(code.matches("html_signal.set(html.clone());").count(), 1);
+        // mermaid 效果用 use_reactive 订阅 html（禁止回到渲染期写 signal 的旧实现）
         assert_eq!(
-            code.matches("html_signal.read().contains(\"language-mermaid\")")
-                .count(),
-            1
+            code.matches("use_reactive(&html").count(),
+            1,
+            "mermaid 效果必须以 html 为反应式依赖"
+        );
+        assert_eq!(
+            code.matches("html_signal").count(),
+            0,
+            "禁止渲染期写 signal 驱动 mermaid 效果"
+        );
+        assert_eq!(
+            code.matches("use_reactive(&code").count(),
+            1,
+            "MermaidDiagram 必须以 code 为反应式依赖"
         );
         assert_eq!(code.matches("dangerous_inner_html: \"{html}\"").count(), 1);
     }

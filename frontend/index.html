@@ -17,58 +17,98 @@
       // ===== Mermaid 渲染桥接（vendor 版，懒加载不影响首屏）=====
       let __mermaidPromise = null;
       let __mermaidCounter = 0;
-      // 主题跟随 DaisyUI data-theme（暗色系用 dark，其余用 default）
-      const __mermaidTheme = () => {
-        const t = document.documentElement.getAttribute('data-theme') || '';
-        return t.includes('dark') ? 'dark' : 'default';
+      // 主题判定：优先 color-scheme，其次按 --color-base-100 亮度推断
+      // （当前主题名 orz-hud / orz-light 不含 "dark"，不能靠名字判断）
+      const __themeIsDark = () => {
+        const cs = getComputedStyle(document.documentElement);
+        const scheme = (cs.colorScheme || '').toLowerCase();
+        if (scheme.includes('dark')) return true;
+        if (scheme.includes('light')) return false;
+        const base = (cs.getPropertyValue('--color-base-100') || '').trim();
+        const oklch = base.match(/oklch\(\s*([0-9.]+)/i);
+        if (oklch) return parseFloat(oklch[1]) < 0.5;
+        const rgb = base.match(/rgba?\(\s*(\d+)[, ]+(\d+)[, ]+(\d+)/i);
+        if (rgb) {
+          const lum =
+            (0.2126 * Number(rgb[1]) + 0.7152 * Number(rgb[2]) + 0.0722 * Number(rgb[3])) / 255;
+          return lum < 0.5;
+        }
+        return (document.documentElement.getAttribute('data-theme') || '').includes('dark');
       };
+      const __mermaidTheme = () => (__themeIsDark() ? 'dark' : 'default');
       const __getMermaid = () => {
         if (!__mermaidPromise) {
-          __mermaidPromise = import('/vendor/mermaid.esm.min.mjs').then((m) => {
-            const mermaid = m.default;
-            mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
-            return mermaid;
-          });
+          __mermaidPromise = import('/vendor/mermaid.esm.min.mjs').then((m) => m.default);
         }
         return __mermaidPromise;
       };
-      // 扫描容器内 ```mermaid 代码块并替换为 SVG（MarkdownRenderer 注入式渲染）
-      window.__renderMermaid = async (container) => {
-        try {
-          const mermaid = await __getMermaid();
-          mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
-          const blocks = container.querySelectorAll('pre code.language-mermaid');
-          for (const code of blocks) {
-            const pre = code.parentElement;
+      // mermaid.render 使用全局状态、不可并发；所有渲染串行排队，避免交错产生半成品
+      let __mermaidQueue = Promise.resolve();
+      const __enqueueMermaid = (task) => {
+        const run = __mermaidQueue.then(task, task);
+        __mermaidQueue = run.catch(() => {});
+        return run;
+      };
+      // 渲染进单个容器（成功返回 true；源码保留在 __mermaidSrc 供主题切换后重绘）
+      const __renderInto = (container, code) => {
+        const token = (container.__mermaidToken = (container.__mermaidToken || 0) + 1);
+        return __enqueueMermaid(async () => {
+          try {
+            const mermaid = await __getMermaid();
+            mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
             const id = 'mermaid-svg-' + (++__mermaidCounter);
-            try {
-              const { svg } = await mermaid.render(id, code.textContent || '');
-              const wrapper = document.createElement('div');
-              wrapper.className = 'mermaid-diagram overflow-x-auto';
-              wrapper.innerHTML = svg;
-              pre.replaceWith(wrapper);
-            } catch (err) {
-              // 语法错误时保留代码块原文展示
-              console.warn('mermaid render failed:', err);
-            }
+            const { svg } = await mermaid.render(id, code || '');
+            // 内容已过期（容器被 Dioxus 重绘）时丢弃结果
+            // 注意不能用 isConnected 判断：Markdown 代码块的 wrapper 在替换前尚未入 DOM
+            if (container.__mermaidToken !== token) return false;
+            container.innerHTML = svg;
+            return true;
+          } catch (err) {
+            console.warn('mermaid render failed:', err);
+            return false;
           }
-        } catch (err) {
-          console.error('mermaid load failed:', err);
+        });
+      };
+      // 扫描容器内 ```mermaid 代码块并替换为 SVG（MarkdownRenderer 注入式渲染）
+      // 渲染成功才替换 pre：语法未写完整（流式输出）或语法错误时保留代码块原文，避免闪烁
+      window.__renderMermaid = async (container) => {
+        const blocks = Array.from(container.querySelectorAll('pre code.language-mermaid'));
+        for (const code of blocks) {
+          const pre = code.parentElement;
+          // 并发调用/内容已重绘时 pre 可能已不在 DOM，或已在渲染中，跳过
+          if (!pre || !pre.isConnected || pre.__mermaidPending) continue;
+          pre.__mermaidPending = true;
+          const src = code.textContent || '';
+          const wrapper = document.createElement('div');
+          wrapper.className = 'mermaid-diagram';
+          wrapper.__mermaidSrc = src;
+          const ok = await __renderInto(wrapper, src);
+          if (ok && pre.isConnected) {
+            pre.replaceWith(wrapper);
+          } else {
+            pre.__mermaidPending = false;
+          }
         }
       };
       // 将裸 Mermaid 字符串渲染进指定容器（MermaidDiagram 组件，如 task_graph）
       window.__renderMermaidCode = async (container, code) => {
-        try {
-          const mermaid = await __getMermaid();
-          mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
-          const id = 'mermaid-svg-' + (++__mermaidCounter);
-          const { svg } = await mermaid.render(id, code || '');
-          container.innerHTML = svg;
-        } catch (err) {
-          console.warn('mermaid render failed:', err);
-          container.textContent = code || '';
+        const src = code || '';
+        container.__mermaidSrc = src;
+        if (!(await __renderInto(container, src))) container.textContent = src;
+      };
+      // 主题切换后重绘已存在的图（Mermaid 的 SVG 颜色在渲染时固化，不会跟随 CSS 变量）
+      window.__rerenderMermaid = async () => {
+        const nodes = Array.from(document.querySelectorAll('.mermaid-diagram'));
+        for (const node of nodes) {
+          if (node.__mermaidSrc) await __renderInto(node, node.__mermaidSrc);
         }
       };
+      new MutationObserver(() => {
+        window.__rerenderMermaid();
+      }).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
+      });
     </script>
     <script>
       // 文档中心站内链接拦截：预拼的 data-repo-href 新窗口打开（AGENTS §2.1.2）

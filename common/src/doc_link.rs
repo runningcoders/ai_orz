@@ -189,6 +189,16 @@ impl DocLinkClassifier {
         }
     }
 
+    /// 目标 → 相对仓库根路径；External / Invalid 无仓库路径。
+    ///
+    /// 渲染期用它把分类结果映射回打包期记录的 `repo_path`（文档中心站内分发）。
+    pub fn to_repo_path(target: &DocLinkTarget) -> Option<String> {
+        match target {
+            DocLinkTarget::External(_) | DocLinkTarget::Invalid => None,
+            _ => Some(Self::to_relative_repo_path(target)),
+        }
+    }
+
     /// 前端路由信息（V2 内部路由升级时用；V1 前端走 GitHub 外链不经此函数）
     pub fn to_frontend_route_info(target: &DocLinkTarget) -> FrontendRouteInfo {
         match target {
@@ -282,10 +292,10 @@ impl DocLinkClassifier {
 
 /// 把 `./x` / `../y` 相对链接按「所在文档的仓库路径」归一化为相对仓库根路径。
 ///
-/// 站内链接约定是**相对仓库根**（AGENTS §2.1.2），但部分文档写成了相对自身位置的
-/// `./x.md`、`../y.md`。GitHub 能按文件位置解析这类链接，**文档中心不行**——md 副本
-/// 被换成 `docs/modules/{hash}.md`，再拿原路径拼 blob URL 会得到 `blob/main/./x.md`
-/// 这种 GitHub 解析不了的地址。所以导入期统一归一化一次。
+/// 源文档按 GitHub 语义写**相对自身位置**的链接（`./x.md`、`../y.md`），GitHub 能
+/// 按文件位置解析；文档中心不行——md 副本被换成 `docs/modules/{hash}.md`，原路径
+/// 拼出来是 `blob/main/./x.md` 这类解析不了的地址。因此文档中心在**渲染期**用本函数
+/// 一次性归一化（打包期只复制字节 + 记录 `repo_path`，不改内容）。
 ///
 /// - 非相对路径（`http(s)://`、`#锚点`、`mailto:`、已是仓库根相对）原样返回
 /// - `..` 越过仓库根（弹栈到空还要弹）时原样返回，交给调用方兜底
@@ -329,110 +339,6 @@ pub fn normalize_repo_relative(path: &str, from_repo_path: &str) -> String {
     format!("{}{}", segments.join("/"), suffix)
 }
 
-/// 导入期改写：把 Markdown 里 `./` / `../` 形式的链接归一化为「相对仓库根」。
-///
-/// 围栏代码块（``` / ~~~）与行内代码里的示例链接**一律不动**——文档里大量
-/// `[示例](./x.md)` 之类的教学片段，改了就变成假文档。支持 `](<path>)` 尖括号包裹
-/// （路径含 `()` 的目录必须这样写，否则 Markdown 在首个 `)` 处截断）。
-///
-/// 幂等：已归一化的链接不以 `./`/`../` 开头，二次调用无变化。
-pub fn rewrite_markdown_relative_links(md: &str, doc_repo_path: &str) -> String {
-    let mut out = String::with_capacity(md.len() + 256);
-    // 当前围栏标记（Some("```") / Some("~~~")），None 表示不在围栏内
-    let mut fence: Option<&str> = None;
-    for line in md.split_inclusive('\n') {
-        let opener = line.trim_start();
-        let marker = if opener.starts_with("```") {
-            Some("```")
-        } else if opener.starts_with("~~~") {
-            Some("~~~")
-        } else {
-            None
-        };
-        if let Some(m) = marker {
-            match fence {
-                None => fence = Some(m),
-                // 只有同种标记能闭合
-                Some(cur) if cur == m => fence = None,
-                Some(_) => {}
-            }
-            out.push_str(line);
-            continue;
-        }
-        if fence.is_some() {
-            out.push_str(line);
-        } else {
-            out.push_str(&rewrite_line_links(line, doc_repo_path));
-        }
-    }
-    out
-}
-
-/// 单行改写：按行内代码（反引号）切段，只在文本段里替换链接目标
-fn rewrite_line_links(line: &str, doc_repo_path: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut buf = String::new();
-    let mut in_code = false;
-    for ch in line.chars() {
-        if ch == '`' {
-            if in_code {
-                out.push_str(&buf);
-            } else {
-                out.push_str(&rewrite_link_targets(&buf, doc_repo_path));
-            }
-            buf.clear();
-            in_code = !in_code;
-            out.push('`');
-        } else {
-            buf.push(ch);
-        }
-    }
-    if in_code {
-        out.push_str(&buf);
-    } else {
-        out.push_str(&rewrite_link_targets(&buf, doc_repo_path));
-    }
-    out
-}
-
-/// 在一段纯文本里找出 `](target)` / `](<target>)` 并归一化 target
-fn rewrite_link_targets(text: &str, doc_repo_path: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(idx) = rest.find("](") {
-        let (head, tail) = rest.split_at(idx + 2);
-        out.push_str(head);
-        let wrapped = tail.starts_with('<');
-        let (target, consumed) = if wrapped {
-            match tail.find('>') {
-                Some(end) => (&tail[1..end], end + 1),
-                None => {
-                    out.push_str(tail);
-                    return out;
-                }
-            }
-        } else {
-            match tail.find(')') {
-                Some(end) => (&tail[..end], end),
-                None => {
-                    out.push_str(tail);
-                    return out;
-                }
-            }
-        };
-        let rewritten = normalize_repo_relative(target, doc_repo_path);
-        if wrapped {
-            out.push('<');
-            out.push_str(&rewritten);
-            out.push('>');
-        } else {
-            out.push_str(&rewritten);
-        }
-        rest = &tail[consumed..];
-    }
-    out.push_str(rest);
-    out
-}
 #[cfg(test)]
 #[path = "doc_link_tests.rs"]
 mod tests;

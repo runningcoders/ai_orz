@@ -180,7 +180,7 @@ fn t19_url_encoded_space_kept() {
     assert!(matches!(r, DocLinkTarget::RagCard { .. }));
 }
 
-// —— 导入期相对链接归一化 ——
+// —— 渲染期相对链接归一化 ——
 
 #[test]
 fn t20_normalize_dot_slash_from_doc_root() {
@@ -246,49 +246,4 @@ fn t23_normalize_passthrough_and_overflow() {
     );
     // 越过仓库根（基准目录在根，没有可弹的层级）→ 原样返回，不猜
     assert_eq!(normalize_repo_relative("../x.md", "AGENTS.md"), "../x.md");
-}
-
-#[test]
-fn t24_rewrite_markdown_links() {
-    let md = "见 [编码规范](./CODE_STANDARDS.md) 与 [运行时](./modules/02-Agent运行时/A-设计/runtime_design.md#L1-L10)。\n";
-    let out = rewrite_markdown_relative_links(md, "docs/AGENT_GUIDE.md");
-    assert!(out.contains("[编码规范](docs/CODE_STANDARDS.md)"));
-    assert!(out.contains("[运行时](docs/modules/02-Agent运行时/A-设计/runtime_design.md#L1-L10)"));
-}
-
-#[test]
-fn t25_rewrite_keeps_code_examples() {
-    let md = "\
-```markdown
-[示例](./x.md)
-```
-
-行内 `[示例](../y.md)` 也不动，但外面 [真链接](./real.md) 要改。
-";
-    let out = rewrite_markdown_relative_links(md, "docs/a.md");
-    // 围栏内原样
-    assert!(out.contains("[示例](./x.md)"));
-    // 行内代码原样
-    assert!(out.contains("`[示例](../y.md)`"));
-    // 代码外的真链接被归一化
-    assert!(out.contains("[真链接](docs/real.md)"));
-}
-
-#[test]
-fn t26_rewrite_angle_bracket_path_with_parens() {
-    // 含 () 的目录必须用 <...> 包裹；同模块 C-知识 → A-设计 上跳一层
-    let md = "[AOP](<../A-设计/aop_design.md>)\n";
-    let out = rewrite_markdown_relative_links(md, "docs/modules/10-异步基建(AOP)/C-知识/x.md");
-    assert_eq!(
-        out.trim_end(),
-        "[AOP](<docs/modules/10-异步基建(AOP)/A-设计/aop_design.md>)"
-    );
-}
-
-#[test]
-fn t27_rewrite_is_idempotent() {
-    let md = "[a](./x.md) [b](../y.md)\n";
-    let once = rewrite_markdown_relative_links(md, "docs/sub/a.md");
-    let twice = rewrite_markdown_relative_links(&once, "docs/sub/a.md");
-    assert_eq!(once, twice);
 }

@@ -577,6 +577,21 @@
   border-radius: 0.5rem;
 }
 
+/* Mermaid 图容器（Markdown 代码块替换 + MermaidDiagram 组件共用）
+ * 与代码块同一套主题底色/描边，避免 SVG 在深色主题下与背景脱节 */
+.mermaid-diagram {
+  margin: 1em 0;
+  padding: 0.75em;
+  background: var(--color-base-200);
+  border: 1px solid var(--color-base-300);
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+.mermaid-diagram svg {
+  display: block;
+  margin: 0 auto;
+}
+
 /* ========== Markdown 紧凑变体（聊天气泡 / 卡片 / 列表展开） ========== */
 /* 收紧字号与上下边距，避免块级留白在小容器内显得空旷 */
 .markdown-compact {

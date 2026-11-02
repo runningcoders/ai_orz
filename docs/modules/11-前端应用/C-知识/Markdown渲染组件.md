@@ -37,6 +37,9 @@
 **2026-08-16 增量更新**：补齐 cite 区四类互引闭环（1 Design 真实 + 1 Design 占位 + 1 Plan 占位 + 2 RAG 卡）；关联 T7（前端 MarkdownRenderer DocLinkClassifier JS 桥接）主题并引用兄弟卡 T6（后端分类器）；§5 链接处理章节来源行号降级（因 fcb08db6 改造加入 classify 调用与 data-repo-href 属性注入，导致 markdown.rs 行号范围漂移，优先降级为无行号范围引用）。
 **2026-10-11 增量更新**（base 2f42b407→a4525d6c）：MarkdownRenderer 由 `use_memo` 缓存 HTML 改为**每次渲染直接计算**——旧实现在气泡列表内容快速切换（SSE 流式追加/会话切换）时，memo 依赖未覆盖 content 变化导致短暂渲染上一条内容的陈旧 HTML；pulldown-cmark 解析为纯 CPU 同步轻量操作，直接计算消除了缓存一致性窗口，复杂度不变。
 
+**2026-11-02 增量更新**：文档互链改为**渲染期归一化 + 站内原地切换**——`build.rs` 只复制字节并在 `index.json` 记录 `repo_path`；`MarkdownRenderer` 新增 `doc_ctx`（原文位置 + 仓库路径→站内副本映射），`./` `../` 链接命中收录文档时由 `docs.rs` 原地切换，未收录（archive 等）与源码文件仍跳 GitHub blob。
+
+**2026-11-02 增量更新（Mermaid 修复）**：mermaid 主题判定改为按 `--color-base-100` 亮度（`orz-hud` 深色不再误用 default 浅色主题）；新增 `MutationObserver` 监听 `data-theme` 重绘已有 SVG；`MarkdownRenderer` / `MermaidDiagram` 的效果改用 `use_reactive` 订阅 `html` / `code`（不再在渲染期写 signal 驱动 effect，也修复任务依赖图刷新后旧图不重绘）。
 **2026-09-18 增量更新**（commit bc2b2c61）：产物详情页（artifact_detail.rs）接入 MarkdownRenderer——`preview_mode` signal 驱动「预览/编辑」toggle 按钮组：预览态 `MarkdownRenderer { content, compact: false }` 完整排版，编辑态 CodeEditor 源码编辑；产物描述字段以 compact 模式渲染。cite 区补 artifact_detail.rs 引用；§Compact 模式应用场景新增「产物详情页描述字段」。
 
 ## 目录
