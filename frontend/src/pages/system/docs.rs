@@ -5,8 +5,9 @@
 //! Markdown 文件，用 MarkdownRenderer 组件渲染（自动触发 ```mermaid 图的 JS 替换）。
 //!
 //! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 能力域知识库
-//! 图表类条目（index.json 中 `type: "html"`）不走 Markdown 渲染，
-//! 直接以新标签页打开静态文件（如 /docs/diagrams/xxx.html）。
+//! 图表类条目（index.json 中 `type: "html"`）不走 Markdown 渲染：
+//! 右侧内容区用 iframe 内嵌加载（sandbox 隔离其自带脚本/样式），
+//! 标题栏另提供「新标签打开」直链 /docs/diagrams/xxx.html。
 //! 各分区默认展开、可整体折叠；能力域知识库为「模块 → A/B/C 层 → 文档」三级折叠树。
 //! `docs/archive/` 历史件不收录（文档中心只回答「现在是什么」）。
 
@@ -18,11 +19,12 @@ use crate::components::hud::PageHeader;
 use dioxus::html::events::MouseEvent;
 use dioxus::prelude::*;
 use serde::Deserialize;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsCast, JsValue};
 
 use crate::api::fetch_static_text;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::Loading;
+use crate::hooks::use_theme;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::doc_link::DocRenderContext;
@@ -111,6 +113,11 @@ impl FlatEntry {
             }
             FlatEntry::Doc { entry, .. } => entry.title.clone(),
         }
+    }
+
+    /// 是否为当前选中的文档行（分组行恒为 false）
+    fn is_active(&self, selected_path: Option<&str>) -> bool {
+        matches!(self, FlatEntry::Doc { entry, .. } if selected_path == Some(entry.path.as_str()))
     }
 
     fn row_class(&self, selected_path: Option<&str>) -> String {
@@ -233,6 +240,115 @@ fn repo_opt(repo_path: &str) -> Option<String> {
     (!repo_path.is_empty()).then(|| repo_path.to_string())
 }
 
+/// 读取 `#doc=<id>` 深链参数（id 已百分号编码；优先原始仓库路径，历史条目用站内短路径）
+fn hash_doc_id() -> Option<String> {
+    let hash = web_sys::window()?.location().hash().ok()?;
+    let encoded = hash.strip_prefix('#')?.strip_prefix("doc=")?;
+    js_sys::decode_uri_component(encoded)
+        .ok()?
+        .as_string()
+        .filter(|s| !s.is_empty())
+}
+
+/// 把当前文档写回 `#doc=<id>`：用 replaceState，不新增历史、不触发路由重算
+fn set_hash_doc(id: &str) {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let Ok(history) = win.history() else {
+        return;
+    };
+    let encoded = js_sys::encode_uri_component(id)
+        .as_string()
+        .unwrap_or_default();
+    let url = format!("#doc={encoded}");
+    let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&url));
+}
+
+/// 按深链 id（repo_path 或站内 path）查找文档条目
+fn find_doc_by_key(index: &DocIndex, key: &str) -> Option<DocEntry> {
+    fn walk(children: &[DocGroupChild], key: &str) -> Option<DocEntry> {
+        for child in children {
+            match child {
+                DocGroupChild::Doc(doc) if doc.repo_path == key || doc.path == key => {
+                    return Some(doc.clone());
+                }
+                DocGroupChild::Doc(_) => {}
+                DocGroupChild::Group(group) => {
+                    if let Some(doc) = walk(&group.children, key) {
+                        return Some(doc);
+                    }
+                }
+            }
+        }
+        None
+    }
+    for section in &index.sections {
+        if let Some(doc) = section
+            .docs
+            .iter()
+            .find(|d| d.repo_path == key || d.path == key)
+        {
+            return Some(doc.clone());
+        }
+        if let Some(doc) = walk(&section.groups, key) {
+            return Some(doc);
+        }
+    }
+    None
+}
+
+/// 文档在导航树中的位置：所属 section 标签 + 沿途分组 key（用于自动展开并滚动定位）
+fn find_doc_location(index: &DocIndex, key: &str) -> Option<(DocEntry, String, Vec<String>)> {
+    fn dir_contains(group: &DocGroup, key: &str) -> bool {
+        group.children.iter().any(|child| match child {
+            DocGroupChild::Doc(doc) => doc.repo_path == key || doc.path == key,
+            DocGroupChild::Group(g) => dir_contains(g, key),
+        })
+    }
+    fn walk(
+        children: &[DocGroupChild],
+        parent_key: &str,
+        key: &str,
+        group_keys: &mut Vec<String>,
+    ) -> Option<DocEntry> {
+        for (i, child) in children.iter().enumerate() {
+            match child {
+                DocGroupChild::Doc(doc) if doc.repo_path == key || doc.path == key => {
+                    return Some(doc.clone());
+                }
+                DocGroupChild::Doc(_) => {}
+                DocGroupChild::Group(group) => {
+                    if !dir_contains(group, key) {
+                        continue;
+                    }
+                    let group_key = format!("{parent_key}-{i}");
+                    group_keys.push(group_key.clone());
+                    if let Some(doc) = walk(&group.children, &group_key, key, group_keys) {
+                        return Some(doc);
+                    }
+                    group_keys.pop();
+                }
+            }
+        }
+        None
+    }
+    for section in &index.sections {
+        if let Some(doc) = section
+            .docs
+            .iter()
+            .find(|d| d.repo_path == key || d.path == key)
+        {
+            return Some((doc.clone(), section.label.clone(), Vec::new()));
+        }
+        let mut group_keys = Vec::new();
+        if let Some(doc) = walk(&section.groups, &section.label, key, &mut group_keys) {
+            return Some((doc, section.label.clone(), group_keys));
+        }
+    }
+    None
+}
+
 fn encode_doc_path(path: &str) -> String {
     path.split('/')
         .map(|seg| String::from(js_sys::encode_uri_component(seg)))
@@ -241,16 +357,12 @@ fn encode_doc_path(path: &str) -> String {
 }
 
 /// 是否为静态 HTML 资源（不走 Markdown 渲染）
-fn is_html_entry(entry: &DocEntry) -> bool {
-    entry.kind == "html" || entry.path.ends_with(".html")
+fn is_html_path(path: &str) -> bool {
+    path.ends_with(".html")
 }
 
-/// 在新标签页打开 /docs/ 下的静态资源（图表 HTML 自身即可交互）
-fn open_static_in_new_tab(path: &str) {
-    let url = format!("/docs/{}", encode_doc_path(path));
-    if let Some(win) = web_sys::window() {
-        let _ = win.open_with_url_and_target(&url, "_blank");
-    }
+fn is_html_entry(entry: &DocEntry) -> bool {
+    entry.kind == "html" || is_html_path(&entry.path)
 }
 
 async fn load_doc(
@@ -262,9 +374,12 @@ async fn load_doc(
     mut loading: Signal<bool>,
     toast: ToastState,
 ) {
-    // 图表 HTML 无法按 Markdown 渲染：直接新标签页打开，不进入加载/选中态
-    if path.ends_with(".html") {
-        open_static_in_new_tab(&path);
+    // 图表 HTML 无法按 Markdown 渲染：进入选中态，由右侧内容区 iframe 内嵌展示
+    if is_html_path(&path) {
+        selected.set(Some(path.clone()));
+        current_repo.set(repo_path);
+        markdown.set(None);
+        loading.set(false);
         return;
     }
     selected.set(Some(path.clone()));
@@ -283,6 +398,8 @@ async fn load_doc(
 #[component]
 pub fn SystemDocs() -> Element {
     let toast = use_toast();
+    // 架构图 iframe 自带 dark 主题：按应用当前主题传 `?theme=` 保持一致
+    let theme = use_theme();
     let mut index: Signal<Option<DocIndex>> = use_signal(|| None);
     let selected: Signal<Option<String>> = use_signal(|| None);
     // 当前文档的原始仓库路径 + 全量「仓库路径 → 站内副本」映射（渲染期链接分发用）
@@ -302,12 +419,15 @@ pub fn SystemDocs() -> Element {
                 Ok(text) => match serde_json::from_str::<DocIndex>(&text) {
                     Ok(idx) => {
                         let pages = Rc::new(build_repo_pages(&idx));
-                        let first = idx.sections.iter().find_map(|s| {
-                            s.docs
-                                .iter()
-                                .find(|d| !is_html_entry(d))
-                                .map(|d| (d.path.clone(), repo_opt(&d.repo_path)))
-                        });
+                        // 深链优先：`#doc=<repo_path|path>` 命中则直接打开该文档（含架构图）
+                        let deep_linked = hash_doc_id().and_then(|key| find_doc_by_key(&idx, &key));
+                        let first = deep_linked
+                            .or_else(|| {
+                                idx.sections.iter().find_map(|s| {
+                                    s.docs.iter().find(|d| !is_html_entry(d)).cloned()
+                                })
+                            })
+                            .map(|d| (d.path.clone(), repo_opt(&d.repo_path)));
                         index.set(Some(idx));
                         repo_pages.set(Some(pages));
                         if let Some((path, repo)) = first {
@@ -328,6 +448,38 @@ pub fn SystemDocs() -> Element {
                 Err(e) => toast.error(format!("加载文档目录失败（请确认前端已重新构建）: {}", e)),
             }
         });
+    });
+
+    // 选中文档 → 同步 `#doc=` 深链 + 自动展开左侧导航所在的 section / 分组
+    use_effect(move || {
+        let Some(path) = selected.read().clone() else {
+            return;
+        };
+        let key = current_repo.read().clone().unwrap_or_else(|| path.clone());
+        set_hash_doc(&key);
+        let idx_guard = index.read();
+        let Some(idx) = idx_guard.as_ref() else {
+            return;
+        };
+        if let Some((_, section, group_keys)) = find_doc_location(idx, &key) {
+            collapsed_sections.write().remove(&section);
+            if !group_keys.is_empty() {
+                expanded.write().extend(group_keys);
+            }
+        }
+    });
+
+    // 高亮行滚动到可视区：依赖展开状态，确保长目录里的深链目标定位到左侧导航
+    use_effect(move || {
+        let _ = selected.read();
+        let _ = expanded.read();
+        let _ = collapsed_sections.read();
+        let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        if let Ok(Some(el)) = doc.query_selector("[data-doc-active=\"true\"]") {
+            el.scroll_into_view();
+        }
     });
 
     let index_opt = index.read().clone();
@@ -381,6 +533,19 @@ pub fn SystemDocs() -> Element {
             doc_repo_path,
             repo_to_page,
         });
+
+    // 架构图（HTML）内嵌：标题用于 iframe 头部/无障碍，主题与应用主题保持一致
+    let html_title = selected_opt
+        .as_deref()
+        .filter(|p| is_html_path(p))
+        .and_then(|p| index_opt.as_ref().and_then(|idx| find_doc_by_key(idx, p)))
+        .map(|d| d.title)
+        .unwrap_or_else(|| "架构图".to_string());
+    let iframe_theme = if theme.current() == "orz-light" {
+        "light"
+    } else {
+        "dark"
+    };
 
     rsx! {
         AppLayout {
@@ -442,13 +607,36 @@ pub fn SystemDocs() -> Element {
                                                     for doc in section.docs.iter() {
                                                         li { key: "{doc.path}",
                                                             if is_html_entry(doc) {
+                                                                // 架构图：点击后右侧 iframe 内嵌；href 保留直开降级
                                                                 a {
-                                                                    class: "flex items-center justify-between gap-2 min-w-0",
+                                                                    class: if selected_opt.as_deref() == Some(doc.path.as_str()) {
+                                                                        "active truncate"
+                                                                    } else {
+                                                                        "truncate"
+                                                                    },
+                                                                    "data-doc-active": if selected_opt.as_deref() == Some(doc.path.as_str()) {
+                                                                        "true"
+                                                                    } else {
+                                                                        "false"
+                                                                    },
                                                                     href: "/docs/{encode_doc_path(&doc.path)}",
-                                                                    target: "_blank",
-                                                                    rel: "noopener",
-                                                                    span { class: "truncate", "{doc.title}" }
-                                                                    span { class: "text-xs opacity-60 shrink-0", "↗" }
+                                                                    onclick: {
+                                                                        let path = doc.path.clone();
+                                                                        let repo = repo_opt(&doc.repo_path);
+                                                                        move |evt: MouseEvent| {
+                                                                            evt.prevent_default();
+                                                                            spawn(load_doc(
+                                                                                path.clone(),
+                                                                                repo.clone(),
+                                                                                selected,
+                                                                                current_repo,
+                                                                                markdown,
+                                                                                loading_doc,
+                                                                                toast,
+                                                                            ));
+                                                                        }
+                                                                    },
+                                                                    "{doc.title}"
                                                                 }
                                                             } else {
                                                                 a {
@@ -456,6 +644,11 @@ pub fn SystemDocs() -> Element {
                                                                         "active truncate"
                                                                     } else {
                                                                         "truncate"
+                                                                    },
+                                                                    "data-doc-active": if selected_opt.as_deref() == Some(doc.path.as_str()) {
+                                                                        "true"
+                                                                    } else {
+                                                                        "false"
                                                                     },
                                                                     onclick: {
                                                                         let path = doc.path.clone();
@@ -483,6 +676,7 @@ pub fn SystemDocs() -> Element {
                                                 div {
                                                     key: "{entry.key()}",
                                                     class: "{entry.row_class(selected_opt.as_deref())}",
+                                                    "data-doc-active": if entry.is_active(selected_opt.as_deref()) { "true" } else { "false" },
                                                     style: "padding-left: {8 + entry.depth() * 12}px",
                                                     onclick: {
                                                         let entry = entry.clone();
@@ -515,12 +709,34 @@ pub fn SystemDocs() -> Element {
                             }
                         }
 
-                        // 右侧文档内容：使用 MarkdownRenderer 组件，自动触发 mermaid 扫描替换
+                        // 右侧文档内容：Markdown 走 MarkdownRenderer；架构图 HTML 走 iframe 隔离内嵌
                         HudPanel { signal: Some(true), extra_class: Some("flex-1 w-full min-w-0".to_string()),
                             div { class: "card-body",
                                 if loading_doc() {
                                     div { class: "flex justify-center py-12",
                                         Loading { size: "md" }
+                                    }
+                                } else if let Some(path) = selected_opt.as_deref().filter(|p| is_html_path(p)) {
+                                    div { class: "space-y-2",
+                                        div { class: "flex items-center justify-between gap-2",
+                                            div { class: "text-sm font-medium truncate", "{html_title}" }
+                                            a {
+                                                class: "btn btn-ghost btn-xs shrink-0",
+                                                href: "/docs/{encode_doc_path(path)}",
+                                                target: "_blank",
+                                                rel: "noopener noreferrer",
+                                                "↗ 新标签打开"
+                                            }
+                                        }
+                                        // sandbox 隔离图表自带的脚本/样式，避免污染 SPA；
+                                        // archify 的 localStorage/clipboard 调用均有 try/catch 兜底
+                                        iframe {
+                                            class: "w-full h-[75vh] rounded-box border border-base-300 bg-base-100",
+                                            src: "/docs/{encode_doc_path(path)}?theme={iframe_theme}",
+                                            title: "{html_title}",
+                                            "sandbox": "allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox",
+                                            "loading": "eager",
+                                        }
                                     }
                                 } else if let Some(md) = markdown_opt.as_ref() {
                                     div {

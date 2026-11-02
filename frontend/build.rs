@@ -329,7 +329,8 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---- 分区 4：图表资源（docs/diagrams/ 下的 .html，保留原相对路径直出）----
     // 图表是自包含 HTML，前端无法按 Markdown 渲染：保留 diagrams/xxx.html 原路径，
-    // 由前端以新标签页直链 /docs/diagrams/xxx.html 打开（见 pages/system/docs.rs）。
+    // 由文档中心右侧 iframe 内嵌加载（也可 /docs/diagrams/xxx.html 新标签直开，
+    // 见 pages/system/docs.rs）。
     let mut diagrams_section: Option<serde_json::Value> = None;
     {
         let diagrams_src = docs_src.join("diagrams");
@@ -370,6 +371,8 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                 diagrams.push(serde_json::json!({
                     "title": title,
                     "path": rel_str,
+                    // 原始仓库路径：文档中心用它写深链（#doc=）并定位左侧导航
+                    "repo_path": format!("docs/{rel_str}"),
                     "type": "html"
                 }));
             }

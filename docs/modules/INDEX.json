@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 525,
-  "total_bytes": 10425979,
+  "total_bytes": 10427314,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -3154,7 +3154,7 @@
           "path": "11-前端应用/C-知识/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md",
           "name": "前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发",
           "title": "前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发",
-          "bytes": 15127
+          "bytes": 16462
         },
         {
           "tier": "C-知识",

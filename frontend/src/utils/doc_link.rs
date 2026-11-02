@@ -8,7 +8,7 @@
 //! - 仓库内 Markdown（已收录）：站内原地切换（`data-doc-path` + Dioxus 点击拦截）
 //! - 仓库内 Markdown（未收录，如 archive）：退化 GitHub blob
 //! - 源码文件（`.rs` / `.sql` 等）：GitHub blob + `#Lx-Ly`
-//! - 架构图 `docs/diagrams/*.html`：站内新标签直开
+//! - 架构图 `docs/diagrams/*.html`：站内原地切换（右侧 iframe 内嵌；href 保留直开降级）
 //!
 //! 站内链接保留 GitHub 地址作为 href 降级；拦截失效时仍能跳远程。
 //!
@@ -88,7 +88,7 @@ pub fn post_process_doc_links(
                     };
                     let target = DocLinkClassifier::classify(&normalized);
                     // 架构图是自包含 HTML，构建期已原路径复制到 public/docs/diagrams/：
-                    // 直接站内新标签打开渲染页，比跳 GitHub 看一堆 HTML 源码有用
+                    // 标注为站内链接，由文档中心右侧 iframe 原地内嵌（比跳 GitHub 看源码有用）
                     // （classify 把非 .md 一律归为 SourceFile，两类都要看）
                     let diagram = match &target {
                         DocLinkTarget::SourceFile { relative_path, .. }
@@ -99,10 +99,13 @@ pub fn post_process_doc_links(
                     };
                     if let Some(rest) = diagram {
                         let static_href = format!("/docs/diagrams/{rest}");
+                        let site_path = format!("diagrams/{rest}");
+                        let repo_path = format!("docs/diagrams/{rest}");
                         out.push_str(&tag.replacen(
                             &format!("href=\"{href}\""),
                             &format!(
-                                "href=\"{static_href}\" target=\"_blank\" rel=\"noopener noreferrer\""
+                                "href=\"{static_href}\" data-doc-path=\"{site_path}\" \
+                                 data-doc-repo=\"{repo_path}\" class=\"doc-link-internal\""
                             ),
                             1,
                         ));
@@ -278,12 +281,14 @@ mod tests {
     }
 
     #[test]
-    fn diagram_html_opens_in_site() {
-        // 架构图是自包含 HTML：站内新标签直开，不跳 GitHub 看源码
+    fn diagram_html_renders_in_doc_center() {
+        // 架构图是自包含 HTML：标注为站内链接，由文档中心右侧 iframe 原地内嵌
         let html = "<a href=\"docs/diagrams/ai-orz-architecture.html\">架构图</a>";
         let out = post_process_doc_links(html, "https://github.com/o/r/blob/main", None);
         assert!(out.contains("href=\"/docs/diagrams/ai-orz-architecture.html\""));
-        assert!(out.contains("target=\"_blank\""));
+        assert!(out.contains("data-doc-path=\"diagrams/ai-orz-architecture.html\""));
+        assert!(out.contains("data-doc-repo=\"docs/diagrams/ai-orz-architecture.html\""));
+        assert!(out.contains("class=\"doc-link-internal\""));
         assert!(!out.contains("data-repo-href"));
     }
 

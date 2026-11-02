@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 525 篇 / 10,425,979 B**，分布于 15 个模块。
+**合计 525 篇 / 10,427,314 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -24,7 +24,7 @@
 | [08-搜索](#08-搜索) | 1 | 2 | 21 | 24 | 606,791 |
 | [09-统计与监控](#09-统计与监控) | 1 | 1 | 8 | 10 | 162,283 |
 | [10-异步基建(AOP)](#10-异步基建aop) | 1 | 0 | 32 | 33 | 709,825 |
-| [11-前端应用](#11-前端应用) | 2 | 0 | 49 | 51 | 1,030,632 |
+| [11-前端应用](#11-前端应用) | 2 | 0 | 49 | 51 | 1,031,967 |
 | [12-基础设施与部署](#12-基础设施与部署) | 3 | 2 | 79 | 84 | 1,519,066 |
 | [13-数据模型](#13-数据模型) | 3 | 0 | 39 | 42 | 749,872 |
 | [14-测试](#14-测试) | 0 | 0 | 4 | 4 | 76,778 |
@@ -551,7 +551,7 @@
 | 14 | [recommend_seed_nodes 种子节点推荐：度数排序（入边+出边）Top N + published 度数持平决胜 + KnowledgeGraph 组件两端复用 + Agent 神经工具免绑定](<11-前端应用/C-知识/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md>) | 17,103 |
 | 15 | [业务组件](<11-前端应用/C-知识/业务组件.md>) | 24,297 |
 | 16 | [任务管理功能](<11-前端应用/C-知识/任务管理功能.md>) | 23,183 |
-| 17 | [前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发](<11-前端应用/C-知识/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md>) | 15,127 |
+| 17 | [前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发](<11-前端应用/C-知识/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md>) | 16,462 |
 | 18 | [前端应用](<11-前端应用/C-知识/前端应用.md>) | 46,247 |
 | 19 | [前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层](<11-前端应用/C-知识/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层.md>) | 13,463 |
 | 20 | [图表组件](<11-前端应用/C-知识/图表组件.md>) | 21,650 |
