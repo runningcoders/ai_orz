@@ -18,6 +18,20 @@ export BACKEND_API_URL=${BACKEND_API_URL:-http://localhost:3000}
 # 先清理再编译：删 1 天前的旧哈希副本（前端 wasm 产物同样按指纹累积）
 clean_stale_artifacts
 
+# dx 对 public/ 是「全量覆盖 + 增量累积」：源目录里删掉的文件会留在上一次的输出目录里，
+# 再被 `cp -R $DX_OUTPUT_DIR/.` 一起带进 dist（docs 目录重构后曾残留 wiki/、other/、
+# CODE_WIKI.md 等旧结构，用户看到的「文档中心」因此混着过期产物）。
+# 构建前清掉输出目录里的 docs 快照，让 dx 按当前 public/docs 重新生成。
+for docs_out in \
+    target/dx/frontend/release/web/public/docs \
+    "$REPO_ROOT/target/dx/frontend/release/web/public/docs" \
+    target/dx/frontend/web/public/docs \
+    "$REPO_ROOT/target/dx/frontend/web/public/docs"; do
+    if [ -d "$docs_out" ]; then
+        rm -rf "$docs_out"
+    fi
+done
+
 # dx build 在 wasm-opt 失败时仍会生成产物，忽略此错误
 dx build --release 2>&1 || true
 

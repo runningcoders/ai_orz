@@ -1,13 +1,13 @@
 //! 文档中心 - 浏览仓库 docs/ 下的 Markdown 文档
 //!
 //! 运行时从静态资源 `/docs/index.json` 拉取目录清单（由 build.rs 复制
-//! docs/ 核心文档 + wiki 到 public/docs/ 时生成），点击条目按需 fetch 对应
+//! docs/ 核心文档 + 能力域知识库到 public/docs/ 时生成），点击条目按需 fetch 对应
 //! Markdown 文件，用 MarkdownRenderer 组件渲染（自动触发 ```mermaid 图的 JS 替换）。
 //!
-//! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 知识卡片 → 代码 Wiki → 其他文档
+//! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 能力域知识库 → 归档文档
 //! 图表类条目（index.json 中 `type: "html"`）不走 Markdown 渲染，
 //! 直接以新标签页打开静态文件（如 /docs/diagrams/xxx.html）。
-//! 其他文档分区默认收起，整体可折叠；Wiki/知识卡片保留目录层级嵌套折叠树。
+//! 归档文档分区默认收起，整体可折叠；能力域知识库保留「模块 → A/B/C 层 → 文档」嵌套折叠树。
 
 use std::collections::HashSet;
 
@@ -108,14 +108,16 @@ impl FlatEntry {
     fn row_class(&self, selected_path: Option<&str>) -> String {
         match self {
             FlatEntry::Group { .. } => {
-                "rounded px-2 py-1 text-sm cursor-pointer font-medium hover:bg-base-200".to_string()
+                "rounded px-2 py-1 text-sm cursor-pointer font-medium truncate hover:bg-base-200"
+                    .to_string()
             }
             FlatEntry::Doc { entry, .. } => {
                 if selected_path == Some(entry.path.as_str()) {
-                    "rounded px-2 py-1 text-sm cursor-pointer bg-primary text-primary-content"
+                    "rounded px-2 py-1 text-sm cursor-pointer truncate bg-primary text-primary-content"
                         .to_string()
                 } else {
-                    "rounded px-2 py-1 text-sm cursor-pointer hover:bg-base-200".to_string()
+                    "rounded px-2 py-1 text-sm cursor-pointer truncate hover:bg-base-200"
+                        .to_string()
                 }
             }
         }
@@ -210,9 +212,9 @@ fn open_static_in_new_tab(path: &str) {
     }
 }
 
-/// 判断该 section 是否需要默认收起（目前「其他文档」默认收起）
+/// 判断该 section 是否需要默认收起（目前「归档文档」默认收起）
 fn section_default_collapsed(label: &str) -> bool {
-    label == "其他文档"
+    label == "归档文档"
 }
 
 async fn load_doc(
@@ -394,19 +396,19 @@ pub fn SystemDocs() -> Element {
                                                         li { key: "{doc.path}",
                                                             if is_html_entry(doc) {
                                                                 a {
-                                                                    class: "flex items-center justify-between",
+                                                                    class: "flex items-center justify-between gap-2 min-w-0",
                                                                     href: "/docs/{encode_doc_path(&doc.path)}",
                                                                     target: "_blank",
                                                                     rel: "noopener",
-                                                                    span { "{doc.title}" }
-                                                                    span { class: "text-xs opacity-60", "↗" }
+                                                                    span { class: "truncate", "{doc.title}" }
+                                                                    span { class: "text-xs opacity-60 shrink-0", "↗" }
                                                                 }
                                                             } else {
                                                                 a {
                                                                     class: if selected_opt.as_deref() == Some(doc.path.as_str()) {
-                                                                        "active"
+                                                                        "active truncate"
                                                                     } else {
-                                                                        ""
+                                                                        "truncate"
                                                                     },
                                                                     onclick: {
                                                                         let path = doc.path.clone();

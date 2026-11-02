@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 525,
-  "total_bytes": 10422278,
+  "total_bytes": 10422666,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -3112,7 +3112,7 @@
           "path": "11-前端应用/C-知识/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md",
           "name": "Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格",
           "title": "Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格",
-          "bytes": 13629
+          "bytes": 14017
         },
         {
           "tier": "C-知识",

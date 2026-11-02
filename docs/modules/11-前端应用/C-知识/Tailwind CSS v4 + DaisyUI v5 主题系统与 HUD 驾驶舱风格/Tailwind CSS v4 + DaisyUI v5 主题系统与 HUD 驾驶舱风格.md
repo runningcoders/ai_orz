@@ -80,7 +80,7 @@ source_files:
 7. **构建产物不可提交**：`public/output.css` 由 Tailwind CLI 自动生成，不应手动编辑，不应纳入版本控制（应忽略）。
 8. **新增全局动画应放在 `input.css` 中**，并按现有命名约定（如 `hud-*`、`kg-*`）组织，避免在 Rust 组件中嵌入 CSS 片段。
 9. **Markdown 内容样式隔离**：用户/后端生成的 Markdown 仅通过 `.markdown-body` 或 `.markdown-compact` 容器应用样式，避免污染全局 DOM。
-10. **文档中心构建集成**：`build.rs::copy_docs()` 递归扫描 `../docs/design|plan|archive|wiki/zh/content` 下的 `.md`，复制到 `public/docs/` 并生成 `index.json` 供前端文档页面动态加载。
+10. **文档中心构建集成**：`build.rs::copy_docs()` 按四个分区收集文档并生成 `index.json`——总览（`docs/` 根纲要，原名直出）、架构图（`docs/diagrams/*.html`，原路径直出）、能力域知识库（`docs/modules/<模块>/{A-设计,B-落地方案,C-知识}/`，保留模块→层→文档三层结构）、归档文档（`docs/archive/`，扁平列表）；除总览与架构图外，文件按路径哈希短名存为 `public/docs/{modules|archive}/{hash}.md`，标题取 frontmatter `title` → 首个 H1 → 文件名。收录范围若有变化只改这一处。
 11. **全站 HUD 原子组件收口红线**：全站所有卡片/徽章/标签/提示条/进度条/分割线/表格/标签页 **必须** 使用 `components/hud.rs` 原语（`HudPanel`/`HudCard`/`HudCallout`/`HudProgress`/`HudDivider`/`HudTable`/`HudTabs`）或 `input.css` 的 `.hud-*` CSS 变体（`.badge.hud-badge`/`.hud-modal`/`.hud-input`）。**禁止** 自定义非 HUD 风格的卡片容器、徽章或标签页。
 12. **HudBadge 玻璃光晕约束**：所有徽章类视觉 **必须** 使用 `.badge.hud-badge` 皮肤（带 `backdrop-blur` + `glow` 光晕，见 `frontend/styles/input.css#L1507-L1549`），保持 HUD 驾驶舱视觉一致性。禁用旧版无光晕裸 `badge`。
 13. **hud-tone 旧变体移除红线**：前端页面已废弃 hud-tone 独立变体，统一收口为 `HudCard { tone: Some("primary"|"accent"|"success"|"neutral") }`。**禁止** 新增 `.hud-tone-*` 类名直写或自定义 tone 变体。

@@ -75,6 +75,136 @@ fn html_title(path: &Path) -> Option<String> {
     }
 }
 
+/// 从 Markdown 提取展示标题：YAML frontmatter 的 `title:` → 首个 H1 → 调用方回退文件名。
+///
+/// 本项目文档也用 `---` 作水平分隔线，因此 frontmatter 必须同时满足
+/// 「首行 `---` + 有闭合 `---` + 中间出现合法键」才认定，避免误吞正文。
+fn md_title(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let content = String::from_utf8_lossy(&bytes);
+
+    if let Some(body) = content
+        .strip_prefix("---\n")
+        .or_else(|| content.strip_prefix("---\r\n"))
+        && let Some(end) = body.find("\n---")
+    {
+        let frontmatter = &body[..end];
+        let looks_like_frontmatter = ["title:", "kind:", "name:", "module:"]
+            .iter()
+            .any(|key| frontmatter.contains(key));
+        if looks_like_frontmatter {
+            let title = frontmatter
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix("title:"))
+                .map(|value| value.trim().trim_matches(|c| c == '"' || c == '\''))
+                .find(|value| !value.is_empty());
+            if let Some(title) = title {
+                return Some(title.to_string());
+            }
+        }
+    }
+
+    content.lines().find_map(|line| {
+        let heading = line
+            .trim()
+            .strip_prefix("# ")?
+            .trim()
+            .trim_matches('*')
+            .trim();
+        (!heading.is_empty()).then(|| heading.to_string())
+    })
+}
+
+/// 层级目录树节点
+enum DocNode {
+    File {
+        /// 展示标题（frontmatter title / H1 / 文件名）
+        title: String,
+        /// 文件 stem，仅用于识别「同名目录包同名文件」
+        name: String,
+        short_path: String,
+    },
+    Dir {
+        name: String,
+        children: Vec<DocNode>,
+    },
+}
+
+/// 递归遍历目录 → 目录树；文件一律复制为 `{dest_prefix}/{hash}.md`（哈希短路径）。
+///
+/// 只扁平化「同名目录包同名文件」（`卡名/卡名.md`），其余目录保留为分组——
+/// 目录名是位置信息（如 `架构设计/领域层.md`），丢了读者就分不清文档归属。
+fn walk_dir_hierarchical(
+    dir: &Path,
+    base: &Path,
+    dest_root: &Path,
+    dest_prefix: &str,
+) -> std::io::Result<Vec<DocNode>> {
+    let mut nodes = Vec::new();
+    let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .collect();
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            let dir_name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let children = walk_dir_hierarchical(&path, base, dest_root, dest_prefix)?;
+            if children.is_empty() {
+                continue;
+            }
+            let is_same_name_package = children.len() == 1
+                && matches!(&children[0], DocNode::File { name, .. } if *name == dir_name);
+            if is_same_name_package {
+                nodes.extend(children);
+            } else {
+                nodes.push(DocNode::Dir {
+                    name: dir_name,
+                    children,
+                });
+            }
+        } else if path.extension().is_some_and(|ext| ext == "md")
+            && let Ok(rel) = path.strip_prefix(base)
+        {
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+            let short_path = format!("{}/{}.md", dest_prefix, short_id(&rel_str));
+            let dest = dest_root.join(&short_path);
+            if let Some(parent) = dest.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::copy(&path, &dest);
+            println!("cargo:rerun-if-changed={}", path.display());
+            let name = Path::new(&rel_str)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| rel_str.clone());
+            let title = md_title(&path).unwrap_or_else(|| name.clone());
+            nodes.push(DocNode::File {
+                title,
+                name,
+                short_path,
+            });
+        }
+    }
+    Ok(nodes)
+}
+
+fn node_to_json(node: &DocNode) -> serde_json::Value {
+    match node {
+        DocNode::File {
+            title, short_path, ..
+        } => {
+            serde_json::json!({ "title": title, "path": short_path })
+        }
+        DocNode::Dir { name, children } => {
+            let children_json: Vec<serde_json::Value> = children.iter().map(node_to_json).collect();
+            serde_json::json!({ "label": name, "children": children_json })
+        }
+    }
+}
+
 /// 文档中心静态资源：将仓库 docs/ 中的核心文档复制到 public/docs/，
 /// 并生成目录清单 index.json 供前端文档中心页面运行时 fetch。
 ///
@@ -84,9 +214,8 @@ fn html_title(path: &Path) -> Option<String> {
 ///
 /// 收录范围：
 /// - docs/ 根目录的纲要文档（路径短，保留原名）
-/// - docs/wiki/knowledge/zh/（知识卡片，层级结构 → 哈希路径）
-/// - docs/wiki/zh/content/（代码 Wiki，层级结构 → 哈希路径）
-/// - docs/design/、docs/plan/、docs/archive/（扁平列表 → 哈希路径）
+/// - docs/modules/<模块>/{A-设计,B-落地方案,C-知识}/（能力域知识库，三层结构保留）
+/// - docs/archive/（历史归档，扁平列表 → 哈希路径）
 /// - docs/diagrams/（图表 HTML，保留原相对路径直出，供前端新标签页打开）
 fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
@@ -107,10 +236,12 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     // ---- 分区 1：总览（根目录纲要文档，路径短无需哈希）----
     {
         let root_docs: &[(&str, &str)] = &[
-            ("README.md", "项目概览"),
+            ("README.md", "知识库使用指南"),
             ("ARCHITECTURE.md", "架构总纲"),
+            ("CODE_STANDARDS.md", "编码规范"),
             ("LAYERED_ARCHITECTURE_PRACTICE.md", "分层架构实践"),
-            ("CODE_WIKI.md", "代码认知入口"),
+            ("AGENT_GUIDE.md", "Agent 实现指引"),
+            ("DOCUMENTATION.md", "文档维护规范"),
             ("memory_design.md", "记忆系统设计"),
         ];
         let mut overview_docs: Vec<serde_json::Value> = Vec::new();
@@ -127,124 +258,60 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // ---- 分区 2 & 3：层级目录型文档（知识卡片 + 代码 Wiki）----
-    // 统一使用哈希短路径：文件存为 {dest_prefix}/{hash}.md，目录结构仅用于 JSON 分组展示
+    // ---- 分区 2：能力域知识库（docs/modules/<模块>/{A-设计,B-落地方案,C-知识}/）----
+    // 三层结构固定保留（模块 → 层 → 文档），层内的「同名目录包同名文件」由 walk 扁平化。
     {
-        /// 层级目录树节点
-        enum DocNode {
-            File {
-                title: String,
-                short_path: String,
-            },
-            Dir {
-                name: String,
-                children: Vec<DocNode>,
-            },
-        }
-
-        fn walk_dir_hierarchical(
-            dir: &Path,
-            base: &Path,
-            dest_root: &Path,
-            dest_prefix: &str,
-        ) -> std::io::Result<Vec<DocNode>> {
-            let mut nodes = Vec::new();
-            let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
+        let modules_src = docs_src.join("modules");
+        if modules_src.is_dir() {
+            // 监听目录本身：新增/删除模块时也要重新构建
+            println!("cargo:rerun-if-changed={}", modules_src.display());
+            let mut module_dirs: Vec<std::path::PathBuf> = fs::read_dir(&modules_src)?
                 .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|path| path.is_dir())
                 .collect();
-            paths.sort();
-            for path in paths {
-                if path.is_dir() {
-                    let name = path
-                        .file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    let children = walk_dir_hierarchical(&path, base, dest_root, dest_prefix)?;
-                    // 扁平化：如果目录只包含 .md 文件（无子目录），直接将文件提升到父级
-                    // 避免 "同名文件夹包同名文件" 的无意义嵌套
-                    let has_subdirs = children.iter().any(|c| matches!(c, DocNode::Dir { .. }));
-                    if !children.is_empty() {
-                        if has_subdirs {
-                            nodes.push(DocNode::Dir { name, children });
-                        } else {
-                            // 全部是文件，直接提升
-                            nodes.extend(children);
-                        }
+            module_dirs.sort();
+
+            let mut module_groups: Vec<serde_json::Value> = Vec::new();
+            for module_dir in module_dirs {
+                let Some(module_name) = module_dir
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                else {
+                    continue;
+                };
+
+                let mut tiers: Vec<serde_json::Value> = Vec::new();
+                for tier in ["A-设计", "B-落地方案", "C-知识"] {
+                    let tier_dir = module_dir.join(tier);
+                    if !tier_dir.is_dir() {
+                        continue;
                     }
-                } else if path.extension().is_some_and(|ext| ext == "md")
-                    && let Ok(rel) = path.strip_prefix(base)
-                {
-                    let rel_str = rel.to_string_lossy().replace('\\', "/");
-                    let sid = short_id(&rel_str);
-                    let short_path = format!("{}/{}.md", dest_prefix, sid);
-                    let dest = dest_root.join(&short_path);
-                    if let Some(parent) = dest.parent() {
-                        let _ = fs::create_dir_all(parent);
+                    let tree = walk_dir_hierarchical(&tier_dir, &docs_src, &dest_root, "modules")?;
+                    if tree.is_empty() {
+                        continue;
                     }
-                    let _ = fs::copy(&path, &dest);
-                    println!("cargo:rerun-if-changed={}", path.display());
-                    let stem = Path::new(&rel_str)
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| rel_str.clone());
-                    nodes.push(DocNode::File {
-                        title: stem,
-                        short_path,
-                    });
+                    let children: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
+                    tiers.push(serde_json::json!({ "label": tier, "children": children }));
+                }
+
+                if !tiers.is_empty() {
+                    module_groups
+                        .push(serde_json::json!({ "label": module_name, "children": tiers }));
                 }
             }
-            Ok(nodes)
-        }
 
-        fn node_to_json(node: &DocNode) -> serde_json::Value {
-            match node {
-                DocNode::File { title, short_path } => {
-                    serde_json::json!({ "title": title, "path": short_path })
-                }
-                DocNode::Dir { name, children } => {
-                    let children_json: Vec<serde_json::Value> =
-                        children.iter().map(node_to_json).collect();
-                    serde_json::json!({ "label": name, "children": children_json })
-                }
-            }
-        }
-
-        // 分区 2：知识卡片
-        let knowledge_src = docs_src.join("wiki/knowledge/zh");
-        if knowledge_src.is_dir() {
-            let tree =
-                walk_dir_hierarchical(&knowledge_src, &docs_src, &dest_root, "wiki/knowledge")?;
-            if !tree.is_empty() {
-                let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
-                sections.push(serde_json::json!({
-                    "label": "知识卡片",
-                    "groups": groups
-                }));
-            }
-        }
-
-        // 分区 3：代码 Wiki
-        let wiki_src = docs_src.join("wiki/zh/content");
-        if wiki_src.is_dir() {
-            let tree = walk_dir_hierarchical(&wiki_src, &docs_src, &dest_root, "wiki/wiki")?;
-            if !tree.is_empty() {
-                let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
-                sections.push(serde_json::json!({
-                    "label": "代码 Wiki",
-                    "groups": groups
-                }));
+            if !module_groups.is_empty() {
+                sections
+                    .push(serde_json::json!({ "label": "能力域知识库", "groups": module_groups }));
             }
         }
     }
 
-    // ---- 分区 4：其他文档（design + plan + archive，扁平列表 + 哈希短路径）----
+    // ---- 分区 4：归档文档（docs/archive/，扁平列表 + 哈希短路径，默认收起）----
     {
         let mut other_docs: Vec<serde_json::Value> = Vec::new();
-        for dir_name in ["design", "plan", "archive"] {
-            let src_dir = docs_src.join(dir_name);
-            if !src_dir.is_dir() {
-                continue;
-            }
+        let src_dir = docs_src.join("archive");
+        if src_dir.is_dir() {
             let mut stack = vec![src_dir];
             while let Some(current) = stack.pop() {
                 for entry in fs::read_dir(&current)? {
@@ -256,21 +323,21 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                         && let Ok(rel) = path.strip_prefix(&docs_src)
                     {
                         let rel_str = rel.to_string_lossy().replace('\\', "/");
-                        let sid = short_id(&rel_str);
-                        let short_path = format!("other/{}.md", sid);
+                        let short_path = format!("archive/{}.md", short_id(&rel_str));
                         let dest = dest_root.join(&short_path);
                         if let Some(parent) = dest.parent() {
                             let _ = fs::create_dir_all(parent);
                         }
                         let _ = fs::copy(&path, &dest);
                         println!("cargo:rerun-if-changed={}", path.display());
-                        let stem = Path::new(&rel_str)
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().to_string())
-                            .unwrap_or_else(|| rel_str.clone());
-                        let display_title = format!("{}/{}", dir_name, stem);
+                        let title = md_title(&path).unwrap_or_else(|| {
+                            Path::new(&rel_str)
+                                .file_stem()
+                                .map(|s| s.to_string_lossy().to_string())
+                                .unwrap_or_else(|| rel_str.clone())
+                        });
                         other_docs.push(serde_json::json!({
-                            "title": display_title,
+                            "title": title,
                             "path": short_path
                         }));
                     }
@@ -283,7 +350,7 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                     .and_then(|v| v.as_str())
                     .cmp(&b.get("title").and_then(|v| v.as_str()))
             });
-            sections.push(serde_json::json!({ "label": "其他文档", "docs": other_docs }));
+            sections.push(serde_json::json!({ "label": "归档文档", "docs": other_docs }));
         }
     }
 
