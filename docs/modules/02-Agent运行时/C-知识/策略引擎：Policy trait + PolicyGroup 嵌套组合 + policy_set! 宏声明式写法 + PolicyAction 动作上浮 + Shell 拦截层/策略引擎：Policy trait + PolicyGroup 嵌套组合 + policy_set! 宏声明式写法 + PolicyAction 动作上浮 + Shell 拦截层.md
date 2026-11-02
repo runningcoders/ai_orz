@@ -80,6 +80,6 @@ source_files:
 - **action() 可选动作（本轮 51d944f8）**：PolicyAction 三值枚举 + trait action() 默认 None + PolicyGroup 自动上浮首个命中策略的动作，实现「默认兼容 + 可选动作」的双模式；Shell 拦截层即走此路径（ShellRulePolicy 覆写 action() 返回 PolicyAction::Deny/Confirm/Audit）。
 - **think_loop 全策略化（本轮 51d944f8）**：build_policy_for_scene 统一 8 策略 OR 组（含 FinalAnswerPolicy 正常完成裁决 + ConsecutiveLlmErrorsPolicy 错误路径裁决），Final 和工具调用统一经 policy_exit；错误路径（brain_dal think 失败）也过策略，预算内立即重试。
 - **Shell 拦截层（本轮 51d944f8）**：shell_policy.rs 新建，ShellRulePolicy 实现 Policy trait + 覆写 action()；shell_exec 与 shell_tool 两条执行链路复用同一 evaluate；env 注入 AI_ORZ_TASK_ID/AI_ORZ_AGENT_ID 供 git commit-msg hook 消费。
-- **【已移除 2026-09-07】PolicyMixed 硬软分层**：旧版策略引擎有 PolicyMixed { hard: PolicyGroup, soft: PolicyGroup } 双层 evaluate，hard_hit 强制退出 / soft_hit 只写日志。本轮迭代简化为单一 Or 组 + 统一 policy_exit，不再分层。**现存代码中 mixed.rs 已不存在**，原 Plan 快照（docs/archive/plan-archive/policy_set_macro_simplification_and_mixed_mode.md）仍保留作为历史参考，正文本卡不再引用。
+- **【已移除 2026-09-07】PolicyMixed 硬软分层**：旧版策略引擎有 PolicyMixed { hard: PolicyGroup, soft: PolicyGroup } 双层 evaluate，hard_hit 强制退出 / soft_hit 只写日志。本轮迭代简化为单一 Or 组 + 统一 policy_exit，不再分层。**现存代码中 mixed.rs 已不存在**，本卡不再引用旧 Plan。
 - **【已移除 2026-09-07】policy_set! 场景 DSL**：旧版有 `policy_set!(Scene::Awaken => [...])` DSL 按 ThinkingScene 变体分 arm。本轮 build_policy_for_scene 不再依赖 scene，统一装配一套 OR 组（FinalAnswerPolicy 已覆盖正常完成裁决），_scene 参数保留但未使用。
 - **【已移除 2026-09-07】TokenCostPolicy**：替换为 TokenBudgetPolicy（budget=0 语义：未启用），id=token_budget（而非 token_cost）。

@@ -26,7 +26,7 @@ source_files:
 - src/service/dao/a2a_callback/mod.rs#L1-L39（瘦身：push_task 替换 push + test_connection 删除）
 - src/service/dao/a2a_callback/http.rs#L1-L40（瘦身：HTTP POST 实现，仅 webhook_url + A2aTask 入参）
 - src/models/agent.rs:Ln-Lm
-- docs/archive/design-archive/a2a_server_architecture_design.md
+- docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_architecture_design.md
 - ''
 - docs/modules/02-Agent运行时/C-知识/AI Agent 管理.md
 - docs/modules/13-数据模型/C-知识/Agent 实体.md
@@ -84,7 +84,7 @@ source_files:
 | [dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs) | A2aCallbackDao trait（瘦身） | `push_task(ctx, webhook_url, &A2aTask) -> Result<()>`（纯 HTTP 出站，test_connection 删除） |
 | [dao/a2a_callback/http.rs](src/service/dao/a2a_callback/http.rs) | A2aCallbackDao HTTP 实现 | 仅 reqwest POST webhook_url + 序列化 A2aTask body；OnceLock 单例 factory |
 | [models/agent.rs](src/models/agent.rs) | ExternalAgentConfig 枚举 | Cli / Remote 变体；与 runtime dao 1:1 对应 |
-| 【① Design】a2a_server_architecture_design.md §二 ExternalCortexDao 桥接 | 为什么要桥接成 CortexDao（统一 think 链路、不侵入内部 brain）| docs/archive/design-archive/a2a_server_architecture_design.md |
+| 【① Design】a2a_server_architecture_design.md §二 ExternalCortexDao 桥接 | 为什么要桥接成 CortexDao（统一 think 链路、不侵入内部 brain）| docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_architecture_design.md |
 | 【③ Wiki 长文 1】AI Agent 管理.md §外部 Agent | 外部 Agent 配置字段含义 + 创建流程 | docs/modules/02-Agent运行时/C-知识/AI Agent 管理.md |
 | 【③ Wiki 长文 2】Agent 实体.md §ExternalAgentConfig | PO 模型字段说明 | docs/modules/13-数据模型/C-知识/Agent 实体.md |
 | 【平行卡 1】协议层 | DTO 类型定义 | docs/wiki/knowledge/zh/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息.md |

@@ -29,7 +29,6 @@
 | [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) | **怎么做**：分层实践与避坑 | 手工维护，开发必读 |
 | [design/](./design/) | **为什么**：当时的设计决策 | 决策快照，写定后不追赶现状 |
 | [plan/](./plan/) | **要去哪**：规划与状态快照 | 按阶段追加 |
-| [archive/](./archive/) | **被什么取代**：历史方案归档 | 只进不出 |
 
 > ⚠️ 当 design/ 与实现不一致时，以 wiki/ 描述的现状为准；design/ 保留决策当时的上下文。
 

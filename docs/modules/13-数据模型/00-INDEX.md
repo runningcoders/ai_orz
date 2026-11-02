@@ -6,13 +6,22 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 42 篇：A 设计 3 · C 知识 39。
+本模块共 48 篇：A 设计 5 · B 落地方案 4 · C 知识 39。
 
 ## A 设计（design）
 
 - [前后端 API 协议规范（common DTO 单一事实源）](<A-设计/api_protocol_convention.md>) — `现行`
+- [产物与消息附件统一存储设计](<A-设计/attachment_storage.md>) — `已废弃`
 - [查询接口分页与通用 count 规范](<A-设计/pagination_and_count_convention.md>) — `现行`
 - [时间戳处理约定](<A-设计/timestamp_convention.md>) — `现行`
+- [统一参数 IDL + 自动生成 HTTP handler 设计文档](<A-设计/unified_idl_http_handler.md>) — `已废弃`
+
+## B 落地方案（plan）
+
+- [Handler 管理面 API 补齐方案](<B-落地方案/Handler 管理面 API 补齐方案.md>) — `已完成`
+- [Query 接口分页与 List 接口简化重构](<B-落地方案/Query接口分页与List接口简化重构.md>) — `已完成`
+- [前端 API 协议结构体统一改造](<B-落地方案/前端API协议结构重构.md>) — `已完成`
+- [批量查询与通用Query接口增强重构](<B-落地方案/批量查询与通用Query接口增强重构.md>) — `已完成`
 
 ## C 知识（wiki）
 

@@ -6,10 +6,10 @@
 - [agent_kind.rs](common/src/enums/agent_kind.rs)
 - [agent.rs](src/models/agent.rs)
 - [agent.rs](src/service/dal/agent/mod.rs)
-- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
-- [message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
-- [project_management_design.md](docs/archive/design-archive/project_management_design.md)
-- [stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
+- [external_agent_design.md](docs/modules/07-外部Agent(A2A)/A-设计/external_agent_design.md)
+- [message_interaction_design.md](docs/modules/04-对话与消息/A-设计/message_interaction_design.md)
+- [project_management_design.md](docs/modules/05-任务与项目/A-设计/project_management_design.md)
+- [stats_query_design.md](docs/modules/09-统计与监控/A-设计/stats_query_design.md)
 - [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/modules/02-Agent运行时/C-知识/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
 - [src/handlers/hr/agent/association.rs](src/handlers/hr/agent/association.rs)
@@ -48,7 +48,7 @@
 - 业务实体与运行时配置：src/models/agent.rs
 - DAL 层（数据访问与装配）：src/service/dal/agent/mod.rs
 - 运行时状态管理：src/pkg/agent_runtime_state.rs
-- 设计与流程文档：docs/external_agent_design.md、docs/message_interaction_design.md、docs/archive/design-archive/project_management_design.md、docs/stats_query_design.md（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
+- 设计与流程文档：docs/external_agent_design.md、docs/message_interaction_design.md、docs/modules/05-任务与项目/A-设计/project_management_design.md、docs/stats_query_design.md（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ```mermaid
 graph TB
@@ -141,12 +141,12 @@ CONSUMER-->>U : SSE 推送回复
 ```
 
 图表来源
-- [message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
+- [message_interaction_design.md](docs/modules/04-对话与消息/A-设计/message_interaction_design.md)
 - [agent.rs:100-193](src/service/dal/agent/mod.rs#L193)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 章节来源
-- [message_interaction_design.md](docs/archive/design-archive/message_interaction_design.md)
+- [message_interaction_design.md](docs/modules/04-对话与消息/A-设计/message_interaction_design.md)
 - [agent.rs:100-193](src/service/dal/agent/mod.rs#L193)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
@@ -160,13 +160,13 @@ CONSUMER-->>U : SSE 推送回复
 ```mermaid
 stateDiagram-v2
 [*] --> Interviewing
-Interviewing --> PendingOnboard : "确认入职"
-PendingOnboard --> Onboarded : "初始化完成"
-Onboarded --> PendingOffboard : "开始交接"
-PendingOffboard --> Offboarded : "完成交接"
-Onboarded --> Deleted : "软删除"
-PendingOffboard --> Deleted : "软删除"
-Note right of Onboarded : "运行时状态 : Idle/Resting/Busy"
+Interviewing --> PendingOnboard : 确认入职
+PendingOnboard --> Onboarded : 初始化完成
+Onboarded --> PendingOffboard : 开始交接
+PendingOffboard --> Offboarded : 完成交接
+Onboarded --> Deleted : 软删除
+PendingOffboard --> Deleted : 软删除
+Note right of Onboarded : 运行时状态：Idle/Resting/Busy
 ```
 
 图表来源
@@ -194,9 +194,9 @@ class AgentPo {
 +get_remote_config()
 }
 class ExternalAgentConfig {
-<<enum>>
-Cli{command,args,work_dir,env,timeout_secs,prompt_template}
-Remote{endpoint,agent_name,auth_token,timeout_secs}
+<<enumeration>>
+Cli
+Remote
 }
 AgentPo --> ExternalAgentConfig : "持有"
 ```
@@ -208,7 +208,7 @@ AgentPo --> ExternalAgentConfig : "持有"
 章节来源
 - [agent.rs:71-105](src/models/agent.rs#L71-L105)
 - [agent.rs:502-553](src/models/agent.rs#L502-L553)
-- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
+- [external_agent_design.md](docs/modules/07-外部Agent(A2A)/A-设计/external_agent_design.md)
 
 ### 唤醒机制与思考循环
 - 唤醒入口：wake_agent_brain 按 kind 装配 Brain（Local 加载 model_provider+Cortex；外部为虚拟 Brain）
@@ -235,11 +235,11 @@ Reply --> End
 
 图表来源
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [project_management_design.md:567-601](docs/archive/design-archive/project_management_design.md#L567-L601)
+- [project_management_design.md:567-601](docs/modules/05-任务与项目/A-设计/project_management_design.md#L567-L601)
 
 章节来源
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [project_management_design.md:567-601](docs/archive/design-archive/project_management_design.md#L567-L601)
+- [project_management_design.md:567-601](docs/modules/05-任务与项目/A-设计/project_management_design.md#L567-L601)
 
 ### 记忆系统与沉淀（sleep_and_settle）
 - Settle 场景：仅加载记忆相关 skill 与工具，生成待沉淀摘要，调用 builder.build_sleep_prompt 形成沉淀提示
@@ -281,10 +281,10 @@ ADP-->>API : 返回 ok
 ```
 
 图表来源
-- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
+- [external_agent_design.md](docs/modules/07-外部Agent(A2A)/A-设计/external_agent_design.md)
 
 章节来源
-- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
+- [external_agent_design.md](docs/modules/07-外部Agent(A2A)/A-设计/external_agent_design.md)
 
 ### 配置模板与示例
 - AgentRuntimeConfig 默认值：max_thinking_depth=365、max_thinking_rounds=0（继承系统 365）、intent_analyze_max_rounds=0、summary_max_rounds=0、think_timeout_secs=0、enable_cerebellum_route=true、cerebellum_trivial_direct=false
@@ -305,7 +305,7 @@ ADP-->>API : 返回 ok
 - 向量索引：自动 upsert，失败降级不影响主流程
 
 章节来源
-- [stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
+- [stats_query_design.md](docs/modules/09-统计与监控/A-设计/stats_query_design.md)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 - [agent.rs:244-312](src/service/dal/agent/mod.rs#L228)
 
@@ -355,8 +355,8 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 章节来源
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 - [agent.rs:244-312](src/service/dal/agent/mod.rs#L228)
-- [stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
-- [external_agent_design.md](docs/archive/design-archive/external_agent_design.md)
+- [stats_query_design.md](docs/modules/09-统计与监控/A-设计/stats_query_design.md)
+- [external_agent_design.md](docs/modules/07-外部Agent(A2A)/A-设计/external_agent_design.md)
 
 ## 结论
 本方案以清晰的 Agent 生命周期与运行时状态机为基础，结合 DAL 抽象与外部 Agent 解耦，实现了从创建、配置、唤醒、思考循环、记忆沉淀到销毁的全流程管理。通过 A2A 协议集成与 SSE 实时推送，提供了可扩展的 Agent 生态。统计与日志体系保障可观测性与可维护性，适合在生产环境中规模化部署与运维。

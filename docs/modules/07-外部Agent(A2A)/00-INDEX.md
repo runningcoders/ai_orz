@@ -6,7 +6,19 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 20 篇：C 知识 20。
+本模块共 26 篇：A 设计 3 · B 落地方案 3 · C 知识 20。
+
+## A 设计（design）
+
+- [A2A Server 架构设计（agent 与 project 维度分离）](<A-设计/a2a_server_architecture_design.md>) — `已废弃`
+- [A2A Server 设计文档](<A-设计/a2a_server_design.md>) — `已废弃`
+- [外部 Agent 接入设计](<A-设计/external_agent_design.md>) — `已废弃`
+
+## B 落地方案（plan）
+
+- [A2A Server 实施计划](<B-落地方案/A2A Server 实施计划（执行蓝图）.md>) — `已完成`
+- [A2A 异步回调与轮询 Producer 实现计划](<B-落地方案/A2A 异步回调与轮询 Producer 实现计划（执行蓝图）.md>) — `已完成`
+- [A2A 外部 Agent 集成（CLI 子进程 + 通用远程）](<B-落地方案/A2A外部Agent集成.md>) — `已完成`
 
 ## C 知识（wiki）
 

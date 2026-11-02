@@ -20,8 +20,8 @@ source_files:
 - 'src/service/dal/memory/mod.rs#L721-L804 '
 - 'src/models/memory/knowledge_relation_po.rs '
 - 'common/src/api/memory.rs '
-- docs/archive/plan-archive/图谱遍历查询优化.md
-- docs/archive/design-archive/memory_search_enhancement_design.md
+- docs/modules/08-搜索/B-落地方案/图谱遍历查询优化.md
+- docs/modules/08-搜索/A-设计/memory_search_enhancement_design.md
 - ''
 - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md
 - docs/modules/03-记忆系统/C-知识/长期记忆 (Long-term Memory).md (Long-term Memory)/知识关系管理.md（知识关系 PO

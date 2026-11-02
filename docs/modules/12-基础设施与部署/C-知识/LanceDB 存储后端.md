@@ -7,7 +7,7 @@
 - [src/pkg/storage/vector.rs](src/pkg/storage/vector.rs)
 - [src/models/vector.rs](src/models/vector.rs)
 - [common/src/config.rs](common/src/config.rs)
-- [docs/archive/design-archive/vector_search_architecture.md](docs/archive/design-archive/vector_search_architecture.md)
+- [docs/modules/08-搜索/A-设计/vector_search_architecture.md](docs/modules/08-搜索/A-设计/vector_search_architecture.md)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
@@ -36,7 +36,7 @@
 - 通用数据结构（行、命中结果、索引参数、可向量化实体接口）：src/models/vector.rs
 - 配置项（默认后端、路径等）：common/src/config.rs
 - DAL 层对向量索引生命周期的编排（重建、查询、写入）：src/service/dal/*.rs
-- 向量搜索整体设计说明：docs/archive/design-archive/vector_search_architecture.md
+- 向量搜索整体设计说明：docs/modules/08-搜索/A-设计/vector_search_architecture.md
 
 ```mermaid
 graph TB
@@ -102,7 +102,7 @@ Lance-->>DAL : Vec<VectorSearchHit>
 - [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
 
 章节来源
-- [docs/archive/design-archive/vector_search_architecture.md:13-43](docs/archive/design-archive/vector_search_architecture.md#L13-L43)
+- [docs/modules/08-搜索/A-设计/vector_search_architecture.md:13-43](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L13-L43)
 - [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
 - [src/pkg/storage/lance.rs:127-282](src/pkg/storage/lance.rs#L127-L282)
 
@@ -244,7 +244,7 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
-- [docs/archive/design-archive/vector_search_architecture.md:178-184](docs/archive/design-archive/vector_search_architecture.md#L178-L184)
+- [docs/modules/08-搜索/A-设计/vector_search_architecture.md:178-184](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L178-L184)
 
 ## 故障排查指南
 - 连接与建表错误：LanceDB connect/create table 异常通常由路径权限或 schema 不匹配引起；检查 base_data_path 与 dimensions 一致性。
@@ -283,7 +283,7 @@ LanceVectorStore 通过 LanceDB 的列式存储与 HNSW 索引，为项目提供
 章节来源
 - [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
 - [common/src/config.rs:244-278](common/src/config.rs#L244-L278)
-- [docs/archive/design-archive/vector_search_architecture.md:342-356](docs/archive/design-archive/vector_search_architecture.md#L342-L356)
+- [docs/modules/08-搜索/A-设计/vector_search_architecture.md:342-356](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L342-L356)
 - [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
 
 ---

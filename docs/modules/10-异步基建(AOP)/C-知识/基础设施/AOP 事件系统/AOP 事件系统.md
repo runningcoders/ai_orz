@@ -21,9 +21,9 @@
 **本文关联的文档（单向引用 v2.1：活文档 → 历史/兄弟文档）**
 - 【① Design 决策快照】
   - [aop_producer_consumer_contract_design.md](docs/modules/10-异步基建(AOP)/A-设计/aop_producer_consumer_contract_design.md) — 生产者-消费者契约重构总设计（topic 收敛、DAL-as-Producer、收尾归属、重试决策）
-  - [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) — 生产-消费异步框架总设计，分层解耦 + 启动顺序红线
+  - [consumer_architecture.md](docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md) — 生产-消费异步框架总设计，分层解耦 + 启动顺序红线
 - 【② Plan 落地快照】
-  - [AOP生产消费事件中心重构.md](docs/archive/plan-archive/AOP生产消费事件中心重构.md) — Registry 单例 + consumer::init 注册顺序 + 收尾回调语义实现
+  - [AOP生产消费事件中心重构.md](docs/modules/10-异步基建(AOP)/B-落地方案/AOP生产消费事件中心重构.md) — Registry 单例 + consumer::init 注册顺序 + 收尾回调语义实现
 - 【④ RAG 原子知识卡】
   - [AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册](docs/modules/10-异步基建(AOP)/C-知识/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md) — 零业务耦合硬边界 + lib.rs 启动 6 步严格顺序 + consumer::init 禁写 DB 等 6 条红线
 - 【③ Wiki 关联长文】

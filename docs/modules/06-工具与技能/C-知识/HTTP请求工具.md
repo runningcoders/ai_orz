@@ -175,7 +175,7 @@ Net-->>Tool : Response
 Tool->>Sec : sanitize_response_headers(response.headers())
 Tool->>Sec : read_limited_response_body(max_bytes)
 Sec-->>Tool : bytes
-Tool->>Tool : parse JSON or string; optional JSON pointer
+Tool->>Tool : parse JSON or string； optional JSON pointer
 Tool-->>Caller : {status, headers, content_length, body}
 ```
 

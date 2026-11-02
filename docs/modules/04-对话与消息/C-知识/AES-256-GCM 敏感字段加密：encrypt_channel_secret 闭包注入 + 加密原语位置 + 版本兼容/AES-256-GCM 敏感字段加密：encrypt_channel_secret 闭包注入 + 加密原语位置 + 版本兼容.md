@@ -50,8 +50,8 @@ source_files:
 | [src/service/dal/message_channel.rs](src/service/dal/message_channel.rs) 或 lark.rs 或 Dao 层 | 唯一解密点（渠道建连/发消息）| `let app_secret = pkg::crypto::decrypt_channel_secret(&cred.detail.app_secret)?` → 明文传入 lark_cli / reqwest 客户端；明文变量作用域仅限函数内部，绝不写入日志/响应/事件 payload |
 | 【对应 Wiki 长文 1】身份凭证管理.md | 系统化上下文 §5 AES-256-GCM 加密小节 | [身份凭证管理](docs/modules/13-数据模型/C-知识/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md) |
 | 【对应 Wiki 长文 2】数据存储架构.md | users.identity_credentials 列加密说明 + 主密钥管理 | [数据存储架构](docs/modules/00-总览与架构/C-知识/数据存储架构.md) |
-| 【① Design】message_channel_design.md §2 凭证加密 | 为什么选 AES-256-GCM / 为什么闭包注入 | docs/archive/design-archive/message_channel_design.md |
-| 【② Plan 定稿】身份凭证Domain统一CRUD重构.md §二 架构思路 (b) 敏感字段加密下沉 | 闭包注入设计决策 + §六 执行结果加密分支测试通过 | docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md |
+| 【① Design】message_channel_design.md §2 凭证加密 | 为什么选 AES-256-GCM / 为什么闭包注入 | docs/modules/04-对话与消息/A-设计/message_channel_design.md |
+| 【② Plan 定稿】身份凭证Domain统一CRUD重构.md §二 架构思路 (b) 敏感字段加密下沉 | 闭包注入设计决策 + §六 执行结果加密分支测试通过 | docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md |
 | 【平行卡】模型层信息下沉（encrypt_sensitive 6 行为方法之一）| 模型层 encrypt_sensitive/apply_patch 定义 | docs/modules/01-组织与权限/C-知识/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md：CredentialDetail%20行为%20+%20CredentialDetailPatch%20补丁语义%20+%20默认槽位独立/身份凭证模型层信息下沉：CredentialDetail%20行为%20+%20CredentialDetailPatch%20补丁语义%20+%20默认槽位独立.md |
 
 ## §3 架构约定

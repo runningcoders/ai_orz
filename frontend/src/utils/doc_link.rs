@@ -6,9 +6,9 @@
 //!
 //! - 外链（http / # / mailto）：新标签原样打开
 //! - 仓库内 Markdown（已收录）：站内原地切换（`data-doc-path` + Dioxus 点击拦截）
-//! - 仓库内 Markdown（未收录，如 archive）：退化 GitHub blob
+//! - 仓库内文档（未收录 / 未打包资源）：退化 GitHub blob
 //! - 源码文件（`.rs` / `.sql` 等）：GitHub blob + `#Lx-Ly`
-//! - 架构图 `docs/diagrams/*.html`：站内原地切换（右侧 iframe 内嵌；href 保留直开降级）
+//! - 自包含 HTML（架构图 / 设计原型）：站内原地切换（右侧 iframe 内嵌；href 保留直开降级）
 //!
 //! 站内链接保留 GitHub 地址作为 href 降级；拦截失效时仍能跳远程。
 //!
@@ -86,26 +86,38 @@ pub fn post_process_doc_links(
                         Some(ctx) => normalize_repo_relative(href, &ctx.doc_repo_path),
                         None => href.to_string(),
                     };
+                    // 自包含 HTML（架构图 / 设计原型）：已收录则标注站内链接，
+                    // 由文档中心右侧 iframe 原地内嵌（比跳 GitHub 看源码有用）
+                    if normalized.ends_with(".html") {
+                        let repo_path = percent_decode(&normalized);
+                        if let Some(page) = doc_ctx.and_then(|ctx| ctx.repo_to_page.get(&repo_path))
+                        {
+                            let static_href = format!("/docs/{page}");
+                            out.push_str(&tag.replacen(
+                                &format!("href=\"{href}\""),
+                                &format!(
+                                    "href=\"{static_href}\" data-doc-path=\"{page}\" \
+                                     data-doc-repo=\"{repo_path}\" class=\"doc-link-internal\""
+                                ),
+                                1,
+                            ));
+                            i = tag_end;
+                            continue;
+                        }
+                    }
                     let target = DocLinkClassifier::classify(&normalized);
-                    // 架构图是自包含 HTML，构建期已原路径复制到 public/docs/diagrams/：
-                    // 标注为站内链接，由文档中心右侧 iframe 原地内嵌（比跳 GitHub 看源码有用）
-                    // （classify 把非 .md 一律归为 SourceFile，两类都要看）
-                    let diagram = match &target {
-                        DocLinkTarget::SourceFile { relative_path, .. }
-                        | DocLinkTarget::OtherDoc { relative_path } => relative_path
+                    // 未收录（或渲染时没有映射上下文）的架构图仍可站内直开：
+                    // 构建期已把它们原路径复制到 public/docs/diagrams/
+                    if let DocLinkTarget::SourceFile { relative_path, .. } = &target
+                        && let Some(rest) = relative_path
                             .strip_prefix("docs/diagrams/")
-                            .filter(|rest| rest.ends_with(".html")),
-                        _ => None,
-                    };
-                    if let Some(rest) = diagram {
+                            .filter(|rest| rest.ends_with(".html"))
+                    {
                         let static_href = format!("/docs/diagrams/{rest}");
-                        let site_path = format!("diagrams/{rest}");
-                        let repo_path = format!("docs/diagrams/{rest}");
                         out.push_str(&tag.replacen(
                             &format!("href=\"{href}\""),
                             &format!(
-                                "href=\"{static_href}\" data-doc-path=\"{site_path}\" \
-                                 data-doc-repo=\"{repo_path}\" class=\"doc-link-internal\""
+                                "href=\"{static_href}\" target=\"_blank\" rel=\"noopener noreferrer\""
                             ),
                             1,
                         ));
@@ -154,7 +166,7 @@ pub fn post_process_doc_links(
 
 /// 已收录的 Markdown → (站内副本路径, 原始仓库路径)
 ///
-/// 未命中映射（如 docs/archive/ 未收录、源码文件）返回 None，交给调用方退化远程。
+/// 未命中映射（如未打包资源、源码文件）返回 None，交给调用方退化远程。
 fn internal_doc_page(
     target: &DocLinkTarget,
     doc_ctx: Option<&DocRenderContext>,
@@ -282,14 +294,50 @@ mod tests {
 
     #[test]
     fn diagram_html_renders_in_doc_center() {
-        // 架构图是自包含 HTML：标注为站内链接，由文档中心右侧 iframe 原地内嵌
+        // 架构图是自包含 HTML：已收录时标注为站内链接，由文档中心右侧 iframe 原地内嵌
+        let context = ctx(
+            "docs/AGENT_GUIDE.md",
+            &[(
+                "docs/diagrams/ai-orz-architecture.html",
+                "diagrams/ai-orz-architecture.html",
+            )],
+        );
         let html = "<a href=\"docs/diagrams/ai-orz-architecture.html\">架构图</a>";
-        let out = post_process_doc_links(html, "https://github.com/o/r/blob/main", None);
+        let out = post_process_doc_links(html, BLOB_BASE, Some(&context));
         assert!(out.contains("href=\"/docs/diagrams/ai-orz-architecture.html\""));
         assert!(out.contains("data-doc-path=\"diagrams/ai-orz-architecture.html\""));
         assert!(out.contains("data-doc-repo=\"docs/diagrams/ai-orz-architecture.html\""));
         assert!(out.contains("class=\"doc-link-internal\""));
         assert!(!out.contains("data-repo-href"));
+    }
+
+    #[test]
+    fn uncollected_diagram_opens_static_page() {
+        // 无映射上下文时，架构图仍可站内直开（构建期已原路径复制到 public/docs/diagrams/）
+        let html = "<a href=\"docs/diagrams/ai-orz-architecture.html\">架构图</a>";
+        let out = post_process_doc_links(html, "https://github.com/o/r/blob/main", None);
+        assert!(out.contains("href=\"/docs/diagrams/ai-orz-architecture.html\""));
+        assert!(out.contains("target=\"_blank\""));
+        assert!(!out.contains("data-doc-path"));
+    }
+
+    #[test]
+    fn module_html_doc_renders_in_doc_center() {
+        // 模块目录内的设计原型 HTML 同样走站内 iframe（不再只限 diagrams/）
+        let context = ctx(
+            "docs/modules/11-前端应用/A-设计/frontend_architecture.md",
+            &[(
+                "docs/modules/11-前端应用/A-设计/hud_design_prototype.html",
+                "modules/abc.html",
+            )],
+        );
+        let html = "<a href=\"./hud_design_prototype.html\">原型</a>";
+        let out = post_process_doc_links(html, BLOB_BASE, Some(&context));
+        assert!(out.contains("data-doc-path=\"modules/abc.html\""));
+        assert!(out.contains(
+            "data-doc-repo=\"docs/modules/11-前端应用/A-设计/hud_design_prototype.html\""
+        ));
+        assert!(out.contains("class=\"doc-link-internal\""));
     }
 
     #[test]
@@ -320,12 +368,12 @@ mod tests {
 
     #[test]
     fn uncollected_doc_falls_back_to_github() {
-        // 未收录（如 archive）→ 远程 GitHub
+        // 映射里没有的文档（未打包 / 索引过期）→ 远程 GitHub
         let context = ctx("docs/AGENT_GUIDE.md", &[("docs/README.md", "README.md")]);
-        let html = "<a href=\"./archive/plan-archive/old.md\">旧方案</a>";
+        let html = "<a href=\"./not-packaged/old.md\">旧方案</a>";
         let out = post_process_doc_links(html, BLOB_BASE, Some(&context));
         assert!(out.contains("class=\"doc-link-intercept\""));
-        assert!(out.contains("archive/plan-archive/old.md"));
+        assert!(out.contains("not-packaged/old.md"));
         assert!(!out.contains("doc-link-internal"));
     }
 

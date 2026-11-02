@@ -49,10 +49,10 @@ source_files:
 - src/service/dal/skill/mod.rs
 - frontend/src/pages/hr/agent_management.rsx
 - frontend/src/components/hr/agent_form.rsx
-- docs/archive/design-archive/skill_design.md
-- docs/archive/design-archive/skill_system_enhancement_design.md
-- docs/archive/plan-archive/Agent管理集成测试.md
-- docs/archive/plan-archive/预置基础技能导入重构.md
+- docs/modules/06-工具与技能/A-设计/skill_design.md
+- docs/modules/06-工具与技能/A-设计/skill_system_enhancement_design.md
+- docs/modules/14-测试/B-落地方案/Agent管理集成测试.md
+- docs/modules/06-工具与技能/B-落地方案/预置基础技能导入重构.md
 - docs/modules/06-工具与技能/C-知识/技能系统.md
 - docs/modules/02-Agent运行时/C-知识/技能包管理.md
 - docs/modules/06-工具与技能/C-知识/技能与工具绑定.md
@@ -124,8 +124,8 @@ source_files:
 | [5 套 TEMPLATE 预置 skill.md 文件](src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) | 技能模板嵌入式注入 | skill.md 6 字段结构（name / description / tags[] / prompt_template / system_constraints / usage_scenarios）；include_str! 编译期嵌入；HRDomain init_base_data 幂等插入 |
 | [SkillPo + Prompt 摘要 to_prompt_summary](src/models/skill.rs#L22-L160) | 技能实体 SSOT + Prompt 注入 | SkillPo 字段（skill_id/agent_id/name/prompt_template/prompt_summary/version/tags/is_published/is_system）；to_prompt_summary 生成 Prompt 注入格式（"### 技能 {name}\n{prompt_template}..."） |
 | [Handler install_skill_pack HTTP 接口](src/handlers/hr/agent/install_skill_pack.rs) | 前端技能包管理入口 | InstallSkillPackRequest{agent_id, tag, skill_ids(Option)}；skill_ids 缺省走 tag 全量；返回统计清单 installed/skipped/total |
-| [技能系统增强 Design 四层架构](docs/archive/design-archive/skill_system_enhancement_design.md) | 为什么 / 决策 6 条 | §决策 2：按 tag 安装 vs 按 id 列表安装；§决策 4：入职默认绑定哪些包；§决策 5：Prompt 分层预算分配 |
-| [Agent集成测试 Plan 落地快照](docs/archive/plan-archive/Agent管理集成测试.md) | 怎么做 + 结果 | §技能安装幂等 §入职绑定失败降级 §Prompt Token 预算断言 |
+| [技能系统增强 Design 四层架构](docs/modules/06-工具与技能/A-设计/skill_system_enhancement_design.md) | 为什么 / 决策 6 条 | §决策 2：按 tag 安装 vs 按 id 列表安装；§决策 4：入职默认绑定哪些包；§决策 5：Prompt 分层预算分配 |
+| [Agent集成测试 Plan 落地快照](docs/modules/14-测试/B-落地方案/Agent管理集成测试.md) | 怎么做 + 结果 | §技能安装幂等 §入职绑定失败降级 §Prompt Token 预算断言 |
 | [技能系统 Wiki 长文](docs/modules/06-工具与技能/C-知识/技能系统.md) | 人类百科 | §5 技能包管理 §8 故障排查（安装失败 / 重名 / Token 超限裁剪日志定位） |
 | [前端技能库管理页 skills.rs](frontend/src/pages/hr/skills.rs) | 技能库树形 + 分页展示 | 371 行重构：树形层级（agent tag 分组折叠）+ 分页（每页 20）+ 默认筛选已发布；skill 卡片支持按 agent 类型 tag 分组 |
 | [前端 API 层 hr.rs](frontend/src/api/hr.rs) | 技能列表 API | 新增 list_skills_paginated(status, tag, page, page_size)；调用后端分页查询接口 |

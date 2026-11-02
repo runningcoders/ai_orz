@@ -13,10 +13,10 @@
 - [src/models/message_channel.rs](src/models/message_channel.rs)
 - [common/src/enums/message_channel.rs](common/src/enums/message_channel.rs)
 - [migrations/20260508000000_message_channels.sql](migrations/20260420000000_initial.sql)
-- [docs/archive/design-archive/message_channel_design.md](docs/archive/design-archive/message_channel_design.md)
+- [docs/modules/04-对话与消息/A-设计/message_channel_design.md](docs/modules/04-对话与消息/A-设计/message_channel_design.md)
 
 **本文关联的文档**
-- ① Design：[message_channel_design.md](docs/archive/design-archive/message_channel_design.md) — 消息渠道入站适配中台架构与渠道引用检查
+- ① Design：[message_channel_design.md](docs/modules/04-对话与消息/A-设计/message_channel_design.md) — 消息渠道入站适配中台架构与渠道引用检查
 - ④ RAG：[消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期](docs/modules/04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md)
 - ③ Wiki 关联长文：[微信 iLink 专属渠道.md](docs/modules/04-对话与消息/C-知识/微信 iLink 专属渠道.md)、[飞书集成系统.md](docs/modules/13-数据模型/C-知识/飞书集成系统.md)
 </cite>
@@ -64,7 +64,7 @@ D --> F["DB: message_channels 表"]
 
 章节来源
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [docs/archive/design-archive/message_channel_design.md:52-69](docs/archive/design-archive/message_channel_design.md#L52-L69)
+- [docs/modules/04-对话与消息/A-设计/message_channel_design.md:52-69](docs/modules/04-对话与消息/A-设计/message_channel_design.md#L52-L69)
 
 ## 核心组件
 - 枚举与实体
@@ -196,7 +196,7 @@ integer updated_at
   - 测试连接通过 Domain/DAL 分发到具体渠道 DAO 执行连通性检查。
 
 章节来源
-- [docs/archive/design-archive/message_channel_design.md:52-69](docs/archive/design-archive/message_channel_design.md#L52-L69)
+- [docs/modules/04-对话与消息/A-设计/message_channel_design.md:52-69](docs/modules/04-对话与消息/A-设计/message_channel_design.md#L52-L69)
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 - [common/src/api/message_channel.rs:9-228](common/src/api/message_channel.rs#L9-L228)
 
@@ -356,7 +356,7 @@ DL --> AC["DAO(A2aCallbackDao)"]
 - [src/handlers/finance/message_channel/test_message_channel_connection.rs:20-56](src/handlers/finance/message_channel/test_message_channel_connection.rs#L20-L56)
 - [src/models/message_channel.rs:67-107](src/models/message_channel.rs#L67-L107)
 - [src/service/dal/message_channel.rs:202-222](src/service/dal/message_channel.rs#L202-L222)
-- [docs/archive/design-archive/message_channel_design.md:23-36](docs/archive/design-archive/message_channel_design.md#L23-L36)
+- [docs/modules/04-对话与消息/A-设计/message_channel_design.md:23-36](docs/modules/04-对话与消息/A-设计/message_channel_design.md#L23-L36)
 
 ## 结论
 消息渠道管理 API 提供了完整的渠道生命周期管理能力，并通过严格的分层与纯 match 分发机制实现了多渠道支持与可扩展的消息路由。当前管理面已具备 CRUD、查询、状态管理与连接测试能力；运行面消息分发已具备框架与部分渠道实现，通用 Webhook 尚未完全实现但已有明确的失败聚合策略。后续可按需扩展新渠道类型与推送实现。
@@ -376,4 +376,4 @@ DL --> AC["DAO(A2aCallbackDao)"]
 章节来源
 - [src/models/message_channel.rs:197-255](src/models/message_channel.rs#L197-L255)
 - [src/service/dal/message_channel.rs:289-313](src/service/dal/message_channel.rs#L289-L313)
-- [docs/archive/design-archive/message_channel_design.md:478-513](docs/archive/design-archive/message_channel_design.md#L478-L513)
+- [docs/modules/04-对话与消息/A-设计/message_channel_design.md:478-513](docs/modules/04-对话与消息/A-设计/message_channel_design.md#L478-L513)

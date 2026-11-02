@@ -16,7 +16,7 @@ source_files:
 - src/service/dao/lark/mod.rs#L96-L140
 - src/service/dao/lark/http.rs#L158-L215
 - src/service/dao/lark/http.rs#L315-L360
-- docs/archive/plan-archive/飞书出站引用回复方案.md
+- docs/modules/04-对话与消息/B-落地方案/飞书出站引用回复方案.md
 - docs/modules/04-对话与消息/C-知识/消息处理核心.md
 - docs/modules/04-对话与消息/C-知识/消息渠道适配器.md
 - docs/modules/04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md

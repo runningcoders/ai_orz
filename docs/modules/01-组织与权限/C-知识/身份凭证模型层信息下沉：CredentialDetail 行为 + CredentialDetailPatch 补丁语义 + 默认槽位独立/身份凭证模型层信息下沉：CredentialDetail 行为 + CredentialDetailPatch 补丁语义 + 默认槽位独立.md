@@ -48,9 +48,9 @@ source_files:
 | [src/service/dao/user/sqlite.rs](src/service/dao/user/sqlite.rs) | DAO 层：get_identity_credentials 读取原始列值 + save_identity_credentials 写回 | 纯列读写 + 反序列化封装（**禁止在 DAO 层做字段级校验**）|
 | [src/service/dal/user.rs](src/service/dal/user.rs) | DAL 层：save_identity_credentials 的事务/行级更新（并发安全） | 并发写凭证库时乐观锁：UPDATE users SET identity_credentials = $1, version = version+1 WHERE id = $2 AND version = $3；失败重试最多 3 次 |
 | 【对应 Wiki 长文】身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md | 系统化上下文（必读 §5 模型层信息下沉小节）| [身份凭证管理](docs/modules/13-数据模型/C-知识/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md) |
-| 【② Plan 定稿】身份凭证Domain统一CRUD重构.md §三 涉及文件 §四 扩展模板 | 改动清单 + 新增凭证类型 4 步模板 | docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md |
-| 【① Design 1】message_channel_design.md §3 凭证引用检查 | resolve_lark_credential_ref 设计动机 | docs/archive/design-archive/message_channel_design.md |
-| 【① Design 2】lark_cli_integration.md §二 凭证变更 WS 移交 | secret_changed 字段来源（CredentialUpdateImpact）| docs/archive/design-archive/lark_cli_integration.md |
+| 【② Plan 定稿】身份凭证Domain统一CRUD重构.md §三 涉及文件 §四 扩展模板 | 改动清单 + 新增凭证类型 4 步模板 | docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md |
+| 【① Design 1】message_channel_design.md §3 凭证引用检查 | resolve_lark_credential_ref 设计动机 | docs/modules/04-对话与消息/A-设计/message_channel_design.md |
+| 【① Design 2】lark_cli_integration.md §二 凭证变更 WS 移交 | secret_changed 字段来源（CredentialUpdateImpact）| docs/modules/04-对话与消息/A-设计/lark_cli_integration.md |
 | 【平行卡 1】Domain 统一 CRUD（5 方法 + 2 Cmd + match kind）| 上层 Domain 调用方式 | docs/wiki/knowledge/zh/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用.md |
 | 【平行卡 2】AES-256-GCM 敏感字段加密（encrypt_sensitive 闭包注入） | encrypt_sensitive 闭包参数来源与原语位置 | docs/wiki/knowledge/zh/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容.md |
 

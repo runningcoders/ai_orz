@@ -6,18 +6,26 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 28 篇：A 设计 3 · B 落地方案 4 · C 知识 21。
+本模块共 36 篇：A 设计 6 · B 落地方案 9 · C 知识 21。
 
 ## A 设计（design）
 
 - [飞书（Lark）渠道集成设计 —— 长连接协议对齐版](<A-设计/lark_channel_integration_design.md>) — `现行`
+- [lark-cli 集成与飞书渠道多应用化设计](<A-设计/lark_cli_integration.md>) — `已废弃`
+- [消息渠道设计文档](<A-设计/message_channel_design.md>) — `已废弃`
+- [用户-Agent 消息交互设计](<A-设计/message_interaction_design.md>) — `已废弃`
 - [消息撤回与取消能力设计](<A-设计/message_recall_design.md>) — `现行`
 - [微信渠道接入设计（iLink ClawBot / 企微智能机器人）](<A-设计/wechat_channel_integration_design.md>) — `草案`
 
 ## B 落地方案（plan）
 
+- [SSE 消息推送实现计划](<B-落地方案/SSE 消息推送实现计划（执行蓝图）.md>) — `已完成`
+- [lark-cli 集成二期：绑定体验 + 用户身份 + WS 稳定性](<B-落地方案/lark-cli_集成二期.md>) — `已完成`
 - [微信 iLink 协议对齐重构方案](<B-落地方案/微信iLink协议对齐重构方案.md>) — `进行中`
 - [消息撤回与取消能力落地](<B-落地方案/消息撤回与取消能力.md>) — `已完成`
+- [聊天MVP](<B-落地方案/聊天MVP.md>) — `已完成`
+- [飞书P2P消息集成](<B-落地方案/飞书P2P消息集成.md>) — `已完成`
+- [飞书出站引用回复 Implementation Plan](<B-落地方案/飞书出站引用回复方案.md>) — `已完成`
 - [飞书链路对齐审查](<B-落地方案/飞书链路对齐审查.md>) — `已完成`
 - [飞书链路对齐重构方案](<B-落地方案/飞书链路对齐重构方案.md>) — `进行中`
 

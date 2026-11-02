@@ -178,9 +178,9 @@ class AgentRuntimeConfig {
 +ExternalAgentConfig external_config
 }
 class ExternalAgentConfig {
-<<enum>>
-Cli{command,args,work_dir,env,timeout_secs,prompt_template}
-Remote{endpoint,agent_name,auth_token,timeout_secs}
+<<enumeration>>
+Cli
+Remote
 }
 AgentRuntimeConfig --> ExternalAgentConfig : "包含"
 ```

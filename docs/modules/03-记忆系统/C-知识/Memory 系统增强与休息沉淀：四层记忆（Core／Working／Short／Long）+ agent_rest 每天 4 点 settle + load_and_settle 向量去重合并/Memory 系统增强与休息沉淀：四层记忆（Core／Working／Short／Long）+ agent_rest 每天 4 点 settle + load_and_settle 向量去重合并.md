@@ -37,8 +37,8 @@ source_files:
 - src/handlers/hr/agent/save_short_term_memory.rs#L19-L56
 - src/handlers/hr/agent/save_long_term_memory.rs#L21-L108
 - src/models/memory.rs#L158-L320
-- docs/archive/design-archive/memory_system_enhancement_design.md
-- docs/archive/plan-archive/唤醒上下文与睡眠约束.md
+- docs/modules/03-记忆系统/A-设计/memory_system_enhancement_design.md
+- docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md
 - docs/modules/03-记忆系统/C-知识/记忆沉淀机制.md
 - docs/modules/03-记忆系统/C-知识/四层记忆系统.md
 - docs/modules/03-记忆系统/C-知识/Agent 记忆系统.md
@@ -81,8 +81,8 @@ source_files:
 | [save_short_term_memory 神经工具](src/handlers/hr/agent/save_short_term_memory.rs#L19-L56) | 专用神经工具（参数极简） | 仅 summary/tags/task_id 三参数；注册 neural tag；Agent 唤醒工具列表含此项；create_memory 不注入 |
 | [save_long_term_memory 神经工具](src/handlers/hr/agent/save_long_term_memory.rs#L21-L108) | 专用神经工具（参数极简） | node + relations 一并创建；不存在的 target 跳过 warn；relations 上限保护 |
 | [四层记忆 PO 定义](src/models/memory.rs#L158-L320) | PO 实体 SSOT | ShortTermMemoryIndexPo（summary/tags/trace_ids/status）；LongTermKnowledgeNodePo（node_name/description/summary/tags/is_published）；MemoryStatus Forgotten(0)/Active(1)/Settled(2) |
-| [记忆系统增强 Design 三阶段](docs/archive/design-archive/memory_system_enhancement_design.md) | 为什么 / 6 条决策 | §决策 1：写入拆分；§决策 3：SystemDomain Cron；§决策 4：休息双轨；§决策 5：冲突合并策略 |
-| [唤醒上下文 Plan 落地快照](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) | 怎么做 + 结果 | §双层工具过滤机制 §ThinkingOptions 统一参数 §build_sleep_prompt 内聚约束 |
+| [记忆系统增强 Design 三阶段](docs/modules/03-记忆系统/A-设计/memory_system_enhancement_design.md) | 为什么 / 6 条决策 | §决策 1：写入拆分；§决策 3：SystemDomain Cron；§决策 4：休息双轨；§决策 5：冲突合并策略 |
+| [唤醒上下文 Plan 落地快照](docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md) | 怎么做 + 结果 | §双层工具过滤机制 §ThinkingOptions 统一参数 §build_sleep_prompt 内聚约束 |
 | [记忆沉淀机制 Wiki 长文](docs/modules/03-记忆系统/C-知识/记忆沉淀机制.md) | 人类百科 | §5 沉淀调度完整链路 §8 故障排查 |
 
 ---

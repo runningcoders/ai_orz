@@ -99,13 +99,13 @@ CONS --> CB
 
 ```mermaid
 sequenceDiagram
-participant Loop as "ProducerLoop(30s)"
+participant PL as "ProducerLoop(30s)"
 participant Prod as "A2aPollingProducer"
 participant Sink as "EventSink"
 participant Reg as "Registry"
 participant Cons as "A2aPollConsumer"
 participant DAO as "A2A 运行时 DAO"
-Loop->>Prod : claim(sink)
+PL->>Prod : claim(sink)
 Prod->>Prod : list_agents + 过滤 remote
 loop 每个 remote Agent
 Prod->>Sink : emit(A2aPollRequestedEvent)

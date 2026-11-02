@@ -34,12 +34,12 @@ source_files:
   - frontend/src/components/hud_palette.rs (HudPalette 调色板：HUD_ORANGE #FF8C00 / HUD_BLUE #00BFFF / HUD_GREEN #32CD32 / HUD_RED #FF4444；draw_glow_stroke(ctx, color, line_width) 加 box-shadow 光晕 blur 8px 渲染橙光条)
   - frontend/src/components/canvas_scene.rs#L112-L117 (measure_text_width：web-sys TextMetrics 精确测量，极端异常回退到字符数×字号×0.6 估算)
   - frontend/src/components/graph_canvas.rs#L21+ (measure_text_width 调用点：节点 label、tooltip、边标签)
-  - docs/archive/design-archive/canvas_rendering_playbook.md（§CanvasScene 统一渲染管线 §力导向参数 α 冷却规则 §橙光光晕 blur 值调优 §5 层 Canvas 节点叠放顺序）
+  - docs/modules/11-前端应用/A-设计/canvas_rendering_playbook.md（§CanvasScene 统一渲染管线 §力导向参数 α 冷却规则 §橙光光晕 blur 值调优 §5 层 Canvas 节点叠放顺序）
   - docs/modules/11-前端应用/A-设计/ui_design_system.md（§HUD 驾驶舱风格视觉规范 §DaisyUI 基础组件 + 自定义 HUD 组件融合方式 §30+ 主题的配色适配策略）
-  - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md（§LineChart 降采样算法 §时间轴月份刻度 §ChartScene 统一基类抽取）
-  - docs/archive/plan-archive/统计图表Phase2.md（§DonutChart 类目分环 §多系列折线叠加 §Dashboard 5指标卡片 + 2仪表盘组合页）
-  - docs/archive/plan-archive/统计图表第三期.md（§AopGauge 双刻度仪表盘 §KnowledgeGraph 种子节点推荐高亮 §recommend_seed_nodes 三因子分数映射到节点颜色）
-  - docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md（§GraphCanvas 组件两端复用：HR记忆搜索页 + Workspace工作台页 §种子节点推荐圆圈外发光）
+  - docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md（§LineChart 降采样算法 §时间轴月份刻度 §ChartScene 统一基类抽取）
+  - docs/modules/09-统计与监控/B-落地方案/统计图表Phase2.md（§DonutChart 类目分环 §多系列折线叠加 §Dashboard 5指标卡片 + 2仪表盘组合页）
+  - docs/modules/09-统计与监控/B-落地方案/统计图表第三期.md（§AopGauge 双刻度仪表盘 §KnowledgeGraph 种子节点推荐高亮 §recommend_seed_nodes 三因子分数映射到节点颜色）
+  - docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md（§GraphCanvas 组件两端复用：HR记忆搜索页 + Workspace工作台页 §种子节点推荐圆圈外发光）
   - docs/modules/08-搜索/C-知识/知识图谱可视化.md（HR 知识图谱页面：GraphCanvas + ForceLayout + 节点点击跳转 /hr/memory-search?id=）
   - docs/modules/11-前端应用/C-知识/图表组件.md（图表组件总览：LineChart/DonutChart/Gauge 三组件 + 使用模式 + 降采样与性能建议）
   - docs/modules/11-前端应用/C-知识/业务组件.md（业务组件：GraphCanvas/RuntimePanel/ChatSidePanel/MessageBubble 四件套 + HUD 风格示例）
@@ -129,7 +129,7 @@ source_files:
 | hud_palette.rs HudPalette | 橙光调色板 | const 4 主色 + draw_glow_stroke(&ctx, color, lw, blur: f32) 工具函数（先 shadow→描边→reset shadow→实线第二遍，重复代码 3 行通用） | 见 palette impl |
 
 **章节来源**
-- [canvas_rendering_playbook.md:L20-L80](docs/archive/design-archive/canvas_rendering_playbook.md#L20-L80)
+- [canvas_rendering_playbook.md:L20-L80](docs/modules/11-前端应用/A-设计/canvas_rendering_playbook.md#L20-L80)
 - [graph_canvas.rs:L1-L80](frontend/src/components/graph_canvas.rs#L1-L80)
 - [hud_palette.rs](frontend/src/components/hud_palette.rs)
 

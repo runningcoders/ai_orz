@@ -151,10 +151,10 @@ AgentCard --> AgentSkill : "包含多个"
 ```mermaid
 flowchart TD
 Start(["请求进入"]) --> Route{"路径匹配"}
-Route --> |/.well-known/agent.json| Card["get_agent_card()<br/>仅 RequestContext"]
-Route --> |/a2a| RPC["handle_jsonrpc()<br/>JWT + RequestContext"]
-Route --> |/a2a/subscribe| Sub["send_subscribe()<br/>JWT + RequestContext"]
-Route --> |/a2a/callback/{task_id}| CB["callback()<br/>仅 RequestContext"]
+Route -->|"/.well-known/agent.json"| Card["get_agent_card()<br/>仅 RequestContext"]
+Route -->|"/a2a"| RPC["handle_jsonrpc()<br/>JWT + RequestContext"]
+Route -->|"/a2a/subscribe"| Sub["send_subscribe()<br/>JWT + RequestContext"]
+Route -->|"/a2a/callback/{task_id}"| CB["callback()<br/>仅 RequestContext"]
 Card --> End(["返回 Agent Card"])
 RPC --> End
 Sub --> End

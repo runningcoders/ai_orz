@@ -5,7 +5,7 @@
 - [hnsw.rs](src/pkg/storage/hnsw.rs)
 - [vector.rs](src/pkg/storage/vector.rs)
 - [lance.rs](src/pkg/storage/lance.rs)
-- [vector_search_architecture.md](docs/archive/design-archive/vector_search_architecture.md)
+- [vector_search_architecture.md](docs/modules/08-搜索/A-设计/vector_search_architecture.md)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [vector.rs（模型定义）](src/models/vector.rs)
 </cite>
@@ -54,7 +54,7 @@ VS --> LANCE
 
 章节来源
 - [vector.rs:1-74](src/pkg/storage/vector.rs#L1-L74)
-- [vector_search_architecture.md:161-206](docs/archive/design-archive/vector_search_architecture.md#L161-L206)
+- [vector_search_architecture.md:161-206](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L161-L206)
 
 ## 核心组件
 - VectorStore trait：定义统一的向量存储接口，包括集合初始化、upsert、search、get、delete、clear_collection、flush 等。
@@ -101,33 +101,33 @@ Store->>Disk : Drop时兜底落盘
 classDiagram
 class HnswStore {
 -base_path : PathBuf
--collections : RwLock<HashMap<String, CollectionData>>
--collections_meta : RwLock<HashMap<String, CollectionMeta>>
--meta_dirty : RwLock<bool>
--flush_task : Option<JoinHandle>
+-collections : RwLock
+-collections_meta : RwLock
+-meta_dirty : RwLock
+-flush_task : Option
 +new() Result
 +with_path(base_path) Result
 +init_collection(collection, dimensions) Result
 +upsert(collection, id, params) Result
 +search(collection, query_vector, top_k) Result
-+get(collection, id) Result<Option<VectorRow>>
++get(collection, id) Result
 +delete(collection, id) Result
 +clear_collection(collection) Result
 +flush() Result
-+get_collection_model_provider_id(collection) Result<Option<String>>
++get_collection_model_provider_id(collection) Result
 +set_collection_model_provider_id(collection, model_provider_id) Result
 }
 class CollectionData {
--vectors : HashMap<String, (FloatPoint, VectorRow)>
--deleted : HashSet<String>
+-vectors : HashMap
+-deleted : HashSet
 -dimensions : i32
--cached_index : Option<HnswMap<FloatPoint, String>>
+-cached_index : Option
 -dirty : bool
 +new(dimensions) Self
 +rebuild() void
 }
 class FloatPoint {
--data : Vec<f32>
+-data : Vec
 +distance(other) f32
 }
 HnswStore --> CollectionData : "管理多个集合"
@@ -239,7 +239,7 @@ Store->>FS : 兜底落盘
 章节来源
 - [vector.rs:76-235](src/pkg/storage/vector.rs#L76-L235)
 - [lance.rs:1-294](src/pkg/storage/lance.rs#L1-L294)
-- [vector_search_architecture.md:178-184](docs/archive/design-archive/vector_search_architecture.md#L178-L184)
+- [vector_search_architecture.md:178-184](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L178-L184)
 
 ## 依赖关系分析
 - HnswStore 依赖 instant-distance 库提供 HnswMap/Builder/Search；使用 bincode 进行序列化；使用 tokio::sync::RwLock 保证并发安全；使用 chrono 记录时间戳。
@@ -283,7 +283,7 @@ VS --> MODELS["models/vector.rs"]
   - 针对 HnswStore 的性能评估，可设计压测脚本测量 upsert/search 耗时与重建频率，结合日志观察 dirty 标志变化与落盘周期。
 
 章节来源
-- [vector_search_architecture.md:425-463](docs/archive/design-archive/vector_search_architecture.md#L425-L439)
+- [vector_search_architecture.md:425-463](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L425-L439)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 故障排查指南
@@ -301,7 +301,7 @@ VS --> MODELS["models/vector.rs"]
 - [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
 - [hnsw.rs:344-388](src/pkg/storage/hnsw.rs#L344-L388)
 - [hnsw.rs:403-430](src/pkg/storage/hnsw.rs#L403-L430)
-- [vector_search_architecture.md:448-463](docs/archive/design-archive/vector_search_architecture.md#L439-L439)
+- [vector_search_architecture.md:448-463](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L439-L439)
 
 ## 结论
 HnswStore 提供了纯 Rust 的 HNSW 向量存储后端，具备懒重建、余弦距离、bincode 持久化与后台落盘能力，适合中小规模与零依赖场景。通过 VectorStore 抽象，上层可无缝切换后端。与 SQLite VSS 相比，HnswStore 更轻量、易部署；与 LanceDB 相比，后者更适合大规模生产负载。建议在业务侧合理拆分集合、控制过期策略与 top_k，并结合后台任务与兜底落盘保障数据一致性。
@@ -314,7 +314,7 @@ HnswStore 提供了纯 Rust 的 HNSW 向量存储后端，具备懒重建、余�
   - SqliteVssStore：[vector.rs:76-235](src/pkg/storage/vector.rs#L76-L235)
   - LanceVectorStore：[lance.rs:1-294](src/pkg/storage/lance.rs#L1-L294)
 - 架构与设计文档：
-  - 向量搜索架构：[vector_search_architecture.md:161-206](docs/archive/design-archive/vector_search_architecture.md#L161-L206)
+  - 向量搜索架构：[vector_search_architecture.md:161-206](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L161-L206)
   - HNSW 增强计划：（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ---

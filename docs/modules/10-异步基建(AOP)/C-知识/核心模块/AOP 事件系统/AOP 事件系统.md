@@ -19,9 +19,9 @@
 - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/modules/10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md)
 
 **本文关联的文档（单向引用 v2.1：活文档 → 历史/兄弟文档）**
-- [消费者与生产者架构设计](docs/archive/design-archive/consumer_architecture.md) — AOP 生产消费异步框架：消费者注册顺序 + Sync/Async 双模式 + 收尾反查
-- [事件总线设计（归档参考）](docs/archive/design-archive/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃，仅对比参考
-- [Agent 循环驱动引擎 Plan](docs/archive/plan-archive/agent_loop_engine_plan.md) — DomainEvent 8 类 → AgentLoopConsumer 唤醒 + 三层兜底架构
+- [消费者与生产者架构设计](docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md) — AOP 生产消费异步框架：消费者注册顺序 + Sync/Async 双模式 + 收尾反查
+- [事件总线设计（归档参考）](docs/modules/10-异步基建(AOP)/A-设计/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃，仅对比参考
+- [Agent 循环驱动引擎 Plan](docs/modules/02-Agent运行时/B-落地方案/Agent 循环驱动引擎实施计划.md) — DomainEvent 8 类 → AgentLoopConsumer 唤醒 + 三层兜底架构
 - [RAG 知识卡：Domain 内部事件与消费者全链路](docs/modules/10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md) — EventTopic 16 大类 + `Event` trait 五字段约束
 </cite>
 

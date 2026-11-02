@@ -24,11 +24,11 @@ source_files:
 - 'common/src/api/project_task.rs '
 - common/src/api/task.rs（CreateTaskRequest/UpdateTaskRequest.dependencies 字段注释：存在前置时必须填写，留空/缺省表示可立即开工；update 传值整体替换，空数组清空）
 - src/handlers/project/task/create_task.rs（create_task 工具 description：dependencies 为构成 DAG 的前置任务 ID，存在依赖时 MUST 填写，否则被视为可立即开工、错序执行）
-- docs/archive/design-archive/task_design.md
-- docs/archive/design-archive/project_design.md
-- docs/archive/design-archive/project_management_design.md
-- docs/archive/plan-archive/项目任务增强.md
-- docs/archive/plan-archive/后台任务管理页面与列表清理接口重构.md
+- docs/modules/05-任务与项目/A-设计/task_design.md
+- docs/modules/05-任务与项目/A-设计/project_design.md
+- docs/modules/05-任务与项目/A-设计/project_management_design.md
+- docs/modules/05-任务与项目/B-落地方案/项目任务增强.md
+- docs/modules/11-前端应用/B-落地方案/后台任务管理页面与列表清理接口重构.md
 - docs/modules/05-任务与项目/C-知识/任务管理.md
 - docs/modules/05-任务与项目/C-知识/任务生命周期管理.md
 - docs/modules/05-任务与项目/C-知识/执行计划与结果追踪.md

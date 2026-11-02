@@ -13,7 +13,7 @@
 - [src/handlers/a2a/mapper.rs](src/handlers/a2a/mapper.rs)
 - [src/router.rs](src/router.rs)
 - [common/src/config.rs](common/src/config.rs)
-- [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
+- [docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_design.md](docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_design.md)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [src/middleware/a2a_auth.rs](src/middleware/a2a_auth.rs)
 - [src/middleware/federation_identity.rs](src/middleware/federation_identity.rs)
@@ -333,7 +333,7 @@ A2A Server 以最小侵入方式将 ai_orz 暴露为标准 A2A 协议服务：�
 
 章节来源
 - [common/src/config.rs:22-59](common/src/config.rs#L22-L59)
-- [docs/archive/design-archive/a2a_server_design.md:421-433](docs/archive/design-archive/a2a_server_design.md#L421-L433)
+- [docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_design.md:421-433](docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_design.md#L421-L433)
 
 ### 端点清单
 - GET /.well-known/agent.json：公开，无需认证
@@ -359,4 +359,4 @@ A2A Server 以最小侵入方式将 ai_orz 暴露为标准 A2A 协议服务：�
 
 章节来源
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
-- [docs/archive/design-archive/a2a_server_design.md:104-131](docs/archive/design-archive/a2a_server_design.md#L104-L131)
+- [docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_design.md:104-131](docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_design.md#L104-L131)

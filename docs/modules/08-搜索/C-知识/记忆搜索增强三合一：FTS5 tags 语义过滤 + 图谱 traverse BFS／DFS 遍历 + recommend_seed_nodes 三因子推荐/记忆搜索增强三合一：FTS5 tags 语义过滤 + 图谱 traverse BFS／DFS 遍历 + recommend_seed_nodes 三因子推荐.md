@@ -25,9 +25,9 @@ source_files:
 - common/src/models/graph.rs
 - src/models/memory.rs
 - migrations/
-- docs/archive/design-archive/memory_search_enhancement_design.md
-- docs/archive/design-archive/vector_search_architecture.md
-- docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md
+- docs/modules/08-搜索/A-设计/memory_search_enhancement_design.md
+- docs/modules/08-搜索/A-设计/vector_search_architecture.md
+- docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md
 - docs/modules/03-记忆系统/C-知识/长期记忆 (Long-term Memory).md (Long-term Memory)/知识关系管理.md
 - docs/modules/08-搜索/C-知识/知识图谱搜索.md
 - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md
@@ -58,8 +58,8 @@ source_files:
 | [DAL recommend_seed_nodes 度数排序](src/service/dao/memory/sqlite/knowledge.rs) | 种子节点推荐算法 | ① query_knowledge_nodes limit=500 上限保护（status=Active、排除 Forgotten）→ ② list_relations_batch 一次拉关系 → ③ HashMap 统计入/出边度数 → ④ degree=入+出 倒序、度数持平 `is_published` 决胜 → 倒序 truncate(limit) |
 | [DAL traverse_knowledge_graph 图谱遍历](src/service/dal/memory/graph.rs) | BFS/DFS 策略实现 | BFS levels 深度逐层返回 + visited 去重；DFS 栈批量预取 edge_cache + IN 列表 400 分块（IN_CLAUSE_CHUNK）防 SQLite 999 参数溢出 |
 | [Handler search_memory 参数解析](src/handlers/hr/agent/search_memory.rs#L24-L100) | HTTP + 神经工具双入口 | traversal_depth 默认 0（兼容旧调用）；traversal_strategy BFS/DFS；tags 过滤走 Vec<String> JSON 解析 |
-| [搜索增强 Design 决策表](docs/archive/design-archive/memory_search_enhancement_design.md) | 为什么 / 关键决策 5 条 | §决策 1：unicode61 vs trigram 分词二分；§决策 3：关系搜索 JOIN 方式；§决策 4：向量阈值参数化 |
-| [推荐起点 Plan 落地快照](docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md) | 怎么做 + 结果 | 5 步度数统计流程 + KnowledgeGraph 组件两端复用 |
+| [搜索增强 Design 决策表](docs/modules/08-搜索/A-设计/memory_search_enhancement_design.md) | 为什么 / 关键决策 5 条 | §决策 1：unicode61 vs trigram 分词二分；§决策 3：关系搜索 JOIN 方式；§决策 4：向量阈值参数化 |
+| [推荐起点 Plan 落地快照](docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md) | 怎么做 + 结果 | 5 步度数统计流程 + KnowledgeGraph 组件两端复用 |
 | [知识图谱搜索 Wiki 长文](docs/modules/08-搜索/C-知识/知识图谱搜索.md) | 人类百科 | §5 搜索算法详解 §8 故障排查 |
 
 ---

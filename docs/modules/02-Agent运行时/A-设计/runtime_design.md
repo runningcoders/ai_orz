@@ -49,11 +49,11 @@ related:
 > - [thinking_task_policy_engine_design.md](./thinking_task_policy_engine_design.md) — 策略引擎与运行时可视化配套设计
 > - [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) — 两阶段唤醒设计总纲（Phase1 IA + Phase2 执行）
 > - 【② Plan 落地 6 份】
->   - [Agent运行时上下文扩展.md](docs/archive/plan-archive/Agent运行时上下文扩展.md) — task_id/project_id 双字段 + BusyGuard RAII
->   - [前端运行时观测面板.md](docs/archive/plan-archive/前端运行时观测面板.md) — RuntimePanel 组件 + Workspace 运行中 Agent 卡片
->   - [两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/archive/plan-archive/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) — IntentAnalyze Phase1 + Awaken Phase2 + 6 级 JSON 降级
->   - [策略引擎与思考运行时策略增强.md](docs/archive/plan-archive/策略引擎与思考运行时策略增强.md) — Policy trait + PolicyGroup + policy_set! + AgentThinkRuntime
->   - [运行时API可观测与退出原因字段.md](docs/archive/plan-archive/运行时API可观测与退出原因字段.md) — 3 接口 runtime-status/cancel-thinking/runtime-list + exit_reason 维度
+>   - [Agent运行时上下文扩展.md](docs/modules/02-Agent运行时/B-落地方案/Agent运行时上下文扩展.md) — task_id/project_id 双字段 + BusyGuard RAII
+>   - [前端运行时观测面板.md](docs/modules/11-前端应用/B-落地方案/前端运行时观测面板.md) — RuntimePanel 组件 + Workspace 运行中 Agent 卡片
+>   - [两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/modules/02-Agent运行时/B-落地方案/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) — IntentAnalyze Phase1 + Awaken Phase2 + 6 级 JSON 降级
+>   - [策略引擎与思考运行时策略增强.md](docs/modules/02-Agent运行时/B-落地方案/策略引擎与思考运行时策略增强.md) — Policy trait + PolicyGroup + policy_set! + AgentThinkRuntime
+>   - [运行时API可观测与退出原因字段.md](docs/modules/02-Agent运行时/B-落地方案/运行时API可观测与退出原因字段.md) — 3 接口 runtime-status/cancel-thinking/runtime-list + exit_reason 维度
 >   - 占位：待文档链接统一+DocLinkClassifier 关联 runtime vNext
 > - 【③ Wiki 长文 7 篇】
 >   - [运行时领域.md](docs/modules/02-Agent运行时/C-知识/运行时领域.md) — Runtime 领域四方法入口（wake/awaken/sleep/analyze）
@@ -72,11 +72,11 @@ related:
 >
 > ⭐ **落地索引（四类互引）**
 > - 对应 Plan 6 份落地快照：
->   - [Agent运行时上下文扩展.md](docs/archive/plan-archive/Agent运行时上下文扩展.md) — task_id/project_id 双字段 + 三态 FSM + BusyGuard RAII
->   - [前端运行时观测面板.md](docs/archive/plan-archive/前端运行时观测面板.md) — RuntimePanel 组件 + 工作台运行中 Agent 卡片
->   - [两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/archive/plan-archive/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) — IntentAnalyze 先理解 + Awaken 正式执行 + 6 级 JSON 降级
->   - [策略引擎与思考运行时策略增强.md](docs/archive/plan-archive/策略引擎与思考运行时策略增强.md) — Policy trait/PolicyGroup 组合宏/policy_set + AgentThinkRuntime
->   - [运行时API可观测与退出原因字段.md](docs/archive/plan-archive/运行时API可观测与退出原因字段.md) — runtime-status/cancel-thinking/runtime-list 接口 + exit_reason 统计维度
+>   - [Agent运行时上下文扩展.md](docs/modules/02-Agent运行时/B-落地方案/Agent运行时上下文扩展.md) — task_id/project_id 双字段 + 三态 FSM + BusyGuard RAII
+>   - [前端运行时观测面板.md](docs/modules/11-前端应用/B-落地方案/前端运行时观测面板.md) — RuntimePanel 组件 + 工作台运行中 Agent 卡片
+>   - [两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/modules/02-Agent运行时/B-落地方案/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) — IntentAnalyze 先理解 + Awaken 正式执行 + 6 级 JSON 降级
+>   - [策略引擎与思考运行时策略增强.md](docs/modules/02-Agent运行时/B-落地方案/策略引擎与思考运行时策略增强.md) — Policy trait/PolicyGroup 组合宏/policy_set + AgentThinkRuntime
+>   - [运行时API可观测与退出原因字段.md](docs/modules/02-Agent运行时/B-落地方案/运行时API可观测与退出原因字段.md) — runtime-status/cancel-thinking/runtime-list 接口 + exit_reason 统计维度
 >   - 占位：待思考运行时 vNext 独立 plan 补充（如需）
 > - 对应 Wiki 长文 7 篇（见上方 【③ Wiki 长文 7 篇】）
 > - 对应 RAG 卡 5 张（见上方 【④ RAG 卡 5 张】）
@@ -384,7 +384,7 @@ ThinkResult::ToolCall?
 > - **中层**：`call_tool`——直接执行层，转发到底层 DAO
 > - **底层**：`ToolCallDao.execute` + `decorate`——装饰器收敛，记录真实 ToolCallEntry trace
 >
-> **命名清理（2026-08-05）**：原 `ToolCallDao::call_manual` 重命名为 `ToolCallDao::execute`，消除"manual"语义重载（旧名误导：实际所有工具都走这里，不分 Auto/Manual）。同时删除 `ToolDal::call_manual` / `McpToolDal::call_manual` 纯转发方法，`call_tool` 直接调 DAO。详见 `docs/archive/design-archive/tool_design.md` "工具调用架构演进"。
+> **命名清理（2026-08-05）**：原 `ToolCallDao::call_manual` 重命名为 `ToolCallDao::execute`，消除"manual"语义重载（旧名误导：实际所有工具都走这里，不分 Auto/Manual）。同时删除 `ToolDal::call_manual` / `McpToolDal::call_manual` 纯转发方法，`call_tool` 直接调 DAO。详见 `docs/modules/06-工具与技能/A-设计/tool_design.md` "工具调用架构演进"。
 >
 > **同步 vs 异步 Manual**：`execute_manual` 根据 `tool.po.config.dispatch_mode` 选择 internal 工具——`sync`（默认）走 `request_tool_call` 在当前轮内通过 `call_tool` 同步执行并返回结果；`async` 走 `send_tool_call_message` 派发消息，结果在下一轮 awaken 送达。Agent 不直接调用这两个 internal 工具。
 

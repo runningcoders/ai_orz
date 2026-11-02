@@ -6,18 +6,23 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 84 篇：A 设计 3 · B 落地方案 2 · C 知识 79。
+本模块共 89 篇：A 设计 5 · B 落地方案 5 · C 知识 79。
 
 ## A 设计（design）
 
+- [common 统一错误类型设计](<A-设计/common_error_type.md>) — `已废弃`
 - [日志系统设计文档](<A-设计/logging_design.md>) — `现行`
 - [模型访问模式（access_mode）UI 设计规范](<A-设计/model_provider_access_mode_design.md>) — `现行`
+- [Seed 配置迁移中心](<A-设计/seed_config_migration.md>) — `已废弃`
 - [SQLx 0.8 + SQLite 开发规范与最佳实践](<A-设计/sqlx_guide.md>) — `现行`
 
 ## B 落地方案（plan）
 
+- [Clippy Warning Cleanup Implementation Plan](<B-落地方案/Clippy Warning Cleanup（执行蓝图）.md>) — `已完成`
+- [Seed 配置迁移中心 实施计划](<B-落地方案/Seed 配置迁移中心 实施计划（执行蓝图）.md>) — `已完成`
 - [容器化与网关部署方案](<B-落地方案/容器化与网关部署方案.md>) — `已完成`
 - [系统初始化模型配置策略调整](<B-落地方案/系统初始化模型配置策略调整.md>) — `已完成`
+- [系统管理工具（备份 + 日志查询 + 角色权限）实现计划](<B-落地方案/系统管理工具（备份 + 日志查询 + 角色权限）实现计划（执行蓝图）.md>) — `已完成`
 
 ## C 知识（wiki）
 
@@ -35,7 +40,7 @@
 - [Rust Workspace + NPM 多语言依赖管理（Cargo.lock / package-lock.json / SQLx 离线构建）](<C-知识/Rust Workspace + NPM 多语言依赖管理（Cargo.lock _ package-lock.json _ SQLx 离线构建）/Rust Workspace + NPM 多语言依赖管理（Cargo.lock _ package-lock.json _ SQLx 离线构建）.md>)
 - [SQLite VSS 存储后端](<C-知识/SQLite VSS 存储后端.md>)
 - [System模块处理器](<C-知识/System模块处理器.md>)
-- [AI Orz 文档编写与精简归档 Skill（规范全文版）](<C-知识/ai-orz-doc-maintainer.md>)
+- [AI Orz 设计与落地方案文档维护 Skill（规范全文版）](<C-知识/ai-orz-doc-maintainer.md>)
 - [AI Orz Wiki 维护 Skill（规范全文版）](<C-知识/ai-orz-wiki-maintainer.md>)
 - [pkg 基建统一：pkg/http + pkg/process/exec + pkg/ws 单一原语](<C-知识/pkg 基建统一：pkg/http + pkg/process/exec + pkg/ws 单一原语/pkg 基建统一：pkg/http + pkg/process/exec + pkg/ws 单一原语.md>)
 - [scripts/ 归置 + Makefile 统一入口 + 60+ 引用全量修正](<C-知识/scripts 归置 + Makefile 统一入口 + 60+ 引用全量修正/scripts 归置 + Makefile 统一入口 + 60+ 引用全量修正.md>)

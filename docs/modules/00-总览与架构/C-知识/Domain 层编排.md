@@ -18,11 +18,11 @@
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [项目领域架构设计](docs/archive/design-archive/project_design.md) — Project Domain 分层架构设计
-- [项目管理增强设计](docs/archive/design-archive/project_management_design.md) — Project Domain 六子模块职责边界 + Domain 层纯透传与按需注入区分
+- [项目领域架构设计](docs/modules/05-任务与项目/A-设计/project_design.md) — Project Domain 分层架构设计
+- [项目管理增强设计](docs/modules/05-任务与项目/A-设计/project_management_design.md) — Project Domain 六子模块职责边界 + Domain 层纯透传与按需注入区分
 
 **② 落地计划（Plan）**：
-- [项目任务增强](docs/archive/plan-archive/项目任务增强.md) — Project Domain 从纯透传 DAL 扩展为按需聚合（task_graph/artifacts/progress_summary）
+- [项目任务增强](docs/modules/05-任务与项目/B-落地方案/项目任务增强.md) — Project Domain 从纯透传 DAL 扩展为按需聚合（task_graph/artifacts/progress_summary）
 
 **④ RAG 原子知识卡**：
 - [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/modules/05-任务与项目/C-知识/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合.md) — ProjectManage 六能力分层映射（ProjectManage/TaskManage/TaskGraphManage/ArtifactManage/ProgressManage/ContextManage）+ 红线（禁止 Domain 调 Domain）

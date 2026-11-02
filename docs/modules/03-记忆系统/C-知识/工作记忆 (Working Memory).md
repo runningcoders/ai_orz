@@ -232,17 +232,17 @@ EmbedAndUpsert --> End
 
 ```mermaid
 sequenceDiagram
-participant Loop as "思考循环"
+participant PL as "思考循环"
 participant Domain as "RuntimeMemory"
 participant DAL as "MemoryDalImpl"
 participant State as "AgentRuntimeStateManager"
-Loop->>Domain : get_recent_context(agent_id, limit)
+PL->>Domain : get_recent_context(agent_id, limit)
 Domain->>DAL : query(MemoryQuery{agent_id, ShortTerm, limit})
 DAL-->>Domain : Vec<Memory>
-Domain-->>Loop : 近期短期记忆
-Loop->>State : set_busy(message_id)
-Note over Loop,State : 忙碌期间禁止沉淀
-Loop->>State : set_idle()
+Domain-->>PL : 近期短期记忆
+PL->>State : set_busy(message_id)
+Note over PL,State : 忙碌期间禁止沉淀
+PL->>State : set_idle()
 ```
 
 图表来源
@@ -369,8 +369,8 @@ R["AgentRuntimeStateManager"] --> H
 
 ### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
 #### ① Design 决策快照
-- [memory_system_enhancement_design.md](docs/archive/design-archive/memory_system_enhancement_design.md) — 决策 4 休息双轨：上下文过载 N 轮小憩（清 Working 内存，不做长期沉淀）+ 每天 4 点睡眠（完整 Short→Long 沉淀）
+- [memory_system_enhancement_design.md](docs/modules/03-记忆系统/A-设计/memory_system_enhancement_design.md) — 决策 4 休息双轨：上下文过载 N 轮小憩（清 Working 内存，不做长期沉淀）+ 每天 4 点睡眠（完整 Short→Long 沉淀）
 #### ② Plan 落地快照
-- [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — ThinkingOptions.for_scene(Settle) 仅 Working/Short 记忆参与上下文；Resting 状态清 Working 不影响 Long-term
+- [唤醒上下文与睡眠约束.md](docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md) — ThinkingOptions.for_scene(Settle) 仅 Working/Short 记忆参与上下文；Resting 状态清 Working 不影响 Long-term
 #### ④ RAG 原子知识卡
 - [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/modules/03-记忆系统/C-知识/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md) — §3 休息触发机制（`Resting` 唯一来源 = 每日睡眠沉淀；上下文过载走 `compact_context` 不属于休息）

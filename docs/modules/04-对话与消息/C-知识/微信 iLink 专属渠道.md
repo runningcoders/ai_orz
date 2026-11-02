@@ -26,7 +26,7 @@
 **本文关联三类文档**
 - 【① Design 决策快照】
   - [wechat_channel_integration_design.md](docs/modules/04-对话与消息/A-设计/wechat_channel_integration_design.md) — iLink 协议设计 + 分层架构（如有）
-  - [message_channel_design.md](docs/archive/design-archive/message_channel_design.md) — 消息渠道入站适配中台架构
+  - [message_channel_design.md](docs/modules/04-对话与消息/A-设计/message_channel_design.md) — 消息渠道入站适配中台架构
 - 【② Plan 落地快照】（如有）
   - [微信 iLink 专属渠道闭环.md](docs/modules/04-对话与消息/C-知识/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程.md) — 阶段一完整闭环落地快照
 - 【④ RAG 原子知识卡】

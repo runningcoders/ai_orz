@@ -481,8 +481,8 @@ A-->>C : AwakeningResult
 
 ### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
 #### ① Design 决策快照
-- [intent_aware_two_stage_awaken_design.md](docs/archive/design-archive/intent_aware_two_stage_awaken_design.md) — Runtime 两阶段编排总纲：RuntimeDomain::analyze_input_intent 独立可调用 trait + awaken 内部 Phase1/Phase2 数据流边界
+- [intent_aware_two_stage_awaken_design.md](docs/modules/02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md) — Runtime 两阶段编排总纲：RuntimeDomain::analyze_input_intent 独立可调用 trait + awaken 内部 Phase1/Phase2 数据流边界
 #### ② Plan 落地快照
-- [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — ThinkingOptions scene 分发 + awaken/sleep_and_settle 签名统一
+- [唤醒上下文与睡眠约束.md](docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md) — ThinkingOptions scene 分发 + awaken/sleep_and_settle 签名统一
 #### ④ RAG 原子知识卡
 - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/modules/02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md) — §2 RuntimeDomain trait 方法签名表 + §3 数据流（Phase1/1.5/2 三步串联 + Prompt 仅供参考原则）

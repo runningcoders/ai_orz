@@ -28,10 +28,10 @@
 
 **本文关联三类文档**
 - 【① Design 决策快照】
-  - [message_channel_design.md](docs/archive/design-archive/message_channel_design.md) — §2 凭证加密策略 + §4 渠道引用检查（Lark 被引用拒删）
-  - [lark_cli_integration.md](docs/archive/design-archive/lark_cli_integration.md) — §四 WS 移交 + 清 HOME lark-cli config + §二 主密钥管理
+  - [message_channel_design.md](docs/modules/04-对话与消息/A-设计/message_channel_design.md) — §2 凭证加密策略 + §4 渠道引用检查（Lark 被引用拒删）
+  - [lark_cli_integration.md](docs/modules/04-对话与消息/A-设计/lark_cli_integration.md) — §四 WS 移交 + 清 HOME lark-cli config + §二 主密钥管理
 - 【② Plan 落地快照（真实定稿，非占位）】
-  - [身份凭证Domain统一CRUD重构.md](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md) — 完整 7 章：重构目标/架构思路/涉及文件清单/分发点速查表/验收清单/执行结果摘要/后续扩展路径4步模板
+  - [身份凭证Domain统一CRUD重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — 完整 7 章：重构目标/架构思路/涉及文件清单/分发点速查表/验收清单/执行结果摘要/后续扩展路径4步模板
 - 【④ RAG 原子知识卡】
   - [身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立](docs/modules/01-组织与权限/C-知识/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md)
   - [身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用](docs/modules/01-组织与权限/C-知识/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md)
@@ -47,14 +47,12 @@
 - [身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）](docs/modules/01-组织与权限/C-知识/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md) — §红线 1 新增凭证类型必须 4 处同步改（模型/领域/处理/前端）；§红线 5 GITHUB_PAT 凭证禁止明文日志输出
 - [GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页](docs/modules/06-工具与技能/C-知识/GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页/GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页.md) — Level3 兄弟卡：GITHUB_PAT 凭证存储复用身份 Domain，凭证优先级 chain（Domain → env fallback）
 #### ① 设计文档（Design，本次追加占位）：
-- docs/archive/design-archive/github_integration_subsystem.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
 #### ② 落地计划（Plan，本次追加占位）：
-- docs/archive/plan-archive/github_integration_gh_cli_credential_crud_and_frontend.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
 </cite>
 
 ## 更新摘要
 **2026-08-24 更新**：新增 GenericToken + platform 二元匹配凭据机制；搜索工具（Tavily/豆包搜索）统一使用 GenericToken 类型；新增通用令牌 Handler 链路；前端新增通用 Token 管理区块。
-**Batch2 2026-08-15 新建**：对应 `docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md`（2026-08-15 验收通过的重构落地项目），系统化说明：common 模型 6 行为方法 + CredentialDetailPatch 三态补丁（模型层信息下沉）、FinanceDomain IdentityCredentialManage trait 封顶 5 统一方法 + 2 Cmd + match kind 分发生命周期副作用（lark WS 移交/渠道引用拒删/gh_cli 清登录态）、8 Handler 迁移调用方式（DTO 零改动/前端零改动）、AES-256-GCM 闭包注入加密（common 零依赖 crypto，MASTER_KEY 从 env 加载）四大主题完整链路。§8 Troubleshooting 4 条，cite 区完整 4 类互引（2 Design + 真实 Plan + 4 RAG + 3 关联长文）。
+**Batch2 2026-08-15 新建**：对应 `docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md`（2026-08-15 验收通过的重构落地项目），系统化说明：common 模型 6 行为方法 + CredentialDetailPatch 三态补丁（模型层信息下沉）、FinanceDomain IdentityCredentialManage trait 封顶 5 统一方法 + 2 Cmd + match kind 分发生命周期副作用（lark WS 移交/渠道引用拒删/gh_cli 清登录态）、8 Handler 迁移调用方式（DTO 零改动/前端零改动）、AES-256-GCM 闭包注入加密（common 零依赖 crypto，MASTER_KEY 从 env 加载）四大主题完整链路。§8 Troubleshooting 4 条，cite 区完整 4 类互引（2 Design + 真实 Plan + 4 RAG + 3 关联长文）。
 **2026-08-16 增量更新**：追加 T3（身份凭证统一链路总卡，Level4 总卡-子卡关系）与 T4（GitHub 集成 GITHUB_PAT 凭证复用）2 张 RAG 卡互引；cite 区补 GitHub 集成子系统 design/plan 规范占位；§5 FinanceDomainImpl identity_credential_manage 章节来源行号降级（因 gh_cli 凭证联动副作用 match arm 新增导致行号漂移，优先降级为无行号范围引用）。
 
 ## 简介
@@ -102,7 +100,7 @@ PO（UserPo identity_credentials TEXT 列）→ SQLite
 - [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto/mod.rs#L1-L120)（加密原语）
 
 **章节来源**
-- [docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md §二 架构思路](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md#L30-L56)
+- [docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md §二 架构思路](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md#L30-L56)
 
 ## 核心组件
 - **UserIdentityCredentials 顶层库结构**：items 列表 + 2 默认槽位（default_credential_id / default_github_credential_id）；parse/to_column_value 对齐「空串=无凭证 + 非空=JSON」DDL 默认值；find_by_id / remove_by_id / set_default_for / clear_default_for / resolve_lark_credential_ref / resolve_github_credential 6 统一查询/默认/校验方法。
@@ -149,7 +147,7 @@ DB --> CH --> DEC
 - [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto/mod.rs#L1-L120)
 
 **章节来源**
-- [docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md §五 验收清单 + §六 执行结果摘要](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md#L108-L128)
+- [docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md §五 验收清单 + §六 执行结果摘要](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md#L108-L128)
 
 ## 详细组件分析
 
@@ -171,7 +169,7 @@ DB --> CH --> DEC
 
 **章节来源**
 - [src/service/domain/finance/identity_credential.rs:34-Lm](src/service/domain/finance/identity_credential.rs#L34-L196)
-- [docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md §四 类型分发速查表](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md#L84-L104)
+- [docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md §四 类型分发速查表](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md#L84-L104)
 
 ### 三、Handler 8 文件迁移（DTO 零改动 + 3 态补丁转换规则）
 - **保持 8 Handler 文件颗粒度 = 凭证类型颗粒度**：lark/github 分目录独立（新增 SlackToken 时复制 github 目录即可）；禁止合并成「通用 create_credential Handler」（避免 Request body 变 HashMap）。
@@ -193,7 +191,7 @@ DB --> CH --> DEC
 **章节来源**
 - [src/pkg/crypto.rs:Ln-Lm](src/pkg/crypto/mod.rs#L1-L120)
 - [src/pkg/config.rs:Ln-Lm](src/config.rs#L1-L80)（MASTER_KEY 加载校验）
-- [docs/archive/design-archive/message_channel_design.md §2](docs/archive/design-archive/message_channel_design.md#L100-L150)（为什么选 AES-256-GCM）
+- [docs/modules/04-对话与消息/A-设计/message_channel_design.md §2](docs/modules/04-对话与消息/A-设计/message_channel_design.md#L100-L150)（为什么选 AES-256-GCM）
 
 ## 依赖关系分析
 - **单向依赖（无环）**：Handlers → Domain.identity_credential_manage → (common 模型 + pkg/crypto(通过闭包)) → DAL（UserDal / LarkChannelDal）→ DAO → SQLite / 外部 API

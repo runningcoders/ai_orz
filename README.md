@@ -194,7 +194,7 @@ make wiki-stale    # 诊断：文档里引用的失效代码路径
 
 ## 文档
 
-> 📌 **内容脉络**：知识库按 15 个能力域拆成 `A-设计`（为什么）/ `B-落地方案`（要去哪）/ `C-知识`（是什么），统一在 [docs/modules/](./docs/modules/) 下；历史方案冻结在 [docs/archive/](./docs/archive/)（不拆分、不修改）。旧的四象限目录 `docs/wiki/`、`docs/design/`、`docs/plan/` 已于 2026-11 全部并入模块体系。
+> 📌 **内容脉络**：知识库按 15 个能力域拆成 `A-设计`（为什么）/ `B-落地方案`（要去哪）/ `C-知识`（是什么），统一在 [docs/modules/](./docs/modules/) 下；被取代的旧设计与旧方案按其能力域留在对应模块的 `A-设计` / `B-落地方案`，用 `status: 已废弃` / `已完成` 表达生命周期，不再单独设归档目录。旧的四象限目录 `docs/wiki/`、`docs/design/`、`docs/plan/` 已于 2026-11 全部并入模块体系。
 
 - 文档站与四张架构图已上移到 **文首「先看图 · 再看字」**，此处只列文字文档。
 
@@ -209,6 +209,8 @@ make wiki-stale    # 诊断：文档里引用的失效代码路径
 | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发必读**：分层架构实践 + 反模式避坑 |
 | [docs/CODE_STANDARDS.md](./docs/CODE_STANDARDS.md) | 编码规范 SSOT（命名 / 分层 / 宏 / 错误 / 日志 / 分页）|
 | [docs/memory_design.md](./docs/memory_design.md) | 四层记忆系统设计（模块 03 的"为什么"）|
+| [ai-orz-doc-maintainer.md](./docs/modules/12-基础设施与部署/C-知识/ai-orz-doc-maintainer.md) | **写文档 Skill**：A-设计 / B-落地方案 全生命周期 + superpowers 蓝图精简（注册版在 `.trae/skills/`）|
+| [ai-orz-wiki-maintainer.md](./docs/modules/12-基础设施与部署/C-知识/ai-orz-wiki-maintainer.md) | **同步代码到知识库 Skill**：C-知识 长文 + RAG 卡 维护规范（注册版在 `.trae/skills/`）|
 | [scripts/README.md](./scripts/README.md) | 运维脚本地图与「一处实现」规则 |
 
 **设计文档精选**（完整清单见 [docs/modules/INDEX.md](./docs/modules/INDEX.md)，`status` 列标注是否生效）：

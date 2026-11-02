@@ -6,7 +6,20 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 4 篇：C 知识 4。
+本模块共 11 篇：A 设计 2 · B 落地方案 5 · C 知识 4。
+
+## A 设计（design）
+
+- [浏览器操作验证用例设计](<A-设计/browser_e2e_test_design.md>) — `已废弃`
+- [项目测试规范](<A-设计/testing_guidelines.md>) — `已废弃`
+
+## B 落地方案（plan）
+
+- [Agent 智能层集成测试 Implementation Plan](<B-落地方案/Agent 智能层集成测试（执行蓝图）.md>) — `已完成`
+- [Agent 管理集成测试落地](<B-落地方案/Agent管理集成测试.md>) — `已完成`
+- [Test Speed Optimization Implementation Plan](<B-落地方案/Test Speed Optimization（执行蓝图）.md>) — `已完成`
+- [测试补充方案 - 2026-05-14](<B-落地方案/测试补充方案（2026-05-14）.md>) — `已完成`
+- [集成测试基础设施搭建（HTTP API 端到端）](<B-落地方案/集成测试基础设施.md>) — `已完成`
 
 ## C 知识（wiki）
 

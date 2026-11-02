@@ -18,7 +18,7 @@ related: []
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — §4.3 枚举类型安全、§4.4 SQLite 规范、§3.5 软删除约定
 > - [SQL 规范](sqlx_guide.md) — STRICT 表、sqlx::Type 派生、`.sqlx` 纳管
-> - [身份凭证Domain统一CRUD重构](../archive/plan-archive/身份凭证Domain统一CRUD重构.md) — 前序落地快照（JSON 列方案），本设计取代其存储层
+> - [身份凭证Domain统一CRUD重构](../B-落地方案/身份凭证Domain统一CRUD重构.md) — 前序落地快照（JSON 列方案），本设计取代其存储层
 > - 暂无对应 plan 文档（落地时补写）
 
 ---

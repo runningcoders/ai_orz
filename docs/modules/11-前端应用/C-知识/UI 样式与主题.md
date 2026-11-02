@@ -28,12 +28,12 @@
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [Canvas 渲染与可视化手册](docs/archive/design-archive/canvas_rendering_playbook.md) — HUD 风格 Canvas 渲染、图表与知识图谱可视化规范
+- [Canvas 渲染与可视化手册](docs/modules/11-前端应用/A-设计/canvas_rendering_playbook.md) — HUD 风格 Canvas 渲染、图表与知识图谱可视化规范
 - 【Batch10 追加】[ui_design_system.md](docs/modules/11-前端应用/A-设计/ui_design_system.md) — Tailwind CSS v4 + DaisyUI v5；orz-light oklch 自定义主题色板（p1-p9 紫蓝渐变主色/o1-o9 橙金强调/g1-g9 成功/b1-b9 错误/r1-r9 危险/n1-n12 灰阶）；30+ DaisyUI 主题切换（data-theme 属性）；HUD 流光条 .hud-streamer 动画；.btn-primary / .card / .stats 等工具类统一
 
 **② 落地计划（Plan）**：
-- [知识图谱推荐起点与组件复用重构](docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md) — 知识图谱推荐起点与 Canvas 组件复用重构
-- [统计图表Phase1基础设施与时序图展示重构](docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md) — 图表组件落地点与前后端对接
+- [知识图谱推荐起点与组件复用重构](docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md) — 知识图谱推荐起点与 Canvas 组件复用重构
+- [统计图表Phase1基础设施与时序图展示重构](docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md) — 图表组件落地点与前后端对接
 
 **④ RAG 原子知识卡**：
 - [Canvas HUD 可视化 RAG 卡](docs/modules/08-搜索/C-知识/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md) — GraphCanvas + Line/Donut + Gauge 仪表盘速查

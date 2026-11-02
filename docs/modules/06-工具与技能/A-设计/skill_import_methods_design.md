@@ -18,7 +18,7 @@ related: []
 > 关联文档：
 > - 对应 plan 文档：docs/plan/技能导入方式扩展与统一导入框架落地.md
 > - 上层规范：AGENTS.md · docs/CODE_STANDARDS.md · docs/LAYERED_ARCHITECTURE_PRACTICE.md
-> - 相关决策：docs/archive/design-archive/skill_design.md · docs/archive/design-archive/skill_system_enhancement_design.md
+> - 相关决策：docs/modules/06-工具与技能/A-设计/skill_design.md · docs/modules/06-工具与技能/A-设计/skill_system_enhancement_design.md
 
 ---
 

@@ -104,7 +104,9 @@ Organization ──┬── User
 | **编码规范 SSOT** | [CODE_STANDARDS.md](./docs/CODE_STANDARDS.md) | 所有编码规则（命名/分层/宏/错误/日志等） |
 | **架构总纲** | [ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 实体关系、设计哲学、核心概念 |
 | **分层实践** | [LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | 适配层架构 + 反模式避坑 |
-| **文档维护** | [DOCUMENTATION.md](./docs/DOCUMENTATION.md) | 四类文档编写/引用/图谱法则 |
+| **文档维护规范** | [DOCUMENTATION.md](./docs/DOCUMENTATION.md) | 三层文档（A-设计 / B-落地方案 / C-知识）编写/引用/图谱法则 |
+| **设计/方案文档 Skill** | [ai-orz-doc-maintainer.md](./docs/modules/12-基础设施与部署/C-知识/ai-orz-doc-maintainer.md) | A-设计/B-落地方案 全生命周期 + superpowers 蓝图精简（`.trae/skills/` 注册版）|
+| **活文档维护 Skill** | [ai-orz-wiki-maintainer.md](./docs/modules/12-基础设施与部署/C-知识/ai-orz-wiki-maintainer.md) | C-知识 长文 + RAG 卡 代码同步（`.trae/skills/` 注册版）|
 | **API 协议** | [api_protocol_convention.md](./docs/modules/13-数据模型/A-设计/api_protocol_convention.md) | common DTO 单一事实源 |
 | **SQL 规范** | [sqlx_guide.md](./docs/modules/12-基础设施与部署/A-设计/sqlx_guide.md) | SQLx 0.8 + SQLite 工程规范 |
 | **日志规范** | [logging_design.md](./docs/modules/12-基础设施与部署/A-设计/logging_design.md) | 统一宏 + tracing 语法 |
@@ -147,7 +149,6 @@ Organization ──┬── User
 - **`A-设计` / `B-落地方案` 顶部必带 YAML frontmatter**（`kind/module/name/title/status/scope/related`），缺则 `make wiki-meta` 直接失败
 - 新增 RAG 知识卡（各模块 `C-知识/`）→ 先按 [DOCUMENTATION.md §3](./docs/DOCUMENTATION.md) 的 5 级算法查重，再决定合并还是新建
 - 引用单向：`C-知识`（活文档）→ `A-设计`/`B-落地方案`（快照）+ 源码；**新增快照文档不得反向链接 `C-知识`**
-- 归档件只加归档头，正文永不修改
 
 **文件落位**：
 
@@ -158,7 +159,6 @@ Organization ──┬── User
 | 落地方案（做到哪了） | `docs/modules/<模块>/B-落地方案/` | 中文主题名（如 `身份凭证Domain统一CRUD重构.md`）|
 | 现状长文 + RAG 卡（是什么） | `docs/modules/<模块>/C-知识/` | 中文主题名；RAG 卡自带同名子目录 |
 | 跨模块总纲 | `docs/` 根目录 | `ARCHITECTURE.md` / `CODE_STANDARDS.md` / `LAYERED_ARCHITECTURE_PRACTICE.md` 等 |
-| 归档 | `docs/archive/{design,plan}-archive/` | 保留原文件名 |
 
 **改完必跑的收尾**：
 
@@ -171,7 +171,6 @@ make wiki-index && make wiki-check    # 重建索引 + 门禁（索引产物一�
 - ❌ **手改 `INDEX.md` / `INDEX.json` / 各 `00-INDEX.md`**（全是 `make wiki-index` 的派生物）
 - ❌ **改了代码不回填对应 `C-知识`**（知识库腐化的唯一来源）
 - ❌ plan 文件名带日期前缀
-- ❌ 归档件散放在 `docs/archive/` 根目录
 - ❌ `A-设计` 用中文命名 / `B-落地方案` 用英文命名
 
 ---

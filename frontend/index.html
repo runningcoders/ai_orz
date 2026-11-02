@@ -55,7 +55,13 @@
         return __enqueueMermaid(async () => {
           try {
             const mermaid = await __getMermaid();
-            mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
+            // suppressErrorRendering：语法错误时只抛异常，不往 document.body 插入
+            // mermaid 自带的「Syntax error in text + 版本号」错误图（否则残留在页面左下角）
+            mermaid.initialize({
+              startOnLoad: false,
+              suppressErrorRendering: true,
+              theme: __mermaidTheme(),
+            });
             const id = 'mermaid-svg-' + (++__mermaidCounter);
             const { svg } = await mermaid.render(id, code || '');
             // 内容已过期（容器被 Dioxus 重绘）时丢弃结果

@@ -120,28 +120,28 @@ sequenceDiagram
 participant Consumer as "MessageConsumer"
 participant Awaken as "RuntimeDomain.awakening"
 participant Brain as "BrainDal.wake_brain"
-participant Loop as "run_think_loop"
+participant PL as "run_think_loop"
 participant Router as "cerebellum_router.route"
 participant Cere as "SystemOneCerebellumDao"
 Consumer->>Awaken : "awaken(ctx, agent, message, options)"
 Awaken->>Brain : "wake_brain(agent, memories)"
 Brain->>Brain : "get_default_cerebellum_provider → brain.cerebellum"
-Awaken->>Loop : "run_think_loop(params)"
-Loop->>Loop : "brain.cerebellum 判空 + 定位最后一条 User 文本"
-Loop->>Router : "route_with_default_dao(ctx, brain, enabled, ...)"
+Awaken->>PL : "run_think_loop(params)"
+PL->>PL : "brain.cerebellum 判空 + 定位最后一条 User 文本"
+PL->>Router : "route_with_default_dao(ctx, brain, enabled, ...)"
 Router->>Router : "route_policy().prepare(metrics) → Vec<DecisionRequest>"
 Router->>Brain : "dal.decide(ctx, brain, requests)"
 Brain->>Brain : "门禁：cerebellum None / api_key 空 / dao 未初始化 → NoProvider（零调用）"
 Brain->>Cere : "think_fast(...) / POST {base}/v1/systemone"
 Cere-->>Brain : "ThinkFastResult{answers, usage}"
 Brain-->>Router : "DecisionOutcome{answers, degraded, usage, latency_ms}"
-Router-->>Loop : "RouteDecision: Direct / Inject / Skip"
+Router-->>PL : "RouteDecision: Direct / Inject / Skip"
 alt Inject
-Loop->>Loop : "messages.insert(0, System{增强提示})"
+PL->>PL : "messages.insert(0, System{增强提示})"
 else Direct 且开关开
-Loop-->>Awaken : "ThinkLoopResult::Final（短路主循环）"
+PL-->>Awaken : "ThinkLoopResult::Final（短路主循环）"
 else Skip
-Loop->>Loop : "空操作，进入正常主循环"
+PL->>PL : "空操作，进入正常主循环"
 end
 ```
 
@@ -320,13 +320,13 @@ Parse --> Res["ThinkFastResult{answers, usage}"]
 ```mermaid
 stateDiagram-v2
 [*] --> Skip
-Skip --> Direct : "trivial_direct 且 confidence>=0.85"
-Skip --> Inject : "cortex_needed 且 confidence>=0.85"
-Direct --> FinalReturn : "开关 cerebellum_trivial_direct=true"
-Direct --> Continue : "开关关闭：不直回不注入"
-Inject --> Continue : "messages.insert(0, System)"
-Continue --> [*] : "进入 cortex 主循环"
-FinalReturn --> [*] : "ThinkLoopResult::Final"
+Skip --> Direct : trivial_direct 且 confidence>=0.85
+Skip --> Inject : cortex_needed 且 confidence>=0.85
+Direct --> FinalReturn : 开关 cerebellum_trivial_direct=true
+Direct --> Continue : 开关关闭：不直回不注入
+Inject --> Continue : messages.insert(0, System)
+Continue --> [*] : 进入 cortex 主循环
+FinalReturn --> [*] : ThinkLoopResult：Final
 ```
 
 **图表来源**

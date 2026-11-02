@@ -9,7 +9,7 @@
 - [src/models/vector.rs](src/models/vector.rs)
 - [src/service/dal/skill.rs](src/service/dal/skill.rs)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
-- [docs/archive/design-archive/vector_search_architecture.md](docs/archive/design-archive/vector_search_architecture.md)
+- [docs/modules/08-搜索/A-设计/vector_search_architecture.md](docs/modules/08-搜索/A-设计/vector_search_architecture.md)
 </cite>
 
 ## 目录
@@ -238,7 +238,7 @@ INTEGER expire_at
 章节来源
 - [src/service/dal/skill.rs:350-513](src/service/dal/skill.rs#L350-L513)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
-- [docs/archive/design-archive/vector_search_architecture.md:72-131](docs/archive/design-archive/vector_search_architecture.md#L72-L131)
+- [docs/modules/08-搜索/A-设计/vector_search_architecture.md:72-131](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L72-L131)
 
 ## 依赖关系分析
 - Storage 依赖 common::config::DatabaseConfig 决定后端类型。

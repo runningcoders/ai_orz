@@ -54,11 +54,11 @@ source_files:
   - frontend/src/pages/finance/message_channels.rs#L498-L513（创建弹窗「绑定 Agent」选框：去掉 is_lark_type 门控，所有渠道类型一致展示——入站路由优先取渠道 agent_id，缺选框会让用户无法指定飞书渠道接单 Agent）
   - frontend/src/pages/finance/message_channel_detail.rs#L853-L868（入站监听复选框统一预置技能同步弹窗写法：`checkbox checkbox-sm checkbox-primary` + onchange 读 e.checked()，label 整行可点，修不可见/不可选）
 
-  - docs/archive/design-archive/message_channel_design.md
+  - docs/modules/04-对话与消息/A-设计/message_channel_design.md
 
-  - docs/archive/plan-archive/飞书P2P消息集成.md（v4 AOP 入站中台方案落地：MessageInboundAdapter trait + Registry + LarkEventDispatcher）
+  - docs/modules/04-对话与消息/B-落地方案/飞书P2P消息集成.md（v4 AOP 入站中台方案落地：MessageInboundAdapter trait + Registry + LarkEventDispatcher）
 
-  - docs/archive/plan-archive/lark-cli_集成二期.md（二期 WS 指数退避重连 + 凭证用户级管理 = 入站中台依赖的基础设施）
+  - docs/modules/04-对话与消息/B-落地方案/lark-cli_集成二期.md（二期 WS 指数退避重连 + 凭证用户级管理 = 入站中台依赖的基础设施）
 
   - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md
 
@@ -216,7 +216,7 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 | [consumer/wechat_inbound.rs](src/consumer/wechat_inbound.rs) | 【简化后】无状态微信入站 Consumer | 同上 L18-L79 |
 | [consumer/mod.rs](src/consumer/mod.rs) | Consumer 注册中心：零参数构造 | init() 注册 LarkInboundConsumer::new() / WechatInboundConsumer::new() L21-L58；不再注入 DAL 弱引用 |
 | [producer/message_channel.rs](src/producer/message_channel.rs) | AOP 消息通道生产者：注入回调 + start_all/stop_all + AdaptedMessage → NewMessageEvent 映射 | init 阶段注册回调（回调被中台 registry 登记，consumer 经 current_callback() 取用）|
-| 【① Design】message_channel_design.md（入站+出站全链路架构）| 入站适配器中台 vs 出站 push_to_channel 双路径对称设计 | docs/archive/design-archive/message_channel_design.md |
+| 【① Design】message_channel_design.md（入站+出站全链路架构）| 入站适配器中台 vs 出站 push_to_channel 双路径对称设计 | docs/modules/04-对话与消息/A-设计/message_channel_design.md |
 | 【③ Wiki 长文 1】消息渠道适配器.md | 新增入站渠道三步流程（用户视角） | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md |
 | 【③ Wiki 长文 2】多渠道消息系统.md | 入站+出站全链路图 | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md |
 | 【③ Wiki 长文 3】消息通道生产者.md | AOP 事件生产者如何调用 start_all 并把 AdaptedMessage 映射为内部事件 | docs/wiki/zh/content/基础设施/AOP%20事件系统/事件生产者/消息通道生产者.md |

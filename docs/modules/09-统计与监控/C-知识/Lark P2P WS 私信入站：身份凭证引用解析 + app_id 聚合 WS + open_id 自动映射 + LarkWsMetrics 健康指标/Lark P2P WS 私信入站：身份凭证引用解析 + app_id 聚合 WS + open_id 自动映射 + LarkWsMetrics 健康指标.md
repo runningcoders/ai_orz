@@ -95,9 +95,9 @@ source_files:
 | [dao/lark/http.rs](src/service/dao/lark/http.rs) | DAO：Lark WS Token Source | LarkWsTokenSource ~L236；ws_token() 自动拉取短期 token（共享 per-app 缓存） |
 | [dao/lark/ws.rs](src/service/dao/lark)（对应 ws 文件）| DAO：WebSocket 连接 + 事件订阅 + 指数退避重连 | start_listener(app, credentials, handler)；心跳 + auto_reconnect；LarkEventHandler trait |
 | [models/message_channel.rs](src/models/message_channel.rs) | ChannelConfig 飞书相关 6 字段 | lark_credential_id 引用 + lark_identity_mode + lark_open_id 绑定 + lark_user_name + lark_listen_inbound 开关 ~L206 |
-| 【① Design 1】lark_cli_integration.md（§飞书私信入站 + 指标）| 为什么 WS 而非飞书事件回调（回调需要公网 IP，WS 适合私有化）；按 app_id 聚合动机 | docs/archive/design-archive/lark_cli_integration.md |
-| 【① Design 2】message_channel_design.md（§入站链路）| 身份引用路径、入站出站对称 | docs/archive/design-archive/message_channel_design.md |
-| 【② Plan】飞书集成二期.md（真实路径）| 飞书私信入站落地计划与执行结果 | docs/archive/plan-archive/lark-cli_集成二期.md |
+| 【① Design 1】lark_cli_integration.md（§飞书私信入站 + 指标）| 为什么 WS 而非飞书事件回调（回调需要公网 IP，WS 适合私有化）；按 app_id 聚合动机 | docs/modules/04-对话与消息/A-设计/lark_cli_integration.md |
+| 【① Design 2】message_channel_design.md（§入站链路）| 身份引用路径、入站出站对称 | docs/modules/04-对话与消息/A-设计/message_channel_design.md |
+| 【② Plan】飞书集成二期.md（真实路径）| 飞书私信入站落地计划与执行结果 | docs/modules/04-对话与消息/B-落地方案/lark-cli_集成二期.md |
 | 【③ Wiki 长文 1】飞书集成系统.md | 用户视角：飞书配置 + 渠道绑定 + 私信收发端到端说明 | docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md |
 | 【③ Wiki 长文 2】消息渠道管理.md | 管理员创建飞书渠道，填 lark_credential_id 引用、绑定 open_id 到用户，开关 lark_listen_inbound | docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md |
 | 【③ Wiki 长文 3】消息通道生产者.md | AOP 层：AdaptedMessage → 内部 NewMessage → 唤醒链路 | docs/wiki/zh/content/基础设施/AOP%20事件系统/事件生产者/消息通道生产者.md |

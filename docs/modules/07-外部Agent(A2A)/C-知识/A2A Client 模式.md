@@ -53,14 +53,14 @@ subgraph "内部系统"
 P["轮询消费者<br/>a2a_polling.rs"]
 D["DAO: A2aRuntimeDao<br/>a2a.rs"]
 end
-C --> |POST /a2a (JSON-RPC)| H
+C -->|"POST /a2a (JSON-RPC)"| H
 H --> S
 H --> G
 H --> X
 S --> M
 G --> M
 P --> D
-D --> |HTTP JSON-RPC| C
+D -->|HTTP JSON-RPC| C
 ```
 
 图表来源

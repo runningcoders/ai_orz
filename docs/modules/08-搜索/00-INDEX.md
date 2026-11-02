@@ -6,16 +6,28 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 24 篇：A 设计 1 · B 落地方案 2 · C 知识 21。
+本模块共 36 篇：A 设计 5 · B 落地方案 10 · C 知识 21。
 
 ## A 设计（design）
 
+- [实体列表/查询/搜索接口设计规范](<A-设计/entity_list_query_search_design.md>) — `已废弃`
+- [全实体 FTS5 全文搜索统一设计](<A-设计/full_entity_fts5_search_design.md>) — `已废弃`
+- [记忆搜索 FTS5 增强与综合搜索设计](<A-设计/memory_search_enhancement_design.md>) — `已废弃`
 - [本体论驱动知识沉淀设计（Ontology-Driven Knowledge Sedimentation）](<A-设计/ontology_knowledge_sedimentation_design.md>) — `现行`
+- [向量搜索与混合搜索架构设计文档](<A-设计/vector_search_architecture.md>) — `已废弃`
 
 ## B 落地方案（plan）
 
+- [Agent搜索查询三场景统一重构](<B-落地方案/Agent搜索查询三场景统一重构.md>) — `已完成`
+- [HNSW持久化与索引重建异步化重构](<B-落地方案/HNSW持久化与索引重建异步化重构.md>) — `已完成`
+- [Project 实体搜索/查询接口统一实施计划](<B-落地方案/Project 实体搜索查询接口统一实施计划（执行蓝图）.md>) — `已完成`
+- [Search and Knowledge Graph Implementation Plan](<B-落地方案/Search and Knowledge Graph（执行蓝图）.md>) — `已完成`
+- [Task 实体搜索/查询接口统一实施计划](<B-落地方案/Task 实体搜索查询接口统一实施计划（执行蓝图）.md>) — `已完成`
 - [向量搜索 Pre-Filter 改造：Payload 落库与谓词下推 实施计划](<B-落地方案/向量搜索Pre-Filter改造.md>) — `进行中`
+- [向量搜索增强计划](<B-落地方案/向量搜索增强计划（执行蓝图）.md>) — `已完成`
+- [知识图谱遍历查询优化（DFS 批量化 + IN 分块）](<B-落地方案/图谱遍历查询优化.md>) — `已完成`
 - [本体论知识沉淀落地](<B-落地方案/本体论知识沉淀落地.md>) — `草案`
+- [统一其他实体搜索/查询接口实施计划](<B-落地方案/统一其他实体搜索查询接口实施计划（执行蓝图）.md>) — `已完成`
 
 ## C 知识（wiki）
 

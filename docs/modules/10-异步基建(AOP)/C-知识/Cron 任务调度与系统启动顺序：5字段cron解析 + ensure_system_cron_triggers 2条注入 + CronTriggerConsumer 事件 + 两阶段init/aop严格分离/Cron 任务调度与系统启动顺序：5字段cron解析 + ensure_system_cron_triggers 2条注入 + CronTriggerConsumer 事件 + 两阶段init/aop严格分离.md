@@ -36,13 +36,13 @@ source_files:
 - src/handlers/system/cron_trigger/list_cron_triggers.rs (Handler：管理员 list_cron_triggers，支持按
   kind/status 过滤，分页；用户创建自定义 cron POST create_cron_trigger 需 cron 表达式格式校验 + 不允许创建 */1
   * * * * < 1 分钟过于频繁的任务（防止队列爆）)
-- docs/archive/design-archive/task_scheduler_design.md
+- docs/modules/05-任务与项目/A-设计/task_scheduler_design.md
 - docs/modules/02-Agent运行时/A-设计/runtime_design.md
-- docs/archive/design-archive/event_design.md
-- docs/archive/design-archive/consumer_architecture.md
-- docs/archive/plan-archive/唤醒上下文与睡眠约束.md
-- docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
-- docs/archive/plan-archive/通用后台任务模块与Seed异步化重构.md
+- docs/modules/10-异步基建(AOP)/A-设计/event_design.md
+- docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md
+- docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md
+- docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md
+- docs/modules/10-异步基建(AOP)/B-落地方案/通用后台任务模块与Seed异步化重构.md
 - docs/modules/05-任务与项目/C-知识/定时任务管理.md
 - docs/modules/05-任务与项目/C-知识/定时任务调度.md
 - docs/modules/10-异步基建(AOP)/C-知识/定时任务消费者.md
@@ -82,7 +82,7 @@ source_files:
 | lib.rs run() 启动总顺序 | 6 步序列 | pkg::init → service::init → producer/consumer::init → service::init_base_data().await → aop::init_all → axum serve；每一步用 comment 标注顺序与 why（防止未来有人手贱调整） | `:L20-L70` |
 
 **章节来源**
-- [task_scheduler_design.md:L1-L60](docs/archive/design-archive/task_scheduler_design.md#L1-L60)
+- [task_scheduler_design.md:L1-L60](docs/modules/05-任务与项目/A-设计/task_scheduler_design.md#L1-L60)
 - [system/mod.rs:L43-L90](src/service/domain/system/mod.rs#L43-L90)
 - [lib.rs run()](src/lib.rs)
 

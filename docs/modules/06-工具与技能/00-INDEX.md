@@ -6,22 +6,38 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 61 篇：A 设计 4 · B 落地方案 5 · C 知识 52。
+本模块共 77 篇：A 设计 11 · B 落地方案 14 · C 知识 52。
 
 ## A 设计（design）
 
+- [HTTP Tool Runtime 设计文档](<A-设计/builtins_http_tool_design.md>) — `已废弃`
+- [通用 Builtin 工具设计 - 文件读写 & HTTP Fetch](<A-设计/generic_builtin_tools_design.md>) — `已废弃`
+- [工具注册宏设计文档](<A-设计/handler_tool_registration_macro.md>) — `已废弃`
+- [MCP Tool Runtime 设计文档](<A-设计/mcp_tool_design.md>) — `已废弃`
+- [技能系统设计文档](<A-设计/skill_design.md>) — `已废弃`
 - [技能导入方式扩展与统一导入框架设计](<A-设计/skill_import_methods_design.md>) — `草案`
+- [技能系统增强（tag 过滤 + 技能包 + 唤醒注入）设计](<A-设计/skill_system_enhancement_design.md>) — `已废弃`
 - [共享工具凭据增强器设计（MCP / HTTP 工具接入身份凭证体系）](<A-设计/tool_credential_requirement_design.md>) — `现行`
+- [ai_orz 工具模块设计与开发总结](<A-设计/tool_design.md>) — `已废弃`
 - [工具输出三分边界设计（运行时输出 / 最终结果 / 产物）](<A-设计/tool_output_boundary_design.md>) — `现行`
 - [网络搜索与浏览器工具设计](<A-设计/web_search_and_browser_tools_design.md>) — `现行`
 
 ## B 落地方案（plan）
 
+- [Tool/Skill 搜索式安装 Implementation Plan](<B-落地方案/ToolSkill 搜索式安装（执行蓝图）.md>) — `已完成`
+- [generate_http_handler 宏 (true, true) 分支修复 Implementation Plan](<B-落地方案/generate_http_handler 宏 (true, true) 分支修复（执行蓝图）.md>) — `已完成`
+- [generate_http_handler 宏 path 参数解析修复 Implementation Plan](<B-落地方案/generate_http_handler 宏 path 参数解析修复（执行蓝图）.md>) — `已完成`
 - [共享工具凭据增强器落地](<B-落地方案/共享工具凭据增强器落地.md>) — `已完成`
+- [技能列表显示修复与技能同步过期处理 实现计划](<B-落地方案/技能列表显示修复与技能同步过期处理 实现计划（执行蓝图）.md>) — `已完成`
 - [技能列表显示修复与技能同步过期处理](<B-落地方案/技能列表显示修复与技能同步过期处理.md>) — `已完成`
 - [技能导入方式扩展与统一导入框架落地](<B-落地方案/技能导入方式扩展与统一导入框架落地.md>) — `草案`
+- [文档路径引用统一化 + DocLinkClassifier 通用组件 Implementation Plan (v2)](<B-落地方案/文档路径引用统一化 + DocLinkClassifier 通用组件 Implementation Plan (v2)（执行蓝图）.md>) — `已完成`
+- [文档链接统一与DocLinkClassifier工具链](<B-落地方案/文档链接统一与DocLinkClassifier工具链.md>) — `已完成`
 - [浏览器工具与环境就绪提示（阶段二：browser + tool_readiness）](<B-落地方案/浏览器工具与环境就绪提示.md>) — `进行中`
+- [统一工具调用与装饰器收敛 Implementation Plan](<B-落地方案/统一工具调用与装饰器收敛（执行蓝图）.md>) — `已完成`
 - [网络搜索工具（阶段一：tavily_search）](<B-落地方案/网络搜索工具.md>) — `草案`
+- [统一后台进程管理 + shell_exec 超时移交修复](<B-落地方案/进程管理与shell_exec修复.md>) — `已完成`
+- [预置基础技能导入重构](<B-落地方案/预置基础技能导入重构.md>) — `已完成`
 
 ## C 知识（wiki）
 

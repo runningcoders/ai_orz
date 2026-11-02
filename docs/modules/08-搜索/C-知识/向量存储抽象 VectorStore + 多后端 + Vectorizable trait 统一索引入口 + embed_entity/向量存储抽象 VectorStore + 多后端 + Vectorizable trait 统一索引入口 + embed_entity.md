@@ -34,9 +34,9 @@ source_files:
 
   - src/service/dal/*（各业务 DAL search() 内部统一 embed_entity → upsert → search 调用链路）
 
-  - docs/archive/design-archive/vector_search_architecture.md
+  - docs/modules/08-搜索/A-设计/vector_search_architecture.md
 
-  - docs/archive/design-archive/full_entity_fts5_search_design.md
+  - docs/modules/08-搜索/A-设计/full_entity_fts5_search_design.md
 
   - docs/plan/系统初始化模型配置策略调整.md（Embedding 创建/更新重建触发条件矩阵）
 
@@ -115,8 +115,8 @@ source_files:
 | [dao/project/vector.rs](src/service/dao/project/vector.rs) + [dao/task/vector.rs](src/service/dao/task/vector.rs) | Project/Task VectorDao | 接收业务 Query → DAO 内转译谓词下推 |
 | [dao/skill/vector.rs](src/service/dao/skill/vector.rs) + [dao/tool/vector.rs](src/service/dao/tool/vector.rs) | Skill/Tool VectorDao | 接收业务 Query → DAO 内转译谓词下推 |
 | [models/agent.rs](src/models/agent.rs) + memory/... 等 | Vectorizable 10 类实现（2026-09-13 补齐） | 所有 10 类 Vectorizable 实体补齐 vector_payload + vector_id + reindex_decision |
-| 【① Design 1】vector_search_architecture.md | 为什么选 VectorStore trait + LanceDB 默认后端 + 为什么 collection 按业务分 | docs/archive/design-archive/vector_search_architecture.md |
-| 【① Design 2】full_entity_fts5_search_design.md | escape_fts5_keyword 设计动机（FTS5 SQL 注入防护）| docs/archive/design-archive/full_entity_fts5_search_design.md |
+| 【① Design 1】vector_search_architecture.md | 为什么选 VectorStore trait + LanceDB 默认后端 + 为什么 collection 按业务分 | docs/modules/08-搜索/A-设计/vector_search_architecture.md |
+| 【① Design 2】full_entity_fts5_search_design.md | escape_fts5_keyword 设计动机（FTS5 SQL 注入防护）| docs/modules/08-搜索/A-设计/full_entity_fts5_search_design.md |
 | 【② Plan】向量搜索Pre-Filter改造.md | Payload 落库 + 谓词下推 + 三态索引完整实施计划 | docs/plan/向量搜索Pre-Filter改造.md |
 | 【③ Wiki 长文 1】存储系统.md §向量存储抽象与多后端 | VectorStore 类图、后端对比表、init_collection 时序 | docs/wiki/zh/content/基础设施/存储系统/存储系统.md |
 | 【③ Wiki 长文 2】记忆和向量系统.md §Vectorizable | 10 PO Vectorizable 列表 | docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md |

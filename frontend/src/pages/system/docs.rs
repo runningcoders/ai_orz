@@ -1,15 +1,14 @@
 //! 文档中心 - 浏览仓库 docs/ 下的 Markdown 文档
 //!
-//! 运行时从静态资源 `/docs/index.json` 拉取目录清单（由 build.rs 复制
-//! docs/ 核心文档 + 能力域知识库到 public/docs/ 时生成），点击条目按需 fetch 对应
+//! 运行时从静态资源 `/docs/index.json` 拉取目录清单（由 build.rs 打包
+//! docs/ 下全部文档到 public/docs/ 时生成），点击条目按需 fetch 对应
 //! Markdown 文件，用 MarkdownRenderer 组件渲染（自动触发 ```mermaid 图的 JS 替换）。
 //!
-//! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 能力域知识库
+//! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 能力域知识库 → 模块索引
 //! 图表类条目（index.json 中 `type: "html"`）不走 Markdown 渲染：
 //! 右侧内容区用 iframe 内嵌加载（sandbox 隔离其自带脚本/样式），
 //! 标题栏另提供「新标签打开」直链 /docs/diagrams/xxx.html。
 //! 各分区默认展开、可整体折叠；能力域知识库为「模块 → A/B/C 层 → 文档」三级折叠树。
-//! `docs/archive/` 历史件不收录（文档中心只回答「现在是什么」）。
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;

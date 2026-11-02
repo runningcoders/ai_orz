@@ -6,11 +6,24 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 54 篇：A 设计 1 · C 知识 53。
+本模块共 64 篇：A 设计 5 · B 落地方案 6 · C 知识 53。
 
 ## A 设计（design）
 
 - [聊天侧栏「项目内 Agent 列表」与「工具调用身份展示」设计说明](<A-设计/chat_project_agents_and_tool_call_identity_design.md>) — `现行`
+- [项目系统设计文档](<A-设计/project_design.md>) — `已废弃`
+- [项目管理系统设计文档](<A-设计/project_management_design.md>) — `已废弃`
+- [任务系统设计文档](<A-设计/task_design.md>) — `已废弃`
+- [定时任务系统设计文档](<A-设计/task_scheduler_design.md>) — `已废弃`
+
+## B 落地方案（plan）
+
+- [Agent Artifact 创建能力实施 Plan](<B-落地方案/Agent Artifact 创建能力实施（执行蓝图）.md>) — `已完成`
+- [Agent Artifact 创建能力方案（定稿）](<B-落地方案/Agent Artifact 创建能力方案（定稿）（执行蓝图）.md>) — `已完成`
+- [Artifact 编辑功能实施 Plan](<B-落地方案/Artifact 编辑功能实施（执行蓝图）.md>) — `已完成`
+- [任务管理核心功能实现计划](<B-落地方案/任务管理核心功能实现计划（执行蓝图）.md>) — `已完成`
+- [独立任务管理页面 + 看板视图实现计划](<B-落地方案/独立任务管理页面 + 看板视图实现计划（执行蓝图）.md>) — `已完成`
+- [项目任务增强](<B-落地方案/项目任务增强.md>) — `已完成`
 
 ## C 知识（wiki）
 

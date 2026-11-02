@@ -38,8 +38,8 @@ source_files:
 - frontend/src/utils/status.rs
 - frontend/src/hooks/mod.rs
 - docs/modules/11-前端应用/A-设计/ui_design_system.md
-- docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
-- docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md
+- docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md
+- docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md
 - docs/modules/11-前端应用/C-知识/组件系统.md
 - docs/modules/11-前端应用/C-知识/UI 样式与主题.md
 - docs/modules/00-总览与架构/C-知识/前端架构设计.md
@@ -90,8 +90,8 @@ source_files:
 | Agent 详情页（HUD 收口示例） | frontend/src/pages/hr/agent_detail.rs | 工具与技能全景改用 HudCard + HudPanel，指标卡统一 StatReadout |
 | 聊天页（HUD 收口示例） | frontend/src/pages/message/chat.rs | 气泡 + 消息侧面板 HUD 统一，进度条改用 HudProgress，提示条改用 HudCallout |
 | Design 规范文档 | docs/modules/11-前端应用/A-设计/ui_design_system.md | Mistral 暖色系设计原则 + DaisyUI 5 迁移落地章节；HUD 驾驶舱效果说明；组件清单参考 |
-| Plan 统计图表基础设施 | docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md | charts/ 子目录组件（donut_chart/line_chart）落地计划与复用约束 |
-| Plan 知识图谱组件复用 | docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md | Graph/GraphCanvas/KanbanCanvas/WorkspaceGraph/CanvasScene 复用层级划分 |
+| Plan 统计图表基础设施 | docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md | charts/ 子目录组件（donut_chart/line_chart）落地计划与复用约束 |
+| Plan 知识图谱组件复用 | docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md | Graph/GraphCanvas/KanbanCanvas/WorkspaceGraph/CanvasScene 复用层级划分 |
 | localStorage 通用组件层 | frontend/src/utils/local_store.rs | L1-L270 `KEY_PREFIX` + `keys`/`legacy` 常量集中 + `get_json`/`set_json`/`remove` 类型化 + `Versioned` 版本包装（`{"v":1,"data":...}`）+ `get_json_with_legacy`/`get_string_with_legacy` 存量迁移 + `LocalStoreError` + `UnreadBadges`/`UNREAD_DEFAULT_KEY` |
 | 聊天气泡尖角贴顶 | frontend/styles/input.css | L1447-L1468 `.chat .chat-bubble::before { bottom:auto; top:0 }` + `.chat-start/.chat-end` `transform: scaleY(-1)`（`chat-end` 保留 `rotateY(180deg)`）+ 抹平角由底角换顶角、底角恢复 `var(--radius-field)` |
 

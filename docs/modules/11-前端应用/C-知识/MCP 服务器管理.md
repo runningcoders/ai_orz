@@ -15,7 +15,7 @@
 - [src/pkg/tool_registry/mcp.rs](src/pkg/tool_registry/mcp.rs)
 - [frontend/src/pages/finance/mcp_servers.rs](frontend/src/pages/finance/mcp_servers.rs)
 - [frontend/src/pages/finance/mcp_server_detail.rs](frontend/src/pages/finance/mcp_server_detail.rs)
-- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -203,12 +203,12 @@ AD-->>FE : "成功/失败提示"
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
 - [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L25)
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md:1320-1327](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md:1320-1327](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)
 
 章节来源
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
 - [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L25)
-- [docs/mcp_tool_design.md:1320-1327](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md:1320-1327](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)
 
 ### 连接状态监控与失效策略
 - 状态字段：Enabled/Disabled/Deleted
@@ -273,11 +273,11 @@ SafeMsg --> Return["返回给上层/前端"]
 
 图表来源
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)
 
 章节来源
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)
 
 ### 前端管理界面
 - 列表页：
@@ -334,7 +334,7 @@ F["Frontend"] --> H
 章节来源
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 - [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
-- [docs/mcp_tool_design.md:1346-1352](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md:1346-1352](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)
 
 ## 故障排查指南
 - 无法创建 MCP 服务器
@@ -356,7 +356,7 @@ F["Frontend"] --> H
 章节来源
 - [src/service/dal/mcp_server.rs:132-159](src/service/dal/mcp_server.rs#L132-L159)
 - [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)
 - [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
 
 ## 结论
@@ -386,4 +386,4 @@ MCP 服务器管理功能通过清晰的层次划分与严格的错误脱敏策�
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 - [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
 - [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [docs/mcp_tool_design.md:1320-1327](docs/archive/design-archive/mcp_tool_design.md)
+- [docs/mcp_tool_design.md:1320-1327](docs/modules/06-工具与技能/A-设计/mcp_tool_design.md)

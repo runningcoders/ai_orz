@@ -371,9 +371,9 @@ Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全�
 
 ### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
 #### ① Design 决策快照
-- [memory_system_enhancement_design.md](docs/archive/design-archive/memory_system_enhancement_design.md) — Agent 视角记忆生命周期：入职默认 Core 记忆 + 唤醒后 Working 装载 + 对话 Short-term 索引 + 每天 4 点 Resting 自动沉淀 Long-term
+- [memory_system_enhancement_design.md](docs/modules/03-记忆系统/A-设计/memory_system_enhancement_design.md) — Agent 视角记忆生命周期：入职默认 Core 记忆 + 唤醒后 Working 装载 + 对话 Short-term 索引 + 每天 4 点 Resting 自动沉淀 Long-term
 #### ② Plan 落地快照
-- [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — 记忆写入工具拆分：save_short_term / save_long_term 替代 create_memory（Agent 唤醒工具列表只注入这两个专用工具）
+- [唤醒上下文与睡眠约束.md](docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md) — 记忆写入工具拆分：save_short_term / save_long_term 替代 create_memory（Agent 唤醒工具列表只注入这两个专用工具）
 #### ④ RAG 原子知识卡
 - [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/modules/03-记忆系统/C-知识/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md) — §4.1 红线 1 工具拆分红线（Agent 工具列表绝不注入 create_memory）
 

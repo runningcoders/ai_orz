@@ -17,9 +17,9 @@ source_files:
   - src/consumer/scheduler.rs
   - src/producer/cron_trigger.rs
   - src/producer/message_channel.rs
-  - docs/archive/design-archive/event_design.md
-  - docs/archive/design-archive/consumer_architecture.md
-  - docs/archive/plan-archive/agent_loop_engine_plan.md
+  - docs/modules/10-异步基建(AOP)/A-设计/event_design.md
+  - docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md
+  - docs/modules/02-Agent运行时/B-落地方案/Agent 循环驱动引擎实施计划.md
   - docs/modules/10-异步基建(AOP)/C-知识/基础设施/AOP 事件系统/AOP 事件系统.md
   - docs/modules/10-异步基建(AOP)/C-知识/核心模块/AOP 事件系统/AOP 事件系统.md
   - docs/modules/00-总览与架构/C-知识/AOP 事件系统架构.md
@@ -50,7 +50,7 @@ source_files:
 | [consumer/message.rs](src/consumer/message.rs) | 消息消费者 | Async 模式，concurrency=4；`subscriptions()` 含 message.created（`.ordered().notify_producer()`）；`on_consumed`（notify_producer 路径）更新 DB status=Processed |
 | [consumer/scheduler.rs](src/consumer/scheduler.rs) | Cron 调度消费者 | Sync 模式；`subscriptions()` 含 cron.trigger（`.notify_producer()`）；on_event 按 payload.action 分发 handler |
 | [producer/cron_trigger.rs](src/producer/cron_trigger.rs) | 定时轮询生产者 | `start(sink)` 自管 60s 循环（ProducerLoop）；`tick()` → list_due_triggers → `sink.emit(CronTriggerEvent)`；`on_consumed` 内 mark_trigger_executed 更新 next_run_at |
-| [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) | 生产消费架构设计 | 两阶段初始化 + 事件总线前置原则；启动严格顺序；consumer::init() 禁写 DB 红线 |
+| [consumer_architecture.md](docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md) | 生产消费架构设计 | 两阶段初始化 + 事件总线前置原则；启动严格顺序；consumer::init() 禁写 DB 红线 |
 | [pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs) (publish context_carrier 注入) | context 贯穿机制 | publish 统一注入 ctx.to_carrier() 到事件 JSON 顶层 context_carrier 字段；carried_ctx(ctx) 从事件还原 RequestContext；Sync/Async 两条路径均传入还原后的 ctx 给 on_event | `:L142-L271` |
 | [pkg/aop/core/metrics_hook.rs](src/pkg/aop/core/metrics_hook.rs) (AopEventMeta) | 元信息扩展 | AopEventMeta 含 context_carrier: Option<ContextCarrier> 字段；from_json 同步解析事件顶层 | `:L18-L61` |
 | [consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs) | 链路可观测日志 | AopStatsHook 四回调追加 `[aop] log_id={} event={} ...` sys_info! 日志；log_id_of(meta) 从 context_carrier 提取 log_id，缺失回退 "unknown" | `:L36-L120` |

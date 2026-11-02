@@ -34,9 +34,9 @@ source_files:
 - frontend/src/hooks/mod.rs（2026-09-26 增量 17cb0056：get_saved_theme / ThemeController::set 走 local_store 读写主题）
 - docs/modules/11-前端应用/A-设计/frontend_architecture.md
 - docs/modules/11-前端应用/A-设计/ui_design_system.md
-- docs/archive/plan-archive/前端工具与进程管理.md
-- docs/archive/plan-archive/前端API协议结构重构.md
-- docs/archive/plan-archive/聊天MVP.md
+- docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md
+- docs/modules/13-数据模型/B-落地方案/前端API协议结构重构.md
+- docs/modules/04-对话与消息/B-落地方案/聊天MVP.md
 - docs/modules/11-前端应用/C-知识/前端应用.md
 - docs/modules/11-前端应用/C-知识/HR 管理页面.md
 - docs/modules/11-前端应用/C-知识/钩子系统.md

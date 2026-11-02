@@ -21,8 +21,8 @@ source_files:
   - frontend/src/pages/hr/knowledge_graph.rs#L876 (HrKnowledgeGraph 路由入口：AppLayout + Agent 选择器 + KnowledgeGraph)
   - frontend/src/pages/hr/agent_detail.rs (Agent 详情页内嵌 KnowledgeGraph { agent_id: Some(...) } —— 两端复用落地证据)
   - frontend/src/components/graph_canvas.rs (画布渲染组件：nodes + edges + levels，与推荐算法完全解耦)
-  - docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md (② Plan 快照：度数统计 + 前端组件拆分 HrKnowledgeGraph vs KnowledgeGraph 两端复用 + agent_id Option 语义)
-  - docs/archive/design-archive/memory_search_enhancement_design.md (① Design 快照：记忆搜索增强决策表，含图谱推荐起点)
+  - docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md (② Plan 快照：度数统计 + 前端组件拆分 HrKnowledgeGraph vs KnowledgeGraph 两端复用 + agent_id Option 语义)
+  - docs/modules/08-搜索/A-设计/memory_search_enhancement_design.md (① Design 快照：记忆搜索增强决策表，含图谱推荐起点)
   - docs/modules/02-Agent运行时/C-知识/记忆系统管理.md (③ Wiki 长文：种子节点推荐面板 + 点击定位画布)
   - docs/modules/08-搜索/C-知识/知识图谱搜索.md (③ Wiki 长文：推荐起点 + 画布渲染 + 链式探索三段)
   - 【平行卡】docs/modules/08-搜索/C-知识/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md (下游：用户点推荐卡片后实际调用 traverse_knowledge_graph 展开邻域)
@@ -146,4 +146,4 @@ source_files:
 - **卡片命名沿革**：最早实现为三因子加权打分（0.45 连通度 + 0.35 内容丰富度 + 0.2 分享权重），返回 `RecommendedSeedNode { node, score, reasons: Vec<String> }`，DTO 落在 `common/src/api/memory.rs`。上述实现与命名一并被本卡标题/路径继承。
 - **重构为度数排序**：`recommend_seed_nodes` 改为按关联度数（入边 + 出边）倒序、度数持平用 `is_published` 决胜；`published` 从「入池门槛」降级为「决胜信号」；返回模型改为 `SeedNodeRecommendation { node, degree, incoming_count, outgoing_count }`，DTO 迁至 `common/src/api/neural_tools.rs` 并扁平化（去掉 `score` / `reasons`）。
 - **神经工具化（2026-09，b82d3f7f→8fa050d0 区间）**：Handler 补 `#[register_handler_tool(id="recommend_seed_nodes", neural, tags="memory")]`，从纯 HTTP 接口升级为**所有 Agent 自动装配的神经工具**（免绑定），使 Agent 在冷启动时能自主挑选图谱起点再沿 `search_memory(seed_node_ids, traversal_depth)` 展开邻域。
-- **前端组件复用**：拆出 `KnowledgeGraph { agent_id: Option<String> }` 子组件，HrKnowledgeGraph 路由页与 Agent 详情页两处共用（早期 Plan 快照见 `docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md`）。
+- **前端组件复用**：拆出 `KnowledgeGraph { agent_id: Option<String> }` 子组件，HrKnowledgeGraph 路由页与 Agent 详情页两处共用（早期 Plan 快照见 `docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md`）。

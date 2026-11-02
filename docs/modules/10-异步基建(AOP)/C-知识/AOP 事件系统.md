@@ -15,16 +15,16 @@
 - [src/models/events/message.rs](src/models/events/message.rs)
 - [src/models/events/agent_loop.rs](src/models/events/agent_loop.rs)
 - [src/consumer/mod.rs](src/consumer/mod.rs)
-- [docs/event_design.md](docs/archive/design-archive/event_design.md)
+- [docs/event_design.md](docs/modules/10-异步基建(AOP)/A-设计/event_design.md)
 </cite>
 
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [消费者与生产者架构设计](docs/archive/design-archive/consumer_architecture.md) — AOP 生产消费异步框架总设计 + 系统管理面板 AOP 监控接入点设计
+- [消费者与生产者架构设计](docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md) — AOP 生产消费异步框架总设计 + 系统管理面板 AOP 监控接入点设计
 
 **② 落地计划（Plan）**：
-- [Agent 循环驱动引擎 Plan](docs/archive/plan-archive/agent_loop_engine_plan.md) — AOP 事件 → Consumer → Agent 唤醒 → 管理面板监控闭环
+- [Agent 循环驱动引擎 Plan](docs/modules/02-Agent运行时/B-落地方案/Agent 循环驱动引擎实施计划.md) — AOP 事件 → Consumer → Agent 唤醒 → 管理面板监控闭环
 
 **④ RAG 原子知识卡**：
 - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/modules/10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md) — 8 Consumer 全能力映射到 AOP 监控面板的 5 指标卡片 + 事件分布饼图 + 时序折线
@@ -229,7 +229,7 @@ end
 - [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
 - [src/pkg/aop/core/registry.rs:208-258](src/pkg/aop/core/registry.rs#L208-L258)
 - [src/pkg/aop/core/registry.rs:333-445](src/pkg/aop/core/registry.rs#L333-L445)
-- [docs/event_design.md](docs/archive/design-archive/event_design.md)
+- [docs/event_design.md](docs/modules/10-异步基建(AOP)/A-设计/event_design.md)
 
 ### 事件监控、指标与性能分析
 - 指标 Hook：AopMetricsHook 提供 on_publish/on_consume_start/on_consume_success/on_consume_failure 四个回调，零开销默认实现。

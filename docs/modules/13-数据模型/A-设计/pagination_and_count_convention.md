@@ -34,8 +34,8 @@ related:
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构（§4.9/§4.10 为本规范的红线摘要来源）
 > - [entity_list_query_search_design.md](./entity_list_query_search_design.md) — list/query/search 三接口职责边界（分页是该规范的子集）
 > - [api_protocol_convention.md](./api_protocol_convention.md) — API 协议规范（common DTO 单一事实源）
-> - 【② Plan 落地】[Query接口分页与List接口简化重构.md](docs/archive/plan-archive/Query接口分页与List接口简化重构.md) — list 只接分页 + query 接完整过滤
-> - 【② Plan 落地】[批量查询与通用Query接口增强重构.md](docs/archive/plan-archive/批量查询与通用Query接口增强重构.md) — Query 结构体化 + PagedResult 统一返回
+> - 【② Plan 落地】[Query接口分页与List接口简化重构.md](docs/modules/13-数据模型/B-落地方案/Query接口分页与List接口简化重构.md) — list 只接分页 + query 接完整过滤
+> - 【② Plan 落地】[批量查询与通用Query接口增强重构.md](docs/modules/13-数据模型/B-落地方案/批量查询与通用Query接口增强重构.md) — Query 结构体化 + PagedResult 统一返回
 > - 【③ Wiki 长文】[分页与计数规范.md](docs/modules/00-总览与架构/C-知识/分页与计数规范.md) — query 核心 vs list 语法糖 + count 通用 WHERE 复用
 > - 【④ RAG 卡】[附件存储与DTO协议统一](docs/modules/13-数据模型/C-知识/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE.md) — §3 query 与 count 复用 WHERE §红线 3/4/7 count 强制共享 push_query_filters
 

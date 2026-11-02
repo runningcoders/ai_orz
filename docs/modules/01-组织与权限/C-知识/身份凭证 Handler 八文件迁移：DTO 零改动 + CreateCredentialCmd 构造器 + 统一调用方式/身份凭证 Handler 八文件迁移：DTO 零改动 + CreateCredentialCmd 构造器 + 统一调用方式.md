@@ -57,7 +57,7 @@ source_files:
 | src/service/domain/finance/mod.rs Commands | CreateCredentialCmd / UpdateCredentialCmd | Handler → Domain 的中间表达 |
 | 【对应 Wiki 长文 1】身份凭证管理.md | 系统化上下文 §5 Handler 迁移小节 | [身份凭证管理](docs/modules/13-数据模型/C-知识/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md) |
 | 【对应 Wiki 长文 2】飞书集成系统.md | 飞书凭证 Handler 字段细节 + WS 移交 | [飞书集成系统](docs/modules/13-数据模型/C-知识/飞书集成系统.md) |
-| 【② Plan 定稿】§三 涉及文件 Handler 8 个迁移表 | 每个 Handler 改写摘要 | docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md |
+| 【② Plan 定稿】§三 涉及文件 Handler 8 个迁移表 | 每个 Handler 改写摘要 | docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md |
 | 【① Design】api_protocol_convention.md | Handler 拆分规范（每方法一文件）/ DTO 定义位置（common）/ 禁止裸响应 / 结构体化请求参数 | docs/modules/13-数据模型/A-设计/api_protocol_convention.md |
 
 ## §3 架构约定

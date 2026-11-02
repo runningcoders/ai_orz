@@ -126,6 +126,8 @@ enum DocNode {
         short_path: String,
         /// 原始仓库相对路径（`docs/modules/<模块>/.../<文件>.md`），渲染期归一化 `./` 链接用
         repo_path: String,
+        /// 空串表示 Markdown；`html` 表示自包含 HTML（前端右侧 iframe 内嵌）
+        kind: String,
     },
     Dir {
         name: String,
@@ -133,10 +135,63 @@ enum DocNode {
     },
 }
 
-/// 递归遍历目录 → 目录树；文件一律复制为 `{dest_prefix}/{hash}.md`（哈希短路径）。
+/// 复制单个文档文件（`.md` / `.html`）为 `{dest_prefix}/{hash}.{ext}`（哈希短路径）
+/// 并生成目录节点。
+///
+/// 其他扩展名返回 `None`；`base` 为仓库内相对路径的基准（通常是 `docs/`）。
+fn copy_doc_node(
+    path: &Path,
+    base: &Path,
+    dest_root: &Path,
+    dest_prefix: &str,
+) -> std::io::Result<Option<DocNode>> {
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return Ok(None);
+    };
+    if !matches!(ext, "md" | "html") {
+        return Ok(None);
+    }
+    let Ok(rel) = path.strip_prefix(base) else {
+        return Ok(None);
+    };
+    let rel_str = rel.to_string_lossy().replace('\\', "/");
+    let short_path = format!("{}/{}.{}", dest_prefix, short_id(&rel_str), ext);
+    let dest = dest_root.join(&short_path);
+    if let Some(parent) = dest.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    // 原样复制字节：`./` `../` 的归一化放到渲染期做（需要原文位置，
+    // 由 index.json 的 repo_path 提供），打包期不改文档内容。
+    let repo_path = format!("docs/{rel_str}");
+    fs::copy(path, &dest)?;
+    println!("cargo:rerun-if-changed={}", path.display());
+    let name = Path::new(&rel_str)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| rel_str.clone());
+    let title = if ext == "html" {
+        html_title(path).unwrap_or_else(|| name.clone())
+    } else {
+        md_title(path).unwrap_or_else(|| name.clone())
+    };
+    Ok(Some(DocNode::File {
+        title,
+        name,
+        short_path,
+        repo_path,
+        kind: if ext == "html" {
+            "html".to_string()
+        } else {
+            String::new()
+        },
+    }))
+}
+
+/// 递归遍历目录 → 目录树；文档文件一律复制为 `{dest_prefix}/{hash}.{ext}`（哈希短路径）。
 ///
 /// 只扁平化「同名目录包同名文件」（`卡名/卡名.md`），其余目录保留为分组——
 /// 目录名是位置信息（如 `架构设计/领域层.md`），丢了读者就分不清文档归属。
+/// 同时收录 `.md` 与自包含 `.html`（如设计原型），两者都走前端统一文档加载。
 fn walk_dir_hierarchical(
     dir: &Path,
     base: &Path,
@@ -168,31 +223,12 @@ fn walk_dir_hierarchical(
                     children,
                 });
             }
-        } else if path.extension().is_some_and(|ext| ext == "md")
-            && let Ok(rel) = path.strip_prefix(base)
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext == "md" || ext == "html")
+            && let Some(node) = copy_doc_node(&path, base, dest_root, dest_prefix)?
         {
-            let rel_str = rel.to_string_lossy().replace('\\', "/");
-            let short_path = format!("{}/{}.md", dest_prefix, short_id(&rel_str));
-            let dest = dest_root.join(&short_path);
-            if let Some(parent) = dest.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            // 原样复制字节：`./` `../` 的归一化放到渲染期做（需要原文位置，
-            // 由 index.json 的 repo_path 提供），打包期不改文档内容。
-            let repo_path = format!("docs/{rel_str}");
-            fs::copy(&path, &dest)?;
-            println!("cargo:rerun-if-changed={}", path.display());
-            let name = Path::new(&rel_str)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| rel_str.clone());
-            let title = md_title(&path).unwrap_or_else(|| name.clone());
-            nodes.push(DocNode::File {
-                title,
-                name,
-                short_path,
-                repo_path,
-            });
+            nodes.push(node);
         }
     }
     Ok(nodes)
@@ -204,9 +240,19 @@ fn node_to_json(node: &DocNode) -> serde_json::Value {
             title,
             short_path,
             repo_path,
+            kind,
             ..
         } => {
-            serde_json::json!({ "title": title, "path": short_path, "repo_path": repo_path })
+            if kind.is_empty() {
+                serde_json::json!({ "title": title, "path": short_path, "repo_path": repo_path })
+            } else {
+                serde_json::json!({
+                    "title": title,
+                    "path": short_path,
+                    "repo_path": repo_path,
+                    "type": kind
+                })
+            }
         }
         DocNode::Dir { name, children } => {
             let children_json: Vec<serde_json::Value> = children.iter().map(node_to_json).collect();
@@ -225,13 +271,11 @@ fn node_to_json(node: &DocNode) -> serde_json::Value {
 /// 复制时**不改文档内容**：每条文档在 index.json 里带上原始 `repo_path`，
 /// 渲染期据此归一化 `./` `../` 链接并决定站内打开还是跳 GitHub。
 ///
-/// 收录范围：
+/// 收录范围（docs/ 下**全部**文档，保证站内互链不退化到 GitHub）：
 /// - docs/ 根目录的纲要文档（路径短，保留原名）
 /// - docs/modules/<模块>/{A-设计,B-落地方案,C-知识}/（能力域知识库，三层结构保留）
-/// - docs/diagrams/（图表 HTML，保留原相对路径直出，供前端新标签页打开）
-///
-/// `docs/archive/`（145 篇被取代的旧设计 / 已完成方案 / 历史会话快照）**不收**：
-/// 文档中心只回答「现在是什么」，历史件留在仓库里按需从 Git 历史或目录直读。
+/// - docs/modules/INDEX.md 与各模块 `00-INDEX.md`（自动生成索引，单独分区）
+/// - docs/diagrams/（图表 HTML 直出 + README 说明）
 fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let docs_src = Path::new(&manifest_dir).join("../docs");
@@ -258,6 +302,16 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
             ("AGENT_GUIDE.md", "Agent 实现指引"),
             ("DOCUMENTATION.md", "文档维护规范"),
             ("memory_design.md", "记忆系统设计"),
+            (
+                "ARCHITECTURE_STATUS_20260725.md",
+                "分层架构现状（2026-07-25）",
+            ),
+            (
+                "DOCUMENTATION_REORG_PLAN.md",
+                "文档规范与仓库精简（2026-08-15）",
+            ),
+            ("CODE_WIKI.md", "Code Wiki 入口"),
+            ("wiki-maintenance.md", "Wiki 维护说明"),
         ];
         let mut overview_docs: Vec<serde_json::Value> = Vec::new();
         for (file, title) in root_docs {
@@ -338,7 +392,7 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
             // 监听目录本身，新增/删除图表文件时可触发重新构建
             println!("cargo:rerun-if-changed={}", diagrams_src.display());
             let mut html_files: Vec<std::path::PathBuf> = Vec::new();
-            let mut stack = vec![diagrams_src];
+            let mut stack = vec![diagrams_src.clone()];
             while let Some(current) = stack.pop() {
                 for entry in fs::read_dir(&current)? {
                     let path = entry?.path();
@@ -376,6 +430,13 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                     "type": "html"
                 }));
             }
+            // 目录说明 README（Markdown）与图表一起收录，避免文档内引用退化为 GitHub
+            let readme_src = diagrams_src.join("README.md");
+            if readme_src.exists()
+                && let Some(node) = copy_doc_node(&readme_src, &docs_src, &dest_root, "diagrams")?
+            {
+                diagrams.insert(0, node_to_json(&node));
+            }
             if !diagrams.is_empty() {
                 diagrams_section = Some(serde_json::json!({ "label": "架构图", "docs": diagrams }));
             }
@@ -386,6 +447,40 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(section) = diagrams_section {
         let pos = sections.len().min(1);
         sections.insert(pos, section);
+    }
+
+    // ---- 分区 3：模块索引（modules/INDEX.md + 各模块 00-INDEX.md）----
+    // 总览类文档（docs/README.md 等）大量引用这些自动生成索引；
+    // 收录后站内点击不再退化到 GitHub。
+    {
+        let modules_src = docs_src.join("modules");
+        if modules_src.is_dir() {
+            let mut index_docs: Vec<serde_json::Value> = Vec::new();
+            let top_index = modules_src.join("INDEX.md");
+            if top_index.exists()
+                && let Some(node) =
+                    copy_doc_node(&top_index, &docs_src, &dest_root, "modules-index")?
+            {
+                index_docs.push(node_to_json(&node));
+            }
+            let mut module_dirs: Vec<std::path::PathBuf> = fs::read_dir(&modules_src)?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|path| path.is_dir())
+                .collect();
+            module_dirs.sort();
+            for module_dir in module_dirs {
+                let index_src = module_dir.join("00-INDEX.md");
+                if index_src.exists()
+                    && let Some(node) =
+                        copy_doc_node(&index_src, &docs_src, &dest_root, "modules-index")?
+                {
+                    index_docs.push(node_to_json(&node));
+                }
+            }
+            if !index_docs.is_empty() {
+                sections.push(serde_json::json!({ "label": "模块索引", "docs": index_docs }));
+            }
+        }
     }
 
     let index = serde_json::json!({ "sections": sections });

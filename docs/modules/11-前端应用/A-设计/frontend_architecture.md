@@ -36,9 +36,9 @@ related:
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
 > - [ui_design_system.md](./ui_design_system.md) — UI 设计系统（主题/色彩/组件规范）
 > - [hud_design_prototype.html](./hud_design_prototype.html) — HUD 设计原型（未来感驾驶舱可视化基准：设计令牌 orz-hud/orz-light、切角发丝边面板、眉标/信号条等，对应 `components/hud.rs` + `styles/input.css` 的 `.hud-*` 皮肤）
-> - 【② Plan 落地】[前端工具与进程管理.md](docs/archive/plan-archive/前端工具与进程管理.md) — Finance Tools 三 Tab 三视图实现
-> - 【② Plan 落地】[前端API协议结构重构.md](docs/archive/plan-archive/前端API协议结构重构.md) — API 客户端 DTO re-export 自 common::api 规范
-> - 【② Plan 落地】[聊天MVP.md](docs/archive/plan-archive/聊天MVP.md) — 对话页 SSE 订阅 + use_resource 资源加载模式
+> - 【② Plan 落地】[前端工具与进程管理.md](docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md) — Finance Tools 三 Tab 三视图实现
+> - 【② Plan 落地】[前端API协议结构重构.md](docs/modules/13-数据模型/B-落地方案/前端API协议结构重构.md) — API 客户端 DTO re-export 自 common::api 规范
+> - 【② Plan 落地】[聊天MVP.md](docs/modules/04-对话与消息/B-落地方案/聊天MVP.md) — 对话页 SSE 订阅 + use_resource 资源加载模式
 > - 【③ Wiki 百科】[前端应用.md](docs/modules/11-前端应用/C-知识/前端应用.md) — 前端入口总览：WASM 编译 + Dioxus 运行时
 > - 【③ Wiki 百科】[钩子系统.md](docs/modules/11-前端应用/C-知识/钩子系统.md) — use_resource/use_breakpoint/use_require_auth 三 Hooks 规范
 > - 【④ RAG 知识卡】[前端整体架构](docs/modules/11-前端应用/C-知识/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层.md) — §41 路由表 + §组件 6 层单向引用 + §7 条红线

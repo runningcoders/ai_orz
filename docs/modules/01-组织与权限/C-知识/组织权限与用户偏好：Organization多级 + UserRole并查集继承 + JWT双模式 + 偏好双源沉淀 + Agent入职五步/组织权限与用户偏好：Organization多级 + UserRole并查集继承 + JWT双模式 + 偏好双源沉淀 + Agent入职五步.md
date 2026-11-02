@@ -13,7 +13,7 @@ scope:
   - "src/pkg/jwt.rs"
   - "src/middleware/auth.rs"
   - "src/models/user.rs (preferences 字段)"
-  - "docs/archive/design-archive/organization_design.md"
+  - "docs/modules/01-组织与权限/A-设计/organization_design.md"
   - "src/models/organization_link.rs"
   - "src/models/organization_pairing_code.rs"
   - "src/middleware/federation_identity.rs"
@@ -28,12 +28,12 @@ source_files:
   - src/middleware/auth.rs#L1-L100 (Axum 鉴权中间件 extractor：优先从 Cookie(ai_orz_token)=JWT → 次从 Header Authorization: Bearer xxx；解析失败统一返回 401 Unauthorized ApiResponse<()>)
   - src/models/user.rs#L20-L80 (UserPo：preferences JSON 字段（自报偏好：theme/language/timezone/notification_channels）；root_user_id 归属过滤 + org_id 多级组织隔离)
   - src/handlers/organization/user/set_user_role.rs#L1-L40 (set_user_role Handler：先 ctx.uid() role.has_permission(Admin) → 再调 OrganizationDomain.set_role；禁止 Member/普通用户给自己提权)
-  - docs/archive/design-archive/organization_design.md（§首次启动自举第一个 SuperAdmin §多级组织 root_org_id 级联 §OrganizationManage + UserManage 子 trait）
-  - docs/archive/design-archive/agent_onboarding_design.md（§入职五步流程 §技能/凭证/工具绑定顺序 §启动时 Agent 必须 Active）
-  - docs/archive/design-archive/request_context_design.md（§ctx.uid/uname/role/org_id 来源 §跨层统一 ctx.clone()）
-  - docs/archive/plan-archive/用户偏好双源设计.md（§自报 users.preferences + §推断 user_preference knowledge tag 双源合并 §冲突优先级）
-  - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md（§入职时凭证绑定第四步 §AES256-GCM 加密存储 reference）
-  - docs/archive/plan-archive/调用者类型上下文.md（§caller_type=User/Agent/System 三枚举 注入 ctx §权限判断 caller_type + role 组合）
+  - docs/modules/01-组织与权限/A-设计/organization_design.md（§首次启动自举第一个 SuperAdmin §多级组织 root_org_id 级联 §OrganizationManage + UserManage 子 trait）
+  - docs/modules/01-组织与权限/A-设计/agent_onboarding_design.md（§入职五步流程 §技能/凭证/工具绑定顺序 §启动时 Agent 必须 Active）
+  - docs/modules/01-组织与权限/A-设计/request_context_design.md（§ctx.uid/uname/role/org_id 来源 §跨层统一 ctx.clone()）
+  - docs/modules/01-组织与权限/B-落地方案/用户偏好双源设计.md（§自报 users.preferences + §推断 user_preference knowledge tag 双源合并 §冲突优先级）
+  - docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md（§入职时凭证绑定第四步 §AES256-GCM 加密存储 reference）
+  - docs/modules/01-组织与权限/B-落地方案/调用者类型上下文.md（§caller_type=User/Agent/System 三枚举 注入 ctx §权限判断 caller_type + role 组合）
   - docs/modules/01-组织与权限/C-知识/用户与组织管理.md（用户组织管理全景：首次启动→创建组织→邀请成员→分配角色→配置偏好 5 步）
   - docs/modules/01-组织与权限/C-知识/组织管理.md（多级组织架构树 + 级联权限 + root_org_id 归属过滤）
   - docs/modules/01-组织与权限/C-知识/用户认证与授权.md（JWT Cookie + Bearer 双模式说明；401/403 错误语义）

@@ -25,7 +25,7 @@ related: []
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范 §SQLite + SQLx 规范
 > - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 查询分页与通用 count 规范（query 过滤条件复用的上游约束）
 > - 【② Plan 落地（Batch9 关联）】
->   - [Query接口分页与List接口简化重构.md](docs/archive/plan-archive/Query接口分页与List接口简化重构.md) — COUNT 与 LIST 复用 push_query_filters 约定
+>   - [Query接口分页与List接口简化重构.md](docs/modules/13-数据模型/B-落地方案/Query接口分页与List接口简化重构.md) — COUNT 与 LIST 复用 push_query_filters 约定
 > - 【③ Wiki 长文（Batch9 新增）】
 >   - [存储架构设计.md](docs/modules/13-数据模型/C-知识/存储架构设计.md) — SQLite STRICT + DuckDB 双层存储架构总览
 >   - [存储系统.md](docs/modules/12-基础设施与部署/C-知识/存储系统.md) — 初始化顺序 DAO→DAL→Domain 红线

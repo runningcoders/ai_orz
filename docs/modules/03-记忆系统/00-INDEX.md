@@ -6,7 +6,18 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 13 篇：C 知识 13。
+本模块共 18 篇：A 设计 1 · B 落地方案 4 · C 知识 13。
+
+## A 设计（design）
+
+- [记忆系统增强（工具拆分 + 定时触发器 + 休息沉淀）设计](<A-设计/memory_system_enhancement_design.md>) — `已废弃`
+
+## B 落地方案（plan）
+
+- [代码异味修复 + sleep_and_settle 架构对齐 Implementation Plan](<B-落地方案/代码异味修复 + sleep_and_settle 架构对齐（执行蓝图）.md>) — `已完成`
+- [知识图谱推荐起点与组件复用重构](<B-落地方案/知识图谱推荐起点与组件复用重构.md>) — `已完成`
+- [知识图谱蜂巢共享（published 标签）实施计划](<B-落地方案/知识图谱蜂巢共享（published 标签）实施计划（执行蓝图）.md>) — `已完成`
+- [蜂巢知识共享 Implementation Plan](<B-落地方案/蜂巢知识共享（执行蓝图）.md>) — `已完成`
 
 ## C 知识（wiki）
 

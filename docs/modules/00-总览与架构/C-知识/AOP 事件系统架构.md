@@ -18,11 +18,11 @@
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [消费者与生产者架构设计](docs/archive/design-archive/consumer_architecture.md) — AOP 生产消费异步框架完整设计（四角色协作图 + Sync/Async 双模式）
-- [事件总线设计（归档参考）](docs/archive/design-archive/event_design.md) — ⚠️ 旧版 EventQueueDao 对比参考（已废弃）
+- [消费者与生产者架构设计](docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md) — AOP 生产消费异步框架完整设计（四角色协作图 + Sync/Async 双模式）
+- [事件总线设计（归档参考）](docs/modules/10-异步基建(AOP)/A-设计/event_design.md) — ⚠️ 旧版 EventQueueDao 对比参考（已废弃）
 
 **② 落地计划（Plan）**：
-- [Agent 循环驱动引擎 Plan](docs/archive/plan-archive/agent_loop_engine_plan.md) — DomainEvent 8 类 → Consumer → Agent 唤醒链路 + 三层兜底架构
+- [Agent 循环驱动引擎 Plan](docs/modules/02-Agent运行时/B-落地方案/Agent 循环驱动引擎实施计划.md) — DomainEvent 8 类 → Consumer → Agent 唤醒链路 + 三层兜底架构
 
 **④ RAG 原子知识卡**：
 - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/modules/10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md) — Event/Publisher/Consumer/Registry 四角色协作 + SyncConsumer（立即处理，只返回 Ok/Err）vs AsyncConsumer（拉-ack/nack，三状态生命周期）
@@ -205,24 +205,24 @@ classDiagram
 class EventQueue {
 +enqueue(ctx, event) Result
 +enqueue_batch(ctx, events) Result
-+dequeue_next(ctx) Result<Option<Value>>
++dequeue_next(ctx) Result
 +ack(ctx, event_id) Result
 +nack(ctx, event_id) Result
 +len() usize
 +in_progress_count() usize
-+recover(ctx) Result<usize>
++recover(ctx) Result
 +clear() void
 +stats() QueueStats
-+query_events(filter) Vec<EventSummary>
-+get_event(event_id) Option<EventDetail>
++query_events(filter) Vec
++get_event(event_id) Option
 }
 class InMemoryEventQueue {
--events : HashMap<String, Value>
--queues : HashMap<String, BinaryHeap<EventRef>>
--global_heap : BinaryHeap<EventRef>
--in_progress : HashMap<String, (EventRef, String)>
--has_active_message : HashMap<String, bool>
--lock : Mutex<()>
+-events : HashMap
+-queues : HashMap
+-global_heap : BinaryHeap
+-in_progress : HashMap
+-has_active_message : HashMap
+-lock : Mutex
 }
 EventQueue <|.. InMemoryEventQueue : "实现"
 ```

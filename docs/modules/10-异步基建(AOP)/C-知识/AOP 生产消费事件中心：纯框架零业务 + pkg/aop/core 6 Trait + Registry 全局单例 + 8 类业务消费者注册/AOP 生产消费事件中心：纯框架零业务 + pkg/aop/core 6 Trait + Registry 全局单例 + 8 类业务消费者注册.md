@@ -25,9 +25,9 @@ source_files:
   查到期 → 逐个 publish(cron.trigger) 事件 → mark_trigger_executed 更新 next_run_at)
 - 'src/consumer/scheduler.rs#L1-L130 '
 - 'src/lib.rs#L150-L250 '
-- docs/archive/design-archive/consumer_architecture.md
-- docs/archive/design-archive/event_design.md
-- docs/archive/plan-archive/AOP生产消费事件中心重构.md
+- docs/modules/10-异步基建(AOP)/A-设计/consumer_architecture.md
+- docs/modules/10-异步基建(AOP)/A-设计/event_design.md
+- docs/modules/10-异步基建(AOP)/B-落地方案/AOP生产消费事件中心重构.md
 - docs/modules/10-异步基建(AOP)/C-知识/基础设施/AOP 事件系统/AOP 事件系统.md
 - docs/modules/10-异步基建(AOP)/C-知识/注册中心与调度器.md
 - docs/modules/10-异步基建(AOP)/C-知识/事件消费者.md

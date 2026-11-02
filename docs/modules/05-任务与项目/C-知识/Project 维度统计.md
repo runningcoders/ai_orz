@@ -7,7 +7,7 @@
 - [common/src/models/stats.rs](common/src/models/stats.rs)
 - [common/src/api/project.rs](common/src/api/project.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
-- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
+- [docs/stats_query_design.md](docs/modules/09-统计与监控/A-设计/stats_query_design.md)
 - [frontend/src/components/stats.rs](frontend/src/components/stats.rs)
 - [src/pkg/stats/tool_call.rs](src/pkg/stats/tool_call.rs)
 - [src/pkg/stats/task_event.rs](src/pkg/stats/task_event.rs)
@@ -147,7 +147,7 @@ Assemble --> End
 章节来源
 - [src/pkg/stats/project_event.rs:12-41](src/pkg/stats/project_event.rs#L12-L41)
 - [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
-- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
+- [docs/stats_query_design.md](docs/modules/09-统计与监控/A-设计/stats_query_design.md)
 - [common/src/models/stats.rs:41-72](common/src/models/stats.rs#L41-L72)
 
 ### 项目活跃度、任务完成率、资源使用率计算方法
@@ -164,7 +164,7 @@ Assemble --> End
 章节来源
 - [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
 - [common/src/models/stats.rs:114-149](common/src/models/stats.rs#L114-L149)
-- [docs/stats_query_design.md](docs/archive/design-archive/stats_query_design.md)
+- [docs/stats_query_design.md](docs/modules/09-统计与监控/A-设计/stats_query_design.md)
 
 ### 项目统计数据查询与分析接口
 - 请求参数（GET /projects/:id）
@@ -307,6 +307,6 @@ Project 维度统计以 ProjectEvent 为核心，通过 DuckDB 统计表与 Proj
 ## 附录
 - 事件类型与触发时机参考：docs/stats_query_design.md
 - 工具调用与 Agent 唤醒统计参考：docs/stats_query_design.md
-- 项目状态与关系参考：docs/archive/design-archive/project_design.md
+- 项目状态与关系参考：docs/modules/05-任务与项目/A-设计/project_design.md
 
 [本节为补充材料，不直接分析具体文件]

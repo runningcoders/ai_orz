@@ -2,31 +2,51 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 525,
-  "total_bytes": 10427314,
+  "total": 668,
+  "total_bytes": 14009756,
   "modules": [
     {
       "id": "00-总览与架构",
       "counts": {
         "A-设计": 0,
-        "B-落地方案": 0,
+        "B-落地方案": 2,
         "C-知识": 35
       },
-      "total": 35,
+      "total": 37,
       "docs": [
+        {
+          "tier": "B-落地方案",
+          "path": "00-总览与架构/B-落地方案/superpowers 执行蓝图说明.md",
+          "name": "superpowers 执行蓝图说明",
+          "title": "superpowers/plans 执行蓝图归档（2026-08-15）",
+          "bytes": 835,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "00-总览与架构/B-落地方案/项目遗留事项 TODO（2026-08-15）.md",
+          "name": "项目遗留事项 TODO（2026-08-15）",
+          "title": "项目遗留事项 TODO",
+          "bytes": 6302,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/AOP 事件系统架构.md",
           "name": "AOP 事件系统架构",
           "title": "AOP 事件系统架构",
-          "bytes": 20561
+          "bytes": 20625
         },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/API协议规范.md",
           "name": "API协议规范",
           "title": "API协议规范",
-          "bytes": 17159
+          "bytes": 17199
         },
         {
           "tier": "C-知识",
@@ -40,28 +60,28 @@
           "path": "00-总览与架构/C-知识/Domain 层编排.md",
           "name": "Domain 层编排",
           "title": "Domain 层编排",
-          "bytes": 18013
+          "bytes": 18060
         },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/Finance 领域编排.md",
           "name": "Finance 领域编排",
           "title": "Finance 领域编排",
-          "bytes": 19298
+          "bytes": 19324
         },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/HR 领域编排.md",
           "name": "HR 领域编排",
           "title": "HR 领域编排",
-          "bytes": 19923
+          "bytes": 19948
         },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/HR领域.md",
           "name": "HR领域",
           "title": "HR领域",
-          "bytes": 20280
+          "bytes": 20410
         },
         {
           "tier": "C-知识",
@@ -75,14 +95,14 @@
           "path": "00-总览与架构/C-知识/Message 领域编排.md",
           "name": "Message 领域编排",
           "title": "Message 领域编排",
-          "bytes": 15302
+          "bytes": 15380
         },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/Organization 领域编排.md",
           "name": "Organization 领域编排",
           "title": "Organization 领域编排",
-          "bytes": 19292
+          "bytes": 19344
         },
         {
           "tier": "C-知识",
@@ -96,14 +116,14 @@
           "path": "00-总览与架构/C-知识/Project 领域编排.md",
           "name": "Project 领域编排",
           "title": "Project 领域编排",
-          "bytes": 13244
+          "bytes": 13296
         },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/Runtime 领域编排.md",
           "name": "Runtime 领域编排",
           "title": "Runtime 领域编排",
-          "bytes": 39495
+          "bytes": 39527
         },
         {
           "tier": "C-知识",
@@ -117,7 +137,7 @@
           "path": "00-总览与架构/C-知识/分层架构设计.md",
           "name": "分层架构设计",
           "title": "分层架构设计",
-          "bytes": 15491
+          "bytes": 15767
         },
         {
           "tier": "C-知识",
@@ -166,7 +186,7 @@
           "path": "00-总览与架构/C-知识/开发指南.md",
           "name": "开发指南",
           "title": "开发指南",
-          "bytes": 16354
+          "bytes": 16108
         },
         {
           "tier": "C-知识",
@@ -180,7 +200,7 @@
           "path": "00-总览与架构/C-知识/技术栈概览.md",
           "name": "技术栈概览",
           "title": "技术栈概览",
-          "bytes": 18769
+          "bytes": 18804
         },
         {
           "tier": "C-知识",
@@ -222,7 +242,7 @@
           "path": "00-总览与架构/C-知识/架构设计.md",
           "name": "架构设计",
           "title": "架构设计",
-          "bytes": 15501
+          "bytes": 15619
         },
         {
           "tier": "C-知识",
@@ -243,7 +263,7 @@
           "path": "00-总览与架构/C-知识/统一工具调用架构.md",
           "name": "统一工具调用架构",
           "title": "统一工具调用架构",
-          "bytes": 23917
+          "bytes": 24008
         },
         {
           "tier": "C-知识",
@@ -264,23 +284,63 @@
     {
       "id": "01-组织与权限",
       "counts": {
-        "A-设计": 1,
-        "B-落地方案": 4,
+        "A-设计": 4,
+        "B-落地方案": 7,
         "C-知识": 36
       },
-      "total": 41,
+      "total": 47,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "01-组织与权限/A-设计/agent_onboarding_design.md",
+          "name": "agent_onboarding_design",
+          "title": "Agent 入职流程设计文档",
+          "bytes": 14575,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "01-组织与权限/A-设计/organization_design.md",
+          "name": "organization_design",
+          "title": "组织初始化与用户认证模块设计文档",
+          "bytes": 10082,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "01-组织与权限/A-设计/request_context_design.md",
+          "name": "request_context_design",
+          "title": "RequestContext 设计文档",
+          "bytes": 20380,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "A-设计",
           "path": "01-组织与权限/A-设计/user_credentials_design.md",
           "name": "user_credentials_design",
           "title": "用户身份凭证独立表设计（user_credentials）",
-          "bytes": 29265,
+          "bytes": 29259,
           "status": "现行",
           "scope": [
             "src/models/user_credential.rs",
             "src/service/dao/user_credential/"
           ],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "01-组织与权限/B-落地方案/用户偏好双源设计.md",
+          "name": "用户偏好双源设计",
+          "title": "用户偏好双源沉淀机制（用户表自述 + 组织级图谱总结）",
+          "bytes": 11123,
+          "status": "已完成",
+          "scope": [],
           "related": []
         },
         {
@@ -332,6 +392,16 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "01-组织与权限/B-落地方案/调用者类型上下文.md",
+          "name": "调用者类型上下文",
+          "title": "RequestContext 调用者类型上下文扩展",
+          "bytes": 13885,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "01-组织与权限/B-落地方案/跨组织业务调用方案.md",
           "name": "跨组织业务调用方案",
           "title": "跨组织业务调用方案（Phase 2 主体）",
@@ -351,6 +421,16 @@
           "related": []
         },
         {
+          "tier": "B-落地方案",
+          "path": "01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md",
+          "name": "身份凭证Domain统一CRUD重构",
+          "title": "身份凭证 Domain 层统一 CRUD 重构",
+          "bytes": 9643,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/Agent 管理 API.md",
           "name": "Agent 管理 API",
@@ -362,7 +442,7 @@
           "path": "01-组织与权限/C-知识/GitHub 集成.md",
           "name": "GitHub 集成",
           "title": "GitHub 集成",
-          "bytes": 23653
+          "bytes": 23369
         },
         {
           "tier": "C-知识",
@@ -425,7 +505,7 @@
           "path": "01-组织与权限/C-知识/用户与组织管理.md",
           "name": "用户与组织管理",
           "title": "用户与组织管理",
-          "bytes": 20646
+          "bytes": 20808
         },
         {
           "tier": "C-知识",
@@ -467,14 +547,14 @@
           "path": "01-组织与权限/C-知识/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md",
           "name": "组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步",
           "title": "组织权限与用户偏好：Organization 多级组织 + UserRole 并查集继承 + JWT Cookie+Bearer 双模式 + 偏好双源沉淀 + Agent入职流程",
-          "bytes": 28654
+          "bytes": 28769
         },
         {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/组织管理.md",
           "name": "组织管理",
           "title": "组织管理",
-          "bytes": 20389
+          "bytes": 20454
         },
         {
           "tier": "C-知识",
@@ -502,7 +582,7 @@
           "path": "01-组织与权限/C-知识/组织领域.md",
           "name": "组织领域",
           "title": "组织领域",
-          "bytes": 17555
+          "bytes": 17594
         },
         {
           "tier": "C-知识",
@@ -551,7 +631,7 @@
           "path": "01-组织与权限/C-知识/记忆管理 API.md",
           "name": "记忆管理 API",
           "title": "记忆管理 API",
-          "bytes": 16524
+          "bytes": 16536
         },
         {
           "tier": "C-知识",
@@ -572,47 +652,57 @@
           "path": "01-组织与权限/C-知识/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md",
           "name": "身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用",
           "title": "身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用",
-          "bytes": 13794
+          "bytes": 13841
         },
         {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/身份凭证 Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式/身份凭证 Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式.md",
           "name": "身份凭证 Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式",
           "title": "身份凭证 Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式",
-          "bytes": 11716
+          "bytes": 11737
         },
         {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/身份凭证与授权流程.md",
           "name": "身份凭证与授权流程",
           "title": "身份凭证与授权流程",
-          "bytes": 29185
+          "bytes": 29206
         },
         {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md",
           "name": "身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立",
           "title": "身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立",
-          "bytes": 12452
+          "bytes": 12499
         },
         {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md",
           "name": "身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）",
           "title": "身份凭证统一链路（总卡）",
-          "bytes": 17149
+          "bytes": 17191
         }
       ]
     },
     {
       "id": "02-Agent运行时",
       "counts": {
-        "A-设计": 5,
-        "B-落地方案": 1,
+        "A-设计": 8,
+        "B-落地方案": 15,
         "C-知识": 19
       },
-      "total": 25,
+      "total": 42,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "02-Agent运行时/A-设计/agent_loop_engine_design.md",
+          "name": "agent_loop_engine_design",
+          "title": "Agent 循环驱动引擎设计",
+          "bytes": 36163,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "A-设计",
           "path": "02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md",
@@ -636,10 +726,20 @@
         },
         {
           "tier": "A-设计",
+          "path": "02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md",
+          "name": "intent_aware_two_stage_awaken_design",
+          "title": "意图感知两阶段唤醒设计",
+          "bytes": 27694,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
           "path": "02-Agent运行时/A-设计/runtime_design.md",
           "name": "runtime_design",
           "title": "Runtime Domain 设计",
-          "bytes": 141847,
+          "bytes": 142056,
           "status": "现行",
           "scope": [
             "common/config/ai_orz.toml",
@@ -670,6 +770,16 @@
           "related": [
             "02-Agent运行时/A-设计/thinking_task_policy_engine_design.md"
           ]
+        },
+        {
+          "tier": "A-设计",
+          "path": "02-Agent运行时/A-设计/runtime_domain_roadmap.md",
+          "name": "runtime_domain_roadmap",
+          "title": "Runtime Domain 推进路线图",
+          "bytes": 31951,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
         },
         {
           "tier": "A-设计",
@@ -721,6 +831,86 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/Agent Loop Alignment + AOP Sync Hooks（执行蓝图）.md",
+          "name": "Agent Loop Alignment + AOP Sync Hooks（执行蓝图）",
+          "title": "Agent Loop Alignment + AOP Sync Hooks Implementation Plan",
+          "bytes": 62565,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/Agent 循环驱动引擎实施计划.md",
+          "name": "Agent 循环驱动引擎实施计划",
+          "title": "Agent 循环驱动引擎 Implementation Plan",
+          "bytes": 13797,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/AgentRuntimeInfo 业务上下文扩展（执行蓝图）.md",
+          "name": "AgentRuntimeInfo 业务上下文扩展（执行蓝图）",
+          "title": "AgentRuntimeInfo 业务上下文扩展 Implementation Plan",
+          "bytes": 18170,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/Agent运行时上下文扩展.md",
+          "name": "Agent运行时上下文扩展",
+          "title": "Agent运行时上下文扩展",
+          "bytes": 8359,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/Rig 0.34 → 0.41 Upgrade（执行蓝图）.md",
+          "name": "Rig 0.34 → 0.41 Upgrade（执行蓝图）",
+          "title": "Rig 0.34 → 0.41 Upgrade Implementation Plan",
+          "bytes": 36316,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/Runtime API + exit_reason 持久化（执行蓝图）.md",
+          "name": "Runtime API + exit_reason 持久化（执行蓝图）",
+          "title": "Runtime API + exit_reason 持久化 Implementation Plan",
+          "bytes": 27084,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/两阶段唤醒：IntentAnalyze+Awaken正式执行.md",
+          "name": "两阶段唤醒：IntentAnalyze+Awaken正式执行",
+          "title": "两阶段唤醒：IntentAnalyze+Awaken正式执行",
+          "bytes": 12615,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md",
+          "name": "唤醒上下文与睡眠约束",
+          "title": "唤醒上下文注入 + 沉睡沉淀约束改造",
+          "bytes": 20963,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "02-Agent运行时/B-落地方案/思考图引擎改造.md",
           "name": "思考图引擎改造",
           "title": "思考图引擎改造实施计划",
@@ -730,18 +920,78 @@
           "related": []
         },
         {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/意图感知两阶段唤醒（执行蓝图）.md",
+          "name": "意图感知两阶段唤醒（执行蓝图）",
+          "title": "意图感知两阶段唤醒 Implementation Plan",
+          "bytes": 67595,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/移除rig依赖与向量存储后端解耦.md",
+          "name": "移除rig依赖与向量存储后端解耦",
+          "title": "移除 rig 依赖与 Cortex 层扁平化重构",
+          "bytes": 19709,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/策略引擎 + AgentThinkRuntime（执行蓝图）.md",
+          "name": "策略引擎 + AgentThinkRuntime（执行蓝图）",
+          "title": "策略引擎 + AgentThinkRuntime Implementation Plan",
+          "bytes": 37207,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/策略引擎与思考运行时策略增强.md",
+          "name": "策略引擎与思考运行时策略增强",
+          "title": "策略引擎与思考运行时策略增强",
+          "bytes": 14795,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/运行时API可观测与退出原因字段.md",
+          "name": "运行时API可观测与退出原因字段",
+          "title": "运行时API可观测与退出原因字段",
+          "bytes": 14562,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/运行时问题修复.md",
+          "name": "运行时问题修复",
+          "title": "运行时问题修复",
+          "bytes": 12197,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md",
           "name": "A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送",
           "title": "A2A Client + 外部 Agent Runtime（出站调用 + 内部桥接）",
-          "bytes": 16306
+          "bytes": 16334
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/AI Agent 管理.md",
           "name": "AI Agent 管理",
           "title": "AI Agent 管理",
-          "bytes": 18270
+          "bytes": 18470
         },
         {
           "tier": "C-知识",
@@ -755,14 +1005,14 @@
           "path": "02-Agent运行时/C-知识/Agent 搜索与推荐.md",
           "name": "Agent 搜索与推荐",
           "title": "Agent 搜索与推荐",
-          "bytes": 13238
+          "bytes": 13286
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/Agent 生命周期管理.md",
           "name": "Agent 生命周期管理",
           "title": "Agent 生命周期管理",
-          "bytes": 28012
+          "bytes": 28090
         },
         {
           "tier": "C-知识",
@@ -776,7 +1026,7 @@
           "path": "02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md",
           "name": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联",
           "title": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2",
-          "bytes": 15988
+          "bytes": 16084
         },
         {
           "tier": "C-知识",
@@ -825,7 +1075,7 @@
           "path": "02-Agent运行时/C-知识/技能包管理.md",
           "name": "技能包管理",
           "title": "技能包管理",
-          "bytes": 30153
+          "bytes": 30444
         },
         {
           "tier": "C-知识",
@@ -839,60 +1089,110 @@
           "path": "02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md",
           "name": "策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层",
           "title": "策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层",
-          "bytes": 15127
+          "bytes": 15003
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/记忆系统管理.md",
           "name": "记忆系统管理",
           "title": "记忆系统管理",
-          "bytes": 36127
+          "bytes": 36193
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md",
           "name": "运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化",
           "title": "运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化",
-          "bytes": 13270
+          "bytes": 13011
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/运行时领域.md",
           "name": "运行时领域",
           "title": "运行时领域",
-          "bytes": 40301
+          "bytes": 39942
         }
       ]
     },
     {
       "id": "03-记忆系统",
       "counts": {
-        "A-设计": 0,
-        "B-落地方案": 0,
+        "A-设计": 1,
+        "B-落地方案": 4,
         "C-知识": 13
       },
-      "total": 13,
+      "total": 18,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "03-记忆系统/A-设计/memory_system_enhancement_design.md",
+          "name": "memory_system_enhancement_design",
+          "title": "记忆系统增强（工具拆分 + 定时触发器 + 休息沉淀）设计",
+          "bytes": 14410,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "03-记忆系统/B-落地方案/代码异味修复 + sleep_and_settle 架构对齐（执行蓝图）.md",
+          "name": "代码异味修复 + sleep_and_settle 架构对齐（执行蓝图）",
+          "title": "代码异味修复 + sleep_and_settle 架构对齐 Implementation Plan",
+          "bytes": 22815,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md",
+          "name": "知识图谱推荐起点与组件复用重构",
+          "title": "知识图谱推荐起点与组件复用重构",
+          "bytes": 15997,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "03-记忆系统/B-落地方案/知识图谱蜂巢共享（published 标签）实施计划（执行蓝图）.md",
+          "name": "知识图谱蜂巢共享（published 标签）实施计划（执行蓝图）",
+          "title": "知识图谱蜂巢共享（published 标签）实施计划",
+          "bytes": 5531,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "03-记忆系统/B-落地方案/蜂巢知识共享（执行蓝图）.md",
+          "name": "蜂巢知识共享（执行蓝图）",
+          "title": "蜂巢知识共享 Implementation Plan",
+          "bytes": 37369,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "C-知识",
           "path": "03-记忆系统/C-知识/Agent 记忆系统.md",
           "name": "Agent 记忆系统",
           "title": "Agent 记忆系统",
-          "bytes": 20427
+          "bytes": 20457
         },
         {
           "tier": "C-知识",
           "path": "03-记忆系统/C-知识/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md",
           "name": "Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并",
           "title": "Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle",
-          "bytes": 32030
+          "bytes": 32090
         },
         {
           "tier": "C-知识",
           "path": "03-记忆系统/C-知识/RESTful API.md",
           "name": "RESTful API",
           "title": "RESTful API",
-          "bytes": 35544
+          "bytes": 35584
         },
         {
           "tier": "C-知识",
@@ -906,14 +1206,14 @@
           "path": "03-记忆系统/C-知识/四层记忆系统.md",
           "name": "四层记忆系统",
           "title": "四层记忆系统",
-          "bytes": 26215
+          "bytes": 26289
         },
         {
           "tier": "C-知识",
           "path": "03-记忆系统/C-知识/工作记忆 (Working Memory).md",
           "name": "工作记忆 (Working Memory)",
           "title": "工作记忆 (Working Memory)",
-          "bytes": 20269
+          "bytes": 20299
         },
         {
           "tier": "C-知识",
@@ -941,14 +1241,14 @@
           "path": "03-记忆系统/C-知识/记忆搜索机制.md",
           "name": "记忆搜索机制",
           "title": "记忆搜索机制",
-          "bytes": 20951
+          "bytes": 21005
         },
         {
           "tier": "C-知识",
           "path": "03-记忆系统/C-知识/记忆沉淀机制.md",
           "name": "记忆沉淀机制",
           "title": "记忆沉淀机制",
-          "bytes": 28039
+          "bytes": 28159
         },
         {
           "tier": "C-知识",
@@ -969,11 +1269,11 @@
     {
       "id": "04-对话与消息",
       "counts": {
-        "A-设计": 3,
-        "B-落地方案": 4,
+        "A-设计": 6,
+        "B-落地方案": 9,
         "C-知识": 21
       },
-      "total": 28,
+      "total": 36,
       "docs": [
         {
           "tier": "A-设计",
@@ -982,6 +1282,36 @@
           "title": "飞书（Lark）渠道集成设计 —— 长连接协议对齐版",
           "bytes": 8859,
           "status": "现行",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "04-对话与消息/A-设计/lark_cli_integration.md",
+          "name": "lark_cli_integration",
+          "title": "lark-cli 集成与飞书渠道多应用化设计",
+          "bytes": 16122,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "04-对话与消息/A-设计/message_channel_design.md",
+          "name": "message_channel_design",
+          "title": "消息渠道设计文档",
+          "bytes": 30817,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "04-对话与消息/A-设计/message_interaction_design.md",
+          "name": "message_interaction_design",
+          "title": "用户-Agent 消息交互设计",
+          "bytes": 19624,
+          "status": "已废弃",
           "scope": [],
           "related": []
         },
@@ -1057,6 +1387,26 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "04-对话与消息/B-落地方案/SSE 消息推送实现计划（执行蓝图）.md",
+          "name": "SSE 消息推送实现计划（执行蓝图）",
+          "title": "SSE 消息推送实现计划",
+          "bytes": 19923,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "04-对话与消息/B-落地方案/lark-cli_集成二期.md",
+          "name": "lark-cli_集成二期",
+          "title": "lark-cli 集成二期：绑定体验 + 用户身份 + WS 稳定性",
+          "bytes": 13476,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "04-对话与消息/B-落地方案/微信iLink协议对齐重构方案.md",
           "name": "微信iLink协议对齐重构方案",
           "title": "微信 iLink 协议对齐重构方案",
@@ -1125,6 +1475,36 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "04-对话与消息/B-落地方案/聊天MVP.md",
+          "name": "聊天MVP",
+          "title": "聊天MVP",
+          "bytes": 13964,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "04-对话与消息/B-落地方案/飞书P2P消息集成.md",
+          "name": "飞书P2P消息集成",
+          "title": "飞书P2P消息集成",
+          "bytes": 14875,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "04-对话与消息/B-落地方案/飞书出站引用回复方案.md",
+          "name": "飞书出站引用回复方案",
+          "title": "飞书出站引用回复 Implementation Plan",
+          "bytes": 34238,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "04-对话与消息/B-落地方案/飞书链路对齐审查.md",
           "name": "飞书链路对齐审查",
           "title": "飞书链路对齐审查",
@@ -1174,14 +1554,14 @@
           "path": "04-对话与消息/C-知识/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容.md",
           "name": "AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容",
           "title": "AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容",
-          "bytes": 11731
+          "bytes": 11765
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/Agent消息集成.md",
           "name": "Agent消息集成",
           "title": "Agent消息集成",
-          "bytes": 18905
+          "bytes": 18947
         },
         {
           "tier": "C-知识",
@@ -1202,14 +1582,14 @@
           "path": "04-对话与消息/C-知识/WebSocket 与 SSE.md",
           "name": "WebSocket 与 SSE",
           "title": "WebSocket 与 SSE",
-          "bytes": 15246
+          "bytes": 15293
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/多渠道消息系统.md",
           "name": "多渠道消息系统",
           "title": "多渠道消息系统",
-          "bytes": 25168
+          "bytes": 25278
         },
         {
           "tier": "C-知识",
@@ -1223,7 +1603,7 @@
           "path": "04-对话与消息/C-知识/微信 iLink 专属渠道.md",
           "name": "微信 iLink 专属渠道",
           "title": "微信 iLink 专属渠道",
-          "bytes": 38858
+          "bytes": 38871
         },
         {
           "tier": "C-知识",
@@ -1237,42 +1617,42 @@
           "path": "04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md",
           "name": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
           "title": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
-          "bytes": 34147
+          "bytes": 34261
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md",
           "name": "消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级",
           "title": "消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级",
-          "bytes": 8671
+          "bytes": 8692
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/消息处理核心.md",
           "name": "消息处理核心",
           "title": "消息处理核心",
-          "bytes": 21357
+          "bytes": 21399
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md",
           "name": "消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期",
           "title": "消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）",
-          "bytes": 36420
+          "bytes": 36488
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/消息渠道管理.md",
           "name": "消息渠道管理",
           "title": "消息渠道管理（业务功能层）",
-          "bytes": 32040
+          "bytes": 32206
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/消息渠道适配器.md",
           "name": "消息渠道适配器",
           "title": "消息渠道适配器",
-          "bytes": 22785
+          "bytes": 22965
         },
         {
           "tier": "C-知识",
@@ -1286,7 +1666,7 @@
           "path": "04-对话与消息/C-知识/消息系统.md",
           "name": "消息系统",
           "title": "消息系统（业务功能层）",
-          "bytes": 22263
+          "bytes": 22683
         },
         {
           "tier": "C-知识",
@@ -1307,11 +1687,11 @@
     {
       "id": "05-任务与项目",
       "counts": {
-        "A-设计": 1,
-        "B-落地方案": 0,
+        "A-设计": 5,
+        "B-落地方案": 6,
         "C-知识": 53
       },
-      "total": 54,
+      "total": 64,
       "docs": [
         {
           "tier": "A-设计",
@@ -1328,11 +1708,111 @@
           "related": []
         },
         {
+          "tier": "A-设计",
+          "path": "05-任务与项目/A-设计/project_design.md",
+          "name": "project_design",
+          "title": "项目系统设计文档",
+          "bytes": 6765,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "05-任务与项目/A-设计/project_management_design.md",
+          "name": "project_management_design",
+          "title": "项目管理系统设计文档",
+          "bytes": 30225,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "05-任务与项目/A-设计/task_design.md",
+          "name": "task_design",
+          "title": "任务系统设计文档",
+          "bytes": 7306,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "05-任务与项目/A-设计/task_scheduler_design.md",
+          "name": "task_scheduler_design",
+          "title": "定时任务系统设计文档",
+          "bytes": 22671,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/Agent Artifact 创建能力实施（执行蓝图）.md",
+          "name": "Agent Artifact 创建能力实施（执行蓝图）",
+          "title": "Agent Artifact 创建能力实施 Plan",
+          "bytes": 38189,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/Agent Artifact 创建能力方案（定稿）（执行蓝图）.md",
+          "name": "Agent Artifact 创建能力方案（定稿）（执行蓝图）",
+          "title": "Agent Artifact 创建能力方案（定稿）",
+          "bytes": 13824,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/Artifact 编辑功能实施（执行蓝图）.md",
+          "name": "Artifact 编辑功能实施（执行蓝图）",
+          "title": "Artifact 编辑功能实施 Plan",
+          "bytes": 34450,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/任务管理核心功能实现计划（执行蓝图）.md",
+          "name": "任务管理核心功能实现计划（执行蓝图）",
+          "title": "任务管理核心功能实现计划",
+          "bytes": 45213,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/独立任务管理页面 + 看板视图实现计划（执行蓝图）.md",
+          "name": "独立任务管理页面 + 看板视图实现计划（执行蓝图）",
+          "title": "独立任务管理页面 + 看板视图实现计划",
+          "bytes": 28928,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/项目任务增强.md",
+          "name": "项目任务增强",
+          "title": "项目任务增强",
+          "bytes": 13332,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息.md",
           "name": "A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息",
           "title": "A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息",
-          "bytes": 9422
+          "bytes": 9450
         },
         {
           "tier": "C-知识",
@@ -1360,21 +1840,21 @@
           "path": "05-任务与项目/C-知识/Agent 状态管理.md",
           "name": "Agent 状态管理",
           "title": "Agent 状态管理",
-          "bytes": 18472
+          "bytes": 18504
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/Agent 维度统计.md",
           "name": "Agent 维度统计",
           "title": "Agent 维度统计",
-          "bytes": 16471
+          "bytes": 16601
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md",
           "name": "AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视",
           "title": "AgentRuntimeInfo 状态机 + BusyGuard RAII：Idle/Busy/Resting 三态转换 + task_id/project_id 业务上下文 + 前端 runtime-list 过滤",
-          "bytes": 17639
+          "bytes": 17679
         },
         {
           "tier": "C-知识",
@@ -1395,7 +1875,7 @@
           "path": "05-任务与项目/C-知识/Project 维度统计.md",
           "name": "Project 维度统计",
           "title": "Project 维度统计",
-          "bytes": 15977
+          "bytes": 16029
         },
         {
           "tier": "C-知识",
@@ -1423,14 +1903,14 @@
           "path": "05-任务与项目/C-知识/任务处理器.md",
           "name": "任务处理器",
           "title": "任务处理器",
-          "bytes": 20929
+          "bytes": 20994
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/任务状态机与项目聚合：TaskStatus 4 态 + progress 0-100 自动联动 + execution_plan_result JSON Patch + TaskGraph 依赖 DAG/任务状态机与项目聚合：TaskStatus 4 态 + progress 0-100 自动联动 + execution_plan_result JSON Patch + TaskGraph 依赖 DAG.md",
           "name": "任务状态机与项目聚合：TaskStatus 4 态 + progress 0-100 自动联动 + execution_plan_result JSON Patch + TaskGraph 依赖 DAG",
           "title": "任务状态机 + 项目聚合进度追踪：TaskStatus 4 态流转 + execution_plan_result 结构化存储 + TaskGraph",
-          "bytes": 14020
+          "bytes": 14098
         },
         {
           "tier": "C-知识",
@@ -1451,7 +1931,7 @@
           "path": "05-任务与项目/C-知识/任务管理.md",
           "name": "任务管理",
           "title": "任务管理（业务功能层）",
-          "bytes": 22672
+          "bytes": 22906
         },
         {
           "tier": "C-知识",
@@ -1465,28 +1945,28 @@
           "path": "05-任务与项目/C-知识/多 Agent 协作机制.md",
           "name": "多 Agent 协作机制",
           "title": "多 Agent 协作机制",
-          "bytes": 18310
+          "bytes": 18441
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/多维统计系统.md",
           "name": "多维统计系统",
           "title": "多维统计系统",
-          "bytes": 26850
+          "bytes": 27108
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/定时任务管理.md",
           "name": "定时任务管理",
           "title": "定时任务管理",
-          "bytes": 21226
+          "bytes": 21259
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/定时任务调度.md",
           "name": "定时任务调度",
           "title": "定时任务调度（业务功能层）",
-          "bytes": 17163
+          "bytes": 17196
         },
         {
           "tier": "C-知识",
@@ -1500,7 +1980,7 @@
           "path": "05-任务与项目/C-知识/工件管理.md",
           "name": "工件管理",
           "title": "工件管理",
-          "bytes": 18210
+          "bytes": 18275
         },
         {
           "tier": "C-知识",
@@ -1563,7 +2043,7 @@
           "path": "05-任务与项目/C-知识/文件系统写入工具 (fs_write).md",
           "name": "文件系统写入工具 (fs_write)",
           "title": "文件系统写入工具 (fs_write)",
-          "bytes": 15115
+          "bytes": 15141
         },
         {
           "tier": "C-知识",
@@ -1584,14 +2064,14 @@
           "path": "05-任务与项目/C-知识/核心功能特性.md",
           "name": "核心功能特性",
           "title": "核心功能特性",
-          "bytes": 32102
+          "bytes": 32306
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/知识关系管理.md",
           "name": "知识关系管理",
           "title": "知识关系管理",
-          "bytes": 25224
+          "bytes": 25268
         },
         {
           "tier": "C-知识",
@@ -1619,7 +2099,7 @@
           "path": "05-任务与项目/C-知识/综合搜索能力.md",
           "name": "综合搜索能力",
           "title": "综合搜索能力",
-          "bytes": 22725
+          "bytes": 22785
         },
         {
           "tier": "C-知识",
@@ -1633,7 +2113,7 @@
           "path": "05-任务与项目/C-知识/自定义工具开发.md",
           "name": "自定义工具开发",
           "title": "自定义工具开发",
-          "bytes": 16513
+          "bytes": 16604
         },
         {
           "tier": "C-知识",
@@ -1675,7 +2155,7 @@
           "path": "05-任务与项目/C-知识/项目管理.md",
           "name": "项目管理",
           "title": "项目管理（业务功能层）",
-          "bytes": 18195
+          "bytes": 18489
         },
         {
           "tier": "C-知识",
@@ -1689,33 +2169,93 @@
           "path": "05-任务与项目/C-知识/项目领域.md",
           "name": "项目领域",
           "title": "项目领域",
-          "bytes": 14952
+          "bytes": 14991
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合.md",
           "name": "项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合",
           "title": "项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合",
-          "bytes": 8993
+          "bytes": 9087
         }
       ]
     },
     {
       "id": "06-工具与技能",
       "counts": {
-        "A-设计": 4,
-        "B-落地方案": 5,
+        "A-设计": 11,
+        "B-落地方案": 14,
         "C-知识": 52
       },
-      "total": 61,
+      "total": 77,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "06-工具与技能/A-设计/builtins_http_tool_design.md",
+          "name": "builtins_http_tool_design",
+          "title": "HTTP Tool Runtime 设计文档",
+          "bytes": 16588,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "06-工具与技能/A-设计/generic_builtin_tools_design.md",
+          "name": "generic_builtin_tools_design",
+          "title": "通用 Builtin 工具设计 - 文件读写 & HTTP Fetch",
+          "bytes": 18323,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "06-工具与技能/A-设计/handler_tool_registration_macro.md",
+          "name": "handler_tool_registration_macro",
+          "title": "工具注册宏设计文档",
+          "bytes": 29127,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "06-工具与技能/A-设计/mcp_tool_design.md",
+          "name": "mcp_tool_design",
+          "title": "MCP Tool Runtime 设计文档",
+          "bytes": 68556,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "06-工具与技能/A-设计/skill_design.md",
+          "name": "skill_design",
+          "title": "技能系统设计文档",
+          "bytes": 31833,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "A-设计",
           "path": "06-工具与技能/A-设计/skill_import_methods_design.md",
           "name": "skill_import_methods_design",
           "title": "技能导入方式扩展与统一导入框架设计",
-          "bytes": 21644,
+          "bytes": 21670,
           "status": "草案",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "06-工具与技能/A-设计/skill_system_enhancement_design.md",
+          "name": "skill_system_enhancement_design",
+          "title": "技能系统增强（tag 过滤 + 技能包 + 唤醒注入）设计",
+          "bytes": 11587,
+          "status": "已废弃",
           "scope": [],
           "related": []
         },
@@ -1732,6 +2272,16 @@
           "related": [
             "06-工具与技能/A-设计/web_search_and_browser_tools_design.md"
           ]
+        },
+        {
+          "tier": "A-设计",
+          "path": "06-工具与技能/A-设计/tool_design.md",
+          "name": "tool_design",
+          "title": "ai_orz 工具模块设计与开发总结",
+          "bytes": 76569,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
         },
         {
           "tier": "A-设计",
@@ -1767,6 +2317,36 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/ToolSkill 搜索式安装（执行蓝图）.md",
+          "name": "ToolSkill 搜索式安装（执行蓝图）",
+          "title": "Tool/Skill 搜索式安装 Implementation Plan",
+          "bytes": 60502,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/generate_http_handler 宏 (true, true) 分支修复（执行蓝图）.md",
+          "name": "generate_http_handler 宏 (true, true) 分支修复（执行蓝图）",
+          "title": "generate_http_handler 宏 (true, true) 分支修复 Implementation Plan",
+          "bytes": 41213,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/generate_http_handler 宏 path 参数解析修复（执行蓝图）.md",
+          "name": "generate_http_handler 宏 path 参数解析修复（执行蓝图）",
+          "title": "generate_http_handler 宏 path 参数解析修复 Implementation Plan",
+          "bytes": 42801,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "06-工具与技能/B-落地方案/共享工具凭据增强器落地.md",
           "name": "共享工具凭据增强器落地",
           "title": "共享工具凭据增强器落地",
@@ -1779,10 +2359,20 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/技能列表显示修复与技能同步过期处理 实现计划（执行蓝图）.md",
+          "name": "技能列表显示修复与技能同步过期处理 实现计划（执行蓝图）",
+          "title": "技能列表显示修复与技能同步过期处理 实现计划",
+          "bytes": 56325,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "06-工具与技能/B-落地方案/技能列表显示修复与技能同步过期处理.md",
           "name": "技能列表显示修复与技能同步过期处理",
           "title": "技能列表显示修复与技能同步过期处理",
-          "bytes": 10812,
+          "bytes": 10791,
           "status": "已完成",
           "scope": [
             "frontend/src/pages/hr/skills.rs",
@@ -1802,6 +2392,26 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/文档路径引用统一化 + DocLinkClassifier 通用组件 Implementation Plan (v2)（执行蓝图）.md",
+          "name": "文档路径引用统一化 + DocLinkClassifier 通用组件 Implementation Plan (v2)（执行蓝图）",
+          "title": "文档路径引用统一化 + DocLinkClassifier 通用组件 Implementation Plan (v2)",
+          "bytes": 43395,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/文档链接统一与DocLinkClassifier工具链.md",
+          "name": "文档链接统一与DocLinkClassifier工具链",
+          "title": "文档链接统一与DocLinkClassifier工具链",
+          "bytes": 17956,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "06-工具与技能/B-落地方案/浏览器工具与环境就绪提示.md",
           "name": "浏览器工具与环境就绪提示",
           "title": "浏览器工具与环境就绪提示（阶段二：browser + tool_readiness）",
@@ -1812,6 +2422,16 @@
             "src/pkg/tool_registry/tool_readiness.rs",
             "tests/integration/browser_tool_test.rs"
           ],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/统一工具调用与装饰器收敛（执行蓝图）.md",
+          "name": "统一工具调用与装饰器收敛（执行蓝图）",
+          "title": "统一工具调用与装饰器收敛 Implementation Plan",
+          "bytes": 23258,
+          "status": "已完成",
+          "scope": [],
           "related": []
         },
         {
@@ -1831,6 +2451,26 @@
           "related": []
         },
         {
+          "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/进程管理与shell_exec修复.md",
+          "name": "进程管理与shell_exec修复",
+          "title": "统一后台进程管理 + shell_exec 超时移交修复",
+          "bytes": 16474,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "06-工具与技能/B-落地方案/预置基础技能导入重构.md",
+          "name": "预置基础技能导入重构",
+          "title": "预置基础技能导入重构",
+          "bytes": 12080,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md",
           "name": "Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配",
@@ -1842,21 +2482,21 @@
           "path": "06-工具与技能/C-知识/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md",
           "name": "DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链",
           "title": "DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链",
-          "bytes": 15425
+          "bytes": 15373
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页/GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页.md",
           "name": "GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页",
           "title": "GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页",
-          "bytes": 16088
+          "bytes": 15784
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/HTTP 客户端工具.md",
           "name": "HTTP 客户端工具",
           "title": "HTTP 客户端工具",
-          "bytes": 22239
+          "bytes": 22252
         },
         {
           "tier": "C-知识",
@@ -1884,14 +2524,14 @@
           "path": "06-工具与技能/C-知识/MCP 协议工具.md",
           "name": "MCP 协议工具",
           "title": "MCP 协议工具",
-          "bytes": 17721
+          "bytes": 17838
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/MCP 工具集成.md",
           "name": "MCP 工具集成",
           "title": "MCP 工具集成（代码落地层）",
-          "bytes": 15643
+          "bytes": 15825
         },
         {
           "tier": "C-知识",
@@ -1933,7 +2573,7 @@
           "path": "06-工具与技能/C-知识/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md",
           "name": "Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断",
           "title": "§1 概述（一句话定位 + 解决什么问题）",
-          "bytes": 43310
+          "bytes": 43394
         },
         {
           "tier": "C-知识",
@@ -1982,21 +2622,21 @@
           "path": "06-工具与技能/C-知识/内置工具.md",
           "name": "内置工具",
           "title": "内置工具",
-          "bytes": 22252
+          "bytes": 22278
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/内置工具系统.md",
           "name": "内置工具系统",
           "title": "内置工具系统（框架层）",
-          "bytes": 18955
+          "bytes": 18968
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/内置工具集.md",
           "name": "内置工具集",
           "title": "内置工具集",
-          "bytes": 22100
+          "bytes": 22126
         },
         {
           "tier": "C-知识",
@@ -2010,7 +2650,7 @@
           "path": "06-工具与技能/C-知识/工具安全控制.md",
           "name": "工具安全控制",
           "title": "工具安全控制",
-          "bytes": 22766
+          "bytes": 22309
         },
         {
           "tier": "C-知识",
@@ -2024,21 +2664,21 @@
           "path": "06-工具与技能/C-知识/工具注册与发现.md",
           "name": "工具注册与发现",
           "title": "工具注册与发现",
-          "bytes": 19755
+          "bytes": 19872
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/工具注册表.md",
           "name": "工具注册表",
           "title": "工具注册表（框架层）",
-          "bytes": 21793
+          "bytes": 21871
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/工具生态系统.md",
           "name": "工具生态系统",
           "title": "工具生态系统",
-          "bytes": 22916
+          "bytes": 23046
         },
         {
           "tier": "C-知识",
@@ -2052,7 +2692,7 @@
           "path": "06-工具与技能/C-知识/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md",
           "name": "工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验",
           "title": "工具系统三层调用架构：CoreTool trait + Builtin/HTTP/MCP 三协议路由 + register_handler_tool 宏",
-          "bytes": 21955
+          "bytes": 22092
         },
         {
           "tier": "C-知识",
@@ -2080,21 +2720,21 @@
           "path": "06-工具与技能/C-知识/技能与工具绑定.md",
           "name": "技能与工具绑定",
           "title": "技能与工具绑定",
-          "bytes": 17426
+          "bytes": 17803
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/技能和工具系统.md",
           "name": "技能和工具系统",
           "title": "技能和工具系统",
-          "bytes": 18352
+          "bytes": 18729
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/技能系统.md",
           "name": "技能系统",
           "title": "技能系统",
-          "bytes": 29511
+          "bytes": 29661
         },
         {
           "tier": "C-知识",
@@ -2108,14 +2748,14 @@
           "path": "06-工具与技能/C-知识/文件系统工具.md",
           "name": "文件系统工具",
           "title": "文件系统工具",
-          "bytes": 20154
+          "bytes": 20180
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/文件读取工具.md",
           "name": "文件读取工具",
           "title": "文件读取工具",
-          "bytes": 18732
+          "bytes": 18424
         },
         {
           "tier": "C-知识",
@@ -2129,7 +2769,7 @@
           "path": "06-工具与技能/C-知识/核心模块/工具注册表/HTTP 工具.md",
           "name": "HTTP 工具",
           "title": "HTTP 工具（代码落地层）",
-          "bytes": 19346
+          "bytes": 19372
         },
         {
           "tier": "C-知识",
@@ -2157,28 +2797,28 @@
           "path": "06-工具与技能/C-知识/核心模块/工具注册表/工具注册表.md",
           "name": "工具注册表",
           "title": "工具注册表（代码落地层）",
-          "bytes": 23566
+          "bytes": 23631
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/核心模块/工具注册表/核心架构与注册机制.md",
           "name": "核心架构与注册机制",
           "title": "核心架构与注册机制（代码落地层）",
-          "bytes": 20834
+          "bytes": 20860
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断/用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断.md",
           "name": "用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断",
           "title": "用户维度工作区路径改造 + 工具调用安全边界检查（路径逃逸 / 跨用户访问 / 相对路径阻断）",
-          "bytes": 19995
+          "bytes": 19823
         },
         {
           "tier": "C-知识",
           "path": "06-工具与技能/C-知识/运行时诊断工具组.md",
           "name": "运行时诊断工具组",
           "title": "运行时诊断工具组",
-          "bytes": 23474
+          "bytes": 23092
         },
         {
           "tier": "C-知识",
@@ -2192,19 +2832,79 @@
           "path": "06-工具与技能/C-知识/项目概述/核心功能特性/统一工具调用架构/MCP 工具集成.md",
           "name": "MCP 工具集成",
           "title": "MCP 工具集成（入门概览层）",
-          "bytes": 16420
+          "bytes": 16485
         }
       ]
     },
     {
       "id": "07-外部Agent(A2A)",
       "counts": {
-        "A-设计": 0,
-        "B-落地方案": 0,
+        "A-设计": 3,
+        "B-落地方案": 3,
         "C-知识": 20
       },
-      "total": 20,
+      "total": 26,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "07-外部Agent(A2A)/A-设计/a2a_server_architecture_design.md",
+          "name": "a2a_server_architecture_design",
+          "title": "A2A Server 架构设计（agent 与 project 维度分离）",
+          "bytes": 14362,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "07-外部Agent(A2A)/A-设计/a2a_server_design.md",
+          "name": "a2a_server_design",
+          "title": "A2A Server 设计文档",
+          "bytes": 20842,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "07-外部Agent(A2A)/A-设计/external_agent_design.md",
+          "name": "external_agent_design",
+          "title": "外部 Agent 接入设计",
+          "bytes": 13600,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "07-外部Agent(A2A)/B-落地方案/A2A Server 实施计划（执行蓝图）.md",
+          "name": "A2A Server 实施计划（执行蓝图）",
+          "title": "A2A Server 实施计划",
+          "bytes": 86554,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "07-外部Agent(A2A)/B-落地方案/A2A 异步回调与轮询 Producer 实现计划（执行蓝图）.md",
+          "name": "A2A 异步回调与轮询 Producer 实现计划（执行蓝图）",
+          "title": "A2A 异步回调与轮询 Producer 实现计划",
+          "bytes": 31197,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "07-外部Agent(A2A)/B-落地方案/A2A外部Agent集成.md",
+          "name": "A2A外部Agent集成",
+          "title": "A2A 外部 Agent 集成（CLI 子进程 + 通用远程）",
+          "bytes": 21073,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "C-知识",
           "path": "07-外部Agent(A2A)/C-知识/A2A Client 模式.md",
@@ -2217,28 +2917,28 @@
           "path": "07-外部Agent(A2A)/C-知识/A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建/A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建.md",
           "name": "A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建",
           "title": "A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建",
-          "bytes": 10672
+          "bytes": 10700
         },
         {
           "tier": "C-知识",
           "path": "07-外部Agent(A2A)/C-知识/A2A Server 模式.md",
           "name": "A2A Server 模式",
           "title": "A2A Server 模式",
-          "bytes": 16789
+          "bytes": 16873
         },
         {
           "tier": "C-知识",
           "path": "07-外部Agent(A2A)/C-知识/A2A 协议.md",
           "name": "A2A 协议",
           "title": "A2A 协议",
-          "bytes": 16938
+          "bytes": 17064
         },
         {
           "tier": "C-知识",
           "path": "07-外部Agent(A2A)/C-知识/A2A 协议支持.md",
           "name": "A2A 协议支持",
           "title": "A2A 协议支持",
-          "bytes": 19396
+          "bytes": 19536
         },
         {
           "tier": "C-知识",
@@ -2252,7 +2952,7 @@
           "path": "07-外部Agent(A2A)/C-知识/A2A 集成指南.md",
           "name": "A2A 集成指南",
           "title": "A2A 集成指南",
-          "bytes": 15582
+          "bytes": 15638
         },
         {
           "tier": "C-知识",
@@ -2322,7 +3022,7 @@
           "path": "07-外部Agent(A2A)/C-知识/任务管理.md",
           "name": "任务管理",
           "title": "任务管理",
-          "bytes": 14774
+          "bytes": 14816
         },
         {
           "tier": "C-知识",
@@ -2336,7 +3036,7 @@
           "path": "07-外部Agent(A2A)/C-知识/回调系统.md",
           "name": "回调系统",
           "title": "回调系统",
-          "bytes": 16477
+          "bytes": 16503
         },
         {
           "tier": "C-知识",
@@ -2350,12 +3050,42 @@
     {
       "id": "08-搜索",
       "counts": {
-        "A-设计": 1,
-        "B-落地方案": 2,
+        "A-设计": 5,
+        "B-落地方案": 10,
         "C-知识": 21
       },
-      "total": 24,
+      "total": 36,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "08-搜索/A-设计/entity_list_query_search_design.md",
+          "name": "entity_list_query_search_design",
+          "title": "实体列表/查询/搜索接口设计规范",
+          "bytes": 23517,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "08-搜索/A-设计/full_entity_fts5_search_design.md",
+          "name": "full_entity_fts5_search_design",
+          "title": "全实体 FTS5 全文搜索统一设计",
+          "bytes": 9944,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "08-搜索/A-设计/memory_search_enhancement_design.md",
+          "name": "memory_search_enhancement_design",
+          "title": "记忆搜索 FTS5 增强与综合搜索设计",
+          "bytes": 10005,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "A-设计",
           "path": "08-搜索/A-设计/ontology_knowledge_sedimentation_design.md",
@@ -2389,6 +3119,66 @@
             "src/service/domain/finance/mod.rs",
             "src/service/domain/hr/mod.rs"
           ],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "08-搜索/A-设计/vector_search_architecture.md",
+          "name": "vector_search_architecture",
+          "title": "向量搜索与混合搜索架构设计文档",
+          "bytes": 23133,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/Agent搜索查询三场景统一重构.md",
+          "name": "Agent搜索查询三场景统一重构",
+          "title": "Agent搜索查询三场景统一重构",
+          "bytes": 17179,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/HNSW持久化与索引重建异步化重构.md",
+          "name": "HNSW持久化与索引重建异步化重构",
+          "title": "HNSW持久化与索引重建异步化重构",
+          "bytes": 17179,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/Project 实体搜索查询接口统一实施计划（执行蓝图）.md",
+          "name": "Project 实体搜索查询接口统一实施计划（执行蓝图）",
+          "title": "Project 实体搜索/查询接口统一实施计划",
+          "bytes": 23773,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/Search and Knowledge Graph（执行蓝图）.md",
+          "name": "Search and Knowledge Graph（执行蓝图）",
+          "title": "Search and Knowledge Graph Implementation Plan",
+          "bytes": 39657,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/Task 实体搜索查询接口统一实施计划（执行蓝图）.md",
+          "name": "Task 实体搜索查询接口统一实施计划（执行蓝图）",
+          "title": "Task 实体搜索/查询接口统一实施计划",
+          "bytes": 19206,
+          "status": "已完成",
+          "scope": [],
           "related": []
         },
         {
@@ -2428,6 +3218,26 @@
         },
         {
           "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/向量搜索增强计划（执行蓝图）.md",
+          "name": "向量搜索增强计划（执行蓝图）",
+          "title": "向量搜索增强计划",
+          "bytes": 13460,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/图谱遍历查询优化.md",
+          "name": "图谱遍历查询优化",
+          "title": "知识图谱遍历查询优化（DFS 批量化 + IN 分块）",
+          "bytes": 10216,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
           "path": "08-搜索/B-落地方案/本体论知识沉淀落地.md",
           "name": "本体论知识沉淀落地",
           "title": "本体论知识沉淀落地",
@@ -2448,11 +3258,21 @@
           "related": []
         },
         {
+          "tier": "B-落地方案",
+          "path": "08-搜索/B-落地方案/统一其他实体搜索查询接口实施计划（执行蓝图）.md",
+          "name": "统一其他实体搜索查询接口实施计划（执行蓝图）",
+          "title": "统一其他实体搜索/查询接口实施计划",
+          "bytes": 36201,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "08-搜索/C-知识/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md",
           "name": "Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕",
           "title": "Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕",
-          "bytes": 48445
+          "bytes": 48546
         },
         {
           "tier": "C-知识",
@@ -2466,7 +3286,7 @@
           "path": "08-搜索/C-知识/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分.md",
           "name": "Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分",
           "title": "Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T",
-          "bytes": 8433
+          "bytes": 8513
         },
         {
           "tier": "C-知识",
@@ -2487,14 +3307,14 @@
           "path": "08-搜索/C-知识/RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配/RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配.md",
           "name": "RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配",
           "title": "RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配",
-          "bytes": 12962
+          "bytes": 12901
         },
         {
           "tier": "C-知识",
           "path": "08-搜索/C-知识/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离.md",
           "name": "SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离",
           "title": "SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离",
-          "bytes": 7416
+          "bytes": 7452
         },
         {
           "tier": "C-知识",
@@ -2508,14 +3328,14 @@
           "path": "08-搜索/C-知识/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md",
           "name": "向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity",
           "title": "向量存储抽象 + Vectorizable trait 统一索引",
-          "bytes": 31037
+          "bytes": 31053
         },
         {
           "tier": "C-知识",
           "path": "08-搜索/C-知识/向量语义搜索.md",
           "name": "向量语义搜索",
           "title": "向量语义搜索",
-          "bytes": 15894
+          "bytes": 15926
         },
         {
           "tier": "C-知识",
@@ -2550,14 +3370,14 @@
           "path": "08-搜索/C-知识/混合搜索引擎.md",
           "name": "混合搜索引擎",
           "title": "混合搜索引擎",
-          "bytes": 16452
+          "bytes": 16492
         },
         {
           "tier": "C-知识",
           "path": "08-搜索/C-知识/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md",
           "name": "知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出",
           "title": "知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出",
-          "bytes": 15781
+          "bytes": 15797
         },
         {
           "tier": "C-知识",
@@ -2571,14 +3391,14 @@
           "path": "08-搜索/C-知识/知识图谱可视化.md",
           "name": "知识图谱可视化",
           "title": "知识图谱可视化",
-          "bytes": 45355
+          "bytes": 45404
         },
         {
           "tier": "C-知识",
           "path": "08-搜索/C-知识/知识图谱搜索.md",
           "name": "知识图谱搜索",
           "title": "知识图谱搜索",
-          "bytes": 27998
+          "bytes": 28060
         },
         {
           "tier": "C-知识",
@@ -2592,19 +3412,39 @@
           "path": "08-搜索/C-知识/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md",
           "name": "记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐",
           "title": "记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 度数排序推荐",
-          "bytes": 14261
+          "bytes": 14309
         }
       ]
     },
     {
       "id": "09-统计与监控",
       "counts": {
-        "A-设计": 1,
-        "B-落地方案": 1,
+        "A-设计": 3,
+        "B-落地方案": 6,
         "C-知识": 8
       },
-      "total": 10,
+      "total": 17,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "09-统计与监控/A-设计/stats_module_design.md",
+          "name": "stats_module_design",
+          "title": "统计模块设计 — 双层实现：DuckDB 持久化 + 内存实时",
+          "bytes": 33464,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "09-统计与监控/A-设计/stats_query_design.md",
+          "name": "stats_query_design",
+          "title": "统计查询模块设计方案",
+          "bytes": 31096,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "A-设计",
           "path": "09-统计与监控/A-设计/workspace_topbar_metrics_design.md",
@@ -2623,6 +3463,16 @@
             "src/router.rs",
             "tools/runtime-stats"
           ],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "09-统计与监控/B-落地方案/Finance 域统计面板补充计划（执行蓝图）.md",
+          "name": "Finance 域统计面板补充计划（执行蓝图）",
+          "title": "Finance 域统计面板补充计划",
+          "bytes": 4189,
+          "status": "已完成",
+          "scope": [],
           "related": []
         },
         {
@@ -2653,18 +3503,58 @@
           "related": []
         },
         {
+          "tier": "B-落地方案",
+          "path": "09-统计与监控/B-落地方案/实体统计注入.md",
+          "name": "实体统计注入",
+          "title": "实体统计注入",
+          "bytes": 15454,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md",
+          "name": "统计图表Phase1基础设施与时序图展示重构",
+          "title": "统计图表Phase1基础设施与时序图展示重构",
+          "bytes": 16039,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "09-统计与监控/B-落地方案/统计图表Phase2.md",
+          "name": "统计图表Phase2",
+          "title": "统计图表 Phase 2：环形图 + Project 任务状态分布",
+          "bytes": 12501,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "09-统计与监控/B-落地方案/统计图表第三期.md",
+          "name": "统计图表第三期",
+          "title": "统计图表第三期（AOP 实时内存统计 + 轮询渲染）",
+          "bytes": 24076,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "09-统计与监控/C-知识/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md",
           "name": "DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表",
           "title": "DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表",
-          "bytes": 9494
+          "bytes": 9583
         },
         {
           "tier": "C-知识",
           "path": "09-统计与监控/C-知识/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标.md",
           "name": "Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标",
           "title": "Lark P2P WS 私信入站（凭证引用解析 + 多渠道按 app_id 聚合 + 用户身份自动映射 + 健康指标）",
-          "bytes": 14140
+          "bytes": 14187
         },
         {
           "tier": "C-知识",
@@ -2685,46 +3575,46 @@
           "path": "09-统计与监控/C-知识/故障排除与监控.md",
           "name": "故障排除与监控",
           "title": "故障排除与监控",
-          "bytes": 17777
+          "bytes": 17803
         },
         {
           "tier": "C-知识",
           "path": "09-统计与监控/C-知识/系统监控与健康检查.md",
           "name": "系统监控与健康检查",
           "title": "系统监控与健康检查",
-          "bytes": 15875
+          "bytes": 15950
         },
         {
           "tier": "C-知识",
           "path": "09-统计与监控/C-知识/统计与监控.md",
           "name": "统计与监控",
           "title": "统计与监控",
-          "bytes": 25456
+          "bytes": 25531
         },
         {
           "tier": "C-知识",
           "path": "09-统计与监控/C-知识/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md",
           "name": "Gauge 展示",
           "title": "统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示",
-          "bytes": 20286
+          "bytes": 20380
         }
       ]
     },
     {
       "id": "10-异步基建(AOP)",
       "counts": {
-        "A-设计": 1,
-        "B-落地方案": 0,
+        "A-设计": 3,
+        "B-落地方案": 3,
         "C-知识": 32
       },
-      "total": 33,
+      "total": 38,
       "docs": [
         {
           "tier": "A-设计",
           "path": "10-异步基建(AOP)/A-设计/aop_producer_consumer_contract_design.md",
           "name": "aop_producer_consumer_contract_design",
           "title": "AOP 生产者-消费者契约重构设计",
-          "bytes": 83726,
+          "bytes": 83761,
           "status": "现行",
           "scope": [
             "common/src/api/system.rs",
@@ -2755,18 +3645,68 @@
           "related": []
         },
         {
+          "tier": "A-设计",
+          "path": "10-异步基建(AOP)/A-设计/consumer_architecture.md",
+          "name": "consumer_architecture",
+          "title": "消费者与生产者架构设计文档",
+          "bytes": 18879,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "10-异步基建(AOP)/A-设计/event_design.md",
+          "name": "event_design",
+          "title": "事件总线设计（已归档）",
+          "bytes": 8154,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "10-异步基建(AOP)/B-落地方案/AOP 队列监控功能实现计划（执行蓝图）.md",
+          "name": "AOP 队列监控功能实现计划（执行蓝图）",
+          "title": "AOP 队列监控功能实现计划",
+          "bytes": 21589,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "10-异步基建(AOP)/B-落地方案/AOP生产消费事件中心重构.md",
+          "name": "AOP生产消费事件中心重构",
+          "title": "AOP 生产-消费事件中心重构",
+          "bytes": 12732,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "10-异步基建(AOP)/B-落地方案/通用后台任务模块与Seed异步化重构.md",
+          "name": "通用后台任务模块与Seed异步化重构",
+          "title": "通用后台任务模块与Seed异步化重构",
+          "bytes": 15996,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "10-异步基建(AOP)/C-知识/AOP 事件系统.md",
           "name": "AOP 事件系统",
           "title": "AOP 事件系统（系统管理层）",
-          "bytes": 22493
+          "bytes": 22572
         },
         {
           "tier": "C-知识",
           "path": "10-异步基建(AOP)/C-知识/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md",
           "name": "core 6 Trait + Registry 全局单例 + 8 类业务消费者注册",
           "title": "AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册",
-          "bytes": 15769
+          "bytes": 15822
         },
         {
           "tier": "C-知识",
@@ -2780,14 +3720,14 @@
           "path": "10-异步基建(AOP)/C-知识/Cron 任务调度与系统启动顺序：5字段cron解析 + ensure_system_cron_triggers 2条注入 + CronTriggerConsumer 事件 + 两阶段init/aop严格分离/Cron 任务调度与系统启动顺序：5字段cron解析 + ensure_system_cron_triggers 2条注入 + CronTriggerConsumer 事件 + 两阶段init/aop严格分离.md",
           "name": "aop严格分离",
           "title": "Cron 任务调度与系统启动顺序：5 字段 cron 解析 + ensure_system_cron_triggers 2 条注入 + CronTriggerProducer",
-          "bytes": 20202
+          "bytes": 20322
         },
         {
           "tier": "C-知识",
           "path": "10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md",
           "name": "Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅",
           "title": "Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅",
-          "bytes": 12345
+          "bytes": 12424
         },
         {
           "tier": "C-知识",
@@ -2843,7 +3783,7 @@
           "path": "10-异步基建(AOP)/C-知识/任务事件消费者.md",
           "name": "任务事件消费者",
           "title": "任务事件消费者（框架层）",
-          "bytes": 14359
+          "bytes": 14385
         },
         {
           "tier": "C-知识",
@@ -2857,14 +3797,14 @@
           "path": "10-异步基建(AOP)/C-知识/基础设施/AOP 事件系统/AOP 事件系统.md",
           "name": "AOP 事件系统",
           "title": "AOP 事件系统（框架层）",
-          "bytes": 22947
+          "bytes": 22985
         },
         {
           "tier": "C-知识",
           "path": "10-异步基建(AOP)/C-知识/定时任务和事件系统.md",
           "name": "定时任务和事件系统",
           "title": "定时任务和事件系统",
-          "bytes": 22628
+          "bytes": 22661
         },
         {
           "tier": "C-知识",
@@ -2899,14 +3839,14 @@
           "path": "10-异步基建(AOP)/C-知识/核心概念与架构.md",
           "name": "核心概念与架构",
           "title": "核心概念与架构",
-          "bytes": 23921
+          "bytes": 23966
         },
         {
           "tier": "C-知识",
           "path": "10-异步基建(AOP)/C-知识/核心模块/AOP 事件系统/AOP 事件系统.md",
           "name": "AOP 事件系统",
           "title": "AOP 事件系统（代码落地层）",
-          "bytes": 22968
+          "bytes": 23032
         },
         {
           "tier": "C-知识",
@@ -2983,18 +3923,28 @@
     {
       "id": "11-前端应用",
       "counts": {
-        "A-设计": 2,
-        "B-落地方案": 0,
+        "A-设计": 3,
+        "B-落地方案": 30,
         "C-知识": 49
       },
-      "total": 51,
+      "total": 82,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "11-前端应用/A-设计/canvas_rendering_playbook.md",
+          "name": "canvas_rendering_playbook",
+          "title": "Canvas 渲染基础设施复用指南",
+          "bytes": 14227,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "A-设计",
           "path": "11-前端应用/A-设计/frontend_architecture.md",
           "name": "frontend_architecture",
           "title": "前端架构设计",
-          "bytes": 31147,
+          "bytes": 31204,
           "status": "现行",
           "scope": [
             "common/config/",
@@ -3036,6 +3986,306 @@
           "related": [
             "11-前端应用/A-设计/frontend_architecture.md"
           ]
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/4 个 CRUD Edit Modal（执行蓝图）.md",
+          "name": "4 个 CRUD Edit Modal（执行蓝图）",
+          "title": "4 个 CRUD Edit Modal Implementation Plan",
+          "bytes": 31189,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/AI Orz 前端重构实施计划（执行蓝图）.md",
+          "name": "AI Orz 前端重构实施计划（执行蓝图）",
+          "title": "AI Orz 前端重构实施计划",
+          "bytes": 141753,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Agent 记忆面板 + 对话体验打磨实现计划（执行蓝图）.md",
+          "name": "Agent 记忆面板 + 对话体验打磨实现计划（执行蓝图）",
+          "title": "Agent 记忆面板 + 对话体验打磨实现计划",
+          "bytes": 21050,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Agent详情页过期技能区与恢复按钮.md",
+          "name": "Agent详情页过期技能区与恢复按钮",
+          "title": "Agent 详情页过期技能独立区 + 恢复按钮 与 DTO 清理 实现计划",
+          "bytes": 32518,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Canvas 动态渲染增强实施计划（阶段 2）（执行蓝图）.md",
+          "name": "Canvas 动态渲染增强实施计划（阶段 2）（执行蓝图）",
+          "title": "Canvas 动态渲染增强实施计划（阶段 2）",
+          "bytes": 39479,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Canvas 改造扩展（高中优先级页面）实施计划（执行蓝图）.md",
+          "name": "Canvas 改造扩展（高中优先级页面）实施计划（执行蓝图）",
+          "title": "Canvas 改造扩展（高/中优先级页面）实施计划",
+          "bytes": 69351,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Canvas 渲染基础设施实施计划（阶段 1）（执行蓝图）.md",
+          "name": "Canvas 渲染基础设施实施计划（阶段 1）（执行蓝图）",
+          "title": "Canvas 渲染基础设施实施计划（阶段 1）",
+          "bytes": 19236,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Canvas 粒子系统与视觉增强实施计划（阶段 3）（执行蓝图）.md",
+          "name": "Canvas 粒子系统与视觉增强实施计划（阶段 3）（执行蓝图）",
+          "title": "Canvas 粒子系统与视觉增强实施计划（阶段 3）",
+          "bytes": 46311,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Frontend Page Completion（执行蓝图）.md",
+          "name": "Frontend Page Completion（执行蓝图）",
+          "title": "Frontend Page Completion Implementation Plan",
+          "bytes": 46192,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Skill 详情页 + 任务 Edit 入口（执行蓝图）.md",
+          "name": "Skill 详情页 + 任务 Edit 入口（执行蓝图）",
+          "title": "Skill 详情页 + 任务 Edit 入口 Implementation Plan",
+          "bytes": 31892,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/TailwindDaisyUI迁移.md",
+          "name": "TailwindDaisyUI迁移",
+          "title": "Tailwind CSS + DaisyUI 集成迁移",
+          "bytes": 11801,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Workspace 工作台驾驶舱（执行蓝图）.md",
+          "name": "Workspace 工作台驾驶舱（执行蓝图）",
+          "title": "Workspace 工作台驾驶舱 Implementation Plan",
+          "bytes": 38949,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/Workspace 第二期：Task DAG 分层布局（执行蓝图）.md",
+          "name": "Workspace 第二期：Task DAG 分层布局（执行蓝图）",
+          "title": "Workspace 第二期：Task DAG 分层布局 Plan",
+          "bytes": 1437,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/三个详情页新增关系图 Tab 实施计划（执行蓝图）.md",
+          "name": "三个详情页新增关系图 Tab 实施计划（执行蓝图）",
+          "title": "三个详情页新增关系图 Tab 实施计划",
+          "bytes": 34419,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/全局通知系统 (Toast) 实现计划（执行蓝图）.md",
+          "name": "全局通知系统 (Toast) 实现计划（执行蓝图）",
+          "title": "全局通知系统 (Toast) 实现计划",
+          "bytes": 15835,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端 Agent 运行时面板 + 取消按钮 + 全局运行中列表 实施计划（执行蓝图）.md",
+          "name": "前端 Agent 运行时面板 + 取消按钮 + 全局运行中列表 实施计划（执行蓝图）",
+          "title": "前端 Agent 运行时面板 + 取消按钮 + 全局运行中列表 实施计划",
+          "bytes": 28072,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端_Markdown_渲染全覆盖.md",
+          "name": "前端_Markdown_渲染全覆盖",
+          "title": "前端 Markdown 渲染全覆盖",
+          "bytes": 13681,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端优化路线图.md",
+          "name": "前端优化路线图",
+          "title": "前端优化路线图",
+          "bytes": 13876,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端功能补全 — Plan 索引（执行蓝图）.md",
+          "name": "前端功能补全 — Plan 索引（执行蓝图）",
+          "title": "前端功能补全 — Plan 索引",
+          "bytes": 3255,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端工具与进程管理.md",
+          "name": "前端工具与进程管理",
+          "title": "HTTP 工具表单 + 进程管理页面 + ChatSidePanel 工具调用 Tab",
+          "bytes": 13828,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端移动端响应式适配.md",
+          "name": "前端移动端响应式适配",
+          "title": "前端移动端响应式适配",
+          "bytes": 10944,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端统计数据集成实现计划（执行蓝图）.md",
+          "name": "前端统计数据集成实现计划（执行蓝图）",
+          "title": "前端统计数据集成实现计划",
+          "bytes": 18993,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/前端运行时观测面板.md",
+          "name": "前端运行时观测面板",
+          "title": "前端运行时观测面板",
+          "bytes": 8025,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/后台任务管理页面与列表清理接口重构.md",
+          "name": "后台任务管理页面与列表清理接口重构",
+          "title": "后台任务管理页面与列表清理接口重构",
+          "bytes": 18158,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/定时触发器前端体验优化计划（执行蓝图）.md",
+          "name": "定时触发器前端体验优化计划（执行蓝图）",
+          "title": "定时触发器前端体验优化计划",
+          "bytes": 13020,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/知识图谱 tags 展示与过滤 实施计划（执行蓝图）.md",
+          "name": "知识图谱 tags 展示与过滤 实施计划（执行蓝图）",
+          "title": "知识图谱 tags 展示与过滤 实施计划",
+          "bytes": 41216,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/知识图谱交互完善（执行蓝图）.md",
+          "name": "知识图谱交互完善（执行蓝图）",
+          "title": "知识图谱交互完善 Implementation Plan",
+          "bytes": 23373,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/管理页面补全实施计划（模块化方案）（执行蓝图）.md",
+          "name": "管理页面补全实施计划（模块化方案）（执行蓝图）",
+          "title": "管理页面补全实施计划（模块化方案）",
+          "bytes": 22013,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/聊天页项目信息侧栏.md",
+          "name": "聊天页项目信息侧栏",
+          "title": "聊天页项目信息侧栏（ChatSidePanel）",
+          "bytes": 10979,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/详情页补全 + 工具调用记录查询页（执行蓝图）.md",
+          "name": "详情页补全 + 工具调用记录查询页（执行蓝图）",
+          "title": "详情页补全 + 工具调用记录查询页 Implementation Plan",
+          "bytes": 58405,
+          "status": "已完成",
+          "scope": [],
+          "related": []
         },
         {
           "tier": "C-知识",
@@ -3084,14 +4334,14 @@
           "path": "11-前端应用/C-知识/MCP 服务器管理.md",
           "name": "MCP 服务器管理",
           "title": "MCP 服务器管理",
-          "bytes": 19137
+          "bytes": 19241
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/Markdown渲染组件.md",
           "name": "Markdown渲染组件",
           "title": "Markdown渲染组件",
-          "bytes": 21562
+          "bytes": 21272
         },
         {
           "tier": "C-知识",
@@ -3112,28 +4362,28 @@
           "path": "11-前端应用/C-知识/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md",
           "name": "Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格",
           "title": "Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格",
-          "bytes": 14280
+          "bytes": 14279
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束.md",
           "name": "UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束",
           "title": "UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束",
-          "bytes": 23129
+          "bytes": 23207
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/UI 样式与主题.md",
           "name": "UI 样式与主题",
           "title": "UI 样式与主题",
-          "bytes": 31958
+          "bytes": 32007
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md",
           "name": "recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用",
           "title": "recommend_seed_nodes 种子节点推荐：度数排序（入边+出边）Top N + published 度数持平决胜 + KnowledgeGraph 组件两端复用 + Agent 神经工具免绑定",
-          "bytes": 17103
+          "bytes": 17143
         },
         {
           "tier": "C-知识",
@@ -3147,35 +4397,35 @@
           "path": "11-前端应用/C-知识/任务管理功能.md",
           "name": "任务管理功能",
           "title": "任务管理功能",
-          "bytes": 23183
+          "bytes": 23204
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md",
           "name": "前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发",
           "title": "前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发",
-          "bytes": 16462
+          "bytes": 16666
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/前端应用.md",
           "name": "前端应用",
           "title": "前端应用",
-          "bytes": 46247
+          "bytes": 46286
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层.md",
           "name": "前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层",
           "title": "前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层",
-          "bytes": 13463
+          "bytes": 13520
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/图表组件.md",
           "name": "图表组件",
           "title": "图表组件",
-          "bytes": 21650
+          "bytes": 21699
         },
         {
           "tier": "C-知识",
@@ -3231,7 +4481,7 @@
           "path": "11-前端应用/C-知识/思考运行时面板观测接口.md",
           "name": "思考运行时面板观测接口",
           "title": "思考运行时面板观测接口",
-          "bytes": 25100
+          "bytes": 24805
         },
         {
           "tier": "C-知识",
@@ -3273,7 +4523,7 @@
           "path": "11-前端应用/C-知识/消息渠道管理.md",
           "name": "消息渠道管理",
           "title": "消息渠道管理（前端 UI 层）",
-          "bytes": 16884
+          "bytes": 17001
         },
         {
           "tier": "C-知识",
@@ -3287,7 +4537,7 @@
           "path": "11-前端应用/C-知识/种子数据管理.md",
           "name": "种子数据管理",
           "title": "种子数据管理（前端 UI 层）",
-          "bytes": 17709
+          "bytes": 17899
         },
         {
           "tier": "C-知识",
@@ -3308,7 +4558,7 @@
           "path": "11-前端应用/C-知识/组件系统.md",
           "name": "组件系统",
           "title": "组件系统",
-          "bytes": 29494
+          "bytes": 29533
         },
         {
           "tier": "C-知识",
@@ -3371,26 +4621,36 @@
           "path": "11-前端应用/C-知识/项目管理功能.md",
           "name": "项目管理功能",
           "title": "项目管理功能",
-          "bytes": 21454
+          "bytes": 21600
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/项目管理页面.md",
           "name": "项目管理页面",
           "title": "项目管理页面",
-          "bytes": 24363
+          "bytes": 24532
         }
       ]
     },
     {
       "id": "12-基础设施与部署",
       "counts": {
-        "A-设计": 3,
-        "B-落地方案": 2,
+        "A-设计": 5,
+        "B-落地方案": 5,
         "C-知识": 79
       },
-      "total": 84,
+      "total": 89,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "12-基础设施与部署/A-设计/common_error_type.md",
+          "name": "common_error_type",
+          "title": "common 统一错误类型设计",
+          "bytes": 10944,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "A-设计",
           "path": "12-基础设施与部署/A-设计/logging_design.md",
@@ -3421,10 +4681,20 @@
         },
         {
           "tier": "A-设计",
+          "path": "12-基础设施与部署/A-设计/seed_config_migration.md",
+          "name": "seed_config_migration",
+          "title": "Seed 配置迁移中心",
+          "bytes": 6633,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
           "path": "12-基础设施与部署/A-设计/sqlx_guide.md",
           "name": "sqlx_guide",
           "title": "SQLx 0.8 + SQLite 开发规范与最佳实践",
-          "bytes": 15095,
+          "bytes": 15113,
           "status": "现行",
           "scope": [
             "common/src/enums/",
@@ -3435,6 +4705,26 @@
             "src/service/dao/",
             "src/service/dao/agent/sqlite.rs"
           ],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "12-基础设施与部署/B-落地方案/Clippy Warning Cleanup（执行蓝图）.md",
+          "name": "Clippy Warning Cleanup（执行蓝图）",
+          "title": "Clippy Warning Cleanup Implementation Plan",
+          "bytes": 27770,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "12-基础设施与部署/B-落地方案/Seed 配置迁移中心 实施计划（执行蓝图）.md",
+          "name": "Seed 配置迁移中心 实施计划（执行蓝图）",
+          "title": "Seed 配置迁移中心 实施计划",
+          "bytes": 89743,
+          "status": "已完成",
+          "scope": [],
           "related": []
         },
         {
@@ -3478,6 +4768,16 @@
             "tests/integration/auth_sysinit_test.rs",
             "tests/integration/model_provider_embedding_test.rs"
           ],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "12-基础设施与部署/B-落地方案/系统管理工具（备份 + 日志查询 + 角色权限）实现计划（执行蓝图）.md",
+          "name": "系统管理工具（备份 + 日志查询 + 角色权限）实现计划（执行蓝图）",
+          "title": "系统管理工具（备份 + 日志查询 + 角色权限）实现计划",
+          "bytes": 29350,
+          "status": "已完成",
+          "scope": [],
           "related": []
         },
         {
@@ -3534,14 +4834,14 @@
           "path": "12-基础设施与部署/C-知识/HNSW 索引存储后端.md",
           "name": "HNSW 索引存储后端",
           "title": "HNSW 索引存储后端",
-          "bytes": 15771
+          "bytes": 15795
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/LanceDB 存储后端.md",
           "name": "LanceDB 存储后端",
           "title": "LanceDB 存储后端",
-          "bytes": 17207
+          "bytes": 17243
         },
         {
           "tier": "C-知识",
@@ -3555,7 +4855,7 @@
           "path": "12-基础设施与部署/C-知识/MCP服务器管理处理器.md",
           "name": "MCP服务器管理处理器",
           "title": "MCP服务器管理处理器",
-          "bytes": 16064
+          "bytes": 16142
         },
         {
           "tier": "C-知识",
@@ -3582,15 +4882,15 @@
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/ai-orz-doc-maintainer.md",
           "name": "ai-orz-doc-maintainer",
-          "title": "AI Orz 文档编写与精简归档 Skill（规范全文版）",
-          "bytes": 29966
+          "title": "AI Orz 设计与落地方案文档维护 Skill（规范全文版）",
+          "bytes": 23475
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/ai-orz-wiki-maintainer.md",
           "name": "ai-orz-wiki-maintainer",
           "title": "AI Orz Wiki 维护 Skill（规范全文版）",
-          "bytes": 26949
+          "bytes": 22160
         },
         {
           "tier": "C-知识",
@@ -3604,7 +4904,7 @@
           "path": "12-基础设施与部署/C-知识/scripts 归置 + Makefile 统一入口 + 60+ 引用全量修正/scripts 归置 + Makefile 统一入口 + 60+ 引用全量修正.md",
           "name": "scripts 归置 + Makefile 统一入口 + 60+ 引用全量修正",
           "title": "scripts/ 归置 + Makefile 统一入口 + 60+ 引用全量修正",
-          "bytes": 17308
+          "bytes": 17077
         },
         {
           "tier": "C-知识",
@@ -3632,14 +4932,14 @@
           "path": "12-基础设施与部署/C-知识/内存向量存储后端.md",
           "name": "内存向量存储后端",
           "title": "内存向量存储后端",
-          "bytes": 15732
+          "bytes": 15744
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/后台任务系统.md",
           "name": "后台任务系统",
           "title": "后台任务系统",
-          "bytes": 20726
+          "bytes": 20759
         },
         {
           "tier": "C-知识",
@@ -3702,14 +5002,14 @@
           "path": "12-基础设施与部署/C-知识/存储系统.md",
           "name": "存储系统",
           "title": "存储系统（框架层）",
-          "bytes": 22490
+          "bytes": 22508
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/存储配置.md",
           "name": "存储配置",
           "title": "存储配置",
-          "bytes": 14606
+          "bytes": 14626
         },
         {
           "tier": "C-知识",
@@ -3772,14 +5072,14 @@
           "path": "12-基础设施与部署/C-知识/思考轮次统计消费者.md",
           "name": "思考轮次统计消费者",
           "title": "思考轮次统计消费者",
-          "bytes": 17852
+          "bytes": 17703
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/持续集成与发布工作流.md",
           "name": "持续集成与发布工作流",
           "title": "持续集成与发布工作流",
-          "bytes": 29839
+          "bytes": 29447
         },
         {
           "tier": "C-知识",
@@ -3793,7 +5093,7 @@
           "path": "12-基础设施与部署/C-知识/文档链接质量门禁.md",
           "name": "文档链接质量门禁",
           "title": "文档链接质量门禁",
-          "bytes": 24115
+          "bytes": 23767
         },
         {
           "tier": "C-知识",
@@ -3821,7 +5121,7 @@
           "path": "12-基础设施与部署/C-知识/日志系统.md",
           "name": "日志系统",
           "title": "日志系统",
-          "bytes": 20393
+          "bytes": 20484
         },
         {
           "tier": "C-知识",
@@ -3842,7 +5142,7 @@
           "path": "12-基础设施与部署/C-知识/本地文件安全与工作区隔离.md",
           "name": "本地文件安全与工作区隔离",
           "title": "本地文件安全与工作区隔离",
-          "bytes": 23540
+          "bytes": 23232
         },
         {
           "tier": "C-知识",
@@ -3863,7 +5163,7 @@
           "path": "12-基础设施与部署/C-知识/模型提供商管理.md",
           "name": "模型提供商管理",
           "title": "模型提供商管理（业务功能层）",
-          "bytes": 23971
+          "bytes": 24049
         },
         {
           "tier": "C-知识",
@@ -3891,7 +5191,7 @@
           "path": "12-基础设施与部署/C-知识/消息处理 API.md",
           "name": "消息处理 API",
           "title": "消息处理 API",
-          "bytes": 20198
+          "bytes": 20237
         },
         {
           "tier": "C-知识",
@@ -3905,14 +5205,14 @@
           "path": "12-基础设施与部署/C-知识/消息渠道管理 API.md",
           "name": "消息渠道管理 API",
           "title": "消息渠道管理 API",
-          "bytes": 20338
+          "bytes": 20481
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/消息渠道管理处理器.md",
           "name": "消息渠道管理处理器",
           "title": "消息渠道管理处理器",
-          "bytes": 17743
+          "bytes": 17847
         },
         {
           "tier": "C-知识",
@@ -3926,7 +5226,7 @@
           "path": "12-基础设施与部署/C-知识/消息通道生产者.md",
           "name": "消息通道生产者",
           "title": "消息通道生产者",
-          "bytes": 15562
+          "bytes": 15614
         },
         {
           "tier": "C-知识",
@@ -3940,7 +5240,7 @@
           "path": "12-基础设施与部署/C-知识/种子数据处理器.md",
           "name": "种子数据处理器",
           "title": "种子数据处理器",
-          "bytes": 20726
+          "bytes": 20757
         },
         {
           "tier": "C-知识",
@@ -3954,21 +5254,21 @@
           "path": "12-基础设施与部署/C-知识/种子数据管理.md",
           "name": "种子数据管理",
           "title": "种子数据管理（业务功能层）",
-          "bytes": 32555
+          "bytes": 32586
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md",
           "name": "种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发",
           "title": "种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离",
-          "bytes": 30345
+          "bytes": 30407
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/系统初始化.md",
           "name": "系统初始化",
           "title": "系统初始化",
-          "bytes": 25657
+          "bytes": 25701
         },
         {
           "tier": "C-知识",
@@ -4010,7 +5310,7 @@
           "path": "12-基础设施与部署/C-知识/配置与部署.md",
           "name": "配置与部署",
           "title": "配置与部署",
-          "bytes": 32105
+          "bytes": 31674
         },
         {
           "tier": "C-知识",
@@ -4038,18 +5338,18 @@
     {
       "id": "13-数据模型",
       "counts": {
-        "A-设计": 3,
-        "B-落地方案": 0,
+        "A-设计": 5,
+        "B-落地方案": 4,
         "C-知识": 39
       },
-      "total": 42,
+      "total": 48,
       "docs": [
         {
           "tier": "A-设计",
           "path": "13-数据模型/A-设计/api_protocol_convention.md",
           "name": "api_protocol_convention",
           "title": "前后端 API 协议规范（common DTO 单一事实源）",
-          "bytes": 6432,
+          "bytes": 6402,
           "status": "现行",
           "scope": [
             "common/src/api/",
@@ -4062,10 +5362,20 @@
         },
         {
           "tier": "A-设计",
+          "path": "13-数据模型/A-设计/attachment_storage.md",
+          "name": "attachment_storage",
+          "title": "产物与消息附件统一存储设计",
+          "bytes": 27560,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
           "path": "13-数据模型/A-设计/pagination_and_count_convention.md",
           "name": "pagination_and_count_convention",
           "title": "查询接口分页与通用 count 规范",
-          "bytes": 16759,
+          "bytes": 16795,
           "status": "现行",
           "scope": [
             "common/src/api/agent.rs",
@@ -4102,6 +5412,56 @@
           ]
         },
         {
+          "tier": "A-设计",
+          "path": "13-数据模型/A-设计/unified_idl_http_handler.md",
+          "name": "unified_idl_http_handler",
+          "title": "统一参数 IDL + 自动生成 HTTP handler 设计文档",
+          "bytes": 17759,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "13-数据模型/B-落地方案/Handler 管理面 API 补齐方案.md",
+          "name": "Handler 管理面 API 补齐方案",
+          "title": "Handler 管理面 API 补齐方案",
+          "bytes": 44113,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "13-数据模型/B-落地方案/Query接口分页与List接口简化重构.md",
+          "name": "Query接口分页与List接口简化重构",
+          "title": "Query 接口分页与 List 接口简化重构",
+          "bytes": 16204,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "13-数据模型/B-落地方案/前端API协议结构重构.md",
+          "name": "前端API协议结构重构",
+          "title": "前端 API 协议结构体统一改造",
+          "bytes": 8479,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "13-数据模型/B-落地方案/批量查询与通用Query接口增强重构.md",
+          "name": "批量查询与通用Query接口增强重构",
+          "title": "批量查询与通用Query接口增强重构",
+          "bytes": 16585,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/API 参考.md",
           "name": "API 参考",
@@ -4134,7 +5494,7 @@
           "path": "13-数据模型/C-知识/HNSW向量存储.md",
           "name": "HNSW向量存储",
           "title": "HNSW向量存储",
-          "bytes": 15553
+          "bytes": 15577
         },
         {
           "tier": "C-知识",
@@ -4162,7 +5522,7 @@
           "path": "13-数据模型/C-知识/SQLite VSS向量存储.md",
           "name": "SQLite VSS向量存储",
           "title": "SQLite VSS向量存储",
-          "bytes": 17052
+          "bytes": 17068
         },
         {
           "tier": "C-知识",
@@ -4176,7 +5536,7 @@
           "path": "13-数据模型/C-知识/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）.md",
           "name": "三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）",
           "title": "三位一体混合搜索（FTS5 + 向量 + 合并排序）",
-          "bytes": 14569
+          "bytes": 14593
         },
         {
           "tier": "C-知识",
@@ -4190,14 +5550,14 @@
           "path": "13-数据模型/C-知识/内存向量存储.md",
           "name": "内存向量存储",
           "title": "内存向量存储",
-          "bytes": 15254
+          "bytes": 15266
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/制品和附件.md",
           "name": "制品和附件",
           "title": "制品和附件",
-          "bytes": 22312
+          "bytes": 22493
         },
         {
           "tier": "C-知识",
@@ -4211,14 +5571,14 @@
           "path": "13-数据模型/C-知识/向量存储抽象接口.md",
           "name": "向量存储抽象接口",
           "title": "向量存储抽象接口（代码落地层）",
-          "bytes": 17195
+          "bytes": 17211
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/向量存储数据访问对象.md",
           "name": "向量存储数据访问对象",
           "title": "向量存储数据访问对象",
-          "bytes": 19926
+          "bytes": 20034
         },
         {
           "tier": "C-知识",
@@ -4232,21 +5592,21 @@
           "path": "13-数据模型/C-知识/存储架构设计.md",
           "name": "存储架构设计",
           "title": "存储架构设计",
-          "bytes": 18661
+          "bytes": 18679
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/存储系统.md",
           "name": "存储系统",
           "title": "存储系统（代码落地层）",
-          "bytes": 21790
+          "bytes": 21862
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/数据对象层 (DAO).md",
           "name": "数据对象层 (DAO)",
           "title": "数据对象层（DAO）",
-          "bytes": 19645
+          "bytes": 19685
         },
         {
           "tier": "C-知识",
@@ -4281,7 +5641,7 @@
           "path": "13-数据模型/C-知识/消息和记忆模型.md",
           "name": "消息和记忆模型",
           "title": "消息和记忆模型",
-          "bytes": 22582
+          "bytes": 22647
         },
         {
           "tier": "C-知识",
@@ -4309,28 +5669,28 @@
           "path": "13-数据模型/C-知识/统一错误模型：ErrorCode + ErrorType + ErrorField 的跨层错误处理体系/统一错误模型：ErrorCode + ErrorType + ErrorField 的跨层错误处理体系.md",
           "name": "统一错误模型：ErrorCode + ErrorType + ErrorField 的跨层错误处理体系",
           "title": "统一错误模型：ErrorCode + ErrorType + ErrorField 的跨层错误处理体系",
-          "bytes": 10819
+          "bytes": 10876
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/统计数据分析对象.md",
           "name": "统计数据分析对象",
           "title": "统计数据分析对象",
-          "bytes": 15593
+          "bytes": 15736
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/记忆和向量系统.md",
           "name": "记忆和向量系统",
           "title": "记忆和向量系统",
-          "bytes": 30191
+          "bytes": 30207
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/请求上下文.md",
           "name": "请求上下文",
           "title": "请求上下文",
-          "bytes": 20302
+          "bytes": 20432
         },
         {
           "tier": "C-知识",
@@ -4344,7 +5704,7 @@
           "path": "13-数据模型/C-知识/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md",
           "name": "身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）",
           "title": "身份凭证管理（统一 Domain CRUD + AES-256-GCM 加密存储 + 生命周期联动）",
-          "bytes": 30612
+          "bytes": 30548
         },
         {
           "tier": "C-知识",
@@ -4358,7 +5718,7 @@
           "path": "13-数据模型/C-知识/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE.md",
           "name": "附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE",
           "title": "附件存储与DTO协议统一：Attachment Finance域统一资产 + PagedResult T map 全链路 + common::api 单一事实源 + count与query 复用 WHERE",
-          "bytes": 16338
+          "bytes": 16443
         },
         {
           "tier": "C-知识",
@@ -4372,46 +5732,116 @@
           "path": "13-数据模型/C-知识/飞书集成系统.md",
           "name": "飞书集成系统",
           "title": "飞书集成系统",
-          "bytes": 24125
+          "bytes": 24331
         }
       ]
     },
     {
       "id": "14-测试",
       "counts": {
-        "A-设计": 0,
-        "B-落地方案": 0,
+        "A-设计": 2,
+        "B-落地方案": 5,
         "C-知识": 4
       },
-      "total": 4,
+      "total": 11,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "14-测试/A-设计/browser_e2e_test_design.md",
+          "name": "browser_e2e_test_design",
+          "title": "浏览器操作验证用例设计",
+          "bytes": 6824,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "14-测试/A-设计/testing_guidelines.md",
+          "name": "testing_guidelines",
+          "title": "项目测试规范",
+          "bytes": 25692,
+          "status": "已废弃",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "14-测试/B-落地方案/Agent 智能层集成测试（执行蓝图）.md",
+          "name": "Agent 智能层集成测试（执行蓝图）",
+          "title": "Agent 智能层集成测试 Implementation Plan",
+          "bytes": 39690,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "14-测试/B-落地方案/Agent管理集成测试.md",
+          "name": "Agent管理集成测试",
+          "title": "Agent 管理集成测试落地",
+          "bytes": 13427,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "14-测试/B-落地方案/Test Speed Optimization（执行蓝图）.md",
+          "name": "Test Speed Optimization（执行蓝图）",
+          "title": "Test Speed Optimization Implementation Plan",
+          "bytes": 22718,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "14-测试/B-落地方案/测试补充方案（2026-05-14）.md",
+          "name": "测试补充方案（2026-05-14）",
+          "title": "测试补充方案 - 2026-05-14",
+          "bytes": 7229,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "14-测试/B-落地方案/集成测试基础设施.md",
+          "name": "集成测试基础设施",
+          "title": "集成测试基础设施搭建（HTTP API 端到端）",
+          "bytes": 20531,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
         {
           "tier": "C-知识",
           "path": "14-测试/C-知识/Playwright Browser E2E 端到端测试：dioxus-playwright Fixture + 本地独立启动 + 登录鉴权流程 + 3 大类页面覆盖/Playwright Browser E2E 端到端测试：dioxus-playwright Fixture + 本地独立启动 + 登录鉴权流程 + 3 大类页面覆盖.md",
           "name": "Playwright Browser E2E 端到端测试：dioxus-playwright Fixture + 本地独立启动 + 登录鉴权流程 + 3 大类页面覆盖",
           "title": "Playwright Browser E2E 端到端测试：dioxus-playwright Fixture + 本地独立启动 + 登录鉴权流程 + 3 大类页面覆盖",
-          "bytes": 8621
+          "bytes": 8653
         },
         {
           "tier": "C-知识",
           "path": "14-测试/C-知识/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E.md",
           "name": "45%门槛 + clippy零容忍+Playwright E2E",
           "title": "测试与质量工程：974测试100%通过 + 984后端82前端58common + 87集成测试19targets + cargo-llvm-cov PR38%/main45%门槛 + clippy -D warnings零容忍 + Playwright E2E",
-          "bytes": 23568
+          "bytes": 23640
         },
         {
           "tier": "C-知识",
           "path": "14-测试/C-知识/测试指南.md",
           "name": "测试指南",
           "title": "测试指南",
-          "bytes": 31423
+          "bytes": 31482
         },
         {
           "tier": "C-知识",
           "path": "14-测试/C-知识/端到端测试基础设施.md",
           "name": "端到端测试基础设施",
           "title": "端到端测试基础设施",
-          "bytes": 13166
+          "bytes": 13174
         }
       ]
     }

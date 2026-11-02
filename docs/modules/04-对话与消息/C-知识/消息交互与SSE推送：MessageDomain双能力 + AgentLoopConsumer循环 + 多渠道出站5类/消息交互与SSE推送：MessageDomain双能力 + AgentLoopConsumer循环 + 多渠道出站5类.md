@@ -38,12 +38,12 @@ source_files:
 - src/consumer/message.rs#L337-L492
 - 'src/consumer/agent_loop.rs#L1-L100 '
 - 'src/middleware/sse.rs '
-- docs/archive/design-archive/message_interaction_design.md
-- docs/archive/design-archive/agent_loop_engine_design.md
-- docs/archive/design-archive/message_channel_design.md
-- docs/archive/plan-archive/agent_loop_engine_plan.md
-- docs/archive/plan-archive/聊天MVP.md
-- docs/archive/plan-archive/飞书P2P消息集成.md
+- docs/modules/04-对话与消息/A-设计/message_interaction_design.md
+- docs/modules/02-Agent运行时/A-设计/agent_loop_engine_design.md
+- docs/modules/04-对话与消息/A-设计/message_channel_design.md
+- docs/modules/02-Agent运行时/B-落地方案/Agent 循环驱动引擎实施计划.md
+- docs/modules/04-对话与消息/B-落地方案/聊天MVP.md
+- docs/modules/04-对话与消息/B-落地方案/飞书P2P消息集成.md
 - docs/modules/04-对话与消息/C-知识/消息系统.md
 - docs/modules/04-对话与消息/C-知识/消息管理.md
 - docs/modules/04-对话与消息/C-知识/实时推送.md

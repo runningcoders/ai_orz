@@ -19,8 +19,6 @@ source_files:
 - frontend/src/api/github_integration.rs#L1-L100
 - common/src/api/github_integration.rs#L1-L150
 - src/service/domain/identity_credential/crud.rs#L200-L280
-- docs/archive/design-archive/github_integration_subsystem.md
-- docs/archive/plan-archive/github_integration_gh_cli_credential_crud_and_frontend.md
 - docs/modules/01-组织与权限/C-知识/GitHub 集成.md
 - docs/modules/01-组织与权限/C-知识/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
   + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
@@ -59,8 +57,8 @@ d04cd9a3 变更落地完整的 GitHub 外部集成三层（凭据链路 2026-08-
 | 【兄弟卡 Level3】身份凭证统一链路总卡 | GITHUB_PAT 凭证存储（复用身份 Domain）| [身份凭证统一总卡](docs/modules/01-组织与权限/C-知识/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md) |
 | 【兄弟卡 Level3】工具系统三层调用架构卡 | gh_cli 是 Builtin 协议的典型实现 | [工具系统三层调用卡](docs/modules/06-工具与技能/C-知识/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) |
 | 【Wiki 长文】GitHub 集成系统.md | 系统化上下文 + Troubleshooting | [GitHub 集成系统长文](docs/modules/01-组织与权限/C-知识/GitHub 集成.md) |
-| 【Design 占位】github_integration_subsystem.md | （未来 doc-maintainer 落地）| docs/archive/design-archive/github_integration_subsystem.md（占位）|
-| 【Plan 占位】github_integration_gh_cli_credential_crud_and_frontend.md | （未来 doc-maintainer 落地）| docs/archive/plan-archive/github_integration_gh_cli_credential_crud_and_frontend.md（占位）|
+| 【Design】github_integration_subsystem.md | （未落地：暂无独立设计文档）| — |
+| 【Plan】github_integration_gh_cli_credential_crud_and_frontend.md | （未落地：暂无独立方案文档）| — |
 
 ## §3 架构约定
 

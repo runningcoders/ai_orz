@@ -15,12 +15,12 @@
 - [common/src/error/mod.rs](common/src/error/mod.rs)
 ### 本文关联的三类文档（四类互引闭环）
 #### ① Design 决策快照
-- [entity_list_query_search_design.md](docs/archive/design-archive/entity_list_query_search_design.md) — DAO 层 push_query_filters 模式金标准 + query/list/count/search 四方法签名统一模式
+- [entity_list_query_search_design.md](docs/modules/08-搜索/A-设计/entity_list_query_search_design.md) — DAO 层 push_query_filters 模式金标准 + query/list/count/search 四方法签名统一模式
 - [pagination_and_count_convention.md](docs/modules/13-数据模型/A-设计/pagination_and_count_convention.md) — DAO 层 push_query_filters 提取要求 + COUNT 与 LIST 复用 WHERE
 - [sqlx_guide.md](docs/modules/12-基础设施与部署/A-设计/sqlx_guide.md) — SQLite STRICT 表 + 枚举 as 标注三要素 + 软删除 status=0 过滤约定
 #### ② Plan 落地快照
-- [批量查询与通用Query接口增强重构.md](docs/archive/plan-archive/批量查询与通用Query接口增强重构.md) — 13 域 DAO 改造清单 + push_query_filters 提取模式 + COUNT 与 LIST 100% 共享 WHERE
-- [Query接口分页与List接口简化重构.md](docs/archive/plan-archive/Query接口分页与List接口简化重构.md) — 新增 DAO 模板（STRICT 表→PO→trait→push_query_filters→query/list/count→trait 注册→DAL→Domain→Handler）
+- [批量查询与通用Query接口增强重构.md](docs/modules/13-数据模型/B-落地方案/批量查询与通用Query接口增强重构.md) — 13 域 DAO 改造清单 + push_query_filters 提取模式 + COUNT 与 LIST 100% 共享 WHERE
+- [Query接口分页与List接口简化重构.md](docs/modules/13-数据模型/B-落地方案/Query接口分页与List接口简化重构.md) — 新增 DAO 模板（STRICT 表→PO→trait→push_query_filters→query/list/count→trait 注册→DAL→Domain→Handler）
 #### ④ RAG 原子知识卡
 - [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/modules/08-搜索/C-知识/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分.md) — 10 条硬约束（禁止 list 独立拼 WHERE / 禁止独立 count_by_xxx / PagedResult total 必须来自 COUNT 查询）
 - [SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离](docs/modules/08-搜索/C-知识/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离.md) — §3 查询三要素一致（STRICT 表 + status 转义 + 枚举 as）+ §红线 5 COUNT 与 LIST push_query_filters 必须同一函数

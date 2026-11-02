@@ -21,11 +21,11 @@ source_files:
 - src/service/dao/model_provider/stats_duckdb.rs
 - common/src/models/stats.rs
 - src/service/domain/finance/model_provider.rs
-- docs/archive/design-archive/stats_module_design.md
-- docs/archive/design-archive/stats_query_design.md
-- docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
-- docs/archive/plan-archive/统计图表Phase2.md
-- docs/archive/plan-archive/统计图表第三期.md
+- docs/modules/09-统计与监控/A-设计/stats_module_design.md
+- docs/modules/09-统计与监控/A-设计/stats_query_design.md
+- docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md
+- docs/modules/09-统计与监控/B-落地方案/统计图表Phase2.md
+- docs/modules/09-统计与监控/B-落地方案/统计图表第三期.md
 - docs/modules/05-任务与项目/C-知识/多维统计系统.md
 - docs/modules/05-任务与项目/C-知识/Agent 维度统计.md
 - docs/modules/06-工具与技能/C-知识/Tool 维度统计.md

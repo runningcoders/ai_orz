@@ -24,7 +24,6 @@ source_files:
   - scripts/tools/coverage.sh#L1-L80
   - .github/workflows/ci.yml#L1-L200
   - .github/workflows/docs.yml#L1-L150
-  - docs/archive/design-archive/build_and_deployment_workflow_design.md
   - docs/modules/12-基础设施与部署/C-知识/持续集成与发布工作流.md
   - docs/wiki/knowledge/zh/构建流水线：cargo 构建 + dioxus 前端打包 + docker 镜像 + GitHub Actions CI/构建流水线：cargo 构建 + dioxus 前端打包 + docker 镜像 + GitHub Actions CI.md
   - docs/modules/12-基础设施与部署/C-知识/配置系统：嵌入默认 TOML + 运行时加载 + 环境变量覆盖 + 前端编译期注入/配置系统：嵌入默认 TOML + 运行时加载 + 环境变量覆盖 + 前端编译期注入.md：嵌入默认 TOML + 运行时加载 + 环境变量覆盖 + 前端编译期注入/配置系统：嵌入默认 TOML + 运行时加载 + 环境变量覆盖 + 前端编译期注入.md
@@ -60,7 +59,6 @@ source_files:
 | `.github/workflows/docs.yml` | Docs CI 门禁 | `make ci-docs-lint`（调用 docs_lint.sh）+ docs_migrate --dry-run（确认迁移后 diff=0，防止 PR 引入遗留旧格式没 migrate）。|
 | 【Level4 总卡】构建流水线：cargo 构建 + dioxus 前端打包 + docker 镜像 + GitHub Actions CI | 本卡是总卡的 scripts/ 归置细粒度拆卡 | [构建流水线总卡](docs/modules/11-前端应用/C-知识/Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线/Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线.md) |
 | 【Wiki 长文】持续集成与发布工作流.md | 系统化上下文 + §8 Troubleshooting | [持续集成与发布工作流](docs/modules/12-基础设施与部署/C-知识/持续集成与发布工作流.md) |
-| 【① Design】build_and_deployment_workflow_design.md | 构建部署设计决策 | `docs/archive/design-archive/build_and_deployment_workflow_design.md` |
 
 ## §3 架构约定
 

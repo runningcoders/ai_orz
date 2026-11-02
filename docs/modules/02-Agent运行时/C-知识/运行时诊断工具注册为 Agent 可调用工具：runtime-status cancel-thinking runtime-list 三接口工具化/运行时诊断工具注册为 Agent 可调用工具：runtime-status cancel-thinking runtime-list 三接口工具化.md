@@ -17,8 +17,6 @@ source_files:
 - src/pkg/aop/core/registry.rs#L1-L100
 - docs/modules/02-Agent运行时/A-设计/runtime_design.md
 - docs/modules/02-Agent运行时/A-设计/thinking_task_policy_engine_design.md
-- docs/archive/design-archive/tool_and_skill_system.md
-- docs/archive/plan-archive/runtime_tool_registration_as_agent_callable_tools.md
 - docs/modules/02-Agent运行时/C-知识/运行时领域.md
 - docs/modules/00-总览与架构/C-知识/Runtime 领域编排.md
 - docs/modules/11-前端应用/C-知识/思考运行时面板观测接口.md
@@ -62,7 +60,6 @@ d1d1013f 变更把原先「只供前端轮询面板」的 3 个 runtime 诊断 H
 | 【Wiki 长文】运行时领域.md | 系统化上下文 | [运行时领域](docs/modules/02-Agent运行时/C-知识/运行时领域.md) |
 | 【Wiki 长文】思考运行时面板观测接口.md | 面板侧长文 | [思考运行时面板](docs/modules/11-前端应用/C-知识/思考运行时面板观测接口.md) |
 | 【① Design】runtime_design.md | 运行时设计 | [docs/modules/02-Agent运行时/A-设计/runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) |
-| 【① Design】tool_and_skill_system.md | 工具系统设计 | `docs/archive/design-archive/tool_and_skill_system.md` |
 
 ## §3 架构约定
 

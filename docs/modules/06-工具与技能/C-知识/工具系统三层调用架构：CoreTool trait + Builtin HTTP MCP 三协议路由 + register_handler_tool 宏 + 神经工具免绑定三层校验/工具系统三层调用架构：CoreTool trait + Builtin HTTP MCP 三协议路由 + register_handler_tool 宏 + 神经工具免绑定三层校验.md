@@ -32,17 +32,17 @@ source_files:
 - src/handlers/hr/agent/update_agent.rs
 - src/service/domain/runtime/awakening.rs#L277-L320
 - src/models/agent.rs (AgentPo::enrich)
-- docs/archive/design-archive/tool_design.md
-- docs/archive/design-archive/mcp_tool_design.md
-- docs/archive/design-archive/builtins_http_tool_design.md
-- docs/archive/design-archive/generic_builtin_tools_design.md
-- docs/archive/design-archive/handler-tool-registration-macro.md
+- docs/modules/06-工具与技能/A-设计/tool_design.md
+- docs/modules/06-工具与技能/A-设计/mcp_tool_design.md
+- docs/modules/06-工具与技能/A-设计/builtins_http_tool_design.md
+- docs/modules/06-工具与技能/A-设计/generic_builtin_tools_design.md
+- docs/modules/06-工具与技能/A-设计/handler_tool_registration_macro.md
 - docs/modules/06-工具与技能/A-设计/tool_credential_requirement_design.md
 - src/pkg/tool_registry/builtin.rs（2026-10-11 增量 4b4e9e7a：ontology tag 护栏三测试——ontology_consumer_tools_carry_ontology_tag / ontology_consumer_tools_are_neural_reachable / ontology_read_tools_are_neural_reachable；13 个消费侧工具读 8 + 写 5）
 - src/router.rs#L786-L800（2026-10-11：list_ontology_properties = neural+ontology_management+ontology 三标签；create/update/retire_property 仅 ontology_management）
-- docs/archive/plan-archive/进程管理与shell_exec修复.md
-- docs/archive/plan-archive/前端工具与进程管理.md
-- docs/archive/plan-archive/移除rig依赖与向量存储后端解耦.md
+- docs/modules/06-工具与技能/B-落地方案/进程管理与shell_exec修复.md
+- docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md
+- docs/modules/02-Agent运行时/B-落地方案/移除rig依赖与向量存储后端解耦.md
 - docs/modules/06-工具与技能/C-知识/工具生态系统.md
 - docs/modules/00-总览与架构/C-知识/统一工具调用架构.md
 - docs/modules/06-工具与技能/C-知识/工具注册与发现.md
@@ -89,7 +89,7 @@ source_files:
 | ai-orz-macros register_handler_tool.rs | Handler 转神经工具宏 | `#[register_handler_tool(name="install_skill_pack", description="按 tag 安装技能包")]` 自动生成 CallableTool 的 name/description + 参数结构转 JSON Schema；宏展开 6 步见 handler-tool-registration-macro 设计文档 | 见宏过程定义 |
 
 **章节来源**
-- [tool_design.md:L30-L70](docs/archive/design-archive/tool_design.md#L30-L70)
+- [tool_design.md:L30-L70](docs/modules/06-工具与技能/A-设计/tool_design.md#L30-L70)
 - [impl.rs:L1-L120](src/service/dao/tool_call/impl.rs#L1-L120)
 - [tool_provider.rs:L13-L101](src/service/domain/finance/tool_provider.rs#L13-L101)
 - [tool_execution.rs:L36-L101](src/service/domain/runtime/tool_execution.rs#L36-L101)
