@@ -13,10 +13,10 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：agent_loop_engine_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [runtime_design.md](./runtime_design.md) — Agent 唤醒机制
 > - [task_scheduler_design.md](../../05-任务与项目/A-设计/task_scheduler_design.md) — CronTrigger 定时任务
-> - 【② Plan 落地】[agent_loop_engine_plan.md](../plan/agent_loop_engine_plan.md) — 事件+定时双链路驱动
+> - 【② Plan 落地】agent_loop_engine_plan.md — 事件+定时双链路驱动
 > - 【③ Wiki 长文】[消息系统.md](docs/modules/04-对话与消息/C-知识/消息系统.md) — 消息驱动 Agent 唤醒链路
 > - 【③ Wiki 长文】[Agent 全生命周期管理.md](docs/modules/05-任务与项目/C-知识/Agent 全生命周期管理.md) — 循环驱动 + 跟进能力
 > - 【④ RAG 卡】[消息交互与SSE推送](docs/modules/04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md) — §3 §AgentLoopConsumer 注册顺序 §红线 3 Busy Vec 缓存

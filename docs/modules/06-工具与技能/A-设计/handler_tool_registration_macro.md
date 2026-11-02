@@ -13,10 +13,10 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：handler-tool-registration-macro 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [unified-idl-http-handler.md](../../13-数据模型/A-设计/unified_idl_http_handler.md) — 统一参数 IDL + 自动生成 HTTP handler（同属「一份定义多端复用」思路）
 > - [tool_design.md](./tool_design.md) — 工具系统总纲
-> - 【② Plan 落地】[前端API协议结构重构.md](../plan/前端API协议结构重构.md) — DTO/参数 IDL 对齐
+> - 【② Plan 落地】[前端API协议结构重构.md](docs/modules/13-数据模型/B-落地方案/前端API协议结构重构.md) — DTO/参数 IDL 对齐
 > - 【③ Wiki 长文】[工具注册与发现.md](docs/modules/06-工具与技能/C-知识/工具注册与发现.md) — 宏注册机制说明
 > - 【④ RAG 卡】[工具系统三层调用架构](docs/modules/06-工具与技能/C-知识/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) — §2 §register_handler_tool.rs 宏实现位置 §4 红线 6 参数名 1:1
 
@@ -592,5 +592,5 @@ neural 意味着「Agent 唤醒时自动注入 Prompt」，**仅用于资源发�
 ### 相关文档
 
 - [unified-idl-http-handler.md](../../13-数据模型/A-设计/unified_idl_http_handler.md) - 统一 IDL 设计文档（已更新支持的组合表、Query 字段提取实现细节、修复历史）
-- [2026-07-26-macro-path-param-fix.md](../superpowers/plans/2026-07-26-macro-path-param-fix.md) - path 参数解析修复 plan
-- [2026-07-26-macro-path-query-branch-fix.md](../superpowers/plans/2026-07-26-macro-path-query-branch-fix.md) - (true, true) 分支修复 plan
+- 2026-07-26-macro-path-param-fix.md - path 参数解析修复 plan
+- 2026-07-26-macro-path-query-branch-fix.md - (true, true) 分支修复 plan

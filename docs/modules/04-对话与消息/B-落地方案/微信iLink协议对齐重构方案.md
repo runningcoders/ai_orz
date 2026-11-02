@@ -48,7 +48,7 @@ related: []
 >
 > 关联文档：
 > - [微信渠道接入设计](docs/modules/04-对话与消息/A-设计/wechat_channel_integration_design.md) — 分层落点与阶段划分（§5.1/§5.2 协议小节须按本文更正）
-> - [CODE_STANDARDS.md](../CODE_STANDARDS.md) — 编码规范 SSOT
+> - [CODE_STANDARDS.md](docs/CODE_STANDARDS.md) — 编码规范 SSOT
 > - [微信 iLink 专属渠道](docs/modules/04-对话与消息/C-知识/微信 iLink 专属渠道.md) — 运行态与观测四件套
 
 ---

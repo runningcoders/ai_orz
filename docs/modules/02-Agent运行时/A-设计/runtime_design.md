@@ -44,8 +44,8 @@ related:
 > 查阅场景：需要理解唤醒机制设计动机、工具二分哲学、上下文拼装边界、场景化 ThinkingScene 设计时打开；字段级 trait 定义和命令结构直接看代码
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构
-> - [tool_design.md](./tool_design.md) — 工具调用架构与三层执行链路
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构
+> - [tool_design.md](docs/modules/06-工具与技能/A-设计/tool_design.md) — 工具调用架构与三层执行链路
 > - [thinking_task_policy_engine_design.md](./thinking_task_policy_engine_design.md) — 策略引擎与运行时可视化配套设计
 > - [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) — 两阶段唤醒设计总纲（Phase1 IA + Phase2 执行）
 > - 【② Plan 落地 6 份】
@@ -697,7 +697,7 @@ ThinkResult::ToolCall?
 
 ## 十三、统一分页设计（2026-07-24 已落地实现）
 
-> 📌 **当前状态**：已全面实现。query 是核心查询能力，list 是语法糖；两者统一返回 `PagedResult<T>`。详见 [分页与通用 count 规范](./pagination_and_count_convention.md)（2026-08-13 从 AGENTS.md 4.9/4.10 迁出）。
+> 📌 **当前状态**：已全面实现。query 是核心查询能力，list 是语法糖；两者统一返回 `PagedResult<T>`。详见 [分页与通用 count 规范](docs/modules/13-数据模型/A-设计/pagination_and_count_convention.md)（2026-08-13 从 AGENTS.md 4.9/4.10 迁出）。
 
 ### 13.1 最终方案
 

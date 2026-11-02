@@ -41,8 +41,8 @@ related: []
 > 查阅场景：需要理解生产者为什么不再持有 Registry、ack/nack 为什么从消费者 trait 上消失、`ordered` / `notify_producer` 声明何时必填、失败后要不要重试由谁定（`RetryDecision`）、topic 枚举为什么放 `common`（§3.6）、生产者为什么就该是 DAL 对象本身（§5.2）、新增一个生产者/消费者该实现什么时打开
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与「单向依赖」红线
-> - [runtime_design.md](./runtime_design.md) — §25.15「settle 并入 agent.awakening」（本设计前因：order_key 串行门闩按消费者作用域）
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与「单向依赖」红线
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — §25.15「settle 并入 agent.awakening」（本设计前因：order_key 串行门闩按消费者作用域）
 > - [AOP 事件系统.md](docs/modules/10-异步基建(AOP)/C-知识/基础设施/AOP 事件系统/AOP 事件系统.md) — 现役生产-消费-调度三段架构总览
 > - [AOP 生产消费事件中心（RAG 卡）](docs/modules/10-异步基建(AOP)/C-知识/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md) — 6 Trait + Registry 全局单例 + 消费者注册清单（本次重构的直接改造对象）
 
@@ -628,7 +628,7 @@ pub struct A2aPollRequestedEvent { pub agent_id: String, pub event_id: String, p
 
 ### 6.1 `ordered` 遗忘（最大的静默回归风险）
 
-改 opt-in 后，唯一需要声明的是 `agent.awakening`（§2.3 推论 A），但**忘声明就会静默退回上一次事故的形态**（[runtime_design.md](./runtime_design.md) §25.15）。三道护栏：
+改 opt-in 后，唯一需要声明的是 `agent.awakening`（§2.3 推论 A），但**忘声明就会静默退回上一次事故的形态**（[runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) §25.15）。三道护栏：
 
 1. **注册期硬校验**：`consume_mode() == Sync` 却声明 `ordered = true` → `register_consumer` 返回 Err（Sync 路径内联执行、无队列无门闩，声明 ordered 是谎言）。
 2. ~~运行期一次性告警~~：**用户拍板不做（2026-09-16 晚）**——`ordered` 是订阅者自己的属性，声明错了行为自然不对，框架不替它操心。§4.1 wiring 落地后，未声明 `ordered` 的事件走 `enqueue_ungated` 直进堆（无门闩），行为与声明**自洽**，告警失去意义。

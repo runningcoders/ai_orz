@@ -13,7 +13,7 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：builtins_http_tool_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [tool_design.md](./tool_design.md) — 工具系统总纲（HTTP Tool Runtime 是工具系统的一个子运行时）
 > - [generic_builtin_tools_design.md](./generic_builtin_tools_design.md) — 通用 Builtin 工具（文件读写/HTTP Fetch，与 HTTP Tool Runtime 定位互补）
 > - 【③ Wiki 长文】[工具生态系统.md](docs/modules/06-工具与技能/C-知识/工具生态系统.md)

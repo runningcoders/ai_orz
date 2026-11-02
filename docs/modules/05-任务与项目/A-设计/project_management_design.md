@@ -13,11 +13,11 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：project_management_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [project_design.md](./project_design.md) — 项目基础实体设计（PM 系统的底层依赖）
 > - [agent_loop_engine_design.md](../../02-Agent运行时/A-设计/agent_loop_engine_design.md) — Agent 自主跟进项目进度驱动机制
 > - 【② Plan 落地（Batch9 关联）】
->   - [项目任务增强.md](../plan/项目任务增强.md) — TaskGraph DAG + Artifact 按需注入模式
+>   - [项目任务增强.md](docs/modules/05-任务与项目/B-落地方案/项目任务增强.md) — TaskGraph DAG + Artifact 按需注入模式
 > - 【③ Wiki 长文（Batch9 新增）】
 >   - [项目管理.md](docs/modules/05-任务与项目/C-知识/项目管理.md) — 项目详情 5 Tab 聚合 + 管理面 API 映射
 >   - [多 Agent 协作机制.md](docs/modules/05-任务与项目/C-知识/多 Agent 协作机制.md) — Project Domain 唯一编排层 + 思考循环状态机
@@ -696,9 +696,9 @@ pub enum MessageType {
 
 ## 参考文档
 
-- [ai-orz-domain-layer-implementation Skill](../.hermes/skills/rust/ai-orz-domain-layer-implementation/SKILL.md)
+- ai-orz-domain-layer-implementation Skill
 - [consumer_architecture.md](../../10-异步基建(AOP)/A-设计/consumer_architecture.md) - 消息消费者框架
 - [tool_design.md](../../06-工具与技能/A-设计/tool_design.md) - 工具调用链路设计
 - [Task 模块设计](./task_design.md)
-- [分层架构规范](./architecture.md)
+- 分层架构规范
 - [测试规范](../../14-测试/A-设计/testing_guidelines.md)

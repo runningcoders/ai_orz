@@ -13,11 +13,11 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：message_interaction_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [message_channel_design.md](./message_channel_design.md) — 外部渠道入站适配与多渠道推送
 > - [intent_aware_two_stage_awaken_design.md](../../02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md) — 两阶段唤醒：先意图识别再执行
-> - 【② Plan 落地】[聊天MVP.md](../plan/聊天MVP.md) — 前端聊天页 SSE 实时推送 MVP
-> - 【② Plan 落地】[agent_loop_engine_plan.md](../plan/agent_loop_engine_plan.md) — AgentLoopConsumer 消息驱动唤醒设计
+> - 【② Plan 落地】[聊天MVP.md](docs/modules/04-对话与消息/B-落地方案/聊天MVP.md) — 前端聊天页 SSE 实时推送 MVP
+> - 【② Plan 落地】agent_loop_engine_plan.md — AgentLoopConsumer 消息驱动唤醒设计
 > - 【③ Wiki 长文】[消息系统.md](docs/modules/04-对话与消息/C-知识/消息系统.md) — 消息系统全景：入站→路由→存储→SSE→出站 5 段
 > - 【③ Wiki 长文】[消息管理.md](docs/modules/04-对话与消息/C-知识/消息管理.md) — 分页查询 + thread 聚合 + 已读
 > - 【③ Wiki 长文】[实时推送.md](docs/modules/04-对话与消息/C-知识/实时推送.md) — SSE EventSource / last-event-id 重连补发
@@ -200,7 +200,7 @@ Agent 角色**不使用枚举**，保持开放灵活：
 ```
 
 后端处理：
-1. JWT/Cookie 中间件解析身份并注入 `RequestContext`（双模式认证详见 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md)）
+1. JWT/Cookie 中间件解析身份并注入 `RequestContext`（双模式认证详见 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md)）
 2. 验证权限（当前用户有权限访问指定项目/任务）
 3. 保存消息到 `messages` 表，状态 = `Pending`，并写入 `root_id` 用于消息链追踪
 4. 发布 `MessageCreatedEvent` 到 AOP 事件中心

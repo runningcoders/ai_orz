@@ -6,8 +6,8 @@
 
 > 关联文档：
 > - [AGENTS.md §2.1 文档编写与维护规范](../../AGENTS.md#L92-L358) — 本次工作确立的强制执行标准（SSOT）
-> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 权威架构总纲（按本次规范已清除所有非ASCII代码块）
-> - [LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实践（已补标准文件头）
+> - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 权威架构总纲（按本次规范已清除所有非ASCII代码块）
+> - [LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实践（已补标准文件头）
 
 ---
 
@@ -97,14 +97,14 @@
 | [docs/superpowers/specs/](../superpowers/specs/) | Spec三件套目录 | **已清空 0 文件**；6目录 18文件全 A 类迁 design/plan 并删除原三件套 |
 | **plan 规范化（Task 2 + Task 4）** | | |
 | [docs/archive/plan-archive/](../plan/) | 规划快照目录（活跃） | Task2 新迁 25 个（原 A 类蓝图）+ Task4 精简原 10 文档（todo.md → 移 archive）；每个文件 150~240 行标准 7 章 |
-| | **参考金标准（风格样板）**：[身份凭证Domain统一CRUD重构.md](../plan/%E8%BA%AB%E4%BB%BD%E5%87%AD%E8%AF%81Domain%E7%BB%9F%E4%B8%80CRUD%E9%87%8D%E6%9E%84.md)（新增同类功能的精简版 plan 必须按这个风格）|
+| | **参考金标准（风格样板）**：[身份凭证Domain统一CRUD重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md)（新增同类功能的精简版 plan 必须按这个风格）|
 | **核心设计文档质量（Task 5/6）** | | |
 | [docs/design/](../design/)（共 8 活跃设计文档）| 设计决策快照（活跃）| Task 5 处理的 8 大文档：逐 249 对代码块判定（142 契约保留+附路径 / 107 快照删+路径引导）；每文档补「五、扩展模式」章节；Task 6 处理的 33 中小文档统一补四件套文件头；其余文档已归档至 [docs/archive/design-archive/](../archive/design-archive/) |
 | 重点重质量8文档： | | 行数变化： |
 | → [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) | 运行时唤醒机制哲学 | 2359→2108 (-251)，34契约保留/15快照删 |
 | → [tool_design.md](./modules/06-工具与技能/A-设计/tool_design.md) | 工具神经外骨骼二分 | 1761→1553 (-208)，29契约/32快照（最大释放 Rig 分发层实现体） |
 | → [thinking_task_policy_engine_design.md](docs/modules/02-Agent运行时/A-设计/thinking_task_policy_engine_design.md) | 策略引擎与思考可观测 | 1329→723 (**-606**，单文档最高释放：think_loop 循环实现体+RAII守卫全清) |
-| → [memory_design.md](../../MEMORY_DESIGN.md) | 四层记忆系统 | 1116→1086 (-30)，SQL Schema 24契约保留附 migration 文件路径 |
+| → [memory_design.md](docs/MEMORY_DESIGN.md) | 四层记忆系统 | 1116→1086 (-30)，SQL Schema 24契约保留附 migration 文件路径 |
 | → [mcp_tool_design.md](./modules/06-工具与技能/A-设计/mcp_tool_design.md) / [frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md) / [sqlx_guide.md](docs/modules/12-基础设施与部署/A-设计/sqlx_guide.md) / [vector_search_architecture.md](./modules/08-搜索/A-设计/vector_search_architecture.md) | 其余4核心设计 | 合计净 -311 行，全部附路径 |
 | 2实践指南（Task6-Part B）： | | |
 | → [logging_design.md](docs/modules/12-基础设施与部署/A-设计/logging_design.md) | 统一日志宏用法约定 | 12用法示例全部保留+附 `ai-orz-macros/src/lib.rs` 宏定义实际行号定位 |
@@ -113,10 +113,10 @@
 | [docs/archive/](../archive/)（含子目录 superpowers-archive/）| 历史封存（只读，不活跃） | Task7 补 5 个原历史文档的模板 C 归档头；Task4 迁 todo.md；Task1 封存 49 个 B 类执行蓝图 |
 | | 封存说明文件：[superpowers-archive/README.md](./modules/00-总览与架构/B-落地方案/superpowers 执行蓝图说明.md) | |
 | **根文档规范（Task 8）** | | |
-| [README.md](../../README.md) | 项目对外门面 | 补定位/状态/查阅场景四件套 |
-| [ARCHITECTURE.md](../ARCHITECTURE.md) | 权威总纲 | 补头 + 清除所有 Rust/SQL/bash 代码块（共 7 段）→ 替换为对应 src/service/domain/ & ai-orz-macros 的路径引导；**纯 ASCII 7 段架构图全部保留**（不属于代码块范畴） |
-| [CODE_WIKI.md](../CODE_WIKI.md) | 代码百科 | 补头 + 标注 IDE 自动生成，勿手工改 |
-| [LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md) | 开发者实操手册 | 补四件套定位头 + 关联 AGENTS §3.1 |
+| [README.md](docs/README.md) | 项目对外门面 | 补定位/状态/查阅场景四件套 |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 权威总纲 | 补头 + 清除所有 Rust/SQL/bash 代码块（共 7 段）→ 替换为对应 src/service/domain/ & ai-orz-macros 的路径引导；**纯 ASCII 7 段架构图全部保留**（不属于代码块范畴） |
+| [CODE_WIKI.md](docs/CODE_WIKI.md) | 代码百科 | 补头 + 标注 IDE 自动生成，勿手工改 |
+| [LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md) | 开发者实操手册 | 补四件套定位头 + 关联 AGENTS §3.1 |
 
 **零改动面**：
 - `docs/wiki/`（IDE 自动生成）、所有代码源文件（无任何代码级改动）、`migrations/` 等未触及
@@ -207,7 +207,7 @@
    - 参考：[AGENTS.md §2.1.2 代码引用铁律判定表](../../AGENTS.md#L132-L184)
 
 3. **第三步：功能完成（验收通过 git 推送之后）7 天内处理 superpowers 下的蓝图**
-   - 按 §四 4.2 速查表判定 A/B 类 → A 类按模板 B 精简迁 plan/（对照参考金标准：[身份凭证重构.md](./%E8%BA%AB%E4%BB%BD%E5%87%AD%E8%AF%81Domain%E7%BB%9F%E4%B8%80CRUD%E9%87%8D%E6%9E%84.md)）；B 类移 `docs/archive/superpowers-archive/` 用 `git mv` 保留日期前缀
+   - 按 §四 4.2 速查表判定 A/B 类 → A 类按模板 B 精简迁 plan/（对照参考金标准：[身份凭证重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md)）；B 类移 `docs/archive/superpowers-archive/` 用 `git mv` 保留日期前缀
    - spec 三件套（如用了 brainstorming 模式）→ spec.md 对应迁 design/ 或 plan/，剩下两个删或整体移 archive
    - 禁止「完成后把 superpowers 下的执行蓝图当长期文档保留」
 

@@ -108,7 +108,7 @@ DAO 层（补齐 OFFSET）
 | **前端列表页** | | |
 | 修改 [frontend/src/pages/hr/agents.rs](../../frontend/src/pages/hr/agents.rs) | Agent 列表页 | 三场景切换：reload_agents 闭包 + 搜索框提交处 → keyword 空 → list_agents(Default).await.map(\|p\| p.items)；非空 → search_agents(SearchAgentsRequest{Some(kw),..}).await.map(\|p\| p.items)。从 r.agents 改为 p.items |
 | **技能文档** | | |
-| 修改 [communication/skill.md](../../src/service/domain/system/seed/skills/communication/skill.md) + [project_management/skill.md](../../src/service/domain/system/seed/skills/project_management/skill.md) | 预置技能文档 | 新增 Agent 查询工具选择三场景对照表；search_agents 参数说明更新；项目管理技能分配前查询步骤说明更新（search 语义搜索 + query/runtime_state 查空闲） |
+| 修改 communication/skill.md + project_management/skill.md | 预置技能文档 | 新增 Agent 查询工具选择三场景对照表；search_agents 参数说明更新；项目管理技能分配前查询步骤说明更新（search 语义搜索 + query/runtime_state 查空闲） |
 | **零改动面** | | |
 | list_agents / query_agents handler 签名（返回 PagedResult） | 100% 不变 | search 对齐已有模式 |
 | AgentQuery / AgentSearch 结构定义（DAO 层） | 不变；search 只是复用 filters |

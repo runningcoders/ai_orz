@@ -29,8 +29,8 @@ related: []
 > 关联文档：
 > - [plan 阶段一：网络搜索工具](docs/modules/06-工具与技能/B-落地方案/网络搜索工具.md) — 阶段一落地路径
 > - [plan 阶段二：浏览器工具与环境就绪提示](docs/modules/06-工具与技能/B-落地方案/浏览器工具与环境就绪提示.md) — 阶段二落地路径
-> - [AGENTS.md](../../AGENTS.md) — 分层架构与工具注册规范
-> - [docs/LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md) — pkg 层无业务感知原则
+> - [AGENTS.md](AGENTS.md) — 分层架构与工具注册规范
+> - [docs/LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md) — pkg 层无业务感知原则
 
 ---
 

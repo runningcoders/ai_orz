@@ -17,8 +17,8 @@ related:
 > 触发场景：任何新增时间戳字段、生成时间戳、格式化时间戳时必读
 >
 > 关联文档：
-> - [通用开发约定](../../AGENTS.md) — 命名与代码规范总览
-> - [API 协议约定](api_protocol_convention.md) — 前后端 DTO 规范
+> - [通用开发约定](AGENTS.md) — 命名与代码规范总览
+> - [API 协议约定](docs/modules/13-数据模型/A-设计/api_protocol_convention.md) — 前后端 DTO 规范
 
 ---
 

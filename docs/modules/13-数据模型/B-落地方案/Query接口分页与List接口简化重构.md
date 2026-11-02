@@ -16,7 +16,7 @@ related: []
 > - 新增实体分页查询时，回看"DAO 改造模板 + List/Query 职责划分"两处即可，无需通读全文
 > - 若需了解 PagedResult/PaginationParams 定义或 COUNT + LIMIT/OFFSET 双查询模式，直接跳转对应代码文件（见 §涉及文件）
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范
+> - [AGENTS.md](AGENTS.md) — 分层架构规范
 > - [API 协议规范](docs/modules/13-数据模型/A-设计/api_protocol_convention.md) — 前后端 DTO 契约约定
 > - 参考实现：[mcp_server/sqlite.rs](../../src/service/dao/mcp_server/sqlite.rs) — COUNT + push_query_filters 模式金标准
 

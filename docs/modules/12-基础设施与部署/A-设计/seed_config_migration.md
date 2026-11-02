@@ -13,7 +13,7 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：seed-config-migration 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Seed 是纯工具箱 Domain）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（Seed 是纯工具箱 Domain）
 > - [attachment_storage.md](../../13-数据模型/A-设计/attachment_storage.md) — 产物与附件统一存储设计（导出包的文件承载）
 > - 【② Plan 落地】[Agent管理集成测试.md](docs/modules/14-测试/B-落地方案/Agent管理集成测试.md) — init_full_test_env 启动顺序与生产 run() 严格对齐（两阶段 init/aop 分离原则）
 > - 【③ Wiki 长文（Batch10 追加）】[系统初始化.md](docs/modules/12-基础设施与部署/C-知识/系统初始化.md) — 用户视角两阶段启动解释

@@ -5,7 +5,7 @@
 > **维护方式**：**团队手工增量维护**。原 `repowiki`（Qoder IDE 插件）已下线，本目录不再由 IDE 生成，
 > 也不会被任何工具覆盖——改什么就留下什么。
 >
-> **入口**：[INDEX.md](INDEX.md) 是全量页面索引（497 篇，自动生成）；本文件是语义入口与维护手册。
+> **入口**：[INDEX.md](docs/modules/INDEX.md) 是全量页面索引（497 篇，自动生成）；本文件是语义入口与维护手册。
 
 ---
 
@@ -22,11 +22,11 @@
 
 ### 2.1 查：我要找的东西在哪一篇？
 
-1. 先翻 [INDEX.md](INDEX.md) 的分类概览，定位到分类；
+1. 先翻 [INDEX.md](docs/modules/INDEX.md) 的分类概览，定位到分类；
 2. 再在该分类的表格里按标题找页（标题是 H1 或 frontmatter `name`，与内容一致）；
 3. 找到页面后读正文；页面头部 `<cite>` 区列了它引用的源文件，可直接跳到代码。
 
-> 不知道属于哪一类时的兜底顺序：`INDEX.md` 全文搜索关键词 → [../CODE_WIKI.md](../CODE_WIKI.md) 模块速查表 → 直接 grep 源码。
+> 不知道属于哪一类时的兜底顺序：`INDEX.md` 全文搜索关键词 → [../CODE_WIKI.md](docs/CODE_WIKI.md) 模块速查表 → 直接 grep 源码。
 
 ### 2.2 增：新增一篇
 
@@ -74,13 +74,13 @@ python3 tools/wiki_index.py --stale   # 诊断：失效的代码路径引用
 
 | 想知道 | 看哪里 |
 |--------|--------|
-| 代码**现在**是什么样（模块、字段、链路） | 本目录（先 [INDEX.md](INDEX.md)） |
-| 架构**权威纲要**（概念、实体关系、分层边界） | [../ARCHITECTURE.md](../ARCHITECTURE.md) |
-| **怎么做**（分层实践与反模式） | [../LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md) |
+| 代码**现在**是什么样（模块、字段、链路） | 本目录（先 [INDEX.md](docs/modules/INDEX.md)） |
+| 架构**权威纲要**（概念、实体关系、分层边界） | [../ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| **怎么做**（分层实践与反模式） | [../LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md) |
 | 当初**为什么**这么设计 | [../design/](../design/) |
 | **要去哪**（规划与状态快照） | [../plan/](../plan/) |
-| 模块速查（不知道去哪个文件找） | [../CODE_WIKI.md](../CODE_WIKI.md) |
-| 文档规范细则（四类文档、五级查重、互引写法） | [../DOCUMENTATION.md](../DOCUMENTATION.md) |
+| 模块速查（不知道去哪个文件找） | [../CODE_WIKI.md](docs/CODE_WIKI.md) |
+| 文档规范细则（四类文档、五级查重、互引写法） | [../DOCUMENTATION.md](docs/DOCUMENTATION.md) |
 
 ## 6. 已知局限（诚实记录）
 

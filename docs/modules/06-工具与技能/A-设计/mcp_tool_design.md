@@ -13,10 +13,10 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：mcp_tool_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与开发规范
 > - [tool_design.md](./tool_design.md) — 通用工具调用架构（ToolProtocol/ControlMode 上游设计）
-> - [runtime_design.md](./runtime_design.md) — Agent 唤醒执行 Runtime（Tool 执行链路的调用方）
-> - 【② Plan 落地】[前端工具与进程管理.md](../plan/前端工具与进程管理.md) — 前端 MCP Server 配置面板
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — Agent 唤醒执行 Runtime（Tool 执行链路的调用方）
+> - 【② Plan 落地】[前端工具与进程管理.md](docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md) — 前端 MCP Server 配置面板
 > - 【③ Wiki 长文】[工具生态系统.md](docs/modules/06-工具与技能/C-知识/工具生态系统.md) — 工具系统全景
 > - 【③ Wiki 长文】[工具注册表.md](docs/modules/06-工具与技能/C-知识/工具注册表.md) — MCP 工具子板块入口
 > - 【④ RAG 卡】[工具系统三层调用架构](docs/modules/06-工具与技能/C-知识/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) — §3 §MCP 协议选择铁律
@@ -24,7 +24,7 @@ related: []
 > - 占位：待 MCP 专用 Wiki 长文（MCP 子系统独立设计说明书）同步后回填真实 Wiki 长文路径
 > - 占位：待 MCP 专用 RAG 知识卡（MCP Server/Tool 双层建模 + Stale 管理）wiki-maintainer 同步后回填真实 RAG 卡路径
 > ⭐ **落地索引（四类互引）**
-> - 对应 Plan：[前端工具与进程管理.md](../plan/前端工具与进程管理.md)（MCP Server 前端配置面板）+ 占位：待 MCP 管理面联调独立 plan 落地
+> - 对应 Plan：[前端工具与进程管理.md](docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md)（MCP Server 前端配置面板）+ 占位：待 MCP 管理面联调独立 plan 落地
 > - 对应 Wiki 长文：工具生态系统/工具注册表（见上 【③ Wiki 长文】）+ 占位：待 MCP 子系统独立长文 wiki-maintainer 同步
 > - 对应 RAG 卡：工具系统三层调用架构总卡 §MCP 协议铁律段（见上）+ 占位：待 MCP 专用 RAG 卡 wiki-maintainer 同步
 

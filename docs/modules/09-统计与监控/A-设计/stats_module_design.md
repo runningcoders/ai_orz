@@ -13,12 +13,12 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：stats_module_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Stats 是基础设施层模块）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（Stats 是基础设施层模块）
 > - [stats_query_design.md](./stats_query_design.md) — 统计查询模块（为前端提供数据查询的 Domain 层封装）
 > - 【② Plan 落地（真实定稿 3 张）】
->   - [统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) — DuckDB 表结构 + record_event! 宏自动推断实现
->   - [统计图表Phase2.md](../plan/统计图表Phase2.md) — 五维度统计面板（Agent/Project/Task/ModelProvider/Tool）+ TokenSumResult 接口
->   - [统计图表第三期.md](../plan/统计图表第三期.md) — AOP 事件统计面板集成 RuntimeStatsCollector 内存滑动窗口
+>   - [统计图表Phase1基础设施与时序图展示重构.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md) — DuckDB 表结构 + record_event! 宏自动推断实现
+>   - [统计图表Phase2.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase2.md) — 五维度统计面板（Agent/Project/Task/ModelProvider/Tool）+ TokenSumResult 接口
+>   - [统计图表第三期.md](docs/modules/09-统计与监控/B-落地方案/统计图表第三期.md) — AOP 事件统计面板集成 RuntimeStatsCollector 内存滑动窗口
 > - 【③ Wiki 长文（人类百科总入口 3 篇 + 细分 2 篇）】
 >   - [多维统计系统.md](docs/modules/05-任务与项目/C-知识/多维统计系统.md) — 五维度总览卡片入口
 >   - [Agent 维度统计.md](docs/modules/05-任务与项目/C-知识/Agent 维度统计.md) — 日调用次数 + Token 消耗分布饼图
@@ -29,7 +29,7 @@ related: []
 >   - [DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表](docs/modules/09-统计与监控/C-知识/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md) — record_event! 三种调用模式 + 持久化/内存选型铁律表 + 6 条回归红线（含 batch_size/WINDOW_MINUTES 阈值）
 >   - [统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示](docs/modules/09-统计与监控/C-知识/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md) — 双层选型铁律表 + 5 Stats DAO 全实体覆盖 + 10 条硬约束
 > ⭐ **落地索引（四类互引）**
-> - 对应 Plan 3 份真实：[统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) / [统计图表Phase2.md](../plan/统计图表Phase2.md) / [统计图表第三期.md](../plan/统计图表第三期.md)
+> - 对应 Plan 3 份真实：[统计图表Phase1基础设施与时序图展示重构.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md) / [统计图表Phase2.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase2.md) / [统计图表第三期.md](docs/modules/09-统计与监控/B-落地方案/统计图表第三期.md)
 > - 对应 Wiki 长文 5 篇（多维统计系统/Agent维度/Tool维度/AOP统计与监控/AOP监控面板，见上 【③ Wiki 长文】）
 > - 对应 RAG 卡 2 份真实（DuckDB 双层互补卡 + 统计查询API与仪表盘卡，见上 【④ RAG 原子知识卡】）
 

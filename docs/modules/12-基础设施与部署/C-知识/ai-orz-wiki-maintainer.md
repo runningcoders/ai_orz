@@ -2,15 +2,15 @@
 
 > 🎯 本文档是 AI Orz 项目「三层文档体系」中活文档一侧的 Skill spec：负责把代码变更同步到 `C-知识`（现状长文 + RAG 知识卡，**全项目唯一的活文档维护方**），并通过 cite / source_files 单向引用 `A-设计` / `B-落地方案` / 源码，保证读者从检索入口能一路跳到设计决策与真实代码。
 >
-> 简短入口版（可直接注册为 Trae Skill）见：[.trae/skills/ai-orz-wiki-maintainer/SKILL.md](../../../../.trae/skills/ai-orz-wiki-maintainer/SKILL.md)
+> 简短入口版（可直接注册为 Trae Skill）见：`.trae/skills/ai-orz-wiki-maintainer/SKILL.md`（本地注册版，未纳入 Git）
 >
-> 平行 Skill（负责历史快照：`A-设计` / `B-落地方案` 的全生命周期）：[ai-orz-doc-maintainer.md](docs/modules/12-基础设施与部署/C-知识/ai-orz-doc-maintainer.md) + [对应注册版](../../../../.trae/skills/ai-orz-doc-maintainer/SKILL.md)
+> 平行 Skill（负责历史快照：`A-设计` / `B-落地方案` 的全生命周期）：[ai-orz-doc-maintainer.md](docs/modules/12-基础设施与部署/C-知识/ai-orz-doc-maintainer.md)（注册版：`.trae/skills/ai-orz-doc-maintainer/SKILL.md`，未纳入 Git）
 >
 > 状态：v3.0（2026-11-02，归档目录物理撤销：Level 1 合并的副卡直接删除；设计退役只改 `status: 已废弃`、不移动文件，因此本 Skill 不再有「归档路径重定向」职责，改为「引用改指现行替代设计」）
 > 查阅场景：任何需要把代码变更同步进 `docs/modules/*/C-知识/` 的两套知识库、或需要在设计退役后修正失效引用时打开；如果是 A/B 的生命周期管理（新建/精简/退役）请走 ai-orz-doc-maintainer。
 >
 > 关联文档：
-> - [DOCUMENTATION.md](../../DOCUMENTATION.md) — 三层文档、frontmatter、路径引用、§3 图谱法则全量细则（本 Skill 的 SSOT）
+> - [DOCUMENTATION.md](docs/DOCUMENTATION.md) — 三层文档、frontmatter、路径引用、§3 图谱法则全量细则（本 Skill 的 SSOT）
 > - [ai-orz-doc-maintainer.md](docs/modules/12-基础设施与部署/C-知识/ai-orz-doc-maintainer.md) — 平行 Skill：历史快照维护方；其场景 D 会通知本 Skill 改指现行替代设计
 
 ---
@@ -280,7 +280,7 @@ source_files:
 
 | 场景 | 应该调用的 Skill | 不应该调用本 Skill |
 |-----|-----------------|------------------|
-| 新功能开发完成后 → 写 A-设计 / B-落地方案 | [ai-orz-doc-maintainer](../../../../.trae/skills/ai-orz-doc-maintainer/SKILL.md) | ❌ 本 Skill 是维护现状知识库，不是写设计决策快照 |
+| 新功能开发完成后 → 写 A-设计 / B-落地方案 | 走 `ai-orz-doc-maintainer`（`.trae/skills/ai-orz-doc-maintainer/SKILL.md`，未纳入 Git） | ❌ 本 Skill 是维护现状知识库，不是写设计决策快照 |
 | superpowers 执行蓝图 → 精简为 `B-落地方案` 7 章 | ai-orz-doc-maintainer | ❌ 本 Skill 不处理 A/B |
 | 设计退役后 → `C-知识` 引用改指现行替代设计 | ✅ 本 Skill（SOP Step 8，被动触发）| ❌ doc-maintainer 不直接改 `C-知识` 文件 |
 | 用户说"更新最近代码到知识库" | ✅ 就是本 Skill | ❌ 不要用 ai-orz-doc-maintainer |

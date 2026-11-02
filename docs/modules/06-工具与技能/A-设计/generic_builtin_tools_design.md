@@ -13,10 +13,10 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：generic_builtin_tools_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [tool_design.md](./tool_design.md) — 工具系统总纲（通用 Builtin 是其核心子集）
 > - [builtins_http_tool_design.md](./builtins_http_tool_design.md) — HTTP Tool Runtime（用户注册式，定位互补而非替代）
-> - 【② Plan 落地】[进程管理与shell_exec修复.md](../plan/进程管理与shell_exec修复.md) — shell_exec 黑名单 + fs 路径安全
+> - 【② Plan 落地】[进程管理与shell_exec修复.md](docs/modules/06-工具与技能/B-落地方案/进程管理与shell_exec修复.md) — shell_exec 黑名单 + fs 路径安全
 > - 【③ Wiki 长文】[工具注册表.md](docs/modules/06-工具与技能/C-知识/工具注册表.md) — 内置工具系统子板块入口
 > - 【④ RAG 卡】[工具系统三层调用架构](docs/modules/06-工具与技能/C-知识/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) — §4 红线 2/3 shell_exec 命令黑名单 + fs 路径安全
 

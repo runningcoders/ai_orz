@@ -13,7 +13,7 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：browser_e2e_test_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [testing_guidelines.md](./testing_guidelines.md) — 项目单元/集成测试通用编写规范（Playbook 是 E2E 层补充）
 > - 【② Plan 落地】[Agent管理集成测试.md](docs/modules/14-测试/B-落地方案/Agent管理集成测试.md) — init_full_test_env 启动顺序对齐 + 19 targets 集成测试模式可复用
 > - 【③ Wiki 长文（Batch10 追加）】[测试指南.md](docs/modules/14-测试/C-知识/测试指南.md) — 测试金字塔分层 + 1124 测试总览 + Playwright E2E 预留位

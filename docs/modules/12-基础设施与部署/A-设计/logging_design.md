@@ -17,9 +17,9 @@ related: []
 > 查阅场景：新增日志打点代码、排查宏调用匹配失败、对齐上下文字段注入规范时打开；宏定义直接看 src/lib.rs 中的 log_info! 等 macro_rules
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
-> - [request_context_design.md](./request_context_design.md) — RequestContext 设计（日志上下文字段的载体）
-> - [common-error-type.md](./common-error-type.md) — 统一错误类型（error 日志错误码格式约定）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
+> - [request_context_design.md](docs/modules/01-组织与权限/A-设计/request_context_design.md) — RequestContext 设计（日志上下文字段的载体）
+> - [common_error_type.md](./common_error_type.md) — 统一错误类型（error 日志错误码格式约定）
 
 ## 概述
 

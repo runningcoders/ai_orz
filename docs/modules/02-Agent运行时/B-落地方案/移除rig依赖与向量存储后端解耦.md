@@ -18,7 +18,7 @@ related: []
 > - 排查向量化/DAL 调用链问题时，直接跳 §涉及文件对路径定位
 > - 理解为什么删除 rig、工具调用循环为何上移到 awakening 层
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范 §3 Trait 位置约定
+> - [AGENTS.md](AGENTS.md) — 分层架构规范 §3 Trait 位置约定
 > - [external_agent_design.md](../../07-外部Agent(A2A)/A-设计/external_agent_design.md) — 外部 Agent（Cli/Remote）协议设计
 > - [vector_search_architecture.md](../../08-搜索/A-设计/vector_search_architecture.md) — 向量索引架构与 DAL 向量化约束
 

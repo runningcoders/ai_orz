@@ -33,7 +33,7 @@ related:
 > 查阅场景：需要理解前端技术选型、业务域与后端 Handler 对齐策略、DaisyUI 迁移路径、HUD Canvas 可视化边界时打开；组件 props 签名、API 客户端方法直接读代码。
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与开发规范
 > - [ui_design_system.md](./ui_design_system.md) — UI 设计系统（主题/色彩/组件规范）
 > - [hud_design_prototype.html](./hud_design_prototype.html) — HUD 设计原型（未来感驾驶舱可视化基准：设计令牌 orz-hud/orz-light、切角发丝边面板、眉标/信号条等，对应 `components/hud.rs` + `styles/input.css` 的 `.hud-*` 皮肤）
 > - 【② Plan 落地】[前端工具与进程管理.md](docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md) — Finance Tools 三 Tab 三视图实现

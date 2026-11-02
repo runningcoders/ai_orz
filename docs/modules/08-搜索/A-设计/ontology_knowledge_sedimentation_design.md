@@ -40,11 +40,11 @@ related: []
 > 触发场景：需要理解本体与知识图谱的关系取舍、本体表结构与词表维护机制、漂移判定为何不物化、DAL 组合方向、published 认证门禁语义、DuckDB 漂移事件设计时打开；字段级实现直接读代码。
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
-> - [CODE_STANDARDS.md](../CODE_STANDARDS.md) — 编码规范 SSOT（§6 STRICT/FTS5、§11 两阶段初始化、§14.2 双端复用下沉）
-> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 实体关系与设计哲学（Agent → Brain → Memory 四层）
-> - [LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md) — 分层红线与反模式避坑（DAL 组合 DAO 先例）
-> - [memory_design.md](../memory_design.md) — 四层记忆系统设计（本设计的领域上游）
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与开发规范
+> - [CODE_STANDARDS.md](docs/CODE_STANDARDS.md) — 编码规范 SSOT（§6 STRICT/FTS5、§11 两阶段初始化、§14.2 双端复用下沉）
+> - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 实体关系与设计哲学（Agent → Brain → Memory 四层）
+> - [LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md) — 分层红线与反模式避坑（DAL 组合 DAO 先例）
+> - [memory_design.md](docs/memory_design.md) — 四层记忆系统设计（本设计的领域上游）
 > - 暂无对应 plan 文档（实施启动时补写 docs/plan/ 本体论知识沉淀落地篇）
 
 ---

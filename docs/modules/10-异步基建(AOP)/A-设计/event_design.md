@@ -13,7 +13,7 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：event_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [consumer_architecture.md](./consumer_architecture.md) — 当前在用的 AOP 事件中心生产-消费架构（本文档的替代方案）
 > - 【③ Wiki 长文（Batch9 新增 — 当前架构参考）】
 >   - [AOP 事件系统架构.md](docs/modules/00-总览与架构/C-知识/AOP 事件系统架构.md) — Event/Publisher/Consumer/Registry 四角色 + Sync/Async 双模式

@@ -185,7 +185,7 @@ pub enum TaskStatus {
 
 **返回值形态**：响应侧的枚举字段恒为 `String`（前端共用的展示契约）；
 只有**请求侧**出现「闭集字符串 → 枚举」的解析。详见
-[memory_design.md §16.4](memory_design.md)。
+[memory_design.md §16.4](docs/memory_design.md)。
 
 参考实现：[memory.rs](common/src/enums/memory.rs)、
 [search_memory.rs](src/handlers/hr/agent/search_memory.rs)

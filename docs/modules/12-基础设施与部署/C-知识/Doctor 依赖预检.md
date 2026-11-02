@@ -8,7 +8,7 @@
 > - 上层权威文档：[AGENTS.md](AGENTS.md) — 依赖管理约定
 > - 横向文档：[基础设施](docs/modules/12-基础设施与部署/C-知识/基础设施.md)
 > - 设计文档：[timestamp_convention.md](docs/modules/13-数据模型/A-设计/timestamp_convention.md)
-> - RAG 知识卡：[Doctor 依赖预检](../../../knowledge/zh/Doctor%20依赖预检/Doctor%20依赖预检.md)
+> - RAG 知识卡：Doctor 依赖预检
 
 ## 一、概述
 

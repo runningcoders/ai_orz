@@ -18,7 +18,7 @@ related: []
 
 **Tech Stack:** Rust (sqlx + async-trait) / Dioxus (frontend) / SQLite (FTS5 + vss0)
 
-**规范基准：** [docs/entity_list_query_search_design.md](../../entity_list_query_search_design.md)
+**规范基准：** [docs/entity_list_query_search_design.md](docs/modules/08-搜索/A-设计/entity_list_query_search_design.md)
 
 **Agent 标杆实现参考：**
 - DTO: `common/src/api/agent.rs` (SearchAgentsRequest)

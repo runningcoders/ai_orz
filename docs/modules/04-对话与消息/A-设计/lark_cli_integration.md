@@ -13,11 +13,11 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：lark_cli_integration 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [message_channel_design.md](./message_channel_design.md) — 消息渠道架构（飞书渠道是其核心子类型）
 > - [tool_design.md](../../06-工具与技能/A-设计/tool_design.md) — 工具系统总纲（lark_cli 是内置工具之一）
-> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — WS 移交 + 清 HOME lark-cli config 落地实现
-> - 【② Plan 落地】[飞书集成二期.md](../plan/lark-cli_集成二期.md) — WS 私信入站 + 指标落地（已完成）
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — WS 移交 + 清 HOME lark-cli config 落地实现
+> - 【② Plan 落地】[飞书集成二期.md](docs/modules/04-对话与消息/B-落地方案/lark-cli_集成二期.md) — WS 私信入站 + 指标落地（已完成）
 > - 【③ Wiki 长文】[身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md](docs/modules/13-数据模型/C-知识/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md) — §5 生命周期联动 WS 移交 + §5 AES 加密
 > - 【③ Wiki 长文】[飞书集成系统.md](docs/modules/13-数据模型/C-知识/飞书集成系统.md)
 > - 【③ Wiki 长文】[消息渠道管理.md](docs/modules/04-对话与消息/C-知识/消息渠道管理.md)

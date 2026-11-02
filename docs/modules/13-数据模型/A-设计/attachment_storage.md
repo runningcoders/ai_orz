@@ -13,9 +13,9 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：attachment_storage 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Attachment 归 Finance 域）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（Attachment 归 Finance 域）
 > - [seed-config-migration.md](../../12-基础设施与部署/A-设计/seed_config_migration.md) — Seed 配置迁移（导出包中会携带 Attachment 引用）
-> - 【② Plan 落地】[项目任务增强.md](../plan/项目任务增强.md) — Project Artifact 按需注入 with_artifacts option
+> - 【② Plan 落地】[项目任务增强.md](docs/modules/05-任务与项目/B-落地方案/项目任务增强.md) — Project Artifact 按需注入 with_artifacts option
 > - 【③ Wiki 长文】[制品和附件.md](docs/modules/13-数据模型/C-知识/制品和附件.md) — Attachment 通用资产 vs Artifact 项目产物
 > - 【③ Wiki 长文】[文件存储模型.md](docs/modules/13-数据模型/C-知识/文件存储模型.md) — data_dir/attachments 分层目录 + 路径安全
 > - 【③ Wiki 长文】[财务领域.md](docs/modules/13-数据模型/C-知识/财务领域.md) — Finance 域三能力 attachment + credential + mcp_server

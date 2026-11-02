@@ -13,8 +13,8 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：entity_list_query_search_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层接口约定）
-> - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 分页参数与通用 count 查询规范（本规范的分页部分的底层）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（Handler 层接口约定）
+> - [pagination_and_count_convention.md](docs/modules/13-数据模型/A-设计/pagination_and_count_convention.md) — 分页参数与通用 count 查询规范（本规范的分页部分的底层）
 > - [full_entity_fts5_search_design.md](./full_entity_fts5_search_design.md) — 全实体 FTS5 + 向量混合搜索统一设计（search 接口底层）
 > - [vector_search_architecture.md](./vector_search_architecture.md) — 向量搜索底层架构
 > - 【② Plan 落地】[批量查询与通用Query接口增强重构.md](docs/modules/13-数据模型/B-落地方案/批量查询与通用Query接口增强重构.md) — query 核心/list 语法糖原则 + 5 实体三层对称模式
@@ -27,12 +27,12 @@ related: []
 > - 【③ Wiki 长文（Batch10 追加）】[知识图谱搜索.md](docs/modules/08-搜索/C-知识/知识图谱搜索.md) — 综合搜索场景映射
 > - 【③ Wiki 长文（Batch10 追加）】[RESTful API.md](docs/modules/03-记忆系统/C-知识/RESTful API.md) — 三接口总览
 > - 【④ RAG 卡 2 张（已有）】
->   - [三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）](docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md) — search 模式样板 + 加权融合
+>   - 三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级） — search 模式样板 + 加权融合
 >   - [向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity](docs/modules/08-搜索/C-知识/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md) — Vectorizable 底层支撑 search 的向量层
 > - 【④ RAG 卡（Batch10 新增）】[Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/modules/08-搜索/C-知识/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分.md) — 全链路三分查询规范 + 8 条硬约束红线
 
 > 本文档总结 Agent 实体统一改造中沉淀的三场景设计经验，作为其他实体（Tool/Skill/Project/Task 等）改造的规范基准。
-> 关联计划：[2026-07-31-unify-agent-search-query.md](superpowers/plans/2026-07-31-unify-agent-search-query.md)
+> 关联计划：2026-07-31-unify-agent-search-query.md
 
 ---
 
@@ -419,7 +419,7 @@ let load_data = move || {
 
 ## 三、改造检查清单（实体改造逐项确认模板）
 
-> 本清单为每个实体重构时的确认模板（非单份落地 checklist）；落地现状以 [三位一体查询 wiki 长文](docs/wiki/zh/content/功能模块/查询与搜索/实体三位一体查询模式list-query-search.md) 与 [PagedResult/分页/RAG 知识卡](docs/wiki/knowledge/zh/查询与搜索体系/实体三位一体查询模式 list query search 规范.md) 为准。每个实体落地时按以下条目逐项核实。
+> 本清单为每个实体重构时的确认模板（非单份落地 checklist）；落地现状以 三位一体查询 wiki 长文 与 PagedResult/分页/RAG 知识卡 为准。每个实体落地时按以下条目逐项核实。
 
 ### 后端
 - DTO：新增 `SearchXxxRequest`（keyword + 完整过滤字段 + pagination），`SearchXxxResponse = PagedResult<XxxListItem>`

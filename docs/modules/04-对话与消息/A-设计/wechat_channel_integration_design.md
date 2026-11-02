@@ -43,8 +43,8 @@ related: []
 > 触发场景：实现/修改微信渠道入站出站、新增 IM 渠道时先读本文；字段级细节以源码为准
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构与规范路由总入口
-> - [CODE_STANDARDS.md](../CODE_STANDARDS.md) — 编码规范 SSOT
+> - [AGENTS.md](AGENTS.md) — 分层架构与规范路由总入口
+> - [CODE_STANDARDS.md](docs/CODE_STANDARDS.md) — 编码规范 SSOT
 > - [消息渠道适配器](docs/modules/04-对话与消息/C-知识/消息渠道适配器.md) — 现有渠道闭环与扩展指南
 > - [用户身份凭证独立表落地](docs/modules/01-组织与权限/B-落地方案/用户身份凭证独立表落地.md) — 凭证引用式存储的先例
 

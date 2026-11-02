@@ -13,10 +13,10 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：unified-idl-http-handler 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [handler-tool-registration-macro.md](../../06-工具与技能/A-设计/handler_tool_registration_macro.md) — HTTP Handler 直接注册为内置工具（互补的另一份定义多端复用）
 > - [api_protocol_convention.md](./api_protocol_convention.md) — API 协议规范（common DTO 单一事实源，IDL 定义必须符合）
-> - 【② Plan 落地】[前端API协议结构重构.md](../plan/前端API协议结构重构.md) — DTO IDL + Handler #[derive(Params)] 对齐
+> - 【② Plan 落地】[前端API协议结构重构.md](docs/modules/13-数据模型/B-落地方案/前端API协议结构重构.md) — DTO IDL + Handler #[derive(Params)] 对齐
 > - 【③ Wiki 长文】[API协议规范.md](docs/modules/00-总览与架构/C-知识/API协议规范.md)
 > - 【④ RAG 卡】[附件存储与DTO协议统一](docs/modules/13-数据模型/C-知识/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE.md) — §红线 5 DTO 仅 common 定义 §IDL derive(Params) 说明位置
 

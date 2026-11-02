@@ -13,7 +13,7 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：intent_aware_two_stage_awaken_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [runtime_design.md](./runtime_design.md) — Runtime 领域总纲与唤醒机制基础
 > - [message_interaction_design.md](../../04-对话与消息/A-设计/message_interaction_design.md) — 用户-Agent 消息交互与前台调度
 > - [thinking_task_policy_engine_design.md](./thinking_task_policy_engine_design.md) — 策略引擎（IA 场景专用 policy_group）
@@ -26,7 +26,7 @@ related: []
 > - 【④ RAG 原子知识卡（Batch11 精确对应 1 张 + 横向关联 2 张）】
 >   - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/modules/02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md) — Phase1/2 串联总卡（IntentAnalysis 7 字段 + 6 级 JSON 降级 + 工具白名单 + think_loop 复用 + Prompt 仅供参考原则）
 >   - [Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报](docs/modules/02-Agent运行时/C-知识/Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报.md) — Phase1 独立 think_runtime 注册清理机制
->   - [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md) — policy_set!(IntentAnalyze) 场景策略组配置
+>   - 策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 — policy_set!(IntentAnalyze) 场景策略组配置
 
 > 范围：只覆盖**总纲与核心理念、接口定义、数据流边界、Prompt 设计原则**；具体落地代码细节由 `docs/superpowers/plans/2026-08-14-intent-analyze-two-stage-awaken.md` 承接。
 

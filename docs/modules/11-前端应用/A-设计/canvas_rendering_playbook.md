@@ -13,12 +13,12 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：canvas_rendering_playbook 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [ui_design_system.md](./ui_design_system.md) — 前端视觉设计系统与样式规范（Canvas 渲染对齐该规范）
-> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) — LineChart LTTB 降采样 + ChartScene 统一基类
-> - 【② Plan 落地】[统计图表Phase2.md](../plan/统计图表Phase2.md) — DonutChart 多环 + Dashboard 指标卡片组合
-> - 【② Plan 落地】[统计图表第三期.md](../plan/统计图表第三期.md) — AopGauge 双刻度仪表盘 + 种子节点推荐高亮外发光
-> - 【② Plan 落地】[知识图谱推荐起点与组件复用重构.md](../plan/知识图谱推荐起点与组件复用重构.md) — GraphCanvas 组件两端复用 HR/Workspace 双页面
+> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md) — LineChart LTTB 降采样 + ChartScene 统一基类
+> - 【② Plan 落地】[统计图表Phase2.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase2.md) — DonutChart 多环 + Dashboard 指标卡片组合
+> - 【② Plan 落地】[统计图表第三期.md](docs/modules/09-统计与监控/B-落地方案/统计图表第三期.md) — AopGauge 双刻度仪表盘 + 种子节点推荐高亮外发光
+> - 【② Plan 落地】[知识图谱推荐起点与组件复用重构.md](docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md) — GraphCanvas 组件两端复用 HR/Workspace 双页面
 > - 【③ Wiki 百科】[图表组件.md](docs/modules/11-前端应用/C-知识/图表组件.md) — LineChart/DonutChart/Gauge 三组件使用模式
 > - 【③ Wiki 百科】[业务组件.md](docs/modules/11-前端应用/C-知识/业务组件.md) — GraphCanvas/RuntimePanel 等 HUD 风格组件总览
 > - 【④ RAG 知识卡】[Canvas HUD 可视化](docs/modules/08-搜索/C-知识/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md) — §CanvasScene Trait 4 方法 §ForceLayout α 冷却 §7 条红线
@@ -300,7 +300,7 @@ let y = e.client_coordinates().y - rect.top();
 
 ### 4.3 注意事项
 
-- **文本排版退化**：Canvas 原生 `fill_text` 无换行、无富文本。若需要复杂文本，要么用 DOM 覆盖层，要么引入 pretext（见 [frontend_roadmap.md 6.1](docs/frontend_roadmap.md)）
+- **文本排版退化**：Canvas 原生 `fill_text` 无换行、无富文本。若需要复杂文本，要么用 DOM 覆盖层，要么引入 pretext（见 frontend_roadmap.md 6.1）
 - **可访问性**：Canvas 内元素无 ARIA、无键盘导航。重要交互控件仍用 DOM
 - **事件精度**：命中检测靠 `hit_test` 几何计算，复杂形状需自己实现
 - **包体**：web-sys 的 Canvas features 已在 Cargo.toml 配置，无额外依赖
@@ -324,9 +324,9 @@ web-sys = { version = "0.3.103", features = [
 
 ## 6. 相关文档
 
-- [frontend_roadmap.md](docs/frontend_roadmap.md) — 前端整体路线图，含游戏化重构五阶段路径
+- frontend_roadmap.md — 前端整体路线图，含游戏化重构五阶段路径
 - [frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md) — 前端架构设计
 - 实施计划：
-  - [2026-07-24-canvas-rendering-infrastructure.md](docs/superpowers/plans/2026-07-24-canvas-rendering-infrastructure.md)
-  - [2026-07-24-canvas-dynamic-rendering.md](docs/superpowers/plans/2026-07-24-canvas-dynamic-rendering.md)
-  - [2026-07-24-canvas-particle-systems.md](docs/superpowers/plans/2026-07-24-canvas-particle-systems.md)
+  - 2026-07-24-canvas-rendering-infrastructure.md
+  - 2026-07-24-canvas-dynamic-rendering.md
+  - 2026-07-24-canvas-particle-systems.md

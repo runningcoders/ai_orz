@@ -18,10 +18,10 @@ related: []
 > 关联文档：
 > - 对应 design 文档：暂无对应独立 AOP 设计文档（强烈建议补写，当前设计决策散落在 pkg/aop/ 源码）
 > - 上游规范与关联：
->   - [AGENTS.md](../../AGENTS.md) — 分层架构规范（§3.1 适配层 AOP Producer 与 Consumer 分层定位约定）
+>   - [AGENTS.md](AGENTS.md) — 分层架构规范（§3.1 适配层 AOP Producer 与 Consumer 分层定位约定）
 >   - [message_channel_design.md](../../04-对话与消息/A-设计/message_channel_design.md) — 消息渠道系统骨架（消息出站链路）
-> - Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件中心设计与实现.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/AOP%20事件中心设计与实现.md) — 统一 publish 入口 + Registry 订阅者注册 + Queue 队列实现
-> - Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者概览.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者概览.md) — 8 类消费者定位与并发策略
+> - Wiki 长文真实路径：docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件中心设计与实现.md — 统一 publish 入口 + Registry 订阅者注册 + Queue 队列实现
+> - Wiki 长文真实路径：docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者概览.md — 8 类消费者定位与并发策略
 > - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md](docs/modules/10-异步基建(AOP)/C-知识/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md)
 > - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md](docs/modules/10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md)
 

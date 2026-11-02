@@ -13,12 +13,12 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：organization_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
-> - [api_protocol_convention.md](./api_protocol_convention.md) — HTTP 接口协议与返回格式约定
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
+> - [api_protocol_convention.md](docs/modules/13-数据模型/A-设计/api_protocol_convention.md) — HTTP 接口协议与返回格式约定
 > - [common-error-type.md](../../12-基础设施与部署/A-设计/common_error_type.md) — 统一错误码与用户可见错误规范
-> - 【② Plan 落地】[用户偏好双源设计.md](../plan/用户偏好双源设计.md) — 自报偏好 + 推断偏好 双源合并逻辑
-> - 【② Plan 落地】[调用者类型上下文.md](../plan/调用者类型上下文.md) — caller_type User/Agent/System 三枚举
-> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — 凭证 AES256-GCM 加密
+> - 【② Plan 落地】[用户偏好双源设计.md](docs/modules/01-组织与权限/B-落地方案/用户偏好双源设计.md) — 自报偏好 + 推断偏好 双源合并逻辑
+> - 【② Plan 落地】[调用者类型上下文.md](docs/modules/01-组织与权限/B-落地方案/调用者类型上下文.md) — caller_type User/Agent/System 三枚举
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — 凭证 AES256-GCM 加密
 > - 【③ Wiki 长文】[用户与组织管理.md](docs/modules/01-组织与权限/C-知识/用户与组织管理.md) — 全景：初始化→创建组织→邀请成员→分配角色→配置偏好
 > - 【③ Wiki 长文】[组织管理.md](docs/modules/01-组织与权限/C-知识/组织管理.md) — 多级组织架构树 + root_org_id 级联
 > - 【③ Wiki 长文】[用户认证与授权.md](docs/modules/01-组织与权限/C-知识/用户认证与授权.md) — JWT Cookie+Bearer 双模式
@@ -217,7 +217,7 @@ pub enum UserRole {
 
 ### 完成功能（开发期落地快照，2026-04-08）
 
-> 本清单为开发期落地记录；落地现状以 [组织与权限 wiki 长文](docs/wiki/zh/content/功能模块/组织与权限/组织与权限架构.md) 与 [UserRole/RAG 知识卡](docs/wiki/knowledge/zh/组织与权限/UserRole 枚举并查集继承体系.md) 为准。
+> 本清单为开发期落地记录；落地现状以 组织与权限 wiki 长文 与 UserRole/RAG 知识卡 为准。
 
 - 数据库表创建 `organizations` + `users`
 - 模型定义 `OrganizationPo` + `UserPo` + `UserRole`

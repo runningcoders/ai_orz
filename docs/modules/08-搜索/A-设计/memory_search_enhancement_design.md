@@ -15,19 +15,19 @@ related: []
 > 状态：定稿（2026-07-12 功能落地）
 > 查阅场景：理解记忆搜索的 FTS5/向量/图谱关系组合方式、调优搜索排序、排查关键词搜索异常时打开。
 > 关联文档：
-> - [memory_design.md](../memory_design.md) — 记忆系统四层认知结构
+> - [memory_design.md](docs/memory_design.md) — 记忆系统四层认知结构
 > - [full_entity_fts5_search_design.md](./full_entity_fts5_search_design.md) — 全实体统一搜索标准（本设计是其超集）
 > - [vector_search_architecture.md](./vector_search_architecture.md) — HNSW 向量搜索底层
 > - [memory_system_enhancement_design.md](../../03-记忆系统/A-设计/memory_system_enhancement_design.md) — 工具拆分 + 定时沉淀设计（搜索增强的上层能力设计）
 > - 【② Plan 落地（真实定稿 2 张）】
->   - [图谱遍历查询优化.md](../plan/图谱遍历查询优化.md) — traverse BFS/DFS IN 分块 400 + 栈批量预取（含 5 个新增测试场景）
->   - [知识图谱推荐起点与组件复用重构.md](../plan/知识图谱推荐起点与组件复用重构.md) — recommend_seed_nodes + 前端 KnowledgeGraph 组件两端复用
+>   - [图谱遍历查询优化.md](docs/modules/08-搜索/B-落地方案/图谱遍历查询优化.md) — traverse BFS/DFS IN 分块 400 + 栈批量预取（含 5 个新增测试场景）
+>   - [知识图谱推荐起点与组件复用重构.md](docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md) — recommend_seed_nodes + 前端 KnowledgeGraph 组件两端复用
 > - 【③ Wiki 长文 ≥3 篇（Batch11 精确对齐）】
 >   - [知识关系管理.md](docs/modules/05-任务与项目/C-知识/知识关系管理.md) — 知识关系 + traverse BFS/DFS 遍历链路 + 图谱冷启动种子推荐
 >   - [知识图谱搜索.md](docs/modules/08-搜索/C-知识/知识图谱搜索.md) — FTS5 关键词 + 向量 + 图谱关系三位一体综合搜索排序
 >   - [记忆系统管理.md](docs/modules/02-Agent运行时/C-知识/记忆系统管理.md) — 记忆搜索接口管理 + 推荐面板 reasons 展示
 > - 【④ RAG 原子知识卡（Batch11 精确对应 1 张 + 横向关联 2 张）】
->   - [记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐](docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md) — 三合一总卡（FTS5 搜索 + tags 过滤 + traverse 分块 + 三因子打分 + MAX_SEARCH_RESULTS 20 红线）
+>   - 记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐 — 三合一总卡（FTS5 搜索 + tags 过滤 + traverse 分块 + 三因子打分 + MAX_SEARCH_RESULTS 20 红线）
 >   - [知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出](docs/modules/08-搜索/C-知识/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md) — §1 决策 2 遍历位置 + BFS/DFS 具体实现细节
 >   - [recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用](docs/modules/11-前端应用/C-知识/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md) — 三因子算法 + 前端 KnowledgeGraph 组件复用拆分
 

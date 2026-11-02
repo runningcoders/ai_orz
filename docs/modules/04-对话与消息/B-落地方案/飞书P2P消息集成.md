@@ -17,7 +17,7 @@ related: []
 > - 排查飞书消息链路异常时，参考"数据流图 + 验收清单"快速定位入口
 > 状态：**完成（2026-07-17）**
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范（consumer → domain → dal → dao 单向）
+> - [AGENTS.md](AGENTS.md) — 分层架构规范（consumer → domain → dal → dao 单向）
 > - [lark-cli_集成二期.md](./lark-cli_集成二期.md) — 飞书 CLI 渠道集成
 > - [身份凭证Domain统一CRUD重构.md](../../01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — 飞书凭证管理
 

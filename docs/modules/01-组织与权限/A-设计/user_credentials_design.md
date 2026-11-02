@@ -16,8 +16,8 @@ related: []
 > 触发场景：实现/修改用户身份凭证 CRUD、新增凭证类型、评估凭据可见性/绑定关系归属、评估 kind 枚举存储方式（TEXT vs INTEGER）、或评估 JSON 列 vs 独立表取舍时打开
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — §4.3 枚举类型安全、§4.4 SQLite 规范、§3.5 软删除约定
-> - [SQL 规范](sqlx_guide.md) — STRICT 表、sqlx::Type 派生、`.sqlx` 纳管
+> - [AGENTS.md](AGENTS.md) — §4.3 枚举类型安全、§4.4 SQLite 规范、§3.5 软删除约定
+> - [SQL 规范](docs/modules/12-基础设施与部署/A-设计/sqlx_guide.md) — STRICT 表、sqlx::Type 派生、`.sqlx` 纳管
 > - [身份凭证Domain统一CRUD重构](../B-落地方案/身份凭证Domain统一CRUD重构.md) — 前序落地快照（JSON 列方案），本设计取代其存储层
 > - 暂无对应 plan 文档（落地时补写）
 

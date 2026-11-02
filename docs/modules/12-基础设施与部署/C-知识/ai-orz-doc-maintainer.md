@@ -2,15 +2,15 @@
 
 > 🎯 本文档是 AI Orz 项目「三层文档体系」中历史快照一侧的 Skill spec：负责 `A-设计`（设计决策快照）+ `B-落地方案`（落地结果快照）的**全生命周期**（新建 → 冻结 → 被取代/完成后的状态标记）+ superpowers 执行蓝图的精简落成。文档互引遵循**单向模型**：`C-知识`（活文档）单向引用 `A-设计` / `B-落地方案`（快照），快照**不**反向维护指向活文档的链接（会随知识库改版腐烂）。
 >
-> 简短入口版（可直接注册为 Trae Skill）见：[.trae/skills/ai-orz-doc-maintainer/SKILL.md](../../../../.trae/skills/ai-orz-doc-maintainer/SKILL.md)
+> 简短入口版（可直接注册为 Trae Skill）见：`.trae/skills/ai-orz-doc-maintainer/SKILL.md`（本地注册版，未纳入 Git）
 >
-> 平行 Skill（负责活文档：`C-知识` 长文 + RAG 知识卡的代码同步）：[ai-orz-wiki-maintainer.md](docs/modules/12-基础设施与部署/C-知识/ai-orz-wiki-maintainer.md) + [对应注册版](../../../../.trae/skills/ai-orz-wiki-maintainer/SKILL.md)
+> 平行 Skill（负责活文档：`C-知识` 长文 + RAG 知识卡的代码同步）：[ai-orz-wiki-maintainer.md](docs/modules/12-基础设施与部署/C-知识/ai-orz-wiki-maintainer.md)（注册版：`.trae/skills/ai-orz-wiki-maintainer/SKILL.md`，未纳入 Git）
 >
 > 状态：v3.0（2026-11-02，归档目录物理撤销：旧设计与旧方案不再移动、不再设归档区，生命周期只用 `status: 已废弃` / `已完成` 表达；superpowers 蓝图精简后原文件直接删除，历史靠 git 追溯）
 > 查阅场景：任何需要写 `A-设计` / `B-落地方案`、需要精简 superpowers 执行蓝图、需要判断"一段代码能不能保留在文档里"、或需要处理"设计被取代 / 方案已完成"的时候打开；如果是 `C-知识` 长文/知识卡的同步请走 ai-orz-wiki-maintainer。
 >
 > 关联文档：
-> - [DOCUMENTATION.md](../../DOCUMENTATION.md) — 本文档的 SSOT（三层文档、YAML frontmatter、路径引用、图谱法则）；本 Skill 是把该规范翻译成可执行的 agent 工作流步骤 + 判定表 + 章节模板
+> - [DOCUMENTATION.md](docs/DOCUMENTATION.md) — 本文档的 SSOT（三层文档、YAML frontmatter、路径引用、图谱法则）；本 Skill 是把该规范翻译成可执行的 agent 工作流步骤 + 判定表 + 章节模板
 > - [ai-orz-wiki-maintainer.md](docs/modules/12-基础设施与部署/C-知识/ai-orz-wiki-maintainer.md) — 平行 Skill：活文档维护方；本 Skill 标记设计退役后通知它把引用改指现行替代文档
 > - [AGENTS.md](../../../../AGENTS.md) — 项目总纲与文件落位规则
 
@@ -196,7 +196,7 @@ related: []
 > 查阅场景：理解设计动机、边界条件、扩展模式时打开；字段级跳代码
 >
 > 关联文档：
-> - [DOCUMENTATION.md §X](../../DOCUMENTATION.md) — 适用的架构规范
+> - [DOCUMENTATION.md §X](docs/DOCUMENTATION.md) — 适用的架构规范
 > - [相关落地方案](docs/modules/<模块>/B-落地方案/xxx.md) — 落地实施计划与结果（若无则写「暂无对应落地方案」）
 
 ---
@@ -252,7 +252,7 @@ related: []
 >
 > 关联文档：
 > - [相关设计文档](docs/modules/<模块>/A-设计/xxx_design.md) — 设计动机；若无则写「暂无对应设计文档（强烈建议补写）」
-> - [DOCUMENTATION.md §X](../../DOCUMENTATION.md) — 适用的架构规范
+> - [DOCUMENTATION.md §X](docs/DOCUMENTATION.md) — 适用的架构规范
 
 ---
 

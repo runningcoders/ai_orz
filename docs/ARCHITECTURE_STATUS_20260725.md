@@ -8,9 +8,9 @@
 > - 追溯 DAO/DAL/Domain 四层全覆盖达成的时间节点与决策记录
 > - 审计早期分层执行质量（如 Handler 严格走 Domain 是否 100% 遵守）
 > 关联文档：
-> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲（当前生效版本）
-> - [LAYERED_ARCHITECTURE_PRACTICE.md](LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实操手册（AGENTS.md §3.1 配套）
-> - [AGENTS.md](../../AGENTS.md) — 强制开发规范 §3.1 代码分层架构
+> - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 唯一权威架构总纲（当前生效版本）
+> - [LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实操手册（AGENTS.md §3.1 配套）
+> - AGENTS.md — 强制开发规范 §3.1 代码分层架构
 
 ---
 

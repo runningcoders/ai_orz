@@ -20,7 +20,7 @@
 - [mod.rs（DAO 接口）](src/service/dao/memory/mod.rs)
 - [vector_search_architecture.md](docs/modules/08-搜索/A-设计/vector_search_architecture.md)
 
-> **更新摘要 2026-10-12（base 2f42b407→a4525d6c）**：① save_long_term_memory / update_memory 请求新增 `properties: []`（`KnowledgePropertyParam`：term_key + 六型 tagged value text/number/boolean/date/reference/enum_value），响应新增 `property_issues_v2: []`（`PropertyIssueEntry{code,message,field}`，结构化；旧字段 `property_issues: []string` 并存）；建边响应新增 `relations_result: []`（`RelationWriteResult{key,status,relation_id,error_code,message,field}`，逐项 keyed 回执；`relation_ids` 收紧为成功边 ID）。② search_memory 请求新增 `property_filters: []`（`PropertyFilterParam{term_key,op: Eq|Gt|Gte|Lt|Le,value}`，与 seed_node_ids 互斥），结果节点新增 `properties: []`（`KnowledgePropertyItem` 仅回显 status=1 生效值）。错误码语义见 common/src/error/code.rs；数据模型与门禁全景见长文 [本体属性管理](../../../功能模块/知识图谱管理/本体属性管理.md)。
+> **更新摘要 2026-10-12（base 2f42b407→a4525d6c）**：① save_long_term_memory / update_memory 请求新增 `properties: []`（`KnowledgePropertyParam`：term_key + 六型 tagged value text/number/boolean/date/reference/enum_value），响应新增 `property_issues_v2: []`（`PropertyIssueEntry{code,message,field}`，结构化；旧字段 `property_issues: []string` 并存）；建边响应新增 `relations_result: []`（`RelationWriteResult{key,status,relation_id,error_code,message,field}`，逐项 keyed 回执；`relation_ids` 收紧为成功边 ID）。② search_memory 请求新增 `property_filters: []`（`PropertyFilterParam{term_key,op: Eq|Gt|Gte|Lt|Le,value}`，与 seed_node_ids 互斥），结果节点新增 `properties: []`（`KnowledgePropertyItem` 仅回显 status=1 生效值）。错误码语义见 common/src/error/code.rs；数据模型与门禁全景见长文 [本体属性管理](docs/modules/08-搜索/C-知识/本体属性管理.md)。
 </cite>
 
 ## 目录

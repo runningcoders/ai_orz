@@ -22,7 +22,7 @@ related: []
 
 **Tech Stack:** Rust, Axum, DashMap, serde
 
-**设计文档：** [docs/design/thinking_task_policy_engine_design.md](../../../docs/design/thinking_task_policy_engine_design.md) 第 103 行"业务上下文字段归属"决策
+**设计文档：** [docs/design/thinking_task_policy_engine_design.md](docs/modules/02-Agent运行时/A-设计/thinking_task_policy_engine_design.md) 第 103 行"业务上下文字段归属"决策
 
 ---
 

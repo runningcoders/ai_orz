@@ -18,7 +18,7 @@ related: []
 
 **Tech Stack:** Rust, Axum, serde, tokio, sqlx
 
-**设计文档:** [docs/a2a_server_design.md](../../a2a_server_design.md)
+**设计文档:** [docs/a2a_server_design.md](docs/modules/07-外部Agent(A2A)/A-设计/a2a_server_design.md)
 
 ---
 

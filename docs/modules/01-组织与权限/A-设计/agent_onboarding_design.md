@@ -13,15 +13,15 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：agent_onboarding_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [external_agent_design.md](../../07-外部Agent(A2A)/A-设计/external_agent_design.md) — 外部 CLI/A2A Agent 接入与本地 Agent 差异封装
 > - [consumer_architecture.md](../../10-异步基建(AOP)/A-设计/consumer_architecture.md) — 事件驱动架构（入职/离职事件广播）
-> - 【② Plan 落地】[预置基础技能导入重构.md](../plan/预置基础技能导入重构.md) — 5 套 TEMPLATE skill packs 编译期嵌入 + install_skill_pack 幂等
-> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — 入职第三步 凭证 AES256-GCM 加密绑定
+> - 【② Plan 落地】[预置基础技能导入重构.md](docs/modules/06-工具与技能/B-落地方案/预置基础技能导入重构.md) — 5 套 TEMPLATE skill packs 编译期嵌入 + install_skill_pack 幂等
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — 入职第三步 凭证 AES256-GCM 加密绑定
 > - 【③ Wiki 长文】[Agent 全生命周期管理.md](docs/modules/05-任务与项目/C-知识/Agent 全生命周期管理.md) — 入职五步流程章节
 > - 【③ Wiki 长文】[技能与工具绑定.md](docs/modules/06-工具与技能/C-知识/技能与工具绑定.md) — 第二步技能 + 第四步工具
 > - 【④ RAG 卡 1】[组织权限与用户偏好](docs/modules/01-组织与权限/C-知识/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md) — §3 HR::onboard_agent 五步时序 §红线 4 原子回滚
-> - 【④ RAG 卡 2】[技能系统 Seed 预置导入与 Agent 入职绑定](docs/wiki/knowledge/zh/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断.md) — 入职第二步 install_skill_pack 流程
+> - 【④ RAG 卡 2】技能系统 Seed 预置导入与 Agent 入职绑定 — 入职第二步 install_skill_pack 流程
 
 ## 模块概述
 
@@ -254,7 +254,7 @@ fn init_hr_test_env() {
 
 ### 测试覆盖清单（设计期规划，2026-05-08 决策快照）
 
-> 本清单为设计阶段的测试覆盖规划，落地现状以 [Agent 入职流程 wiki 长文](docs/wiki/zh/content/功能模块/Agent/Agent入职流程与HR领域服务.md) 与 [Agent 入职状态机/RAG 知识卡](docs/wiki/knowledge/zh/Agent 组织与入职/Agent入职流程与状态机流转.md) 为准。
+> 本清单为设计阶段的测试覆盖规划，落地现状以 Agent 入职流程 wiki 长文 与 Agent 入职状态机/RAG 知识卡 为准。
 
 - Agent CRUD 基础操作
 - transition_status 合法流转测试
@@ -315,7 +315,7 @@ fn init_hr_test_env() {
 
 ## 已完成 vs 待完成（开发期状态快照，2026-05-08）
 
-> 本小节为开发期进度快照，对应 commit e75d41f；落地现状以 [Agent 入职流程 wiki 长文](docs/wiki/zh/content/功能模块/Agent/Agent入职流程与HR领域服务.md) 为准。
+> 本小节为开发期进度快照，对应 commit e75d41f；落地现状以 Agent 入职流程 wiki 长文 为准。
 
 ### ✅ 已完成
 
@@ -372,7 +372,7 @@ test result: ok. 4 passed; 0 failed
 
 ## 相关文档
 
-- [分层架构实践指南](./LAYERED_ARCHITECTURE_PRACTICE.md)
+- [分层架构实践指南](docs/LAYERED_ARCHITECTURE_PRACTICE.md)
 - [消息渠道设计文档](../../04-对话与消息/A-设计/message_channel_design.md)
 - [工具系统设计文档](../../06-工具与技能/A-设计/tool_design.md)
 - [技能系统设计文档](../../06-工具与技能/A-设计/skill_design.md)

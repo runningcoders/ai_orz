@@ -31,8 +31,8 @@ related:
 > 查阅场景：新增全量实体 query/list 接口、排查 count 与 query 结果不一致、对齐 DAO push_query_filters 模式与全链路参数透传时打开；具体实现看 common/src/api/ 与对应 DAO
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（§4.9/§4.10 为本规范的红线摘要来源）
-> - [entity_list_query_search_design.md](./entity_list_query_search_design.md) — list/query/search 三接口职责边界（分页是该规范的子集）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（§4.9/§4.10 为本规范的红线摘要来源）
+> - [entity_list_query_search_design.md](docs/modules/08-搜索/A-设计/entity_list_query_search_design.md) — list/query/search 三接口职责边界（分页是该规范的子集）
 > - [api_protocol_convention.md](./api_protocol_convention.md) — API 协议规范（common DTO 单一事实源）
 > - 【② Plan 落地】[Query接口分页与List接口简化重构.md](docs/modules/13-数据模型/B-落地方案/Query接口分页与List接口简化重构.md) — list 只接分页 + query 接完整过滤
 > - 【② Plan 落地】[批量查询与通用Query接口增强重构.md](docs/modules/13-数据模型/B-落地方案/批量查询与通用Query接口增强重构.md) — Query 结构体化 + PagedResult 统一返回

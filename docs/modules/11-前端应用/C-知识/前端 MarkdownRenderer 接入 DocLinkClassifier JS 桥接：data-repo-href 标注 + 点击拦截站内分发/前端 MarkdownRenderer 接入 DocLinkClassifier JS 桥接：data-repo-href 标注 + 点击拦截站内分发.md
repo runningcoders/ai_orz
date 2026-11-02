@@ -39,6 +39,8 @@ fcb08db6 变更把前端 Dioxus Markdown 渲染组件统一接入 DocLinkClassif
 
 **2026-11-02 增量更新（架构图 HTML 右侧内嵌）**：`docs/diagrams/*.html` 是 archify 生成的自包含页面（内联脚本 + 硬编码主题），不再一律新标签打开；渲染期把它标注为站内链接：`href="/docs/diagrams/xxx.html"` 作直开降级，并追加 `data-doc-path="diagrams/xxx.html"` / `data-doc-repo="docs/diagrams/xxx.html"` / `class="doc-link-internal"`，由 `docs.rs` 内容容器的事件委托拦截后在右侧内容区用 **iframe** 加载（`sandbox="allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox"` 隔离其脚本/样式，宿主页 CSS/JS 不受污染）。左侧「架构图」条目与深链 `#doc=docs/diagrams/xxx.html` 也进入内嵌态；标题栏保留「↗ 新标签打开」直链。主题通过 `?theme=light|dark` 传给图表（archify 优先读 query 参数，避免 `orz-light` 下仍显示深色图）。`build.rs` 为每条图表补写 `repo_path`，使深链、`#doc=` 回写与左侧导航自动展开都按仓库路径命中。
 
+**2026-11-02 修复（doc_ctx 优先级 + 导航滚动）**：`MarkdownRenderer` 原先按 `(directory, doc_ctx)` 顺序匹配渲染分支，而 `main.rs` 全局注册了 `Directory` provider，导致文档中心恒定命中 `render_markdown_with_names`、完全跳过 `DocRenderContext`，站内链接全部退化为 GitHub blob。现改为 `doc_ctx` 优先：`Some(ctx)` → `render_markdown_doc`，无文档上下文时才走 Directory 名称渲染。另：左侧导航把高亮行滚动到可视区改用 `ScrollIntoViewOptions { block: nearest }`（`frontend/src/pages/system/docs.rs`），避免默认 `block: start` 把整个页面滚到该行（表现为点击条目时页面闪一下、条目顶到最上方）。
+
 ## §2 关键文件路径表格（读代码直接跳）
 
 | 文件 | 角色 | 关键结构/宏/入口 |

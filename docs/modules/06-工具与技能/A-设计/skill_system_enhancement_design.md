@@ -17,7 +17,7 @@ related: []
 > 关联文档：
 > - [skill_design.md](./skill_design.md) — 技能系统基础设计
 > - [tool_design.md](./tool_design.md) — 工具系统基础设计（tag 过滤通用优化）
-> - [runtime_design.md](./runtime_design.md) — 唤醒流程与 PromptBuilder
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — 唤醒流程与 PromptBuilder
 > - 【② Plan 落地快照（Batch11 精确新增）】
 >   - [Agent管理集成测试.md](docs/modules/14-测试/B-落地方案/Agent管理集成测试.md) — 技能安装幂等测试 + 入职绑定失败降级 + Prompt Token 预算断言
 > - 【③ Wiki 长文 ≥3 篇（Batch11 精确对齐）】

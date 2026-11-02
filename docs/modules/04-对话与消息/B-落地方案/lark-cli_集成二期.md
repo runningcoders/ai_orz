@@ -18,7 +18,7 @@ related: []
 > - 调试 WS 重连或渠道凭证联动问题时，按 §二 架构分层定位 Domain 编排联动链路
 > - 新增凭证类型时，参考 §四 速查表确认改动面（DAL/DAO/Handler 三处）
 > 关联文档：
-> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲
+> - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 唯一权威架构总纲
 > - [lark_cli_integration.md](../A-设计/lark_cli_integration.md) — 底层设计决策（§4 二期三项）
 > - [身份凭证Domain统一CRUD重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — 凭证类型统一 CRUD 的后续收敛方案
 

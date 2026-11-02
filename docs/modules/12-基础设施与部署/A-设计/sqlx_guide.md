@@ -22,8 +22,8 @@ related: []
 > 查阅场景：写 SQL / 新增 DAO 方法 / 迁移表结构 / 编写 sqlx 测试 / 排查 sqlx 编译报错时打开；具体 SQL 语句与宏参数直接看 DAO 实现代码。
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范 §SQLite + SQLx 规范
-> - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 查询分页与通用 count 规范（query 过滤条件复用的上游约束）
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与开发规范 §SQLite + SQLx 规范
+> - [pagination_and_count_convention.md](docs/modules/13-数据模型/A-设计/pagination_and_count_convention.md) — 查询分页与通用 count 规范（query 过滤条件复用的上游约束）
 > - 【② Plan 落地（Batch9 关联）】
 >   - [Query接口分页与List接口简化重构.md](docs/modules/13-数据模型/B-落地方案/Query接口分页与List接口简化重构.md) — COUNT 与 LIST 复用 push_query_filters 约定
 > - 【③ Wiki 长文（Batch9 新增）】
@@ -287,7 +287,7 @@ trigram 分词器基于 3 字符滑动窗口，**少于 3 个字符的关键词�
 
 ### 8. 与向量搜索的关系
 
-FTS5 关键词搜索和向量语义搜索是互补关系，在 DAL 层组合为**混合搜索**，具体架构见 [vector_search_architecture.md](./vector_search_architecture.md)。
+FTS5 关键词搜索和向量语义搜索是互补关系，在 DAL 层组合为**混合搜索**，具体架构见 [vector_search_architecture.md](docs/modules/08-搜索/A-设计/vector_search_architecture.md)。
 
 ## 离线查询缓存
 

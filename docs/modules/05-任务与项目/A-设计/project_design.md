@@ -13,7 +13,7 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：project_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [task_design.md](./task_design.md) — 任务实体基础设计（项目的一对多子实体）
 > - [project_management_design.md](./project_management_design.md) — 项目管理增强：DAG 依赖/产物/进度实时计算
 > - 【③ Wiki 长文（Batch9 新增）】
@@ -130,7 +130,7 @@ ai_orz 项目系统用于组织和管理相关任务，支持任务分组、项�
 
 ## 后续待开发（设计决策快照）
 
-> 本文件为 2026-04-15 决策快照，写定不追代码；以下条目记录当时的后续规划，落地现状以 [Project 领域 wiki 长文](docs/wiki/zh/content/功能模块/任务与项目/项目领域与产物聚合.md) 与 [Project CRUD/RAG 知识卡](docs/wiki/knowledge/zh/任务与项目体系/Project 实体 CRUD 与状态机设计.md) 为准。
+> 本文件为 2026-04-15 决策快照，写定不追代码；以下条目记录当时的后续规划，落地现状以 Project 领域 wiki 长文 与 Project CRUD/RAG 知识卡 为准。
 
 - DAL 层业务逻辑实现
 - Domain 层领域服务

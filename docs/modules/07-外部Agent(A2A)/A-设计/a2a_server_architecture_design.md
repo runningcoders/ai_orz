@@ -18,7 +18,7 @@ related: []
 > - [external_agent_design.md](./external_agent_design.md) — 反向：ai_orz 作为客户端调用外部 A2A Server 的设计（双向对称）
 > - [a2a_server_design.md](./a2a_server_design.md) — 早期 RESTful Callback 方案（已废弃，保留对比）
 > - [consumer_architecture.md](../../10-异步基建(AOP)/A-设计/consumer_architecture.md) — 事件消费架构（A2A 异步唤醒复用）
-> - [AGENTS.md](../../AGENTS.md) §3.2：Handler 层 mapper 转换约定
+> - [AGENTS.md](AGENTS.md) §3.2：Handler 层 mapper 转换约定
 > - 【② Plan 落地】（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
 > - 【③ Wiki 长文】[API 参考.md](docs/modules/13-数据模型/C-知识/API 参考.md) — §A2A 协议接口完整时序图与路由表
 > - 【③ Wiki 长文】[Agent 发现机制.md](docs/modules/07-外部Agent(A2A)/C-知识/Agent 发现机制.md) — /.well-known/agent.json 公开端点说明

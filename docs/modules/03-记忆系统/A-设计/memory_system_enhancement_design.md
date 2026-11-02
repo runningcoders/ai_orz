@@ -15,13 +15,13 @@ related: []
 > 状态：v2 部分完成（阶段一已落地，阶段二/三进行中，2026-08-15）
 > 查阅场景：理解记忆写入接口拆分设计、定时触发器架构、记忆自动沉淀机制、新增系统能力类 Domain 时打开。
 > 关联文档：
-> - [memory_design.md](../memory_design.md) — 记忆四层认知模型基础
+> - [memory_design.md](docs/memory_design.md) — 记忆四层认知模型基础
 > - [memory_search_enhancement_design.md](../../08-搜索/A-设计/memory_search_enhancement_design.md) — 搜索增强设计（阶段一配套）
 > - [consumer_architecture.md](../../10-异步基建(AOP)/A-设计/consumer_architecture.md) — 事件消费架构（阶段二/三复用）
-> - [runtime_design.md](./runtime_design.md) — Agent 状态机（Resting 状态 + BusyGuard 防沉淀并发冲突）
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — Agent 状态机（Resting 状态 + BusyGuard 防沉淀并发冲突）
 > - 【② Plan 落地快照】
->   - [图谱遍历查询优化.md](../plan/图谱遍历查询优化.md) — 阶段二 traverse 性能优化真实定稿
->   - [知识图谱推荐起点与组件复用重构.md](../plan/知识图谱推荐起点与组件复用重构.md) — 阶段二 recommend_seed_nodes + 前端组件复用真实定稿
+>   - [图谱遍历查询优化.md](docs/modules/08-搜索/B-落地方案/图谱遍历查询优化.md) — 阶段二 traverse 性能优化真实定稿
+>   - [知识图谱推荐起点与组件复用重构.md](docs/modules/03-记忆系统/B-落地方案/知识图谱推荐起点与组件复用重构.md) — 阶段二 recommend_seed_nodes + 前端组件复用真实定稿
 > - 【② Plan 落地快照（Batch11 精确新增）】
 >   - [唤醒上下文与睡眠约束.md](docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md) — sleep_and_settle 沉淀约束 + ThinkingOptions 统一参数 + 双层工具过滤
 > - 【③ Wiki 长文 ≥4 篇（Batch11 精确对齐）】
@@ -30,8 +30,8 @@ related: []
 >   - [Agent 记忆系统.md](docs/modules/03-记忆系统/C-知识/Agent 记忆系统.md) — Agent 视角下的记忆生命周期 + 入职/休息/沉淀环节联动
 >   - [工作记忆 (Working Memory).md](docs/modules/03-记忆系统/C-知识/工作记忆 (Working Memory).md) — 小憩时清 Working 上下文边界 + 上下文过载触发小憩
 > - 【④ RAG 原子知识卡（Batch11 精确对应 1 张 + 横向关联 3 张）】
->   - [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — 三合一总卡（工具拆分 + Cron 定时框架 + 沉淀冲突合并 0.78 阈值 + 双层工具过滤）
->   - [记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐](docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md) — 阶段二搜索能力（记忆沉淀依赖的相似节点向量搜索底座）
+>   - Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并 — 三合一总卡（工具拆分 + Cron 定时框架 + 沉淀冲突合并 0.78 阈值 + 双层工具过滤）
+>   - 记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐 — 阶段二搜索能力（记忆沉淀依赖的相似节点向量搜索底座）
 >   - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/modules/02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md) — 复用同一 run_think_loop 引擎（Settle 场景共用）
 
 ---

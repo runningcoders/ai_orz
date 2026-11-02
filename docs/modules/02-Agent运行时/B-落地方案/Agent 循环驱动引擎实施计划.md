@@ -18,7 +18,7 @@ related: []
 > - 排查项目进度通知未送达时，按链路逐层定位（实体字段→事件→定时补偿）
 > - 新增系统级通知类型时，按 §四 速查表模式扩展，复用第一节消息构建器实现模式
 > 关联文档：
-> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲
+> - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 唯一权威架构总纲
 > - [agent_loop_engine_design.md](../A-设计/agent_loop_engine_design.md) — 底层设计决策细节
 > - [task_design.md](../../05-任务与项目/A-设计/task_design.md) — 任务状态机与进度追踪
 

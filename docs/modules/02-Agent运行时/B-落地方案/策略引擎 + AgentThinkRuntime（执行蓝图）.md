@@ -22,7 +22,7 @@ related: []
 
 **Tech Stack:** Rust, DashMap, Arc<AtomicBool>（替代 tokio_util::CancellationToken，避免新增依赖）
 
-**设计文档：** [docs/design/thinking_task_policy_engine_design.md](../../../docs/design/thinking_task_policy_engine_design.md) 第四章（策略引擎）+ 第五章（AgentThinkRuntime）
+**设计文档：** [docs/design/thinking_task_policy_engine_design.md](docs/modules/02-Agent运行时/A-设计/thinking_task_policy_engine_design.md) 第四章（策略引擎）+ 第五章（AgentThinkRuntime）
 
 **偏差说明：**
 - 设计文档用 `CancellationToken`（tokio_util），本计划用 `Arc<AtomicBool>`（功能等价，零新依赖）

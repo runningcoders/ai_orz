@@ -13,12 +13,12 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：testing_guidelines 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [browser_e2e_test_design.md](./browser_e2e_test_design.md) — 浏览器端 E2E/操作验证用例 Playbook 体系
-> - [sqlx_guide.md](./sqlx_guide.md) — SQLite + SQLx 0.8 规范与 #[sqlx::test] 隔离
-> - 【② Plan 落地】[Agent管理集成测试.md](../plan/Agent管理集成测试.md) — 19 集成测试 target 清单 + onboard_agent 回滚断言矩阵
-> - 【② Plan 落地】[AOP生产消费事件中心重构.md](../plan/AOP生产消费事件中心重构.md) — event_delivery 集成测试链路：publish→消费者 ack→断言表记录
-> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — credential_crud 集成测试 AES256-GCM 加解密 roundtrip 断言
+> - [sqlx_guide.md](docs/modules/12-基础设施与部署/A-设计/sqlx_guide.md) — SQLite + SQLx 0.8 规范与 #[sqlx::test] 隔离
+> - 【② Plan 落地】[Agent管理集成测试.md](docs/modules/14-测试/B-落地方案/Agent管理集成测试.md) — 19 集成测试 target 清单 + onboard_agent 回滚断言矩阵
+> - 【② Plan 落地】[AOP生产消费事件中心重构.md](docs/modules/10-异步基建(AOP)/B-落地方案/AOP生产消费事件中心重构.md) — event_delivery 集成测试链路：publish→消费者 ack→断言表记录
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](docs/modules/01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — credential_crud 集成测试 AES256-GCM 加解密 roundtrip 断言
 > - 【③ Wiki 百科】[测试指南.md](docs/modules/14-测试/C-知识/测试指南.md) — 1124 测试分布总览：984 后端(897单元+87集成) + 82 前端 + 58 common
 > - 【③ Wiki 百科】[端到端测试基础设施.md](docs/modules/14-测试/C-知识/端到端测试基础设施.md) — Playwright E2E 本地 `just e2e` + 失败视频自动保存
 > - 【③ Wiki 百科】[持续集成与发布工作流.md](docs/modules/12-基础设施与部署/C-知识/持续集成与发布工作流.md) — CI 四阶段闸门 check/test/coverage/build + cargo-llvm-cov 38%/45% 阈值
@@ -298,7 +298,7 @@ fn init_message_channel_test_env() {
 
 ## 相关文档
 
-- [分层架构实践指南](./LAYERED_ARCHITECTURE_PRACTICE.md)
+- [分层架构实践指南](docs/LAYERED_ARCHITECTURE_PRACTICE.md)
 - [代码风格规范]（待补充）
 
 ---

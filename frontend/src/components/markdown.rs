@@ -163,13 +163,17 @@ pub fn MarkdownRenderer(
             if !doc_match {
                 c.doc_repo_path = doc_path.map(str::to_string);
             }
-            c.html = match (directory.as_ref(), doc_ctx.as_ref()) {
-                (Some(sig), _) => {
-                    let d = sig.read();
-                    render_markdown_with_names(&content, Some(&d.agents))
-                }
-                (None, Some(ctx)) => render_markdown_doc(&content, ctx),
-                (None, None) => render_markdown(&content),
+            // 文档上下文优先：全局 Directory provider 常驻（main.rs 注册），若先命中
+            // directory 分支会把文档中心的站内链接分发整个跳过，导致链接全部退化 GitHub。
+            c.html = match doc_ctx.as_ref() {
+                Some(ctx) => render_markdown_doc(&content, ctx),
+                None => match directory.as_ref() {
+                    Some(sig) => {
+                        let d = sig.read();
+                        render_markdown_with_names(&content, Some(&d.agents))
+                    }
+                    None => render_markdown(&content),
+                },
             };
             c.content = content.clone();
         }

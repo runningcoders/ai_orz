@@ -13,10 +13,10 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：stats_query_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [stats_module_design.md](./stats_module_design.md) — 统计收集存储底层框架（DuckDB+内存双层）
 > - 【② Plan 落地（Batch9 关联）】
->   - [统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) — DuckDB 建表 + record_event! 宏自动推断
+>   - [统计图表Phase1基础设施与时序图展示重构.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md) — DuckDB 建表 + record_event! 宏自动推断
 > - 【③ Wiki 长文（Batch9 新增 3 篇 + 已有 5 篇保留）】
 >   - [统计与监控.md](docs/modules/09-统计与监控/C-知识/统计与监控.md) — RuntimeStatsCollector 内存滑动窗口 + overview/time-series/distribution 三接口映射
 >   - [多维统计系统.md](docs/modules/05-任务与项目/C-知识/多维统计系统.md) — 五维度统计面板（Agent/Project/Task/ModelProvider/Tool）入口

@@ -13,7 +13,7 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：external_agent_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [a2a_server_architecture_design.md](./a2a_server_architecture_design.md) — 反向：ai_orz 作为 A2A Server 被外部 Agent 调用的架构
 
 ## 定位
@@ -154,7 +154,7 @@ Handler 内按 kind 校验必填字段并构造 `ExternalAgentConfig`，写入 `
 
 Handler/回调端点/Producer 同属**适配层（Adapter）**——Handler 是面向用户 HTTP API 的 Adapter，回调端点/Producer 是面向外部系统的 Adapter，它们在架构中处于同一层级，职责完全一致：在适配层完成外部协议到内部操作的转换后，直接调用 Domain 层方法完成业务处理，**外部协议数据绝不进入事件中心**。
 
-> 详见 [LAYERED_ARCHITECTURE_PRACTICE.md - 实践 7：适配层架构原则](../LAYERED_ARCHITECTURE_PRACTICE.md)
+> 详见 [LAYERED_ARCHITECTURE_PRACTICE.md - 实践 7：适配层架构原则](docs/LAYERED_ARCHITECTURE_PRACTICE.md)
 
 #### 入站适配器对照
 

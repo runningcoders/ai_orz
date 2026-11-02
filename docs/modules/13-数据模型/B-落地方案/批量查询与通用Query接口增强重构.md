@@ -16,7 +16,7 @@ related: []
 > - 为新实体增加批量查询能力时，回看"list ids + Project/Task query 补齐 双模板"两处
 > - 若需了解 handler 统一走 query 模式或 Agent 内存过滤 bug 修复细节，直接跳转对应代码文件（见 §涉及文件）
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范（DAO/Domain/Handler 分层职责）
+> - [AGENTS.md](AGENTS.md) — 分层架构规范（DAO/Domain/Handler 分层职责）
 > - [Query 接口分页与 List 接口简化重构](./Query接口分页与List接口简化重构.md) — 姊妹计划：query 核心 + list 语法糖分层延续同一设计原则
 
 ---

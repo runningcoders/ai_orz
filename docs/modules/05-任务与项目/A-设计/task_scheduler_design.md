@@ -13,15 +13,15 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：task_scheduler_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [task_design.md](./task_design.md) — 任务实体基础（定时触发创建的目标实例）
 > - [agent_loop_engine_design.md](../../02-Agent运行时/A-设计/agent_loop_engine_design.md) — Agent 自主循环驱动（CronTrigger 作为补偿链路）
-> - [runtime_design.md](./runtime_design.md) — Agent 唤醒/休息状态机（Resting 期间 agent_rest 不让唤醒）
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — Agent 唤醒/休息状态机（Resting 期间 agent_rest 不让唤醒）
 > - [consumer_architecture.md](../../10-异步基建(AOP)/A-设计/consumer_architecture.md) — AOP SchedulerConsumer 注册顺序和消费模式
-> - 【② Plan 落地】[唤醒上下文与睡眠约束.md](../plan/唤醒上下文与睡眠约束.md) — agent_rest 每天 4 点触发 + Resting 期间 pending_message 不唤醒
-> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) — stats_collect 每 5 分钟 cron → RuntimeStatsCollector flush 到 DuckDB
-> - 【② Plan 落地】[通用后台任务模块与Seed异步化重构.md](../plan/通用后台任务模块与Seed异步化重构.md) — 自定义 cron CRUD + 5 字段表达式校验 + <1 分钟拦截
-> - 【② Plan 落地】[AOP生产消费事件中心重构.md](../plan/AOP生产消费事件中心重构.md) — SchedulerTriggerFiredEvent 事件 → Consumer 分发处理链路
+> - 【② Plan 落地】[唤醒上下文与睡眠约束.md](docs/modules/02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md) — agent_rest 每天 4 点触发 + Resting 期间 pending_message 不唤醒
+> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](docs/modules/09-统计与监控/B-落地方案/统计图表Phase1基础设施与时序图展示重构.md) — stats_collect 每 5 分钟 cron → RuntimeStatsCollector flush 到 DuckDB
+> - 【② Plan 落地】[通用后台任务模块与Seed异步化重构.md](docs/modules/10-异步基建(AOP)/B-落地方案/通用后台任务模块与Seed异步化重构.md) — 自定义 cron CRUD + 5 字段表达式校验 + <1 分钟拦截
+> - 【② Plan 落地】[AOP生产消费事件中心重构.md](docs/modules/10-异步基建(AOP)/B-落地方案/AOP生产消费事件中心重构.md) — SchedulerTriggerFiredEvent 事件 → Consumer 分发处理链路
 > - 【③ Wiki 百科】[定时任务管理.md](docs/modules/05-任务与项目/C-知识/定时任务管理.md) — SystemTriggers 页面：2 条系统默认 readonly + 用户 CRUD + 立即触发按钮
 > - 【③ Wiki 百科】[定时任务调度.md](docs/modules/05-任务与项目/C-知识/定时任务调度.md) — 调度总览：5 字段 cron + 轮询 + AOP 事件分发 + SchedulerConsumer 处理
 > - 【④ RAG 知识卡】[Cron 任务调度与系统启动顺序](docs/modules/10-异步基建(AOP)/C-知识/Cron 任务调度与系统启动顺序：5字段cron解析 + ensure_system_cron_triggers 2条注入 + CronTriggerConsumer 事件 + 两阶段init/aop严格分离/Cron 任务调度与系统启动顺序：5字段cron解析 + ensure_system_cron_triggers 2条注入 + CronTriggerConsumer 事件 + 两阶段init/aop严格分离.md) — §启动 6 步顺序 §ensure_system_cron_triggers 2 条默认 §8 条红线
@@ -184,7 +184,7 @@ impl TriggerType {
 }
 ```
 
-> 💡 **注意**：实际实现使用 `INTEGER` 存储（而非文档早期版本的 `TEXT`），遵循 [AGENTS.md 4.3 枚举类型安全](../AGENTS.md) 规范，所有数据库枚举字段必须使用 Rust 枚举 + `#[repr(i32)]` + `#[derive(sqlx::Type)]`，并实现 `From<i64>` 适配 sqlx 类型推断。
+> 💡 **注意**：实际实现使用 `INTEGER` 存储（而非文档早期版本的 `TEXT`），遵循 [AGENTS.md 4.3 枚举类型安全](AGENTS.md) 规范，所有数据库枚举字段必须使用 Rust 枚举 + `#[repr(i32)]` + `#[derive(sqlx::Type)]`，并实现 `From<i64>` 适配 sqlx 类型推断。
 
 ---
 
@@ -442,7 +442,7 @@ fn calculate_cron_next(cron_expr: &str, from_time: i64) -> Option<i64> {
 
 ## 📋 实现任务清单（落地完成态）
 
-> ✅ 全部已实现（2026-07-12 落地，2026-07-15 前端体验优化）；落地现状以 [Cron 触发器 wiki 长文](docs/wiki/zh/content/功能模块/调度与触发/Cron触发器与定时任务调度.md) 与 [CronManager/RAG 知识卡](docs/wiki/knowledge/zh/调度与触发体系/Cron 触发器与 CronManager 任务调度.md) 为准。
+> ✅ 全部已实现（2026-07-12 落地，2026-07-15 前端体验优化）；落地现状以 Cron 触发器 wiki 长文 与 CronManager/RAG 知识卡 为准。
 
 - 创建 `common/src/enums/` 下 TriggerType 枚举
 - 创建 `src/models/cron_trigger.rs` PO 结构体（含 `payload` 字段承载 action + extra）

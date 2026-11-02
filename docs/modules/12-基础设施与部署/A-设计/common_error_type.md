@@ -13,8 +13,8 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：common-error-type 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（错误是跨层通用契约）
-> - [api_protocol_convention.md](./api_protocol_convention.md) — API 协议规范（错误码是响应协议的核心部分）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（错误是跨层通用契约）
+> - [api_protocol_convention.md](docs/modules/13-数据模型/A-设计/api_protocol_convention.md) — API 协议规范（错误码是响应协议的核心部分）
 
 > 记录日期：2026-06-25  
 > **更新日期：** 2026-06-26  

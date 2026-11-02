@@ -13,19 +13,19 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：tool_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构
-> - [runtime_design.md](./runtime_design.md) — Runtime 域内 Awakening 层 execute_auto/execute_manual 分发逻辑
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — Runtime 域内 Awakening 层 execute_auto/execute_manual 分发逻辑
 > - [mcp_tool_design.md](./mcp_tool_design.md) — MCP 工具子系统的独立设计
-> - 【② Plan 落地】[进程管理与shell_exec修复.md](../plan/进程管理与shell_exec修复.md) — shell_exec 进程管理命令黑白名单 + 进程双暴露
-> - 【② Plan 落地】[前端工具与进程管理.md](../plan/前端工具与进程管理.md) — 前端工具管理三 Tab 视图（Builtin/HTTP/MCP）
+> - 【② Plan 落地】[进程管理与shell_exec修复.md](docs/modules/06-工具与技能/B-落地方案/进程管理与shell_exec修复.md) — shell_exec 进程管理命令黑白名单 + 进程双暴露
+> - 【② Plan 落地】[前端工具与进程管理.md](docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md) — 前端工具管理三 Tab 视图（Builtin/HTTP/MCP）
 > - 【③ Wiki 长文】[工具生态系统.md](docs/modules/06-工具与技能/C-知识/工具生态系统.md) — 工具系统全景：注册→分组→执行→统计
 > - 【③ Wiki 长文】[统一工具调用架构.md](docs/modules/00-总览与架构/C-知识/统一工具调用架构.md) — 三协议路由 + 工具包 tag 分组
 > - 【③ Wiki 长文】[工具注册与发现.md](docs/modules/06-工具与技能/C-知识/工具注册与发现.md) — CoreTool trait 契约 + 注册表加载
 > - 【③ Wiki 长文】[工具注册表.md](docs/modules/06-工具与技能/C-知识/工具注册表.md) — 工具注册表全景 + 内置/MCP/HTTP 三板块入口
 > - 【④ RAG 卡】[工具系统三层调用架构：CoreTool trait + Builtin/HTTP/MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验](docs/modules/06-工具与技能/C-知识/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) — §三层调用链 §tag 免绑定 §6 条红线
-> - 【平行 RAG】[技能系统 Seed 预置导入与 Agent 入职绑定](docs/wiki/knowledge/zh/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断.md) — 入职后通过 ToolProvider 安装 tool_packs tag
+> - 【平行 RAG】技能系统 Seed 预置导入与 Agent 入职绑定 — 入职后通过 ToolProvider 安装 tool_packs tag
 > ⭐ **落地索引（四类互引）**
-> - 对应 Plan 2 份真实 + 占位 1：[进程管理与shell_exec修复.md](../plan/进程管理与shell_exec修复.md) / [前端工具与进程管理.md](../plan/前端工具与进程管理.md) / 占位：待 handler_tool_registration_macro 设计落地独立 plan
+> - 对应 Plan 2 份真实 + 占位 1：[进程管理与shell_exec修复.md](docs/modules/06-工具与技能/B-落地方案/进程管理与shell_exec修复.md) / [前端工具与进程管理.md](docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md) / 占位：待 handler_tool_registration_macro 设计落地独立 plan
 > - 对应 Wiki 长文 4 篇（工具生态系统/统一工具调用架构/工具注册与发现/工具注册表，见上 【③ Wiki 长文】）
 > - 对应 RAG 卡 1 份 + 平行卡 1 份（见上 【④ RAG 卡】+【平行 RAG】）
 

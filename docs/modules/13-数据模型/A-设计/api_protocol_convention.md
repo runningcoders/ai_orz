@@ -18,7 +18,7 @@ related:
 > 查阅场景：新增 HTTP 接口 DTO、排查前后端枚举不一致、检查接口响应是否符合裸类型禁用红线时打开；具体 DTO 定义直接看 common/src/api/
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层约束）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（Handler 层约束）
 > - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 分页与通用 count 查询接口规范（协议的子集）
 > - 【② Plan 落地】[前端API协议结构重构.md](docs/modules/13-数据模型/B-落地方案/前端API协议结构重构.md) — 前端 DTO 镜像 → common::api 直接 re-export
 > - 【③ Wiki 长文】[API协议规范.md](docs/modules/00-总览与架构/C-知识/API协议规范.md) — common DTO 单一事实源 + ApiResponse 信封标准
@@ -90,5 +90,5 @@ pub async fn delete_backup(...) -> Result<DeleteBackupResponse> { ... }
 
 ## 关联文档
 
-- [docs/LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md) — 分层架构实践（Handler 属适配层，DTO↔Command 转换职责）
-- [docs/CODE_STANDARDS.md §1](../CODE_STANDARDS.md) — 全项目命名约定
+- [docs/LAYERED_ARCHITECTURE_PRACTICE.md](docs/LAYERED_ARCHITECTURE_PRACTICE.md) — 分层架构实践（Handler 属适配层，DTO↔Command 转换职责）
+- [docs/CODE_STANDARDS.md §1](docs/CODE_STANDARDS.md) — 全项目命名约定

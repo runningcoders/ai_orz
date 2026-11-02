@@ -19,7 +19,7 @@ related: []
 > - 理解 Local/Cli/Remote 三类 Agent 的 Brain 装配差异与统一入口
 > 关联文档：
 > - [external_agent_design.md](../A-设计/external_agent_design.md) — 外部 Agent 设计决策（架构决策+关键约束）
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范 §3 Domain/DAL/DAO 职责边界
+> - [AGENTS.md](AGENTS.md) — 分层架构规范 §3 Domain/DAL/DAO 职责边界
 > - [身份凭证Domain统一CRUD重构.md](../../01-组织与权限/B-落地方案/身份凭证Domain统一CRUD重构.md) — 同类派生 Dal 模式参考（Lark/Github 双分支）
 
 ---

@@ -26,7 +26,7 @@ related: []
 > 查阅场景：需要理解顶栏指标为何单端点单轮询、新增顶栏指标往哪加、各维度数据源与降级策略时打开
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构
 > - [health_metrics.rs](src/handlers/system/health_metrics.rs) — 同域前置范例：跨域聚合编排先例（本设计沿用其模式）
 > - 暂无对应 plan 文档（一次性小特性，落地过程见 git 历史）
 

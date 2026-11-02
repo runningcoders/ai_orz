@@ -13,8 +13,8 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：vector_search_architecture 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范 §向量化实体规范
-> - [memory_design.md](../memory_design.md) — 记忆系统（短期/长期记忆实体 Vectorizable 实现的使用方）
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与开发规范 §向量化实体规范
+> - [memory_design.md](docs/memory_design.md) — 记忆系统（短期/长期记忆实体 Vectorizable 实现的使用方）
 > - [tool_design.md](../../06-工具与技能/A-设计/tool_design.md) — 工具/技能实体 Vectorizable 实现的使用方
 > - [full_entity_fts5_search_design.md](./full_entity_fts5_search_design.md) — FTS5 全文搜索统一标准（6 实体同构 search 模式）
 > - [memory_search_enhancement_design.md](./memory_search_enhancement_design.md) — 记忆搜索扩展（tags 过滤/图谱遍历/种子节点推荐）
@@ -27,8 +27,8 @@ related: []
 > - 【③ Wiki 长文】[Agent 搜索与查询.md](docs/modules/05-任务与项目/C-知识/Agent 搜索与查询.md) — §AgentSearch 三场景 list/query/search
 > - 【④ RAG 卡 3 张】
 >   - [向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity](docs/modules/08-搜索/C-知识/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md) — 向量基础设施 + 统一 embed_entity 工厂
->   - [三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）](docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md) — 6 实体 search 同构模式 + 加权融合排序
->   - [记忆领域搜索增强：FTS5 tags 语义过滤 + knowledge graph traverse 图谱遍历 + recommend_seed_nodes 种子节点推荐](docs/wiki/knowledge/zh/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐.md) — tags 过滤 + BFS 遍历 + 推荐
+>   - 三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级） — 6 实体 search 同构模式 + 加权融合排序
+>   - 记忆领域搜索增强：FTS5 tags 语义过滤 + knowledge graph traverse 图谱遍历 + recommend_seed_nodes 种子节点推荐 — tags 过滤 + BFS 遍历 + 推荐
 
 ## 概述
 

@@ -16,7 +16,7 @@ related: []
 > - 新增凭证类型时，回看"改动清单 + 扩展模式"两处即可，无需通读全文
 > - 若需了解字段级加密/校验细节，直接跳转对应代码文件（见 §涉及文件）
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范 §3.1 Trait 位置约定
+> - [AGENTS.md](AGENTS.md) — 分层架构规范 §3.1 Trait 位置约定
 > - [api_protocol_convention.md](docs/modules/13-数据模型/A-设计/api_protocol_convention.md) — 前后端 DTO 契约规范
 > - [logging_design.md](docs/modules/12-基础设施与部署/A-设计/logging_design.md) — 日志宏规范（联动 lark WS 移交的告警语义）
 

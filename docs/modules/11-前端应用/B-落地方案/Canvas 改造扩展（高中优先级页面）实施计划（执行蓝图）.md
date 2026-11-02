@@ -2148,7 +2148,7 @@ git push origin main
 
 ### 规范沉淀
 
-[AGENTS.md](../../../AGENTS.md) 新增 4.10 通用 count 方法规范（强制执行），明确：
+[AGENTS.md](AGENTS.md) 新增 4.10 通用 count 方法规范（强制执行），明确：
 - count 与 query 复用 `push_query_filters`，禁止独立拼接 WHERE
 - 特定 `count_by_xxx` 必须构造 Query 调用通用 count，禁止独立实现 SQL
 - DAL/Domain 层禁止用 `query().len()` 实现 count，必须透传到 DAO

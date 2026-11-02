@@ -18,7 +18,7 @@ related: []
 > - 新增详情页字段展示时，参考 §四 速查表接入 MarkdownRenderer 组件
 > - 排查渲染问题（XSS/样式错乱/Mermaid 未渲染）按 Phase 分层定位
 > 关联文档：
-> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲
+> - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 唯一权威架构总纲
 > - [frontend_architecture.md](docs/modules/11-前端应用/A-设计/frontend_architecture.md) — 前端架构详解
 > - [ui_design_system.md](docs/modules/11-前端应用/A-设计/ui_design_system.md) — 设计系统（Tailwind v4 + DaisyUI v5 主题规范）
 

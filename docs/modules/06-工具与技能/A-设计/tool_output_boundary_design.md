@@ -15,9 +15,9 @@ related:
 > 触发场景：新增任何会产生输出的工具（尤其长输出/文件型输出）时，设计其输出处理策略前必读；做日志清理、产物归档相关改动时必读。
 >
 > 关联文档：
-> - [runtime_design.md](./runtime_design.md) — P1「ToolCallResult 产物化引用策略」条目由本文展开落地
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — P1「ToolCallResult 产物化引用策略」条目由本文展开落地
 > - [web_search_and_browser_tools_design.md](./web_search_and_browser_tools_design.md) — 截图产物先例（红线 11）纳入本文统一模型
-> - [AGENTS.md](../../AGENTS.md) — 分层架构与两阶段初始化规范
+> - [AGENTS.md](AGENTS.md) — 分层架构与两阶段初始化规范
 
 ---
 

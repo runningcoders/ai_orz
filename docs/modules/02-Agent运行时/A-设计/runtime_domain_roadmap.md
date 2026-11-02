@@ -124,7 +124,7 @@ Phase 5: 多 Agent 协作 ✅
 - [x] 集成测试：发消息 → 唤醒 → 回复消息入队，完整链路走通
 - [x] 所有现有测试通过（548 个测试 100% 通过）
 
-**执行方案**：[`docs/superpowers/plans/2026-07-10-runtime-domain-phase1-end-to-end.md`](./superpowers/plans/2026-07-10-runtime-domain-phase1-end-to-end.md)
+**执行方案**：`docs/superpowers/plans/2026-07-10-runtime-domain-phase1-end-to-end.md`
 
 ---
 
@@ -175,7 +175,7 @@ Phase 5: 多 Agent 协作 ✅
 - [x] 移除消息消费者中的自动回复逻辑
 - [x] 所有现有测试通过（548 个测试 100% 通过）
 
-**执行方案**：[`docs/superpowers/plans/2026-07-10-runtime-domain-phase2-neural-tools.md`](./superpowers/plans/2026-07-10-runtime-domain-phase2-neural-tools.md)
+**执行方案**：`docs/superpowers/plans/2026-07-10-runtime-domain-phase2-neural-tools.md`
 
 ### 已交付神经工具清单
 
@@ -234,7 +234,7 @@ Phase 5: 多 Agent 协作 ✅
 - [x] 集成测试：调用 mark_done 后任务完成，后续消息不触发唤醒
 - [x] 所有现有测试通过（554 个测试 100% 通过）
 
-**执行方案**：[`docs/superpowers/plans/2026-07-10-runtime-domain-phase3-multi-turn-loop.md`](./superpowers/plans/2026-07-10-runtime-domain-phase3-multi-turn-loop.md)
+**执行方案**：`docs/superpowers/plans/2026-07-10-runtime-domain-phase3-multi-turn-loop.md`
 
 ---
 
@@ -468,7 +468,7 @@ wake_agent_brain(ctx, agent)
 - [x] PromptBuilder 支持 TaskAssignment 差异化提示
 - [x] 所有现有测试通过（569 个测试 100% 通过）
 
-**执行方案**：[`docs/superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md`](./superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md)
+**执行方案**：`docs/superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md`
 
 ---
 

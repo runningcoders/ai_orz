@@ -17,7 +17,7 @@ related: []
 > - 从短轮询升级为 SSE/WebSocket 时，回看"Handler API 契约 + 双向分页模式"不破坏
 > 状态：**完成（2026-07-12）**
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范
+> - [AGENTS.md](AGENTS.md) — 分层架构规范
 > - [飞书P2P消息集成.md](./飞书P2P消息集成.md) — 其他消息渠道接入
 
 ---
@@ -119,7 +119,7 @@ ai_orz 系统仅有后端消息链路，无前端用户对话界面。本期上�
 | **前端 Pages（对话页核心）** | | |
 | [frontend/src/pages/message/chat.rs](../../frontend/src/pages/message/chat.rs) | 对话页 MVP（重写） | 左右分栏 chat-layout；左侧项目列表（点击切换 context）；右侧对话区（消息渲染 + 上拉翻页 + 3s 轮询）；底部输入框 + 发送按钮 |
 | **前端样式** | | |
-| [frontend/index.html](../../frontend/index.html) | 前端 HTML 入口 | `<style>` 内联 chat-* CSS 类：chat-layout 分栏、chat-sidebar 侧边栏样式、chat-messages 滚动区、message-bubble 左右气泡、chat-input 输入栏 |
+| [frontend/index.html](frontend/index.html) | 前端 HTML 入口 | `<style>` 内联 chat-* CSS 类：chat-layout 分栏、chat-sidebar 侧边栏样式、chat-messages 滚动区、message-bubble 左右气泡、chat-input 输入栏 |
 | **零改动面（验证架构稳定性）** | | |
 | 数据库 Schema / MessageDomain / MessageConsumer / awaken 链路 / Agent → 用户 deliver_message 投递 | 对外契约不变 | 无修改；用户消息入队 → Agent 唤醒 100% 复用现有链路 |
 
@@ -197,4 +197,4 @@ ai_orz 系统仅有后端消息链路，无前端用户对话界面。本期上�
 4. **移动端适配（窄屏布局）**：
    - chat-layout 在 <640px 改为上下结构（顶部顶栏切换项目 → 全屏对话区）
    - 输入框软键盘弹起时 sticky 定位（CSS 变量 + viewport 适配）
-   - 参考 Tailwind DaisyUI 迁移方案 [Tailwind DaisyUI迁移.md](./Tailwind DaisyUI迁移.md) 响应式模式
+   - 参考 Tailwind DaisyUI 迁移方案 [TailwindDaisyUI迁移.md](docs/modules/11-前端应用/B-落地方案/TailwindDaisyUI迁移.md) 响应式模式

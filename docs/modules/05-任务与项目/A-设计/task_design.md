@@ -13,12 +13,12 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：task_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [project_design.md](./project_design.md) — 项目实体与任务关联（一对多）
 > - [task_scheduler_design.md](./task_scheduler_design.md) — 定时任务 CronTrigger 触发机制
 > - 【② Plan 落地（真实定稿 2 张）】
->   - [项目任务增强.md](../plan/项目任务增强.md) — execution_plan/result 字段设计 + progress_summary 聚合算法 + TaskGraph DAG
->   - [后台任务管理页面与列表清理接口重构.md](../plan/后台任务管理页面与列表清理接口重构.md) — 任务 query 接口通用 count 与 PagedResult 统一
+>   - [项目任务增强.md](docs/modules/05-任务与项目/B-落地方案/项目任务增强.md) — execution_plan/result 字段设计 + progress_summary 聚合算法 + TaskGraph DAG
+>   - [后台任务管理页面与列表清理接口重构.md](docs/modules/11-前端应用/B-落地方案/后台任务管理页面与列表清理接口重构.md) — 任务 query 接口通用 count 与 PagedResult 统一
 > - 【③ Wiki 长文（人类百科 6 篇）】
 >   - [任务管理.md](docs/modules/05-任务与项目/C-知识/任务管理.md) — 四态卡片 UI + 进度条 + 依赖图 Mermaid 渲染
 >   - [项目管理.md](docs/modules/05-任务与项目/C-知识/项目管理.md) — 项目详情 5 Tab + 进度百分比总览卡
@@ -129,7 +129,7 @@ ai_orz 任务系统用于管理用户待办、项目任务、系统自动化任�
 
 ## 后续待开发（设计决策快照）
 
-> 本文件为 2026-04-15 决策快照，写定不追代码；以下条目记录当时的后续规划，落地现状以 [Task 状态机 wiki 长文](docs/wiki/zh/content/功能模块/任务与项目/Task 实体状态机与进度追踪.md) 与 [Task CRUD/RAG 知识卡](docs/wiki/knowledge/zh/任务与项目体系/Task 实体 CRUD 与状态机设计.md) 为准。
+> 本文件为 2026-04-15 决策快照，写定不追代码；以下条目记录当时的后续规划，落地现状以 Task 状态机 wiki 长文 与 Task CRUD/RAG 知识卡 为准。
 
 - DAL 层业务逻辑实现
 - Domain 层领域服务

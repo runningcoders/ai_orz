@@ -24,7 +24,7 @@ related:
 > 关联文档：
 > - [frontend_architecture.md](./frontend_architecture.md) — 前端架构、组件层级与 DaisyUI 使用规范
 > - [hud_design_prototype.html](./hud_design_prototype.html) — 未来感驾驶舱设计原型（可视化基准、色彩/字体/组件完整示例）
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构
 > - [UI 样式与主题](docs/modules/11-前端应用/C-知识/UI 样式与主题.md) — 主题切换实现细节
 
 ---

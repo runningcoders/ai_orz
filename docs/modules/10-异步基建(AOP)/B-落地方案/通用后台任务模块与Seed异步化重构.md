@@ -16,7 +16,7 @@ related: []
 > - 新增后台异步任务时，回看"BackgroundTask trait 契约 + 装饰模式向后兼容"两处
 > - 若需了解 registry 注册执行或 progress 装饰响应细节，直接跳转对应代码文件（见 §涉及文件）
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范（trait 位置约定）
+> - [AGENTS.md](AGENTS.md) — 分层架构规范（trait 位置约定）
 > - [向量存储架构设计](../design/) — 向量重建流程（BackgroundTask 典型收编对象）
 
 ---

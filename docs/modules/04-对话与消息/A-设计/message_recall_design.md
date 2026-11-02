@@ -38,9 +38,9 @@ related: []
 > 查阅场景：理解「为什么需要撤回/取消」「权限与粒度边界怎么划」「队列层怎么落地」时打开；字段级细节跳代码
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构与「单向依赖」红线
-> - [aop_producer_consumer_contract_design.md](./aop_producer_consumer_contract_design.md) — 「Discard 复用 queue.ack、零新队列机制」先例，本设计在事件中心的落点
-> - [runtime_design.md](./runtime_design.md) — `cancel_thinking` / `AgentThinkRuntime` / Agent 三态状态机
+> - [AGENTS.md](AGENTS.md) — 分层架构与「单向依赖」红线
+> - [aop_producer_consumer_contract_design.md](docs/modules/10-异步基建(AOP)/A-设计/aop_producer_consumer_contract_design.md) — 「Discard 复用 queue.ack、零新队列机制」先例，本设计在事件中心的落点
+> - [runtime_design.md](docs/modules/02-Agent运行时/A-设计/runtime_design.md) — `cancel_thinking` / `AgentThinkRuntime` / Agent 三态状态机
 > - 落地计划：[docs/plan/消息撤回与取消能力.md](docs/modules/04-对话与消息/B-落地方案/消息撤回与取消能力.md)
 
 ---

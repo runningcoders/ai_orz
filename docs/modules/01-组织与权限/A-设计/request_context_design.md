@@ -13,9 +13,9 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：request_context_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层上下文传递约定）
+> - [AGENTS.md](AGENTS.md) — 整体分层架构（Handler 层上下文传递约定）
 > - [common-error-type.md](../../12-基础设施与部署/A-设计/common_error_type.md) — 统一错误类型（上下文错误码归属）
-> - 【② Plan 落地】[调用者类型上下文.md](../plan/调用者类型上下文.md) — caller_type 字段 + User/Agent/System 三枚举
+> - 【② Plan 落地】[调用者类型上下文.md](docs/modules/01-组织与权限/B-落地方案/调用者类型上下文.md) — caller_type 字段 + User/Agent/System 三枚举
 > - 【③ Wiki 长文】[用户认证与授权.md](docs/modules/01-组织与权限/C-知识/用户认证与授权.md) — ctx 中 uid/role/org_id 来源
 > - 【④ RAG 卡】[组织权限与用户偏好](docs/modules/01-组织与权限/C-知识/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md) — §2 ctx 注入 §JWT decode 双模式
 

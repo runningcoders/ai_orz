@@ -30,9 +30,9 @@ related:
 > 触发场景：需要理解思考循环可观察性设计动机、策略引擎解耦哲学、policy_set! 声明宏组合模式、前端轮询+取消链路边界时打开；字段级 trait 定义与策略实现体直接读代码。
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
+> - [AGENTS.md](AGENTS.md) — 项目整体分层架构与开发规范
 > - [runtime_design.md](./runtime_design.md) — 两阶段唤醒 Runtime 设计（策略引擎的上游调用方）
-> - [tool_design.md](./tool_design.md) — 工具调用架构（策略判断结果影响工具执行链路）
+> - [tool_design.md](docs/modules/06-工具与技能/A-设计/tool_design.md) — 工具调用架构（策略判断结果影响工具执行链路）
 > - 【③ Wiki 百科长文 系统化上下文必读】
 >   - [运行时领域.md](docs/modules/02-Agent运行时/C-知识/运行时领域.md) — §5 策略引擎集成与思考运行时挂载子章节
 >   - [Runtime 领域编排.md](docs/modules/00-总览与架构/C-知识/Runtime 领域编排.md) — §5 RuntimeDomain 3 个观测/编排接口小节

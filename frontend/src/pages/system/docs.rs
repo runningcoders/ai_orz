@@ -477,7 +477,14 @@ pub fn SystemDocs() -> Element {
             return;
         };
         if let Ok(Some(el)) = doc.query_selector("[data-doc-active=\"true\"]") {
-            el.scroll_into_view();
+            // 只保证高亮行可见：默认 block=start 会把整页（含窗口）滚到该行，
+            // 表现为点击左侧条目时页面闪一下、被点条目顶到最上方。
+            let opts = web_sys::ScrollIntoViewOptions::new();
+            web_sys::ScrollIntoViewOptions::set_block(
+                &opts,
+                web_sys::ScrollLogicalPosition::Nearest,
+            );
+            el.scroll_into_view_with_scroll_into_view_options(&opts);
         }
     });
 

@@ -13,11 +13,11 @@ related: []
 > 📦 归档标记（2026-08-16）：归档冻结。保留原因：consumer_architecture 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
 
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [AGENTS.md](AGENTS.md) — 整体分层架构
 > - [event_design.md](./event_design.md) — 归档：旧版 EventQueueDao 事件总线（已废弃对比参考）
 > - [agent_loop_engine_design.md](../../02-Agent运行时/A-设计/agent_loop_engine_design.md) — Agent 循环驱动：事件+定时双链路
 > - 【② Plan 落地（Batch9 关联）】
->   - [agent_loop_engine_plan.md](../plan/agent_loop_engine_plan.md) — 8 类 DomainEvent → AgentLoopConsumer 唤醒
+>   - agent_loop_engine_plan.md — 8 类 DomainEvent → AgentLoopConsumer 唤醒
 > - 【③ Wiki 长文（Batch9 新增 4 篇 + 原 7 篇保留）】
 >   - [AOP 事件系统.md](docs/modules/10-异步基建(AOP)/C-知识/基础设施/AOP 事件系统/AOP 事件系统.md) — 生产-消费-调度三段架构总览
 >   - [AOP 事件系统.md](docs/modules/10-异步基建(AOP)/C-知识/核心模块/AOP 事件系统/AOP 事件系统.md) — DomainEvent 枚举定义 + 事件消费链路

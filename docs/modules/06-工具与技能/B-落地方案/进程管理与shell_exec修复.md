@@ -18,9 +18,9 @@ related: []
 > - 排查 Agent 越权管理别人启动的进程，直接定位 §二 第 3 条权限边界红线
 > - 新增任何 spawn 进程/产日志的工具，参考 §四 4.1 速查表接入 ctx.tool_call_id() 消费模式
 > 关联文档：
-> - 对应 design 文档：[tool_design.md](../design/tool_design.md) — 工具系统设计（统一进程管理架构 + shell_exec 超时 detach 语义）
+> - 对应 design 文档：[tool_design.md](docs/modules/06-工具与技能/A-设计/tool_design.md) — 工具系统设计（统一进程管理架构 + shell_exec 超时 detach 语义）
 > - 姊妹 Plan 与规范：
->   - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲（分层边界 + pkg 基础设施约定）
+>   - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 唯一权威架构总纲（分层边界 + pkg 基础设施约定）
 >   - [前端工具与进程管理.md](docs/modules/11-前端应用/B-落地方案/前端工具与进程管理.md) — 前端进程管理页面 + shell_list API 配套前端消费端
 > - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/modules/06-工具与技能/C-知识/运行时诊断工具组.md) — shell_exec/shell_status/shell_kill 进程管理双露工具
 > - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md](docs/modules/06-工具与技能/C-知识/工具生态系统.md) — 工具系统全景，含进程管理器位置
