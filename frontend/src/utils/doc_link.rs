@@ -5,7 +5,7 @@
 //!
 //! 按 chars 迭代推进 + is_char_boundary 锚点检查，保证中文（多字节 UTF-8）不被拆坏。
 
-use common::doc_link::DocLinkClassifier;
+use common::doc_link::{DocLinkClassifier, DocLinkTarget};
 
 /// GitHub blob 前缀（V1 全部站内链接走 GitHub 新窗口）
 // 与 git remote origin（git@github.com:runningcoders/ai_orz.git）对齐；换 remote 时同步改
@@ -46,6 +46,28 @@ pub fn post_process_doc_links(html: &str, blob_base: &str) -> String {
                     out.push_str(&safe);
                 } else {
                     let target = DocLinkClassifier::classify(href);
+                    // 架构图是自包含 HTML，构建期已原路径复制到 public/docs/diagrams/：
+                    // 直接站内新标签打开渲染页，比跳 GitHub 看一堆 HTML 源码有用
+                    // （classify 把非 .md 一律归为 SourceFile，两类都要看）
+                    let diagram = match &target {
+                        DocLinkTarget::SourceFile { relative_path, .. }
+                        | DocLinkTarget::OtherDoc { relative_path } => relative_path
+                            .strip_prefix("docs/diagrams/")
+                            .filter(|rest| rest.ends_with(".html")),
+                        _ => None,
+                    };
+                    if let Some(rest) = diagram {
+                        let static_href = format!("/docs/diagrams/{rest}");
+                        out.push_str(&tag.replacen(
+                            &format!("href=\"{href}\""),
+                            &format!(
+                                "href=\"{static_href}\" target=\"_blank\" rel=\"noopener noreferrer\""
+                            ),
+                            1,
+                        ));
+                        i = tag_end;
+                        continue;
+                    }
                     let repo_href = DocLinkClassifier::to_github_url(&target, blob_base);
                     // 解析失败（Invalid → to_github_url 返回空串）则原样保留
                     if repo_href.is_empty() {
@@ -130,5 +152,15 @@ mod tests {
             post_process_doc_links(html, "https://github.com/o/r/blob/main"),
             html
         );
+    }
+
+    #[test]
+    fn diagram_html_opens_in_site() {
+        // 架构图是自包含 HTML：站内新标签直开，不跳 GitHub 看源码
+        let html = "<a href=\"docs/diagrams/ai-orz-architecture.html\">架构图</a>";
+        let out = post_process_doc_links(html, "https://github.com/o/r/blob/main");
+        assert!(out.contains("href=\"/docs/diagrams/ai-orz-architecture.html\""));
+        assert!(out.contains("target=\"_blank\""));
+        assert!(!out.contains("data-repo-href"));
     }
 }

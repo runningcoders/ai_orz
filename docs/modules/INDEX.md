@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 525 篇 / 10,422,666 B**，分布于 15 个模块。
+**合计 525 篇 / 10,422,929 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -24,7 +24,7 @@
 | [08-搜索](#08-搜索) | 1 | 2 | 21 | 24 | 606,791 |
 | [09-统计与监控](#09-统计与监控) | 1 | 1 | 8 | 10 | 162,283 |
 | [10-异步基建(AOP)](#10-异步基建aop) | 1 | 0 | 32 | 33 | 709,825 |
-| [11-前端应用](#11-前端应用) | 2 | 0 | 49 | 51 | 1,027,319 |
+| [11-前端应用](#11-前端应用) | 2 | 0 | 49 | 51 | 1,027,582 |
 | [12-基础设施与部署](#12-基础设施与部署) | 3 | 2 | 79 | 84 | 1,519,066 |
 | [13-数据模型](#13-数据模型) | 3 | 0 | 39 | 42 | 749,872 |
 | [14-测试](#14-测试) | 0 | 0 | 4 | 4 | 76,778 |
@@ -545,7 +545,7 @@
 | 8 | [Markdown渲染组件](<11-前端应用/C-知识/Markdown渲染组件.md>) | 20,753 |
 | 9 | [Mermaid图表支持](<11-前端应用/C-知识/Mermaid图表支持.md>) | 16,179 |
 | 10 | [Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线](<11-前端应用/C-知识/Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线/Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线.md>) | 16,397 |
-| 11 | [Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格](<11-前端应用/C-知识/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md>) | 14,017 |
+| 11 | [Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格](<11-前端应用/C-知识/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md>) | 14,280 |
 | 12 | [UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束](<11-前端应用/C-知识/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束.md>) | 23,129 |
 | 13 | [UI 样式与主题](<11-前端应用/C-知识/UI 样式与主题.md>) | 31,958 |
 | 14 | [recommend_seed_nodes 种子节点推荐：度数排序（入边+出边）Top N + published 度数持平决胜 + KnowledgeGraph 组件两端复用 + Agent 神经工具免绑定](<11-前端应用/C-知识/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md>) | 17,103 |

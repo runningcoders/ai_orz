@@ -4,10 +4,11 @@
 //! docs/ 核心文档 + 能力域知识库到 public/docs/ 时生成），点击条目按需 fetch 对应
 //! Markdown 文件，用 MarkdownRenderer 组件渲染（自动触发 ```mermaid 图的 JS 替换）。
 //!
-//! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 能力域知识库 → 归档文档
+//! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 能力域知识库
 //! 图表类条目（index.json 中 `type: "html"`）不走 Markdown 渲染，
 //! 直接以新标签页打开静态文件（如 /docs/diagrams/xxx.html）。
-//! 归档文档分区默认收起，整体可折叠；能力域知识库保留「模块 → A/B/C 层 → 文档」嵌套折叠树。
+//! 各分区默认展开、可整体折叠；能力域知识库为「模块 → A/B/C 层 → 文档」三级折叠树。
+//! `docs/archive/` 历史件不收录（文档中心只回答「现在是什么」）。
 
 use std::collections::HashSet;
 
@@ -212,11 +213,6 @@ fn open_static_in_new_tab(path: &str) {
     }
 }
 
-/// 判断该 section 是否需要默认收起（目前「归档文档」默认收起）
-fn section_default_collapsed(label: &str) -> bool {
-    label == "归档文档"
-}
-
 async fn load_doc(
     path: String,
     mut selected: Signal<Option<String>>,
@@ -249,9 +245,9 @@ pub fn SystemDocs() -> Element {
     let markdown: Signal<Option<String>> = use_signal(|| None);
     let loading_doc = use_signal(|| false);
     let mut filter: Signal<String> = use_signal(String::new);
-    // Wiki/知识卡片内部分组展开集合
+    // 知识库三级树的分组展开集合
     let mut expanded: Signal<HashSet<String>> = use_signal(HashSet::new);
-    // Section 级折叠状态（label -> 是否展开）；未命中的按 section_default_collapsed 决定默认值
+    // Section 级折叠状态（label 在集合内 = 已收起）；默认全部展开
     let mut collapsed_sections: Signal<HashSet<String>> = use_signal(HashSet::new);
 
     use_effect(move || {
@@ -311,13 +307,7 @@ pub fn SystemDocs() -> Element {
                     if s.docs.is_empty() && flat.is_empty() {
                         None
                     } else {
-                        let section_collapsed = if filtering {
-                            false
-                        } else {
-                            collapsed_set.contains(&s.label)
-                                || (!collapsed_set.contains(&s.label)
-                                    && section_default_collapsed(&s.label))
-                        };
+                        let section_collapsed = !filtering && collapsed_set.contains(&s.label);
                         Some((s, flat, section_collapsed))
                     }
                 })
@@ -365,17 +355,7 @@ pub fn SystemDocs() -> Element {
                                                 let label = section.label.clone();
                                                 move |_| {
                                                     let mut set = collapsed_sections.write();
-                                                    // 默认收起的 section：第一次点击展开 → 从集合移除
-                                                    // 默认展开的 section：第一次点击收起 → 加入集合
-                                                    let default = section_default_collapsed(&label);
-                                                    let currently_collapsed = if set.contains(&label) {
-                                                        true
-                                                    } else {
-                                                        default
-                                                    };
-                                                    if currently_collapsed {
-                                                        set.remove(&label);
-                                                    } else {
+                                                    if !set.remove(&label) {
                                                         set.insert(label.clone());
                                                     }
                                                 }

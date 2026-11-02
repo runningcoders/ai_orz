@@ -179,3 +179,116 @@ fn t19_url_encoded_space_kept() {
         DocLinkClassifier::classify("docs/wiki/knowledge/zh/工具系统/CoreTool%20trait%20三层.md");
     assert!(matches!(r, DocLinkTarget::RagCard { .. }));
 }
+
+// —— 导入期相对链接归一化 ——
+
+#[test]
+fn t20_normalize_dot_slash_from_doc_root() {
+    assert_eq!(
+        normalize_repo_relative("./CODE_STANDARDS.md", "docs/AGENT_GUIDE.md"),
+        "docs/CODE_STANDARDS.md"
+    );
+    assert_eq!(
+        normalize_repo_relative("./modules/INDEX.md", "docs/AGENT_GUIDE.md"),
+        "docs/modules/INDEX.md"
+    );
+}
+
+#[test]
+fn t21_normalize_dot_dot_into_sibling_tier() {
+    // C-知识 → 同模块的 A-设计
+    assert_eq!(
+        normalize_repo_relative(
+            "../A-设计/runtime_design.md",
+            "docs/modules/02-Agent运行时/C-知识/运行时领域.md"
+        ),
+        "docs/modules/02-Agent运行时/A-设计/runtime_design.md"
+    );
+    // 多级回退：卡目录 → 仓库根
+    assert_eq!(
+        normalize_repo_relative(
+            "../../../../../AGENTS.md",
+            "docs/modules/02-Agent运行时/C-知识/卡/卡.md"
+        ),
+        "AGENTS.md"
+    );
+}
+
+#[test]
+fn t22_normalize_keeps_fragment_and_query() {
+    assert_eq!(
+        normalize_repo_relative("../A-设计/x_design.md#L10-L20", "docs/modules/01/a/b.md"),
+        "docs/modules/01/A-设计/x_design.md#L10-L20"
+    );
+    assert_eq!(
+        normalize_repo_relative("./x.md?plain=1", "docs/a.md"),
+        "docs/x.md?plain=1"
+    );
+}
+
+#[test]
+fn t23_normalize_passthrough_and_overflow() {
+    // 非相对路径原样返回
+    for href in [
+        "https://github.com/o/r",
+        "#anchor",
+        "mailto:a@b.c",
+        "docs/modules/01/a.md",
+        "",
+    ] {
+        assert_eq!(normalize_repo_relative(href, "docs/a.md"), href);
+    }
+    // 恰好弹到仓库根 → 归一化为根级路径
+    assert_eq!(normalize_repo_relative("../x.md", "docs/a.md"), "x.md");
+    assert_eq!(
+        normalize_repo_relative("../../x.md", "docs/sub/a.md"),
+        "x.md"
+    );
+    // 越过仓库根（基准目录在根，没有可弹的层级）→ 原样返回，不猜
+    assert_eq!(normalize_repo_relative("../x.md", "AGENTS.md"), "../x.md");
+}
+
+#[test]
+fn t24_rewrite_markdown_links() {
+    let md = "见 [编码规范](./CODE_STANDARDS.md) 与 [运行时](./modules/02-Agent运行时/A-设计/runtime_design.md#L1-L10)。\n";
+    let out = rewrite_markdown_relative_links(md, "docs/AGENT_GUIDE.md");
+    assert!(out.contains("[编码规范](docs/CODE_STANDARDS.md)"));
+    assert!(out.contains("[运行时](docs/modules/02-Agent运行时/A-设计/runtime_design.md#L1-L10)"));
+}
+
+#[test]
+fn t25_rewrite_keeps_code_examples() {
+    let md = "\
+```markdown
+[示例](./x.md)
+```
+
+行内 `[示例](../y.md)` 也不动，但外面 [真链接](./real.md) 要改。
+";
+    let out = rewrite_markdown_relative_links(md, "docs/a.md");
+    // 围栏内原样
+    assert!(out.contains("[示例](./x.md)"));
+    // 行内代码原样
+    assert!(out.contains("`[示例](../y.md)`"));
+    // 代码外的真链接被归一化
+    assert!(out.contains("[真链接](docs/real.md)"));
+}
+
+#[test]
+fn t26_rewrite_angle_bracket_path_with_parens() {
+    // 含 () 的目录必须用 <...> 包裹；同模块 C-知识 → A-设计 上跳一层
+    let md = "[AOP](<../A-设计/aop_design.md>)\n";
+    let out = rewrite_markdown_relative_links(md, "docs/modules/10-异步基建(AOP)/C-知识/x.md");
+    assert_eq!(
+        out.trim_end(),
+        "[AOP](<docs/modules/10-异步基建(AOP)/A-设计/aop_design.md>)"
+    );
+}
+
+#[test]
+fn t27_rewrite_is_idempotent() {
+    let md = "[a](./x.md) [b](../y.md)\n";
+    let once = rewrite_markdown_relative_links(md, "docs/sub/a.md");
+    let twice = rewrite_markdown_relative_links(&once, "docs/sub/a.md");
+    assert_eq!(once, twice);
+}

@@ -174,7 +174,20 @@ fn walk_dir_hierarchical(
             if let Some(parent) = dest.parent() {
                 let _ = fs::create_dir_all(parent);
             }
-            let _ = fs::copy(&path, &dest);
+            // 导入期把 `./` `../` 相对链接归一化为「相对仓库根」：
+            // 文档中心里的 md 是 hash 短名副本，原写法在这里必然解析错（GitHub 也解析不了
+            // `blob/main/./x.md`）。非 UTF-8 等异常文件退回原样复制，不阻断构建。
+            let repo_path = format!("docs/{rel_str}");
+            match fs::read_to_string(&path) {
+                Ok(md) => {
+                    let rewritten =
+                        common::doc_link::rewrite_markdown_relative_links(&md, &repo_path);
+                    fs::write(&dest, rewritten)?;
+                }
+                Err(_) => {
+                    let _ = fs::copy(&path, &dest);
+                }
+            }
             println!("cargo:rerun-if-changed={}", path.display());
             let name = Path::new(&rel_str)
                 .file_stem()
@@ -212,11 +225,16 @@ fn node_to_json(node: &DocNode) -> serde_json::Value {
 /// 避免深嵌套目录名导致的路径超长问题。
 /// 原始标题和目录结构仅用于前端 UI 展示。
 ///
+/// 复制时对 Markdown 做一次**链接归一化**（`common::doc_link::rewrite_markdown_relative_links`）：
+/// 把 `./` `../` 形式改写成「相对仓库根」，前端便只需按约定拼 GitHub URL，不必猜原文位置。
+///
 /// 收录范围：
 /// - docs/ 根目录的纲要文档（路径短，保留原名）
 /// - docs/modules/<模块>/{A-设计,B-落地方案,C-知识}/（能力域知识库，三层结构保留）
-/// - docs/archive/（历史归档，扁平列表 → 哈希路径）
 /// - docs/diagrams/（图表 HTML，保留原相对路径直出，供前端新标签页打开）
+///
+/// `docs/archive/`（145 篇被取代的旧设计 / 已完成方案 / 历史会话快照）**不收**：
+/// 文档中心只回答「现在是什么」，历史件留在仓库里按需从 Git 历史或目录直读。
 fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let docs_src = Path::new(&manifest_dir).join("../docs");
@@ -248,7 +266,19 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
         for (file, title) in root_docs {
             let src = docs_src.join(file);
             if src.exists() {
-                fs::copy(&src, dest_root.join(file))?;
+                // 根纲要同样做导入期链接归一化：仓库路径是 `docs/<file>`（不是 `<file>`），
+                // 否则 `./modules/INDEX.md` 会被解到仓库根而不是 docs/ 下
+                let repo_path = format!("docs/{file}");
+                match fs::read_to_string(&src) {
+                    Ok(md) => {
+                        let rewritten =
+                            common::doc_link::rewrite_markdown_relative_links(&md, &repo_path);
+                        fs::write(dest_root.join(file), rewritten)?;
+                    }
+                    Err(_) => {
+                        fs::copy(&src, dest_root.join(file))?;
+                    }
+                }
                 println!("cargo:rerun-if-changed={}", src.display());
                 overview_docs.push(serde_json::json!({ "title": title, "path": file }));
             }
@@ -307,54 +337,7 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // ---- 分区 4：归档文档（docs/archive/，扁平列表 + 哈希短路径，默认收起）----
-    {
-        let mut other_docs: Vec<serde_json::Value> = Vec::new();
-        let src_dir = docs_src.join("archive");
-        if src_dir.is_dir() {
-            let mut stack = vec![src_dir];
-            while let Some(current) = stack.pop() {
-                for entry in fs::read_dir(&current)? {
-                    let entry = entry?;
-                    let path = entry.path();
-                    if path.is_dir() {
-                        stack.push(path);
-                    } else if path.extension().is_some_and(|ext| ext == "md")
-                        && let Ok(rel) = path.strip_prefix(&docs_src)
-                    {
-                        let rel_str = rel.to_string_lossy().replace('\\', "/");
-                        let short_path = format!("archive/{}.md", short_id(&rel_str));
-                        let dest = dest_root.join(&short_path);
-                        if let Some(parent) = dest.parent() {
-                            let _ = fs::create_dir_all(parent);
-                        }
-                        let _ = fs::copy(&path, &dest);
-                        println!("cargo:rerun-if-changed={}", path.display());
-                        let title = md_title(&path).unwrap_or_else(|| {
-                            Path::new(&rel_str)
-                                .file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_else(|| rel_str.clone())
-                        });
-                        other_docs.push(serde_json::json!({
-                            "title": title,
-                            "path": short_path
-                        }));
-                    }
-                }
-            }
-        }
-        if !other_docs.is_empty() {
-            other_docs.sort_by(|a, b| {
-                a.get("title")
-                    .and_then(|v| v.as_str())
-                    .cmp(&b.get("title").and_then(|v| v.as_str()))
-            });
-            sections.push(serde_json::json!({ "label": "归档文档", "docs": other_docs }));
-        }
-    }
-
-    // ---- 分区 5：图表资源（docs/diagrams/ 下的 .html，保留原相对路径直出）----
+    // ---- 分区 4：图表资源（docs/diagrams/ 下的 .html，保留原相对路径直出）----
     // 图表是自包含 HTML，前端无法按 Markdown 渲染：保留 diagrams/xxx.html 原路径，
     // 由前端以新标签页直链 /docs/diagrams/xxx.html 打开（见 pages/system/docs.rs）。
     let mut diagrams_section: Option<serde_json::Value> = None;
