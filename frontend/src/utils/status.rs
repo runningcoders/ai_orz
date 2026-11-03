@@ -224,6 +224,18 @@ pub fn agent_runtime_badge_str(state: &str) -> &'static str {
     }
 }
 
+/// 思考轨迹的「进行中」徽章（单一事实源，未收尾时才有）
+///
+/// 落盘契约里逐轮增量行标 `partial=true`，DTO 对外翻成 `finished=false`。
+/// 这里只对**未收尾**的 run 返回样式：已结束是常态，额外标一个「已结束」只会
+/// 给列表加噪音；进行中用 warning（琥珀）—— 与 Agent 运行时「忙碌」同色阶，
+/// 表达「还在跑」而不是「出了异常」。
+///
+/// 返回 `None` 即不渲染，调用方用 `if let Some(class)` 承接，别自己散写颜色类。
+pub fn think_trace_running_badge(finished: bool) -> Option<&'static str> {
+    (!finished).then_some("badge hud-badge badge-sm badge-warning")
+}
+
 /// 任务状态对应的 HUD 风格颜色（hex，适配深色背景）
 ///
 /// 颜色语义与 `task_status_badge` 对齐，但用更鲜艳的 hex 值适配 HUD 深色背景：

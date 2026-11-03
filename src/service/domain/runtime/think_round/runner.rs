@@ -129,7 +129,51 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
     Ok(deps.take_result())
 }
 
-/// 落盘一次轮级图轨迹（每 run 一行 JSONL）
+/// 追加一条「运行中」的轮级增量轨迹（每轮定型后调用）
+///
+/// 与 [`persist_trace`] 的分工：本函数只写**单轮**明细（`partial=true`），让前端在
+/// run 未结束时查询也能看到已完成的轮次；run 收尾的 [`persist_trace`] 再写完整行
+/// （`partial=false`，含 occurrences / routes / fingerprint）。
+///
+/// 查询侧按同一 `(agent_id, run_id, scene)` 合并，收尾行会**替换本片段**这里累积的
+/// rounds（同一批数据的两个粒度，拼接会重复），片段之间仍拼接续编号；
+/// 因此两条路径可以安全并存，多次重跑也不会互相冲掉轮次。
+/// 写失败与收尾写盘同口径：只告警，不影响思考主流程。
+///
+/// ⚠️ 这里刻意**同步**写盘，不要改成 `spawn_blocking` / 后台队列：JSONL 是
+/// append-only，行序即轮次序，而 `merge_into` 的「增量行累积 → 收尾行替换」完全
+/// 依赖这个顺序。一旦并发写导致后一轮先落盘，合并出的轨迹轮次就会错序。
+/// 单轮一次小写入的阻塞代价，远小于轨迹错乱的排障代价。
+pub(super) fn append_partial_round(
+    deps: &RoundDeps,
+    round: &crate::pkg::think_trace::ThinkTraceRound,
+) {
+    let entry = serde_json::json!({
+        "run_id": deps.trace_id,
+        "agent_id": deps.agent.po.id,
+        "scene": deps.scene.as_str(),
+        "project_id": deps.ctx.project_id(),
+        "task_id": deps.ctx.task_id(),
+        // 与 persist_trace 的 run.blueprint.id 同源（常量），改蓝图 ID 时两边一起动
+        "path": super::blueprint::THINK_ROUND_BLUEPRINT_ID,
+        // 增量行不含图执行信息，全部由收尾行提供
+        "steps": 0,
+        "advisor_calls": 0,
+        "fingerprint": "",
+        "partial": true,
+        "rounds": [round],
+        "occurrences": [],
+        "routes": [],
+    });
+    if let Err(e) = crate::pkg::think_trace::append(&deps.agent.po.id, &entry) {
+        crate::log_warn!("think round partial trace write failed: {}", e);
+    }
+}
+
+/// 落盘一次轮级图轨迹的收尾行（`partial=false`）
+///
+/// 一轮思考循环 = 每轮各一行增量行（[`append_partial_round`]）+ 收尾这里一行
+/// 完整行；查询侧合并成一条连续轨迹。
 ///
 /// 动态分叉（reflect）出问题时，只有这里有完整的 occurrence 序列与选路来源；
 /// 写失败不影响思考结果，仅告警——可观测性不能反过来拖垮主流程。
@@ -148,6 +192,7 @@ fn persist_trace(deps: &RoundDeps, run: &ThinkRun) {
         "project_id": deps.ctx.project_id(),
         "task_id": deps.ctx.task_id(),
         "path": run.blueprint.id,
+        "partial": false,
         "steps": run.trace.steps,
         "advisor_calls": run.trace.advisor_calls,
         "fingerprint": run.trace.fingerprint(),

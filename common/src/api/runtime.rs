@@ -170,6 +170,15 @@ pub struct ThinkTraceListItem {
     pub fingerprint: String,
     /// 落盘时间戳（毫秒）
     pub created_at: u64,
+    /// 该 run 是否已收尾（对外只回答「这条轨迹还在跑吗」）
+    ///
+    /// 与落盘契约的 `partial` 是同一个事实的两面：`partial` 标记「逐轮增量行 vs
+    /// 收尾全量行」这个内部粒度，对外不暴露该二分语义，只给一个布尔。
+    ///
+    /// `finished=false`（进行中）时 `rounds` 只到已完成的最新一轮，且 `steps` /
+    /// `occurrences` / `routes` 可能为空 —— 这些只有收尾行才带。前端据此显示
+    /// 「进行中」，不必再靠最后一条 `decision` 反推是否还在跑。
+    pub finished: bool,
     /// 关联项目 ID
     pub project_id: Option<String>,
     /// 关联任务 ID

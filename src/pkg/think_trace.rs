@@ -4,8 +4,13 @@
 //! 生产环境在 [`crate::pkg::init_all`] 注入 base_data_path；单元测试不初始化，
 //! 因此不会往 `~/.ai_orz` 写文件（测试隔离红线）。
 //!
-//! 每次思考循环一行 JSONL（`agents/{agent_id}/think_trace/{YYYYMMDD}.jsonl`），
-//! 记录节点 occurrence 序列与每次选路的候选/来源，供动态路由排障与回放。
+//! 落盘是「逐轮增量 + 收尾全量」两段式（`agents/{agent_id}/think_trace/{YYYYMMDD}.jsonl`）：
+//! - 每轮定型（think → dispatch → evaluate）后追加一行 `partial=true`，只含该轮明细；
+//! - run 收尾追加一行 `partial=false`，含完整 rounds 与节点 occurrence 序列、选路来源。
+//!
+//! 查询按 `(agent_id, run_id, scene)` 合并：收尾行只替换**本片段**的增量 rounds、
+//! 片段之间拼接续编号，因此前端在 run 未结束时查询也能看到已完成轮次（半成品），
+//! 异常中断也不会整条丢失。
 //!
 //! 查询侧按 **agent 维度** 分页：`agent_id` 缺省时遍历 `agents/*/think_trace`，
 //! 供对话页「多 Agent 聚合流」使用；`project_id` / `task_id` 是 entry 字段过滤
@@ -65,6 +70,7 @@ pub fn append(agent_id: &str, entry: &serde_json::Value) -> anyhow::Result<bool>
 /// 一次轮级思考循环的轨迹条目
 ///
 /// 字段名与落盘 JSON 一一对应；`#[serde(default)]` 让历史行/字段扩展时仍可读取。
+/// 唯一的例外是 `partial_round_count` —— 它是查询合并期的内部状态，不落盘。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ThinkTraceEntry {
     /// 本次 run 的唯一 ID（图引擎生成）
@@ -106,6 +112,25 @@ pub struct ThinkTraceEntry {
     /// 轮级明细：模型思考文本、reasoning summary、工具调用与决策
     #[serde(default)]
     pub rounds: Vec<ThinkTraceRound>,
+    /// 本行是否为「运行中逐轮增量」而非 run 收尾的完整行
+    ///
+    /// 思考循环每轮定型（think → dispatch → evaluate）后追加一行 `partial=true`，
+    /// 只携带该轮的 `rounds` 明细；run 收尾再追加一行 `partial=false`，携带完整
+    /// `rounds` 与图执行信息（occurrences / routes / fingerprint）。
+    ///
+    /// 这样前端在 run 未结束时查询也能看到已完成轮次（半成品），异常中断也
+    /// 不会整条丢失。查询合并时收尾行**替换本片段**增量行累积的 rounds——两者
+    /// 是同一份数据的两个粒度，拼接会导致轮次翻倍。
+    #[serde(default)]
+    pub partial: bool,
+    /// 查询合并期内部状态：当前片段已累积的逐轮增量 `rounds` 条数（不落盘）
+    ///
+    /// 一次唤醒内可能因意图修订多次重跑，每个片段各自「N 行增量 + 1 行收尾」。
+    /// 收尾行需要摘掉**本片段**的增量轮次再拼接，否则第二个片段的收尾行会把
+    /// 第一个片段的轮次一起冲掉。这个计数精确反映实际收到的增量行数（写失败
+    /// 只告警，可能少于收尾行的全量轮数），不能用 `next.rounds.len()` 代替。
+    #[serde(skip)]
+    pub partial_round_count: usize,
 }
 
 /// 单轮思考明细
@@ -240,6 +265,21 @@ pub fn query(query: ThinkTraceQuery) -> anyhow::Result<PagedResult<ThinkTraceEnt
 }
 
 /// 在指定基础目录下查询（包内可测，避免依赖全局初始化）
+///
+/// ## 成本模型：以及为什么这里不做早停
+///
+/// 扫描是**全量**的：每个 JSONL 分片逐行读 + 全量反序列化（[`read_matching_entries`]
+/// 无早停），再合并、排序、分页。单次查询成本 ≈ 匹配行数 × 单行大小。
+///
+/// 逐轮增量落盘让行数从「1 行 / run」变成「N+1 行 / run」，但增量行只带**单轮**
+/// `rounds`、收尾行才带全量，所以**解析的数据量约 2×** —— 不是行数那个 N+1 倍。
+/// 这是「run 未结束也能查到半成品」的既定代价，量级可接受。
+///
+/// ⚠️ 不要为了省这点成本加「读够一页就停」的早停：`total` 必须是**合并后**的真实
+/// 总数，前端 `has_next = offset + len < total` 与「共 N 条」都依赖它。早停会把
+/// total 变成「已扫描到的条数」，翻页按钮当场失效（永远推不出下一页）。真要优化，
+/// 正确方向是缩小时间窗口（调用方传 `started_after`，由 [`date_in_range`] 在文件级
+/// 粗筛掉整段历史分片），而不是截断扫描过程。
 pub(crate) fn query_at(
     base_data_path: &Path,
     query: &ThinkTraceQuery,
@@ -309,8 +349,14 @@ fn merge_same_run(entries: Vec<ThinkTraceEntry>) -> Vec<ThinkTraceEntry> {
         match positions.get(&key).copied() {
             Some(index) => merge_into(&mut merged[index], entry),
             None => {
+                // 首行不经过 merge_into，若是增量行需在这里补上片段计数，
+                // 否则该行不会被本片段的收尾行摘除（会多出一轮）
+                let mut first = entry;
+                if first.partial {
+                    first.partial_round_count = first.rounds.len();
+                }
                 positions.insert(key, merged.len());
-                merged.push(entry);
+                merged.push(first);
             }
         }
     }
@@ -328,6 +374,22 @@ fn merge_same_run(entries: Vec<ThinkTraceEntry>) -> Vec<ThinkTraceEntry> {
 fn merge_into(base: &mut ThinkTraceEntry, next: ThinkTraceEntry) {
     let step_offset = base.steps;
 
+    // 收尾行（partial=false）到达：先摘掉「本片段」逐轮增量累积的 rounds，
+    // 再按跨片段偏移拼接收尾行的完整 rounds。
+    //
+    // ⚠️ 只摘本片段，不能整体替换 `base.rounds`：一次唤醒内可能因意图修订多次
+    // 重跑（见 [`merge_same_run`] 注释），每个片段各自 N 行增量 + 1 行收尾。
+    // 早期版本「收尾行整体替换」会让第二个片段的收尾行把第一个片段的轮次
+    // 一并冲掉；直接拼接又会让本片段每轮出现两次。
+    // 增量行不带图执行信息，故 steps / occurrences / routes 的累加不受影响。
+    let final_line = !next.partial;
+    let next_round_count = next.rounds.len();
+    if final_line {
+        let drop_count = base.partial_round_count.min(base.rounds.len());
+        base.rounds.truncate(base.rounds.len() - drop_count);
+        base.partial_round_count = 0;
+    }
+
     // 轮次：意图重跑从 1 计数，需要后移；执行回退已带 `start_round`（累计值），
     // 已是连续编号，不能再加偏移
     let round_offset = match (base.rounds.last(), next.rounds.first()) {
@@ -339,6 +401,10 @@ fn merge_into(base: &mut ThinkTraceEntry, next: ThinkTraceEntry) {
     for mut round in next.rounds {
         round.round = round.round.saturating_add(round_offset);
         base.rounds.push(round);
+    }
+    // 增量行可能部分写失败（只告警），按实际收到的行数累计，供本片段收尾行摘除
+    if !final_line {
+        base.partial_round_count = base.partial_round_count.saturating_add(next_round_count);
     }
 
     // occurrence：节点级序号跨片段续编号，图步号整体后移。
@@ -377,6 +443,8 @@ fn merge_into(base: &mut ThinkTraceEntry, next: ThinkTraceEntry) {
     if base.task_id.is_none() {
         base.task_id = next.task_id;
     }
+    // 本行粒度跟随最新写入的那行：收尾行之后不再是「半成品」
+    base.partial = next.partial;
 }
 
 /// 列出待扫描的 Agent 数据目录

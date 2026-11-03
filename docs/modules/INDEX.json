@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 671,
-  "total_bytes": 14091840,
+  "total_bytes": 14103964,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1106,7 +1106,7 @@
           "path": "02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md",
           "name": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
           "title": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
-          "bytes": 8363
+          "bytes": 13281
         },
         {
           "tier": "C-知识",
@@ -4589,7 +4589,7 @@
           "path": "11-前端应用/C-知识/消息与工作区页面.md",
           "name": "消息与工作区页面",
           "title": "消息与工作区页面",
-          "bytes": 27860
+          "bytes": 28974
         },
         {
           "tier": "C-知识",
@@ -4645,7 +4645,7 @@
           "path": "11-前端应用/C-知识/聊天侧面板.md",
           "name": "聊天侧面板",
           "title": "聊天侧面板",
-          "bytes": 20516
+          "bytes": 26608
         },
         {
           "tier": "C-知识",

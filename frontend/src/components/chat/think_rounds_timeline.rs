@@ -112,6 +112,164 @@ fn format_duration(ms: u64) -> String {
     }
 }
 
+/// 多轮聚合摘要（列表折叠态用）
+///
+/// 折叠条目想回答「跑了几轮 / 花了多少 token / 多久」，答案都在已落盘的
+/// `rounds` 里，前端叠加即可 —— 不为它新增后端字段，也不为它再要一次请求。
+///
+/// ⚠️ 刻意**不含**「第 N/M 轮」的分母：运行时实际会跑几轮不可知（可能提前
+/// final / exit，也可能因意图修订折返重跑），拿配置预算当分母等于把「预算」
+/// 说成「实际」。所以只给已记录轮数，配合「进行中」徽章表达还在增长。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RoundStats {
+    /// 已记录的轮数
+    pub recorded: usize,
+    /// 累计口径下最后一个完成的轮次编号（跨压缩累计；0 = 尚无任何一轮）
+    pub last_round: usize,
+    /// 累计输入 token
+    pub input_tokens: u64,
+    /// 累计输出 token（含思考 token）
+    pub output_tokens: u64,
+    /// 累计提示缓存命中 token
+    pub cached_tokens: u64,
+    /// 累计思考/推理 token（已包含在输出内）
+    pub reasoning_tokens: u64,
+    /// 累计模型调用耗时
+    pub duration_ms: u64,
+    /// 强度：取最后一轮实际下发的（各轮一致时即全程强度）
+    pub intensity: Option<ThinkingIntensity>,
+    /// 是否出现过逐轮不同的强度（true 时 `intensity` 只代表最新一轮）
+    pub intensity_varies: bool,
+}
+
+/// 把多轮明细叠加成一条摘要
+pub fn summarize_rounds(rounds: &[ThinkTraceRoundDto]) -> RoundStats {
+    let mut stats = RoundStats {
+        recorded: rounds.len(),
+        ..Default::default()
+    };
+    let mut first: Option<ThinkingIntensity> = None;
+    for r in rounds {
+        stats.input_tokens = stats.input_tokens.saturating_add(r.input_tokens);
+        stats.output_tokens = stats.output_tokens.saturating_add(r.output_tokens);
+        stats.cached_tokens = stats.cached_tokens.saturating_add(r.cached_tokens);
+        stats.reasoning_tokens = stats.reasoning_tokens.saturating_add(r.reasoning_tokens);
+        stats.duration_ms = stats.duration_ms.saturating_add(r.duration_ms);
+        // 行序即轮次序，但取 max 更稳：合并片段时不依赖顺序假设
+        stats.last_round = stats.last_round.max(r.round);
+        if let Some(i) = r.thinking_intensity {
+            match first {
+                None => first = Some(i),
+                Some(f) if f.score() != i.score() => stats.intensity_varies = true,
+                _ => {}
+            }
+            stats.intensity = Some(i);
+        }
+    }
+    stats
+}
+
+/// 轮次进度文案：`已 3 轮` / `3 轮`
+///
+/// `finished=false`（进行中）时数字还会继续涨，故加「已」字；轮次编号跨压缩累计，
+/// 与本片段轮数不一致时两个都给，否则会让人以为丢了轮次。
+pub fn round_progress_label(rounds: &[ThinkTraceRoundDto], finished: bool) -> String {
+    let stats = summarize_rounds(rounds);
+    if stats.recorded == 0 {
+        return if finished {
+            "0 轮".to_string()
+        } else {
+            "尚未开始".to_string()
+        };
+    }
+    let prefix = if finished { "" } else { "已 " };
+    if stats.last_round == stats.recorded {
+        format!("{prefix}{} 轮", stats.recorded)
+    } else {
+        format!(
+            "{prefix}{} 轮（累计第 {} 轮）",
+            stats.recorded, stats.last_round
+        )
+    }
+}
+
+/// token 明细 2×2 badge 网格（逐轮时间线 + 折叠态概览共用）
+///
+/// 顺序按「左列入/出单字、右列缓存/思考两字」排布；时间线传**单轮**值、
+/// 折叠概览传**累计**值，配色与文案保持同一套，避免两种视觉读法。
+#[component]
+fn TokenBadgeGrid(
+    input_tokens: u64,
+    cached_tokens: u64,
+    output_tokens: u64,
+    reasoning_tokens: u64,
+) -> Element {
+    let input_text = format_compact_count(input_tokens);
+    let cached_text = format_compact_count(cached_tokens);
+    let output_text = format_compact_count(output_tokens);
+    let reasoning_text = format_compact_count(reasoning_tokens);
+    rsx! {
+        div { class: "grid grid-cols-2 gap-1 ml-auto shrink-0",
+            span {
+                class: "badge badge-xs badge-info badge-soft font-mono justify-start min-w-[60px]",
+                title: "输入（prompt）token",
+                "入 {input_text}"
+            }
+            span {
+                class: "badge badge-xs badge-success badge-soft font-mono justify-start min-w-[60px]",
+                title: "提示缓存命中的输入 token；provider 未上报时为 0，不代表未命中",
+                "缓存 {cached_text}"
+            }
+            span {
+                class: "badge badge-xs badge-accent badge-soft font-mono justify-start min-w-[60px]",
+                title: "输出（completion）token；含思考 token",
+                "出 {output_text}"
+            }
+            span {
+                class: "badge badge-xs badge-warning badge-soft font-mono justify-start min-w-[60px]",
+                title: "思考/推理消耗的 token，已包含在输出 token 内",
+                "思考 {reasoning_text}"
+            }
+        }
+    }
+}
+
+/// 右栏：强度 + 耗时上下两行（逐轮时间线 + 折叠态概览共用）
+///
+/// `scope` 只影响悬停文案（"本轮" / "累计"）；`intensity_note` 在逐轮强度
+/// 不一致时补一句说明（只有累计概览会传）。
+#[component]
+fn IntensityDurationColumn(
+    intensity: Option<ThinkingIntensity>,
+    duration_ms: u64,
+    scope: &'static str,
+    intensity_note: Option<&'static str>,
+) -> Element {
+    let intensity_text = intensity
+        .map(thinking_intensity_label)
+        .unwrap_or_else(|| "思考·未启用".to_string());
+    let duration_text = format_duration(duration_ms);
+    let intensity_title = format!(
+        "{scope}实际下发的思考强度（0–100 分；未启用时请求体不下发该字段）{}",
+        intensity_note.map_or(String::new(), |n| format!("；{n}"))
+    );
+    let duration_title = format!("{scope}模型调用耗时");
+    rsx! {
+        div { class: "flex flex-col items-end gap-1 shrink-0",
+            span {
+                class: "{intensity_class(intensity)}",
+                title: "{intensity_title}",
+                "{intensity_text}"
+            }
+            span {
+                class: "text-[11px] text-base-content/50 font-mono",
+                title: "{duration_title}",
+                "{duration_text}"
+            }
+        }
+    }
+}
+
 /// 思考轮次时间线
 ///
 /// 强度按轮记录（同一 run 内目前各轮相同，未来可逐轮动态调整）。
@@ -137,15 +295,6 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                             .is_some_and(|t| needs_expand(t, TEXT_PREVIEW_CHARS));
                         let reasoning = r.reasoning.clone();
                         let tools = r.tool_calls.clone();
-                        let input_text = format_compact_count(r.input_tokens);
-                        let output_text = format_compact_count(r.output_tokens);
-                        let cached_text = format_compact_count(r.cached_tokens);
-                        let reasoning_text = format_compact_count(r.reasoning_tokens);
-                        let duration_text = format_duration(r.duration_ms);
-                        let intensity_text = r
-                            .thinking_intensity
-                            .map(thinking_intensity_label)
-                            .unwrap_or_else(|| "思考·未启用".to_string());
                         rsx! {
                             div {
                                 key: "{round_no}",
@@ -159,42 +308,19 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                             span { class: decision_class(&decision), "{decision_label(&decision)}" }
                                         }
                                     }
-                                    // token 明细 2×2（缓存/思考未上报时为 0），靠右贴近强度/耗时
-                                    // 按标签字数分列：左列「入/出」单字，右列「缓存/思考」两字，列内宽度一致更齐
-                                    div { class: "grid grid-cols-2 gap-1 ml-auto",
-                                        span {
-                                            class: "badge badge-xs badge-info badge-soft font-mono justify-start min-w-[60px]",
-                                            title: "本轮输入（prompt）token",
-                                            "入 {input_text}"
-                                        }
-                                        span {
-                                            class: "badge badge-xs badge-success badge-soft font-mono justify-start min-w-[60px]",
-                                            title: "提示缓存命中的输入 token；provider 未上报时为 0，不代表未命中",
-                                            "缓存 {cached_text}"
-                                        }
-                                        span {
-                                            class: "badge badge-xs badge-accent badge-soft font-mono justify-start min-w-[60px]",
-                                            title: "本轮输出（completion）token；含思考 token",
-                                            "出 {output_text}"
-                                        }
-                                        span {
-                                            class: "badge badge-xs badge-warning badge-soft font-mono justify-start min-w-[60px]",
-                                            title: "思考/推理消耗的 token，已包含在输出 token 内",
-                                            "思考 {reasoning_text}"
-                                        }
+                                    // token 明细 2×2：与折叠态概览共用同一组件（此处是单轮值）
+                                    TokenBadgeGrid {
+                                        input_tokens: r.input_tokens,
+                                        cached_tokens: r.cached_tokens,
+                                        output_tokens: r.output_tokens,
+                                        reasoning_tokens: r.reasoning_tokens,
                                     }
-                                    // 右端两行：上强度标签、下耗时
-                                    div { class: "flex flex-col items-end gap-1 shrink-0",
-                                        span {
-                                            class: intensity_class(r.thinking_intensity),
-                                            title: "本轮实际下发的思考强度（0–100 分；未启用时请求体不下发）",
-                                            "{intensity_text}"
-                                        }
-                                        span {
-                                            class: "text-[11px] text-base-content/50 font-mono",
-                                            title: "本轮模型调用耗时",
-                                            "{duration_text}"
-                                        }
+                                    // 右端两行：上强度标签、下耗时（与折叠态概览共用组件）
+                                    IntensityDurationColumn {
+                                        intensity: r.thinking_intensity,
+                                        duration_ms: r.duration_ms,
+                                        scope: "本轮",
+                                        intensity_note: None,
                                     }
                                 }
                                 // 推理摘要：先给预览，超长折叠
@@ -295,9 +421,147 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
     }
 }
 
+/// 折叠态的轮次概览：与 [`ThinkRoundsTimeline`] 顶行同构的三栏布局
+///
+/// 左 = 轮次进度 + 图执行信息，中 = token 2×2，右 = 强度 + 累计耗时；
+/// 三栏各占两行高，与展开后每一轮的行完全对齐，展开前后不用重新认位置。
+/// 复用 `TokenBadgeGrid` / `intensity_class` / `format_duration`，折叠态是
+/// **累计值**、时间线是**单轮值**，只有数值口径不同，没有两套视觉读法。
+#[component]
+pub fn RoundStatsLine(
+    rounds: Vec<ThinkTraceRoundDto>,
+    finished: bool,
+    steps: usize,
+    advisor_calls: usize,
+) -> Element {
+    let stats = summarize_rounds(&rounds);
+    let progress = round_progress_label(&rounds, finished);
+    rsx! {
+        div { class: "mt-1.5 flex flex-wrap items-start gap-2",
+            // 左栏：对应时间线的「第 N 轮 + 裁决」竖排
+            div { class: "flex flex-col items-start justify-center gap-1 shrink-0 self-stretch",
+                span {
+                    class: "text-sm font-semibold whitespace-nowrap leading-none",
+                    title: "已记录轮数（进行中会继续增长）",
+                    "{progress}"
+                }
+                if finished {
+                    span { class: "badge badge-xs badge-ghost",
+                        "{steps} 步 · advisor {advisor_calls}"
+                    }
+                } else {
+                    // 图执行信息只有收尾行才写，增量行恒为 0；「0 步」会把
+                    // 「还没落盘」说成「一步没走」，故只提示状态
+                    span { class: "text-[11px] text-base-content/50", "图信息待收尾" }
+                }
+            }
+            if stats.recorded > 0 {
+                // 中栏：token 2×2（累计值），与时间线共用组件
+                TokenBadgeGrid {
+                    input_tokens: stats.input_tokens,
+                    cached_tokens: stats.cached_tokens,
+                    output_tokens: stats.output_tokens,
+                    reasoning_tokens: stats.reasoning_tokens,
+                }
+                // 右栏：强度 + 累计耗时，上下两行（与逐轮时间线共用组件）
+                IntensityDurationColumn {
+                    intensity: stats.intensity,
+                    duration_ms: stats.duration_ms,
+                    scope: "累计",
+                    intensity_note: stats.intensity_varies.then_some("逐轮下发的强度不同，此处显示最后一轮"),
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn round_with(
+        round: usize,
+        input: u64,
+        output: u64,
+        cached: u64,
+        reasoning: u64,
+        duration_ms: u64,
+        intensity: Option<u8>,
+    ) -> ThinkTraceRoundDto {
+        ThinkTraceRoundDto {
+            round,
+            input_tokens: input,
+            output_tokens: output,
+            cached_tokens: cached,
+            reasoning_tokens: reasoning,
+            duration_ms,
+            thinking_intensity: intensity.map(ThinkingIntensity::new),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn summarize_rounds_adds_up_tokens_and_duration() {
+        let rounds = vec![
+            round_with(1, 100, 20, 5, 4, 500, Some(80)),
+            round_with(2, 200, 30, 0, 6, 1_500, Some(80)),
+        ];
+        let s = summarize_rounds(&rounds);
+        assert_eq!(s.recorded, 2);
+        assert_eq!(s.last_round, 2);
+        assert_eq!(s.input_tokens, 300);
+        assert_eq!(s.output_tokens, 50);
+        assert_eq!(s.cached_tokens, 5);
+        assert_eq!(s.reasoning_tokens, 10);
+        assert_eq!(s.duration_ms, 2_000);
+        assert_eq!(s.intensity.map(|i| i.score()), Some(80));
+        assert!(!s.intensity_varies);
+    }
+
+    #[test]
+    fn summarize_rounds_keeps_latest_intensity_and_flags_variance() {
+        // 各轮一致：不标差异
+        let same = vec![
+            round_with(1, 0, 0, 0, 0, 0, Some(20)),
+            round_with(2, 0, 0, 0, 0, 0, Some(20)),
+        ];
+        assert!(!summarize_rounds(&same).intensity_varies);
+        // 逐轮调整：取最新一轮，并标出「不全相同」
+        let varies = vec![
+            round_with(1, 0, 0, 0, 0, 0, Some(20)),
+            round_with(2, 0, 0, 0, 0, 0, Some(90)),
+        ];
+        let s = summarize_rounds(&varies);
+        assert!(s.intensity_varies);
+        assert_eq!(s.intensity.map(|i| i.score()), Some(90));
+        // 全轮未启用：None 且不标差异
+        let none = vec![round_with(1, 0, 0, 0, 0, 0, None)];
+        let s = summarize_rounds(&none);
+        assert_eq!(s.intensity, None);
+        assert!(!s.intensity_varies);
+    }
+
+    #[test]
+    fn round_progress_label_marks_running_and_cumulative_rounds() {
+        let rounds = vec![
+            round_with(1, 0, 0, 0, 0, 0, None),
+            round_with(2, 0, 0, 0, 0, 0, None),
+        ];
+        assert_eq!(round_progress_label(&rounds, true), "2 轮");
+        // 进行中：数字还会涨
+        assert_eq!(round_progress_label(&rounds, false), "已 2 轮");
+        assert_eq!(round_progress_label(&[], false), "尚未开始");
+        assert_eq!(round_progress_label(&[], true), "0 轮");
+        // 跨压缩：本片段 2 轮，但累计编号已到第 8 轮 —— 两个都要给
+        let cumulative = vec![
+            round_with(7, 0, 0, 0, 0, 0, None),
+            round_with(8, 0, 0, 0, 0, 0, None),
+        ];
+        assert_eq!(
+            round_progress_label(&cumulative, false),
+            "已 2 轮（累计第 8 轮）"
+        );
+    }
 
     #[test]
     fn duration_scales_to_readable_units() {

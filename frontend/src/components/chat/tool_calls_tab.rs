@@ -129,32 +129,36 @@ pub fn ToolCallsTab(
     // 供 Modal 内进程变更后重拉 join 数据的参数副本
     let pid_for_change = project_id.clone();
     let aid_for_change = agent_id.clone();
-    let pid_for_effect = project_id.clone();
-    let aid_for_effect = agent_id.clone();
     let has_scope = project_id.is_some() || agent_id.is_some();
 
     // 范围切换 → 立即加载；refresh_tick 变化 → 防抖刷新
-    use_effect(move || {
-        let scope = format!("{:?}|{:?}", pid_for_effect, aid_for_effect);
-        let tick = refresh_tick;
-        let scope_changed = prev_scope() != scope;
-        let tick_changed = prev_tick() != tick;
-        // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
-        // 无条件写回本 effect 自己订阅的信号会触发 effect 重跑 → 无限循环卡死主线程
-        if scope_changed {
-            prev_scope.set(scope);
-        }
-        if tick_changed {
-            prev_tick.set(tick);
-        }
-        if scope_changed {
-            expanded_call_id.set(None);
-            detail_pid.set(None);
-            load(pid_for_effect.clone(), aid_for_effect.clone(), false);
-        } else if tick_changed {
-            load(pid_for_effect.clone(), aid_for_effect.clone(), true);
-        }
-    });
+    //
+    // ⚠️ 必须用 `use_reactive` 显式声明依赖：`use_effect` 只对**信号**依赖重跑，
+    // `project_id` / `agent_id` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
+    // 值变了 effect 也不会重跑（SSE 与周期轮询都推不动这个 Tab）。
+    use_effect(use_reactive(
+        (&project_id, &agent_id, &refresh_tick),
+        move |(pid, aid, tick)| {
+            let scope = format!("{:?}|{:?}", pid, aid);
+            let scope_changed = prev_scope() != scope;
+            let tick_changed = prev_tick() != tick;
+            // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
+            // 无条件写回本 effect 自己订阅的信号会触发 effect 重跑 → 无限循环卡死主线程
+            if scope_changed {
+                prev_scope.set(scope);
+            }
+            if tick_changed {
+                prev_tick.set(tick);
+            }
+            if scope_changed {
+                expanded_call_id.set(None);
+                detail_pid.set(None);
+                load(pid, aid, false);
+            } else if tick_changed {
+                load(pid, aid, true);
+            }
+        },
+    ));
 
     if !has_scope {
         return rsx! {

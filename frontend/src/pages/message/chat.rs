@@ -636,7 +636,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
                     }
                 }
                 poll_count += 1;
-                if poll_count.is_multiple_of(10) {
+                // 侧栏收起时不推进统计节拍：面板隐藏时没有任何组件消费这个 tick，
+                // 推进只会白白触发一次侧栏重渲染（侧栏组件在 hidden 容器里仍挂载）
+                if panel_open() && poll_count.is_multiple_of(10) {
                     stats_poll_tick.set(stats_poll_tick() + 1);
                 }
                 gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
@@ -1788,6 +1790,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
                     project_id: selected_project,
                     reception_agent_id: reception_agent().map(|a| a.agent_id),
                     refresh_tick: refresh_tick,
+                    // 面板收起时组件仍挂载（外层只是 hidden），必须显式告知可见性，
+                    // 否则看不见的侧栏照样跟着 SSE 刷新发请求
+                    visible: panel_open,
                     stats_poll_tick: stats_poll_tick(),
                     on_close: move |_| panel_open.set(false),
                     agent_info: target_agent_info,

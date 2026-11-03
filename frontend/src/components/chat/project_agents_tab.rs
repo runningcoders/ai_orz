@@ -81,7 +81,6 @@ pub fn ProjectAgentsTab(
     agent_stats_tick: u64,
 ) -> Element {
     let agent_ids = agent_ids_from_tasks(&tasks, project_owner_id.as_deref());
-    let ids_key = agent_ids.join(",");
 
     let mut agents = use_signal(Vec::<AgentListItem>::new);
     let mut failed = use_signal(|| false);
@@ -92,8 +91,6 @@ pub fn ProjectAgentsTab(
 
     // 详情加载 + 刷新：集合变化 → 立即取；refresh_tick 变化 → 防抖重取。
     // 守卫结构与 ToolCallsTab 一致：仅值真正变化时写回，避免 effect 自触发循环。
-    let ids_for_effect = ids_key.clone();
-    let ids_for_refresh = agent_ids.clone();
     let mut prev_ids = use_signal(String::new);
     let mut prev_tick = use_signal(|| 0u64);
 
@@ -131,25 +128,32 @@ pub fn ProjectAgentsTab(
         });
     };
 
-    use_effect(move || {
-        let tick = refresh_tick;
-        let ids_changed = prev_ids() != ids_for_effect;
-        let tick_changed = prev_tick() != tick;
-        if ids_changed {
-            prev_ids.set(ids_for_effect.clone());
-        }
-        if tick_changed {
-            prev_tick.set(tick);
-        }
-        if ids_changed {
-            // 项目切换 / 任务集合变化：复位视图与选中高亮，避免残留上个项目的状态
-            view_agent.set(None);
-            last_selected.set(None);
-            load_agents(ids_for_refresh.clone(), false);
-        } else if tick_changed && !ids_for_refresh.is_empty() {
-            load_agents(ids_for_refresh.clone(), true);
-        }
-    });
+    // ⚠️ 必须用 `use_reactive` 显式声明依赖：`agent_ids` 与 `refresh_tick` 都是普通
+    // 值 prop，`use_effect` 对它们不订阅 —— 任务集合变了、SSE 与周期 tick 来了都不会刷新
+    use_effect(use_reactive(
+        (&agent_ids, &refresh_tick),
+        move |(ids, tick)| {
+            let key = ids.join(",");
+            let ids_changed = prev_ids() != key;
+            let tick_changed = prev_tick() != tick;
+            if ids_changed {
+                prev_ids.set(key);
+            }
+            if tick_changed {
+                prev_tick.set(tick);
+            }
+            if ids_changed {
+                // 项目切换 / 任务集合变化：复位视图与选中高亮，避免残留上个项目的状态
+                view_agent.set(None);
+                last_selected.set(None);
+                load_agents(ids, false);
+            } else if tick_changed && !ids.is_empty() && view_agent().is_none() {
+                // 只在列表可见时重取：已点进某个 Agent 详情子页时列表并不在屏上，
+                // 为它批量拉一遍详情纯属浪费（详情子页自己的刷新由 AgentInfoTab 承担）
+                load_agents(ids, true);
+            }
+        },
+    ));
 
     // ---- 渲染分支（全部 hook 已在上方完成，早退安全）----
 

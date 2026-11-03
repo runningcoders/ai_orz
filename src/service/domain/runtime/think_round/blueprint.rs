@@ -30,6 +30,13 @@ pub(crate) const NODE_REFLECT: &str = "reflect";
 /// 轮边界的新输入收集节点（仅 awaken 主链启用）
 pub(crate) const NODE_POLL: &str = "poll_round";
 
+/// 轮级环图的蓝图 ID
+///
+/// 同时是轨迹条目落盘的 `path` 字段值。`append_partial_round` 写逐轮增量行时
+/// 拿不到 `ThinkRun`（收尾行才有），只能引用这个常量 —— 两边必须同源，否则
+/// 同一 run 的增量行与收尾行 `path` 不一致，查询合并时会被当成不同蓝图。
+pub(crate) const THINK_ROUND_BLUEPRINT_ID: &str = "think_round";
+
 pub(crate) const SIGNAL_TOOL_CALLS: &str = "tool_calls";
 pub(crate) const SIGNAL_FINAL: &str = "final";
 pub(crate) const SIGNAL_CONTINUE: &str = "continue";
@@ -54,7 +61,7 @@ pub(crate) fn round_blueprint_with_poll(
     reflect_enabled: bool,
     poll_enabled: bool,
 ) -> Result<ThinkPathBlueprint> {
-    let mut builder = ThinkPathBuilder::new("think_round")
+    let mut builder = ThinkPathBuilder::new(THINK_ROUND_BLUEPRINT_ID)
         .entry(NODE_THINK)
         .node_with(NODE_THINK, PhaseId::Deliberate, 0, "调用模型进行一轮思考")
         .node_with(NODE_DISPATCH, PhaseId::Review, 0, "执行本轮工具调用")

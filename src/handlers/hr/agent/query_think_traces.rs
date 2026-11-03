@@ -58,6 +58,9 @@ fn to_list_item(entry: ThinkTraceEntry) -> ThinkTraceListItem {
         advisor_calls: entry.advisor_calls,
         fingerprint: entry.fingerprint,
         created_at: entry.created_at,
+        // 对外的「是否结束」= 内部落盘粒度 `partial` 的反义：
+        // 收尾行到达后 `merge_into` 会把 partial 置 false，此处天然跟随
+        finished: !entry.partial,
         project_id: entry.project_id,
         task_id: entry.task_id,
         rounds: entry
@@ -108,5 +111,27 @@ fn to_list_item(entry: ThinkTraceEntry) -> ThinkTraceListItem {
                 reason: r.reason,
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finished_mirrors_partial_so_frontend_can_tell_running_aps() {
+        // 落盘契约用 `partial` 表达「增量行 vs 收尾行」，对外统一成 `finished`。
+        // 这一层必须严格反义：前端据此显示「进行中」，反了就会把跑完的标成在跑。
+        let running = to_list_item(ThinkTraceEntry {
+            partial: true,
+            ..Default::default()
+        });
+        assert!(!running.finished, "只有增量行的 run 仍在进行中");
+
+        let done = to_list_item(ThinkTraceEntry {
+            partial: false,
+            ..Default::default()
+        });
+        assert!(done.finished, "收尾行到达后即为已结束");
     }
 }

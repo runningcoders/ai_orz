@@ -19,13 +19,14 @@ use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
+use crate::utils::status::think_trace_running_badge;
 use common::api::{
     PaginationParams, QueryThinkTracesRequest, ThinkTraceListItem, ThinkTraceRouteDto,
 };
 
 use super::ThinkPathGraphView;
 use super::memory_trace_detail::MemoryTraceDetail;
-use super::think_rounds_timeline::ThinkRoundsTimeline;
+use super::think_rounds_timeline::{RoundStatsLine, ThinkRoundsTimeline};
 
 /// 每页条数（JSONL 扫描开销控制）
 const PAGE_SIZE: usize = 20;
@@ -167,44 +168,36 @@ pub fn ThinkTracesTab(
         });
     };
 
-    let pid_for_effect = project_id.clone();
-    let aid_for_effect = agent_id.clone();
     let has_scope = project_id.is_some() || agent_id.is_some();
 
     // 范围切换 → 立即加载并重置分页/筛选；refresh_tick 变化 → 防抖刷新当前页
-    use_effect(move || {
-        let scope = format!("{:?}|{:?}", pid_for_effect, aid_for_effect);
-        let tick = refresh_tick;
-        let scope_changed = prev_scope() != scope;
-        let tick_changed = prev_tick() != tick;
-        // 仅在值真正变化时写回，避免 Signal::set 触发 effect 自订阅循环
-        if scope_changed {
-            prev_scope.set(scope);
-        }
-        if tick_changed {
-            prev_tick.set(tick);
-        }
-        if scope_changed {
-            offset.set(0);
-            scene_filter.set(None);
-            expanded_key.set(None);
-            load(
-                pid_for_effect.clone(),
-                aid_for_effect.clone(),
-                None,
-                0,
-                false,
-            );
-        } else if tick_changed {
-            load(
-                pid_for_effect.clone(),
-                aid_for_effect.clone(),
-                scene_filter(),
-                offset(),
-                true,
-            );
-        }
-    });
+    //
+    // ⚠️ 必须用 `use_reactive` 显式声明依赖：`use_effect` 只对**信号**依赖重跑，
+    // `project_id` / `agent_id` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
+    // 值变了 effect 也不会重跑（SSE 与周期轮询都推不动这个 Tab）。
+    use_effect(use_reactive(
+        (&project_id, &agent_id, &refresh_tick),
+        move |(pid, aid, tick)| {
+            let scope = format!("{:?}|{:?}", pid, aid);
+            let scope_changed = prev_scope() != scope;
+            let tick_changed = prev_tick() != tick;
+            // 仅在值真正变化时写回，避免 Signal::set 触发 effect 自订阅循环
+            if scope_changed {
+                prev_scope.set(scope);
+            }
+            if tick_changed {
+                prev_tick.set(tick);
+            }
+            if scope_changed {
+                offset.set(0);
+                scene_filter.set(None);
+                expanded_key.set(None);
+                load(pid, aid, None, 0, false);
+            } else if tick_changed {
+                load(pid, aid, scene_filter(), offset(), true);
+            }
+        },
+    ));
 
     if !has_scope {
         return rsx! {
@@ -310,8 +303,12 @@ pub fn ThinkTracesTab(
                         let occurrences = e.occurrences.clone();
                         let routes = e.routes.clone();
                         let rounds = e.rounds.clone();
+                        let rounds_for_stats = rounds.clone();
                         let path = e.path.clone();
                         let fingerprint = e.fingerprint.clone();
+                        // 未收尾的 run（只有逐轮增量行）标「进行中」：此时 rounds
+                        // 只到最新完成的一轮、图执行信息还没写，别让人以为它就这么多
+                        let running_badge = think_trace_running_badge(e.finished);
                         rsx! {
                             div {
                                 key: "{key_for_dom}",
@@ -327,6 +324,9 @@ pub fn ThinkTracesTab(
                                     },
                                     div { class: "flex items-center gap-2 flex-wrap",
                                         span { class: "badge orz-tag badge-sm", "{scene_label(&scene)}" }
+                                        if let Some(badge_class) = running_badge {
+                                            span { class: "{badge_class}", "进行中" }
+                                        }
                                         div {
                                             class: "flex-none",
                                             IdentityChip {
@@ -334,12 +334,19 @@ pub fn ThinkTracesTab(
                                                 tone: AvatarTone::Agent,
                                             }
                                         }
-                                        span { class: "text-xs text-base-content/70 flex-1 truncate",
-                                            "{steps} 步 · advisor {advisor_calls}"
-                                        }
+                                        span { class: "flex-1" }
                                         if is_expanded { "▲" } else { "▼" }
                                     }
-                                    div { class: "text-xs text-base-content/60 mt-1",
+                                    // 统计区：与展开后每一轮的顶行同构（左轮次 / 中 token 2×2 /
+                                    // 右强度+耗时），全部由 rounds 现算，不为此多要一次请求
+                                    RoundStatsLine {
+                                        rounds: rounds_for_stats,
+                                        finished: e.finished,
+                                        steps: steps,
+                                        advisor_calls: advisor_calls,
+                                    }
+                                    // 元信息单独一行小字，不与统计数字抢位置
+                                    div { class: "text-[11px] text-base-content/50 mt-1",
                                         "{created} · 蓝图 {path}"
                                     }
                                 }

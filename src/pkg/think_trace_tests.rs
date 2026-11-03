@@ -35,6 +35,8 @@ fn entry(run_id: &str, agent_id: &str, created_at: u64) -> ThinkTraceEntry {
         project_id: None,
         task_id: None,
         rounds: Vec::new(),
+        partial: false,
+        partial_round_count: 0,
     }
 }
 
@@ -392,6 +394,148 @@ fn query_keeps_continued_round_numbers_when_merging() {
             .collect::<Vec<_>>(),
         vec![1, 2]
     );
+}
+
+#[test]
+fn in_progress_run_is_queryable_as_partial() {
+    // 思考循环跑到一半：磁盘上只有逐轮增量行，没有收尾行。
+    // 查询必须能拿到这个「半成品」，而不是等 run 结束后才可见。
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    let mut p1 = entry("run-1", "agent-a", 1_000);
+    p1.steps = 0;
+    p1.occurrences.clear();
+    p1.routes.clear();
+    p1.fingerprint.clear();
+    p1.partial = true;
+    p1.rounds = vec![round(1)];
+
+    let mut p2 = entry("run-1", "agent-a", 2_000);
+    p2.steps = 0;
+    p2.occurrences.clear();
+    p2.routes.clear();
+    p2.fingerprint.clear();
+    p2.partial = true;
+    p2.rounds = vec![round(2)];
+
+    write_entry(base, "agent-a", &date, &p1);
+    write_entry(base, "agent-a", &date, &p2);
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1, "同一 run 的多条增量行必须合成一条");
+    let merged = &page.items[0];
+    assert_eq!(
+        merged.rounds.iter().map(|r| r.round).collect::<Vec<_>>(),
+        vec![1, 2],
+        "运行中应能看到已完成轮次"
+    );
+    assert!(merged.partial, "无收尾行时仍是半成品");
+    assert_eq!(merged.steps, 0);
+}
+
+#[test]
+fn final_line_replaces_partial_rounds_without_duplication() {
+    // 增量行（逐轮）+ 收尾行（全量）：收尾行的 rounds 必须替换本片段的增量行，
+    // 不能与增量行拼接——否则每轮会出现两次。
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    let mut p1 = entry("run-1", "agent-a", 1_000);
+    p1.steps = 0;
+    p1.occurrences.clear();
+    p1.routes.clear();
+    p1.fingerprint.clear();
+    p1.partial = true;
+    p1.rounds = vec![round(1)];
+
+    let mut p2 = entry("run-1", "agent-a", 2_000);
+    p2.steps = 0;
+    p2.occurrences.clear();
+    p2.routes.clear();
+    p2.fingerprint.clear();
+    p2.partial = true;
+    p2.rounds = vec![round(2)];
+
+    let mut full = entry("run-1", "agent-a", 3_000);
+    full.steps = 6;
+    full.occurrences = vec![occurrence("think", 1, 1), occurrence("evaluate", 1, 2)];
+    full.routes = vec![route(1), route(2)];
+    full.rounds = vec![round(1), round(2)];
+    full.partial = false;
+
+    write_entry(base, "agent-a", &date, &p1);
+    write_entry(base, "agent-a", &date, &p2);
+    write_entry(base, "agent-a", &date, &full);
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
+    let merged = &page.items[0];
+    assert_eq!(
+        merged.rounds.iter().map(|r| r.round).collect::<Vec<_>>(),
+        vec![1, 2],
+        "收尾行替换本片段增量行，轮次不得翻倍"
+    );
+    assert!(!merged.partial, "收尾后不再是半成品");
+    assert_eq!(merged.steps, 6, "图执行信息只来自收尾行");
+    assert_eq!(merged.occurrences.len(), 2);
+    assert_eq!(merged.created_at, 1_000, "created_at 取 run 起点");
+}
+
+#[test]
+fn rerun_fragments_keep_rounds_from_every_fragment() {
+    // 一次唤醒内因意图修订重跑两次：真实落盘形态是每个片段各自
+    // 「N 行增量 + 1 行收尾」。第二个片段的收尾行只能替换**本片段**的增量行，
+    // 既不能把第一个片段的轮次一起冲掉，也不能让本片段轮次重复出现。
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    let partial = |ts: u64, r: usize| {
+        let mut e = entry("run-1", "agent-a", ts);
+        e.steps = 0;
+        e.occurrences.clear();
+        e.routes.clear();
+        e.fingerprint.clear();
+        e.partial = true;
+        e.rounds = vec![round(r)];
+        e
+    };
+    let final_line = |ts: u64, seq: usize| {
+        let mut e = entry("run-1", "agent-a", ts);
+        e.steps = 2;
+        e.occurrences = vec![
+            occurrence("think", seq, seq),
+            occurrence("evaluate", seq, seq + 1),
+        ];
+        e.routes = vec![route(seq)];
+        e.rounds = vec![round(1), round(2)];
+        e.partial = false;
+        e
+    };
+
+    // 片段 1：两轮增量 + 收尾
+    write_entry(base, "agent-a", &date, &partial(1_000, 1));
+    write_entry(base, "agent-a", &date, &partial(2_000, 2));
+    write_entry(base, "agent-a", &date, &final_line(3_000, 1));
+    // 片段 2：重跑，轮次从 1 重新计数
+    write_entry(base, "agent-a", &date, &partial(4_000, 1));
+    write_entry(base, "agent-a", &date, &partial(5_000, 2));
+    write_entry(base, "agent-a", &date, &final_line(6_000, 2));
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
+    let merged = &page.items[0];
+    assert_eq!(
+        merged.rounds.iter().map(|r| r.round).collect::<Vec<_>>(),
+        vec![1, 2, 3, 4],
+        "两个片段各 2 轮，必须连续且各出现一次"
+    );
+    assert_eq!(merged.steps, 4, "两个片段的图步数都要累计");
+    assert_eq!(merged.occurrences.len(), 4, "两个片段的节点序列都要保留");
+    assert!(!merged.partial, "收尾后不再是半成品");
 }
 
 #[test]

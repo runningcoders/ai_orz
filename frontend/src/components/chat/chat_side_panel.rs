@@ -13,6 +13,24 @@
 //!
 //! 面板纯只读：数据加载复用现有项目/任务/产物/Agent API，
 //! 创建与编辑操作仍在跳转各自详情页完成。
+//!
+//! ## 刷新只跟着「看得见的东西」走
+//!
+//! 侧栏收起时外层 div 只是 `hidden`，组件与各 Tab 仍挂载 —— 若不做门闩，
+//! SSE 每来一条消息都会替一个看不见的面板重拉项目详情与任务列表。因此刷新分三层收紧：
+//!
+//! 1. 面板收起（`visible=false`）→ 冻结下发给各 Tab 的刷新计数，零请求；
+//! 2. Tab 维度 → 只有当前 Tab 真正消费的那份数据才刷新（见 [`tab_data_needs`]），
+//!    工具 / 思考 Tab 自取数，不再陪跑项目与任务请求；
+//! 3. Agent Tab 的子视图 → 点进某个 Agent 详情后，列表视图不在屏上就不再批量重取。
+//!
+//! 切 Tab 会为它消费的数据即时补刷一次（等同局部手动刷新），所以裁剪不会让用户
+//! 看到陈旧数据。
+//!
+//! 例外是**工具 / 思考**两个 Tab：它们的数据源（工具调用记录、`think_trace` JSONL）
+//! 变化不产生会话消息、没有 SSE 可等，只能拉。故给它们一条独立的低频轮询通道
+//! （`LIVE_REFRESH_SECS`，仅面板可见且正看这两个 Tab 时推进），近似实时地看到
+//! 新增工具调用与思考轮次。
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -53,6 +71,14 @@ use common::models::{AgentStats, ModelCallStats};
 /// SSE 消息触发的防抖刷新等待时长（毫秒）
 const REFRESH_DEBOUNCE_MS: u64 = 2000;
 
+/// 工具 / 思考 Tab 的「接近实时」轮询周期（秒）
+///
+/// 这两个 Tab 的数据源（工具调用记录、`think_trace` JSONL）没有 SSE 推送，只能拉；
+/// 但也不必跟 chat 主链路的 3s 诊断轮询同频：一道思考通常十几秒才落一轮，
+/// 工具调用也只在真正调用时才有新行，取 6s（主链路两拍）已足够「接近实时」，
+/// 请求量仍是一个 Tab 每 6s 一次分页查询。叠加各 Tab 自带的 2s 防抖后实际约 8s 一刷。
+const LIVE_REFRESH_SECS: u64 = 6;
+
 /// 运行统计的时间窗口（分钟）
 ///
 /// 与工作台顶栏 `RUNTIME_METRICS_WINDOW_MINUTES` 同口径：侧栏这一栏是**运行时**读数，
@@ -86,6 +112,62 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
         ArtifactSourceType::GeneratedContent => "生成内容",
         ArtifactSourceType::RemoteUrl => "远程链接",
     }
+}
+
+/// 侧栏 Tab 序列（索引 ↔ 名称的唯一事实源）
+///
+/// 渲染、刷新裁剪（[`tab_data_needs`]）、轮询判定（[`tab_needs_live_poll`]）都从
+/// 这里取名字，不再各自硬编码 0..5 —— 增删或重排 Tab 时不会静默错位
+/// （错位会让某个 Tab 白陪跑请求、或该轮询的没轮询到）。
+fn tab_names(is_project_mode: bool) -> &'static [&'static str] {
+    if is_project_mode {
+        &["总览", "任务", "产物", "Agent", "工具", "思考"]
+    } else {
+        &["Agent", "任务", "产物", "工具", "思考"]
+    }
+}
+
+/// 取某个索引的 Tab 名，越界返回 `None`（调用方按「不消费 / 不轮询」处理）
+fn tab_name(is_project_mode: bool, tab: usize) -> Option<&'static str> {
+    tab_names(is_project_mode).get(tab).copied()
+}
+
+/// 当前 Tab 真正消费的侧栏数据：`(需要项目详情, 需要任务列表)`
+///
+/// 侧栏按 Tab 裁剪刷新范围的依据 —— SSE 消息到达时，只有这两份数据的消费方
+/// 值得为之付一次请求；其余 Tab 等用户切过去时再补（切 Tab 会即时刷一次）。
+///
+/// 按 Tab **名**判定而非索引，与 [`tab_names`] 同源：
+/// - 总览只用 `GetProjectResponse`（目标、进度汇总、执行计划/结果）
+/// - 任务只用任务列表（依赖图与列表都从 `TaskListItem` 构建）
+/// - 产物两者都用：项目级产物来自详情，任务级产物要按任务标题分组
+/// - 项目模式的 Agent 两者都用：owner 来自详情，成员集合由任务 assignee 推导
+/// - 工具 / 思考各自取数，不消费侧栏这两份数据
+///
+/// ⚠️ 同名 Tab 在两种模式下消费的数据并不相同，两个分支都必须带 `is_project_mode`：
+/// - 产物：项目模式按任务标题分组，要两份；默认对话是硬编码空态「暂无产物」
+///   （产物硬绑定真实项目，游离任务不可能有产物），一份都不该拉
+/// - Agent：项目模式的成员集合由任务 assignee 推导，要两份；默认对话由
+///   `reception_agent_id` + chat 主链路共享轮询供数，也不消费这两份
+fn tab_data_needs(is_project_mode: bool, tab: usize) -> (bool, bool) {
+    match tab_name(is_project_mode, tab) {
+        Some("总览") => (true, false),
+        Some("任务") => (false, true),
+        Some("产物" | "Agent") if is_project_mode => (true, true),
+        _ => (false, false),
+    }
+}
+
+/// 该 Tab 是否该跟「接近实时」轮询（工具 / 思考）
+///
+/// 这两个 Tab 的内容变化不会推 SSE 消息（工具调用记录只在调用时写库，
+/// `think_trace` 是逐轮落盘的 JSONL），只能靠拉取才看得到新增，
+/// 因此给它们一条独立的周期通道；其余 Tab 的数据都有 SSE 消息或自身接口兜着。
+///
+/// 按 Tab 名判定：两种模式下工具 / 思考的索引并不相同（默认对话少了总览），
+/// 用名字就不用记两套数字。
+fn tab_needs_live_poll(is_project_mode: bool, tab: usize) -> bool {
+    matches!(tab_name(is_project_mode, tab), Some("工具" | "思考"))
 }
 
 /// 将产物按归属拆分为两组：项目级（task_id=None）/ 任务级（task_id=Some）
@@ -131,6 +213,8 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 /// - `agent_info`：主链路轮询共享的 Agent 详情，Agent Tab 优先消费（id 匹配时零请求）
 /// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据。
 ///   同样必须以 Signal 传入才能驱动 use_effect 重跑
+/// - `visible`：侧栏是否展开。面板收起时外层 div 只是 `hidden`、组件仍挂载，
+///   本组件据此冻结下发给各 Tab 的刷新计数 —— 看不见的面板一次请求都不该发
 /// - `stats_poll_tick`：统计周期刷新计数器（chat 页 3s 轮询每 30s 递增），
 ///   仅叠加进 Agent 统计 Tab 的刷新驱动，静默期统计不再停摆
 /// - `on_close`：收起面板回调
@@ -139,6 +223,7 @@ pub fn ChatSidePanel(
     project_id: Signal<Option<String>>,
     reception_agent_id: Option<String>,
     refresh_tick: Signal<u64>,
+    visible: Signal<bool>,
     stats_poll_tick: u64,
     on_close: Callback,
     /// 主链路轮询共享的目标 Agent 详情（chat 页置底状态气泡与轮询同源），
@@ -156,14 +241,20 @@ pub fn ChatSidePanel(
     let toast = use_toast();
     let mut project = use_signal(|| None::<GetProjectResponse>);
     let mut tasks = use_signal(Vec::<TaskListItem>::new);
-    let mut loading = use_signal(|| false);
+    // 在途请求数：项目详情与任务列表现在可被不同 Tab 独立刷新、也可能并发，
+    // 用计数而不是 bool 承载顶部 spinner，避免先完成的一方提前把它关掉
+    let mut pending = use_signal(|| 0u32);
     let mut active_tab = use_signal(|| 0usize);
-    // 加载代际计数：防抖刷新与项目切换时丢弃过期请求结果
-    let mut load_gen = use_signal(|| 0u64);
+    // 加载代际计数：按数据源分开。两份数据已能各自独立刷新，
+    // 共用一代会让并发的两个请求互相把对方判为过期而丢弃
+    let mut project_gen = use_signal(|| 0u64);
+    let mut tasks_gen = use_signal(|| 0u64);
     let mut prev_project_id = use_signal(|| Option::<String>::None);
     let mut prev_tick = use_signal(|| 0u64);
-    // 首帧兜底开关：变化检测的初值比较在首帧恒为 false（None==None / 0==0），
+    let mut prev_tab = use_signal(|| 0usize);
+    // 首次可见运行开关：变化检测的初值比较在首帧恒为 false（None==None / 0==0），
     // 默认对话首帧会跳过加载 → 任务面板空「暂无任务」。首帧强制走一次加载后关闭。
+    // 侧栏收起时首帧分支不执行（也不写回），故它实际是「首次可见」而非「首次渲染」。
     let mut first_run = use_signal(|| true);
     // 手动刷新计数：叠加到 refresh_tick 一并下发给工具调用 Tab
     let mut manual_tick = use_signal(|| 0u64);
@@ -176,40 +267,61 @@ pub fn ChatSidePanel(
     // Modal 需要挂在本组件返回的 rsx 里）
     let mut graph_zoom_open = use_signal(|| false);
 
-    // 加载项目数据：debounce=true 时先等待防抖窗口（SSE 触发），期间被更新的代际直接丢弃
-    let mut do_load = move |pid: String, debounce: bool| {
-        let my_gen = load_gen() + 1;
-        load_gen.set(my_gen);
-        loading.set(true);
+    // 加载项目详情（总览 / 产物 / Agent 三个 Tab 的消费源）
+    //
+    // debounce=true 时先等待防抖窗口（SSE 触发），期间被更新的代际直接丢弃。
+    // 与任务列表拆开的理由见 [`tab_data_needs`]：任务 Tab 只要任务列表，
+    // 没必要为它顺带拉一遍带 artifacts 的项目详情。
+    let mut do_load_project = move |pid: String, debounce: bool| {
+        let my_gen = project_gen() + 1;
+        project_gen.set(my_gen);
+        pending.set(pending() + 1);
         spawn(async move {
             if debounce {
                 gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
-                if load_gen() != my_gen {
-                    return;
+            }
+            if project_gen() == my_gen {
+                let req = GetProjectRequest {
+                    id: pid,
+                    with_progress_summary: Some(true),
+                    with_artifacts: Some(true),
+                    // 依赖图已改由前端从任务列表自绘（build_task_graph_data），
+                    // 不再向后端要 Mermaid task_graph（项目详情页仍需要，别处勿效仿删除）
+                    ..Default::default()
+                };
+                let res = get_project(req).await;
+                if project_gen() == my_gen {
+                    match res {
+                        Ok(p) => project.set(Some(p)),
+                        Err(e) => toast.error(format!("加载项目信息失败: {}", e)),
+                    }
                 }
             }
-            let req = GetProjectRequest {
-                id: pid.clone(),
-                with_progress_summary: Some(true),
-                with_artifacts: Some(true),
-                // 依赖图已改由前端从任务列表自绘（build_task_graph_data），
-                // 不再向后端要 Mermaid task_graph（项目详情页仍需要，别处勿效仿删除）
-                ..Default::default()
-            };
-            let proj_res = get_project(req).await;
-            let tasks_res = list_project_tasks(&pid).await;
-            if load_gen() != my_gen {
-                return;
+            pending.set(pending().saturating_sub(1));
+        });
+    };
+
+    // 加载项目任务列表（任务 / 产物 / Agent 三个 Tab 的消费源）
+    //
+    // 产物按任务标题分组、Agent 成员集合由任务 assignee 推导，故这两个 Tab 也要它。
+    let mut do_load_tasks = move |pid: String, debounce: bool| {
+        let my_gen = tasks_gen() + 1;
+        tasks_gen.set(my_gen);
+        pending.set(pending() + 1);
+        spawn(async move {
+            if debounce {
+                gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
             }
-            match proj_res {
-                Ok(p) => project.set(Some(p)),
-                Err(e) => toast.error(format!("加载项目信息失败: {}", e)),
+            if tasks_gen() == my_gen {
+                let res = list_project_tasks(&pid).await;
+                if tasks_gen() == my_gen {
+                    match res {
+                        Ok(r) => tasks.set(r.tasks),
+                        Err(e) => toast.error(format!("加载任务列表失败: {}", e)),
+                    }
+                }
             }
-            match tasks_res {
-                Ok(r) => tasks.set(r.tasks),
-                Err(e) => toast.error(format!("加载任务列表失败: {}", e)),
-            }
-            loading.set(false);
+            pending.set(pending().saturating_sub(1));
         });
     };
 
@@ -224,15 +336,12 @@ pub fn ChatSidePanel(
     // ② 不足 `FLOATING_TASK_PANEL_LIMIT` 条时，拉最近 Completed 倒序补齐——
     //    任务刚完成时 updated_at 最新，正好落在补齐段顶部，解决「还没等看就消失」。
     let mut do_load_floating = move |debounce: bool| {
-        let my_gen = load_gen() + 1;
-        load_gen.set(my_gen);
-        loading.set(true);
+        let my_gen = tasks_gen() + 1;
+        tasks_gen.set(my_gen);
+        pending.set(pending() + 1);
         spawn(async move {
             if debounce {
                 gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
-                if load_gen() != my_gen {
-                    return;
-                }
             }
             // 第一段：未完成任务（进行中 + 待办），带 limit 上限
             let unfinished_req = TaskQueryRequest {
@@ -245,50 +354,47 @@ pub fn ChatSidePanel(
                 ..Default::default()
             };
             let unfinished = match query_tasks(&unfinished_req).await {
-                Ok(page) => page.items,
+                Ok(page) => Some(page.items),
                 Err(e) => {
-                    if load_gen() != my_gen {
-                        return;
+                    if tasks_gen() == my_gen {
+                        toast.error(format!("加载任务列表失败: {}", e));
                     }
-                    toast.error(format!("加载任务列表失败: {}", e));
-                    loading.set(false);
-                    return;
+                    None
                 }
             };
-            if load_gen() != my_gen {
-                return;
-            }
-            // 第二段：数量不足上限才拉补齐段（零增量请求的开销只发生在真需要时）
-            let mut merged = unfinished;
-            if merged.len() < FLOATING_TASK_PANEL_LIMIT {
-                let recent_req = TaskQueryRequest {
-                    project_id: request_scope(None),
-                    // 只补 Completed：Archived 是用户主动归档，不翻出来；
-                    // Cancelled 由后端基线 `status != 0` 排除
-                    status_in: Some(vec![TaskStatus::Completed]),
-                    pagination: PaginationParams {
-                        limit: Some(FLOATING_TASK_PANEL_LIMIT),
-                        offset: None,
-                    },
-                    ..Default::default()
-                };
-                match query_tasks(&recent_req).await {
-                    Ok(page) => {
-                        merged = merge_unfinished_with_recent(
-                            merged,
-                            page.items,
-                            FLOATING_TASK_PANEL_LIMIT,
-                        );
+            if let Some(mut merged) = unfinished
+                && tasks_gen() == my_gen
+            {
+                // 第二段：数量不足上限才拉补齐段（零增量请求的开销只发生在真需要时）
+                if merged.len() < FLOATING_TASK_PANEL_LIMIT {
+                    let recent_req = TaskQueryRequest {
+                        project_id: request_scope(None),
+                        // 只补 Completed：Archived 是用户主动归档，不翻出来；
+                        // Cancelled 由后端基线 `status != 0` 排除
+                        status_in: Some(vec![TaskStatus::Completed]),
+                        pagination: PaginationParams {
+                            limit: Some(FLOATING_TASK_PANEL_LIMIT),
+                            offset: None,
+                        },
+                        ..Default::default()
+                    };
+                    match query_tasks(&recent_req).await {
+                        Ok(page) => {
+                            merged = merge_unfinished_with_recent(
+                                merged,
+                                page.items,
+                                FLOATING_TASK_PANEL_LIMIT,
+                            );
+                        }
+                        // 补齐失败不丢主数据：未完成列表已可用，仅提示补齐段缺失
+                        Err(e) => toast.error(format!("加载最近任务失败: {}", e)),
                     }
-                    // 补齐失败不丢主数据：未完成列表已可用，仅提示补齐段缺失
-                    Err(e) => toast.error(format!("加载最近任务失败: {}", e)),
+                }
+                if tasks_gen() == my_gen {
+                    tasks.set(merged);
                 }
             }
-            if load_gen() != my_gen {
-                return;
-            }
-            tasks.set(merged);
-            loading.set(false);
+            pending.set(pending().saturating_sub(1));
         });
     };
 
@@ -298,11 +404,66 @@ pub fn ChatSidePanel(
     let pid_for_refresh = project_id_value.clone();
     let pid_for_tab = project_id_value.clone();
 
-    // 项目切换 → 立即加载并重置面板状态；refresh_tick 变化 → 防抖刷新
+    // 分发给各 Tab 的刷新计数：侧栏收起时冻结。
+    //
+    // chat 页的 `refresh_tick` 按 SSE 消息递增，而侧栏收起时外层 div 只是 `hidden`、
+    // 组件与各 Tab 仍挂着 —— 直接下发会让看不见的面板照样发请求。这里把它落成
+    // 一个「可见时才前进」的计数：收起期间 tick 原地不动，重新展开时一次性补上，
+    // 各 Tab 的 `refresh_tick` 变化依赖随之自然停摆。
+    let mut tab_tick = use_signal(|| 0u64);
     use_effect(move || {
+        if !visible() {
+            return;
+        }
+        let now = refresh_tick() + manual_tick();
+        // Signal::set 不做相等去重：只在真的变化时写回，否则 effect 自订阅成死循环（同 E2E-1）
+        if tab_tick() != now {
+            tab_tick.set(now);
+        }
+    });
+
+    // 工具 / 思考 Tab 的接近实时轮询：只在「面板可见 且 正看这两个 Tab」时推进。
+    //
+    // 为什么不复用 SSE tick：这两个 Tab 的数据变化本就不产生会话消息（工具调用与思考
+    // 轮次都是旁路写库/写文件），SSE tick 永远等不到它们；也不复用 chat 主链路的 3s
+    // 循环 —— 那是给置底状态气泡用的，对这两份数据太浪费。故单起一条低频循环。
+    // 每拍醒来重判可见性与 Tab：切走 / 收起立刻停摆，切回来重新计时，不会因切走前
+    // 的那半拍马上触发一次。
+    //
+    // ⚠️ 这个 effect 只起**一个**循环：`use_effect` 的依赖在同步执行的闭包体里建立，
+    //    `spawn` 内异步读取的 `visible()` / `project_id()` / `active_tab()` 不进依赖表，
+    //    因此 `live_tick.set` 不会反过来重跑本 effect 再 spawn 一个循环（否则每 6s 翻倍）。
+    //    与 chat 页 3s 主轮询同写法，改这里前先确认 Dioxus 仍保持该语义。
+    let mut live_tick = use_signal(|| 0u64);
+    use_effect(move || {
+        spawn(async move {
+            loop {
+                gloo_timers::future::sleep(Duration::from_secs(LIVE_REFRESH_SECS)).await;
+                if visible() && tab_needs_live_poll(project_id().is_some(), active_tab()) {
+                    live_tick.set(live_tick() + 1);
+                }
+            }
+        });
+    });
+
+    // 项目切换 → 立即全量加载并重置面板状态；
+    // 切 Tab → 只补刷该 Tab 消费的那份数据；同一 Tab 内 tick 变化 → 防抖刷新它。
+    //
+    // 为什么要按 Tab 裁剪：SSE 每来一条消息都会推 tick，此前无论用户在看哪个 Tab
+    // 都要重拉「带 artifacts 的项目详情 + 项目任务列表」；而工具 / 思考 Tab 自己取数、
+    // 根本不消费这两份数据，任务 Tab 也只用任务列表。裁剪后不可见 Tab 零请求。
+    use_effect(move || {
+        // 面板收起：连 prev_* 一并不写回，让展开后按「首次可见 / 换过项目 / 换过 Tab」
+        // 重新判定一次，该补的刷新在展开那一刻一次性完成 —— 收起的侧栏零请求零加载
+        if !visible() {
+            return;
+        }
         let pid = project_id();
-        let tick = refresh_tick();
+        let tick = tab_tick();
+        let tab = active_tab();
+        let is_project = pid.is_some();
         let project_changed = prev_project_id() != pid;
+        let tab_changed = prev_tab() != tab;
         let tick_changed = prev_tick() != tick;
         let first_run_now = first_run();
         // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
@@ -310,48 +471,80 @@ pub fn ChatSidePanel(
         if project_changed || first_run_now {
             prev_project_id.set(pid.clone());
         }
+        if tab_changed {
+            prev_tab.set(tab);
+        }
         if tick_changed {
             prev_tick.set(tick);
         }
         if project_changed || first_run_now {
             first_run.set(false);
             active_tab.set(0);
+            prev_tab.set(0);
             expanded_task_id.set(None);
             task_cache.set(HashMap::new());
+            // 首帧 / 切项目：两份数据都拉，保证任何 Tab 切过去都有基线（不做按 Tab 裁剪）
             match pid {
-                Some(id) => do_load(id, false),
+                Some(id) => {
+                    do_load_project(id.clone(), false);
+                    do_load_tasks(id, false);
+                }
                 None => {
                     project.set(None);
                     // 默认对话 = 默认虚拟项目：任务域是游离任务，同步拉取
                     do_load_floating(false);
                 }
             }
-        } else if tick_changed {
-            // SSE 消息触发：项目模式重拉项目数据，默认对话重拉游离任务
-            match pid {
-                Some(id) => do_load(id, true),
-                None => do_load_floating(true),
+            return;
+        }
+        // 既没换 Tab 也没有新 tick：无需打扰后端。
+        // 这一条同时挡住「首帧分支里 active_tab.set(0)」引发的自重跑（值变了但 tab_changed=false）
+        if !tab_changed && !tick_changed {
+            return;
+        }
+        let (need_project, need_tasks) = tab_data_needs(is_project, tab);
+        if !need_project && !need_tasks {
+            return;
+        }
+        // 切 Tab 是用户主动操作，等同局部手动刷新（立即拉，不防抖），避免切过去看到旧数据；
+        // 同一 Tab 内由 SSE 触发的刷新仍走 2s 防抖合并
+        let debounce = !tab_changed;
+        match pid {
+            Some(id) => {
+                if need_project {
+                    do_load_project(id.clone(), debounce);
+                }
+                if need_tasks {
+                    do_load_tasks(id, debounce);
+                }
+            }
+            None => {
+                if need_tasks {
+                    do_load_floating(debounce);
+                }
             }
         }
     });
 
-    // 手动刷新：项目模式重拉项目数据，默认对话重拉游离任务；两种模式均同步刷新工具调用 Tab
+    // 手动刷新：项目模式重拉两份数据，默认对话重拉游离任务；两种模式均同步刷新工具调用 Tab
     let manual_refresh = move |_| {
         manual_tick.set(manual_tick() + 1);
         match pid_for_refresh.clone() {
-            Some(id) => do_load(id, false),
+            Some(id) => {
+                do_load_project(id.clone(), false);
+                do_load_tasks(id, false);
+            }
             None => do_load_floating(false),
         }
     };
 
-    let tab_labels: Vec<&'static str> = if is_project_mode {
-        vec!["总览", "任务", "产物", "Agent", "工具", "思考"]
-    } else {
-        vec!["Agent", "任务", "产物", "工具", "思考"]
-    };
+    // Tab 序列取自 [`tab_names`] 唯一事实源，渲染与刷新判定不会各自漂移
+    let tab_labels: Vec<&'static str> = tab_names(is_project_mode).to_vec();
 
-    // 工具调用 Tab 的刷新驱动：SSE tick + 手动刷新计数
-    let tool_tab_tick = refresh_tick() + manual_tick();
+    // 工具调用 Tab 的刷新驱动：已按可见性冻结的 tick（SSE + 手动刷新）
+    let tool_tab_tick = tab_tick();
+    // 工具 / 思考 Tab 的实际刷新驱动：在可见 tick 之上叠加低频轮询节拍（仅这两个 Tab 在涨）
+    let live_tab_tick = tool_tab_tick + live_tick();
     // Agent 统计 Tab 的刷新驱动：SSE tick + 手动刷新 + 30s 周期 tick（对齐后端统计落盘节奏）
     let agent_stats_tick = tool_tab_tick + stats_poll_tick;
 
@@ -393,6 +586,9 @@ pub fn ChatSidePanel(
                     ProjectAgentsTab {
                         project_owner_id: p.owner_agent_id.clone(),
                         tasks: tasks_list.clone(),
+                        // Agent Tab 走 SSE/手动 tick 即可：它有会话消息可等，
+                        // 不该吃工具 / 思考那条轮询通道（tab_needs_live_poll 已排除它，
+                        // 但这里若写 live_tab_tick，将来 Tab 序列一变就会连带被轮询）
                         refresh_tick: tool_tab_tick,
                         agent_info,
                         agent_stats_tick,
@@ -404,7 +600,7 @@ pub fn ChatSidePanel(
                 ToolCallsTab {
                     project_id: pid_for_tab.clone(),
                     agent_id: None,
-                    refresh_tick: tool_tab_tick,
+                    refresh_tick: live_tab_tick,
                 }
             },
             // 思考轨迹：项目模式下按 project_id 跨 Agent 聚合（一行一个 run，
@@ -413,7 +609,7 @@ pub fn ChatSidePanel(
                 ThinkTracesTab {
                     project_id: pid_for_tab.clone(),
                     agent_id: None,
-                    refresh_tick: tool_tab_tick,
+                    refresh_tick: live_tab_tick,
                 }
             },
             _ => rsx! {},
@@ -446,7 +642,7 @@ pub fn ChatSidePanel(
                 ToolCallsTab {
                     project_id: None,
                     agent_id: reception_agent_id.clone(),
-                    refresh_tick: tool_tab_tick,
+                    refresh_tick: live_tab_tick,
                 }
             },
             // 默认对话：按前台 Agent 过滤其思考轨迹
@@ -454,7 +650,7 @@ pub fn ChatSidePanel(
                 ThinkTracesTab {
                     project_id: None,
                     agent_id: reception_agent_id.clone(),
-                    refresh_tick: tool_tab_tick,
+                    refresh_tick: live_tab_tick,
                 }
             },
             _ => rsx! {},
@@ -464,7 +660,7 @@ pub fn ChatSidePanel(
     rsx! {
         div { class: "p-3 border-b border-base-300 flex items-center gap-2",
             h3 { class: "font-semibold text-sm flex-1 truncate", "信息面板" }
-            if loading() {
+            if pending() > 0 {
                 Loading { size: "xs" }
             }
             button {
@@ -1046,20 +1242,20 @@ pub(crate) fn AgentInfoTab(
 ) -> Element {
     let mut agent = use_signal(|| None::<GetAgentResponse>);
     let mut failed = use_signal(|| false);
-    // effect 闭包需要 'static 捕获，单独克隆一份，渲染段仍可直接用 agent_id
-    let agent_id_for_effect = agent_id.clone();
-    use_effect(move || {
-        // 共享数据已就绪且 id 匹配：跳过自身请求
-        if shared_info()
-            .as_ref()
-            .is_some_and(|a| a.id == agent_id_for_effect)
-        {
+    // 共享数据已就绪且 id 匹配：跳过自身请求
+    //
+    // ⚠️ `agent_id` 是普通 prop，`use_effect` 不订阅它 —— 必须用 `use_reactive`
+    // 显式声明，否则从项目内 Agent 列表切到另一个 Agent 详情时会继续展示上一个的数据
+    use_effect(use_reactive(&agent_id, move |aid: String| {
+        // peek 而非读取：chat 主链路每 3s 重写 shared_info，若在这里订阅，看非 owner
+        // Agent 时会被它的高频更新带着每 3s 重发一次自身请求
+        let shared = shared_info.peek();
+        if shared.as_ref().is_some_and(|a| a.id == aid) {
             return;
         }
-        let id = agent_id_for_effect.clone();
         spawn(async move {
             let req = GetAgentRequest {
-                id,
+                id: aid,
                 ..Default::default()
             };
             match get_agent(req).await {
@@ -1067,7 +1263,7 @@ pub(crate) fn AgentInfoTab(
                 Err(_) => failed.set(true),
             }
         });
-    });
+    }));
 
     // ---- 运行统计：独立拉取（带 stats fetch-options），防抖刷新与代际丢弃 ----
     // 四元组同源于一次响应：避免切换 Agent 时统计数据与上下文长度错代混用
@@ -1082,12 +1278,12 @@ pub(crate) fn AgentInfoTab(
     let mut stats_loaded = use_signal(|| false);
     let mut stats_gen = use_signal(|| 0u64);
     let mut prev_stats_tick = use_signal(|| 0u64);
-    let agent_id_for_stats = agent_id.clone();
 
-    let mut load_stats = move |debounce: bool| {
+    // id 由调用方传入而不是闭包捕获：项目内 Agent 列表里切到另一个 Agent 时，
+    // 组件不重建，捕获值会一直是挂载时那个 id，统计就会拉到别人身上
+    let mut load_stats = move |id: String, debounce: bool| {
         let my_gen = stats_gen() + 1;
         stats_gen.set(my_gen);
-        let id = agent_id_for_stats.clone();
         spawn(async move {
             if debounce {
                 gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
@@ -1110,12 +1306,18 @@ pub(crate) fn AgentInfoTab(
                 ..Default::default()
             };
             let pair = match get_agent(req).await {
-                Ok(a) => Some((
-                    a.stats.clone(),
-                    a.model_call_stats.clone(),
-                    a.context_length,
-                    a.context_length_threshold,
-                )),
+                Ok(a) => {
+                    // 顺带用这次响应刷新详情本身：非 owner 的 Agent（项目内其它成员）吃不到
+                    // chat 主链路的 3s 共享轮询，状态徽章只有靠这一次才能动，
+                    // 否则会一直停在「点开那一刻」的运行时状态
+                    agent.set(Some(a.clone()));
+                    Some((
+                        a.stats.clone(),
+                        a.model_call_stats.clone(),
+                        a.context_length,
+                        a.context_length_threshold,
+                    ))
+                }
                 Err(_) => None,
             };
             if stats_gen() != my_gen {
@@ -1130,30 +1332,32 @@ pub(crate) fn AgentInfoTab(
 
     // 挂载/Agent 切换 → 立即加载；refresh_tick 变化 → 防抖刷新。
     // 守卫结构与 ToolCallsTab 一致：仅在值真正变化时写回 + 调 load，
-    // 避免 load 内写 gen 信号触发 effect 重跑 → 无条件 load 的请求循环（同 E2E-1）
+    // 避免 load 内写 gen 信号触发 effect 重跑 → 无条件 load 的请求循环（同 E2E-1）。
+    //
+    // ⚠️ 两个值 prop 都要 `use_reactive` 声明：`use_effect` 不订阅普通 prop，
+    // 否则 30s 统计节拍、SSE 与手动刷新都推不动这一栏
     let mut prev_stats_agent = use_signal(String::new);
-    // effect 闭包 'static 捕获会 move agent_id，渲染段还要用，单独克隆一份
-    let agent_id_for_key = agent_id.clone();
-    use_effect(move || {
-        let tick = refresh_tick;
-        let aid = agent_id_for_key.clone();
-        let agent_changed = prev_stats_agent() != aid;
-        let tick_changed = prev_stats_tick() != tick;
-        if agent_changed {
-            prev_stats_agent.set(aid);
-        }
-        if tick_changed {
-            prev_stats_tick.set(tick);
-        }
-        if agent_changed {
-            // 切换 Agent 时丢弃旧统计，避免新请求返回前闪现上一个 Agent 的数据
-            stats_pair.set(None);
-            stats_loaded.set(false);
-            load_stats(false);
-        } else if tick_changed {
-            load_stats(true);
-        }
-    });
+    use_effect(use_reactive(
+        (&agent_id, &refresh_tick),
+        move |(aid, tick)| {
+            let agent_changed = prev_stats_agent() != aid;
+            let tick_changed = prev_stats_tick() != tick;
+            if agent_changed {
+                prev_stats_agent.set(aid.clone());
+            }
+            if tick_changed {
+                prev_stats_tick.set(tick);
+            }
+            if agent_changed {
+                // 切换 Agent 时丢弃旧统计，避免新请求返回前闪现上一个 Agent 的数据
+                stats_pair.set(None);
+                stats_loaded.set(false);
+                load_stats(aid, false);
+            } else if tick_changed {
+                load_stats(aid, true);
+            }
+        },
+    ));
 
     if failed() {
         return empty_hint("Agent 信息加载失败");
@@ -1216,6 +1420,83 @@ pub(crate) fn AgentInfoTab(
 mod tests {
     use super::*;
     use common::enums::FileType;
+
+    #[test]
+    fn tab_needs_live_poll_only_tools_and_thinking() {
+        // 项目模式：总览/任务/产物/Agent 走 SSE 或自身接口；工具(4)/思考(5) 才需要低频轮询
+        assert!(!tab_needs_live_poll(true, 0));
+        assert!(!tab_needs_live_poll(true, 1));
+        assert!(!tab_needs_live_poll(true, 2));
+        assert!(!tab_needs_live_poll(true, 3));
+        assert!(tab_needs_live_poll(true, 4));
+        assert!(tab_needs_live_poll(true, 5));
+        // 默认对话少一个总览 Tab，工具/思考前移到 3/4
+        assert!(!tab_needs_live_poll(false, 0));
+        assert!(!tab_needs_live_poll(false, 1));
+        assert!(!tab_needs_live_poll(false, 2));
+        assert!(tab_needs_live_poll(false, 3));
+        assert!(tab_needs_live_poll(false, 4));
+        // 越界索引不得被当成工具/思考（否则会凭空多一条轮询通道）
+        assert!(!tab_needs_live_poll(true, 6));
+        assert!(!tab_needs_live_poll(false, 5));
+    }
+
+    #[test]
+    fn tab_data_needs_only_marks_consumers() {
+        // 项目模式：总览只要项目详情；任务只要任务列表；
+        // 产物 / Agent 两者都要；工具 / 思考都不需要（各自取数）
+        assert_eq!(tab_data_needs(true, 0), (true, false));
+        assert_eq!(tab_data_needs(true, 1), (false, true));
+        assert_eq!(tab_data_needs(true, 2), (true, true));
+        assert_eq!(tab_data_needs(true, 3), (true, true));
+        assert_eq!(tab_data_needs(true, 4), (false, false));
+        assert_eq!(tab_data_needs(true, 5), (false, false));
+        // 默认对话：只有任务 Tab 消费游离任务列表，产物是空态占位、Agent 走共享轮询
+        assert_eq!(tab_data_needs(false, 0), (false, false));
+        assert_eq!(tab_data_needs(false, 1), (false, true));
+        assert_eq!(tab_data_needs(false, 2), (false, false));
+        assert_eq!(tab_data_needs(false, 3), (false, false));
+        assert_eq!(tab_data_needs(false, 4), (false, false));
+    }
+
+    #[test]
+    fn tab_judgements_follow_tab_names_not_indexes() {
+        // 判定函数按 Tab **名**取值，与渲染用的 tab_names 同源。
+        // 这里遍历真实 Tab 序列逐个核对，且**不认识的名字直接 panic** ——
+        // 增删或重命名 Tab 时，判定表必须同步更新，不能悄悄落进默认分支
+        // （默认是不消费 / 不轮询，看似安全，实则新 Tab 会一直拿不到刷新）。
+        for is_project_mode in [true, false] {
+            for (index, name) in tab_names(is_project_mode).iter().enumerate() {
+                let needs = tab_data_needs(is_project_mode, index);
+                match *name {
+                    "总览" => assert_eq!(needs, (true, false), "{name}: 只用项目详情"),
+                    "任务" => assert_eq!(needs, (false, true), "{name}: 只用任务列表"),
+                    // 产物 / Agent 只在项目模式消费这两份：默认对话的产物是硬空态，
+                    // Agent 走共享轮询
+                    "产物" | "Agent" => {
+                        assert_eq!(
+                            needs,
+                            (is_project_mode, is_project_mode),
+                            "{name}: 仅项目模式消费"
+                        )
+                    }
+                    "工具" | "思考" => {
+                        assert_eq!(needs, (false, false), "{name}: 自取数，不陪跑")
+                    }
+                    other => panic!("新 Tab 名 {other} 未在 tab_data_needs 中显式判定"),
+                }
+
+                let live = tab_needs_live_poll(is_project_mode, index);
+                match *name {
+                    "工具" | "思考" => assert!(live, "{name}: 无 SSE 可等，必须轮询"),
+                    "总览" | "任务" | "产物" | "Agent" => {
+                        assert!(!live, "{name}: 有 SSE 或自身接口，不该轮询")
+                    }
+                    other => panic!("新 Tab 名 {other} 未在 tab_needs_live_poll 中显式判定"),
+                }
+            }
+        }
+    }
 
     fn test_artifact(id: &str, task_id: Option<&str>) -> ArtifactDetail {
         ArtifactDetail {

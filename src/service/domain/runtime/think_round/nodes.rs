@@ -967,9 +967,11 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         final_content,
     );
 
-    match kind {
+    // 先把裁决与出口信号算成一对值，再统一写回轨迹。
+    // 收在一处是为了让「本轮定型」只有一个出口——逐轮增量落盘（见函数尾部）
+    // 才不会因为分支各自 return 而漏记某一轮。
+    let (decision, signal): (&str, &str) = match kind {
         OutputKind::Final => {
-            set_trace_decision(&mut state, "final");
             state.result = Some(match exit {
                 Some(exit) => exit,
                 None => {
@@ -983,15 +985,13 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                     }
                 }
             });
-            Ok(NodeSignal::Yield(SIGNAL_EXIT.to_string()).into())
+            ("final", SIGNAL_EXIT)
         }
         OutputKind::ToolCalls => {
             if let Some(exit) = exit {
-                set_trace_decision(&mut state, "exit");
                 state.result = Some(exit);
-                Ok(NodeSignal::Yield(SIGNAL_EXIT.to_string()).into())
+                ("exit", SIGNAL_EXIT)
             } else if d.enable_reflect && !reflect_targets(&state).is_empty() {
-                set_trace_decision(&mut state, "reflect");
                 // 重复调用同一工具：插入自省节点，下一轮换方向
                 log_info!(
                     &d.ctx,
@@ -999,13 +999,24 @@ async fn run_evaluate(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                     "evaluate: repeated tools detected at round={}, entering reflect",
                     d.wake_rounds(round)
                 );
-                Ok(NodeSignal::Yield(SIGNAL_REFLECT.to_string()).into())
+                ("reflect", SIGNAL_REFLECT)
             } else {
-                set_trace_decision(&mut state, "continue");
-                Ok(NodeSignal::Yield(SIGNAL_CONTINUE.to_string()).into())
+                ("continue", SIGNAL_CONTINUE)
             }
         }
+    };
+
+    set_trace_decision(&mut state, decision);
+    // 本轮明细至此定型（assistant 文本 / reasoning / 工具结果 / 裁决齐备）：
+    // 取快照后立刻释放锁，再追加一行 partial 轨迹。写盘是同步 I/O，不能持锁。
+    // 这样前端在 run 未结束时查询也能看到已完成轮次，异常中断也不会整条丢失。
+    let finished_round = state.trace_rounds.last().cloned();
+    drop(state);
+    if let Some(round_trace) = finished_round {
+        super::runner::append_partial_round(d, &round_trace);
     }
+
+    Ok(NodeSignal::Yield(signal.to_string()).into())
 }
 
 #[cfg(test)]
