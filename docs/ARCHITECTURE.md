@@ -336,7 +336,7 @@ data/
 |--------|--------|------|
 | [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) | 总图：三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 总览 / 存储 / 质量门禁 |
 | [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) | 本体子系统：四条能力线 + 五道门闩 + 治理看板 | 读侧 / 写入门闩 / 治理面 |
-| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：唤醒 → 快判断 → 轮次 → 相位 → 落盘 → 查询 → 前端 | 一轮思考 / 轨迹链路 / 认知分层 |
+| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 落盘 → 查询 → 前端 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
 | [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 7 消费者 + 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
