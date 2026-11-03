@@ -71,6 +71,7 @@ awaken / settle / compact 场景下 `run_id` 等于 `MemoryTrace.id`；轨迹面
 - ✅ **DTO 逐字段映射，禁止透传内部结构**：`to_list_item` 负责把 `ThinkTraceEntry` 转成 common DTO，保证前后端契约只在 `common/src/api/runtime.rs` 定义。
 - ✅ **前端切换 Agent / 翻页要丢弃过期响应**：用加载代际计数（`load_gen`）比对后再写状态；选中 run 若不在新页，回落到首条，避免详情区显示上一页数据。
 - ❌ **同一 run 的重跑不能按行展示**：意图修订 / 执行回退会让同一 `run_id` 追加多行；查询层必须按 `(agent_id, run_id, scene)` 合并后再分页，否则同一个动作会变成两个动作并各自统计轮次。
+- ❌ **UI 展开 / 选中态不能用 `run_id` 单键**：Phase1 意图分析与 Phase2 唤醒**共享同一个 `run_id`**，列表 DOM key 与展开态必须用 `(agent_id, run_id, scene)`（common `ThinkTraceListItem::entry_key`），否则点一张卡片会同时展开 / 选中两张。
 - ❌ **合并时编号不能重复偏移**：occurrence 的节点序号偏移要取合并前快照，片段内后续节点不能再吃一遍偏移；轮次只在「后段编号小于等于前段」时后移，已累计的 `start_round` 不能二次相加。
 - ✅ **字段缺失靠 `serde(default)` 兼容**：历史行可能没有 `project_id` / `task_id`（2026-10-22 之后才写入），反序列化不得失败。
 - ✅ **pkg 层允许 Domain 直达**：`think_trace` 是基础设施（类似日志），没有 DAL/DAO 参与；不要为它硬造一层 DAO 转发。

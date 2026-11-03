@@ -182,6 +182,23 @@ pub struct ThinkTraceListItem {
     pub routes: Vec<ThinkTraceRouteDto>,
 }
 
+/// 轨迹条目的展示 / 合并标识：`(agent_id, run_id, scene)`
+///
+/// `run_id` 只在同一个图 run 内唯一：Phase1 意图分析与 Phase2 唤醒**共享**
+/// 主 `run_id`。因此单用 `run_id` 做合并键会把两个场景并成一条，做前端 DOM
+/// key / 展开态又会把两张卡片一起展开。后端查询合并与前端列表都走这里，
+/// 保证「合并键 = 展示标识」同源。
+pub fn think_trace_entry_key(agent_id: &str, run_id: &str, scene: &str) -> String {
+    format!("{agent_id}|{run_id}|{scene}")
+}
+
+impl ThinkTraceListItem {
+    /// 本条轨迹的展示 / 合并标识，见 [`think_trace_entry_key`]
+    pub fn entry_key(&self) -> String {
+        think_trace_entry_key(&self.agent_id, &self.run_id, &self.scene)
+    }
+}
+
 /// 单轮思考明细
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ThinkTraceRoundDto {
@@ -363,4 +380,32 @@ pub struct MemoryTraceDetail {
     pub output: Option<String>,
     /// 元数据
     pub metadata: std::collections::HashMap<String, String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(agent_id: &str, run_id: &str, scene: &str) -> ThinkTraceListItem {
+        ThinkTraceListItem {
+            agent_id: agent_id.to_string(),
+            run_id: run_id.to_string(),
+            scene: scene.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn entry_key_keeps_shared_run_id_apart_across_scenes() {
+        // Phase1 意图与 Phase2 唤醒共享 run_id，展示 / 合并键必须按 scene 区分
+        let intent = item("agent-a", "run-1", "intent-analyze");
+        let awaken = item("agent-a", "run-1", "awaken");
+        assert_ne!(intent.entry_key(), awaken.entry_key());
+
+        // 同一 (agent, run, scene) 的重跑必须落到同一个键，后端才能合并片段
+        assert_eq!(
+            intent.entry_key(),
+            item("agent-a", "run-1", "intent-analyze").entry_key()
+        );
+    }
 }

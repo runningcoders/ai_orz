@@ -302,13 +302,10 @@ pub(crate) fn query_at(
 /// 按该键聚合，让轨迹面板呈现一条连续路径，而不是两个各自计数的动作。
 fn merge_same_run(entries: Vec<ThinkTraceEntry>) -> Vec<ThinkTraceEntry> {
     let mut merged: Vec<ThinkTraceEntry> = Vec::with_capacity(entries.len());
-    let mut positions: HashMap<(String, String, String), usize> = HashMap::new();
+    // 键与前端展示标识同源（common::api::think_trace_entry_key）
+    let mut positions: HashMap<String, usize> = HashMap::new();
     for entry in entries {
-        let key = (
-            entry.agent_id.clone(),
-            entry.run_id.clone(),
-            entry.scene.clone(),
-        );
+        let key = common::api::think_trace_entry_key(&entry.agent_id, &entry.run_id, &entry.scene);
         match positions.get(&key).copied() {
             Some(index) => merge_into(&mut merged[index], entry),
             None => {

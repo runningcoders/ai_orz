@@ -39,7 +39,9 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
     let mut offset = use_signal(|| 0usize);
     let mut loading = use_signal(|| false);
     let mut loaded = use_signal(|| false);
-    let mut selected_run_id = use_signal(|| None::<String>);
+    // 选中项的展示标识是 `(agent_id, run_id, scene)`：同一 run 的意图段与唤醒段
+    // 共享 run_id，只用 run_id 会把两张卡片一起选中
+    let mut selected_key = use_signal(|| None::<String>);
     // 加载代际计数：快速切换 Agent / 翻页时丢弃过期响应
     let mut load_gen = use_signal(|| 0u64);
     let mut reload_tick = use_signal(|| 0u64);
@@ -64,12 +66,12 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
                         return;
                     }
                     // 选中项仍在当前页则保留，否则回落到首条
-                    let current = selected_run_id();
+                    let current = selected_key();
                     let still_present = current
                         .as_ref()
-                        .is_some_and(|id| page.items.iter().any(|i| &i.run_id == id));
+                        .is_some_and(|key| page.items.iter().any(|i| &i.entry_key() == key));
                     if !still_present {
-                        selected_run_id.set(page.items.first().map(|i| i.run_id.clone()));
+                        selected_key.set(page.items.first().map(|i| i.entry_key()));
                     }
                     entries.set(page.items);
                     total.set(page.total);
@@ -95,17 +97,21 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
         }
         prev_scope.set(scope);
         offset.set(0);
-        selected_run_id.set(None);
+        selected_key.set(None);
         load(aid_effect.clone(), 0);
     });
 
     let list = entries.read().clone();
     let total_now = total();
     let offset_now = offset();
-    let selected_run_id_now = selected_run_id();
+    let selected_key_now = selected_key();
     let selected = list
         .iter()
-        .find(|e| Some(&e.run_id) == selected_run_id_now.as_ref())
+        .find(|e| {
+            selected_key_now
+                .as_deref()
+                .is_some_and(|key| key == e.entry_key())
+        })
         .cloned();
     let (start_no, end_no) = page_bounds(offset_now, list.len(), total_now);
     let page_no = offset_now / PAGE_SIZE + 1;
@@ -141,21 +147,24 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
                         for e in list.iter() {
                             {
                                 let run_id = e.run_id.clone();
-                                let select_run_id = e.run_id.clone();
                                 let scene = e.scene.clone();
+                                let item_key = e.entry_key();
+                                let key_for_dom = item_key.clone();
+                                let key_for_click = item_key.clone();
                                 let steps = e.steps;
                                 let advisor_calls = e.advisor_calls;
                                 let created = format_timestamp_opt(Some(e.created_at as i64));
-                                let is_selected = selected_run_id_now.as_ref() == Some(&run_id);
+                                let is_selected =
+                                    selected_key_now.as_deref() == Some(item_key.as_str());
                                 rsx! {
                                     button {
-                                        key: "{run_id}",
+                                        key: "{key_for_dom}",
                                         class: if is_selected {
                                             "w-full text-left rounded-lg border border-primary bg-primary/10 p-2 space-y-1"
                                         } else {
                                             "w-full text-left rounded-lg border border-base-300 bg-base-100 p-2 space-y-1 hover:bg-base-200"
                                         },
-                                        onclick: move |_| selected_run_id.set(Some(select_run_id.clone())),
+                                        onclick: move |_| selected_key.set(Some(key_for_click.clone())),
                                         div { class: "flex items-center gap-2 flex-wrap",
                                             span { class: "badge orz-tag badge-sm", "{scene_label(&scene)}" }
                                             if has_memory_entry(&scene) {
@@ -222,7 +231,7 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
                     // 记忆段在上：与下段轮次时间线同源于同一个 run_id
                     if has_memory_entry(&sel.scene) {
                         MemoryTraceDetail {
-                            key: "{sel.run_id}",
+                            key: "{sel.entry_key()}",
                             agent_id: sel.agent_id.clone(),
                             trace_id: sel.run_id.clone(),
                         }

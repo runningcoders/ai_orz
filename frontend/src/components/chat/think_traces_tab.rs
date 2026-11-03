@@ -113,7 +113,7 @@ pub fn ThinkTracesTab(
     let mut load_gen = use_signal(|| 0u64);
     let mut prev_scope = use_signal(String::new);
     let mut prev_tick = use_signal(|| 0u64);
-    let mut expanded_run_id = use_signal(|| None::<String>);
+    let mut expanded_key = use_signal(|| None::<String>);
     // 记忆条目详情弹窗目标：(agent_id, trace_id)。run_id 在 awaken/settle/compact
     // 三类场景下与 MemoryTrace.id 同值，故可直接回查 input/output。
     let mut memory_target = use_signal(|| None::<(String, String)>);
@@ -186,7 +186,7 @@ pub fn ThinkTracesTab(
         if scope_changed {
             offset.set(0);
             scene_filter.set(None);
-            expanded_run_id.set(None);
+            expanded_key.set(None);
             load(
                 pid_for_effect.clone(),
                 aid_for_effect.clone(),
@@ -275,7 +275,7 @@ pub fn ThinkTracesTab(
                                     let next = value.clone();
                                     scene_filter.set(next.clone());
                                     offset.set(0);
-                                    expanded_run_id.set(None);
+                                    expanded_key.set(None);
                                     load(pid.clone(), aid.clone(), next, 0, false);
                                 },
                                 "{label}"
@@ -302,7 +302,10 @@ pub fn ThinkTracesTab(
                         let steps = e.steps;
                         let advisor_calls = e.advisor_calls;
                         let created = format_timestamp_opt(Some(e.created_at as i64));
-                        let is_expanded = expanded_run_id() == Some(run_id.clone());
+                        let item_key = e.entry_key();
+                        let key_for_dom = item_key.clone();
+                        let key_for_click = item_key.clone();
+                        let is_expanded = expanded_key() == Some(item_key.clone());
                         let occurrences = e.occurrences.clone();
                         let routes = e.routes.clone();
                         let rounds = e.rounds.clone();
@@ -310,15 +313,15 @@ pub fn ThinkTracesTab(
                         let fingerprint = e.fingerprint.clone();
                         rsx! {
                             div {
-                                key: "{run_id}",
+                                key: "{key_for_dom}",
                                 class: "rounded-lg border border-base-300 bg-base-100",
                                 div {
                                     class: "p-2 cursor-pointer hover:bg-base-200",
                                     onclick: move |_| {
-                                        if expanded_run_id() == Some(run_id.clone()) {
-                                            expanded_run_id.set(None);
+                                        if expanded_key() == Some(key_for_click.clone()) {
+                                            expanded_key.set(None);
                                         } else {
-                                            expanded_run_id.set(Some(run_id.clone()));
+                                            expanded_key.set(Some(key_for_click.clone()));
                                         }
                                     },
                                     div { class: "flex items-center gap-2 flex-wrap",
@@ -388,7 +391,7 @@ pub fn ThinkTracesTab(
                             onclick: move |_| {
                                 let next = offset().saturating_sub(PAGE_SIZE);
                                 offset.set(next);
-                                expanded_run_id.set(None);
+                                expanded_key.set(None);
                                 load(pid_prev.clone(), aid_prev.clone(), scene_filter(), next, false);
                             },
                             "上一页"
@@ -399,7 +402,7 @@ pub fn ThinkTracesTab(
                             onclick: move |_| {
                                 let next = offset() + PAGE_SIZE;
                                 offset.set(next);
-                                expanded_run_id.set(None);
+                                expanded_key.set(None);
                                 load(pid_next.clone(), aid_next.clone(), scene_filter(), next, false);
                             },
                             "下一页"
