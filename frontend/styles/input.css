@@ -576,6 +576,32 @@
   max-width: 100%;
   border-radius: 0.5rem;
 }
+/* 内联附件图片（markdown 里 `[x](attachment:id)` 渲染的内联 <img>）：气泡内限高，
+   避免大图撑破布局；cursor 提示可点击放大（缩放交互按需补充）。
+   复用 /content 接口同源加载，样式与聊天专用附件消息的 .message-image 对齐。 */
+.markdown-attachment-image {
+  max-height: 320px;
+  cursor: zoom-in;
+}
+/* 内联附件图片 + 识别摘要：<figure> 包裹 <img> 与 <figcaption>，让文字总结贴着图片下方。
+ * figcaption 限宽与图片对齐、小字弱化处理，避免喧宾夺主；图片为空描述时不渲染 figure。 */
+.attachment-figure {
+  margin: 0.25rem 0;
+  display: inline-block;
+  max-width: 100%;
+}
+.attachment-figure .markdown-attachment-image {
+  display: block;
+}
+.attachment-figure figcaption {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--color-base-content);
+  opacity: 0.6;
+  max-width: 320px;
+  word-break: break-word;
+}
 
 /* Mermaid 图容器（Markdown 代码块替换 + MermaidDiagram 组件共用）
  * 与代码块同一套主题底色/描边，避免 SVG 在深色主题下与背景脱节 */

@@ -111,7 +111,7 @@ fn render_content(msg: &MessageListItem) -> Element {
         // Text 消息按 Markdown 渲染（紧凑样式）
         rsx! {
             span { class: "message-text",
-                MarkdownRenderer { content: msg.content.clone(), compact: true }
+                MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
             }
         }
     } else {

@@ -1754,7 +1754,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                                 if is_attachment_message(tm.message_type) {
                                                     span { class: "opacity-60", "[附件消息]" }
                                                 } else {
-                                                    MarkdownRenderer { content: tm.content.clone(), compact: true }
+                                                    MarkdownRenderer { content: tm.content.clone(), compact: true, resolve_attachment_descriptions: true }
                                                 }
                                             }
                                         }
@@ -2323,7 +2323,7 @@ fn render_message_content(
                         }
                     }
                     div { class: "{bubble_class} break-words",
-                        MarkdownRenderer { content: msg.content.clone(), compact: true }
+                        MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
                     }
                     // hover 操作图标排：复制 / 回复
                     div { class: "absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity",

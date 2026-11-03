@@ -24,15 +24,18 @@
 //! ```
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dioxus::prelude::*;
 
+use crate::api::finance::get_attachment;
 use crate::store::directory::Directory;
 use crate::utils::doc_link::DocRenderContext;
 use crate::utils::mention::transform_mentions;
 use crate::utils::message::NameMap;
+use common::markdown_protocol::extract_refs;
 
 /// 容器 ID 自增序号（同页多实例互不干扰）
 static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -46,42 +49,26 @@ fn next_container_id(prefix: &str) -> String {
 /// 源文原始 HTML（块级/内联）会被转义为纯文本，禁止透传，保证注入安全。
 /// 本函数是全站唯一渲染事实源，文档中心（docs.rs）等非组件场景直接复用。
 ///
-/// 不带名称上下文：提及 chip 用消息文本里的快照名，见 [`render_markdown_with_names`]。
-pub fn render_markdown(md: &str) -> String {
-    render_markdown_inner(md, None, None)
-}
-
-/// Markdown → HTML，带 Agent 名称上下文
-///
-/// `agents` 用于把 Agent 提及的展示名升级为目录里的实时名 —— 实体改名后，
-/// 历史消息里的 chip 会自动跟着变，不会停留在发送当时的快照。
-/// 传 `None`（文档中心等非聊天场景）时回退到消息文本里的快照名。
-///
-/// 事件流统一交给 [`transform_mentions`]：它同时承担源文 HTML 转义
-/// 与 `[@名](agent:id)` 提及链接 → chip 的替换，调用方无需再单独做转义映射。
-pub fn render_markdown_with_names(md: &str, agents: Option<&NameMap>) -> String {
-    render_markdown_inner(md, agents, None)
-}
-
-/// Markdown → HTML，带文档上下文（文档中心专用）
-///
-/// 上下文提供当前文档的仓库路径与「仓库路径 → 站内副本」映射，
-/// 渲染期据此把 `./` `../` 归一化并决定站内切换 / 远程 GitHub 分发。
-pub fn render_markdown_doc(md: &str, doc_ctx: &DocRenderContext) -> String {
-    render_markdown_inner(md, None, Some(doc_ctx))
+/// 不带名称上下文：提及 chip 用消息文本里的快照名。
+pub fn render_markdown(
+    md: &str,
+    attachment_descriptions: Option<&HashMap<String, String>>,
+) -> String {
+    render_markdown_inner(md, None, None, attachment_descriptions)
 }
 
 fn render_markdown_inner(
     md: &str,
     agents: Option<&NameMap>,
     doc_ctx: Option<&DocRenderContext>,
+    attachment_descriptions: Option<&HashMap<String, String>>,
 ) -> String {
     let mut options = pulldown_cmark::Options::empty();
     options.insert(pulldown_cmark::Options::ENABLE_TABLES);
     options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
     options.insert(pulldown_cmark::Options::ENABLE_TASKLISTS);
     let parser = pulldown_cmark::Parser::new_ext(md, options);
-    let events = transform_mentions(parser, agents);
+    let events = transform_mentions(parser, agents, attachment_descriptions);
     let mut html_out = String::new();
     pulldown_cmark::html::push_html(&mut html_out, events.into_iter());
     // 站内链接分发：文档上下文存在时归一化 `./` 并站内切换，否则预拼 data-repo-href
@@ -94,7 +81,8 @@ fn render_markdown_inner(
 
 /// `MarkdownRenderer` 每实例的渲染缓存（内容寻址）
 ///
-/// 失效键 = `content` + 目录快照（`Option<NameMap>`，仅 `agents` 参与 HTML 计算）：
+/// 失效键 = `content` + 目录快照（`Option<NameMap>`，仅 `agents` 参与 HTML 计算）。
+/// 附件摘要快照（`Option<HashMap>`，仅 `resolve_attachment_descriptions` 开启时参与）：
 /// 任一变化即全量重解析；都未变时直接复用缓存 HTML —— chat / 长列表里父组件
 /// 的重渲染只剩一次字符串对比，不再触发 O(n) 重解析。
 #[derive(Default)]
@@ -105,6 +93,9 @@ struct MdCache {
     names: Option<NameMap>,
     /// 上次解析使用的文档仓库路径（None = 非文档中心场景）
     doc_repo_path: Option<String>,
+    /// 上次解析使用的附件摘要快照（None = 未开启 / 尚未拉取）。description 异步到位后
+    /// 与当前 signal 比对，失配即重算，让 figcaption 在拉取完成后补上。
+    att_desc: Option<HashMap<String, String>>,
     /// 上次解析产物
     html: String,
 }
@@ -113,6 +104,9 @@ struct MdCache {
 ///
 /// - `content`: Markdown 源文本
 /// - `compact`: 紧凑模式（更小字号 / 收紧上下边距），用于卡片、聊天气泡、列表展开等场景
+/// - `resolve_attachment_descriptions`: 为 true 时，自动解析正文内 `attachment:<id>` 引用，
+///   异步拉取各附件的 `description`（图片被 AI 识别后的摘要），在图片下方渲染 `<figcaption>`
+///   文字总结。聊天场景开启；文档中心等无附件图注需求的页面保持默认 false 零开销。
 ///
 /// 内容寻缓存：`content` / 目录任一变化必重算（修复知识图谱详情「内容」栏切换不更新），
 /// 都未变化则直接复用缓存（chat / 长列表高频父渲染下不丢性能）。
@@ -121,6 +115,7 @@ pub fn MarkdownRenderer(
     content: String,
     #[props(default = false)] compact: bool,
     #[props(default)] doc_ctx: Option<DocRenderContext>,
+    #[props(default = false)] resolve_attachment_descriptions: bool,
 ) -> Element {
     // 全局名称目录：命中时 Agent 提及用实时名渲染。
     // 文档中心等未提供 provider 的页面 try_consume_context 返回 None，自动回退到快照名。
@@ -137,6 +132,51 @@ pub fn MarkdownRenderer(
     // use_hook 每次渲染返回存储值的 clone（State: Clone），裸 RefCell 会被克隆走、
     // 写入不落回组件状态，故包一层 Rc（clone 只拷指针，cell 本体跨渲染共享）。
     let cache = use_hook(|| Rc::new(RefCell::new(MdCache::default())));
+    // 附件摘要异步拉取：正文内 `attachment:<id>` 引用 → 批量 get_attachment 取 description，
+    // 存入 signal；拉取完成（signal 变化）触发下方缓存失效重算，在图片下方补 `<figcaption>`。
+    // 无条件调用 hook（保持 hook 顺序稳定），仅在 `resolve_attachment_descriptions` 开启时真正拉取。
+    let att_desc = use_signal(HashMap::<String, String>::new);
+    {
+        let enabled = resolve_attachment_descriptions;
+        // `att_desc`（Signal，Copy）被下方 move 闭包隐式拷贝进 effect，原绑定仍可在
+        // 下方缓存块中 `att_desc.read()` 使用，无需额外 rebinding（避免 redundant_locals）。
+        use_effect(use_reactive(&content, move |content: String| {
+            if !enabled {
+                return;
+            }
+            let mut att_desc = att_desc;
+            spawn(async move {
+                let known = att_desc.read();
+                // 增量拉取：只请求尚未拉取过的 id。流式场景 content 每个 token 都会触发
+                // 一次 effect，若每次全量重拉，N 个 token 会给后端放大 N 倍请求；同时
+                // 下方用「读快照 + 合并 + 回写」而非整体替换，避免并发 task 相互覆盖。
+                // 空描述 / 请求失败的 id 也写入（空串）以标记「已尝试」，既杜绝重试风暴，
+                // 又让渲染侧自然跳过 figcaption（见 render_attachment_image 空串分支）。
+                let todo: Vec<String> = extract_refs(&content)
+                    .into_iter()
+                    .filter(|(r, _)| r.scheme == "attachment")
+                    .map(|(r, _)| r.id.clone())
+                    .filter(|id| !known.contains_key(id))
+                    .collect();
+                // 读守卫在 await 之前释放：跨 await 持有 Signal guard 会与后续写入冲突
+                drop(known);
+                if todo.is_empty() {
+                    return;
+                }
+                let mut fetched = HashMap::new();
+                for id in todo {
+                    let desc = match get_attachment(&id).await {
+                        Ok(detail) => detail.description.trim().to_string(),
+                        Err(_) => String::new(),
+                    };
+                    fetched.insert(id, desc);
+                }
+                let mut merged = att_desc.read().clone();
+                merged.extend(fetched);
+                att_desc.set(merged);
+            });
+        }));
+    }
     let html = {
         let mut c = cache.borrow_mut();
         // 目录指纹取舍：Directory 非 Arc 包装、HashMap 也没有廉价的稳定指针指纹，
@@ -154,7 +194,15 @@ pub fn MarkdownRenderer(
         // 文档切换时原文位置变化 → 相对链接归一化的基准也变，必须重算
         let doc_path = doc_ctx.as_ref().map(|ctx| ctx.doc_repo_path.as_str());
         let doc_match = c.doc_repo_path.as_deref() == doc_path;
-        if c.content != content || !names_match || !doc_match {
+        // 附件摘要快照：仅开启拉取时取 signal 当前值（克隆一次），否则恒为 None ——
+        // 关闭状态下 descriptions 与缓存快照（同为 None）必然匹配，不会空 map 反复重算。
+        let descriptions = if resolve_attachment_descriptions {
+            Some(att_desc.read().clone())
+        } else {
+            None
+        };
+        let desc_match = c.att_desc == descriptions;
+        if c.content != content || !names_match || !doc_match || !desc_match {
             // 目录快照仅在失配时重新克隆：流式场景 content 每 token 失效一次，
             // 目录未变时不应付出整表克隆的代价。
             if !names_match {
@@ -163,16 +211,26 @@ pub fn MarkdownRenderer(
             if !doc_match {
                 c.doc_repo_path = doc_path.map(str::to_string);
             }
+            if !desc_match {
+                c.att_desc = descriptions.clone();
+            }
             // 文档上下文优先：全局 Directory provider 常驻（main.rs 注册），若先命中
             // directory 分支会把文档中心的站内链接分发整个跳过，导致链接全部退化 GitHub。
             c.html = match doc_ctx.as_ref() {
-                Some(ctx) => render_markdown_doc(&content, ctx),
+                Some(ctx) => {
+                    render_markdown_inner(&content, None, Some(ctx), descriptions.as_ref())
+                }
                 None => match directory.as_ref() {
                     Some(sig) => {
                         let d = sig.read();
-                        render_markdown_with_names(&content, Some(&d.agents))
+                        render_markdown_inner(
+                            &content,
+                            Some(&d.agents),
+                            None,
+                            descriptions.as_ref(),
+                        )
                     }
-                    None => render_markdown(&content),
+                    None => render_markdown(&content, descriptions.as_ref()),
                 },
             };
             c.content = content.clone();
@@ -280,7 +338,7 @@ mod tests {
 
     #[test]
     fn render_heading_and_list() {
-        let html = render_markdown("# 标题\n- 一项\n- 两项");
+        let html = render_markdown("# 标题\n- 一项\n- 两项", None);
         assert!(html.contains("<h1>标题</h1>"));
         assert!(html.contains("<li>一项</li>"));
         assert!(html.contains("<li>两项</li>"));
@@ -288,21 +346,21 @@ mod tests {
 
     #[test]
     fn render_table_and_strikethrough() {
-        let html = render_markdown("| a | b |\n|---|---|\n| 1 | 2 |\n\n~~删除~~");
+        let html = render_markdown("| a | b |\n|---|---|\n| 1 | 2 |\n\n~~删除~~", None);
         assert!(html.contains("<table>"));
         assert!(html.contains("<del>删除</del>"));
     }
 
     #[test]
     fn render_tasklist() {
-        let html = render_markdown("- [ ] 未完成\n- [x] 已完成");
+        let html = render_markdown("- [ ] 未完成\n- [x] 已完成", None);
         assert!(html.contains("checkbox"));
     }
 
     #[test]
     fn render_escapes_raw_html() {
         // 原始 HTML（块级 + 内联）一律转义为文本，保证 dangerous_inner_html 注入安全
-        let html = render_markdown("<script>alert(1)</script>\n\nhello <b>x</b>");
+        let html = render_markdown("<script>alert(1)</script>\n\nhello <b>x</b>", None);
         assert!(!html.contains("<script>"));
         assert!(!html.contains("<b>"));
         assert!(html.contains("&lt;script&gt;"));
@@ -312,7 +370,7 @@ mod tests {
     #[test]
     fn render_mermaid_block_kept_as_code() {
         // ```mermaid 代码块保留为带语言 class 的代码，交由 JS 渲染层处理
-        let html = render_markdown("```mermaid\ngraph LR\nA-->B\n```");
+        let html = render_markdown("```mermaid\ngraph LR\nA-->B\n```", None);
         assert!(html.contains("language-mermaid"));
         assert!(html.contains("graph LR"));
     }
@@ -338,7 +396,7 @@ mod tests {
             1
         );
         assert_eq!(
-            code.matches("if c.content != content || !names_match || !doc_match {")
+            code.matches("if c.content != content || !names_match || !doc_match || !desc_match {")
                 .count(),
             1
         );

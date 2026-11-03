@@ -18,6 +18,8 @@ pub use common::mention::{
     format_mention_ref, remove_mention_token, resolve_display_name,
 };
 
+use std::collections::HashMap;
+
 use pulldown_cmark::Event;
 use wasm_bindgen::JsCast;
 
@@ -151,6 +153,34 @@ pub fn render_resource_chip(scheme: &str, id: &str, display_name: &str) -> Strin
     )
 }
 
+/// 渲染 attachment 内联引用为内联图片（批2 扩展）
+///
+/// `[图片](attachment:att_1)`（如微信图片消息）渲染成 `<img>`，src 复用聊天专用附件
+/// 消息同款 `/api/v1/finance/attachments/{id}/content` 接口（message_bubble.rs 已验证
+/// 同源 cookie 鉴权可用）。仅 attachment 这类「图片型资源引用」走此分支，artifact 等
+/// 其余资源引用仍走 [`render_resource_chip`]。
+///
+/// `id` 经 `escape_html` 转义后拼入 src，杜绝注入；alt 为固定文案，不含用户输入。
+///
+/// 当 `description` 非空（附件被识别后写入的摘要，见 `AttachmentPo.description`）时，
+/// 在图片正下方追加 `<figcaption>` 显示文字总结（同样经 `escape_html`），形成
+/// `<figure><img><figcaption>` 结构，与图片语义对齐。空描述则只输出 `<img>`。
+pub fn render_attachment_image(id: &str, description: &str) -> String {
+    let id = escape_html(id);
+    let img = format!(
+        r#"<img class="markdown-attachment-image" src="/api/v1/finance/attachments/{id}/content" alt="附件图片" loading="lazy">"#
+    );
+    let desc = description.trim();
+    if desc.is_empty() {
+        img
+    } else {
+        let desc = escape_html(desc);
+        format!(
+            r#"<figure class="attachment-figure">{img}<figcaption>{desc}</figcaption></figure>"#
+        )
+    }
+}
+
 /// 消息接收方的「提及 chip」HTML（气泡头部拼出「这条消息发给谁」）
 ///
 /// 群聊（项目会话）里消息不止你 ↔ 一个 Agent 两条线，Agent 之间也会互相说话。
@@ -199,7 +229,11 @@ pub fn receiver_mention_html(
 /// （如 `user:`）降级为普通链接原样透传。批2 起 attachment/artifact 资源引用
 /// 渲染为资源 chip（复用 mention chip 样式，`data-mention-kind` 区分），批1
 /// 登记的「快照吐回」语义边界随 render 接管自然消解。
-pub fn transform_mentions<'a, I>(events: I, agents: Option<&NameMap>) -> Vec<Event<'a>>
+pub fn transform_mentions<'a, I>(
+    events: I,
+    agents: Option<&NameMap>,
+    attachment_descriptions: Option<&HashMap<String, String>>,
+) -> Vec<Event<'a>>
 where
     I: Iterator<Item = Event<'a>>,
 {
@@ -216,6 +250,18 @@ where
             let name = resolve_display_name(&m, snapshot, agents);
             return Some(Event::InlineHtml(render_mention_chip(&m, &name).into()));
         }
+        // 批2 扩展：attachment 内联引用（`[图片](attachment:att_1)`，如微信图片）渲染为
+        // 内联 <img>，复用聊天专用附件消息同款 /content 接口（message_bubble.rs 已验证可用，
+        // 同源 cookie 鉴权）；有识别摘要时追加 <figcaption> 显示（见 render_attachment_image）。
+        if r.scheme == "attachment" {
+            let desc = attachment_descriptions
+                .and_then(|m| m.get(&r.id))
+                .map(|s| s.as_str())
+                .unwrap_or("");
+            return Some(Event::InlineHtml(
+                render_attachment_image(&r.id, desc).into(),
+            ));
+        }
         Some(Event::InlineHtml(
             render_resource_chip(&r.scheme, &r.id, snapshot).into(),
         ))
@@ -231,7 +277,7 @@ mod tests {
         let mut options = pulldown_cmark::Options::empty();
         options.insert(pulldown_cmark::Options::ENABLE_TABLES);
         let parser = pulldown_cmark::Parser::new_ext(md, options);
-        let events = transform_mentions(parser, agents);
+        let events = transform_mentions(parser, agents, None);
         let mut html = String::new();
         pulldown_cmark::html::push_html(&mut html, events.into_iter());
         html
@@ -437,7 +483,7 @@ mod tests {
             "[设计稿](attachment:att_1) 参考",
             false,
             concat!(
-                r#"<p><span class="mention-chip mention-attachment" data-mention-kind="attachment" data-mention-id="att_1" title="attachment: att_1">设计稿</span> 参考</p>"#,
+                r#"<p><img class="markdown-attachment-image" src="/api/v1/finance/attachments/att_1/content" alt="附件图片" loading="lazy"> 参考</p>"#,
                 "\n"
             ),
         ),
@@ -468,9 +514,11 @@ mod tests {
     #[test]
     fn batch1_semantic_boundary_resolved_by_render_takeover() {
         let html = render("[**张伟**](attachment:att_1) 看看", None);
-        // 消解：chip 形态 + 快照名，内层结构事件被吞并（与 mention 同口径）
-        assert!(html.contains("mention-chip mention-attachment"));
-        assert!(html.contains(">张伟</span>"));
+        // 消解：attachment 内联引用渲染为内联 <img>（复用 /content 接口），内层结构事件被吞并
+        assert!(html.contains("markdown-attachment-image"));
+        assert!(html.contains("/api/v1/finance/attachments/att_1/content"));
+        // 不再退化为 chip（data-mention-id 等 chip 属性不应出现）
+        assert!(!html.contains("mention-chip mention-attachment"));
         // 吐回分支（dest 裸奔为 <a href>）不再触发
         assert!(!html.contains("<a href=\"attachment:att_1\">"));
     }
@@ -481,6 +529,62 @@ mod tests {
         assert!(html.contains("&lt;img src=x&gt;"));
         assert!(html.contains("data-mention-id=\"att_&lt;1&gt;\""));
         assert!(html.contains("mention-attachment"));
+    }
+
+    /// 内联 attachment 引用携带识别摘要时，应在图片下方渲染 <figcaption> 文字总结。
+    ///
+    /// 回归守卫：description 来自 `AttachmentPo.description`（图片被 AI 识别后写入），
+    /// 经 escape_html 后拼入 figcaption，杜绝注入。空描述则只输出 <img>。
+    #[test]
+    fn attachment_image_renders_figcaption_with_description() {
+        let mut map = HashMap::new();
+        map.insert("att_1".to_string(), "一张包含季度图表的截图".to_string());
+
+        let mut options = pulldown_cmark::Options::empty();
+        options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+        let parser = pulldown_cmark::Parser::new_ext("[设计稿](attachment:att_1) 参考", options);
+        let events = transform_mentions(parser, None, Some(&map));
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, events.into_iter());
+
+        assert!(html.contains("attachment-figure"));
+        assert!(html.contains("<figcaption>"));
+        assert!(html.contains("一张包含季度图表的截图"));
+        assert!(html.contains("/api/v1/finance/attachments/att_1/content"));
+        // 关键：摘要文本必须被转义，不能原样注入
+        let mut bad = HashMap::new();
+        bad.insert("att_2".to_string(), "<script>alert(1)</script>".to_string());
+        let p2 = pulldown_cmark::Parser::new_ext("[x](attachment:att_2)", options);
+        let e2 = transform_mentions(p2, None, Some(&bad));
+        let mut h2 = String::new();
+        pulldown_cmark::html::push_html(&mut h2, e2.into_iter());
+        assert!(
+            h2.contains("&lt;script&gt;"),
+            "figcaption 文本必须转义：{h2}"
+        );
+        assert!(!h2.contains("<script>alert"));
+    }
+
+    #[test]
+    fn attachment_image_omits_figcaption_when_description_empty() {
+        // 未提供 description map → 只输出 <img>，无 figure/figcaption
+        let mut options = pulldown_cmark::Options::empty();
+        options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+        let parser = pulldown_cmark::Parser::new_ext("[设计稿](attachment:att_1) 参考", options);
+        let events = transform_mentions(parser, None, None);
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, events.into_iter());
+        assert!(!html.contains("attachment-figure"));
+        assert!(!html.contains("figcaption"));
+
+        // 提供了 map 但该 id 无摘要 → 同样只输出 <img>
+        let mut empty_map = HashMap::new();
+        empty_map.insert("other".to_string(), "别的".to_string());
+        let p2 = pulldown_cmark::Parser::new_ext("[设计稿](attachment:att_1) 参考", options);
+        let e2 = transform_mentions(p2, None, Some(&empty_map));
+        let mut h2 = String::new();
+        pulldown_cmark::html::push_html(&mut h2, e2.into_iter());
+        assert!(!h2.contains("attachment-figure"));
     }
 
     #[test]
