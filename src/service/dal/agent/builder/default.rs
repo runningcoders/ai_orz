@@ -118,6 +118,13 @@ pub struct DefaultPromptBuilder {
     method_skills: Vec<SkillPo>,
     /// 上一轮思考摘要（仅 awaken 场景：思考图 discover 回环产出的衔接线索）
     prior_thinking_summary: Option<String>,
+    /// 意图增量修订入参（上次结论 + 新增输入，仅修订 Prompt 尾部区块使用）
+    intent_revision: Option<(
+        crate::service::domain::runtime::awakening::IntentAnalysis,
+        Vec<String>,
+    )>,
+    /// 对话过程中追加的输入（尾部转向消息）
+    injected_inputs: Vec<String>,
     /// 工作空间上下文：默认工作目录
     workspace_default: Option<String>,
     /// 工作空间上下文：用户 HOME 目录
@@ -446,11 +453,16 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         // ⚠️ neural 只剩两个特殊语义：**区块置前**（静态块，保前缀缓存）与
         // **不可卸载**（卸载保护见 uninstall_skill_pack）；**不再决定可见性**——
         // 可见性由「是否已安装副本」决定，与其他技能同判据。
-        let neural_skills: Vec<_> = self
+        let mut neural_skills: Vec<_> = self
             .skills
             .iter()
             .filter(|s| Self::is_neural_skill(s))
             .collect();
+        // 技能区块位于 System 前缀，渲染顺序必须与 DB 的 updated_at 排序解耦：
+        // 否则任何一次技能更新（自我进化 / 重装 / 改描述）都会重排整块，
+        // 该 Agent 后续所有唤醒的 System 前缀缓存一起作废。按 name + id 排，
+        // 兼作同一秒 updated_at 并列时的稳定 tie-break。
+        neural_skills.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         result.push_str(&Self::build_skills_section("神经技能", &neural_skills));
 
         // 已安装技能（其余全部）：**装了就进**，不再用 tags 二次匹配
@@ -459,11 +471,12 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         // 那是「没有安装过程」年代的兜底，如今安装链路（install_skill_to_agent /
         // install_skill_pack / 入职预装）已经完成了挑选，再按 tag 过滤只会制造
         // 「装了包却不进 Prompt」的静默故障。
-        let installed_skills: Vec<_> = self
+        let mut installed_skills: Vec<_> = self
             .skills
             .iter()
             .filter(|s| !Self::is_neural_skill(s))
             .collect();
+        installed_skills.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         result.push_str(&Self::build_skills_section("已安装技能", &installed_skills));
 
         result
@@ -747,6 +760,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         if let Some(msg) = &self.current_message {
             result.push_str("【当前消息】\n");
             result.push_str(msg);
+            // 增量修订：上次结论 + 新增输入只拼在尾部区块，
+            // 前面的 System / 上下文 / SOP 保持字节稳定
+            self.push_intent_revision(&mut result);
             result.push_str("\n\n现在开始：在思考中走完 Step 1~5，然后按上面的 INTENT_ANALYSIS_START/END 锚点格式输出最终 JSON。\n");
         } else {
             result.push_str("【注意】当前消息为空。请直接输出空 JSON 或说明情况。\n");
@@ -1205,6 +1221,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         }
         if let Some(msg) = &self.current_message {
             s.push_str(msg);
+            // 对话进行中新到达的输入只能尾插，严禁插到 System 前缀之前
+            self.push_injected_inputs(&mut s);
             // 提醒放在决策点（当前消息之后）而不是信息区，见 skill_recall_nudge 注释
             s.push_str(&self.skill_recall_nudge());
             s.push_str("\n\n请回复：");
@@ -1268,6 +1286,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         // 13. 当前用户消息
         if let Some(msg) = &self.current_message {
             result.push_str(msg);
+            // 与 awaken_user_part 同一口径：新输入只做尾插
+            self.push_injected_inputs(&mut result);
             // 与 awaken_user_part 同一口径，见 skill_recall_nudge 注释
             result.push_str(&self.skill_recall_nudge());
             result.push_str("\n\n请回复：");
@@ -1418,6 +1438,18 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
     ) {
         self.intent_analysis = Some(analysis.clone());
+    }
+
+    fn intent_revision(
+        &mut self,
+        previous: &crate::service::domain::runtime::awakening::IntentAnalysis,
+        inputs: &[String],
+    ) {
+        self.intent_revision = Some((previous.clone(), inputs.to_vec()));
+    }
+
+    fn injected_inputs(&mut self, inputs: &[String]) {
+        self.injected_inputs = inputs.to_vec();
     }
 
     fn retrieved_knowledge(&mut self, hits: &[String]) {
@@ -1599,10 +1631,50 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             user.push_str("【当前消息（作为理解靶子）】\n");
             user.push_str(msg);
             user.push('\n');
+            // 增量修订只拼在尾部，System/上下文/历史均保持稳定
+            self.push_intent_revision(&mut user);
         }
         user.push_str("请开始理解并输出最终 JSON：");
 
         vec![ChatMessage::system(system), ChatMessage::user(user)]
+    }
+}
+
+impl DefaultPromptBuilder {
+    /// 渲染意图增量修订尾部区块（上次结论 + 新增输入 + 合并协议）
+    fn push_intent_revision(&self, out: &mut String) {
+        let Some((previous, inputs)) = &self.intent_revision else {
+            return;
+        };
+        out.push_str("\n\n===== 【增量修订：上次结论 + 新增输入】 =====\n");
+        out.push_str("上次意图识别结论（完整 JSON）：\n");
+        out.push_str(&serde_json::to_string_pretty(previous).unwrap_or_else(|_| "{}".to_string()));
+        out.push_str("\n\n本次新增输入（按时间正序）：\n");
+        for (index, input) in inputs.iter().enumerate() {
+            out.push_str(&format!("（新增输入 #{}）\n{}\n", index + 1, input));
+        }
+        out.push_str("\n合并协议：\n");
+        out.push_str("1. 新输入回答了此前 `need_clarification` 中的问题时，清空已解决条目；\n");
+        out.push_str("2. 新输入改变目标 / 对象 / 约束时，重写 `summary` 与 `key_terms`，并清空 `direct_answer`；\n");
+        out.push_str(
+            "3. 新输入只是补充细节时，合并进 `key_terms` / `resolutions`，其余保持不变；\n",
+        );
+        out.push_str(
+            "4. 无法判断是否改变意图时，保守地清空 `direct_answer`，让流程回到完整链路；\n",
+        );
+        out.push_str("5. 始终输出完整的 IntentAnalysis JSON（不是增量补丁），并按锚点格式包裹。\n");
+        out.push_str("注意：`direct_answer` / `need_clarification` / `retrieved_context` 是针对上一条消息的终态判断，新输入一到即失效，必须重新计算。\n");
+    }
+
+    /// 渲染「对话过程中追加的输入」尾部区块
+    fn push_injected_inputs(&self, out: &mut String) {
+        if self.injected_inputs.is_empty() {
+            return;
+        }
+        out.push_str("\n\n【对话过程中追加的输入】\n");
+        for (index, input) in self.injected_inputs.iter().enumerate() {
+            out.push_str(&format!("（补充输入 #{}）\n{}\n", index + 1, input));
+        }
     }
 }
 

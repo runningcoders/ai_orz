@@ -4,8 +4,8 @@
 //! 切成三段。所有跨段状态经 [`RoundState`] 传递；节点之间互不引用后继。
 
 use super::blueprint::{
-    NODE_DISPATCH, NODE_EVALUATE, NODE_REFLECT, NODE_THINK, SIGNAL_CANCELLED, SIGNAL_CONTINUE,
-    SIGNAL_EXIT, SIGNAL_FINAL, SIGNAL_REDIRECT, SIGNAL_REFLECT, SIGNAL_TOOL_CALLS,
+    NODE_DISPATCH, NODE_EVALUATE, NODE_POLL, NODE_REFLECT, NODE_THINK, SIGNAL_CANCELLED,
+    SIGNAL_CONTINUE, SIGNAL_EXIT, SIGNAL_FINAL, SIGNAL_REDIRECT, SIGNAL_REFLECT, SIGNAL_TOOL_CALLS,
 };
 use super::deps::RoundDeps;
 use super::state::{
@@ -20,6 +20,7 @@ use crate::pkg::think_path::{
 };
 use crate::pkg::think_trace::ThinkTraceRound;
 use crate::service::domain::runtime::RuntimeToolExecution;
+use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, collect as collect_inbox};
 use crate::service::domain::runtime::think_loop::{
     ROUND_DIGEST_MAX_CONTENT, TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS, is_recursive_settle_call,
     is_settle_queue_write, policy_exit, round_metrics,
@@ -44,6 +45,8 @@ enum Role {
     Dispatch,
     Evaluate,
     Reflect,
+    /// 轮边界收集新输入（仅 awaken 主链启用）
+    Poll,
 }
 
 /// 轮级环图节点（各角色共用一个实现，避免多份样板）
@@ -73,7 +76,7 @@ impl ThinkNode for RoundNode {
     fn phase(&self) -> PhaseId {
         match self.role {
             Role::Think => PhaseId::Deliberate,
-            Role::Dispatch | Role::Evaluate | Role::Reflect => PhaseId::Review,
+            Role::Dispatch | Role::Evaluate | Role::Reflect | Role::Poll => PhaseId::Review,
         }
     }
 
@@ -83,6 +86,7 @@ impl ThinkNode for RoundNode {
             Role::Dispatch => "执行本轮工具调用并记录进度",
             Role::Evaluate => "策略裁决：继续下一轮或退出循环",
             Role::Reflect => "自省：重复调用时注入换方向提示",
+            Role::Poll => "轮边界：收集并尾插新输入",
         }
     }
 
@@ -100,6 +104,7 @@ impl ThinkNode for RoundNode {
             Role::Dispatch => run_dispatch(&self.deps).await,
             Role::Evaluate => run_evaluate(&self.deps).await,
             Role::Reflect => run_reflect(&self.deps),
+            Role::Poll => run_poll_round(&self.deps).await,
         }
     }
 }
@@ -126,7 +131,74 @@ pub(crate) fn build_nodes(deps: &Arc<RoundDeps>) -> Vec<Arc<dyn ThinkNode>> {
             Arc::clone(deps),
         )));
     }
+    if deps.inbox.is_some() {
+        nodes.push(Arc::new(RoundNode::new(
+            NODE_POLL,
+            Role::Poll,
+            Arc::clone(deps),
+        )));
+    }
     nodes
+}
+
+// ==================== poll_round ====================
+
+/// 轮边界收集器：把新输入按序号尾插为一条用户消息
+///
+/// 只在轮边界注入；工具批量执行中途不插队（v1 约束）。
+async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
+    let Some(inbox) = &deps.inbox else {
+        return Ok(continue_to_think());
+    };
+
+    let (anchor, cursor, injections, rounds_started) = {
+        let state = inbox
+            .lock()
+            .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
+        let started = lock(&deps.state)?.rounds_started;
+        (
+            state.anchor().clone(),
+            state.cursor().clone(),
+            state.injections(),
+            started,
+        )
+    };
+
+    // 注入批次封顶 & 剩余轮次检查：只剩最后一轮时不再注入，避免「听完没轮次回答」
+    if injections >= MAX_INJECTIONS_PER_WAKE || rounds_started >= deps.available_rounds {
+        return Ok(continue_to_think());
+    }
+
+    let batch = collect_inbox(&deps.ctx, &anchor, &cursor).await?;
+    if batch.is_empty() {
+        return Ok(continue_to_think());
+    }
+
+    {
+        let mut state = lock(&deps.state)?;
+        // 同一批只尾插一条用户消息：连续多条 user turn 在部分模型协议下
+        // 会被合并/拒绝，且设计约定就是「带序号的一条」
+        let merged = batch
+            .iter()
+            .enumerate()
+            .map(|(index, item)| item.numbered_text(index))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        state.messages.push(ChatMessage::user(merged));
+    }
+
+    let mut state = inbox
+        .lock()
+        .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
+    state.advance(&batch);
+    state.note_injection();
+
+    Ok(continue_to_think())
+}
+
+/// 轮边界检查结束：无论是否注入，都进入下一轮 `think`
+fn continue_to_think() -> NodeOutcome {
+    NodeOutcome::new(NodeSignal::Yield(SIGNAL_CONTINUE.to_string()))
 }
 
 // ==================== think ====================

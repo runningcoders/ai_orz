@@ -1,14 +1,25 @@
 //! `legacy_awaken` 蓝图：把老 awaitaken 的控制流写成完整思考图
 //!
 //! ```text
-//! intent ──done────▶ retrieve ──done──▶ prepare ──done──▶ deliberate
-//!   │                    ▲                                 ├─done──────▶ consolidate
-//!   │                    │                                 ├─cancelled─▶ consolidate
-//!   │                    │                                 └─overflow──▶ compact ──done──▶ prepare
-//!   │                    └────────── new_findings ── discover ◀── max_rounds
-//!   │                                                    └─no_new_findings─▶ force_compact ──done──▶ consolidate
-//!   └─direct / clarify────────────────────────────────────────────────────────▶ consolidate
+//! intent ──done──▶ poll_front ──done──▶ retrieve ──done──▶ prepare ──done──▶ deliberate
+//!   ▲                    │                          ▲                          │
+//!   └──new_input◀────────┘                          │ new_findings             ├─done──────▶ poll_exit ──done──▶ consolidate
+//!   │                                              └──────── discover ◀─max_rounds
+//!   │                                                        └─no_new_findings─▶ force_compact ──done──▶ poll_exit
+//!   │                                                                                                 │
+//!   ├─◀──new_input────────────────────────────────────────────────────────────────────────────────────┘
+//!   │                                                              poll_exit ──rethink──▶ prepare
+//!   └─direct / clarify──▶ poll_exit
+//!                        └─exit_done──▶ consolidate
 //! ```
+//!
+//! 三处新输入挂点（`poll_front` / `poll_exit`，轮级另有 `poll_round`）：
+//! - `poll_front` 在意图识别后、检索前收集同源新消息，能回退就让意图做增量修订
+//!   （`new_input` 回边，≤ `MAX_INTENT_REWINDS` 次），否则尾插进本轮 Prompt；
+//! - `poll_exit` 在 `final` / `direct` / `clarify` 落地前收集：尚未检索则回意图，
+//!   已检索/执行过则尾插后继续思考（`rethink` 回 `prepare`），上限
+//!   `MAX_INJECTIONS_PER_WAKE`；
+//! - 两处都无新输入才正常收尾，避免把已作废的直答/澄清发出去。
 //!
 //! 主链 =「意图识别 → 检索 → 装配 → 执行」，`deliberate` 之后按退出的不同分岔。
 //!
@@ -38,8 +49,12 @@ use super::discover_node::MAX_DISCOVERY_ROUNDS;
 use super::nodes::{
     SIGNAL_CANCELLED, SIGNAL_CLARIFY, SIGNAL_DIRECT, SIGNAL_MAX_ROUNDS, SIGNAL_OVERFLOW,
 };
+use super::poll_node::{
+    NODE_POLL_EXIT, NODE_POLL_FRONT, SIGNAL_EXIT_DONE, SIGNAL_NEW_INPUT, SIGNAL_RETHINK,
+};
 use crate::pkg::think_path::types::SIGNAL_DONE;
-use crate::pkg::think_path::{PhaseId, ThinkPathBlueprint, ThinkPathBuilder};
+use crate::pkg::think_path::{PathLimits, PhaseId, ThinkPathBlueprint, ThinkPathBuilder};
+use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, MAX_INTENT_REWINDS};
 use common::error::Result;
 
 /// 「溢出 → 压缩 → 重装配」回环的次数上限
@@ -71,6 +86,12 @@ pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
             "意图识别：产出结构化 IntentAnalysis",
         )
         .node_with(
+            NODE_POLL_FRONT,
+            PhaseId::Triage,
+            0,
+            "意图后收集新输入：可回退做增量修订",
+        )
+        .node_with(
             "retrieve",
             PhaseId::Prepare,
             0,
@@ -86,20 +107,36 @@ pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
             0,
             "新发现识别：提取新线索或退出",
         )
+        .node_with(
+            NODE_POLL_EXIT,
+            PhaseId::Review,
+            0,
+            "落地前收集新输入：防止发出已作废的直答/澄清",
+        )
         .node_with("consolidate", PhaseId::Consolidate, 0, "收尾落档")
-        .edge("intent", "retrieve", Some(SIGNAL_DONE))
-        .edge("intent", "consolidate", Some(SIGNAL_DIRECT))
-        .edge("intent", "consolidate", Some(SIGNAL_CLARIFY))
+        .edge("intent", NODE_POLL_FRONT, Some(SIGNAL_DONE))
+        .edge(NODE_POLL_FRONT, "retrieve", Some(SIGNAL_DONE))
+        .edge(NODE_POLL_FRONT, "intent", Some(SIGNAL_NEW_INPUT))
+        .edge("intent", NODE_POLL_EXIT, Some(SIGNAL_DIRECT))
+        .edge("intent", NODE_POLL_EXIT, Some(SIGNAL_CLARIFY))
         .edge("retrieve", "prepare", Some(SIGNAL_DONE))
         .edge("prepare", "deliberate", Some(SIGNAL_DONE))
-        .edge("deliberate", "consolidate", Some(SIGNAL_DONE))
+        .edge("deliberate", NODE_POLL_EXIT, Some(SIGNAL_DONE))
         .edge("deliberate", "compact", Some(SIGNAL_OVERFLOW))
         .edge("compact", "prepare", Some(SIGNAL_DONE))
         .edge("deliberate", "discover", Some(SIGNAL_MAX_ROUNDS))
         .edge("discover", "retrieve", Some(SIGNAL_NEW_FINDINGS))
         .edge("discover", "force_compact", Some(SIGNAL_NO_NEW_FINDINGS))
-        .edge("force_compact", "consolidate", Some(SIGNAL_DONE))
+        .edge("force_compact", NODE_POLL_EXIT, Some(SIGNAL_DONE))
+        .edge(NODE_POLL_EXIT, "intent", Some(SIGNAL_NEW_INPUT))
+        .edge(NODE_POLL_EXIT, "prepare", Some(SIGNAL_RETHINK))
+        .edge(NODE_POLL_EXIT, "consolidate", Some(SIGNAL_EXIT_DONE))
         .edge("deliberate", "consolidate", Some(SIGNAL_CANCELLED))
+        .limits(PathLimits {
+            // 各节点激活预算之和 ≈ 61，96 留出余量；仍是回环死循环的硬护栏
+            max_steps: 96,
+            ..PathLimits::default()
+        })
         .build()?;
 
     // 只有「允许重复出现」的节点才显式放开预算，其余保持默认一次。
@@ -108,13 +145,21 @@ pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
     // `compact` 比 `prepare` 少一次：第 N 次 prepare 才有第 N-1 次压缩；
     // `retrieve` / `discover` 是新发现回环的配对预算：N 轮再识别 = N 次新词
     // 回检索 + 1 次初始检索，discover 再多 1 次激活留给软预算优雅退出。
-    // retrieve 若不跟着 discover 一起调，第 N+1 次回检索会先撞「无合法候选」。
+    //
+    // 新输入挂点的预算必须覆盖最坏组合：意图最多回退 `MAX_INTENT_REWINDS`
+    // 次，尾插转向最多 `MAX_INJECTIONS_PER_WAKE` 次；`poll_exit` 每回退/转向
+    // 后都会被再次进入，所以是 `1 + 回退 + 转向`。漏算任意一项都会在
+    // 「无合法候选」处报错收场，而不是优雅降级。
     for node in bp.nodes.iter_mut() {
         node.budget.max_activations = Some(match node.id.as_str() {
-            "prepare" | "deliberate" => MAX_LOOP_ROUNDS,
-            "compact" => MAX_LOOP_ROUNDS.saturating_sub(1),
-            "retrieve" => MAX_DISCOVERY_ROUNDS + 1,
-            "discover" => MAX_DISCOVERY_ROUNDS + 1,
+            "intent" => 1 + MAX_INTENT_REWINDS,
+            NODE_POLL_FRONT => 1 + MAX_INTENT_REWINDS,
+            NODE_POLL_EXIT => 1 + MAX_INTENT_REWINDS + MAX_INJECTIONS_PER_WAKE,
+            "prepare" | "deliberate" => MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE,
+            "compact" => MAX_LOOP_ROUNDS.saturating_sub(1) + MAX_INJECTIONS_PER_WAKE,
+            "force_compact" => 1 + MAX_INTENT_REWINDS + MAX_INJECTIONS_PER_WAKE,
+            "retrieve" => MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS,
+            "discover" => MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS,
             _ => 1,
         });
     }

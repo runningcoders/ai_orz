@@ -54,6 +54,16 @@ impl MessageManagement for MessageDomainImpl {
         self.message_dal.find_by_id(ctx, message_id).await
     }
 
+    async fn get_by_id_with_recalled(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<Option<Message>> {
+        self.message_dal
+            .find_by_id_with_recalled(ctx, message_id)
+            .await
+    }
+
     async fn update_status(
         &self,
         ctx: RequestContext,
@@ -62,6 +72,17 @@ impl MessageManagement for MessageDomainImpl {
     ) -> Result<()> {
         self.message_dal
             .update_status(ctx, message_id, status)
+            .await
+    }
+
+    async fn update_status_batch(
+        &self,
+        ctx: RequestContext,
+        message_ids: &[String],
+        status: MessageStatus,
+    ) -> Result<u64> {
+        self.message_dal
+            .update_status_batch(ctx, message_ids, status)
             .await
     }
 

@@ -27,6 +27,7 @@ use crate::pkg::think_path::{
 };
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use crate::service::domain::runtime::awakening::build_scene_tool_descriptors;
+use crate::service::domain::runtime::inbox::{InboxAnchor, InboxState};
 use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkingOptions};
 use crate::{models::agent::Agent, models::message::Message};
 use common::enums::ThinkingScene;
@@ -105,6 +106,8 @@ pub(crate) struct AwakenDeps {
     pub compaction: Mutex<CompactionSlot>,
     /// run 级检索状态：visited 词集合 + discover 轮次软预算（见 [`RetrievalState`]）
     pub retrieval: Mutex<RetrievalState>,
+    /// 唤醒级收件箱：三处挂点共享的游标、吸收清单与回退计数
+    pub inbox: Arc<Mutex<InboxState>>,
     /// 影子模式：跑完整链路但**不落库、不发通知**，只够成「有机质春雨对比」。
     pub shadow: bool,
     pub started_at: Instant,
@@ -410,6 +413,10 @@ pub(crate) fn build_deps_with_backend(
         shadow,
     } = input;
     let trace_id = trace.id.clone();
+    let inbox = Arc::new(Mutex::new(InboxState::new(InboxAnchor::from_message(
+        &agent.po.id,
+        &message,
+    ))));
     let (think_runtime, policy) = super::super::awakening::init_think_runtime_and_policy(
         &agent,
         common::enums::ThinkingScene::Awaken,
@@ -429,6 +436,7 @@ pub(crate) fn build_deps_with_backend(
         trace: Mutex::new(trace),
         compaction: Mutex::new(CompactionSlot::default()),
         retrieval: Mutex::new(RetrievalState::default()),
+        inbox,
         shadow,
         started_at: Instant::now(),
     })

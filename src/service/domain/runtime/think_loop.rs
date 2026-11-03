@@ -314,6 +314,7 @@ impl RuntimeDomainImpl {
             progress,
             thinking_intensity_offset,
             usage,
+            inbox,
         } = params;
 
         // 唤醒级用量：None = 本次循环独立计量（compact / intent / settle）
@@ -412,14 +413,17 @@ impl RuntimeDomainImpl {
                         }
                         // 直回开关关 → 不直回也不注入（保守口径）
                     }
-                    // 增强注入（默认开）：路由结论作为首轮 System 提示插入消息头
+                    // 增强注入（默认开）：路由结论作为 System 提示追加到消息尾部
+                    //
+                    // ⚠️ 必须尾插，不能插到 index 0：插头会让「人设 + 技能 + 词表 +
+                    // 历史」整段前缀整体后移一条消息，provider 的前缀缓存从第一个
+                    // token 起就全部失配——这一次唤醒的跨唤醒缓存收益归零。
+                    // 尾插只影响它自身及其后的内容，前缀照旧命中；与轮内 nudge /
+                    // reflect 的注入方式一致。
                     RouteDecision::Inject { system_prompt, .. } => {
-                        messages.insert(
-                            0,
-                            ChatMessage::System {
-                                content: system_prompt,
-                            },
-                        );
+                        messages.push(ChatMessage::System {
+                            content: system_prompt,
+                        });
                     }
                     // 静默跳过 = 现状
                     RouteDecision::Skip { .. } => {}
@@ -499,6 +503,7 @@ impl RuntimeDomainImpl {
                     loop_start,
                     usage,
                     base,
+                    inbox,
                 },
             )
             .await

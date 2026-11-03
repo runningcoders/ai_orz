@@ -21,6 +21,11 @@ source_files:
 - src/service/domain/runtime/awakening.rs#L1322-L1355
 - src/service/domain/runtime/mod.rs#L203-L225
 - src/service/domain/runtime/think_loop.rs#L117-L160
+- src/service/domain/runtime/inbox.rs#L59-L342 (2026-11-02 增量：新输入统一收集器)
+- src/service/domain/runtime/legacy_awaken/poll_node.rs#L31-L242 (2026-11-02 增量：poll_front / poll_exit)
+- src/service/domain/runtime/legacy_awaken/blueprint.rs (2026-11-02 增量：挂点接线与预算)
+- src/service/domain/runtime/legacy_awaken/runner.rs (2026-11-02 增量：injected_ids 回传)
+- docs/modules/02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md
 - src/service/dal/agent/mod.rs#L1080
 - src/service/dal/agent/mod.rs#L1715
 - src/models/prompt_builder.rs#L104-L123
@@ -64,6 +69,9 @@ source_files:
 | [运行时领域 Wiki 长文](docs/modules/02-Agent运行时/C-知识/运行时领域.md) | 人类百科 | §5 两阶段唤醒流程详细说明 §8 故障排查 |
 | [cortex_types.rs DeltaToolCall index 消歧](src/models/cortex_types.rs) (2026-09 增量) | LLM 流式 tool_call index 多路 fragment 消歧 | DeltaToolCall.index 改 Option；新增 `resolve_tool_call_index` 方法合并多路 fragment 的 index 消除歧义 |
 | [handler_adapter check_stream_end](src/pkg/tool_registry/handler_adapter/mod.rs) (2026-09 增量) | 流式终止校验 | `check_stream_end` 无 `[DONE]` 或 `finish_reason=length` 一律判截断；empty tool arguments 独立错误路径 |
+| [inbox.rs 统一收集器](src/service/domain/runtime/inbox.rs#L232-L342) (2026-11-02 增量) | 新输入合并判据 / 游标 / 批量预算 | `Option` 相等比较（None 也是取值）；`from_id + from_role` 相同；`thread_id` 仅否决；Text 白名单；≤5 条 / ≤2000 字 |
+| [poll_node.rs 三处挂点](src/service/domain/runtime/legacy_awaken/poll_node.rs#L31-L242) (2026-11-02 增量) | 意图回退 / 尾插转向 / 落地前检查 | `poll_front` / `poll_exit`（轮级 `poll_round`）；回退 ≤2 次、转向 ≤3 次；出口信号 `exit_done` 必须唯一 |
+| [inbox_poll_and_intent_revision_design.md](docs/modules/02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md) | 为什么 / 决策表 | 合并判据、意图增量修订、状态提交、预算护栏 |
 
 ---
 
@@ -138,8 +146,23 @@ source_files:
 | 短路澄清机制上线（need_clarification 非空直接发消息，不进入 Phase2） | awaken() 入口追加 if 分支；send_message 走与正常 Agent 调 send_message 同一通道；状态机正确回到 Idle | [awakening.rs awaken 方法入口](src/service/domain/runtime/awakening.rs#L150-L180) |
 | 新增 ThinkingScene（如 CodeReview 专用前置分析场景） | ① ThinkingScene 枚举追加变体 → ② is_tool_allowed 追加分支 → ③ 对应专用 build_xxx_prompt → ④ RuntimeAwakening trait 新增通用复用方法 → ⑤ awaken 内部按需串联前置阶段 | common/src/enums/thinking_scene.rs + awakening.rs is_tool_allowed match |
 
+## §4.3 2026-11-02 增量：思考中收到新输入（收集 + 增量修订）
+
+**新增红线（与既有 16 条并列，违反 = FAIL）**
+
+| # | 红线 | 验证方式 | 代码锚点 |
+|---|------|---------|---------|
+| 17 | **上下文过滤必须用 `Option` 相等比较**：`project_id` / `task_id` 的 `None` 也是取值，默认对话（无项目/无任务）必须参与匹配；禁止「空值就跳过过滤」的写法 | inbox 单测覆盖默认对话 / 有项目无任务 / 项目+任务三种上下文 | [inbox.rs#L232-L258](src/service/domain/runtime/inbox.rs#L232-L258) |
+| 18 | **合并只要求同发送者（`from_id` + `from_role`）**，不限于 User；`thread_id` 只作否决项（两端都有且不等才拒绝），不能当必要条件 | inbox 单测：非 User 同发送者可合并；单端 thread 缺失不拒绝 | [inbox.rs#L245-L257](src/service/domain/runtime/inbox.rs#L245-L257) |
+| 19 | **意图增量修订必须重算终态字段**：`direct_answer` / `need_clarification` / `retrieved_context` 针对旧消息，一有新输入即失效；只允许复用 `intent_type / confidence / key_terms / resolutions / summary` | 修订 Prompt 渲染在 `current_message` 之后；失败降级清空终态字段 | [default.rs#L1645-L1668](src/service/dal/agent/builder/default.rs#L1645-L1668) |
+| 20 | **收集只读、成功才提交**：唤醒失败时吸收的消息必须保持 `Pending`，不得在收集阶段提前置 `Processed` | consumer 只在 awaken 成功后遍历 `injected_ids` 批量更新 | [consumer/message.rs](src/consumer/message.rs) |
+| 21 | **图激活预算必须与新增挂点同步**：`poll_exit` 出口信号用唯一 `exit_done`（禁止复用 `done`，否则与 `prepare` 的入边竞争）；各节点预算漏算会在「无合法候选」处报错 | 蓝图单测断言节点/边/预算；`legacy_awaken` 集成测试跑通回退/转向路径 | [blueprint.rs](src/service/domain/runtime/legacy_awaken/blueprint.rs) |
+
+**与既有红线的冲突说明**：红线 13「need_clarification 不短路 Phase2」描述的是旧唤醒入口；当前 legacy 思考图已通过 `poll_exit` 在 `direct` / `clarify` 落地前做新输入检查，澄清仍不会跳过整轮思考，但会在**确认没有新输入后**直接向用户提问。两者语义对齐：澄清不是跳过执行，而是缺少用户输入时不再白跑检索。
+
 ## §5 历史演进（f300b5c0..HEAD 增量）
 
 | commit | 事件 | 变更内容 |
 |--------|------|---------|
+| 2026-11-02 | 思考中收到新输入：统一收集 + 意图增量修订 | 新增 `inbox.rs`（锚点/游标/Option 相等/线程否决/批量预算）；`legacy_awaken/poll_node.rs` 三挂点 + `poll_exit` 唯一出口信号 `exit_done`；`IntentRevision` 尾部修订 Prompt；成功后批量 `Processed`，失败保持 `Pending`；蓝图预算同步上调并 `max_steps=96` |
 | 0e818092 | cortex 流式终止校验 + LLM 出站留痕 + empty tool arguments 独立错误 | DeltaToolCall.index 改 Option 类型 + resolve_tool_call_index 消歧（多路 fragment 并行时禁止直接拿 index）；check_stream_end 无 [DONE] 或 finish_reason=length 一律判截断；empty tool arguments 独立错误路径 |

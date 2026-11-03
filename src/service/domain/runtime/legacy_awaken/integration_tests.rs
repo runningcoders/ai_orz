@@ -35,6 +35,7 @@ use crate::models::message::Message;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::think_path::{ContextKey, LoadDepth, NodeSignal, ThinkBus, ThinkNode};
 use crate::service::domain::runtime::compaction::CompactOutcome;
+use crate::service::domain::runtime::inbox::MAX_INJECTIONS_PER_WAKE;
 use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult, ThinkingOptions};
 use async_trait::async_trait;
 use common::enums::{AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType};
@@ -395,11 +396,12 @@ async fn final_answer_walks_prepare_deliberate_consolidate(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "done");
-    assert_eq!(outcome.steps, 5);
+    // intent / poll_front / retrieve / prepare / deliberate / poll_exit / consolidate
+    assert_eq!(outcome.steps, 7);
 }
 
 /// 溢出回环：`overflow` → 压缩 → **重装配** → 再思考 → 完成
@@ -423,7 +425,7 @@ async fn overflow_loops_back_and_rethinks(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>compact#1>prepare#2>deliberate#2>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>compact#1>prepare#2>deliberate#2>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "recovered");
@@ -446,7 +448,7 @@ async fn max_rounds_exits_via_force_compact(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>force_compact#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>discover#1>force_compact#1>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_MAX_ROUNDS);
     // ForceCompact 的产物就是给用户的回复
@@ -481,7 +483,7 @@ async fn happy_path_runs_intent_retrieve_deliberate(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "done");
@@ -493,6 +495,109 @@ async fn happy_path_runs_intent_retrieve_deliberate(pool: SqlitePool) {
         .map(|s| s.queried_terms.clone())
         .unwrap_or_default();
     assert_eq!(queried, vec!["测试".to_string()]);
+}
+
+/// 思考中收到同发送者的新消息：`poll_front` 收集并回退做意图增量修订
+///
+/// 护栏意义：新输入必须被当前唤醒吸收（而不是并发开第二次唤醒），
+/// 且成功后 `injected_ids` 回传消费者批量置 `Processed`。
+#[sqlx::test]
+async fn poll_front_absorbs_same_sender_and_rewinds_intent(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(vec![final_result("done")]).with_intents(vec![
+        IntentAnalysis {
+            key_terms: vec!["第一问".to_string()],
+            summary: "用户第一问".to_string(),
+            ..Default::default()
+        },
+        IntentAnalysis {
+            key_terms: vec!["第一问".to_string(), "第二问".to_string()],
+            summary: "用户补充第二问".to_string(),
+            ..Default::default()
+        },
+    ]);
+
+    let deps = make_deps(ctx.clone(), backend.clone());
+    // 锚点之后插入一条同发送者 / 同上下文的 Pending 消息
+    let mut injected = make_message("我再补充一个问题");
+    injected.po.to_id = deps.agent.po.id.clone();
+    injected.po.created_at = deps.message.po.created_at + 1;
+    crate::service::dal::message::dal()
+        .save_message(ctx, &injected)
+        .await
+        .expect("injected message should save");
+
+    let outcome = run_legacy_awaken(Arc::clone(&deps))
+        .await
+        .expect("poll_front absorb must complete");
+
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>poll_front#1>intent#2>poll_front#2>retrieve#1>prepare#1>deliberate#1>poll_exit#1>consolidate#1"
+    );
+    assert_eq!(outcome.injected_ids, vec![injected.po.id.clone()]);
+    assert_eq!(
+        backend.intent_calls.load(Ordering::SeqCst),
+        2,
+        "收集到新输入后应回退意图做一次增量修订"
+    );
+}
+
+/// 直答落地前收到补充：`poll_exit` 回退意图，且旧直答不能再被发出
+///
+/// 护栏意义：直答路径在总线上留了 `Artifacts`；如果回退时不清理，
+/// 后续路径一旦没有重新写产物，就会把已作废的直答原样发给用户。
+#[sqlx::test]
+async fn poll_exit_rewinds_direct_and_drops_stale_answer(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(vec![final_result("补充后的完整回答")]).with_intents(vec![
+        IntentAnalysis {
+            intent_type: "Chat".to_string(),
+            direct_answer: "旧的直答".to_string(),
+            summary: "用户打招呼".to_string(),
+            ..Default::default()
+        },
+        IntentAnalysis {
+            key_terms: vec!["补充".to_string()],
+            summary: "用户补充后重新理解".to_string(),
+            ..Default::default()
+        },
+    ]);
+
+    let deps = make_deps(ctx.clone(), backend.clone());
+    let mut injected = make_message("补充：请再展开讲讲");
+    injected.po.to_id = deps.agent.po.id.clone();
+    injected.po.created_at = deps.message.po.created_at + 1;
+    crate::service::dal::message::dal()
+        .save_message(ctx.clone(), &injected)
+        .await
+        .expect("injected message should save");
+
+    let outcome = run_legacy_awaken(Arc::clone(&deps))
+        .await
+        .expect("poll_exit rewind must complete");
+
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>poll_exit#1>intent#2>poll_front#1>retrieve#1>prepare#1>deliberate#1>poll_exit#2>consolidate#1"
+    );
+    assert_eq!(outcome.exit, EXIT_FINAL);
+    assert_eq!(outcome.raw_output, "补充后的完整回答");
+    assert_ne!(outcome.raw_output, "旧的直答", "回退后不得复用旧直答产物");
+    assert_eq!(outcome.injected_ids, vec![injected.po.id.clone()]);
+    assert_eq!(
+        backend.intent_calls.load(Ordering::SeqCst),
+        2,
+        "直答落地前的新输入必须触发一次意图增量修订"
+    );
+
+    // 补充消息此时仍为 Pending：状态提交属于消费者职责，图只负责回传 ID
+    let stored = crate::service::dal::message::dal()
+        .find_by_id(ctx.clone(), &injected.po.id)
+        .await
+        .expect("query injected message")
+        .expect("injected message exists");
+    assert_eq!(stored.po.status, common::enums::MessageStatus::Pending);
 }
 
 /// 简单问题直答：intent 命中 `direct_answer` → 直连 consolidate，跳过三节点
@@ -514,7 +619,7 @@ async fn direct_answer_skips_retrieve_prepare_deliberate(pool: SqlitePool) {
         .await
         .expect("direct answer must complete");
 
-    assert_eq!(outcome.fingerprint, "intent#1>consolidate#1");
+    assert_eq!(outcome.fingerprint, "intent#1>poll_exit#1>consolidate#1");
     assert_eq!(outcome.exit, EXIT_DIRECT);
     assert_eq!(outcome.raw_output, "你好，我是接待助手。");
     assert_eq!(
@@ -548,7 +653,7 @@ async fn clarification_skips_retrieve_prepare_deliberate(pool: SqlitePool) {
         .await
         .expect("clarification must complete");
 
-    assert_eq!(outcome.fingerprint, "intent#1>consolidate#1");
+    assert_eq!(outcome.fingerprint, "intent#1>poll_exit#1>consolidate#1");
     assert_eq!(outcome.exit, EXIT_CLARIFY);
     assert!(outcome.raw_output.contains("你要改哪份文档？"));
     assert!(
@@ -598,7 +703,7 @@ async fn discovery_loop_retrieves_again(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>retrieve#2>prepare#2>deliberate#2>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>discover#1>retrieve#2>prepare#2>deliberate#2>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "recovered after loop");
@@ -656,8 +761,8 @@ async fn graph_level_loop_converges_via_discover_soft_budget(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>retrieve#2>prepare#2>\
-deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compact#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>discover#1>retrieve#2>prepare#2>\
+deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compact#1>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_MAX_ROUNDS);
     assert_eq!(outcome.raw_output, "已尽力收尾");
@@ -731,7 +836,7 @@ async fn discover_is_skipped_when_wake_round_budget_is_spent(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>discover#1>force_compact#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>discover#1>force_compact#1>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_MAX_ROUNDS);
     assert_eq!(
@@ -752,7 +857,7 @@ async fn intent_failure_degrades_and_continues(pool: SqlitePool) {
     // 降级不炸链路：走线与空意图 happy path 完全一致，照常收尾
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "still done");
@@ -820,10 +925,12 @@ async fn deliberation_error_propagates(pool: SqlitePool) {
 #[sqlx::test]
 async fn loop_budget_exhaustion_errors_instead_of_returning_ok(pool: SqlitePool) {
     let ctx = init_env(pool);
-    // 一路溢出：`prepare / deliberate` 各能出现 8 次、`compact` 7 次，
-    // 队列给够（多余的不会被消费），第 9 次 prepare 无处可去时应中断。
+    // 一路溢出：`prepare / deliberate` 各能出现
+    // `MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE` 次（新输入注入的预留额度），
+    // `compact` 比之少一次。队列按新预算给足，下一次 prepare 无处可去时应中断。
+    let loop_capacity = MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE;
     let backend = ScriptedBackend::new(
-        (0..MAX_LOOP_ROUNDS)
+        (0..loop_capacity)
             .map(|_| ThinkLoopResult::ContextOverflow {
                 messages: user_msg(),
                 input_tokens: 100,
@@ -832,7 +939,7 @@ async fn loop_budget_exhaustion_errors_instead_of_returning_ok(pool: SqlitePool)
             .collect(),
     )
     .with_compacts(
-        (0..MAX_LOOP_ROUNDS)
+        (0..loop_capacity)
             .map(|i| compact_outcome(&format!("第 {i} 轮摘要"), ""))
             .collect(),
     );
@@ -861,7 +968,7 @@ async fn cancelled_shortcuts_to_consolidate(pool: SqlitePool) {
 
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_CANCELLED);
     // 取消不该碰压缩（没有活儿要沉淀）

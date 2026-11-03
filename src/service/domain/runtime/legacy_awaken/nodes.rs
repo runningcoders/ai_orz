@@ -297,6 +297,17 @@ impl ThinkNode for PrepareNode {
         }
         builder.current_message(&deps.message);
         builder.message_thread(&biz.message_thread);
+        // 意图修订失败 / 预算耗尽时，新输入降级为尾插转向消息
+        // （只追加在当前消息之后，绝不插到 System 前缀之前）
+        if let Ok(mut state) = deps.inbox.lock() {
+            let pending = state.pending_turn_texts();
+            // 消费即清空：后续 compact→prepare 重装配 / poll_exit rethink 不能
+            // 把同一批输入重复渲染进 Prompt
+            state.clear_pending_turn();
+            if !pending.is_empty() {
+                builder.injected_inputs(&pending);
+            }
+        }
 
         let pack = PromptPack {
             prompt: builder.build(),
@@ -511,6 +522,7 @@ impl ThinkNode for DeliberateNode {
                     start_round: total_rounds,
                     thinking_intensity_offset,
                     usage: Arc::clone(&self.usage),
+                    inbox: Some(Arc::clone(&deps.inbox)),
                 },
             )
             .await;

@@ -52,6 +52,8 @@ pub(crate) struct RoundDeps {
     pub usage: Arc<Mutex<WakeUsage>>,
     /// 进入本周期前的已用量（本次循环的计量起点）
     pub base: WakeUsage,
+    /// 唤醒级收件箱（`Some` 时轮级图插入 `poll_round`）
+    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
 }
 
 /// 唤醒级轮次编号（1 基）= 进入本周期前已消耗的轮次 + 本周期内局部轮次

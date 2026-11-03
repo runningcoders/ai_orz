@@ -45,6 +45,8 @@ pub struct ThinkInput {
     pub thinking_intensity_offset: i32,
     /// 唤醒级用量表（思考循环每轮写回，跨周期累计）
     pub usage: Arc<Mutex<WakeUsage>>,
+    /// 唤醒级收件箱：`Some` 时轮级图启用 `poll_round`
+    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
 }
 
 /// 一次「压缩」的输入
@@ -62,6 +64,8 @@ pub struct CompactInput {
 pub struct IntentInput {
     /// 意图分析子 trace id（形如 `intent-{主 trace_id}`）
     pub trace_id: String,
+    /// 增量修订入参：上次完整结论 + 新增输入（首次识别为 `None`）
+    pub revision: Option<crate::service::domain::runtime::inbox::IntentRevision>,
 }
 
 /// 一次「新发现识别」的输入：短聚焦 prompt，单轮无工具
@@ -104,24 +108,24 @@ impl ThinkBackend for LegacyBackend {
         AgentRuntimeStateManager::global()
             .set_think_runtime(&deps.agent.po.id, deps.think_runtime.clone());
 
-        let result = deps
-            .domain
-            .run_think_loop(
-                ThinkLoopParams::new(
-                    deps.ctx.clone(),
-                    &deps.agent,
-                    ThinkingScene::Awaken,
-                    &deps.trace_id,
-                    input.initial_messages,
-                    &input.tools,
-                )
-                .with_rounds(input.max_rounds, input.start_round)
-                .with_usage(&input.usage)
-                .with_monitoring(&deps.think_runtime, &deps.policy)
-                .with_progress(&deps.progress)
-                .with_thinking_intensity_offset(input.thinking_intensity_offset),
-            )
-            .await;
+        let mut params = ThinkLoopParams::new(
+            deps.ctx.clone(),
+            &deps.agent,
+            ThinkingScene::Awaken,
+            &deps.trace_id,
+            input.initial_messages,
+            &input.tools,
+        )
+        .with_rounds(input.max_rounds, input.start_round)
+        .with_usage(&input.usage)
+        .with_monitoring(&deps.think_runtime, &deps.policy)
+        .with_progress(&deps.progress)
+        .with_thinking_intensity_offset(input.thinking_intensity_offset);
+        if let Some(inbox) = &input.inbox {
+            params = params.with_inbox(inbox);
+        }
+
+        let result = deps.domain.run_think_loop(params).await;
 
         match &result {
             Ok(_) => crate::log_info!(
@@ -168,6 +172,7 @@ impl ThinkBackend for LegacyBackend {
                 &deps.message,
                 &deps.options,
                 &input.trace_id,
+                input.revision.as_ref(),
             )
             .await
     }

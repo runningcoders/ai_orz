@@ -6,7 +6,7 @@
 //! 空则不渲染，链路等价于「没有 Phase 1」的老行为。
 
 use super::backend::IntentInput;
-use super::context::AwakenDeps;
+use super::context::{AwakenDeps, read_bus};
 use super::nodes::{
     Artifacts, EXIT_CLARIFY, EXIT_DIRECT, PromptPack, SIGNAL_CLARIFY, SIGNAL_DIRECT,
     write_artifacts,
@@ -16,6 +16,7 @@ use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
 };
+use crate::service::domain::runtime::inbox::IntentRevision;
 use crate::service::domain::runtime::types::IntentAnalysis;
 use async_trait::async_trait;
 use common::error::Result;
@@ -74,6 +75,23 @@ impl ThinkNode for IntentNode {
         )
         .await;
 
+        // 回退重入时 bus 里已有上次完整结论；首次识别则为 None。
+        // 新增输入由 poll_front / poll_exit 暂存在共享收件箱里，这里取走并
+        // 组装成一次增量修订（上次结论 + 新增输入）。
+        let previous = read_bus::<IntentAnalysis>(bus, ContextKey::Intent).ok();
+        let revision_batch = deps
+            .inbox
+            .lock()
+            .map(|mut state| state.take_revision())
+            .unwrap_or(None);
+        let revision = match (&previous, &revision_batch) {
+            (Some(prev), Some(batch)) if !batch.is_empty() => Some(IntentRevision {
+                previous: prev.clone(),
+                inputs: batch.iter().map(|item| item.content.clone()).collect(),
+            }),
+            _ => None,
+        };
+
         // 失败降级：空 IntentAnalysis，主流程照常（retrieve 对空词自行短路）。
         // 事件口径与 awakening::analyze_input_intent 对齐：失败也发 finished 事件
         // （status=failed），监控才能追踪 Phase 1 的失败率与耗时。
@@ -83,6 +101,7 @@ impl ThinkNode for IntentNode {
                 deps,
                 IntentInput {
                     trace_id: trace_id.clone(),
+                    revision: revision.clone(),
                 },
             )
             .await
@@ -92,13 +111,32 @@ impl ThinkNode for IntentNode {
                 crate::log_error!(
                     &deps.ctx,
                     "legacy_awaken",
-                    "intent analyze degraded to empty: agent_id={}, error={}",
+                    "intent analyze degraded: agent_id={}, error={}",
                     deps.agent.po.id,
                     e
                 );
-                (IntentAnalysis::default(), format!("failed: {e}"))
+                // 修订失败：保留旧理解结论，但必须清空针对上一条消息的终态判断；
+                // 新输入降级为尾插转向消息，交给 prepare 拼到 Prompt 尾部。
+                if let (Some(mut prev), Some(batch)) = (previous.clone(), revision_batch) {
+                    prev.direct_answer.clear();
+                    prev.need_clarification.clear();
+                    prev.retrieved_context.clear();
+                    if let Ok(mut state) = deps.inbox.lock() {
+                        state.fallback_revision(batch);
+                    }
+                    (prev, format!("failed: {e}"))
+                } else {
+                    (IntentAnalysis::default(), format!("failed: {e}"))
+                }
             }
         };
+
+        // 修订成功：旧结论已被完整新结论替换，清掉可能残留的降级输入
+        if revision.is_some()
+            && let Ok(mut state) = deps.inbox.lock()
+        {
+            state.clear_pending_turn();
+        }
 
         crate::log_info!(
             &deps.ctx,

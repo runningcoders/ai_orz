@@ -769,6 +769,102 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 批量状态更新：一条 SQL 覆盖多个 ID，空集合直接返回 0
+#[sqlx::test(migrations = "./migrations")]
+async fn test_update_status_batch(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    let mut ids = Vec::new();
+    for content in ["批量消息 1", "批量消息 2"] {
+        let msg = MessagePo::new(
+            Uuid::now_v7().to_string(),
+            None,
+            Some("task-batch".to_string()),
+            "user-001".to_string(),
+            "".to_string(),
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            content.to_string(),
+            None,
+            FileMeta::new("".to_string(), "".to_string(), 0),
+            None,
+            None,
+            None,
+            "test-user".to_string(),
+        );
+        message_dao.insert(ctx.clone(), &msg).await?;
+        ids.push(msg.id);
+    }
+
+    let updated = message_dao
+        .update_status_batch(ctx.clone(), &ids, MessageStatus::Processed)
+        .await?;
+    assert_eq!(updated, 2);
+
+    for id in &ids {
+        let found = message_dao.find_by_id(ctx.clone(), id).await?.unwrap();
+        assert_eq!(found.status, MessageStatus::Processed);
+    }
+
+    // 空集合不产生 SQL，直接返回 0
+    assert_eq!(
+        message_dao
+            .update_status_batch(ctx.clone(), &[], MessageStatus::Processed)
+            .await?,
+        0
+    );
+
+    Ok(())
+}
+
+/// thread_id 兼容过滤：只排除「两端都有且不等」，NULL 一律放行
+#[sqlx::test(migrations = "./migrations")]
+async fn test_query_thread_id_compatible_veto(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    for (index, thread_id) in [Some("t1"), Some("t2"), None].iter().enumerate() {
+        let mut msg = MessagePo::new(
+            Uuid::now_v7().to_string(),
+            None,
+            None,
+            "user-001".to_string(),
+            "".to_string(),
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            format!("线程消息 {index}"),
+            None,
+            FileMeta::new("".to_string(), "".to_string(), 0),
+            None,
+            None,
+            None,
+            "test-user".to_string(),
+        );
+        msg.thread_id = thread_id.map(str::to_string);
+        message_dao.insert(ctx.clone(), &msg).await?;
+    }
+
+    let rows = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                thread_id_compatible: Some("t1".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(rows.len(), 2, "应保留同线程与无线程消息");
+    assert!(
+        rows.iter()
+            .all(|m| m.thread_id.as_deref() == Some("t1") || m.thread_id.is_none()),
+        "异线程消息必须被 SQL 排除"
+    );
+
+    Ok(())
+}
+
 /// 测试图片消息带元数据
 #[sqlx::test(migrations = "./migrations")]
 async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {

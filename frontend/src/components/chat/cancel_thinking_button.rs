@@ -4,10 +4,9 @@
 //! `POST /api/v1/hr/agents/{id}/cancel-thinking`），区别只在入口位置：这里是
 //! **对话内**入口，用户不必离开聊天窗口去详情页找人。
 //!
-//! 两个落点共用本组件，避免在 `pages/message/chat.rs` 的两个 rsx 分支
-//! （项目对话 / 默认对话）里各写一遍，也避免再抄一份请求 + 二次确认逻辑：
-//! - `CancelThinkingStyle::Inline`：置底状态气泡内的小号按钮，紧挨「正在思考中…」
-//! - `CancelThinkingStyle::Block`：输入区发送键位，Busy 时顶替被禁用的「处理中」
+//! 两个会话分支（项目对话 / 默认对话）共用本组件，避免各写一遍请求 +
+//! 二次确认逻辑。唯一落点是**置底状态气泡内的小号按钮**，紧挨「正在思考中…」；
+//! 输入区固定只放发送键位，不再重复出现停止入口。
 //!
 //! 语义：`cancel_thinking` 是**信号语义**（Agent 在当前轮次边界退出），不是状态语义——
 //! 队列里排着、还没轮到处理的消息不受影响，那些要用 `recall_message` 作废。
@@ -21,24 +20,11 @@ use crate::store::toast::use_toast;
 use common::api::CancelThinkingRequest;
 use dioxus::prelude::*;
 
-/// 按钮外观变体
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub enum CancelThinkingStyle {
-    /// 置底状态气泡内：小号，与气泡内其它元素同排
-    #[default]
-    Inline,
-    /// 输入区发送键位：常规尺寸，承接原本「发送」按钮的位置
-    Block,
-}
-
 /// 停止思考按钮 Props
 #[derive(Props, Clone, PartialEq)]
 pub struct CancelThinkingButtonProps {
     /// 目标 Agent ID（对话内 = 项目 owner / 前台 Agent）
     pub agent_id: String,
-    /// 外观变体
-    #[props(default)]
-    pub style: CancelThinkingStyle,
     /// 取消信号投递成功后的回调：调用方据此乐观回写运行时状态，
     /// 不必等 3s 周期轮询才把按钮 / 气泡收敛掉
     pub on_cancelled: EventHandler<()>,
@@ -51,7 +37,6 @@ pub fn CancelThinkingButton(props: CancelThinkingButtonProps) -> Element {
     let mut show_confirm = use_signal(|| false);
     let mut cancelling = use_signal(|| false);
 
-    let style = props.style;
     let agent_id = props.agent_id.clone();
     let on_cancelled = props.on_cancelled;
 
@@ -83,18 +68,10 @@ pub fn CancelThinkingButton(props: CancelThinkingButtonProps) -> Element {
     };
 
     let busy = *cancelling.read();
-    let (class, label) = match style {
-        // whitespace-nowrap：`.btn` 自身不禁止折行，输入区按钮在窄屏下会把「停止思考」
-        // 折成两行、把按钮撑高。文案收到两字 + 显式 nowrap，双保险（「取消中…」同样受益）
-        CancelThinkingStyle::Inline => (
-            "btn hud-btn btn-xs btn-warning shrink-0 whitespace-nowrap",
-            if busy { "取消中…" } else { "停止" },
-        ),
-        CancelThinkingStyle::Block => (
-            "btn hud-btn btn-warning whitespace-nowrap",
-            if busy { "取消中…" } else { "停止" },
-        ),
-    };
+    // whitespace-nowrap：`.btn` 自身不禁止折行，窄屏下会把「停止思考」折成两行、
+    // 把气泡撑高。文案收到两字 + 显式 nowrap，双保险（「取消中…」同样受益）
+    let class = "btn hud-btn btn-xs btn-warning shrink-0 whitespace-nowrap";
+    let label = if busy { "取消中…" } else { "停止" };
 
     rsx! {
         // display:contents —— 本层不生成盒子，按钮直接作为父级 flex 的子项参与布局。

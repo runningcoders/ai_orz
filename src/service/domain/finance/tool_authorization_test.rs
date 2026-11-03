@@ -178,6 +178,15 @@ mod tests {
             unimplemented!("本测试不需要")
         }
 
+        async fn update_status_batch(
+            &self,
+            _ctx: RequestContext,
+            _ids: &[String],
+            _s: MessageStatus,
+        ) -> Result<u64> {
+            unimplemented!("本测试不需要")
+        }
+
         async fn count_by_task_id(&self, _ctx: RequestContext, _task_id: &str) -> Result<u64> {
             unimplemented!("本测试不需要")
         }

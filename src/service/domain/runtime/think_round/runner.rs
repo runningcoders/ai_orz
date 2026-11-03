@@ -48,6 +48,8 @@ pub(crate) struct RoundRun<'a> {
     pub usage: Arc<Mutex<WakeUsage>>,
     /// 进入本周期前的已用量（本次循环的计量起点）
     pub base: WakeUsage,
+    /// 唤醒级收件箱（仅 awaken 主链为 Some）
+    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
 }
 
 /// 装配并驱动轮级环图，返回循环终止结果
@@ -70,6 +72,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         loop_start,
         usage,
         base,
+        inbox,
     } = input;
 
     // 模型标识：事件上报用；与老循环「每轮共用同一份」的口径一致
@@ -107,9 +110,12 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         loop_start,
         usage,
         base,
+        inbox,
     });
 
-    let blueprint = blueprint::round_blueprint(available_rounds, enable_reflect)?;
+    let poll_enabled = deps.inbox.is_some();
+    let blueprint =
+        blueprint::round_blueprint_with_poll(available_rounds, enable_reflect, poll_enabled)?;
     let engine = ThinkPathEngine::new(
         blueprint,
         nodes::build_nodes(&deps),

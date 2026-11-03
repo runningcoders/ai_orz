@@ -123,7 +123,10 @@ pub trait RuntimeDomain: Send + Sync + Debug {
 pub trait RuntimeMemory: Send + Sync {
     // === 内部使用方法（保持不变） ===
 
-    /// 读取最近短期记忆
+    /// 读取最近短期记忆（返回**时间正序**：旧 → 新）
+    ///
+    /// 供 Prompt 的【历史对话】装配使用：正序渲染让新增记忆落在尾部追加，
+    /// 窗口未满时可保住整块前缀缓存（倒序会把新记忆插到最前面，整块失配）。
     async fn get_recent_context(
         &self,
         ctx: RequestContext,
@@ -436,6 +439,7 @@ pub mod busy_guard;
 pub mod cancel;
 mod cerebellum_router;
 mod compaction;
+mod inbox;
 mod intent_analyze;
 // `pub(crate)`：尚未接入调用方，先作为内部可用的**影子链路**存在；
 // 影子对比通过后再决定是否抬为对外入口。
@@ -803,4 +807,11 @@ pub struct AwakeningResult {
     pub raw_input: String,
     /// 原始输出（模型返回）
     pub raw_output: String,
+    /// 本轮唤醒吸收的其他消息 ID（成功后由消费者批量置 `Processed`）
+    pub injected_ids: Vec<String>,
+    /// 是否因用户取消而结束
+    ///
+    /// 取消语义下，本轮吸收的补充消息**不算被处理过**：消费者不提交
+    /// `Processed`，让它们各自触发后续唤醒，避免用户的补充被静默吞掉。
+    pub cancelled: bool,
 }

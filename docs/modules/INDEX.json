@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 668,
-  "total_bytes": 14004814,
+  "total": 669,
+  "total_bytes": 14035697,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -687,11 +687,11 @@
     {
       "id": "02-Agent运行时",
       "counts": {
-        "A-设计": 8,
+        "A-设计": 9,
         "B-落地方案": 15,
         "C-知识": 19
       },
-      "total": 42,
+      "total": 43,
       "docs": [
         {
           "tier": "A-设计",
@@ -722,6 +722,37 @@
             "02-Agent运行时/A-设计/thinking_task_policy_engine_design.md",
             "02-Agent运行时/A-设计/runtime_design.md",
             "02-Agent运行时/C-知识/小脑快判断（System One）.md"
+          ]
+        },
+        {
+          "tier": "A-设计",
+          "path": "02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md",
+          "name": "inbox_poll_and_intent_revision_design",
+          "title": "思考循环中的新输入收集与意图回退设计（可中断唤醒）",
+          "bytes": 19786,
+          "status": "现行",
+          "scope": [
+            "src/service/domain/runtime/legacy_awaken/blueprint.rs",
+            "src/service/domain/runtime/legacy_awaken/intent_node.rs",
+            "src/service/domain/runtime/legacy_awaken/nodes.rs",
+            "src/service/domain/runtime/think_round/blueprint.rs",
+            "src/service/domain/runtime/think_round/nodes.rs",
+            "src/service/domain/runtime/think_round/state.rs",
+            "src/service/domain/runtime/think_round/deps.rs",
+            "src/service/domain/runtime/intent_analyze.rs",
+            "src/service/domain/runtime/types.rs",
+            "src/service/dal/agent/builder/default.rs",
+            "src/service/dao/message/mod.rs",
+            "src/consumer/message.rs",
+            "src/pkg/think_path/types.rs",
+            "frontend/src/pages/message/chat.rs",
+            "frontend/src/components/chat/cancel_thinking_button.rs"
+          ],
+          "related": [
+            "02-Agent运行时/A-设计/agent_loop_engine_design.md",
+            "02-Agent运行时/A-设计/thinking_graph_engine_design.md",
+            "02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md",
+            "02-Agent运行时/A-设计/runtime_design.md"
           ]
         },
         {
@@ -1026,7 +1057,7 @@
           "path": "02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md",
           "name": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联",
           "title": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2",
-          "bytes": 16084
+          "bytes": 20145
         },
         {
           "tier": "C-知识",
@@ -1110,7 +1141,7 @@
           "path": "02-Agent运行时/C-知识/运行时领域.md",
           "name": "运行时领域",
           "title": "运行时领域",
-          "bytes": 39932
+          "bytes": 44695
         }
       ]
     },
@@ -3300,7 +3331,7 @@
           "path": "08-搜索/C-知识/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序.md",
           "name": "PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序",
           "title": "PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序",
-          "bytes": 17734
+          "bytes": 18978
         },
         {
           "tier": "C-知识",
@@ -4516,7 +4547,7 @@
           "path": "11-前端应用/C-知识/消息与工作区页面.md",
           "name": "消息与工作区页面",
           "title": "消息与工作区页面",
-          "bytes": 26831
+          "bytes": 27860
         },
         {
           "tier": "C-知识",

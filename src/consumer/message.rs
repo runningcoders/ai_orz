@@ -43,7 +43,6 @@ use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
 use crate::service::dal::agent::AgentFetchOptions;
-use crate::service::dal::message as message_dal;
 use crate::service::domain::hr::{self as hr_domain, HrDomain};
 use crate::service::domain::message::{
     self as message_domain, DeliverMessageCommand, DeliveryOptions, MessageDomain,
@@ -185,8 +184,10 @@ impl MessageConsumer {
 
         // 从 DB 加载完整 Message
         // ctx 已由 AOP 框架从事件顶层 context_carrier 还原，保留原始 log_id 等链路标识
-        let message = match message_dal::dal()
-            .find_by_id(ctx.clone(), &msg_event.message_id)
+        let message = match self
+            .message_domain
+            .management()
+            .get_by_id(ctx.clone(), &msg_event.message_id)
             .await?
         {
             Some(m) => m,
@@ -196,8 +197,10 @@ impl MessageConsumer {
                 // 撤回是一个**正常结局**且事件仍排在 AOP 队列里，出队即走到此处 ——
                 // 必须 ack 跳过（返回 `Ok`），**不能**当「消息不存在」上抛：上抛会让
                 // 框架 nack 重投最多 8 次，把该 Agent 的队列堵死（与撤回的初衷完全相反）。
-                if message_dal::dal()
-                    .find_by_id_with_recalled(ctx.clone(), &msg_event.message_id)
+                if self
+                    .message_domain
+                    .management()
+                    .get_by_id_with_recalled(ctx.clone(), &msg_event.message_id)
                     .await?
                     .is_some()
                 {
@@ -863,6 +866,50 @@ impl MessageConsumer {
             agent_id,
             awaken_result.trace_ids
         );
+
+        // 本轮唤醒吸收的其他消息：成功后才提交 `Processed`。
+        // 收集阶段只读，失败时它们仍是 `Pending`，会各自作为独立唤醒处理；
+        // 未提交成功也不会丢消息，只是多跑一次唤醒（幂等守卫兜底）。
+        if !awaken_result.injected_ids.is_empty() {
+            if awaken_result.cancelled {
+                // 用户主动停止：本轮吸收的补充消息没被真正处理完，
+                // 保持 Pending 让它们各自触发后续唤醒，不能静默吞掉。
+                log_info!(
+                    &ctx,
+                    "handle_agent_message",
+                    "wake cancelled, absorbed messages stay pending: count={}",
+                    awaken_result.injected_ids.len()
+                );
+            } else {
+                match self
+                    .message_domain
+                    .management()
+                    .update_status_batch(
+                        ctx.clone(),
+                        &awaken_result.injected_ids,
+                        MessageStatus::Processed,
+                    )
+                    .await
+                {
+                    Ok(updated) => log_info!(
+                        &ctx,
+                        "handle_agent_message",
+                        "absorbed messages committed, updated={}, total={}",
+                        updated,
+                        awaken_result.injected_ids.len()
+                    ),
+                    // 整批失败时全部保持 Pending：后续会各自作为独立唤醒处理，
+                    // 未提交成功也不会丢消息，幂等守卫会跳过已处理的消息。
+                    Err(e) => log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "吸收消息批量置 Processed 失败（保持 Pending 交后续唤醒）: count={}, error={}",
+                        awaken_result.injected_ids.len(),
+                        e
+                    ),
+                }
+            }
+        }
 
         // =============== 关键：Framework 主动把 Final 文本转为"对等回复" ===============
         //

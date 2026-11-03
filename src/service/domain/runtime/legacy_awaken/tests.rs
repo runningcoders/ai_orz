@@ -7,7 +7,9 @@
 use super::blueprint::{MAX_LOOP_ROUNDS, legacy_awaken_blueprint};
 use super::discover_node::MAX_DISCOVERY_ROUNDS;
 use super::nodes::{EXIT_MAX_ROUNDS, map_think_result, sample_results};
+use super::poll_node::{NODE_POLL_EXIT, NODE_POLL_FRONT};
 use crate::pkg::think_path::ThinkPathBlueprint;
+use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, MAX_INTENT_REWINDS};
 use crate::service::domain::runtime::types::{ThinkLoopResult, WakeUsage};
 
 fn blueprint() -> ThinkPathBlueprint {
@@ -29,12 +31,14 @@ fn entry_and_nodes_are_declared() {
     let ids: Vec<&str> = bp.nodes.iter().map(|n| n.id.as_str()).collect();
     for expected in [
         "intent",
+        NODE_POLL_FRONT,
         "retrieve",
         "prepare",
         "deliberate",
         "compact",
         "force_compact",
         "discover",
+        NODE_POLL_EXIT,
         "consolidate",
     ] {
         assert!(ids.contains(&expected), "{expected} missing: {ids:?}");
@@ -68,11 +72,23 @@ fn loop_nodes_budget_is_explicitly_loosened() {
     // 回环上的节点必须允许多次出现；其余默认一次。
     // ⚠️ 断言的是常量本身而不是抄下来的字面量 —— 抄一份数字到这里就是第三份真相：
     // 改了蓝图而这里没改，测试照样绿，运行时却在别处静默停车。
-    assert_eq!(budget_of("prepare"), Some(MAX_LOOP_ROUNDS));
-    assert_eq!(budget_of("deliberate"), Some(MAX_LOOP_ROUNDS));
+    assert_eq!(
+        budget_of("prepare"),
+        Some(MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE)
+    );
+    assert_eq!(
+        budget_of("deliberate"),
+        Some(MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE)
+    );
     assert_eq!(
         budget_of("compact"),
-        Some(MAX_LOOP_ROUNDS.saturating_sub(1))
+        Some(MAX_LOOP_ROUNDS.saturating_sub(1) + MAX_INJECTIONS_PER_WAKE)
+    );
+    assert_eq!(budget_of("intent"), Some(1 + MAX_INTENT_REWINDS));
+    assert_eq!(budget_of(NODE_POLL_FRONT), Some(1 + MAX_INTENT_REWINDS));
+    assert_eq!(
+        budget_of(NODE_POLL_EXIT),
+        Some(1 + MAX_INTENT_REWINDS + MAX_INJECTIONS_PER_WAKE)
     );
     assert_eq!(budget_of("consolidate"), Some(1));
 }
@@ -135,11 +151,17 @@ fn consolidate_only_sees_exits_the_graph_can_deliver() {
         .collect();
     assert!(
         direct.contains(&"deliberate"),
-        "deliberate should feed consolidate directly"
+        "deliberate(cancelled) should feed consolidate directly"
+    );
+    // 正常收尾统一经过出口检查：force_compact / final / direct / clarify
+    // 都不能绕过 `poll_exit`，否则会把已作废的答复发出去
+    assert!(
+        direct.contains(&NODE_POLL_EXIT),
+        "poll_exit should feed consolidate"
     );
     assert!(
-        direct.contains(&"force_compact"),
-        "force_compact should feed consolidate"
+        !direct.contains(&"force_compact"),
+        "force_compact reaches consolidate only via poll_exit"
     );
     // `compact` 走的是回环回 prepare，不直达收尾：因此 `Consolidate`
     // 永远不会看到 `overflow`（它会先变成下一轮的 prepare→deliberate）
@@ -234,12 +256,12 @@ fn every_exit_route_reaches_consolidate() {
     }
 }
 
-/// 进入 `prepare` 的边只有两条：retrieve 的首装 + compact 的回环
+/// 进入 `prepare` 的边只有三条：retrieve 首装、compact 回环、poll_exit 转向
 ///
 /// `prepare` 是最贵的节点之一（全量装配），任何新的入边都意味着一次
 /// 额外的全量重装配成本，必须是有意为之——这是防意外回环的哨兵。
 #[test]
-fn prepare_is_fed_only_by_retrieve_or_compaction() {
+fn prepare_is_fed_only_by_retrieve_compaction_or_poll_exit() {
     let bp = blueprint();
     let mut feeds: Vec<&str> = bp
         .edges
@@ -248,7 +270,7 @@ fn prepare_is_fed_only_by_retrieve_or_compaction() {
         .map(|e| e.from.as_str())
         .collect();
     feeds.sort_unstable();
-    assert_eq!(feeds, vec!["compact", "retrieve"]);
+    assert_eq!(feeds, vec!["compact", NODE_POLL_EXIT, "retrieve"]);
 }
 
 /// 完整思考图的走线锁：主链、压缩回环、新发现回环、无新息退出一次性断言
@@ -265,15 +287,20 @@ fn thinking_graph_blueprint_wires_full_loop() {
             .iter()
             .any(|e| e.from == from && e.to == to && e.on.as_deref() == Some(on))
     };
-    // 主链
-    assert!(has("intent", "retrieve", "done"));
-    // 简单问题直答：intent 直接收尾（跳过 retrieve/prepare/deliberate）
-    assert!(has("intent", "consolidate", "direct"));
-    // 信息不足澄清：同样收尾等用户补充，不必往下跑一轮空转
-    assert!(has("intent", "consolidate", "clarify"));
+    // 主链：意图后先过新输入检查，再检索
+    assert!(has("intent", NODE_POLL_FRONT, "done"));
+    assert!(has(NODE_POLL_FRONT, "retrieve", "done"));
+    assert!(has(NODE_POLL_FRONT, "intent", "new_input"));
+    // 简单问题直答 / 信息不足澄清：先到出口检查，再收尾
+    assert!(has("intent", NODE_POLL_EXIT, "direct"));
+    assert!(has("intent", NODE_POLL_EXIT, "clarify"));
     assert!(has("retrieve", "prepare", "done"));
     assert!(has("prepare", "deliberate", "done"));
-    assert!(has("deliberate", "consolidate", "done"));
+    // 正常收尾与转向：已执行过只做尾插后继续，未检索才回意图
+    assert!(has("deliberate", NODE_POLL_EXIT, "done"));
+    assert!(has(NODE_POLL_EXIT, "consolidate", "exit_done"));
+    assert!(has(NODE_POLL_EXIT, "prepare", "rethink"));
+    assert!(has(NODE_POLL_EXIT, "intent", "new_input"));
     // 既有压缩回环
     assert!(has("deliberate", "compact", "overflow"));
     assert!(has("compact", "prepare", "done"));
@@ -281,11 +308,12 @@ fn thinking_graph_blueprint_wires_full_loop() {
     assert!(has("deliberate", "discover", "max_rounds"));
     assert!(has("discover", "retrieve", "new_findings"));
     assert!(has("discover", "force_compact", "no_new_findings"));
-    assert!(has("force_compact", "consolidate", "done"));
+    assert!(has("force_compact", NODE_POLL_EXIT, "done"));
     assert!(has("deliberate", "consolidate", "cancelled"));
-    // 节点数：intent/retrieve/prepare/deliberate/compact/force_compact/discover/consolidate
-    assert_eq!(bp.nodes.len(), 8);
-    // 预算：retrieve/discover 显式放开
+    // 节点数：intent/poll_front/retrieve/prepare/deliberate/compact/force_compact/
+    // discover/poll_exit/consolidate
+    assert_eq!(bp.nodes.len(), 10);
+    // 预算：retrieve/discover/意图回退与新输入注入显式放开
     let budget = |id: &str| {
         bp.nodes
             .iter()
@@ -296,9 +324,19 @@ fn thinking_graph_blueprint_wires_full_loop() {
     };
     // 回环配对预算：N 轮再识别 = N 次新词回检索 + 1 次初始检索；discover 再多
     // 1 次激活留给软预算优雅退出（硬预算 = 软预算 + 1，见 blueprint.rs）
-    assert_eq!(budget("retrieve"), Some(MAX_DISCOVERY_ROUNDS + 1));
-    assert_eq!(budget("discover"), Some(MAX_DISCOVERY_ROUNDS + 1));
-    assert_eq!(budget("prepare"), Some(MAX_LOOP_ROUNDS));
+    // 意图回退后 retrieve 会重跑，预算再叠加 MAX_INTENT_REWINDS
+    assert_eq!(
+        budget("retrieve"),
+        Some(MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS)
+    );
+    assert_eq!(
+        budget("discover"),
+        Some(MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS)
+    );
+    assert_eq!(
+        budget("prepare"),
+        Some(MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE)
+    );
 }
 
 // ==================== retrieve_node::diff_terms 纯函数 ====================

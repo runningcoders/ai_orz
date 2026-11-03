@@ -35,6 +35,7 @@ impl RuntimeDomainImpl {
         message: &Message,
         options: &ThinkingOptions,
         trace_id: &str,
+        revision: Option<&super::inbox::IntentRevision>,
     ) -> Result<IntentAnalysis> {
         // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene）
         let mut analyze_opts = options.clone();
@@ -124,6 +125,11 @@ impl RuntimeDomainImpl {
         mount_ontology_lexicon(&ctx, builder.as_mut()).await;
         builder.history(&recent_memories);
         builder.current_message(message);
+        // 增量修订：上次结论 + 新增输入拼在 current_message 之后的尾部区块，
+        // 保证 System 段与公共上下文段字节稳定、前缀缓存全量命中。
+        if let Some(revision) = revision {
+            builder.intent_revision(&revision.previous, &revision.inputs);
+        }
 
         // 5. 组装专用 Prompt（不是普通 build()）
         let _prompt = builder.build_intent_analyze_prompt();

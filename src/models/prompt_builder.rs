@@ -331,6 +331,27 @@ pub trait PromptBuilder: Send + Sync {
     ) {
     }
 
+    /// 注入意图增量修订入参（上次结论 + 新增输入）
+    ///
+    /// 仅 DefaultPromptBuilder 在意图分析 Prompt 的**尾部区块**渲染；
+    /// System 段与公共上下文段保持不变，保证前缀缓存命中。
+    /// 默认实现为空（其他场景不产生修订）。
+    fn intent_revision(
+        &mut self,
+        _previous: &crate::service::domain::runtime::awakening::IntentAnalysis,
+        _inputs: &[String],
+    ) {
+    }
+
+    /// 注入「对话过程中追加的输入」（尾部转向消息）
+    ///
+    /// 用于意图修订失败 / 预算耗尽时的降级：把新输入尾插到 Prompt 末尾，
+    /// 严禁插到 System 前缀之前（会破坏跨唤醒缓存）。
+    /// 默认实现为空。
+    fn injected_inputs(&mut self, inputs: &[String]) {
+        let _ = inputs;
+    }
+
     /// 注入【相关知识】检索命中摘要行（仅 awaken 场景，思考图 retrieve 节点产出）
     ///
     /// 每条一行已截断的摘要，build 时渲染成【相关知识】区块放在意图区块之后。

@@ -621,6 +621,17 @@ pub trait MessageManagement: Send + Sync {
     /// 根据消息 ID 获取消息
     async fn get_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<Option<Message>>;
 
+    /// 按 ID 读取消息，**不过滤撤回态**
+    ///
+    /// 与 [`Self::get_by_id`] 的区别只在软删除过滤：本方法内部用
+    /// `MessageQuery.status_in` 显式列出全部状态，因此也能读到 `Recalled`。
+    /// 消费入口守卫需要它来区分「消息已撤回」与「消息不存在」。
+    async fn get_by_id_with_recalled(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<Option<Message>>;
+
     /// 更新消息状态
     async fn update_status(
         &self,
@@ -628,6 +639,14 @@ pub trait MessageManagement: Send + Sync {
         message_id: &str,
         status: MessageStatus,
     ) -> Result<()>;
+
+    /// 按 ID 集合批量更新状态（单条 SQL，返回实际影响行数）
+    async fn update_status_batch(
+        &self,
+        ctx: RequestContext,
+        message_ids: &[String],
+        status: MessageStatus,
+    ) -> Result<u64>;
 
     /// 删除单条消息
     async fn delete_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<()>;

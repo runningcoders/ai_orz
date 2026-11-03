@@ -27,6 +27,8 @@ pub(crate) const NODE_THINK: &str = "think";
 pub(crate) const NODE_DISPATCH: &str = "dispatch";
 pub(crate) const NODE_EVALUATE: &str = "evaluate";
 pub(crate) const NODE_REFLECT: &str = "reflect";
+/// 轮边界的新输入收集节点（仅 awaken 主链启用）
+pub(crate) const NODE_POLL: &str = "poll_round";
 
 pub(crate) const SIGNAL_TOOL_CALLS: &str = "tool_calls";
 pub(crate) const SIGNAL_FINAL: &str = "final";
@@ -38,24 +40,39 @@ pub(crate) const SIGNAL_REFLECT: &str = "reflect";
 /// reflect 注入换方向提示后回到下一轮 think
 pub(crate) const SIGNAL_REDIRECT: &str = "redirect";
 
-/// 构造轮级环图蓝图
+/// 构造轮级环图蓝图（可插入轮边界的 `poll_round`）
 ///
 /// 默认每轮最多 3 步（think / dispatch / evaluate），最后一轮最多 2 步
 /// （think / evaluate）。启用 reflect 时每轮多一步（evaluate / reflect），
-/// 上限同步放宽到 `4 * rounds + 2`。步数上限是回环下的死循环硬护栏。
-pub(crate) fn round_blueprint(
+/// `poll_enabled` 时再多一步（evaluate / poll_round），上限同步放宽。
+/// 步数上限是回环下的死循环硬护栏。
+///
+/// `poll_enabled` 时每轮 `evaluate --continue--> poll_round --> think`，
+/// 多一步收集新输入；关闭时拓扑与老循环完全一致。
+pub(crate) fn round_blueprint_with_poll(
     available_rounds: usize,
     reflect_enabled: bool,
+    poll_enabled: bool,
 ) -> Result<ThinkPathBlueprint> {
     let mut builder = ThinkPathBuilder::new("think_round")
         .entry(NODE_THINK)
         .node_with(NODE_THINK, PhaseId::Deliberate, 0, "调用模型进行一轮思考")
         .node_with(NODE_DISPATCH, PhaseId::Review, 0, "执行本轮工具调用")
-        .node_with(NODE_EVALUATE, PhaseId::Review, 0, "策略裁决：继续还是退出")
+        .node_with(NODE_EVALUATE, PhaseId::Review, 0, "策略裁决：继续还是退出");
+
+    if poll_enabled {
+        builder = builder
+            .node_with(NODE_POLL, PhaseId::Review, 0, "收集轮边界的新输入")
+            .edge(NODE_EVALUATE, NODE_POLL, Some(SIGNAL_CONTINUE))
+            .edge(NODE_POLL, NODE_THINK, Some(SIGNAL_CONTINUE));
+    } else {
+        builder = builder.edge(NODE_EVALUATE, NODE_THINK, Some(SIGNAL_CONTINUE));
+    }
+
+    builder = builder
         .edge(NODE_THINK, NODE_DISPATCH, Some(SIGNAL_TOOL_CALLS))
         .edge(NODE_THINK, NODE_EVALUATE, Some(SIGNAL_FINAL))
-        .edge(NODE_DISPATCH, NODE_EVALUATE, Some(SIGNAL_DONE))
-        .edge(NODE_EVALUATE, NODE_THINK, Some(SIGNAL_CONTINUE));
+        .edge(NODE_DISPATCH, NODE_EVALUATE, Some(SIGNAL_DONE));
 
     // 自省分支：同一工具反复调用时，evaluate 改发 reflect 信号，
     // reflect 注入「换方向」提示后再以 redirect 信号回到 think。
@@ -67,7 +84,8 @@ pub(crate) fn round_blueprint(
             .edge(NODE_REFLECT, NODE_THINK, Some(SIGNAL_REDIRECT));
     }
 
-    let steps_per_round = if reflect_enabled { 4 } else { 3 };
+    let base_steps_per_round = if reflect_enabled { 4 } else { 3 };
+    let steps_per_round = base_steps_per_round + usize::from(poll_enabled);
     builder
         .limits(PathLimits {
             max_steps: available_rounds
@@ -85,7 +103,7 @@ mod tests {
 
     #[test]
     fn blueprint_wires_round_loop() {
-        let bp = round_blueprint(4, false).expect("blueprint");
+        let bp = round_blueprint_with_poll(4, false, false).expect("blueprint");
         assert_eq!(bp.entry, NODE_THINK);
         assert_eq!(bp.nodes.len(), 3);
         assert_eq!(bp.limits.max_steps, 14);
@@ -116,7 +134,7 @@ mod tests {
 
     #[test]
     fn blueprint_adds_reflect_branch_when_enabled() {
-        let bp = round_blueprint(4, true).expect("blueprint");
+        let bp = round_blueprint_with_poll(4, true, false).expect("blueprint");
         assert_eq!(bp.nodes.len(), 4);
         assert_eq!(bp.limits.max_steps, 18);
 
@@ -133,7 +151,7 @@ mod tests {
     fn single_round_has_enough_steps_for_tool_loop() {
         // 1 轮最坏情况：think + dispatch + evaluate = 3 步，上限 5 步
         assert_eq!(
-            round_blueprint(1, false)
+            round_blueprint_with_poll(1, false, false)
                 .expect("blueprint")
                 .limits
                 .max_steps,
@@ -141,7 +159,7 @@ mod tests {
         );
         // 启用 reflect：think + dispatch + evaluate + reflect = 4 步，上限 6 步
         assert_eq!(
-            round_blueprint(1, true)
+            round_blueprint_with_poll(1, true, false)
                 .expect("blueprint")
                 .limits
                 .max_steps,
@@ -168,7 +186,7 @@ mod tests {
             )),
         ];
         let engine = ThinkPathEngine::new(
-            round_blueprint(1, false).expect("blueprint"),
+            round_blueprint_with_poll(1, false, false).expect("blueprint"),
             nodes,
             Arbiter::deterministic(),
             ProviderSet::new(),
@@ -212,7 +230,7 @@ mod tests {
             )),
         ];
         let engine = ThinkPathEngine::new(
-            round_blueprint(1, true).expect("blueprint"),
+            round_blueprint_with_poll(1, true, false).expect("blueprint"),
             nodes,
             Arbiter::deterministic(),
             ProviderSet::new(),

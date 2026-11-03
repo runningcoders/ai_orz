@@ -146,6 +146,14 @@ pub trait MessageDal: Send + Sync {
         status: MessageStatus,
     ) -> Result<()>;
 
+    /// 按 ID 集合批量更新状态（透传 DAO 单条 `IN (...)` SQL，返回影响行数）
+    async fn update_status_batch(
+        &self,
+        ctx: RequestContext,
+        message_ids: &[String],
+        status: MessageStatus,
+    ) -> Result<u64>;
+
     async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64>;
 
     /// 统计符合查询条件的消息数量（透传 DAO count）
@@ -419,6 +427,17 @@ impl MessageDal for MessageDalImpl {
     ) -> Result<()> {
         self.message_dao
             .update_status(ctx, message_id, status)
+            .await
+    }
+
+    async fn update_status_batch(
+        &self,
+        ctx: RequestContext,
+        message_ids: &[String],
+        status: MessageStatus,
+    ) -> Result<u64> {
+        self.message_dao
+            .update_status_batch(ctx, message_ids, status)
             .await
     }
 

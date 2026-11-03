@@ -333,6 +333,33 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
         Ok(())
     }
 
+    async fn update_status_batch(
+        &self,
+        ctx: RequestContext,
+        message_ids: &[String],
+        status: MessageStatus,
+    ) -> Result<u64> {
+        if message_ids.is_empty() {
+            return Ok(0);
+        }
+        let current_timestamp = Utc::now().timestamp_millis();
+        let uid = ctx.caller_id_or_system();
+        // 单条 SQL：一条 UPDATE 覆盖全部 ID，失败即整批回滚（SQLite 语句原子性）
+        let mut builder: sqlx::QueryBuilder<'_, sqlx::Sqlite> =
+            sqlx::QueryBuilder::new("UPDATE messages SET \"status\" = ");
+        builder.push_bind(status as i32);
+        builder.push(", updated_at = ").push_bind(current_timestamp);
+        builder.push(", modified_by = ").push_bind(uid);
+        builder.push(" WHERE id IN (");
+        let mut separated = builder.separated(", ");
+        for id in message_ids {
+            separated.push_bind(id.clone());
+        }
+        separated.push_unseparated(")");
+        let result = builder.build().execute(ctx.db_pool()).await?;
+        Ok(result.rows_affected())
+    }
+
     async fn list_by_status(
         &self,
         ctx: RequestContext,
@@ -662,7 +689,9 @@ fn push_query_filters<'args>(
         }
         separated.push_unseparated(")");
     }
-    if let Some(task_id) = &query.task_id {
+    if query.task_id_is_null {
+        builder.push(" AND task_id IS NULL");
+    } else if let Some(task_id) = &query.task_id {
         builder.push(" AND task_id = ").push_bind(task_id.clone());
     }
     if let Some(project_id) = &query.project_id {
@@ -683,6 +712,11 @@ fn push_query_filters<'args>(
     if let Some(from_id) = &query.from_id {
         builder.push(" AND from_id = ").push_bind(from_id.clone());
     }
+    if let Some(from_role) = query.from_role {
+        builder
+            .push(" AND from_role = ")
+            .push_bind(from_role as i32);
+    }
     if let Some(to_id) = &query.to_id {
         builder.push(" AND to_id = ").push_bind(to_id.clone());
     }
@@ -701,6 +735,15 @@ fn push_query_filters<'args>(
         builder
             .push(" AND message_type = ")
             .push_bind(message_type as i32);
+    }
+    if query.file_type_is_null {
+        builder.push(" AND file_type IS NULL");
+    }
+    if let Some(thread_id) = &query.thread_id_compatible {
+        builder
+            .push(" AND (thread_id IS NULL OR thread_id = ")
+            .push_bind(thread_id.clone())
+            .push(")");
     }
     if let Some(status_in) = &query.status_in
         && !status_in.is_empty()

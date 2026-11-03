@@ -29,7 +29,7 @@ pub mod tool_calls_tab;
 pub mod typing_indicator;
 
 pub use agent_trace_panel::AgentTracePanel;
-pub use cancel_thinking_button::{CancelThinkingButton, CancelThinkingStyle};
+pub use cancel_thinking_button::CancelThinkingButton;
 pub use chat_side_panel::ChatSidePanel;
 pub use message_bubble::MessageBubble;
 pub use project_agents_tab::ProjectAgentsTab;

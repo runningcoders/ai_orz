@@ -6,12 +6,13 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 42 篇：A 设计 8 · B 落地方案 15 · C 知识 19。
+本模块共 43 篇：A 设计 9 · B 落地方案 15 · C 知识 19。
 
 ## A 设计（design）
 
 - [Agent 循环驱动引擎设计](<A-设计/agent_loop_engine_design.md>) — `已废弃`
 - [决策型策略设计（策略引擎承载小脑场景）](<A-设计/cerebellum_decision_strategy_design.md>) — `现行`
+- [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<A-设计/inbox_poll_and_intent_revision_design.md>) — `现行`
 - [意图感知两阶段唤醒设计](<A-设计/intent_aware_two_stage_awaken_design.md>) — `已废弃`
 - [Runtime Domain 设计](<A-设计/runtime_design.md>) — `现行`
 - [Runtime Domain 推进路线图](<A-设计/runtime_domain_roadmap.md>) — `已废弃`

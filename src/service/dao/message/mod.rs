@@ -18,13 +18,23 @@ pub struct MessageQuery {
     /// 按多个消息 ID 批量查询（用于向量搜索结果回填）
     pub ids: Option<Vec<String>>,
     /// 按任务 ID 查询
+    ///
+    /// `None` 表示**不限制**；要表达「任务为空」必须用
+    /// [`task_id_is_null`](Self::task_id_is_null)——两者语义不同。
     pub task_id: Option<String>,
+    /// 要求 `task_id IS NULL`（仅当 `task_id` 为 `None` 时有意义）
+    ///
+    /// 用于「无项目 / 无任务」上下文的精确匹配：`Option` 相等不能用
+    /// 「空值跳过过滤」代替，否则会把别的任务下的消息吸进同一轮。
+    pub task_id_is_null: bool,
     /// 按项目 ID 查询
     pub project_id: Option<String>,
     /// 按多个项目 ID 批量 IN 查询（批量去重用）
     pub project_ids: Option<Vec<String>>,
     /// 按发送方 ID 查询
     pub from_id: Option<String>,
+    /// 按发送方角色查询（与 `from_id` 一起构成「同一发送者」判据）
+    pub from_role: Option<MessageRole>,
     /// 按接收方 ID 查询
     pub to_id: Option<String>,
     /// 按回复目标消息 ID 查询（直接回复某条消息的消息）
@@ -35,6 +45,14 @@ pub struct MessageQuery {
     pub to_role: Option<MessageRole>,
     /// 按消息类型查询
     pub message_type: Option<MessageType>,
+    /// 要求 `file_type IS NULL`（无附件的纯文本消息）
+    pub file_type_is_null: bool,
+    /// 线程兼容过滤：只返回 `thread_id IS NULL` 或等于该值的消息
+    ///
+    /// 用于「thread_id 只作否决项」的场景：两端都有且不等才拒绝，
+    /// 任一端缺失（NULL）都放行。SQL 侧表达为
+    /// `thread_id IS NULL OR thread_id = ?`，避免内存筛把查询配额挤占掉。
+    pub thread_id_compatible: Option<String>,
     /// 按状态 IN 查询（支持多选）
     pub status_in: Option<Vec<MessageStatus>>,
     /// 创建时间**下界**（开区间：`created_at > created_after`，毫秒）
@@ -172,6 +190,16 @@ pub trait MessageDao: Send + Sync {
         id: &str,
         status: MessageStatus,
     ) -> Result<()>;
+
+    /// 按 ID 集合批量更新状态（单条 SQL，返回实际影响行数）
+    ///
+    /// 空集合直接返回 0，不产生一次空 `IN ()` 查询。
+    async fn update_status_batch(
+        &self,
+        ctx: RequestContext,
+        message_ids: &[String],
+        status: MessageStatus,
+    ) -> Result<u64>;
 
     /// 根据多个状态查询消息（用于启动恢复未处理消息）
     async fn list_by_status(

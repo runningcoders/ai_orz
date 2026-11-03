@@ -23,7 +23,11 @@ impl RuntimeMemory for RuntimeDomainImpl {
     ) -> Result<Vec<Memory>> {
         let ctx = ctx.to_builder().agent_id(agent_id).build();
         use crate::service::dal::memory::dal;
-        dal()
+        // DB 侧取的是「最近 N 条」的倒序（created_at DESC），这里翻转成时间正序。
+        // 【历史对话】的渲染顺序直接决定前缀缓存命中：倒序时新增一条记忆会插到
+        // 整块最前面，令其后的所有区块从第一个字符起失配；正序在窗口未满时是纯
+        // 尾部追加，整块前缀可继续命中（满了以后按窗口滑动）。
+        let mut memories = dal()
             .query(
                 ctx,
                 MemoryQuery {
@@ -33,7 +37,9 @@ impl RuntimeMemory for RuntimeDomainImpl {
                     ..Default::default()
                 },
             )
-            .await
+            .await?;
+        memories.reverse();
+        Ok(memories)
     }
 
     /// 写入思考 Trace

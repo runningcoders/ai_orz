@@ -11,6 +11,7 @@ scope:
 - src/service/domain/runtime/awakening.rs
 - src/service/domain/runtime/intent_analyze.rs
 - src/service/domain/runtime/think_loop.rs
+- src/service/domain/runtime/memory.rs
 - src/models/project.rs
 - src/models/task.rs
 source_files:
@@ -35,6 +36,8 @@ source_files:
 - docs/modules/06-工具与技能/C-知识/用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断/用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断.md：路径逃逸 跨用户访问 相对路径阻断/用户维度工作区路径改造 + 工具调用安全边界检查：路径逃逸 跨用户访问 相对路径阻断.md
 - src/service/dal/agent/builder/default.rs#L408-L440 (2026-10-11 增量 4b4e9e7a：build_skills_sections 改「装了就进」——神经技能置前后，其余已安装技能不再按 tag 二次匹配兜底)
 - src/service/domain/system/seed/skills/TEMPLATE_ONTOLOGY_COGNITION/skill.md (2026-10-11：神经技能新增，随「神经技能」区块常驻)
+- src/service/domain/runtime/memory.rs#L18-L43 (2026-11-02 增量：get_recent_context 反转 DB 倒序 → 时间正序，保【历史对话】追加式前缀)
+- src/service/domain/runtime/think_loop.rs#L415-L426 (2026-11-02 增量：小脑 Inject 由插 index 0 改尾插，避免整段前缀错位)
 
 ---
 
@@ -107,6 +110,7 @@ source_files:
 13. ✅ （2026-09-XX 新增）扁平 Prompt 静态指令块必须前置在易变数据之前（易变：本体词表、工作区上下文、最近对话），易变数据一律收尾；收尾时间一律用绝对时间（"2026-09-19 14:02" 而非 "3 小时前"），避免缓存命中抖动
 14. ✅ （2026-09-XX 新增）本体词表运行时注入必须走 `OntologyDal.load_lexicon_summary` → `common::ontology` 纯函数解析链路，handler 层不得自行拼接词表或跳过 OntologyDal 直查三表
 15. ✅ （2026-10-11 新增，4b4e9e7a）技能区块「**装了就进**」：神经技能（须挂 neural tag 且模板内容跨次稳定，如新增 TEMPLATE_ONTOLOGY_COGNITION）置前常驻，其余技能只渲染 Agent 实际持有（安装副本 + 自有副本），禁止 builder 侧按 tag 二次兜底把未安装技能塞进 Prompt；需要某技能的语义走安装（install_skill_pack / sync_packs），不靠 Prompt 隐式补全
+16. ✅ （2026-11-02 新增）**前缀稳定性三红线**：①【历史对话】必须时间正序（`get_recent_context` 反转 DB 的 `created_at DESC`）——倒序会让新增记忆插到整块最前，其后全部区块失配；②技能区块渲染按 `name + id` 排序，与 DB `updated_at DESC` 解耦——任何技能更新都不得重排 System 前缀；③小脑路由 Inject 必须**尾插**，禁止 `insert(0, System)`——插头会让「人设+技能+词表+历史」整段后移，跨唤醒缓存归零
 
 ## §5 历史演进
 
@@ -118,3 +122,4 @@ source_files:
 | 14a4b688 | 2026-09 | 前缀缓存专项优化：① Project/Task start_at 绝对时间替换 relative_duration ② 场景 prompt 静态指令块前置、易变数据统一收尾 ③ initial-messages 缓存友好注释 | src/models/project.rs；src/models/task.rs；src/service/dal/agent/builder/default.rs#L1055-L1234 |
 | db46a354 → 5b52c72c | 2026-09 | 本体词表前移为稳定前缀、运行时落地：awakening.rs → OntologyDal.load_lexicon_summary → OntologyDomain.list_lexicon → builder.ontology_lexicon() 完整注入链路 | src/service/dal/ontology.rs；src/service/domain/hr/ontology.rs |
 | 4b4e9e7a | 2026-10-11 | 技能区块「装了就进」：build_skills_sections 取消 tag 二次兜底，非神经区块只渲染实际持有；新增神经技能 TEMPLATE_ONTOLOGY_COGNITION（neural+ontology） | src/service/dal/agent/builder/default.rs#L408-L440；seed TEMPLATE_ONTOLOGY_COGNITION |
+| 2026-11-02 | 前缀稳定性加固：①【历史对话】改时间正序（窗口未满时纯尾插）②技能区块按 name+id 排序，不再跟随 DB updated_at ③小脑 Inject 改尾插，避免整段前缀错位 | src/service/domain/runtime/memory.rs#L18-L43；src/service/dal/agent/builder/default.rs#L441-L475；src/service/domain/runtime/think_loop.rs#L415-L426 |

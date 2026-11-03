@@ -41,6 +41,7 @@ pub mod discover_node;
 pub mod intent_node;
 pub mod memory_relevance;
 pub mod nodes;
+pub mod poll_node;
 pub mod retrieve_node;
 pub mod runner;
 

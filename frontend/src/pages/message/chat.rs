@@ -8,7 +8,7 @@ use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, get_project, list_projects, query_projects};
 use crate::components::avatar_bubble::{AvatarBubble, AvatarTone, BubbleAlign};
-use crate::components::chat::{CancelThinkingButton, CancelThinkingStyle, ChatSidePanel};
+use crate::components::chat::{CancelThinkingButton, ChatSidePanel};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::mention_picker::{
     MentionCandidate, MentionPickedBar, MentionPicker, MentionState, MentionTab, mention_kinds_for,
@@ -677,18 +677,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
         if text.is_empty() && attachments.is_empty() {
             return;
         }
-        // 非空闲门禁：Agent 忙碌 / 休息中不接受新消息（按钮已禁用，此处兜底 Alt+Enter 快捷键路径）
-        // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：旧会话残留状态（归属不匹配）
-        // 不拦截新会话发送。
-        if agent_state() != 0
-            && agent_state_owner_matches(
-                agent_state_owner().as_deref(),
-                target_agent_id().as_deref(),
-            )
-        {
-            toast.info("对方正在处理消息，请稍候再发");
-            return;
-        }
+        // 忙碌不再拦截发送：消息照常入队，等当前唤醒结束后按队列顺序处理。
+        // 忙碌提示保留在置底状态气泡（「正在思考中…」）与输入框 placeholder，
+        // 只提示、不阻断——用户连发多条正是「边想边补充」的常见形态。
         // 回复目标：本次发送携带 reply_to_id（引用条已清空则不带）
         let reply_to_id = reply_target().map(|m| m.message_id);
         if show_slash_menu() {
@@ -1243,7 +1234,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                             if let Some(aid) = target_agent_id() {
                                                 CancelThinkingButton {
                                                     agent_id: aid.clone(),
-                                                    style: CancelThinkingStyle::Inline,
                                                     on_cancelled: on_thinking_cancelled,
                                                 }
                                             }
@@ -1287,8 +1277,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 agent_state,
                 reply_preview.clone(),
                 cancel_reply,
-                target_agent_id(),
-                on_thinking_cancelled,
             )}
         }
     } else {
@@ -1527,7 +1515,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                             if let Some(aid) = target_agent_id() {
                                                 CancelThinkingButton {
                                                     agent_id: aid.clone(),
-                                                    style: CancelThinkingStyle::Inline,
                                                     on_cancelled: on_thinking_cancelled,
                                                 }
                                             }
@@ -1571,8 +1558,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 agent_state,
                 reply_preview.clone(),
                 cancel_reply,
-                target_agent_id(),
-                on_thinking_cancelled,
             )}
         }
     };
@@ -1970,10 +1955,6 @@ fn chat_input_area(
     agent_state: Signal<i32>,
     reply_preview: Option<(String, String)>,
     cancel_reply: impl FnMut(dioxus::events::MouseEvent) + 'static,
-    // 当前会话目标 Agent（项目 owner / 前台 Agent）：Busy 时发送键位让给「停止思考」
-    cancel_agent_id: Option<String>,
-    // 取消思考成功后的乐观回写（归零 runtime_state + 清「等待回复」标记）
-    on_cancelled: EventHandler<()>,
 ) -> Element {
     // 鼠标点选候选：先由组件对齐高亮，这里直接 confirm 即可
     let mut input_text_pick = input_text;
@@ -2130,13 +2111,9 @@ fn chat_input_area(
                     rows: "2",
                     id: CHAT_INPUT_ID,
                     value: "{input_text}",
-                    // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：placeholder 归属
-                    // 过滤 —— cancel_agent_id 即调用点传入的当前会话目标，与 None（未解析）
-                    // 一致放行，杜绝切换会话后旧状态误占 placeholder。
-                    placeholder: if agent_state() != 0
-                        && cancel_agent_id.is_some()
-                    {
-                        "对方正在处理消息，暂不接受新消息…"
+                    // 忙碌时只提示、不阻断：placeholder 说明「会排队处理」，输入照常可用。
+                    placeholder: if agent_state() != 0 {
+                        "对方正在思考中，你的消息会排队处理…"
                     } else {
                         "输入消息...（Alt+回车发送，@ 提及 Agent / 任务 / 项目）"
                     },
@@ -2227,33 +2204,15 @@ fn chat_input_area(
                         }
                     },
                 }
-                // Busy 时发送键位让给「停止思考」：此刻用户多半正是想发下一句却发现发不出去，
-                // 这个位置就是他正在找的出口（主流对话产品同款肌肉记忆）。
-                // Resting(1) 仍沿用原「处理中」禁用态 —— 取消思考对休息态无意义。
-                // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：旧会话残留状态
-                // （归属不匹配）不让发送键位让位 —— 本会话 Agent 并未在思考。
-                if agent_state() == 2 && cancel_agent_id.is_some() {
-                    if let Some(ref aid) = cancel_agent_id {
-                        CancelThinkingButton {
-                            agent_id: aid.clone(),
-                            style: CancelThinkingStyle::Block,
-                            on_cancelled,
-                        }
-                    }
-                } else {
-                    button {
-                        class: "btn hud-btn btn-primary",
-                        onclick: move |_| handle_send(()),
-                        // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：旧会话残留
-                        // 状态（归属不匹配，cancel_agent_id=None）不禁用发送键位。
-                        disabled: (agent_state() != 0 && cancel_agent_id.is_some())
-                            || (input_text().trim().is_empty() && pending_attachments().is_empty()),
-                        if agent_state() != 0 && cancel_agent_id.is_some() {
-                            "处理中"
-                        } else {
-                            "发送"
-                        }
-                    }
+                // 输入区固定只放发送键位：忙碌时也照常发送（消息入队，
+                // 忙碌提示由置底状态气泡与 placeholder 承担）。
+                // 「停止思考」只在气泡里出现一次，避免同一动作在同一屏出现两个入口。
+                button {
+                    class: "btn hud-btn btn-primary",
+                    onclick: move |_| handle_send(()),
+                    disabled: input_text().trim().is_empty()
+                        && pending_attachments().is_empty(),
+                    "发送"
                 }
             }
         }
@@ -2753,24 +2712,34 @@ mod chat_state_fix_tests {
             0,
             "旧三参调用不应残留"
         );
-        // 发送兜底门禁 + 键位区归属校验（门禁块 + 让位块 + 发送键 disabled）
+        // 忙碌只提示、不阻断：旧兜底门禁与「处理中」禁用态都应清零
         assert_eq!(
             src.matches("if agent_state() != 0\n            && agent_state_owner_matches(")
                 .count(),
-            1,
-            "发送兜底门禁应接归属校验"
+            0,
+            "发送兜底门禁应已移除（忙碌只提示不阻断）"
+        );
+        assert_eq!(
+            src.matches("对方正在处理消息，请稍候再发").count(),
+            0,
+            "旧的忙碌拦截提示不应残留"
         );
         assert_eq!(
             src.matches("if agent_state() == 2 && cancel_agent_id.is_some() {")
                 .count(),
-            1,
-            "停止思考键位应接归属校验"
+            0,
+            "输入区不应再出现停止思考键位（停止只保留在状态气泡内）"
+        );
+        assert_eq!(
+            src.matches("CancelThinkingStyle::Block").count(),
+            0,
+            "输入区 Block 停止按钮样式应已删除"
         );
         assert_eq!(
             src.matches("(agent_state() != 0 && cancel_agent_id.is_some())")
                 .count(),
-            1,
-            "发送键 disabled 应接归属校验"
+            0,
+            "发送键不应再因忙碌禁用"
         );
     }
 }

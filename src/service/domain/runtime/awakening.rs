@@ -578,6 +578,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             trace_ids: outcome.trace_ids,
             raw_input: outcome.raw_input,
             raw_output: outcome.raw_output,
+            injected_ids: outcome.injected_ids,
+            cancelled: outcome.exit == super::legacy_awaken::nodes::EXIT_CANCELLED,
         })
     }
 
@@ -662,7 +664,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         .await;
 
         let result = self
-            .analyze_input_intent_inner(ctx.clone(), agent, message, options, &trace_id)
+            .analyze_input_intent_inner(ctx.clone(), agent, message, options, &trace_id, None)
             .await;
 
         let duration_ms = start_time

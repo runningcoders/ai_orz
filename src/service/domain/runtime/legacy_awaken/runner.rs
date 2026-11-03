@@ -15,6 +15,7 @@ use super::nodes::{
     Artifacts, BudgetState, CompactNode, ConsolidateNode, DeliberateNode, NODE_CONSOLIDATE,
     PrepareNode, PromptPack,
 };
+use super::poll_node::{PollKind, PollNode};
 use super::retrieve_node::RetrieveNode;
 use crate::models::events::AgentLoopEvent;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -35,6 +36,8 @@ pub struct LegacyAwakenOutcome {
     pub fingerprint: String,
     pub exit: String,
     pub steps: usize,
+    /// 本轮唤醒吸收的其他消息 ID（成功后由消费者批量置 `Processed`）
+    pub injected_ids: Vec<String>,
 }
 
 /// 跑一条 legacy_awaken 路径
@@ -88,6 +91,8 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
         Arc::new(CompactNode::overflow(Arc::clone(&deps))),
         Arc::new(CompactNode::forced(Arc::clone(&deps))),
         Arc::new(DiscoverNode::new(Arc::clone(&deps))),
+        Arc::new(PollNode::new(Arc::clone(&deps), PollKind::Front)),
+        Arc::new(PollNode::new(Arc::clone(&deps), PollKind::Exit)),
         Arc::new(ConsolidateNode::new(Arc::clone(&deps))),
     ];
     let engine = ThinkPathEngine::new(
@@ -247,6 +252,11 @@ fn collect(deps: Arc<AwakenDeps>, run: &ThinkRun) -> LegacyAwakenOutcome {
         .map(|p| p.prompt)
         .unwrap_or_default();
     let artifacts = read_bus::<Artifacts>(&run.bus, ContextKey::Artifacts).unwrap_or_default();
+    let injected_ids = deps
+        .inbox
+        .lock()
+        .map(|state| state.injected_ids().to_vec())
+        .unwrap_or_default();
     LegacyAwakenOutcome {
         agent_id: deps.agent.po.id.clone(),
         trace_ids: vec![deps.trace_id.clone()],
@@ -255,5 +265,6 @@ fn collect(deps: Arc<AwakenDeps>, run: &ThinkRun) -> LegacyAwakenOutcome {
         fingerprint: run.trace.fingerprint(),
         exit: artifacts.exit,
         steps: run.trace.steps,
+        injected_ids,
     }
 }

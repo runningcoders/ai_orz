@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 668 篇 / 14,004,814 B**，分布于 15 个模块。
+**合计 669 篇 / 14,035,697 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -15,16 +15,16 @@
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,240 |
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 904,755 |
-| [02-Agent运行时](#02-agent运行时) | 8 | 15 | 19 | 42 | 1,143,484 |
+| [02-Agent运行时](#02-agent运行时) | 9 | 15 | 19 | 43 | 1,172,094 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,177 |
 | [04-对话与消息](#04-对话与消息) | 6 | 9 | 21 | 36 | 823,727 |
 | [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,298 |
 | [06-工具与技能](#06-工具与技能) | 11 | 14 | 52 | 77 | 1,775,774 |
 | [07-外部Agent(A2A)](#07-外部agenta2a) | 3 | 3 | 20 | 26 | 515,641 |
-| [08-搜索](#08-搜索) | 5 | 10 | 21 | 36 | 848,850 |
+| [08-搜索](#08-搜索) | 5 | 10 | 21 | 36 | 850,094 |
 | [09-统计与监控](#09-统计与监控) | 3 | 6 | 8 | 17 | 299,639 |
 | [10-异步基建(AOP)](#10-异步基建aop) | 3 | 3 | 32 | 38 | 787,588 |
-| [11-前端应用](#11-前端应用) | 3 | 30 | 49 | 82 | 1,926,648 |
+| [11-前端应用](#11-前端应用) | 3 | 30 | 49 | 82 | 1,927,677 |
 | [12-基础设施与部署](#12-基础设施与部署) | 5 | 5 | 79 | 89 | 1,670,953 |
 | [13-数据模型](#13-数据模型) | 5 | 4 | 39 | 48 | 881,846 |
 | [14-测试](#14-测试) | 2 | 5 | 4 | 11 | 213,194 |
@@ -146,18 +146,19 @@
 
 ### 02-Agent运行时
 
-#### A 设计（design，8 篇）
+#### A 设计（design，9 篇）
 
 | # | 页面 | 状态 | 字节 |
 |---:|---|---|---:|
 | 1 | [Agent 循环驱动引擎设计](<02-Agent运行时/A-设计/agent_loop_engine_design.md>) | 已废弃 | 36,120 |
 | 2 | [决策型策略设计（策略引擎承载小脑场景）](<02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md>) | 现行 | 24,529 |
-| 3 | [意图感知两阶段唤醒设计](<02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md>) | 已废弃 | 27,455 |
-| 4 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 142,125 |
-| 5 | [Runtime Domain 推进路线图](<02-Agent运行时/A-设计/runtime_domain_roadmap.md>) | 已废弃 | 31,664 |
-| 6 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
-| 7 | [思考图引擎改造设计（Awaken 主思考路径节点化）](<02-Agent运行时/A-设计/thinking_graph_engine_design.md>) | 落地中 | 10,207 |
-| 8 | [Agent 思考运行时 + 策略引擎设计](<02-Agent运行时/A-设计/thinking_task_policy_engine_design.md>) | 现行 | 47,942 |
+| 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 19,786 |
+| 4 | [意图感知两阶段唤醒设计](<02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md>) | 已废弃 | 27,455 |
+| 5 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 142,125 |
+| 6 | [Runtime Domain 推进路线图](<02-Agent运行时/A-设计/runtime_domain_roadmap.md>) | 已废弃 | 31,664 |
+| 7 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
+| 8 | [思考图引擎改造设计（Awaken 主思考路径节点化）](<02-Agent运行时/A-设计/thinking_graph_engine_design.md>) | 落地中 | 10,207 |
+| 9 | [Agent 思考运行时 + 策略引擎设计](<02-Agent运行时/A-设计/thinking_task_policy_engine_design.md>) | 现行 | 47,942 |
 
 #### B 落地方案（plan，15 篇）
 
@@ -189,7 +190,7 @@
 | 4 | [Agent 搜索与推荐](<02-Agent运行时/C-知识/Agent 搜索与推荐.md>) | 13,286 |
 | 5 | [Agent 生命周期管理](<02-Agent运行时/C-知识/Agent 生命周期管理.md>) | 28,090 |
 | 6 | [Agent处理器](<02-Agent运行时/C-知识/Agent处理器.md>) | 24,451 |
-| 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 16,084 |
+| 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 20,145 |
 | 8 | [ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](<02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md>) | 6,388 |
 | 9 | [小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类](<02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md>) | 17,916 |
 | 10 | [小脑快判断（System One）](<02-Agent运行时/C-知识/小脑快判断（System One）.md>) | 30,754 |
@@ -201,7 +202,7 @@
 | 16 | [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层](<02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md>) | 15,003 |
 | 17 | [记忆系统管理](<02-Agent运行时/C-知识/记忆系统管理.md>) | 36,203 |
 | 18 | [运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化](<02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md>) | 13,011 |
-| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 39,932 |
+| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 44,695 |
 
 ### 03-记忆系统
 
@@ -544,7 +545,7 @@
 | 2 | [Embedding Provider 生命周期与重建触发条件](<08-搜索/C-知识/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md>) | 23,915 |
 | 3 | [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T](<08-搜索/C-知识/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分.md>) | 8,513 |
 | 4 | [FTS5 关键词搜索](<08-搜索/C-知识/FTS5 关键词搜索.md>) | 18,064 |
-| 5 | [PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序](<08-搜索/C-知识/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序.md>) | 17,734 |
+| 5 | [PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序](<08-搜索/C-知识/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序.md>) | 18,978 |
 | 6 | [RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配](<08-搜索/C-知识/RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配/RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配.md>) | 12,901 |
 | 7 | [SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离](<08-搜索/C-知识/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离.md>) | 7,452 |
 | 8 | [全文搜索（框架层）](<08-搜索/C-知识/全文搜索.md>) | 16,308 |
@@ -732,7 +733,7 @@
 | 30 | [文档中心](<11-前端应用/C-知识/文档中心.md>) | 12,629 |
 | 31 | [日志管理系统（前端 UI 层）](<11-前端应用/C-知识/日志管理系统.md>) | 17,970 |
 | 32 | [模型提供商管理（前端 UI 层）](<11-前端应用/C-知识/模型提供商管理.md>) | 27,191 |
-| 33 | [消息与工作区页面](<11-前端应用/C-知识/消息与工作区页面.md>) | 26,831 |
+| 33 | [消息与工作区页面](<11-前端应用/C-知识/消息与工作区页面.md>) | 27,860 |
 | 34 | [消息渠道管理（前端 UI 层）](<11-前端应用/C-知识/消息渠道管理.md>) | 17,001 |
 | 35 | [用户与组织页面](<11-前端应用/C-知识/用户与组织页面.md>) | 18,217 |
 | 36 | [种子数据管理（前端 UI 层）](<11-前端应用/C-知识/种子数据管理.md>) | 17,899 |

@@ -258,6 +258,11 @@ pub struct ThinkLoopParams<'a> {
     /// - `None`：compact / intent / settle 等固定开销场景 ⇒ 本次循环自建零表，
     ///   计量口径仍是单周期（这些场景没有「再来一次」的回环）。
     pub usage: Option<Arc<Mutex<WakeUsage>>>,
+    /// 唤醒级收件箱（仅 awaken 主链传入）
+    ///
+    /// `Some` 时轮级图插入 `poll_round` 节点：每轮边界检查是否到达新输入并尾插；
+    /// `None` 时拓扑保持不变（intent 单轮 / settle / summary / discover 等）。
+    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
 }
 
 impl<'a> ThinkLoopParams<'a> {
@@ -289,7 +294,17 @@ impl<'a> ThinkLoopParams<'a> {
             progress: None,
             thinking_intensity_offset: 0,
             usage: None,
+            inbox: None,
         }
+    }
+
+    /// 接入唤醒级收件箱（启用轮级 `poll_round`）
+    pub fn with_inbox(
+        mut self,
+        inbox: &Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>,
+    ) -> Self {
+        self.inbox = Some(Arc::clone(inbox));
+        self
     }
 
     /// 覆盖轮次参数：总上限 + 本次循环的起始轮次
