@@ -54,6 +54,32 @@ fn query(base: &Path, query: ThinkTraceQuery) -> PagedResult<ThinkTraceEntry> {
     query_at(base, &query).unwrap()
 }
 
+fn occurrence(node: &str, seq: usize, step: usize) -> ThinkTraceOccurrence {
+    ThinkTraceOccurrence {
+        node: node.to_string(),
+        seq,
+        step,
+        signal: None,
+    }
+}
+
+fn route(step: usize) -> ThinkTraceRoute {
+    ThinkTraceRoute {
+        step,
+        candidates: Vec::new(),
+        chosen: String::new(),
+        via: "unique".to_string(),
+        reason: None,
+    }
+}
+
+fn round(round: usize) -> ThinkTraceRound {
+    ThinkTraceRound {
+        round,
+        ..Default::default()
+    }
+}
+
 #[test]
 fn query_filters_by_agent_and_sorts_desc() {
     let dir = tempdir().unwrap();
@@ -261,4 +287,127 @@ fn entry_round_trips_round_details() {
     let json = serde_json::to_string(&trace).unwrap();
     let parsed: ThinkTraceEntry = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.rounds, trace.rounds);
+}
+
+#[test]
+fn query_merges_reruns_of_same_run_into_one_entry() {
+    // 新消息触发意图修订：同一 `intent-{main}` run 内的思考循环会被重跑，
+    // 每次追加一行。查询侧必须合成一个动作，轮次/步号/节点序号连续。
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    let mut first = entry("run-1", "agent-a", 1_000);
+    first.steps = 2;
+    first.occurrences = vec![occurrence("intent", 1, 1), occurrence("poll_front", 1, 2)];
+    first.routes = vec![route(1), route(2)];
+    first.rounds = vec![round(1), round(2)];
+
+    let mut second = entry("run-1", "agent-a", 2_000);
+    second.steps = 2;
+    second.occurrences = vec![occurrence("intent", 1, 1), occurrence("poll_front", 1, 2)];
+    second.routes = vec![route(1), route(2)];
+    second.rounds = vec![round(1), round(2)];
+
+    write_entry(base, "agent-a", &date, &first);
+    write_entry(base, "agent-a", &date, &second);
+
+    let page = query(
+        base,
+        ThinkTraceQuery {
+            agent_id: Some("agent-a".to_string()),
+            ..Default::default()
+        },
+    );
+
+    assert_eq!(page.total, 1, "同一 run 的重跑必须合成一条轨迹");
+    let merged = &page.items[0];
+    assert_eq!(merged.created_at, 1_000, "created_at 取 run 起点");
+    assert_eq!(merged.steps, 4, "步数应累计");
+    assert_eq!(
+        merged.rounds.iter().map(|r| r.round).collect::<Vec<_>>(),
+        vec![1, 2, 3, 4],
+        "从 1 重新计数的轮次应接续为 3、4"
+    );
+    assert_eq!(
+        merged
+            .occurrences
+            .iter()
+            .map(|o| (o.node.as_str(), o.seq, o.step))
+            .collect::<Vec<_>>(),
+        vec![
+            ("intent", 1, 1),
+            ("poll_front", 1, 2),
+            ("intent", 2, 3),
+            ("poll_front", 2, 4),
+        ],
+        "节点序号与图步号必须跨片段连续"
+    );
+    assert_eq!(
+        merged.routes.iter().map(|r| r.step).collect::<Vec<_>>(),
+        vec![1, 2, 3, 4]
+    );
+    assert_eq!(
+        merged.fingerprint, "intent#1>poll_front#1>intent#2>poll_front#2",
+        "指纹应按合并后的 occurrence 序列重算"
+    );
+}
+
+#[test]
+fn query_keeps_continued_round_numbers_when_merging() {
+    // 执行回退的思考循环已带唤醒级累计 `start_round`（3、4），合并时不得再次后移
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    let mut first = entry("run-1", "agent-a", 1_000);
+    first.steps = 1;
+    first.occurrences = vec![occurrence("think", 1, 1)];
+    first.rounds = vec![round(1), round(2)];
+
+    let mut second = entry("run-1", "agent-a", 2_000);
+    second.steps = 1;
+    second.occurrences = vec![occurrence("think", 1, 1)];
+    second.rounds = vec![round(3), round(4)];
+
+    write_entry(base, "agent-a", &date, &first);
+    write_entry(base, "agent-a", &date, &second);
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
+    assert_eq!(
+        page.items[0]
+            .rounds
+            .iter()
+            .map(|r| r.round)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4],
+        "已是连续累计的轮次应原样保留"
+    );
+    assert_eq!(
+        page.items[0]
+            .occurrences
+            .iter()
+            .map(|o| o.seq)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+}
+
+#[test]
+fn query_does_not_merge_same_run_id_across_scenes() {
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    let mut awaken = entry("run-1", "agent-a", 1_000);
+    awaken.scene = "awaken".to_string();
+    let mut settle = entry("run-1", "agent-a", 2_000);
+    settle.scene = "settle".to_string();
+
+    write_entry(base, "agent-a", &date, &awaken);
+    write_entry(base, "agent-a", &date, &settle);
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 2, "不同场景不是同一个动作，不能合并");
 }

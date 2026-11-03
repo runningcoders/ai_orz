@@ -13,7 +13,7 @@ scope:
   - 'frontend/src/components/chat/think_traces_tab.rs'
   - 'frontend/src/components/chat/think_rounds_timeline.rs'
 source_files:
-  - src/pkg/think_trace.rs#L41-L266
+  - src/pkg/think_trace.rs#L41-L378
   - src/service/domain/runtime/think_trace_query.rs#L48-L171
   - src/handlers/hr/agent/query_think_traces.rs#L27-L108
   - common/src/api/runtime.rs#L109-L246
@@ -27,6 +27,8 @@ source_files:
 思考轨迹把一次思考 run 的**轮级细节**（模型可见文本、推理摘要、工具调用与状态、每轮 token 与耗时、裁决结果）连同图执行信息（节点 occurrence 序列、选路记录 candidates/chosen/via）落成 append-only JSONL：`agents/{agent_id}/think_trace/YYYYMMDD.jsonl`，时间戳为**毫秒**。写入由 `pkg::think_trace::append` 完成，读取由 `query` / `query_at` 完成，两者都不经过关系库。
 
 对外的唯一查询入口是 `GET /api/v1/hr/agents/think-traces`，它同时服务两种调用姿势：Agent 详情页带 `agent_id` 看单 Agent 历史；对话页「思考」Tab 带 `project_id` 聚合多 Agent。响应把 rounds / occurrences / routes **一次性内联返回**，前端展开条目时无需二次请求。
+
+一次图 run 内思考循环可能被重新触发（新消息触发意图修订、`poll_exit` 回退执行），每次重跑都会追加一行 JSONL。查询层在分页前按 `(agent_id, run_id, scene)` 把这些行**合并成一条连续轨迹**（轮次 / 节点序号 / 图步号接续编号、步数与 advisor 次数求和、指纹重算），否则轨迹面板会把同一个动作显示成两个动作、各自统计轮次。
 
 ## 2. 关键文件与位置
 
@@ -45,7 +47,9 @@ source_files:
 
 ### 3.1 落盘与读取对称
 
-写入走 `DailyJsonlWriter`（按日分区、无 position 回填）；读取按 `agent_id` 选目录（缺省遍历全部 Agent）、按日期文件名区间裁剪、逐行解析后过滤。排序键是 `(created_at desc, run_id desc)`——同一毫秒内必须有第二键，否则多条目翻页会重复或漏项。查询未初始化时返回**空页**而不是报错、也不产生文件副作用。
+写入走 `DailyJsonlWriter`（按日分区、无 position 回填）；读取按 `agent_id` 选目录（缺省遍历全部 Agent）、按日期文件名区间裁剪、逐行解析后过滤。读取后先按 `created_at` 正序把同一 `(agent_id, run_id, scene)` 的多行合并（同一 run 的重跑片段），再按 `(created_at desc, run_id desc)` 排序分页——合并必须发生在分页之前，否则 `total` 与页边界会按「行」而不是按「动作」计算。同一毫秒内必须有第二键，否则多条目翻页会重复或漏项。查询未初始化时返回**空页**而不是报错、也不产生文件副作用。
+
+合并口径：`created_at` 取最早片段（run 起点，与 `MemoryTrace.id` 回查语义一致）；`steps` / `advisor_calls` 求和；`rounds` 若后一段从 1 重新计数则整体后移、若已带唤醒级累计 `start_round` 则原样保留；`occurrences` 的节点级 `seq` 跨片段续编号、`step` 与 `routes.step` 按前段 `steps` 后移；`fingerprint` 由合并后的 occurrence 序列重算。
 
 ### 3.2 作用域守门与会话一致
 
@@ -66,6 +70,8 @@ awaken / settle / compact 场景下 `run_id` 等于 `MemoryTrace.id`；轨迹面
 - ❌ **limit 上限 100**：pkg 层 `bail` 超限，Domain 层同样校验；前端分页不可突破。
 - ✅ **DTO 逐字段映射，禁止透传内部结构**：`to_list_item` 负责把 `ThinkTraceEntry` 转成 common DTO，保证前后端契约只在 `common/src/api/runtime.rs` 定义。
 - ✅ **前端切换 Agent / 翻页要丢弃过期响应**：用加载代际计数（`load_gen`）比对后再写状态；选中 run 若不在新页，回落到首条，避免详情区显示上一页数据。
+- ❌ **同一 run 的重跑不能按行展示**：意图修订 / 执行回退会让同一 `run_id` 追加多行；查询层必须按 `(agent_id, run_id, scene)` 合并后再分页，否则同一个动作会变成两个动作并各自统计轮次。
+- ❌ **合并时编号不能重复偏移**：occurrence 的节点序号偏移要取合并前快照，片段内后续节点不能再吃一遍偏移；轮次只在「后段编号小于等于前段」时后移，已累计的 `start_round` 不能二次相加。
 - ✅ **字段缺失靠 `serde(default)` 兼容**：历史行可能没有 `project_id` / `task_id`（2026-10-22 之后才写入），反序列化不得失败。
 - ✅ **pkg 层允许 Domain 直达**：`think_trace` 是基础设施（类似日志），没有 DAL/DAO 参与；不要为它硬造一层 DAO 转发。
 - ✅ **诊断顺序**：查不到轨迹 → 先确认 `init` 是否已绑定基础数据目录（未初始化返回空页）、再看 `agents/{agent_id}/think_trace/` 是否存在当日文件、最后核对毫秒区间与 scene 过滤。

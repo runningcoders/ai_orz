@@ -10,12 +10,17 @@
 //! 查询侧按 **agent 维度** 分页：`agent_id` 缺省时遍历 `agents/*/think_trace`，
 //! 供对话页「多 Agent 聚合流」使用；`project_id` / `task_id` 是 entry 字段过滤
 //! （2026-10-22 起新写入的轨迹才有值，历史轨迹该字段为空）。
+//!
+//! 同一图 run 可能因新输入重跑思考循环（意图修订 / 执行回退），每次重跑追加一行；
+//! 查询在分页前按 `(agent_id, run_id, scene)` 合并成一个动作，避免轨迹面板把
+//! 同一个动作展示成多个条目、各自统计轮次。
 
 use crate::pkg::daily_jsonl::DailyJsonlWriter;
 use crate::pkg::paths;
 use common::api::{PagedResult, PaginationParams};
 use common::enums::ThinkingIntensity;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -265,6 +270,16 @@ pub(crate) fn query_at(
         }
     }
 
+    // 同一 run 内可能因新输入重跑思考循环（意图修订 / 执行回退），每次重跑都会
+    // 追加一行。先按时间正序把同一 `(agent_id, run_id, scene)` 的多行合成一条，
+    // 否则「同一动作被重新触发」会被展示成两个动作、各自统计轮次。
+    entries.sort_by(|a, b| {
+        a.created_at
+            .cmp(&b.created_at)
+            .then_with(|| a.run_id.cmp(&b.run_id))
+    });
+    let mut entries = merge_same_run(entries);
+
     // 最新在前；同一毫秒内按 run_id 倒序，保证分页顺序稳定
     entries.sort_by(|a, b| {
         b.created_at
@@ -275,6 +290,96 @@ pub(crate) fn query_at(
     let total = entries.len();
     let items = entries.into_iter().skip(offset).take(limit).collect();
     Ok(PagedResult { items, total })
+}
+
+/// 合并同一 run 内被重新触发而追加的多行轨迹
+///
+/// `run_id` 标识一次图 run，但一次 run 里思考循环可能执行多次：
+/// - 新消息触发意图修订时，`IntentNode` 重跑，`intent-{main}` 轨迹追加一行；
+/// - `poll_exit` 回退执行时，Deliberate 的思考循环重跑，主 run 轨迹追加一行。
+///
+/// 这些行共享 `(agent_id, run_id, scene)`，是**同一个动作的不同片段**。查询层
+/// 按该键聚合，让轨迹面板呈现一条连续路径，而不是两个各自计数的动作。
+fn merge_same_run(entries: Vec<ThinkTraceEntry>) -> Vec<ThinkTraceEntry> {
+    let mut merged: Vec<ThinkTraceEntry> = Vec::with_capacity(entries.len());
+    let mut positions: HashMap<(String, String, String), usize> = HashMap::new();
+    for entry in entries {
+        let key = (
+            entry.agent_id.clone(),
+            entry.run_id.clone(),
+            entry.scene.clone(),
+        );
+        match positions.get(&key).copied() {
+            Some(index) => merge_into(&mut merged[index], entry),
+            None => {
+                positions.insert(key, merged.len());
+                merged.push(entry);
+            }
+        }
+    }
+    merged
+}
+
+/// 把后一段轨迹并入前一段（入参按 `created_at` 正序，前一段即更早的片段）
+///
+/// - `created_at` / `project_id` / `task_id` 保留最早片段的值（run 起点语义，
+///   与 `MemoryTrace.id` 的回查口径一致）
+/// - `steps` / `advisor_calls` 求和
+/// - `rounds` / `occurrences` / `routes` 按时间拼接，并让轮次、节点序号与图步号
+///   连续：后一段若从 1 重新计数则整体后移，若已按唤醒级累计则原样保留
+/// - `fingerprint` 由合并后的 occurrence 序列重算
+fn merge_into(base: &mut ThinkTraceEntry, next: ThinkTraceEntry) {
+    let step_offset = base.steps;
+
+    // 轮次：意图重跑从 1 计数，需要后移；执行回退已带 `start_round`（累计值），
+    // 已是连续编号，不能再加偏移
+    let round_offset = match (base.rounds.last(), next.rounds.first()) {
+        (Some(last), Some(first)) if first.round <= last.round => {
+            last.round.saturating_add(1).saturating_sub(first.round)
+        }
+        _ => 0,
+    };
+    for mut round in next.rounds {
+        round.round = round.round.saturating_add(round_offset);
+        base.rounds.push(round);
+    }
+
+    // occurrence：节点级序号跨片段续编号，图步号整体后移。
+    // 偏移必须取自合并前的快照：同一片段内后面的 occurrence 不能再吃一遍偏移。
+    let base_seq_by_node: HashMap<String, usize> = base
+        .occurrences
+        .iter()
+        .map(|occurrence| (occurrence.node.clone(), occurrence.seq))
+        .collect();
+    for mut occurrence in next.occurrences {
+        if let Some(previous) = base_seq_by_node.get(&occurrence.node).copied() {
+            occurrence.seq = occurrence.seq.saturating_add(previous);
+        }
+        occurrence.step = occurrence.step.saturating_add(step_offset);
+        base.occurrences.push(occurrence);
+    }
+
+    for mut route in next.routes {
+        route.step = route.step.saturating_add(step_offset);
+        base.routes.push(route);
+    }
+
+    base.steps = base.steps.saturating_add(next.steps);
+    base.advisor_calls = base.advisor_calls.saturating_add(next.advisor_calls);
+    // 指纹是实际 occurrence 序列的压缩表达，合并后必须重算
+    base.fingerprint = base
+        .occurrences
+        .iter()
+        .map(|occurrence| format!("{}#{}", occurrence.node, occurrence.seq))
+        .collect::<Vec<_>>()
+        .join(">");
+
+    if base.project_id.is_none() {
+        base.project_id = next.project_id;
+    }
+    if base.task_id.is_none() {
+        base.task_id = next.task_id;
+    }
 }
 
 /// 列出待扫描的 Agent 数据目录
