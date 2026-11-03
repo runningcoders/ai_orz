@@ -61,7 +61,7 @@ source_files:
 
 ### 3.4 与记忆轨迹的关联
 
-awaken / settle / compact 场景下 `run_id` 等于 `MemoryTrace.id`；轨迹面板据此调用记忆轨迹详情接口渲染上段记忆条目。`summary` / `intent-analyze` 没有对应 MemoryTrace，`has_memory_entry` 判false，不渲染记忆段。
+awaken / settle / compact / summary 场景下 `run_id` 等于 `MemoryTrace.id`；轨迹面板据此调用记忆轨迹详情接口渲染上段记忆条目。`intent-analyze` 没有对应 MemoryTrace，不渲染记忆段。判定统一走 common 的 `think_trace_has_memory_entry(scene)`，前后端不再各自维护场景白名单。
 
 ## 4. 约定与约束 / 最佳实践 / 常见坑
 

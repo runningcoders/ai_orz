@@ -664,29 +664,24 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             .find(|t| common::llm_schema::to_wire_tool_name(&t.po.id) == tc.name)
         {
             Some(tool) => {
-                // 意图识别场景：工具描述符与正式执行完全一致（否则请求前缀不同，
-                // prompt cache 不会命中），允许集合改在「调用时」拦截。
-                // 被拦的调用不执行任何副作用，只回一条 tool message。
-                if intent_analyze_blocks_tool(d.scene, &tool.po.get_tags()) {
+                // 意图识别 / 压缩 / 总结退出：工具描述符与主循环完全一致（否则请求
+                // 前缀在 tools 段就分叉，prompt cache 整段失配），允许集合改在
+                // 「调用时」拦截。被拦的调用不执行任何副作用，只回一条 tool message。
+                if scene_blocks_tool(d.scene, &tool.po.get_tags()) {
                     log_info!(
                         &ctx,
                         "think_loop",
-                        "blocked non-intent tool {} in IntentAnalyze",
-                        tc.name
+                        "blocked tool {} in scene={}",
+                        tc.name,
+                        d.scene.as_str()
                     );
-                    messages.push(ChatMessage::tool(
-                        tc.id,
-                        "当前是审题阶段（IntentAnalyze），该工具不可执行，也没有产生任何\
-                         副作用。请只使用理解类工具（检索 / 记忆 / 神经技能），继续完成\
-                         理解后输出 INTENT_ANALYSIS JSON。"
-                            .to_string(),
-                    ));
+                    messages.push(ChatMessage::tool(tc.id, blocked_tool_message(d.scene)));
                     mark_trace_tool(
                         &mut trace_tool_calls,
                         trace_idx,
                         None,
                         "blocked",
-                        Some("已拦截：审题阶段不允许执行该工具".to_string()),
+                        Some(format!("已拦截：{}阶段不允许执行该工具", d.scene.as_str())),
                     );
                     continue;
                 }
@@ -852,12 +847,35 @@ fn reflect_targets(state: &RoundState) -> Vec<(String, usize)> {
     targets
 }
 
-/// 意图识别场景的工具拦截判定
+/// 复用主循环上下文的场景（意图 / 压缩 / 总结退出）的工具拦截判定
 ///
 /// 两阶段工具描述符必须完全一致（否则请求前缀不同，prompt cache 不命中），
 /// 所以允许集合改在**调用时**判定：命中拦截就回 tool message，不执行副作用。
-fn intent_analyze_blocks_tool(scene: ThinkingScene, tags: &[String]) -> bool {
-    scene == ThinkingScene::IntentAnalyze && !scene.is_tool_allowed(tags)
+fn scene_blocks_tool(scene: ThinkingScene, tags: &[String]) -> bool {
+    matches!(
+        scene,
+        ThinkingScene::IntentAnalyze | ThinkingScene::Compact | ThinkingScene::Summary
+    ) && !scene.is_tool_allowed(tags)
+}
+
+/// 场景拦截后回给模型的 tool message（场景不同，引导模型做的事也不同）
+fn blocked_tool_message(scene: ThinkingScene) -> String {
+    match scene {
+        ThinkingScene::IntentAnalyze => {
+            "当前是审题阶段（IntentAnalyze），该工具不可执行，也没有产生任何副作用。\
+             请只使用理解类工具（检索 / 记忆 / 神经技能），继续完成理解后输出 \
+             INTENT_ANALYSIS JSON。"
+        }
+        ThinkingScene::Summary => {
+            "当前是总结退出阶段（Summary），该工具不可执行，也没有产生任何副作用。\
+             请直接输出本轮工作摘要与用户可见的收尾回复。"
+        }
+        _ => {
+            "当前是上下文压缩阶段（Compact），该工具不可执行，也没有产生任何副作用。\
+             请只输出压缩后的短期记忆摘要。"
+        }
+    }
+    .to_string()
 }
 
 /// 自省节点：把「别再重复同一个工具」的提示注入下一轮上下文
@@ -1011,20 +1029,47 @@ mod tests {
         assert!(reflect_targets(&state).is_empty(), "同一工具只提示一次");
     }
 
-    /// 审题阶段只拦执行类工具；理解类工具与正式执行场景保持放通
+    /// 意图 / 压缩 / 总结退出都复用主循环的工具 schema，执行集合改在调用时拦截
     #[test]
-    fn intent_analyze_blocks_execution_tools_at_call_time() {
-        assert!(intent_analyze_blocks_tool(
+    fn reused_context_scenes_block_tools_at_call_time() {
+        assert!(scene_blocks_tool(
             ThinkingScene::IntentAnalyze,
             &["tool_management".to_string()]
         ));
-        assert!(!intent_analyze_blocks_tool(
+        assert!(!scene_blocks_tool(
             ThinkingScene::IntentAnalyze,
             &["search".to_string()]
         ));
-        assert!(!intent_analyze_blocks_tool(
+        // 压缩只放通 neural / memory
+        assert!(scene_blocks_tool(
+            ThinkingScene::Compact,
+            &["tool_management".to_string()]
+        ));
+        assert!(!scene_blocks_tool(
+            ThinkingScene::Compact,
+            &["memory".to_string()]
+        ));
+        // 总结退出放通消息 / 任务管理，但不放通执行类工具
+        assert!(!scene_blocks_tool(
+            ThinkingScene::Summary,
+            &["messaging".to_string()]
+        ));
+        assert!(scene_blocks_tool(
+            ThinkingScene::Summary,
+            &["tool_management".to_string()]
+        ));
+        // 主循环不受影响
+        assert!(!scene_blocks_tool(
             ThinkingScene::Awaken,
             &["tool_management".to_string()]
         ));
+    }
+
+    /// 拦截文案按场景区分，引导模型走对应的收尾动作
+    #[test]
+    fn blocked_tool_message_matches_scene() {
+        assert!(blocked_tool_message(ThinkingScene::IntentAnalyze).contains("INTENT_ANALYSIS"));
+        assert!(blocked_tool_message(ThinkingScene::Summary).contains("收尾回复"));
+        assert!(blocked_tool_message(ThinkingScene::Compact).contains("短期记忆摘要"));
     }
 }

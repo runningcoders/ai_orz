@@ -146,7 +146,7 @@ pub(crate) fn map_triggered_to_result(
 
 /// 判断是否为「沉淀/压缩循环中递归触发沉淀」的工具调用
 ///
-/// 处于 Settle / Compact 场景时，模型再调 `settle_memory` 即为自我递归，需拦截。
+/// 处于 Settle / Compact / Summary 场景时，模型再调 `settle_memory` 即为自我递归，需拦截。
 /// 其他场景（含 Awaken）不拦截——主循环里 Agent 主动触发一次沉淀是合法需求。
 /// 入参 `tool_name` 是模型回传的 wire name（`to_wire_tool_name` 输出），
 /// 常量侧同样过一遍该函数，两侧禁各写一份字面量。
@@ -155,9 +155,11 @@ pub(crate) fn is_recursive_settle_call(
     tool_name: &str,
 ) -> bool {
     use common::enums::ThinkingScene;
-    matches!(scene, ThinkingScene::Settle | ThinkingScene::Compact)
-        && tool_name
-            == common::llm_schema::to_wire_tool_name(super::compaction::RECURSIVE_SETTLE_TOOL)
+    matches!(
+        scene,
+        ThinkingScene::Settle | ThinkingScene::Compact | ThinkingScene::Summary
+    ) && tool_name
+        == common::llm_schema::to_wire_tool_name(super::compaction::RECURSIVE_SETTLE_TOOL)
 }
 
 /// 判断是否为「沉淀过程中往待沉淀队列写新短期记忆」的工具调用

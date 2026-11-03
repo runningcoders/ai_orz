@@ -199,6 +199,15 @@ impl ThinkTraceListItem {
     }
 }
 
+/// 该场景的思考轨迹是否对应一条可回查的记忆条目（input / output）
+///
+/// 只有这四类场景的 `run_id` 与 `MemoryTrace.id` 同值：唤醒 / 沉淀 / 压缩
+/// 由唤醒主流程写记忆，总结退出由收尾路径写记忆；意图识别只落思考轨迹，
+/// 没有可回查的条目。
+pub fn think_trace_has_memory_entry(scene: &str) -> bool {
+    matches!(scene, "awaken" | "settle" | "compact" | "summary")
+}
+
 /// 单轮思考明细
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ThinkTraceRoundDto {
@@ -407,5 +416,14 @@ mod tests {
             intent.entry_key(),
             item("agent-a", "run-1", "intent-analyze").entry_key()
         );
+    }
+
+    #[test]
+    fn memory_entry_scenes_cover_both_compact_and_summary() {
+        // 压缩与总结退出都会写记忆条目，轨迹面板两者都要能回查 input / output
+        assert!(think_trace_has_memory_entry("compact"));
+        assert!(think_trace_has_memory_entry("summary"));
+        // 意图识别只落思考轨迹，没有可回查的条目
+        assert!(!think_trace_has_memory_entry("intent-analyze"));
     }
 }

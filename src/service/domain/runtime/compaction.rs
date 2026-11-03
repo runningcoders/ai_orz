@@ -70,6 +70,35 @@ const COMPACTION_TAG: &str = "compaction";
 /// 框架轻量落档时打的标签（跳过 LLM 压缩的那部分轮次）
 const QUICK_TURN_TAG: &str = "quick_turn";
 
+/// 压缩 / 总结的入口类型：同时决定 trace 场景与是否产出用户回复
+///
+/// 把两个维度绑在一起，避免调用方拼出「总结场景却要用户回复字段」这种不一致组合。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactMode {
+    /// 上下文溢出：压缩后回 `Prepare` 继续主循环
+    Overflow,
+    /// 正常结束后的存档：总结本轮工作，不产出用户回复
+    TurnArchive,
+    /// 轮次耗尽的收尾：总结本轮工作，并把结果作为用户回复
+    ForcedReply,
+}
+
+impl CompactMode {
+    /// 对应的思考场景（轨迹 / AOP 统计口径）
+    pub fn scene(self) -> ThinkingScene {
+        match self {
+            CompactMode::Overflow => ThinkingScene::Compact,
+            // 正常结束与轮次耗尽都是「总结」，只有溢出才是「压缩」
+            CompactMode::TurnArchive | CompactMode::ForcedReply => ThinkingScene::Summary,
+        }
+    }
+
+    /// 是否把产物剥出 `<user_reply>` 作为回复发用户
+    pub fn with_user_reply(self) -> bool {
+        matches!(self, CompactMode::ForcedReply)
+    }
+}
+
 /// 轻量落档写入时的硬上限（兜底，不是分流阈值）
 ///
 /// 分流由策略引擎按估算 token 数决定（见 [`build_compaction_policy`]）；
@@ -404,7 +433,13 @@ impl RuntimeDomainImpl {
         }
     }
 
-    /// 上下文压缩：把当前工作对话压缩为一条短期记忆
+    /// 上下文总结 / 压缩：把当前工作对话压缩为一条短期记忆
+    ///
+    /// 三处入口共用同一套「追加指令 + 复用主循环上下文」的执行方式，入口类型由
+    /// [`CompactMode`] 区分：
+    /// - 上下文溢出 → [`CompactMode::Overflow`]（场景 `compact`，压完继续）
+    /// - 正常结束后的存档 → [`CompactMode::TurnArchive`]（场景 `summary`）
+    /// - 轮次耗尽的收尾回复 → [`CompactMode::ForcedReply`]（场景 `summary`，并产出用户回复）
     ///
     /// # 与 sleep_and_settle 的差异
     /// - 复用 `work_messages` 全量上下文（追加指令而非重建），命中 prefix caching
@@ -429,9 +464,11 @@ impl RuntimeDomainImpl {
         agent: &Agent,
         parent_trace_id: &str,
         trace_ids: &[String],
-        with_user_reply: bool,
+        mode: CompactMode,
     ) -> Result<CompactOutcome> {
-        let scene = ThinkingScene::Compact;
+        // 场景与回复形态都由入口类型决定，避免拼出不一致的组合
+        let scene = mode.scene();
+        let with_user_reply = mode.with_user_reply();
         let start_time = std::time::Instant::now();
 
         // 场景内轮次预算（不从唤醒总轮次里扣）：
@@ -444,10 +481,11 @@ impl RuntimeDomainImpl {
             COMPACT_MAX_ROUNDS
         };
 
-        // 1. 构造压缩 trace（不写 Agent 状态，仅用于审计追溯）
+        // 1. 构造场景 trace（不写 Agent 状态，仅用于审计追溯）
+        //    log_id 用场景前缀，压缩与总结在记忆轨迹里也能一眼区分
         let mut trace = MemoryTrace::new(
             agent.po.id.clone(),
-            format!("compact-{}", parent_trace_id),
+            format!("{}-{}", scene.as_str(), parent_trace_id),
             ctx.uid(),
             ctx.organization_id.clone().unwrap_or_default(),
             MemoryRole::System,
@@ -476,12 +514,17 @@ impl RuntimeDomainImpl {
         // 4. 发布循环启动事件
         let _ = crate::pkg::aop::publish(
             &ctx,
-            AgentLoopEvent::started(&agent.po.id, &trace_id, "compact", None),
+            AgentLoopEvent::started(&agent.po.id, &trace_id, scene.as_str(), None),
         )
         .await;
 
         // 5. 执行压缩循环（场景内小预算：与 Agent 的唤醒级 max_thinking_rounds 无关）
-        let tool_descriptors = build_scene_tool_descriptors(agent, scene);
+        //
+        // 工具描述符必须与主循环（Awaken）逐字节一致：provider 的 prefix cache
+        // 从 tools 段开始匹配，裁剪 schema 会让整段前缀失配（实测压缩命中率
+        // 只有个位数，而主循环 90%+）。本场景禁止执行工具这件事交给 think_round
+        // 在**调用时**拦截，不靠裁剪 schema 实现。
+        let tool_descriptors = build_scene_tool_descriptors(agent, ThinkingScene::Awaken);
         let result = self
             .run_think_loop(
                 ThinkLoopParams::new(
@@ -560,7 +603,7 @@ impl RuntimeDomainImpl {
             AgentLoopEvent::finished(
                 &agent.po.id,
                 &trace_id,
-                "compact",
+                scene.as_str(),
                 "success",
                 start_time.elapsed().as_millis() as u64,
                 None,
@@ -579,6 +622,18 @@ impl RuntimeDomainImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 压缩与总结必须分场景：轨迹 / AOP 统计靠 scene 区分，不能都记成 compact
+    #[test]
+    fn compact_mode_binds_scene_and_reply_form() {
+        assert_eq!(CompactMode::Overflow.scene(), ThinkingScene::Compact);
+        assert_eq!(CompactMode::TurnArchive.scene(), ThinkingScene::Summary);
+        assert_eq!(CompactMode::ForcedReply.scene(), ThinkingScene::Summary);
+        // 只有轮次耗尽才需要给用户的收尾回复
+        assert!(CompactMode::ForcedReply.with_user_reply());
+        assert!(!CompactMode::Overflow.with_user_reply());
+        assert!(!CompactMode::TurnArchive.with_user_reply());
+    }
 
     #[test]
     fn compact_instruction_forbids_compressing_boilerplate() {

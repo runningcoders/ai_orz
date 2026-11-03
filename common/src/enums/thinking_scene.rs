@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 /// 思考场景类型
 ///
-/// 用于区分唤醒（awaken）、沉睡（sleep_and_settle）、总结退出（summary）
-/// 和意图识别（intent-analyze）四种场景，不同场景根据 tag 过滤可用工具和技能。
+/// 用于区分唤醒（awaken）、沉睡（settle）、总结（summary）、压缩（compact）
+/// 和意图识别（intent-analyze）五种场景，不同场景根据 tag 过滤可用工具和技能。
 ///
 /// 放在 common 层，供 pkg / domain / handler / DTO 共用。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -34,8 +34,8 @@ pub enum ThinkingScene {
     ///
     /// ⚠️ 与 Compact 不同：Compact 只压缩出一条短期记忆，不放通技能写工具。
     Settle,
-    /// 总结退出场景：思考轮次耗尽后总结当前工作，允许消息和任务管理工具
-    /// （neural + memory + messaging + project_management tag）
+    /// 总结场景：正常结束后的存档总结，或思考轮次耗尽后的收尾回复（最后一次向用户交付），
+    /// 允许消息和任务管理工具（neural + memory + messaging + project_management tag）
     Summary,
     /// 上下文压缩场景：主循环上下文接近上限时，把本次对话压缩成一条短期记忆
     ///

@@ -114,8 +114,9 @@ pub fn ThinkTracesTab(
     let mut prev_scope = use_signal(String::new);
     let mut prev_tick = use_signal(|| 0u64);
     let mut expanded_key = use_signal(|| None::<String>);
-    // 记忆条目详情弹窗目标：(agent_id, trace_id)。run_id 在 awaken/settle/compact
-    // 三类场景下与 MemoryTrace.id 同值，故可直接回查 input/output。
+    // 记忆条目详情弹窗目标：(agent_id, trace_id)。run_id 在 awaken/settle/compact/summary
+    // 场景下与 MemoryTrace.id 同值，故可直接回查 input/output（见 common 的
+    // think_trace_has_memory_entry）。
     let mut memory_target = use_signal(|| None::<(String, String)>);
 
     let mut load = move |pid: Option<String>,
@@ -359,7 +360,7 @@ pub fn ThinkTracesTab(
                                         div { class: "text-xs text-base-content/50 font-mono break-all",
                                             "run: {run_id} · fp: {fingerprint}"
                                         }
-                                        if scene == "awaken" || scene == "settle" || scene == "compact" {
+                                        if common::api::think_trace_has_memory_entry(&scene) {
                                             button {
                                                 class: "btn hud-btn btn-ghost btn-xs",
                                                 title: "查看本次 run 对应的记忆条目（input / output）",

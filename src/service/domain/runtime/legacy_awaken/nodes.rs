@@ -14,6 +14,7 @@ use crate::pkg::think_path::{
     ThinkNode,
 };
 use crate::service::domain::runtime::RuntimeMemory;
+use crate::service::domain::runtime::compaction::CompactMode;
 use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult, WakeUsage};
 use async_trait::async_trait;
 use common::error::Result;
@@ -724,13 +725,14 @@ impl ThinkNode for DeliberateNode {
 
 /// 压缩节点：把当前对话压成一条短期记忆
 ///
-/// `with_user_reply = true` 时压缩产物剥掉摘要标记后**作为回复发给用户**
-/// （轮次耗尽退出流程），否则只是内部产物，压完回到 `Prepare` 继续下一轮。
+/// `ForcedReply` 时压缩产物剥掉摘要标记后**作为回复发给用户**（轮次耗尽退出流程）；
+/// `Overflow` 只是内部产物，压完回到 `Prepare` 继续下一轮；`TurnArchive` 是正常结束
+/// 后的存档总结。入口类型同时决定 trace 场景（溢出 = compact，其余 = summary）。
 #[derive(Debug)]
 pub struct CompactNode {
     deps: Arc<AwakenDeps>,
     id: NodeId,
-    with_user_reply: bool,
+    mode: CompactMode,
 }
 
 impl CompactNode {
@@ -739,7 +741,7 @@ impl CompactNode {
         Self {
             deps,
             id: NodeId::new("compact"),
-            with_user_reply: false,
+            mode: CompactMode::Overflow,
         }
     }
 
@@ -748,7 +750,7 @@ impl CompactNode {
         Self {
             deps,
             id: NodeId::new("force_compact"),
-            with_user_reply: true,
+            mode: CompactMode::ForcedReply,
         }
     }
 }
@@ -780,9 +782,10 @@ impl ThinkNode for CompactNode {
         crate::log_info!(
             &deps.ctx,
             "legacy_awaken",
-            "compact node start, agent_id={}, with_user_reply={}",
+            "compact node start, agent_id={}, mode={:?}, scene={}",
             deps.agent.po.id,
-            self.with_user_reply
+            self.mode,
+            self.mode.scene().as_str()
         );
         let mut artifacts = read_artifacts(bus)?;
         let trace_ids = vec![deps.trace_id.clone()];
@@ -795,13 +798,13 @@ impl ThinkNode for CompactNode {
                 super::backend::CompactInput {
                     messages: artifacts.messages.clone(),
                     trace_ids: trace_ids.clone(),
-                    with_user_reply: self.with_user_reply,
+                    mode: self.mode,
                 },
             )
             .await
         {
             Ok(outcome) => {
-                if self.with_user_reply {
+                if self.mode.with_user_reply() {
                     // 只认 `<user_reply>` 标记：没有标记就兜底，绝不把摘要区块
                     // （内部口吻的「已完成/待办」）当成回复发给用户。
                     artifacts.content =
@@ -842,7 +845,7 @@ impl ThinkNode for CompactNode {
             "legacy_awaken",
             "compact node done, agent_id={}, with_user_reply={}",
             deps.agent.po.id,
-            self.with_user_reply
+            self.mode.with_user_reply()
         );
         Ok(NodeOutcome::new(NodeSignal::Done))
     }
@@ -1084,7 +1087,8 @@ impl ThinkNode for ConsolidateNode {
                         super::backend::CompactInput {
                             messages,
                             trace_ids: trace_ids.clone(),
-                            with_user_reply: false,
+                            // 正常结束后的存档是「总结本轮工作」，不是上下文溢出压缩
+                            mode: CompactMode::TurnArchive,
                         },
                     )
                     .await

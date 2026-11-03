@@ -20,7 +20,7 @@
 use super::context::AwakenDeps;
 use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
-use crate::service::domain::runtime::compaction::CompactOutcome;
+use crate::service::domain::runtime::compaction::{CompactMode, CompactOutcome};
 use crate::service::domain::runtime::types::{
     IntentAnalysis, ThinkLoopParams, ThinkLoopResult, WakeUsage,
 };
@@ -49,15 +49,13 @@ pub struct ThinkInput {
     pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
 }
 
-/// 一次「压缩」的输入
+/// 一次「压缩 / 总结」的输入
 pub struct CompactInput {
     pub messages: Vec<ChatMessage>,
     pub trace_ids: Vec<String>,
-    /// `true` = 压缩产物剥掉摘要标记后作为给用户的回复（轮次耗尽退出）
-    ///
-    /// 它也决定本轮的思考轮次预算：`false` → 压缩固定 3 轮；
-    /// `true` → Agent 的 `summary_max_rounds`（见 `compact_context`）。
-    pub with_user_reply: bool,
+    /// 本次调用的入口类型：溢出 = `Overflow`；正常结束存档 = `TurnArchive`；
+    /// 轮次耗尽收尾 = `ForcedReply`。场景与回复形态都由它派生。
+    pub mode: CompactMode,
 }
 
 /// 一次「意图识别」的输入（其余上下文由 `AwakenDeps` 携带）
@@ -151,7 +149,7 @@ impl ThinkBackend for LegacyBackend {
                 &deps.agent,
                 &deps.trace_id,
                 &input.trace_ids,
-                input.with_user_reply,
+                input.mode,
             )
             .await
     }

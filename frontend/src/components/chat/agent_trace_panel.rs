@@ -15,7 +15,9 @@ use crate::api::hr::query_think_traces;
 use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
-use common::api::{PaginationParams, QueryThinkTracesRequest, ThinkTraceListItem};
+use common::api::{
+    PaginationParams, QueryThinkTracesRequest, ThinkTraceListItem, think_trace_has_memory_entry,
+};
 
 use super::ThinkPathGraphView;
 use super::memory_trace_detail::MemoryTraceDetail;
@@ -24,11 +26,6 @@ use super::think_traces_tab::{page_bounds, scene_label};
 
 /// 每页条数（JSONL 扫描开销控制）
 const PAGE_SIZE: usize = 20;
-
-/// 这些场景的 run_id 与记忆条目 id 同值，可回查记忆 input / output
-fn has_memory_entry(scene: &str) -> bool {
-    matches!(scene, "awaken" | "settle" | "compact")
-}
 
 /// Agent 轨迹面板
 #[component]
@@ -167,7 +164,7 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
                                         onclick: move |_| selected_key.set(Some(key_for_click.clone())),
                                         div { class: "flex items-center gap-2 flex-wrap",
                                             span { class: "badge orz-tag badge-sm", "{scene_label(&scene)}" }
-                                            if has_memory_entry(&scene) {
+                                            if think_trace_has_memory_entry(&scene) {
                                                 span {
                                                     class: "badge badge-xs badge-info badge-soft",
                                                     title: "该 run 同时存在记忆条目",
@@ -229,7 +226,7 @@ pub fn AgentTracePanel(agent_id: String) -> Element {
             div { class: "space-y-2",
                 if let Some(sel) = selected {
                     // 记忆段在上：与下段轮次时间线同源于同一个 run_id
-                    if has_memory_entry(&sel.scene) {
+                    if think_trace_has_memory_entry(&sel.scene) {
                         MemoryTraceDetail {
                             key: "{sel.entry_key()}",
                             agent_id: sel.agent_id.clone(),
@@ -290,10 +287,12 @@ mod tests {
 
     #[test]
     fn memory_entry_only_for_memory_backed_scenes() {
-        assert!(has_memory_entry("awaken"));
-        assert!(has_memory_entry("settle"));
-        assert!(has_memory_entry("compact"));
-        assert!(!has_memory_entry("summary"));
-        assert!(!has_memory_entry("intent-analyze"));
+        assert!(think_trace_has_memory_entry("awaken"));
+        assert!(think_trace_has_memory_entry("settle"));
+        assert!(think_trace_has_memory_entry("compact"));
+        // 总结退出（轮次耗尽收尾）同样写记忆条目
+        assert!(think_trace_has_memory_entry("summary"));
+        // 意图识别只落思考轨迹
+        assert!(!think_trace_has_memory_entry("intent-analyze"));
     }
 }
