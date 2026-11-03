@@ -901,3 +901,100 @@ mod attachment_resource_tests {
         assert!(!line.contains("摘要："));
     }
 }
+
+// ==================== 消息链窗口选择 ====================
+
+mod message_thread_selection {
+    use super::super::select_thread_items;
+    use crate::models::message::MessagePo;
+    use common::enums::MessageStatus;
+
+    fn po(id: &str, created_at: i64) -> MessagePo {
+        MessagePo {
+            id: id.to_string(),
+            created_at,
+            ..Default::default()
+        }
+    }
+
+    fn ids(items: &[String]) -> Vec<String> {
+        items
+            .iter()
+            .map(|item| {
+                // to_prompt 里的消息 ID 是 `id` 原文，取第一段 `【消息ID】...`
+                item.lines()
+                    .find(|line| line.contains("消息 ID") || line.contains("消息ID"))
+                    .unwrap_or(item)
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// 长链必须保留**最近** 6 条，而不是最早 6 条（旧 ASC+LIMIT 的缺陷）。
+    #[test]
+    fn long_chain_keeps_most_recent_six_in_ascending_order() {
+        let head = po("root", 0);
+        // DESC：m9(99) → m0(90)
+        let recent_desc: Vec<_> = (0..10)
+            .rev()
+            .map(|i| po(&format!("m{i}"), 90 + i))
+            .collect();
+        let anchor = po("anchor", 100);
+        let items = select_thread_items(Some(head), recent_desc, &anchor);
+
+        assert_eq!(items.len(), 7, "链头 + 最近 6 条");
+        assert!(items[0].contains("root"), "链头最先");
+        for (idx, expect) in ["m4", "m5", "m6", "m7", "m8", "m9"].iter().enumerate() {
+            assert!(
+                items[idx + 1].contains(expect),
+                "第 {} 条应为 {expect}，实际 {}",
+                idx + 1,
+                items[idx + 1]
+            );
+        }
+    }
+
+    /// 锚点之后的消息（含同毫秒 id 更大者）必须剔除，只允许更早的同毫秒消息。
+    #[test]
+    fn messages_after_anchor_are_excluded_same_ms_by_id() {
+        let head = po("root", 0);
+        let after_same_ms = po("zzz", 100);
+        let before_same_ms = po("aaa", 100);
+        let recent_desc = vec![after_same_ms, before_same_ms, po("m0", 90)];
+        let anchor = po("anchor", 100);
+
+        let items = select_thread_items(Some(head), recent_desc, &anchor);
+        assert_eq!(items.len(), 3, "链头 + aaa + m0");
+        assert!(!items.iter().any(|i| i.contains("zzz")), "锚点之后必须剔除");
+        assert!(
+            items.iter().any(|i| i.contains("aaa")),
+            "同毫秒更早的应保留"
+        );
+    }
+
+    /// 当前消息自身与已撤回消息不进入上下文。
+    #[test]
+    fn anchor_and_recalled_messages_are_excluded() {
+        let head = po("root", 0);
+        let mut recalled = po("m1", 91);
+        recalled.status = MessageStatus::Recalled;
+        let recent_desc = vec![po("anchor", 100), recalled, po("m2", 92)];
+        let anchor = po("anchor", 100);
+
+        let items = select_thread_items(Some(head), recent_desc, &anchor);
+        assert_eq!(items.len(), 2, "链头 + m2");
+        assert!(!items.iter().any(|i| i.contains("m1")));
+        assert!(!items.iter().any(|i| i.contains("anchor")));
+    }
+
+    /// 链头已落入尾部窗口时去重，不允许同一 id 出现两次。
+    #[test]
+    fn head_is_deduplicated_when_present_in_tail() {
+        let head = po("root", 10);
+        let recent_desc = vec![po("m2", 92), po("m1", 91), po("root", 10)];
+        let anchor = po("anchor", 100);
+        let items = select_thread_items(Some(head), recent_desc, &anchor);
+        assert_eq!(items.len(), 3);
+        assert_eq!(ids(&items).iter().filter(|i| i.contains("root")).count(), 1);
+    }
+}

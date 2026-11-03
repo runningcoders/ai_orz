@@ -100,7 +100,6 @@ impl ThinkNode for IntentNode {
             .analyze_intent(
                 deps,
                 IntentInput {
-                    trace_id: trace_id.clone(),
                     revision: revision.clone(),
                 },
             )

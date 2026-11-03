@@ -62,8 +62,6 @@ pub struct CompactInput {
 
 /// 一次「意图识别」的输入（其余上下文由 `AwakenDeps` 携带）
 pub struct IntentInput {
-    /// 意图分析子 trace id（形如 `intent-{主 trace_id}`）
-    pub trace_id: String,
     /// 增量修订入参：上次完整结论 + 新增输入（首次识别为 `None`）
     pub revision: Option<crate::service::domain::runtime::inbox::IntentRevision>,
 }
@@ -165,14 +163,20 @@ impl ThinkBackend for LegacyBackend {
     ) -> Result<IntentAnalysis> {
         // 只做转调：started/finished 事件包裹由 IntentNode 负责（含降级语义），
         // 避免缝里先发一份「成功」事件、节点又降级，监控口径分裂。
+        //
+        // Prompt 与 Phase 2 共用主 trace_id；`intent-{main}` 只用于事件子轨迹。
+        // 初始消息快照写入 `deps.intent_seed` 供正式装配续接。
         deps.domain
             .analyze_input_intent_inner(
                 deps.ctx.clone(),
                 &deps.agent,
                 &deps.message,
                 &deps.options,
-                &input.trace_id,
-                input.revision.as_ref(),
+                &deps.trace_id,
+                super::super::intent_analyze::IntentPhaseInput {
+                    revision: input.revision.as_ref(),
+                    seed: Some(&deps.intent_seed),
+                },
             )
             .await
     }

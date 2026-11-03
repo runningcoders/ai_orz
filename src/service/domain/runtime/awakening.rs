@@ -14,9 +14,12 @@ use crate::enrich_ctx;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ImagePart, ToolDescriptor};
 use crate::models::events::AgentLoopEvent;
-use crate::models::memory::MemoryTrace;
+use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::Message;
+use crate::models::prompt_builder::PromptBuilder;
+use crate::models::skill::SkillPo;
 use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, AgentThinkRuntime};
+use crate::pkg::paths;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
 use crate::service::domain::runtime::{
@@ -186,21 +189,6 @@ impl RuntimeDomainImpl {
             }
         }
     }
-}
-
-pub(super) fn build_scene_skills(
-    agent: &Agent,
-    scene: ThinkingScene,
-) -> Vec<crate::models::skill::SkillPo> {
-    agent
-        .skills()
-        .iter()
-        .filter(|s| {
-            let tags = s.po.parse_tags();
-            scene.is_tool_allowed(&tags)
-        })
-        .map(|s| s.po.clone())
-        .collect()
 }
 
 /// 本体词表注入（design §5.4）：awaken / settle / intent_analyze 三场景共用挂载
@@ -664,7 +652,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         .await;
 
         let result = self
-            .analyze_input_intent_inner(ctx.clone(), agent, message, options, &trace_id, None)
+            .analyze_input_intent_inner(
+                ctx.clone(),
+                agent,
+                message,
+                options,
+                &trace_id,
+                super::intent_analyze::IntentPhaseInput {
+                    revision: None,
+                    seed: None,
+                },
+            )
             .await;
 
         let duration_ms = start_time
@@ -697,18 +695,206 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 /// 上报到 `AgentAwakeEvent.exit_reason` 的错误原因最大字符数。
 pub(crate) const AGENT_AWAKE_REASON_LIMIT: usize = 200;
 
+/// 工作空间路径的唯一计算入口（意图识别与正式装配共用，保证 base 逐字节一致）
+///
+/// 返回 `(default, user_home, user_shared, user_agent, agent, project)`，
+/// 与 `PromptBuilder::workspace_context` 的入参顺序一致。
+pub(crate) fn workspace_path_args(
+    ctx: &RequestContext,
+    agent_id: &str,
+    project_id: Option<&str>,
+) -> (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    let base = crate::config::get().base_data_path();
+    let uid = ctx.uid();
+    let uid_ref = if uid.is_empty() {
+        None
+    } else {
+        Some(uid.as_str())
+    };
+    let default_workspace = paths::default_workspace(&base, uid_ref, Some(agent_id))
+        .to_string_lossy()
+        .to_string();
+    let user_home = if uid.is_empty() {
+        paths::users_root_dir(&base).to_string_lossy().to_string()
+    } else {
+        paths::user_home(&base, &uid).to_string_lossy().to_string()
+    };
+    let user_shared_workspace = if uid.is_empty() {
+        default_workspace.clone()
+    } else {
+        paths::user_shared_workspace(&base, &uid)
+            .to_string_lossy()
+            .to_string()
+    };
+    let user_agent_workspace = if uid.is_empty() {
+        None
+    } else {
+        Some(
+            paths::user_agent_workspace(&base, &uid, agent_id)
+                .to_string_lossy()
+                .to_string(),
+        )
+    };
+    let agent_workspace = Some(
+        paths::agent_workspace(&base, agent_id)
+            .to_string_lossy()
+            .to_string(),
+    );
+    let project_workspace = match (project_id, !uid.is_empty()) {
+        (Some(project_id), true) => Some(
+            paths::user_project_workspace(&base, &uid, project_id)
+                .to_string_lossy()
+                .to_string(),
+        ),
+        _ => None,
+    };
+    (
+        default_workspace,
+        user_home,
+        user_shared_workspace,
+        user_agent_workspace,
+        agent_workspace,
+        project_workspace,
+    )
+}
+
+/// 两阶段共享 base 的装配入参
+///
+/// 意图识别与正式装配都必须只通过 [`fill_prompt_base`] 挂载这段内容：
+/// 两边的字段集合、顺序、渲染路径相同，才能保证 Phase 2 的请求前缀
+/// 与 Phase 1 初始 Prompt 逐字节一致（prompt cache 才可能命中）。
+pub(crate) struct PromptBaseInput<'a> {
+    pub ctx: &'a RequestContext,
+    pub agent: &'a Agent,
+    pub message: &'a Message,
+    pub options: &'a ThinkingOptions,
+    /// 两阶段都用主 trace_id；`intent-{trace}` 只用于事件子轨迹
+    pub trace_id: &'a str,
+    pub recent_memories: &'a [Memory],
+    /// 全量已安装技能（两阶段完全一致，不按场景裁剪）
+    pub skills: &'a [SkillPo],
+    /// 压缩摘要（仅在压缩回环后由正式装配传入）
+    pub compacted: Option<&'a str>,
+    /// 更早记忆参考（仅在已压缩时由正式装配传入）
+    pub past_memories: &'a [String],
+    pub message_thread: &'a [String],
+    pub resource_lines: &'a [String],
+    pub vision_parts: &'a [ImagePart],
+}
+
+/// 唯一 base 装配：System（人设 + 技能 + 最终回复规范）+ 公共上下文 +
+/// 历史/压缩 + 消息链 + 资源/视觉 + trace + 当前消息
+///
+/// ⚠️ 这里**不得**出现意图分析结果、检索知识、思维方法或执行指令：
+/// 那些属于「意图之后才确定」的追加内容，必须留在意图尾部或执行段。
+pub(crate) async fn fill_prompt_base(builder: &mut dyn PromptBuilder, input: PromptBaseInput<'_>) {
+    builder.current_trace_id(input.trace_id);
+    builder.system_prompt(input.agent);
+    builder.skills(input.skills);
+    let (default, user_home, user_shared, user_agent, agent, project) = workspace_path_args(
+        input.ctx,
+        &input.agent.po.id,
+        input.options.project.as_ref().map(|p| p.po.id.as_str()),
+    );
+    builder.workspace_context(default, user_home, user_shared, user_agent, agent, project);
+    if let Some(project) = &input.options.project {
+        builder.project_context(project);
+    }
+    if let Some(task) = &input.options.task {
+        builder.task_context(task);
+    }
+    if let Some(user) = &input.options.user_profile {
+        builder.user_profile(user);
+    }
+    // 本体词表（记忆图谱用词约定），三场景共用挂载点
+    mount_ontology_lexicon(input.ctx, builder).await;
+    builder.history(input.recent_memories);
+    if let Some(compacted) = input.compacted {
+        builder.compacted_context(compacted);
+    }
+    if !input.past_memories.is_empty() {
+        builder.past_memories_reference(input.past_memories);
+    }
+    if !input.resource_lines.is_empty() {
+        builder.set_resource_context_lines(input.resource_lines.to_vec());
+    }
+    if !input.vision_parts.is_empty() {
+        builder.set_current_message_vision(input.vision_parts.to_vec());
+    }
+    builder.current_message(input.message);
+    builder.message_thread(input.message_thread);
+}
+
+/// 当前消息业务上下文的唯一取数入口：消息链 + 资源行 + 视觉 parts
+///
+/// 意图识别与正式装配都从这里取同一份数据，避免两阶段各查一次、结果漂移。
+/// 三块都是可选增强：查询失败只记日志并降级为空，不阻断唤醒主流程。
+pub(crate) async fn fetch_message_business_blocks(
+    ctx: &RequestContext,
+    message: &Message,
+) -> (Vec<String>, Vec<String>, Vec<ImagePart>) {
+    let thread = match fetch_message_thread(ctx, message).await {
+        Ok(items) => items,
+        Err(e) => {
+            log_warn!(
+                ctx,
+                "awaken",
+                "fetch message thread failed (message_id={}): {:?}",
+                message.po.id,
+                e
+            );
+            Vec::new()
+        }
+    };
+    let (mut resource_lines, vision_parts) = resolve_current_message_resources(ctx, message).await;
+    append_attachment_description_guidance(message, &mut resource_lines);
+    (thread, resource_lines, vision_parts)
+}
+
+/// 当前消息携带附件时，向资源上下文追加「写摘要」引导行
+///
+/// 意图分析阶段与正式装配共用同一份资源行，因此引导也必须由这里统一挂载。
+fn append_attachment_description_guidance(message: &Message, lines: &mut Vec<String>) {
+    if message.from_role() != common::enums::MessageRole::User {
+        return;
+    }
+    if collect_current_message_attachment_ids(message).is_empty() {
+        return;
+    }
+
+    lines.push(format!(
+        "附件摘要要求：资源行已带「摘要」的附件**默认直接复用**，不必重复识别；但如果结合当前用户文字或上下文判断摘要可能失准（与附件实际内容不符，或用途已随本次意图变化），应重新识别并调用工具 `save_attachment_description` 覆盖。没有摘要的附件请在识别后调用该工具写入——`attachment_id` 取资源行括号内的附件 id；`content` 写客观内容摘要，`usage` 写结合当前用户文字推断的用途，`message_id` 填当前消息 ID `{}`。调用再次发生即覆盖旧摘要；需要完整摘要或用途时用 `get_attachment` 查询（`get_attachment_content` 取文件内容）。",
+        message.po.id
+    ));
+}
+
 /// 消息链上下文：尾部最多保留的近期消息条数（链头永远保留，见 fetch_message_thread）。
 const MESSAGE_THREAD_RECENT_KEEP: usize = 6;
 
-/// 消息链上下文：单次查询的最大条数（防止异常超长链拖垮 prompt 组装）。
-const MESSAGE_THREAD_QUERY_LIMIT: usize = 60;
+/// 尾部窗口每页扫描条数：比 K 多 1，给当前消息 / 被过滤项留出推进空间。
+///
+/// 单页不足 K 条时继续按 `offset` 向更早翻页，直到凑满 K 条或链已耗尽。
+const MESSAGE_THREAD_SCAN_PAGE: usize = MESSAGE_THREAD_RECENT_KEEP + 1;
 
 /// 拉取当前消息所属消息链的上下文条目（供 PromptBuilder 注入【消息链上下文】区块）。
 ///
-/// 组装策略（用户拍板）：链头消息（root，话题起点）信息量最大，永远保留；
+/// 组装策略：链头消息（root，话题起点）信息量最大，永远保留；
 /// 尾部保留最近 [`MESSAGE_THREAD_RECENT_KEEP`] 条（时间正序，紧邻当前消息）；
 /// 中间被截断的部分由区块文案引导 Agent 用 list_messages 按 root_id 自行查询。
 /// 当前消息自身已由【当前消息】区块承载，这里排除避免重复。
+///
+/// ⚠️ 两个必须同时成立的口径（否则「最近」会静默退化成「最早」）：
+/// 1. **锚点上界**：只取 `created_at <= 当前消息` 的链内消息，晚于锚点的消息
+///    属于本轮新输入，只能由收件箱走执行段追加，不能混进 base 前缀；
+/// 2. **倒序取 K 再反转**：旧实现 `created_at ASC + LIMIT 60` 拿到的是**最早**
+///    60 条，长链下尾部 6 条根本不是最近 6 条。
 pub(crate) async fn fetch_message_thread(
     ctx: &RequestContext,
     message: &Message,
@@ -718,45 +904,116 @@ pub(crate) async fn fetch_message_thread(
     let Some(root_id) = message.po.root_id.as_deref() else {
         return Ok(Vec::new());
     };
+    let dal = crate::service::dal::message::dal();
 
-    let query = MessageQuery {
-        root_id: Some(root_id.to_string()),
-        organization_id: message.po.organization_id.clone(),
-        order_by: Some("created_at ASC".to_string()),
-        limit: Some(MESSAGE_THREAD_QUERY_LIMIT),
-        ..Default::default()
-    };
-    let chain = crate::service::dal::message::dal()
-        .query(ctx.clone(), query)
-        .await?;
-
-    // 排除当前消息自身（已由【当前消息】区块承载），排除已撤回的无效消息
-    let chain: Vec<_> = chain
-        .into_iter()
-        .filter(|m| {
-            m.po.id != message.po.id && m.po.status != common::enums::MessageStatus::Recalled
-        })
-        .collect();
-    if chain.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 头消息（root）优先；尾部取最近 N 条；链头已落在尾部窗口时去重
-    let head = chain.first().cloned();
-    let tail: Vec<_> = if chain.len() > MESSAGE_THREAD_RECENT_KEEP {
-        chain[chain.len() - MESSAGE_THREAD_RECENT_KEEP..].to_vec()
+    // 链头单独按 id 取：稳定、且不会被尾部窗口挤掉
+    let head = if root_id == message.po.id {
+        None
     } else {
-        chain[1..].to_vec()
+        dal.query(
+            ctx.clone(),
+            MessageQuery {
+                id: Some(root_id.to_string()),
+                organization_id: message.po.organization_id.clone(),
+                ..Default::default()
+            },
+        )
+        .await?
+        .into_iter()
+        .next()
     };
 
-    let mut items = Vec::with_capacity(tail.len() + 1);
-    if let Some(head) = head {
-        items.push(head.po.to_prompt());
+    // `created_before` 是开区间：`created_at + 1` 把锚点同毫秒消息也纳入，
+    // 同毫秒的先后再由 id 在 `select_thread_items` 里裁定。
+    //
+    // 不能只取一页 K+1：链内可能夹着当前消息、同毫秒且 id 更大的消息或 Recalled，
+    // 这些都会被过滤掉。这里按 offset 向更早翻页，直到凑满 K 条或链已耗尽，
+    // 保证「最近 K 条」是真正的最近 K 条有效消息。
+    let mut recent_desc: Vec<crate::models::message::MessagePo> =
+        Vec::with_capacity(MESSAGE_THREAD_RECENT_KEEP);
+    let mut offset = 0usize;
+    loop {
+        let batch = dal
+            .query(
+                ctx.clone(),
+                MessageQuery {
+                    root_id: Some(root_id.to_string()),
+                    organization_id: message.po.organization_id.clone(),
+                    created_before: Some(message.po.created_at.saturating_add(1)),
+                    // 同毫秒用 id 兜底排序：反向 + 再在内存反转后正好是 (created_at, id) 正序，
+                    // 与 `select_thread_items` 的过滤裁定口径一致。
+                    order_by: Some("created_at DESC, id DESC".to_string()),
+                    limit: Some(MESSAGE_THREAD_SCAN_PAGE),
+                    offset: Some(offset),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let batch_len = batch.len();
+        for m in batch {
+            if thread_message_precedes_anchor(&m.po, &message.po) {
+                recent_desc.push(m.po);
+                if recent_desc.len() >= MESSAGE_THREAD_RECENT_KEEP {
+                    break;
+                }
+            }
+        }
+        if recent_desc.len() >= MESSAGE_THREAD_RECENT_KEEP || batch_len < MESSAGE_THREAD_SCAN_PAGE {
+            break;
+        }
+        offset += batch_len;
     }
-    for m in tail {
-        items.push(m.po.to_prompt());
+
+    Ok(select_thread_items(
+        head.map(|m| m.po),
+        recent_desc,
+        &message.po,
+    ))
+}
+
+/// 纯函数：从「链头 + 倒序尾部窗口」选出最终注入的消息（时间正序）。
+///
+/// 单独抽出来是为了能在不打 DB 的前提下验证两个边界：
+/// 锚点之后（同毫秒按 id）的消息必须被剔除；超长链保留的是**最近** K 条。
+fn select_thread_items(
+    head: Option<crate::models::message::MessagePo>,
+    recent_desc: Vec<crate::models::message::MessagePo>,
+    anchor: &crate::models::message::MessagePo,
+) -> Vec<String> {
+    let mut recent: Vec<_> = recent_desc
+        .into_iter()
+        .rev()
+        .filter(|m| thread_message_precedes_anchor(m, anchor))
+        .collect();
+    if recent.len() > MESSAGE_THREAD_RECENT_KEEP {
+        recent.drain(..recent.len() - MESSAGE_THREAD_RECENT_KEEP);
     }
-    Ok(items)
+
+    let mut items = Vec::with_capacity(recent.len() + 1);
+    let mut seen = std::collections::HashSet::new();
+    if let Some(head) =
+        head.filter(|h| h.id != anchor.id && h.status != common::enums::MessageStatus::Recalled)
+    {
+        seen.insert(head.id.clone());
+        items.push(head.to_prompt());
+    }
+    for m in recent {
+        if seen.insert(m.id.clone()) {
+            items.push(m.to_prompt());
+        }
+    }
+    items
+}
+
+/// 链内消息是否位于锚点之前（含同毫秒但 id 更小者）
+fn thread_message_precedes_anchor(
+    m: &crate::models::message::MessagePo,
+    anchor: &crate::models::message::MessagePo,
+) -> bool {
+    if m.id == anchor.id || m.status == common::enums::MessageStatus::Recalled {
+        return false;
+    }
+    (m.created_at, m.id.as_str()) < (anchor.created_at, anchor.id.as_str())
 }
 
 /// 截断错误原因文本，避免过长动态文本进入 metric 造成存储膨胀与聚合碎片化。

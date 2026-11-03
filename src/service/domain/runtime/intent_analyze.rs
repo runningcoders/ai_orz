@@ -8,19 +8,28 @@
 
 use super::types::ThinkLoopParams;
 use crate::models::agent::Agent;
+use crate::models::cortex_types::ChatMessage;
 use crate::models::message::Message;
-use crate::pkg::paths;
+use crate::models::skill::SkillPo;
 use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::{RuntimeDomain, RuntimeDomainImpl};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 
 use super::awakening::{
-    build_scene_skills, build_scene_tool_descriptors, init_think_runtime_and_policy,
-    mount_ontology_lexicon,
+    PromptBaseInput, build_scene_tool_descriptors, fetch_message_business_blocks, fill_prompt_base,
+    init_think_runtime_and_policy,
 };
 use super::types::config_resolve;
 use super::types::{IntentAnalysis, ThinkingOptions};
+
+/// 意图识别阶段的可选追加/回写能力
+pub(crate) struct IntentPhaseInput<'a> {
+    /// 增量修订入参：上次完整结论 + 新增输入（首次识别为 `None`）
+    pub revision: Option<&'a super::inbox::IntentRevision>,
+    /// Phase 1 初始消息快照回写槽（由正式装配读取作为请求前缀）
+    pub seed: Option<&'a std::sync::Mutex<Option<Vec<ChatMessage>>>>,
+}
 
 impl RuntimeDomainImpl {
     /// analyze_input_intent 的核心实现（由 trait 方法委托，外层负责 stats 包裹）
@@ -35,14 +44,11 @@ impl RuntimeDomainImpl {
         message: &Message,
         options: &ThinkingOptions,
         trace_id: &str,
-        revision: Option<&super::inbox::IntentRevision>,
+        extra: IntentPhaseInput<'_>,
     ) -> Result<IntentAnalysis> {
         // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene）
         let mut analyze_opts = options.clone();
         analyze_opts.scene = ThinkingScene::IntentAnalyze;
-        // 轮次和超时由 config_resolve 从 Agent 配置 + 系统配置解析，
-        // 直接传入 run_think_loop，不经过 ThinkingOptions
-        let scene = analyze_opts.scene;
 
         // 2. 查最近 20 条短期记忆做上下文（与 awaken 相同窗口，保证 Agent 有历史可读做消歧）
         let recent_memories = self
@@ -50,96 +56,49 @@ impl RuntimeDomainImpl {
             .get_recent_context(ctx.clone(), &agent.po.id, 20)
             .await?;
 
-        // 3. 按 IntentAnalyze 场景过滤技能（严格只保留理解类标签）
-        let skill_pos = build_scene_skills(agent, scene);
+        // 3. 全量技能 + 业务块：与正式装配同一来源，保证 base 逐字节一致
+        let skills: Vec<SkillPo> = agent.skills().iter().map(|s| s.po.clone()).collect();
+        let (message_thread, resource_lines, vision_parts) =
+            fetch_message_business_blocks(&ctx, message).await;
 
-        // 4. 构造 PromptBuilder（与 awaken 相同挂载链路，保证背景知识一致）
+        // 4. 唯一 base 装配（System + 公共上下文 + 历史 + 消息链 + 资源/视觉 + 当前消息）
         let mut builder = self.prompt_builder(agent);
-        builder.current_trace_id(trace_id);
-        builder.system_prompt(agent);
-        builder.skills(&skill_pos);
-        let base = crate::config::get().base_data_path();
-        let uid = ctx.uid();
-        let uid_ref = if uid.is_empty() {
-            None
-        } else {
-            Some(uid.as_str())
-        };
-        let default_workspace = paths::default_workspace(&base, uid_ref, Some(&agent.po.id))
-            .to_string_lossy()
-            .to_string();
-        let user_home = if uid.is_empty() {
-            paths::users_root_dir(&base).to_string_lossy().to_string()
-        } else {
-            paths::user_home(&base, &uid).to_string_lossy().to_string()
-        };
-        let user_shared_workspace = if uid.is_empty() {
-            default_workspace.clone()
-        } else {
-            paths::user_shared_workspace(&base, &uid)
-                .to_string_lossy()
-                .to_string()
-        };
-        let user_agent_workspace = if uid.is_empty() {
-            None
-        } else {
-            Some(
-                paths::user_agent_workspace(&base, &uid, &agent.po.id)
-                    .to_string_lossy()
-                    .to_string(),
-            )
-        };
-        let agent_workspace = Some(
-            paths::agent_workspace(&base, &agent.po.id)
-                .to_string_lossy()
-                .to_string(),
-        );
-        let project_workspace =
-            if let (Some(project), true) = (&analyze_opts.project, !uid.is_empty()) {
-                Some(
-                    paths::user_project_workspace(&base, &uid, &project.po.id)
-                        .to_string_lossy()
-                        .to_string(),
-                )
-            } else {
-                None
-            };
-        builder.workspace_context(
-            default_workspace,
-            user_home,
-            user_shared_workspace,
-            user_agent_workspace,
-            agent_workspace,
-            project_workspace,
-        );
-        if let Some(project) = &analyze_opts.project {
-            builder.project_context(project);
-        }
-        if let Some(task) = &analyze_opts.task {
-            builder.task_context(task);
-        }
-        if let Some(user) = &analyze_opts.user_profile {
-            builder.user_profile(user);
-        }
-        // 本体词表（design §5.4）：记忆图谱用词约定，三场景共用挂载点
-        mount_ontology_lexicon(&ctx, builder.as_mut()).await;
-        builder.history(&recent_memories);
-        builder.current_message(message);
-        // 增量修订：上次结论 + 新增输入拼在 current_message 之后的尾部区块，
-        // 保证 System 段与公共上下文段字节稳定、前缀缓存全量命中。
-        if let Some(revision) = revision {
+        fill_prompt_base(
+            builder.as_mut(),
+            PromptBaseInput {
+                ctx: &ctx,
+                agent,
+                message,
+                options: &analyze_opts,
+                trace_id,
+                recent_memories: &recent_memories,
+                skills: &skills,
+                compacted: None,
+                past_memories: &[],
+                message_thread: &message_thread,
+                resource_lines: &resource_lines,
+                vision_parts: &vision_parts,
+            },
+        )
+        .await;
+
+        // 增量修订：上次结论 + 新增输入追加在 base 尾部（不插入 base 中间）
+        if let Some(revision) = extra.revision {
             builder.intent_revision(&revision.previous, &revision.inputs);
         }
 
-        // 5. 组装专用 Prompt（不是普通 build()）
-        let _prompt = builder.build_intent_analyze_prompt();
-        // P0-b：用 System + User 双角色拆分版初始消息
+        // 5. 初始消息 = base + 意图指令尾插；把同一份快照交给 Phase 2 作为请求前缀
         let initial_messages = builder.build_intent_analyze_initial_messages();
+        if let Some(seed) = extra.seed
+            && let Ok(mut slot) = seed.lock()
+        {
+            *slot = Some(initial_messages.clone());
+        }
 
         // 6. Agent Brain 由 run_think_loop 内部解析（调用方需已通过 wake_agent_brain 装配）
 
-        // 7. 按场景构建工具描述符列表（严格白名单，只允许理解类工具）
-        let tool_descriptors = build_scene_tool_descriptors(agent, scene);
+        // 7. 工具描述符与正式阶段完全一致（全量）；允许集合改在 run_dispatch 调用时拦截
+        let tool_descriptors = build_scene_tool_descriptors(agent, ThinkingScene::Awaken);
 
         // 8. 运行 think loop（轮次由配置决定，保证多步检索后有足够轮次输出 Final JSON）
         // IntentAnalyze 是 awaken 的 Phase 1 子流程，但同样是一个完整的 think_loop，

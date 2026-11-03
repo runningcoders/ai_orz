@@ -27,7 +27,7 @@ use crate::service::domain::runtime::think_loop::{
 };
 use crate::service::domain::runtime::types::{RoundDigest, ThinkLoopResult};
 use async_trait::async_trait;
-use common::enums::ThinkingIntensity;
+use common::enums::{ThinkingIntensity, ThinkingScene};
 use common::error::{Result, err};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -664,6 +664,32 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             .find(|t| common::llm_schema::to_wire_tool_name(&t.po.id) == tc.name)
         {
             Some(tool) => {
+                // 意图识别场景：工具描述符与正式执行完全一致（否则请求前缀不同，
+                // prompt cache 不会命中），允许集合改在「调用时」拦截。
+                // 被拦的调用不执行任何副作用，只回一条 tool message。
+                if intent_analyze_blocks_tool(d.scene, &tool.po.get_tags()) {
+                    log_info!(
+                        &ctx,
+                        "think_loop",
+                        "blocked non-intent tool {} in IntentAnalyze",
+                        tc.name
+                    );
+                    messages.push(ChatMessage::tool(
+                        tc.id,
+                        "当前是审题阶段（IntentAnalyze），该工具不可执行，也没有产生任何\
+                         副作用。请只使用理解类工具（检索 / 记忆 / 神经技能），继续完成\
+                         理解后输出 INTENT_ANALYSIS JSON。"
+                            .to_string(),
+                    ));
+                    mark_trace_tool(
+                        &mut trace_tool_calls,
+                        trace_idx,
+                        None,
+                        "blocked",
+                        Some("已拦截：审题阶段不允许执行该工具".to_string()),
+                    );
+                    continue;
+                }
                 let call_result = match tool.po.control_mode {
                     common::enums::tool::ControlMode::Auto => {
                         d.domain.call_tool(ctx.clone(), tool, tc.arguments).await
@@ -826,6 +852,14 @@ fn reflect_targets(state: &RoundState) -> Vec<(String, usize)> {
     targets
 }
 
+/// 意图识别场景的工具拦截判定
+///
+/// 两阶段工具描述符必须完全一致（否则请求前缀不同，prompt cache 不命中），
+/// 所以允许集合改在**调用时**判定：命中拦截就回 tool message，不执行副作用。
+fn intent_analyze_blocks_tool(scene: ThinkingScene, tags: &[String]) -> bool {
+    scene == ThinkingScene::IntentAnalyze && !scene.is_tool_allowed(tags)
+}
+
 /// 自省节点：把「别再重复同一个工具」的提示注入下一轮上下文
 ///
 /// 纯确定性、零 LLM 调用：只在 evaluate 已判定值得自省时进入，
@@ -975,5 +1009,22 @@ mod tests {
 
         state.reflected_tools.insert("search".to_string());
         assert!(reflect_targets(&state).is_empty(), "同一工具只提示一次");
+    }
+
+    /// 审题阶段只拦执行类工具；理解类工具与正式执行场景保持放通
+    #[test]
+    fn intent_analyze_blocks_execution_tools_at_call_time() {
+        assert!(intent_analyze_blocks_tool(
+            ThinkingScene::IntentAnalyze,
+            &["tool_management".to_string()]
+        ));
+        assert!(!intent_analyze_blocks_tool(
+            ThinkingScene::IntentAnalyze,
+            &["search".to_string()]
+        ));
+        assert!(!intent_analyze_blocks_tool(
+            ThinkingScene::Awaken,
+            &["tool_management".to_string()]
+        ));
     }
 }

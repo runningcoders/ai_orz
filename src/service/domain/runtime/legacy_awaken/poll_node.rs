@@ -218,6 +218,9 @@ async fn run_poll(deps: &AwakenDeps, kind: PollKind, bus: &mut ThinkBus) -> Resu
     state.advance(&batch);
     state.note_injection();
     state.set_pending_turn(batch);
+    // 这是唯一需要「在既有对话上续跑」的场景：prepare 必须追加而非重建 base，
+    // 否则 Phase 1 前缀与 assistant 意图结论会被重排丢进 Prompt 中部
+    state.mark_resume_append();
     drop(state);
     // 转向只重装配 Prompt：检索结果仍然有效，不能一起丢掉
     bus.invalidate(ContextKey::Prompt);

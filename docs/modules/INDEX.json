@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 669,
-  "total_bytes": 14035697,
+  "total": 671,
+  "total_bytes": 14086615,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -687,11 +687,11 @@
     {
       "id": "02-Agent运行时",
       "counts": {
-        "A-设计": 9,
-        "B-落地方案": 15,
+        "A-设计": 10,
+        "B-落地方案": 16,
         "C-知识": 19
       },
-      "total": 43,
+      "total": 45,
       "docs": [
         {
           "tier": "A-设计",
@@ -729,7 +729,7 @@
           "path": "02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md",
           "name": "inbox_poll_and_intent_revision_design",
           "title": "思考循环中的新输入收集与意图回退设计（可中断唤醒）",
-          "bytes": 19786,
+          "bytes": 19854,
           "status": "现行",
           "scope": [
             "src/service/domain/runtime/legacy_awaken/blueprint.rs",
@@ -752,6 +752,7 @@
             "02-Agent运行时/A-设计/agent_loop_engine_design.md",
             "02-Agent运行时/A-设计/thinking_graph_engine_design.md",
             "02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md",
+            "02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md",
             "02-Agent运行时/A-设计/runtime_design.md"
           ]
         },
@@ -861,6 +862,37 @@
           ]
         },
         {
+          "tier": "A-设计",
+          "path": "02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md",
+          "name": "two_stage_append_only_prompt_design",
+          "title": "两阶段唤醒 Prompt 追加化与前缀缓存设计",
+          "bytes": 23238,
+          "status": "现行",
+          "scope": [
+            "src/service/domain/runtime/intent_analyze.rs",
+            "src/service/domain/runtime/memory.rs",
+            "src/service/domain/runtime/awakening.rs",
+            "src/service/domain/runtime/inbox.rs",
+            "src/service/domain/runtime/legacy_awaken/context.rs",
+            "src/service/domain/runtime/legacy_awaken/backend.rs",
+            "src/service/domain/runtime/legacy_awaken/intent_node.rs",
+            "src/service/domain/runtime/legacy_awaken/nodes.rs",
+            "src/service/domain/runtime/legacy_awaken/poll_node.rs",
+            "src/service/domain/runtime/legacy_awaken/blueprint.rs",
+            "src/service/domain/runtime/think_round/nodes.rs",
+            "src/service/dal/agent/builder/default.rs",
+            "src/models/prompt_builder.rs",
+            "src/service/domain/runtime/types.rs",
+            "common/src/enums/thinking_scene.rs"
+          ],
+          "related": [
+            "02-Agent运行时/A-设计/runtime_design.md",
+            "02-Agent运行时/A-设计/thinking_graph_engine_design.md",
+            "02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md",
+            "02-Agent运行时/A-设计/agent_loop_engine_design.md"
+          ]
+        },
+        {
           "tier": "B-落地方案",
           "path": "02-Agent运行时/B-落地方案/Agent Loop Alignment + AOP Sync Hooks（执行蓝图）.md",
           "name": "Agent Loop Alignment + AOP Sync Hooks（执行蓝图）",
@@ -916,6 +948,16 @@
           "name": "Runtime API + exit_reason 持久化（执行蓝图）",
           "title": "Runtime API + exit_reason 持久化 Implementation Plan",
           "bytes": 27084,
+          "status": "已完成",
+          "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "02-Agent运行时/B-落地方案/两阶段唤醒Prompt追加化.md",
+          "name": "两阶段唤醒Prompt追加化",
+          "title": "两阶段唤醒Prompt追加化",
+          "bytes": 11715,
           "status": "已完成",
           "scope": [],
           "related": []
@@ -1057,7 +1099,7 @@
           "path": "02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md",
           "name": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联",
           "title": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2",
-          "bytes": 20145
+          "bytes": 27874
         },
         {
           "tier": "C-知识",
@@ -1141,7 +1183,7 @@
           "path": "02-Agent运行时/C-知识/运行时领域.md",
           "name": "运行时领域",
           "title": "运行时领域",
-          "bytes": 44695
+          "bytes": 52863
         }
       ]
     },

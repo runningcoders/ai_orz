@@ -170,11 +170,12 @@ fn build_intent_analyze_prompt_contains_sop_and_schema() {
     );
 }
 
-/// 缓存友好排序：意图分析的静态 SOP 指令块（~140 行，完全不变）必须渲染在
-/// 【思考 Trace ID】（每轮变化）之前，否则每条新消息都会作废整个静态块的
-/// 前缀缓存（Trace ID 唯一能安全共享的位置是紧贴当前消息的易变尾部）。
+/// 两阶段前缀缓存：意图 SOP 必须**追加在 base（含 Trace / 当前消息）之后**。
+///
+/// Phase 2 直接复用 Phase 1 的初始消息作为请求前缀，再追加意图结论与执行段；
+/// 因此 SOP 不再是「跨轮稳定的前置区块」，而是尾插内容，不能插进 base 中间。
 #[test]
-fn intent_analyze_prompt_sop_precedes_trace() {
+fn intent_analyze_sop_is_appended_after_base() {
     let agent = make_simple_agent();
     let message = make_simple_message("缓存排序测试");
 
@@ -193,12 +194,16 @@ fn intent_analyze_prompt_sop_precedes_trace() {
     let trace_idx = prompt
         .find("【思考 Trace ID】")
         .expect("意图分析 Prompt 应包含【思考 Trace ID】");
+    let message_idx = prompt
+        .find("缓存排序测试")
+        .expect("意图分析 Prompt 应包含当前消息原文");
 
     assert!(
-        sop_idx < trace_idx,
-        "静态 SOP (idx={}) 必须在 Trace ID (idx={}) 之前以保前缀缓存",
+        sop_idx > trace_idx && sop_idx > message_idx,
+        "SOP (idx={}) 必须追加在 base 的 Trace (idx={}) / 当前消息 (idx={}) 之后",
         sop_idx,
-        trace_idx
+        trace_idx,
+        message_idx
     );
 }
 

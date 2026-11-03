@@ -24,6 +24,7 @@ related:
 - 02-Agent运行时/A-设计/agent_loop_engine_design.md
 - 02-Agent运行时/A-设计/thinking_graph_engine_design.md
 - 02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md
+- 02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md
 - 02-Agent运行时/A-设计/runtime_design.md
 ---
 

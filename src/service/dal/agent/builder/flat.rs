@@ -275,6 +275,21 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
         self.inner.intent_analysis(analysis);
     }
 
+    /// 转发意图增量修订：Flat 的 `build_intent_analyze_initial_messages` 走内层，
+    /// 若这里不转发，Cli/Remote 在 `poll_front` 吸收新输入后的重跑将看不到修订内容。
+    fn intent_revision(
+        &mut self,
+        previous: &crate::service::domain::runtime::awakening::IntentAnalysis,
+        inputs: &[String],
+    ) {
+        self.inner.intent_revision(previous, inputs);
+    }
+
+    /// 转发「对话中追加的输入」：外部 Agent 的重建路径同样要把批次尾插到当前消息之后。
+    fn injected_inputs(&mut self, inputs: &[String]) {
+        self.inner.injected_inputs(inputs);
+    }
+
     fn build_initial_messages(&self) -> Vec<ChatMessage> {
         self.flatten(&self.inner.build_initial_messages())
     }
@@ -350,5 +365,57 @@ mod tests {
             ChatMessage::User { content } => assert_eq!(content, "hi"),
             other => panic!("期望 User 消息，实际 {:?}", other),
         }
+    }
+
+    #[test]
+    fn forwards_intent_revision_into_flat_prompt() {
+        use crate::models::prompt_builder::PromptBuilder;
+        use crate::service::domain::runtime::awakening::IntentAnalysis;
+
+        let mut builder = FlatPromptBuilder::new();
+        builder.intent_revision(&IntentAnalysis::default(), &["新输入：改做 B".to_string()]);
+        let intent_text = builder
+            .build_intent_analyze_initial_messages()
+            .into_iter()
+            .filter_map(|m| match m {
+                ChatMessage::User { content } => Some(content),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            intent_text.contains("新输入：改做 B"),
+            "意图增量修订必须转发进扁平 Prompt"
+        );
+    }
+
+    #[test]
+    fn forwards_injected_inputs_into_flat_prompt() {
+        use crate::models::message::{Message, MessagePo};
+        use crate::models::prompt_builder::PromptBuilder;
+        use common::enums::{MessageRole, MessageStatus, MessageType};
+
+        let message = Message::from_po(MessagePo {
+            id: "m1".to_string(),
+            from_id: "u1".to_string(),
+            to_id: "a1".to_string(),
+            from_role: MessageRole::User,
+            to_role: MessageRole::Agent,
+            message_type: MessageType::Text,
+            status: MessageStatus::Pending,
+            content: "原始请求".to_string(),
+            created_at: 1,
+            ..Default::default()
+        });
+
+        let mut builder = FlatPromptBuilder::new();
+        builder.current_message(&message);
+        builder.injected_inputs(&["追加：先给我大纲".to_string()]);
+        let prompt = builder.build();
+        assert!(prompt.contains("原始请求"), "当前消息应保留");
+        assert!(
+            prompt.contains("追加：先给我大纲"),
+            "追加输入必须转发进扁平 Prompt"
+        );
     }
 }

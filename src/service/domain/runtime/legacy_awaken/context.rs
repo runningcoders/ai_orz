@@ -15,11 +15,10 @@
 //! 这也是「两者轴的交替使用」的一个矛盾点：统一取数的价值在于消除散落查询，
 //! 而不是把所有东西都塞进总线。
 
-use crate::models::cortex_types::ToolDescriptor;
+use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
 use crate::models::memory::MemoryTrace;
 use crate::models::skill::SkillPo;
 use crate::pkg::agent_runtime_state::AgentThinkRuntime;
-use crate::pkg::paths;
 use crate::pkg::policy::Policy;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::think_path::{
@@ -108,6 +107,11 @@ pub(crate) struct AwakenDeps {
     pub retrieval: Mutex<RetrievalState>,
     /// 唤醒级收件箱：三处挂点共享的游标、吸收清单与回退计数
     pub inbox: Arc<Mutex<InboxState>>,
+    /// Phase 1（意图识别）最后一次调用的初始消息快照
+    ///
+    /// Phase 2 以此作为请求前缀，追加意图结论与执行段即可命中 prompt cache。
+    /// 只在首次装配消费一次；压缩回环 / 无快照时退回重建。
+    pub intent_seed: Mutex<Option<Vec<ChatMessage>>>,
     /// 影子模式：跑完整链路但**不落库、不发通知**，只够成「有机质春雨对比」。
     pub shadow: bool,
     pub started_at: Instant,
@@ -166,51 +170,19 @@ impl ContextProvider for WorkspaceProvider {
     }
 
     async fn load(&self, _stimulus: &Stimulus, _depth: LoadDepth) -> Result<Value> {
-        let base = crate::config::get().base_data_path();
-        let uid = self.ctx.uid();
-        let uid_ref = if uid.is_empty() {
-            None
-        } else {
-            Some(uid.as_str())
-        };
-        let agent_id = &self.agent_id;
-        let default_workspace = paths::default_workspace(&base, uid_ref, Some(agent_id))
-            .to_string_lossy()
-            .to_string();
-        let user_home = if uid.is_empty() {
-            paths::users_root_dir(&base).to_string_lossy().to_string()
-        } else {
-            paths::user_home(&base, &uid).to_string_lossy().to_string()
-        };
-        let user_shared_workspace = if uid.is_empty() {
-            default_workspace.clone()
-        } else {
-            paths::user_shared_workspace(&base, &uid)
-                .to_string_lossy()
-                .to_string()
-        };
-        let user_agent_workspace = if uid.is_empty() {
-            None
-        } else {
-            Some(
-                paths::user_agent_workspace(&base, &uid, agent_id)
-                    .to_string_lossy()
-                    .to_string(),
-            )
-        };
-        let agent_workspace = Some(
-            paths::agent_workspace(&base, agent_id)
-                .to_string_lossy()
-                .to_string(),
+        // 与意图识别阶段共用唯一路径计算入口，避免两阶段 base 出现路径差异
+        let (
+            default_workspace,
+            user_home,
+            user_shared_workspace,
+            user_agent_workspace,
+            agent_workspace,
+            project_workspace,
+        ) = super::super::awakening::workspace_path_args(
+            &self.ctx,
+            &self.agent_id,
+            self.project_id.as_deref(),
         );
-        let project_workspace = match (&self.project_id, !uid.is_empty()) {
-            (Some(project_id), true) => Some(
-                paths::user_project_workspace(&base, &uid, project_id)
-                    .to_string_lossy()
-                    .to_string(),
-            ),
-            _ => None,
-        };
         Ok(json!({
             "default": default_workspace,
             "user_home": user_home,
@@ -307,38 +279,16 @@ impl ContextProvider for BusinessProvider {
             deps.message.po.id
         );
 
-        let thread = match super::super::awakening::fetch_message_thread(&ctx, &deps.message).await
-        {
-            Ok(items) => items,
-            Err(e) => {
-                crate::log_warn!(
-                    &ctx,
-                    "legacy_awaken",
-                    "fetch message thread failed (message_id={}): {:?}",
-                    deps.message.po.id,
-                    e
-                );
-                Vec::new()
-            }
-        };
+        // 与意图识别阶段共用同一取数入口，保证两阶段 base 内容一致
+        let (thread, resource_lines, vision_parts) =
+            super::super::awakening::fetch_message_business_blocks(&ctx, &deps.message).await;
 
         crate::log_info!(
             &ctx,
             "legacy_awaken",
-            "message thread loaded, agent_id={}, n={}",
+            "business context loaded, agent_id={}, thread={}, resource_lines={}, vision_parts={}",
             deps.agent.po.id,
-            thread.len()
-        );
-
-        let (mut resource_lines, vision_parts) =
-            super::super::awakening::resolve_current_message_resources(&ctx, &deps.message).await;
-        append_attachment_description_guidance(&deps.message, &mut resource_lines);
-
-        crate::log_info!(
-            &ctx,
-            "legacy_awaken",
-            "current message resources resolved, agent_id={}, resource_lines={}, vision_parts={}",
-            deps.agent.po.id,
+            thread.len(),
             resource_lines.len(),
             vision_parts.len()
         );
@@ -437,6 +387,7 @@ pub(crate) fn build_deps_with_backend(
         compaction: Mutex::new(CompactionSlot::default()),
         retrieval: Mutex::new(RetrievalState::default()),
         inbox,
+        intent_seed: Mutex::new(None),
         shadow,
         started_at: Instant::now(),
     })
@@ -473,23 +424,4 @@ pub fn read_bus<T: serde::de::DeserializeOwned>(
     let value = bus.get(key).cloned().unwrap_or(Value::Null);
     serde_json::from_value(value)
         .map_err(|e| err!(Internal, "decode bus key {} failed: {e}", key.as_str()))
-}
-
-/// 当前消息携带附件时，向资源上下文追加「写摘要」引导行
-///
-/// 意图分析阶段看不到附件内容（资源只在 Awaken 注入），因此引导必须挂在
-/// Awaken 的资源区：模型识别完附件后即可调用 `save_attachment_description`
-/// 把摘要落到附件元信息（供后续搜索与兜底复用）。
-fn append_attachment_description_guidance(message: &Message, lines: &mut Vec<String>) {
-    if message.from_role() != common::enums::MessageRole::User {
-        return;
-    }
-    if super::super::awakening::collect_current_message_attachment_ids(message).is_empty() {
-        return;
-    }
-
-    lines.push(format!(
-        "附件摘要要求：资源行已带「摘要」的附件**默认直接复用**，不必重复识别；但如果结合当前用户文字或上下文判断摘要可能失准（与附件实际内容不符，或用途已随本次意图变化），应重新识别并调用工具 `save_attachment_description` 覆盖。没有摘要的附件请在识别后调用该工具写入——`attachment_id` 取资源行括号内的附件 id；`content` 写客观内容摘要，`usage` 写结合当前用户文字推断的用途，`message_id` 填当前消息 ID `{}`。调用再次发生即覆盖旧摘要；需要完整摘要或用途时用 `get_attachment` 查询（`get_attachment_content` 取文件内容）。",
-        message.po.id
-    ));
 }

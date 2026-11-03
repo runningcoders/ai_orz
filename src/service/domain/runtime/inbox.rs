@@ -123,6 +123,12 @@ pub struct InboxState {
     injected_ids: Vec<String>,
     pending_turn: Vec<InjectedMessage>,
     revision: Option<Vec<InjectedMessage>>,
+    /// 续跑追加标记：`poll_exit` 的 rethink 必须基于既有对话尾部追加，
+    /// 不能重新装配 base（否则 Phase 1 前缀与意图结论会被重排/丢失）。
+    ///
+    /// 只有 `poll_exit` 会置位；`poll_front` / `poll_round` 不置位。
+    /// `PrepareNode` 读取后立即消费，避免后续压缩回环误走追加。
+    resume_append: bool,
 }
 
 impl InboxState {
@@ -140,6 +146,7 @@ impl InboxState {
             injected_ids: Vec::new(),
             pending_turn: Vec::new(),
             revision: None,
+            resume_append: false,
         }
     }
 
@@ -223,6 +230,16 @@ impl InboxState {
     /// 意图修订失败时，把新输入降级为尾插转向消息
     pub fn fallback_revision(&mut self, batch: Vec<InjectedMessage>) {
         self.pending_turn = batch;
+    }
+
+    /// `poll_exit` 判定需要重新思考：下一次 `prepare` 走「既有对话尾部追加」
+    pub fn mark_resume_append(&mut self) {
+        self.resume_append = true;
+    }
+
+    /// 取走续跑标记（`PrepareNode` 消费；未置位返回 false）
+    pub fn take_resume_append(&mut self) -> bool {
+        std::mem::replace(&mut self.resume_append, false)
     }
 }
 
@@ -703,5 +720,21 @@ mod tests {
                 .sum::<usize>(),
             1900
         );
+    }
+
+    /// 续跑标记只被 PrepareNode 消费一次，避免压缩回环误走追加路径
+    #[test]
+    fn resume_append_flag_is_one_shot() {
+        let mut state = InboxState::new(anchor(
+            MessageRole::User,
+            None,
+            None,
+            None,
+            MessageType::Text,
+        ));
+        assert!(!state.take_resume_append(), "默认不续跑");
+        state.mark_resume_append();
+        assert!(state.take_resume_append(), "置位后可取走");
+        assert!(!state.take_resume_append(), "取走后立即失效");
     }
 }

@@ -269,6 +269,17 @@ impl ChatMessage {
         }
     }
 
+    /// 创建 Assistant 消息（纯文本，无 tool_calls）
+    ///
+    /// 两阶段唤醒用它把 Phase 1 的意图结论作为「模型自己刚说过的话」追加到会话，
+    /// 既保持思考连续，也让这条消息参与后续请求前缀。
+    pub fn assistant(content: impl Into<String>) -> Self {
+        ChatMessage::Assistant {
+            content: Some(content.into()),
+            tool_calls: None,
+        }
+    }
+
     /// 创建 Tool 结果消息
     pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
         ChatMessage::Tool {

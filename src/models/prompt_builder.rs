@@ -226,6 +226,14 @@ pub trait PromptBuilder: Send + Sync {
         String::new()
     }
 
+    /// Phase 2 执行段：追加在 Phase 1 初始消息（seed）之后
+    ///
+    /// 仅在「复用意图 initial_messages 作为请求前缀」时使用；压缩回环 /
+    /// 无 seed 的路径仍走 `build_initial_messages` 重建。默认实现为空。
+    fn build_execution_segment(&self) -> String {
+        String::new()
+    }
+
     /// 渲染【输入理解结果】参考区块（IntentAnalyze 阶段产出）
     ///
     /// 姿态：反复强调"仅供参考，以你当下判断为准"，避免 Agent 被前置结论带偏。

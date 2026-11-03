@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 669 篇 / 14,035,697 B**，分布于 15 个模块。
+**合计 671 篇 / 14,086,615 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -15,7 +15,7 @@
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,240 |
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 904,755 |
-| [02-Agent运行时](#02-agent运行时) | 9 | 15 | 19 | 43 | 1,172,094 |
+| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,223,012 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,177 |
 | [04-对话与消息](#04-对话与消息) | 6 | 9 | 21 | 36 | 823,727 |
 | [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,298 |
@@ -146,21 +146,22 @@
 
 ### 02-Agent运行时
 
-#### A 设计（design，9 篇）
+#### A 设计（design，10 篇）
 
 | # | 页面 | 状态 | 字节 |
 |---:|---|---|---:|
 | 1 | [Agent 循环驱动引擎设计](<02-Agent运行时/A-设计/agent_loop_engine_design.md>) | 已废弃 | 36,120 |
 | 2 | [决策型策略设计（策略引擎承载小脑场景）](<02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md>) | 现行 | 24,529 |
-| 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 19,786 |
+| 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 19,854 |
 | 4 | [意图感知两阶段唤醒设计](<02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md>) | 已废弃 | 27,455 |
 | 5 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 142,125 |
 | 6 | [Runtime Domain 推进路线图](<02-Agent运行时/A-设计/runtime_domain_roadmap.md>) | 已废弃 | 31,664 |
 | 7 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
 | 8 | [思考图引擎改造设计（Awaken 主思考路径节点化）](<02-Agent运行时/A-设计/thinking_graph_engine_design.md>) | 落地中 | 10,207 |
 | 9 | [Agent 思考运行时 + 策略引擎设计](<02-Agent运行时/A-设计/thinking_task_policy_engine_design.md>) | 现行 | 47,942 |
+| 10 | [两阶段唤醒 Prompt 追加化与前缀缓存设计](<02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md>) | 现行 | 23,238 |
 
-#### B 落地方案（plan，15 篇）
+#### B 落地方案（plan，16 篇）
 
 | # | 页面 | 状态 | 字节 |
 |---:|---|---|---:|
@@ -170,15 +171,16 @@
 | 4 | [Agent运行时上下文扩展](<02-Agent运行时/B-落地方案/Agent运行时上下文扩展.md>) | 已完成 | 8,359 |
 | 5 | [Rig 0.34 → 0.41 Upgrade Implementation Plan](<02-Agent运行时/B-落地方案/Rig 0.34 → 0.41 Upgrade（执行蓝图）.md>) | 已完成 | 36,316 |
 | 6 | [Runtime API + exit_reason 持久化 Implementation Plan](<02-Agent运行时/B-落地方案/Runtime API + exit_reason 持久化（执行蓝图）.md>) | 已完成 | 27,084 |
-| 7 | [两阶段唤醒：IntentAnalyze+Awaken正式执行](<02-Agent运行时/B-落地方案/两阶段唤醒：IntentAnalyze+Awaken正式执行.md>) | 已完成 | 12,615 |
-| 8 | [唤醒上下文注入 + 沉睡沉淀约束改造](<02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md>) | 已完成 | 20,586 |
-| 9 | [思考图引擎改造实施计划](<02-Agent运行时/B-落地方案/思考图引擎改造.md>) | 进行中 | 34,415 |
-| 10 | [意图感知两阶段唤醒 Implementation Plan](<02-Agent运行时/B-落地方案/意图感知两阶段唤醒（执行蓝图）.md>) | 已完成 | 67,595 |
-| 11 | [移除 rig 依赖与 Cortex 层扁平化重构](<02-Agent运行时/B-落地方案/移除rig依赖与向量存储后端解耦.md>) | 已完成 | 19,703 |
-| 12 | [策略引擎 + AgentThinkRuntime Implementation Plan](<02-Agent运行时/B-落地方案/策略引擎 + AgentThinkRuntime（执行蓝图）.md>) | 已完成 | 37,226 |
-| 13 | [策略引擎与思考运行时策略增强](<02-Agent运行时/B-落地方案/策略引擎与思考运行时策略增强.md>) | 已完成 | 14,329 |
-| 14 | [运行时API可观测与退出原因字段](<02-Agent运行时/B-落地方案/运行时API可观测与退出原因字段.md>) | 已完成 | 14,562 |
-| 15 | [运行时问题修复](<02-Agent运行时/B-落地方案/运行时问题修复.md>) | 已完成 | 12,191 |
+| 7 | [两阶段唤醒Prompt追加化](<02-Agent运行时/B-落地方案/两阶段唤醒Prompt追加化.md>) | 已完成 | 11,715 |
+| 8 | [两阶段唤醒：IntentAnalyze+Awaken正式执行](<02-Agent运行时/B-落地方案/两阶段唤醒：IntentAnalyze+Awaken正式执行.md>) | 已完成 | 12,615 |
+| 9 | [唤醒上下文注入 + 沉睡沉淀约束改造](<02-Agent运行时/B-落地方案/唤醒上下文与睡眠约束.md>) | 已完成 | 20,586 |
+| 10 | [思考图引擎改造实施计划](<02-Agent运行时/B-落地方案/思考图引擎改造.md>) | 进行中 | 34,415 |
+| 11 | [意图感知两阶段唤醒 Implementation Plan](<02-Agent运行时/B-落地方案/意图感知两阶段唤醒（执行蓝图）.md>) | 已完成 | 67,595 |
+| 12 | [移除 rig 依赖与 Cortex 层扁平化重构](<02-Agent运行时/B-落地方案/移除rig依赖与向量存储后端解耦.md>) | 已完成 | 19,703 |
+| 13 | [策略引擎 + AgentThinkRuntime Implementation Plan](<02-Agent运行时/B-落地方案/策略引擎 + AgentThinkRuntime（执行蓝图）.md>) | 已完成 | 37,226 |
+| 14 | [策略引擎与思考运行时策略增强](<02-Agent运行时/B-落地方案/策略引擎与思考运行时策略增强.md>) | 已完成 | 14,329 |
+| 15 | [运行时API可观测与退出原因字段](<02-Agent运行时/B-落地方案/运行时API可观测与退出原因字段.md>) | 已完成 | 14,562 |
+| 16 | [运行时问题修复](<02-Agent运行时/B-落地方案/运行时问题修复.md>) | 已完成 | 12,191 |
 
 #### C 知识（wiki，19 篇）
 
@@ -190,7 +192,7 @@
 | 4 | [Agent 搜索与推荐](<02-Agent运行时/C-知识/Agent 搜索与推荐.md>) | 13,286 |
 | 5 | [Agent 生命周期管理](<02-Agent运行时/C-知识/Agent 生命周期管理.md>) | 28,090 |
 | 6 | [Agent处理器](<02-Agent运行时/C-知识/Agent处理器.md>) | 24,451 |
-| 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 20,145 |
+| 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 27,874 |
 | 8 | [ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](<02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md>) | 6,388 |
 | 9 | [小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类](<02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md>) | 17,916 |
 | 10 | [小脑快判断（System One）](<02-Agent运行时/C-知识/小脑快判断（System One）.md>) | 30,754 |
@@ -202,7 +204,7 @@
 | 16 | [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层](<02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md>) | 15,003 |
 | 17 | [记忆系统管理](<02-Agent运行时/C-知识/记忆系统管理.md>) | 36,203 |
 | 18 | [运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化](<02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md>) | 13,011 |
-| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 44,695 |
+| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 52,863 |
 
 ### 03-记忆系统
 

@@ -549,226 +549,14 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s
     }
 
-    /// 构建意图分析场景的 Prompt（Task 3：完整实现）
-    ///
-    /// 与 build()/build_sleep_prompt() 对称：复用 1-8 区块（人设 + 技能 + 上下文 + 历史），
-    /// 再追加「意图识别 SOP 五步走 + 严格执行禁令 + JSON Schema 输出约束」的专属指令块
-    /// （完全静态，置于 Trace ID 之前保前缀缓存），随后是 Trace ID，
-    /// 最后附上当前消息作为明确靶子。
+    /// 意图分析扁平 Prompt（仅供 Trace / 调试；模型实际读的是 initial_messages）
     fn build_intent_analyze_prompt(&self) -> String {
-        let mut result = String::new();
-
-        // 1. System Prompt（Agent 人设）
-        if let Some(system) = &self.system_prompt {
-            result.push_str(system);
-            result.push_str("\n\n");
-        }
-
-        // 2-3. 技能区块（神经技能 + 已安装技能；调用方 analyze_input_intent 会通过
-        //    scene=IntentAnalyze 的工具白名单过滤，保证 Prompt 中无执行类技能描述）
-        result.push_str(&self.build_skills_sections());
-
-        // 4-7. 通用上下文区块（词表 + 画像 + 项目 + 任务 + 工作空间，有值即拼装）
-        result.push_str(&self.build_common_context_sections());
-
-        // 8. 历史对话记忆（最近 N 条）
-        if !self.history.is_empty() {
-            result.push_str("【历史对话】\n");
-            for h in &self.history {
-                result.push_str(h);
-                result.push('\n');
-            }
-            result.push('\n');
-        }
-
-        // ==================== 阶段一：输入理解专用指令（核心）====================
-        result.push_str("### 阶段一：输入理解专用指令（仅限 IntentAnalyze 场景）\n\n");
-
-        result.push_str("===== 【输入理解阶段】IntentAnalyze 场景约束（非常重要！）=====\n\n");
-        result.push_str("## 你的任务：只做理解，不做执行\n\n");
-        result.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果，然后就结束本轮思考。\n\n");
-        result.push_str("✅ 必须做：\n");
-        result.push_str(
-            "   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍，每一步都要有实质思考，不要跳过\n",
-        );
-        result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory（关键词语义检索，traversal_depth>0 时同步展开知识图谱关联网络）+ 一次 query_memory 或 recommend_seed_nodes（「直答前置判断」命中时全额豁免；100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
-        result.push_str("   3. 关键词联想要充分展开，联想扩展词与基础关键词一起写入 key_terms\n");
-        result.push_str("   4. 最终输出严格的 JSON 对象，字段完整可被解析\n");
-        result.push_str("   5. 「直答前置判断」命中时，直接把给用户的答复写进 direct_answer，并跳过下方 Step 1~5\n\n");
-        result.push_str("❌ 严格禁止做（任何违反都将导致此阶段结果作废）：\n");
-        result.push_str("   1. 严禁执行任何行动/工具调用——禁止调用 send_message / send_task_assignment_message / send_message_to_agent：不准给任何用户/Agent 发消息\n");
-        result.push_str("   2. 严禁编造无来源信息——禁止调用 create_task / update_task / create_project / update_project / update_memory 状态写入类工具；不准改动任何系统状态（只有 save_short_term_memory 内部记忆写入是允许的，若你需要临时记录东西）\n");
-        result.push_str("   3. 如果信息不足必须把澄清问题写进 need_clarification——禁止做任何外部 API 调用、shell 执行、文件读写类工具；除「直答前置判断」命中的简单问题外，禁止把对用户的回复写进 Final（哪怕你 100% 知道答案）\n\n");
-
-        result.push_str("## 直答前置判断（先做这一步，命中则其余步骤全部跳过）\n\n");
-        result.push_str("如果【当前消息】完全满足以下**全部**条件，可以直接在意图阶段作答：\n");
-        result.push_str("- 是简单问题或闲聊：问候/客套/常识/概念解释/简单事实/单步操作指引\n");
-        result.push_str("- 不依赖长期记忆、知识图谱、项目或任务状态、用户偏好\n");
-        result.push_str("- 不需要调用任何工具（不查库、不读写文件、不发消息、不改状态）\n");
-        result.push_str("- 没有指代歧义，无需向用户澄清\n");
-        result.push_str("- 你能用 1~3 句话给出确定、完整、无需后续跟进的答复\n\n");
-        result.push_str("命中时：跳过下方 Step 1~5，把答复写进 direct_answer，其余字段按真实判断填写（key_terms / retrieved_context / need_clarification 留空，summary 写一句话理解结论）；不要为了凑字段编造检索结果。\n");
-        result.push_str("只要有任何一条不满足（包括「把握不准」），direct_answer 必须留空，正常走 Step 1~5。\n\n");
-
-        result.push_str("## 理解 SOP 五步走（在思考中严格按此顺序执行）\n\n");
-        result.push_str("### Step 1：意图识别\n");
-        result.push_str("在思考中先把【当前消息】归类，写出你判断的依据：\n");
-        result.push_str("- Question：提问型（要信息/问进度/问规则/请教）\n");
-        result.push_str("- TaskRequest：任务型（提需求/安排工作/要产出）\n");
-        result.push_str("- Confirm：确认型（同意/否定/选择/拍板）\n");
-        result.push_str("- FollowUp：追问型（承接之前某条回答/产出的继续追问）\n");
-        result.push_str("- ClarificationResponse：澄清响应型（针对你前面追问的答复）\n");
-        result.push_str("- Chat：闲聊型（打招呼/客套/社交礼貌）\n");
-        result.push_str("- Mixed：混合型（多类意图，拆分说明）\n");
-        result.push_str(
-            "意图类型写入 intent_type 字段；置信度 0.0~1.0 自己打分写入 confidence。\n\n",
-        );
-
-        result.push_str("### Step 2：指代与上下文消歧\n");
-        result.push_str("1. 仔细读【历史对话】+【项目/任务上下文】+【用户画像】\n");
-        result.push_str("2. 找【当前消息】中的指代短语：这/那/上次/那个/他/按之前定的来 等\n");
-        result.push_str("3. 在思考中把每个指代对应到具体对象（project_id/task_id/message_id/某个人物…），写进 resolutions 数组，每条格式：\"\\\"XXX\\\" → YYY\"\n");
-        result.push_str("4. 读完所有上下文仍无法确定 → 写进 need_clarification，不要硬猜\n\n");
-
-        result.push_str("### Step 3：关键词抽取与联想扩展\n");
-        result.push_str(
-            "这一步不只是提取，更重要的是联想扩展，为后续检索提供丰富的 query 基础。\n\n",
-        );
-        result.push_str("3.1 基础关键词抽取：\n");
-        result.push_str("从【当前消息】+ 消歧后的具体对象中，抽取关键实体和核心短语：\n");
-        result.push_str("- 显式实体：项目名/任务名/产品名/人名/专有名词/技术术语\n");
-        result.push_str("- 隐式语义：核心动词短语（推进进度→进度查询、对比方案→方案比较）\n");
-        result.push_str("- 情感倾向词：急迫/犹豫/不满/期待（影响执行优先级判断）\n\n");
-        result.push_str("3.2 关键词联想扩展（在思考中展开，不要跳过）：\n");
-        result.push_str("对每个基础关键词，思考它的关联概念并扩展：\n");
-        result.push_str("- 同义/近义词：用户说方案A → 也搜索 proposal A / 备选方案A\n");
-        result.push_str("- 上下游概念：用户说部署 → 关联测试/回滚/监控/配置变更\n");
-        result.push_str("- 时间关联：用户说上次 → 思考上次是什么时候 → 搜索对应时间段的记忆\n");
-        result.push_str("- 因果关联：用户说为什么失败 → 关联错误日志/最近变更/依赖状态\n\n");
-        result.push_str("3.3 把基础关键词 + 联想扩展词都写进 key_terms 数组（5~12 个），\n");
-        result.push_str("这些词将直接用于 Step 4 的多角度检索，越丰富检索越全面。\n\n");
-
-        result.push_str(
-            "### Step 4：多步语义检索与知识图谱关联分析（强制执行，本阶段核心价值所在）\n",
-        );
-        result.push_str(
-            "本步直接决定后续执行阶段的信息完备性。宁可多检索一步，不要遗漏关键上下文。\n",
-        );
-        result.push_str("你的检索策略应该是有层次的，不是随机调工具：\n\n");
-        result.push_str("4.1 短期记忆检索（search_memory）——第一轮：\n");
-        result.push_str("- 用 Step 3 的核心关键词组合成 query，调用 search_memory\n");
-        result
-            .push_str("- 如果第一批结果不够相关，换一组关键词组合再搜一轮（不要一次不中就放弃）\n");
-        result.push_str(
-            "- 示例：用户问上次那个方案进度 → 先搜「方案 进度」，再搜「方案A 项目X」\n\n",
-        );
-        result.push_str(
-            "4.2 知识图谱探索（search_memory 遍历模式 + query_memory / recommend_seed_nodes）——第二轮：\n",
-        );
-        result.push_str(
-            "- 语义检索命中知识节点后，用 search_memory(query=核心概念, traversal_depth=1~2) 沿关系边展开关联网络：起点节点一定在结果里，每条边两端节点一起返回，不会出现半条边\n",
-        );
-        result.push_str(
-            "- 已知节点 id 时可做纯图谱遍历：search_memory(seed_node_ids=[节点id], traversal_depth=1~2)，追溯前置/因果链（traversal_strategy=depth_first）或看全貌（breadth_first）\n",
-        );
-        result.push_str(
-            "- 无任何已知节点时（冷启动）：先调用 recommend_seed_nodes 拿高连接度种子节点，再用上面的遍历模式从种子展开\n",
-        );
-        result.push_str(
-            "- query_memory 按结构化条件精确定位：如 query_memory(tags=[\"user_preference\"]) 找用户偏好节点，也可按 agent_id / memory_type / task_id 筛选\n",
-        );
-        result.push_str(
-            "- 重点关注：用户偏好节点（user_preference tag）、历史决策节点、相关项目/任务节点\n",
-        );
-        result.push_str("- 知识图谱中的关系链路本身就是信息：A 依赖 B、A 衍生自 C、A 取代了 D\n\n");
-        result.push_str("4.3 历史对话补充（list_messages，可选第三轮）：\n");
-        result.push_str("- 如果短期记忆和知识图谱都不够，调用 list_messages 上拉最近对话记录\n");
-        result.push_str("- 特别关注：用户最近提过的类似需求、Agent 之前给过的承诺或结论\n\n");
-        result.push_str("4.4 检索结果整理：\n");
-        result.push_str(
-            "- 把所有检索命中的高相关内容**你自己概括为短摘要**（1~2 句每条，不要贴原始 JSON）\n",
-        );
-        result.push_str("- 每条摘要注明来源类型：[记忆]/[图谱]/[对话]\n");
-        result.push_str("- 按相关度排序，最相关的放前面\n");
-        result.push_str("- 写进 retrieved_context 数组\n\n");
-        result.push_str("如果跳过了 4.1 或 4.2，必须在思考中明确说明理由（如：100%全新话题，无历史可检索）。\n\n");
-
-        result.push_str("### Step 5：综合研判与总结\n");
-        result.push_str("5.1 信息完备性检查：\n");
-        result.push_str("- 回顾 Step 1~4 的全部产出，检查是否有信息缺口\n");
-        result.push_str("- 如果消歧失败 / 混合型意图优先级不清 / 需求边界不明 / 需要用户决策\n");
-        result.push_str("  → 把要问用户的具体问题逐条写进 need_clarification（问题尽量用选择题形式，不要开放式）\n");
-        result.push_str(
-            "  → 澄清即本轮终态：这些问题的原文会**直接作为给用户的回复**发出，跳过检索与执行\n",
-        );
-        result.push_str(
-            "  → 因此每条必须独立可读、自成一句，不要写「如上次所说」这类依赖上下文的表述\n",
-        );
-        result.push_str("- 如果理解充分 → need_clarification = []\n\n");
-        result.push_str("5.2 形成理解结论：\n");
-        result.push_str("- 在思考中用 1~2 句话总结：我理解用户想要 XXX，相关的背景信息有 YYY\n");
-        result.push_str("- 这个总结将直接作为下一阶段执行的输入，务必准确、完整、可执行\n");
-        result.push_str("- 写进 summary 字段\n\n");
-
-        result.push_str("## 最终输出规范（必须严格遵守）\n\n");
-        result.push_str("你输出的【最终 Final 内容】必须严格符合以下格式：\n");
-        result.push_str("- Final block MUST start with `--- INTENT_ANALYSIS_START ---` followed by pure JSON and end with `--- INTENT_ANALYSIS_END ---`\n");
-        result
-            .push_str("- 中间 JSON 对象必须严格符合以下 schema（8 个字段全包含，不要省略）：\n\n");
-        result.push_str("JSON Schema 字段说明：\n");
-        result.push_str("- intent_type：字符串，取值为 Question | TaskRequest | Confirm | FollowUp | ClarificationResponse | Chat | Mixed\n");
-        result.push_str("- confidence：数字，0.0 到 1.0，你对自己意图判断的置信度\n");
-        result.push_str("- key_terms：字符串数组，5~12 个关键词（基础抽取 + 联想扩展）\n");
-        result.push_str(
-            "- resolutions：字符串数组，指代消歧映射结果，每条格式 \"\\\"XXX\\\" → 具体对象\"\n",
-        );
-        result.push_str("- retrieved_context：字符串数组，search_memory / recommend_seed_nodes 等命中结果的你自己概括的短摘要（不要原始 JSON）\n");
-        result.push_str(
-            "- need_clarification：字符串数组，需要向用户澄清的具体问题（空列表 = 理解充分）\n",
-        );
-        result.push_str("- direct_answer：字符串，只在「直答前置判断」命中时填写给用户的最终答复；其余情况必须为空字符串 \"\"\n");
-        result.push_str("- summary：字符串，一句话总结你最终理解的用户需求\n\n");
-        result.push_str("示例 JSON（请严格模仿此结构，字段名和类型必须一致）：\n");
-        result.push_str("--- INTENT_ANALYSIS_START ---\n");
-        result.push_str("{\n");
-        result.push_str("  \"intent_type\": \"FollowUp\",\n");
-        result.push_str("  \"confidence\": 0.85,\n");
-        result.push_str("  \"key_terms\": [\"项目X\", \"方案A\", \"进度\", \"上次那个方案\"],\n");
-        result.push_str(
-            "  \"resolutions\": [\"\\\"上次那个方案\\\" → project=proj_123, task=task_456\"],\n",
-        );
-        result.push_str("  \"retrieved_context\": [\"2026-08-10 短期记忆：项目X 方案 A/B 比较，推荐方案 A（相似度 0.88）\"],\n");
-        result.push_str("  \"need_clarification\": [],\n");
-        result.push_str("  \"direct_answer\": \"\",\n");
-        result.push_str(
-            "  \"summary\": \"用户想知道项目 X 中之前讨论过的方案 A 的当前推进进度与结果\"\n",
-        );
-        result.push_str("}\n");
-        result.push_str("--- INTENT_ANALYSIS_END ---\n\n");
-        result.push_str("直答示例（仅命中「直答前置判断」时）：\"direct_answer\": \"你好，我是你的接待助手，有什么可以帮你？\"，其余数组留空。\n\n");
-
-        result.push_str("===== 【输入理解阶段】指令结束 =====\n\n");
-
-        // 10. Trace ID（每轮变化）——置于静态 SOP 指令块之后：SOP 是本路径最大的
-        // 稳定区块（~140 行），前置 trace 会让每条新消息的意图分析请求作废整块缓存；
-        // 后置后「人设→技能→上下文→历史→SOP」前缀可跨轮命中
-        if let Some(trace_id) = &self.current_trace_id {
-            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
-        }
-
-        // 11. 当前消息（放在最后，给 Agent 明确的靶子）
-        if let Some(msg) = &self.current_message {
-            result.push_str("【当前消息】\n");
-            result.push_str(msg);
-            // 增量修订：上次结论 + 新增输入只拼在尾部区块，
-            // 前面的 System / 上下文 / SOP 保持字节稳定
-            self.push_intent_revision(&mut result);
-            result.push_str("\n\n现在开始：在思考中走完 Step 1~5，然后按上面的 INTENT_ANALYSIS_START/END 锚点格式输出最终 JSON。\n");
-        } else {
-            result.push_str("【注意】当前消息为空。请直接输出空 JSON 或说明情况。\n");
-        }
-
-        result
+        format!(
+            "{}\n\n{}{}",
+            self.awaken_system_part(),
+            self.awaken_user_part(),
+            intent_analyze_tail(self)
+        )
     }
 
     /// 渲染【输入理解结果】参考区块（Task 4：完整实现 + 严格截断规则）
@@ -1484,6 +1272,38 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         }
     }
 
+    /// Phase 2 执行段：追加在 Phase 1 初始消息（seed）之后
+    ///
+    /// 顺序固定：切换语 → 本次新消息（当前消息 + 吸收批次）→ 知识/方法/摘要 →
+    /// 执行要求。历史对话、消息链、资源行、视觉 parts 已在 base 中，不重复。
+    fn build_execution_segment(&self) -> String {
+        let mut s = String::new();
+        s.push_str("以上为意图识别部分。下面开始真正处理本次新消息。\n\n");
+        if let Some(msg) = &self.current_message {
+            s.push_str(msg);
+            self.push_injected_inputs(&mut s);
+            s.push('\n');
+        }
+        let knowledge = self.render_retrieved_knowledge_section();
+        if !knowledge.is_empty() {
+            s.push_str(&knowledge);
+        }
+        let method = self.render_method_skills_section();
+        if !method.is_empty() {
+            s.push_str(&method);
+        }
+        let prior = self.render_prior_thinking_summary_section();
+        if !prior.is_empty() {
+            s.push_str(&prior);
+        }
+        s.push_str("\n【执行要求】\n");
+        s.push_str("- 按上面的意图结论推进任务，需要工具就直接调用；\n");
+        s.push_str("- 这是新任务，不要重复已完成的步骤，也不要再次输出 INTENT_ANALYSIS JSON；\n");
+        s.push_str("- 完成后用 Final 文本给出最终结果。\n");
+        s.push_str("\n\n请回复：");
+        s
+    }
+
     /// 沉淀场景：System（人设+技能+**完整沉淀指令块**）
     /// + User（上下文+已沉淀参考+Trace+待沉淀摘要+依赖 trace 列表）
     ///
@@ -1585,58 +1405,23 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         vec![ChatMessage::system(system), ChatMessage::user(user)]
     }
 
-    /// 意图分析场景：System（人设+技能+理解规范简版指引+原始专用指令块核心）
-    /// + User（上下文+历史+Trace+当前消息靶子）
+    /// 意图分析场景初始消息 = base（System + User）+ 意图指令尾插
     ///
-    /// 缓存友好排布：System 含意图分析 SOP 专属指令块（跨次唤醒完全静态，是本场景
-    /// 前缀缓存的主要命中面），User 中易变的 Trace/当前消息收尾。
+    /// Phase 1 的 System / base user 必须与 Phase 2 正式装配逐字节一致：
+    /// Phase 2 直接以这份 `initial_messages` 作为请求前缀，再追加意图结论与执行段。
+    /// 意图专用指令只允许追加在 base 的同一条 user 消息尾部。
     fn build_intent_analyze_initial_messages(&self) -> Vec<ChatMessage> {
-        let mut system = String::new();
-        if let Some(s) = &self.system_prompt {
-            system.push_str(s);
-            system.push_str("\n\n");
+        let system = self.awaken_system_part();
+        let mut user = self.awaken_user_part();
+        user.push_str(&intent_analyze_tail(self));
+        if self.vision_parts.is_empty() {
+            vec![ChatMessage::system(system), ChatMessage::user(user)]
+        } else {
+            vec![
+                ChatMessage::system(system),
+                ChatMessage::user_multimodal(user, self.vision_parts.clone()),
+            ]
         }
-        system.push_str(&self.build_skills_sections());
-        // 追加意图分析专属指令（直接复用 build_intent_analyze_prompt 的指令部分——从
-        // "阶段一：输入理解专用指令"这一段锚点之后的内容，通过完整 build 再切片不优雅，
-        // 直接重新渲染指令块）。
-        system.push_str("### 阶段一：输入理解专用指令（仅限 IntentAnalyze 场景）\n\n");
-        system.push_str("===== 【输入理解阶段】IntentAnalyze 场景约束（非常重要！）=====\n\n");
-        system.push_str("## 你的任务：只做理解，不做执行\n\n");
-        system.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果（JSON），然后就结束本轮思考。\n\n");
-        system.push_str("✅ 必须做：\n");
-        system.push_str("   1. 按「理解 SOP 五步走」的方法理解当前消息\n");
-        system.push_str("   2. 需要检索时调用 search_memory（traversal_depth>0 可沿知识图谱展开关联网络，冷启动可先 recommend_seed_nodes 拿种子）/ query_memory（按 tags/类型结构化筛选）（纯闲聊 Chat 型且无历史时可直接豁免，不必为了检索而检索）\n");
-        system.push_str("   3. 最终输出严格的 JSON 对象（含 intent_type / confidence / summary / key_terms / resolutions / need_clarification / suggested_tools 等字段），不要附加无关废话\n\n");
-        system.push_str("❌ 严格禁止：\n");
-        system.push_str("   1. 严禁给任何用户/Agent 发消息（禁止 send_message 类工具）\n");
-        system.push_str("   2. 严禁修改系统状态（禁止 create_task / update_project / update_memory 等写入类工具）\n");
-        system.push_str("   3. 信息不足时设置 need_clarification=true，不要硬猜答案\n");
-        system.push_str("   4. 同一语义的检索只需 1 次即可，不要空结果后反复换参数重试\n\n");
-
-        let mut user = String::new();
-        user.push_str(&self.build_common_context_sections());
-        if !self.history.is_empty() {
-            user.push_str("【历史对话】\n");
-            for h in &self.history {
-                user.push_str(h);
-                user.push('\n');
-            }
-            user.push('\n');
-        }
-        if let Some(trace_id) = &self.current_trace_id {
-            user.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
-        }
-        if let Some(msg) = &self.current_message {
-            user.push_str("【当前消息（作为理解靶子）】\n");
-            user.push_str(msg);
-            user.push('\n');
-            // 增量修订只拼在尾部，System/上下文/历史均保持稳定
-            self.push_intent_revision(&mut user);
-        }
-        user.push_str("请开始理解并输出最终 JSON：");
-
-        vec![ChatMessage::system(system), ChatMessage::user(user)]
     }
 }
 
@@ -1822,9 +1607,189 @@ fn push_sleep_instructions(out: &mut String) {
     out.push_str("开始沉淀吧。\n\n");
 }
 
+/// 意图指令尾部：追加在 base 的**同一条 user 消息尾部**
+///
+/// 之所以不放进 System：System 必须与 Phase 2 逐字节一致，否则 Phase 1
+/// 初始 Prompt 的前缀在 Phase 2 请求里整体失效（prompt cache 无法命中）。
+fn intent_analyze_tail(builder: &DefaultPromptBuilder) -> String {
+    let mut out = String::new();
+    out.push_str("\n\n");
+    push_intent_analyze_instructions(&mut out);
+    builder.push_intent_revision(&mut out);
+    out.push_str(
+        "\n\n现在开始：在思考中走完 Step 1~5，然后按上面的 INTENT_ANALYSIS_START/END 锚点格式输出最终 JSON。",
+    );
+    out
+}
+
+/// 意图识别专用指令块（完全静态，盲插在 base 之后即可）
+fn push_intent_analyze_instructions(result: &mut String) {
+    // ==================== 阶段一：输入理解专用指令（核心）====================
+    result.push_str("### 阶段一：输入理解专用指令（仅限 IntentAnalyze 场景）\n\n");
+
+    result.push_str("===== 【输入理解阶段】IntentAnalyze 场景约束（非常重要！）=====\n\n");
+    result.push_str("## 你的任务：只做理解，不做执行\n\n");
+    result.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果，然后就结束本轮思考。\n\n");
+    result.push_str("✅ 必须做：\n");
+    result.push_str(
+        "   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍，每一步都要有实质思考，不要跳过\n",
+    );
+    result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory（关键词语义检索，traversal_depth>0 时同步展开知识图谱关联网络）+ 一次 query_memory 或 recommend_seed_nodes（「直答前置判断」命中时全额豁免；100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
+    result.push_str("   3. 关键词联想要充分展开，联想扩展词与基础关键词一起写入 key_terms\n");
+    result.push_str("   4. 最终输出严格的 JSON 对象，字段完整可被解析\n");
+    result.push_str("   5. 「直答前置判断」命中时，直接把给用户的答复写进 direct_answer，并跳过下方 Step 1~5\n\n");
+    result.push_str("❌ 严格禁止做（任何违反都将导致此阶段结果作废）：\n");
+    result.push_str("   1. 严禁执行任何行动/工具调用——禁止调用 send_message / send_task_assignment_message / send_message_to_agent：不准给任何用户/Agent 发消息\n");
+    result.push_str("   2. 严禁编造无来源信息——禁止调用 create_task / update_task / create_project / update_project / update_memory 状态写入类工具；不准改动任何系统状态（只有 save_short_term_memory 内部记忆写入是允许的，若你需要临时记录东西）\n");
+    result.push_str("   3. 如果信息不足必须把澄清问题写进 need_clarification——禁止做任何外部 API 调用、shell 执行、文件读写类工具；除「直答前置判断」命中的简单问题外，禁止把对用户的回复写进 Final（哪怕你 100% 知道答案）\n\n");
+
+    result.push_str("## 直答前置判断（先做这一步，命中则其余步骤全部跳过）\n\n");
+    result.push_str("如果【当前消息】完全满足以下**全部**条件，可以直接在意图阶段作答：\n");
+    result.push_str("- 是简单问题或闲聊：问候/客套/常识/概念解释/简单事实/单步操作指引\n");
+    result.push_str("- 不依赖长期记忆、知识图谱、项目或任务状态、用户偏好\n");
+    result.push_str("- 不需要调用任何工具（不查库、不读写文件、不发消息、不改状态）\n");
+    result.push_str("- 没有指代歧义，无需向用户澄清\n");
+    result.push_str("- 你能用 1~3 句话给出确定、完整、无需后续跟进的答复\n\n");
+    result.push_str("命中时：跳过下方 Step 1~5，把答复写进 direct_answer，其余字段按真实判断填写（key_terms / retrieved_context / need_clarification 留空，summary 写一句话理解结论）；不要为了凑字段编造检索结果。\n");
+    result.push_str(
+        "只要有任何一条不满足（包括「把握不准」），direct_answer 必须留空，正常走 Step 1~5。\n\n",
+    );
+
+    result.push_str("## 理解 SOP 五步走（在思考中严格按此顺序执行）\n\n");
+    result.push_str("### Step 1：意图识别\n");
+    result.push_str("在思考中先把【当前消息】归类，写出你判断的依据：\n");
+    result.push_str("- Question：提问型（要信息/问进度/问规则/请教）\n");
+    result.push_str("- TaskRequest：任务型（提需求/安排工作/要产出）\n");
+    result.push_str("- Confirm：确认型（同意/否定/选择/拍板）\n");
+    result.push_str("- FollowUp：追问型（承接之前某条回答/产出的继续追问）\n");
+    result.push_str("- ClarificationResponse：澄清响应型（针对你前面追问的答复）\n");
+    result.push_str("- Chat：闲聊型（打招呼/客套/社交礼貌）\n");
+    result.push_str("- Mixed：混合型（多类意图，拆分说明）\n");
+    result.push_str("意图类型写入 intent_type 字段；置信度 0.0~1.0 自己打分写入 confidence。\n\n");
+
+    result.push_str("### Step 2：指代与上下文消歧\n");
+    result.push_str("1. 仔细读【历史对话】+【项目/任务上下文】+【用户画像】\n");
+    result.push_str("2. 找【当前消息】中的指代短语：这/那/上次/那个/他/按之前定的来 等\n");
+    result.push_str("3. 在思考中把每个指代对应到具体对象（project_id/task_id/message_id/某个人物…），写进 resolutions 数组，每条格式：\"\\\"XXX\\\" → YYY\"\n");
+    result.push_str("4. 读完所有上下文仍无法确定 → 写进 need_clarification，不要硬猜\n\n");
+
+    result.push_str("### Step 3：关键词抽取与联想扩展\n");
+    result.push_str("这一步不只是提取，更重要的是联想扩展，为后续检索提供丰富的 query 基础。\n\n");
+    result.push_str("3.1 基础关键词抽取：\n");
+    result.push_str("从【当前消息】+ 消歧后的具体对象中，抽取关键实体和核心短语：\n");
+    result.push_str("- 显式实体：项目名/任务名/产品名/人名/专有名词/技术术语\n");
+    result.push_str("- 隐式语义：核心动词短语（推进进度→进度查询、对比方案→方案比较）\n");
+    result.push_str("- 情感倾向词：急迫/犹豫/不满/期待（影响执行优先级判断）\n\n");
+    result.push_str("3.2 关键词联想扩展（在思考中展开，不要跳过）：\n");
+    result.push_str("对每个基础关键词，思考它的关联概念并扩展：\n");
+    result.push_str("- 同义/近义词：用户说方案A → 也搜索 proposal A / 备选方案A\n");
+    result.push_str("- 上下游概念：用户说部署 → 关联测试/回滚/监控/配置变更\n");
+    result.push_str("- 时间关联：用户说上次 → 思考上次是什么时候 → 搜索对应时间段的记忆\n");
+    result.push_str("- 因果关联：用户说为什么失败 → 关联错误日志/最近变更/依赖状态\n\n");
+    result.push_str("3.3 把基础关键词 + 联想扩展词都写进 key_terms 数组（5~12 个），\n");
+    result.push_str("这些词将直接用于 Step 4 的多角度检索，越丰富检索越全面。\n\n");
+
+    result.push_str("### Step 4：多步语义检索与知识图谱关联分析（强制执行，本阶段核心价值所在）\n");
+    result.push_str("本步直接决定后续执行阶段的信息完备性。宁可多检索一步，不要遗漏关键上下文。\n");
+    result.push_str("你的检索策略应该是有层次的，不是随机调工具：\n\n");
+    result.push_str("4.1 短期记忆检索（search_memory）——第一轮：\n");
+    result.push_str("- 用 Step 3 的核心关键词组合成 query，调用 search_memory\n");
+    result.push_str("- 如果第一批结果不够相关，换一组关键词组合再搜一轮（不要一次不中就放弃）\n");
+    result.push_str("- 示例：用户问上次那个方案进度 → 先搜「方案 进度」，再搜「方案A 项目X」\n\n");
+    result.push_str(
+            "4.2 知识图谱探索（search_memory 遍历模式 + query_memory / recommend_seed_nodes）——第二轮：\n",
+        );
+    result.push_str(
+            "- 语义检索命中知识节点后，用 search_memory(query=核心概念, traversal_depth=1~2) 沿关系边展开关联网络：起点节点一定在结果里，每条边两端节点一起返回，不会出现半条边\n",
+        );
+    result.push_str(
+            "- 已知节点 id 时可做纯图谱遍历：search_memory(seed_node_ids=[节点id], traversal_depth=1~2)，追溯前置/因果链（traversal_strategy=depth_first）或看全貌（breadth_first）\n",
+        );
+    result.push_str(
+            "- 无任何已知节点时（冷启动）：先调用 recommend_seed_nodes 拿高连接度种子节点，再用上面的遍历模式从种子展开\n",
+        );
+    result.push_str(
+            "- query_memory 按结构化条件精确定位：如 query_memory(tags=[\"user_preference\"]) 找用户偏好节点，也可按 agent_id / memory_type / task_id 筛选\n",
+        );
+    result.push_str(
+        "- 重点关注：用户偏好节点（user_preference tag）、历史决策节点、相关项目/任务节点\n",
+    );
+    result.push_str("- 知识图谱中的关系链路本身就是信息：A 依赖 B、A 衍生自 C、A 取代了 D\n\n");
+    result.push_str("4.3 历史对话补充（list_messages，可选第三轮）：\n");
+    result.push_str("- 如果短期记忆和知识图谱都不够，调用 list_messages 上拉最近对话记录\n");
+    result.push_str("- 特别关注：用户最近提过的类似需求、Agent 之前给过的承诺或结论\n\n");
+    result.push_str("4.4 检索结果整理：\n");
+    result.push_str(
+        "- 把所有检索命中的高相关内容**你自己概括为短摘要**（1~2 句每条，不要贴原始 JSON）\n",
+    );
+    result.push_str("- 每条摘要注明来源类型：[记忆]/[图谱]/[对话]\n");
+    result.push_str("- 按相关度排序，最相关的放前面\n");
+    result.push_str("- 写进 retrieved_context 数组\n\n");
+    result.push_str(
+        "如果跳过了 4.1 或 4.2，必须在思考中明确说明理由（如：100%全新话题，无历史可检索）。\n\n",
+    );
+
+    result.push_str("### Step 5：综合研判与总结\n");
+    result.push_str("5.1 信息完备性检查：\n");
+    result.push_str("- 回顾 Step 1~4 的全部产出，检查是否有信息缺口\n");
+    result.push_str("- 如果消歧失败 / 混合型意图优先级不清 / 需求边界不明 / 需要用户决策\n");
+    result.push_str(
+        "  → 把要问用户的具体问题逐条写进 need_clarification（问题尽量用选择题形式，不要开放式）\n",
+    );
+    result.push_str(
+        "  → 澄清即本轮终态：这些问题的原文会**直接作为给用户的回复**发出，跳过检索与执行\n",
+    );
+    result
+        .push_str("  → 因此每条必须独立可读、自成一句，不要写「如上次所说」这类依赖上下文的表述\n");
+    result.push_str("- 如果理解充分 → need_clarification = []\n\n");
+    result.push_str("5.2 形成理解结论：\n");
+    result.push_str("- 在思考中用 1~2 句话总结：我理解用户想要 XXX，相关的背景信息有 YYY\n");
+    result.push_str("- 这个总结将直接作为下一阶段执行的输入，务必准确、完整、可执行\n");
+    result.push_str("- 写进 summary 字段\n\n");
+
+    result.push_str("## 最终输出规范（必须严格遵守）\n\n");
+    result.push_str("你输出的【最终 Final 内容】必须严格符合以下格式：\n");
+    result.push_str("- Final block MUST start with `--- INTENT_ANALYSIS_START ---` followed by pure JSON and end with `--- INTENT_ANALYSIS_END ---`\n");
+    result.push_str("- 中间 JSON 对象必须严格符合以下 schema（8 个字段全包含，不要省略）：\n\n");
+    result.push_str("JSON Schema 字段说明：\n");
+    result.push_str("- intent_type：字符串，取值为 Question | TaskRequest | Confirm | FollowUp | ClarificationResponse | Chat | Mixed\n");
+    result.push_str("- confidence：数字，0.0 到 1.0，你对自己意图判断的置信度\n");
+    result.push_str("- key_terms：字符串数组，5~12 个关键词（基础抽取 + 联想扩展）\n");
+    result.push_str(
+        "- resolutions：字符串数组，指代消歧映射结果，每条格式 \"\\\"XXX\\\" → 具体对象\"\n",
+    );
+    result.push_str("- retrieved_context：字符串数组，search_memory / recommend_seed_nodes 等命中结果的你自己概括的短摘要（不要原始 JSON）\n");
+    result.push_str(
+        "- need_clarification：字符串数组，需要向用户澄清的具体问题（空列表 = 理解充分）\n",
+    );
+    result.push_str("- direct_answer：字符串，只在「直答前置判断」命中时填写给用户的最终答复；其余情况必须为空字符串 \"\"\n");
+    result.push_str("- summary：字符串，一句话总结你最终理解的用户需求\n\n");
+    result.push_str("示例 JSON（请严格模仿此结构，字段名和类型必须一致）：\n");
+    result.push_str("--- INTENT_ANALYSIS_START ---\n");
+    result.push_str("{\n");
+    result.push_str("  \"intent_type\": \"FollowUp\",\n");
+    result.push_str("  \"confidence\": 0.85,\n");
+    result.push_str("  \"key_terms\": [\"项目X\", \"方案A\", \"进度\", \"上次那个方案\"],\n");
+    result.push_str(
+        "  \"resolutions\": [\"\\\"上次那个方案\\\" → project=proj_123, task=task_456\"],\n",
+    );
+    result.push_str("  \"retrieved_context\": [\"2026-08-10 短期记忆：项目X 方案 A/B 比较，推荐方案 A（相似度 0.88）\"],\n");
+    result.push_str("  \"need_clarification\": [],\n");
+    result.push_str("  \"direct_answer\": \"\",\n");
+    result.push_str(
+        "  \"summary\": \"用户想知道项目 X 中之前讨论过的方案 A 的当前推进进度与结果\"\n",
+    );
+    result.push_str("}\n");
+    result.push_str("--- INTENT_ANALYSIS_END ---\n\n");
+    result.push_str("直答示例（仅命中「直答前置判断」时）：\"direct_answer\": \"你好，我是你的接待助手，有什么可以帮你？\"，其余数组留空。\n\n");
+
+    result.push_str("===== 【输入理解阶段】指令结束 =====\n");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::prompt_builder::PromptBuilder;
 
     /// 没有技能时不拼装提醒：此时提醒读技能是无意义噪声，还会让「请回复」收尾分叉
     #[test]
@@ -1842,5 +1807,41 @@ mod tests {
         assert!(!nudge.is_empty());
         assert!(nudge.contains("get_skill"), "{nudge}");
         assert!(nudge.contains("读全文的时机"), "{nudge}");
+    }
+
+    /// 前缀不变量：意图初始消息的 System / User 必须原样包含 Awaken base，
+    /// 意图指令只能是同一 user 消息的**尾部追加**（I1/I2/I4）。
+    #[test]
+    fn intent_initial_messages_reuse_awaken_base_as_prefix() {
+        let mut builder = DefaultPromptBuilder {
+            system_prompt: Some("PERSONA".to_string()),
+            ..Default::default()
+        };
+        builder.skills.push(SkillPo::default());
+        builder.history.push("H1".to_string());
+        builder.current_message = Some("CURRENT".to_string());
+
+        let base_system = builder.awaken_system_part();
+        let base_user = builder.awaken_user_part();
+        let messages = builder.build_intent_analyze_initial_messages();
+        assert_eq!(messages.len(), 2);
+
+        match &messages[0] {
+            ChatMessage::System { content } => assert_eq!(content, &base_system),
+            _ => panic!("首条必须是 System"),
+        }
+        match &messages[1] {
+            ChatMessage::User { content } => {
+                assert!(
+                    content.starts_with(&base_user),
+                    "意图指令只能追加在 base 之后"
+                );
+                assert!(
+                    content.contains("INTENT_ANALYSIS_START"),
+                    "缺少意图指令尾部"
+                );
+            }
+            _ => panic!("次条必须是 User"),
+        }
     }
 }

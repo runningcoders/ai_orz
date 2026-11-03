@@ -137,6 +137,65 @@ fn read_artifacts(bus: &ThinkBus) -> Result<Artifacts> {
     read_bus::<Artifacts>(bus, ContextKey::Artifacts)
 }
 
+/// 写 PromptPack 到总线（三条装配路径共用）
+fn write_prompt_pack(bus: &mut ThinkBus, pack: &PromptPack) -> Result<()> {
+    let value = serde_json::to_value(pack)
+        .map_err(|e| common::error::err!(Internal, "encode prompt pack failed: {e}"))?;
+    bus.insert(ContextKey::Prompt, LoadDepth::Full, value);
+    Ok(())
+}
+
+/// 预算状态原样透传（轮次 / token / 时长都是唤醒级累计值，Prepare 不改写）
+fn echo_budget(bus: &mut ThinkBus) -> Result<()> {
+    let budget = read_budget(bus);
+    bus.insert(
+        ContextKey::Budget,
+        LoadDepth::Shallow,
+        serde_json::to_value(budget)
+            .map_err(|e| common::error::err!(Internal, "encode budget failed: {e}"))?,
+    );
+    Ok(())
+}
+
+/// 续跑追加（`poll_exit` rethink）的 user 文本：只描述新输入，不重复意图 JSON 正文
+fn resume_append_text(pending: &[String]) -> String {
+    let mut s = String::from(
+        "上一条 assistant JSON 是本次意图识别结论。以下是对话过程中新到达的输入，请据此继续推进：\n\n",
+    );
+    if pending.is_empty() {
+        s.push_str("（本轮没有新的文本输入，请继续推进当前任务。）\n");
+    } else {
+        for item in pending {
+            s.push_str(item);
+            s.push('\n');
+        }
+    }
+    s.push_str("\n注意：不要重复已完成的步骤，也不要再次输出 INTENT_ANALYSIS JSON。\n\n请回复：");
+    s
+}
+
+/// 把最终初始消息拼成 Trace 用的扁平文本（仅用于 `trace.input`，不参与模型请求）
+fn render_seed_prompt(messages: &[ChatMessage]) -> String {
+    let mut out = String::new();
+    for (index, message) in messages.iter().enumerate() {
+        match message {
+            ChatMessage::System { content } | ChatMessage::User { content } => {
+                out.push_str(content);
+            }
+            ChatMessage::UserMultimodal { text, .. } => out.push_str(text),
+            ChatMessage::Assistant {
+                content: Some(content),
+                ..
+            } => out.push_str(content),
+            _ => continue,
+        }
+        if index + 1 < messages.len() {
+            out.push_str("\n\n");
+        }
+    }
+    out
+}
+
 /// 写 Artifacts 到总线（`Intent` 直答分支与各思考节点共用同一份编码逻辑）
 pub(super) fn write_artifacts(bus: &mut ThinkBus, artifacts: &Artifacts) -> Result<()> {
     let value = serde_json::to_value(artifacts)
@@ -247,6 +306,108 @@ impl ThinkNode for PrepareNode {
         let pack = read_bus::<super::context::RetrievalPack>(bus, ContextKey::Knowledge)
             .unwrap_or_default();
 
+        // 三条装配路径的优先级：续跑追加（poll_exit）> 意图 seed 续接（首次装配）
+        // > 重建（压缩回环 / 无 seed / 脚本后端）。
+        // 新输入只允许在尾部追加：读取即清空，避免 compact→prepare / rethink 重复渲染。
+        let (resume_append, pending) = deps
+            .inbox
+            .lock()
+            .map(|mut state| {
+                let resume = state.take_resume_append();
+                let pending = state.pending_turn_texts();
+                state.clear_pending_turn();
+                (resume, pending)
+            })
+            .unwrap_or((false, Vec::new()));
+
+        // 外部 Agent（Cli / Remote）走 `FlatPromptBuilder`：初始消息会被压成**单条**
+        // user，而 `BrainDal::think` 的 Cli/Remote 分支只取最后一条 user
+        // (`extract_last_user_prompt`)。追加 assistant + 执行段后，base 原文会落在
+        // 倒数第二条 user 上、被整块丢弃（人设、当前消息、消息链全丢）。它们也没有
+        // provider 级 prompt cache，追加化收益为零，因此统一退回重建，保持既有行为。
+        let append_ok = matches!(deps.agent.po.kind, common::enums::AgentKind::Local);
+        // seed 读取即清空：即使外部 Agent 不用，也必须消费掉，避免后续 rethink
+        // 拿到与当前装配不一致的旧快照
+        let seed = deps
+            .intent_seed
+            .lock()
+            .ok()
+            .and_then(|mut seed_slot| seed_slot.take());
+
+        // A. 续跑追加：以 `Artifacts.messages` 为既有对话，只在尾部加一条 user 消息
+        if append_ok
+            && resume_append
+            && let Some(existing) = read_artifacts(bus).ok().filter(|a| !a.messages.is_empty())
+        {
+            let mut messages = existing.messages;
+            let tail = resume_append_text(&pending);
+            messages.push(ChatMessage::user(tail.clone()));
+            crate::log_info!(
+                ctx,
+                "legacy_awaken",
+                "prepare resumed (append-only), agent_id={}, messages={}",
+                deps.agent.po.id,
+                messages.len()
+            );
+            write_prompt_pack(
+                bus,
+                &PromptPack {
+                    prompt: tail,
+                    initial_messages: messages,
+                },
+            )?;
+            echo_budget(bus)?;
+            return Ok(NodeOutcome::new(NodeSignal::Done));
+        }
+        // `Artifacts.messages` 为空（脚本后端 / 外部执行器）：退回重建，保证兼容
+
+        // B. 意图 seed 续接：Phase 2 初始消息 = Phase 1 初始消息 + assistant 结论 + 执行段
+        //    压缩回环（slot.summary 非空）不能续接：压缩是有损变换，必须重建
+        if append_ok
+            && let Some(seed) = seed
+            && slot.summary.is_none()
+        {
+            let mut exec = deps.domain.prompt_builder(&deps.agent);
+            if !pack.knowledge_hits.is_empty() {
+                exec.retrieved_knowledge(&pack.knowledge_hits);
+            }
+            if !pack.method_skills.is_empty() {
+                exec.method_skills(&pack.method_skills);
+            }
+            if let Some(summary) = &pack.prior_thinking_summary {
+                exec.prior_thinking_summary(summary);
+            }
+            exec.current_message(&deps.message);
+            if !pending.is_empty() {
+                exec.injected_inputs(&pending);
+            }
+            let intent_json = serde_json::to_string(&intent)
+                .map_err(|e| common::error::err!(Internal, "encode intent analysis failed: {e}"))?;
+            let segment = exec.build_execution_segment();
+            let mut messages = seed.clone();
+            messages.push(ChatMessage::assistant(intent_json));
+            messages.push(ChatMessage::user(segment));
+            let prompt = render_seed_prompt(&messages);
+            crate::log_info!(
+                ctx,
+                "legacy_awaken",
+                "prepare seeded from intent, agent_id={}, seed_messages={}, final_messages={}",
+                deps.agent.po.id,
+                seed.len(),
+                messages.len()
+            );
+            write_prompt_pack(
+                bus,
+                &PromptPack {
+                    prompt,
+                    initial_messages: messages,
+                },
+            )?;
+            echo_budget(bus)?;
+            return Ok(NodeOutcome::new(NodeSignal::Done));
+        }
+
+        // C. 重建（唯一允许重建的常规路径；压缩回环也走这里）
         let mut builder = deps.domain.prompt_builder(&deps.agent);
         builder.current_trace_id(&deps.trace_id);
         builder.system_prompt(&deps.agent);
@@ -270,9 +431,8 @@ impl ThinkNode for PrepareNode {
         }
         super::super::awakening::mount_ontology_lexicon(ctx, builder.as_mut()).await;
         builder.history(&recent);
-        // 思考图上游产物注入（重点前置的短聚焦装配）：意图理解 + 检索命中的
-        // 知识/方法技能 + 上一轮思考摘要；空集合跳过——builder 对空输入不渲染
-        // 区块，prompt 与思考图未产出时保持一致
+        // 重建路径保留「重点前置」的短聚焦装配：意图理解 + 检索命中的
+        // 知识/方法技能 + 上一轮思考摘要；空集合跳过
         builder.intent_analysis(&intent);
         if !pack.knowledge_hits.is_empty() {
             builder.retrieved_knowledge(&pack.knowledge_hits);
@@ -297,34 +457,18 @@ impl ThinkNode for PrepareNode {
         }
         builder.current_message(&deps.message);
         builder.message_thread(&biz.message_thread);
-        // 意图修订失败 / 预算耗尽时，新输入降级为尾插转向消息
-        // （只追加在当前消息之后，绝不插到 System 前缀之前）
-        if let Ok(mut state) = deps.inbox.lock() {
-            let pending = state.pending_turn_texts();
-            // 消费即清空：后续 compact→prepare 重装配 / poll_exit rethink 不能
-            // 把同一批输入重复渲染进 Prompt
-            state.clear_pending_turn();
-            if !pending.is_empty() {
-                builder.injected_inputs(&pending);
-            }
+        if !pending.is_empty() {
+            builder.injected_inputs(&pending);
         }
 
-        let pack = PromptPack {
-            prompt: builder.build(),
-            initial_messages: builder.build_initial_messages(),
-        };
-        let value = serde_json::to_value(&pack)
-            .map_err(|e| common::error::err!(Internal, "encode prompt pack failed: {e}"))?;
-        bus.insert(ContextKey::Prompt, LoadDepth::Full, value);
-
-        // 预算状态原样透传（轮次 / token / 时长三项都是唤醒级累计值，Prepare 不改写）
-        let budget = read_budget(bus);
-        bus.insert(
-            ContextKey::Budget,
-            LoadDepth::Shallow,
-            serde_json::to_value(budget)
-                .map_err(|e| common::error::err!(Internal, "encode budget failed: {e}"))?,
-        );
+        write_prompt_pack(
+            bus,
+            &PromptPack {
+                prompt: builder.build(),
+                initial_messages: builder.build_initial_messages(),
+            },
+        )?;
+        echo_budget(bus)?;
 
         Ok(NodeOutcome::new(NodeSignal::Done))
     }

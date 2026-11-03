@@ -6,7 +6,7 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 43 篇：A 设计 9 · B 落地方案 15 · C 知识 19。
+本模块共 45 篇：A 设计 10 · B 落地方案 16 · C 知识 19。
 
 ## A 设计（design）
 
@@ -19,6 +19,7 @@
 - [思考生命周期设计（Think Lifecycle）](<A-设计/think_lifecycle_design.md>) — `现行`
 - [思考图引擎改造设计（Awaken 主思考路径节点化）](<A-设计/thinking_graph_engine_design.md>) — `落地中`
 - [Agent 思考运行时 + 策略引擎设计](<A-设计/thinking_task_policy_engine_design.md>) — `现行`
+- [两阶段唤醒 Prompt 追加化与前缀缓存设计](<A-设计/two_stage_append_only_prompt_design.md>) — `现行`
 
 ## B 落地方案（plan）
 
@@ -28,6 +29,7 @@
 - [Agent运行时上下文扩展](<B-落地方案/Agent运行时上下文扩展.md>) — `已完成`
 - [Rig 0.34 → 0.41 Upgrade Implementation Plan](<B-落地方案/Rig 0.34 → 0.41 Upgrade（执行蓝图）.md>) — `已完成`
 - [Runtime API + exit_reason 持久化 Implementation Plan](<B-落地方案/Runtime API + exit_reason 持久化（执行蓝图）.md>) — `已完成`
+- [两阶段唤醒Prompt追加化](<B-落地方案/两阶段唤醒Prompt追加化.md>) — `已完成`
 - [两阶段唤醒：IntentAnalyze+Awaken正式执行](<B-落地方案/两阶段唤醒：IntentAnalyze+Awaken正式执行.md>) — `已完成`
 - [唤醒上下文注入 + 沉睡沉淀约束改造](<B-落地方案/唤醒上下文与睡眠约束.md>) — `已完成`
 - [思考图引擎改造实施计划](<B-落地方案/思考图引擎改造.md>) — `进行中`
