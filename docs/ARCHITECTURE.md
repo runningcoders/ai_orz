@@ -336,13 +336,13 @@ data/
 |--------|--------|------|
 | [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) | 总图：三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 总览 / 存储 / 质量门禁 |
 | [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) | 本体子系统：四条能力线 + 五道门闩 + 治理看板 | 读侧 / 写入门闩 / 治理面 |
-| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 落盘 → 查询 → 前端 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
+| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询 → 前端 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
 | [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 7 消费者 + 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
 | [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) | 组织与权限：多级组织 + 角色继承 + 双模式认证 + 联邦组网 | 组织与角色 / 认证与凭证 / 联邦组网 |
 | [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：四态状态机 + DAG 唤醒 + 制品聚合 | 任务状态机 / DAG 与唤醒 / 项目聚合 |
-| [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + MessageDomain（builder / delivery）+ SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
+| [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + MessageDomain（builder / delivery）+ 附件字节流与正文引用 + SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
 | [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) | 外部 Agent：Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 | 协议入口 / 结果与兜底 / 联邦与长连接 |
 | [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) | 搜索：FTS5 + 向量 + 图谱三路召回 + 属性精确过滤 | 工具入口 / 三路召回 / 存储面 |
 | [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) | 统计与监控：事件采集 → AOP 消费 → 四类指标落库 → 监控 API | 采集 / 聚合 / 读取与看板 |
