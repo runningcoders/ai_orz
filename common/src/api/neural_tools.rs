@@ -395,10 +395,12 @@ pub struct SendMessageToAgentParams {
     pub task_id: Option<String>,
     /// 回复的消息 ID。
     pub reply_to_id: Option<String>,
-    /// 附件 ID 列表。
-    /// 发送方已经上传到 Attachment 模块的附件 ID 列表，
-    /// 后端会为每个附件创建一条附件消息（Image/File/Audio/Video），
-    /// 紧跟在文本消息之前（按数组顺序排列）。
+    /// 附件 ID 列表（已上传到 Attachment 模块）。
+    ///
+    /// 主路径是**把引用写进 content**：`[文件名](attachment:{id})` 与文字同处一条
+    /// 混排消息，展示与唤醒都从正文解析，附件不再独立成消息。本字段是随消息携带
+    /// 的附件声明清单，后端据此做归属校验；若 content 里漏写了某个 id 的引用
+    /// （例如只传数组的调用方），后端会按原文件名兜底补进正文。
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub attachment_ids: Option<Vec<String>>,
     /// 知会模式（无需回复）。

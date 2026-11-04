@@ -147,7 +147,8 @@ impl WechatDalImpl {
             return Ok(None);
         }
         // 图片消息无文本：用占位符维持气泡与消息链，实际内容由附件承载
-        let content = text.unwrap_or_else(|| "[图片]".to_string());
+        let content =
+            text.unwrap_or_else(|| common::constants::message::IMAGE_ONLY_PLACEHOLDER.to_string());
 
         // 平台侧消息 ID（`message_id` 优先，回落 `client_id`）→ 落 `messages.external_key`，
         // 与飞书 `lark:{message_id}`、邮件 `email:<Message-ID>` 口径齐平。

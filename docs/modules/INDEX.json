@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 671,
-  "total_bytes": 14103964,
+  "total_bytes": 14106325,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1383,7 +1383,7 @@
           "path": "04-对话与消息/A-设计/message_interaction_design.md",
           "name": "message_interaction_design",
           "title": "用户-Agent 消息交互设计",
-          "bytes": 19623,
+          "bytes": 19755,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -1662,7 +1662,7 @@
           "path": "04-对话与消息/C-知识/多渠道消息系统.md",
           "name": "多渠道消息系统",
           "title": "多渠道消息系统",
-          "bytes": 25278
+          "bytes": 25355
         },
         {
           "tier": "C-知识",
@@ -1704,7 +1704,7 @@
           "path": "04-对话与消息/C-知识/消息处理核心.md",
           "name": "消息处理核心",
           "title": "消息处理核心",
-          "bytes": 21399
+          "bytes": 21767
         },
         {
           "tier": "C-知识",
@@ -1732,7 +1732,7 @@
           "path": "04-对话与消息/C-知识/消息管理.md",
           "name": "消息管理",
           "title": "消息管理",
-          "bytes": 19205
+          "bytes": 19908
         },
         {
           "tier": "C-知识",
@@ -1746,7 +1746,7 @@
           "path": "04-对话与消息/C-知识/消息领域.md",
           "name": "消息领域",
           "title": "消息领域",
-          "bytes": 25572
+          "bytes": 25804
         },
         {
           "tier": "C-知识",
@@ -5686,7 +5686,7 @@
           "path": "13-数据模型/C-知识/数据模型.md",
           "name": "数据模型",
           "title": "数据模型",
-          "bytes": 28067
+          "bytes": 28216
         },
         {
           "tier": "C-知识",
@@ -5714,7 +5714,7 @@
           "path": "13-数据模型/C-知识/消息和记忆模型.md",
           "name": "消息和记忆模型",
           "title": "消息和记忆模型",
-          "bytes": 22647
+          "bytes": 23347
         },
         {
           "tier": "C-知识",

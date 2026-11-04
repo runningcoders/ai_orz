@@ -78,6 +78,11 @@ pub fn MessageBubble(
 }
 
 /// 渲染消息内容（文本/图片/文件）
+///
+/// `is_attachment_message` 分支只服务**历史存量**：早年附件是独立消息
+/// （`content` = 附件 id、`file_type` 标记类型）。现在站内发送与渠道入站都把
+/// 附件以 `[文件名](attachment:id)` 并进正文（`Mixed`），走下面 Markdown 渲染
+/// 分支出图，不再产生新的独立附件消息。
 fn render_content(msg: &MessageListItem) -> Element {
     if is_attachment_message(msg.message_type) {
         if let Some(fm) = &msg.file_meta {

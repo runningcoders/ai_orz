@@ -19,11 +19,13 @@
 //! [`ProtocolRegistry`] 是拦截资格的唯一事实源：**扩展 = 一组件 + 一行注册**
 //! （见 [`component::ProtocolComponent`]），解析器本体零改动。
 //!
-//! ## 解析策略（决策点③，批1 仅预留）
+//! ## 解析策略（决策点③，批1 仅预留；Mixed 写入路径已接通）
 //!
 //! [`ParsePolicy::Lenient`] 宽容解析：全 Text 类统一启用解析、未识别语法自然
-//! 降级；`MessageType::Mixed`（=13）仅作语义标记，批1 无生产写入路径、无任何
-//! 消费点按 Mixed 分流（发送链改造归批3）。
+//! 降级。`MessageType::Mixed`（=13）批1 只是枚举预留，**现在已有生产写入路径**：
+//! 站内前端与渠道入站用 `append_refs` 把 `[文件名](attachment:id)` 写进请求
+//! 正文，投递域按正文含资源引用归一升级为 Mixed；展示与唤醒都从正文解析引用。
+//! （`ParsePolicy` / `ProtocolEvent::Image` 本身仍未接线，属独立预留。）
 
 pub mod component;
 pub mod transform;
@@ -134,7 +136,7 @@ fn classify_ref_dest(dest: &str) -> Option<ProtocolRef> {
     })
 }
 
-/// 拼装口：引用 + 展示名 → 协议文本（批3 发送链消费，批1 仅提供能力）
+/// 拼装口：引用 + 展示名 → 协议文本（批1 提供能力，现为发送链唯一拼装口）
 ///
 /// mention 形态复用 [`format_mention_ref`]（含 `@` 触发符与 `\` `[` `]` 转义规则，
 /// 单一事实源零复制）；其余形态同规则转义、无 `@` 前缀。非提及形态的 `org` 段
@@ -152,6 +154,26 @@ pub fn format_ref(r: &ProtocolRef, name: &str) -> String {
         None => format!("{}:{}", r.scheme, r.id),
     };
     format!("[{safe_name}]({dest})")
+}
+
+/// 把一组已拼装好的引用并入正文（空正文只留引用）
+///
+/// 发送链唯一拼装入**口**：站内前端（`MessageChat`）与渠道入站
+/// （`producer::message_channel::compose_inbound_content`）都在**入库前**调用它
+/// 把附件引用写进请求正文，投递域只对漏写声明的 id 做兜底补拼。两处共用同一
+/// 拼装口，正文形态才不会分叉。正文与引用之间留一个空行（Markdown 段落边界），
+/// 多个引用之间用空格分隔，保证 `extract_refs` 与前端渲染都能稳定识别。
+pub fn append_refs(base: &str, refs: &[String]) -> String {
+    if refs.is_empty() {
+        return base.to_string();
+    }
+    let block = refs.join(" ");
+    let base = base.trim();
+    if base.is_empty() {
+        block
+    } else {
+        format!("{base}\n\n{block}")
+    }
 }
 
 /// 从文本提取全部协议引用及链接文本快照（extract 能力，零解析器开销）

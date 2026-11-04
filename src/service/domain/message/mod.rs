@@ -296,8 +296,15 @@ pub struct SendToAgentCommand<'a> {
     /// 渠道入站话题消息落库时随消息写入 `messages.thread_id`，同一话题内
     /// 所有消息共享，供出站时按话题回复。
     pub thread_id: Option<&'a str>,
-    /// 附件 ID 列表（可选）
-    /// 如果提供，会为每个附件创建一条附件消息，按顺序排列在文本消息之前
+    /// 附件 ID 声明清单（可选）
+    ///
+    /// **不**创建独立附件消息：附件以 `[文件名](attachment:{id})` 引用与文字同处
+    /// `content`，正文由请求侧（前端 / 渠道适配层）在调用本命令前用
+    /// `common::markdown_protocol::append_refs` 拼好。本字段用于归属校验，并为
+    /// 「只传数组、正文漏写引用」的调用方兜底补引用。正文含资源引用时消息类型
+    /// 由 `Text` 归一为 `Mixed`（`AgentNotify` 等语义类型不升级）。
+    /// 这样一条图文发送只产生一条消息、只唤醒一次 Agent，唤醒侧
+    /// `resolve_current_message_resources` 能在同一轮解析出图片 / 文件内容。
     pub attachment_ids: Option<&'a [String]>,
     /// 消息类型（默认 Text，系统通知可指定 TaskDispatchNotification 等）
     pub message_type: common::enums::message::MessageType,

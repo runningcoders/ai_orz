@@ -77,7 +77,7 @@ ALTER TABLE messages ADD COLUMN reply_to_id TEXT;
 | to_id | TEXT | 接收者ID（用户ID或AgentID） |
 | role | INTEGER | 发送者角色：0=User 1=Agent 2=System |
 | message_type | INTEGER | 消息类型：0=Text 1=Image 2=File 3=ToolCallRequest 4=ToolCallResult |
-| file_type | INTEGER | 文件类型（附件消息） |
+| file_type | INTEGER | 文件类型（仅历史存量独立附件消息；附件并入正文引用后新消息为空） |
 | status | INTEGER | 处理状态：0=撤回 1=待处理 2=处理中 3=已完成 4=失败 |
 | content | TEXT | 消息内容 |
 | file_meta | TEXT | 文件元数据JSON |
@@ -97,7 +97,7 @@ ALTER TABLE messages ADD COLUMN reply_to_id TEXT;
 | to_id | TEXT | 接收者ID（用户ID或AgentID） |
 | role | INTEGER | 发送者角色：0=User 1=Agent 2=System |
 | message_type | INTEGER | 消息类型：0=Text 1=Image 2=File... |
-| file_type | INTEGER | 文件类型（附件消息） |
+| file_type | INTEGER | 文件类型（仅历史存量独立附件消息；附件并入正文引用后新消息为空） |
 | status | INTEGER | 处理状态：0=撤回 1=待处理 2=处理中 3=已完成 4=失败 |
 | content | TEXT | 消息内容 |
 | file_meta | TEXT | 文件元数据JSON |

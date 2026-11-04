@@ -153,6 +153,47 @@ pub fn render_resource_chip(scheme: &str, id: &str, display_name: &str) -> Strin
     )
 }
 
+/// 附件引用的展示元信息（`MarkdownRenderer` 异步拉一次 `get_attachment` 得到）。
+///
+/// 图片 / 文件的渲染分派只看 `mime_type`。整个 map 为 `None`（该页面未开启拉取）
+/// 时维持既有的 `<img>` 形态，避免文档中心等场景凭空改观；聊天渲染点全部开启，
+/// 因此真实发送链路上的 PDF / 文档 / 音视频都能拿到元信息并正确分派。
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AttachmentMeta {
+    /// AI 识别摘要（图片的 figcaption）
+    pub description: String,
+    /// MIME 类型，决定是否内联出图
+    pub mime_type: String,
+    /// 原始文件名（下载链接的展示名 / `download` 属性）
+    pub original_name: String,
+}
+
+impl AttachmentMeta {
+    /// 仅位图内联出图，白名单与后端 `pkg::http::file::is_inline_safe` 的位图段一致。
+    /// `image/svg+xml` 被排除（服务端强制 attachment 下载防同源 XSS），
+    /// 音视频也不进 `<img>`（交给文件 chip，播放器只在详情页）。
+    pub fn is_inline_image(&self) -> bool {
+        let base = self
+            .mime_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        matches!(
+            base.as_str(),
+            "image/png"
+                | "image/jpeg"
+                | "image/gif"
+                | "image/webp"
+                | "image/bmp"
+                | "image/avif"
+                | "image/heic"
+                | "image/heif"
+        )
+    }
+}
+
 /// 渲染 attachment 内联引用为内联图片（批2 扩展）
 ///
 /// `[图片](attachment:att_1)`（如微信图片消息）渲染成 `<img>`，src 指向
@@ -180,6 +221,19 @@ pub fn render_attachment_image(id: &str, description: &str) -> String {
             r#"<figure class="attachment-figure">{img}<figcaption>{desc}</figcaption></figure>"#
         )
     }
+}
+
+/// 非图片附件引用 → 可点击下载的文件 chip（复用 `.mention-chip` HUD 样式）。
+///
+/// PDF / 文档 / 音视频的字节塞进 `<img>` 必然裂图，因此按 MIME 分派到链接。
+/// `download` 用 `original_name`（与服务端 `Content-Disposition` 同名、带扩展名），
+/// 不会下到打不开的无后缀文件。id 与展示名都经 `escape_html`，属性注入安全。
+pub fn render_attachment_file(id: &str, name: &str) -> String {
+    let id = escape_html(id);
+    let name = escape_html(name);
+    format!(
+        r#"<a class="mention-chip mention-attachment-file" href="/api/v1/finance/attachments/{id}/file" download="{name}" data-mention-kind="attachment" data-mention-id="{id}" title="下载 {name}"><span class="attachment-file-icon" aria-hidden="true">↓</span> {name}</a>"#
+    )
 }
 
 /// 消息接收方的「提及 chip」HTML（气泡头部拼出「这条消息发给谁」）
@@ -233,7 +287,7 @@ pub fn receiver_mention_html(
 pub fn transform_mentions<'a, I>(
     events: I,
     agents: Option<&NameMap>,
-    attachment_descriptions: Option<&HashMap<String, String>>,
+    attachments: Option<&HashMap<String, AttachmentMeta>>,
 ) -> Vec<Event<'a>>
 where
     I: Iterator<Item = Event<'a>>,
@@ -251,16 +305,27 @@ where
             let name = resolve_display_name(&m, snapshot, agents);
             return Some(Event::InlineHtml(render_mention_chip(&m, &name).into()));
         }
-        // 批2 扩展：attachment 内联引用（`[图片](attachment:att_1)`，如微信图片）渲染为
-        // 内联 <img>，src 指向 /file 原始字节流接口（按 mime 返回真实 Content-Type，同源
-        // cookie 鉴权）；有识别摘要时追加 <figcaption> 显示（见 render_attachment_image）。
+        // attachment 内联引用（`[文件名](attachment:id)`）：按 MIME 分派。
+        // 位图 → <img>（/file 原始字节流）+ 识别摘要 figcaption；
+        // PDF / 文档 / 音视频 / SVG → 可下载文件 chip（塞进 <img> 只会裂图）。
+        // 元信息整体缺失（页面未开启拉取）时维持既有 <img> 形态。
         if r.scheme == "attachment" {
-            let desc = attachment_descriptions
-                .and_then(|m| m.get(&r.id))
-                .map(|s| s.as_str())
-                .unwrap_or("");
+            let meta = attachments.and_then(|m| m.get(&r.id));
+            if meta.is_none_or(|m| m.is_inline_image()) {
+                let desc = meta.map(|m| m.description.as_str()).unwrap_or("");
+                return Some(Event::InlineHtml(
+                    render_attachment_image(&r.id, desc).into(),
+                ));
+            }
+            let meta = meta.expect("已确认是 Some 且非位图");
+            let stored_name = meta.original_name.trim();
+            let name = if stored_name.is_empty() {
+                snapshot
+            } else {
+                stored_name
+            };
             return Some(Event::InlineHtml(
-                render_attachment_image(&r.id, desc).into(),
+                render_attachment_file(&r.id, name).into(),
             ));
         }
         Some(Event::InlineHtml(
@@ -532,6 +597,14 @@ mod tests {
         assert!(html.contains("mention-attachment"));
     }
 
+    fn image_meta(description: &str) -> AttachmentMeta {
+        AttachmentMeta {
+            description: description.to_string(),
+            mime_type: "image/png".to_string(),
+            original_name: "设计稿.png".to_string(),
+        }
+    }
+
     /// 内联 attachment 引用携带识别摘要时，应在图片下方渲染 <figcaption> 文字总结。
     ///
     /// 回归守卫：description 来自 `AttachmentPo.description`（图片被 AI 识别后写入），
@@ -539,7 +612,7 @@ mod tests {
     #[test]
     fn attachment_image_renders_figcaption_with_description() {
         let mut map = HashMap::new();
-        map.insert("att_1".to_string(), "一张包含季度图表的截图".to_string());
+        map.insert("att_1".to_string(), image_meta("一张包含季度图表的截图"));
 
         let mut options = pulldown_cmark::Options::empty();
         options.insert(pulldown_cmark::Options::ENABLE_TABLES);
@@ -554,7 +627,7 @@ mod tests {
         assert!(html.contains("/api/v1/finance/attachments/att_1/file"));
         // 关键：摘要文本必须被转义，不能原样注入
         let mut bad = HashMap::new();
-        bad.insert("att_2".to_string(), "<script>alert(1)</script>".to_string());
+        bad.insert("att_2".to_string(), image_meta("<script>alert(1)</script>"));
         let p2 = pulldown_cmark::Parser::new_ext("[x](attachment:att_2)", options);
         let e2 = transform_mentions(p2, None, Some(&bad));
         let mut h2 = String::new();
@@ -568,24 +641,100 @@ mod tests {
 
     #[test]
     fn attachment_image_omits_figcaption_when_description_empty() {
-        // 未提供 description map → 只输出 <img>，无 figure/figcaption
+        // 未提供元信息 map → 维持既有 <img>，无 figure/figcaption
         let mut options = pulldown_cmark::Options::empty();
         options.insert(pulldown_cmark::Options::ENABLE_TABLES);
         let parser = pulldown_cmark::Parser::new_ext("[设计稿](attachment:att_1) 参考", options);
         let events = transform_mentions(parser, None, None);
         let mut html = String::new();
         pulldown_cmark::html::push_html(&mut html, events.into_iter());
+        assert!(html.contains("<img"));
         assert!(!html.contains("attachment-figure"));
         assert!(!html.contains("figcaption"));
 
-        // 提供了 map 但该 id 无摘要 → 同样只输出 <img>
+        // 提供了 map 但该 id 无元信息 → 同样维持 <img>
         let mut empty_map = HashMap::new();
-        empty_map.insert("other".to_string(), "别的".to_string());
+        empty_map.insert("other".to_string(), image_meta("别的"));
         let p2 = pulldown_cmark::Parser::new_ext("[设计稿](attachment:att_1) 参考", options);
         let e2 = transform_mentions(p2, None, Some(&empty_map));
         let mut h2 = String::new();
         pulldown_cmark::html::push_html(&mut h2, e2.into_iter());
+        assert!(h2.contains("<img"));
         assert!(!h2.contains("attachment-figure"));
+    }
+
+    /// 真实意图回归守卫：附件不只图片。PDF / 文档 / 音视频引用绝不能渲染成 <img>
+    /// （浏览器拿到非图片字节只会裂图），必须出可点击下载的文件 chip。
+    #[test]
+    fn non_image_attachment_renders_download_chip() {
+        let mut map = HashMap::new();
+        for (id, mime, name) in [
+            ("att_pdf", "application/pdf", "季度报告.pdf"),
+            ("att_mp4", "video/mp4", "演示.mp4"),
+            ("att_doc", "application/msword", "会议纪要.doc"),
+        ] {
+            map.insert(
+                id.to_string(),
+                AttachmentMeta {
+                    description: String::new(),
+                    mime_type: mime.to_string(),
+                    original_name: name.to_string(),
+                },
+            );
+        }
+        let mut options = pulldown_cmark::Options::empty();
+        options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+        for id in ["att_pdf", "att_mp4", "att_doc"] {
+            let md = format!("[文件](attachment:{id})");
+            let parser = pulldown_cmark::Parser::new_ext(&md, options);
+            let events = transform_mentions(parser, None, Some(&map));
+            let mut html = String::new();
+            pulldown_cmark::html::push_html(&mut html, events.into_iter());
+            assert!(!html.contains("<img"), "{id} 不应出 <img>：{html}");
+            assert!(html.contains("mention-attachment-file"), "{id} 缺文件 chip");
+            assert!(html.contains("/file\""), "{id} 缺下载链接");
+        }
+        // 下载名取元信息里的原始文件名（带扩展名），不拿正文快照的「文件」覆盖
+        let parser = pulldown_cmark::Parser::new_ext("[文件](attachment:att_pdf)", options);
+        let events = transform_mentions(parser, None, Some(&map));
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, events.into_iter());
+        assert!(html.contains("季度报告.pdf"), "{html}");
+    }
+
+    /// SVG 被服务端强制 attachment 下载（防同源 XSS），MIME 未拉到时落 default
+    /// 也不能当图片，两者都走文件 chip 而不是裂图。
+    #[test]
+    fn svg_and_missing_mime_are_not_inline_images() {
+        let mut map = HashMap::new();
+        map.insert(
+            "att_svg".to_string(),
+            AttachmentMeta {
+                mime_type: "image/svg+xml".to_string(),
+                original_name: "图.svg".to_string(),
+                ..Default::default()
+            },
+        );
+        map.insert("att_unknown".to_string(), AttachmentMeta::default());
+        let options = pulldown_cmark::Options::empty();
+        for id in ["att_svg", "att_unknown"] {
+            let md = format!("[图](attachment:{id})");
+            let parser = pulldown_cmark::Parser::new_ext(&md, options);
+            let events = transform_mentions(parser, None, Some(&map));
+            let mut html = String::new();
+            pulldown_cmark::html::push_html(&mut html, events.into_iter());
+            assert!(!html.contains("<img"), "{id} 不应出 <img>：{html}");
+            assert!(html.contains("mention-attachment-file"));
+        }
+    }
+
+    /// 文件 chip 的 id / 文件名进 HTML 属性，必须转义（防止 `"` 提前闭合属性）。
+    #[test]
+    fn attachment_file_chip_escapes_html() {
+        let html = render_attachment_file("att_\"1", "a\"><script>b.pdf");
+        assert!(html.contains("att_&quot;1"));
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(!html.contains("<script>"));
     }
 
     #[test]

@@ -56,7 +56,7 @@ pub fn collect_resource_ids(text: &str) -> (HashSet<String>, HashSet<String>) {
     (att, art)
 }
 
-/// content 是否含资源混排协议引用（批3：Mixed=13 写入路径判定，handler 单点调用）。
+/// content 是否含资源混排协议引用（Mixed=13 写入路径判定，投递域单一归一点）。
 ///
 /// 仅认 attachment / artifact scheme（AMan 批3 决策点②：mention 族 agent/task/project/user
 /// 系协作协议不算混排）；未注册 scheme（https 等）与歪格式不命中——[`extract_refs`]

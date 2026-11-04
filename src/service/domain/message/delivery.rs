@@ -13,7 +13,9 @@ use crate::service::domain::message::{
     SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome,
 };
-use common::enums::{FileType, MessageRole, MessageType};
+use std::collections::HashSet;
+
+use common::enums::{MessageRole, MessageType};
 use common::error::{Result, bail_err, err};
 use serde_json::json;
 
@@ -71,17 +73,6 @@ fn build_sse_payload(message: &Message) -> crate::service::dal::message_push::Ss
         created_at: message.created_at(),
         file_type: message.file_type().map(|ft| ft as i32),
         file_meta,
-    }
-}
-
-/// 将 Attachment FileType 映射到对应的 MessageType
-fn map_file_type_to_message_type(file_type: FileType) -> MessageType {
-    match file_type {
-        FileType::Image => MessageType::Image,
-        FileType::Audio => MessageType::Audio,
-        FileType::Video => MessageType::Video,
-        // 文档与二进制文件统一归类为 File
-        FileType::Document | FileType::Binary => MessageType::File,
     }
 }
 
@@ -196,7 +187,7 @@ impl MessageDelivery for MessageDomainImpl {
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
 
-        // 先生成根消息 ID（文本消息的 ID），附件消息使用 reply_to_id 链回根
+        // 先生成消息 ID：正文（含附件引用）就是这一条，不再有旁路附件消息
         let root_msg_id = generate_id();
 
         // root_id 继承：如果有 reply_to_id，查询父消息的 root_id 作为链根；
@@ -219,8 +210,29 @@ impl MessageDelivery for MessageDomainImpl {
             None => (root_msg_id.clone(), None),
         };
 
-        // 1. 处理附件消息：按数组顺序创建 N 条附件消息
-        if let Some(att_ids) = cmd.attachment_ids {
+        // 附件不再生成独立消息：正文里的 `[文件名](attachment:{id})` 引用是唯一
+        // 事实源，展示与唤醒都从正文解析（将来真要反查关联用关系表，不落专用列）。
+        //
+        // 拼装发生在**请求侧**：站内发送由前端把引用写进 `content`，渠道入站由
+        // `producer::message_channel` 在适配层完成「附件 → 协议引用」转换，两者共用
+        // `common::markdown_protocol` 的拼装口。本层不改写请求侧已拼好的正文，只做：
+        // ① 对 `attachment_ids` 声明的附件做归属校验（客户端可伪造正文引用，显式
+        //    声明清单才是可信边界），并把「只声明、没写进正文」的 id 兜底补成引用——
+        //    兼容只传数组的 LLM 工具调用 / 老客户端，避免附件静默丢失；
+        // ② 把正文含资源引用的 Text 归一为 Mixed（幂等收口，handler / producer
+        //    不必各判一次；AgentNotify 等语义类型保持不升级）。
+        let mut content = cmd.content.to_string();
+        let mut message_type = cmd.message_type;
+        if let Some(att_ids) = cmd.attachment_ids.filter(|ids| !ids.is_empty()) {
+            // 请求侧已经写进正文的引用不重复拼装，展示名也以请求侧为准（用户可能
+            // 主动改名 / 在光标位置插入引用，投递域无权重排）。
+            let mut already_referenced: HashSet<String> =
+                common::markdown_protocol::extract_refs(&content)
+                    .into_iter()
+                    .filter(|(r, _)| r.scheme == "attachment")
+                    .map(|(r, _)| r.id)
+                    .collect();
+            let mut missing = Vec::new();
             for att_id in att_ids {
                 let attachment = self
                     .attachment_dal
@@ -228,7 +240,7 @@ impl MessageDelivery for MessageDomainImpl {
                     .await?
                     .ok_or_else(|| err!(ResourceNotFound, "Attachment {} not found", att_id))?;
 
-                // 校验归属：附件必须属于当前用户
+                // 校验归属：声明的附件必须属于当前用户
                 if !cmd.from_id.is_empty()
                     && attachment.po.root_user_id != cmd.from_id
                     && ctx.uid() != attachment.po.root_user_id
@@ -236,41 +248,32 @@ impl MessageDelivery for MessageDomainImpl {
                     bail_err!(InvalidRequest, "Attachment {} 不属于当前用户", att_id);
                 }
 
-                let att_msg_id = generate_id();
-                let file_type = map_file_type_to_message_type(attachment.po.file_type);
-                let file_meta = FileMeta::new(
-                    attachment.po.relative_path.clone(),
-                    attachment.po.mime_type.clone(),
-                    attachment.po.size as u64,
-                );
-
-                let att_po = MessagePo::new(
-                    att_msg_id.clone(),
-                    project_id.clone(),
-                    task_id.clone(),
-                    cmd.from_id.to_string(),
-                    cmd.to_agent_id.to_string(),
-                    cmd.from_role,
-                    MessageRole::Agent,
-                    file_type,
-                    attachment.po.id.clone(),
-                    Some(attachment.po.file_type),
-                    file_meta,
-                    Some(root_msg_id.clone()),
-                    Some(chain_root_id.clone()),
-                    ctx.organization_id().cloned(),
-                    cmd.from_id.to_string(),
-                );
-
-                let att_message = Message::from_po(att_po);
-                let att_ctx = enrich_ctx!(&ctx, &att_message);
-                self.message_dal
-                    .save_message(att_ctx.clone(), &att_message)
-                    .await?;
+                // 正文已写过的引用、以及本次循环已补过的重复声明，都不再补拼
+                // （`insert` 返回 false 表示 id 已在集合里）。
+                if !already_referenced.insert(att_id.clone()) {
+                    continue;
+                }
+                // 兜底展示名用原始文件名：模型据此判断附件内容，前端非图片附件也
+                // 据此出链接。空名兜底「附件」，避免 `[](attachment:id)` 空链接。
+                let name = attachment.po.original_name.trim();
+                let name = if name.is_empty() { "附件" } else { name };
+                missing.push(common::markdown_protocol::format_ref(
+                    &common::markdown_protocol::ProtocolRef::attachment(att_id),
+                    name,
+                ));
             }
+            content = common::markdown_protocol::append_refs(&content, &missing);
+        }
+        // Mixed 归一：正文含 attachment / artifact 引用即混排（mention 族不算）。
+        // 只升级 Text —— 知会语义（AgentNotify，防协作乒乓）与结构化通知类型由
+        // 调用方决定，不能被这里覆盖。
+        if message_type == MessageType::Text
+            && resource_resolver::content_has_resource_refs(&content)
+        {
+            message_type = MessageType::Mixed;
         }
 
-        // 2. 创建文本消息（root_id 继承自父消息或自身）
+        // 2. 落库：一条消息，正文即请求侧拼好的混排协议文本
         let mut po = MessagePo::new(
             root_msg_id.clone(),
             project_id,
@@ -279,8 +282,8 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.to_agent_id.to_string(),
             cmd.from_role,
             MessageRole::Agent,
-            cmd.message_type,
-            cmd.content.to_string(),
+            message_type,
+            content,
             None,
             FileMeta::default(),
             cmd.reply_to_id.map(|s| s.to_string()),

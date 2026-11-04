@@ -62,6 +62,19 @@ pub fn normalize_project_id(project_id: Option<&str>) -> Option<&str> {
     }
 }
 
+/// 渠道适配层的「纯图片占位」正文
+///
+/// 飞书 / 微信入站把**没有文字**的纯图片消息落成这个占位（见
+/// `service::dal::lark` / `service::dal::wechat` 的适配实现）。入站在适配层把
+/// 附件解析成 `[文件名](attachment:id)` 引用时，占位必须被引用**整体替代**，
+/// 否则正文会变成「[图片] + 引用」的重复占位。
+///
+/// 生产方是适配层、消费方是入站 producer（`compose_inbound_content`），跨层共用
+/// 才放 common：任一侧改字面量都会让「纯图片消息多一行 `[图片]`」悄无声息地
+/// 回归，两边必须认同一个常量。⚠️ 只在确实有附件时替换：用户手打这三个字且
+/// 不带附件时必须原样保留。
+pub const IMAGE_ONLY_PLACEHOLDER: &str = "[图片]";
+
 #[cfg(test)]
 mod tests {
     use super::*;

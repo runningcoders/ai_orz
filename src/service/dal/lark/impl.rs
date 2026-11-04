@@ -229,7 +229,7 @@ impl LarkDalImpl {
                         return Ok(None);
                     }
                     let content = if text.is_empty() {
-                        "[图片]".to_string()
+                        common::constants::message::IMAGE_ONLY_PLACEHOLDER.to_string()
                     } else {
                         text
                     };
@@ -247,7 +247,10 @@ impl LarkDalImpl {
             }
         } else if is_image {
             match event.parse_image_key() {
-                Some(key) => ("[图片]".to_string(), vec![key]),
+                Some(key) => (
+                    common::constants::message::IMAGE_ONLY_PLACEHOLDER.to_string(),
+                    vec![key],
+                ),
                 None => {
                     log_info!(
                         &ctx,

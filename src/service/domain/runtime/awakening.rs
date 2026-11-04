@@ -301,8 +301,19 @@ pub(super) async fn resolve_current_message_resources(
 }
 
 /// 当前消息引用的附件 ID（纯收集，不做存在性解析）：
-/// 旁路文件消息优先（content = attachment id），再按协议引用顺序去重追加。
-pub(super) fn collect_current_message_attachment_ids(message: &Message) -> Vec<String> {
+/// 按正文协议引用顺序去重收集；历史存量兼容见下。
+///
+/// **正文引用是唯一事实源**：所有新写入路径（站内发送、飞书富文本、微信图片）
+/// 都把附件以 `[文件名](attachment:id)` 并进正文，消息上不再有独立附件消息，
+/// 也没有专用附件字段——需要「附件 ↔ 消息」关联时从正文解析。
+///
+/// `file_type` 分支只用于**历史存量**：早年附件是独立消息（`content` = 附件 id、
+/// `file_type` 标记类型），这类消息可能因重投被再次唤醒。新消息 `file_type` 恒为
+/// `None`（混排消息由正文表达附件），不会进入该分支。
+///
+/// `pub(crate)`：投递侧（`message::delivery`）用单测盯住「请求侧拼装改口径后
+/// 附件仍能被唤醒侧收集到」，这是「附件有没有进模型」的唯一入口。
+pub(crate) fn collect_current_message_attachment_ids(message: &Message) -> Vec<String> {
     let mut att_ids: Vec<String> = Vec::new();
     if message.file_meta().is_some() {
         att_ids.push(message.content().to_string());

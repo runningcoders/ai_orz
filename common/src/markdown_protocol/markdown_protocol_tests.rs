@@ -380,12 +380,71 @@ fn format_ref_roundtrip_mention_and_generic() {
     assert_eq!(extract_refs(&text), vec![(g, "设计稿.png".to_string())]);
 }
 
-/// 批1 验收 #5：Mixed=13 仅枚举预留——From(13) 可还原、未知值回退不变、
-/// 无任何消费点（生产写入路径归批3，grep 证明见 T1 回报）。
+/// Mixed=13 数值契约：From(13) 可还原、未知值回退不变。
+///
+/// 该枚举现在已有生产写入路径（投递域按正文含资源引用把 Text 归一为 Mixed），
+/// 这里只守住数值稳定性：前端 `MSG_MIXED` 常量与 `From<i32>` 都依赖 13。
 #[test]
-fn mixed_enum_reserved_without_behavior() {
+fn mixed_enum_roundtrip() {
     use crate::enums::MessageType;
     assert_eq!(MessageType::from(13), MessageType::Mixed);
     assert_eq!(MessageType::Mixed.to_i32(), 13);
     assert_eq!(MessageType::from(999), MessageType::Text);
+}
+
+/// 附件引用构造口：scheme 字面量只在 `ProtocolRef::attachment` 出现一次，
+/// 拼出的文本必须能被 `extract_refs` 原样解析回来（发送链 ↔ 唤醒侧契约）。
+#[test]
+fn attachment_ref_roundtrips_through_extract_refs() {
+    let r = ProtocolRef::attachment("att_1");
+    assert_eq!(r.scheme, "attachment");
+    assert_eq!(r.id, "att_1");
+    assert!(r.org.is_none());
+    let text = format_ref(&r, "扫描件.pdf");
+    assert_eq!(text, "[扫描件.pdf](attachment:att_1)");
+    assert_eq!(extract_refs(&text), vec![(r, "扫描件.pdf".to_string())]);
+}
+
+#[test]
+fn append_refs_without_refs_keeps_base_verbatim() {
+    assert_eq!(append_refs("  你好  ", &[]), "  你好  ");
+    assert_eq!(append_refs("", &[]), "");
+}
+
+/// 空正文只留引用；非空正文与引用之间留 Markdown 段落边界，多个引用空格分隔。
+#[test]
+fn append_refs_layout_and_whitespace() {
+    let refs = vec![
+        format_ref(&ProtocolRef::attachment("att_1"), "a.png"),
+        format_ref(&ProtocolRef::attachment("att_2"), "b.pdf"),
+    ];
+    assert_eq!(
+        append_refs("", &refs),
+        "[a.png](attachment:att_1) [b.pdf](attachment:att_2)"
+    );
+    assert_eq!(
+        append_refs("看这两份资料", &refs),
+        "看这两份资料\n\n[a.png](attachment:att_1) [b.pdf](attachment:att_2)"
+    );
+    // 首尾空白归一，避免正文尾部换行与段落边界叠成三个换行
+    assert_eq!(
+        append_refs("  看这两份资料\n", &refs),
+        "看这两份资料\n\n[a.png](attachment:att_1) [b.pdf](attachment:att_2)"
+    );
+}
+
+/// 拼装结果必须能被唤醒侧完整收集：正文 + N 个引用 → extract_refs 恰好 N 个、
+/// 保序、scheme 正确。这条断了就会出现「正文里有图，模型却看不到」。
+#[test]
+fn appended_refs_are_all_extractable_in_order() {
+    let refs: Vec<String> = (1..=3)
+        .map(|i| format_ref(&ProtocolRef::attachment(format!("att_{i}")), "图"))
+        .collect();
+    let content = append_refs("请描述这三张图", &refs);
+    let ids: Vec<String> = extract_refs(&content)
+        .into_iter()
+        .filter(|(r, _)| r.scheme == "attachment")
+        .map(|(r, _)| r.id)
+        .collect();
+    assert_eq!(ids, vec!["att_1", "att_2", "att_3"]);
 }

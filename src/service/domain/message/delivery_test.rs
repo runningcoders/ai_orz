@@ -285,7 +285,7 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_send_to_agent_with_attachments_creates_attachment_messages(pool: SqlitePool) {
+async fn test_send_to_agent_with_attachments_composes_refs_into_one_message(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
 
     // 先创建两个附件（属于当前用户 admin）
@@ -338,12 +338,26 @@ async fn test_send_to_agent_with_attachments_creates_attachment_messages(pool: S
         .await
         .unwrap();
 
-    // 文本消息是 root
-    assert_eq!(sent.po.message_type, MessageType::Text);
-    assert_eq!(sent.po.content, "看这两份资料");
-    let root_id = sent.po.id.clone();
-
-    // 找到 2 条附件消息
+    // 单条消息：附件以正文引用并入，类型升级为 Mixed
+    assert_eq!(sent.po.message_type, MessageType::Mixed);
+    assert!(sent.po.content.starts_with("看这两份资料"));
+    // 展示名取原始文件名（模型据此判断附件内容，前端非图片附件也据此出链接）
+    assert!(
+        sent.po
+            .content
+            .contains(&format!("[document.txt](attachment:{})", att1.po.id)),
+        "正文缺文档引用：{}",
+        sent.po.content
+    );
+    assert!(
+        sent.po
+            .content
+            .contains(&format!("[image.png](attachment:{})", att2.po.id)),
+        "正文缺图片引用：{}",
+        sent.po.content
+    );
+    // 一条图文发送 = 一条消息：不再生成旁路附件消息（否则各自唤醒一次 Agent，
+    // 且唤醒侧只看当前消息 ⇒ 文本那一轮拿不到附件内容）
     let msgs = domain
         .management()
         .query(
@@ -356,26 +370,347 @@ async fn test_send_to_agent_with_attachments_creates_attachment_messages(pool: S
         )
         .await
         .unwrap();
-    assert!(msgs.len() >= 3, "应至少有 3 条消息，实际 {}", msgs.len());
+    assert_eq!(msgs.len(), 1, "应只有 1 条混排消息，实际 {}", msgs.len());
+    assert!(
+        !msgs
+            .iter()
+            .any(|m| matches!(m.po.message_type, MessageType::Image | MessageType::File)),
+        "不应再有独立附件消息"
+    );
+}
 
-    // 找到 2 条附件消息
-    let image_msg = msgs
-        .iter()
-        .find(|m| m.po.message_type == MessageType::Image)
-        .expect("应有一条图片附件消息");
-    let file_msg = msgs
-        .iter()
-        .find(|m| m.po.message_type == MessageType::File)
-        .expect("应有一条文件附件消息");
-    // 附件消息的 reply_to_id 应指向文本消息
-    assert_eq!(image_msg.po.reply_to_id.as_ref(), Some(&root_id));
-    assert_eq!(file_msg.po.reply_to_id.as_ref(), Some(&root_id));
-    // 附件消息的 root_id 应指向文本消息
-    assert_eq!(image_msg.po.root_id.as_ref(), Some(&root_id));
-    assert_eq!(file_msg.po.root_id.as_ref(), Some(&root_id));
-    // 附件消息的 content 应为附件 ID
-    assert_eq!(image_msg.po.content, att2.po.id);
-    assert_eq!(file_msg.po.content, att1.po.id);
+/// 附件引用必须能被唤醒侧解析：`collect_current_message_attachment_ids` 是
+/// 「附件有没有进模型」的唯一入口，正文拼装改口径时这里必须继续命中。
+#[sqlx::test]
+async fn test_composed_attachment_refs_are_visible_to_awakening(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let att = crate::service::dal::attachment::dal()
+        .create_from_text(
+            ctx.clone(),
+            crate::models::attachment::TextAttachmentCreate {
+                file_name: "note.txt".to_string(),
+                content: "hello".to_string(),
+                mime_type: None,
+                purpose: Some("test".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+    let att_ids = vec![att.po.id.clone()];
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: Some(&att_ids),
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+
+    // 纯附件（无正文）也要拼出引用而不是空正文
+    assert!(!sent.po.content.trim().is_empty());
+    assert_eq!(sent.po.message_type, MessageType::Mixed);
+
+    let collected =
+        crate::service::domain::runtime::awakening::collect_current_message_attachment_ids(&sent);
+    assert_eq!(collected, att_ids, "唤醒侧必须能从正文引用里收集到附件");
+}
+
+/// 主路径：请求侧（前端 / 渠道适配层）已经把引用写进正文，投递域必须逐字节
+/// 保留，不能重复拼装、不能拿服务端原文件名覆盖用户写的展示名。
+#[sqlx::test]
+async fn test_request_side_content_is_preserved_verbatim(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let att = crate::service::dal::attachment::dal()
+        .create_from_upload(
+            ctx.clone(),
+            crate::models::attachment::AttachmentUpload {
+                original_name: "wx-image.png".to_string(),
+                mime_type: "image/png".to_string(),
+                purpose: "message".to_string(),
+                bytes: b"fake-image-bytes".to_vec(),
+            },
+        )
+        .await
+        .unwrap();
+    let att_ids = vec![att.po.id.clone()];
+    let content = format!("看这张\n\n[自定义名](attachment:{})", att.po.id);
+
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: &content,
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: Some(&att_ids),
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(sent.po.content, content, "正文不得被二次拼装或改名");
+    assert_eq!(sent.po.message_type, MessageType::Mixed);
+}
+
+/// 正文引用是唯一事实源：调用方只写正文、不带声明清单，也应归一为 Mixed 并原样落库。
+/// 这是「以后所有消息都通过 mention 传入、不落专用字段」的关键契约。
+#[sqlx::test]
+async fn test_content_refs_without_declaration_become_mixed(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let content = "看 [报告](artifact:art_1) 与 [图](attachment:att_1)";
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content,
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: None,
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(sent.po.content, content);
+    assert_eq!(sent.po.message_type, MessageType::Mixed);
+}
+
+/// 兼容路径：只传数组的 LLM 工具调用 / 老客户端，漏写的引用要按原文件名补进正文，
+/// 且已在正文里的不能重复补。
+#[sqlx::test]
+async fn test_declaration_backfills_only_missing_refs(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let dal = crate::service::dal::attachment::dal();
+    let att1 = dal
+        .create_from_text(
+            ctx.clone(),
+            crate::models::attachment::TextAttachmentCreate {
+                file_name: "a.txt".to_string(),
+                content: "a".to_string(),
+                mime_type: None,
+                purpose: Some("test".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+    let att2 = dal
+        .create_from_text(
+            ctx.clone(),
+            crate::models::attachment::TextAttachmentCreate {
+                file_name: "b.txt".to_string(),
+                content: "b".to_string(),
+                mime_type: None,
+                purpose: Some("test".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+    // att2 故意重复声明：兜底不能补出两条相同引用（前端会重复渲染）
+    let att_ids = vec![att1.po.id.clone(), att2.po.id.clone(), att2.po.id.clone()];
+    let content = format!("已有 [手写名](attachment:{})", att1.po.id);
+
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: &content,
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: Some(&att_ids),
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(sent.po.content.starts_with(&content));
+    assert!(sent.po.content.contains("[手写名](attachment:"));
+    assert!(
+        sent.po
+            .content
+            .contains(&format!("[b.txt](attachment:{})", att2.po.id))
+    );
+    // att1 不能被补第二遍，重复声明的 att2 也只能补一次
+    assert_eq!(sent.po.content.matches(att1.po.id.as_str()).count(), 1);
+    assert_eq!(sent.po.content.matches(att2.po.id.as_str()).count(), 1);
+    assert_eq!(sent.po.message_type, MessageType::Mixed);
+}
+
+/// 占位清洗已上移到入站适配层（`producer::compose_inbound_content`）。投递域收到
+/// 带附件的 `[图片]` 只可能是用户手打的字面量，必须原样保留而不是清空。
+#[sqlx::test]
+async fn test_typed_image_placeholder_is_preserved_with_attachments(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let att = crate::service::dal::attachment::dal()
+        .create_from_upload(
+            ctx.clone(),
+            crate::models::attachment::AttachmentUpload {
+                original_name: "wx-image.png".to_string(),
+                mime_type: "image/png".to_string(),
+                purpose: "message".to_string(),
+                bytes: b"fake-image-bytes".to_vec(),
+            },
+        )
+        .await
+        .unwrap();
+    let att_ids = vec![att.po.id.clone()];
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: common::constants::message::IMAGE_ONLY_PLACEHOLDER,
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: Some(&att_ids),
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        sent.po
+            .content
+            .starts_with(common::constants::message::IMAGE_ONLY_PLACEHOLDER)
+    );
+    assert!(
+        sent.po
+            .content
+            .contains(&format!("[wx-image.png](attachment:{})", att.po.id))
+    );
+    assert_eq!(sent.po.message_type, MessageType::Mixed);
+}
+
+/// 声明清单是可信边界：不存在的附件 id 必须报错，不能悄悄落库成悬空引用。
+#[sqlx::test]
+async fn test_unknown_declared_attachment_is_rejected(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let bogus = vec!["att_missing".to_string()];
+    let result = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "看图",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: Some(&bogus),
+                message_type: MessageType::Text,
+            },
+        )
+        .await;
+    assert!(result.is_err(), "不存在的附件必须被拒绝");
+}
+
+/// 知会语义优先：正文含资源引用也不能把 AgentNotify 升级成 Mixed，
+/// 否则防协作乒乓机制会失效。
+#[sqlx::test]
+async fn test_agent_notify_is_not_upgraded_by_content_refs(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let content = "同步一下 [报告](artifact:art_1)";
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content,
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: None,
+                message_type: MessageType::AgentNotify,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(sent.po.message_type, MessageType::AgentNotify);
+}
+
+/// 反面：用户手打「[图片]」且**没有**附件时，占位替换不能触发，否则整条正文
+/// 会被清空（占位替换是「渠道纯图片消息」专属，不是通用文本清洗）。
+#[sqlx::test]
+async fn test_image_only_placeholder_without_attachments_is_preserved(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: common::constants::message::IMAGE_ONLY_PLACEHOLDER,
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external_key: None,
+                thread_id: None,
+                attachment_ids: None,
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sent.po.content,
+        common::constants::message::IMAGE_ONLY_PLACEHOLDER
+    );
+    assert_eq!(sent.po.message_type, MessageType::Text);
 }
 
 #[sqlx::test]

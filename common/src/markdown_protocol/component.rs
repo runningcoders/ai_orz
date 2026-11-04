@@ -9,8 +9,9 @@
 //!
 //! - [`MentionComponent`]：agent / task / project 三实例，委托
 //!   [`crate::mention`] 既有 API（单一事实源地位不变，本模块零协议逻辑复制）；
-//! - [`AttachmentComponent`] / [`ArtifactComponent`]：批2 资源占位，
-//!   批1 仅登记 scheme 与降级文本形态，`extract` 快照通道待 DAL resolver 注入。
+//! - [`AttachmentComponent`] / [`ArtifactComponent`]：批2 资源组件，除 scheme
+//!   登记与降级文本形态外，还支持 `with_resolved` 注入 DAL 预解析载荷
+//!   （`resource_resolver::resolve_message_resources` 消费）。
 //!
 //! ## 降级安全
 //!
@@ -72,6 +73,18 @@ pub struct ProtocolRef {
 }
 
 impl ProtocolRef {
+    /// 附件资源引用（`attachment:{id}`）
+    ///
+    /// 发送链（站内发送 / 渠道入站）拼装附件正文引用的唯一入口：scheme 字面量
+    /// 只在这里出现一次，避免各调用点手写字符串拼错 scheme 导致静默降级成普通链接。
+    pub fn attachment(id: impl Into<String>) -> Self {
+        Self {
+            scheme: "attachment".to_string(),
+            id: id.into(),
+            org: None,
+        }
+    }
+
     /// 转 mention 引用：仅 agent / task / project 三种 scheme 可转，其余 `None`
     pub fn to_mention(&self) -> Option<MentionRef> {
         let kind = match self.scheme.as_str() {

@@ -33,26 +33,31 @@ impl MessageChannelProducer {
     }
 }
 
-/// 将入站附件以 markdown 引用（`[图片](attachment:{id})`）并入消息正文
+/// 渠道入站「附件 → 正文协议引用」转换（入库前解析转换，纯函数）
 ///
-/// 渠道入站不再生成独立附件消息（避免每条附件各自唤醒 Agent），附件信息全部
-/// 收敛到文本根消息的正文里，由唤醒侧 `resolve_current_message_resources` 解析。
-/// 纯图片消息的 `[图片]` 占位会被引用整体替代，避免正文出现重复占位。
-fn compose_content_with_attachment_refs(base: &str, attachment_ids: &[String]) -> String {
-    if attachment_ids.is_empty() {
-        return base.to_string();
-    }
-    let refs = attachment_ids
+/// 站内发送由前端用同一个 `common::markdown_protocol` 拼装口完成，两条入口写进
+/// 请求 / 落库的正文形态必须逐字节一致。纯图片入站（飞书 / 微信无文字）的
+/// `[图片]` 占位在**确实有附件**时整体替代：用户手打「[图片]」且不带附件时
+/// 必须原样保留，否则会把人家的话清空。
+fn compose_inbound_content(base: &str, attachments: &[(String, String)]) -> String {
+    let refs: Vec<String> = attachments
         .iter()
-        .map(|id| format!("[图片](attachment:{id})"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let base = base.trim();
-    if base.is_empty() || base == "[图片]" {
-        refs
-    } else {
-        format!("{base}\n\n{refs}")
-    }
+        .map(|(id, name)| {
+            let name = name.trim();
+            let name = if name.is_empty() { "附件" } else { name };
+            common::markdown_protocol::format_ref(
+                &common::markdown_protocol::ProtocolRef::attachment(id),
+                name,
+            )
+        })
+        .collect();
+    let base =
+        if !refs.is_empty() && base.trim() == common::constants::message::IMAGE_ONLY_PLACEHOLDER {
+            ""
+        } else {
+            base
+        };
+    common::markdown_protocol::append_refs(base, &refs)
 }
 
 /// 渠道类型 → 渠道专属接待角色（档位链第 2 级）
@@ -169,9 +174,11 @@ impl MessageAdapterCallback for MessageChannelProducer {
             return Ok(());
         };
 
-        // 渠道附件落库：先转为内部 Attachment 资产，随后以正文引用并入文本消息
-        // （单条失败只丢该附件并留痕，不阻断文本消息入站 —— 与下载失败的降级口径一致）
-        let mut attachment_ids: Vec<String> = Vec::new();
+        // 渠道附件落库：先转为内部 Attachment 资产，随后**在适配层**把 id 解析成
+        // 正文协议引用再入库（单条失败只丢该附件并留痕，不阻断文本消息入站）。
+        // 与微信 / 飞书「先解析转换，然后才入库」的口径一致：投递域拿到的 content
+        // 已经是混排文本，不再负责拼装。
+        let mut inbound_attachments: Vec<(String, String)> = Vec::new();
         for attachment in &msg.attachments {
             let upload = AttachmentUpload {
                 original_name: attachment.file_name.clone(),
@@ -185,7 +192,9 @@ impl MessageAdapterCallback for MessageChannelProducer {
                 .create_attachment(ctx.clone(), upload)
                 .await
             {
-                Ok(created) => attachment_ids.push(created.po.id),
+                Ok(created) => {
+                    inbound_attachments.push((created.po.id, attachment.file_name.clone()));
+                }
                 Err(e) => log_warn!(
                     &ctx,
                     "message_channel_producer",
@@ -197,12 +206,13 @@ impl MessageAdapterCallback for MessageChannelProducer {
                 ),
             }
         }
-        // 附件以正文引用（`[图片](attachment:{id})`）随文本消息一起投递，不再生成
-        // 独立附件消息：旁路附件消息同样是 to_role=Agent，会各自发布事件唤醒一次
-        // Agent，导致「一条图文入站触发 N+1 次唤醒」。引用由唤醒侧
-        // `resolve_current_message_resources` 解析，视觉输入与文字在同一轮到达。
-        let content = compose_content_with_attachment_refs(&msg.content, &attachment_ids);
-
+        let content = compose_inbound_content(&msg.content, &inbound_attachments);
+        // 声明清单随请求传给投递域做归属校验（正文引用客户端可伪造），同时兼容
+        // 「只声明、没写进正文」的老调用方兜底补引用。
+        let attachment_ids: Vec<String> = inbound_attachments
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
         let cmd = SendToAgentCommand {
             from_id: &msg.from_id,
             from_role: msg.from_role,
@@ -213,7 +223,12 @@ impl MessageAdapterCallback for MessageChannelProducer {
             reply_to_id: msg.reply_to_id.as_deref(),
             external_key: msg.external_key.as_deref(),
             thread_id: msg.thread_id.as_deref(),
-            attachment_ids: None,
+            attachment_ids: if attachment_ids.is_empty() {
+                None
+            } else {
+                Some(attachment_ids.as_slice())
+            },
+            // Mixed 归一收敛在投递域（正文含资源引用即升级），这里不必重复判定
             message_type: MessageType::Text,
         };
 
@@ -314,38 +329,59 @@ pub async fn shutdown() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::compose_content_with_attachment_refs;
+    use super::compose_inbound_content;
+
+    fn one_image() -> Vec<(String, String)> {
+        vec![("att_1".to_string(), "wx-image.png".to_string())]
+    }
 
     #[test]
-    fn test_compose_content_without_attachments() {
-        assert_eq!(compose_content_with_attachment_refs("你好", &[]), "你好");
-        // 无附件时连占位都不改写
+    fn no_attachments_keeps_base_verbatim() {
+        // 无附件时连 `[图片]` 占位都不能改写：它可能就是用户手打的字面量
+        assert_eq!(compose_inbound_content("[图片]", &[]), "[图片]");
+        assert_eq!(compose_inbound_content("你好", &[]), "你好");
+    }
+
+    #[test]
+    fn image_only_placeholder_is_replaced_by_ref() {
         assert_eq!(
-            compose_content_with_attachment_refs("[图片]", &[]),
-            "[图片]"
+            compose_inbound_content("[图片]", &one_image()),
+            "[wx-image.png](attachment:att_1)"
+        );
+        assert_eq!(
+            compose_inbound_content("  ", &one_image()),
+            "[wx-image.png](attachment:att_1)"
         );
     }
 
     #[test]
-    fn test_compose_content_text_with_attachments() {
-        let ids = vec!["att_1".to_string(), "att_2".to_string()];
+    fn text_with_attachments_appends_ordered_refs() {
+        let atts = vec![
+            ("att_1".to_string(), "a.png".to_string()),
+            ("att_2".to_string(), "b.pdf".to_string()),
+        ];
         assert_eq!(
-            compose_content_with_attachment_refs("看这两张", &ids),
-            "看这两张\n\n[图片](attachment:att_1) [图片](attachment:att_2)"
+            compose_inbound_content("看这两份", &atts),
+            "看这两份\n\n[a.png](attachment:att_1) [b.pdf](attachment:att_2)"
         );
     }
 
     #[test]
-    fn test_compose_content_image_only_replaces_placeholder() {
-        let ids = vec!["att_1".to_string()];
-        // 纯图片消息的 `[图片]` 占位整体被引用替代，避免正文重复
+    fn empty_file_name_falls_back() {
+        let atts = vec![("att_1".to_string(), "  ".to_string())];
         assert_eq!(
-            compose_content_with_attachment_refs("[图片]", &ids),
-            "[图片](attachment:att_1)"
+            compose_inbound_content("", &atts),
+            "[附件](attachment:att_1)"
         );
-        assert_eq!(
-            compose_content_with_attachment_refs("  ", &ids),
-            "[图片](attachment:att_1)"
-        );
+    }
+
+    /// 拼装结果必须能被唤醒侧 `extract_refs` 收回，否则附件进不了模型当前轮。
+    #[test]
+    fn composed_refs_are_extractable_by_awakening_side() {
+        let composed = compose_inbound_content("看图", &one_image());
+        let refs = common::markdown_protocol::extract_refs(&composed);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].0.scheme, "attachment");
+        assert_eq!(refs[0].0.id, "att_1");
     }
 }

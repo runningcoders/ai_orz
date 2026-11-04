@@ -49,7 +49,8 @@ pub fn image_extension_for_mime(mime_type: &str) -> &'static str {
 /// 渠道入站附件（图片等二进制资源）
 ///
 /// 渠道 DAL 完成协议侧下载后填入 [`AdaptedMessage::attachments`]；producer 负责
-/// 落库为内部 Attachment 资产，再以 `attachment_ids` 交给消息投递链路。
+/// 落库为内部 Attachment 资产，并在入库前把 id 解析成正文协议引用
+/// （`[文件名](attachment:id)`），与站内前端同口径。
 /// 本结构只承载字节与元数据，不含任何渠道协议字段（保持 pkg 层纯净）。
 #[derive(Debug, Clone)]
 pub struct AdaptedAttachment {

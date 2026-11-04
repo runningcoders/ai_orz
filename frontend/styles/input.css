@@ -603,6 +603,24 @@
   word-break: break-word;
 }
 
+/* 非图片附件引用（PDF / 文档 / 音视频 / SVG）在聊天正文里的下载 chip。
+ * 复用 .mention-chip 的 HUD 视觉，只补 <a> 特有的下划线、hover 与图标间距。 */
+.mention-attachment-file {
+  text-decoration: none;
+  cursor: pointer;
+  gap: 0.25rem;
+}
+.mention-attachment-file:hover,
+.mention-attachment-file:focus-visible {
+  border-color: color-mix(in oklab, var(--color-primary) 45%, transparent);
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+.attachment-file-icon {
+  font-weight: 700;
+  opacity: 0.75;
+}
+
 /* 附件 / 产物详情页预览（图片 / 视频 / PDF）
  * 统一限高，避免超大图把元信息面板挤到屏幕外 */
 .attachment-preview-link {

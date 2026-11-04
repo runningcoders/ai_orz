@@ -283,30 +283,18 @@ impl BrainDal for FailingBrainDal {
     }
 }
 
-/// 初始化测试环境：所有 DAO + DAL 单例
-fn init_awaken_test_env(pool: SqlitePool) -> RequestContext {
-    // 必须先初始化 config（文件操作需要 base_data_path）
-    let _ = crate::config::init();
-
-    // 初始化所有 DAO
-    crate::service::dao::agent::init();
-    crate::service::dao::tool::init();
-    crate::service::dao::skill::init();
-    crate::service::dao::tool_call::init();
-    crate::service::dao::model_provider::init();
-    crate::service::dao::cortex::init();
-    crate::service::dao::memory::init();
-    crate::service::dao::mcp_server::init();
-
-    // 初始化所有 DAL
-    crate::service::dal::agent::init();
-    crate::service::dal::tool::init();
-    crate::service::dal::skill::init();
-    crate::service::dal::model_provider::init();
-    crate::service::dal::memory::init();
-    crate::service::dal::mcp_tool::init();
-    crate::service::dal::brain::init();
-
+/// 初始化测试环境：全局 Storage 单例 + 全链 service 装配
+///
+/// ⚠️ 两处都缺不得，单跑本模块时没有其它用例帮忙初始化：
+/// ① 全局 Storage：`RequestContext::new*` 的部分路径会回退到全局单例，缺了会
+///    panic「Storage 尚未初始化」；
+/// ② `init_service_for_test()`：config → dao::init_all → dal::init_all →
+///    domain::init 的幂等统一入口。原先手工列 DAO/DAL 漏了 `message` DAL，
+///    唤醒链一调 `dal::message::dal()` 就 `unwrap()` 到 None。全量跑时靠别的
+///    用例先初始化侥幸通过，属测试隔离缺陷（与业务无关）。
+async fn init_awaken_test_env(pool: SqlitePool) -> RequestContext {
+    crate::pkg::storage::test_support::init_for_test().await;
+    crate::pkg::request_context_test_support::init_service_for_test();
     crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
 }
 
@@ -421,7 +409,7 @@ async fn load_skills_to_agent(ctx: RequestContext, agent: &mut Agent) {
 
 #[sqlx::test]
 async fn test_awaken_with_skills(pool: SqlitePool) {
-    let ctx = init_awaken_test_env(pool);
+    let ctx = init_awaken_test_env(pool).await;
 
     let agent_id = format!("agent-with-skills-{}", Uuid::now_v7());
     let mut agent = make_test_agent(&agent_id);
@@ -497,7 +485,7 @@ async fn test_awaken_with_skills(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_awaken_without_skills(pool: SqlitePool) {
-    let ctx = init_awaken_test_env(pool);
+    let ctx = init_awaken_test_env(pool).await;
 
     let agent_id = format!("agent-no-skills-{}", Uuid::now_v7());
     let agent = make_test_agent(&agent_id);
@@ -544,7 +532,7 @@ async fn test_awaken_without_skills(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_awaken_rate_limited_persists_abort_memory(pool: SqlitePool) {
-    let ctx = init_awaken_test_env(pool);
+    let ctx = init_awaken_test_env(pool).await;
 
     let agent_id = format!("agent-abort-{}", Uuid::now_v7());
     let agent = make_test_agent(&agent_id);
@@ -611,7 +599,7 @@ async fn test_awaken_rate_limited_persists_abort_memory(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_awaken_with_user_profile(pool: SqlitePool) {
-    let ctx = init_awaken_test_env(pool);
+    let ctx = init_awaken_test_env(pool).await;
 
     let agent_id = format!("agent-user-profile-{}", Uuid::now_v7());
     let agent = make_test_agent(&agent_id);

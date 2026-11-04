@@ -71,6 +71,26 @@ struct PendingAttachment {
     name: String,
 }
 
+/// 把已上传附件按协议写进**请求正文**（与渠道入站共用 common 拼装口）。
+///
+/// 附件选择完成时 id 已经生成，这里直接把 `[文件名](attachment:id)` 与文字拼成
+/// 一条混排消息发给后端：服务端拿到的 content 已经是可展示 / 可唤醒解析的最终
+/// 形态，落库不再二次拼装。乐观气泡也复用同一份字符串，保证发出即出附件。
+fn compose_outbound_content(base: &str, attachments: &[PendingAttachment]) -> String {
+    let refs: Vec<String> = attachments
+        .iter()
+        .map(|a| {
+            let name = a.name.trim();
+            let name = if name.is_empty() { "附件" } else { name };
+            common::markdown_protocol::format_ref(
+                &common::markdown_protocol::ProtocolRef::attachment(&a.id),
+                name,
+            )
+        })
+        .collect();
+    common::markdown_protocol::append_refs(base, &refs)
+}
+
 /// 被引用消息的预览信息（气泡引用块 / 输入框回复条展示用）
 #[derive(Debug, Clone)]
 struct QuotedPreview {
@@ -724,6 +744,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
             reception_agent().map(|a| a.agent_id)
         };
 
+        // 附件引用在请求侧就写进正文，与微信 / 飞书入站「先解析转换再入库」同口径；
+        // `attachment_ids` 仍随请求传给后端做归属校验与兼容兜底。
+        let composed_content = compose_outbound_content(&text, &attachments);
         let attachment_ids: Vec<String> = attachments.iter().map(|a| a.id.clone()).collect();
         let attachment_ids_opt = if attachment_ids.is_empty() {
             None
@@ -755,7 +778,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
             let to_agent_snapshot = to_agent_id.clone();
             let req = SendMessageToAgentParams {
                 to_agent_id,
-                content: text.clone(),
+                content: composed_content.clone(),
                 project_id: project_id.clone(),
                 task_id: None,
                 reply_to_id,
@@ -765,9 +788,17 @@ pub fn MessageChat(project: Option<String>) -> Element {
 
             match send_message_to_agent(req).await {
                 Ok(resp) => {
+                    // 乐观气泡直接用请求的同一份正文（含附件引用），否则发送后只看到
+                    // 一段文字、刷新后才冒出附件。message_type 仍硬编码 MSG_TEXT
+                    // （见 utils::message 的结构守卫），渲染层 `MSG_TEXT | MSG_MIXED`
+                    // 同路，content 带引用即可正常出图。
                     // 修复 L18：tmp_msg_id 用 now_ms+random 避免同毫秒发送两条消息 ID 碰撞
-                    let mut user_msg =
-                        build_optimistic_user_msg(text, project_id, None, to_agent_snapshot);
+                    let mut user_msg = build_optimistic_user_msg(
+                        composed_content,
+                        project_id,
+                        None,
+                        to_agent_snapshot,
+                    );
                     // 用户消息（to_role=Agent）只触发 Agent 唤醒，后端**不回推 SSE**，
                     // 乐观消息永远不会被真实消息替换 → 本地恒持有 tmp_ ID。
                     // 而 Agent 回复的 reply_to_id 指向本条消息的**真实 ID**，
@@ -782,7 +813,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
                     current.push(user_msg);
                 }
                 Err(e) => {
-                    // 修复 M4：失败时恢复用户输入
+                    // 修复 M4：失败时恢复用户输入（恢复的是纯文字 + 待发附件，
+                    // 请求里拼好的协议引用不能回灌进输入框）
                     input_text.set(text_snapshot);
                     pending_attachments.set(attachments_snapshot);
                     toast.error(format!("发送消息失败: {}", e));
@@ -2644,6 +2676,65 @@ fn format_date_group_label(ts_ms: i64) -> String {
         return "昨天".to_string();
     }
     format!("{:04}-{:02}-{:02}", msg_key.0, msg_key.1, msg_key.2)
+}
+
+#[cfg(test)]
+mod attachment_request_tests {
+    use super::{PendingAttachment, compose_outbound_content};
+
+    fn one_image() -> Vec<PendingAttachment> {
+        vec![PendingAttachment {
+            id: "att_1".to_string(),
+            name: "设计稿.png".to_string(),
+        }]
+    }
+
+    #[test]
+    fn no_attachments_keeps_text_verbatim() {
+        assert_eq!(compose_outbound_content("你好", &[]), "你好");
+        // 用户手打的这三个字不是渠道占位，不能被清掉
+        assert_eq!(compose_outbound_content("[图片]", &[]), "[图片]");
+    }
+
+    #[test]
+    fn outbound_content_embeds_protocol_refs() {
+        assert_eq!(
+            compose_outbound_content("看这张", &one_image()),
+            "看这张\n\n[设计稿.png](attachment:att_1)"
+        );
+        // 纯附件（无文字）也必须留下引用而不是空正文
+        assert_eq!(
+            compose_outbound_content("", &one_image()),
+            "[设计稿.png](attachment:att_1)"
+        );
+    }
+
+    /// 请求正文与唤醒侧解析必须闭环：拼出的引用能被 extract_refs 收回。
+    #[test]
+    fn outbound_refs_are_extractable() {
+        let content = compose_outbound_content("看这张", &one_image());
+        let refs = common::markdown_protocol::extract_refs(&content);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].0.scheme, "attachment");
+        assert_eq!(refs[0].0.id, "att_1");
+    }
+
+    /// 结构守卫：请求体与乐观气泡共用同一份拼装结果，且没有第二处再拼一遍。
+    #[test]
+    fn request_and_optimistic_bubble_share_one_content() {
+        let src = include_str!("chat.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        assert_eq!(
+            src.matches("compose_outbound_content(&text, &attachments)")
+                .count(),
+            1
+        );
+        assert_eq!(src.matches("content: composed_content.clone(),").count(), 1);
+        assert!(!src.contains("optimistic_content"));
+    }
 }
 
 #[cfg(test)]
