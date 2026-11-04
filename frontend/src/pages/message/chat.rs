@@ -2368,7 +2368,9 @@ fn render_attachment_message(
     };
 
     let file_path = &msg.content;
-    let file_url = format!("/api/v1/finance/attachments/{}/content", file_path);
+    // /file 返回原始字节流（按 mime 给 Content-Type）；/content 是 JSON 文本信封，
+    // <img>/<video>/<audio> 拿到 JSON 会裂开，不能用于媒体渲染。
+    let file_url = format!("/api/v1/finance/attachments/{}/file", file_path);
 
     match msg.message_type {
         MSG_IMAGE => rsx! {

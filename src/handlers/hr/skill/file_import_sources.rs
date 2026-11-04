@@ -25,7 +25,6 @@ use common::error::{Result, bail_err, err};
 
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
-use crate::pkg::paths;
 use crate::service::domain::finance::domain as finance_domain;
 use crate::service::domain::hr::SkillFileImport;
 use crate::service::domain::project;
@@ -88,11 +87,9 @@ async fn resolve_attachment(
         .await?
         .ok_or_else(|| err!(InvalidRequest, "附件 {} 不存在或无权访问", id))?;
 
-    // 与 DAO 读写内容的落地点同源（路径推导的唯一真相在模型层；附件根目录必须由
-    // 调用方给出——DAO 侧是可注入的，这里没有注入，取部署配置即是实际生效的那个）。
-    let abs_path = attachment.file_abs_path(&paths::attachments_dir(
-        &crate::config::get().base_data_path(),
-    ))?;
+    // 路径随实体一起返回：DAO 读取时用**它自己注入的** `attachments_dir` 解析好，
+    // 所以这里不需要（也不应该）再读全局配置拼路径（与 `get_attachment_file` 同口径）。
+    let abs_path = attachment.file_abs_path()?;
 
     Ok((abs_path, attachment.po.original_name))
 }

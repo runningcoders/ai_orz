@@ -17,6 +17,9 @@ autobenches = false
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+# 文件字节流出站（pkg::http::file）：ReaderStream 把 AsyncRead 转成 Body 流。
+# 该版本已在依赖树中（axum/hyper 传递依赖），只额外打开 io feature，不引入新包。
+tokio-util = { version = "0.7", features = ["io"] }
 axum = { version = "0.8", features = ["multipart", "ws"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 serde = { version = "1", features = ["derive"] }

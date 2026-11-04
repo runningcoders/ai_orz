@@ -139,8 +139,15 @@ impl AttachmentDal for AttachmentDalImpl {
 
         self.attachment_dao
             .write_file(&relative_path, &upload.bytes)?;
-        self.attachment_dao.insert(ctx, &po).await?;
-        Ok(Attachment::from_po(po))
+        self.attachment_dao.insert(ctx.clone(), &po).await?;
+
+        // 落库后回读「真正的 PO」：DAO 会用它自己注入的 `attachments_dir` 回填绝对路径
+        // （见 `AttachmentPo::abs_path`），因此返回的实体是完成态——不会出现「刚创建的
+        // 对象取不到 file_abs_path」这种半成品。代价是一次主键 SELECT；创建路径频率低，
+        // 换来调用方不必自己补路径，值得。
+        self.get_by_id(ctx, &id)
+            .await?
+            .ok_or_else(|| err!(Internal, "Attachment {} 落库后回读失败", id))
     }
 
     async fn create_from_text(

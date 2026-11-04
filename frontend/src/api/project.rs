@@ -171,7 +171,6 @@ pub async fn update_artifact(
     .await
 }
 
-#[allow(dead_code)]
 pub async fn get_artifact(id: &str) -> Result<ArtifactDetail, ApiError> {
     api_get(&format!("/api/v1/project/artifacts/{}", id)).await
 }

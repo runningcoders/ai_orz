@@ -499,6 +499,10 @@ fn artifact_routes() -> Router {
             "/artifacts/{id}/content",
             get(handlers::project::artifact::get_artifact_content_handler),
         )
+        .route(
+            "/artifacts/{id}/file",
+            get(handlers::project::artifact::get_artifact_file),
+        )
 }
 
 fn organization_protected_routes() -> Router {
@@ -919,6 +923,10 @@ fn finance_routes() -> Router {
         .route(
             "/attachments/{id}/content",
             put(handlers::finance::attachment::update_attachment_content::update_attachment_content_handler),
+        )
+        .route(
+            "/attachments/{id}/file",
+            get(handlers::finance::attachment::get_attachment_file::get_attachment_file),
         )
         .route(
             "/attachments/{id}",

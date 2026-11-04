@@ -155,10 +155,11 @@ pub fn render_resource_chip(scheme: &str, id: &str, display_name: &str) -> Strin
 
 /// 渲染 attachment 内联引用为内联图片（批2 扩展）
 ///
-/// `[图片](attachment:att_1)`（如微信图片消息）渲染成 `<img>`，src 复用聊天专用附件
-/// 消息同款 `/api/v1/finance/attachments/{id}/content` 接口（message_bubble.rs 已验证
-/// 同源 cookie 鉴权可用）。仅 attachment 这类「图片型资源引用」走此分支，artifact 等
-/// 其余资源引用仍走 [`render_resource_chip`]。
+/// `[图片](attachment:att_1)`（如微信图片消息）渲染成 `<img>`，src 指向
+/// `/api/v1/finance/attachments/{id}/file` 原始字节流接口（按 mime 返回真实 Content-Type，
+/// 同源 cookie 鉴权可用）。注意 `/content` 是 JSON 文本信封、`<img>` 无法渲染，故不能用。
+/// 仅 attachment 这类「图片型资源引用」走此分支，artifact 等其余资源引用仍走
+/// [`render_resource_chip`]。
 ///
 /// `id` 经 `escape_html` 转义后拼入 src，杜绝注入；alt 为固定文案，不含用户输入。
 ///
@@ -168,7 +169,7 @@ pub fn render_resource_chip(scheme: &str, id: &str, display_name: &str) -> Strin
 pub fn render_attachment_image(id: &str, description: &str) -> String {
     let id = escape_html(id);
     let img = format!(
-        r#"<img class="markdown-attachment-image" src="/api/v1/finance/attachments/{id}/content" alt="附件图片" loading="lazy">"#
+        r#"<img class="markdown-attachment-image" src="/api/v1/finance/attachments/{id}/file" alt="附件图片" loading="lazy">"#
     );
     let desc = description.trim();
     if desc.is_empty() {
@@ -251,8 +252,8 @@ where
             return Some(Event::InlineHtml(render_mention_chip(&m, &name).into()));
         }
         // 批2 扩展：attachment 内联引用（`[图片](attachment:att_1)`，如微信图片）渲染为
-        // 内联 <img>，复用聊天专用附件消息同款 /content 接口（message_bubble.rs 已验证可用，
-        // 同源 cookie 鉴权）；有识别摘要时追加 <figcaption> 显示（见 render_attachment_image）。
+        // 内联 <img>，src 指向 /file 原始字节流接口（按 mime 返回真实 Content-Type，同源
+        // cookie 鉴权）；有识别摘要时追加 <figcaption> 显示（见 render_attachment_image）。
         if r.scheme == "attachment" {
             let desc = attachment_descriptions
                 .and_then(|m| m.get(&r.id))
@@ -483,7 +484,7 @@ mod tests {
             "[设计稿](attachment:att_1) 参考",
             false,
             concat!(
-                r#"<p><img class="markdown-attachment-image" src="/api/v1/finance/attachments/att_1/content" alt="附件图片" loading="lazy"> 参考</p>"#,
+                r#"<p><img class="markdown-attachment-image" src="/api/v1/finance/attachments/att_1/file" alt="附件图片" loading="lazy"> 参考</p>"#,
                 "\n"
             ),
         ),
@@ -514,9 +515,9 @@ mod tests {
     #[test]
     fn batch1_semantic_boundary_resolved_by_render_takeover() {
         let html = render("[**张伟**](attachment:att_1) 看看", None);
-        // 消解：attachment 内联引用渲染为内联 <img>（复用 /content 接口），内层结构事件被吞并
+        // 消解：attachment 内联引用渲染为内联 <img>（复用 /file 字节流接口），内层结构事件被吞并
         assert!(html.contains("markdown-attachment-image"));
-        assert!(html.contains("/api/v1/finance/attachments/att_1/content"));
+        assert!(html.contains("/api/v1/finance/attachments/att_1/file"));
         // 不再退化为 chip（data-mention-id 等 chip 属性不应出现）
         assert!(!html.contains("mention-chip mention-attachment"));
         // 吐回分支（dest 裸奔为 <a href>）不再触发
@@ -550,7 +551,7 @@ mod tests {
         assert!(html.contains("attachment-figure"));
         assert!(html.contains("<figcaption>"));
         assert!(html.contains("一张包含季度图表的截图"));
-        assert!(html.contains("/api/v1/finance/attachments/att_1/content"));
+        assert!(html.contains("/api/v1/finance/attachments/att_1/file"));
         // 关键：摘要文本必须被转义，不能原样注入
         let mut bad = HashMap::new();
         bad.insert("att_2".to_string(), "<script>alert(1)</script>".to_string());

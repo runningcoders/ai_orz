@@ -32,7 +32,7 @@ fn create_upload(original_name: &str, purpose: &str, bytes: &[u8]) -> Attachment
 
 #[sqlx::test(migrations = "./migrations")]
 async fn test_create_from_upload_writes_file_and_metadata(pool: SqlitePool) -> Result<()> {
-    let (_temp_dir, dal, ctx) = init_test_env(pool);
+    let (temp_dir, dal, ctx) = init_test_env(pool);
 
     let attachment = dal
         .create_from_upload(ctx.clone(), create_upload("../skill.MD", "skill", b"hello"))
@@ -44,6 +44,14 @@ async fn test_create_from_upload_writes_file_and_metadata(pool: SqlitePool) -> R
     assert_eq!(attachment.po.size, 5);
     assert_eq!(attachment.po.root_user_id, "test-user");
     assert_eq!(dal.read_file(&attachment)?, b"hello");
+
+    // 创建即完成态：落库后回读，DAO 用注入的根目录回填的绝对路径已在实体上。
+    let abs_path = attachment.file_abs_path()?;
+    assert!(
+        abs_path.starts_with(temp_dir.path()),
+        "路径应落在注入目录 {} 下，实际 {abs_path:?}",
+        temp_dir.path().display()
+    );
 
     let found = dal.get_by_id(ctx, attachment.id()).await?.unwrap();
     assert_eq!(found.id(), attachment.id());

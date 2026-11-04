@@ -43,7 +43,7 @@ fn create_test_attachment(id: &str, original_name: &str, purpose: &str) -> Attac
 
 #[sqlx::test(migrations = "./migrations")]
 async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
-    let (_temp_dir, dao, ctx) = init_test_env(pool);
+    let (temp_dir, dao, ctx) = init_test_env(pool);
     let attachment = create_test_attachment("attachment-1", "skill.md", "skill");
 
     dao.insert(ctx.clone(), &attachment).await?;
@@ -54,6 +54,13 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.stored_name, "attachment-1.md");
     assert_eq!(found.file_type, FileType::Document);
     assert_eq!(found.root_user_id, "test-user");
+    // DAO 读取时用**注入的** attachments_dir 回填绝对路径，上层因此不必再读全局配置。
+    let expected = temp_dir
+        .path()
+        .join("attachments")
+        .join(&attachment.relative_path);
+    assert_eq!(found.abs_path.as_deref(), Some(expected.as_path()));
+    assert_eq!(found.resolved_abs_path()?, expected);
     Ok(())
 }
 
@@ -92,6 +99,8 @@ async fn test_query_by_root_user_and_purpose(pool: SqlitePool) -> Result<()> {
 
     assert_eq!(list.items.len(), 1);
     assert_eq!(list.items[0].id, "attachment-1");
+    // 列表同样回填路径：实体离开 DAO 即自带可定位的绝对路径。
+    assert!(list.items[0].resolved_abs_path().is_ok());
     Ok(())
 }
 

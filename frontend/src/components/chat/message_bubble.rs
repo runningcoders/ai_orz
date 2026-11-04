@@ -81,7 +81,8 @@ pub fn MessageBubble(
 fn render_content(msg: &MessageListItem) -> Element {
     if is_attachment_message(msg.message_type) {
         if let Some(fm) = &msg.file_meta {
-            let file_url = format!("/api/v1/finance/attachments/{}/content", msg.content);
+            // /file = 原始字节流；/content 是 JSON 文本信封，<img>/<a> 拿到 JSON 会裂开
+            let file_url = format!("/api/v1/finance/attachments/{}/file", msg.content);
             if msg.message_type == 1 {
                 // 图片
                 rsx! {

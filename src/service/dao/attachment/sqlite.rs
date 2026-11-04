@@ -58,6 +58,23 @@ impl AttachmentDaoSqliteImpl {
     fn resolve_relative_path(&self, relative_path: &str) -> Result<PathBuf> {
         attachment_file_abs_path(&self.attachments_dir, relative_path)
     }
+
+    /// 给读出的 PO 回填磁盘绝对路径，使上层拿到实体就能直接定位文件。
+    ///
+    /// 解析失败（DB 里 relative_path 非法，属数据损坏）只告警不回填——元信息读取
+    /// 不该因一条脏数据整条失败；真正需要字节的调用方会在 `resolved_abs_path()`
+    /// 处拿到明确错误。
+    fn with_abs_path(&self, mut po: AttachmentPo) -> AttachmentPo {
+        match self.resolve_relative_path(&po.relative_path) {
+            Ok(abs_path) => po.abs_path = Some(abs_path),
+            Err(error) => log_warn!(
+                "附件 {} 的相对路径无法解析为绝对路径，已跳过路径回填: {}",
+                po.id,
+                error
+            ),
+        }
+        po
+    }
 }
 
 #[async_trait::async_trait]
@@ -116,7 +133,7 @@ WHERE id = ? AND "status" != 0
         .bind(id)
         .fetch_optional(pool)
         .await?;
-        Ok(attachment)
+        Ok(attachment.map(|po| self.with_abs_path(po)))
     }
 
     async fn query(
@@ -146,7 +163,8 @@ WHERE id = ? AND "status" != 0
             list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
-        let items = list_builder.build_query_as().fetch_all(pool).await?;
+        let items: Vec<AttachmentPo> = list_builder.build_query_as().fetch_all(pool).await?;
+        let items = items.into_iter().map(|po| self.with_abs_path(po)).collect();
         Ok(PagedResult {
             items,
             total: total as usize,

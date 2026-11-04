@@ -200,6 +200,14 @@ impl Artifact {
     pub fn file_abs_path(&self, base_data_path: &Path) -> Result<PathBuf> {
         self.po.file_abs_path(base_data_path)
     }
+
+    /// 按来源类型定位产物字节的磁盘落点。
+    ///
+    /// 等价于 [`ArtifactPo::resolve_file_abs_path`]；读字节的调用方（下载/预览/流式）
+    /// 应该用这个，而不是假定产物一定在产物目录下。
+    pub fn resolve_file_abs_path(&self, base_data_path: &Path) -> Result<PathBuf> {
+        self.po.resolve_file_abs_path(base_data_path)
+    }
 }
 
 impl ArtifactPo {
@@ -379,6 +387,50 @@ impl ArtifactPo {
                 .join(relative),
         )
     }
+
+    /// 定位「这份产物的字节到底在磁盘哪里」——按来源类型分派。
+    ///
+    /// 与 [`Self::file_abs_path`] 的区别：后者是 **GeneratedContent 专属**的产物目录
+    /// 推导（`{base}/artifacts/projects/{pid}/{aid}/{file_path}`），对 Attachment 型
+    /// 直接拒绝。而 Attachment 型产物的 `file_meta.file_path` 记录的是
+    /// **相对 `base_data_path`** 的附件存储路径（`attachments/{relative_path}`，
+    /// 由 `create_artifact` 从附件元信息复制而来，不复制字节），落点完全不同。
+    ///
+    /// 因此「读产物字节」的调用方（下载 / 预览 / 流式响应）应该用本方法，而不是
+    /// 自己按来源类型分支——两套拼串分头维护必然漂移。
+    ///
+    /// ## 安全
+    ///
+    /// 两个分支都拒绝 `ParentDir` / `RootDir` / 盘符前缀。`ArtifactSourceType::RemoteUrl`
+    /// 目前没有本地落点（预留），这里显式报错而不是返回空路径让下游当「文件不存在」。
+    pub fn resolve_file_abs_path(&self, base_data_path: &Path) -> Result<PathBuf> {
+        match self.source_type {
+            ArtifactSourceType::GeneratedContent => self.file_abs_path(base_data_path),
+            ArtifactSourceType::Attachment => {
+                // `file_path` 形如 `attachments/<YYYYMMDD>/<file_id><ext>`（见
+                // `create_artifact::create_from_attachment` + `generate_relative_path`），
+                // 以 base 为根，拼出来正好是 `paths::attachments_dir(base)` 下的实体文件。
+                let relative = Path::new(&self.file_meta.0.file_path);
+                if relative.components().any(|c| {
+                    matches!(
+                        c,
+                        Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                    )
+                }) {
+                    bail_err!(
+                        InvalidRequest,
+                        "Invalid artifact file path: path traversal attempt detected"
+                    );
+                }
+                Ok(base_data_path.join(relative))
+            }
+            ArtifactSourceType::RemoteUrl => bail_err!(
+                UnsupportedOperation,
+                "Artifact {} is stored as a remote URL; there is no local file to serve.",
+                self.id
+            ),
+        }
+    }
 }
 
 // ==================== EnrichContext 实现 ====================
@@ -477,5 +529,53 @@ mod tests {
                 .join(&po.id)
                 .join("assets/guide.md")
         );
+    }
+
+    /// Attachment 型产物不复制字节，`file_path` 是**相对 base** 的附件存储路径，
+    /// 必须与 GeneratedContent 的产物目录布局区分开（混用会去 `artifacts/...` 下找附件）。
+    #[test]
+    fn resolve_file_abs_path_maps_attachment_under_base() {
+        let po = sample(
+            ArtifactSourceType::Attachment,
+            "attachments/20261104/att-1.png",
+        );
+        assert_eq!(
+            po.resolve_file_abs_path(&base()).unwrap(),
+            base().join("attachments/20261104/att-1.png")
+        );
+        // 同一份 file_path 走 GeneratedContent 推导会落到产物目录，两者绝不能相等。
+        assert_ne!(
+            po.resolve_file_abs_path(&base()).unwrap(),
+            base().join("artifacts/projects/proj-1").join(&po.id)
+        );
+    }
+
+    /// GeneratedContent 分支应与 `file_abs_path` 完全一致——分派不得引入第二套拼串。
+    #[test]
+    fn resolve_file_abs_path_delegates_to_file_abs_path() {
+        let po = sample(ArtifactSourceType::GeneratedContent, "report.md");
+        assert_eq!(
+            po.resolve_file_abs_path(&base()).unwrap(),
+            po.file_abs_path(&base()).unwrap()
+        );
+    }
+
+    /// 附件路径同样来自 DB，逃逸写法必须被拒。
+    #[test]
+    fn resolve_file_abs_path_rejects_traversal() {
+        for evil in ["attachments/../../etc/passwd", "/etc/passwd", "../a"] {
+            let po = sample(ArtifactSourceType::Attachment, evil);
+            assert!(
+                po.resolve_file_abs_path(&base()).is_err(),
+                "应拒绝穿越出 base 的 file_path: {evil}"
+            );
+        }
+    }
+
+    /// RemoteUrl 没有本地落点，必须显式报错，而不是返回一个不存在的路径。
+    #[test]
+    fn resolve_file_abs_path_rejects_remote_url() {
+        let po = sample(ArtifactSourceType::RemoteUrl, "a.md");
+        assert!(po.resolve_file_abs_path(&base()).is_err());
     }
 }

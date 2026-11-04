@@ -5,7 +5,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use common::enums::FileType;
-use common::error::{Result, bail_err};
+use common::error::{Result, bail_err, err};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -86,6 +86,17 @@ pub struct AttachmentPo {
     pub created_at: i64,
     /// 更新时间戳（毫秒）。
     pub updated_at: i64,
+    /// 已解析的磁盘绝对路径（**不落库**；`None` = 该实例未经 DAO 解析）。
+    ///
+    /// DAO 读取（单条 / 列表）时用自己的 `attachments_dir`（可注入，测试隔离依赖它）
+    /// 解析后回填，因此上层拿到实体就能直接定位文件，**不必再读全局配置拼路径**——
+    /// 那样在注入场景会算到真实目录。字段不参与序列化，避免把服务器绝对路径漏给前端。
+    ///
+    /// `#[sqlx(skip)]`：本列不存在于 `attachments` 表，派生 `FromRow` 时直接取
+    /// `Default::default()`（`PathBuf` 本身不是 SQL 可解码类型，用 `default` 不够）。
+    #[sqlx(skip)]
+    #[serde(skip)]
+    pub abs_path: Option<PathBuf>,
 }
 
 /// Attachment 业务实体。
@@ -207,11 +218,14 @@ impl Attachment {
         &self.po.root_user_id
     }
 
-    /// 获取附件实体文件在磁盘上的绝对路径。
+    /// 附件实体文件在磁盘上的绝对路径。
     ///
-    /// 等价于 [`AttachmentPo::file_abs_path`]，供持有 `Attachment` 的调用方直接使用。
-    pub fn file_abs_path(&self, attachments_dir: &Path) -> Result<PathBuf> {
-        self.po.file_abs_path(attachments_dir)
+    /// 取的是 DAO 读取实体时**已经解析好**的路径（用实际生效、可注入的附件根目录），
+    /// 调用方无需也不应再自行读全局配置拼路径。手工 `AttachmentPo::new` 构造、
+    /// 未经 DAO 读取的实例没有该值，此处返回 `Err`——那种场景请显式调用
+    /// [`attachment_file_abs_path`] 并给出根目录。
+    pub fn file_abs_path(&self) -> Result<PathBuf> {
+        self.po.resolved_abs_path()
     }
 }
 
@@ -252,6 +266,7 @@ impl AttachmentPo {
             modified_by: created_by,
             created_at: now,
             updated_at: now,
+            abs_path: None,
         }
     }
 
@@ -262,12 +277,27 @@ impl AttachmentPo {
         self.updated_at = common::constants::utils::current_timestamp_ms();
     }
 
-    /// 获取附件实体文件在磁盘上的绝对路径。
+    /// 由相对路径**推导**磁盘绝对路径（纯计算，不依赖 [`Self::abs_path`]）。
     ///
     /// 详见 [`attachment_file_abs_path`]：`attachments_dir` 必须由调用方给出实际
     /// 生效的存储根（可注入），不要在本层取全局配置。
     pub fn file_abs_path(&self, attachments_dir: &Path) -> Result<PathBuf> {
         attachment_file_abs_path(attachments_dir, &self.relative_path)
+    }
+
+    /// 取 DAO 读取时**已解析**的磁盘绝对路径。
+    ///
+    /// 优于 [`Self::file_abs_path`]：解析用的是 DAO 实例注入的根目录，测试隔离下
+    /// 也能指向正确的临时目录。未经 DAO 读取的实例（手工构造）没有该值 → `Err`，
+    /// 此时只能回退到显式传根目录的推导入口。
+    pub fn resolved_abs_path(&self) -> Result<PathBuf> {
+        self.abs_path.clone().ok_or_else(|| {
+            err!(
+                IoError,
+                "附件 {} 的磁盘路径未解析（实例未经 DAO 读取）",
+                self.id
+            )
+        })
     }
 }
 
@@ -328,5 +358,56 @@ mod tests {
             po.file_abs_path(&root()).unwrap(),
             attachment_file_abs_path(&root(), "user-1/a.txt").unwrap()
         );
+    }
+
+    /// DAO 回填的路径优先：实体直接取用，不再需要调用方给根目录。
+    #[test]
+    fn entity_prefers_dao_resolved_abs_path() {
+        let mut po = AttachmentPo::new(
+            "att-1".to_string(),
+            "a.txt".to_string(),
+            "stored".to_string(),
+            "user-1/a.txt".to_string(),
+            "text/plain".to_string(),
+            FileType::Document,
+            8,
+            String::new(),
+            "user-1".to_string(),
+            "user-1".to_string(),
+        );
+        // 未经 DAO 读取 → 没有解析结果，必须报错而不是悄悄算到别的目录
+        assert!(po.resolved_abs_path().is_err());
+
+        let injected = PathBuf::from("/tmp/injected-root");
+        po.abs_path = Some(injected.join("user-1/a.txt"));
+        assert_eq!(
+            po.resolved_abs_path().unwrap(),
+            injected.join("user-1/a.txt")
+        );
+        assert_eq!(
+            Attachment::from_po(po).file_abs_path().unwrap(),
+            injected.join("user-1/a.txt")
+        );
+    }
+
+    /// 绝对路径属于服务器内部信息，序列化（如审计/日志场景）不得外泄。
+    #[test]
+    fn abs_path_is_not_serialized() {
+        let mut po = AttachmentPo::new(
+            "att-1".to_string(),
+            "a.txt".to_string(),
+            "stored".to_string(),
+            "user-1/a.txt".to_string(),
+            "text/plain".to_string(),
+            FileType::Document,
+            8,
+            String::new(),
+            "user-1".to_string(),
+            "user-1".to_string(),
+        );
+        po.abs_path = Some(root().join("user-1/a.txt"));
+        let json = serde_json::to_string(&po).unwrap();
+        assert!(!json.contains("abs_path"), "实际: {json}");
+        assert!(!json.contains("/srv/ai_orz"), "实际: {json}");
     }
 }
