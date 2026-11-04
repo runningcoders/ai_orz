@@ -5,7 +5,8 @@ use super::{
     write_relations_with_receipt,
 };
 use crate::models::memory::{
-    KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo,
+    KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo, PUBLISHED_TAG,
+    legacy_tags_json,
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
@@ -18,7 +19,7 @@ use serde_json;
 #[register_handler_tool(
     id = "save_long_term_memory",
     name = "Save to Long-Term Memory",
-    description = "Persist durable knowledge as a long-term knowledge node (node_name, node_description, node_type, tags) and optionally create typed relations to other nodes in the same call. Each relation accepts an optional weight (0.0-1.0) stating how strong/confirmed the association is; it drives edge thickness and color in the knowledge graph and is shown on hover, so omit it when unsure rather than guessing. You may also attach structured properties (term_key + typed value) for facts that need to be filtered or compared, e.g. model_name, effective_from, confidence - leave them out for narrative content, which belongs in node_description. Relation writes are per-item keyed: relations_result[] reports each entry as {key, status, relation_id (success only), error_code, message} — placeholder node IDs (SELF / kn_new_self) and nonexistent endpoints are rejected per-item without failing the batch, and relation_ids lists ONLY the IDs actually persisted (strictly the success items). The node itself is still created even if every relation fails. Returns node_id, relation_ids, relations_result, property_issues (V1 strings, deprecated) and property_issues_v2 (structured {code,message,field}); property issues are per-item partial-success and never fail the node creation. source_short_term_ids declares which short-term memories this node was distilled from: fill it with the [id=...] values of the memories you consolidated, because a node keeps only a summary while the raw detail stays in traces — declaring the source lets the framework record a node -> short-term memory -> original trace chain so the node can be traced back to the original records; omitting it leaves the node an unsourced assertion. For transient working-memory entries use save_short_term_memory.",
+    description = "Persist durable knowledge as a long-term knowledge node (node_name, node_description, node_type, tags) and optionally create typed relations to other nodes in the same call. `tags` are WRITABLE business labels only: `published` is a system flag, not a tag - a `published` entry in tags is captured as is_published=true and stripped out of the tag list, and you should prefer the explicit is_published parameter (omit = derived from tags for backward compatibility). Reads echo `tags` (writable) and `system_flags` (read-only derived, currently only `published`) separately. Each relation accepts an optional weight (0.0-1.0) stating how strong/confirmed the association is; it drives edge thickness and color in the knowledge graph and is shown on hover, so omit it when unsure rather than guessing. You may also attach structured properties (term_key + typed value) for facts that need to be filtered or compared, e.g. model_name, effective_from, confidence - leave them out for narrative content, which belongs in node_description. Relation writes are per-item keyed: relations_result[] reports each entry as {key, status, relation_id (success only), error_code, message} — placeholder node IDs (SELF / kn_new_self) and nonexistent endpoints are rejected per-item without failing the batch, and relation_ids lists ONLY the IDs actually persisted (strictly the success items). The node itself is still created even if every relation fails. Returns node_id, relation_ids, relations_result, property_issues (V1 strings, deprecated) and property_issues_v2 (structured {code,message,field}); property issues are per-item partial-success and never fail the node creation. source_short_term_ids declares which short-term memories this node was distilled from: fill it with the [id=...] values of the memories you consolidated, because a node keeps only a summary while the raw detail stays in traces — declaring the source lets the framework record a node -> short-term memory -> original trace chain so the node can be traced back to the original records; omitting it leaves the node an unsourced assertion. For transient working-memory entries use save_short_term_memory.",
     params = "common::api::SaveLongTermMemoryParams",
     neural,
     tags = "ontology"
@@ -36,14 +37,23 @@ pub async fn save_long_term_memory(
     // 只有调用方真的给了摘要才落库。
     let summary = params.summary.clone().unwrap_or_default();
 
-    // 根据 tags 是否包含 "published" 设置冗余字段 is_published
-    let is_published = params
-        .tags
-        .as_ref()
-        .map(|tags| tags.iter().any(|t| t == "published"))
-        .unwrap_or(false);
+    // 标签拆分：`published` 是**系统标记**，不是业务标签。
+    //   * `is_published` = 显式参数优先；`None` 时按 tags 里有无 `published` 推导
+    //     （与拆分前行为逐字节一致，老调用方零感知）
+    //   * `user_tags` = 入参 tags **剔除** `published` —— 唯一可写标签面
+    //   * `tags` 旧列由 `legacy_tags_json` 双写（= user_tags + 已发布时补 published），
+    //     FTS5 触发器与旧读侧零回归
+    let raw_tags = params.tags.unwrap_or_default();
+    let has_published_tag = raw_tags.iter().any(|t| t == PUBLISHED_TAG);
+    let is_published = params.is_published.unwrap_or(has_published_tag);
 
-    let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
+    let user_tags: Vec<String> = raw_tags
+        .iter()
+        .filter(|t| t.as_str() != PUBLISHED_TAG)
+        .cloned()
+        .collect();
+    let user_tags_json = serde_json::to_string(&user_tags)?;
+    let tags_json = legacy_tags_json(&user_tags, is_published)?;
 
     let node_id = format!("kn_{}", uuid::Uuid::now_v7().simple());
 
@@ -57,6 +67,7 @@ pub async fn save_long_term_memory(
         node_type: params.node_type.clone(),
         summary,
         tags: tags_json,
+        user_tags: user_tags_json,
         status: common::enums::MemoryStatus::Active,
         is_published,
         created_at: now,

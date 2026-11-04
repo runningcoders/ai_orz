@@ -4,7 +4,7 @@ use super::{
     RelationBatchReceipt, property_issue_entries, property_issue_strings, save_node_properties,
     write_relations_with_receipt,
 };
-use crate::models::memory::{Memory, MemoryPo};
+use crate::models::memory::{Memory, MemoryPo, PUBLISHED_TAG, legacy_tags_json};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
 use crate::service::domain::runtime::domain as runtime_domain;
@@ -18,7 +18,7 @@ use serde_json;
 #[register_handler_tool(
     id = "update_memory",
     name = "Update Memory Entry",
-    description = "Update an existing short_term memory or knowledge_node by id: change content, summary, tags, or status (active/settled/forgotten; any other value is rejected with invalid_request rather than silently ignored); knowledge nodes also accept node_tags to toggle the published flag, relations to create typed edges to other nodes — this is the ONLY way to add edges to an existing node (mentioning another node in the body text does NOT create an edge: graph traversal only follows the relation table, in-text references are unreachable) — and properties to attach or correct structured facts (term_key + typed value), the ONLY way to put properties on an existing node. Re-writing a single-valued property supersedes the old value (history is kept, only the newest is read back), so correcting a property is just another write, not a delete-then-create. Relation writes are per-item keyed: relations_result[] reports each entry as {key, status, relation_id (success only), error_code, message} — placeholder node IDs (SELF / kn_new_self) and nonexistent endpoints are rejected per-item without failing the update. Rejected property entries are listed in property_issues (V1 strings, deprecated) and property_issues_v2 (structured {code,message,field}), never failing the update itself. Trace and Relation entries cannot be modified, and neither relations nor properties are accepted for short_term memories. Returns memory_id, relations_result, property_issues and property_issues_v2.",
+    description = "Update an existing short_term memory or knowledge_node by id: change content, summary, tags, or status (active/settled/forgotten; any other value is rejected with invalid_request rather than silently ignored); knowledge nodes also accept node_tags for their WRITABLE business tags (a `published` entry there is captured as is_published=true and is NOT stored as a tag) and is_published: Option<bool> (omit / null = leave the publish state untouched, true = publish, false = unpublish - this is the only supported way to change publication), relations to create typed edges to other nodes — this is the ONLY way to add edges to an existing node (mentioning another node in the body text does NOT create an edge: graph traversal only follows the relation table, in-text references are unreachable) — and properties to attach or correct structured facts (term_key + typed value), the ONLY way to put properties on an existing node. Re-writing a single-valued property supersedes the old value (history is kept, only the newest is read back), so correcting a property is just another write, not a delete-then-create. Relation writes are per-item keyed: relations_result[] reports each entry as {key, status, relation_id (success only), error_code, message} — placeholder node IDs (SELF / kn_new_self) and nonexistent endpoints are rejected per-item without failing the update. Rejected property entries are listed in property_issues (V1 strings, deprecated) and property_issues_v2 (structured {code,message,field}), never failing the update itself. Trace and Relation entries cannot be modified, and neither relations nor properties are accepted for short_term memories. Returns memory_id, relations_result, property_issues and property_issues_v2.",
     params = "common::api::UpdateMemoryParams",
     neural,
     tags = "ontology"
@@ -110,11 +110,29 @@ pub async fn update_memory(
             if let Some(summary) = &params.summary {
                 updated.summary = summary.clone();
             }
-            // 新增：支持 KnowledgeNode tags 更新（用于加 published 标签等）
-            // 同步 is_published 冗余字段，保证 DB 查询走索引而非 json_each 全表扫描
+            // 标签写入（拆分后）：`node_tags` 是**可写业务标签** → 落 `user_tags`；
+            // `published` 属系统标记 → **不写入 user_tags**，改折算 `is_published = true`
+            // （语义收编：系统标记不该躺在业务标签里，回显走 `system_flags`）。
             if let Some(node_tags) = &params.node_tags {
-                updated.is_published = node_tags.iter().any(|t| t == "published");
-                updated.tags = serde_json::to_string(node_tags)?;
+                let user_tags: Vec<String> = node_tags
+                    .iter()
+                    .filter(|t| t.as_str() != PUBLISHED_TAG)
+                    .cloned()
+                    .collect();
+                if node_tags.iter().any(|t| t == PUBLISHED_TAG) {
+                    updated.is_published = true;
+                }
+                updated.user_tags = serde_json::to_string(&user_tags)?;
+                updated.tags = legacy_tags_json(&user_tags, updated.is_published)?;
+            }
+            // 发布标记：`None` = **保持不变** —— 这条是「读全字段原样回写不再静默
+            // 清 published」的关键：不开这个口子，调用方只能靠往 tags 里塞
+            // `published` 来保发布，而那正是本次要消灭的双义写法。
+            if let Some(is_published) = params.is_published {
+                updated.is_published = is_published;
+                // 旧列双写跟随，否则 FTS / 旧读侧与 is_published 会脱节
+                let user_tags = crate::models::memory::parse_tags_json(&updated.user_tags);
+                updated.tags = legacy_tags_json(&user_tags, is_published)?;
             }
             // 支持 status 更新（如遗忘节点）。同上：非法值 400，不静默兜底。
             if let Some(status_str) = &params.status {

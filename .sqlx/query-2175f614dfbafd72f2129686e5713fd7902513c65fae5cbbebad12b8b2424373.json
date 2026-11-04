@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, agent_id, node_name, node_description, node_type, summary, tags, status AS \"status: MemoryStatus\", is_published AS \"is_published: bool\", created_at, updated_at\nFROM long_term_knowledge_node\nWHERE id = ? AND status != 0\n",
+  "query": "\nSELECT id, agent_id, node_name, node_description, node_type, summary, tags, user_tags, status AS \"status: MemoryStatus\", is_published AS \"is_published: bool\", created_at, updated_at\nFROM long_term_knowledge_node\nWHERE id = ? AND status != 0\n",
   "describe": {
     "columns": [
       {
@@ -39,23 +39,28 @@
         "type_info": "Text"
       },
       {
-        "name": "status: MemoryStatus",
+        "name": "user_tags",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "is_published: bool",
+        "name": "status: MemoryStatus",
         "ordinal": 8,
         "type_info": "Integer"
       },
       {
-        "name": "created_at",
+        "name": "is_published: bool",
         "ordinal": 9,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 11,
         "type_info": "Integer"
       }
     ],
@@ -73,8 +78,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "7b03786b702abf6926904058ed71e8bae05b615f01e18c75ed51933f25f62e27"
+  "hash": "2175f614dfbafd72f2129686e5713fd7902513c65fae5cbbebad12b8b2424373"
 }

@@ -399,6 +399,7 @@ mod tests {
             node_type: node_type.to_string(),
             summary: String::new(),
             tags: "[]".to_string(),
+            user_tags: "[]".to_string(),
             status: MemoryStatus::Active,
             is_published: false,
             created_at: 0,

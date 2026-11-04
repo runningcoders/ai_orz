@@ -1,7 +1,8 @@
 //! Handler: 创建记忆
 
 use crate::models::memory::{
-    LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo, ShortTermMemoryIndexPo,
+    LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo, PUBLISHED_TAG, ShortTermMemoryIndexPo,
+    legacy_tags_json,
 };
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime::domain as runtime_domain;
@@ -89,15 +90,20 @@ async fn create_knowledge_node(ctx: RequestContext, params: CreateMemoryParams) 
     // 用描述渲染，真有独立摘要时才填。
     let summary = params.summary.clone().unwrap_or_default();
 
-    // 根据 tags 是否包含 "published" 设置冗余字段 is_published
-    // 注意：需在 tags_json 之前计算，因为 unwrap_or_default() 会 move params.tags
-    let is_published = params
-        .tags
-        .as_ref()
-        .map(|tags| tags.iter().any(|t| t == "published"))
-        .unwrap_or(false);
+    // 标签拆分（与 `save_long_term_memory` 同口径）：`published` 是**系统标记**
+    // 不是业务标签 —— `user_tags` 剔除它、`is_published` 承载它、`tags` 旧列双写。
+    // 注意：`unwrap_or_default()` 会 move `params.tags`，拆分必须在这之前一次做完。
+    let raw_tags = params.tags.unwrap_or_default();
+    let has_published_tag = raw_tags.iter().any(|t| t == PUBLISHED_TAG);
+    let is_published = has_published_tag;
 
-    let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
+    let user_tags: Vec<String> = raw_tags
+        .iter()
+        .filter(|t| t.as_str() != PUBLISHED_TAG)
+        .cloned()
+        .collect();
+    let user_tags_json = serde_json::to_string(&user_tags)?;
+    let tags_json = legacy_tags_json(&user_tags, is_published)?;
 
     let id_content = format!("{}{}", params.content, now);
     let id = format!("kn_{}", sha256::digest(id_content));
@@ -112,6 +118,7 @@ async fn create_knowledge_node(ctx: RequestContext, params: CreateMemoryParams) 
         node_type: "general".to_string(),
         summary,
         tags: tags_json,
+        user_tags: user_tags_json,
         status: common::enums::MemoryStatus::Active,
         is_published,
         created_at: now,

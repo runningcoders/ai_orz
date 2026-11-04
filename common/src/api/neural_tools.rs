@@ -117,6 +117,17 @@ pub struct MemoryResult {
     /// 匹配元信息（仅 search_memory 语义搜索有值）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_match: Option<MemorySearchMatch>,
+    /// **只读**系统标记（仅 knowledge_node 有值；无标记的节点为 `None`）。
+    ///
+    /// 与 `tags` 严格分工：`tags` 是用户/Agent **可写**的业务标签，本字段是
+    /// **系统维护、只读**的控制标记（当前仅 `published`），由 `is_published`
+    /// 派生而来 —— **不落列、没有独立写入口**。
+    ///
+    /// 想改动它请用 `save_long_term_memory` / `update_memory` 的 `is_published`
+    /// 参数；**不要**把 `published` 塞进 `tags`（那是拆分前的旧行为，会让发布
+    /// 标记混进业务标签、在「读全字段原样回写」时被静默清掉）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_flags: Option<Vec<String>>,
 }
 
 /// 记忆匹配元信息（语义搜索场景）。
@@ -204,8 +215,18 @@ pub struct UpdateMemoryParams {
     /// ⚠️ 词表外的值报 `invalid_request`，**不会**静默兜底成 active ——
     /// 兜底会让「拼错状态」变成一次静默写入。
     pub status: Option<String>,
-    /// 新增：更新知识节点的 tags（与 tags 字段区分，tags 用于 ShortTerm，node_tags 用于 KnowledgeNode）
+    /// 更新知识节点的**可写业务标签**（与 `tags` 区分：`tags` 作用于短期记忆，
+    /// `node_tags` 作用于知识节点）。落 `user_tags` 列（过度期与 `tags` 双写）。
+    ///
+    /// ⚠️ 含 `published` 时不写入 `user_tags`，而是折算成 `is_published = true`
+    /// （语义收编：系统标记不该躺在业务标签里）。
     pub node_tags: Option<Vec<String>>,
+    /// 发布标记（**写 `is_published`，唯一真相源**）。
+    ///
+    /// - `None`（默认）= **保持不变**（不因本次更新触碰到发布状态）；
+    /// - `Some(true)` = 置为已发布；
+    /// - `Some(false)` = 取消发布。
+    pub is_published: Option<bool>,
     /// 新建关系边（仅知识节点有效；短期记忆传入报 400）。
     ///
     /// 给**既有节点**补边的唯一路径：沉淀时发现新经验与已有节点相关，
@@ -741,8 +762,22 @@ pub struct SaveLongTermMemoryParams {
     pub node_type: String,
     /// 节点摘要。
     pub summary: Option<String>,
-    /// 标签列表（用于过滤检索 + 全文索引）。
+    /// 标签列表 —— **用户/Agent 可写的业务标签**（用于过滤检索 + 全文索引）。
+    ///
+    /// 落 `user_tags` 列（过度期与 `tags` 双写）。**不要**把 `published` 塞进来：
+    /// 它是系统标记，请改用 `is_published` 参数；即使塞进来也会被剥离出
+    /// `user_tags` 并折算成 `is_published = true`（语义收编），回显在
+    /// `system_flags` 里。
     pub tags: Option<Vec<String>>,
+    /// 发布标记（**写 `is_published`，唯一真相源**）。
+    ///
+    /// - `None`（默认）= 按 `tags` 里有无 `published` 推导，与拆分前行为一致；
+    /// - `Some(true)` = 置为已发布；
+    /// - `Some(false)` = 明确不发布。
+    ///
+    /// 有了它，「读全字段 → 原样回写」才不会再静默清掉发布标记：
+    /// 调用方既可以把回显的 `system_flags` 折成本参数，也可以直接省略（不清空）。
+    pub is_published: Option<bool>,
     /// 关联关系列表。
     pub relations: Option<Vec<KnowledgeRelationParam>>,
     /// 本节点的**来源短期记忆 id 列表**（沉淀场景必填）。
@@ -890,6 +925,7 @@ mod tests {
             tags: None,
             properties: None,
             search_match: None,
+            system_flags: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         assert!(

@@ -151,6 +151,8 @@ async fn create_knowledge_node(
     let id = format!("kn_{}", sha256::digest(id_content));
     let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
     let is_published = tags.iter().any(|t| t == "published");
+    // 迁移搬移形态：user_tags 与 tags 同值（含可能的 published 脏值）
+    let user_tags_json = tags_json.clone();
 
     let node = LongTermKnowledgeNodePo {
         id: id.clone(),
@@ -160,6 +162,7 @@ async fn create_knowledge_node(
         node_type: "general".to_string(),
         summary: summary.to_string(),
         tags: tags_json,
+        user_tags: user_tags_json,
         status: MemoryStatus::Active,
         is_published,
         created_at: now,

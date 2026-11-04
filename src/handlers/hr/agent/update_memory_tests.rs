@@ -77,6 +77,7 @@ fn update_params(memory_id: &str, status: Option<&str>) -> UpdateMemoryParams {
         content: None,
         summary: None,
         tags: None,
+        is_published: None,
         status: status.map(|s| s.to_string()),
         node_tags: None,
         relations: None,
@@ -162,6 +163,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: None,
             properties: None,
             task_id: None,
@@ -179,6 +181,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: None,
             properties: None,
             task_id: None,
@@ -299,6 +302,7 @@ async fn update_memory_attaches_and_supersedes_properties(pool: sqlx::SqlitePool
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: None,
             properties: None,
             task_id: None,
@@ -317,6 +321,7 @@ async fn update_memory_attaches_and_supersedes_properties(pool: sqlx::SqlitePool
                 content: None,
                 summary: None,
                 tags: None,
+                is_published: None,
                 status: None,
                 node_tags: None,
                 relations: None,
@@ -373,6 +378,7 @@ async fn properties_are_rejected_for_short_term_memory(pool: sqlx::SqlitePool) {
             content: None,
             summary: None,
             tags: None,
+            is_published: None,
             status: None,
             node_tags: None,
             relations: None,
@@ -403,6 +409,7 @@ async fn seed_node(ctx: &RequestContext, name: &str) -> String {
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: None,
             properties: None,
             task_id: None,
@@ -435,6 +442,7 @@ async fn mixed_batch_relations_receipt_has_keys_and_real_ids(pool: sqlx::SqliteP
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: Some(vec![
                 // 0：两端都存在 → 成功
                 KnowledgeRelationParam {
@@ -558,6 +566,7 @@ async fn placeholder_relations_fail_per_item_without_any_edge(pool: sqlx::Sqlite
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: Some(vec![
                 KnowledgeRelationParam {
                     source_node_id: "SELF".to_string(),
@@ -697,6 +706,7 @@ async fn property_issues_v2_structured_with_error_codes(pool: sqlx::SqlitePool) 
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: None,
             properties: Some(vec![
                 // 类型不符（number 声明 vs 文本值）→ 硬拒
@@ -768,6 +778,7 @@ async fn clean_properties_yield_empty_v1_and_omitted_v2(pool: sqlx::SqlitePool) 
             node_type: "concept".to_string(),
             summary: None,
             tags: None,
+            is_published: None,
             relations: None,
             properties: Some(vec![KnowledgePropertyParam {
                 term_key: "confidence".to_string(),
@@ -787,4 +798,365 @@ async fn clean_properties_yield_empty_v1_and_omitted_v2(pool: sqlx::SqlitePool) 
         resp.relations_result.is_none(),
         "未带 relations 不得有建边回执"
     );
+}
+
+// ========== C 单：tags 与发布标记拆分（user_tags / is_published / system_flags）==========
+
+fn split_save_params(name: &str, tags: Option<Vec<&str>>) -> SaveLongTermMemoryParams {
+    SaveLongTermMemoryParams {
+        node_name: name.to_string(),
+        node_description: format!("{name} 的正文"),
+        node_type: "concept".to_string(),
+        summary: None,
+        tags: tags.map(|v| v.into_iter().map(|t| t.to_string()).collect()),
+        is_published: None,
+        relations: None,
+        source_short_term_ids: None,
+        properties: None,
+        task_id: None,
+    }
+}
+
+fn split_update_params(memory_id: &str) -> UpdateMemoryParams {
+    UpdateMemoryParams {
+        memory_id: memory_id.to_string(),
+        content: None,
+        summary: None,
+        tags: None,
+        status: None,
+        node_tags: None,
+        is_published: None,
+        relations: None,
+        properties: None,
+    }
+}
+
+fn split_tags(json: &str) -> Vec<String> {
+    crate::models::memory::parse_tags_json(json)
+}
+
+fn split_has(tags: &[String], tag: &str) -> bool {
+    tags.iter().any(|t| t == tag)
+}
+
+async fn split_read_node(
+    ctx: &RequestContext,
+    id: &str,
+) -> crate::models::memory::LongTermKnowledgeNodePo {
+    crate::service::dao::memory::dao()
+        .get_knowledge_node(ctx.clone(), id)
+        .await
+        .expect("查询应成功")
+        .expect("节点应存在")
+}
+
+fn split_po(is_published: bool) -> crate::models::memory::LongTermKnowledgeNodePo {
+    crate::models::memory::LongTermKnowledgeNodePo {
+        id: "kn_split".to_string(),
+        agent_id: "agent-x".to_string(),
+        node_name: "拆分节点".to_string(),
+        node_description: String::new(),
+        node_type: "concept".to_string(),
+        summary: String::new(),
+        tags: "[]".to_string(),
+        user_tags: r#"["架构"]"#.to_string(),
+        status: MemoryStatus::Active,
+        is_published,
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+/// **C-2 核心回归**：脏节点「读全字段 → 原样回写」不得静默清掉发布标记。
+///
+/// 存量形态：节点 `tags` 里带 `published`（迁移搬列时 `user_tags` 被填成同值，
+/// 故也是「脏」的）。调用方读完回显（`tags` 只剩业务标签，`published` 出现在
+/// `system_flags` 里），把回显的业务标签原样写回 `node_tags`、不碰 `is_published`。
+/// 拆分前这一步会让 `is_published` 从 true 翻成 false —— 这就是被切断的损坏路径。
+#[sqlx::test]
+async fn split_roundtrip_write_never_clears_published(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let saved = save_long_term_memory(
+        ctx.clone(),
+        split_save_params("存量脏节点", Some(vec!["published", "架构"])),
+    )
+    .await
+    .expect("保存应成功");
+
+    let before = split_read_node(&ctx, &saved.node_id).await;
+    assert!(before.is_published, "前置：带 published 标签应置为已发布");
+    assert!(
+        !split_has(&split_tags(&before.user_tags), "published"),
+        "published 是系统标记，不得落进 user_tags：{}",
+        before.user_tags
+    );
+
+    // 读侧回显 → 原样回写（只回写业务标签，is_published 不传 = 保持不变）
+    let mut params = split_update_params(&saved.node_id);
+    params.node_tags = Some(vec!["架构".to_string()]);
+    update_memory(ctx.clone(), params)
+        .await
+        .expect("更新应成功");
+
+    let after = split_read_node(&ctx, &saved.node_id).await;
+    assert!(
+        after.is_published,
+        "C-2 回归：原样回写业务标签不得清掉发布标记"
+    );
+    assert_eq!(split_tags(&after.user_tags), vec!["架构".to_string()]);
+    assert!(
+        split_has(&split_tags(&after.tags), "published"),
+        "旧列双写必须保留 published（FTS5 触发器与旧读侧零回归）：{}",
+        after.tags
+    );
+}
+
+/// 只写业务标签不得触碰发布状态（`is_published` 与业务标签彻底解耦）。
+#[sqlx::test]
+async fn split_business_tags_do_not_change_publish_state(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let saved = save_long_term_memory(ctx.clone(), split_save_params("普通节点", Some(vec!["a"])))
+        .await
+        .expect("保存应成功");
+    assert!(!split_read_node(&ctx, &saved.node_id).await.is_published);
+
+    let mut params = split_update_params(&saved.node_id);
+    params.node_tags = Some(vec!["a".to_string(), "b".to_string()]);
+    update_memory(ctx.clone(), params)
+        .await
+        .expect("更新应成功");
+
+    let after = split_read_node(&ctx, &saved.node_id).await;
+    assert!(!after.is_published, "只写业务标签不得改动发布状态");
+    assert_eq!(
+        split_tags(&after.user_tags),
+        vec!["a".to_string(), "b".to_string()]
+    );
+}
+
+/// `node_tags` 里塞 `published` → **语义收编**：折算成 `is_published = true`，
+/// 且绝不写进 `user_tags`（旧行为会把它当业务标签落库）。
+#[sqlx::test]
+async fn split_published_in_node_tags_is_captured_not_stored(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let saved = save_long_term_memory(
+        ctx.clone(),
+        split_save_params("待发布节点", Some(vec!["真实标签"])),
+    )
+    .await
+    .expect("保存应成功");
+
+    let mut params = split_update_params(&saved.node_id);
+    params.node_tags = Some(vec!["published".to_string(), "另一标签".to_string()]);
+    update_memory(ctx.clone(), params)
+        .await
+        .expect("更新应成功");
+
+    let after = split_read_node(&ctx, &saved.node_id).await;
+    assert!(after.is_published, "node_tags 含 published 应折算成已发布");
+    let user_tags = split_tags(&after.user_tags);
+    assert!(
+        !split_has(&user_tags, "published"),
+        "published 不得污染 user_tags：{user_tags:?}"
+    );
+    assert_eq!(user_tags, vec!["另一标签".to_string()]);
+    assert!(
+        split_has(&split_tags(&after.tags), "published"),
+        "旧列双写应补上 published"
+    );
+}
+
+/// `system_flags` 与 `is_published` 恒自洽（知识节点恒有该字段，未发布为空数组）。
+#[test]
+fn split_system_flags_mirror_is_published() {
+    use crate::models::memory::{Memory, MemoryPo};
+
+    let published = Memory::new(MemoryPo::KnowledgeNode(split_po(true))).to_api_result();
+    assert_eq!(published.system_flags, Some(vec!["published".to_string()]));
+    assert_eq!(published.tags, Some(vec!["架构".to_string()]));
+
+    let unpublished = Memory::new(MemoryPo::KnowledgeNode(split_po(false))).to_api_result();
+    assert_eq!(
+        unpublished.system_flags,
+        Some(Vec::new()),
+        "未发布 → 空数组（不是 None：知识节点恒有该字段）"
+    );
+    assert_eq!(
+        unpublished.tags,
+        Some(vec!["架构".to_string()]),
+        "业务标签不受发布状态影响"
+    );
+}
+
+/// **口径回归**：按 `published` 过滤 = 活跃（`status != 0`）∩ `is_published = 1`。
+///
+/// 三条否定断言直接钉死三个错误口径：
+///   * 不是「全表已发布」（退役节点必须排除）
+///   * 不是「tags 里带 published 的脏节点数」（脏值不承载语义）
+///   * 不为 0（别再退化成「published 查不到」）
+#[sqlx::test]
+async fn split_published_filter_uses_is_published_column(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+
+    // A：活跃 + 已发布，且**没有**任何 published 脏值 → 唯一应命中的
+    let a = save_long_term_memory(ctx.clone(), split_save_params("A", Some(vec!["业务"])))
+        .await
+        .expect("保存 A 应成功");
+    let mut p = split_update_params(&a.node_id);
+    p.is_published = Some(true);
+    update_memory(ctx.clone(), p).await.expect("发布 A 应成功");
+
+    // B：活跃 + 未发布
+    let _b = save_long_term_memory(ctx.clone(), split_save_params("B", Some(vec!["业务"])))
+        .await
+        .expect("保存 B 应成功");
+
+    // D：活跃 + 未发布，但旧列被手工塞了 published 脏值 → 必须**不**命中
+    let dirty_id = "kn_split_dirty";
+    sqlx::query(
+        r#"INSERT INTO long_term_knowledge_node
+           (id, agent_id, node_name, node_description, node_type, summary, tags, user_tags,
+            status, is_published, created_at, updated_at)
+           VALUES (?, 'agent-x', 'D', '', 'concept', '', '["published"]', '["published"]', 1, 0, 0, 0)"#,
+    )
+    .bind(dirty_id)
+    .execute(ctx.db_pool())
+    .await
+    .expect("造脏节点应成功");
+
+    let hits = crate::service::dao::memory::dao()
+        .query_knowledge_nodes(
+            ctx.clone(),
+            MemoryQuery {
+                tags: Some(vec!["published".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("查询应成功");
+
+    let ids: Vec<&str> = hits.iter().map(|n| n.id.as_str()).collect();
+    assert_ne!(ids.len(), 0, "published 过滤不得为 0（口径退化）");
+    assert_eq!(
+        ids,
+        vec![a.node_id.as_str()],
+        "published 过滤必须只命中「活跃 ∩ is_published=1」，实际: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&dirty_id),
+        "tags 里的 published 脏值不得让节点命中（不许靠脏值兜）"
+    );
+
+    // 退役（Forgotten）节点即使已发布也不得命中
+    let mut p = split_update_params(&a.node_id);
+    p.status = Some("forgotten".to_string());
+    update_memory(ctx.clone(), p).await.expect("遗忘 A 应成功");
+    let after = crate::service::dao::memory::dao()
+        .query_knowledge_nodes(
+            ctx.clone(),
+            MemoryQuery {
+                tags: Some(vec!["published".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("查询应成功");
+    assert!(
+        after.is_empty(),
+        "退役节点不得计入 published 口径（≠全表口径）"
+    );
+}
+
+/// `is_published = Some(false)` 能取消发布，且旧列 `tags` 里的 `published` 同步移除。
+#[sqlx::test]
+async fn split_is_published_false_unpublishes(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let saved = save_long_term_memory(
+        ctx.clone(),
+        split_save_params("已发布节点", Some(vec!["published", "业务"])),
+    )
+    .await
+    .expect("保存应成功");
+    assert!(split_read_node(&ctx, &saved.node_id).await.is_published);
+
+    let mut params = split_update_params(&saved.node_id);
+    params.is_published = Some(false);
+    update_memory(ctx.clone(), params)
+        .await
+        .expect("取消发布应成功");
+
+    let after = split_read_node(&ctx, &saved.node_id).await;
+    assert!(!after.is_published, "is_published=Some(false) 应取消发布");
+    assert!(
+        !split_has(&split_tags(&after.tags), "published"),
+        "旧列双写必须跟随取消发布（否则 FTS/旧读侧与真相源脱节）：{}",
+        after.tags
+    );
+
+    use crate::models::memory::{Memory, MemoryPo};
+    let dto = Memory::new(MemoryPo::KnowledgeNode(after)).to_api_result();
+    assert_eq!(
+        dto.system_flags,
+        Some(Vec::new()),
+        "取消发布后派生 system_flags 应变空数组"
+    );
+    assert_eq!(dto.tags, Some(vec!["业务".to_string()]));
+}
+
+/// **独立性断言**：`user_tags` 单独可检索，不依赖过渡期双写。
+///
+/// 造一个 `user_tags = ["a"]` 而旧列 `tags = '[]'` 的节点（模拟 D 单停写 tags
+/// 之后的形态）—— 若过滤只看旧列，这里会立刻查不到。
+#[sqlx::test]
+async fn split_user_tags_is_searchable_without_legacy_column(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    sqlx::query(
+        r#"INSERT INTO long_term_knowledge_node
+           (id, agent_id, node_name, node_description, node_type, summary, tags, user_tags,
+            status, is_published, created_at, updated_at)
+           VALUES ('kn_only_user_tags', 'agent-x', '仅新列', '', 'concept', '',
+                   '[]', '["a"]', 1, 0, 0, 0)"#,
+    )
+    .execute(ctx.db_pool())
+    .await
+    .expect("造节点应成功");
+
+    let hits = crate::service::dao::memory::dao()
+        .query_knowledge_nodes(
+            ctx.clone(),
+            MemoryQuery {
+                tags: Some(vec!["a".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("查询应成功");
+    assert_eq!(
+        hits.len(),
+        1,
+        "user_tags 必须独立可检索（D 单停写 tags 后标签检索不能失灵）"
+    );
+
+    // 反向：只写在旧列里的标签仍应命中（过渡期双写兼容）
+    sqlx::query(
+        r#"INSERT INTO long_term_knowledge_node
+           (id, agent_id, node_name, node_description, node_type, summary, tags, user_tags,
+            status, is_published, created_at, updated_at)
+           VALUES ('kn_only_legacy_tags', 'agent-x', '仅旧列', '', 'concept', '',
+                   '["legacy_only"]', '[]', 1, 0, 0, 0)"#,
+    )
+    .execute(ctx.db_pool())
+    .await
+    .expect("造节点应成功");
+    let hits = crate::service::dao::memory::dao()
+        .query_knowledge_nodes(
+            ctx.clone(),
+            MemoryQuery {
+                tags: Some(vec!["legacy_only".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("查询应成功");
+    assert_eq!(hits.len(), 1, "旧列标签过渡期仍需可检索");
 }

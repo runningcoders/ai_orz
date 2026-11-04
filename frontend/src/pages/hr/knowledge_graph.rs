@@ -1247,6 +1247,7 @@ mod tests {
             tags: None,
             properties: None,
             search_match: None,
+            system_flags: None,
         }
     }
 
@@ -1265,6 +1266,7 @@ mod tests {
             tags: None,
             properties: None,
             search_match: None,
+            system_flags: None,
         }
     }
 

@@ -45,6 +45,7 @@ async fn seed_node(ctx: &RequestContext, id: &str, name: &str, desc: &str, summa
         node_type: "general".to_string(),
         summary: summary.to_string(),
         tags: r#"["published"]"#.to_string(),
+        user_tags: r#"["published"]"#.to_string(),
         status: MemoryStatus::Active,
         is_published: true,
         created_at: now,
@@ -210,6 +211,12 @@ async fn seed_scoped(ctx: &RequestContext, id: &str, name: &str, agent_id: &str,
         } else {
             "[]".to_string()
         },
+        // 迁移搬移后的存量形态：user_tags 也带 published（**脏值**，单 D 才清洗）
+        user_tags: if published {
+            r#"["published"]"#.to_string()
+        } else {
+            "[]".to_string()
+        },
         status: MemoryStatus::Active,
         is_published: published,
         created_at: now,
@@ -331,6 +338,7 @@ async fn relation_type_outside_vocabulary_stays_verbatim(pool: sqlx::SqlitePool)
             node_type: "concept".to_string(),
             summary: Some("实现与契约的对应".to_string()),
             tags: None,
+            is_published: None,
             relations: Some(vec![KnowledgeRelationParam {
                 source_node_id: "kn_impl".to_string(),
                 target_node_id: "kn_spec".to_string(),
@@ -395,6 +403,7 @@ async fn forgotten_endpoint_drops_the_edge(pool: sqlx::SqlitePool) {
                     node_type: "general".to_string(),
                     summary: "已遗忘节点的摘要".to_string(),
                     tags: "[]".to_string(),
+                    user_tags: "[]".to_string(),
                     status: MemoryStatus::Forgotten,
                     is_published: false,
                     created_at: now,
@@ -668,6 +677,7 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
             content: None,
             summary: None,
             tags: None,
+            is_published: None,
             status: Some("settled".to_string()),
             node_tags: None,
             relations: None,
@@ -741,6 +751,7 @@ async fn attach(ctx: &RequestContext, node_id: &str, entries: Vec<KnowledgePrope
             content: None,
             summary: None,
             tags: None,
+            is_published: None,
             status: None,
             node_tags: None,
             relations: None,

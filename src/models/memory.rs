@@ -245,7 +245,17 @@ pub struct LongTermKnowledgeNodePo {
     /// 综合总结
     pub summary: String,
     /// 标签列表（用于过滤检索 + 全文索引，JSON 数组字符串）
+    ///
+    /// ⚠️ **过渡期保留、不再是权威读写面**：写侧与 [`Self::user_tags`] 双写
+    /// （FTS5 触发器 `knowledge_node_fts_ai/_au` 与短词 LIKE 兜底都读本列），
+    /// 读侧仅作回退兼容。删除留待后续单。
     pub tags: String,
+    /// 用户 / Agent **可写业务标签**（JSON 数组字符串）
+    ///
+    /// **唯一权威读写面**：`tags` / `node_tags` 参数一律落本列。
+    /// 不含 `published` 这类系统标记 —— 那些由 [`Self::is_published`] 承载，
+    /// 回显时派生到 [`MemoryResult::system_flags`]。
+    pub user_tags: String,
     /// 记忆状态
     pub status: common::enums::MemoryStatus,
     /// 是否被标记为**高价值/高影响力**（tags 含 "published" 时为 true）
@@ -621,6 +631,7 @@ impl Memory {
                 weight: None,
                 tags: None,
                 properties: None,
+                system_flags: None,
                 search_match,
             },
             // 短期记忆 PO 只有一个文本字段 summary（无独立标题/正文）：
@@ -639,6 +650,7 @@ impl Memory {
                 weight: None,
                 tags: Some(business_tags(&st.tags)),
                 properties: None,
+                system_flags: None,
                 search_match,
             },
             MemoryPo::KnowledgeNode(kn) => MemoryResult {
@@ -654,10 +666,19 @@ impl Memory {
                 target_node_id: None,
                 relation_type: None,
                 weight: None,
-                tags: Some(business_tags(&kn.tags)),
+                tags: Some(business_tags(&kn.user_tags)),
                 // 属性由 `search_memory` 单独批量查询后回填（不在 `Memory` 结构内）：
                 // 这里恒 None，保持 PO→DTO 的纯粹映射
                 properties: None,
+                // 系统标记**只读派生**：`published` 的唯一真相源是 `is_published`，
+                // 不从 `user_tags` 里的残留值反推 —— 存量脏值（迁移期未清洗）不语义生效。
+                // 知识节点**恒有**该字段（未发布 → 空数组）：让「没有系统标记」与
+                // 「这条不是知识节点」在载荷上可区分，前端不必猜。
+                system_flags: Some(if kn.is_published {
+                    vec![PUBLISHED_TAG.to_string()]
+                } else {
+                    Vec::new()
+                }),
                 search_match,
             },
             MemoryPo::Relation(rel) => {
@@ -690,6 +711,7 @@ impl Memory {
                     weight: rel.weight,
                     tags: None,
                     properties: None,
+                    system_flags: None,
                     search_match,
                 }
             }
@@ -707,9 +729,29 @@ pub(crate) fn parse_tags_json(tags_json: &str) -> Vec<String> {
 /// 写节点时它同时落进 `tags` 且置冗余字段 [`LongTermKnowledgeNodePo::is_published`]
 /// （供查询走索引）。它是**控制位不是业务标签**，回给前端会在卡片上多出一个
 /// 没有意义的英文胶囊。
-const PUBLISHED_TAG: &str = "published";
+pub(crate) const PUBLISHED_TAG: &str = "published";
+
+/// 过渡期旧列 `tags` 的重建值：业务标签 +（已发布时）`published`
+///
+/// `user_tags` 是唯一可写面，但 FTS5 触发器（`knowledge_node_fts_ai/_au`）与
+/// 旧读侧仍吃 `tags` —— 双写必须由同一个函数产出，避免两个写入口各写一套
+/// 导致「旧列与新列语义漂移」。
+pub(crate) fn legacy_tags_json(
+    user_tags: &[String],
+    is_published: bool,
+) -> common::error::Result<String> {
+    let mut tags: Vec<String> = user_tags.to_vec();
+    if is_published && !tags.iter().any(|t| t == PUBLISHED_TAG) {
+        tags.push(PUBLISHED_TAG.to_string());
+    }
+    Ok(serde_json::to_string(&tags)?)
+}
 
 /// 结果侧业务标签：剔除 `published` 这类控制标记
+///
+/// 知识节点读 `user_tags`（唯一可写标签面）；短期记忆仍读 `tags`（没有拆分）。
+/// 剥离逻辑保留为**防御**：迁移未清洗的存量节点 `user_tags` 里可能还残留
+/// `published`，绝不能让它冒充业务标签回到前端。
 fn business_tags(tags_json: &str) -> Vec<String> {
     parse_tags_json(tags_json)
         .into_iter()

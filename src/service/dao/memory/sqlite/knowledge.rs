@@ -1,7 +1,9 @@
 //! 长期知识节点 DAO：节点 CRUD / 查询 / FTS5 搜索 + 记忆引用
 
 use super::MemoryDaoSqliteImpl;
-use crate::models::memory::{KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace};
+use crate::models::memory::{
+    KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace, PUBLISHED_TAG,
+};
 use crate::pkg::RequestContext;
 use crate::pkg::storage::{build_fts5_like_clause, build_fts5_search_plan, merge_fts5_results};
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
@@ -21,6 +23,7 @@ struct KnowledgeNodeSearchRow {
     node_type: String,
     summary: String,
     tags: String,
+    user_tags: String,
     status: MemoryStatus,
     is_published: bool,
     created_at: i64,
@@ -75,6 +78,7 @@ SET agent_id = ?,
     node_type = ?,
     summary = ?,
     tags = ?,
+    user_tags = ?,
     status = ?,
     is_published = ?,
     updated_at = ?
@@ -86,6 +90,7 @@ WHERE id = ?
             node_type,
             node.summary,
             node.tags,
+            node.user_tags,
             status_i32,
             is_published_i64,
             node.updated_at,
@@ -105,8 +110,8 @@ WHERE id = ?
             sqlx::query!(
                 r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, tags, status, is_published, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, tags, user_tags, status, is_published, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                 node.id,
                 node.agent_id,
@@ -115,6 +120,7 @@ INSERT INTO long_term_knowledge_node (
                 node_type,
                 node.summary,
                 node.tags,
+                node.user_tags,
                 status_i32,
                 is_published_i64,
                 node.created_at,
@@ -146,6 +152,7 @@ SET agent_id = ?,
     node_type = ?,
     summary = ?,
     tags = ?,
+    user_tags = ?,
     status = ?,
     is_published = ?,
     updated_at = ?
@@ -157,6 +164,7 @@ WHERE id = ?
             node_type,
             node.summary,
             node.tags,
+            node.user_tags,
             status_i32,
             is_published_i64,
             node.updated_at,
@@ -197,6 +205,7 @@ SET agent_id = ?,
     node_type = ?,
     summary = ?,
     tags = ?,
+    user_tags = ?,
     status = ?,
     is_published = ?,
     updated_at = ?
@@ -208,6 +217,7 @@ WHERE id = ?
                 node_type,
                 node.summary,
                 node.tags,
+                node.user_tags,
                 status_i32,
                 is_published_i64,
                 node.updated_at,
@@ -227,8 +237,8 @@ WHERE id = ?
                 sqlx::query!(
                     r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, tags, status, is_published, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, tags, user_tags, status, is_published, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                     node.id,
                     node.agent_id,
@@ -237,6 +247,7 @@ INSERT INTO long_term_knowledge_node (
                     node_type,
                     node.summary,
                     node.tags,
+                    node.user_tags,
                     status_i32,
                     is_published_i64,
                     node.created_at,
@@ -260,7 +271,7 @@ INSERT INTO long_term_knowledge_node (
         let node = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status AS "status: MemoryStatus", is_published AS "is_published: bool", created_at, updated_at
+SELECT id, agent_id, node_name, node_description, node_type, summary, tags, user_tags, status AS "status: MemoryStatus", is_published AS "is_published: bool", created_at, updated_at
 FROM long_term_knowledge_node
 WHERE id = ? AND status != 0
 "#,
@@ -310,7 +321,7 @@ WHERE id = ? AND status != 0
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status, is_published, created_at, updated_at
+            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, tags, user_tags, status, is_published, created_at, updated_at
 FROM long_term_knowledge_node WHERE 1=1"#,
         );
 
@@ -361,16 +372,46 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             );
         }
 
-        // tag 过滤（OR 语义：包含任一 tag 即可命中）
+        // tag 过滤（OR 语义：命中任一 tag 即可）
+        //
+        // 两个语义面合成**一个视图**，缺一不可：
+        //   * `published` 是**系统标记** → 走 `is_published = 1`（唯一真相源），
+        //     **绝不去 JSON 里找**：靠 `tags` 里的脏值兜只会得到 50（存量脏节点）
+        //     而不是 401（活跃 ∩ 已发布），且脏值清洗后就归零。
+        //   * 其余是**业务标签** → `user_tags`（唯一可写面）∪ `tags`（旧列，过渡期双写）
+        //     双列 `json_each`；只查一列会在 D 单停写 tags 后让标签检索静默失灵。
         if let Some(tags) = &query.tags
             && !tags.is_empty()
         {
-            builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
-            let mut separated = builder.separated(", ");
-            for tag in tags {
-                separated.push_bind(tag);
+            let want_published = tags.iter().any(|t| t == PUBLISHED_TAG);
+            let other_tags: Vec<&String> = tags
+                .iter()
+                .filter(|t| t.as_str() != PUBLISHED_TAG)
+                .collect();
+            builder.push(" AND (");
+            if want_published {
+                builder.push("is_published = 1");
+                if !other_tags.is_empty() {
+                    builder.push(" OR ");
+                }
             }
-            separated.push_unseparated("))");
+            if !other_tags.is_empty() {
+                builder
+                    .push("EXISTS (SELECT 1 FROM json_each(user_tags) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for tag in other_tags.iter().copied() {
+                    separated.push_bind(tag);
+                }
+                separated.push_unseparated(
+                    ")) OR EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (",
+                );
+                let mut separated = builder.separated(", ");
+                for tag in other_tags.iter().copied() {
+                    separated.push_bind(tag);
+                }
+                separated.push_unseparated("))");
+            }
+            builder.push(")");
         }
 
         // `updated_at` 毫秒级可能同值（批量写入常见），补 `id` 作次序键：
@@ -416,11 +457,32 @@ FROM long_term_knowledge_node WHERE 1=1"#,
 
         // 构建带可选 tags 过滤的 SQL（MATCH / LIKE 两条路径共用）
         let has_tags = !tags.is_empty();
+        // `published` 走 `is_published = 1` 分支（见 query_knowledge_nodes 同款说明），
+        // 其余标签双列 json_each；两者 OR 合成「用户标签 ∪ 系统标记」视图。
+        let want_published = tags.iter().any(|t| t == PUBLISHED_TAG);
+        let other_tags: Vec<String> = tags
+            .iter()
+            .filter(|t| t.as_str() != PUBLISHED_TAG)
+            .cloned()
+            .collect();
         let tags_clause = if has_tags {
-            let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            format!(
-                " AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))"
-            )
+            let mut parts: Vec<String> = Vec::new();
+            if want_published {
+                parts.push("m.is_published = 1".to_string());
+            }
+            if !other_tags.is_empty() {
+                let placeholders = other_tags
+                    .iter()
+                    .map(|_| "?")
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                // 双列：`m.user_tags` ∪ `m.tags`。EXISTS 天然去重。
+                parts.push(format!(
+                    "(EXISTS (SELECT 1 FROM json_each(m.user_tags) WHERE json_each.value IN ({placeholders})) \
+                     OR EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders})))"
+                ));
+            }
+            format!(" AND ({})", parts.join(" OR "))
         } else {
             String::new()
         };
@@ -443,6 +505,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
                 node_type: row.node_type,
                 summary: row.summary,
                 tags: row.tags,
+                user_tags: row.user_tags,
                 status: row.status,
                 is_published: row.is_published,
                 created_at: row.created_at,
@@ -473,7 +536,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             let sql = format!(
                 r#"
 SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary, m.tags,
-       m.status, m.is_published, m.created_at, m.updated_at,
+       m.user_tags, m.status, m.is_published, m.created_at, m.updated_at,
        knowledge_node_fts.rank as fts_rank
 FROM knowledge_node_fts
 JOIN long_term_knowledge_node m ON knowledge_node_fts.rowid = m.rowid
@@ -492,9 +555,12 @@ LIMIT ?
                 query = query.bind(agent_id);
             }
 
-            // 绑定 tags 参数（如果有）
-            if has_tags {
-                for tag in &tags {
+            // 绑定业务标签参数：双列各一套 → 绑两遍（published 不发参数）
+            if !other_tags.is_empty() {
+                for tag in &other_tags {
+                    query = query.bind(tag);
+                }
+                for tag in &other_tags {
                     query = query.bind(tag);
                 }
             }
@@ -515,14 +581,20 @@ LIMIT ?
         if !plan.like_patterns.is_empty()
             && let Some((like_clause, like_params)) = build_fts5_like_clause(
                 "m",
-                &["node_name", "summary", "node_description", "tags"],
+                &[
+                    "node_name",
+                    "summary",
+                    "node_description",
+                    "tags",
+                    "user_tags",
+                ],
                 &plan.like_patterns,
             )
         {
             let sql = format!(
                 r#"
 SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary, m.tags,
-       m.status, m.is_published, m.created_at, m.updated_at,
+       m.user_tags, m.status, m.is_published, m.created_at, m.updated_at,
        NULL as fts_rank
 FROM long_term_knowledge_node m
 WHERE ({like_clause})
@@ -540,8 +612,11 @@ LIMIT ?
             if let Some(agent_id) = &agent_filter {
                 query = query.bind(agent_id);
             }
-            if has_tags {
-                for tag in &tags {
+            if !other_tags.is_empty() {
+                for tag in &other_tags {
+                    query = query.bind(tag);
+                }
+                for tag in &other_tags {
                     query = query.bind(tag);
                 }
             }

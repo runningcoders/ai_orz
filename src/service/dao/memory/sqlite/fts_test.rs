@@ -206,6 +206,7 @@ async fn test_knowledge_node_fts5_trigger_insert_sync(pool: SqlitePool) {
         node_type: "concept".to_string(),
         summary: "ownership system ensures memory safety".to_string(),
         tags: "[]".to_string(),
+        user_tags: "[]".to_string(),
         status: MemoryStatus::Active,
         is_published: false,
         created_at: now,

@@ -18,6 +18,7 @@ fn node(summary: &str) -> Memory {
         node_type: "general".to_string(),
         summary: summary.to_string(),
         tags: "[]".to_string(),
+        user_tags: "[]".to_string(),
         status: MemoryStatus::Active,
         is_published: false,
         created_at: 0,
@@ -103,7 +104,10 @@ fn score_is_relevance_not_distance() {
 fn published_control_tag_is_not_exposed_as_label() {
     let mut memory = node("");
     if let MemoryPo::KnowledgeNode(kn) = &mut memory.po {
+        // 存量脏值形态：迁移只搬列不清洗，`published` 同时躺在 tags 与 user_tags 里。
+        // 读侧必须仍然只吐业务标签（published 的真相源是 is_published）。
         kn.tags = r#"["published","架构"]"#.to_string();
+        kn.user_tags = r#"["published","架构"]"#.to_string();
     }
     assert_eq!(
         memory.to_api_result().tags,
