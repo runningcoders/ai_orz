@@ -131,6 +131,21 @@ pub struct AgentConfig {
     /// 配置文件缺项时用 `Default` 兜底。
     #[serde(default = "default_agent_compaction_threshold_tokens")]
     pub compaction_threshold_tokens: usize,
+
+    /// 协作压力：信息疲劳度软阈值（>= 该值开始随回复注入施压提示词）
+    ///
+    /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].collab_soft_fatigue`；
+    /// 口径与默认值定义在 `pkg/collaboration_pressure::PressureConfig`。
+    #[serde(default = "default_agent_collab_soft_fatigue")]
+    pub collab_soft_fatigue: u64,
+
+    /// 协作压力：信息疲劳度硬阈值（>= 该值升级 / 暂停自动回发）
+    #[serde(default = "default_agent_collab_hard_fatigue")]
+    pub collab_hard_fatigue: u64,
+
+    /// 协作压力：连续无新信息窗口的硬上限（回血会重置该窗口）
+    #[serde(default = "default_agent_collab_hard_window_depth")]
+    pub collab_hard_window_depth: usize,
 }
 
 impl Default for AgentConfig {
@@ -145,6 +160,9 @@ impl Default for AgentConfig {
             think_timeout_secs: 0,
             token_budget: 0,
             compaction_threshold_tokens: 256,
+            collab_soft_fatigue: 36,
+            collab_hard_fatigue: 100,
+            collab_hard_window_depth: 8,
         }
     }
 }
@@ -159,6 +177,18 @@ fn default_agent_intent_analyze_max_rounds() -> usize {
 
 fn default_agent_summary_max_rounds() -> usize {
     3
+}
+
+fn default_agent_collab_soft_fatigue() -> u64 {
+    36
+}
+
+fn default_agent_collab_hard_fatigue() -> u64 {
+    100
+}
+
+fn default_agent_collab_hard_window_depth() -> usize {
+    8
 }
 
 /// 记忆分流阈值默认值（本轮问答估算 token 数）

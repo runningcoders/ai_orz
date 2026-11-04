@@ -453,6 +453,11 @@ impl ThinkNode for PrepareNode {
         if !biz.resource_lines.is_empty() {
             builder.set_resource_context_lines(biz.resource_lines);
         }
+        // 重建路径与 fill_prompt_base 同口径：压力行独立尾部区块，
+        // 值与 seed 相同（同一份 ThinkingOptions），不破坏两阶段前缀一致。
+        if !deps.options.extra_resource_lines.is_empty() {
+            builder.set_pressure_prompt_lines(deps.options.extra_resource_lines.clone());
+        }
         if !biz.vision_parts.is_empty() {
             builder.set_current_message_vision(biz.vision_parts);
         }

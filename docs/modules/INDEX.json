@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 671,
-  "total_bytes": 14106936,
+  "total": 672,
+  "total_bytes": 14133155,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1342,12 +1342,42 @@
     {
       "id": "04-对话与消息",
       "counts": {
-        "A-设计": 6,
+        "A-设计": 7,
         "B-落地方案": 9,
         "C-知识": 21
       },
-      "total": 36,
+      "total": 37,
       "docs": [
+        {
+          "tier": "A-设计",
+          "path": "04-对话与消息/A-设计/collaboration_pressure_design.md",
+          "name": "collaboration_pressure_design",
+          "title": "Agent 间协作压力（链深度 + 信息疲劳度）可复用组件设计",
+          "bytes": 15140,
+          "status": "现行",
+          "scope": [
+            "common/config/ai_orz.toml",
+            "common/src/config.rs",
+            "src/consumer/message.rs",
+            "src/consumer/message_route_policy.rs",
+            "src/consumer/message_route_policy_tests.rs",
+            "src/models/prompt_builder.rs",
+            "src/service/dal/agent/builder/default.rs",
+            "src/service/dal/agent/builder/flat.rs",
+            "src/pkg/collaboration_pressure/",
+            "src/pkg/collaboration_pressure/mod.rs",
+            "src/pkg/collaboration_pressure/policy.rs",
+            "src/pkg/mod.rs",
+            "src/pkg/policy/",
+            "src/service/domain/runtime/awakening.rs",
+            "src/service/domain/runtime/legacy_awaken/nodes.rs",
+            "src/service/domain/runtime/types.rs"
+          ],
+          "related": [
+            "02-Agent运行时/A-设计/thinking_task_policy_engine_design.md",
+            "02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md"
+          ]
+        },
         {
           "tier": "A-设计",
           "path": "04-对话与消息/A-设计/lark_channel_integration_design.md",
@@ -1690,7 +1720,7 @@
           "path": "04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md",
           "name": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
           "title": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
-          "bytes": 34261
+          "bytes": 41074
         },
         {
           "tier": "C-知识",
@@ -1746,7 +1776,7 @@
           "path": "04-对话与消息/C-知识/消息领域.md",
           "name": "消息领域",
           "title": "消息领域",
-          "bytes": 25804
+          "bytes": 30070
         },
         {
           "tier": "C-知识",

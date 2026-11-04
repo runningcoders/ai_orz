@@ -6,10 +6,11 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 36 篇：A 设计 6 · B 落地方案 9 · C 知识 21。
+本模块共 37 篇：A 设计 7 · B 落地方案 9 · C 知识 21。
 
 ## A 设计（design）
 
+- [Agent 间协作压力（链深度 + 信息疲劳度）可复用组件设计](<A-设计/collaboration_pressure_design.md>) — `现行`
 - [飞书（Lark）渠道集成设计 —— 长连接协议对齐版](<A-设计/lark_channel_integration_design.md>) — `现行`
 - [lark-cli 集成与飞书渠道多应用化设计](<A-设计/lark_cli_integration.md>) — `已废弃`
 - [消息渠道设计文档](<A-设计/message_channel_design.md>) — `已废弃`

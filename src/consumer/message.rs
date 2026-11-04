@@ -26,11 +26,11 @@ use async_trait::async_trait;
 use common::enums::{CallerType, MessageRole, MessageStatus, MessageType, TaskStatus};
 use common::error::{Error, ErrorCode, Result};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::message_route_policy::{
-    AutoReplyRoute, MAX_AGENT_REPLY_CHAIN, RouteInput, judge_chain_reply_route,
-    judge_static_reply_route,
+    AutoReplyRoute, RouteInput, judge_chain_reply_route, judge_static_reply_route,
 };
 use super::wake_gate_policy::{
     STALE_DEPENDENCY_POLICY_ID, WAKEUP_BUDGET_POLICY_ID, WakeGateInput, judge_wake_gate,
@@ -42,6 +42,7 @@ use crate::models::message::{Message, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
+use crate::pkg::collaboration_pressure::{ChainHop, ChainPressure, Novelty, PressureConfig};
 use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::domain::hr::{self as hr_domain, HrDomain};
 use crate::service::domain::message::{
@@ -54,6 +55,9 @@ use crate::service::domain::runtime::{
     self as runtime_domain, RuntimeDomain, awakening::ThinkingOptions,
 };
 use common::enums::EventTopic;
+
+/// 协作链回溯的查库硬上限（异常长链 / 环的保护；正常 A↔B 链远小于该值）
+const MAX_CHAIN_TRAVERSAL: usize = 32;
 
 // ==================== 消费者实现 ====================
 
@@ -813,6 +817,30 @@ impl MessageConsumer {
             ctx = ctx.to_builder().user_id(root_user_id).build();
         }
 
+        // ══════ 协作压力观测（只对跨 Agent 对等回复候选查库）══════
+        //
+        // 预筛条件与静态路由规则同源：用户/系统来源、自触发、知会消息都不会
+        // 进入链深度判定，因此主流对话路径零额外 DB 读。压力信号与配套提示词
+        // 必须在 awaken **之前**注入，本轮正在思考的 Agent 才能看到深度/疲劳度
+        // 并主动收敛，而不是等回发时被硬墙机械掐断。
+        let chain_pressure = if message.from_role() == MessageRole::Agent
+            && message.po.from_id != message.po.to_id
+            && message.message_type() != MessageType::AgentNotify
+        {
+            let pressure = self.collect_chain_pressure(&ctx, message).await;
+            let decision = pressure.judge();
+            log_info!(
+                &ctx,
+                "handle_agent_message",
+                "collaboration pressure observed: {}",
+                decision.log_line()
+            );
+            thinking_options = thinking_options.with_extra_resource_lines(decision.prompt_lines());
+            Some(pressure)
+        } else {
+            None
+        };
+
         // 调用 RuntimeDomain 唤醒 Agent
         let awaken_result = match self
             .runtime_domain
@@ -961,9 +989,12 @@ impl MessageConsumer {
             let task_id = message.po.task_id.as_deref();
             let reply_to_id = Some(message.po.id.as_str());
 
-            let route = self
-                .resolve_auto_reply_route(&ctx, message, agent_id, raw_output)
-                .await;
+            let route = self.resolve_auto_reply_route(
+                message,
+                agent_id,
+                raw_output,
+                chain_pressure.as_ref(),
+            );
 
             let send_result: Result<()> = match route {
                 AutoReplyRoute::Peer => match message.from_role() {
@@ -1046,8 +1077,7 @@ impl MessageConsumer {
                                     from_agent_id: agent_id,
                                     to_user_id: owner_user_id,
                                     content: &format!(
-                                        "⚠️ Agent 间自动回复已达链路深度上限（{} 轮），为防止两个 Agent 无限互发已自动中止协作。Agent {} 的最新处理结果未回发，请人工介入确认后续安排。",
-                                        MAX_AGENT_REPLY_CHAIN,
+                                        "⚠️ Agent 间协作已连续多轮未引入有效新信息，信息疲劳度触顶，已暂停自动回发以防无限互发。Agent {} 的最新处理结果未回发。\n\n回复本条并补充新信息、或指定新的协作 Agent，即可重置疲劳窗口并继续协作；若无需继续，忽略本条即可。",
                                         message.po.from_id
                                     ),
                                     project_id,
@@ -1323,14 +1353,15 @@ impl MessageConsumer {
     /// 计算 Final 自动回发的最终路由（静态判定 + 回复链深度机械判定）
     ///
     /// 判定顺序：静态规则（用户/系统/自触发/知会/哨兵）短路在前，
-    /// 需要查库的链深度兜底只对「跨 Agent 对等回复候选」执行——
+    /// 协作压力裁决只对「跨 Agent 对等回复候选」执行——压力观测已在 awaken 前
+    /// 完成并缓存，这里只做纯函数映射，不再查库。
     /// User 消息与 Discard 场景零额外查询，主流路径不增加任何成本。
-    async fn resolve_auto_reply_route(
+    fn resolve_auto_reply_route(
         &self,
-        ctx: &RequestContext,
         message: &Message,
         agent_id: &str,
         raw_output: &str,
+        chain_pressure: Option<&ChainPressure>,
     ) -> AutoReplyRoute {
         if let Some(route) = judge_static_reply_route(RouteInput {
             from_role: message.from_role(),
@@ -1341,30 +1372,51 @@ impl MessageConsumer {
         }) {
             return route;
         }
-        let chain_depth = self.agent_reply_chain_depth(ctx, message).await;
-        judge_chain_reply_route(chain_depth)
+        // 静态未命中 = 跨 Agent 对等候选。压力数据缺失属异常（预筛与静态规则
+        // 同源），按「宁少勿错」放行 Peer，不因存储/装配抖动误伤协作。
+        chain_pressure
+            .map(judge_chain_reply_route)
+            .unwrap_or(AutoReplyRoute::Peer)
     }
 
-    /// 统计入口消息沿 `reply_to_id` 向上连续 Agent 来源消息的条数（含入口自身）
+    /// 沿 `reply_to_id` 回溯观测协作链压力（跨 Agent 对等候选专用）
     ///
-    /// 链的形态（A↔B 协作）：A→B(1) ← B回复(2) ← A回复(3) ← …，每条自动回复的
-    /// reply_to_id 指向触发它的消息。遇到 User/System 来源消息或断链即停止——
-    /// 用户介入是链的自然终止点。查询失败按断链处理（宁少勿错：放行 Peer 后
-    /// 仍有模型侧哨兵与发送方知会声明继续兜底，不因存储抖动误伤正常协作）。
-    async fn agent_reply_chain_depth(&self, ctx: &RequestContext, message: &Message) -> usize {
-        let mut depth = usize::from(message.from_role() == MessageRole::Agent);
-        let mut cursor = message.po.reply_to_id.clone();
-        while depth < MAX_AGENT_REPLY_CHAIN {
-            let Some(prev_id) = cursor.as_deref() else {
+    /// 保留旧链深度遍历的「宁少勿错」语义：非 Agent 来源、断链、父消息不存在
+    /// 或查询失败即停止；额外加 MAX_CHAIN_TRAVERSAL 硬上限，防异常长链 / 环
+    /// 把一次回发判定放大成几十次 DB 读。
+    async fn collect_chain_pressure(
+        &self,
+        ctx: &RequestContext,
+        message: &Message,
+    ) -> ChainPressure {
+        let mut pressure = ChainPressure::new(PressureConfig::from_system());
+        let mut seen_participants: HashSet<String> = HashSet::new();
+        let mut hops: Vec<ChainHop> = Vec::new(); // 回溯顺序：新 → 旧
+        let mut current = Some(message.clone());
+
+        for _ in 0..MAX_CHAIN_TRAVERSAL {
+            let Some(current_message) = current else {
                 break;
             };
-            let prev = match self
+            // 链断点不入 hops：归一化反转后它会落在链头，observe 返回 false
+            // 会让整条链被误截断。User/System 来源是协作链的自然终止点。
+            if current_message.from_role() != MessageRole::Agent {
+                break;
+            }
+            hops.push(ChainHop {
+                from_agent: true,
+                novelty: Self::classify_chain_novelty(&current_message, &mut seen_participants),
+            });
+            let Some(prev_id) = current_message.po.reply_to_id.as_deref() else {
+                break;
+            };
+            match self
                 .message_domain
                 .management()
                 .get_by_id(ctx.clone(), prev_id)
                 .await
             {
-                Ok(Some(m)) => m,
+                Ok(Some(prev)) => current = Some(prev),
                 Ok(None) => break,
                 Err(e) => {
                     log_warn!(
@@ -1376,14 +1428,50 @@ impl MessageConsumer {
                     );
                     break;
                 }
-            };
-            if prev.from_role() != MessageRole::Agent {
-                break;
             }
-            depth += 1;
-            cursor = prev.po.reply_to_id.clone();
         }
-        depth
+        // ⚠️ 回血会清零连续窗口，是有方向的运算。回溯得到的新→旧序列必须
+        // 归一化为时间正序再观测，否则「最近回血之后的连续窗口」会算成
+        // 「回血之前的旧跳」：硬墙可能永不触发，或误对刚续接的链施压。
+        let traversed = hops.len();
+        pressure.observe_backward_chain(hops);
+        if traversed >= MAX_CHAIN_TRAVERSAL {
+            log_warn!(
+                &ctx,
+                "handle_agent_message",
+                "reply chain traversal reached hard cap {} (possible cycle), pressure observation truncated",
+                MAX_CHAIN_TRAVERSAL
+            );
+        }
+        pressure
+    }
+
+    /// 领域对象 → 组件语义标志：结构化新信息锚点的唯一翻译处
+    ///
+    /// 不做内容相似度 / embedding：工具与任务结果、附件、新参与方已经能
+    /// 表达「是否引入新信息」，成本与不确定性都远低于落库后的向量比对。
+    ///
+    /// `seen_participants` 刻意按**回溯顺序**（新 → 旧）填充：最先见到的两个
+    /// 参与方就是当前协作的 A↔B，更早出现的第三方才算「新鲜血液」。若改成
+    /// 按时间正序分类，A↔B 里后加入的那一方会被误判成新参与方而多一次回血。
+    /// 观测顺序与分类顺序解耦是允许的：`observe_backward_chain` 只负责把
+    /// `hops` 反转为时间正序，标志本身在构造时已定。
+    fn classify_chain_novelty(
+        message: &Message,
+        seen_participants: &mut HashSet<String>,
+    ) -> Novelty {
+        let is_new = seen_participants.insert(message.po.from_id.clone());
+        match message.message_type() {
+            MessageType::Text | MessageType::AgentNotify => {
+                // 前两个参与方就是 A↔B 本身，第三个起才算「新鲜血液」
+                if is_new && seen_participants.len() > 2 {
+                    Novelty::NewParticipant
+                } else {
+                    Novelty::None
+                }
+            }
+            _ => Novelty::ToolResult,
+        }
     }
 
     /// User 消息处理：调用 MessageDomain 推送给用户

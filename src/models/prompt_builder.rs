@@ -112,6 +112,22 @@ pub trait PromptBuilder: Send + Sync {
         let _ = lines;
     }
 
+    /// 设置【协作压力】append-only 尾部区块的提示词行（仅 awaken 场景）
+    ///
+    /// 由 `pkg/collaboration_pressure` 等思考链路组件产出：链深 / 疲劳度 / 档位指引 /
+    /// 回血规则。这些数值**每次唤醒都可能变化**，因此只允许渲染成 User 消息末尾的
+    /// 独立区块（当前消息之后、收尾指令之前），禁止并入【资源上下文】或插入到
+    /// 【消息链上下文】等稳定区块之前——provider prefix cache 从请求第一个字节
+    /// 逐字节匹配，易变内容前移会作废其后全部内容（两阶段唤醒 I1/I2 不变量）。
+    /// 也禁止放进 System：System 是跨唤醒唯一可复用的前缀。
+    ///
+    /// 默认空实现只适用于「不渲染该区块」的实现；任何包装
+    /// `DefaultPromptBuilder` 的实现（如 `FlatPromptBuilder` / A2A / Codex）
+    /// **必须显式转发**，否则整段组件提示词会被静默吞掉。
+    fn set_pressure_prompt_lines(&mut self, lines: Vec<String>) {
+        let _ = lines;
+    }
+
     /// 设置 Agent 可用技能（全量注入，build 时按 tag 分块）
     fn skills(&mut self, skills: &[SkillPo]);
 

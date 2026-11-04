@@ -106,6 +106,11 @@ pub struct DefaultPromptBuilder {
     vision_parts: Vec<ImagePart>,
     /// 当前消息【资源上下文】详情行（仅 awaken 场景：awakening 预解析双产出注入）
     resource_context_lines: Vec<String>,
+    /// 思考链路组件的提示词行（协作压力等）：渲染为 User 消息末尾的独立尾部区块
+    ///
+    /// 与 `resource_context_lines` 严格分流——这些数值每次唤醒都可能变化，
+    /// 混入稳定区块会作废其后全部 prefix cache 命中（I1/I2）。
+    pressure_prompt_lines: Vec<String>,
     /// 技能（全量，build 时按 tag 分块）
     skills: Vec<SkillPo>,
     /// 工具失败统计：(工具名称, 失败次数)
@@ -259,6 +264,24 @@ impl DefaultPromptBuilder {
          全文里有此刻该用的操作口径，只凭摘要容易按自己的习惯蛮干。\n"
             .to_string()
     }
+
+    /// 渲染【协作压力】append-only 尾部区块
+    ///
+    /// 组件自带首行即区块标题（`【协作压力】…`），这里只补换行、不改文案，
+    /// 保证「行为动作 + 配套提示词」继续由 `collaboration_pressure` 一处维护。
+    /// 位置固定在当前消息 / 尾插输入 / 技能提醒**之后**，其后只剩「请回复：」——
+    /// 每轮变化的压力数值不切割任何稳定区块，跨唤醒可复用前缀保持最长。
+    fn render_pressure_block(&self) -> String {
+        if self.pressure_prompt_lines.is_empty() {
+            return String::new();
+        }
+        let mut s = String::from("\n\n");
+        for line in &self.pressure_prompt_lines {
+            s.push_str(line);
+            s.push('\n');
+        }
+        s
+    }
 }
 
 /// 按预算装入一个词表段落：段首（header + 首行）装不下则整段让位
@@ -391,6 +414,10 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
     fn set_resource_context_lines(&mut self, lines: Vec<String>) {
         self.resource_context_lines = lines;
+    }
+
+    fn set_pressure_prompt_lines(&mut self, lines: Vec<String>) {
+        self.pressure_prompt_lines = lines;
     }
 
     fn skills(&mut self, skills: &[SkillPo]) {
@@ -1013,6 +1040,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             self.push_injected_inputs(&mut s);
             // 提醒放在决策点（当前消息之后）而不是信息区，见 skill_recall_nudge 注释
             s.push_str(&self.skill_recall_nudge());
+            // 每轮变化的压力信号只允许 append-only 收尾，绝不前移切割稳定前缀
+            s.push_str(&self.render_pressure_block());
             s.push_str("\n\n请回复：");
         }
         s
@@ -1078,6 +1107,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             self.push_injected_inputs(&mut result);
             // 与 awaken_user_part 同一口径，见 skill_recall_nudge 注释
             result.push_str(&self.skill_recall_nudge());
+            // 与 awaken_user_part 同一口径：压力区块 append-only 收尾
+            result.push_str(&self.render_pressure_block());
             result.push_str("\n\n请回复：");
         }
 
@@ -1842,6 +1873,92 @@ mod tests {
                 );
             }
             _ => panic!("次条必须是 User"),
+        }
+    }
+
+    /// 协作压力信号必须 append-only 收尾：插入点之前的所有字节逐字节不变，
+    /// 且不进 System / 不并进【资源上下文】（prefix cache I1/I2 护栏）。
+    #[test]
+    fn pressure_block_is_append_only_and_preserves_stable_prefix() {
+        let mut builder = DefaultPromptBuilder {
+            system_prompt: Some("PERSONA".to_string()),
+            ..Default::default()
+        };
+        builder.history.push("H1".to_string());
+        // 直接给出 current_message 渲染后的文本形态（含【资源上下文】区块），
+        // 本护栏测的是 build 层装配顺序，不需要再构造 Message 领域对象
+        builder.current_message = Some(
+            "CURRENT\n\n【资源上下文】\n本条消息引用了以下资源：\n- ATTACHMENT.md\n".to_string(),
+        );
+
+        let before = builder.awaken_user_part();
+        let system = builder.awaken_system_part();
+
+        builder.set_pressure_prompt_lines(vec![
+            "【协作压力】链深 3，疲劳度 36/100。".to_string(),
+            "- 本轮指引：请引入新信息或主动收敛".to_string(),
+        ]);
+        let after = builder.awaken_user_part();
+        let pressure_at = after.find("【协作压力】").expect("压力区块必须渲染");
+
+        assert_eq!(
+            &after[..pressure_at],
+            &before[..pressure_at],
+            "压力块之前的前缀必须逐字节不变，否则跨唤醒缓存命中面被打穿"
+        );
+        assert!(
+            pressure_at > before.find("【资源上下文】").unwrap(),
+            "压力块不得并入或前移到【资源上下文】之前"
+        );
+        assert!(
+            pressure_at > before.find("CURRENT").unwrap(),
+            "压力块必须在当前消息之后"
+        );
+        assert!(
+            !builder.awaken_system_part().contains("协作压力"),
+            "System 是跨唤醒唯一可复用前缀，禁止携带每轮变化的压力值"
+        );
+        assert_eq!(system, builder.awaken_system_part());
+        assert!(
+            !after.contains("- 【协作压力】"),
+            "压力行是独立区块，不是【资源上下文】的列表项"
+        );
+
+        // 跨唤醒压力值每轮递增，插入点之前的前缀仍必须逐字节一致
+        builder.set_pressure_prompt_lines(vec![
+            "【协作压力】链深 8，疲劳度 96/100。".to_string(),
+            "- 本轮指引：必须收敛".to_string(),
+        ]);
+        let next = builder.awaken_user_part();
+        let next_at = next.find("【协作压力】").unwrap();
+        assert_eq!(
+            &next[..next_at],
+            &before[..next_at],
+            "压力值变化不得改动前缀，否则跨唤醒缓存命中面被打穿"
+        );
+    }
+
+    /// 带压力行时两阶段仍需逐字节一致：意图指令只能继续在 base 尾部追加。
+    #[test]
+    fn pressure_lines_keep_intent_prefix_identical() {
+        let mut builder = DefaultPromptBuilder {
+            system_prompt: Some("PERSONA".to_string()),
+            ..Default::default()
+        };
+        builder.current_message = Some("CURRENT".to_string());
+        builder.set_pressure_prompt_lines(vec!["【协作压力】链深 2".to_string()]);
+
+        let base_system = builder.awaken_system_part();
+        let base_user = builder.awaken_user_part();
+        let messages = builder.build_intent_analyze_initial_messages();
+        assert_eq!(messages.len(), 2);
+        match (&messages[0], &messages[1]) {
+            (ChatMessage::System { content: s }, ChatMessage::User { content: u }) => {
+                assert_eq!(s, &base_system);
+                assert!(u.starts_with(&base_user), "意图指令只能追加在 base 之后");
+                assert!(u.contains("【协作压力】"), "Phase1 需看到同一份压力信号");
+            }
+            _ => panic!("两阶段首两条必须是 System + User"),
         }
     }
 }

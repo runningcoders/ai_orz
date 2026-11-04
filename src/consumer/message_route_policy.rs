@@ -3,10 +3,11 @@
 //! 复用 `pkg/policy` 引擎组合路由策略组（照 shell_policy 先例）：
 //! - 静态判定段（零查库）：领域匹配器规则（哨兵 / 来源角色 / 自触发 /
 //!   知会类型）按 Or 组合，声明顺序即判定优先级（首个命中即产出路由）
-//! - 机械兜底段：builtin 通用 `ThresholdPolicy`（`chain_depth >= 上限` →
-//!   升级归属用户）。仅对「跨 Agent 对等回复候选」执行——需要沿 reply_to_id
-//!   查库计算链深度（见 `MessageConsumer::agent_reply_chain_depth`），
-//!   静态命中的场景零额外查询
+//! - 协作压力段：`pkg/collaboration_pressure` 组件的策略引擎裁决档位，
+//!   仅 `PressureAction::Escalate` 升级归属用户，其余档位仍 Peer；
+//!   压力带内的施压提示词在唤醒前由该组件注入 `ThinkingOptions`。
+//!   仅对「跨 Agent 对等回复候选」执行——需要沿 reply_to_id 查库观测链
+//!   （见 `MessageConsumer::collect_chain_pressure`），静态命中零额外查询
 //!
 //! 领域特有判定保留专用匹配器（不具备跨领域共性，抽象边界参照 builtin 模块文档）：
 //! - 来源角色 / 知会类型是枚举等值（Metrics 侧以数值承载）
@@ -17,7 +18,7 @@ use std::sync::OnceLock;
 
 use common::enums::{MessageRole, MessageType};
 
-use crate::pkg::policy::builtin::ThresholdPolicy;
+use crate::pkg::collaboration_pressure::{ChainPressure, PressureAction};
 use crate::pkg::policy::{Metrics, Policy, PolicyBuilder};
 
 // 历史注记：哨兵曾由 builtin `FieldEqualsPolicy`（单键 == 单常量）承载。
@@ -36,13 +37,7 @@ pub mod keys {
     pub const MESSAGE_TYPE: &str = "route.message_type";
     /// 唤醒 Final 原始输出（trim 后）
     pub const RAW_OUTPUT: &str = "route.raw_output";
-    /// 回复链深度（机械兜底段专用，由 consumer 查库计算后填充）
-    pub const CHAIN_DEPTH: &str = "route.chain_depth";
 }
-
-/// Agent 间回复链深度上限：入口消息沿 `reply_to_id` 链上连续 Agent 来源消息
-/// 达到该条数时不再自动回发，改为通知归属用户（防 A↔B 无限乒乓的最后防线）
-pub const MAX_AGENT_REPLY_CHAIN: usize = 5;
 
 /// 无需回复哨兵：Agent 判断「后续工作与来源方无关」时，让 Final 恰好输出该词，
 /// Framework 检测到后不再把 Final 回发给任何对象。保留协议字，路由判定中
@@ -279,22 +274,6 @@ fn static_ruleset() -> &'static dyn Policy {
         .as_ref()
 }
 
-/// 链深度兜底策略：通用 ThresholdPolicy 承载
-/// （`chain_depth >= MAX_AGENT_REPLY_CHAIN` 即命中；上限为正常量，恒启用）
-fn chain_policy() -> &'static ThresholdPolicy {
-    static POLICY: OnceLock<ThresholdPolicy> = OnceLock::new();
-    POLICY.get_or_init(|| {
-        ThresholdPolicy::new(
-            "chain_depth_escalation",
-            "ChainDepthEscalation",
-            keys::CHAIN_DEPTH,
-            MAX_AGENT_REPLY_CHAIN as u64,
-            "回复链深度",
-            "",
-        )
-    })
-}
-
 /// 静态命中 id → 路由产出：全部内嵌在规则表（含哨兵），由 Or 组的首个命中
 /// 上浮。fallback 仅作防御——表新增成员忘了写 outcome 时，退化为「不投递」
 /// 而非「发给来源方」，失败的永远是噪声最少的一侧
@@ -337,21 +316,19 @@ pub fn judge_static_reply_route(input: RouteInput<'_>) -> Option<AutoReplyRoute>
         .map(|id| static_outcome(id))
 }
 
-/// Final 回发路由的链深度机械判定段（防乒乓最后防线）
+/// Final 回发路由的协作压力判定段（防乒乓最后防线）
 ///
-/// 链深度 = 入口消息沿 `reply_to_id` 向上连续 Agent 来源消息的条数（含入口自身），
-/// 由 consumer 查库计算（见 `MessageConsumer::agent_reply_chain_depth`）。
-/// A↔B 协作中每条自动回复的 reply_to_id 都指向触发它的消息，链深度随往返单调
-/// 递增；达到 `MAX_AGENT_REPLY_CHAIN` 说明模型侧的协调约定（哨兵 / 知会声明）
-/// 已失效，不再信任模型判断，机械终止回发并升级给归属用户。
-pub fn judge_chain_reply_route(chain_depth: usize) -> AutoReplyRoute {
-    let metrics = Metrics::new().with(keys::CHAIN_DEPTH, chain_depth as u64);
-    if chain_policy().is_triggered(&metrics) {
-        AutoReplyRoute::EscalateToOwner {
-            reason: "agent reply chain depth limit exceeded",
-        }
-    } else {
-        AutoReplyRoute::Peer
+/// 压力观测由 consumer 沿 `reply_to_id` 查库后委托组件完成
+/// （见 `MessageConsumer::collect_chain_pressure`）。仅硬红线档位升级归属用户；
+/// 压力带档位仍 Peer，但唤醒前已注入配套施压提示词，让模型主动收敛。
+/// 出现工具结果 / 新参与方 / 外部输入时组件回血并重置连续窗口，
+/// 因此「有新鲜感的协作」可以合法超过硬窗口，不再被固定次数一刀切。
+pub fn judge_chain_reply_route(pressure: &ChainPressure) -> AutoReplyRoute {
+    match pressure.judge().action {
+        PressureAction::Escalate => AutoReplyRoute::EscalateToOwner {
+            reason: "collaboration pressure exhausted",
+        },
+        PressureAction::Continue | PressureAction::Nudge => AutoReplyRoute::Peer,
     }
 }
 #[cfg(test)]

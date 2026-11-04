@@ -196,6 +196,13 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
         self.inner.current_message(message);
     }
 
+    /// 协作压力等组件提示词必须转发给 inner：`build()` 用的是
+    /// `inner.awaken_user_part()`，走 trait 默认空实现会让 A2A / Codex Agent
+    /// 静默丢掉整段压力信号（只剩 consumer 层硬墙兜底，失去主动收敛能力）。
+    fn set_pressure_prompt_lines(&mut self, lines: Vec<String>) {
+        self.inner.set_pressure_prompt_lines(lines);
+    }
+
     fn skills(&mut self, skills: &[SkillPo]) {
         self.inner.skills(skills);
     }
@@ -365,6 +372,42 @@ mod tests {
             ChatMessage::User { content } => assert_eq!(content, "hi"),
             other => panic!("期望 User 消息，实际 {:?}", other),
         }
+    }
+
+    /// 外部 Agent（A2A / Codex）也必须看到协作压力指引：
+    /// FlatPromptBuilder 走 trait 默认空实现会静默吞掉整段信号。
+    #[test]
+    fn forwards_pressure_prompt_lines_into_flat_prompt() {
+        use crate::models::message::Message;
+        use crate::models::prompt_builder::PromptBuilder;
+        use common::enums::{MessageRole, MessageType};
+
+        let mut builder = FlatPromptBuilder::new();
+        let message = Message::new_with_context(
+            "msg-pressure".to_string(),
+            None,
+            None,
+            "test-user".to_string(),
+            "agent-test".to_string(),
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            "CURRENT".to_string(),
+            None,
+            crate::models::file::FileMeta::default(),
+            None,
+            None,
+            None,
+            "test-user".to_string(),
+        );
+        builder.current_message(&message);
+        builder.set_pressure_prompt_lines(vec![
+            "【协作压力】链深 2，疲劳度 24/100。".to_string(),
+            "- 本轮指引：请主动收敛".to_string(),
+        ]);
+        let prompt = builder.build();
+        assert!(prompt.contains("【协作压力】链深 2"), "{prompt}");
+        assert!(prompt.contains("- 本轮指引：请主动收敛"), "{prompt}");
     }
 
     #[test]

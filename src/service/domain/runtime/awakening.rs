@@ -840,6 +840,12 @@ pub(crate) async fn fill_prompt_base(builder: &mut dyn PromptBuilder, input: Pro
     if !input.resource_lines.is_empty() {
         builder.set_resource_context_lines(input.resource_lines.to_vec());
     }
+    // 组件提示词独立成 append-only 尾部区块：不能并入【资源上下文】，
+    // 更不能插到消息链 / 历史等稳定区块之前（会作废其后全部 prefix cache）。
+    // 两阶段共用本函数装配 base，压力行因此天然在 Phase1/Phase2 间一致。
+    if !input.options.extra_resource_lines.is_empty() {
+        builder.set_pressure_prompt_lines(input.options.extra_resource_lines.clone());
+    }
     if !input.vision_parts.is_empty() {
         builder.set_current_message_vision(input.vision_parts.to_vec());
     }

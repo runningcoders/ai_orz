@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 671 篇 / 14,106,936 B**，分布于 15 个模块。
+**合计 672 篇 / 14,133,155 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -17,7 +17,7 @@
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 904,755 |
 | [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,233,155 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,177 |
-| [04-对话与消息](#04-对话与消息) | 6 | 9 | 21 | 36 | 825,239 |
+| [04-对话与消息](#04-对话与消息) | 7 | 9 | 21 | 37 | 851,458 |
 | [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,298 |
 | [06-工具与技能](#06-工具与技能) | 11 | 14 | 52 | 77 | 1,775,774 |
 | [07-外部Agent(A2A)](#07-外部agenta2a) | 3 | 3 | 20 | 26 | 515,641 |
@@ -243,16 +243,17 @@
 
 ### 04-对话与消息
 
-#### A 设计（design，6 篇）
+#### A 设计（design，7 篇）
 
 | # | 页面 | 状态 | 字节 |
 |---:|---|---|---:|
-| 1 | [飞书（Lark）渠道集成设计 —— 长连接协议对齐版](<04-对话与消息/A-设计/lark_channel_integration_design.md>) | 现行 | 8,859 |
-| 2 | [lark-cli 集成与飞书渠道多应用化设计](<04-对话与消息/A-设计/lark_cli_integration.md>) | 已废弃 | 16,194 |
-| 3 | [消息渠道设计文档](<04-对话与消息/A-设计/message_channel_design.md>) | 已废弃 | 30,889 |
-| 4 | [用户-Agent 消息交互设计](<04-对话与消息/A-设计/message_interaction_design.md>) | 已废弃 | 19,755 |
-| 5 | [消息撤回与取消能力设计](<04-对话与消息/A-设计/message_recall_design.md>) | 现行 | 29,408 |
-| 6 | [微信渠道接入设计（iLink ClawBot / 企微智能机器人）](<04-对话与消息/A-设计/wechat_channel_integration_design.md>) | 草案 | 59,531 |
+| 1 | [Agent 间协作压力（链深度 + 信息疲劳度）可复用组件设计](<04-对话与消息/A-设计/collaboration_pressure_design.md>) | 现行 | 15,140 |
+| 2 | [飞书（Lark）渠道集成设计 —— 长连接协议对齐版](<04-对话与消息/A-设计/lark_channel_integration_design.md>) | 现行 | 8,859 |
+| 3 | [lark-cli 集成与飞书渠道多应用化设计](<04-对话与消息/A-设计/lark_cli_integration.md>) | 已废弃 | 16,194 |
+| 4 | [消息渠道设计文档](<04-对话与消息/A-设计/message_channel_design.md>) | 已废弃 | 30,889 |
+| 5 | [用户-Agent 消息交互设计](<04-对话与消息/A-设计/message_interaction_design.md>) | 已废弃 | 19,755 |
+| 6 | [消息撤回与取消能力设计](<04-对话与消息/A-设计/message_recall_design.md>) | 现行 | 29,408 |
+| 7 | [微信渠道接入设计（iLink ClawBot / 企微智能机器人）](<04-对话与消息/A-设计/wechat_channel_integration_design.md>) | 草案 | 59,531 |
 
 #### B 落地方案（plan，9 篇）
 
@@ -283,7 +284,7 @@
 | 9 | [实时推送](<04-对话与消息/C-知识/实时推送.md>) | 18,046 |
 | 10 | [微信 iLink 专属渠道](<04-对话与消息/C-知识/微信 iLink 专属渠道.md>) | 38,871 |
 | 11 | [微信 iLink 专属渠道闭环（wechat_dal + ilink_dao + inbound_state + 授权流程）](<04-对话与消息/C-知识/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程.md>) | 23,805 |
-| 12 | [消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类](<04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md>) | 34,261 |
+| 12 | [消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类](<04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md>) | 41,074 |
 | 13 | [消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级](<04-对话与消息/C-知识/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md>) | 8,692 |
 | 14 | [消息处理核心](<04-对话与消息/C-知识/消息处理核心.md>) | 21,767 |
 | 15 | [消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）](<04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md>) | 36,488 |
@@ -291,7 +292,7 @@
 | 17 | [消息渠道适配器](<04-对话与消息/C-知识/消息渠道适配器.md>) | 22,965 |
 | 18 | [消息管理](<04-对话与消息/C-知识/消息管理.md>) | 19,908 |
 | 19 | [消息系统（业务功能层）](<04-对话与消息/C-知识/消息系统.md>) | 22,683 |
-| 20 | [消息领域](<04-对话与消息/C-知识/消息领域.md>) | 25,804 |
+| 20 | [消息领域](<04-对话与消息/C-知识/消息领域.md>) | 30,070 |
 | 21 | [邮箱渠道全链路：SMTP 出站 + IMAP 入站 + EmailBot 身份凭证类型](<04-对话与消息/C-知识/邮箱渠道全链路：SMTP 出站 + IMAP 入站 + EmailBot 身份凭证类型/邮箱渠道全链路：SMTP 出站 + IMAP 入站 + EmailBot 身份凭证类型.md>) | 11,894 |
 
 ### 05-任务与项目

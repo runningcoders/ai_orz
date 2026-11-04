@@ -170,23 +170,48 @@ fn static_route_discards_no_reply_sentinel_for_user_origin() {
     );
 }
 
-/// 链深度机械兜底：达到上限 → EscalateToOwner，未达 → Peer
+/// 协作压力硬红线：纯文本往返撞窗口上限 → EscalateToOwner；
+/// 关键回归：有新信息回血时窗口重置，硬窗口之外仍允许 Peer 继续协作
 #[test]
-fn chain_route_escalates_at_depth_limit() {
-    assert_eq!(judge_chain_reply_route(0), AutoReplyRoute::Peer);
-    assert_eq!(judge_chain_reply_route(1), AutoReplyRoute::Peer);
+fn chain_route_escalates_at_pressure_wall_but_recovery_keeps_peer() {
+    use crate::pkg::collaboration_pressure::{ChainHop, ChainPressure, Novelty};
+
+    fn chain(rounds: usize, novelty_at: &[usize]) -> ChainPressure {
+        let mut pressure = ChainPressure::default();
+        for i in 0..rounds {
+            let novelty = if novelty_at.contains(&i) {
+                Novelty::ToolResult
+            } else {
+                Novelty::None
+            };
+            pressure.observe(ChainHop {
+                from_agent: true,
+                novelty,
+            });
+        }
+        pressure
+    }
+
     assert_eq!(
-        judge_chain_reply_route(MAX_AGENT_REPLY_CHAIN - 1),
+        judge_chain_reply_route(&chain(0, &[])),
+        AutoReplyRoute::Peer
+    );
+    assert_eq!(
+        judge_chain_reply_route(&chain(1, &[])),
+        AutoReplyRoute::Peer
+    );
+    assert_eq!(
+        judge_chain_reply_route(&chain(7, &[])),
         AutoReplyRoute::Peer
     );
     assert!(matches!(
-        judge_chain_reply_route(MAX_AGENT_REPLY_CHAIN),
+        judge_chain_reply_route(&chain(8, &[])),
         AutoReplyRoute::EscalateToOwner { .. }
     ));
-    assert!(matches!(
-        judge_chain_reply_route(MAX_AGENT_REPLY_CHAIN + 1),
-        AutoReplyRoute::EscalateToOwner { .. }
-    ));
+    assert_eq!(
+        judge_chain_reply_route(&chain(12, &[3, 7, 11])),
+        AutoReplyRoute::Peer
+    );
 }
 
 /// 回归（2026-10-18）：模型把哨兵写成中文「未回复」——全库 grep / git 历史 /
