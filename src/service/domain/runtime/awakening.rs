@@ -254,7 +254,9 @@ pub(super) async fn resolve_current_message_resources(
             }
         };
         let po = &att.po;
-        let mime = po.mime_type.clone();
+        // 生效 MIME（泛型按文件名补齐）：决定了能否进 `image/*` 视觉白名单，
+        // 历史 octet-stream 附件靠这里自愈，不必重传。
+        let mime = po.effective_mime_type();
         let size = po.size;
         lines.push(attachment_resource_line(po, att_id));
         if let Err(reason) = image_part_admission(&mime, size, images.len()) {
@@ -349,7 +351,9 @@ fn collect_resource_ref_ids(content: &str) -> (Vec<String>, Vec<String>) {
 fn attachment_resource_line(po: &crate::models::attachment::AttachmentPo, att_id: &str) -> String {
     let mut line = format!(
         "附件「{}」 (id: {att_id}) · {} · {} 字节",
-        po.original_name, po.mime_type, po.size
+        po.original_name,
+        po.effective_mime_type(),
+        po.size
     );
     let description = po.description.trim();
     if !description.is_empty() {

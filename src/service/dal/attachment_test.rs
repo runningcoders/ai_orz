@@ -88,3 +88,52 @@ fn infer_extension_sanitizes_user_filename() {
     let upload = create_upload("../evil.MD", "skill", b"hello");
     assert_eq!(upload.original_name, "../evil.MD");
 }
+
+/// 泛型 `application/octet-stream` 必须按后缀补齐真实类型。
+///
+/// 回归背景：前端构造上传 Blob 时曾硬编码该类型，后端又原样落库，导致每张图片都
+/// 变成二进制——前端 `is_inline_image()` 不出图、`/file` 带 `nosniff` 浏览器也救不了。
+/// 写库口是所有上传入口（站内 / 渠道入站 / 文本附件）的必经之路，兜底放这里最稳。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_create_from_upload_infers_mime_when_generic(pool: SqlitePool) -> Result<()> {
+    let (_temp_dir, dal, ctx) = init_test_env(pool);
+
+    let attachment = dal
+        .create_from_upload(
+            ctx,
+            AttachmentUpload {
+                original_name: "设计稿.png".to_string(),
+                mime_type: "application/octet-stream".to_string(),
+                purpose: "message".to_string(),
+                bytes: b"\x89PNG-fake".to_vec(),
+            },
+        )
+        .await?;
+
+    assert_eq!(attachment.po.mime_type, "image/png");
+    assert_eq!(attachment.po.file_type, FileType::Image);
+    assert!(attachment.po.stored_name.ends_with(".png"));
+    Ok(())
+}
+
+/// 调用方给出具体类型时原样尊重（含参数），不被后缀覆盖——客户端判定可能比后缀准。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_create_from_upload_keeps_specific_mime(pool: SqlitePool) -> Result<()> {
+    let (_temp_dir, dal, ctx) = init_test_env(pool);
+
+    let attachment = dal
+        .create_from_upload(
+            ctx,
+            AttachmentUpload {
+                original_name: "note.bin".to_string(),
+                mime_type: "text/markdown".to_string(),
+                purpose: "message".to_string(),
+                bytes: b"# hi".to_vec(),
+            },
+        )
+        .await?;
+
+    assert_eq!(attachment.po.mime_type, "text/markdown");
+    assert_eq!(attachment.po.file_type, FileType::Document);
+    Ok(())
+}

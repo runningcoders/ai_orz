@@ -49,6 +49,10 @@ pub async fn upload_attachment(
 
         if field_name == "file" {
             let original_name = field.file_name().unwrap_or("upload").to_string();
+            // 只做「原样透传」：客户端给的 `Content-Type` 可能就是泛型
+            // `application/octet-stream` 甚至缺失，按文件名后缀补齐真实类型的兜底
+            // 统一在写库口 `AttachmentDal::create_from_upload` 做（站内 / 渠道 / 文本
+            // 附件都要经过它，兜底放一处才不会漏）。
             let mime_type = field
                 .content_type()
                 .unwrap_or("application/octet-stream")

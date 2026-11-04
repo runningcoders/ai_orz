@@ -270,6 +270,15 @@ impl AttachmentPo {
         }
     }
 
+    /// 生效 MIME 类型：泛型 `application/octet-stream` / 空值时按原始文件名后缀补齐。
+    ///
+    /// 写库归一（`AttachmentDal::create_from_upload`）上线前落库的附件可能存着泛型
+    /// 类型。附件的所有读侧（详情 DTO、`/file` 响应头、唤醒视觉输入、派生资源）统一
+    /// 走本方法，旧附件不必重传即可自愈：图片重新内联出图、能进视觉输入。
+    pub fn effective_mime_type(&self) -> String {
+        common::mime::normalize_or_infer(&self.mime_type, &self.original_name)
+    }
+
     /// 标记为删除。
     pub fn mark_deleted(&mut self, modified_by: String) {
         self.status = 0;
@@ -308,6 +317,46 @@ mod tests {
 
     fn root() -> PathBuf {
         PathBuf::from("/srv/ai_orz/attachments")
+    }
+
+    fn po_with(mime_type: &str, original_name: &str) -> AttachmentPo {
+        AttachmentPo::new(
+            "att-1".to_string(),
+            original_name.to_string(),
+            "stored".to_string(),
+            "user-1/stored".to_string(),
+            mime_type.to_string(),
+            FileType::Document,
+            8,
+            String::new(),
+            "user-1".to_string(),
+            "user-1".to_string(),
+        )
+    }
+
+    /// 泛型 MIME 按文件名补齐：写库归一上线前落库的历史附件靠这里自愈，
+    /// 否则图片既进不了前端内联白名单，也进不了唤醒的 `image/*` 视觉白名单。
+    #[test]
+    fn effective_mime_type_infers_from_original_name() {
+        assert_eq!(
+            po_with("application/octet-stream", "截图.png").effective_mime_type(),
+            "image/png"
+        );
+        assert_eq!(po_with("", "clip.mp4").effective_mime_type(), "video/mp4");
+        // 后缀也识别不出时保持泛型，不瞎猜
+        assert_eq!(
+            po_with("application/octet-stream", "blob").effective_mime_type(),
+            common::mime::OCTET_STREAM
+        );
+    }
+
+    /// 具体类型原样返回，不被后缀覆盖。
+    #[test]
+    fn effective_mime_type_keeps_specific_value() {
+        assert_eq!(
+            po_with("image/webp", "cat.png").effective_mime_type(),
+            "image/webp"
+        );
     }
 
     #[test]

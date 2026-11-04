@@ -117,10 +117,16 @@ impl AttachmentDal for AttachmentDalImpl {
         }
 
         let id = uuid::Uuid::now_v7().to_string();
-        let extension = infer_extension(&upload.original_name, &upload.mime_type);
+        // ⚠️ 上传方的 `mime_type` 不可全信：浏览器里手工构造的 Blob 若没设 type、
+        // 微信 / 飞书下载响应、非浏览器调用方都会给 `application/octet-stream` 甚至空串。
+        // 直接落库会让「图片」永远进不了内联白名单（`/file` 还会带 `nosniff`，连浏览器
+        // 嗅探都被禁），所以**写库前**按原文件名后缀补齐真实类型；调用方给了具体类型
+        // 则原样尊重。这是所有上传入口（站内 / 渠道入站 / 文本附件）的唯一写库口。
+        let mime_type = common::mime::normalize_or_infer(&upload.mime_type, &upload.original_name);
+        let extension = infer_extension(&upload.original_name, &mime_type);
         let stored_name = format!("{id}{extension}");
         let relative_path = generate_relative_path(&id, &extension);
-        let file_type = infer_file_type(&upload.mime_type, &extension);
+        let file_type = infer_file_type(&mime_type, &extension);
         let size = upload.bytes.len() as i64;
         let purpose = upload.purpose.trim().to_string();
 
@@ -129,7 +135,7 @@ impl AttachmentDal for AttachmentDalImpl {
             upload.original_name,
             stored_name,
             relative_path.clone(),
-            upload.mime_type,
+            mime_type,
             file_type,
             size,
             purpose,
@@ -155,9 +161,14 @@ impl AttachmentDal for AttachmentDalImpl {
         ctx: RequestContext,
         create: TextAttachmentCreate,
     ) -> Result<Attachment> {
-        let mime_type = create
-            .mime_type
-            .unwrap_or_else(|| infer_mime_type(&create.file_name));
+        // 文本附件按内容来源创建，后缀往往缺失；推断不出具体类型时退回 `text/plain`
+        // （而不是泛型 octet-stream），否则纯文本会掉进 Binary 分支。
+        let mime_type = create.mime_type.unwrap_or_else(|| {
+            match common::mime::infer_mime_type(&create.file_name) {
+                common::mime::OCTET_STREAM => "text/plain".to_string(),
+                inferred => inferred.to_string(),
+            }
+        });
         let upload = AttachmentUpload {
             original_name: create.file_name,
             mime_type,
@@ -266,23 +277,6 @@ fn infer_extension(original_name: &str, mime_type: &str) -> String {
     }
 }
 
-fn infer_mime_type(file_name: &str) -> String {
-    match Path::new(file_name)
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "md" => "text/markdown".to_string(),
-        "json" => "application/json".to_string(),
-        "yaml" | "yml" => "application/yaml".to_string(),
-        "toml" => "application/toml".to_string(),
-        "csv" => "text/csv".to_string(),
-        _ => "text/plain".to_string(),
-    }
-}
-
 fn sanitize_extension(extension: &str) -> String {
     extension
         .chars()
@@ -293,7 +287,10 @@ fn sanitize_extension(extension: &str) -> String {
 }
 
 fn infer_file_type(mime_type: &str, extension: &str) -> FileType {
-    let normalized_mime = mime_type.split(';').next().unwrap_or_default().trim();
+    // 先按 MIME 归类：客户端 / 渠道给出的具体类型比文件名后缀更可信。
+    // ⚠️ 文档类也必须在这里认——否则「`text/markdown` + `.bin` 文件名」会掉进
+    // Binary 分支（详情页与前端渲染都按 `FileType` 分派，会当成二进制下载）。
+    let normalized_mime = common::mime::normalize(mime_type);
     if normalized_mime.starts_with("image/") {
         return FileType::Image;
     }
@@ -303,7 +300,30 @@ fn infer_file_type(mime_type: &str, extension: &str) -> FileType {
     if normalized_mime.starts_with("video/") {
         return FileType::Video;
     }
+    let is_document_mime = normalized_mime.starts_with("text/")
+        || matches!(
+            normalized_mime,
+            "application/pdf"
+                | "application/json"
+                | "application/xml"
+                | "application/yaml"
+                | "application/x-yaml"
+                | "application/toml"
+                | "application/sql"
+                | "application/rtf"
+                | "application/epub+zip"
+                | "application/msword"
+                | "application/vnd.ms-excel"
+                | "application/vnd.ms-powerpoint"
+                | "application/javascript"
+        )
+        // docx / xlsx / pptx 共用 OOXML 后缀
+        || normalized_mime.contains("officedocument");
+    if is_document_mime {
+        return FileType::Document;
+    }
 
+    // MIME 泛型 / 未知：退回扩展名兜底
     match extension
         .trim_start_matches('.')
         .to_ascii_lowercase()

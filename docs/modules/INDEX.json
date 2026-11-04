@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 671,
-  "total_bytes": 14106325,
+  "total_bytes": 14106936,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -5686,7 +5686,7 @@
           "path": "13-数据模型/C-知识/数据模型.md",
           "name": "数据模型",
           "title": "数据模型",
-          "bytes": 28216
+          "bytes": 28827
         },
         {
           "tier": "C-知识",

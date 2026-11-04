@@ -243,7 +243,10 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
                                             uint8.copy_from(&bytes);
                                             blob_parts.push(&uint8);
                                             let bag = web_sys::BlobPropertyBag::new();
-                                            bag.set_type("application/octet-stream");
+                                            // Blob type 即 multipart part 的 Content-Type：
+                                            // 按后缀给真实类型（表来自 common，与后端一致），
+                                            // 否则技能包附件会被存成 application/octet-stream。
+                                            bag.set_type(common::mime::infer_mime_type(&filename));
                                             let blob = web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &bag).ok();
 
                                             let form = match web_sys::FormData::new() {

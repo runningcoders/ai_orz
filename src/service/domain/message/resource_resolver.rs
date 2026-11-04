@@ -178,11 +178,15 @@ pub async fn resolve_message_resources(
         if let Ok(Some(a)) = attachment_dal.get_by_id(ctx.clone(), &id).await
             && a.po.status == 1
         {
+            // 归一化后再拼摘要：历史泛型 mime 会让模型把图片误判成二进制附件。
+            // 先算完借用值，再移动 `original_name`（字段移动后不能整体借用 a）。
+            let mime = a.po.effective_mime_type();
+            let size = a.po.size;
             attachments.insert(
                 id,
                 ResolvedPayload {
                     name: a.po.original_name,
-                    summary: Some(format!("{} · {}", a.po.mime_type, a.po.size)),
+                    summary: Some(format!("{mime} · {size}")),
                 },
             );
         }

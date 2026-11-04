@@ -861,7 +861,11 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 uint8_array.copy_from(&bytes);
                 blob_parts.push(&uint8_array);
                 let blob_bag = web_sys::BlobPropertyBag::new();
-                blob_bag.set_type("application/octet-stream");
+                // ⚠️ Blob 的 type 会变成 multipart part 的 `Content-Type`，写死
+                // `application/octet-stream` 会让后端把每张图都存成泛型类型，图片就再也
+                // 内联不出来（`/file` 带 `nosniff`，浏览器无法纠正）。按后缀给真实类型，
+                // 推断表与后端共用一个（`common::mime`）。
+                blob_bag.set_type(common::mime::infer_mime_type(&file_name));
                 let blob =
                     web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &blob_bag).ok();
 

@@ -16,6 +16,7 @@ pub mod error;
 pub mod llm_schema;
 pub mod markdown_protocol;
 pub mod mention;
+pub mod mime;
 pub mod models;
 pub mod ontology;
 pub mod ontology_property;

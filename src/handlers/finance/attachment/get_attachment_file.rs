@@ -59,11 +59,17 @@ pub async fn get_attachment_file(
         .get(header::RANGE)
         .and_then(|value| value.to_str().ok());
 
+    // 历史数据兜底：写库归一（`AttachmentDal::create_from_upload`）上线前落库的附件，
+    // `mime_type` 可能是泛型 `application/octet-stream`（前端 Blob 未设 type / 渠道
+    // 下载响应只给泛型）。响应头带 `nosniff`，泛型类型会让 `<img>` 直接拒绝渲染，
+    // 所以在出口再按原文件名补齐一次——旧附件不必重传即可恢复内联展示。
+    let mime_type = attachment.po.effective_mime_type();
+
     serve_file(
         &abs_path,
         range,
         FileServeOptions {
-            mime_type: &attachment.po.mime_type,
+            mime_type: &mime_type,
             file_name: &attachment.po.original_name,
             // 私有资产：允许浏览器短期缓存以减少重复拉取，但禁止共享缓存留存。
             cache_control: Some("private, max-age=3600"),

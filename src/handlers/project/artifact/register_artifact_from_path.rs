@@ -81,9 +81,12 @@ pub async fn register_artifact_from_path(
     let file_name = params
         .file_name
         .unwrap_or_else(|| mime_util::basename(&params.source_path));
-    let mime_type = params
-        .mime_type
-        .unwrap_or_else(|| mime_util::infer_mime_type(&file_name));
+    // 显式给的 mime 若只是泛型 `application/octet-stream`（非浏览器调用方的常见写法），
+    // 与「没给」等价，按文件名后缀补齐真实类型——否则产物详情页会把它当二进制下载。
+    let mime_type = common::mime::normalize_or_infer(
+        params.mime_type.as_deref().unwrap_or_default(),
+        &file_name,
+    );
     let file_type = params
         .file_type
         .unwrap_or_else(|| mime_util::infer_file_type(&mime_type));

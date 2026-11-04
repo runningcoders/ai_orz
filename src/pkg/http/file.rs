@@ -40,7 +40,10 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio_util::io::ReaderStream;
 
 /// `mime_type` 缺失或含非法字符时的兜底类型。
-pub const DEFAULT_MIME: &str = "application/octet-stream";
+///
+/// 与 [`common::mime::OCTET_STREAM`] 同一字面量：上传链路（缺失 → 按后缀补齐）与
+/// 响应链路（缺失 → 泛型兜底）共用一套判定，避免两边对「未知」的定义分叉。
+pub const DEFAULT_MIME: &str = common::mime::OCTET_STREAM;
 
 /// 流式读取的块大小（64 KiB）：小于默认 8 KiB 会导致大文件系统调用过多，
 /// 过大则单块占用内存偏高。

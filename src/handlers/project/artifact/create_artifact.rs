@@ -80,7 +80,9 @@ async fn create_from_attachment(
     let file_type = params.file_type.unwrap_or(attachment.po.file_type);
     let file_meta = FileMeta::new(
         format!("attachments/{}", attachment.po.relative_path),
-        attachment.po.mime_type.clone(),
+        // 与附件读侧同口径：历史泛型 mime 在这里也要补齐，否则产物 `/file`
+        // 响应头仍是 octet-stream（带 nosniff），图片内联不出来。
+        attachment.po.effective_mime_type(),
         attachment.po.size as u64,
     );
 
