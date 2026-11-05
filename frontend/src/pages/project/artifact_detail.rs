@@ -15,6 +15,7 @@ use dioxus_router::Link;
 use crate::api::project::{get_artifact, get_artifact_content, update_artifact};
 use crate::components::artifact_meta_modal::ArtifactMetaModal;
 use crate::components::code_editor::CodeEditor;
+use crate::components::html_preview::{HtmlPreview, is_html_previewable};
 use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
@@ -93,6 +94,11 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
             if d.source_type != ArtifactSourceType::GeneratedContent
                 || d.file_type != FileType::Document
                 || is_pdf
+                || is_html_previewable(
+                    &d.mime_type,
+                    d.file_path.rsplit('/').next().unwrap_or(""),
+                    d.file_size,
+                )
             {
                 return None;
             }
@@ -100,6 +106,27 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                 .await
                 .ok()
                 .map(|resp| resp.content.content)
+        }
+    });
+
+    // HTML 产物：先按元信息判定是否可内联，再走 `/file` 取源码交给沙箱 iframe。
+    // 不能把 iframe 直指 `/file`——后端对 text/html 强制 attachment，那样只会下载。
+    let html_res = use_resource(move || {
+        let id = rid();
+        let target = detail_res
+            .read()
+            .as_ref()
+            .and_then(|r| r.as_ref().ok())
+            .map(|d| (d.mime_type.clone(), d.file_path.clone(), d.file_size));
+        async move {
+            let (mime_type, file_path, file_size) = target?;
+            let stored_name = file_path.rsplit('/').next().unwrap_or("");
+            if !is_html_previewable(&mime_type, stored_name, file_size) {
+                return None;
+            }
+            crate::api::api_get_text(&format!("/api/v1/project/artifacts/{id}/file"))
+                .await
+                .ok()
         }
     });
 
@@ -173,6 +200,12 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                     signal: true,
                     div { class: "card-body",
                         div { class: "card-actions justify-end",
+                            a {
+                                class: "btn hud-btn btn-primary btn-sm",
+                                href: file_url(&a.id),
+                                download: download_name(&a.file_path, &a.name),
+                                "⬇️ 下载原件"
+                            }
                             button {
                                 class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: move |_| show_meta_modal.set(true),
@@ -191,7 +224,32 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                 {
                     let url = file_url(&a.id);
                     let is_pdf = a.mime_type.starts_with("application/pdf");
+                    // 需求①：html 走沙箱内联，优先于「文本编辑」分支（HTML 当 Markdown
+                    // 渲染是错的，当纯文本看也不是用户要的）
+                    let is_html = is_html_previewable(
+                        &a.mime_type,
+                        a.file_path.rsplit('/').next().unwrap_or(""),
+                        a.file_size,
+                    );
                     match a.file_type {
+                        _ if is_html => rsx! {
+                            HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
+                                h3 { class: "font-semibold mb-3", "🌐 HTML 预览" }
+                                div { class: "text-xs text-base-content/60 mb-2",
+                                    "沙箱隔离渲染（不加载本站身份）；依赖外部资源或文件过大时请下载原件"
+                                }
+                                if let Some(html) = html_res.read().as_ref().and_then(|h| h.clone()) {
+                                    HtmlPreview { html: html, title: a.name.clone() }
+                                } else if html_res.read().as_ref().is_none() {
+                                    Loading {}
+                                } else {
+                                    EmptyState {
+                                        icon: "🌐".to_string(),
+                                        message: "HTML 源码读取失败，请下载查看原件".to_string(),
+                                    }
+                                }
+                            }
+                        },
                         FileType::Image => rsx! {
                             HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
                                 h3 { class: "font-semibold mb-3", "🖼️ 图片" }
@@ -304,14 +362,6 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                         _ => rsx! {
                             EmptyState { icon: "📦".to_string(), message: "此产物为二进制文件，不支持在线预览，请下载查看".to_string() }
                         },
-                    }
-                }
-                div { class: "mt-4",
-                    a {
-                        class: "btn hud-btn btn-ghost btn-sm",
-                        href: file_url(&a.id),
-                        download: download_name(&a.file_path, &a.name),
-                        "⬇️ 下载原件"
                     }
                 }
                 ArtifactMetaModal {

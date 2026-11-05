@@ -11,6 +11,7 @@
 
 use crate::api::finance::{get_attachment, get_attachment_content, update_attachment_content};
 use crate::components::code_editor::CodeEditor;
+use crate::components::html_preview::{HtmlPreview, is_html_previewable};
 use crate::components::hud::HudPanel;
 use crate::components::hud::PageHeader;
 use crate::components::state::{EmptyState, Loading};
@@ -54,16 +55,47 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
             .read()
             .as_ref()
             .and_then(|r| r.as_ref().ok())
-            .map(|d| (d.file_type, d.mime_type.clone()));
+            .map(|d| {
+                (
+                    d.file_type,
+                    d.mime_type.clone(),
+                    d.original_name.clone(),
+                    d.size,
+                )
+            });
         async move {
-            let (file_type, mime_type) = target?;
-            if file_type != FileType::Document || mime_type.starts_with("application/pdf") {
+            let (file_type, mime_type, original_name, size) = target?;
+            // HTML 归「内联渲染」而不是「文本编辑」：既不该进代码编辑器改，
+            // 也不该白跑一趟 /content。
+            if file_type != FileType::Document
+                || mime_type.starts_with("application/pdf")
+                || is_html_previewable(&mime_type, &original_name, size)
+            {
                 return None;
             }
             get_attachment_content(&id)
                 .await
                 .ok()
                 .map(|resp| resp.text.content)
+        }
+    });
+
+    // HTML 附件：走 `/file` 取源码交给沙箱 iframe（后端对 text/html 强制下载）。
+    let html_res = use_resource(move || {
+        let id = rid();
+        let target = detail_res
+            .read()
+            .as_ref()
+            .and_then(|r| r.as_ref().ok())
+            .map(|d| (d.mime_type.clone(), d.original_name.clone(), d.size));
+        async move {
+            let (mime_type, original_name, size) = target?;
+            if !is_html_previewable(&mime_type, &original_name, size) {
+                return None;
+            }
+            crate::api::api_get_text(&format!("/api/v1/finance/attachments/{id}/file"))
+                .await
+                .ok()
         }
     });
 
@@ -125,6 +157,14 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
             } else if let Some(a) = detail {
                 HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
                     title: Some(a.original_name.clone()),
+                    div { class: "card-actions justify-end mt-4",
+                        a {
+                            class: "btn hud-btn btn-primary btn-sm",
+                            href: file_url(&a.id),
+                            download: a.original_name.clone(),
+                            "⬇️ 下载原件"
+                        }
+                    }
                     div { class: "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4",
                             div { div { class: "text-sm text-base-content/60", "存储名" }, div { class: "font-mono text-sm", "{a.stored_name}" } }
                             div { div { class: "text-sm text-base-content/60", "大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.size)}" } }
@@ -136,7 +176,26 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                 {
                     let url = file_url(&a.id);
                     let is_pdf = a.mime_type.starts_with("application/pdf");
+                    let is_html = is_html_previewable(&a.mime_type, &a.original_name, a.size);
                     match a.file_type {
+                        _ if is_html => rsx! {
+                            HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
+                                h3 { class: "font-semibold mb-3", "🌐 HTML 预览" }
+                                div { class: "text-xs text-base-content/60 mb-2",
+                                    "沙箱隔离渲染（不加载本站身份）；依赖外部资源或文件过大时请下载原件"
+                                }
+                                if let Some(html) = html_res.read().as_ref().and_then(|h| h.clone()) {
+                                    HtmlPreview { html: html, title: a.original_name.clone() }
+                                } else if html_res.read().as_ref().is_none() {
+                                    Loading {}
+                                } else {
+                                    EmptyState {
+                                        icon: "🌐".to_string(),
+                                        message: "HTML 源码读取失败，请下载查看原件".to_string(),
+                                    }
+                                }
+                            }
+                        },
                         FileType::Image => rsx! {
                             HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
                                 h3 { class: "font-semibold mb-3", "🖼️ 图片" }
@@ -230,14 +289,6 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                                 message: "此类型附件不支持在线预览，请下载查看".to_string(),
                             }
                         },
-                    }
-                }
-                div { class: "mt-4",
-                    a {
-                        class: "btn hud-btn btn-ghost btn-sm",
-                        href: file_url(&a.id),
-                        download: a.original_name.clone(),
-                        "⬇️ 下载原件"
                     }
                 }
             } else {

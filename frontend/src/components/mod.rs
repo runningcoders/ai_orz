@@ -21,6 +21,7 @@ pub mod force_layout;
 pub mod gauge;
 pub mod graph;
 pub mod graph_canvas;
+pub mod html_preview;
 pub mod hud;
 pub mod hud_palette;
 pub mod identity_chip;
