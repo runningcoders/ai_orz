@@ -274,6 +274,9 @@ async fn expand_graph(deps: &AwakenDeps, memories: &[Memory]) -> GraphExpansion 
             GRAPH_MAX_DEPTH,
             GRAPH_MAX_BREADTH,
             TraversalStrategy::BreadthFirst,
+            // 唤醒链路**硬传 false**：检索是增强而非决定条件，不为它引入行为变更
+            // （退役节点不因这条链路被带回上下文）。
+            false,
         )
         .await
     {

@@ -92,6 +92,7 @@ fn fetch_memories(
                 agent_id: agent_id.clone(),
                 property_filters: None,
                 include_history: None,
+                include_retired: None,
             })
             .await
             .map(|r| r.results)

@@ -203,6 +203,11 @@ pub trait RuntimeMemory: Send + Sync {
     ///
     /// 蜂巢语义：知识与关系是全体 Agent 共享资产，遍历不施加归属门槛；
     /// 种子节点（调用方点名的中心节点）**恒出现在结果里**。
+    ///
+    /// # 参数 `include_retired`
+    /// 退役节点（status=0）的受控出口：`false`（默认）沿用既有行为（排除退役），
+    /// `true` 时放开状态谓词，让上层能观测到退役节点。唤醒链路固定传 `false`
+    /// （检索是增强而非决定条件，不引入行为变更）。
     async fn traverse_graph(
         &self,
         ctx: RequestContext,
@@ -210,6 +215,7 @@ pub trait RuntimeMemory: Send + Sync {
         max_depth: i32,
         max_breadth: i32,
         strategy: TraversalStrategy,
+        include_retired: bool,
     ) -> Result<Vec<Memory>>;
 
     // ========== 实体属性（ABox 图谱域通用挂载） ==========

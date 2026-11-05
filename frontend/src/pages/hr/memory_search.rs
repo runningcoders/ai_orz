@@ -65,6 +65,7 @@ pub fn HrMemorySearch() -> Element {
                     agent_id: None,
                     property_filters: None,
                     include_history: None,
+                    include_retired: None,
                 })
                 .await
                 .map(|r| r.results)

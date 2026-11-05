@@ -85,6 +85,15 @@ pub struct MemoryQuery {
     /// 新增：按知识节点类型过滤（summary/concept/fact/procedure）
     /// 注意：与 memory_type 不同——memory_type 是记忆大类型，node_type 是知识节点的子类型
     pub node_type: Option<String>,
+    /// 是否把**退役**（`MemoryStatus::Forgotten`，即 status=0）的知识节点也纳入召回
+    ///
+    /// 默认 `false` = 沿用既有行为（查询默认排除软删除 / 遗忘的记忆）。
+    ///
+    /// # 优先级
+    /// `status` 显式指定 > `exclude_status`（明确排除）> `include_retired`（可选包含）>
+    /// 默认排除。顺序不是随意的：「明确排除」的语义强度**高于**「可选包含」，
+    /// 调用方显式投了排除就不该被一个布尔开关放开。
+    pub include_retired: bool,
     /// 排序方向，默认 [`MemorySortOrder::RecentFirst`]（保持历史行为）
     ///
     /// 队列类查询（如待沉淀短期记忆）应显式指定 [`MemorySortOrder::OldestFirst`]。

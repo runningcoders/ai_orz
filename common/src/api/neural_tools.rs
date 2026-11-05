@@ -70,6 +70,20 @@ pub struct SearchMemoryParams {
     /// `term_key` / `ordinal` / `status` 排序，生效行在前。显式软删行
     /// （`status = 2`）任何情况下都不返回。
     pub include_history: Option<bool>,
+    /// 是否**一并返回退役（`status = 0`）知识节点**（默认 `false` = 排除）。
+    ///
+    /// - `false`（或未传）：沿用既有行为 —— FTS / 向量回表 / 关键词三条通道
+    ///   都在 DAO 层过滤 `status != 0`，退役节点不可见；
+    /// - `true`：受控出口，上述通道**不再附加** `status != 0` 谓词，退役节点
+    ///   一并返回，其回包 `status` 为 `"retired"`（= 请求侧 `query_memory` 的
+    ///   `status = "forgotten"`，同为 status=0，两端同义不同名）。
+    ///
+    /// ⚠️ 显式 `status` / `exclude_status` 的语义强度高于本开关：调用方明确
+    /// 排除某个状态时，本开关不得把它放回来。
+    ///
+    /// 回包用 `include_retired` 回显实际生效值、`retired_excluded_count` 给出
+    /// 被排除的条数（仅纯关键词通道计量）。
+    pub include_retired: Option<bool>,
 }
 
 /// 搜索记忆响应。
@@ -128,6 +142,33 @@ pub struct SearchMemoryResponse {
     /// 与「库里真没有」，进而反复重试同一条件。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// 被**排除掉的退役知识节点条数**（`status = 0`）。
+    ///
+    /// 口径：同条件以 `include_retired = true` 再检一次，在**该次结果里**直接数
+    /// `memory_type == "knowledge_node" && status == "retired"` 的条数 ——
+    /// 与本次结果是否被 `max_results` 截断无关（差值法会高估，故不采用）。
+    ///
+    /// - `Some(0)`：确实没有退役节点被排除；
+    /// - `Some(n)`：有 n 条退役节点因默认排除而不可见，需要时请传 `include_retired`；
+    /// - `None`：**未计量** —— ① `include_retired = true`（本就没排除）；
+    ///   ② `seed_node_ids` / 遍历通道（点名展开的语义与关键词检索不同，本字段
+    ///   只在纯关键词通道给量）；③ 计量用的第二次检索失败（失败只降级本字段，
+    ///   不让主请求失败）；④ **传了 `property_filters`** —— 属性命中集是召回
+    ///   **之后**的内存 `retain`，本字段的二次检索不重放该收口 ⇒ 会数进
+    ///   不带该属性的退役节点（既高估，又与同回包的 `matched_total` 口径矛盾），
+    ///   故宁可不给值。
+    ///
+    /// 精度：第二次检索自身若撞上内部探测上限，本字段是**下界**；若本次有向量
+    /// 通道参与（`semantic_used == true`），放开 `limit` 会改变向量召回集，
+    /// 该情形下本字段是**近似值**。纯关键词通道（`semantic_used != true` 且未传
+    /// `property_filters`）下是精确值。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retired_excluded_count: Option<u64>,
+    /// 本次实际生效的 `include_retired` 取值（`None` 请求 ⇒ `Some(false)`）。
+    ///
+    /// 总是回显：调用方无需回看自己传了什么，就能确认「这次到底排不排退役」。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_retired: Option<bool>,
 }
 
 /// 单条记忆结果。
@@ -195,6 +236,32 @@ pub struct MemoryResult {
     /// 标记混进业务标签、在「读全字段原样回写」时被静默清掉）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_flags: Option<Vec<String>>,
+    /// 记忆状态：**四值封闭**，`active` / `settled` / `retired` / `deleted`。
+    ///
+    /// 取值来源按记忆类型分工（两者状态枚举同形不同名，故合并成一个字符串字段）：
+    /// - `knowledge_node` 取自 `MemoryStatus`：`active`(=1) / `settled`(=2) /
+    ///   `retired`(=0)。⚠️ **回包 `retired` = 请求侧 `status` 参数的 `forgotten`**
+    ///   —— 存储层叫「已遗忘」（软归档），回包统一叫「已退役」，两端同义不同名。
+    ///   不要把它读成第五种状态：`retired` 就是 `status = 0`。
+    /// - `relation` 取自 `KnowledgeRelationStatus`：`active`(=1) / `retired`(=0，
+    ///   即 `Superseded` 被替换) / `deleted`(=2，用户显式软删除)。
+    ///   ⚠️ **检索通道上关系边只会是 `active`**：关系边的全部读取路径硬编码
+    ///   `status = 1`（`dao/memory/sqlite/relations.rs` 六处 SELECT），
+    ///   `Superseded`(=0) 与 `Deleted`(=2) 的边**从不进入检索结果**（既有的
+    ///   图谱读取语义，非本字段引入；`graph.rs` 注释亦自述「仅返回 Active 边」）。
+    ///   因此上面那两个标签在本字段里保留，只是为了 `to_api_result` 是一份
+    ///   **完备映射** —— 写侧 / 更新路径仍可能把非 `active` 的边交给它，
+    ///   届时不能把它们误读成 `active` 或解析出错。
+    ///   另注：`deleted` 在检索通道上不可观测（不是「观测缺失」，是读取语义
+    ///   决定的），若将来关系通道也做受控出口，需同步改写本段。
+    ///
+    /// `short_term` / `trace` 没有状态维度，恒为 `None`（**键整体缺席**，
+    /// 不是空串）：消费方按「缺席 ⇒ 该类型无状态」处理，别回退成默认值。
+    ///
+    /// 本字段只做**可观测性**：它不改变任何检索范围（那由 `SearchMemoryParams::
+    /// include_retired` 与 `retired_excluded_count` 负责）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// 记忆匹配元信息（语义搜索场景）。
@@ -1037,6 +1104,7 @@ mod tests {
             properties: None,
             search_match: None,
             system_flags: None,
+            status: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         assert!(

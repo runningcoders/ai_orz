@@ -201,6 +201,9 @@ impl MemoryDalImpl {
         })
     }
 
+    /// `include_retired` 是退役节点的**受控出口**：`false`（默认）时取回阶段仍由 DAO
+    /// 的 `status != 0` 排除退役节点；`true` 时只放开该谓词，其余不变。
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn traverse_knowledge_graph(
         &self,
         ctx: RequestContext,
@@ -208,6 +211,7 @@ impl MemoryDalImpl {
         max_depth: i32,
         max_breadth: i32,
         strategy: TraversalStrategy,
+        include_retired: bool,
     ) -> Result<Vec<Memory>> {
         if seed_node_ids.is_empty() {
             return Ok(Vec::new());
@@ -223,7 +227,9 @@ impl MemoryDalImpl {
         }
 
         if max_depth <= 0 {
-            let nodes = self.fetch_nodes_by_ids(ctx.clone(), &visited_nodes).await?;
+            let nodes = self
+                .fetch_nodes_by_ids(ctx.clone(), &visited_nodes, include_retired)
+                .await?;
             return Ok(self.build_graph_memories(nodes, result_relations));
         }
 
@@ -258,7 +264,9 @@ impl MemoryDalImpl {
             }
         }
 
-        let nodes = self.fetch_nodes_by_ids(ctx.clone(), &visited_nodes).await?;
+        let nodes = self
+            .fetch_nodes_by_ids(ctx.clone(), &visited_nodes, include_retired)
+            .await?;
         Ok(self.build_graph_memories(nodes, result_relations))
     }
 
@@ -460,11 +468,14 @@ impl MemoryDalImpl {
     /// - 种子是调用方点名的节点，无论归属哪个 Agent 都必须取回（否则点击展开缺中心节点）；
     /// - 邻居也是共享知识，不因归属被丢弃。
     ///
-    /// 仍然受软删除约束：DAO 默认排除 `status = Forgotten`（遗忘的节点不该再出现在图上）。
+    /// 默认仍然受软删除约束：DAO 默认排除 `status = Forgotten`（遗忘的节点不该再出现在图上）。
+    /// `include_retired = true` 是**受控出口**（`search_memory` 的 `include_retired` 开关沿
+    /// `traverse_graph` 一路透传到这里），只放开退役节点，其余谓词不变。
     async fn fetch_nodes_by_ids(
         &self,
         ctx: RequestContext,
         node_ids: &HashSet<String>,
+        include_retired: bool,
     ) -> Result<Vec<LongTermKnowledgeNodePo>> {
         if node_ids.is_empty() {
             return Ok(Vec::new());
@@ -475,6 +486,7 @@ impl MemoryDalImpl {
         for chunk in ids.chunks(crate::service::dao::memory::sqlite::IN_CLAUSE_CHUNK) {
             let query = MemoryQuery {
                 ids: Some(chunk.to_vec()),
+                include_retired,
                 ..Default::default()
             };
             nodes.extend(

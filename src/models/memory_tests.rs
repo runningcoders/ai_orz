@@ -254,3 +254,82 @@ fn property_superseded_and_deleted_are_not_active() {
     po.status = KnowledgeRelationStatus::Deleted;
     assert!(!po.is_active());
 }
+
+/// B 单 CP1（B-e'）：知识节点三种存储状态 → 回包 `status` 文案。
+///
+/// `Forgotten`(=0) 回包写 `retired`，而**请求参数侧仍写 `forgotten`** ——
+/// 同义不同名（存储叫「已遗忘」、回包叫「已退役」），不要当成第五种状态。
+#[test]
+fn status_label_maps_every_node_status_value() {
+    for (status, want) in [
+        (MemoryStatus::Active, "active"),
+        (MemoryStatus::Settled, "settled"),
+        (MemoryStatus::Forgotten, "retired"),
+    ] {
+        let mut memory = node("摘要");
+        if let MemoryPo::KnowledgeNode(po) = &mut memory.po {
+            po.status = status;
+        }
+        assert_eq!(
+            memory.to_api_result().status.as_deref(),
+            Some(want),
+            "知识节点 {status:?} 必须回显 {want}"
+        );
+    }
+}
+
+/// B 单 CP1：关系边三种存储状态 → 回包 `status` 文案。
+///
+/// `Deleted`(=2) 必须显式给出：默认检索只排除 `status = 0`，被删边仍会进结果，
+/// 合并成 `active` 会让消费方看不出「这条已被删过」。
+#[test]
+fn status_label_maps_every_relation_status_value() {
+    for (status, want) in [
+        (KnowledgeRelationStatus::Active, "active"),
+        (KnowledgeRelationStatus::Superseded, "retired"),
+        (KnowledgeRelationStatus::Deleted, "deleted"),
+    ] {
+        let mut memory = relation("causes");
+        if let MemoryPo::Relation(po) = &mut memory.po {
+            po.status = status;
+        }
+        assert_eq!(
+            memory.to_api_result().status.as_deref(),
+            Some(want),
+            "关系边 {status:?} 必须回显 {want}"
+        );
+    }
+}
+
+/// B 单 CP1（旧形状兼容）：`status = None` 时序列化载荷里**整键缺席**。
+///
+/// short_term / trace 没有状态维度；空串或 null 都会被前端读成
+/// 「有状态但没值」，只有键缺席才是「该类型无此维度」。
+#[test]
+fn status_key_is_absent_from_payload_when_none() {
+    let result =
+        crate::models::memory::Memory::new(MemoryPo::KnowledgeNode(LongTermKnowledgeNodePo {
+            id: "kn_absent".to_string(),
+            agent_id: "agent-a".to_string(),
+            node_name: "节点".to_string(),
+            node_description: "正文".to_string(),
+            node_type: "general".to_string(),
+            summary: String::new(),
+            tags: "[]".to_string(),
+            user_tags: "[]".to_string(),
+            status: MemoryStatus::Active,
+            is_published: false,
+            created_at: 0,
+            updated_at: 0,
+        }))
+        .to_api_result();
+    assert_eq!(result.status.as_deref(), Some("active"));
+
+    let mut absent = result;
+    absent.status = None;
+    let json = serde_json::to_value(&absent).unwrap();
+    assert!(
+        !json.as_object().unwrap().contains_key("status"),
+        "status = None 时不得出现该键（不是 null、不是空串）: {json}"
+    );
+}

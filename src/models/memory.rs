@@ -10,7 +10,7 @@
 use crate::models::vector::{MatchType, SearchMatchInfo, VectorPayload, Vectorizable};
 use common::api::{MemoryResult, MemorySearchMatch};
 use common::enums::ontology::PropertyTargetType;
-use common::enums::{KnowledgeRelationStatus, KnowledgeRelationType};
+use common::enums::{KnowledgeRelationStatus, KnowledgeRelationType, MemoryStatus};
 use common::ontology_property::{PropertyColumns, PropertyValue};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -632,6 +632,7 @@ impl Memory {
                 tags: None,
                 properties: None,
                 system_flags: None,
+                status: None,
                 search_match,
             },
             // 短期记忆 PO 只有一个文本字段 summary（无独立标题/正文）：
@@ -651,6 +652,7 @@ impl Memory {
                 tags: Some(business_tags(&st.tags)),
                 properties: None,
                 system_flags: None,
+                status: None,
                 search_match,
             },
             MemoryPo::KnowledgeNode(kn) => MemoryResult {
@@ -679,6 +681,7 @@ impl Memory {
                 } else {
                     Vec::new()
                 }),
+                status: Some(node_status_label(kn.status)),
                 search_match,
             },
             MemoryPo::Relation(rel) => {
@@ -712,11 +715,41 @@ impl Memory {
                     tags: None,
                     properties: None,
                     system_flags: None,
+                    status: Some(relation_status_label(rel.status)),
                     search_match,
                 }
             }
         }
     }
+}
+
+/// 知识节点状态 → 回包 `status` 文案。
+///
+/// 三值：`active` / `settled` / `retired`。
+/// ⚠️ 存储枚举叫 `Forgotten`（已遗忘 = 软归档），回包统一叫 `retired`（已退役）——
+/// 而请求参数侧仍写 `forgotten`（见 `QueryMemoryParams::status` 词表）。
+/// 两端同义不同名是刻意保留的：改任一侧都会破现有调用方。
+fn node_status_label(status: MemoryStatus) -> String {
+    match status {
+        MemoryStatus::Active => "active",
+        MemoryStatus::Settled => "settled",
+        MemoryStatus::Forgotten => "retired",
+    }
+    .to_string()
+}
+
+/// 关系边状态 → 回包 `status` 文案。
+///
+/// 三值：`active` / `retired`(被替换) / `deleted`(显式软删)。
+/// ⚠️ `deleted` 必须显式给出：默认检索只排除 `status = 0`，`status = 2` 的边
+/// 仍会进结果，合并成 `active` 会让消费方看不出「这条已被删过」。
+fn relation_status_label(status: KnowledgeRelationStatus) -> String {
+    match status {
+        KnowledgeRelationStatus::Active => "active",
+        KnowledgeRelationStatus::Superseded => "retired",
+        KnowledgeRelationStatus::Deleted => "deleted",
+    }
+    .to_string()
 }
 
 /// 解析 tags JSON 数组字符串为 Vec<String>，解析失败返回空 Vec

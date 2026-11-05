@@ -221,6 +221,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             agent_id: None,
             property_filters: None,
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -626,6 +627,7 @@ async fn placeholder_relations_fail_per_item_without_any_edge(pool: sqlx::Sqlite
             agent_id: None,
             property_filters: None,
             include_history: None,
+            include_retired: None,
         },
     )
     .await

@@ -140,6 +140,7 @@ async fn knowledge_graph_payload_is_human_readable(pool: sqlx::SqlitePool) {
                 1,
                 10,
                 TraversalStrategy::BreadthFirst,
+                false,
             )
             .await
             .unwrap(),
@@ -270,6 +271,7 @@ fn click_params(seed: &str, agent_id: Option<&str>) -> SearchMemoryParams {
         agent_id: agent_id.map(|s| s.to_string()),
         property_filters: None,
         include_history: None,
+        include_retired: None,
     }
 }
 
@@ -482,6 +484,7 @@ async fn keyword_search_never_returns_dangling_edges(pool: sqlx::SqlitePool) {
             agent_id: Some("agent-kg".to_string()),
             property_filters: None,
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -542,6 +545,7 @@ async fn invalid_filter_values_are_rejected_instead_of_defaulted(pool: sqlx::Sql
         agent_id: None,
         property_filters: None,
         include_history: None,
+        include_retired: None,
     };
 
     // 拼错的 memory_type（少了 d）→ 400，而不是悄悄搜全部
@@ -633,6 +637,7 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
             agent_id: None,
             property_filters: None,
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -795,6 +800,7 @@ async fn search_memory_echoes_node_properties(pool: sqlx::SqlitePool) {
             agent_id: None,
             property_filters: None,
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -853,6 +859,7 @@ async fn property_filters_recall_matching_nodes_only(pool: sqlx::SqlitePool) {
                 value: PropertyValue::Number(0.8),
             }]),
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -898,6 +905,7 @@ async fn property_filters_with_no_hit_returns_empty(pool: sqlx::SqlitePool) {
                 value: PropertyValue::Number(0.99),
             }]),
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -935,6 +943,7 @@ async fn property_filters_conflict_with_seed_nodes(pool: sqlx::SqlitePool) {
                 value: PropertyValue::Number(0.8),
             }]),
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -968,6 +977,7 @@ async fn numeric_operator_requires_number_value(pool: sqlx::SqlitePool) {
                 value: PropertyValue::Text("官方手册".to_string()),
             }]),
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -1006,6 +1016,7 @@ fn filter_params(
             value: PropertyValue::Text(value.to_string()),
         }]),
         include_history: None,
+        include_retired: None,
     }
 }
 
@@ -1149,6 +1160,7 @@ async fn response_shape_stays_backward_compatible_without_property_filters(pool:
             agent_id: None,
             property_filters: None,
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -1211,6 +1223,7 @@ async fn explicit_agent_scope_never_falls_back_to_context(pool: sqlx::SqlitePool
             agent_id: Some("agent-without-any-node".to_string()),
             property_filters: None,
             include_history: None,
+            include_retired: None,
         },
     )
     .await
@@ -1234,5 +1247,541 @@ async fn explicit_agent_scope_never_falls_back_to_context(pool: sqlx::SqlitePool
         resp.agent_scope.as_deref(),
         Some("explicit:agent-without-any-node"),
         "作用域自述必须带出显式传入的 id"
+    );
+}
+
+/// B 单 CP1（B-e'）：`MemoryResult.status` 在**真实响应**里可观测，且无状态类型键缺席。
+///
+/// 四条断言：
+/// 1. 活跃知识节点 → `Some("active")`
+/// 2. 退役知识节点（`status = 0`）→ `Some("retired")`（= 请求侧 `forgotten`，同义不同名）
+/// 3. `short_term` → `None` 且载荷里 **`status` 键整体缺席**
+/// 4. 关系边 → **不为 `None`**（当前可见边均为活跃边，故 `Some("active")`）
+///
+/// 前置断言（防假绿）：退役节点必须真的能查出来，否则「没查到」会被误读成
+/// 「正确排除了退役节点」。
+#[sqlx::test]
+async fn memory_result_status_is_observable_on_live_payload(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let now = chrono::Utc::now().timestamp();
+
+    // —— 活跃节点（同时作为遍历种子，用来带出关系边）
+    seed_node(
+        &ctx,
+        "kn_status_live",
+        "活跃节点",
+        "活跃节点的正文",
+        "活跃节点的摘要",
+    )
+    .await;
+    seed_node(
+        &ctx,
+        "kn_status_peer",
+        "邻居节点",
+        "邻居节点的正文",
+        "邻居节点的摘要",
+    )
+    .await;
+    link(&ctx, "kr_status", "kn_status_live", "kn_status_peer").await;
+
+    // —— 退役节点（status = 0）：软归档但行仍在
+    runtime_domain()
+        .memory()
+        .create(
+            ctx.clone(),
+            MemoryCreateParams::CreateKnowledgeNode {
+                node: LongTermKnowledgeNodePo {
+                    id: "kn_status_retired".to_string(),
+                    agent_id: "agent-kg".to_string(),
+                    node_name: "退役节点".to_string(),
+                    node_description: "退役节点的正文".to_string(),
+                    node_type: "general".to_string(),
+                    summary: "退役节点的摘要".to_string(),
+                    tags: "[]".to_string(),
+                    user_tags: "[]".to_string(),
+                    status: MemoryStatus::Forgotten,
+                    is_published: false,
+                    created_at: now,
+                    updated_at: now,
+                },
+                references: vec![],
+            },
+        )
+        .await
+        .unwrap();
+
+    // —— 短期记忆（无状态维度）
+    create_memory(
+        ctx.clone(),
+        CreateMemoryParams {
+            memory_type: "short_term".to_string(),
+            content: "短期记忆正文".to_string(),
+            summary: Some("短期记忆摘要".to_string()),
+            tags: None,
+            task_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // —— 断言 1 + 4：遍历通道拿活跃节点与关系边
+    let graph = search_memory(ctx.clone(), click_params("kn_status_live", None))
+        .await
+        .unwrap();
+    let live = graph
+        .results
+        .iter()
+        .find(|r| r.id == "kn_status_live")
+        .unwrap_or_else(|| panic!("活跃节点必须回来: {:?}", graph.results));
+    assert_eq!(
+        live.status.as_deref(),
+        Some("active"),
+        "活跃知识节点必须回显 active"
+    );
+
+    let edge = graph
+        .results
+        .iter()
+        .find(|r| r.memory_type == "relation")
+        .unwrap_or_else(|| panic!("关系边必须随之回来: {:?}", graph.results));
+    assert!(
+        edge.status.is_some(),
+        "关系边必须回显 status（不得为 None，否则消费方无法区分 active/retired/deleted）"
+    );
+    assert_eq!(edge.status.as_deref(), Some("active"), "该边是生效边");
+
+    // —— 断言 2：退役节点经显式 status 筛选可读出，且回显 retired
+    let retired = query_memory(
+        ctx.clone(),
+        QueryMemoryParams {
+            agent_id: None,
+            memory_type: Some("knowledge_node".to_string()),
+            limit: Some(10),
+            tags: None,
+            task_id: None,
+            status: Some("forgotten".to_string()),
+            include_history: None,
+        },
+    )
+    .await
+    .unwrap();
+    let retired_hit = retired
+        .results
+        .iter()
+        .find(|r| r.id == "kn_status_retired")
+        .unwrap_or_else(|| {
+            panic!(
+                "前置断言失败：退役节点必须真实存在（否则本用例会假绿）: {:?}",
+                retired.results
+            )
+        });
+    assert_eq!(
+        retired_hit.status.as_deref(),
+        Some("retired"),
+        "退役节点（status=0）回包必须写 retired（= 请求侧 forgotten）"
+    );
+
+    // —— 断言 3：short_term 无状态维度 → None，且键整体缺席
+    let short = query_memory(
+        ctx.clone(),
+        QueryMemoryParams {
+            agent_id: None,
+            memory_type: Some("short_term".to_string()),
+            limit: Some(10),
+            tags: None,
+            task_id: None,
+            status: None,
+            include_history: None,
+        },
+    )
+    .await
+    .unwrap();
+    let short_hit = short
+        .results
+        .iter()
+        .find(|r| r.memory_type == "short_term")
+        .unwrap_or_else(|| panic!("短期记忆必须可查: {:?}", short.results));
+    assert!(
+        short_hit.status.is_none(),
+        "short_term 没有状态维度，必须是 None"
+    );
+    let json = serde_json::to_value(short_hit).unwrap();
+    assert!(
+        !json.as_object().unwrap().contains_key("status"),
+        "short_term 载荷里 status 键必须整体缺席: {json}"
+    );
+}
+
+// ==================== 退役节点受控出口（B 单 CP3） ====================
+
+/// 造一个指定状态的知识节点（退役 / 活跃），供受控出口用例使用
+async fn seed_node_with_status(ctx: &RequestContext, id: &str, name: &str, status: MemoryStatus) {
+    let now = chrono::Utc::now().timestamp();
+    runtime_domain()
+        .memory()
+        .create(
+            ctx.clone(),
+            MemoryCreateParams::CreateKnowledgeNode {
+                node: LongTermKnowledgeNodePo {
+                    id: id.to_string(),
+                    agent_id: "agent-kg".to_string(),
+                    node_name: name.to_string(),
+                    node_description: format!("{name} tailgate 正文"),
+                    node_type: "general".to_string(),
+                    summary: format!("{name} tailgate 摘要"),
+                    tags: "[]".to_string(),
+                    user_tags: "[]".to_string(),
+                    status,
+                    is_published: false,
+                    created_at: now,
+                    updated_at: now,
+                },
+                references: vec![],
+            },
+        )
+        .await
+        .unwrap();
+}
+
+/// 纯关键词通道参数（带 limit 与开关，用于计量口径用例）
+fn keyword_params(
+    query: &str,
+    max_results: i32,
+    include_retired: Option<bool>,
+) -> SearchMemoryParams {
+    SearchMemoryParams {
+        query: query.to_string(),
+        max_results: Some(max_results),
+        memory_type: None,
+        // 纯关键词通道：**不带**种子、**不做**遍历（否则走 seed / do_traversal 分支，
+        // 那两个分支的计量恒为 None，本用例就测不到 else 分支的计数口径）
+        traversal_depth: None,
+        traversal_breadth: None,
+        traversal_strategy: None,
+        seed_node_ids: None,
+        tags: None,
+        task_id: None,
+        agent_id: None,
+        property_filters: None,
+        include_history: None,
+        include_retired,
+    }
+}
+
+/// 用例 1 + 3（seed 分支）：默认排除退役、`include_retired = true` 可取回，
+/// 且 seed 分支 `retired_excluded_count` 恒 `None`（未计量）。
+#[sqlx::test]
+async fn include_retired_controls_seed_visibility(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    seed_node_with_status(&ctx, "kn_seed_live", "活跃种子节点", MemoryStatus::Active).await;
+    seed_node_with_status(&ctx, "kn_seed_off", "退役种子节点", MemoryStatus::Forgotten).await;
+
+    // 前置断言：退役节点必须真实存在（否则本用例会假绿）
+    let all = query_memory(
+        ctx.clone(),
+        common::api::QueryMemoryParams {
+            agent_id: None,
+            memory_type: None,
+            limit: None,
+            tags: None,
+            task_id: None,
+            status: Some("forgotten".to_string()),
+            include_history: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        all.results.iter().any(|r| r.id == "kn_seed_off"),
+        "前置断言失败：退役节点必须真实存在（否则本用例会假绿）"
+    );
+
+    // 默认：种子点名也不返回退役节点（退役节点取回阶段就被排除）
+    let default_resp = search_memory(ctx.clone(), click_params("kn_seed_off", None))
+        .await
+        .unwrap();
+    assert!(
+        !default_resp.results.iter().any(|r| r.id == "kn_seed_off"),
+        "默认必须排除退役节点: {:?}",
+        default_resp.results
+    );
+    assert_eq!(
+        default_resp.include_retired,
+        Some(false),
+        "回包必须回显生效的 include_retired = false"
+    );
+    assert_eq!(
+        default_resp.retired_excluded_count, None,
+        "seed / 遍历分支未计量，必须为 None（不是 Some(1)、不是 Some(0)）"
+    );
+
+    // 放开：退役节点可取回，且 status 回显 retired
+    let mut on = click_params("kn_seed_off", None);
+    on.include_retired = Some(true);
+    let opened = search_memory(ctx.clone(), on).await.unwrap();
+    let hit = opened
+        .results
+        .iter()
+        .find(|r| r.id == "kn_seed_off")
+        .unwrap_or_else(|| {
+            panic!(
+                "include_retired = true 必须能取回退役种子: {:?}",
+                opened.results
+            )
+        });
+    assert_eq!(
+        hit.status.as_deref(),
+        Some("retired"),
+        "退役节点的 status 必须回显 retired（= 请求侧 forgotten）"
+    );
+    assert_eq!(opened.include_retired, Some(true), "回包必须回显开关");
+    assert_eq!(
+        opened.retired_excluded_count, None,
+        "include_retired = true 时本就没排除，必须为 None"
+    );
+}
+
+/// 用例 3 生死断言：小 `max_results` + 命中数 > `max_results` + 含退役
+/// ⇒ `retired_excluded_count` 必须等于**精确退役数**（差值法在此必红）。
+#[sqlx::test]
+async fn retired_excluded_count_is_exact_under_small_max_results(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    // 3 个活跃 + 2 个退役，全部命中关键词 `tailgate`
+    seed_node_with_status(&ctx, "kn_tally_1", "tailgate 活跃一", MemoryStatus::Active).await;
+    seed_node_with_status(&ctx, "kn_tally_2", "tailgate 活跃二", MemoryStatus::Active).await;
+    seed_node_with_status(&ctx, "kn_tally_3", "tailgate 活跃三", MemoryStatus::Active).await;
+    seed_node_with_status(
+        &ctx,
+        "kn_tally_4",
+        "tailgate 退役一",
+        MemoryStatus::Forgotten,
+    )
+    .await;
+    seed_node_with_status(
+        &ctx,
+        "kn_tally_5",
+        "tailgate 退役二",
+        MemoryStatus::Forgotten,
+    )
+    .await;
+
+    // max_results = 3 < 命中总数 5：主结果被截断，差值法会把「没返回的活跃」也算成退役
+    let resp = search_memory(ctx.clone(), keyword_params("tailgate", 3, None))
+        .await
+        .unwrap();
+    let nodes: Vec<&MemoryResult> = resp
+        .results
+        .iter()
+        .filter(|r| r.memory_type == "knowledge_node")
+        .collect();
+    assert!(
+        nodes.len() <= 3,
+        "主结果不得突破 max_results（实测 {}）",
+        nodes.len()
+    );
+    assert!(
+        nodes.iter().all(|r| r.status.as_deref() == Some("active")),
+        "默认通道只能回活跃节点: {:?}",
+        nodes.iter().map(|r| (&r.id, &r.status)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        resp.retired_excluded_count,
+        Some(2),
+        "被排除的退役节点数必须精确等于 2：命中 5 条（3 活跃 + 2 退役）而 max_results = 3，\
+         差值法在截断场景下会得到错误答案；本断言锁的是「按 id 去重后的精确节点数」"
+    );
+    assert_eq!(resp.include_retired, Some(false), "回包必须回显开关");
+
+    // 放开后：退役节点可见，且计量字段为 None（没有排除）。
+    // 这里 max_results 放宽到 10 —— 不是为了「绕过」上面的截断断言，而是：主结果按
+    // fts_rank 排序，退役节点通常排在活跃节点之后，3 条窗口内本就轮不到它们。
+    // 「放开开关后能否看见退役节点」与「截断时计量是否精确」是两个独立断言。
+    let opened = search_memory(ctx.clone(), keyword_params("tailgate", 10, Some(true)))
+        .await
+        .unwrap();
+    assert!(
+        opened
+            .results
+            .iter()
+            .any(|r| r.status.as_deref() == Some("retired")),
+        "include_retired = true 必须能带出退役节点: {:?}",
+        opened.results
+    );
+    assert_eq!(
+        opened.retired_excluded_count, None,
+        "include_retired = true 时未排除，必须为 None"
+    );
+}
+
+/// 关系边通道的**真实行为**锁定：`deleted`（status=2）的边取不到。
+///
+/// ⚠️ 这不是本单引入的收敛：`list_relations_batch_chunk` 的两条 SQL 硬编码
+/// `) AND "status" = 1`（`src/service/dao/memory/sqlite/relations.rs:55/87`），
+/// 部署库里 `status = 2` 的 254 条边**从来不进检索结果**。所以 `deleted` 这个取值
+/// 在检索通道上不可观测；保留在映射里是因为写侧/更新路径仍可能把 Deleted 的边
+/// 交给 `to_api_result`（若将来关系通道也做受控出口，本用例会失败并提醒同步文档）。
+#[sqlx::test]
+async fn deleted_relation_is_not_reachable_through_search_channels(pool: sqlx::SqlitePool) {
+    let raw = pool.clone();
+    let ctx = init_env(pool);
+    seed_node(&ctx, "kn_del_a", "删除边源", "来源正文", "来源摘要").await;
+    seed_node(&ctx, "kn_del_b", "删除边靶", "靶正文", "靶摘要").await;
+    link(&ctx, "kr_del_probe", "kn_del_a", "kn_del_b").await;
+
+    // 夹具：把这条边改成 status = 2（Deleted）—— 仅测试库内构造，非生产写路径
+    sqlx::query("UPDATE knowledge_node_relation SET \"status\" = 2 WHERE id = ?")
+        .bind("kr_del_probe")
+        .execute(&raw)
+        .await
+        .unwrap();
+
+    let resp = search_memory(ctx.clone(), click_params("kn_del_a", None))
+        .await
+        .unwrap();
+    assert!(
+        !resp.results.iter().any(|r| r.id == "kr_del_probe"),
+        "关系边通道硬编码 status = 1，deleted 边不应出现在检索结果里: {:?}",
+        resp.results
+            .iter()
+            .map(|r| (&r.id, &r.status))
+            .collect::<Vec<_>>()
+    );
+    // 两端节点仍应正常返回（节点通道没有边的状态约束）
+    assert!(
+        resp.results.iter().any(|r| r.id == "kn_del_a"),
+        "源节点必须正常返回"
+    );
+}
+
+// ==================== 用例 4（CP4）：additive 锁定 / 旧形状兼容 ====================
+
+/// 用例 4（B 单 CP4）：三处加字段必须**纯 additive** ——
+/// ① `MemoryResult.status` 在无状态维度的结果（short_term）上**键整体缺席**；
+/// ② `SearchMemoryResponse.retired_excluded_count` 在 seed 分支（未计量）上
+///    **键缺席**，而同批新增的 `include_retired` 恒回显生效值 `false`；
+/// ③ A-2 的五个自述字段行为零变化（无 property_filters 时
+///    `matched_total` / `returned` / `reason` 缺席，`agent_scope` / `semantic_used` 恒在）。
+///
+/// 附：纯关键词通道在**零退役节点**的场景下，计量应为精确的 `Some(0)`
+/// （而不是缺席）—— 缺席只留给「未能计量」的四种情形。
+#[sqlx::test]
+async fn new_fields_are_purely_additive_on_legacy_shapes(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    seed_node(
+        &ctx,
+        "kn_shape4",
+        "形状节点",
+        "shapetail 形状正文",
+        "shapetail 形状摘要",
+    )
+    .await;
+
+    // —— ① short_term 结果：status 键整体缺席，相邻旧字段原样保留
+    create_memory(
+        ctx.clone(),
+        CreateMemoryParams {
+            memory_type: "short_term".to_string(),
+            content: "shapetail 短期记忆正文".to_string(),
+            summary: Some("shapetail 短期记忆摘要".to_string()),
+            tags: None,
+            task_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let short = query_memory(
+        ctx.clone(),
+        QueryMemoryParams {
+            agent_id: None,
+            memory_type: Some("short_term".to_string()),
+            limit: Some(10),
+            tags: None,
+            task_id: None,
+            status: None,
+            include_history: None,
+        },
+    )
+    .await
+    .unwrap();
+    let short_hit = short
+        .results
+        .iter()
+        .find(|r| r.memory_type == "short_term")
+        .unwrap_or_else(|| panic!("前置：短期记忆必须可查: {:?}", short.results));
+    let short_json = serde_json::to_value(short_hit).unwrap();
+    let short_obj = short_json.as_object().unwrap();
+    assert!(
+        !short_obj.contains_key("status"),
+        "short_term 无状态维度 ⇒ status 键必须整体缺席（None 不得序列化成 null）: {short_json}"
+    );
+    assert!(
+        short_obj.contains_key("memory_type") && short_obj.contains_key("content"),
+        "相邻旧字段必须原样保留（证明不是整块被吞）: {short_json}"
+    );
+
+    // —— ② seed 分支：retired_excluded_count 未计量 ⇒ 键缺席；include_retired 恒回显
+    let seed_req = SearchMemoryParams {
+        query: String::new(),
+        max_results: Some(50),
+        memory_type: None,
+        traversal_depth: Some(0),
+        traversal_breadth: Some(10),
+        traversal_strategy: Some("breadth_first".to_string()),
+        seed_node_ids: Some(vec!["kn_shape4".to_string()]),
+        tags: None,
+        task_id: None,
+        agent_id: None,
+        property_filters: None,
+        include_history: None,
+        include_retired: None,
+    };
+    let seeded = search_memory(ctx.clone(), seed_req).await.unwrap();
+    assert!(
+        seeded.results.iter().any(|r| r.id == "kn_shape4"),
+        "前置：种子节点必须回来: {:?}",
+        seeded.results
+    );
+    let seed_json = serde_json::to_value(&seeded).unwrap();
+    let seed_obj = seed_json.as_object().unwrap();
+    assert!(
+        !seed_obj.contains_key("retired_excluded_count"),
+        "seed / 遍历分支未计量 ⇒ retired_excluded_count 键必须缺席（skip_serializing_if 失效？）: {seed_json}"
+    );
+    assert_eq!(
+        seed_obj.get("include_retired").and_then(|v| v.as_bool()),
+        Some(false),
+        "不传开关时生效应为 false，且必须回显（不能只留文档不留实现）: {seed_json}"
+    );
+
+    // —— ③ A-2 五字段零变化（复跑 A-2 用例 3 口径）
+    let kw = search_memory(ctx.clone(), keyword_params("shapetail", 10, None))
+        .await
+        .unwrap();
+    assert!(!kw.results.is_empty(), "前置：关键词通道必须有命中");
+    let kw_json = serde_json::to_value(&kw).unwrap();
+    let kw_obj = kw_json.as_object().unwrap();
+    for key in ["matched_total", "returned", "reason"] {
+        assert!(
+            !kw_obj.contains_key(key),
+            "不传 property_filters 且结果非空时不得出现 `{key}`（A-2 五字段行为变更？）: {kw_json}"
+        );
+    }
+    assert!(kw_obj.contains_key("agent_scope"), "agent_scope 恒回显");
+    assert!(
+        kw_obj.contains_key("semantic_used"),
+        "非空结果时 semantic_used 恒回显"
+    );
+    // —— 附：零退役节点场景下计量必须是精确 0，而不是缺席（缺席语义留给「没能计量」）
+    assert_eq!(
+        kw_obj
+            .get("retired_excluded_count")
+            .and_then(|v| v.as_u64()),
+        Some(0),
+        "本用例库里没有任何退役节点 ⇒ 计量应为精确的 0（缺席只代表未计量）: {kw_json}"
+    );
+    assert_eq!(
+        kw_obj.get("include_retired").and_then(|v| v.as_bool()),
+        Some(false),
+        "关键词通道同样必须回显生效值"
     );
 }

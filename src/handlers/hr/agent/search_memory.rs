@@ -18,7 +18,7 @@ use common::ontology_property::PropertyValue;
 #[register_handler_tool(
     id = "search_memory",
     name = "Search Memory (Semantic)",
-    description = "Search memories with a free-text query via hybrid keyword + vector semantic matching; results are ranked and annotated with match_type, vector_distance, and fts_rank. memory_type accepts short_term/knowledge_node/trace/relation/all; traversal_strategy accepts breadth_first/depth_first. Values outside those lists are rejected with invalid_request rather than silently defaulted. Knowledge nodes are hive-shared: every agent can read all of them, and agent_id is only an optional ownership filter on the seeds (omit it to search the whole hive). Pass seed_node_ids to expand through the knowledge graph instead of searching: the seed nodes themselves are always returned (the center node is never dropped), traversal_depth/breadth/strategy shape the expansion, and neighbors are never filtered by ownership. Pass property_filters for exact structured filtering on node properties (term_key + operator + typed value, AND semantics): it runs as an independent recall channel that resolves matching node ids first instead of re-filtering the semantic top_k, and combines with query as an intersection; it cannot be combined with seed_node_ids, and comparison operators other than eq require a number value. Returned knowledge nodes carry their current properties, so you can see what is already attached (and re-send an item to correct it via update_memory). `tags` matching uses one composed view: a node matches when any requested tag equals one of its WRITABLE user tags, OR when the requested tag is a system flag (`published`) carried by the read-only is_published marker (the marker is the source of truth - do not rely on a `published` string sitting in the tag list). Results echo the two faces separately: `tags` is the writable business-label list, `system_flags` is a read-only derived list (currently only `published`; always present on knowledge nodes, empty array when not published). Never write `published` into tags - use save_long_term_memory / update_memory's is_published parameter instead. For structured field filtering on tags/agent/status use query_memory.",
+    description = "Search memories with a free-text query via hybrid keyword + vector semantic matching; results are ranked and annotated with match_type, vector_distance, and fts_rank. memory_type accepts short_term/knowledge_node/trace/relation/all; traversal_strategy accepts breadth_first/depth_first. Values outside those lists are rejected with invalid_request rather than silently defaulted. Knowledge nodes are hive-shared: every agent can read all of them, and agent_id is only an optional ownership filter on the seeds (omit it to search the whole hive). Pass seed_node_ids to expand through the knowledge graph instead of searching: the seed nodes themselves are always returned (the center node is never dropped), traversal_depth/breadth/strategy shape the expansion, and neighbors are never filtered by ownership. Pass property_filters for exact structured filtering on node properties (term_key + operator + typed value, AND semantics): it runs as an independent recall channel that resolves matching node ids first instead of re-filtering the semantic top_k, and combines with query as an intersection; it cannot be combined with seed_node_ids, and comparison operators other than eq require a number value. Returned knowledge nodes carry their current properties, so you can see what is already attached (and re-send an item to correct it via update_memory). `tags` matching uses one composed view: a node matches when any requested tag equals one of its WRITABLE user tags, OR when the requested tag is a system flag (`published`) carried by the read-only is_published marker (the marker is the source of truth - do not rely on a `published` string sitting in the tag list). Results echo the two faces separately: `tags` is the writable business-label list, `system_flags` is a read-only derived list (currently only `published`; always present on knowledge nodes, empty array when not published). Never write `published` into tags - use save_long_term_memory / update_memory's is_published parameter instead. For structured field filtering on tags/agent/status use query_memory. Retired (soft-deleted) knowledge nodes are EXCLUDED by default; pass include_retired: true to also return them - such a node then echoes status = retired, which is the SAME value as the request-side forgotten (status 0), not a fifth state. The response echoes the effective switch in include_retired. retired_excluded_count reports how many retired knowledge nodes the keyword channel filtered out; it is measured in a widened probe re-run, so it stays exact even when max_results truncates the main result set (it is a lower bound only if the probe itself hits its internal cap, and it is approximate when a vector channel participated). It is omitted (null) in four cases: include_retired is true (nothing was excluded), the seed / traversal channels (not measured), when property_filters is present (the property hit set is applied after recall, so the count would overstate), and when the probe re-run itself fails (degraded to unmeasured; the main request still succeeds). Result status is active / settled / retired for knowledge nodes. Relation results on the search channels are ALWAYS active: every relation read path hard-codes status = 1 (six SELECTs in dao/memory/sqlite/relations.rs), so superseded and deleted edges never reach a search result - the retired / deleted labels remain in the mapping only as a complete conversion for write-side / update paths that may hand a non-active edge to to_api_result. short_term and trace results omit the key entirely.",
     params = "common::api::SearchMemoryParams",
     neural,
     tags = "ontology"
@@ -57,6 +57,11 @@ pub async fn search_memory(
     // `agent_filter` 在下方召回分支里会被 move 进查询参数，这里先固化成 bool，
     // 供回包 `reason` 的优先级链复用（否则 move 之后无法再问「有没有显式作用域」）。
     let has_explicit_agent = agent_filter.is_some();
+
+    // 退役节点受控出口的**生效值**（入口处固化一次，两条返回路径共用）：
+    // `None`（未传）= 默认排除退役，与拆分前的既有行为一致。
+    // 回包用 `include_retired` 回显它，让调用方不必回看自己传了什么。
+    let include_retired: bool = params.include_retired.unwrap_or(false);
 
     // 属性过滤入参先落地：后面据此收敛记忆类型与命中集（见「精确召回通道」注释）
     let property_filters: Vec<PropertyFilterParam> =
@@ -162,10 +167,18 @@ pub async fn search_memory(
             agent_scope: Some(agent_scope),
             semantic_used: None,
             reason: Some("filter_no_match".to_string()),
+            // 本路径没进任何召回通道，无从计量被排除的退役节点（未计量 ≠ 0 条）。
+            retired_excluded_count: None,
+            include_retired: Some(include_retired),
         });
     }
 
     let mut all_memories: Vec<Memory> = Vec::new();
+
+    // 被排除的退役节点条数（受控出口的**可观测性**）：只在纯检索分支给出真实值，
+    // 种子 / 遍历分支恒 `None`（未计量 —— 那些分支的召回范围由图结构决定，
+    // 「被排除多少条」没有稳定口径）。
+    let mut retired_excluded_count: Option<u64> = None;
 
     if has_seeds {
         // 🎯 点名种子（前端点击节点展开 / 调用方指定起点）：直接沿图展开，**不搜索**。
@@ -180,6 +193,7 @@ pub async fn search_memory(
                 traversal_depth,
                 traversal_breadth,
                 traversal_strategy,
+                include_retired,
             )
             .await?;
         all_memories.extend(traversed);
@@ -195,6 +209,7 @@ pub async fn search_memory(
                 tags: params.tags.clone(),
                 agent_id: agent_filter.clone(),
                 ids: property_hit_ids.clone(),
+                include_retired,
                 ..Default::default()
             },
             ..Default::default()
@@ -224,6 +239,7 @@ pub async fn search_memory(
                     traversal_depth,
                     traversal_breadth,
                     traversal_strategy,
+                    include_retired,
                 )
                 .await?;
             all_memories.extend(traversed);
@@ -237,8 +253,9 @@ pub async fn search_memory(
                 limit: params.max_results.map(|l| l as usize),
                 tags: params.tags.clone(),
                 task_id: params.task_id.clone(),
-                agent_id: agent_filter,
+                agent_id: agent_filter.clone(),
                 ids: property_hit_ids.clone(),
+                include_retired,
                 ..Default::default()
             },
             ..Default::default()
@@ -249,6 +266,57 @@ pub async fn search_memory(
             .search(ctx.clone(), search)
             .await?;
         all_memories.extend(search_results);
+
+        // ===== 退役节点计量（仅本分支：纯关键词 / 语义检索）=====
+        // 口径：在**放开退役**的同条件二次检索里直接数
+        // `MemoryPo::KnowledgeNode` 且 `status == Forgotten` 的条数
+        // （等价于回包里的 `memory_type == "knowledge_node" && status == "retired"`）。
+        //
+        // 为什么不用「二次条数 − 本次条数」：本次若被 `max_results` 截断，差值会把
+        // 「本来就没返回的活跃节点」也算成退役 ⇒ **高估**。直接数不受截断影响。
+        // 为什么二次检索要放开 limit：沿用 `max_results` 会让两次都撞同一个上限，
+        // 退役节点可能整批落在窗口外 ⇒ 恒为 0 的假值。
+        // 安全侧：二次检索的结果**绝不进 `results`**，失败只让本字段降级为 `None`，
+        // 主请求照常成功（计量是附加观测，不是主功能）。
+        // 三种 `None`：① `include_retired == true`（没有排除，也就无从计量，省一次检索）；
+        // ② 传了 `property_filters`（属性命中集是召回**之后**的内存 `retain`，这里不重放
+        //    该收口 ⇒ 会数进不带该属性的退役节点，既高估又与同回包的 `matched_total` 矛盾）；
+        // ③ 二次检索失败。
+        if !include_retired && !has_property_filters {
+            let probe = MemorySearch {
+                keyword: Some(params.query.clone()),
+                top_k: Some(RETIRED_COUNT_PROBE_LIMIT),
+                filters: crate::service::dao::memory::MemoryQuery {
+                    memory_type: Some(effective_memory_type),
+                    limit: Some(RETIRED_COUNT_PROBE_LIMIT as usize),
+                    tags: params.tags.clone(),
+                    task_id: params.task_id.clone(),
+                    agent_id: agent_filter.clone(),
+                    include_retired: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            if let Ok(probe_results) = runtime_domain().memory().search(ctx.clone(), probe).await {
+                // 按 **id 去重**后计数：二次检索走的是 DAL 合并通道（关键词/向量/图
+                // 多条来源可能给出同一节点的多行），而主结果的 `results` 是去重过的。
+                // 不去重就会把「一条退役节点被两条来源命中」数成两条 ⇒ 高估，
+                // 与同一回包里 `results` 的节点数口径也对不上。
+                // 计数用的是**节点数**（退役节点有多少个被排除），不是命中行数。
+                let retired_ids: std::collections::HashSet<&str> = probe_results
+                    .iter()
+                    .filter_map(|m| match &m.po {
+                        MemoryPo::KnowledgeNode(kn)
+                            if kn.status == common::enums::MemoryStatus::Forgotten =>
+                        {
+                            Some(kn.id.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                retired_excluded_count = Some(retired_ids.len() as u64);
+            }
+        }
     }
 
     let mut seen = HashSet::new();
@@ -330,8 +398,19 @@ pub async fn search_memory(
         agent_scope: Some(agent_scope),
         semantic_used,
         reason,
+        // 计量口径见 `else` 分支内的注释（三通道里只有纯检索分支能给出稳定值）。
+        retired_excluded_count,
+        include_retired: Some(include_retired),
     })
 }
+
+/// 二次检索（计量退役节点）放开的上限
+///
+/// 必须**远大于**常见 `max_results`（工具默认/常用范围 5~50，上限 100）：
+/// 沿用请求的 `max_results` 会让「本次」与「二次」撞同一个窗口，退役节点可能整批
+/// 落在窗口外 ⇒ 计量恒为 0 的假值。500 足够覆盖单次检索的实际候选规模；
+/// 真撞到这个上限时结果只是**下界**（字段文档已声明）。
+const RETIRED_COUNT_PROBE_LIMIT: i32 = 500;
 
 /// 向量通道是否真实参与了本次召回（三态，见 `SearchMemoryResponse::semantic_used`）。
 ///

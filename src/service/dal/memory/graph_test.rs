@@ -46,6 +46,7 @@ async fn test_traverse_bfs_layered(pool: SqlitePool) -> Result<()> {
             1,
             0,
             TraversalStrategy::BreadthFirst,
+            false,
         )
         .await?;
     assert_eq!(
@@ -66,6 +67,7 @@ async fn test_traverse_bfs_layered(pool: SqlitePool) -> Result<()> {
             2,
             0,
             TraversalStrategy::BreadthFirst,
+            false,
         )
         .await?;
     assert_eq!(
@@ -116,6 +118,7 @@ async fn test_traverse_dfs_branching_with_breadth_limit(pool: SqlitePool) -> Res
             3,
             1,
             TraversalStrategy::DepthFirst,
+            false,
         )
         .await?;
 
@@ -166,6 +169,7 @@ async fn test_traverse_dfs_chain(pool: SqlitePool) -> Result<()> {
             3,
             0,
             TraversalStrategy::DepthFirst,
+            false,
         )
         .await?;
 
@@ -218,6 +222,7 @@ async fn test_traverse_wide_star_fetch_chunking(pool: SqlitePool) -> Result<()> 
             1,
             0,
             TraversalStrategy::BreadthFirst,
+            false,
         )
         .await?;
 

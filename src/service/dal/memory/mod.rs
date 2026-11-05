@@ -259,6 +259,11 @@ pub trait MemoryDal: Send + Sync {
     /// # 不变量三：边只随两端节点一起返回
     /// 见 `drop_dangling_relations`：端点不在批内的边一律丢弃（层级是节点维度的概念，
     /// 边不是层级实体，孤立在批外的边没有意义）。
+    ///
+    /// # 参数 `include_retired`
+    /// 退役节点（`MemoryStatus::Forgotten`，status=0）的**受控出口**：`false`（默认）
+    /// 时取回阶段仍排除退役节点；`true` 时放开该谓词，让调用方能观测到退役节点
+    /// （其 `status` 回显为 `retired`）。
     async fn traverse_knowledge_graph(
         &self,
         ctx: RequestContext,
@@ -266,6 +271,7 @@ pub trait MemoryDal: Send + Sync {
         max_depth: i32,
         max_breadth: i32,
         strategy: TraversalStrategy,
+        include_retired: bool,
     ) -> Result<Vec<Memory>>;
 
     // ========== 实体属性（ABox 泛化挂载：节点 / 边共用一张表） ==========
@@ -496,7 +502,8 @@ memory_dal_impl! {
         seed_node_ids: &[String],
         max_depth: i32,
         max_breadth: i32,
-        strategy: TraversalStrategy
+        strategy: TraversalStrategy,
+        include_retired: bool
     ) -> Result<Vec<Memory>>,
     save_entity_properties(
         ctx: RequestContext,

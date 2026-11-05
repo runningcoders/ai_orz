@@ -124,6 +124,7 @@ fn seed_params(seed_id: &str, include_history: Option<bool>) -> SearchMemoryPara
         agent_id: None,
         property_filters: None,
         include_history,
+        include_retired: None,
     }
 }
 

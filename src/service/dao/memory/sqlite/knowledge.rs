@@ -13,6 +13,17 @@ use common::ontology::normalize;
 use serde_json;
 use sqlx::FromRow;
 
+/// 默认排除退役节点（`MemoryStatus::Forgotten` = 0）的 SQL 片段
+///
+/// 与引入受控出口**之前**的片段逐字节相同 —— 默认路径拼出的 SQL 必须一字不差。
+const SEARCH_CLAUSE_EXCLUDE_RETIRED: &str = "AND m.status != 0";
+
+/// `include_retired = true` 时的状态片段：空前缀 ⇒ 谓词位整体不加状态约束
+///
+/// ⚠️ 这两个常量是模板插值的**唯一**来源：只接受 `&'static str` 常量，
+/// 绝不允许把请求参数 `format!` 进 SQL（否则既破注入防御，又让默认路径无法保证逐字节等价）。
+const SEARCH_CLAUSE_INCLUDE_RETIRED: &str = "";
+
 /// 知识节点搜索行（PO + fts_rank）
 #[derive(FromRow)]
 struct KnowledgeNodeSearchRow {
@@ -354,8 +365,11 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             let exclude_i32 = *exclude_status as i32;
             builder.push(" AND status != ");
             builder.push_bind(exclude_i32);
-        } else if query.status.is_none() {
-            // 只有当没有明确指定 status 时，才默认排除 Forgotten（0）
+        } else if query.status.is_none() && !query.include_retired {
+            // 只有当**没有**明确指定 status、且调用方没有要求纳入退役节点时，
+            // 才默认排除 Forgotten（0）。
+            // 优先级：`status` 显式 > `exclude_status`（明确排除，语义更强）>
+            // `include_retired`（可选包含）> 默认排除。
             builder.push(" AND status != 0");
         }
 
@@ -487,6 +501,16 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             String::new()
         };
 
+        // 退役节点的**受控出口**：默认（`include_retired == false`）拼出的片段与
+        // 拆分前**逐字节相同**（`AND m.status != 0`）；放开时片段为空串，谓词位整体
+        // 少一段，SELECT 列 / JOIN / ORDER BY / LIMIT 一个字都没变。
+        // ⚠️ 插值只接受 `&'static str` 常量（见文件头两个常量），不许 `format!` 请求参数。
+        let status_clause = if search.filters.include_retired {
+            SEARCH_CLAUSE_INCLUDE_RETIRED
+        } else {
+            SEARCH_CLAUSE_EXCLUDE_RETIRED
+        };
+
         // 归属筛选：只有调用方**显式**指定 agent_id 才过滤（空串 = None）。
         // ⚠️ 知识节点是蜂巢共享资产：默认全域可搜，`published` 不再是可见性门槛。
         let ownership_clause = if agent_filter.is_some() {
@@ -542,7 +566,7 @@ FROM knowledge_node_fts
 JOIN long_term_knowledge_node m ON knowledge_node_fts.rowid = m.rowid
 WHERE knowledge_node_fts MATCH ?
   AND {ownership_clause}
-  AND m.status != 0{tags_clause}{ids_clause}
+  {status_clause}{tags_clause}{ids_clause}
 ORDER BY knowledge_node_fts.rank
 LIMIT ?
 "#
@@ -599,7 +623,7 @@ SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary
 FROM long_term_knowledge_node m
 WHERE ({like_clause})
   AND {ownership_clause}
-  AND m.status != 0{tags_clause}{ids_clause}
+  {status_clause}{tags_clause}{ids_clause}
 ORDER BY m.updated_at DESC, m.id DESC
 LIMIT ?
 "#

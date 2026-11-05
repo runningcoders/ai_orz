@@ -178,10 +178,18 @@ impl RuntimeMemory for RuntimeDomainImpl {
         max_depth: i32,
         max_breadth: i32,
         strategy: TraversalStrategy,
+        include_retired: bool,
     ) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
         dal()
-            .traverse_knowledge_graph(ctx, seed_node_ids, max_depth, max_breadth, strategy)
+            .traverse_knowledge_graph(
+                ctx,
+                seed_node_ids,
+                max_depth,
+                max_breadth,
+                strategy,
+                include_retired,
+            )
             .await
     }
 
