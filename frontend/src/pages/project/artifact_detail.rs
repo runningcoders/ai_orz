@@ -239,7 +239,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                                     "沙箱隔离渲染（不加载本站身份）；依赖外部资源或文件过大时请下载原件"
                                 }
                                 if let Some(html) = html_res.read().as_ref().and_then(|h| h.clone()) {
-                                    HtmlPreview { html: html, title: a.name.clone() }
+                                    HtmlPreview { html: Some(html), title: a.name.clone() }
                                 } else if html_res.read().as_ref().is_none() {
                                     Loading {}
                                 } else {

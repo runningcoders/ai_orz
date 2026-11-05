@@ -6,13 +6,16 @@
 //!
 //! 分区顺序（由 build.rs 保证）：总览 → 架构图 → 能力域知识库 → 模块索引
 //! 图表类条目（index.json 中 `type: "html"`）不走 Markdown 渲染：
-//! 右侧内容区用 iframe 内嵌加载（sandbox 隔离其自带脚本/样式），
+//! 右侧内容区交给共享组件 `HtmlPreview`（`components/html_preview.rs`）以静态 URL 模式
+//! 内嵌——与产物 / 附件详情页的 HTML 预览是同一条渲染路径（sandbox 隔离图表自带的
+//! 脚本 / 样式）；
 //! 标题栏另提供「新标签打开」直链 /docs/diagrams/xxx.html。
 //! 各分区默认展开、可整体折叠；能力域知识库为「模块 → A/B/C 层 → 文档」三级折叠树。
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use crate::components::html_preview::{HtmlPreview, HtmlPreviewSandbox};
 use crate::components::hud::HudPanel;
 use crate::components::hud::PageHeader;
 use dioxus::html::events::MouseEvent;
@@ -734,14 +737,17 @@ pub fn SystemDocs() -> Element {
                                                 "↗ 新标签打开"
                                             }
                                         }
-                                        // sandbox 隔离图表自带的脚本/样式，避免污染 SPA；
+                                        // 渲染统一收敛到共享组件 components/html_preview.rs：
+                                        // 与产物 / 附件预览同一套 iframe 属性与隔离口径，差别只在来源形态
+                                        // （这里是同源静态 URL，产物是 API 取回的源码）。
+                                        // WithPopups = 架构图既有的开窗能力逐字保留；sandbox / referrerpolicy
+                                        // 由组件统一给出，此处不再拼字符串。
                                         // archify 的 localStorage/clipboard 调用均有 try/catch 兜底
-                                        iframe {
-                                            class: "w-full h-[75vh] rounded-box border border-base-300 bg-base-100",
-                                            src: "/docs/{encode_doc_path(path)}?theme={iframe_theme}",
-                                            title: "{html_title}",
-                                            "sandbox": "allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox",
-                                            "loading": "eager",
+                                        HtmlPreview {
+                                            src: Some(format!("/docs/{}?theme={}", encode_doc_path(path), iframe_theme)),
+                                            title: html_title.clone(),
+                                            sandbox: HtmlPreviewSandbox::WithPopups,
+                                            lazy: false,
                                         }
                                     }
                                 } else if let Some(md) = markdown_opt.as_ref() {
