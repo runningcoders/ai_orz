@@ -1027,29 +1027,33 @@ impl ThinkNode for ConsolidateNode {
                 .write_thinking_trace(deps.ctx.clone(), snapshot)
                 .await?;
 
-            // 正常完成后按「估算 token 数」分流记忆：短问答原文记账，长内容交给模型总结
+            // 正常完成后按「实际链路规模」分流记忆：简单轮次原文记账，
+            // 有中间过程（多轮 / 多工具 / 大工具结果）或极长问答才交给模型总结
             //
-            // 分流不再看 exit / intent_type：直答、澄清、闲聊、任务一律守同一个阈值。
-            // 判据是策略引擎里的 `CompactionThresholdPolicy`（阈值来自
-            // `[agent].compaction_threshold_tokens`），以后要加「小脑」判断就往
-            // 策略组里加一条，调用方不动。
+            // ⚠️ 判据不能只看「用户原文 + 最终回复」：原文记账只保留首尾两侧，
+            // 长工具链里查到的路径 / ID / 参数 / 报错会整段丢。事实桶由
+            // `measure_turn_chain` 从主循环完整 messages 量出，交给 OR 策略组裁决；
+            // 以后换「小脑」判断只改策略组，这里不动。
             //
             // ⚠️ 不压缩 ≠ 不写记忆：唤醒时注入的近期对话读的就是短期记忆，
             // 这里不补一条，下一轮追问在历史里就看不到刚才那轮，表现为「聊过就忘」。
-            let turn_tokens = super::super::compaction::estimate_turn_tokens(
+            let chain = super::super::compaction::measure_turn_chain(
+                &artifacts.messages,
+                budget.total_rounds,
                 deps.message.content(),
                 &artifacts.content,
             );
             let compaction_policy = super::super::compaction::build_compaction_policy(&deps.agent);
-            let should_compress = compaction_policy.is_triggered(
-                &crate::pkg::policy::Metrics::new().with("turn_tokens", turn_tokens as u64),
-            );
+            let hits = compaction_policy.evaluate(&chain.into_policy_metrics());
+            let should_compress = !hits.is_empty();
             crate::log_info!(
                 &deps.ctx,
                 "legacy_awaken",
-                "post-completion compaction decision: {}, turn_tokens={}, exit={}, intent_type={}",
+                "post-completion compaction decision: should_compress={}, hits={:?}, chain={:?}, condition={}, exit={}, intent_type={}",
+                should_compress,
+                hits,
+                chain,
                 compaction_policy.condition_desc(),
-                turn_tokens,
                 artifacts.exit,
                 intent.intent_type
             );
@@ -1068,9 +1072,9 @@ impl ThinkNode for ConsolidateNode {
                 crate::log_info!(
                     &deps.ctx,
                     "legacy_awaken",
-                    "quick-store turn memory (below threshold), exit={}, turn_tokens={}, quick_memory_id={:?}",
+                    "quick-store turn memory (no compaction dimension hit), exit={}, chain={:?}, quick_memory_id={:?}",
                     artifacts.exit,
-                    turn_tokens,
+                    chain,
                     quick_memory_id
                 );
             } else if artifacts.exit != EXIT_MAX_ROUNDS {

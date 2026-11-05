@@ -79,9 +79,13 @@ summary_max_rounds = 3
 think_timeout_secs = 0
 # 单次唤醒 Token 预算（input+output 累计，跨周期），0 = 不启用
 token_budget = 0
-# 记忆分流阈值：本轮问答估算 token 数（中文≈汉字数，英文≈4 字符/token）
-# 低于它原文写入短期记忆，达到/超过才交给模型压缩
-compaction_threshold_tokens = 256
+# 记忆分流：首尾文本（用户原文 + 最终回复）估算 token 数的兜底阈值
+# 中文≈汉字数，英文≈4 字符/token。达到它或链路复杂度任一达标 → 交给模型压缩；
+# 都不达标 → 原文写入短期记忆。
+# ⚠️ 主判据是链路复杂度（思考轮次 / 工具调用数 / 工具结果体量，见
+#    src/service/domain/runtime/compaction.rs 的 COMPACTION_CHAIN_* 常量），
+#    这里只兜「回复本身极长」的情况，别再当成总结频率的唯一旋钮。
+compaction_threshold_tokens = 1024
 # 协作压力（Agent 间互发防乒乓：慢性红线 + 新信息回血，见 pkg/collaboration_pressure）
 # 每跳累积 12 点疲劳度；纯文本重复往返第 3 跳进入压力带（随回复注入施压提示词）
 collab_soft_fatigue = 36

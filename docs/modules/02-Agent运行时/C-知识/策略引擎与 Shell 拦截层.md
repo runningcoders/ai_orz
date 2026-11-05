@@ -372,11 +372,19 @@ think_loop 装配的 8 个：
 |------|----------|------|
 | ThresholdPolicy | 任意数值 key | `new(id, name, metric_key, threshold, label, unit)`——条件描述由构造参数拼出 |
 | FieldEqualsPolicy | 任意字符串 key | `new(id, name, metric_key, expected, desc)`——字段全等即命中 |
-| CompactionThresholdPolicy | `turn_tokens` | 包装 `ThresholdPolicy`，id 固定 `compaction_threshold`（就地压缩触发） |
+| CompactionThresholdPolicy | `turn_tokens` | 包装 `ThresholdPolicy`，id 固定 `compaction_threshold`（记忆分流 OR 组的文本兜底维度） |
+
+记忆分流（`ConsolidateNode` 收尾）另有一条领域策略，与上面的文本阈值组成 OR 组：
+
+| 策略 | id | 评估因子 | 条件 |
+|------|----|----------|------|
+| CompactionChainPolicy | compaction_chain | rounds_used, tool_calls, tool_result_chars | 任一维度达标（阈值见 `runtime::compaction::COMPACTION_CHAIN_*`） |
+
+⚠️ 老判据只看 `turn_tokens`（用户原文 + 最终回复），会漏掉「短回复 + 长工具链」——原文记账只保留首尾两侧，中间查到的路径 / ID / 参数 / 报错整段丢失。现在由 `measure_turn_chain` 从主循环完整 `messages` 量出事实桶，只统计 `Tool` 结果与 `Assistant.tool_calls`（System 人设 / User 通用上下文等每轮重拼的样板不计入）。小脑判断（`Grade`）作为第三条策略并进 OR 组即可，调用方只管喂 Metrics。
 
 ### 7. 决策型策略分支：DecisionPolicy 与四形态
 
-上面 11 个都是**本地可算**的策略（真值全在 `Metrics` 里）。当判断依据只能由外部模型给（小脑 System One）时，用 [`DecisionPolicy`](src/pkg/policy/mod.rs) 这个分支——它仍是 `Policy`，所以能直接进 `PolicyGroup`，组合语义不变。
+上面这些都是**本地可算**的策略（真值全在 `Metrics` 里）。当判断依据只能由外部模型给（小脑 System One）时，用 [`DecisionPolicy`](src/pkg/policy/mod.rs) 这个分支——它仍是 `Policy`，所以能直接进 `PolicyGroup`，组合语义不变。
 
 ```rust
 pub trait DecisionPolicy: Policy {

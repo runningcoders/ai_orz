@@ -124,9 +124,10 @@ pub struct AgentConfig {
     #[serde(default)]
     pub token_budget: u64,
 
-    /// 记忆分流阈值（本轮问答估算 token 数）
+    /// 记忆分流阈值（首尾文本估算 token 数，仅兜底维度）
     ///
-    /// 低于它 → 原文写入短期记忆；达到/超过 → 交给 LLM 压缩成摘要。
+    /// 与链路复杂度（思考轮次 / 工具调用数 / 工具结果体量）组成 OR 策略组：
+    /// 任一达标才交给 LLM 压缩成摘要，都不达标则原文写入短期记忆。
     /// 实际取值看 `common/config/ai_orz.toml` 的 `[agent].compaction_threshold_tokens`；
     /// 配置文件缺项时用 `Default` 兜底。
     #[serde(default = "default_agent_compaction_threshold_tokens")]
@@ -159,7 +160,7 @@ impl Default for AgentConfig {
             summary_max_rounds: 3,
             think_timeout_secs: 0,
             token_budget: 0,
-            compaction_threshold_tokens: 256,
+            compaction_threshold_tokens: DEFAULT_COMPACTION_THRESHOLD_TOKENS,
             collab_soft_fatigue: 36,
             collab_hard_fatigue: 100,
             collab_hard_window_depth: 8,
@@ -191,12 +192,14 @@ fn default_agent_collab_hard_window_depth() -> usize {
     8
 }
 
-/// 记忆分流阈值默认值（本轮问答估算 token 数）
+/// 记忆分流阈值默认值（首尾文本估算 token 数）
 ///
 /// 后端 `AgentRuntimeConfig` 与前后端 DTO `AgentRuntimeConfigInfo` 共用，
-/// 避免默认值在两端漂移。**不存在「不压缩」场景**，只有阈值大小之别，
-/// 因此默认值就是一个有效阈值，而不是 0（0 在策略引擎里表示「未启用」）。
-pub const DEFAULT_COMPACTION_THRESHOLD_TOKENS: usize = 256;
+/// 避免默认值在两端漂移。它只是 OR 策略组里的一条**兜底维度**：链路复杂度
+/// （见 `runtime::compaction::COMPACTION_CHAIN_*`）不依赖该配置，因此调大它
+/// 不会让有工具链的轮次退化成「全部原文记账」。
+/// 值取 1024 而非早先的 256：中文约 256 字就触发一次额外 LLM，频率过高。
+pub const DEFAULT_COMPACTION_THRESHOLD_TOKENS: usize = 1024;
 
 fn default_agent_compaction_threshold_tokens() -> usize {
     DEFAULT_COMPACTION_THRESHOLD_TOKENS

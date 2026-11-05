@@ -1105,7 +1105,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         rc.map(|r| r.think_timeout_secs.to_string()).unwrap_or_else(|| "0".to_string()),
                                     );
                                     edit_compaction_threshold_tokens.set(
-                                        rc.map(|r| r.compaction_threshold_tokens.to_string()).unwrap_or_else(|| "256".to_string()),
+                                        rc.map(|r| r.compaction_threshold_tokens.to_string()).unwrap_or_else(|| "1024".to_string()),
                                     );
                                     // 回显思考强度：未覆盖 = 开关关闭，滑块落在平台默认分
                                     let intensity = rc.and_then(|r| r.thinking_intensity);
@@ -2556,13 +2556,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
-                                        span { class: "label-text font-medium", "记忆分流阈值" }
-                                        span { class: "label-text-alt text-base-content/60", "估算 token 数，0 = 跟随系统" }
+                                        span { class: "label-text font-medium", "记忆分流阈值（长文本兜底）" }
+                                        span { class: "label-text-alt text-base-content/60", "仅兜极长问答；链路复杂度自动判断，0 = 跟随系统" }
                                     }
                                     input { class: "input input-bordered w-full", r#type: "number",
                                         value: "{edit_compaction_threshold_tokens}",
                                         oninput: move |e| edit_compaction_threshold_tokens.set(e.value()),
-                                        placeholder: "256" }
+                                        placeholder: "1024" }
                                 }
                                 ThinkingIntensityField {
                                     enabled: edit_thinking_intensity_enabled(),

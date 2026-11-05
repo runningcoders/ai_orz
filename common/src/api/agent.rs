@@ -192,10 +192,11 @@ pub struct AgentRuntimeConfigInfo {
     pub summary_max_rounds: usize,
     /// 思考超时秒数（0 = 不限制）
     pub think_timeout_secs: u64,
-    /// 记忆分流阈值（本轮问答估算 token 数）
+    /// 记忆分流阈值（首尾文本估算 token 数，仅兜底维度）
     ///
-    /// 低于它原文写入短期记忆，达到/超过才交给模型压缩。
-    /// **不存在「不压缩」场景**，所以默认就是有效阈值 256。
+    /// 达到它或链路复杂度任一达标才交给模型压缩；都不达标则原文写入短期记忆。
+    /// 默认值是一个有效阈值（0 = 跟随系统配置），不是「关闭压缩」：链路复杂度
+    /// 判据不依赖该字段，调大它不会让有工具链的轮次退化成全部原文记账。
     #[serde(default = "default_compaction_threshold_tokens")]
     pub compaction_threshold_tokens: usize,
     /// 思考强度覆盖（0–100 分，None = 跟随 Provider 基准）

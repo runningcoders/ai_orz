@@ -70,10 +70,11 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub think_timeout_secs: u64,
 
-    /// 记忆分流阈值（本轮问答估算 token 数）
+    /// 记忆分流阈值（首尾文本估算 token 数，仅兜底维度）
     ///
-    /// 不存在「不压缩」场景，只有阈值大小之别：默认就是有效值 256，
-    /// 0 不是合法业务值（历史数据缺字段时由 serde default 兜底为 256）。
+    /// 链路复杂度（轮次 / 工具数 / 工具结果体量）不依赖该配置，
+    /// 所以不存在「不压缩」场景：调大它只会减少极长问答的压缩，不会让
+    /// 有工具链的轮次退化成全部原文记账。0 表示跟随系统配置。
     #[serde(default = "default_compaction_threshold_tokens")]
     pub compaction_threshold_tokens: usize,
 

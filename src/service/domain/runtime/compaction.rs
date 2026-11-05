@@ -17,7 +17,7 @@
 //! 触发时机：
 //! - 主循环上下文溢出（`ContextOverflow`）→ 压缩后 `continue` 重建循环
 //! - 思考轮次耗尽（`MaxRoundsExceeded`）→ 压缩产出作为给用户回复
-//! - 正常完成（`Final`）→ 压缩落盘短期记忆
+//! - 正常完成（`Final`）→ 按链路规模分流：简单轮次原文记账，复杂轮次压缩落盘短期记忆
 //!
 //! # 与 sleep_and_settle 的边界
 //!
@@ -101,9 +101,26 @@ impl CompactMode {
 
 /// 轻量落档写入时的硬上限（兜底，不是分流阈值）
 ///
-/// 分流由策略引擎按估算 token 数决定（见 [`build_compaction_policy`]）；
+/// 分流由策略引擎按链路规模决定（见 [`build_compaction_policy`]）；
 /// 这里兜一个字符上限，避免极端长原文在阈值配置过大时长期占用后续 prompt。
 const QUICK_TURN_HARD_CAP_CHARS: usize = 1200;
+
+/// 链路复杂度判据的三个阈值（任一命中即值得用 LLM 总结）
+///
+/// 与 `[agent].compaction_threshold_tokens` 分工：后者只看「用户原文 + 最终回复」
+/// 的文本规模，是极端长问答的兜底；这里看本轮**真正产生过的中间过程**。
+/// 原文记账（`quick_turn`）只保留首尾两侧，中间过程装不下才需要模型提炼。
+///
+/// 常量定义在业务侧而不新增配置项：它们描述的是「quick_turn 装不下多少信息」，
+/// 属于实现语义，不需要按 Agent 调（YAGNI，避免牵动 DTO / 前端 / seed）。
+///
+/// - 轮次 >= 3：多轮推理意味着中间有查证 / 修正，首尾两侧装不下
+/// - 工具调用 >= 2：单工具直查通常一条结果就能靠原文记账覆盖，
+///   两次以上基本都有跨工具拼接的结论
+/// - 工具结果字符 >= [`QUICK_TURN_HARD_CAP_CHARS`]：原文记账会截断，必须提炼
+pub(crate) const COMPACTION_CHAIN_MIN_ROUNDS: u64 = 3;
+pub(crate) const COMPACTION_CHAIN_MIN_TOOL_CALLS: u64 = 2;
+pub(crate) const COMPACTION_CHAIN_MIN_TOOL_CHARS: u64 = QUICK_TURN_HARD_CAP_CHARS as u64;
 
 /// 按字符（非字节）截断，保留字符边界
 fn truncate_chars(text: &str, max: usize) -> String {
@@ -149,25 +166,105 @@ pub(crate) fn estimate_tokens(text: &str) -> usize {
     cjk + other.div_ceil(4)
 }
 
-/// 估算「用户消息 + 助手回复」的合计 token 数（记忆分流依据）
+/// 估算「用户消息 + 助手回复」的合计 token 数（首尾两侧文本规模）
+///
+/// ⚠️ 只是分流的一个**兜底维度**，不能单独代表「这轮该不该总结」：
+/// 长工具链 + 短回复在这里看起来很轻，中间过程却全是该留存的信息。
 pub(crate) fn estimate_turn_tokens(user_message: &str, reply: &str) -> usize {
     estimate_tokens(user_message.trim()) + estimate_tokens(reply.trim())
 }
 
-/// 构造记忆分流策略组（命中 = 本轮值得走 LLM 压缩）
+/// 一次唤醒收尾时的「链路规模」事实桶，喂给记忆分流策略组
 ///
-/// 策略组现在是单条阈值策略，但保留组形态：后续加「小脑」判断（如
-/// 语义重要性、任务类型）时直接往组里加，调用方无需改动。
-pub(crate) fn build_compaction_policy(agent: &Agent) -> Arc<dyn crate::pkg::policy::Policy> {
-    use crate::pkg::policy::builtin::CompactionThresholdPolicy;
+/// 键名与 `CompactionChainPolicy::required_metrics` 一一对应。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TurnChainMetrics {
+    /// 用户原文 + 最终回复的估算 token（首尾两侧文本规模）
+    pub turn_tokens: u64,
+    /// 本次唤醒累计思考轮次（跨压缩周期，取 `BudgetState.total_rounds`）
+    pub rounds_used: u64,
+    /// 本轮工具调用次数
+    pub tool_calls: u64,
+    /// 本轮工具结果文本的总字符数（本轮独有信息）
+    pub tool_result_chars: u64,
+}
+
+impl TurnChainMetrics {
+    /// 摊平成策略引擎的 Metrics
+    pub fn into_policy_metrics(self) -> crate::pkg::policy::Metrics {
+        crate::pkg::policy::Metrics::new()
+            .with("turn_tokens", self.turn_tokens)
+            .with("rounds_used", self.rounds_used)
+            .with("tool_calls", self.tool_calls)
+            .with("tool_result_chars", self.tool_result_chars)
+    }
+}
+
+/// 从主循环完整对话里量出「这一轮到底干了多少活」
+///
+/// ⚠️ 只统计 `ChatMessage::Tool`（工具结果）与 `Assistant.tool_calls`：
+/// System 人设 / 技能、User 里的画像 / 项目 / 工作空间等**每轮都会重拼**的
+/// 样板内容不能计入 —— 它们在压缩指令里被明确排除，一旦计入会让每一轮
+/// 都超阈值，摘要反而全是冗余。
+pub(crate) fn measure_turn_chain(
+    messages: &[ChatMessage],
+    rounds_used: usize,
+    user_message: &str,
+    reply: &str,
+) -> TurnChainMetrics {
+    let mut assistant_calls = 0u64;
+    let mut tool_results = 0u64;
+    let mut tool_result_chars = 0u64;
+    for msg in messages {
+        match msg {
+            ChatMessage::Assistant {
+                tool_calls: Some(calls),
+                ..
+            } => assistant_calls += calls.len() as u64,
+            ChatMessage::Tool { content, .. } => {
+                tool_results += 1;
+                tool_result_chars += content.chars().count() as u64;
+            }
+            _ => {}
+        }
+    }
+    TurnChainMetrics {
+        turn_tokens: estimate_turn_tokens(user_message, reply) as u64,
+        rounds_used: rounds_used as u64,
+        // 两种口径取大：一次 Assistant 可能带多个 tool_calls，
+        // 也可能脚本后端只回填了 Tool 结果而没回填 Assistant
+        tool_calls: assistant_calls.max(tool_results),
+        tool_result_chars,
+    }
+}
+
+/// 按给定文本阈值构造分流策略组（纯函数，便于单测）
+///
+/// OR 组两条：文本规模兜底 + 链路复杂度。保留组形态是为了给「小脑」留位：
+/// `cerebellum_decision_strategy_design.md` 已把「记忆压缩阈值」列为 `Grade`
+/// 题型替换位，届时往 OR 组加第三条 `DecisionPolicy` 即可，调用方只管喂 Metrics。
+pub(crate) fn compaction_policy_for(threshold_tokens: u64) -> Arc<dyn crate::pkg::policy::Policy> {
+    use crate::pkg::policy::builtin::{CompactionChainPolicy, CompactionThresholdPolicy};
     use crate::pkg::policy::policy_set;
 
-    // 不存在「不压缩」场景：即使配置被误填成 0（策略引擎里 0 = 未启用），
-    // 也至少保证按 1 处理，绝不静默退化成「全部原文记账」。
-    let threshold = super::types::config_resolve::compaction_threshold_tokens(agent).max(1);
     Arc::from(policy_set! {
-        CompactionThresholdPolicy(threshold as u64)
+        OR {
+            CompactionThresholdPolicy(threshold_tokens),
+            CompactionChainPolicy(
+                COMPACTION_CHAIN_MIN_ROUNDS,
+                COMPACTION_CHAIN_MIN_TOOL_CALLS,
+                COMPACTION_CHAIN_MIN_TOOL_CHARS
+            ),
+        }
     })
+}
+
+/// 构造记忆分流策略组（命中 = 本轮值得走 LLM 压缩）
+pub(crate) fn build_compaction_policy(agent: &Agent) -> Arc<dyn crate::pkg::policy::Policy> {
+    // 文本维度不允许「完全不启用」：配置误填成 0 时（策略引擎里 0 = 未启用）
+    // 至少按 1 处理；链路维度本身不依赖配置，不会退化成全部原文记账。
+    let threshold = super::types::config_resolve::compaction_threshold_tokens(agent).max(1);
+    compaction_policy_for(threshold as u64)
 }
 
 /// 轻量落档的摘要文本（纯函数，便于单测）
@@ -620,175 +717,5 @@ impl RuntimeDomainImpl {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 压缩与总结必须分场景：轨迹 / AOP 统计靠 scene 区分，不能都记成 compact
-    #[test]
-    fn compact_mode_binds_scene_and_reply_form() {
-        assert_eq!(CompactMode::Overflow.scene(), ThinkingScene::Compact);
-        assert_eq!(CompactMode::TurnArchive.scene(), ThinkingScene::Summary);
-        assert_eq!(CompactMode::ForcedReply.scene(), ThinkingScene::Summary);
-        // 只有轮次耗尽才需要给用户的收尾回复
-        assert!(CompactMode::ForcedReply.with_user_reply());
-        assert!(!CompactMode::Overflow.with_user_reply());
-        assert!(!CompactMode::TurnArchive.with_user_reply());
-    }
-
-    #[test]
-    fn compact_instruction_forbids_compressing_boilerplate() {
-        let s = compact_instruction(false);
-        // 明确只压缩「真正干的活儿」
-        assert!(s.contains("只压缩"));
-        assert!(s.contains("真正干的活儿"));
-        // 逐项排除每次都会重新注入的内容
-        assert!(s.contains("人设"));
-        assert!(s.contains("技能"));
-        assert!(s.contains("【用户画像】"));
-        assert!(s.contains("【项目上下文】"));
-        assert!(s.contains("【任务上下文】"));
-        assert!(s.contains("【工作空间与路径约定】"));
-        assert!(s.contains("【历史对话】"));
-        // 给出可执行的判断标准
-        assert!(s.contains("下一轮还会原样出现"));
-        // 框架落库：不再要求模型调工具
-        assert!(s.contains("不要调用任何工具"));
-        assert!(!s.contains("save_short_term_memory 写入"));
-        // 要求用标记包裹输出
-        assert!(s.contains(SUMMARY_OPEN));
-        assert!(s.contains(SUMMARY_CLOSE));
-    }
-
-    #[test]
-    fn compact_instruction_with_user_reply_demands_marker() {
-        let s = compact_instruction(true);
-        assert!(s.contains(USER_REPLY_OPEN));
-        assert!(s.contains(USER_REPLY_CLOSE));
-        assert!(s.contains("直接发送给用户"));
-        // 无回复场景不该出现回复标记
-        assert!(!compact_instruction(false).contains(USER_REPLY_OPEN));
-    }
-
-    /// 轻量落档必须同时留下「用户说了什么」和「助手回了什么」
-    ///
-    /// 它是跳过压缩后下一轮唤醒能看到的唯一上下文，任一侧丢失都会断片。
-    #[test]
-    fn quick_turn_summary_keeps_both_sides() {
-        let s = build_quick_turn_summary("  你好  ", " 你好，我是助手 ").expect("非空");
-        assert_eq!(s, "用户：你好\n助手：你好，我是助手");
-    }
-
-    /// 阈值内的短对话保留**全文**，不做任何截断
-    ///
-    /// 这是「按长度分流」的核心承诺：短内容就是原文记账，
-    /// 一旦仍按单侧 200 字截断，用户说的后半句就丢了，等于白记。
-    #[test]
-    fn quick_turn_summary_keeps_short_turn_verbatim() {
-        let user: String = (0..300).map(|_| '问').collect();
-        let reply: String = (0..80).map(|_| '答').collect();
-        let s = build_quick_turn_summary(&user, &reply).expect("非空");
-        assert_eq!(s, format!("用户：{user}\n助手：{reply}"));
-        assert!(!s.ends_with('…'), "阈值内不应截断: {s}");
-    }
-
-    /// 超过硬上限的极长内容两侧均分截断兜底
-    ///
-    /// 只有直答/澄清（没有 messages 可压缩）才可能走到这里；兜底是为了
-    /// 不让一条原文长期占用后续 ~20 轮 prompt 预算。
-    #[test]
-    fn quick_turn_summary_caps_extremely_long_turn() {
-        let long: String = (0..QUICK_TURN_HARD_CAP_CHARS + 50).map(|_| '字').collect();
-        let s = build_quick_turn_summary(&long, "").expect("非空");
-        assert!(s.starts_with("用户："));
-        assert!(s.ends_with('…'), "超硬上限应带省略号: {s}");
-        assert!(!s.contains('\n'), "没有回复时不应出现助手行");
-        // 截断按字符而非字节：中文不能切在半个字上
-        assert_eq!(
-            s.chars().count(),
-            "用户：".chars().count() + QUICK_TURN_HARD_CAP_CHARS / 2 + 1
-        );
-    }
-
-    #[test]
-    fn quick_turn_summary_rejects_all_empty() {
-        assert!(build_quick_turn_summary("   ", "\n").is_none());
-    }
-
-    /// 中文按 1 token/字，英文按 4 字符/token，混合文本逐类累加
-    #[test]
-    fn estimate_tokens_counts_cjk_and_latin_separately() {
-        // 纯中文：一字一 token
-        assert_eq!(estimate_tokens("你好世界"), 4);
-        // 纯英文：4 字符一 token（向上取整）
-        assert_eq!(estimate_tokens("abcd"), 1);
-        assert_eq!(estimate_tokens("abcde"), 2);
-        // 混合：5 汉字 + 8 拉丁字符 = 5 + 2
-        assert_eq!(estimate_tokens("你好世界啊abcdefgh"), 7);
-        // 空白不特殊处理，仍按拉丁字符计入
-        assert_eq!(estimate_tokens("   "), 1);
-        assert_eq!(estimate_tokens(""), 0);
-    }
-
-    /// 分流依据是「用户 + 助手」的合计，不是单侧
-    ///
-    /// 反例：2000 字报错 + 一句「改第 42 行」，只看回复会被误判成短对话。
-    #[test]
-    fn estimate_turn_tokens_sums_both_sides() {
-        assert_eq!(estimate_turn_tokens("你好", "世界"), 4);
-        assert_eq!(estimate_turn_tokens("  ", "  "), 0);
-    }
-
-    #[test]
-    fn parse_compacted_summary_extracts_marked_block() {
-        let text =
-            format!("前面一段话\n{SUMMARY_OPEN}\n完成了 A，待办是 B\n{SUMMARY_CLOSE}\n后面一段话");
-        assert_eq!(
-            parse_compacted_summary(&text),
-            Some("完成了 A，待办是 B".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_compacted_summary_tolerates_missing_close() {
-        // 输出被截断时至少保住开头到结尾之间的内容
-        let text = format!("{SUMMARY_OPEN}\n完成了 A");
-        assert_eq!(parse_compacted_summary(&text), Some("完成了 A".to_string()));
-    }
-
-    #[test]
-    fn parse_compacted_summary_returns_none_when_absent_or_empty() {
-        assert_eq!(parse_compacted_summary("没有标记的一段话"), None);
-        let empty = format!("{SUMMARY_OPEN}\n   \n{SUMMARY_CLOSE}");
-        assert_eq!(parse_compacted_summary(&empty), None);
-    }
-
-    #[test]
-    fn extract_user_reply_takes_marked_sentence_only() {
-        let text = format!(
-            "{SUMMARY_OPEN}\n内部摘要：已完成 A，待办 B\n{SUMMARY_CLOSE}\n\
-             {USER_REPLY_OPEN}\n已完成三件事，因轮次耗尽停止。\n{USER_REPLY_CLOSE}"
-        );
-        assert_eq!(
-            extract_user_reply(&text),
-            Some("已完成三件事，因轮次耗尽停止。".to_string())
-        );
-    }
-
-    /// 最关键的一条防线：模型漏打任何标记时，**绝不能**把内部摘要当回复
-    ///
-    /// 旧实现 `strip_summary_block` 在无标记时原样返回整段，用户会收到
-    /// 「已完成的工作 / 还没做完的待办」这种内部口吻的摘要。
-    #[test]
-    fn extract_user_reply_never_leaks_summary() {
-        // 只有摘要、没有回复标记
-        let summary_only = format!("{SUMMARY_OPEN}\n已完成 A，待办 B\n{SUMMARY_CLOSE}");
-        assert_eq!(extract_user_reply(&summary_only), None);
-
-        // 完全没标记：无法区分是「纯摘要」还是「纯回复」，一律不发给用户
-        assert_eq!(extract_user_reply("已完成 A，待办 B"), None);
-
-        // 标记内为空
-        let empty = format!("{USER_REPLY_OPEN}\n  \n{USER_REPLY_CLOSE}");
-        assert_eq!(extract_user_reply(&empty), None);
-    }
-}
+#[path = "compaction_tests.rs"]
+mod tests;

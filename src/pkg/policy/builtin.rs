@@ -11,7 +11,7 @@
 //! - UserCancelPolicy：状态源是 `Arc<AtomicBool>` 而非 Metrics
 //! - NoProgressPolicy：多键聚合 + 工具差异化限流
 //!
-//! 9 个内置策略：
+//! 10 个内置策略：
 //! - MaxRoundsPolicy：轮次上限（保留专用：阈值来自 Metrics 双键）
 //! - TimeoutPolicy：超时（ThresholdPolicy 薄包装）
 //! - ContextOverflowPolicy：上下文溢出（ThresholdPolicy 薄包装）
@@ -20,7 +20,8 @@
 //! - FinalAnswerPolicy：模型输出 Final（FieldEqualsPolicy 薄包装）
 //! - ConsecutiveLlmErrorsPolicy：LLM 连续失败预算（ThresholdPolicy 薄包装）
 //! - NoProgressPolicy：单工具调用上限（保留专用：多键聚合 + 工具差异化）
-//! - CompactionThresholdPolicy：记忆分流阈值（ThresholdPolicy 薄包装）
+//! - CompactionThresholdPolicy：记忆分流·首尾文本规模（ThresholdPolicy 薄包装）
+//! - CompactionChainPolicy：记忆分流·链路复杂度（多键聚合，任一维度达标即命中）
 //!
 //! 薄包装保留原类型名与 `new` 签名：think_loop 的 `policy_set!` 与引擎测试
 //! 的调用点零改动，包装仅做参数翻译 + Policy 委托（`impl_policy_delegate!`）。
@@ -349,14 +350,17 @@ impl TokenBudgetPolicy {
 
 impl_policy_delegate!(TokenBudgetPolicy);
 
-/// 记忆分流策略（ThresholdPolicy 薄包装：`turn_tokens >= threshold`）
+/// 记忆分流策略·首尾文本规模（ThresholdPolicy 薄包装：`turn_tokens >= threshold`）
 ///
-/// 命中 = 本轮问答值得花一次 LLM 压缩；未命中 = 原文机械记账即可。
+/// 命中 = 本轮问答本身极长、原文记账装不下，值得花一次 LLM 压缩。
 /// 阈值来自 `[agent].compaction_threshold_tokens`（Agent 级可覆盖）。
 ///
-/// 选它而不是在调用点写 `if`：`condition_desc()` 能把
-/// 「本轮问答 token >= 256」带进日志与前端，后续换「小脑」判断时
-/// 只需替换策略组，调用方不动。
+/// ⚠️ 它只是**兜底维度**，不是「这轮该不该总结」的主判据：
+/// 「用户原文 + 最终回复」短不代表链路简单，长工具链的中间过程全在
+/// [`CompactionChainPolicy`] 管的那几个键里。两者在 OR 组里并列。
+///
+/// 选它而不是在调用点写 `if`：`condition_desc()` 能把阈值带进日志与前端，
+/// 后续换「小脑」判断时只需往策略组加一条，调用方不动。
 pub struct CompactionThresholdPolicy(ThresholdPolicy);
 
 impl CompactionThresholdPolicy {
@@ -373,6 +377,72 @@ impl CompactionThresholdPolicy {
 }
 
 impl_policy_delegate!(CompactionThresholdPolicy);
+
+/// 记忆分流策略·链路复杂度：三个维度任一达标即命中
+///
+/// 与 [`CompactionThresholdPolicy`] 分工：那条只看首尾文本，这条看本轮
+/// **真正产生过的中间过程** —— 思考轮次、工具调用数、工具结果体量。
+/// 「短回复 + 长工具链」是老判据漏掉、却最需要 LLM 总结的场景：原文记账
+/// 只保留「用户：…／助手：…」两侧，中间查到的路径 / ID / 参数 / 报错会整段丢。
+///
+/// 阈值由调用方传入（业务常量在 `runtime::compaction`），0 表示该维度未启用。
+/// 键名与 `TurnChainMetrics::into_policy_metrics` 一一对应；后续「小脑」判断
+/// （语义重要性 / 任务类型）作为第三条策略并进 OR 组即可，本策略无需改动。
+///
+/// ⚠️ `desc` 存 `String` 而不是照抄兄弟策略的 `Box::leak(&'static str)`：
+/// 本策略由 `build_compaction_policy` 在**每次唤醒收尾**重建一次，
+/// 用 leak 会把一小段字符串永久留在堆上，长期运行持续累积。
+pub struct CompactionChainPolicy {
+    min_rounds: u64,
+    min_tool_calls: u64,
+    min_tool_chars: u64,
+    desc: String,
+}
+
+impl CompactionChainPolicy {
+    pub fn new(min_rounds: u64, min_tool_calls: u64, min_tool_chars: u64) -> Self {
+        Self {
+            min_rounds,
+            min_tool_calls,
+            min_tool_chars,
+            desc: format!(
+                "链路复杂度 轮次>={min_rounds} 或 工具调用>={min_tool_calls} 或 工具结果字符>={min_tool_chars}"
+            ),
+        }
+    }
+}
+
+impl Policy for CompactionChainPolicy {
+    fn id(&self) -> &str {
+        "compaction_chain"
+    }
+    fn name(&self) -> &str {
+        "CompactionChain"
+    }
+    fn condition_desc(&self) -> &str {
+        &self.desc
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec![
+            "rounds_used".into(),
+            "tool_calls".into(),
+            "tool_result_chars".into(),
+        ]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        let rounds = metrics.get_u64("rounds_used").unwrap_or(0);
+        let tool_calls = metrics.get_u64("tool_calls").unwrap_or(0);
+        let tool_chars = metrics.get_u64("tool_result_chars").unwrap_or(0);
+        let hit = (self.min_rounds > 0 && rounds >= self.min_rounds)
+            || (self.min_tool_calls > 0 && tool_calls >= self.min_tool_calls)
+            || (self.min_tool_chars > 0 && tool_chars >= self.min_tool_chars);
+        if hit {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
 
 /// 无进展策略：按工具差异化限制累计调用次数
 ///
