@@ -245,6 +245,18 @@ pub trait RuntimeMemory: Send + Sync {
         targets: &[(PropertyTargetType, String)],
     ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
 
+    /// 📖 批量取多个载体的属性含历史版本（`status != 2`，受控历史出口）
+    ///
+    /// # 返回
+    /// - key 为 `(target_type.as_str(), target_id)`
+    /// - 含 `status = 0` 被取代的历史行（由 `KnowledgePropertyItem.is_current`
+    ///   区分），`status = 2` 显式软删的行永不返回
+    async fn list_entity_properties_batch_with_history(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
+
     /// 🔍 按属性条件精确召回载体 id（结构化过滤入口，与语义召回互补）
     async fn query_entities_by_properties(
         &self,

@@ -54,6 +54,17 @@ pub struct SearchMemoryParams {
     /// 造成「传了过滤却仍返回未命中节点」的静默失真，直接报 400。
     /// 数值运算符（`gt`/`gte`/`lt`/`lte`）必须配 `number` 值，配其他类型报 400。
     pub property_filters: Option<Vec<PropertyFilterParam>>,
+    /// 是否回显属性历史版本（默认 `false`）。
+    ///
+    /// - `false`（或未传）：结果的 `properties` 只含**生效值**（`status = 1`），
+    ///   响应 JSON 中不出现 `is_current` 字段（缺席 ⇒ 视为 `true`）；
+    /// - `true`：一并回显被取代的**历史版本**（`status = 0`），历史行带
+    ///   `"is_current": false`，生效行不带该字段。
+    ///
+    /// 复用同一个 `properties` 数组（不另开 `property_history`）；记录按
+    /// `term_key` / `ordinal` / `status` 排序，生效行在前。显式软删行
+    /// （`status = 2`）任何情况下都不返回。
+    pub include_history: Option<bool>,
 }
 
 /// 搜索记忆响应。
@@ -167,6 +178,16 @@ pub struct QueryMemoryParams {
     ///
     /// ⚠️ 词表外的值报 `invalid_request`，**不会**静默降级成只查 active。
     pub status: Option<String>,
+    /// 是否回显属性历史版本（默认 `false`）。
+    ///
+    /// 与 `search_memory` 的同名参数**同语义、同实现**（唯一装配源）：
+    /// - `false`（或未传）：`results[].properties` 只含**生效值**（`status = 1`），
+    ///   响应 JSON 中不出现 `is_current` 字段（缺席 ⇒ 视为 `true`）；
+    /// - `true`：一并回显被取代的**历史版本**（`status = 0`），历史行带
+    ///   `"is_current": false`，生效行不带该字段。
+    ///
+    /// 显式软删行（`status = 2`）任何情况下都不返回。
+    pub include_history: Option<bool>,
 }
 
 /// 查询记忆响应。
@@ -600,6 +621,33 @@ pub struct KnowledgePropertyItem {
     pub value: PropertyValue,
     /// 多值属性槽位；单值恒 0
     pub ordinal: i32,
+    /// 该行是否为**当前生效值**。
+    ///
+    /// - `true`：生效值（`knowledge_property.status = 1`）
+    /// - `false`：已被取代的历史版本（`status = 0`）
+    ///
+    /// ⚠️ **字段缺席 ⇒ 视为 `true`**：默认查询路径（`include_history` 未开启）
+    /// 只回显生效值，本字段不序列化，响应形状与旧版逐字兼容；仅当
+    /// `include_history=true` 且该行是历史版本时才出现 `"is_current": false`。
+    /// 显式软删行（`status = 2`）任何情况下都不回显，故不存在第三种含义。
+    #[serde(
+        default = "default_is_current",
+        skip_serializing_if = "is_current_is_default"
+    )]
+    pub is_current: bool,
+}
+
+/// `is_current` 的 serde 默认值：字段缺席即视为当前生效值。
+///
+/// 旧消费方（不认识 `is_current` 的客户端 / 模型）拿到的是三字段形状，
+/// 语义上等价于「回显的都是生效值」——默认路径本就只查生效行。
+fn default_is_current() -> bool {
+    true
+}
+
+/// `is_current == true` 时跳过序列化，保持旧响应形状（缺席 ⇒ `true`）。
+fn is_current_is_default(value: &bool) -> bool {
+    *value
 }
 
 /// 属性过滤运算符（工具面枚举，非法值在反序列化阶段即 400）
@@ -714,6 +762,13 @@ pub struct PropertyIssueEntry {
     pub message: String,
     /// 结构化上下文：至少携带 `term_key`，类型不符时另带 `expected` 等字段。
     pub field: serde_json::Value,
+    /// 严重度：`error` = 本条**被拒、未写库**（硬拦）；`warning` = 已记录**照常写入**
+    /// （本体软门禁：认知分歧不阻断写入）。
+    ///
+    /// 唯一判据是 `PropertyWriteIssue::rejects_write()`——**不另设第二套判定**，
+    /// 避免出现「拒绝但 severity=warning」这种自相矛盾的回执。V1 串
+    /// （`property_issues`）的文案与格式不受本字段影响，一个字都不变。
+    pub severity: String,
 }
 
 impl KnowledgeRelationParam {
@@ -996,5 +1051,62 @@ mod tests {
             !json.contains("relation_id"),
             "失败项不应带 relation_id: {json}"
         );
+    }
+
+    /// A1-7 ①：默认路径（未开 `include_history`）的属性条目**不出现** `is_current` 字段。
+    ///
+    /// 旧消费方只认识 `{term_key, value, ordinal}`。一旦 `is_current` 变成恒出现，
+    /// 等于对所有既有调用方做了一次非预期 schema 变更 —— 本条把它钉死。
+    #[test]
+    fn current_property_omits_is_current_field() {
+        let item = KnowledgePropertyItem {
+            term_key: "lifecycle_status".into(),
+            value: PropertyValue::Enum("现行有效".into()),
+            ordinal: 0,
+            is_current: true,
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(
+            !json.contains("is_current"),
+            "生效值不得序列化 is_current（缺席 ⇒ true）: {json}"
+        );
+        assert!(json.contains("lifecycle_status"));
+        assert!(json.contains("现行有效"), "值本身不能被吞掉: {json}");
+    }
+
+    /// A1-7 ②：`include_history=true` 时**历史行带** `"is_current": false`、
+    /// **生效行不带**该字段 —— 同一数组内两种形状并存，且可被反序列化回落。
+    #[test]
+    fn history_property_marks_is_current_false_only_on_superseded_rows() {
+        let items = vec![
+            KnowledgePropertyItem {
+                term_key: "event_time".into(),
+                value: PropertyValue::Date("2026-11-04".into()),
+                ordinal: 0,
+                is_current: true,
+            },
+            KnowledgePropertyItem {
+                term_key: "event_time".into(),
+                value: PropertyValue::Date("2026-10-28".into()),
+                ordinal: 0,
+                is_current: false,
+            },
+        ];
+        let json = serde_json::to_string(&items).unwrap();
+        assert_eq!(
+            json.matches("\"is_current\":false").count(),
+            1,
+            "恰有一条历史行带 is_current=false: {json}"
+        );
+        assert!(
+            !json.contains("\"is_current\":true"),
+            "生效行不得出现 is_current=true（应完全缺席）: {json}"
+        );
+        assert!(json.contains("2026-10-28"), "历史值必须回显: {json}");
+
+        // 回落语义：字段缺席 ⇒ 视为 true（未来消费方按默认值解读不会翻错）
+        let back: KnowledgePropertyItem =
+            serde_json::from_str(r#"{"term_key":"k","value":{"text":"v"},"ordinal":0}"#).unwrap();
+        assert!(back.is_current, "字段缺席必须反序列化为 true");
     }
 }

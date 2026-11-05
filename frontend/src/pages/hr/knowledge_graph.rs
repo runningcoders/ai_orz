@@ -438,6 +438,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 task_id: None,
                 agent_id: aid,
                 property_filters: None,
+                include_history: None,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {
@@ -509,6 +510,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 task_id: None,
                 agent_id: aid,
                 property_filters: None,
+                include_history: None,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {

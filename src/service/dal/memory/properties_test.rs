@@ -4,6 +4,8 @@
 use super::dal;
 use super::test_support::*;
 use crate::models::ontology::OntologyPropertyPo;
+use crate::pkg::RequestContext;
+use common::enums::KnowledgeRelationStatus;
 use common::enums::ontology::{PropertyDataType, PropertyTargetType};
 use common::ontology_property::{
     PropertyEntry, PropertyFilter, PropertyFilterOp, PropertyValue, PropertyWriteIssue,
@@ -585,4 +587,174 @@ async fn save_entity_properties_skips_domain_check_for_unknown_target(pool: sqlx
 
     assert_eq!(report.accepted, 1, "节点不存在不阻断写入");
     assert!(report.is_clean(), "查不到节点时不告警: {:?}", report.issues);
+}
+
+// ==================== 批量通道 status 过滤（H-C 回归） ====================
+//
+// 缺陷形态是 SQL 的 AND/OR 优先级：`WHERE (t1∧i1) OR … OR (tn∧in) AND status=1`
+// 实际语义让**除最后一个载体外全部不过滤**。所以用例必须 ≥3 个载体，
+// 且让**中间位**那个带历史行 —— 只测 2 个载体时两种写法等价，测不出。
+
+/// 写 n 次同 term 同槽位 ⇒ 1 条生效 + (n-1) 条被取代，返回最终值
+async fn write_repeatedly(ctx: &RequestContext, target_id: &str, term: &str, values: &[&str]) {
+    let d = dal();
+    for v in values {
+        d.save_entity_properties(
+            ctx.clone(),
+            PropertyTargetType::Node,
+            target_id,
+            vec![PropertyEntry {
+                term_key: term.to_string(),
+                value: PropertyValue::Text(v.to_string()),
+                ordinal: 0,
+            }],
+        )
+        .await
+        .expect("write should succeed");
+    }
+}
+
+/// 生效口径：三个载体、中间位带历史行 ⇒ 每个载体都只回 1 行（修复前中间位会回 2 行）
+#[sqlx::test]
+async fn batch_active_scope_filters_every_target_including_middle(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    define_property(&ctx, &property_po("memo", "string", "", "single", "")).await;
+
+    write_repeatedly(&ctx, "kn_first", "memo", &["first-v1"]).await;
+    // 中间位：两次写入 ⇒ 1 生效 + 1 历史
+    write_repeatedly(&ctx, "kn_middle", "memo", &["mid-v1", "mid-v2"]).await;
+    write_repeatedly(&ctx, "kn_last", "memo", &["last-v1"]).await;
+    assert_eq!(count_property_rows(&ctx, "kn_middle").await, 2, "物理两行");
+
+    let map = dal()
+        .list_entity_properties_batch(
+            ctx.clone(),
+            &[
+                (PropertyTargetType::Node, "kn_first".to_string()),
+                (PropertyTargetType::Node, "kn_middle".to_string()),
+                (PropertyTargetType::Node, "kn_last".to_string()),
+            ],
+        )
+        .await
+        .expect("batch read should succeed");
+
+    for (target, expected) in [
+        ("kn_first", "first-v1"),
+        ("kn_middle", "mid-v2"),
+        ("kn_last", "last-v1"),
+    ] {
+        let rows = map
+            .get(&("node".to_string(), target.to_string()))
+            .unwrap_or_else(|| panic!("{target} 的生效属性应存在"));
+        assert_eq!(
+            rows.len(),
+            1,
+            "{target} 只应回 status=1 生效行（H-C 回归：中间位曾带出历史行）: {rows:?}"
+        );
+        assert_eq!(
+            rows[0].value(),
+            Some(PropertyValue::Text(expected.to_string()))
+        );
+        assert_eq!(rows[0].status, KnowledgeRelationStatus::Active);
+    }
+}
+
+/// 历史口径：带历史行返回 1 生效 + 0 被取代，且 status=2 显式软删**永不返回**
+#[sqlx::test]
+async fn batch_history_scope_returns_superseded_but_never_deleted(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    define_property(&ctx, &property_po("memo", "string", "", "single", "")).await;
+
+    write_repeatedly(&ctx, "kn_first", "memo", &["first-v1"]).await;
+    write_repeatedly(&ctx, "kn_middle", "memo", &["mid-v1", "mid-v2"]).await;
+    write_repeatedly(&ctx, "kn_last", "memo", &["last-v1"]).await;
+
+    // kn_first 的生效行改成 status=2（显式软删）：历史口径也不得返回
+    sqlx::query(
+        "UPDATE knowledge_property SET \"status\" = 2 WHERE target_id = ? AND term_key = ?",
+    )
+    .bind("kn_first")
+    .bind("memo")
+    .execute(ctx.db_pool())
+    .await
+    .expect("soft delete row");
+
+    let map = dal()
+        .list_entity_properties_batch_with_history(
+            ctx.clone(),
+            &[
+                (PropertyTargetType::Node, "kn_first".to_string()),
+                (PropertyTargetType::Node, "kn_middle".to_string()),
+                (PropertyTargetType::Node, "kn_last".to_string()),
+            ],
+        )
+        .await
+        .expect("history batch read should succeed");
+
+    let middle = map
+        .get(&("node".to_string(), "kn_middle".to_string()))
+        .expect("中间位历史行应返回");
+    assert_eq!(middle.len(), 2, "1 生效 + 1 被取代: {middle:?}");
+    let active = middle
+        .iter()
+        .filter(|p| p.status == KnowledgeRelationStatus::Active)
+        .count();
+    assert_eq!(active, 1, "生效行恰 1 条");
+    assert_eq!(
+        middle[0].status,
+        KnowledgeRelationStatus::Active,
+        "排序：生效行在前（ORDER BY ... \"status\" DESC）"
+    );
+
+    assert!(
+        !map.contains_key(&("node".to_string(), "kn_first".to_string())),
+        "status=2 显式软删的行任何读路径都不得返回: {map:?}"
+    );
+    assert_eq!(
+        map.get(&("node".to_string(), "kn_last".to_string()))
+            .map(Vec::len),
+        Some(1),
+        "末位只生效行"
+    );
+}
+
+/// chunk 边界：401 个载体跨越 IN_CLAUSE_CHUNK=400，末块单载体同样受 status 过滤
+///
+/// 分块是 H-C 的放大器：每块都重新拼一次 OR 串，任何一块漏掉外层括号，
+/// 该块内除最后一个载体外全部不放过滤。这里把唯一「有历史行」的载体
+/// 放在第 401 位（= 最后一个 chunk 的唯一成员）。
+#[sqlx::test]
+async fn batch_active_scope_handles_chunk_boundary(pool: sqlx::SqlitePool) {
+    let ctx = seed_graph_ctx(pool).await;
+    define_property(&ctx, &property_po("memo", "string", "", "single", "")).await;
+
+    // 只有第 401 个载体真的有属性行（前 400 个是占位 id）
+    write_repeatedly(&ctx, "kn_401", "memo", &["v1", "v2"]).await;
+    let mut targets: Vec<(PropertyTargetType, String)> = (1..=400)
+        .map(|i| (PropertyTargetType::Node, format!("kn_missing_{i}")))
+        .collect();
+    targets.push((PropertyTargetType::Node, "kn_401".to_string()));
+    assert_eq!(targets.len(), 401, "跨 chunk 边界（400 + 1）");
+
+    let map = dal()
+        .list_entity_properties_batch(ctx.clone(), &targets)
+        .await
+        .expect("batch read should succeed");
+    assert_eq!(map.len(), 1, "只有末块唯一载体有属性: {map:?}");
+    let rows = map
+        .get(&("node".to_string(), "kn_401".to_string()))
+        .expect("末块载体应回生效行");
+    assert_eq!(rows.len(), 1, "跨 chunk 边界仍只回 status=1: {rows:?}");
+    assert_eq!(rows[0].value(), Some(PropertyValue::Text("v2".to_string())));
+
+    let hist = dal()
+        .list_entity_properties_batch_with_history(ctx.clone(), &targets)
+        .await
+        .expect("history batch read should succeed");
+    assert_eq!(
+        hist.get(&("node".to_string(), "kn_401".to_string()))
+            .map(Vec::len),
+        Some(2),
+        "历史口径跨 chunk：1 生效 + 1 被取代"
+    );
 }

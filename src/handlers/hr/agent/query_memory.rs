@@ -1,5 +1,6 @@
 //! Handler: 查询记忆 - Neural Tool
 
+use super::property_attach::{AttachOptions, attach_properties};
 use crate::models::memory::Memory;
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
@@ -74,8 +75,18 @@ pub async fn query_memory(
         ..Default::default()
     };
 
-    let memories = runtime_domain().memory().query(ctx, query).await?;
-    let results = memories_to_results(memories);
+    let memories = runtime_domain().memory().query(ctx.clone(), query).await?;
+    let mut results = memories_to_results(memories);
+
+    // 属性回显：与 search_memory 共用 `property_attach::attach_properties` ——
+    // (d)「唯一装配源」：结构化通道此前完全不回显属性，与语义通道形成硬缺口。
+    // 默认 `include_history = false`，只回生效值。
+    attach_properties(
+        &ctx,
+        &mut results,
+        AttachOptions::from_param(params.include_history),
+    )
+    .await?;
 
     Ok(QueryMemoryResponse { results })
 }
@@ -111,6 +122,7 @@ mod tests {
             tags: None,
             task_id: None,
             status: status.map(|s| s.to_string()),
+            include_history: None,
         }
     }
 

@@ -170,6 +170,7 @@ memory_dao_impl! {
     batch_upsert_properties(ctx: RequestContext, properties: &[KnowledgePropertyPo]) -> Result<()>,
     list_active_properties(ctx: RequestContext, target_type: PropertyTargetType, target_id: &str) -> Result<Vec<KnowledgePropertyPo>>,
     list_active_properties_batch(ctx: RequestContext, targets: &[(PropertyTargetType, String)]) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>,
+    list_properties_batch_with_history(ctx: RequestContext, targets: &[(PropertyTargetType, String)]) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>,
     supersede_properties(ctx: RequestContext, target_type: PropertyTargetType, target_id: &str, term_key: &str) -> Result<u64>,
     query_properties_by_value(ctx: RequestContext, filter: &PropertyFilter) -> Result<Vec<KnowledgePropertyPo>>,
     word_freq_relations(ctx: RequestContext, agent_id: Option<String>) -> Result<Vec<TermFrequencyRow>>,

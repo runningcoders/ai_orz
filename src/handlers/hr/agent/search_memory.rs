@@ -2,18 +2,15 @@
 
 use std::collections::HashSet;
 
+use super::property_attach::{AttachOptions, attach_properties};
 use crate::models::memory::{Memory, MemoryPo};
 use crate::pkg::RequestContext;
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::MemorySearch;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{
-    KnowledgePropertyItem, MemoryResult, PropertyFilterParam, SearchMemoryParams,
-    SearchMemoryResponse,
-};
+use common::api::{MemoryResult, PropertyFilterParam, SearchMemoryParams, SearchMemoryResponse};
 use common::enums::MemoryType;
-use common::enums::ontology::PropertyTargetType;
 use common::error::{Result, bail_err, err};
 use common::ontology_property::PropertyValue;
 
@@ -251,52 +248,18 @@ pub async fn search_memory(
     let mut results = memories_to_results(unique_memories);
 
     // 属性回显：一趟批量查完再回填（防 N+1）。
-    // 只回显**生效值**——历史版本留在库里可追溯，但不进模型视野（避免它对着旧值推理）。
-    attach_properties(&ctx, &mut results).await?;
+    // 装配逻辑**只有一份**（`property_attach::attach_properties`），query_memory 复用同一个
+    // 函数、同一个 `AttachOptions`——否则 (d)「唯一装配源」当场作废。
+    // 默认只回显生效值；`include_history=true` 才带出 status=0 历史行（status=2 永不返回）。
+    // 本文件的 has_seeds / do_traversal / else 三分支都汇到这一处调用，天然同口径（A1-j）。
+    attach_properties(
+        &ctx,
+        &mut results,
+        AttachOptions::from_param(params.include_history),
+    )
+    .await?;
 
     Ok(SearchMemoryResponse { results })
-}
-
-/// 把命中节点的生效属性回填进结果（无属性的节点保持 `None`，不是空数组）
-async fn attach_properties(ctx: &RequestContext, results: &mut [MemoryResult]) -> Result<()> {
-    let targets: Vec<(PropertyTargetType, String)> = results
-        .iter()
-        .filter(|r| r.memory_type == "knowledge_node")
-        .map(|r| (PropertyTargetType::Node, r.id.clone()))
-        .collect();
-    if targets.is_empty() {
-        return Ok(());
-    }
-
-    let map = runtime_domain()
-        .memory()
-        .list_entity_properties_batch(ctx.clone(), &targets)
-        .await?;
-
-    let key_prefix = PropertyTargetType::Node.as_str();
-    for r in results.iter_mut() {
-        if r.memory_type != "knowledge_node" {
-            continue;
-        }
-        let Some(pos) = map.get(&(key_prefix.to_string(), r.id.clone())) else {
-            continue;
-        };
-        // 指派列缺失的行 = 脏数据，跳过而不是给一个错类型的值
-        let items: Vec<KnowledgePropertyItem> = pos
-            .iter()
-            .filter_map(|po| {
-                Some(KnowledgePropertyItem {
-                    term_key: po.term_key.clone(),
-                    value: po.value()?,
-                    ordinal: po.ordinal,
-                })
-            })
-            .collect();
-        if !items.is_empty() {
-            r.properties = Some(items);
-        }
-    }
-    Ok(())
 }
 
 fn memory_id(memory: &Memory) -> String {

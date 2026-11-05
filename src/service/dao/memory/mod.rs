@@ -756,6 +756,18 @@ pub trait MemoryDao: Send + Sync {
         targets: &[(PropertyTargetType, String)],
     ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
 
+    /// 批量取多个载体的属性**含历史版本**（`status != 2`：1 生效 + 0 被取代）
+    ///
+    /// 受控历史出口专用（`include_history = true`）。与
+    /// [`Self::list_active_properties_batch`] 共用同一份 OR 链拼接实现，只差
+    /// status 谓词：历史口径是 `"status" != 2` 而**不是**「完全不过滤」——
+    /// 显式软删的行（`status = 2`）任何读路径都不得默认可见。
+    async fn list_properties_batch_with_history(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
+
     /// 下线某载体的某属性（全部槽位一起降级 Superseded）
     ///
     /// # 返回

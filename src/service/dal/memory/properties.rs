@@ -221,6 +221,23 @@ impl MemoryDalImpl {
             .await
     }
 
+    /// 批量取多个载体的属性含历史版本（`status != 2`）
+    ///
+    /// 受控历史出口：只有 `include_history = true` 时才走这里，默认读路径
+    /// 仍走 [`Self::list_entity_properties_batch`]（只出 `status = 1`）。
+    pub(super) async fn list_entity_properties_batch_with_history(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
+        if targets.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        self.memory_dao
+            .list_properties_batch_with_history(ctx, targets)
+            .await
+    }
+
     pub(super) async fn query_entities_by_properties(
         &self,
         ctx: RequestContext,

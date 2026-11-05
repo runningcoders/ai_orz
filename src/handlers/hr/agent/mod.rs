@@ -18,6 +18,7 @@ pub mod list_agents;
 pub mod list_installed_skill_packs;
 pub mod list_installed_tool_packs;
 pub mod onboard_agent;
+pub mod property_attach;
 pub mod query_agents;
 pub mod query_memory;
 pub mod query_memory_traces;
@@ -259,9 +260,13 @@ pub(crate) fn property_issue_strings(report: &PropertySaveReport) -> Vec<String>
         .collect()
 }
 
-/// 属性回执 V2：结构化 `{code, message, field}`，与平台 `Error{code, msg, field}` 对齐
+/// 属性回执 V2：结构化 `{code, message, field, severity}`，与平台 `Error{code, msg, field}` 对齐
 /// （复用既有 error 词表的属性域错误码；`field` 至少携带 `term_key`，
 /// 类型不符时另带 `expected`——把原来只在 describe 文案里的上下文结构化带出来）。
+///
+/// `severity` 由 `PropertyWriteIssue::rejects_write()` 派生：**调用方（模型）据此区分
+/// 「这条没写进去、必须改」与「写进去了但有本体分歧、可不管」**——此前两类都只有
+/// 一条中性 message，模型无从判断要不要补写。V1 串保持原样（过渡并存）。
 pub(crate) fn property_issue_entries(report: &PropertySaveReport) -> Vec<PropertyIssueEntry> {
     report
         .issues
@@ -294,6 +299,13 @@ pub(crate) fn property_issue_entries(report: &PropertySaveReport) -> Vec<Propert
                 code: code.code_str().to_string(),
                 message: i.kind.describe(),
                 field,
+                // 与「是否真的没写进库」严格同源（同一个 rejects_write 判据）：
+                // 硬拦 → error；本体软门禁记账 → warning。
+                severity: if i.kind.rejects_write() {
+                    "error".to_string()
+                } else {
+                    "warning".to_string()
+                },
             }
         })
         .collect()

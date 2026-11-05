@@ -137,10 +137,45 @@ impl MemoryDaoSqliteImpl {
         Ok(rows)
     }
 
+    /// 批量取多个载体的生效属性（只 `status = 1`）
+    ///
+    /// # 返回
+    /// - key 为 `(target_type, target_id)`；**没有任何属性的载体不出现在 map 里**
     pub(super) async fn list_active_properties_batch(
         &self,
         ctx: RequestContext,
         targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
+        self.list_properties_batch(ctx, targets, PropertyBatchScope::ActiveOnly)
+            .await
+    }
+
+    /// 批量取多个载体的属性**含历史版本**（`status != 2`：1 生效 + 0 被取代）
+    ///
+    /// 仅供 `include_history = true` 的受控历史出口使用；默认读路径仍走
+    /// [`Self::list_active_properties_batch`]，不对旧消费方暴露历史行。
+    ///
+    /// `status = 2`（显式软删）**永不返回**：历史出口要的是「版本演进」，
+    /// 不是「已删除的行」——恢复入口应走专门的写路径，不能从这里漏出去。
+    pub(super) async fn list_properties_batch_with_history(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
+        self.list_properties_batch(ctx, targets, PropertyBatchScope::WithHistory)
+            .await
+    }
+
+    /// 批量属性读的实现单点（两个 status 口径共用同一份 OR 链拼接与分块逻辑）
+    ///
+    /// 单点实现是刻意的：`ActiveOnly` / `WithHistory` 只差一个 status 谓词，
+    /// 若各写一份，将来任一侧改分块或改排序都会静默走岔（对齐
+    /// `legacy_tags_json` 作为唯一双写产出点的既有纪律）。
+    async fn list_properties_batch(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+        scope: PropertyBatchScope,
     ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
         let mut result: std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>> =
             std::collections::HashMap::new();
@@ -151,29 +186,7 @@ impl MemoryDaoSqliteImpl {
         // SQLite 绑定参数上限 999：每个载体占 2 绑定，按 IN_CLAUSE_CHUNK 分块
         let pool = self.pool(ctx);
         for chunk in targets.chunks(IN_CLAUSE_CHUNK) {
-            let mut builder = QueryBuilder::new(format!(
-                "SELECT {} FROM knowledge_property WHERE ",
-                Self::PROPERTY_COLUMNS
-            ));
-            // (target_type = ? AND target_id = ?) OR ... —— 不用 row-value IN，
-            // SQLite 的 (a,b) IN ((?,?),...) 依赖 3.15+ 的 row value 支持，可移植性更差
-            for (i, (target_type, target_id)) in chunk.iter().enumerate() {
-                if i > 0 {
-                    builder.push(" OR ");
-                }
-                builder
-                    .push("(target_type = ")
-                    .push_bind(target_type.as_str())
-                    .push(" AND target_id = ")
-                    .push_bind(target_id.clone())
-                    .push(")");
-            }
-            builder
-                .push(" AND \"status\" = ")
-                .push_bind(KnowledgeRelationStatus::Active as i32);
-            builder.push(" ORDER BY term_key ASC, ordinal ASC");
-
-            let rows = builder
+            let rows = property_batch_query(scope, chunk)
                 .build_query_as::<KnowledgePropertyPo>()
                 .fetch_all(&pool)
                 .await?;
@@ -284,5 +297,125 @@ WHERE target_type = ? AND target_id = ? AND term_key = ? AND "status" = 1
         }
         let rows = query.fetch_all(&pool).await?;
         Ok(rows)
+    }
+}
+
+/// 批量属性读的 status 口径
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PropertyBatchScope {
+    /// 只出 `status = 1` 生效行（默认读路径）
+    ActiveOnly,
+    /// 出 `status != 2`（1 生效 + 0 历史），显式软删的 2 永不可见（受控历史出口）
+    WithHistory,
+}
+
+/// 批量属性读的 SQL 构造单点（读取与 SQL 原文断言共用，避免"看起来对"）
+///
+/// # 为什么 status 谓词在**外层**、OR 串在**内层**括号
+///
+/// SQL 的 `AND` 优先级高于 `OR`。旧写法把 `AND "status" = 1` 接在 OR 串**尾部**，
+/// 实际语义退化成：
+/// `(t1∧id1) OR (t2∧id2) OR … OR ((tn∧idn) ∧ status=1)`
+/// ⇒ 分块内**除最后一个载体外全部不带 status 过滤**，历史行被当成生效行返回
+/// （H-C 缺陷，A1-10）。单 target 时它恰好是"最后一个"，所以既有单测全绿、
+/// 现网只在多载体的语义通道上暴露（8 行 vs 4 行）。
+///
+/// 正确形态必须两层括号，一个都不能少：
+/// `WHERE "status" = ? AND ( (t1∧id1) OR (t2∧id2) OR … OR (tn∧idn) )`
+fn property_batch_query<'a>(
+    scope: PropertyBatchScope,
+    chunk: &'a [(PropertyTargetType, String)],
+) -> QueryBuilder<'a, sqlx::Sqlite> {
+    let mut builder = QueryBuilder::new(format!(
+        "SELECT {} FROM knowledge_property WHERE ",
+        MemoryDaoSqliteImpl::PROPERTY_COLUMNS
+    ));
+    match scope {
+        PropertyBatchScope::ActiveOnly => {
+            builder
+                .push("\"status\" = ")
+                .push_bind(KnowledgeRelationStatus::Active as i32);
+        }
+        PropertyBatchScope::WithHistory => {
+            builder
+                .push("\"status\" != ")
+                .push_bind(KnowledgeRelationStatus::Deleted as i32);
+        }
+    }
+    builder.push(" AND (");
+    // (target_type = ? AND target_id = ?) OR ... —— 不用 row-value IN，
+    // SQLite 的 (a,b) IN ((?,?),...) 依赖 3.15+ 的 row value 支持，可移植性更差
+    for (i, (target_type, target_id)) in chunk.iter().enumerate() {
+        if i > 0 {
+            builder.push(" OR ");
+        }
+        builder
+            .push("(target_type = ")
+            .push_bind(target_type.as_str())
+            .push(" AND target_id = ")
+            .push_bind(target_id.clone())
+            .push(")");
+    }
+    builder.push(")");
+    // 同 term/ordinal 时生效行排在历史行之前；ActiveOnly 口径下该键恒等，无副作用
+    builder.push(" ORDER BY term_key ASC, ordinal ASC, \"status\" DESC");
+    builder
+}
+
+#[cfg(test)]
+mod batch_sql_test {
+    //! H-C 缺陷的**形态断言**：只看拼出来的 SQL 原文，不连库。
+    //!
+    //! 单 target 时「谓词在尾部」与「谓词在外层包住 OR 组」恰好等价，
+    //! 所以库级用例永远测不出这个 bug —— SQL 原文是唯一能锁死形态的证据。
+
+    use super::{PropertyBatchScope, property_batch_query};
+    use common::enums::ontology::PropertyTargetType;
+
+    fn chunk() -> Vec<(PropertyTargetType, String)> {
+        vec![
+            (PropertyTargetType::Node, "kn_first".to_string()),
+            (PropertyTargetType::Node, "kn_middle".to_string()),
+            (PropertyTargetType::Node, "kn_last".to_string()),
+        ]
+    }
+
+    /// 生效口径：status 谓词必须在外层，OR 串整体被括号包住
+    #[test]
+    fn active_scope_wraps_every_or_branch_inside_status_predicate() {
+        let sql = property_batch_query(PropertyBatchScope::ActiveOnly, &chunk())
+            .sql()
+            .to_string();
+        let expected = concat!(
+            "SELECT id, target_type, target_id, term_key, data_type,\n",
+            "       ordinal, value_text, value_num, value_bool, value_ref, \"status\", created_at, updated_at",
+            " FROM knowledge_property WHERE \"status\" = ? AND (",
+            "(target_type = ? AND target_id = ?) OR ",
+            "(target_type = ? AND target_id = ?) OR ",
+            "(target_type = ? AND target_id = ?)",
+            ") ORDER BY term_key ASC, ordinal ASC, \"status\" DESC"
+        );
+        assert_eq!(
+            sql, expected,
+            "H-C 回归：status 谓词没有包住整个 OR 组，分块内除最后一个载体外会漏过滤"
+        );
+        println!("BUILT_SQL_ACTIVE={sql}");
+    }
+
+    /// 历史口径：`!= 2`（1 生效 + 0 历史），不是「完全不过滤」
+    #[test]
+    fn history_scope_excludes_deleted_but_keeps_superseded() {
+        let sql = property_batch_query(PropertyBatchScope::WithHistory, &chunk())
+            .sql()
+            .to_string();
+        assert!(
+            sql.contains(" WHERE \"status\" != ? AND (("),
+            "历史口径必须排除 status=2：{sql}"
+        );
+        assert!(
+            !sql.contains("\"status\" = ?"),
+            "历史口径不得退化成只出生效行：{sql}"
+        );
+        println!("BUILT_SQL_HISTORY={sql}");
     }
 }

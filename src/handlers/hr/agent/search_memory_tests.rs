@@ -269,6 +269,7 @@ fn click_params(seed: &str, agent_id: Option<&str>) -> SearchMemoryParams {
         task_id: None,
         agent_id: agent_id.map(|s| s.to_string()),
         property_filters: None,
+        include_history: None,
     }
 }
 
@@ -480,6 +481,7 @@ async fn keyword_search_never_returns_dangling_edges(pool: sqlx::SqlitePool) {
             task_id: None,
             agent_id: Some("agent-kg".to_string()),
             property_filters: None,
+            include_history: None,
         },
     )
     .await
@@ -539,6 +541,7 @@ async fn invalid_filter_values_are_rejected_instead_of_defaulted(pool: sqlx::Sql
         task_id: None,
         agent_id: None,
         property_filters: None,
+        include_history: None,
     };
 
     // 拼错的 memory_type（少了 d）→ 400，而不是悄悄搜全部
@@ -629,6 +632,7 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
             task_id: None,
             agent_id: None,
             property_filters: None,
+            include_history: None,
         },
     )
     .await
@@ -652,6 +656,7 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
             tags: None,
             task_id: None,
             status: None,
+            include_history: None,
         },
     )
     .await
@@ -789,6 +794,7 @@ async fn search_memory_echoes_node_properties(pool: sqlx::SqlitePool) {
             task_id: None,
             agent_id: None,
             property_filters: None,
+            include_history: None,
         },
     )
     .await
@@ -846,6 +852,7 @@ async fn property_filters_recall_matching_nodes_only(pool: sqlx::SqlitePool) {
                 op: Some(PropertyFilterOpParam::Gte),
                 value: PropertyValue::Number(0.8),
             }]),
+            include_history: None,
         },
     )
     .await
@@ -890,6 +897,7 @@ async fn property_filters_with_no_hit_returns_empty(pool: sqlx::SqlitePool) {
                 op: Some(PropertyFilterOpParam::Gte),
                 value: PropertyValue::Number(0.99),
             }]),
+            include_history: None,
         },
     )
     .await
@@ -926,6 +934,7 @@ async fn property_filters_conflict_with_seed_nodes(pool: sqlx::SqlitePool) {
                 op: None,
                 value: PropertyValue::Number(0.8),
             }]),
+            include_history: None,
         },
     )
     .await
@@ -958,6 +967,7 @@ async fn numeric_operator_requires_number_value(pool: sqlx::SqlitePool) {
                 op: Some(PropertyFilterOpParam::Gte),
                 value: PropertyValue::Text("官方手册".to_string()),
             }]),
+            include_history: None,
         },
     )
     .await

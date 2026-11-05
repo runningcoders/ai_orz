@@ -221,6 +221,17 @@ impl RuntimeMemory for RuntimeDomainImpl {
         dal().list_entity_properties_batch(ctx, targets).await
     }
 
+    async fn list_entity_properties_batch_with_history(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
+        use crate::service::dal::memory::dal;
+        dal()
+            .list_entity_properties_batch_with_history(ctx, targets)
+            .await
+    }
+
     async fn query_entities_by_properties(
         &self,
         ctx: RequestContext,

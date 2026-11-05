@@ -220,6 +220,7 @@ async fn relations_create_edges_on_existing_knowledge_node(pool: sqlx::SqlitePoo
             task_id: None,
             agent_id: None,
             property_filters: None,
+            include_history: None,
         },
     )
     .await
@@ -624,6 +625,7 @@ async fn placeholder_relations_fail_per_item_without_any_edge(pool: sqlx::Sqlite
             task_id: None,
             agent_id: None,
             property_filters: None,
+            include_history: None,
         },
     )
     .await
@@ -1159,4 +1161,406 @@ async fn split_user_tags_is_searchable_without_legacy_column(pool: sqlx::SqliteP
         .await
         .expect("查询应成功");
     assert_eq!(hits.len(), 1, "旧列标签过渡期仍需可检索");
+}
+
+// ============ A1-4 / A1-5：实体类域软门禁的 severity 与「空清单 = 不限」 ============
+//
+// 判据来源：`PropertyWriteIssue::rejects_write()` 只对 `TypeMismatch` / `CardinalityExceeded`
+// 为真 ⇒ 这两类 severity = `error`（被拒、未写库）；`DomainClassNotAllowed` 等软门禁
+// ⇒ `warning`（已记录、照常写入）。V1 串（`property_issues`）与 V2 条目**并存**，
+// 本组用例同时断言 V1 形态，防以后有人「顺手统一 V1/V2」把过渡期兼容口径改掉。
+
+/// 造一条**带实体类域**的属性定义：`domain_classes` 传空切片 = 空清单（= 不限实体类）。
+async fn sev_scoped_property(
+    ctx: &RequestContext,
+    term_key: &str,
+    domain_classes: &[&str],
+    data_type: &str,
+    cardinality: &str,
+) {
+    let classes = serde_json::to_string(domain_classes).expect("序列化实体类清单");
+    crate::service::dao::ontology::dao()
+        .insert_property(
+            ctx.clone(),
+            &OntologyPropertyPo::new(
+                term_key,
+                format!("属性-{term_key}"),
+                format!("{term_key} 的语义描述"),
+                classes,
+                "node",
+                data_type,
+                "",
+                cardinality,
+                None,
+                false,
+            ),
+        )
+        .await
+        .expect("属性定义应插入成功");
+}
+
+/// 按 `term_key` 取 V2 条目（不存在即失败，避免「找不到就默默过」）。
+fn sev_entry<'a>(
+    entries: &'a [common::api::PropertyIssueEntry],
+    term_key: &str,
+) -> &'a common::api::PropertyIssueEntry {
+    entries
+        .iter()
+        .find(|e| e.field["term_key"] == term_key)
+        .unwrap_or_else(|| panic!("{term_key} 的 V2 条目必须在场: {entries:?}"))
+}
+
+/// `A1-4`（save 入口）：域外实体类 = `warning`，**属性照常入库**，V1 串同时并存。
+#[sqlx::test]
+async fn sev_save_entry_domain_violation_is_warning(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    sev_scoped_property(&ctx, "pattern_hint", &["pattern"], "string", "single").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "域外挂载（save 入口）".to_string(),
+            node_description: "concept 节点挂 pattern 专属属性".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            is_published: None,
+            relations: None,
+            properties: Some(vec![KnowledgePropertyParam {
+                term_key: "pattern_hint".to_string(),
+                value: PropertyValue::Text("x".to_string()),
+                ordinal: 0,
+            }]),
+            task_id: None,
+            source_short_term_ids: None,
+        },
+    )
+    .await
+    .expect("软门禁不得让保存整体失败");
+
+    // V1 串并存：形态（`<term_key>: <原因>`）与文案都不许改
+    let v1 = resp.property_issues.join(" | ");
+    assert!(v1.contains("pattern_hint: "), "V1 串必须并存: {v1:?}");
+    assert!(
+        v1.contains("node_type=concept"),
+        "V1 文案须带实体类上下文: {v1:?}"
+    );
+
+    let v2 = resp.property_issues_v2.expect("必须回 V2 条目");
+    assert_eq!(v2.len(), 1, "只应有实体类域一条: {v2:?}");
+    let e = sev_entry(&v2, "pattern_hint");
+    assert_eq!(e.code, "property_domain_class_not_allowed");
+    assert_eq!(
+        e.severity, "warning",
+        "软门禁必须是 warning（rejects_write() 为 false）"
+    );
+    assert_eq!(e.field["node_type"], "concept");
+    assert_eq!(e.field["domain_classes"], serde_json::json!(["pattern"]));
+    assert!(!e.message.is_empty(), "message 必须可读");
+
+    // 软门禁不阻断写入：生效行真的在库
+    let props = active_properties(&ctx, &resp.node_id).await;
+    assert!(
+        props
+            .iter()
+            .any(|(k, v)| k == "pattern_hint" && matches!(v, PropertyValue::Text(t) if t == "x")),
+        "域外挂载也必须落库（软门禁只记账）: {props:?}"
+    );
+}
+
+/// `A1-4`（update 入口）：同一条软门禁在**既有节点**上同样只告警、照写；
+/// `node_type` 由节点读出（不是参数给的）。
+#[sqlx::test]
+async fn sev_update_entry_domain_violation_is_warning(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    sev_scoped_property(&ctx, "pattern_hint", &["pattern"], "string", "single").await;
+    // seed_node 建的是 concept 节点
+    let node_id = seed_node(&ctx, "域外挂载（update 入口）").await;
+
+    let resp = update_memory(
+        ctx.clone(),
+        UpdateMemoryParams {
+            memory_id: node_id.clone(),
+            content: None,
+            summary: None,
+            tags: None,
+            is_published: None,
+            status: None,
+            node_tags: None,
+            relations: None,
+            properties: Some(vec![KnowledgePropertyParam {
+                term_key: "pattern_hint".to_string(),
+                value: PropertyValue::Text("y".to_string()),
+                ordinal: 0,
+            }]),
+        },
+    )
+    .await
+    .expect("软门禁不得让更新整体失败");
+
+    let v1 = resp.property_issues.join(" | ");
+    assert!(v1.contains("pattern_hint: "), "V1 串必须并存: {v1:?}");
+
+    let v2 = resp.property_issues_v2.expect("必须回 V2 条目");
+    let e = sev_entry(&v2, "pattern_hint");
+    assert_eq!(e.code, "property_domain_class_not_allowed");
+    assert_eq!(e.severity, "warning");
+    assert_eq!(
+        e.field["node_type"], "concept",
+        "node_type 必须来自被更新的节点本身"
+    );
+
+    let props = active_properties(&ctx, &node_id).await;
+    assert!(
+        props
+            .iter()
+            .any(|(k, v)| k == "pattern_hint" && matches!(v, PropertyValue::Text(t) if t == "y")),
+        "更新入口的域外挂载同样要落库: {props:?}"
+    );
+}
+
+/// `A1-4`（error 分支）：两条硬拦（类型不符 / 基数超限）必须是 `error`，
+/// 且被拒的属性**没有落库**（与 warning 「照写」形成对照）。
+#[sqlx::test]
+async fn sev_hard_rejects_are_error_and_absent_from_store(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "confidence", "number").await;
+    sev_scoped_property(&ctx, "identity_criteria", &[], "string", "single").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "硬拦分支".to_string(),
+            node_description: "类型不符 + 批内重复写单值属性".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            is_published: None,
+            relations: None,
+            properties: Some(vec![
+                // 门闩 2：number 声明 vs 文本值 → 硬拦
+                KnowledgePropertyParam {
+                    term_key: "confidence".to_string(),
+                    value: PropertyValue::Text("oops".to_string()),
+                    ordinal: 0,
+                },
+                // 门闩 4：单值属性同批写两次 → 第二条 CardinalityExceeded 硬拦
+                KnowledgePropertyParam {
+                    term_key: "identity_criteria".to_string(),
+                    value: PropertyValue::Text("a".to_string()),
+                    ordinal: 0,
+                },
+                KnowledgePropertyParam {
+                    term_key: "identity_criteria".to_string(),
+                    value: PropertyValue::Text("b".to_string()),
+                    ordinal: 0,
+                },
+            ]),
+            task_id: None,
+            source_short_term_ids: None,
+        },
+    )
+    .await
+    .expect("硬拦也只跳过坏条目，不让整体失败");
+
+    let v2 = resp.property_issues_v2.expect("必须回 V2 条目");
+    assert_eq!(v2.len(), 2, "两条硬拦各一条: {v2:?}");
+
+    let mismatch = sev_entry(&v2, "confidence");
+    assert_eq!(mismatch.code, "property_type_mismatch");
+    assert_eq!(mismatch.severity, "error", "类型不符是被拒，必须 error");
+
+    let cardinality = sev_entry(&v2, "identity_criteria");
+    assert_eq!(cardinality.code, "property_cardinality_exceeded");
+    assert_eq!(cardinality.severity, "error", "基数超限是被拒，必须 error");
+
+    let props = active_properties(&ctx, &resp.node_id).await;
+    assert!(
+        !props.iter().any(|(k, _)| k == "confidence"),
+        "被硬拦的属性不得落库: {props:?}"
+    );
+    assert!(
+        props
+            .iter()
+            .any(|(k, v)| k == "identity_criteria"
+                && matches!(v, PropertyValue::Text(t) if t == "a")),
+        "批内第一条仍应写入（部分成功语义）: {props:?}"
+    );
+}
+
+/// `A1-5` 正面：`domain_classes` 空清单 = **不限实体类**（本体最小承诺：不声明就不限制）。
+///
+/// 现网 21 条属性里恰好只有 2 条空清单：`domain` 与 `identity_criteria`。
+/// 断言的是**零 issue**（`property_issues` 空数组 + `property_issues_v2` 缺省），
+/// 不是「有 warning 但照写」——后者会把「不限」误读成「不合法」。
+#[sqlx::test]
+async fn empty_domain_classes_means_unrestricted(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    sev_scoped_property(&ctx, "domain", &[], "string", "single").await;
+    sev_scoped_property(&ctx, "identity_criteria", &[], "string", "single").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "空清单=不限".to_string(),
+            node_description: "两个空清单属性挂到 concept".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            is_published: None,
+            relations: None,
+            properties: Some(vec![
+                KnowledgePropertyParam {
+                    term_key: "domain".to_string(),
+                    value: PropertyValue::Text("消息渠道".to_string()),
+                    ordinal: 0,
+                },
+                KnowledgePropertyParam {
+                    term_key: "identity_criteria".to_string(),
+                    value: PropertyValue::Text("id".to_string()),
+                    ordinal: 0,
+                },
+            ]),
+            task_id: None,
+            source_short_term_ids: None,
+        },
+    )
+    .await
+    .expect("空清单属性写入应成功");
+
+    assert!(
+        resp.property_issues.is_empty(),
+        "空清单不得产生任何 V1 条目: {:?}",
+        resp.property_issues
+    );
+    assert!(
+        resp.property_issues_v2.is_none(),
+        "空清单 = 零 issue（不是 warning）: {:?}",
+        resp.property_issues_v2
+    );
+    let props = active_properties(&ctx, &resp.node_id).await;
+    assert_eq!(props.len(), 2, "两条都应落库: {props:?}");
+}
+
+/// `A1-5` 反面：窄清单必须报红 —— 证明「空清单 = 不限」没有退化成「一律不限」。
+#[sqlx::test]
+async fn narrow_domain_classes_still_flag_foreign_class(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    sev_scoped_property(&ctx, "layer", &["code_unit", "module"], "string", "single").await;
+
+    let resp = save_long_term_memory(
+        ctx.clone(),
+        SaveLongTermMemoryParams {
+            node_name: "窄清单挂错类".to_string(),
+            node_description: "layer 只允许 code_unit/module，却挂到 concept".to_string(),
+            node_type: "concept".to_string(),
+            summary: None,
+            tags: None,
+            is_published: None,
+            relations: None,
+            properties: Some(vec![KnowledgePropertyParam {
+                term_key: "layer".to_string(),
+                value: PropertyValue::Text("http".to_string()),
+                ordinal: 0,
+            }]),
+            task_id: None,
+            source_short_term_ids: None,
+        },
+    )
+    .await
+    .expect("软门禁不让保存整体失败");
+
+    let v2 = resp.property_issues_v2.expect("窄清单挂错实体类必须报红");
+    assert_eq!(v2.len(), 1, "恰一条实体类域问题: {v2:?}");
+    let e = sev_entry(&v2, "layer");
+    assert_eq!(e.code, "property_domain_class_not_allowed");
+    assert_eq!(e.severity, "warning");
+    assert_eq!(e.field["node_type"], "concept");
+    assert_eq!(
+        e.field["domain_classes"],
+        serde_json::json!(["code_unit", "module"])
+    );
+    // 反面同样是软门禁：照写
+    assert!(
+        active_properties(&ctx, &resp.node_id)
+            .await
+            .iter()
+            .any(|(k, _)| k == "layer"),
+        "窄清单不匹配也只记账、照常落库"
+    );
+}
+
+/// `A1-5` 域内零误报：三种清单形态（多类 / 窄清单 / 空清单）× 现网真实属性名，共 10 组。
+#[sqlx::test]
+async fn in_domain_writes_yield_zero_issues_across_ten_shapes(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    let multi = [
+        "concept",
+        "pattern",
+        "fact",
+        "norm",
+        "code_unit",
+        "event",
+        "task",
+        "project",
+        "agent",
+        "module",
+        "category",
+    ];
+    let narrow = ["code_unit", "module"];
+    let cases: [(&str, &[&str], &str); 10] = [
+        ("lifecycle_status", &multi[..], "concept"),
+        ("related_task_id", &multi[..], "concept"),
+        ("event_time", &multi[..], "pattern"),
+        ("version", &multi[..], "fact"),
+        ("source_memory_id", &multi[..], "concept"),
+        ("unit_kind", &narrow[..], "code_unit"),
+        ("record_state", &narrow[..], "module"),
+        ("tag", &narrow[..], "code_unit"),
+        ("domain", &[], "concept"),
+        ("identity_criteria", &[], "pattern"),
+    ];
+
+    for (term_key, domain_classes, node_type) in cases {
+        sev_scoped_property(&ctx, term_key, domain_classes, "string", "single").await;
+        let resp = save_long_term_memory(
+            ctx.clone(),
+            SaveLongTermMemoryParams {
+                node_name: format!("域内-{term_key}"),
+                node_description: format!("{term_key} 挂 {node_type}"),
+                node_type: node_type.to_string(),
+                summary: None,
+                tags: None,
+                is_published: None,
+                relations: None,
+                properties: Some(vec![KnowledgePropertyParam {
+                    term_key: term_key.to_string(),
+                    value: PropertyValue::Text("v".to_string()),
+                    ordinal: 0,
+                }]),
+                task_id: None,
+                source_short_term_ids: None,
+            },
+        )
+        .await
+        .expect("域内写入应成功");
+
+        assert!(
+            resp.property_issues.is_empty(),
+            "{term_key} 挂 {node_type} 是域内写入，不得有任何 issue: {:?}",
+            resp.property_issues
+        );
+        assert!(
+            resp.property_issues_v2.is_none(),
+            "{term_key}/{node_type} 零误报（V2 必须缺省）: {:?}",
+            resp.property_issues_v2
+        );
+        assert!(
+            active_properties(&ctx, &resp.node_id)
+                .await
+                .iter()
+                .any(|(k, _)| k == term_key),
+            "{term_key} 应已落库"
+        );
+    }
 }

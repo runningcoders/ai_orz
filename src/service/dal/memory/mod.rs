@@ -312,6 +312,16 @@ pub trait MemoryDal: Send + Sync {
         targets: &[(PropertyTargetType, String)],
     ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
 
+    /// 📖 批量取多个载体的属性**含历史版本**（`status != 2`，受控历史出口）
+    ///
+    /// 与 [`Self::list_entity_properties_batch`] 的唯一差别是 status 口径：
+    /// 这里出 `1 生效 + 0 被取代`，`2 显式软删` 永不返回。
+    async fn list_entity_properties_batch_with_history(
+        &self,
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)],
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>;
+
     /// 🔍 按属性条件**精确召回**载体 id（结构化过滤入口）
     ///
     /// # 为什么是独立召回通道而不是搜索过滤器
@@ -500,6 +510,10 @@ memory_dal_impl! {
         target_id: &str
     ) -> Result<Vec<KnowledgePropertyPo>>,
     list_entity_properties_batch(
+        ctx: RequestContext,
+        targets: &[(PropertyTargetType, String)]
+    ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>,
+    list_entity_properties_batch_with_history(
         ctx: RequestContext,
         targets: &[(PropertyTargetType, String)]
     ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>>,
