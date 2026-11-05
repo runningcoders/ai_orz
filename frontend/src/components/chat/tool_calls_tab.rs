@@ -2,11 +2,32 @@
 //!
 //! 展示最近的工具调用记录（JSONL 扫描查询，limit 30），并与后台进程列表
 //! 按 `call_id` join 出仍在运行的关联进程；点击 PID 徽标弹出进程详情
-//! （复用 ProcessDetailContent）。行展开可查看 input/output 摘要。
+//! （复用 ProcessDetailContent）。行头可点击展开查看 input/output 摘要。
 //!
-//! 行头在状态徽章之后、工具名之前渲染发起 Agent 的身份 chip（`IdentityChip`，
-//! 负责人样式同源；`agent_id` 为 None 不渲染），点头像弹出与聊天页同源的
-//! Agent 信息小卡片（AvatarBubble 复用；点击经 stop_propagation 防误触发行展开）。
+//! ## 条目卡片：三行布局（对齐「思考轨迹」列表卡片的行结构）
+//!
+//! - **第一行**：执行状态徽章 + 发起 Agent 的 `IdentityChip`（`agent_id` 为 None
+//!   〔系统级调用等〕不渲染）+ 末位展开箭头；点头像弹出与聊天页同源的信息小卡片
+//!   （AvatarBubble 复用；点击经 stop_propagation 防误触发行展开）。
+//! - **第二行**：工具名（占满剩余宽度、truncate）+ 长程链路标识 chip
+//!   （见 [`chain_ref`]，无数据时整块不渲染）+ 运行中进程 PID 徽标
+//!   （与进程列表 join 命中才有）。
+//! - **第三行**：开始时间靠左、用时靠右（`justify-between`）；时间戳缺失时
+//!   `format_timestamp_opt` 渲染 `—`，两形态（有/无链路标识）均不破版。
+//!
+//! ## 链路标识（"长程任务线程 id"）的数据可得性
+//!
+//! 工具调用追踪条目（`common::api::ToolCallEntryDetail`）**没有独立的
+//! `thread_id` / `run_id` 字段**：落盘行只带 `call_id` / `agent_id` / `task_id` /
+//! `project_id` / 时间戳 / 耗时 / 自由形态 `metadata`。现网 trace 实测 `metadata`
+//! 仅含 `caller_location`，无 run/thread 键 —— 故链路标识按下列优先级取，
+//! 一个都取不到就整块不渲染（绝不伪造占位 id）：
+//!
+//! 1. `metadata` 里的 `run_id` / `thread_id` / `trace_id`（后端将来落盘即自动生效）；
+//! 2. `task_id` —— 任务驱动的长程动作，任务 id 就是它的链路锚点；
+//! 3. `project_id` —— 既无任务也无 metadata 链路键时的弱口径兜底。
+//!
+//! 值一律经 [`short_id`]（前 6 后 4）折叠，完整值放 `title` 供 hover 查看。
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -22,7 +43,7 @@ use crate::components::process_detail::ProcessDetailContent;
 use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
-use crate::utils::status::{tool_call_status_badge, tool_call_status_text};
+use crate::utils::status::{short_id, tool_call_status_badge, tool_call_status_text};
 use common::api::{ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail};
 
 /// 工具调用记录查询条数上限（JSONL 扫描开销控制）
@@ -61,6 +82,73 @@ pub fn join_running_pids(processes: &[ProcessInfo]) -> HashMap<String, u32> {
         .filter(|p| p.alive)
         .map(|p| (p.call_id.clone(), p.pid))
         .collect()
+}
+
+/// 长程链路标识（工具调用条目第二行右侧 chip）
+///
+/// 工具调用追踪条目没有原生 `thread_id` / `run_id`，故把「可能存在的链路标识」
+/// 收敛成这个结构：`full` 是原始标识值（放 `title`），`label` 说明它的来源口径。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainRef {
+    /// 来源口径短标签（`run` / `thread` / `trace` / `task` / `project`）
+    pub label: &'static str,
+    /// 原始标识值（完整值，用于 hover 提示）
+    pub full: String,
+}
+
+impl ChainRef {
+    /// chip 内折叠文案：`label 短id`（侧栏窄，完整值只在 title 里）
+    pub fn chip_text(&self) -> String {
+        format!("{} {}", self.label, short_id(&self.full))
+    }
+
+    /// chip 的 hover 提示（说明这是哪种链路标识 + 完整值）
+    pub fn title(&self) -> String {
+        format!("长程链路标识（{}）：{}", self.label, self.full)
+    }
+}
+
+/// 从工具调用条目的可得字段里推导「长程任务链路标识」
+///
+/// 优先级：`metadata.run_id` / `metadata.thread_id` / `metadata.trace_id`
+/// → `task_id` → `project_id` → `None`（整块不渲染，不伪造）。
+/// 空白字符串按缺失处理（JSONL 里空串与 null 同义）。
+pub fn chain_ref(
+    metadata: &serde_json::Value,
+    task_id: Option<&str>,
+    project_id: Option<&str>,
+) -> Option<ChainRef> {
+    // 后端将来把 run/thread 落进 metadata 时无需改前端：命中即用
+    for (key, label) in [
+        ("run_id", "run"),
+        ("thread_id", "thread"),
+        ("trace_id", "trace"),
+    ] {
+        if let Some(v) = metadata.get(key).and_then(|v| v.as_str()) {
+            let v = v.trim();
+            if !v.is_empty() {
+                return Some(ChainRef {
+                    label,
+                    full: v.to_string(),
+                });
+            }
+        }
+    }
+    // 任务驱动的长程动作：任务 id 就是链路锚点
+    if let Some(t) = task_id.map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(ChainRef {
+            label: "task",
+            full: t.to_string(),
+        });
+    }
+    // 弱口径兜底：连任务都没有时才退到项目维度
+    if let Some(p) = project_id.map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(ChainRef {
+            label: "project",
+            full: p.to_string(),
+        });
+    }
+    None
 }
 
 /// 工具调用 Tab
@@ -210,6 +298,11 @@ pub fn ToolCallsTab(
                             .as_ref()
                             .map(|v| truncate_json_text(v, SUMMARY_MAX_CHARS));
                         let error = e.error.clone();
+                        let chain = chain_ref(
+                            &e.metadata,
+                            e.task_id.as_deref(),
+                            e.project_id.as_deref(),
+                        );
                         rsx! {
                             div {
                                 key: "{call_id}",
@@ -224,17 +317,18 @@ pub fn ToolCallsTab(
                                             expanded_call_id.set(Some(call_id.clone()));
                                         }
                                     },
-                                    div { class: "flex items-center gap-2 flex-wrap",
+                                    // 第一行：执行状态 + 发起 Agent（+ 展开指示）
+                                    div { class: "flex items-center gap-2 min-w-0",
                                         span {
                                             class: "{tool_call_status_badge(status)}",
                                             "{tool_call_status_text(status)}"
                                         }
                                         // 发起 Agent 身份（T3 需求②）：负责人样式同源，点小卡片看详情。
-                                        // agent_id 为 None（系统级调用等）不渲染；flex-none + chip 自带
-                                        // truncate，窄侧栏下压缩工具名而不是身份；点击不得触发行展开。
+                                        // agent_id 为 None（系统级调用等）不渲染；chip 外层限宽 + 内部
+                                        // truncate，窄侧栏下压缩身份而不是撑破卡片；点击不得触发行展开。
                                         if let Some(entry_agent_id) = e.agent_id.clone() {
                                             div {
-                                                class: "flex-none",
+                                                class: "flex-none min-w-0 max-w-[12rem]",
                                                 onclick: move |evt: MouseEvent| evt.stop_propagation(),
                                                 IdentityChip {
                                                     id: entry_agent_id,
@@ -243,10 +337,30 @@ pub fn ToolCallsTab(
                                                 }
                                             }
                                         }
-                                        span { class: "font-medium text-sm flex-1 truncate", "{tool_name}" }
+                                        span { class: "flex-1" }
+                                        span {
+                                            class: "text-[11px] text-base-content/50 select-none shrink-0",
+                                            if is_expanded { "▲" } else { "▼" }
+                                        }
+                                    }
+                                    // 第二行：工具名 + 长程链路标识 + 运行中进程
+                                    div { class: "mt-1 flex items-center gap-2 min-w-0",
+                                        span {
+                                            class: "font-medium text-sm flex-1 truncate",
+                                            title: "{tool_name}",
+                                            "{tool_name}"
+                                        }
+                                        // 链路标识：无数据整块不渲染（不硬造），有数据折叠显示
+                                        if let Some(chain) = chain.clone() {
+                                            span {
+                                                class: "badge hud-badge badge-sm badge-ghost font-mono shrink-0 max-w-[8rem] truncate",
+                                                title: "{chain.title()}",
+                                                "🧵 {chain.chip_text()}"
+                                            }
+                                        }
                                         if let Some(pid) = pid_opt {
                                             button {
-                                                class: "badge hud-badge badge-warning cursor-pointer",
+                                                class: "badge hud-badge badge-warning cursor-pointer shrink-0",
                                                 title: "查看关联进程详情",
                                                 onclick: move |evt: MouseEvent| {
                                                     evt.stop_propagation();
@@ -255,9 +369,12 @@ pub fn ToolCallsTab(
                                                 "⚙ PID {pid}"
                                             }
                                         }
-                                        if is_expanded { "▲" } else { "▼" }
                                     }
-                                    div { class: "text-xs text-base-content/60 mt-1", "{duration} · {started}" }
+                                    // 第三行：开始时间靠左、用时靠右
+                                    div { class: "mt-1 flex items-center justify-between gap-2 text-[11px] text-base-content/60",
+                                        span { class: "truncate", title: "开始时间", "{started}" }
+                                        span { class: "shrink-0 font-mono", title: "用时", "⏱ {duration}" }
+                                    }
                                 }
                                 // 展开：input/output 摘要
                                 if is_expanded {
@@ -344,6 +461,53 @@ mod tests {
         let out = truncate_json_text(&v, 50);
         assert_eq!(out.chars().count(), 51);
         assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn chain_ref_prefers_metadata_run_id() {
+        let meta = serde_json::json!({
+            "run_id": "01a1abcf-64c0-78a0-b6c5-4abeab2566a7",
+            "caller_location": "src/service/dao/tool_call/impl.rs:158",
+        });
+        let chain = chain_ref(&meta, Some("01a1abce-ccfe-7d80"), Some("proj-1"))
+            .expect("metadata.run_id 应优先命中");
+        assert_eq!(chain.label, "run");
+        assert_eq!(chain.full, "01a1abcf-64c0-78a0-b6c5-4abeab2566a7");
+    }
+
+    #[test]
+    fn chain_ref_falls_back_from_task_to_project_to_none() {
+        let empty = serde_json::json!({});
+        let by_task = chain_ref(
+            &empty,
+            Some("01a1abce-ccfe-7d80-8930-71c0836b2c17"),
+            Some("p"),
+        )
+        .expect("有 task_id 时用任务链路");
+        assert_eq!(by_task.label, "task");
+        let by_project = chain_ref(&empty, None, Some("01a1abce-ccfe-7d80-8930-71c0836b2c17"))
+            .expect("无任务时退项目维度");
+        assert_eq!(by_project.label, "project");
+        assert!(
+            chain_ref(&empty, None, None).is_none(),
+            "三者皆无时必须返回 None（不伪造）"
+        );
+    }
+
+    #[test]
+    fn chain_ref_treats_blank_values_as_missing() {
+        let meta = serde_json::json!({ "thread_id": "   " });
+        assert!(chain_ref(&meta, None, None).is_none());
+        // 空白 task_id 也不能当成链路锚点
+        assert!(chain_ref(&meta, Some("  "), None).is_none());
+    }
+
+    #[test]
+    fn chain_ref_chip_text_is_shortened_but_title_keeps_full() {
+        let full = "01a1abce-ccfe-7d80-8930-71c0836b2c17";
+        let chain = chain_ref(&serde_json::json!({}), Some(full), None).unwrap();
+        assert_eq!(chain.chip_text(), "task 01a1ab…2c17");
+        assert_eq!(chain.title(), format!("长程链路标识（task）：{full}"));
     }
 
     #[test]
