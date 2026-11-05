@@ -123,6 +123,8 @@ related:
 1. **发送侧**：`judge_chain_reply_route` 的 `Escalate` → `AutoReplyRoute::CloseChainAsNotify`，consumer 用 `MessageType::AgentNotify` 投递 Final（收口仍走 `Ok(())` ack 终结，不产生 nack 重投）；
 2. **接收侧**：知会消息也做一次链观测（但**不施压**——它本来就不回），命中硬墙档位时追加 `PressureDecision::chain_closed_prompt_lines()`：疲劳度事实 + 「默认 NO_REPLY / 要推进就自己开新链」。
 
+⚠️ **数值只能「实际值 + 硬阈值」并列表述，禁止写成 `当前/阈值` 比例**。知会本身也是一跳，接收方看到的事实必然比发送侧触顶时多一跳（窗口 9 对阈值 8、疲劳度 108 对阈值 100），比例写法会渲染成「已连续 9/8 跳」，数字超过上限看起来像统计出错，反而削弱信号可信度。护栏：`chain_closed_prompt_renders_overflow_as_value_plus_threshold`。
+
 ⚠️ **知会必须同时是回溯边界**（`MessageConsumer::is_chain_boundary`）。否则「对端主动开新链」发出的那一跳会顺着 `reply_to_id` 穿过那条知会，把旧链疲劳度整段继承过来 ⇒ 新链第一跳立刻再撞墙，「换个新链继续」当场变成空话。护栏：`notify_is_a_chain_boundary_so_reopened_chain_starts_fresh`。
 
 代价与取舍：知会消息多一次回溯查库（≤ `MAX_CHAIN_TRAVERSAL` 跳，仅 Agent 来源消息）；换来的是收口机制闭环——信息传到与链必断同时成立。
@@ -206,4 +208,4 @@ awaken → raw_output
 5. **查库失败 / 断链一律放行 Peer**，禁止改成 Err；升级也保持 `Ok(())` ack 终结。
 6. **`NO_REPLY` 哨兵恒在最前且只做归一化全等**，禁止 includes 子串匹配。
 7. **回溯序列必须先归一化为时间正序再观测**（2026-11-05 审核新增）：禁止把新→旧的 `ChainHop` 直接喂进 `observe` / `observe_chain`；回血清零窗口是有方向的运算，倒序会让硬墙永不触发（§6.2）。链断点不入链，改在回溯处停止收集。
-8. **硬墙必须收口为知会，禁止「直接停」或「照常回发」**（2026-11-05 新增）：`Escalate` 只准映射为 `CloseChainAsNotify`（Final 以 `AgentNotify` 送达 + 通知归属用户）；接收侧必须看到 `chain_closed_prompt_lines()`；**知会必须同时是回溯边界**，否则「主动开新链」的第一跳会继承旧链疲劳度而立刻再撞墙（§5.1）。
+8. **硬墙必须收口为知会，禁止「直接停」或「照常回发」**（2026-11-05 新增）：`Escalate` 只准映射为 `CloseChainAsNotify`（Final 以 `AgentNotify` 送达 + 通知归属用户）；接收侧必须看到 `chain_closed_prompt_lines()`；**知会必须同时是回溯边界**，否则「主动开新链」的第一跳会继承旧链疲劳度而立刻再撞墙（§5.1）。收口提示词的数值必须「实际值 + 硬阈值」并列表述（接收方必然多一跳，比例写法会渲染成 9/8）。

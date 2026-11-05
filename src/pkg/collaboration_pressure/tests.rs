@@ -238,11 +238,19 @@ fn chain_closed_prompt_carries_fatigue_and_reopen_guidance() {
     let lines = decision.chain_closed_prompt_lines();
     assert_eq!(lines.len(), 3);
     assert!(lines[0].contains("【协作链收口】"));
-    assert!(lines[0].contains("8/8"), "窗口事实必须带上：{}", lines[0]);
-    // 撞的是窗口墙（8 跳 × 12 = 96），不是疲劳度墙——两种硬墙都要如实打印
+    // 数值必须「实际值 + 硬阈值」分开表述，不能是 9/8 这种比例（见下条护栏）
     assert!(
         lines[0].contains(&format!(
-            "{}/{}",
+            "已连续 {} 跳无新信息（硬阈值 {} 跳）",
+            pressure.window_depth(),
+            pressure.config().hard_window_depth
+        )),
+        "窗口事实必须带上：{}",
+        lines[0]
+    );
+    assert!(
+        lines[0].contains(&format!(
+            "疲劳度 {}（硬阈值 {}）",
             pressure.fatigue(),
             pressure.config().hard_fatigue
         )),
@@ -258,6 +266,42 @@ fn chain_closed_prompt_carries_fatigue_and_reopen_guidance() {
     light.observe(plain());
     let light_decision = light.judge();
     assert!(!light_decision.closes_chain_as_notify());
+}
+
+/// 接收方视角必然比发送侧多一跳（知会自己也是一跳），数字会「超过」硬阈值
+///
+/// 若沿用 `当前/阈值` 比例写法，模型实际看到的是「已连续 9/8 跳」「疲劳度
+/// 108/100」——数字比上限还大，读起来像统计出错，反而削弱这条信号的可信度。
+/// 必须改成「实际值（硬阈值 X）」的并列表述。
+#[test]
+fn chain_closed_prompt_renders_overflow_as_value_plus_threshold() {
+    let mut pressure = ChainPressure::default();
+    for _ in 0..9 {
+        pressure.observe(plain());
+    }
+    assert!(
+        pressure.window_depth() as u64 > pressure.config().hard_window_depth,
+        "本护栏的前提是「接收方窗口确实超过硬阈值」"
+    );
+    let lines = pressure.judge().chain_closed_prompt_lines();
+    assert!(
+        lines[0].contains(&format!(
+            "已连续 {} 跳无新信息（硬阈值 {} 跳）",
+            pressure.window_depth(),
+            pressure.config().hard_window_depth
+        )),
+        "溢出场景也必须读成「值 + 阈值」：{}",
+        lines[0]
+    );
+    assert!(
+        !lines[0].contains(&format!(
+            "{}/{}",
+            pressure.window_depth(),
+            pressure.config().hard_window_depth
+        )),
+        "禁止比例写法（会渲染成 9/8）：{}",
+        lines[0]
+    );
 }
 
 #[test]
