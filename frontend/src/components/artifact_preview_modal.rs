@@ -13,6 +13,10 @@
 //! | 下载原件 | 有 | 有 |
 //! | 编辑（内容 / 元信息 / 标签） | 有 | 无，纯只读 |
 //!
+//! 信息框 `card-actions` 一带给了「🔗 打开详情页」快捷入口（需要编辑时再去详情页）：
+//! 点击先复位本弹窗状态、再 `navigator.push` 到既有深链路由 `ProjectArtifactDetail`。
+//! 走同页 SPA 跳转而非新开标签——平台既有页面跳转一律如此，新开会脱离应用外壳。
+//!
 //! 预览分派与详情页同口径：HTML 走共享组件 `HtmlPreview`——前端取源码 + `srcdoc` +
 //! 沙箱 iframe，**不能**把 iframe 直指 `/file`（后端对 `text/html` 强制 `attachment`，
 //! 那样只会触发下载）；媒体走各自的只读标签；PDF 走 iframe 直指 `/file`（PDF 在后端
@@ -22,6 +26,7 @@
 //! 弹窗不新增任何放宽隔离的能力，也不经 `dangerous_inner_html` 注入父文档。
 
 use dioxus::prelude::*;
+use dioxus_router::use_navigator;
 
 use crate::components::html_preview::{HtmlPreview, is_html_previewable};
 use crate::components::markdown::MarkdownRenderer;
@@ -182,6 +187,9 @@ pub fn ArtifactPreviewModal(
         artifact.file_type,
     );
     let download_file_name = download_name(&artifact.file_path, &artifact.name);
+    // 「打开详情页」用：既有深链路由的 id（此处先克隆，避免被闭包 move 走影响后续 use_resource）
+    let id_for_link = id.clone();
+    let navigator = use_navigator();
 
     // HTML 源码：走鉴权 API 取文本（`/file` 对 text/html 是 attachment，只影响导航不影响 fetch）
     let id_for_html = id.clone();
@@ -223,6 +231,17 @@ pub fn ArtifactPreviewModal(
                 div { class: "card bg-base-100 border border-base-300",
                     div { class: "card-body p-3 gap-3",
                         div { class: "card-actions justify-end",
+                            button {
+                                class: "btn hud-btn btn-secondary btn-sm",
+                                onclick: move |_| {
+                                    // 先复位弹窗状态再跳转：即便侧栏被布局级复用，也不会残留 top layer 弹窗
+                                    on_close.call(());
+                                    navigator.push(crate::pages::Route::ProjectArtifactDetail {
+                                        id: id_for_link.clone(),
+                                    });
+                                },
+                                "🔗 打开详情页"
+                            }
                             a {
                                 class: "btn hud-btn btn-primary btn-sm",
                                 href: url.clone(),
