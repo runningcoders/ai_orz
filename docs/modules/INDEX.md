@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 673 篇 / 14,148,048 B**，分布于 15 个模块。
+**合计 673 篇 / 14,150,489 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -15,7 +15,7 @@
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,240 |
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 904,755 |
-| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,233,155 |
+| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,235,596 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,177 |
 | [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 866,351 |
 | [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,298 |
@@ -200,11 +200,11 @@
 | 12 | [思考循环异常退出兜底总结与错误上报结构化](<02-Agent运行时/C-知识/思考循环异常退出兜底总结与错误上报结构化/思考循环异常退出兜底总结与错误上报结构化.md>) | 4,735 |
 | 13 | [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](<02-Agent运行时/C-知识/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md>) | 13,082 |
 | 14 | [技能包管理](<02-Agent运行时/C-知识/技能包管理.md>) | 30,463 |
-| 15 | [策略引擎与 Shell 拦截层](<02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md>) | 31,774 |
+| 15 | [策略引擎与 Shell 拦截层](<02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md>) | 32,664 |
 | 16 | [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层](<02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md>) | 15,003 |
 | 17 | [记忆系统管理](<02-Agent运行时/C-知识/记忆系统管理.md>) | 36,203 |
 | 18 | [运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化](<02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md>) | 13,011 |
-| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 56,113 |
+| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 57,664 |
 
 ### 03-记忆系统
 

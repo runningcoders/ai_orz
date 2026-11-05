@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14148048,
+  "total_bytes": 14150489,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1155,7 +1155,7 @@
           "path": "02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md",
           "name": "策略引擎与 Shell 拦截层",
           "title": "策略引擎与 Shell 拦截层",
-          "bytes": 31774
+          "bytes": 32664
         },
         {
           "tier": "C-知识",
@@ -1183,7 +1183,7 @@
           "path": "02-Agent运行时/C-知识/运行时领域.md",
           "name": "运行时领域",
           "title": "运行时领域",
-          "bytes": 56113
+          "bytes": 57664
         }
       ]
     },
