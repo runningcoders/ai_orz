@@ -102,9 +102,30 @@ related:
 
 **每一行同时写着 `prompt_hint` 与 `recovery_hint`**：找「Escalate 会让模型看到什么」「回血后提示语怎么变」只需看那一行。`every_hit_binds_action_and_prompt_to_the_same_rule` 是这条约束的护栏测试。
 
-`Nudge` 不改变路由（仍 Peer），它的效力来自唤醒前注入的施压提示词；只有 `Escalate` 才映射为 `EscalateToOwner`。
+`Nudge` 不改变路由（仍 Peer），它的效力来自唤醒前注入的施压提示词；只有 `Escalate` 才改变路由：映射为 `CloseChainAsNotify`，把 Final 作为知会送达对方并终止链条（见 §5.1）。
 
 ⚠️ **阈值不写进规则对象**：`FatigueAtLeast` / `WindowDepthAtLeast` 按 key 从 `Metrics` 双键读取，规则本身无状态，因此规则组可以安全 `OnceLock` 缓存而配置改动立即生效。旧 `chain_policy()` 把 `MAX_AGENT_REPLY_CHAIN` 固化进 `OnceLock<ThresholdPolicy>` 是明确反例。系统级配置在 `[agent].collab_*`（`common/config/ai_orz.toml`），`PressureConfig::sanitized()` 对非法配置回退默认值，避免一条坏配置把所有协作钉死在升级区；`max_fatigue` 自动抬到 `>= hard_fatigue`，否则把硬阈值放宽到 100 以上会被当成非法配置、连带软阈值与窗口一起静默回退（`hard_fatigue_above_default_max_is_not_silently_rejected`）。
+
+### 5.1 硬墙收口：终止链条，但不丢最后一轮信息
+
+硬墙命中时**不再「直接停」**。旧形态（`EscalateToOwner`）只通知归属用户，对方永远等不到最后一轮结果——协作被切断，信息凭空消失；而「照常回发」又正是硬墙要拦的乒乓。收口是第三种形态：
+
+| 维度 | 旧：直接停 | 新：知会收口 |
+|---|---|---|
+| 最后一次 Final | 丢弃（用户只收到一条告警说「没回发」） | 作为 `AgentNotify` 投给来源方，信息完整送达 |
+| 链条怎么断 | 靠「没发出去」断 | 靠知会语义断：对端 `ReplyObligation::NotifyOnly` ⇒ 静态路由 Discard |
+| 对端感知 | 只知道自己发了消息、永远等不到 | 提示词明确「本条是上游链最后一跳，链已终止」+ 疲劳度事实 |
+| 想继续 | 无入口 | 对端自己主动 `send_message_to_agent` 开新消息（新链从第 1 跳重新计数） |
+| 归属用户 | 「已暂停自动回发」告警 | 「已把最后一轮作为知会送达并终止该链」的知会（结果已给对端，不再承载内容） |
+
+两个条件必须同时成立，缺一个就退回成「丢消息」或「继续乒乓」：
+
+1. **发送侧**：`judge_chain_reply_route` 的 `Escalate` → `AutoReplyRoute::CloseChainAsNotify`，consumer 用 `MessageType::AgentNotify` 投递 Final（收口仍走 `Ok(())` ack 终结，不产生 nack 重投）；
+2. **接收侧**：知会消息也做一次链观测（但**不施压**——它本来就不回），命中硬墙档位时追加 `PressureDecision::chain_closed_prompt_lines()`：疲劳度事实 + 「默认 NO_REPLY / 要推进就自己开新链」。
+
+⚠️ **知会必须同时是回溯边界**（`MessageConsumer::is_chain_boundary`）。否则「对端主动开新链」发出的那一跳会顺着 `reply_to_id` 穿过那条知会，把旧链疲劳度整段继承过来 ⇒ 新链第一跳立刻再撞墙，「换个新链继续」当场变成空话。护栏：`notify_is_a_chain_boundary_so_reopened_chain_starts_fresh`。
+
+代价与取舍：知会消息多一次回溯查库（≤ `MAX_CHAIN_TRAVERSAL` 跳，仅 Agent 来源消息）；换来的是收口机制闭环——信息传到与链必断同时成立。
 
 ---
 
@@ -112,14 +133,17 @@ related:
 
 ```
 handle_agent_message（唤醒前）
-  ├─ 预筛：ReplyObligation::Expected（Agent 来源 && from != agent_id && 非知会）
+  ├─ 预筛：ReplyObligation::of = Some（Agent 来源 && from != agent_id）
+  │    · Expected（对端在等答复）：施压 + 硬墙裁决用
+  │    · NotifyOnly（知会）：不施压，只判断「本条是不是上游触顶收口的那一跳」
   │        （与静态路由规则同源 ⇒ 用户对话主干零额外 DB 读）
   ├─ collect_chain_pressure：沿 reply_to_id 回溯收集 ChainHop（新 → 旧）
   │    · 非 Agent 来源 / 断链 / 父消息不存在 / 查询失败 → 停止（宁少勿错）
+  │    · 父消息是知会 → 链边界，不继续回溯（见 §5.1）
   │    · MAX_CHAIN_TRAVERSAL = 32 硬上限，防异常长链放大 DB 读
   │    · observe_backward_chain：归一化为时间正序后再逐跳 observe（见 §6.2）
   ├─ log_info! 打印 decision.log_line()（档位 / 命中策略 / 条件 / 全部事实）
-  └─ ThinkingOptions.with_turn_guidance_lines(回复仲裁行 + decision.prompt_lines())
+  └─ ThinkingOptions.with_turn_guidance_lines(回复仲裁行 + 压力行 / 收口行)
         ↓ fill_prompt_base / legacy_awaken 重建路径 / Phase2 执行段 → set_turn_guidance_lines
         ↓ DefaultPromptBuilder 渲染 append-only 独立区块
           （当前消息 / 尾插输入 / 技能提醒之后，收尾指令之前）
@@ -127,10 +151,10 @@ handle_agent_message（唤醒前）
 awaken → raw_output
   └─ resolve_auto_reply_route（纯函数，不再查库）
        静态段命中 → Peer / Discard
-       静态未命中 → judge_chain_reply_route(&pressure)：Escalate → 升级，其余 Peer
+       静态未命中 → judge_chain_reply_route(&pressure)：Escalate → 知会收口，其余 Peer
 ```
 
-升级文案不再写「已自动中止协作」，改为「已暂停自动回发 + 回复本条补充新信息即可重置疲劳窗口继续协作」。压力数据缺失属异常，按「宁少勿错」放行 Peer，不改成 Err / nack（会触发重投雪崩）。
+归属用户的通知文案不再是「已暂停自动回发」，而是「已把最后一轮结果作为知会送达对方并终止该链」，并给出续接入口（补新信息 / 让相关 Agent 重新发起）。压力数据缺失属异常，按「宁少勿错」放行 Peer，不改成 Err / nack（会触发重投雪崩）。
 
 ### 6.1 提示词注入位置与 prefix cache 边界
 
@@ -182,3 +206,4 @@ awaken → raw_output
 5. **查库失败 / 断链一律放行 Peer**，禁止改成 Err；升级也保持 `Ok(())` ack 终结。
 6. **`NO_REPLY` 哨兵恒在最前且只做归一化全等**，禁止 includes 子串匹配。
 7. **回溯序列必须先归一化为时间正序再观测**（2026-11-05 审核新增）：禁止把新→旧的 `ChainHop` 直接喂进 `observe` / `observe_chain`；回血清零窗口是有方向的运算，倒序会让硬墙永不触发（§6.2）。链断点不入链，改在回溯处停止收集。
+8. **硬墙必须收口为知会，禁止「直接停」或「照常回发」**（2026-11-05 新增）：`Escalate` 只准映射为 `CloseChainAsNotify`（Final 以 `AgentNotify` 送达 + 通知归属用户）；接收侧必须看到 `chain_closed_prompt_lines()`；**知会必须同时是回溯边界**，否则「主动开新链」的第一跳会继承旧链疲劳度而立刻再撞墙（§5.1）。

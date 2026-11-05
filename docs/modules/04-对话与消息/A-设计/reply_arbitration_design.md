@@ -144,12 +144,17 @@ pub enum ReplyDecision {
 ① 静态规则表（零查库，声明顺序即优先级）
    哨兵 → 用户来源 Peer → 系统来源 → 自触发 → 知会
 ② 协作压力档位（awaken 前已观测）
-   Exhausted → EscalateToOwner，其余 → Peer
+   Exhausted → CloseChainAsNotify（Final 作知会送达 + 终止链），其余 → Peer
 ③ 未来：小脑（读同一份证据）
 ```
 
 哨兵仍在最前：保留字任何来源都不投递（任务派发经用户身份中继后 `from_role=User`，
 若让来源规则先命中会把哨兵原文发给用户，2026-10-16 实证泄漏 29 条）。
+
+**②的兜底形态是「收口」而不是「丢弃」**：命硬墙时 Final 仍作为 `AgentNotify` 送达
+来源方，靠知会语义终止链条，对端另有一条「链已终止 + 疲劳度」的提示词。细节见
+[collaboration_pressure_design.md](<collaboration_pressure_design.md>) §5.1（含「知会必须是
+回溯边界」这条不变量）。
 
 ## 五、小脑接入点（预留，本文不实现）
 
@@ -158,7 +163,7 @@ pub enum ReplyDecision {
 ```rust
 fn resolve_auto_reply_route(...) -> AutoReplyRoute {
     if let Some(route) = judge_static_reply_route(evidence) { return route; }
-    if pressure.exhausted() { return EscalateToOwner; }
+    if pressure.exhausted() { return CloseChainAsNotify; }
     // ← 小脑接在这里：输入同一份 evidence + pressure 快照 + Final 形态
     //    输出 Peer / Discard{reason}，reason 必写日志
     Peer
@@ -178,7 +183,7 @@ fn resolve_auto_reply_route(...) -> AutoReplyRoute {
 
 | 边界 | 现状 | 影响 |
 |---|---|---|
-| 模型坚持每轮都回 | 提示词 + 疲劳度施压只能降低概率 | 硬墙 `EscalateToOwner` 兜底；后续小脑接管 |
+| 模型坚持每轮都回 | 提示词 + 疲劳度施压只能降低概率 | 硬墙 `CloseChainAsNotify` 兜底（最后一轮作知会送达、链必然终止）；后续小脑接管 |
 | 哨兵后追加解释（`NO_REPLY: 不用回`） | 归一化全等不命中 ⇒ 当正文投递 | 提示词已要求「独占全文」；确定性更强的前缀规则暂不做（会把「正文恰好以 NO_REPLY 开头」误伤，收益低于风险） |
 | 知会消息 Final 被丢弃 | 要回必须显式调发送工具 | 提示词已给出口；若模型仍只输出正文，属于可观测的协议违约（`auto-reply decision` 日志） |
 | 过程中已用工具发过消息，Final 又输出正文 | 会重复投递 | 由 Agent 自决（提示词要求此时 Final 输出 NO_REPLY）；框架不再反查——见 §1.1 |

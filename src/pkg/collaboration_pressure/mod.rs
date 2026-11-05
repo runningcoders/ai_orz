@@ -408,7 +408,7 @@ impl PressureDecision {
     ///
     /// 这是「每次回复都带上深度等信号」的落点：调用方把这组行追加到
     /// `ThinkingOptions.turn_guidance_lines`（与回复仲裁行同区块），当前正在
-    /// 思考的 Agent 就能看到压力并主动收敛，而不是等到硬墙被机械掐断。
+    /// 思考的 Agent 就能看到压力并主动收敛，而不是等撞上硬墙才被动收口。
     pub fn prompt_lines(&self) -> Vec<String> {
         let s = &self.snapshot;
         vec![
@@ -429,6 +429,33 @@ impl PressureDecision {
             ),
             format!("- 本轮指引：{}", self.prompt_hint),
             format!("- 回血规则：{}", self.recovery_hint),
+        ]
+    }
+
+    /// 本档位是否把「回发」收口为「知会」（硬墙的最后一跳）
+    ///
+    /// 两个使用方，共用同一份判据：
+    /// - 发送侧路由据此产出「知会收口」而非「静默丢弃」或「照常回发」；
+    /// - 接收侧据此识别「这条知会是一条已触顶的链收口出来的」，从而拿到
+    ///   站到它自己视角的同一份证据（疲劳度 + 链已终止）。
+    pub fn closes_chain_as_notify(&self) -> bool {
+        self.action == PressureAction::Escalate
+    }
+
+    /// 收口知会送给**接收方**的提示词（发送侧看不到这段）
+    ///
+    /// 链条终止不能只靠「知会语义 ⇒ 静态路由 Discard」这种框架侧保证，还要让
+    /// 接收方知道**为什么**终止、以及想继续时正确的动作是什么：自己主动发起
+    /// 新消息（新链重新计数），而不是回发本条把旧链续起来。
+    pub fn chain_closed_prompt_lines(&self) -> Vec<String> {
+        let s = &self.snapshot;
+        vec![
+            format!(
+                "【协作链收口】本条是上游链的最后一跳：本条所在协作链已连续 {}/{} 跳无新信息、疲劳度 {}/{}（含本条），对方的本轮结果按「知会」送达你，框架不会再让它自动回发——这条链到此终止。",
+                s.window_depth, s.hard_window_depth, s.fatigue, s.hard_fatigue,
+            ),
+            "- 默认到此为止：Final 恰好只输出 NO_REPLY，不要为了「有消息就回一句」把旧链重新点起来。".to_string(),
+            "- 仍要推进：自己主动用 send_message_to_agent 发起新消息（新链从第 1 跳重新计数），不要靠在旧链上回发续接；对方结论已在本条正文里，可直接引用。".to_string(),
         ]
     }
 

@@ -191,6 +191,75 @@ fn every_hit_binds_action_and_prompt_to_the_same_rule() {
     assert!(saw_table_hit);
 }
 
+/// 硬墙不是「静默丢弃」：动作是收口为知会，配套文案必须说清「本轮仍会送达」
+///
+/// 这条护栏钉的是「改动作忘改文案」的反向版本：行为从「暂停回发」改成「知会
+/// 收口」后，提示词若还写着「暂停/不发」，模型会以为结论发不出去，转而用工具
+/// 重复投递或干脆不说清楚——两种都会把收口的价值抵消掉。
+#[test]
+fn exhausted_stage_prompt_matches_chain_close_behavior() {
+    let walled: Vec<_> = STAGE_DEFS
+        .iter()
+        .filter(|rule| rule.action == PressureAction::Escalate)
+        .collect();
+    assert_eq!(walled.len(), 2, "两条硬墙规则都应标记为收口动作");
+    for rule in walled {
+        assert_eq!(rule.stage, PressureStage::Exhausted);
+        assert!(
+            rule.prompt_hint.contains("知会"),
+            "硬墙文案必须说明 Final 会作为知会送达：{}",
+            rule.prompt_hint
+        );
+        for forbidden in ["暂停", "不回发你的"] {
+            assert!(
+                !rule.prompt_hint.contains(forbidden),
+                "硬墙文案残留旧口径「{forbidden}」：{}",
+                rule.prompt_hint
+            );
+        }
+        assert!(
+            rule.recovery_hint.contains("主动") && rule.recovery_hint.contains("新消息"),
+            "续接话术必须指向「主动发新消息开新链」：{}",
+            rule.recovery_hint
+        );
+    }
+}
+
+/// 收口知会给接收方的提示词：疲劳度事实 + 「要推进就自己开新链」
+#[test]
+fn chain_closed_prompt_carries_fatigue_and_reopen_guidance() {
+    let mut pressure = ChainPressure::default();
+    for _ in 0..8 {
+        pressure.observe(plain());
+    }
+    let decision = pressure.judge();
+    assert!(decision.closes_chain_as_notify());
+
+    let lines = decision.chain_closed_prompt_lines();
+    assert_eq!(lines.len(), 3);
+    assert!(lines[0].contains("【协作链收口】"));
+    assert!(lines[0].contains("8/8"), "窗口事实必须带上：{}", lines[0]);
+    // 撞的是窗口墙（8 跳 × 12 = 96），不是疲劳度墙——两种硬墙都要如实打印
+    assert!(
+        lines[0].contains(&format!(
+            "{}/{}",
+            pressure.fatigue(),
+            pressure.config().hard_fatigue
+        )),
+        "疲劳度事实必须带上：{}",
+        lines[0]
+    );
+    assert!(lines[1].contains("NO_REPLY"));
+    assert!(lines[2].contains("send_message_to_agent"));
+    assert!(lines[2].contains("新链"));
+
+    // 未触顶的链不产生收口话术（普通知会不该被套上「链已终止」的口径）
+    let mut light = ChainPressure::default();
+    light.observe(plain());
+    let light_decision = light.judge();
+    assert!(!light_decision.closes_chain_as_notify());
+}
+
 #[test]
 fn snapshot_is_serializable_and_prints_core_signals() {
     let mut pressure = ChainPressure::default();

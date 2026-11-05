@@ -170,7 +170,8 @@ fn static_route_discards_no_reply_sentinel_for_user_origin() {
     );
 }
 
-/// 协作压力硬红线：纯文本往返撞窗口上限 → EscalateToOwner；
+/// 协作压力硬红线：纯文本往返撞窗口上限 → 知会收口（CloseChainAsNotify），
+/// 既完成最后一轮信息传递、又必然终止链条；
 /// 关键回归：有新信息回血时窗口重置，硬窗口之外仍允许 Peer 继续协作
 #[test]
 fn chain_route_escalates_at_pressure_wall_but_recovery_keeps_peer() {
@@ -206,7 +207,7 @@ fn chain_route_escalates_at_pressure_wall_but_recovery_keeps_peer() {
     );
     assert!(matches!(
         judge_chain_reply_route(&chain(8, &[])),
-        AutoReplyRoute::EscalateToOwner { .. }
+        AutoReplyRoute::CloseChainAsNotify { .. }
     ));
     assert_eq!(
         judge_chain_reply_route(&chain(12, &[3, 7, 11])),

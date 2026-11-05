@@ -25,7 +25,7 @@ pub enum PressureStage {
     Recovered,
     /// 压力带：施压但未终止
     Pressured,
-    /// 硬红线：升级 / 暂停回发
+    /// 硬红线：本轮回发收口为知会（最后一跳）并升级给归属方
     Exhausted,
 }
 
@@ -47,7 +47,11 @@ pub enum PressureAction {
     Continue,
     /// 放行但伴随提示词施压，让模型主动收敛
     Nudge,
-    /// 升级：暂停自动回发 / 通知归属方
+    /// 升级：本轮回发**收口为知会**（最后一跳，信息照常送达）并通知归属方
+    ///
+    /// ⚠️ 不是「丢回包」也不是「照常回发」：前者让结论凭空消失，后者把乒乓推高一跳。
+    /// 行为落点在 `message_route_policy::AutoReplyRoute::CloseChainAsNotify`，
+    /// 文案必须同步说明「本轮仍会送达」，否则模型会以为发不出去。
     Escalate,
 }
 
@@ -155,8 +159,8 @@ pub(super) static STAGE_DEFS: &[StageRule] = &[
         matcher: Matcher::FatigueAtLeast(keys::HARD_FATIGUE),
         stage: PressureStage::Exhausted,
         action: PressureAction::Escalate,
-        prompt_hint: "协作已连续多轮无有效新信息、疲劳度触顶。请立即收敛：直接给出最终结论；若本条消息来自 Agent 且后续工作与来源 Agent 无关，让 Final 恰好只输出 NO_REPLY。不要再把上一轮换个说法重发。",
-        recovery_hint: "只有用户补充、工具/任务结果或新参与方注入才能开启新窗口；升级通知可直接回复并补充新信息来续接协作。",
+        prompt_hint: "协作已连续多轮无有效新信息、疲劳度触顶。本轮是本链最后一跳：Final 仍会作为**知会**完整送达来源方（对方不会再自动回发，框架也不会再唤醒你），请一次性给出可独立读懂的最终结论，不要期待下一轮，也不要把上一轮换个说法重发；若后续工作与来源 Agent 无关，让 Final 恰好只输出 NO_REPLY（那就不发知会）。",
+        recovery_hint: "只有用户补充、工具/任务结果或新参与方注入才能开启新窗口；确需继续这段讨论，由一方主动重新发起新消息（新链从第 1 跳重新计数），而不是在旧链上回发。",
     },
     StageRule {
         id: "pressure_window_exhausted",
@@ -165,8 +169,8 @@ pub(super) static STAGE_DEFS: &[StageRule] = &[
         matcher: Matcher::WindowDepthAtLeast,
         stage: PressureStage::Exhausted,
         action: PressureAction::Escalate,
-        prompt_hint: "连续无新信息窗口已达上限，本次自动回发将被暂停。请直接给出结论；若来源是 Agent 且后续无关，让 Final 恰好只输出 NO_REPLY。",
-        recovery_hint: "回血会把连续窗口清零，因此带新信息的往返不会撞这条硬墙；升级后补充新输入即可重新计数。",
+        prompt_hint: "连续无新信息窗口已达上限，本轮回发会**收口为知会**（本链最后一跳，结果照常送达对方）。请直接给出完整结论；若来源是 Agent 且后续无关，让 Final 恰好只输出 NO_REPLY。",
+        recovery_hint: "回血会把连续窗口清零，因此带新信息的往返不会撞这条硬墙；收口后要续接，请主动发起新消息重新开链。",
     },
     StageRule {
         id: "pressure_nudge",

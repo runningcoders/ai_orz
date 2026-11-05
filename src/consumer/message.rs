@@ -834,20 +834,26 @@ impl MessageConsumer {
             agent_id,
             message.message_type(),
         );
-        // 压力观测只对「对端在等答复」的跨 Agent 协作执行：知会消息本来
-        // 就无需回复，观测链深没有意义，还会白白多一次回溯查库。
-        let chain_pressure = if reply_obligation == Some(ReplyObligation::Expected) {
-            let pressure = self.collect_chain_pressure(&ctx, message).await;
-            let decision = pressure.judge();
-            log_info!(
-                &ctx,
-                "handle_agent_message",
-                "collaboration pressure observed: {}",
-                decision.log_line()
-            );
-            Some((pressure, decision.prompt_lines()))
-        } else {
-            None
+        // 观测条件按来源类型分两种用途，都只对 Agent 来源生效：
+        // - `Expected`：施压/硬墙裁决本身需要链事实（本轮回发要据此路由）；
+        // - `NotifyOnly`：不施压（本来就不回），但要识别「本条是不是上游触顶后
+        //   收口出来的知会」——那是站到接收方一侧的同一份证据，接收方要靠它
+        //   知道「链在此终止、要继续请自己发起新消息」。
+        // 知会消息因此也会有一次回溯查库；换来的是收口机制闭环（否则接收方
+        // 只看到一条普通知会，不知道链已经到底）。
+        let chain_pressure = match reply_obligation {
+            Some(_) => {
+                let pressure = self.collect_chain_pressure(&ctx, message).await;
+                let decision = pressure.judge();
+                log_info!(
+                    &ctx,
+                    "handle_agent_message",
+                    "collaboration pressure observed: {}",
+                    decision.log_line()
+                );
+                Some((pressure, decision))
+            }
+            None => None,
         };
 
         // 顺序固定：先「本条要不要回」（跨轮稳定，利于前缀复用），再「已经
@@ -855,8 +861,17 @@ impl MessageConsumer {
         let mut turn_guidance = reply_obligation
             .map(ReplyObligation::prompt_lines)
             .unwrap_or_default();
-        if let Some((_, pressure_lines)) = &chain_pressure {
-            turn_guidance.extend(pressure_lines.iter().cloned());
+        if let Some((_, decision)) = &chain_pressure {
+            match reply_obligation {
+                // 对端在等答复：压力事实 + 本轮指引（施压 / 硬墙收口提示）。
+                Some(ReplyObligation::Expected) => turn_guidance.extend(decision.prompt_lines()),
+                // 知会是链的终点：只有「上游触顶收口」这一种情况需要额外说明，
+                // 普通知会（对方主动 notify_only）不加噪音。
+                Some(ReplyObligation::NotifyOnly) if decision.closes_chain_as_notify() => {
+                    turn_guidance.extend(decision.chain_closed_prompt_lines());
+                }
+                _ => {}
+            }
         }
         if !turn_guidance.is_empty() {
             thinking_options = thinking_options.with_turn_guidance_lines(turn_guidance);
@@ -998,7 +1013,8 @@ impl MessageConsumer {
         //   │ 跨 Agent 协作          │ ① Final 命中 NO_REPLY 哨兵词表 → Discard     │
         //   │                        │   （Agent 自决「本轮不回复」，含中文等价写法）│
         //   │                        │ ② 协作压力 Exhausted（疲劳度/窗口触顶）      │
-        //   │                        │   → EscalateToOwner 通知归属用户人工介入     │
+        //   │                        │   → CloseChainAsNotify：Final 作为知会投给  │
+        //   │                        │   对方（信息照常送达）+ 通知归属用户收口    │
         //   │                        │ ③ 否则 Peer → send_to_agent(from=本Agent,    │
         //   │                        │   to=message.from)，避免把 Agent ID 硬塞到   │
         //   │                        │   to_user_id 里导致投递失败                  │
@@ -1094,19 +1110,72 @@ impl MessageConsumer {
                     Ok(())
                 }
 
-                // 防乒乓机械兜底：reply_to 链上连续 Agent 消息已达上限，回发只会
-                // 继续推高链深度形成 A↔B 无限乒乓。终止回发并通知归属用户人工介入；
-                // 无归属用户（无 task/project root_user_id 的裸协作）时仅记日志。
-                AutoReplyRoute::EscalateToOwner { reason } => {
+                // 硬墙收口：把本轮 Final 作为**知会**送达来源方，再通知归属用户。
+                //
+                // 为什么不是「直接停」：直接丢弃会让最后一轮结论凭空消失，对方
+                // 只知道自己发了消息、永远等不到结果。为什么不是「照常回发」：
+                // 那会把乒乓推高一跳，正是硬墙要拦的东西。
+                //
+                // 知会语义（`AgentNotify`）是这里的关键：它让对端的
+                // `ReplyObligation` 变成 `NotifyOnly`，静态路由直接 Discard，
+                // 链条必然终止；同时对端能在提示词里看到「本链因疲劳度触顶收口」，
+                // 确需继续时会**自己主动发新消息**（新链从第 1 跳重新计数），
+                // 而不是靠回发本条续命。信息传到、链必断，两者同时成立。
+                AutoReplyRoute::CloseChainAsNotify { reason } => {
                     log_warn!(
                         &ctx,
                         "handle_agent_message",
-                        "auto-reply escalated to owner ({}), from_agent={}, final len={}",
+                        "chain closed as notify ({}), from_agent={}, final len={}",
                         reason,
                         message.po.from_id,
                         raw_output.len()
                     );
-                    match work_root_user_id.as_deref() {
+                    // 收口只对跨 Agent 对等链产出（`judge_chain_reply_route` 的
+                    // 前置静态规则已拦下用户/系统/自触发/知会来源），这里仍显式
+                    // 校验来源角色：万一路由被误用，宁可不发也不能把 Agent 的
+                    // 答复塞进用户通道。
+                    let notify_result: Result<()> = if message.from_role() == MessageRole::Agent {
+                        self.message_domain
+                            .delivery()
+                            .send_to_agent(
+                                ctx.clone(),
+                                SendToAgentCommand {
+                                    from_id: agent_id,
+                                    from_role: MessageRole::Agent,
+                                    to_agent_id: &message.po.from_id,
+                                    content: raw_output,
+                                    project_id,
+                                    task_id,
+                                    reply_to_id,
+                                    external_key: None,
+                                    thread_id: None,
+                                    attachment_ids: None,
+                                    // 唯一区别就是这里：Text → AgentNotify
+                                    message_type: MessageType::AgentNotify,
+                                },
+                            )
+                            .await
+                            .map(|_| ())
+                    } else {
+                        log_warn!(
+                            &ctx,
+                            "handle_agent_message",
+                            "chain-close notify skipped: source role is {:?}, not Agent",
+                            message.from_role()
+                        );
+                        Ok(())
+                    };
+                    if let Err(e) = &notify_result {
+                        log_warn!(
+                            &ctx,
+                            "handle_agent_message",
+                            "chain-close notify to {} failed: {:?}",
+                            message.po.from_id,
+                            e
+                        );
+                    }
+                    // 归属用户只做知会，不承载「结果」——结果已经给到对端了。
+                    let owner_result = match work_root_user_id.as_deref() {
                         Some(owner_user_id) => self
                             .message_domain
                             .delivery()
@@ -1116,7 +1185,7 @@ impl MessageConsumer {
                                     from_agent_id: agent_id,
                                     to_user_id: owner_user_id,
                                     content: &format!(
-                                        "⚠️ Agent 间协作已连续多轮未引入有效新信息，信息疲劳度触顶，已暂停自动回发以防无限互发。Agent {} 的最新处理结果未回发。\n\n回复本条并补充新信息、或指定新的协作 Agent，即可重置疲劳窗口并继续协作；若无需继续，忽略本条即可。",
+                                        "ℹ️ Agent 间协作连续多轮未引入有效新信息、疲劳度触顶，已把 Agent {} 的最后一轮结果作为**知会**送达对方，该协作链到此终止（对方不会再自动回发）。\n\n如需继续这段讨论，回复本条并补充新信息、或直接让相关 Agent 重新发起新消息即可（新链重新计数）；若无需继续，忽略本条即可。",
                                         message.po.from_id
                                     ),
                                     project_id,
@@ -1130,11 +1199,12 @@ impl MessageConsumer {
                             log_warn!(
                                 &ctx,
                                 "handle_agent_message",
-                                "no owner user to escalate (no task/project root_user_id), agent reply chain stopped silently"
+                                "no owner user to notify chain close (no task/project root_user_id)"
                             );
                             Ok(())
                         }
-                    }
+                    };
+                    notify_result.and(owner_result)
                 }
             };
 
@@ -1418,11 +1488,17 @@ impl MessageConsumer {
             .unwrap_or(AutoReplyRoute::Peer)
     }
 
-    /// 沿 `reply_to_id` 回溯观测协作链压力（跨 Agent 对等候选专用）
+    /// 沿 `reply_to_id` 回溯观测协作链压力（Agent 来源消息专用）
     ///
     /// 保留旧链深度遍历的「宁少勿错」语义：非 Agent 来源、断链、父消息不存在
     /// 或查询失败即停止；额外加 MAX_CHAIN_TRAVERSAL 硬上限，防异常长链 / 环
     /// 把一次回发判定放大成几十次 DB 读。
+    ///
+    /// ⚠️ **知会是链的边界**（见 [`Self::is_chain_boundary`]）：回溯到知会父消息
+    /// 即停止，不把它与更早的跳计入本次窗口。否则「硬墙收口 → 对端重新主动
+    /// 发起新消息」时，新消息的 reply_to_id 仍指向那条知会，回溯会穿过边界把
+    /// 旧链的疲劳度整段继承过来，新链第一跳就又撞墙——「要推进请自己开新链」
+    /// 的承诺会当场失效，两个 Agent 永远无法重新开始协作。
     async fn collect_chain_pressure(
         &self,
         ctx: &RequestContext,
@@ -1455,7 +1531,14 @@ impl MessageConsumer {
                 .get_by_id(ctx.clone(), prev_id)
                 .await
             {
-                Ok(Some(prev)) => current = Some(prev),
+                Ok(Some(prev)) => {
+                    // 知会是链边界：父消息是知会 ⇒ 当前这条是「对方主动重新
+                    // 发起的新话头」，从第 1 跳重新计数，不继承旧链疲劳度。
+                    if Self::is_chain_boundary(&prev) {
+                        break;
+                    }
+                    current = Some(prev);
+                }
                 Ok(None) => break,
                 Err(e) => {
                     log_warn!(
@@ -1511,6 +1594,22 @@ impl MessageConsumer {
             }
             _ => Novelty::ToolResult,
         }
+    }
+
+    /// 回溯链时的边界判定：遇到它就不再往更早的跳走
+    ///
+    /// 知会（`AgentNotify`）语义上是**发送方宣告「这一轮到此为止」**，因此它是
+    /// 一段对话的终点、也是下一段对话的起点：父消息是知会 ⇒ 当前这条是「对方
+    /// 主动重新发起的新话头」，协作窗口与疲劳度都从第 1 跳重新计数。
+    ///
+    /// 这正是硬墙收口机制能闭环的另一半：没有这条边界，收口后对方按提示词
+    /// 「自己主动发新消息」发出的第一跳，会顺着 `reply_to_id` 穿过那条知会、
+    /// 把旧链疲劳度整段继承，立刻再次撞墙——「换个新链继续」变成一句空话。
+    ///
+    /// 只按消息类型判定，不看来源：知会本身不会由用户/系统发出，多一个角色
+    /// 判断只会让两处口径有机会漂移。
+    fn is_chain_boundary(message: &Message) -> bool {
+        message.message_type() == MessageType::AgentNotify
     }
 
     /// User 消息处理：调用 MessageDomain 推送给用户
@@ -1837,6 +1936,38 @@ mod tests {
             assert!(
                 !applies_task_scope_gates(message_type),
                 "{message_type:?} 不该受任务级门闩约束（通知/对话被任务终态拦住 = 静默丢唤醒）"
+            );
+        }
+    }
+
+    /// 知会是链边界：硬墙收口后「自己主动发新消息」必须从第 1 跳重新计数
+    ///
+    /// 收口机制承诺「想继续就自己开新链」。若回溯不停在知会，新消息的
+    /// `reply_to_id` 指向那条知会，疲劳度会整段继承旧链 ⇒ 新链第一跳立刻
+    /// 再次撞墙，两个 Agent 永远无法重新开始协作。这条护栏把边界钉在类型上。
+    #[test]
+    fn notify_is_a_chain_boundary_so_reopened_chain_starts_fresh() {
+        let with_type = |message_type: MessageType| {
+            Message::from_po(crate::models::message::MessagePo {
+                message_type,
+                ..Default::default()
+            })
+        };
+
+        assert!(
+            MessageConsumer::is_chain_boundary(&with_type(MessageType::AgentNotify)),
+            "知会宣告「本轮到此为止」，必须是边界"
+        );
+        // 其余类型都不是边界：工具结果 / 任务派发自带回血，纯文本是正常往返
+        for message_type in [
+            MessageType::Text,
+            MessageType::Mixed,
+            MessageType::TaskAssignment,
+            MessageType::ToolCallResult,
+        ] {
+            assert!(
+                !MessageConsumer::is_chain_boundary(&with_type(message_type)),
+                "{message_type:?} 不该切断协作链（会凭空给重复往返洗白疲劳度）"
             );
         }
     }

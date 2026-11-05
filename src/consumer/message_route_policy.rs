@@ -4,11 +4,12 @@
 //! - 静态判定段（零查库）：领域匹配器规则（哨兵 / 来源角色 / 自触发 /
 //!   知会类型）按 Or 组合，声明顺序即判定优先级（首个命中即产出路由）
 //! - 协作压力段：`pkg/collaboration_pressure` 组件的策略引擎裁决档位，
-//!   仅 `PressureAction::Escalate` 升级归属用户，其余档位仍 Peer；
-//!   压力带内的施压提示词在唤醒前由该组件注入 `ThinkingOptions`。
-//!   仅对「跨 Agent 且对端在等答复」（`ReplyObligation::Expected`）执行——需要沿
-//!   reply_to_id 查库观测链（见 `MessageConsumer::collect_chain_pressure`）；
-//!   用户/系统来源、自触发、知会消息零额外查询
+//!   仅 `PressureAction::Escalate` 收口——把 Final 作为知会投给来源方
+//!   （最后一轮信息照常送达，对端不会再自动回发）并通知归属用户，
+//!   其余档位仍 Peer；压力带内的施压提示词在唤醒前由该组件注入 `ThinkingOptions`。
+//!   仅对 Agent 来源消息执行（`ReplyObligation::Some`）：`Expected` 用链事实做
+//!   施压与硬墙裁决，`NotifyOnly` 只用它识别「上游触顶收口的那一跳」；
+//!   用户/系统来源、自触发零额外查询
 //!
 //! # 回复决策权归 Agent，Final 是唯一权威
 //!
@@ -184,14 +185,19 @@ pub fn classify_reply_decision(raw_output: &str) -> ReplyDecision {
 /// Final 自动回发的路由决策
 ///
 /// `handle_agent_message` 唤醒完成后按此决定 Final 输出的去向：
-/// - `Peer`            → 回发给来源方（用户或对端 Agent）
-/// - `Discard`         → 丢弃 Final（无对等回复对象 / 发送方声明无需回复）
-/// - `EscalateToOwner` → 终止回复链并通知归属用户（防乒乓机械兜底）
+/// - `Peer`                → 回发给来源方（用户或对端 Agent）
+/// - `Discard`             → 丢弃 Final（无对等回复对象 / 发送方声明无需回复）
+/// - `CloseChainAsNotify`  → 硬墙收口：把 Final 作为**知会**投给来源方（信息不丢）
+///   并通知归属用户；知会语义保证对端不会再自动回发，链在此终止
+///
+/// 硬墙不采用「直接丢弃」：那样既不通知归属方，也让最后一轮结论白白消失；
+/// 也不采用「照常回发」，那只会把乒乓推高一跳。收口成知会是唯一既完成
+/// 「最后一轮信息传递」又必然终止链条的形态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutoReplyRoute {
     Peer,
     Discard { reason: &'static str },
-    EscalateToOwner { reason: &'static str },
+    CloseChainAsNotify { reason: &'static str },
 }
 
 /// 静态路由判定的输入（consumer 从 Message / 唤醒结果解析后填充）
@@ -416,7 +422,8 @@ pub fn judge_static_reply_route(input: RouteInput<'_>) -> Option<AutoReplyRoute>
 /// 因此「有新鲜感的协作」可以合法超过硬窗口，不再被固定次数一刀切。
 pub fn judge_chain_reply_route(pressure: &ChainPressure) -> AutoReplyRoute {
     match pressure.judge().action {
-        PressureAction::Escalate => AutoReplyRoute::EscalateToOwner {
+        // 硬墙：不再「停下不说话」，而是把本轮 Final 收口成知会发出。
+        PressureAction::Escalate => AutoReplyRoute::CloseChainAsNotify {
             reason: "collaboration pressure exhausted",
         },
         PressureAction::Continue | PressureAction::Nudge => AutoReplyRoute::Peer,
