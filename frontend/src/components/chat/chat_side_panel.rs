@@ -14,6 +14,10 @@
 //! 面板纯只读：数据加载复用现有项目/任务/产物/Agent API，
 //! 创建与编辑操作仍在跳转各自详情页完成。
 //!
+//! 产物是这条规则的例外——但只往「更少跳转」的方向：点击侧栏里的产物不再跳
+//! 产物详情页，就地弹出 `ArtifactPreviewModal`（基础信息 + 预览 + 下载原件，纯只读）。
+//! 详情页本身保留、深链仍可用，这条链路不提供任何编辑入口。
+//!
 //! ## 刷新只跟着「看得见的东西」走
 //!
 //! 侧栏收起时外层 div 只是 `hidden`，组件与各 Tab 仍挂载 —— 若不做门闩，
@@ -41,6 +45,7 @@ use dioxus_router::Link;
 use crate::api::hr::get_agent;
 use crate::api::project::{get_project, get_task, list_project_tasks, query_tasks};
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
+use crate::components::artifact_preview_modal::ArtifactPreviewModal;
 use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
 use crate::components::chat::ThinkTracesTab;
@@ -104,6 +109,32 @@ const TASK_GRAPH_H: f64 = 200.0;
 /// 放大弹窗画布尺寸（max-w-5xl 弹窗内容区，减去弹窗内边距）
 const TASK_GRAPH_ZOOM_W: f64 = 920.0;
 const TASK_GRAPH_ZOOM_H: f64 = 620.0;
+
+/// 产物预览卡片的打开目标。
+///
+/// 归属信息（项目名 / 任务标题）在打开时就地捕获：侧栏本就有这两份数据，
+/// 弹窗不必再为一行文字多发一次请求。
+#[derive(Debug, Clone, PartialEq)]
+struct ArtifactPreviewTarget {
+    artifact: ArtifactDetail,
+    /// 所属项目名（空串 = 未知，弹窗不展示该行）
+    project_name: String,
+    /// 所属任务标题；`None` = 项目级产物
+    task_title: Option<String>,
+}
+
+/// 产物预览的打开入口。
+///
+/// 把「项目名 + 目标信号」打包成一个参数：任务列表本身已有 6 个入参，
+/// 再散着加两个会踩 clippy 的 `too_many_arguments`，而且这两项在语义上是一体的
+/// ——「从这个项目的产物行打开预览」。
+#[derive(Clone)]
+struct ArtifactPreviewScope {
+    /// 所属项目名（空串 = 未知，弹窗不展示该行）
+    project_name: String,
+    /// 当前打开的预览目标；`None` = 没有弹窗
+    target: Signal<Option<ArtifactPreviewTarget>>,
+}
 
 /// 产物来源类型中文文案
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -263,6 +294,10 @@ pub fn ChatSidePanel(
     let mut expanded_task_id = use_signal(|| None::<String>);
     let mut task_cache = use_signal(HashMap::<String, GetTaskResponse>::new);
     let loading_task_id = use_signal(|| None::<String>);
+    // 产物预览卡片：点侧栏产物就地弹窗（基础信息 + 预览 + 下载），不再跳详情页。
+    // 状态放主组件 —— artifacts_tab / tasks_tab 都是普通函数，弹窗要挂在本组件的
+    // rsx 里，与任务依赖图放大弹窗（graph_zoom_open）同一处置方式。
+    let mut artifact_preview = use_signal(|| Option::<ArtifactPreviewTarget>::None);
     // 任务依赖图放大弹窗（缩略图右上按钮打开；状态必须放主组件 —— tasks_tab 是普通函数，
     // Modal 需要挂在本组件返回的 rsx 里）
     let mut graph_zoom_open = use_signal(|| false);
@@ -575,8 +610,15 @@ pub fn ChatSidePanel(
                 loading_task_id,
                 graph_zoom_open,
                 toast,
+                ArtifactPreviewScope {
+                    project_name: project_data
+                        .as_ref()
+                        .map(|p| p.name.clone())
+                        .unwrap_or_default(),
+                    target: artifact_preview,
+                },
             ),
-            2 => artifacts_tab(project_data.as_ref(), &tasks_list),
+            2 => artifacts_tab(project_data.as_ref(), &tasks_list, artifact_preview),
             // 项目内 Agent 列表（T3 需求①）：assignee 推导（复用面板已拉的
             // tasks_list，零额外项目请求）→ query_agents 批量详情；负责人置顶打标，
             // 点击行进入单 Agent 详情子页（AgentInfoTab 原样复用）。
@@ -635,6 +677,11 @@ pub fn ChatSidePanel(
                 loading_task_id,
                 graph_zoom_open,
                 toast,
+                ArtifactPreviewScope {
+                    // 游离任务没有所属项目名：弹窗里不展示该行
+                    project_name: String::new(),
+                    target: artifact_preview,
+                },
             ),
             // 产物硬绑定真实项目，游离任务不可能有产物 → 先做空态占位
             2 => empty_hint("暂无产物"),
@@ -687,6 +734,15 @@ pub fn ChatSidePanel(
             }
         }
         div { class: "flex-1 overflow-y-auto p-3", {content} }
+        // 产物预览卡片：top layer 弹窗，关闭即卸载（show 语义由条件渲染承载）
+        if let Some(target) = artifact_preview() {
+            ArtifactPreviewModal {
+                artifact: target.artifact,
+                project_name: target.project_name,
+                task_title: target.task_title,
+                on_close: move |_| artifact_preview.set(None),
+            }
+        }
         // 任务依赖图放大弹窗：top layer 渲染不受侧栏 overflow / 堆叠上下文裁剪
         if graph_zoom_open_now {
             Modal {
@@ -956,6 +1012,7 @@ fn tasks_tab(
     mut loading_task_id: Signal<Option<String>>,
     mut graph_zoom_open: Signal<bool>,
     toast: ToastState,
+    preview_scope: ArtifactPreviewScope,
 ) -> Element {
     if tasks.is_empty() {
         return empty_hint("暂无任务");
@@ -1063,7 +1120,7 @@ fn tasks_tab(
                                             let detail = detail.clone();
                                             let tid_link = tid.clone();
                                             rsx! {
-                                                {task_expanded_content(detail, tid_link)}
+                                                {task_expanded_content(detail, tid_link, preview_scope.clone())}
                                             }
                                         }
                                     }
@@ -1078,7 +1135,12 @@ fn tasks_tab(
 }
 
 /// 任务展开内容：描述、时间、执行计划/结果、产物列表
-fn task_expanded_content(t: GetTaskResponse, tid: String) -> Element {
+fn task_expanded_content(
+    t: GetTaskResponse,
+    tid: String,
+    preview_scope: ArtifactPreviewScope,
+) -> Element {
+    let task_title = t.title.clone();
     let desc = t.description.clone().filter(|s| !s.is_empty());
     let plan = t.execution_plan.clone().filter(|s| !s.is_empty());
     let result = t.execution_result.clone().filter(|s| !s.is_empty());
@@ -1112,13 +1174,24 @@ fn task_expanded_content(t: GetTaskResponse, tid: String) -> Element {
                     div { class: "flex flex-wrap gap-1",
                         for a in artifacts.iter() {
                             {
+                                let a = a.clone();
                                 let aid = a.id.clone();
                                 let aname = a.name.clone();
+                                let scope = preview_scope.clone();
+                                let tt = task_title.clone();
                                 rsx! {
-                                    Link {
+                                    div {
                                         key: "{aid}",
-                                        class: "{tag_chip()}",
-                                        to: crate::pages::Route::ProjectArtifactDetail { id: aid },
+                                        class: "{tag_chip()} cursor-pointer",
+                                        title: "预览产物",
+                                        onclick: move |_| {
+                                            let mut target = scope.target;
+                                            target.set(Some(ArtifactPreviewTarget {
+                                                artifact: a.clone(),
+                                                project_name: scope.project_name.clone(),
+                                                task_title: Some(tt.clone()),
+                                            }))
+                                        },
                                         "{aname}"
                                     }
                                 }
@@ -1137,10 +1210,15 @@ fn task_expanded_content(t: GetTaskResponse, tid: String) -> Element {
 }
 
 /// Tab 产物：项目级产物 + 任务级产物（按任务分组）
-fn artifacts_tab(project: Option<&GetProjectResponse>, tasks: &[TaskListItem]) -> Element {
+fn artifacts_tab(
+    project: Option<&GetProjectResponse>,
+    tasks: &[TaskListItem],
+    mut artifact_preview: Signal<Option<ArtifactPreviewTarget>>,
+) -> Element {
     let Some(p) = project else {
         return loading_placeholder();
     };
+    let project_name = p.name.clone();
     let artifacts = p.artifacts.clone().unwrap_or_default();
     if artifacts.is_empty() {
         return empty_hint("暂无产物");
@@ -1159,7 +1237,17 @@ fn artifacts_tab(project: Option<&GetProjectResponse>, tasks: &[TaskListItem]) -
                         for a in project_level.iter() {
                             {
                                 let a = (*a).clone();
-                                rsx! { ArtifactRow { artifact: a } }
+                                let pn = project_name.clone();
+                                rsx! {
+                                    ArtifactRow {
+                                        artifact: a,
+                                        on_open: move |art: ArtifactDetail| artifact_preview.set(Some(ArtifactPreviewTarget {
+                                            artifact: art,
+                                            project_name: pn.clone(),
+                                            task_title: None,
+                                        })),
+                                    }
+                                }
                             }
                         }
                     }
@@ -1190,7 +1278,18 @@ fn artifacts_tab(project: Option<&GetProjectResponse>, tasks: &[TaskListItem]) -
                                         for a in arts.iter() {
                                             {
                                                 let a = a.clone();
-                                                rsx! { ArtifactRow { artifact: a } }
+                                                let pn = project_name.clone();
+                                                let tt = task_title.clone();
+                                                rsx! {
+                                                    ArtifactRow {
+                                                        artifact: a,
+                                                        on_open: move |art: ArtifactDetail| artifact_preview.set(Some(ArtifactPreviewTarget {
+                                                            artifact: art,
+                                                            project_name: pn.clone(),
+                                                            task_title: Some(tt.clone()),
+                                                        })),
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1204,18 +1303,19 @@ fn artifacts_tab(project: Option<&GetProjectResponse>, tasks: &[TaskListItem]) -
     }
 }
 
-/// 单行产物卡片（只读，点击跳转产物详情页）
+/// 单行产物卡片（只读，点击就地打开预览卡片弹窗，不再跳转产物详情页）
 #[component]
-fn ArtifactRow(artifact: ArtifactDetail) -> Element {
-    let aid = artifact.id.clone();
+fn ArtifactRow(artifact: ArtifactDetail, on_open: EventHandler<ArtifactDetail>) -> Element {
+    let payload = artifact.clone();
     let name = artifact.name.clone();
     let source_text = artifact_source_type_text(artifact.source_type);
     let size = format_file_size(artifact.file_size);
     let created = format_timestamp(Some(artifact.created_at));
     rsx! {
-        Link {
-            class: "flex items-center gap-2 p-2 rounded-lg border border-base-300 bg-base-100 hover:bg-base-200",
-            to: crate::pages::Route::ProjectArtifactDetail { id: aid },
+        div {
+            class: "flex items-center gap-2 p-2 rounded-lg border border-base-300 bg-base-100 hover:bg-base-200 cursor-pointer",
+            title: "预览产物",
+            onclick: move |_| on_open.call(payload.clone()),
             div { class: "flex-1 min-w-0",
                 div { class: "text-sm font-medium truncate", "{name}" }
                 div { class: "text-xs text-base-content/60", "{size} · {created}" }

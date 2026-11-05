@@ -3,6 +3,7 @@
 pub mod agent_summary;
 pub mod aop_gauge;
 pub mod artifact_meta_modal;
+pub mod artifact_preview_modal;
 pub mod avatar_bubble;
 pub mod button;
 pub mod canvas_scene;
