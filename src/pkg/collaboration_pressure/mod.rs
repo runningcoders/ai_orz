@@ -407,8 +407,8 @@ impl PressureDecision {
     /// 注入到思考 prompt 的配套提示词（信号 + 动作 + 本轮指引 + 回血规则）
     ///
     /// 这是「每次回复都带上深度等信号」的落点：调用方把这组行追加到
-    /// `ThinkingOptions.extra_resource_lines`，当前正在思考的 Agent 就能
-    /// 看到压力并主动收敛，而不是等到硬墙被机械掐断。
+    /// `ThinkingOptions.turn_guidance_lines`（与回复仲裁行同区块），当前正在
+    /// 思考的 Agent 就能看到压力并主动收敛，而不是等到硬墙被机械掐断。
     pub fn prompt_lines(&self) -> Vec<String> {
         let s = &self.snapshot;
         vec![

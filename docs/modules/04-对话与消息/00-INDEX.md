@@ -6,7 +6,7 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 37 篇：A 设计 7 · B 落地方案 9 · C 知识 21。
+本模块共 38 篇：A 设计 8 · B 落地方案 9 · C 知识 21。
 
 ## A 设计（design）
 
@@ -16,6 +16,7 @@
 - [消息渠道设计文档](<A-设计/message_channel_design.md>) — `已废弃`
 - [用户-Agent 消息交互设计](<A-设计/message_interaction_design.md>) — `已废弃`
 - [消息撤回与取消能力设计](<A-设计/message_recall_design.md>) — `现行`
+- [回复仲裁：是否回复由 Agent 自决，Final 是唯一权威](<A-设计/reply_arbitration_design.md>) — `现行`
 - [微信渠道接入设计（iLink ClawBot / 企微智能机器人）](<A-设计/wechat_channel_integration_design.md>) — `草案`
 
 ## B 落地方案（plan）

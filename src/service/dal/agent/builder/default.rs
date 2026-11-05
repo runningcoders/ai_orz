@@ -106,11 +106,11 @@ pub struct DefaultPromptBuilder {
     vision_parts: Vec<ImagePart>,
     /// 当前消息【资源上下文】详情行（仅 awaken 场景：awakening 预解析双产出注入）
     resource_context_lines: Vec<String>,
-    /// 思考链路组件的提示词行（协作压力等）：渲染为 User 消息末尾的独立尾部区块
+    /// 本轮动态指引行（回复仲裁 + 协作压力）：渲染为 User 消息末尾的独立尾部区块
     ///
-    /// 与 `resource_context_lines` 严格分流——这些数值每次唤醒都可能变化，
+    /// 与 `resource_context_lines` 严格分流——这些内容每轮都可能变化，
     /// 混入稳定区块会作废其后全部 prefix cache 命中（I1/I2）。
-    pressure_prompt_lines: Vec<String>,
+    turn_guidance_lines: Vec<String>,
     /// 技能（全量，build 时按 tag 分块）
     skills: Vec<SkillPo>,
     /// 工具失败统计：(工具名称, 失败次数)
@@ -265,22 +265,36 @@ impl DefaultPromptBuilder {
             .to_string()
     }
 
-    /// 渲染【协作压力】append-only 尾部区块
+    /// 渲染本轮动态指引的 append-only 尾部区块
     ///
-    /// 组件自带首行即区块标题（`【协作压力】…`），这里只补换行、不改文案，
-    /// 保证「行为动作 + 配套提示词」继续由 `collaboration_pressure` 一处维护。
-    /// 位置固定在当前消息 / 尾插输入 / 技能提醒**之后**，其后只剩「请回复：」——
-    /// 每轮变化的压力数值不切割任何稳定区块，跨唤醒可复用前缀保持最长。
-    fn render_pressure_block(&self) -> String {
-        if self.pressure_prompt_lines.is_empty() {
+    /// 行文本由产出方（`ReplyObligation` / `collaboration_pressure`）自带标题
+    /// 与话术，这里只补换行、不改文案，保证「行为动作 + 配套提示词」继续由
+    /// 各自组件一处维护。位置固定在当前消息 / 尾插输入 / 技能提醒**之后**，
+    /// 其后只剩收尾指令——每轮变化的数值不切割任何稳定区块，跨唤醒可复用的
+    /// 前缀保持最长。
+    fn render_turn_guidance_block(&self) -> String {
+        if self.turn_guidance_lines.is_empty() {
             return String::new();
         }
         let mut s = String::from("\n\n");
-        for line in &self.pressure_prompt_lines {
+        for line in &self.turn_guidance_lines {
             s.push_str(line);
             s.push('\n');
         }
         s
+    }
+
+    /// 收尾指令：有本轮指引时明确给出「可以不回」，否则维持原有「请回复：」
+    ///
+    /// 老文案「请回复：」本身就在替 Agent 假设「必须回」，与回复仲裁区块的
+    /// NO_REPLY 出口相互矛盾；只在注入指引的跨 Agent 轮替换，用户 ↔ Agent
+    /// 主流路径的 Prompt 逐字节不变。
+    fn reply_tail(&self) -> &'static str {
+        if self.turn_guidance_lines.is_empty() {
+            "\n\n请回复："
+        } else {
+            "\n\n请输出本轮结果（无需回复时只输出 NO_REPLY）："
+        }
     }
 }
 
@@ -416,8 +430,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         self.resource_context_lines = lines;
     }
 
-    fn set_pressure_prompt_lines(&mut self, lines: Vec<String>) {
-        self.pressure_prompt_lines = lines;
+    fn set_turn_guidance_lines(&mut self, lines: Vec<String>) {
+        self.turn_guidance_lines = lines;
     }
 
     fn skills(&mut self, skills: &[SkillPo]) {
@@ -1040,9 +1054,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             self.push_injected_inputs(&mut s);
             // 提醒放在决策点（当前消息之后）而不是信息区，见 skill_recall_nudge 注释
             s.push_str(&self.skill_recall_nudge());
-            // 每轮变化的压力信号只允许 append-only 收尾，绝不前移切割稳定前缀
-            s.push_str(&self.render_pressure_block());
-            s.push_str("\n\n请回复：");
+            // 本轮指引（回复仲裁 + 压力）只允许 append-only 收尾，绝不前移切割稳定前缀
+            s.push_str(&self.render_turn_guidance_block());
+            s.push_str(self.reply_tail());
         }
         s
     }
@@ -1107,9 +1121,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             self.push_injected_inputs(&mut result);
             // 与 awaken_user_part 同一口径，见 skill_recall_nudge 注释
             result.push_str(&self.skill_recall_nudge());
-            // 与 awaken_user_part 同一口径：压力区块 append-only 收尾
-            result.push_str(&self.render_pressure_block());
-            result.push_str("\n\n请回复：");
+            // 与 awaken_user_part 同一口径：本轮指引区块 append-only 收尾
+            result.push_str(&self.render_turn_guidance_block());
+            result.push_str(self.reply_tail());
         }
 
         result
@@ -1330,8 +1344,17 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s.push_str("\n【执行要求】\n");
         s.push_str("- 按上面的意图结论推进任务，需要工具就直接调用；\n");
         s.push_str("- 这是新任务，不要重复已完成的步骤，也不要再次输出 INTENT_ANALYSIS JSON；\n");
-        s.push_str("- 完成后用 Final 文本给出最终结果。\n");
-        s.push_str("\n\n请回复：");
+        if self.turn_guidance_lines.is_empty() {
+            s.push_str("- 完成后用 Final 文本给出最终结果。\n");
+        } else {
+            s.push_str(
+                "- 完成后用 Final 文本给出最终结果；若判断无需回复来源方，只输出 NO_REPLY。\n",
+            );
+        }
+        // 与 awaken_user_part 同口径：执行段才是真正的决策点，把同一份指引
+        // 再挂一次（值与 base 同源），模型不必回头翻 Phase 1。
+        s.push_str(&self.render_turn_guidance_block());
+        s.push_str(self.reply_tail());
         s
     }
 
@@ -1876,10 +1899,10 @@ mod tests {
         }
     }
 
-    /// 协作压力信号必须 append-only 收尾：插入点之前的所有字节逐字节不变，
-    /// 且不进 System / 不并进【资源上下文】（prefix cache I1/I2 护栏）。
+    /// 本轮指引（回复仲裁 + 协作压力）必须 append-only 收尾：插入点之前的所有
+    /// 字节逐字节不变，且不进 System / 不并进【资源上下文】（prefix cache I1/I2 护栏）。
     #[test]
-    fn pressure_block_is_append_only_and_preserves_stable_prefix() {
+    fn guidance_block_is_append_only_and_preserves_stable_prefix() {
         let mut builder = DefaultPromptBuilder {
             system_prompt: Some("PERSONA".to_string()),
             ..Default::default()
@@ -1894,7 +1917,7 @@ mod tests {
         let before = builder.awaken_user_part();
         let system = builder.awaken_system_part();
 
-        builder.set_pressure_prompt_lines(vec![
+        builder.set_turn_guidance_lines(vec![
             "【协作压力】链深 3，疲劳度 36/100。".to_string(),
             "- 本轮指引：请引入新信息或主动收敛".to_string(),
         ]);
@@ -1923,9 +1946,15 @@ mod tests {
             !after.contains("- 【协作压力】"),
             "压力行是独立区块，不是【资源上下文】的列表项"
         );
+        // 收尾指令必须给出「可以回 NO_REPLY」的出口，否则老文案「请回复：」
+        // 等于替 Agent 假定必须回，与仲裁区块自相矛盾
+        assert!(
+            after.ends_with("请输出本轮结果（无需回复时只输出 NO_REPLY）："),
+            "有指引时的收尾指令必须暴露 NO_REPLY 出口：{after}"
+        );
 
         // 跨唤醒压力值每轮递增，插入点之前的前缀仍必须逐字节一致
-        builder.set_pressure_prompt_lines(vec![
+        builder.set_turn_guidance_lines(vec![
             "【协作压力】链深 8，疲劳度 96/100。".to_string(),
             "- 本轮指引：必须收敛".to_string(),
         ]);
@@ -1938,15 +1967,15 @@ mod tests {
         );
     }
 
-    /// 带压力行时两阶段仍需逐字节一致：意图指令只能继续在 base 尾部追加。
+    /// 带指引行时两阶段仍需逐字节一致：意图指令只能继续在 base 尾部追加。
     #[test]
-    fn pressure_lines_keep_intent_prefix_identical() {
+    fn guidance_lines_keep_intent_prefix_identical() {
         let mut builder = DefaultPromptBuilder {
             system_prompt: Some("PERSONA".to_string()),
             ..Default::default()
         };
         builder.current_message = Some("CURRENT".to_string());
-        builder.set_pressure_prompt_lines(vec!["【协作压力】链深 2".to_string()]);
+        builder.set_turn_guidance_lines(vec!["【协作压力】链深 2".to_string()]);
 
         let base_system = builder.awaken_system_part();
         let base_user = builder.awaken_user_part();
@@ -1960,5 +1989,44 @@ mod tests {
             }
             _ => panic!("两阶段首两条必须是 System + User"),
         }
+    }
+
+    /// 用户 ↔ Agent 主流路径零变化：没有本轮指引时，收尾指令逐字节保持原样
+    #[test]
+    fn reply_tail_stays_unchanged_without_guidance() {
+        let mut builder = DefaultPromptBuilder {
+            system_prompt: Some("PERSONA".to_string()),
+            ..Default::default()
+        };
+        builder.current_message = Some("CURRENT".to_string());
+        let user = builder.awaken_user_part();
+        assert!(user.ends_with("\n\n请回复："), "{user}");
+        assert!(
+            !user.contains("NO_REPLY"),
+            "用户对话不该看到内部哨兵：{user}"
+        );
+    }
+
+    /// 执行段（Phase 2）才是真正的决策点：同一份指引与 NO_REPLY 出口必须出现在这里，
+    /// 否则模型要回头翻 Phase 1 才知道「可以不回」，实际仍会每轮都答。
+    #[test]
+    fn execution_segment_carries_turn_guidance_and_reply_tail() {
+        let mut builder = DefaultPromptBuilder {
+            current_message: Some("CURRENT".to_string()),
+            ..Default::default()
+        };
+        builder.set_turn_guidance_lines(vec![
+            "【回复仲裁】本条来自另一个 Agent，在等你答复；是否回复由你决定。".to_string(),
+        ]);
+        let segment = builder.build_execution_segment();
+        assert!(segment.contains("【回复仲裁】"), "{segment}");
+        assert!(
+            segment.contains("若判断无需回复来源方，只输出 NO_REPLY"),
+            "{segment}"
+        );
+        assert!(
+            segment.ends_with("请输出本轮结果（无需回复时只输出 NO_REPLY）："),
+            "{segment}"
+        );
     }
 }

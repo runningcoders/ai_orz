@@ -288,6 +288,113 @@ fn static_route_ignores_sentinel_inside_prose() {
     }
 }
 
+/// 回复义务只看入口消息语义：知会默认不回，对等协作在等答复
+///
+/// 关键边界：用户/系统来源与自触发**不进入**仲裁（投递方向由来源规则决定），
+/// 这样主流用户对话的 Prompt 与路由都零变化。
+#[test]
+fn reply_obligation_follows_message_semantics() {
+    assert_eq!(
+        ReplyObligation::of(MessageRole::Agent, "agent-2", "agent-1", MessageType::Text),
+        Some(ReplyObligation::Expected)
+    );
+    assert_eq!(
+        ReplyObligation::of(
+            MessageRole::Agent,
+            "agent-2",
+            "agent-1",
+            MessageType::AgentNotify
+        ),
+        Some(ReplyObligation::NotifyOnly)
+    );
+    assert_eq!(
+        ReplyObligation::of(MessageRole::User, "user-1", "agent-1", MessageType::Text),
+        None
+    );
+    assert_eq!(
+        ReplyObligation::of(
+            MessageRole::System,
+            "task-1",
+            "agent-1",
+            MessageType::TaskAssignment
+        ),
+        None
+    );
+    // 自触发：from == 本 Agent，不构成对等对话
+    assert_eq!(
+        ReplyObligation::of(MessageRole::Agent, "agent-1", "agent-1", MessageType::Text),
+        None
+    );
+}
+
+/// 提示词必须把两种合法形态与判据讲清楚，且明确「由你决定」
+///
+/// 同时钉住「提示词承诺 = 路由行为」：文案说 NO_REPLY 不回发，路由就必须
+/// Discard；两边漂移会让模型学会一个不存在的出口。
+#[test]
+fn reply_protocol_prompt_states_both_forms() {
+    let prompt = ReplyObligation::Expected.prompt_lines().join("\n");
+    assert!(prompt.contains("是否回复由你决定"), "{prompt}");
+    assert!(prompt.contains("正文即答复全文"), "{prompt}");
+    assert!(prompt.contains("NO_REPLY"), "{prompt}");
+    assert!(prompt.contains("独占全文"), "{prompt}");
+    assert_eq!(
+        judge_static_reply_route(input(
+            MessageRole::Agent,
+            "agent-2",
+            MessageType::Text,
+            "NO_REPLY"
+        )),
+        Some(AutoReplyRoute::Discard {
+            reason: "agent final output is the NO_REPLY sentinel"
+        })
+    );
+}
+
+/// 知会消息：框架不回发 Final，提示词必须给出「确需回应走工具」的出口
+///
+/// 否则 Agent 想回也没有合法通道（Final 被 Discard），只能沉默或反复输出正文。
+#[test]
+fn notify_obligation_prompt_points_to_explicit_send() {
+    let prompt = ReplyObligation::NotifyOnly.prompt_lines().join("\n");
+    assert!(prompt.contains("知会消息"), "{prompt}");
+    assert!(prompt.contains("不会回发"), "{prompt}");
+    assert!(prompt.contains("发送消息工具"), "{prompt}");
+    assert_eq!(
+        judge_static_reply_route(input(
+            MessageRole::Agent,
+            "agent-2",
+            MessageType::AgentNotify,
+            "进度同步：已完成 60%"
+        )),
+        Some(AutoReplyRoute::Discard {
+            reason: "agent-notify message (sender declared no reply needed)"
+        })
+    );
+}
+
+/// Final 决策解析：只有哨兵判 NoReply，带解释的写法一律按正文处理
+///
+/// 宁可多发一次（对方再判一次无需回复），也绝不把「NO_REPLY: 这条不用回」
+/// 这种自造格式当哨兵吞掉——它不是封闭词表成员，也不该被 substring 兜底。
+#[test]
+fn reply_decision_only_fails_closed_on_sentinel() {
+    for raw in ["NO_REPLY", " no_reply. ", "无需回复"] {
+        assert_eq!(
+            classify_reply_decision(raw),
+            ReplyDecision::NoReply,
+            "{raw:?}"
+        );
+    }
+    for raw in ["改好了", "NO_REPLY: 这条不用回", "NO_REPLY 是哨兵", ""] {
+        assert_eq!(
+            classify_reply_decision(raw),
+            ReplyDecision::Reply,
+            "{raw:?}"
+        );
+    }
+}
+
 /// 词表护栏：封闭集合必须含英文主哨兵，且无空白/重复/空条目
 /// （有人偷偷把词表清空 => 2026-10-18 泄漏现场回归，测试必须红）
 #[test]

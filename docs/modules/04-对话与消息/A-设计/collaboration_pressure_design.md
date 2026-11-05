@@ -112,18 +112,18 @@ related:
 
 ```
 handle_agent_message（唤醒前）
-  ├─ 预筛：from_role=Agent && from != to && message_type != AgentNotify
+  ├─ 预筛：ReplyObligation::Expected（Agent 来源 && from != agent_id && 非知会）
   │        （与静态路由规则同源 ⇒ 用户对话主干零额外 DB 读）
   ├─ collect_chain_pressure：沿 reply_to_id 回溯收集 ChainHop（新 → 旧）
   │    · 非 Agent 来源 / 断链 / 父消息不存在 / 查询失败 → 停止（宁少勿错）
   │    · MAX_CHAIN_TRAVERSAL = 32 硬上限，防异常长链放大 DB 读
   │    · observe_backward_chain：归一化为时间正序后再逐跳 observe（见 §6.2）
   ├─ log_info! 打印 decision.log_line()（档位 / 命中策略 / 条件 / 全部事实）
-  └─ ThinkingOptions.with_extra_resource_lines(decision.prompt_lines())
-        ↓ fill_prompt_base / legacy_awaken 重建路径两处 → set_pressure_prompt_lines
-        ↓ DefaultPromptBuilder 渲染【协作压力】append-only 独立区块
-          （当前消息 / 尾插输入 / 技能提醒之后，「请回复：」之前）
-        ↓ 本轮 Agent 看到链深、疲劳度、档位动作、本轮指引、回血规则
+  └─ ThinkingOptions.with_turn_guidance_lines(回复仲裁行 + decision.prompt_lines())
+        ↓ fill_prompt_base / legacy_awaken 重建路径 / Phase2 执行段 → set_turn_guidance_lines
+        ↓ DefaultPromptBuilder 渲染 append-only 独立区块
+          （当前消息 / 尾插输入 / 技能提醒之后，收尾指令之前）
+        ↓ 本轮 Agent 看到「要不要回」+ 链深、疲劳度、档位动作、本轮指引、回血规则
 awaken → raw_output
   └─ resolve_auto_reply_route（纯函数，不再查库）
        静态段命中 → Peer / Discard
@@ -136,12 +136,12 @@ awaken → raw_output
 
 **压力值每次唤醒都变**（链深 +1、疲劳度 +12、档位可能跳档），因此它属于最易变内容，只能 append-only 收尾：
 
-- **落点**：`DefaultPromptBuilder` 把 `pressure_prompt_lines` 渲染成独立的【协作压力】区块，位于 `current_message` / 尾插输入 / 技能提醒**之后**、「请回复：」之前。其后只剩一句静态收尾语，插入点之前的所有字节与没有压力信号时逐字节一致。
+- **落点**：`DefaultPromptBuilder` 把 `turn_guidance_lines` 渲染成独立区块（内容含回复仲裁行 + 【协作压力】行），位于 `current_message` / 尾插输入 / 技能提醒**之后**、收尾指令之前。其后只剩一句收尾语，插入点之前的所有字节与没有指引时逐字节一致。
 - **三个禁止**：❌ 禁止前移到【消息链上下文】/【资源上下文】等稳定区块之前（provider prefix cache 从请求首字节逐字节匹配，易变内容前移会作废其后全部内容）；❌ 禁止并入【资源上下文】的 `- ` 列表项（语义错配，把行为指令降级成参考资料）；❌ 禁止进 System 或 tools（那是跨唤醒唯一可复用的前缀，本次完全未改动）。
 - **两阶段 I1/I2**：`analyze_opts = options.clone()` 携带同一份压力行，`fill_prompt_base` 是唯一 base 装配点，Phase1 seed 与 Phase2 base 逐字节一致；`compact_context` 复用 `work_messages` 只 push 指令，压缩循环的前缀也不变。
 - **跨唤醒的现实边界**：A↔B 协作交替唤醒的是**不同 Agent**，System 人设与技能不同，前缀天然无法跨唤醒复用；能复用的是同一 Agent 多次唤醒的 System + tools，本次已保持完全静态。把压力信号「加到消息列表前面」不会带来复用，只会把本来可命中的稳定前缀一起作废。
-- **护栏**：`pressure_block_is_append_only_and_preserves_stable_prefix`（前缀逐字节不变 + 压力值变化也不变 + 不进 System）、`pressure_lines_keep_intent_prefix_identical`（带压力行时两阶段仍一致）、`forwards_pressure_prompt_lines_into_flat_prompt`。
-- ⚠️ **外部 Agent 覆盖**：`FlatPromptBuilder`（A2A / Codex）内部包 `DefaultPromptBuilder`，但只转发部分方法；必须显式转发 `set_pressure_prompt_lines`，否则 trait 默认空实现会**静默吞掉整段压力信号**，只剩 consumer 层硬墙兜底、失去主动收敛能力。（其 `prompt_template` 若不含 `{user}` 占位符仍会丢，属模板配置范畴。）
+- **护栏**：`guidance_block_is_append_only_and_preserves_stable_prefix`（前缀逐字节不变 + 压力值变化也不变 + 不进 System）、`guidance_lines_keep_intent_prefix_identical`（带指引行时两阶段仍一致）、`forwards_turn_guidance_lines_into_flat_prompt`。
+- ⚠️ **外部 Agent 覆盖**：`FlatPromptBuilder`（A2A / Codex）内部包 `DefaultPromptBuilder`，但只转发部分方法；必须显式转发 `set_turn_guidance_lines`，否则 trait 默认空实现会**静默吞掉整段指引**（压力信号 + 「可以回 NO_REPLY」的出口），只剩 consumer 层硬墙兜底、失去主动收敛能力。（其 `prompt_template` 若不含 `{user}` 占位符仍会丢，属模板配置范畴。）
 
 ### 6.2 回溯方向与回血时序（提交审核时修正）
 

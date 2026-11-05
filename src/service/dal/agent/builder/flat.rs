@@ -196,11 +196,11 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
         self.inner.current_message(message);
     }
 
-    /// 协作压力等组件提示词必须转发给 inner：`build()` 用的是
+    /// 本轮指引（回复仲裁 + 协作压力）必须转发给 inner：`build()` 用的是
     /// `inner.awaken_user_part()`，走 trait 默认空实现会让 A2A / Codex Agent
-    /// 静默丢掉整段压力信号（只剩 consumer 层硬墙兜底，失去主动收敛能力）。
-    fn set_pressure_prompt_lines(&mut self, lines: Vec<String>) {
-        self.inner.set_pressure_prompt_lines(lines);
+    /// 静默丢掉整段信号（既看不到「可以回 NO_REPLY」，也看不到疲劳度）。
+    fn set_turn_guidance_lines(&mut self, lines: Vec<String>) {
+        self.inner.set_turn_guidance_lines(lines);
     }
 
     fn skills(&mut self, skills: &[SkillPo]) {
@@ -374,10 +374,10 @@ mod tests {
         }
     }
 
-    /// 外部 Agent（A2A / Codex）也必须看到协作压力指引：
+    /// 外部 Agent（A2A / Codex）也必须看到本轮指引（回复仲裁 + 协作压力）：
     /// FlatPromptBuilder 走 trait 默认空实现会静默吞掉整段信号。
     #[test]
-    fn forwards_pressure_prompt_lines_into_flat_prompt() {
+    fn forwards_turn_guidance_lines_into_flat_prompt() {
         use crate::models::message::Message;
         use crate::models::prompt_builder::PromptBuilder;
         use common::enums::{MessageRole, MessageType};
@@ -401,11 +401,13 @@ mod tests {
             "test-user".to_string(),
         );
         builder.current_message(&message);
-        builder.set_pressure_prompt_lines(vec![
+        builder.set_turn_guidance_lines(vec![
+            "【回复仲裁】本条来自另一个 Agent，在等你答复；是否回复由你决定。".to_string(),
             "【协作压力】链深 2，疲劳度 24/100。".to_string(),
             "- 本轮指引：请主动收敛".to_string(),
         ]);
         let prompt = builder.build();
+        assert!(prompt.contains("【回复仲裁】"), "{prompt}");
         assert!(prompt.contains("【协作压力】链深 2"), "{prompt}");
         assert!(prompt.contains("- 本轮指引：请主动收敛"), "{prompt}");
     }

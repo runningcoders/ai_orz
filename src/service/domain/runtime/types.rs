@@ -457,11 +457,11 @@ pub(crate) mod config_resolve {
         config::get().agent.think_timeout_secs
     }
 
-    /// 记忆分流阈值（本轮问答估算 token 数）
+    /// 记忆分流阈值（首尾文本估算 token 数，仅兜底维度）
     ///
-    /// 低于它原文写入短期记忆，达到/超过才交给 LLM 压缩。
-    /// **不存在「不压缩」场景**，所以 `AgentRuntimeConfig` 的默认值就是 256，
-    /// 不是 0；只有显式填 0 才表示「跟随系统配置」。
+    /// 与链路复杂度并列在 OR 策略组里，任一达标才交给 LLM 压缩。
+    /// `AgentRuntimeConfig` 里显式填 0 才表示「跟随系统配置」，
+    /// 0 不是「关闭压缩」。
     pub fn compaction_threshold_tokens(agent: &Agent) -> usize {
         let rc = agent.po.get_runtime_config();
         if rc.compaction_threshold_tokens > 0 {
@@ -495,13 +495,15 @@ pub struct ThinkingOptions {
     pub max_thinking_rounds: Option<usize>,
     /// 用户画像（消息发送者的 UserPo，awaken 场景注入【用户画像】区块）
     pub user_profile: Option<crate::models::user::UserPo>,
-    /// 组件化提示词的统一注入口（思考链路复用）
+    /// 本轮动态指引的统一注入口（思考链路复用）
     ///
-    /// 目前由 `pkg/collaboration_pressure` 产出（协作深度 / 疲劳度 / 配套指引），
-    /// 渲染为 User 消息末尾的【协作压力】append-only 独立区块。**不并入
-    /// 【资源上下文】、不进 System、不进消息正文/历史**——数值每次唤醒都可能
-    /// 变化，前移会作废其后全部 prefix cache 命中。空集合不改变原有装配。
-    pub extra_resource_lines: Vec<String>,
+    /// 目前由两块产出，按顺序拼接：`message_route_policy::ReplyObligation`
+    /// （本条要不要回、Final 只能用哪两种形态）+ `pkg/collaboration_pressure`
+    /// （协作链深 / 疲劳度 / 施压话术）。渲染为 User 消息末尾的 append-only
+    /// 独立区块，紧贴「请输出本轮结果」。**不并入【资源上下文】、不进 System、
+    /// 不进消息正文/历史**——内容每轮都可能变化，前移会作废其后全部 prefix
+    /// cache 命中。空集合不改变原有装配（用户 ↔ Agent 主流对话零变化）。
+    pub turn_guidance_lines: Vec<String>,
 }
 
 impl ThinkingOptions {
@@ -542,9 +544,9 @@ impl ThinkingOptions {
         self
     }
 
-    /// 设置组件化提示词行（渲染为【协作压力】append-only 尾部独立区块）
-    pub fn with_extra_resource_lines(mut self, lines: Vec<String>) -> Self {
-        self.extra_resource_lines = lines;
+    /// 设置本轮动态指引行（渲染为 User 消息末尾的 append-only 独立区块）
+    pub fn with_turn_guidance_lines(mut self, lines: Vec<String>) -> Self {
+        self.turn_guidance_lines = lines;
         self
     }
 

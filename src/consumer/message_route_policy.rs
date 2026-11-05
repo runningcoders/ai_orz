@@ -3,6 +3,15 @@
 //! 复用 `pkg/policy` 引擎组合路由策略组（照 shell_policy 先例）：
 //! - 静态判定段（零查库）：领域匹配器规则（哨兵 / 来源角色 / 自触发 /
 //!   知会类型）按 Or 组合，声明顺序即判定优先级（首个命中即产出路由）
+//!
+//! # 回复决策权归 Agent，Final 是唯一权威
+//!
+//! 框架不根据「本轮是否调用过发送工具」反推该不该回——那是**副作用推断**，
+//! 既覆盖不了「发给了别人」「发了但对方没收到」，也会把「Agent 已经交代过」
+//! 与「还欠一句答复」混为一谈。判定权在 Agent：思考中自决，Final 只有两种
+//! 合法形态（[`ReplyDecision`]）——正文即答复，或恰好输出 [`NO_REPLY_SENTINEL`]。
+//! 框架的职责是把「本条要不要回」与「已经来回多少轮」写进提示词
+//! （[`ReplyObligation::prompt_lines`]），再按 Final 确定性执行。
 //! - 协作压力段：`pkg/collaboration_pressure` 组件的策略引擎裁决档位，
 //!   仅 `PressureAction::Escalate` 升级归属用户，其余档位仍 Peer；
 //!   压力带内的施压提示词在唤醒前由该组件注入 `ThinkingOptions`。
@@ -88,6 +97,87 @@ pub fn is_no_reply_sentinel(raw_output: &str) -> bool {
         return true;
     }
     normalized.is_ascii() && normalized.to_ascii_uppercase() == NO_REPLY_SENTINEL
+}
+
+/// 本轮消息对「是否需要回复」的要求（由入口消息语义决定，不参与路由判定）
+///
+/// 只回答「这条消息在不在乎答复」，**不看本轮调用过哪些工具**：是否回复是
+/// Agent 在思考中自决的结果，框架只负责把要求与证据摆到决策点。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplyObligation {
+    /// 对端在等答复（跨 Agent 对等协作 / 任务交接）
+    Expected,
+    /// 知会类：发送方已声明无需回复（`MessageType::AgentNotify`）
+    NotifyOnly,
+}
+
+impl ReplyObligation {
+    /// 从入口消息推导；`None` = 不需要回复仲裁提示
+    ///
+    /// 只对 Agent 来源且非自触发的消息生效：用户/系统来源由来源规则决定
+    /// 投递方向（用户必须收到 Final），自触发回给自己则本来就是 Discard。
+    pub fn of(
+        from_role: MessageRole,
+        from_id: &str,
+        agent_id: &str,
+        message_type: MessageType,
+    ) -> Option<Self> {
+        if from_role != MessageRole::Agent || from_id == agent_id {
+            return None;
+        }
+        Some(if message_type == MessageType::AgentNotify {
+            Self::NotifyOnly
+        } else {
+            Self::Expected
+        })
+    }
+
+    /// 注入提示词的回复仲裁区块（与 [`NO_REPLY_SENTINEL`] 的协议成对维护）
+    ///
+    /// ⚠️ 文案必须与路由行为**逐条对应**：这里承诺「Final 正文即答复」，
+    /// 路由就必须把正文回发给来源方；这里承诺「NO_REPLY 不回发」，路由
+    /// 就必须在哨兵分支 Discard。改任何一侧都要同步另一侧。
+    pub fn prompt_lines(self) -> Vec<String> {
+        match self {
+            ReplyObligation::Expected => vec![
+                "【回复仲裁】本条来自另一个 Agent，在等你答复；是否回复由你决定。".to_string(),
+                "- 回复：思考完成后由 Final 统一答复，正文即答复全文——不要再用发送消息工具重复投递同一份内容。"
+                    .to_string(),
+                "- 不回复：Final 恰好只输出 NO_REPLY（独占全文，不加引号、标点或解释），框架不会回发。"
+                    .to_string(),
+                "- 判据：有结论/交付物、需要对方决策或补充信息 → 回复；只是确认收到、复述上一轮、已完成且无补充、后续与对方无关 → NO_REPLY。"
+                    .to_string(),
+            ],
+            ReplyObligation::NotifyOnly => vec![
+                "【回复仲裁】本条是知会消息（发送方已声明无需回复），框架不会回发你的 Final。"
+                    .to_string(),
+                "- 默认不回复：Final 恰好只输出 NO_REPLY 收尾。".to_string(),
+                "- 确需回应：用发送消息工具主动发给来源方，不要依赖 Final。".to_string(),
+            ],
+        }
+    }
+}
+
+/// Agent 对「本轮是否回复来源方」的自决结果（Final 的唯一权威形态）
+///
+/// 只有两个取值：正文即答复，或恰好输出哨兵。解析是**归一化后全等**的
+/// 封闭词表（见 [`is_no_reply_sentinel`]），正文里提到「无需回复」仍是正常
+/// 答复；任何无法判定的输出都按 `Reply` 处理（宁可多发，也绝不吞答复）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplyDecision {
+    /// 回复：Final 正文投递给来源方
+    Reply,
+    /// 不回复：Final 是哨兵，丢弃
+    NoReply,
+}
+
+/// 解析 Final 的回复决策（路由层与日志共用同一判定，避免两处口径漂移）
+pub fn classify_reply_decision(raw_output: &str) -> ReplyDecision {
+    if is_no_reply_sentinel(raw_output) {
+        ReplyDecision::NoReply
+    } else {
+        ReplyDecision::Reply
+    }
 }
 
 /// Final 自动回发的路由决策

@@ -30,7 +30,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::message_route_policy::{
-    AutoReplyRoute, RouteInput, judge_chain_reply_route, judge_static_reply_route,
+    AutoReplyRoute, ReplyObligation, RouteInput, classify_reply_decision, judge_chain_reply_route,
+    judge_static_reply_route,
 };
 use super::wake_gate_policy::{
     STALE_DEPENDENCY_POLICY_ID, WAKEUP_BUDGET_POLICY_ID, WakeGateInput, judge_wake_gate,
@@ -817,16 +818,25 @@ impl MessageConsumer {
             ctx = ctx.to_builder().user_id(root_user_id).build();
         }
 
-        // ══════ 协作压力观测（只对跨 Agent 对等回复候选查库）══════
+        // ══════ 回复仲裁 + 协作压力（只对 Agent 来源消息）══════
         //
-        // 预筛条件与静态路由规则同源：用户/系统来源、自触发、知会消息都不会
-        // 进入链深度判定，因此主流对话路径零额外 DB 读。压力信号与配套提示词
-        // 必须在 awaken **之前**注入，本轮正在思考的 Agent 才能看到深度/疲劳度
-        // 并主动收敛，而不是等回发时被硬墙机械掐断。
-        let chain_pressure = if message.from_role() == MessageRole::Agent
-            && message.po.from_id != message.po.to_id
-            && message.message_type() != MessageType::AgentNotify
-        {
+        // 是否回复由 Agent 在思考中自决，Final 是唯一权威：正文即答复，
+        // `NO_REPLY` 即放弃。框架**不反查「本轮是否已调过发送工具」**——
+        // 那是副作用推断，既分不清「发给了谁」，也会把「已经交代过」和
+        // 「还欠一句答复」混为一谈。见 `message_route_policy::ReplyObligation`。
+        //
+        // 预筛与静态路由同源：用户/系统来源、自触发不注入本区块，主流对话
+        // 路径零额外 DB 读。两组行都必须在 awaken **之前**注入，本轮正在思考
+        // 的 Agent 才能在决策点看到「要不要回」与「已经来回多少轮」。
+        let reply_obligation = ReplyObligation::of(
+            message.from_role(),
+            &message.po.from_id,
+            agent_id,
+            message.message_type(),
+        );
+        // 压力观测只对「对端在等答复」的跨 Agent 协作执行：知会消息本来
+        // 就无需回复，观测链深没有意义，还会白白多一次回溯查库。
+        let chain_pressure = if reply_obligation == Some(ReplyObligation::Expected) {
             let pressure = self.collect_chain_pressure(&ctx, message).await;
             let decision = pressure.judge();
             log_info!(
@@ -835,11 +845,23 @@ impl MessageConsumer {
                 "collaboration pressure observed: {}",
                 decision.log_line()
             );
-            thinking_options = thinking_options.with_extra_resource_lines(decision.prompt_lines());
-            Some(pressure)
+            Some((pressure, decision.prompt_lines()))
         } else {
             None
         };
+
+        // 顺序固定：先「本条要不要回」（跨轮稳定，利于前缀复用），再「已经
+        // 回了多少轮」（每轮变化），最后一行的结论紧贴「请输出本轮结果」。
+        let mut turn_guidance = reply_obligation
+            .map(ReplyObligation::prompt_lines)
+            .unwrap_or_default();
+        if let Some((_, pressure_lines)) = &chain_pressure {
+            turn_guidance.extend(pressure_lines.iter().cloned());
+        }
+        if !turn_guidance.is_empty() {
+            thinking_options = thinking_options.with_turn_guidance_lines(turn_guidance);
+        }
+        let chain_pressure = chain_pressure.map(|(pressure, _)| pressure);
 
         // 调用 RuntimeDomain 唤醒 Agent
         let awaken_result = match self
@@ -946,13 +968,18 @@ impl MessageConsumer {
         // 造成 to_user_id 推导失败 + "必须走工具才算完成任务"的 365 轮死循环。
         // 本段改为 Framework 层按入口消息的来源角色，路由到对应的落库通道。
         //
-        // 路由判定收敛在 resolve_auto_reply_route（单一扩展点），四层防线：
+        // 路由判定收敛在 resolve_auto_reply_route（单一扩展点），三段判定：
         // 前置（优先级最高，先于下表所有来源规则）：Final 归一化后全等哨兵
         // 词表 → Discard。词表是封闭集合：英文主哨兵 NO_REPLY + 模型自造的
         // 中文等价写法（2026-10-18 实证：前台把哨兵写成「未回复」，英文全等
         // 不命中 → 当真实回复投给财务总监 + 两轮无意义往返）。保留字任何
         // 来源均不投递——任务派发经用户身份中继后 from_role=User，若让 User
         // 分支先命中会把哨兵原文发给用户（2026-10-16 实证：全库 29 条泄漏）。
+        //
+        // ⚠️ 判定**只看 Final**，不查「本轮是否已经用工具发过消息」：是否回复
+        // 是 Agent 在思考中自决的结果，提示词已把义务（`ReplyObligation`）
+        // 与证据（压力指标）摆到决策点；用副作用反推会把「发了进度同步但还
+        // 欠完整答复」误判成已交付，也会让 Agent 的显式选择失去意义。
         //   ┌────────────────────────┬──────────────────────────────────────────────┐
         //   │ 判定                   │ 路由                                         │
         //   ├────────────────────────┼──────────────────────────────────────────────┤
@@ -969,8 +996,8 @@ impl MessageConsumer {
         //   │                        │   不再回发来源方（防乒乓第一道防线）         │
         //   ├────────────────────────┼──────────────────────────────────────────────┤
         //   │ 跨 Agent 协作          │ ① Final 命中 NO_REPLY 哨兵词表 → Discard     │
-        //   │                        │   （含中文等价写法，任何来源均生效）         │
-        //   │                        │ ② reply_to 链连续 Agent 消息达上限           │
+        //   │                        │   （Agent 自决「本轮不回复」，含中文等价写法）│
+        //   │                        │ ② 协作压力 Exhausted（疲劳度/窗口触顶）      │
         //   │                        │   → EscalateToOwner 通知归属用户人工介入     │
         //   │                        │ ③ 否则 Peer → send_to_agent(from=本Agent,    │
         //   │                        │   to=message.from)，避免把 Agent ID 硬塞到   │
@@ -994,6 +1021,18 @@ impl MessageConsumer {
                 agent_id,
                 raw_output,
                 chain_pressure.as_ref(),
+            );
+            // 决策留痕：Final 形态 + 义务 + 路由，三件一起打印。后续接小脑时
+            // 这份日志就是「证据 → 决策」的天然训练/回放样本。
+            log_info!(
+                &ctx,
+                "handle_agent_message",
+                "auto-reply decision: {:?}, obligation={:?}, route={:?}, from_id={}, type={:?}",
+                classify_reply_decision(raw_output),
+                reply_obligation,
+                route,
+                message.po.from_id,
+                message.po.message_type
             );
 
             let send_result: Result<()> = match route {
@@ -1350,12 +1389,12 @@ impl MessageConsumer {
         Ok(())
     }
 
-    /// 计算 Final 自动回发的最终路由（静态判定 + 回复链深度机械判定）
+    /// 计算 Final 自动回发的最终路由（静态判定 + 协作压力机械判定）
     ///
-    /// 判定顺序：静态规则（用户/系统/自触发/知会/哨兵）短路在前，
-    /// 协作压力裁决只对「跨 Agent 对等回复候选」执行——压力观测已在 awaken 前
-    /// 完成并缓存，这里只做纯函数映射，不再查库。
-    /// User 消息与 Discard 场景零额外查询，主流路径不增加任何成本。
+    /// 判定顺序：静态规则（哨兵/用户/系统/自触发/知会）短路在前，协作压力
+    /// 裁决只对「跨 Agent 对等回复候选」执行——压力观测已在 awaken 前完成并
+    /// 缓存，这里只做纯函数映射，零查库。是否回复是 Agent 的 Final 自决结果，
+    /// 路由只负责按它执行，不做副作用推断。
     fn resolve_auto_reply_route(
         &self,
         message: &Message,

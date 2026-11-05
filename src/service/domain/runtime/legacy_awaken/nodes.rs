@@ -382,6 +382,12 @@ impl ThinkNode for PrepareNode {
             if !pending.is_empty() {
                 exec.injected_inputs(&pending);
             }
+            // Phase 2 是真正的执行段，决策点在它的收尾：把同一份指引行再挂一次，
+            // 模型不必回头翻 Phase 1 的 base 才能看到「要不要回 / 已经多累」。
+            // 同源（`deps.options`）保证与 base 数值一致，不会出现两个口径。
+            if !deps.options.turn_guidance_lines.is_empty() {
+                exec.set_turn_guidance_lines(deps.options.turn_guidance_lines.clone());
+            }
             let intent_json = serde_json::to_string(&intent)
                 .map_err(|e| common::error::err!(Internal, "encode intent analysis failed: {e}"))?;
             let segment = exec.build_execution_segment();
@@ -453,10 +459,10 @@ impl ThinkNode for PrepareNode {
         if !biz.resource_lines.is_empty() {
             builder.set_resource_context_lines(biz.resource_lines);
         }
-        // 重建路径与 fill_prompt_base 同口径：压力行独立尾部区块，
+        // 重建路径与 fill_prompt_base 同口径：本轮指引独立尾部区块，
         // 值与 seed 相同（同一份 ThinkingOptions），不破坏两阶段前缀一致。
-        if !deps.options.extra_resource_lines.is_empty() {
-            builder.set_pressure_prompt_lines(deps.options.extra_resource_lines.clone());
+        if !deps.options.turn_guidance_lines.is_empty() {
+            builder.set_turn_guidance_lines(deps.options.turn_guidance_lines.clone());
         }
         if !biz.vision_parts.is_empty() {
             builder.set_current_message_vision(biz.vision_parts);

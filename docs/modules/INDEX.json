@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 672,
-  "total_bytes": 14133155,
+  "total": 673,
+  "total_bytes": 14147958,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1342,18 +1342,18 @@
     {
       "id": "04-对话与消息",
       "counts": {
-        "A-设计": 7,
+        "A-设计": 8,
         "B-落地方案": 9,
         "C-知识": 21
       },
-      "total": 37,
+      "total": 38,
       "docs": [
         {
           "tier": "A-设计",
           "path": "04-对话与消息/A-设计/collaboration_pressure_design.md",
           "name": "collaboration_pressure_design",
           "title": "Agent 间协作压力（链深度 + 信息疲劳度）可复用组件设计",
-          "bytes": 15140,
+          "bytes": 15238,
           "status": "现行",
           "scope": [
             "common/config/ai_orz.toml",
@@ -1452,6 +1452,29 @@
             "src/service/domain/runtime/cancel.rs"
           ],
           "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "04-对话与消息/A-设计/reply_arbitration_design.md",
+          "name": "reply_arbitration_design",
+          "title": "回复仲裁：是否回复由 Agent 自决，Final 是唯一权威",
+          "bytes": 10851,
+          "status": "现行",
+          "scope": [
+            "src/consumer/message.rs",
+            "src/consumer/message_route_policy.rs",
+            "src/consumer/message_route_policy_tests.rs",
+            "src/models/prompt_builder.rs",
+            "src/service/dal/agent/builder/default.rs",
+            "src/service/dal/agent/builder/flat.rs",
+            "src/service/domain/runtime/types.rs",
+            "src/service/domain/runtime/awakening.rs",
+            "src/service/domain/runtime/legacy_awaken/nodes.rs"
+          ],
+          "related": [
+            "04-对话与消息/A-设计/collaboration_pressure_design.md",
+            "02-Agent运行时/A-设计/thinking_task_policy_engine_design.md"
+          ]
         },
         {
           "tier": "A-设计",
@@ -1720,7 +1743,7 @@
           "path": "04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md",
           "name": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
           "title": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
-          "bytes": 41074
+          "bytes": 42361
         },
         {
           "tier": "C-知识",
@@ -1776,7 +1799,7 @@
           "path": "04-对话与消息/C-知识/消息领域.md",
           "name": "消息领域",
           "title": "消息领域",
-          "bytes": 30070
+          "bytes": 32637
         },
         {
           "tier": "C-知识",
