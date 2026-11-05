@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14147958,
+  "total_bytes": 14148048,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1743,7 +1743,7 @@
           "path": "04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md",
           "name": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
           "title": "消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类",
-          "bytes": 42361
+          "bytes": 42451
         },
         {
           "tier": "C-知识",

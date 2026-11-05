@@ -3,6 +3,12 @@
 //! 复用 `pkg/policy` 引擎组合路由策略组（照 shell_policy 先例）：
 //! - 静态判定段（零查库）：领域匹配器规则（哨兵 / 来源角色 / 自触发 /
 //!   知会类型）按 Or 组合，声明顺序即判定优先级（首个命中即产出路由）
+//! - 协作压力段：`pkg/collaboration_pressure` 组件的策略引擎裁决档位，
+//!   仅 `PressureAction::Escalate` 升级归属用户，其余档位仍 Peer；
+//!   压力带内的施压提示词在唤醒前由该组件注入 `ThinkingOptions`。
+//!   仅对「跨 Agent 且对端在等答复」（`ReplyObligation::Expected`）执行——需要沿
+//!   reply_to_id 查库观测链（见 `MessageConsumer::collect_chain_pressure`）；
+//!   用户/系统来源、自触发、知会消息零额外查询
 //!
 //! # 回复决策权归 Agent，Final 是唯一权威
 //!
@@ -12,11 +18,6 @@
 //! 合法形态（[`ReplyDecision`]）——正文即答复，或恰好输出 [`NO_REPLY_SENTINEL`]。
 //! 框架的职责是把「本条要不要回」与「已经来回多少轮」写进提示词
 //! （[`ReplyObligation::prompt_lines`]），再按 Final 确定性执行。
-//! - 协作压力段：`pkg/collaboration_pressure` 组件的策略引擎裁决档位，
-//!   仅 `PressureAction::Escalate` 升级归属用户，其余档位仍 Peer；
-//!   压力带内的施压提示词在唤醒前由该组件注入 `ThinkingOptions`。
-//!   仅对「跨 Agent 对等回复候选」执行——需要沿 reply_to_id 查库观测链
-//!   （见 `MessageConsumer::collect_chain_pressure`），静态命中零额外查询
 //!
 //! 领域特有判定保留专用匹配器（不具备跨领域共性，抽象边界参照 builtin 模块文档）：
 //! - 来源角色 / 知会类型是枚举等值（Metrics 侧以数值承载）
