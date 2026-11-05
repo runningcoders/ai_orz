@@ -977,3 +977,262 @@ async fn numeric_operator_requires_number_value(pool: sqlx::SqlitePool) {
         "错误信息应点明需要 number 值: {err}"
     );
 }
+
+// ==================== ④ property_filters 回包计量（A-2 单） ====================
+
+/// 造一条「属性过滤」请求（`query` 非空才能让召回通道真的产出候选：
+/// FTS 的 `keyword` 走 `Some(query)`，空串命中 0 条会把结果清空，
+/// 那样测到的是 `property_filter_not_applied` 而不是本用例想验的计量字段）
+fn filter_params(
+    query: &str,
+    term_key: &str,
+    value: &str,
+    agent_id: Option<&str>,
+) -> SearchMemoryParams {
+    SearchMemoryParams {
+        query: query.to_string(),
+        max_results: Some(50),
+        memory_type: None,
+        traversal_depth: Some(0),
+        traversal_breadth: None,
+        traversal_strategy: None,
+        seed_node_ids: None,
+        tags: None,
+        task_id: None,
+        agent_id: agent_id.map(str::to_string),
+        property_filters: Some(vec![PropertyFilterParam {
+            term_key: term_key.to_string(),
+            op: None,
+            value: PropertyValue::Text(value.to_string()),
+        }]),
+        include_history: None,
+    }
+}
+
+/// 用例 1：传 `property_filters` 且命中 —— 四个计量字段必须填全且自洽
+///
+/// `matched_total` 记「精确通道命中几个节点」、`returned` 记「实际回了几个」，
+/// 两者成对才有诊断价值：只给 results 的话，调用方分不清「筛完就这么多」
+/// 与「命中很多但被别的条件收敛掉了」。
+#[sqlx::test]
+async fn property_filter_hit_reports_matched_and_returned(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "source", "string").await;
+
+    // 三个节点都含唯一词 alphaprobe（FTS 都能召回），只有前两个挂了 source 属性
+    seed_node(&ctx, "kn_pf_1", "节点一", "alphaprobe 一号", "").await;
+    seed_node(&ctx, "kn_pf_2", "节点二", "alphaprobe 二号", "").await;
+    seed_node(&ctx, "kn_pf_3", "节点三", "alphaprobe 三号", "").await;
+    for id in ["kn_pf_1", "kn_pf_2"] {
+        attach(
+            &ctx,
+            id,
+            vec![prop("source", PropertyValue::Text("官方手册".to_string()))],
+        )
+        .await;
+    }
+
+    let resp = search_memory(
+        ctx.clone(),
+        filter_params("alphaprobe", "source", "官方手册", None),
+    )
+    .await
+    .expect("搜索应成功");
+
+    assert_eq!(resp.results.len(), 2, "只有挂了该属性的两个节点应返回");
+    assert_eq!(
+        resp.matched_total,
+        Some(2),
+        "精确通道命中数 = 命中集大小（不是返回条数）"
+    );
+    assert_eq!(
+        resp.returned,
+        Some(resp.results.len() as u64),
+        "returned 必须等于实际返回条数"
+    );
+    assert_eq!(
+        resp.agent_scope.as_deref(),
+        Some("hive"),
+        "未传 agent_id ⇒ 作用域自述必须是 hive（不存在 context_fallback 取值）"
+    );
+    assert!(
+        resp.semantic_used.is_some(),
+        "非空结果必须能判定向量是否参与（is_some），不得缺值"
+    );
+    assert!(
+        resp.reason.is_none(),
+        "非空结果不得给 reason（有结果就不存在「为什么空」）: {:?}",
+        resp.reason
+    );
+}
+
+/// 用例 2：传 `property_filters` 且精确通道零命中 —— 早返回路径的 reason 锁死
+///
+/// 该分支 `reason` **只能**是 `filter_no_match`：命中集压根没有元素，
+/// 归属筛选还没来得及参与。所以即使同时传了显式 `agent_id`，也必须报
+/// `filter_no_match` 而不是 `agent_scope_mismatch`（最高优先，专家 Q3 口径）。
+#[sqlx::test]
+async fn property_filter_no_match_reports_filter_no_match(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    define_property(&ctx, "source", "string").await;
+    seed_node(&ctx, "kn_pf_a", "甲", "alphaprobe 甲", "").await;
+    attach(
+        &ctx,
+        "kn_pf_a",
+        vec![prop("source", PropertyValue::Text("官方手册".to_string()))],
+    )
+    .await;
+
+    // 查询一个从未写过的取值 ⇒ 精确通道命中集为空 ⇒ 早返回
+    let resp = search_memory(
+        ctx.clone(),
+        filter_params("alphaprobe", "source", "不存在的取值", None),
+    )
+    .await
+    .expect("搜索应成功");
+
+    assert!(resp.results.is_empty(), "精确通道零命中必须返回空");
+    assert_eq!(
+        resp.reason.as_deref(),
+        Some("filter_no_match"),
+        "该分支的真实枚举只能是 filter_no_match"
+    );
+    assert_eq!(resp.matched_total, Some(0), "命中集为空 ⇒ matched_total=0");
+    assert_eq!(resp.returned, Some(0), "命中集为空 ⇒ 一条都返不回来");
+    assert!(
+        resp.semantic_used.is_none(),
+        "空结果下无法判定向量跑没跑 ⇒ 必须是 None，给 Some(false) 是伪报"
+    );
+
+    // 最高优先：同时传显式 agent_id 也不得改成 agent_scope_mismatch
+    // （命中集为空不是「被归属筛空」，把两者混为一谈会把排查方向带偏）
+    let with_agent = search_memory(
+        ctx.clone(),
+        filter_params("alphaprobe", "source", "不存在的取值", Some("agent-other")),
+    )
+    .await
+    .expect("搜索应成功");
+    assert!(with_agent.results.is_empty());
+    assert_eq!(
+        with_agent.reason.as_deref(),
+        Some("filter_no_match"),
+        "filter_no_match 最高优先，不得因为带了显式 agent_id 就换值"
+    );
+    assert_eq!(
+        with_agent.agent_scope.as_deref(),
+        Some("explicit:agent-other"),
+        "作用域自述仍要如实回显显式作用域"
+    );
+}
+
+/// 用例 3：旧响应形状不变（序列化锁定）
+///
+/// 不传 `property_filters` 时三个字段必须**整个缺席**（不是 `null`）：
+/// 老调用方按固定 schema 解析，多出一个 key 就可能被严格的解析器拒掉。
+#[sqlx::test]
+async fn response_shape_stays_backward_compatible_without_property_filters(pool: sqlx::SqlitePool) {
+    let ctx = init_env(pool);
+    seed_node(&ctx, "kn_shape", "形状", "alphaprobe 形状", "").await;
+
+    let resp = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: "alphaprobe".to_string(),
+            max_results: Some(10),
+            memory_type: None,
+            traversal_depth: Some(0),
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: None,
+            tags: None,
+            task_id: None,
+            agent_id: None,
+            property_filters: None,
+            include_history: None,
+        },
+    )
+    .await
+    .expect("搜索应成功");
+    assert!(!resp.results.is_empty(), "前置：本用例需要非空结果");
+
+    let json = serde_json::to_value(&resp).expect("响应应可序列化");
+    let obj = json.as_object().expect("响应应是 JSON 对象");
+    for key in ["matched_total", "returned", "reason"] {
+        assert!(
+            !obj.contains_key(key),
+            "不传 property_filters / 非空结果时不得出现 `{key}`（skip_serializing_if 失效？）"
+        );
+    }
+    // 两个恒给的自述字段必须出现，否则「自述」就白加了
+    assert!(obj.contains_key("agent_scope"), "agent_scope 恒回显");
+    assert!(
+        obj.contains_key("semantic_used"),
+        "非空结果时 semantic_used 恒回显"
+    );
+}
+
+/// 用例 4：文档锁定 + 显式 `agent_id` **不回退** `ctx.agent_id()`
+///
+/// 文档侧：`SearchMemoryParams::agent_id` 曾经写着「不传则回退当前请求上下文的
+/// agent_id」—— 这句与实现相反，是「Agent 以为自己在全库查、其实只查了自己」
+/// 这类误判的直接来源（专家 Q3 点名）。这里用源码字面量锁死，防止它被改回去。
+#[sqlx::test]
+async fn explicit_agent_scope_never_falls_back_to_context(pool: sqlx::SqlitePool) {
+    // ---- 文档锁定（源码字面量断言）----
+    const NEURAL_TOOLS_SRC: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/common/src/api/neural_tools.rs"
+    ));
+    assert!(
+        !NEURAL_TOOLS_SRC.contains("不传则回退当前请求上下文的 agent_id"),
+        "agent_id 文档不得再写「回退当前请求上下文的 agent_id」（与实现相反）"
+    );
+    assert!(
+        NEURAL_TOOLS_SRC.contains("刻意**不**回退 `ctx.agent_id()`"),
+        "agent_id 文档必须显式声明「刻意不回退 ctx.agent_id()」"
+    );
+
+    // ---- 行为锁定：显式查一个没有节点的 agent，不得回退成 ctx（全库）----
+    let ctx = init_env(pool);
+    seed_node(&ctx, "kn_owner_a", "甲", "alphaprobe 属于 agent-kg", "").await;
+
+    let resp = search_memory(
+        ctx.clone(),
+        SearchMemoryParams {
+            query: "alphaprobe".to_string(),
+            max_results: Some(10),
+            memory_type: None,
+            traversal_depth: Some(0),
+            traversal_breadth: None,
+            traversal_strategy: None,
+            seed_node_ids: None,
+            tags: None,
+            task_id: None,
+            agent_id: Some("agent-without-any-node".to_string()),
+            property_filters: None,
+            include_history: None,
+        },
+    )
+    .await
+    .expect("搜索应成功");
+
+    assert!(
+        resp.results.is_empty(),
+        "显式作用域下无节点必须返回空；回退 ctx 就会把 kn_owner_a 带出来（{} 条）",
+        resp.results.len()
+    );
+    assert!(
+        !resp.results.iter().any(|r| r.id == "kn_owner_a"),
+        "不得回退 ctx.agent_id() 而返回他域节点"
+    );
+    assert_eq!(
+        resp.reason.as_deref(),
+        Some("agent_scope_explicit_empty"),
+        "显式作用域下确实没有记忆 ⇒ 该值的语义唯一"
+    );
+    assert_eq!(
+        resp.agent_scope.as_deref(),
+        Some("explicit:agent-without-any-node"),
+        "作用域自述必须带出显式传入的 id"
+    );
+}

@@ -1211,6 +1211,22 @@ const DEFAULT_PROPERTY_EFFECTIVENESS_LIMIT: usize = 100;
 /// 要么该类内部其实该拆子类。严格大于才标黄：恰好 90% 仍留 10% 变化，属正常使用。
 pub(crate) const PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD: f64 = 0.90;
 
+/// 属性有效性计数字段的口径自述（响应 `count_semantics` 的固定值）
+///
+/// 口径内容：活跃知识节点（`node.status = 1`）上、属性行 `status = 1`（生效值）
+/// 的属性值行数，**不是**按取值去重后的条数。
+/// 提升为常量而非散落字符串：它同时出现在响应字段、DTO 文档与工具 description
+/// 三处，写死三遍迟早漂移成「同一件事有两种说法」。
+pub(crate) const PROPERTY_EFFECTIVENESS_COUNT_SEMANTICS: &str = "active_node_status1_property_rows";
+
+/// 「样本量不足」判据下限：`total < 3` ⇒ `insufficient_sample = true`
+///
+/// 为什么是 3：`total = 1` 时 `mode_ratio` 恒为 1.0、`total = 2` 时只能是
+/// 1.0 或 0.5，两种都无统计意义。但**这只是并列标注，不是判定**：`flagged`
+/// 仍只由 `mode_ratio > threshold` 机械决定（专家 Q4 裁定——用样本量压告警
+/// 等于靠改口径凑指标，宁可同时给出「像常量」与「样本不足」两条信号）。
+pub(crate) const PROPERTY_EFFECTIVENESS_MIN_SAMPLE: u64 = 3;
+
 /// 分组内取值分布累加器（纯函数内部结构，不出本模块）
 struct EffectivenessGroup {
     /// 该组合的生效值总条数
@@ -1230,6 +1246,12 @@ struct EffectivenessGroup {
 /// - `flagged = mode_ratio > 阈值`（**严格大于**；恰好 0.90 不标黄）。
 /// - `limit` 默认 [`DEFAULT_PROPERTY_EFFECTIVENESS_LIMIT`]；`total_groups` 是截断
 ///   前的分组数，不受 `limit` 影响。
+/// - `insufficient_sample = total < [`PROPERTY_EFFECTIVENESS_MIN_SAMPLE`]`：
+///   **并列标注**，不参与 `flagged`（两条信息正交，消费方自行组合）。
+/// - `is_truncated = total_groups > 截断后条数`：组级截断，行级 limit 会把
+///   分母计小、让占比失真，故本接口不做行级限制。
+/// - `count_semantics` 固定为 [`PROPERTY_EFFECTIVENESS_COUNT_SEMANTICS`]，
+///   让调用方能分清「数字变了」与「口径变了」。
 /// - `total = 0` 不会产出条目（SQL GROUP BY 天然不产空组，这里仍防御）——
 ///   「空集不产生条目」是显式契约，避免前端渲染一行 0/0 的 NaN 占比。
 ///
@@ -1301,7 +1323,10 @@ pub(crate) fn compute_property_effectiveness(
                 mode_count,
                 mode_ratio,
                 non_default_ratio: 1.0 - mode_ratio,
+                // 判定式一行不动：flagged 只由「占比 vs 阈值」机械决定。
+                // 样本量只做**并列标注**，绝不参与这条判定。
                 flagged: mode_ratio > PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD,
+                insufficient_sample: group.total < PROPERTY_EFFECTIVENESS_MIN_SAMPLE,
             })
         })
         .collect();
@@ -1320,16 +1345,22 @@ pub(crate) fn compute_property_effectiveness(
             .then_with(|| a.node_type.cmp(&b.node_type))
     });
 
+    // total_groups 在截断**之前**取：它表达「过滤后一共多少组」，
+    // 与 limit 无关（截断是展示层的事，不该改变「总量」这个事实）。
     let total_groups = items.len() as u64;
     items.truncate(
         request
             .limit
             .unwrap_or(DEFAULT_PROPERTY_EFFECTIVENESS_LIMIT),
     );
+    // 组级截断：只影响展示条数，任何一组的 total / mode_ratio 都不受影响
+    let returned = items.len() as u64;
 
     GetPropertyEffectivenessResponse {
         items,
         total_groups,
         threshold: PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD,
+        count_semantics: PROPERTY_EFFECTIVENESS_COUNT_SEMANTICS.to_string(),
+        is_truncated: total_groups > returned,
     }
 }

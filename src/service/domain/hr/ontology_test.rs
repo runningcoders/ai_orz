@@ -11,7 +11,8 @@ use super::{HrDomain, domain};
 use crate::models::memory::{KnowledgeNodeRelationPo, LongTermKnowledgeNodePo};
 use crate::models::ontology::{
     OntologyClass, OntologyClassPo, OntologyClassRelation, OntologyClassRelationPo,
-    OntologyRelationType, OntologyRelationTypePo, OntologySynonymMapping, OntologySynonymMappingPo,
+    OntologyProperty, OntologyPropertyPo, OntologyRelationType, OntologyRelationTypePo,
+    OntologySynonymMapping, OntologySynonymMappingPo,
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::ontology::{
@@ -19,6 +20,7 @@ use crate::service::dao::ontology::{
 };
 use common::api::PaginationParams;
 use common::api::ontology::GetDriftDashboardRequest;
+use common::constants::utils::current_timestamp;
 use common::enums::KnowledgeRelationStatus;
 use common::enums::MemoryStatus;
 use common::ontology::{
@@ -692,4 +694,123 @@ fn test_direction_validation_rules() {
     // 此处锁规则常量：parse 失败兜底路径 = handler err! InvalidRequest 分支
     let undirected = Direction::default();
     assert_eq!(undirected, Direction::Undirected);
+}
+
+/// ⑦ 属性定义 `updated_at` 更新不生效（回归，A-2 单）
+///
+/// 根因：DAO 的 `UPDATE ... SET updated_at = ?` 绑的是**入参**，Domain 层从未置
+/// now ⇒ 调用方「读—改—写」把旧值原样带回，时间戳永远不前进（全表
+/// `updated_at == created_at`，看不出任何变更时点）。修法：Domain 构造时置 now。
+///
+/// 三重断言（缺一不可）：
+/// 1. 被改行 `updated_at > created_at` —— 时间戳真的前进了；
+/// 2. 被改行 `updated_at != 旧值` —— 不是把旧值原样写回（这才是本 bug 的直接表征）；
+/// 3. **同表其他未改动行的 `updated_at` 完全不变** —— 反"顺手全表回填"。
+///    回填会把现存定义的真实变更时点抹平成同一个值，属于数据破坏而非修复。
+#[sqlx::test]
+async fn test_update_property_refreshes_updated_at_only_for_touched_row(pool: SqlitePool) {
+    let (hr, ctx) = init_test_env(pool);
+    let onto = hr.ontology_domain();
+
+    // 夹具：建一条"早已存在"的定义。created_at 刻意前置 100 秒——秒级时间戳的
+    // 固有粒度决定了「同一秒内创建 + 更新」时 `>` 断言无法成立，这不是修复能绕开
+    // 的问题，所以夹具必须模拟真实库里的历史行，而不是"刚刚创建的行"。
+    let mut target_po = OntologyPropertyPo::new(
+        "hist_term",
+        "历史术语",
+        "夹具：模拟现存定义",
+        "[]",
+        "[\"node\"]",
+        "string",
+        "",
+        "single",
+        None,
+        false,
+    );
+    target_po.created_at = current_timestamp() - 100;
+    target_po.updated_at = target_po.created_at;
+    let target_id = target_po.id.clone();
+    onto.create_property(ctx.clone(), &OntologyProperty::from_po(target_po))
+        .await
+        .unwrap();
+
+    // 旁观者两条：任何一条 updated_at 变动都说明发生了全表回填
+    let mut bystanders: Vec<(String, i64)> = Vec::new();
+    for (term, label) in [("bystander_a", "旁观甲"), ("bystander_b", "旁观乙")] {
+        let mut po = OntologyPropertyPo::new(
+            term,
+            label,
+            "夹具：不应被改动",
+            "[]",
+            "[\"node\"]",
+            "string",
+            "",
+            "single",
+            None,
+            false,
+        );
+        po.created_at = current_timestamp() - 100;
+        po.updated_at = po.created_at;
+        let id = po.id.clone();
+        let old_updated = po.updated_at;
+        onto.create_property(ctx.clone(), &OntologyProperty::from_po(po))
+            .await
+            .unwrap();
+        bystanders.push((id, old_updated));
+    }
+
+    // 基线：正确落库，且初始 updated_at == created_at（复刻现网 21/21 条形态）
+    let before = onto
+        .get_property(ctx.clone(), &target_id)
+        .await
+        .unwrap()
+        .expect("目标属性定义应存在");
+    assert_eq!(
+        before.po.updated_at, before.po.created_at,
+        "夹具前置：初始 updated_at 应等于 created_at（复刻现网形态）"
+    );
+
+    // 缺陷触发形态：读回 → 改 display_name/description → 把回读到的旧 updated_at
+    // 原样带回（真实调用方就是这么做的，这正是本 bug 的入口）。
+    let mut edited = before.po.clone();
+    edited.display_name = "历史术语（已更名）".to_string();
+    edited.description = "描述已更新".to_string();
+    edited.updated_at = before.po.updated_at;
+    onto.update_property(ctx.clone(), &OntologyProperty::from_po(edited))
+        .await
+        .unwrap();
+
+    let after = onto
+        .get_property(ctx.clone(), &target_id)
+        .await
+        .unwrap()
+        .expect("更新后应仍能读回");
+    assert_eq!(
+        after.po.display_name, "历史术语（已更名）",
+        "业务字段应真实更新"
+    );
+    assert!(
+        after.po.updated_at > after.po.created_at,
+        "updated_at 应晚于 created_at（缺陷形态下两者恒相等）: created={} updated={}",
+        after.po.created_at,
+        after.po.updated_at
+    );
+    assert_ne!(
+        after.po.updated_at, before.po.updated_at,
+        "updated_at 不得等于旧值（把旧值原样写回就是本 bug 的直接表征）: old={}",
+        before.po.updated_at
+    );
+
+    // 反全表回填：未改动的行必须一动不动
+    for (id, old_updated) in &bystanders {
+        let row = onto
+            .get_property(ctx.clone(), id)
+            .await
+            .unwrap()
+            .expect("旁观者应存在");
+        assert_eq!(
+            row.po.updated_at, *old_updated,
+            "未改动的属性定义 updated_at 不得变化（发生了全表回填？）id={id}"
+        );
+    }
 }

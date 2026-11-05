@@ -47,6 +47,17 @@ pub async fn search_memory(
     // 该参数只约束**起点**的选取，不约束沿图展开（见下方分支注释）。
     let agent_filter: Option<String> = params.agent_id.clone().filter(|s| !s.is_empty());
 
+    // 归属作用域自述（回包 `agent_scope`，入口处判定**一次**，两条返回路径共用）：
+    // 全库 / 显式作用域，**没有第三种取值** —— 因为这里刻意不回退 `ctx.agent_id()`，
+    // 不存在「上下文兜底」这种中间态。调用方据此确认「这次查的是谁的范围」。
+    let agent_scope: String = match &agent_filter {
+        Some(id) => format!("explicit:{id}"),
+        None => "hive".to_string(),
+    };
+    // `agent_filter` 在下方召回分支里会被 move 进查询参数，这里先固化成 bool，
+    // 供回包 `reason` 的优先级链复用（否则 move 之后无法再问「有没有显式作用域」）。
+    let has_explicit_agent = agent_filter.is_some();
+
     // 属性过滤入参先落地：后面据此收敛记忆类型与命中集（见「精确召回通道」注释）
     let property_filters: Vec<PropertyFilterParam> =
         params.property_filters.clone().unwrap_or_default();
@@ -138,8 +149,19 @@ pub async fn search_memory(
     if let Some(ids) = &property_hit_ids
         && ids.is_empty()
     {
+        // 空结果原因：本分支 = 「传了 property_filters 且精确通道命中集为空」，
+        // 五值里**只有** `filter_no_match` 说得通，且它**最高优先** —— 即使同时
+        // 传了显式 `agent_id` 也不是 `agent_scope_mismatch`：命中集压根没有元素，
+        // 归属筛选还没来得及参与，把「本来就空」归因成「被筛空」会把排查方向带偏。
+        // `semantic_used` 给 `None`：此路径没进任何召回通道，无法判定向量跑没跑，
+        // 给 `false` 是伪报。`returned` 恒 0（命中集空 ⇒ 一条都不可能返回）。
         return Ok(SearchMemoryResponse {
             results: Vec::new(),
+            matched_total: Some(0),
+            returned: Some(0),
+            agent_scope: Some(agent_scope),
+            semantic_used: None,
+            reason: Some("filter_no_match".to_string()),
         });
     }
 
@@ -259,7 +281,73 @@ pub async fn search_memory(
     )
     .await?;
 
-    Ok(SearchMemoryResponse { results })
+    // ===== 回包计量（④）：四个字段的取值口径逐条落在注释里，改之前先看这里 =====
+    //
+    // `semantic_used` 三态：有结果且见 vector_distance ⇒ Some(true)；有结果但全无
+    // ⇒ Some(false)（确定未参与）；空结果 ⇒ None（无法判定，不伪报 false）。
+    let semantic_used = semantic_used_of(&results);
+    let returned_count = results.len() as u64;
+
+    // `reason` 五值封闭的**优先级链**（顺序即优先级，勿调换）：
+    //   ① 有 property_filters 且命中集为空 → 已在上方早返回（`filter_no_match`），
+    //      走不到这里；这条分支最高优先，即使同时有显式 agent_id。
+    //   ② 有 property_filters + 命中集非空 + 显式 agent → `agent_scope_mismatch`
+    //      （命中集里的节点都不在该 agent 名下）。
+    //   ③ 有 property_filters + 命中集非空 + 无显式 agent → `property_filter_not_applied`
+    //      （命中集非空却零结果 ⇒ 召回通道没把命中集注入，属实现异常自述）。
+    //   ④ 无 property_filters + 显式 agent → `agent_scope_explicit_empty`
+    //      （该作用域下确实没有记忆；用别的值会让人怀疑回退了他域结果）。
+    //   ⑤ 无 property_filters + 无显式 agent → `no_recall_hit`（全库未召回）。
+    // 非空结果一律 `None`（有结果就不存在「为什么空」的问题）。
+    let reason: Option<String> = if results.is_empty() {
+        let code = if has_property_filters {
+            if property_hit_ids.as_ref().is_some_and(|ids| !ids.is_empty()) {
+                if has_explicit_agent {
+                    "agent_scope_mismatch"
+                } else {
+                    "property_filter_not_applied"
+                }
+            } else {
+                // 理论上不可达（filters 非空 ⇒ 命中集恒为 Some，空集已早返回）；
+                // 真走到这里说明命中集被清空却漏了短路，仍归到最贴近的语义。
+                "filter_no_match"
+            }
+        } else if has_explicit_agent {
+            "agent_scope_explicit_empty"
+        } else {
+            "no_recall_hit"
+        };
+        Some(code.to_string())
+    } else {
+        None
+    };
+
+    Ok(SearchMemoryResponse {
+        results,
+        // 仅当传了 property_filters 才给（`property_hit_ids` 为 None ⇔ 没传 filters）
+        matched_total: property_hit_ids.as_ref().map(|ids| ids.len() as u64),
+        returned: has_property_filters.then_some(returned_count),
+        agent_scope: Some(agent_scope),
+        semantic_used,
+        reason,
+    })
+}
+
+/// 向量通道是否真实参与了本次召回（三态，见 `SearchMemoryResponse::semantic_used`）。
+///
+/// **单一判据**：只看 `search_match.vector_distance` 有没有值，不要同时再用
+/// `score.is_some()`（两者同源换算，判两处迟早漂移成两种说法）。
+fn semantic_used_of(results: &[MemoryResult]) -> Option<bool> {
+    if results.is_empty() {
+        // 空结果下「有没有跑向量」无从观测 ⇒ 诚实缺省，不给 false
+        return None;
+    }
+    Some(results.iter().any(|r| {
+        r.search_match
+            .as_ref()
+            .and_then(|m| m.vector_distance)
+            .is_some()
+    }))
 }
 
 fn memory_id(memory: &Memory) -> String {

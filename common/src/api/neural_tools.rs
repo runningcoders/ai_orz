@@ -40,8 +40,13 @@ pub struct SearchMemoryParams {
     /// 归属筛选：只看该 Agent 沉淀的记忆。**不是可见性门槛**。
     ///
     /// 知识节点是蜂巢共享资产，所有 Agent 都能读到全部知识节点；
-    /// 该参数只约束「从谁的节点起步」（关键词搜索/列表），不传 = 全域。
-    /// 不传则回退当前请求上下文的 agent_id。
+    /// 该参数只约束「从谁的节点起步」（关键词搜索/列表）。
+    ///
+    /// **不传 = 全库（hive 共享）**：刻意**不**回退 `ctx.agent_id()`——回退会让
+    /// Agent 的检索静默收窄成「只看自己沉淀的节点」，与「所有 Agent 都能看到
+    /// 所有知识节点」相反。短期记忆（私有）需要的归属回退由 DAL 内部完成，
+    /// 那里才分得清「私有要作用域」与「共享不要门槛」。回包用 `agent_scope`
+    /// 自述本次生效范围。
     pub agent_id: Option<String>,
     /// 按属性值**精确**过滤（多个条件 AND 语义）。
     ///
@@ -68,10 +73,61 @@ pub struct SearchMemoryParams {
 }
 
 /// 搜索记忆响应。
+///
+/// 除 `results` 外的五个字段全部是 **additive 回包自述**：不传
+/// `property_filters` 时它们的序列化形状与旧版完全一致（`None` 直接跳过），
+/// 因此老调用方的 JSON 解析零影响。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct SearchMemoryResponse {
     /// 搜索结果列表。
     pub results: Vec<MemoryResult>,
+    /// 属性过滤精确通道命中的节点数（= `property_hit_ids.len()`）。
+    ///
+    /// 仅在请求传了 `property_filters` 时有值；与 [`Self::returned`] 成对出现，
+    /// 便于一眼判断「命中 N 个、只返回 M 条」——M < N 说明结果被 memory_type /
+    /// 归属等其它条件收敛掉了，不是命中集本身有问题。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_total: Option<u64>,
+    /// 本次实际返回条数（= `results.len()`）。
+    ///
+    /// 仅在请求传了 `property_filters` 时有值。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned: Option<u64>,
+    /// 本次生效的归属作用域自述：`"hive"`（未传 `agent_id`）/
+    /// `"explicit:<id>"`（显式传入）。
+    ///
+    /// **不存在 `context_fallback` 取值**：`agent_id` 不传就是全库（蜂巢共享），
+    /// 刻意不回退 `ctx.agent_id()`（见 `SearchMemoryParams::agent_id` 文档）。
+    /// 总是回显，让调用方能确认「这次查的到底是谁的范围」。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_scope: Option<String>,
+    /// 向量通道是否**真实参与**了本次召回（三态）。
+    ///
+    /// - `Some(true)`：结果中观测到 `vector_distance` ⇒ 向量参与了本次召回；
+    /// - `Some(false)`：有结果且全部无 `vector_distance` ⇒ 确定未参与
+    ///   （纯关键词 / 纯遍历通道）；
+    /// - `None`：**无结果 ⇒ 无法判定**。
+    ///
+    /// 第三态是刻意的：空结果下无法区分「向量通道被短路」与「跑了但无候选」，
+    /// 此时给 `false` 属于伪报。做监控时请把 `None` 单列，不要计入分母。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_used: Option<bool>,
+    /// 空结果的**枚举原因**（仅 `results` 为空时有值；非空结果恒为 `None`）。
+    ///
+    /// 五值封闭，不得出现第六种：
+    /// - `filter_no_match`：传了 `property_filters` 且精确通道命中集为空
+    ///   （**最高优先**，即使同时传了显式 `agent_id`）；
+    /// - `agent_scope_mismatch`：命中集非空，但被显式 `agent_id` 筛空；
+    /// - `property_filter_not_applied`：命中集非空却零结果，且无显式 `agent_id`
+    ///   —— 说明召回通道没把命中集注入（实现异常的自述）；
+    /// - `agent_scope_explicit_empty`：未传 `property_filters`、传了显式
+    ///   `agent_id`，该作用域下确实没有任何记忆；
+    /// - `no_recall_hit`：既无 `property_filters` 也无显式 `agent_id`，全库未召回。
+    ///
+    /// 空结果必须给出原因：只返回 `[]` 会让调用方分不清「查错范围」「筛太狠」
+    /// 与「库里真没有」，进而反复重试同一条件。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// 单条记忆结果。

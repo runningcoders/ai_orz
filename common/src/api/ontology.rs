@@ -718,6 +718,15 @@ pub struct PropertyEffectivenessItem {
     pub non_default_ratio: f64,
     /// 是否标黄：`mode_ratio > threshold`（严格大于，恰好等于不标）
     pub flagged: bool,
+    /// 样本量是否不足（`total < 3`）——**并列标注，不参与 `flagged` 判定**
+    ///
+    /// 与 `flagged` 是两条**正交**信息：`flagged` 回答「众数是否已近常量」，
+    /// 本字段回答「这个结论有多可信」。`total = 1` 时 `mode_ratio` 恒为 1.0、
+    /// `total = 2` 时只能是 1.0 或 0.5，都没有统计意义——但**不得因此把
+    /// `flagged` 抹掉**：用样本量压告警等于靠改口径凑指标（专家 Q4 裁定）。
+    /// 消费方要「只看可信告警」请自行 `flagged && !insufficient_sample`，
+    /// 服务端不替调用方做这个减法（否则原始信号就永久丢了）。
+    pub insufficient_sample: bool,
 }
 
 /// 属性有效性统计响应
@@ -729,6 +738,24 @@ pub struct GetPropertyEffectivenessResponse {
     pub total_groups: u64,
     /// 本次判定所用阈值（回显，便于看板解释标黄来源）
     pub threshold: f64,
+    /// 计数字段的口径自述（固定常量 `"active_node_status1_property_rows"`）
+    ///
+    /// 人类可读解释：`total` / `distinct_values` / `mode_count` 统计的是
+    /// **活跃知识节点（`long_term_knowledge_node.status = 1`）上、属性行
+    /// `knowledge_property.status = 1`（生效值）** 的属性值行数，**不是**
+    /// 「按取值去重后的条数」，也不含退役节点（`status = 0`）与被取代的历史
+    /// 属性行（`status = 0`）；`status = 2`（显式软删）任何情况都不计入。
+    ///
+    /// 为什么把口径做成回包字段而不只写在文档里：图谱是活的，同一个接口的
+    /// `total` 会随写入持续漂移，看板必须能把「数字变了」与「口径变了」分开，
+    /// 否则一次口径调整会被误读成数据暴涨/暴跌。
+    pub count_semantics: String,
+    /// 是否发生**组级截断**（`total_groups > items.len()`）
+    ///
+    /// 组级截断只影响「展示多少组」，**不影响任何一组的 `total` / `mode_ratio`**
+    /// —— 这是本接口与「行级 LIMIT」的关键差别：行级截断会把分母计小，让占比
+    /// 直接失真。所以这里宁可按组截断并显式回显，也不做行级限制。
+    pub is_truncated: bool,
 }
 
 /// 漂移趋势请求（DuckDB 事件流聚合，"历史时"视角）

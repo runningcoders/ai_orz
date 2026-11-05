@@ -6,6 +6,7 @@
 //! 排序确定性（占比降序 → term_key 升序 → node_type 升序）。
 
 use super::ontology::{
+    PROPERTY_EFFECTIVENESS_COUNT_SEMANTICS, PROPERTY_EFFECTIVENESS_MIN_SAMPLE,
     PROPERTY_EFFECTIVENESS_MODE_ALERT_THRESHOLD, compute_property_effectiveness,
 };
 use crate::service::dao::memory::PropertyValueFreqRow;
@@ -273,4 +274,111 @@ fn zero_or_negative_count_rows_are_ignored() {
     assert_eq!(resp.items[0].total, 2);
     assert_eq!(resp.items[0].mode_value, "y");
     assert_close(resp.items[0].mode_ratio, 1.0);
+}
+
+// ==================== ⑧ 口径自述 + 样本量标注（A-2 单） ====================
+
+/// 用例 6：`insufficient_sample` 边界锁 3
+///
+/// `total = 1` 时 `mode_ratio` 恒为 1.0、`total = 2` 时只能是 1.0 / 0.5，
+/// 都没有统计意义；`total = 3` 起才可能出现「2/3」这种有信息量的分布。
+/// 边界取**严格小于**：`total = 3` 不算样本不足。
+#[test]
+fn insufficient_sample_boundary_is_three() {
+    let rows = vec![
+        row("samp_two", "fact", "x", 2),
+        row("samp_three", "fact", "x", 3),
+        row("samp_one", "fact", "x", 1),
+    ];
+    let resp = compute_property_effectiveness(&rows, &request(None, None, None, None));
+    assert_eq!(resp.total_groups, 3);
+
+    let find = |term: &str| {
+        resp.items
+            .iter()
+            .find(|item| item.term_key == term)
+            .unwrap_or_else(|| panic!("应产出 {term} 组"))
+    };
+
+    assert!(
+        find("samp_one").insufficient_sample,
+        "total=1 < 3 应标注样本不足"
+    );
+    assert!(
+        find("samp_two").insufficient_sample,
+        "total=2 < 3 应标注样本不足"
+    );
+    assert!(
+        !find("samp_three").insufficient_sample,
+        "total=3 恰在边界上，不算样本不足（阈值是严格小于）"
+    );
+
+    // 常量本身也锁一遍：判据改动（比如有人把 3 改成 5）必须让本用例重审
+    assert_eq!(PROPERTY_EFFECTIVENESS_MIN_SAMPLE, 3);
+    assert_eq!(
+        find("samp_two").total,
+        PROPERTY_EFFECTIVENESS_MIN_SAMPLE - 1
+    );
+    assert_eq!(find("samp_three").total, PROPERTY_EFFECTIVENESS_MIN_SAMPLE);
+}
+
+/// 用例 7：样本量**不得**压制 `flagged`（本单最高价值断言，专家 Q4 硬红线）
+///
+/// 「用样本量压告警」= 靠改口径凑指标：告警少了不代表问题少了，只代表信号被
+/// 藏起来了。正确做法是两条信号并列输出，由消费方按需组合。
+#[test]
+fn small_sample_never_suppresses_the_flag() {
+    let rows = vec![row("tiny_constant", "fact", "only", 2)];
+    let resp = compute_property_effectiveness(&rows, &request(None, None, None, None));
+    let item = &resp.items[0];
+
+    assert_close(item.mode_ratio, 1.0);
+    assert!(
+        item.flagged,
+        "mode_ratio=1.0 > threshold 必须标黄 —— 与样本量无关，不得因 total=2 就抹掉"
+    );
+    assert!(
+        item.insufficient_sample,
+        "同一组必须同时标注样本不足（两条信息并列，不是二选一）"
+    );
+    // 正交性：不是「或」也不是「且」，各自独立为 true
+    assert!(item.flagged && item.insufficient_sample);
+
+    // 反向锁：样本充足的常量组同样标黄 ⇒ `flagged` 与样本量之间不存在隐含耦合
+    let big = vec![row("big_constant", "fact", "only", 50)];
+    let big_resp = compute_property_effectiveness(&big, &request(None, None, None, None));
+    assert!(big_resp.items[0].flagged, "样本充足时同样按占比判定标黄");
+    assert!(!big_resp.items[0].insufficient_sample);
+}
+
+/// 用例 8：`is_truncated`（组级截断）+ `count_semantics` 回显
+#[test]
+fn truncation_and_count_semantics_are_echoed() {
+    let rows: Vec<PropertyValueFreqRow> = (0..5)
+        .map(|i| row(&format!("term_{i}"), "fact", "x", 10))
+        .collect();
+
+    // limit 小于组数 → 截断
+    let cut = compute_property_effectiveness(&rows, &request(None, None, None, Some(2)));
+    assert_eq!(cut.total_groups, 5, "total_groups 是截断**前**的组数");
+    assert_eq!(cut.items.len(), 2);
+    assert!(cut.is_truncated, "limit 小于组数应标截断");
+
+    // limit 覆盖全部 → 不截断
+    let full = compute_property_effectiveness(&rows, &request(None, None, None, Some(10)));
+    assert_eq!(full.items.len(), 5);
+    assert!(!full.is_truncated, "limit 覆盖全部组时不应标截断");
+
+    // 边界：limit 恰好等于组数 → 不截断（严格大于才标）
+    let exact = compute_property_effectiveness(&rows, &request(None, None, None, Some(5)));
+    assert_eq!(exact.items.len(), 5);
+    assert!(!exact.is_truncated, "limit 恰好等于组数不应标截断");
+
+    // 口径自述：固定常量 + 字面值双锁
+    assert_eq!(cut.count_semantics, PROPERTY_EFFECTIVENESS_COUNT_SEMANTICS);
+    assert_eq!(cut.count_semantics, "active_node_status1_property_rows");
+
+    // 截断不得改变任何一组的精确计数 —— 这是「宁做组级截断、不做行级 LIMIT」的核心
+    assert_eq!(cut.items[0].total, 10);
+    assert_close(cut.items[0].mode_ratio, 1.0);
 }

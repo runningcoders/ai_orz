@@ -32,6 +32,7 @@ use common::api::ontology::{
     OntologyRelationTypeItem, PresetOntologySyncItem, PresetOntologySyncStrategy,
     PreviewPresetOntologyResponse,
 };
+use common::constants::utils::current_timestamp;
 use common::enums::OntologyStatus;
 use common::enums::ontology::{Cardinality, PropertyDataType, PropertyTargetType};
 use common::error::{Result, bail_err, err};
@@ -652,7 +653,15 @@ impl OntologyDomain for HrDomainImpl {
         {
             return Err(err!(NotFound, "属性 {} 不存在", property.po.id));
         }
-        self.ontology_dal.update_property(ctx, property).await
+        // 时间戳由语义层负责：DAO 的 `UPDATE ... SET updated_at = ?` 绑的是**入参**，
+        // 而调用方几乎总是把回读到的旧值原样带回（管理页"读—改—写"的天然形态）
+        // ⇒ 不在本层置 now，就会把旧时间戳写回，表上永远看不出任何变更时点
+        // （缺陷现场：`updated_at == created_at` 全表成立）。
+        // 只刷新这一个字段，其余字段一律沿用入参；**不做全表回填**——回填会把
+        // 现存定义的真实变更时点一并抹平成同一个值。
+        let mut updated = property.clone();
+        updated.po.updated_at = current_timestamp();
+        self.ontology_dal.update_property(ctx, &updated).await
     }
 
     async fn retire_property(&self, ctx: RequestContext, id: &str) -> Result<()> {
