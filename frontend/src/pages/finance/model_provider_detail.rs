@@ -809,27 +809,29 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             class: "select select-bordered w-full",
                             value: "{edit_provider_type}",
                             onchange: move |e| edit_provider_type.set(e.value()),
-                            // 类型选项按能力过滤：Jev 仅决策、向量专用端点仅 Embedding
+                            // 类型选项按能力过滤：Jev 仅决策、向量专用端点仅 Embedding。
+                            // 回显必须用 option 的 selected 属性：select 的 value 属性在
+                            // 子选项挂载前被设置，浏览器找不到匹配项会静默回落到第一项。
                             if editing_is_agent {
-                                option { value: "OpenAI", "OpenAI" }
-                                option { value: "DeepSeek", "DeepSeek" }
-                                option { value: "Qwen", "通义千问" }
-                                option { value: "Doubao", "豆包" }
-                                option { value: "Ollama", "Ollama" }
-                                option { value: "Custom", "自定义" }
+                                option { value: "OpenAI", selected: edit_provider_type() == "OpenAI", "OpenAI" }
+                                option { value: "DeepSeek", selected: edit_provider_type() == "DeepSeek", "DeepSeek" }
+                                option { value: "Qwen", selected: edit_provider_type() == "Qwen", "通义千问" }
+                                option { value: "Doubao", selected: edit_provider_type() == "Doubao", "豆包" }
+                                option { value: "Ollama", selected: edit_provider_type() == "Ollama", "Ollama" }
+                                option { value: "Custom", selected: edit_provider_type() == "Custom", "自定义" }
                             }
                             if editing_is_embedding {
-                                option { value: "OpenAI", "OpenAI" }
-                                option { value: "DeepSeek", "DeepSeek" }
-                                option { value: "Qwen", "通义千问" }
-                                option { value: "Doubao", "豆包" }
-                                option { value: "DoubaoVision", "豆包 Vision (多模态 Embedding)" }
-                                option { value: "Ollama", "Ollama" }
-                                option { value: "Custom", "自定义" }
-                                option { value: "FastEmbed", "FastEmbed（本地向量模型）" }
+                                option { value: "OpenAI", selected: edit_provider_type() == "OpenAI", "OpenAI" }
+                                option { value: "DeepSeek", selected: edit_provider_type() == "DeepSeek", "DeepSeek" }
+                                option { value: "Qwen", selected: edit_provider_type() == "Qwen", "通义千问" }
+                                option { value: "Doubao", selected: edit_provider_type() == "Doubao", "豆包" }
+                                option { value: "DoubaoVision", selected: edit_provider_type() == "DoubaoVision", "豆包 Vision (多模态 Embedding)" }
+                                option { value: "Ollama", selected: edit_provider_type() == "Ollama", "Ollama" }
+                                option { value: "Custom", selected: edit_provider_type() == "Custom", "自定义" }
+                                option { value: "FastEmbed", selected: edit_provider_type() == "FastEmbed", "FastEmbed（本地向量模型）" }
                             }
                             if editing_is_decision {
-                                option { value: "Jev", "Jev（小脑决策模型）" }
+                                option { value: "Jev", selected: edit_provider_type() == "Jev", "Jev（小脑决策模型）" }
                             }
                         }
                     }
