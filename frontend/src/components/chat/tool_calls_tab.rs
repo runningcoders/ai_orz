@@ -9,25 +9,22 @@
 //! - **第一行**：执行状态徽章 + 发起 Agent 的 `IdentityChip`（`agent_id` 为 None
 //!   〔系统级调用等〕不渲染）+ 末位展开箭头；点头像弹出与聊天页同源的信息小卡片
 //!   （AvatarBubble 复用；点击经 stop_propagation 防误触发行展开）。
-//! - **第二行**：工具名（占满剩余宽度、truncate）+ 长程链路标识 chip
-//!   （见 [`chain_ref`]，无数据时整块不渲染）+ 运行中进程 PID 徽标
-//!   （与进程列表 join 命中才有）。
+//! - **第二行**：工具名（占满剩余宽度、truncate）+ 运行中进程 PID 徽标
+//!   （与进程列表 join 命中才有，见 [`running_pid_badge`]）。AMan 2026-11-06
+//!   实机复核后定案「第二行保持名字和 pid 足够了」：project / task 维度的链路
+//!   chip 已整块下线，不在本条目任何位置展示。
 //! - **第三行**：开始时间靠左、用时靠右（`justify-between`）；时间戳缺失时
-//!   `format_timestamp_opt` 渲染 `—`，两形态（有/无链路标识）均不破版。
+//!   `format_timestamp_opt` 渲染 `—`。
 //!
-//! ## 链路标识（"长程任务线程 id"）的数据可得性
+//! ## 第二行为什么只有「名字 + PID」
 //!
-//! 工具调用追踪条目（`common::api::ToolCallEntryDetail`）**没有独立的
-//! `thread_id` / `run_id` 字段**：落盘行只带 `call_id` / `agent_id` / `task_id` /
-//! `project_id` / 时间戳 / 耗时 / 自由形态 `metadata`。现网 trace 实测 `metadata`
-//! 仅含 `caller_location`，无 run/thread 键 —— 故链路标识按下列优先级取，
-//! 一个都取不到就整块不渲染（绝不伪造占位 id）：
-//!
-//! 1. `metadata` 里的 `run_id` / `thread_id` / `trace_id`（后端将来落盘即自动生效）；
-//! 2. `task_id` —— 任务驱动的长程动作，任务 id 就是它的链路锚点；
-//! 3. `project_id` —— 既无任务也无 metadata 链路键时的弱口径兜底。
-//!
-//! 值一律经 [`short_id`]（前 6 后 4）折叠，完整值放 `title` 供 hover 查看。
+//! 历史上第二行曾挂一枚「长程链路标识」chip，按 `metadata.run_id` / `thread_id` /
+//! `trace_id` → `task_id` → `project_id` 三级兜底取值。但工具调用条目
+//! （`common::api::ToolCallEntryDetail`）没有原生 `thread_id` / `run_id`，现网
+//! trace 实测 `metadata` 仅含 `caller_location`，兜底命中的多是 task / project
+//! 维度的弱标识 —— AMan 定案：**不展示 project，有 pid 才展示 pid，名字 + pid
+//! 足够**。故 chip 整块移除，弱标识不再冒充强语义；将来若后端真落盘 `run_id`，
+//! 需重新评估展示形态（不沿用旧 chip 兜底）。
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -43,7 +40,7 @@ use crate::components::process_detail::ProcessDetailContent;
 use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
-use crate::utils::status::{short_id, tool_call_status_badge, tool_call_status_text};
+use crate::utils::status::{tool_call_status_badge, tool_call_status_text};
 use common::api::{ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail};
 
 /// 工具调用记录查询条数上限（JSONL 扫描开销控制）
@@ -84,71 +81,15 @@ pub fn join_running_pids(processes: &[ProcessInfo]) -> HashMap<String, u32> {
         .collect()
 }
 
-/// 长程链路标识（工具调用条目第二行右侧 chip）
+/// 第二行右侧唯一补充信息：运行中进程的 PID 徽标
 ///
-/// 工具调用追踪条目没有原生 `thread_id` / `run_id`，故把「可能存在的链路标识」
-/// 收敛成这个结构：`full` 是原始标识值（放 `title`），`label` 说明它的来源口径。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChainRef {
-    /// 来源口径短标签（`run` / `thread` / `trace` / `task` / `project`）
-    pub label: &'static str,
-    /// 原始标识值（完整值，用于 hover 提示）
-    pub full: String,
-}
-
-impl ChainRef {
-    /// chip 内折叠文案：`label 短id`（侧栏窄，完整值只在 title 里）
-    pub fn chip_text(&self) -> String {
-        format!("{} {}", self.label, short_id(&self.full))
-    }
-
-    /// chip 的 hover 提示（说明这是哪种链路标识 + 完整值）
-    pub fn title(&self) -> String {
-        format!("长程链路标识（{}）：{}", self.label, self.full)
-    }
-}
-
-/// 从工具调用条目的可得字段里推导「长程任务链路标识」
-///
-/// 优先级：`metadata.run_id` / `metadata.thread_id` / `metadata.trace_id`
-/// → `task_id` → `project_id` → `None`（整块不渲染，不伪造）。
-/// 空白字符串按缺失处理（JSONL 里空串与 null 同义）。
-pub fn chain_ref(
-    metadata: &serde_json::Value,
-    task_id: Option<&str>,
-    project_id: Option<&str>,
-) -> Option<ChainRef> {
-    // 后端将来把 run/thread 落进 metadata 时无需改前端：命中即用
-    for (key, label) in [
-        ("run_id", "run"),
-        ("thread_id", "thread"),
-        ("trace_id", "trace"),
-    ] {
-        if let Some(v) = metadata.get(key).and_then(|v| v.as_str()) {
-            let v = v.trim();
-            if !v.is_empty() {
-                return Some(ChainRef {
-                    label,
-                    full: v.to_string(),
-                });
-            }
-        }
-    }
-    // 任务驱动的长程动作：任务 id 就是链路锚点
-    if let Some(t) = task_id.map(str::trim).filter(|s| !s.is_empty()) {
-        return Some(ChainRef {
-            label: "task",
-            full: t.to_string(),
-        });
-    }
-    // 弱口径兜底：连任务都没有时才退到项目维度
-    if let Some(p) = project_id.map(str::trim).filter(|s| !s.is_empty()) {
-        return Some(ChainRef {
-            label: "project",
-            full: p.to_string(),
-        });
-    }
-    None
+/// AMan 2026-11-06 定案「第二行保持名字和 pid 足够了」：project / task 维度的
+/// 链路 chip 全部下线（历史上曾按 `metadata.run_id` / `thread_id` / `trace_id`
+/// → `task_id` → `project_id` 三级兜底，弱标识冒充强语义）。因此这里只剩一个
+/// 判据：`call_id` 在「仍在运行的进程」join 命中 → 显示 PID；未命中（进程已退出 /
+/// 非进程型工具 / 无关联 call_id）→ `None`，调用方整块不渲染（不补占位、不硬造）。
+pub fn running_pid_badge(pid_by_call: &HashMap<String, u32>, call_id: &str) -> Option<u32> {
+    pid_by_call.get(call_id).copied()
 }
 
 /// 工具调用 Tab
@@ -290,7 +231,7 @@ pub fn ToolCallsTab(
                         let status = e.status;
                         let duration = format_duration_ms(e.duration_ms);
                         let started = format_timestamp_opt(Some(e.started_at as i64));
-                        let pid_opt = pid_by_call.get(&call_id).copied();
+                        let pid_opt = running_pid_badge(&pid_by_call, &call_id);
                         let is_expanded = expanded_call_id() == Some(call_id.clone());
                         let input_summary = truncate_json_text(&e.input, SUMMARY_MAX_CHARS);
                         let output_summary = e
@@ -298,11 +239,6 @@ pub fn ToolCallsTab(
                             .as_ref()
                             .map(|v| truncate_json_text(v, SUMMARY_MAX_CHARS));
                         let error = e.error.clone();
-                        let chain = chain_ref(
-                            &e.metadata,
-                            e.task_id.as_deref(),
-                            e.project_id.as_deref(),
-                        );
                         rsx! {
                             div {
                                 key: "{call_id}",
@@ -343,20 +279,12 @@ pub fn ToolCallsTab(
                                             if is_expanded { "▲" } else { "▼" }
                                         }
                                     }
-                                    // 第二行：工具名 + 长程链路标识 + 运行中进程
+                                    // 第二行：工具名 + 运行中进程 PID（无 pid 整块不渲染）
                                     div { class: "mt-1 flex items-center gap-2 min-w-0",
                                         span {
                                             class: "font-medium text-sm flex-1 truncate",
                                             title: "{tool_name}",
                                             "{tool_name}"
-                                        }
-                                        // 链路标识：无数据整块不渲染（不硬造），有数据折叠显示
-                                        if let Some(chain) = chain.clone() {
-                                            span {
-                                                class: "badge hud-badge badge-sm badge-ghost font-mono shrink-0 max-w-[8rem] truncate",
-                                                title: "{chain.title()}",
-                                                "🧵 {chain.chip_text()}"
-                                            }
                                         }
                                         if let Some(pid) = pid_opt {
                                             button {
@@ -464,50 +392,53 @@ mod tests {
     }
 
     #[test]
-    fn chain_ref_prefers_metadata_run_id() {
-        let meta = serde_json::json!({
-            "run_id": "01a1abcf-64c0-78a0-b6c5-4abeab2566a7",
-            "caller_location": "src/service/dao/tool_call/impl.rs:158",
-        });
-        let chain = chain_ref(&meta, Some("01a1abce-ccfe-7d80"), Some("proj-1"))
-            .expect("metadata.run_id 应优先命中");
-        assert_eq!(chain.label, "run");
-        assert_eq!(chain.full, "01a1abcf-64c0-78a0-b6c5-4abeab2566a7");
+    fn pid_badge_shows_up_without_project_or_task() {
+        // 有 pid、无 project/task：徽标照样出现——判据只看 call_id 与运行中进程 join
+        let mut map = HashMap::new();
+        map.insert("call-pid-only".to_string(), 9012u32);
+        assert_eq!(running_pid_badge(&map, "call-pid-only"), Some(9012));
     }
 
     #[test]
-    fn chain_ref_falls_back_from_task_to_project_to_none() {
-        let empty = serde_json::json!({});
-        let by_task = chain_ref(
-            &empty,
-            Some("01a1abce-ccfe-7d80-8930-71c0836b2c17"),
-            Some("p"),
-        )
-        .expect("有 task_id 时用任务链路");
-        assert_eq!(by_task.label, "task");
-        let by_project = chain_ref(&empty, None, Some("01a1abce-ccfe-7d80-8930-71c0836b2c17"))
-            .expect("无任务时退项目维度");
-        assert_eq!(by_project.label, "project");
-        assert!(
-            chain_ref(&empty, None, None).is_none(),
-            "三者皆无时必须返回 None（不伪造）"
-        );
+    fn pid_badge_absent_when_no_pid() {
+        // 无 pid：None → 调用方整块不渲染（不留空壳、不造占位）
+        let map = HashMap::new();
+        assert_eq!(running_pid_badge(&map, "call-unknown"), None);
     }
 
     #[test]
-    fn chain_ref_treats_blank_values_as_missing() {
-        let meta = serde_json::json!({ "thread_id": "   " });
-        assert!(chain_ref(&meta, None, None).is_none());
-        // 空白 task_id 也不能当成链路锚点
-        assert!(chain_ref(&meta, Some("  "), None).is_none());
+    fn pid_badge_absent_for_finished_process() {
+        // 进程已退出：join 已按 alive 过滤，徽标随之消失
+        let processes = vec![test_process(3301, "call-done", false)];
+        let map = join_running_pids(&processes);
+        assert_eq!(running_pid_badge(&map, "call-done"), None);
     }
 
     #[test]
-    fn chain_ref_chip_text_is_shortened_but_title_keeps_full() {
-        let full = "01a1abce-ccfe-7d80-8930-71c0836b2c17";
-        let chain = chain_ref(&serde_json::json!({}), Some(full), None).unwrap();
-        assert_eq!(chain.chip_text(), "task 01a1ab…2c17");
-        assert_eq!(chain.title(), format!("长程链路标识（task）：{full}"));
+    fn pid_badge_ignores_other_calls_pids() {
+        // 不许串号：别的 call 的 pid 不能借给本条目
+        let processes = vec![test_process(4401, "call-other", true)];
+        let map = join_running_pids(&processes);
+        assert_eq!(running_pid_badge(&map, "call-mine"), None);
+        assert_eq!(running_pid_badge(&map, "call-other"), Some(4401));
+    }
+
+    #[test]
+    fn second_row_keeps_only_tool_name_and_pid() {
+        // 源码结构守卫（AMan 2026-11-06 定案）：链路 chip（含 project/task 维度）
+        // 不得回流。针串一律运行时拼接 —— 本模块 include_str! 读到的就是本文件，
+        // 直接写死字面量会自匹配、守卫失效。
+        let src = include_str!("tool_calls_tab.rs");
+        let chain_fn = concat!("chain", "_ref");
+        let chain_ty = concat!("Chain", "Ref");
+        let chip_icon = "\u{1F9F5}"; // 织线 emoji
+        assert!(!src.contains(chain_fn), "链路标识函数应已下线");
+        assert!(!src.contains(chain_ty), "链路标识类型应已下线");
+        assert!(!src.contains(chip_icon), "链路 chip 图标不应回流");
+        let pid_render = concat!("⚙ PID ", "{pid}");
+        assert!(src.contains(pid_render), "PID 徽标文案不得丢失");
+        let pid_call = concat!("running_pid_badge(&pid_by_call", ", &call_id)");
+        assert!(src.contains(pid_call), "第二行必须用 PID 判据函数取 pid");
     }
 
     #[test]
