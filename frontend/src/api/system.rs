@@ -267,3 +267,37 @@ pub async fn rebuild_vectors() -> Result<common::api::TaskIdResponse, ApiError> 
     )
     .await
 }
+
+/// 触发全量向量重建并轮询到终态（2s 间隔，连续 3 次查询失败则放弃）。
+///
+/// `on_progress` 用于接收最近一次进度快照；成功返回 `Ok(())`，失败返回错误信息。
+pub async fn rebuild_vectors_and_wait(
+    mut on_progress: impl FnMut(&common::api::TaskProgressSnapshot),
+) -> Result<(), String> {
+    let resp = rebuild_vectors().await.map_err(|e| e.to_string())?;
+    let mut consecutive_errors = 0u32;
+    loop {
+        match super::background_task::get_task_progress(&resp.task_id).await {
+            Ok(progress) => {
+                consecutive_errors = 0;
+                let finished = progress.status == common::api::TaskStatus::Completed;
+                let failed = progress.status == common::api::TaskStatus::Failed;
+                let error = progress.error.clone();
+                on_progress(&progress);
+                if finished {
+                    return Ok(());
+                }
+                if failed {
+                    return Err(error.unwrap_or_else(|| "未知错误".to_string()));
+                }
+            }
+            Err(e) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= 3 {
+                    return Err(format!("进度查询连续失败: {}", e));
+                }
+            }
+        }
+        gloo_timers::future::sleep(std::time::Duration::from_secs(2)).await;
+    }
+}

@@ -18,7 +18,7 @@ impl ModelProviderManage for FinanceDomainImpl {
     ) -> Result<()> {
         // Embedding「创建不阻塞 + 启用时切换」：已有启用的 Embedding Provider 时，
         // 新的允许创建但降级为 Disabled（未启用）；启用时走 update 守卫 409
-        // → 前端 switch modal 确认 → switch_embedding（软删旧+启用新+全量重建）。
+        // → 前端 switch modal 确认 → switch_embedding（禁用旧+启用新，重建另行确认）。
         // 首个 Embedding 直接 Normal 启用（当前无任何启用者）。
         let mut provider = provider.clone();
         if provider.po.capability.is_embedding()
@@ -178,8 +178,9 @@ impl ModelProviderManage for FinanceDomainImpl {
             return Ok(current_provider);
         }
 
+        // 旧 provider 置为 Disabled（保留可见、可再次启用），而不是软删除
         if let Some(mut current) = current_provider.clone() {
-            current.po.status = ModelProviderStatus::Deleted;
+            current.po.status = ModelProviderStatus::Disabled;
             self.model_provider_dal
                 .update(ctx.clone(), &current)
                 .await?;
@@ -190,7 +191,7 @@ impl ModelProviderManage for FinanceDomainImpl {
         self.update_model_provider(ctx.clone(), &new_provider_to_enable)
             .await?;
 
-        // 向量索引重建由调用方通过 RebuildVectorsTask 触发
+        // 切换只改启用状态；向量索引重建由调用方在用户二次确认后显式触发
         Ok(current_provider)
     }
 

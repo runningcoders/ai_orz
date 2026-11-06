@@ -70,7 +70,7 @@ H --> N["AttachmentDal"]
 - [docs/ARCHITECTURE.md:24-64](docs/ARCHITECTURE.md#L24-L64)
 
 ## 核心组件
-- 模型提供商（ModelProvider）：LLM/Embedding 提供商配置与切换，支持连接测试、启用状态切换、向量索引重建触发。
+- 模型提供商（ModelProvider）：LLM/Embedding 提供商配置与切换，支持连接测试、启用状态切换；编辑配置不触发重建，切换后由前端二次确认是否调用显式全量重建。
 - MCP 服务器（MCP Server）：外部 MCP Provider 的配置管理，敏感字段脱敏返回，更新时合并保留未覆盖的密钥。
 - 工具提供商（Tool Provider）：工具注册、查询、搜索、内置工具同步、Agent 工具借用（绑定/解绑），含协议与控制模式策略校验。
 - 消息渠道（Message Channel）：消息渠道配置 CRUD、连通性测试、分页查询。

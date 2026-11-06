@@ -295,7 +295,7 @@ VS --> MODELS["models/vector.rs"]
 - 过期过滤导致结果缺失：
   - 确认 expire_at 设置是否正确；搜索时会过滤过期条目。
 - 切换 Embedding Provider 冲突：
-  - Domain 层校验唯一性；若冲突返回 409，前端需引导用户二次确认后走 switch 接口并异步重建索引。
+  - Domain 层校验唯一性；若冲突返回 409，前端需引导用户二次确认后走 switch 接口；切换只改启用状态，重建由用户再次确认后走显式重建接口。
 
 章节来源
 - [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)

@@ -27,7 +27,7 @@
 
 ## 更新摘要
 **变更内容（2026-08-19 增量更新）**
-- 补充 Embedding Provider 切换触发的异步重建引用：model_provider Domain / DAL 重建调度
+- 补充向量重建调度引用：切换 Embedding Provider 不自动重建，显式重建接口（/api/v1/system/vector-rebuild）触发 model_provider Domain / DAL 重建
 - 补充向量数据结构元信息（VectorMeta / VectorRow / VectorIndexParams / SearchMatchInfo）行号精确定位
 - 统一 cite 条目标注子模块职责（HnswStore 实现 / VectorStore trait / Storage 门面）
 

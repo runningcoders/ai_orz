@@ -7,26 +7,26 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 673 篇 / 14,158,200 B**，分布于 15 个模块。
+**合计 673 篇 / 14,165,554 B**，分布于 15 个模块。
 
 ## 模块概览
 
 | 模块 | A 设计 | B 落地方案 | C 知识 | 合计 | 字节 |
 |---|---:|---:|---:|---:|---:|
-| [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,240 |
+| [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,363 |
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 904,755 |
-| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,235,596 |
+| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,236,980 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,177 |
 | [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 874,062 |
-| [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,298 |
+| [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,530 |
 | [06-工具与技能](#06-工具与技能) | 11 | 14 | 52 | 77 | 1,775,774 |
 | [07-外部Agent(A2A)](#07-外部agenta2a) | 3 | 3 | 20 | 26 | 515,641 |
-| [08-搜索](#08-搜索) | 5 | 10 | 21 | 36 | 850,094 |
+| [08-搜索](#08-搜索) | 5 | 10 | 21 | 36 | 852,924 |
 | [09-统计与监控](#09-统计与监控) | 3 | 6 | 8 | 17 | 299,639 |
 | [10-异步基建(AOP)](#10-异步基建aop) | 3 | 3 | 32 | 38 | 787,588 |
-| [11-前端应用](#11-前端应用) | 3 | 30 | 49 | 82 | 1,934,883 |
-| [12-基础设施与部署](#12-基础设施与部署) | 5 | 5 | 79 | 89 | 1,670,953 |
-| [13-数据模型](#13-数据模型) | 5 | 4 | 39 | 48 | 883,306 |
+| [11-前端应用](#11-前端应用) | 3 | 30 | 49 | 82 | 1,935,240 |
+| [12-基础设施与部署](#12-基础设施与部署) | 5 | 5 | 79 | 89 | 1,673,248 |
+| [13-数据模型](#13-数据模型) | 5 | 4 | 39 | 48 | 883,439 |
 | [14-测试](#14-测试) | 2 | 5 | 4 | 11 | 213,194 |
 
 ## 各模块文档
@@ -48,7 +48,7 @@
 | 2 | [API协议规范](<00-总览与架构/C-知识/API协议规范.md>) | 17,199 |
 | 3 | [DAL 层组合](<00-总览与架构/C-知识/DAL 层组合.md>) | 20,010 |
 | 4 | [Domain 层编排](<00-总览与架构/C-知识/Domain 层编排.md>) | 18,060 |
-| 5 | [Finance 领域编排](<00-总览与架构/C-知识/Finance 领域编排.md>) | 19,324 |
+| 5 | [Finance 领域编排](<00-总览与架构/C-知识/Finance 领域编排.md>) | 19,390 |
 | 6 | [HR 领域编排](<00-总览与架构/C-知识/HR 领域编排.md>) | 19,948 |
 | 7 | [HR领域](<00-总览与架构/C-知识/HR领域.md>) | 20,410 |
 | 8 | [Handler 层设计](<00-总览与架构/C-知识/Handler 层设计.md>) | 14,149 |
@@ -77,7 +77,7 @@
 | 31 | [核心模块](<00-总览与架构/C-知识/核心模块.md>) | 14,086 |
 | 32 | [系统领域](<00-总览与架构/C-知识/系统领域.md>) | 14,007 |
 | 33 | [统一工具调用架构](<00-总览与架构/C-知识/统一工具调用架构.md>) | 24,008 |
-| 34 | [记忆系统架构](<00-总览与架构/C-知识/记忆系统架构.md>) | 30,200 |
+| 34 | [记忆系统架构](<00-总览与架构/C-知识/记忆系统架构.md>) | 30,257 |
 | 35 | [领域层](<00-总览与架构/C-知识/领域层.md>) | 18,301 |
 
 ### 01-组织与权限
@@ -154,12 +154,12 @@
 | 2 | [决策型策略设计（策略引擎承载小脑场景）](<02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md>) | 现行 | 24,529 |
 | 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 19,854 |
 | 4 | [意图感知两阶段唤醒设计](<02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md>) | 已废弃 | 27,455 |
-| 5 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 142,125 |
+| 5 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 142,235 |
 | 6 | [Runtime Domain 推进路线图](<02-Agent运行时/A-设计/runtime_domain_roadmap.md>) | 已废弃 | 31,664 |
 | 7 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
 | 8 | [思考图引擎改造设计（Awaken 主思考路径节点化）](<02-Agent运行时/A-设计/thinking_graph_engine_design.md>) | 落地中 | 10,207 |
 | 9 | [Agent 思考运行时 + 策略引擎设计](<02-Agent运行时/A-设计/thinking_task_policy_engine_design.md>) | 现行 | 47,942 |
-| 10 | [两阶段唤醒 Prompt 追加化与前缀缓存设计](<02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md>) | 现行 | 23,238 |
+| 10 | [两阶段唤醒 Prompt 追加化与前缀缓存设计](<02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md>) | 现行 | 24,512 |
 
 #### B 落地方案（plan，16 篇）
 
@@ -364,7 +364,7 @@
 | 39 | [知识节点管理](<05-任务与项目/C-知识/知识节点管理.md>) | 16,327 |
 | 40 | [系统健康检查](<05-任务与项目/C-知识/系统健康检查.md>) | 24,038 |
 | 41 | [系统管理功能](<05-任务与项目/C-知识/系统管理功能.md>) | 16,576 |
-| 42 | [综合搜索能力](<05-任务与项目/C-知识/综合搜索能力.md>) | 22,785 |
+| 42 | [综合搜索能力](<05-任务与项目/C-知识/综合搜索能力.md>) | 23,017 |
 | 43 | [聊天页引入只读信息侧栏（ChatSidePanel）聚合项目上下文](<05-任务与项目/C-知识/聊天页引入只读信息侧栏（ChatSidePanel）聚合项目上下文/聊天页引入只读信息侧栏（ChatSidePanel）聚合项目上下文.md>) | 5,957 |
 | 44 | [自定义工具开发](<05-任务与项目/C-知识/自定义工具开发.md>) | 16,604 |
 | 45 | [通过 common DTO 补全 Project/Task execution_plan/result 读取链路](<05-任务与项目/C-知识/通过 common DTO 补全 Project_Task execution_plan_result 读取链路/通过 common DTO 补全 Project_Task execution_plan_result 读取链路.md>) | 1,666 |
@@ -546,7 +546,7 @@
 | # | 页面 | 字节 |
 |---:|---|---:|
 | 1 | [Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕](<08-搜索/C-知识/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md>) | 48,546 |
-| 2 | [Embedding Provider 生命周期与重建触发条件](<08-搜索/C-知识/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md>) | 23,915 |
+| 2 | [Embedding Provider 生命周期与重建触发条件](<08-搜索/C-知识/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md>) | 26,431 |
 | 3 | [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T](<08-搜索/C-知识/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分.md>) | 8,513 |
 | 4 | [FTS5 关键词搜索](<08-搜索/C-知识/FTS5 关键词搜索.md>) | 18,064 |
 | 5 | [PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序](<08-搜索/C-知识/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序.md>) | 18,978 |
@@ -554,12 +554,12 @@
 | 7 | [SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离](<08-搜索/C-知识/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离/SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离.md>) | 7,452 |
 | 8 | [全文搜索（框架层）](<08-搜索/C-知识/全文搜索.md>) | 16,308 |
 | 9 | [向量存储抽象 + Vectorizable trait 统一索引](<08-搜索/C-知识/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md>) | 31,053 |
-| 10 | [向量语义搜索](<08-搜索/C-知识/向量语义搜索.md>) | 15,926 |
+| 10 | [向量语义搜索](<08-搜索/C-知识/向量语义搜索.md>) | 16,194 |
 | 11 | [本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查](<08-搜索/C-知识/本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查/本体属性层：ontology_properties TBox 第四张词表 + knowledge_property EAV 版本化 ABox + 四类型列软门禁写入 + property_filters 结构化反查.md>) | 18,477 |
 | 12 | [本体属性管理](<08-搜索/C-知识/本体属性管理.md>) | 32,881 |
 | 13 | [本体词表与漂移治理](<08-搜索/C-知识/本体词表与漂移治理.md>) | 30,736 |
 | 14 | [本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账](<08-搜索/C-知识/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账/本体词表漂移治理与 Prompt 注入：OntologyDal load_lexicon_summary + common 纯函数解析 + 写后认证 + DuckDB 漂移记账.md>) | 22,057 |
-| 15 | [混合搜索引擎](<08-搜索/C-知识/混合搜索引擎.md>) | 16,492 |
+| 15 | [混合搜索引擎](<08-搜索/C-知识/混合搜索引擎.md>) | 16,538 |
 | 16 | [知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出](<08-搜索/C-知识/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md>) | 15,797 |
 | 17 | [知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头](<08-搜索/C-知识/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头/知识图谱全局点线视图：get_knowledge_graph 全量聚合端点 + R1R2R4 口径 + 边方向服务端 resolve + 双渲染器箭头.md>) | 23,435 |
 | 18 | [知识图谱可视化](<08-搜索/C-知识/知识图谱可视化.md>) | 45,395 |
@@ -736,7 +736,7 @@
 | 29 | [技能管理系统](<11-前端应用/C-知识/技能管理系统.md>) | 25,708 |
 | 30 | [文档中心](<11-前端应用/C-知识/文档中心.md>) | 12,629 |
 | 31 | [日志管理系统（前端 UI 层）](<11-前端应用/C-知识/日志管理系统.md>) | 17,970 |
-| 32 | [模型提供商管理（前端 UI 层）](<11-前端应用/C-知识/模型提供商管理.md>) | 27,191 |
+| 32 | [模型提供商管理（前端 UI 层）](<11-前端应用/C-知识/模型提供商管理.md>) | 27,548 |
 | 33 | [消息与工作区页面](<11-前端应用/C-知识/消息与工作区页面.md>) | 28,974 |
 | 34 | [消息渠道管理（前端 UI 层）](<11-前端应用/C-知识/消息渠道管理.md>) | 17,001 |
 | 35 | [用户与组织页面](<11-前端应用/C-知识/用户与组织页面.md>) | 18,217 |
@@ -788,7 +788,7 @@
 | 5 | [Doctor 依赖预检](<12-基础设施与部署/C-知识/Doctor 依赖预检/Doctor 依赖预检.md>) | 5,899 |
 | 6 | [Doctor 依赖预检](<12-基础设施与部署/C-知识/Doctor 依赖预检.md>) | 5,347 |
 | 7 | [Finance模块处理器](<12-基础设施与部署/C-知识/Finance模块处理器.md>) | 34,066 |
-| 8 | [HNSW 索引存储后端](<12-基础设施与部署/C-知识/HNSW 索引存储后端.md>) | 15,601 |
+| 8 | [HNSW 索引存储后端](<12-基础设施与部署/C-知识/HNSW 索引存储后端.md>) | 15,661 |
 | 9 | [LanceDB 存储后端](<12-基础设施与部署/C-知识/LanceDB 存储后端.md>) | 17,243 |
 | 10 | [MCP 服务器管理 API](<12-基础设施与部署/C-知识/MCP 服务器管理 API.md>) | 15,775 |
 | 11 | [MCP服务器管理处理器](<12-基础设施与部署/C-知识/MCP服务器管理处理器.md>) | 16,142 |
@@ -834,9 +834,9 @@
 | 51 | [服务层](<12-基础设施与部署/C-知识/服务层.md>) | 18,070 |
 | 52 | [本地文件安全与工作区隔离](<12-基础设施与部署/C-知识/本地文件安全与工作区隔离.md>) | 23,232 |
 | 53 | [模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片](<12-基础设施与部署/C-知识/模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片/模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片.md>) | 7,888 |
-| 54 | [模型提供商管理 API](<12-基础设施与部署/C-知识/模型提供商管理 API.md>) | 23,711 |
-| 55 | [模型提供商管理（业务功能层）](<12-基础设施与部署/C-知识/模型提供商管理.md>) | 24,049 |
-| 56 | [模型提供商管理处理器](<12-基础设施与部署/C-知识/模型提供商管理处理器.md>) | 21,479 |
+| 54 | [模型提供商管理 API](<12-基础设施与部署/C-知识/模型提供商管理 API.md>) | 24,259 |
+| 55 | [模型提供商管理（业务功能层）](<12-基础设施与部署/C-知识/模型提供商管理.md>) | 25,147 |
+| 56 | [模型提供商管理处理器](<12-基础设施与部署/C-知识/模型提供商管理处理器.md>) | 21,959 |
 | 57 | [模型提供商配置](<12-基础设施与部署/C-知识/模型提供商配置.md>) | 15,010 |
 | 58 | [模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析](<12-基础设施与部署/C-知识/模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析/模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析.md>) | 11,455 |
 | 59 | [消息处理 API](<12-基础设施与部署/C-知识/消息处理 API.md>) | 20,237 |
@@ -855,7 +855,7 @@
 | 72 | [系统管理模块 API](<12-基础设施与部署/C-知识/系统管理模块 API.md>) | 19,066 |
 | 73 | [脱敏引擎下沉 common](<12-基础设施与部署/C-知识/脱敏引擎下沉 common.md>) | 25,444 |
 | 74 | [脱敏引擎下沉 common：fail-closed + ValueRule + 边界统一 + 闭环脱敏](<12-基础设施与部署/C-知识/脱敏引擎下沉 common：fail-closed + ValueRule + 边界统一 + 闭环脱敏/脱敏引擎下沉 common：fail-closed + ValueRule + 边界统一 + 闭环脱敏.md>) | 5,884 |
-| 75 | [财务管理模块 API](<12-基础设施与部署/C-知识/财务管理模块 API.md>) | 23,365 |
+| 75 | [财务管理模块 API](<12-基础设施与部署/C-知识/财务管理模块 API.md>) | 23,474 |
 | 76 | [配置与部署](<12-基础设施与部署/C-知识/配置与部署.md>) | 31,674 |
 | 77 | [配置系统：嵌入默认 TOML + 运行时加载 + 环境变量覆盖 + 前端编译期注入](<12-基础设施与部署/C-知识/配置系统：嵌入默认 TOML + 运行时加载 + 环境变量覆盖 + 前端编译期注入/配置系统：嵌入默认 TOML + 运行时加载 + 环境变量覆盖 + 前端编译期注入.md>) | 14,871 |
 | 78 | [附件管理 API](<12-基础设施与部署/C-知识/附件管理 API.md>) | 18,021 |
@@ -890,7 +890,7 @@
 | 2 | [Agent 和技能模型](<13-数据模型/C-知识/Agent 和技能模型.md>) | 18,999 |
 | 3 | [Agent 实体](<13-数据模型/C-知识/Agent 实体.md>) | 16,167 |
 | 4 | [DAO 层多态](<13-数据模型/C-知识/DAO 层多态.md>) | 16,330 |
-| 5 | [HNSW向量存储](<13-数据模型/C-知识/HNSW向量存储.md>) | 15,577 |
+| 5 | [HNSW向量存储](<13-数据模型/C-知识/HNSW向量存储.md>) | 15,646 |
 | 6 | [Handler 宏元数据契约 + ToolPo config/parameters_schema 字段分离](<13-数据模型/C-知识/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位.md>) | 15,162 |
 | 7 | [LanceDB向量存储](<13-数据模型/C-知识/LanceDB向量存储.md>) | 15,130 |
 | 8 | [Mermaid 图表采用 vendor mermaid.js 的独立阶段实现](<13-数据模型/C-知识/Mermaid 图表采用 vendor mermaid.js 的独立阶段实现/Mermaid 图表采用 vendor mermaid.js 的独立阶段实现.md>) | 1,717 |
@@ -902,7 +902,7 @@
 | 14 | [制品和附件](<13-数据模型/C-知识/制品和附件.md>) | 22,493 |
 | 15 | [向量存储（代码落地层）](<13-数据模型/C-知识/向量存储.md>) | 17,975 |
 | 16 | [向量存储抽象接口（代码落地层）](<13-数据模型/C-知识/向量存储抽象接口.md>) | 17,211 |
-| 17 | [向量存储数据访问对象](<13-数据模型/C-知识/向量存储数据访问对象.md>) | 20,034 |
+| 17 | [向量存储数据访问对象](<13-数据模型/C-知识/向量存储数据访问对象.md>) | 20,098 |
 | 18 | [外部 API 数据访问对象](<13-数据模型/C-知识/外部 API 数据访问对象.md>) | 19,059 |
 | 19 | [存储架构设计](<13-数据模型/C-知识/存储架构设计.md>) | 18,679 |
 | 20 | [存储系统（代码落地层）](<13-数据模型/C-知识/存储系统.md>) | 21,862 |

@@ -266,9 +266,6 @@ pub struct UpdateModelProviderResponse {
     pub status: i32,
     /// Updated timestamp
     pub updated_at: i64,
-    /// 本次操作触发的向量重建任务 ID（仅 Embedding 且配置变化时返回，None 表示未触发）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rebuild_task_id: Option<String>,
     /// 上下文窗口长度（模型支持的最大 token 数）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context_length: Option<i32>,
@@ -407,10 +404,6 @@ pub struct SwitchEmbeddingProviderResponse {
     pub previous_provider_id: Option<String>,
     /// Previous provider name (if existed)
     pub previous_provider_name: Option<String>,
-    /// Rebuild status
-    pub rebuild_status: String,
-    /// Rebuild task ID (empty if rebuild completed synchronously)
-    pub task_id: String,
 }
 
 /// Rebuild status

@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14158200,
+  "total_bytes": 14165554,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -67,7 +67,7 @@
           "path": "00-总览与架构/C-知识/Finance 领域编排.md",
           "name": "Finance 领域编排",
           "title": "Finance 领域编排",
-          "bytes": 19324
+          "bytes": 19390
         },
         {
           "tier": "C-知识",
@@ -270,7 +270,7 @@
           "path": "00-总览与架构/C-知识/记忆系统架构.md",
           "name": "记忆系统架构",
           "title": "记忆系统架构",
-          "bytes": 30200
+          "bytes": 30257
         },
         {
           "tier": "C-知识",
@@ -771,7 +771,7 @@
           "path": "02-Agent运行时/A-设计/runtime_design.md",
           "name": "runtime_design",
           "title": "Runtime Domain 设计",
-          "bytes": 142125,
+          "bytes": 142235,
           "status": "现行",
           "scope": [
             "common/config/ai_orz.toml",
@@ -866,7 +866,7 @@
           "path": "02-Agent运行时/A-设计/two_stage_append_only_prompt_design.md",
           "name": "two_stage_append_only_prompt_design",
           "title": "两阶段唤醒 Prompt 追加化与前缀缓存设计",
-          "bytes": 23238,
+          "bytes": 24512,
           "status": "现行",
           "scope": [
             "src/service/domain/runtime/intent_analyze.rs",
@@ -2225,7 +2225,7 @@
           "path": "05-任务与项目/C-知识/综合搜索能力.md",
           "name": "综合搜索能力",
           "title": "综合搜索能力",
-          "bytes": 22785
+          "bytes": 23017
         },
         {
           "tier": "C-知识",
@@ -3405,7 +3405,7 @@
           "path": "08-搜索/C-知识/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md",
           "name": "Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵",
           "title": "Embedding Provider 生命周期与重建触发条件",
-          "bytes": 23915
+          "bytes": 26431
         },
         {
           "tier": "C-知识",
@@ -3461,7 +3461,7 @@
           "path": "08-搜索/C-知识/向量语义搜索.md",
           "name": "向量语义搜索",
           "title": "向量语义搜索",
-          "bytes": 15926
+          "bytes": 16194
         },
         {
           "tier": "C-知识",
@@ -3496,7 +3496,7 @@
           "path": "08-搜索/C-知识/混合搜索引擎.md",
           "name": "混合搜索引擎",
           "title": "混合搜索引擎",
-          "bytes": 16492
+          "bytes": 16538
         },
         {
           "tier": "C-知识",
@@ -4635,7 +4635,7 @@
           "path": "11-前端应用/C-知识/模型提供商管理.md",
           "name": "模型提供商管理",
           "title": "模型提供商管理（前端 UI 层）",
-          "bytes": 27191
+          "bytes": 27548
         },
         {
           "tier": "C-知识",
@@ -4960,7 +4960,7 @@
           "path": "12-基础设施与部署/C-知识/HNSW 索引存储后端.md",
           "name": "HNSW 索引存储后端",
           "title": "HNSW 索引存储后端",
-          "bytes": 15601
+          "bytes": 15661
         },
         {
           "tier": "C-知识",
@@ -5282,21 +5282,21 @@
           "path": "12-基础设施与部署/C-知识/模型提供商管理 API.md",
           "name": "模型提供商管理 API",
           "title": "模型提供商管理 API",
-          "bytes": 23711
+          "bytes": 24259
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/模型提供商管理.md",
           "name": "模型提供商管理",
           "title": "模型提供商管理（业务功能层）",
-          "bytes": 24049
+          "bytes": 25147
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/模型提供商管理处理器.md",
           "name": "模型提供商管理处理器",
           "title": "模型提供商管理处理器",
-          "bytes": 21479
+          "bytes": 21959
         },
         {
           "tier": "C-知识",
@@ -5429,7 +5429,7 @@
           "path": "12-基础设施与部署/C-知识/财务管理模块 API.md",
           "name": "财务管理模块 API",
           "title": "财务管理模块 API",
-          "bytes": 23365
+          "bytes": 23474
         },
         {
           "tier": "C-知识",
@@ -5620,7 +5620,7 @@
           "path": "13-数据模型/C-知识/HNSW向量存储.md",
           "name": "HNSW向量存储",
           "title": "HNSW向量存储",
-          "bytes": 15577
+          "bytes": 15646
         },
         {
           "tier": "C-知识",
@@ -5704,7 +5704,7 @@
           "path": "13-数据模型/C-知识/向量存储数据访问对象.md",
           "name": "向量存储数据访问对象",
           "title": "向量存储数据访问对象",
-          "bytes": 20034
+          "bytes": 20098
         },
         {
           "tier": "C-知识",

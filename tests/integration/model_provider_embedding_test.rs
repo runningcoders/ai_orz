@@ -4,15 +4,14 @@
 //! - 首个 Embedding 创建 → 直接启用（Normal），并注册全量向量重建（后补场景）
 //! - 已有启用的 Embedding 时再创建 → 成功但落库为未启用（Disabled=2），不注册重建
 //! - 启用 Disabled 的 Embedding → 409 switch_required → 走 switch 完成切换确认
-//! - 编辑 Normal 的 Embedding **模型 id（model_name）** → 注册重建；
-//!   编辑 Disabled 的 → 不注册（启用切换时 switch 全量重建兜底）；
-//!   编辑 Normal 的接入参数（api_key/base_url）→ 不注册（向量空间不变）
+//! - switch 仅「禁用旧 + 启用新」，不自动重建；旧 provider 落 Disabled(2) 而非软删
+//! - 编辑任何字段 → 不注册重建；是否重建由用户切换后二次确认显式触发
 
 #[path = "../common/mod.rs"]
 mod common;
 
 use crate::common::TestApp;
-use ::common::api::CreateModelProviderRequest;
+use ::common::api::{CreateModelProviderRequest, SwitchEmbeddingProviderRequest};
 use ::common::enums::{ModelCapability, ProviderType};
 use sqlx::SqlitePool;
 
@@ -142,6 +141,67 @@ async fn test_enable_disabled_embedding_requires_switch_confirm(pool: SqlitePool
     );
 }
 
+/// 切换 Embedding Provider：旧 provider 落为 Disabled(2)（保留可见），不是软删 Deleted(0)
+#[sqlx::test]
+async fn test_switch_embedding_disables_previous_provider(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
+
+    let (status, body) = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-Old"), &jwt)
+        .await;
+    let old_id = crate::common::assert_api_ok(status, &body)
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("old provider id")
+        .to_string();
+
+    let (status, body) = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-New"), &jwt)
+        .await;
+    let new_id = crate::common::assert_api_ok(status, &body)
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("new provider id")
+        .to_string();
+
+    let req = SwitchEmbeddingProviderRequest {
+        id: new_id.clone(),
+        confirm: true,
+    };
+    let (status, body) = app
+        .post_with_jwt(&format!("{}/{}/switch", PROVIDERS_PATH, new_id), &req, &jwt)
+        .await;
+    assert_eq!(status, 200, "switch failed: {}", body);
+
+    // 旧 provider 应为 Disabled(2) 且仍在列表中（不是 Deleted(0) 软删）
+    let (status, body) = app.get_with_jwt(PROVIDERS_PATH, &jwt).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let providers = data["providers"].as_array().expect("providers array");
+    let old = providers
+        .iter()
+        .find(|p| p["id"].as_str() == Some(old_id.as_str()))
+        .expect("old provider should stay visible in list");
+    assert_eq!(
+        old["status"].as_i64(),
+        Some(2),
+        "old embedding provider should be Disabled(2), got {:?}",
+        old["status"]
+    );
+    let new = providers
+        .iter()
+        .find(|p| p["id"].as_str() == Some(new_id.as_str()))
+        .expect("new provider in list");
+    assert_eq!(
+        new["status"].as_i64(),
+        Some(1),
+        "new provider should be Normal"
+    );
+}
+
 /// 后补场景：初始化未配向量模型，事后创建首个 Embedding（落库 Normal）→ 携带 rebuild_task_id
 #[sqlx::test]
 async fn test_create_first_embedding_provider_triggers_rebuild(pool: SqlitePool) {
@@ -169,7 +229,7 @@ async fn test_create_first_embedding_provider_triggers_rebuild(pool: SqlitePool)
     );
 }
 
-/// 已有启用者时创建第二个（Disabled）→ 不携带 rebuild_task_id（重建推迟到切换时）
+/// 已有启用者时创建第二个（Disabled）→ 不携带 rebuild_task_id（重建由用户后续显式确认）
 #[sqlx::test]
 async fn test_create_disabled_embedding_no_rebuild(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -192,13 +252,16 @@ async fn test_create_disabled_embedding_no_rebuild(pool: SqlitePool) {
     );
     assert!(
         data.get("rebuild_task_id").is_none(),
-        "disabled embedding creation must NOT register rebuild (deferred to switch)"
+        "disabled embedding creation must NOT register rebuild (user decides later)"
     );
 }
 
-/// 编辑使用中（Normal）embedding 的 model_name → 触发重建
+/// 编辑使用中（Normal）embedding 的 model_name → **不触发**重建
+///
+/// 重建只由显式切换（switch_embedding_provider）负责；编辑 model_name 可能只是
+/// 同一个模型的别名/版本写法，不应按字段变化全量重建。
 #[sqlx::test]
-async fn test_update_enabled_embedding_model_triggers_rebuild(pool: SqlitePool) {
+async fn test_update_enabled_embedding_model_no_rebuild(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
     let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
@@ -222,9 +285,8 @@ async fn test_update_enabled_embedding_model_triggers_rebuild(pool: SqlitePool) 
     assert!(
         crate::common::assert_api_ok(status, &body)
             .get("rebuild_task_id")
-            .and_then(|v| v.as_str())
-            .is_some(),
-        "model_name change on enabled embedding should trigger rebuild"
+            .is_none(),
+        "editing model_name on an enabled embedding must NOT trigger rebuild"
     );
 }
 

@@ -4,6 +4,7 @@ use crate::api::finance::{
     call_model_provider, delete_model_provider, get_model_provider, switch_embedding_provider,
     test_model_provider_connection, toggle_model_provider, update_model_provider,
 };
+use crate::api::system::rebuild_vectors_and_wait;
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
@@ -108,6 +109,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut show_switch_modal = use_signal(|| false);
     let mut switch_provider_name = use_signal(String::new);
     let mut switch_loading = use_signal(|| false);
+    // 切换完成后二次确认：是否同步触发向量重建（两个模型向量空间可能一致）
+    let mut show_rebuild_prompt = use_signal(|| false);
 
     // ===== 编辑 Modal =====
     let mut show_edit_modal = use_signal(|| false);
@@ -196,10 +199,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 {
                     Ok(resp) => {
                         show_switch_modal.set(false);
-                        toast.success(format!(
-                            "Embedding Provider 已切换为 {}，向量索引重建完成",
-                            resp.name
-                        ));
+                        toast.success(format!("Embedding Provider 已切换为 {}", resp.name));
+                        show_rebuild_prompt.set(true);
                         match get_model_provider(build_provider_stats_request(
                             reload_id,
                             stats_range(),
@@ -217,6 +218,17 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 }
             }
             switch_loading.set(false);
+        });
+    };
+
+    // 切换成功后的二次确认：立即触发全量向量重建，或暂不重建
+    let handle_rebuild_confirm = move |_| {
+        show_rebuild_prompt.set(false);
+        spawn(async move {
+            match rebuild_vectors_and_wait(|_| {}).await {
+                Ok(()) => toast.success("向量索引重建完成"),
+                Err(e) => toast.error(format!("向量索引重建失败：{}", e)),
+            }
         });
     };
 
@@ -625,10 +637,33 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                         ul { class: "pl-5 leading-loose text-base-content/70 list-disc",
                             li { "禁用当前的 Embedding Provider" }
                             li { "启用新的 Embedding Provider" }
-                            li { "使用新的 Embedding 模型重建所有向量索引" }
+                            li { "切换完成后可自行决定是否同步重建向量索引" }
+                        }
+                        p { class: "mt-3 text-base-content/60",
+                            "若新旧模型向量空间一致（例如仅计费方式或接入参数不同），无需重建。"
+                        }
+                    }
+                }
+
+                Modal {
+                    title: "是否同步重建向量索引？".to_string(),
+                    show: show_rebuild_prompt(),
+                    on_close: move |_| show_rebuild_prompt.set(false),
+                    footer: rsx! {
+                        button { class: "btn hud-btn btn-ghost", onclick: move |_| show_rebuild_prompt.set(false), "暂不重建" }
+                        button { class: "btn hud-btn btn-warning", onclick: handle_rebuild_confirm, "立即重建" }
+                    },
+                    div {
+                        p { class: "mb-2 leading-relaxed",
+                            "Embedding Provider 已切换为 "
+                            strong { "{switch_provider_name}" }
+                            "，旧 Provider 已禁用。"
+                        }
+                        p { class: "leading-relaxed text-base-content/70",
+                            "若两个模型向量空间一致（例如仅计费方式不同），可直接跳过；若模型本身不同，需要重建才能让已有数据匹配新的向量空间。"
                         }
                         p { class: "mt-3 text-warning font-medium",
-                            "⚠️ 重建向量索引可能需要较长时间，期间搜索功能将受影响"
+                            "⚠️ 全量重建可能耗时较长，期间向量检索结果可能不完整"
                         }
                     }
                 }

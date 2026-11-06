@@ -89,7 +89,7 @@ D1 --> E1
 图表来源
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
 - [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L41)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-42](src/handlers/finance/model_provider/switch_embedding.rs#L1-L42)
 - [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L49)
 - [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
 - [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
@@ -103,7 +103,7 @@ D1 --> E1
 ## 核心组件
 - 请求/响应 DTO：创建、更新、查询、列表、删除、连接测试、模型调用、切换嵌入提供商、重建进度等
 - Provider 类型与能力：OpenAI、DeepSeek、Qwen、Doubao、Ollama、Custom、FastEmbed、DoubaoVision；Agent/Embedding 能力区分
-- 领域服务：创建/获取/更新/删除/查询提供商；唯一性校验（仅一个启用的 Embedding 提供商）；连接测试；切换嵌入提供商；创建 Embedding 时已有启用者降级为 Disabled(2)；启用走切换确认；创建/更新按生效状态条件触发重建
+- 领域服务：创建/获取/更新/删除/查询提供商；唯一性校验（仅一个启用的 Embedding 提供商）；连接测试；切换嵌入提供商；创建 Embedding 时已有启用者降级为 Disabled(2)；启用走切换确认；仅首个 Embedding 创建触发重建，编辑配置与切换均不触发
 - 数据访问层：CRUD、综合查询、统计注入（可选）、启用中的 Embedding 提供商查询
 - 后台任务：RebuildVectorsTask，串行执行 7 类实体的向量重建并暴露进度
 
@@ -140,14 +140,16 @@ H->>D : switch_embedding_provider(new_id)
 D->>L : find_enabled_embedding_provider(ctx)
 L-->>D : current_or_none
 D-->>H : previous/current
-H->>T : register RebuildVectorsTask (若需要)
+H-->>C : SwitchEmbeddingProviderResponse（无重建字段）
+C->>H : (用户二次确认后) POST /system/vector-rebuild
+H->>T : register RebuildVectorsTask
 T-->>H : task_id
-H-->>C : SwitchEmbeddingProviderResponse
+H-->>C : TaskIdResponse
 ```
 
 图表来源
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-42](src/handlers/finance/model_provider/switch_embedding.rs#L1-L42)
 - [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
 - [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
 - [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
@@ -184,10 +186,10 @@ Handler-->>Client : TestConnectionResponse/CallModelResponse
 - [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L41)
 - [src/service/domain/finance/model_provider.rs:93-101](src/service/domain/finance/model_provider.rs#L93-L101)
 
-### 切换嵌入提供商与向量重建
-- 切换前校验：目标必须为 Embedding 能力；同一 provider 无需重建
-- 切换逻辑：禁用当前启用的 Embedding 提供商，启用新提供商
-- 重建任务：注册 RebuildVectorsTask，遍历 agent/memory/skill/task/project/message/tool 七类实体逐一重建向量索引，并发度受控（同一时刻仅允许一个 Running）
+### 切换嵌入提供商与向量重建（解耦）
+- 切换前校验：目标必须为 Embedding 能力；同一 provider 直接返回
+- 切换逻辑：禁用当前启用的 Embedding 提供商，启用新提供商；**不注册重建任务**
+- 重建任务：由前端切换成功后的二次确认显式调用 `POST /api/v1/system/vector-rebuild`；任务遍历 agent/memory/skill/task/project/message/tool 七类实体逐一重建，并发度受控（同一时刻仅允许一个 Running）
 
 ```mermaid
 flowchart TD
@@ -197,24 +199,27 @@ CheckConfirm --> |是| CallDomain["调用领域层切换"]
 CallDomain --> Validate{"目标为Embedding?"}
 Validate --> |否| Err2["返回错误：非Embedding提供商"]
 Validate --> |是| DisablePrev{"存在已启用Embedding?"}
-DisablePrev --> |是| SetDeleted["标记为已删除"]
+DisablePrev --> |是| SetDisabled["旧 Provider 置为 Disabled(2)"]
 DisablePrev --> |否| EnableNew["启用新提供商"]
-SetDeleted --> EnableNew
-EnableNew --> SameId{"是否与当前相同ID?"}
-SameId --> |是| Done["直接完成，无需重建"]
-SameId --> |否| Register["注册RebuildVectorsTask"]
+SetDisabled --> EnableNew
+EnableNew --> Done["返回切换结果（不含重建字段）"]
+Done --> Ask{"前端二次确认是否重建?"}
+Ask --> |否| End(["结束"])
+Ask --> |是| Register["POST /system/vector-rebuild<br/>注册RebuildVectorsTask"]
 Register --> Run["顺序重建7类实体向量索引"]
 Run --> Progress["暴露进度与状态"]
-Progress --> End(["结束"])
+Progress --> End
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-42](src/handlers/finance/model_provider/switch_embedding.rs#L1-L42)
+- [src/handlers/system/vector_rebuild.rs:1-60](src/handlers/system/vector_rebuild.rs#L1-L60)
 - [src/service/domain/finance/model_provider.rs:103-147](src/service/domain/finance/model_provider.rs#L103-L147)
 - [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-193](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L193)
 
 章节来源
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-42](src/handlers/finance/model_provider/switch_embedding.rs#L1-L42)
+- [src/handlers/system/vector_rebuild.rs:1-60](src/handlers/system/vector_rebuild.rs#L1-L60)
 - [src/service/domain/finance/model_provider.rs:103-147](src/service/domain/finance/model_provider.rs#L103-L147)
 - [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
 
@@ -241,8 +246,8 @@ Handler-->>Client : RebuildProgressResponse
 ### 领域与数据访问层要点
 - 领域层：
   - 创建：Embedding 采用「创建不阻塞 + 启用时切换」策略——已有启用 Embedding 时新创建降级为 Disabled(2)，首个创建直接 Normal 启用
-  - 更新：仅使用中(Normal) Embedding 的 model_name（模型 id）变化触发重建；api_key/base_url 等接入参数变更与 Disabled 编辑不触发（启用时 switch 全量重建兜底）
-  - 切换嵌入提供商：先禁用旧，再启用新，必要时触发重建
+  - 更新：编辑任何字段都不注册重建（model_name 可能只是同一模型的别名/版本写法）
+  - 切换嵌入提供商：先禁用旧，再启用新，不自动重建；需要重建时由前端二次确认调用系统显式重建接口
   - 连接测试：委托底层 brain_dal.test_connection
 - ModelProviderStatus 枚举：Deleted=0(软删除) / Normal=1(启用) / Disabled=2(未启用)
 - 数据访问层：
@@ -354,7 +359,7 @@ R --> T["RebuildVectorsTask"]
   - 方法：PUT
   - 路径：/api/v1/finance/model-providers/{id}
   - 请求体：UpdateModelProviderRequest
-  - 响应：UpdateModelProviderResponse（含 rebuild_task_id(Option<String>) 字段）
+  - 响应：UpdateModelProviderResponse（不含重建字段；编辑配置不触发重建）
 
 - 更新状态（启用/禁用）
   - 方法：PUT
@@ -395,7 +400,7 @@ R --> T["RebuildVectorsTask"]
   - 方法：POST
   - 路径：/api/v1/finance/model-providers/:id/switch
   - 请求体：SwitchEmbeddingProviderRequest（confirm 必填）
-  - 响应：SwitchEmbeddingProviderResponse（包含重建状态与任务 ID）
+  - 响应：SwitchEmbeddingProviderResponse（仅返回新旧 provider id/name，不含重建状态；是否重建由前端二次确认后调用 /system/vector-rebuild）
 
 - 查询重建进度
   - 方法：GET
@@ -413,7 +418,7 @@ R --> T["RebuildVectorsTask"]
 - [common/src/api/model_provider.rs:9-391](common/src/api/model_provider.rs#L9-L391)
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
 - [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L41)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L54)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-42](src/handlers/finance/model_provider/switch_embedding.rs#L1-L42)
 - [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L49)
 - [common/src/api/tavily_integration.rs](common/src/api/generic_token_integration.rs)
 - [src/service/domain/finance/identity_credential.rs:1-454](src/service/domain/finance/identity_credential.rs#L1-L454)

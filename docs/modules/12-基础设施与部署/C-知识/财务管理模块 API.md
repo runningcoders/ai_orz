@@ -264,7 +264,7 @@ Note over Client,Handler : "客户端断开 → Drop 触发 unsubscribe_sse"
   - 行为：创建 RebuildVectorsTask，独占运行，遍历 agent/memory/skill/task/project/message/tool 七类实体重建向量索引；提供进度查询接口
 - 切换嵌入提供者
   - 入口：POST /api/v1/model-providers/{id}/switch-embedding
-  - 行为：切换底层嵌入模型并触发重建
+  - 行为：切换底层嵌入模型（禁用旧+启用新），不自动触发重建；是否重建由前端二次确认后调用 /api/v1/system/vector-rebuild
 
 ```mermaid
 sequenceDiagram
