@@ -32,6 +32,8 @@ related:
 > 🎯 **本文档定位**：设计意图权威。回答「意图识别（Phase 1）与正式执行（Phase 2）如何共用同一段 Prompt 前缀，让第二次调用尽量命中缓存」。
 > 现状以代码与 `C-知识` 为准；本文与代码冲突时，以代码为准并回头修正本文。
 > 状态：新增（2026-11-03），**已实现**；落地快照见 [两阶段唤醒Prompt追加化](../B-落地方案/两阶段唤醒Prompt追加化.md)。本文保持现行。
+>
+> 同步记录：2026-11-06 将【历史对话】从「固定 20 条 `ShortTermMemoryIndexPo` 摘要」改为预算驱动的阶梯式索引加载（见 §2.9 表格「历史对话」行与红线）；具体算法与常量见 `src/models/memory.rs` 的 `MemoryIndexPlan` / `memory_index_budget_tokens` 与 `src/service/domain/runtime/think_loop.rs` 的 `memory_index_budget_for` / `context_overflow_threshold`。
 
 ## 一、设计目标与关键决策
 
@@ -183,7 +185,7 @@ Phase 2（正式执行）
 
 | 项 | 现状 | 本设计 |
 |----|------|--------|
-| 20 条历史 | `get_recent_context` 取 20 条 `ShortTermMemoryIndexPo`（每条是 `summary` 摘要），只按 `agent_id + ShortTerm + limit`，倒序翻转成正序 | 保留 20 与来源不变；**不改成原始消息条数** |
+| 历史对话（短期记忆索引块） | 原：`get_recent_context` 取固定 20 条 `ShortTermMemoryIndexPo`（每条 `summary` 摘要），只按 `agent_id + ShortTerm + limit`，倒序翻转成正序。新（2026-11-06）：装配节点按「记忆索引块」渲染——预算 = 压缩阈值 × 10%，四档配额 `4:3:2:1`（`Full` / 3 段 / 2 段 / 1 段，由近到远），复用总结阶段 `estimate_tokens` 从新往旧累加切档，**不设条数上限** | 改为预算驱动阶梯式加载；元信息不分级（id / 绝对时间 / `ts=` Unix 秒级 / 相对时间 / tags / task_id 四档逐字节一致，仅摘要正文随档衰减）；`T0` = 入站消息时间作锚点冻结索引块，保证 Phase 1 / Phase 2 base 逐字节一致；按需翻页（每页 20、最多 50 页）而非固定 20 条；仍只按 agent 级口径，不引入 project / thread 过滤 |
 | 同上下文 | 短期记忆 PO 只有 `agent_id / task_id`，无 project / thread / root；`MemoryQuery` 有 `task_id` 但调用方未传。新输入同上下文由收集器按 project / task 的 `Option` 相等判定 | 短期记忆查询不改；同上下文由「当前消息 + 项目/任务区块 + 收集器」表达 |
 | 同 thread | 独立 `fetch_message_thread`：`root_id + organization_id`，`created_at ASC` + `limit 60`，排除当前消息与 `Recalled`，取链头 + 最近 6 条 | 保留为**唯一**消息链来源；仍然只进 base，不进执行段 |
 | 与新输入的重叠 | 查询没有时间上界，晚于锚点的消息可能已落库并被链查询命中 | 链查询加 `created_at <= 锚点消息` 上界（同毫秒按 id 去重）；晚于锚点的消息只由收集器进入执行段 |
@@ -191,7 +193,7 @@ Phase 2（正式执行）
 
 落地后实际实现（2026-11-03）：`fetch_message_thread` 以 `root_id + organization_id` 查询，链头单独按 id 取；尾部窗口以 `created_before = 锚点 + 1`、`ORDER BY created_at DESC, id DESC`、每页 `LIMIT K + 1` 按 `offset` 向更早翻页，边扫描边过滤当前消息 / 同毫秒 id 更大 / `Recalled`，凑满 K 条或链耗尽即停；内存反转后按 `(created_at, id)` 正序，最终输出「链头 + 最近 6 条」。分页扫描而非单页 K+1 的原因：单页可能被过滤掉若干条，导致「最近 6 条」不足 6。
 
-红线：base 中的【历史对话】（20 条摘要）与【消息链上下文】必须分别渲染、各自稳定排序；不得把消息链原文塞进【历史对话】冒充摘要，也不得用摘要替代链内原文。
+红线：base 中的【历史对话】（预算驱动的短期记忆索引块）与【消息链上下文】必须分别渲染、各自稳定排序；不得把消息链原文塞进【历史对话】冒充索引，也不得用索引替代链内原文。
 
 ### 2.10 上次意图结论在新消息后的携带
 
@@ -224,7 +226,7 @@ Phase 2（正式执行）
 | [intent_node.rs](../../../../src/service/domain/runtime/legacy_awaken/intent_node.rs#L47-L119) | 意图节点 | 写入 seed；修订时覆盖 seed；失败时仍写可追加结论 |
 | [backend.rs](../../../../src/service/domain/runtime/legacy_awaken/backend.rs#L161-L178) | LLM 调用缝 | 意图调用返回分析结果 + 本次初始消息，供节点保存 |
 | [awakening.rs](../../../../src/service/domain/runtime/awakening.rs#L700-L760) | 消息链取数 | 链查询加锚点上界；长链改为「链头 + 最近 K 条」 |
-| [memory.rs](../../../../src/service/domain/runtime/memory.rs#L20-L45) | 历史记忆取数 | 保持 20 条短期摘要与 agent 级口径，不引入 project / thread 过滤 |
+| [memory.rs](../../../../src/service/domain/runtime/memory.rs#L20-L45) | 历史记忆取数（记忆索引窗口） | 改为预算驱动阶梯式加载（`MemoryIndexPlan` + `memory_index_budget_for`），按需翻页，不再固定 20 条；仍只按 agent 级口径，不引入 project / thread 过滤 |
 | [nodes.rs](../../../../src/service/domain/runtime/legacy_awaken/nodes.rs#L280-L315) | 装配节点 | 有 seed 时直接以 seed 为初始消息；续跑标记为真时以 `Artifacts.messages` 追加；两者都没有时保留旧路径 |
 | [think_round/nodes.rs](../../../../src/service/domain/runtime/think_round/nodes.rs#L548-L657) | 工具分发 | 白名单判定从描述符构造挪到调用前；被拦截时回 tool message |
 | [thinking_scene.rs](../../../../common/src/enums/thinking_scene.rs#L111-L126) | 场景矩阵 | 复用现有 `is_tool_allowed`，不改允许集合 |
@@ -243,7 +245,7 @@ Phase 2（正式执行）
 10. **`poll_exit` 的 rethink 不得重建 base**：必须走续跑标记 + 既有消息追加；否则 I5 失效，这正是既有实现需要随本设计一起调整的唯一一处。
 11. **压缩回环是唯一重建例外**：`overflow → compact → prepare` 必须有损压缩后重建；不得为了缓存把压缩摘要塞回原 base。
 12. **续跑标记必须显式**：不能用「`Artifacts` 存在」推断，否则压缩回环会被误判成追加；`Artifacts.messages` 为空时必须退回重建，兼容脚本后端与外部执行器。
-13. **历史摘要与消息链不得混源**：20 条短期记忆仍是 agent 级摘要，不扩成原始消息查询；同 thread 由 `root_id` 链单独表达。
+13. **历史索引与消息链不得混源**：短期记忆索引块仍是 agent 级摘要（预算驱动阶梯加载、不设条数上限），不扩成原始消息查询；同 thread 由 `root_id` 链单独表达。
 14. **消息链不得越过锚点**：链查询必须限制在当前消息之前；晚于锚点的新消息只能由收集器进入执行段，避免重复渲染。
 15. **上次意图结论不得被删改**：新输入到来后，仅在其后追加新的 user turn；上一轮 assistant JSON 保持原位。
 

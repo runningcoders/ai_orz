@@ -2124,7 +2124,7 @@ awaken 循环
        │
        ├── Phase 1：analyze_input_intent(ctx, agent, message, options)
        │   ├── 强制构造 IntentAnalyze 场景 options
-       │   ├── 读最近 20 条短期记忆做上下文
+       │   ├── 装配【历史对话】短期记忆索引块：预算驱动阶梯加载（压缩阈值 × 10%，四档 4:3:2:1，不设条数上限，按需翻页）
        │   ├── 按 IntentAnalyze 场景过滤技能/工具
        │   ├── build_intent_analyze_prompt 拼装专用 Prompt（SOP 五步 + 禁令 + JSON schema）
        │   ├── run_think_loop（轮次由 config_resolve.intent_analyze_max_rounds 决定）
