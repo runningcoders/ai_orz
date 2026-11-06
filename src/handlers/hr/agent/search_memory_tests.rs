@@ -655,6 +655,7 @@ async fn memory_tools_accept_settle_shaped_agent_ctx_without_user(pool: sqlx::Sq
     query_memory(
         ctx.clone(),
         QueryMemoryParams {
+            ids: None,
             agent_id: Some("agent-settle".to_string()),
             memory_type: Some("knowledge_node".to_string()),
             limit: Some(20),
@@ -1354,6 +1355,7 @@ async fn memory_result_status_is_observable_on_live_payload(pool: sqlx::SqlitePo
     let retired = query_memory(
         ctx.clone(),
         QueryMemoryParams {
+            ids: None,
             agent_id: None,
             memory_type: Some("knowledge_node".to_string()),
             limit: Some(10),
@@ -1385,6 +1387,7 @@ async fn memory_result_status_is_observable_on_live_payload(pool: sqlx::SqlitePo
     let short = query_memory(
         ctx.clone(),
         QueryMemoryParams {
+            ids: None,
             agent_id: None,
             memory_type: Some("short_term".to_string()),
             limit: Some(10),
@@ -1480,6 +1483,7 @@ async fn include_retired_controls_seed_visibility(pool: sqlx::SqlitePool) {
     let all = query_memory(
         ctx.clone(),
         common::api::QueryMemoryParams {
+            ids: None,
             agent_id: None,
             memory_type: None,
             limit: None,
@@ -1692,6 +1696,7 @@ async fn new_fields_are_purely_additive_on_legacy_shapes(pool: sqlx::SqlitePool)
     let short = query_memory(
         ctx.clone(),
         QueryMemoryParams {
+            ids: None,
             agent_id: None,
             memory_type: Some("short_term".to_string()),
             limit: Some(10),

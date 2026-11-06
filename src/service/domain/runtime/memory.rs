@@ -11,6 +11,81 @@ use common::enums::ontology::PropertyTargetType;
 use common::error::{Result, err};
 use common::ontology_property::{PropertyEntry, PropertyFilter, PropertySaveReport};
 
+impl RuntimeDomainImpl {
+    /// **按需翻页**取「记忆索引候选集」：从 T0 往过去一页页查，预算装满就停，
+    /// 不够才查下一页（不再一次性预取固定上限的候选集）。
+    ///
+    /// 每取满一页，用与生产装配**完全相同**的预算 / T0 / `estimate_tokens`
+    /// 重算一次 `MemoryIndexPlan`；`needs_more() == false` 表示最后一档配额
+    /// 已经耗尽，再翻更早的页也不可能多留一行，立刻收手。预算没装满则继续
+    /// 翻页 —— 大窗口模型不会因固定页数被截断，小窗口模型也不白读一行。
+    ///
+    /// 返回**时间正序**（旧 → 新）。已过滤 `created_at > T0`（未来记忆 ⇒ 同一次
+    /// 唤醒链内索引块逐字节冻结）。时间**不参与分档**、也不设遗忘地平线：
+    /// 保留多少条始终由 `MemoryIndexPlan::build` 按字符预算从新往旧累加裁决。
+    /// 页数硬上限只防病态数据下的失控扫描，**不是保留条数上限**。
+    pub(crate) async fn load_memory_index_window(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        anchor_ts: i64,
+        budget_tokens: usize,
+    ) -> Result<Vec<Memory>> {
+        use crate::models::memory::{
+            MEMORY_INDEX_MAX_PAGES, MEMORY_INDEX_PAGE_SIZE, MemoryIndexPlan, MemoryPo,
+            normalize_timestamp_secs,
+        };
+        use crate::service::dao::memory::MemorySortOrder;
+        use common::enums::MemoryType;
+
+        let scoped = ctx.to_builder().agent_id(agent_id).build();
+        let anchor = normalize_timestamp_secs(anchor_ts);
+        // `created_at DESC, id ASC` 的分页次序在 DAO 里已固定，跨页相对次序确定，
+        // 不会因同秒写入而漏行（见 short_term.rs 的 ORDER BY 注释）。
+        let mut picked: Vec<Memory> = Vec::new(); // DESC 页序
+
+        for page in 0..MEMORY_INDEX_MAX_PAGES {
+            let mut rows = crate::service::dal::memory::dal()
+                .query(
+                    scoped.clone(),
+                    MemoryQuery {
+                        agent_id: Some(agent_id.to_string()),
+                        memory_type: Some(MemoryType::ShortTerm),
+                        limit: Some(MEMORY_INDEX_PAGE_SIZE),
+                        offset: Some(page * MEMORY_INDEX_PAGE_SIZE),
+                        order: MemorySortOrder::RecentFirst,
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let page_len = rows.len();
+            rows.retain(|memory| match &memory.po {
+                MemoryPo::ShortTerm(st) => normalize_timestamp_secs(st.created_at) <= anchor,
+                _ => false,
+            });
+            picked.extend(rows);
+            if page_len < MEMORY_INDEX_PAGE_SIZE {
+                break; // DB 已翻到头，再查也是空
+            }
+            // 计划要求时间正序；这里翻成旧→新视图再算。候选集最多 1000 行，
+            // 每页一次纯内存重算的代价远小于多查一页 DB。
+            let ascending: Vec<Memory> = picked.iter().rev().cloned().collect();
+            let plan = MemoryIndexPlan::build(
+                &ascending,
+                Some(anchor),
+                budget_tokens,
+                crate::service::domain::runtime::compaction::estimate_tokens,
+            );
+            if !plan.needs_more() {
+                break;
+            }
+        }
+
+        picked.reverse(); // DESC 页序 → 时间正序：新增记忆落在纯尾部追加
+        Ok(picked)
+    }
+}
+
 #[async_trait::async_trait]
 impl RuntimeMemory for RuntimeDomainImpl {
     // === 内部使用方法 ===

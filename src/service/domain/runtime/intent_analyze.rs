@@ -12,7 +12,7 @@ use crate::models::cortex_types::ChatMessage;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
 use crate::pkg::request_context::RequestContext;
-use crate::service::domain::runtime::{RuntimeDomain, RuntimeDomainImpl};
+use crate::service::domain::runtime::RuntimeDomainImpl;
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 
@@ -20,6 +20,7 @@ use super::awakening::{
     PromptBaseInput, build_scene_tool_descriptors, fetch_message_business_blocks, fill_prompt_base,
     init_think_runtime_and_policy,
 };
+use super::think_loop::memory_index_budget_for;
 use super::types::config_resolve;
 use super::types::{IntentAnalysis, ThinkingOptions};
 
@@ -50,10 +51,16 @@ impl RuntimeDomainImpl {
         let mut analyze_opts = options.clone();
         analyze_opts.scene = ThinkingScene::IntentAnalyze;
 
-        // 2. 查最近 20 条短期记忆做上下文（与 awaken 相同窗口，保证 Agent 有历史可读做消歧）
+        // 2. 分页向前多查一批短期记忆做上下文（保证 Agent 有历史可读做消歧）
+        //    ⚠️ T0 = 入站消息时间：同一次唤醒链内固定，Phase 1 快照与 Phase 2
+        //    重建的 base 必须取到逐字节一致的记忆集合，否则前缀缓存整段失配。
         let recent_memories = self
-            .memory()
-            .get_recent_context(ctx.clone(), &agent.po.id, 20)
+            .load_memory_index_window(
+                ctx.clone(),
+                &agent.po.id,
+                message.po.created_at,
+                memory_index_budget_for(agent),
+            )
             .await?;
 
         // 3. 全量技能 + 业务块：与正式装配同一来源，保证 base 逐字节一致

@@ -68,6 +68,7 @@ fn fetch_memories(
         let mem_type = Some(tab.memory_type());
         let fetch_result: Result<Vec<MemoryResult>, ApiError> = if kw.trim().is_empty() {
             query_memory(QueryMemoryParams {
+                ids: None,
                 agent_id,
                 memory_type: mem_type.map(|s| s.to_string()),
                 limit: Some(20),

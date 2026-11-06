@@ -14,7 +14,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "query_memory",
     name = "Query Agent Memory",
-    description = "Query memory entries by structured filters: agent_id, memory_type (short_term/knowledge_node/trace/relation/all), status (active/settled/forgotten), tags, and task_id. Values outside those lists are rejected with invalid_request rather than silently ignored. Knowledge nodes are hive-shared (any agent can read all of them), so agent_id is an optional ownership filter rather than a permission gate; short-term memory is scoped to the calling agent. For relevance-ranked free-text lookup use search_memory.",
+    description = "Query memory entries by structured filters: ids (exact fetch by memory id — use this to expand an index line into its full content), agent_id, memory_type (short_term/knowledge_node/trace/relation/all), status (active/settled/forgotten), tags, and task_id. ids takes a list of exact memory ids and combines with other filters (AND semantics); an empty list or blank-only ids is rejected with invalid_request instead of silently returning everything. Values outside those lists are rejected with invalid_request rather than silently ignored. Knowledge nodes are hive-shared (any agent can read all of them), so agent_id is an optional ownership filter rather than a permission gate; short-term memory is scoped to the calling agent. For relevance-ranked free-text lookup use search_memory.",
     params = "common::api::QueryMemoryParams",
     neural
 )]
@@ -65,7 +65,29 @@ pub async fn query_memory(
     // （`private_agent_scope`：缺省回退 ctx 自己的 Agent，Agent 调用天然只看自己）。
     let query_agent_id = params.agent_id.clone().filter(|s| !s.is_empty());
 
+    // ids = 索引块的反查通道：点名直取，不参与语义排序。
+    // ⚠️ 空数组必须 400 而不是退化成「不过滤」——后者会静默返回全量记忆，
+    // 既贵又最难察觉；索引层永远会带至少一个 id。顺手 trim + 保序去重，
+    // 避免 `id IN ()` 这种 SQLite 语法错误和重复参数把 SQL 撑大。
+    let ids = params.ids.as_ref().map(|raw| {
+        let mut seen: Vec<&str> = Vec::new();
+        for id in raw {
+            let id = id.trim();
+            if !id.is_empty() && !seen.contains(&id) {
+                seen.push(id);
+            }
+        }
+        seen.into_iter().map(str::to_string).collect::<Vec<_>>()
+    });
+    if ids.as_ref().is_some_and(Vec::is_empty) {
+        bail_err!(
+            InvalidRequest,
+            "ids 至少需要一个非空 id；空数组不会退化为查询全量"
+        );
+    }
+
     let query = MemoryQuery {
+        ids,
         agent_id: query_agent_id,
         memory_type: Some(memory_type),
         limit: params.limit.map(|l| l as usize),
@@ -103,6 +125,8 @@ fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::memory::{MemoryCreateParams, ShortTermMemoryIndexPo};
+    use common::enums::MemoryStatus;
 
     fn init_env(pool: sqlx::SqlitePool) -> RequestContext {
         let _ = crate::config::init();
@@ -116,6 +140,7 @@ mod tests {
 
     fn params(memory_type: Option<&str>, status: Option<&str>) -> QueryMemoryParams {
         QueryMemoryParams {
+            ids: None,
             agent_id: None,
             memory_type: memory_type.map(|s| s.to_string()),
             limit: Some(5),
@@ -164,5 +189,111 @@ mod tests {
         query_memory(ctx.clone(), params(None, Some("2")))
             .await
             .expect("判别值 \"2\" 应等价于 settled");
+    }
+
+    async fn seed_short_term(ctx: &RequestContext, id: &str) {
+        let now = chrono::Utc::now().timestamp();
+        runtime_domain()
+            .memory()
+            .create(
+                ctx.clone(),
+                MemoryCreateParams::CreateShortTerm(ShortTermMemoryIndexPo {
+                    id: id.to_string(),
+                    agent_id: "agent-ids-test".to_string(),
+                    task_id: None,
+                    role: "user".to_string(),
+                    summary: format!("索引行正文 {id}"),
+                    tags: "[]".to_string(),
+                    trace_ids: "[]".to_string(),
+                    status: MemoryStatus::Active,
+                    created_at: now,
+                    updated_at: now,
+                }),
+            )
+            .await
+            .expect("seed 短期记忆");
+    }
+
+    fn ids_params(ids: Option<Vec<String>>, status: Option<&str>) -> QueryMemoryParams {
+        QueryMemoryParams {
+            ids,
+            agent_id: Some("agent-ids-test".to_string()),
+            ..params(Some("short_term"), status)
+        }
+    }
+
+    /// 索引 → 详情反查通道：点名直取、空数组不退化成全量、与其它过滤 AND。
+    ///
+    /// 护栏意义：索引块只给 id + 短摘要，详情必须能按 id 原样取回；
+    /// 若空 ids 被当成「不过滤」，一次误传就把全量记忆灌进上下文，
+    /// 既烧 token 又最难察觉（响应看起来完全成功）。
+    #[sqlx::test]
+    async fn ids_fetch_exact_memories_and_empty_ids_is_rejected(pool: sqlx::SqlitePool) {
+        let ctx = init_env(pool);
+        seed_short_term(&ctx, "st_ids_a").await;
+        seed_short_term(&ctx, "st_ids_b").await;
+        seed_short_term(&ctx, "st_ids_c").await;
+
+        // 1. 点名直取：只回点名的两条，且带回完整正文
+        let resp = query_memory(
+            ctx.clone(),
+            ids_params(Some(vec!["st_ids_a".into(), "st_ids_c".into()]), None),
+        )
+        .await
+        .expect("按 id 精确取回应成功");
+        let got: Vec<&str> = resp.results.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(got.len(), 2, "点名两条就该只回两条: {got:?}");
+        assert!(got.contains(&"st_ids_a") && got.contains(&"st_ids_c"));
+        assert!(
+            resp.results
+                .iter()
+                .all(|r| r.content.contains("索引行正文")),
+            "反查必须带回完整内容，而不是索引里的短摘要"
+        );
+
+        // 2. 未知 id → 空结果，不是全量
+        let miss = query_memory(
+            ctx.clone(),
+            ids_params(Some(vec!["st_missing".into()]), None),
+        )
+        .await
+        .expect("未知 id 应是合法查询");
+        assert!(miss.results.is_empty(), "未知 id 不得返回任何记忆");
+
+        // 3. trim + 保序去重：重复点名不产生重复行
+        let dedup = query_memory(
+            ctx.clone(),
+            ids_params(
+                Some(vec![
+                    "  st_ids_a  ".into(),
+                    "st_ids_a".into(),
+                    "st_ids_b".into(),
+                ]),
+                None,
+            ),
+        )
+        .await
+        .expect("trim + 去重后应成功");
+        assert_eq!(dedup.results.len(), 2, "去重后应恰好两条");
+
+        // 4. 与其它过滤条件 AND：status=settled 与 active 的 seed 不相交
+        let filtered = query_memory(
+            ctx.clone(),
+            ids_params(Some(vec!["st_ids_a".into()]), Some("settled")),
+        )
+        .await
+        .expect("AND 过滤应正常返回");
+        assert!(filtered.results.is_empty(), "ids 不得架空 status 过滤");
+
+        // 5. 空数组 / 全空串 → 400，绝不静默退化成查询全量
+        for bad in [Some(vec![]), Some(vec!["  ".to_string(), String::new()])] {
+            let e = query_memory(ctx.clone(), ids_params(bad, None))
+                .await
+                .expect_err("空 ids 必须报错");
+            assert!(
+                e.to_string().contains("invalid_request"),
+                "空 ids 应报 invalid_request: {e}"
+            );
+        }
     }
 }

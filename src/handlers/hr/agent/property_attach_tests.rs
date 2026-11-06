@@ -100,6 +100,7 @@ async fn write_prop(ctx: &RequestContext, target_id: &str, term: &str, value: &s
 
 fn query_params(include_history: Option<bool>) -> QueryMemoryParams {
     QueryMemoryParams {
+        ids: None,
         agent_id: None,
         memory_type: None,
         limit: Some(50),

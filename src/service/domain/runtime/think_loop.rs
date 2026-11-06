@@ -236,23 +236,7 @@ pub(crate) fn build_policy_for_scene(
         .map(|cfg| cfg.agent.token_budget)
         .unwrap_or(0);
 
-    // 上下文压缩触发阈值（占最大上下文窗口的比例）：
-    // 优先 recommended_context_length > max_context_length * 60% > 未启用
-    const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
-    let overflow_threshold = agent.brain.as_ref().and_then(|brain| {
-        brain.model_provider().and_then(|po| {
-            let config = po.config();
-            if let Some(rec) = config.recommended_context_length
-                && rec > 0
-            {
-                return Some(rec as u64);
-            }
-            config
-                .max_context_length
-                .filter(|&v| v > 0)
-                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
-        })
-    });
+    let overflow_threshold = context_overflow_threshold(agent);
     // 阈值同步进运行时内存（纯内存、不入库），供前端把上下文长度渲染成进度。
     // 与 ContextOverflowPolicy 同源，避免两处各算一遍导致展示与裁决口径不一致。
     AgentRuntimeStateManager::global()
@@ -271,6 +255,40 @@ pub(crate) fn build_policy_for_scene(
             ConsecutiveLlmErrorsPolicy(LLM_ERROR_RETRY_BUDGET),
         }
     })
+}
+
+/// 从 Agent 的 Brain 配置读出上下文压缩触发阈值（prompt token）。
+///
+/// 优先 `recommended_context_length` > `max_context_length × 0.6` > 未启用。
+/// `ContextOverflowPolicy` 与【历史对话】索引块的 10% 脑容量预算**共用这一个
+/// 取值入口**，避免两处各算一遍导致展示、裁决与记忆加载口径漂移。
+pub(crate) fn context_overflow_threshold(agent: &Agent) -> Option<u64> {
+    const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
+    agent.brain.as_ref().and_then(|brain| {
+        brain.model_provider().and_then(|po| {
+            let config = po.config();
+            if let Some(rec) = config.recommended_context_length
+                && rec > 0
+            {
+                return Some(rec as u64);
+            }
+            config
+                .max_context_length
+                .filter(|&v| v > 0)
+                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
+        })
+    })
+}
+
+/// 记忆索引块的 token 预算 = 压缩阈值 × 10%。
+///
+/// ⚠️ **唯一入口**：Phase 1 装配、C 路径重建、分页取数三处必须拿到同一个数，
+/// 否则 Phase 1 快照与 Phase 2 重建的【历史对话】会逐字节不一致，整段前缀
+/// 缓存失配。调用方不要再自己 `unwrap_or(0)` + 乘 10%。
+pub(crate) fn memory_index_budget_for(agent: &Agent) -> usize {
+    crate::models::memory::memory_index_budget_tokens(
+        context_overflow_threshold(agent).unwrap_or(0) as usize,
+    )
 }
 
 // ==================== 共享 think loop ====================

@@ -41,6 +41,7 @@ pub fn HrMemorySearch() -> Element {
             // 根据关键词是否为空选择 query / search 场景
             let fetch_result = if kw.trim().is_empty() {
                 query_memory(QueryMemoryParams {
+                    ids: None,
                     agent_id: None,
                     memory_type: mem_type.map(|s| s.to_string()),
                     limit: Some(20),

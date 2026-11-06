@@ -180,6 +180,14 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
         self.inner.history(memories);
     }
 
+    /// 记忆索引计划必须转发：`build()` 用的是 `inner.awaken_user_part()`，
+    /// 走 trait 默认空实现会让 A2A / Codex Agent 静默退回名义预算兜底
+    /// （无 T0 锚点、不标相对时间、按字符而非 token 计价），索引块形状与
+    /// 主链路不一致还会作废前缀缓存。
+    fn set_memory_index_plan(&mut self, plan: crate::models::memory::MemoryIndexPlan) {
+        self.inner.set_memory_index_plan(plan);
+    }
+
     fn settled_reference(&mut self, items: &[String]) {
         self.inner.settled_reference(items);
     }

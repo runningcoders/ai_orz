@@ -8,6 +8,7 @@
 
 use super::context::{AwakenDeps, read_bus};
 use crate::models::cortex_types::ChatMessage;
+use crate::models::memory::MemoryIndexPlan;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
@@ -15,15 +16,13 @@ use crate::pkg::think_path::{
 };
 use crate::service::domain::runtime::RuntimeMemory;
 use crate::service::domain::runtime::compaction::CompactMode;
+use crate::service::domain::runtime::think_loop::memory_index_budget_for;
 use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult, WakeUsage};
 use async_trait::async_trait;
 use common::error::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
-
-/// 历史短期记忆条数（与老链路一致）
-const RECENT_MEMORIES_LIMIT: usize = 20;
 
 /// 收尾节点的 id
 ///
@@ -281,8 +280,14 @@ impl ThinkNode for PrepareNode {
         let recent: Vec<crate::models::memory::Memory> = if slot.summary.is_some() {
             Vec::new()
         } else {
+            // T0 = 入站消息时间：与 Phase 1 同源，分页窗口与索引计划都据此冻结
             deps.domain
-                .get_recent_context(ctx.clone(), &deps.agent.po.id, RECENT_MEMORIES_LIMIT)
+                .load_memory_index_window(
+                    ctx.clone(),
+                    &deps.agent.po.id,
+                    deps.message.po.created_at,
+                    memory_index_budget_for(deps.agent.as_ref()),
+                )
                 .await?
         };
 
@@ -437,6 +442,14 @@ impl ThinkNode for PrepareNode {
             builder.user_profile(user);
         }
         super::super::awakening::mount_ontology_lexicon(ctx, builder.as_mut()).await;
+        // C 路径是手工装配（不经过 fill_prompt_base），必须显式注入同一份计划，
+        // 否则会退回兜底预算与「无锚点」，与 Phase 1 的 seed 逐字节不一致。
+        builder.set_memory_index_plan(MemoryIndexPlan::build(
+            &recent,
+            Some(deps.message.po.created_at),
+            memory_index_budget_for(deps.agent.as_ref()),
+            crate::service::domain::runtime::compaction::estimate_tokens,
+        ));
         builder.history(&recent);
         // 重建路径保留「重点前置」的短聚焦装配：意图理解 + 检索命中的
         // 知识/方法技能 + 上一轮思考摘要；空集合跳过

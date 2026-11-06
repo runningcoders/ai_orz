@@ -28,7 +28,9 @@
 
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ChatMessage, ImagePart};
-use crate::models::memory::Memory;
+use crate::models::memory::{
+    MEMORY_INDEX_NOMINAL_CONTEXT_TOKENS, Memory, MemoryIndexPlan, memory_index_budget_tokens,
+};
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
@@ -45,6 +47,13 @@ const NEURAL_TAG: &str = "neural";
 /// 词表区块注入预算（字符数）：预置词表全量约 2k 字符，正常全量注入；
 /// 管理员扩表超预算时按「关系词 > 实体类 > 同义样例」优先级裁剪（design §3）
 const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
+
+/// 【历史对话】区块头：4 条装配路径（awaken / build / 总结 / 意图）共用，禁止各写一份。
+///
+/// 索引行只保留摘要片段，`[...]` 内的 ID 是按需展开的把手 —— 引导必须随区块头
+/// 一起出现，否则模型看到压缩行却不知道能按 ID 反查全文，代词消歧会静默降级。
+const HISTORY_SECTION_HEADER: &str = "【历史对话】（记忆索引：越靠近当前时间点的条目越完整；元信息里的「当天 / 昨天 / N天前」以本次消息时间为基准，`[...]` 内为记忆 ID）\n\
+     远处条目可能只有半句摘要；需要完整内容时用 `query_memory` 的 `ids` 按 ID 精确取回。\n";
 
 /// 默认 Prompt 构建器（Local Agent 使用）
 ///
@@ -91,6 +100,8 @@ pub struct DefaultPromptBuilder {
     task_context: Option<String>,
     /// 历史对话记忆
     history: Vec<String>,
+    /// 由 domain 层算好的记忆索引计划（字符预算档位 + T0 锚点）；None = 名义预算兜底
+    memory_index_plan: Option<MemoryIndexPlan>,
     /// 近期已沉淀记忆参考条目（仅沉淀场景，已完成沉淀，不作为待处理对象）
     settled_reference: Vec<String>,
     /// 上一轮工作压缩结果（仅 awaken 场景，压缩后由框架直接注入）
@@ -339,10 +350,29 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         self.system_prompt = Some(agent.to_system_prompt());
     }
 
+    fn set_memory_index_plan(&mut self, plan: MemoryIndexPlan) {
+        self.memory_index_plan = Some(plan);
+    }
+
     fn history(&mut self, memories: &[Memory]) {
-        for memory in memories {
-            if let Some(summary) = memory.to_prompt_summary() {
-                self.history.push(summary);
+        // 档位、预算、锚点**全部由 domain 层算好注入**：builder 手里只有 &[Memory]，
+        // 既拿不到 Agent 的压缩阈值，也没有入站消息时间 T0，不配做分档判断。
+        // 未注入计划时按名义预算兜底（无锚点 = 不标相对时间），保证不丢行。
+        let plan = self.memory_index_plan.clone().unwrap_or_else(|| {
+            MemoryIndexPlan::fallback(
+                memories,
+                memory_index_budget_tokens(MEMORY_INDEX_NOMINAL_CONTEXT_TOKENS),
+                |line: &str| line.chars().count(),
+            )
+        });
+        for (index, memory) in memories.iter().enumerate() {
+            let Some(tier) = plan.tier_at(index) else {
+                continue; // 预算耗尽 / T0 之后的新记忆 → 本轮不进索引块
+            };
+            if let Some(line) =
+                memory.to_index_prompt_at(tier, tier.segment_chars(), plan.anchor_ts)
+            {
+                self.history.push(line);
             }
         }
     }
@@ -722,7 +752,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         }
         let mut s = String::new();
         s.push_str("【相关知识】\n");
-        s.push_str("以下是本轮按你的意图检索命中的知识摘要（仅供参考，以你当下判断为准）：\n");
+        s.push_str("以下是本轮按你的意图检索命中的知识（仅供参考，以你当下判断为准）：\n");
+        s.push_str("带 [索引] 前缀的行只有元信息与摘要：需要完整内容用 query_memory(ids=[...]) 按 id 反查，需要知识节点的关联边用 search_memory(seed_node_ids=[节点id], traversal_depth=1) 沿图展开。\n");
+        s.push_str("[关系 id] 行给出两端节点 id（可直接作 seed_node_ids 继续展开），边本身也可用 query_memory(ids=[边id]) 反查；两端都已在本区块时这条关系才是闭环的。\n");
         for line in &self.retrieved_knowledge_lines {
             s.push_str("- ");
             s.push_str(line);
@@ -795,6 +827,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s.push_str("   ① 理解意图 + 消歧：判断用户当前这句话在问什么/想做什么。\n");
         s.push_str(
             "      若出现「这、它、那个、上次、之前」这类代词，去【历史对话】/【上下文】区块里找对应的具体对象，\n",
+        );
+        s.push_str(
+            "      索引行只保留摘要片段，定位到条目后用 `query_memory` 的 `ids` 按 `[...]` 内 ID 展开全文。\n",
         );
         s.push_str("      没找到就问用户澄清，不要猜。\n");
         s.push_str(
@@ -1007,7 +1042,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             s.push('\n');
         }
         if !self.history.is_empty() {
-            s.push_str("【历史对话】\n");
+            s.push_str(HISTORY_SECTION_HEADER);
             for h in &self.history {
                 s.push_str(h);
                 s.push('\n');
@@ -1079,7 +1114,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         // 8. 历史对话记忆
         if !self.history.is_empty() {
-            result.push_str("【历史对话】\n");
+            result.push_str(HISTORY_SECTION_HEADER);
             for h in &self.history {
                 result.push_str(h);
                 result.push('\n');
@@ -1214,7 +1249,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         // 8. 历史对话记忆
         if !self.history.is_empty() {
-            result.push_str("【历史对话】\n");
+            result.push_str(HISTORY_SECTION_HEADER);
             for h in &self.history {
                 result.push_str(h);
                 result.push('\n');
@@ -1430,7 +1465,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         let mut user = String::new();
         user.push_str(&self.build_common_context_sections());
         if !self.history.is_empty() {
-            user.push_str("【历史对话】\n");
+            user.push_str(HISTORY_SECTION_HEADER);
             for h in &self.history {
                 user.push_str(h);
                 user.push('\n');
@@ -1839,194 +1874,6 @@ fn push_intent_analyze_instructions(result: &mut String) {
 
     result.push_str("===== 【输入理解阶段】指令结束 =====\n");
 }
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::prompt_builder::PromptBuilder;
-
-    /// 没有技能时不拼装提醒：此时提醒读技能是无意义噪声，还会让「请回复」收尾分叉
-    #[test]
-    fn skill_recall_nudge_is_empty_without_skills() {
-        let builder = DefaultPromptBuilder::default();
-        assert!(builder.skill_recall_nudge().is_empty());
-    }
-
-    /// 有技能时必须提醒，且点名 get_skill（技能正文是按需加载，不提醒模型不会去读）
-    #[test]
-    fn skill_recall_nudge_points_to_get_skill() {
-        let mut builder = DefaultPromptBuilder::default();
-        builder.skills.push(SkillPo::default());
-        let nudge = builder.skill_recall_nudge();
-        assert!(!nudge.is_empty());
-        assert!(nudge.contains("get_skill"), "{nudge}");
-        assert!(nudge.contains("读全文的时机"), "{nudge}");
-    }
-
-    /// 前缀不变量：意图初始消息的 System / User 必须原样包含 Awaken base，
-    /// 意图指令只能是同一 user 消息的**尾部追加**（I1/I2/I4）。
-    #[test]
-    fn intent_initial_messages_reuse_awaken_base_as_prefix() {
-        let mut builder = DefaultPromptBuilder {
-            system_prompt: Some("PERSONA".to_string()),
-            ..Default::default()
-        };
-        builder.skills.push(SkillPo::default());
-        builder.history.push("H1".to_string());
-        builder.current_message = Some("CURRENT".to_string());
-
-        let base_system = builder.awaken_system_part();
-        let base_user = builder.awaken_user_part();
-        let messages = builder.build_intent_analyze_initial_messages();
-        assert_eq!(messages.len(), 2);
-
-        match &messages[0] {
-            ChatMessage::System { content } => assert_eq!(content, &base_system),
-            _ => panic!("首条必须是 System"),
-        }
-        match &messages[1] {
-            ChatMessage::User { content } => {
-                assert!(
-                    content.starts_with(&base_user),
-                    "意图指令只能追加在 base 之后"
-                );
-                assert!(
-                    content.contains("INTENT_ANALYSIS_START"),
-                    "缺少意图指令尾部"
-                );
-            }
-            _ => panic!("次条必须是 User"),
-        }
-    }
-
-    /// 本轮指引（回复仲裁 + 协作压力）必须 append-only 收尾：插入点之前的所有
-    /// 字节逐字节不变，且不进 System / 不并进【资源上下文】（prefix cache I1/I2 护栏）。
-    #[test]
-    fn guidance_block_is_append_only_and_preserves_stable_prefix() {
-        let mut builder = DefaultPromptBuilder {
-            system_prompt: Some("PERSONA".to_string()),
-            ..Default::default()
-        };
-        builder.history.push("H1".to_string());
-        // 直接给出 current_message 渲染后的文本形态（含【资源上下文】区块），
-        // 本护栏测的是 build 层装配顺序，不需要再构造 Message 领域对象
-        builder.current_message = Some(
-            "CURRENT\n\n【资源上下文】\n本条消息引用了以下资源：\n- ATTACHMENT.md\n".to_string(),
-        );
-
-        let before = builder.awaken_user_part();
-        let system = builder.awaken_system_part();
-
-        builder.set_turn_guidance_lines(vec![
-            "【协作压力】链深 3，疲劳度 36/100。".to_string(),
-            "- 本轮指引：请引入新信息或主动收敛".to_string(),
-        ]);
-        let after = builder.awaken_user_part();
-        let pressure_at = after.find("【协作压力】").expect("压力区块必须渲染");
-
-        assert_eq!(
-            &after[..pressure_at],
-            &before[..pressure_at],
-            "压力块之前的前缀必须逐字节不变，否则跨唤醒缓存命中面被打穿"
-        );
-        assert!(
-            pressure_at > before.find("【资源上下文】").unwrap(),
-            "压力块不得并入或前移到【资源上下文】之前"
-        );
-        assert!(
-            pressure_at > before.find("CURRENT").unwrap(),
-            "压力块必须在当前消息之后"
-        );
-        assert!(
-            !builder.awaken_system_part().contains("协作压力"),
-            "System 是跨唤醒唯一可复用前缀，禁止携带每轮变化的压力值"
-        );
-        assert_eq!(system, builder.awaken_system_part());
-        assert!(
-            !after.contains("- 【协作压力】"),
-            "压力行是独立区块，不是【资源上下文】的列表项"
-        );
-        // 收尾指令必须给出「可以回 NO_REPLY」的出口，否则老文案「请回复：」
-        // 等于替 Agent 假定必须回，与仲裁区块自相矛盾
-        assert!(
-            after.ends_with("请输出本轮结果（无需回复时只输出 NO_REPLY）："),
-            "有指引时的收尾指令必须暴露 NO_REPLY 出口：{after}"
-        );
-
-        // 跨唤醒压力值每轮递增，插入点之前的前缀仍必须逐字节一致
-        builder.set_turn_guidance_lines(vec![
-            "【协作压力】链深 8，疲劳度 96/100。".to_string(),
-            "- 本轮指引：必须收敛".to_string(),
-        ]);
-        let next = builder.awaken_user_part();
-        let next_at = next.find("【协作压力】").unwrap();
-        assert_eq!(
-            &next[..next_at],
-            &before[..next_at],
-            "压力值变化不得改动前缀，否则跨唤醒缓存命中面被打穿"
-        );
-    }
-
-    /// 带指引行时两阶段仍需逐字节一致：意图指令只能继续在 base 尾部追加。
-    #[test]
-    fn guidance_lines_keep_intent_prefix_identical() {
-        let mut builder = DefaultPromptBuilder {
-            system_prompt: Some("PERSONA".to_string()),
-            ..Default::default()
-        };
-        builder.current_message = Some("CURRENT".to_string());
-        builder.set_turn_guidance_lines(vec!["【协作压力】链深 2".to_string()]);
-
-        let base_system = builder.awaken_system_part();
-        let base_user = builder.awaken_user_part();
-        let messages = builder.build_intent_analyze_initial_messages();
-        assert_eq!(messages.len(), 2);
-        match (&messages[0], &messages[1]) {
-            (ChatMessage::System { content: s }, ChatMessage::User { content: u }) => {
-                assert_eq!(s, &base_system);
-                assert!(u.starts_with(&base_user), "意图指令只能追加在 base 之后");
-                assert!(u.contains("【协作压力】"), "Phase1 需看到同一份压力信号");
-            }
-            _ => panic!("两阶段首两条必须是 System + User"),
-        }
-    }
-
-    /// 用户 ↔ Agent 主流路径零变化：没有本轮指引时，收尾指令逐字节保持原样
-    #[test]
-    fn reply_tail_stays_unchanged_without_guidance() {
-        let mut builder = DefaultPromptBuilder {
-            system_prompt: Some("PERSONA".to_string()),
-            ..Default::default()
-        };
-        builder.current_message = Some("CURRENT".to_string());
-        let user = builder.awaken_user_part();
-        assert!(user.ends_with("\n\n请回复："), "{user}");
-        assert!(
-            !user.contains("NO_REPLY"),
-            "用户对话不该看到内部哨兵：{user}"
-        );
-    }
-
-    /// 执行段（Phase 2）才是真正的决策点：同一份指引与 NO_REPLY 出口必须出现在这里，
-    /// 否则模型要回头翻 Phase 1 才知道「可以不回」，实际仍会每轮都答。
-    #[test]
-    fn execution_segment_carries_turn_guidance_and_reply_tail() {
-        let mut builder = DefaultPromptBuilder {
-            current_message: Some("CURRENT".to_string()),
-            ..Default::default()
-        };
-        builder.set_turn_guidance_lines(vec![
-            "【回复仲裁】本条来自另一个 Agent，在等你答复；是否回复由你决定。".to_string(),
-        ]);
-        let segment = builder.build_execution_segment();
-        assert!(segment.contains("【回复仲裁】"), "{segment}");
-        assert!(
-            segment.contains("若判断无需回复来源方，只输出 NO_REPLY"),
-            "{segment}"
-        );
-        assert!(
-            segment.ends_with("请输出本轮结果（无需回复时只输出 NO_REPLY）："),
-            "{segment}"
-        );
-    }
-}
+#[path = "default_tests.rs"]
+mod tests;

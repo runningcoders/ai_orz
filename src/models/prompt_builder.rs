@@ -24,7 +24,7 @@
 
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ChatMessage, ImagePart};
-use crate::models::memory::Memory;
+use crate::models::memory::{Memory, MemoryIndexPlan};
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
@@ -43,6 +43,20 @@ pub trait PromptBuilder: Send + Sync {
 
     /// 设置历史对话记忆
     fn history(&mut self, memories: &[Memory]);
+
+    /// 注入由 domain 层算好的**记忆索引计划**（字符预算倒序累加的档位 + T0 锚点）。
+    ///
+    /// 必须在 [`Self::history`] 之前调用：builder 自己只有 `&[Memory]`，拿不到
+    /// Agent 的上下文压缩阈值、入站消息时间 T0，也不能分页查库，所以档位不能
+    /// 在这里算。未注入时 `DefaultPromptBuilder` 按名义预算兜底（无锚点、不标
+    /// 相对时间），保证旧调用方与单测不丢行，但生产路径必须显式注入。
+    ///
+    /// 默认空实现只适用于「不渲染索引块」的实现；任何包装
+    /// `DefaultPromptBuilder` 的实现（如 `FlatPromptBuilder` / A2A / Codex）
+    /// **必须显式转发**，否则会静默退回兜底计划，预算分层与相对时间标注整体失效。
+    fn set_memory_index_plan(&mut self, plan: MemoryIndexPlan) {
+        let _ = plan;
+    }
 
     /// 设置「更早的记忆」参考条目（仅 awaken 场景，压缩后的轮次）
     ///

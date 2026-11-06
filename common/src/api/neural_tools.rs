@@ -280,6 +280,12 @@ pub struct MemorySearchMatch {
 /// 查询记忆请求参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct QueryMemoryParams {
+    /// 按记忆 ID 精确取回（索引 → 详情的反查通道）。
+    ///
+    /// 索引块里每行都带 id：看到线索后用它直取完整内容，不必再跑一次语义检索
+    /// 去「碰运气」找回同一条记忆。可与其他过滤条件叠加（AND 语义）。
+    /// 不传 = 不过滤；**空数组 / 全空串会报 400**，绝不静默退化成查询全量。
+    pub ids: Option<Vec<String>>,
     /// Agent ID 筛选（**归属筛选，不是权限门槛**）。
     ///
     /// 知识节点蜂巢共享，任何 Agent 都能查到全部知识节点；该字段只用于「只看某个

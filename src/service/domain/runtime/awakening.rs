@@ -14,7 +14,7 @@ use crate::enrich_ctx;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ImagePart, ToolDescriptor};
 use crate::models::events::AgentLoopEvent;
-use crate::models::memory::{Memory, MemoryTrace};
+use crate::models::memory::{Memory, MemoryIndexPlan, MemoryTrace};
 use crate::models::message::Message;
 use crate::models::prompt_builder::PromptBuilder;
 use crate::models::skill::SkillPo;
@@ -30,7 +30,7 @@ use common::enums::{MemoryStatus, MemoryType};
 use common::error::Result;
 use std::sync::Arc;
 
-use super::think_loop::build_policy_for_scene;
+use super::think_loop::{build_policy_for_scene, memory_index_budget_for};
 
 // ==================== re-export（保持外部引用路径不变）====================
 // pub use 同时完成导入（供本文件内部使用）和 re-export（供外部 awakening::xxx 访问）
@@ -150,7 +150,8 @@ impl RuntimeDomainImpl {
     ///
     /// 与 `get_recent_context` 的区别：
     /// - 只取 `status = Settled` 的（已整合进图谱，不是待处理对象）
-    /// - 条数远少于历史对话（5 vs 20），避免与【待沉淀的短期记忆】重复占用预算
+    /// - 只取 5 条（历史对话索引块按字符预算加载，条数不固定），避免与
+    ///   【待沉淀的短期记忆】重复占用预算
     ///
     /// 查询失败不阻断沉淀流程——参考块是锦上添花，缺了也能正常工作。
     pub(crate) async fn query_settled_reference(
@@ -830,6 +831,15 @@ pub(crate) async fn fill_prompt_base(builder: &mut dyn PromptBuilder, input: Pro
     }
     // 本体词表（记忆图谱用词约定），三场景共用挂载点
     mount_ontology_lexicon(input.ctx, builder).await;
+    // 索引计划在这里算（唯一 base 装配入口）：预算 = Agent 压缩阈值 × 10%，
+    // 逐行成本复用总结阶段的 `estimate_tokens`，T0 取入站消息时间 —— 两阶段同源。
+    // builder 只消费档位，不参与分档判断。
+    builder.set_memory_index_plan(MemoryIndexPlan::build(
+        input.recent_memories,
+        Some(input.message.po.created_at),
+        memory_index_budget_for(input.agent),
+        super::compaction::estimate_tokens,
+    ));
     builder.history(input.recent_memories);
     if let Some(compacted) = input.compacted {
         builder.compacted_context(compacted);
