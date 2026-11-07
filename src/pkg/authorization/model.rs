@@ -267,7 +267,7 @@ mod tests {
             tool_id: "shell_exec".into(),
             user_id: "user-aman".into(),
             command_signature: SAMPLE_SIG.into(),
-            blocking_rule: "git_dangerous_subcommand".into(),
+            blocking_rule: "destructive_fs".into(),
             requested_at_ms: 1_000,
             call_id: None,
             status: AuthorizationStatus::Pending,

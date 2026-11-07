@@ -15,6 +15,8 @@
 
 **更新摘要 2026-09-07**：Shell 工具三层架构完成——shell_exec 内置执行 + shell_policy 策略拦截层（ShellRulePolicy 实现通用 Policy trait，5 条静态规则表 scope 越界 Confirm / 身份边界越界 Confirm / 破坏性 fs 命令 Confirm / git push-reset-clean Confirm / git commit Audit）+ shell_tool 声明式 Shell 工具（数据库注册 + ShellToolConfig 驱动，argv 逐项传递不经 sh -c）。shell_exec 和 shell_tool 双执行通道**复用同一 shell_policy::evaluate** 策略管线。env 注入 AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID 供 git_workspace commit-msg hook 读取追加 Task-Id / Agent-Id trailer。
 
+**更新摘要 2026-11-07**：git push/reset/clean 的 Confirm 拦截放开（AMan 决策）——规则降级为 Audit 留痕（id 改为 `git_mutating_ops_audit`），平台不再重复拦截远端操作；远端仓库保护改由 GitHub 分支保护（PR-only）承接。Deny / scope / 破坏性 fs 规则不变。
+
 **关联 RAG 卡**：
 - [Shell 工具全链路 RAG 卡](docs/modules/06-工具与技能/C-知识/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行.md) — 三层架构 + 策略拦截层完整链路
 - [策略引擎 RAG 卡](docs/modules/02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md) — 通用 Policy trait + PolicyAction 动作机制

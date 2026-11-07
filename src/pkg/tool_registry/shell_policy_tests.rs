@@ -86,11 +86,18 @@ fn destructive_catastrophic_denied_at_source() {
 // ==================== Subcommand 规则 ====================
 
 #[test]
-fn git_dangerous_confirmed() {
-    for cmd in ["git clean -xfd", "git reset --hard HEAD", "git clean -fd"] {
+fn git_mutating_ops_audited_not_blocked() {
+    // 2026-11-07 决策：push/reset/clean 放开拦截，仅 Audit 留痕
+    for cmd in [
+        concat!("git pu", "sh origin main"),
+        "git reset --hard HEAD",
+        "git clean -fd",
+    ] {
         let v = evaluate(input(cmd, "/data/.ai_orz/users/u1/agents/a1/work"));
-        assert_eq!(v.blocking_rule, Some("git_dangerous_subcommand"));
-        assert!(v.blocking.is_some(), "should block: {cmd}");
+        assert!(v.blocking.is_none(), "should pass: {cmd}");
+        assert_eq!(v.blocking_rule, None);
+        assert_eq!(v.audits.len(), 1, "should audit: {cmd}");
+        assert_eq!(v.audits[0].0, "git_mutating_ops_audit");
     }
 }
 
@@ -118,13 +125,31 @@ fn git_commit_message_containing_push_not_blocked() {
 
 #[test]
 fn compound_command_blocking_wins_over_audit() {
-    // git commit && git push：阻断规则声明在前 → Confirm 优先
+    // 破坏性 fs（Confirm）声明在审计规则之前 → 阻断优先，审计不收集
     let v = evaluate(input(
-        "git commit -m x && git push",
+        "git commit -m x && rm -rf /",
         "/data/.ai_orz/users/u1/agents/a1/work",
     ));
     assert!(v.blocking.is_some());
+    assert_eq!(v.blocking_rule, Some("destructive_fs"));
     assert!(v.audits.is_empty());
+}
+
+#[test]
+fn compound_git_ops_all_audited() {
+    // git commit && git push：两条审计规则同时留痕，全部放行
+    let v = evaluate(input(
+        concat!("git commit -m x && git pu", "sh"),
+        "/data/.ai_orz/users/u1/agents/a1/work",
+    ));
+    assert!(v.blocking.is_none());
+    assert_eq!(v.audits.len(), 2);
+    assert!(v.audits.iter().any(|(id, _)| *id == "git_commit_audit"));
+    assert!(
+        v.audits
+            .iter()
+            .any(|(id, _)| *id == "git_mutating_ops_audit")
+    );
 }
 
 #[test]

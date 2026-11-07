@@ -128,15 +128,9 @@ async fn ctx_with_storage() -> RequestContext {
 
 async fn run_confirm(gate: Option<&Arc<dyn AuthorizationGate>>) -> ConfirmOutcome {
     let ctx = ctx_with_storage().await;
-    confirm_with_authorization(
-        &ctx,
-        gate,
-        "git_dangerous_subcommand",
-        "blocked".to_string(),
-        SIG,
-    )
-    .await
-    .unwrap()
+    confirm_with_authorization(&ctx, gate, "destructive_fs", "blocked".to_string(), SIG)
+        .await
+        .unwrap()
 }
 
 #[tokio::test]

@@ -10,7 +10,7 @@
 - [src/service/dal/brain.rs](src/service/dal/brain.rs) — BrainDal::decide（唯一执行点：请求 → 协议 → 答案，永不 Err）
 - [src/service/domain/runtime/cerebellum_router.rs](src/service/domain/runtime/cerebellum_router.rs) — PickOnePolicy 的第一个生产用例（三分类翻译）
 - [src/service/domain/runtime/legacy_awaken/memory_relevance.rs](src/service/domain/runtime/legacy_awaken/memory_relevance.rs) — RankPolicy 的第一个生产用例（检索结果精选）
-- [src/pkg/tool_registry/shell_policy.rs](src/pkg/tool_registry/shell_policy.rs) — ShellRulePolicy 声明式结构 + CommandMatcher 四 matcher + RULE_DEFS 5 条静态规则表 + evaluate 入口
+- [src/pkg/tool_registry/shell_policy.rs](src/pkg/tool_registry/shell_policy.rs) — ShellRulePolicy 声明式结构 + CommandMatcher 四 matcher + RULE_DEFS 6 条静态规则表（1 Deny / 3 Confirm / 2 Audit）+ evaluate 入口
 - [src/pkg/tool_registry/shell_exec.rs#L266-L342](src/pkg/tool_registry/shell_exec.rs#L266-L342) — shell_exec call 内 shell_policy::evaluate + env 注入
 - [src/pkg/tool_registry/shell_tool.rs#L122-L178](src/pkg/tool_registry/shell_tool.rs#L122-L178) — shell_tool execute_shell_call 内 shell_policy::evaluate
 - [src/service/domain/runtime/think_loop.rs#L16-L230](src/service/domain/runtime/think_loop.rs#L16-L230) — round_metrics / policy_exit / build_policy_for_scene / map_triggered_to_result
@@ -67,7 +67,7 @@ pkg/policy/
 │   └── mod.rs        RankPolicy / PickOnePolicy / ScorePolicy / PresencePolicy + Candidate
 └── tests.rs          单测：PolicyAction 动作 / policy_set! 宏 DSL / 内置策略组合 / 决策骨架
 pkg/tool_registry/
-├── shell_policy.rs   ShellRulePolicy 实现 + CommandMatcher + RULE_DEFS 5 条规则表 + evaluate 入口
+├── shell_policy.rs   ShellRulePolicy 实现 + CommandMatcher + RULE_DEFS 6 条规则表（1 Deny / 3 Confirm / 2 Audit）+ evaluate 入口
 ├── shell_exec.rs     shell_exec 内置工具（call 内 evaluate + env 注入）
 └── shell_tool.rs     shell_tool 声明式工具（execute_shell_call 内 evaluate）
 pkg/git_workspace.rs  Agent 工作区惰性 git init + commit-msg hook trailer + checkpoint 兜底提交
@@ -89,10 +89,10 @@ src/service/domain/runtime/
 | 内置策略 builtin | src/pkg/policy/builtin.rs | 11 个：MaxRounds / Timeout / ContextOverflow / UserCancel / TokenBudget / FinalAnswer / ConsecutiveLlmErrors / NoProgress / Threshold / FieldEquals / CompactionThreshold |
 | DecisionPolicy | src/pkg/policy/mod.rs | 决策型策略分支（super trait = Policy）；固定「问什么 → 读答案 → 判命中」骨架，场景只填 scene/request/judge |
 | 决策形态 | src/pkg/policy/forms/mod.rs | RankPolicy（Pick→有序保留集）/ PickOnePolicy（Pick→选中项）/ ScorePolicy（Grade→分数）/ PresencePolicy（Presence→概率）；`impl Policy` 由宏生成 |
-| ShellRulePolicy | src/pkg/tool_registry/shell_policy.rs#L76-L177 | 声明式结构（id/name/condition_desc/matcher/action/reason）；实现 Policy trait 并覆写 action() 返回 PolicyAction |
-| RULE_DEFS | src/pkg/tool_registry/shell_policy.rs#L180-L231 | 5 条静态规则：工作目录越界 Confirm / 身份边界越界 Confirm / 破坏性 fs Confirm / git push-reset-clean Confirm / git commit Audit |
-| CommandMatcher | src/pkg/tool_registry/shell_policy.rs#L45-L62 | 四 matcher：ScopeOutsideAllowedPaths / ScopeIdentityBoundary / Regex / Subcommand |
-| shell_policy::evaluate | src/pkg/tool_registry/shell_policy.rs#L324-L359 | 适配层入口：构造 Metrics → Or 组 action → PolicyAction.is_blocking 短路 + 放行场景收集 Audit |
+| ShellRulePolicy | src/pkg/tool_registry/shell_policy.rs#L79-L180 | 声明式结构（id/name/condition_desc/matcher/action/reason）；实现 Policy trait 并覆写 action() 返回 PolicyAction |
+| RULE_DEFS | src/pkg/tool_registry/shell_policy.rs#L184-L248 | 6 条静态规则：灾难级 fs Deny / 工作目录越界 Confirm / 身份边界越界 Confirm / 破坏性 fs Confirm / git 变更型子命令（push·reset·clean）Audit / git commit Audit（2026-11-07 起 git 子命令不再 Confirm 拦截） |
+| CommandMatcher | src/pkg/tool_registry/shell_policy.rs#L48-L67 | 四 matcher：ScopeOutsideAllowedPaths / ScopeIdentityBoundary / Regex / Subcommand |
+| shell_policy::evaluate | src/pkg/tool_registry/shell_policy.rs#L343-L395 | 适配层入口：构造 Metrics → Or 组 action → PolicyAction.is_blocking 短路 + 放行场景收集 Audit |
 | build_policy_for_scene | src/service/domain/runtime/think_loop.rs#L172-L230 | 统一 8 策略 OR 组装配；声明顺序即优先级 |
 | policy_exit | src/service/domain/runtime/think_loop.rs#L46-L73 | think_loop 统一退出裁决点；Final 和工具调用都经此 |
 | map_triggered_to_result | src/service/domain/runtime/think_loop.rs#L82-L127 | 命中策略 id 列表 → ThinkLoopResult 分派（声明顺序即优先级） |
@@ -122,7 +122,7 @@ graph TB
     subgraph "Shell 拦截层 src/pkg/tool_registry/shell_policy.rs"
         SRP[ShellRulePolicy<br/>实现 Policy trait]
         CM[CommandMatcher 四 matcher]
-        RD[RULE_DEFS 5 条静态规则<br/>OnceLock OR 组]
+        RD[RULE_DEFS 6 条静态规则<br/>OnceLock OR 组]
         SE[shell_policy::evaluate<br/>Metrics → Or 组 → Verdict]
     end
 
@@ -242,7 +242,7 @@ fn action(&self, metrics: &Metrics) -> Option<PolicyAction> {
 }
 ```
 
-RULE_DEFS 静态规则表按 Or 组合——声明顺序 = 阻断优先级。破坏性 fs 命令 Confirm 放在 git commit Audit 前面，复合命令 `git commit -m x && git push` 时 push 阻断优先于 commit 审计。
+RULE_DEFS 静态规则表按 Or 组合——声明顺序 = 阻断优先级。阻断规则（Deny/Confirm）声明在审计规则（Audit）之前：复合命令 `git commit -m x && rm -rf /` 时破坏性 fs 的 Confirm 先上浮、审计不收集。git 子命令（commit / push / reset / clean）自 2026-11-07 起全部为 Audit，不再阻断。
 
 ### 3. policy_set! 宏 DSL
 
@@ -347,7 +347,7 @@ pub fn evaluate(input: ShellPolicyInput<'_>) -> ShellPolicyVerdict {
 }
 ```
 
-**双执行通道同管线**：shell_exec 和 shell_tool 都调用 `shell_policy::evaluate(ShellPolicyInput)`。拦截逻辑完全一致——scope 越界 Confirm / 身份边界越界 Confirm / 破坏性 fs 命令 Confirm / git push-reset-clean Confirm / git commit Audit。
+**双执行通道同管线**：shell_exec 和 shell_tool 都调用 `shell_policy::evaluate(ShellPolicyInput)`。拦截逻辑完全一致——灾难级 fs Deny / scope 越界 Confirm / 身份边界越界 Confirm / 破坏性 fs 命令 Confirm / git 变更型子命令（push·reset·clean）Audit / git commit Audit。
 
 **env 注入是结构性出口步骤**：两条执行链路都注入 AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID（不可绕），供 git commit-msg hook（pkg/git_workspace.rs）读取追加 Task-Id / Agent-Id trailer。git commit 这条 Audit 规则正是产物锚点产生时刻的审计标记。
 

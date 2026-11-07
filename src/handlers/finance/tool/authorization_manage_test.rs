@@ -17,10 +17,11 @@ fn init_test_singletons() {
     crate::pkg::request_context_test_support::init_service_for_test();
 }
 
-// 各测试唯一命令串（受控 git 子命令形态，无受限字面序列）：
-// 授权服务为进程级共享单例且测试默认并行，唯一化避免「同签名 Pending 防重」跨测试误伤
+// 各测试唯一命令串（破坏性 fs 形态，稳定命中 Confirm 规则）：
+// 授权服务为进程级共享单例且测试默认并行，唯一化避免「同签名 Pending 防重」跨测试误伤。
+// 2026-11-07 起 git reset/clean/push 已降级为 Audit（不再可建单），故样例改用 destructive_fs。
 fn uniq_cmd(tag: &str) -> String {
-    format!("git reset --hard HEAD~{tag}")
+    format!("echo {tag} && rm -rf /")
 }
 
 fn create_params(agent_id: &str, command: &str) -> CreateAuthorizationRequest {

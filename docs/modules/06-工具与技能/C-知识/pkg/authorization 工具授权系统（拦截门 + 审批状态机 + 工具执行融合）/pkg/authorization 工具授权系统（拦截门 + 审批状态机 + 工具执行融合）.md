@@ -69,8 +69,8 @@ source_files:
 **工具授权完整链路**（Agent 执行 Shell 危险命令触发拦截 → 审批 → 通过后继续执行）：
 
 ```
-1. Agent 调用 shell_exec("git push --force")
-2. shell_policy 评估 ShellRulePolicy → action()=Confirm（破坏性 git 命令）
+1. Agent 调用 shell_exec("rm -rf /")
+2. shell_policy 评估 ShellRulePolicy → action()=Confirm（破坏性 fs 命令）
 3. tool_execution 拦截 → policy_authorization_fusion::confirm_with_authorization
    → gate.request_authorization(call_id=ctx.tool_call_id()) → 落 Pending
 4. consumer 发布 authorization.requested AOP 事件

@@ -57,7 +57,7 @@ async fn make_pending(pool: &SqlitePool, signature: &str) -> String {
                 agent_id: "agent-a".to_string(),
                 tool_id: "shell_exec".to_string(),
                 command_signature: command_signature(signature),
-                blocking_rule: "git_dangerous_subcommand".to_string(),
+                blocking_rule: "destructive_fs".to_string(),
                 rule_idempotent: false,
                 reason: Some("T4 handler 集成测试".to_string()),
                 call_id: None,

@@ -11,6 +11,8 @@
 //!   漏拦可接受，YAGNI 不做完整 shell argv 解析
 //! - inject-env（AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID）不是规则，是管线出口的固定步骤
 //!   （见 `ENV_TASK_ID` / `ENV_AGENT_ID`，shell_exec 恒注入，供 git commit-msg hook 读取）
+//! - 2026-11-07 决策：git push/reset/clean 的 Confirm 拦截放开（改 Audit 留痕），
+//!   远端保护改由 GitHub 侧分支保护（PR-only）兜底；Deny / scope / 破坏性 fs 规则不变
 
 use crate::pkg::policy::{Metrics, Policy, PolicyAction, PolicyBuilder};
 use crate::pkg::tool_registry::tool_security::fs::{
@@ -220,16 +222,16 @@ static RULE_DEFS: &[ShellRulePolicy] = &[
         idempotent: false,
     },
     ShellRulePolicy {
-        id: "git_dangerous_subcommand",
-        name: "受限 git 子命令",
-        condition_desc: "git push / reset / clean",
+        id: "git_mutating_ops_audit",
+        name: "git 变更型子命令审计",
+        condition_desc: "git push / reset / clean（2026-11-07 起放开拦截，仅留痕）",
         matcher: CommandMatcher::Subcommand {
             bin: "git",
             subs: &["push", "reset", "clean"],
         },
-        action: RuleAction::Confirm,
-        reason: "Restricted git subcommand (push/reset/clean) requires explicit user confirmation.",
-        idempotent: false,
+        action: RuleAction::Audit,
+        reason: "git mutating subcommand (push/reset/clean) executed; interception removed by owner decision on 2026-11-07 - audit only.",
+        idempotent: true,
     },
     ShellRulePolicy {
         id: "git_commit_audit",
