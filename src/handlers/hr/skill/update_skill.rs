@@ -24,8 +24,10 @@ pub async fn update_skill(
     params: UpdateSkillRequest,
 ) -> Result<UpdateSkillResponse> {
     let user_id = ctx.uid();
-    if user_id.is_empty() {
-        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    // Agent 上下文（沉淀/自进化等无用户的后台唤醒）允许更新技能，修改者记为 Agent；
+    // 用户上下文记为当前用户。两者都没有才视为缺少调用主体。
+    if user_id.is_empty() && ctx.agent_id().is_none() {
+        bail_err!(InvalidRequest, "当前请求缺少用户或 Agent 上下文");
     }
 
     let mut skill = domain()
@@ -63,7 +65,11 @@ pub async fn update_skill(
     if let Some(status) = params.status {
         skill.po.status = status;
     }
-    skill.po.modifier_id = user_id;
+    skill.po.modifier_id = if user_id.is_empty() {
+        ctx.agent_id().cloned().unwrap_or_default()
+    } else {
+        user_id
+    };
     skill.po.updated_at = chrono::Utc::now().timestamp_millis();
 
     let mut imports: Vec<SkillFileImport> = Vec::new();

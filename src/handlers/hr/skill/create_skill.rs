@@ -28,8 +28,10 @@ pub async fn create_skill(
     params: CreateSkillRequest,
 ) -> Result<CreateSkillResponse> {
     let user_id = ctx.uid();
-    if user_id.is_empty() {
-        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    // Agent 上下文（沉淀/自进化等无用户的后台唤醒）允许创建技能，归属调用 Agent；
+    // 用户上下文归属当前用户。两者都没有才视为缺少调用主体。
+    if user_id.is_empty() && ctx.agent_id().is_none() {
+        bail_err!(InvalidRequest, "当前请求缺少用户或 Agent 上下文");
     }
     if params.name.trim().is_empty() {
         bail_err!(InvalidRequest, "skill name 不能为空");
