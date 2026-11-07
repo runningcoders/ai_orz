@@ -56,15 +56,40 @@ setup_path() {
 # 所有编译入口（build / prod / package / build-fe / clippy / test / coverage / dev）
 # 编译前统一调用本函数，实现在 scripts/clean_target.sh（唯一实现，接口只有这一处）。
 #
-# 为什么要清：deps 里的产物文件名带构建指纹哈希，源码每次变更都重链出**新副本**，
-# 旧副本 cargo 永不回收——测试二进制单个 300~800M，target 会无上限增长。
-# 清掉的是「当前构建永不复用」的旧可执行副本 + profraw 运行时数据，依赖 rlib/rmeta
-# 热缓存不动，所以最多触发一次重链接（分钟级），不会退化成冷构建。
+# 为什么要清：Cargo 不回收 target/ 里的旧指纹产物（官方 build artifacts GC 尚未实现，
+# cargo#13136），源码 / RUSTFLAGS / feature 每次变化都留下一整套新 hash 副本，
+# target 实测涨到 346G。现在是精准 GC：按 .fingerprint/*/invoked.timestamp 判定活缓存，
+# 保留 rlib/rmeta/build out 等真正能加速编译的产物，删除 *.rcgu.o、历史副本、
+# 旧 incremental session 与闲置工具 target（详见 clean_target.py 头注）。
+# --auto 表示「编译钩子自动调用」：短时间内重复编译跳过重扫（AI_ORZ_GC_MIN_INTERVAL
+# 可调）；手动 make clean-stale 不带此标记，永远立即执行。
 # 发布包不含 clean_target.sh（无需编译），缺失时静默跳过；清理失败也不阻断编译。
 clean_stale_artifacts() {
     [ -x "$SCRIPTS_DIR/clean_target.sh" ] || return 0
-    "$SCRIPTS_DIR/clean_target.sh" stale >/dev/null 2>&1 ||
+    "$SCRIPTS_DIR/clean_target.sh" stale --auto >/dev/null 2>&1 ||
         warn "⚠️ 编译前产物清理失败（忽略，继续编译）"
+}
+
+# ===== 编译后收尾：命令一结束就清掉本次产生的 codegen 中间对象 =====
+# *.rcgu.o 是 rustc 的 codegen-unit 中间对象，链接一结束就永不被引用，却是
+# target 膨胀的头号元凶（2026-11 实测 26.6 万个 / 273 GiB）。编译前 GC 也会删，
+# 但要等下一次编译才生效；本钩子让「编完即回落」，不留任何残留。
+# 只删 *.rcgu.o，不碰 rlib / rmeta / 可执行文件等热缓存；失败不阻断主流程。
+# 由 check.sh / prod.sh / build_frontend.sh / run.sh 以 EXIT trap 挂载（含编译失败、
+# Ctrl+C）；run.sh 里已有 EXIT trap 的两处须把本函数并入现有 trap 命令，不能直接覆盖。
+# 多 checkout / worktree：REPO_ROOT 由本文件位置推导，各副本只清自己的 target；
+# 若显式设了 CARGO_TARGET_DIR（多副本共享编译目录），以它为准。
+clean_generated_rcgu() {
+    local target_dir="${CARGO_TARGET_DIR:-$REPO_ROOT/target}" deps
+    [ -d "$target_dir" ] || return 0
+    # 只扫各 profile 的 deps/ 一层（.rcgu.o 只在这里出现）；全树 find 会钻进
+    # incremental/ 与 build/*/out/ 的几十万小文件，实测能把收尾拖到分钟级。
+    # 三种形态：target/deps、target/<profile>/deps、target/<triple>/<profile>/deps
+    # （后者覆盖 wasm32-unknown-unknown 与 llvm-cov-target 这类平行 target）。
+    for deps in "$target_dir"/deps "$target_dir"/*/deps "$target_dir"/*/*/deps; do
+        [ -d "$deps" ] || continue
+        find "$deps" -maxdepth 1 -type f -name '*.rcgu.o' -print0 2>/dev/null
+    done | xargs -0 -n 1000 rm -f -- 2>/dev/null || true
 }
 
 # ===== 输出助手 =====

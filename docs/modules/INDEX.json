@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14174637,
+  "total_bytes": 14176311,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1155,7 +1155,7 @@
           "path": "02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md",
           "name": "策略引擎与 Shell 拦截层",
           "title": "策略引擎与 Shell 拦截层",
-          "bytes": 32664
+          "bytes": 32997
         },
         {
           "tier": "C-知识",
@@ -1183,7 +1183,7 @@
           "path": "02-Agent运行时/C-知识/运行时领域.md",
           "name": "运行时领域",
           "title": "运行时领域",
-          "bytes": 57664
+          "bytes": 58012
         }
       ]
     },
@@ -2671,7 +2671,7 @@
           "path": "06-工具与技能/C-知识/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行.md",
           "name": "Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行",
           "title": "Shell 工具全链路：shell_exec 内置执行 + shell_policy 策略拦截 + shell_tool 声明式注册",
-          "bytes": 16988
+          "bytes": 17671
         },
         {
           "tier": "C-知识",
@@ -2692,7 +2692,7 @@
           "path": "06-工具与技能/C-知识/Shell执行工具.md",
           "name": "Shell执行工具",
           "title": "Shell执行工具",
-          "bytes": 20046
+          "bytes": 20365
         },
         {
           "tier": "C-知识",
@@ -2713,7 +2713,7 @@
           "path": "06-工具与技能/C-知识/pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）/pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）.md",
           "name": "authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）",
           "title": "pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）",
-          "bytes": 13782
+          "bytes": 13773
         },
         {
           "tier": "C-知识",
