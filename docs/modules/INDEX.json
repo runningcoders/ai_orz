@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14165554,
+  "total_bytes": 14173925,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -2734,7 +2734,7 @@
           "path": "06-工具与技能/C-知识/共享工具凭据增强器.md",
           "name": "共享工具凭据增强器",
           "title": "共享工具凭据增强器",
-          "bytes": 37112
+          "bytes": 45483
         },
         {
           "tier": "C-知识",

@@ -6,7 +6,7 @@ use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
-use common::enums::AgentStatus;
+use common::enums::{AgentStatus, CallerType};
 use common::error::{Result, bail_err, err};
 
 use crate::enrich_ctx;
@@ -996,6 +996,24 @@ impl AgentManage for HrDomainImpl {
         agent_id: &str,
         tag: &str,
     ) -> Result<()> {
+        // 受限工具包边界：本方法自身挂在 `tool_management`（Agent 出生可达），
+        // 若无边界，Agent 可自行 install "admin" 拿到 35 个管理面工具完成权限提升。
+        // 按调用者身份分叉：管理员经 HTTP（caller_type=User）显式授权不受限，
+        // 保留「技能发布收口人」等需要 admin 包的预设场景。内置工具是 handler
+        // 直调、不经过 axum 中间件，HTTP 路由门闩拦不住，主封堵必须落在此处。
+        // 用原始 ctx 判定：`enrich_ctx!` 透传 caller_type，但也避免后续改写影响边界。
+        // tag 归一化只用于边界判断（写入仍用原值，不改变管理员既有行为）；与
+        // `validate_agent_created_tool_tags` 同口径，防大小写 / 空白变体绕过并留下脏 tag。
+        let normalized_tag = tag.trim().to_ascii_lowercase();
+        if ctx.caller_type() == CallerType::Agent
+            && common::models::RESTRICTED_TOOL_PACKS.contains(&normalized_tag.as_str())
+        {
+            bail_err!(
+                Forbidden,
+                "Agent 不允许自行安装受限工具包 [{tag}]，请联系管理员显式授权"
+            );
+        }
+
         let mut agent = self
             .agent_dal
             .find_by_id(ctx.clone(), agent_id)

@@ -5,7 +5,7 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolStatusRequest, UpdateToolStatusResponse};
 
-use super::response::to_detail;
+use super::response::{attach_credential_source, to_detail};
 use common::error::{Result, bail_err, err};
 
 /// Update the status of a tool (enable/disable it)
@@ -37,8 +37,10 @@ pub async fn update_tool_status(
 
     domain()
         .tool_provider_manage()
-        .update_tool(ctx, &tool)
+        .update_tool(ctx.clone(), &tool)
         .await?;
 
-    Ok(to_detail(&tool))
+    let mut detail = to_detail(&tool);
+    attach_credential_source(&ctx, &tool, &mut detail).await;
+    Ok(detail)
 }

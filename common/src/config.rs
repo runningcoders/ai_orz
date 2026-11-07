@@ -959,6 +959,12 @@ pub struct ShellToolConfig {
     pub working_dir: Option<String>,
     /// 执行超时毫秒（默认 60s，硬上限 10 分钟）
     pub timeout_ms: Option<u64>,
+    /// 凭据需求声明（类型级；仅 Env binding，运行时按调用者身份解析后注入子进程 env）
+    ///
+    /// 由管理面 `CreateToolRequest` / `UpdateToolRequest` 的顶层同名字段归并写入，
+    /// 声明本身非敏感（不含 credential_id / 凭据原文，D1）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_requirements: Vec<crate::models::CredentialRequirement>,
 }
 
 /// MCP 工具绑定配置（存于 `ToolPo.config`）。

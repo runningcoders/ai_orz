@@ -315,6 +315,8 @@ pub fn build_http_create_request(
         tags: if tags.is_empty() { None } else { Some(tags) },
         control_mode: None,
         enabled: None,
+        // HTTP 工具保持既有 config 内声明通道（顶层契约对它也生效，旧表单无需迁移）
+        credential_requirements: None,
     })
 }
 

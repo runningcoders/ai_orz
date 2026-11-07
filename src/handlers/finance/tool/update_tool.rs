@@ -7,7 +7,7 @@ use common::enums::{ToolProtocol, ToolStatus};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
-use super::response::to_detail;
+use super::response::{attach_credential_source, to_detail};
 use common::error::{Result, bail_err, err};
 
 /// Update an existing custom tool's configuration (name, description, credentials)
@@ -54,14 +54,24 @@ pub async fn update_tool(
     if let Some(control_mode) = params.control_mode {
         tool.po.control_mode = control_mode;
     }
-    if let Some(config) = params.config {
+    let mut config = tool.po.config.clone();
+    if let Some(new_config) = params.config {
         // Builtin config 轻量校验（D28：CLI 命令与行为参数为运维所有权字段，
         // sync 保留现场）；未知字段宽松保留，规则见 validate_builtin_config
         if matches!(tool.po.protocol, ToolProtocol::Builtin) {
-            validate_builtin_config(&config)?;
+            validate_builtin_config(&new_config)?;
         }
-        tool.po.config = config;
+        config = new_config;
     }
+    // 详情回显的 config 会经 redact_config 把 credential_requirements 打成
+    // [REDACTED]，因此凭据声明必须由顶层字段回传，否则保存即静默清空。
+    common::models::apply_credential_requirements(
+        &mut config,
+        params.credential_requirements.as_deref(),
+        common::models::tool_credential_scope(tool.po.protocol),
+    )
+    .map_err(|msg| err!(InvalidRequest, "{}", msg))?;
+    tool.po.config = config;
     if let Some(parameters_schema) = params.parameters_schema {
         // 网关安全门：规则本体单点在 common（与 create_tool、前端表单提交前校验共用）
         common::models::validate_tool_parameters_schema(&parameters_schema)
@@ -84,10 +94,12 @@ pub async fn update_tool(
 
     domain()
         .tool_provider_manage()
-        .update_tool(ctx, &tool)
+        .update_tool(ctx.clone(), &tool)
         .await?;
 
-    Ok(to_detail(&tool))
+    let mut detail = to_detail(&tool);
+    attach_credential_source(&ctx, &tool, &mut detail).await;
+    Ok(detail)
 }
 
 /// Builtin 工具管理接口字段保护（D28：CLI 命令与行为参数为运维所有权字段）

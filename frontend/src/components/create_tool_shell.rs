@@ -4,13 +4,22 @@
 //! （每行一项，支持 `{{args.x}}` 占位符）+ working_dir + timeout_ms。
 //! 执行侧参数逐项传递不经 `sh -c`（免注入），模板占位符语法与 HTTP 工具
 //! 共用同一约定（`{{args.x}}`，后端统一校验）。
+//! 凭据需求声明走工具级顶层契约（Shell scope 仅 Env binding），运行时按调用者
+//! 身份解析后经 `shell_env::resolve` 注入子进程；预校验委托 common 单点。
 
 use dioxus::prelude::*;
 
 use crate::components::create_tool::{ToolBasicsState, validate_basics};
 use crate::components::create_tool_http::parse_optional_u64;
+use crate::components::credential_form::{
+    all_credential_kinds, binding_name, injection_value_preview, kind_from_value,
+    normalize_requirements, validate_requirements_scoped,
+};
 use common::api::CreateToolRequest;
 use common::enums::ToolProtocol;
+use common::models::{
+    CredentialBinding, CredentialKind, CredentialRequirement, CredentialRequirementScope,
+};
 
 /// Shell 工具协议特定表单状态（全部为文本输入，提交时统一解析校验）
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -23,6 +32,8 @@ pub struct ShellToolFormState {
     pub working_dir: String,
     /// 执行超时毫秒（可选，默认 60s，上限 10 分钟）
     pub timeout_ms: String,
+    /// 凭据需求声明（Shell scope：仅 Env binding）
+    pub credential_requirements: Vec<CredentialRequirement>,
 }
 
 /// 拆分 argv 模板文本：每行一项，忽略空行与纯空白行
@@ -63,12 +74,16 @@ pub fn shell_config_from_form(
         }
     };
     let timeout_ms = parse_optional_u64(&form.timeout_ms, "超时时间")?;
+    // 凭据需求预校验（Shell 工具恒 Shell scope：仅 Env），规则本体与后端同源
+    let requirements = normalize_requirements(form.credential_requirements.clone());
+    validate_requirements_scoped(&requirements, CredentialRequirementScope::Shell)?;
 
     Ok(common::config::ShellToolConfig {
         program,
         args_template,
         working_dir,
         timeout_ms,
+        credential_requirements: requirements,
     })
 }
 
@@ -107,6 +122,10 @@ pub fn shell_form_from_config(config: Option<&serde_json::Value>) -> ShellToolFo
             .and_then(|v| v.as_u64())
             .map(|n| n.to_string())
             .unwrap_or_default(),
+        credential_requirements: object
+            .get("credential_requirements")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
     }
 }
 
@@ -120,7 +139,9 @@ pub fn build_shell_create_request(
     // 构造 common SSOT 结构体 `ShellToolConfig`（前后端共享同一类型定义，杜绝键名漂移），
     // 再序列化为 config JSON：Option 字段为 None 序列化成 null，与旧行为一致。
     // ⚠️ 先于 schema/tags 解析：保持既有错误报告顺序（字段级错误优先于 schema JSON 错误）
-    let config = serde_json::to_value(shell_config_from_form(form)?)
+    let shell_config = shell_config_from_form(form)?;
+    let requirements = shell_config.credential_requirements.clone();
+    let config = serde_json::to_value(shell_config)
         .map_err(|e| format!("Shell 工具配置序列化失败: {}", e))?;
     let parameters_schema =
         crate::components::create_tool_http::parse_parameters_schema(&basics.parameters_schema)?;
@@ -135,6 +156,9 @@ pub fn build_shell_create_request(
         tags: if tags.is_empty() { None } else { Some(tags) },
         control_mode: None,
         enabled: None,
+        // 工具级顶层契约：后端归并进 config.credential_requirements，避免详情
+        // 回显时 config 内同名键被 redact_config 打成 [REDACTED] 后保存丢失
+        credential_requirements: Some(requirements),
     })
 }
 
@@ -185,6 +209,118 @@ pub fn ShellToolSubForm(mut form: Signal<ShellToolFormState>) -> Element {
                 oninput: move |e| form.write().timeout_ms = e.value(),
             }
         }
+        div { class: "border border-base-300 rounded-box p-3 space-y-2",
+            div { class: "flex justify-between items-center",
+                span { class: "text-sm font-semibold", "凭据需求（注入子进程环境变量）" }
+                button { class: "btn hud-btn btn-ghost btn-xs",
+                    onclick: move |_| {
+                        form.write().credential_requirements.push(CredentialRequirement {
+                            kind: CredentialKind::GenericToken,
+                            platform: Some(String::new()),
+                            field: None,
+                            enhancer: None,
+                            binding: CredentialBinding::Env { name: String::new() },
+                        });
+                    },
+                    "+ 添加"
+                }
+            }
+            p { class: "text-xs opacity-60",
+                "只声明凭据类型与注入点，不填凭据原文；运行时按调用者身份解析后注入，模型与工具入参均看不到值。"
+            }
+            if form.read().credential_requirements.is_empty() {
+                p { class: "text-xs text-base-content/40", "暂未声明凭据需求" }
+            } else {
+                div { class: "mt-2 space-y-2",
+                    for (idx, req) in form.read().credential_requirements.clone().iter().enumerate() {
+                        {
+                            let kind_value = req.kind.as_str();
+                            let platform_value = req.platform.clone().unwrap_or_default();
+                            let field_value = req.field.clone().unwrap_or_default();
+                            let env_name_value = binding_name(&req.binding).to_string();
+                            let requires_platform = req.kind.requires_platform();
+                            let preview = injection_value_preview(req);
+                            let idx_remove = idx;
+                            let idx_kind = idx;
+                            let idx_platform = idx;
+                            let idx_field = idx;
+                            let idx_env = idx;
+                            rsx! {
+                                div { class: "border border-base-300 rounded-box p-3 space-y-2", key: "{idx}",
+                                    div { class: "flex justify-between items-center",
+                                        span { class: "text-xs font-semibold text-base-content/60", "需求 #{idx + 1}" }
+                                        button { class: "btn hud-btn btn-ghost btn-xs text-error",
+                                            onclick: move |_| { form.write().credential_requirements.remove(idx_remove); },
+                                            "✕ 移除"
+                                        }
+                                    }
+                                    div { class: "flex gap-2 flex-wrap",
+                                        div { class: "form-control flex-1 min-w-[10rem]",
+                                            label { class: "label", span { class: "label-text text-xs", "凭据类型 *" } }
+                                            select { class: "select select-bordered hud-input select-sm w-full", value: "{kind_value}",
+                                                onchange: move |e| {
+                                                    let kind = kind_from_value(&e.value()).unwrap_or(CredentialKind::GenericToken);
+                                                    let mut f = form.write();
+                                                    let r = &mut f.credential_requirements[idx_kind];
+                                                    r.kind = kind;
+                                                    if !kind.requires_platform() { r.platform = None; }
+                                                },
+                                                for kind in all_credential_kinds() {
+                                                    option { value: "{kind.as_str()}", selected: kind.as_str() == kind_value, "{kind.as_str()}" }
+                                                }
+                                            }
+                                        }
+                                        if requires_platform {
+                                            div { class: "form-control flex-1 min-w-[8rem]",
+                                                label { class: "label", span { class: "label-text text-xs", "平台标识 *" } }
+                                                input { class: "input input-bordered hud-input input-sm w-full", value: "{platform_value}",
+                                                    oninput: move |e| {
+                                                        let v = e.value();
+                                                        form.write().credential_requirements[idx_platform].platform =
+                                                            if v.is_empty() { None } else { Some(v) };
+                                                    },
+                                                    placeholder: "如 my_platform"
+                                                }
+                                            }
+                                        }
+                                    }
+                                    div { class: "flex gap-2 flex-wrap",
+                                        div { class: "form-control flex-1 min-w-[8rem]",
+                                            label { class: "label", span { class: "label-text text-xs", "提取字段（可选）" } }
+                                            input { class: "input input-bordered hud-input input-sm w-full", value: "{field_value}",
+                                                oninput: move |e| {
+                                                    let v = e.value();
+                                                    form.write().credential_requirements[idx_field].field =
+                                                        if v.is_empty() { None } else { Some(v) };
+                                                },
+                                                placeholder: "如 token / api_key"
+                                            }
+                                        }
+                                        div { class: "form-control flex-1 min-w-[8rem]",
+                                            label { class: "label", span { class: "label-text text-xs", "注入环境变量名 *" } }
+                                            input { class: "input input-bordered hud-input input-sm w-full font-mono", value: "{env_name_value}",
+                                                oninput: move |e| {
+                                                    let v = e.value();
+                                                    let mut f = form.write();
+                                                    if let CredentialBinding::Env { name } = &mut f.credential_requirements[idx_env].binding {
+                                                        *name = v;
+                                                    }
+                                                },
+                                                placeholder: "如 DEPLOY_TOKEN"
+                                            }
+                                        }
+                                    }
+                                    div { class: "text-xs text-base-content/50",
+                                        code { class: "bg-base-200 rounded px-1", "{preview}" }
+                                        " ← 注入值形态"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -207,6 +343,7 @@ mod tests {
             args_template: "-i\n{{args.input}}\n{{args.output}}".into(),
             working_dir: String::new(),
             timeout_ms: String::new(),
+            credential_requirements: Vec::new(),
         }
     }
 
@@ -260,6 +397,44 @@ mod tests {
     fn build_request_rejects_bad_timeout() {
         let mut f = form();
         f.timeout_ms = "abc".into();
+        assert!(build_shell_create_request(&basics(), &f).is_err());
+    }
+
+    #[test]
+    fn build_request_carries_credential_requirements_top_level() {
+        let mut f = form();
+        f.credential_requirements = vec![CredentialRequirement {
+            kind: CredentialKind::GenericToken,
+            platform: Some("my_platform".to_string()),
+            field: None,
+            enhancer: None,
+            binding: CredentialBinding::Env {
+                name: "DEPLOY_TOKEN".to_string(),
+            },
+        }];
+        let req = build_shell_create_request(&basics(), &f).unwrap();
+        let reqs = req.credential_requirements.clone().unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(binding_name(&reqs[0].binding), "DEPLOY_TOKEN");
+        // config 内同源（后端归并时顶层覆盖，值一致）
+        assert_eq!(
+            req.config.unwrap()["credential_requirements"][0]["binding"]["name"],
+            "DEPLOY_TOKEN"
+        );
+    }
+
+    #[test]
+    fn build_request_rejects_non_env_binding_for_shell() {
+        let mut f = form();
+        f.credential_requirements = vec![CredentialRequirement {
+            kind: CredentialKind::GithubToken,
+            platform: None,
+            field: None,
+            enhancer: None,
+            binding: CredentialBinding::Header {
+                name: "authorization".to_string(),
+            },
+        }];
         assert!(build_shell_create_request(&basics(), &f).is_err());
     }
 

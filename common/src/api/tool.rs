@@ -25,6 +25,13 @@ pub struct CreateToolRequest {
     pub control_mode: Option<ControlMode>,
     /// Whether this tool is enabled
     pub enabled: Option<bool>,
+    /// 凭据需求声明（工具级通用契约，与协议无关）
+    ///
+    /// 创建时由后端归并进 `config.credential_requirements`；`None` = 保留 config
+    /// 内既有声明（兼容 HTTP 工具旧表单）。声明只含类型级匹配键与注入点，
+    /// 不含 credential_id 与凭据原文（D1）。
+    #[serde(default)]
+    pub credential_requirements: Option<Vec<crate::models::CredentialRequirement>>,
 }
 
 /// Create built-in tool response
@@ -62,6 +69,30 @@ pub struct GetToolRequest {
 /// Get tool response (alias for tool detail)
 pub type ToolDetail = GetToolResponse;
 
+/// 凭据需求的来源类型（工具自身无声明时的继承来源）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolCredentialSourceKind {
+    /// 声明属主是 MCP Server：工具行凭据需求继承自 `McpServerPo.config`
+    McpServer,
+}
+
+/// 凭据需求的继承来源（只读展示，不承载声明内容）
+///
+/// MCP 工具行是 Server 的派生镜像，声明属主在 `McpServerPo.config`（同一
+/// Server 下 N 个工具共享连接属性）；工具行 `McpToolConfig` 带
+/// `deny_unknown_fields`，不能再复制一份声明。详情接口在工具自身无声明时
+/// 只回显来源标识，既避免凭据区域空白，也不改变声明属主。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolCredentialSource {
+    /// 来源类型
+    pub kind: ToolCredentialSourceKind,
+    /// 来源实体 id（MCP Server id）
+    pub id: String,
+    /// 来源可读名称；查询失败时回落为 id
+    pub name: String,
+}
+
 /// Get tool response
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetToolResponse {
@@ -79,9 +110,12 @@ pub struct GetToolResponse {
     pub config: Option<serde_json::Value>,
     /// Whether there is any non-empty configuration
     pub has_config: bool,
-    /// 凭据需求声明（类型级：Builtin 工厂静态声明 / Mcp·Http 从 config 解析；非敏感直接展示）
+    /// 凭据需求声明（类型级：Builtin 工厂静态声明 / Http·Shell 从 config 解析；非敏感直接展示）
     #[serde(default)]
     pub credential_requirements: Vec<crate::models::CredentialRequirement>,
+    /// 凭据需求继承来源（仅当工具自身无声明且存在继承源时回显，如 MCP 工具的 Server）
+    #[serde(default)]
+    pub credential_source: Option<ToolCredentialSource>,
     /// Parameters JSON Schema
     pub parameters_schema: Option<serde_json::Value>,
     /// Tags list
@@ -287,6 +321,12 @@ pub struct UpdateToolRequest {
     pub tags: Option<Vec<String>>,
     /// New enabled status
     pub enabled: Option<bool>,
+    /// 凭据需求声明（工具级通用契约；`Some([])` 表示清空工具凭据需求）
+    ///
+    /// 详情页 config 回显会经 `redact_config` 把同名键打成 `[REDACTED]`，
+    /// 因此保存时必须由本顶层字段回传，否则凭据声明会被静默清空。
+    #[serde(default)]
+    pub credential_requirements: Option<Vec<crate::models::CredentialRequirement>>,
 }
 
 /// Update tool response

@@ -455,8 +455,15 @@ pub fn FinanceToolDetail(id: String) -> Element {
             config_form.set(builtin_form_from_config(tool.config.as_ref()));
             // 用户自建工具（HTTP / Shell）：config 反填协议子表单（与创建页同一字段集）
             if matches!(tool.protocol, ToolProtocol::Http | ToolProtocol::Shell) {
-                http_form.set(http_form_from_config(tool.config.as_ref()));
-                shell_form.set(shell_form_from_config(tool.config.as_ref()));
+                let mut http = http_form_from_config(tool.config.as_ref());
+                let mut shell = shell_form_from_config(tool.config.as_ref());
+                // config 回显会把 credential_requirements 打成 [REDACTED]，
+                // 凭据声明以顶层字段为准，否则保存时会被静默清空
+                let requirements = tool.credential_requirements.clone();
+                http.credential_requirements = requirements.clone();
+                shell.credential_requirements = requirements;
+                http_form.set(http);
+                shell_form.set(shell);
             }
         }
     });
@@ -909,19 +916,31 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                         return;
                                                     }
                                                 };
+                                                let requirements = if is_http {
+                                                    http_form.read().credential_requirements.clone()
+                                                } else {
+                                                    shell_form.read().credential_requirements.clone()
+                                                };
                                                 custom_config_saving.set(true);
                                                 spawn(async move {
                                                     match update_tool(UpdateToolRequest {
                                                         id: id.clone(),
                                                         config: Some(config),
+                                                        credential_requirements: Some(requirements),
                                                         ..Default::default()
                                                     }).await {
                                                         Ok(_) => {
                                                             toast.success("工具配置已保存");
                                                             match get_tool(build_tool_stats_request(id, stats_range())).await {
                                                                 Ok(tool) => {
-                                                                    http_form.set(http_form_from_config(tool.config.as_ref()));
-                                                                    shell_form.set(shell_form_from_config(tool.config.as_ref()));
+                                                                    // 与上方 use_effect 同源：凭据声明以顶层字段为准
+                                                                    let mut http = http_form_from_config(tool.config.as_ref());
+                                                                    let mut shell = shell_form_from_config(tool.config.as_ref());
+                                                                    let requirements = tool.credential_requirements.clone();
+                                                                    http.credential_requirements = requirements.clone();
+                                                                    shell.credential_requirements = requirements;
+                                                                    http_form.set(http);
+                                                                    shell_form.set(shell);
                                                                     tool_res.set(Some(Ok(tool)));
                                                                 }
                                                                 Err(e) => toast.error(&e),
@@ -953,20 +972,37 @@ pub fn FinanceToolDetail(id: String) -> Element {
                     }
                 }
 
-                // ===== 凭据需求只读卡片（空数组不渲染）=====
-                if !t.credential_requirements.is_empty() {
+                // ===== 凭据需求卡片 =====
+                // 工具自身无声明时，MCP 工具改展示继承来源标识（声明属主在 Server 行），
+                // 避免凭据区域恒空白；不复制声明内容、不改变声明属主。
+                if !t.credential_requirements.is_empty() || t.credential_source.is_some() {
                     HudPanel {
                         title: "凭据需求".to_string(),
                         eyebrow: "CREDENTIALS".to_string(),
                         div { class: "card-body",
-                            p { class: "text-sm opacity-60",
-                                if t.protocol == ToolProtocol::Builtin {
-                                    "内置工具凭据需求由工厂声明，只读展示"
-                                } else {
-                                    "凭据需求由工具配置声明，只读展示"
+                            if let Some(ref source) = t.credential_source {
+                                p { class: "text-sm opacity-60",
+                                    "此工具自身不声明凭据需求，凭据继承自其 MCP Server；声明在 Server 管理页维护，运行时按调用者身份解析后注入。"
                                 }
+                                div { class: "flex flex-wrap items-center gap-2 mt-2",
+                                    span { class: "text-xs opacity-60", "来源 Server：" }
+                                    Link {
+                                        class: "btn hud-btn btn-ghost btn-sm",
+                                        to: crate::pages::Route::FinanceMcpServerDetail { id: source.id.clone() },
+                                        "{source.name}"
+                                    }
+                                    code { class: "text-xs bg-base-200 rounded px-1 font-mono", "{source.id}" }
+                                }
+                            } else {
+                                p { class: "text-sm opacity-60",
+                                    if t.protocol == ToolProtocol::Builtin {
+                                        "内置工具凭据需求由工厂声明，只读展示"
+                                    } else {
+                                        "凭据需求由工具配置声明，只读展示"
+                                    }
+                                }
+                                CredentialRequirementsTable { requirements: t.credential_requirements.clone() }
                             }
-                            CredentialRequirementsTable { requirements: t.credential_requirements.clone() }
                             // 运行时就绪绑定引导（与列表 badge 同源；NotReady 时提示）
                             if let RuntimeReady::NotReady { reason, hint } = runtime_ready.read().as_ref().cloned().unwrap_or_default() {
                                 HudCallout { tone: Some("warning".to_string()), extra_class: Some("mt-3 py-2 text-sm".to_string()),

@@ -884,6 +884,8 @@ pub enum CredentialRequirementScope {
     McpHttp,
     /// HTTP 工具：Header / Query binding
     HttpTool,
+    /// 声明式 Shell 工具：仅 Env binding（值经 `shell_env::resolve` 注入子进程）
+    Shell,
     /// 内置工具（DB 不持久化，静态声明自校验用）：仅 Internal binding
     Builtin,
 }
@@ -970,6 +972,9 @@ pub fn binding_allowed(binding: &CredentialBinding, scope: CredentialRequirement
             CredentialBinding::Query { .. },
             CredentialRequirementScope::HttpTool
         ) | (
+            CredentialBinding::Env { .. },
+            CredentialRequirementScope::Shell
+        ) | (
             CredentialBinding::Internal { .. },
             CredentialRequirementScope::Builtin
         )
@@ -1007,6 +1012,9 @@ pub fn validate_requirements(
                 }
                 CredentialRequirementScope::HttpTool => {
                     "凭据注入点与工具协议不匹配（HTTP 工具仅支持请求头或查询参数注入）".to_string()
+                }
+                CredentialRequirementScope::Shell => {
+                    "凭据注入点与工具协议不匹配（Shell 工具仅支持环境变量注入）".to_string()
                 }
                 CredentialRequirementScope::Builtin => {
                     "凭据注入点与工具协议不匹配（内置工具仅支持实例字段注入）".to_string()

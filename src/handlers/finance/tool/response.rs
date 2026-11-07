@@ -1,5 +1,7 @@
-use common::api::{RuntimeReady, ToolDetail, ToolListItem};
-use common::enums::ToolStatus;
+use common::api::{
+    RuntimeReady, ToolCredentialSource, ToolCredentialSourceKind, ToolDetail, ToolListItem,
+};
+use common::enums::{ToolProtocol, ToolStatus};
 use reqwest::Url;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -61,6 +63,8 @@ pub(super) fn to_detail(tool: &Tool) -> ToolDetail {
         // 声明本身非敏感（kind/注入点），与 config 脱敏通道互不影响
         credential_requirements: crate::pkg::tool_registry::get_registry()
             .credential_requirements(&tool.po),
+        // 继承来源由 handler 经 `attach_credential_source` 异步补齐（需要查 Server 名称）
+        credential_source: None,
         parameters_schema: tool.po.parameters_schema.clone(),
         tags: tool.po.get_tags(),
         status: tool.po.status,
@@ -71,6 +75,55 @@ pub(super) fn to_detail(tool: &Tool) -> ToolDetail {
         updated_at: tool.po.updated_at,
         stats: tool.stats.clone(),
     }
+}
+
+/// 组装 MCP 工具的凭据需求继承来源（纯函数，便于护栏测试）
+///
+/// 只在「MCP 协议 + 工具自身无声明」时返回；工具行 config 只存
+/// `{server_id, tool_name}`，声明属主在 Server 行，这里不复制声明内容。
+pub(super) fn credential_source(
+    tool: &Tool,
+    server_name: Option<String>,
+) -> Option<ToolCredentialSource> {
+    if !matches!(tool.po.protocol, ToolProtocol::Mcp) {
+        return None;
+    }
+    let server_id = serde_json::from_value::<common::config::McpToolConfig>(tool.po.config.clone())
+        .ok()?
+        .server_id;
+    Some(ToolCredentialSource {
+        kind: ToolCredentialSourceKind::McpServer,
+        name: server_name
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| server_id.clone()),
+        id: server_id,
+    })
+}
+
+/// 详情回显补齐凭据需求继承来源（只回显 Server 标识，不改声明属主）
+///
+/// `to_detail` 是同步纯函数、无法查库；MCP Server 名称由此处 best-effort 补一次，
+/// 查不到（Server 已删 / DB 异常）时回落为 server_id，详情接口不因此失败。
+pub(super) async fn attach_credential_source(
+    ctx: &RequestContext,
+    tool: &Tool,
+    detail: &mut ToolDetail,
+) {
+    // 工具已有自己的声明时不标注继承（HTTP / Shell / Builtin 工厂静态）
+    if !detail.credential_requirements.is_empty() {
+        return;
+    }
+    let Some(source) = credential_source(tool, None) else {
+        return;
+    };
+    let server_name = crate::service::domain::finance::domain()
+        .mcp_server_manage()
+        .get_mcp_server(ctx.clone(), &source.id)
+        .await
+        .ok()
+        .flatten()
+        .map(|server| server.po.name);
+    detail.credential_source = credential_source(tool, server_name);
 }
 
 fn has_config(config: &Value) -> bool {

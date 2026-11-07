@@ -2183,3 +2183,77 @@ async fn test_sync_installed_copies_counts_only_real_changes(pool: SqlitePool) {
         .unwrap();
     assert_eq!(settled, 0, "同步完成后的再次同步不应重复计数");
 }
+
+/// 护栏：Agent 不能通过出生可达的 `install_tool_pack` 自开受限包。
+///
+/// 内置工具经 handler 直调核心函数，不经过 axum 中间件——HTTP 侧的角色门闩
+/// 拦不住这条链路，主封堵必须落在 domain 并按 caller_type 分叉。
+#[sqlx::test]
+async fn test_install_tool_pack_rejects_restricted_pack_for_agent_caller(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+    let agent = create_test_agent("EscalationGuardAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    let agent_ctx = ctx
+        .to_builder()
+        .caller_type(common::enums::CallerType::Agent)
+        .agent_id(agent.id().to_string())
+        .build();
+    let err = domain
+        .agent_manage()
+        .install_tool_pack(agent_ctx.clone(), agent.id(), "admin")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code_enum(), common::error::ErrorCode::Forbidden);
+
+    // 大小写 / 空白变体同样被拒（tag 归一化只用于边界判断，不改写写入值）
+    let variant_err = domain
+        .agent_manage()
+        .install_tool_pack(agent_ctx, agent.id(), " ADMIN ")
+        .await
+        .unwrap_err();
+    assert_eq!(variant_err.code_enum(), common::error::ErrorCode::Forbidden);
+
+    // 边界在任何写库动作之前，installed_tags 不得被写入（含变体脏 tag）
+    let packs = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx, agent.id())
+        .await
+        .unwrap();
+    assert!(
+        !packs.iter().any(|p| p.trim().eq_ignore_ascii_case("admin")),
+        "Agent 自开 admin 包（含大小写/空白变体）必须被拒且不留痕：{packs:?}"
+    );
+}
+
+/// 护栏：管理员 HTTP（caller_type=User）仍可显式授权受限包。
+///
+/// `publish_skill` 等能力刻意依赖「管理员给收口人 Agent 装 admin 包」，
+/// 按身份分叉就是为了保住这条链路，不能把 admin 全局禁掉。
+#[sqlx::test]
+async fn test_install_tool_pack_allows_restricted_pack_for_admin_user(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+    let agent = create_test_agent("AdminGrantedAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "admin")
+        .await
+        .expect("管理员显式授权 admin 包应放行");
+
+    let packs = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx, agent.id())
+        .await
+        .unwrap();
+    assert!(packs.contains(&"admin".to_string()));
+}

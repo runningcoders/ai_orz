@@ -44,6 +44,96 @@ pub fn is_supported_toolchain(name: &str) -> bool {
         .any(|(supported, _, _)| *supported == lowered)
 }
 
+/// 受限工具包：Agent 不得自行安装（管理员经 HTTP 显式授权不受限）
+///
+/// `admin` 内含模型提供商 / MCP Server / 消息通道 / 组织 / 技能发布等管理面
+/// 工具，默认不在 `BASE_AGENT_PACKS`；而 `install_tool_pack` 自身挂在
+/// `tool_management`（Agent 出生可达），若无边界则 Agent 可自开 admin 包
+/// 完成权限提升。封堵落在 domain，不能只靠 HTTP 路由门闩——内置工具是
+/// handler 直调，不经过 axum 中间件。
+pub const RESTRICTED_TOOL_PACKS: &[&str] = &["admin"];
+
+/// Agent 自建工具禁止携带的标签（防通过 tag 把工具扩散给其他 Agent）
+///
+/// `neural` 恒在工具面 tag_filter（所有 Agent 天生拥有）、`internal` 为系统
+/// 自用、`admin` 会被已装 admin 包的 Agent 继承——任一都能让 Agent 造出的
+/// 工具越过自身授权边界。管理员 HTTP 创建不受此限（保留既有运维能力）。
+pub const AGENT_FORBIDDEN_TOOL_TAGS: &[&str] = &["neural", "internal", "admin"];
+
+/// Agent 创建工具时的标签校验（规则本体单点，供后端管理面复用）
+pub fn validate_agent_created_tool_tags(tags: &[String]) -> Result<(), String> {
+    let forbidden: Vec<String> = tags
+        .iter()
+        .map(|tag| tag.trim().to_ascii_lowercase())
+        .filter(|tag| AGENT_FORBIDDEN_TOOL_TAGS.contains(&tag.as_str()))
+        .collect();
+    if forbidden.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Agent 创建的工具不允许携带保留标签：{}",
+            forbidden.join(", ")
+        ))
+    }
+}
+
+/// 协议 → 工具凭据需求作用域（管理期统一校验单点）
+///
+/// Mcp 的声明属主是 `McpServerPo.config`（同一 server 下 N 个工具共享连接属性，
+/// 工具行是 sync 派生的远端镜像）；Builtin 的声明是工厂代码静态。这两类协议
+/// 不经工具管理面编辑凭据需求，返回 `None`。
+pub fn tool_credential_scope(
+    protocol: crate::enums::ToolProtocol,
+) -> Option<crate::models::CredentialRequirementScope> {
+    use crate::enums::ToolProtocol;
+    use crate::models::CredentialRequirementScope;
+    match protocol {
+        ToolProtocol::Http => Some(CredentialRequirementScope::HttpTool),
+        ToolProtocol::Shell => Some(CredentialRequirementScope::Shell),
+        ToolProtocol::Mcp | ToolProtocol::Builtin => None,
+    }
+}
+
+/// 工具级凭据需求声明 → `ToolPo.config` 归并（创建/更新管理面共用单一实现）
+///
+/// 契约层（顶层 DTO 字段）与存储层（各协议 config 内同名键）在此收口：
+/// - `None` = 调用方未声明，保留 config 内既有声明（兼容 HTTP 工具旧表单）
+/// - `Some([])` = 显式清空（删除键）
+/// - 非 object 的 config（存量 Null）先归一为空对象
+///
+/// 声明本身非敏感（不含 credential_id / 凭据原文，D1），归并前按协议 scope
+/// 走 common 六规则单点校验。
+pub fn apply_credential_requirements(
+    config: &mut serde_json::Value,
+    requirements: Option<&[crate::models::CredentialRequirement]>,
+    scope: Option<crate::models::CredentialRequirementScope>,
+) -> Result<(), String> {
+    let Some(requirements) = requirements else {
+        return Ok(());
+    };
+    let Some(scope) = scope else {
+        return Err(
+            "该协议的工具凭据声明不由工具行承载（MCP 请在 Server 配置，Builtin 由代码静态声明）"
+                .to_string(),
+        );
+    };
+    crate::models::identity_credentials::validate_requirements(requirements, scope)?;
+    if !config.is_object() {
+        *config = serde_json::Value::Object(serde_json::Map::new());
+    }
+    let object = config
+        .as_object_mut()
+        .expect("config normalized to object above");
+    if requirements.is_empty() {
+        object.remove("credential_requirements");
+    } else {
+        let value =
+            serde_json::to_value(requirements).map_err(|e| format!("凭据需求序列化失败: {}", e))?;
+        object.insert("credential_requirements".to_string(), value);
+    }
+    Ok(())
+}
+
 /// Builtin 工具 config 已知字段轻量校验（D28：CLI 命令与行为参数进 PO config）
 ///
 /// 仅校验已知字段的类型与取值（command 非空 string / timeout_ms·max_output_bytes

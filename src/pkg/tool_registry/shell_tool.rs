@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use common::err;
 use common::error::Result;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -50,6 +51,8 @@ pub use common::config::ShellToolConfig;
 pub struct ShellCoreTool {
     po: ToolPo,
     config: ShellToolConfig,
+    /// check 写入的 Env 注入值（单次实例，D22；值不进 args / trace）
+    credential_injections: HashMap<String, String>,
 }
 
 impl ShellCoreTool {
@@ -59,7 +62,11 @@ impl ShellCoreTool {
             .map_err(|e| anyhow!("invalid shell tool config for {}: {}", po.id, e))?;
         validate_config(&config)
             .map_err(|e| anyhow!("invalid shell tool config for {}: {}", po.id, e))?;
-        Ok(Self { po, config })
+        Ok(Self {
+            po,
+            config,
+            credential_injections: HashMap::new(),
+        })
     }
 
     pub fn config(&self) -> &ShellToolConfig {
@@ -70,13 +77,40 @@ impl ShellCoreTool {
 #[async_trait]
 impl CoreTool for ShellCoreTool {
     async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
-        execute_shell_call(&ctx, &self.config, self.po.parameters_schema.as_ref(), args)
-            .await
-            .map_err(|e| err!(ToolExecutionFailed, e.to_string()))
+        execute_shell_call(
+            &ctx,
+            &self.config,
+            self.po.parameters_schema.as_ref(),
+            args,
+            &self.credential_injections,
+        )
+        .await
+        .map_err(|e| err!(ToolExecutionFailed, e.to_string()))
     }
 
     fn po(&self) -> &ToolPo {
         &self.po
+    }
+
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        self.config.credential_requirements.clone()
+    }
+
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
+        let mut injections = HashMap::with_capacity(resolved.len());
+        for item in resolved {
+            match &item.requirement.binding {
+                // Shell 唯一合法注入点（配置期 validate_requirements 已限定，此处防御兜底）
+                common::models::CredentialBinding::Env { name } => {
+                    injections.insert(name.clone(), item.value.clone());
+                }
+                _ => {
+                    return Err(err!(InvalidRequest, "Shell 工具仅支持环境变量凭据注入点"));
+                }
+            }
+        }
+        self.credential_injections = injections;
+        Ok(())
     }
 }
 
@@ -100,6 +134,7 @@ async fn execute_shell_call(
     config: &ShellToolConfig,
     parameters_schema: Option<&Value>,
     args: Value,
+    credential_injections: &HashMap<String, String>,
 ) -> Result<Value> {
     validate_args_schema(parameters_schema, &args)?;
 
@@ -193,7 +228,11 @@ async fn execute_shell_call(
     }
     // 统一环境变量出口：PATH 补全（服务进程 PATH 常缺 node/cargo 等目录）
     // + 身份变量注入（与 shell_exec 一致，供 git commit-msg hook 读取）
+    // 凭据值只经 extra_env 进子进程 env，绝不进 args / trace（设计红线 2）；
+    // shell_env::resolve 是三条子进程链路的唯一合法出口，不自行拼装 env。
+    let extra_env = credential_injections.clone();
     let env = shell_env::resolve(&shell_env::ShellEnvRequest {
+        extra_env: Some(&extra_env),
         task_id: ctx.task_id().map(String::as_str),
         agent_id: ctx.agent_id().map(String::as_str),
         ..Default::default()
@@ -252,6 +291,11 @@ pub fn validate_config(config: &ShellToolConfig) -> Result<()> {
         )
         .into());
     }
+    // 配置期六规则（含 binding ↔ Shell scope）：本体在 common，前端预校验同源
+    crate::pkg::credential::validate_requirements(
+        &config.credential_requirements,
+        common::models::CredentialRequirementScope::Shell,
+    )?;
     Ok(())
 }
 

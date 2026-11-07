@@ -62,6 +62,12 @@ impl ToolProviderManage for FinanceDomainImpl {
             .into_iter()
             .filter(|t| !RESERVED.iter().any(|r| t == r))
             .collect();
+        // Agent 侧不暴露受限包：主封堵在 `install_tool_pack`，此处减少信息暴露
+        // （越权链路的「发现 tag」一环）。管理员 HTTP 仍能看到并显式授权，
+        // 技能发布收口人等预设场景不受影响。
+        if ctx.caller_type() == common::enums::CallerType::Agent {
+            filtered.retain(|t| !common::models::RESTRICTED_TOOL_PACKS.contains(&t.as_str()));
+        }
         filtered.sort();
         filtered.dedup();
         Ok(filtered)
@@ -197,6 +203,19 @@ fn validate_tool_management_policy(tool: &Tool) -> Result<()> {
                 .map_err(|err| err!(InvalidRequest, "{}", err).with_source(err))?;
         }
         _ => {}
+    }
+
+    // 工具级凭据需求统一校验（管理期单点）：协议 → scope 映射与六规则本体都在
+    // common，HTTP / Shell 等可编辑协议走同一入口；各协议 validate_config 内的
+    // 校验保留作运行时构造实例的二次防御（纯函数幂等，无副作用）。
+    if let Some(scope) = common::models::tool_credential_scope(tool.po.protocol) {
+        let requirements: Vec<common::models::CredentialRequirement> = tool
+            .po
+            .config
+            .get("credential_requirements")
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .unwrap_or_default();
+        crate::pkg::credential::validate_requirements(&requirements, scope)?;
     }
 
     Ok(())

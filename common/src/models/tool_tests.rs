@@ -212,3 +212,169 @@ fn parameters_schema_still_descends_into_properties_and_definitions() {
         "{err}"
     );
 }
+
+// ===== 工具级凭据声明统一契约（顶层 DTO → config 归并）=====
+
+use crate::enums::ToolProtocol;
+use crate::models::{
+    CredentialBinding, CredentialKind, CredentialRequirement, CredentialRequirementScope,
+};
+
+fn shell_env_requirement(name: &str) -> CredentialRequirement {
+    CredentialRequirement {
+        kind: CredentialKind::GenericToken,
+        platform: Some("my_platform".to_string()),
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Env {
+            name: name.to_string(),
+        },
+    }
+}
+
+#[test]
+fn tool_credential_scope_maps_editable_protocols_only() {
+    assert_eq!(
+        tool_credential_scope(ToolProtocol::Http),
+        Some(CredentialRequirementScope::HttpTool)
+    );
+    assert_eq!(
+        tool_credential_scope(ToolProtocol::Shell),
+        Some(CredentialRequirementScope::Shell)
+    );
+    // MCP 声明在 server 行、Builtin 是代码静态 → 工具行不承载声明
+    assert_eq!(tool_credential_scope(ToolProtocol::Mcp), None);
+    assert_eq!(tool_credential_scope(ToolProtocol::Builtin), None);
+}
+
+#[test]
+fn shell_scope_only_allows_env_binding() {
+    let env = shell_env_requirement("DEPLOY_TOKEN");
+    assert!(
+        crate::models::validate_requirements(
+            std::slice::from_ref(&env),
+            CredentialRequirementScope::Shell,
+        )
+        .is_ok()
+    );
+    // Header / Query / Internal 在 Shell scope 下必须被配置期拒绝
+    for binding in [
+        CredentialBinding::Header {
+            name: "authorization".to_string(),
+        },
+        CredentialBinding::Query {
+            name: "token".to_string(),
+        },
+        CredentialBinding::Internal {
+            field: "api_key".to_string(),
+        },
+    ] {
+        let mut req = env.clone();
+        req.binding = binding;
+        assert!(
+            crate::models::validate_requirements(&[req], CredentialRequirementScope::Shell)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn apply_credential_requirements_merges_top_level_contract() {
+    let mut config = json!({"program": "deploy-cli", "credential_requirements": "stale"});
+    let reqs = vec![shell_env_requirement("DEPLOY_TOKEN")];
+    apply_credential_requirements(
+        &mut config,
+        Some(&reqs),
+        tool_credential_scope(ToolProtocol::Shell),
+    )
+    .unwrap();
+    let parsed: crate::config::ShellToolConfig = serde_json::from_value(config.clone()).unwrap();
+    assert_eq!(parsed.program, "deploy-cli");
+    assert_eq!(parsed.credential_requirements.len(), 1);
+    assert_eq!(
+        config["credential_requirements"][0]["binding"]["name"],
+        "DEPLOY_TOKEN"
+    );
+}
+
+#[test]
+fn apply_credential_requirements_none_keeps_existing_and_empty_clears() {
+    let scope = tool_credential_scope(ToolProtocol::Shell);
+    let mut config = json!({
+        "program": "cli",
+        "credential_requirements": [serde_json::to_value(shell_env_requirement("KEEP")).unwrap()]
+    });
+    apply_credential_requirements(&mut config, None, scope).unwrap();
+    assert_eq!(
+        config["credential_requirements"][0]["binding"]["name"],
+        "KEEP"
+    );
+
+    apply_credential_requirements(&mut config, Some(&[]), scope).unwrap();
+    assert!(config.get("credential_requirements").is_none());
+}
+
+#[test]
+fn apply_credential_requirements_rejects_non_editable_protocols() {
+    for protocol in [ToolProtocol::Mcp, ToolProtocol::Builtin] {
+        let mut config = json!({});
+        let err = apply_credential_requirements(
+            &mut config,
+            Some(&[shell_env_requirement("TOKEN")]),
+            tool_credential_scope(protocol),
+        )
+        .unwrap_err();
+        assert!(err.contains("不由工具行承载"), "{err}");
+    }
+}
+
+#[test]
+fn apply_credential_requirements_normalizes_null_config_and_validates() {
+    let scope = tool_credential_scope(ToolProtocol::Shell);
+    let mut config = serde_json::Value::Null;
+    let mut bad = shell_env_requirement("TOKEN");
+    bad.binding = CredentialBinding::Header {
+        name: "authorization".to_string(),
+    };
+    // 非法注入点在配置期即被拒（不会静默落库）
+    assert!(apply_credential_requirements(&mut config, Some(&[bad]), scope).is_err());
+
+    apply_credential_requirements(&mut config, Some(&[shell_env_requirement("TOKEN")]), scope)
+        .unwrap();
+    assert!(config.is_object());
+    assert_eq!(
+        config["credential_requirements"][0]["binding"]["name"],
+        "TOKEN"
+    );
+}
+
+#[test]
+fn agent_created_tool_tags_accepts_ordinary_tags() {
+    let tags = vec!["data_analysis".to_string(), " finance ".to_string()];
+    assert!(super::validate_agent_created_tool_tags(&tags).is_ok());
+    assert!(super::validate_agent_created_tool_tags(&[]).is_ok());
+}
+
+#[test]
+fn agent_created_tool_tags_reject_reserved_tags_that_would_escalate_reach() {
+    for tag in super::AGENT_FORBIDDEN_TOOL_TAGS {
+        let tags = vec![tag.to_string()];
+        let err = super::validate_agent_created_tool_tags(&tags).unwrap_err();
+        assert!(err.contains(tag), "{err}");
+    }
+    // 大小写与空白不能绕过（工具面按字面量匹配 tag）
+    let err = super::validate_agent_created_tool_tags(&[" NEURAL ".to_string()]).unwrap_err();
+    assert!(err.contains("neural"), "{err}");
+}
+
+#[test]
+fn restricted_packs_are_also_forbidden_as_agent_created_tags() {
+    // 受限包与禁用的自建标签必须同步：Agent 既不能装 admin 包，也不能造出
+    // 一个带 admin 标签、被已授权 Agent 自动继承的工具。
+    for pack in super::RESTRICTED_TOOL_PACKS {
+        assert!(
+            super::AGENT_FORBIDDEN_TOOL_TAGS.contains(pack),
+            "受限包 {pack} 必须同时禁止作为 Agent 自建工具的标签"
+        );
+    }
+}

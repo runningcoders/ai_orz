@@ -1,3 +1,4 @@
+use common::api::ToolCredentialSourceKind;
 use common::enums::ToolProtocol;
 use common::models::{CredentialBinding, CredentialKind};
 use serde_json::json;
@@ -154,4 +155,67 @@ fn tool_detail_exposes_config_declared_credential_requirements_for_http_tool() {
         detail.config.unwrap()["credential_requirements"],
         "[REDACTED]"
     );
+}
+
+fn mcp_tool_with_config(config: serde_json::Value) -> Tool {
+    let po = ToolPo::new(
+        String::new(),
+        "test-mcp-tool".to_string(),
+        "test mcp tool".to_string(),
+        ToolProtocol::Mcp,
+        config,
+        None,
+        vec![],
+        Some("test-user".to_string()),
+    );
+    Tool::from_po_for_management(po)
+}
+
+#[test]
+fn mcp_tool_credential_source_only_reports_server_identity() {
+    let tool = mcp_tool_with_config(json!({
+        "server_id": "srv-42",
+        "tool_name": "remote.echo"
+    }));
+    let source = super::response::credential_source(&tool, Some("生产 MCP".to_string()))
+        .expect("MCP 工具应回显凭据继承来源");
+    assert_eq!(source.kind, ToolCredentialSourceKind::McpServer);
+    assert_eq!(source.id, "srv-42");
+    assert_eq!(source.name, "生产 MCP");
+
+    // 关键：详情仍不复制 Server 的声明内容，工具行自身声明恒空；
+    // 来源标识由 handler 经 attach_credential_source 异步补齐。
+    let detail = to_detail(&tool);
+    assert!(detail.credential_requirements.is_empty());
+    assert!(detail.credential_source.is_none());
+    // server_id 不属于敏感键，config 回显里仍明文可见（前端可据此兜底）
+    assert_eq!(detail.config.unwrap()["server_id"], "srv-42");
+}
+
+#[test]
+fn credential_source_falls_back_to_id_and_skips_non_mcp_or_broken_config() {
+    let tool = mcp_tool_with_config(json!({
+        "server_id": "srv-42",
+        "tool_name": "remote.echo"
+    }));
+    assert_eq!(
+        super::response::credential_source(&tool, None)
+            .unwrap()
+            .name,
+        "srv-42"
+    );
+    assert_eq!(
+        super::response::credential_source(&tool, Some(String::new()))
+            .unwrap()
+            .name,
+        "srv-42"
+    );
+
+    // 非 MCP 协议不标注继承来源（它有自己的声明）
+    let http = http_tool_with_config(json!({}));
+    assert!(super::response::credential_source(&http, None).is_none());
+
+    // 畸形工具行 config 安静跳过，详情接口不因 Server 数据异常而失败
+    let broken = mcp_tool_with_config(json!({ "tool_name": "remote.echo" }));
+    assert!(super::response::credential_source(&broken, None).is_none());
 }

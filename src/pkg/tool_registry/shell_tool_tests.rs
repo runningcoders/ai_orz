@@ -186,3 +186,93 @@ async fn call_reports_non_zero_exit() {
     assert_eq!(out["success"], json!(false));
     assert_eq!(out["exit_code"], json!(7));
 }
+
+// ===== 凭据注入（Shell scope：仅 Env，值不进 args / trace）=====
+
+use crate::pkg::credential::ResolvedRequirement;
+use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
+
+fn test_requirement(binding: CredentialBinding) -> CredentialRequirement {
+    CredentialRequirement {
+        kind: CredentialKind::GenericToken,
+        platform: Some("my_platform".to_string()),
+        field: None,
+        enhancer: None,
+        binding,
+    }
+}
+
+fn env_binding(name: &str) -> CredentialBinding {
+    CredentialBinding::Env {
+        name: name.to_string(),
+    }
+}
+
+#[test]
+fn validate_config_rejects_non_env_shell_credential_binding() {
+    let binding = CredentialBinding::Header {
+        name: "authorization".to_string(),
+    };
+    let config: ShellToolConfig = serde_json::from_value(json!({
+        "program": "echo",
+        "args_template": [],
+        "credential_requirements": [serde_json::to_value(test_requirement(binding)).unwrap()]
+    }))
+    .unwrap();
+    assert!(validate_config(&config).is_err());
+}
+
+#[test]
+fn check_injects_env_credentials_and_rejects_other_bindings() {
+    let requirement = test_requirement(env_binding("DEPLOY_TOKEN"));
+    let config = json!({
+        "program": "echo",
+        "args_template": ["ok"],
+        "credential_requirements": [serde_json::to_value(requirement.clone()).unwrap()]
+    });
+    let mut tool = ShellCoreTool::from_po(po_with_config(config)).unwrap();
+    assert_eq!(tool.credential_requirements().len(), 1);
+
+    tool.check(&[ResolvedRequirement {
+        requirement: requirement.clone(),
+        value: "s3cr3t".to_string(),
+    }])
+    .unwrap();
+    assert_eq!(
+        tool.credential_injections
+            .get("DEPLOY_TOKEN")
+            .map(String::as_str),
+        Some("s3cr3t")
+    );
+
+    let bad = test_requirement(CredentialBinding::Header {
+        name: "authorization".to_string(),
+    });
+    assert!(
+        tool.check(&[ResolvedRequirement {
+            requirement: bad,
+            value: "s3cr3t".to_string(),
+        }])
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn call_exposes_injected_credential_to_child_env() {
+    let config = json!({
+        "program": "sh",
+        "args_template": ["-c", "printf %s \"$DEPLOY_TOKEN\""],
+        "timeout_ms": 5000
+    });
+    let mut tool = ShellCoreTool::from_po(po_with_config(config)).unwrap();
+    tool.check(&[ResolvedRequirement {
+        requirement: test_requirement(env_binding("DEPLOY_TOKEN")),
+        value: "s3cr3t".to_string(),
+    }])
+    .unwrap();
+    let out = tool
+        .call(test_ctx("test-user", None), json!({"file": "x"}))
+        .await
+        .unwrap();
+    assert_eq!(out["stdout"], json!("s3cr3t"));
+}

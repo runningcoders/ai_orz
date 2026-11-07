@@ -7,7 +7,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolRequest, GetToolResponse};
 use common::error::Result;
 
-use super::response::to_detail;
+use super::response::{attach_credential_source, to_detail};
 
 /// Get detailed information about a specific tool including configuration
 #[register_handler_tool(
@@ -30,9 +30,11 @@ pub async fn get_tool(ctx: RequestContext, params: GetToolRequest) -> Result<Get
 
     let tool = domain()
         .tool_provider_manage()
-        .get_tool_with_options(ctx, &params.id, options)
+        .get_tool_with_options(ctx.clone(), &params.id, options)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Tool {} not found", params.id)))?;
 
-    Ok(to_detail(&tool))
+    let mut detail = to_detail(&tool);
+    attach_credential_source(&ctx, &tool, &mut detail).await;
+    Ok(detail)
 }

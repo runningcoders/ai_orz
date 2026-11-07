@@ -1060,7 +1060,17 @@ fn finance_routes() -> Router {
             "/mcp-servers/{server_id}/tools",
             get(handlers::finance::mcp_tool::list_mcp_tools_by_server_handler),
         )
-        .route("/tools", post(handlers::finance::tool::create_tool::create_tool_handler))
+        // 工具写操作是组织级共享资源的管理面：HTTP 入口要求 Admin。
+        // Agent 经内置工具 `create_tool` 直调 handler，不经过 axum 中间件，
+        // 能力仍保留（其边界由 install_tool_pack 与标签校验收口）。
+        .route(
+            "/tools",
+            post(handlers::finance::tool::create_tool::create_tool_handler).layer(
+                axum::middleware::from_fn(|req, next| {
+                    require_role_middleware(common::enums::UserRole::Admin, req, next)
+                }),
+            ),
+        )
         .route("/tools", get(handlers::finance::tool::list_tools::list_tools_handler))
         .route(
             "/tools/query",
@@ -1110,10 +1120,21 @@ fn finance_routes() -> Router {
             ),
         )
         .route("/tools/{id}", get(handlers::finance::tool::get_tool::get_tool_handler))
-        .route("/tools/{id}", put(handlers::finance::tool::update_tool::update_tool_handler))
+        .route(
+            "/tools/{id}",
+            put(handlers::finance::tool::update_tool::update_tool_handler).layer(
+                axum::middleware::from_fn(|req, next| {
+                    require_role_middleware(common::enums::UserRole::Admin, req, next)
+                }),
+            ),
+        )
         .route(
             "/tools/{id}/status",
-            put(handlers::finance::tool::update_tool_status::update_tool_status_handler),
+            put(handlers::finance::tool::update_tool_status::update_tool_status_handler).layer(
+                axum::middleware::from_fn(|req, next| {
+                    require_role_middleware(common::enums::UserRole::Admin, req, next)
+                }),
+            ),
         )
         .route(
             "/tools/{id}/debug-call",
@@ -1130,7 +1151,14 @@ fn finance_routes() -> Router {
             "/agents/{agent_id}/tools/{tool_id}/bind",
             delete(handlers::finance::tool::unbind_tool_from_agent::unbind_tool_from_agent_handler),
         )
-        .route("/tools/{id}", delete(handlers::finance::tool::delete_tool::delete_tool_handler))
+        .route(
+            "/tools/{id}",
+            delete(handlers::finance::tool::delete_tool::delete_tool_handler).layer(
+                axum::middleware::from_fn(|req, next| {
+                    require_role_middleware(common::enums::UserRole::Admin, req, next)
+                }),
+            ),
+        )
 }
 
 fn system_routes() -> Router {
