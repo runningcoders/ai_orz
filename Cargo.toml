@@ -257,3 +257,27 @@ path = "tests/integration/organization_invite_test.rs"
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]
 # full-vector = ["hnsw"]
+
+# ===== 开发/测试产物体积极小化 =====
+# 背景：dev/test 默认 debug=2 会把完整 DWARF 写进每个 codegen-unit 的 .rcgu.o 与
+# 每个测试二进制；本项目 40+ 个 [[test]] 各自静态链接 duckdb（libduckdb.a 1.46G），
+# 单个测试二进制 ~700M，每轮 make ci 新增几十 G。Cargo 又不回收旧指纹副本（见
+# scripts/clean_target.py 头注），target 曾涨到 346G。
+#
+# workspace 代码只保留行表：backtrace 仍有文件名/行号，cargo-llvm-cov 仍能做行级
+# 覆盖率映射（覆盖率只插桩 workspace crate）；不含类型/变量信息。
+# 第三方依赖完全关掉 debuginfo：它们本来就不进覆盖率报告，调试信息纯属浪费。
+# ⚠️ 覆盖率门禁（make coverage 的 38/45 红线）依赖行表，勿把 workspace 侧改成 0。
+# 需要本地断点调试看变量时临时覆盖：CARGO_PROFILE_DEV_DEBUG=2 cargo build。
+# 首次改动会因 rustc flags 变化触发一次全量重编，之后产物显著变小。
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = 0
+
+[profile.test]
+debug = "line-tables-only"
+
+[profile.test.package."*"]
+debug = 0

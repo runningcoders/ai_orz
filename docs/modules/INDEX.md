@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 673 篇 / 14,174,637 B**，分布于 15 个模块。
+**合计 673 篇 / 14,176,311 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -15,11 +15,11 @@
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,363 |
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 904,755 |
-| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,236,980 |
+| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,237,661 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,177 |
 | [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 874,062 |
 | [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,530 |
-| [06-工具与技能](#06-工具与技能) | 11 | 14 | 52 | 77 | 1,784,857 |
+| [06-工具与技能](#06-工具与技能) | 11 | 14 | 52 | 77 | 1,785,850 |
 | [07-外部Agent(A2A)](#07-外部agenta2a) | 3 | 3 | 20 | 26 | 515,641 |
 | [08-搜索](#08-搜索) | 5 | 10 | 21 | 36 | 852,924 |
 | [09-统计与监控](#09-统计与监控) | 3 | 6 | 8 | 17 | 299,639 |
@@ -200,11 +200,11 @@
 | 12 | [思考循环异常退出兜底总结与错误上报结构化](<02-Agent运行时/C-知识/思考循环异常退出兜底总结与错误上报结构化/思考循环异常退出兜底总结与错误上报结构化.md>) | 4,735 |
 | 13 | [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](<02-Agent运行时/C-知识/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md>) | 13,082 |
 | 14 | [技能包管理](<02-Agent运行时/C-知识/技能包管理.md>) | 30,463 |
-| 15 | [策略引擎与 Shell 拦截层](<02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md>) | 32,664 |
+| 15 | [策略引擎与 Shell 拦截层](<02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md>) | 32,997 |
 | 16 | [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层](<02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md>) | 15,003 |
 | 17 | [记忆系统管理](<02-Agent运行时/C-知识/记忆系统管理.md>) | 36,203 |
 | 18 | [运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化](<02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md>) | 13,011 |
-| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 57,664 |
+| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 58,012 |
 
 ### 03-记忆系统
 
@@ -428,13 +428,13 @@
 | 8 | [MCP 协议工具](<06-工具与技能/C-知识/MCP 协议工具.md>) | 17,838 |
 | 9 | [MCP 工具集成（代码落地层）](<06-工具与技能/C-知识/MCP 工具集成.md>) | 15,825 |
 | 10 | [MCP 服务器集成](<06-工具与技能/C-知识/MCP 服务器集成.md>) | 19,624 |
-| 11 | [Shell 工具全链路：shell_exec 内置执行 + shell_policy 策略拦截 + shell_tool 声明式注册](<06-工具与技能/C-知识/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行.md>) | 16,988 |
+| 11 | [Shell 工具全链路：shell_exec 内置执行 + shell_policy 策略拦截 + shell_tool 声明式注册](<06-工具与技能/C-知识/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行/Shell 工具全链路：shell_tool 注册 + shell_policy 拦截 + shell_exec 执行.md>) | 17,671 |
 | 12 | [Shell 执行工具 (shell_exec)](<06-工具与技能/C-知识/Shell 执行工具 (shell_exec).md>) | 17,514 |
 | 13 | [Shell 执行工具（业务功能层）](<06-工具与技能/C-知识/Shell 执行工具.md>) | 28,491 |
-| 14 | [Shell执行工具](<06-工具与技能/C-知识/Shell执行工具.md>) | 20,046 |
+| 14 | [Shell执行工具](<06-工具与技能/C-知识/Shell执行工具.md>) | 20,365 |
 | 15 | [§1 概述（一句话定位 + 解决什么问题）](<06-工具与技能/C-知识/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md>) | 44,106 |
 | 16 | [Tool 维度统计](<06-工具与技能/C-知识/Tool 维度统计.md>) | 17,234 |
-| 17 | [pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）](<06-工具与技能/C-知识/pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）/pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）.md>) | 13,782 |
+| 17 | [pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）](<06-工具与技能/C-知识/pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）/pkg/authorization 工具授权系统（拦截门 + 审批状态机 + 工具执行融合）.md>) | 13,773 |
 | 18 | [pkg 基建统一](<06-工具与技能/C-知识/pkg 基建统一.md>) | 11,374 |
 | 19 | [sync_seed_skill 预置技能同步工具（运行期数据目录增量导入）](<06-工具与技能/C-知识/sync_seed_skill 预置技能同步工具（运行期数据目录增量导入）/sync_seed_skill 预置技能同步工具（运行期数据目录增量导入）.md>) | 8,975 |
 | 20 | [共享工具凭据增强器](<06-工具与技能/C-知识/共享工具凭据增强器.md>) | 45,483 |

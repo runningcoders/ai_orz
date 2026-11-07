@@ -8,6 +8,10 @@ linker = "rust-lld"
 # 限制并发编译进程数，避免内存被打爆（M 系列芯片日常开发 8 足够）
 jobs = 8
 
-# 注意：cargo 官方目前没有 [cache] auto-clean 配置项。
-# 增量缓存治理依赖 Makefile 的 `make clean-slim`（清理 incremental + 陈旧 deps 快照），
-# 建议每 1-2 周或 target 超过 10GB 时手动执行一次。
+# target/ 磁盘治理：Cargo 只会回收 ~/.cargo 全局缓存（[cache] auto-clean-frequency），
+# target 目录里的 build artifacts GC 官方尚未实现（Cargo Book "Global caches" / cargo#13136），
+# 旧指纹副本会无限累积。因此所有编译入口在编译前自动跑 scripts/clean_target.sh stale
+# （按 .fingerprint/*/invoked.timestamp 精准判定活缓存），命令结束后再由各脚本的 EXIT trap
+# 立刻清掉本次产生的 *.rcgu.o（common.sh::clean_generated_rcgu，编完即回落）；
+# 手动深度瘦身 make clean-slim，全量重置 make clean。
+# 可用 AI_ORZ_GC_KEEP_DAYS / AI_ORZ_GC_KEEP_PER_CRATE 调保留窗口。

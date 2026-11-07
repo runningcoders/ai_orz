@@ -46,6 +46,10 @@ set -eu
 # shellcheck source=./lib/service.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/service.sh"
 
+# build 结束（含失败 / Ctrl+C）后立刻清掉本次产生的 *.rcgu.o；
+# install / start 等非编译子命令只会空跑一次 find，无副作用。
+trap clean_generated_rcgu EXIT
+
 CMD="${1:-start}"
 [ $# -gt 0 ] && shift || true
 
