@@ -12,6 +12,9 @@ use crate::components::create_tool_shell::{
 };
 use crate::components::credential_requirements::CredentialRequirementsTable;
 use crate::components::hud::{HudCallout, HudPanel, PageHeader};
+use crate::components::injection_strategy_editor::{
+    InjectionStrategyEditor, config_layer_declared, injection_panel_visible, prepare_for_save,
+};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ToolStatsPanel;
@@ -23,6 +26,7 @@ use common::api::{
     UpdateToolStatusRequest,
 };
 use common::enums::{ToolProtocol, ToolStatus};
+use common::models::{CredentialRequirement, CredentialRequirementScope};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
@@ -221,6 +225,11 @@ fn merge_builtin_config(
         .and_then(|c| c.as_object())
         .cloned()
         .unwrap_or_default();
+    // `credential_requirements` 在详情回显里被 redact 成 `[REDACTED]` 字符串（不可信）；
+    // 真实声明走 UpdateToolRequest 顶层字段单独提交（见下方「注入策略」卡片）。
+    // 此处必须剔除：否则「保存配置」会把占位串写回 config，运行时反序列化失败 →
+    // 回落到工厂默认，注入策略被静默清空。
+    map.remove("credential_requirements");
     match layout {
         BuiltinConfigForm::Browser => {
             insert_command(&mut map, &form.command);
@@ -430,6 +439,10 @@ pub fn FinanceToolDetail(id: String) -> Element {
     let mut http_form = use_signal(HttpToolFormState::default);
     let mut shell_form = use_signal(ShellToolFormState::default);
     let mut custom_config_saving = use_signal(|| false);
+    // 注入策略编辑（Builtin：两 Tab —— 「凭据」/「通用（身份）」共享同一个
+    // credential_requirements 数组；草稿以服务端回读为准，保存后重拉覆盖）
+    let mut requirements_draft = use_signal(Vec::<CredentialRequirement>::new);
+    let mut requirements_saving = use_signal(|| false);
     // 运行时就绪（详情响应无此字段，经 query_tools 与列表 badge 同源探测）
     let runtime_ready = use_resource(move || {
         let id = rid();
@@ -453,6 +466,8 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 debug_args.set(generate_skeleton_from_schema(schema));
             }
             config_form.set(builtin_form_from_config(tool.config.as_ref()));
+            // 注入策略草稿：详情回读（含保存后重拉）以服务端为准 —— 两 Tab 复用同一回填
+            requirements_draft.set(tool.credential_requirements.clone());
             // 用户自建工具（HTTP / Shell）：config 反填协议子表单（与创建页同一字段集）
             if matches!(tool.protocol, ToolProtocol::Http | ToolProtocol::Shell) {
                 let mut http = http_form_from_config(tool.config.as_ref());
@@ -975,10 +990,24 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 // ===== 凭据需求卡片 =====
                 // 工具自身无声明时，MCP 工具改展示继承来源标识（声明属主在 Server 行），
                 // 避免凭据区域恒空白；不复制声明内容、不改变声明属主。
-                if !t.credential_requirements.is_empty() || t.credential_source.is_some() {
+                // Builtin 即使零声明也必须给编辑入口（shell_exec 现状为空声明）；
+                // 其余协议保持「有声明或有继承才渲染」的既有形态（零变化）。
+                if injection_panel_visible(
+                    t.protocol,
+                    !t.credential_requirements.is_empty(),
+                    t.credential_source.is_some(),
+                ) {
                     HudPanel {
-                        title: "凭据需求".to_string(),
-                        eyebrow: "CREDENTIALS".to_string(),
+                        title: if t.protocol == ToolProtocol::Builtin {
+                            "注入策略".to_string()
+                        } else {
+                            "凭据需求".to_string()
+                        },
+                        eyebrow: if t.protocol == ToolProtocol::Builtin {
+                            "INJECTION".to_string()
+                        } else {
+                            "CREDENTIALS".to_string()
+                        },
                         div { class: "card-body",
                             if let Some(ref source) = t.credential_source {
                                 p { class: "text-sm opacity-60",
@@ -993,14 +1022,89 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                     }
                                     code { class: "text-xs bg-base-200 rounded px-1 font-mono", "{source.id}" }
                                 }
-                            } else {
-                                p { class: "text-sm opacity-60",
-                                    if t.protocol == ToolProtocol::Builtin {
-                                        "内置工具凭据需求由工厂声明，只读展示"
-                                    } else {
-                                        "凭据需求由工具配置声明，只读展示"
+                            } else if t.protocol == ToolProtocol::Builtin {
+                                // —— 内置工具：注入策略两 Tab 编辑器 ——
+                                // config 优先 / 工厂兜底（P2 分派），保存只写声明不写凭据原文；
+                                // config 其余字段由上方「保存配置」经 merge_builtin_config 维护，互不覆盖。
+                                div { class: "space-y-2",
+                                    p { class: "text-sm opacity-60",
+                                        if config_layer_declared(t.config.as_ref()) {
+                                            "注入需求由该工具的 config 声明（已固化）；config 属运维所有权，工厂 sync 不会覆盖。"
+                                        } else {
+                                            "当前注入需求来自工厂静态声明（默认值）。保存后写入工具 config，此后工厂声明变更不再自动生效。"
+                                        }
+                                    }
+                                    if !config_layer_declared(t.config.as_ref()) && !t.credential_requirements.is_empty() {
+                                        HudCallout { tone: Some("warning".to_string()), extra_class: Some("py-2 text-sm".to_string()),
+                                            div {
+                                                p { "上表是工厂默认值，不是配置值。" }
+                                                p { class: "text-xs opacity-80",
+                                                    "点「保存注入策略」即把当前列表写入工具 config（此后以 config 为准）；不改动则运行时行为零变化。"
+                                                }
+                                            }
+                                        }
+                                    }
+                                    InjectionStrategyEditor { requirements: requirements_draft }
+                                    div { class: "flex items-center gap-3 mt-2",
+                                        button {
+                                            class: "btn hud-btn btn-primary btn-sm",
+                                            disabled: requirements_saving(),
+                                            onclick: {
+                                                let id = t.id.clone();
+                                                move |_| {
+                                                    let id = id.clone();
+                                                    let draft = requirements_draft.read().clone();
+                                                    let prepared = match prepare_for_save(
+                                                        draft,
+                                                        CredentialRequirementScope::Builtin,
+                                                    ) {
+                                                        Ok(list) => list,
+                                                        Err(e) => {
+                                                            // 与后端同一套规则（common 单点），错误就地提示不提交
+                                                            toast.error(&e);
+                                                            return;
+                                                        }
+                                                    };
+                                                    requirements_saving.set(true);
+                                                    spawn(async move {
+                                                        match update_tool(UpdateToolRequest {
+                                                            id: id.clone(),
+                                                            credential_requirements: Some(prepared),
+                                                            ..Default::default()
+                                                        })
+                                                        .await
+                                                        {
+                                                            Ok(_) => {
+                                                                toast.success("注入策略已保存");
+                                                                match get_tool(build_tool_stats_request(id, stats_range())).await {
+                                                                    Ok(tool) => {
+                                                                        // 回读覆盖草稿：验收 A6「保存 → 刷新回读一致」
+                                                                        requirements_draft.set(tool.credential_requirements.clone());
+                                                                        tool_res.set(Some(Ok(tool)));
+                                                                    }
+                                                                    Err(e) => toast.error(&e),
+                                                                }
+                                                            }
+                                                            Err(e) => toast.error(&e),
+                                                        }
+                                                        requirements_saving.set(false);
+                                                    });
+                                                }
+                                            },
+                                            if requirements_saving() {
+                                                Loading { size: "sm" }
+                                                "保存中..."
+                                            } else {
+                                                "保存注入策略"
+                                            }
+                                        }
+                                        span { class: "text-xs opacity-60",
+                                            "只写声明（类型 / 字段 / 注入点），不写任何凭据原文；清空后回落到工厂默认"
+                                        }
                                     }
                                 }
+                            } else {
+                                p { class: "text-sm opacity-60", "凭据需求由工具配置声明，只读展示" }
                                 CredentialRequirementsTable { requirements: t.credential_requirements.clone() }
                             }
                             // 运行时就绪绑定引导（与列表 badge 同源；NotReady 时提示）
@@ -1159,6 +1263,29 @@ pub fn FinanceToolDetail(id: String) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_builtin_config_never_writes_back_redacted_requirements() {
+        // 详情 config 的 credential_requirements 是 redact 占位串；
+        // 「保存配置」必须剔除该键（真实声明走顶层字段单独提交）。
+        let base = serde_json::json!({
+            "command": "gh",
+            "credential_requirements": "[REDACTED]",
+            "unknown_field": 1
+        });
+        let form = BuiltinConfigFormState {
+            command: "gh".to_string(),
+            ..Default::default()
+        };
+        let merged = merge_builtin_config(Some(&base), &form, BuiltinConfigForm::GhCli)
+            .expect("合法 config 应通过校验");
+        assert!(
+            merged.get("credential_requirements").is_none(),
+            "redact 占位串不得写回 config"
+        );
+        assert_eq!(merged["command"], "gh");
+        assert_eq!(merged["unknown_field"], 1, "未展示字段必须原样保留");
+    }
 
     #[test]
     fn builtin_config_form_matches_factory_ids_not_display_names() {

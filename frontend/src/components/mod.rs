@@ -26,6 +26,7 @@ pub mod html_preview;
 pub mod hud;
 pub mod hud_palette;
 pub mod identity_chip;
+pub mod injection_strategy_editor;
 pub mod kanban_canvas;
 pub mod markdown;
 pub mod mcp_server_edit_modal;
