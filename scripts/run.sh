@@ -20,6 +20,10 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/service.sh"
 # IDE / CI / Makefile 调起的非交互 shell 可能缺 cargo / dx，先补齐 PATH 再启动
 setup_path
 
+# 服务退出后清掉本次编译产生的 *.rcgu.o。注意 cmd_dev / cmd_frontend 各自有
+# EXIT trap 会覆盖这里，那两处需把 clean_generated_rcgu 并入自己的 trap 命令。
+trap clean_generated_rcgu EXIT
+
 MODE="${1:-dev}"
 
 INT_RECEIVED=0
@@ -97,6 +101,8 @@ cmd_dev() {
         wait "${BACKEND_PID:-0}" 2>/dev/null || true
         wait "${FRONTEND_PID:-0}" 2>/dev/null || true
         restore_dx_backend_override
+        # cmd_dev 的 EXIT trap 覆盖了顶层 trap，收尾清理必须在这里显式补上
+        clean_generated_rcgu
         ok "👋 服务已停止"
         exit 0
     }
@@ -154,7 +160,7 @@ cmd_backend() {
 
 cmd_frontend() {
     apply_dx_backend_override
-    trap restore_dx_backend_override EXIT
+    trap 'restore_dx_backend_override; clean_generated_rcgu' EXIT
     print_backend_hint
     cd "$REPO_ROOT/frontend"
     # 先清理再编译：删 1 天前的旧哈希副本（dx serve 每次都会重链 wasm）

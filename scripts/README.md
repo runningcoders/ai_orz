@@ -25,8 +25,8 @@ scripts/
 ├── build_frontend.sh   【实现】前端 dx build --release → dist/（Dockerfile 也复用它）
 ├── cleanup.sh          【实现】残留进程与端口占用清理（--dry-run 只列不杀）；
 │                       后端走 `service.sh::graceful_stop`（与 make stop 同一条链路）
-├── clean_target.sh     【实现】target/ 磁盘治理：stale [天数] / slim / all（哈希副本
-│                       清理一处实现；`prod.sh build` 编译前自动跑 stale）
+├── clean_target.sh     【实现】target/ 精准 GC 入口：stale / slim / dry-run / all
+├── clean_target.py     【实现】GC 判定与删除清单生成（指纹活跃度分析；批量删除由 sh 执行）
 ├── check_deps.sh       【实现】依赖预检（[模式] [--fix]）
 ├── check.sh            【实现】代码门禁：fmt / clippy / clippy-fe / test / lint / ci / coverage
 ├── package.sh          【实现】发布物打包（CI release.yml 直接调用）
@@ -49,19 +49,33 @@ scripts/
 | 停止 / 重启 | `make stop` / `make restart` | `stop` / `restart` | `prod.sh` |
 | 状态 / 日志 | `make status` / `make logs` | `status` / `logs` | `prod.sh` |
 | 残留进程清理 | `make clean-proc` | `clean [--dry-run]` | `cleanup.sh` |
-| target 磁盘治理 | `make clean-stale [DAYS=]` / `clean-slim` / `clean` | `clean-target stale \| slim \| all` | `clean_target.sh`（所有编译指令经 `clean_stale_artifacts` 自动跑 `stale`） |
+| target 磁盘治理 | `make clean-stale [DAYS=]` / `clean-slim` / `clean` | `clean-target stale \| slim \| dry-run \| all` | `clean_target.sh` + `clean_target.py`（所有编译指令经 `clean_stale_artifacts` 自动跑 `stale --auto`） |
 | 依赖预检 | `make doctor` | `doctor [模式] [--fix]` | `check_deps.sh` |
 | 代码门禁 | `make lint` / `make ci` | `check lint` / `check ci` | `check.sh` |
 | 发布打包 | `make package` | `package [版本]` | `package.sh`（消费 `prod.sh build` 产物，**不**搬运到部署根） |
 | 数据迁移 | — | `migrate [--apply]` | `migrate_tool_call_trace.sh` |
 
-> **target/ 为什么会涨到几百 G**：deps 里的产物带构建指纹哈希，源码每次变更都会
-> 重链出**新哈希副本**而旧副本 cargo 永不回收——测试二进制单个 300~800M，无上限增长。
+> **target/ 为什么会涨到几百 G**：Cargo 只回收 `~/.cargo` 全局缓存，target 目录里的
+> build artifacts GC 官方尚未实现（cargo#13136），旧指纹副本永不回收；实测涨到 346G。
 > **所有编译指令**（`make build` / `prod` / `package` / `build-fe` / `dev` / `run` /
 > `serve` / `test` / `lint` / `ci` / `coverage`）编译前都会自动跑
-> `clean_target.sh stale`（`common.sh::clean_stale_artifacts` 统一调用）：删 1 天前的
-> 旧可执行副本 + profraw，**依赖热缓存不动**（`AI_ORZ_STALE_DAYS` 可调）。删掉的副本
-> 当前构建永不复用，最多触发一次重链接。手动深度瘦身 `make clean-slim`，彻底重置 `make clean`。
+> `clean_target.sh stale --auto`（`common.sh::clean_stale_artifacts` 统一调用）；
+> 编译 / 测试命令一结束，各脚本的 EXIT trap 再跑 `common.sh::clean_generated_rcgu`，
+> 立刻删掉本次产生的 `*.rcgu.o`（编完即回落，不等下一次编译；失败 / Ctrl+C 同样触发）。
+>
+> **GC 判据**：以 `target/<profile>/.fingerprint/<crate>-<hash>/invoked.timestamp` 的
+> mtime 为「该编译单元最近被使用」的时间，按 crate 保留最近 `AI_ORZ_GC_KEEP_PER_CRATE`
+> 份（默认 2）+ `AI_ORZ_GC_KEEP_DAYS` 天窗口（默认 7）内用过的全部；其余视为死副本。
+> 保留的是真正能加快编译的热缓存（rlib / rmeta / .d / 最新 build out / fingerprint），
+> 删除的是 `*.rcgu.o`（codegen 中间对象）、历史指纹副本、旧 incremental session、
+> 2 小时前的集成测试二进制（链接产物，非缓存；每个 target 只留最近链接的 1 份）与
+> 闲置的覆盖率 / tarpaulin 平行 target。
+>
+> ⚠️ 不能按「最近一次构建批次」一刀切：实测 9336 个 fingerprint 里最近 1 小时只 touch
+> 了 82 个，但更早那批 2000+ 个依赖 rlib 依然有效，删了就退化成完整冷构建。
+> 编译钩子带 `--auto`，`AI_ORZ_GC_MIN_INTERVAL`（默认 300 秒）内重复编译跳过重扫；
+> 手动 `make clean-stale` 永远立即执行。预览用 `./scripts/clean_target.sh dry-run`，
+> 激进瘦身 `make clean-slim`，彻底重置 `make clean`（下次为完整冷构建）。
 
 ## 四、两条硬规则
 

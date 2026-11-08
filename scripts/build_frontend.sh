@@ -12,6 +12,9 @@ set -e
 # shellcheck source=./lib/common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
+# dx build 结束（含失败退出）后立刻清掉本次产生的 *.rcgu.o
+trap clean_generated_rcgu EXIT
+
 cd "$REPO_ROOT/frontend"
 export BACKEND_API_URL=${BACKEND_API_URL:-http://localhost:3000}
 

@@ -164,10 +164,10 @@ package: ## 编译并打包正式发布物（tar.gz：二进制 + dist/ + 运维
 
 # ===== 磁盘治理 =====
 
-clean-stale: ## 删 DAYS 天前（默认 1）的旧构建副本：可执行副本+profraw，依赖热缓存不动（所有编译指令前自动执行）
+clean-stale: ## 精准 GC：保留 DAYS 天窗口（默认 7）内的活缓存，删历史指纹副本与 .rcgu.o（编译前自动执行）
 	./scripts/ai_orz.sh clean-target stale $(DAYS)
 
-clean-slim: ## 瘦身 target：清增量缓存+30 天前陈旧快照，保留近期依赖缓存（下次编译仅几十秒）
+clean-slim: ## 激进 GC：1 天窗口 / 每 crate 1 份 / 清 incremental 与闲置工具 target
 	./scripts/ai_orz.sh clean-target slim
 
 clean: ## 全量清理 target（下次编译为完整冷构建，慎用）

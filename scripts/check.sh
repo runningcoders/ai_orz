@@ -39,6 +39,11 @@ CMD="${1:-help}"
 
 cd "$REPO_ROOT"
 
+# 命令结束（含编译失败 / Ctrl+C）后立刻清掉本次产生的 *.rcgu.o：
+# 一处 EXIT trap 覆盖本脚本所有子命令（clippy / test / coverage / lint / ci ...）。
+# 实现见 common.sh::clean_generated_rcgu；只删无用的 codegen 中间对象，不碰热缓存。
+trap clean_generated_rcgu EXIT
+
 step() { echo ""; echo "== $1 =="; }
 
 # ===== 格式化 =====
