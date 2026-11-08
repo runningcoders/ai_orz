@@ -27,6 +27,10 @@ use std::path::{Path, PathBuf};
 pub const TRAILER_TASK_ID: &str = "Task-Id";
 /// commit-msg hook 追加的 trailer 键
 pub const TRAILER_AGENT_ID: &str = "Agent-Id";
+/// commit-msg hook 追加的 trailer 键（分支合并后中间 commit 会消失，故把归属
+/// 落到「可持续载体」上：trailer 随 commit 对象永久保留，squash 前的分支历史、
+/// reflog、`git log --grep` 都可回溯「这笔改动属于哪个项目」）
+pub const TRAILER_PROJECT_ID: &str = "Project-Id";
 
 /// git 模板目录（base 下固定子目录，经 paths SSOT 约定）
 pub fn template_dir(base_data_path: &Path) -> PathBuf {
@@ -39,9 +43,17 @@ pub const CHECKPOINT_PREFIX: &str = "checkpoint:";
 /// 默认 .gitignore 内容（屏蔽构建产物与依赖目录，工作区文件锚点不收噪声）
 pub const DEFAULT_GITIGNORE: &str = "# ai-orz managed workspace ignore\nnode_modules/\ntarget/\ndist/\nbuild/\n__pycache__/\n*.log\n.DS_Store\n";
 
-/// commit-msg hook 脚本：读 AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID 追加 trailer（幂等）
+/// commit-msg hook 脚本：按**映射表**从注入 env 追加 trailer（幂等 + 永不阻断）
+///
+/// 映射表形态（`<trailer 键>:<env 变量名>`）而不是三条 if：新增一个可追溯字段
+/// 只加一行，不用复制粘贴判断逻辑——`Log-Id` / `Tool-Call-Id` 这类单次调用级字段
+/// 有意**不放进来**（进 commit 历史即噪音，与 `ContextCarrier` 禁 `tool_call_id`
+/// 同源理由）；`User-Id` 也可从 project/task 反查，暂不引入。
+///
+/// **仓库副本 `.githooks/commit-msg` 必须与本常量逐字一致**，由
+/// `git_workspace_tests::repo_commit_msg_hook_matches_managed_template` 在编译期绑定。
 const COMMIT_MSG_HOOK: &str = r#"#!/bin/sh
-# ai-orz managed hook: append Task-Id / Agent-Id trailers from injected env.
+# ai-orz managed hook: append Task-Id / Agent-Id / Project-Id trailers from injected env.
 # Idempotent: skips if trailer already present. Never blocks the commit.
 msg_file="$1"
 [ -f "$msg_file" ] || exit 0
@@ -51,15 +63,32 @@ grep -v '^#' "$msg_file" | grep -q '[^[:space:]]' || exit 0
 
 # ensure trailing newline
 [ -z "$(tail -c 1 "$msg_file")" ] || printf '\n' >> "$msg_file"
-# ensure blank line separating trailer paragraph
-[ -z "$(tail -n 1 "$msg_file")" ] || printf '\n' >> "$msg_file"
 
-if [ -n "$AI_ORZ_TASK_ID" ] && ! grep -q '^Task-Id:' "$msg_file"; then
-    printf 'Task-Id: %s\n' "$AI_ORZ_TASK_ID" >> "$msg_file"
+# trailer key <- env var（新增字段只加一行；POSIX sh，不依赖 bash 数组）
+pairs="Task-Id:AI_ORZ_TASK_ID Agent-Id:AI_ORZ_AGENT_ID Project-Id:AI_ORZ_PROJECT_ID"
+
+# 分隔空行只在「尚未出现任何本 hook 管理的 trailer」时补一次：
+# amend / 重复运行 / --no-verify 后再补时会已有 trailer，此时再补空行会把 trailer
+# 段劈成两块（git 的 %(trailers) 只认最后一段，前面的键在工具视图里就消失了）。
+need_sep=1
+for pair in $pairs; do
+    key=${pair%%:*}
+    if grep -q "^$key:" "$msg_file"; then
+        need_sep=0
+    fi
+done
+if [ "$need_sep" = "1" ] && [ -n "$(tail -n 1 "$msg_file")" ]; then
+    printf '\n' >> "$msg_file"
 fi
-if [ -n "$AI_ORZ_AGENT_ID" ] && ! grep -q '^Agent-Id:' "$msg_file"; then
-    printf 'Agent-Id: %s\n' "$AI_ORZ_AGENT_ID" >> "$msg_file"
-fi
+
+for pair in $pairs; do
+    key=${pair%%:*}
+    var=${pair#*:}
+    eval "value=\$$var"
+    if [ -n "$value" ] && ! grep -q "^$key:" "$msg_file"; then
+        printf '%s: %s\n' "$key" "$value" >> "$msg_file"
+    fi
+done
 exit 0
 "#;
 
@@ -236,16 +265,21 @@ pub async fn ensure_workspace_repo(
     Some(repo_root)
 }
 
-/// 任务收尾 checkpoint 兜底提交（`checkpoint:` 前缀 + Task-Id trailer）
+/// 任务收尾 checkpoint 兜底提交（`checkpoint:` 前缀 + Task/Agent/Project trailer）
 ///
 /// 工作区无变更时跳过；失败只记日志。返回是否产生了新提交。
+///
+/// env 键名统一取自 [`crate::pkg::request_context`]（与 `shell_exec` 的 `base_env`
+/// 同一 SSOT）：checkpoint 的 trailer 与正常提交的 trailer 必须同源，否则
+/// 「兜底提交」会缺字段。
 pub async fn checkpoint_task_commit(
     repo_root: &Path,
     task_id: &str,
     agent_id: Option<&str>,
+    project_id: Option<&str>,
 ) -> bool {
     let task_env = vec![(
-        crate::pkg::tool_registry::shell_policy::ENV_TASK_ID.to_string(),
+        crate::pkg::request_context::ENV_TASK_ID.to_string(),
         task_id.to_string(),
     )];
 
@@ -274,8 +308,14 @@ pub async fn checkpoint_task_commit(
     let mut env = task_env;
     if let Some(aid) = agent_id {
         env.push((
-            crate::pkg::tool_registry::shell_policy::ENV_AGENT_ID.to_string(),
+            crate::pkg::request_context::ENV_AGENT_ID.to_string(),
             aid.to_string(),
+        ));
+    }
+    if let Some(pid) = project_id {
+        env.push((
+            crate::pkg::request_context::ENV_PROJECT_ID.to_string(),
+            pid.to_string(),
         ));
     }
     let message = format!("{CHECKPOINT_PREFIX} task {task_id} wrapped up");

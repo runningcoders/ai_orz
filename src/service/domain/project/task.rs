@@ -29,10 +29,12 @@ async fn checkpoint_agent_workspace(task: &Task) {
     let base = config.base_data_path();
     let ws =
         crate::pkg::paths::user_agent_workspace(&base, &task.po.root_user_id, &task.po.assignee_id);
+    // project_id 进 trailer：squash 后中间 commit 消失，Project-Id 是可回溯载体之一
     if crate::pkg::git_workspace::checkpoint_task_commit(
         &ws,
         &task.po.id,
         Some(&task.po.assignee_id),
+        task.po.project_id.as_deref(),
     )
     .await
     {

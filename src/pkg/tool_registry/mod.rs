@@ -150,8 +150,9 @@ impl ToolRegistry {
 
     /// 工具凭据需求声明读取（readiness 判定与 call_tool 编排共用，D17/D28）
     ///
-    /// - Builtin：工具行 `config.credential_requirements` 优先，空则回落工厂静态声明
-    ///   （tavily → [TavilyKey]；gh/lark 在 Step 4 声明）；
+    /// - Builtin：**键在即为权威声明**（含用户删空后的 `[]`），键缺失才回落工厂
+    ///   静态声明。三态：`None` → 出厂默认；`[]` → 零注入（尊重用户删空）；
+    ///   解析失败 → 空 + warn（不回落，防脏数据复活出厂身份）；
     /// - Mcp/Http：po.config 的 `credential_requirements` 数组（未声明 → 空）。
     pub fn credential_requirements(
         &self,
@@ -161,20 +162,25 @@ impl ToolRegistry {
             // Builtin 声明双源：工具行 config 优先（运维可配，sync 恒不覆盖 config），
             // 空则回落工厂静态声明（tavily/gh_cli/lark_cli 等既有行为逐字节不变）
             common::enums::ToolProtocol::Builtin => {
-                let declared: Vec<common::models::CredentialRequirement> = po
-                    .config
-                    .get("credential_requirements")
-                    .and_then(|v| serde_json::from_value(v.clone()).ok())
-                    .unwrap_or_default();
-                if !declared.is_empty() {
-                    declared
-                } else {
-                    self.builtin_factories
+                match po.config.get("credential_requirements") {
+                    // 键在（含 `[]`）= 用户已明确表态，原样采信：
+                    // `[]` 意味着「这个工具不需要注入任何东西」，绝不能回落出厂默认
+                    // （否则前端显示 0 条、实际注入 4 条，配置与行为脱节）。
+                    Some(value) => serde_json::from_value(value.clone()).unwrap_or_else(|error| {
+                        sys_warn!(
+                            "parse credential_requirements of builtin tool {} failed, treat as empty (no factory fallback): {error}",
+                            po.id
+                        );
+                        Vec::new()
+                    }),
+                    // 键缺失 = 从未配置过 → 回落工厂静态声明（新装 / 存量工具即刻可用）
+                    None => self
+                        .builtin_factories
                         .lock()
                         .unwrap()
                         .get(&po.id)
                         .map(|f| f.credential_requirements())
-                        .unwrap_or_default()
+                        .unwrap_or_default(),
                 }
             }
             common::enums::ToolProtocol::Mcp

@@ -1,7 +1,10 @@
-//! agent_identity 单元测试（纯函数 + DB 派生 + 缓存 TTL）
+//! agent_identity 单元测试（纯派生规则）
 //!
 //! 用 `#[path]` 而非内联 `mod tests`：保住 `use super::*` 可见父模块私有 helper，
 //! 同时规避 inline-test-lint 对内联测试体量的限制。
+//!
+//! DB 派生与缓存已随「L1 结构层删除」一起移除（取值统一走凭据注入通道，
+//! 由 `identity_dataset` 负责查库与缓存，测试在彼处覆盖）。
 
 use super::*;
 
@@ -43,109 +46,4 @@ fn derive_identity_sanitizes_role_slug() {
     assert_eq!(spaced.name, "tech-lead", "空格折成 '-'，大写转小写");
     // 纯符号 role 归一后为空 → None
     assert!(derive_identity(Some(r#"["///"]"#), "agent-1", 1).is_none());
-}
-
-#[test]
-fn cache_lookup_expires_after_ttl() {
-    let agent_id = "unit-test-agent-cache-expiry";
-    clear_cache();
-    let stale = Instant::now() - (CACHE_TTL + Duration::from_secs(1));
-    cache_store(
-        agent_id,
-        Some(AgentGitIdentity {
-            name: "tech_lead".to_string(),
-            email: "tech_lead@agents.ai-orz.local".to_string(),
-        }),
-        stale,
-    );
-    assert!(
-        cache_lookup(agent_id).is_none(),
-        "超过 TTL 应视为未命中（重新查库）"
-    );
-}
-
-#[test]
-fn cache_keeps_negative_hits() {
-    let agent_id = "unit-test-agent-cache-negative";
-    clear_cache();
-    cache_store(agent_id, None, Instant::now());
-    assert_eq!(
-        cache_lookup(agent_id),
-        Some(None),
-        "负命中也要缓存（否则未知 agent 会反复打库）"
-    );
-}
-
-async fn test_pool() -> SqlitePool {
-    use sqlx::sqlite::SqlitePoolOptions;
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    sqlx::query("CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT, role TEXT, status INTEGER NOT NULL DEFAULT 0)")
-        .execute(&pool)
-        .await
-        .expect("create agents");
-    pool
-}
-
-#[tokio::test]
-async fn resolve_reads_role_from_agents_table() {
-    let pool = test_pool().await;
-    sqlx::query("INSERT INTO agents (id, name, role, status) VALUES (?1, ?2, ?3, 3)")
-        .bind("resolve-agent-single")
-        .bind("技术负责人")
-        .bind(r#"["tech_lead"]"#)
-        .execute(&pool)
-        .await
-        .expect("insert agent");
-    clear_cache();
-
-    let identity = resolve(&pool, "resolve-agent-single")
-        .await
-        .expect("应派生成功");
-    assert_eq!(identity.name, "tech_lead");
-    assert_eq!(identity.email, "tech_lead@agents.ai-orz.local");
-}
-
-#[tokio::test]
-async fn resolve_returns_none_for_unknown_or_disabled_agent() {
-    let pool = test_pool().await;
-    sqlx::query("INSERT INTO agents (id, name, role, status) VALUES (?1, ?2, ?3, 0)")
-        .bind("resolve-agent-disabled")
-        .bind("已离职")
-        .bind(r#"["tech_lead"]"#)
-        .execute(&pool)
-        .await
-        .expect("insert agent");
-    clear_cache();
-
-    assert!(resolve(&pool, "resolve-agent-missing").await.is_none());
-    assert!(
-        resolve(&pool, "resolve-agent-disabled").await.is_none(),
-        "status=0 的 Agent 不应派生身份"
-    );
-}
-
-#[tokio::test]
-async fn resolve_disambiguates_role_shared_by_multiple_agents() {
-    let pool = test_pool().await;
-    for (id, status) in [("shared-agent-a", 3), ("shared-agent-b", 3)] {
-        sqlx::query("INSERT INTO agents (id, name, role, status) VALUES (?1, ?2, ?3, ?4)")
-            .bind(id)
-            .bind(id)
-            .bind(r#"["backend_developer"]"#)
-            .bind(status)
-            .execute(&pool)
-            .await
-            .expect("insert agent");
-    }
-    clear_cache();
-
-    let identity = resolve(&pool, "shared-agent-a").await.expect("应派生成功");
-    assert_eq!(
-        identity.email,
-        "backend_developer+shared-a@agents.ai-orz.local"
-    );
 }

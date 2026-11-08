@@ -9,7 +9,6 @@ use crate::pkg::git_workspace;
 use crate::pkg::paths;
 use crate::pkg::process::{self, ProcessEntry, ProcessStatus};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::agent_identity;
 use crate::pkg::tool_registry::policy_authorization_fusion::{
     ConfirmOutcome, blocking_response, confirm_with_authorization,
 };
@@ -124,6 +123,46 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
         Box::new(ShellExecCoreTool::new(po))
     }
+
+    /// 出厂默认注入策略（**机制对所有工具成立，本轮只给 shell_exec 装配**）
+    ///
+    /// 4 条 `agent_info` 需求：`git_name` → `GIT_AUTHOR_NAME` / `GIT_COMMITTER_NAME`，
+    /// `email` → `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_EMAIL`。值由运行时从 `agents`
+    /// 表派生（`pkg/identity_dataset`），**不落库、不可绑定**——它是「从上下文取某
+    /// 字段注入到某处」的声明，复用凭据注入结构承载，走同一条
+    /// `credential_requirements` → resolve → check → env 通道。
+    ///
+    /// 三态语义（AMan 2026-11-08 拍板）：
+    /// - **键缺失** → 回落本默认（新装 / 从未配置即生效）；
+    /// - **`[]`（用户删空）** → 零注入，**不自动补回**（尊重用户；前端提供
+    ///   「恢复初始设置」按钮让用户主动改回，留作下一笔）；
+    /// - **解析失败** → 按空声明处理（不回落默认，防脏数据复活出厂身份）。
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        default_credential_requirements()
+    }
+}
+
+/// 出厂默认注入策略：Agent 身份四元组（`git_name` / `email` 各两条注入点）
+///
+/// 为什么是 4 条而不是 2 条：`CredentialRequirement` 是「一条需求 = 一个取值 →
+/// 一个注入点」的扁平结构，`binding` 只有一个 `name`。显式 4 条让「用户删掉
+/// 其中一条」变得可行（例如只覆盖 committer 邮箱），比引入「一对多 binding」简单。
+fn default_credential_requirements() -> Vec<common::models::CredentialRequirement> {
+    let requirement = |field: &str, env: &str| common::models::CredentialRequirement {
+        kind: common::models::CredentialKind::AgentInfo,
+        platform: None,
+        field: Some(field.to_string()),
+        enhancer: None,
+        binding: common::models::CredentialBinding::Env {
+            name: env.to_string(),
+        },
+    };
+    vec![
+        requirement("git_name", "GIT_AUTHOR_NAME"),
+        requirement("git_name", "GIT_COMMITTER_NAME"),
+        requirement("email", "GIT_AUTHOR_EMAIL"),
+        requirement("email", "GIT_COMMITTER_EMAIL"),
+    ]
 }
 
 /// Core implementation of shell_exec tool.
@@ -319,13 +358,10 @@ impl CoreTool for ShellExecCoreTool {
 
         // Prepare environment（统一出口：白名单 → extra → PATH 补全 → 身份变量）
         let path_additions = self.config.path_additions();
-        // Agent 级 git 身份：由 agents 表派生（进程级缓存 TTL 300s），让 commit
-        // 署名落到具体 Agent，而不是仓库 .git/config 的统一身份
-        let agent_git_identity = match ctx.agent_id() {
-            Some(agent_id) => agent_identity::resolve(ctx.db_pool(), agent_id).await,
-            None => None,
-        };
-        // L2 注入：credential_requirements 的 Env 值并入 extra_env；
+        // 平台基础身份（AI_ORZ_*）：ctx 摊平，末位注入不可绕
+        let base_env = ctx.base_env();
+        // L2 注入：credential_requirements 的 Env 值并入 extra_env
+        // （Agent 级 git 身份四元组也走这条通道：出厂默认声明 agent_info → Env）；
         // 调用方 params.env 同名时显式传参优先（逐个覆盖，保持既有优先级）
         let mut extra_env = self.credential_injections.clone();
         if let Some(overrides) = params.env.as_ref() {
@@ -342,9 +378,7 @@ impl CoreTool for ShellExecCoreTool {
             allowed_env: self.config.allowed_env(),
             path_additions: Some(path_additions.as_slice()),
             extra_env,
-            task_id: ctx.task_id().map(String::as_str),
-            agent_id: ctx.agent_id().map(String::as_str),
-            agent_git_identity: agent_git_identity.as_ref(),
+            base_env: &base_env,
         });
         // 隔离 HOME + 声明工具链 → 工具链根目录经官方变量指回真实 HOME：
         // git/gh 走隔离身份的同时，cargo/nvm/pyenv 等仍能读真实 HOME 配置。

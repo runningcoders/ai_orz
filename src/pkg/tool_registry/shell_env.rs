@@ -16,9 +16,10 @@
 //! - **只产出增量**：返回的 map 由调用方决定怎么施加——继承式（`command.env` 叠加，
 //!   父进程环境仍在）或零继承式（`env_clear()` 后注入）
 //! - **PATH 补全恒追加到尾部**：不覆盖既有解析顺序，显式配置优先于系统默认
-//! - **身份变量恒注入**：`AI_ORZ_TASK_ID` / `AI_ORZ_AGENT_ID` 供 git commit-msg
-//!   hook 等原生扩展点读取（见 `pkg/git_workspace.rs`）；有 agent 上下文时另以
-//!   `or_insert` 注入 `GIT_AUTHOR_*` / `GIT_COMMITTER_*`（见 `agent_identity.rs`）
+//! - **基础身份变量恒注入且不可绕**：[`ShellEnvRequest::base_env`] 由
+//!   [`crate::pkg::request_context::RequestContext::base_env`] 产出（`AI_ORZ_LOG_ID` /
+//!   `AI_ORZ_TASK_ID` / `AI_ORZ_PROJECT_ID` / `AI_ORZ_AGENT_ID` 等），末位 `insert`
+//!   覆盖同名键——显式传参不得改写平台身份。git commit-msg hook 等原生扩展点据此读取
 //!
 //! # 环境变量策略：兼容优先（不做白名单）
 //!
@@ -34,8 +35,6 @@
 //! - 推论：不要把服务端凭据放进服务进程环境（用配置文件），否则子进程可读；
 //!   唯一真正零继承的是 MCP stdio 链路（凭据隔离红线，见 `mcp.rs`）
 
-use crate::pkg::tool_registry::agent_identity::AgentGitIdentity;
-use crate::pkg::tool_registry::shell_policy;
 use common::config::HomeMode;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -72,15 +71,12 @@ pub struct ShellEnvRequest<'a> {
     pub path_additions: Option<&'a [String]>,
     /// 调用方（模型 / 工具配置）额外指定的环境变量，优先级最高
     pub extra_env: Option<&'a HashMap<String, String>>,
-    /// 任务 ID → `AI_ORZ_TASK_ID`
-    pub task_id: Option<&'a str>,
-    /// Agent ID → `AI_ORZ_AGENT_ID`
-    pub agent_id: Option<&'a str>,
-    /// Agent 级 git 身份 → `GIT_AUTHOR_*` / `GIT_COMMITTER_*`（`or_insert` 语义）
+    /// 平台基础身份 → 环境变量（末位注入，**覆盖**同名键 = 不可绕）
     ///
-    /// 由 [`crate::pkg::tool_registry::agent_identity::resolve`] 从 `agents` 表派生
-    /// （进程级缓存 TTL 300s）。`None` = 无 agent 上下文或派生失败 → **零新增变量**。
-    pub agent_git_identity: Option<&'a AgentGitIdentity>,
+    /// 取值唯一来源 = [`crate::pkg::request_context::RequestContext::base_env`]。
+    /// 语义与 `extra_env` 相反：那一条是「调用方要什么」，本字段是「平台是谁」——
+    /// 调用方无法通过 `params.env` 冒充平台身份。
+    pub base_env: &'a [(&'static str, String)],
 }
 
 /// 解析子进程需要显式注入的环境变量
@@ -102,22 +98,12 @@ pub fn resolve(request: &ShellEnvRequest<'_>) -> HashMap<String, String> {
     if let Some(path) = completed_path(env.get("PATH").map(String::as_str), &additions) {
         env.insert("PATH".to_string(), path);
     }
-    // L1 结构层：Agent 级 git 身份（GIT_AUTHOR_* / GIT_COMMITTER_*）
-    // `or_insert`：extra_env（params.env / L2 凭据与策略注入）已写同名变量时保持
-    // 其值——显式传参永远优先于平台默认。无 agent 上下文时零新增变量。
-    if let Some(identity) = request.agent_git_identity {
-        for (key, value) in identity.env_pairs() {
-            env.entry(key.to_string())
-                .or_insert_with(|| value.to_string());
-        }
-    }
-    // 拦截层固定出口步骤：结构性注入任务/Agent 身份（不可绕），
-    // 供 git commit-msg hook 等原生扩展点读取
-    if let Some(task_id) = request.task_id {
-        env.insert(shell_policy::ENV_TASK_ID.to_string(), task_id.to_string());
-    }
-    if let Some(agent_id) = request.agent_id {
-        env.insert(shell_policy::ENV_AGENT_ID.to_string(), agent_id.to_string());
+    // 平台基础身份（`AI_ORZ_*`）：末位 `insert` 覆盖同名键 = **不可绕**。
+    // 与上方 extra_env 的 `insert` 顺序共同构成优先级铁律：
+    // `params.env`（extra_env）> 凭据/策略注入（同为 extra_env）> 平台 base_env。
+    // 反过来说：调用方写 `AI_ORZ_AGENT_ID=xxx` 只会被平台真值覆盖，冒充无效。
+    for (key, value) in request.base_env {
+        env.insert((*key).to_string(), value.clone());
     }
     env
 }

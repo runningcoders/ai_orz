@@ -1,5 +1,5 @@
 #!/bin/sh
-# ai-orz managed hook: append Task-Id / Agent-Id trailers from injected env.
+# ai-orz managed hook: append Task-Id / Agent-Id / Project-Id trailers from injected env.
 # Idempotent: skips if trailer already present. Never blocks the commit.
 msg_file="$1"
 [ -f "$msg_file" ] || exit 0
@@ -9,13 +9,30 @@ grep -v '^#' "$msg_file" | grep -q '[^[:space:]]' || exit 0
 
 # ensure trailing newline
 [ -z "$(tail -c 1 "$msg_file")" ] || printf '\n' >> "$msg_file"
-# ensure blank line separating trailer paragraph
-[ -z "$(tail -n 1 "$msg_file")" ] || printf '\n' >> "$msg_file"
 
-if [ -n "$AI_ORZ_TASK_ID" ] && ! grep -q '^Task-Id:' "$msg_file"; then
-    printf 'Task-Id: %s\n' "$AI_ORZ_TASK_ID" >> "$msg_file"
+# trailer key <- env var（新增字段只加一行；POSIX sh，不依赖 bash 数组）
+pairs="Task-Id:AI_ORZ_TASK_ID Agent-Id:AI_ORZ_AGENT_ID Project-Id:AI_ORZ_PROJECT_ID"
+
+# 分隔空行只在「尚未出现任何本 hook 管理的 trailer」时补一次：
+# amend / 重复运行 / --no-verify 后再补时会已有 trailer，此时再补空行会把 trailer
+# 段劈成两块（git 的 %(trailers) 只认最后一段，前面的键在工具视图里就消失了）。
+need_sep=1
+for pair in $pairs; do
+    key=${pair%%:*}
+    if grep -q "^$key:" "$msg_file"; then
+        need_sep=0
+    fi
+done
+if [ "$need_sep" = "1" ] && [ -n "$(tail -n 1 "$msg_file")" ]; then
+    printf '\n' >> "$msg_file"
 fi
-if [ -n "$AI_ORZ_AGENT_ID" ] && ! grep -q '^Agent-Id:' "$msg_file"; then
-    printf 'Agent-Id: %s\n' "$AI_ORZ_AGENT_ID" >> "$msg_file"
-fi
+
+for pair in $pairs; do
+    key=${pair%%:*}
+    var=${pair#*:}
+    eval "value=\$$var"
+    if [ -n "$value" ] && ! grep -q "^$key:" "$msg_file"; then
+        printf '%s: %s\n' "$key" "$value" >> "$msg_file"
+    fi
+done
 exit 0

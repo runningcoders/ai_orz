@@ -17,10 +17,10 @@
 //! 派生结果走**进程级缓存**（key = agent_id / user_id，TTL 300s，含负命中），
 //! 避免每次工具调用打库；派生失败返回 `None`，由编排层「跳过该条不阻断」。
 //!
-//! 与 [`crate::pkg::tool_registry::agent_identity`] 的关系：后者是 L1 结构层
-//! （`GIT_AUTHOR_*` 四元组，只读 `role` + 同 role 人数），本模块是 L2 可配层
-//! （按 `credential_requirements` 的 `field` 取任意白名单字段）。两者共用同一
-//! 派生规则（本模块直接复用 `derive_identity`），缓存各自独立、TTL 一致。
+//! 与 [`crate::pkg::tool_registry::agent_identity`] 的关系：后者只保留**纯派生规则**
+//! （`role` JSON → `git_name` + `email`，无 SQL / 无缓存 / 无 env）；本模块负责查库 +
+//! 缓存 + 字段摊平，是唯一的运行时取值方。`git_name` 与 `email` 必须同源（否则姓名与
+//! 邮箱指向两个不同角色），故直接复用 [`agent_identity::derive_identity`]。
 
 use crate::pkg::tool_registry::agent_identity;
 use sqlx::{Row, SqlitePool};
@@ -247,7 +247,7 @@ fn json_string_array(raw: Option<&str>) -> Vec<String> {
     }
 }
 
-/// slug 归一（与 L1 `agent_identity` 的规则逐字一致：小写 + 非 `[a-z0-9_.]` 折 `-`）
+/// slug 归一（与 `agent_identity::sanitize_slug` 的规则逐字一致：小写 + 非 `[a-z0-9_.]` 折 `-`）
 fn normalize_slug(raw: &str) -> Option<String> {
     let mut slug = String::with_capacity(raw.len());
     let mut last_dash = false;
