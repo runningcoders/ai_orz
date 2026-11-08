@@ -233,7 +233,7 @@ fn shell_env_requirement(name: &str) -> CredentialRequirement {
 }
 
 #[test]
-fn tool_credential_scope_maps_editable_protocols_only() {
+fn tool_credential_scope_maps_editable_protocols() {
     assert_eq!(
         tool_credential_scope(ToolProtocol::Http),
         Some(CredentialRequirementScope::HttpTool)
@@ -242,9 +242,13 @@ fn tool_credential_scope_maps_editable_protocols_only() {
         tool_credential_scope(ToolProtocol::Shell),
         Some(CredentialRequirementScope::Shell)
     );
-    // MCP 声明在 server 行、Builtin 是代码静态 → 工具行不承载声明
+    // Builtin 写侧与读侧同源：config.credential_requirements（空则回落工厂静态）
+    assert_eq!(
+        tool_credential_scope(ToolProtocol::Builtin),
+        Some(CredentialRequirementScope::Builtin)
+    );
+    // MCP 声明属主是 server 行 → 工具行不承载声明
     assert_eq!(tool_credential_scope(ToolProtocol::Mcp), None);
-    assert_eq!(tool_credential_scope(ToolProtocol::Builtin), None);
 }
 
 #[test]
@@ -315,17 +319,142 @@ fn apply_credential_requirements_none_keeps_existing_and_empty_clears() {
 }
 
 #[test]
-fn apply_credential_requirements_rejects_non_editable_protocols() {
-    for protocol in [ToolProtocol::Mcp, ToolProtocol::Builtin] {
-        let mut config = json!({});
-        let err = apply_credential_requirements(
-            &mut config,
-            Some(&[shell_env_requirement("TOKEN")]),
-            tool_credential_scope(protocol),
-        )
-        .unwrap_err();
-        assert!(err.contains("不由工具行承载"), "{err}");
+fn apply_credential_requirements_rejects_mcp_only() {
+    let mut config = json!({"transport": "stdio"});
+    let err = apply_credential_requirements(
+        &mut config,
+        Some(&[shell_env_requirement("TOKEN")]),
+        tool_credential_scope(ToolProtocol::Mcp),
+    )
+    .unwrap_err();
+    assert!(err.contains("不由工具行承载"), "{err}");
+    assert!(err.contains("MCP 请在 Server 配置"), "{err}");
+    // 拒绝发生在校验/归并之前：config 原样不动
+    assert_eq!(config, json!({"transport": "stdio"}));
+}
+
+// ===== Builtin 作用域（写侧放开后的六规则边界）=====
+
+fn builtin_env_requirement(name: &str) -> CredentialRequirement {
+    CredentialRequirement {
+        kind: CredentialKind::GithubToken,
+        platform: None,
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Env {
+            name: name.to_string(),
+        },
     }
+}
+
+fn builtin_internal_requirement(field_name: &str) -> CredentialRequirement {
+    CredentialRequirement {
+        kind: CredentialKind::GenericToken,
+        platform: Some("internal_slot".to_string()),
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Internal {
+            field: field_name.to_string(),
+        },
+    }
+}
+
+fn builtin_identity_requirement(field: &str, env_name: &str) -> CredentialRequirement {
+    CredentialRequirement {
+        kind: CredentialKind::AgentInfo,
+        platform: None,
+        field: Some(field.to_string()),
+        enhancer: None,
+        binding: CredentialBinding::Env {
+            name: env_name.to_string(),
+        },
+    }
+}
+
+#[test]
+fn builtin_scope_accepts_env_and_internal_bindings_round_trip() {
+    let scope = tool_credential_scope(ToolProtocol::Builtin);
+    assert_eq!(scope, Some(CredentialRequirementScope::Builtin));
+    let reqs = vec![
+        builtin_env_requirement("GITHUB_TOKEN"),
+        builtin_internal_requirement("api_key"),
+        builtin_identity_requirement("email", "GIT_AUTHOR_EMAIL"),
+    ];
+    let mut config = json!({"command": "agent-browser"});
+    apply_credential_requirements(&mut config, Some(&reqs), scope).unwrap();
+    // 写：config 落 credential_requirements，其余 config 字段原样保留
+    assert_eq!(config["command"], "agent-browser");
+    let parsed: Vec<CredentialRequirement> =
+        serde_json::from_value(config["credential_requirements"].clone()).unwrap();
+    assert_eq!(parsed, reqs);
+}
+
+#[test]
+fn builtin_scope_rejects_invalid_declarations() {
+    let scope = tool_credential_scope(ToolProtocol::Builtin);
+    let cases = vec![
+        // 身份类必须空 platform
+        (
+            CredentialRequirement {
+                platform: Some("my_platform".to_string()),
+                ..builtin_identity_requirement("email", "GIT_AUTHOR_EMAIL")
+            },
+            "不适用平台标识",
+        ),
+        // Builtin 不支持 Header 注入
+        (
+            CredentialRequirement {
+                binding: CredentialBinding::Header {
+                    name: "authorization".to_string(),
+                },
+                ..builtin_env_requirement("TOKEN")
+            },
+            "凭据注入点与工具协议不匹配",
+        ),
+        // 身份类 field 白名单
+        (
+            builtin_identity_requirement("password", "AGENT_SECRET"),
+            "提取字段不合法",
+        ),
+        // 平台保留前缀
+        (
+            builtin_env_requirement("AI_ORZ_AGENT_ID"),
+            "不允许使用 AI_ORZ_ 前缀",
+        ),
+    ];
+    for (req, expected) in cases {
+        let mut config = json!({"command": "agent-browser"});
+        let err = apply_credential_requirements(&mut config, Some(&[req]), scope).unwrap_err();
+        assert!(err.contains(expected), "{err}");
+        // 校验失败不落库：config 原样不动
+        assert!(config.get("credential_requirements").is_none());
+        assert_eq!(config["command"], "agent-browser");
+    }
+}
+
+#[test]
+fn builtin_scope_rejects_duplicate_identity_injection_names() {
+    let scope = tool_credential_scope(ToolProtocol::Builtin);
+    let reqs = vec![
+        builtin_identity_requirement("email", "AGENT_EMAIL"),
+        builtin_identity_requirement("name", "AGENT_EMAIL"),
+    ];
+    let mut config = json!({});
+    let err = apply_credential_requirements(&mut config, Some(&reqs), scope).unwrap_err();
+    assert!(err.contains("重复的身份注入名"), "{err}");
+}
+
+#[test]
+fn builtin_empty_requirements_clears_key_to_fall_back_to_factory() {
+    let scope = tool_credential_scope(ToolProtocol::Builtin);
+    let mut config = json!({
+        "command": "agent-browser",
+        "credential_requirements": [serde_json::to_value(builtin_env_requirement("OLD")).unwrap()]
+    });
+    apply_credential_requirements(&mut config, Some(&[]), scope).unwrap();
+    // 空数组 = 显式清空 → 读侧回落工厂静态声明
+    assert!(config.get("credential_requirements").is_none());
+    assert_eq!(config["command"], "agent-browser");
 }
 
 #[test]

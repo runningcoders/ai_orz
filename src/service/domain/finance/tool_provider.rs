@@ -206,7 +206,7 @@ fn validate_tool_management_policy(tool: &Tool) -> Result<()> {
     }
 
     // 工具级凭据需求统一校验（管理期单点）：协议 → scope 映射与六规则本体都在
-    // common，HTTP / Shell 等可编辑协议走同一入口；各协议 validate_config 内的
+    // common，HTTP / Shell / Builtin 等可写协议走同一入口；各协议 validate_config 内的
     // 校验保留作运行时构造实例的二次防御（纯函数幂等，无副作用）。
     if let Some(scope) = common::models::tool_credential_scope(tool.po.protocol) {
         let requirements: Vec<common::models::CredentialRequirement> = tool

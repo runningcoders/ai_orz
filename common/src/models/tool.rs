@@ -80,8 +80,12 @@ pub fn validate_agent_created_tool_tags(tags: &[String]) -> Result<(), String> {
 /// 协议 → 工具凭据需求作用域（管理期统一校验单点）
 ///
 /// Mcp 的声明属主是 `McpServerPo.config`（同一 server 下 N 个工具共享连接属性，
-/// 工具行是 sync 派生的远端镜像）；Builtin 的声明是工厂代码静态。这两类协议
-/// 不经工具管理面编辑凭据需求，返回 `None`。
+/// 工具行是 sync 派生的远端镜像），管理面不承载其声明，返回 `None`。
+///
+/// Http / Shell / Builtin 的声明都落在各自工具行 `config.credential_requirements`：
+/// Builtin 为该键非空时优先、为空回落工厂静态声明（读取侧见
+/// `pkg::tool_registry` 的 `credential_requirements`），写侧必须与读取侧同源放开，
+/// 否则管理面保存必然失败。
 pub fn tool_credential_scope(
     protocol: crate::enums::ToolProtocol,
 ) -> Option<crate::models::CredentialRequirementScope> {
@@ -90,7 +94,9 @@ pub fn tool_credential_scope(
     match protocol {
         ToolProtocol::Http => Some(CredentialRequirementScope::HttpTool),
         ToolProtocol::Shell => Some(CredentialRequirementScope::Shell),
-        ToolProtocol::Mcp | ToolProtocol::Builtin => None,
+        ToolProtocol::Builtin => Some(CredentialRequirementScope::Builtin),
+        // MCP 的声明属主是 McpServerPo.config（工具行只是 sync 派生的远端镜像）
+        ToolProtocol::Mcp => None,
     }
 }
 
@@ -112,10 +118,7 @@ pub fn apply_credential_requirements(
         return Ok(());
     };
     let Some(scope) = scope else {
-        return Err(
-            "该协议的工具凭据声明不由工具行承载（MCP 请在 Server 配置，Builtin 由代码静态声明）"
-                .to_string(),
-        );
+        return Err("该协议的工具凭据声明不由工具行承载（MCP 请在 Server 配置）".to_string());
     };
     crate::models::identity_credentials::validate_requirements(requirements, scope)?;
     if !config.is_object() {
