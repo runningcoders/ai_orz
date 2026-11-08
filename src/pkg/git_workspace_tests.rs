@@ -191,3 +191,15 @@ async fn commit_msg_hook_injects_trailers_via_env() {
     assert!(message.contains("Task-Id: task-42"));
     assert!(message.contains("Agent-Id: a1"));
 }
+
+#[test]
+fn repo_commit_msg_hook_matches_managed_template() {
+    // ai_orz 仓 `.githooks/commit-msg` 是 COMMIT_MSG_HOOK 的仓库副本
+    // （`core.hooksPath=.githooks`）。两处副本漂移会让「平台工作区」与「本仓」
+    // 的 trailer 行为不一致，故用 `include_str!` 在编译期绑定二者。
+    let repo_hook = include_str!("../../.githooks/commit-msg");
+    assert_eq!(
+        repo_hook, COMMIT_MSG_HOOK,
+        "仓库 hook 与 git_workspace::COMMIT_MSG_HOOK 不一致（改一处必须同步另一处）"
+    );
+}

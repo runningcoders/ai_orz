@@ -12,6 +12,7 @@ fn resolve_injects_identity_and_completes_path() {
         extra_env: Some(&extra),
         task_id: Some("task-1"),
         agent_id: Some("agent-1"),
+        agent_git_identity: None,
     });
 
     assert_eq!(
@@ -251,5 +252,74 @@ fn common_toolchain_list_has_unique_names_and_vars() {
     assert!(
         vars.windows(2).all(|w| w[0] != w[1]),
         "官方变量名不应重复: {vars:?}"
+    );
+}
+
+fn sample_agent_git_identity() -> AgentGitIdentity {
+    AgentGitIdentity {
+        name: "tech_lead".to_string(),
+        email: "tech_lead@agents.ai-orz.local".to_string(),
+    }
+}
+
+#[test]
+fn resolve_injects_agent_git_identity_with_agent_context() {
+    let identity = sample_agent_git_identity();
+    let env = resolve(&ShellEnvRequest {
+        agent_id: Some("agent-1"),
+        agent_git_identity: Some(&identity),
+        ..Default::default()
+    });
+    assert_eq!(
+        env.get("GIT_AUTHOR_NAME").map(String::as_str),
+        Some("tech_lead")
+    );
+    assert_eq!(
+        env.get("GIT_AUTHOR_EMAIL").map(String::as_str),
+        Some("tech_lead@agents.ai-orz.local")
+    );
+    assert_eq!(
+        env.get("GIT_COMMITTER_NAME").map(String::as_str),
+        Some("tech_lead")
+    );
+    assert_eq!(
+        env.get("GIT_COMMITTER_EMAIL").map(String::as_str),
+        Some("tech_lead@agents.ai-orz.local")
+    );
+}
+
+#[test]
+fn resolve_without_agent_context_adds_no_git_vars() {
+    // 无 agent 上下文（系统级 / 前台无 agent）→ 四个变量一个都不能凭空出现
+    let env = resolve(&ShellEnvRequest::default());
+    for key in [
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ] {
+        assert!(!env.contains_key(key), "{key} 不应被凭空注入");
+    }
+}
+
+#[test]
+fn resolve_keeps_explicit_env_over_agent_git_identity() {
+    let identity = sample_agent_git_identity();
+    let mut extra = HashMap::new();
+    extra.insert("GIT_AUTHOR_NAME".to_string(), "explicit-name".to_string());
+    let env = resolve(&ShellEnvRequest {
+        extra_env: Some(&extra),
+        agent_id: Some("agent-1"),
+        agent_git_identity: Some(&identity),
+        ..Default::default()
+    });
+    // or_insert：params.env 显式值优先，其余三项仍由 L1 兜住
+    assert_eq!(
+        env.get("GIT_AUTHOR_NAME").map(String::as_str),
+        Some("explicit-name")
+    );
+    assert_eq!(
+        env.get("GIT_COMMITTER_EMAIL").map(String::as_str),
+        Some("tech_lead@agents.ai-orz.local")
     );
 }

@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+pub mod agent_identity;
 pub mod browser;
 pub mod builtin;
 pub mod cli_lookup;

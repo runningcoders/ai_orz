@@ -17,7 +17,8 @@
 //!   父进程环境仍在）或零继承式（`env_clear()` 后注入）
 //! - **PATH 补全恒追加到尾部**：不覆盖既有解析顺序，显式配置优先于系统默认
 //! - **身份变量恒注入**：`AI_ORZ_TASK_ID` / `AI_ORZ_AGENT_ID` 供 git commit-msg
-//!   hook 等原生扩展点读取（见 `pkg/git_workspace.rs`）
+//!   hook 等原生扩展点读取（见 `pkg/git_workspace.rs`）；有 agent 上下文时另以
+//!   `or_insert` 注入 `GIT_AUTHOR_*` / `GIT_COMMITTER_*`（见 `agent_identity.rs`）
 //!
 //! # 环境变量策略：兼容优先（不做白名单）
 //!
@@ -33,6 +34,7 @@
 //! - 推论：不要把服务端凭据放进服务进程环境（用配置文件），否则子进程可读；
 //!   唯一真正零继承的是 MCP stdio 链路（凭据隔离红线，见 `mcp.rs`）
 
+use crate::pkg::tool_registry::agent_identity::AgentGitIdentity;
 use crate::pkg::tool_registry::shell_policy;
 use common::config::HomeMode;
 use serde_json::Value;
@@ -74,6 +76,11 @@ pub struct ShellEnvRequest<'a> {
     pub task_id: Option<&'a str>,
     /// Agent ID → `AI_ORZ_AGENT_ID`
     pub agent_id: Option<&'a str>,
+    /// Agent 级 git 身份 → `GIT_AUTHOR_*` / `GIT_COMMITTER_*`（`or_insert` 语义）
+    ///
+    /// 由 [`crate::pkg::tool_registry::agent_identity::resolve`] 从 `agents` 表派生
+    /// （进程级缓存 TTL 300s）。`None` = 无 agent 上下文或派生失败 → **零新增变量**。
+    pub agent_git_identity: Option<&'a AgentGitIdentity>,
 }
 
 /// 解析子进程需要显式注入的环境变量
@@ -94,6 +101,15 @@ pub fn resolve(request: &ShellEnvRequest<'_>) -> HashMap<String, String> {
     };
     if let Some(path) = completed_path(env.get("PATH").map(String::as_str), &additions) {
         env.insert("PATH".to_string(), path);
+    }
+    // L1 结构层：Agent 级 git 身份（GIT_AUTHOR_* / GIT_COMMITTER_*）
+    // `or_insert`：extra_env（params.env / L2 凭据与策略注入）已写同名变量时保持
+    // 其值——显式传参永远优先于平台默认。无 agent 上下文时零新增变量。
+    if let Some(identity) = request.agent_git_identity {
+        for (key, value) in identity.env_pairs() {
+            env.entry(key.to_string())
+                .or_insert_with(|| value.to_string());
+        }
     }
     // 拦截层固定出口步骤：结构性注入任务/Agent 身份（不可绕），
     // 供 git commit-msg hook 等原生扩展点读取

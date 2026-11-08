@@ -18,6 +18,7 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::process::{self, ExecOptions};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::agent_identity;
 use crate::pkg::tool_registry::http::{render_string_template, validate_args_schema};
 use crate::pkg::tool_registry::policy_authorization_fusion as fusion;
 use crate::pkg::tool_registry::shell_env;
@@ -231,10 +232,16 @@ async fn execute_shell_call(
     // 凭据值只经 extra_env 进子进程 env，绝不进 args / trace（设计红线 2）；
     // shell_env::resolve 是三条子进程链路的唯一合法出口，不自行拼装 env。
     let extra_env = credential_injections.clone();
+    // Agent 级 git 身份（与 shell_exec 同源：agents 表派生 + 进程级缓存）
+    let agent_git_identity = match ctx.agent_id() {
+        Some(agent_id) => agent_identity::resolve(ctx.db_pool(), agent_id).await,
+        None => None,
+    };
     let env = shell_env::resolve(&shell_env::ShellEnvRequest {
         extra_env: Some(&extra_env),
         task_id: ctx.task_id().map(String::as_str),
         agent_id: ctx.agent_id().map(String::as_str),
+        agent_git_identity: agent_git_identity.as_ref(),
         ..Default::default()
     });
     let output = process::exec(

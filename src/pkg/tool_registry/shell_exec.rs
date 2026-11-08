@@ -9,6 +9,7 @@ use crate::pkg::git_workspace;
 use crate::pkg::paths;
 use crate::pkg::process::{self, ProcessEntry, ProcessStatus};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::agent_identity;
 use crate::pkg::tool_registry::policy_authorization_fusion::{
     ConfirmOutcome, blocking_response, confirm_with_authorization,
 };
@@ -289,12 +290,19 @@ impl CoreTool for ShellExecCoreTool {
 
         // Prepare environment（统一出口：白名单 → extra → PATH 补全 → 身份变量）
         let path_additions = self.config.path_additions();
+        // Agent 级 git 身份：由 agents 表派生（进程级缓存 TTL 300s），让 commit
+        // 署名落到具体 Agent，而不是仓库 .git/config 的统一身份
+        let agent_git_identity = match ctx.agent_id() {
+            Some(agent_id) => agent_identity::resolve(ctx.db_pool(), agent_id).await,
+            None => None,
+        };
         let mut env = shell_env::resolve(&shell_env::ShellEnvRequest {
             allowed_env: self.config.allowed_env(),
             path_additions: Some(path_additions.as_slice()),
             extra_env: params.env.as_ref(),
             task_id: ctx.task_id().map(String::as_str),
             agent_id: ctx.agent_id().map(String::as_str),
+            agent_git_identity: agent_git_identity.as_ref(),
         });
         // 隔离 HOME + 声明工具链 → 工具链根目录经官方变量指回真实 HOME：
         // git/gh 走隔离身份的同时，cargo/nvm/pyenv 等仍能读真实 HOME 配置。

@@ -1,0 +1,21 @@
+#!/bin/sh
+# ai-orz managed hook: append Task-Id / Agent-Id trailers from injected env.
+# Idempotent: skips if trailer already present. Never blocks the commit.
+msg_file="$1"
+[ -f "$msg_file" ] || exit 0
+
+# no real content (all comments / blank) -> nothing to tag
+grep -v '^#' "$msg_file" | grep -q '[^[:space:]]' || exit 0
+
+# ensure trailing newline
+[ -z "$(tail -c 1 "$msg_file")" ] || printf '\n' >> "$msg_file"
+# ensure blank line separating trailer paragraph
+[ -z "$(tail -n 1 "$msg_file")" ] || printf '\n' >> "$msg_file"
+
+if [ -n "$AI_ORZ_TASK_ID" ] && ! grep -q '^Task-Id:' "$msg_file"; then
+    printf 'Task-Id: %s\n' "$AI_ORZ_TASK_ID" >> "$msg_file"
+fi
+if [ -n "$AI_ORZ_AGENT_ID" ] && ! grep -q '^Agent-Id:' "$msg_file"; then
+    printf 'Agent-Id: %s\n' "$AI_ORZ_AGENT_ID" >> "$msg_file"
+fi
+exit 0
