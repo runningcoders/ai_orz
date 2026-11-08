@@ -45,6 +45,49 @@ pub async fn init_full_test_env(_pool: SqlitePool) -> RequestContext {
             // Leak：进程生命周期内保持目录存在，测试结束由 OS 回收 tempdir。
             std::mem::forget(base_tmp);
 
+            // 0.1 本机回环地址绕过系统代理（测试环境统一兜底）。
+            //
+            // 宿主开发机常开系统代理（如 macOS `127.0.0.1:7993`），reqwest 会
+            // 读取系统设置；而 macOS 的 `ExceptionsList` 常写成 `127.*` 通配，
+            // reqwest 的 no_proxy 匹配器识别不了，于是集成测试里发往
+            // `127.0.0.1:<随机端口>` 的请求被送进代理并返回 502。
+            //
+            // 集成测试里 lib 以非 `test` 配置编译，拿不到
+            // `ai_orz::pkg::http` 的 `#[cfg(test)]` 保护，故在此显式注入 env；
+            // 取值与 `ai_orz::pkg::http::LOOPBACK_NO_PROXY` 同源。
+            // 合并已有取值，不覆盖调用方显式配置。
+            let merged_no_proxy = {
+                let mut items: Vec<String> = Vec::new();
+                for var in ["NO_PROXY", "no_proxy"] {
+                    if let Ok(value) = std::env::var(var) {
+                        items.extend(
+                            value
+                                .split(',')
+                                .map(str::trim)
+                                .filter(|item| !item.is_empty())
+                                .map(str::to_string),
+                        );
+                    }
+                }
+                items.extend(
+                    ai_orz::pkg::http::LOOPBACK_NO_PROXY
+                        .split(',')
+                        .map(str::to_string),
+                );
+                let mut seen = std::collections::HashSet::new();
+                let merged: Vec<String> = items
+                    .into_iter()
+                    .filter(|item| seen.insert(item.to_lowercase()))
+                    .collect();
+                merged.join(",")
+            };
+            // 安全性：同上方 set_var 口径——位于 ENV_INIT OnceCell 初始化闭包内，
+            // 是该进程测试代码执行的公共前置，无并发读写 env。
+            unsafe {
+                std::env::set_var("NO_PROXY", &merged_no_proxy);
+                std::env::set_var("no_proxy", &merged_no_proxy);
+            }
+
             // 1. Load global AppConfig (idempotent; writes default to isolated base path)
             //    显式 unwrap：配置加载失败必须立刻终止，静默忽略会导致后续
             //    config::get() 拿到空 OnceLock 发生无关 panic，定位成本极高。

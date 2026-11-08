@@ -146,7 +146,15 @@ cmd_lint() {
 # ===== 测试 =====
 cmd_test_be() {
     clean_stale_artifacts
+    # NO_PROXY 双保险：本机回环 mock 服务不应走宿主系统代理（macOS 的
+    # `127.*` 例外写法 reqwest 识别不了，会把回环请求送进代理导致 502）。
+    # 代码层已在 pkg::http / tests::common 兜底，这里再给进程级一份，
+    # 覆盖不走上述入口的测试（如未来新增的第三方 SDK 直连）。
+    NO_PROXY="${NO_PROXY:-}${NO_PROXY:+,}127.0.0.1,localhost,::1" \
+    no_proxy="${no_proxy:-}${no_proxy:+,}127.0.0.1,localhost,::1" \
     cargo test --workspace --exclude frontend --lib
+    NO_PROXY="${NO_PROXY:-}${NO_PROXY:+,}127.0.0.1,localhost,::1" \
+    no_proxy="${no_proxy:-}${no_proxy:+,}127.0.0.1,localhost,::1" \
     cargo test --workspace --exclude frontend --test '*'
 }
 
