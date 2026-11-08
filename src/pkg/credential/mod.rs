@@ -233,6 +233,18 @@ pub async fn resolve_requirements(
 
 /// 缺凭据结构化引导（GenericToken 平台化引导，D19）
 pub fn credential_missing_json(requirement: &CredentialRequirement) -> serde_json::Value {
+    // 身份类（user_info / agent_info）没有「凭据可绑定」：文案必须与凭据缺失区分，
+    // 否则会把调用方引到「设置 → 身份凭证」这条根本走不通的路径上
+    if !requirement.kind.requires_hitl_credential() {
+        return crate::pkg::tool_registry::tool_readiness::api_key_missing_json(
+            &format!(
+                "工具需要运行时 {} 身份信息（field={}），但当前上下文无法派生",
+                requirement.kind.as_str(),
+                requirement.field.as_deref().unwrap_or("-")
+            ),
+            "该信息不来自凭据绑定：请确认调用上下文携带 Agent/用户身份（Agent 需在职且 role 已配置）",
+        );
+    }
     let kind_desc = match &requirement.platform {
         Some(platform) => format!("{}/{}", requirement.kind.as_str(), platform),
         None => requirement.kind.as_str().to_string(),

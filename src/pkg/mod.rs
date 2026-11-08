@@ -11,6 +11,7 @@ pub mod daily_jsonl;
 pub mod external;
 pub mod git_workspace;
 pub mod http;
+pub mod identity_dataset;
 pub mod jwt;
 pub mod lark_integration;
 pub mod logging;

@@ -150,20 +150,33 @@ impl ToolRegistry {
 
     /// 工具凭据需求声明读取（readiness 判定与 call_tool 编排共用，D17/D28）
     ///
-    /// - Builtin：工厂静态声明（tavily → [TavilyKey]；gh/lark 在 Step 4 声明）；
+    /// - Builtin：工具行 `config.credential_requirements` 优先，空则回落工厂静态声明
+    ///   （tavily → [TavilyKey]；gh/lark 在 Step 4 声明）；
     /// - Mcp/Http：po.config 的 `credential_requirements` 数组（未声明 → 空）。
     pub fn credential_requirements(
         &self,
         po: &ToolPo,
     ) -> Vec<common::models::CredentialRequirement> {
         match po.protocol {
-            common::enums::ToolProtocol::Builtin => self
-                .builtin_factories
-                .lock()
-                .unwrap()
-                .get(&po.id)
-                .map(|f| f.credential_requirements())
-                .unwrap_or_default(),
+            // Builtin 声明双源：工具行 config 优先（运维可配，sync 恒不覆盖 config），
+            // 空则回落工厂静态声明（tavily/gh_cli/lark_cli 等既有行为逐字节不变）
+            common::enums::ToolProtocol::Builtin => {
+                let declared: Vec<common::models::CredentialRequirement> = po
+                    .config
+                    .get("credential_requirements")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .unwrap_or_default();
+                if !declared.is_empty() {
+                    declared
+                } else {
+                    self.builtin_factories
+                        .lock()
+                        .unwrap()
+                        .get(&po.id)
+                        .map(|f| f.credential_requirements())
+                        .unwrap_or_default()
+                }
+            }
             common::enums::ToolProtocol::Mcp
             | common::enums::ToolProtocol::Http
             | common::enums::ToolProtocol::Shell => po

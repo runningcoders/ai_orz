@@ -2077,6 +2077,148 @@ mod tests {
         assert!(resolved.unwrap().is_empty());
     }
 
+    /// 身份类需求构造函数（Builtin + Env 注入，与 shell_exec 的真实声明同形）
+    fn identity_requirement(
+        kind: CredentialKind,
+        field: &str,
+        env_name: &str,
+    ) -> CredentialRequirement {
+        CredentialRequirement {
+            kind,
+            platform: None,
+            field: Some(field.to_string()),
+            enhancer: None,
+            binding: CredentialBinding::Env {
+                name: env_name.to_string(),
+            },
+        }
+    }
+
+    /// A5-a：agent_info 命中运行时派生值（agents 表 → role slug 派生邮箱）
+    #[tokio::test]
+    async fn resolve_tool_credentials_agent_info_hits_derived_value() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+        sqlx::query(
+            "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT, \
+             capabilities TEXT, status INTEGER NOT NULL DEFAULT 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agents (id, name, role, capabilities, status) \
+             VALUES ('agent-identity-email', '技术负责人', '[\"tech_lead\"]', '[]', 3)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        crate::pkg::identity_dataset::clear_cache();
+
+        let ctx = crate::pkg::request_context_test_support::new_test_agent_ctx(
+            "agent-identity-email",
+            pool,
+        );
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let requirements = vec![identity_requirement(
+            CredentialKind::AgentInfo,
+            "email",
+            "GIT_AUTHOR_EMAIL",
+        )];
+
+        let resolved = runtime
+            .resolve_tool_credentials(&ctx, &requirements)
+            .await
+            .unwrap()
+            .expect("身份需求不得触发凭据硬失败");
+
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].value, "tech_lead@agents.ai-orz.local");
+        assert_eq!(resolved[0].requirement.kind, CredentialKind::AgentInfo);
+    }
+
+    /// A5-a：身份派生失败 → 跳过不阻断（Some(空)，而非 Ok(None) 硬失败）
+    #[tokio::test]
+    async fn resolve_tool_credentials_identity_miss_skips_without_blocking() {
+        crate::pkg::identity_dataset::clear_cache();
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        // test_ctx 无 agent_id → 派生链第一层即缺失
+        let requirements = vec![
+            identity_requirement(CredentialKind::AgentInfo, "email", "GIT_AUTHOR_EMAIL"),
+            identity_requirement(CredentialKind::UserInfo, "email", "LEDGER_OPERATOR_EMAIL"),
+        ];
+
+        let resolved = runtime
+            .resolve_tool_credentials(&test_ctx(), &requirements)
+            .await
+            .unwrap()
+            .expect("身份派生失败必须跳过而非阻断");
+
+        assert!(resolved.is_empty());
+    }
+
+    /// 混合需求：身份命中 + 凭据命中 → 按原声明序合并
+    #[tokio::test]
+    async fn resolve_tool_credentials_merges_identity_and_credential_in_declaration_order() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+        sqlx::query(
+            "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT, \
+             capabilities TEXT, status INTEGER NOT NULL DEFAULT 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agents (id, name, role, capabilities, status) \
+             VALUES ('agent-identity-merge', '后端开发者', '[\"backend_developer\"]', '[]', 3)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        crate::pkg::identity_dataset::clear_cache();
+
+        let credential = UserCredential::from_po(UserCredentialPo::new(
+            "cred-gh-2".to_string(),
+            "org-1".to_string(),
+            "test-user".to_string(),
+            CredentialKind::GithubToken,
+            "gh default".to_string(),
+            CredentialDetail::GithubToken {
+                token: "ghp_plain".to_string(),
+            },
+            CredentialVisibility::Private,
+            "test-user".to_string(),
+        ));
+        let runtime = credential_runtime(
+            StubUserDal::with_default(credential),
+            StubLarkCredentialDal::none(),
+        );
+        let ctx = crate::pkg::request_context_test_support::new_test_agent_ctx(
+            "agent-identity-merge",
+            pool,
+        )
+        .to_builder()
+        .user_id("test-user")
+        .build();
+        let requirements = vec![
+            credential_requirement(CredentialKind::GithubToken, None, None),
+            identity_requirement(CredentialKind::AgentInfo, "name", "AGENT_DISPLAY_NAME"),
+        ];
+
+        let resolved = runtime
+            .resolve_tool_credentials(&ctx, &requirements)
+            .await
+            .unwrap()
+            .expect("混合需求应全命中");
+
+        assert_eq!(resolved.len(), 2);
+        assert_eq!(resolved[0].value, "ghp_plain");
+        assert_eq!(resolved[1].value, "后端开发者");
+    }
+
     // ==================== tool_readiness 数据驱动判定（D28） ====================
 
     use crate::pkg::tool_registry::browser::BrowserToolFactory;

@@ -76,8 +76,13 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             }
         };
         let Some(resolved) = self.resolve_tool_credentials(&ctx, &requirements).await? else {
+            // 硬失败只可能来自凭据类需求（身份类失败是跳过不阻断）→ 引导文案取第一条凭据类
+            let missing = requirements
+                .iter()
+                .find(|requirement| requirement.kind.requires_hitl_credential())
+                .unwrap_or(&requirements[0]);
             return Ok(ToolExecutionResult::new(
-                crate::pkg::credential::credential_missing_json(&requirements[0]),
+                crate::pkg::credential::credential_missing_json(missing),
                 tool_id.clone(),
                 format!("credential_missing_{}", uuid::Uuid::now_v7()),
             ));
@@ -443,55 +448,126 @@ impl RuntimeDomainImpl {
         if requirements.is_empty() {
             return Ok(Some(Vec::new()));
         }
-        let mut fetched = Vec::with_capacity(requirements.len());
-        for requirement in requirements {
-            let fetched_credential = match requirement.kind {
-                // 生产路由（D17 v1.5）：LarkApp 走渠道路径，附派生属性（D24）
-                CredentialKind::LarkApp => {
-                    self.lark_credentials
-                        .resolve_credentials_for_user(ctx)
-                        .await?
-                        .map(|(creds, mode)| FetchedCredential {
-                            credential_id: creds.app_id.clone(), // 生产端无独立 id，以 app_id 代
-                            detail: CredentialDetail::LarkApp {
-                                app_id: creds.app_id,
-                                app_secret: creds.app_secret,
-                                encrypt_key: None,
-                                verification_token: None,
-                            },
-                            attributes: BTreeMap::from([("identity_mode".to_string(), mode)]),
-                            already_decrypted: true,
-                        })
+        // 分派二元化（项目 01a1ba32 P2 / v0.4 定稿）：
+        // - 身份类（user_info / agent_info）：从运行时上下文派生，**不查 user_credentials**；
+        //   派生失败 → 跳过该条不阻断（与凭据的硬失败语义相反）
+        // - 凭据类：维持现状生产路由（LarkApp 渠道 / 其余 user dal find_default），
+        //   任一未命中 → `Ok(None)`（调用方出结构化引导）
+        let mut pieces: Vec<(usize, ResolvedRequirement)> = Vec::with_capacity(requirements.len());
+        let mut credential_requirements: Vec<CredentialRequirement> = Vec::new();
+        let mut credential_slots: Vec<usize> = Vec::new();
+        for (index, requirement) in requirements.iter().enumerate() {
+            if requirement.kind.is_identity() {
+                match self.resolve_identity_value(ctx, requirement).await {
+                    Some(value) => pieces.push((
+                        index,
+                        ResolvedRequirement {
+                            requirement: requirement.clone(),
+                            value,
+                        },
+                    )),
+                    // audit 留痕：身份派生失败零注入，但不阻断工具执行
+                    None => sys_warn!(
+                        "identity requirement skipped: kind={} field={:?} agent_id={:?} user_id={:?}",
+                        requirement.kind.as_str(),
+                        requirement.field,
+                        ctx.agent_id(),
+                        ctx.user_id()
+                    ),
                 }
-                // 其余 kind 统一走 user dal find_default（tavily 纯单轨 D27，无兜底）
-                _ => {
-                    let Some(user_id) = ctx.user_id.clone() else {
-                        return Ok(None);
-                    };
-                    self.user_dal
-                        .find_default_credential(
-                            ctx.clone(),
-                            &user_id,
-                            requirement.kind,
-                            requirement.platform.as_deref(),
-                        )
-                        .await?
-                        .map(|credential| FetchedCredential {
-                            credential_id: credential.id().to_string(),
-                            detail: credential.detail().clone(),
-                            attributes: BTreeMap::new(),
-                            already_decrypted: false,
-                        })
-                }
-            };
-            let Some(credential) = fetched_credential else {
-                return Ok(None);
-            };
-            fetched.push(credential);
+                continue;
+            }
+            credential_requirements.push(requirement.clone());
+            credential_slots.push(index);
         }
-        Ok(Some(
-            crate::pkg::credential::resolve_requirements(requirements, &fetched).await?,
-        ))
+        if !credential_requirements.is_empty() {
+            let mut fetched = Vec::with_capacity(credential_requirements.len());
+            for requirement in &credential_requirements {
+                let fetched_credential = match requirement.kind {
+                    // 生产路由（D17 v1.5）：LarkApp 走渠道路径，附派生属性（D24）
+                    CredentialKind::LarkApp => {
+                        self.lark_credentials
+                            .resolve_credentials_for_user(ctx)
+                            .await?
+                            .map(|(creds, mode)| FetchedCredential {
+                                credential_id: creds.app_id.clone(), // 生产端无独立 id，以 app_id 代
+                                detail: CredentialDetail::LarkApp {
+                                    app_id: creds.app_id,
+                                    app_secret: creds.app_secret,
+                                    encrypt_key: None,
+                                    verification_token: None,
+                                },
+                                attributes: BTreeMap::from([("identity_mode".to_string(), mode)]),
+                                already_decrypted: true,
+                            })
+                    }
+                    // 其余 kind 统一走 user dal find_default（tavily 纯单轨 D27，无兜底）
+                    _ => {
+                        let Some(user_id) = ctx.user_id.clone() else {
+                            return Ok(None);
+                        };
+                        self.user_dal
+                            .find_default_credential(
+                                ctx.clone(),
+                                &user_id,
+                                requirement.kind,
+                                requirement.platform.as_deref(),
+                            )
+                            .await?
+                            .map(|credential| FetchedCredential {
+                                credential_id: credential.id().to_string(),
+                                detail: credential.detail().clone(),
+                                attributes: BTreeMap::new(),
+                                already_decrypted: false,
+                            })
+                    }
+                };
+                let Some(credential) = fetched_credential else {
+                    return Ok(None);
+                };
+                fetched.push(credential);
+            }
+            let resolved =
+                crate::pkg::credential::resolve_requirements(&credential_requirements, &fetched)
+                    .await?;
+            for (slot, item) in credential_slots.into_iter().zip(resolved) {
+                pieces.push((slot, item));
+            }
+        }
+        // 按原声明序还原（两条流水的产出必须与 requirements 一一对位）
+        pieces.sort_by_key(|(index, _)| *index);
+        Ok(Some(pieces.into_iter().map(|(_, item)| item).collect()))
+    }
+
+    /// 身份类需求取值（`user_info` / `agent_info`）：运行时上下文 + `agents`/`users` 表派生
+    ///
+    /// 进程级缓存 TTL 300s（见 `pkg::identity_dataset`）；任一层缺失 → `None`，
+    /// 由调用方跳过不阻断。
+    async fn resolve_identity_value(
+        &self,
+        ctx: &RequestContext,
+        requirement: &CredentialRequirement,
+    ) -> Option<String> {
+        let field = requirement.field.as_deref()?;
+        match requirement.kind {
+            CredentialKind::AgentInfo => {
+                let agent_id = ctx.agent_id()?;
+                let dataset =
+                    crate::pkg::identity_dataset::agent_dataset(ctx.db_pool(), agent_id).await?;
+                dataset.field_value(field)
+            }
+            CredentialKind::UserInfo => {
+                let user_id = ctx.user_id()?;
+                let dataset = crate::pkg::identity_dataset::user_dataset(
+                    ctx.db_pool(),
+                    user_id,
+                    ctx.username.as_deref(),
+                )
+                .await?;
+                dataset.field_value(field)
+            }
+            _ => None,
+        }
     }
 }
 

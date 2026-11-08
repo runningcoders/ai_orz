@@ -131,6 +131,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
 pub struct ShellExecCoreTool {
     po: ToolPo,
     config: ShellExecConfig,
+    /// L2 注入：`credential_requirements` 的 Env 值（per-call 实例字段，D22）
+    credential_injections: HashMap<String, String>,
 }
 
 impl ShellExecCoreTool {
@@ -140,7 +142,11 @@ impl ShellExecCoreTool {
         } else {
             serde_json::from_value(po.config.clone()).unwrap_or_default()
         };
-        Self { po, config }
+        Self {
+            po,
+            config,
+            credential_injections: HashMap::new(),
+        }
     }
 
     /// Resolve absolute working directory path.
@@ -187,6 +193,29 @@ pub fn merge_extra_environment(
 
 #[async_trait::async_trait]
 impl CoreTool for ShellExecCoreTool {
+    /// 注入生命周期（D22 create → check → call）：只消费 `Env` 注入点。
+    ///
+    /// Builtin 作用域现同时允许 `Internal` 与 `Env`（`binding_allowed`），
+    /// 本工具只认 `Env`——`Internal` 是其它内置工具的实例字段形态。
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
+        let mut injections = HashMap::with_capacity(resolved.len());
+        for item in resolved {
+            match &item.requirement.binding {
+                common::models::CredentialBinding::Env { name } => {
+                    injections.insert(name.clone(), item.value.clone());
+                }
+                _ => {
+                    return Err(common::error::Error::new(
+                        common::error::ErrorCode::InvalidRequest,
+                        "shell_exec 仅支持环境变量（env）注入点",
+                    ));
+                }
+            }
+        }
+        self.credential_injections = injections;
+        Ok(())
+    }
+
     async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
         // Parse arguments
         let params: ShellExecParams = serde_json::from_value(args)
@@ -296,10 +325,23 @@ impl CoreTool for ShellExecCoreTool {
             Some(agent_id) => agent_identity::resolve(ctx.db_pool(), agent_id).await,
             None => None,
         };
+        // L2 注入：credential_requirements 的 Env 值并入 extra_env；
+        // 调用方 params.env 同名时显式传参优先（逐个覆盖，保持既有优先级）
+        let mut extra_env = self.credential_injections.clone();
+        if let Some(overrides) = params.env.as_ref() {
+            for (key, value) in overrides {
+                extra_env.insert(key.clone(), value.clone());
+            }
+        }
+        let extra_env = if extra_env.is_empty() {
+            None
+        } else {
+            Some(&extra_env)
+        };
         let mut env = shell_env::resolve(&shell_env::ShellEnvRequest {
             allowed_env: self.config.allowed_env(),
             path_additions: Some(path_additions.as_slice()),
-            extra_env: params.env.as_ref(),
+            extra_env,
             task_id: ctx.task_id().map(String::as_str),
             agent_id: ctx.agent_id().map(String::as_str),
             agent_git_identity: agent_git_identity.as_ref(),

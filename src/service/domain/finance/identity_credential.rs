@@ -381,6 +381,9 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 }
                 false
             }
+            // 运行时身份（user_info / agent_info）不是 user_credentials 资产：
+            // 不落库、不可绑定、不可删除——真走到这里说明数据被污染，按「无引用」处理
+            CredentialKind::UserInfo | CredentialKind::AgentInfo => false,
         };
 
         // 软删（DAO 联动清默认标记：删掉的凭证若为默认，对应作用域默认槽位自动空出）
