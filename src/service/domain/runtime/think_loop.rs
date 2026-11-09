@@ -376,9 +376,9 @@ impl RuntimeDomainImpl {
         };
 
         let think_future = async {
-            let mut messages = initial_messages;
+            let messages = initial_messages;
             // 最后一条用户消息：路由与思考强度共用的唯一输入（都只带轻量上下文）。
-            // 取 owned String：后面要 `messages.push` 注入 System 提示，不能同时持有借用。
+            // 取 owned String：路由分支要提前 `return` 带走 `messages`，不能同时持有借用。
             let last_user_text: Option<String> = messages.iter().rev().find_map(|m| match m {
                 ChatMessage::User { content } => Some(content.clone()),
                 // 批4 披露②：带图消息取文本 part（防小脑快判断静默跳过）
@@ -387,7 +387,7 @@ impl RuntimeDomainImpl {
             });
             // ---- B3 小脑快判断路由（单点接线；四场景自动全覆盖）----
             // 三层降级全部收敛为「静默跳过 = 现状」：无启用小脑、
-            // 800ms 超时/调用失败、低置信。只有 Inject 会改变消息序列。
+            // 800ms 超时/调用失败、低置信。只有 Direct 会改变流程（提前返回）。
             if let Some(cerebellum) = brain.cerebellum.as_ref() {
                 log_info!(
                     &ctx,
@@ -411,11 +411,11 @@ impl RuntimeDomainImpl {
                             None,
                             true,
                         ),
-                        RouteDecision::Inject { confidence, .. } => (
+                        RouteDecision::Proceed { confidence } => (
                             cerebellum_router::CHOICE_CORTEX_NEEDED.to_string(),
                             Some(*confidence),
                             None,
-                            true,
+                            false,
                         ),
                         RouteDecision::Skip { reason } => (
                             "skip".to_string(),
@@ -437,10 +437,10 @@ impl RuntimeDomainImpl {
                 log_info!(
                     &ctx,
                     "think_loop",
-                    "cerebellum route done, agent={}, direct={}, inject={}, skip={}",
+                    "cerebellum route done, agent={}, direct={}, proceed={}, skip={}",
                     agent.po.id,
                     matches!(decision, RouteDecision::Direct { .. }),
-                    matches!(decision, RouteDecision::Inject { .. }),
+                    matches!(decision, RouteDecision::Proceed { .. }),
                     matches!(decision, RouteDecision::Skip { .. }),
                 );
                 match decision {
@@ -462,18 +462,11 @@ impl RuntimeDomainImpl {
                             rounds_used: start_round,
                         });
                     }
-                    // 增强注入（默认开）：路由结论作为 System 提示追加到消息尾部
+                    // 有价值：判了，但没有可执行动作 —— 不注入、不改消息序列。
                     //
-                    // ⚠️ 必须尾插，不能插到 index 0：插头会让「人设 + 技能 + 词表 +
-                    // 历史」整段前缀整体后移一条消息，provider 的前缀缓存从第一个
-                    // token 起就全部失配——这一次唤醒的跨唤醒缓存收益归零。
-                    // 尾插只影响它自身及其后的内容，前缀照旧命中；与轮内 nudge /
-                    // reflect 的注入方式一致。
-                    RouteDecision::Inject { system_prompt, .. } => {
-                        messages.push(ChatMessage::System {
-                            content: system_prompt,
-                        });
-                    }
+                    // 路由层不再向 Prompt 推任何内容（K3 删 Inject）：「有价值」本来
+                    // 就等于「按原逻辑跑」，多推一条 System 只会平白多付 token。
+                    RouteDecision::Proceed { .. } => {}
                     // 静默跳过 = 现状
                     RouteDecision::Skip { .. } => {}
                 }

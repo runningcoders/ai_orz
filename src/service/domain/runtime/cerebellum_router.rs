@@ -1,13 +1,14 @@
 //! 小脑路由器（B3 运行时快判断路由）
 //!
 //! 在 `run_think_loop` 首轮前做一次亚秒级小脑（System One decision 模型）快判断：
-//! 让"琐碎请求"要么得到模板直回（默认关），要么带着路由结论进入 cortex 主循环
-//! （System 增强提示，默认开）。三层降级全部收敛为「静默跳过 = 现状」：
+//! 判为「无价值」（只认三类：在线性询问 / 连通测试 / 纯标点或空串）走模板直回，
+//! 其余一律「有价值」按原逻辑进入 cortex 主循环——路由层不向 Prompt 注入任何内容。
+//! 三层降级全部收敛为「静默跳过 = 现状」：
 //!
 //! 1. 无启用小脑（`brain.cerebellum = None`）→ 全域静默跳过，
 //!    同时即全局回滚开关（管理面停用默认小脑 = 一键回滚，零代码零重启）；
 //! 2. 调用失败 / 超时（`provider.config.timeout_ms`，缺省 800ms）→ 静默跳过；
-//! 3. 低置信 → 不注入、不直回。
+//! 3. 低置信 → 不直回（按「有价值」走原逻辑）。
 //!
 //! 三铁律口径：state 只携带轻量上下文（消息文本 + Agent 标识），不取全量记忆；
 //! 结果只注入 cortex 增强，不替代主循环；单次调用受亚秒预算约束。
@@ -26,8 +27,11 @@ use std::sync::Arc;
 
 // ==================== 常量集中（Spike 后只调这里） ====================
 
-/// 置信度阈值：低于该值不注入、不直回（保守口径，Spike 后可调）
-pub const CEREBELLUM_ROUTE_CONFIDENCE_THRESHOLD: f32 = 0.85;
+/// 入口门置信阈值：低于该值按「没判出来」处理（静默走原逻辑）
+///
+/// **独立阈值，不与其它场景共用**（旧路由的 0.85 随判据重写作废）：入口门判成
+/// 「无价值」= 用户拿到的是一句模板直回，误判代价远高于多跑一次主循环，故取 0.9。
+pub const ENTRY_GATE_CONFIDENCE_THRESHOLD: f32 = 0.9;
 
 /// 场景名（日志/计量口径，也是 qid 命名空间前缀）
 pub const ROUTE_SCENE: &str = "route";
@@ -37,7 +41,12 @@ pub const CHOICE_TRIVIAL_DIRECT: &str = "trivial_direct";
 pub const CHOICE_CORTEX_NEEDED: &str = "cortex_needed";
 
 /// 判据（prompt 存调用方，服务端不持有）
-const ROUTE_INSTRUCTIONS: &str = "根据用户消息判断应走模板直回还是完整思考主循环";
+///
+/// **只写黑名单侧**：只有明确落入三类「无价值」才判无价值，其余默认有价值——
+/// 判据漏写/模型保守时，最坏结果是多跑一次主循环，而不是把正常消息吞成模板直回。
+const ROUTE_INSTRUCTIONS: &str = "判断用户消息是否属于『无价值』，只有三类算无价值：\
+①在线性询问（在吗 / 在不在）；②连通性测试（测试一下 / 1+1 这类探针）；③纯标点或空串。\
+其余一律有价值：寒暄、客套、致谢、简单问题、单个名词，以及任何具体任务，都必须当作有价值。";
 
 /// 透传给模型的上下文事实（三铁律：只带轻量上下文，不取全量记忆）
 const ROUTE_STATE_KEYS: &[&str] = &["agent_id", "agent_name", "last_user_message"];
@@ -45,22 +54,18 @@ const ROUTE_STATE_KEYS: &[&str] = &["agent_id", "agent_name", "last_user_message
 /// 模板直回文案（2026-11-09 起 TRIVIAL 直回默认启用，已无开关）
 pub const TRIVIAL_DIRECT_TEMPLATE: &str = "收到。这个问题比较简单直接，我直接答复：目前没有需要深度处理的任务。如果你有具体需求（查数据、改配置、跑任务），直接说需求即可。";
 
-/// 注入 cortex 首轮的增强 System 提示（默认开；纯增强，失败即现状）
-pub const CORTEX_BOOST_TEMPLATE: &str =
-    "[小脑路由提示] 快判断认为本请求需要完整思考能力，请按你的正常流程高质量完成本轮任务。";
-
 // ==================== 决策类型 ====================
 
 /// 路由决策三分类
 #[derive(Debug, Clone, PartialEq)]
 pub enum RouteDecision {
-    /// 琐碎请求：直回候选（开关取消后由调用方无条件直回）
+    /// 无价值：模板直回（P1a 仍用单条模板，P1b 换成候选池）
     Direct { content: String, confidence: f32 },
-    /// 需要完整思考：注入增强 System 提示后进主循环
-    Inject {
-        system_prompt: String,
-        confidence: f32,
-    },
+    /// 有价值：不做任何干预，按原逻辑进入主循环
+    ///
+    /// 与 `Skip` 的差别是观测口径：`Proceed` = 判出来了且判为有价值，`Skip` =
+    /// 压根没判出来（降级）。删掉 Inject 后，路由层不再向 Prompt 注入任何内容。
+    Proceed { confidence: f32 },
     /// 静默跳过 = 现状（降级原因用于 B5 观测）
     Skip { reason: DegradedReason },
 }
@@ -80,14 +85,14 @@ fn route_policy() -> PickOnePolicy {
         [
             (
                 CHOICE_TRIVIAL_DIRECT,
-                "琐碎请求：寒暄/客套/简单确认类，无需工具与深度思考，可直接模板答复",
+                "无价值（只有三类）：在线性询问（在吗 / 在不在）、连通性测试（测试一下 / 1+1 这类探针）、纯标点或空串",
             ),
             (
                 CHOICE_CORTEX_NEEDED,
-                "需要完整思考：具体任务/查数据/改配置/多轮指代等，必须进入主循环",
+                "有价值（默认）：寒暄、客套、致谢、简单问题、单个名词，以及任何具体任务——都必须进入主循环正常回复",
             ),
         ],
-        CEREBELLUM_ROUTE_CONFIDENCE_THRESHOLD,
+        ENTRY_GATE_CONFIDENCE_THRESHOLD,
     )
     .with_state_keys(ROUTE_STATE_KEYS)
 }
@@ -159,11 +164,11 @@ pub async fn route(
                 "cerebellum route decision"
             );
         }
-        RouteDecision::Inject { confidence, .. } => {
+        RouteDecision::Proceed { confidence } => {
             log_info!(
                 ctx,
                 "cerebellum_route",
-                decision = "inject",
+                decision = "proceed",
                 confidence = confidence,
                 latency_ms = latency_ms,
                 input_tokens = outcome.usage.input_tokens,
@@ -189,14 +194,14 @@ pub async fn route(
 
 /// 决策结论 → 路由三分类（纯函数，单测覆盖三分类）
 ///
-/// 规则：cortex_needed 且置信达标 → Inject；trivial_direct 且置信达标 → Direct；
-/// 其余（无结论 / 非 Pick / 未知选项 / 低置信）→ Skip。
+/// 规则：cortex_needed 且置信达标 → Proceed（零干预）；trivial_direct 且置信达标
+/// → Direct；其余（无结论 / 非 Pick / 未知选项 / 低置信）→ Skip。
 ///
-/// ⚠️ `None`（没问出来）必须走 Skip，绝不能落到 Direct/Inject ——
+/// ⚠️ `None`（没问出来）必须走 Skip，绝不能落到 Direct/Proceed ——
 /// 「降级 = 未命中」，把「没判断出来」当成「判断为琐碎」会静默改变主流程。
 fn translate(policy: &PickOnePolicy, metrics: &Metrics) -> RouteDecision {
     let Some(PickOne { option, confidence }) =
-        policy.pick_one(metrics, CEREBELLUM_ROUTE_CONFIDENCE_THRESHOLD)
+        policy.pick_one(metrics, ENTRY_GATE_CONFIDENCE_THRESHOLD)
     else {
         // 区分「答了但不可用」的两种口径：Pick 但置信不足 → 低置信；
         // 其它（没答 / 题型不符 / 模型编造）→ 形态不符。
@@ -207,10 +212,8 @@ fn translate(policy: &PickOnePolicy, metrics: &Metrics) -> RouteDecision {
         return RouteDecision::Skip { reason };
     };
     match option.as_str() {
-        CHOICE_CORTEX_NEEDED => RouteDecision::Inject {
-            system_prompt: CORTEX_BOOST_TEMPLATE.to_string(),
-            confidence,
-        },
+        // 判为有价值 = 什么都不做（K3：删 Inject，路由层不再注入增强 System）
+        CHOICE_CORTEX_NEEDED => RouteDecision::Proceed { confidence },
         CHOICE_TRIVIAL_DIRECT => RouteDecision::Direct {
             content: TRIVIAL_DIRECT_TEMPLATE.to_string(),
             confidence,

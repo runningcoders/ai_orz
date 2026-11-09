@@ -182,17 +182,29 @@ async fn test_route_trivial_direct() {
 }
 
 #[tokio::test]
-async fn test_route_cortex_needed_injects() {
+async fn test_route_cortex_needed_proceeds() {
+    // 有价值 = 零干预：不再有 System 注入（K3 删 Inject）
     let d = run_with(
         Some(pick_outcome(CHOICE_CORTEX_NEEDED, 0.92)),
         Some("帮我查一下上个月的报销数据"),
     )
     .await;
+    assert_eq!(d, RouteDecision::Proceed { confidence: 0.92 });
+}
+
+#[tokio::test]
+async fn test_route_entry_gate_uses_independent_threshold() {
+    // 0.89 在旧阈值 0.85 之上、新入口门阈值 0.9 之下：必须判低置信 → Skip。
+    // 这条锁死「入口门用自己的 0.9，不复用旧 0.85」。
+    let d = run_with(
+        Some(pick_outcome(CHOICE_TRIVIAL_DIRECT, 0.89)),
+        Some("在吗"),
+    )
+    .await;
     assert_eq!(
         d,
-        RouteDecision::Inject {
-            system_prompt: CORTEX_BOOST_TEMPLATE.to_string(),
-            confidence: 0.92
+        RouteDecision::Skip {
+            reason: DegradedReason::LowConfidence
         }
     );
 }
@@ -304,7 +316,7 @@ fn test_translate_unknown_choice_skips() {
 
 #[test]
 fn test_translate_missing_answer_skips() {
-    // 没问出来（None）必须走 Skip —— 绝不能默认成 Direct 或 Inject
+    // 没问出来（None）必须走 Skip —— 绝不能默认成 Direct 或 Proceed
     let d = translate(&route_policy(), &Metrics::new());
     assert_eq!(
         d,
@@ -319,7 +331,7 @@ fn test_translate_low_confidence_skips() {
     // 有结论但置信不足：与「压根没答」要区分开（观测口径不同）
     let metrics = metrics_with(DecisionValue::Pick {
         chosen: CHOICE_TRIVIAL_DIRECT.to_string(),
-        confidence: CEREBELLUM_ROUTE_CONFIDENCE_THRESHOLD - 0.1,
+        confidence: ENTRY_GATE_CONFIDENCE_THRESHOLD - 0.1,
         weights: BTreeMap::new(),
     });
     assert_eq!(
