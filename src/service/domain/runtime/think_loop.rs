@@ -427,7 +427,7 @@ impl RuntimeDomainImpl {
                 crate::pkg::think_trace::record_cerebellum(
                     trace_id,
                     ThinkTraceCerebellum {
-                        scene: cerebellum_router::ROUTE_SCENE.to_string(),
+                        scene: cerebellum_router::ENTRY_GATE_SCENE.to_string(),
                         decision: route_decision,
                         confidence: route_confidence,
                         degraded: route_degraded,
@@ -444,16 +444,41 @@ impl RuntimeDomainImpl {
                     matches!(decision, RouteDecision::Skip { .. }),
                 );
                 match decision {
-                    // TRIVIAL 高置信直回：默认关；开则跳过主循环提前返回
+                    // 入口门判无价值 → 候选池直回：跳过主循环提前返回
                     RouteDecision::Direct {
                         content,
                         confidence,
+                        pool,
                     } => {
+                        // 第二个决策点留痕（K1）：选出来了记 pool_N，回退记 pool_fallback
+                        let pool_applied =
+                            matches!(&pool, cerebellum_router::PoolReply::Picked { .. });
+                        let (pool_decision, pool_confidence, pool_degraded) = match &pool {
+                            cerebellum_router::PoolReply::Picked { id, confidence } => {
+                                (id.clone(), Some(*confidence), None)
+                            }
+                            cerebellum_router::PoolReply::Fallback { .. } => (
+                                "fallback".to_string(),
+                                None,
+                                Some(cerebellum_router::POOL_FALLBACK_DEGRADED.to_string()),
+                            ),
+                        };
+                        crate::pkg::think_trace::record_cerebellum(
+                            trace_id,
+                            ThinkTraceCerebellum {
+                                scene: cerebellum_router::ENTRY_POOL_SCENE.to_string(),
+                                decision: pool_decision,
+                                confidence: pool_confidence,
+                                degraded: pool_degraded,
+                                applied: pool_applied,
+                            },
+                        );
                         log_info!(
                             &ctx,
                             "think_loop",
-                            "cerebellum trivial direct short-circuit, confidence={}",
-                            confidence
+                            "cerebellum entry pool short-circuit, confidence={}, pool_applied={}",
+                            confidence,
+                            pool_applied
                         );
                         return Ok(ThinkLoopResult::Final {
                             content,

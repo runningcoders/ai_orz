@@ -1,10 +1,7 @@
-//! tests 单元测试（拆分自 cerebellum_router.rs）
+//! cerebellum_router 单元测试（`#[path]` 注册，保住 `mod tests` 层级）
 //!
-//! 文件瘦身：原 596 行 → 298 行，测试体 299 行。
-//! 用 `#[path]` 而非 mod.rs 注册：保住 `mod tests` 层级，
-//! 测试里 `use super::*` 仍能看到父模块的私有 use 与私有 helper。
-//!
-//! 拆分命令见 `tools/split_inline_tests.py`。
+//! 覆盖两个决策点：入口门三分类（Direct / Proceed / Skip）+ 候选池（选中 / 回退）
+//! + 两者共享同一本 per-run 配额账（**新增决策点漏检查即在此失败**）。
 
 use super::*;
 use crate::models::model_provider::ModelProviderPo;
@@ -13,13 +10,31 @@ use crate::service::dal::brain::DecisionOutcome;
 use async_trait::async_trait;
 use common::api::cerebellum::CerebellumUsage;
 use common::error::Result;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ---------- mock BrainDal（实现全 trait 方法，仅 decide 生效） ----------
 
-/// `outcome = None` 表示模拟调用失败（CallError）
+/// 按剧本依次作答：`None` / 剧本耗尽 = 该次调用失败（CallError）
+///
+/// `calls` 是配额断言的唯一依据：配额上限 = N 时，真实调用次数**不得**超过 N。
 struct MockBrainDal {
-    outcome: Option<DecisionOutcome>,
+    script: Mutex<VecDeque<Option<DecisionOutcome>>>,
+    calls: AtomicUsize,
+}
+
+impl MockBrainDal {
+    fn new(script: Vec<Option<DecisionOutcome>>) -> Self {
+        Self {
+            script: Mutex::new(script.into()),
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::Relaxed)
+    }
 }
 
 #[async_trait]
@@ -30,9 +45,11 @@ impl BrainDal for MockBrainDal {
         _brain: &Brain,
         _requests: Vec<DecisionRequest>,
     ) -> DecisionOutcome {
-        match &self.outcome {
-            Some(outcome) => outcome.clone(),
-            None => DecisionOutcome {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        match self.script.lock().expect("mock script lock").pop_front() {
+            Some(Some(outcome)) => outcome,
+            // 剧本耗尽也算调用失败：调用次数超出预期时，断言会直接炸出来
+            _ => DecisionOutcome {
                 answers: DecisionAnswers::new(),
                 degraded: Some(DegradedReason::CallError),
                 latency_ms: 0,
@@ -113,11 +130,18 @@ fn mock_brain(cerebellum: Option<ModelProviderPo>) -> Brain {
     brain
 }
 
-/// 成功结论：Pick(choice, confidence)
-fn pick_outcome(choice: &str, confidence: f32) -> DecisionOutcome {
+/// 带 per-run 配额的 Brain（与生产装配口径一致：配额挂在 Brain 上）
+fn brain_with_quota(limit: usize) -> Brain {
+    let mut brain = mock_brain(None);
+    brain.cerebellum_quota = Arc::new(crate::models::brain::CerebellumQuota::new(limit));
+    brain
+}
+
+/// 用指定策略的 qid 装一条 Pick 结论
+fn pick_for(policy: &PickOnePolicy, choice: &str, confidence: f32) -> DecisionOutcome {
     DecisionOutcome {
         answers: DecisionAnswers::new().with(
-            route_policy().primary_qid(),
+            policy.primary_qid(),
             DecisionValue::Pick {
                 chosen: choice.to_string(),
                 confidence,
@@ -125,12 +149,22 @@ fn pick_outcome(choice: &str, confidence: f32) -> DecisionOutcome {
             },
         ),
         degraded: None,
-        latency_ms: 10,
+        latency_ms: 8,
         usage: CerebellumUsage {
             input_tokens: 100,
             output_tokens: 10,
         },
     }
+}
+
+/// 入口门结论
+fn gate_pick(choice: &str, confidence: f32) -> DecisionOutcome {
+    pick_for(&entry_gate_policy(), choice, confidence)
+}
+
+/// 入口池结论（`id` 必须是 `pool_N`）
+fn pool_pick(id: &str, confidence: f32) -> DecisionOutcome {
+    pick_for(&pool_policy(), id, confidence)
 }
 
 /// 降级结论（DAL 侧判定的失败原因）
@@ -152,45 +186,67 @@ async fn run_with_brain(
     user_msg: Option<&str>,
     brain: Brain,
 ) -> RouteDecision {
+    run_script(vec![outcome], user_msg, brain).await.0
+}
+
+/// 按剧本走完整 `route`（门 → 池），返回结论与**真实决策调用次数**
+async fn run_script(
+    script: Vec<Option<DecisionOutcome>>,
+    user_msg: Option<&str>,
+    brain: Brain,
+) -> (RouteDecision, usize) {
     // 全局 Storage 单例：`test_ctx()` 走 `RequestContext::new`，其 builder
     // 在未显式注入 storage 时回退到全局单例 ⇒ 必须先初始化，否则单跑
-    // 本模块时 panic「Storage 尚未初始化」。全量跑时靠其它用例先初始化
-    // 侥幸通过，属测试隔离缺陷（与业务无关）。
+    // 本模块时 panic「Storage 尚未初始化」。
     crate::pkg::storage::test_support::init_for_test().await;
     let ctx = test_ctx();
-    route(&ctx, Arc::new(MockBrainDal { outcome }), &brain, user_msg).await
+    let mock = Arc::new(MockBrainDal::new(script));
+    let decision = route(&ctx, mock.clone(), &brain, user_msg).await;
+    (decision, mock.calls())
 }
 
 fn test_ctx() -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx_from_global("test-user")
 }
 
-// ---------- 翻译三分类 ----------
+// ---------- 入口门三分类 ----------
 
 #[tokio::test]
-async fn test_route_trivial_direct() {
-    let d = run_with(
-        Some(pick_outcome(CHOICE_TRIVIAL_DIRECT, 0.95)),
+async fn test_entry_gate_trivial_then_pool_picked() {
+    // 门判无价值 → 串第二次决策选中 pool_1：文案取自池，id 记 pool_1
+    let (d, calls) = run_script(
+        vec![
+            Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.95)),
+            Some(pool_pick("pool_1", 0.93)),
+        ],
         Some("在吗"),
+        mock_brain(None),
     )
     .await;
+    assert_eq!(calls, 2, "门 + 池 = 两次串行决策");
     assert_eq!(
         d,
         RouteDecision::Direct {
-            content: TRIVIAL_DIRECT_TEMPLATE.to_string(),
-            confidence: 0.95
+            content: ENTRY_POOL[1].to_string(),
+            confidence: 0.95,
+            pool: PoolReply::Picked {
+                id: "pool_1".to_string(),
+                confidence: 0.93,
+            },
         }
     );
 }
 
 #[tokio::test]
 async fn test_route_cortex_needed_proceeds() {
-    // 有价值 = 零干预：不再有 System 注入（K3 删 Inject）
-    let d = run_with(
-        Some(pick_outcome(CHOICE_CORTEX_NEEDED, 0.92)),
+    // 有价值 = 零干预：不再有 System 注入（K3 删 Inject）；池**一次都不调**
+    let (d, calls) = run_script(
+        vec![Some(gate_pick(CHOICE_CORTEX_NEEDED, 0.92))],
         Some("帮我查一下上个月的报销数据"),
+        mock_brain(None),
     )
     .await;
+    assert_eq!(calls, 1, "判为有价值时只走门，不问池");
     assert_eq!(d, RouteDecision::Proceed { confidence: 0.92 });
 }
 
@@ -198,11 +254,13 @@ async fn test_route_cortex_needed_proceeds() {
 async fn test_route_entry_gate_uses_independent_threshold() {
     // 0.89 在旧阈值 0.85 之上、新入口门阈值 0.9 之下：必须判低置信 → Skip。
     // 这条锁死「入口门用自己的 0.9，不复用旧 0.85」。
-    let d = run_with(
-        Some(pick_outcome(CHOICE_TRIVIAL_DIRECT, 0.89)),
+    let (d, calls) = run_script(
+        vec![Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.89))],
         Some("在吗"),
+        mock_brain(None),
     )
     .await;
+    assert_eq!(calls, 1, "低置信不进池");
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -213,11 +271,7 @@ async fn test_route_entry_gate_uses_independent_threshold() {
 
 #[tokio::test]
 async fn test_route_low_confidence_skips() {
-    let d = run_with(
-        Some(pick_outcome(CHOICE_CORTEX_NEEDED, 0.5)),
-        Some("随便聊聊"),
-    )
-    .await;
+    let d = run_with(Some(gate_pick(CHOICE_CORTEX_NEEDED, 0.5)), Some("随便聊聊")).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -271,7 +325,7 @@ async fn test_route_unsupported_answer_skips() {
     // 非 Pick 结论（如 Grade）→ UnsupportedAnswer
     let outcome = DecisionOutcome {
         answers: DecisionAnswers::new().with(
-            route_policy().primary_qid(),
+            entry_gate_policy().primary_qid(),
             DecisionValue::Grade {
                 score: 3.0,
                 confidence: 0.99,
@@ -290,11 +344,179 @@ async fn test_route_unsupported_answer_skips() {
     );
 }
 
-// ---------- 纯函数翻译边界 ----------
+// ---------- 入口池回退路径（唯一例外：门已放行直回，必须给出一句） ----------
+
+#[tokio::test]
+async fn test_entry_pool_low_confidence_falls_back_to_most_neutral() {
+    let (d, _) = run_script(
+        vec![
+            Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.95)),
+            Some(pool_pick("pool_1", ENTRY_POOL_CONFIDENCE_THRESHOLD - 0.2)),
+        ],
+        Some("在吗"),
+        mock_brain(None),
+    )
+    .await;
+    assert_eq!(
+        d,
+        RouteDecision::Direct {
+            content: ENTRY_POOL[0].to_string(),
+            confidence: 0.95,
+            pool: PoolReply::Fallback {
+                reason: DegradedReason::LowConfidence
+            },
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_entry_pool_unknown_id_falls_back() {
+    // 模型编造池外 id（pool_9）：不得拿它去查文案，按「没有结论」回退
+    let (d, _) = run_script(
+        vec![
+            Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.99)),
+            Some(pool_pick("pool_9", 0.99)),
+        ],
+        Some("在吗"),
+        mock_brain(None),
+    )
+    .await;
+    assert_eq!(
+        d,
+        RouteDecision::Direct {
+            content: ENTRY_POOL[0].to_string(),
+            confidence: 0.99,
+            pool: PoolReply::Fallback {
+                reason: DegradedReason::UnsupportedAnswer
+            },
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_entry_pool_degraded_falls_back() {
+    let (d, _) = run_script(
+        vec![
+            Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.99)),
+            Some(degraded_outcome(DegradedReason::Timeout)),
+        ],
+        Some("在吗"),
+        mock_brain(None),
+    )
+    .await;
+    assert_eq!(
+        d,
+        RouteDecision::Direct {
+            content: ENTRY_POOL[0].to_string(),
+            confidence: 0.99,
+            pool: PoolReply::Fallback {
+                reason: DegradedReason::Timeout
+            },
+        }
+    );
+}
+
+// ---------- 配额：两个决策点共享同一本 per-run 账 ----------
+
+#[tokio::test]
+async fn test_entry_decisions_share_one_quota_budget() {
+    // 配额 2 = 门一次 + 池一次：两次都真发请求，额度用尽
+    let brain = brain_with_quota(2);
+    let probe = brain.clone();
+    let (d, calls) = run_script(
+        vec![
+            Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.99)),
+            Some(pool_pick("pool_2", 0.97)),
+        ],
+        Some("在吗"),
+        brain,
+    )
+    .await;
+    assert_eq!(
+        calls, 2,
+        "两个决策点各发一次：新增决策点漏过配额检查会在这里露出来"
+    );
+    assert_eq!(probe.cerebellum_quota.used(), 2);
+    assert_eq!(
+        d,
+        RouteDecision::Direct {
+            content: ENTRY_POOL[2].to_string(),
+            confidence: 0.99,
+            pool: PoolReply::Picked {
+                id: "pool_2".to_string(),
+                confidence: 0.97,
+            },
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_entry_pool_quota_exhausted_falls_back_without_call() {
+    // 配额 1：门吃掉唯一额度 ⇒ 池**一次请求都不发**，直接回退最中性一条。
+    // 剧本里故意放一条会选中 pool_2 的结论——若池真发了请求，结果就会是 Picked。
+    let brain = brain_with_quota(1);
+    let probe = brain.clone();
+    let (d, calls) = run_script(
+        vec![
+            Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.99)),
+            Some(pool_pick("pool_2", 0.99)),
+        ],
+        Some("在吗"),
+        brain,
+    )
+    .await;
+    assert_eq!(calls, 1, "额度已耗尽：池不得再发请求");
+    assert_eq!(probe.cerebellum_quota.used(), 1);
+    assert_eq!(
+        d,
+        RouteDecision::Direct {
+            content: ENTRY_POOL[0].to_string(),
+            confidence: 0.99,
+            pool: PoolReply::Fallback {
+                reason: DegradedReason::BudgetExhausted
+            },
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_route_quota_exhausted_skips_without_call() {
+    // 配额 1 次且已被占满：门必须直接降级，**一次请求都不发**。
+    // 这里故意给一个会判 Direct 的结论——若真发了请求，结果就会是 Direct。
+    let brain = brain_with_quota(1);
+    assert!(brain.cerebellum_quota.try_acquire());
+    let d = run_with_brain(
+        Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.99)),
+        Some("在吗"),
+        brain,
+    )
+    .await;
+    assert_eq!(
+        d,
+        RouteDecision::Skip {
+            reason: DegradedReason::BudgetExhausted
+        }
+    );
+}
+
+// ---------- 池结构与纯函数翻译边界 ----------
+
+#[test]
+fn test_entry_pool_ids_align_with_texts() {
+    assert_eq!(
+        ENTRY_POOL_IDS.len(),
+        ENTRY_POOL.len(),
+        "id 与文案必须一一对应"
+    );
+    for (i, id) in ENTRY_POOL_IDS.iter().enumerate() {
+        assert_eq!(*id, format!("pool_{i}"), "池 id 必须是 pool_N 且与下标一致");
+    }
+    assert!((3..=5).contains(&ENTRY_POOL.len()), "池容量 3~5 条（K8）");
+}
 
 /// 把一条结论装进事实桶（translate 只看桶，不看原始 answers）
 fn metrics_with(value: DecisionValue) -> Metrics {
-    let policy = route_policy();
+    let policy = entry_gate_policy();
     Metrics::new().with_decisions(Arc::new(
         DecisionAnswers::new().with(policy.primary_qid(), value),
     ))
@@ -307,10 +529,9 @@ fn test_translate_unknown_choice_skips() {
         confidence: 0.99,
         weights: BTreeMap::new(),
     });
-    let d = translate(&route_policy(), &metrics);
     assert_eq!(
-        d,
-        RouteDecision::Skip {
+        translate_gate(&entry_gate_policy(), &metrics),
+        GateVerdict::Skip {
             reason: DegradedReason::UnsupportedAnswer
         }
     );
@@ -319,10 +540,9 @@ fn test_translate_unknown_choice_skips() {
 #[test]
 fn test_translate_missing_answer_skips() {
     // 没问出来（None）必须走 Skip —— 绝不能默认成 Direct 或 Proceed
-    let d = translate(&route_policy(), &Metrics::new());
     assert_eq!(
-        d,
-        RouteDecision::Skip {
+        translate_gate(&entry_gate_policy(), &Metrics::new()),
+        GateVerdict::Skip {
             reason: DegradedReason::UnsupportedAnswer
         }
     );
@@ -337,30 +557,9 @@ fn test_translate_low_confidence_skips() {
         weights: BTreeMap::new(),
     });
     assert_eq!(
-        translate(&route_policy(), &metrics),
-        RouteDecision::Skip {
+        translate_gate(&entry_gate_policy(), &metrics),
+        GateVerdict::Skip {
             reason: DegradedReason::LowConfidence
-        }
-    );
-}
-
-#[tokio::test]
-async fn test_route_quota_exhausted_skips_without_call() {
-    // 配额 1 次且已被占满：决策点必须直接降级，**一次请求都不发**。
-    // 这里故意给一个会判 Direct 的结论——若真发了请求，结果就会是 Direct。
-    let mut brain = mock_brain(None);
-    brain.cerebellum_quota = Arc::new(crate::models::brain::CerebellumQuota::new(1));
-    assert!(brain.cerebellum_quota.try_acquire());
-    let d = run_with_brain(
-        Some(pick_outcome(CHOICE_TRIVIAL_DIRECT, 0.99)),
-        Some("在吗"),
-        brain,
-    )
-    .await;
-    assert_eq!(
-        d,
-        RouteDecision::Skip {
-            reason: DegradedReason::BudgetExhausted
         }
     );
 }
