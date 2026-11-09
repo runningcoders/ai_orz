@@ -45,7 +45,7 @@
 ## 简介
 本章节面向「AI Agent 运行时」的读者，介绍 AI Orz 的「System One 快判断」能力（代号小脑 Cerebellum）。核心语义是：在进入大脑（cortex）主循环之前，让小脑（`jev` / TypeSafe AI System One 决策模型）用一次亚秒级调用给出「琐碎直回 / 需完整思考」的路由结论，从而为寒暄、客套、简单确认类请求省掉完整多轮 cortex 主循环的 token 与延迟成本。
 
-小脑不兼容 OpenAI 的 `chat/completions` 协议，走独立的 `POST {base}/v1/systemone`（Bearer 鉴权）；系统为此新增 `ProviderType::Jev = 8` 与 `ModelCapability::Decision = 2` 两个用途枚举，二者均为 `#[repr(i32)]` 尾部追加变体，免 DB migration。整条链路由「协议 DTO → System One client → 默认小脑获取 → Brain 注入 → 运行时路由三分类 → think_loop 单点接线」六段构成，任何异常都收敛为「静默跳过 = 现状」，并可通过管理面停用默认小脑实现一键全局回滚（零代码、零重启）。
+小脑不兼容 OpenAI 的 `chat/completions` 协议，走独立的 `POST {base}/systemone`（`base` 自带版本前缀，如 `https://api.typesafe.ai/v1`；Bearer 鉴权）；系统为此新增 `ProviderType::Jev = 8` 与 `ModelCapability::Decision = 2` 两个用途枚举，二者均为 `#[repr(i32)]` 尾部追加变体，免 DB migration。整条链路由「协议 DTO → System One client → 默认小脑获取 → Brain 注入 → 运行时路由三分类 → think_loop 单点接线」六段构成，任何异常都收敛为「静默跳过 = 现状」，并可通过管理面停用默认小脑实现一键全局回滚（零代码、零重启）。
 
 > 📌 源码口径说明：本能力的 System One 协议口径依据官方公开文档多来源交叉实证，**未经真实端点实测**；连通性 Spike 顺延至凭据到位后二期启动前集中纠偏（见 [common/src/api/cerebellum.rs](common/src/api/cerebellum.rs) 模块头注释）。
 
@@ -97,7 +97,7 @@ EN --> CT
 - [src/service/dal/brain.rs](src/service/dal/brain.rs)
 
 ## 核心组件
-- **协议 DTO（`common/src/api/cerebellum.rs`）**：三类问题/答案一一对应——`noul`（无选项，输出 0~1 概率，无 confidence）/ `choice`（≤255 选项，输出 choice + confidence + probabilities）/ `score`（2~10 级有序等级，输出 score + probabilities + legend + confidence）。`CerebellumQuestion::validate` 前置执行「类型 × criteria 形态 + 数量边界」硬校验。放 `common` 而非 `src/models`：它是跨进程线格式，前端以后也要用；引擎侧的进程内契约（`DecisionRequest` 等）在 `pkg/policy/decision`，两者在 DAL 一处互相映射。
+- **协议 DTO（`common/src/api/cerebellum.rs`）**：三类问题/答案一一对应——`noul`（可选 `{true,false}` 判据对象，输出 0~1 概率，无 confidence）/ `choice`（≤255 选项，输出 choice + confidence + probabilities）/ `score`（2~10 级有序等级，输出 score + probabilities + legend + confidence，`legend` 为「等级序号 → 描述」对象）。`CerebellumQuestion::validate` 前置执行「类型 × criteria 形态 + 数量边界」硬校验。放 `common` 而非 `src/models`：它是跨进程线格式，前端以后也要用；引擎侧的进程内契约（`DecisionRequest` 等）在 `pkg/policy/decision`，两者在 DAL 一处互相映射。
 - **System One client（`dao/cerebellum/`）**：`CerebellumDao` trait + `SystemOneCerebellumDao` 单例（`OnceLock`）。无状态、全配置随 `&ModelProviderPo` 传入；`client.rs` 负责端点/超时解析、请求编解码、响应结构校验与错误分类。
 - **默认小脑获取（`get_default_cerebellum_provider`）**：与 embedding 版同构，查询 `capability = Decision AND status = Normal AND api_key 非空` 取第一条；语义即「status 单启用即默认」。
 - **Brain 注入（`dal/brain.rs` + `models/brain.rs`）**：`wake_brain` 在 Local 分支注入 `brain.cerebellum`；无启用记录则为 `None`，行为与现状逐字节一致。
@@ -132,7 +132,7 @@ PL->>Router : "route_with_default_dao(ctx, brain, enabled, ...)"
 Router->>Router : "route_policy().prepare(metrics) → Vec<DecisionRequest>"
 Router->>Brain : "dal.decide(ctx, brain, requests)"
 Brain->>Brain : "门禁：cerebellum None / api_key 空 / dao 未初始化 → NoProvider（零调用）"
-Brain->>Cere : "think_fast(...) / POST {base}/v1/systemone"
+Brain->>Cere : "think_fast(...) / POST {base}/systemone"
 Cere-->>Brain : "ThinkFastResult{answers, usage}"
 Brain-->>Router : "DecisionOutcome{answers, degraded, usage, latency_ms}"
 Router-->>PL : "RouteDecision: Direct / Inject / Skip"
@@ -154,7 +154,7 @@ end
 ## 详细组件分析
 
 ### 协议 DTO：三类型问题与答案
-`QuestionType` 定义 `Noul` / `Choice` / `Score` 三型；`QuestionCriteria` 用 `#[serde(untagged)]` 承载双形态（choice→选项对象、score→有序等级数组），`CerebellumQuestion::validate` 强制「类型与 criteria 形态匹配」并校验数量边界（choice ∈ [1,255]、score ∈ [2,10]、noul 不带 criteria），不合规直接 `ConfigInvalid`。响应侧 `CerebellumAnswer` 用 `#[serde(tag = "type")]` 区分三型，并提供 `as_noul` / `as_choice` / `as_score` 取值器；`CerebellumResponse` 的 `usage` 缺失时容错为零值。
+`QuestionType` 定义 `Noul` / `Choice` / `Score` 三型；`QuestionCriteria` 用 `#[serde(untagged)]` 承载双形态（choice→选项对象、score→有序等级数组），`CerebellumQuestion::validate` 强制「类型与 criteria 形态匹配」并校验数量边界（choice ∈ [1,255]、score ∈ [2,10]、noul 可选 `{true,false}` 判据对象且不允许数组），不合规直接 `ConfigInvalid`。响应侧 `CerebellumAnswer` 用 `#[serde(tag = "type")]` 区分三型，并提供 `as_noul` / `as_choice` / `as_score` 取值器；`CerebellumResponse` 的 `usage` 缺失时容错为零值。
 
 **章节来源**
 - [common/src/api/cerebellum.rs](common/src/api/cerebellum.rs)
@@ -304,7 +304,7 @@ flowchart LR
 Q["CerebellumQuestion<br/>{type, instructions, criteria?}"] --> V{"validate()<br/>类型×criteria 形态 + 数量边界"}
 V --> |不合规| E1["ConfigInvalid（本地硬错误）"]
 V --> |合规| Req["CerebellumRequest<br/>{model=po.model_name, state, questions}"]
-Req --> Post["POST {base}/v1/systemone<br/>Bearer api_key, timeout=config.timeout_ms ?? 800ms"]
+Req --> Post["POST {base}/systemone<br/>Bearer api_key, timeout=config.timeout_ms ?? 800ms"]
 Post --> Resp["CerebellumResponse<br/>{model, answers, usage?}"]
 Resp --> SV{"顶层 answers 存在且为对象 ?"}
 SV --> |否| E2["硬错误 Internal"]

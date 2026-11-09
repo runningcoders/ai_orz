@@ -16,12 +16,13 @@
 //!
 //! 协议口径（官方公开文档，多来源交叉实证；未经真实端点实测，
 //! 连通性 Spike 顺延至凭据到位后二期启动前集中纠偏）：
-//! - `POST {base}/v1/systemone`，Bearer 鉴权
+//! - `POST {base}/systemone`（`base` 自带版本前缀，如 `https://api.typesafe.ai/v1`），Bearer 鉴权
 //! - 请求 = `{"model", "state", "questions": {qid: {"type","instructions","criteria"}}}`
 //! - 响应 = `{"model", "answers": {qid: {...}}, "usage": {"input_tokens","output_tokens"}}`
 //! - choice：criteria 为选项对象（≤255 项），输出 {type,choice,confidence,probabilities}
-//! - score：criteria 为有序等级数组（2~10 级），输出 {type,score,probabilities,legend,confidence}
-//! - noul：仅 instructions，输出 {type,noul}（0~1 概率，无 confidence）
+//! - score：criteria 为有序等级数组（2~10 级），输出
+//!   {type,score,probabilities,legend,confidence}；legend 为「等级序号 → 描述」对象
+//! - noul：instructions + 可选 {true,false} 判据对象，输出 {type,noul}（0~1 概率，无 confidence）
 
 use crate::error::{Result, err};
 use serde::{Deserialize, Serialize};
@@ -39,7 +40,7 @@ pub const MAX_SCORE_LEVELS: usize = 10;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuestionType {
-    /// 无选项判断：仅 instructions，输出 0~1 概率
+    /// 无选项判断：instructions（可选 true/false 判据），输出 0~1 概率
     Noul,
     /// 单选：从 ≤255 个选项中选出一项，输出带各选项概率
     Choice,
@@ -47,11 +48,12 @@ pub enum QuestionType {
     Score,
 }
 
-/// 问题评估准则（choice=选项对象 / score=有序等级数组；noul 不携带）
+/// 问题评估准则（choice=选项对象 / score=有序等级数组 / noul=可选 {true,false} 判据对象）
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum QuestionCriteria {
-    /// choice：选项对象（键=选项标识，值=选项描述），≤255 项
+    /// 对象形态：choice 为选项映射（键=选项标识，值=描述，≤255 项）；
+    /// noul 为判据映射（键仅限 `true` / `false`）
     Choices(BTreeMap<String, String>),
     /// score：有序等级数组（从低到高），2~10 级
     Levels(Vec<String>),
@@ -65,7 +67,7 @@ pub struct CerebellumQuestion {
     pub question_type: QuestionType,
     /// 问题指令（三类问题必有）
     pub instructions: String,
-    /// choice=选项对象 / score=等级数组；noul 不携带
+    /// choice=选项对象 / score=等级数组 / noul=可选 {true,false} 判据对象
     #[serde(skip_serializing_if = "Option::is_none")]
     pub criteria: Option<QuestionCriteria>,
 }
@@ -74,11 +76,24 @@ impl CerebellumQuestion {
     /// 请求前置校验（协议边界）：类型与 criteria 形态匹配 + 数量边界
     pub fn validate(&self) -> Result<()> {
         match self.question_type {
-            QuestionType::Noul => {
-                if self.criteria.is_some() {
-                    return Err(err!(ConfigInvalid, "noul question must not carry criteria"));
+            QuestionType::Noul => match &self.criteria {
+                // noul 判据可选：官方 NoulCriteria = {true?, false?}
+                None => {}
+                Some(QuestionCriteria::Choices(m)) => {
+                    if m.is_empty() || m.keys().any(|k| k != "true" && k != "false") {
+                        return Err(err!(
+                            ConfigInvalid,
+                            "noul criteria must be a non-empty object with only 'true' / 'false' keys"
+                        ));
+                    }
                 }
-            }
+                Some(QuestionCriteria::Levels(_)) => {
+                    return Err(err!(
+                        ConfigInvalid,
+                        "noul criteria must be an object with 'true' / 'false', not an array"
+                    ));
+                }
+            },
             QuestionType::Choice => match &self.criteria {
                 Some(QuestionCriteria::Choices(m)) => {
                     if m.is_empty() || m.len() > MAX_CHOICE_OPTIONS {
@@ -159,9 +174,9 @@ pub enum CerebellumAnswer {
         score: f32,
         /// 各等级的概率分布
         probabilities: BTreeMap<String, f32>,
-        /// 等级标签（低→高），响应可选回显
+        /// 等级标签（等级序号 → 描述），响应可选回显
         #[serde(default)]
-        legend: Vec<String>,
+        legend: BTreeMap<String, String>,
         /// 该评分的置信度（0~1）
         confidence: f32,
     },

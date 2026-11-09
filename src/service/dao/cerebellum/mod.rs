@@ -22,7 +22,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 /// System One 默认端点（Jev 协议 base_url 缺省兜底；provider 配置 base_url 优先）
-pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai";
+///
+/// 与 OpenAI 兼容 provider 同口径：**版本前缀由 base_url 承载**（如 Qwen 的
+/// `/compatible-mode/v1`），client 只追加 `/systemone`。
+pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
 /// 默认请求超时（毫秒）：小脑快判断亚秒级预算；config.timeout_ms 可逐模型覆盖
 pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 800;
 

@@ -450,7 +450,10 @@ fn test_to_decision_value_preserves_three_shapes() {
     let score = CerebellumAnswer::Score {
         score: 3.4,
         probabilities: std::collections::BTreeMap::new(),
-        legend: vec!["低".to_string(), "高".to_string()],
+        legend: std::collections::BTreeMap::from([
+            ("0".to_string(), "低".to_string()),
+            ("1".to_string(), "高".to_string()),
+        ]),
         confidence: 0.7,
     };
     match to_decision_value(&score) {

@@ -1,7 +1,7 @@
 //! System One HTTP client（jev 协议编解码）
 //!
 //! wire format（官方公开口径，多来源交叉实证）：
-//! - `POST {base}/v1/systemone`，`Authorization: Bearer <api_key>`
+//! - `POST {base}/systemone`（`base` 自带版本前缀，如 `/v1`），`Authorization: Bearer <api_key>`
 //! - 请求：`{"model": po.model_name, "state": <字符串|对象|数组>, "questions": {qid: {type, instructions, criteria?}}}`
 //! - 响应：`{"model": "...", "answers": {qid: <类型化答案>}, "usage": {...}}`
 //! - 结构校验：顶层缺 answers / answers 非对象 → 硬错误；
@@ -54,7 +54,7 @@ fn resolve_endpoint(provider: &ModelProviderPo) -> Result<String> {
         .clone()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_SYSTEM_ONE_BASE_URL.to_string());
-    Ok(format!("{}/v1/systemone", base.trim_end_matches('/')))
+    Ok(format!("{}/systemone", base.trim_end_matches('/')))
 }
 
 /// 快判断入口（协议编解码 + 响应结构校验）
@@ -248,7 +248,7 @@ mod cerebellum_client_tests {
     #[test]
     fn endpoint_prefers_provider_base_url() {
         let mut po = provider("{}");
-        po.base_url = Some("https://my-relay.example.com/".to_string());
+        po.base_url = Some("https://my-relay.example.com/v1/".to_string());
         let url = resolve_endpoint(&po).unwrap();
         assert_eq!(url, "https://my-relay.example.com/v1/systemone");
     }
