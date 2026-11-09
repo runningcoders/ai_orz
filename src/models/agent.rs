@@ -94,6 +94,14 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub enable_memory_rerank: bool,
 
+    /// 方法技能小脑精选（同 tag 已发布候选 → 小脑重排 → 权重阈值截断）：默认关
+    ///
+    /// 只控制「这池子里哪两条进 prompt」，不控制候选池：同 tag 已发布技能全量入池。
+    /// 关闭或小脑降级时按「description 与新词词面重叠优先」取前 2（老路径），
+    /// prompt 预算不变。
+    #[serde(default)]
+    pub enable_skill_rerank: bool,
+
     /// 是否启用轮级自省节点（reflect）：默认关
     ///
     /// 打开后，同一工具累计调用达到阈值时，环图会在 evaluate 与下一轮 think
@@ -165,6 +173,7 @@ impl Default for AgentRuntimeConfig {
             enable_cerebellum_route: true,
             cerebellum_trivial_direct: false,
             enable_memory_rerank: false,
+            enable_skill_rerank: false,
             enable_round_reflect: false,
             external_config: None,
             thinking_intensity: None,
@@ -769,6 +778,9 @@ mod tests {
         assert!(!config.cerebellum_trivial_direct);
         // 轮级自省默认关：默认拓扑与老循环一致
         assert!(!config.enable_round_reflect);
+        // 两路精选默认关：先观察期，与 memory 同口径
+        assert!(!config.enable_memory_rerank);
+        assert!(!config.enable_skill_rerank);
     }
 
     #[test]

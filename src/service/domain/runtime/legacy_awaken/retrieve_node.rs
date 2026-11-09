@@ -19,6 +19,7 @@
 
 use super::context::{AwakenDeps, RetrievalPack, read_bus};
 use crate::models::memory::{Memory, MemoryIndexTier, MemoryPo};
+use crate::models::skill::SkillPo;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
@@ -80,8 +81,8 @@ const RECALL_WIDTH_FACTOR: usize = 3;
 /// 和节点抢同一个名额会让图谱在提示里被挤掉。
 const RELATION_TOP_K: usize = 4;
 
-/// 方法技能条数上限
-const METHOD_SKILLS_TOP_K: usize = 2;
+/// 方法技能条数上限（渲染预算 + 精选 keep，两处共用的同一真相）
+pub(crate) const METHOD_SKILLS_TOP_K: usize = 2;
 
 /// 图谱扩展的种子节点数（从长期知识候选池里取前 N 个知识节点）
 ///
@@ -674,22 +675,40 @@ impl ThinkNode for RetrieveNode {
         let knowledge_hits =
             build_knowledge_lines(&selected, &rest, &graph.neighbors, &graph.relations);
 
-        // 5. 方法技能召回：机械排序取前 2（description 与新词词面重叠者优先）
+        // 5. 方法技能召回：同 tag 已发布技能 → 可选小脑精选（默认关）→ 机械排序取前 2
+        //
+        // 候选池不 take：精选要看到全部候选才有取舍空间。关闭开关 / 小脑降级 /
+        // 无答案时退回「词面重叠优先 + 稳定排序」的老路径，逐字节等价。
         let method_skills = match crate::service::dal::skill::dal()
             .list_published_by_tag(deps.ctx.clone(), METHOD_SKILL_TAG)
             .await
         {
-            Ok(mut skills) => {
-                skills.sort_by_key(|s| {
-                    let desc = s.po.description.to_lowercase();
-                    // 词面重叠者优先（重叠 = false 排前；稳定排序保证其余保序）
-                    !new_terms.iter().any(|t| desc.contains(&t.to_lowercase()))
-                });
-                skills
-                    .into_iter()
-                    .take(METHOD_SKILLS_TOP_K)
-                    .map(|s| s.po)
-                    .collect::<Vec<_>>()
+            Ok(skills) => {
+                let mut candidates: Vec<SkillPo> = skills.into_iter().map(|s| s.po).collect();
+                let ranked = match deps.agent.brain.as_ref() {
+                    Some(brain) if brain.runtime_config.enable_skill_rerank => {
+                        super::skill_relevance::rank_with_default_dao(
+                            &deps.ctx,
+                            brain,
+                            &keyword,
+                            &candidates,
+                            METHOD_SKILLS_TOP_K,
+                        )
+                        .await
+                    }
+                    _ => None,
+                };
+                match ranked {
+                    Some(kept) => kept.into_iter().take(METHOD_SKILLS_TOP_K).collect(),
+                    None => {
+                        candidates.sort_by_key(|s| {
+                            let desc = s.description.to_lowercase();
+                            // 词面重叠者优先（重叠 = false 排前；稳定排序保证其余保序）
+                            !new_terms.iter().any(|t| desc.contains(&t.to_lowercase()))
+                        });
+                        candidates.into_iter().take(METHOD_SKILLS_TOP_K).collect()
+                    }
+                }
             }
             Err(e) => {
                 crate::log_error!(

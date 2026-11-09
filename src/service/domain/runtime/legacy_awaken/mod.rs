@@ -44,6 +44,7 @@ pub mod nodes;
 pub mod poll_node;
 pub mod retrieve_node;
 pub mod runner;
+pub mod skill_relevance;
 
 #[cfg(test)]
 #[path = "tests.rs"]
