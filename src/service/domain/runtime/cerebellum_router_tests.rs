@@ -143,11 +143,7 @@ fn degraded_outcome(reason: DegradedReason) -> DecisionOutcome {
     }
 }
 
-async fn run_with(
-    outcome: Option<DecisionOutcome>,
-    enabled: bool,
-    user_msg: Option<&str>,
-) -> RouteDecision {
+async fn run_with(outcome: Option<DecisionOutcome>, user_msg: Option<&str>) -> RouteDecision {
     // 全局 Storage 单例：`test_ctx()` 走 `RequestContext::new`，其 builder
     // 在未显式注入 storage 时回退到全局单例 ⇒ 必须先初始化，否则单跑
     // 本模块时 panic「Storage 尚未初始化」。全量跑时靠其它用例先初始化
@@ -158,7 +154,6 @@ async fn run_with(
         &ctx,
         Arc::new(MockBrainDal { outcome }),
         &mock_brain(None),
-        enabled,
         user_msg,
     )
     .await
@@ -174,7 +169,6 @@ fn test_ctx() -> RequestContext {
 async fn test_route_trivial_direct() {
     let d = run_with(
         Some(pick_outcome(CHOICE_TRIVIAL_DIRECT, 0.95)),
-        true,
         Some("在吗"),
     )
     .await;
@@ -191,7 +185,6 @@ async fn test_route_trivial_direct() {
 async fn test_route_cortex_needed_injects() {
     let d = run_with(
         Some(pick_outcome(CHOICE_CORTEX_NEEDED, 0.92)),
-        true,
         Some("帮我查一下上个月的报销数据"),
     )
     .await;
@@ -208,7 +201,6 @@ async fn test_route_cortex_needed_injects() {
 async fn test_route_low_confidence_skips() {
     let d = run_with(
         Some(pick_outcome(CHOICE_CORTEX_NEEDED, 0.5)),
-        true,
         Some("随便聊聊"),
     )
     .await;
@@ -223,19 +215,8 @@ async fn test_route_low_confidence_skips() {
 // ---------- 降级路径 ----------
 
 #[tokio::test]
-async fn test_route_disabled_skips_without_call() {
-    let d = run_with(None, false, Some("在吗")).await;
-    assert_eq!(
-        d,
-        RouteDecision::Skip {
-            reason: DegradedReason::Disabled
-        }
-    );
-}
-
-#[tokio::test]
 async fn test_route_no_user_message_skips() {
-    let d = run_with(None, true, None).await;
+    let d = run_with(None, None).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -246,7 +227,7 @@ async fn test_route_no_user_message_skips() {
 
 #[tokio::test]
 async fn test_route_call_error_skips() {
-    let d = run_with(None, true, Some("在吗")).await;
+    let d = run_with(None, Some("在吗")).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -260,7 +241,6 @@ async fn test_route_timeout_skips() {
     // 超时判定已下沉到 DAL（单一超时预算），router 只把 degraded 翻成 Skip
     let d = run_with(
         Some(degraded_outcome(DegradedReason::Timeout)),
-        true,
         Some("在吗"),
     )
     .await;
@@ -287,7 +267,7 @@ async fn test_route_unsupported_answer_skips() {
         latency_ms: 5,
         usage: CerebellumUsage::default(),
     };
-    let d = run_with(Some(outcome), true, Some("在吗")).await;
+    let d = run_with(Some(outcome), Some("在吗")).await;
     assert_eq!(
         d,
         RouteDecision::Skip {
@@ -352,7 +332,8 @@ fn test_translate_low_confidence_skips() {
 
 #[test]
 fn test_degraded_reason_str() {
-    // 「没配小脑」与「被开关关掉」必须是两个口径——排查时才能区分配置缺失与人为关闭
+    // 稳定字符串口径（日志/前端展示）。`Disabled` 已无生产方（小脑开关整体取消），
+    // 保留变体只为解释历史日志。
     assert_eq!(DegradedReason::NoProvider.as_str(), "no_provider");
     assert_eq!(DegradedReason::Disabled.as_str(), "disabled");
     assert_eq!(DegradedReason::Timeout.as_str(), "timeout");

@@ -21,10 +21,12 @@
 
 use super::cerebellum_router::{self, RouteDecision};
 use super::think_round::{self, RoundRun};
+use super::thinking_strength;
 use super::types::ThinkLoopResult;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::ChatMessage;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use crate::pkg::think_trace::ThinkTraceCerebellum;
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
@@ -356,11 +358,10 @@ impl RuntimeDomainImpl {
         log_info!(
             &ctx,
             "think_loop",
-            "think loop entered (pre-cerebellum), scene={}, agent={}, has_cerebellum={}, enable_route={}, max_rounds={}, start_round={}, timeout_secs={}",
+            "think loop entered (pre-cerebellum), scene={}, agent={}, has_cerebellum={}, max_rounds={}, start_round={}, timeout_secs={}",
             scene.as_str(),
             agent.po.id,
             brain.cerebellum.is_some(),
-            brain.runtime_config.enable_cerebellum_route,
             max_rounds,
             start_round,
             timeout_secs,
@@ -376,32 +377,63 @@ impl RuntimeDomainImpl {
 
         let think_future = async {
             let mut messages = initial_messages;
+            // 最后一条用户消息：路由与思考强度共用的唯一输入（都只带轻量上下文）。
+            // 取 owned String：后面要 `messages.push` 注入 System 提示，不能同时持有借用。
+            let last_user_text: Option<String> = messages.iter().rev().find_map(|m| match m {
+                ChatMessage::User { content } => Some(content.clone()),
+                // 批4 披露②：带图消息取文本 part（防小脑快判断静默跳过）
+                ChatMessage::UserMultimodal { text, .. } => Some(text.clone()),
+                _ => None,
+            });
             // ---- B3 小脑快判断路由（单点接线；四场景自动全覆盖）----
-            // 三层降级全部收敛为「静默跳过 = 现状」：无启用小脑/总开关关、
+            // 三层降级全部收敛为「静默跳过 = 现状」：无启用小脑、
             // 800ms 超时/调用失败、低置信。只有 Inject 会改变消息序列。
             if let Some(cerebellum) = brain.cerebellum.as_ref() {
-                let rc = &brain.runtime_config;
-                let last_user_text = messages.iter().rev().find_map(|m| match m {
-                    ChatMessage::User { content } => Some(content.as_str()),
-                    // 批4 披露②：带图消息取文本 part（防小脑快判断静默跳过）
-                    ChatMessage::UserMultimodal { text, .. } => Some(text.as_str()),
-                    _ => None,
-                });
                 log_info!(
                     &ctx,
                     "think_loop",
-                    "cerebellum route start, agent={}, provider={}, enable={}",
+                    "cerebellum route start, agent={}, provider={}",
                     agent.po.id,
                     cerebellum.id,
-                    rc.enable_cerebellum_route,
                 );
                 let decision = cerebellum_router::route_with_default_dao(
                     &ctx,
                     &brain,
-                    rc.enable_cerebellum_route,
-                    last_user_text,
+                    last_user_text.as_deref(),
                 )
                 .await;
+                // 小脑留痕：结论与降级都要能在思考轨迹里被追问（细因在日志）
+                let (route_decision, route_confidence, route_degraded, route_applied) =
+                    match &decision {
+                        RouteDecision::Direct { confidence, .. } => (
+                            cerebellum_router::CHOICE_TRIVIAL_DIRECT.to_string(),
+                            Some(*confidence),
+                            None,
+                            true,
+                        ),
+                        RouteDecision::Inject { confidence, .. } => (
+                            cerebellum_router::CHOICE_CORTEX_NEEDED.to_string(),
+                            Some(*confidence),
+                            None,
+                            true,
+                        ),
+                        RouteDecision::Skip { reason } => (
+                            "skip".to_string(),
+                            None,
+                            Some(reason.as_str().to_string()),
+                            false,
+                        ),
+                    };
+                crate::pkg::think_trace::record_cerebellum(
+                    trace_id,
+                    ThinkTraceCerebellum {
+                        scene: cerebellum_router::ROUTE_SCENE.to_string(),
+                        decision: route_decision,
+                        confidence: route_confidence,
+                        degraded: route_degraded,
+                        applied: route_applied,
+                    },
+                );
                 log_info!(
                     &ctx,
                     "think_loop",
@@ -417,21 +449,18 @@ impl RuntimeDomainImpl {
                         content,
                         confidence,
                     } => {
-                        if rc.cerebellum_trivial_direct {
-                            log_info!(
-                                &ctx,
-                                "think_loop",
-                                "cerebellum trivial direct short-circuit, confidence={}",
-                                confidence
-                            );
-                            return Ok(ThinkLoopResult::Final {
-                                content,
-                                messages,
-                                // 小脑直回没跑思考轮次：绝对轮次停在起点
-                                rounds_used: start_round,
-                            });
-                        }
-                        // 直回开关关 → 不直回也不注入（保守口径）
+                        log_info!(
+                            &ctx,
+                            "think_loop",
+                            "cerebellum trivial direct short-circuit, confidence={}",
+                            confidence
+                        );
+                        return Ok(ThinkLoopResult::Final {
+                            content,
+                            messages,
+                            // 小脑直回没跑思考轮次：绝对轮次停在起点
+                            rounds_used: start_round,
+                        });
                     }
                     // 增强注入（默认开）：路由结论作为 System 提示追加到消息尾部
                     //
@@ -449,6 +478,55 @@ impl RuntimeDomainImpl {
                     RouteDecision::Skip { .. } => {}
                 }
             }
+
+            // ---- 思考强度：小脑按 0–100 分直接选（2026-11-09 AMan 拍板）----
+            //
+            // 无小脑 / 失败 / 低置信 → None，退回原逻辑（意图确定性偏移）。
+            // 分数是否真正下发由 `resolve_call_options` 里的 Provider 能力开关裁定：
+            // 这里只记录「选了什么、有没有生效」，不让它静默失效。
+            let thinking_strength = if brain.cerebellum.is_some() {
+                let provider_capable = brain
+                    .model_provider()
+                    .and_then(|po| po.config().thinking_intensity)
+                    .is_some();
+                match thinking_strength::select_with_default_dao(
+                    &ctx,
+                    &brain,
+                    scene.as_str(),
+                    last_user_text.as_deref(),
+                )
+                .await
+                {
+                    Some(choice) => {
+                        crate::pkg::think_trace::record_cerebellum(
+                            trace_id,
+                            ThinkTraceCerebellum {
+                                scene: thinking_strength::SCENE.to_string(),
+                                decision: choice.strength.score().to_string(),
+                                confidence: Some(choice.confidence),
+                                degraded: None,
+                                applied: provider_capable,
+                            },
+                        );
+                        Some(choice.strength)
+                    }
+                    None => {
+                        crate::pkg::think_trace::record_cerebellum(
+                            trace_id,
+                            ThinkTraceCerebellum {
+                                scene: thinking_strength::SCENE.to_string(),
+                                decision: "fallback".to_string(),
+                                confidence: None,
+                                degraded: Some("no_usable_answer".to_string()),
+                                applied: false,
+                            },
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             // 提取模型提供商信息（入口日志用；事件发布由轮级节点自行取）
             let model_provider_id = brain.model_provider().map(|po| po.id.clone());
             // 本次循环可用轮次 = max_rounds - start_round
@@ -511,6 +589,7 @@ impl RuntimeDomainImpl {
                     brain,
                     scene,
                     thinking_intensity_offset,
+                    thinking_strength,
                     trace_id,
                     messages,
                     tool_descriptors,

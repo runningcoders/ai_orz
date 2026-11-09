@@ -78,30 +78,11 @@ pub struct AgentRuntimeConfig {
     #[serde(default = "default_compaction_threshold_tokens")]
     pub compaction_threshold_tokens: usize,
 
-    /// 是否启用小脑路由（B3 运行时快判断）：关闭=全域静默跳过（Agent 级回滚开关）
-    #[serde(default = "default_true")]
-    pub enable_cerebellum_route: bool,
-
-    /// 琐碎请求模板直回（TRIVIAL）：默认关，放开需 Spike 实测+灰度后另行拍板
-    #[serde(default)]
-    pub cerebellum_trivial_direct: bool,
-
-    /// 检索结果小脑精选（宽召回 → 小脑重排 → 权重阈值截断）：默认关
-    ///
-    /// 只控制「要不要用小脑筛」，不控制召回宽度：候选池恒为渲染预算的 3 倍
-    /// （`retrieve_node::recall_width`），开关只决定这池子里哪几条进 prompt。
-    /// 关闭或小脑降级时按召回序取前 5 条，prompt 预算不变。
-    #[serde(default)]
-    pub enable_memory_rerank: bool,
-
-    /// 方法技能小脑精选（同 tag 已发布候选 → 小脑重排 → 权重阈值截断）：默认关
-    ///
-    /// 只控制「这池子里哪两条进 prompt」，不控制候选池：同 tag 已发布技能全量入池。
-    /// 关闭或小脑降级时按「description 与新词词面重叠优先」取前 2（老路径），
-    /// prompt 预算不变。
-    #[serde(default)]
-    pub enable_skill_rerank: bool,
-
+    // 小脑开关（原 `enable_cerebellum_route` / `cerebellum_trivial_direct` /
+    // `enable_memory_rerank` / `enable_skill_rerank`）已于 2026-11-09 整体取消：
+    // 所有接线点默认启用，降级由「小脑内部失败 → 业务走原逻辑」保证，不再需要
+    // 逐点开关。存量配置 JSON 里的旧字段由 serde 静默忽略（结构体无
+    // `deny_unknown_fields`），反序列化不会失败。
     /// 是否启用轮级自省节点（reflect）：默认关
     ///
     /// 打开后，同一工具累计调用达到阈值时，环图会在 evaluate 与下一轮 think
@@ -170,10 +151,6 @@ impl Default for AgentRuntimeConfig {
             summary_max_rounds: 0,
             think_timeout_secs: 0,
             compaction_threshold_tokens: common::config::DEFAULT_COMPACTION_THRESHOLD_TOKENS,
-            enable_cerebellum_route: true,
-            cerebellum_trivial_direct: false,
-            enable_memory_rerank: false,
-            enable_skill_rerank: false,
             enable_round_reflect: false,
             external_config: None,
             thinking_intensity: None,
@@ -231,10 +208,6 @@ impl AgentRuntimeConfig {
 // 单一事实源在 common::api::DEFAULT_MAX_THINKING_DEPTH，避免前后端默认值漂移
 fn default_max_thinking_depth() -> i32 {
     common::api::DEFAULT_MAX_THINKING_DEPTH
-}
-
-fn default_true() -> bool {
-    true
 }
 
 // 记忆分流阈值默认值，与 common 层的系统配置默认值同源，避免双端漂移
@@ -771,44 +744,47 @@ mod tests {
     }
 
     #[test]
-    fn test_cerebellum_switches_default_values() {
-        let config = AgentRuntimeConfig::default();
-        // 增强注入默认开 / TRIVIAL 直回默认关（T1 拍板）
-        assert!(config.enable_cerebellum_route);
-        assert!(!config.cerebellum_trivial_direct);
-        // 轮级自省默认关：默认拓扑与老循环一致
+    fn test_removed_cerebellum_switches_are_ignored() {
+        // 小脑开关已整体取消（2026-11-09 AMan 拍板：全部默认放开、不再需要开关）。
+        // 存量配置 JSON 仍可能带着旧字段：必须能正常反序列化（未知字段忽略），
+        // 且旧字段不得被回写进序列化结果。
+        let legacy = serde_json::json!({
+            "enable_cerebellum_route": false,
+            "cerebellum_trivial_direct": true,
+            "enable_memory_rerank": false,
+            "enable_skill_rerank": false
+        })
+        .to_string();
+        let config: AgentRuntimeConfig =
+            serde_json::from_str(&legacy).expect("legacy config with removed switches");
+        let json = config.to_json();
+        for gone in [
+            "enable_cerebellum_route",
+            "cerebellum_trivial_direct",
+            "enable_memory_rerank",
+            "enable_skill_rerank",
+        ] {
+            assert!(
+                !json.contains(gone),
+                "removed switch leaked into json: {gone}"
+            );
+        }
+        // 非小脑开关不受影响（轮级自省仍然独立存在）
         assert!(!config.enable_round_reflect);
-        // 两路精选默认关：先观察期，与 memory 同口径
-        assert!(!config.enable_memory_rerank);
-        assert!(!config.enable_skill_rerank);
     }
 
     #[test]
-    fn test_cerebellum_switches_serde_backward_compat() {
-        // 存量 config JSON 无新字段 → serde default 自动补齐（向后兼容）
-        let legacy = "{}";
-        let config: AgentRuntimeConfig = serde_json::from_str(legacy).expect("legacy config");
-        assert!(config.enable_cerebellum_route);
-        assert!(!config.cerebellum_trivial_direct);
+    fn test_empty_and_roundtrip_config_stay_default() {
+        // 空 JSON（旧版本 Agent 的 config 字符串）→ 全默认
+        let config: AgentRuntimeConfig = serde_json::from_str("{}").expect("empty config");
+        let dflt = AgentRuntimeConfig::default();
+        assert_eq!(config.max_thinking_depth, dflt.max_thinking_depth);
+        assert_eq!(config.max_thinking_rounds, dflt.max_thinking_rounds);
+        assert!(config.thinking_intensity.is_none());
 
-        // 显式覆盖可关闭
-        let custom = serde_json::json!({
-            "enable_cerebellum_route": false,
-            "cerebellum_trivial_direct": true
-        })
-        .to_string();
-        let config: AgentRuntimeConfig = serde_json::from_str(&custom).expect("custom config");
-        assert!(!config.enable_cerebellum_route);
-        assert!(config.cerebellum_trivial_direct);
-
-        // round-trip 保留
-        let config = AgentRuntimeConfig {
-            enable_cerebellum_route: false,
-            ..Default::default()
-        };
-        let json = config.to_json();
-        let back: AgentRuntimeConfig = serde_json::from_str(&json).expect("round-trip");
-        assert!(!back.enable_cerebellum_route);
-        assert!(!back.cerebellum_trivial_direct);
+        // round-trip 保形
+        let back: AgentRuntimeConfig = serde_json::from_str(&config.to_json()).expect("round-trip");
+        assert_eq!(back.max_thinking_depth, config.max_thinking_depth);
+        assert_eq!(back.enable_round_reflect, config.enable_round_reflect);
     }
 }

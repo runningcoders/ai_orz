@@ -237,7 +237,8 @@ pub struct ThinkFastResult {
 pub enum DegradedReason {
     /// 小脑 provider 未装配，或已装配但 api_key 为空（DAL 侧判定）
     NoProvider,
-    /// 业务开关关闭（Domain 侧判定，如 `enable_cerebellum_route = false`）
+    /// 业务开关关闭（**已无生产方**：2026-11-09 小脑开关整体取消，
+    /// 保留变体仅用于解释历史日志）
     Disabled,
     /// 上下文不足，无法构造请求（如没有用户消息）
     NoUserMessage,

@@ -18,6 +18,7 @@ fn entry(run_id: &str, agent_id: &str, created_at: u64) -> ThinkTraceEntry {
         steps: 5,
         advisor_calls: 0,
         fingerprint: "fp".to_string(),
+        cerebellum: Vec::new(),
         occurrences: vec![ThinkTraceOccurrence {
             node: "think".to_string(),
             seq: 0,

@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// 单次查询允许的最大条数（JSONL 扫描开销控制）
 pub const MAX_THINK_TRACE_QUERY_LIMIT: usize = 100;
@@ -71,7 +71,7 @@ pub fn append(agent_id: &str, entry: &serde_json::Value) -> anyhow::Result<bool>
 ///
 /// 字段名与落盘 JSON 一一对应；`#[serde(default)]` 让历史行/字段扩展时仍可读取。
 /// 唯一的例外是 `partial_round_count` —— 它是查询合并期的内部状态，不落盘。
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ThinkTraceEntry {
     /// 本次 run 的唯一 ID（图引擎生成）
     #[serde(default)]
@@ -112,6 +112,14 @@ pub struct ThinkTraceEntry {
     /// 轮级明细：模型思考文本、reasoning summary、工具调用与决策
     #[serde(default)]
     pub rounds: Vec<ThinkTraceRound>,
+    /// 本次 run 内的小脑决策留痕（routing / 思考强度 / 检索精选）
+    ///
+    /// 小脑调用点分散在 run 的不同阶段，落盘只有这里一个出口，因此由
+    /// [`record_cerebellum`] 按 run 收集、收尾时 [`take_cerebellum`] 一次取走。
+    /// 增量行（`partial=true`）不写该字段：它只承载轮次明细，run 级信息统一由
+    /// 收尾行提供（与 `steps` / `occurrences` / `routes` 同口径）。
+    #[serde(default)]
+    pub cerebellum: Vec<ThinkTraceCerebellum>,
     /// 本行是否为「运行中逐轮增量」而非 run 收尾的完整行
     ///
     /// 思考循环每轮定型（think → dispatch → evaluate）后追加一行 `partial=true`，
@@ -171,6 +179,75 @@ pub struct ThinkTraceRound {
     /// 未来支持逐轮动态调整时无需改存储结构。
     #[serde(default)]
     pub thinking_intensity: Option<ThinkingIntensity>,
+}
+
+/// run 内一次小脑调用的决策留痕
+///
+/// 小脑是可选增强：它的每次判断要么产出结论（进不进主流程、强度多少、
+/// 哪些条目入选），要么降级走原逻辑。两种结果都必须能被事后追问，
+/// 否则「小脑到底判了什么」只能靠翻日志。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ThinkTraceCerebellum {
+    /// 场景（`DecisionRequest.scene`：route / thinking_strength / memory_relevance / skill_relevance）
+    #[serde(default)]
+    pub scene: String,
+    /// 决策结论（选中的选项或分数；`fallback` = 未产出可用结论）
+    #[serde(default)]
+    pub decision: String,
+    /// 置信度（Pick 的概率；未产出结论时为 None）
+    #[serde(default)]
+    pub confidence: Option<f32>,
+    /// 降级原因（None = 正常出结论）
+    #[serde(default)]
+    pub degraded: Option<String>,
+    /// 是否真正影响了下游行为
+    ///
+    /// `false` 的典型场景：小脑算出了强度分数，但 Provider 未配置
+    /// `thinking_intensity`（能力开关关闭），分数只留痕、请求体不下发。
+    #[serde(default)]
+    pub applied: bool,
+}
+
+/// 单 run 最多保留多少条小脑留痕（防御：run 异常未收尾时不无限增长）
+const CEREBELLUM_BUFFER_MAX_PER_RUN: usize = 32;
+
+/// 按 run 收集的小脑留痕缓冲
+///
+/// 为什么不层层透传 `Arc<Mutex<Vec<_>>>`：小脑调用点横跨 run 的四个阶段
+/// （路由在循环之前、强度在入口、两路精选在检索节点），透传要穿过 4 个结构体；
+/// 而轨迹是纯观测数据，丢失不影响业务。用有界缓冲换掉 4 处结构体扩张。
+static CEREBELLUM_BUFFER: OnceLock<Mutex<HashMap<String, Vec<ThinkTraceCerebellum>>>> =
+    OnceLock::new();
+
+/// 追加一条小脑留痕（未初始化 / 空 run_id 时静默忽略，不产生副作用）
+pub fn record_cerebellum(run_id: &str, item: ThinkTraceCerebellum) {
+    if run_id.is_empty() || BASE_DATA_PATH.get().is_none() {
+        return;
+    }
+    let buffer = CEREBELLUM_BUFFER.get_or_init(|| Mutex::new(HashMap::new()));
+    let Ok(mut map) = buffer.lock() else {
+        return;
+    };
+    // 防御：正常路径每个 run 都会在收尾时 take 走；若引擎异常中断导致残留，
+    // 用总量上限兜住，避免进程内 map 无界增长。
+    if map.len() > CEREBELLUM_BUFFER_MAX_PER_RUN * 8 {
+        map.clear();
+    }
+    let entry = map.entry(run_id.to_string()).or_default();
+    if entry.len() < CEREBELLUM_BUFFER_MAX_PER_RUN {
+        entry.push(item);
+    }
+}
+
+/// 取走并清理某 run 的全部小脑留痕（run 收尾落盘时调用一次）
+pub fn take_cerebellum(run_id: &str) -> Vec<ThinkTraceCerebellum> {
+    let Some(buffer) = CEREBELLUM_BUFFER.get() else {
+        return Vec::new();
+    };
+    let Ok(mut map) = buffer.lock() else {
+        return Vec::new();
+    };
+    map.remove(run_id).unwrap_or_default()
 }
 
 /// 单轮内的一次工具调用

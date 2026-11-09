@@ -364,15 +364,35 @@ async fn rerank_if_enabled(
         .into_iter()
         .partition(|m| matches!(m.po, MemoryPo::Relation(_)));
 
-    let ranked: Option<Vec<Memory>> = match deps.agent.brain.as_ref() {
-        Some(brain) if brain.runtime_config.enable_memory_rerank => {
-            super::memory_relevance::rank_with_default_dao(
-                &deps.ctx, brain, question, &entities, keep,
-            )
-            .await
-        }
-        _ => None,
-    };
+    let (ranked, rerank_scene): (Option<Vec<Memory>>, Option<&'static str>) =
+        match deps.agent.brain.as_ref() {
+            Some(brain) => (
+                super::memory_relevance::rank_with_default_dao(
+                    &deps.ctx, brain, question, &entities, keep,
+                )
+                .await,
+                Some(super::memory_relevance::SCENE),
+            ),
+            _ => (None, None),
+        };
+    // 小脑留痕：精选是增强，没出结论时也要能看见「这次是靠老路径兜的」
+    if let Some(scene) = rerank_scene {
+        crate::pkg::think_trace::record_cerebellum(
+            &deps.trace_id,
+            crate::pkg::think_trace::ThinkTraceCerebellum {
+                scene: scene.to_string(),
+                decision: if ranked.is_some() {
+                    "select"
+                } else {
+                    "fallback"
+                }
+                .to_string(),
+                confidence: None,
+                degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
+                applied: ranked.is_some(),
+            },
+        );
+    }
 
     let mut outcome = match ranked {
         None => split_by_recall_order(entities, keep),
@@ -685,19 +705,39 @@ impl ThinkNode for RetrieveNode {
         {
             Ok(skills) => {
                 let mut candidates: Vec<SkillPo> = skills.into_iter().map(|s| s.po).collect();
-                let ranked = match deps.agent.brain.as_ref() {
-                    Some(brain) if brain.runtime_config.enable_skill_rerank => {
-                        super::skill_relevance::rank_with_default_dao(
-                            &deps.ctx,
-                            brain,
-                            &keyword,
-                            &candidates,
-                            METHOD_SKILLS_TOP_K,
-                        )
-                        .await
-                    }
-                    _ => None,
-                };
+                let (ranked, rerank_scene): (Option<Vec<SkillPo>>, Option<&'static str>) =
+                    match deps.agent.brain.as_ref() {
+                        Some(brain) => (
+                            super::skill_relevance::rank_with_default_dao(
+                                &deps.ctx,
+                                brain,
+                                &keyword,
+                                &candidates,
+                                METHOD_SKILLS_TOP_K,
+                            )
+                            .await,
+                            Some(super::skill_relevance::SCENE),
+                        ),
+                        _ => (None, None),
+                    };
+                // 小脑留痕：与记忆精选同口径（有没有出结论都要能看见）
+                if let Some(scene) = rerank_scene {
+                    crate::pkg::think_trace::record_cerebellum(
+                        &deps.trace_id,
+                        crate::pkg::think_trace::ThinkTraceCerebellum {
+                            scene: scene.to_string(),
+                            decision: if ranked.is_some() {
+                                "select"
+                            } else {
+                                "fallback"
+                            }
+                            .to_string(),
+                            confidence: None,
+                            degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
+                            applied: ranked.is_some(),
+                        },
+                    );
+                }
                 match ranked {
                     Some(kept) => kept.into_iter().take(METHOD_SKILLS_TOP_K).collect(),
                     None => {
