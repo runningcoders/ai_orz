@@ -75,6 +75,14 @@
     </section>
 
     <section class="card ">
+      <h3>工具调用 · 上下文（身份）数据流转 · 组件级</h3>
+      <p class="q">身份怎么进子进程 env：声明（CredentialKind 的 UserInfo / AgentInfo 两个非凭据变体 + field 白名单 + binding 注入点）→ 解析（is_identity 二元分派，未命中按来源分叉）→ 注入（check 注入 + base_env 九键末位硬 insert）→ 使用（git 子进程 4 个 GIT_* 与 commit-msg hook）</p>
+      <ul>
+        <li><a href="./diagrams/ai-orz-tool-context.html">打开专题子图</a><span class="desc">四层链路 · 失败语义分叉 · 注入与优先级</span></li>
+      </ul>
+    </section>
+
+    <section class="card ">
       <h3>异步基建 · AOP 事件中心</h3>
       <p class="q">事件从哪来、谁消费：pkg/aop 六 Trait + Registry 单例 + 7 类业务消费者 + 3 类 tick 生产者 + context_carrier 链路贯穿</p>
       <ul>
@@ -243,7 +251,7 @@
         <tr><td>03-记忆系统</td><td class="n">14</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/03-记忆系统/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-memory.html">记忆</a></td></tr>
         <tr><td>04-对话与消息</td><td class="n">29</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/04-对话与消息/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-messaging.html">对话 · 消息</a></td></tr>
         <tr><td>05-任务与项目</td><td class="n">55</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/05-任务与项目/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-task-project.html">任务 · DAG</a></td></tr>
-        <tr><td>06-工具与技能</td><td class="n">62</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/06-工具与技能/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-tools.html">工具 · 技能</a></td></tr>
+        <tr><td>06-工具与技能</td><td class="n">62</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/06-工具与技能/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-tools.html">工具 · 技能</a> · <a href="./diagrams/ai-orz-tool-context.html">上下文注入</a></td></tr>
         <tr><td>07-外部Agent(A2A)</td><td class="n">21</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/07-外部Agent%28A2A%29/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-a2a.html">A2A · 联邦</a></td></tr>
         <tr><td>08-搜索</td><td class="n">25</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/08-搜索/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-search.html">搜索</a></td></tr>
         <tr><td>09-统计与监控</td><td class="n">11</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/09-统计与监控/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-stats.html">统计 · 监控</a></td></tr>
@@ -261,7 +269,7 @@
     <ul>
       <li><a href="https://github.com/runningcoders/ai_orz">GitHub 仓库</a><span class="desc">源码、Issue 与提交历史</span></li>
       <li><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules">docs/modules/</a><span class="desc">知识库主体：15 个模块 × 三层</span></li>
-      <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/diagrams">docs/diagrams/</a><span class="desc">16 张架构图源文件（自包含 HTML）+ 图目录清单 README</span></li>
+      <li><a href="https://github.com/runningcoders/ai_orz/tree/main/docs/diagrams">docs/diagrams/</a><span class="desc">17 张架构图源文件（自包含 HTML）+ 图目录清单 README</span></li>
     </ul>
   </div>
 
