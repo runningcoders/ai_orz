@@ -91,6 +91,19 @@ pub async fn select(
     // 没有用户消息就没有可判断的输入：直接走原逻辑，零调用。
     let user_text = last_user_message?;
 
+    // 本 run 的调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
+    if !brain.cerebellum_quota.try_acquire() {
+        log_info!(
+            ctx,
+            "cerebellum_quota",
+            scene = SCENE,
+            limit = brain.cerebellum_quota.limit(),
+            used = brain.cerebellum_quota.used(),
+            "cerebellum call budget exhausted, fall back to original logic"
+        );
+        return None;
+    }
+
     let policy = policy();
     let metrics = Metrics::new()
         .with("agent_id", &brain.agent_id)

@@ -117,6 +117,21 @@ pub async fn route(
         };
     };
 
+    // 本 run 的调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
+    if !brain.cerebellum_quota.try_acquire() {
+        log_info!(
+            ctx,
+            "cerebellum_quota",
+            scene = ROUTE_SCENE,
+            limit = brain.cerebellum_quota.limit(),
+            used = brain.cerebellum_quota.used(),
+            "cerebellum call budget exhausted, fall back to original logic"
+        );
+        return RouteDecision::Skip {
+            reason: DegradedReason::BudgetExhausted,
+        };
+    }
+
     // 轻量上下文（三铁律：不取全量记忆、先于小脑的仅有消息文本）
     let policy = route_policy();
     let metrics = Metrics::new()

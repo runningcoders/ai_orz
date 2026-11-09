@@ -250,6 +250,11 @@ pub enum DegradedReason {
     LowConfidence,
     /// 答案形态不符合预期（题型不符 / 未知选项）
     UnsupportedAnswer,
+    /// 本 run 的小脑调用配额已耗尽（上限 = resolved 大脑轮次）
+    ///
+    /// 唯一生产方是各决策点入口的 `CerebellumQuota::try_acquire`：超限即
+    /// **静默走原逻辑**（与超时 / 失败同一降级语义）。
+    BudgetExhausted,
 }
 
 impl DegradedReason {
@@ -263,6 +268,7 @@ impl DegradedReason {
             DegradedReason::Timeout => "timeout",
             DegradedReason::LowConfidence => "low_confidence",
             DegradedReason::UnsupportedAnswer => "unsupported_answer",
+            DegradedReason::BudgetExhausted => "budget_exhausted",
         }
     }
 }

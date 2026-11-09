@@ -144,19 +144,21 @@ fn degraded_outcome(reason: DegradedReason) -> DecisionOutcome {
 }
 
 async fn run_with(outcome: Option<DecisionOutcome>, user_msg: Option<&str>) -> RouteDecision {
+    run_with_brain(outcome, user_msg, mock_brain(None)).await
+}
+
+async fn run_with_brain(
+    outcome: Option<DecisionOutcome>,
+    user_msg: Option<&str>,
+    brain: Brain,
+) -> RouteDecision {
     // 全局 Storage 单例：`test_ctx()` 走 `RequestContext::new`，其 builder
     // 在未显式注入 storage 时回退到全局单例 ⇒ 必须先初始化，否则单跑
     // 本模块时 panic「Storage 尚未初始化」。全量跑时靠其它用例先初始化
     // 侥幸通过，属测试隔离缺陷（与业务无关）。
     crate::pkg::storage::test_support::init_for_test().await;
     let ctx = test_ctx();
-    route(
-        &ctx,
-        Arc::new(MockBrainDal { outcome }),
-        &mock_brain(None),
-        user_msg,
-    )
-    .await
+    route(&ctx, Arc::new(MockBrainDal { outcome }), &brain, user_msg).await
 }
 
 fn test_ctx() -> RequestContext {
@@ -338,6 +340,27 @@ fn test_translate_low_confidence_skips() {
         translate(&route_policy(), &metrics),
         RouteDecision::Skip {
             reason: DegradedReason::LowConfidence
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_route_quota_exhausted_skips_without_call() {
+    // 配额 1 次且已被占满：决策点必须直接降级，**一次请求都不发**。
+    // 这里故意给一个会判 Direct 的结论——若真发了请求，结果就会是 Direct。
+    let mut brain = mock_brain(None);
+    brain.cerebellum_quota = Arc::new(crate::models::brain::CerebellumQuota::new(1));
+    assert!(brain.cerebellum_quota.try_acquire());
+    let d = run_with_brain(
+        Some(pick_outcome(CHOICE_TRIVIAL_DIRECT, 0.99)),
+        Some("在吗"),
+        brain,
+    )
+    .await;
+    assert_eq!(
+        d,
+        RouteDecision::Skip {
+            reason: DegradedReason::BudgetExhausted
         }
     );
 }
