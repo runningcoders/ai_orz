@@ -510,7 +510,7 @@ impl RuntimeDomainImpl {
                 match thinking_strength::select_with_default_dao(
                     &ctx,
                     &brain,
-                    scene.as_str(),
+                    scene,
                     last_user_text.as_deref(),
                 )
                 .await
@@ -519,7 +519,7 @@ impl RuntimeDomainImpl {
                         crate::pkg::think_trace::record_cerebellum(
                             trace_id,
                             ThinkTraceCerebellum {
-                                scene: thinking_strength::SCENE.to_string(),
+                                scene: thinking_strength::trace_scene(scene).to_string(),
                                 decision: choice.strength.score().to_string(),
                                 confidence: Some(choice.confidence),
                                 degraded: None,
@@ -532,7 +532,7 @@ impl RuntimeDomainImpl {
                         crate::pkg::think_trace::record_cerebellum(
                             trace_id,
                             ThinkTraceCerebellum {
-                                scene: thinking_strength::SCENE.to_string(),
+                                scene: thinking_strength::trace_scene(scene).to_string(),
                                 decision: "fallback".to_string(),
                                 confidence: None,
                                 degraded: Some("no_usable_answer".to_string()),

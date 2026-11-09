@@ -20,11 +20,29 @@ use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
 use crate::service::dal::brain::{BrainDal, dal};
-use common::enums::ThinkingIntensity;
+use common::enums::{ThinkingIntensity, ThinkingScene};
 use std::sync::Arc;
 
 /// 场景标识（日志 / 计量口径，也是 qid 命名空间前缀）
 pub const SCENE: &str = "thinking_strength";
+
+/// 轨迹里的阶段标签：`thinking_strength.<phase>`（2026-11-10 硬约束）
+///
+/// 强度决策在 awaken / intent-analyze / summary / compact / settle **每条链路各调
+/// 一次**，但它们是**同一个决策 scene**（同一策略、同一问题、同一 800ms 预算，
+/// 只是 `state.scene` 不同）。所以：
+/// - `DecisionRequest.scene` 恒为 [`SCENE`]（不拆 scene，qid 命名空间唯一）；
+/// - 轨迹/日志用本函数给出阶段后缀，否则看板读不出是哪一次决策（Q9 缺口：
+///   P2 补上 intent 后，awaken / summary / intent 会三合一）。
+pub const fn trace_scene(thought: ThinkingScene) -> &'static str {
+    match thought {
+        ThinkingScene::Awaken => "thinking_strength.awaken",
+        ThinkingScene::IntentAnalyze => "thinking_strength.intent",
+        ThinkingScene::Summary => "thinking_strength.summary",
+        ThinkingScene::Compact => "thinking_strength.compact",
+        ThinkingScene::Settle => "thinking_strength.settle",
+    }
+}
 
 /// 置信阈值：低于此值按「没结论」处理
 ///
@@ -85,11 +103,14 @@ pub async fn select(
     ctx: &RequestContext,
     dal: Arc<dyn BrainDal>,
     brain: &Brain,
-    scene: &str,
+    thought: ThinkingScene,
     last_user_message: Option<&str>,
 ) -> Option<StrengthChoice> {
     // 没有用户消息就没有可判断的输入：直接走原逻辑，零调用。
     let user_text = last_user_message?;
+
+    // 阶段标签：同一个决策 scene，用 phase 区分是哪条链路的那一次
+    let phase = thought.as_str();
 
     // 本 run 的调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
     if !brain.cerebellum_quota.try_acquire() {
@@ -97,6 +118,7 @@ pub async fn select(
             ctx,
             "cerebellum_quota",
             scene = SCENE,
+            phase = phase,
             limit = brain.cerebellum_quota.limit(),
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
@@ -108,7 +130,7 @@ pub async fn select(
     let metrics = Metrics::new()
         .with("agent_id", &brain.agent_id)
         .with("agent_name", &brain.agent_name)
-        .with("scene", scene)
+        .with("scene", phase)
         .with("last_user_message", user_text);
 
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
@@ -127,7 +149,8 @@ pub async fn select(
             "thinking_strength",
             decision = "fallback",
             degraded_reason = reason.as_str(),
-            scene = scene,
+            scene = SCENE,
+            phase = phase,
             latency_ms = latency_ms,
             "thinking strength degraded to original logic"
         );
@@ -141,7 +164,8 @@ pub async fn select(
             ctx,
             "thinking_strength",
             decision = "no_answer",
-            scene = scene,
+            scene = SCENE,
+            phase = phase,
             latency_ms = latency_ms,
             "thinking strength produced no usable answer"
         );
@@ -165,7 +189,8 @@ pub async fn select(
         decision = "select",
         score = strength.score(),
         confidence = pick.confidence,
-        scene = scene,
+        scene = SCENE,
+        phase = phase,
         latency_ms = latency_ms,
         input_tokens = outcome.usage.input_tokens,
         output_tokens = outcome.usage.output_tokens,
@@ -181,8 +206,12 @@ pub async fn select(
 pub async fn select_with_default_dao(
     ctx: &RequestContext,
     brain: &Brain,
-    scene: &str,
+    thought: ThinkingScene,
     last_user_message: Option<&str>,
 ) -> Option<StrengthChoice> {
-    select(ctx, dal(), brain, scene, last_user_message).await
+    select(ctx, dal(), brain, thought, last_user_message).await
 }
+
+#[cfg(test)]
+#[path = "thinking_strength_tests.rs"]
+mod tests;
