@@ -459,6 +459,7 @@ mod cerebellum_router;
 mod compaction;
 mod inbox;
 mod intent_analyze;
+mod intent_gate;
 mod thinking_strength;
 // `pub(crate)`：尚未接入调用方，先作为内部可用的**影子链路**存在；
 // 影子对比通过后再决定是否抬为对外入口。
