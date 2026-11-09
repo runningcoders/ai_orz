@@ -164,8 +164,10 @@ pub(crate) async fn skip_if_pointless(
 
     // ② 未装配小脑 = 降级，不是错误（本门绝不阻断主流程，也不 panic）
     //
-    // 刻意写成 `let ... else` 而不是 `brain?`：本门**禁止** `?`（P3-a 硬约束），
-    // 让「降级 = 返回 None」在每一处都显式可见，而不是被 `?` 藏在表达式里。
+    // 刻意写成 `let ... else` 而不是 `brain?`：`?` 在 `Option` 上下文里只是提前
+    // `return None`，与 let-else 逐字节等价，不构成「把 None 升级成 Err / 中断主流程」；
+    // 此处保留 let-else 只为让每一个降级点都在调用点显式可见，不被 `?` 藏进表达式。
+    // 若本函数返回类型改为 `Result`，`?` 才真变成错误升级，此 allow 必须重审。
     #[allow(clippy::question_mark)]
     let Some(brain) = brain else {
         return None;
