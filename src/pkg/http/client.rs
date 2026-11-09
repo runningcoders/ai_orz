@@ -135,6 +135,18 @@ pub fn build_client(opts: &HttpClientOptions) -> Result<reqwest::Client> {
         }
     }
 
+    // 测试构建：一律绕过系统代理。
+    //
+    // 单元测试全部面向本机回环 mock 服务；宿主若开着系统代理（macOS 的
+    // `ExceptionsList` 常写成 `127.*`，reqwest 识别不了这种通配），回环
+    // 请求会被送进代理并返回 502，表现为「mock server 在监听但客户端连不上」。
+    // 与 `crate::pkg::http::install_loopback_no_proxy`（rmcp 等自建 client 的
+    // env 通道）互补：本处覆盖走本入口的全部测试 client，且不触碰 env。
+    #[cfg(test)]
+    {
+        builder = builder.no_proxy();
+    }
+
     if opts.no_proxy {
         builder = builder.no_proxy();
     }

@@ -39,6 +39,29 @@ pub enum CredentialKind {
     /// 邮箱机器人（用户自建代理邮箱）：platform = 邮箱提供商（qq/163…），
     /// 匹配键含 platform 维度（展示与默认隔离），连接参数以 detail 为准
     EmailBot,
+    /// 运行时【用户】身份（★非凭据）：值由 `RequestContext` + `users` 表派生，
+    /// **不落 `user_credentials` 表、不加密、不可被用户绑定**——借用「注入需求」
+    /// 声明结构承载「从上下文取某字段注入到某处」，`field` 为取值字段（必填）。
+    UserInfo,
+    /// 运行时【Agent】身份（★非凭据）：值由 `RequestContext` + `agents` 表派生，
+    /// 语义与 `UserInfo` 对称（不落库、不可绑定）。
+    AgentInfo,
+}
+
+/// `agent_info` 可提取字段白名单（配置期校验与前端选择器共用单点）
+pub const AGENT_INFO_FIELDS: &[&str] =
+    &["id", "name", "email", "git_name", "role", "roles", "tags"];
+
+/// `user_info` 可提取字段白名单（配置期校验与前端选择器共用单点）
+pub const USER_INFO_FIELDS: &[&str] = &["id", "username", "display_name", "email"];
+
+/// 身份类需求的 `field` 白名单判定（kind 非身份类时恒 `false`）
+pub fn identity_field_allowed(kind: CredentialKind, field: &str) -> bool {
+    match kind {
+        CredentialKind::AgentInfo => AGENT_INFO_FIELDS.contains(&field),
+        CredentialKind::UserInfo => USER_INFO_FIELDS.contains(&field),
+        _ => false,
+    }
 }
 
 impl CredentialKind {
@@ -51,6 +74,22 @@ impl CredentialKind {
         )
     }
 
+    /// 是否为运行时身份类需求（`user_info` / `agent_info`）
+    ///
+    /// 身份类的取值来自运行时上下文（`RequestContext` + `agents` / `users` 表），
+    /// 与凭据解析链完全无关：不查 `user_credentials`、不加密、不可绑定。
+    pub fn is_identity(&self) -> bool {
+        matches!(self, Self::UserInfo | Self::AgentInfo)
+    }
+
+    /// 是否需要「人工绑定凭据」（HITL）：身份类恒 `false`
+    ///
+    /// 编排层据此分派两条流水：`true` → 走凭据生产路由（未命中=硬失败出引导）；
+    /// `false` → 走上下文派生（未命中=跳过不阻断）。
+    pub fn requires_hitl_credential(&self) -> bool {
+        !self.is_identity()
+    }
+
     /// 稳定字符串名（snake_case，与 serde/DB 值空间一致；引导文案与展示用）
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -61,6 +100,8 @@ impl CredentialKind {
             Self::UserPassword => "user_password",
             Self::WechatIlink => "wechat_ilink",
             Self::EmailBot => "email_bot",
+            Self::UserInfo => "user_info",
+            Self::AgentInfo => "agent_info",
         }
     }
 }
@@ -886,7 +927,8 @@ pub enum CredentialRequirementScope {
     HttpTool,
     /// 声明式 Shell 工具：仅 Env binding（值经 `shell_env::resolve` 注入子进程）
     Shell,
-    /// 内置工具（DB 不持久化，静态声明自校验用）：仅 Internal binding
+    /// 内置工具：Internal binding（实例字段形态）或 Env binding（子进程环境注入，
+    /// 如 `shell_exec` 需要 `GIT_AUTHOR_*`）；各工具在自身 `check()` 自守实际消费形态
     Builtin,
 }
 
@@ -977,6 +1019,9 @@ pub fn binding_allowed(binding: &CredentialBinding, scope: CredentialRequirement
         ) | (
             CredentialBinding::Internal { .. },
             CredentialRequirementScope::Builtin
+        ) | (
+            CredentialBinding::Env { .. },
+            CredentialRequirementScope::Builtin
         )
     )
 }
@@ -999,7 +1044,28 @@ pub fn validate_requirements(
     scope: CredentialRequirementScope,
 ) -> std::result::Result<(), String> {
     let mut seen = std::collections::HashSet::new();
+    // 身份类需求的注入名必须唯一（含与凭据类重名）：同一注入点同时承接身份值与
+    // 凭据值时取值顺序不可判定，属配置错误。凭据 ↔ 凭据同名保留既有「备选凭据」
+    // 语义（D10：OAuth / UserPassword 可同时声明注入同一 Authorization 头）。
+    let mut identity_names = std::collections::HashSet::new();
+    for req in requirements.iter().filter(|req| req.kind.is_identity()) {
+        if !identity_names.insert(binding_name(&req.binding).to_string()) {
+            return Err(format!(
+                "存在重复的身份注入名: {}（身份注入点必须唯一）",
+                binding_name(&req.binding)
+            ));
+        }
+    }
+    for req in requirements.iter().filter(|req| !req.kind.is_identity()) {
+        if identity_names.contains(binding_name(&req.binding)) {
+            return Err(format!(
+                "身份注入名 {} 与凭据注入点重名（同一注入点不得混装身份值与凭据值）",
+                binding_name(&req.binding)
+            ));
+        }
+    }
     for req in requirements {
+        let name = binding_name(&req.binding);
         // 1. binding ↔ scope
         if !binding_allowed(&req.binding, scope) {
             return Err(match scope {
@@ -1017,7 +1083,7 @@ pub fn validate_requirements(
                     "凭据注入点与工具协议不匹配（Shell 工具仅支持环境变量注入）".to_string()
                 }
                 CredentialRequirementScope::Builtin => {
-                    "凭据注入点与工具协议不匹配（内置工具仅支持实例字段注入）".to_string()
+                    "凭据注入点与工具协议不匹配（内置工具仅支持实例字段或环境变量注入）".to_string()
                 }
             });
         }
@@ -1048,6 +1114,41 @@ pub fn validate_requirements(
                 "凭据类型 {} 不支持增强器 {}",
                 req.kind.as_str(),
                 enhancer.as_str()
+            ));
+        }
+        // 5.5 身份类需求（user_info / agent_info）：field 必填 + 白名单 + 无平台/增强器
+        if req.kind.is_identity() {
+            let field = req.field.as_deref().unwrap_or("").trim();
+            if field.is_empty() {
+                return Err(format!(
+                    "身份需求 {} 必须指定提取字段（field）",
+                    req.kind.as_str()
+                ));
+            }
+            if !identity_field_allowed(req.kind, field) {
+                let allowed = match req.kind {
+                    CredentialKind::AgentInfo => AGENT_INFO_FIELDS.join("/"),
+                    _ => USER_INFO_FIELDS.join("/"),
+                };
+                return Err(format!(
+                    "身份需求 {} 的提取字段不合法: {}（可选：{}）",
+                    req.kind.as_str(),
+                    field,
+                    allowed
+                ));
+            }
+            if req.enhancer.is_some() {
+                return Err(format!(
+                    "身份需求 {} 不支持增强器（身份信息无增强语义）",
+                    req.kind.as_str()
+                ));
+            }
+        }
+        // 5.6 注入名不得使用 AI_ORZ_ 前缀（平台结构身份变量恒硬覆盖，配了等于没配）
+        if name.to_ascii_uppercase().starts_with("AI_ORZ_") {
+            return Err(format!(
+                "注入名 {} 不允许使用 AI_ORZ_ 前缀（平台保留的结构身份变量）",
+                name
             ));
         }
         // 6. (kind, platform, 注入名) 三元组去重

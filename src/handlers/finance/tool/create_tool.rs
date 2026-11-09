@@ -47,7 +47,8 @@ pub async fn create_tool(
             .map_err(|msg| err!(InvalidRequest, "{}", msg))?;
     }
     // 工具级凭据声明统一契约：顶层字段归并进 config（各协议存储位置不变，
-    // 但创建任何协议的工具都走同一入口；MCP/Builtin 有独立声明属主，明确拒绝）
+    // 但创建任何协议的工具都走同一入口；MCP 有独立声明属主，明确拒绝
+    // （Builtin 由本函数更早的协议闸门拒绝，不经此处））
     let mut config = params.config.clone().unwrap_or_default();
     common::models::apply_credential_requirements(
         &mut config,

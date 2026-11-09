@@ -1087,3 +1087,183 @@ fn test_validate_requirements_mcp_http_allows_header_and_query() {
         .is_err()
     );
 }
+
+// ==================== 身份类注入需求（user_info / agent_info） ====================
+
+fn identity_requirement(
+    kind: CredentialKind,
+    field: Option<&str>,
+    platform: Option<&str>,
+    enhancer: Option<CredentialEnhancerKind>,
+    binding: CredentialBinding,
+) -> CredentialRequirement {
+    CredentialRequirement {
+        kind,
+        platform: platform.map(String::from),
+        field: field.map(String::from),
+        enhancer,
+        binding,
+    }
+}
+
+#[test]
+fn test_binding_allowed_env_builtin_but_not_header() {
+    let env = CredentialBinding::Env {
+        name: "GIT_AUTHOR_NAME".to_string(),
+    };
+    let header = CredentialBinding::Header {
+        name: "X-Agent".to_string(),
+    };
+    // shell_exec 等内置工具的 Env 注入（P2 放宽）
+    assert!(binding_allowed(&env, CredentialRequirementScope::Builtin));
+    // 请求头/查询参数仍不进内置工具（内置工具无 HTTP 通道）
+    assert!(!binding_allowed(
+        &header,
+        CredentialRequirementScope::Builtin
+    ));
+}
+
+#[test]
+fn test_validate_identity_requirements_six_rules() {
+    let env = |name: &str| CredentialBinding::Env {
+        name: name.to_string(),
+    };
+    // 合法：agent_info.email → GIT_AUTHOR_EMAIL
+    let legal = identity_requirement(
+        CredentialKind::AgentInfo,
+        Some("email"),
+        None,
+        None,
+        env("GIT_AUTHOR_EMAIL"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&legal),
+            CredentialRequirementScope::Builtin
+        )
+        .is_ok()
+    );
+
+    // ① platform 非空拒绝
+    let with_platform = identity_requirement(
+        CredentialKind::AgentInfo,
+        Some("email"),
+        Some("github"),
+        None,
+        env("GIT_AUTHOR_EMAIL"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&with_platform),
+            CredentialRequirementScope::Builtin
+        )
+        .is_err()
+    );
+
+    // ② field 越界拒绝
+    let bad_field = identity_requirement(
+        CredentialKind::AgentInfo,
+        Some("display_name"),
+        None,
+        None,
+        env("GIT_AUTHOR_NAME"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&bad_field),
+            CredentialRequirementScope::Builtin
+        )
+        .is_err()
+    );
+
+    // ②-b field 缺省拒绝
+    let no_field = identity_requirement(
+        CredentialKind::UserInfo,
+        None,
+        None,
+        None,
+        env("LEDGER_OPERATOR"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&no_field),
+            CredentialRequirementScope::Builtin
+        )
+        .is_err()
+    );
+
+    // ③ enhancer 非空拒绝
+    let with_enhancer = identity_requirement(
+        CredentialKind::AgentInfo,
+        Some("email"),
+        None,
+        Some(CredentialEnhancerKind::BearerToken),
+        env("GIT_AUTHOR_EMAIL"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&with_enhancer),
+            CredentialRequirementScope::Builtin
+        )
+        .is_err()
+    );
+
+    // ④ 同工具注入名重复拒绝（不同 kind 落到同一 env 也不允许）
+    let duplicate = vec![
+        legal.clone(),
+        identity_requirement(
+            CredentialKind::UserInfo,
+            Some("email"),
+            None,
+            None,
+            env("GIT_AUTHOR_EMAIL"),
+        ),
+    ];
+    assert!(validate_requirements(&duplicate, CredentialRequirementScope::Builtin).is_err());
+
+    // ⑤ AI_ORZ_ 前缀拒绝
+    let reserved = identity_requirement(
+        CredentialKind::AgentInfo,
+        Some("name"),
+        None,
+        None,
+        env("AI_ORZ_AGENT_NAME"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&reserved),
+            CredentialRequirementScope::Builtin
+        )
+        .is_err()
+    );
+
+    // ⑥ user_info 白名单：username 合法 / role 越界
+    let user_legal = identity_requirement(
+        CredentialKind::UserInfo,
+        Some("username"),
+        None,
+        None,
+        env("LEDGER_OPERATOR"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&user_legal),
+            CredentialRequirementScope::Builtin
+        )
+        .is_ok()
+    );
+    let user_bad = identity_requirement(
+        CredentialKind::UserInfo,
+        Some("role"),
+        None,
+        None,
+        env("LEDGER_OPERATOR"),
+    );
+    assert!(
+        validate_requirements(
+            std::slice::from_ref(&user_bad),
+            CredentialRequirementScope::Builtin
+        )
+        .is_err()
+    );
+}

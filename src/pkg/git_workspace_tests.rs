@@ -111,11 +111,11 @@ async fn checkpoint_commits_with_trailer_and_skips_clean_repo() {
         .expect("repo ensured");
 
     // 干净 repo：无提交
-    assert!(!checkpoint_task_commit(&ws, "task-1", Some("a1")).await);
+    assert!(!checkpoint_task_commit(&ws, "task-1", Some("a1"), Some("p1")).await);
 
     // 有变更：产生带 trailer 的 checkpoint 提交
     std::fs::write(ws.join("out.txt"), "hello").unwrap();
-    assert!(checkpoint_task_commit(&ws, "task-1", Some("a1")).await);
+    assert!(checkpoint_task_commit(&ws, "task-1", Some("a1"), Some("p1")).await);
 
     let log = process::exec(
         &ExecOptions::new("git", vec!["log".into(), "--format=%B".into(), "-1".into()])
@@ -127,9 +127,13 @@ async fn checkpoint_commits_with_trailer_and_skips_clean_repo() {
     assert!(message.contains("checkpoint: task task-1"));
     assert!(message.contains("Task-Id: task-1"));
     assert!(message.contains("Agent-Id: a1"));
+    assert!(
+        message.contains("Project-Id: p1"),
+        "project 上下文应落 Project-Id trailer: {message}"
+    );
 
     // 再跑一次：无变更，不产生空提交（初始提交 + checkpoint = 2）
-    assert!(!checkpoint_task_commit(&ws, "task-1", Some("a1")).await);
+    assert!(!checkpoint_task_commit(&ws, "task-1", Some("a1"), Some("p1")).await);
     let count = process::exec(
         &ExecOptions::new(
             "git",
@@ -170,7 +174,8 @@ async fn commit_msg_hook_injects_trailers_via_env() {
         )
         .current_dir(&ws)
         .env("AI_ORZ_TASK_ID", "task-42")
-        .env("AI_ORZ_AGENT_ID", "a1"),
+        .env("AI_ORZ_AGENT_ID", "a1")
+        .env("AI_ORZ_PROJECT_ID", "p9"),
     )
     .await
     .unwrap();
@@ -190,4 +195,20 @@ async fn commit_msg_hook_injects_trailers_via_env() {
     assert!(message.contains("feat: add feature"));
     assert!(message.contains("Task-Id: task-42"));
     assert!(message.contains("Agent-Id: a1"));
+    assert!(
+        message.contains("Project-Id: p9"),
+        "hook 应按映射表追加 Project-Id: {message}"
+    );
+}
+
+#[test]
+fn repo_commit_msg_hook_matches_managed_template() {
+    // ai_orz 仓 `.githooks/commit-msg` 是 COMMIT_MSG_HOOK 的仓库副本
+    // （`core.hooksPath=.githooks`）。两处副本漂移会让「平台工作区」与「本仓」
+    // 的 trailer 行为不一致，故用 `include_str!` 在编译期绑定二者。
+    let repo_hook = include_str!("../../.githooks/commit-msg");
+    assert_eq!(
+        repo_hook, COMMIT_MSG_HOOK,
+        "仓库 hook 与 git_workspace::COMMIT_MSG_HOOK 不一致（改一处必须同步另一处）"
+    );
 }

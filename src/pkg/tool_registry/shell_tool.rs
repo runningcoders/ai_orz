@@ -231,10 +231,11 @@ async fn execute_shell_call(
     // 凭据值只经 extra_env 进子进程 env，绝不进 args / trace（设计红线 2）；
     // shell_env::resolve 是三条子进程链路的唯一合法出口，不自行拼装 env。
     let extra_env = credential_injections.clone();
+    // 平台基础身份（与 shell_exec 同源：ctx 摊平，末位注入不可绕）
+    let base_env = ctx.base_env();
     let env = shell_env::resolve(&shell_env::ShellEnvRequest {
         extra_env: Some(&extra_env),
-        task_id: ctx.task_id().map(String::as_str),
-        agent_id: ctx.agent_id().map(String::as_str),
+        base_env: &base_env,
         ..Default::default()
     });
     let output = process::exec(

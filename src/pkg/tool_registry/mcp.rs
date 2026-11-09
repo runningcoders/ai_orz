@@ -380,6 +380,16 @@ async fn connect_http_client(
     config: &McpServerConfig,
     credential_injections: &[McpCredentialInjection],
 ) -> common::error::Result<RunningService<RoleClient, ()>> {
+    // 测试构建：本机回环 mock server 一律绕过系统代理。
+    //
+    // rmcp 的 StreamableHttp transport 内部自建 reqwest client，不经过
+    // `pkg::http::build_client`，因此拿不到那里的测试分支保护；宿主开着系统
+    // 代理时（macOS ExceptionsList 的 `127.*` 通配 reqwest 识别不了），
+    // 对 `127.0.0.1:<随机端口>` 的 initialize 请求会被代理吞掉并回 502。
+    // 生产构建零影响（`#[cfg(test)]`）。
+    #[cfg(test)]
+    crate::pkg::http::install_loopback_no_proxy();
+
     let url = config
         .url
         .as_deref()

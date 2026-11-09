@@ -45,3 +45,66 @@ pub use ssrf::{
     is_local_network_ip, is_sensitive_header, normalize_domain, read_limited_response_body,
     sanitize_response_headers, validate_target_url,
 };
+
+/// 本机回环地址的 no-proxy 例外清单（测试环境统一口径）
+///
+/// 取值与 `tests/e2e/playwright.config.ts` 中的 `NO_PROXY` 同源：
+/// `127.0.0.1`（IPv4 回环）、`localhost`（名字解析）、`::1`（IPv6 回环）。
+pub const LOOPBACK_NO_PROXY: &str = "127.0.0.1,localhost,::1";
+
+/// 测试进程：把本机回环地址加入 `NO_PROXY` / `no_proxy` 例外（幂等）。
+///
+/// # 为什么测试层需要这个
+///
+/// 宿主开发机常开系统代理（如 macOS `HTTPEnable=1` → `127.0.0.1:7993`），
+/// `reqwest` 默认会读取系统代理设置。而 macOS 的 `ExceptionsList` 习惯写成
+/// `127.*` 这类通配，`reqwest` 的 no_proxy 匹配器只认 IP / CIDR / 域名后缀，
+/// 识别不了 `127.*`，于是发往 `127.0.0.1:<随机端口>` 的请求被塞进代理，
+/// 代理回 **502 Bad Gateway** —— 表现为「本机 mock server 明明在监听，
+/// 客户端却报 502 / 初始化会话失败」。
+///
+/// 测试一律面向本机回环 mock 服务（stub A2A server、python MCP mock），
+/// 不存在走代理的正当理由，因此在测试构建下统一声明例外。
+/// 生产运行不经过本函数（`#[cfg(test)]`），代理行为零改动。
+///
+/// # 安全性
+///
+/// `std::env::set_var` 在 Rust 2024 标记 `unsafe`（跨线程读写 env 会 UB）。
+/// 这里用 [`std::sync::Once`] 保证进程内只写一次，并**合并**已有取值而不是
+/// 覆盖调用方的显式配置；与 `tests/common/env.rs` 的既有初始化同样处理。
+#[cfg(test)]
+pub(crate) fn install_loopback_no_proxy() {
+    use std::collections::HashSet;
+    use std::sync::Once;
+
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        let mut items: Vec<String> = Vec::new();
+        for var in ["NO_PROXY", "no_proxy"] {
+            if let Ok(value) = std::env::var(var) {
+                items.extend(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .map(str::to_string),
+                );
+            }
+        }
+        items.extend(LOOPBACK_NO_PROXY.split(',').map(str::to_string));
+
+        // 去重（大小写不敏感，保留首次出现的写法）
+        let mut seen: HashSet<String> = HashSet::new();
+        let merged: Vec<String> = items
+            .into_iter()
+            .filter(|item| seen.insert(item.to_lowercase()))
+            .collect();
+        let merged = merged.join(",");
+
+        // 安全性见上方文档：Once 保证单次写入，且写入发生在测试首次建链之前。
+        unsafe {
+            std::env::set_var("NO_PROXY", &merged);
+            std::env::set_var("no_proxy", &merged);
+        }
+    });
+}

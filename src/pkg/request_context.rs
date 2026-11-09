@@ -613,6 +613,75 @@ impl RequestContext {
     pub fn to_carrier(&self) -> ContextCarrier {
         ContextCarrier::from_context(self)
     }
+
+    /// 基础上下文 → 子进程环境变量对（env 是 context 的又一种载体）
+    ///
+    /// 凡需要起子进程、或向外部透传「我是谁 / 我在替谁干活」的地方
+    /// （`shell_env::resolve` 的末位注入、git 辅助子进程、脚本自省运行环境）
+    /// 都从这里取值，**不要在别处手搓 `AI_ORZ_*` 键名**。
+    ///
+    /// # 契约（写死，勿再漂移）
+    ///
+    /// - **只放标识字段**：不查库、不解析凭据、不做策略裁决。与
+    ///   `credential_requirements` 通道**正交**：那条管「工具需要什么值、从哪取」，
+    ///   本方法回答「平台自己是谁」。二者不重叠、不互相覆盖。
+    /// - **`None` / 空白串不产出该变量**：不写空串。空串会让下游两种判据给出相反
+    ///   结论（`env | grep AI_ORZ_PROJECT_ID` 命中 vs `[ -z "$AI_ORZ_PROJECT_ID" ]` 为真），
+    ///   缺变量只有一种解释。
+    /// - **`tool_call_id` 在此是正确用法**：[`ContextCarrier`] 禁它是防跨链路污染
+    ///   （随 carrier 流转会传给下游并再也换不掉）；env 只作用于本次子进程，
+    ///   恰好是「单次调用级」该出现的地方。
+    /// - `model_provider_id` / `model_name` 不属于基础身份，不入本集合（留作扩展点）。
+    pub fn base_env(&self) -> Vec<(&'static str, String)> {
+        let mut env: Vec<(&'static str, String)> = Vec::with_capacity(9);
+        push_env(&mut env, ENV_LOG_ID, Some(self.log_id.as_str()));
+        push_env(&mut env, ENV_CALLER_TYPE, Some(self.caller_type.as_str()));
+        push_env(&mut env, ENV_USER_ID, self.user_id.as_deref());
+        push_env(&mut env, ENV_USERNAME, self.username.as_deref());
+        push_env(
+            &mut env,
+            ENV_ORGANIZATION_ID,
+            self.organization_id.as_deref(),
+        );
+        push_env(&mut env, ENV_AGENT_ID, self.agent_id.as_deref());
+        push_env(&mut env, ENV_PROJECT_ID, self.project_id.as_deref());
+        push_env(&mut env, ENV_TASK_ID, self.task_id.as_deref());
+        push_env(&mut env, ENV_TOOL_CALL_ID, self.tool_call_id.as_deref());
+        env
+    }
+}
+
+// ==================== 基础身份环境变量（`base_env` 的产出契约）====================
+//
+// 键名是**平台与脚本之间的公开契约**：git commit-msg hook、worktree 脚本、
+// 子进程自省代码都按这些名字读取，改动等于破坏兼容，只能新增不能改名。
+
+/// 日志追踪 ID（恒有）
+pub const ENV_LOG_ID: &str = "AI_ORZ_LOG_ID";
+/// 调用方类型（`User` / `Agent` / `System`，恒有）
+pub const ENV_CALLER_TYPE: &str = "AI_ORZ_CALLER_TYPE";
+/// 用户 ID
+pub const ENV_USER_ID: &str = "AI_ORZ_USER_ID";
+/// 用户名
+pub const ENV_USERNAME: &str = "AI_ORZ_USERNAME";
+/// 组织 ID
+pub const ENV_ORGANIZATION_ID: &str = "AI_ORZ_ORGANIZATION_ID";
+/// Agent ID
+pub const ENV_AGENT_ID: &str = "AI_ORZ_AGENT_ID";
+/// Project ID
+pub const ENV_PROJECT_ID: &str = "AI_ORZ_PROJECT_ID";
+/// Task ID
+pub const ENV_TASK_ID: &str = "AI_ORZ_TASK_ID";
+/// 工具调用 ID（单次调用级；仅 env 载体可用，见 `base_env` 契约）
+pub const ENV_TOOL_CALL_ID: &str = "AI_ORZ_TOOL_CALL_ID";
+
+/// 追加一条 env：`None` / 空白串不产出（见 [`RequestContext::base_env`] 契约）
+fn push_env(env: &mut Vec<(&'static str, String)>, key: &'static str, value: Option<&str>) {
+    let Some(value) = value else { return };
+    let trimmed = value.trim();
+    if !trimmed.is_empty() {
+        env.push((key, trimmed.to_string()));
+    }
 }
 
 // ==================== Context Carrier（事件可传输上下文子集）====================
@@ -991,5 +1060,109 @@ mod sender_id_tests {
             .user_id("user-3")
             .build();
         assert_eq!(ctx.message_sender_role(), MessageRole::User);
+    }
+}
+
+#[cfg(test)]
+mod base_env_tests {
+    use super::*;
+
+    /// `builder().build()` 依赖全局 storage，测试需先初始化
+    async fn init() {
+        crate::pkg::storage::test_support::init_for_test().await;
+    }
+
+    /// 全字段齐全时：9 个变量一个不少，且顺序/键名与契约一致
+    #[tokio::test]
+    async fn base_env_covers_all_identifier_fields() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .log_id("log-1".to_string())
+            .caller_type(CallerType::Agent)
+            .user_id("u1")
+            .username("aman")
+            .organization_id("org-1")
+            .agent_id("a1")
+            .project_id("p1")
+            .task_id("t1")
+            .tool_call_id("call-1")
+            .build();
+        let env = ctx.base_env();
+
+        assert_eq!(
+            env,
+            vec![
+                (ENV_LOG_ID, "log-1".to_string()),
+                (ENV_CALLER_TYPE, "Agent".to_string()),
+                (ENV_USER_ID, "u1".to_string()),
+                (ENV_USERNAME, "aman".to_string()),
+                (ENV_ORGANIZATION_ID, "org-1".to_string()),
+                (ENV_AGENT_ID, "a1".to_string()),
+                (ENV_PROJECT_ID, "p1".to_string()),
+                (ENV_TASK_ID, "t1".to_string()),
+                (ENV_TOOL_CALL_ID, "call-1".to_string()),
+            ]
+        );
+    }
+
+    /// 契约：`None` 与空白串都**不产出**该变量（不写空串，避免下游判据二义）
+    #[tokio::test]
+    async fn base_env_omits_none_and_blank_values() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::System)
+            .project_id("   ")
+            .task_id("")
+            .build();
+        let env = ctx.base_env();
+
+        let keys: Vec<&str> = env.iter().map(|(key, _)| *key).collect();
+        assert!(keys.contains(&ENV_LOG_ID), "log_id 恒有");
+        assert!(keys.contains(&ENV_CALLER_TYPE), "caller_type 恒有");
+        for absent in [
+            ENV_USER_ID,
+            ENV_USERNAME,
+            ENV_ORGANIZATION_ID,
+            ENV_AGENT_ID,
+            ENV_PROJECT_ID,
+            ENV_TASK_ID,
+            ENV_TOOL_CALL_ID,
+        ] {
+            assert!(!keys.contains(&absent), "{absent} 不应产出（None / 空白）");
+        }
+        assert!(
+            env.iter().all(|(_, value)| !value.trim().is_empty()),
+            "任何值都不应为空白串"
+        );
+    }
+
+    /// 值两端空白被裁剪（env 值进 shell 后不再有机会 trim）
+    #[tokio::test]
+    async fn base_env_trims_values() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::User)
+            .project_id("  p1  ")
+            .build();
+        let env = ctx.base_env();
+        let project = env
+            .iter()
+            .find(|(key, _)| *key == ENV_PROJECT_ID)
+            .map(|(_, value)| value.as_str());
+        assert_eq!(project, Some("p1"));
+    }
+
+    /// 键名是公开契约：改名等于破坏 git hook / 脚本兼容，锁死字面值
+    #[test]
+    fn base_env_keys_are_stable_public_contract() {
+        assert_eq!(ENV_LOG_ID, "AI_ORZ_LOG_ID");
+        assert_eq!(ENV_CALLER_TYPE, "AI_ORZ_CALLER_TYPE");
+        assert_eq!(ENV_USER_ID, "AI_ORZ_USER_ID");
+        assert_eq!(ENV_USERNAME, "AI_ORZ_USERNAME");
+        assert_eq!(ENV_ORGANIZATION_ID, "AI_ORZ_ORGANIZATION_ID");
+        assert_eq!(ENV_AGENT_ID, "AI_ORZ_AGENT_ID");
+        assert_eq!(ENV_PROJECT_ID, "AI_ORZ_PROJECT_ID");
+        assert_eq!(ENV_TASK_ID, "AI_ORZ_TASK_ID");
+        assert_eq!(ENV_TOOL_CALL_ID, "AI_ORZ_TOOL_CALL_ID");
     }
 }

@@ -9,8 +9,9 @@
 //! - 命令类规则（Regex/Subcommand）是粗粒度匹配：Confirm 是护栏不是安全边界，
 //!   真正的安全边界是路径 scope + Manual 控制模式审批，嵌套绕过（`sh -c` 等）
 //!   漏拦可接受，YAGNI 不做完整 shell argv 解析
-//! - inject-env（AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID）不是规则，是管线出口的固定步骤
-//!   （见 `ENV_TASK_ID` / `ENV_AGENT_ID`，shell_exec 恒注入，供 git commit-msg hook 读取）
+//! - inject-env（`AI_ORZ_*` 基础身份）不是规则，是管线出口的固定步骤——取值统一由
+//!   [`crate::pkg::request_context::RequestContext::base_env`] 产出（本模块不再持有
+//!   环境变量键常量，避免 pkg 内两处 SSOT）
 //! - 2026-11-07 决策：git push/reset/clean 的 Confirm 拦截放开（改 Audit 留痕），
 //!   远端保护改由 GitHub 侧分支保护（PR-only）兜底；Deny / scope / 破坏性 fs 规则不变
 
@@ -21,11 +22,6 @@ use crate::pkg::tool_registry::tool_security::fs::{
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
-
-/// 结构性注入给子进程的环境变量键（git commit-msg hook 消费）
-pub const ENV_TASK_ID: &str = "AI_ORZ_TASK_ID";
-/// 结构性注入给子进程的环境变量键（git commit-msg hook 消费）
-pub const ENV_AGENT_ID: &str = "AI_ORZ_AGENT_ID";
 
 /// Metrics 键约定（适配层 `evaluate` 统一填充）
 pub mod keys {

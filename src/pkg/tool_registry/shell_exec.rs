@@ -123,6 +123,46 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
         Box::new(ShellExecCoreTool::new(po))
     }
+
+    /// 出厂默认注入策略（**机制对所有工具成立，本轮只给 shell_exec 装配**）
+    ///
+    /// 4 条 `agent_info` 需求：`git_name` → `GIT_AUTHOR_NAME` / `GIT_COMMITTER_NAME`，
+    /// `email` → `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_EMAIL`。值由运行时从 `agents`
+    /// 表派生（`pkg/identity_dataset`），**不落库、不可绑定**——它是「从上下文取某
+    /// 字段注入到某处」的声明，复用凭据注入结构承载，走同一条
+    /// `credential_requirements` → resolve → check → env 通道。
+    ///
+    /// 三态语义（AMan 2026-11-08 拍板）：
+    /// - **键缺失** → 回落本默认（新装 / 从未配置即生效）；
+    /// - **`[]`（用户删空）** → 零注入，**不自动补回**（尊重用户；前端提供
+    ///   「恢复初始设置」按钮让用户主动改回，留作下一笔）；
+    /// - **解析失败** → 按空声明处理（不回落默认，防脏数据复活出厂身份）。
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        default_credential_requirements()
+    }
+}
+
+/// 出厂默认注入策略：Agent 身份四元组（`git_name` / `email` 各两条注入点）
+///
+/// 为什么是 4 条而不是 2 条：`CredentialRequirement` 是「一条需求 = 一个取值 →
+/// 一个注入点」的扁平结构，`binding` 只有一个 `name`。显式 4 条让「用户删掉
+/// 其中一条」变得可行（例如只覆盖 committer 邮箱），比引入「一对多 binding」简单。
+fn default_credential_requirements() -> Vec<common::models::CredentialRequirement> {
+    let requirement = |field: &str, env: &str| common::models::CredentialRequirement {
+        kind: common::models::CredentialKind::AgentInfo,
+        platform: None,
+        field: Some(field.to_string()),
+        enhancer: None,
+        binding: common::models::CredentialBinding::Env {
+            name: env.to_string(),
+        },
+    };
+    vec![
+        requirement("git_name", "GIT_AUTHOR_NAME"),
+        requirement("git_name", "GIT_COMMITTER_NAME"),
+        requirement("email", "GIT_AUTHOR_EMAIL"),
+        requirement("email", "GIT_COMMITTER_EMAIL"),
+    ]
 }
 
 /// Core implementation of shell_exec tool.
@@ -130,6 +170,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
 pub struct ShellExecCoreTool {
     po: ToolPo,
     config: ShellExecConfig,
+    /// L2 注入：`credential_requirements` 的 Env 值（per-call 实例字段，D22）
+    credential_injections: HashMap<String, String>,
 }
 
 impl ShellExecCoreTool {
@@ -139,7 +181,11 @@ impl ShellExecCoreTool {
         } else {
             serde_json::from_value(po.config.clone()).unwrap_or_default()
         };
-        Self { po, config }
+        Self {
+            po,
+            config,
+            credential_injections: HashMap::new(),
+        }
     }
 
     /// Resolve absolute working directory path.
@@ -186,6 +232,29 @@ pub fn merge_extra_environment(
 
 #[async_trait::async_trait]
 impl CoreTool for ShellExecCoreTool {
+    /// 注入生命周期（D22 create → check → call）：只消费 `Env` 注入点。
+    ///
+    /// Builtin 作用域现同时允许 `Internal` 与 `Env`（`binding_allowed`），
+    /// 本工具只认 `Env`——`Internal` 是其它内置工具的实例字段形态。
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
+        let mut injections = HashMap::with_capacity(resolved.len());
+        for item in resolved {
+            match &item.requirement.binding {
+                common::models::CredentialBinding::Env { name } => {
+                    injections.insert(name.clone(), item.value.clone());
+                }
+                _ => {
+                    return Err(common::error::Error::new(
+                        common::error::ErrorCode::InvalidRequest,
+                        "shell_exec 仅支持环境变量（env）注入点",
+                    ));
+                }
+            }
+        }
+        self.credential_injections = injections;
+        Ok(())
+    }
+
     async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
         // Parse arguments
         let params: ShellExecParams = serde_json::from_value(args)
@@ -289,12 +358,27 @@ impl CoreTool for ShellExecCoreTool {
 
         // Prepare environment（统一出口：白名单 → extra → PATH 补全 → 身份变量）
         let path_additions = self.config.path_additions();
+        // 平台基础身份（AI_ORZ_*）：ctx 摊平，末位注入不可绕
+        let base_env = ctx.base_env();
+        // L2 注入：credential_requirements 的 Env 值并入 extra_env
+        // （Agent 级 git 身份四元组也走这条通道：出厂默认声明 agent_info → Env）；
+        // 调用方 params.env 同名时显式传参优先（逐个覆盖，保持既有优先级）
+        let mut extra_env = self.credential_injections.clone();
+        if let Some(overrides) = params.env.as_ref() {
+            for (key, value) in overrides {
+                extra_env.insert(key.clone(), value.clone());
+            }
+        }
+        let extra_env = if extra_env.is_empty() {
+            None
+        } else {
+            Some(&extra_env)
+        };
         let mut env = shell_env::resolve(&shell_env::ShellEnvRequest {
             allowed_env: self.config.allowed_env(),
             path_additions: Some(path_additions.as_slice()),
-            extra_env: params.env.as_ref(),
-            task_id: ctx.task_id().map(String::as_str),
-            agent_id: ctx.agent_id().map(String::as_str),
+            extra_env,
+            base_env: &base_env,
         });
         // 隔离 HOME + 声明工具链 → 工具链根目录经官方变量指回真实 HOME：
         // git/gh 走隔离身份的同时，cargo/nvm/pyenv 等仍能读真实 HOME 配置。

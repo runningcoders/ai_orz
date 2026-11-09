@@ -6,12 +6,15 @@ fn resolve_injects_identity_and_completes_path() {
     let mut extra = HashMap::new();
     extra.insert("RUSTFLAGS".to_string(), "--deny warnings".to_string());
 
+    let base_env = vec![
+        ("AI_ORZ_TASK_ID", "task-1".to_string()),
+        ("AI_ORZ_AGENT_ID", "agent-1".to_string()),
+    ];
     let env = resolve(&ShellEnvRequest {
         allowed_env: &["PATH".to_string()],
         path_additions: None,
         extra_env: Some(&extra),
-        task_id: Some("task-1"),
-        agent_id: Some("agent-1"),
+        base_env: &base_env,
     });
 
     assert_eq!(
@@ -252,4 +255,40 @@ fn common_toolchain_list_has_unique_names_and_vars() {
         vars.windows(2).all(|w| w[0] != w[1]),
         "官方变量名不应重复: {vars:?}"
     );
+}
+
+#[test]
+fn resolve_keeps_platform_base_env_over_explicit_env() {
+    // 优先级铁律：params.env（extra_env）> 凭据/策略注入（同为 extra_env）> base_env。
+    // base_env 末位 insert 覆盖同名键 —— 调用方无法用 params.env 冒充平台身份。
+    let mut extra = HashMap::new();
+    extra.insert("AI_ORZ_AGENT_ID".to_string(), "fake-agent".to_string());
+    extra.insert("RUSTFLAGS".to_string(), "--deny warnings".to_string());
+    let base_env = vec![("AI_ORZ_AGENT_ID", "real-agent".to_string())];
+
+    let env = resolve(&ShellEnvRequest {
+        extra_env: Some(&extra),
+        base_env: &base_env,
+        ..Default::default()
+    });
+
+    assert_eq!(
+        env.get("AI_ORZ_AGENT_ID").map(String::as_str),
+        Some("real-agent"),
+        "平台身份不可被 params.env 冒充"
+    );
+    assert_eq!(
+        env.get("RUSTFLAGS").map(String::as_str),
+        Some("--deny warnings"),
+        "非冲突键仍由 extra_env 生效"
+    );
+}
+
+#[test]
+fn resolve_with_empty_base_env_adds_no_identity_vars() {
+    // 空 base_env（如 System 级、无 ctx 的链路）→ 零平台身份变量，不留空串
+    let env = resolve(&ShellEnvRequest::default());
+    for key in ["AI_ORZ_TASK_ID", "AI_ORZ_AGENT_ID", "AI_ORZ_PROJECT_ID"] {
+        assert!(!env.contains_key(key), "{key} 不应被凭空注入");
+    }
 }
