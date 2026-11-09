@@ -33,6 +33,7 @@ use common::enums::ThinkingScene;
 use common::error::Result;
 use common::error::err;
 use serde_json::{Value, json};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -105,6 +106,13 @@ pub(crate) struct AwakenDeps {
     pub compaction: Mutex<CompactionSlot>,
     /// run 级检索状态：visited 词集合 + discover 轮次软预算（见 [`RetrievalState`]）
     pub retrieval: Mutex<RetrievalState>,
+    /// 本 run **真正发起检索**的次数（短路不计）
+    ///
+    /// 与 [`RetrievalState::queried_terms`] 分工：那个记「查过哪些词」（差集输入），
+    /// 这个记「查了几次库」。差集为空时 retrieve 在自增点之前就 return，所以它
+    /// 能直接回答「回环 / 二次进入有没有真的再查一遍」——**不能靠 pack 形态反推**：
+    /// 短路的 pack（全空）与「真查了但零命中」的 pack 长得一样，用形态断言会假绿。
+    pub retrieve_searches: AtomicUsize,
     /// 唤醒级收件箱：三处挂点共享的游标、吸收清单与回退计数
     pub inbox: Arc<Mutex<InboxState>>,
     /// Phase 1（意图识别）最后一次调用的初始消息快照
@@ -386,6 +394,7 @@ pub(crate) fn build_deps_with_backend(
         trace: Mutex::new(trace),
         compaction: Mutex::new(CompactionSlot::default()),
         retrieval: Mutex::new(RetrievalState::default()),
+        retrieve_searches: AtomicUsize::new(0),
         inbox,
         intent_seed: Mutex::new(None),
         shadow,

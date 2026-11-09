@@ -32,6 +32,7 @@ use async_trait::async_trait;
 use common::enums::MemoryType;
 use common::error::Result;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// 节点 id：蓝图声明、runner 注册、轨迹指纹三处共用的同一真相
 pub(crate) const NODE_RETRIEVE: &str = "retrieve";
@@ -625,6 +626,12 @@ impl ThinkNode for RetrieveNode {
             return Ok(NodeOutcome::new(NodeSignal::Done));
         }
 
+        // 3.5 记账「真正发起检索」：差集为空的短路分支在上面已 return，走到这里
+        //     才算一次真检索。⚠️ 与 `queried_terms` 分开记（一个记词、一个记次数）：
+        //     「第二次进入有没有再查」只能看次数，看 pack 形态会假绿——短路的空 pack
+        //     与「查了但零命中」的空 pack 无法区分。
+        deps.retrieve_searches.fetch_add(1, Ordering::SeqCst);
+
         // 4. 分两路召回：长期知识图谱（主）+ 短期记忆（少量补充）
         //
         // ⚠️ 两路各自独立 limit / 独立失败降级：一路查挂了不影响另一路。
@@ -765,14 +772,15 @@ impl ThinkNode for RetrieveNode {
         crate::log_info!(
             &deps.ctx,
             "legacy_awaken",
-            "retrieve node done, agent_id={}, new_terms={}, long_term={}, short_term={}, index={}, knowledge_hits={}, method_skills={}",
+            "retrieve node done, agent_id={}, new_terms={}, long_term={}, short_term={}, index={}, knowledge_hits={}, method_skills={}, searches={}",
             deps.agent.po.id,
             new_terms.len(),
             long_term_len,
             short_term_len,
             index_len,
             knowledge_hits.len(),
-            method_skills.len()
+            method_skills.len(),
+            deps.retrieve_searches.load(Ordering::SeqCst)
         );
 
         // 6. 写总线 + 累积 visited（discover 回环下轮差集的输入）
