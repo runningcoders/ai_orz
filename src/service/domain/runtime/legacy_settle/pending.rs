@@ -43,14 +43,6 @@ const DEFAULT_CONTEXT_TOKENS: usize = 200_000;
 /// 因此待沉淀列表不能吃满整个窗口。
 const PENDING_BUDGET_RATIO: f64 = 0.4;
 
-/// 上下文长度未知时，`max_context_length` 的**沉淀批**可用比例
-///
-/// ⚠️ 数值与 `models/model_provider.rs::CAPACITY_RATIO`（上下文**容量** 6 折）
-/// 相同，但两者**不是同一语义，勿合并**：本处是「一批沉淀最多能占多大」，
-/// 那处是「模型容量上限」。绑死成一个常量会让改一边静默改另一边。
-/// 判据：同一语义两处出现 = 漂移（须单点）；不同语义撞了同一个数字 = 巧合。
-const CONTEXT_USABLE_RATIO: f64 = 0.6;
-
 /// 单批待沉淀列表的 token 硬上限（= 默认窗口 20 万 × 40%）
 ///
 /// 40% 只是**理论上界**：推荐上下文 50 万 token 的模型按 40% 会得到 20 万 token
@@ -73,8 +65,9 @@ pub(crate) fn short_term_of(mem: &Memory) -> Option<&ShortTermMemoryIndexPo> {
 
 /// 计算待沉淀列表可用的 token 预算
 ///
-/// 取数优先级与 `run_think_loop` 的压缩阈值一致：推荐上下文长度 >
-/// `max_context_length * 60%` > 默认窗口；结果乘 40% 后再封顶
+/// 取数直接委托 `ModelProviderConfig::recommended_context_length_tokens()`
+/// （与 `run_think_loop` 的压缩阈值同源），未配置时回落默认窗口；
+/// 结果乘 40% 后再封顶
 /// [`MAX_PENDING_BUDGET_TOKENS`]。
 ///
 /// # 为什么按 token 而不是字符
@@ -84,23 +77,15 @@ pub(crate) fn short_term_of(mem: &Memory) -> Option<&ShortTermMemoryIndexPo> {
 /// 差 4 倍，而且无法与 `ContextOverflowPolicy` 直接比较。这里复用压缩分流用的
 /// [`estimate_tokens`]（CJK 1 token/字，其余 4 字符/token），全项目只有一份估算口径。
 fn pending_budget_tokens(agent: &Agent) -> usize {
+    // 容量口径只有一处实现（`ModelProviderConfig::recommended_context_length_tokens`）：
+    // 本函数此前自己重写了一遍「推荐值 > max × 60%」，数值虽一致，但两处同语义
+    // 必然漂移（改一边静默只改一半）。这里只保留「批占比 40% + 封顶」这层。
     let context_tokens = agent
         .brain
         .as_ref()
         .and_then(|brain| brain.model_provider())
-        .and_then(|provider| {
-            let config = provider.config();
-            config
-                .recommended_context_length
-                .filter(|&v| v > 0)
-                .map(|v| v as usize)
-                .or_else(|| {
-                    config
-                        .max_context_length
-                        .filter(|&v| v > 0)
-                        .map(|v| (v as f64 * CONTEXT_USABLE_RATIO) as usize)
-                })
-        })
+        .and_then(|provider| provider.config().recommended_context_length_tokens())
+        .map(|v| v as usize)
         .unwrap_or(DEFAULT_CONTEXT_TOKENS);
 
     ((context_tokens as f64 * PENDING_BUDGET_RATIO) as usize).min(MAX_PENDING_BUDGET_TOKENS)
