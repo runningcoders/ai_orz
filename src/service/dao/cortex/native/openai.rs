@@ -59,6 +59,12 @@ impl super::CortexDao for OpenAiCompatibleCortexDao {
 
         // 向量模型被上层多处调用，统一在最底层收口打点：
         // 一次 HTTP 请求一条事件；provider 未上报 usage 时 token 为 0，仅计调用次数。
+        //
+        // 耗时（`duration_ms`）在此**刻意留 NULL**：本路径一次 HTTP 请求会产出
+        // `outcome.usages` 多条事件（每段文本一条，既有口径），而"这一次请求"的
+        // 耗时无法一对一归到某一条上——记在每条上会让 `SUM(duration_ms)` 放大 N 倍，
+        // 记在首条上又让其余条看起来"没有耗时"。没有可靠的 per-event 归属就落 NULL，
+        // 与「历史行不回填」同一原则：宁可留空，不给一个会算错的数。
         let now = chrono::Utc::now().timestamp_millis();
         for usage in &outcome.usages {
             let event = ModelCallEvent::new(now)

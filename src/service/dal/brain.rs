@@ -794,9 +794,14 @@ impl BrainDal for BrainDalImpl {
                         "cerebellum state truncated to provider capacity"
                     );
                 }
+                let call_started = std::time::Instant::now();
                 let result = dao
                     .think_fast(ctx.clone(), provider, state, questions)
                     .await?;
+                // 端到端耗时：从发起到拿到应答（含建连、TLS、等待与 JSON 解析）。
+                // 只有成功路径有值——`?` 之上失败/超时早已传播出 batch，
+                // 不会留下半截耗时，对应「调用失败不产生脏计数」。
+                let call_duration_ms = call_started.elapsed().as_millis() as u64;
                 // 一次真实 HTTP 请求记一条：`?` 之上失败/超时早已传播出 batch，
                 // 能走到这里的必然是一次成功调用 —— 失败与降级不产生脏计数。
                 // 也正是它把 p95 从「扫思考轨迹反推」搬到了 DuckDB 聚合层。
@@ -808,7 +813,7 @@ impl BrainDal for BrainDalImpl {
                         provider.model_name.clone(),
                         result.usage.input_tokens,
                         result.usage.output_tokens,
-                        None,
+                        Some(call_duration_ms),
                     )
                 );
                 usage.input_tokens += result.usage.input_tokens;

@@ -64,7 +64,11 @@ impl Consumer for ThinkRoundStatsConsumer {
             .with_tokens_output(event.tokens_output)
             .with_total_tokens(event.total_tokens)
             .with_cached_tokens(event.cached_tokens)
-            .with_reasoning_tokens(event.reasoning_tokens);
+            .with_reasoning_tokens(event.reasoning_tokens)
+            // 耗时取本轮的 `duration_ms`（`think_round/nodes.rs` 里紧贴模型调用
+            // 前后取的 `round_start.elapsed()`：只圈住 LLM 请求本身与失败重试，
+            // 不含工具执行）。重试时它是累计值，语义仍是「这一轮花了多久」。
+            .with_duration_ms(Some(event.duration_ms));
 
         if let Some(stats) = global_stats() {
             // ctx 已由框架从事件 carrier 还原（携带 log_id 等链路标识）
