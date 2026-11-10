@@ -11,6 +11,7 @@ use crate::models::model_provider::ModelProvider;
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{DecisionAnswers, DecisionRequest, DecisionValue, QuestionSpec};
+use crate::pkg::stats::ModelCallEvent;
 use crate::service::dao::agent_runtime;
 use crate::service::dao::cortex;
 use crate::service::dao::model_provider::ModelProviderDao;
@@ -770,6 +771,19 @@ impl BrainDal for BrainDalImpl {
                 let result = dao
                     .think_fast(ctx.clone(), provider, state, questions)
                     .await?;
+                // 一次真实 HTTP 请求记一条：`?` 之上失败/超时早已传播出 batch，
+                // 能走到这里的必然是一次成功调用 —— 失败与降级不产生脏计数。
+                // 也正是它把 p95 从「扫思考轨迹反推」搬到了 DuckDB 聚合层。
+                let _ = crate::record_event!(
+                    ctx,
+                    ModelCallEvent::decision(
+                        chrono::Utc::now().timestamp_millis(),
+                        provider.id.clone(),
+                        provider.model_name.clone(),
+                        result.usage.input_tokens,
+                        result.usage.output_tokens,
+                    )
+                );
                 usage.input_tokens += result.usage.input_tokens;
                 usage.output_tokens += result.usage.output_tokens;
                 for (qid, answer) in result.answers {

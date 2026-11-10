@@ -9,6 +9,16 @@ use common::error::Result;
 use duckdb::{Connection, ToSql};
 use uuid::Uuid;
 
+/// 小脑（System One 决策模型）调用的 `call_kind` 取值
+///
+/// 与 `chat` / `embedding` 并列，**必须独立成桶**：小脑用的是 Decision capability
+/// 的 provider，单价与调用频次跟对话模型都不是一回事，混进 chat 会让「对话花了多少 /
+/// 小脑花了多少」在统计上无法分开。
+///
+/// 录制侧（`dal::brain`）与查询侧（`dal::model_provider`）都引用本常量，
+/// 避免两处各写一份字面量后静默漂移——那正是 decision 此前落进 chat 桶的形态。
+pub const DECISION_CALL_KIND: &str = "decision";
+
 #[derive(Debug, Clone, Default, StatsEvent)]
 #[event_type = "model_call"]
 pub struct ModelCallEvent {
@@ -31,7 +41,7 @@ pub struct ModelCallEvent {
     caller_organization_id: Option<String>,
     #[tag]
     user_id: Option<String>,
-    /// 调用场景（chat / embedding），用于区分不同用途与计价的模型调用
+    /// 调用场景（chat / embedding / decision），用于区分不同用途与计价的模型调用
     #[tag]
     call_kind: Option<String>,
     #[metric]
@@ -135,6 +145,30 @@ impl ModelCallEvent {
     pub fn with_reasoning_tokens(mut self, v: u64) -> Self {
         self.reasoning_tokens = v;
         self
+    }
+
+    /// 构造一条小脑（Decision）调用事件
+    ///
+    /// 一次 HTTP 请求一条：
+    /// - `call_count` 取 `new()` 的默认值 1，**不按题数累计**——同一请求内可以带多题，
+    ///   按题数算会把「请求次数」这个指标直接搞坏；
+    /// - `tokens_input` / `tokens_output` 来自 `CerebellumUsage`，两维为 0 时**仍然记
+    ///   这一条**（与 embedding 路径同口径）：有些 provider 不回 usage，但「调用了 1 次」
+    ///   是真的，抹掉会让调用次数悄悄变少。
+    pub fn decision(
+        timestamp: i64,
+        model_provider_id: String,
+        model_name: String,
+        tokens_input: u64,
+        tokens_output: u64,
+    ) -> Self {
+        Self::new(timestamp)
+            .with_call_kind(Some(DECISION_CALL_KIND.to_string()))
+            .with_model_provider_id(Some(model_provider_id))
+            .with_model_name(Some(model_name))
+            .with_tokens_input(tokens_input)
+            .with_tokens_output(tokens_output)
+            .with_total_tokens(tokens_input + tokens_output)
     }
 }
 
@@ -296,5 +330,45 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
             })?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 小脑事件必须落 decision 桶，且 provider 身份与 token 分项可读回
+    #[test]
+    fn decision_event_carries_decision_kind_and_provider_identity() {
+        let event = ModelCallEvent::decision(
+            1_700_000_000_000,
+            "provider-1".to_string(),
+            "jev-1.14".to_string(),
+            11,
+            7,
+        );
+        assert_eq!(event.call_kind.as_deref(), Some(DECISION_CALL_KIND));
+        assert_eq!(event.model_provider_id.as_deref(), Some("provider-1"));
+        assert_eq!(event.model_name.as_deref(), Some("jev-1.14"));
+        assert_eq!(event.tokens_input, 11);
+        assert_eq!(event.tokens_output, 7);
+        assert_eq!(event.total_tokens, 18);
+        assert_eq!(event.call_count, 1);
+    }
+
+    /// usage 缺失（两维皆 0）时仍记调用次数——不许把「调用了」抹成「没调用」
+    #[test]
+    fn decision_event_keeps_call_count_when_usage_is_zero() {
+        let event = ModelCallEvent::decision(0, "p".to_string(), "m".to_string(), 0, 0);
+        assert_eq!(event.call_count, 1);
+        assert_eq!(event.total_tokens, 0);
+        assert_eq!(event.call_kind.as_deref(), Some(DECISION_CALL_KIND));
+    }
+
+    /// 与既有两桶互不相等：防「把 decision 写成 chat」的静默并桶
+    #[test]
+    fn decision_kind_is_distinct_from_chat_and_embedding() {
+        assert_ne!(DECISION_CALL_KIND, "chat");
+        assert_ne!(DECISION_CALL_KIND, "embedding");
     }
 }
