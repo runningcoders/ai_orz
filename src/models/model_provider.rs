@@ -108,6 +108,10 @@ impl ModelProviderConfig {
     /// ⚠️ 返回的是**容量上限**，不是「本次可用预算」——调用方必须再与自己的
     /// 时延/成本上限取小，否则按 200K 级容量拉满必然超时。
     pub fn recommended_context_length_tokens(&self) -> Option<u64> {
+        // ⚠️ 与 `legacy_settle/pending.rs::CONTEXT_USABLE_RATIO`（同为 0.6，但那是
+        // 「沉淀批可用预算比例」）**不是同一语义，勿合并**：绑死成一个常量会让改
+        // 一边静默改另一边。判据：同一语义两处出现 = 漂移（须单点）；不同语义撞了
+        // 同一个数字 = 巧合（不许合并）。
         const CAPACITY_RATIO: f64 = 0.6;
         if let Some(rec) = self.recommended_context_length
             && rec > 0
