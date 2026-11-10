@@ -58,6 +58,14 @@ pub struct ModelCallEvent {
     /// 思考/推理消耗的输出 token 数（provider 未上报时为 0）
     #[metric]
     reasoning_tokens: u64,
+    /// 本次调用的端到端耗时（毫秒，**可空**）
+    ///
+    /// 可空是刻意的，不许退化成 0：补列之前的历史行、以及录制点拿不到可靠耗时的
+    /// 路径一律落 NULL。聚合（`AVG`/`SUM`）会忽略 NULL，而 0 是「一次 0 毫秒的调用」
+    /// ——它会把均值拉低成「调用飞快」的假象。0 是数据，NULL 是「没有数据」，二者
+    /// 不能混。历史行不回填、不伪造。
+    #[metric]
+    duration_ms: Option<u64>,
 }
 
 impl ModelCallEvent {
@@ -79,6 +87,7 @@ impl ModelCallEvent {
             total_tokens: 0,
             cached_tokens: 0,
             reasoning_tokens: 0,
+            duration_ms: None,
         }
     }
 
@@ -147,6 +156,12 @@ impl ModelCallEvent {
         self
     }
 
+    /// 设置端到端耗时（毫秒）。`None` = 本次调用没有可靠耗时，落 NULL 而非 0。
+    pub fn with_duration_ms(mut self, v: Option<u64>) -> Self {
+        self.duration_ms = v;
+        self
+    }
+
     /// 构造一条小脑（Decision）调用事件
     ///
     /// 一次 HTTP 请求一条：
@@ -161,6 +176,7 @@ impl ModelCallEvent {
         model_name: String,
         tokens_input: u64,
         tokens_output: u64,
+        duration_ms: Option<u64>,
     ) -> Self {
         Self::new(timestamp)
             .with_call_kind(Some(DECISION_CALL_KIND.to_string()))
@@ -169,6 +185,7 @@ impl ModelCallEvent {
             .with_tokens_input(tokens_input)
             .with_tokens_output(tokens_output)
             .with_total_tokens(tokens_input + tokens_output)
+            .with_duration_ms(duration_ms)
     }
 }
 
@@ -203,7 +220,8 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 tokens_output BIGINT,
                 total_tokens BIGINT,
                 cached_tokens BIGINT,
-                reasoning_tokens BIGINT
+                reasoning_tokens BIGINT,
+                duration_ms BIGINT
             );
         "#;
         conn.execute(sql, []).map_err(|e| {
@@ -236,7 +254,13 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
         // 关键：CREATE TABLE IF NOT EXISTS 对**已存在**的 .duckdb 文件是 no-op，
         // 新增列只能靠 ALTER 补，否则旧库查询报「未知列」。migrations/ 是 SQLite
         // 专用（走 sqlx），DuckDB 不走那套 migration，靠本函数每次启动幂等执行。
-        for (col, ty) in [("cached_tokens", "BIGINT"), ("reasoning_tokens", "BIGINT")] {
+        // 耗时列必须**可空且无默认值**：`ADD COLUMN ... DEFAULT 0` 会把历史行写成 0，
+        // 等于伪造「这些调用耗时 0 毫秒」，均值当场失真。留 NULL 才是「不知道」。
+        for (col, ty) in [
+            ("cached_tokens", "BIGINT"),
+            ("reasoning_tokens", "BIGINT"),
+            ("duration_ms", "BIGINT"),
+        ] {
             conn.execute(
                 &format!("ALTER TABLE model_call_events ADD COLUMN IF NOT EXISTS {col} {ty}"),
                 [],
@@ -258,8 +282,8 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 id, timestamp, agent_id, project_id, task_id,
                 model_provider_id, model_name, organization_id, caller_organization_id, user_id,
                 call_kind, call_count, tokens_input, tokens_output, total_tokens,
-                cached_tokens, reasoning_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                cached_tokens, reasoning_tokens, duration_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -281,6 +305,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 &event.total_tokens as &dyn ToSql,
                 &event.cached_tokens as &dyn ToSql,
                 &event.reasoning_tokens as &dyn ToSql,
+                &event.duration_ms as &dyn ToSql,
             ],
         )
         .map_err(|e| {
@@ -297,8 +322,8 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                     id, timestamp, agent_id, project_id, task_id,
                     model_provider_id, model_name, organization_id, caller_organization_id, user_id,
                     call_kind, call_count, tokens_input, tokens_output, total_tokens,
-                    cached_tokens, reasoning_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    cached_tokens, reasoning_tokens, duration_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
             conn.execute(
                 sql,
@@ -320,6 +345,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                     &event.total_tokens as &dyn ToSql,
                     &event.cached_tokens as &dyn ToSql,
                     &event.reasoning_tokens as &dyn ToSql,
+                    &event.duration_ms as &dyn ToSql,
                 ],
             )
             .map_err(|e| {
@@ -346,6 +372,7 @@ mod tests {
             "jev-1.14".to_string(),
             11,
             7,
+            Some(1234),
         );
         assert_eq!(event.call_kind.as_deref(), Some(DECISION_CALL_KIND));
         assert_eq!(event.model_provider_id.as_deref(), Some("provider-1"));
@@ -359,7 +386,7 @@ mod tests {
     /// usage 缺失（两维皆 0）时仍记调用次数——不许把「调用了」抹成「没调用」
     #[test]
     fn decision_event_keeps_call_count_when_usage_is_zero() {
-        let event = ModelCallEvent::decision(0, "p".to_string(), "m".to_string(), 0, 0);
+        let event = ModelCallEvent::decision(0, "p".to_string(), "m".to_string(), 0, 0, None);
         assert_eq!(event.call_count, 1);
         assert_eq!(event.total_tokens, 0);
         assert_eq!(event.call_kind.as_deref(), Some(DECISION_CALL_KIND));
@@ -370,5 +397,26 @@ mod tests {
     fn decision_kind_is_distinct_from_chat_and_embedding() {
         assert_ne!(DECISION_CALL_KIND, "chat");
         assert_ne!(DECISION_CALL_KIND, "embedding");
+    }
+
+    /// 耗时可带：`Some(ms)` 原样读回（小脑链路按 per-call 计时写入）
+    #[test]
+    fn duration_ms_is_carried_when_provided() {
+        let event = ModelCallEvent::decision(0, "p".to_string(), "m".to_string(), 1, 1, Some(250));
+        assert_eq!(event.duration_ms, Some(250));
+    }
+
+    /// 耗时缺省必须是 `None`（落 NULL），**不是 0**：
+    /// 0 会被 SQL 聚合当成「一次 0 毫秒的调用」把均值拉低，NULL 才会被忽略。
+    #[test]
+    fn duration_ms_defaults_to_none_not_zero() {
+        let event = ModelCallEvent::new(0);
+        assert_eq!(event.duration_ms, None);
+        // 任何走 `new()` 的既有路径（chat / embedding）默认不带耗时，
+        // 在各自录制点显式 `with_duration_ms(...)` 之前都必须是 None。
+        assert_eq!(
+            ModelCallEvent::decision(0, "p".into(), "m".into(), 0, 0, None).duration_ms,
+            None
+        );
     }
 }

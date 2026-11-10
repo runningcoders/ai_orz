@@ -808,6 +808,7 @@ impl BrainDal for BrainDalImpl {
                         provider.model_name.clone(),
                         result.usage.input_tokens,
                         result.usage.output_tokens,
+                        None,
                     )
                 );
                 usage.input_tokens += result.usage.input_tokens;
