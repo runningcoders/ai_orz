@@ -217,7 +217,22 @@ pub struct ThinkTraceCerebellum {
 }
 
 /// 单 run 最多保留多少条小脑留痕（防御：run 异常未收尾时不无限增长）
-const CEREBELLUM_BUFFER_MAX_PER_RUN: usize = 32;
+///
+/// ## 为什么是 64（2026-11-10 由 32 上调）
+///
+/// 32 的隐含假设是「一个小脑写入点」，实际写入点有 **31 处 / 9 个场景**，且
+/// **记账条目也占名额**：`empty_input`（intent_gate 放行）、`fallback` +
+/// `budget_exhausted`、`circuit_open`（熔断开闸）、`capacity_too_small`、
+/// `entry_gate` 的 `Skip` —— 它们不带业务结论，却与真结论抢同一批槽位。
+/// 实测最坏口径（compaction 回环时同一 run 的记账条数）达 **58 条**，32 会稳定
+/// 截断 26 条，且「哪些 scene 被丢」在轨迹里不可知（只有 `dropped` 总数）。
+///
+/// 64 的取值依据：覆盖 58 条最坏口径并留 6 条余量，同时仍是有界值 ——
+/// 不存在「按 scene 分桶」那样的结构性改动（分桶要改 `record_cerebellum` 的
+/// 键、`take_cerebellum` 的返回形状与查询侧合并口径，收益只是「丢得更有规律」，
+/// 而 64 已让常规 run 不再触顶）。`dropped` 计数与收尾一次 `warn` 的契约不变：
+/// 真撞顶时仍然是「可计数事实」，不沉默。
+const CEREBELLUM_BUFFER_MAX_PER_RUN: usize = 64;
 
 /// 单 run 的小脑留痕缓冲：条目 + 溢出丢弃计数
 ///

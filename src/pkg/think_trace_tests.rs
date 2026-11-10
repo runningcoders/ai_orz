@@ -611,3 +611,46 @@ fn take_cerebellum_caps_items_and_clears_run_state() {
     // 取走后本 run 状态被整体移除 ⇒ 第二次取空（也就不会有第二次告警）
     assert!(take_cerebellum(run_id).is_empty());
 }
+
+#[test]
+fn cerebellum_buffer_capacity_is_64_after_raise() {
+    // 锁死容量常量本身：31 处写入点 + 记账条目（放行/空输入/熔断开闸）共用
+    // 同一批槽位，最坏口径 58 条 ⇒ 32 会稳定截断，64 覆盖并留 6 条余量。
+    // 这条断言刻意写死字面量 64：它回答的是「AMan 拍板的 32→64 有没有真生效」，
+    // 跟着常量走就永远为真、失去判据意义。
+    assert_eq!(
+        CEREBELLUM_BUFFER_MAX_PER_RUN, 64,
+        "缓冲上限必须是 64（32→64 是拍板项，不得被无意改回）"
+    );
+
+    // 边界行为以 64 为界：64 条全留、第 65 条开始计丢弃
+    let mut exactly_cap = CerebellumBufferEntry::default();
+    for i in 0..64 {
+        exactly_cap.push(cerebellum_item(i));
+    }
+    let (items, dropped) = exactly_cap.drain();
+    assert_eq!(items.len(), 64, "恰满 64 条时一条都不许丢");
+    assert_eq!(dropped, 0, "恰满不算溢出");
+
+    let mut over_cap = CerebellumBufferEntry::default();
+    for i in 0..65 {
+        over_cap.push(cerebellum_item(i));
+    }
+    let (items, dropped) = over_cap.drain();
+    assert_eq!(items.len(), 64, "第 65 条必须被拒之门外");
+    assert_eq!(dropped, 1, "溢出 1 条就要能数出来 1 条");
+}
+
+#[test]
+fn cerebellum_buffer_worst_case_58_fits_within_capacity() {
+    // 回归护栏：32 时代的溢出量是 58-32=26；升到 64 后同一最坏口径必须零丢弃。
+    // 这条是「为什么改 64」的可判定表达 —— 若将来有人把容量改回 32，它会红。
+    let worst_case = 58;
+    let mut entry = CerebellumBufferEntry::default();
+    for i in 0..worst_case {
+        entry.push(cerebellum_item(i));
+    }
+    let (items, dropped) = entry.drain();
+    assert_eq!(items.len(), worst_case, "最坏口径 58 条必须全部保留");
+    assert_eq!(dropped, 0, "64 的取值依据就是让 58 条不触顶");
+}
