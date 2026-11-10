@@ -28,25 +28,31 @@ use std::sync::{Arc, OnceLock};
 pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
 /// 默认请求超时（毫秒）：小脑快判断的全局缺省预算；config.timeout_ms 可逐模型覆盖
 ///
-/// **终态 = 1000ms**（AMan 2026-11-10 09:08「把小脑判断的超时时间调大一点，1 秒吧」，
-/// 落地 `cedf4022`）。沿革：`800 → 1000（cedf4022）→（误）800（ea06affb）→ 1000（本笔）`；
+/// **终态 = 3000ms**（AMan 2026-11-10 续令「小脑思考的缺省耗时改成 3 秒吧，先试试情况」，
+/// 消息 `01a1c5c9`）。**同日 10:55 那条「耗时统一调成 5 秒」（消息 `01a1c5af`）已作废**——
+/// 稍晚的续令明确把它改成 3 秒，故本常量不取 5000，也不存在「5 秒全局缺省」这一态。
+/// 沿革：`800 → 1000（cedf4022）→（误）800（ea06affb）→ 1000 → 3000（AMan 01a1c5c9）`；
 /// 中间那次 800 是按**一条已被撤回的裁定**落的码（前台 `01a1c374` 误判后自行撤回，
-/// 责任不在执行侧），故本笔是「纠正一次误落」，不是回滚任何用户指令。
+/// 责任不在执行侧），当时那笔是「纠正一次误落」，不是回滚任何用户指令。
 ///
-/// 同日 10:55 AMan 追加的「5 秒」是**给 `chain_reply` 的**（语境是链内多拉上下文），
-/// 从未取代本条「1 秒」，落法是**场景级覆盖**（`chain_reply::SCENE_TIMEOUT_MS = 5000`）。
+/// 为什么敢从 1 秒抬到 3 秒（旧 doc 论证过「5 秒不能做全局缺省」，方向仍成立、只是阈值不同）：
+/// 本常量是整批共享的**一份**预算（`BrainDal::decide` 的 for 循环整体包一个
+/// `tokio::time::timeout`），作用于全部已接 scene；其中 `entry_gate` 是**每条入站消息**
+/// 都过的门 —— 端点挂掉时每条消息都要白等到超时，缺省每抬 1 秒就是每条入站多等 1 秒。
+/// 取 3000（AMan「先试试」）是折中：给真实调用留 2~3 倍余量，同时把最坏白等限制在 3 秒。
+/// 风险兜底不靠这个数字，靠既有熔断与降级语义：
+/// - `chain_reply` 有 `CEREBELLUM_FAILURE_THRESHOLD = 3` / `PROBE_EVERY = 5` 的串行熔断
+///   （连续 3 次失败开闸、之后每 5 次探一次），开闸期间 `degraded=circuit_open`、零调用零等待；
+/// - 其余 scene 失败一律降级走原逻辑（`DecisionOutcome.degraded`），不阻断主流程。
 ///
-/// 为什么 5 秒不能做全局缺省：本常量是整批共享的**一份**预算（`BrainDal::decide` 的
-/// for 循环整体包一个 `tokio::time::timeout`），作用于全部已接 scene。`entry_gate`
-/// 是**每条入站消息**都过的门，端点挂掉时若缺省是 5000，每条消息白等 5 秒，
-/// 影响面比「让 chain_reply 多读上下文」大一个量级。反过来把它压回 800 则是抗一条
-/// 未被撤销的用户指令 —— 两个方向都由字面断言钉住。
+/// **回退方式**：把本常量改回 `1_000` 即回退（单点，无第二处派生数字；`chain_reply` 的
+/// 场景级覆盖 `SCENE_TIMEOUT_MS = 5000` 独立于本值，不受回退影响）。
 ///
 /// 取值顺序（三级链，唯一梯子点是 `brain::effective_timeout_ms`）：
 /// `DecisionRequest.timeout_ms`（场景声明）→ `provider.config.timeout_ms` → 本常量。
-/// 现网 provider 的 `config` 无一条显式写 `timeout_ms`，故其余 scene 的实际生效值
-/// 就是本常量。
-pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 1_000;
+/// 现网 provider 的 `config` 无一条显式写 `timeout_ms`，故除 `chain_reply`（声明 5000）
+/// 之外的 scene 实际生效值就是本常量。
+pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 3_000;
 
 /// Cerebellum DAO trait - 小脑快判断接口
 #[async_trait]

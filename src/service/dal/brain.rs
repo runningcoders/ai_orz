@@ -735,7 +735,7 @@ impl BrainDal for BrainDalImpl {
         };
 
         // 单一超时预算：**场景级覆盖 > provider.config.timeout_ms > 全局缺省**
-        // （DEFAULT_CEREBELLUM_TIMEOUT_MS = 1000ms；`chain_reply` 另行声明
+        // （DEFAULT_CEREBELLUM_TIMEOUT_MS = 3000ms；`chain_reply` 另行声明
         // 5000ms 场景覆盖，用于多读链内上下文）。
         // 整个批次共享——多场景同轮触发时不该各付一次超时。
         // 取值梯子抽成 `effective_timeout_ms`：两层各有锁，防 override 被摘掉后

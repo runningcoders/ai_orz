@@ -1335,29 +1335,31 @@ fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
     assert!(INSTRUCTIONS.contains("仅作辅助参考"));
 }
 
-/// 场景级超时覆盖：chain_reply 声明 5000ms，不改全局缺省
+/// 场景级超时覆盖：chain_reply 声明 5000ms（严格高于全局缺省），不改全局缺省
 #[test]
 fn scene_declares_a_5s_timeout_override() {
-    assert_eq!(SCENE_TIMEOUT_MS, 5_000, "AMan 定谳：请求小脑 5 秒");
+    assert_eq!(SCENE_TIMEOUT_MS, 5_000, "AMan 定谳：本场景请求小脑 5 秒");
     let reqs = policy().prepare(&metrics_with(&triggered_facts()));
     assert_eq!(
         reqs[0].timeout_ms,
         Some(SCENE_TIMEOUT_MS),
-        "超时必须由场景显式声明（否则会落回全局缺省，把所有 scene 一起拖慢）"
+        "超时必须由场景显式声明（否则落回全局缺省 3000ms，链内多拉上下文的预算被砍 2 秒）"
     );
 
-    // 差值字面断言：防止某天 override 被摘掉、值悄悄回落到全局缺省而无人发觉。
-    // 两个数字都写死（1000 / 4000 差值），不做「常量 vs 常量」的比较 ——
-    // 那样只证「两值不等」，证不了「缺省被顺手改成了别的值」（`ea06affb`
-    // 把缺省误落成 800 那次，正是靠这条字面断言在下一轮被立刻抓出来）。
+    // 三钉字面断言：全局缺省 / 场景声明 / 两者差值，三个数字全部写死。
+    // 不做「常量 vs 常量」的比较 —— 那样只证「两值不等」，证不了「缺省被顺手
+    // 改成了别的值」（`ea06affb` 把缺省误落成 800 那次，正是靠字面断言在下一轮
+    // 被抓出来）。缺省值已由 AMan 续令（`01a1c5c9`）改为 3000ms，原「统一 5 秒」
+    // 作废；本场景声明仍是 5000ms 且必须**严格高于**缺省（差值为 0 说明 override
+    // 被摘掉，负值说明缺省被抬过了场景声明）。
     assert_eq!(
         crate::service::dao::cerebellum::DEFAULT_CEREBELLUM_TIMEOUT_MS,
-        1_000,
-        "全局缺省必须是 1000ms（AMan 09:08「1 秒」定谳）：5 秒属 chain_reply 的场景级覆盖"
+        3_000,
+        "全局缺省必须是 3000ms（AMan 01a1c5c9 续令）：本场景 5 秒属场景级覆盖"
     );
     assert_eq!(
         SCENE_TIMEOUT_MS - crate::service::dao::cerebellum::DEFAULT_CEREBELLUM_TIMEOUT_MS,
-        4_000,
-        "场景覆盖与全局缺省的差值必须显式成立（摘掉 override 时立刻红）"
+        2_000,
+        "场景覆盖必须严格高于全局缺省（差值 2000ms 字面成立，摘掉 override 时立刻红）"
     );
 }
