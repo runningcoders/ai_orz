@@ -429,6 +429,26 @@ pub fn judge_chain_reply_route(pressure: &ChainPressure) -> AutoReplyRoute {
         PressureAction::Continue | PressureAction::Nudge => AutoReplyRoute::Peer,
     }
 }
+
+/// 小脑判「无新信息 / 无需回复」时的收口理由
+///
+/// 与静态硬墙的 `"collaboration pressure exhausted"` 分开写：排障时要一眼看出
+/// 「这条链是被谁收的」——是跳数撞墙，还是内容被判空。两个理由串共用同一条
+/// `CloseChainAsNotify` 收口路径（消息照常作为知会送达 + 通知归属用户）。
+pub const CEREBELLUM_CLOSE_REASON: &str = "cerebellum: no new information in latest message";
+
+/// 小脑结论 → 路由（`None` = 不覆盖，调用方继续走静态判定）
+///
+/// 单独成函数而不是内联：这是「收口路径仍可用」与「放行不覆盖」两条断言的
+/// 可测试点（见 `message_route_policy_tests`）。小脑只允许产出「收口」这一种
+/// 路由，**不得**产出 `Peer` / `Discard` —— 那会把静态规则与压力档位的既有
+/// 结论改掉，超出「判内容」这一件事的边界。
+pub fn cerebellum_close_route(close: bool) -> Option<AutoReplyRoute> {
+    close.then_some(AutoReplyRoute::CloseChainAsNotify {
+        reason: CEREBELLUM_CLOSE_REASON,
+    })
+}
+
 #[cfg(test)]
 #[path = "message_route_policy_tests.rs"]
 mod tests;

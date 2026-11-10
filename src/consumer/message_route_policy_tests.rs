@@ -421,3 +421,39 @@ fn no_reply_sentinel_variants_stays_closed_and_clean() {
         );
     }
 }
+
+// ---------- 小脑判内容 → 收口路由（P2-A：收口路径仍可用 / 放行不覆盖） ----------
+
+/// `close` 必须走**现成**收口路径：`CloseChainAsNotify` + 独立理由串。
+///
+/// 这是「收口路径仍可用」的可断言点：小脑只增加一个**产出方**，
+/// 不改收口语义（Final 仍作为知会送达来源方 + 通知归属用户）。
+#[test]
+fn cerebellum_close_reuses_the_existing_close_route() {
+    let route = cerebellum_close_route(true).expect("close 必须产出收口路由");
+    match route {
+        AutoReplyRoute::CloseChainAsNotify { reason } => {
+            assert_eq!(reason, CEREBELLUM_CLOSE_REASON);
+            assert_ne!(
+                reason, "collaboration pressure exhausted",
+                "小脑收口与静态硬墙必须用不同理由串，排障时要能区分是谁收的"
+            );
+        }
+        other => panic!("close 不得产出 {:?}（只允许收口）", other),
+    }
+}
+
+/// `continue`（与 not_triggered / 降级同路）**不得覆盖**静态判定。
+///
+/// 反事实成对：不放行时调用方继续走 `judge_chain_reply_route`，
+/// 压力档位照旧产出 `Peer` / `CloseChainAsNotify`，逐字节不变。
+#[test]
+fn cerebellum_continue_keeps_static_verdict() {
+    assert!(
+        cerebellum_close_route(false).is_none(),
+        "continue 必须返回 None，调用方才能落到原静态判定"
+    );
+    // 反事实：同一条压力事实经静态判定仍产出 Peer（未被小脑短路）
+    let pressure = ChainPressure::default();
+    assert_eq!(judge_chain_reply_route(&pressure), AutoReplyRoute::Peer);
+}

@@ -456,6 +456,7 @@ pub mod busy_guard;
 // 映射为 `CancelThinkingResponse`，暴露方式与消息域 `RecallOutcome` 对齐
 pub mod cancel;
 mod cerebellum_router;
+pub(crate) mod chain_reply;
 mod compaction;
 mod inbox;
 mod intent_analyze;

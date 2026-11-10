@@ -30,8 +30,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::message_route_policy::{
-    AutoReplyRoute, ReplyObligation, RouteInput, classify_reply_decision, judge_chain_reply_route,
-    judge_static_reply_route,
+    AutoReplyRoute, ReplyObligation, RouteInput, cerebellum_close_route, classify_reply_decision,
+    judge_chain_reply_route, judge_static_reply_route,
 };
 use super::wake_gate_policy::{
     STALE_DEPENDENCY_POLICY_ID, WAKEUP_BUDGET_POLICY_ID, WakeGateInput, judge_wake_gate,
@@ -843,7 +843,7 @@ impl MessageConsumer {
         // 只看到一条普通知会，不知道链已经到底）。
         let chain_pressure = match reply_obligation {
             Some(_) => {
-                let pressure = self.collect_chain_pressure(&ctx, message).await;
+                let (pressure, chain_messages) = self.collect_chain_pressure(&ctx, message).await;
                 let decision = pressure.judge();
                 log_info!(
                     &ctx,
@@ -851,7 +851,7 @@ impl MessageConsumer {
                     "collaboration pressure observed: {}",
                     decision.log_line()
                 );
-                Some((pressure, decision))
+                Some((pressure, decision, chain_messages))
             }
             None => None,
         };
@@ -861,7 +861,7 @@ impl MessageConsumer {
         let mut turn_guidance = reply_obligation
             .map(ReplyObligation::prompt_lines)
             .unwrap_or_default();
-        if let Some((_, decision)) = &chain_pressure {
+        if let Some((_, decision, _)) = &chain_pressure {
             match reply_obligation {
                 // 对端在等答复：压力事实 + 本轮指引（施压 / 硬墙收口提示）。
                 Some(ReplyObligation::Expected) => turn_guidance.extend(decision.prompt_lines()),
@@ -876,7 +876,12 @@ impl MessageConsumer {
         if !turn_guidance.is_empty() {
             thinking_options = thinking_options.with_turn_guidance_lines(turn_guidance);
         }
-        let chain_pressure = chain_pressure.map(|(pressure, _)| pressure);
+        // 压力事实与链内正文一起带到回发判定：正文只在小脑判内容时用，
+        // 未触发/无小脑时它一直是未读的 `Option`，零额外成本。
+        let (chain_pressure, chain_messages) = match chain_pressure {
+            Some((pressure, _, messages)) => (Some(pressure), Some(messages)),
+            None => (None, None),
+        };
 
         // 调用 RuntimeDomain 唤醒 Agent
         let awaken_result = match self
@@ -1032,12 +1037,38 @@ impl MessageConsumer {
             let task_id = message.po.task_id.as_deref();
             let reply_to_id = Some(message.po.id.as_str());
 
-            let route = self.resolve_auto_reply_route(
-                message,
-                agent_id,
-                raw_output,
-                chain_pressure.as_ref(),
-            );
+            // ══════ 小脑判内容（P2-A：链深收敛判定，scene = chain_reply）══════
+            //
+            // 只有「静态规则未命中的跨 Agent 对等候选」才进这一步；静态命中
+            // （哨兵 / 用户 / 系统 / 自触发 / 知会）时小脑零调用、不掺和。
+            // 触发阈值见 `ChainPressureFacts::should_ask`（软阈值 **或** 窗口
+            // 硬上限前一跳，两者并列）：
+            //   close    → 直接收口（复用 CloseChainAsNotify，消息必达语义不变）
+            //   continue → 落到原静态判定
+            //   降级 / 空输入 / 未触发 → 落到原静态判定（不抛错、不短路）
+            //
+            // `None` = 不覆盖 ⇒ 下面 `resolve_auto_reply_route` 逐字节保持原样。
+            let cerebellum_route = self
+                .judge_chain_reply_by_cerebellum(
+                    &ctx,
+                    message,
+                    agent_id,
+                    raw_output,
+                    chain_pressure.as_ref(),
+                    chain_messages.as_deref(),
+                    agent.brain.as_ref(),
+                    awaken_result.trace_ids.first().map(String::as_str),
+                )
+                .await;
+            let route = match cerebellum_route {
+                Some(route) => route,
+                None => self.resolve_auto_reply_route(
+                    message,
+                    agent_id,
+                    raw_output,
+                    chain_pressure.as_ref(),
+                ),
+            };
             // 决策留痕：Final 形态 + 义务 + 路由，三件一起打印。后续接小脑时
             // 这份日志就是「证据 → 决策」的天然训练/回放样本。
             log_info!(
@@ -1459,6 +1490,63 @@ impl MessageConsumer {
         Ok(())
     }
 
+    /// 小脑判「这条新消息还有没有信息量、本轮还需不需要自动回发」
+    ///
+    /// 返回 `Some(route)` 表示**覆盖**静态路由（当前只有「收口」一种，见
+    /// `cerebellum_close_route`）；`None` = 不覆盖，调用方继续走
+    /// `resolve_auto_reply_route`（该函数逐字节保持原样）。
+    ///
+    /// 降级边界：静态规则命中 / 压力缺失 / 正文缺失 / 未达触发阈值 / 未装配小脑 /
+    /// 配额耗尽 / 失败 / 超时 / 低置信 / 幻觉选项 —— **全部返回 `None`**，
+    /// 一次都不抛错、不短路主流程。小脑只允许把「要不要继续回发」从
+    /// continue 改成 close，不得产出 Peer / Discard（那会改掉既有静态结论）。
+    #[allow(clippy::too_many_arguments)]
+    async fn judge_chain_reply_by_cerebellum(
+        &self,
+        ctx: &RequestContext,
+        message: &Message,
+        agent_id: &str,
+        raw_output: &str,
+        chain_pressure: Option<&ChainPressure>,
+        chain_messages: Option<&[runtime_domain::chain_reply::ChainMessage]>,
+        brain: Option<&crate::models::brain::Brain>,
+        trace_id: Option<&str>,
+    ) -> Option<AutoReplyRoute> {
+        // 静态规则命中 ⇒ 小脑不掺和（零调用）。这里是**纯函数**再算一次，
+        // 只为「要不要进小脑」这一个开关，不改任何既有结论。
+        if judge_static_reply_route(RouteInput {
+            from_role: message.from_role(),
+            from_id: &message.po.from_id,
+            agent_id,
+            message_type: message.message_type(),
+            raw_output,
+        })
+        .is_some()
+        {
+            return None;
+        }
+        let (pressure, messages) = (chain_pressure?, chain_messages?);
+        let facts = runtime_domain::chain_reply::ChainPressureFacts {
+            chain_depth: pressure.depth(),
+            window_depth: pressure.window_depth(),
+            fatigue: pressure.fatigue(),
+            soft_fatigue: pressure.config().soft_fatigue,
+            hard_fatigue: pressure.config().hard_fatigue,
+            hard_window_depth: pressure.config().hard_window_depth,
+        };
+        // 轨迹键：本 run 的第一条 trace（小脑留痕挂在它名下）。缺失时传空串
+        // —— `record_cerebellum` 对空键同样只做丢弃，不 panic。
+        let verdict = runtime_domain::chain_reply::judge_chain_reply_with_default_dao(
+            ctx,
+            brain,
+            messages,
+            &facts,
+            trace_id.unwrap_or(""),
+        )
+        .await?;
+        cerebellum_close_route(verdict.close)
+    }
+
     /// 计算 Final 自动回发的最终路由（静态判定 + 协作压力机械判定）
     ///
     /// 判定顺序：静态规则（哨兵/用户/系统/自触发/知会）短路在前，协作压力
@@ -1503,10 +1591,16 @@ impl MessageConsumer {
         &self,
         ctx: &RequestContext,
         message: &Message,
-    ) -> ChainPressure {
+    ) -> (
+        ChainPressure,
+        Vec<runtime_domain::chain_reply::ChainMessage>,
+    ) {
         let mut pressure = ChainPressure::new(PressureConfig::from_system());
         let mut seen_participants: HashSet<String> = HashSet::new();
         let mut hops: Vec<ChainHop> = Vec::new(); // 回溯顺序：新 → 旧
+        // 小脑判据的输入正文：与 `hops` **同一趟**收集 —— 这一趟本来就要读每条
+        // 消息做 ChainHop 分类，正文已在手里 ⇒ 新增判据零额外 DB 读。
+        let mut chain_messages: Vec<runtime_domain::chain_reply::ChainMessage> = Vec::new();
         let mut current = Some(message.clone());
 
         for _ in 0..MAX_CHAIN_TRAVERSAL {
@@ -1521,6 +1615,13 @@ impl MessageConsumer {
             hops.push(ChainHop {
                 from_agent: true,
                 novelty: Self::classify_chain_novelty(&current_message, &mut seen_participants),
+            });
+            // 与 `hops` 同源同序（新 → 旧），末尾一起归一化为时间正序。
+            chain_messages.push(runtime_domain::chain_reply::ChainMessage {
+                from_id: current_message.po.from_id.clone(),
+                type_label: chain_type_label(current_message.message_type()),
+                content: current_message.po.content.clone(),
+                created_at: current_message.po.created_at,
             });
             let Some(prev_id) = current_message.po.reply_to_id.as_deref() else {
                 break;
@@ -1557,6 +1658,8 @@ impl MessageConsumer {
         // 「回血之前的旧跳」：硬墙可能永不触发，或误对刚续接的链施压。
         let traversed = hops.len();
         pressure.observe_backward_chain(hops);
+        // `hops` 由组件自己归一化方向；正文列表由本处归一化（链头在前）。
+        chain_messages.reverse();
         if traversed >= MAX_CHAIN_TRAVERSAL {
             log_warn!(
                 &ctx,
@@ -1565,7 +1668,7 @@ impl MessageConsumer {
                 MAX_CHAIN_TRAVERSAL
             );
         }
-        pressure
+        (pressure, chain_messages)
     }
 
     /// 领域对象 → 组件语义标志：结构化新信息锚点的唯一翻译处
@@ -1782,6 +1885,29 @@ impl MessageConsumer {
 }
 
 // ==================== 辅助函数 ====================
+
+/// 消息类型 → 链内判据的中文短标签
+///
+/// 只给模型看，不参与任何分支判定；未知/新增类型统一落「其它消息」，
+/// 避免 common 侧枚举扩充时这里编译不过（判据不需要精确到每一种）。
+fn chain_type_label(message_type: MessageType) -> &'static str {
+    match message_type {
+        MessageType::Text => "文本消息",
+        MessageType::ToolCallRequest => "工具调用请求",
+        MessageType::ToolCallResult => "工具执行结果",
+        MessageType::ConfirmRequest => "确认请求",
+        MessageType::ConfirmResponse => "确认回复",
+        MessageType::TaskAssignment => "任务分配通知",
+        MessageType::TaskDispatchNotification => "任务调度通知",
+        MessageType::ProjectFollowupNotification => "项目跟进通知",
+        MessageType::AgentNotify => "知会",
+        MessageType::Image => "图片消息",
+        MessageType::File => "文件消息",
+        MessageType::Audio => "音频消息",
+        MessageType::Video => "视频消息",
+        _ => "其它消息",
+    }
+}
 
 fn parse_tool_call_request(message: &Message) -> Result<ToolCallMessage> {
     if message.message_type() != MessageType::ToolCallRequest {
