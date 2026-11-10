@@ -19,6 +19,7 @@
 > - [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) — 思维轨迹 / 思考图专题图
 > - [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) — 记忆子系统专题图
 > - [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) — 工具与技能专题图（三层调用 / 授权 / 技能装配）
+> - [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) — 工具调用上下文（身份）数据流转专题图（声明 / 解析 / 注入 / 使用四层）
 > - [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) — 异步基建专题图（AOP 生产消费事件中心）
 > - [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) — 组织与权限专题图（含联邦组网）
 > - [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) — 任务与项目专题图（状态机 / DAG / 制品）
@@ -339,6 +340,7 @@ data/
 | [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询 → 前端 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
+| [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) | 工具调用上下文（身份）数据流转：声明（CredentialKind 的 UserInfo / AgentInfo + field 白名单 + binding）→ 解析（is_identity 二元分派 + 失败语义按来源分叉）→ 注入（check + base_env 九键末位 insert）→ 使用（git 子进程 / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 |
 | [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 7 消费者 + 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
 | [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) | 组织与权限：多级组织 + 角色继承 + 双模式认证 + 联邦组网 | 组织与角色 / 认证与凭证 / 联邦组网 |
 | [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：四态状态机 + DAG 唤醒 + 制品聚合 | 任务状态机 / DAG 与唤醒 / 项目聚合 |

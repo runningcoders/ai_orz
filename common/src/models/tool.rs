@@ -104,7 +104,8 @@ pub fn tool_credential_scope(
 ///
 /// 契约层（顶层 DTO 字段）与存储层（各协议 config 内同名键）在此收口：
 /// - `None` = 调用方未声明，保留 config 内既有声明（兼容 HTTP 工具旧表单）
-/// - `Some([])` = 显式清空（删除键）
+/// - `Some([])` = 显式清空 → **落空数组 `[]`**（不是删键）：读侧把 `[]` 采信为
+///   用户明确表态的「零注入」，删键则会被误判成「从未配置」而回落工厂默认
 /// - 非 object 的 config（存量 Null）先归一为空对象
 ///
 /// 声明本身非敏感（不含 credential_id / 凭据原文，D1），归并前按协议 scope
@@ -127,13 +128,11 @@ pub fn apply_credential_requirements(
     let object = config
         .as_object_mut()
         .expect("config normalized to object above");
-    if requirements.is_empty() {
-        object.remove("credential_requirements");
-    } else {
-        let value =
-            serde_json::to_value(requirements).map_err(|e| format!("凭据需求序列化失败: {}", e))?;
-        object.insert("credential_requirements".to_string(), value);
-    }
+    // 空声明是「用户显式清空 = 零注入」，不是「未配置」：必须落 `[]` 保留用户意图。
+    // 删键会被读侧判成「从未配置过」而回落工厂默认（表现为"以为关了、实际仍在注入"）。
+    let value =
+        serde_json::to_value(requirements).map_err(|e| format!("凭据需求序列化失败: {}", e))?;
+    object.insert("credential_requirements".to_string(), value);
     Ok(())
 }
 
