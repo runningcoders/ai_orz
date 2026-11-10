@@ -58,8 +58,9 @@ struct ScriptedBackend {
     intents: Mutex<VecDeque<IntentAnalysis>>,
     /// analyze_intent 直接报错（意图降级路径）；队列与它互斥使用
     fail_intent: AtomicBool,
-    /// 每次 think() 收到的 (max_rounds, start_round)：锁「周期满额重启」口径
-    pub think_round_inputs: Mutex<Vec<(usize, usize)>>,
+    /// 每次 think() 收到的 (max_rounds, start_round, force_intensity)：
+    /// 锁「周期满额重启」口径 + P3-b 浅答门的绝对强度注入
+    pub think_round_inputs: Mutex<Vec<(usize, usize, Option<common::enums::ThinkingIntensity>)>>,
     pub think_calls: AtomicUsize,
     pub compact_calls: AtomicUsize,
     pub discover_calls: AtomicUsize,
@@ -148,10 +149,12 @@ impl ThinkBackend for ScriptedBackend {
         self.think_calls.fetch_add(1, Ordering::SeqCst);
         // 记录轮次口径：P2 回归锁靠它断言「每个周期满额重启」
         match self.think_round_inputs.lock() {
-            Ok(mut q) => q.push((input.max_rounds, input.start_round)),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .push((input.max_rounds, input.start_round)),
+            Ok(mut q) => q.push((input.max_rounds, input.start_round, input.force_intensity)),
+            Err(poisoned) => poisoned.into_inner().push((
+                input.max_rounds,
+                input.start_round,
+                input.force_intensity,
+            )),
         }
         let front = self
             .thinks
@@ -715,6 +718,13 @@ async fn discovery_loop_retrieves_again(pool: SqlitePool) {
         .map(|s| s.queried_terms.clone())
         .unwrap_or_default();
     assert_eq!(queried, vec!["初始词".to_string(), "新线索".to_string()]);
+    // 检索发起次数：两次进入各发起一次（初始词一次、回环新词一次）。
+    // 差值能挡住两类回归：①短路却仍发检索（>2）②一次进入分多趟查（>2）。
+    assert_eq!(
+        deps.retrieve_searches.load(Ordering::SeqCst),
+        2,
+        "两次 retrieve 进入应各发起一次检索（已查词不重查、新词只查一次）"
+    );
     assert_eq!(
         deps.retrieval
             .lock()
@@ -778,7 +788,7 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
     assert_eq!(inputs.len(), 3);
     let max_rounds = inputs[0].0;
     assert!(max_rounds > 0, "effective_max_rounds 应为正数");
-    for (i, (m, start)) in inputs.iter().enumerate() {
+    for (i, (m, start, force)) in inputs.iter().enumerate() {
         assert_eq!(
             *m,
             max_rounds,
@@ -789,6 +799,14 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
             *start,
             i * 10,
             "第 {} 次 deliberate 的起始轮次应累计（脚本每次报 10 轮）",
+            i + 1
+        );
+        // P3-b 降级侧**两维同时断言**：max_rounds 维（上方已断言 == effective_max_rounds）
+        // + force_intensity 维（本行）。语义：小脑未装配的组织**不得**被误判成全员
+        // 浅答 —— `Brain::new_local` 的 `cerebellum` 恒为 `None`，故一个强度都不该注入。
+        assert!(
+            force.is_none(),
+            "第 {} 次 deliberate 不得注入绝对强度（未装配小脑 ⇒ 降级侧 force_intensity=None）",
             i + 1
         );
     }
@@ -1077,6 +1095,82 @@ async fn retrieve_node_records_new_terms_and_queries(pool: SqlitePool) {
         .map(|s| s.queried_terms.clone())
         .unwrap_or_default();
     assert_eq!(queried, vec!["新线索".to_string()]);
+}
+
+// ==================== 节点级行为：queried_terms ②（K4-b 缺口） ====================
+
+/// `queried_terms` ②：跳过路径的原文进 visited；同一批词第二次进入**零检索发起**
+///
+/// K4-b 定谳：跳过意图识别时 `key_terms` = 用户原文（整句、不拆词，语义召回弱于拆词
+/// 是已知代价，不在此优化）。本用例锁两件事：
+///
+/// ① 原文经 `candidates → diff_terms → queried_terms.extend` 进**同一本** run 级 visited
+///    ——不是为跳过路径另开一套「跳过专用」记账（两套记账 = 差集失效 = 回环把同一句
+///    话反复送去检索）；
+/// ② 第二次进入 retrieve 时差集为空 → 走短路分支，**一次检索都不发起**。
+///
+/// ⚠️ 判据是 `retrieve_searches` 计数，**不是返回的 pack 长什么样**：短路写的空 pack
+/// 与「真查了但零命中」的空 pack 形态完全相同，用形态断言会假绿（把「没查」判成
+/// 「查了没结果」）。这也是本条缺口此前测不出来的原因。
+#[sqlx::test]
+async fn retrieve_second_pass_on_same_terms_issues_no_search(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let deps = make_deps(ctx, ScriptedBackend::new(vec![]));
+
+    // 跳过路径的产物形态：key_terms = 用户原文（整句）
+    let original = deps.message.content().to_string();
+    assert!(!original.trim().is_empty(), "fixture 消息内容不应为空");
+    let ia = IntentAnalysis {
+        key_terms: vec![original.clone()],
+        ..Default::default()
+    };
+    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+
+    let mut first = ThinkBus::new();
+    first.insert(
+        ContextKey::Intent,
+        LoadDepth::Full,
+        serde_json::to_value(&ia).expect("encode intent"),
+    );
+    node.run(&mut first).await.expect("first retrieve pass");
+
+    // ① 原文被登记进 run 级 visited，且确实发起过一次检索
+    let queried = deps
+        .retrieval
+        .lock()
+        .map(|s| s.queried_terms.clone())
+        .unwrap_or_default();
+    assert_eq!(
+        queried,
+        vec![original.clone()],
+        "跳过路径的整句原文必须登记进 queried_terms（与 intent 路径同一本账）"
+    );
+    assert_eq!(
+        deps.retrieve_searches.load(Ordering::SeqCst),
+        1,
+        "首进有新词 → 必须真发起一次检索"
+    );
+
+    // ② 同一批词第二次进入：差集为空 → 短路，检索发起次数不得增加
+    let mut second = ThinkBus::new();
+    second.insert(
+        ContextKey::Intent,
+        LoadDepth::Full,
+        serde_json::to_value(&ia).expect("encode intent"),
+    );
+    node.run(&mut second).await.expect("second retrieve pass");
+
+    assert_eq!(
+        deps.retrieve_searches.load(Ordering::SeqCst),
+        1,
+        "第二次进入差集为空必须短路：检索发起次数增加即差集机制失效（回环会重复查同一批词）"
+    );
+    let queried = deps
+        .retrieval
+        .lock()
+        .map(|s| s.queried_terms.clone())
+        .unwrap_or_default();
+    assert_eq!(queried, vec![original], "短路路径不得重复登记已查词");
 }
 
 // ==================== 节点级行为：discover 回环 ====================

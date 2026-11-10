@@ -10,8 +10,8 @@ use crate::pkg::think_trace::{ThinkTraceEntry, ThinkTraceQuery};
 use crate::service::domain::runtime::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
-    PagedResult, QueryThinkTracesRequest, ThinkTraceListItem, ThinkTraceOccurrenceDto,
-    ThinkTraceRoundDto, ThinkTraceRouteDto, ThinkTraceToolCallDto,
+    PagedResult, QueryThinkTracesRequest, ThinkTraceCerebellumDto, ThinkTraceListItem,
+    ThinkTraceOccurrenceDto, ThinkTraceRoundDto, ThinkTraceRouteDto, ThinkTraceToolCallDto,
 };
 use common::error::Result;
 
@@ -63,6 +63,20 @@ fn to_list_item(entry: ThinkTraceEntry) -> ThinkTraceListItem {
         finished: !entry.partial,
         project_id: entry.project_id,
         task_id: entry.task_id,
+        // run 级小脑留痕：收尾行的全量 + chain_reply 补丁行补的那批（查询侧
+        // merge_into 已按 (agent_id, run_id, scene) 拼好，这里只做结构映射）
+        cerebellum: entry
+            .cerebellum
+            .into_iter()
+            .map(|c| ThinkTraceCerebellumDto {
+                scene: c.scene,
+                decision: c.decision,
+                confidence: c.confidence,
+                degraded: c.degraded,
+                applied: c.applied,
+                latency_ms: c.latency_ms,
+            })
+            .collect(),
         rounds: entry
             .rounds
             .into_iter()
@@ -133,5 +147,44 @@ mod tests {
             ..Default::default()
         });
         assert!(done.finished, "收尾行到达后即为已结束");
+    }
+
+    #[test]
+    fn cerebellum_fields_map_one_to_one_into_dto() {
+        // 「前端三维平表字段与后端契约一一对应」的落点断言。
+        //
+        // 手写映射（不是 From）的风险：后端 `ThinkTraceCerebellum` 将来加字段时，
+        // 编译器不会提醒这里漏映射 —— 轨迹里有了、接口里没有，前端永远看不到。
+        // 所以先把 6 个字段全部填成**非默认值**，再逐项比对：任何一项漏映射
+        // （或被静默改成默认值）这条立即红。
+        use crate::pkg::think_trace::{ThinkTraceCerebellum, ThinkTraceEntry};
+        let entry = ThinkTraceEntry {
+            cerebellum: vec![ThinkTraceCerebellum {
+                scene: "chain_reply".to_string(),
+                decision: "close".to_string(),
+                confidence: Some(0.87),
+                degraded: Some("circuit_open".to_string()),
+                applied: true,
+                latency_ms: Some(1_234),
+            }],
+            ..Default::default()
+        };
+        let dto = to_list_item(entry);
+        assert_eq!(dto.cerebellum.len(), 1, "留痕条数必须原样透出");
+        let c = &dto.cerebellum[0];
+        assert_eq!(c.scene, "chain_reply");
+        assert_eq!(c.decision, "close");
+        assert_eq!(c.confidence, Some(0.87));
+        assert_eq!(c.degraded.as_deref(), Some("circuit_open"));
+        assert!(c.applied);
+        assert_eq!(c.latency_ms, Some(1_234), "p95 时延的回收点不能丢");
+    }
+
+    #[test]
+    fn empty_cerebellum_stays_empty_not_null() {
+        // 空留痕必须是空数组（前端按 `is_empty()` 决定是否渲染折叠条），
+        // 不能因为映射逻辑变成「一条全默认值的假记录」。
+        let dto = to_list_item(ThinkTraceEntry::default());
+        assert!(dto.cerebellum.is_empty());
     }
 }

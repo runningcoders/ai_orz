@@ -421,3 +421,75 @@ fn no_reply_sentinel_variants_stays_closed_and_clean() {
         );
     }
 }
+
+// ---------- 小脑判内容 → 收口路由（P2-A：收口路径仍可用 / 放行不覆盖） ----------
+
+/// `close` 必须走**现成**收口路径：`CloseChainAsNotify` + 独立理由串。
+///
+/// 这是「收口路径仍可用」的可断言点：小脑只增加一个**产出方**，
+/// 不改收口语义（Final 仍作为知会送达来源方 + 通知归属用户）。
+#[test]
+fn cerebellum_close_reuses_the_existing_close_route() {
+    let route = cerebellum_close_route(true).expect("close 必须产出收口路由");
+    match route {
+        AutoReplyRoute::CloseChainAsNotify { reason } => {
+            assert_eq!(reason, CEREBELLUM_CLOSE_REASON);
+            assert_ne!(
+                reason, "collaboration pressure exhausted",
+                "小脑收口与静态硬墙必须用不同理由串，排障时要能区分是谁收的"
+            );
+        }
+        other => panic!("close 不得产出 {:?}（只允许收口）", other),
+    }
+}
+
+/// `continue`（与 not_triggered / 降级同路）**不得覆盖**静态判定。
+///
+/// 反事实成对：不放行时调用方继续走 `judge_chain_reply_route`，
+/// 压力档位照旧产出 `Peer` / `CloseChainAsNotify`，逐字节不变。
+#[test]
+fn cerebellum_continue_keeps_static_verdict() {
+    assert!(
+        cerebellum_close_route(false).is_none(),
+        "continue 必须返回 None，调用方才能落到原静态判定"
+    );
+    // 反事实：同一条压力事实经静态判定仍产出 Peer（未被小脑短路）
+    let pressure = ChainPressure::default();
+    assert_eq!(judge_chain_reply_route(&pressure), AutoReplyRoute::Peer);
+}
+
+/// **静态硬墙的兜底角色**：小脑**没有结论**时，`hard_window_depth` 照旧收口。
+///
+/// ⚠️ 口径变更（AMan 2026-11-10 定谳，覆盖此前「硬墙绝对护栏」）：
+/// 小脑判 `continue` 时**可以越过**硬墙（软墙），该行为不经过本函数——
+/// 生产路径在 `consumer::message` 里把 `ChainReplyVerdict::Continue` 直接
+/// 映射成 `Peer`。本用例守的是剩下那一半：**小脑没结论（None）时**，
+/// 静态判定必须逐字节保持原样（这是「小脑挂了也不会无限聊」的保险）。
+///
+/// 若哪天有人把静态 `Escalate` 也删掉（例如「既然有软墙，硬墙就不要了」），
+/// 本用例必须红。
+#[test]
+fn static_hard_wall_still_closes_when_cerebellum_has_no_verdict() {
+    use crate::pkg::collaboration_pressure::{ChainHop, PressureAction};
+
+    let mut pressure = ChainPressure::default();
+    let hops: Vec<ChainHop> = (0..8).map(|_| ChainHop::plain()).collect();
+    pressure.observe_chain(hops);
+    assert_eq!(
+        pressure.judge().action,
+        PressureAction::Escalate,
+        "窗口撞满 hard_window_depth（缺省 8）必须静态升级"
+    );
+
+    assert!(
+        cerebellum_close_route(false).is_none(),
+        "「无结论」不得覆盖静态判定（软墙放行走的是 Continue 分支，不经过这里）"
+    );
+    assert_eq!(
+        judge_chain_reply_route(&pressure),
+        AutoReplyRoute::CloseChainAsNotify {
+            reason: "collaboration pressure exhausted"
+        },
+        "小脑没结论时，硬墙收口必须逐字节保持原样"
+    );
+}

@@ -7,6 +7,8 @@
 //! 节点间只通过总线通信，唯一的例外是 `AwakenDeps`（不可序列化的强类型依赖）。
 
 use super::context::{AwakenDeps, read_bus};
+use super::summary_gate;
+use super::wake_gate;
 use crate::models::cortex_types::ChatMessage;
 use crate::models::memory::MemoryIndexPlan;
 use crate::pkg::stats::AgentAwakeEvent;
@@ -660,7 +662,26 @@ impl ThinkNode for DeliberateNode {
         let tools =
             read_bus::<Vec<crate::models::cortex_types::ToolDescriptor>>(bus, ContextKey::Tools)?;
         let total_rounds = read_budget(bus).total_rounds;
-        let max_rounds = deps.options.effective_max_rounds();
+        let user_text = deps.message.content();
+        // 唤醒门（P3-b）：整次唤醒只问一次小脑「这条要不要浅答」，判浅答则本轮
+        // 轮次上限压到 1、思考强度强制 0（翻译全在 `wake_gate::apply`）。
+        //
+        // 门闩实参 = 上一行局部变量 `total_rounds`，其赋值行逐字为
+        // `read_budget(bus).total_rounds`（run 级跨周期累计）；**不取** `start_round`
+        // （周期内起始轮次）——`poll_exit` 续跑复用同一 run ⇒ 续跑轮 total_rounds > 0
+        // ⇒ 天然不重走门、判决沿首轮结果。
+        let shallow = wake_gate::maybe_shallow(
+            &deps.ctx,
+            crate::service::dal::brain::dal(),
+            deps.agent.brain.as_ref(),
+            user_text,
+            &deps.trace_id,
+            total_rounds,
+        )
+        .await;
+        // 唯一翻译点：本节点不得自行翻译判决（故此处不出现字面量 `1` / `Some(0)`）。
+        let (max_rounds, force_intensity) =
+            wake_gate::apply(shallow, deps.options.effective_max_rounds());
 
         // 意图阶段可能被跳过/降级：读不到就按默认空结构处理（偏移 0，即老口径）
         let intent = read_bus::<IntentAnalysis>(bus, ContextKey::Intent).unwrap_or_default();
@@ -690,6 +711,7 @@ impl ThinkNode for DeliberateNode {
                     // 可用量 = max_rounds - total_rounds，由 `run_think_loop` 自行折算。
                     start_round: total_rounds,
                     thinking_intensity_offset,
+                    force_intensity,
                     usage: Arc::clone(&self.usage),
                     inbox: Some(Arc::clone(&deps.inbox)),
                 },
@@ -1058,7 +1080,27 @@ impl ThinkNode for ConsolidateNode {
             );
             let compaction_policy = super::super::compaction::build_compaction_policy(&deps.agent);
             let hits = compaction_policy.evaluate(&chain.into_policy_metrics());
-            let should_compress = !hits.is_empty();
+            let would_compress = !hits.is_empty();
+            // 总结门（P3-c / K6）：优先级 = 阈值策略先判、小脑只做减法。
+            // 只有「本来要压」且「不是 max_rounds 收尾」时才问小脑 —— 后者已在
+            // `CompactNode` / force_compact 压过，再问一次只会多一次调用且无出口。
+            // 不问时零调用、零配额、零轨迹（门内的 ⓪ 本地判据与本处的短路同义）。
+            let skip_summary = if would_compress && artifacts.exit != EXIT_MAX_ROUNDS {
+                summary_gate::maybe_skip(
+                    &deps.ctx,
+                    crate::service::dal::brain::dal(),
+                    deps.agent.brain.as_ref(),
+                    deps.message.content(),
+                    &deps.trace_id,
+                    would_compress,
+                )
+                .await
+            } else {
+                None
+            };
+            // 唯一翻译点：本节点不得自行翻译判决（故此处不出现 `Some(SkipSummary)`
+            // 分支；`apply` 的 `None` 分支逐字节等价于改造前）。
+            let should_compress = summary_gate::apply(skip_summary, would_compress);
             crate::log_info!(
                 &deps.ctx,
                 "legacy_awaken",

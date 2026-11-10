@@ -97,6 +97,20 @@ pub struct TimeSeriesPoint {
     pub tokens_reasoning: u64,
     /// Number of calls
     pub call_count: u64,
+    /// 该时间桶内**带耗时样本**的平均耗时（毫秒）
+    ///
+    /// `None` = 该桶内没有任何一条记录带耗时（补列前的历史行、embedding 改造前的行、
+    /// 或该录制路径拿不到可靠计时），与「一次 0 毫秒的调用」严格区分：后者是数据，
+    /// 前者是没有数据。AVG 天然忽略 NULL，因此这里**不用也不允许** COALESCE 成 0。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avg_duration_ms: Option<f64>,
+    /// 该时间桶内参与平均的样本数（`duration_ms` 非空的记录条数）
+    ///
+    /// 单独给出，是为了让全窗口汇总能按样本数**加权**复算
+    /// （Σ(桶均值 × 桶样本数) / Σ桶样本数 ≡ 全窗口 AVG），
+    /// 而不是对「桶均值」再求一次简单平均——后者会给样本少的桶过高权重。
+    #[serde(default)]
+    pub duration_sample_count: u64,
 }
 
 /// Total token sum result
@@ -235,6 +249,16 @@ pub struct ModelCallStats {
     pub token_summary: Option<TokenSumResult>,
     /// 模型调用时序趋势
     pub model_call_time_series: Option<Vec<TimeSeriesPoint>>,
+    /// 窗口内平均调用耗时（毫秒）；无带耗时样本时为 `None`
+    ///
+    /// 由时序桶按样本数加权求得（与折线图**同源**，一次查询供两处用），
+    /// 不是「总耗时 ÷ 总次数」。`None` 与 `Some(0.0)` 语义不同——展示层对前者
+    /// 显示「无数据」而不是 `0ms`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avg_duration_ms: Option<f64>,
+    /// 参与平均的耗时样本数；`0` = 该窗口没有任何带耗时的调用
+    #[serde(default)]
+    pub duration_sample_count: u64,
 }
 
 /// 项目进度汇总（实时计算，不持久化）

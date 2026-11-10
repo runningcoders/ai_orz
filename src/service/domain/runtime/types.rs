@@ -250,6 +250,12 @@ pub struct ThinkLoopParams<'a> {
     /// 叠加在场景偏移之上（`场景偏移 + 动态偏移`），由调用方在拿到
     /// `IntentAnalysis` 后填入；意图阶段缺失/降级时保持 0，行为与未改造前一致。
     pub thinking_intensity_offset: i32,
+    /// 绝对思考强度：`Some` = 跳过 base / 场景偏移 / 动态偏移整条链，直接采用该值
+    ///
+    /// 与 `thinking_intensity_offset` 分工：偏移是**在基准上加**（加减语义，
+    /// `base=70` 时减不到 0）；本字段是**替换结果**，用于表达「浅答强度真为 0」。
+    /// `None` 时逐字节等价于未加本字段前。
+    pub force_intensity: Option<common::enums::ThinkingIntensity>,
     /// 唤醒级用量计量器（跨周期累计）
     ///
     /// - `Some`：awaken 传入 run 级共享表 ⇒ 轮次/token/时长在周期之间累计，
@@ -293,6 +299,7 @@ impl<'a> ThinkLoopParams<'a> {
             policy: None,
             progress: None,
             thinking_intensity_offset: 0,
+            force_intensity: None,
             usage: None,
             inbox: None,
         }
@@ -357,6 +364,15 @@ impl<'a> ThinkLoopParams<'a> {
     /// 意图识别自身）不传，保持 0。
     pub fn with_thinking_intensity_offset(mut self, offset: i32) -> Self {
         self.thinking_intensity_offset = offset;
+        self
+    }
+
+    /// 设定绝对思考强度（`Some` = 跳过基准与全部偏移，直接采用）
+    ///
+    /// 只给「唤醒门判浅答」这一类场景用：它要求强度**真为 0**，而偏移链是加减
+    /// 语义（`base=70` 加场景/动态偏移减不到 0），假语义会骗过「小于基准」这类弱断言。
+    pub fn with_force_intensity(mut self, force: Option<common::enums::ThinkingIntensity>) -> Self {
+        self.force_intensity = force;
         self
     }
 }

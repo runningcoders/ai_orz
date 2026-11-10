@@ -7,6 +7,65 @@
 use crate::models::agent::AgentRuntimeConfig;
 use crate::models::model_provider::ModelProviderPo;
 use common::enums::AgentKind;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// 单次唤醒（一个 Brain 生命周期）内的小脑调用配额
+///
+/// **取值 = 本 run 起点的 resolved 大脑轮次**（`max_thinking_rounds`：Agent
+/// runtime_config 非 0 取它，否则取系统配置 `[agent].max_thinking_rounds`），
+/// 由 `wake_agent_brain` 装配 Brain 时写入 ⇒ 随 run 生命周期固定，不跨 run 累积。
+///
+/// 用途只有一个：**防失控**。小脑单次成本低，图内又有
+/// `overflow → compact → prepare` 与 `discover → retrieve` 等回环，同一处决策
+/// 会被反复触发；配额把「整条唤醒链一共能问几次小脑」封在一个上界内，超限一律
+/// **静默走原逻辑**（与超时 / 调用失败同一降级语义，不改变主流程）。
+///
+/// `limit == 0` 表示不限：测试与外部构造的 Brain 走这条路径，行为与未加配额前一致。
+#[derive(Debug)]
+pub struct CerebellumQuota {
+    limit: usize,
+    used: AtomicUsize,
+}
+
+impl CerebellumQuota {
+    /// 按上限构造（0 = 不限）
+    pub fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            used: AtomicUsize::new(0),
+        }
+    }
+
+    /// 不限配额（测试 / 未按 run 装配的 Brain）
+    pub fn unlimited() -> Self {
+        Self::new(0)
+    }
+
+    /// 占用一次调用额度；`false` = 已超限，调用方**必须**走原逻辑
+    pub fn try_acquire(&self) -> bool {
+        if self.limit == 0 {
+            // 不限：仍计数，便于观测真实用量
+            self.used.fetch_add(1, Ordering::Relaxed);
+            return true;
+        }
+        self.used
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                (n < self.limit).then_some(n + 1)
+            })
+            .is_ok()
+    }
+
+    /// 本 run 的上限（0 = 不限）
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
+    /// 已占用的次数
+    pub fn used(&self) -> usize {
+        self.used.load(Ordering::Relaxed)
+    }
+}
 
 /// Brain 封装了完整的思考执行环境
 ///
@@ -33,6 +92,10 @@ pub struct Brain {
     pub cerebellum: Option<ModelProviderPo>,
     /// 记忆列表
     pub memories: Vec<crate::models::memory::Memory>,
+    /// 本 run 的小脑调用配额（见 [`CerebellumQuota`]）
+    ///
+    /// 默认不限；`wake_agent_brain` 在装配时按 resolved 大脑轮次写入。
+    pub cerebellum_quota: Arc<CerebellumQuota>,
 }
 
 impl Brain {
@@ -51,6 +114,7 @@ impl Brain {
             runtime_config,
             model_provider: Some(model_provider),
             cerebellum: None,
+            cerebellum_quota: Arc::new(CerebellumQuota::unlimited()),
             memories,
         }
     }
@@ -71,6 +135,7 @@ impl Brain {
             runtime_config,
             model_provider: None,
             cerebellum: None,
+            cerebellum_quota: Arc::new(CerebellumQuota::unlimited()),
             memories,
         }
     }
@@ -88,5 +153,31 @@ impl Brain {
     /// 获取 ModelProvider 配置引用（仅 Local 有值）
     pub fn model_provider(&self) -> Option<&ModelProviderPo> {
         self.model_provider.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod cerebellum_quota_tests {
+    use super::CerebellumQuota;
+
+    #[test]
+    fn quota_blocks_after_limit() {
+        let quota = CerebellumQuota::new(2);
+        assert!(quota.try_acquire());
+        assert!(quota.try_acquire());
+        // 超限：调用方必须走原逻辑，且计数不再被顶高
+        assert!(!quota.try_acquire());
+        assert!(!quota.try_acquire());
+        assert_eq!(quota.used(), 2);
+        assert_eq!(quota.limit(), 2);
+    }
+
+    #[test]
+    fn unlimited_quota_never_blocks() {
+        let quota = CerebellumQuota::unlimited();
+        for _ in 0..64 {
+            assert!(quota.try_acquire());
+        }
+        assert_eq!(quota.used(), 64);
     }
 }

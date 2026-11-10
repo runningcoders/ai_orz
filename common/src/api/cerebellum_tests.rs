@@ -75,7 +75,7 @@ fn response_parse_matches_official_fixture() {
         "model": "jev-1.13.0",
         "answers": {
             "q_route": {"type": "choice", "choice": "answer_directly", "confidence": 0.87, "probabilities": {"answer_directly": 0.87, "route_cortex": 0.13}},
-            "q_urgency": {"type": "score", "score": 2.4, "probabilities": {"无关": 0.1, "一般": 0.8, "紧急": 0.1}, "legend": ["无关", "一般", "紧急"], "confidence": 0.8},
+            "q_urgency": {"type": "score", "score": 2.4, "probabilities": {"0": 0.1, "1": 0.8, "2": 0.1}, "legend": {"0": "无关", "1": "一般", "2": "紧急"}, "confidence": 0.8},
             "q_trivial": {"type": "noul", "noul": 0.92}
         },
         "usage": {"input_tokens": 128, "output_tokens": 16}
@@ -100,7 +100,7 @@ fn response_without_usage_defaults_to_zero() {
     assert_eq!(resp.usage.output_tokens, 0);
 }
 
-/// 边界校验：choice ≤255 / score 2~10 / noul 无 criteria
+/// 边界校验：choice ≤255 / score 2~10 / noul 可选 {true,false} 判据
 #[test]
 fn question_validate_enforces_protocol_boundaries() {
     // 合法用例
@@ -124,6 +124,16 @@ fn question_validate_enforces_protocol_boundaries() {
         criteria: None,
     };
     assert!(ok_noul.validate().is_ok());
+    // noul 可选 {true,false} 判据（官方 NoulCriteria）
+    let mut noul_criteria = BTreeMap::new();
+    noul_criteria.insert("true".to_string(), "在索要退款".to_string());
+    noul_criteria.insert("false".to_string(), "闲聊".to_string());
+    let ok_noul_criteria = CerebellumQuestion {
+        question_type: QuestionType::Noul,
+        instructions: "i".into(),
+        criteria: Some(QuestionCriteria::Choices(noul_criteria)),
+    };
+    assert!(ok_noul_criteria.validate().is_ok());
 
     // choice 256 选项越界
     let mut too_many = BTreeMap::new();
@@ -153,11 +163,26 @@ fn question_validate_enforces_protocol_boundaries() {
     };
     assert!(bad_score_high.validate().is_err());
 
-    // noul 携带 criteria 非法
-    let bad_noul = CerebellumQuestion {
+    // noul 判据形态非法：数组 / 非 true|false 键 / 空对象
+    let bad_noul_array = CerebellumQuestion {
         question_type: QuestionType::Noul,
         instructions: "i".into(),
         criteria: Some(QuestionCriteria::Levels(vec!["低".into(), "高".into()])),
     };
-    assert!(bad_noul.validate().is_err());
+    assert!(bad_noul_array.validate().is_err());
+    let bad_noul_key = CerebellumQuestion {
+        question_type: QuestionType::Noul,
+        instructions: "i".into(),
+        criteria: Some(QuestionCriteria::Choices(BTreeMap::from([(
+            "yes".to_string(),
+            "是".to_string(),
+        )]))),
+    };
+    assert!(bad_noul_key.validate().is_err());
+    let bad_noul_empty = CerebellumQuestion {
+        question_type: QuestionType::Noul,
+        instructions: "i".into(),
+        criteria: Some(QuestionCriteria::Choices(BTreeMap::new())),
+    };
+    assert!(bad_noul_empty.validate().is_err());
 }

@@ -431,10 +431,18 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         //
         // TODO(brain-cache): 目前每条消息都重新加载 agent 并重建 Brain，
         // 存在性能浪费。若未来引入 brain 缓存，需重新评估 ctx 新鲜度问题。
-        let brain = self
+        let mut brain = self
             .brain_dal()
             .wake_brain(ctx.clone(), &agent.po, Vec::new())
             .await?;
+
+        // K7：小脑调用配额 = 本 run 起点的 resolved 大脑轮次
+        // （runtime_config 非 0 取它，否则取系统配置 `[agent].max_thinking_rounds`）。
+        // Brain 每条消息重建 ⇒ 配额天然 per-run、不跨 run 累积；超限后各决策点
+        // 一律静默走原逻辑（与超时 / 失败同语义）。
+        brain.cerebellum_quota = std::sync::Arc::new(crate::models::brain::CerebellumQuota::new(
+            super::types::config_resolve::max_thinking_rounds(agent),
+        ));
 
         // 从 brain.model_provider 提取配置重新 enrich ctx（仅 Local agent 有值），
         // 保证返回的 ctx 含 model_provider_id / model_name（供 awaken 的统计/trace 使用）。

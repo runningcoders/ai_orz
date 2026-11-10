@@ -12,6 +12,31 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// 链深判定（`chain_reply`）小脑熔断的缺省阈值
+///
+/// 连续 3 次 **transport 级**失败（`timeout` / `call_error`）后跳过后续尝试。
+/// 取 3 而非 1：一次抖动不该让整条链失去快判断；也不是 10：每条白等一个超时，
+/// 3 次已经付了 3 秒。
+pub const CEREBELLUM_FAILURE_THRESHOLD: usize = 3;
+
+/// 熔断期间每 N 次尝试放一次**真探针**（自愈）
+///
+/// 纯计数、无时钟 ⇒ 单测确定性可复现；周期 = 5 次尝试（4 次跳过 + 第 5 次探针）。
+/// 没有它，熔断只能等进程重启才解除 —— 在「每条入站消息重建 Brain」的接线形态下
+/// 等价于「永久关闭」。
+pub const CEREBELLUM_PROBE_EVERY: usize = 5;
+
+/// 小脑熔断的单次尝试裁决
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CerebellumGuardVerdict {
+    /// 未熔断（或该 Agent 从未出现过 transport 级失败）—— 正常发请求
+    Allow,
+    /// 熔断中 —— 本次跳过：零渲染 / 零配额 / 零请求
+    Skip,
+    /// 熔断中但到了探针周期 —— 放行一次真请求，用来判断端点是否已恢复
+    Probe,
+}
+
 /// Agent 运行时信息（内存中）
 #[derive(Debug, Clone)]
 pub struct AgentRuntimeInfo {
@@ -44,6 +69,19 @@ pub struct AgentRuntimeInfo {
     /// 只上报原始值，百分比由前端按 `context_length / context_length_threshold` 计算。
     /// 0 = 未配置（前端退化为不展示进度）。
     pub context_length_threshold: u64,
+    /// 链深判定（`chain_reply`）小脑端点的**连续 transport 级失败次数**
+    /// （只计 `timeout` / `call_error`；有应答一律清零）
+    ///
+    /// 纯内存、不落 DB、不跨进程、服务重启归零。
+    ///
+    /// ⚠️ 刻意**不随 Busy ↔ Idle / Resting 转换清空**：熔断是「端点可用性」事实，
+    /// 与「这个 Agent 此刻在不在思考」无关。若 `set_idle` 顺手清零，熔断会在每条
+    /// 消息收尾时被重置一次 —— 而 Brain 也是每条消息重建，等于熔断从未存在。
+    pub cerebellum_consecutive_failures: u32,
+    /// 熔断期间已跳过的尝试次数；满 [`CEREBELLUM_PROBE_EVERY`] 放一次真探针
+    ///
+    /// 同样不随状态转换清空（探针周期必须跨消息累计，否则永远等不到第 5 次）。
+    pub cerebellum_skipped_since_probe: u32,
 }
 
 impl Default for AgentRuntimeInfo {
@@ -57,6 +95,8 @@ impl Default for AgentRuntimeInfo {
             think_runtime: None,
             context_length: 0,
             context_length_threshold: 0,
+            cerebellum_consecutive_failures: 0,
+            cerebellum_skipped_since_probe: 0,
         }
     }
 }
@@ -306,6 +346,68 @@ impl AgentRuntimeStateManager {
             .entry(agent_id.to_string())
             .or_default()
             .context_length_threshold = threshold;
+    }
+
+    /// 链深判定小脑熔断：判定本次尝试能不能发请求
+    ///
+    /// ⚠️ **有副作用**：`Skip` / `Probe` 都会推进探针计数，因此调用点必须保证
+    /// 「一次尝试只调一次」，不要在同一跳里反复调用。
+    pub fn cerebellum_guard_verdict(&self, agent_id: &str) -> CerebellumGuardVerdict {
+        let Some(mut entry) = self.states.get_mut(agent_id) else {
+            // 无运行时状态 = 从未记录过失败 ⇒ 正常放行
+            return CerebellumGuardVerdict::Allow;
+        };
+        if (entry.cerebellum_consecutive_failures as usize) < CEREBELLUM_FAILURE_THRESHOLD {
+            return CerebellumGuardVerdict::Allow;
+        }
+        let next = entry.cerebellum_skipped_since_probe.saturating_add(1);
+        entry.cerebellum_skipped_since_probe = next;
+        if (next as usize) >= CEREBELLUM_PROBE_EVERY {
+            // 到周期：放一次真探针，并把周期计数归零（探针若失败，重新数 5 次）
+            entry.cerebellum_skipped_since_probe = 0;
+            CerebellumGuardVerdict::Probe
+        } else {
+            CerebellumGuardVerdict::Skip
+        }
+    }
+
+    /// 当前连续 transport 级失败次数（只读，不推进任何计数）
+    pub fn cerebellum_consecutive_failures(&self, agent_id: &str) -> u32 {
+        self.states
+            .get(agent_id)
+            .map(|entry| entry.cerebellum_consecutive_failures)
+            .unwrap_or(0)
+    }
+
+    /// 当前熔断期间已跳过的次数（只读）
+    pub fn cerebellum_skipped_since_probe(&self, agent_id: &str) -> u32 {
+        self.states
+            .get(agent_id)
+            .map(|entry| entry.cerebellum_skipped_since_probe)
+            .unwrap_or(0)
+    }
+
+    /// 熔断是否已开闸（只读；阈值见 [`CEREBELLUM_FAILURE_THRESHOLD`]）
+    pub fn is_cerebellum_circuit_open(&self, agent_id: &str) -> bool {
+        (self.cerebellum_consecutive_failures(agent_id) as usize) >= CEREBELLUM_FAILURE_THRESHOLD
+    }
+
+    /// 记一次 transport 级失败（`timeout` / `call_error`），返回累计后的连续次数
+    pub fn record_cerebellum_transport_failure(&self, agent_id: &str) -> u32 {
+        let mut entry = self.states.entry(agent_id.to_string()).or_default();
+        let next = entry.cerebellum_consecutive_failures.saturating_add(1);
+        entry.cerebellum_consecutive_failures = next;
+        next
+    }
+
+    /// 记一次「端点有应答」：连续失败与探针计数一起清零
+    ///
+    /// 「有应答」不等于「有可用结论」：低置信 / 幻觉选项也走这里 ——
+    /// 熔断判的是端点可用性，不是判断质量。
+    pub fn record_cerebellum_healthy(&self, agent_id: &str) {
+        let mut entry = self.states.entry(agent_id.to_string()).or_default();
+        entry.cerebellum_consecutive_failures = 0;
+        entry.cerebellum_skipped_since_probe = 0;
     }
 
     /// 查询思考运行时快照（runtime-status 接口调用）

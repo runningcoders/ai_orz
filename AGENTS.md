@@ -175,4 +175,47 @@ make wiki-index && make wiki-check    # 重建索引 + 门禁（索引产物一�
 
 ---
 
+## 七、贡献流程（分支与 PR）
+
+`main` 是受保护分支：**禁止直推**，所有改动一律经 Pull Request 合入。
+
+### 分支
+
+| 层 | 分支名 | 用法 |
+|---|---|---|
+| L0 | `main` | 只 `git pull` 取基准，**不在 main 上开发或提交** |
+| L1 | `feature/<slug>` / `bugfix/<slug>` | 从最新 `origin/main` 切出；**一个主题一条**，改动全部先汇到这条 |
+| L2 | `dev/<agent>-<slug>` | 多 Agent 并行时的个人工作分支，本地合回 L1 即可，不必推远端 |
+
+单人小改动只用 L1 就够；多人 / 多 Agent 并行才需要 L2。
+
+### 提交前
+
+```bash
+make ci    # = lint（fmt + clippy + clippy-fe + docs-lint + inline-test-lint + wiki-check）+ 全量测试
+```
+
+### 提 PR
+
+```bash
+git push -u origin feature/<slug>                 # 推自己的功能分支，永不推 main
+gh pr create --base main --head feature/<slug>     # 标题与正文写清「为什么改」，关联任务号
+```
+
+PR 需满足：四项必需检查 `fmt` / `lint` / `backend` / `frontend` 全绿；分支与 `main` 保持同步（strict）；不夹带本主题之外的改动。
+
+### 合并
+
+- 合并方式**统一 squash**：一条 PR 对应 `main` 上一条提交，历史保持线性可读。
+- 合并后删除源分支。
+- **merge 决策归仓库维护者**；贡献者负责推功能分支 + 开 PR，不做合并。
+
+### 红线
+
+- ❌ 直推 `main`（即使技术上能绕过保护规则，也**不得**这么做）
+- ❌ 一条 PR 混装多个主题
+- ❌ 带红门禁提 PR，或跳过 `make ci`
+
+---
+
 *实现需求先读 [AGENT_GUIDE.md](./docs/AGENT_GUIDE.md)；规范与约定看 [CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)；功能现状看 [docs/modules/](./docs/modules/)；设计决策看各模块 `A-设计/`；文档操作看 [docs/README.md](./docs/README.md)，编写细则看 [DOCUMENTATION.md](./docs/DOCUMENTATION.md)*

@@ -25,6 +25,7 @@ use common::api::{
 };
 
 use super::ThinkPathGraphView;
+use super::cerebellum_trace_table::{CerebellumSummaryLine, CerebellumTable};
 use super::memory_trace_detail::MemoryTraceDetail;
 use super::think_rounds_timeline::{RoundStatsLine, ThinkRoundsTimeline};
 
@@ -304,6 +305,10 @@ pub fn ThinkTracesTab(
                         let routes = e.routes.clone();
                         let rounds = e.rounds.clone();
                         let rounds_for_stats = rounds.clone();
+                        // 小脑留痕：形态丙（run 卡片内折叠条 + 展开三维平表）
+                        // 空数组 = 本 run 无留痕，两个组件都会自行渲染成空
+                        let cerebellum = e.cerebellum.clone();
+                        let cerebellum_for_table = cerebellum.clone();
                         let path = e.path.clone();
                         let fingerprint = e.fingerprint.clone();
                         // 未收尾的 run（只有逐轮增量行）标「进行中」：此时 rounds
@@ -345,6 +350,10 @@ pub fn ThinkTracesTab(
                                         steps: steps,
                                         advisor_calls: advisor_calls,
                                     }
+                                    // 小脑折叠条：n 次 / 降级 k / 生效 m / 均时延·p95
+                                    // 放在统计行之后、元信息之前 —— 它属于「本次 run
+                                    // 发生了什么」这一层，不该沉到元信息小字里
+                                    CerebellumSummaryLine { items: cerebellum.clone() }
                                     // 元信息单独一行小字，不与统计数字抢位置
                                     div { class: "text-[11px] text-base-content/50 mt-1",
                                         "{created} · 蓝图 {path}"
@@ -364,6 +373,10 @@ pub fn ThinkTracesTab(
                                         }
                                         // 轮次时间线：模型每一轮想了什么、调了什么、如何裁决
                                         ThinkRoundsTimeline { rounds: rounds.clone() }
+                                        // 小脑三维平表（scene × decision × degraded）：
+                                        // 逐条陈列而不是聚合 —— 不同 scene 的 decision
+                                        // 取值域不同，混算「跳过率」是没有意义的数
+                                        CerebellumTable { items: cerebellum_for_table.clone() }
                                         div { class: "text-xs text-base-content/50 font-mono break-all",
                                             "run: {run_id} · fp: {fingerprint}"
                                         }

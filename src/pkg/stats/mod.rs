@@ -46,7 +46,7 @@ mod traits;
 pub use self::agent_awake::{AgentAwakeEvent, AgentAwakeStatTable};
 pub use self::collector::{AggregationRow, StatAggregation, StatFilter, StatParam, Stats};
 pub use self::default::{DefaultStatEvent, DefaultStatTable};
-pub use self::model_call::{ModelCallEvent, ModelCallStatTable};
+pub use self::model_call::{DECISION_CALL_KIND, ModelCallEvent, ModelCallStatTable};
 pub use self::ontology_drift::{OntologyDriftEvent, OntologyDriftStatTable};
 pub use self::project_event::{ProjectEvent, ProjectStatTable};
 pub use self::task_event::{TaskEvent, TaskStatTable};

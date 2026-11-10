@@ -28,6 +28,15 @@ pub struct DecisionRequest {
     pub state: serde_json::Value,
     /// 题 id → 题型/指令/判据
     pub questions: BTreeMap<String, QuestionSpec>,
+    /// 场景级请求超时覆盖（毫秒）；`None` = 用 provider 配置 / 全局缺省
+    ///
+    /// 为什么需要场景级覆盖：`BrainDal::decide` 是**整批共享一份超时预算**
+    /// （一个 `tokio::time::timeout` 包住整个 for 循环）。把全局缺省调大
+    /// 等于让全部已接 scene 一起变慢——`entry_gate` 是每条入站消息都过的门，
+    /// 端点挂掉时每条消息都要白等整个预算，影响面比单个场景大一个量级。
+    /// 需要更长预算的场景（例如 `chain_reply` 要多读链内上下文）在这里
+    /// 显式声明「我至少需要这么多」，全局缺省保持不变。
+    pub timeout_ms: Option<u64>,
 }
 
 /// 决策题型（与外部协议三型对应，但引擎不引用协议 DTO）

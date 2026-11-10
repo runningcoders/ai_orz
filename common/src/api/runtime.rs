@@ -152,7 +152,10 @@ pub struct QueryThinkTracesRequest {
 pub type QueryThinkTracesResponse = PagedResult<ThinkTraceListItem>;
 
 /// 思考轨迹条目（含节点 occurrence 与选路记录，展开即用，不再二次请求）
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+///
+/// 注意：**不实现 `Eq`** —— `cerebellum` 里的 `confidence` 是 `f32`（小脑返回的
+/// 概率），浮点不满足 `Eq`。`PartialEq` 足够测试断言与前端比较。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ThinkTraceListItem {
     /// 本次 run 的唯一 ID（awaken / settle / compact 下同时是 MemoryTrace.id）
     pub run_id: String,
@@ -183,6 +186,13 @@ pub struct ThinkTraceListItem {
     pub project_id: Option<String>,
     /// 关联任务 ID
     pub task_id: Option<String>,
+    /// run 级小脑决策留痕（可能来自多段：收尾行 + chain_reply 补丁行）
+    ///
+    /// 空数组 = 本 run 没有小脑留痕。**前端不要把「空」解读成「未装配」**：
+    /// 装配缺失由 `scene = bootstrap` / `decision = not_assembled` 的那一条显式
+    /// 表达（第 0 案），空数组只说明「没有任何记录」。
+    #[serde(default)]
+    pub cerebellum: Vec<ThinkTraceCerebellumDto>,
     /// 轮级明细（思考文本 / 推理摘要 / 工具调用 / 裁决）
     pub rounds: Vec<ThinkTraceRoundDto>,
     /// 节点 occurrence 序列
@@ -215,6 +225,28 @@ impl ThinkTraceListItem {
 /// 没有可回查的条目。
 pub fn think_trace_has_memory_entry(scene: &str) -> bool {
     matches!(scene, "awaken" | "settle" | "compact" | "summary")
+}
+
+/// run 级小脑决策留痕的一条记录
+///
+/// 与 `ThinkTraceCerebellum`（后端落盘结构）字段一一对应，不做裁剪：
+/// `scene` × `decision` × `degraded` 是三维平表的三个维度，`applied` 区分
+/// 「判了但没改变下游」，`latency_ms` 是 p95 时延的唯一回收点。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ThinkTraceCerebellumDto {
+    /// 场景（entry_gate / entry_pool / thinking_strength.* / memory_relevance /
+    /// skill_relevance / chain_reply / bootstrap）
+    pub scene: String,
+    /// 决策结论（选中的选项 / 分数 / fallback / not_assembled）
+    pub decision: String,
+    /// 置信度（Pick 的概率；未产出结论时为 None）
+    pub confidence: Option<f32>,
+    /// 降级原因（None = 正常出结论）
+    pub degraded: Option<String>,
+    /// 是否真正影响了下游行为（false = 判了但未生效，如 Provider 未启用强度能力）
+    pub applied: bool,
+    /// 本次判定的真实调用耗时（毫秒）；未发生调用时为 None
+    pub latency_ms: Option<u64>,
 }
 
 /// 单轮思考明细

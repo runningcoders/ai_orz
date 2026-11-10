@@ -19,6 +19,7 @@
 
 use super::context::{AwakenDeps, RetrievalPack, read_bus};
 use crate::models::memory::{Memory, MemoryIndexTier, MemoryPo};
+use crate::models::skill::SkillPo;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
@@ -31,6 +32,7 @@ use async_trait::async_trait;
 use common::enums::MemoryType;
 use common::error::Result;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// 节点 id：蓝图声明、runner 注册、轨迹指纹三处共用的同一真相
 pub(crate) const NODE_RETRIEVE: &str = "retrieve";
@@ -80,8 +82,8 @@ const RECALL_WIDTH_FACTOR: usize = 3;
 /// 和节点抢同一个名额会让图谱在提示里被挤掉。
 const RELATION_TOP_K: usize = 4;
 
-/// 方法技能条数上限
-const METHOD_SKILLS_TOP_K: usize = 2;
+/// 方法技能条数上限（渲染预算 + 精选 keep，两处共用的同一真相）
+pub(crate) const METHOD_SKILLS_TOP_K: usize = 2;
 
 /// 图谱扩展的种子节点数（从长期知识候选池里取前 N 个知识节点）
 ///
@@ -363,15 +365,36 @@ async fn rerank_if_enabled(
         .into_iter()
         .partition(|m| matches!(m.po, MemoryPo::Relation(_)));
 
-    let ranked: Option<Vec<Memory>> = match deps.agent.brain.as_ref() {
-        Some(brain) if brain.runtime_config.enable_memory_rerank => {
-            super::memory_relevance::rank_with_default_dao(
-                &deps.ctx, brain, question, &entities, keep,
-            )
-            .await
-        }
-        _ => None,
-    };
+    let (ranked, rerank_scene): (Option<Vec<Memory>>, Option<&'static str>) =
+        match deps.agent.brain.as_ref() {
+            Some(brain) => (
+                super::memory_relevance::rank_with_default_dao(
+                    &deps.ctx, brain, question, &entities, keep,
+                )
+                .await,
+                Some(super::memory_relevance::SCENE),
+            ),
+            _ => (None, None),
+        };
+    // 小脑留痕：精选是增强，没出结论时也要能看见「这次是靠老路径兜的」
+    if let Some(scene) = rerank_scene {
+        crate::pkg::think_trace::record_cerebellum(
+            &deps.trace_id,
+            crate::pkg::think_trace::ThinkTraceCerebellum {
+                scene: scene.to_string(),
+                decision: if ranked.is_some() {
+                    "select"
+                } else {
+                    "fallback"
+                }
+                .to_string(),
+                confidence: None,
+                degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
+                applied: ranked.is_some(),
+                latency_ms: None,
+            },
+        );
+    }
 
     let mut outcome = match ranked {
         None => split_by_recall_order(entities, keep),
@@ -604,6 +627,12 @@ impl ThinkNode for RetrieveNode {
             return Ok(NodeOutcome::new(NodeSignal::Done));
         }
 
+        // 3.5 记账「真正发起检索」：差集为空的短路分支在上面已 return，走到这里
+        //     才算一次真检索。⚠️ 与 `queried_terms` 分开记（一个记词、一个记次数）：
+        //     「第二次进入有没有再查」只能看次数，看 pack 形态会假绿——短路的空 pack
+        //     与「查了但零命中」的空 pack 无法区分。
+        deps.retrieve_searches.fetch_add(1, Ordering::SeqCst);
+
         // 4. 分两路召回：长期知识图谱（主）+ 短期记忆（少量补充）
         //
         // ⚠️ 两路各自独立 limit / 独立失败降级：一路查挂了不影响另一路。
@@ -674,22 +703,61 @@ impl ThinkNode for RetrieveNode {
         let knowledge_hits =
             build_knowledge_lines(&selected, &rest, &graph.neighbors, &graph.relations);
 
-        // 5. 方法技能召回：机械排序取前 2（description 与新词词面重叠者优先）
+        // 5. 方法技能召回：同 tag 已发布技能 → 可选小脑精选（默认关）→ 机械排序取前 2
+        //
+        // 候选池不 take：精选要看到全部候选才有取舍空间。关闭开关 / 小脑降级 /
+        // 无答案时退回「词面重叠优先 + 稳定排序」的老路径，逐字节等价。
         let method_skills = match crate::service::dal::skill::dal()
             .list_published_by_tag(deps.ctx.clone(), METHOD_SKILL_TAG)
             .await
         {
-            Ok(mut skills) => {
-                skills.sort_by_key(|s| {
-                    let desc = s.po.description.to_lowercase();
-                    // 词面重叠者优先（重叠 = false 排前；稳定排序保证其余保序）
-                    !new_terms.iter().any(|t| desc.contains(&t.to_lowercase()))
-                });
-                skills
-                    .into_iter()
-                    .take(METHOD_SKILLS_TOP_K)
-                    .map(|s| s.po)
-                    .collect::<Vec<_>>()
+            Ok(skills) => {
+                let mut candidates: Vec<SkillPo> = skills.into_iter().map(|s| s.po).collect();
+                let (ranked, rerank_scene): (Option<Vec<SkillPo>>, Option<&'static str>) =
+                    match deps.agent.brain.as_ref() {
+                        Some(brain) => (
+                            super::skill_relevance::rank_with_default_dao(
+                                &deps.ctx,
+                                brain,
+                                &keyword,
+                                &candidates,
+                                METHOD_SKILLS_TOP_K,
+                            )
+                            .await,
+                            Some(super::skill_relevance::SCENE),
+                        ),
+                        _ => (None, None),
+                    };
+                // 小脑留痕：与记忆精选同口径（有没有出结论都要能看见）
+                if let Some(scene) = rerank_scene {
+                    crate::pkg::think_trace::record_cerebellum(
+                        &deps.trace_id,
+                        crate::pkg::think_trace::ThinkTraceCerebellum {
+                            scene: scene.to_string(),
+                            decision: if ranked.is_some() {
+                                "select"
+                            } else {
+                                "fallback"
+                            }
+                            .to_string(),
+                            confidence: None,
+                            degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
+                            applied: ranked.is_some(),
+                            latency_ms: None,
+                        },
+                    );
+                }
+                match ranked {
+                    Some(kept) => kept.into_iter().take(METHOD_SKILLS_TOP_K).collect(),
+                    None => {
+                        candidates.sort_by_key(|s| {
+                            let desc = s.description.to_lowercase();
+                            // 词面重叠者优先（重叠 = false 排前；稳定排序保证其余保序）
+                            !new_terms.iter().any(|t| desc.contains(&t.to_lowercase()))
+                        });
+                        candidates.into_iter().take(METHOD_SKILLS_TOP_K).collect()
+                    }
+                }
             }
             Err(e) => {
                 crate::log_error!(
@@ -706,14 +774,15 @@ impl ThinkNode for RetrieveNode {
         crate::log_info!(
             &deps.ctx,
             "legacy_awaken",
-            "retrieve node done, agent_id={}, new_terms={}, long_term={}, short_term={}, index={}, knowledge_hits={}, method_skills={}",
+            "retrieve node done, agent_id={}, new_terms={}, long_term={}, short_term={}, index={}, knowledge_hits={}, method_skills={}, searches={}",
             deps.agent.po.id,
             new_terms.len(),
             long_term_len,
             short_term_len,
             index_len,
             knowledge_hits.len(),
-            method_skills.len()
+            method_skills.len(),
+            deps.retrieve_searches.load(Ordering::SeqCst)
         );
 
         // 6. 写总线 + 累积 visited（discover 回环下轮差集的输入）

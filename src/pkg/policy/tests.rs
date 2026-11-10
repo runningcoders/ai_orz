@@ -736,6 +736,7 @@ impl DecisionPolicy for PickGatePolicy {
             scene: "test",
             state: serde_json::json!({ "probe": 0 }),
             questions: BTreeMap::new(),
+            timeout_ms: None,
         })
     }
 

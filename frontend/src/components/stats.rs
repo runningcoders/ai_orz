@@ -131,6 +131,37 @@ fn render_time_series_chart_sized(
     rsx! {}
 }
 
+/// 渲染「平均耗时」趋势图（独立图 + 独立 Y 轴）
+///
+/// 为什么不并进 `render_time_series_chart`：token 在万级、耗时在百毫秒级，量纲差 2~3 个
+/// 数量级，混轴会把耗时曲线压成一条贴地直线，看上去像「耗时恒定」。
+///
+/// 只在**至少一个桶有耗时样本**时渲染：全空时画一张空图会被误读成「统计坏了」，
+/// 真实情况是「该范围内没有带耗时的调用」，这条信息由汇总卡的「无数据」承载。
+fn render_duration_chart(model_call_stats: &Option<ModelCallStats>) -> Element {
+    let Some(series) = model_call_stats
+        .as_ref()
+        .and_then(|mcs| mcs.model_call_time_series.as_ref())
+    else {
+        return rsx! {};
+    };
+    if !series.iter().any(|p| p.avg_duration_ms.is_some()) {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "mt-4",
+            LineChart {
+                data: series.clone(),
+                width: 600.0,
+                height: 200.0,
+                title: Some("平均耗时趋势".to_string()),
+                value_label: Some("平均耗时 (ms)".to_string()),
+                value_field: Some(LineChartValueField::AvgDurationMs),
+            }
+        }
+    }
+}
+
 #[component]
 pub fn StatsCard(title: String, icon: String, value: String, subtitle: Option<String>) -> Element {
     rsx! {
@@ -469,9 +500,30 @@ pub fn ModelProviderStatsPanel(stats: Option<ModelCallStats>) -> Element {
                         StatsCard { title: "缓存命中 Token".to_string(), icon: "⚡".to_string(), value: format_compact_count(token.total_cached_tokens), subtitle: None }
                         StatsCard { title: "思考 Token".to_string(), icon: "🧠".to_string(), value: format_compact_count(token.total_reasoning_tokens), subtitle: None }
                     }
+                    // 平均耗时（ms）：本单交付位。**恒渲染**——「无数据」本身就是要传达的信息
+                    // （静默隐藏会让人以为功能没上），而显示 0ms 会被读成「调用瞬时返回」。
+                    {match s.avg_duration_ms {
+                        Some(avg) => rsx! {
+                            StatsCard {
+                                title: "平均耗时".to_string(),
+                                icon: "⏱".to_string(),
+                                value: format!("{avg:.0} ms"),
+                                subtitle: Some(format!("{} 次带耗时样本", s.duration_sample_count)),
+                            }
+                        },
+                        None => rsx! {
+                            StatsCard {
+                                title: "平均耗时".to_string(),
+                                icon: "⏱".to_string(),
+                                value: "无数据".to_string(),
+                                subtitle: Some("该范围内无带耗时的调用".to_string()),
+                            }
+                        },
+                    }}
                 }
             }
             {render_time_series_chart(&chart_data)}
+            {render_duration_chart(&chart_data)}
         }
     }
 }

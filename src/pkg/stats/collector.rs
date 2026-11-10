@@ -521,9 +521,16 @@ impl Stats {
     ///
     /// If table_name is None, defaults to "default_events".
     ///
-    /// `extra_metrics` 追加额外求和的指标列（如 `cached_tokens` / `reasoning_tokens`），
+    /// `extra_metrics` 追加额外**求和**的指标列（如 `cached_tokens` / `reasoning_tokens`），
     /// 结果写回 [`TimeSeriesPoint`] 的固定字段。不传时这两项恒为 0；
     /// 只有确有该列的专用表才能声明，否则 SQL 会因未知列报错。
+    ///
+    /// ⚠️ `extra_metrics` 的口径是 **SUM**（`COALESCE(SUM(CAST(col AS DOUBLE)), 0)`），
+    /// 它既表达不了平均值，也丢掉了「真实 0」与「无数据」的区分。需要平均请走
+    /// `avg_duration`，不要往 `extra_metrics` 里塞列名硬凑。
+    // 参数已按职责分组（目标表 / 过滤 / 时间窗 / 两个取数扩展），再抽一个结构体只会把
+    // 唯一调用点的构造搬长而不减少概念数——本函数是统计模块的底层取数原语，刻意保持扁平。
+    #[allow(clippy::too_many_arguments)]
     pub async fn query_time_series(
         &self,
         ctx: RequestContext,
@@ -532,6 +539,7 @@ impl Stats {
         interval: StatsInterval,
         time_range: (i64, i64),
         extra_metrics: &[&str],
+        avg_duration: bool,
     ) -> Result<Vec<TimeSeriesPoint>> {
         let table = table_name.unwrap_or("default_events");
         let table_meta = self
@@ -559,11 +567,26 @@ impl Stats {
             ));
         }
 
+        // 平均耗时：口径与上面的 SUM 不同——`duration_ms` 是**可空**列，AVG 与 COUNT
+        // 都忽略 NULL，且这里**故意不加 COALESCE**：桶内一条带耗时的记录都没有时，
+        // NULL 才是正确表达（写成 0 等于伪造「调用瞬时返回」）。COUNT 一并取出，
+        // 供上层按样本数加权求全窗口平均，避免「对桶均值再求简单平均」的错误口径。
+        let avg_cols = if avg_duration {
+            let dur = table_meta.metric_sql("duration_ms");
+            format!(
+                ",
+                AVG(CAST({dur} AS DOUBLE)) AS avg_duration_ms,
+                COUNT({dur}) AS duration_sample_count"
+            )
+        } else {
+            String::new()
+        };
+
         let sql = format!(
             "SELECT
                 {} AS interval_start,
                 COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_input,
-                COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_output{extra_cols},
+                COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_output{extra_cols}{avg_cols},
                 COUNT(*) AS call_count
              FROM {}
              WHERE timestamp >= ? AND timestamp <= ?",
@@ -613,6 +636,14 @@ impl Stats {
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as u64;
 
+            // NULL → None：`as_f64()` 对 JSON null 返回 None，正是「该桶无耗时样本」。
+            // 这里不能 `unwrap_or(0.0)`，那会把「没数据」压成「0 毫秒」。
+            let avg_duration_ms = obj.get("avg_duration_ms").and_then(|v| v.as_f64());
+            let duration_sample_count = obj
+                .get("duration_sample_count")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as u64;
+
             result.push(TimeSeriesPoint {
                 interval_start,
                 tokens_input,
@@ -620,6 +651,8 @@ impl Stats {
                 tokens_cached,
                 tokens_reasoning,
                 call_count,
+                avg_duration_ms,
+                duration_sample_count,
             });
         }
 

@@ -97,6 +97,30 @@ impl ModelProviderConfig {
     pub fn api_flavor_or_default(&self) -> ChatApiFlavor {
         self.api_flavor.unwrap_or(ChatApiFlavor::Responses)
     }
+
+    /// 上下文**容量上限**的唯一取值入口：`recommended_context_length` >
+    /// `max_context_length × 60%` > `None`（未配置）。
+    ///
+    /// 三处共用这一条链（禁止各算一遍导致漂移）：上下文压缩阈值
+    /// （`think_loop::context_overflow_threshold`）、由它派生的记忆索引块预算、
+    /// 以及需要「按模型容量」估输入预算的决策点（如 `chain_reply`）。
+    ///
+    /// ⚠️ 返回的是**容量上限**，不是「本次可用预算」——调用方必须再与自己的
+    /// 时延/成本上限取小，否则按 200K 级容量拉满必然超时。
+    pub fn recommended_context_length_tokens(&self) -> Option<u64> {
+        // 本处是**容量** 0.6 的唯一实现：`legacy_settle/pending.rs` 的沉淀批预算
+        // 曾自己重写一遍同样的取值链（「推荐值 > max × 60%」），已收敛到本方法，
+        // 那里只保留自己的「批占比 40% + 8 万封顶」——同一语义两处出现 = 漂移。
+        const CAPACITY_RATIO: f64 = 0.6;
+        if let Some(rec) = self.recommended_context_length
+            && rec > 0
+        {
+            return Some(rec as u64);
+        }
+        self.max_context_length
+            .filter(|&v| v > 0)
+            .map(|v| (v as f64 * CAPACITY_RATIO) as u64)
+    }
 }
 
 /// 模型提供商持久化对象
@@ -436,5 +460,43 @@ mod access_mode_config_tests {
         assert!(json.contains("\"thinking_intensity\":100"), "json: {json}");
         let back: ModelProviderConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.thinking_intensity, Some(ThinkingIntensity::MAX));
+    }
+}
+
+#[cfg(test)]
+mod recommended_context_length_tests {
+    use super::*;
+
+    #[test]
+    fn recommended_wins_over_ratio() {
+        let cfg = ModelProviderConfig {
+            max_context_length: Some(128_000),
+            recommended_context_length: Some(64_000),
+            ..Default::default()
+        };
+        assert_eq!(cfg.recommended_context_length_tokens(), Some(64_000));
+    }
+
+    #[test]
+    fn falls_back_to_sixty_percent_of_max() {
+        let cfg = ModelProviderConfig {
+            max_context_length: Some(128_000),
+            ..Default::default()
+        };
+        assert_eq!(cfg.recommended_context_length_tokens(), Some(76_800));
+    }
+
+    #[test]
+    fn zero_or_missing_config_yields_none() {
+        assert_eq!(
+            ModelProviderConfig::default().recommended_context_length_tokens(),
+            None
+        );
+        let cfg = ModelProviderConfig {
+            max_context_length: Some(0),
+            recommended_context_length: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(cfg.recommended_context_length_tokens(), None);
     }
 }

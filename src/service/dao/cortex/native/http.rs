@@ -557,12 +557,30 @@ fn check_stream_end(acc: &StreamAccumulator) -> Result<()> {
     Ok(())
 }
 
-/// 向量化调用结果（向量 + 每个 HTTP 请求对应的 token 用量）
+/// 向量化调用结果（向量 + 每个 HTTP 请求对应的 token 用量与耗时）
 pub struct EmbeddingOutcome {
     pub vectors: Vec<Vec<f32>>,
     /// 每个 HTTP 请求对应一条 usage（multimodal 逐条请求）；
     /// provider 未上报时为空用量，仅统计调用次数。
     pub usages: Vec<TokenUsage>,
+    /// 每个 HTTP 请求的端到端墙钟耗时（毫秒），与 `usages` **同长同序**。
+    ///
+    /// 一个元素 = 一次真实 HTTP 请求的耗时。调用方 `zip` 后逐条落
+    /// `ModelCallEvent::duration_ms`：`SUM(duration_ms)` 是真实总耗时、
+    /// `COUNT(*)` 是真实请求数、`AVG(duration_ms)` 是真实平均耗时，三者同时成立，
+    /// 不需要「总时间 ÷ 总次数」这类近似。
+    ///
+    /// 与 `usages` 分开成两个 Vec 而不是并成一个结构体，是为了让「provider 没上报
+    /// usage 但仍有一次真实请求」这种情形照旧能计时——耗时与 token 是两件正交的事实。
+    pub durations_ms: Vec<u64>,
+}
+
+/// 墙钟耗时（毫秒）：per-request 计时的统一出口。
+///
+/// `u64::try_from` 而非 `as`：`as_millis()` 返回 u128，超长调用（理论上不可能）
+/// 时截断成 0 会把「极慢」写成「极快」，宁可饱和到 `u64::MAX`。
+fn elapsed_ms(started_at: std::time::Instant) -> u64 {
+    u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 /// 调用标准 Embeddings API
@@ -580,6 +598,7 @@ pub async fn call_embeddings(
         "input": texts,
     });
 
+    let started_at = std::time::Instant::now();
     let resp = client
         .post(&url)
         .bearer_auth(&provider.api_key)
@@ -602,6 +621,10 @@ pub async fn call_embeddings(
         .await
         .map_err(|e| err!(Internal, "embeddings response parse failed: {}", e))?;
 
+    // 计时收口在响应体解析完成之后：端到端包含传输 + 反序列化，
+    // 与实际占用的下游配额时间同量级（不含上层业务处理）。
+    let duration_ms = elapsed_ms(started_at);
+
     Ok(EmbeddingOutcome {
         vectors: resp_body
             .data
@@ -614,6 +637,7 @@ pub async fn call_embeddings(
                 .map(|u| u.to_token_usage())
                 .unwrap_or_default(),
         ],
+        durations_ms: vec![duration_ms],
     })
 }
 
@@ -634,7 +658,9 @@ pub async fn call_embeddings_multimodal(
 
     let mut results = Vec::with_capacity(texts.len());
     let mut usages = Vec::with_capacity(texts.len());
+    let mut durations = Vec::with_capacity(texts.len());
     for text in texts {
+        let started_at = std::time::Instant::now();
         let body = json!({
             "model": provider.model_name,
             "input": [{"type": "text", "text": text}],
@@ -680,11 +706,14 @@ pub async fn call_embeddings_multimodal(
                 .map(|u| u.to_token_usage())
                 .unwrap_or_default(),
         );
+        // 本条文本那次请求的耗时，与上面 push 的 usage 严格配对
+        durations.push(elapsed_ms(started_at));
     }
 
     Ok(EmbeddingOutcome {
         vectors: results,
         usages,
+        durations_ms: durations,
     })
 }
 

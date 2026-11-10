@@ -21,10 +21,12 @@
 
 use super::cerebellum_router::{self, RouteDecision};
 use super::think_round::{self, RoundRun};
+use super::thinking_strength;
 use super::types::ThinkLoopResult;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::ChatMessage;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use crate::pkg::think_trace::ThinkTraceCerebellum;
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
@@ -263,21 +265,14 @@ pub(crate) fn build_policy_for_scene(
 /// `ContextOverflowPolicy` 与【历史对话】索引块的 10% 脑容量预算**共用这一个
 /// 取值入口**，避免两处各算一遍导致展示、裁决与记忆加载口径漂移。
 pub(crate) fn context_overflow_threshold(agent: &Agent) -> Option<u64> {
-    const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
-    agent.brain.as_ref().and_then(|brain| {
-        brain.model_provider().and_then(|po| {
-            let config = po.config();
-            if let Some(rec) = config.recommended_context_length
-                && rec > 0
-            {
-                return Some(rec as u64);
-            }
-            config
-                .max_context_length
-                .filter(|&v| v > 0)
-                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
-        })
-    })
+    // ⚠️ 取值链**只有一处实现**（`ModelProviderConfig::recommended_context_length_tokens`）：
+    // 本函数与「按模型容量估输入预算」的决策点（如 `chain_reply`）共用同一条链、
+    // 同一字段，禁止在这里再算一遍 60% —— 两处各算一遍必然漂移（吃过亏的口径）。
+    agent
+        .brain
+        .as_ref()
+        .and_then(|brain| brain.model_provider())
+        .and_then(|po| po.config().recommended_context_length_tokens())
 }
 
 /// 记忆索引块的 token 预算 = 压缩阈值 × 10%。
@@ -333,6 +328,7 @@ impl RuntimeDomainImpl {
             policy,
             progress,
             thinking_intensity_offset,
+            force_intensity,
             usage,
             inbox,
         } = params;
@@ -356,15 +352,37 @@ impl RuntimeDomainImpl {
         log_info!(
             &ctx,
             "think_loop",
-            "think loop entered (pre-cerebellum), scene={}, agent={}, has_cerebellum={}, enable_route={}, max_rounds={}, start_round={}, timeout_secs={}",
+            "think loop entered (pre-cerebellum), scene={}, agent={}, has_cerebellum={}, max_rounds={}, start_round={}, timeout_secs={}",
             scene.as_str(),
             agent.po.id,
             brain.cerebellum.is_some(),
-            brain.runtime_config.enable_cerebellum_route,
             max_rounds,
             start_round,
             timeout_secs,
         );
+
+        // ══════ 「第 0 案」：装配为空时的记账留痕（AMan 2026-11-10 拍板）══════
+        //
+        // 缺的是什么：未装配小脑时，全部小脑记录点都是「先判缺失 → return，
+        // 一条不记」（本文件下方 `if brain.cerebellum.is_some()` 与
+        // `chain_reply::judge_chain_reply` 的 `if brain.cerebellum.is_none()`）。
+        // 于是 jsonl 上「没装配」与「装配了但本场景未触发」**完全同形**，
+        // 排查只能靠翻 wake_brain 日志倒推。
+        //
+        // 放在这里而不是 wake_brain：装配发生在 awaken 之前，那里没有 trace_id，
+        // 而 `record_cerebellum` 对空 run_id 是「直接丢弃」——写在装配点等于没写。
+        // 本位置在 brain 解析之后、小脑路由之前，trace_id 已就绪，且无论本周期
+        // 后续走 Direct / Proceed / Skip 哪条分支，这一条都先落地。
+        //
+        // applied=false：本态没有任何下游行为被改变（小脑根本没参与判断）。
+        // degraded=None：不是降级，是「能力未装配」这一事实本身 —— 记成 degraded
+        // 会把它算进降级率，而分母里根本没有对应的小脑调用。
+        //
+        // 每周期一条：compaction 回环时同一 run 会有多条同值条目，这是刻意的
+        // —— 条数本身反映周期数，不做去重（去重需要跨周期状态，收益不抵复杂度）。
+        if let Some(item) = bootstrap_not_assembled_item(brain.cerebellum.as_ref()) {
+            crate::pkg::think_trace::record_cerebellum(trace_id, item);
+        }
 
         // 唤醒级时长预算：本周期只能用到剩余额度（跨周期累计耗时见 base）。
         // 放在 async 块外：外层 tokio::time::timeout 与块内的早退判定共用同一个值。
@@ -375,80 +393,179 @@ impl RuntimeDomainImpl {
         };
 
         let think_future = async {
-            let mut messages = initial_messages;
+            let messages = initial_messages;
+            // 最后一条用户消息：路由与思考强度共用的唯一输入（都只带轻量上下文）。
+            // 取 owned String：路由分支要提前 `return` 带走 `messages`，不能同时持有借用。
+            let last_user_text: Option<String> = messages.iter().rev().find_map(|m| match m {
+                ChatMessage::User { content } => Some(content.clone()),
+                // 批4 披露②：带图消息取文本 part（防小脑快判断静默跳过）
+                ChatMessage::UserMultimodal { text, .. } => Some(text.clone()),
+                _ => None,
+            });
             // ---- B3 小脑快判断路由（单点接线；四场景自动全覆盖）----
-            // 三层降级全部收敛为「静默跳过 = 现状」：无启用小脑/总开关关、
-            // 800ms 超时/调用失败、低置信。只有 Inject 会改变消息序列。
+            // 三层降级全部收敛为「静默跳过 = 现状」：无启用小脑、
+            // 800ms 超时/调用失败、低置信。只有 Direct 会改变流程（提前返回）。
             if let Some(cerebellum) = brain.cerebellum.as_ref() {
-                let rc = &brain.runtime_config;
-                let last_user_text = messages.iter().rev().find_map(|m| match m {
-                    ChatMessage::User { content } => Some(content.as_str()),
-                    // 批4 披露②：带图消息取文本 part（防小脑快判断静默跳过）
-                    ChatMessage::UserMultimodal { text, .. } => Some(text.as_str()),
-                    _ => None,
-                });
                 log_info!(
                     &ctx,
                     "think_loop",
-                    "cerebellum route start, agent={}, provider={}, enable={}",
+                    "cerebellum route start, agent={}, provider={}",
                     agent.po.id,
                     cerebellum.id,
-                    rc.enable_cerebellum_route,
                 );
                 let decision = cerebellum_router::route_with_default_dao(
                     &ctx,
                     &brain,
-                    rc.enable_cerebellum_route,
-                    last_user_text,
+                    last_user_text.as_deref(),
                 )
                 .await;
+                // 小脑留痕：结论与降级都要能在思考轨迹里被追问（细因在日志）
+                let (route_decision, route_confidence, route_degraded, route_applied) =
+                    match &decision {
+                        RouteDecision::Direct { confidence, .. } => (
+                            cerebellum_router::CHOICE_TRIVIAL_DIRECT.to_string(),
+                            Some(*confidence),
+                            None,
+                            true,
+                        ),
+                        RouteDecision::Proceed { confidence } => (
+                            cerebellum_router::CHOICE_CORTEX_NEEDED.to_string(),
+                            Some(*confidence),
+                            None,
+                            false,
+                        ),
+                        RouteDecision::Skip { reason } => (
+                            "skip".to_string(),
+                            None,
+                            Some(reason.as_str().to_string()),
+                            false,
+                        ),
+                    };
+                crate::pkg::think_trace::record_cerebellum(
+                    trace_id,
+                    ThinkTraceCerebellum {
+                        scene: cerebellum_router::ENTRY_GATE_SCENE.to_string(),
+                        decision: route_decision,
+                        confidence: route_confidence,
+                        degraded: route_degraded,
+                        applied: route_applied,
+                        latency_ms: None,
+                    },
+                );
                 log_info!(
                     &ctx,
                     "think_loop",
-                    "cerebellum route done, agent={}, direct={}, inject={}, skip={}",
+                    "cerebellum route done, agent={}, direct={}, proceed={}, skip={}",
                     agent.po.id,
                     matches!(decision, RouteDecision::Direct { .. }),
-                    matches!(decision, RouteDecision::Inject { .. }),
+                    matches!(decision, RouteDecision::Proceed { .. }),
                     matches!(decision, RouteDecision::Skip { .. }),
                 );
                 match decision {
-                    // TRIVIAL 高置信直回：默认关；开则跳过主循环提前返回
+                    // 入口门判无价值 → 候选池直回：跳过主循环提前返回
                     RouteDecision::Direct {
                         content,
                         confidence,
+                        pool,
                     } => {
-                        if rc.cerebellum_trivial_direct {
-                            log_info!(
-                                &ctx,
-                                "think_loop",
-                                "cerebellum trivial direct short-circuit, confidence={}",
-                                confidence
-                            );
-                            return Ok(ThinkLoopResult::Final {
-                                content,
-                                messages,
-                                // 小脑直回没跑思考轮次：绝对轮次停在起点
-                                rounds_used: start_round,
-                            });
-                        }
-                        // 直回开关关 → 不直回也不注入（保守口径）
-                    }
-                    // 增强注入（默认开）：路由结论作为 System 提示追加到消息尾部
-                    //
-                    // ⚠️ 必须尾插，不能插到 index 0：插头会让「人设 + 技能 + 词表 +
-                    // 历史」整段前缀整体后移一条消息，provider 的前缀缓存从第一个
-                    // token 起就全部失配——这一次唤醒的跨唤醒缓存收益归零。
-                    // 尾插只影响它自身及其后的内容，前缀照旧命中；与轮内 nudge /
-                    // reflect 的注入方式一致。
-                    RouteDecision::Inject { system_prompt, .. } => {
-                        messages.push(ChatMessage::System {
-                            content: system_prompt,
+                        // 第二个决策点留痕（K1）：选出来了记 pool_N，回退记 pool_fallback
+                        let pool_applied =
+                            matches!(&pool, cerebellum_router::PoolReply::Picked { .. });
+                        let (pool_decision, pool_confidence, pool_degraded) = match &pool {
+                            cerebellum_router::PoolReply::Picked { id, confidence } => {
+                                (id.clone(), Some(*confidence), None)
+                            }
+                            cerebellum_router::PoolReply::Fallback { .. } => (
+                                "fallback".to_string(),
+                                None,
+                                Some(cerebellum_router::POOL_FALLBACK_DEGRADED.to_string()),
+                            ),
+                        };
+                        crate::pkg::think_trace::record_cerebellum(
+                            trace_id,
+                            ThinkTraceCerebellum {
+                                scene: cerebellum_router::ENTRY_POOL_SCENE.to_string(),
+                                decision: pool_decision,
+                                confidence: pool_confidence,
+                                degraded: pool_degraded,
+                                applied: pool_applied,
+                                latency_ms: None,
+                            },
+                        );
+                        log_info!(
+                            &ctx,
+                            "think_loop",
+                            "cerebellum entry pool short-circuit, confidence={}, pool_applied={}",
+                            confidence,
+                            pool_applied
+                        );
+                        return Ok(ThinkLoopResult::Final {
+                            content,
+                            messages,
+                            // 小脑直回没跑思考轮次：绝对轮次停在起点
+                            rounds_used: start_round,
                         });
                     }
+                    // 有价值：判了，但没有可执行动作 —— 不注入、不改消息序列。
+                    //
+                    // 路由层不再向 Prompt 推任何内容（K3 删 Inject）：「有价值」本来
+                    // 就等于「按原逻辑跑」，多推一条 System 只会平白多付 token。
+                    RouteDecision::Proceed { .. } => {}
                     // 静默跳过 = 现状
                     RouteDecision::Skip { .. } => {}
                 }
             }
+
+            // ---- 思考强度：小脑按 0–100 分直接选（2026-11-09 AMan 拍板）----
+            //
+            // 无小脑 / 失败 / 低置信 → None，退回原逻辑（意图确定性偏移）。
+            // 分数是否真正下发由 `resolve_call_options` 里的 Provider 能力开关裁定：
+            // 这里只记录「选了什么、有没有生效」，不让它静默失效。
+            let thinking_strength = if brain.cerebellum.is_some() {
+                let provider_capable = brain
+                    .model_provider()
+                    .and_then(|po| po.config().thinking_intensity)
+                    .is_some();
+                match thinking_strength::select_with_default_dao(
+                    &ctx,
+                    &brain,
+                    scene,
+                    last_user_text.as_deref(),
+                )
+                .await
+                {
+                    Some(choice) => {
+                        crate::pkg::think_trace::record_cerebellum(
+                            trace_id,
+                            ThinkTraceCerebellum {
+                                scene: thinking_strength::trace_scene(scene).to_string(),
+                                decision: choice.strength.score().to_string(),
+                                confidence: Some(choice.confidence),
+                                degraded: None,
+                                applied: provider_capable,
+                                latency_ms: None,
+                            },
+                        );
+                        Some(choice.strength)
+                    }
+                    None => {
+                        crate::pkg::think_trace::record_cerebellum(
+                            trace_id,
+                            ThinkTraceCerebellum {
+                                scene: thinking_strength::trace_scene(scene).to_string(),
+                                decision: "fallback".to_string(),
+                                confidence: None,
+                                degraded: Some("no_usable_answer".to_string()),
+                                applied: false,
+                                latency_ms: None,
+                            },
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             // 提取模型提供商信息（入口日志用；事件发布由轮级节点自行取）
             let model_provider_id = brain.model_provider().map(|po| po.id.clone());
             // 本次循环可用轮次 = max_rounds - start_round
@@ -511,6 +628,8 @@ impl RuntimeDomainImpl {
                     brain,
                     scene,
                     thinking_intensity_offset,
+                    thinking_strength,
+                    force_intensity,
                     trace_id,
                     messages,
                     tool_descriptors,
@@ -550,6 +669,26 @@ impl RuntimeDomainImpl {
             }
         }
     }
+}
+
+/// 装配为空时该写的「第 0 案」记账条目（`None` = 装配正常，不写）
+///
+/// ## 为什么抽成纯函数而不是内联 `if`
+///
+/// 这条留痕的价值全在「取值对不对」上：scene 写成 `entry_gate` 会把装配缺失
+/// 混进真场景的降级率，`applied = true` 会把「没参与判断」记成「生效」。内联在
+/// `run_think_loop` 里，这些取值只能靠读代码相信 —— 而该函数要 `Brain` +
+/// `RoundDeps` 才能跑起来（`ModelProviderPo` 没有 `Default`，重型 mock 只会让
+/// 断言变成「测试脚手架对不对」）。
+///
+/// 泛型 `T` 而非 `&ModelProviderPo`：判定只关心「有没有」，与具体配置无关，
+/// 单测用 `Some(&())` 就能覆盖「装配正常不写」那一侧，不必构造 provider。
+fn bootstrap_not_assembled_item<T>(cerebellum: Option<&T>) -> Option<ThinkTraceCerebellum> {
+    cerebellum.is_none().then(|| ThinkTraceCerebellum {
+        scene: cerebellum_router::BOOTSTRAP_SCENE.to_string(),
+        decision: cerebellum_router::BOOTSTRAP_NOT_ASSEMBLED.to_string(),
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
@@ -651,5 +790,55 @@ mod tests {
             ThinkingScene::Settle,
             "search_memory"
         ));
+    }
+    // ══════ 第 0 案：装配为空 vs 装配正常，必须在轨迹里可区分 ══════
+
+    #[test]
+    fn bootstrap_item_is_written_when_cerebellum_absent() {
+        let item = bootstrap_not_assembled_item::<()>(None)
+            .expect("装配为空时必须写一条记账留痕，否则「没装配」与「没触发」在 jsonl 上同形");
+
+        // 值域逐项钉死：改任何一个都会让这条红
+        assert_eq!(item.scene, "bootstrap", "scene 必须是独立记账域");
+        assert_eq!(item.decision, "not_assembled");
+        assert!(
+            !item.applied,
+            "没参与判断就不能记生效，否则生效率被这批样本抬高"
+        );
+        assert_eq!(
+            item.degraded, None,
+            "装配缺失不是降级：记成 degraded 会进降级率的分母，而这里根本没调用过小脑"
+        );
+        assert_eq!(item.confidence, None, "没有判断就没有置信度");
+        assert_eq!(item.latency_ms, None, "没有调用就没有时延");
+        // scene 与既有业务场景不得重叠（否则该场景的降级率被算脏）
+        assert_ne!(item.scene, cerebellum_router::ENTRY_GATE_SCENE);
+        assert_ne!(item.scene, cerebellum_router::ENTRY_POOL_SCENE);
+    }
+
+    #[test]
+    fn bootstrap_item_is_not_written_when_cerebellum_assembled() {
+        assert!(
+            bootstrap_not_assembled_item(Some(&())).is_none(),
+            "装配正常时一条都不许写：否则每次 run 都多一条假「未装配」"
+        );
+    }
+
+    #[test]
+    fn bootstrap_item_survives_buffer_round_trip() {
+        // 判定 → 记账 → 取出：证明这条留痕真能落到 run 收尾行里，而不是只存在于
+        // 一个 Nobody 读取的 Option。落盘基址未注入时 record 会静默返回，
+        // 故断言前先注入（与 think_trace 既有用例同口径）。
+        crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_think_loop_bootstrap"));
+        let run_id = "test-run-bootstrap-not-assembled";
+        let _ = crate::pkg::think_trace::take_cerebellum(run_id); // 清场防串味
+
+        let item = bootstrap_not_assembled_item::<()>(None).expect("前置条件：装配为空");
+        crate::pkg::think_trace::record_cerebellum(run_id, item);
+
+        let items = crate::pkg::think_trace::take_cerebellum(run_id);
+        assert_eq!(items.len(), 1, "记账条目必须能被收尾 take 取到");
+        assert_eq!(items[0].scene, "bootstrap");
+        assert_eq!(items[0].decision, "not_assembled");
     }
 }

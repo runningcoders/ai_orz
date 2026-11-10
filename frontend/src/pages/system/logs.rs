@@ -287,6 +287,8 @@ pub fn SystemLogs() -> Element {
                                     tokens_cached: 0,
                                     tokens_reasoning: 0,
                                     call_count: p.count,
+                                    avg_duration_ms: None,
+                                    duration_sample_count: 0,
                                 }).collect::<Vec<_>>(),
                                 width: Some(500.0),
                                 height: Some(220.0),

@@ -14,6 +14,9 @@
 //! 外层 awaken / settle / compact 拓扑本阶段不动，仍由 `run_think_loop` 调用本模块。
 
 mod blueprint;
+
+/// 轮级思考轨迹的蓝图 ID（转发给 runtime 层：补丁行需与收尾行同 path）
+pub(super) use blueprint::THINK_ROUND_BLUEPRINT_ID;
 mod deps;
 mod nodes;
 mod runner;

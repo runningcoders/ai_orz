@@ -6,6 +6,7 @@ use crate::service::dao::model_provider::stats_duckdb::stats_new;
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use chrono::Utc;
 use common::error::Result;
+use common::models::{StatsFetchOptions, TimeSeriesPoint};
 use serde_json::json;
 use sqlx::SqlitePool;
 use tempfile::tempdir;
@@ -369,4 +370,225 @@ async fn test_filter_by_different_provider() -> Result<()> {
     assert_eq!(result_b.total_tokens_input, 200 + 210);
 
     Ok(())
+}
+
+// ==================== 平均耗时（avg_duration_ms）口径 ====================
+//
+// 这组断言的靶心是「0 是数据、NULL 是没有数据」这一条不可混淆的口径：
+// - 无耗时样本 ⇒ `None` + `duration_sample_count == 0`（**不是** `Some(0.0)`）；
+// - 真实 0ms 调用 ⇒ 参与平均（它是一次「瞬时返回」，仍是有信息的观测）；
+// - 全窗口汇总必须按**样本数加权**，不能对桶均值再求简单平均。
+
+/// 带 `call_kind` / `duration_ms` 的事件夹具
+///
+/// 与 `setup_test_env` 同构，区别是这两列由调用方逐条指定——它们正是本次扩展的取数来源，
+/// 用默认值铺出来的数据无法证明任何事。
+async fn setup_duration_env(
+    model_provider_id: &str,
+    specs: &[(Option<u64>, &str)],
+) -> Result<(
+    crate::pkg::RequestContext,
+    std::sync::Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
+)> {
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let stats = Stats::open(db_path.to_str().unwrap(), 100).await?;
+    stats.initialize_default()?;
+
+    let pool = SqlitePool::connect("sqlite::memory:").await?;
+    let tmp_ctx = request_context_test_support::new_test_ctx("tmp-user", pool.clone());
+
+    let now = Utc::now().timestamp_millis();
+    for (i, (duration, call_kind)) in specs.iter().enumerate() {
+        let event = ModelCallEvent::new(now - (specs.len() as i64 - i as i64) * 1000)
+            .with_model_provider_id(Some(model_provider_id.to_string()))
+            .with_call_kind(Some((*call_kind).to_string()))
+            .with_duration_ms(*duration);
+        stats.record(tmp_ctx.clone(), event).await?;
+    }
+    stats.flush_all(tmp_ctx).await?;
+
+    let ctx = request_context_test_support::new_test_ctx_with_stats("test-user", pool, stats);
+    Ok((ctx, stats_new()))
+}
+
+fn duration_stats_options() -> StatsFetchOptions {
+    let now = Utc::now().timestamp_millis();
+    StatsFetchOptions {
+        with_call_summary: true,
+        with_token_summary: false,
+        with_time_series: true,
+        time_range: Some((now - 7 * 86_400_000, now + 1_000)),
+        interval: Some(StatsInterval::Daily),
+    }
+}
+
+/// 反事实之一：窗口内**没有任何**带耗时的调用 ⇒ 汇总为 `None`，不是 `Some(0.0)`
+///
+/// 同时断言时序序列**确实被查出来了**（非空、且每个桶都是 None）：否则「None」可能只是
+/// 「压根没查时序」的同形结果，就这样断言等于自欺。
+#[tokio::test]
+async fn test_avg_duration_none_when_no_duration_samples() -> Result<()> {
+    const PROVIDER_ID: &str = "provider-avg-none";
+    // 三条都用 chat：DAO 的缺省口径是 `call_kind="chat"`（decision 走自己的桶），
+    // 混入 decision 会让「调用次数零回归」这条断言算错，从而掩盖真正要验的东西。
+    let (ctx, dao) = setup_duration_env(
+        PROVIDER_ID,
+        &[(None, "chat"), (None, "chat"), (None, "chat")],
+    )
+    .await?;
+
+    let query = ModelProviderStatsQuery {
+        model_provider_id: Some(PROVIDER_ID.to_string()),
+        ..Default::default()
+    };
+
+    let stats = dao.get_stats(ctx, query, duration_stats_options()).await?;
+
+    assert_eq!(
+        stats.avg_duration_ms, None,
+        "没有耗时样本时必须是 None；写成 Some(0.0) 会被展示成「调用瞬时返回」"
+    );
+    assert_eq!(stats.duration_sample_count, 0);
+
+    let series = stats
+        .model_call_time_series
+        .expect("时序必须被查出（否则 None 无从归因）");
+    assert!(!series.is_empty(), "三次调用应至少产生一个桶");
+    assert!(series.iter().all(|p| p.avg_duration_ms.is_none()));
+    assert!(series.iter().all(|p| p.duration_sample_count == 0));
+    // 调用次数口径不受影响（既有列零回归的最小证据）
+    assert_eq!(series.iter().map(|p| p.call_count).sum::<u64>(), 3);
+
+    Ok(())
+}
+
+/// 有耗时样本 ⇒ 平均值正确，且**真实 0ms 也参与平均**
+///
+/// 0ms 是有效观测（一次瞬时返回），如果把它当「没数据」跳过，均值会虚高——
+/// 这条断言把「0 参与平均」与「NULL 不参与平均」在同一张表里钉死。
+#[tokio::test]
+async fn test_avg_duration_averages_real_zero_ms_and_skips_null() -> Result<()> {
+    const PROVIDER_ID: &str = "provider-avg-basic";
+    // 100 / 200 / 300 各一次 + 一次真实 0ms + 两次 NULL
+    let (ctx, dao) = setup_duration_env(
+        PROVIDER_ID,
+        &[
+            (Some(100), "chat"),
+            (Some(200), "chat"),
+            (Some(300), "chat"),
+            (Some(0), "chat"),
+            (None, "chat"),
+            (None, "chat"),
+        ],
+    )
+    .await?;
+
+    let query = ModelProviderStatsQuery {
+        model_provider_id: Some(PROVIDER_ID.to_string()),
+        ..Default::default()
+    };
+
+    let stats = dao.get_stats(ctx, query, duration_stats_options()).await?;
+
+    // (100 + 200 + 300 + 0) / 4 = 150；NULL 两行不参与，也不拉低
+    assert_eq!(stats.avg_duration_ms, Some(150.0));
+    assert_eq!(
+        stats.duration_sample_count, 4,
+        "样本数只数非空 duration_ms（4 条），不是调用次数（6 条）"
+    );
+
+    Ok(())
+}
+
+/// 不同 `call_kind` 的耗时互不混计（chat 与 decision 各自独立）
+#[tokio::test]
+async fn test_avg_duration_isolated_between_call_kinds() -> Result<()> {
+    const PROVIDER_ID: &str = "provider-avg-kind";
+    let (ctx, dao) = setup_duration_env(
+        PROVIDER_ID,
+        &[
+            (Some(50), "chat"),
+            (Some(50), "chat"),
+            (Some(300), "decision"),
+            (Some(300), "decision"),
+        ],
+    )
+    .await?;
+
+    // ⚠️ `call_kind` 是**独立字段**而非普通 filter：DAO 在 None 时缺省填 "chat"，
+    // 若改走 `filters` 会与缺省值 AND 成 `call_kind='chat' AND call_kind='decision'`（恒空）。
+    let kind_query = |kind: Option<&str>| ModelProviderStatsQuery {
+        model_provider_id: Some(PROVIDER_ID.to_string()),
+        call_kind: kind.map(|k| k.to_string()),
+        ..Default::default()
+    };
+
+    let chat = dao
+        .get_stats(
+            ctx.clone(),
+            kind_query(Some("chat")),
+            duration_stats_options(),
+        )
+        .await?;
+    let decision = dao
+        .get_stats(
+            ctx.clone(),
+            kind_query(Some("decision")),
+            duration_stats_options(),
+        )
+        .await?;
+
+    assert_eq!(chat.avg_duration_ms, Some(50.0));
+    assert_eq!(chat.duration_sample_count, 2);
+    assert_eq!(decision.avg_duration_ms, Some(300.0));
+    assert_eq!(decision.duration_sample_count, 2);
+
+    // 缺省（call_kind=None）落回 "chat" 桶：decision 的 300ms **不得**混进来。
+    // 这是「不混计」最直接的证据——若缺省口径退化成「全量」，此处会变成 175。
+    // 生产侧同源：`dal::model_provider::call_kind_for_capability` 把
+    // Decision capability 的 provider 固定映射到 "decision" 桶。
+    let default_bucket = dao
+        .get_stats(ctx, kind_query(None), duration_stats_options())
+        .await?;
+    assert_eq!(default_bucket.avg_duration_ms, Some(50.0));
+    assert_eq!(default_bucket.duration_sample_count, 2);
+
+    Ok(())
+}
+
+/// 纯函数口径：全窗口平均必须按**样本数加权**，不能对桶均值求简单平均
+///
+/// 两个桶：1000ms×100 次、1ms×1 次。
+/// - 加权（正确）：100001/101 ≈ 990.11
+/// - 简单平均（错误）：500.5 —— 差距巨大，故这条断言能真正抓住口径退化。
+#[test]
+fn test_weighted_avg_duration_is_sample_weighted_not_plain_mean() {
+    let point = |avg: Option<f64>, n: u64| TimeSeriesPoint {
+        interval_start: 0,
+        tokens_input: 0,
+        tokens_output: 0,
+        tokens_cached: 0,
+        tokens_reasoning: 0,
+        call_count: n,
+        avg_duration_ms: avg,
+        duration_sample_count: n,
+    };
+
+    let points = vec![point(Some(1000.0), 100), point(Some(1.0), 1)];
+    let (avg, samples) = super::weighted_avg_duration_ms(&points);
+    assert_eq!(samples, 101);
+    let got = avg.expect("有样本时必须给出 Some");
+    assert!(
+        (got - 100_001.0 / 101.0).abs() < 1e-9,
+        "必须按样本数加权，实际 {got}"
+    );
+    assert!(
+        (got - 500.5).abs() > 1.0,
+        "Σ(avg×n)/Σn 若退化成桶均值的简单平均，此处会得到 500.5"
+    );
+
+    // 全空桶 ⇒ (None, 0)，不是 (Some(0.0), 0)
+    let empty = vec![point(None, 0), point(None, 0)];
+    assert_eq!(super::weighted_avg_duration_ms(&empty), (None, 0));
 }

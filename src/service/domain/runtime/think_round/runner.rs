@@ -18,7 +18,7 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::think_path::{Arbiter, ProviderSet, Stimulus, ThinkPathEngine, ThinkRun};
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkLoopResult, WakeUsage};
-use common::enums::ThinkingScene;
+use common::enums::{ThinkingIntensity, ThinkingScene};
 use common::error::Result;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -34,6 +34,13 @@ pub(crate) struct RoundRun<'a> {
     pub scene: ThinkingScene,
     /// 意图识别后对后续阶段叠加的思考强度偏移（分）
     pub thinking_intensity_offset: i32,
+    /// 小脑直接选定的思考强度（0–100 分；None = 用小脑之外的原逻辑）
+    pub thinking_strength: Option<ThinkingIntensity>,
+    /// 绝对思考强度（`Some` = 跳过 base/场景/动态偏移整条链；`None` = 逐字节等价）
+    ///
+    /// 唤醒门（`wake_gate`）判浅答时注入 `ThinkingIntensity::MIN`：强度链是加减
+    /// 语义（`base=70` 时减不到 0），「浅答强度真 0」只能靠绝对通道表达。
+    pub force_intensity: Option<ThinkingIntensity>,
     pub trace_id: &'a str,
     pub messages: Vec<ChatMessage>,
     pub tool_descriptors: &'a [ToolDescriptor],
@@ -60,6 +67,8 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         brain,
         scene,
         thinking_intensity_offset,
+        thinking_strength,
+        force_intensity,
         trace_id,
         messages,
         tool_descriptors,
@@ -86,7 +95,13 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
 
     // 三层思考强度（0–100）：Provider 基准（能力开关）→ Agent 覆盖 → 场景偏移
     // → 意图识别产出的动态偏移
-    let call_options = resolve_call_options(&brain, scene, thinking_intensity_offset);
+    let call_options = resolve_call_options(
+        &brain,
+        scene,
+        thinking_intensity_offset,
+        thinking_strength,
+        force_intensity,
+    );
 
     let deps = Arc::new(RoundDeps {
         domain,
@@ -193,6 +208,8 @@ fn persist_trace(deps: &RoundDeps, run: &ThinkRun) {
         "task_id": deps.ctx.task_id(),
         "path": run.blueprint.id,
         "partial": false,
+        // run 级小脑留痕：route / 思考强度 / 两路精选在此一次性取走并清空
+        "cerebellum": crate::pkg::think_trace::take_cerebellum(&deps.trace_id),
         "steps": run.trace.steps,
         "advisor_calls": run.trace.advisor_calls,
         "fingerprint": run.trace.fingerprint(),
@@ -228,24 +245,41 @@ fn persist_trace(deps: &RoundDeps, run: &ThinkRun) {
 
 /// 解析本次思考的模型调用参数（当前只有思考强度）
 ///
-/// 优先级：`Agent 显式 > Provider 基准`，再叠加「场景偏移 + 意图动态偏移」并
-/// 饱和钳制到 [0, 100]。
+/// 基准优先级：`小脑选定 > Agent 显式 > Provider 基准`，再叠加「场景偏移 +
+/// 意图动态偏移」并饱和钳制到 [0, 100]。
+///
+/// 小脑给的是**绝对分数**（它已经综合了消息本身的难度），所以它只替换基准，
+/// 场景偏移仍照旧叠加——场景是机制层的固有差异（收尾总结要稳、压缩要省），
+/// 不该被模型的一次判断抹平。
 ///
 /// ⚠️ Provider 未配置 `thinking_intensity` 时返回 None（能力开关关闭）：
-/// 请求体完全不下发该字段，Agent 覆盖、场景偏移与动态偏移均不生效——保持存量
-/// 行为是第一优先级，避免给不支持该参数的端点注入字段导致 400。
+/// 请求体完全不下发该字段，小脑选定值与 Agent 覆盖均不生效——保持存量行为是
+/// 第一优先级，避免给不支持该参数的端点注入字段导致 400。此时小脑的分数仍会
+/// 写进思考轨迹（`applied=false`），不会静默消失。
 fn resolve_call_options(
     brain: &Brain,
     scene: ThinkingScene,
     dynamic_offset: i32,
+    cerebellum_strength: Option<ThinkingIntensity>,
+    force_intensity: Option<ThinkingIntensity>,
 ) -> ModelCallOptions {
     let thinking_intensity = brain
         .model_provider()
         .and_then(|po| po.config().thinking_intensity)
         .map(|provider_base| {
-            let base = brain
-                .runtime_config
-                .thinking_intensity
+            // 绝对强度（唤醒门判浅答）：跳过 `base + 场景偏移 + 动态偏移` 整条链。
+            //
+            // 必须在 Provider 能力开关的 map 闭包**内部**判断：Provider 未配
+            // `thinking_intensity` 时整链不下发（`None`），本通道也不得绕过能力
+            // 开关往不支持的端点注入字段。
+            //
+            // 不复用 `cerebellum_strength`：它只替换基准、之后仍叠加偏移；强度链
+            // 是加减语义，`base=70` 加偏移减不到 0，「浅答强度设为 0」是假语义。
+            if let Some(forced) = force_intensity {
+                return forced;
+            }
+            let base = cerebellum_strength
+                .or(brain.runtime_config.thinking_intensity)
                 .unwrap_or(provider_base);
             base.offset(scene.thinking_intensity_offset() + dynamic_offset)
         });
@@ -305,7 +339,52 @@ mod tests {
 
     /// 取本次调用的思考强度（None = 能力开关关闭）
     fn intensity(brain: &Brain, scene: ThinkingScene, dynamic: i32) -> Option<ThinkingIntensity> {
-        resolve_call_options(brain, scene, dynamic).thinking_intensity
+        resolve_call_options(brain, scene, dynamic, None, None).thinking_intensity
+    }
+
+    /// 小脑选定值优先于 Agent 覆盖，作为基准再叠加场景偏移
+    #[test]
+    fn cerebellum_strength_overrides_agent_then_applies_scene_offset() {
+        let brain = brain_with(r#"{"thinking_intensity":50}"#, Some(ThinkingIntensity::MAX));
+        // Awaken 场景偏移为正：小脑给 20 → 20 + 场景偏移（clamp 100）
+        let got = resolve_call_options(
+            &brain,
+            ThinkingScene::Awaken,
+            0,
+            Some(ThinkingIntensity::new(20)),
+            None,
+        )
+        .thinking_intensity
+        .expect("provider configured");
+        assert_eq!(
+            got,
+            ThinkingIntensity::new(20).offset(ThinkingScene::Awaken.thinking_intensity_offset())
+        );
+        // 小脑缺席 → 仍用 Agent 覆盖
+        let fallback = resolve_call_options(&brain, ThinkingScene::Awaken, 0, None, None)
+            .thinking_intensity
+            .expect("provider configured");
+        assert_eq!(
+            fallback,
+            ThinkingIntensity::MAX.offset(ThinkingScene::Awaken.thinking_intensity_offset())
+        );
+    }
+
+    /// Provider 未配置 = 能力开关关闭：小脑选定值也不下发（轨迹里留 applied=false）
+    #[test]
+    fn cerebellum_strength_still_gated_by_provider_capability() {
+        let brain = brain_with("{}", None);
+        assert_eq!(
+            resolve_call_options(
+                &brain,
+                ThinkingScene::Awaken,
+                0,
+                Some(ThinkingIntensity::new(90)),
+                None
+            )
+            .thinking_intensity,
+            None
+        );
     }
 
     /// Provider 未配置 = 能力开关关闭：Agent 覆盖与场景偏移都不生效
@@ -377,5 +456,104 @@ mod tests {
             ),
             Some(ThinkingIntensity::DEFAULT)
         );
+    }
+
+    // ---------- P3-b：绝对强度通道（唤醒门判浅答 → 强度真 0） ----------
+    //
+    // 为什么必须是独立通道：思考强度是 `base + 场景偏移 + 动态偏移`（**加减**，
+    // 不是赋值）。`base=70` 时靠偏移减不到 0，用偏移表达「浅答强度=0」是假语义；
+    // 复用 `cerebellum_strength` 也不行（它只替换基准、之后仍叠加偏移）。
+
+    /// A 成对（force=None 侧）：整条 base + 场景偏移 + 动态偏移链**仍然生效**。
+    ///
+    /// base=70 + Awaken(0) + 动态 20 → 90（不是 70，也不是 0）。
+    #[test]
+    fn force_none_keeps_base_and_offsets() {
+        let brain = brain_with(r#"{"thinking_intensity":70}"#, None);
+        let got = resolve_call_options(&brain, ThinkingScene::Awaken, 20, None, None)
+            .thinking_intensity
+            .expect("provider configured");
+        assert_eq!(got, ThinkingIntensity::new(90));
+    }
+
+    /// A 成对（force=Some(MIN) 侧）：**真 0** —— 不是「小于 70」，也不是「归零到 70」。
+    #[test]
+    fn force_min_is_absolute_zero() {
+        let brain = brain_with(r#"{"thinking_intensity":70}"#, None);
+        let got = resolve_call_options(
+            &brain,
+            ThinkingScene::Awaken,
+            20,
+            None,
+            Some(ThinkingIntensity::MIN),
+        )
+        .thinking_intensity
+        .expect("provider configured");
+        assert_eq!(got, ThinkingIntensity::MIN);
+        assert_eq!(got.score(), 0, "浅答强度必须真为 0");
+    }
+
+    /// B 成对（force=None 侧）：借 `Settle` 的 +30 构造最坏组合 —— base 100 饱和到 100。
+    ///
+    /// `wake_gate` 实际跑在 `Awaken` 场景（偏移 0）；这里取最坏组合只为证明
+    /// 「偏移再大也压不动 force」。
+    #[test]
+    fn force_none_saturates_with_scene_offset() {
+        let brain = brain_with(r#"{"thinking_intensity":100}"#, None);
+        let got = resolve_call_options(&brain, ThinkingScene::Settle, 0, None, None)
+            .thinking_intensity
+            .expect("provider configured");
+        assert_eq!(got, ThinkingIntensity::MAX);
+    }
+
+    /// B 成对（force=Some(MIN) 侧）：base=100 + Settle(+30) + 动态 25 + 小脑基准 MAX，
+    /// 结果仍必须**真 0** —— 绝对通道先于整条 base/offset 链。
+    #[test]
+    fn force_min_beats_worst_case_base_and_offsets() {
+        let brain = brain_with(r#"{"thinking_intensity":100}"#, None);
+        let got = resolve_call_options(
+            &brain,
+            ThinkingScene::Settle,
+            25,
+            Some(ThinkingIntensity::MAX),
+            Some(ThinkingIntensity::MIN),
+        )
+        .thinking_intensity
+        .expect("provider configured");
+        assert_eq!(got, ThinkingIntensity::MIN);
+        assert_eq!(got.score(), 0);
+    }
+
+    /// Provider 未配 = 能力开关关闭：绝对通道也不得绕过（`None`，不是 `Some(0)`）。
+    #[test]
+    fn force_min_still_gated_by_provider_capability() {
+        let brain = brain_with("{}", None);
+        assert_eq!(
+            resolve_call_options(
+                &brain,
+                ThinkingScene::Awaken,
+                0,
+                None,
+                Some(ThinkingIntensity::MIN)
+            )
+            .thinking_intensity,
+            None
+        );
+    }
+
+    /// force=None 时偏移确实改变结果：不能只断言「等于旧值」，
+    /// 否则「偏移恒为 0」的实现会空转通过。
+    #[test]
+    fn offset_still_changes_result_when_force_absent() {
+        let brain = brain_with(r#"{"thinking_intensity":50}"#, None);
+        let with_offset = resolve_call_options(&brain, ThinkingScene::Awaken, 20, None, None)
+            .thinking_intensity
+            .expect("provider configured");
+        let without_offset = resolve_call_options(&brain, ThinkingScene::Awaken, 0, None, None)
+            .thinking_intensity
+            .expect("provider configured");
+        assert_eq!(with_offset, ThinkingIntensity::new(70));
+        assert_eq!(without_offset, ThinkingIntensity::DEFAULT);
+        assert_ne!(with_offset, without_offset, "偏移必须真的改变结果");
     }
 }

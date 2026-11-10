@@ -47,6 +47,20 @@ impl RuntimeDomainImpl {
         trace_id: &str,
         extra: IntentPhaseInput<'_>,
     ) -> Result<IntentAnalysis> {
+        // 0. 意图分析前的成本门（P3-a · K4-b）：零信息量输入本地短路；其余由小脑
+        //    判「这条消息值不值得做意图分析」。跳过 = 降级到现状（key_terms 用用户
+        //    原文），任何降级（无小脑 / 配额耗尽 / 调用失败 / 低置信）都走原逻辑。
+        if let Some(skipped) = super::intent_gate::skip_if_pointless_with_default_dao(
+            &ctx,
+            agent.brain(),
+            message.content(),
+            trace_id,
+        )
+        .await
+        {
+            return Ok(skipped);
+        }
+
         // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene）
         let mut analyze_opts = options.clone();
         analyze_opts.scene = ThinkingScene::IntentAnalyze;

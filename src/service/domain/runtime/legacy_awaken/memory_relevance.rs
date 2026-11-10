@@ -125,6 +125,19 @@ pub(crate) async fn rank(
         return None;
     }
 
+    // 本 run 的调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
+    if !brain.cerebellum_quota.try_acquire() {
+        log_info!(
+            ctx,
+            "cerebellum_quota",
+            scene = SCENE,
+            limit = brain.cerebellum_quota.limit(),
+            used = brain.cerebellum_quota.used(),
+            "cerebellum call budget exhausted, fall back to original logic"
+        );
+        return None;
+    }
+
     // 阶段二：唯一 async 点
     let candidate_count = candidates.len();
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
