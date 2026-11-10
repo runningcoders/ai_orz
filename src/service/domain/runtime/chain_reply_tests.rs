@@ -307,7 +307,8 @@ fn latency_cap_is_4000_by_5s_budget() {
     // 生成长度波动 / prefill 吞吐差异），取 4000 = 理论值 ≈ 44%，对 5s 留 ≈ 50% 余量。
     // 与旧值的关系：旧 800 按 1000ms 反推，基数 5 倍 ⇒ 本值同样 5 倍，没有缩回。
     assert_eq!(LATENCY_INPUT_CAP, 4_000);
-    assert_eq!(FRAME_OVERHEAD_RESERVE, 500);
+    // 骨架预留不再是本场景私有常量：由比例表派生，@输入 4000 ⇒ min(4000×12.5%, 500) = 500
+    assert_eq!(context::frame_tokens(4_000), 500);
     assert_eq!(body_token_budget(4_000), 3_500);
     // 条数上限退为防环硬顶（与消费者侧回溯硬上限同口径）
     assert_eq!(MAX_CHAIN_MESSAGES, 32);
@@ -322,8 +323,10 @@ fn input_budget_is_min_of_capacity_and_latency_cap() {
     assert_eq!(input_token_budget(Some(600)), 600);
     // 未配置容量：保守退化到时延上限
     assert_eq!(input_token_budget(None), 4_000);
-    // 容量小于骨架预留：正文预算归零而不是下溢
-    assert_eq!(body_token_budget(300), 0);
+    // 容量小于「实测定标骨架」时不再归零：骨架按比例缩到 37，正文仍有 263
+    // （改造前固定 500 骨架 ⇒ 300 − 500 下溢成 0 ⇒ 小容量一律降级）
+    assert_eq!(body_token_budget(300), 263);
+    assert_eq!(body_token_budget(0), 0, "输入被骨架吞完才归零");
 }
 
 // ---------- 输入组装（Q3：保头 + 保尾 + 省略标注） ----------
@@ -893,13 +896,15 @@ async fn any_answer_resets_the_consecutive_failure_counter() {
 /// 容量（500 × 60% = 300）连 450 骨架都装不下 ⇒ 零请求、零配额、记 capacity_too_small。
 #[tokio::test]
 async fn capacity_below_judge_skeleton_sends_no_request() {
-    let brain = brain_with_capacity(500);
+    // 骨架按比例后，「连骨架都装不下」的门槛随之下移：150 × 60% = 90 token
+    // ⇒ 骨架 11、正文 79 < MIN_JUDGEABLE_BODY_TOKENS(100) ⇒ 仍不问
+    let brain = brain_with_capacity(150);
     assert_eq!(
         brain
             .cerebellum
             .as_ref()
             .and_then(|po| po.config().recommended_context_length_tokens()),
-        Some(300)
+        Some(90)
     );
 
     let (verdict, calls) = run_gate(
@@ -920,15 +925,15 @@ async fn capacity_below_judge_skeleton_sends_no_request() {
     assert_eq!(traces[0].latency_ms, None);
 }
 
-/// 反事实：容量刚好够（1000 × 60% = 600 ⇒ 正文 100，**恰在**最低可用线上）必须照常问。
+/// 反事实：容量刚好够（190 × 60% = 114 ⇒ 骨架 14、正文 100，**恰在**最低可用线上）必须照常问。
 ///
-/// 骨架预留 450 → 500 之后，这条恰好落在边界上：100 == MIN_BODY_TOKEN_BUDGET，
+/// 骨架改比例派生后边界从 600 下移到 114：正文 100 == MIN_JUDGEABLE_BODY_TOKENS，
 /// 判据是 `< MIN`（严格小于）⇒ 仍须问。边界值最容易被后续调参悄悄改成「不问」。
 #[tokio::test]
 async fn capacity_above_min_body_budget_still_asks() {
-    let brain = brain_with_capacity(1000);
+    let brain = brain_with_capacity(190);
     assert_eq!(
-        body_token_budget(input_token_budget(Some(600))),
+        body_token_budget(input_token_budget(Some(114))),
         MIN_BODY_TOKEN_BUDGET
     );
 
@@ -965,8 +970,8 @@ fn capacity_at_or_above_latency_cap_binds_the_latency_side() {
         );
         assert_eq!(
             body_token_budget(input_token_budget(Some(capacity))),
-            LATENCY_INPUT_CAP - FRAME_OVERHEAD_RESERVE,
-            "容量 {capacity} 下正文预算必须恰为 时延上限 − 骨架预留"
+            context::body_budget_tokens(LATENCY_INPUT_CAP),
+            "容量 {capacity} 下正文预算必须恰为 时延上限 − 骨架预留（比例派生）"
         );
     }
     // 边界另一侧：容量比时延上限小 1 ⇒ 容量绑定（逐 token 相等）
@@ -1556,7 +1561,11 @@ fn context_block_order_is_identity_scene_chain_pressure() {
     );
 }
 
-/// 边界四点实测：capacity = 500 / 1088 / 2500 / 4500
+/// 边界五点实测：capacity = 110 / 500 / 1088 / 1500 / 200_000
+///
+/// 改造前骨架预留是固定 500，capacity=500 时正文预算被打到 0（永远降级）；
+/// 改按比例后同类小容量仍能挤出一份可判正文（438），只有落到
+/// `MIN_JUDGEABLE_BODY_TOKENS` 以下（capacity=110 ⇒ 97）才不问 —— 两个分支都覆盖。
 ///
 /// R53 同源自证：每个点先断言**实际走了哪条分支**（calls / states），再断结构——
 /// 否则「每块都有非空 body」在「压根没构造请求」的点上也会绿（假绿）。
@@ -1575,11 +1584,12 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
     }
     messages.push(msg("agent-b", "文本消息", CHAIN_SENTINEL_TAIL));
 
-    for capacity in [500u64, 1_088, 2_500, 4_500] {
+    for capacity in [110u64, 500, 1_088, 1_500, 200_000] {
         let brain = brain_with_capacity_tokens(capacity);
         let input_budget = input_token_budget(Some(capacity));
         let body_budget = body_token_budget(input_budget);
-        let expected_body = [0usize, 588, 2_000, 3_500][[500u64, 1_088, 2_500, 4_500]
+        // 200_000 的容量被 `LATENCY_INPUT_CAP` 夹到 4000 ⇒ 正文池 4000 − 500 = 3500
+        let expected_body = [97usize, 438, 952, 1_313, 3_500][[110u64, 500, 1_088, 1_500, 200_000]
             .iter()
             .position(|c| *c == capacity)
             .unwrap()];
@@ -1597,9 +1607,12 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
         .await;
 
         if body_budget < MIN_BODY_TOKEN_BUDGET {
-            // 正文预算 0（capacity=500 ⇒ input 500 − 骨架 500 = 0）⇒ **不问**：
+            // 正文预算低于最小可判线（capacity=110 ⇒ 110 − 13 = 97 < 100）⇒ **不问**：
             // `## 链内消息` 根本不存在，既不是「注册成空块」也不是「空标题」。
-            assert_eq!(body_budget, 0, "capacity={capacity} 的正文预算必须被打到 0");
+            assert!(
+                body_budget < MIN_BODY_TOKEN_BUDGET,
+                "capacity={capacity} 的正文预算必须落在最小可判线以下"
+            );
             assert_eq!(calls, 0, "capacity={capacity}：预算 0 必须一次都不问");
             assert!(
                 states.is_empty(),
@@ -1650,12 +1663,10 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
             &triggered_facts(),
         );
         let actual_tokens = estimate_tokens(&bundle.render());
-        let organizer_budget =
-            (capacity as usize).saturating_sub(context::CONTEXT_FRAME_RESERVE_TOKENS);
+        // 组织器预算与场景自截共用同一比例表（`share::FRAME_BP` / `share::BODY_BP`）；
+        // 差别只在基准：场景侧 input 被 `LATENCY_INPUT_CAP` 夹住，组织器吃整个 capacity。
+        let organizer_budget = context::body_budget_tokens(capacity as usize);
         let would_be = bundle.render_within(Some(capacity));
-        // 实测值（2026-11-11，HEAD=本笔）：state_tokens = 621 / 1569 / 1569，
-        // 组织器预算 = capacity − 1024 = 64 / 1476 / 3476 ⇒ 1088 与 2500 两点
-        // 组织器**会截断**，4500 不截断。
         if actual_tokens > organizer_budget {
             assert!(
                 would_be.contains("省略") || would_be.contains("已按模型容量截断"),
@@ -1908,9 +1919,10 @@ async fn oversized_pending_reply_is_truncated_with_annotation() {
         .find(|part| part.starts_with("## 待发消息"))
         .expect("待发消息块必须存在");
     let used = estimate_tokens(block.trim_start_matches("## 待发消息\n"));
+    let pending_cap = context::bp_of(input_token_budget(None), context::share::PENDING_REPLY_BP);
     assert!(
-        used <= PENDING_REPLY_TOKEN_CAP,
-        "待发正文实测 {used} token 超过子预算 {PENDING_REPLY_TOKEN_CAP}"
+        used <= pending_cap,
+        "待发正文实测 {used} token 超过子预算 {pending_cap}"
     );
 }
 
@@ -1976,15 +1988,28 @@ fn context_block_order_includes_new_inputs() {
 fn pending_budget_is_a_share_of_the_same_pool() {
     let body = body_token_budget(input_token_budget(None)); // 4000 − 500 = 3500
     assert_eq!(body, 3500, "可用正文池不受本笔影响");
+    let input = input_token_budget(None); // 4000
     assert_eq!(
-        pending_token_budget(body),
-        PENDING_REPLY_TOKEN_CAP,
-        "标准容量取上限 600"
+        pending_token_budget(input, body),
+        600,
+        "标准容量由比例表绑定（4000 × 15% = 600）"
     );
-    assert_eq!(pending_token_budget(400), 100, "小容量按 1/4 收敛");
     assert_eq!(
-        pending_token_budget(MIN_BODY_TOKEN_BUDGET),
-        MIN_BODY_TOKEN_BUDGET / PENDING_BUDGET_SHARE_DIVISOR,
-        "极小容量只给 1/4（再由 judge 侧夹逼到 0）"
+        pending_token_budget(400, 400),
+        60,
+        "小输入由比例绑定（400 × 15% = 60 < 400/4）"
+    );
+    // 极小正文池：由「正文池 / 4」收敛（不把链内证据挤掉）
+    assert_eq!(
+        pending_token_budget(input, MIN_BODY_TOKEN_BUDGET),
+        MIN_BODY_TOKEN_BUDGET / 4,
+        "正文池极小时按 1/4 收敛"
+    );
+    // 反事实（R49）：改前本函数只接 body 一个参数、上限是常量 600；
+    // 本轮改为两参数比例派生后，同一 body 在不同输入预算下给出不同结果。
+    assert_ne!(
+        pending_token_budget(4_000, body),
+        pending_token_budget(8_000, body),
+        "待发预算必须随输入预算变化，不得是固定 600"
     );
 }

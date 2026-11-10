@@ -178,18 +178,9 @@ const DEGRADED_CEILING_FORCED: &str = "ceiling_forced";
 /// 绑定**；只有小容量 provider 才会被容量侧压下来（[`input_token_budget`] 取小）。
 pub(crate) const LATENCY_INPUT_CAP: usize = 4000;
 
-/// 判据骨架的固定开销预留（instructions + options + 压力事实 + 协议包装）
-///
-/// 取值**由实测定标**（`estimate_tokens` 对真实判据文本计数）：
-/// 压缩后的 `INSTRUCTIONS` ≈ 232 + `OPTIONS` ≈ 50 + state ≈ 53 + wrapper ≈ 37
-/// = **≈ 372 tokens**；2026-11-10 按 AMan 要求把 `window_depth` / `fatigue`
-/// 的「仅作辅助参考」写进 `INSTRUCTIONS`（+两行 ≈ +40 tokens）⇒ ≈ 412，
-/// 预留 500 留出 ~88 tokens 缓冲（agent_name 变长、数值进位、协议字段增减）。
-///
-/// 定标过程本身就是一次纠错：初版 `INSTRUCTIONS` 389 tokens，骨架实测
-/// 574 > 预留 400 ⇒ 最坏总输入 974，余量只剩 12~62ms，等于「设计上就
-/// 注定超时」。所以判据必须先压，预留才敢按 450 定。
-pub(crate) const FRAME_OVERHEAD_RESERVE: usize = 500;
+// 骨架预留不再有本场景私有常量：改由组织器的比例表派生
+// （`context::share::FRAME_BP` = 12.5%，@输入 4000 ⇒ 500，与改造前逐位一致）。
+// 实测定标值与「为什么是 500」见 `cerebellum_context::FRAME_TOKEN_CEILING`。
 
 /// 本场景的请求超时预算（毫秒）：**场景级覆盖**，不改全局缺省
 ///
@@ -243,37 +234,32 @@ pub(crate) fn input_token_budget(capacity_tokens: Option<u64>) -> usize {
 /// 取 100 的定标依据：省略标注行本身约 40 tokens（`[中间 N 条已省略（共 M 条
 /// 链内消息；仅保留链头与最近若干条）]`），加一条短消息正文约 20~40 tokens，
 /// 100 才容得下「链头 + 标注 + 至少一条真实正文」这一最小可用组合。
-pub(crate) const MIN_BODY_TOKEN_BUDGET: usize = 100;
+pub(crate) const MIN_BODY_TOKEN_BUDGET: usize = context::MIN_JUDGEABLE_BODY_TOKENS;
 
-/// 链内正文可用的 token 预算 = 输入预算 − 骨架预留（不足时归零，不下溢）
+/// 链内正文可用的 token 预算 = 输入预算 − 骨架预留（比例派生，见 [`context::body_budget_tokens`]）
+///
+/// 骨架预留 = `min(输入 × 12.5%, 实测定标上限 500)`：输入大时按实测定标封顶、
+/// 输入小时按比例走 —— 不再是一刀切的固定 500（那会让小容量 provider 的正文
+/// 预算恒为 0、永远降级）。
 pub(crate) fn body_token_budget(input_budget: usize) -> usize {
-    input_budget.saturating_sub(FRAME_OVERHEAD_RESERVE)
+    context::body_budget_tokens(input_budget)
 }
 
-/// 待发正文（本条**默认准备发送**的消息）在 state 里的 token 上限
-///
-/// 存在理由：判 ①②③ 时模型必须能看到「我这条本来要发什么」。只看链内历史，
-/// 会把「我这条里有新结论」误判成 `close`（历史里确实没见过这句）。
-/// 这是 AMan 2026-11-11 明确要求新增的判定输入（原话：「当前消息处理结果
-/// 也就是这条默认准备发送的消息」）。
-///
-/// 600 的定标：一次 Final 的典型长度 200~500 tokens；600 覆盖绝大多数，又不至于
-/// 让一条超长回复把链内证据挤掉一半（可用池 = `LATENCY_INPUT_CAP 4000 −
-/// FRAME_OVERHEAD_RESERVE 500 = 3500`，600 只占 17%）。
-pub(crate) const PENDING_REPLY_TOKEN_CAP: usize = 600;
-
-/// 待发正文的份额分母：最多占链内可用预算的 1/4
-///
-/// 小容量 provider（配置写几百 token）下 600 会吃掉整条预算，故再按份额收敛：
-/// `min(PENDING_REPLY_TOKEN_CAP, body_budget / 4)`。
-const PENDING_BUDGET_SHARE_DIVISOR: usize = 4;
+// 待发正文的子预算不再有本场景私有常量：改由组织器的比例表派生
+// （`context::share::PENDING_REPLY_BP` = 15%，@输入 4000 ⇒ 600，与改造前逐位一致；
+// 再被正文池的 1/4 夹住，小容量自动收敛）。
+// 存在理由不变：判 ①②③ 时模型必须能看到「我这条本来要发什么」——只看链内历史，
+// 会把「我这条里有新结论」误判成 `close`（历史里确实没见过这句）。
 
 /// 待发正文被截断时的标注（与链内正文的截断标注分列，便于排查归因）
 const PENDING_TRUNCATION_SUFFIX: &str = "…（待发正文已截断）";
 
 /// 待发正文的切分预算（**同一池里留位**，不新增预算池）
-pub(crate) fn pending_token_budget(body_budget: usize) -> usize {
-    (body_budget / PENDING_BUDGET_SHARE_DIVISOR).min(PENDING_REPLY_TOKEN_CAP)
+///
+/// `min(输入 × 15%, 正文池 / 4)`：标准容量下由前者绑定（= 600，与改造前一致），
+/// 小容量下由后者收敛（不把链内证据挤掉）。
+pub(crate) fn pending_token_budget(input_budget: usize, body_budget: usize) -> usize {
+    context::pending_reply_tokens(input_budget, body_budget)
 }
 
 /// 判据（prompt 存调用方，服务端不持有）
@@ -485,8 +471,8 @@ hard_fatigue: {}\nhard_window_depth: {}",
 ///   空列表由 `push` 整块跳过，不留裸标题。
 ///
 /// 也**不做组织器侧容量自截**（`render_within`）：链内正文已由 [`render_chain`] 按
-/// `body_token_budget` 自截到 `容量 − FRAME_OVERHEAD_RESERVE` 以内；再叠一层
-/// `容量 − CONTEXT_FRAME_RESERVE_TOKENS(1024)` 的**尾块整砍**，会在中间容量带把
+/// `body_token_budget` 自截到「输入 − 骨架比例」以内；再叠一层组织器的
+/// 「容量 − 骨架比例」**尾块整砍**，会在中间容量带把
 /// `## 链内消息` 这块主要证据整块砍掉 —— 比不截断更坏（实测见 `chain_reply_tests`）。
 /// 容量安全的判据是「`body_token_budget < MIN_BODY_TOKEN_BUDGET` ⇒ 不问」，不是
 /// 「截到装得下」。
@@ -767,14 +753,14 @@ pub(crate) async fn judge_chain_reply(
     //
     // 分账规则（与 Q3 预算共存，**不新开预算池**）：
     // - 同一池：`body_budget` 不变，只是先给它切一小块
-    //   （`pending_token_budget` = min(600, body/4)），再按**实测占用**扣减，
+    //   （`pending_token_budget` = min(输入×15%, body/4)），再按**实测占用**扣减，
     //   余额全部给链内正文 ⇒ 总输入仍受 `LATENCY_INPUT_CAP` 约束（时延反推那条
     //   线没被突破），且待发正文短时不会白占固定预留。
     // - 再夹逼 `body_budget − MIN_BODY_TOKEN_BUDGET`：容量再小也不让待发正文把
     //   链内证据挤到最小可用线以下；挤不下就不带（块缺席），不留一句「已截断」
     //   的空壳去污染判据。
-    let pending_budget =
-        pending_token_budget(body_budget).min(body_budget.saturating_sub(MIN_BODY_TOKEN_BUDGET));
+    let pending_budget = pending_token_budget(input_budget, body_budget)
+        .min(body_budget.saturating_sub(MIN_BODY_TOKEN_BUDGET));
     let pending = if pending_budget == 0 {
         String::new()
     } else {

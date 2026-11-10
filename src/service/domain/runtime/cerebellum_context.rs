@@ -52,14 +52,85 @@ pub(crate) const RECENT_DIALOGUE_LIMIT: usize = 3;
 /// 单条历史摘要的字符上限（长期/短期记忆都按此截断）
 const DIALOGUE_SNIPPET_CHARS: usize = 160;
 
-/// 帧与题面预留（保守值：覆盖 `DecisionRequest` 帧 + 三题型题面）
-///
-/// 与 `dal/brain.rs::FRAME_RESERVE_TOKENS(512)` 同量级但更保守：本模块只服务已接入的
-/// 6 个场景，题面都很小（2 / 4 / 11 个短档），留一倍余量足够。
-pub(crate) const CONTEXT_FRAME_RESERVE_TOKENS: usize = 1024;
+// # 输入预算的比例分账（**唯一事实源**）
+//
+// AMan 2026-11-11 口径：「这一部分数据占几成，那一部分几成，只要最终不超过
+// 最大长度就可以」。故各块占比集中在本节，消费方只做「占比 × 预算」的乘法，
+// **不得再各自拍固定 token 数**。唯一硬顶 = 各块之和 ≤ [`share::BASIS`]（100%）。
 
-/// 预算下限：低于它就不做截断（与 `dal::brain::MIN_STATE_BUDGET_TOKENS` 同口径）
-pub(crate) const MIN_CONTEXT_BUDGET_TOKENS: usize = 64;
+/// 小脑一次判据的输入预算分账（basis points；1 bp = 0.01%）
+///
+/// 取值的来源是**现状实测反推**，不是新拍：@输入 4000 token 时
+/// `FRAME_BP` ⇒ 500（= 原 `FRAME_OVERHEAD_RESERVE`）、
+/// `PENDING_REPLY_BP` ⇒ 600（= 原 `PENDING_REPLY_TOKEN_CAP`）、
+/// `BODY_BP` ⇒ 2900（= 原 `4000 − 500 − 600`）——三项逐位复现改造前实值。
+pub(crate) mod share {
+    /// 判据骨架：instructions + options + 题面 + 协议包装
+    pub(crate) const FRAME_BP: u32 = 1_250; // 12.5%
+    /// 待发消息（本条默认准备发送的正文）
+    pub(crate) const PENDING_REPLY_BP: u32 = 1_500; // 15%
+    /// 正文池（链内消息 / state 正文）
+    pub(crate) const BODY_BP: u32 = 7_250; // 72.5%
+
+    /// 基准：10_000 bp = 100%
+    pub(crate) const BASIS: u32 = 10_000;
+    /// 占比总和（自校验锚点，见 [`validate_share_sum`]）
+    pub(crate) const TOTAL_BP: u32 = FRAME_BP + PENDING_REPLY_BP + BODY_BP;
+}
+
+/// 骨架预留的**实测上限**（token）——可判定的定标值，不是拍的
+///
+/// 2026-11-10 用 `estimate_tokens` 对真实判据文本定标：压缩后 `INSTRUCTIONS` ≈232、
+/// `OPTIONS` ≈50、state ≈53、wrapper ≈37，合计 ≈ **372**；把 `window_depth` /
+/// `fatigue` 的「仅作辅助参考」两行写进 `INSTRUCTIONS` 后 ≈ **412**。
+/// 本值 = 412 加 ~88 缓冲。**它是比例的上限而非替代品**：输入小时按
+/// `输入 × FRAME_BP` 走（不会把小容量拍死），输入大时按本值封顶（不随容量线性膨胀）。
+pub(crate) const FRAME_TOKEN_CEILING: usize = 500;
+
+/// 最小可判正文线（token）——可判定的下限，低于它就不问/不截
+///
+/// 定标：省略标注行本身 ≈40 token（`…（上下文已按模型容量截断，省略 N 块）`），
+/// 加一条最短可判正文 ≈20~40 ⇒ 100 才容得下「标注 + 至少一条真实正文」。
+/// 两个消费者同一条线：组织器（`render_within`）与 `chain_reply`（`MIN_BODY_TOKEN_BUDGET`）。
+pub(crate) const MIN_JUDGEABLE_BODY_TOKENS: usize = 100;
+
+/// 待发消息占正文池的份额分母（最多 1/4）
+const PENDING_SHARE_DIVISOR: usize = 4;
+
+/// 占比之和校验：> 100% 即超限（**唯一硬顶**，不允许静默超限）
+pub(crate) fn validate_share_sum(total_bp: u32) -> Result<(), String> {
+    if total_bp > share::BASIS {
+        return Err(format!(
+            "cerebellum budget shares exceed the hard ceiling: {total_bp} bp > {} bp",
+            share::BASIS
+        ));
+    }
+    Ok(())
+}
+
+/// 按占比切分预算（1 bp = 0.01%，向下取整）
+pub(crate) fn bp_of(input_budget: usize, bp: u32) -> usize {
+    input_budget.saturating_mul(bp as usize) / share::BASIS as usize
+}
+
+/// 骨架预留 = min(输入 × `FRAME_BP`, [`FRAME_TOKEN_CEILING`])
+pub(crate) fn frame_tokens(input_budget: usize) -> usize {
+    debug_assert!(validate_share_sum(share::TOTAL_BP).is_ok());
+    bp_of(input_budget, share::FRAME_BP).min(FRAME_TOKEN_CEILING)
+}
+
+/// 正文池 = 输入 − 骨架（不足归零，不下溢）
+pub(crate) fn body_budget_tokens(input_budget: usize) -> usize {
+    input_budget.saturating_sub(frame_tokens(input_budget))
+}
+
+/// 待发消息预算 = min(输入 × `PENDING_REPLY_BP`, 正文池 / 4)
+///
+/// 同一池分账（**不新增预算池**）：上限按输入的比例、再被正文池的四分之一夹住，
+/// 小容量下自然收敛到 1/4，不会把链内证据挤掉。
+pub(crate) fn pending_reply_tokens(input_budget: usize, body_budget: usize) -> usize {
+    bp_of(input_budget, share::PENDING_REPLY_BP).min(body_budget / PENDING_SHARE_DIVISOR)
+}
 
 /// 整块被砍时的标注前缀（后接「N 块）」，N = 注册块数 − 保留块数）
 const OMISSION_NOTE_PREFIX: &str = "…（上下文已按模型容量截断，省略 ";
@@ -157,13 +228,9 @@ impl ContextBundle {
         let Some(capacity) = capacity_tokens else {
             return self.render();
         };
-        let Some(budget) = usize::try_from(capacity)
-            .unwrap_or(usize::MAX)
-            .checked_sub(CONTEXT_FRAME_RESERVE_TOKENS)
-        else {
-            return self.render();
-        };
-        if budget < MIN_CONTEXT_BUDGET_TOKENS {
+        // 预算 = 容量 × 正文占比（比例表唯一入口，不再减固定预留）
+        let budget = body_budget_tokens(usize::try_from(capacity).unwrap_or(usize::MAX));
+        if budget < MIN_JUDGEABLE_BODY_TOKENS {
             return self.render();
         }
         self.render_within_tokens(budget)
@@ -172,7 +239,7 @@ impl ContextBundle {
     /// 真正的按预算渲染（**私有**）
     ///
     /// 私有是为了让测试能构造极小预算走到「末块截尾」分支：经 [`Self::render_within`]
-    /// 入口时预算最小是 `MIN_CONTEXT_BUDGET_TOKENS`，到不了 0 边界。
+    /// 入口时预算最小是 `MIN_JUDGEABLE_BODY_TOKENS`，到不了 0 边界。
     fn render_within_tokens(&self, budget: usize) -> String {
         let full = self.render();
         if estimate_tokens(&full) <= budget {
@@ -386,7 +453,9 @@ mod tests {
     #[test]
     fn render_within_ample_capacity_matches_render_byte_for_byte() {
         let bundle = five_block_bundle();
-        let ample = (estimate_tokens(&bundle.render()) + CONTEXT_FRAME_RESERVE_TOKENS + 512) as u64;
+        // 充裕容量 = 全文所需 + 骨架上限 + 一份同量余量（按比例表反算，不再用固定 1024）
+        let ample =
+            (estimate_tokens(&bundle.render()) + FRAME_TOKEN_CEILING + FRAME_TOKEN_CEILING) as u64;
         let rendered = bundle.render_within(Some(ample));
         assert_eq!(rendered, bundle.render());
         assert!(
@@ -531,5 +600,106 @@ mod tests {
             !rendered.contains("省略"),
             "没有任何块被砍，不得误标「省略」：{rendered:?}"
         );
+    }
+}
+
+/// 比例表自身的可独立失败断言（不采信自述）
+#[cfg(test)]
+mod budget_share_tests {
+    use super::*;
+
+    /// 占比之和必须 ≤ 硬顶，且当前表**恰好用满**（留空等于又拍了一个隐式预留）
+    #[test]
+    fn shares_sum_never_exceeds_the_hard_ceiling() {
+        assert!(
+            validate_share_sum(share::TOTAL_BP).is_ok(),
+            "占比之和 {} bp 超过硬顶 {} bp",
+            share::TOTAL_BP,
+            share::BASIS
+        );
+        assert_eq!(share::TOTAL_BP, share::BASIS, "各块之和必须恰好 100%");
+    }
+
+    /// 反事实：把占比调成 >100% 必须被捕获，不允许静默超限
+    #[test]
+    fn over_allocated_shares_are_rejected_not_silently_accepted() {
+        assert!(validate_share_sum(share::BASIS).is_ok(), "恰好 100% 合法");
+        assert!(
+            validate_share_sum(share::BASIS + 1).is_err(),
+            "100.01% 必须被拒，否则超限会静默通过"
+        );
+        assert!(
+            validate_share_sum(share::BASIS + share::FRAME_BP).is_err(),
+            "任意超限组合同样必须被拒（不只 BASIS+1 这一个点）"
+        );
+    }
+
+    /// 骨架预留随输入预算变化 —— 改造前是固定常量 500（两个输入恒同值）⇒ 本断言改前必红
+    #[test]
+    fn frame_budget_scales_with_input_not_a_fixed_constant() {
+        assert_eq!(frame_tokens(2_000), 250, "小输入按比例：2000 × 12.5%");
+        assert_eq!(
+            frame_tokens(4_000),
+            500,
+            "标准输入：4000 × 12.5% = 实测定标上限"
+        );
+        assert_eq!(
+            frame_tokens(8_000),
+            FRAME_TOKEN_CEILING,
+            "大输入按实测定标封顶"
+        );
+        assert_eq!(
+            frame_tokens(200_000),
+            FRAME_TOKEN_CEILING,
+            "不随容量线性膨胀"
+        );
+        assert_ne!(
+            frame_tokens(2_000),
+            frame_tokens(4_000),
+            "同一位置换两个容量的 provider ⇒ 预算必须不同（固定常量的反事实）"
+        );
+    }
+
+    /// 骨架 + 正文恒不超过输入（AMan 原话「只要最终不超过最大长度就可以」）
+    #[test]
+    fn frame_plus_body_never_exceeds_input() {
+        for input in [0usize, 1, 37, 110, 500, 1_088, 4_000, 200_000, usize::MAX] {
+            let frame = frame_tokens(input);
+            let body = body_budget_tokens(input);
+            assert!(
+                frame.saturating_add(body) <= input,
+                "input={input}: frame {frame} + body {body} 超过输入预算"
+            );
+        }
+    }
+
+    /// 待发消息是同一池里的份额，不是新增预算池
+    #[test]
+    fn pending_reply_is_a_share_of_the_same_pool() {
+        let input = 4_000;
+        let body = body_budget_tokens(input);
+        let pending = pending_reply_tokens(input, body);
+        assert_eq!(pending, 600, "4000 × 15%");
+        assert!(pending < body, "待发预算必须小于正文池");
+        assert_eq!(
+            pending_reply_tokens(input, 100),
+            25,
+            "正文池极小时由 1/4 收敛"
+        );
+        assert_ne!(
+            pending_reply_tokens(2_000, 1_750),
+            pending_reply_tokens(4_000, 3_500),
+            "待发预算必须随输入变化，不是固定 600"
+        );
+    }
+
+    /// provider 未配容量 ⇒ 回退路径仍可用（不炸、不改语义）
+    #[test]
+    fn none_capacity_falls_back_to_full_render() {
+        let bundle = ContextBundle::new()
+            .with_identity("agent-1", "技术负责人")
+            .with_scene("wake_gate")
+            .with_user_message("用户消息");
+        assert_eq!(bundle.render_within(None), bundle.render());
     }
 }
