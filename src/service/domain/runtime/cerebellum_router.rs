@@ -46,6 +46,19 @@ pub const ENTRY_GATE_CONFIDENCE_THRESHOLD: f32 = 0.9;
 /// 入口门场景名（日志/计量口径，也是 qid 命名空间前缀）
 pub const ENTRY_GATE_SCENE: &str = "entry_gate";
 
+/// 「第 0 案」记账 scene：小脑**装配为空**时的留痕归类
+///
+/// 为什么单独开一个 scene 而不复用 `entry_gate` / `degraded`：装配缺失不是
+/// 「某场景降级」，而是「本 run 根本没有小脑」这一上层事实。混进任何业务场景
+/// 都会把该场景的降级率算脏（分母里塞进一批根本没调用过的样本）。
+pub const BOOTSTRAP_SCENE: &str = "bootstrap";
+
+/// 「第 0 案」记账结论：`brain.cerebellum == None`（未装配/未启用小脑模型）
+///
+/// 与「装配了但本场景未触发」严格区分：后者在任何 scene 下都不会出现本条，
+/// 前者必然出现 —— 这正是本条留痕要回答的唯一问题。
+pub const BOOTSTRAP_NOT_ASSEMBLED: &str = "not_assembled";
+
 /// 入口候选池场景名
 pub const ENTRY_POOL_SCENE: &str = "entry_pool";
 

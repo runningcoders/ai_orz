@@ -361,6 +361,29 @@ impl RuntimeDomainImpl {
             timeout_secs,
         );
 
+        // ══════ 「第 0 案」：装配为空时的记账留痕（AMan 2026-11-10 拍板）══════
+        //
+        // 缺的是什么：未装配小脑时，全部小脑记录点都是「先判缺失 → return，
+        // 一条不记」（本文件下方 `if brain.cerebellum.is_some()` 与
+        // `chain_reply::judge_chain_reply` 的 `if brain.cerebellum.is_none()`）。
+        // 于是 jsonl 上「没装配」与「装配了但本场景未触发」**完全同形**，
+        // 排查只能靠翻 wake_brain 日志倒推。
+        //
+        // 放在这里而不是 wake_brain：装配发生在 awaken 之前，那里没有 trace_id，
+        // 而 `record_cerebellum` 对空 run_id 是「直接丢弃」——写在装配点等于没写。
+        // 本位置在 brain 解析之后、小脑路由之前，trace_id 已就绪，且无论本周期
+        // 后续走 Direct / Proceed / Skip 哪条分支，这一条都先落地。
+        //
+        // applied=false：本态没有任何下游行为被改变（小脑根本没参与判断）。
+        // degraded=None：不是降级，是「能力未装配」这一事实本身 —— 记成 degraded
+        // 会把它算进降级率，而分母里根本没有对应的小脑调用。
+        //
+        // 每周期一条：compaction 回环时同一 run 会有多条同值条目，这是刻意的
+        // —— 条数本身反映周期数，不做去重（去重需要跨周期状态，收益不抵复杂度）。
+        if let Some(item) = bootstrap_not_assembled_item(brain.cerebellum.as_ref()) {
+            crate::pkg::think_trace::record_cerebellum(trace_id, item);
+        }
+
         // 唤醒级时长预算：本周期只能用到剩余额度（跨周期累计耗时见 base）。
         // 放在 async 块外：外层 tokio::time::timeout 与块内的早退判定共用同一个值。
         let remaining_timeout = if timeout_secs == 0 {
@@ -648,6 +671,26 @@ impl RuntimeDomainImpl {
     }
 }
 
+/// 装配为空时该写的「第 0 案」记账条目（`None` = 装配正常，不写）
+///
+/// ## 为什么抽成纯函数而不是内联 `if`
+///
+/// 这条留痕的价值全在「取值对不对」上：scene 写成 `entry_gate` 会把装配缺失
+/// 混进真场景的降级率，`applied = true` 会把「没参与判断」记成「生效」。内联在
+/// `run_think_loop` 里，这些取值只能靠读代码相信 —— 而该函数要 `Brain` +
+/// `RoundDeps` 才能跑起来（`ModelProviderPo` 没有 `Default`，重型 mock 只会让
+/// 断言变成「测试脚手架对不对」）。
+///
+/// 泛型 `T` 而非 `&ModelProviderPo`：判定只关心「有没有」，与具体配置无关，
+/// 单测用 `Some(&())` 就能覆盖「装配正常不写」那一侧，不必构造 provider。
+fn bootstrap_not_assembled_item<T>(cerebellum: Option<&T>) -> Option<ThinkTraceCerebellum> {
+    cerebellum.is_none().then(|| ThinkTraceCerebellum {
+        scene: cerebellum_router::BOOTSTRAP_SCENE.to_string(),
+        decision: cerebellum_router::BOOTSTRAP_NOT_ASSEMBLED.to_string(),
+        ..Default::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -747,5 +790,55 @@ mod tests {
             ThinkingScene::Settle,
             "search_memory"
         ));
+    }
+    // ══════ 第 0 案：装配为空 vs 装配正常，必须在轨迹里可区分 ══════
+
+    #[test]
+    fn bootstrap_item_is_written_when_cerebellum_absent() {
+        let item = bootstrap_not_assembled_item::<()>(None)
+            .expect("装配为空时必须写一条记账留痕，否则「没装配」与「没触发」在 jsonl 上同形");
+
+        // 值域逐项钉死：改任何一个都会让这条红
+        assert_eq!(item.scene, "bootstrap", "scene 必须是独立记账域");
+        assert_eq!(item.decision, "not_assembled");
+        assert_eq!(
+            item.applied, false,
+            "没参与判断就不能记生效，否则生效率被这批样本抬高"
+        );
+        assert_eq!(
+            item.degraded, None,
+            "装配缺失不是降级：记成 degraded 会进降级率的分母，而这里根本没调用过小脑"
+        );
+        assert_eq!(item.confidence, None, "没有判断就没有置信度");
+        assert_eq!(item.latency_ms, None, "没有调用就没有时延");
+        // scene 与既有业务场景不得重叠（否则该场景的降级率被算脏）
+        assert_ne!(item.scene, cerebellum_router::ENTRY_GATE_SCENE);
+        assert_ne!(item.scene, cerebellum_router::ENTRY_POOL_SCENE);
+    }
+
+    #[test]
+    fn bootstrap_item_is_not_written_when_cerebellum_assembled() {
+        assert!(
+            bootstrap_not_assembled_item(Some(&())).is_none(),
+            "装配正常时一条都不许写：否则每次 run 都多一条假「未装配」"
+        );
+    }
+
+    #[test]
+    fn bootstrap_item_survives_buffer_round_trip() {
+        // 判定 → 记账 → 取出：证明这条留痕真能落到 run 收尾行里，而不是只存在于
+        // 一个 Nobody 读取的 Option。落盘基址未注入时 record 会静默返回，
+        // 故断言前先注入（与 think_trace 既有用例同口径）。
+        crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_think_loop_bootstrap"));
+        let run_id = "test-run-bootstrap-not-assembled";
+        let _ = crate::pkg::think_trace::take_cerebellum(run_id); // 清场防串味
+
+        let item = bootstrap_not_assembled_item::<()>(None).expect("前置条件：装配为空");
+        crate::pkg::think_trace::record_cerebellum(run_id, item);
+
+        let items = crate::pkg::think_trace::take_cerebellum(run_id);
+        assert_eq!(items.len(), 1, "记账条目必须能被收尾 take 取到");
+        assert_eq!(items[0].scene, "bootstrap");
+        assert_eq!(items[0].decision, "not_assembled");
     }
 }
