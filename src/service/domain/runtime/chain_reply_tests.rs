@@ -230,8 +230,8 @@ fn take_traces(run_id: &str) -> Vec<ThinkTraceCerebellum> {
 fn total_input_budget_is_800_and_body_gets_the_remainder() {
     // Q3 定谳的 800 必须字面落在代码里（不靠注释自述）
     assert_eq!(INPUT_TOKEN_BUDGET, 800);
-    assert_eq!(FRAME_OVERHEAD_RESERVE, 400);
-    assert_eq!(body_token_budget(), 400);
+    assert_eq!(FRAME_OVERHEAD_RESERVE, 450);
+    assert_eq!(body_token_budget(), 350);
     // 条数上限与消费者侧回溯硬上限同口径
     assert_eq!(MAX_CHAIN_MESSAGES, 32);
 }
