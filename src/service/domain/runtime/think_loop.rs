@@ -801,8 +801,8 @@ mod tests {
         // 值域逐项钉死：改任何一个都会让这条红
         assert_eq!(item.scene, "bootstrap", "scene 必须是独立记账域");
         assert_eq!(item.decision, "not_assembled");
-        assert_eq!(
-            item.applied, false,
+        assert!(
+            !item.applied,
             "没参与判断就不能记生效，否则生效率被这批样本抬高"
         );
         assert_eq!(
