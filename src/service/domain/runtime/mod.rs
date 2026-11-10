@@ -483,6 +483,8 @@ mod types;
 #[cfg(test)]
 mod cancel_test;
 #[cfg(test)]
+mod cerebellum_log_tests;
+#[cfg(test)]
 mod tool_execution_test;
 
 // DefaultPromptBuilder 已迁移到 dal/agent.rs，由 AgentDal.prompt_builder() 提供
