@@ -29,6 +29,7 @@
 //! `started/finished` status 一律不动 —— skip 是正常决策不是异常，往 status
 //! 里塞 `skipped` 会让成功率/失败率统计失真，且要新增枚举值波及前端与统计侧。
 
+use super::cerebellum_context as context;
 use super::types::IntentAnalysis;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
@@ -91,8 +92,11 @@ const OPTIONS: [(&str, &str); 2] = [
     ),
 ];
 
-/// 透传给模型的上下文事实（与路由同口径：只带轻量上下文，不取全量记忆）
-const STATE_KEYS: &[&str] = &["agent_id", "agent_name", "last_user_message"];
+/// 透传给模型的上下文事实：统一由 [`context::ContextBundle`] 渲染成单键分块正文
+///
+/// 键名收敛到 `context::STATE_KEY` 一处（单出口）：本文件不再出现
+/// `agent_id` / `last_user_message` 这类裸键拼装。
+const STATE_KEYS: &[&str] = &[context::STATE_KEY];
 
 /// 本场景的策略形态（无状态，可反复构造）
 fn policy() -> PickOnePolicy {
@@ -196,10 +200,15 @@ pub(crate) async fn skip_if_pointless(
     }
 
     let policy = policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("last_user_message", text);
+    let metrics = Metrics::new().with(
+        context::STATE_KEY,
+        context::ContextBundle::new()
+            .with_identity(&brain.agent_id, &brain.agent_name)
+            .with_scene(SCENE)
+            .with_user_message(text)
+            .with_recent_dialogue(&brain.memories, context::RECENT_DIALOGUE_LIMIT)
+            .render(),
+    );
 
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
