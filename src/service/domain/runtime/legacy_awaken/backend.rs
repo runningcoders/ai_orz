@@ -43,6 +43,12 @@ pub struct ThinkInput {
     ///
     /// 缺失/降级意图阶段时为 0，等价于未改造前的固定口径。
     pub thinking_intensity_offset: i32,
+    /// 绝对思考强度（`Some` = 跳过 base/场景/动态偏移整条链直接采用；`None` = 逐字节等价）
+    ///
+    /// 唤醒门（`wake_gate`）判「浅答」时给 `Some(ThinkingIntensity::MIN)`：强度链是
+    /// `base + 场景偏移 + 动态偏移`（加减，不是赋值），`base=70` 时靠偏移减不到 0，
+    /// 必须新增独立通道才能表达「真 0」。
+    pub force_intensity: Option<common::enums::ThinkingIntensity>,
     /// 唤醒级用量表（思考循环每轮写回，跨周期累计）
     pub usage: Arc<Mutex<WakeUsage>>,
     /// 唤醒级收件箱：`Some` 时轮级图启用 `poll_round`
@@ -116,7 +122,8 @@ impl ThinkBackend for LegacyBackend {
         .with_usage(&input.usage)
         .with_monitoring(&deps.think_runtime, &deps.policy)
         .with_progress(&deps.progress)
-        .with_thinking_intensity_offset(input.thinking_intensity_offset);
+        .with_thinking_intensity_offset(input.thinking_intensity_offset)
+        .with_force_intensity(input.force_intensity);
         if let Some(inbox) = &input.inbox {
             params = params.with_inbox(inbox);
         }

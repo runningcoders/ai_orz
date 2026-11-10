@@ -58,8 +58,9 @@ struct ScriptedBackend {
     intents: Mutex<VecDeque<IntentAnalysis>>,
     /// analyze_intent 直接报错（意图降级路径）；队列与它互斥使用
     fail_intent: AtomicBool,
-    /// 每次 think() 收到的 (max_rounds, start_round)：锁「周期满额重启」口径
-    pub think_round_inputs: Mutex<Vec<(usize, usize)>>,
+    /// 每次 think() 收到的 (max_rounds, start_round, force_intensity)：
+    /// 锁「周期满额重启」口径 + P3-b 浅答门的绝对强度注入
+    pub think_round_inputs: Mutex<Vec<(usize, usize, Option<common::enums::ThinkingIntensity>)>>,
     pub think_calls: AtomicUsize,
     pub compact_calls: AtomicUsize,
     pub discover_calls: AtomicUsize,
@@ -148,10 +149,12 @@ impl ThinkBackend for ScriptedBackend {
         self.think_calls.fetch_add(1, Ordering::SeqCst);
         // 记录轮次口径：P2 回归锁靠它断言「每个周期满额重启」
         match self.think_round_inputs.lock() {
-            Ok(mut q) => q.push((input.max_rounds, input.start_round)),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .push((input.max_rounds, input.start_round)),
+            Ok(mut q) => q.push((input.max_rounds, input.start_round, input.force_intensity)),
+            Err(poisoned) => poisoned.into_inner().push((
+                input.max_rounds,
+                input.start_round,
+                input.force_intensity,
+            )),
         }
         let front = self
             .thinks
@@ -785,7 +788,7 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
     assert_eq!(inputs.len(), 3);
     let max_rounds = inputs[0].0;
     assert!(max_rounds > 0, "effective_max_rounds 应为正数");
-    for (i, (m, start)) in inputs.iter().enumerate() {
+    for (i, (m, start, force)) in inputs.iter().enumerate() {
         assert_eq!(
             *m,
             max_rounds,
@@ -796,6 +799,14 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
             *start,
             i * 10,
             "第 {} 次 deliberate 的起始轮次应累计（脚本每次报 10 轮）",
+            i + 1
+        );
+        // P3-b 降级侧**两维同时断言**：max_rounds 维（上方已断言 == effective_max_rounds）
+        // + force_intensity 维（本行）。语义：小脑未装配的组织**不得**被误判成全员
+        // 浅答 —— `Brain::new_local` 的 `cerebellum` 恒为 `None`，故一个强度都不该注入。
+        assert!(
+            force.is_none(),
+            "第 {} 次 deliberate 不得注入绝对强度（未装配小脑 ⇒ 降级侧 force_intensity=None）",
             i + 1
         );
     }

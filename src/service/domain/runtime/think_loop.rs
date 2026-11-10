@@ -335,6 +335,7 @@ impl RuntimeDomainImpl {
             policy,
             progress,
             thinking_intensity_offset,
+            force_intensity,
             usage,
             inbox,
         } = params;
@@ -608,6 +609,7 @@ impl RuntimeDomainImpl {
                     scene,
                     thinking_intensity_offset,
                     thinking_strength,
+                    force_intensity,
                     trace_id,
                     messages,
                     tool_descriptors,
