@@ -302,20 +302,22 @@ fn apply_credential_requirements_merges_top_level_contract() {
 }
 
 #[test]
-fn apply_credential_requirements_none_keeps_existing_and_empty_clears() {
+fn apply_credential_requirements_none_keeps_existing_and_empty_writes_empty_array() {
     let scope = tool_credential_scope(ToolProtocol::Shell);
     let mut config = json!({
         "program": "cli",
         "credential_requirements": [serde_json::to_value(shell_env_requirement("KEEP")).unwrap()]
     });
+    let before = config.clone();
     apply_credential_requirements(&mut config, None, scope).unwrap();
-    assert_eq!(
-        config["credential_requirements"][0]["binding"]["name"],
-        "KEEP"
-    );
+    // `None` = 调用方未声明 → 既有声明逐字节不变
+    assert_eq!(config, before);
 
     apply_credential_requirements(&mut config, Some(&[]), scope).unwrap();
-    assert!(config.get("credential_requirements").is_none());
+    // `Some([])` = 用户显式清空 → 落空数组（零注入），**不是**删键：
+    // 删键会被读侧判成「从未配置」而回落工厂默认，用户意图随之丢失
+    assert_eq!(config["credential_requirements"], json!([]));
+    assert_eq!(config["program"], "cli");
 }
 
 #[test]
@@ -445,15 +447,16 @@ fn builtin_scope_rejects_duplicate_identity_injection_names() {
 }
 
 #[test]
-fn builtin_empty_requirements_clears_key_to_fall_back_to_factory() {
+fn builtin_empty_requirements_writes_empty_array_zero_injection() {
     let scope = tool_credential_scope(ToolProtocol::Builtin);
     let mut config = json!({
         "command": "agent-browser",
         "credential_requirements": [serde_json::to_value(builtin_env_requirement("OLD")).unwrap()]
     });
     apply_credential_requirements(&mut config, Some(&[]), scope).unwrap();
-    // 空数组 = 显式清空 → 读侧回落工厂静态声明
-    assert!(config.get("credential_requirements").is_none());
+    // 空数组 = 用户显式零注入：键仍存在 ⇒ 读侧「键在即权威」原样采信 `[]`，
+    // 绝不回落工厂静态声明（这是「删空即关闭注入」的数据前提）
+    assert_eq!(config["credential_requirements"], json!([]));
     assert_eq!(config["command"], "agent-browser");
 }
 
