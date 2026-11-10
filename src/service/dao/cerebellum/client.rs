@@ -260,6 +260,19 @@ mod cerebellum_client_tests {
         assert!(resolve_endpoint(&po).is_err());
     }
 
+    /// 字面断言：缺省超时必须是 1000ms（AMan 2026-11-10 拍板）。
+    ///
+    /// 上一条用例引用常量，改常量时会「自动跟变」——它只能证明「配置优先、
+    /// 缺省兜底」这条链路成立，**证不了缺省值到底是几百毫秒**。这里用字面
+    /// 数字钉死：有人把它改回 800 或改成别的值，本用例立刻红。
+    #[test]
+    fn default_timeout_ms_is_1000_by_decision() {
+        assert_eq!(
+            DEFAULT_CEREBELLUM_TIMEOUT_MS, 1000,
+            "缺省小脑超时必须是 1000ms（AMan 2026-11-10 拍板：800ms → 1 秒）"
+        );
+    }
+
     #[tokio::test]
     async fn timeout_uses_config_then_default() {
         // RequestContext::new_system() 依赖全局 Storage 单例（builder 未显式

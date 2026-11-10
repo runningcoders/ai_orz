@@ -27,7 +27,17 @@ use std::sync::{Arc, OnceLock};
 /// `/compatible-mode/v1`），client 只追加 `/systemone`。
 pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
 /// 默认请求超时（毫秒）：小脑快判断亚秒级预算；config.timeout_ms 可逐模型覆盖
-pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 800;
+///
+/// 800 → 1000（2026-11-10 AMan 拍板「把小脑判断的超时时间调大一点，1 秒吧」）：
+/// 800ms 对「一次判多个场景 + 输入侧多带链内消息」偏紧，超时会让决策恒定降级、
+/// 功能白做。1000ms 与 `chain_reply` 的 800 tokens 输入预算是**耦合参数**
+/// （联合核算见 P3 报告），改这一行即可整体生效：现网 provider 的 `config`
+/// 无一条显式写 `timeout_ms`，`resolve_timeout_ms` 全部落到本常量。
+///
+/// 作用面：整批共享**一份**预算（`BrainDal::decide` 的 for 循环整体包一个
+/// `tokio::time::timeout`），非 per-scene —— 改它对全部已接 scene 同时生效，
+/// 回滚也只需 revert 本行。
+pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 1000;
 
 /// Cerebellum DAO trait - 小脑快判断接口
 #[async_trait]
