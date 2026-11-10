@@ -121,6 +121,23 @@ pub(crate) async fn rank(
     // 阶段一：策略声明要问什么（纯函数，未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
     if requests.is_empty() {
+        // 续-3：被丢弃的请求必须留痕。候选不足 2 条属常态 ⇒ info（warn 会刷屏）。
+        // `usable` 直接读事实桶里已过滤好的选项数，零重算。
+        let usable = metrics
+            .get_as::<Vec<Candidate>>(KEY_CANDIDATES)
+            .map_or(0, |v| v.len());
+        let dropped = skills.len().saturating_sub(usable);
+        log_info!(
+            ctx,
+            "skill_relevance",
+            decision = "empty_requests",
+            scene = SCENE,
+            candidates = skills.len(),
+            usable = usable,
+            dropped = dropped,
+            keep = keep,
+            "skill rerank asked nothing, keep original order"
+        );
         return (None, None);
     }
 

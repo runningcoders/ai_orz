@@ -187,6 +187,18 @@ pub async fn select(
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
     if requests.is_empty() {
+        // 续-3：被丢弃的请求必须留痕。⚠️ 本分支在现配置下结构不可达
+        // （`LEVELS` 是 11 档编译期常量，`PickOnePolicy::request` 只在选项为空时返回
+        // None）⇒ 本行日志只能由代码审查保证，不计入「已测」。
+        log_info!(
+            ctx,
+            "thinking_strength",
+            decision = "empty_requests",
+            scene = SCENE,
+            phase = phase,
+            degraded_reason = DEGRADED_EMPTY_REQUESTS,
+            "thinking strength asked nothing, keep original logic"
+        );
         return StrengthSelection::not_called(DEGRADED_EMPTY_REQUESTS);
     }
 
