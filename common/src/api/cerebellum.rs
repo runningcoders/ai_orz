@@ -20,7 +20,7 @@
 //! - 请求 = `{"model", "state", "questions": {qid: {"type","instructions","criteria"}}}`
 //! - 响应 = `{"model", "answers": {qid: {...}}, "usage": {"input_tokens","output_tokens"}}`
 //! - choice：criteria 为选项对象（≤255 项），输出 {type,choice,confidence,probabilities}
-//! - score：criteria 为有序等级数组（2~10 级），输出
+//! - score：criteria 为有序等级数组（2~255 级，建议 3~7 级），输出
 //!   {type,score,probabilities,legend,confidence}；legend 为「等级序号 → 描述」对象
 //! - noul：instructions + 可选 {true,false} 判据对象，输出 {type,noul}（0~1 概率，无 confidence）
 
@@ -34,7 +34,12 @@ pub const MAX_CHOICE_OPTIONS: usize = 255;
 /// score 问题等级数下限（协议边界）
 pub const MIN_SCORE_LEVELS: usize = 2;
 /// score 问题等级数上限（协议边界）
-pub const MAX_SCORE_LEVELS: usize = 10;
+///
+/// **官方口径是 2–255 级**（阿里百炼《决策模型 API》原文：「score：从低到高的
+/// 等级描述数组（2–255 级，建议 3–7 级且每级可清晰区分）」）。旧值 10 是 jev
+/// 早期公开口径的残留，接入百炼后已对齐到 255；平台自身不校验「建议 3–7 级」
+/// 这条软建议（那是给用户的提示，不是协议边界）。
+pub const MAX_SCORE_LEVELS: usize = 255;
 
 /// System One 问题类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,7 +60,7 @@ pub enum QuestionCriteria {
     /// 对象形态：choice 为选项映射（键=选项标识，值=描述，≤255 项）；
     /// noul 为判据映射（键仅限 `true` / `false`）
     Choices(BTreeMap<String, String>),
-    /// score：有序等级数组（从低到高），2~10 级
+    /// score：有序等级数组（从低到高），2~255 级（官方口径；建议 3~7 级）
     Levels(Vec<String>),
 }
 
@@ -116,7 +121,7 @@ impl CerebellumQuestion {
                     if v.len() < MIN_SCORE_LEVELS || v.len() > MAX_SCORE_LEVELS {
                         return Err(err!(
                             ConfigInvalid,
-                            "score criteria must have 2..=10 levels, got {}",
+                            "score criteria must have 2..=255 levels, got {}",
                             v.len()
                         ));
                     }

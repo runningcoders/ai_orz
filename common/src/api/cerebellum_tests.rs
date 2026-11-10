@@ -100,7 +100,7 @@ fn response_without_usage_defaults_to_zero() {
     assert_eq!(resp.usage.output_tokens, 0);
 }
 
-/// 边界校验：choice ≤255 / score 2~10 / noul 可选 {true,false} 判据
+/// 边界校验：choice ≤255 / score 2~255（官方口径）/ noul 可选 {true,false} 判据
 #[test]
 fn question_validate_enforces_protocol_boundaries() {
     // 合法用例
@@ -147,18 +147,32 @@ fn question_validate_enforces_protocol_boundaries() {
     };
     assert!(bad_choice.validate().is_err());
 
-    // score 1 级 / 11 级越界
+    // score 1 级越界（下限恒 2，官方与平台一致）
     let bad_score_low = CerebellumQuestion {
         question_type: QuestionType::Score,
         instructions: "i".into(),
         criteria: Some(QuestionCriteria::Levels(vec!["唯一".into()])),
     };
     assert!(bad_score_low.validate().is_err());
-    let bad_score_high = CerebellumQuestion {
+    // **11 级必须合法**：官方上限是 255，旧上限 10 是 jev 早期口径残留。
+    // 这条断言是本笔「10 → 255 对齐」的反向护栏：有人把上限压回 10，它立刻红。
+    let eleven_levels = CerebellumQuestion {
         question_type: QuestionType::Score,
         instructions: "i".into(),
         criteria: Some(QuestionCriteria::Levels(
             (0..11).map(|i| format!("L{i}")).collect(),
+        )),
+    };
+    assert!(
+        eleven_levels.validate().is_ok(),
+        "11 级必须合法：官方上限 255，旧值 10 是未对齐的残留"
+    );
+    // 256 级越界（新上限 255 的正向边界）
+    let bad_score_high = CerebellumQuestion {
+        question_type: QuestionType::Score,
+        instructions: "i".into(),
+        criteria: Some(QuestionCriteria::Levels(
+            (0..256).map(|i| format!("L{i}")).collect(),
         )),
     };
     assert!(bad_score_high.validate().is_err());

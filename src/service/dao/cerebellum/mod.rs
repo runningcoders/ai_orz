@@ -21,10 +21,20 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
-/// System One 默认端点（Jev 协议 base_url 缺省兜底；provider 配置 base_url 优先）
+/// System One 默认端点（**仅 `ProviderType::Jev` 的 base_url 缺省兜底**）
 ///
 /// 与 OpenAI 兼容 provider 同口径：**版本前缀由 base_url 承载**（如 Qwen 的
 /// `/compatible-mode/v1`），client 只追加 `/systemone`。
+///
+/// ⚠️ 本常量**只对 `ProviderType::Jev` 生效**（分派点：`client::default_base_url_for`）。
+/// 阿里百炼决策模型（`ProviderType::Qwen` + `capability = Decision`）走
+/// **Workspace 专用 Endpoint**，host 里含 workspace id 与地域，平台无法推断，
+/// 因此未配 base_url 时**显式报错**，而不是落到本端点——否则「没配百炼端点」
+/// 会被静默改写成「请求打到 TypeSafe 商业端点」，排查方向全错。
+///
+/// 百炼 base_url 填法（前端只填这一个字段，**无需新增配置项**）：
+/// `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`
+/// （新加坡地域把 `cn-beijing` 换成 `ap-southeast-1`；API Key 须与地域匹配）。
 pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
 /// 默认请求超时（毫秒）：小脑快判断的全局缺省预算；config.timeout_ms 可逐模型覆盖
 ///
