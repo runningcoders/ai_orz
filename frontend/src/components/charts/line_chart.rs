@@ -36,6 +36,12 @@ pub enum LineChartValueField {
     TokensInput,
     /// 输出 Token（单个时间桶内的 completion tokens）
     TokensOutput,
+    /// 平均耗时（毫秒，单个时间桶内的均值）
+    ///
+    /// `TimeSeriesPoint::avg_duration_ms` 是 `Option`：桶内没有带耗时的记录时为 `None`。
+    /// 这里映射成 `NaN` 交给上层**过滤**——绝不能映射成 0：0ms 是「调用瞬时返回」，
+    /// 会整条曲线压到地板上，等于用图形说谎。
+    AvgDurationMs,
 }
 
 /// 按取值字段从数据点取出绘制值
@@ -44,6 +50,7 @@ fn point_value(p: &TimeSeriesPoint, field: LineChartValueField) -> f64 {
         LineChartValueField::CallCount => p.call_count as f64,
         LineChartValueField::TokensInput => p.tokens_input as f64,
         LineChartValueField::TokensOutput => p.tokens_output as f64,
+        LineChartValueField::AvgDurationMs => p.avg_duration_ms.unwrap_or(f64::NAN),
     }
 }
 
@@ -421,14 +428,21 @@ fn draw_chart(
 
     // 7. 绘制折线（流光发光）与数据点（呼吸光晕）
     for (color, field, _label, axis) in &specs {
-        let pts = to_points(
+        let pts: Vec<(f64, f64, f64)> = to_points(
             *field,
             if *axis == ChartAxis::Right {
                 right_max.unwrap_or(1.0)
             } else {
                 max_y
             },
-        );
+        )
+        // 过滤「无数据」点：`avg_duration_ms = None` 的桶映射成 NaN，照画会得到非有限的
+        // 画布坐标（浏览器静默丢弃该次 line_to，曲线形如断裂且无法解释）。
+        // 已知的展示简化：相邻有值点之间会直连跨过空桶——那是「该桶没有耗时样本」，
+        // 不是 0 值；图形不伪造 0（0 会把曲线压到轴上，比留空更容易被误读）。
+        .into_iter()
+        .filter(|(_, y, _)| y.is_finite())
+        .collect();
         draw_line(ctx, &pts, now, color);
         draw_points(ctx, &pts, now, color);
     }
@@ -859,6 +873,8 @@ mod tests {
             tokens_cached: 0,
             tokens_reasoning: 0,
             call_count: 0,
+            avg_duration_ms: None,
+            duration_sample_count: 0,
         }
     }
 

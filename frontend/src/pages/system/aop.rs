@@ -432,6 +432,8 @@ fn AopStatsPanel() -> Element {
             tokens_cached: 0,
             tokens_reasoning: 0,
             call_count: p.call_count,
+            avg_duration_ms: None,
+            duration_sample_count: 0,
         })
         .collect();
 
