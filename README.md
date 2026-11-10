@@ -204,7 +204,7 @@ make wiki-stale    # 诊断：文档里引用的失效代码路径
 |---|---|
 | [docs/AGENT_GUIDE.md](./docs/AGENT_GUIDE.md) | **实现需求入口**：五步流程 + 15 模块路由表 + 在途改造清单 + 反模式 |
 | [docs/README.md](./docs/README.md) | 知识库地图与运维手册（命令 / 查询配方 / 维护场景 / 元数据规范）|
-| [AGENTS.md](./AGENTS.md) | AI 开发规范总览 + 完整文档索引 |
+| [AGENTS.md](./AGENTS.md) | AI 开发规范总览 + 完整文档索引 + **贡献流程（分支与 PR，禁直推 main）** |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 权威架构总纲（实体关系 / 设计哲学 / 核心概念）|
 | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发必读**：分层架构实践 + 反模式避坑 |
 | [docs/CODE_STANDARDS.md](./docs/CODE_STANDARDS.md) | 编码规范 SSOT（命名 / 分层 / 宏 / 错误 / 日志 / 分页）|
