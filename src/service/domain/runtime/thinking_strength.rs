@@ -20,6 +20,7 @@
 //! 能力开关的唯一判定点在 `think_round::runner::resolve_call_options`，这里
 //! 不重复判。这样「算出了但没生效」是可观测的，不是静默失效。
 
+use super::cerebellum_context as context;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
@@ -78,7 +79,11 @@ const LEVELS: [(&str, &str); 11] = [
 ];
 
 /// 透传给模型的上下文事实（与路由同口径：只带轻量上下文，不取全量记忆）
-const STATE_KEYS: &[&str] = &["agent_id", "agent_name", "scene", "last_user_message"];
+///
+/// 键名收敛到 [`context::STATE_KEY`] 一处（单出口）。原 `scene` 键放的是 **phase**
+/// （`ThinkingScene::as_str()`），收敛后 phase 作为 `render_for` 的 scene 参数
+/// 进正文「当前场景」块——该维度信息不丢。
+const STATE_KEYS: &[&str] = &[context::STATE_KEY];
 
 /// 一次强度选择的结果
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -178,11 +183,11 @@ pub async fn select(
     }
 
     let policy = policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("scene", phase)
-        .with("last_user_message", user_text);
+    // 单出口（笔④-2 笔 B）：phase 仍进正文「当前场景」块，维度信息不丢
+    let metrics = Metrics::new().with(
+        context::STATE_KEY,
+        context::render_for(brain, phase, user_text),
+    );
 
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);

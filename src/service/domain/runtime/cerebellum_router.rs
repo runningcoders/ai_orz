@@ -28,6 +28,7 @@
 //!
 //! 阈值与降级常量集中在此，便于 Spike 后集中调参（只调常量不动结构）。
 
+use super::cerebellum_context as context;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{DecisionPolicy, DecisionValue, Metrics, PickOne, PickOnePolicy, Policy};
@@ -87,7 +88,10 @@ const ENTRY_POOL_INSTRUCTIONS: &str = "从候选回复里挑一句最适合回�
 候选都只是简短承接语，不要挑与消息场景不符的。";
 
 /// 透传给模型的上下文事实（三铁律：只带轻量上下文，不取全量记忆）
-const ENTRY_STATE_KEYS: &[&str] = &["agent_id", "agent_name", "last_user_message"];
+///
+/// 键名收敛到 [`context::STATE_KEY`] 一处（单出口）：本文件不再出现 `agent_id` /
+/// `last_user_message` 这类平铺键，正文由组织器分块渲染进单一 `context` 键。
+const ENTRY_STATE_KEYS: &[&str] = &[context::STATE_KEY];
 
 /// 入口候选池 id（顺序即语义序，`pool_0` = 最中性）
 ///
@@ -256,10 +260,10 @@ pub async fn route(
 
     // 轻量上下文（三铁律：不取全量记忆、先于小脑的仅有消息文本）
     let policy = entry_gate_policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("last_user_message", user_text);
+    let metrics = Metrics::new().with(
+        context::STATE_KEY,
+        context::render_for(brain, ENTRY_GATE_SCENE, user_text),
+    );
 
     // 形态负责「问什么」：一次单选，选项与判据都在策略里；
     // 选项描述只写判据语义，不写实现细节——换模型 / 换实现时判据不用改。
@@ -394,10 +398,10 @@ async fn select_pool_reply(
     }
 
     let policy = pool_policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("last_user_message", user_text);
+    let metrics = Metrics::new().with(
+        context::STATE_KEY,
+        context::render_for(brain, ENTRY_POOL_SCENE, user_text),
+    );
 
     let requests = policy.prepare(&metrics);
     let outcome = dal.decide(ctx.clone(), brain, requests).await;

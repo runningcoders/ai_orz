@@ -235,15 +235,8 @@ pub(crate) async fn maybe_shallow(
     }
 
     let policy = policy();
-    let metrics = Metrics::new().with(
-        context::STATE_KEY,
-        context::ContextBundle::new()
-            .with_identity(&brain.agent_id, &brain.agent_name)
-            .with_scene(SCENE)
-            .with_user_message(text)
-            .with_recent_dialogue(&brain.memories, context::RECENT_DIALOGUE_LIMIT)
-            .render(),
-    );
+    // 单出口（笔④-2 笔 B）：装配与容量自截都在组织器，本处只调一次
+    let metrics = Metrics::new().with(context::STATE_KEY, context::render_for(brain, SCENE, text));
 
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);

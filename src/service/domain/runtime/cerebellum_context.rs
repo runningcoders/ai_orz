@@ -218,8 +218,6 @@ impl ContextBundle {
 ///
 /// 六个接入场景（三 gate / entry_gate / entry_pool / thinking_strength）都走这里，
 /// 不再各写一遍 `Metrics::new().with(...)` 拼装。
-// 笔 B 把六个场景切到本函数后，这行 allow 随之移除（此刻确有未使用窗口）
-#[allow(dead_code)]
 pub(crate) fn render_for(brain: &Brain, scene: &str, user_text: &str) -> String {
     ContextBundle::new()
         .with_identity(&brain.agent_id, &brain.agent_name)
@@ -230,8 +228,6 @@ pub(crate) fn render_for(brain: &Brain, scene: &str, user_text: &str) -> String 
 }
 
 /// 小脑模型容量（与 `dal/brain.rs` 的兜底同源同口径：配置 → provider → None）
-// 同上：笔 B 落码后由 render_for 之外不再需要 allow
-#[allow(dead_code)]
 pub(crate) fn context_capacity(brain: &Brain) -> Option<u64> {
     brain
         .cerebellum
@@ -476,5 +472,64 @@ mod tests {
             .with_scene("")
             .with_user_message("   ");
         assert_eq!(bundle.render(), "", "全空块必须渲染成空串");
+    }
+
+    /// 缺口 1（前台 01a1c645 裁定）：**截尾路径**也要跑一遍完整结构判据。
+    ///
+    /// 砍块路径（`render_kept`）与截尾路径（保标题 + body 截尾）的拼装不一样，
+    /// #3 只覆盖了前者、#5 只断了首字符非空白 ⇒ 这里补「每段首行 `## ` 且非空行数 ≥ 2」。
+    #[test]
+    fn single_block_tail_truncation_passes_full_structure_criteria() {
+        let bundle = ContextBundle::new().with_identity("agent-tail", "截尾夹具");
+        assert_eq!(bundle.sections.len(), 1, "夹具必须恰一块才能走到 TAIL 分支");
+        let rendered = bundle.render_within_tokens(0);
+        for part in rendered.split("\n\n") {
+            assert!(!part.trim().is_empty(), "不得出现空段落：{rendered:?}");
+            let first = part.lines().next().unwrap_or("");
+            assert!(first.starts_with("## "), "每块首行必须是二级标题：{part:?}");
+            let non_empty = part.lines().filter(|line| !line.trim().is_empty()).count();
+            assert!(non_empty >= 2, "每块至少标题 + 正文两行：{part:?}");
+        }
+        assert_every_block_has_body(&rendered);
+    }
+
+    /// 缺口 1（多块侧）：`total > 1` 的截尾走「省略 N 块」标注，同样要过结构判据。
+    #[test]
+    fn multi_block_tail_truncation_passes_full_structure_criteria() {
+        let mut bundle = ContextBundle::new()
+            .with_identity("agent-long", "长块夹具")
+            .with_scene("wake_gate");
+        // 首块正文撑到远超「第二块 + 标注」的成本 ⇒ 只有截尾分支能落地
+        bundle.sections[0].body = "首块正文".repeat(200);
+        let rendered = bundle.render_within_tokens(50);
+        assert!(
+            rendered.contains(&omission_note(1)),
+            "被砍 1 块必须写成「省略 1 块」：{rendered:?}"
+        );
+        for part in rendered.split("\n\n") {
+            assert!(!part.trim().is_empty(), "不得出现空段落：{rendered:?}");
+            let first = part.lines().next().unwrap_or("");
+            assert!(first.starts_with("## "), "每块首行必须是二级标题：{part:?}");
+            let non_empty = part.lines().filter(|line| !line.trim().is_empty()).count();
+            assert!(non_empty >= 2, "每块至少标题 + 正文两行：{part:?}");
+        }
+        assert_every_block_has_body(&rendered);
+    }
+
+    /// 缺口 2（前台裁定）：`TAIL_TRUNCATION_NOTE` 分支的语义断言 ——
+    /// 一块都没被砍，全文必须出现截尾标注、且**不得**残留「省略 N 块」。
+    #[test]
+    fn tail_truncation_note_never_claims_blocks_were_omitted() {
+        let bundle = ContextBundle::new().with_identity("agent-tail", "截尾夹具");
+        assert_eq!(bundle.sections.len(), 1, "夹具必须恰一块");
+        let rendered = bundle.render_within_tokens(0);
+        assert!(
+            rendered.contains(TAIL_TRUNCATION_NOTE),
+            "单块截尾必须用 TAIL_TRUNCATION_NOTE：{rendered:?}"
+        );
+        assert!(
+            !rendered.contains("省略"),
+            "没有任何块被砍，不得误标「省略」：{rendered:?}"
+        );
     }
 }
