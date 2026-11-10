@@ -211,13 +211,47 @@ pub struct ThinkTraceCerebellum {
 /// 单 run 最多保留多少条小脑留痕（防御：run 异常未收尾时不无限增长）
 const CEREBELLUM_BUFFER_MAX_PER_RUN: usize = 32;
 
+/// 单 run 的小脑留痕缓冲：条目 + 溢出丢弃计数
+///
+/// 为什么单独记 `dropped` 而不是只靠 `items.len()`：容量封顶后长度恒为
+/// `CEREBELLUM_BUFFER_MAX_PER_RUN`，「丢了几条」在长度上一片空白 ——
+/// 「轨迹看着完整、其实少了 26 条」是最难查的失败形态，所以丢弃必须是
+/// **可计数事实**，不能沉默。
+#[derive(Default)]
+struct CerebellumBufferEntry {
+    items: Vec<ThinkTraceCerebellum>,
+    /// 因超出容量被丢弃的条数（同一 run 内累加）
+    dropped: usize,
+}
+
+impl CerebellumBufferEntry {
+    /// 追加一条：超容量只累加丢弃计数
+    ///
+    /// 这里**不打日志**：日志统一在 [`take_cerebellum`] 收尾处打一次。
+    /// 两个理由：①每次丢弃打一行会变成日志风暴，换一个坑；
+    /// ②丢弃发生时的计数只是瞬时值，不是本 run 的丢弃总量 ——
+    /// 「丢了几条」要等收尾才数得准。
+    fn push(&mut self, item: ThinkTraceCerebellum) {
+        if self.items.len() < CEREBELLUM_BUFFER_MAX_PER_RUN {
+            self.items.push(item);
+        } else {
+            self.dropped = self.dropped.saturating_add(1);
+        }
+    }
+
+    /// 取走全部条目与丢弃计数（清空自身，可重复调用）
+    fn drain(&mut self) -> (Vec<ThinkTraceCerebellum>, usize) {
+        let dropped = std::mem::take(&mut self.dropped);
+        (std::mem::take(&mut self.items), dropped)
+    }
+}
+
 /// 按 run 收集的小脑留痕缓冲
 ///
 /// 为什么不层层透传 `Arc<Mutex<Vec<_>>>`：小脑调用点横跨 run 的四个阶段
 /// （路由在循环之前、强度在入口、两路精选在检索节点），透传要穿过 4 个结构体；
 /// 而轨迹是纯观测数据，丢失不影响业务。用有界缓冲换掉 4 处结构体扩张。
-static CEREBELLUM_BUFFER: OnceLock<Mutex<HashMap<String, Vec<ThinkTraceCerebellum>>>> =
-    OnceLock::new();
+static CEREBELLUM_BUFFER: OnceLock<Mutex<HashMap<String, CerebellumBufferEntry>>> = OnceLock::new();
 
 /// 追加一条小脑留痕（未初始化 / 空 run_id 时静默忽略，不产生副作用）
 pub fn record_cerebellum(run_id: &str, item: ThinkTraceCerebellum) {
@@ -233,13 +267,14 @@ pub fn record_cerebellum(run_id: &str, item: ThinkTraceCerebellum) {
     if map.len() > CEREBELLUM_BUFFER_MAX_PER_RUN * 8 {
         map.clear();
     }
-    let entry = map.entry(run_id.to_string()).or_default();
-    if entry.len() < CEREBELLUM_BUFFER_MAX_PER_RUN {
-        entry.push(item);
-    }
+    map.entry(run_id.to_string()).or_default().push(item);
 }
 
 /// 取走并清理某 run 的全部小脑留痕（run 收尾落盘时调用一次）
+///
+/// 本 run 若有溢出丢弃，这里**恰好打一次** `warn`，带丢弃条数与保留条数：
+/// 收尾 `take` 每 run 只调用一次，且取走后该 run 的状态被整体移除，
+/// 所以「每 run 至多一次告警」是结构保证，不依赖调用方自觉。
 pub fn take_cerebellum(run_id: &str) -> Vec<ThinkTraceCerebellum> {
     let Some(buffer) = CEREBELLUM_BUFFER.get() else {
         return Vec::new();
@@ -247,7 +282,20 @@ pub fn take_cerebellum(run_id: &str) -> Vec<ThinkTraceCerebellum> {
     let Ok(mut map) = buffer.lock() else {
         return Vec::new();
     };
-    map.remove(run_id).unwrap_or_default()
+    let Some(mut entry) = map.remove(run_id) else {
+        return Vec::new();
+    };
+    let (items, dropped) = entry.drain();
+    if dropped > 0 {
+        log_warn!(
+            "小脑轨迹缓冲已截断: run_id={}, dropped={}, kept={}, cap={}",
+            run_id,
+            dropped,
+            items.len(),
+            CEREBELLUM_BUFFER_MAX_PER_RUN
+        );
+    }
+    items
 }
 
 /// 单轮内的一次工具调用

@@ -556,3 +556,58 @@ fn query_does_not_merge_same_run_id_across_scenes() {
     let page = query(base, ThinkTraceQuery::default());
     assert_eq!(page.total, 2, "不同场景不是同一个动作，不能合并");
 }
+
+// ---------- 小脑留痕缓冲：截断必须可计数（每 run 至多一次告警） ----------
+
+fn cerebellum_item(i: usize) -> ThinkTraceCerebellum {
+    ThinkTraceCerebellum {
+        scene: format!("test_scene_{i}"),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn cerebellum_buffer_within_cap_drops_nothing() {
+    let mut entry = CerebellumBufferEntry::default();
+    for i in 0..CEREBELLUM_BUFFER_MAX_PER_RUN {
+        entry.push(cerebellum_item(i));
+    }
+    let (items, dropped) = entry.drain();
+    assert_eq!(items.len(), CEREBELLUM_BUFFER_MAX_PER_RUN);
+    assert_eq!(dropped, 0, "未溢出时不应出现丢弃计数");
+}
+
+#[test]
+fn cerebellum_buffer_overflow_counts_dropped_exactly_and_drains_once() {
+    // 与 buffer 真数表同口径：最坏口径 58 条 - 上限 32 = 26 条被截断
+    let overflow = 26;
+    let mut entry = CerebellumBufferEntry::default();
+    for i in 0..(CEREBELLUM_BUFFER_MAX_PER_RUN + overflow) {
+        entry.push(cerebellum_item(i));
+    }
+    let (items, dropped) = entry.drain();
+    assert_eq!(items.len(), CEREBELLUM_BUFFER_MAX_PER_RUN);
+    assert_eq!(dropped, overflow, "丢弃条数必须精确可数，不能只说「满了」");
+    // 告警挂在 drain 的 dropped>0 分支；drain 幂等清空 ⇒ 同一 run 不可能二次告警
+    let (again, dropped_again) = entry.drain();
+    assert!(again.is_empty());
+    assert_eq!(dropped_again, 0);
+}
+
+#[test]
+fn take_cerebellum_caps_items_and_clears_run_state() {
+    // record_cerebellum 在落盘基址未注入时直接返回（无副作用设计），断言前先注入
+    init(std::env::temp_dir().join("ai_orz_think_trace_buffer_test"));
+    let run_id = "test-run-cerebellum-overflow";
+    let _ = take_cerebellum(run_id); // 清场，避免跨用例串味
+    for i in 0..(CEREBELLUM_BUFFER_MAX_PER_RUN + 5) {
+        record_cerebellum(run_id, cerebellum_item(i));
+    }
+    assert_eq!(
+        take_cerebellum(run_id).len(),
+        CEREBELLUM_BUFFER_MAX_PER_RUN,
+        "取出条数必须封顶在 CEREBELLUM_BUFFER_MAX_PER_RUN"
+    );
+    // 取走后本 run 状态被整体移除 ⇒ 第二次取空（也就不会有第二次告警）
+    assert!(take_cerebellum(run_id).is_empty());
+}
