@@ -305,6 +305,23 @@ pub(crate) fn effective_timeout_ms(
     scene_override.or(provider_timeout_ms)
 }
 
+/// provider 显式超时**被场景覆盖**时的留痕值：`Some(provider)` = 「配了但没生效」
+///
+/// 语义刻意收窄（否则会刷噪声、最终被运维学会忽略）：**仅当**两侧都显式声明
+/// 且**不相等**时才返回 `Some(provider_timeout_ms)`。三种情况一律 `None`：
+/// - 场景侧没覆盖 —— provider 值是生效的，不是被忽略；
+/// - provider 侧没配 —— 无值可忽略；
+/// - 两侧相等 —— 配了也生效了，报 warn 是假警报。
+pub(crate) fn ignored_provider_timeout_ms(
+    scene_override: Option<u64>,
+    provider_timeout_ms: Option<u64>,
+) -> Option<u64> {
+    match (scene_override, provider_timeout_ms) {
+        (Some(scene), Some(provider)) if scene != provider => Some(provider),
+        _ => None,
+    }
+}
+
 /// Brain DAL 实现
 #[allow(dead_code)]
 struct BrainDalImpl {
@@ -709,6 +726,22 @@ impl BrainDal for BrainDalImpl {
             "provider_or_default"
         };
 
+        // provider 侧显式 `timeout_ms` 被场景覆盖时必须留痕：否则运维改了配置
+        // 没反应，是黑箱。只在「两侧都显式且不等」时打（见纯函数 doc），
+        // 相等时不报 —— 那种 warn 迟早被学会忽略，等于没做。
+        let ignored_provider_ms =
+            ignored_provider_timeout_ms(scene_timeout_ms, provider_timeout_ms);
+        if let Some(ignored_ms) = ignored_provider_ms {
+            log_warn!(
+                ctx,
+                "brain_decide",
+                timeout_source = timeout_source,
+                ignored_provider_timeout_ms = ignored_ms,
+                "provider timeout_ms configured but overridden by scene override: provider_id={}",
+                provider.id
+            );
+        }
+
         // 场景口径：`DecisionRequest.scene` 是唯一能区分「谁问的」的信息，
         // 降级 / 超时日志里必须带上它，否则多场景并存后无法定位是哪一处
         // 在反复失败（agent 侧只看得到「小脑降级」一条）。
@@ -762,6 +795,7 @@ impl BrainDal for BrainDalImpl {
                     ctx,
                     "brain_decide",
                     timeout_source = timeout_source,
+                    ignored_provider_timeout_ms = ?ignored_provider_ms,
                     "cerebellum decide timeout: {}ms, scenes={:?}",
                     timeout_ms,
                     scenes

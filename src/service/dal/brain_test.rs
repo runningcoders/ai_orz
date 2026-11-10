@@ -531,6 +531,36 @@ fn test_effective_timeout_ms_ladder() {
     );
 }
 
+/// provider 显式超时被场景覆盖 ⇒ 必须给出「被忽略的那个数」
+///
+/// 三对输入输出按裁定收窄：不同值才报；相等不报（它其实生效了）；
+/// 仅 provider 有也不报（没有场景覆盖时它是被用上的）。
+#[test]
+fn test_ignored_provider_timeout_ms_marks_overridden_config() {
+    use crate::service::dal::brain::ignored_provider_timeout_ms;
+
+    assert_eq!(
+        ignored_provider_timeout_ms(Some(5_000), Some(800)),
+        Some(800),
+        "两侧都显式且不等 ⇒ 报出被忽略的 provider 值"
+    );
+    assert_eq!(
+        ignored_provider_timeout_ms(Some(5_000), Some(5_000)),
+        None,
+        "两侧相等时 provider 值是生效的，不得报「配了但没生效」"
+    );
+    assert_eq!(
+        ignored_provider_timeout_ms(None, Some(800)),
+        None,
+        "无场景覆盖 ⇒ provider 值生效，不是被忽略"
+    );
+    assert_eq!(
+        ignored_provider_timeout_ms(None, None),
+        None,
+        "两侧都未声明 ⇒ 无值可忽略"
+    );
+}
+
 fn decision_request_with_timeout(timeout_ms: u64) -> crate::pkg::policy::DecisionRequest {
     let mut req = decision_request();
     req.timeout_ms = Some(timeout_ms);
