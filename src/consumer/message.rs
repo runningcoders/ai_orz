@@ -1062,6 +1062,30 @@ impl MessageConsumer {
                     awaken_result.trace_ids.first().map(String::as_str),
                 )
                 .await;
+            // ══════ chain_reply 留痕补丁行（AMan 2026-11-10 拍板：追加补丁行）══════
+            //
+            // 现缺陷：本函数上面那次判定跑在 awaken **返回之后** —— 此时该 run
+            // 的收尾行已落盘、`take_cerebellum` 也已把缓冲取走并 remove，于是
+            // chain_reply 之后记的留痕落进一个永不 take 的键上，结构上永远查不到。
+            //
+            // 修法：判完立刻补一次 take + 追加一条 `partial=false` 空载荷补丁行，
+            // 查询侧按 `(agent_id, run_id, scene)` 合并回原轨迹（详见
+            // `runtime::flush_cerebellum_patch` 的时序前提）。
+            //
+            // 放在 `judge_chain_reply_by_cerebellum` 之后、路由执行之前：
+            // ①留痕已写完（判定过程就是写入过程）；②即使后面发送失败，轨迹也
+            // 已经完整 —— 观测数据不该被投递结果左右。
+            // 没有留痕时该函数不落盘（返回 0），因此本调用对「静态命中 / 无压力 /
+            // 未装配」这些零调用路径没有任何副作用。
+            if let Some(trace_id) = awaken_result.trace_ids.first() {
+                runtime_domain::flush_cerebellum_patch(
+                    agent_id,
+                    trace_id,
+                    common::enums::ThinkingScene::Awaken.as_str(),
+                    project_id,
+                    task_id,
+                );
+            }
             let route = match cerebellum_route {
                 Some(route) => route,
                 None => self.resolve_auto_reply_route(

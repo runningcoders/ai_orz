@@ -575,6 +575,14 @@ fn merge_into(base: &mut ThinkTraceEntry, next: ThinkTraceEntry) {
         base.routes.push(route);
     }
 
+    // 小脑留痕：收尾行带 run 级全量，chain_reply 补丁行在其后再补一批 ——
+    // 两者是同一 run 的两段留痕，按时间拼接。
+    //
+    // 不需要去重：`take_cerebellum` 是「取走即清空」，同一 run 的每个批次只会
+    // 落进一行，拼接不会产生重复条目。若将来出现「多次 take + 多行补丁」，
+    // 这里才是需要加去重的地方（当前没有这个路径）。
+    base.cerebellum.extend(next.cerebellum);
+
     base.steps = base.steps.saturating_add(next.steps);
     base.advisor_calls = base.advisor_calls.saturating_add(next.advisor_calls);
     // 指纹是实际 occurrence 序列的压缩表达，合并后必须重算

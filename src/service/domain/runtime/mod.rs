@@ -836,3 +836,68 @@ pub struct AwakeningResult {
     /// `Processed`，让它们各自触发后续唤醒，避免用户的补充被静默吞掉。
     pub cancelled: bool,
 }
+
+/// 为**已收尾**的 run 追加一条小脑留痕补丁行，返回补写的条数
+///
+/// ## 为什么需要它（现缺陷）
+/// `chain_reply` 的判定跑在 awaken **返回之后** —— 此时该 run 的收尾行
+/// （`persist_trace`）早已落盘，`take_cerebellum` 也已把缓冲取走并 remove 掉该
+/// run。于是 chain_reply 之后记的留痕落进一个**永不 take 的键**上：既不进任何
+/// 收尾行，也要等 `map.len() > CAP*8` 的兜底 clear 才被丢弃 —— 结构上永远查不到。
+///
+/// 修法即本函数：补一次 take + 追加一条 `partial=false` 的补丁行，让查询侧按
+/// `(agent_id, run_id, scene)` 把它合并回原轨迹。
+///
+/// ## 为什么补丁行是空载荷
+/// 本行只承载 `cerebellum`：`rounds` / `occurrences` / `routes` / `steps` 全零。
+/// `merge_into` 对 `partial=false` 的处理是「先摘掉本片段增量轮次再拼接」，
+/// 本行到达时 base 已是收尾行（`partial_round_count == 0`）⇒ 零摘除、零轮次
+/// 追加，只有 cerebellum 被 extend。append-only 取向不破：不修改已落盘行。
+///
+/// ## 时序前提（调用方必须遵守）
+/// 必须在该 run 的收尾行落盘**之后**调用。早于收尾行时本行会被当成收尾行，
+/// 先摘一次增量轮次再来真收尾行 —— 轮次仍只出现一次，但中间态会短暂少轮。
+/// 当前唯一调用点（chain_reply）天然满足：它跑在 awaken 返回之后。
+///
+/// ## 没有留痕就不写空行
+/// 一条「什么都没记」的收尾行会把 `finished` 语义与卡片计数搅乱，且对排查零
+/// 信息量 —— 所以 `items.is_empty()` 直接返回 0，不落盘。
+pub(crate) fn flush_cerebellum_patch(
+    agent_id: &str,
+    run_id: &str,
+    scene: &str,
+    project_id: Option<&str>,
+    task_id: Option<&str>,
+) -> usize {
+    if run_id.is_empty() {
+        return 0;
+    }
+    let items = crate::pkg::think_trace::take_cerebellum(run_id);
+    if items.is_empty() {
+        return 0;
+    }
+    let count = items.len();
+    let entry = serde_json::json!({
+        "run_id": run_id,
+        "agent_id": agent_id,
+        "scene": scene,
+        "project_id": project_id,
+        "task_id": task_id,
+        // 与 persist_trace 同源常量（同一个蓝图 ID），两处必须一起动
+        "path": think_round::THINK_ROUND_BLUEPRINT_ID,
+        "partial": false,
+        "cerebellum": items,
+        // 空载荷：本行是同一 run 的第二段留痕，不代表新一轮图执行
+        "steps": 0,
+        "advisor_calls": 0,
+        "fingerprint": "",
+        "rounds": [],
+        "occurrences": [],
+        "routes": [],
+    });
+    if let Err(e) = crate::pkg::think_trace::append(agent_id, &entry) {
+        // 与收尾写盘同口径：只告警，不影响主流程
+        crate::log_warn!("cerebellum patch trace write failed: {}", e);
+    }
+    count
+}
