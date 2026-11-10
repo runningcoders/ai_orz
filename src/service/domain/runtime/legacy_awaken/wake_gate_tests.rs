@@ -207,6 +207,17 @@ fn test_policy_scene_and_labels_follow_convention() {
 
 // ---------- ① 唯一翻译点：两维各一条用例，每条都断言整个二元组 ----------
 
+/// 产品定谳钉：浅答轮次**恰 1**
+///
+/// 上面两条整元组断言锁的是「翻译一致」（同一常量进出），锁不住「定谳值本身」：
+/// 若有人把 `SHALLOW_MAX_ROUNDS` 从 1 放宽到 5，那些用例照样全绿。
+/// K5-① 的定谳是「强度 0 + max_rounds 恰 1」——改这个值必须先改定谳，
+/// 所以把它钉在测试里（不是生产节点，`nodes.rs` 不出现字面量 1 的禁令不受影响）。
+#[test]
+fn test_shallow_max_rounds_is_pinned_to_one() {
+    assert_eq!(SHALLOW_MAX_ROUNDS, 1, "K5-① 定谳：浅答轮次恰 1");
+}
+
 #[test]
 fn test_apply_shallow_max_rounds_dim() {
     // 轮次维：effective_max_rounds 无论多大，浅答一律压到 SHALLOW_MAX_ROUNDS。
