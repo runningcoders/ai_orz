@@ -7,6 +7,7 @@
 //! 节点间只通过总线通信，唯一的例外是 `AwakenDeps`（不可序列化的强类型依赖）。
 
 use super::context::{AwakenDeps, read_bus};
+use super::summary_gate;
 use super::wake_gate;
 use crate::models::cortex_types::ChatMessage;
 use crate::models::memory::MemoryIndexPlan;
@@ -1079,7 +1080,27 @@ impl ThinkNode for ConsolidateNode {
             );
             let compaction_policy = super::super::compaction::build_compaction_policy(&deps.agent);
             let hits = compaction_policy.evaluate(&chain.into_policy_metrics());
-            let should_compress = !hits.is_empty();
+            let would_compress = !hits.is_empty();
+            // 总结门（P3-c / K6）：优先级 = 阈值策略先判、小脑只做减法。
+            // 只有「本来要压」且「不是 max_rounds 收尾」时才问小脑 —— 后者已在
+            // `CompactNode` / force_compact 压过，再问一次只会多一次调用且无出口。
+            // 不问时零调用、零配额、零轨迹（门内的 ⓪ 本地判据与本处的短路同义）。
+            let skip_summary = if would_compress && artifacts.exit != EXIT_MAX_ROUNDS {
+                summary_gate::maybe_skip(
+                    &deps.ctx,
+                    crate::service::dal::brain::dal(),
+                    deps.agent.brain.as_ref(),
+                    deps.message.content(),
+                    &deps.trace_id,
+                    would_compress,
+                )
+                .await
+            } else {
+                None
+            };
+            // 唯一翻译点：本节点不得自行翻译判决（故此处不出现 `Some(SkipSummary)`
+            // 分支；`apply` 的 `None` 分支逐字节等价于改造前）。
+            let should_compress = summary_gate::apply(skip_summary, would_compress);
             crate::log_info!(
                 &deps.ctx,
                 "legacy_awaken",
