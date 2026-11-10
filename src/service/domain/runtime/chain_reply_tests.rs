@@ -34,6 +34,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct MockBrainDal {
     script: Mutex<VecDeque<Option<DecisionOutcome>>>,
     calls: AtomicUsize,
+    /// 每次 `decide` 收到的 `DecisionRequest.state` 原文（运行时反事实的唯一证据面）
+    ///
+    /// 只捕获 state 不改签名：本场景的 state 是**发给模型的东西**，断言必须落在
+    /// 它上面，而不是落在 `Metrics` 中间态上（后者不经过 `prepare()` 的键裁剪）。
+    states: Mutex<Vec<serde_json::Value>>,
 }
 
 impl MockBrainDal {
@@ -41,11 +46,16 @@ impl MockBrainDal {
         Self {
             script: Mutex::new(script.into()),
             calls: AtomicUsize::new(0),
+            states: Mutex::new(Vec::new()),
         }
     }
 
     fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
+    }
+
+    fn states(&self) -> Vec<serde_json::Value> {
+        self.states.lock().expect("mock states lock").clone()
     }
 }
 
@@ -55,9 +65,15 @@ impl BrainDal for MockBrainDal {
         &self,
         _ctx: RequestContext,
         _brain: &Brain,
-        _requests: Vec<crate::pkg::policy::DecisionRequest>,
+        requests: Vec<crate::pkg::policy::DecisionRequest>,
     ) -> DecisionOutcome {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut states = self.states.lock().expect("mock states lock");
+            for request in &requests {
+                states.push(request.state.clone());
+            }
+        }
         match self.script.lock().expect("mock script lock").pop_front() {
             Some(Some(outcome)) => outcome,
             _ => DecisionOutcome {
@@ -235,6 +251,21 @@ async fn run_gate(
     brain: Option<&Brain>,
     run_id: &str,
 ) -> (Option<ChainReplyVerdict>, usize) {
+    let (verdict, calls, _) = run_gate_full(messages, facts, script, brain, run_id).await;
+    (verdict, calls)
+}
+
+/// 同 [`run_gate`]，额外吐出每次 `decide` 收到的 state（运行时反事实用）
+///
+/// 拆成两个函数而不是改签名：`run_gate` 有 30+ 处调用，改签名会把「一次无关的
+/// 机械改动」混进本笔的语义收敛里（回滚面变大）。
+async fn run_gate_full(
+    messages: &[ChainMessage],
+    facts: ChainPressureFacts,
+    script: Vec<Option<DecisionOutcome>>,
+    brain: Option<&Brain>,
+    run_id: &str,
+) -> (Option<ChainReplyVerdict>, usize, Vec<serde_json::Value>) {
     // 全局 Storage 单例：单跑本模块时 `test_ctx()` 依赖它已初始化
     crate::pkg::storage::test_support::init_for_test().await;
     // 轨迹落盘基址：`record_cerebellum` 未初始化时静默丢弃（无副作用设计）
@@ -242,7 +273,7 @@ async fn run_gate(
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
     let got = judge_chain_reply(&ctx, mock.clone(), brain, messages, &facts, run_id).await;
-    (got, mock.calls())
+    (got, mock.calls(), mock.states())
 }
 
 fn take_traces(run_id: &str) -> Vec<ThinkTraceCerebellum> {
@@ -1294,17 +1325,12 @@ async fn absolute_ceiling_forces_close_without_asking() {
 
 // ---------- 上下文两字段（AMan 硬要求：链深 + 疲劳必须写进上下文） ----------
 
-fn metrics_with(facts: &ChainPressureFacts) -> Metrics {
-    Metrics::new()
-        .with("agent_id", "agent-prompt")
-        .with("agent_name", "Test Agent")
-        .with("chain_depth", facts.chain_depth as u64)
-        .with("window_depth", facts.window_depth as u64)
-        .with("fatigue", facts.fatigue)
-        .with("soft_fatigue", facts.soft_fatigue)
-        .with("hard_fatigue", facts.hard_fatigue)
-        .with("hard_window_depth", facts.hard_window_depth)
-        .with("chain_messages", "[#1] agent-a 文本消息: 正文")
+/// 生产同一装配点的直调：`state_metrics` 是本场景**唯一** state 装配入口
+///
+/// 刻意不再保留一份「测试侧平行拼装」：上一版的 `metrics_with` 自己重拼 9 个键，
+/// 所以「生产收敛成单键」这件事它**测不出来**（拼装逻辑改了两边不必同步）。
+fn metrics_for(facts: &ChainPressureFacts) -> Metrics {
+    state_metrics(&brain_with_quota(1), "[#1] agent-a 文本消息: 正文", facts)
 }
 
 /// 渲染出的 prompt / state 里必须**同时**出现链深与疲劳值且非空
@@ -1314,19 +1340,25 @@ fn metrics_with(facts: &ChainPressureFacts) -> Metrics {
 #[test]
 fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
     let facts = triggered_facts();
-    let reqs = policy().prepare(&metrics_with(&facts));
+    let brain = brain_with_quota(1);
+    let reqs = policy().prepare(&state_metrics(
+        &brain,
+        "[#1] agent-a 文本消息: 正文",
+        &facts,
+    ));
     assert_eq!(reqs.len(), 1, "一次 PickOne 一个请求");
 
-    let state = &reqs[0].state;
-    assert_eq!(
-        state["window_depth"],
-        serde_json::json!(facts.window_depth as u64),
-        "state 必须带当前链深度"
+    // 断言**不删只搬**：值仍在 state 里，只是从平铺键搬进了 `## 协作压力` 块正文
+    let body = reqs[0].state[context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        body.contains(&format!("window_depth: {}", facts.window_depth)),
+        "state 必须带当前链深度（实际取值，不是键存在）：{body:?}"
     );
-    assert_eq!(
-        state["fatigue"],
-        serde_json::json!(facts.fatigue),
-        "state 必须带疲劳值"
+    assert!(
+        body.contains(&format!("fatigue: {}", facts.fatigue)),
+        "state 必须带疲劳值（实际取值）：{body:?}"
     );
 
     // 判据侧必须写明「仅作辅助参考」，否则模型会拿跳数当硬判据
@@ -1339,7 +1371,7 @@ fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
 #[test]
 fn scene_declares_a_5s_timeout_override() {
     assert_eq!(SCENE_TIMEOUT_MS, 5_000, "AMan 定谳：本场景请求小脑 5 秒");
-    let reqs = policy().prepare(&metrics_with(&triggered_facts()));
+    let reqs = policy().prepare(&metrics_for(&triggered_facts()));
     assert_eq!(
         reqs[0].timeout_ms,
         Some(SCENE_TIMEOUT_MS),
@@ -1362,4 +1394,271 @@ fn scene_declares_a_5s_timeout_override() {
         2_000,
         "场景覆盖必须严格高于全局缺省（差值 2000ms 字面成立，摘掉 override 时立刻红）"
     );
+}
+
+// ---------- 上下文单出口（笔：chain_reply 收敛）----------
+
+/// 哨兵：正文必须**逐字**带上（R54 ②「新形态取值正确」的证据面）
+const CHAIN_SENTINEL_HEAD: &str = "链头哨兵：这条链在修小脑上下文";
+const CHAIN_SENTINEL_TAIL: &str = "尾部哨兵：刚发来的这一跳";
+
+/// 指定**容量**（token）的 Brain：`recommended_context_length` 直给，
+/// 避开 `max_context_length × 60%` 的回落，才能精确打在边界点上。
+fn brain_with_capacity_tokens(capacity: u64) -> Brain {
+    let mut brain = brain_with_quota(4);
+    let mut po = mock_provider();
+    po.config = serde_json::to_string(&crate::models::model_provider::ModelProviderConfig {
+        recommended_context_length: Some(capacity as i32),
+        ..Default::default()
+    })
+    .expect("provider config 必须可序列化");
+    brain.cerebellum = Some(po);
+    brain
+}
+
+/// R54 成对断言：形态迁移必须同时断「旧形态已消失」与「新形态取值正确」
+///
+/// 只断后者时，**双出口共存**仍会全绿（改造前 9 个平铺键还在，新键也照样有值）。
+#[tokio::test]
+async fn request_state_is_single_rendered_context_block() {
+    let brain = brain_with_quota(4);
+    let facts = triggered_facts();
+    let messages = vec![
+        msg("agent-a", "文本消息", CHAIN_SENTINEL_HEAD),
+        msg("agent-b", "文本消息", "收到"),
+        msg("agent-a", "工具执行结果", CHAIN_SENTINEL_TAIL),
+    ];
+    let (verdict, calls, states) = run_gate_full(
+        &messages,
+        facts,
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        "run-single-exit",
+    )
+    .await;
+
+    assert!(matches!(verdict, Some(ChainReplyVerdict::Close { .. })));
+    assert_eq!(calls, 1, "应当问且只问一次");
+    assert_eq!(states.len(), 1, "应当捕获一份 state");
+
+    let state = &states[0];
+    // ① 旧形态（9 键平铺）在该路径**已消失** —— 这是本笔的迁移方向证据
+    for key in [
+        "agent_id",
+        "agent_name",
+        "chain_depth",
+        "window_depth",
+        "fatigue",
+        "soft_fatigue",
+        "hard_fatigue",
+        "hard_window_depth",
+        "chain_messages",
+    ] {
+        assert!(
+            state.get(key).is_none(),
+            "旧平铺键 `{key}` 必须已从 state 消失（双出口共存不算收敛）：{state}"
+        );
+    }
+    assert_eq!(
+        state.as_object().map(|o| o.len()),
+        Some(1),
+        "state 必须恰一个键（单出口）：{state}"
+    );
+
+    // ② 新形态取值正确（实际取值，不是「非空」）
+    let body = state[context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        body.contains(&format!("agent_id: {}", brain.agent_id)),
+        "身份块必须带 agent_id 实际取值：{body:?}"
+    );
+    assert!(
+        body.contains(&format!("agent_name: {}", brain.agent_name)),
+        "身份块必须带 agent_name 实际取值：{body:?}"
+    );
+    assert!(body.contains("## 当前场景"), "{body:?}");
+    assert!(body.contains(SCENE), "场景块必须写明 scene：{body:?}");
+    assert!(body.contains("## 链内消息"), "{body:?}");
+    assert!(
+        body.contains(CHAIN_SENTINEL_HEAD),
+        "链头正文必须逐字带上：{body:?}"
+    );
+    assert!(
+        body.contains(CHAIN_SENTINEL_TAIL),
+        "尾部正文必须逐字带上：{body:?}"
+    );
+    assert!(body.contains("## 协作压力"), "{body:?}");
+    assert!(
+        body.contains(&format!("chain_depth: {}", facts.chain_depth)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("window_depth: {}", facts.window_depth)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("fatigue: {}", facts.fatigue)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("soft_fatigue: {}", facts.soft_fatigue)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("hard_fatigue: {}", facts.hard_fatigue)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("hard_window_depth: {}", facts.hard_window_depth)),
+        "{body:?}"
+    );
+}
+
+/// 块顺序断言：`会话身份` → `当前场景` → `链内消息` → `协作压力`
+///
+/// 不是洁癖：组织器的截断是**从尾部整块砍**，顺序错了「先砍压力块还是先砍证据块」
+/// 就变了 —— 顺序是截断语义的一部分。
+#[test]
+fn context_block_order_is_identity_scene_chain_pressure() {
+    let brain = brain_with_quota(1);
+    let rendered = state_bundle(&brain, CHAIN_SENTINEL_HEAD, &triggered_facts()).render();
+    let at = |needle: &str| {
+        rendered
+            .find(needle)
+            .unwrap_or_else(|| panic!("缺块 {needle}：{rendered:?}"))
+    };
+    let identity = at("## 会话身份");
+    let scene = at("## 当前场景");
+    let chain = at("## 链内消息");
+    let pressure = at("## 协作压力");
+    assert!(
+        identity < scene && scene < chain && chain < pressure,
+        "块序必须是 身份 < 场景 < 链内消息 < 协作压力（实际 {identity} / {scene} / {chain} / {pressure}）：{rendered:?}"
+    );
+}
+
+/// 边界四点实测：capacity = 500 / 1088 / 2500 / 4500
+///
+/// R53 同源自证：每个点先断言**实际走了哪条分支**（calls / states），再断结构——
+/// 否则「每块都有非空 body」在「压根没构造请求」的点上也会绿（假绿）。
+#[tokio::test]
+async fn boundary_capacities_never_emit_a_title_without_body() {
+    // 长链：4 条 × 480 字（CJK ≈ 1 token/字）⇒ ≈ 1920 token，足以打满
+    // capacity=2500 的正文预算（2000），真正进入「预算裁尾」分支。
+    let long = "链内正文".repeat(120);
+    let mut messages = vec![msg("agent-a", "文本消息", CHAIN_SENTINEL_HEAD)];
+    for i in 0..3 {
+        messages.push(msg(
+            if i % 2 == 0 { "agent-b" } else { "agent-a" },
+            "文本消息",
+            &long,
+        ));
+    }
+    messages.push(msg("agent-b", "文本消息", CHAIN_SENTINEL_TAIL));
+
+    for capacity in [500u64, 1_088, 2_500, 4_500] {
+        let brain = brain_with_capacity_tokens(capacity);
+        let input_budget = input_token_budget(Some(capacity));
+        let body_budget = body_token_budget(input_budget);
+        let expected_body = [0usize, 588, 2_000, 3_500][[500u64, 1_088, 2_500, 4_500]
+            .iter()
+            .position(|c| *c == capacity)
+            .unwrap()];
+        assert_eq!(
+            body_budget, expected_body,
+            "capacity={capacity} 的正文预算必须落在实测值上"
+        );
+        let (_, calls, states) = run_gate_full(
+            &messages,
+            triggered_facts(),
+            vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+            Some(&brain),
+            &format!("run-boundary-{capacity}"),
+        )
+        .await;
+
+        if body_budget < MIN_BODY_TOKEN_BUDGET {
+            // 正文预算 0（capacity=500 ⇒ input 500 − 骨架 500 = 0）⇒ **不问**：
+            // `## 链内消息` 根本不存在，既不是「注册成空块」也不是「空标题」。
+            assert_eq!(body_budget, 0, "capacity={capacity} 的正文预算必须被打到 0");
+            assert_eq!(calls, 0, "capacity={capacity}：预算 0 必须一次都不问");
+            assert!(
+                states.is_empty(),
+                "capacity={capacity}：没问就不该有 state（{states:?}）"
+            );
+            continue;
+        }
+
+        assert_eq!(calls, 1, "capacity={capacity} 应当问一次");
+        assert_eq!(states.len(), 1, "capacity={capacity} 应当捕获一份 state");
+        let body = states[0][context::STATE_KEY]
+            .as_str()
+            .unwrap_or_else(|| panic!("capacity={capacity}：state 必须是单键字符串"));
+
+        // 结构判据（与组织器既有 tail 判据同源）：每段首行 `## ` 且非空行 ≥ 2
+        for part in body.split("\n\n") {
+            assert!(
+                !part.trim().is_empty(),
+                "capacity={capacity} 出现空段落：{body:?}"
+            );
+            let first = part.lines().next().unwrap_or("");
+            assert!(
+                first.starts_with("## "),
+                "capacity={capacity} 每块首行必须是二级标题：{part:?}"
+            );
+            let non_empty = part.lines().filter(|l| !l.trim().is_empty()).count();
+            assert!(
+                non_empty >= 2,
+                "capacity={capacity} 每块至少「标题 + 正文」两行：{part:?}"
+            );
+        }
+        assert!(
+            body.contains("## 链内消息"),
+            "capacity={capacity} 必须带链内消息块：{body:?}"
+        );
+        // 链头恒保留（定值）；尾部是否保留取决于预算 ⇒ 只断链头
+        assert!(
+            body.contains(CHAIN_SENTINEL_HEAD),
+            "capacity={capacity} 链头必须保留：{body:?}"
+        );
+
+        // ★ 设计取舍的实证：同一份内容若交给组织器 `render_within(Some(capacity))`
+        // 会怎样（本场景刻意不用它 —— 见 `state_bundle` doc）
+        let bundle = state_bundle(
+            &brain,
+            &render_chain(&messages, body_budget).rendered,
+            &triggered_facts(),
+        );
+        let actual_tokens = estimate_tokens(&bundle.render());
+        let organizer_budget =
+            (capacity as usize).saturating_sub(context::CONTEXT_FRAME_RESERVE_TOKENS);
+        let would_be = bundle.render_within(Some(capacity));
+        // 实测值（2026-11-11，HEAD=本笔）：state_tokens = 621 / 1569 / 1569，
+        // 组织器预算 = capacity − 1024 = 64 / 1476 / 3476 ⇒ 1088 与 2500 两点
+        // 组织器**会截断**，4500 不截断。
+        if actual_tokens > organizer_budget {
+            assert!(
+                would_be.contains("省略") || would_be.contains("已按模型容量截断"),
+                "capacity={capacity}（state {actual_tokens} token > 组织器预算 {organizer_budget}）\
+                 必须发生截断，否则本用例没证到冲突区：{would_be:?}"
+            );
+            // ★ 冲突区最坏形态：尾块整砍会把 `## 链内消息` 这块**主要证据**砍掉 ——
+            // 这正是本场景不走组织器截断的理由（比不截断更坏）。
+            assert!(
+                !would_be.contains(CHAIN_SENTINEL_HEAD),
+                "capacity={capacity}：组织器截断应把链内消息整块砍掉（否则冲突区论证不成立）：{would_be:?}"
+            );
+        } else {
+            assert_eq!(
+                would_be,
+                bundle.render(),
+                "capacity={capacity}（state {actual_tokens} token ≤ 组织器预算 {organizer_budget}）不应截断"
+            );
+            assert!(
+                would_be.contains(CHAIN_SENTINEL_HEAD),
+                "capacity={capacity}：不截断时链内消息必须在：{would_be:?}"
+            );
+        }
+    }
 }

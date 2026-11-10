@@ -79,6 +79,7 @@
 //! `fallback`。**记账条目（not_triggered / empty_input / continue）同样占轨迹名额**
 //! —— 一次唤醒最多 1 条（一次回发判定一次），单 run 32 条上限内绰绰有余。
 
+use super::cerebellum_context as context;
 use super::compaction::{estimate_tokens, truncate_to_tokens};
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
@@ -263,18 +264,16 @@ const OPTIONS: [(&str, &str); 2] = [
     ),
 ];
 
-/// 透传给模型的上下文事实（轻量：只有压力数字与链内正文，不取记忆 / 工具）
-const STATE_KEYS: &[&str] = &[
-    "agent_id",
-    "agent_name",
-    "chain_depth",
-    "window_depth",
-    "fatigue",
-    "soft_fatigue",
-    "hard_fatigue",
-    "hard_window_depth",
-    "chain_messages",
-];
+/// 透传给模型的上下文：**单键分块正文**（走组织器 `cerebellum_context` 的统一出口）
+///
+/// 改造前是 9 键平铺（`agent_id` / `agent_name` / 6 个压力数字 / `chain_messages`）：
+/// 同一种「给模型读的上下文」在 7 个接入点里出现了两套写法。收敛后本场景与另外
+/// 六个场景同形，唯一装配点是 [`state_bundle`]。
+///
+/// ⚠️ 宣称边界：本笔之后「全仓**代码路径**单出口」成立（残留 3 条 = 2 条 doc /
+/// 注释 + 1 条无关测试）；但这不等于「所有接入点都接了容量自截」——本场景刻意
+/// 不用组织器的 `render_within`，理由见 [`state_bundle`]。
+const STATE_KEYS: &[&str] = &[context::STATE_KEY];
 
 /// 链内一条消息（小脑判据的最小输入）
 ///
@@ -401,6 +400,61 @@ pub(crate) fn render_chain(messages: &[ChainMessage], budget: usize) -> ChainInp
         included,
         omitted,
     }
+}
+
+/// 协作压力块正文：六个数字逐行 `key: value`
+///
+/// 六个全部保留 —— `window_depth` / `fatigue` 在判据里写明「仅作辅助参考」，但
+/// `soft_*` / `hard_*` 是模型理解「这一跳处在第几层」的唯一依据；少给一个，
+/// 它就会把当前跳数当绝对值读。
+fn pressure_body(facts: &ChainPressureFacts) -> String {
+    format!(
+        "chain_depth: {}\nwindow_depth: {}\nfatigue: {}\nsoft_fatigue: {}\n\
+hard_fatigue: {}\nhard_window_depth: {}",
+        facts.chain_depth,
+        facts.window_depth,
+        facts.fatigue,
+        facts.soft_fatigue,
+        facts.hard_fatigue,
+        facts.hard_window_depth
+    )
+}
+
+/// 本场景的上下文装配（**唯一装配点**）：块序固定
+/// `会话身份` → `当前场景` → `链内消息` → `协作压力`
+///
+/// 两处刻意的「不」：
+/// - **不用 `with_user_message`**：本场景的输入是 N 条链内历史正文，不是「当前用户
+///   消息」；那个标题会把多轮历史误导成一条待判正文。
+/// - **不用 `with_recent_dialogue`（`Brain.memories`）**：链内正文已是主信息源，再叠
+///   记忆摘要属**新增判断输入**（语义变更）而非形态迁移 ⇒ 单独评估，不夹带。
+///
+/// 也**不做组织器侧容量自截**（`render_within`）：链内正文已由 [`render_chain`] 按
+/// `body_token_budget` 自截到 `容量 − FRAME_OVERHEAD_RESERVE` 以内；再叠一层
+/// `容量 − CONTEXT_FRAME_RESERVE_TOKENS(1024)` 的**尾块整砍**，会在中间容量带把
+/// `## 链内消息` 这块主要证据整块砍掉 —— 比不截断更坏（实测见 `chain_reply_tests`）。
+/// 容量安全的判据是「`body_token_budget < MIN_BODY_TOKEN_BUDGET` ⇒ 不问」，不是
+/// 「截到装得下」。
+fn state_bundle(
+    brain: &Brain,
+    chain_rendered: &str,
+    facts: &ChainPressureFacts,
+) -> context::ContextBundle {
+    let mut bundle = context::ContextBundle::new()
+        .with_identity(&brain.agent_id, &brain.agent_name)
+        .with_scene(SCENE);
+    // 空正文（一条链内消息都没带上）时 `push` 整块跳过，不留 `## 链内消息` 裸标题
+    bundle.push("链内消息", chain_rendered.to_string());
+    bundle.push("协作压力", pressure_body(facts));
+    bundle
+}
+
+/// 本场景的 state 装配（单出口：`{"context": "<分块正文>"}`）
+fn state_metrics(brain: &Brain, chain_rendered: &str, facts: &ChainPressureFacts) -> Metrics {
+    Metrics::new().with(
+        context::STATE_KEY,
+        state_bundle(brain, chain_rendered, facts).render(),
+    )
 }
 
 /// 本场景的策略形态（无状态，可反复构造）
@@ -672,16 +726,7 @@ pub(crate) async fn judge_chain_reply(
     }
 
     let policy = policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("chain_depth", facts.chain_depth as u64)
-        .with("window_depth", facts.window_depth as u64)
-        .with("fatigue", facts.fatigue)
-        .with("soft_fatigue", facts.soft_fatigue)
-        .with("hard_fatigue", facts.hard_fatigue)
-        .with("hard_window_depth", facts.hard_window_depth)
-        .with("chain_messages", &input.rendered);
+    let metrics = state_metrics(brain, &input.rendered, facts);
 
     // 阶段一：策略声明要问什么（纯函数；选项固定两条，一次 PickOne）
     let requests = policy.prepare(&metrics);
