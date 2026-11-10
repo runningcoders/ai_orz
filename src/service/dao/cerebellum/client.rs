@@ -260,16 +260,21 @@ mod cerebellum_client_tests {
         assert!(resolve_endpoint(&po).is_err());
     }
 
-    /// 字面断言：缺省超时必须是 1000ms（AMan 2026-11-10 拍板）。
+    /// 字面断言：缺省超时必须是 **800ms**（原值；「1 秒」那笔已按场景级覆盖 revert）。
     ///
     /// 上一条用例引用常量，改常量时会「自动跟变」——它只能证明「配置优先、
     /// 缺省兜底」这条链路成立，**证不了缺省值到底是几百毫秒**。这里用字面
-    /// 数字钉死：有人把它改回 800 或改成别的值，本用例立刻红。
+    /// 数字钉死：有人把它改成 1000 / 5000 或别的值，本用例立刻红。
+    ///
+    /// 为什么必须钉死：AMan 的 5 秒只给 `chain_reply`（场景级 `SCENE_TIMEOUT_MS`），
+    /// 全局缺省一旦被顺手抬上去，`entry_gate` 这类「每条入站消息都过」的门会在
+    /// 端点挂掉时每条白等同等时长 —— 影响面比本功能大一个量级。与场景覆盖的差值
+    /// 另有一条字面断言（`chain_reply_tests::scene_declares_a_5s_timeout_override`）。
     #[test]
-    fn default_timeout_ms_is_1000_by_decision() {
+    fn default_timeout_ms_is_800_and_stays_there() {
         assert_eq!(
-            DEFAULT_CEREBELLUM_TIMEOUT_MS, 1000,
-            "缺省小脑超时必须是 1000ms（AMan 2026-11-10 拍板：800ms → 1 秒）"
+            DEFAULT_CEREBELLUM_TIMEOUT_MS, 800,
+            "缺省小脑超时必须保持 800ms：5 秒是 chain_reply 的场景级覆盖，不是全局缺省"
         );
     }
 

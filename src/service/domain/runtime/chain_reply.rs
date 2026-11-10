@@ -53,7 +53,7 @@
 //! ```
 //!
 //! ⚠️ 容量上限是「模型能吃多少」，不是「本次该喂多少」：标准 provider（128K/200K）
-//! 的容量恒远大于 1000ms 能处理完的量，直接按容量拉满必然超时、功能恒定降级。
+//! 的容量恒远大于本场景预算（5 秒）能处理完的量，直接按容量拉满必然超时、功能恒定降级。
 //! 因此实际生效值由时延侧（[`LATENCY_INPUT_CAP`]）绑定，容量侧只在**小容量**
 //! provider（容量 < 时延上限）时生效。条数 [`MAX_CHAIN_MESSAGES`] = 32 保留为
 //! **防环硬顶**（与消费者侧回溯硬上限同口径），不再承担主预算职责。
@@ -149,8 +149,10 @@ const DEGRADED_CEILING_FORCED: &str = "ceiling_forced";
 /// 生成长度波动、prefill 吞吐在不同 provider 上差 2~3 倍都常见，故取 **4000**：
 /// `4000 / 2000 = 2.0s + 0.175s + 0.3s ≈ 2.48s`，对 5s 预算留 ≈ 50% 余量。
 ///
-/// 与旧值的关系：旧值 800 是按 1000ms 反推的（留 20% 余量）；基数从 1000ms
-/// 放到 5000ms 是 5 倍，本常量 800 → 4000 同样是 5 倍——**没有缩回**。
+/// 与旧值的关系：旧值 800 是按当时的 1000ms 反推的（留 20% 余量）；本场景基数
+/// 从 1000ms 放到 5000ms 是 5 倍，本常量 800 → 4000 同样是 5 倍——**没有缩回**。
+/// 注：全局缺省已回 800ms（「1 秒」那笔按场景级覆盖 revert），本场景不吃缺省、
+/// 只吃 [`SCENE_TIMEOUT_MS`]，故 5 倍基数不受影响。
 ///
 /// 容量侧（provider 推荐上下文长度）通常远大于本值，故**实际生效预算由本常量
 /// 绑定**；只有小容量 provider 才会被容量侧压下来（[`input_token_budget`] 取小）。
@@ -201,7 +203,7 @@ pub(crate) const MAX_CHAIN_MESSAGES: usize = 32;
 ///
 /// `capacity_tokens` 是小脑 provider 的推荐上下文长度（容量上限，来自
 /// [`ModelProviderConfig::recommended_context_length_tokens`] 这条全局唯一链）。
-/// 容量缺失（未配置）时退化到时延上限——保守，绝不按「无限容量 × 1000ms」硬拉。
+/// 容量缺失（未配置）时退化到时延上限——保守，绝不按「无限容量 × 5 秒」硬拉。
 pub(crate) fn input_token_budget(capacity_tokens: Option<u64>) -> usize {
     capacity_tokens
         .map(|capacity| (capacity as usize).min(LATENCY_INPUT_CAP))

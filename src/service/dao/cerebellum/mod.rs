@@ -28,16 +28,20 @@ use std::sync::{Arc, OnceLock};
 pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
 /// 默认请求超时（毫秒）：小脑快判断亚秒级预算；config.timeout_ms 可逐模型覆盖
 ///
-/// 800 → 1000（2026-11-10 AMan 拍板「把小脑判断的超时时间调大一点，1 秒吧」）：
-/// 800ms 对「一次判多个场景 + 输入侧多带链内消息」偏紧，超时会让决策恒定降级、
-/// 功能白做。1000ms 与 `chain_reply` 的 800 tokens 输入预算是**耦合参数**
-/// （联合核算见 P3 报告），改这一行即可整体生效：现网 provider 的 `config`
-/// 无一条显式写 `timeout_ms`，`resolve_timeout_ms` 全部落到本常量。
+/// **保持 800ms 原值**。2026-11-10 曾有「800 → 1000」一笔（AMan 先提「1 秒」），
+/// 同日 AMan 改口径为「请求小脑思考 5 秒，5 秒没反应直接走正常流程」，落法经前台
+/// 定为**场景级覆盖**（`chain_reply::SCENE_TIMEOUT_MS = 5000`），故那笔已 revert：
+/// 需要更长预算的 scene 自己声明，全局缺省不动。
 ///
-/// 作用面：整批共享**一份**预算（`BrainDal::decide` 的 for 循环整体包一个
-/// `tokio::time::timeout`），非 per-scene —— 改它对全部已接 scene 同时生效，
-/// 回滚也只需 revert 本行。
-pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 1000;
+/// 为什么不能改全局缺省：本常量是整批共享的**一份**预算（`BrainDal::decide` 的
+/// for 循环整体包一个 `tokio::time::timeout`），作用于全部已接 scene。`entry_gate`
+/// 是**每条入站消息**都过的门，端点挂掉时若缺省是 5000，每条消息白等 5 秒，
+/// 影响面比「让 chain_reply 多读上下文」大一个量级。
+///
+/// 取值顺序（四级链）：`DecisionRequest.timeout_ms`（场景声明）→
+/// `provider.config.timeout_ms` → 本常量。现网 provider 的 `config` 无一条显式写
+/// `timeout_ms`，故其余 scene 的实际生效值就是本常量。
+pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 800;
 
 /// Cerebellum DAO trait - 小脑快判断接口
 #[async_trait]
