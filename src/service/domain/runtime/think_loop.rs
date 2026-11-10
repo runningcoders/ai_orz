@@ -265,21 +265,14 @@ pub(crate) fn build_policy_for_scene(
 /// `ContextOverflowPolicy` 与【历史对话】索引块的 10% 脑容量预算**共用这一个
 /// 取值入口**，避免两处各算一遍导致展示、裁决与记忆加载口径漂移。
 pub(crate) fn context_overflow_threshold(agent: &Agent) -> Option<u64> {
-    const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
-    agent.brain.as_ref().and_then(|brain| {
-        brain.model_provider().and_then(|po| {
-            let config = po.config();
-            if let Some(rec) = config.recommended_context_length
-                && rec > 0
-            {
-                return Some(rec as u64);
-            }
-            config
-                .max_context_length
-                .filter(|&v| v > 0)
-                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
-        })
-    })
+    // ⚠️ 取值链**只有一处实现**（`ModelProviderConfig::recommended_context_length_tokens`）：
+    // 本函数与「按模型容量估输入预算」的决策点（如 `chain_reply`）共用同一条链、
+    // 同一字段，禁止在这里再算一遍 60% —— 两处各算一遍必然漂移（吃过亏的口径）。
+    agent
+        .brain
+        .as_ref()
+        .and_then(|brain| brain.model_provider())
+        .and_then(|po| po.config().recommended_context_length_tokens())
 }
 
 /// 记忆索引块的 token 预算 = 压缩阈值 × 10%。
