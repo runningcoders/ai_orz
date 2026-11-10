@@ -130,10 +130,24 @@ fn mock_provider() -> ModelProviderPo {
     )
 }
 
+/// 每个 Brain 一个全局唯一的 agent_id
+///
+/// 熔断状态挂在进程级单例 `AgentRuntimeStateManager` 上（键 = agent_id）：
+/// 若所有用例共用 `agent-1`，上一例残留的熔断态会让「calls==0」**假绿** ——
+/// 与 Q1 那次抓到的假绿同形，只是换了个地方长出来。
+static TEST_AGENT_SEQ: AtomicUsize = AtomicUsize::new(0);
+
+fn unique_agent_id() -> String {
+    format!(
+        "agent-chain-reply-{}",
+        TEST_AGENT_SEQ.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
 /// 带 per-run 配额的 Brain（与生产装配口径一致：配额挂在 Brain 上）
 fn brain_with_quota(limit: usize) -> Brain {
     let mut brain = Brain::new_local(
-        "agent-1".to_string(),
+        unique_agent_id(),
         "Test Agent".to_string(),
         Default::default(),
         mock_provider(),
@@ -625,10 +639,16 @@ fn brain_with_capacity(max_context_length: i32) -> Brain {
     brain
 }
 
-/// 连续 3 次端点级失败 ⇒ 熔断；第 4 次零调用零配额且记 `circuit_open`；下一 run 恢复。
+/// 连续 3 次端点级失败 ⇒ 熔断；开闸后零调用零配额；到周期放真探针并自愈。
+///
+/// 载体 = `AgentRuntimeStateManager`（键 = agent_id）。Brain 每条入站消息重建，
+/// 挂在 Brain 上的计数在生产永不达阈 —— 这里刻意**跨多次 `run_gate` 复用同一个
+/// agent_id** 来复现生产语义（同一个 Agent 的连续多条入站消息）。
 #[tokio::test]
-async fn circuit_opens_after_three_endpoint_failures_and_resets_next_run() {
+async fn circuit_opens_after_three_endpoint_failures_then_probes_and_heals() {
     let brain = brain_with_quota(0);
+    let agent_id = brain.agent_id.clone();
+    let state = AgentRuntimeStateManager::global();
 
     for i in 0..3 {
         let (verdict, calls) = run_gate(
@@ -642,17 +662,17 @@ async fn circuit_opens_after_three_endpoint_failures_and_resets_next_run() {
         assert!(verdict.is_none(), "降级不得产出结论");
         assert_eq!(calls, 1, "第 {} 次必须真发一次请求", i + 1);
         assert_eq!(
-            brain.cerebellum_failure_guard.consecutive(),
-            i + 1,
-            "连续失败计数必须逐次递增"
+            state.cerebellum_consecutive_failures(&agent_id),
+            i as u32 + 1,
+            "连续失败计数必须逐次递增，且跨消息累计（不随 Brain 重建丢失）"
         );
     }
     assert!(
-        brain.cerebellum_failure_guard.is_open(),
+        state.is_cerebellum_circuit_open(&agent_id),
         "连续 3 次端点级失败必须熔断"
     );
 
-    // 第 4 次：剧本留空 —— 若真发了请求，Mock 会回 CallError 并再记一次调用
+    // ① 开闸后第 1 次：零请求、零配额、记独立值 circuit_open
     let (verdict, calls) = run_gate(
         &sample_chain(4),
         triggered_facts(),
@@ -672,31 +692,82 @@ async fn circuit_opens_after_three_endpoint_failures_and_resets_next_run() {
         Some("circuit_open"),
         "必须记独立值 circuit_open，不得并入 timeout"
     );
+    assert_ne!(
+        traces[0].degraded.as_deref(),
+        Some("timeout"),
+        "熔断 ≠ 超时"
+    );
     assert_eq!(traces[0].latency_ms, None, "没发生调用不得编造时延");
 
-    // 下一 run：Brain 重建 ⇒ 熔断自动恢复（不跨 run、不入库、不设时间窗）
-    let fresh = brain_with_quota(0);
-    assert!(!fresh.cerebellum_failure_guard.is_open());
+    // ② 周期未到的补充尝试：继续零请求
+    for i in 0..3 {
+        let (verdict, calls) = run_gate(
+            &sample_chain(4),
+            triggered_facts(),
+            vec![],
+            Some(&brain),
+            &format!("run-circuit-skip-{i}"),
+        )
+        .await;
+        assert!(verdict.is_none());
+        assert_eq!(
+            calls,
+            0,
+            "探针周期未到，第 {} 次补充尝试仍不许发请求",
+            i + 1
+        );
+    }
+
+    // ③ 第 5 次尝试 = 真探针（周期 5：4 次跳过 + 1 次探针）
     let (verdict, calls) = run_gate(
         &sample_chain(4),
         triggered_facts(),
         vec![Some(pick_for(OPTION_CLOSE, 0.95))],
-        Some(&fresh),
-        "run-circuit-recovered",
+        Some(&brain),
+        "run-circuit-probe",
     )
     .await;
-    assert!(verdict.is_some(), "新 run 首条必须重新尝试");
-    assert_eq!(calls, 1, "下一 run 首条 calls==1");
+    assert_eq!(calls, 1, "到探针周期必须真发一次请求");
+    assert!(
+        verdict.is_some_and(|v| v.close),
+        "探针成功应正常产出结论（自愈生效）"
+    );
+    assert_eq!(
+        state.cerebellum_consecutive_failures(&agent_id),
+        0,
+        "探针成功必须清零"
+    );
+    assert!(
+        !state.is_cerebellum_circuit_open(&agent_id),
+        "清零后闸必须关闭"
+    );
+
+    // ④ 自愈后下一次：正常问、无降级
+    let (verdict, calls) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        "run-circuit-healed",
+    )
+    .await;
+    assert_eq!(calls, 1, "自愈后首条必须重新尝试");
+    assert!(verdict.is_some());
+    let traces = take_traces("run-circuit-healed");
+    assert_eq!(traces[0].degraded, None, "自愈后不得再记降级");
 }
 
 /// 端点恢复（有应答）即清零：低置信不是失败。
 #[tokio::test]
 async fn any_answer_resets_the_consecutive_failure_counter() {
     let brain = brain_with_quota(0);
+    let agent_id = brain.agent_id.clone();
+    let state = AgentRuntimeStateManager::global();
+
     let _ = run_gate(
         &sample_chain(4),
         triggered_facts(),
-        vec![Some(timeout_outcome()), Some(timeout_outcome())],
+        vec![Some(timeout_outcome())],
         Some(&brain),
         "run-reset-a",
     )
@@ -709,7 +780,7 @@ async fn any_answer_resets_the_consecutive_failure_counter() {
         "run-reset-b",
     )
     .await;
-    assert_eq!(brain.cerebellum_failure_guard.consecutive(), 2);
+    assert_eq!(state.cerebellum_consecutive_failures(&agent_id), 2);
 
     // 低置信（有应答、无可用结论）→ 端点健康，清零
     let (verdict, _) = run_gate(
@@ -722,7 +793,7 @@ async fn any_answer_resets_the_consecutive_failure_counter() {
     .await;
     assert!(verdict.is_none());
     assert_eq!(
-        brain.cerebellum_failure_guard.consecutive(),
+        state.cerebellum_consecutive_failures(&agent_id),
         0,
         "有应答即清零：熔断判的是端点可用性，不是判断质量"
     );
@@ -905,6 +976,9 @@ async fn cerebellum_is_asked_once_and_continue_still_hits_the_static_hard_wall()
     assert_eq!(traces.len(), 1);
     assert_eq!(traces[0].decision, DECISION_CONTINUE);
     assert_eq!(traces[0].latency_ms, Some(3));
+    // ② 必须断「小脑真答了」：调了但超时/报错同样落回静态路由，
+    //    只断最终路由是假绿（测的是降级路径，不是 continue 与 Escalate 的冲突）
+    assert_eq!(traces[0].degraded, None, "② 该次必须是正常判定，不得是降级");
     // ③ continue 不覆盖 ⇒ 最终路由仍是静态硬墙
     assert!(verdict.is_none(), "continue 不得产出覆盖结论");
     assert_eq!(

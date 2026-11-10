@@ -337,3 +337,86 @@ fn test_list_runtime_agents_filters_by_task_and_project_and_combination() {
     let empty = mgr.list_runtime_agents(None, Some("not-exist"), None);
     assert!(empty.is_empty());
 }
+
+// ---------- 链深判定小脑熔断（载体 = AgentRuntimeInfo，纯内存/不落库/重启归零） ----------
+
+#[test]
+fn cerebellum_guard_opens_at_three_and_heals_on_answer() {
+    let mgr = AgentRuntimeStateManager::new();
+    assert_eq!(
+        mgr.cerebellum_guard_verdict("a"),
+        CerebellumGuardVerdict::Allow,
+        "从未失败过 ⇒ 放行"
+    );
+    assert_eq!(mgr.record_cerebellum_transport_failure("a"), 1);
+    assert_eq!(mgr.record_cerebellum_transport_failure("a"), 2);
+    assert!(!mgr.is_cerebellum_circuit_open("a"), "2 < 3 仍未熔断");
+    assert_eq!(mgr.record_cerebellum_transport_failure("a"), 3);
+    assert!(mgr.is_cerebellum_circuit_open("a"), "连续 3 次必须熔断");
+
+    // 有应答即清零（低置信也算「端点活着」）
+    mgr.record_cerebellum_healthy("a");
+    assert_eq!(mgr.cerebellum_consecutive_failures("a"), 0);
+    assert!(!mgr.is_cerebellum_circuit_open("a"));
+}
+
+#[test]
+fn cerebellum_guard_skips_then_probes_on_cycle() {
+    let mgr = AgentRuntimeStateManager::new();
+    for _ in 0..CEREBELLUM_FAILURE_THRESHOLD {
+        mgr.record_cerebellum_transport_failure("a");
+    }
+    assert!(mgr.is_cerebellum_circuit_open("a"));
+
+    // 周期 = CEREBELLUM_PROBE_EVERY 次尝试：前 N-1 次跳过，第 N 次是真探针
+    let mut verdicts = Vec::new();
+    for _ in 0..CEREBELLUM_PROBE_EVERY {
+        verdicts.push(mgr.cerebellum_guard_verdict("a"));
+    }
+    assert!(
+        verdicts[..CEREBELLUM_PROBE_EVERY - 1]
+            .iter()
+            .all(|v| *v == CerebellumGuardVerdict::Skip),
+        "周期未到必须全部跳过"
+    );
+    assert_eq!(
+        verdicts[CEREBELLUM_PROBE_EVERY - 1],
+        CerebellumGuardVerdict::Probe,
+        "到周期必须放一次真探针"
+    );
+    // 探针发出后周期归零 ⇒ 下一次重新回到 Skip
+    assert_eq!(
+        mgr.cerebellum_guard_verdict("a"),
+        CerebellumGuardVerdict::Skip
+    );
+    // 探针失败（再记一次失败）仍保持开闸
+    assert_eq!(mgr.record_cerebellum_transport_failure("a"), 4);
+    assert!(mgr.is_cerebellum_circuit_open("a"));
+}
+
+#[test]
+fn cerebellum_guard_survives_busy_idle_resting_transitions() {
+    let mgr = AgentRuntimeStateManager::new();
+    mgr.record_cerebellum_transport_failure("a");
+    mgr.record_cerebellum_transport_failure("a");
+    assert_eq!(mgr.cerebellum_consecutive_failures("a"), 2);
+
+    mgr.set_busy("a", "msg-1", None, None);
+    assert_eq!(
+        mgr.cerebellum_consecutive_failures("a"),
+        2,
+        "set_busy 不得清零熔断计数"
+    );
+    mgr.set_idle("a");
+    assert_eq!(
+        mgr.cerebellum_consecutive_failures("a"),
+        2,
+        "set_idle 不得清零熔断计数（否则熔断等于从未存在）"
+    );
+    mgr.set_resting("a");
+    assert_eq!(
+        mgr.cerebellum_consecutive_failures("a"),
+        2,
+        "set_resting 不得清零熔断计数"
+    );
+}

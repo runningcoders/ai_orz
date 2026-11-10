@@ -546,11 +546,6 @@ fn make_cli_agent(prompt_template: Option<String>) -> Agent {
         model_provider: None,
         cerebellum: None,
         cerebellum_quota: std::sync::Arc::new(crate::models::brain::CerebellumQuota::unlimited()),
-        cerebellum_failure_guard: std::sync::Arc::new(
-            crate::models::brain::CerebellumFailureGuard::new(
-                crate::models::brain::DEFAULT_CEREBELLUM_FAILURE_THRESHOLD,
-            ),
-        ),
         memories: vec![],
     });
     agent
@@ -892,11 +887,6 @@ fn flat_builder_ignores_template_for_remote_config() {
         model_provider: None,
         cerebellum: None,
         cerebellum_quota: std::sync::Arc::new(crate::models::brain::CerebellumQuota::unlimited()),
-        cerebellum_failure_guard: std::sync::Arc::new(
-            crate::models::brain::CerebellumFailureGuard::new(
-                crate::models::brain::DEFAULT_CEREBELLUM_FAILURE_THRESHOLD,
-            ),
-        ),
         memories: vec![],
     });
 

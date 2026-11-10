@@ -77,6 +77,7 @@
 use super::compaction::estimate_tokens;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
+use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, CerebellumGuardVerdict};
 use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
 use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
 use crate::service::dal::brain::{BrainDal, dal};
@@ -117,7 +118,7 @@ pub(crate) const DECISION_FALLBACK: &str = "fallback";
 const DEGRADED_BUDGET: &str = "budget_exhausted";
 /// 降级原因：判了但没有可用结论（低置信 / 答案缺失 / 幻觉选项）
 const DEGRADED_NO_ANSWER: &str = "no_answer";
-/// 降级原因：端点连续失败已熔断，本 run 内不再尝试
+/// 降级原因：端点连续失败已熔断，本次跳过不再尝试（按周期放真探针）
 ///
 /// **独立值域**，绝不并入 `timeout`：熔断是「按设计跳过」，超时是「试了又超」。
 /// 并进去之后，「端点挂了 3 次后被跳过」与「第 4 次又超时」在轨迹上一模一样，
@@ -452,21 +453,29 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
-    // ③ 熔断：端点连续失败后本 run 内不再尝试
+    // ③ 熔断：端点连续失败后跳过（按周期放真探针自愈）
     //
-    // 位置极关键 —— 必须在渲染 / 配额 / 请求**之前**：熔断的全部价值就是
-    // 「别再付那一个超时」，放在 decide 旁边则等于白熔。也必须在
+    // 位置极关键 —— 必须在渲染 / 配额 / 请求**之前**（②.5）：熔断的全部价值
+    // 就是「别再付那一个超时」，放在 decide 旁边等于白熔。也必须在
     // `cerebellum.is_none()` 之后：没有模型时熔断不欠任何人一个解释。
-    if brain.cerebellum_failure_guard.is_open() {
+    //
+    // 载体是 `AgentRuntimeStateManager`（键 = 本 Brain 的宿主 agent_id），不是
+    // Brain 上的字段：`handle_agent_message` **每条入站消息都重建 Brain**，挂在
+    // Brain 上的连续失败计数取值恒为 0 或 1，阈值 3 在生产接线形态下永远不可达
+    // （单测里循环调同一个 Brain 能过 ⇒ 典型假绿）。运行时状态是纯内存单例、
+    // 跨消息累计、服务重启归零，满足「不入 DB / 不设时间窗」。
+    let runtime_state = AgentRuntimeStateManager::global();
+    let guard_verdict = runtime_state.cerebellum_guard_verdict(&brain.agent_id);
+    if matches!(guard_verdict, CerebellumGuardVerdict::Skip) {
         log_info!(
             ctx,
             "chain_reply",
             decision = DECISION_FALLBACK,
             degraded_reason = DEGRADED_CIRCUIT_OPEN,
             scene = SCENE,
-            is_open = brain.cerebellum_failure_guard.is_open(),
-            consecutive_failures = brain.cerebellum_failure_guard.consecutive(),
-            threshold = brain.cerebellum_failure_guard.threshold(),
+            consecutive_failures = runtime_state.cerebellum_consecutive_failures(&brain.agent_id),
+            skipped_since_probe = runtime_state.cerebellum_skipped_since_probe(&brain.agent_id),
+            probe_every = crate::pkg::agent_runtime_state::CEREBELLUM_PROBE_EVERY,
             "chain reply gate skipped by circuit breaker (endpoint keeps failing)"
         );
         record_cerebellum(
@@ -480,6 +489,19 @@ pub(crate) async fn judge_chain_reply(
             ),
         );
         return None;
+    }
+    if matches!(guard_verdict, CerebellumGuardVerdict::Probe) {
+        // 探针：真发一次请求。成功即清零回正常，失败则继续开闸并重新计周期。
+        log_info!(
+            ctx,
+            "chain_reply",
+            decision = DECISION_FALLBACK,
+            degraded_reason = "circuit_probe",
+            scene = SCENE,
+            consecutive_failures = runtime_state.cerebellum_consecutive_failures(&brain.agent_id),
+            probe_every = crate::pkg::agent_runtime_state::CEREBELLUM_PROBE_EVERY,
+            "circuit breaker probe: retrying the endpoint once to check recovery"
+        );
     }
 
     // ④ 输入预算 = min(小脑模型容量上限, 时延反推上限)
@@ -525,6 +547,9 @@ pub(crate) async fn judge_chain_reply(
     // ⑥ 链内一条消息都拉不到：不调小脑、不占配额
     let input = render_chain(messages, body_budget);
     if input.included == 0 {
+        // 空输入没发请求、也没证明端点坏了 ⇒ 按裁定口径记「健康」（清零）：
+        // 只有 timeout / call_error 才是熔断证据，其余一律不累加。
+        runtime_state.record_cerebellum_healthy(&brain.agent_id);
         record_cerebellum(
             trace_id,
             trace(DECISION_EMPTY_INPUT, None, None, false, None),
@@ -591,9 +616,11 @@ pub(crate) async fn judge_chain_reply(
         Some(common::api::cerebellum::DegradedReason::Timeout)
             | Some(common::api::cerebellum::DegradedReason::CallError)
     ) {
-        brain.cerebellum_failure_guard.record_failure();
+        runtime_state.record_cerebellum_transport_failure(&brain.agent_id);
     } else {
-        brain.cerebellum_failure_guard.record_success();
+        // 有应答即清零：低置信 / 幻觉选项 / close / continue 都走这里 ——
+        // 熔断判的是端点可用性，不是判断质量。
+        runtime_state.record_cerebellum_healthy(&brain.agent_id);
     }
 
     if let Some(reason) = outcome.degraded {
