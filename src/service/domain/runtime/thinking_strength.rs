@@ -6,9 +6,13 @@
 //!
 //! # 降级（业务方忽略错误、走原逻辑）
 //!
-//! 无小脑 / 调用失败 / 超时 / 低置信 / 答案不可用 → 一律 `None`，调用方退回
+//! 无小脑 / 调用失败 / 超时 / 低置信 / 答案不可用 → `choice = None`，调用方退回
 //! 原逻辑（Provider 基准 + Agent 覆盖 + 场景偏移 + 意图确定性偏移）。
 //! 小脑是可选增强，绝不阻塞主流程，也不把「没判断出来」当成「判断为最低强度」。
+//!
+//! 返回 [`StrengthSelection`] 而不是 `Option`：调用方（思考轨迹）需要同时知道
+//! **问没问**（`latency_ms`）与**为什么没成**（`degraded`）。五种成因若折叠成
+//! 一个值，「配额耗尽」会被记成「答案不可用」，统计上无法归因。
 //!
 //! # Provider 未配置 `thinking_intensity` 时
 //!
@@ -85,6 +89,51 @@ pub struct StrengthChoice {
     pub confidence: f32,
 }
 
+/// 轨迹 `degraded` 值域：**每个值对应唯一触发条件**
+///
+/// 2026-11-10 修正：此前五种成因统一返回 `None`，`think_loop` 于是把
+/// 「配额耗尽」也记成 `no_usable_answer`——统计上无法归因。
+pub const DEGRADED_NO_USER_MESSAGE: &str = "no_user_message";
+pub const DEGRADED_BUDGET: &str = "budget_exhausted";
+pub const DEGRADED_EMPTY_REQUESTS: &str = "empty_requests";
+pub const DEGRADED_NO_ANSWER: &str = "no_usable_answer";
+pub const DEGRADED_BAD_OPTION: &str = "bad_option";
+
+/// 一次强度选择的完整产出：选了没有 + 耗了多久 + 为什么没选
+///
+/// 与 [`StrengthChoice`] 的分工：后者只表达「选到了什么」，本结构额外承载
+/// **观测口径**——轨迹要回答「这次到底问没问、问出了什么」，
+/// 把「没问」（配额 / 无用户消息）与「问了但没答案」记成同一个值就是失真。
+#[derive(Debug, Clone)]
+pub struct StrengthSelection {
+    /// 选中项；`None` = 本次没有可用结论（原因见 `degraded`）
+    pub choice: Option<StrengthChoice>,
+    /// 轨迹口径的耗时；`None` = 没真正发出请求
+    pub latency_ms: Option<u64>,
+    /// 降级/未命中原因；`None` 且 `choice.is_some()` = 正常选中
+    pub degraded: Option<&'static str>,
+}
+
+impl StrengthSelection {
+    /// 零调用早退：没问，所以耗时恒 `None`
+    fn not_called(degraded: &'static str) -> Self {
+        Self {
+            choice: None,
+            latency_ms: None,
+            degraded: Some(degraded),
+        }
+    }
+
+    /// 调用过但没拿到可用结论：耗时取实测值
+    fn unusable(latency_ms: Option<u64>, degraded: &'static str) -> Self {
+        Self {
+            choice: None,
+            latency_ms,
+            degraded: Some(degraded),
+        }
+    }
+}
+
 /// 本场景的策略形态（无状态，可反复构造）
 fn policy() -> PickOnePolicy {
     PickOnePolicy::new(
@@ -105,9 +154,11 @@ pub async fn select(
     brain: &Brain,
     thought: ThinkingScene,
     last_user_message: Option<&str>,
-) -> Option<StrengthChoice> {
+) -> StrengthSelection {
     // 没有用户消息就没有可判断的输入：直接走原逻辑，零调用。
-    let user_text = last_user_message?;
+    let Some(user_text) = last_user_message else {
+        return StrengthSelection::not_called(DEGRADED_NO_USER_MESSAGE);
+    };
 
     // 阶段标签：同一个决策 scene，用 phase 区分是哪条链路的那一次
     let phase = thought.as_str();
@@ -123,7 +174,7 @@ pub async fn select(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        return None;
+        return StrengthSelection::not_called(DEGRADED_BUDGET);
     }
 
     let policy = policy();
@@ -136,12 +187,14 @@ pub async fn select(
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
     if requests.is_empty() {
-        return None;
+        return StrengthSelection::not_called(DEGRADED_EMPTY_REQUESTS);
     }
 
     // 阶段二：唯一 async 点（门禁 / 超时 / 协议转换 / 降级全在 DAL）
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
 
     if let Some(reason) = outcome.degraded {
         log_info!(
@@ -154,7 +207,7 @@ pub async fn select(
             latency_ms = latency_ms,
             "thinking strength degraded to original logic"
         );
-        return None;
+        return StrengthSelection::unusable(traced_latency_ms, reason.as_str());
     }
 
     // 阶段三：答案注入事实桶，形态负责「选一个 + 置信达标」
@@ -169,7 +222,7 @@ pub async fn select(
             latency_ms = latency_ms,
             "thinking strength produced no usable answer"
         );
-        return None;
+        return StrengthSelection::unusable(traced_latency_ms, DEGRADED_NO_ANSWER);
     };
     // 选项 id 就是分数；形态已保证在选项集内，解析失败只可能是配置被改坏。
     let Ok(score) = pick.option.parse::<u8>() else {
@@ -180,7 +233,7 @@ pub async fn select(
             option = pick.option.as_str(),
             "thinking strength option is not a score"
         );
-        return None;
+        return StrengthSelection::unusable(traced_latency_ms, DEGRADED_BAD_OPTION);
     };
     let strength = ThinkingIntensity::new(score);
     log_info!(
@@ -196,10 +249,14 @@ pub async fn select(
         output_tokens = outcome.usage.output_tokens,
         "thinking strength selected"
     );
-    Some(StrengthChoice {
-        strength,
-        confidence: pick.confidence,
-    })
+    StrengthSelection {
+        choice: Some(StrengthChoice {
+            strength,
+            confidence: pick.confidence,
+        }),
+        latency_ms: traced_latency_ms,
+        degraded: None,
+    }
 }
 
 /// 单例 DAL 的生产封装
@@ -208,7 +265,7 @@ pub async fn select_with_default_dao(
     brain: &Brain,
     thought: ThinkingScene,
     last_user_message: Option<&str>,
-) -> Option<StrengthChoice> {
+) -> StrengthSelection {
     select(ctx, dal(), brain, thought, last_user_message).await
 }
 

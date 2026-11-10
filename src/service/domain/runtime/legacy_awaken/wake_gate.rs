@@ -141,6 +141,7 @@ fn trace(
     confidence: Option<f32>,
     degraded: Option<&str>,
     applied: bool,
+    latency_ms: Option<u64>,
 ) -> ThinkTraceCerebellum {
     ThinkTraceCerebellum {
         scene: SCENE.to_string(),
@@ -148,7 +149,7 @@ fn trace(
         confidence,
         degraded: degraded.map(|s| s.to_string()),
         applied,
-        latency_ms: None,
+        latency_ms,
     }
 }
 
@@ -224,7 +225,7 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false),
+            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
         );
         return None;
     }
@@ -244,6 +245,8 @@ pub(crate) async fn maybe_shallow(
     // 阶段二：唯一 async 点（门禁 / 超时 / 协议转换 / 降级全在 DAL）
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
 
     if let Some(reason) = outcome.degraded {
         log_info!(
@@ -257,7 +260,13 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(reason.as_str()), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(reason.as_str()),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     }
@@ -276,7 +285,13 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_NO_ANSWER), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_NO_ANSWER),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     };
@@ -293,7 +308,13 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_SHALLOW, Some(pick.confidence), None, true),
+            trace(
+                DECISION_SHALLOW,
+                Some(pick.confidence),
+                None,
+                true,
+                traced_latency_ms,
+            ),
         );
         return Some(Shallow);
     }
@@ -311,7 +332,13 @@ pub(crate) async fn maybe_shallow(
     );
     record_cerebellum(
         trace_id,
-        trace(DECISION_DEEP, Some(pick.confidence), None, false),
+        trace(
+            DECISION_DEEP,
+            Some(pick.confidence),
+            None,
+            false,
+            traced_latency_ms,
+        ),
     );
     None
 }

@@ -97,6 +97,29 @@ impl DecisionOutcome {
             usage: CerebellumUsage::default(),
         }
     }
+
+    /// 轨迹口径的耗时：`None` = 本次**没有真正发出模型请求**
+    ///
+    /// 与 [`DecisionOutcome::latency_ms`] 的分工：后者是原始计量（无论是否调用都记），
+    /// 前者只回答「这次到底问没问」。思考轨迹的 `latency_ms` 要的是后者——
+    /// 把「没问」记成「问了 0ms」会让 p95 时延和跳过率同时失真。
+    ///
+    /// 零调用路径各自靠**不同机制**判 `None`（别混写成一条）：
+    /// - 门 2/3/4（provider 未装配 / api_key 空 / DAO 未初始化）：统一以
+    ///   [`DegradedReason::NoProvider`] 变体标记 ⇒ **靠变体判**，与耗时数值无关
+    ///   （这三条返回的 `elapsed_ms()` 可能是 0 也可能是 1~2ms）。
+    /// - 门 1（请求为空）：不设 `degraded`（它不是降级），唯一特征是
+    ///   `latency_ms` 被固定写成 `0` ⇒ **靠 `latency_ms == 0` 判**。
+    ///   真实 HTTP 往返不可能为 0ms；测试侧要表达「调用过」必须注入 ≥ 1ms。
+    /// - 其余（正常 / `Timeout` / `CallError`）：即便失败也真实付了时延 ⇒ `Some(实测值)`。
+    ///
+    /// 新增零调用路径**必须同步本函数**，否则轨迹会把「没问」记成「问了」。
+    pub fn traced_latency_ms(&self) -> Option<u64> {
+        if matches!(self.degraded, Some(DegradedReason::NoProvider)) {
+            return None;
+        }
+        (self.latency_ms > 0).then_some(self.latency_ms)
+    }
 }
 
 // ==================== DAL 接口 ====================
@@ -1045,5 +1068,54 @@ mod tests {
     fn shrink_state_ignores_non_string_field() {
         let mut state = serde_json::json!({"last_user_message": 42});
         assert!(shrink_state_to_capacity(&mut state, 1).is_none());
+    }
+}
+
+#[cfg(test)]
+mod traced_latency_tests {
+    use super::*;
+
+    fn outcome(degraded: Option<DegradedReason>, latency_ms: u64) -> DecisionOutcome {
+        DecisionOutcome {
+            answers: DecisionAnswers::new(),
+            degraded,
+            latency_ms,
+            usage: CerebellumUsage::default(),
+        }
+    }
+
+    #[test]
+    fn no_provider_is_not_a_call_regardless_of_elapsed() {
+        // 三个零调用门（provider 未装配 / api_key 空 / DAO 未初始化）统一以
+        // `NoProvider` 变体标记 ⇒ **靠变体判**，不靠耗时数值。
+        assert_eq!(
+            outcome(Some(DegradedReason::NoProvider), 0).traced_latency_ms(),
+            None
+        );
+        assert_eq!(
+            outcome(Some(DegradedReason::NoProvider), 3).traced_latency_ms(),
+            None,
+            "零调用门也返回 elapsed_ms()，所以不能用 latency>0 判「调用过」"
+        );
+    }
+
+    #[test]
+    fn empty_request_gate_is_not_a_call() {
+        // 门 1（请求为空）：不设 degraded（不是降级），唯一特征是 latency 固定 0
+        assert_eq!(outcome(None, 0).traced_latency_ms(), None);
+    }
+
+    #[test]
+    fn real_calls_keep_measured_latency_even_when_degraded() {
+        // 正常 / 超时 / 调用失败都真实付了时延 ⇒ 即便失败也记实测值
+        assert_eq!(outcome(None, 7).traced_latency_ms(), Some(7));
+        assert_eq!(
+            outcome(Some(DegradedReason::Timeout), 12).traced_latency_ms(),
+            Some(12)
+        );
+        assert_eq!(
+            outcome(Some(DegradedReason::CallError), 3).traced_latency_ms(),
+            Some(3)
+        );
     }
 }

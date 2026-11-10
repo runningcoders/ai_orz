@@ -173,6 +173,17 @@ async fn run_script(
     thought: ThinkingScene,
     user_msg: Option<&str>,
 ) -> (Option<StrengthChoice>, usize) {
+    let (selection, calls) = run_full(script, brain, thought, user_msg).await;
+    (selection.choice, calls)
+}
+
+/// 同上，但保留完整产出：**选没选到 + 耗时 + 为什么没选到**
+async fn run_full(
+    script: Vec<Option<DecisionOutcome>>,
+    brain: &Brain,
+    thought: ThinkingScene,
+    user_msg: Option<&str>,
+) -> (StrengthSelection, usize) {
     // 全局 Storage 单例：单跑本模块时 `test_ctx()` 依赖它已初始化
     crate::pkg::storage::test_support::init_for_test().await;
     let ctx = test_ctx();
@@ -279,4 +290,135 @@ async fn test_intent_strength_without_user_message_sends_no_request() {
     assert_eq!(calls, 0);
     assert!(got.is_none());
     assert_eq!(brain.cerebellum_quota.used(), 0);
+}
+
+// ---------- ④ 值域分列：degraded 按**真实成因**落值 + 耗时口径 ----------
+//
+// 改造前：五种成因统一返回 `None`，`think_loop` 一律记 `no_usable_answer`，
+// 于是「配额耗尽」在统计里被算成「答案不可用」。下面按值逐条钉死。
+
+fn degraded_outcome(reason: DegradedReason, latency_ms: u64) -> DecisionOutcome {
+    DecisionOutcome {
+        answers: DecisionAnswers::new(),
+        degraded: Some(reason),
+        latency_ms,
+        usage: CerebellumUsage::default(),
+    }
+}
+
+#[tokio::test]
+async fn test_no_user_message_is_zero_call_and_latency_none() {
+    let brain = brain_with_quota(5);
+    let (sel, calls) = run_full(vec![], &brain, ThinkingScene::Awaken, None).await;
+    assert_eq!(calls, 0, "没有用户消息 = 零调用");
+    assert_eq!(sel.degraded, Some(DEGRADED_NO_USER_MESSAGE));
+    assert_eq!(sel.latency_ms, None, "零调用 ⇒ 轨迹耗时为 None");
+    assert!(sel.choice.is_none());
+}
+
+#[tokio::test]
+async fn test_budget_exhausted_is_not_folded_into_no_answer() {
+    let brain = brain_with_quota(1);
+    assert!(brain.cerebellum_quota.try_acquire(), "先吃掉唯一额度");
+    let (sel, calls) = run_full(
+        vec![Some(pick_for("90", 0.99))],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("帮我重构这块代码"),
+    )
+    .await;
+    assert_eq!(calls, 0, "配额耗尽：一次请求都不发");
+    assert_eq!(
+        sel.degraded,
+        Some(DEGRADED_BUDGET),
+        "配额耗尽必须落 budget_exhausted，不能折叠成 no_usable_answer"
+    );
+    assert_eq!(sel.latency_ms, None);
+}
+
+#[tokio::test]
+async fn test_no_provider_keeps_no_latency_despite_elapsed_ms() {
+    // 零调用门返回的是 elapsed_ms()（这里刻意给 3ms）：若代码直接透传，
+    // 断言会红 —— 这条锁死「靠变体判而非靠数值」
+    let brain = brain_with_quota(5);
+    let (sel, calls) = run_full(
+        vec![Some(degraded_outcome(DegradedReason::NoProvider, 3))],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("在吗"),
+    )
+    .await;
+    assert_eq!(calls, 1);
+    assert_eq!(sel.degraded, Some("no_provider"));
+    assert_eq!(
+        sel.latency_ms, None,
+        "NoProvider 是零调用门 ⇒ 轨迹耗时 None"
+    );
+}
+
+#[tokio::test]
+async fn test_timeout_and_call_error_keep_measured_latency() {
+    let brain = brain_with_quota(5);
+    let (sel, _) = run_full(
+        vec![Some(degraded_outcome(DegradedReason::Timeout, 7))],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("在吗"),
+    )
+    .await;
+    assert_eq!(sel.degraded, Some("timeout"));
+    assert_eq!(sel.latency_ms, Some(7), "超时真实付了时延");
+
+    let brain = brain_with_quota(5);
+    let (sel, _) = run_full(
+        vec![Some(degraded_outcome(DegradedReason::CallError, 7))],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("在吗"),
+    )
+    .await;
+    assert_eq!(sel.degraded, Some("call_error"));
+    assert_eq!(sel.latency_ms, Some(7), "调用失败同样付了时延");
+}
+
+#[tokio::test]
+async fn test_empty_answers_is_no_usable_answer_with_latency() {
+    // 调用成功但答案缺失（形态取不到结论）⇒ no_usable_answer，且耗时是实测值
+    let brain = brain_with_quota(5);
+    let (sel, calls) = run_full(
+        vec![Some(DecisionOutcome {
+            answers: DecisionAnswers::new(),
+            degraded: None,
+            latency_ms: 7,
+            usage: CerebellumUsage::default(),
+        })],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("在吗"),
+    )
+    .await;
+    assert_eq!(calls, 1);
+    assert_eq!(sel.degraded, Some(DEGRADED_NO_ANSWER));
+    assert_eq!(sel.latency_ms, Some(7), "问了就问到了，耗时不能丢");
+    assert!(sel.choice.is_none());
+}
+
+#[tokio::test]
+async fn test_selected_strength_carries_latency_and_no_degraded() {
+    let brain = brain_with_quota(5);
+    let (sel, calls) = run_full(
+        vec![Some(pick_for("70", 0.82))],
+        &brain,
+        ThinkingScene::IntentAnalyze,
+        Some("帮我分析一下这个方案的风险"),
+    )
+    .await;
+    assert_eq!(calls, 1);
+    assert_eq!(sel.degraded, None, "选到了就不是降级");
+    assert_eq!(
+        sel.latency_ms,
+        Some(4),
+        "轨迹必须带实测耗时（剧本自报 4ms）"
+    );
+    assert_eq!(sel.choice.expect("应选出分数").strength.score(), 70);
 }

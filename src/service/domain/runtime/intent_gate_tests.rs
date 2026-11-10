@@ -382,3 +382,35 @@ async fn test_brain_absent_returns_none_without_error() {
         "未摸到小脑就没有决策可留痕（缺失不是决策）"
     );
 }
+
+// ---------- ⑤ 轨迹耗时：调用过必带实测值，零调用必为 None ----------
+
+#[tokio::test]
+async fn test_trace_latency_measured_when_called_and_none_when_zero_call() {
+    // 正向：剧本自报 3ms（`pick_for`），轨迹必须取到该值 —— 断取值，不只断字段
+    let brain = brain_with_quota(5);
+    let run_id = "intent-gate-latency-called";
+    let (_, calls) = run_gate(
+        "帮我分析这个方案的风险",
+        vec![Some(pick_for(OPTION_ANALYZE, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert_eq!(calls, 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(
+        traces[0].latency_ms,
+        Some(3),
+        "发生了调用 ⇒ 轨迹必须带实测耗时（改造前固定 None 会红）"
+    );
+
+    // 反向：零信息量输入 = 零调用 ⇒ 必须是 None，不能被记成「问了 0ms」
+    let run_id = "intent-gate-latency-zero";
+    let (_, calls) = run_gate("   ", vec![], Some(&brain), run_id).await;
+    assert_eq!(calls, 0);
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].latency_ms, None, "零调用 ⇒ None（不是 Some(0)）");
+}

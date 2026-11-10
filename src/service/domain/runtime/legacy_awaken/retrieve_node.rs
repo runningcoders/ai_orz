@@ -365,17 +365,20 @@ async fn rerank_if_enabled(
         .into_iter()
         .partition(|m| matches!(m.po, MemoryPo::Relation(_)));
 
-    let (ranked, rerank_scene): (Option<Vec<Memory>>, Option<&'static str>) =
-        match deps.agent.brain.as_ref() {
-            Some(brain) => (
-                super::memory_relevance::rank_with_default_dao(
-                    &deps.ctx, brain, question, &entities, keep,
-                )
-                .await,
-                Some(super::memory_relevance::SCENE),
-            ),
-            _ => (None, None),
-        };
+    let (ranked, rerank_scene, rerank_latency_ms): (
+        Option<Vec<Memory>>,
+        Option<&'static str>,
+        Option<u64>,
+    ) = match deps.agent.brain.as_ref() {
+        Some(brain) => {
+            let (ranked, latency_ms) = super::memory_relevance::rank_with_default_dao(
+                &deps.ctx, brain, question, &entities, keep,
+            )
+            .await;
+            (ranked, Some(super::memory_relevance::SCENE), latency_ms)
+        }
+        _ => (None, None, None),
+    };
     // 小脑留痕：精选是增强，没出结论时也要能看见「这次是靠老路径兜的」
     if let Some(scene) = rerank_scene {
         crate::pkg::think_trace::record_cerebellum(
@@ -391,7 +394,7 @@ async fn rerank_if_enabled(
                 confidence: None,
                 degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
                 applied: ranked.is_some(),
-                latency_ms: None,
+                latency_ms: rerank_latency_ms,
             },
         );
     }
@@ -713,21 +716,24 @@ impl ThinkNode for RetrieveNode {
         {
             Ok(skills) => {
                 let mut candidates: Vec<SkillPo> = skills.into_iter().map(|s| s.po).collect();
-                let (ranked, rerank_scene): (Option<Vec<SkillPo>>, Option<&'static str>) =
-                    match deps.agent.brain.as_ref() {
-                        Some(brain) => (
-                            super::skill_relevance::rank_with_default_dao(
-                                &deps.ctx,
-                                brain,
-                                &keyword,
-                                &candidates,
-                                METHOD_SKILLS_TOP_K,
-                            )
-                            .await,
-                            Some(super::skill_relevance::SCENE),
-                        ),
-                        _ => (None, None),
-                    };
+                let (ranked, rerank_scene, rerank_latency_ms): (
+                    Option<Vec<SkillPo>>,
+                    Option<&'static str>,
+                    Option<u64>,
+                ) = match deps.agent.brain.as_ref() {
+                    Some(brain) => {
+                        let (ranked, latency_ms) = super::skill_relevance::rank_with_default_dao(
+                            &deps.ctx,
+                            brain,
+                            &keyword,
+                            &candidates,
+                            METHOD_SKILLS_TOP_K,
+                        )
+                        .await;
+                        (ranked, Some(super::skill_relevance::SCENE), latency_ms)
+                    }
+                    _ => (None, None, None),
+                };
                 // 小脑留痕：与记忆精选同口径（有没有出结论都要能看见）
                 if let Some(scene) = rerank_scene {
                     crate::pkg::think_trace::record_cerebellum(
@@ -743,7 +749,7 @@ impl ThinkNode for RetrieveNode {
                             confidence: None,
                             degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
                             applied: ranked.is_some(),
-                            latency_ms: None,
+                            latency_ms: rerank_latency_ms,
                         },
                     );
                 }

@@ -519,3 +519,28 @@ async fn test_cerebellum_provider_absent_sends_no_request() {
     assert!(got.is_none());
     assert!(take_traces(run_id).is_empty());
 }
+
+// ---------- 轨迹耗时：调用过必带实测值 ----------
+
+#[tokio::test]
+async fn test_trace_latency_measured_when_called() {
+    let brain = brain_with_quota(5);
+    let run_id = "wake-gate-latency";
+    let (got, calls) = run_gate(
+        "在吗",
+        vec![Some(pick_for(OPTION_SHALLOW, 0.95))],
+        Some(&brain),
+        run_id,
+        0,
+    )
+    .await;
+    assert_eq!(calls, 1);
+    assert!(got.is_some(), "判浅答应真的改变下游参数");
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(
+        traces[0].latency_ms,
+        Some(3),
+        "发生了调用 ⇒ 轨迹必须带实测耗时（改造前固定 None 会红）"
+    );
+}

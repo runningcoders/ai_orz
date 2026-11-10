@@ -497,3 +497,28 @@ async fn test_summarize_decision_keeps_original_path() {
         "照旧总结时下游行为与无本门时一致，applied=false"
     );
 }
+
+// ---------- 轨迹耗时：调用过必带实测值 ----------
+
+#[tokio::test]
+async fn test_trace_latency_measured_when_called() {
+    let brain = brain_with_quota(5);
+    let run_id = "summary-gate-latency";
+    let (got, calls) = run_gate(
+        "帮我总结一下这一轮",
+        vec![Some(pick_for(OPTION_SKIP, 0.95))],
+        Some(&brain),
+        run_id,
+        true,
+    )
+    .await;
+    assert_eq!(calls, 1);
+    assert!(got.is_some(), "判跳过应真的改变下游行为");
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(
+        traces[0].latency_ms,
+        Some(3),
+        "发生了调用 ⇒ 轨迹必须带实测耗时（改造前固定 None 会红）"
+    );
+}

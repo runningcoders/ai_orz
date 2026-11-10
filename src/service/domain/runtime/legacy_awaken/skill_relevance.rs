@@ -114,14 +114,14 @@ pub(crate) async fn rank(
     question: &str,
     skills: &[SkillPo],
     keep: usize,
-) -> Option<Vec<SkillPo>> {
+) -> (Option<Vec<SkillPo>>, Option<u64>) {
     let policy = policy(keep);
     let metrics = facts(question, skills);
 
     // 阶段一：策略声明要问什么（纯函数，未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
     if requests.is_empty() {
-        return None;
+        return (None, None);
     }
 
     // 本 run 的调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
@@ -134,13 +134,15 @@ pub(crate) async fn rank(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        return None;
+        return (None, None);
     }
 
     // 阶段二：唯一 async 点
     let candidate_count = skills.len();
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
     let input_tokens = outcome.usage.input_tokens;
     let output_tokens = outcome.usage.output_tokens;
 
@@ -155,7 +157,7 @@ pub(crate) async fn rank(
             latency_ms = latency_ms,
             "skill rerank degraded"
         );
-        return None;
+        return (None, traced_latency_ms);
     }
 
     // 阶段三：答案注入事实桶，形态负责排序与截断
@@ -170,7 +172,7 @@ pub(crate) async fn rank(
             latency_ms = latency_ms,
             "skill rerank produced no usable answer"
         );
-        return None;
+        return (None, traced_latency_ms);
     };
 
     let by_id: HashMap<&str, &SkillPo> = skills.iter().map(|s| (s.id.as_str(), s)).collect();
@@ -192,7 +194,7 @@ pub(crate) async fn rank(
         output_tokens = output_tokens,
         "skill rerank selected"
     );
-    (!kept.is_empty()).then_some(kept)
+    ((!kept.is_empty()).then_some(kept), traced_latency_ms)
 }
 
 /// 单例 DAL 的生产封装
@@ -202,7 +204,7 @@ pub(crate) async fn rank_with_default_dao(
     question: &str,
     skills: &[SkillPo],
     keep: usize,
-) -> Option<Vec<SkillPo>> {
+) -> (Option<Vec<SkillPo>>, Option<u64>) {
     rank(ctx, dal(), brain, question, skills, keep).await
 }
 

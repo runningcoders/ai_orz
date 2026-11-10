@@ -113,6 +113,7 @@ fn trace(
     confidence: Option<f32>,
     degraded: Option<&str>,
     applied: bool,
+    latency_ms: Option<u64>,
 ) -> ThinkTraceCerebellum {
     ThinkTraceCerebellum {
         scene: SCENE.to_string(),
@@ -120,7 +121,7 @@ fn trace(
         confidence,
         degraded: degraded.map(|s| s.to_string()),
         applied,
-        latency_ms: None,
+        latency_ms,
     }
 }
 
@@ -153,7 +154,10 @@ pub(crate) async fn skip_if_pointless(
     //    判定面严格限 `trim()` 后为空：纯标点仍送小脑判，别让本地黑名单和
     //    小脑黑名单变成两套真相（本地只兜「形态上零信息量」那一种）。
     if text.trim().is_empty() {
-        record_cerebellum(trace_id, trace(DECISION_EMPTY_INPUT, None, None, true));
+        record_cerebellum(
+            trace_id,
+            trace(DECISION_EMPTY_INPUT, None, None, true, None),
+        );
         log_info!(
             ctx,
             "intent_gate",
@@ -186,7 +190,7 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false),
+            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
         );
         return None;
     }
@@ -206,6 +210,8 @@ pub(crate) async fn skip_if_pointless(
     // 阶段二：唯一 async 点（门禁 / 超时 / 协议转换 / 降级全在 DAL）
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
 
     if let Some(reason) = outcome.degraded {
         log_info!(
@@ -219,7 +225,13 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(reason.as_str()), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(reason.as_str()),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     }
@@ -238,7 +250,13 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_NO_ANSWER), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_NO_ANSWER),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     };
@@ -257,7 +275,13 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_SKIP, Some(pick.confidence), None, true),
+            trace(
+                DECISION_SKIP,
+                Some(pick.confidence),
+                None,
+                true,
+                traced_latency_ms,
+            ),
         );
         return Some(skipped_analysis(text));
     }
@@ -275,7 +299,13 @@ pub(crate) async fn skip_if_pointless(
     );
     record_cerebellum(
         trace_id,
-        trace(DECISION_ANALYZE, Some(pick.confidence), None, false),
+        trace(
+            DECISION_ANALYZE,
+            Some(pick.confidence),
+            None,
+            false,
+            traced_latency_ms,
+        ),
     );
     None
 }
