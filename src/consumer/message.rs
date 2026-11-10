@@ -1618,6 +1618,10 @@ impl MessageConsumer {
             brain,
             messages,
             &facts,
+            // 待发正文：本条默认准备发送的内容（AMan 2026-11-11 新增的判定输入）。
+            // 小脑必须能看到「我这条本来要发什么」，否则只看链内历史会把
+            // 「待发正文里有新结论」误判成收口。
+            raw_output,
             trace_id.unwrap_or(""),
         )
         .await?;

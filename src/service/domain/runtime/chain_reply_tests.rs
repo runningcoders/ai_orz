@@ -266,13 +266,25 @@ async fn run_gate_full(
     brain: Option<&Brain>,
     run_id: &str,
 ) -> (Option<ChainReplyVerdict>, usize, Vec<serde_json::Value>) {
+    run_gate_full_with_pending(messages, facts, script, brain, "", run_id).await
+}
+
+/// 带待发正文的同一入口（新增输入侧的用例走这里；旧用例零改动）
+async fn run_gate_full_with_pending(
+    messages: &[ChainMessage],
+    facts: ChainPressureFacts,
+    script: Vec<Option<DecisionOutcome>>,
+    brain: Option<&Brain>,
+    pending: &str,
+    run_id: &str,
+) -> (Option<ChainReplyVerdict>, usize, Vec<serde_json::Value>) {
     // 全局 Storage 单例：单跑本模块时 `test_ctx()` 依赖它已初始化
     crate::pkg::storage::test_support::init_for_test().await;
     // 轨迹落盘基址：`record_cerebellum` 未初始化时静默丢弃（无副作用设计）
     crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_chain_reply_test"));
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
-    let got = judge_chain_reply(&ctx, mock.clone(), brain, messages, &facts, run_id).await;
+    let got = judge_chain_reply(&ctx, mock.clone(), brain, messages, &facts, pending, run_id).await;
     (got, mock.calls(), mock.states())
 }
 
@@ -1330,7 +1342,12 @@ async fn absolute_ceiling_forces_close_without_asking() {
 /// 刻意不再保留一份「测试侧平行拼装」：上一版的 `metrics_with` 自己重拼 9 个键，
 /// 所以「生产收敛成单键」这件事它**测不出来**（拼装逻辑改了两边不必同步）。
 fn metrics_for(facts: &ChainPressureFacts) -> Metrics {
-    state_metrics(&brain_with_quota(1), "[#1] agent-a 文本消息: 正文", facts)
+    state_metrics(
+        &brain_with_quota(1),
+        "[#1] agent-a 文本消息: 正文",
+        "",
+        facts,
+    )
 }
 
 /// 渲染出的 prompt / state 里必须**同时**出现链深与疲劳值且非空
@@ -1344,6 +1361,7 @@ fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
     let reqs = policy().prepare(&state_metrics(
         &brain,
         "[#1] agent-a 文本消息: 正文",
+        "",
         &facts,
     ));
     assert_eq!(reqs.len(), 1, "一次 PickOne 一个请求");
@@ -1522,7 +1540,7 @@ async fn request_state_is_single_rendered_context_block() {
 #[test]
 fn context_block_order_is_identity_scene_chain_pressure() {
     let brain = brain_with_quota(1);
-    let rendered = state_bundle(&brain, CHAIN_SENTINEL_HEAD, &triggered_facts()).render();
+    let rendered = state_bundle(&brain, CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
     let at = |needle: &str| {
         rendered
             .find(needle)
@@ -1628,6 +1646,7 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
         let bundle = state_bundle(
             &brain,
             &render_chain(&messages, body_budget).rendered,
+            "",
             &triggered_facts(),
         );
         let actual_tokens = estimate_tokens(&bundle.render());
@@ -1780,5 +1799,192 @@ fn options_are_three_and_keep_old_ids() {
     assert!(
         !close_desc.contains("到此为止"),
         "close 描述零改动：{close_desc}"
+    );
+}
+
+// ══════ 判定输入补充（AMan 2026-11-11）：最近对话 + 待发消息 ══════
+//
+// 原任务书的判据输入是「链深度 + 疲劳度 + 上下文」，`state_bundle` 此前**刻意**
+// 不带 `Brain.memories`（登记为待裁项，理由见旧 doc）。AMan 2026-11-11 明确两点后
+// 两条都转成正式输入：①「最近对话对这个判断很有用」；②「当前消息处理结果，也就是
+// 这条默认准备发送的消息」也要能看到。两条都是**输入侧**增量 —— 三态定义、
+// ②③ 独立性、计数口径一律不变。
+
+use crate::models::memory::{Memory, MemoryPo, ShortTermMemoryIndexPo};
+use common::enums::MemoryStatus;
+
+/// 待发正文的哨兵：唯一色，避免与链内正文里的任何既有字符串撞
+const PENDING_SENTINEL: &str = "本条默认准备发送：新增结论 X=42，对方还不知道。";
+
+fn short_term(id: &str, summary: &str) -> Memory {
+    Memory::new(MemoryPo::ShortTerm(ShortTermMemoryIndexPo {
+        id: id.to_string(),
+        agent_id: "agent-test".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: summary.to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: 0,
+        updated_at: 0,
+    }))
+}
+
+/// 待发正文逐字进 state（`## 待发消息` 取值断言，不是「键存在」断言）
+#[tokio::test]
+async fn pending_reply_reaches_the_model_verbatim() {
+    let brain = brain_with_quota(10);
+    let (_, calls, states) = run_gate_full_with_pending(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        PENDING_SENTINEL,
+        "chain-reply-pending-verbatim",
+    )
+    .await;
+    assert_eq!(calls, 1, "有待发正文不影响「问一次」");
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(body.contains("## 待发消息"), "必须带待发消息块：{body:?}");
+    assert!(
+        body.contains(PENDING_SENTINEL),
+        "待发正文必须逐字进 state：{body:?}"
+    );
+    assert!(
+        body.contains("## 链内消息"),
+        "与链内块共存，不是替换关系：{body:?}"
+    );
+}
+
+/// 待发正文为空 ⇒ 整块跳过（不留裸标题）
+#[tokio::test]
+async fn empty_pending_reply_leaves_no_block() {
+    let brain = brain_with_quota(10);
+    let (_, _, states) = run_gate_full_with_pending(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        "",
+        "chain-reply-pending-empty",
+    )
+    .await;
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        !body.contains("## 待发消息"),
+        "空待发正文不得留裸标题：{body:?}"
+    );
+}
+
+/// 超长待发正文按子预算截断并显式标注（不许悄悄丢内容）
+#[tokio::test]
+async fn oversized_pending_reply_is_truncated_with_annotation() {
+    let brain = brain_with_quota(10);
+    let long = "待发正文".repeat(1_200); // 4800 字 ⇒ 远超 600 token
+    let (_, _, states) = run_gate_full_with_pending(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        &long,
+        "chain-reply-pending-truncated",
+    )
+    .await;
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        body.contains(PENDING_TRUNCATION_SUFFIX),
+        "超长必须显式标注截断：{body:?}"
+    );
+    assert!(!body.contains(&long), "不许把全文塞进来：{body:?}");
+    let block = body
+        .split("\n\n")
+        .find(|part| part.starts_with("## 待发消息"))
+        .expect("待发消息块必须存在");
+    let used = estimate_tokens(block.trim_start_matches("## 待发消息\n"));
+    assert!(
+        used <= PENDING_REPLY_TOKEN_CAP,
+        "待发正文实测 {used} token 超过子预算 {PENDING_REPLY_TOKEN_CAP}"
+    );
+}
+
+/// 最近对话块跟 `Brain.memories` 走：空列表整块跳过，非空逐字进正文
+#[test]
+fn recent_dialogue_block_follows_brain_memories() {
+    let mut brain = brain_with_quota(1);
+    let facts = triggered_facts();
+    let without = state_bundle(&brain, CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(
+        !without.contains("## 最近对话"),
+        "空 memories ⇒ 整块跳过：{without:?}"
+    );
+    brain.memories = vec![
+        short_term("st-d1", "第一条：链内最近对话甲"),
+        short_term("st-d2", "第二条：链内最近对话乙"),
+    ];
+    let with = state_bundle(&brain, CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(with.contains("## 最近对话"), "{with:?}");
+    assert!(
+        with.contains("第一条：链内最近对话甲"),
+        "摘要必须逐字在：{with:?}"
+    );
+    assert!(with.contains("第二条：链内最近对话乙"), "{with:?}");
+}
+
+/// 块序（新增两块的位置是截断语义的一部分）
+#[test]
+fn context_block_order_includes_new_inputs() {
+    let mut brain = brain_with_quota(1);
+    brain.memories = vec![short_term("st-o1", "最近一句")];
+    let rendered = state_bundle(
+        &brain,
+        CHAIN_SENTINEL_HEAD,
+        PENDING_SENTINEL,
+        &triggered_facts(),
+    )
+    .render();
+    let at = |needle: &str| {
+        rendered
+            .find(needle)
+            .unwrap_or_else(|| panic!("缺块 {needle}：{rendered:?}"))
+    };
+    let identity = at("## 会话身份");
+    let scene = at("## 当前场景");
+    let dialogue = at("## 最近对话");
+    let chain = at("## 链内消息");
+    let pending = at("## 待发消息");
+    let pressure = at("## 协作压力");
+    assert!(
+        identity < scene
+            && scene < dialogue
+            && dialogue < chain
+            && chain < pending
+            && pending < pressure,
+        "块序必须是 身份 < 场景 < 最近对话 < 链内消息 < 待发消息 < 协作压力\
+         （实际 {identity}/{scene}/{dialogue}/{chain}/{pending}/{pressure}）：{rendered:?}"
+    );
+}
+
+/// 待发正文的子预算是**同一池里的份额**，不是新增预算
+#[test]
+fn pending_budget_is_a_share_of_the_same_pool() {
+    let body = body_token_budget(input_token_budget(None)); // 4000 − 500 = 3500
+    assert_eq!(body, 3500, "可用正文池不受本笔影响");
+    assert_eq!(
+        pending_token_budget(body),
+        PENDING_REPLY_TOKEN_CAP,
+        "标准容量取上限 600"
+    );
+    assert_eq!(pending_token_budget(400), 100, "小容量按 1/4 收敛");
+    assert_eq!(
+        pending_token_budget(MIN_BODY_TOKEN_BUDGET),
+        MIN_BODY_TOKEN_BUDGET / PENDING_BUDGET_SHARE_DIVISOR,
+        "极小容量只给 1/4（再由 judge 侧夹逼到 0）"
     );
 }

@@ -250,12 +250,41 @@ pub(crate) fn body_token_budget(input_budget: usize) -> usize {
     input_budget.saturating_sub(FRAME_OVERHEAD_RESERVE)
 }
 
+/// 待发正文（本条**默认准备发送**的消息）在 state 里的 token 上限
+///
+/// 存在理由：判 ①②③ 时模型必须能看到「我这条本来要发什么」。只看链内历史，
+/// 会把「我这条里有新结论」误判成 `close`（历史里确实没见过这句）。
+/// 这是 AMan 2026-11-11 明确要求新增的判定输入（原话：「当前消息处理结果
+/// 也就是这条默认准备发送的消息」）。
+///
+/// 600 的定标：一次 Final 的典型长度 200~500 tokens；600 覆盖绝大多数，又不至于
+/// 让一条超长回复把链内证据挤掉一半（可用池 = `LATENCY_INPUT_CAP 4000 −
+/// FRAME_OVERHEAD_RESERVE 500 = 3500`，600 只占 17%）。
+pub(crate) const PENDING_REPLY_TOKEN_CAP: usize = 600;
+
+/// 待发正文的份额分母：最多占链内可用预算的 1/4
+///
+/// 小容量 provider（配置写几百 token）下 600 会吃掉整条预算，故再按份额收敛：
+/// `min(PENDING_REPLY_TOKEN_CAP, body_budget / 4)`。
+const PENDING_BUDGET_SHARE_DIVISOR: usize = 4;
+
+/// 待发正文被截断时的标注（与链内正文的截断标注分列，便于排查归因）
+const PENDING_TRUNCATION_SUFFIX: &str = "…（待发正文已截断）";
+
+/// 待发正文的切分预算（**同一池里留位**，不新增预算池）
+pub(crate) fn pending_token_budget(body_budget: usize) -> usize {
+    (body_budget / PENDING_BUDGET_SHARE_DIVISOR).min(PENDING_REPLY_TOKEN_CAP)
+}
+
 /// 判据（prompt 存调用方，服务端不持有）
 ///
 /// 只写黑名单侧（默认 continue）：误收口的代价高于多回一轮。
 /// 末段「省略标注 ⇒ 证据不足选 continue」是本场景唯一的假阴性防线。
 const INSTRUCTIONS: &str = "判断协作方刚发来的消息有没有新的实质信息、本轮还需不需要自动回发；\
-只看链内消息本身。\n\
+看链内消息、最近对话（`## 最近对话`）与待发消息（`## 待发消息`）。\n\
+先看 `## 待发消息` —— 它是本条**本来就要发出去**的正文，属判据的一部分：\
+它有对方需要知道的新内容（新结论 / 新数据 / 待办 / 问题）⇒ 选 continue；\
+只有它本身就是对方已经知道的纯确认 / 纯致谢，才可能选 close / silent。\
 选 silent：本条与本轮回复里都没有对方需要知道的内容（纯确认 / 纯致谢 / 纯重复），\n\
 连「到此为止」都不必告诉对方。\n\
 选 close：只是确认 / 致谢 / 收讫 / 复述（「收到」「明白」「已完成」），但对方需要知道「到此为止」，\
@@ -446,13 +475,14 @@ hard_fatigue: {}\nhard_window_depth: {}",
 }
 
 /// 本场景的上下文装配（**唯一装配点**）：块序固定
-/// `会话身份` → `当前场景` → `链内消息` → `协作压力`
+/// `会话身份` → `当前场景` → `最近对话` → `链内消息` → `待发消息` → `协作压力`
 ///
 /// 两处刻意的「不」：
 /// - **不用 `with_user_message`**：本场景的输入是 N 条链内历史正文，不是「当前用户
 ///   消息」；那个标题会把多轮历史误导成一条待判正文。
-/// - **不用 `with_recent_dialogue`（`Brain.memories`）**：链内正文已是主信息源，再叠
-///   记忆摘要属**新增判断输入**（语义变更）而非形态迁移 ⇒ 单独评估，不夹带。
+/// - **用 `with_recent_dialogue`（`Brain.memories`）**：AMan 2026-11-11 明确「最近对话
+///   对这个判断很有用」⇒ 从「有意的缺失」转为正式判据输入（此前登记为待裁项）。
+///   空列表由 `push` 整块跳过，不留裸标题。
 ///
 /// 也**不做组织器侧容量自截**（`render_within`）：链内正文已由 [`render_chain`] 按
 /// `body_token_budget` 自截到 `容量 − FRAME_OVERHEAD_RESERVE` 以内；再叠一层
@@ -463,22 +493,34 @@ hard_fatigue: {}\nhard_window_depth: {}",
 fn state_bundle(
     brain: &Brain,
     chain_rendered: &str,
+    pending_rendered: &str,
     facts: &ChainPressureFacts,
 ) -> context::ContextBundle {
     let mut bundle = context::ContextBundle::new()
         .with_identity(&brain.agent_id, &brain.agent_name)
-        .with_scene(SCENE);
+        .with_scene(SCENE)
+        // 最近对话（`Brain.memories` 尾部 N 条）：AMan 2026-11-11 定为正式判据输入。
+        // 与另外六个接入点同源同限（`RECENT_DIALOGUE_LIMIT`），不另设条数口径。
+        .with_recent_dialogue(&brain.memories, context::RECENT_DIALOGUE_LIMIT);
     // 空正文（一条链内消息都没带上）时 `push` 整块跳过，不留 `## 链内消息` 裸标题
     bundle.push("链内消息", chain_rendered.to_string());
+    // 待发消息：本条**默认准备发送**的正文（判 ①②③ 的第三个输入面）。
+    // 空待发正文同样整块跳过 —— 不给模型一个空壳标题去猜。
+    bundle.push("待发消息", pending_rendered.to_string());
     bundle.push("协作压力", pressure_body(facts));
     bundle
 }
 
 /// 本场景的 state 装配（单出口：`{"context": "<分块正文>"}`）
-fn state_metrics(brain: &Brain, chain_rendered: &str, facts: &ChainPressureFacts) -> Metrics {
+fn state_metrics(
+    brain: &Brain,
+    chain_rendered: &str,
+    pending_rendered: &str,
+    facts: &ChainPressureFacts,
+) -> Metrics {
     Metrics::new().with(
         context::STATE_KEY,
-        state_bundle(brain, chain_rendered, facts).render(),
+        state_bundle(brain, chain_rendered, pending_rendered, facts).render(),
     )
 }
 
@@ -571,6 +613,7 @@ pub(crate) async fn judge_chain_reply(
     brain: Option<&Brain>,
     messages: &[ChainMessage],
     facts: &ChainPressureFacts,
+    pending_reply: &str,
     trace_id: &str,
 ) -> Option<ChainReplyVerdict> {
     // ① 未装配 Brain = 降级，不是错误（本门绝不阻断主流程，也不 panic）
@@ -720,8 +763,31 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
+    // ⑤.5 待发正文（本条默认准备发送的消息）—— AMan 2026-11-11 新增的判定输入
+    //
+    // 分账规则（与 Q3 预算共存，**不新开预算池**）：
+    // - 同一池：`body_budget` 不变，只是先给它切一小块
+    //   （`pending_token_budget` = min(600, body/4)），再按**实测占用**扣减，
+    //   余额全部给链内正文 ⇒ 总输入仍受 `LATENCY_INPUT_CAP` 约束（时延反推那条
+    //   线没被突破），且待发正文短时不会白占固定预留。
+    // - 再夹逼 `body_budget − MIN_BODY_TOKEN_BUDGET`：容量再小也不让待发正文把
+    //   链内证据挤到最小可用线以下；挤不下就不带（块缺席），不留一句「已截断」
+    //   的空壳去污染判据。
+    let pending_budget =
+        pending_token_budget(body_budget).min(body_budget.saturating_sub(MIN_BODY_TOKEN_BUDGET));
+    let pending = if pending_budget == 0 {
+        String::new()
+    } else {
+        truncate_to_tokens(
+            pending_reply.trim(),
+            pending_budget,
+            PENDING_TRUNCATION_SUFFIX,
+        )
+    };
+    let chain_budget = body_budget.saturating_sub(estimate_tokens(&pending));
+
     // ⑥ 链内一条消息都拉不到：不调小脑、不占配额
-    let input = render_chain(messages, body_budget);
+    let input = render_chain(messages, chain_budget);
     if input.included == 0 {
         // 空输入没发请求、也没证明端点坏了 ⇒ 按裁定口径记「健康」（清零）：
         // 只有 timeout / call_error 才是熔断证据，其余一律不累加。
@@ -762,7 +828,7 @@ pub(crate) async fn judge_chain_reply(
     }
 
     let policy = policy();
-    let metrics = state_metrics(brain, &input.rendered, facts);
+    let metrics = state_metrics(brain, &input.rendered, &pending, facts);
 
     // 阶段一：策略声明要问什么（纯函数；选项固定三条，一次 PickOne）
     let requests = policy.prepare(&metrics);
@@ -962,9 +1028,10 @@ pub(crate) async fn judge_chain_reply_with_default_dao(
     brain: Option<&Brain>,
     messages: &[ChainMessage],
     facts: &ChainPressureFacts,
+    pending_reply: &str,
     trace_id: &str,
 ) -> Option<ChainReplyVerdict> {
-    judge_chain_reply(ctx, dal(), brain, messages, facts, trace_id).await
+    judge_chain_reply(ctx, dal(), brain, messages, facts, pending_reply, trace_id).await
 }
 
 #[cfg(test)]
