@@ -27,11 +27,19 @@
 //! DAL 与协议零改动（`CerebellumRequest.state` 本就是 `Value`，wire format doc 明写
 //! 允许字符串 / 对象 / 数组）。
 //!
-//! ⚠️ 已知边界（如实登记，处置待裁）：`dal/brain.rs::shrink_state_to_capacity`
-//! 只对 `last_user_message` 键做容量对齐；改成 `context` 键后该兜底不再命中。
-//! 好处是绝不出现「半个 `## 标题`」（根本不截），代价是超长输入不再被容量对齐。
+//! # 容量自截（已裁定：组织器自截，`dal/brain.rs` 一行不动）
+//! `dal/brain.rs::shrink_state_to_capacity` 只认 `last_user_message` 键，state 改成
+//! `context` 单键后那条兜底不再命中 —— 这属**已发生的等价性缺口**，不是可选优化。
+//! 处置已裁定为「组织器自截」：[`ContextBundle::render_within`] 按模型容量从尾部
+//! 整块砍（标注省略块数 N），必要时对末块正文截尾，**保证不出现无 body 的裸
+//! `## 标题`**。不改 dal 侧的两条理由：块边界（`## 标题` + 正文）是本模块的输出格式，
+//! dal 侧要知道它就得硬编码 domain 约定，而 `dal` → `domain` 是反向依赖；且 dal 那个
+//! 兜底点是 13 个 scene 共用的，改它要评估全部场景、回滚面也更大。
 
+use crate::models::brain::Brain;
 use crate::models::memory::{Memory, MemoryPo};
+
+use super::compaction::{estimate_tokens, truncate_to_tokens};
 
 /// state 里承载分块正文的键名
 ///
@@ -43,6 +51,21 @@ pub(crate) const RECENT_DIALOGUE_LIMIT: usize = 3;
 
 /// 单条历史摘要的字符上限（长期/短期记忆都按此截断）
 const DIALOGUE_SNIPPET_CHARS: usize = 160;
+
+/// 帧与题面预留（保守值：覆盖 `DecisionRequest` 帧 + 三题型题面）
+///
+/// 与 `dal/brain.rs::FRAME_RESERVE_TOKENS(512)` 同量级但更保守：本模块只服务已接入的
+/// 6 个场景，题面都很小（2 / 4 / 11 个短档），留一倍余量足够。
+pub(crate) const CONTEXT_FRAME_RESERVE_TOKENS: usize = 1024;
+
+/// 预算下限：低于它就不做截断（与 `dal::brain::MIN_STATE_BUDGET_TOKENS` 同口径）
+pub(crate) const MIN_CONTEXT_BUDGET_TOKENS: usize = 64;
+
+/// 整块被砍时的标注前缀（后接「N 块）」，N = 注册块数 − 保留块数）
+const OMISSION_NOTE_PREFIX: &str = "…（上下文已按模型容量截断，省略 ";
+
+/// 只有一块、且该块正文被截尾时的标注（此时没有「被砍掉的块」，写块数会说谎）
+const TAIL_TRUNCATION_NOTE: &str = "…（正文已按模型容量截断）";
 
 /// 一个上下文区块：标题 + 正文
 pub(crate) struct ContextSection {
@@ -124,6 +147,118 @@ impl ContextBundle {
             .collect::<Vec<_>>()
             .join("\n\n")
     }
+
+    /// 按模型容量渲染（容量自截；`None` 或预算不足 ⇒ 逐字节等于 [`Self::render`]）
+    ///
+    /// `capacity_tokens` 由调用方从
+    /// `ModelProviderConfig::recommended_context_length_tokens()` 取（与 `dal` 侧兜底同源）。
+    /// 不做截断的两档刻意「逐字节等于 `render()`」：静默改语义比不截更糟。
+    pub(crate) fn render_within(&self, capacity_tokens: Option<u64>) -> String {
+        let Some(capacity) = capacity_tokens else {
+            return self.render();
+        };
+        let Some(budget) = usize::try_from(capacity)
+            .unwrap_or(usize::MAX)
+            .checked_sub(CONTEXT_FRAME_RESERVE_TOKENS)
+        else {
+            return self.render();
+        };
+        if budget < MIN_CONTEXT_BUDGET_TOKENS {
+            return self.render();
+        }
+        self.render_within_tokens(budget)
+    }
+
+    /// 真正的按预算渲染（**私有**）
+    ///
+    /// 私有是为了让测试能构造极小预算走到「末块截尾」分支：经 [`Self::render_within`]
+    /// 入口时预算最小是 `MIN_CONTEXT_BUDGET_TOKENS`，到不了 0 边界。
+    fn render_within_tokens(&self, budget: usize) -> String {
+        let full = self.render();
+        if estimate_tokens(&full) <= budget {
+            return full;
+        }
+        let total = self.sections.len();
+        // 从尾部整块砍：keep 递减，标注里写出被砍掉的块数 N = total − keep
+        for keep in (1..total).rev() {
+            let candidate = self.render_kept(keep, total - keep);
+            if estimate_tokens(&candidate) <= budget {
+                return candidate;
+            }
+        }
+        // 连首块单独都超预算 ⇒ 保标题 + 正文截尾（标题恒有正文，绝不裸标题）
+        let title = self.sections[0].title;
+        let note = if total > 1 {
+            omission_note(total - 1)
+        } else {
+            TAIL_TRUNCATION_NOTE.to_string()
+        };
+        let overhead = estimate_tokens(&format!("## {title}\n")) + estimate_tokens(&note) + 1; // 标注前那个换行
+        let body_budget = budget.saturating_sub(overhead);
+        let body = truncate_body_keep_visible(&self.sections[0].body, body_budget);
+        format!("## {title}\n{body}\n{note}")
+    }
+
+    /// 保留前 `keep` 块并附省略标注（标注紧贴末块正文，不另起段落）
+    fn render_kept(&self, keep: usize, omitted: usize) -> String {
+        let mut rendered = self
+            .sections
+            .iter()
+            .take(keep)
+            .map(|section| format!("## {}\n{}", section.title, section.body))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        rendered.push('\n');
+        rendered.push_str(&omission_note(omitted));
+        rendered
+    }
+}
+
+/// scene 侧唯一装配点：身份 + 场景 + 用户消息 + 最近对话，并按模型容量自截
+///
+/// 六个接入场景（三 gate / entry_gate / entry_pool / thinking_strength）都走这里，
+/// 不再各写一遍 `Metrics::new().with(...)` 拼装。
+// 笔 B 把六个场景切到本函数后，这行 allow 随之移除（此刻确有未使用窗口）
+#[allow(dead_code)]
+pub(crate) fn render_for(brain: &Brain, scene: &str, user_text: &str) -> String {
+    ContextBundle::new()
+        .with_identity(&brain.agent_id, &brain.agent_name)
+        .with_scene(scene)
+        .with_user_message(user_text)
+        .with_recent_dialogue(&brain.memories, RECENT_DIALOGUE_LIMIT)
+        .render_within(context_capacity(brain))
+}
+
+/// 小脑模型容量（与 `dal/brain.rs` 的兜底同源同口径：配置 → provider → None）
+// 同上：笔 B 落码后由 render_for 之外不再需要 allow
+#[allow(dead_code)]
+pub(crate) fn context_capacity(brain: &Brain) -> Option<u64> {
+    brain
+        .cerebellum
+        .as_ref()
+        .and_then(|po| po.config().recommended_context_length_tokens())
+}
+
+/// 省略标注（N 由调用方按「注册块数 − 保留块数」算好传入，绝不写死）
+fn omission_note(omitted: usize) -> String {
+    format!("{OMISSION_NOTE_PREFIX}{omitted} 块）")
+}
+
+/// 末块正文按 token 预算截尾，但**至少保留 1 个非空白字符**
+///
+/// 取舍（与 dal 的「不静默改语义」并列）：**预算服从可解析性** —— 预算再小也宁可
+/// 超 1~2 token，绝不产出「裸 `## 标题`」。截断复用
+/// `compaction::truncate_to_tokens`，不写第二份 token 估算实现。
+fn truncate_body_keep_visible(body: &str, budget: usize) -> String {
+    let kept = truncate_to_tokens(body, budget, "");
+    if !kept.trim().is_empty() {
+        return kept;
+    }
+    body.trim_start()
+        .chars()
+        .next()
+        .map(|ch| ch.to_string())
+        .unwrap_or_default()
 }
 
 /// 一条历史记忆压成一行摘要
@@ -212,6 +347,125 @@ mod tests {
     fn user_message_goes_into_body_verbatim() {
         let bundle = ContextBundle::new().with_user_message("__SENTINEL_MSG__");
         assert!(bundle.render().contains("__SENTINEL_MSG__"));
+    }
+
+    /// 五块夹具：身份 / 场景 / 用户消息 / 附加块一 / 附加块二（注册序固定）
+    fn five_block_bundle() -> ContextBundle {
+        let mut bundle = ContextBundle::new()
+            .with_identity("agent-5b", "五块夹具")
+            .with_scene("wake_gate")
+            .with_user_message("__SENTINEL_FIVE__");
+        bundle.push("附加块一", "alpha-block-body-one".to_string());
+        bundle.push(
+            "附加块二",
+            "第五块正文用于让整块砍可判定，长度必须大于省略标注本身".to_string(),
+        );
+        bundle
+    }
+
+    /// 按 `\n\n` 切块后以 `## ` 开头的段落数（标注紧贴末块正文，不单独成段）
+    fn count_blocks(rendered: &str) -> usize {
+        rendered
+            .split("\n\n")
+            .filter(|part| part.starts_with("## "))
+            .count()
+    }
+
+    /// 每个 `## ` 块的正文都必须非空（不得出现无 body 的裸标题）
+    fn assert_every_block_has_body(rendered: &str) {
+        for part in rendered.split("\n\n").filter(|p| p.starts_with("## ")) {
+            let body = part.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
+            assert!(!body.trim().is_empty(), "不得出现无 body 的裸标题：{part}");
+        }
+    }
+
+    /// 容量为 `None`（未配小脑 provider / 未配上下限）⇒ 逐字节等于 `render()`
+    #[test]
+    fn render_within_none_matches_render_byte_for_byte() {
+        let bundle = five_block_bundle();
+        assert_eq!(bundle.render_within(None), bundle.render());
+    }
+
+    /// 容量充裕（远超全文）⇒ 同样逐字节等于 `render()`，且不带省略标注
+    #[test]
+    fn render_within_ample_capacity_matches_render_byte_for_byte() {
+        let bundle = five_block_bundle();
+        let ample = (estimate_tokens(&bundle.render()) + CONTEXT_FRAME_RESERVE_TOKENS + 512) as u64;
+        let rendered = bundle.render_within(Some(ample));
+        assert_eq!(rendered, bundle.render());
+        assert!(
+            !rendered.contains(OMISSION_NOTE_PREFIX),
+            "未截断时不得出现省略标注：{rendered}"
+        );
+    }
+
+    /// 预算紧张时仍不得出现裸 `## 标题`（唯一结构判据）
+    #[test]
+    fn render_within_tight_budget_never_leaves_bare_title() {
+        let bundle = five_block_bundle();
+        // 恰好卡在「保留 2 块」的预算（更紧的预算会落到末块截尾分支）
+        let keep_two = format!(
+            "{}\n\n{}\n{}",
+            "## 会话身份\nagent_id: agent-5b\nagent_name: 五块夹具",
+            "## 当前场景\nwake_gate",
+            "…（上下文已按模型容量截断，省略 3 块）"
+        );
+        let rendered = bundle.render_within_tokens(estimate_tokens(&keep_two));
+        assert_every_block_has_body(&rendered);
+        assert_eq!(count_blocks(&rendered), 2);
+    }
+
+    /// N 只认并列值（注册 5 / 保留 2 ⇒ N=3；反向 保留 4 ⇒ N=1），不接受只看下界
+    #[test]
+    fn omission_note_count_is_measured_not_hardcoded() {
+        let bundle = five_block_bundle();
+        let block0 = "## 会话身份\nagent_id: agent-5b\nagent_name: 五块夹具";
+        let block1 = "## 当前场景\nwake_gate";
+        let block2 = "## 当前用户消息\n__SENTINEL_FIVE__";
+        let block3 = "## 附加块一\nalpha-block-body-one";
+
+        let keep_two = format!("{block0}\n\n{block1}\n…（上下文已按模型容量截断，省略 3 块）");
+        let rendered_two = bundle.render_within_tokens(estimate_tokens(&keep_two));
+        assert_eq!(rendered_two, keep_two);
+        assert_eq!(count_blocks(&rendered_two), 2, "注册 5 块、保留 2 块");
+
+        let keep_four = format!(
+            "{block0}\n\n{block1}\n\n{block2}\n\n{block3}\n…（上下文已按模型容量截断，省略 1 块）"
+        );
+        let rendered_four = bundle.render_within_tokens(estimate_tokens(&keep_four));
+        assert_eq!(rendered_four, keep_four);
+        assert_eq!(count_blocks(&rendered_four), 4, "注册 5 块、保留 4 块");
+    }
+
+    /// 预算 0 ⇒ 走末块截尾分支，标题后至少 1 个非空白字符（先自证该分支可达）
+    #[test]
+    fn zero_budget_keeps_one_visible_char_after_title() {
+        let bundle = five_block_bundle();
+        // R50 延伸：先自证「朴素截尾在 0 预算下确实为空」，否则本条走不到边界分支
+        let naive = truncate_to_tokens(&bundle.sections[0].body, 0, "");
+        assert!(
+            naive.trim().is_empty(),
+            "0 预算下朴素截尾必须为空，否则截尾分支不可达、本条判据无效"
+        );
+
+        let rendered = bundle.render_within_tokens(0);
+        assert!(
+            rendered.starts_with("## 会话身份\n"),
+            "必须保标题：{rendered}"
+        );
+        let first = rendered
+            .strip_prefix("## 会话身份\n")
+            .and_then(|rest| rest.chars().next())
+            .expect("标题后必须还有正文字符");
+        assert!(
+            !first.is_whitespace(),
+            "截尾后 body 至少保留 1 个非空白字符：{rendered:?}"
+        );
+        assert_every_block_has_body(&rendered);
+        assert!(
+            rendered.contains(TAIL_TRUNCATION_NOTE) || rendered.contains(OMISSION_NOTE_PREFIX),
+            "截尾必须留标注：{rendered}"
+        );
     }
 
     /// 全部块都空 ⇒ 渲染为空串（调用方可据此判「没东西可带」）
