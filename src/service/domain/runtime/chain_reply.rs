@@ -79,7 +79,7 @@
 //! `fallback`。**记账条目（not_triggered / empty_input / continue）同样占轨迹名额**
 //! —— 一次唤醒最多 1 条（一次回发判定一次），单 run 32 条上限内绰绰有余。
 
-use super::compaction::estimate_tokens;
+use super::compaction::{estimate_tokens, truncate_to_tokens};
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, CerebellumGuardVerdict};
@@ -330,35 +330,9 @@ pub(crate) fn render_one(index: usize, message: &ChainMessage) -> String {
     )
 }
 
-/// 按 token 预算截断到最大可行前缀，并留下截断标注
-///
-/// 标注本身的 token 也计入 `budget`：否则「正好截到预算」再拼一段标注就会
-/// 越界（实测过 436 > 400）。返回值恒满足 `estimate_tokens(..) <= budget`。
-fn truncate_to_tokens(text: &str, budget: usize) -> String {
-    if estimate_tokens(text) <= budget {
-        return text.to_string();
-    }
-    const SUFFIX: &str = "…（正文已截断）";
-    let body_budget = budget.saturating_sub(estimate_tokens(SUFFIX));
-    let chars: Vec<char> = text.chars().collect();
-    let (mut lo, mut hi) = (0usize, chars.len());
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        let prefix: String = chars[..mid].iter().collect();
-        if estimate_tokens(&prefix) <= body_budget {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    // 预算连一个字符都装不下：只留标注，保证「有内容被截」这一事实可见
-    if lo == 0 {
-        return SUFFIX.to_string();
-    }
-    let mut out: String = chars[..lo].iter().collect();
-    out.push_str(SUFFIX);
-    out
-}
+/// 链内正文的截断标注（实现见 `compaction::truncate_to_tokens`，
+/// 小脑 state 裁剪共用同一实现、只差这段文案）
+const BODY_TRUNCATION_SUFFIX: &str = "…（正文已截断）";
 
 /// 组装链内输入：保链头 1 条 + 最近 N 条，双阈取小，中间显式标注省略
 ///
@@ -386,7 +360,11 @@ pub(crate) fn render_chain(messages: &[ChainMessage], budget: usize) -> ChainInp
     let reserve = estimate_tokens(&omission_line(total, total));
     // 链头单独超预算时截断：保住「链从哪来」这一端，并给省略标注留出空间，
     // 使「链头 + 省略标注」这条最小渲染恒不越界。
-    let head = truncate_to_tokens(&render_one(0, &messages[0]), budget.saturating_sub(reserve));
+    let head = truncate_to_tokens(
+        &render_one(0, &messages[0]),
+        budget.saturating_sub(reserve),
+        BODY_TRUNCATION_SUFFIX,
+    );
     let mut used = estimate_tokens(&head);
 
     let mut tail: Vec<String> = Vec::new();

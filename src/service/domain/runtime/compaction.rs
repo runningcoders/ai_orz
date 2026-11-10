@@ -166,6 +166,38 @@ pub(crate) fn estimate_tokens(text: &str) -> usize {
     cjk + other.div_ceil(4)
 }
 
+/// 按 token 预算截断到最大可行前缀，并留下调用方指定的截断标注
+///
+/// 标注本身的 token 也计入 `budget`：否则「正好截到预算」再拼一段标注就会越界
+/// （实测过 436 > 400）。返回值恒满足 `estimate_tokens(..) <= budget`。
+///
+/// **唯一实现**：链内正文裁剪（`chain_reply`）与小脑 state 裁剪（`dal::brain`）
+/// 共用本函数，只差标注文案——两处文案语义不同，故由调用方传入，不写死。
+pub(crate) fn truncate_to_tokens(text: &str, budget: usize, suffix: &str) -> String {
+    if estimate_tokens(text) <= budget {
+        return text.to_string();
+    }
+    let body_budget = budget.saturating_sub(estimate_tokens(suffix));
+    let chars: Vec<char> = text.chars().collect();
+    let (mut lo, mut hi) = (0usize, chars.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        let prefix: String = chars[..mid].iter().collect();
+        if estimate_tokens(&prefix) <= body_budget {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    // 预算连一个字符都装不下：只留标注，保证「有内容被截」这一事实可见
+    if lo == 0 {
+        return suffix.to_string();
+    }
+    let mut out: String = chars[..lo].iter().collect();
+    out.push_str(suffix);
+    out
+}
+
 /// 估算「用户消息 + 助手回复」的合计 token 数（首尾两侧文本规模）
 ///
 /// ⚠️ 只是分流的一个**兜底维度**，不能单独代表「这轮该不该总结」：

@@ -457,7 +457,10 @@ pub mod busy_guard;
 pub mod cancel;
 mod cerebellum_router;
 pub(crate) mod chain_reply;
-mod compaction;
+// `pub(crate)`：token 估算/截断是**跨层共用**的纯文本工具——Domain 内部的
+// 压缩分流、`chain_reply` 链内裁剪，以及 DAL 侧小脑 state 的容量对齐都用同一份实现。
+// 若将来要彻底消除 DAL→Domain 的引用，应把这两个函数下沉到 `pkg`（登记为技术债候选）。
+pub(crate) mod compaction;
 mod inbox;
 mod intent_analyze;
 mod intent_gate;

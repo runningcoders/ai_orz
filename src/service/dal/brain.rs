@@ -16,6 +16,7 @@ use crate::service::dao::agent_runtime;
 use crate::service::dao::cortex;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool_call::ToolCallDao;
+use crate::service::domain::runtime::compaction::{estimate_tokens, truncate_to_tokens};
 use async_trait::async_trait;
 use common::api::cerebellum::{
     CerebellumAnswer, CerebellumQuestion, CerebellumUsage, DegradedReason, QuestionCriteria,
@@ -748,6 +749,11 @@ impl BrainDal for BrainDalImpl {
         // 在反复失败（agent 侧只看得到「小脑降级」一条）。
         let scenes: Vec<&'static str> = requests.iter().map(|r| r.scene).collect();
 
+        // 输入容量上限：provider 的推荐上下文长度（`None` = 未配置 ⇒ 一切照旧）。
+        // 整批共用一个容量口径：同一 provider 一次请求只发一个场景的 state，
+        // 但容量是 provider 属性，不该按场景各算一遍。
+        let capacity = provider.config().recommended_context_length_tokens();
+
         // 当前逐条发送（每场景一个 state）。协议支持一次请求内多题并行，
         // 但不同场景的 state 不同，跨场景合并在协议层没有干净的表示；
         // 同 scene 且 state 相同的合并留作后续优化，此处不为它发明 state 结构。
@@ -767,7 +773,27 @@ impl BrainDal for BrainDalImpl {
                     );
                     continue;
                 }
-                let (state, questions) = to_protocol(req);
+                // scene 在 `to_protocol` 里被移走，先留一份给日志/留痕用。
+                let scene = req.scene;
+                let (mut state, questions) = to_protocol(req);
+                // 题面（instructions + options/levels）与协议封装同样吃上下文：
+                // 与 state 共用同一份容量预算，否则「state 顶到上限 + 题面」必然越界。
+                let reserved = FRAME_RESERVE_TOKENS + question_tokens(&questions);
+                if let Some(budget) = state_budget_tokens(capacity, reserved)
+                    && let Some((before, after)) = shrink_state_to_capacity(&mut state, budget)
+                {
+                    // 截断会改变判定质量，必须留痕：否则长粘贴让小脑判偏时，
+                    // 现场只看得到「小脑判错了」，看不到「输入被裁了」。
+                    log_warn!(
+                        ctx,
+                        "brain_decide",
+                        scene = scene,
+                        before_tokens = before,
+                        after_tokens = after,
+                        budget_tokens = budget,
+                        "cerebellum state truncated to provider capacity"
+                    );
+                }
                 let result = dao
                     .think_fast(ctx.clone(), provider, state, questions)
                     .await?;
@@ -870,6 +896,68 @@ impl BrainDal for BrainDalImpl {
     }
 }
 
+/// 协议封装 + 题面之外，为 state 之外的固定开销预留的 token 估算
+///
+/// 真实开销（JSON 外壳、字段名、服务端 prompt 模板）无法在客户端精确得知，
+/// 取一个保守常量：宁可少给 state 一点，也不要因为估少了把整个请求顶出窗口
+/// —— 顶出去的后果是整批 4xx/超时，等于本轮所有场景一起白白降级。
+const FRAME_RESERVE_TOKENS: usize = 512;
+
+/// state 文本的最小可用预算（token）
+///
+/// 容量极小的 provider（例如只配了 800）不该被截成空串：截到 0 等于让小脑
+/// 对着空输入判，比不判更坏。低于此值直接放弃截断、按原样发出（由既有的
+/// 超时/降级机制兜底），保持「不炸、不静默改语义」。
+const MIN_STATE_BUDGET_TOKENS: usize = 64;
+
+/// state 里唯一无界的字段
+///
+/// 其余键都是受控短文本（agent_id / agent_name / scene / 候选摘要受
+/// `SNIPPET_CHARS` 约束），唯一可能随用户粘贴无限增长的就是它。
+const STATE_LAST_USER_MESSAGE: &str = "last_user_message";
+
+/// state 截断标注（计入预算；语义=data 被裁过，不是 data 缺失）
+const STATE_TRUNCATION_NOTE: &str = "…（原文超出模型上下文上限，已截断）";
+
+/// 题面占用的 token 估算（序列化后长度，与 state 共用同一份估算口径）
+fn question_tokens(questions: &BTreeMap<String, CerebellumQuestion>) -> usize {
+    serde_json::to_string(questions)
+        .map(|json| estimate_tokens(&json))
+        .unwrap_or(0)
+}
+
+/// 按「容量 − 固定预留 − 题面」算出 state 可用的 token 预算
+///
+/// 返回 `None` 的三种情形都必须保持**原行为零变化**：
+/// 1. provider 未配置上下文长度（无法知道上界，不猜）；
+/// 2. 容量连固定预留都盖不住（配置异常，交给既有降级路径）；
+/// 3. 剩余预算低于 [`MIN_STATE_BUDGET_TOKENS`]（截了也没法判）。
+fn state_budget_tokens(capacity: Option<u64>, reserved: usize) -> Option<usize> {
+    let capacity = usize::try_from(capacity?).ok()?;
+    let budget = capacity
+        .saturating_sub(FRAME_RESERVE_TOKENS)
+        .saturating_sub(reserved);
+    (budget >= MIN_STATE_BUDGET_TOKENS).then_some(budget)
+}
+
+/// 把 state 里无界字段裁到 `budget` 以内
+///
+/// 返回 `Some((截前, 截后))` 表示真的截了（供留痕/断言），`None` = 一字未动。
+/// 只动 [`STATE_LAST_USER_MESSAGE`]，其余键原样保留——「按容量对齐」不是
+/// 「重建 state」，不能顺手把结构性字段也清了。
+fn shrink_state_to_capacity(state: &mut Value, budget: usize) -> Option<(usize, usize)> {
+    let map = state.as_object_mut()?;
+    let Some(Value::String(text)) = map.get_mut(STATE_LAST_USER_MESSAGE) else {
+        return None;
+    };
+    let before = estimate_tokens(text);
+    if before <= budget {
+        return None;
+    }
+    *text = truncate_to_tokens(text, budget, STATE_TRUNCATION_NOTE);
+    Some((before, estimate_tokens(text)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -900,5 +988,56 @@ mod tests {
     fn extract_last_user_prompt_empty_when_no_user() {
         let messages = vec![ChatMessage::system("sys")];
         assert_eq!(extract_last_user_prompt(&messages), "");
+    }
+
+    #[test]
+    fn state_budget_none_when_capacity_unset() {
+        // provider 未配置容量 ⇒ 不知道上界，不猜：必须返回 None（原行为零变化）
+        assert_eq!(state_budget_tokens(None, 0), None);
+    }
+
+    #[test]
+    fn state_budget_none_below_floor() {
+        // 容量连固定预留都盖不住 / 剩余低于下限 ⇒ 放弃截断（不截成空串）
+        assert_eq!(state_budget_tokens(Some(500), 0), None);
+        assert_eq!(state_budget_tokens(Some(10_000), 10_000), None);
+    }
+
+    #[test]
+    fn state_budget_subtracts_reserve_and_questions() {
+        assert_eq!(
+            state_budget_tokens(Some(10_000), 512),
+            Some(10_000 - FRAME_RESERVE_TOKENS - 512)
+        );
+    }
+
+    #[test]
+    fn shrink_state_leaves_short_text_untouched() {
+        let mut state = serde_json::json!({"agent_id": "a1", "last_user_message": "短"});
+        let snapshot = state.to_string();
+        assert!(shrink_state_to_capacity(&mut state, 100).is_none());
+        // 逐字节等价：短输入在高容量 provider 上必须与改造前完全一致
+        assert_eq!(state.to_string(), snapshot);
+    }
+
+    #[test]
+    fn shrink_state_truncates_long_text_with_note_within_budget() {
+        let long = "长".repeat(2_000);
+        let mut state = serde_json::json!({"agent_id": "a1", "last_user_message": long});
+        let (before, after) = shrink_state_to_capacity(&mut state, 100).expect("必须截断");
+        assert!(before > after);
+        assert!(after <= 100, "截断后仍须落在预算内：{after} > 100");
+        let text = state[STATE_LAST_USER_MESSAGE]
+            .as_str()
+            .expect("仍应是字符串");
+        assert!(text.ends_with(STATE_TRUNCATION_NOTE), "截断必须留标注");
+        // 非无界字段零改动
+        assert_eq!(state["agent_id"].as_str(), Some("a1"));
+    }
+
+    #[test]
+    fn shrink_state_ignores_non_string_field() {
+        let mut state = serde_json::json!({"last_user_message": 42});
+        assert!(shrink_state_to_capacity(&mut state, 1).is_none());
     }
 }
