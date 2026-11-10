@@ -14,7 +14,7 @@
 //!
 //! 1. 无启用小脑（`brain.cerebellum = None`）→ 全域静默跳过，
 //!    同时即全局回滚开关（管理面停用默认小脑 = 一键回滚，零代码零重启）；
-//! 2. 调用失败 / 超时（`provider.config.timeout_ms`，缺省 800ms）→ 静默跳过；
+//! 2. 调用失败 / 超时（`provider.config.timeout_ms`，缺省 1000ms）→ 静默跳过；
 //! 3. 低置信 → 不直回（按「有价值」走原逻辑）。
 //!
 //! ⚠️ **每个决策点都必须过 `CerebellumQuota::try_acquire`**（同一本 per-run 账）：

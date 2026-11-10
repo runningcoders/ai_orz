@@ -662,7 +662,8 @@ impl BrainDal for BrainDalImpl {
             return DecisionOutcome::degraded(DegradedReason::NoProvider, elapsed_ms());
         };
 
-        // 单一超时预算：provider.config.timeout_ms 优先，缺省 800。
+        // 单一超时预算：provider.config.timeout_ms 优先，缺省 1000ms
+        // （DEFAULT_CEREBELLUM_TIMEOUT_MS，2026-11-10 由 800 调大）。
         // 整个批次共享——多场景同轮触发时不该各付一次超时。
         let timeout_ms =
             crate::service::dao::cerebellum::client::resolve_timeout_ms(&ctx, provider);
