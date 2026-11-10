@@ -18,6 +18,7 @@
 
 pub mod agent_trace_panel;
 pub mod cancel_thinking_button;
+pub mod cerebellum_trace_table;
 pub mod chat_side_panel;
 pub mod memory_trace_detail;
 pub mod message_bubble;
