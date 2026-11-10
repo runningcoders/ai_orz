@@ -2,7 +2,7 @@
 
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{ModelCallEvent, StatFilter};
+use crate::pkg::stats::{DECISION_CALL_KIND, ModelCallEvent, StatFilter};
 use crate::service::dao::model_provider;
 use crate::service::dao::model_provider::{
     ModelProviderDao, ModelProviderQuery, ModelProviderStatsDao, ModelProviderStatsQuery,
@@ -174,10 +174,7 @@ impl ModelProviderDal for ModelProviderDalImpl {
                     interval: options.stats_interval,
                 };
 
-                let call_kind = match provider.po.capability {
-                    ModelCapability::Embedding => "embedding",
-                    _ => "chat",
-                };
+                let call_kind = call_kind_for_capability(provider.po.capability);
                 match self
                     .get_stats(ctx.clone(), id, call_kind, stats_options)
                     .await
@@ -325,5 +322,58 @@ impl ModelProviderDal for ModelProviderDalImpl {
         self.model_provider_stats_dao
             .get_stats(ctx, query, options)
             .await
+    }
+}
+
+/// 模型调用统计的 `call_kind` 取值：由 provider 的 capability 唯一确定
+///
+/// ## 为什么按 capability 派生
+///
+/// 查询侧**拿不到调用点**——模型详情页只知道「这个 provider 是谁」，不知道它
+/// 被哪些链路用过。所以「详情页该查哪个桶」只能由 provider 自身属性推断。
+///
+/// ## 为什么必须穷举 match（不许 `_` 兜底）
+///
+/// 此前这里是 `Embedding => "embedding", _ => "chat"`，`Decision` 就静默落进
+/// 了 chat 桶：小脑调用要么查不到，要么把对话口径虚高。新增 capability 时
+/// 本函数必须编译不过，逼作者显式回答「新种类记进哪个桶」，而不是被 `_`
+/// 悄悄并进 chat。录制侧与本函数共用同一份字符串契约（见
+/// `dal::brain::decision_model_call_event`）。
+fn call_kind_for_capability(capability: ModelCapability) -> &'static str {
+    match capability {
+        ModelCapability::Agent => "chat",
+        ModelCapability::Embedding => "embedding",
+        ModelCapability::Decision => DECISION_CALL_KIND,
+    }
+}
+
+#[cfg(test)]
+mod call_kind_tests {
+    use super::*;
+
+    /// 三种 capability 各自映射到自己的桶，一个都不能落进 chat
+    #[test]
+    fn call_kind_maps_each_capability_to_its_own_bucket() {
+        assert_eq!(call_kind_for_capability(ModelCapability::Agent), "chat");
+        assert_eq!(
+            call_kind_for_capability(ModelCapability::Embedding),
+            "embedding"
+        );
+        assert_eq!(
+            call_kind_for_capability(ModelCapability::Decision),
+            "decision"
+        );
+    }
+
+    /// 两两不等：专防「将来有人把 Decision 也映射成 chat」——
+    /// 那种改动在逐条字面断言下看起来「对」，实际上把小脑调用灌进对话口径。
+    #[test]
+    fn call_kind_values_are_pairwise_distinct() {
+        let agent = call_kind_for_capability(ModelCapability::Agent);
+        let embedding = call_kind_for_capability(ModelCapability::Embedding);
+        let decision = call_kind_for_capability(ModelCapability::Decision);
+        assert_ne!(agent, embedding);
+        assert_ne!(agent, decision);
+        assert_ne!(embedding, decision);
     }
 }
