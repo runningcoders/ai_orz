@@ -412,8 +412,9 @@ mod tests {
     fn duration_ms_defaults_to_none_not_zero() {
         let event = ModelCallEvent::new(0);
         assert_eq!(event.duration_ms, None);
-        // 任何走 `new()` 的既有路径（chat / embedding）默认不带耗时，
-        // 在各自录制点显式 `with_duration_ms(...)` 之前都必须是 None。
+        // 任何走 `new()` 的路径（chat / embedding / decision）默认不带耗时：
+        // 耗时一律由各录制点显式 `with_duration_ms(...)` 注入——chat 用轮耗时、
+        // embedding 用逐请求墙钟、decision 用 per-call 计时；拿不到就保持 None。
         assert_eq!(
             ModelCallEvent::decision(0, "p".into(), "m".into(), 0, 0, None).duration_ms,
             None
