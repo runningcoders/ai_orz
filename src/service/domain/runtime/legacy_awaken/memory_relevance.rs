@@ -42,7 +42,24 @@ pub(crate) const SCENE: &str = "memory_relevance";
 pub(crate) const WEIGHT_THRESHOLD: f32 = 0.08;
 
 /// 单条候选进判据的字符上限
+///
+/// 只约束**正文**部分：来源标签是前缀，不吃这段预算（见 [`snippet`]）。
 const SNIPPET_CHARS: usize = 160;
+
+/// 候选来源标签（与 [`MemoryPo`] 的四个变体一一对应）
+///
+/// 四类候选的**可信度与用途不同**：长期知识是已沉淀的结论、短期记忆是工作记忆、
+/// trace 是原始思考记录、关系是图谱边。模型无法只从正文可靠区分这四种来源，
+/// 所以来源属于「判断所需的事实」，不是装饰。
+///
+/// ⚠️ 只加标签、**不加分数**：入参层（[`rank`] 的签名）没有任何召回分数可用；
+/// 真正的相关性分数在**输出侧**（`DecisionValue::Pick::weights` 给出全部选项
+/// 概率，`RankPolicy` 用它做阈值截断）。在候选文本里塞一个先验分反而会锚定
+/// 模型，破坏「一次 Pick 看相对差异」的设计。
+const SOURCE_KNOWLEDGE_NODE: &str = "[知识节点]";
+const SOURCE_SHORT_TERM: &str = "[短期记忆]";
+const SOURCE_TRACE: &str = "[trace]";
+const SOURCE_RELATION: &str = "[关系]";
 
 /// 重排判据（prompt 存调用方，服务端不持有）
 const RANK_INSTRUCTIONS: &str = "下面每条候选是按关键词从记忆库召回的条目。请判断哪一条与用户问题最相关。\
@@ -62,9 +79,13 @@ fn policy(keep: usize) -> RankPolicy {
     )
 }
 
-/// 候选的判据文本（名称 + 摘录），空描述 = 不可判，直接跳过
+/// 候选的判据文本（来源标签 + 名称/摘录），空描述 = 不可判，直接跳过
+///
+/// 标签只加在**有内容**的候选上：空描述必须继续产出空串（[`candidate_views`]
+/// 靠 `is_empty()` 判定「不可判」并丢弃）。否则标签会把「无内容」伪装成有
+/// 内容，让空判据白占一个选项位 —— 那是行为变更，不是本次要的。
 fn snippet(m: &Memory) -> String {
-    match &m.po {
+    let (label, text) = match &m.po {
         MemoryPo::KnowledgeNode(k) => {
             let body = if k.node_description.is_empty() {
                 &k.summary
@@ -72,19 +93,32 @@ fn snippet(m: &Memory) -> String {
                 &k.node_description
             };
             if body.is_empty() {
-                String::new()
-            } else {
-                format!("{}：{}", k.node_name, truncate_chars(body, SNIPPET_CHARS))
+                return String::new();
             }
+            (
+                SOURCE_KNOWLEDGE_NODE,
+                format!("{}：{}", k.node_name, truncate_chars(body, SNIPPET_CHARS)),
+            )
         }
-        MemoryPo::ShortTerm(st) => truncate_chars(&st.summary, SNIPPET_CHARS),
+        MemoryPo::ShortTerm(st) => (
+            SOURCE_SHORT_TERM,
+            truncate_chars(&st.summary, SNIPPET_CHARS),
+        ),
         // trace 没有摘要字段：优先思考输出（短且有信息量），回退输入
         MemoryPo::Trace(t) => {
             let body = t.output.as_deref().unwrap_or(t.input.as_str());
-            truncate_chars(body, SNIPPET_CHARS)
+            (SOURCE_TRACE, truncate_chars(body, SNIPPET_CHARS))
         }
-        MemoryPo::Relation(r) => truncate_chars(&r.relation_type, SNIPPET_CHARS),
+        MemoryPo::Relation(r) => (
+            SOURCE_RELATION,
+            truncate_chars(&r.relation_type, SNIPPET_CHARS),
+        ),
+    };
+    // 纯空白正文同样视为不可判（`summary` / `relation_type` 落库可能是空串）
+    if text.trim().is_empty() {
+        return String::new();
     }
+    format!("{label}{text}")
 }
 
 /// 候选 → 决策视图（保持召回序；空判据直接丢弃，不占选项位）
