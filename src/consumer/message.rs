@@ -30,8 +30,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::message_route_policy::{
-    AutoReplyRoute, ReplyObligation, RouteInput, cerebellum_close_route, classify_reply_decision,
-    judge_chain_reply_route, judge_static_reply_route,
+    AutoReplyRoute, ReplyObligation, RouteInput, cerebellum_close_route, cerebellum_silent_route,
+    classify_reply_decision, judge_chain_reply_route, judge_static_reply_route,
 };
 use super::wake_gate_policy::{
     STALE_DEPENDENCY_POLICY_ID, WAKEUP_BUDGET_POLICY_ID, WakeGateInput, judge_wake_gate,
@@ -1154,6 +1154,52 @@ impl MessageConsumer {
                     MessageRole::System => Ok(()),
                 },
 
+                // 静默收口：**对端一条都不发**（既不回发、也不发知会），只通知归属用户。
+                //
+                // 与上面的 `CloseChainAsNotify` 是两个独立形态（AMan 2026-11-11
+                // 定谳）：那边把 Final 作为知会送给对端，对方知道「到此为止」；
+                // 这里连知会都不发 —— 判据是「本条与本轮回复都没有对方需要知道
+                // 的内容」。`send_to_agent` 一行都不调用（零发送是本形态的定义，
+                // 不是优化），「消息必达」由归属用户那条通知承载。
+                AutoReplyRoute::SilentClose { reason } => {
+                    log_info!(
+                        &ctx,
+                        "handle_agent_message",
+                        "chain closed silently ({}), no message to peer {}, owner notified only",
+                        reason,
+                        message.po.from_id
+                    );
+                    match work_root_user_id.as_deref() {
+                        Some(owner_user_id) => self
+                            .message_domain
+                            .delivery()
+                            .send_to_user(
+                                ctx.clone(),
+                                SendToUserCommand {
+                                    from_agent_id: agent_id,
+                                    to_user_id: owner_user_id,
+                                    content: &format!(
+                                        "ℹ️ 小脑判定本条消息里没有需要对方知道的内容，已**静默收口**：对端 Agent {} 一条消息都没有收到（既未回发、也未发知会），该协作链到此终止。\n\n如需继续这段讨论，回复本条并补充新信息、或直接让相关 Agent 重新发起新消息即可（新链重新计数）；若无需继续，忽略本条即可。",
+                                        message.po.from_id
+                                    ),
+                                    project_id,
+                                    task_id,
+                                    reply_to_id,
+                                },
+                            )
+                            .await
+                            .map(|_| ()),
+                        None => {
+                            log_warn!(
+                                &ctx,
+                                "handle_agent_message",
+                                "no owner user to notify silent chain close (no task/project root_user_id)"
+                            );
+                            Ok(())
+                        }
+                    }
+                }
+
                 AutoReplyRoute::Discard { reason } => {
                     log_debug!(
                         &ctx,
@@ -1581,6 +1627,10 @@ impl MessageConsumer {
                 cerebellum_close_route(true)?
             }
             // 软墙放行：不落回静态判定，硬墙此时不生效
+            // 静默收口：对端零发送（连知会都不发），只通知归属用户
+            runtime_domain::chain_reply::ChainReplyVerdict::Silent { .. } => {
+                cerebellum_silent_route(true)?
+            }
             runtime_domain::chain_reply::ChainReplyVerdict::Continue { .. } => AutoReplyRoute::Peer,
         })
     }

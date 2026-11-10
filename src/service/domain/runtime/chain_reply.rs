@@ -110,6 +110,13 @@ pub(crate) const MIN_CONFIDENCE: f32 = 0.9;
 pub(crate) const OPTION_CONTINUE: &str = "continue";
 /// 选项 id：收口（不再自动回发，改知会 + 通知归属用户）
 pub(crate) const OPTION_CLOSE: &str = "close";
+/// 选项 id：静默收口（对端**一条都不发**，只通知归属用户）
+///
+/// 与 [`OPTION_CLOSE`] 是**两个独立选项**，绝不合并：`close` 仍把本轮 Final 作为
+/// 知会送达对端（对方因此知道「到此为止」），`silent` 连这条知会都不发（本条与
+/// 本轮回复都没有对方需要知道的内容）。AMan 2026-11-11 定谳：「noreply 是让对方
+/// 不回复，不是不回复对方；直接不回复是一个独立的选项」——压成同一个值就算没做。
+pub(crate) const OPTION_SILENT: &str = "silent";
 
 /// 轨迹决策值：链内一条消息都拉不到（零调用零配额）
 pub(crate) const DECISION_EMPTY_INPUT: &str = "empty_input";
@@ -120,6 +127,13 @@ pub(crate) const DECISION_CONTINUE: &str = "continue";
 /// `applied` 不恒 true：`close` 只在硬墙**之下**才改变下游（静态本是 `Peer`）；
 /// 硬墙之上静态判定本就 `Escalate → CloseChainAsNotify`，此时 `close` 是 no-op。
 pub(crate) const DECISION_CLOSE: &str = "close";
+/// 轨迹决策值：模型判静默收口（对端零发送，只通知归属用户）
+///
+/// `applied` **恒 `true`**：本门只在「静态规则未命中的跨 Agent 对等候选」上表态 ——
+/// 硬墙之下静态本是 `Peer`（被改成对端零发送），硬墙之上静态本是
+/// `CloseChainAsNotify`（会发知会，也被改成零发送）。两种情形下游都被改变，
+/// 这与 `close` 在硬墙之上是 no-op 的形状不同，故单独定值、不并入。
+pub(crate) const DECISION_SILENT: &str = "silent";
 /// 轨迹决策值：降级（`degraded` 给出原因）
 pub(crate) const DECISION_FALLBACK: &str = "fallback";
 
@@ -242,7 +256,9 @@ pub(crate) fn body_token_budget(input_budget: usize) -> usize {
 /// 末段「省略标注 ⇒ 证据不足选 continue」是本场景唯一的假阴性防线。
 const INSTRUCTIONS: &str = "判断协作方刚发来的消息有没有新的实质信息、本轮还需不需要自动回发；\
 只看链内消息本身。\n\
-选 close：只是确认 / 致谢 / 收讫 / 复述（「收到」「明白」「已完成」），\
+选 silent：本条与本轮回复里都没有对方需要知道的内容（纯确认 / 纯致谢 / 纯重复），\n\
+连「到此为止」都不必告诉对方。\n\
+选 close：只是确认 / 致谢 / 收讫 / 复述（「收到」「明白」「已完成」），但对方需要知道「到此为止」，\
 或结论已在上文交付、本条只是重复总结，或同一层意思反复换措辞。\n\
 选 continue：带来了上文没有的新事实 / 数据 / 结论 / 问题 / 待办，\
 或提出需要答复的问题、需要确认的决策点、需要执行的下一步。\n\
@@ -252,8 +268,13 @@ state 里的 window_depth（当前链深度）与 fatigue（疲劳值）**仅作
 链内区块若出现「中间 N 条已省略」，不得把「看不到」当成「没有新信息」，\
 证据不足一律选 continue。";
 
-/// 两个选项（id → 判据描述）
-const OPTIONS: [(&str, &str); 2] = [
+/// 三个选项（id → 判据描述）
+///
+/// `continue` / `close` 的 id 与语义**零改动**（旧轨迹照旧可解读），只新增
+/// `silent`。`close` 与 `silent` 的判据刻意写成对照对：「对方是否需要知道
+/// 『到此为止』」——这是模型唯一可判的差别，也是本改动最大的风险面
+/// （两者区分度靠这一句，而不是靠 confidence）。
+const OPTIONS: [(&str, &str); 3] = [
     (
         OPTION_CONTINUE,
         "继续回发：带来上文没有的新事实 / 结论 / 问题 / 待办，或证据不足（含链内被截断）",
@@ -261,6 +282,10 @@ const OPTIONS: [(&str, &str); 2] = [
     (
         OPTION_CLOSE,
         "不再回发：只是确认 / 致谢 / 收讫 / 复述，或同一层意思反复换措辞",
+    ),
+    (
+        OPTION_SILENT,
+        "连「到此为止」都不必告诉对方：本条与本轮回复都没有对方需要知道的内容（纯确认 / 纯致谢 / 纯重复）",
     ),
 ];
 
@@ -495,10 +520,11 @@ fn trace(
     }
 }
 
-/// 本场景的裁决（两个「有结论」分支）
+/// 本场景的裁决（三个「有结论」分支）
 ///
 /// 返回值 `None` = 没结论 ⇒ 调用方走静态判定（含硬墙 `Escalate`），逐字节不变。
 /// `Some(Close)` ⇒ `CloseChainAsNotify`。
+/// `Some(Silent)` ⇒ `SilentClose`（对端零发送，只通知归属用户）。
 /// `Some(Continue)` ⇒ **直接 `Peer`**，跳过静态判定 —— 这是「硬墙降软墙」的落点：
 /// 静态硬墙只在「小脑没结论」时生效。
 ///
@@ -507,6 +533,8 @@ fn trace(
 /// - `close` + `depth >= hard` ⇒ `false`（静态本也 `Escalate`，下游不变）
 /// - `continue` + `depth >= hard` ⇒ `true`（越墙，软墙真起效）
 /// - `continue` + `depth <  hard` ⇒ `false`（墙下本就走，没改）
+/// - `silent`（任意 `depth`）⇒ `true`（墙下静态本 `Peer`、墙上静态本
+///   `CloseChainAsNotify` 会发知会，两种情形都被「对端零发送」改变）
 ///
 /// 推论（读三维立方最容易看错的一处）：`depth >= hard` 区间里只有 `continue` 能
 /// 改变下游，`close` 全是 no-op。天花板 `ceiling_forced` 也落在该区间、且根本没问
@@ -517,6 +545,14 @@ pub(crate) enum ChainReplyVerdict {
     Close {
         /// 小脑判断置信度（天花板强制时无判断，为 `None`）
         confidence: Option<f32>,
+    },
+    /// 静默收口：对端**零发送**（连知会都不发），只通知归属用户（保消息必达）
+    ///
+    /// 与 [`Self::Close`] 独立、不合并：`close` 把 Final 作为知会送达对端，
+    /// `silent` 连知会都不发。两者各自独立计数（`decision` 三值分列）。
+    Silent {
+        /// 小脑判断置信度
+        confidence: f32,
     },
     /// 继续回发：**越过静态硬墙**（软墙）
     Continue {
@@ -728,7 +764,7 @@ pub(crate) async fn judge_chain_reply(
     let policy = policy();
     let metrics = state_metrics(brain, &input.rendered, facts);
 
-    // 阶段一：策略声明要问什么（纯函数；选项固定两条，一次 PickOne）
+    // 阶段一：策略声明要问什么（纯函数；选项固定三条，一次 PickOne）
     let requests = policy.prepare(&metrics);
     if requests.is_empty() {
         return None;
@@ -841,6 +877,42 @@ pub(crate) async fn judge_chain_reply(
         );
         return Some(ChainReplyVerdict::Close {
             confidence: Some(pick.confidence),
+        });
+    }
+
+    // 静默收口：对端零发送。与 close 的差别只在「有没有一条需要告诉对方的话」，
+    // 路由层是两个 enum 变体、轨迹层是两个 decision 值 —— 不许压成同一个值。
+    if pick.option == OPTION_SILENT {
+        log_info!(
+            ctx,
+            "chain_reply",
+            decision = DECISION_SILENT,
+            confidence = pick.confidence,
+            scene = SCENE,
+            latency_ms = latency_ms,
+            chain_depth = facts.chain_depth,
+            window_depth = facts.window_depth,
+            hard_window_depth = facts.hard_window_depth,
+            fatigue = facts.fatigue,
+            included = input.included,
+            omitted = input.omitted,
+            input_budget = input_budget,
+            input_tokens = outcome.usage.input_tokens,
+            output_tokens = outcome.usage.output_tokens,
+            "chain closed silently by cerebellum (nothing the peer needs to know)"
+        );
+        record_cerebellum(
+            trace_id,
+            trace(
+                DECISION_SILENT,
+                Some(pick.confidence),
+                None,
+                true,
+                Some(latency_ms),
+            ),
+        );
+        return Some(ChainReplyVerdict::Silent {
+            confidence: pick.confidence,
         });
     }
 

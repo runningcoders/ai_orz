@@ -1662,3 +1662,123 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
         }
     }
 }
+
+// ══════ 三态（continue / close / silent）独立计数 ══════
+//
+// AMan 2026-11-11 定谳：「noreply 是让对方不回复，不是不回复对方；直接不回复是
+// 一个独立的选项」⇒ ② close 与 ③ silent 是两个独立结论，各自独立计数，
+// **不得压成同一个值**（压成同值就算没做）。
+
+/// `silent` 是一个**独立**的第三个结论，不是 `close` 的别名
+#[tokio::test]
+async fn silent_verdict_is_a_distinct_third_state() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-silent";
+    let (got, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_SILENT, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    let verdict = got.expect("silent 必须产出结论，调用方才能走 SilentClose（对端零发送）");
+    assert!(matches!(verdict, ChainReplyVerdict::Silent { .. }));
+    assert_eq!(calls, 1, "一次 PickOne，不是逐候选各发一题");
+    assert_eq!(brain.cerebellum_quota.used(), 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_SILENT);
+    assert_ne!(
+        traces[0].decision, DECISION_CLOSE,
+        "三态不得压成同一个值：silent 与 close 是两个 decision 值"
+    );
+    assert!(
+        traces[0].applied,
+        "silent 恒改变下游（墙下静态本 Peer、墙上静态本发知会，都被零发送改变）"
+    );
+    assert!(traces[0].confidence.is_some());
+}
+
+/// R45：新增的 `silent` 计数**不是死的** —— 同一条门对三个选项分别产出三个不同取值
+#[tokio::test]
+async fn three_states_are_counted_separately() {
+    let cases = [
+        (OPTION_CONTINUE, DECISION_CONTINUE),
+        (OPTION_CLOSE, DECISION_CLOSE),
+        (OPTION_SILENT, DECISION_SILENT),
+    ];
+    for (option, want) in cases {
+        let brain = brain_with_quota(10);
+        let run_id = format!("chain-reply-3state-{option}");
+        let (got, calls) = run_gate(
+            &sample_chain(6),
+            triggered_facts(),
+            vec![Some(pick_for(option, 0.95))],
+            Some(&brain),
+            &run_id,
+        )
+        .await;
+        assert!(got.is_some(), "有结论的选项必须产出 verdict：{option}");
+        assert_eq!(calls, 1, "{option}: 一次请求");
+        let traces = take_traces(&run_id);
+        assert_eq!(traces.len(), 1, "{option}: 一条留痕");
+        assert_eq!(
+            traces[0].decision, want,
+            "{option}: decision 必须是它自己那一值（不得恒同值 / 恒 0）"
+        );
+    }
+}
+
+/// 降级不变量对 `silent` 同样成立：低置信 ⇒ `None`（走原静态判定，绝不静默吞消息）
+#[tokio::test]
+async fn low_confidence_silent_falls_back_to_static() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-silent-low-confidence";
+    let (got, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_SILENT, 0.5))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        got.is_none(),
+        "低置信的 silent 不得生效：必须落回静态判定（宁多发一条，不误静默）"
+    );
+    assert_eq!(calls, 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces[0].decision, DECISION_FALLBACK);
+    assert_eq!(traces[0].degraded, Some(DEGRADED_NO_ANSWER.to_string()));
+}
+
+/// 选项表形态：三选项、`silent` 与 `close` 不同 id，且旧两值字符串零改动
+#[test]
+fn options_are_three_and_keep_old_ids() {
+    assert_eq!(OPTIONS.len(), 3, "OPTIONS 必须是 3 项");
+    let ids: Vec<&str> = OPTIONS.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, vec![OPTION_CONTINUE, OPTION_CLOSE, OPTION_SILENT]);
+    assert_eq!(OPTION_CONTINUE, "continue", "旧值字符串零改动");
+    assert_eq!(
+        OPTION_CLOSE, "close",
+        "旧值字符串零改动（② 语义与字符串不变）"
+    );
+    assert_ne!(OPTION_SILENT, OPTION_CLOSE, "③ 不得与 ② 同 id");
+    // 判据文案必须把 ②/③ 的差别写清楚（模型唯一可判的差别）
+    let silent_desc = OPTIONS
+        .iter()
+        .find(|(id, _)| *id == OPTION_SILENT)
+        .map(|(_, d)| *d)
+        .expect("silent 判据描述");
+    assert!(silent_desc.contains("到此为止"), "{silent_desc}");
+    let close_desc = OPTIONS
+        .iter()
+        .find(|(id, _)| *id == OPTION_CLOSE)
+        .map(|(_, d)| *d)
+        .expect("close 判据描述");
+    assert!(
+        !close_desc.contains("到此为止"),
+        "close 描述零改动：{close_desc}"
+    );
+}

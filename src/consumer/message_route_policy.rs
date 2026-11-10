@@ -189,6 +189,7 @@ pub fn classify_reply_decision(raw_output: &str) -> ReplyDecision {
 /// - `Discard`             → 丢弃 Final（无对等回复对象 / 发送方声明无需回复）
 /// - `CloseChainAsNotify`  → 硬墙收口：把 Final 作为**知会**投给来源方（信息不丢）
 ///   并通知归属用户；知会语义保证对端不会再自动回发，链在此终止
+/// - `SilentClose`         → 静默收口：对端**零发送**（连知会都不发），只通知归属用户
 ///
 /// 硬墙不采用「直接丢弃」：那样既不通知归属方，也让最后一轮结论白白消失；
 /// 也不采用「照常回发」，那只会把乒乓推高一跳。收口成知会是唯一既完成
@@ -196,8 +197,21 @@ pub fn classify_reply_decision(raw_output: &str) -> ReplyDecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutoReplyRoute {
     Peer,
-    Discard { reason: &'static str },
-    CloseChainAsNotify { reason: &'static str },
+    Discard {
+        reason: &'static str,
+    },
+    CloseChainAsNotify {
+        reason: &'static str,
+    },
+    /// 静默收口：对端**一条都不发**，只通知归属用户（保「消息必达」）
+    ///
+    /// 与 [`Self::CloseChainAsNotify`] 是两个**独立**形态，绝不合并：后者把 Final
+    /// 作为知会送达对端（对方因此知道「到此为止」），前者连知会都不发。AMan
+    /// 2026-11-11 定谳：「noreply 是让对方不回复，不是不回复对方；直接不回复是
+    /// 一个独立的选项」—— 两者各自独立计数，压成同一个值就算没做。
+    SilentClose {
+        reason: &'static str,
+    },
 }
 
 /// 静态路由判定的输入（consumer 从 Message / 唤醒结果解析后填充）
@@ -332,14 +346,18 @@ static STATIC_ROUTE_DEFS: &[StaticRoutePolicy] = &[
         },
     },
     // 知会 → Discard：发送方已声明无需回复。仅 Agent 来源会命中该规则——
-    // 用户来源已被声明在前的 user_origin 拦下，用户对话主干不受影响
+    // 用户来源已被声明在前的 user_origin 拦下，用户对话主干不受影响。
+    //
+    // 这条规则是「入站带 noreply ⇒ 直接不返回、不问小脑」的**唯一承载**：
+    // 反事实断言见 `agent_notify_is_the_only_inbound_noreply_short_circuit`
+    // （同一条消息只把类型换成 Text，静态规则就全不命中 ⇒ 落回压力判定 ⇒ Peer）。
     StaticRoutePolicy {
         id: "agent_notify",
         name: "知会消息",
         condition_desc: "message_type == AgentNotify",
         matcher: RouteMatcher::MessageTypeEquals(MessageType::AgentNotify),
         outcome: AutoReplyRoute::Discard {
-            reason: "agent-notify message (sender declared no reply needed)",
+            reason: AGENT_NOTIFY_REASON,
         },
     },
 ];
@@ -348,6 +366,12 @@ static STATIC_ROUTE_DEFS: &[StaticRoutePolicy] = &[
 const SENTINEL_POLICY_ID: &str = "no_reply_sentinel";
 /// 哨兵命中的路由产出 reason
 const SENTINEL_HIT_REASON: &str = "agent final output is the NO_REPLY sentinel";
+
+/// 知会消息（`AgentNotify`）被静态规则拦下的理由串
+///
+/// 单独成**公开**常量（原先是规则表里的字面量）：这是「入站 noreply 短路」的
+/// 可指认命名 —— 日志与断言共用同一处，改串不会让断言静默漂移。
+pub const AGENT_NOTIFY_REASON: &str = "agent-notify message (sender declared no reply needed)";
 
 /// 静态规则集：领域规则表按 Or 组合
 /// （等价 policy_set!(OR { .. }) 的展开结果，声明顺序即优先级）
@@ -446,6 +470,23 @@ pub const CEREBELLUM_CLOSE_REASON: &str = "cerebellum: no new information in lat
 pub fn cerebellum_close_route(close: bool) -> Option<AutoReplyRoute> {
     close.then_some(AutoReplyRoute::CloseChainAsNotify {
         reason: CEREBELLUM_CLOSE_REASON,
+    })
+}
+
+/// 小脑判「连收尾都不必要」时的静默收口理由
+///
+/// 与 [`CEREBELLUM_CLOSE_REASON`] 分开写，理由同它与静态硬墙的分工：排障时要
+/// 一眼看出「这条链是被谁、以哪种形态收的」——是发了知会，还是一条都没发。
+pub const CEREBELLUM_SILENT_REASON: &str =
+    "cerebellum: nothing the peer needs to know (silent close)";
+
+/// 小脑结论 → 路由（静默收口）：`None` = 不覆盖
+///
+/// 与 [`cerebellum_close_route`] 并列存在、互不替代：`close` 与 `silent` 是
+/// AMan 定谳的两个独立选项，各自产出各自的 `AutoReplyRoute` 变体（可独立计数）。
+pub fn cerebellum_silent_route(silent: bool) -> Option<AutoReplyRoute> {
+    silent.then_some(AutoReplyRoute::SilentClose {
+        reason: CEREBELLUM_SILENT_REASON,
     })
 }
 
