@@ -809,7 +809,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             class: "select select-bordered w-full",
                             value: "{edit_provider_type}",
                             onchange: move |e| edit_provider_type.set(e.value()),
-                            // 类型选项按能力过滤：Jev 仅决策、向量专用端点仅 Embedding。
+                            // 类型选项按能力过滤：Jev 仅决策、决策组另含 Qwen、向量专用端点仅 Embedding。
                             // 回显必须用 option 的 selected 属性：select 的 value 属性在
                             // 子选项挂载前被设置，浏览器找不到匹配项会静默回落到第一项。
                             if editing_is_agent {
@@ -832,6 +832,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             }
                             if editing_is_decision {
                                 option { value: "Jev", selected: edit_provider_type() == "Jev", "Jev（小脑决策模型）" }
+                                option { value: "Qwen", selected: edit_provider_type() == "Qwen", "通义千问" }
                             }
                         }
                     }
@@ -1078,5 +1079,34 @@ mod batch5_p2_tests {
         );
         // 初值主线协议
         assert!(code.contains("use_signal(|| \"responses\".to_string())"));
+    }
+}
+
+#[cfg(test)]
+mod decision_provider_option_tests {
+    /// 决策模型（capability=Decision）provider 类型下拉守卫：
+    /// 三组选项（Agent/Embedding/Decision）各含一处 Qwen，且决策组内 Jev 与 Qwen 并存
+    /// （新语义：决策允许 Jev 或 Qwen；旧语义「决策只允许 Jev」已作废）。
+    #[test]
+    fn decision_provider_type_options_include_qwen() {
+        let src = include_str!("model_provider_detail.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+
+        assert_eq!(
+            code.matches(
+                "option { value: \"Qwen\", selected: edit_provider_type() == \"Qwen\", \"通义千问\" }"
+            )
+            .count(),
+            3,
+            "Agent/Embedding/Decision 三组各含一处 Qwen option"
+        );
+        // 决策组切片：只取标记后的前 4 行，确认 Jev 与 Qwen 并存（防「只加在前两组」假绿）
+        let decision_tail = code
+            .split("if editing_is_decision")
+            .nth(1)
+            .expect("decision option group");
+        let block: String = decision_tail.lines().take(4).collect::<Vec<_>>().join("\n");
+        assert!(block.contains("value: \"Jev\""), "决策组必须保留 Jev");
+        assert!(block.contains("value: \"Qwen\""), "决策组必须含 Qwen");
     }
 }

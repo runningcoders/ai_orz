@@ -500,7 +500,7 @@ pub fn FinanceModelProviders() -> Element {
                                 _ => {}
                             }
                         },
-                        // 类型选项按能力过滤：Jev 仅决策、向量专用端点仅 Embedding
+                        // 类型选项按能力过滤：Jev 仅决策、决策组另含 Qwen、向量专用端点仅 Embedding
                         if is_agent_cap {
                             option { value: "openai", "OpenAI" }
                             option { value: "custom", "OpenAI 兼容" }
@@ -521,6 +521,7 @@ pub fn FinanceModelProviders() -> Element {
                         }
                         if is_decision_cap {
                             option { value: "jev", "Jev（小脑决策模型）" }
+                            option { value: "qwen", "通义千问" }
                         }
                     }
                 }
@@ -538,7 +539,16 @@ pub fn FinanceModelProviders() -> Element {
                                 // 能力 → 类型纠正：切到决策锁定 Jev；切出决策时 Jev 必须让位；
                                 // 向量专用端点（DoubaoVision/FastEmbed）在 Agent 下非法
                                 match ModelCapability::from_i32(v) {
-                                    ModelCapability::Decision => provider_type.set(ProviderType::Jev),
+                                    ModelCapability::Decision => {
+                                        // 决策能力允许 Jev 或 Qwen（百炼 qwen 走同一 System One 协议），
+                                        // 只有其他类型才锁回 Jev（既有行为不变）
+                                        if !matches!(
+                                            provider_type(),
+                                            ProviderType::Jev | ProviderType::Qwen
+                                        ) {
+                                            provider_type.set(ProviderType::Jev);
+                                        }
+                                    }
                                     ModelCapability::Embedding => {
                                         if provider_type() == ProviderType::Jev {
                                             provider_type.set(ProviderType::OpenAI);
@@ -946,5 +956,21 @@ mod batch5_p2_tests {
         );
         // 类型选项按能力分组过滤：决策组恰 1，Embedding 组至少 1
         assert_eq!(code.matches("if is_decision_cap {").count(), 1);
+        // 决策组含 qwen（新语义：能力=Decision 允许 Jev 或 Qwen 两种提供方）
+        assert_eq!(
+            code.matches("option { value: \"qwen\", \"通义千问\" }")
+                .count(),
+            3,
+            "Agent/Embedding/Decision 三组各含一处 qwen option"
+        );
+        // R54 形态迁移成对：旧形态（Decision 无条件锁 Jev）必须消失，新形态允许 Qwen
+        assert!(
+            !code.contains("ModelCapability::Decision => provider_type.set(ProviderType::Jev),"),
+            "旧形态必须消失：决策不再无条件锁回 Jev"
+        );
+        assert!(
+            code.contains("ProviderType::Jev | ProviderType::Qwen"),
+            "新形态必须到位：决策能力允许 Jev 或 Qwen"
+        );
     }
 }
