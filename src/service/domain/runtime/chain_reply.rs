@@ -114,7 +114,10 @@ pub(crate) const OPTION_CLOSE: &str = "close";
 pub(crate) const DECISION_EMPTY_INPUT: &str = "empty_input";
 /// 轨迹决策值：模型判继续回发（下游与无本门时一致，`applied=false`）
 pub(crate) const DECISION_CONTINUE: &str = "continue";
-/// 轨迹决策值：模型判收口（改变下游路由，`applied=true`）
+/// 轨迹决策值：模型判收口
+///
+/// `applied` 不恒 true：`close` 只在硬墙**之下**才改变下游（静态本是 `Peer`）；
+/// 硬墙之上静态判定本就 `Escalate → CloseChainAsNotify`，此时 `close` 是 no-op。
 pub(crate) const DECISION_CLOSE: &str = "close";
 /// 轨迹决策值：降级（`degraded` 给出原因）
 pub(crate) const DECISION_FALLBACK: &str = "fallback";
@@ -462,6 +465,16 @@ fn trace(
 /// `Some(Close)` ⇒ `CloseChainAsNotify`。
 /// `Some(Continue)` ⇒ **直接 `Peer`**，跳过静态判定 —— 这是「硬墙降软墙」的落点：
 /// 静态硬墙只在「小脑没结论」时生效。
+///
+/// **`applied` 的统一口径 = 本门是否改变了下游**（四条定值，`depth = window_depth`）：
+/// - `close` + `depth <  hard` ⇒ `true`（静态本是 `Peer`，被改成收口）
+/// - `close` + `depth >= hard` ⇒ `false`（静态本也 `Escalate`，下游不变）
+/// - `continue` + `depth >= hard` ⇒ `true`（越墙，软墙真起效）
+/// - `continue` + `depth <  hard` ⇒ `false`（墙下本就走，没改）
+///
+/// 推论（读三维立方最容易看错的一处）：`depth >= hard` 区间里只有 `continue` 能
+/// 改变下游，`close` 全是 no-op。天花板 `ceiling_forced` 也落在该区间、且根本没问
+/// 小脑 ⇒ 同样 `applied = false`（`degraded` + `false` 合起来才是「未生效但留痕」）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ChainReplyVerdict {
     /// 收口；`confidence` 为 `None` = 非小脑判断（绝对天花板强制）
@@ -529,13 +542,15 @@ pub(crate) async fn judge_chain_reply(
         );
         record_cerebellum(
             trace_id,
-            // `applied = true`：标注「没问小脑但改变了下游」这一态；
-            // 收口率口径里它与 `close` 分列（decision 不同），不混算。
+            // `applied = false`：天花板在 `depth >= 32 >= hard(8)`，该区间静态判定
+            // 本就 `Escalate → CloseChainAsNotify`，下游**没变**；且本态根本没问小脑
+            // （`degraded = ceiling_forced`），记 true 等于把「没判」记成「生效」，
+            // 会污染生效率。`degraded` + `applied = false` 合起来才是「未生效但留痕」。
             trace(
                 DECISION_FALLBACK,
                 None,
                 Some(DEGRADED_CEILING_FORCED),
-                true,
+                false,
                 None,
             ),
         );
@@ -762,6 +777,11 @@ pub(crate) async fn judge_chain_reply(
         return None;
     };
 
+    // `applied` 的统一口径 = 本门是否**改变了下游**（四条定值见本函数 doc）。
+    // 提前算一次供 close / continue 共用：硬墙之上静态判定本就收口，close 在那
+    // 里是 no-op，只有 continue 能改变下游。
+    let overrode_static_wall = facts.window_depth as u64 >= facts.hard_window_depth;
+
     if pick.option == OPTION_CLOSE {
         log_info!(
             ctx,
@@ -772,6 +792,8 @@ pub(crate) async fn judge_chain_reply(
             latency_ms = latency_ms,
             chain_depth = facts.chain_depth,
             window_depth = facts.window_depth,
+            hard_window_depth = facts.hard_window_depth,
+            overrode_static_wall = overrode_static_wall,
             fatigue = facts.fatigue,
             included = input.included,
             omitted = input.omitted,
@@ -786,7 +808,7 @@ pub(crate) async fn judge_chain_reply(
                 DECISION_CLOSE,
                 Some(pick.confidence),
                 None,
-                true,
+                !overrode_static_wall,
                 Some(latency_ms),
             ),
         );
@@ -806,7 +828,6 @@ pub(crate) async fn judge_chain_reply(
     // 下游本来也是 Peer（`applied=false`）；判 continue 且越过硬墙 ⇒ 下游本来
     // 会 `CloseChainAsNotify`，被本门改回 Peer（`applied=true`）——这一位就是
     // 「软墙真的起效了」的可观测点。
-    let overrode_static_wall = facts.window_depth as u64 >= facts.hard_window_depth;
     log_info!(
         ctx,
         "chain_reply",

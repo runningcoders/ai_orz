@@ -497,6 +497,44 @@ async fn continue_verdict_lets_the_chain_continue() {
     );
 }
 
+/// 硬墙之上判 close：静态判定本就收口 ⇒ 下游没变 ⇒ `applied=false`
+///
+/// 与 `close_verdict_closes_the_chain`（硬墙之下 close ⇒ true）成对，两条一起
+/// 钉住「applied = 是否改变下游」，防它退化回「close 恒 true」。
+#[tokio::test]
+async fn close_above_hard_window_depth_is_not_applied() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-close-above-hard";
+    let facts = ChainPressureFacts {
+        chain_depth: 10,
+        window_depth: 10,
+        fatigue: 60,
+        soft_fatigue: 36,
+        hard_fatigue: 100,
+        hard_window_depth: 8,
+    };
+    let (got, calls) = run_gate(
+        &sample_chain(10),
+        facts,
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { .. })),
+        "该区间小脑判 close 依旧收口（结论不变），变的只是 applied 记账"
+    );
+    assert_eq!(calls, 1, "该区间仍然每次都问（触发已改「每次都问」）");
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_CLOSE);
+    assert!(
+        !traces[0].applied,
+        "越过硬墙的 close 与静态 Escalate 同结论 ⇒ 下游没变 ⇒ applied=false"
+    );
+}
+
 // ---------- 降级：一律落回原阈值 ----------
 
 #[tokio::test]
@@ -1247,7 +1285,10 @@ async fn absolute_ceiling_forces_close_without_asking() {
     assert_eq!(traces.len(), 1, "强制收口也必须留痕，不许零轨迹");
     assert_eq!(traces[0].decision, DECISION_FALLBACK);
     assert_eq!(traces[0].degraded.as_deref(), Some("ceiling_forced"));
-    assert!(traces[0].applied);
+    assert!(
+        !traces[0].applied,
+        "天花板没问小脑、且下游本就收口 ⇒ applied=false（degraded + false 才是「未生效但留痕」）"
+    );
     assert_eq!(traces[0].latency_ms, None, "没发生调用 ⇒ latency=None");
 }
 
