@@ -200,6 +200,8 @@ pub trait ModelProviderStatsDao: Send + Sync {
             call_summary: None,
             token_summary: None,
             model_call_time_series: None,
+            avg_duration_ms: None,
+            duration_sample_count: 0,
         };
 
         if options.with_call_summary {
@@ -243,8 +245,13 @@ pub trait ModelProviderStatsDao: Send + Sync {
             let mut ts_query = query;
             ts_query.time_range = options.time_range;
             ts_query.interval = options.interval.or(Some(StatsInterval::Daily));
-            stats.model_call_time_series =
-                Some(self.query_model_call_time_series(ctx, ts_query).await?);
+            let points = self.query_model_call_time_series(ctx, ts_query).await?;
+            // 汇总卡的「平均耗时」从同一批桶**加权**派生，零额外查询：
+            // 加权平均 ≡ 全窗口 AVG，故汇总卡与折线图不会互相打架。
+            let (avg_duration_ms, duration_sample_count) = weighted_avg_duration_ms(&points);
+            stats.avg_duration_ms = avg_duration_ms;
+            stats.duration_sample_count = duration_sample_count;
+            stats.model_call_time_series = Some(points);
         }
 
         Ok(stats)
@@ -312,6 +319,8 @@ fn parse_time_series_point(row: &JsonValue) -> TimeSeriesPoint {
                 tokens_cached: 0,
                 tokens_reasoning: 0,
                 call_count: 0,
+                avg_duration_ms: None,
+                duration_sample_count: 0,
             };
         }
     };
@@ -341,6 +350,44 @@ fn parse_time_series_point(row: &JsonValue) -> TimeSeriesPoint {
             .get("call_count")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0) as u64,
+        // 显式保留 None：`as_f64()` 对 JSON null 返回 None，「桶内无耗时样本」不能被
+        // 压成 0.0（0 毫秒是有效数据，会拉低均值）。
+        avg_duration_ms: obj.get("avg_duration_ms").and_then(|v| v.as_f64()),
+        duration_sample_count: obj
+            .get("duration_sample_count")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as u64,
+    }
+}
+
+/// 由时序桶按**样本数加权**求全窗口平均耗时
+///
+/// `Σ(桶均值 × 桶样本数) / Σ桶样本数` 在数学上恒等于「全窗口 `AVG(duration_ms)`」，
+/// 因此它与折线图**同源**、可被独立实现路径复算（DuckDB 直查可对照），
+/// 不需要为汇总卡再发一次查询。
+///
+/// 返回 `(None, 0)` 表示该窗口没有任何带耗时的记录——**不是 0 毫秒**：
+/// 0 是「一次调用瞬时返回」，两者在展示层必须分开（前者显示「无数据」）。
+///
+/// 桶均值为 `Some` 而样本数为 0 属数据不一致（SQL 侧不可能产出：AVG 非空的桶
+/// COUNT 必 > 0），遇到时跳过而不是按 0 样本计入，避免把不一致放大成错误的均值。
+fn weighted_avg_duration_ms(points: &[TimeSeriesPoint]) -> (Option<f64>, u64) {
+    let mut weighted_sum = 0.0_f64;
+    let mut total_samples = 0_u64;
+    for p in points {
+        let Some(avg) = p.avg_duration_ms else {
+            continue;
+        };
+        if p.duration_sample_count == 0 {
+            continue;
+        }
+        weighted_sum += avg * p.duration_sample_count as f64;
+        total_samples += p.duration_sample_count;
+    }
+    if total_samples == 0 {
+        (None, 0)
+    } else {
+        (Some(weighted_sum / total_samples as f64), total_samples)
     }
 }
 

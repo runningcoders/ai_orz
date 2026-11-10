@@ -139,6 +139,9 @@ impl ModelProviderStatsDaoDuckDbImpl {
                     interval,
                     time_range,
                     &["cached_tokens", "reasoning_tokens"],
+                    // 模型调用是唯一有 `duration_ms` 列的统计表，故这里开平均耗时；
+                    // 其它表走同一函数时必须传 false，否则 SQL 会撞未知列。
+                    true,
                 )
                 .await?;
 
