@@ -27,21 +27,31 @@
 //!
 //! # 触发阈值（两条件并列，缺一会漏判）
 //!
-//! - `fatigue >= soft_fatigue`：纯文本往返累积到压力带；
-//! - `window_depth >= hard_window_depth - 1`：**回血**（工具结果 / 新参与方）会把
-//!   疲劳度扣回去、窗口清零，让 `fatigue` 长期到不了软阈值；但窗口一旦撞满
-//!   `hard_window_depth` 就直接 `Escalate` 封链 —— 这些链会「一次小脑都没问过
-//!   就被封」。并列条件让它们在封链前一跳被问到。
+//! - **每次都问**（Q2 改判，AMan 2026-11-10）：只要走到本门（静态规则未命中的
+//!   跨 Agent 对等候选）就问一次，不再看 `fatigue` / `stage`。原「`fatigue >=
+//!   soft_fatigue` 或 `window_depth >= hard_window_depth - 1`」的门槛已取消——
+//!   理由是「有可能从第二句开始就是废话」，挂门槛会漏掉短链。
+//! - **`hard_window_depth` 是绝对护栏**（Q1 补强）：小脑判 `continue` 只返回
+//!   `None`（不覆盖），调用方落回静态判定 ⇒ 窗口撞满时照旧 `Escalate` 收口。
+//!   防无限乒乓的物理底线不能因为「小脑说还能聊」就撤掉。
 //!
-//! # 输入侧（Q3 定谳：条数 32 / token 预算 800 / 双阈取小）
+//! # 输入侧（Q3 改判：容量上限与服务时延上限**取小**，条数 32 退为防环硬顶）
 //!
 //! 链内消息由调用方沿 `reply_to_id` 回溯时**顺手收集**（那一趟本来就要拿每条
 //! 消息做 `ChainHop` 分类，正文已在手里，零额外读库）。
 //!
-//! 预算分配是**有界且显式**的：总输入预算 [`INPUT_TOKEN_BUDGET`] = 800 tokens，
-//! 其中 [`FRAME_OVERHEAD_RESERVE`] = 400 预留给判据骨架（instructions + options +
-//! 压力事实 + 协议包装），余下 [`body_token_budget`] = 400 给链内正文。
-//! 800 是全条 prompt 的上界——只给正文留 800 会让总输入贴住 1000ms 硬顶。
+//! 预算分配是**有界且显式**的，两段取小：
+//!
+//! ```text
+//! 输入预算 = min( 小脑 provider 的推荐上下文长度（容量上限，缺省 max × 60%）, 时延反推上限 )
+//! 正文预算 = 输入预算 − 判据骨架预留
+//! ```
+//!
+//! ⚠️ 容量上限是「模型能吃多少」，不是「本次该喂多少」：标准 provider（128K/200K）
+//! 的容量恒远大于 1000ms 能处理完的量，直接按容量拉满必然超时、功能恒定降级。
+//! 因此实际生效值由时延侧（[`LATENCY_INPUT_CAP`]）绑定，容量侧只在**小容量**
+//! provider（容量 < 时延上限）时生效。条数 [`MAX_CHAIN_MESSAGES`] = 32 保留为
+//! **防环硬顶**（与消费者侧回溯硬上限同口径），不再承担主预算职责。
 //!
 //! 超长降级：**保链头 1 条 + 最近 N 条**，中间被丢弃的部分必须在 prompt 里
 //! 显式写出「中间 N 条已省略（共 M 条）」。⚠️ 这一行是本场景唯一的假阴性形态：
@@ -73,6 +83,13 @@ use crate::service::dal::brain::{BrainDal, dal};
 use std::sync::Arc;
 
 /// 场景标识（日志 / 计量口径，也是 `DecisionRequest.scene`）
+///
+/// Q4 定名（**按推荐**）：`chain_reply` —— ①不与既有 scene 撞名（`entry_gate` /
+/// `entry_pool` / `thinking_strength.*` / `memory_relevance` / `skill_relevance` /
+/// `intent_gate` / `wake_gate` / `summary_gate`）；②描述决策动作本身（这条链
+/// 还要不要**回**），而不是描述被判定的事实。刻意不用 `chain_depth`：同一份
+/// state 里已有 `chain_depth` / `window_depth` / `hard_window_depth` 三个度量，
+/// 再叫 `chain_depth` 会让 `scene × decision × degraded` 与度量字段互相污染。
 pub(crate) const SCENE: &str = "chain_reply";
 
 /// 置信阈值：低于此值按「没结论」处理
@@ -87,8 +104,6 @@ pub(crate) const OPTION_CONTINUE: &str = "continue";
 /// 选项 id：收口（不再自动回发，改知会 + 通知归属用户）
 pub(crate) const OPTION_CLOSE: &str = "close";
 
-/// 轨迹决策值：未达触发阈值（本门不适用，零调用零配额）
-pub(crate) const DECISION_NOT_TRIGGERED: &str = "not_triggered";
 /// 轨迹决策值：链内一条消息都拉不到（零调用零配额）
 pub(crate) const DECISION_EMPTY_INPUT: &str = "empty_input";
 /// 轨迹决策值：模型判继续回发（下游与无本门时一致，`applied=false`）
@@ -103,11 +118,16 @@ const DEGRADED_BUDGET: &str = "budget_exhausted";
 /// 降级原因：判了但没有可用结论（低置信 / 答案缺失 / 幻觉选项）
 const DEGRADED_NO_ANSWER: &str = "no_answer";
 
-/// 本场景输入的 token 总预算（Q3 定谳：800，不是 1000）
+/// 时延反推的输入 token 上限（= 本次预算的**上界**，不是容量）
 ///
-/// 否决 1000 的理由：1000 tokens ≈ 1.0s 已贴住 1000ms 的硬顶，按 1000 定预算
-/// 等于「设计上就注定超时」，功能会恒定降级、退回静态阈值，这笔就白做了。
-pub(crate) const INPUT_TOKEN_BUDGET: usize = 800;
+/// 1000ms 预算的拆解（与 [`crate::service::dao::cerebellum`] 的缺省超时同源）：
+/// 网络 ≈ 150~200ms + 生成 100 tokens ≈ 0.3s，余下 ≈ 0.5s 给 prefill；按
+/// 2000 tok/s 上界 ≈ 1000 tokens，取 800 留 20% 余量（实测 736 tokens ≈ 0.82~0.87s）。
+///
+/// 1000 tokens 会贴住 1000ms 硬顶 ⇒ 「设计上就注定超时」，功能恒定降级、退回
+/// 静态阈值，这笔就白做了。容量侧（provider 推荐上下文长度）通常远大于本值，
+/// 故**实际生效预算由本常量绑定**；只有小容量 provider 才会被容量侧压下来。
+pub(crate) const LATENCY_INPUT_CAP: usize = 800;
 
 /// 判据骨架的固定开销预留（instructions + options + 压力事实 + 协议包装）
 ///
@@ -127,9 +147,20 @@ pub(crate) const FRAME_OVERHEAD_RESERVE: usize = 450;
 /// `MAX_CHAIN_MESSAGES - 1` 条），再按 token 预算裁尾窗口。
 pub(crate) const MAX_CHAIN_MESSAGES: usize = 32;
 
-/// 链内正文可用的 token 预算 = 总预算 − 骨架预留
-pub(crate) fn body_token_budget() -> usize {
-    INPUT_TOKEN_BUDGET.saturating_sub(FRAME_OVERHEAD_RESERVE)
+/// 本次判据的输入 token 预算 = **min(容量上限, 时延上限)**
+///
+/// `capacity_tokens` 是小脑 provider 的推荐上下文长度（容量上限，来自
+/// [`ModelProviderConfig::recommended_context_length_tokens`] 这条全局唯一链）。
+/// 容量缺失（未配置）时退化到时延上限——保守，绝不按「无限容量 × 1000ms」硬拉。
+pub(crate) fn input_token_budget(capacity_tokens: Option<u64>) -> usize {
+    capacity_tokens
+        .map(|capacity| (capacity as usize).min(LATENCY_INPUT_CAP))
+        .unwrap_or(LATENCY_INPUT_CAP)
+}
+
+/// 链内正文可用的 token 预算 = 输入预算 − 骨架预留（不足时归零，不下溢）
+pub(crate) fn body_token_budget(input_budget: usize) -> usize {
+    input_budget.saturating_sub(FRAME_OVERHEAD_RESERVE)
 }
 
 /// 判据（prompt 存调用方，服务端不持有）
@@ -198,17 +229,9 @@ pub(crate) struct ChainPressureFacts {
     pub hard_window_depth: u64,
 }
 
-impl ChainPressureFacts {
-    /// 是否达到「接近静态上限」的提问阈值（两条件**并列**）
-    ///
-    /// 只有 `fatigue` 会漏掉「靠回血续命的链」：`ToolResult` / `NewParticipant`
-    /// 会把疲劳度扣回去、窗口清零，疲劳度永远涨不到软阈值，而窗口一撞满
-    /// `hard_window_depth` 就直接封链 —— 这些链会一次都没被小脑看过。
-    pub(crate) fn should_ask(&self) -> bool {
-        self.fatigue >= self.soft_fatigue
-            || (self.window_depth as u64) >= self.hard_window_depth.saturating_sub(1)
-    }
-}
+// ⚠️ Q2 改判（AMan 2026-11-10）：原 `should_ask` 门槛（`fatigue >= soft` 或
+// `window_depth >= hard-1`）**已取消**。走到本门即问一次——「有可能从第二句
+// 开始就是废话」，挂门槛会漏掉短链。压力事实仍全部注入 state，供判据参考。
 
 /// 组装后的链内输入
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,28 +403,37 @@ pub(crate) async fn judge_chain_reply(
     facts: &ChainPressureFacts,
     trace_id: &str,
 ) -> Option<ChainReplyVerdict> {
-    // ① 未达触发阈值：本门不适用 —— 零调用、零配额，但要留痕
-    //    （不记这一条，三维观测里就看不出「触发率」，也就无法解释
-    //    「为什么这条链一次小脑都没问过」）。
-    if !facts.should_ask() {
-        record_cerebellum(trace_id, trace(DECISION_NOT_TRIGGERED, None, None, false));
-        log_info!(
-            ctx,
-            "chain_reply",
-            decision = DECISION_NOT_TRIGGERED,
-            scene = SCENE,
-            chain_depth = facts.chain_depth,
-            window_depth = facts.window_depth,
-            fatigue = facts.fatigue,
-            soft_fatigue = facts.soft_fatigue,
-            hard_window_depth = facts.hard_window_depth,
-            "chain reply gate not triggered (below both thresholds, zero call)"
-        );
+    // ① 未装配 Brain = 降级，不是错误（本门绝不阻断主流程，也不 panic）
+    //
+    // 刻意写成 `let ... else` 而不是 `brain?`：`?` 在 `Option` 上下文里只是提前
+    // `return None`，与 let-else 逐字节等价，不构成「把 None 升级成 Err / 中断主流程」；
+    // 此处保留 let-else 只为让每一个降级点都在调用点显式可见。
+    #[allow(clippy::question_mark)]
+    let Some(brain) = brain else {
+        return None;
+    };
+
+    // ② 未启用小脑模型 = **零开销**（不渲染、不占配额、不发请求）
+    //
+    // 「每次都问」之后这条变得关键：没配小脑的 Agent 不能每条跨 Agent 回复都吃
+    // 一次「渲染 + 请求 + 等待」。确认有模型才继续往下走。
+    // 与上面 `brain` 同一条口径：显式 let-else 胜在「每个降级点都在调用点可见」，
+    // `?` 会把它压成一行而看不出这是零开销的守卫。
+    #[allow(clippy::question_mark)]
+    if brain.cerebellum.is_none() {
         return None;
     }
 
-    // ② 链内一条消息都拉不到（或预算连一条装不下）：不调小脑，落回原阈值
-    let input = render_chain(messages, body_token_budget());
+    // ③ 输入预算 = min(小脑模型容量上限, 时延反推上限)
+    //    容量对标准 provider 恒远大于时延上限 ⇒ 实际生效值由时延侧绑定。
+    let capacity_tokens = brain
+        .cerebellum
+        .as_ref()
+        .and_then(|po| po.config().recommended_context_length_tokens());
+    let input_budget = input_token_budget(capacity_tokens);
+
+    // ④ 链内一条消息都拉不到（或预算连一条装不下）：不调小脑、不占配额
+    let input = render_chain(messages, body_token_budget(input_budget));
     if input.included == 0 {
         record_cerebellum(trace_id, trace(DECISION_EMPTY_INPUT, None, None, false));
         log_info!(
@@ -415,17 +447,10 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
-    // ③ 未装配小脑 = 降级，不是错误（本门绝不阻断主流程，也不 panic）
+    // ⑤ 本 run 的小脑调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
     //
-    // 刻意写成 `let ... else` 而不是 `brain?`：`?` 在 `Option` 上下文里只是提前
-    // `return None`，与 let-else 逐字节等价，不构成「把 None 升级成 Err / 中断主流程」；
-    // 此处保留 let-else 只为让每一个降级点都在调用点显式可见。
-    #[allow(clippy::question_mark)]
-    let Some(brain) = brain else {
-        return None;
-    };
-
-    // ④ 本 run 的小脑调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
+    // 放在「本地就能判完」的两道门（未启用小脑 / 空输入）之后：配额是有限
+    // 保护资源，不该被本地短路的情形白吃一次。
     if !brain.cerebellum_quota.try_acquire() {
         log_info!(
             ctx,
@@ -515,6 +540,7 @@ pub(crate) async fn judge_chain_reply(
             fatigue = facts.fatigue,
             included = input.included,
             omitted = input.omitted,
+            input_budget = input_budget,
             input_tokens = outcome.usage.input_tokens,
             output_tokens = outcome.usage.output_tokens,
             "chain closed by cerebellum (no new information / no need to reply)"

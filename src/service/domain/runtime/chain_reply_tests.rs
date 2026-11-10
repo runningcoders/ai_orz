@@ -1,9 +1,9 @@
 //! chain_reply 单元测试（`#[path]` 注册，保住 `mod tests` 层级）
 //!
 //! 覆盖 P2-A 的硬要求：
-//! ① **触发阈值两条件并列**（Q2）：`fatigue >= soft` 或 `window_depth >= hard-1`
-//!    任一命中都要问；两者都不命中才 `not_triggered`（零调用）；
-//! ② **输入侧双阈取小 + 省略标注**（Q3）：超预算时保链头 + 最近 N 条，
+//! ① **每次都问**（Q2 改判）：静态未命中即问一次，**没有**门槛；同时
+//!    「未启用小脑模型 ⇒ 零开销」（不渲染 / 不占配额 / 不发请求）；
+//! ② **输入侧 min(容量, 时延) + 省略标注**（Q3 改判）：超预算时保链头 + 最近 N 条，
 //!    且 prompt 里必须出现「中间 N 条已省略（共 M 条）」——
 //!    不标注，小脑会把「看不到」当「没有信息」而误封后半段被截掉的链；
 //! ③ **配额 / 零调用**：按真实调用次数（`AtomicUsize`）对账，quota 恰剩 0 时
@@ -140,6 +140,17 @@ fn brain_with_quota(limit: usize) -> Brain {
         vec![],
     );
     brain.cerebellum_quota = Arc::new(CerebellumQuota::new(limit));
+    // 生产装配口径：未启用小脑的 Agent 根本走不到门内（零开销），因此
+    // 「能进门的 Brain」必然带小脑 provider。缺这一行所有正向用例都会在
+    // 「未启用小脑模型」这道门提前返回。
+    brain.cerebellum = Some(mock_provider());
+    brain
+}
+
+/// 未启用小脑模型的 Brain（零开销用例专用）
+fn brain_without_cerebellum(limit: usize) -> Brain {
+    let mut brain = brain_with_quota(limit);
+    brain.cerebellum = None;
     brain
 }
 
@@ -224,62 +235,34 @@ fn take_traces(run_id: &str) -> Vec<ThinkTraceCerebellum> {
     crate::pkg::think_trace::take_cerebellum(run_id)
 }
 
-// ---------- 预算分配（Q3：800 是总输入上界，不是正文预算） ----------
+// ---------- 预算分配（Q3 改判：min(容量上限, 时延上限)） ----------
+
+/// 测试用默认正文预算：无容量配置 ⇒ 时延上限绑定
+fn test_body_budget() -> usize {
+    body_token_budget(input_token_budget(None))
+}
 
 #[test]
-fn total_input_budget_is_800_and_body_gets_the_remainder() {
-    // Q3 定谳的 800 必须字面落在代码里（不靠注释自述）
-    assert_eq!(INPUT_TOKEN_BUDGET, 800);
+fn latency_cap_is_800_and_body_gets_the_remainder() {
+    // 时延反推上限必须字面落在代码里（不靠注释自述）
+    assert_eq!(LATENCY_INPUT_CAP, 800);
     assert_eq!(FRAME_OVERHEAD_RESERVE, 450);
-    assert_eq!(body_token_budget(), 350);
-    // 条数上限与消费者侧回溯硬上限同口径
+    assert_eq!(body_token_budget(800), 350);
+    // 条数上限退为防环硬顶（与消费者侧回溯硬上限同口径）
     assert_eq!(MAX_CHAIN_MESSAGES, 32);
 }
 
-// ---------- 触发阈值（Q2：两条件并列） ----------
-
 #[test]
-fn should_ask_triggers_on_fatigue_alone() {
-    let facts = ChainPressureFacts {
-        chain_depth: 3,
-        window_depth: 3,
-        fatigue: 36,
-        soft_fatigue: 36,
-        hard_fatigue: 100,
-        hard_window_depth: 8,
-    };
-    assert!(facts.should_ask(), "fatigue 恰达软阈值必须触发");
-}
-
-#[test]
-fn should_ask_triggers_on_window_depth_alone() {
-    // 回血型链：工具结果把疲劳度扣回去（这里 0），窗口仍连续增长
-    let facts = ChainPressureFacts {
-        chain_depth: 8,
-        window_depth: 7,
-        fatigue: 0,
-        soft_fatigue: 36,
-        hard_fatigue: 100,
-        hard_window_depth: 8,
-    };
-    assert!(
-        facts.should_ask(),
-        "回血型链 fatigue 到不了软阈值，窗口 >= hard-1 必须单独触发，\
-否则这些链会一次小脑都没问过就被 Escalate 封掉"
-    );
-}
-
-#[test]
-fn should_ask_is_false_only_below_both_thresholds() {
-    let facts = ChainPressureFacts {
-        chain_depth: 2,
-        window_depth: 6,
-        fatigue: 35,
-        soft_fatigue: 36,
-        hard_fatigue: 100,
-        hard_window_depth: 8,
-    };
-    assert!(!facts.should_ask(), "两条都不达阈值才不触发");
+fn input_budget_is_min_of_capacity_and_latency_cap() {
+    // 标准 provider（128K / 200K）：容量远大于时延上限 ⇒ 时延侧绑定
+    assert_eq!(input_token_budget(Some(200_000)), 800);
+    assert_eq!(input_token_budget(Some(128_000)), 800);
+    // 小容量 provider：容量侧绑定（不能按 800 硬拉）
+    assert_eq!(input_token_budget(Some(600)), 600);
+    // 未配置容量：保守退化到时延上限
+    assert_eq!(input_token_budget(None), 800);
+    // 容量小于骨架预留：正文预算归零而不是下溢
+    assert_eq!(body_token_budget(300), 0);
 }
 
 // ---------- 输入组装（Q3：保头 + 保尾 + 省略标注） ----------
@@ -287,7 +270,7 @@ fn should_ask_is_false_only_below_both_thresholds() {
 #[test]
 fn render_chain_keeps_head_and_tail_and_marks_omission() {
     let chain = sample_chain(32);
-    let input = render_chain(&chain, body_token_budget());
+    let input = render_chain(&chain, test_body_budget());
     assert!(input.included >= 2, "至少保住链头 + 最近一条");
     assert!(
         input.omitted > 0,
@@ -320,7 +303,7 @@ fn render_chain_keeps_head_and_tail_and_marks_omission() {
 #[test]
 fn render_chain_within_budget_has_no_omission_mark() {
     let chain = sample_chain(3);
-    let input = render_chain(&chain, body_token_budget());
+    let input = render_chain(&chain, test_body_budget());
     assert_eq!(input.included, 3);
     assert_eq!(input.omitted, 0);
     assert!(
@@ -331,7 +314,7 @@ fn render_chain_within_budget_has_no_omission_mark() {
 
 #[test]
 fn render_chain_empty_yields_zero_included() {
-    let input = render_chain(&[], body_token_budget());
+    let input = render_chain(&[], test_body_budget());
     assert_eq!(input.included, 0);
     assert!(input.rendered.is_empty());
 }
@@ -344,15 +327,15 @@ fn render_chain_truncates_oversized_head_instead_of_dropping_it() {
         msg("agent-a", "文本消息", &long),
         msg("agent-b", "文本消息", "尾"),
     ];
-    let input = render_chain(&chain, body_token_budget());
+    let input = render_chain(&chain, test_body_budget());
     assert!(input.included >= 1, "链头必须保住（哪怕截断）");
     assert!(input.rendered.contains("正文已截断"), "截断必须可见");
     // 截断后仍在预算内（估算口径与 compaction 同一份）
     assert!(
-        estimate_tokens(&input.rendered) <= body_token_budget(),
+        estimate_tokens(&input.rendered) <= test_body_budget(),
         "渲染结果不得超过正文预算：{} > {}",
         estimate_tokens(&input.rendered),
-        body_token_budget()
+        test_body_budget()
     );
 }
 
@@ -361,9 +344,9 @@ fn rendered_chain_fits_body_budget_for_every_size() {
     // 双阈取小的直接证据：任意链长都不得越过正文预算
     for n in 1..=MAX_CHAIN_MESSAGES {
         let chain = sample_chain(n);
-        let input = render_chain(&chain, body_token_budget());
+        let input = render_chain(&chain, test_body_budget());
         assert!(
-            estimate_tokens(&input.rendered) <= body_token_budget(),
+            estimate_tokens(&input.rendered) <= test_body_budget(),
             "n={n} 超出正文预算：{}",
             estimate_tokens(&input.rendered)
         );
@@ -373,7 +356,9 @@ fn rendered_chain_fits_body_budget_for_every_size() {
 // ---------- 未触发 / 空输入：零调用 ----------
 
 #[tokio::test]
-async fn not_triggered_sends_no_request() {
+async fn below_every_threshold_still_asks_once() {
+    // Q2 改判的直接证据：压力远低于软阈值（fatigue=12 / window=1）也**必须**
+    // 问一次——「有可能从第二句开始就是废话」，挂门槛就会漏掉这些短链。
     let facts = ChainPressureFacts {
         chain_depth: 1,
         window_depth: 1,
@@ -383,7 +368,7 @@ async fn not_triggered_sends_no_request() {
         hard_window_depth: 8,
     };
     let brain = brain_with_quota(10);
-    let run_id = "chain-reply-not-triggered";
+    let run_id = "chain-reply-always-ask";
     let (got, calls) = run_gate(
         &sample_chain(2),
         facts,
@@ -392,14 +377,33 @@ async fn not_triggered_sends_no_request() {
         run_id,
     )
     .await;
-    assert!(got.is_none(), "未触发不得产出收口结论");
-    assert_eq!(calls, 0, "未触发必须零请求");
-    assert_eq!(brain.cerebellum_quota.used(), 0, "未触发不得占配额");
+    assert_eq!(calls, 1, "门槛取消后，低压力链也必须问一次");
+    assert_eq!(brain.cerebellum_quota.used(), 1, "问了就占一次配额");
+    let verdict = got.expect("判 close 必须产出结论");
+    assert!(verdict.close);
     let traces = take_traces(run_id);
-    assert_eq!(traces.len(), 1, "记账条目也要占轨迹名额（1 条）");
-    assert_eq!(traces[0].scene, SCENE);
-    assert_eq!(traces[0].decision, DECISION_NOT_TRIGGERED);
-    assert!(!traces[0].applied);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_CLOSE);
+}
+
+#[tokio::test]
+async fn missing_cerebellum_model_has_zero_cost() {
+    // 「每次都问」之后最危险的成本形态：没配小脑的 Agent 每条跨 Agent 回复
+    // 都吃一次「渲染 + 请求 + 等待」。这道门保证零开销（且不占配额）。
+    let brain = brain_without_cerebellum(10);
+    let run_id = "chain-reply-no-cerebellum";
+    let (got, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.99))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(got.is_none(), "未启用小脑模型只允许降级");
+    assert_eq!(calls, 0, "未启用小脑模型必须零请求");
+    assert_eq!(brain.cerebellum_quota.used(), 0, "零开销必须包含不占配额");
+    assert!(take_traces(run_id).is_empty(), "不进入决策就不写轨迹");
 }
 
 #[tokio::test]
