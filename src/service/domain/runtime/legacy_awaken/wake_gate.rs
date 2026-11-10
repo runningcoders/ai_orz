@@ -148,6 +148,7 @@ fn trace(
         confidence,
         degraded: degraded.map(|s| s.to_string()),
         applied,
+        latency_ms: None,
     }
 }
 

@@ -117,6 +117,15 @@ pub(crate) const DECISION_FALLBACK: &str = "fallback";
 const DEGRADED_BUDGET: &str = "budget_exhausted";
 /// 降级原因：判了但没有可用结论（低置信 / 答案缺失 / 幻觉选项）
 const DEGRADED_NO_ANSWER: &str = "no_answer";
+/// 降级原因：端点连续失败已熔断，本 run 内不再尝试
+///
+/// **独立值域**，绝不并入 `timeout`：熔断是「按设计跳过」，超时是「试了又超」。
+/// 并进去之后，「端点挂了 3 次后被跳过」与「第 4 次又超时」在轨迹上一模一样，
+/// 排障时只能靠猜。与 [`DEGRADED_BUDGET`] 同理分开：那是成本闸（能问几次），
+/// 这是可用性闸（问了也白问）。
+const DEGRADED_CIRCUIT_OPEN: &str = "circuit_open";
+/// 降级原因：provider 容量连判据骨架都装不下，不构造退化请求
+const DEGRADED_CAPACITY: &str = "capacity_too_small";
 
 /// 时延反推的输入 token 上限（= 本次预算的**上界**，不是容量）
 ///
@@ -157,6 +166,19 @@ pub(crate) fn input_token_budget(capacity_tokens: Option<u64>) -> usize {
         .map(|capacity| (capacity as usize).min(LATENCY_INPUT_CAP))
         .unwrap_or(LATENCY_INPUT_CAP)
 }
+
+/// 正文预算的**最低可用线**：低于它就不问，而不是发一个只剩骨架的请求
+///
+/// `body_token_budget` 是裸减法（`input − 450`），小容量 provider（配置写几百
+/// token 的模型）会算出 0 或个位数。此时 `render_chain` 仍会返回 `included = 1`，
+/// 但正文只剩 `…（正文已截断）` 这一行 —— 请求发得出去、账单照付，模型拿到的
+/// 却是一句「正文已截断」，判 `close` 与否纯属噪声。所以这里把「预算不够」
+/// 显式变成「不问」（与未装配小脑同一语义：不渲染、不占配额、不发请求）。
+///
+/// 取 100 的定标依据：省略标注行本身约 40 tokens（`[中间 N 条已省略（共 M 条
+/// 链内消息；仅保留链头与最近若干条）]`），加一条短消息正文约 20~40 tokens，
+/// 100 才容得下「链头 + 标注 + 至少一条真实正文」这一最小可用组合。
+pub(crate) const MIN_BODY_TOKEN_BUDGET: usize = 100;
 
 /// 链内正文可用的 token 预算 = 输入预算 − 骨架预留（不足时归零，不下溢）
 pub(crate) fn body_token_budget(input_budget: usize) -> usize {
@@ -366,11 +388,16 @@ fn policy() -> PickOnePolicy {
 }
 
 /// 一条小脑留痕（三态 + 降级共用一个构造器，避免字段漏填）
+///
+/// `latency_ms` 对**没发生调用**的分支传 `None`（空输入 / 配额 / 熔断 / 容量不足），
+/// 对发生过调用的分支一律传 `Some(outcome.latency_ms)` —— 含 `applied=false`
+/// 的放行与 `degraded` 的降级：它们同样付了时延，漏记会让 p95 系统性低估。
 fn trace(
     decision: &str,
     confidence: Option<f32>,
     degraded: Option<&str>,
     applied: bool,
+    latency_ms: Option<u64>,
 ) -> ThinkTraceCerebellum {
     ThinkTraceCerebellum {
         scene: SCENE.to_string(),
@@ -378,6 +405,7 @@ fn trace(
         confidence,
         degraded: degraded.map(|s| s.to_string()),
         applied,
+        latency_ms,
     }
 }
 
@@ -424,18 +452,83 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
-    // ③ 输入预算 = min(小脑模型容量上限, 时延反推上限)
+    // ③ 熔断：端点连续失败后本 run 内不再尝试
+    //
+    // 位置极关键 —— 必须在渲染 / 配额 / 请求**之前**：熔断的全部价值就是
+    // 「别再付那一个超时」，放在 decide 旁边则等于白熔。也必须在
+    // `cerebellum.is_none()` 之后：没有模型时熔断不欠任何人一个解释。
+    if brain.cerebellum_failure_guard.is_open() {
+        log_info!(
+            ctx,
+            "chain_reply",
+            decision = DECISION_FALLBACK,
+            degraded_reason = DEGRADED_CIRCUIT_OPEN,
+            scene = SCENE,
+            is_open = brain.cerebellum_failure_guard.is_open(),
+            consecutive_failures = brain.cerebellum_failure_guard.consecutive(),
+            threshold = brain.cerebellum_failure_guard.threshold(),
+            "chain reply gate skipped by circuit breaker (endpoint keeps failing)"
+        );
+        record_cerebellum(
+            trace_id,
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_CIRCUIT_OPEN),
+                false,
+                None,
+            ),
+        );
+        return None;
+    }
+
+    // ④ 输入预算 = min(小脑模型容量上限, 时延反推上限)
     //    容量对标准 provider 恒远大于时延上限 ⇒ 实际生效值由时延侧绑定。
     let capacity_tokens = brain
         .cerebellum
         .as_ref()
         .and_then(|po| po.config().recommended_context_length_tokens());
     let input_budget = input_token_budget(capacity_tokens);
+    let body_budget = body_token_budget(input_budget);
 
-    // ④ 链内一条消息都拉不到（或预算连一条装不下）：不调小脑、不占配额
-    let input = render_chain(messages, body_token_budget(input_budget));
+    // ⑤ 容量连判据骨架都装不下：不问，也不构造退化请求
+    //
+    // 裸减法（`input − 450`）在小容量 provider 上会算出 0 或个位数；此时
+    // `render_chain` 仍会给出 `included = 1`，但正文只剩「…（正文已截断）」，
+    // 请求发得出去、账单照付、结论纯噪声。显式变成「不问」比「问了也白问」诚实。
+    if body_budget < MIN_BODY_TOKEN_BUDGET {
+        log_info!(
+            ctx,
+            "chain_reply",
+            decision = DECISION_FALLBACK,
+            degraded_reason = DEGRADED_CAPACITY,
+            scene = SCENE,
+            capacity_tokens = capacity_tokens.unwrap_or(0),
+            input_budget = input_budget,
+            body_budget = body_budget,
+            min_body_budget = MIN_BODY_TOKEN_BUDGET,
+            "chain reply gate skipped: provider capacity below judge skeleton"
+        );
+        record_cerebellum(
+            trace_id,
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_CAPACITY),
+                false,
+                None,
+            ),
+        );
+        return None;
+    }
+
+    // ⑥ 链内一条消息都拉不到：不调小脑、不占配额
+    let input = render_chain(messages, body_budget);
     if input.included == 0 {
-        record_cerebellum(trace_id, trace(DECISION_EMPTY_INPUT, None, None, false));
+        record_cerebellum(
+            trace_id,
+            trace(DECISION_EMPTY_INPUT, None, None, false, None),
+        );
         log_info!(
             ctx,
             "chain_reply",
@@ -447,7 +540,7 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
-    // ⑤ 本 run 的小脑调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
+    // ⑦ 本 run 的小脑调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
     //
     // 放在「本地就能判完」的两道门（未启用小脑 / 空输入）之后：配额是有限
     // 保护资源，不该被本地短路的情形白吃一次。
@@ -462,7 +555,7 @@ pub(crate) async fn judge_chain_reply(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false),
+            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
         );
         return None;
     }
@@ -489,6 +582,20 @@ pub(crate) async fn judge_chain_reply(
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
 
+    // 熔断记账：只认**端点级**失败（超时 / 调用失败）。
+    // 「有应答但没结论」（低置信 / 幻觉选项）视为端点健康 → 清零：
+    // 熔断判的是端点可用性，不是判断质量；把低置信也算失败，会在模型偶发
+    // 保守时误封一个其实活着的端点。
+    if matches!(
+        outcome.degraded,
+        Some(common::api::cerebellum::DegradedReason::Timeout)
+            | Some(common::api::cerebellum::DegradedReason::CallError)
+    ) {
+        brain.cerebellum_failure_guard.record_failure();
+    } else {
+        brain.cerebellum_failure_guard.record_success();
+    }
+
     if let Some(reason) = outcome.degraded {
         log_info!(
             ctx,
@@ -503,7 +610,13 @@ pub(crate) async fn judge_chain_reply(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(reason.as_str()), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(reason.as_str()),
+                false,
+                Some(latency_ms),
+            ),
         );
         return None;
     }
@@ -522,7 +635,13 @@ pub(crate) async fn judge_chain_reply(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_NO_ANSWER), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_NO_ANSWER),
+                false,
+                Some(latency_ms),
+            ),
         );
         return None;
     };
@@ -547,7 +666,13 @@ pub(crate) async fn judge_chain_reply(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_CLOSE, Some(pick.confidence), None, true),
+            trace(
+                DECISION_CLOSE,
+                Some(pick.confidence),
+                None,
+                true,
+                Some(latency_ms),
+            ),
         );
         return Some(ChainReplyVerdict {
             close: true,
@@ -570,7 +695,13 @@ pub(crate) async fn judge_chain_reply(
     );
     record_cerebellum(
         trace_id,
-        trace(DECISION_CONTINUE, Some(pick.confidence), None, false),
+        trace(
+            DECISION_CONTINUE,
+            Some(pick.confidence),
+            None,
+            false,
+            Some(latency_ms),
+        ),
     );
     None
 }

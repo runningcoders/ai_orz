@@ -206,6 +206,14 @@ pub struct ThinkTraceCerebellum {
     /// `thinking_intensity`（能力开关关闭），分数只留痕、请求体不下发。
     #[serde(default)]
     pub applied: bool,
+    /// 本次判定的真实调用耗时（毫秒）；未发生调用时为 `None`
+    ///
+    /// 存在的唯一理由：**p95 时延的回收点**。时延只进日志的话，「这个场景到底
+    /// 会不会恒超时」只能靠 grep 日志重算；进轨迹后可直接按 `scene` 分位统计。
+    /// `applied=false`（放行）与 `degraded`（降级）也必须记 —— 它们同样付了
+    /// 这次调用的时延，漏记会把 p95 系统性低估（只统计成功样本）。
+    #[serde(default)]
+    pub latency_ms: Option<u64>,
 }
 
 /// 单 run 最多保留多少条小脑留痕（防御：run 异常未收尾时不无限增长）

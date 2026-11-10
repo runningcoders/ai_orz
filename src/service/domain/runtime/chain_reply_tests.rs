@@ -596,3 +596,322 @@ fn instructions_default_to_continue() {
     assert!(INSTRUCTIONS.contains("判不准就选 continue"));
     assert_eq!(MIN_CONFIDENCE, 0.9);
 }
+
+// ---------- 熔断（circuit_open）：run 级、独立值域、下一 run 自动恢复 ----------
+
+/// 端点级失败（超时）
+fn timeout_outcome() -> DecisionOutcome {
+    DecisionOutcome {
+        answers: DecisionAnswers::new(),
+        degraded: Some(DegradedReason::Timeout),
+        latency_ms: 1000,
+        usage: CerebellumUsage::default(),
+    }
+}
+
+/// 指定 provider 容量（`max_context_length`）的 Brain
+///
+/// 容量经 `recommended_context_length_tokens()` 走「max × 60%」回落，
+/// 故传 500 ⇒ 容量 300（低于 450 骨架）；传 1000 ⇒ 容量 600（够用）。
+fn brain_with_capacity(max_context_length: i32) -> Brain {
+    let mut brain = brain_with_quota(0);
+    let mut po = mock_provider();
+    po.config = serde_json::to_string(&crate::models::model_provider::ModelProviderConfig {
+        max_context_length: Some(max_context_length),
+        ..Default::default()
+    })
+    .expect("provider config 必须可序列化");
+    brain.cerebellum = Some(po);
+    brain
+}
+
+/// 连续 3 次端点级失败 ⇒ 熔断；第 4 次零调用零配额且记 `circuit_open`；下一 run 恢复。
+#[tokio::test]
+async fn circuit_opens_after_three_endpoint_failures_and_resets_next_run() {
+    let brain = brain_with_quota(0);
+
+    for i in 0..3 {
+        let (verdict, calls) = run_gate(
+            &sample_chain(4),
+            triggered_facts(),
+            vec![Some(timeout_outcome())],
+            Some(&brain),
+            &format!("run-circuit-{i}"),
+        )
+        .await;
+        assert!(verdict.is_none(), "降级不得产出结论");
+        assert_eq!(calls, 1, "第 {} 次必须真发一次请求", i + 1);
+        assert_eq!(
+            brain.cerebellum_failure_guard.consecutive(),
+            i + 1,
+            "连续失败计数必须逐次递增"
+        );
+    }
+    assert!(
+        brain.cerebellum_failure_guard.is_open(),
+        "连续 3 次端点级失败必须熔断"
+    );
+
+    // 第 4 次：剧本留空 —— 若真发了请求，Mock 会回 CallError 并再记一次调用
+    let (verdict, calls) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![],
+        Some(&brain),
+        "run-circuit-open",
+    )
+    .await;
+    assert!(verdict.is_none());
+    assert_eq!(calls, 0, "熔断后一次请求都不许发");
+    assert_eq!(brain.cerebellum_quota.used(), 3, "熔断分支不得白吃配额");
+    let traces = take_traces("run-circuit-open");
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_FALLBACK);
+    assert_eq!(
+        traces[0].degraded.as_deref(),
+        Some("circuit_open"),
+        "必须记独立值 circuit_open，不得并入 timeout"
+    );
+    assert_eq!(traces[0].latency_ms, None, "没发生调用不得编造时延");
+
+    // 下一 run：Brain 重建 ⇒ 熔断自动恢复（不跨 run、不入库、不设时间窗）
+    let fresh = brain_with_quota(0);
+    assert!(!fresh.cerebellum_failure_guard.is_open());
+    let (verdict, calls) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&fresh),
+        "run-circuit-recovered",
+    )
+    .await;
+    assert!(verdict.is_some(), "新 run 首条必须重新尝试");
+    assert_eq!(calls, 1, "下一 run 首条 calls==1");
+}
+
+/// 端点恢复（有应答）即清零：低置信不是失败。
+#[tokio::test]
+async fn any_answer_resets_the_consecutive_failure_counter() {
+    let brain = brain_with_quota(0);
+    let _ = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(timeout_outcome()), Some(timeout_outcome())],
+        Some(&brain),
+        "run-reset-a",
+    )
+    .await;
+    let _ = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(timeout_outcome())],
+        Some(&brain),
+        "run-reset-b",
+    )
+    .await;
+    assert_eq!(brain.cerebellum_failure_guard.consecutive(), 2);
+
+    // 低置信（有应答、无可用结论）→ 端点健康，清零
+    let (verdict, _) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.1))],
+        Some(&brain),
+        "run-reset-c",
+    )
+    .await;
+    assert!(verdict.is_none());
+    assert_eq!(
+        brain.cerebellum_failure_guard.consecutive(),
+        0,
+        "有应答即清零：熔断判的是端点可用性，不是判断质量"
+    );
+}
+
+// ---------- 正文预算下限：容量不足就不问，而不是发一个只剩骨架的请求 ----------
+
+/// 容量（500 × 60% = 300）连 450 骨架都装不下 ⇒ 零请求、零配额、记 capacity_too_small。
+#[tokio::test]
+async fn capacity_below_judge_skeleton_sends_no_request() {
+    let brain = brain_with_capacity(500);
+    assert_eq!(
+        brain
+            .cerebellum
+            .as_ref()
+            .and_then(|po| po.config().recommended_context_length_tokens()),
+        Some(300)
+    );
+
+    let (verdict, calls) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.99))],
+        Some(&brain),
+        "run-capacity-small",
+    )
+    .await;
+    assert!(verdict.is_none());
+    assert_eq!(calls, 0, "容量不足必须零请求");
+    assert_eq!(brain.cerebellum_quota.used(), 0, "也不得占配额");
+    let traces = take_traces("run-capacity-small");
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_FALLBACK);
+    assert_eq!(traces[0].degraded.as_deref(), Some("capacity_too_small"));
+    assert_eq!(traces[0].latency_ms, None);
+}
+
+/// 反事实：容量刚好够（1000 × 60% = 600 ⇒ 正文 150 ≥ 100）必须照常问。
+#[tokio::test]
+async fn capacity_above_min_body_budget_still_asks() {
+    let brain = brain_with_capacity(1000);
+    assert_eq!(body_token_budget(input_token_budget(Some(600))), 150);
+
+    let (verdict, calls) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        "run-capacity-ok",
+    )
+    .await;
+    assert!(verdict.is_some_and(|v| v.close), "容量够时必须正常出结论");
+    assert_eq!(calls, 1);
+}
+
+// ---------- 等价断言（容量 ≥ 时延反推量 ⇒ 预算 == 时延反推量） ----------
+
+#[test]
+fn capacity_at_or_above_latency_cap_binds_the_latency_side() {
+    for capacity in [
+        LATENCY_INPUT_CAP as u64,
+        LATENCY_INPUT_CAP as u64 + 1,
+        128_000,
+        200_000,
+        1_000_000,
+    ] {
+        assert_eq!(
+            input_token_budget(Some(capacity)),
+            LATENCY_INPUT_CAP,
+            "容量 {capacity} ≥ 时延反推量 ⇒ 预算必须恰等于时延反推量"
+        );
+        assert_eq!(
+            body_token_budget(input_token_budget(Some(capacity))),
+            LATENCY_INPUT_CAP - FRAME_OVERHEAD_RESERVE,
+            "容量 {capacity} 下正文预算必须恰为 时延上限 − 骨架预留"
+        );
+    }
+    // 边界另一侧：容量比时延上限小 1 ⇒ 容量绑定（逐 token 相等）
+    assert_eq!(
+        input_token_budget(Some(LATENCY_INPUT_CAP as u64 - 1)),
+        LATENCY_INPUT_CAP - 1
+    );
+}
+
+// ---------- 时延回收点：applied=false / degraded 也要记 ----------
+
+#[tokio::test]
+async fn latency_lands_in_trace_for_continue_close_and_degraded() {
+    // 放行（applied=false）
+    let brain = brain_with_quota(0);
+    let _ = run_gate(
+        &sample_chain(3),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        "run-lat-continue",
+    )
+    .await;
+    let t = take_traces("run-lat-continue");
+    assert_eq!(t[0].decision, DECISION_CONTINUE);
+    assert!(!t[0].applied);
+    assert_eq!(t[0].latency_ms, Some(3), "放行也必须记时延（p95 分母）");
+
+    // 收口（applied=true）
+    let brain = brain_with_quota(0);
+    let _ = run_gate(
+        &sample_chain(3),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        "run-lat-close",
+    )
+    .await;
+    let t = take_traces("run-lat-close");
+    assert_eq!(t[0].decision, DECISION_CLOSE);
+    assert!(t[0].applied);
+    assert_eq!(t[0].latency_ms, Some(3));
+
+    // 降级（超时：真实时延 1000ms）
+    let brain = brain_with_quota(0);
+    let _ = run_gate(
+        &sample_chain(3),
+        triggered_facts(),
+        vec![Some(timeout_outcome())],
+        Some(&brain),
+        "run-lat-degraded",
+    )
+    .await;
+    let t = take_traces("run-lat-degraded");
+    assert_eq!(t[0].decision, DECISION_FALLBACK);
+    assert_eq!(t[0].degraded.as_deref(), Some("timeout"));
+    assert_eq!(
+        t[0].latency_ms,
+        Some(1000),
+        "降级样本必须记时延 —— 漏掉会把 p95 系统性低估"
+    );
+}
+
+// ---------- Q1 三断：接线层真问过 + 判的是 continue + 最终仍走静态硬墙 ----------
+
+#[tokio::test]
+async fn cerebellum_is_asked_once_and_continue_still_hits_the_static_hard_wall() {
+    use crate::consumer::message_route_policy::{AutoReplyRoute, judge_chain_reply_route};
+    use crate::pkg::collaboration_pressure::{ChainHop, ChainPressure};
+
+    // 窗口撞满 hard_window_depth（缺省 8）⇒ 静态判定必然 Escalate
+    let mut pressure = ChainPressure::default();
+    let hops: Vec<ChainHop> = (0..8).map(|_| ChainHop::plain()).collect();
+    pressure.observe_chain(hops);
+    assert_eq!(
+        judge_chain_reply_route(&pressure),
+        AutoReplyRoute::CloseChainAsNotify {
+            reason: "collaboration pressure exhausted"
+        }
+    );
+
+    // 小脑被判「继续」（高置信）—— 接线层必须真问过一次
+    let brain = brain_with_quota(0);
+    let facts = ChainPressureFacts {
+        chain_depth: 8,
+        window_depth: 8,
+        fatigue: 60,
+        soft_fatigue: 36,
+        hard_fatigue: 100,
+        hard_window_depth: 8,
+    };
+    let (verdict, calls) = run_gate(
+        &sample_chain(8),
+        facts,
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        "run-q1-wiring",
+    )
+    .await;
+
+    // ① 真问过（不是单元级空转：把 should_ask / quota / 未配任一处改成「不问」这里会红）
+    assert_eq!(calls, 1, "接线层必须真问过一次小脑");
+    // ② 判的是 continue
+    let traces = take_traces("run-q1-wiring");
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_CONTINUE);
+    assert_eq!(traces[0].latency_ms, Some(3));
+    // ③ continue 不覆盖 ⇒ 最终路由仍是静态硬墙
+    assert!(verdict.is_none(), "continue 不得产出覆盖结论");
+    assert_eq!(
+        judge_chain_reply_route(&pressure),
+        AutoReplyRoute::CloseChainAsNotify {
+            reason: "collaboration pressure exhausted"
+        },
+        "小脑 continue 之下，硬墙收口必须逐字节保持原样"
+    );
+}

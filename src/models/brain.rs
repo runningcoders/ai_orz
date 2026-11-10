@@ -67,6 +67,75 @@ impl CerebellumQuota {
     }
 }
 
+/// 小脑端点的连续失败熔断器（run 内）
+///
+/// 动机：`tokio::time::timeout` 是**阻塞式成本** —— 端点挂了而调用门槛又已取消
+/// （Q2「每次都问」），每条跨 Agent 回复都会白等一个完整超时（缺省 1000ms）。
+/// 这比「多调几次模型」贵得多，所以必须有「先别再试」的开关。
+///
+/// 语义三条（缺一不可）：
+/// - **连续计数**：只要有一次成功就清零（端点已恢复，没必要继续惩罚）；
+/// - **独立降级值**：熔断触发记 `degraded = circuit_open`，**不并入** timeout ——
+///   否则「挂 3 次后被跳过」与「第 4 次又超时」在轨迹上无法区分；
+/// - **自动恢复**：状态挂在 Brain 上，Brain 随 run 生命周期重建 ⇒ 下一 run
+///   天然从零开始（`不跨 run / 不入库 / 不设时间窗`，见 AMan 定谳）。
+///
+/// `threshold == 0` 表示不熔断（测试与外部构造的 Brain 走这条路径）。
+#[derive(Debug)]
+pub struct CerebellumFailureGuard {
+    threshold: usize,
+    consecutive: AtomicUsize,
+}
+
+/// 缺省熔断阈值：连续 3 次「端点级失败」（timeout / call_error）后当前 run 内不再尝试。
+///
+/// 取 3 而不是 1：一次抖动不该让整条 run 失去快判断；也不是 10：
+/// 每条白等一个超时，3 次已经付了 3 秒。
+pub const DEFAULT_CEREBELLUM_FAILURE_THRESHOLD: usize = 3;
+
+impl CerebellumFailureGuard {
+    /// 按阈值构造（0 = 不熔断）
+    pub const fn new(threshold: usize) -> Self {
+        Self {
+            threshold,
+            consecutive: AtomicUsize::new(0),
+        }
+    }
+
+    /// 不熔断（阈值 0）
+    pub const fn disabled() -> Self {
+        Self::new(0)
+    }
+
+    /// 熔断阈值（0 = 不熔断）
+    pub fn threshold(&self) -> usize {
+        self.threshold
+    }
+
+    /// 当前连续失败次数
+    pub fn consecutive(&self) -> usize {
+        self.consecutive.load(Ordering::Relaxed)
+    }
+
+    /// 是否已熔断（阈值 0 恒 false）
+    pub fn is_open(&self) -> bool {
+        self.threshold != 0 && self.consecutive() >= self.threshold
+    }
+
+    /// 记一次端点级失败，返回累计后的连续失败次数
+    pub fn record_failure(&self) -> usize {
+        self.consecutive.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    /// 记一次「端点有应答」，清零并返回清零前的连续失败次数
+    ///
+    /// 「有应答」不等于「有可用结论」：低置信 / 幻觉选项也走这里 ——
+    /// 熔断判的是端点可用性，不是判断质量。
+    pub fn record_success(&self) -> usize {
+        self.consecutive.swap(0, Ordering::Relaxed)
+    }
+}
+
 /// Brain 封装了完整的思考执行环境
 ///
 /// - Local agent: 持有 ModelProviderPo + 记忆列表
@@ -96,6 +165,12 @@ pub struct Brain {
     ///
     /// 默认不限；`wake_agent_brain` 在装配时按 resolved 大脑轮次写入。
     pub cerebellum_quota: Arc<CerebellumQuota>,
+    /// 本 run 的小脑连续失败熔断器（见 [`CerebellumFailureGuard`]）
+    ///
+    /// 与 [`CerebellumQuota`] **严格分开**：配额是「能问几次」的成本闸，超限记
+    /// `budget_exhausted`；熔断是「问了也白问」的可用性闸，记 `circuit_open`。
+    /// 两者值域独立、互不抵扣 —— 混用会让「端点挂了」伪装成「预算用完了」。
+    pub cerebellum_failure_guard: Arc<CerebellumFailureGuard>,
 }
 
 impl Brain {
@@ -115,6 +190,9 @@ impl Brain {
             model_provider: Some(model_provider),
             cerebellum: None,
             cerebellum_quota: Arc::new(CerebellumQuota::unlimited()),
+            cerebellum_failure_guard: Arc::new(CerebellumFailureGuard::new(
+                DEFAULT_CEREBELLUM_FAILURE_THRESHOLD,
+            )),
             memories,
         }
     }
@@ -136,6 +214,9 @@ impl Brain {
             model_provider: None,
             cerebellum: None,
             cerebellum_quota: Arc::new(CerebellumQuota::unlimited()),
+            cerebellum_failure_guard: Arc::new(CerebellumFailureGuard::new(
+                DEFAULT_CEREBELLUM_FAILURE_THRESHOLD,
+            )),
             memories,
         }
     }
@@ -179,5 +260,71 @@ mod cerebellum_quota_tests {
             assert!(quota.try_acquire());
         }
         assert_eq!(quota.used(), 64);
+    }
+}
+
+#[cfg(test)]
+mod cerebellum_failure_guard_tests {
+    use super::{CerebellumFailureGuard, DEFAULT_CEREBELLUM_FAILURE_THRESHOLD};
+
+    #[test]
+    fn opens_exactly_at_threshold_and_resets_on_success() {
+        let guard = CerebellumFailureGuard::new(3);
+        assert_eq!(guard.threshold(), 3);
+        assert!(!guard.is_open(), "零失败不得熔断");
+
+        assert_eq!(guard.record_failure(), 1);
+        assert!(!guard.is_open());
+        assert_eq!(guard.record_failure(), 2);
+        assert!(!guard.is_open(), "2 < 3 仍未熔断");
+        assert_eq!(guard.record_failure(), 3);
+        assert!(guard.is_open(), "连续 3 次失败必须熔断");
+
+        // 有应答即清零：端点恢复后不再惩罚
+        assert_eq!(guard.record_success(), 3, "返回值＝清零前的连续次数");
+        assert_eq!(guard.consecutive(), 0);
+        assert!(!guard.is_open());
+    }
+
+    #[test]
+    fn disabled_guard_never_opens() {
+        let guard = CerebellumFailureGuard::disabled();
+        assert_eq!(guard.threshold(), 0);
+        for _ in 0..100 {
+            guard.record_failure();
+        }
+        assert!(!guard.is_open(), "threshold=0 恒不熔断");
+        assert_eq!(guard.consecutive(), 100, "仍计数，便于观测");
+    }
+
+    #[test]
+    fn default_threshold_is_three() {
+        assert_eq!(DEFAULT_CEREBELLUM_FAILURE_THRESHOLD, 3);
+        assert_eq!(
+            super::Brain::new_local(
+                "a".to_string(),
+                "A".to_string(),
+                Default::default(),
+                unreachable_provider(),
+                vec![],
+            )
+            .cerebellum_failure_guard
+            .threshold(),
+            3,
+            "生产装配的 Brain 必须带 3 次熔断"
+        );
+    }
+
+    fn unreachable_provider() -> crate::models::model_provider::ModelProviderPo {
+        crate::models::model_provider::ModelProviderPo::new(
+            "Jev".to_string(),
+            common::enums::ProviderType::Jev,
+            common::enums::ModelCapability::Decision,
+            "jev-latest".to_string(),
+            "k".to_string(),
+            None,
+            None,
+            "test".to_string(),
+        )
     }
 }

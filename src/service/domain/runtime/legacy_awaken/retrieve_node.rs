@@ -391,6 +391,7 @@ async fn rerank_if_enabled(
                 confidence: None,
                 degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
                 applied: ranked.is_some(),
+                latency_ms: None,
             },
         );
     }
@@ -742,6 +743,7 @@ impl ThinkNode for RetrieveNode {
                             confidence: None,
                             degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
                             applied: ranked.is_some(),
+                            latency_ms: None,
                         },
                     );
                 }

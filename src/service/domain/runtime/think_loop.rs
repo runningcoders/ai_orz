@@ -426,6 +426,7 @@ impl RuntimeDomainImpl {
                         confidence: route_confidence,
                         degraded: route_degraded,
                         applied: route_applied,
+                        latency_ms: None,
                     },
                 );
                 log_info!(
@@ -465,6 +466,7 @@ impl RuntimeDomainImpl {
                                 confidence: pool_confidence,
                                 degraded: pool_degraded,
                                 applied: pool_applied,
+                                latency_ms: None,
                             },
                         );
                         log_info!(
@@ -518,6 +520,7 @@ impl RuntimeDomainImpl {
                                 confidence: Some(choice.confidence),
                                 degraded: None,
                                 applied: provider_capable,
+                                latency_ms: None,
                             },
                         );
                         Some(choice.strength)
@@ -531,6 +534,7 @@ impl RuntimeDomainImpl {
                                 confidence: None,
                                 degraded: Some("no_usable_answer".to_string()),
                                 applied: false,
+                                latency_ms: None,
                             },
                         );
                         None
