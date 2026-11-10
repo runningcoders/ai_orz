@@ -989,3 +989,127 @@ async fn cerebellum_is_asked_once_and_continue_still_hits_the_static_hard_wall()
         "小脑 continue 之下，硬墙收口必须逐字节保持原样"
     );
 }
+
+// ---------- 熔断：探针失败仍 open（前台断言形的另一半） ----------
+
+/// 探针失败：闸必须保持开、失败计数继续累加、周期重新计数。
+///
+/// 只测「探针成功自愈」会漏掉最危险的形态——端点持续坏时，熔断被一次
+/// 探针意外解除（等于每 5 条回复白等一个超时，比不做熔断更糟）。
+#[tokio::test]
+async fn failed_probe_keeps_the_circuit_open() {
+    let brain = brain_with_quota(0);
+    let agent_id = brain.agent_id.clone();
+    let state = AgentRuntimeStateManager::global();
+
+    // 3 次端点级失败 ⇒ 开闸
+    for i in 0..3 {
+        let _ = run_gate(
+            &sample_chain(4),
+            triggered_facts(),
+            vec![Some(timeout_outcome())],
+            Some(&brain),
+            &format!("run-probe-fail-open-{i}"),
+        )
+        .await;
+    }
+    assert!(state.is_cerebellum_circuit_open(&agent_id));
+
+    // 周期内 4 次跳过：一次都不许发
+    for i in 0..4 {
+        let (_, calls) = run_gate(
+            &sample_chain(4),
+            triggered_facts(),
+            vec![],
+            Some(&brain),
+            &format!("run-probe-fail-skip-{i}"),
+        )
+        .await;
+        assert_eq!(calls, 0, "探针周期未到，第 {} 次仍不许发请求", i + 1);
+    }
+    assert_eq!(
+        state.cerebellum_skipped_since_probe(&agent_id),
+        4,
+        "4 次跳过之后才轮到探针（周期 5 = 4 跳过 + 1 探针）"
+    );
+
+    // 第 5 次 = 真探针，端点仍坏 ⇒ 保持开 + 失败计数继续累加
+    let (verdict, calls) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(timeout_outcome())],
+        Some(&brain),
+        "run-probe-fail-probe",
+    )
+    .await;
+    assert!(verdict.is_none());
+    assert_eq!(calls, 1, "到周期必须真探一次");
+    assert_eq!(
+        state.cerebellum_consecutive_failures(&agent_id),
+        4,
+        "探针失败必须继续累计（不得因放过一次就清零）"
+    );
+    assert!(
+        state.is_cerebellum_circuit_open(&agent_id),
+        "探针失败后闸必须保持开"
+    );
+    assert_eq!(
+        state.cerebellum_skipped_since_probe(&agent_id),
+        0,
+        "探针后周期计数归零，从头再数"
+    );
+
+    // 探针失败后的下一次：重新回到跳过
+    let (_, calls) = run_gate(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![],
+        Some(&brain),
+        "run-probe-fail-after",
+    )
+    .await;
+    assert_eq!(calls, 0, "探针失败后必须回到跳过");
+}
+
+// ---------- 接线层护栏：生产入口必须真的转发到本门函数 ----------
+
+/// 生产链路三层：`handle_agent_message` → `judge_chain_reply_by_cerebellum`
+/// → `judge_chain_reply_with_default_dao` → `judge_chain_reply`。
+///
+/// `run_gate` 直接调的是**最内层**门函数（带 mock DAL），所以它证明不了上游
+/// 两层真的把请求转过来了：把 `judge_chain_reply_by_cerebellum` 里的转发删掉、
+/// 或让 `judge_chain_reply_with_default_dao` 直接 `return None`，本文件其余
+/// 用例**全部照绿** —— 这是 Q1 假绿的第二次形态，只是往上游挪了一层。
+///
+/// 用源码级断言锁住转发（`include_str!` 编译期内嵌，改坏即红；不引入运行期 IO）。
+#[test]
+fn production_wiring_reaches_the_gate() {
+    let consumer = include_str!("../../../consumer/message.rs");
+    let domain = include_str!("chain_reply.rs");
+
+    // ① 消费者层：恰好一处调用薄封装
+    //    0 处 = 小脑整门在生产不可达（「每次都问」变成「从来不问」）；
+    //    多处 = 接线分叉，两处口径迟早漂移。
+    let call_sites = consumer
+        .matches("judge_chain_reply_with_default_dao(")
+        .count();
+    assert_eq!(
+        call_sites, 1,
+        "接线层必须恰好有一处调用薄封装，实际 {call_sites} 处"
+    );
+
+    // ② 域层：薄封装必须只是转发（既不能缺 `dal()` 注入，也不能自己造逻辑）
+    let with_dao = domain
+        .split("pub(crate) async fn judge_chain_reply_with_default_dao")
+        .nth(1)
+        .expect("薄封装必须存在（删掉它 = 接线层各自装配 DAL）");
+    let body = &with_dao[..with_dao.find("\n}").expect("薄封装必须有函数体")];
+    assert!(
+        body.contains("judge_chain_reply("),
+        "薄封装必须转发到门函数，不得提前 return / 自造判断"
+    );
+    assert!(
+        body.contains("dal()"),
+        "薄封装必须注入单例 DAL，否则接线与测试各走一套"
+    );
+}
