@@ -31,9 +31,14 @@
 //!   跨 Agent 对等候选）就问一次，不再看 `fatigue` / `stage`。原「`fatigue >=
 //!   soft_fatigue` 或 `window_depth >= hard_window_depth - 1`」的门槛已取消——
 //!   理由是「有可能从第二句开始就是废话」，挂门槛会漏掉短链。
-//! - **`hard_window_depth` 是绝对护栏**（Q1 补强）：小脑判 `continue` 只返回
-//!   `None`（不覆盖），调用方落回静态判定 ⇒ 窗口撞满时照旧 `Escalate` 收口。
-//!   防无限乒乓的物理底线不能因为「小脑说还能聊」就撤掉。
+//! - **`hard_window_depth` 是软墙**（AMan 2026-11-10 定谳，覆盖此前「绝对护栏」
+//!   的口径）：小脑判 `continue` 时**即使 `window_depth >= hard_window_depth`**
+//!   也放行——判据是内容，跳数只是辅助。静态硬墙不退场，只降为兜底：小脑
+//!   `None` / degraded / 超时 / 空输入 / 未配时，调用方照旧落回静态判定
+//!   （逐字节不变），这是「小脑挂了也不会无限聊」的保险。
+//! - **绝对天花板 [`ABSOLUTE_CEILING`]**：硬墙降软墙之后，小脑持续误判
+//!   `continue` 就是物理上的无限互发。故保留一个「无论小脑说什么都强制收口」
+//!   的物理上限，命中即收口并记 `degraded = ceiling_forced` 留痕。
 //!
 //! # 输入侧（Q3 改判：容量上限与服务时延上限**取小**，条数 32 退为防环硬顶）
 //!
@@ -127,29 +132,64 @@ const DEGRADED_NO_ANSWER: &str = "no_answer";
 const DEGRADED_CIRCUIT_OPEN: &str = "circuit_open";
 /// 降级原因：provider 容量连判据骨架都装不下，不构造退化请求
 const DEGRADED_CAPACITY: &str = "capacity_too_small";
+/// 降级原因：链深触到绝对天花板，**不问小脑**直接强制收口
+///
+/// 独立值域（不并入 `circuit_open` / `timeout`）：排障时要能一眼分出
+/// 「端点坏了被跳过」与「链太长被物理收口」——前者要查 provider，
+/// 后者要查小脑判据是否在持续误判 `continue`。
+const DEGRADED_CEILING_FORCED: &str = "ceiling_forced";
 
 /// 时延反推的输入 token 上限（= 本次预算的**上界**，不是容量）
 ///
-/// 1000ms 预算的拆解（与 [`crate::service::dao::cerebellum`] 的缺省超时同源）：
-/// 网络 ≈ 150~200ms + 生成 100 tokens ≈ 0.3s，余下 ≈ 0.5s 给 prefill；按
-/// 2000 tok/s 上界 ≈ 1000 tokens，取 800 留 20% 余量（实测 736 tokens ≈ 0.82~0.87s）。
+/// 预算基数 = [`SCENE_TIMEOUT_MS`] = **5000ms**（AMan 2026-11-10 定谳：1 秒只覆盖
+/// 「请求小脑思考」本身，觉得不够就 5 秒，5 秒没反应直接走正常流程）。
 ///
-/// 1000 tokens 会贴住 1000ms 硬顶 ⇒ 「设计上就注定超时」，功能恒定降级、退回
-/// 静态阈值，这笔就白做了。容量侧（provider 推荐上下文长度）通常远大于本值，
-/// 故**实际生效预算由本常量绑定**；只有小容量 provider 才会被容量侧压下来。
-pub(crate) const LATENCY_INPUT_CAP: usize = 800;
+/// 拆解（沿用 P1 时延模型）：`5.0s − 网络 0.175s − 生成 0.3s ≈ 4.525s` 可给
+/// prefill；按 2000 tok/s 上界 ⇒ 理论 ≈ 9000 tokens。**不取满**：模型侧排队、
+/// 生成长度波动、prefill 吞吐在不同 provider 上差 2~3 倍都常见，故取 **4000**：
+/// `4000 / 2000 = 2.0s + 0.175s + 0.3s ≈ 2.48s`，对 5s 预算留 ≈ 50% 余量。
+///
+/// 与旧值的关系：旧值 800 是按 1000ms 反推的（留 20% 余量）；基数从 1000ms
+/// 放到 5000ms 是 5 倍，本常量 800 → 4000 同样是 5 倍——**没有缩回**。
+///
+/// 容量侧（provider 推荐上下文长度）通常远大于本值，故**实际生效预算由本常量
+/// 绑定**；只有小容量 provider 才会被容量侧压下来（[`input_token_budget`] 取小）。
+pub(crate) const LATENCY_INPUT_CAP: usize = 4000;
 
 /// 判据骨架的固定开销预留（instructions + options + 压力事实 + 协议包装）
 ///
 /// 取值**由实测定标**（`estimate_tokens` 对真实判据文本计数）：
 /// 压缩后的 `INSTRUCTIONS` ≈ 232 + `OPTIONS` ≈ 50 + state ≈ 53 + wrapper ≈ 37
-/// = **≈ 372 tokens**，预留 450 留出 ~80 tokens 缓冲（agent_name 变长、
-/// 数值进位、协议字段增减）。
+/// = **≈ 372 tokens**；2026-11-10 按 AMan 要求把 `window_depth` / `fatigue`
+/// 的「仅作辅助参考」写进 `INSTRUCTIONS`（+两行 ≈ +40 tokens）⇒ ≈ 412，
+/// 预留 500 留出 ~88 tokens 缓冲（agent_name 变长、数值进位、协议字段增减）。
 ///
 /// 定标过程本身就是一次纠错：初版 `INSTRUCTIONS` 389 tokens，骨架实测
 /// 574 > 预留 400 ⇒ 最坏总输入 974，余量只剩 12~62ms，等于「设计上就
 /// 注定超时」。所以判据必须先压，预留才敢按 450 定。
-pub(crate) const FRAME_OVERHEAD_RESERVE: usize = 450;
+pub(crate) const FRAME_OVERHEAD_RESERVE: usize = 500;
+
+/// 本场景的请求超时预算（毫秒）：**场景级覆盖**，不改全局缺省
+///
+/// AMan 定谳（2026-11-10）：5 秒只覆盖「请求小脑思考」本身——链内消息准备
+/// （`collect_chain_pressure` 那一趟批量查询）发生在 `dal.decide` **之外**，
+/// 天然不计入。
+///
+/// 为什么必须做成场景级：`DEFAULT_CEREBELLUM_TIMEOUT_MS` 是整批共享的一份预算
+/// 且作用于全部已接 scene；把全局缺省改成 5000 会让 `entry_gate`（每条入站
+/// 消息都过）在端点挂掉时每条白等 5 秒，影响面比本单大一个量级。
+pub(crate) const SCENE_TIMEOUT_MS: u64 = 5_000;
+
+/// 绝对天花板：`window_depth` 达到它即**无论小脑说什么都强制收口**
+///
+/// 硬墙降软墙之后，小脑持续误判 `continue` 就是物理上的无限互发，故保留一个
+/// 「按物理极限兜」的上限。取 32 与 [`MAX_CHAIN_MESSAGES`] 对齐——那是消费者侧
+/// 沿 `reply_to_id` 回溯的硬上限，超过 32 条的历史本来就已经读不到了，再往上设
+/// 天花板没有意义，且会引入第五个数字。
+///
+/// 与 `hard_window_depth`（缺省 8）的分工：8 是「按轮次猜」的静态判据，会误伤
+/// 正常长对话，故降为兜底；32 只在异常（小脑持续误判）时生效，不影响正常对话。
+pub(crate) const ABSOLUTE_CEILING: usize = 32;
 
 /// 链内消息条数上限（与 `consumer::message::MAX_CHAIN_TRAVERSAL` 同口径）
 ///
@@ -197,6 +237,8 @@ const INSTRUCTIONS: &str = "判断协作方刚发来的消息有没有新的实�
 选 continue：带来了上文没有的新事实 / 数据 / 结论 / 问题 / 待办，\
 或提出需要答复的问题、需要确认的决策点、需要执行的下一步。\n\
 判不准就选 continue —— 误收口代价高于多回一轮。\n\
+state 里的 window_depth（当前链深度）与 fatigue（疲劳值）**仅作辅助参考**：\n\
+主判据是这条消息有没有新的实质信息量，不得仅因为这两个数字偏大就选 close。\n\
 链内区块若出现「中间 N 条已省略」，不得把「看不到」当成「没有新信息」，\
 证据不足一律选 continue。";
 
@@ -386,6 +428,8 @@ fn policy() -> PickOnePolicy {
         MIN_CONFIDENCE,
     )
     .with_state_keys(STATE_KEYS)
+    // 场景级超时覆盖：只在 chain_reply 生效，全局缺省不动
+    .with_timeout_ms(SCENE_TIMEOUT_MS)
 }
 
 /// 一条小脑留痕（三态 + 降级共用一个构造器，避免字段漏填）
@@ -410,14 +454,24 @@ fn trace(
     }
 }
 
-/// 本场景的裁决：`close=true` ⇒ 调用方走 `CloseChainAsNotify`
+/// 本场景的裁决（两个「有结论」分支）
 ///
-/// 只在「判了且要收口」时返回 `Some`；`continue` / 降级 / 未触发一律 `None`
-/// （调用方继续走原逻辑）。轨迹里保留细因，调用方无需区分。
+/// 返回值 `None` = 没结论 ⇒ 调用方走静态判定（含硬墙 `Escalate`），逐字节不变。
+/// `Some(Close)` ⇒ `CloseChainAsNotify`。
+/// `Some(Continue)` ⇒ **直接 `Peer`**，跳过静态判定 —— 这是「硬墙降软墙」的落点：
+/// 静态硬墙只在「小脑没结论」时生效。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct ChainReplyVerdict {
-    pub close: bool,
-    pub confidence: f32,
+pub(crate) enum ChainReplyVerdict {
+    /// 收口；`confidence` 为 `None` = 非小脑判断（绝对天花板强制）
+    Close {
+        /// 小脑判断置信度（天花板强制时无判断，为 `None`）
+        confidence: Option<f32>,
+    },
+    /// 继续回发：**越过静态硬墙**（软墙）
+    Continue {
+        /// 小脑判断置信度
+        confidence: f32,
+    },
 }
 
 /// 生产入口：判一次「还要不要继续回发」（`None` = 走原逻辑）
@@ -451,6 +505,39 @@ pub(crate) async fn judge_chain_reply(
     #[allow(clippy::question_mark)]
     if brain.cerebellum.is_none() {
         return None;
+    }
+
+    // ②.5 绝对天花板：硬墙降软墙之后，小脑的 `continue` 可以越墙 ⇒ 必须有
+    // 一个「无论小脑说什么都收口」的物理上限，否则小脑持续误判就是真无限互发。
+    //
+    // 放在 decide **之前**而不是之后：到顶时结论已定（必收口），再花一次 5s
+    // 预算去问一个必然被覆盖的问题，纯粹是白等 + 白计一次配额。
+    if facts.window_depth >= ABSOLUTE_CEILING {
+        log_info!(
+            ctx,
+            "chain_reply",
+            decision = DECISION_FALLBACK,
+            degraded_reason = DEGRADED_CEILING_FORCED,
+            scene = SCENE,
+            window_depth = facts.window_depth,
+            fatigue = facts.fatigue,
+            absolute_ceiling = ABSOLUTE_CEILING,
+            hard_window_depth = facts.hard_window_depth,
+            "chain depth hits the absolute ceiling: close regardless of cerebellum verdict"
+        );
+        record_cerebellum(
+            trace_id,
+            // `applied = true`：标注「没问小脑但改变了下游」这一态；
+            // 收口率口径里它与 `close` 分列（decision 不同），不混算。
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_CEILING_FORCED),
+                true,
+                None,
+            ),
+        );
+        return Some(ChainReplyVerdict::Close { confidence: None });
     }
 
     // ③ 熔断：端点连续失败后跳过（按周期放真探针自愈）
@@ -701,14 +788,23 @@ pub(crate) async fn judge_chain_reply(
                 Some(latency_ms),
             ),
         );
-        return Some(ChainReplyVerdict {
-            close: true,
-            confidence: pick.confidence,
+        return Some(ChainReplyVerdict::Close {
+            confidence: Some(pick.confidence),
         });
     }
 
-    // 放行：下游行为与没有本门时一致，故 `applied=false`；留痕只为算收口率
-    // （分母 = 本 scene 轨迹条数，分子 = decision=close）。
+    // 放行：小脑判 continue ⇒ 下游**直接 Peer**，不再落回静态判定。
+    //
+    // 与旧版的差别（AMan 2026-11-10 定谳）：旧版返回 `None` 让调用方走静态判定，
+    // 于是 `window_depth >= hard_window_depth` 时会被静态 `Escalate` 收口 ——
+    // 那等于「小脑说还能聊，但硬墙说了算」。现在反过来：硬墙降为兜底，只在
+    // 小脑没结论时生效。
+    //
+    // `applied` 的语义：本门是否**改变了**下游。判 continue 且在硬墙之下 ⇒
+    // 下游本来也是 Peer（`applied=false`）；判 continue 且越过硬墙 ⇒ 下游本来
+    // 会 `CloseChainAsNotify`，被本门改回 Peer（`applied=true`）——这一位就是
+    // 「软墙真的起效了」的可观测点。
+    let overrode_static_wall = facts.window_depth as u64 >= facts.hard_window_depth;
     log_info!(
         ctx,
         "chain_reply",
@@ -716,9 +812,12 @@ pub(crate) async fn judge_chain_reply(
         confidence = pick.confidence,
         scene = SCENE,
         latency_ms = latency_ms,
+        window_depth = facts.window_depth,
+        hard_window_depth = facts.hard_window_depth,
+        overrode_static_wall = overrode_static_wall,
         included = input.included,
         omitted = input.omitted,
-        "chain reply gate lets original path run"
+        "chain reply gate lets the chain continue (soft wall)"
     );
     record_cerebellum(
         trace_id,
@@ -726,11 +825,13 @@ pub(crate) async fn judge_chain_reply(
             DECISION_CONTINUE,
             Some(pick.confidence),
             None,
-            false,
+            overrode_static_wall,
             Some(latency_ms),
         ),
     );
-    None
+    Some(ChainReplyVerdict::Continue {
+        confidence: pick.confidence,
+    })
 }
 
 /// 单例 DAL 的生产封装

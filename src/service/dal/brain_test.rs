@@ -251,6 +251,7 @@ fn decision_request() -> crate::pkg::policy::DecisionRequest {
                 instructions: "test".to_string(),
             },
         )]),
+        timeout_ms: None,
     }
 }
 
@@ -351,6 +352,7 @@ fn test_to_protocol_presence_never_carries_criteria() {
                 instructions: "是否相关".to_string(),
             },
         )]),
+        timeout_ms: None,
     };
 
     let (state, questions) = to_protocol(req);
@@ -390,6 +392,7 @@ fn test_to_protocol_pick_and_grade_shapes() {
                 },
             ),
         ]),
+        timeout_ms: None,
     };
 
     let (_, questions) = to_protocol(req);
@@ -471,4 +474,40 @@ fn test_to_decision_value_preserves_three_shapes() {
         DecisionValue::Presence { value } => assert!((value - 0.83).abs() < 1e-6),
         other => panic!("noul 必须映射为 Presence，实际 {:?}", other),
     }
+}
+
+// ==================== 场景级超时覆盖（per-scene，不改全局缺省） ====================
+
+/// 覆盖优先级：场景声明 > provider 配置 > 全局缺省。
+///
+/// 超时的**实际等待**在单测里没有干净观测点，故把「选哪个值」抽成纯函数
+/// `scene_timeout_override` 单独断言——否则「5 秒」只能靠读代码相信。
+#[test]
+fn test_scene_timeout_override_wins_over_provider_config() {
+    use crate::service::dal::brain::scene_timeout_override;
+
+    // 无覆盖 ⇒ None（调用方回退 provider 配置 / 全局缺省）
+    let plain = decision_request();
+    assert_eq!(scene_timeout_override(&[plain]), None);
+
+    // chain_reply 声明 5000 ⇒ 覆盖生效
+    let mut slow = decision_request();
+    slow.timeout_ms = Some(5_000);
+    assert_eq!(scene_timeout_override(&[slow]), Some(5_000));
+
+    // 同批多个覆盖 ⇒ 取最大（掐掉任何一个都等于让它注定超时）
+    assert_eq!(
+        scene_timeout_override(&[
+            decision_request_with_timeout(1_000),
+            decision_request_with_timeout(5_000),
+        ]),
+        Some(5_000),
+        "同批多覆盖取最大"
+    );
+}
+
+fn decision_request_with_timeout(timeout_ms: u64) -> crate::pkg::policy::DecisionRequest {
+    let mut req = decision_request();
+    req.timeout_ms = Some(timeout_ms);
+    req
 }

@@ -174,6 +174,7 @@ impl DecisionPolicy for RankPolicy {
                     options,
                 },
             )]),
+            timeout_ms: None,
         })
     }
 
@@ -202,6 +203,8 @@ pub struct PickOnePolicy {
     options: BTreeMap<String, String>,
     state_keys: Vec<&'static str>,
     min_confidence: f32,
+    /// 场景级超时覆盖（毫秒）；`None` = 用 provider 配置 / 全局缺省
+    timeout_ms: Option<u64>,
 }
 
 impl PickOnePolicy {
@@ -228,12 +231,19 @@ impl PickOnePolicy {
                 .collect(),
             state_keys: Vec::new(),
             min_confidence,
+            timeout_ms: None,
         }
     }
 
     /// 声明哪些事实要作为 `state` 透传给模型（按给定顺序）
     pub fn with_state_keys(mut self, keys: &[&'static str]) -> Self {
         self.state_keys = keys.to_vec();
+        self
+    }
+
+    /// 声明本场景的请求超时预算（毫秒），覆盖 provider 配置与全局缺省
+    pub fn with_timeout_ms(mut self, timeout_ms: u64) -> Self {
+        self.timeout_ms = Some(timeout_ms);
         self
     }
 
@@ -268,6 +278,7 @@ impl DecisionPolicy for PickOnePolicy {
                     options: self.options.clone(),
                 },
             )]),
+            timeout_ms: self.timeout_ms,
         })
     }
 
@@ -349,6 +360,7 @@ impl DecisionPolicy for ScorePolicy {
                     levels: self.levels.iter().map(|l| (*l).to_string()).collect(),
                 },
             )]),
+            timeout_ms: None,
         })
     }
 
@@ -426,6 +438,7 @@ impl DecisionPolicy for PresencePolicy {
                     instructions: self.instructions.to_string(),
                 },
             )]),
+            timeout_ms: None,
         })
     }
 

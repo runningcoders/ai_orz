@@ -257,11 +257,15 @@ fn test_body_budget() -> usize {
 }
 
 #[test]
-fn latency_cap_is_800_and_body_gets_the_remainder() {
+fn latency_cap_is_4000_by_5s_budget() {
     // 时延反推上限必须字面落在代码里（不靠注释自述）
-    assert_eq!(LATENCY_INPUT_CAP, 800);
-    assert_eq!(FRAME_OVERHEAD_RESERVE, 450);
-    assert_eq!(body_token_budget(800), 350);
+    //
+    // 5s 预算 → 理论 prefill 天花板 ≈ 9000 tokens；不取满（模型侧排队 /
+    // 生成长度波动 / prefill 吞吐差异），取 4000 = 理论值 ≈ 44%，对 5s 留 ≈ 50% 余量。
+    // 与旧值的关系：旧 800 按 1000ms 反推，基数 5 倍 ⇒ 本值同样 5 倍，没有缩回。
+    assert_eq!(LATENCY_INPUT_CAP, 4_000);
+    assert_eq!(FRAME_OVERHEAD_RESERVE, 500);
+    assert_eq!(body_token_budget(4_000), 3_500);
     // 条数上限退为防环硬顶（与消费者侧回溯硬上限同口径）
     assert_eq!(MAX_CHAIN_MESSAGES, 32);
 }
@@ -269,12 +273,12 @@ fn latency_cap_is_800_and_body_gets_the_remainder() {
 #[test]
 fn input_budget_is_min_of_capacity_and_latency_cap() {
     // 标准 provider（128K / 200K）：容量远大于时延上限 ⇒ 时延侧绑定
-    assert_eq!(input_token_budget(Some(200_000)), 800);
-    assert_eq!(input_token_budget(Some(128_000)), 800);
-    // 小容量 provider：容量侧绑定（不能按 800 硬拉）
+    assert_eq!(input_token_budget(Some(200_000)), 4_000);
+    assert_eq!(input_token_budget(Some(128_000)), 4_000);
+    // 小容量 provider：容量侧绑定（不能按时延上限硬拉）
     assert_eq!(input_token_budget(Some(600)), 600);
     // 未配置容量：保守退化到时延上限
-    assert_eq!(input_token_budget(None), 800);
+    assert_eq!(input_token_budget(None), 4_000);
     // 容量小于骨架预留：正文预算归零而不是下溢
     assert_eq!(body_token_budget(300), 0);
 }
@@ -284,7 +288,9 @@ fn input_budget_is_min_of_capacity_and_latency_cap() {
 #[test]
 fn render_chain_keeps_head_and_tail_and_marks_omission() {
     let chain = sample_chain(32);
-    let input = render_chain(&chain, test_body_budget());
+    // 显式给一个小预算：预算放到 3500 后 32 条短消息能全装下，
+    // 那样就测不到「保头 + 保尾 + 省略标注」这一组行为了（用例意图是截断形态）。
+    let input = render_chain(&chain, test_body_budget().min(120));
     assert!(input.included >= 2, "至少保住链头 + 最近一条");
     assert!(
         input.omitted > 0,
@@ -394,7 +400,7 @@ async fn below_every_threshold_still_asks_once() {
     assert_eq!(calls, 1, "门槛取消后，低压力链也必须问一次");
     assert_eq!(brain.cerebellum_quota.used(), 1, "问了就占一次配额");
     let verdict = got.expect("判 close 必须产出结论");
-    assert!(verdict.close);
+    assert!(matches!(verdict, ChainReplyVerdict::Close { .. }));
     let traces = take_traces(run_id);
     assert_eq!(traces.len(), 1);
     assert_eq!(traces[0].decision, DECISION_CLOSE);
@@ -456,7 +462,7 @@ async fn close_verdict_closes_the_chain() {
     )
     .await;
     let verdict = got.expect("close 必须产出结论，调用方才能走 CloseChainAsNotify");
-    assert!(verdict.close);
+    assert!(matches!(verdict, ChainReplyVerdict::Close { .. }));
     assert_eq!(calls, 1, "一次 PickOne，不是逐候选各发一题");
     assert_eq!(brain.cerebellum_quota.used(), 1);
     let traces = take_traces(run_id);
@@ -467,7 +473,7 @@ async fn close_verdict_closes_the_chain() {
 }
 
 #[tokio::test]
-async fn continue_verdict_keeps_original_path() {
+async fn continue_verdict_lets_the_chain_continue() {
     let brain = brain_with_quota(10);
     let run_id = "chain-reply-continue";
     let (got, calls) = run_gate(
@@ -478,14 +484,16 @@ async fn continue_verdict_keeps_original_path() {
         run_id,
     )
     .await;
-    assert!(got.is_none(), "continue ⇒ 不覆盖路由，原静态阈值继续适用");
+    // 软墙：continue 是**有结论**的分支（调用方据此直接走 Peer）
+    let verdict = got.expect("continue 必须产出结论，调用方才能跳过静态判定");
+    assert!(matches!(verdict, ChainReplyVerdict::Continue { .. }));
     assert_eq!(calls, 1);
     let traces = take_traces(run_id);
     assert_eq!(traces.len(), 1);
     assert_eq!(traces[0].decision, DECISION_CONTINUE);
     assert!(
         !traces[0].applied,
-        "放行不改下游 ⇒ applied=false（跳过率才有意义）"
+        "硬墙之下判 continue：下游本来就是 Peer ⇒ applied=false"
     );
 }
 
@@ -729,7 +737,7 @@ async fn circuit_opens_after_three_endpoint_failures_then_probes_and_heals() {
     .await;
     assert_eq!(calls, 1, "到探针周期必须真发一次请求");
     assert!(
-        verdict.is_some_and(|v| v.close),
+        verdict.is_some_and(|v| matches!(v, ChainReplyVerdict::Close { .. })),
         "探针成功应正常产出结论（自愈生效）"
     );
     assert_eq!(
@@ -831,11 +839,17 @@ async fn capacity_below_judge_skeleton_sends_no_request() {
     assert_eq!(traces[0].latency_ms, None);
 }
 
-/// 反事实：容量刚好够（1000 × 60% = 600 ⇒ 正文 150 ≥ 100）必须照常问。
+/// 反事实：容量刚好够（1000 × 60% = 600 ⇒ 正文 100，**恰在**最低可用线上）必须照常问。
+///
+/// 骨架预留 450 → 500 之后，这条恰好落在边界上：100 == MIN_BODY_TOKEN_BUDGET，
+/// 判据是 `< MIN`（严格小于）⇒ 仍须问。边界值最容易被后续调参悄悄改成「不问」。
 #[tokio::test]
 async fn capacity_above_min_body_budget_still_asks() {
     let brain = brain_with_capacity(1000);
-    assert_eq!(body_token_budget(input_token_budget(Some(600))), 150);
+    assert_eq!(
+        body_token_budget(input_token_budget(Some(600))),
+        MIN_BODY_TOKEN_BUDGET
+    );
 
     let (verdict, calls) = run_gate(
         &sample_chain(4),
@@ -845,7 +859,10 @@ async fn capacity_above_min_body_budget_still_asks() {
         "run-capacity-ok",
     )
     .await;
-    assert!(verdict.is_some_and(|v| v.close), "容量够时必须正常出结论");
+    assert!(
+        verdict.is_some_and(|v| matches!(v, ChainReplyVerdict::Close { .. })),
+        "容量够时必须正常出结论"
+    );
     assert_eq!(calls, 1);
 }
 
@@ -932,10 +949,10 @@ async fn latency_lands_in_trace_for_continue_close_and_degraded() {
     );
 }
 
-// ---------- Q1 三断：接线层真问过 + 判的是 continue + 最终仍走静态硬墙 ----------
+// ---------- Q1 三断：接线层真问过 + 判的是 continue + 软墙放行（硬墙降兜底） ----------
 
 #[tokio::test]
-async fn cerebellum_is_asked_once_and_continue_still_hits_the_static_hard_wall() {
+async fn cerebellum_continue_overrides_the_static_hard_wall() {
     use crate::consumer::message_route_policy::{AutoReplyRoute, judge_chain_reply_route};
     use crate::pkg::collaboration_pressure::{ChainHop, ChainPressure};
 
@@ -979,15 +996,22 @@ async fn cerebellum_is_asked_once_and_continue_still_hits_the_static_hard_wall()
     // ② 必须断「小脑真答了」：调了但超时/报错同样落回静态路由，
     //    只断最终路由是假绿（测的是降级路径，不是 continue 与 Escalate 的冲突）
     assert_eq!(traces[0].degraded, None, "② 该次必须是正常判定，不得是降级");
-    // ③ continue 不覆盖 ⇒ 最终路由仍是静态硬墙
-    assert!(verdict.is_none(), "continue 不得产出覆盖结论");
+    // ③ 软墙（AMan 2026-11-10 定谳，覆盖此前「硬墙绝对护栏」的口径）：
+    //    continue 是**有结论**的分支 ⇒ 调用方直接 Peer，静态硬墙此时不生效
+    assert!(
+        matches!(verdict, Some(ChainReplyVerdict::Continue { .. })),
+        "continue 必须产出结论，否则调用方会落回静态 Escalate（硬墙又变成绝对护栏）"
+    );
+    // ④ 反事实：同一条 pressure 在**没有小脑结论**时仍然 Escalate（兜底不变）
     assert_eq!(
         judge_chain_reply_route(&pressure),
         AutoReplyRoute::CloseChainAsNotify {
             reason: "collaboration pressure exhausted"
         },
-        "小脑 continue 之下，硬墙收口必须逐字节保持原样"
+        "硬墙只降为兜底：小脑没结论时它必须逐字节保持原样"
     );
+    // ⑤ applied 的语义：这一跳下游本是 CloseChainAsNotify，被软墙改回 Peer
+    assert!(traces[0].applied, "越过硬墙的放行必须标 applied=true");
 }
 
 // ---------- 熔断：探针失败仍 open（前台断言形的另一半） ----------
@@ -1111,5 +1135,173 @@ fn production_wiring_reaches_the_gate() {
     assert!(
         body.contains("dal()"),
         "薄封装必须注入单例 DAL，否则接线与测试各走一套"
+    );
+}
+
+// ---------- 软墙 + 绝对天花板（AMan 2026-11-10 定谳） ----------
+
+/// 硬墙之上判 continue ⇒ 放行（这是「硬墙降软墙」的直接断言点）
+#[tokio::test]
+async fn continue_above_hard_window_depth_lets_the_chain_go_on() {
+    let brain = brain_with_quota(10);
+    let run_id = "run-soft-wall-continue";
+    // window_depth = hard(8) + 2
+    let facts = ChainPressureFacts {
+        chain_depth: 10,
+        window_depth: 10,
+        fatigue: 60,
+        soft_fatigue: 36,
+        hard_fatigue: 100,
+        hard_window_depth: 8,
+    };
+    let (verdict, calls) = run_gate(
+        &sample_chain(10),
+        facts,
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(verdict, Some(ChainReplyVerdict::Continue { .. })),
+        "深度越过硬墙也必须以 continue 为准（软墙）"
+    );
+    assert_eq!(calls, 1, "必须真问过一次（不是绕过判定直接放行）");
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_CONTINUE);
+    assert_eq!(traces[0].degraded, None, "该次必须是正常判定，不得是降级");
+    assert!(traces[0].applied, "越过硬墙 ⇒ 改变了下游 ⇒ applied=true");
+}
+
+/// 同一深度、小脑没结论（超时）⇒ 落回静态硬墙（兜底仍在）
+#[tokio::test]
+async fn degraded_above_hard_window_depth_still_falls_back_to_the_static_wall() {
+    use crate::consumer::message_route_policy::{AutoReplyRoute, judge_chain_reply_route};
+    use crate::pkg::collaboration_pressure::{ChainHop, ChainPressure};
+
+    let brain = brain_with_quota(10);
+    let facts = ChainPressureFacts {
+        chain_depth: 10,
+        window_depth: 10,
+        fatigue: 60,
+        soft_fatigue: 36,
+        hard_fatigue: 100,
+        hard_window_depth: 8,
+    };
+    let (verdict, calls) = run_gate(
+        &sample_chain(10),
+        facts,
+        vec![Some(timeout_outcome())],
+        Some(&brain),
+        "run-soft-wall-degraded",
+    )
+    .await;
+    assert!(verdict.is_none(), "降级不得产出结论");
+    assert_eq!(calls, 1);
+    let traces = take_traces("run-soft-wall-degraded");
+    assert_eq!(traces[0].decision, DECISION_FALLBACK);
+    assert_eq!(traces[0].degraded.as_deref(), Some("timeout"));
+
+    // 调用方此时走静态判定 ⇒ 硬墙照旧收口（这是「小脑挂了也不会无限聊」的保险）
+    let mut pressure = ChainPressure::default();
+    let hops: Vec<ChainHop> = (0..10).map(|_| ChainHop::plain()).collect();
+    pressure.observe_chain(hops);
+    assert_eq!(
+        judge_chain_reply_route(&pressure),
+        AutoReplyRoute::CloseChainAsNotify {
+            reason: "collaboration pressure exhausted"
+        }
+    );
+}
+
+/// 触到绝对天花板 ⇒ 强制收口，且**不问小脑**（零请求 / 零配额 / 留痕）
+#[tokio::test]
+async fn absolute_ceiling_forces_close_without_asking() {
+    let brain = brain_with_quota(10);
+    let run_id = "run-ceiling";
+    let facts = ChainPressureFacts {
+        chain_depth: ABSOLUTE_CEILING,
+        window_depth: ABSOLUTE_CEILING,
+        fatigue: 80,
+        soft_fatigue: 36,
+        hard_fatigue: 100,
+        hard_window_depth: 8,
+    };
+    let (verdict, calls) = run_gate(
+        &sample_chain(6),
+        facts,
+        // 剧本给 continue：若实现漏了天花板，这一跳会被放行 ⇒ 断言必红
+        vec![Some(pick_for(OPTION_CONTINUE, 0.99))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(verdict, Some(ChainReplyVerdict::Close { confidence: None })),
+        "天花板必须无条件收口，且不是小脑判断（confidence=None）"
+    );
+    assert_eq!(calls, 0, "结论已定 ⇒ 不该再花一次请求预算");
+    assert_eq!(brain.cerebellum_quota.used(), 0, "也不该吃配额");
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1, "强制收口也必须留痕，不许零轨迹");
+    assert_eq!(traces[0].decision, DECISION_FALLBACK);
+    assert_eq!(traces[0].degraded.as_deref(), Some("ceiling_forced"));
+    assert!(traces[0].applied);
+    assert_eq!(traces[0].latency_ms, None, "没发生调用 ⇒ latency=None");
+}
+
+// ---------- 上下文两字段（AMan 硬要求：链深 + 疲劳必须写进上下文） ----------
+
+fn metrics_with(facts: &ChainPressureFacts) -> Metrics {
+    Metrics::new()
+        .with("agent_id", "agent-prompt")
+        .with("agent_name", "Test Agent")
+        .with("chain_depth", facts.chain_depth as u64)
+        .with("window_depth", facts.window_depth as u64)
+        .with("fatigue", facts.fatigue)
+        .with("soft_fatigue", facts.soft_fatigue)
+        .with("hard_fatigue", facts.hard_fatigue)
+        .with("hard_window_depth", facts.hard_window_depth)
+        .with("chain_messages", "[#1] agent-a 文本消息: 正文")
+}
+
+/// 渲染出的 prompt / state 里必须**同时**出现链深与疲劳值且非空
+///
+/// 防「塞进 state 却没渲染进 prompt」这类静默失效：只断言 metrics 里有值
+/// 是不够的，必须断言 `prepare()` 产出的请求体里真的有。
+#[test]
+fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
+    let facts = triggered_facts();
+    let reqs = policy().prepare(&metrics_with(&facts));
+    assert_eq!(reqs.len(), 1, "一次 PickOne 一个请求");
+
+    let state = &reqs[0].state;
+    assert_eq!(
+        state["window_depth"],
+        serde_json::json!(facts.window_depth as u64),
+        "state 必须带当前链深度"
+    );
+    assert_eq!(
+        state["fatigue"],
+        serde_json::json!(facts.fatigue),
+        "state 必须带疲劳值"
+    );
+
+    // 判据侧必须写明「仅作辅助参考」，否则模型会拿跳数当硬判据
+    assert!(INSTRUCTIONS.contains("window_depth"));
+    assert!(INSTRUCTIONS.contains("fatigue"));
+    assert!(INSTRUCTIONS.contains("仅作辅助参考"));
+}
+
+/// 场景级超时覆盖：chain_reply 声明 5000ms，不改全局缺省
+#[test]
+fn scene_declares_a_5s_timeout_override() {
+    assert_eq!(SCENE_TIMEOUT_MS, 5_000, "AMan 定谳：请求小脑 5 秒");
+    let reqs = policy().prepare(&metrics_with(&triggered_facts()));
+    assert_eq!(
+        reqs[0].timeout_ms,
+        Some(SCENE_TIMEOUT_MS),
+        "超时必须由场景显式声明（否则会落回全局缺省，把所有 scene 一起拖慢）"
     );
 }

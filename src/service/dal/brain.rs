@@ -275,6 +275,18 @@ pub(super) fn to_decision_value(answer: &CerebellumAnswer) -> DecisionValue {
     }
 }
 
+/// 批次实际生效的**场景级**超时覆盖（毫秒）：同批多个覆盖取最大
+///
+/// 覆盖声明的语义是「本场景至少需要这么多」，同批多个覆盖时掐掉任何一个
+/// 都等于让那个场景注定超时，故取 max；无覆盖返回 `None`，调用方回退
+/// provider 配置 / 全局缺省。
+///
+/// 抽成顶层纯函数只为**可断言**：`decide` 里的超时值不能靠「读代码相信」，
+/// 而 `tokio::time::timeout` 的实际等待时长在单测里没有干净的观测点。
+pub(crate) fn scene_timeout_override(requests: &[DecisionRequest]) -> Option<u64> {
+    requests.iter().filter_map(|r| r.timeout_ms).max()
+}
+
 /// Brain DAL 实现
 #[allow(dead_code)]
 struct BrainDalImpl {
@@ -662,11 +674,19 @@ impl BrainDal for BrainDalImpl {
             return DecisionOutcome::degraded(DegradedReason::NoProvider, elapsed_ms());
         };
 
-        // 单一超时预算：provider.config.timeout_ms 优先，缺省 1000ms
-        // （DEFAULT_CEREBELLUM_TIMEOUT_MS，2026-11-10 由 800 调大）。
+        // 单一超时预算：**场景级覆盖 > provider.config.timeout_ms > 全局缺省**
+        // （DEFAULT_CEREBELLUM_TIMEOUT_MS = 1000ms；`chain_reply` 另行声明
+        // 5000ms 场景覆盖，用于多读链内上下文）。
         // 整个批次共享——多场景同轮触发时不该各付一次超时。
-        let timeout_ms =
-            crate::service::dao::cerebellum::client::resolve_timeout_ms(&ctx, provider);
+        let scene_timeout_ms = scene_timeout_override(&requests);
+        let timeout_ms = scene_timeout_ms.unwrap_or_else(|| {
+            crate::service::dao::cerebellum::client::resolve_timeout_ms(&ctx, provider)
+        });
+        let timeout_source = if scene_timeout_ms.is_some() {
+            "scene_override"
+        } else {
+            "provider_or_default"
+        };
 
         // 场景口径：`DecisionRequest.scene` 是唯一能区分「谁问的」的信息，
         // 降级 / 超时日志里必须带上它，否则多场景并存后无法定位是哪一处
@@ -720,6 +740,7 @@ impl BrainDal for BrainDalImpl {
                 log_warn!(
                     ctx,
                     "brain_decide",
+                    timeout_source = timeout_source,
                     "cerebellum decide timeout: {}ms, scenes={:?}",
                     timeout_ms,
                     scenes

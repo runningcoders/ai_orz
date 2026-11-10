@@ -1494,14 +1494,19 @@ impl MessageConsumer {
 
     /// 小脑判「这条新消息还有没有信息量、本轮还需不需要自动回发」
     ///
-    /// 返回 `Some(route)` 表示**覆盖**静态路由（当前只有「收口」一种，见
-    /// `cerebellum_close_route`）；`None` = 不覆盖，调用方继续走
-    /// `resolve_auto_reply_route`（该函数逐字节保持原样）。
+    /// 返回 `Some(route)` 表示**覆盖**静态路由，两种形态：
+    /// - `Close` ⇒ `CloseChainAsNotify`（内容判空，收口）；
+    /// - `Continue` ⇒ `Peer`，**跳过静态判定** —— 硬墙降软墙的落点（AMan
+    ///   2026-11-10 定谳：判据是内容，跳数只作辅助）。
     ///
-    /// 降级边界：静态规则命中 / 压力缺失 / 正文缺失 / 未达触发阈值 / 未装配小脑 /
-    /// 配额耗尽 / 失败 / 超时 / 低置信 / 幻觉选项 —— **全部返回 `None`**，
-    /// 一次都不抛错、不短路主流程。小脑只允许把「要不要继续回发」从
-    /// continue 改成 close，不得产出 Peer / Discard（那会改掉既有静态结论）。
+    /// `None` = 不覆盖，调用方继续走 `resolve_auto_reply_route`（该函数逐字节
+    /// 保持原样，含 `window_depth >= hard_window_depth` 的静态 `Escalate`）。
+    ///
+    /// 降级边界：静态规则命中 / 压力缺失 / 正文缺失 / 未装配小脑 / 熔断 /
+    /// 达到绝对天花板 / 配额耗尽 / 失败 / 超时 / 低置信 / 幻觉选项 ——
+    /// 除天花板（结论是「必收口」，走 `Close`）外**全部返回 `None`**，
+    /// 一次都不抛错、不短路主流程。绝对天花板在 `chain_reply` 内部已转成
+    /// `Close` 结论，因此这里只处理两个有结论的分支。
     #[allow(clippy::too_many_arguments)]
     async fn judge_chain_reply_by_cerebellum(
         &self,
@@ -1546,7 +1551,14 @@ impl MessageConsumer {
             trace_id.unwrap_or(""),
         )
         .await?;
-        cerebellum_close_route(verdict.close)
+        Some(match verdict {
+            // 收口：复用现成路径（Final 作为知会送达 + 通知归属用户）
+            runtime_domain::chain_reply::ChainReplyVerdict::Close { .. } => {
+                cerebellum_close_route(true)?
+            }
+            // 软墙放行：不落回静态判定，硬墙此时不生效
+            runtime_domain::chain_reply::ChainReplyVerdict::Continue { .. } => AutoReplyRoute::Peer,
+        })
     }
 
     /// 计算 Final 自动回发的最终路由（静态判定 + 协作压力机械判定）

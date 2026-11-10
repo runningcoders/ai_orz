@@ -458,14 +458,18 @@ fn cerebellum_continue_keeps_static_verdict() {
     assert_eq!(judge_chain_reply_route(&pressure), AutoReplyRoute::Peer);
 }
 
-/// **Q1 绝对护栏成对断言**：小脑判 `continue` **不得**突破 `hard_window_depth`。
+/// **静态硬墙的兜底角色**：小脑**没有结论**时，`hard_window_depth` 照旧收口。
 ///
-/// 反事实的两侧要同时成立才算数：一侧是同一条压力事实（窗口撞满硬上限）
-/// 静态判定 = `Escalate` → 收口；另一侧是小脑 `continue` 返回 `None`（不覆盖）
-/// ⇒ 调用方落回静态判定，收口照旧。若哪天有人把 `continue` 改成「强制 Peer」，
-/// 本用例必须红 —— 防无限乒乓的物理底线不能因为「小脑说还能聊」就撤掉。
+/// ⚠️ 口径变更（AMan 2026-11-10 定谳，覆盖此前「硬墙绝对护栏」）：
+/// 小脑判 `continue` 时**可以越过**硬墙（软墙），该行为不经过本函数——
+/// 生产路径在 `consumer::message` 里把 `ChainReplyVerdict::Continue` 直接
+/// 映射成 `Peer`。本用例守的是剩下那一半：**小脑没结论（None）时**，
+/// 静态判定必须逐字节保持原样（这是「小脑挂了也不会无限聊」的保险）。
+///
+/// 若哪天有人把静态 `Escalate` 也删掉（例如「既然有软墙，硬墙就不要了」），
+/// 本用例必须红。
 #[test]
-fn cerebellum_continue_never_breaks_the_hard_window_depth_guardrail() {
+fn static_hard_wall_still_closes_when_cerebellum_has_no_verdict() {
     use crate::pkg::collaboration_pressure::{ChainHop, PressureAction};
 
     let mut pressure = ChainPressure::default();
@@ -479,13 +483,13 @@ fn cerebellum_continue_never_breaks_the_hard_window_depth_guardrail() {
 
     assert!(
         cerebellum_close_route(false).is_none(),
-        "continue 不得覆盖静态判定"
+        "「无结论」不得覆盖静态判定（软墙放行走的是 Continue 分支，不经过这里）"
     );
     assert_eq!(
         judge_chain_reply_route(&pressure),
         AutoReplyRoute::CloseChainAsNotify {
             reason: "collaboration pressure exhausted"
         },
-        "小脑 continue 之下，硬墙收口必须逐字节保持原样"
+        "小脑没结论时，硬墙收口必须逐字节保持原样"
     );
 }
