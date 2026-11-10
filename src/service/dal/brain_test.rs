@@ -506,6 +506,31 @@ fn test_scene_timeout_override_wins_over_provider_config() {
     );
 }
 
+/// 取值梯子：场景覆盖 > provider 配置 >（调用方兜全局缺省）
+///
+/// 与上一条分工：上一条锁「场景声明真的到了请求上」，本用例锁「两份声明撞在
+/// 一起时谁赢」——两层各有锁，才不怕某天 override 被摘掉、值悄悄落回缺省。
+#[test]
+fn test_effective_timeout_ms_ladder() {
+    use crate::service::dal::brain::effective_timeout_ms;
+
+    assert_eq!(
+        effective_timeout_ms(Some(5_000), Some(800)),
+        Some(5_000),
+        "场景覆盖必须压过 provider 配置：否则 5 秒定谳在配了 timeout_ms 的 provider 上失效"
+    );
+    assert_eq!(
+        effective_timeout_ms(None, Some(800)),
+        Some(800),
+        "无场景覆盖时 provider 配置生效（它是被用上的，不是被忽略的）"
+    );
+    assert_eq!(
+        effective_timeout_ms(None, None),
+        None,
+        "两侧都未声明 ⇒ None，由调用方兜全局缺省 1000ms"
+    );
+}
+
 fn decision_request_with_timeout(timeout_ms: u64) -> crate::pkg::policy::DecisionRequest {
     let mut req = decision_request();
     req.timeout_ms = Some(timeout_ms);

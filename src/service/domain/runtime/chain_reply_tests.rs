@@ -1306,16 +1306,17 @@ fn scene_declares_a_5s_timeout_override() {
     );
 
     // 差值字面断言：防止某天 override 被摘掉、值悄悄回落到全局缺省而无人发觉。
-    // 两个数字都写死（800 / 4200 差值），不做「常量 vs 常量」的比较 ——
-    // 那样只证「两值不等」，证不了「缺省没被顺手抬上去」（800→1000 那次正是这么漏过去的）。
+    // 两个数字都写死（1000 / 4000 差值），不做「常量 vs 常量」的比较 ——
+    // 那样只证「两值不等」，证不了「缺省被顺手改成了别的值」（`ea06affb`
+    // 把缺省误落成 800 那次，正是靠这条字面断言在下一轮被立刻抓出来）。
     assert_eq!(
         crate::service::dao::cerebellum::DEFAULT_CEREBELLUM_TIMEOUT_MS,
-        800,
-        "全局缺省必须是 800ms 原值：5 秒属 chain_reply 的场景级覆盖，不是全局缺省"
+        1_000,
+        "全局缺省必须是 1000ms（AMan 09:08「1 秒」定谳）：5 秒属 chain_reply 的场景级覆盖"
     );
     assert_eq!(
         SCENE_TIMEOUT_MS - crate::service::dao::cerebellum::DEFAULT_CEREBELLUM_TIMEOUT_MS,
-        4_200,
+        4_000,
         "场景覆盖与全局缺省的差值必须显式成立（摘掉 override 时立刻红）"
     );
 }

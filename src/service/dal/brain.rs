@@ -283,8 +283,26 @@ pub(super) fn to_decision_value(answer: &CerebellumAnswer) -> DecisionValue {
 ///
 /// 抽成顶层纯函数只为**可断言**：`decide` 里的超时值不能靠「读代码相信」，
 /// 而 `tokio::time::timeout` 的实际等待时长在单测里没有干净的观测点。
+///
+/// **混批**：当前无混批路径 —— 全仓每个 `.decide(` 调用点都是「一个 scene 一组
+/// request 单独发一次」，无 `extend`、无跨 scene 拼接，故本函数是防御性代码。
+/// 将来若引入混批，必须改为 per-scene 独立 timeout：否则 `max` 会让本该 1s
+/// 降级的场景白等 5s，那是净回归。
 pub(crate) fn scene_timeout_override(requests: &[DecisionRequest]) -> Option<u64> {
     requests.iter().filter_map(|r| r.timeout_ms).max()
+}
+
+/// 超时取值梯子的**唯一**纯函数形态：场景覆盖 > provider 配置
+///
+/// 返回 `None` = 两侧都没声明，由调用方兜 `DEFAULT_CEREBELLUM_TIMEOUT_MS`。
+/// 抽出来是为「两层各有锁」：`DecisionRequest.timeout_ms == Some(5000)` 只证明
+/// 「声明到了请求上」，证不了「`decide` 真按它算」——某天 override 被摘掉、
+/// 值悄悄落回 1000 时，只有这条梯子断言会红。
+pub(crate) fn effective_timeout_ms(
+    scene_override: Option<u64>,
+    provider_timeout_ms: Option<u64>,
+) -> Option<u64> {
+    scene_override.or(provider_timeout_ms)
 }
 
 /// Brain DAL 实现
@@ -675,13 +693,16 @@ impl BrainDal for BrainDalImpl {
         };
 
         // 单一超时预算：**场景级覆盖 > provider.config.timeout_ms > 全局缺省**
-        // （DEFAULT_CEREBELLUM_TIMEOUT_MS = 800ms；`chain_reply` 另行声明
+        // （DEFAULT_CEREBELLUM_TIMEOUT_MS = 1000ms；`chain_reply` 另行声明
         // 5000ms 场景覆盖，用于多读链内上下文）。
         // 整个批次共享——多场景同轮触发时不该各付一次超时。
+        // 取值梯子抽成 `effective_timeout_ms`：两层各有锁，防 override 被摘掉后
+        // 值悄悄落回缺省而无人发觉。
         let scene_timeout_ms = scene_timeout_override(&requests);
-        let timeout_ms = scene_timeout_ms.unwrap_or_else(|| {
-            crate::service::dao::cerebellum::client::resolve_timeout_ms(&ctx, provider)
-        });
+        let provider_timeout_ms =
+            crate::service::dao::cerebellum::client::provider_timeout_ms(&ctx, provider);
+        let timeout_ms = effective_timeout_ms(scene_timeout_ms, provider_timeout_ms)
+            .unwrap_or(crate::service::dao::cerebellum::DEFAULT_CEREBELLUM_TIMEOUT_MS);
         let timeout_source = if scene_timeout_ms.is_some() {
             "scene_override"
         } else {

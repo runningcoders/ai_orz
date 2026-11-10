@@ -26,22 +26,27 @@ use std::sync::{Arc, OnceLock};
 /// 与 OpenAI 兼容 provider 同口径：**版本前缀由 base_url 承载**（如 Qwen 的
 /// `/compatible-mode/v1`），client 只追加 `/systemone`。
 pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
-/// 默认请求超时（毫秒）：小脑快判断亚秒级预算；config.timeout_ms 可逐模型覆盖
+/// 默认请求超时（毫秒）：小脑快判断的全局缺省预算；config.timeout_ms 可逐模型覆盖
 ///
-/// **保持 800ms 原值**。2026-11-10 曾有「800 → 1000」一笔（AMan 先提「1 秒」），
-/// 同日 AMan 改口径为「请求小脑思考 5 秒，5 秒没反应直接走正常流程」，落法经前台
-/// 定为**场景级覆盖**（`chain_reply::SCENE_TIMEOUT_MS = 5000`），故那笔已 revert：
-/// 需要更长预算的 scene 自己声明，全局缺省不动。
+/// **终态 = 1000ms**（AMan 2026-11-10 09:08「把小脑判断的超时时间调大一点，1 秒吧」，
+/// 落地 `cedf4022`）。沿革：`800 → 1000（cedf4022）→（误）800（ea06affb）→ 1000（本笔）`；
+/// 中间那次 800 是按**一条已被撤回的裁定**落的码（前台 `01a1c374` 误判后自行撤回，
+/// 责任不在执行侧），故本笔是「纠正一次误落」，不是回滚任何用户指令。
 ///
-/// 为什么不能改全局缺省：本常量是整批共享的**一份**预算（`BrainDal::decide` 的
+/// 同日 10:55 AMan 追加的「5 秒」是**给 `chain_reply` 的**（语境是链内多拉上下文），
+/// 从未取代本条「1 秒」，落法是**场景级覆盖**（`chain_reply::SCENE_TIMEOUT_MS = 5000`）。
+///
+/// 为什么 5 秒不能做全局缺省：本常量是整批共享的**一份**预算（`BrainDal::decide` 的
 /// for 循环整体包一个 `tokio::time::timeout`），作用于全部已接 scene。`entry_gate`
 /// 是**每条入站消息**都过的门，端点挂掉时若缺省是 5000，每条消息白等 5 秒，
-/// 影响面比「让 chain_reply 多读上下文」大一个量级。
+/// 影响面比「让 chain_reply 多读上下文」大一个量级。反过来把它压回 800 则是抗一条
+/// 未被撤销的用户指令 —— 两个方向都由字面断言钉住。
 ///
-/// 取值顺序（四级链）：`DecisionRequest.timeout_ms`（场景声明）→
-/// `provider.config.timeout_ms` → 本常量。现网 provider 的 `config` 无一条显式写
-/// `timeout_ms`，故其余 scene 的实际生效值就是本常量。
-pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 800;
+/// 取值顺序（三级链，唯一梯子点是 `brain::effective_timeout_ms`）：
+/// `DecisionRequest.timeout_ms`（场景声明）→ `provider.config.timeout_ms` → 本常量。
+/// 现网 provider 的 `config` 无一条显式写 `timeout_ms`，故其余 scene 的实际生效值
+/// 就是本常量。
+pub const DEFAULT_CEREBELLUM_TIMEOUT_MS: u64 = 1_000;
 
 /// Cerebellum DAO trait - 小脑快判断接口
 #[async_trait]
