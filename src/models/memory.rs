@@ -622,6 +622,12 @@ pub const MEMORY_INDEX_SEGMENT_BASE_CHARS: usize = 128;
 pub const MEMORY_INDEX_SEGMENT_MIN_CHARS: usize = 24;
 
 /// 全文档安全阀：单条压缩摘要再长也不整条灌进索引（需要全文用 `query_memory` 反查）
+///
+/// ⚠️ 这里是**字符口径**，只约束「单条索引行长什么样」，不是输入预算：总量由
+/// `MemoryIndexPlan::build` 的 `budget_tokens`（压缩阈值派生的 token 份额）加
+/// `line_cost` 逐行计价裁决；小脑侧的摘要另走 `snippet_budget` 的 token 占比。
+/// 保持绝对值是有意的 —— 索引行是 `query_memory(ids)` 反查的稳定把手，同一条
+/// 记忆不该在不同容量 provider 上渲染成不同文本。别当成「字符预算漏改」改成占比。
 pub const MEMORY_INDEX_FULL_MAX_CHARS: usize = 512;
 
 /// 记忆索引层级：按摘要保留量递减

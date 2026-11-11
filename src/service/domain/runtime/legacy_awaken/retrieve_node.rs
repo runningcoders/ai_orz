@@ -51,7 +51,7 @@ pub(crate) const KNOWLEDGE_TOP_K: usize = 5;
 /// 【历史对话】索引块按预算铺在 base 里。这里只留少量「语义命中、但可能
 /// 落在索引窗口之外」的补充，全文硬顶 3 条，既不与长期知识抢候选位，
 /// 也避免把整段历史重新灌回 prompt。
-/// ⚠️ 未入选的候选不丢弃，改成 `[索引]` 行（元信息 + 64 字片段），
+/// ⚠️ 未入选的候选不丢弃，改成 `[索引]` 行（元信息 + token 预算内的摘要片段），
 /// 所以「进 prompt 的短期记忆总行数」会大于 3；这里限的是**带全文的行**。
 pub(crate) const SHORT_TERM_TOP_K: usize = 3;
 
@@ -77,6 +77,18 @@ const RECALL_WIDTH_FACTOR: usize = 3;
 /// 与知识节点**分开**截断：边是结构信息（「谁和谁什么关系」），
 /// 和节点抢同一个名额会让图谱在提示里被挤掉。
 const RELATION_TOP_K: usize = 4;
+
+/// 精选**全文行**的单条 token 上限 = 索引行预算 × 本倍数
+///
+/// 索引行只是「元信息 + 摘要片段」，全文行要带完整正文，故给更大的份额；两者
+/// 同源派生（`index_snippet_tokens` 已是容量 × `SNIPPET_BP`），不引入第二个与
+/// 容量无关的绝对 token 数。@输入 4000 ⇒ 索引行 160、全文行 640 token。
+/// ⚠️ 此前全文行**没有任何单行上限**，只靠 `KNOWLEDGE_TOP_K` / `SHORT_TERM_TOP_K`
+/// 的条数兜底：一条病态长的摘要就能原样灌进 prompt。
+const FULL_LINE_BUDGET_FACTOR: usize = 4;
+
+/// 全文行被裁时的标注（计入预算；索引行沿用无标注口径）
+const FULL_LINE_TRUNCATION_NOTE: &str = "…（全文已按模型容量截断）";
 
 /// 方法技能条数上限（渲染预算 + 精选 keep，两处共用的同一真相）
 pub(crate) const METHOD_SKILLS_TOP_K: usize = 2;
@@ -166,6 +178,10 @@ fn short_term_search(keyword: &str, width: usize) -> MemorySearch {
 ///
 /// ⚠️ 两档都带 id：短期记忆走 `query_memory(ids)` 反查，知识节点走
 /// `search_memory(seed_node_ids=[...], traversal_depth=1)` 查边。
+///
+/// ⚠️ 两档都按 token 预算截**整行**（含元信息与标签），只是份额不同：索引行
+/// 吃 `index_snippet_tokens`，全文行吃其 [`FULL_LINE_BUDGET_FACTOR`] 倍。全文行
+/// 不再「只受条数约束」——条数上限防的是条目太多，防不了单条无限长。
 fn recall_line(m: &Memory, full: bool, index_snippet_tokens: Option<usize>) -> Option<String> {
     let line = if full {
         m.to_prompt_summary()?
@@ -181,9 +197,14 @@ fn recall_line(m: &Memory, full: bool, index_snippet_tokens: Option<usize>) -> O
         _ => format!("[索引] {line}"),
     };
     // 预算按**整行**核算（含元信息与标签）：id 是反查把手，不能被正文挤掉。
-    // 容量未配置 ⇒ 不截断。
-    Some(match index_snippet_tokens {
-        Some(budget) if !full => truncate_to_tokens(&line, budget, ""),
+    // 容量未配置 ⇒ 两档都不截断。
+    Some(match (full, index_snippet_tokens) {
+        (true, Some(budget)) => truncate_to_tokens(
+            &line,
+            budget.saturating_mul(FULL_LINE_BUDGET_FACTOR),
+            FULL_LINE_TRUNCATION_NOTE,
+        ),
+        (false, Some(budget)) => truncate_to_tokens(&line, budget, ""),
         _ => line,
     })
 }

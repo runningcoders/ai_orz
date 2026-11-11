@@ -373,3 +373,39 @@ fn full_and_index_layers_carry_ids_without_dumping_bodies() {
         "行前缀由 builder 统一加，这里不能自带: {lines:?}"
     );
 }
+
+/// 精选**全文行**也有单行 token 上限：此前它只受 `KNOWLEDGE_TOP_K` 的条数约束，
+/// 一条病态长摘要就能原样灌进 prompt。截断必须显式标注，且不许砍掉 id。
+#[test]
+fn selected_full_line_is_capped_and_keeps_its_id() {
+    let long_body = "缓存".repeat(1_000); // 2000 token，远超任何单行份额
+    let selected = vec![node("k0", "前缀缓存", &long_body)];
+    let index_budget = 64;
+    let cap = index_budget * FULL_LINE_BUDGET_FACTOR;
+
+    // 反事实：预算未配 ⇒ 不裁（证明下面的截断确实来自新上限，不是别的分支）
+    let uncapped = build_knowledge_lines(&selected, &[], &[], &[], None);
+    assert!(
+        uncapped[0].contains(&long_body),
+        "容量未配时必须保持不裁口径"
+    );
+
+    let lines = build_knowledge_lines(&selected, &[], &[], &[], Some(index_budget));
+    let full = &lines[0];
+    assert!(
+        full.contains("[知识节点 k0]"),
+        "从头截断必须保住 id（query_memory 反查把手）：{full:?}"
+    );
+    assert!(
+        full.contains(FULL_LINE_TRUNCATION_NOTE),
+        "全文被裁必须显式标注，不许悄悄丢内容：{full:?}"
+    );
+    assert!(
+        crate::service::domain::runtime::compaction::estimate_tokens(full) <= cap,
+        "全文行实测越过单行上限 {cap}：{full:?}"
+    );
+    assert!(
+        !full.contains(&long_body),
+        "病态长正文不得原样灌进 prompt：{full:?}"
+    );
+}

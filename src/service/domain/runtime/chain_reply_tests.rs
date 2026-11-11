@@ -2134,3 +2134,131 @@ fn pending_budget_is_a_share_of_the_same_pool() {
         "待发预算必须随输入预算变化，不得是固定 600"
     );
 }
+
+// ══════ 输入总账护栏：state 正文 + 题面 ≤ provider 容量 ══════
+
+/// 病态输入：长身份 + 3 条长最近对话 + 长链 + 长待发，把每个块都顶到预算边界。
+/// 只有这种输入才能暴露「固定块不在预算内」——普通短链下所有块都装得下，
+/// 总账缺口会一直静默。
+fn saturated_state_inputs(capacity: u64) -> (Brain, Vec<ChainMessage>, String) {
+    let mut brain = brain_with_capacity_tokens(capacity);
+    brain.agent_name = "名".repeat(400);
+    brain.memories = (0..3)
+        .map(|i| short_term(&format!("st-{i}"), &"内".repeat(1_000)))
+        .collect();
+    let messages = (0..MAX_CHAIN_MESSAGES)
+        .map(|_| msg("agent-a", "文本消息", &"链".repeat(400)))
+        .collect();
+    (brain, messages, "待".repeat(2_000))
+}
+
+/// 护栏（R49/R54 成对）：不接 `render_within` 也必须守住整个 state 的总账
+///
+/// 反事实在**同一用例内**构造：把正文池整池给「链内 + 待发」两块（改造前口径）
+/// 必然越过 `body_budget`；生产路径按实测扣掉固定块后必须落在池内，且
+/// `## 链内消息` 仍要逐块保留（这正是不能走组织器尾块整砍的理由）。
+#[tokio::test]
+async fn state_body_stays_in_its_pool_even_with_heavy_fixed_sections() {
+    const CAPACITY: u64 = 4_000;
+    let input = input_token_budget(Some(CAPACITY));
+    let body_budget = body_token_budget(input);
+    let (brain, messages, pending) = saturated_state_inputs(CAPACITY);
+    let facts = triggered_facts();
+
+    let (_, calls, states) = run_gate_full_with_pending(
+        &messages,
+        facts,
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        &pending,
+        "chain-reply-state-ledger",
+    )
+    .await;
+    assert_eq!(calls, 1, "总账收口不得把正常请求挡在门外");
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    let actual = estimate_tokens(body);
+    assert!(
+        actual <= body_budget,
+        "state 正文 {actual} token 越过正文池 {body_budget}（容量 {CAPACITY}）"
+    );
+    assert!(
+        body.contains("## 链内消息"),
+        "总账收口只能按比例裁链内正文，不能整块砍掉主要证据：{body:?}"
+    );
+
+    // 反事实：旧口径 = 正文池 − 待发实测，身份 / 场景 / 最近对话 / 协作压力全在池外。
+    let pending_rendered = truncate_to_tokens(
+        &pending,
+        pending_token_budget(input, body_budget),
+        PENDING_TRUNCATION_SUFFIX,
+    );
+    let legacy_chain_budget = body_budget.saturating_sub(estimate_tokens(&pending_rendered));
+    let legacy = state_bundle(
+        &brain,
+        &render_chain(&messages, legacy_chain_budget).rendered,
+        &pending_rendered,
+        &facts,
+    )
+    .render();
+    let legacy_tokens = estimate_tokens(&legacy);
+    assert!(
+        legacy_tokens > body_budget,
+        "反事实必须成立：不扣固定块时 state 会越过正文池（{legacy_tokens} vs {body_budget}）"
+    );
+
+    // 第二处缺口：题面是常量，@4000 实测 573 > 骨架份额 500。仅修「固定块」仍会
+    // 让「state 用满 87.5% + 题面」越过容量，故 `state_pool_tokens` 必须按题面实测
+    // 收紧正文池 —— 本用例钉死收紧确实生效，且总账仍闭合。
+    let question_cost = question_frame_tokens();
+    let state_pool = state_pool_tokens(input);
+    assert!(
+        question_cost > context::frame_tokens(input),
+        "必须落在「题面超出骨架份额」的收紧区，否则没证到第二处缺口\
+         （题面 {question_cost} vs 骨架 {}）",
+        context::frame_tokens(input)
+    );
+    assert!(
+        state_pool < body_budget,
+        "题面超骨架时必须收紧正文池：{state_pool} 应 < {body_budget}"
+    );
+    assert!(
+        actual <= state_pool,
+        "state 正文 {actual} 越过收紧后的正文池 {state_pool}"
+    );
+    assert!(
+        actual + question_cost <= CAPACITY as usize,
+        "state {actual} + 题面 {question_cost} 越过容量 {CAPACITY}"
+    );
+}
+
+/// 收紧的边界：极小容量（收紧后连固定块都装不下）**保持改造前分账**，否则会把
+/// 「小容量照常问」的结构性判据推翻（正文池被打到 0 ⇒ `empty_input` ⇒ 零请求），
+/// 或把链头证据整条裁没。`question + 1` 是断崖点：容量刚过题面长度时收紧池
+/// 只剩 1 token，不能出现「容量稍大反而不问」。
+#[test]
+fn tiny_capacity_keeps_the_pre_change_split() {
+    let question = question_frame_tokens();
+    let brain = brain_with_quota(1);
+    let facts = triggered_facts();
+    for input in [90usize, 110, 500, question, question + 1] {
+        assert_eq!(
+            chain_budget_tokens(&brain, &facts, input, 0),
+            body_token_budget(input),
+            "input={input} 必须保持改造前分账"
+        );
+    }
+    // 容量未配 ⇒ input_budget = usize::MAX：不裁口径不能被收紧改写
+    assert_eq!(
+        state_pool_tokens(usize::MAX),
+        body_token_budget(usize::MAX),
+        "容量未配时保持不裁"
+    );
+    // 越过题面长度、且题面超骨架份额时才真正收紧 + 扣固定块
+    let mid = question + 1_000;
+    assert!(
+        chain_budget_tokens(&brain, &facts, mid, 0) < body_token_budget(mid),
+        "input={mid} 必须按题面实测收紧并扣掉固定块"
+    );
+}

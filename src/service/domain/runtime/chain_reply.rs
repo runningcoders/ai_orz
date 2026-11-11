@@ -277,6 +277,54 @@ const OPTIONS: [(&str, &str); 3] = [
     ),
 ];
 
+/// 题面（instructions + 三个选项描述）的实测 token
+///
+/// 与协议层 `questions` 同源（同一份 `INSTRUCTIONS` / `OPTIONS` 常量），不另算一份
+/// 「大概多少」。题面是常量，@4000 实测 **573 token**，已超过 `share::FRAME_BP`
+/// 在标准容量下的 500 token 预留 —— 这不是估算误差，是比例预留装不下常量题面。
+fn question_frame_tokens() -> usize {
+    estimate_tokens(INSTRUCTIONS)
+        + OPTIONS
+            .iter()
+            .map(|(id, desc)| estimate_tokens(id) + estimate_tokens(desc))
+            .sum::<usize>()
+}
+
+/// 本场景 state 正文的**实际上限**：比例池与「容量 − 题面实测」取小
+///
+/// 六场景由 `render_within` 统一裁到 `body_budget_tokens`（= 容量 − 骨架份额）；
+/// 本场景不接它，就必须自己保证「state + 题面 ≤ 容量」。题面小于骨架份额时
+/// `min` 取比例池 ⇒ 既有分账逐字节不变；题面超出骨架份额时（小容量 / 常量题面
+/// 偏长）按实测收紧，只在本场景少给一点链内正文，不动共用比例表、不波及六场景。
+pub(crate) fn state_pool_tokens(input_budget: usize) -> usize {
+    body_token_budget(input_budget).min(input_budget.saturating_sub(question_frame_tokens()))
+}
+
+/// 链内正文的可用预算（**总账收口的唯一出口**）
+///
+/// 三层扣减全在同一个池：① `state_pool_tokens` 按题面实测收紧；② 固定块实测
+/// 占用；③ 待发正文实测占用。生产与护栏测试只认这一个函数，避免两处各算一遍
+/// 之后口径漂移。
+///
+/// ⚠️ 收紧后**连固定块都装不下**的极小容量，保持改造前的分账「比例池 − 待发实测」：
+/// 该档超窗是 provider 配置问题（题面本身就是常量 573 token），收紧只会把链内
+/// 证据裁没，还会推翻「`body_budget == 0` 才不问 ⇒ 小容量照常问」的结构性判据。
+/// 判据用「池 ≤ 固定块实测」而不是「容量 ≤ 题面」：后者会在刚过题面长度处留下
+/// 一段「容量稍大反而不问」的非单调断崖。
+pub(crate) fn chain_budget_tokens(
+    brain: &Brain,
+    facts: &ChainPressureFacts,
+    input_budget: usize,
+    pending_tokens: usize,
+) -> usize {
+    let fixed = fixed_sections_tokens(brain, facts);
+    let pool = state_pool_tokens(input_budget);
+    if pool <= fixed {
+        return body_token_budget(input_budget).saturating_sub(pending_tokens);
+    }
+    pool.saturating_sub(fixed).saturating_sub(pending_tokens)
+}
+
 /// 透传给模型的上下文：**单键分块正文**（走组织器 `cerebellum_context` 的统一出口）
 ///
 /// 改造前是 9 键平铺（`agent_id` / `agent_name` / 6 个压力数字 / `chain_messages`）：
@@ -444,11 +492,14 @@ hard_fatigue: {}\nhard_window_depth: {}",
 ///   空列表由 `push` 整块跳过，不留裸标题。
 ///
 /// 也**不做组织器侧容量自截**（`render_within`）：链内正文已由 [`render_chain`] 按
-/// `body_token_budget` 自截到「输入 − 骨架比例」以内；再叠一层组织器的
-/// 「容量 − 骨架比例」**尾块整砍**，会在中间容量带把
-/// `## 链内消息` 这块主要证据整块砍掉 —— 比不截断更坏（实测见 `chain_reply_tests`）。
-/// 容量安全的判据是「`body_token_budget == 0` ⇒ 不问」，不是
-/// 「截到装得下」。
+/// 实测余额自截；再叠一层组织器的「容量 − 骨架比例」**尾块整砍**，会在中间容量带
+/// 把 `## 链内消息` 这块主要证据整块砍掉 —— 比不截断更坏（实测见 `chain_reply_tests`）。
+///
+/// ⚠️ 但「不接 `render_within`」不等于「不做总账」：`body_budget_tokens` 在六场景
+/// 是**整个 state 正文**的预算，本场景必须由 [`fixed_sections_tokens`] 把其余块的
+/// 实测占用从同一个池扣掉，余额才交给链内 / 待发两块 —— 否则「87.5% 全给两块 +
+/// 最近对话 12% + 身份/场景/协作压力 + 题面 12.5%」会越过 100%。容量是否够问的
+/// 判据仍是「`body_token_budget == 0` ⇒ 不问」（⑤），不是「截到装得下」。
 fn state_bundle(
     brain: &Brain,
     chain_rendered: &str,
@@ -472,6 +523,24 @@ fn state_bundle(
     bundle.push("待发消息", pending_rendered.to_string());
     bundle.push("协作压力", pressure_body(facts));
     bundle
+}
+
+/// 链内 / 待发两块之外的固定 state 开销（token，**实测口径**）
+///
+/// `share::TOTAL_BP` 的编译期断言只钉「骨架 + 待发 + 正文 = 100%」，钉不住本场景
+/// 的语义分叉：六场景由 `render_within` 把**所有块**压到 `body_budget_tokens` 以内，
+/// 本场景却把整个正文池当成了「链内 + 待发」两块的预算。故这里按实测把身份 /
+/// 场景 / 最近对话 / 协作压力（含 `## 标题` 与 `\n\n` 分隔符）从同一个池扣掉。
+///
+/// 占位块用 **CJK 单字**：`estimate_tokens` 对 CJK 是严格 1 字 / 1 token 的线性
+/// 计数，减去两个占位后即为固定块的精确开销；用拉丁字符会踩「4 字符 1 token、
+/// 向上取整」的分界，拼接后可能少算 1 token。最终态若有块因空正文被跳过，本估算
+/// 只会偏高 ⇒ 预算更保守，不会越界。容量未配时 `body_budget` 极大，扣减不改变
+/// 「不裁」的既有行为。
+fn fixed_sections_tokens(brain: &Brain, facts: &ChainPressureFacts) -> usize {
+    const PLACEHOLDER: &str = "占";
+    let rendered = state_bundle(brain, PLACEHOLDER, PLACEHOLDER, facts).render();
+    estimate_tokens(&rendered).saturating_sub(2 * estimate_tokens(PLACEHOLDER))
 }
 
 /// 本场景的 state 装配（单出口：`{"context": "<分块正文>"}`）
@@ -734,9 +803,11 @@ pub(crate) async fn judge_chain_reply(
     // ⑤.5 待发正文（本条默认准备发送的消息）—— AMan 2026-11-11 新增的判定输入
     //
     // 分账规则（**不新开预算池**）：
-    // - 同一池：`body_budget` 不变，只是先给它切一小块
-    //   （`pending_token_budget` = min(输入×15%, body/4)），再按**实测占用**扣减，
-    //   余额全部给链内正文 ⇒ 总输入仍不超过容量，且待发正文短时不会白占固定预留。
+    // - 同一池：`state_pool` 是本场景 state 正文的上限（比例池与「容量 − 题面实测」
+    //   取小，见 [`state_pool_tokens`]），先给它切一小块
+    //   （`pending_token_budget` = min(输入×15%, body/4)），再按**实测占用**扣减；
+    //   固定块与待发正文都从同一池扣除后，余额才给链内正文 ⇒ state + 题面仍
+    //   落在容量内，且待发正文短时不会白占固定预留。
     // - 两重比例约束（输入 15% 上限 + 正文池 1/4）已保证待发正文挤不掉链内证据，
     //   故不再减一个绝对值下限：预算极小时它自然收敛到 body/4，为 0 就不带
     //   （块缺席），不留一句「已截断」的空壳去污染判据。
@@ -750,7 +821,12 @@ pub(crate) async fn judge_chain_reply(
             PENDING_TRUNCATION_SUFFIX,
         )
     };
-    let chain_budget = body_budget.saturating_sub(estimate_tokens(&pending));
+    // ⚠️ 总账收口：本场景不接 `render_within`，就得自己保证「整个 state 正文 ≤
+    // state_pool」（六场景由组织器保证）。`chain_budget_tokens` 单一出口负责
+    // 「题面实测收紧 + 固定块实测 + 待发实测」三层扣减；少了它，12% 的最近对话
+    // + 固定块 + 573 token 题面会叠在 87.5% 之外，推荐值≈最大长度的 provider
+    // 会被顶出窗口。极小容量保持改造前分账（见该函数 doc）。
+    let chain_budget = chain_budget_tokens(brain, facts, input_budget, estimate_tokens(&pending));
 
     // ⑥ 链内一条消息都拉不到：不调小脑、不占配额
     let input = render_chain(messages, chain_budget);
