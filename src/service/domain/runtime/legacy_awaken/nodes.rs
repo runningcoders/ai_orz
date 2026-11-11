@@ -1122,6 +1122,10 @@ impl ThinkNode for ConsolidateNode {
                         deps.message.content(),
                         &artifacts.content,
                         &deps.trace_id,
+                        // 原文记账硬上限按模型容量的占比派生（未配置 ⇒ 不裁）
+                        super::super::compaction::quick_turn_hard_cap_tokens(
+                            super::super::compaction::context_capacity_of(&deps.agent),
+                        ),
                     )
                     .await;
                 crate::log_info!(

@@ -38,6 +38,7 @@ use common::error::Result;
 use std::sync::Arc;
 
 use super::awakening::build_scene_tool_descriptors;
+use super::text_budget;
 use super::think_loop::build_policy_for_scene;
 
 /// 压缩场景的思考轮次上限（**溢出回环 / 正常收尾存档**用）
@@ -99,11 +100,26 @@ impl CompactMode {
     }
 }
 
-/// 轻量落档写入时的硬上限（兜底，不是分流阈值）
+// 轻量落档写入时的硬上限（兜底，不是分流阈值）不再是固定字符数：
+// 它是 `text_budget::share::QUICK_TURN_HARD_CAP_BP`（模型容量的 0.6%）派生的
+// token 预算，见 [`quick_turn_hard_cap_tokens`]。分流由策略引擎按链路规模决定
+// （见 [`build_compaction_policy`]），这里只兜「单条原文别长期占着后续 prompt」。
+
+/// 从 Agent 取模型上下文容量（**唯一入口**）
 ///
-/// 分流由策略引擎按链路规模决定（见 [`build_compaction_policy`]）；
-/// 这里兜一个字符上限，避免极端长原文在阈值配置过大时长期占用后续 prompt。
-const QUICK_TURN_HARD_CAP_CHARS: usize = 1200;
+/// 只是把 `think_loop::context_overflow_threshold` 领到本模块：凡「按容量占比算
+/// 预算」的消费点都经这里取数，不许各自 `agent.brain...` 拼一遍取值链。
+pub(crate) fn context_capacity_of(agent: &Agent) -> Option<u64> {
+    super::think_loop::context_overflow_threshold(agent)
+}
+
+/// 原文记账的 token 硬上限（容量未配置 ⇒ `None` ＝ 不裁）
+///
+/// 与链路判据 [`compaction_chain_min_tool_tokens`] **同源同值**：两者问的是同一个量
+/// ——「原文记账装不下多少」——各算一遍必然漂移，所以只留一条派生。
+pub(crate) fn quick_turn_hard_cap_tokens(capacity: Option<u64>) -> Option<usize> {
+    text_budget::tokens_of(capacity, text_budget::share::QUICK_TURN_HARD_CAP_BP)
+}
 
 /// 链路复杂度判据的三个阈值（任一命中即值得用 LLM 总结）
 ///
@@ -117,22 +133,20 @@ const QUICK_TURN_HARD_CAP_CHARS: usize = 1200;
 /// - 轮次 >= 3：多轮推理意味着中间有查证 / 修正，首尾两侧装不下
 /// - 工具调用 >= 2：单工具直查通常一条结果就能靠原文记账覆盖，
 ///   两次以上基本都有跨工具拼接的结论
-/// - 工具结果字符 >= [`QUICK_TURN_HARD_CAP_CHARS`]：原文记账会截断，必须提炼
+/// - 工具结果 token >= [`compaction_chain_min_tool_tokens`]：原文记账会截断，必须提炼
 pub(crate) const COMPACTION_CHAIN_MIN_ROUNDS: u64 = 3;
 pub(crate) const COMPACTION_CHAIN_MIN_TOOL_CALLS: u64 = 2;
-pub(crate) const COMPACTION_CHAIN_MIN_TOOL_CHARS: u64 = QUICK_TURN_HARD_CAP_CHARS as u64;
 
-/// 按字符（非字节）截断，保留字符边界
-fn truncate_chars(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        return text.to_string();
-    }
-    let end = text
-        .char_indices()
-        .nth(max)
-        .map(|(i, _)| i)
-        .unwrap_or(text.len());
-    format!("{}…", &text[..end])
+/// 「工具结果大到原文记账装不下」的阈值（token）
+///
+/// 与 [`quick_turn_hard_cap_tokens`] 同一个派生量：判据比的是「这批工具结果放不进
+/// 原文记账的账本」，账本多大由同一个份额决定。**量纲必须是 token**：字符口径下
+/// 同样 1200 字，中文是 1200 token、英文只有 300 token，英文侧永远撞不到阈值——
+/// 判据会说反话（明明装不下却判「装得下」）。
+///
+/// 容量未配置 ⇒ `0`＝该维度禁用（不猜兜底值；另两个维度仍然生效）。
+pub(crate) fn compaction_chain_min_tool_tokens(capacity: Option<u64>) -> u64 {
+    quick_turn_hard_cap_tokens(capacity).unwrap_or(0) as u64
 }
 
 /// 是否 CJK 字符（中日韩表意文字 / 假名 / 谚文 / 全角标点）
@@ -217,8 +231,8 @@ pub(crate) struct TurnChainMetrics {
     pub rounds_used: u64,
     /// 本轮工具调用次数
     pub tool_calls: u64,
-    /// 本轮工具结果文本的总字符数（本轮独有信息）
-    pub tool_result_chars: u64,
+    /// 本轮工具结果合计 token（判据口径；与 prompt 侧同一套估算）
+    pub tool_result_tokens: u64,
 }
 
 impl TurnChainMetrics {
@@ -228,7 +242,7 @@ impl TurnChainMetrics {
             .with("turn_tokens", self.turn_tokens)
             .with("rounds_used", self.rounds_used)
             .with("tool_calls", self.tool_calls)
-            .with("tool_result_chars", self.tool_result_chars)
+            .with("tool_result_tokens", self.tool_result_tokens)
     }
 }
 
@@ -246,7 +260,7 @@ pub(crate) fn measure_turn_chain(
 ) -> TurnChainMetrics {
     let mut assistant_calls = 0u64;
     let mut tool_results = 0u64;
-    let mut tool_result_chars = 0u64;
+    let mut tool_result_tokens = 0u64;
     for msg in messages {
         match msg {
             ChatMessage::Assistant {
@@ -255,7 +269,8 @@ pub(crate) fn measure_turn_chain(
             } => assistant_calls += calls.len() as u64,
             ChatMessage::Tool { content, .. } => {
                 tool_results += 1;
-                tool_result_chars += content.chars().count() as u64;
+                // 与 prompt 侧同一套估算：判据比的是「放不放得下」，不是字符数
+                tool_result_tokens += estimate_tokens(content) as u64;
             }
             _ => {}
         }
@@ -266,7 +281,7 @@ pub(crate) fn measure_turn_chain(
         // 两种口径取大：一次 Assistant 可能带多个 tool_calls，
         // 也可能脚本后端只回填了 Tool 结果而没回填 Assistant
         tool_calls: assistant_calls.max(tool_results),
-        tool_result_chars,
+        tool_result_tokens,
     }
 }
 
@@ -275,7 +290,10 @@ pub(crate) fn measure_turn_chain(
 /// OR 组两条：文本规模兜底 + 链路复杂度。保留组形态是为了给「小脑」留位：
 /// `cerebellum_decision_strategy_design.md` 已把「记忆压缩阈值」列为 `Grade`
 /// 题型替换位，届时往 OR 组加第三条 `DecisionPolicy` 即可，调用方只管喂 Metrics。
-pub(crate) fn compaction_policy_for(threshold_tokens: u64) -> Arc<dyn crate::pkg::policy::Policy> {
+pub(crate) fn compaction_policy_for(
+    threshold_tokens: u64,
+    min_tool_tokens: u64,
+) -> Arc<dyn crate::pkg::policy::Policy> {
     use crate::pkg::policy::builtin::{CompactionChainPolicy, CompactionThresholdPolicy};
     use crate::pkg::policy::policy_set;
 
@@ -285,7 +303,7 @@ pub(crate) fn compaction_policy_for(threshold_tokens: u64) -> Arc<dyn crate::pkg
             CompactionChainPolicy(
                 COMPACTION_CHAIN_MIN_ROUNDS,
                 COMPACTION_CHAIN_MIN_TOOL_CALLS,
-                COMPACTION_CHAIN_MIN_TOOL_CHARS
+                min_tool_tokens
             ),
         }
     })
@@ -296,7 +314,9 @@ pub(crate) fn build_compaction_policy(agent: &Agent) -> Arc<dyn crate::pkg::poli
     // 文本维度不允许「完全不启用」：配置误填成 0 时（策略引擎里 0 = 未启用）
     // 至少按 1 处理；链路维度本身不依赖配置，不会退化成全部原文记账。
     let threshold = super::types::config_resolve::compaction_threshold_tokens(agent).max(1);
-    compaction_policy_for(threshold as u64)
+    // 容量取全仓唯一入口（推荐值 > max × 60% > 未配置）
+    let capacity = super::think_loop::context_overflow_threshold(agent);
+    compaction_policy_for(threshold as u64, compaction_chain_min_tool_tokens(capacity))
 }
 
 /// 轻量落档的摘要文本（纯函数，便于单测）
@@ -307,22 +327,28 @@ pub(crate) fn build_compaction_policy(agent: &Agent) -> Arc<dyn crate::pkg::poli
 ///
 /// 阈值内的短对话**保留全文**（"直接记下来"要名副其实）；只有超过硬上限的
 /// 极长内容（仅直答/澄清可能触发）才两侧均分截断兜底。
-fn build_quick_turn_summary(user_message: &str, reply: &str) -> Option<String> {
+fn build_quick_turn_summary(
+    user_message: &str,
+    reply: &str,
+    hard_cap: Option<usize>,
+) -> Option<String> {
     let user = user_message.trim();
     let reply = reply.trim();
     if user.is_empty() && reply.is_empty() {
         return None;
     }
 
-    let total = user.chars().count() + reply.chars().count();
-    let (user, reply) = if total <= QUICK_TURN_HARD_CAP_CHARS {
-        (user.to_string(), reply.to_string())
-    } else {
-        let half = QUICK_TURN_HARD_CAP_CHARS / 2;
-        (
-            truncate_chars(user, half),
-            truncate_chars(reply, QUICK_TURN_HARD_CAP_CHARS - half),
-        )
+    // 预算未配置 ⇒ 不裁（不猜兜底值）；配置了才按 token 均分两侧截断
+    let total = estimate_tokens(user) + estimate_tokens(reply);
+    let (user, reply) = match hard_cap {
+        Some(cap) if total > cap => {
+            let half = cap / 2;
+            (
+                truncate_to_tokens(user, half, TRUNCATION_SUFFIX),
+                truncate_to_tokens(reply, cap - half, TRUNCATION_SUFFIX),
+            )
+        }
+        _ => (user.to_string(), reply.to_string()),
     };
 
     Some(if reply.is_empty() {
@@ -331,6 +357,9 @@ fn build_quick_turn_summary(user_message: &str, reply: &str) -> Option<String> {
         format!("用户：{user}\n助手：{reply}")
     })
 }
+
+/// 轻量落档两侧截断时追加的省略标注
+const TRUNCATION_SUFFIX: &str = "…";
 
 /// 压缩摘要的起止标记
 ///
@@ -502,8 +531,9 @@ impl RuntimeDomainImpl {
         user_message: &str,
         reply: &str,
         trace_id: &str,
+        hard_cap: Option<usize>,
     ) -> Option<String> {
-        let summary = build_quick_turn_summary(user_message, reply)?;
+        let summary = build_quick_turn_summary(user_message, reply, hard_cap)?;
         self.insert_short_term(
             ctx,
             agent_id,

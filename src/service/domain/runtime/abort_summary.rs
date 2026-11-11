@@ -27,6 +27,8 @@
 //! - **不改错误语义**：兜底只做「存档」，失败照常向上抛，重试/通知决策仍在消费者侧。
 //! - **全链路尽力而为**：任何一步失败都只记 warn，绝不把兜底失败变成新的错误。
 
+use super::compaction::{estimate_tokens, truncate_to_tokens};
+use super::text_budget;
 use super::types::{ProgressSnapshot, RoundDigest, ThinkLoopProgress};
 use crate::models::agent::Agent;
 use crate::models::memory::{MemoryCreateParams, MemoryTrace, ShortTermMemoryIndexPo};
@@ -34,7 +36,6 @@ use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::{RuntimeDomain, RuntimeDomainImpl};
 use common::enums::MemoryStatus;
 use common::error::Error;
-use std::borrow::Cow;
 
 /// 框架落库时给中断存档打的标签（便于识别/统计这类记忆，与 `compaction` 区分）
 const ABORT_TAG: &str = "loop_abort";
@@ -45,17 +46,12 @@ const ABORT_TAG: &str = "loop_abort";
 /// 让用户知道工作没白做。放在错误上传递，是为了不为此新增返回值字段。
 pub const ABORT_NOTICE_FIELD: &str = "abort_notice";
 
-/// 兜底摘要的字符预算
-///
-/// 短期记忆最终要进 Prompt，无上限的存档会把下一轮上下文直接撑爆 ——
-/// 宁可截断，也不能劣化模型表现。这里按字符计，与沉淀批次的 token 预算相互独立。
-const SUMMARY_BUDGET_CHARS: usize = 12_000;
-
-/// 用户原始消息的截断上限
-const USER_MESSAGE_MAX_CHARS: usize = 4_000;
-
-/// 错误详情的截断上限（provider 的原始报错体可能极长）
-const ERROR_MESSAGE_MAX_CHARS: usize = 1_000;
+// 各段的预算不再是「按字符拍的绝对值」，改为**按模型上下文容量的占比**派生：
+// 份额表在 [`text_budget::share`]（单一事实源），本文件只做「占比 × 容量」的取值，
+// 不得再各自写死 token / 字符数。容量未配置 ⇒ `tokens_of` 返回 `None` ⇒ 不裁。
+//
+// 为什么这些段需要上限：短期记忆最终要进 Prompt，无上限的存档会把下一轮上下文
+// 直接撑爆 —— 宁可截断，也不能劣化模型表现。
 
 // ==================== 中断类型 ====================
 
@@ -103,6 +99,8 @@ pub(crate) struct AbortContext<'a> {
     pub progress: &'a ProgressSnapshot,
     /// 已消耗的轮次（跨压缩累计，可能大于快照里的轮次数）
     pub total_rounds: usize,
+    /// 模型上下文容量（provider 推荐值；`None` ＝ 未配置 ⇒ 各段不裁）
+    pub capacity_tokens: Option<u64>,
 }
 
 /// 兜底摘要的两种产物
@@ -114,17 +112,20 @@ pub(crate) struct AbortSummary {
     pub brief: String,
 }
 
-/// 按字符预算截断（保字符边界，尾部标注原始长度）
-fn truncate_chars(s: &str, max: usize) -> Cow<'_, str> {
-    if s.chars().count() <= max {
-        return Cow::Borrowed(s);
+/// 按 token 预算截断（预算未配置 ⇒ 原样返回，不裁）
+///
+/// 标注文案里仍报「原文 N 字符」：字符数是人读得懂的原始体量，token 数是模型
+/// 口径，两者不冲突；**截断本身按 token 判定**（`truncate_to_tokens` 唯一实现），
+/// 且标注的 token 也计入预算，不会「截到预算再拼标注就超」。
+fn clip(s: &str, budget: Option<usize>) -> String {
+    match budget {
+        Some(budget) => truncate_to_tokens(
+            s,
+            budget,
+            &format!("…（已截断，原文 {} 字符）", s.chars().count()),
+        ),
+        None => s.to_string(),
     }
-    let end = s.char_indices().nth(max).map(|(i, _)| i).unwrap_or(s.len());
-    Cow::Owned(format!(
-        "{}…（已截断，原文 {} 字符）",
-        &s[..end],
-        s.chars().count()
-    ))
 }
 
 /// 从最近一轮往前挑，直到用尽预算
@@ -133,13 +134,21 @@ fn truncate_chars(s: &str, max: usize) -> Cow<'_, str> {
 /// 开头部分即便被裁掉，用户诉求也在摘要开头单独成段，不会丢。
 ///
 /// 至少保留一轮，避免预算极小时产出空进度。
-fn pick_rounds_within_budget(rounds: &[RoundDigest], budget: usize) -> (Vec<&RoundDigest>, usize) {
+fn pick_rounds_within_budget(
+    rounds: &[RoundDigest],
+    budget: Option<usize>,
+) -> (Vec<&RoundDigest>, usize) {
     let mut kept: Vec<&RoundDigest> = Vec::new();
     let mut used = 0usize;
     let mut omitted = 0usize;
     for rd in rounds.iter().rev() {
-        let size: usize = rd.transcript.iter().map(|l| l.chars().count() + 1).sum();
-        if !kept.is_empty() && used.saturating_add(size) > budget {
+        // 逐行按 token 估算（与 prompt 侧同口径），+1 是换行本身
+        let size: usize = rd.transcript.iter().map(|l| estimate_tokens(l) + 1).sum();
+        let over = match budget {
+            Some(budget) => !kept.is_empty() && used.saturating_add(size) > budget,
+            None => false,
+        };
+        if over {
             omitted += 1;
             continue;
         }
@@ -154,6 +163,7 @@ fn pick_rounds_within_budget(rounds: &[RoundDigest], budget: usize) -> (Vec<&Rou
 pub(crate) fn build_abort_summary(input: &AbortContext<'_>) -> AbortSummary {
     let rounds_used = input.progress.rounds_used();
     let tool_calls = input.progress.total_tool_calls;
+    let capacity = input.capacity_tokens;
 
     let mut s = String::new();
 
@@ -169,7 +179,10 @@ pub(crate) fn build_abort_summary(input: &AbortContext<'_>) -> AbortSummary {
     if user_message.is_empty() {
         s.push_str("（空消息）");
     } else {
-        s.push_str(&truncate_chars(user_message, USER_MESSAGE_MAX_CHARS));
+        s.push_str(&clip(
+            user_message,
+            text_budget::tokens_of(capacity, text_budget::share::ABORT_USER_MESSAGE_BP),
+        ));
     }
     s.push_str("\n\n");
 
@@ -180,7 +193,10 @@ pub(crate) fn build_abort_summary(input: &AbortContext<'_>) -> AbortSummary {
             s.push_str(&format!(
                 "[{}] {}",
                 e.code(),
-                truncate_chars(&e.msg, ERROR_MESSAGE_MAX_CHARS)
+                clip(
+                    &e.msg,
+                    text_budget::tokens_of(capacity, text_budget::share::ABORT_ERROR_MESSAGE_BP),
+                )
             ));
         }
         None => match input.kind {
@@ -199,8 +215,10 @@ pub(crate) fn build_abort_summary(input: &AbortContext<'_>) -> AbortSummary {
     if rounds_used == 0 {
         s.push_str("尚未产生任何有效轮次：模型在第一轮调用时即失败。\n\n");
     } else {
-        let (kept, omitted) =
-            pick_rounds_within_budget(&input.progress.rounds, SUMMARY_BUDGET_CHARS);
+        let (kept, omitted) = pick_rounds_within_budget(
+            &input.progress.rounds,
+            text_budget::tokens_of(capacity, text_budget::share::ABORT_SUMMARY_BP),
+        );
         for rd in &kept {
             s.push_str(&format!("### 第 {} 轮\n", rd.round));
             if rd.transcript.is_empty() {
@@ -215,7 +233,7 @@ pub(crate) fn build_abort_summary(input: &AbortContext<'_>) -> AbortSummary {
         }
         if omitted > 0 {
             s.push_str(&format!(
-                "（受字符预算限制，已省略最早的 {omitted} 轮）\n\n"
+                "（受 token 预算限制，已省略最早的 {omitted} 轮）\n\n"
             ));
         }
     }
@@ -231,7 +249,10 @@ pub(crate) fn build_abort_summary(input: &AbortContext<'_>) -> AbortSummary {
     // 5. 中断前模型最后的话 —— 常常就是它打算接下来做什么
     if let Some(last) = input.progress.last_assistant_text() {
         s.push_str("## 中断前模型的最后输出\n\n");
-        s.push_str(&truncate_chars(last.trim(), 2_000));
+        s.push_str(&clip(
+            last.trim(),
+            text_budget::tokens_of(capacity, text_budget::share::ABORT_LAST_OUTPUT_BP),
+        ));
         s.push_str("\n\n");
     }
 
@@ -368,6 +389,8 @@ impl RuntimeDomainImpl {
             error,
         } = params;
 
+        // 容量取全仓唯一入口（推荐值 > max × 60% > 未配置），不在这里算比例
+        let capacity_tokens = super::think_loop::context_overflow_threshold(agent);
         let snapshot = progress.snapshot();
         let summary = build_abort_summary(&AbortContext {
             kind,
@@ -375,6 +398,7 @@ impl RuntimeDomainImpl {
             user_message,
             progress: &snapshot,
             total_rounds,
+            capacity_tokens,
         });
 
         // ---- 1. 落库短期记忆 ----
@@ -405,7 +429,13 @@ impl RuntimeDomainImpl {
             trace.metadata.insert("error_code".into(), e.code().into());
             trace.metadata.insert(
                 "error_message".into(),
-                truncate_chars(&e.msg, ERROR_MESSAGE_MAX_CHARS).into_owned(),
+                clip(
+                    &e.msg,
+                    text_budget::tokens_of(
+                        capacity_tokens,
+                        text_budget::share::ABORT_ERROR_MESSAGE_BP,
+                    ),
+                ),
             );
         }
         if let Some(id) = &memory_id {
@@ -537,6 +567,7 @@ mod tests {
             user_message: "帮我把上周的方案整理成一页纸",
             progress: &snapshot,
             total_rounds: 2,
+            capacity_tokens: None,
         });
 
         assert!(out.detail.contains("帮我把上周的方案整理成一页纸"));
@@ -561,6 +592,7 @@ mod tests {
             user_message: "你好",
             progress: &snapshot,
             total_rounds: 0,
+            capacity_tokens: None,
         });
 
         assert!(out.detail.contains("尚未产生任何有效轮次"));
@@ -578,6 +610,7 @@ mod tests {
             user_message: "读文件",
             progress: &snapshot,
             total_rounds: 2,
+            capacity_tokens: None,
         });
         assert!(out.brief.contains("2 轮思考"));
         assert!(out.brief.contains("2 次工具调用"));
@@ -594,6 +627,7 @@ mod tests {
             user_message: "继续跑",
             progress: &snapshot,
             total_rounds: 1,
+            capacity_tokens: None,
         });
         assert!(out.detail.contains("被取消的任务"));
         assert!(out.detail.contains("主动取消"));
@@ -602,14 +636,15 @@ mod tests {
 
     #[test]
     fn budget_drops_oldest_rounds_and_says_so() {
-        // 每轮 3000 字符，预算 12000 → 只能留下最近 4 轮中的若干轮
+        // 每轮 3000 个 CJK 字 ≈ 3000 token；@200K 容量 ⇒ 轮次预算 12_000 token
+        // ⇒ 只留得下最近 4 轮，最早的 2 轮被省略。
         let p = ThinkLoopProgress::new();
         for i in 0..6 {
             p.record_round(RoundDigest {
                 round: i + 1,
                 assistant_text: Some("x".to_string()),
                 tool_names: vec![],
-                transcript: vec!["y".repeat(3_000)],
+                transcript: vec!["字".repeat(3_000)],
             });
         }
         let snapshot = p.snapshot();
@@ -619,18 +654,69 @@ mod tests {
             user_message: "跑批",
             progress: &snapshot,
             total_rounds: 6,
+            capacity_tokens: Some(200_000),
         });
         assert!(out.detail.contains("已省略最早的"));
         // 最近一轮必须保留
         assert!(out.detail.contains("### 第 6 轮"));
     }
 
+    /// 容量未配置 ⇒ 轮次一条都不省略（不猜兜底值）
     #[test]
-    fn truncate_keeps_char_boundary() {
-        let s = "中文字符串截断测试";
-        assert_eq!(truncate_chars(s, 100), s);
-        let out = truncate_chars(s, 3);
-        assert!(out.starts_with("中文字"));
+    fn unknown_capacity_keeps_every_round() {
+        let p = ThinkLoopProgress::new();
+        for i in 0..3 {
+            p.record_round(RoundDigest {
+                round: i + 1,
+                assistant_text: Some("x".to_string()),
+                tool_names: vec![],
+                transcript: vec!["字".repeat(3_000)],
+            });
+        }
+        let snapshot = p.snapshot();
+        let out = build_abort_summary(&AbortContext {
+            kind: AbortKind::Error,
+            error: None,
+            user_message: "跑批",
+            progress: &snapshot,
+            total_rounds: 3,
+            capacity_tokens: None,
+        });
+        assert!(!out.detail.contains("已省略最早的"));
+    }
+
+    /// 截断按 token 判定、且守住 token 预算（字符边界不破）
+    #[test]
+    fn clip_keeps_token_boundary() {
+        let s: String = "中".repeat(200);
+        assert_eq!(clip(&s, Some(1_000)), s, "未超预算 ⇒ 原样");
+        assert_eq!(clip(&s, None), s, "容量未配 ⇒ 不裁");
+        let out = clip(&s, Some(50));
+        assert!(out.starts_with('中'));
         assert!(out.contains("已截断"));
+        assert!(super::estimate_tokens(&out) <= 50, "截后必须落在预算内");
+        assert!(out.chars().count() < 200);
+    }
+
+    /// 同一份 token 预算下 CJK 与英文留下的字符数不同（char 口径 → token 口径）
+    ///
+    /// 改前按 `chars().count()` 裁：两种语言都留 100 个字符，英文侧实际只用了
+    /// 25 token 的额度（白扔 3/4）—— 这正是「一套字符规则在两种语言下差 4 倍」。
+    #[test]
+    fn token_budget_bounds_cjk_and_latin_differently() {
+        let cjk: String = "中".repeat(400);
+        let latin: String = "a".repeat(400);
+        let cjk_out = clip(&cjk, Some(100));
+        let latin_out = clip(&latin, Some(100));
+        assert!(super::estimate_tokens(&cjk_out) <= 100);
+        assert!(super::estimate_tokens(&latin_out) <= 100);
+        let cjk_chars = cjk_out.chars().count();
+        let latin_chars = latin_out.chars().count();
+        assert!(
+            latin_chars > cjk_chars * 3,
+            "同预算下英文字符数应显著多于 CJK：{latin_chars} vs {cjk_chars}"
+        );
+        assert!(super::estimate_tokens(&cjk_out) >= 90);
+        assert!(super::estimate_tokens(&latin_out) >= 90);
     }
 }

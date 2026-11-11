@@ -459,6 +459,7 @@ mod cerebellum_router;
 // 小脑上下文组织器（笔④）：state 分块正文的唯一装配点，`pub(crate)` 供 legacy_awaken 侧接入
 pub(crate) mod cerebellum_context;
 pub(crate) mod chain_reply;
+pub(crate) mod text_budget;
 // `pub(crate)`：token 估算/截断是**跨层共用**的纯文本工具——Domain 内部的
 // 压缩分流、`chain_reply` 链内裁剪，以及 DAL 侧小脑 state 的容量对齐都用同一份实现。
 // 若将来要彻底消除 DAL→Domain 的引用，应把这两个函数下沉到 `pkg`（登记为技术债候选）。
