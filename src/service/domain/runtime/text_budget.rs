@@ -8,9 +8,11 @@
 //!
 //! - `cerebellum_context::share`：小脑一次判断的输入如何**切开分账**（骨架 /
 //!   待发消息 / 正文 / 摘要片段），各份额相加 ≤ 100%，有硬顶断言。
-//! - 本模块：各消费点（中止摘要 / inbox 注入 / 原文记账）都是**独立字段**的上限，
-//!   不会同时出现在同一个 prompt 的同一个池里被加总 ⇒ **不设总和硬顶**——把它们
-//!   加总没有语义，硬套一个 100% 断言只会逼出假约束。改为断言「单份额 ≤ 100%」。
+//! - 本模块：一颗份额表管两件事——①**同池总和**：abort 摘要的四段落在同一份
+//!   detail 文档里叠加，份额和由编译期断言钉住（见文件末尾 `const _`）；②**跨路径
+//!   不加总**：中止摘要 / inbox 注入 / 原文记账 / 词表 / 意图区块分属互斥路径，
+//!   不会同时落进同一个池 ⇒ 对它们造「全局总额」只是假约束。prompt 内区块
+//!   （词表 + 意图条目 + 意图摘要）在上层 builder 侧另有一条编译期断言。
 //!
 //! # 基准
 //!
@@ -54,6 +56,31 @@ pub(crate) mod share {
     /// @200K ⇒ 2_000 token，对应改造前 `MAX_INJECTED_CHARS = 2_000`。
     pub(crate) const INBOX_BATCH_BP: u32 = 100;
 
+    /// 本体词表注入预算（1.5%）
+    ///
+    /// @200K ⇒ 3_000 token，对应改造前 `LEXICON_PROMPT_BUDGET_CHARS = 3_000`。
+    /// 预置词表全量约 2k 字符 ⇒ 正常全量注入；管理员扩表超预算时按
+    /// 「关系词 > 实体类 > 同义样例」优先级裁剪（design §3）。
+    pub(crate) const LEXICON_PROMPT_BP: u32 = 150;
+
+    /// 意图分析区块里**单条**条目（关键词 / 消歧 / 检索摘要 / 澄清问题）上限（0.08%）
+    ///
+    /// @200K ⇒ 160 token。改造前是 `MAX_ITEM_CHARS = 150`（字符口径）——
+    /// 两者在 200K 上**不逐位相等**（150 → 160，+10 的位移），口径是「量级对齐」，
+    /// 不是「逐位复现」：字符口径下同一行中文算 150 token、英文只算 37 token，
+    /// 本来就没有唯一等价值。
+    pub(crate) const INTENT_ITEM_BP: u32 = 8;
+
+    /// 意图分析区块的「一句话理解总结」上限（0.4%）
+    ///
+    /// @200K ⇒ 800 token，对应改造前 `MAX_SUMMARY_CHARS = 800`。
+    pub(crate) const INTENT_SUMMARY_BP: u32 = 40;
+
+    /// discover 轨迹**单行**的内容预算（0.1%）
+    ///
+    /// @200K ⇒ 200 token，对应改造前 `TRAIL_SUMMARY_CHARS = 200`。
+    pub(crate) const TRAIL_SUMMARY_BP: u32 = 10;
+
     /// 轻量落档（`quick_turn`）的原文记账上限（0.6%）
     ///
     /// @200K ⇒ 1_200 token，对应改造前 `QUICK_TURN_HARD_CAP_CHARS = 1_200`。
@@ -71,6 +98,19 @@ pub(crate) fn tokens_of(capacity: Option<u64>, bp: u32) -> Option<usize> {
     let tokens = ((capacity as u128) * (bp as u128) / (share::BASIS as u128)) as usize;
     Some(tokens.max(1))
 }
+
+/// 同池总和自校验（编译期，零运行时成本）：abort 摘要的四段
+/// **同处一份 detail 文档**、互不重复扣减，份额和超 100% 说明份额表被改坏。
+///
+/// 只钉「同一份文档内」的和；`INBOX_BATCH_BP` / `QUICK_TURN_HARD_CAP_BP` /
+/// `LEXICON_PROMPT_BP` / intent 两块属互斥路径，不与本池相加。
+const _: () = assert!(
+    share::ABORT_SUMMARY_BP
+        + share::ABORT_USER_MESSAGE_BP
+        + share::ABORT_ERROR_MESSAGE_BP
+        + share::ABORT_LAST_OUTPUT_BP
+        <= share::BASIS
+);
 
 #[cfg(test)]
 mod tests {
@@ -112,6 +152,20 @@ mod tests {
         );
     }
 
+    /// prompt 侧三项 + discover 轨迹行 @200K 的取值（口径对齐改造前字符值）
+    ///
+    /// `INTENT_ITEM_BP` 是**量级对齐不是逐位复现**（150 字符 → 160 token），
+    /// 单独分组，不许混进上面那组「逐位复现」断言里。
+    #[test]
+    fn prompt_side_shares_are_reproduced_at_200k() {
+        let cap = Some(200_000);
+        assert_eq!(tokens_of(cap, share::LEXICON_PROMPT_BP), Some(3_000));
+        assert_eq!(tokens_of(cap, share::INTENT_SUMMARY_BP), Some(800));
+        assert_eq!(tokens_of(cap, share::TRAIL_SUMMARY_BP), Some(200));
+        // 量级对齐（+10 位移），不是逐位复现
+        assert_eq!(tokens_of(cap, share::INTENT_ITEM_BP), Some(160));
+    }
+
     /// 预算随容量变（同一份额换两个容量的 provider ⇒ 预算不同）
     #[test]
     fn budget_follows_capacity() {
@@ -146,6 +200,10 @@ mod tests {
             share::ABORT_LAST_OUTPUT_BP,
             share::INBOX_BATCH_BP,
             share::QUICK_TURN_HARD_CAP_BP,
+            share::LEXICON_PROMPT_BP,
+            share::INTENT_ITEM_BP,
+            share::INTENT_SUMMARY_BP,
+            share::TRAIL_SUMMARY_BP,
         ] {
             assert!(bp <= share::BASIS, "share {bp} bp exceeds 100%");
         }

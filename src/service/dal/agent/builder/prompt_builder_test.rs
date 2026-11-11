@@ -238,15 +238,18 @@ fn render_intent_analysis_section_truncation_rules() {
     };
 
     let mut builder = DefaultPromptBuilder::new();
+    // 容量注入后才进入「按占比派生预算」的形态；未配容量 ⇒ 不裁（本用例前提必须显式给）
+    builder.set_context_capacity_tokens(Some(200_000));
     builder.intent_analysis = Some(ia);
 
     let output = builder.render_intent_analysis_section();
     assert!(!output.is_empty(), "理解区块不应为空");
 
-    // 1) 总字符数 < 3000（实际 ~10*150*4 + 800 + 约 500 固定文字 ≈ 7300，
-    //    这里用 8000 作为安全上限，重点是不能让 20*300*4 + 2000 = 26000 全部进入）
+    // 1) 截断后的体量上限：4 个数组各 10 条 × 160 token ≈ 6.5k 字符 + 摘要 800
+    //    + 固定文字 ≈ 300 ⇒ 约 7.6k；未配容量时是 20*300*4 + 2000 = 26000 全量进入。
+    //    这里用 9000 作为安全上限，重点是「远小于原始体量」。
     assert!(
-        output.chars().count() < 8000,
+        output.chars().count() < 9000,
         "截断后输出应远小于原始体量，当前字符数: {}",
         output.chars().count()
     );
@@ -1048,6 +1051,8 @@ fn lexicon_block_truncates_low_priority_sections() {
         .collect();
 
     let mut builder = DefaultPromptBuilder::new();
+    // 200K ⇒ 词表预算 3_000 token；单条 description ≈ 3_400 token ⇒ 首条即装不下
+    builder.set_context_capacity_tokens(Some(200_000));
     builder.system_prompt(&agent);
     builder.ontology_lexicon(&lexicon);
     let prompt = builder.build();
@@ -1136,6 +1141,9 @@ fn lexicon_block_synonyms_yield_when_budget_exhausted() {
     };
 
     let mut builder = DefaultPromptBuilder::new();
+    // 133K ⇒ 词表预算 ≈1_995 token：前两段（≈700 token）装得下，
+    // 同义段单条 raw_term 3_000 字符 ≈3_000 token ⇒ 剩余预算不足、整体让位
+    builder.set_context_capacity_tokens(Some(133_000));
     builder.system_prompt(&agent);
     builder.ontology_lexicon(&lexicon);
     let prompt = builder.build();

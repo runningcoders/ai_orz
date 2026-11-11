@@ -641,11 +641,17 @@ impl RuntimeDomainImpl {
         agent: &Agent,
     ) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
         use common::enums::AgentKind;
-        match agent.po.kind {
+        let mut builder: Box<dyn crate::models::prompt_builder::PromptBuilder> = match agent.po.kind
+        {
             AgentKind::Local => self.agent_dal.prompt_builder(),
             AgentKind::Cli => self.codex_agent_dal.prompt_builder(),
             AgentKind::Remote => self.a2a_agent_dal.prompt_builder(),
-        }
+        };
+        // 上下文容量在**唯一 builder 生产点**注入：所有场景（intent / awaken /
+        // C 路径 / settle）都从这里拿 builder，装配点无需各自记得注入 —— 漏一处
+        // 就会静默退化成「不裁」，这类缺口不该靠人工枚举装配点来防。
+        builder.set_context_capacity_tokens(compaction::context_capacity_of(agent));
+        builder
     }
 }
 

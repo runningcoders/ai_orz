@@ -12,6 +12,56 @@ use crate::pkg::think_path::ThinkPathBlueprint;
 use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, MAX_INTENT_REWINDS};
 use crate::service::domain::runtime::types::{ThinkLoopResult, WakeUsage};
 
+/// discover 轨迹行：同一 token 预算下 CJK 与拉丁留下**不同字符数**
+///
+/// 改造前单行固定截断 200 **字符**：CJK 200 字符 = 200 token，拉丁 200 字符 = 50 token
+/// —— 同一预算在英文上白扔 3/4 额度。改后按 token 裁 ⇒ 拉丁留 ~800 字符。
+/// 静态依据在旧树（`to_summary_text(TRAIL_SUMMARY_CHARS)` + `truncate_str` 按 chars 截），
+/// 未把断言搬到旧树实跑 ⇒ R66 档②「改前应红」，不是「改前必红」。
+#[test]
+fn discover_trail_line_budget_counts_tokens_not_chars() {
+    use super::discover_node::trail_line;
+    use crate::models::cortex_types::ChatMessage;
+    use crate::service::domain::runtime::compaction::estimate_tokens;
+
+    let cjk = ChatMessage::User {
+        content: "字".repeat(1_000),
+    };
+    let latin = ChatMessage::User {
+        content: "a".repeat(2_000),
+    };
+
+    let cjk_line = trail_line(&cjk, Some(200));
+    let latin_line = trail_line(&latin, Some(200));
+
+    assert!(
+        estimate_tokens(&cjk_line) <= 200,
+        "截断后必须满足预算: {}",
+        estimate_tokens(&cjk_line)
+    );
+    assert!(
+        estimate_tokens(&latin_line) <= 200,
+        "截断后必须满足预算: {}",
+        estimate_tokens(&latin_line)
+    );
+    // 同一 200 token 预算：CJK 剩 ~199 字符，拉丁剩 ~795 字符
+    assert!(
+        latin_line.chars().count() > cjk_line.chars().count() * 3,
+        "字符口径下两者都是 200 字符；token 口径下应当差 3 倍以上: cjk={} latin={}",
+        cjk_line.chars().count(),
+        latin_line.chars().count()
+    );
+
+    // 容量未配 ⇒ 不裁（整行原样，含 1_000 个 CJK 字）
+    let unset = trail_line(&cjk, None);
+    assert_eq!(
+        unset.chars().count(),
+        "[user] ".chars().count() + 1_000,
+        "未配容量时不得截断: {}",
+        unset.chars().count()
+    );
+}
+
 fn blueprint() -> ThinkPathBlueprint {
     legacy_awaken_blueprint().expect("legacy_awaken blueprint")
 }

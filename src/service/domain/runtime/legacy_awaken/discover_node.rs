@@ -8,10 +8,14 @@
 //!
 //! 观测口径（design §3.7）：日志 + fingerprint 覆盖，不新增事件类型。
 
+use super::super::compaction::{context_capacity_of, truncate_to_tokens};
+use super::super::text_budget;
 use super::blueprint::{SIGNAL_NEW_FINDINGS, SIGNAL_NO_NEW_FINDINGS};
 use super::context::{AwakenDeps, DiscoveryOutcome, RetrievalPack, read_bus};
 use super::nodes::{Artifacts, BudgetState};
 use super::retrieve_node::diff_terms;
+use crate::models::agent::Agent;
+use crate::models::cortex_types::ChatMessage;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
@@ -35,18 +39,37 @@ pub(crate) const MAX_DISCOVERY_ROUNDS: usize = 2;
 /// 轨迹行数上限（防 prompt 失控：30 行 × 每行 200 chars）
 const MAX_TRAIL_LINES: usize = 30;
 
-/// 单条轨迹行的内容截断长度
-const TRAIL_SUMMARY_CHARS: usize = 200;
+/// 单条轨迹行的内容预算：占上下文容量 0.1%
+///
+/// @200K ⇒ 200 token，与改造前 `TRAIL_SUMMARY_CHARS = 200`（字符口径）在 CJK
+/// 最坏情况下逐位一致；容量未配 ⇒ `None` ⇒ 不裁（不猜兜底值）。
+fn trail_summary_budget(agent: &Agent) -> Option<usize> {
+    text_budget::tokens_of(
+        context_capacity_of(agent),
+        text_budget::share::TRAIL_SUMMARY_BP,
+    )
+}
+
+/// 单条轨迹行：先按 `[role] content` 整行渲染，再**整行**按 token 预算裁
+///
+/// 不传字符上限给 `to_summary_text`：那会退回字符判断，等于留第二套口径。
+pub(super) fn trail_line(message: &ChatMessage, budget: Option<usize>) -> String {
+    let line = message.to_summary_text(usize::MAX);
+    match budget {
+        Some(b) => truncate_to_tokens(&line, b, "…"),
+        None => line,
+    }
+}
 
 /// 轨迹行：只保留最近的 `MAX_TRAIL_LINES` 条（新线索大概率出现在轨迹尾部），
 /// 单行复用 `ChatMessage::to_summary_text` 的 `[role] content` 口径（含截断）
-fn trail_lines(artifacts: &Artifacts) -> Vec<String> {
+fn trail_lines(artifacts: &Artifacts, budget_tokens: Option<usize>) -> Vec<String> {
     let skip = artifacts.messages.len().saturating_sub(MAX_TRAIL_LINES);
     artifacts
         .messages
         .iter()
         .skip(skip)
-        .map(|m| m.to_summary_text(TRAIL_SUMMARY_CHARS))
+        .map(|m| trail_line(m, budget_tokens))
         .collect()
 }
 
@@ -209,7 +232,7 @@ impl ThinkNode for DiscoverNode {
 
         // 3. 轨迹行 + 短聚焦 prompt（Artifacts 缺失 = 空轨迹，照常让模型判断）
         let artifacts = read_bus::<Artifacts>(bus, ContextKey::Artifacts).unwrap_or_default();
-        let trails = trail_lines(&artifacts);
+        let trails = trail_lines(&artifacts, trail_summary_budget(&deps.agent));
         let prompt = build_discover_prompt(
             deps.message.content(),
             &trails,
