@@ -292,41 +292,38 @@ fn take_traces(run_id: &str) -> Vec<ThinkTraceCerebellum> {
     crate::pkg::think_trace::take_cerebellum(run_id)
 }
 
-// ---------- 预算分配（Q3 改判：min(容量上限, 时延上限)） ----------
+// ---------- 预算分配（容量即预算，无时延反推轴） ----------
 
-/// 测试用默认正文预算：无容量配置 ⇒ 时延上限绑定
+/// 测试用默认正文预算：标准 4000 容量 ⇒ 正文池 3500（与改造前 `None` 口径同值）
 fn test_body_budget() -> usize {
-    body_token_budget(input_token_budget(None))
+    body_token_budget(input_token_budget(Some(4_000)))
 }
 
 #[test]
-fn latency_cap_is_4000_by_5s_budget() {
-    // 时延反推上限必须字面落在代码里（不靠注释自述）
-    //
-    // 5s 预算 → 理论 prefill 天花板 ≈ 9000 tokens；不取满（模型侧排队 /
-    // 生成长度波动 / prefill 吞吐差异），取 4000 = 理论值 ≈ 44%，对 5s 留 ≈ 50% 余量。
-    // 与旧值的关系：旧 800 按 1000ms 反推，基数 5 倍 ⇒ 本值同样 5 倍，没有缩回。
-    assert_eq!(LATENCY_INPUT_CAP, 4_000);
-    // 骨架预留不再是本场景私有常量：由比例表派生，@输入 4000 ⇒ min(4000×12.5%, 500) = 500
+fn input_budget_is_provider_capacity_without_a_latency_cap() {
+    // 速率轴已删：输入预算恒等于 provider 容量，不再被任何绝对 token 数夹顶
+    assert_eq!(input_token_budget(Some(200_000)), 200_000);
+    assert_eq!(input_token_budget(Some(128_000)), 128_000);
+    assert_eq!(input_token_budget(Some(4_000)), 4_000);
+    assert_eq!(input_token_budget(Some(600)), 600);
+    // 未配置容量 ⇒ 不裁（容量未配不猜，绝不拍一个默认上限）
+    assert_eq!(input_token_budget(None), usize::MAX);
+    // 同一场景换两个不同容量的 provider ⇒ 预算必须不同（固定上限的反事实；
+    // R49 静态证据：`git show 7ec1d6fc:src/service/domain/runtime/chain_reply.rs`
+    // 里 `LATENCY_INPUT_CAP = 4000` 与 `.min(LATENCY_INPUT_CAP)` 均在档）
+    assert_ne!(
+        input_token_budget(Some(200_000)),
+        input_token_budget(Some(4_000)),
+        "两个容量的 provider ⇒ 预算必须不同"
+    );
+    // 骨架按比例派生：@4000 ⇒ 500（与改造前逐位一致），正文 3500
     assert_eq!(context::frame_tokens(4_000), 500);
     assert_eq!(body_token_budget(4_000), 3_500);
+    // 小容量由比例收敛（不再被固定 500 骨架打成 0）
+    assert_eq!(body_token_budget(300), 263);
+    assert_eq!(body_token_budget(0), 0, "输入为 0 时才归零");
     // 条数上限退为防环硬顶（与消费者侧回溯硬上限同口径）
     assert_eq!(MAX_CHAIN_MESSAGES, 32);
-}
-
-#[test]
-fn input_budget_is_min_of_capacity_and_latency_cap() {
-    // 标准 provider（128K / 200K）：容量远大于时延上限 ⇒ 时延侧绑定
-    assert_eq!(input_token_budget(Some(200_000)), 4_000);
-    assert_eq!(input_token_budget(Some(128_000)), 4_000);
-    // 小容量 provider：容量侧绑定（不能按时延上限硬拉）
-    assert_eq!(input_token_budget(Some(600)), 600);
-    // 未配置容量：保守退化到时延上限
-    assert_eq!(input_token_budget(None), 4_000);
-    // 容量小于「实测定标骨架」时不再归零：骨架按比例缩到 37，正文仍有 263
-    // （改造前固定 500 骨架 ⇒ 300 − 500 下溢成 0 ⇒ 小容量一律降级）
-    assert_eq!(body_token_budget(300), 263);
-    assert_eq!(body_token_budget(0), 0, "输入被骨架吞完才归零");
 }
 
 // ---------- 输入组装（Q3：保头 + 保尾 + 省略标注） ----------
@@ -893,18 +890,19 @@ async fn any_answer_resets_the_consecutive_failure_counter() {
 
 // ---------- 正文预算下限：容量不足就不问，而不是发一个只剩骨架的请求 ----------
 
-/// 容量（500 × 60% = 300）连 450 骨架都装不下 ⇒ 零请求、零配额、记 capacity_too_small。
+/// 容量为 0（`max_context_length = 1` ⇒ 1 × 60% = 0）⇒ 零请求、零配额、记 capacity_too_small。
+///
+/// 判据是结构性的「正文预算 == 0」，不再是「低于某个最小可用 token 数」：
+/// 唯一会落到 0 的输入就是容量 0 本身。
 #[tokio::test]
-async fn capacity_below_judge_skeleton_sends_no_request() {
-    // 骨架按比例后，「连骨架都装不下」的门槛随之下移：150 × 60% = 90 token
-    // ⇒ 骨架 11、正文 79 < MIN_JUDGEABLE_BODY_TOKENS(100) ⇒ 仍不问
-    let brain = brain_with_capacity(150);
+async fn zero_capacity_sends_no_request() {
+    let brain = brain_with_capacity(1);
     assert_eq!(
         brain
             .cerebellum
             .as_ref()
             .and_then(|po| po.config().recommended_context_length_tokens()),
-        Some(90)
+        Some(0)
     );
 
     let (verdict, calls) = run_gate(
@@ -925,17 +923,21 @@ async fn capacity_below_judge_skeleton_sends_no_request() {
     assert_eq!(traces[0].latency_ms, None);
 }
 
-/// 反事实：容量刚好够（190 × 60% = 114 ⇒ 骨架 14、正文 100，**恰在**最低可用线上）必须照常问。
+/// 行为变化实证：容量 90（改造前会被固定 500 骨架打到 0 而永远降级）现在照常问。
 ///
-/// 骨架改比例派生后边界从 600 下移到 114：正文 100 == MIN_JUDGEABLE_BODY_TOKENS，
-/// 判据是 `< MIN`（严格小于）⇒ 仍须问。边界值最容易被后续调参悄悄改成「不问」。
+/// 判据从「低于最小可用 token 数」改成「正文预算 == 0」后，capacity 90 ⇒ 正文 79 > 0
+/// ⇒ 必须真发请求。这是「不做多余限制」的直接后果，用断言钉住免得被后续调参改回去。
 #[tokio::test]
-async fn capacity_above_min_body_budget_still_asks() {
-    let brain = brain_with_capacity(190);
+async fn small_capacity_still_asks_after_the_floor_was_removed() {
+    let brain = brain_with_capacity(150);
     assert_eq!(
-        body_token_budget(input_token_budget(Some(114))),
-        MIN_BODY_TOKEN_BUDGET
+        brain
+            .cerebellum
+            .as_ref()
+            .and_then(|po| po.config().recommended_context_length_tokens()),
+        Some(90)
     );
+    assert_eq!(body_token_budget(90), 79, "容量 90 ⇒ 正文 79 > 0 ⇒ 必须问");
 
     let (verdict, calls) = run_gate(
         &sample_chain(4),
@@ -950,35 +952,6 @@ async fn capacity_above_min_body_budget_still_asks() {
         "容量够时必须正常出结论"
     );
     assert_eq!(calls, 1);
-}
-
-// ---------- 等价断言（容量 ≥ 时延反推量 ⇒ 预算 == 时延反推量） ----------
-
-#[test]
-fn capacity_at_or_above_latency_cap_binds_the_latency_side() {
-    for capacity in [
-        LATENCY_INPUT_CAP as u64,
-        LATENCY_INPUT_CAP as u64 + 1,
-        128_000,
-        200_000,
-        1_000_000,
-    ] {
-        assert_eq!(
-            input_token_budget(Some(capacity)),
-            LATENCY_INPUT_CAP,
-            "容量 {capacity} ≥ 时延反推量 ⇒ 预算必须恰等于时延反推量"
-        );
-        assert_eq!(
-            body_token_budget(input_token_budget(Some(capacity))),
-            context::body_budget_tokens(LATENCY_INPUT_CAP),
-            "容量 {capacity} 下正文预算必须恰为 时延上限 − 骨架预留（比例派生）"
-        );
-    }
-    // 边界另一侧：容量比时延上限小 1 ⇒ 容量绑定（逐 token 相等）
-    assert_eq!(
-        input_token_budget(Some(LATENCY_INPUT_CAP as u64 - 1)),
-        LATENCY_INPUT_CAP - 1
-    );
 }
 
 // ---------- 时延回收点：applied=false / degraded 也要记 ----------
@@ -1564,8 +1537,8 @@ fn context_block_order_is_identity_scene_chain_pressure() {
 /// 边界五点实测：capacity = 110 / 500 / 1088 / 1500 / 200_000
 ///
 /// 改造前骨架预留是固定 500，capacity=500 时正文预算被打到 0（永远降级）；
-/// 改按比例后同类小容量仍能挤出一份可判正文（438），只有落到
-/// `MIN_JUDGEABLE_BODY_TOKENS` 以下（capacity=110 ⇒ 97）才不问 —— 两个分支都覆盖。
+/// 改按比例后同类小容量仍能挤出一份可判正文（438）；删掉「最小可判线」后
+/// 五点（含 capacity=110 ⇒ 97）全部真发请求 —— 「不问」分支由零容量用例单独覆盖。
 ///
 /// R53 同源自证：每个点先断言**实际走了哪条分支**（calls / states），再断结构——
 /// 否则「每块都有非空 body」在「压根没构造请求」的点上也会绿（假绿）。
@@ -1588,11 +1561,12 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
         let brain = brain_with_capacity_tokens(capacity);
         let input_budget = input_token_budget(Some(capacity));
         let body_budget = body_token_budget(input_budget);
-        // 200_000 的容量被 `LATENCY_INPUT_CAP` 夹到 4000 ⇒ 正文池 4000 − 500 = 3500
-        let expected_body = [97usize, 438, 952, 1_313, 3_500][[110u64, 500, 1_088, 1_500, 200_000]
-            .iter()
-            .position(|c| *c == capacity)
-            .unwrap()];
+        // 容量即预算：200_000 ⇒ 骨架 25_000、正文池 175_000（不再被夹顶）
+        let expected_body =
+            [97usize, 438, 952, 1_313, 175_000][[110u64, 500, 1_088, 1_500, 200_000]
+                .iter()
+                .position(|c| *c == capacity)
+                .unwrap()];
         assert_eq!(
             body_budget, expected_body,
             "capacity={capacity} 的正文预算必须落在实测值上"
@@ -1606,20 +1580,8 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
         )
         .await;
 
-        if body_budget < MIN_BODY_TOKEN_BUDGET {
-            // 正文预算低于最小可判线（capacity=110 ⇒ 110 − 13 = 97 < 100）⇒ **不问**：
-            // `## 链内消息` 根本不存在，既不是「注册成空块」也不是「空标题」。
-            assert!(
-                body_budget < MIN_BODY_TOKEN_BUDGET,
-                "capacity={capacity} 的正文预算必须落在最小可判线以下"
-            );
-            assert_eq!(calls, 0, "capacity={capacity}：预算 0 必须一次都不问");
-            assert!(
-                states.is_empty(),
-                "capacity={capacity}：没问就不该有 state（{states:?}）"
-            );
-            continue;
-        }
+        // 五个点全部走「真发请求」分支（判据已改为 `body_budget == 0`，
+        // capacity 110 ⇒ 97 > 0）；「零容量不问」由 `zero_capacity_sends_no_request` 覆盖。
 
         assert_eq!(calls, 1, "capacity={capacity} 应当问一次");
         assert_eq!(states.len(), 1, "capacity={capacity} 应当捕获一份 state");
@@ -1664,7 +1626,7 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
         );
         let actual_tokens = estimate_tokens(&bundle.render());
         // 组织器预算与场景自截共用同一比例表（`share::FRAME_BP` / `share::BODY_BP`）；
-        // 差别只在基准：场景侧 input 被 `LATENCY_INPUT_CAP` 夹住，组织器吃整个 capacity。
+        // 两处基准现已一致（都吃 capacity），差别只在裁法：场景侧按 body 预算裁正文、组织器按块整砍。
         let organizer_budget = context::body_budget_tokens(capacity as usize);
         let would_be = bundle.render_within(Some(capacity));
         if actual_tokens > organizer_budget {
@@ -1895,7 +1857,9 @@ async fn empty_pending_reply_leaves_no_block() {
 /// 超长待发正文按子预算截断并显式标注（不许悄悄丢内容）
 #[tokio::test]
 async fn oversized_pending_reply_is_truncated_with_annotation() {
-    let brain = brain_with_quota(10);
+    // 必须给一个**有容量**的 provider：容量未配 ⇒ 不裁（容量即预算），
+    // 那时待发正文不会被截断，本用例就测不到截断形态了。
+    let brain = brain_with_capacity_tokens(4_000);
     let long = "待发正文".repeat(1_200); // 4800 字 ⇒ 远超 600 token
     let (_, _, states) = run_gate_full_with_pending(
         &sample_chain(4),
@@ -1919,7 +1883,10 @@ async fn oversized_pending_reply_is_truncated_with_annotation() {
         .find(|part| part.starts_with("## 待发消息"))
         .expect("待发消息块必须存在");
     let used = estimate_tokens(block.trim_start_matches("## 待发消息\n"));
-    let pending_cap = context::bp_of(input_token_budget(None), context::share::PENDING_REPLY_BP);
+    let pending_cap = context::bp_of(
+        input_token_budget(Some(4_000)),
+        context::share::PENDING_REPLY_BP,
+    );
     assert!(
         used <= pending_cap,
         "待发正文实测 {used} token 超过子预算 {pending_cap}"
@@ -1986,9 +1953,9 @@ fn context_block_order_includes_new_inputs() {
 /// 待发正文的子预算是**同一池里的份额**，不是新增预算
 #[test]
 fn pending_budget_is_a_share_of_the_same_pool() {
-    let body = body_token_budget(input_token_budget(None)); // 4000 − 500 = 3500
+    let input = input_token_budget(Some(4_000)); // 容量即预算
+    let body = body_token_budget(input); // 4000 − 500 = 3500
     assert_eq!(body, 3500, "可用正文池不受本笔影响");
-    let input = input_token_budget(None); // 4000
     assert_eq!(
         pending_token_budget(input, body),
         600,
@@ -2001,8 +1968,8 @@ fn pending_budget_is_a_share_of_the_same_pool() {
     );
     // 极小正文池：由「正文池 / 4」收敛（不把链内证据挤掉）
     assert_eq!(
-        pending_token_budget(input, MIN_BODY_TOKEN_BUDGET),
-        MIN_BODY_TOKEN_BUDGET / 4,
+        pending_token_budget(input, 100),
+        25,
         "正文池极小时按 1/4 收敛"
     );
     // 反事实（R49）：改前本函数只接 body 一个参数、上限是常量 600；

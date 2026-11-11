@@ -78,21 +78,14 @@ pub(crate) mod share {
     pub(crate) const TOTAL_BP: u32 = FRAME_BP + PENDING_REPLY_BP + BODY_BP;
 }
 
-/// 骨架预留的**实测上限**（token）——可判定的定标值，不是拍的
-///
-/// 2026-11-10 用 `estimate_tokens` 对真实判据文本定标：压缩后 `INSTRUCTIONS` ≈232、
-/// `OPTIONS` ≈50、state ≈53、wrapper ≈37，合计 ≈ **372**；把 `window_depth` /
-/// `fatigue` 的「仅作辅助参考」两行写进 `INSTRUCTIONS` 后 ≈ **412**。
-/// 本值 = 412 加 ~88 缓冲。**它是比例的上限而非替代品**：输入小时按
-/// `输入 × FRAME_BP` 走（不会把小容量拍死），输入大时按本值封顶（不随容量线性膨胀）。
-pub(crate) const FRAME_TOKEN_CEILING: usize = 500;
+// 骨架预留不再有绝对上限：AMan 2026-11-11 终裁删掉 500。骨架 = 输入 × `share::FRAME_BP`
+// 纯比例 —— 输入大时随容量线性增长（比例分账的本意就是「不超过最大长度即可」，
+// 不该再叠一层与容量无关的固定封顶）。历史定标（实测骨架 ≈412）只用于确认
+// `FRAME_BP` = 12.5% 在标准容量下与旧值逐位一致，不再作为写死的上界。
 
-/// 最小可判正文线（token）——可判定的下限，低于它就不问/不截
-///
-/// 定标：省略标注行本身 ≈40 token（`…（上下文已按模型容量截断，省略 N 块）`），
-/// 加一条最短可判正文 ≈20~40 ⇒ 100 才容得下「标注 + 至少一条真实正文」。
-/// 两个消费者同一条线：组织器（`render_within`）与 `chain_reply`（`MIN_BODY_TOKEN_BUDGET`）。
-pub(crate) const MIN_JUDGEABLE_BODY_TOKENS: usize = 100;
+// 正文预算不再有「最小可判 token 数」这个绝对值：AMan 2026-11-11 终裁删掉 100。
+// 判据换成结构性的「预算 == 0 ⇒ 不截」，`render_within` 与 `chain_reply` 各自
+// 用同一句 `== 0` 判断（零魔法值）。
 
 /// 待发消息占正文池的份额分母（最多 1/4）
 const PENDING_SHARE_DIVISOR: usize = 4;
@@ -113,10 +106,10 @@ pub(crate) fn bp_of(input_budget: usize, bp: u32) -> usize {
     input_budget.saturating_mul(bp as usize) / share::BASIS as usize
 }
 
-/// 骨架预留 = min(输入 × `FRAME_BP`, [`FRAME_TOKEN_CEILING`])
+/// 骨架预留 = 输入 × `FRAME_BP`（纯比例，无绝对上限）
 pub(crate) fn frame_tokens(input_budget: usize) -> usize {
     debug_assert!(validate_share_sum(share::TOTAL_BP).is_ok());
-    bp_of(input_budget, share::FRAME_BP).min(FRAME_TOKEN_CEILING)
+    bp_of(input_budget, share::FRAME_BP)
 }
 
 /// 正文池 = 输入 − 骨架（不足归零，不下溢）
@@ -230,7 +223,8 @@ impl ContextBundle {
         };
         // 预算 = 容量 × 正文占比（比例表唯一入口，不再减固定预留）
         let budget = body_budget_tokens(usize::try_from(capacity).unwrap_or(usize::MAX));
-        if budget < MIN_JUDGEABLE_BODY_TOKENS {
+        // 结构性判据（不是「最低可用 token 数」）：预算 0 ⇒ 不截（逐字节 == render()）
+        if budget == 0 {
             return self.render();
         }
         self.render_within_tokens(budget)
@@ -239,7 +233,7 @@ impl ContextBundle {
     /// 真正的按预算渲染（**私有**）
     ///
     /// 私有是为了让测试能构造极小预算走到「末块截尾」分支：经 [`Self::render_within`]
-    /// 入口时预算最小是 `MIN_JUDGEABLE_BODY_TOKENS`，到不了 0 边界。
+    /// 入口时预算恒 > 0（0 已被 `render_within` 早退拦下），到不了 0 边界。
     fn render_within_tokens(&self, budget: usize) -> String {
         let full = self.render();
         if estimate_tokens(&full) <= budget {
@@ -453,9 +447,9 @@ mod tests {
     #[test]
     fn render_within_ample_capacity_matches_render_byte_for_byte() {
         let bundle = five_block_bundle();
-        // 充裕容量 = 全文所需 + 骨架上限 + 一份同量余量（按比例表反算，不再用固定 1024）
-        let ample =
-            (estimate_tokens(&bundle.render()) + FRAME_TOKEN_CEILING + FRAME_TOKEN_CEILING) as u64;
+        // 充裕容量 = 全文所需的两倍（按比例反算：body = capacity × 87.5% ⇒
+        // capacity > 全文 / 0.875 即够，取两倍留足余量；不再依赖任何固定上限）
+        let ample = (estimate_tokens(&bundle.render()) as u64 + 1) * 2;
         let rendered = bundle.render_within(Some(ample));
         assert_eq!(rendered, bundle.render());
         assert!(
@@ -643,15 +637,11 @@ mod budget_share_tests {
             500,
             "标准输入：4000 × 12.5% = 实测定标上限"
         );
-        assert_eq!(
-            frame_tokens(8_000),
-            FRAME_TOKEN_CEILING,
-            "大输入按实测定标封顶"
-        );
+        assert_eq!(frame_tokens(8_000), 1_000, "大输入同样按比例：8000 × 12.5%");
         assert_eq!(
             frame_tokens(200_000),
-            FRAME_TOKEN_CEILING,
-            "不随容量线性膨胀"
+            25_000,
+            "不再有绝对封顶：骨架随容量线性增长（比例是唯一口径）"
         );
         assert_ne!(
             frame_tokens(2_000),

@@ -40,23 +40,23 @@
 //!   `continue` 就是物理上的无限互发。故保留一个「无论小脑说什么都强制收口」
 //!   的物理上限，命中即收口并记 `degraded = ceiling_forced` 留痕。
 //!
-//! # 输入侧（Q3 改判：容量上限与服务时延上限**取小**，条数 32 退为防环硬顶）
+//! # 输入侧（容量即预算；条数 32 退为防环硬顶）
 //!
 //! 链内消息由调用方沿 `reply_to_id` 回溯时**顺手收集**（那一趟本来就要拿每条
 //! 消息做 `ChainHop` 分类，正文已在手里，零额外读库）。
 //!
-//! 预算分配是**有界且显式**的，两段取小：
+//! 预算分配是**有界且显式**的，按 provider 容量比例分账：
 //!
 //! ```text
-//! 输入预算 = min( 小脑 provider 的推荐上下文长度（容量上限，缺省 max × 60%）, 时延反推上限 )
-//! 正文预算 = 输入预算 − 判据骨架预留
+//! 输入预算 = 小脑 provider 的推荐上下文长度（容量上限，缺省 max × 60%；未配置 ⇒ 不裁）
+//! 正文预算 = 输入预算 − 判据骨架（输入 × FRAME_BP）
 //! ```
 //!
-//! ⚠️ 容量上限是「模型能吃多少」，不是「本次该喂多少」：标准 provider（128K/200K）
-//! 的容量恒远大于本场景预算（5 秒）能处理完的量，直接按容量拉满必然超时、功能恒定降级。
-//! 因此实际生效值由时延侧（[`LATENCY_INPUT_CAP`]）绑定，容量侧只在**小容量**
-//! provider（容量 < 时延上限）时生效。条数 [`MAX_CHAIN_MESSAGES`] = 32 保留为
-//! **防环硬顶**（与消费者侧回溯硬上限同口径），不再承担主预算职责。
+//! ⚠️ 沿革：本场景曾按「5 秒超时 × 实测 prefill 速率」反推一个 4000 token 的时延上限。
+//! 速率项无实测定标（属经验假设），AMan 2026-11-11 终裁**整条轴删除**——容量即预算，
+//! 不再用时间预算乘速率去猜 token 数。时间预算只剩 [`SCENE_TIMEOUT_MS`]（请求超时，
+//! 不是 token 预算）。条数 [`MAX_CHAIN_MESSAGES`] = 32 保留为**防环硬顶**
+//! （与消费者侧回溯硬上限同口径），不再承担主预算职责。
 //!
 //! 超长降级：**保链头 1 条 + 最近 N 条**，中间被丢弃的部分必须在 prompt 里
 //! 显式写出「中间 N 条已省略（共 M 条）」。⚠️ 这一行是本场景唯一的假阴性形态：
@@ -157,30 +157,9 @@ const DEGRADED_CAPACITY: &str = "capacity_too_small";
 /// 后者要查小脑判据是否在持续误判 `continue`。
 const DEGRADED_CEILING_FORCED: &str = "ceiling_forced";
 
-/// 时延反推的输入 token 上限（= 本次预算的**上界**，不是容量）
-///
-/// 预算基数 = [`SCENE_TIMEOUT_MS`] = **5000ms**（AMan 2026-11-10 定谳：超时只覆盖
-/// 「请求小脑思考」本身，觉得不够就 5 秒，5 秒没反应直接走正常流程；本值是**场景声明**，
-/// 与全局缺省 3000ms 相互独立）。
-///
-/// 拆解（沿用 P1 时延模型）：`5.0s − 网络 0.175s − 生成 0.3s ≈ 4.525s` 可给
-/// prefill；按 2000 tok/s 上界 ⇒ 理论 ≈ 9000 tokens。**不取满**：模型侧排队、
-/// 生成长度波动、prefill 吞吐在不同 provider 上差 2~3 倍都常见，故取 **4000**：
-/// `4000 / 2000 = 2.0s + 0.175s + 0.3s ≈ 2.48s`，对 5s 预算留 ≈ 50% 余量。
-///
-/// 与旧值的关系：旧值 800 是按当时的 1000ms 反推的（留 20% 余量）；本场景基数
-/// 从 1000ms 放到 5000ms 是 5 倍，本常量 800 → 4000 同样是 5 倍——**没有缩回**。
-/// 注：全局缺省现为 **3000ms**（AMan 2026-11-10 续令改 3 秒；更早的「1 秒」与
-/// 「统一 5 秒」均已被覆盖作废），本场景不吃缺省、只吃 [`SCENE_TIMEOUT_MS`] = 5000ms，
-/// 故 4000 仍按 5 秒反推、不受缺省变化影响。
-///
-/// 容量侧（provider 推荐上下文长度）通常远大于本值，故**实际生效预算由本常量
-/// 绑定**；只有小容量 provider 才会被容量侧压下来（[`input_token_budget`] 取小）。
-pub(crate) const LATENCY_INPUT_CAP: usize = 4000;
-
 // 骨架预留不再有本场景私有常量：改由组织器的比例表派生
 // （`context::share::FRAME_BP` = 12.5%，@输入 4000 ⇒ 500，与改造前逐位一致）。
-// 实测定标值与「为什么是 500」见 `cerebellum_context::FRAME_TOKEN_CEILING`。
+// 比例是唯一口径：大容量下骨架随容量线性增长，不再有绝对封顶。
 
 /// 本场景的请求超时预算（毫秒）：**场景级覆盖**，不改全局缺省
 ///
@@ -190,9 +169,9 @@ pub(crate) const LATENCY_INPUT_CAP: usize = 4000;
 ///
 /// 为什么仍要做成场景级（而不是跟着全局缺省走）：`DEFAULT_CEREBELLUM_TIMEOUT_MS`
 /// 是整批共享的一份预算且作用于全部已接 scene，AMan 续令（`01a1c5c9`）已把它抬到
-/// 3000ms；本场景需要的是 5000ms（`LATENCY_INPUT_CAP = 4000` token 按 5 秒反推），
-/// 比缺省多出的 2 秒只应花在链内多读上下文上，不能让 `entry_gate`（每条入站消息
-/// 都过）在端点挂掉时也跟着白等。
+/// 3000ms；本场景需要的是 5000ms（整条链最多 32 条消息一次读入，读的量比其他场景
+/// 大得多），比缺省多出的 2 秒只应花在链内多读上下文上，不能让 `entry_gate`
+/// （每条入站消息都过）在端点挂掉时也跟着白等。
 pub(crate) const SCENE_TIMEOUT_MS: u64 = 5_000;
 
 /// 绝对天花板：`window_depth` 达到它即**无论小脑说什么都强制收口**
@@ -212,35 +191,29 @@ pub(crate) const ABSOLUTE_CEILING: usize = 32;
 /// `MAX_CHAIN_MESSAGES - 1` 条），再按 token 预算裁尾窗口。
 pub(crate) const MAX_CHAIN_MESSAGES: usize = 32;
 
-/// 本次判据的输入 token 预算 = **min(容量上限, 时延上限)**
+/// 本次判据的输入 token 预算 = **provider 推荐上下文长度**（容量即预算）
 ///
 /// `capacity_tokens` 是小脑 provider 的推荐上下文长度（容量上限，来自
 /// [`ModelProviderConfig::recommended_context_length_tokens`] 这条全局唯一链）。
-/// 容量缺失（未配置）时退化到时延上限——保守，绝不按「无限容量 × 5 秒」硬拉。
+/// 容量未配置 ⇒ 不裁（`usize::MAX`）：既没有容量也没有时延轴可依赖，猜一个数
+/// 只会再现「拍脑袋上限」这笔债——「容量未配不猜」是本仓既定口径。
+///
+/// 沿革：本函数曾是 `min(容量, 4000 时延上限)`。时延轴已按 AMan 2026-11-11 终裁
+/// 删除（速率项无实测定标），故只剩容量。
 pub(crate) fn input_token_budget(capacity_tokens: Option<u64>) -> usize {
     capacity_tokens
-        .map(|capacity| (capacity as usize).min(LATENCY_INPUT_CAP))
-        .unwrap_or(LATENCY_INPUT_CAP)
+        .map(|capacity| capacity as usize)
+        .unwrap_or(usize::MAX)
 }
 
-/// 正文预算的**最低可用线**：低于它就不问，而不是发一个只剩骨架的请求
-///
-/// `body_token_budget` 是裸减法（`input − 450`），小容量 provider（配置写几百
-/// token 的模型）会算出 0 或个位数。此时 `render_chain` 仍会返回 `included = 1`，
-/// 但正文只剩 `…（正文已截断）` 这一行 —— 请求发得出去、账单照付，模型拿到的
-/// 却是一句「正文已截断」，判 `close` 与否纯属噪声。所以这里把「预算不够」
-/// 显式变成「不问」（与未装配小脑同一语义：不渲染、不占配额、不发请求）。
-///
-/// 取 100 的定标依据：省略标注行本身约 40 tokens（`[中间 N 条已省略（共 M 条
-/// 链内消息；仅保留链头与最近若干条）]`），加一条短消息正文约 20~40 tokens，
-/// 100 才容得下「链头 + 标注 + 至少一条真实正文」这一最小可用组合。
-pub(crate) const MIN_BODY_TOKEN_BUDGET: usize = context::MIN_JUDGEABLE_BODY_TOKENS;
+// 正文预算不再有「最低可用线」这个绝对值：AMan 2026-11-11 终裁删掉 100。
+// 风险改由**结构性判据**兜住：`body_token_budget == 0` ⇒ 不问（见 `decide` 第⑤步）。
 
 /// 链内正文可用的 token 预算 = 输入预算 − 骨架预留（比例派生，见 [`context::body_budget_tokens`]）
 ///
-/// 骨架预留 = `min(输入 × 12.5%, 实测定标上限 500)`：输入大时按实测定标封顶、
-/// 输入小时按比例走 —— 不再是一刀切的固定 500（那会让小容量 provider 的正文
-/// 预算恒为 0、永远降级）。
+/// 骨架预留 = `输入 × 12.5%`（纯比例，无绝对值封顶）：输入大时骨架随容量线性
+/// 增长，输入小时按同一比例缩到很小 —— 不再是一刀切的固定 500（那会让小容量
+/// provider 的正文预算恒为 0、永远降级）。
 pub(crate) fn body_token_budget(input_budget: usize) -> usize {
     context::body_budget_tokens(input_budget)
 }
@@ -474,7 +447,7 @@ hard_fatigue: {}\nhard_window_depth: {}",
 /// `body_token_budget` 自截到「输入 − 骨架比例」以内；再叠一层组织器的
 /// 「容量 − 骨架比例」**尾块整砍**，会在中间容量带把
 /// `## 链内消息` 这块主要证据整块砍掉 —— 比不截断更坏（实测见 `chain_reply_tests`）。
-/// 容量安全的判据是「`body_token_budget < MIN_BODY_TOKEN_BUDGET` ⇒ 不问」，不是
+/// 容量安全的判据是「`body_token_budget == 0` ⇒ 不问」，不是
 /// 「截到装得下」。
 fn state_bundle(
     brain: &Brain,
@@ -709,8 +682,7 @@ pub(crate) async fn judge_chain_reply(
         );
     }
 
-    // ④ 输入预算 = min(小脑模型容量上限, 时延反推上限)
-    //    容量对标准 provider 恒远大于时延上限 ⇒ 实际生效值由时延侧绑定。
+    // ④ 输入预算 = 小脑模型容量（容量即预算，无时延反推轴；未配置 ⇒ 不裁）
     let capacity_tokens = brain
         .cerebellum
         .as_ref()
@@ -718,12 +690,12 @@ pub(crate) async fn judge_chain_reply(
     let input_budget = input_token_budget(capacity_tokens);
     let body_budget = body_token_budget(input_budget);
 
-    // ⑤ 容量连判据骨架都装不下：不问，也不构造退化请求
+    // ⑤ 正文预算为 0：不问，也不构造退化请求
     //
-    // 裸减法（`input − 450`）在小容量 provider 上会算出 0 或个位数；此时
-    // `render_chain` 仍会给出 `included = 1`，但正文只剩「…（正文已截断）」，
-    // 请求发得出去、账单照付、结论纯噪声。显式变成「不问」比「问了也白问」诚实。
-    if body_budget < MIN_BODY_TOKEN_BUDGET {
+    // 结构性判据（不是「最低可用 token 数」这种绝对值）：预算 0 ⇒ 正文必然空，
+    // 发出去只会是一句「…（正文已截断）」，请求发得出去、账单照付、结论纯噪声。
+    // 显式变成「不问」比「问了也白问」诚实。
+    if body_budget == 0 {
         log_info!(
             ctx,
             "chain_reply",
@@ -733,7 +705,6 @@ pub(crate) async fn judge_chain_reply(
             capacity_tokens = capacity_tokens.unwrap_or(0),
             input_budget = input_budget,
             body_budget = body_budget,
-            min_body_budget = MIN_BODY_TOKEN_BUDGET,
             "chain reply gate skipped: provider capacity below judge skeleton"
         );
         record_cerebellum(
@@ -751,16 +722,14 @@ pub(crate) async fn judge_chain_reply(
 
     // ⑤.5 待发正文（本条默认准备发送的消息）—— AMan 2026-11-11 新增的判定输入
     //
-    // 分账规则（与 Q3 预算共存，**不新开预算池**）：
+    // 分账规则（**不新开预算池**）：
     // - 同一池：`body_budget` 不变，只是先给它切一小块
     //   （`pending_token_budget` = min(输入×15%, body/4)），再按**实测占用**扣减，
-    //   余额全部给链内正文 ⇒ 总输入仍受 `LATENCY_INPUT_CAP` 约束（时延反推那条
-    //   线没被突破），且待发正文短时不会白占固定预留。
-    // - 再夹逼 `body_budget − MIN_BODY_TOKEN_BUDGET`：容量再小也不让待发正文把
-    //   链内证据挤到最小可用线以下；挤不下就不带（块缺席），不留一句「已截断」
-    //   的空壳去污染判据。
-    let pending_budget = pending_token_budget(input_budget, body_budget)
-        .min(body_budget.saturating_sub(MIN_BODY_TOKEN_BUDGET));
+    //   余额全部给链内正文 ⇒ 总输入仍不超过容量，且待发正文短时不会白占固定预留。
+    // - 两重比例约束（输入 15% 上限 + 正文池 1/4）已保证待发正文挤不掉链内证据，
+    //   故不再减一个绝对值下限：预算极小时它自然收敛到 body/4，为 0 就不带
+    //   （块缺席），不留一句「已截断」的空壳去污染判据。
+    let pending_budget = pending_token_budget(input_budget, body_budget);
     let pending = if pending_budget == 0 {
         String::new()
     } else {
