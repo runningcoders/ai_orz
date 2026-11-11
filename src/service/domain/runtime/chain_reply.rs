@@ -686,15 +686,22 @@ pub(crate) async fn judge_chain_reply(
         );
     }
 
-    // ④ 输入预算 = 小脑模型容量（容量即预算，无时延反推轴；未配置 ⇒ 不裁）
-    let capacity_tokens = brain
-        .cerebellum
-        .as_ref()
-        .and_then(|po| po.config().recommended_context_length_tokens());
+    // ④ 输入预算 = 小脑模型容量（**两层**：推荐长度是裁剪基准，最大长度是唯一硬顶）
+    //
+    // 取值收敛到 `context::context_capacity` 单一入口（= min(推荐, 最大)），
+    // 不在本场景再写一遍「推荐值 > max × 60%」的链——同一语义两处实现必然漂移。
+    // 超过**推荐长度**的内容走裁剪（⑤.5 / ⑥ 的 truncate），不判失败；只有预算被
+    // 夹到 0（连判据骨架都装不下）才是 ⑤ 的收口条件。
+    let capacity_tokens = context::context_capacity(brain);
     let input_budget = input_token_budget(capacity_tokens);
     let body_budget = body_token_budget(input_budget);
 
     // ⑤ 正文预算为 0：不问，也不构造退化请求
+    //
+    // **本场景唯一的「不发」判据**（AMan 2026-11-11 口径）：超过推荐长度不算超限，
+    // 一律走裁剪后照常发送；只有预算被夹到 0（连骨架都装不下，通常意味着 provider
+    // 连 `max_context_length` 都没配出可用值）才收口。命中时 `degraded` 仍记
+    // `capacity_too_small` —— 值域不变，避免历史轨迹失去可解读性。
     //
     // 结构性判据（不是「最低可用 token 数」这种绝对值）：预算 0 ⇒ 正文必然空，
     // 发出去只会是一句「…（正文已截断）」，请求发得出去、账单照付、结论纯噪声。

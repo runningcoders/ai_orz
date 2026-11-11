@@ -27,6 +27,16 @@
 //! DAL 与协议零改动（`CerebellumRequest.state` 本就是 `Value`，wire format doc 明写
 //! 允许字符串 / 对象 / 数组）。
 //!
+//! # 两层预算（AMan 2026-11-11 口径：超推荐不收口，硬顶才收口）
+//! - **推荐上下文长度**＝裁剪基准（软目标）：内容超了就按比例裁，**不判失败、
+//!   不降级、不拦截**，请求照常发出（[`ContextBundle::render_within`] 的产物
+//!   仍是合法分块正文）；
+//! - **最大上下文长度**＝唯一硬顶：只有连它都装不下才收口，且本次预算永不越过它
+//!   （[`context_capacity`] 用 `min(推荐, 最大)` 夹住）。
+//!
+//! 两层的分工必须写死在取值入口，不许各调用点自己判：配置里推荐值大于最大长度时
+//! 按最大长度封顶（那不是「超过推荐」，是真超限 —— provider 会直接拒请求）。
+//!
 //! # 容量自截（已裁定：组织器自截，`dal/brain.rs` 一行不动）
 //! `dal/brain.rs::shrink_state_to_capacity` 只认 `last_user_message` 键，state 改成
 //! `context` 单键后那条兜底不再命中 —— 这属**已发生的等价性缺口**，不是可选优化。
@@ -305,12 +315,42 @@ pub(crate) fn render_for(brain: &Brain, scene: &str, user_text: &str) -> String 
         .render_within(context_capacity(brain))
 }
 
-/// 小脑模型容量（与 `dal/brain.rs` 的兜底同源同口径：配置 → provider → None）
-pub(crate) fn context_capacity(brain: &Brain) -> Option<u64> {
+/// 软目标：provider 推荐上下文长度（**裁剪基准**，超了只裁、不判失败）
+///
+/// 取值链仍走 [`ModelProviderConfig::recommended_context_length_tokens`] 这条
+/// 全仓唯一实现（推荐值 > 最大长度 × 60% > 未配置），本函数只负责「从 Brain 上取」。
+fn context_soft_target(brain: &Brain) -> Option<u64> {
     brain
         .cerebellum
         .as_ref()
         .and_then(|po| po.config().recommended_context_length_tokens())
+}
+
+/// 唯一硬顶：provider 的**最大**上下文长度（未配置 ⇒ `None`＝不设硬顶）
+///
+/// 与软目标是两层不同语义：软目标决定「裁到多大」，硬顶决定「到哪就真的发不出去」。
+/// 只读 `max_context_length` 本身，不参与 0.6 的比例回落（那是软目标的取值链）。
+pub(crate) fn context_hard_ceiling(brain: &Brain) -> Option<u64> {
+    brain
+        .cerebellum
+        .as_ref()
+        .and_then(|po| po.config().max_context_length)
+        .filter(|&v| v > 0)
+        .map(|v| v as u64)
+}
+
+/// 小脑模型容量（**两层夹逼后的本次预算**＝`min(软目标, 硬顶)`）
+///
+/// - 软目标未配置 ⇒ `None`（不裁，既有口径不变）；
+/// - 硬顶未配置 ⇒ 直接用软目标；
+/// - 软目标 > 硬顶（配置写反 / 推荐值虚高）⇒ 按硬顶封顶：越过最大长度的请求会被
+///   provider 直接拒，那才是真超限。
+pub(crate) fn context_capacity(brain: &Brain) -> Option<u64> {
+    let soft = context_soft_target(brain)?;
+    Some(match context_hard_ceiling(brain) {
+        Some(hard) => soft.min(hard),
+        None => soft,
+    })
 }
 
 /// 单条摘要片段的 token 预算 = 输入预算 × `bp`（容量未配 ⇒ `None` ＝ 不截断）

@@ -1398,6 +1398,20 @@ fn scene_declares_a_5s_timeout_override() {
 const CHAIN_SENTINEL_HEAD: &str = "链头哨兵：这条链在修小脑上下文";
 const CHAIN_SENTINEL_TAIL: &str = "尾部哨兵：刚发来的这一跳";
 
+/// 同时给「推荐长度」与「最大长度」的 Brain（两层语义的夹具）
+fn brain_with_recommended_and_max(recommended: i32, max: i32) -> Brain {
+    let mut brain = brain_with_quota(4);
+    let mut po = mock_provider();
+    po.config = serde_json::to_string(&crate::models::model_provider::ModelProviderConfig {
+        recommended_context_length: Some(recommended),
+        max_context_length: Some(max),
+        ..Default::default()
+    })
+    .expect("provider config 必须可序列化");
+    brain.cerebellum = Some(po);
+    brain
+}
+
 /// 指定**容量**（token）的 Brain：`recommended_context_length` 直给，
 /// 避开 `max_context_length × 60%` 的回落，才能精确打在边界点上。
 fn brain_with_capacity_tokens(capacity: u64) -> Brain {
@@ -1438,6 +1452,117 @@ fn snippet_budget_follows_provider_capacity() {
         context::snippet_budget(&brain_with_quota(4), context::share::SNIPPET_BP),
         None,
         "容量未配置 ⇒ 不猜预算（不截断）"
+    );
+}
+
+/// 两层语义：推荐长度是裁剪基准、最大长度是唯一硬顶（推荐值不得越过硬顶）
+///
+/// 改前必红（R49 静态证据）：旧实现只读 `recommended_context_length_tokens()`
+/// —— `git show 24e01d33:src/service/domain/runtime/chain_reply.rs | grep -c max_context_length`
+/// 为 0，硬顶从未被任何小脑路径读过，推荐值给 20 万就按 20 万发。
+#[test]
+fn hard_ceiling_clamps_the_soft_target() {
+    // 推荐值虚高（> 最大长度）⇒ 按最大长度封顶
+    let over = brain_with_recommended_and_max(200_000, 128_000);
+    assert_eq!(
+        context::context_hard_ceiling(&over),
+        Some(128_000),
+        "硬顶取的是 max_context_length 本身，不参与 0.6 回落"
+    );
+    assert_eq!(
+        context::context_capacity(&over),
+        Some(128_000),
+        "推荐 20 万 > 最大 12.8 万 ⇒ 本次预算必须是 12.8 万（越过最大长度会被 provider 直接拒）"
+    );
+    assert!(
+        input_token_budget(context::context_capacity(&over)) <= 128_000,
+        "预算永不越过唯一硬顶"
+    );
+
+    // 推荐值 < 最大长度 ⇒ 取推荐：推荐是裁剪基准，不抬到最大
+    let under = brain_with_recommended_and_max(64_000, 128_000);
+    assert_eq!(
+        context::context_capacity(&under),
+        Some(64_000),
+        "裁剪基准仍是推荐长度：有空间也不把预算抬到硬顶"
+    );
+
+    // 硬顶未配置 ⇒ 保持既有口径（用推荐值）
+    let no_hard = brain_with_capacity_tokens(4_000);
+    assert_eq!(context::context_hard_ceiling(&no_hard), None);
+    assert_eq!(context::context_capacity(&no_hard), Some(4_000));
+}
+
+/// 超过**推荐**长度但远低于**最大**长度 ⇒ 照常发送（裁剪不阻断）
+///
+/// 这是 AMan 2026-11-11 口径的正面断言：内容（6 条链内消息）远超推荐值 4000，
+/// 但离硬顶 20 万还很远 ⇒ 必须真发请求，不得判失败 / 降级 / 静默不发。
+/// 如实披露：改造前该路径**本就放行**（旧实现按推荐裁剪后照发），故本条不是
+/// 「改前必红」项，而是防止后续把「超推荐」重新写成硬校验的反回归护栏；
+/// 真正改前必红的是 [`hard_ceiling_clamps_the_soft_target`]。
+#[tokio::test]
+async fn content_over_recommended_but_under_hard_ceiling_still_asks() {
+    let brain = brain_with_recommended_and_max(4_000, 200_000);
+    assert_eq!(
+        context::context_capacity(&brain),
+        Some(4_000),
+        "本次预算按推荐裁剪"
+    );
+    let (verdict, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        "run-over-soft",
+    )
+    .await;
+    assert!(verdict.is_some(), "略超推荐、远低于最大 ⇒ 必须有结论");
+    assert_eq!(
+        calls, 1,
+        "略超推荐、远低于最大 ⇒ 必须照常发送（裁剪不阻断，也不是强校验失败）"
+    );
+
+    // 反向（不得放宽）：硬顶小到预算夹成 0 ⇒ 仍按既有口径收口
+    let degenerate = brain_with_capacity(1); // max=1 ⇒ 推荐 0、硬顶 1 ⇒ min = 0
+    let (verdict, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&degenerate),
+        "run-over-hard",
+    )
+    .await;
+    assert!(verdict.is_none(), "预算 0 ⇒ 不问");
+    assert_eq!(calls, 0, "超过唯一硬顶才收口：零请求");
+}
+
+/// 接线一跳：容量派生的摘要预算必须真的传进装配点（不是算完丢掉）
+///
+/// 派生值 `snippet_budget(brain, SNIPPET_BP)` 若只在测试里被调用、生产装配点仍传
+/// `None`（或旧常量），两个容量渲染出的正文会**逐字节相同** —— 那正是「派生值没
+/// 接线」的形态。本条直接对生产出口 `state_bundle` 断言两侧长度必须不同。
+#[test]
+fn dialogue_snippet_budget_reaches_the_bundle() {
+    let long_summary = "这是一条很长的历史摘要".repeat(80);
+    let mut small = brain_with_capacity_tokens(4_000); // 160 token
+    small.memories = vec![short_term("st-w1", &long_summary)];
+    let mut large = brain_with_capacity_tokens(128_000); // 5120 token ⇒ 全文放得下
+    large.memories = vec![short_term("st-w2", &long_summary)];
+    let facts = triggered_facts();
+
+    let small_body = state_bundle(&small, CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let large_body = state_bundle(&large, CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(
+        !small_body.contains(&long_summary),
+        "小容量必须按派生预算截断：{small_body:?}"
+    );
+    assert!(
+        large_body.contains(&long_summary),
+        "大容量必须原样带上（预算真的传进去了）：{large_body:?}"
+    );
+    assert!(
+        small_body.len() < large_body.len(),
+        "两个容量渲染同长 ⇒ 派生预算没接到装配点"
     );
 }
 
