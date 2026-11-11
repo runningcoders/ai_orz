@@ -809,7 +809,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             class: "select select-bordered w-full",
                             value: "{edit_provider_type}",
                             onchange: move |e| edit_provider_type.set(e.value()),
-                            // 类型选项按能力过滤：Jev 仅决策、决策组另含 Qwen、向量专用端点仅 Embedding。
+                            // 类型选项按能力过滤：决策组允许 Jev / Qwen、向量专用端点仅 Embedding。
                             // 回显必须用 option 的 selected 属性：select 的 value 属性在
                             // 子选项挂载前被设置，浏览器找不到匹配项会静默回落到第一项。
                             if editing_is_agent {
@@ -1084,29 +1084,75 @@ mod batch5_p2_tests {
 
 #[cfg(test)]
 mod decision_provider_option_tests {
-    /// 决策模型（capability=Decision）provider 类型下拉守卫：
-    /// 三组选项（Agent/Embedding/Decision）各含一处 Qwen，且决策组内 Jev 与 Qwen 并存
-    /// （新语义：决策允许 Jev 或 Qwen；旧语义「决策只允许 Jev」已作废）。
+    /// 同 model_providers.rs：按 rsx 条件组切块，断言只在切片内做。
+    fn rsx_group_block(code: &str, cond: &str) -> String {
+        let mut depth: i32 = 0;
+        let mut started = false;
+        let mut out = String::new();
+        for line in code.lines() {
+            if !started {
+                if line.contains(cond) {
+                    started = true;
+                } else {
+                    continue;
+                }
+            }
+            out.push_str(line);
+            out.push('\n');
+            depth += line.matches('{').count() as i32;
+            depth -= line.matches('}').count() as i32;
+            if depth == 0 {
+                break;
+            }
+        }
+        assert!(started, "未找到分组锚点：{cond}");
+        assert_eq!(depth, 0, "分组未闭合：{cond}");
+        out
+    }
+
+    /// 目标断言：决策能力的编辑页「提供商类型」下拉必须含 Qwen（切片到决策组再断言）。
     #[test]
     fn decision_provider_type_options_include_qwen() {
         let src = include_str!("model_provider_detail.rs");
         let code = src.split("#[cfg(test)]").next().expect("code region");
-
-        assert_eq!(
-            code.matches(
-                "option { value: \"Qwen\", selected: edit_provider_type() == \"Qwen\", \"通义千问\" }"
-            )
-            .count(),
-            3,
-            "Agent/Embedding/Decision 三组各含一处 Qwen option"
+        let group = rsx_group_block(code, "if editing_is_decision {");
+        assert!(
+            group.contains("value: \"Jev\""),
+            "决策组必须保留 Jev；实际切片：{group}"
         );
-        // 决策组切片：只取标记后的前 4 行，确认 Jev 与 Qwen 并存（防「只加在前两组」假绿）
-        let decision_tail = code
-            .split("if editing_is_decision")
-            .nth(1)
-            .expect("decision option group");
-        let block: String = decision_tail.lines().take(4).collect::<Vec<_>>().join("\n");
-        assert!(block.contains("value: \"Jev\""), "决策组必须保留 Jev");
-        assert!(block.contains("value: \"Qwen\""), "决策组必须含 Qwen");
+        assert!(
+            group.contains("value: \"Qwen\""),
+            "决策组必须含 Qwen；实际切片：{group}"
+        );
+        assert_eq!(
+            group.matches("option {").count(),
+            2,
+            "决策组应恰 Jev / Qwen 两项；实际切片：{group}"
+        );
+    }
+
+    /// 非目标断言（成对）：Agent / Embedding 组各恰 1 处 Qwen，不因本次改动增减。
+    #[test]
+    fn non_decision_groups_keep_single_qwen_option() {
+        let src = include_str!("model_provider_detail.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+        let at = code
+            .find("// 类型选项按能力过滤")
+            .expect("类型选项注释锚点");
+        let zone = &code[at..];
+        let agent = rsx_group_block(zone, "if editing_is_agent {");
+        let after_agent =
+            &zone[zone.find("if editing_is_agent {").expect("agent 组") + agent.len()..];
+        let embedding = rsx_group_block(after_agent, "if editing_is_embedding {");
+        assert_eq!(
+            agent.matches("value: \"Qwen\"").count(),
+            1,
+            "Agent 组 Qwen 应恰 1 处；实际切片：{agent}"
+        );
+        assert_eq!(
+            embedding.matches("value: \"Qwen\"").count(),
+            1,
+            "Embedding 组 Qwen 应恰 1 处；实际切片：{embedding}"
+        );
     }
 }
