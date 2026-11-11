@@ -26,12 +26,14 @@
 //! 关闭开关、无小脑、超时、答案缺失、模型编造 id —— 一律返回 `None`，
 //! 调用方按机械 Top-K 截断（= 老路径）。精选是增强，不是闸门。
 
-use super::retrieve_node::{memory_id, truncate_chars};
+use super::retrieve_node::memory_id;
 use crate::models::brain::Brain;
 use crate::models::memory::{Memory, MemoryPo};
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Candidate, KEY_CANDIDATES, KEY_QUESTION, Metrics, Policy, RankPolicy};
 use crate::service::dal::brain::{BrainDal, dal};
+use crate::service::domain::runtime::cerebellum_context;
+use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -40,11 +42,6 @@ pub(crate) const SCENE: &str = "memory_relevance";
 
 /// 权重阈值：低于此值视为不相关（被模型选中的那条无论如何保留）
 pub(crate) const WEIGHT_THRESHOLD: f32 = 0.08;
-
-/// 单条候选进判据的字符上限
-///
-/// 只约束**正文**部分：来源标签是前缀，不吃这段预算（见 [`snippet`]）。
-const SNIPPET_CHARS: usize = 160;
 
 /// 候选来源标签（与 [`MemoryPo`] 的四个变体一一对应）
 ///
@@ -84,7 +81,13 @@ fn policy(keep: usize) -> RankPolicy {
 /// 标签只加在**有内容**的候选上：空描述必须继续产出空串（[`candidate_views`]
 /// 靠 `is_empty()` 判定「不可判」并丢弃）。否则标签会把「无内容」伪装成有
 /// 内容，让空判据白占一个选项位 —— 那是行为变更，不是本次要的。
-fn snippet(m: &Memory) -> String {
+fn snippet(m: &Memory, snippet_tokens: Option<usize>) -> String {
+    // 单条正文的 token 预算来自比例表（`share::SNIPPET_BP` × 输入预算）；
+    // 容量未配置 ⇒ 不截断（不猜预算）。来源标签是前缀，不吃这段预算。
+    let cut = |body: &str| match snippet_tokens {
+        Some(budget) => truncate_to_tokens(body, budget, ""),
+        None => body.to_string(),
+    };
     let (label, text) = match &m.po {
         MemoryPo::KnowledgeNode(k) => {
             let body = if k.node_description.is_empty() {
@@ -97,22 +100,16 @@ fn snippet(m: &Memory) -> String {
             }
             (
                 SOURCE_KNOWLEDGE_NODE,
-                format!("{}：{}", k.node_name, truncate_chars(body, SNIPPET_CHARS)),
+                format!("{}：{}", k.node_name, cut(body)),
             )
         }
-        MemoryPo::ShortTerm(st) => (
-            SOURCE_SHORT_TERM,
-            truncate_chars(&st.summary, SNIPPET_CHARS),
-        ),
+        MemoryPo::ShortTerm(st) => (SOURCE_SHORT_TERM, cut(&st.summary)),
         // trace 没有摘要字段：优先思考输出（短且有信息量），回退输入
         MemoryPo::Trace(t) => {
             let body = t.output.as_deref().unwrap_or(t.input.as_str());
-            (SOURCE_TRACE, truncate_chars(body, SNIPPET_CHARS))
+            (SOURCE_TRACE, cut(body))
         }
-        MemoryPo::Relation(r) => (
-            SOURCE_RELATION,
-            truncate_chars(&r.relation_type, SNIPPET_CHARS),
-        ),
+        MemoryPo::Relation(r) => (SOURCE_RELATION, cut(&r.relation_type)),
     };
     // 纯空白正文同样视为不可判（`summary` / `relation_type` 落库可能是空串）
     if text.trim().is_empty() {
@@ -122,20 +119,20 @@ fn snippet(m: &Memory) -> String {
 }
 
 /// 候选 → 决策视图（保持召回序；空判据直接丢弃，不占选项位）
-fn candidate_views(candidates: &[Memory]) -> Vec<Candidate> {
+fn candidate_views(candidates: &[Memory], snippet_tokens: Option<usize>) -> Vec<Candidate> {
     candidates
         .iter()
         .filter_map(|m| {
             let id = memory_id(m)?;
-            let text = snippet(m);
+            let text = snippet(m, snippet_tokens);
             (!text.is_empty()).then(|| Candidate::new(id, text))
         })
         .collect()
 }
 
 /// 本场景的事实桶（问题 + 候选）
-fn facts(question: &str, candidates: &[Memory]) -> Metrics {
-    let views = candidate_views(candidates);
+fn facts(question: &str, candidates: &[Memory], snippet_tokens: Option<usize>) -> Metrics {
+    let views = candidate_views(candidates, snippet_tokens);
     Metrics::new()
         .with(KEY_QUESTION, question)
         .with(KEY_CANDIDATES, views)
@@ -151,7 +148,9 @@ pub(crate) async fn rank(
     keep: usize,
 ) -> (Option<Vec<Memory>>, Option<u64>) {
     let policy = policy(keep);
-    let metrics = facts(question, candidates);
+    let snippet_tokens =
+        cerebellum_context::snippet_budget(brain, cerebellum_context::share::SNIPPET_BP);
+    let metrics = facts(question, candidates, snippet_tokens);
 
     // 阶段一：策略声明要问什么（纯函数，未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);

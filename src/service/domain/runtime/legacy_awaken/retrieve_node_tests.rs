@@ -116,7 +116,7 @@ fn short_term_lines_have_their_own_render_budget() {
         .map(|i| relation(&format!("k{}", i % 9), &format!("k{}", (i + 1) % 9), "rel"))
         .collect();
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &relations);
+    let lines = build_knowledge_lines(&hits, &[], &[], &relations, None);
 
     assert_eq!(
         lines.len(),
@@ -161,7 +161,7 @@ fn relation_line_resolves_neighbor_name_without_dumping_its_body() {
     let neighbors = vec![node("k2", "库存扣减", "这段邻居正文不应出现在 prompt")];
     let relations = vec![relation("k1", "k2", "depends_on")];
 
-    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations);
+    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations, None);
 
     assert_eq!(
         lines[0],
@@ -210,7 +210,7 @@ fn index_lines_do_not_consume_relation_budget() {
         .collect();
     let relations = vec![relation("k1", "r0", "rel")];
 
-    let lines = build_knowledge_lines(&selected, &rest, &[], &relations);
+    let lines = build_knowledge_lines(&selected, &rest, &[], &relations, None);
 
     assert_eq!(
         lines.iter().filter(|l| l.contains("[索引]")).count(),
@@ -231,7 +231,7 @@ fn dangling_relation_is_skipped() {
     let hits = vec![node("k1", "A", "a")];
     let relations = vec![relation("k1", "k9", "rel")];
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &relations);
+    let lines = build_knowledge_lines(&hits, &[], &[], &relations, None);
 
     assert_eq!(lines, vec!["[知识节点 k1] A · concept · a".to_string()]);
 }
@@ -246,7 +246,7 @@ fn node_and_relation_budgets_are_enforced() {
         .map(|i| relation(&format!("k{}", i % 9), &format!("k{}", (i + 1) % 9), "rel"))
         .collect();
 
-    let lines = build_knowledge_lines(&nodes, &[], &[], &relations);
+    let lines = build_knowledge_lines(&nodes, &[], &[], &relations, None);
 
     assert_eq!(
         lines.len(),
@@ -267,7 +267,7 @@ fn edges_from_both_paths_are_merged_without_duplicates() {
     let hits = vec![node("k1", "A", "a"), node("k2", "B", "b"), edge.clone()];
     let graph_edges = vec![edge];
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &graph_edges);
+    let lines = build_knowledge_lines(&hits, &[], &[], &graph_edges, None);
 
     let edge_lines: Vec<&String> = lines.iter().filter(|l| l.contains("-->")).collect();
     assert_eq!(edge_lines.len(), 1, "同一条边只渲染一次: {lines:?}");
@@ -287,7 +287,7 @@ fn edge_with_both_ends_hit_outranks_heavier_dangling_edge() {
         relation_with_weight("k1", "k2", "strong_link", Some(0.10)),
     ];
 
-    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations);
+    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations, None);
 
     assert!(lines[2].contains("strong_link"), "完整边应排前: {lines:?}");
     assert!(lines[3].contains("weak_link"));
@@ -302,7 +302,7 @@ fn edges_of_equal_completeness_are_ordered_by_weight() {
         relation_with_weight("k1", "k2", "heavy", Some(0.9)),
     ];
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &relations);
+    let lines = build_knowledge_lines(&hits, &[], &[], &relations, None);
 
     assert!(lines[2].contains("heavy"), "weight 高的排前: {lines:?}");
     assert!(lines[3].contains("light"));
@@ -331,7 +331,7 @@ fn rerank_fallback_keeps_unselected_candidates() {
     );
 }
 
-/// 全文层给完整正文与 id，索引层只给元信息 + 摘要片段；两层都带 id
+/// 全文层给完整正文与 id，索引层只给元信息 + token 预算内的摘要片段；两层都带 id
 #[test]
 fn full_and_index_layers_carry_ids_without_dumping_bodies() {
     let long_body = "缓存".repeat(60); // 120 字，必然触发摘要截断
@@ -341,7 +341,9 @@ fn full_and_index_layers_carry_ids_without_dumping_bodies() {
         short_term("st0", &long_body),
     ];
 
-    let lines = build_knowledge_lines(&selected, &rest, &[], &[]);
+    // 索引行预算 64 token（生产取值 = 4% × 容量；这里只为把「按 token 截断」这条
+    // 口径钉成可独立失败的断言，不代表任何场景的实值）。
+    let lines = build_knowledge_lines(&selected, &rest, &[], &[], Some(64));
 
     assert_eq!(lines.len(), 3, "1 条全文 + 2 条索引");
     assert!(
@@ -353,10 +355,18 @@ fn full_and_index_layers_carry_ids_without_dumping_bodies() {
     assert!(lines[2].starts_with("[索引] [st0]"));
     assert!(lines[2].contains("ts="), "短期记忆索引行带绝对时间戳");
     assert!(!lines[1].contains("ts="), "知识节点没有时间戳字段");
-    assert!(lines[1].contains('…') && lines[2].contains('…'));
+    assert!(
+        !lines[1].contains(&long_body) && !lines[2].contains(&long_body),
+        "索引行不得灌全文正文: {lines:?}"
+    );
     assert!(
         lines[1].chars().count() < lines[0].chars().count(),
         "索引行必须比全文行短: {lines:?}"
+    );
+    assert!(
+        crate::service::domain::runtime::compaction::estimate_tokens(&lines[1]) <= 64,
+        "索引行必须守住 token 预算（不是字符数）: {:?}",
+        lines[1]
     );
     assert!(
         lines.iter().all(|l| !l.starts_with("- ")),

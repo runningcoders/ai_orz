@@ -18,7 +18,7 @@ fn skill(id: &str, name: &str, desc: &str, category: &str) -> SkillPo {
 }
 
 fn metrics_for(question: &str, cands: &[SkillPo]) -> Metrics {
-    facts(question, cands)
+    facts(question, cands, None)
 }
 
 /// 构造带答案的事实桶（同时带候选：`ranked` 要用它过滤幻觉 id）

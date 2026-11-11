@@ -460,7 +460,11 @@ fn state_bundle(
         .with_scene(SCENE)
         // 最近对话（`Brain.memories` 尾部 N 条）：AMan 2026-11-11 定为正式判据输入。
         // 与另外六个接入点同源同限（`RECENT_DIALOGUE_LIMIT`），不另设条数口径。
-        .with_recent_dialogue(&brain.memories, context::RECENT_DIALOGUE_LIMIT);
+        .with_recent_dialogue(
+            &brain.memories,
+            context::RECENT_DIALOGUE_LIMIT,
+            context::dialogue_snippet_tokens(brain),
+        );
     // 空正文（一条链内消息都没带上）时 `push` 整块跳过，不留 `## 链内消息` 裸标题
     bundle.push("链内消息", chain_rendered.to_string());
     // 待发消息：本条**默认准备发送**的正文（判 ①②③ 的第三个输入面）。

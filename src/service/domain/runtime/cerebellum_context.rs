@@ -49,9 +49,6 @@ pub(crate) const STATE_KEY: &str = "context";
 /// 历史对话块默认条数（尾部取最近 N 条）
 pub(crate) const RECENT_DIALOGUE_LIMIT: usize = 3;
 
-/// 单条历史摘要的字符上限（长期/短期记忆都按此截断）
-const DIALOGUE_SNIPPET_CHARS: usize = 160;
-
 // # 输入预算的比例分账（**唯一事实源**）
 //
 // AMan 2026-11-11 口径：「这一部分数据占几成，那一部分几成，只要最终不超过
@@ -71,6 +68,13 @@ pub(crate) mod share {
     pub(crate) const PENDING_REPLY_BP: u32 = 1_500; // 15%
     /// 正文池（链内消息 / state 正文）
     pub(crate) const BODY_BP: u32 = 7_250; // 72.5%
+
+    /// 单条摘要片段（历史对话 / 检索候选 / 索引行）的正文份额
+    ///
+    /// **块内派生，不进 [`TOTAL_BP`]**：它切的是各块正文里的一行，不是独立预算池
+    /// ——算进总和会把「同一块数据分几段写」重复计费。@输入 4000 ⇒ 160 token，
+    /// 与改造前「160 字符」（CJK 最坏情况）逐位一致。
+    pub(crate) const SNIPPET_BP: u32 = 400; // 4%
 
     /// 基准：10_000 bp = 100%
     pub(crate) const BASIS: u32 = 10_000;
@@ -176,11 +180,20 @@ impl ContextBundle {
     }
 
     /// 最近若干条历史块（尾部 N 条、时间正序保留；一条都取不到就整块不 push）
-    pub(crate) fn with_recent_dialogue(mut self, memories: &[Memory], limit: usize) -> Self {
+    ///
+    /// `snippet_tokens` = 单条摘要的 token 预算（见 [`snippet_budget`]）；
+    /// `None` ⇒ 不截断（模型容量未配置时不猜预算，与 `input_token_budget(None)`
+    /// 的「容量未配不裁」同口径）。
+    pub(crate) fn with_recent_dialogue(
+        mut self,
+        memories: &[Memory],
+        limit: usize,
+        snippet_tokens: Option<usize>,
+    ) -> Self {
         let start = memories.len().saturating_sub(limit);
         let mut lines = Vec::new();
         for memory in &memories[start..] {
-            let line = dialogue_line(memory);
+            let line = dialogue_line(memory, snippet_tokens);
             if !line.is_empty() {
                 lines.push(format!("- {line}"));
             }
@@ -284,7 +297,11 @@ pub(crate) fn render_for(brain: &Brain, scene: &str, user_text: &str) -> String 
         .with_identity(&brain.agent_id, &brain.agent_name)
         .with_scene(scene)
         .with_user_message(user_text)
-        .with_recent_dialogue(&brain.memories, RECENT_DIALOGUE_LIMIT)
+        .with_recent_dialogue(
+            &brain.memories,
+            RECENT_DIALOGUE_LIMIT,
+            dialogue_snippet_tokens(brain),
+        )
         .render_within(context_capacity(brain))
 }
 
@@ -294,6 +311,23 @@ pub(crate) fn context_capacity(brain: &Brain) -> Option<u64> {
         .cerebellum
         .as_ref()
         .and_then(|po| po.config().recommended_context_length_tokens())
+}
+
+/// 单条摘要片段的 token 预算 = 输入预算 × `bp`（容量未配 ⇒ `None` ＝ 不截断）
+///
+/// `.max(1)` 是 `usize` 的最小非零值，属**结构性下限**而不是拍出来的整数：占比在
+/// 极小容量下会向下取整成 0，而「0 token 的片段」等于有内容但看不见，与「不裁」
+/// 自相矛盾。
+pub(crate) fn snippet_budget(brain: &Brain, bp: u32) -> Option<usize> {
+    context_capacity(brain).map(|capacity| {
+        let input_budget = usize::try_from(capacity).unwrap_or(usize::MAX);
+        bp_of(input_budget, bp).max(1)
+    })
+}
+
+/// 历史对话单条摘要的 token 预算（四个摘要消费者共用同一条 `SNIPPET_BP`）
+pub(crate) fn dialogue_snippet_tokens(brain: &Brain) -> Option<usize> {
+    snippet_budget(brain, share::SNIPPET_BP)
 }
 
 /// 省略标注（N 由调用方按「注册块数 − 保留块数」算好传入，绝不写死）
@@ -322,19 +356,15 @@ fn truncate_body_keep_visible(body: &str, budget: usize) -> String {
 ///
 /// `Brain.memories` 在唤醒链路里装的是短期记忆；取不到正文的形态直接返回空串
 /// （由调用方按「空则跳过」处理，不塞占位符）。
-fn dialogue_line(memory: &Memory) -> String {
+fn dialogue_line(memory: &Memory, snippet_tokens: Option<usize>) -> String {
     if let MemoryPo::ShortTerm(short_term) = &memory.po {
-        return truncate_chars(short_term.summary.trim(), DIALOGUE_SNIPPET_CHARS);
+        let body = short_term.summary.trim();
+        return match snippet_tokens {
+            Some(budget) => truncate_to_tokens(body, budget, ""),
+            None => body.to_string(),
+        };
     }
     String::new()
-}
-
-/// 按字符（非字节）截断，避免切断多字节字符
-fn truncate_chars(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-    text.chars().take(max_chars).collect()
 }
 
 #[cfg(test)]
@@ -365,7 +395,7 @@ mod tests {
     fn empty_dialogue_block_is_skipped_entirely() {
         let bundle = ContextBundle::new()
             .with_scene("wake_gate")
-            .with_recent_dialogue(&[], RECENT_DIALOGUE_LIMIT);
+            .with_recent_dialogue(&[], RECENT_DIALOGUE_LIMIT, None);
         let rendered = bundle.render();
         assert!(
             rendered.contains("## 当前场景"),
@@ -376,6 +406,31 @@ mod tests {
             "空块标题不得出现（不是标题 + 空 body）：{rendered}"
         );
         assert!(!bundle.render().is_empty());
+    }
+
+    /// 摘要预算 = 输入预算 × `share::SNIPPET_BP`（换容量就换预算，不是固定整数）
+    #[test]
+    fn snippet_budget_is_a_share_of_the_input_budget() {
+        assert_eq!(bp_of(4_000, share::SNIPPET_BP), 160, "@4000 ⇒ 4%");
+        assert_eq!(bp_of(128_000, share::SNIPPET_BP), 5_120, "@128K ⇒ 4%");
+        assert_eq!(bp_of(200_000, share::SNIPPET_BP), 8_000, "@200K ⇒ 4%");
+        // 块内派生：加进总和会把「同一块数据分几段写」重复计费
+        assert_eq!(share::TOTAL_BP, share::BASIS);
+    }
+
+    /// 摘要截断按 token 计：CJK 1 token/字、拉丁 4 字符/token —— 同一预算下两者能装的
+    /// **字符数**差 4 倍（旧字符口径下会一模一样，这正是本轮要删的那套体系）
+    #[test]
+    fn snippet_truncation_counts_tokens_not_chars() {
+        let cjk = "缓".repeat(400);
+        let cut = truncate_to_tokens(&cjk, 160, "");
+        assert!(estimate_tokens(&cut) <= 160, "CJK 截断后必须守住预算");
+        assert_eq!(cut.chars().count(), 160, "CJK：1 字 ≈ 1 token");
+
+        let latin = "a".repeat(2_000);
+        let cut = truncate_to_tokens(&latin, 160, "");
+        assert!(estimate_tokens(&cut) <= 160, "拉丁截断后必须守住预算");
+        assert_eq!(cut.chars().count(), 640, "拉丁：4 字符 ≈ 1 token");
     }
 
     /// 注册序即渲染序，两次调用逐字节相等

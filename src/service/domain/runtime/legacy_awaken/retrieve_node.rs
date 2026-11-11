@@ -27,6 +27,8 @@ use crate::pkg::think_path::{
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::domain::runtime::RuntimeMemory;
+use crate::service::domain::runtime::cerebellum_context;
+use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use crate::service::domain::runtime::types::IntentAnalysis;
 use async_trait::async_trait;
 use common::enums::MemoryType;
@@ -60,12 +62,6 @@ pub(crate) const SHORT_TERM_TOP_K: usize = 3;
 /// 候选池让小脑有取舍空间；开关未打开时这段只是「按召回序取前 3」，
 /// 与老路径逐字节等价。
 const SHORT_TERM_RECALL_WIDTH: usize = 20;
-
-/// `[索引]` 行里摘要片段的字符数：只留开头一小段，够判断「值不值得反查」即可
-///
-/// 不另设索引行条数上限——两路候选池本身有界（15 / 20），最多 35 行，
-/// 每行元信息 + 64 字，比给它们全灌正文便宜一个量级。
-const RECALL_INDEX_SNIPPET_CHARS: usize = 64;
 
 /// 召回宽度相对渲染预算的倍数
 ///
@@ -170,17 +166,25 @@ fn short_term_search(keyword: &str, width: usize) -> MemorySearch {
 ///
 /// ⚠️ 两档都带 id：短期记忆走 `query_memory(ids)` 反查，知识节点走
 /// `search_memory(seed_node_ids=[...], traversal_depth=1)` 查边。
-fn recall_line(m: &Memory, full: bool) -> Option<String> {
+fn recall_line(m: &Memory, full: bool, index_snippet_tokens: Option<usize>) -> Option<String> {
     let line = if full {
         m.to_prompt_summary()?
     } else {
-        m.to_index_prompt(MemoryIndexTier::OnePart, RECALL_INDEX_SNIPPET_CHARS)?
+        // 系数 0 = 不切段：整行先按全文拼出来，再统一按 token 预算截断
+        // （token / 字符两套体系不留，截断只走 `compaction::truncate_to_tokens`）。
+        m.to_index_prompt(MemoryIndexTier::OnePart, 0)?
     };
-    Some(match (&m.po, full) {
+    let line = match (&m.po, full) {
         // to_prompt_summary 自带 [id]，补一个类型标签让两层视觉上可区分
         (MemoryPo::ShortTerm(_), true) => format!("[短期记忆] {line}"),
         (_, true) => line,
         _ => format!("[索引] {line}"),
+    };
+    // 预算按**整行**核算（含元信息与标签）：id 是反查把手，不能被正文挤掉。
+    // 容量未配置 ⇒ 不截断。
+    Some(match index_snippet_tokens {
+        Some(budget) if !full => truncate_to_tokens(&line, budget, ""),
+        _ => line,
     })
 }
 
@@ -206,6 +210,7 @@ fn build_knowledge_lines(
     rest: &[Memory],
     neighbors: &[Memory],
     relations: &[Memory],
+    index_snippet_tokens: Option<usize>,
 ) -> Vec<String> {
     let mut node_names: std::collections::HashMap<&str, &str> = selected
         .iter()
@@ -230,12 +235,12 @@ fn build_knowledge_lines(
     for m in selected {
         match &m.po {
             MemoryPo::KnowledgeNode(_) => {
-                if let Some(line) = recall_line(m, true) {
+                if let Some(line) = recall_line(m, true, index_snippet_tokens) {
                     node_lines.push(line);
                 }
             }
             MemoryPo::ShortTerm(_) => {
-                if let Some(line) = recall_line(m, true) {
+                if let Some(line) = recall_line(m, true, index_snippet_tokens) {
                     short_term_lines.push(line);
                 }
             }
@@ -308,7 +313,7 @@ fn build_knowledge_lines(
     // 其余候选只给元信息 + 摘要片段：不丢掉它们，是为了让 Agent 知道
     // 「还有这些相关条目」并能按 id 精确反查，又不把整批正文灌进 prompt。
     for m in rest {
-        if let Some(line) = recall_line(m, false) {
+        if let Some(line) = recall_line(m, false, index_snippet_tokens) {
             lines.push(line);
         }
     }
@@ -535,11 +540,6 @@ pub(super) fn memory_id(m: &Memory) -> Option<&str> {
     }
 }
 
-/// 截取前 `max` 个字符（按字符而不是字节，避免把中文切坏）
-pub(super) fn truncate_chars(text: &str, max: usize) -> String {
-    text.chars().take(max).collect()
-}
-
 /// 写总线：pack 统一 Full 深度（prepare / deliberate 都按全量消费）
 fn write_pack(bus: &mut ThinkBus, pack: &RetrievalPack) -> Result<()> {
     let value = serde_json::to_value(pack)
@@ -703,8 +703,17 @@ impl ThinkNode for RetrieveNode {
         selected.extend(short_term.selected);
         let mut rest = long_term.rest;
         rest.extend(short_term.rest);
-        let knowledge_hits =
-            build_knowledge_lines(&selected, &rest, &graph.neighbors, &graph.relations);
+        // 索引行摘要预算：与其它摘要消费者共用 `share::SNIPPET_BP`（容量未配 ⇒ 不截）
+        let index_snippet_tokens = deps.agent.brain.as_ref().and_then(|brain| {
+            cerebellum_context::snippet_budget(brain, cerebellum_context::share::SNIPPET_BP)
+        });
+        let knowledge_hits = build_knowledge_lines(
+            &selected,
+            &rest,
+            &graph.neighbors,
+            &graph.relations,
+            index_snippet_tokens,
+        );
 
         // 5. 方法技能召回：同 tag 已发布技能 → 可选小脑精选（默认关）→ 机械排序取前 2
         //

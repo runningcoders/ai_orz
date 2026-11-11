@@ -75,7 +75,7 @@ fn relation(id: &str, relation_type: &str) -> Memory {
 }
 
 fn metrics_for(question: &str, cands: &[Memory]) -> Metrics {
-    facts(question, cands)
+    facts(question, cands, None)
 }
 
 /// 构造带答案的事实桶（同时带候选：`ranked` 要用它过滤幻觉 id）
@@ -264,28 +264,32 @@ fn short_term_rerank_uses_its_own_keep_budget() {
 #[test]
 fn snippet_labels_each_source_verbatim() {
     assert_eq!(
-        snippet(&node("m1", "订单状态机", "订单从创建到完成")),
+        snippet(&node("m1", "订单状态机", "订单从创建到完成"), None),
         "[知识节点]订单状态机：订单从创建到完成"
     );
     assert_eq!(
-        snippet(&short_term("st1", "会议结论：下周上线")),
+        snippet(&short_term("st1", "会议结论：下周上线"), None),
         "[短期记忆]会议结论：下周上线"
     );
     assert_eq!(
-        snippet(&trace("t1", Some("思考输出正文"), "输入正文")),
+        snippet(&trace("t1", Some("思考输出正文"), "输入正文"), None),
         "[trace]思考输出正文"
     );
-    assert_eq!(snippet(&relation("r1", "depends")), "[关系]depends");
+    assert_eq!(snippet(&relation("r1", "depends"), None), "[关系]depends");
 }
 
 /// 标签不得把空判据变成可判据（否则空候选会白占一个选项位）
 #[test]
 fn empty_body_stays_empty_even_with_label() {
-    assert_eq!(snippet(&node("m1", "有名字", "")), "", "知识节点 body 为空");
-    assert_eq!(snippet(&short_term("st1", "")), "");
-    assert_eq!(snippet(&short_term("st1", "   ")), "");
-    assert_eq!(snippet(&trace("t1", Some(""), "")), "");
-    assert_eq!(snippet(&relation("r1", "")), "");
+    assert_eq!(
+        snippet(&node("m1", "有名字", ""), None),
+        "",
+        "知识节点 body 为空"
+    );
+    assert_eq!(snippet(&short_term("st1", ""), None), "");
+    assert_eq!(snippet(&short_term("st1", "   "), None), "");
+    assert_eq!(snippet(&trace("t1", Some(""), ""), None), "");
+    assert_eq!(snippet(&relation("r1", ""), None), "");
 }
 
 /// 成对不变量：①选项值 == `snippet()` 逐字（标签确实进了选项）
@@ -301,8 +305,8 @@ fn options_carry_the_label_and_state_keeps_its_two_keys() {
     let reqs = p.prepare(&m);
     match &reqs[0].questions[&p.primary_qid()] {
         QuestionSpec::Pick { options, .. } => {
-            assert_eq!(options["m1"], snippet(&cands[0]));
-            assert_eq!(options["st1"], snippet(&cands[1]));
+            assert_eq!(options["m1"], snippet(&cands[0], None));
+            assert_eq!(options["st1"], snippet(&cands[1], None));
             assert!(options["m1"].starts_with("[知识节点]"));
             assert!(options["st1"].starts_with("[短期记忆]"));
         }

@@ -22,12 +22,13 @@
 //! 关闭开关、无小脑、超时、答案缺失、模型编造 id —— 一律返回 `None`，调用方退回
 //! 「词面重叠优先 + 稳定排序」取前 2（= 老路径）。精选是增强，不是闸门。
 
-use super::retrieve_node::truncate_chars;
 use crate::models::brain::Brain;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Candidate, KEY_CANDIDATES, KEY_QUESTION, Metrics, Policy, RankPolicy};
 use crate::service::dal::brain::{BrainDal, dal};
+use crate::service::domain::runtime::cerebellum_context;
+use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -36,9 +37,6 @@ pub(crate) const SCENE: &str = "skill_relevance";
 
 /// 权重阈值：低于此值视为不适用（被模型选中的那条无论如何保留）
 pub(crate) const WEIGHT_THRESHOLD: f32 = 0.08;
-
-/// 单条候选进判据的字符上限（技能描述通常一两句话，截断只为守住输入体积）
-const SNIPPET_CHARS: usize = 160;
 
 /// 重排判据（prompt 存调用方，服务端不持有）
 const RANK_INSTRUCTIONS: &str = "下面每条候选是一个可用的方法技能，描述里写的是「什么时候该用这个技能」。\
@@ -64,9 +62,15 @@ fn policy(keep: usize) -> RankPolicy {
 ///
 /// 三个字段都是技能的「可判别面」：`description` 是「什么时候用」，
 /// `category` 给出领域归属，`name` 兜底标识同一族的不同粒度。
-fn snippet(s: &SkillPo) -> String {
+fn snippet(s: &SkillPo, snippet_tokens: Option<usize>) -> String {
     let mut text = s.name.trim().to_string();
-    let desc = truncate_chars(s.description.trim(), SNIPPET_CHARS);
+    // 描述正文按 token 预算截断（`share::SNIPPET_BP` × 输入预算）；
+    // 容量未配置 ⇒ 不截断。名称 / 分类不吃这段预算（它们是判别面，不是正文）。
+    let desc = s.description.trim();
+    let desc = match snippet_tokens {
+        Some(budget) => truncate_to_tokens(desc, budget, ""),
+        None => desc.to_string(),
+    };
     if !desc.is_empty() {
         if !text.is_empty() {
             text.push('：');
@@ -87,20 +91,20 @@ fn snippet(s: &SkillPo) -> String {
 }
 
 /// 候选 → 决策视图（保持召回序；空判据直接丢弃，不占选项位）
-fn candidate_views(skills: &[SkillPo]) -> Vec<Candidate> {
+fn candidate_views(skills: &[SkillPo], snippet_tokens: Option<usize>) -> Vec<Candidate> {
     skills
         .iter()
         .filter_map(|s| {
             let id = s.id.trim();
-            let text = snippet(s);
+            let text = snippet(s, snippet_tokens);
             (!id.is_empty() && !text.is_empty()).then(|| Candidate::new(id, text))
         })
         .collect()
 }
 
 /// 本场景的事实桶（问题 + 候选）
-fn facts(question: &str, skills: &[SkillPo]) -> Metrics {
-    let views = candidate_views(skills);
+fn facts(question: &str, skills: &[SkillPo], snippet_tokens: Option<usize>) -> Metrics {
+    let views = candidate_views(skills, snippet_tokens);
     Metrics::new()
         .with(KEY_QUESTION, question)
         .with(KEY_CANDIDATES, views)
@@ -116,7 +120,9 @@ pub(crate) async fn rank(
     keep: usize,
 ) -> (Option<Vec<SkillPo>>, Option<u64>) {
     let policy = policy(keep);
-    let metrics = facts(question, skills);
+    let snippet_tokens =
+        cerebellum_context::snippet_budget(brain, cerebellum_context::share::SNIPPET_BP);
+    let metrics = facts(question, skills, snippet_tokens);
 
     // 阶段一：策略声明要问什么（纯函数，未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);

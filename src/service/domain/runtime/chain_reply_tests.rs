@@ -1412,6 +1412,35 @@ fn brain_with_capacity_tokens(capacity: u64) -> Brain {
     brain
 }
 
+/// 摘要预算随 provider 容量变化（同一场景换容量 ⇒ 换预算），不是固定整数
+///
+/// 改前必红：旧实现 `SNIPPET_CHARS = 160` 是常量，两个容量的取值必然相等。
+#[test]
+fn snippet_budget_follows_provider_capacity() {
+    let small = brain_with_capacity_tokens(4_000);
+    let large = brain_with_capacity_tokens(128_000);
+    assert_eq!(
+        context::snippet_budget(&small, context::share::SNIPPET_BP),
+        Some(160),
+        "@4000 ⇒ 4% = 160 token（与改造前 160 字符等值）"
+    );
+    assert_eq!(
+        context::snippet_budget(&large, context::share::SNIPPET_BP),
+        Some(5_120),
+        "@128K ⇒ 4% = 5120 token（改造前恒 160）"
+    );
+    assert_ne!(
+        context::snippet_budget(&small, context::share::SNIPPET_BP),
+        context::snippet_budget(&large, context::share::SNIPPET_BP),
+        "预算必须随容量变，否则又退化成硬编码绝对值"
+    );
+    assert_eq!(
+        context::snippet_budget(&brain_with_quota(4), context::share::SNIPPET_BP),
+        None,
+        "容量未配置 ⇒ 不猜预算（不截断）"
+    );
+}
+
 /// R54 成对断言：形态迁移必须同时断「旧形态已消失」与「新形态取值正确」
 ///
 /// 只断后者时，**双出口共存**仍会全绿（改造前 9 个平铺键还在，新键也照样有值）。
