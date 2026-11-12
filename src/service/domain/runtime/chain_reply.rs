@@ -404,7 +404,7 @@ state 里的 window_depth（当前链深度）与 fatigue（疲劳值）**仅作
 
 /// 题面末段的**运行时裁决口径**（不是内容判据，是本次判定怎么被采纳）
 ///
-/// 与 `thinking_strength::instructions(base)` 同一手法：题面不能只讲原则，
+/// 与 `thinking_strength::instructions` 同一手法：题面不能只讲原则，
 /// 必须把本次真正生效的数字写进来。否则模型看到「window_depth 仅作辅助参考」，
 /// 实际裁决却按 [`continue_threshold_at`] 把门槛从 0.60 抬到 0.90 ——
 /// 题面与裁决方向相反，模型给不出达门槛的置信还不知道差在哪。

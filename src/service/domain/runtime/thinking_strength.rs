@@ -8,14 +8,25 @@
 //! 配的 `thinking_intensity=100` 被静默替换成 46。
 //!
 //! ```text
-//! base   = Agent 覆盖 → Provider 基准 → DEFAULT(50)      （配置重新成为权威）
-//! delta  = 小脑相对偏移，量程 [-50, +50]                  （score 0–100 减去中位 50）
-//! result = base.offset_with_headroom(delta, MAX_DELTA)   （恒在 0–100）
+//! base     = Agent 覆盖 → Provider 基准 → DEFAULT(50)    （配置权威；也是判断/折算锚点）
+//! fallback = base.offset(场景固定偏移 + 意图动态偏移)     （默认建议值，仅无结论时下发）
+//! delta    = 小脑相对偏移，量程 [-50, +50]                （score 0–100 减去中位 50）
+//! result   = base.offset_with_headroom(delta, MAX_DELTA)  （**最终下发值**，恒在 0–100）
 //! ```
 //!
-//! 题面里写明当前 `base` 与「值域 0–100、100 是最大值」。偏移按**剩余空间**
-//! 折算：基准越靠近极值，朝该极值方向越难动（base=100 时正向完全不动、反向
-//! 正常兑现），于是「基础越大向上越难」由代码保证，不靠模型自觉。
+//! ⚠️ 场景/意图偏移是**重要度先验**，不是硬加成（2026-11-12 二次拍板）：它们和
+//! 每个场景的重要度说明一起写进题面与 state，由小脑结合节点目标与输入要点决定
+//! 本次是否兑现；**判断有结论时完全以它为准**，`fallback` 不参与折算也不二次叠加。
+//! 只有降级（无结论 / 调用失败 / 超时 / 答案不可用）才回落到 `fallback`。
+//! 此前把偏移在判断前硬并入锚点，基准顶格时向上 headroom=0，小脑判「更深」根本
+//! 兑现不了；而题面又把它说成「不调整时真正下发的值」，模型自然倾向选「与基准
+//! 相当」，于是 8 次实测全落在 98–100。现在先验与裁决分离，模型明确知道
+//! 「默认建议不必照做」。
+//!
+//! 题面里写明当前 `base`、场景重要度与 `fallback`，并钉死「值域 0–100、
+//! 100 是最大值」。偏移按**剩余空间**折算：基准越靠近极值，朝该极值方向越难动
+//! （base=100 时正向完全不动、反向正常兑现），于是「基础越大向上越难」由代码
+//! 保证，不靠模型自觉。
 //!
 //! # 上下文：节点位置 + 节点输入要点 + 原值（2026-11-12 续）
 //!
@@ -26,8 +37,8 @@
 //! 区分度。故改走专用装配 [`render_strength_context`]：
 //!
 //! 1. **当前节点**：节点位置、该节点的真实目标与预期产出、轮次进度；
-//! 2. **强度原值**：配置基准及其来源、场景固定偏移、意图动态偏移、
-//!    「不调整时的下发值」、双向可调空间、可用工具数；
+//! 2. **强度原值**：配置基准及其来源、场景重要度、场景固定偏移、意图动态偏移、
+//!    默认建议值（仅兜底）、双向可调空间、可用工具数；
 //! 3. **节点输入要点**：从传入该节点的 `initial_messages` 提取规模 /
 //!    大脑已注入的背景区块 / 任务·项目摘要 / 已发生的工具调用 / 最近动作；
 //! 4. 「当前用户消息」降级为输入之一，按容量截断并标明它在各节点的真实语义；
@@ -50,7 +61,8 @@
 //! # 降级（业务方忽略错误、走原逻辑）
 //!
 //! 无小脑 / 调用失败 / 超时 / 答案不可用 → `choice = None`，调用方退回
-//! 原逻辑（Provider 基准 + Agent 覆盖 + 场景偏移 + 意图确定性偏移）。
+//! 原逻辑（Provider 基准 + Agent 覆盖 + 场景偏移 + 意图确定性偏移），即
+//! [`strength_fallback`]。这是场景偏移**唯一真正被硬加进去**的时机。
 //! 小脑是可选增强，绝不阻塞主流程，也不把「没判断出来」当成「判断为最低强度」。
 //!
 //! ⚠️⚠️ **不做单档置信门禁**：`score` 的 `confidence` 是打分置信度，只作观测。
@@ -112,25 +124,35 @@ const UPPER: f32 = 100.0;
 /// 两者的一致性由 `delta_range_matches_upper` 护栏钉死。
 const MAX_DELTA: i32 = 50;
 
-/// 判据（本次运行的配置基准动态注入；prompt 存调用方，服务端不持有）
+/// 判据（本次运行的**基准 + 场景重要度 + 默认建议值**动态注入）
 ///
-/// 四件事缺一不可：① 告诉模型当前配置基准是多少；② 钉死 0–100 值域、
-/// **100 是最大值**；③ 说明偏移会按剩余空间折算；④ 明确 state 各块的
-/// **优先级**。少了②，模型会把「+50」当成可以突破 100 的加分；少了④，
-/// 它会退回「只看最后一条消息」—— 而那条在四个节点里根本不是用户原话。
-fn instructions(base: ThinkingIntensity) -> String {
+/// 四件事缺一不可：① 报裸配置基准（判断与折算都落在它上面）；② 把场景重要度
+/// 与默认建议值写清楚，并明确「只是先验、可被覆盖、仅兜底生效」；③ 钉死
+/// 0–100 值域、**100 是最大值**并说明按剩余空间折算；④ 明确 state 各块的
+/// **优先级**。少了③，模型会把「+50」当成可以突破 100 的加分；少了④，它会
+/// 退回「只看最后一条消息」—— 而那条在四个节点里根本不是用户原话。
+///
+/// ⚠️ `base` / `fallback` / `importance` 必须与 [`baseline_block`]、
+/// [`strength_fallback`] 和 [`select`] 的折算逐位同源：题面说「基准 N 分」，
+/// 裁决就得按 N 的剩余空间折算，不能各算一份。
+fn instructions(base: ThinkingIntensity, fallback: ThinkingIntensity, importance: &str) -> String {
     format!(
         "请判断「相对当前配置基准，这个节点这一次需要更深还是更浅的思考」。\
-当前基准强度 = {base} 分，合法值域 0–100 分，**100 是最大值**。\
+当前基准强度 = {base} 分（配置原值，不含场景/意图偏移），合法值域 0–100 分，**100 是最大值**。\
+场景重要度：{importance}；系统据此给出的默认建议值 = {fallback} 分（= 基准 + 场景固定偏移 + 意图动态偏移，已钳制）。\
+⚠️ 默认建议只是先验、**不是必须兑现**：请结合「当前节点」的目标与「节点输入要点」判断本次是否真需要这么深；若不需要，直接给负值或选「与基准相当」，以你的判断为准。只有本次没给出可用结论时，系统才会回退到默认建议值。\
 下面的等级是相对偏移：负数 = 比基准更浅，0 = 与基准相当，正数 = 比基准更深。\
-偏移会按基准距边界的剩余空间折算：基准越接近 100，向上越难（到 100 时无法再增）；越接近 0，向下越难。\
+偏移会按当前基准距边界的剩余空间折算：基准越接近 100，向上越难（到 100 时无法再增）；越接近 0，向下越难。\
+判断结果**就是最终下发值**，不会再叠加场景或意图偏移，请直接对着这个数值给出深浅。\
 state 按重要性给出：「当前节点」= 本次在链路中的位置、该节点的真实目标与轮次进度；\
-「强度原值」= 配置基准及其来源、场景固定偏移、意图动态偏移、不调整时的下发值与可调空间；\
+「强度原值」= 配置基准及其来源、场景重要度、场景固定偏移、意图动态偏移、默认建议值与可调空间；\
 「节点输入要点」= 从传入本节点的消息序列里提取的规模、大脑已注入的背景区块、任务/项目摘要、已发生的工具调用与最近动作；\
 「当前用户消息」只是输入之一（部分节点里它是整份拼装 Prompt，不是用户原话），另有「会话身份」「最近对话」。\
 请以「当前节点的目标 + 节点输入要点」为主要依据，不要只看用户消息的文字长短或措辞。\
 只按任务相对基准的深浅判断，不要按身份、历史表现或情绪判断；拿不准就选「与基准相当」。",
         base = base.score(),
+        fallback = fallback.score(),
+        importance = importance,
     )
 }
 
@@ -183,7 +205,7 @@ pub struct StrengthNodeContext<'a> {
     pub start_round: usize,
     /// 总轮次上限
     pub max_rounds: usize,
-    /// 意图识别产出的动态偏移（会叠加到最终强度）
+    /// 意图识别产出的动态偏移（默认建议值的组成部分，仅兜底时硬兑现）
     pub dynamic_offset: i32,
     /// 绝对强度覆盖（有值时本次判断结果不会下发，仅留痕）
     pub force_intensity: Option<u8>,
@@ -214,8 +236,31 @@ fn node_goal(thought: ThinkingScene) -> (&'static str, &'static str) {
         ),
         ThinkingScene::Settle => (
             "沉淀节点（settle）",
-            "无人值守的内循环：把待沉淀队列归纳成知识节点、关系与可复用技能，需要关联与抽象；已有固定 +30 场景偏移。",
+            "无人值守的内循环：把待沉淀队列归纳成知识节点、关系与可复用技能，需要关联与抽象；系统默认建议更深，是否兑现由本次判断决定。",
         ),
+    }
+}
+
+/// 场景**重要度**：把「为什么系统会给出这个默认偏移」直接告诉小脑
+///
+/// 2026-11-12：此前只有数值偏移，模型看到的是「基准已被加好」，无法判断这次
+/// 到底该不该兑现；现在重要度与默认建议值一起进题面 + state（同源），并明确
+/// 只是先验。Settle 是唯一有非零固定偏移的场景。
+fn scene_importance(thought: ThinkingScene) -> &'static str {
+    match thought {
+        ThinkingScene::Awaken => {
+            "高但方差最大：主循环要推进任务、多轮推理与调用工具，深度取决于本次任务复杂度；系统默认不额外加减"
+        }
+        ThinkingScene::IntentAnalyze => {
+            "中偏低：只做单轮理解、不执行业务动作，结论会驱动后续阶段的动态偏移；系统默认不额外加减"
+        }
+        ThinkingScene::Summary => {
+            "中：结论直接可见，重覆盖与忠实、不需要新的探索；系统默认不额外加减"
+        }
+        ThinkingScene::Compact => "中：输入规模是主要负担，要求信息保全；系统默认不额外加减",
+        ThinkingScene::Settle => {
+            "高：无人值守地归纳知识节点、关系与可复用技能，需要关联与抽象；系统默认建议 +30，请按本次队列规模与要点判断是否真需要"
+        }
     }
 }
 
@@ -260,11 +305,23 @@ fn node_block(thought: ThinkingScene, node: &StrengthNodeContext<'_>) -> String 
     format!("阶段：{phase}\n节点位置：{position}\n本节点目标：{goal}\n{rounds}")
 }
 
-/// 「强度原值」块：告诉模型「不调整会是多少」，这才是相对判断的真正锚点
+/// **默认建议值 / 兜底值**：配置基准 + 场景固定偏移 + 意图动态偏移
 ///
-/// ⚠️ 锚点不是裸 `base`：`runner::resolve_call_options` 最终下发的是
-/// `base.offset(场景固定偏移 + 动态偏移)`。只报 base 会让模型拿一个**永远不会
-/// 真正出现的值**当参照，settle（+30）上尤其失真。
+/// 只出现在两处：① 题面与 state 里的「场景重要度默认建议」；② 小脑无结论时
+/// 的下发值（`think_round::runner::resolve_call_options` 复用本函数，避免
+/// 两处各算一份）。判断有结论时它**完全不参与**折算，禁止把它当折算锚点。
+pub(crate) fn strength_fallback(
+    base: ThinkingIntensity,
+    fixed_offset: i32,
+    dynamic_offset: i32,
+) -> ThinkingIntensity {
+    base.offset(fixed_offset + dynamic_offset)
+}
+
+/// 「强度原值」块：配置基准 + 场景重要度 + 默认建议值（先验，不是硬加成）
+///
+/// ⚠️ 可调空间必须按**裸 `base`** 报：折算落在 `base` 上，报 `fallback` 的
+/// 剩余空间会让题面与裁决再次错位。
 fn baseline_block(
     brain: &Brain,
     thought: ThinkingScene,
@@ -273,22 +330,25 @@ fn baseline_block(
 ) -> String {
     let fixed = thought.thinking_intensity_offset();
     let dynamic = node.dynamic_offset;
-    let unchanged = base.offset(fixed + dynamic);
+    let fallback = strength_fallback(base, fixed, dynamic);
     let mut lines = vec![
         format!(
-            "配置基准（原值）：{} 分，来源：{}",
+            "配置基准（本次判断锚点）：{} 分，来源：{}",
             base.score(),
             strength_base_source(brain)
         ),
-        format!("场景固定偏移：{fixed:+}；意图动态偏移：{dynamic:+}"),
+        format!("场景重要度：{}", scene_importance(thought)),
         format!(
-            "不调整时的下发值：{} 分（= 基准 + 固定偏移 + 动态偏移，已钳制）",
-            unchanged.score()
+            "场景固定偏移：{fixed:+}；意图动态偏移：{dynamic:+}（只是默认先验，可被本次判断覆盖）"
         ),
         format!(
-            "可调空间：向上 {} 分 / 向下 {} 分（折算按剩余空间）",
-            100 - unchanged.score(),
-            unchanged.score()
+            "系统默认建议值（仅兜底）：{} 分（= 基准 + 固定偏移 + 动态偏移，已钳制）",
+            fallback.score()
+        ),
+        format!(
+            "可调空间：向上 {} 分 / 向下 {} 分（按当前基准的剩余空间折算）",
+            100 - base.score(),
+            base.score()
         ),
         format!("本节点可用工具：{} 个", node.tool_count),
     ];
@@ -372,12 +432,14 @@ pub(crate) fn render_strength_context(
 /// 一次强度选择的结果
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StrengthChoice {
-    /// 折算后的强度（0–100 分）：下游仍把它当**基准**用，不是凭空绝对分
+    /// 折算后的强度（0–100 分）：**最终下发值**，下游不得再叠加任何偏移
     pub strength: ThinkingIntensity,
     /// 小脑给的相对偏移力度（`[-MAX_DELTA, +MAX_DELTA]`，排障用）
     pub delta: i32,
-    /// 本次的配置基准（Agent 覆盖 → Provider → DEFAULT），排障用
+    /// 本次的配置原值（Agent 覆盖 → Provider → DEFAULT）= 折算锚点，排障用
     pub base: u8,
+    /// 默认建议值（配置原值 + 场景固定偏移 + 意图动态偏移），仅无结论时下发
+    pub fallback: u8,
     /// 打分置信度（只作观测，不作门禁）
     pub confidence: f32,
 }
@@ -443,16 +505,16 @@ pub(crate) fn strength_base(brain: &Brain) -> ThinkingIntensity {
         .unwrap_or(ThinkingIntensity::DEFAULT)
 }
 
-/// 本场景的策略形态（按本次基准拼判据，可反复构造）
+/// 本场景的策略形态（按本次基准 + 默认建议值 + 场景重要度拼判据）
 ///
 /// `min_score = 0`：本场景不用 `judge`（命中与否由「有没有结论」决定，
 /// 低分是合法判断而不是未命中），阈值参数在这里无意义。
-fn policy(base: ThinkingIntensity) -> ScorePolicy {
+fn policy(base: ThinkingIntensity, fallback: ThinkingIntensity, importance: &str) -> ScorePolicy {
     ScorePolicy::new(
         SCENE,
         "思考强度选择",
         "相对当前配置基准，这次任务需要更深还是更浅的思考（偏移 -50~+50）",
-        instructions(base),
+        instructions(base, fallback, importance),
         LEVELS,
         0.0,
     )
@@ -491,10 +553,16 @@ pub async fn select(
         return StrengthSelection::not_called(DEGRADED_BUDGET);
     }
 
-    // 基准先取、题面带着它出门：模型看到的是「当前配置 = N 分」而不是凭空
-    // 给绝对分。与 `runner::resolve_call_options` 共用 `strength_base` 一处取值。
+    // 判断与折算都落在裸配置基准上；场景/意图偏移只作为「重要度先验 +
+    // 默认建议值」进题面与 state，不参与有结论时的折算。
+    // ⚠️ `strength_fallback` 是唯一取值口：题面 / state / 降级共用一份。
     let base = strength_base(brain);
-    let policy = policy(base);
+    let fallback = strength_fallback(
+        base,
+        thought.thinking_intensity_offset(),
+        node.dynamic_offset,
+    );
+    let policy = policy(base, fallback, scene_importance(thought));
     // 专用装配：节点位置 / 原值 / 输入要点前置，用户消息殿后。
     // 单出口仍是 [`context::STATE_KEY`]，DAL 与协议零改动。
     let rendered = render_strength_context(brain, thought, base, &node, user_text);
@@ -558,11 +626,14 @@ pub async fn select(
 
     let force = grade.score.round().clamp(0.0, UPPER) as i32;
     let delta = force - MAX_DELTA;
+    // 折算直接落在裸基准上 ⇒ `resolved` 就是最终下发值；场景/意图偏移作为
+    // 先验已被模型看过，判断后不再叠加，也不拿 `fallback` 兜其结果。
     let resolved = base.offset_with_headroom(delta, MAX_DELTA);
     let choice = StrengthChoice {
         strength: resolved,
         delta,
         base: base.score(),
+        fallback: fallback.score(),
         confidence: grade.confidence,
     };
 
@@ -572,7 +643,8 @@ pub async fn select(
         decision = "select",
         score = resolved.score(),
         delta = delta,
-        base = base.score(),
+        base = choice.base,
+        fallback = choice.fallback,
         force = force,
         confidence = choice.confidence,
         levels = LEVELS.len(),

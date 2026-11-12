@@ -5,9 +5,10 @@
 //!   未配置则整条链路不下发该字段，保持存量行为）
 //! - **Agent 覆盖值**（`AgentRuntimeConfig.thinking_intensity`，显式覆盖 provider 基准）
 //! - **场景偏移**（`ThinkingScene::thinking_intensity_offset`，在基准值上做 ±N 分偏移，
-//!   未配置的场景为 0）
+//!   未配置的场景为 0）：与小脑结论二选一 —— 小脑有结论时偏移只作为重要度先验，
+//!   无结论时才按 clamp(基准 + 偏移, 0, 100) 兜底下发
 //!
-//! 最终值 = clamp(基准 + 偏移, 0, 100)。真正请求下游模型时，才按下游支持的形式做转换
+//! 真正请求下游模型时，才按下游支持的形式做转换
 //! （完整六档 `minimal`/`low`/`medium`/`high`/`xhigh`/`max`，见
 //! [`ThinkingIntensity::to_reasoning_effort_wire`]）。`none` 不在强度档位内：
 //! 平台的 `Option::None` 已经表达「不下发该字段」（走厂商默认），无需再发 `none`。

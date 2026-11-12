@@ -398,3 +398,42 @@ FinalReturn --> [*] : ThinkLoopResult：Final
 **口径**：与强度场景 `instructions(base)` 是同一手法，但事实类型不同 —— `base` 是**判据锚点**（判相对偏移必须知道基准），`continue_threshold` 是**裁决参数**（判据不变，只决定采纳要求）。两者都写进题面，state 里再放一份便于模型直接读
 **边界**：题型仍是 `PickOne` 三选项、门槛阶梯仍是 0.60→0.90、降级链与 `decision` 值域不动；本次只统一「上下文里写了什么」与「最终按什么裁决」
 **验证状态**（2026-11-12，全绿）：`chain_reply` **65 passed**（含 6 条新护栏）；`make ci` 真实退出码 0（后端 lib 2853 / common 419 / 前端 452，`inline_test_lint` 0 违规）；`make wiki-check` 673 篇 / 192 元数据；`dx check` No issues
+
+---
+
+### 更新摘要（2026-11-12，强度锚点单一出口：判断后不再二次叠加场景偏移）【已废弃：被下节「场景重要度先验与兜底分离」取代】
+**主题**：场景固定偏移与意图动态偏移既然已写进题面/state 作为节点事实，就必须在**判断之前**并入折算锚点；`runner` 直接采用小脑结论，不再叠加一次
+**触发**：重启后实测 8 次新逻辑决策，`base` 全为 100（生产 Agent 显式配 `thinking_intensity=100`），`score` 落在 **98–100、中位 100、均值 99.62**。但 `delta` 其实是 **−2…+29** 且按阶段分层（awaken +24…+29 / intent-analyze +7…+15 / summary −2…−1、置信中位 0.84）—— **判别力已经恢复，是基准顶格让 `offset_with_headroom` 的向上 headroom=0，正偏移全被吃掉**，不是又压平了。顺着排查发现更深一层的口径错配：题面与 `## 强度原值` 都报「不调整时的下发值 = base + 场景/意图偏移」并据此给出可调空间，裁决却按**裸 `base`** 折算，再由 `runner::resolve_call_options` 补一次 `.offset(场景偏移 + 动态偏移)` —— 同一份场景信息用了两次；`settle(+30)` 会把小脑刻意压低的结论整段顶回 100
+**关键变更**：
+1. `thinking_strength.rs`——新增 `strength_anchor(base, thought, node) = base.offset(场景固定偏移 + 意图动态偏移)` 作为**唯一锚点取值口**；`instructions(anchor)` / `baseline_block` / `select` 的 `offset_with_headroom` / 日志都取这一份。`instructions` 补两句：该数值「已含场景固定偏移与意图动态偏移，即不调整时真正下发的值」、「判断结果**就是最终下发值**，不会再叠加场景或意图偏移」。`LEVELS`、题型、折算公式不动
+2. `StrengthChoice` 新增 `anchor: u8`（`base` 保留为配置原值），日志新增 `anchor` 字段；排障可一眼区分「配置原值 / 判断锚点 / 最终下发值」三者
+3. `think_round/runner.rs`——`resolve_call_options` 有结论时 **直接返回 `cerebellum_strength`**；仅降级（`None`）时由 runner 自己重建 `strength_base(brain).offset(场景偏移 + 动态偏移)`。`force_intensity` 绝对通道与 Provider 能力开关（未配 `thinking_intensity` 则整链不下发）逐字节不变
+4. `runner.rs` / `think_loop.rs` / `types.rs` / `chain_reply.rs` 的链路注释同步改为「配置基准 + 场景/意图偏移 = 锚点 → 相对偏移折算 = 最终下发值」
+**口径**：`settle(+30)` 的 `base=60` 例子——旧口径按裸 base 折算 `60+16=76` 再 `+30` ⇒ **100**（小脑判断被抹平）；新口径锚点 90、向上剩余 10/50 ⇒ `+20` 只兑现 `+4` ⇒ **94**。配置原值 100 时向上饱和是设计结果（基准权威），要更大区分度应把基准调到中间值，而不是改折算规则
+**运维观察**：基准顶格时小脑等价于「只能减、不能加」的单向调节器。以本次 8 条 `delta` 反推，基准 70 ⇒ 下发约 68–87（跨度 19）、基准 60 ⇒ 58–83（跨度 25）、基准 50 ⇒ 48–79（跨度 31，双向 1:1）。且基准降低后 `settle` 的锚点不再顶到 100，沉降阶段的判断才真正生效。生产库配置属数据侧操作，本次**未改动**
+**边界**：不改题型、不改 `LEVELS`、不改 `offset_with_headroom`、不改降级链 / `force_intensity` / 能力开关、不改轨迹 `decision` 值域（仍是最终下发值，看板不用改）
+**护栏**（+5）：`strength_anchor_includes_scene_and_intent_offsets` / `settle_anchor_folds_delta_without_second_offset`（94 vs 旧口径 100 的反事实）/ `instructions_use_anchor_not_raw_base` / `select_folds_delta_on_scene_anchor_and_reports_it`（端到端 Settle）/ `cerebellum_strength_is_final_and_not_offset_again`（runner 侧反事实）；`runner_tests` 原「小脑值之后仍叠加场景偏移」断言改写为「小脑值即最终值」，降级路径仍单独钉死
+**验证状态**（2026-11-12，全绿）：`cargo test -p ai_orz --lib thinking_strength` **34 passed**（含 4 条新护栏）、`--lib runner` **13 passed**；`make ci` 真实退出码 **0**（fmt-check / clippy / clippy-fe / docs-lint / inline-test-lint 全过；后端 lib、common、前端 452 与各集成 / doctest target 全 ok）；`make wiki-index && make wiki-check` 673 篇 / 192 篇元数据全合规。首轮 `make ci` 曾因新增模块头注释的 doc 列表续行缩进报 2 处 `clippy::doc_lazy_continuation`，已把「`+ 场景固定偏移`」改成「`加场景固定偏移与意图动态偏移`」消除列表解析后重跑通过
+
+---
+
+### 更新摘要（2026-11-12，场景重要度先验与兜底分离：小脑结论优先）【现行口径】
+**主题**：既然场景上下文已经进题面/state，就把「场景重要度」直接告诉小脑；判断有结论时完全以它为准，默认场景偏移只在判断失败 / 降级时兜底生效
+**触发**：上一节把场景/意图偏移在判断前硬并入锚点后，生产仍观察到 `score` 98–100 的顶格饱和；进一步分析发现「默认偏移被当成基准的一部分」会让模型倾向选「与基准相当」，且基准顶格时向上 headroom=0、正偏移根本兑现不了。AMan 二次拍板：把偏移从硬加成改成「重要度提示 + 默认建议值」，以小脑结论为准，失败才用默认偏移兜底
+**口径**：
+```text
+base     = Agent 覆盖 → Provider 基准 → DEFAULT(50)    （判断/折算锚点）
+fallback = base.offset(场景固定偏移 + 意图动态偏移)     （默认建议值，仅无结论时下发）
+delta    = 小脑相对偏移，量程 [-50, +50]
+result   = base.offset_with_headroom(delta, 50)        （最终下发值）
+```
+**关键变更**：
+1. `thinking_strength.rs`——`strength_anchor` 改名 `strength_fallback(base, fixed, dynamic)`，语义从「唯一折算锚点」变成「默认建议值 / 兜底值」；`select` 的折算改回**裸 `base`**，`fallback` 不参与有结论时的计算。新增 `scene_importance(thought)` 为五个阶段各写一句重要度说明（Settle 明确「高 / 默认建议 +30」），题面与 `## 强度原值` 同源
+2. `instructions(base, fallback, importance)`——报裸基准，写明场景重要度与默认建议值，并明确「默认建议只是先验、**不是必须兑现**：若本次不需要那么深就直接给负值或选与基准相当，以你的判断为准；只有本次没给出可用结论时系统才回退到默认建议值」；保留「0–100、100 是最大值」「按剩余空间折算」「判断结果就是最终下发值、不再叠加偏移」。`baseline_block` 的「可调空间」改按裸 `base` 报
+3. `StrengthChoice.anchor: u8` 改名 `fallback: u8`，日志 `anchor` 改 `fallback`；`base` 仍是配置原值兼折算锚点。排障看 `base` / `fallback` / `delta` / `force` / `score`
+4. `think_round/runner.rs`——有结论仍直接采用；`None` 时改调 `strength_fallback(strength_base(brain), scene.thinking_intensity_offset(), dynamic_offset)`，与题面/state 共用同一取值口。`force_intensity` 绝对通道与 Provider 能力开关不变
+5. `types.rs` / `common/enums/thinking_intensity.rs` / `wake_gate.rs` / `legacy_awaken/backend.rs` / `chain_reply.rs` 的链路注释同步
+**反事实**：`base=60` + Settle(+30) + `delta=+20`：硬并入锚点时代下发 **94**（锚点 90 只剩 10/50 空间），现在按裸基准 60 折算 ⇒ **76**，明显低于默认建议 90；`delta=-30` 且 `fallback=100` 时下发 **30**，默认建议不托底
+**边界**：题型 `score`、`LEVELS`(-50…+50)、`offset_with_headroom`、配额/超时/降级链、`force_intensity`、Provider 能力开关、轨迹 `decision` 值域全部不动；生产库配置未改
+**护栏**（新增/改写 8 条）：`strength_fallback_includes_scene_and_intent_offsets` / `fallback_does_not_fold_into_the_judgment_anchor`（76 vs 旧 94 的反事实）/ `instructions_use_raw_base_and_report_fallback_as_advice` / `select_folds_delta_on_raw_base_and_reports_fallback` / `shallow_judgment_beats_the_default_advice`（fallback=100 却下发 30）/ `scene_importance_explains_the_default_offset`（五阶段去重）/ `instructions_declare_current_base_and_the_ceiling` / `baseline_block_separates_judgment_base_from_default_advice`；`runner_tests` 的「小脑值即最终值」与降级兜底断言保留
+**验证状态**：聚焦 `thinking_strength` **36 passed**、`runner` **13 passed**；全量门禁与 wiki 校验见本日工作日志

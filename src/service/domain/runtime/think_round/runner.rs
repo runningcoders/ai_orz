@@ -17,7 +17,7 @@ use crate::pkg::policy::Policy;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::think_path::{Arbiter, ProviderSet, Stimulus, ThinkPathEngine, ThinkRun};
 use crate::service::domain::runtime::RuntimeDomainImpl;
-use crate::service::domain::runtime::thinking_strength::strength_base;
+use crate::service::domain::runtime::thinking_strength::{strength_base, strength_fallback};
 use crate::service::domain::runtime::types::{ThinkLoopProgress, ThinkLoopResult, WakeUsage};
 use common::enums::{ThinkingIntensity, ThinkingScene};
 use common::error::Result;
@@ -35,10 +35,11 @@ pub(crate) struct RoundRun<'a> {
     pub scene: ThinkingScene,
     /// 意图识别后对后续阶段叠加的思考强度偏移（分）
     pub thinking_intensity_offset: i32,
-    /// 小脑**已按配置基准折算**的思考强度（0–100 分；None = 走原逻辑）
+    /// 小脑给出的**最终下发强度**（0–100 分；None = 降级走原逻辑）
     ///
-    /// ⚠️ 不是凭空绝对分：`thinking_strength::select` 先取 `strength_base`、
-    /// 再把小脑的相对偏移按剩余空间折算成这个值，管理员配的基准不会被覆盖。
+    /// ⚠️ 不是待加工的基准：`thinking_strength::select` 已在裸配置基准上完成
+    /// 相对偏移折算（场景/意图偏移只作为重要度先验进题面，不参与折算），
+    /// 管理员配的基准不会被覆盖，这里也不得再叠加任何偏移。
     pub thinking_strength: Option<ThinkingIntensity>,
     /// 绝对思考强度（`Some` = 跳过 base/场景/动态偏移整条链；`None` = 逐字节等价）
     ///
@@ -97,8 +98,8 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
     // reflect 分支由 Agent 运行时开关控制；关闭时拓扑与老循环完全一致
     let enable_reflect = brain.runtime_config.enable_round_reflect;
 
-    // 思考强度（0–100）：配置基准 → 小脑相对偏移折算 → 场景偏移 → 动态偏移。
-    // 配置基准不再被小脑绝对分替换，见 `thinking_strength::strength_base`。
+    // 思考强度（0–100）：小脑有结论 ⇒ 直接采用（在裸配置基准上折算完毕）；
+    // 无结论 ⇒ 回落默认建议值 `strength_fallback`（基准 + 场景/意图偏移）。
     let call_options = resolve_call_options(
         &brain,
         scene,
@@ -249,17 +250,16 @@ fn persist_trace(deps: &RoundDeps, run: &ThinkRun) {
 
 /// 解析本次思考的模型调用参数（当前只有思考强度）
 ///
-/// 基准优先级：`小脑折算值 > 配置基准（Agent 显式 > Provider 基准）`，再叠加
-/// 「场景偏移 + 意图动态偏移」并饱和钳制到 [0, 100]。
+/// 小脑有结论 ⇒ **直接采用**：`thinking_strength::select` 已在裸配置基准上完成
+/// 相对偏移折算，产出的就是最终下发值。场景固定偏移与意图动态偏移只是判断时
+/// 的「重要度先验 + 默认建议值」，不参与折算。小脑无结论 ⇒ 才按默认建议值
+/// 兜底，这也是场景/意图偏移**唯一被硬加进最终值**的时机。
 ///
-/// ⚠️ 小脑值**不是凭空绝对分**：`thinking_strength::select` 已经把它的相对
-/// 偏移按配置基准的剩余空间折算成 0–100（见 `strength_base`）。所以这里的
-/// 「小脑优先」是「以配置基准为锚、加减后仍优先」，不是覆盖管理员配置。
-/// 场景偏移仍照旧叠加——场景是机制层的固有差异（收尾总结要稳、压缩要省），
-/// 不该被模型的一次判断抹平。
-///
-/// 2026-11-12 事故：此前小脑直接给绝对分并排在第一位，实测 73 次判定全部
-/// 落在 19–58（中位 46），把显式配置的 100 静默替换成 medium。
+/// ⚠️ 两次教训（2026-11-12）：① 曾把小脑绝对分排在显式配置前面，实测 73 次
+/// 判定全落在 19–58（中位 46），管理员配的 100 被静默换成 medium；② 曾把
+/// 场景/意图偏移在判断前硬并入锚点，基准顶格时向上 headroom=0，8 次实测全落
+/// 98–100，而题面又说「不调整时真正下发」，模型自然倾向选「与基准相当」。
+/// 现在先验与裁决分离：判断有结论以它为准，判断失败才用默认偏移兜底。
 ///
 /// ⚠️ Provider 未配置 `thinking_intensity` 时返回 None（能力开关关闭）：
 /// 请求体完全不下发该字段，小脑选定值与 Agent 覆盖均不生效——保持存量行为是
@@ -276,22 +276,29 @@ fn resolve_call_options(
         .model_provider()
         .and_then(|po| po.config().thinking_intensity)
         .map(|_provider_base| {
-            // 绝对强度（唤醒门判浅答）：跳过 `base + 场景偏移 + 动态偏移` 整条链。
+            // 绝对强度（唤醒门判浅答）：跳过「裸基准相对折算 / 默认建议值」整条链。
             //
             // 必须在 Provider 能力开关的 map 闭包**内部**判断：Provider 未配
             // `thinking_intensity` 时整链不下发（`None`），本通道也不得绕过能力
             // 开关往不支持的端点注入字段。
             //
-            // 不复用 `cerebellum_strength`：它只替换基准、之后仍叠加偏移；强度链
-            // 是加减语义，`base=70` 加偏移减不到 0，「浅答强度设为 0」是假语义。
+            // 绝对强度通道先于整条相对偏移链：强度链是加减语义，
+            // `base=70` 加偏移减不到 0，「浅答强度设为 0」是假语义。
             if let Some(forced) = force_intensity {
                 return forced;
             }
-            // `cerebellum_strength` 已是「配置基准 + 相对偏移」折算后的绝对值；
-            // 降级（None）时才由 `strength_base` 直接给配置基准。能力开关仍在
+            // `cerebellum_strength` 已是**最终下发值**（裸基准上折算完毕），
+            // 这里再 `.offset(...)` 就是二次叠加场景/意图信息。
+            // 只有降级（None）时才回落默认建议值；与题面/state 共用同一个
+            // `strength_fallback` 取值口，避免两处各算一份。能力开关仍在
             // 外层 map：provider 未配 `thinking_intensity` 时整链不下发。
-            let base = cerebellum_strength.unwrap_or_else(|| strength_base(brain));
-            base.offset(scene.thinking_intensity_offset() + dynamic_offset)
+            cerebellum_strength.unwrap_or_else(|| {
+                strength_fallback(
+                    strength_base(brain),
+                    scene.thinking_intensity_offset(),
+                    dynamic_offset,
+                )
+            })
         });
     ModelCallOptions { thinking_intensity }
 }

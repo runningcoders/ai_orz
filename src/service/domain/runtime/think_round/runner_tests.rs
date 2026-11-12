@@ -49,11 +49,10 @@ fn intensity(brain: &Brain, scene: ThinkingScene, dynamic: i32) -> Option<Thinki
     resolve_call_options(brain, scene, dynamic, None, None).thinking_intensity
 }
 
-/// 小脑选定值优先于 Agent 覆盖，作为基准再叠加场景偏移
+/// 小脑结论优先于 Agent 覆盖（配置基准是折算锚点，场景先验不参与折算）
 #[test]
-fn cerebellum_strength_overrides_agent_then_applies_scene_offset() {
+fn cerebellum_strength_overrides_agent_override() {
     let brain = brain_with(r#"{"thinking_intensity":50}"#, Some(ThinkingIntensity::MAX));
-    // Awaken 场景偏移为正：小脑给 20 → 20 + 场景偏移（clamp 100）
     let got = resolve_call_options(
         &brain,
         ThinkingScene::Awaken,
@@ -63,18 +62,37 @@ fn cerebellum_strength_overrides_agent_then_applies_scene_offset() {
     )
     .thinking_intensity
     .expect("provider configured");
-    assert_eq!(
+    assert_eq!(got, ThinkingIntensity::new(20));
+}
+
+/// 反事实（2026-11-12）：小脑结论**就是最终值**，场景/意图偏移不得二次叠加。
+///
+/// 场景/意图偏移现在只是判断时的重要度先验，有结论时完全不参与；
+/// 只有降级（None）才回落默认建议值 `strength_fallback`。
+#[test]
+fn cerebellum_strength_is_final_and_not_offset_again() {
+    let brain = brain_with(r#"{"thinking_intensity":50}"#, Some(ThinkingIntensity::MAX));
+    let got = resolve_call_options(
+        &brain,
+        ThinkingScene::Settle,
+        -20,
+        Some(ThinkingIntensity::new(70)),
+        None,
+    )
+    .thinking_intensity
+    .expect("provider configured");
+    assert_eq!(got, ThinkingIntensity::new(70));
+    assert_ne!(
         got,
-        ThinkingIntensity::new(20).offset(ThinkingScene::Awaken.thinking_intensity_offset())
+        ThinkingIntensity::new(70).offset(30 - 20),
+        "场景 +30 / 动态 -20 都不得在判断后再叠加"
     );
-    // 小脑缺席 → 仍用 Agent 覆盖
-    let fallback = resolve_call_options(&brain, ThinkingScene::Awaken, 0, None, None)
+
+    // 只有降级（小脑无结论）时才回落含场景/意图偏移的默认建议值
+    let fallback = resolve_call_options(&brain, ThinkingScene::Settle, -20, None, None)
         .thinking_intensity
         .expect("provider configured");
-    assert_eq!(
-        fallback,
-        ThinkingIntensity::MAX.offset(ThinkingScene::Awaken.thinking_intensity_offset())
-    );
+    assert_eq!(fallback, ThinkingIntensity::MAX.offset(30 - 20));
 }
 
 /// Provider 未配置 = 能力开关关闭：小脑选定值也不下发（轨迹里留 applied=false）
@@ -167,11 +185,11 @@ fn offsets_stack_and_clamp_at_bounds() {
 
 // ---------- P3-b：绝对强度通道（唤醒门判浅答 → 强度真 0） ----------
 //
-// 为什么必须是独立通道：思考强度是 `base + 场景偏移 + 动态偏移`（**加减**，
+// 为什么必须是独立通道：思考强度是 `配置基准 + 小脑相对偏移`（**加减**，
 // 不是赋值）。`base=70` 时靠偏移减不到 0，用偏移表达「浅答强度=0」是假语义；
-// 复用 `cerebellum_strength` 也不行（它只替换基准、之后仍叠加偏移）。
+// 复用 `cerebellum_strength` 也不行（它是最终下发值，本通道要的是无条件真 0）。
 
-/// A 成对（force=None 侧）：整条 base + 场景偏移 + 动态偏移链**仍然生效**。
+/// A 成对（force=None 侧）：降级时 base + 场景偏移 + 动态偏移的默认建议值**仍生效**。
 ///
 /// base=70 + Awaken(0) + 动态 20 → 90（不是 70，也不是 0）。
 #[test]
