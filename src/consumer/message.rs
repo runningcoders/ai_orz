@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use super::message_route_policy::{
     AutoReplyRoute, ReplyObligation, RouteInput, cerebellum_close_route, cerebellum_silent_route,
-    classify_reply_decision, judge_chain_reply_route, judge_static_reply_route,
+    chain_close_notice, classify_reply_decision, judge_chain_reply_route, judge_static_reply_route,
 };
 use super::wake_gate_policy::{
     STALE_DEPENDENCY_POLICY_ID, WAKEUP_BUDGET_POLICY_ID, WakeGateInput, judge_wake_gate,
@@ -1215,17 +1215,24 @@ impl MessageConsumer {
                     Ok(())
                 }
 
-                // 硬墙收口：把本轮 Final 作为**知会**送达来源方，再通知归属用户。
+                // 收口（两条产出方共用这一条路径）：把本轮 Final 作为**知会**
+                // 送达来源方，再通知归属用户。
                 //
                 // 为什么不是「直接停」：直接丢弃会让最后一轮结论凭空消失，对方
                 // 只知道自己发了消息、永远等不到结果。为什么不是「照常回发」：
-                // 那会把乒乓推高一跳，正是硬墙要拦的东西。
+                // 那会把乒乓推高一跳，正是收口要拦的东西。
                 //
                 // 知会语义（`AgentNotify`）是这里的关键：它让对端的
                 // `ReplyObligation` 变成 `NotifyOnly`，静态路由直接 Discard，
-                // 链条必然终止；同时对端能在提示词里看到「本链因疲劳度触顶收口」，
+                // 链条必然终止；同时对端能在提示词里看到「本链已收口」，
                 // 确需继续时会**自己主动发新消息**（新链从第 1 跳重新计数），
                 // 而不是靠回发本条续命。信息传到、链必断，两者同时成立。
+                //
+                // ⚠️ `reason` 有两种：静态硬墙（`PRESSURE_CLOSE_REASON`，疲劳度 /
+                // 窗口触顶）与小脑判无新信息（`CEREBELLUM_CLOSE_REASON`），另有
+                // 小脑低置信的兜底收口。**给用户的文案必须按 `reason` 分叉**
+                // （`chain_close_notice`）——统一写「疲劳度触顶」会把第 1 跳的
+                // 内容判定说成跳数撞墙，用户按这个数字去核对必然对不上。
                 AutoReplyRoute::CloseChainAsNotify { reason } => {
                     log_warn!(
                         &ctx,
@@ -1289,9 +1296,10 @@ impl MessageConsumer {
                                 SendToUserCommand {
                                     from_agent_id: agent_id,
                                     to_user_id: owner_user_id,
-                                    content: &format!(
-                                        "ℹ️ Agent 间协作连续多轮未引入有效新信息、疲劳度触顶，已把 Agent {} 的最后一轮结果作为**知会**送达对方，该协作链到此终止（对方不会再自动回发）。\n\n如需继续这段讨论，回复本条并补充新信息、或直接让相关 Agent 重新发起新消息即可（新链重新计数）；若无需继续，忽略本条即可。",
-                                        message.po.from_id
+                                    content: &chain_close_notice(
+                                        reason,
+                                        agent_id,
+                                        &message.po.from_id,
                                     ),
                                     project_id,
                                     task_id,

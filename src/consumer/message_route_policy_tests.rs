@@ -559,3 +559,72 @@ fn agent_notify_is_the_only_inbound_noreply_short_circuit() {
         "agent-notify message (sender declared no reply needed)"
     );
 }
+
+// ---------- 收口通知文案：按 reason 分叉原因 + 指代与投递方向一致 ----------
+
+/// 原因必须**按 reason 分叉**：小脑收口不得写「疲劳度触顶」。
+///
+/// 实测反例（2026-11-12 15:44，agent=TEMPLATE_RECEPTION_AGENT）：
+/// `decision=close_default, degraded_reason=low_confidence, window_depth=1`，
+/// 用户收到的却是「连续多轮…疲劳度触顶」——第 1 跳的内容判定被描述成跳数撞墙，
+/// 用户拿这个数字去核对必然对不上。
+#[test]
+fn chain_close_notice_splits_cause_by_reason() {
+    let cerebellum = chain_close_notice(CEREBELLUM_CLOSE_REASON, "agent-a", "agent-b");
+    assert!(
+        cerebellum.contains("小脑"),
+        "小脑收口必须自报是小脑判的：{cerebellum}"
+    );
+    assert!(
+        !cerebellum.contains("疲劳度"),
+        "小脑收口禁提疲劳度（第 1 跳也会收口，写疲劳度等于报假数据）：{cerebellum}"
+    );
+
+    let pressure = chain_close_notice(PRESSURE_CLOSE_REASON, "agent-a", "agent-b");
+    assert!(
+        pressure.contains("疲劳度"),
+        "静态硬墙才该提疲劳度：{pressure}"
+    );
+    assert!(
+        !pressure.contains("小脑"),
+        "静态硬墙不得把原因栽给小脑：{pressure}"
+    );
+
+    let unknown = chain_close_notice("some new close reason", "agent-a", "agent-b");
+    assert!(
+        !unknown.contains("疲劳度") && !unknown.contains("小脑"),
+        "未知 reason 必须中性措辞，禁止猜原因（宁可少说不可说错）：{unknown}"
+    );
+}
+
+/// 指代必须与**投递方向**一致：知会送出的是本 Agent 的 Final，来源方是收件人。
+///
+/// 旧文案把来源方写成「结果作者」，用户会去找错对象（2026-11-12 实测）。
+#[test]
+fn chain_close_notice_keeps_direction_of_delivery() {
+    let notice = chain_close_notice(PRESSURE_CLOSE_REASON, "author-agent", "peer-agent");
+    assert!(
+        notice.contains("Agent author-agent"),
+        "结果作者必须是本 Agent：{notice}"
+    );
+    assert!(
+        notice.contains("送达 Agent peer-agent"),
+        "收件人必须是来源方：{notice}"
+    );
+}
+
+/// 两种原因都必须保留「怎么续接」的出口与「知会」这个关键事实
+#[test]
+fn chain_close_notice_tells_user_how_to_resume() {
+    for reason in [CEREBELLUM_CLOSE_REASON, PRESSURE_CLOSE_REASON] {
+        let notice = chain_close_notice(reason, "agent-a", "agent-b");
+        assert!(
+            notice.contains("知会"),
+            "必须说明结果已作为知会送达：{notice}"
+        );
+        assert!(
+            notice.contains("新链重新计数"),
+            "必须给出续接方式：{notice}"
+        );
+    }
+}
