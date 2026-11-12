@@ -394,7 +394,10 @@ impl RuntimeDomainImpl {
 
         let think_future = async {
             let messages = initial_messages;
-            // 最后一条用户消息：路由与思考强度共用的唯一输入（都只带轻量上下文）。
+            // 最后一条用户消息：路由的唯一输入；思考强度**不再**只靠它，
+            // 下方另有 `StrengthNodeContext` 把整个节点现场传进去。
+            // ⚠️ compact / summary / settle 的这条 User 其实是整份拼装 Prompt
+            // （不是用户原话），已在强度装配里按容量截断并标注语义。
             // 取 owned String：路由分支要提前 `return` 带走 `messages`，不能同时持有借用。
             let last_user_text: Option<String> = messages.iter().rev().find_map(|m| match m {
                 ChatMessage::User { content } => Some(content.clone()),
@@ -520,21 +523,33 @@ impl RuntimeDomainImpl {
                 }
             }
 
-            // ---- 思考强度：小脑按 0–100 分直接选（2026-11-09 AMan 拍板）----
+            // ---- 思考强度：小脑给相对偏移、按配置基准折算成 0–100 分 ----
             //
-            // 无小脑 / 失败 / 低置信 → None，退回原逻辑（意图确定性偏移）。
-            // 分数是否真正下发由 `resolve_call_options` 里的 Provider 能力开关裁定：
-            // 这里只记录「选了什么、有没有生效」，不让它静默失效。
+            // 2026-11-12：不再凭空判绝对值覆盖管理员配置（实测 100 被判成 46）。
+            // 题面带着当前基准出门，`select` 折算回绝对强度；这里只记「选了什么、
+            // 有没有生效」，不让它静默失效。
+            // 降级（无小脑 / 失败 / 超时）→ None，退回原逻辑（意图确定性偏移）。
+            // 分数是否真正下发由 `resolve_call_options` 里的 Provider 能力开关裁定。
             let thinking_strength = if brain.cerebellum.is_some() {
                 let provider_capable = brain
                     .model_provider()
                     .and_then(|po| po.config().thinking_intensity)
                     .is_some();
+                // 节点现场直接取自本循环入参：消息序列、工具面、轮次进度、意图
+                // 动态偏移与强制值。小脑不再只凭「最后一条 User 文本」猜整个任务。
                 let selection = thinking_strength::select_with_default_dao(
                     &ctx,
                     &brain,
                     scene,
                     last_user_text.as_deref(),
+                    thinking_strength::StrengthNodeContext {
+                        messages: &messages,
+                        tool_count: tool_descriptors.len(),
+                        start_round,
+                        max_rounds,
+                        dynamic_offset: thinking_intensity_offset,
+                        force_intensity: force_intensity.map(|v| v.score()),
+                    },
                 )
                 .await;
                 // 值域分列：`degraded` 由 select 按**真实成因**给出

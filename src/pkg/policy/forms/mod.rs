@@ -202,7 +202,9 @@ pub struct PickOnePolicy {
     id: &'static str,
     name: &'static str,
     condition_desc: &'static str,
-    instructions: &'static str,
+    /// 判据题面：`String` 而非 `&'static str`，让场景能把**本次运行事实**
+    /// （例如按链深度现算的采纳门槛）写进题面。其余场景仍传字面量，行为不变。
+    instructions: String,
     options: BTreeMap<String, String>,
     state_keys: Vec<&'static str>,
     min_confidence: f32,
@@ -225,7 +227,7 @@ impl PickOnePolicy {
         id: &'static str,
         name: &'static str,
         condition_desc: &'static str,
-        instructions: &'static str,
+        instructions: impl Into<String>,
         options: impl IntoIterator<Item = (&'static str, &'static str)>,
         min_confidence: f32,
     ) -> Self {
@@ -233,7 +235,7 @@ impl PickOnePolicy {
             id,
             name,
             condition_desc,
-            instructions,
+            instructions: instructions.into(),
             options: options
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -304,7 +306,7 @@ impl DecisionPolicy for PickOnePolicy {
             questions: BTreeMap::from([(
                 self.primary_qid(),
                 QuestionSpec::Pick {
-                    instructions: self.instructions.to_string(),
+                    instructions: self.instructions.clone(),
                     options: self.options.clone(),
                 },
             )]),
@@ -335,7 +337,9 @@ pub struct ScorePolicy {
     id: &'static str,
     name: &'static str,
     condition_desc: &'static str,
-    instructions: &'static str,
+    /// `String` 而非 `&'static str`：判据可携带本次运行时事实（如思考强度的
+    /// 当前配置基准）。其余形态的判据仍是编译期常量，不跟着放宽。
+    instructions: String,
     levels: Vec<String>,
     state_keys: Vec<&'static str>,
     upper: f32,
@@ -348,11 +352,12 @@ impl ScorePolicy {
     /// - `levels`：由低到高的等级描述，数量在协议边界
     ///   [`MIN_SCORE_LEVELS`]~[`MAX_SCORE_LEVELS`]（2~255）内
     /// - `min_score`：**业务刻度**下的命中阈值（配合 [`Self::with_upper`] 理解）
+    /// - `instructions`：`impl Into<String>`，可由调用方按本次运行事实拼装
     pub fn new(
         id: &'static str,
         name: &'static str,
         condition_desc: &'static str,
-        instructions: &'static str,
+        instructions: impl Into<String>,
         levels: impl IntoIterator<Item = &'static str>,
         min_score: f32,
     ) -> Self {
@@ -360,7 +365,7 @@ impl ScorePolicy {
             id,
             name,
             condition_desc,
-            instructions,
+            instructions: instructions.into(),
             levels: levels.into_iter().map(str::to_string).collect(),
             state_keys: Vec::new(),
             upper: 1.0,
@@ -427,7 +432,7 @@ impl DecisionPolicy for ScorePolicy {
             questions: BTreeMap::from([(
                 self.primary_qid(),
                 QuestionSpec::Grade {
-                    instructions: self.instructions.to_string(),
+                    instructions: self.instructions.clone(),
                     levels: self.levels.clone(),
                 },
             )]),

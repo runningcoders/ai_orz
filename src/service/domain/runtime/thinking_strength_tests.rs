@@ -1,13 +1,16 @@
 //! thinking_strength 单元测试（`#[path]` 注册，保住 `mod tests` 层级）
 //!
-//! 覆盖四件事：
+//! 覆盖六件事：
 //! ① **scene 可区分**：`intent / awaken / summary / compact / settle` 五个阶段的
 //!    决策 scene 名两两不同（修 Q9 报的「`thinking_strength` 三合一」缺口）；
 //! ② **配额覆盖面**：intent 强度同样过 `CerebellumQuota`，断言按**真实调用次数**
 //!    对账 —— `quota` 恰好剩 0 时一次请求都不发、直接 `None` 走原逻辑；
 //! ③ 正常路径读回分数，且 `used` 与实际调用次数一致；
-//! ④ 连续量按 `score` 题的协议原值**一次线性缩放**到 0–100：既不被档位
-//!    离散化，也不做客户端加权 / 单档置信门禁。
+//! ④ 连续量按 `score` 题的协议原值**一次线性缩放**到 0–100 的力度分，
+//!    既不被档位离散化，也不做客户端加权 / 单档置信门禁；
+//! ⑤ **相对偏移**（2026-11-12）：力度分减中位得 `delta`，按配置基准的剩余
+//!    空间折算回绝对强度。基准 50 时与旧断言逐位等价；基准 100 时正向不动、
+//!    反向兑现，钉死「配置不再被小脑绝对分覆盖」。
 
 use super::*;
 use crate::models::brain::CerebellumQuota;
@@ -17,7 +20,7 @@ use crate::pkg::policy::{DecisionAnswers, DecisionPolicy, DecisionRequest, Decis
 use crate::service::dal::brain::{BrainDal, DecisionOutcome};
 use async_trait::async_trait;
 use common::api::cerebellum::{CerebellumUsage, DegradedReason};
-use common::enums::ThinkingScene;
+use common::enums::{ThinkingIntensity, ThinkingScene};
 use common::error::Result;
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -162,7 +165,7 @@ fn brain_with_quota(limit: usize) -> Brain {
 /// 经 `score_to_unit(raw, 11) × 100` 缩放后即 0–100 分（raw 7.0 → 70 分）。
 /// 阶段只体现在 `state.scene` 与轨迹标签上，答案的 qid 与阶段无关。
 fn grade_for(raw: f32, confidence: f32) -> DecisionOutcome {
-    let policy = policy();
+    let policy = policy(ThinkingIntensity::DEFAULT);
     DecisionOutcome {
         answers: DecisionAnswers::new().with(
             policy.primary_qid(),
@@ -205,7 +208,17 @@ async fn run_full(
     crate::pkg::storage::test_support::init_for_test().await;
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
-    let got = select(&ctx, mock.clone(), brain, thought, user_msg).await;
+    let got = select(
+        &ctx,
+        mock.clone(),
+        brain,
+        thought,
+        user_msg,
+        // 旧用例只验分数换算 / 配额 / 降级：给空节点现场，不改原有断言口径。
+        // 新增的上下文结构由本文件末尾的专用护栏覆盖。
+        StrengthNodeContext::default(),
+    )
+    .await;
     (got, mock.calls())
 }
 
@@ -445,7 +458,7 @@ async fn test_selected_strength_carries_latency_and_no_degraded() {
 }
 
 /// 运行时反事实（笔④-2 笔 B）：强度选择的请求体收敛为单一 `context` 分块正文，
-/// 且 **phase 仍进正文「当前场景」块**（原 `scene` 键放的就是 phase，收敛不得丢维度）。
+/// 且 **phase 仍进正文「当前节点」块**（原 `scene` 键放的就是 phase，收敛不得丢维度）。
 #[tokio::test]
 async fn test_request_state_is_single_rendered_context_block() {
     crate::pkg::storage::test_support::init_for_test().await;
@@ -460,6 +473,7 @@ async fn test_request_state_is_single_rendered_context_block() {
         &brain,
         ThinkingScene::Awaken,
         Some(sentinel),
+        StrengthNodeContext::default(),
     )
     .await;
 
@@ -473,10 +487,14 @@ async fn test_request_state_is_single_rendered_context_block() {
     let rendered = state["context"]
         .as_str()
         .expect("context 必须是渲染后的字符串正文");
-    assert!(rendered.contains("## 当前场景"), "必须有场景块：{rendered}");
+    assert!(rendered.contains("## 当前节点"), "必须有节点块：{rendered}");
     assert!(
         rendered.contains(phase),
-        "phase 必须进正文场景块（维度信息不得丢）：期望 {phase}，实际 {rendered}"
+        "phase 必须进正文节点块（维度信息不得丢）：期望 {phase}，实际 {rendered}"
+    );
+    assert!(
+        rendered.contains("## 强度原值") && rendered.contains("## 节点输入要点"),
+        "原值与输入要点必须与节点块同源进 body：{rendered}"
     );
     assert!(
         rendered.contains("agent_id: agent-1"),
@@ -493,9 +511,9 @@ async fn test_request_state_is_single_rendered_context_block() {
 fn test_single_context_key_still_prepares_exactly_one_request() {
     let metrics = Metrics::new().with(
         crate::service::domain::runtime::cerebellum_context::STATE_KEY,
-        "## 当前场景\nawaken\n\n## 当前用户消息\n护栏",
+        "## 当前节点\nawaken\n\n## 当前用户消息\n护栏",
     );
-    let requests = super::policy().prepare(&metrics);
+    let requests = super::policy(ThinkingIntensity::DEFAULT).prepare(&metrics);
     assert_eq!(requests.len(), 1, "强度选择只应产出一条请求");
     let state = &requests[0].state;
     assert!(
@@ -585,7 +603,7 @@ async fn test_low_confidence_and_non_finite_score_are_not_silent_zero() {
 async fn test_old_choice_answer_shape_is_not_silently_accepted() {
     // 题型契约：强度现在是 `score` 题。若上游仍回 choice 答案，必须记
     // no_usable_answer 走原逻辑，绝不能静默当成 0 分。
-    let policy = policy();
+    let policy = policy(ThinkingIntensity::DEFAULT);
     let old_shape = DecisionOutcome {
         answers: DecisionAnswers::new().with(
             policy.primary_qid(),
@@ -609,4 +627,310 @@ async fn test_old_choice_answer_shape_is_not_silently_accepted() {
     .await;
     assert_eq!(sel.degraded, Some(DEGRADED_NO_ANSWER));
     assert!(sel.choice.is_none());
+}
+
+// ---------- ⑥ 相对偏移（2026-11-12）：配置基准不再被绝对分覆盖 ----------
+
+/// 显式配置基准的 Brain（agent 覆盖优先于 provider，见 `strength_base`）
+fn brain_with_base(base: u8, limit: usize) -> Brain {
+    let mut brain = brain_with_quota(limit);
+    brain.runtime_config.thinking_intensity = Some(ThinkingIntensity::new(base));
+    brain
+}
+
+/// 量程与业务上限对齐：力度分 0..100 减中位 50 ⇒ `delta` -50..+50
+#[test]
+fn delta_range_matches_upper() {
+    assert_eq!(MAX_DELTA as f32, UPPER / 2.0);
+    assert_eq!(LEVELS.len(), 11, "锚点数仍是 11（协议边界内）");
+}
+
+/// 题面必须带**本次**基准并钉死上限；少了这两句，模型又会凭空给绝对分
+#[test]
+fn instructions_declare_current_base_and_the_ceiling() {
+    let at_max = instructions(ThinkingIntensity::MAX);
+    assert!(at_max.contains("当前基准强度 = 100 分"), "{at_max}");
+    assert!(at_max.contains("100 是最大值"), "{at_max}");
+    assert!(
+        at_max.contains("剩余空间"),
+        "必须说明偏移会被折算：{at_max}"
+    );
+
+    let at_thirty = instructions(ThinkingIntensity::new(30));
+    assert!(at_thirty.contains("当前基准强度 = 30 分"), "{at_thirty}");
+    assert!(!at_thirty.contains("当前基准强度 = 100 分"));
+}
+
+/// 反事实（本次事故的核心）：base=100 时小脑再怎么判「更深」也不能改变基准，
+/// 而「更浅」正常生效。旧链路里 `grade_for(7.0)` 会把显式配的 100 直接换成 70。
+#[tokio::test]
+async fn configured_ceiling_resists_upward_delta_but_accepts_downward() {
+    // force=100 → delta=+50；剩余上升空间 0 ⇒ 折算后仍是 100
+    let brain = brain_with_base(100, 5);
+    let (up, _) = run_script(
+        vec![Some(grade_for(10.0, 0.9))],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("跨模块排查"),
+    )
+    .await;
+    let up = up.expect("应产出结论");
+    assert_eq!(up.base, 100);
+    assert_eq!(up.delta, 50);
+    assert_eq!(up.strength.score(), 100, "100 是最大值，向上无法再动");
+
+    // force=0 → delta=-50；反向空间 100，正常兑现一个量程（-50 分）
+    let brain = brain_with_base(100, 5);
+    let (down, _) = run_script(
+        vec![Some(grade_for(0.0, 0.9))],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("在吗"),
+    )
+    .await;
+    let down = down.expect("应产出结论");
+    assert_eq!(down.delta, -50);
+    assert_eq!(down.strength.score(), 50, "一个量程 = 50 分");
+}
+
+/// 中位基准下 1:1 兑现（旧断言之所以逐位不变的根据）
+#[tokio::test]
+async fn mid_base_applies_delta_one_to_one() {
+    let brain = brain_with_base(50, 5);
+    let (got, _) = run_script(
+        vec![Some(grade_for(7.0, 0.82))],
+        &brain,
+        ThinkingScene::IntentAnalyze,
+        Some("帮我分析一下这个方案的风险"),
+    )
+    .await;
+    let choice = got.expect("应产出结论");
+    assert_eq!(choice.base, 50);
+    assert_eq!(choice.delta, 20);
+    assert_eq!(choice.strength.score(), 70);
+}
+
+/// 「基础越大向上越难」：同一力度 +20，中位兑现 +20，靠近上限只兑现 +8
+#[tokio::test]
+async fn same_delta_moves_less_when_near_the_ceiling() {
+    let brain = brain_with_base(80, 5);
+    let (got, _) = run_script(
+        vec![Some(grade_for(7.0, 0.85))],
+        &brain,
+        ThinkingScene::Awaken,
+        Some("复杂任务"),
+    )
+    .await;
+    let choice = got.expect("应产出结论");
+    assert_eq!(choice.delta, 20);
+    assert_eq!(
+        choice.strength.score(),
+        88,
+        "剩余空间 20/50 ⇒ +20 的力度只兑现 +8"
+    );
+}
+
+/// 基准取值链：显式配置赢，未配回落 DEFAULT(50)
+#[test]
+fn strength_base_follows_config_then_default() {
+    let fallback = brain_with_quota(1);
+    assert_eq!(strength_base(&fallback), ThinkingIntensity::DEFAULT);
+    let configured = brain_with_base(100, 1);
+    assert_eq!(strength_base(&configured), ThinkingIntensity::MAX);
+}
+
+// ---------- ⑥ 节点上下文（2026-11-12 续：不再只凭用户消息判断） ----------
+//
+// ⚠️ 本组按 AMan 要求「先不着急测试」只落地护栏代码、不运行；编译通过由
+// `cargo check --lib --tests` 保证。正式跑全量时这些用例必须一起绿。
+
+/// 指定小脑容量的 Brain（容量截断唯一的取值入口）
+fn brain_with_capacity(capacity: i32) -> Brain {
+    let mut brain = brain_with_quota(4);
+    let mut po = mock_provider();
+    po.config = serde_json::to_string(&crate::models::model_provider::ModelProviderConfig {
+        recommended_context_length: Some(capacity),
+        ..Default::default()
+    })
+    .expect("provider config 必须可序列化");
+    brain.cerebellum = Some(po);
+    brain
+}
+
+/// 一个「传入节点」的典型消息序列：System 带背景区块、Assistant 带工具调用、
+/// Tool 结果、最后是带图消息（验证 base64 不外泄）。
+fn sample_node_messages() -> Vec<ChatMessage> {
+    vec![
+        ChatMessage::system(
+            "【Agent 人设】你是技术负责人\n【任务上下文】修复 DAL 层一个编译错误\n【项目上下文】ai_orz\n【历史对话】（略）",
+        ),
+        ChatMessage::user("请继续"),
+        ChatMessage::Assistant {
+            content: Some("我先看下代码".to_string()),
+            tool_calls: Some(vec![crate::models::cortex_types::ToolCallRequest {
+                id: "call-1".to_string(),
+                name: "fs_read".to_string(),
+                arguments: serde_json::json!({ "path": "src/a.rs" }),
+            }]),
+        },
+        ChatMessage::tool("call-1", "fn main() {}"),
+        ChatMessage::UserMultimodal {
+            text: "带图补充".to_string(),
+            images: vec![crate::models::cortex_types::ImagePart {
+                mime_type: "image/png".to_string(),
+                data_base64: "__SECRET_BASE64__".to_string(),
+            }],
+        },
+    ]
+}
+
+/// 块序即「保留优先级」：高价值块必须在用户消息之前
+///
+/// `render_within` 从**尾部**砍块。把新块追加到末尾 ⇒ 容量一紧就先被砍，
+/// 等于白改。这条断言把顺序钉死。
+#[test]
+fn strength_context_puts_high_value_blocks_before_user_message() {
+    let brain = brain_with_quota(1);
+    let node = StrengthNodeContext::default();
+    let rendered = render_strength_context(
+        &brain,
+        ThinkingScene::Compact,
+        ThinkingIntensity::DEFAULT,
+        &node,
+        "压缩指令",
+    );
+    let at = |title: &str| {
+        rendered
+            .find(title)
+            .unwrap_or_else(|| panic!("缺块 {title}：{rendered}"))
+    };
+    assert!(
+        at("## 当前节点") < at("## 强度原值")
+            && at("## 强度原值") < at("## 节点输入要点")
+            && at("## 节点输入要点") < at("## 当前用户消息"),
+        "节点 / 原值 / 输入要点必须依次前置：{rendered}"
+    );
+    // 阶段目标按节点分叉，且明确说清这条 User 不是用户原话
+    assert!(rendered.contains("把接近容量上限的完整对话"), "{rendered}");
+    assert!(rendered.contains("不是用户原话"), "{rendered}");
+    // 原值块：来源 + 不调整时的下发值（相对判断的真正锚点）
+    assert!(rendered.contains("平台默认 50"), "{rendered}");
+    assert!(rendered.contains("不调整时的下发值：50 分"), "{rendered}");
+}
+
+/// 五个节点的真实目标两两不同（旧题面五阶段共用「用户这条消息」）
+#[test]
+fn node_goal_differs_across_all_five_stages() {
+    let all = [
+        ThinkingScene::Awaken,
+        ThinkingScene::IntentAnalyze,
+        ThinkingScene::Summary,
+        ThinkingScene::Compact,
+        ThinkingScene::Settle,
+    ]
+    .into_iter()
+    .map(|s| node_goal(s).1)
+    .collect::<Vec<_>>();
+    let mut dedup = all.clone();
+    dedup.sort_unstable();
+    dedup.dedup();
+    assert_eq!(dedup.len(), 5, "五个阶段的目标不得复用同一句：{all:?}");
+    for goal in &all {
+        assert!(!goal.contains("用户这条消息"), "不得退回旧题面：{goal}");
+    }
+}
+
+/// 原值块必须体现「场景固定偏移 + 动态偏移」后的真实下发值
+///
+/// 只报裸 base 会让模型拿一个永远不会出现的值当参照：Settle 固定 +30，
+/// 基准 50 时不调整实际下发 80 分。
+#[test]
+fn baseline_block_reports_the_value_that_would_actually_be_sent() {
+    let brain = brain_with_base(50, 1);
+    let node = StrengthNodeContext {
+        tool_count: 12,
+        dynamic_offset: 0,
+        ..Default::default()
+    };
+    let body = baseline_block(
+        &brain,
+        ThinkingScene::Settle,
+        ThinkingIntensity::new(50),
+        &node,
+    );
+    assert!(body.contains("来源：Agent 显式覆盖"), "{body}");
+    assert!(body.contains("场景固定偏移：+30"), "{body}");
+    assert!(body.contains("不调整时的下发值：80 分"), "{body}");
+    assert!(body.contains("本节点可用工具：12 个"), "{body}");
+}
+
+/// 从节点消息序列提取的要点：规模 / 背景区块 / 任务摘要 / 工具调用 / 最近动作
+/// 且**不得**把多模态 base64 带进小脑 state
+#[test]
+fn node_message_facts_extract_structure_without_secrets() {
+    let messages = sample_node_messages();
+    let facts =
+        crate::service::domain::runtime::cerebellum_context::node_message_facts(&messages, None)
+            .join("\n");
+    assert!(facts.contains("共 5 条"), "{facts}");
+    assert!(facts.contains("大脑已注入的背景区块"), "{facts}");
+    assert!(facts.contains("任务上下文"), "{facts}");
+    assert!(facts.contains("修复 DAL 层一个编译错误"), "{facts}");
+    assert!(
+        facts.contains("已发起工具调用 1 次（fs_read×1）"),
+        "{facts}"
+    );
+    assert!(facts.contains("最近动作（时间正序）"), "{facts}");
+    assert!(
+        !facts.contains("__SECRET_BASE64__"),
+        "base64 不得外泄：{facts}"
+    );
+}
+
+/// 反事实（本次要修的核心缺口）：34K 级拼装 Prompt + 紧容量下，前三块仍全部在，
+/// 且超长用户消息被截断 —— 旧装配会把整份 Prompt 塞进去、把判据稀释掉。
+#[test]
+fn tight_capacity_keeps_node_baseline_and_facts_and_truncates_long_prompt() {
+    let brain = brain_with_capacity(2_000);
+    let messages = sample_node_messages();
+    let node = StrengthNodeContext {
+        messages: &messages,
+        tool_count: 20,
+        start_round: 3,
+        max_rounds: 20,
+        ..Default::default()
+    };
+    let long_prompt = "请排查并修复这个问题。".repeat(3_000);
+    let rendered = render_strength_context(
+        &brain,
+        ThinkingScene::Awaken,
+        ThinkingIntensity::MAX,
+        &node,
+        &long_prompt,
+    );
+    for title in ["## 当前节点", "## 强度原值", "## 节点输入要点"] {
+        assert!(
+            rendered.contains(title),
+            "容量紧张时仍须保住 {title}：{rendered}"
+        );
+    }
+    assert!(rendered.contains("修复 DAL 层一个编译错误"), "{rendered}");
+    assert!(
+        !rendered.contains(&long_prompt),
+        "超长拼装 Prompt 不得整段进 state"
+    );
+    assert!(
+        rendered.contains(USER_MESSAGE_TRUNCATION_NOTE) || !rendered.contains("## 当前用户消息"),
+        "要么截断带标注、要么整块被砍，不能原样保留：{rendered}"
+    );
+}
+
+/// 题面必须把「节点目标 + 输入要点」立为主要依据，否则模型会退回只看用户消息
+#[test]
+fn instructions_prioritize_node_goal_and_input_facts() {
+    let text = instructions(ThinkingIntensity::new(70));
+    assert!(text.contains("当前节点"), "{text}");
+    assert!(text.contains("节点输入要点"), "{text}");
+    assert!(text.contains("强度原值"), "{text}");
+    assert!(text.contains("不要只看用户消息"), "{text}");
 }
