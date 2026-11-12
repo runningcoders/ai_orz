@@ -28,6 +28,7 @@
 //!
 //! 阈值与降级常量集中在此，便于 Spike 后集中调参（只调常量不动结构）。
 
+use super::cerebellum_context as context;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{DecisionPolicy, DecisionValue, Metrics, PickOne, PickOnePolicy, Policy};
@@ -87,7 +88,10 @@ const ENTRY_POOL_INSTRUCTIONS: &str = "从候选回复里挑一句最适合回�
 候选都只是简短承接语，不要挑与消息场景不符的。";
 
 /// 透传给模型的上下文事实（三铁律：只带轻量上下文，不取全量记忆）
-const ENTRY_STATE_KEYS: &[&str] = &["agent_id", "agent_name", "last_user_message"];
+///
+/// 键名收敛到 [`context::STATE_KEY`] 一处（单出口）：本文件不再出现 `agent_id` /
+/// `last_user_message` 这类平铺键，正文由组织器分块渲染进单一 `context` 键。
+const ENTRY_STATE_KEYS: &[&str] = &[context::STATE_KEY];
 
 /// 入口候选池 id（顺序即语义序，`pool_0` = 最中性）
 ///
@@ -197,6 +201,32 @@ fn pool_policy() -> PickOnePolicy {
     .with_state_keys(ENTRY_STATE_KEYS)
 }
 
+/// 一次路由的完整产出：结论 + **两条轨迹各自的耗时**
+///
+/// 门与池是两次独立的模型调用（`entry_gate` / `entry_pool`），所以必须两列。
+/// 合成一个数字的话，「门没调用、池花了 7ms」与「门花了 7ms、池没调用」
+/// 在轨迹上会完全一样——那正是本次要修掉的观测失真。
+#[derive(Debug, Clone)]
+pub struct RouteOutcome {
+    /// 路由结论（三分类）
+    pub decision: RouteDecision,
+    /// `entry_gate` 那一次调用的轨迹口径耗时；`None` = 没发出请求
+    pub gate_latency_ms: Option<u64>,
+    /// `entry_pool` 那一次调用的轨迹口径耗时；`None` = 门没判 Direct / 池没调用
+    pub pool_latency_ms: Option<u64>,
+}
+
+impl RouteOutcome {
+    /// 零调用早退（本地可判 / 配额闸）：两笔耗时都是 `None`
+    fn not_called(reason: DegradedReason) -> Self {
+        Self {
+            decision: RouteDecision::Skip { reason },
+            gate_latency_ms: None,
+            pool_latency_ms: None,
+        }
+    }
+}
+
 /// B3 运行时快判断路由：`entry_gate` → （仅当判无价值）`entry_pool`
 ///
 /// - `dal` 参数化 trait 对象：生产 = `dal::brain::dal()`（BrainDal::decide），测试注入 mock；
@@ -210,11 +240,9 @@ pub async fn route(
     dal: Arc<dyn BrainDal>,
     brain: &Brain,
     last_user_message: Option<&str>,
-) -> RouteDecision {
+) -> RouteOutcome {
     let Some(user_text) = last_user_message else {
-        return RouteDecision::Skip {
-            reason: DegradedReason::NoUserMessage,
-        };
+        return RouteOutcome::not_called(DegradedReason::NoUserMessage);
     };
 
     // 本 run 的调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
@@ -227,17 +255,15 @@ pub async fn route(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        return RouteDecision::Skip {
-            reason: DegradedReason::BudgetExhausted,
-        };
+        return RouteOutcome::not_called(DegradedReason::BudgetExhausted);
     }
 
     // 轻量上下文（三铁律：不取全量记忆、先于小脑的仅有消息文本）
     let policy = entry_gate_policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("last_user_message", user_text);
+    let metrics = Metrics::new().with(
+        context::STATE_KEY,
+        context::render_for(brain, ENTRY_GATE_SCENE, user_text),
+    );
 
     // 形态负责「问什么」：一次单选，选项与判据都在策略里；
     // 选项描述只写判据语义，不写实现细节——换模型 / 换实现时判据不用改。
@@ -247,6 +273,8 @@ pub async fn route(
     // 这一层只负责「问什么」与「答案怎么用」。
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
 
     if let Some(reason) = outcome.degraded {
         log_info!(
@@ -257,7 +285,11 @@ pub async fn route(
             latency_ms = latency_ms,
             "cerebellum entry gate degraded"
         );
-        return RouteDecision::Skip { reason };
+        return RouteOutcome {
+            decision: RouteDecision::Skip { reason },
+            gate_latency_ms: traced_latency_ms,
+            pool_latency_ms: None,
+        };
     }
 
     let metrics = metrics.with_decisions(Arc::new(outcome.answers));
@@ -265,11 +297,13 @@ pub async fn route(
 
     // K1：门判「无价值」后才串第二次决策（用哪一句）——两次请求、两条轨迹、两笔配额。
     // 池侧任何失败都**不会**退回主循环：门已经放行了直回，此处只会回退池内最中性一条。
+    let mut pool_latency_ms = None;
     let decision = match verdict {
         GateVerdict::Skip { reason } => RouteDecision::Skip { reason },
         GateVerdict::Proceed { confidence } => RouteDecision::Proceed { confidence },
         GateVerdict::Direct { confidence } => {
-            let (content, pool) = select_pool_reply(ctx, &dal, brain, user_text).await;
+            let (content, pool, pool_ms) = select_pool_reply(ctx, &dal, brain, user_text).await;
+            pool_latency_ms = pool_ms;
             RouteDecision::Direct {
                 content,
                 confidence,
@@ -327,7 +361,11 @@ pub async fn route(
             );
         }
     }
-    decision
+    RouteOutcome {
+        decision,
+        gate_latency_ms: traced_latency_ms,
+        pool_latency_ms,
+    }
 }
 
 /// 入口候选池：给「已被门判为无价值」的消息选一句回复（K8）
@@ -339,7 +377,7 @@ async fn select_pool_reply(
     dal: &Arc<dyn BrainDal>,
     brain: &Brain,
     user_text: &str,
-) -> (String, PoolReply) {
+) -> (String, PoolReply, Option<u64>) {
     // 配额：与入口门同一本 per-run 账（新增决策点同样必须过闸，否则配额形同虚设）
     if !brain.cerebellum_quota.try_acquire() {
         log_info!(
@@ -355,18 +393,21 @@ async fn select_pool_reply(
             PoolReply::Fallback {
                 reason: DegradedReason::BudgetExhausted,
             },
+            None,
         );
     }
 
     let policy = pool_policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("last_user_message", user_text);
+    let metrics = Metrics::new().with(
+        context::STATE_KEY,
+        context::render_for(brain, ENTRY_POOL_SCENE, user_text),
+    );
 
     let requests = policy.prepare(&metrics);
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求
+    let traced_latency_ms = outcome.traced_latency_ms();
 
     let fallback = |reason: DegradedReason| {
         log_info!(
@@ -377,7 +418,11 @@ async fn select_pool_reply(
             latency_ms = latency_ms,
             "cerebellum pool degraded, fall back to most neutral reply"
         );
-        (ENTRY_POOL[0].to_string(), PoolReply::Fallback { reason })
+        (
+            ENTRY_POOL[0].to_string(),
+            PoolReply::Fallback { reason },
+            traced_latency_ms,
+        )
     };
 
     if let Some(reason) = outcome.degraded {
@@ -417,6 +462,7 @@ async fn select_pool_reply(
             id: option,
             confidence,
         },
+        traced_latency_ms,
     )
 }
 
@@ -458,7 +504,7 @@ pub async fn route_with_default_dao(
     ctx: &RequestContext,
     brain: &Brain,
     last_user_message: Option<&str>,
-) -> RouteDecision {
+) -> RouteOutcome {
     route(
         ctx,
         crate::service::dal::brain::dal(),

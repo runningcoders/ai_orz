@@ -624,15 +624,17 @@ async fn ambiguous_root_markdowns_rejected_with_guidance(pool: SqlitePool) {
         "报错应列出冲突候选，便于打包方定位，实际: {msg}"
     );
 
-    // 且必须原子：失败后不应留下半成品技能记录
+    // 且必须原子：文件先落盘、**行落库是提交点**，失败后既不留行也不留文件。
+    // 旧实现是「先写行、再解包」，失败后留一个空技能行——列表里看得见、打开是空正文，
+    // 而且能经 restore_skill 复活，比不留更糟。
     assert!(
         domain
             .skill_manage()
             .get_skill(ctx.clone(), skill.id())
             .await
             .unwrap()
-            .is_some(),
-        "本次解包发生在 create 之后，技能行存在但不应带文件"
+            .is_none(),
+        "创建失败不应留下元数据行"
     );
     let files = domain
         .skill_manage()

@@ -16,6 +16,7 @@ use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::{AgentQuery, AgentSearch};
+use common::enums::VectorRebuildMode;
 use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use std::sync::Arc;
@@ -113,8 +114,9 @@ impl AgentDal for CodexAgentDal {
         &self,
         ctx: RequestContext,
         progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: VectorRebuildMode,
     ) -> Result<()> {
-        self.base.rebuild_vectors(ctx, progress).await
+        self.base.rebuild_vectors(ctx, progress, mode).await
     }
 
     /// Cli Agent 配套扁平化 Builder

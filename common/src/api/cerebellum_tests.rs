@@ -100,7 +100,7 @@ fn response_without_usage_defaults_to_zero() {
     assert_eq!(resp.usage.output_tokens, 0);
 }
 
-/// 边界校验：choice ≤255 / score 2~10 / noul 可选 {true,false} 判据
+/// 边界校验：choice ≤255 / score 2~255（官方口径）/ noul 可选 {true,false} 判据
 #[test]
 fn question_validate_enforces_protocol_boundaries() {
     // 合法用例
@@ -147,18 +147,32 @@ fn question_validate_enforces_protocol_boundaries() {
     };
     assert!(bad_choice.validate().is_err());
 
-    // score 1 级 / 11 级越界
+    // score 1 级越界（下限恒 2，官方与平台一致）
     let bad_score_low = CerebellumQuestion {
         question_type: QuestionType::Score,
         instructions: "i".into(),
         criteria: Some(QuestionCriteria::Levels(vec!["唯一".into()])),
     };
     assert!(bad_score_low.validate().is_err());
-    let bad_score_high = CerebellumQuestion {
+    // **11 级必须合法**：官方上限是 255，旧上限 10 是 jev 早期口径残留。
+    // 这条断言是本笔「10 → 255 对齐」的反向护栏：有人把上限压回 10，它立刻红。
+    let eleven_levels = CerebellumQuestion {
         question_type: QuestionType::Score,
         instructions: "i".into(),
         criteria: Some(QuestionCriteria::Levels(
             (0..11).map(|i| format!("L{i}")).collect(),
+        )),
+    };
+    assert!(
+        eleven_levels.validate().is_ok(),
+        "11 级必须合法：官方上限 255，旧值 10 是未对齐的残留"
+    );
+    // 256 级越界（新上限 255 的正向边界）
+    let bad_score_high = CerebellumQuestion {
+        question_type: QuestionType::Score,
+        instructions: "i".into(),
+        criteria: Some(QuestionCriteria::Levels(
+            (0..256).map(|i| format!("L{i}")).collect(),
         )),
     };
     assert!(bad_score_high.validate().is_err());
@@ -185,4 +199,42 @@ fn question_validate_enforces_protocol_boundaries() {
         criteria: Some(QuestionCriteria::Choices(BTreeMap::new())),
     };
     assert!(bad_noul_empty.validate().is_err());
+}
+
+/// score 量纲：服务端返回的已是判断好的连续值，客户端只做一次线性缩放
+///
+/// 实测样本（2026-11-11，真实 System One 端点）：3 级 → 1.27、11 级语义题
+/// → 6.95、101 级 → 31.38。分母必须是「本轮最大等级序号 = level_count - 1」。
+#[test]
+fn score_to_unit_uses_level_count_not_hardcoded_255() {
+    let unit = |score: f32, n: usize| score_to_unit(score, n).unwrap();
+
+    // 同一输入、不同等级数，归一后应落回同一刻度附近（语义描述可比）
+    assert!((unit(1.27, 3) - 0.635).abs() < 1e-4);
+    assert!((unit(6.95, 11) - 0.695).abs() < 1e-4);
+    assert!((unit(31.38, 101) - 0.3138).abs() < 1e-4);
+
+    // 用户口径：255 级判断出 150，映射到 100 分制
+    assert!((unit(150.0, 255) * 100.0 - 59.055).abs() < 1e-2);
+    // 满刻度必须能取到业务上限 ⇒ 分母是 254（最大序号），不是 255
+    assert_eq!(unit(254.0, 255), 1.0);
+    assert_eq!(unit(254.0, 255) * 100.0, 100.0);
+
+    // 写死 /255 的反例护栏：11 级满分只会读出 3.9 分
+    assert!(
+        unit(10.0, 11) * 100.0 > 99.0,
+        "11 级满分必须映射成 100，不能被固定 255 分母压成 3.9"
+    );
+}
+
+#[test]
+fn score_to_unit_clamps_and_rejects_invalid_input() {
+    // 服务端 probabilities 之和偶发 ≠ 1 ⇒ score 略超值域，夹紧而非溢出
+    assert_eq!(score_to_unit(999.0, 11), Some(1.0));
+    assert_eq!(score_to_unit(-2.0, 11), Some(0.0));
+    // 非法量纲 / 非有限值必须当「没结论」，禁止压成 0 分
+    assert_eq!(score_to_unit(1.0, 1), None);
+    assert_eq!(score_to_unit(1.0, 256), None);
+    assert_eq!(score_to_unit(f32::NAN, 11), None);
+    assert_eq!(score_to_unit(f32::INFINITY, 11), None);
 }

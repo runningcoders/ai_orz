@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14176477,
+  "total_bytes": 14190944,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -81,7 +81,7 @@
           "path": "00-总览与架构/C-知识/HR领域.md",
           "name": "HR领域",
           "title": "HR领域",
-          "bytes": 20410
+          "bytes": 20426
         },
         {
           "tier": "C-知识",
@@ -498,7 +498,7 @@
           "path": "01-组织与权限/C-知识/技能包管理 API.md",
           "name": "技能包管理 API",
           "title": "技能包管理 API",
-          "bytes": 23394
+          "bytes": 23306
         },
         {
           "tier": "C-知识",
@@ -708,7 +708,7 @@
           "path": "02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md",
           "name": "cerebellum_decision_strategy_design",
           "title": "决策型策略设计（策略引擎承载小脑场景）",
-          "bytes": 24529,
+          "bytes": 24591,
           "status": "现行",
           "scope": [
             "src/pkg/policy/mod.rs",
@@ -987,7 +987,7 @@
           "path": "02-Agent运行时/B-落地方案/思考图引擎改造.md",
           "name": "思考图引擎改造",
           "title": "思考图引擎改造实施计划",
-          "bytes": 34415,
+          "bytes": 34989,
           "status": "进行中",
           "scope": [],
           "related": []
@@ -1113,14 +1113,14 @@
           "path": "02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md",
           "name": "小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类",
           "title": "小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类",
-          "bytes": 17916
+          "bytes": 18045
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/小脑快判断（System One）.md",
           "name": "小脑快判断（System One）",
           "title": "小脑快判断（System One）",
-          "bytes": 30920
+          "bytes": 31557
         },
         {
           "tier": "C-知识",
@@ -1148,14 +1148,14 @@
           "path": "02-Agent运行时/C-知识/技能包管理.md",
           "name": "技能包管理",
           "title": "技能包管理",
-          "bytes": 30463
+          "bytes": 30369
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/策略引擎与 Shell 拦截层.md",
           "name": "策略引擎与 Shell 拦截层",
           "title": "策略引擎与 Shell 拦截层",
-          "bytes": 32997
+          "bytes": 35017
         },
         {
           "tier": "C-知识",
@@ -2225,7 +2225,7 @@
           "path": "05-任务与项目/C-知识/综合搜索能力.md",
           "name": "综合搜索能力",
           "title": "综合搜索能力",
-          "bytes": 23017
+          "bytes": 23021
         },
         {
           "tier": "C-知识",
@@ -2360,7 +2360,7 @@
           "path": "06-工具与技能/A-设计/skill_design.md",
           "name": "skill_design",
           "title": "技能系统设计文档",
-          "bytes": 31514,
+          "bytes": 31507,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -2370,7 +2370,7 @@
           "path": "06-工具与技能/A-设计/skill_import_methods_design.md",
           "name": "skill_import_methods_design",
           "title": "技能导入方式扩展与统一导入框架设计",
-          "bytes": 21670,
+          "bytes": 21674,
           "status": "草案",
           "scope": [],
           "related": []
@@ -2380,7 +2380,7 @@
           "path": "06-工具与技能/A-设计/skill_system_enhancement_design.md",
           "name": "skill_system_enhancement_design",
           "title": "技能系统增强（tag 过滤 + 技能包 + 唤醒注入）设计",
-          "bytes": 11625,
+          "bytes": 11633,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -2446,7 +2446,7 @@
           "path": "06-工具与技能/B-落地方案/ToolSkill 搜索式安装（执行蓝图）.md",
           "name": "ToolSkill 搜索式安装（执行蓝图）",
           "title": "Tool/Skill 搜索式安装 Implementation Plan",
-          "bytes": 60502,
+          "bytes": 60530,
           "status": "已完成",
           "scope": [],
           "related": []
@@ -2488,7 +2488,7 @@
           "path": "06-工具与技能/B-落地方案/技能列表显示修复与技能同步过期处理 实现计划（执行蓝图）.md",
           "name": "技能列表显示修复与技能同步过期处理 实现计划（执行蓝图）",
           "title": "技能列表显示修复与技能同步过期处理 实现计划",
-          "bytes": 56325,
+          "bytes": 56272,
           "status": "已完成",
           "scope": [],
           "related": []
@@ -2498,11 +2498,11 @@
           "path": "06-工具与技能/B-落地方案/技能列表显示修复与技能同步过期处理.md",
           "name": "技能列表显示修复与技能同步过期处理",
           "title": "技能列表显示修复与技能同步过期处理",
-          "bytes": 10791,
+          "bytes": 10781,
           "status": "已完成",
           "scope": [
             "frontend/src/pages/hr/skills.rs",
-            "src/service/dal/skill_test.rs"
+            "src/service/dal/skill/"
           ],
           "related": []
         },
@@ -2511,7 +2511,7 @@
           "path": "06-工具与技能/B-落地方案/技能导入方式扩展与统一导入框架落地.md",
           "name": "技能导入方式扩展与统一导入框架落地",
           "title": "技能导入方式扩展与统一导入框架落地",
-          "bytes": 22299,
+          "bytes": 22315,
           "status": "草案",
           "scope": [],
           "related": []
@@ -2699,7 +2699,7 @@
           "path": "06-工具与技能/C-知识/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md",
           "name": "Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断",
           "title": "§1 概述（一句话定位 + 解决什么问题）",
-          "bytes": 44106
+          "bytes": 44070
         },
         {
           "tier": "C-知识",
@@ -2734,7 +2734,7 @@
           "path": "06-工具与技能/C-知识/共享工具凭据增强器.md",
           "name": "共享工具凭据增强器",
           "title": "共享工具凭据增强器",
-          "bytes": 45483
+          "bytes": 48217
         },
         {
           "tier": "C-知识",
@@ -2846,7 +2846,7 @@
           "path": "06-工具与技能/C-知识/技能与工具绑定.md",
           "name": "技能与工具绑定",
           "title": "技能与工具绑定",
-          "bytes": 17803
+          "bytes": 18312
         },
         {
           "tier": "C-知识",
@@ -2860,7 +2860,7 @@
           "path": "06-工具与技能/C-知识/技能系统.md",
           "name": "技能系统",
           "title": "技能系统",
-          "bytes": 29703
+          "bytes": 36432
         },
         {
           "tier": "C-知识",
@@ -3197,7 +3197,7 @@
           "path": "08-搜索/A-设计/full_entity_fts5_search_design.md",
           "name": "full_entity_fts5_search_design",
           "title": "全实体 FTS5 全文搜索统一设计",
-          "bytes": 9609,
+          "bytes": 9617,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -3252,7 +3252,7 @@
           "path": "08-搜索/A-设计/vector_search_architecture.md",
           "name": "vector_search_architecture",
           "title": "向量搜索与混合搜索架构设计文档",
-          "bytes": 22467,
+          "bytes": 22471,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -3347,7 +3347,7 @@
           "path": "08-搜索/B-落地方案/向量搜索增强计划（执行蓝图）.md",
           "name": "向量搜索增强计划（执行蓝图）",
           "title": "向量搜索增强计划",
-          "bytes": 13460,
+          "bytes": 13464,
           "status": "已完成",
           "scope": [],
           "related": []
@@ -3388,7 +3388,7 @@
           "path": "08-搜索/B-落地方案/统一其他实体搜索查询接口实施计划（执行蓝图）.md",
           "name": "统一其他实体搜索查询接口实施计划（执行蓝图）",
           "title": "统一其他实体搜索/查询接口实施计划",
-          "bytes": 36227,
+          "bytes": 36243,
           "status": "已完成",
           "scope": [],
           "related": []
@@ -3454,14 +3454,14 @@
           "path": "08-搜索/C-知识/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md",
           "name": "向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity",
           "title": "向量存储抽象 + Vectorizable trait 统一索引",
-          "bytes": 31053
+          "bytes": 31057
         },
         {
           "tier": "C-知识",
           "path": "08-搜索/C-知识/向量语义搜索.md",
           "name": "向量语义搜索",
           "title": "向量语义搜索",
-          "bytes": 16194
+          "bytes": 16202
         },
         {
           "tier": "C-知识",
@@ -3496,7 +3496,7 @@
           "path": "08-搜索/C-知识/混合搜索引擎.md",
           "name": "混合搜索引擎",
           "title": "混合搜索引擎",
-          "bytes": 16538
+          "bytes": 16546
         },
         {
           "tier": "C-知识",
@@ -4148,7 +4148,7 @@
           "path": "11-前端应用/B-落地方案/Agent详情页过期技能区与恢复按钮.md",
           "name": "Agent详情页过期技能区与恢复按钮",
           "title": "Agent 详情页过期技能独立区 + 恢复按钮 与 DTO 清理 实现计划",
-          "bytes": 32518,
+          "bytes": 32513,
           "status": "已完成",
           "scope": [],
           "related": []
@@ -4614,7 +4614,7 @@
           "path": "11-前端应用/C-知识/技能管理系统.md",
           "name": "技能管理系统",
           "title": "技能管理系统",
-          "bytes": 25708
+          "bytes": 26672
         },
         {
           "tier": "C-知识",
@@ -4995,7 +4995,7 @@
           "path": "12-基础设施与部署/C-知识/SQLite VSS 存储后端.md",
           "name": "SQLite VSS 存储后端",
           "title": "SQLite VSS 存储后端",
-          "bytes": 15198
+          "bytes": 15156
         },
         {
           "tier": "C-知识",
@@ -5282,7 +5282,7 @@
           "path": "12-基础设施与部署/C-知识/模型提供商管理 API.md",
           "name": "模型提供商管理 API",
           "title": "模型提供商管理 API",
-          "bytes": 24259
+          "bytes": 24547
         },
         {
           "tier": "C-知识",
@@ -5648,7 +5648,7 @@
           "path": "13-数据模型/C-知识/SQLite VSS向量存储.md",
           "name": "SQLite VSS向量存储",
           "title": "SQLite VSS向量存储",
-          "bytes": 17068
+          "bytes": 17076
         },
         {
           "tier": "C-知识",
@@ -5662,7 +5662,7 @@
           "path": "13-数据模型/C-知识/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）.md",
           "name": "三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）",
           "title": "三位一体混合搜索（FTS5 + 向量 + 合并排序）",
-          "bytes": 14593
+          "bytes": 14605
         },
         {
           "tier": "C-知识",
@@ -5906,7 +5906,7 @@
           "path": "14-测试/B-落地方案/Agent管理集成测试.md",
           "name": "Agent管理集成测试",
           "title": "Agent 管理集成测试落地",
-          "bytes": 13421,
+          "bytes": 13429,
           "status": "已完成",
           "scope": [],
           "related": []

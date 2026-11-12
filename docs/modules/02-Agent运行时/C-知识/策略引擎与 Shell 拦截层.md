@@ -415,17 +415,22 @@ pub trait DecisionPolicy: Policy {
 |------|------|----------|------|----------|
 | `RankPolicy` | `Pick`（全选项权重） | `Candidate{id, text}` 列表 | `ranked()`：按权重降序的保留集 | 候选 < 2 不发；阈值 + 上限截断；模型编造 id 丢弃；被选中的那条不因低权重被清空 |
 | `PickOnePolicy` | `Pick` | 固定选项 + `with_state_keys` 声明透传字段 | `chosen()`：选中项 + 置信度 | 选项为空不发；置信不足视为未命中 |
-| `ScorePolicy` | `Grade` | 2~10 级等级表 | `grade()`：分数 + 置信度 | 等级数越界不发 |
+| `ScorePolicy` | `Grade` | 2~255 级等级表（协议上限）+ `with_upper()` 业务上限 | `scaled()`：协议原值按等级数归一 × 业务上限 | 等级数越界不发；置信仅观测 |
 | `PresencePolicy` | `Presence` | 上下文 | `presence()`：0~1 概率 | — |
 
 多选不单独算一种：排序后按阈值截断就是多选，`RankPolicy::ranked` 一个方法覆盖。四者的 `impl Policy` 由文件内 `impl_policy_for_form!` 宏生成（纯样板），**业务侧零 impl**。
 
-#### 两个生产用例
+#### 三个生产用例
 
 | 场景 | 形态 | 业务侧剩余代码 |
 |------|------|----------------|
 | 检索结果精选（`legacy_awaken/memory_relevance.rs`） | `RankPolicy` | `Memory → Candidate` 与 `id → Memory` 两头映射 |
+| 方法技能精选（`legacy_awaken/skill_relevance.rs`） | `RankPolicy` | `SkillPo → Candidate` 与 `id → SkillPo` 两头映射 |
 | 琐碎请求路由（`cerebellum_router.rs`） | `PickOnePolicy` | 选中项 → `Direct` / `Inject` / `Skip` 三分类翻译 |
+
+**技能精选与知识精选是同一个 `RankPolicy`**：同为一次 `Pick` 拿全部选项权重，按 `WEIGHT_THRESHOLD=0.08` 阈值 + `keep` 上限截断，**没有置信门禁**（`confidence` 只作观测）。历史上的差异全在召回层：知识是关键词宽召回 15 / 20 条，技能却是 `list_published_by_tag("thinking_method")` 单 tag 全量拉；生产库该 tag 下只有 1 条已发布根技能 ⇒ `RankPolicy::request` 的「候选 < 2 不发」恒真，技能精选 0 次调用、看板上一片 `fallback / no_usable_answer`（其中大半来自未装配小脑的 run，属留痕误标）。
+
+现状（`retrieve_node.rs` 第 5 步）：技能与知识三路共用同一份意图关键词（`new_terms` 差集），走 `SkillDal::search` 的 FTS5 + 向量混合搜索（向量路由 DAL 用同一份 keyword 现算查询 embedding，调用方不拼 `query_vector`），过滤为 `status=Published` + `has_parent=false`（与老路径口径一致），宽召回 `METHOD_SKILLS_TOP_K × RECALL_WIDTH_FACTOR = 6` 条；`top_k`（向量路）与 `pagination.limit`（FTS 路）必须同宽，否则向量路按缺省 20 条召回、聚合排序后把 FTS 命中挤出分页。向量路任一步失败（provider 读取 / 查询向量生成 / 向量检索）只 warn 降级为纯关键词，不把 `search` 打成 `Err`；`thinking_method` 只作召回序里的稳定优先项、**不作硬过滤**（硬过滤会退回 1 条的老问题）；零命中或搜索报错兜底回 `list_published_by_tag` 保住「至少 1 条」。降级路径按**召回序**取前 2，不再按词面重叠重排（召回序本身已是 BM25 / 综合相关度序）。只有候选 ≥ 2 且本 run 装配了小脑才进排序，其余直接放候选、不写 fallback 留痕。
 
 #### 执行在哪
 

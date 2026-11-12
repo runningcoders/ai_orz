@@ -7,7 +7,7 @@
 - [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 - [src/models/vector.rs](src/models/vector.rs)
 - [common/src/config.rs](common/src/config.rs)
-- [src/service/dal/skill_test.rs](src/service/dal/skill_test.rs)
+- [src/service/dal/skill/](src/service/dal/skill/)
 </cite>
 
 ## 目录
@@ -140,7 +140,7 @@ Map --> End(["结束"])
 
 图表来源
 - [src/pkg/storage/vector.rs:126-173](src/pkg/storage/vector.rs#L126-L173)
-- [src/service/dal/skill_test.rs:167-176](src/service/dal/skill_test.rs#L167-L176)
+- [src/service/dal/skill/:167-176](src/service/dal/skill/#L167-L176)
 
 章节来源
 - [src/pkg/storage/vector.rs:126-173](src/pkg/storage/vector.rs#L126-L173)
@@ -231,7 +231,7 @@ SStore --> Meta["vector_metadata 表"]
 
 章节来源
 - [src/pkg/storage/vector.rs:245-262](src/pkg/storage/vector.rs#L245-L262)
-- [src/service/dal/skill_test.rs:167-176](src/service/dal/skill_test.rs#L167-L176)
+- [src/service/dal/skill/:167-176](src/service/dal/skill/#L167-L176)
 - [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 
 ## 结论

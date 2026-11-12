@@ -30,6 +30,7 @@ use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::ontology::OntologyDao;
 use async_trait::async_trait;
 use common::api::PagedResult;
+use common::enums::VectorRebuildMode;
 use common::enums::ontology::PropertyTargetType;
 use common::error::Result;
 use common::ontology_property::{PropertyEntry, PropertyFilter, PropertySaveReport};
@@ -396,6 +397,7 @@ pub trait MemoryDal: Send + Sync {
         &self,
         ctx: RequestContext,
         progress: &TaskProgressCounter,
+        mode: VectorRebuildMode,
     ) -> Result<()>;
 }
 
@@ -528,7 +530,11 @@ memory_dal_impl! {
         -> Result<Vec<String>>,
     mark_short_term_settled(ctx: RequestContext, agent_id: &str, memory_ids: &[String])
         -> Result<usize>,
-    rebuild_vectors(ctx: RequestContext, progress: &TaskProgressCounter) -> Result<()>,
+    rebuild_vectors(
+        ctx: RequestContext,
+        progress: &TaskProgressCounter,
+        mode: VectorRebuildMode
+    ) -> Result<()>,
 }
 
 #[cfg(test)]

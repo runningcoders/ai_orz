@@ -14,6 +14,7 @@
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
+use crate::service::domain::runtime::compaction::estimate_tokens;
 use common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::Result;
@@ -22,8 +23,6 @@ use common::error::Result;
 pub const MAX_INJECTIONS_PER_WAKE: usize = 3;
 /// 单次唤醒允许的最大意图回退次数
 pub const MAX_INTENT_REWINDS: usize = 2;
-/// 单批注入允许吸收的最大字符数（每次 `take_batch` 独立计算）
-pub const MAX_INJECTED_CHARS: usize = 2000;
 /// 单批吸收的最大消息条数
 pub const MAX_INJECTED_MESSAGES: usize = 5;
 /// 吸收窗口：只吸收锚点后该时间窗内到达的消息（毫秒）
@@ -272,14 +271,19 @@ pub fn is_after_cursor(cursor: &InboxCursor, message: &Message) -> bool {
         || (message.po.created_at == cursor.created_at && message.po.id > cursor.id)
 }
 
-/// 在条数与字符上限内截取一批消息
+/// 在条数与 token 上限内截取一批消息
+///
+/// `budget_tokens` 由调用方按模型上下文容量的占比算好传入（`None` ⇒ 不设预算）：
+/// 注入内容最终进的是模型输入，预算单位必须是 token，字符口径会在中英混排下
+/// 差出 4 倍，且无法与容量直接比较。
 pub fn take_batch(
     anchor: &InboxAnchor,
     cursor: &InboxCursor,
     rows: Vec<Message>,
+    budget_tokens: Option<usize>,
 ) -> Vec<InjectedMessage> {
     let mut batch = Vec::new();
-    let mut chars = 0usize;
+    let mut used_tokens = 0usize;
     for message in rows {
         if batch.len() >= MAX_INJECTED_MESSAGES {
             break;
@@ -287,14 +291,18 @@ pub fn take_batch(
         if !is_after_cursor(cursor, &message) || !accepts(anchor, &message) {
             continue;
         }
-        let content_chars = message.po.content.chars().count();
-        if chars + content_chars > MAX_INJECTED_CHARS {
+        let content_tokens = estimate_tokens(&message.po.content);
+        let over_budget = match budget_tokens {
+            Some(budget) => used_tokens + content_tokens > budget,
+            None => false,
+        };
+        if over_budget {
             // 跳过超预算的单条，不能 break：否则一条超长消息会卡住整批，
             // 后面的短消息也只能等下一次唤醒。被跳过的消息保持 Pending，
             // 它自己的事件会触发独立唤醒，不会丢。
             continue;
         }
-        chars += content_chars;
+        used_tokens += content_tokens;
         batch.push(InjectedMessage {
             id: message.po.id,
             created_at: message.po.created_at,
@@ -311,6 +319,7 @@ pub async fn collect(
     ctx: &RequestContext,
     anchor: &InboxAnchor,
     cursor: &InboxCursor,
+    budget_tokens: Option<usize>,
 ) -> Result<Vec<InjectedMessage>> {
     // v1 白名单仅 Text：其他协议类型各自配对，不能并进同一轮
     if anchor.message_type != MessageType::Text {
@@ -352,7 +361,7 @@ pub async fn collect(
     let rows = crate::service::dal::message::dal()
         .query(ctx.clone(), query)
         .await?;
-    Ok(take_batch(anchor, cursor, rows))
+    Ok(take_batch(anchor, cursor, rows, budget_tokens))
 }
 #[cfg(test)]
 #[path = "inbox_tests.rs"]

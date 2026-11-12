@@ -413,12 +413,16 @@ impl RuntimeDomainImpl {
                     agent.po.id,
                     cerebellum.id,
                 );
-                let decision = cerebellum_router::route_with_default_dao(
+                let route = cerebellum_router::route_with_default_dao(
                     &ctx,
                     &brain,
                     last_user_text.as_deref(),
                 )
                 .await;
+                // 门与池是两条独立轨迹，耗时也分两列（合成一个数字会丢掉「谁慢」）
+                let gate_latency_ms = route.gate_latency_ms;
+                let pool_latency_ms = route.pool_latency_ms;
+                let decision = route.decision;
                 // 小脑留痕：结论与降级都要能在思考轨迹里被追问（细因在日志）
                 let (route_decision, route_confidence, route_degraded, route_applied) =
                     match &decision {
@@ -449,7 +453,7 @@ impl RuntimeDomainImpl {
                         confidence: route_confidence,
                         degraded: route_degraded,
                         applied: route_applied,
-                        latency_ms: None,
+                        latency_ms: gate_latency_ms,
                     },
                 );
                 log_info!(
@@ -489,7 +493,7 @@ impl RuntimeDomainImpl {
                                 confidence: pool_confidence,
                                 degraded: pool_degraded,
                                 applied: pool_applied,
-                                latency_ms: None,
+                                latency_ms: pool_latency_ms,
                             },
                         );
                         log_info!(
@@ -526,14 +530,17 @@ impl RuntimeDomainImpl {
                     .model_provider()
                     .and_then(|po| po.config().thinking_intensity)
                     .is_some();
-                match thinking_strength::select_with_default_dao(
+                let selection = thinking_strength::select_with_default_dao(
                     &ctx,
                     &brain,
                     scene,
                     last_user_text.as_deref(),
                 )
-                .await
-                {
+                .await;
+                // 值域分列：`degraded` 由 select 按**真实成因**给出
+                // （无用户消息 / 配额耗尽 / 无 provider / 超时 / 调用失败 /
+                //  无可用答案 / 分数坏），不再一律折叠成 no_usable_answer
+                match selection.choice {
                     Some(choice) => {
                         crate::pkg::think_trace::record_cerebellum(
                             trace_id,
@@ -543,7 +550,7 @@ impl RuntimeDomainImpl {
                                 confidence: Some(choice.confidence),
                                 degraded: None,
                                 applied: provider_capable,
-                                latency_ms: None,
+                                latency_ms: selection.latency_ms,
                             },
                         );
                         Some(choice.strength)
@@ -555,9 +562,9 @@ impl RuntimeDomainImpl {
                                 scene: thinking_strength::trace_scene(scene).to_string(),
                                 decision: "fallback".to_string(),
                                 confidence: None,
-                                degraded: Some("no_usable_answer".to_string()),
+                                degraded: selection.degraded.map(str::to_string),
                                 applied: false,
-                                latency_ms: None,
+                                latency_ms: selection.latency_ms,
                             },
                         );
                         None

@@ -85,7 +85,14 @@ pub fn OrganizationInfo() -> Element {
     let handle_rebuild = move |_| {
         show_rebuild_confirm.set(false);
         spawn(async move {
-            match rebuild_vectors().await {
+            // 手动点「重建」= 认为现有索引不对：用 Force 全量重算，不赌「口径没变」。
+            // 换 provider 后这里也可能是手动兜底，Missing 会因口径章不一致退化成全量，
+            // 但语义上「我怀疑索引坏了」就该显式走 Force。
+            let req = common::api::RebuildVectorsRequest {
+                entities: None,
+                mode: common::enums::VectorRebuildMode::Force,
+            };
+            match rebuild_vectors(req).await {
                 Ok(resp) => {
                     toast.success("重建任务已启动");
                     rebuild_task_id.set(Some(resp.task_id));

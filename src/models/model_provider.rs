@@ -105,8 +105,9 @@ impl ModelProviderConfig {
     /// （`think_loop::context_overflow_threshold`）、由它派生的记忆索引块预算、
     /// 以及需要「按模型容量」估输入预算的决策点（如 `chain_reply`）。
     ///
-    /// ⚠️ 返回的是**容量上限**，不是「本次可用预算」——调用方必须再与自己的
-    /// 时延/成本上限取小，否则按 200K 级容量拉满必然超时。
+    /// ⚠️ 返回的是**容量上限**，不是「本次可用预算」——需要时延/成本约束的调用方
+    /// 必须再与自己的上限取小。`chain_reply` 已按 AMan 2026-11-11 终裁取消时延轴
+    /// （容量即预算，未配置则不裁），此处不再声称「按容量拉满必然超时」。
     pub fn recommended_context_length_tokens(&self) -> Option<u64> {
         // 本处是**容量** 0.6 的唯一实现：`legacy_settle/pending.rs` 的沉淀批预算
         // 曾自己重写一遍同样的取值链（「推荐值 > max × 60%」），已收敛到本方法，

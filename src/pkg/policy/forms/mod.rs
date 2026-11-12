@@ -8,13 +8,15 @@
 //! |---|---|---|---|
 //! | [`RankPolicy`] | `Pick`（全选项权重） | 候选 [`Candidate`] | 有序保留集 `Vec<String>` |
 //! | [`PickOnePolicy`] | `Pick` | 固定选项 + 上下文 | [`PickOne`]（选中项 + 置信度） |
-//! | [`ScorePolicy`] | `Grade` | 等级表 + 上下文 | [`Grade`]（分数 + 置信度） |
+//! | [`ScorePolicy`] | `Grade` | 等级表 + 业务上限 | [`Grade`]（缩放后的分数 + 置信度） |
 //! | [`PresencePolicy`] | `Presence` | 上下文 | 0~1 概率 |
 //!
 //! 这四种覆盖了协议全部三种题型的「正常用法」：
 //! - **排序**与**多选**是同一个形态（排序后按阈值截断就是多选，见 [`RankPolicy::ranked`]）；
 //! - **单选**是「候选只有一个胜出」的排序特例，但答案的消费方式不同（要置信度门槛，不要全序）；
-//! - **分级**用于「强度/质量」这类连续判断，**概率**用于「是不是/要不要」这类二值判断。
+//! - **分级**用于「强度/质量」这类连续判断：服务端已把等级概率加权成一个分数，
+//!   客户端只按等级数归一 + 乘业务上限（`ScorePolicy::scaled`），**不重复加权**；
+//! - **概率**用于「是不是/要不要」这类二值判断。
 //!
 //! 需要额外后处理（把 id 映射回实体、按结论选文案）时，读 `Metrics` 里的答案即可；
 //! 需要非同寻常的问法（多题、动态题型）时，自己实现 [`DecisionPolicy`]。
@@ -23,6 +25,7 @@ use super::decision::{
     DecisionAnswers, DecisionRequest, DecisionValue, Grade, Metrics, PickOne, QuestionSpec,
 };
 use super::{DecisionPolicy, Policy};
+use common::api::cerebellum::{MAX_SCORE_LEVELS, MIN_SCORE_LEVELS, score_to_unit};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -203,6 +206,12 @@ pub struct PickOnePolicy {
     options: BTreeMap<String, String>,
     state_keys: Vec<&'static str>,
     min_confidence: f32,
+    /// 选项级置信门槛（覆盖 `min_confidence`）
+    ///
+    /// 收口的代价天然不对称：同一个场景里，某些选项的决定只是「多跑一跳」，
+    /// 另一些则会改变下游形态。用一条全局门槛只能取交集（要么误伤低代价选项，
+    /// 要么放过高代价选项），故允许按选项单列。
+    option_min_confidence: BTreeMap<String, f32>,
     /// 场景级超时覆盖（毫秒）；`None` = 用 provider 配置 / 全局缺省
     timeout_ms: Option<u64>,
 }
@@ -231,8 +240,29 @@ impl PickOnePolicy {
                 .collect(),
             state_keys: Vec::new(),
             min_confidence,
+            option_min_confidence: BTreeMap::new(),
             timeout_ms: None,
         }
+    }
+
+    /// 为单个选项声明置信门槛（不调用则用构造时的全局 `min_confidence`）
+    pub fn with_option_min_confidence(mut self, option: &str, min_confidence: f32) -> Self {
+        self.option_min_confidence
+            .insert(option.to_string(), min_confidence);
+        self
+    }
+
+    /// 某选项的置信门槛；`None` = 不在本轮选项集内（模型编造的选项）
+    ///
+    /// 与 [`Self::chosen`] 的分工：那个用一条全局门槛给「有没有结论」做总闸；
+    /// 本方法把门槛判断交给调用方，让同一场景的不同选项各自设档。
+    pub fn option_threshold(&self, option: &str) -> Option<f32> {
+        self.options.contains_key(option).then(|| {
+            self.option_min_confidence
+                .get(option)
+                .copied()
+                .unwrap_or(self.min_confidence)
+        })
     }
 
     /// 声明哪些事实要作为 `state` 透传给模型（按给定顺序）
@@ -291,22 +321,33 @@ impl DecisionPolicy for PickOnePolicy {
     }
 }
 
-/// 分级形态：把「强度 / 质量」判成一个分数，分数达标才算命中
+/// 分级形态：把「强度 / 质量」判成一个分数，按业务上限缩放后判命中
+///
+/// ⚠️ 协议 `score` 题的返回值**已经是服务端判断好的连续值**（各等级概率由
+/// 服务端加权合成），客户端不再加权。它的量纲是「0-based 等级序号」，
+/// 值域 `[0, levels.len()-1]` 随本轮等级数变化，所以读侧只做两步：
+/// ① [`score_to_unit`] 归一到 0~1；② 乘业务上限 `upper`。
+///
+/// 于是**等级数怎么选**（2~255，协议上限）与**业务上限定多少**（0~100 /
+/// 0~10 / 0~1）完全解耦：同一道 11 级题既能读成 100 分制，也能读成 0~1，
+/// 不必为了凑业务上限去人为切档，输出也不再被档位离散化。
 pub struct ScorePolicy {
     id: &'static str,
     name: &'static str,
     condition_desc: &'static str,
     instructions: &'static str,
-    levels: Vec<&'static str>,
+    levels: Vec<String>,
     state_keys: Vec<&'static str>,
+    upper: f32,
     min_score: f32,
 }
 
 impl ScorePolicy {
     /// 构造分级形态
     ///
-    /// - `levels`：由低到高的等级描述（协议要求 2~10 项）
-    /// - `min_score`：命中阈值（0~1）
+    /// - `levels`：由低到高的等级描述，数量在协议边界
+    ///   [`MIN_SCORE_LEVELS`]~[`MAX_SCORE_LEVELS`]（2~255）内
+    /// - `min_score`：**业务刻度**下的命中阈值（配合 [`Self::with_upper`] 理解）
     pub fn new(
         id: &'static str,
         name: &'static str,
@@ -320,10 +361,20 @@ impl ScorePolicy {
             name,
             condition_desc,
             instructions,
-            levels: levels.into_iter().collect(),
+            levels: levels.into_iter().map(str::to_string).collect(),
             state_keys: Vec::new(),
+            upper: 1.0,
             min_score,
         }
+    }
+
+    /// 声明业务上限：读到的分数落在 `[0, upper]`
+    ///
+    /// 例：11 级题、`upper=100`，服务端判断出 6.95 → `6.95 / 10 × 100 = 69.5`。
+    /// 底层等级数保持原样，不需要为了 100 分制去凑 101 个档位。
+    pub fn with_upper(mut self, upper: f32) -> Self {
+        self.upper = upper;
+        self
     }
 
     /// 声明哪些事实要作为 `state` 透传给模型
@@ -332,9 +383,28 @@ impl ScorePolicy {
         self
     }
 
-    /// 分数（带置信度）
+    /// 协议原值（未缩放，`[0, levels.len()-1]` 刻度）；生产请用 [`Self::scaled`]
     pub fn score(&self, metrics: &Metrics) -> Option<Grade> {
         self.grade(metrics, 0.0)
+    }
+
+    /// 映射到 `[0, upper]` 的分数（**生产读法**）
+    ///
+    /// `confidence` 原样透传、只作观测：连续量的置信度不是「有没有结论」的
+    /// 门禁（11 档 choice 题硬套单档阈值曾导致强度决策 79 次全量降级）。
+    ///
+    /// `None` = 没答 / 形态不符 / 量纲非法 / upper 非法，一律当「没结论」，
+    /// 不得回退成 0 分（0 分是明确判断，不是未知）。
+    pub fn scaled(&self, metrics: &Metrics) -> Option<Grade> {
+        if !self.upper.is_finite() || self.upper <= 0.0 {
+            return None;
+        }
+        let raw = self.grade(metrics, 0.0)?;
+        let unit = score_to_unit(raw.score, self.levels.len())?;
+        Some(Grade {
+            score: unit * self.upper,
+            confidence: raw.confidence,
+        })
     }
 }
 
@@ -346,8 +416,9 @@ impl DecisionPolicy for ScorePolicy {
     }
 
     fn request(&self, metrics: &Metrics) -> Option<DecisionRequest> {
-        // 等级数量是协议硬约束：不在 2~10 会被 client 整批拒
-        if !(2..=10).contains(&self.levels.len()) {
+        // 数量边界的唯一真相在协议层（2~255）。写死 10 是 jev 早期口径残留，
+        // 会让合法的 11 级题零调用，也让平台永远用不上协议的真实上限。
+        if !(MIN_SCORE_LEVELS..=MAX_SCORE_LEVELS).contains(&self.levels.len()) {
             return None;
         }
         Some(DecisionRequest {
@@ -357,7 +428,7 @@ impl DecisionPolicy for ScorePolicy {
                 self.primary_qid(),
                 QuestionSpec::Grade {
                     instructions: self.instructions.to_string(),
-                    levels: self.levels.iter().map(|l| (*l).to_string()).collect(),
+                    levels: self.levels.clone(),
                 },
             )]),
             timeout_ms: None,
@@ -366,7 +437,7 @@ impl DecisionPolicy for ScorePolicy {
 
     fn judge(&self, metrics: &Metrics, _answers: &DecisionAnswers) -> Vec<String> {
         let hit = self
-            .score(metrics)
+            .scaled(metrics)
             .is_some_and(|g| g.score >= self.min_score);
         if hit {
             vec![self.id.to_string()]

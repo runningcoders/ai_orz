@@ -20,6 +20,7 @@ use crate::service::dao::project::{
 };
 use common::api::PaginationParams;
 use common::enums::ProjectStatus;
+use common::enums::VectorRebuildMode;
 use common::error::Result;
 use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions, StatsInterval};
 use std::collections::{HashMap, HashSet};
@@ -220,6 +221,7 @@ pub trait ProjectDal: Send + Sync {
         &self,
         ctx: RequestContext,
         progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: VectorRebuildMode,
     ) -> Result<()>;
 }
 
@@ -768,6 +770,7 @@ impl ProjectDal for ProjectDalImpl {
         &self,
         ctx: RequestContext,
         progress: &TaskProgressCounter,
+        _mode: VectorRebuildMode,
     ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self

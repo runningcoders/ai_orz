@@ -97,7 +97,7 @@ EN --> CT
 - [src/service/dal/brain.rs](src/service/dal/brain.rs)
 
 ## 核心组件
-- **协议 DTO（`common/src/api/cerebellum.rs`）**：三类问题/答案一一对应——`noul`（可选 `{true,false}` 判据对象，输出 0~1 概率，无 confidence）/ `choice`（≤255 选项，输出 choice + confidence + probabilities）/ `score`（2~10 级有序等级，输出 score + probabilities + legend + confidence，`legend` 为「等级序号 → 描述」对象）。`CerebellumQuestion::validate` 前置执行「类型 × criteria 形态 + 数量边界」硬校验。放 `common` 而非 `src/models`：它是跨进程线格式，前端以后也要用；引擎侧的进程内契约（`DecisionRequest` 等）在 `pkg/policy/decision`，两者在 DAL 一处互相映射。
+- **协议 DTO（`common/src/api/cerebellum.rs`）**：三类问题/答案一一对应——`noul`（可选 `{true,false}` 判据对象，输出 0~1 概率，无 confidence）/ `choice`（≤255 选项，输出 choice + confidence + probabilities）/ `score`（2~255 级有序等级，输出 score + probabilities + legend + confidence，`legend` 为「等级序号 → 描述」对象）。⚠️ `score` 是**服务端已加权的 0-based 等级序号期望值**（值域 `[0, levels-1]`，不是 0~1、也不是 0~255），客户端只经 `score_to_unit(score, level_count)` 归一到 0~1 再乘业务上限，禁止拿 `probabilities` 再加权一次。`CerebellumQuestion::validate` 前置执行「类型 × criteria 形态 + 数量边界」硬校验。放 `common` 而非 `src/models`：它是跨进程线格式，前端以后也要用；引擎侧的进程内契约（`DecisionRequest` 等）在 `pkg/policy/decision`，两者在 DAL 一处互相映射。
 - **System One client（`dao/cerebellum/`）**：`CerebellumDao` trait + `SystemOneCerebellumDao` 单例（`OnceLock`）。无状态、全配置随 `&ModelProviderPo` 传入；`client.rs` 负责端点/超时解析、请求编解码、响应结构校验与错误分类。
 - **默认小脑获取（`get_default_cerebellum_provider`）**：与 embedding 版同构，查询 `capability = Decision AND status = Normal AND api_key 非空` 取第一条；语义即「status 单启用即默认」。
 - **Brain 注入（`dal/brain.rs` + `models/brain.rs`）**：`wake_brain` 在 Local 分支注入 `brain.cerebellum`；无启用记录则为 `None`，行为与现状逐字节一致。
@@ -154,7 +154,7 @@ end
 ## 详细组件分析
 
 ### 协议 DTO：三类型问题与答案
-`QuestionType` 定义 `Noul` / `Choice` / `Score` 三型；`QuestionCriteria` 用 `#[serde(untagged)]` 承载双形态（choice→选项对象、score→有序等级数组），`CerebellumQuestion::validate` 强制「类型与 criteria 形态匹配」并校验数量边界（choice ∈ [1,255]、score ∈ [2,10]、noul 可选 `{true,false}` 判据对象且不允许数组），不合规直接 `ConfigInvalid`。响应侧 `CerebellumAnswer` 用 `#[serde(tag = "type")]` 区分三型，并提供 `as_noul` / `as_choice` / `as_score` 取值器；`CerebellumResponse` 的 `usage` 缺失时容错为零值。
+`QuestionType` 定义 `Noul` / `Choice` / `Score` 三型；`QuestionCriteria` 用 `#[serde(untagged)]` 承载双形态（choice→选项对象、score→有序等级数组），`CerebellumQuestion::validate` 强制「类型与 criteria 形态匹配」并校验数量边界（choice ∈ [1,255]、score ∈ [2,255]、noul 可选 `{true,false}` 判据对象且不允许数组），不合规直接 `ConfigInvalid`。响应侧 `CerebellumAnswer` 用 `#[serde(tag = "type")]` 区分三型，并提供 `as_noul` / `as_choice` / `as_score` 取值器；`CerebellumResponse` 的 `usage` 缺失时容错为零值。量纲换算的单一真相是 `common::api::cerebellum::score_to_unit(score, level_count)`：`score` 是 0-based 等级序号的加权期望（实测 3 级 → 1.27、11 级 → 6.95、101 级 → 31.38），分母取 `level_count - 1` 而非固定的 255；再乘业务上限即可映射到任意刻度（`thinking_strength` 用 11 级语义锚点 × 100 分制）。
 
 **章节来源**
 - [common/src/api/cerebellum.rs](common/src/api/cerebellum.rs)

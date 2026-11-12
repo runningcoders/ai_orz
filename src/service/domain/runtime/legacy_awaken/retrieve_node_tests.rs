@@ -10,7 +10,7 @@ use super::*;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, ShortTermMemoryIndexPo,
 };
-use common::enums::{KnowledgeRelationStatus, MemoryStatus, MemoryType};
+use common::enums::{KnowledgeRelationStatus, MemoryStatus, MemoryType, SkillStatus};
 
 fn node(id: &str, name: &str, desc: &str) -> Memory {
     Memory::new(MemoryPo::KnowledgeNode(LongTermKnowledgeNodePo {
@@ -116,7 +116,7 @@ fn short_term_lines_have_their_own_render_budget() {
         .map(|i| relation(&format!("k{}", i % 9), &format!("k{}", (i + 1) % 9), "rel"))
         .collect();
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &relations);
+    let lines = build_knowledge_lines(&hits, &[], &[], &relations, None);
 
     assert_eq!(
         lines.len(),
@@ -161,7 +161,7 @@ fn relation_line_resolves_neighbor_name_without_dumping_its_body() {
     let neighbors = vec![node("k2", "库存扣减", "这段邻居正文不应出现在 prompt")];
     let relations = vec![relation("k1", "k2", "depends_on")];
 
-    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations);
+    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations, None);
 
     assert_eq!(
         lines[0],
@@ -210,7 +210,7 @@ fn index_lines_do_not_consume_relation_budget() {
         .collect();
     let relations = vec![relation("k1", "r0", "rel")];
 
-    let lines = build_knowledge_lines(&selected, &rest, &[], &relations);
+    let lines = build_knowledge_lines(&selected, &rest, &[], &relations, None);
 
     assert_eq!(
         lines.iter().filter(|l| l.contains("[索引]")).count(),
@@ -231,7 +231,7 @@ fn dangling_relation_is_skipped() {
     let hits = vec![node("k1", "A", "a")];
     let relations = vec![relation("k1", "k9", "rel")];
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &relations);
+    let lines = build_knowledge_lines(&hits, &[], &[], &relations, None);
 
     assert_eq!(lines, vec!["[知识节点 k1] A · concept · a".to_string()]);
 }
@@ -246,7 +246,7 @@ fn node_and_relation_budgets_are_enforced() {
         .map(|i| relation(&format!("k{}", i % 9), &format!("k{}", (i + 1) % 9), "rel"))
         .collect();
 
-    let lines = build_knowledge_lines(&nodes, &[], &[], &relations);
+    let lines = build_knowledge_lines(&nodes, &[], &[], &relations, None);
 
     assert_eq!(
         lines.len(),
@@ -267,7 +267,7 @@ fn edges_from_both_paths_are_merged_without_duplicates() {
     let hits = vec![node("k1", "A", "a"), node("k2", "B", "b"), edge.clone()];
     let graph_edges = vec![edge];
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &graph_edges);
+    let lines = build_knowledge_lines(&hits, &[], &[], &graph_edges, None);
 
     let edge_lines: Vec<&String> = lines.iter().filter(|l| l.contains("-->")).collect();
     assert_eq!(edge_lines.len(), 1, "同一条边只渲染一次: {lines:?}");
@@ -287,7 +287,7 @@ fn edge_with_both_ends_hit_outranks_heavier_dangling_edge() {
         relation_with_weight("k1", "k2", "strong_link", Some(0.10)),
     ];
 
-    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations);
+    let lines = build_knowledge_lines(&hits, &[], &neighbors, &relations, None);
 
     assert!(lines[2].contains("strong_link"), "完整边应排前: {lines:?}");
     assert!(lines[3].contains("weak_link"));
@@ -302,7 +302,7 @@ fn edges_of_equal_completeness_are_ordered_by_weight() {
         relation_with_weight("k1", "k2", "heavy", Some(0.9)),
     ];
 
-    let lines = build_knowledge_lines(&hits, &[], &[], &relations);
+    let lines = build_knowledge_lines(&hits, &[], &[], &relations, None);
 
     assert!(lines[2].contains("heavy"), "weight 高的排前: {lines:?}");
     assert!(lines[3].contains("light"));
@@ -331,7 +331,7 @@ fn rerank_fallback_keeps_unselected_candidates() {
     );
 }
 
-/// 全文层给完整正文与 id，索引层只给元信息 + 摘要片段；两层都带 id
+/// 全文层给完整正文与 id，索引层只给元信息 + token 预算内的摘要片段；两层都带 id
 #[test]
 fn full_and_index_layers_carry_ids_without_dumping_bodies() {
     let long_body = "缓存".repeat(60); // 120 字，必然触发摘要截断
@@ -341,7 +341,9 @@ fn full_and_index_layers_carry_ids_without_dumping_bodies() {
         short_term("st0", &long_body),
     ];
 
-    let lines = build_knowledge_lines(&selected, &rest, &[], &[]);
+    // 索引行预算 64 token（生产取值 = 4% × 容量；这里只为把「按 token 截断」这条
+    // 口径钉成可独立失败的断言，不代表任何场景的实值）。
+    let lines = build_knowledge_lines(&selected, &rest, &[], &[], Some(64));
 
     assert_eq!(lines.len(), 3, "1 条全文 + 2 条索引");
     assert!(
@@ -353,13 +355,165 @@ fn full_and_index_layers_carry_ids_without_dumping_bodies() {
     assert!(lines[2].starts_with("[索引] [st0]"));
     assert!(lines[2].contains("ts="), "短期记忆索引行带绝对时间戳");
     assert!(!lines[1].contains("ts="), "知识节点没有时间戳字段");
-    assert!(lines[1].contains('…') && lines[2].contains('…'));
+    assert!(
+        !lines[1].contains(&long_body) && !lines[2].contains(&long_body),
+        "索引行不得灌全文正文: {lines:?}"
+    );
     assert!(
         lines[1].chars().count() < lines[0].chars().count(),
         "索引行必须比全文行短: {lines:?}"
     );
     assert!(
+        crate::service::domain::runtime::compaction::estimate_tokens(&lines[1]) <= 64,
+        "索引行必须守住 token 预算（不是字符数）: {:?}",
+        lines[1]
+    );
+    assert!(
         lines.iter().all(|l| !l.starts_with("- ")),
         "行前缀由 builder 统一加，这里不能自带: {lines:?}"
     );
+}
+
+/// 精选**全文行**也有单行 token 上限：此前它只受 `KNOWLEDGE_TOP_K` 的条数约束，
+/// 一条病态长摘要就能原样灌进 prompt。截断必须显式标注，且不许砍掉 id。
+#[test]
+fn selected_full_line_is_capped_and_keeps_its_id() {
+    let long_body = "缓存".repeat(1_000); // 2000 token，远超任何单行份额
+    let selected = vec![node("k0", "前缀缓存", &long_body)];
+    let index_budget = 64;
+    let cap = index_budget * FULL_LINE_BUDGET_FACTOR;
+
+    // 反事实：预算未配 ⇒ 不裁（证明下面的截断确实来自新上限，不是别的分支）
+    let uncapped = build_knowledge_lines(&selected, &[], &[], &[], None);
+    assert!(
+        uncapped[0].contains(&long_body),
+        "容量未配时必须保持不裁口径"
+    );
+
+    let lines = build_knowledge_lines(&selected, &[], &[], &[], Some(index_budget));
+    let full = &lines[0];
+    assert!(
+        full.contains("[知识节点 k0]"),
+        "从头截断必须保住 id（query_memory 反查把手）：{full:?}"
+    );
+    assert!(
+        full.contains(FULL_LINE_TRUNCATION_NOTE),
+        "全文被裁必须显式标注，不许悄悄丢内容：{full:?}"
+    );
+    assert!(
+        crate::service::domain::runtime::compaction::estimate_tokens(full) <= cap,
+        "全文行实测越过单行上限 {cap}：{full:?}"
+    );
+    assert!(
+        !full.contains(&long_body),
+        "病态长正文不得原样灌进 prompt：{full:?}"
+    );
+}
+
+/// 只有一个技能 / 没装小脑时不该进小脑：没有排序对象，也不该留一条 fallback
+/// 把降级率算脏。此前这两类 run 每次都写 `skill_relevance / fallback /
+/// no_usable_answer`（生产轨迹里 175 条有 149 条来自未装配小脑的 run）。
+///
+/// 泛型入参让「已装配」用 `Some(&())` 就能表达，不必构造 ModelProviderPo。
+#[test]
+fn skill_rerank_only_runs_with_multiple_candidates_and_a_cerebellum() {
+    let unit = ();
+    let assembled = Some(&unit);
+    let missing: Option<&()> = None;
+
+    assert!(
+        !should_rerank_skills(1, assembled),
+        "只有一个技能没有排序可言，直接按召回序放进去"
+    );
+    assert!(!should_rerank_skills(0, assembled), "零候选更不该发请求");
+    assert!(
+        !should_rerank_skills(3, missing),
+        "未装配小脑的 run 由 bootstrap/not_assembled 单独记，业务场景不许补 fallback"
+    );
+    assert!(!should_rerank_skills(1, missing), "两个条件都不满足");
+    assert!(
+        should_rerank_skills(2, assembled),
+        "两个及以上候选 + 已装配小脑才走「搜索集合 → 排序 → 取前 2」"
+    );
+    assert!(should_rerank_skills(8, assembled));
+}
+
+/// 技能召回必须与知识共用同一份意图关键词，且过滤口径等价老路径：
+/// 已发布 + 根技能 + 宽召回上限。缺 `limit` 会退化成 DAL 的 20 条，
+/// 一次 Pick 的选项列表过长会摊薄概率。
+#[test]
+fn method_skill_search_uses_intent_keyword_and_wide_published_roots() {
+    let s = method_skill_search("Rust 代码 审阅", METHOD_SKILLS_RECALL_WIDTH);
+    assert_eq!(s.keyword.as_deref(), Some("Rust 代码 审阅"));
+    assert_eq!(s.filters.status, Some(SkillStatus::Published));
+    assert_eq!(s.filters.has_parent, Some(false));
+    let limit = s.filters.pagination.limit;
+    assert_eq!(
+        limit,
+        Some(METHOD_SKILLS_TOP_K * RECALL_WIDTH_FACTOR),
+        "与知识两路共用同一个宽度倍数，别在这里另立一套常数"
+    );
+    assert_eq!(s.filters.pagination.offset, None);
+    assert!(
+        limit.unwrap_or(0) > METHOD_SKILLS_TOP_K,
+        "召回必须宽于渲染预算，否则排序没有取舍空间"
+    );
+}
+
+/// ⚠️ 反例护栏：`thinking_method` 只能作召回序优先项，绝不能下推成 SQL 过滤。
+/// 一旦 `filters.tags` 带上它，生产库就只剩 1 条已发布技能，
+/// `RankPolicy::request` 的 `options.len() < 2` 恒真 ⇒ 精选永远零调用。
+#[test]
+fn method_skill_search_never_filters_by_method_tag() {
+    let s = method_skill_search("降级", METHOD_SKILLS_RECALL_WIDTH);
+    assert!(
+        s.filters.tags.is_none(),
+        "tag 硬过滤会把候选池打回 1 条，精选又变成恒定空转"
+    );
+    assert!(s.filters.category.is_none(), "同理不得按 category 硬过滤");
+}
+
+/// 向量路与 FTS 路必须同宽：只给 `pagination.limit` 时 DAL 的向量路会按
+/// 缺省 20 条召回，聚合排序（Hybrid / Vector 优先）后把 width 条关键词命中
+/// 挤到分页之外。与长期/短期记忆的 `top_k + limit` 双字段口径保持一致。
+#[test]
+fn method_skill_search_sizes_vector_and_fts_roads_together() {
+    let s = method_skill_search("思考 强度 策略", METHOD_SKILLS_RECALL_WIDTH);
+    assert_eq!(
+        s.top_k,
+        Some(METHOD_SKILLS_RECALL_WIDTH as i32),
+        "top_k 管向量路，不能留空让 DAL 回落 20"
+    );
+    assert_eq!(
+        s.top_k.map(|k| k as usize),
+        s.filters.pagination.limit,
+        "两路宽度必须相等，否则聚合后 FTS 命中会被向量命中挤掉"
+    );
+    assert!(
+        s.query_vector.is_none(),
+        "查询向量由 DAL 用同一份 keyword 现算，调用方不该自己 embed"
+    );
+}
+
+/// tag 优先是稳定排序：只换顺序、不丢候选，组内保持召回序。
+#[test]
+fn prefer_method_tag_keeps_every_candidate_and_is_stable() {
+    let po = |id: &str, tags: &[&str]| SkillPo {
+        id: id.to_string(),
+        tags: serde_json::to_string(tags).unwrap(),
+        ..Default::default()
+    };
+    let mut skills = vec![
+        po("a", &["rust"]),
+        po("b", &["thinking_method"]),
+        po("c", &["code"]),
+        po("d", &["thinking_method", "neural"]),
+    ];
+    prefer_method_tag(&mut skills);
+    assert_eq!(
+        skills.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+        vec!["b", "d", "a", "c"],
+        "方法技能提到前面，其余按原召回序跟随"
+    );
+    assert_eq!(skills.len(), 4, "优先排序不是过滤，一条都不能丢");
 }

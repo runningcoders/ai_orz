@@ -142,6 +142,7 @@ impl AgentDal for MockAgentDal {
         &self,
         _ctx: RequestContext,
         _progress: &crate::pkg::background_task::TaskProgressCounter,
+        _mode: common::enums::VectorRebuildMode,
     ) -> Result<()> {
         self.record_call("rebuild_vectors");
         Ok(())
@@ -195,7 +196,11 @@ async fn codex_agent_dal_delegates_rebuild_vectors_to_base() {
     let codex_dal = CodexAgentDal::new(mock.clone());
 
     let result = codex_dal
-        .rebuild_vectors(make_test_ctx(), &Default::default())
+        .rebuild_vectors(
+            make_test_ctx(),
+            &Default::default(),
+            common::enums::VectorRebuildMode::Force,
+        )
         .await;
     assert!(result.is_ok());
     assert!(mock.was_called("rebuild_vectors"));

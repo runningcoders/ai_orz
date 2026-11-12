@@ -29,6 +29,7 @@
 //! `started/finished` status 一律不动 —— skip 是正常决策不是异常，往 status
 //! 里塞 `skipped` 会让成功率/失败率统计失真，且要新增枚举值波及前端与统计侧。
 
+use super::cerebellum_context as context;
 use super::types::IntentAnalysis;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
@@ -91,8 +92,11 @@ const OPTIONS: [(&str, &str); 2] = [
     ),
 ];
 
-/// 透传给模型的上下文事实（与路由同口径：只带轻量上下文，不取全量记忆）
-const STATE_KEYS: &[&str] = &["agent_id", "agent_name", "last_user_message"];
+/// 透传给模型的上下文事实：统一由 [`context::ContextBundle`] 渲染成单键分块正文
+///
+/// 键名收敛到 `context::STATE_KEY` 一处（单出口）：本文件不再出现
+/// `agent_id` / `last_user_message` 这类裸键拼装。
+const STATE_KEYS: &[&str] = &[context::STATE_KEY];
 
 /// 本场景的策略形态（无状态，可反复构造）
 fn policy() -> PickOnePolicy {
@@ -113,6 +117,7 @@ fn trace(
     confidence: Option<f32>,
     degraded: Option<&str>,
     applied: bool,
+    latency_ms: Option<u64>,
 ) -> ThinkTraceCerebellum {
     ThinkTraceCerebellum {
         scene: SCENE.to_string(),
@@ -120,7 +125,7 @@ fn trace(
         confidence,
         degraded: degraded.map(|s| s.to_string()),
         applied,
-        latency_ms: None,
+        latency_ms,
     }
 }
 
@@ -153,7 +158,10 @@ pub(crate) async fn skip_if_pointless(
     //    判定面严格限 `trim()` 后为空：纯标点仍送小脑判，别让本地黑名单和
     //    小脑黑名单变成两套真相（本地只兜「形态上零信息量」那一种）。
     if text.trim().is_empty() {
-        record_cerebellum(trace_id, trace(DECISION_EMPTY_INPUT, None, None, true));
+        record_cerebellum(
+            trace_id,
+            trace(DECISION_EMPTY_INPUT, None, None, true, None),
+        );
         log_info!(
             ctx,
             "intent_gate",
@@ -186,16 +194,14 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false),
+            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
         );
         return None;
     }
 
     let policy = policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("last_user_message", text);
+    // 单出口（笔④-2 笔 B）：装配与容量自截都在组织器，本处只调一次
+    let metrics = Metrics::new().with(context::STATE_KEY, context::render_for(brain, SCENE, text));
 
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
@@ -206,6 +212,8 @@ pub(crate) async fn skip_if_pointless(
     // 阶段二：唯一 async 点（门禁 / 超时 / 协议转换 / 降级全在 DAL）
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
 
     if let Some(reason) = outcome.degraded {
         log_info!(
@@ -219,7 +227,13 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(reason.as_str()), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(reason.as_str()),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     }
@@ -238,7 +252,13 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_NO_ANSWER), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_NO_ANSWER),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     };
@@ -257,7 +277,13 @@ pub(crate) async fn skip_if_pointless(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_SKIP, Some(pick.confidence), None, true),
+            trace(
+                DECISION_SKIP,
+                Some(pick.confidence),
+                None,
+                true,
+                traced_latency_ms,
+            ),
         );
         return Some(skipped_analysis(text));
     }
@@ -275,7 +301,13 @@ pub(crate) async fn skip_if_pointless(
     );
     record_cerebellum(
         trace_id,
-        trace(DECISION_ANALYZE, Some(pick.confidence), None, false),
+        trace(
+            DECISION_ANALYZE,
+            Some(pick.confidence),
+            None,
+            false,
+            traced_latency_ms,
+        ),
     );
     None
 }

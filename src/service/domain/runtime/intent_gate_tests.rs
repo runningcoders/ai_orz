@@ -30,6 +30,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct MockBrainDal {
     script: Mutex<VecDeque<Option<DecisionOutcome>>>,
     calls: AtomicUsize,
+    /// 每次 decide 收到的 `DecisionRequest.state`（运行时反事实的唯一捕获面）
+    states: Mutex<Vec<serde_json::Value>>,
 }
 
 impl MockBrainDal {
@@ -37,11 +39,17 @@ impl MockBrainDal {
         Self {
             script: Mutex::new(script.into()),
             calls: AtomicUsize::new(0),
+            states: Mutex::new(Vec::new()),
         }
     }
 
     fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
+    }
+
+    /// 逐条取出捕获到的 state（顺序 = 请求发出顺序）
+    fn states(&self) -> Vec<serde_json::Value> {
+        self.states.lock().expect("mock states lock").clone()
     }
 }
 
@@ -51,9 +59,15 @@ impl BrainDal for MockBrainDal {
         &self,
         _ctx: RequestContext,
         _brain: &Brain,
-        _requests: Vec<DecisionRequest>,
+        requests: Vec<DecisionRequest>,
     ) -> DecisionOutcome {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        for request in &requests {
+            self.states
+                .lock()
+                .expect("mock states lock")
+                .push(request.state.clone());
+        }
         match self.script.lock().expect("mock script lock").pop_front() {
             Some(Some(outcome)) => outcome,
             _ => DecisionOutcome {
@@ -380,5 +394,81 @@ async fn test_brain_absent_returns_none_without_error() {
     assert!(
         take_traces(run_id).is_empty(),
         "未摸到小脑就没有决策可留痕（缺失不是决策）"
+    );
+}
+
+// ---------- ⑤ 轨迹耗时：调用过必带实测值，零调用必为 None ----------
+
+#[tokio::test]
+async fn test_trace_latency_measured_when_called_and_none_when_zero_call() {
+    // 正向：剧本自报 3ms（`pick_for`），轨迹必须取到该值 —— 断取值，不只断字段
+    let brain = brain_with_quota(5);
+    let run_id = "intent-gate-latency-called";
+    let (_, calls) = run_gate(
+        "帮我分析这个方案的风险",
+        vec![Some(pick_for(OPTION_ANALYZE, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert_eq!(calls, 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(
+        traces[0].latency_ms,
+        Some(3),
+        "发生了调用 ⇒ 轨迹必须带实测耗时（改造前固定 None 会红）"
+    );
+
+    // 反向：零信息量输入 = 零调用 ⇒ 必须是 None，不能被记成「问了 0ms」
+    let run_id = "intent-gate-latency-zero";
+    let (_, calls) = run_gate("   ", vec![], Some(&brain), run_id).await;
+    assert_eq!(calls, 0);
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].latency_ms, None, "零调用 ⇒ None（不是 Some(0)）");
+}
+
+/// 运行时反事实（笔④-2 笔 B）：单出口收敛后，**真正发出去的**请求体里
+/// 只有 `context` 一个键，且它是分块正文、含身份与用户消息的实际取值。
+///
+/// 改造前必红（R49 静态证据）：改造前 `skip_if_pointless` 用
+/// `Metrics::new().with("agent_id", …).with("agent_name", …).with("last_user_message", …)`
+/// 三键平铺，`state["context"]` 根本不存在。
+#[tokio::test]
+async fn test_request_state_is_single_rendered_context_block() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_intent_gate_test"));
+    let ctx = test_ctx();
+    let brain = brain_with_quota(5);
+    let mock = Arc::new(MockBrainDal::new(vec![Some(pick_for("skip", 0.95))]));
+    let sentinel = "运行时反事实哨兵-intent";
+    let _ = skip_if_pointless(
+        &ctx,
+        mock.clone(),
+        Some(&brain),
+        sentinel,
+        "run-counterfact",
+    )
+    .await;
+
+    let states = mock.states();
+    assert_eq!(states.len(), 1, "首轮应恰发一条请求：{states:?}");
+    let state = &states[0];
+    assert!(
+        state.get("agent_id").is_none(),
+        "平铺键必须已消失（单出口不变量）：{state}"
+    );
+    let rendered = state["context"]
+        .as_str()
+        .expect("context 必须是渲染后的字符串正文");
+    assert!(rendered.contains("## 会话身份"), "必须有身份块：{rendered}");
+    assert!(
+        rendered.contains("agent_id: agent-1"),
+        "身份必须带实际取值（不是「非空」）：{rendered}"
+    );
+    assert!(
+        rendered.contains(sentinel),
+        "用户消息必须逐字进正文：{rendered}"
     );
 }

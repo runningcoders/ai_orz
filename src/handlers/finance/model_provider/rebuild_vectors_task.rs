@@ -10,24 +10,69 @@ use crate::pkg::background_task::TaskProgressCounter;
 use crate::service::dal;
 use async_trait::async_trait;
 use common::api::{TaskProgressSnapshot, TaskStatus, TaskType};
+use common::enums::VectorRebuildMode;
 use common::error::{Error, Result};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// 可重建的实体清单：(key, 展示名)。顺序即执行顺序。
+pub const ALL_ENTITIES: [(&str, &str); 7] = [
+    ("agent", "Agent"),
+    ("memory", "Memory"),
+    ("skill", "Skill"),
+    ("task", "Task"),
+    ("project", "Project"),
+    ("message", "Message"),
+    ("tool", "Tool"),
+];
+
+/// 把请求里的实体名解析成执行清单。
+///
+/// `None` 或空 → 全部 7 类（向后兼容：老前端不传该字段）。
+/// 未知名字**报错**而不是忽略：拼错一个字母就「任务成功但一条都没重建」，
+/// 是最难排查的那类静默失败。
+pub fn resolve_entities(names: Option<&[String]>) -> Result<Vec<(&'static str, &'static str)>> {
+    let Some(names) = names.filter(|v| !v.is_empty()) else {
+        return Ok(ALL_ENTITIES.to_vec());
+    };
+
+    let mut picked = Vec::with_capacity(names.len());
+    for name in names {
+        let key = name.trim().to_ascii_lowercase();
+        let Some(found) = ALL_ENTITIES.iter().find(|(k, _)| *k == key) else {
+            let legal: Vec<&str> = ALL_ENTITIES.iter().map(|(k, _)| *k).collect();
+            return Err(Error::bad_request(format!(
+                "未知的向量集合: {}（合法值：{}）",
+                name,
+                legal.join(" / ")
+            )));
+        };
+        // 去重：重复传同一实体只会白跑一遍（每次都要 clear + 全量重算）
+        if !picked.iter().any(|(k, _)| *k == found.0) {
+            picked.push(*found);
+        }
+    }
+    Ok(picked)
+}
+
 /// 向量索引重建任务
 ///
-/// 遍历 7 个实体（agent/memory/skill/task/project/message/tool）调用各 DAL 的
-/// `rebuild_vectors(ctx, progress)`。同一时刻仅允许一个 RebuildVectors 任务运行（由 `run` 内部检查）。
+/// 遍历指定实体调用各 DAL 的 `rebuild_vectors(ctx, progress, mode)`。
+/// 同一时刻仅允许一个 RebuildVectors 任务运行（由 `run` 内部检查）。
 pub struct RebuildVectorsTask {
     /// 任务唯一 ID
     task_id: String,
     /// 请求上下文（包含用户/组织信息，供 DAL 日志与权限校验使用）
     ctx: RequestContext,
+    /// 本次要重建的实体（缺省为全部 7 类）
+    entities: Vec<(&'static str, &'static str)>,
+    /// 重建模式（`auto` 幂等 / `missing` 查漏补缺 / `force` 强制全量）
+    mode: VectorRebuildMode,
     /// 任务状态（Pending → Running → Completed/Failed）
     status: Mutex<TaskStatus>,
     /// 当前步骤编号（1-based，0 表示尚未开始）
     current_step: AtomicUsize,
-    /// 总步骤数（7 个实体）
+    /// 总步骤数（等于实体数，只重建技能时为 1）
     total_steps: usize,
     /// 当前步骤描述（人类可读）
     step_message: Mutex<String>,
@@ -44,14 +89,31 @@ pub struct RebuildVectorsTask {
 }
 
 impl RebuildVectorsTask {
-    /// 创建新的重建任务实例（状态为 Pending，尚未注册到 registry）
+    /// 创建全量重建任务（非强制，尊重幂等短路）。
+    ///
+    /// 这是「首次配置 embedding provider 后自动补齐存量」的入口：那时确实不该
+    /// 把已经新鲜的索引再算一遍。
     pub fn new(ctx: RequestContext) -> Self {
+        Self::with_scope(ctx, ALL_ENTITIES.to_vec(), VectorRebuildMode::Auto)
+    }
+
+    /// 创建限定范围的重建任务实例（状态为 Pending，尚未注册到 registry）
+    ///
+    /// `mode` 决定是否忽略各 DAL 的幂等短路、是否逐条比对补缺，语义见
+    /// [`VectorRebuildMode`]。
+    pub fn with_scope(
+        ctx: RequestContext,
+        entities: Vec<(&'static str, &'static str)>,
+        mode: VectorRebuildMode,
+    ) -> Self {
         Self {
             task_id: uuid::Uuid::new_v4().to_string(),
             ctx,
+            total_steps: entities.len(),
+            entities,
+            mode,
             status: Mutex::new(TaskStatus::Pending),
             current_step: AtomicUsize::new(0),
-            total_steps: 7,
             step_message: Mutex::new("等待开始".to_string()),
             progress: TaskProgressCounter::new(),
             started_at: chrono::Utc::now().timestamp_millis(),
@@ -134,22 +196,14 @@ impl BackgroundTask for RebuildVectorsTask {
         log_info!(
             &self.ctx,
             "rebuild_vectors",
-            "开始异步重建所有向量索引 task_id={}",
-            self.task_id
+            "开始异步重建向量索引 task_id={} mode={} entities={}",
+            self.task_id,
+            self.mode.as_str(),
+            self.entities.len()
         );
 
-        let entities: [(&str, &str); 7] = [
-            ("agent", "Agent"),
-            ("memory", "Memory"),
-            ("skill", "Skill"),
-            ("task", "Task"),
-            ("project", "Project"),
-            ("message", "Message"),
-            ("tool", "Tool"),
-        ];
-
         let result: Result<()> = async {
-            for (i, (entity, label)) in entities.iter().enumerate() {
+            for (i, (entity, label)) in self.entities.iter().enumerate() {
                 self.set_step(
                     i + 1,
                     &format!(
@@ -162,37 +216,37 @@ impl BackgroundTask for RebuildVectorsTask {
                 match *entity {
                     "agent" => {
                         dal::agent::dal()
-                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }
                     "memory" => {
                         dal::memory::dal()
-                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }
                     "skill" => {
                         dal::skill::dal()
-                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }
                     "task" => {
                         dal::task::dal()
-                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }
                     "project" => {
                         dal::project::dal()
-                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }
                     "message" => {
                         dal::message::dal()
-                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }
                     "tool" => {
                         dal::tool::dal()
-                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }
                     _ => {}
@@ -206,15 +260,18 @@ impl BackgroundTask for RebuildVectorsTask {
             Ok(()) => {
                 let v = serde_json::json!({
                     "rebuilt": true,
-                    "entities": 7,
+                    "entities": self.entities.len(),
                     "processed": self.progress.processed(),
+                    "mode": self.mode.as_str(),
                 });
                 self.set_completed(v.clone());
                 log_info!(
                     &self.ctx,
                     "rebuild_vectors",
-                    "异步重建所有向量索引完成 task_id={}",
-                    self.task_id
+                    "异步重建向量索引完成 task_id={} entities={} processed={}",
+                    self.task_id,
+                    self.entities.len(),
+                    self.progress.processed()
                 );
                 Ok(v)
             }
@@ -233,3 +290,7 @@ impl BackgroundTask for RebuildVectorsTask {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "rebuild_vectors_task_tests.rs"]
+mod tests;

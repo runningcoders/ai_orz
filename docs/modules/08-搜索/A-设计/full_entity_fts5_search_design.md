@@ -105,7 +105,7 @@ DAO（原子搜索层）
 | [src/service/dao/project/sqlite.rs](../../src/service/dao/project/sqlite.rs) | Project FTS5 + 向量 | 新增 search_projects；ProjectVectorDao；Vectorizable 实现 |
 | [src/service/dao/agent/sqlite.rs](../../src/service/dao/agent/sqlite.rs) | Agent FTS5 + 向量 | 新增 search_agents；AgentVectorDao；Vectorizable 实现 |
 | **DAL 层（混合搜索）** | | |
-| [src/service/dal/skill.rs](../../src/service/dal/skill.rs) | Skill 混合 | 补全 MatchType 三态；综合排序 Hybrid→Vector→Keyword |
+| [src/service/dal/skill/mod.rs](../../src/service/dal/skill/mod.rs) | Skill 混合 | 补全 MatchType 三态；综合排序 Hybrid→Vector→Keyword |
 | [src/service/dal/tool.rs](../../src/service/dal/tool.rs) | Tool 混合 | 同上 |
 | [src/service/dal/message.rs](../../src/service/dal/message.rs) | Message 混合 | 新增 search() 混合方法 |
 | [src/service/dal/task.rs](../../src/service/dal/task.rs) | Task 混合 | 同上 |

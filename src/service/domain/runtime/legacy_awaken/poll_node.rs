@@ -126,7 +126,12 @@ async fn run_poll(deps: &AwakenDeps, kind: PollKind, bus: &mut ThinkBus) -> Resu
         )
     };
 
-    let batch = collect(&deps.ctx, &anchor, &cursor).await?;
+    // 注入预算按模型上下文容量的占比派生（容量未配 ⇒ 不设预算）
+    let inbox_budget = crate::service::domain::runtime::text_budget::tokens_of(
+        crate::service::domain::runtime::think_loop::context_overflow_threshold(&deps.agent),
+        crate::service::domain::runtime::text_budget::share::INBOX_BATCH_BP,
+    );
+    let batch = collect(&deps.ctx, &anchor, &cursor, inbox_budget).await?;
     if batch.is_empty() {
         return Ok(match kind {
             PollKind::Front => NodeOutcome::new(NodeSignal::Done),

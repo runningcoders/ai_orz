@@ -28,7 +28,10 @@ fn chain_metrics_capture_long_tool_chain_with_short_reply() {
     let m = measure_turn_chain(&messages, 2, "帮我查一下", "查到了");
     assert_eq!(m.rounds_used, 2);
     assert_eq!(m.tool_calls, 2);
-    assert_eq!(m.tool_result_chars, 2800);
+    assert_eq!(
+        m.tool_result_tokens, 2800,
+        "1400 个 CJK 字 × 2 条 = 2800 token"
+    );
     // System 人设 / User 通用上下文是每轮重拼的样板，绝不能计入
     assert!(m.turn_tokens < 20, "首尾文本很短：{m:?}");
 }
@@ -47,7 +50,7 @@ fn compaction_policy_hits_chain_even_when_reply_is_short() {
         },
     ];
     let chain = measure_turn_chain(&messages, 2, "帮我查一下", "查到了");
-    let hits = compaction_policy_for(1024).evaluate(&chain.into_policy_metrics());
+    let hits = compaction_policy_for(1024, 1_200).evaluate(&chain.into_policy_metrics());
     assert!(
         hits.iter().any(|h| h == "compaction_chain"),
         "工具链应命中链路策略，实际 hits={hits:?}"
@@ -60,7 +63,7 @@ fn compaction_policy_hits_chain_even_when_reply_is_short() {
 fn compaction_policy_keeps_short_chit_chat_on_quick_turn() {
     let chain = measure_turn_chain(&[], 0, "你好", "你好，我是助手");
     assert!(
-        compaction_policy_for(1024)
+        compaction_policy_for(1024, 1_200)
             .evaluate(&chain.into_policy_metrics())
             .is_empty()
     );
@@ -70,7 +73,7 @@ fn compaction_policy_keeps_short_chit_chat_on_quick_turn() {
 #[test]
 fn compaction_policy_still_hits_on_very_long_reply() {
     let chain = measure_turn_chain(&[], 0, "请写一篇长文", &"很长".repeat(600));
-    let hits = compaction_policy_for(1024).evaluate(&chain.into_policy_metrics());
+    let hits = compaction_policy_for(1024, 1_200).evaluate(&chain.into_policy_metrics());
     assert!(hits.iter().any(|h| h == "compaction_threshold"));
 }
 
@@ -79,7 +82,7 @@ fn compaction_policy_still_hits_on_very_long_reply() {
 fn compaction_policy_hits_on_many_rounds_without_tools() {
     let chain = measure_turn_chain(&[], 3, "再想想", "好了");
     assert_eq!(chain.tool_calls, 0);
-    let hits = compaction_policy_for(1024).evaluate(&chain.into_policy_metrics());
+    let hits = compaction_policy_for(1024, 1_200).evaluate(&chain.into_policy_metrics());
     assert!(hits.iter().any(|h| h == "compaction_chain"));
 }
 
@@ -134,7 +137,7 @@ fn compact_instruction_with_user_reply_demands_marker() {
 /// 它是跳过压缩后下一轮唤醒能看到的唯一上下文，任一侧丢失都会断片。
 #[test]
 fn quick_turn_summary_keeps_both_sides() {
-    let s = build_quick_turn_summary("  你好  ", " 你好，我是助手 ").expect("非空");
+    let s = build_quick_turn_summary("  你好  ", " 你好，我是助手 ", Some(1_200)).expect("非空");
     assert_eq!(s, "用户：你好\n助手：你好，我是助手");
 }
 
@@ -146,7 +149,7 @@ fn quick_turn_summary_keeps_both_sides() {
 fn quick_turn_summary_keeps_short_turn_verbatim() {
     let user: String = (0..300).map(|_| '问').collect();
     let reply: String = (0..80).map(|_| '答').collect();
-    let s = build_quick_turn_summary(&user, &reply).expect("非空");
+    let s = build_quick_turn_summary(&user, &reply, Some(1_200)).expect("非空");
     assert_eq!(s, format!("用户：{user}\n助手：{reply}"));
     assert!(!s.ends_with('…'), "阈值内不应截断: {s}");
 }
@@ -157,21 +160,67 @@ fn quick_turn_summary_keeps_short_turn_verbatim() {
 /// 不让一条原文长期占用后续 ~20 轮 prompt 预算。
 #[test]
 fn quick_turn_summary_caps_extremely_long_turn() {
-    let long: String = (0..QUICK_TURN_HARD_CAP_CHARS + 50).map(|_| '字').collect();
-    let s = build_quick_turn_summary(&long, "").expect("非空");
+    let cap = quick_turn_hard_cap_tokens(Some(200_000)).expect("容量已配");
+    let long: String = (0..cap + 50).map(|_| '字').collect();
+    let s = build_quick_turn_summary(&long, "", Some(cap)).expect("非空");
     assert!(s.starts_with("用户："));
     assert!(s.ends_with('…'), "超硬上限应带省略号: {s}");
     assert!(!s.contains('\n'), "没有回复时不应出现助手行");
-    // 截断按字符而非字节：中文不能切在半个字上
+    // 截断按 token 而非字符/字节：整段落进预算内，且中文不切在半个字上
+    assert!(estimate_tokens(&s) <= cap, "截后必须落在硬上限内: {s}");
+    assert!(s.chars().count() < long.chars().count());
+}
+
+/// 硬上限随 provider 容量变（同一会话换两个容量的 provider ⇒ 预算不同）
+#[test]
+fn quick_turn_cap_follows_provider_capacity() {
+    assert_eq!(quick_turn_hard_cap_tokens(Some(200_000)), Some(1_200));
+    assert_eq!(quick_turn_hard_cap_tokens(Some(64_000)), Some(384));
+    assert_ne!(
+        quick_turn_hard_cap_tokens(Some(200_000)),
+        quick_turn_hard_cap_tokens(Some(64_000))
+    );
     assert_eq!(
-        s.chars().count(),
-        "用户：".chars().count() + QUICK_TURN_HARD_CAP_CHARS / 2 + 1
+        quick_turn_hard_cap_tokens(None),
+        None,
+        "容量未配 ⇒ 不裁（不猜兜底值）"
+    );
+}
+
+/// 判据语义：阈值与「原文记账装不下」同源，且**量纲是 token**
+///
+/// 改前按字符比：1200 个英文只算 1200「字符量」⇒ 撞不到阈值，判据说「装得下」，
+/// 而实际上（按 token 记）它只占账本的 1/4。改后中英各一条边界都判得对。
+#[test]
+fn chain_tool_threshold_is_token_not_chars() {
+    let thr = compaction_chain_min_tool_tokens(Some(200_000));
+    assert_eq!(thr, 1_200);
+
+    let cjk = vec![ChatMessage::Tool {
+        tool_call_id: "t".into(),
+        content: "字".repeat(1_200),
+    }];
+    let m = measure_turn_chain(&cjk, 1, "问", "答");
+    assert_eq!(m.tool_result_tokens, 1_200);
+    let hits = compaction_policy_for(1_000_000, thr).evaluate(&m.into_policy_metrics());
+    assert!(hits.iter().any(|h| h == "compaction_chain"), "CJK 应命中");
+
+    let latin = vec![ChatMessage::Tool {
+        tool_call_id: "t".into(),
+        content: "a".repeat(1_200),
+    }];
+    let m2 = measure_turn_chain(&latin, 1, "问", "答");
+    assert_eq!(m2.tool_result_tokens, 300);
+    let hits2 = compaction_policy_for(1_000_000, thr).evaluate(&m2.into_policy_metrics());
+    assert!(
+        !hits2.iter().any(|h| h == "compaction_chain"),
+        "同样 1200 个英文只有 300 token，不该命中"
     );
 }
 
 #[test]
 fn quick_turn_summary_rejects_all_empty() {
-    assert!(build_quick_turn_summary("   ", "\n").is_none());
+    assert!(build_quick_turn_summary("   ", "\n", None).is_none());
 }
 
 /// 中文按 1 token/字，英文按 4 字符/token，混合文本逐类累加

@@ -311,13 +311,13 @@ fn cursor_uses_id_tie_break_and_limits() {
             )
         })
         .collect();
-    let batch = take_batch(&a, &cursor, rows);
+    let batch = take_batch(&a, &cursor, rows, None);
     assert_eq!(batch.len(), MAX_INJECTED_MESSAGES);
     assert_eq!(batch.last().unwrap().id, "m4");
 }
 
 #[test]
-fn char_budget_skips_oversized_without_blocking_later() {
+fn token_budget_skips_oversized_without_blocking_later() {
     let a = anchor(MessageRole::User, None, None, None, MessageType::Text);
     let cursor = default_cursor();
     let rows = vec![
@@ -359,16 +359,42 @@ fn char_budget_skips_oversized_without_blocking_later() {
             &"z".repeat(400),
         ),
     ];
-    let batch = take_batch(&a, &cursor, rows);
+    // 预算 500 token：m1 375 + m2 625 装不下 ⇒ 跳过 m2；m1 375 + m3 100 刚好装得下
+    let batch = take_batch(&a, &cursor, rows, Some(500));
     let ids: Vec<&str> = batch.iter().map(|item| item.id.as_str()).collect();
-    assert_eq!(ids, vec!["m1", "m3"], "超长单条被跳过，后续短消息仍应吸收");
+    assert_eq!(
+        ids,
+        vec!["m1", "m3"],
+        "超预算单条被跳过，后续短消息仍应吸收"
+    );
     assert_eq!(
         batch
             .iter()
-            .map(|i| i.content.chars().count())
+            .map(|i| estimate_tokens(&i.content))
             .sum::<usize>(),
-        1900
+        475
     );
+}
+
+/// 预算未配置 ⇒ 不裁（不猜兜底值）
+#[test]
+fn unknown_token_budget_keeps_every_message() {
+    let a = anchor(MessageRole::User, None, None, None, MessageType::Text);
+    let cursor = default_cursor();
+    let rows = vec![message(
+        "big",
+        1001,
+        "sender-1",
+        MessageRole::User,
+        None,
+        None,
+        None,
+        MessageType::Text,
+        None,
+        &"x".repeat(100_000),
+    )];
+    let batch = take_batch(&a, &cursor, rows, None);
+    assert_eq!(batch.len(), 1, "无预算时不得因体量跳过");
 }
 
 /// 续跑标记只被 PrepareNode 消费一次，避免压缩回环误走追加路径

@@ -15,6 +15,7 @@ use crate::service::dao::message::{
 };
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::organization::OrganizationDao;
+use common::enums::VectorRebuildMode;
 use common::enums::{EventTopic, MessageRole, MessageStatus, MessageType};
 use common::error::Result;
 use std::collections::HashMap;
@@ -231,6 +232,7 @@ pub trait MessageDal: Send + Sync {
         &self,
         ctx: RequestContext,
         progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: VectorRebuildMode,
     ) -> Result<()>;
 }
 
@@ -612,6 +614,7 @@ impl MessageDal for MessageDalImpl {
         &self,
         ctx: RequestContext,
         progress: &TaskProgressCounter,
+        _mode: VectorRebuildMode,
     ) -> Result<()> {
         // 清空全部 message 向量：天然让“关闭开关的 org”无残留（已被清、不重建）
         self.message_vector_dao

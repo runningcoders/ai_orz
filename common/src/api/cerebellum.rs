@@ -20,7 +20,7 @@
 //! - 请求 = `{"model", "state", "questions": {qid: {"type","instructions","criteria"}}}`
 //! - 响应 = `{"model", "answers": {qid: {...}}, "usage": {"input_tokens","output_tokens"}}`
 //! - choice：criteria 为选项对象（≤255 项），输出 {type,choice,confidence,probabilities}
-//! - score：criteria 为有序等级数组（2~10 级），输出
+//! - score：criteria 为有序等级数组（2~255 级，建议 3~7 级），输出
 //!   {type,score,probabilities,legend,confidence}；legend 为「等级序号 → 描述」对象
 //! - noul：instructions + 可选 {true,false} 判据对象，输出 {type,noul}（0~1 概率，无 confidence）
 
@@ -34,7 +34,46 @@ pub const MAX_CHOICE_OPTIONS: usize = 255;
 /// score 问题等级数下限（协议边界）
 pub const MIN_SCORE_LEVELS: usize = 2;
 /// score 问题等级数上限（协议边界）
-pub const MAX_SCORE_LEVELS: usize = 10;
+///
+/// **官方口径是 2–255 级**（阿里百炼《决策模型 API》原文：「score：从低到高的
+/// 等级描述数组（2–255 级，建议 3–7 级且每级可清晰区分）」）。旧值 10 是 jev
+/// 早期公开口径的残留，接入百炼后已对齐到 255；平台自身不校验「建议 3–7 级」
+/// 这条软建议（那是给用户的提示，不是协议边界）。
+pub const MAX_SCORE_LEVELS: usize = 255;
+
+/// score 题协议原值 → 0~1 单位刻度（**唯一量纲换算点**）
+///
+/// ⚠️ `score` 是**服务端已经判断完的连续值**（官方称「概率加权分数」，即各等级
+/// 概率已由服务端合成一个数，可落在两级之间）。实测 11 级题返回 `score=6.95`，
+/// 用响应里的 `probabilities` 手算期望 = 6.90（差 0.05 纯舍入）——
+/// **客户端不要再加权一次**，否则等于把同一个判断算两遍。
+///
+/// 但这个值**不是 0~1，也不是 0~255**，而是 **0-based 等级序号**的加权期望：
+///
+/// | 等级数 | 同一输入返回的 score | 值域 |
+/// |---|---|---|
+/// | 3 | 1.27 | 0~2 |
+/// | 11 | 6.95（语义等级）/ 3.98（裸数字等级） | 0~10 |
+/// | 101 | 31.38 | 0~100 |
+///
+/// 量纲由**本轮等级数**决定，分母必须是 `level_count - 1`（最大序号），
+/// 不能写死 255 —— 255 是**等级数上限**（[`MAX_SCORE_LEVELS`]），不是分数量纲。
+/// 固定 /255 会让 11 级题的满分只换算出 3.9 分，业务上限也永远差 1/255。
+///
+/// 映射到任意业务上限 `upper` 只需再乘一次：`score_to_unit(..)? * upper`。
+/// 例：255 级判断出 150 → 150/254 → `upper=100` 得 59.1；
+/// 11 级判断出 6.95 → 6.95/10 → 得 69.5。**等级数怎么选、业务上限定多少，
+/// 两边靠这一次线性缩放解耦**，不必人为凑档位。
+///
+/// 越界（服务端偶发 `probabilities` 之和 ≠ 1 导致 score 略超值域）夹紧到 0~1；
+/// 等级数非法 / 非有限值返回 `None`，调用方必须当「没结论」，
+/// 禁止 `unwrap_or_default()` 压成 0 分。
+pub fn score_to_unit(score: f32, level_count: usize) -> Option<f32> {
+    if !(MIN_SCORE_LEVELS..=MAX_SCORE_LEVELS).contains(&level_count) || !score.is_finite() {
+        return None;
+    }
+    Some((score / (level_count - 1) as f32).clamp(0.0, 1.0))
+}
 
 /// System One 问题类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,7 +83,7 @@ pub enum QuestionType {
     Noul,
     /// 单选：从 ≤255 个选项中选出一项，输出带各选项概率
     Choice,
-    /// 打分：2~10 级有序等级，输出概率加权分数
+    /// 打分：2~255 级有序等级，输出等级序号的概率加权分数（见 [`score_to_unit`]）
     Score,
 }
 
@@ -55,7 +94,7 @@ pub enum QuestionCriteria {
     /// 对象形态：choice 为选项映射（键=选项标识，值=描述，≤255 项）；
     /// noul 为判据映射（键仅限 `true` / `false`）
     Choices(BTreeMap<String, String>),
-    /// score：有序等级数组（从低到高），2~10 级
+    /// score：有序等级数组（从低到高），2~255 级（官方口径；建议 3~7 级）
     Levels(Vec<String>),
 }
 
@@ -116,7 +155,7 @@ impl CerebellumQuestion {
                     if v.len() < MIN_SCORE_LEVELS || v.len() > MAX_SCORE_LEVELS {
                         return Err(err!(
                             ConfigInvalid,
-                            "score criteria must have 2..=10 levels, got {}",
+                            "score criteria must have 2..=255 levels, got {}",
                             v.len()
                         ));
                     }
@@ -168,9 +207,12 @@ pub enum CerebellumAnswer {
         /// 各选项的概率分布（键 = 选项标识）
         probabilities: BTreeMap<String, f32>,
     },
-    /// score：概率加权分数（可落在两级之间）
+    /// score：服务端已判断完的连续分数（可落在两级之间）
     Score {
-        /// 概率加权分数（可落在两级之间，不一定是整数）
+        /// **0-based 等级序号**的概率加权期望，值域 `[0, levels.len()-1]`，
+        /// 不是 0~1、也不是 0~255。换算口径见 [`score_to_unit`]。
+        ///
+        /// 加权已由服务端完成，客户端**不要**拿 `probabilities` 再算一遍。
         score: f32,
         /// 各等级的概率分布
         probabilities: BTreeMap<String, f32>,

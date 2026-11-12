@@ -30,6 +30,9 @@ use tokio::sync::RwLock;
 
 use super::{VectorMaintenanceOptions, VectorMaintenanceReport};
 
+/// 集合口径章的 sidecar 文件名（与 LanceDB 表存放在同一目录）
+const COLLECTION_META_FILE: &str = "collection_meta.json";
+
 /// LanceDB 向量存储
 ///
 /// 基于 LanceDB 的高性能向量数据库
@@ -37,6 +40,15 @@ use super::{VectorMaintenanceOptions, VectorMaintenanceReport};
 pub struct LanceVectorStore {
     db: Connection,
     tables: Arc<RwLock<HashMap<String, Arc<Table>>>>,
+    /// 口径章持久化目录（`collection_meta.json` 落在这里）
+    base_path: std::path::PathBuf,
+    /// 集合 → 口径标识（`{provider_id}#vt{N}`）
+    ///
+    /// LanceDB 的表 schema 里没有「整个集合是谁算的」这种集合级信息，而
+    /// `rebuild_vectors` 的幂等短路 / 查漏补缺都要判断它。此前该接口走 trait 默认
+    /// 实现（恒 `None` + 写入 no-op），意味着**默认后端上口径比较永远不成立**：
+    /// 每次都整体重建，「查漏补缺」也退化成全量重算。所以这里落一个 sidecar JSON。
+    collection_meta: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl std::fmt::Debug for LanceVectorStore {
@@ -48,23 +60,44 @@ impl std::fmt::Debug for LanceVectorStore {
 }
 
 impl LanceVectorStore {
+    /// 把口径章整体覆盖写入 sidecar（先写临时文件再 rename，避免半截 JSON）
+    fn persist_collection_meta(
+        base_path: &std::path::Path,
+        meta: &HashMap<String, String>,
+    ) -> std::io::Result<()> {
+        let path = base_path.join(COLLECTION_META_FILE);
+        let tmp = base_path.join(format!("{COLLECTION_META_FILE}.tmp"));
+        let raw = serde_json::to_vec_pretty(meta)
+            .map_err(|e| std::io::Error::other(format!("序列化 collection_meta 失败: {e}")))?;
+        std::fs::write(&tmp, raw)?;
+        std::fs::rename(&tmp, &path)?;
+        Ok(())
+    }
+
     /// 创建新的 LanceDB 向量存储
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
         let base_path = base_path.as_ref().to_path_buf();
         std::fs::create_dir_all(&base_path)?;
 
+        // 口径章先读：sidecar 缺失/损坏都退化为空表（下次重建会重新盖章）
+        let collection_meta = std::fs::read_to_string(base_path.join(COLLECTION_META_FILE))
+            .ok()
+            .and_then(|raw| serde_json::from_str::<HashMap<String, String>>(&raw).ok())
+            .unwrap_or_default();
+
         // 使用 block_in_place 执行异步初始化
+        let connect_path = base_path.to_string_lossy().to_string();
         let db = tokio::task::block_in_place(move || {
-            tokio::runtime::Handle::current().block_on(async move {
-                let path_str = base_path.to_str().unwrap_or_default();
-                connect(path_str).execute().await
-            })
+            tokio::runtime::Handle::current()
+                .block_on(async move { connect(&connect_path).execute().await })
         })
         .map_err(|e| common::error::Error::internal(format!("LanceDB connect error: {}", e)))?;
 
         Ok(Self {
             db,
             tables: Arc::new(RwLock::new(HashMap::new())),
+            base_path,
+            collection_meta: Arc::new(RwLock::new(collection_meta)),
         })
     }
 
@@ -382,6 +415,27 @@ fn parse_lance_batch(batch: &RecordBatch) -> Option<Vec<(VectorRow, Option<f32>)
 
 #[async_trait]
 impl super::VectorStore for LanceVectorStore {
+    async fn get_collection_model_provider_id(&self, collection: &str) -> Result<Option<String>> {
+        Ok(self.collection_meta.read().await.get(collection).cloned())
+    }
+
+    async fn set_collection_model_provider_id(
+        &self,
+        collection: &str,
+        model_provider_id: &str,
+    ) -> Result<()> {
+        let snapshot = {
+            let mut meta = self.collection_meta.write().await;
+            meta.insert(collection.to_string(), model_provider_id.to_string());
+            meta.clone()
+        };
+        // 口径章丢了只会导致「多一次全量重建」（安全侧），不必让调用方因写盘失败而中断
+        if let Err(_e) = Self::persist_collection_meta(&self.base_path, &snapshot) {
+            log_warn!("LanceDB collection_meta 落盘失败（仅影响下次重建开销）");
+        }
+        Ok(())
+    }
+
     async fn init_collection(&self, collection: &str, dimensions: i32) -> Result<()> {
         // 初始化表（如果不存在则创建）
         self.get_or_create_table(collection, dimensions).await?;

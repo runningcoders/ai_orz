@@ -1,9 +1,14 @@
-//! 方法技能精选（同 tag 已发布候选 → 小脑一次 Pick 全序 → 阈值截断 → 渲染预算）
+//! 方法技能精选（关键词宽召回候选 → 小脑一次 Pick 全序 → 阈值截断 → 渲染预算）
 //!
-//! 老路径：`thinking_method` 已发布技能按「description 与新词词面重叠」布尔排序取
-//! 前 [`METHOD_SKILLS_TOP_K`](super::retrieve_node::METHOD_SKILLS_TOP_K) 条。词面重叠
-//! 只回答「描述里有没有提到这个词」，回答不了「这一条该不该用」——而技能描述写的
-//! 正是「什么时候用这个技能」，这是模型比字符串匹配擅长的判断。
+//! 候选由 `retrieve_node` 用与知识同一份意图关键词做 FTS5 + 向量混合搜索得到
+//! （`thinking_method` 只作召回序优先项、不作硬过滤）。此前按单一 tag 全量拉，
+//! 生产库该 tag 下只有 1 条已发布技能 ⇒ 排序形态的 `options.len() < 2` 恒真、
+//! 精选永远零调用，看板上一片 fallback。
+//!
+//! 老路径：按召回序（BM25 / 综合相关度）取前
+//! [`METHOD_SKILLS_TOP_K`](super::retrieve_node::METHOD_SKILLS_TOP_K) 条。召回序只
+//! 回答「词面/语义像不像」，回答不了「这一条该不该用」——而技能描述写的正是
+//! 「什么时候用这个技能」，这是模型比排序更擅长的判断。
 //!
 //! # 形态复用
 //!
@@ -20,14 +25,16 @@
 //! # 降级口径
 //!
 //! 关闭开关、无小脑、超时、答案缺失、模型编造 id —— 一律返回 `None`，调用方退回
-//! 「词面重叠优先 + 稳定排序」取前 2（= 老路径）。精选是增强，不是闸门。
+//! 「按召回序取前 2」（= 老路径）。精选是增强，不是闸门。
+//! `rank` 额外返回**分列**的降级原因供轨迹留痕，调用方不得再自行折叠。
 
-use super::retrieve_node::truncate_chars;
 use crate::models::brain::Brain;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Candidate, KEY_CANDIDATES, KEY_QUESTION, Metrics, Policy, RankPolicy};
 use crate::service::dal::brain::{BrainDal, dal};
+use crate::service::domain::runtime::cerebellum_context;
+use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -37,11 +44,8 @@ pub(crate) const SCENE: &str = "skill_relevance";
 /// 权重阈值：低于此值视为不适用（被模型选中的那条无论如何保留）
 pub(crate) const WEIGHT_THRESHOLD: f32 = 0.08;
 
-/// 单条候选进判据的字符上限（技能描述通常一两句话，截断只为守住输入体积）
-const SNIPPET_CHARS: usize = 160;
-
 /// 重排判据（prompt 存调用方，服务端不持有）
-const RANK_INSTRUCTIONS: &str = "下面每条候选是一个可用的方法技能，描述里写的是「什么时候该用这个技能」。\
+const RANK_INSTRUCTIONS: &str = "下面每条候选是一个可用的技能，描述里写的是「什么时候该用这个技能」。\
 请判断哪一条最适合解决当前问题。你的判断会按各选项概率从高到低决定保留哪些技能，\
 因此请让明显无关的技能概率尽量低；若一条都不适用，请把所有选项概率都给得很低。";
 
@@ -53,7 +57,7 @@ fn policy(keep: usize) -> RankPolicy {
     RankPolicy::new(
         SCENE,
         "方法技能精选",
-        "已发布方法技能 ≥ 2 条且小脑可用时按适用性重排",
+        "关键词召回的已发布技能 ≥ 2 条且小脑可用时按适用性重排",
         RANK_INSTRUCTIONS,
         WEIGHT_THRESHOLD,
         keep,
@@ -64,9 +68,15 @@ fn policy(keep: usize) -> RankPolicy {
 ///
 /// 三个字段都是技能的「可判别面」：`description` 是「什么时候用」，
 /// `category` 给出领域归属，`name` 兜底标识同一族的不同粒度。
-fn snippet(s: &SkillPo) -> String {
+fn snippet(s: &SkillPo, snippet_tokens: Option<usize>) -> String {
     let mut text = s.name.trim().to_string();
-    let desc = truncate_chars(s.description.trim(), SNIPPET_CHARS);
+    // 描述正文按 token 预算截断（`share::SNIPPET_BP` × 输入预算）；
+    // 容量未配置 ⇒ 不截断。名称 / 分类不吃这段预算（它们是判别面，不是正文）。
+    let desc = s.description.trim();
+    let desc = match snippet_tokens {
+        Some(budget) => truncate_to_tokens(desc, budget, ""),
+        None => desc.to_string(),
+    };
     if !desc.is_empty() {
         if !text.is_empty() {
             text.push('：');
@@ -87,26 +97,31 @@ fn snippet(s: &SkillPo) -> String {
 }
 
 /// 候选 → 决策视图（保持召回序；空判据直接丢弃，不占选项位）
-fn candidate_views(skills: &[SkillPo]) -> Vec<Candidate> {
+fn candidate_views(skills: &[SkillPo], snippet_tokens: Option<usize>) -> Vec<Candidate> {
     skills
         .iter()
         .filter_map(|s| {
             let id = s.id.trim();
-            let text = snippet(s);
+            let text = snippet(s, snippet_tokens);
             (!id.is_empty() && !text.is_empty()).then(|| Candidate::new(id, text))
         })
         .collect()
 }
 
 /// 本场景的事实桶（问题 + 候选）
-fn facts(question: &str, skills: &[SkillPo]) -> Metrics {
-    let views = candidate_views(skills);
+fn facts(question: &str, skills: &[SkillPo], snippet_tokens: Option<usize>) -> Metrics {
+    let views = candidate_views(skills, snippet_tokens);
     Metrics::new()
         .with(KEY_QUESTION, question)
         .with(KEY_CANDIDATES, views)
 }
 
 /// 生产入口：一次决策 → 精选后的技能（`None` = 保持老路径）
+///
+/// 返回 `(精选结果, 真实调用耗时, 降级原因)`，第三项专供轨迹留痕，`None` =
+/// 正常出结论。此前调用方只看 `ranked.is_none()`，把「候选不足 / 配额耗尽 /
+/// 调用失败 / 答案不可用」一刀切记成 `no_usable_answer`，看板上全是「无可用答案」，
+/// 实际其中大部分连请求都没发出去。
 pub(crate) async fn rank(
     ctx: &RequestContext,
     dal: Arc<dyn BrainDal>,
@@ -114,14 +129,33 @@ pub(crate) async fn rank(
     question: &str,
     skills: &[SkillPo],
     keep: usize,
-) -> Option<Vec<SkillPo>> {
+) -> (Option<Vec<SkillPo>>, Option<u64>, Option<String>) {
     let policy = policy(keep);
-    let metrics = facts(question, skills);
+    let snippet_tokens =
+        cerebellum_context::snippet_budget(brain, cerebellum_context::share::SNIPPET_BP);
+    let metrics = facts(question, skills, snippet_tokens);
 
     // 阶段一：策略声明要问什么（纯函数，未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
     if requests.is_empty() {
-        return None;
+        // 续-3：被丢弃的请求必须留痕。候选不足 2 条属常态 ⇒ info（warn 会刷屏）。
+        // `usable` 直接读事实桶里已过滤好的选项数，零重算。
+        let usable = metrics
+            .get_as::<Vec<Candidate>>(KEY_CANDIDATES)
+            .map_or(0, |v| v.len());
+        let dropped = skills.len().saturating_sub(usable);
+        log_info!(
+            ctx,
+            "skill_relevance",
+            decision = "empty_requests",
+            scene = SCENE,
+            candidates = skills.len(),
+            usable = usable,
+            dropped = dropped,
+            keep = keep,
+            "skill rerank asked nothing, keep original order"
+        );
+        return (None, None, Some("empty_requests".to_string()));
     }
 
     // 本 run 的调用配额（上限 = resolved 大脑轮次）：超限静默走原逻辑
@@ -134,17 +168,20 @@ pub(crate) async fn rank(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        return None;
+        return (None, None, Some("budget_exhausted".to_string()));
     }
 
     // 阶段二：唯一 async 点
     let candidate_count = skills.len();
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
     let input_tokens = outcome.usage.input_tokens;
     let output_tokens = outcome.usage.output_tokens;
 
     if let Some(reason) = outcome.degraded {
+        let reason = reason.as_str().to_string();
         log_info!(
             ctx,
             "skill_relevance",
@@ -155,7 +192,7 @@ pub(crate) async fn rank(
             latency_ms = latency_ms,
             "skill rerank degraded"
         );
-        return None;
+        return (None, traced_latency_ms, Some(reason));
     }
 
     // 阶段三：答案注入事实桶，形态负责排序与截断
@@ -170,7 +207,11 @@ pub(crate) async fn rank(
             latency_ms = latency_ms,
             "skill rerank produced no usable answer"
         );
-        return None;
+        return (
+            None,
+            traced_latency_ms,
+            Some("no_usable_answer".to_string()),
+        );
     };
 
     let by_id: HashMap<&str, &SkillPo> = skills.iter().map(|s| (s.id.as_str(), s)).collect();
@@ -179,6 +220,7 @@ pub(crate) async fn rank(
         .filter_map(|id| by_id.get(id.as_str()).copied())
         .cloned()
         .collect();
+    let has_result = !kept.is_empty();
 
     log_info!(
         ctx,
@@ -192,7 +234,11 @@ pub(crate) async fn rank(
         output_tokens = output_tokens,
         "skill rerank selected"
     );
-    (!kept.is_empty()).then_some(kept)
+    (
+        has_result.then_some(kept),
+        traced_latency_ms,
+        (!has_result).then(|| "no_usable_answer".to_string()),
+    )
 }
 
 /// 单例 DAL 的生产封装
@@ -202,7 +248,7 @@ pub(crate) async fn rank_with_default_dao(
     question: &str,
     skills: &[SkillPo],
     keep: usize,
-) -> Option<Vec<SkillPo>> {
+) -> (Option<Vec<SkillPo>>, Option<u64>, Option<String>) {
     rank(ctx, dal(), brain, question, skills, keep).await
 }
 

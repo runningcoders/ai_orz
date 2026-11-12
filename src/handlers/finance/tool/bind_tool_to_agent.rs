@@ -27,8 +27,9 @@ pub async fn bind_tool_to_agent(
             common::error::Error::not_found(format!("Tool {} not found", params.tool_id))
         })?;
 
-    let ctx = ctx.to_builder().agent_id(&params.agent_id).build();
-
+    // ⚠️ 不要把 ctx 改写成目标 `agent_id`：domain 内部自己会改写一次，且
+    // 「Agent 只能绑给自己」的归属校验依赖**改写前**的 caller agent_id。
+    // 这里提前改写会让 domain 把目标误当调用者，封堵恒真失效。
     domain()
         .tool_provider_manage()
         .bind_tool_to_agent(ctx, &params.agent_id, &params.tool_id)

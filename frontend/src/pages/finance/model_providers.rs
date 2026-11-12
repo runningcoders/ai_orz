@@ -248,7 +248,7 @@ pub fn FinanceModelProviders() -> Element {
     let handle_rebuild_confirm = move |_| {
         show_rebuild_prompt.set(false);
         spawn(async move {
-            match rebuild_vectors_and_wait(|_| {}).await {
+            match rebuild_vectors_and_wait(Default::default(), |_| {}).await {
                 Ok(()) => toast.success("向量索引重建完成"),
                 Err(e) => toast.error(format!("向量索引重建失败：{}", e)),
             }
@@ -500,7 +500,7 @@ pub fn FinanceModelProviders() -> Element {
                                 _ => {}
                             }
                         },
-                        // 类型选项按能力过滤：Jev 仅决策、向量专用端点仅 Embedding
+                        // 类型选项按能力过滤：决策组允许 Jev / Qwen、向量专用端点仅 Embedding
                         if is_agent_cap {
                             option { value: "openai", "OpenAI" }
                             option { value: "custom", "OpenAI 兼容" }
@@ -521,6 +521,7 @@ pub fn FinanceModelProviders() -> Element {
                         }
                         if is_decision_cap {
                             option { value: "jev", "Jev（小脑决策模型）" }
+                            option { value: "qwen", "通义千问" }
                         }
                     }
                 }
@@ -538,7 +539,16 @@ pub fn FinanceModelProviders() -> Element {
                                 // 能力 → 类型纠正：切到决策锁定 Jev；切出决策时 Jev 必须让位；
                                 // 向量专用端点（DoubaoVision/FastEmbed）在 Agent 下非法
                                 match ModelCapability::from_i32(v) {
-                                    ModelCapability::Decision => provider_type.set(ProviderType::Jev),
+                                    // 决策能力允许 Jev 或 Qwen 两种提供方：仅当当前类型两者都不是时才锁回 Jev。
+                                    // 旧形态无条件 set，会把用户已选的 Qwen 在切回决策能力时立刻覆盖掉。
+                                    ModelCapability::Decision => {
+                                        if !matches!(
+                                            provider_type(),
+                                            ProviderType::Jev | ProviderType::Qwen
+                                        ) {
+                                            provider_type.set(ProviderType::Jev);
+                                        }
+                                    }
                                     ModelCapability::Embedding => {
                                         if provider_type() == ProviderType::Jev {
                                             provider_type.set(ProviderType::OpenAI);
@@ -946,5 +956,101 @@ mod batch5_p2_tests {
         );
         // 类型选项按能力分组过滤：决策组恰 1，Embedding 组至少 1
         assert_eq!(code.matches("if is_decision_cap {").count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod decision_provider_option_tests {
+    /// 按 rsx 条件组切块：从命中 `cond` 的行起累计花括号直到配平归零。
+    /// 断言只在切片内做，避免「全文件 contains」被前两组同名 option 命中造成假绿。
+    fn rsx_group_block(code: &str, cond: &str) -> String {
+        let mut depth: i32 = 0;
+        let mut started = false;
+        let mut out = String::new();
+        for line in code.lines() {
+            if !started {
+                if line.contains(cond) {
+                    started = true;
+                } else {
+                    continue;
+                }
+            }
+            out.push_str(line);
+            out.push('\n');
+            depth += line.matches('{').count() as i32;
+            depth -= line.matches('}').count() as i32;
+            if depth == 0 {
+                break;
+            }
+        }
+        assert!(started, "未找到分组锚点：{cond}");
+        assert_eq!(depth, 0, "分组未闭合：{cond}");
+        out
+    }
+
+    /// 把搜索范围限定在「类型选项」下拉内部，不受表单里同名 `if is_agent_cap {` 分支干扰。
+    fn type_options_zone(code: &str) -> &str {
+        let at = code
+            .find("// 类型选项按能力过滤")
+            .expect("类型选项注释锚点");
+        &code[at..]
+    }
+
+    /// 目标断言：决策（capability=Decision）组必须含 Qwen，且 Jev 仍在。
+    #[test]
+    fn decision_group_contains_qwen_option() {
+        let src = include_str!("model_providers.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+        let group = rsx_group_block(type_options_zone(code), "if is_decision_cap {");
+        assert!(
+            group.contains("value: \"jev\""),
+            "决策组必须保留 Jev；实际切片：{group}"
+        );
+        assert!(
+            group.contains("value: \"qwen\""),
+            "决策组必须含 Qwen；实际切片：{group}"
+        );
+    }
+
+    /// 非目标断言（成对）：Agent / Embedding 组各恰 1 处 Qwen，不因本次改动增减。
+    #[test]
+    fn non_decision_groups_keep_single_qwen_option() {
+        let src = include_str!("model_providers.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+        let zone = type_options_zone(code);
+        let agent = rsx_group_block(zone, "if is_agent_cap {");
+        let after_agent = &zone[zone.find("if is_agent_cap {").expect("agent 组") + agent.len()..];
+        let embedding = rsx_group_block(after_agent, "if is_embedding_cap {");
+        assert_eq!(
+            agent.matches("value: \"qwen\"").count(),
+            1,
+            "Agent 组 Qwen 应恰 1 处；实际切片：{agent}"
+        );
+        assert_eq!(
+            embedding.matches("value: \"qwen\"").count(),
+            1,
+            "Embedding 组 Qwen 应恰 1 处；实际切片：{embedding}"
+        );
+    }
+
+    /// 联动语义（成对）：选 Decision 不再无条件锁回 Jev，改为「两者都不是才锁回」。
+    #[test]
+    fn decision_capability_no_longer_forces_jev_unconditionally() {
+        let src = include_str!("model_providers.rs");
+        let code = src.split("#[cfg(test)]").next().expect("code region");
+        assert!(
+            !code.contains("ModelCapability::Decision => provider_type.set(ProviderType::Jev),"),
+            "旧形态（无条件锁回 Jev）必须消失，否则会把已选 Qwen 抹掉"
+        );
+        assert!(
+            code.contains("ProviderType::Jev | ProviderType::Qwen"),
+            "决策分支必须显式允许 Jev / Qwen"
+        );
+        assert_eq!(
+            code.matches("provider_type.set(ProviderType::Jev);")
+                .count(),
+            1,
+            "锁回 Jev 只应保留条件分支内一处"
+        );
     }
 }

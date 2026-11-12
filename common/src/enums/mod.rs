@@ -23,6 +23,7 @@ pub mod thinking_intensity;
 pub mod thinking_scene;
 pub mod tool;
 pub mod user;
+pub mod vector;
 
 pub use agent::{AgentRuntimeState, AgentStatus, ModelProviderStatus};
 pub use agent_kind::AgentKind;
@@ -50,3 +51,4 @@ pub use thinking_intensity::ThinkingIntensity;
 pub use thinking_scene::ThinkingScene;
 pub use tool::{ControlMode, ToolProtocol, ToolStatus};
 pub use user::{UserRole, UserStatus};
+pub use vector::VectorRebuildMode;

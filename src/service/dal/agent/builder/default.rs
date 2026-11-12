@@ -34,6 +34,8 @@ use crate::models::memory::{
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
+use crate::service::domain::runtime::compaction::{estimate_tokens, truncate_to_tokens};
+use crate::service::domain::runtime::text_budget::{self, tokens_of};
 // ==================== Prompt Builder（Local Agent 默认实现） ====================
 
 /// neural tag 常量：标记为神经级别的工具/技能。
@@ -44,9 +46,20 @@ use crate::models::user::UserPo;
 ///   + 区块置前 + 不可卸载；**不再决定可见性**（可见性 = 是否已安装副本）。
 const NEURAL_TAG: &str = "neural";
 
-/// 词表区块注入预算（字符数）：预置词表全量约 2k 字符，正常全量注入；
-/// 管理员扩表超预算时按「关系词 > 实体类 > 同义样例」优先级裁剪（design §3）
-const LEXICON_PROMPT_BUDGET_CHARS: usize = 3000;
+/// 意图分析区块最多渲染的条目数（**条数**上限，不是 token 预算）
+const MAX_INTENT_ITEMS: usize = 10;
+
+/// 同一份 prompt 内三个区块的份额上限之和：编译期自校验（≤ 100%）
+///
+/// 本体词表（system 前缀）、意图条目、意图摘要**同时出现在同一份 awaken prompt**
+/// 里，份额和超 100% 说明份额表被改坏 ⇒ 编译期就炸，不让它静默超限。
+/// 条目是逐条上限，故按 `MAX_INTENT_ITEMS` 条取上界。
+const _: () = assert!(
+    text_budget::share::LEXICON_PROMPT_BP
+        + text_budget::share::INTENT_ITEM_BP * MAX_INTENT_ITEMS as u32
+        + text_budget::share::INTENT_SUMMARY_BP
+        <= text_budget::share::BASIS
+);
 
 /// 【历史对话】区块头：4 条装配路径（awaken / build / 总结 / 意图）共用，禁止各写一份。
 ///
@@ -102,6 +115,9 @@ pub struct DefaultPromptBuilder {
     history: Vec<String>,
     /// 由 domain 层算好的记忆索引计划（字符预算档位 + T0 锚点）；None = 名义预算兜底
     memory_index_plan: Option<MemoryIndexPlan>,
+    /// provider 上下文容量（token）：由 domain 工厂在 `prompt_builder()` 里注入，
+    /// 供按占比派生的区块预算使用（词表注入 / 意图区块）。None = 未配置 ⇒ 不裁。
+    context_capacity_tokens: Option<u64>,
     /// 近期已沉淀记忆参考条目（仅沉淀场景，已完成沉淀，不作为待处理对象）
     settled_reference: Vec<String>,
     /// 上一轮工作压缩结果（仅 awaken 场景，压缩后由框架直接注入）
@@ -193,7 +209,10 @@ impl DefaultPromptBuilder {
     /// 属性定义 > 同义样例——高优先级段落装入后，剩余预算才轮到低优先级段落；
     /// 同段内逐词条贪心装入，装不下即停。每段享有「段首保底」：只要
     /// header + 首行装得下就一定露脸，装不下才整段让位。
-    fn build_lexicon_section(lexicon: Option<&common::ontology::OntologyLexiconSummary>) -> String {
+    fn build_lexicon_section(
+        lexicon: Option<&common::ontology::OntologyLexiconSummary>,
+        budget_tokens: Option<usize>,
+    ) -> String {
         let Some(lexicon) = lexicon.filter(|l| !l.is_empty()) else {
             return String::new();
         };
@@ -202,7 +221,7 @@ impl DefaultPromptBuilder {
              额外事实优先落成「属性定义」里的属性而不是新建节点；同义说法写入后自动归并到\
              规范词；词表不贴切时可自拟，语义准确 > 用词规范）\n",
         );
-        let mut used = s.chars().count();
+        let mut used = estimate_tokens(&s);
         let mut truncated = false;
 
         // 关系词 > 实体类（行形态同为 LexiconTermSummary）
@@ -216,6 +235,7 @@ impl DefaultPromptBuilder {
             truncated |= push_budgeted_section(
                 &mut s,
                 &mut used,
+                budget_tokens,
                 &format!("{}：\n", title),
                 terms.iter().map(|t| {
                     format!(
@@ -231,6 +251,7 @@ impl DefaultPromptBuilder {
             truncated |= push_budgeted_section(
                 &mut s,
                 &mut used,
+                budget_tokens,
                 "属性定义（挂在节点或关系上的键值对，方括号内是写值约束）\n",
                 lexicon.properties.iter().map(|p| p.to_prompt_line()),
             );
@@ -241,6 +262,7 @@ impl DefaultPromptBuilder {
             truncated |= push_budgeted_section(
                 &mut s,
                 &mut used,
+                budget_tokens,
                 "同义映射（以下说法写入后自动归并到规范词）\n",
                 lexicon
                     .synonyms
@@ -317,31 +339,57 @@ impl DefaultPromptBuilder {
 fn push_budgeted_section(
     s: &mut String,
     used: &mut usize,
+    budget_tokens: Option<usize>,
     header: &str,
     lines: impl Iterator<Item = String>,
 ) -> bool {
     let mut lines = lines.peekable();
-    let Some(first) = lines.peek() else {
+    let first_tokens = match lines.peek() {
+        // 空段：没有首行就没有「段首保底」可言，直接让位
+        None => return false,
+        Some(first) => estimate_tokens(first),
+    };
+    let Some(budget) = budget_tokens else {
+        // 容量未配 ⇒ 不裁（不猜兜底值），整段照装
+        s.push_str(header);
+        *used += estimate_tokens(header);
+        for line in lines {
+            *used += estimate_tokens(&line);
+            s.push_str(&line);
+        }
         return false;
     };
     // 段首（header + 首行）都装不下 → 本段整体让位
-    if *used + header.chars().count() + first.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
+    if *used + estimate_tokens(header) + first_tokens > budget {
         return true;
     }
     s.push_str(header);
-    *used += header.chars().count();
+    *used += estimate_tokens(header);
     for line in lines {
-        if *used + line.chars().count() > LEXICON_PROMPT_BUDGET_CHARS {
+        let line_tokens = estimate_tokens(&line);
+        if *used + line_tokens > budget {
             return true;
         }
         s.push_str(&line);
-        *used += line.chars().count();
+        *used += line_tokens;
     }
     false
 }
 
+/// 按 token 预算截断一行内容（`None` ⇒ 不裁）
+fn clip_to_tokens(s: &str, budget: Option<usize>) -> String {
+    match budget {
+        Some(b) => truncate_to_tokens(s, b, "…"),
+        None => s.to_string(),
+    }
+}
+
 /// 实现 PromptBuilder trait
 impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
+    fn set_context_capacity_tokens(&mut self, capacity: Option<u64>) {
+        self.context_capacity_tokens = capacity;
+    }
+
     fn current_trace_id(&mut self, trace_id: &str) {
         self.current_trace_id = Some(trace_id.to_string());
     }
@@ -565,7 +613,13 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         let mut s = String::new();
         // 本体词表（记忆图谱用词约定）：有词表数据即拼装，awaken / settle / intent_analyze 三场景共用；
         // 置于最前以保 Prompt 前缀缓存（任务上下文每轮变动不影响词表命中）
-        s.push_str(&Self::build_lexicon_section(self.ontology_lexicon.as_ref()));
+        s.push_str(&Self::build_lexicon_section(
+            self.ontology_lexicon.as_ref(),
+            tokens_of(
+                self.context_capacity_tokens,
+                text_budget::share::LEXICON_PROMPT_BP,
+            ),
+        ));
         if let Some(profile) = &self.user_profile {
             s.push_str("【用户画像】\n");
             s.push_str(profile);
@@ -647,36 +701,31 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             Some(ia) => ia,
         };
 
-        let trunc_str = |s: &str, max: usize| -> String {
-            let chars: Vec<char> = s.chars().collect();
-            if chars.len() <= max {
-                s.to_string()
-            } else {
-                let mut out: String = chars.into_iter().take(max).collect();
-                out.push('…');
-                out
-            }
-        };
-
-        const MAX_ITEMS: usize = 10;
-        const MAX_ITEM_CHARS: usize = 150;
-        const MAX_SUMMARY_CHARS: usize = 800;
+        // 逐条 / 摘要的预算都按上下文容量的占比派生（容量未配 ⇒ 不裁）
+        let item_budget = tokens_of(
+            self.context_capacity_tokens,
+            text_budget::share::INTENT_ITEM_BP,
+        );
+        let summary_budget = tokens_of(
+            self.context_capacity_tokens,
+            text_budget::share::INTENT_SUMMARY_BP,
+        );
 
         let format_array =
             |items: &[String], prefix_icon: &str, _omit_msg: &str| -> (String, bool) {
                 let mut s = String::new();
-                let display = items.iter().take(MAX_ITEMS);
+                let display = items.iter().take(MAX_INTENT_ITEMS);
                 let count = items.len();
                 for item in display {
                     s.push_str(&format!(
                         "{} {}\n",
                         prefix_icon,
-                        trunc_str(item, MAX_ITEM_CHARS)
+                        clip_to_tokens(item, item_budget)
                     ));
                 }
-                let omitted = count > MAX_ITEMS;
+                let omitted = count > MAX_INTENT_ITEMS;
                 if omitted {
-                    let n = count - MAX_ITEMS;
+                    let n = count - MAX_INTENT_ITEMS;
                     s.push_str(&format!("... 及 {} 项已省略\n", n));
                 }
                 (s, omitted)
@@ -734,7 +783,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         if !ia.summary.is_empty() {
             s.push_str(&format!(
                 "💡 **一句话理解总结**：{}\n\n",
-                trunc_str(&ia.summary, MAX_SUMMARY_CHARS)
+                clip_to_tokens(&ia.summary, summary_budget)
             ));
         }
 

@@ -57,6 +57,18 @@ pub fn degraded_label(degraded: Option<&str>) -> &'static str {
         Some("pool_fallback") => "池兜底",
         Some("timeout") => "超时",
         Some("transport") => "传输失败",
+        // 后端 `DegradedReason::as_str()` 与强度场景的五种成因：不补齐词表，
+        // 这些真实原因会全部塌成笼统的「降级」，排查时看不出是哪一环出的问题。
+        Some("no_provider") => "无小脑",
+        Some("disabled") => "已关闭",
+        Some("no_user_message") => "无用户消息",
+        Some("call_error") => "调用失败",
+        Some("low_confidence") => "置信不足",
+        Some("unsupported_answer") => "答案不符",
+        Some("no_usable_answer") => "无可用答案",
+        Some("no_answer") => "无答案",
+        Some("bad_option") => "选项异常",
+        Some("empty_requests") => "空请求",
         Some(_) => "降级",
     }
 }
@@ -280,5 +292,17 @@ mod tests {
             "降级",
             "未知原因也要显式标降级，不能静默显示成正常"
         );
+    }
+
+    #[test]
+    fn degraded_label_names_real_backend_reasons() {
+        // 后端 `DegradedReason::as_str()` 与强度场景五种成因的实际取值：
+        // 漏一个就会在平表里塌成笼统的「降级」，排查时无法归因。
+        assert_eq!(degraded_label(Some("call_error")), "调用失败");
+        assert_eq!(degraded_label(Some("timeout")), "超时");
+        assert_eq!(degraded_label(Some("no_usable_answer")), "无可用答案");
+        assert_eq!(degraded_label(Some("no_answer")), "无答案");
+        assert_eq!(degraded_label(Some("no_provider")), "无小脑");
+        assert_eq!(degraded_label(Some("budget_exhausted")), "预算耗尽");
     }
 }

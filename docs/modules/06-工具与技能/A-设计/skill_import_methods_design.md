@@ -120,7 +120,7 @@ SkillFileImport = (去哪放) × (从哪来)
 | Adapter Handler | src/handlers/hr/skill/update_skill.rs | Modify | 删硬写 content:None/files:None 空代码；若 content_input.is_some() 走 classify + validate + finance 附件读 + pkg URL；组装 UpdateSkillParams |
 | Domain Trait | src/service/domain/hr/mod.rs | Modify | Phase 1：create_skill 签名换 CreateSkillParams + from_skill 兼容 16 调用点。Phase 2：SkillFileImport 合并 old file_imports + file_writes → 统一结构（target_path × source_abs_path × content_bytes × suggested_name）；CreateSkillParams/UpdateSkillParams 删 file_writes + file_imports → 单一 imports: Vec<SkillFileImport> |
 | Domain impl | src/service/domain/hr/skill.rs | Modify | Phase 1：apply_content_sources 4 原子。Phase 2：原子 1/2/3 合并为 `process_skill_package` 纯函数（5 级 target 推断 + zip 解包 + same_fs rename/copy/write_bytes 三通路）；原子 4 Frontmatter 保留读最终磁盘 |
-| DAL trait | src/service/dal/skill.rs | Modify（Phase 2） | skill_dir / file_abs_path 从 private 升 pub trait 方法（供 Domain 拼目标绝对路径做 rename） |
+| DAL trait | src/service/dal/skill/mod.rs | Modify（Phase 2） | skill_dir / file_abs_path 从 private 升 pub trait 方法（供 Domain 拼目标绝对路径做 rename） |
 | DAO impl | src/service/dao/skill/sqlite.rs | Modify（Phase 2） | skill_dir / file_path 升 pub + 重命名 file_abs_path |
 | pkg 注册 | src/pkg/mod.rs | Modify | pub mod fetch_remote_content |
 | pkg lark_cli | src/pkg/tool_registry/lark_cli.rs#L200-L212 | ✅已完成 | apply_cli_env + NO_SKILLS_NOTIFIER=0，统一 4 处 env |

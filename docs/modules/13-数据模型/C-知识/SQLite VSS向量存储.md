@@ -7,7 +7,7 @@
 - [migrations/20260505000000_vector_metadata.sql](migrations/20260420000000_initial.sql)
 - [common/src/config.rs](common/src/config.rs)
 - [src/models/vector.rs](src/models/vector.rs)
-- [src/service/dal/skill.rs](src/service/dal/skill.rs)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [docs/modules/08-搜索/A-设计/vector_search_architecture.md](docs/modules/08-搜索/A-设计/vector_search_architecture.md)
 </cite>
@@ -68,7 +68,7 @@ B --> J["SQLx Migrate 运行迁移"]
 - [src/pkg/storage/mod.rs:36-167](src/pkg/storage/mod.rs#L36-L167)
 - [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [src/models/vector.rs:9-168](src/models/vector.rs#L9-L168)
-- [src/service/dal/skill.rs:350-513](src/service/dal/skill.rs#L350-L513)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs#L350-L513)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ## 架构总览
@@ -211,7 +211,7 @@ INTEGER expire_at
 
 章节来源
 - [src/pkg/storage/vector.rs:245-262](src/pkg/storage/vector.rs#L245-L262)
-- [src/service/dal/skill.rs:350-364](src/service/dal/skill.rs#L350-L364)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs#L350-L364)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ### 数据库迁移脚本
@@ -236,7 +236,7 @@ INTEGER expire_at
 - 混合搜索：组合 FTS5 关键词结果与向量结果，标记 MatchType（Hybrid/Vector/Keyword），按优先级与组内细排输出。
 
 章节来源
-- [src/service/dal/skill.rs:350-513](src/service/dal/skill.rs#L350-L513)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs#L350-L513)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 - [docs/modules/08-搜索/A-设计/vector_search_architecture.md:72-131](docs/modules/08-搜索/A-设计/vector_search_architecture.md#L72-L131)
 
@@ -296,7 +296,7 @@ DAL --> Cortex["CortexDao(Embedding)"]
 
 章节来源
 - [src/pkg/storage/vector.rs:245-262](src/pkg/storage/vector.rs#L245-L262)
-- [src/service/dal/skill.rs:350-364](src/service/dal/skill.rs#L350-L364)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs#L350-L364)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs#L228)
 
 ## 结论

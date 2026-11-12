@@ -456,7 +456,10 @@ pub mod busy_guard;
 // 映射为 `CancelThinkingResponse`，暴露方式与消息域 `RecallOutcome` 对齐
 pub mod cancel;
 mod cerebellum_router;
+// 小脑上下文组织器（笔④）：state 分块正文的唯一装配点，`pub(crate)` 供 legacy_awaken 侧接入
+pub(crate) mod cerebellum_context;
 pub(crate) mod chain_reply;
+pub(crate) mod text_budget;
 // `pub(crate)`：token 估算/截断是**跨层共用**的纯文本工具——Domain 内部的
 // 压缩分流、`chain_reply` 链内裁剪，以及 DAL 侧小脑 state 的容量对齐都用同一份实现。
 // 若将来要彻底消除 DAL→Domain 的引用，应把这两个函数下沉到 `pkg`（登记为技术债候选）。
@@ -482,6 +485,8 @@ mod types;
 
 #[cfg(test)]
 mod cancel_test;
+#[cfg(test)]
+mod cerebellum_log_tests;
 #[cfg(test)]
 mod tool_execution_test;
 
@@ -636,11 +641,17 @@ impl RuntimeDomainImpl {
         agent: &Agent,
     ) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
         use common::enums::AgentKind;
-        match agent.po.kind {
+        let mut builder: Box<dyn crate::models::prompt_builder::PromptBuilder> = match agent.po.kind
+        {
             AgentKind::Local => self.agent_dal.prompt_builder(),
             AgentKind::Cli => self.codex_agent_dal.prompt_builder(),
             AgentKind::Remote => self.a2a_agent_dal.prompt_builder(),
-        }
+        };
+        // 上下文容量在**唯一 builder 生产点**注入：所有场景（intent / awaken /
+        // C 路径 / settle）都从这里拿 builder，装配点无需各自记得注入 —— 漏一处
+        // 就会静默退化成「不裁」，这类缺口不该靠人工枚举装配点来防。
+        builder.set_context_capacity_tokens(compaction::context_capacity_of(agent));
+        builder
     }
 }
 

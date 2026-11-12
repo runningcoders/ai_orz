@@ -8,7 +8,9 @@
 
 use super::super::retrieve_node::{KNOWLEDGE_TOP_K, SHORT_TERM_TOP_K};
 use super::*;
-use crate::models::memory::LongTermKnowledgeNodePo;
+use crate::models::memory::{
+    KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, MemoryTrace, ShortTermMemoryIndexPo,
+};
 use crate::pkg::policy::{DecisionAnswers, DecisionPolicy, DecisionValue, QuestionSpec};
 use common::enums::MemoryStatus;
 
@@ -29,8 +31,51 @@ fn node(id: &str, name: &str, desc: &str) -> Memory {
     }))
 }
 
+fn short_term(id: &str, summary: &str) -> Memory {
+    Memory::new(MemoryPo::ShortTerm(ShortTermMemoryIndexPo {
+        id: id.to_string(),
+        agent_id: "agent-test".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: summary.to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: 0,
+        updated_at: 0,
+    }))
+}
+
+fn trace(id: &str, output: Option<&str>, input: &str) -> Memory {
+    let mut t = MemoryTrace::new(
+        "agent-test".to_string(),
+        "log-test".to_string(),
+        "user-test".to_string(),
+        "org-test".to_string(),
+        common::enums::MemoryRole::Assistant,
+        input.to_string(),
+        None,
+    );
+    t.id = id.to_string();
+    t.output = output.map(str::to_string);
+    Memory::new(MemoryPo::Trace(t))
+}
+
+fn relation(id: &str, relation_type: &str) -> Memory {
+    Memory::new(MemoryPo::Relation(KnowledgeNodeRelationPo {
+        id: id.to_string(),
+        source_node_id: "src".to_string(),
+        target_node_id: "dst".to_string(),
+        relation_type: relation_type.to_string(),
+        weight: None,
+        status: common::enums::KnowledgeRelationStatus::Active,
+        created_at: 0,
+        updated_at: 0,
+    }))
+}
+
 fn metrics_for(question: &str, cands: &[Memory]) -> Metrics {
-    facts(question, cands)
+    facts(question, cands, None)
 }
 
 /// 构造带答案的事实桶（同时带候选：`ranked` 要用它过滤幻觉 id）
@@ -212,4 +257,69 @@ fn short_term_rerank_uses_its_own_keep_budget() {
         kept.iter().map(String::as_str).collect::<Vec<_>>(),
         vec!["st0", "st1", "st2"]
     );
+}
+
+/// 四类候选各自带来源标签（逐字取值；R48：用字面量而非常量断言，
+/// 否则改常量会连测试一起漂移，「取值正确」就不可判定）
+#[test]
+fn snippet_labels_each_source_verbatim() {
+    assert_eq!(
+        snippet(&node("m1", "订单状态机", "订单从创建到完成"), None),
+        "[知识节点]订单状态机：订单从创建到完成"
+    );
+    assert_eq!(
+        snippet(&short_term("st1", "会议结论：下周上线"), None),
+        "[短期记忆]会议结论：下周上线"
+    );
+    assert_eq!(
+        snippet(&trace("t1", Some("思考输出正文"), "输入正文"), None),
+        "[trace]思考输出正文"
+    );
+    assert_eq!(snippet(&relation("r1", "depends"), None), "[关系]depends");
+}
+
+/// 标签不得把空判据变成可判据（否则空候选会白占一个选项位）
+#[test]
+fn empty_body_stays_empty_even_with_label() {
+    assert_eq!(
+        snippet(&node("m1", "有名字", ""), None),
+        "",
+        "知识节点 body 为空"
+    );
+    assert_eq!(snippet(&short_term("st1", ""), None), "");
+    assert_eq!(snippet(&short_term("st1", "   "), None), "");
+    assert_eq!(snippet(&trace("t1", Some(""), ""), None), "");
+    assert_eq!(snippet(&relation("r1", ""), None), "");
+}
+
+/// 成对不变量：①选项值 == `snippet()` 逐字（标签确实进了选项）
+/// ②`state` 仍只有 `question` + `candidate_count` 两键（没被顺带扩成三键）
+#[test]
+fn options_carry_the_label_and_state_keeps_its_two_keys() {
+    let cands = vec![
+        node("m1", "订单状态机", "订单流转"),
+        short_term("st1", "会议结论"),
+    ];
+    let m = metrics_for("订单怎么流转", &cands);
+    let p = policy(KNOWLEDGE_TOP_K);
+    let reqs = p.prepare(&m);
+    match &reqs[0].questions[&p.primary_qid()] {
+        QuestionSpec::Pick { options, .. } => {
+            assert_eq!(options["m1"], snippet(&cands[0], None));
+            assert_eq!(options["st1"], snippet(&cands[1], None));
+            assert!(options["m1"].starts_with("[知识节点]"));
+            assert!(options["st1"].starts_with("[短期记忆]"));
+        }
+        other => panic!("expected Pick, got {other:?}"),
+    }
+    let state = reqs[0]
+        .state
+        .as_object()
+        .expect("state must be a JSON object");
+    assert_eq!(
+        state.len(),
+        2,
+        "state 只应有 question + candidate_count：{state:?}"
+    );
+    assert_eq!(state["candidate_count"], 2);
 }

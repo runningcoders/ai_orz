@@ -16,6 +16,7 @@ use crate::service::dao::tool::{ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery
 use crate::service::dao::tool_call::{self, ToolCallDao};
 use common::api::PaginationParams;
 use common::enums::ToolStatus;
+use common::enums::VectorRebuildMode;
 use common::error::{Result, bail_err};
 use common::models::{StatsFetchOptions, ToolStats};
 use serde_json::Value;
@@ -193,6 +194,7 @@ pub trait ToolDal: Send + Sync {
         &self,
         ctx: RequestContext,
         progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: VectorRebuildMode,
     ) -> Result<()>;
 }
 
@@ -777,6 +779,7 @@ impl ToolDal for ToolDalImpl {
         &self,
         ctx: RequestContext,
         progress: &TaskProgressCounter,
+        _mode: VectorRebuildMode,
     ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self

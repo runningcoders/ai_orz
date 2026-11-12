@@ -189,7 +189,7 @@ Handler-->>Client : TestConnectionResponse/CallModelResponse
 ### 切换嵌入提供商与向量重建（解耦）
 - 切换前校验：目标必须为 Embedding 能力；同一 provider 直接返回
 - 切换逻辑：禁用当前启用的 Embedding 提供商，启用新提供商；**不注册重建任务**
-- 重建任务：由前端切换成功后的二次确认显式调用 `POST /api/v1/system/vector-rebuild`；任务遍历 agent/memory/skill/task/project/message/tool 七类实体逐一重建，并发度受控（同一时刻仅允许一个 Running）
+- 重建任务：由前端切换成功后的二次确认显式调用 `POST /api/v1/system/vector-rebuild`；缺省遍历 agent/memory/skill/task/project/message/tool 七类实体逐一重建，`entities` 可收窄范围（技能库页面的「重建索引」只传 `["skill"]`）；`mode` 决定形态（`auto` 幂等 / `missing` 查漏补缺 / `force` 强制全量，见 `common::enums::VectorRebuildMode`），目前只有 `skill` 实现逐条比对，其余实体三档等价；并发度受控（同一时刻仅允许一个 Running）
 
 ```mermaid
 flowchart TD

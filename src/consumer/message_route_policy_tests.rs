@@ -493,3 +493,69 @@ fn static_hard_wall_still_closes_when_cerebellum_has_no_verdict() {
         "小脑没结论时，硬墙收口必须逐字节保持原样"
     );
 }
+
+// ══════ ③ 静默收口 与 ② 收口 是两条独立路由（AMan 2026-11-11 定谳）══════
+
+/// R54 成对：② 收口取值**零改动**、③ 静默收口另成一值，两者不相等
+#[test]
+fn cerebellum_silent_route_is_distinct_from_close_route() {
+    assert_eq!(
+        cerebellum_close_route(true),
+        Some(AutoReplyRoute::CloseChainAsNotify {
+            reason: CEREBELLUM_CLOSE_REASON
+        }),
+        "② 语义与字符串不变"
+    );
+    assert_eq!(
+        cerebellum_silent_route(true),
+        Some(AutoReplyRoute::SilentClose {
+            reason: CEREBELLUM_SILENT_REASON
+        })
+    );
+    assert_ne!(
+        cerebellum_silent_route(true),
+        cerebellum_close_route(true),
+        "静默收口与知会收口必须是两个不同的值：压成同值就算没做"
+    );
+    // 独立计数：两个 reason 串不同（日志/排障一眼看出是被哪种形态收的）
+    assert_ne!(CEREBELLUM_SILENT_REASON, CEREBELLUM_CLOSE_REASON);
+    // 不产出时都是 None（不覆盖静态判定）
+    assert_eq!(cerebellum_silent_route(false), None);
+    assert_eq!(cerebellum_close_route(false), None);
+}
+
+/// 入站 noreply 短路的**唯一承载**是 `agent_notify` 静态规则（反事实）
+///
+/// 正：Agent 来源 + `AgentNotify` ⇒ `Discard`（一步都不进小脑）。
+/// 反事实：同一条消息只把类型换成 `Text` ⇒ 静态规则全不命中（`None`）⇒ 下游
+/// `resolve_auto_reply_route` 落压力判定（`Peer`）。两次对照证明：让这条消息
+/// 「直接不返回」的就是这条规则，不是别的分支。
+#[test]
+fn agent_notify_is_the_only_inbound_noreply_short_circuit() {
+    assert_eq!(
+        judge_static_reply_route(input(
+            MessageRole::Agent,
+            "peer-1",
+            MessageType::AgentNotify,
+            "done"
+        )),
+        Some(AutoReplyRoute::Discard {
+            reason: AGENT_NOTIFY_REASON
+        })
+    );
+    assert_eq!(
+        judge_static_reply_route(input(
+            MessageRole::Agent,
+            "peer-1",
+            MessageType::Text,
+            "done"
+        )),
+        None,
+        "反事实成立：拿掉 agent_notify 规则（换成 Text）后静态规则全不命中 ⇒ 落 Peer 候选"
+    );
+    // 理由串是可指认命名（公开常量，日志与断言共用一处，改串不会静默漂移）
+    assert_eq!(
+        AGENT_NOTIFY_REASON,
+        "agent-notify message (sender declared no reply needed)"
+    );
+}

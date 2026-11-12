@@ -28,6 +28,7 @@ use crate::service::dao::agent::{
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderStatsDao};
 use crate::service::dao::tool::ToolStatsDao;
+use common::enums::VectorRebuildMode;
 use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval};
 use std::sync::{Arc, OnceLock};
@@ -203,6 +204,7 @@ pub trait AgentDal: Send + Sync {
         &self,
         ctx: RequestContext,
         progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: VectorRebuildMode,
     ) -> Result<()>;
 
     /// 返回该 Dal 对应 Agent 类型的 PromptBuilder

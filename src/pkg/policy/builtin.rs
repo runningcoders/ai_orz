@@ -395,18 +395,18 @@ impl_policy_delegate!(CompactionThresholdPolicy);
 pub struct CompactionChainPolicy {
     min_rounds: u64,
     min_tool_calls: u64,
-    min_tool_chars: u64,
+    min_tool_tokens: u64,
     desc: String,
 }
 
 impl CompactionChainPolicy {
-    pub fn new(min_rounds: u64, min_tool_calls: u64, min_tool_chars: u64) -> Self {
+    pub fn new(min_rounds: u64, min_tool_calls: u64, min_tool_tokens: u64) -> Self {
         Self {
             min_rounds,
             min_tool_calls,
-            min_tool_chars,
+            min_tool_tokens,
             desc: format!(
-                "链路复杂度 轮次>={min_rounds} 或 工具调用>={min_tool_calls} 或 工具结果字符>={min_tool_chars}"
+                "链路复杂度 轮次>={min_rounds} 或 工具调用>={min_tool_calls} 或 工具结果 token>={min_tool_tokens}"
             ),
         }
     }
@@ -426,16 +426,16 @@ impl Policy for CompactionChainPolicy {
         vec![
             "rounds_used".into(),
             "tool_calls".into(),
-            "tool_result_chars".into(),
+            "tool_result_tokens".into(),
         ]
     }
     fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
         let rounds = metrics.get_u64("rounds_used").unwrap_or(0);
         let tool_calls = metrics.get_u64("tool_calls").unwrap_or(0);
-        let tool_chars = metrics.get_u64("tool_result_chars").unwrap_or(0);
+        let tool_tokens = metrics.get_u64("tool_result_tokens").unwrap_or(0);
         let hit = (self.min_rounds > 0 && rounds >= self.min_rounds)
             || (self.min_tool_calls > 0 && tool_calls >= self.min_tool_calls)
-            || (self.min_tool_chars > 0 && tool_chars >= self.min_tool_chars);
+            || (self.min_tool_tokens > 0 && tool_tokens >= self.min_tool_tokens);
         if hit {
             vec![self.id().to_string()]
         } else {

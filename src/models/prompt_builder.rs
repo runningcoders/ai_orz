@@ -58,6 +58,20 @@ pub trait PromptBuilder: Send + Sync {
         let _ = plan;
     }
 
+    /// 注入 provider 的**上下文容量**（token），供按占比派生的区块预算使用
+    /// （本体词表注入预算 / 意图分析区块的单条与摘要上限 / discover 轨迹行）。
+    ///
+    /// 容量未配（`None`）⇒ 各区块**不裁**（不猜兜底值），与全仓「未配不猜不裁」
+    /// 同一口径。默认空实现只适用于「不渲染这些区块」的实现；任何包装
+    /// `DefaultPromptBuilder` 的实现（如 `FlatPromptBuilder`）**必须显式转发**，
+    /// 否则该 Agent 类型的区块预算会静默退化成「不裁」。
+    ///
+    /// 注入点只有一处：`RuntimeDomainImpl::prompt_builder()` 工厂——所有场景
+    /// （intent / awaken / C 路径 / settle）都从那里拿 builder。
+    fn set_context_capacity_tokens(&mut self, capacity: Option<u64>) {
+        let _ = capacity;
+    }
+
     /// 设置「更早的记忆」参考条目（仅 awaken 场景，压缩后的轮次）
     ///
     /// 压缩后下一轮以【上一轮工作压缩结果】为主，这里再补少量**更早之前**的记忆，

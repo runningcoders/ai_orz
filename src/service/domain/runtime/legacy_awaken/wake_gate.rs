@@ -50,6 +50,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
 use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
 use crate::service::dal::brain::BrainDal;
+use crate::service::domain::runtime::cerebellum_context as context;
 use common::enums::ThinkingIntensity;
 use std::sync::Arc;
 
@@ -113,8 +114,11 @@ const OPTIONS: [(&str, &str); 2] = [
     ),
 ];
 
-/// 透传给模型的上下文事实（与路由同口径：只带轻量上下文，不取全量记忆）
-const STATE_KEYS: &[&str] = &["agent_id", "agent_name", "last_user_message"];
+/// 透传给模型的上下文事实：统一由 [`context::ContextBundle`] 渲染成单键分块正文
+///
+/// 键名收敛到 `context::STATE_KEY` 一处（单出口）：本文件不再出现
+/// `agent_id` / `last_user_message` 这类裸键拼装。
+const STATE_KEYS: &[&str] = &[context::STATE_KEY];
 
 /// 浅答判决（零尺寸证据类型）
 ///
@@ -141,6 +145,7 @@ fn trace(
     confidence: Option<f32>,
     degraded: Option<&str>,
     applied: bool,
+    latency_ms: Option<u64>,
 ) -> ThinkTraceCerebellum {
     ThinkTraceCerebellum {
         scene: SCENE.to_string(),
@@ -148,7 +153,7 @@ fn trace(
         confidence,
         degraded: degraded.map(|s| s.to_string()),
         applied,
-        latency_ms: None,
+        latency_ms,
     }
 }
 
@@ -224,16 +229,14 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false),
+            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
         );
         return None;
     }
 
     let policy = policy();
-    let metrics = Metrics::new()
-        .with("agent_id", &brain.agent_id)
-        .with("agent_name", &brain.agent_name)
-        .with("last_user_message", text);
+    // 单出口（笔④-2 笔 B）：装配与容量自截都在组织器，本处只调一次
+    let metrics = Metrics::new().with(context::STATE_KEY, context::render_for(brain, SCENE, text));
 
     // 阶段一：策略声明要问什么（纯函数；未命中就一次调用都不发）
     let requests = policy.prepare(&metrics);
@@ -244,6 +247,8 @@ pub(crate) async fn maybe_shallow(
     // 阶段二：唯一 async 点（门禁 / 超时 / 协议转换 / 降级全在 DAL）
     let outcome = dal.decide(ctx.clone(), brain, requests).await;
     let latency_ms = outcome.latency_ms;
+    // 轨迹口径：`None` = 本次没真正发出请求（空请求门 / 三个零调用门）
+    let traced_latency_ms = outcome.traced_latency_ms();
 
     if let Some(reason) = outcome.degraded {
         log_info!(
@@ -257,7 +262,13 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(reason.as_str()), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(reason.as_str()),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     }
@@ -276,7 +287,13 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_NO_ANSWER), false),
+            trace(
+                DECISION_FALLBACK,
+                None,
+                Some(DEGRADED_NO_ANSWER),
+                false,
+                traced_latency_ms,
+            ),
         );
         return None;
     };
@@ -293,7 +310,13 @@ pub(crate) async fn maybe_shallow(
         );
         record_cerebellum(
             trace_id,
-            trace(DECISION_SHALLOW, Some(pick.confidence), None, true),
+            trace(
+                DECISION_SHALLOW,
+                Some(pick.confidence),
+                None,
+                true,
+                traced_latency_ms,
+            ),
         );
         return Some(Shallow);
     }
@@ -311,7 +334,13 @@ pub(crate) async fn maybe_shallow(
     );
     record_cerebellum(
         trace_id,
-        trace(DECISION_DEEP, Some(pick.confidence), None, false),
+        trace(
+            DECISION_DEEP,
+            Some(pick.confidence),
+            None,
+            false,
+            traced_latency_ms,
+        ),
     );
     None
 }

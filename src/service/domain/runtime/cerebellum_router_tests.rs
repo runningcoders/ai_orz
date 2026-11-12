@@ -22,6 +22,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct MockBrainDal {
     script: Mutex<VecDeque<Option<DecisionOutcome>>>,
     calls: AtomicUsize,
+    /// 每次 decide 收到的 `DecisionRequest.state`（运行时反事实的唯一捕获面）
+    states: Mutex<Vec<serde_json::Value>>,
 }
 
 impl MockBrainDal {
@@ -29,11 +31,17 @@ impl MockBrainDal {
         Self {
             script: Mutex::new(script.into()),
             calls: AtomicUsize::new(0),
+            states: Mutex::new(Vec::new()),
         }
     }
 
     fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
+    }
+
+    /// 逐条取出捕获到的 state（顺序 = 请求发出顺序）
+    fn states(&self) -> Vec<serde_json::Value> {
+        self.states.lock().expect("mock states lock").clone()
     }
 }
 
@@ -43,9 +51,15 @@ impl BrainDal for MockBrainDal {
         &self,
         _ctx: RequestContext,
         _brain: &Brain,
-        _requests: Vec<DecisionRequest>,
+        requests: Vec<DecisionRequest>,
     ) -> DecisionOutcome {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        for request in &requests {
+            self.states
+                .lock()
+                .expect("mock states lock")
+                .push(request.state.clone());
+        }
         match self.script.lock().expect("mock script lock").pop_front() {
             Some(Some(outcome)) => outcome,
             // 剧本耗尽也算调用失败：调用次数超出预期时，断言会直接炸出来
@@ -195,14 +209,24 @@ async fn run_script(
     user_msg: Option<&str>,
     brain: Brain,
 ) -> (RouteDecision, usize) {
+    let (outcome, calls) = run_script_full(script, user_msg, brain).await;
+    (outcome.decision, calls)
+}
+
+/// 同上，但保留完整产出：**门与池两条轨迹各自的耗时**
+async fn run_script_full(
+    script: Vec<Option<DecisionOutcome>>,
+    user_msg: Option<&str>,
+    brain: Brain,
+) -> (RouteOutcome, usize) {
     // 全局 Storage 单例：`test_ctx()` 走 `RequestContext::new`，其 builder
     // 在未显式注入 storage 时回退到全局单例 ⇒ 必须先初始化，否则单跑
     // 本模块时 panic「Storage 尚未初始化」。
     crate::pkg::storage::test_support::init_for_test().await;
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
-    let decision = route(&ctx, mock.clone(), &brain, user_msg).await;
-    (decision, mock.calls())
+    let outcome = route(&ctx, mock.clone(), &brain, user_msg).await;
+    (outcome, mock.calls())
 }
 
 fn test_ctx() -> RequestContext {
@@ -571,4 +595,124 @@ fn test_degraded_reason_str() {
     assert_eq!(DegradedReason::NoProvider.as_str(), "no_provider");
     assert_eq!(DegradedReason::Disabled.as_str(), "disabled");
     assert_eq!(DegradedReason::Timeout.as_str(), "timeout");
+}
+
+// ---------- 轨迹耗时：门 / 池两条独立轨迹，各记各的 ----------
+
+#[tokio::test]
+async fn test_gate_and_pool_latency_are_traced_separately() {
+    // 剧本自报 8ms（`pick_for`）：两次调用各自 8ms，两列都必须取到实测值
+    let (outcome, calls) = run_script_full(
+        vec![
+            Some(gate_pick(CHOICE_TRIVIAL_DIRECT, 0.95)),
+            Some(pool_pick("pool_1", 0.93)),
+        ],
+        Some("在吗"),
+        mock_brain(None),
+    )
+    .await;
+    assert_eq!(calls, 2, "门 + 池 = 两次串行决策");
+    assert_eq!(
+        outcome.gate_latency_ms,
+        Some(8),
+        "门侧耗时必须是实测值（改造前轨迹固定 None 会红）"
+    );
+    assert_eq!(
+        outcome.pool_latency_ms,
+        Some(8),
+        "池侧耗时必须是实测值，且与门侧分开记"
+    );
+}
+
+#[tokio::test]
+async fn test_pool_latency_is_none_when_gate_proceeds() {
+    // 门判「有价值」→ 池**一次都不调**：池耗时必须是 None，不是 Some(0)
+    let (outcome, calls) = run_script_full(
+        vec![Some(gate_pick(CHOICE_CORTEX_NEEDED, 0.92))],
+        Some("帮我查一下上个月的报销数据"),
+        mock_brain(None),
+    )
+    .await;
+    assert_eq!(calls, 1);
+    assert_eq!(outcome.gate_latency_ms, Some(8));
+    assert_eq!(
+        outcome.pool_latency_ms, None,
+        "没走池 ⇒ None（记成 0ms 会污染池侧的 p95）"
+    );
+}
+
+#[tokio::test]
+async fn test_zero_call_early_return_has_no_latency_at_all() {
+    // 无用户消息：本地早退，零调用 ⇒ 两列都 None
+    let (outcome, calls) = run_script_full(vec![], None, mock_brain(None)).await;
+    assert_eq!(calls, 0);
+    assert_eq!(outcome.gate_latency_ms, None);
+    assert_eq!(outcome.pool_latency_ms, None);
+}
+
+#[tokio::test]
+async fn test_no_provider_degrade_is_not_counted_as_a_call() {
+    // NoProvider 是**零调用门**：即便剧本自报 5ms，轨迹也必须是 None
+    // —— 这条锁死「靠变体判，而不是靠 latency>0 判」
+    let (outcome, calls) = run_script_full(
+        vec![Some(degraded_outcome(DegradedReason::NoProvider))],
+        Some("在吗"),
+        mock_brain(None),
+    )
+    .await;
+    assert_eq!(calls, 1);
+    assert_eq!(
+        outcome.gate_latency_ms, None,
+        "NoProvider = 没真正问 ⇒ 轨迹耗时必须 None"
+    );
+}
+
+#[tokio::test]
+async fn test_timeout_degrade_keeps_measured_latency() {
+    // 超时是**真实调用**：付了时延，轨迹要记实测值（这里剧本自报 5ms）
+    let (outcome, _) = run_script_full(
+        vec![Some(degraded_outcome(DegradedReason::Timeout))],
+        Some("在吗"),
+        mock_brain(None),
+    )
+    .await;
+    assert_eq!(
+        outcome.gate_latency_ms,
+        Some(5),
+        "超时也要记耗时（否则 p95 只能看到成功样本）"
+    );
+}
+
+/// 运行时反事实（笔④-2 笔 B）：entry_gate 请求体收敛为单一 `context` 分块正文。
+///
+/// 改造前必红（R49）：改造前 `ENTRY_STATE_KEYS` 是三键白名单，`collect_state`
+/// 产出 `{agent_id, agent_name, last_user_message}`，无 `context` 键。
+#[tokio::test]
+async fn test_request_state_is_single_rendered_context_block() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    let ctx = test_ctx();
+    let brain = mock_brain(Some(mock_provider()));
+    let mock = Arc::new(MockBrainDal::new(vec![None]));
+    let sentinel = "运行时反事实哨兵-entry";
+    let _ = route(&ctx, mock.clone(), &brain, Some(sentinel)).await;
+
+    let states = mock.states();
+    assert_eq!(states.len(), 1, "首轮应恰发一条请求：{states:?}");
+    let state = &states[0];
+    assert!(
+        state.get("agent_id").is_none(),
+        "平铺键必须已消失（单出口不变量）：{state}"
+    );
+    let rendered = state["context"]
+        .as_str()
+        .expect("context 必须是渲染后的字符串正文");
+    assert!(rendered.contains("## 会话身份"), "必须有身份块：{rendered}");
+    assert!(
+        rendered.contains("agent_id: agent-1"),
+        "身份必须带实际取值（不是「非空」）：{rendered}"
+    );
+    assert!(
+        rendered.contains(sentinel),
+        "用户消息必须逐字进正文：{rendered}"
+    );
 }

@@ -45,7 +45,7 @@ source_files:
 
 **本卡角色**：AI Orz「System One 快判断」能力的全链路原子卡——覆盖 **协议 DTO（`src/models/cerebellum_types.rs`）→ System One client（`src/service/dao/cerebellum/`）→ 默认小脑获取（`get_default_cerebellum_provider`）→ Brain 注入（`src/service/dal/brain.rs`）→ 运行时快判断路由（`cerebellum_router.rs`）→ think_loop 单点接线** 六段。核心语义：在进入大脑（cortex）主循环之前，让小脑（jev / TypeSafe AI System One 决策模型）用一次亚秒级调用给出「琐碎直回 / 需完整思考」的路由结论，从而为简单请求省掉主循环开销。
 
-- **协议维度**：jev 不兼容 OpenAI chat/completions，走独立 `POST {base}/v1/systemone`（Bearer 鉴权）。请求携带 `model` + `state`（任意 JSON 上下文）+ `questions`（qid → 类型化问题）；响应 `answers`（qid → 类型化答案）+ `usage`。三类问题/答案一一对应：`noul`（无选项，输出 0~1 概率，无 confidence）/ `choice`（≤255 选项，输出 choice + confidence + probabilities）/ `score`（2~10 级有序等级，输出 score + probabilities + legend + confidence）。
+- **协议维度**：jev 不兼容 OpenAI chat/completions，走独立 `POST {base}/v1/systemone`（Bearer 鉴权）。请求携带 `model` + `state`（任意 JSON 上下文）+ `questions`（qid → 类型化问题）；响应 `answers`（qid → 类型化答案）+ `usage`。三类问题/答案一一对应：`noul`（无选项，输出 0~1 概率，无 confidence）/ `choice`（≤255 选项，输出 choice + confidence + probabilities）/ `score`（2~255 级有序等级，输出 score + probabilities + legend + confidence；`score` 是 0-based 等级序号的加权期望，值域 `[0, levels-1]`，服务端已加权，客户端只做量纲缩放）。
 - **用途维度**：新增 `ProviderType::Jev = 8` 与 `ModelCapability::Decision = 2`。二者均为 `#[repr(i32)]` 尾部追加变体，免 DB migration（仓库既有模式）；`Decision` 与 `Agent`（对话思考）、`Embedding`（向量化）在调度与展示上按用途隔离。
 - **路由维度**：`cerebellum_router::route` 只发**一个** choice 问题（`route`），两选项 `trivial_direct` / `cortex_needed`；`confidence >= 0.85` 才采纳，否则保守降级。三层降级（无启用小脑 / 调用失败或超时 / 低置信）全部收敛为「静默跳过 = 现状」。
 - **回滚维度**：管理面停用默认小脑（把 Decision provider 置 Disabled）= 一键全局回滚，**零代码零重启**（`brain.cerebellum` 变 None 即断链）。
@@ -75,7 +75,7 @@ source_files:
 
 ```
 CerebellumQuestion{type, instructions, criteria?}
-        │  validate(): noul 不带 criteria / choice ∈ [1,255] 选项对象 / score ∈ [2,10] 等级数组
+        │  validate(): noul 不带 criteria / choice ∈ [1,255] 选项对象 / score ∈ [2,255] 等级数组
         ▼
 CerebellumRequest{model = provider.model_name, state, questions: {qid → question}}
         │  POST {base}/v1/systemone  (Bearer api_key, timeout = config.timeout_ms ?? 800ms)
@@ -129,7 +129,7 @@ ThinkFastResult{answers, usage}
 3. ❌ **禁止路由失败/超时阻塞主循环**：三层降级（无小脑 / 调用失败或超时 / 低置信）必须全部收敛为「静默跳过 = 现状」；违反 = 小脑抖动导致主流程不可用。
 4. ❌ **禁止在 state 里塞全量记忆或完整会话历史**：state 只允许轻量上下文（消息文本 + Agent 标识）；违反 = 小脑调用退化为第二个大脑，亚秒预算破裂。
 5. ❌ **禁止小脑结论直接替代主循环**（除显式开关）：`Inject` 只能追加一条 System 增强提示；`Direct` 短路必须受 `cerebellum_trivial_direct` 开关约束，且该开关默认 false。
-6. ✅ **协议边界校验必须前置本地执行**：`CerebellumQuestion::validate` 必须在发出请求前跑（choice ∈ [1,255] / score ∈ [2,10] / noul 不带 criteria）；违反 = 无效请求打到服务端。
+6. ✅ **协议边界校验必须前置本地执行**：`CerebellumQuestion::validate` 必须在发出请求前跑（choice ∈ [1,255] / score ∈ [2,255] / noul 不带 criteria）；违反 = 无效请求打到服务端。
 7. ✅ **响应容错边界必须"顶层硬、逐项软"**：顶层缺 `answers` / `answers` 非对象 → 硬错误；单答案解析失败 → 容错跳过 + 告警。禁止反过来（顶层缺失静默通过 = 决策结果凭空消失）。
 8. ✅ **错误码映射必须与 cortex 同口径**：429 → `ModelRateLimited`、401|403 → `ModelAuth`、4xx → `ModelBadRequest`（含内容过滤 → `ModelContentFiltered`）、5xx → `ModelServerError`。
 9. ✅ **`ProviderType::Jev` / `ModelCapability::Decision` 只能尾部追加**：`#[repr(i32)]` 变体位置必须追加在末尾，禁止插队；违反 = 存量 DB 判别值错位。

@@ -188,6 +188,12 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
         self.inner.set_memory_index_plan(plan);
     }
 
+    /// 上下文容量同样必须转发：`build()` 走 `inner`，默认空实现会让 A2A / Codex
+    /// Agent 的区块预算静默退化成「不裁」，与主链路形状不一致。
+    fn set_context_capacity_tokens(&mut self, capacity: Option<u64>) {
+        self.inner.set_context_capacity_tokens(capacity);
+    }
+
     fn settled_reference(&mut self, items: &[String]) {
         self.inner.settled_reference(items);
     }

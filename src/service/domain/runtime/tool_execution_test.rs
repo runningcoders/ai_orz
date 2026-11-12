@@ -437,6 +437,7 @@ mod tests {
             &self,
             _ctx: RequestContext,
             _progress: &crate::pkg::background_task::TaskProgressCounter,
+            _mode: common::enums::VectorRebuildMode,
         ) -> Result<()> {
             unimplemented!("not needed by tool execution routing tests")
         }
@@ -695,6 +696,7 @@ mod tests {
             &self,
             _ctx: RequestContext,
             _progress: &crate::pkg::background_task::TaskProgressCounter,
+            _mode: common::enums::VectorRebuildMode,
         ) -> Result<()> {
             unimplemented!("not needed by tool execution routing tests")
         }

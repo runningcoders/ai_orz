@@ -53,11 +53,14 @@ pub enum QuestionSpec {
         /// 选项 id → 该选项的描述（模型据此比较）
         options: BTreeMap<String, String>,
     },
-    /// 分级打分（对应 score）：levels 由低到高，2~10 级
+    /// 分级打分（对应 score）：levels 由低到高，协议允许 2~255 级
+    ///
+    /// 等级**数量**是协议自由度，不必人为凑成固定档数；读侧按等级数把
+    /// 服务端返回的分数归一到 0~1，再映射到业务自己的上限。
     Grade {
         /// 判据说明
         instructions: String,
-        /// 由低到高的等级描述（2~10 项）
+        /// 由低到高的等级描述（边界真相：`common::api::cerebellum::MAX_SCORE_LEVELS`）
         levels: Vec<String>,
     },
     /// 存在性概率（对应 noul）：0~1，**不带判据也不带 confidence**
@@ -79,11 +82,14 @@ pub enum DecisionValue {
         /// 选项 id → 概率
         weights: BTreeMap<String, f32>,
     },
-    /// 概率加权分数 + 置信度
+    /// 服务端已判断完的分数 + 置信度
     Grade {
-        /// 加权分数
+        /// **协议原值**：0-based 等级序号的加权期望，值域 `[0, levels.len()-1]`。
+        ///
+        /// 加权由服务端完成，消费方只做量纲换算（`score_to_unit`）：
+        /// 拿到单位刻度后再乘业务上限，**不得**再对概率做一次加权。
         score: f32,
-        /// 打分置信度
+        /// 打分置信度（连续量里只作观测，不作「有没有结论」的门禁）
         confidence: f32,
     },
     /// 0~1 概率（无置信度）
@@ -108,7 +114,7 @@ pub struct PickOne {
 /// 分级结论（已过阈值过滤）
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grade {
-    /// 加权分数
+    /// 分数；`score()` 给协议原值，`scaled()` 给映射到业务上限后的值
     pub score: f32,
     /// 打分置信度
     pub confidence: f32,

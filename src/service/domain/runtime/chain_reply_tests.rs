@@ -34,6 +34,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct MockBrainDal {
     script: Mutex<VecDeque<Option<DecisionOutcome>>>,
     calls: AtomicUsize,
+    /// 每次 `decide` 收到的 `DecisionRequest.state` 原文（运行时反事实的唯一证据面）
+    ///
+    /// 只捕获 state 不改签名：本场景的 state 是**发给模型的东西**，断言必须落在
+    /// 它上面，而不是落在 `Metrics` 中间态上（后者不经过 `prepare()` 的键裁剪）。
+    states: Mutex<Vec<serde_json::Value>>,
 }
 
 impl MockBrainDal {
@@ -41,11 +46,16 @@ impl MockBrainDal {
         Self {
             script: Mutex::new(script.into()),
             calls: AtomicUsize::new(0),
+            states: Mutex::new(Vec::new()),
         }
     }
 
     fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
+    }
+
+    fn states(&self) -> Vec<serde_json::Value> {
+        self.states.lock().expect("mock states lock").clone()
     }
 }
 
@@ -55,9 +65,15 @@ impl BrainDal for MockBrainDal {
         &self,
         _ctx: RequestContext,
         _brain: &Brain,
-        _requests: Vec<crate::pkg::policy::DecisionRequest>,
+        requests: Vec<crate::pkg::policy::DecisionRequest>,
     ) -> DecisionOutcome {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut states = self.states.lock().expect("mock states lock");
+            for request in &requests {
+                states.push(request.state.clone());
+            }
+        }
         match self.script.lock().expect("mock script lock").pop_front() {
             Some(Some(outcome)) => outcome,
             _ => DecisionOutcome {
@@ -208,6 +224,7 @@ fn triggered_facts() -> ChainPressureFacts {
 fn msg(from_id: &str, type_label: &'static str, content: &str) -> ChainMessage {
     ChainMessage {
         from_id: from_id.to_string(),
+        from_name: None,
         type_label,
         content: content.to_string(),
         created_at: 0,
@@ -235,52 +252,89 @@ async fn run_gate(
     brain: Option<&Brain>,
     run_id: &str,
 ) -> (Option<ChainReplyVerdict>, usize) {
+    let (verdict, calls, _) = run_gate_full(messages, facts, script, brain, run_id).await;
+    (verdict, calls)
+}
+
+/// 同 [`run_gate`]，额外吐出每次 `decide` 收到的 state（运行时反事实用）
+///
+/// 拆成两个函数而不是改签名：`run_gate` 有 30+ 处调用，改签名会把「一次无关的
+/// 机械改动」混进本笔的语义收敛里（回滚面变大）。
+async fn run_gate_full(
+    messages: &[ChainMessage],
+    facts: ChainPressureFacts,
+    script: Vec<Option<DecisionOutcome>>,
+    brain: Option<&Brain>,
+    run_id: &str,
+) -> (Option<ChainReplyVerdict>, usize, Vec<serde_json::Value>) {
+    run_gate_full_with_pending(messages, facts, script, brain, "", run_id).await
+}
+
+/// 带待发正文的同一入口（新增输入侧的用例走这里；旧用例零改动）
+async fn run_gate_full_with_pending(
+    messages: &[ChainMessage],
+    facts: ChainPressureFacts,
+    script: Vec<Option<DecisionOutcome>>,
+    brain: Option<&Brain>,
+    pending: &str,
+    run_id: &str,
+) -> (Option<ChainReplyVerdict>, usize, Vec<serde_json::Value>) {
     // 全局 Storage 单例：单跑本模块时 `test_ctx()` 依赖它已初始化
     crate::pkg::storage::test_support::init_for_test().await;
     // 轨迹落盘基址：`record_cerebellum` 未初始化时静默丢弃（无副作用设计）
     crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_chain_reply_test"));
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
-    let got = judge_chain_reply(&ctx, mock.clone(), brain, messages, &facts, run_id).await;
-    (got, mock.calls())
+    let got = judge_chain_reply(
+        &ctx,
+        mock.clone(),
+        brain,
+        None,
+        messages,
+        &facts,
+        pending,
+        run_id,
+    )
+    .await;
+    (got, mock.calls(), mock.states())
 }
 
 fn take_traces(run_id: &str) -> Vec<ThinkTraceCerebellum> {
     crate::pkg::think_trace::take_cerebellum(run_id)
 }
 
-// ---------- 预算分配（Q3 改判：min(容量上限, 时延上限)） ----------
+// ---------- 预算分配（容量即预算，无时延反推轴） ----------
 
-/// 测试用默认正文预算：无容量配置 ⇒ 时延上限绑定
+/// 测试用默认正文预算：标准 4000 容量 ⇒ 正文池 3500（与改造前 `None` 口径同值）
 fn test_body_budget() -> usize {
-    body_token_budget(input_token_budget(None))
+    body_token_budget(input_token_budget(Some(4_000)))
 }
 
 #[test]
-fn latency_cap_is_4000_by_5s_budget() {
-    // 时延反推上限必须字面落在代码里（不靠注释自述）
-    //
-    // 5s 预算 → 理论 prefill 天花板 ≈ 9000 tokens；不取满（模型侧排队 /
-    // 生成长度波动 / prefill 吞吐差异），取 4000 = 理论值 ≈ 44%，对 5s 留 ≈ 50% 余量。
-    // 与旧值的关系：旧 800 按 1000ms 反推，基数 5 倍 ⇒ 本值同样 5 倍，没有缩回。
-    assert_eq!(LATENCY_INPUT_CAP, 4_000);
-    assert_eq!(FRAME_OVERHEAD_RESERVE, 500);
+fn input_budget_is_provider_capacity_without_a_latency_cap() {
+    // 速率轴已删：输入预算恒等于 provider 容量，不再被任何绝对 token 数夹顶
+    assert_eq!(input_token_budget(Some(200_000)), 200_000);
+    assert_eq!(input_token_budget(Some(128_000)), 128_000);
+    assert_eq!(input_token_budget(Some(4_000)), 4_000);
+    assert_eq!(input_token_budget(Some(600)), 600);
+    // 未配置容量 ⇒ 不裁（容量未配不猜，绝不拍一个默认上限）
+    assert_eq!(input_token_budget(None), usize::MAX);
+    // 同一场景换两个不同容量的 provider ⇒ 预算必须不同（固定上限的反事实；
+    // R49 静态证据：`git show 7ec1d6fc:src/service/domain/runtime/chain_reply.rs`
+    // 里 `LATENCY_INPUT_CAP = 4000` 与 `.min(LATENCY_INPUT_CAP)` 均在档）
+    assert_ne!(
+        input_token_budget(Some(200_000)),
+        input_token_budget(Some(4_000)),
+        "两个容量的 provider ⇒ 预算必须不同"
+    );
+    // 骨架按比例派生：@4000 ⇒ 500（与改造前逐位一致），正文 3500
+    assert_eq!(context::frame_tokens(4_000), 500);
     assert_eq!(body_token_budget(4_000), 3_500);
+    // 小容量由比例收敛（不再被固定 500 骨架打成 0）
+    assert_eq!(body_token_budget(300), 263);
+    assert_eq!(body_token_budget(0), 0, "输入为 0 时才归零");
     // 条数上限退为防环硬顶（与消费者侧回溯硬上限同口径）
     assert_eq!(MAX_CHAIN_MESSAGES, 32);
-}
-
-#[test]
-fn input_budget_is_min_of_capacity_and_latency_cap() {
-    // 标准 provider（128K / 200K）：容量远大于时延上限 ⇒ 时延侧绑定
-    assert_eq!(input_token_budget(Some(200_000)), 4_000);
-    assert_eq!(input_token_budget(Some(128_000)), 4_000);
-    // 小容量 provider：容量侧绑定（不能按时延上限硬拉）
-    assert_eq!(input_token_budget(Some(600)), 600);
-    // 未配置容量：保守退化到时延上限
-    assert_eq!(input_token_budget(None), 4_000);
-    // 容量小于骨架预留：正文预算归零而不是下溢
-    assert_eq!(body_token_budget(300), 0);
 }
 
 // ---------- 输入组装（Q3：保头 + 保尾 + 省略标注） ----------
@@ -564,22 +618,65 @@ async fn degraded_outcome_falls_back_to_static_threshold() {
 }
 
 #[tokio::test]
-async fn low_confidence_falls_back() {
+async fn low_confidence_close_is_adopted() {
+    // close 的代价最低：门槛 0，任何置信度都采纳
     let brain = brain_with_quota(10);
     let run_id = "chain-reply-low-conf";
     let (got, calls) = run_gate(
         &sample_chain(6),
         triggered_facts(),
-        vec![Some(pick_for(OPTION_CLOSE, 0.5))],
+        vec![Some(pick_for(OPTION_CLOSE, 0.1))],
         Some(&brain),
         run_id,
     )
     .await;
-    assert!(got.is_none(), "置信度低于 {} 不得收口", MIN_CONFIDENCE);
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: Some(c) }) if (c - 0.1).abs() < 1e-6),
+        "close 门槛为 0，低置信也必须采纳：{got:?}"
+    );
     assert_eq!(calls, 1);
     let traces = take_traces(run_id);
-    assert_eq!(traces[0].decision, DECISION_FALLBACK);
-    assert_eq!(traces[0].degraded.as_deref(), Some("no_answer"));
+    assert_eq!(traces[0].decision, DECISION_CLOSE);
+    assert_eq!(traces[0].confidence, Some(0.1));
+}
+
+#[tokio::test]
+async fn low_confidence_continue_falls_back_to_close() {
+    // continue 代价最高：门槛 0.9，不达标就落到默认 close
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-low-continue";
+    let (got, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.85))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: None })),
+        "低置信 continue 必须落到默认 close：{got:?}"
+    );
+    assert_eq!(calls, 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces[0].decision, DECISION_CLOSE_DEFAULT);
+    assert_eq!(traces[0].degraded.as_deref(), Some(DEGRADED_LOW_CONFIDENCE));
+}
+
+#[tokio::test]
+async fn high_confidence_continue_is_adopted() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-high-continue";
+    let (got, _) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(matches!(got, Some(ChainReplyVerdict::Continue { .. })));
+    assert_eq!(take_traces(run_id)[0].decision, DECISION_CONTINUE);
 }
 
 #[tokio::test]
@@ -594,9 +691,13 @@ async fn hallucinated_option_is_not_trusted() {
         run_id,
     )
     .await;
-    assert!(got.is_none(), "不在选项集内的答案视为没结论");
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: None })),
+        "不在选项集内的答案视为没结论，落默认 close"
+    );
     let traces = take_traces(run_id);
-    assert_eq!(traces[0].decision, DECISION_FALLBACK);
+    assert_eq!(traces[0].decision, DECISION_CLOSE_DEFAULT);
+    assert_eq!(traces[0].degraded.as_deref(), Some(DEGRADED_NO_ANSWER));
 }
 
 #[tokio::test]
@@ -647,14 +748,18 @@ fn instructions_forbid_treating_omission_as_absence() {
     // 本场景唯一的假阴性形态：把「看不到」当「没有新信息」
     assert!(INSTRUCTIONS.contains("中间 N 条已省略"));
     assert!(INSTRUCTIONS.contains("不得把「看不到」当成「没有新信息」"));
-    assert!(INSTRUCTIONS.contains("证据不足"));
+    assert!(INSTRUCTIONS.contains("无法确认时选 close"));
 }
 
 #[test]
-fn instructions_default_to_continue() {
-    // 只写黑名单侧：误收口代价高于多回一轮
-    assert!(INSTRUCTIONS.contains("判不准就选 continue"));
+fn instructions_default_to_close() {
+    // 拿不准就选代价最低的 close（仍把 Final 作为知会送达）
+    assert!(INSTRUCTIONS.contains("拿不准时也选 close"));
+    assert!(!INSTRUCTIONS.contains("判不准就选 continue"));
     assert_eq!(MIN_CONFIDENCE, 0.9);
+    assert_eq!(MIN_CONFIDENCE_CLOSE, 0.0);
+    assert_eq!(MIN_CONFIDENCE_SILENT, 0.8);
+    assert_eq!(MIN_CONFIDENCE_CONTINUE, 0.9);
 }
 
 // ---------- 熔断（circuit_open）：run 级、独立值域、下一 run 自动恢复 ----------
@@ -828,16 +933,19 @@ async fn any_answer_resets_the_consecutive_failure_counter() {
     .await;
     assert_eq!(state.cerebellum_consecutive_failures(&agent_id), 2);
 
-    // 低置信（有应答、无可用结论）→ 端点健康，清零
+    // 有应答、但置信不达标 ⇒ 端点健康，清零（结论按默认 close）
     let (verdict, _) = run_gate(
         &sample_chain(4),
         triggered_facts(),
-        vec![Some(pick_for(OPTION_CLOSE, 0.1))],
+        vec![Some(pick_for(OPTION_CONTINUE, 0.5))],
         Some(&brain),
         "run-reset-c",
     )
     .await;
-    assert!(verdict.is_none());
+    assert!(matches!(
+        verdict,
+        Some(ChainReplyVerdict::Close { confidence: None })
+    ));
     assert_eq!(
         state.cerebellum_consecutive_failures(&agent_id),
         0,
@@ -847,16 +955,19 @@ async fn any_answer_resets_the_consecutive_failure_counter() {
 
 // ---------- 正文预算下限：容量不足就不问，而不是发一个只剩骨架的请求 ----------
 
-/// 容量（500 × 60% = 300）连 450 骨架都装不下 ⇒ 零请求、零配额、记 capacity_too_small。
+/// 容量为 0（`max_context_length = 1` ⇒ 1 × 60% = 0）⇒ 零请求、零配额、记 capacity_too_small。
+///
+/// 判据是结构性的「正文预算 == 0」，不再是「低于某个最小可用 token 数」：
+/// 唯一会落到 0 的输入就是容量 0 本身。
 #[tokio::test]
-async fn capacity_below_judge_skeleton_sends_no_request() {
-    let brain = brain_with_capacity(500);
+async fn zero_capacity_sends_no_request() {
+    let brain = brain_with_capacity(1);
     assert_eq!(
         brain
             .cerebellum
             .as_ref()
             .and_then(|po| po.config().recommended_context_length_tokens()),
-        Some(300)
+        Some(0)
     );
 
     let (verdict, calls) = run_gate(
@@ -877,17 +988,21 @@ async fn capacity_below_judge_skeleton_sends_no_request() {
     assert_eq!(traces[0].latency_ms, None);
 }
 
-/// 反事实：容量刚好够（1000 × 60% = 600 ⇒ 正文 100，**恰在**最低可用线上）必须照常问。
+/// 行为变化实证：容量 90（改造前会被固定 500 骨架打到 0 而永远降级）现在照常问。
 ///
-/// 骨架预留 450 → 500 之后，这条恰好落在边界上：100 == MIN_BODY_TOKEN_BUDGET，
-/// 判据是 `< MIN`（严格小于）⇒ 仍须问。边界值最容易被后续调参悄悄改成「不问」。
+/// 判据从「低于最小可用 token 数」改成「正文预算 == 0」后，capacity 90 ⇒ 正文 79 > 0
+/// ⇒ 必须真发请求。这是「不做多余限制」的直接后果，用断言钉住免得被后续调参改回去。
 #[tokio::test]
-async fn capacity_above_min_body_budget_still_asks() {
-    let brain = brain_with_capacity(1000);
+async fn small_capacity_still_asks_after_the_floor_was_removed() {
+    let brain = brain_with_capacity(150);
     assert_eq!(
-        body_token_budget(input_token_budget(Some(600))),
-        MIN_BODY_TOKEN_BUDGET
+        brain
+            .cerebellum
+            .as_ref()
+            .and_then(|po| po.config().recommended_context_length_tokens()),
+        Some(90)
     );
+    assert_eq!(body_token_budget(90), 79, "容量 90 ⇒ 正文 79 > 0 ⇒ 必须问");
 
     let (verdict, calls) = run_gate(
         &sample_chain(4),
@@ -902,35 +1017,6 @@ async fn capacity_above_min_body_budget_still_asks() {
         "容量够时必须正常出结论"
     );
     assert_eq!(calls, 1);
-}
-
-// ---------- 等价断言（容量 ≥ 时延反推量 ⇒ 预算 == 时延反推量） ----------
-
-#[test]
-fn capacity_at_or_above_latency_cap_binds_the_latency_side() {
-    for capacity in [
-        LATENCY_INPUT_CAP as u64,
-        LATENCY_INPUT_CAP as u64 + 1,
-        128_000,
-        200_000,
-        1_000_000,
-    ] {
-        assert_eq!(
-            input_token_budget(Some(capacity)),
-            LATENCY_INPUT_CAP,
-            "容量 {capacity} ≥ 时延反推量 ⇒ 预算必须恰等于时延反推量"
-        );
-        assert_eq!(
-            body_token_budget(input_token_budget(Some(capacity))),
-            LATENCY_INPUT_CAP - FRAME_OVERHEAD_RESERVE,
-            "容量 {capacity} 下正文预算必须恰为 时延上限 − 骨架预留"
-        );
-    }
-    // 边界另一侧：容量比时延上限小 1 ⇒ 容量绑定（逐 token 相等）
-    assert_eq!(
-        input_token_budget(Some(LATENCY_INPUT_CAP as u64 - 1)),
-        LATENCY_INPUT_CAP - 1
-    );
 }
 
 // ---------- 时延回收点：applied=false / degraded 也要记 ----------
@@ -1294,17 +1380,18 @@ async fn absolute_ceiling_forces_close_without_asking() {
 
 // ---------- 上下文两字段（AMan 硬要求：链深 + 疲劳必须写进上下文） ----------
 
-fn metrics_with(facts: &ChainPressureFacts) -> Metrics {
-    Metrics::new()
-        .with("agent_id", "agent-prompt")
-        .with("agent_name", "Test Agent")
-        .with("chain_depth", facts.chain_depth as u64)
-        .with("window_depth", facts.window_depth as u64)
-        .with("fatigue", facts.fatigue)
-        .with("soft_fatigue", facts.soft_fatigue)
-        .with("hard_fatigue", facts.hard_fatigue)
-        .with("hard_window_depth", facts.hard_window_depth)
-        .with("chain_messages", "[#1] agent-a 文本消息: 正文")
+/// 生产同一装配点的直调：`state_metrics` 是本场景**唯一** state 装配入口
+///
+/// 刻意不再保留一份「测试侧平行拼装」：上一版的 `metrics_with` 自己重拼 9 个键，
+/// 所以「生产收敛成单键」这件事它**测不出来**（拼装逻辑改了两边不必同步）。
+fn metrics_for(facts: &ChainPressureFacts) -> Metrics {
+    state_metrics(
+        &brain_with_quota(1),
+        "",
+        "[#1] agent-a 文本消息: 正文",
+        "",
+        facts,
+    )
 }
 
 /// 渲染出的 prompt / state 里必须**同时**出现链深与疲劳值且非空
@@ -1314,19 +1401,27 @@ fn metrics_with(facts: &ChainPressureFacts) -> Metrics {
 #[test]
 fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
     let facts = triggered_facts();
-    let reqs = policy().prepare(&metrics_with(&facts));
+    let brain = brain_with_quota(1);
+    let reqs = policy().prepare(&state_metrics(
+        &brain,
+        "",
+        "[#1] agent-a 文本消息: 正文",
+        "",
+        &facts,
+    ));
     assert_eq!(reqs.len(), 1, "一次 PickOne 一个请求");
 
-    let state = &reqs[0].state;
-    assert_eq!(
-        state["window_depth"],
-        serde_json::json!(facts.window_depth as u64),
-        "state 必须带当前链深度"
+    // 断言**不删只搬**：值仍在 state 里，只是从平铺键搬进了 `## 协作压力` 块正文
+    let body = reqs[0].state[context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        body.contains(&format!("window_depth: {}", facts.window_depth)),
+        "state 必须带当前链深度（实际取值，不是键存在）：{body:?}"
     );
-    assert_eq!(
-        state["fatigue"],
-        serde_json::json!(facts.fatigue),
-        "state 必须带疲劳值"
+    assert!(
+        body.contains(&format!("fatigue: {}", facts.fatigue)),
+        "state 必须带疲劳值（实际取值）：{body:?}"
     );
 
     // 判据侧必须写明「仅作辅助参考」，否则模型会拿跳数当硬判据
@@ -1335,29 +1430,1004 @@ fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
     assert!(INSTRUCTIONS.contains("仅作辅助参考"));
 }
 
-/// 场景级超时覆盖：chain_reply 声明 5000ms，不改全局缺省
+/// 场景级超时覆盖：chain_reply 声明 5000ms（严格高于全局缺省），不改全局缺省
 #[test]
 fn scene_declares_a_5s_timeout_override() {
-    assert_eq!(SCENE_TIMEOUT_MS, 5_000, "AMan 定谳：请求小脑 5 秒");
-    let reqs = policy().prepare(&metrics_with(&triggered_facts()));
+    assert_eq!(SCENE_TIMEOUT_MS, 5_000, "AMan 定谳：本场景请求小脑 5 秒");
+    let reqs = policy().prepare(&metrics_for(&triggered_facts()));
     assert_eq!(
         reqs[0].timeout_ms,
         Some(SCENE_TIMEOUT_MS),
-        "超时必须由场景显式声明（否则会落回全局缺省，把所有 scene 一起拖慢）"
+        "超时必须由场景显式声明（否则落回全局缺省 3000ms，链内多拉上下文的预算被砍 2 秒）"
     );
 
-    // 差值字面断言：防止某天 override 被摘掉、值悄悄回落到全局缺省而无人发觉。
-    // 两个数字都写死（1000 / 4000 差值），不做「常量 vs 常量」的比较 ——
-    // 那样只证「两值不等」，证不了「缺省被顺手改成了别的值」（`ea06affb`
-    // 把缺省误落成 800 那次，正是靠这条字面断言在下一轮被立刻抓出来）。
+    // 三钉字面断言：全局缺省 / 场景声明 / 两者差值，三个数字全部写死。
+    // 不做「常量 vs 常量」的比较 —— 那样只证「两值不等」，证不了「缺省被顺手
+    // 改成了别的值」（`ea06affb` 把缺省误落成 800 那次，正是靠字面断言在下一轮
+    // 被抓出来）。缺省值已由 AMan 续令（`01a1c5c9`）改为 3000ms，原「统一 5 秒」
+    // 作废；本场景声明仍是 5000ms 且必须**严格高于**缺省（差值为 0 说明 override
+    // 被摘掉，负值说明缺省被抬过了场景声明）。
     assert_eq!(
         crate::service::dao::cerebellum::DEFAULT_CEREBELLUM_TIMEOUT_MS,
-        1_000,
-        "全局缺省必须是 1000ms（AMan 09:08「1 秒」定谳）：5 秒属 chain_reply 的场景级覆盖"
+        3_000,
+        "全局缺省必须是 3000ms（AMan 01a1c5c9 续令）：本场景 5 秒属场景级覆盖"
     );
     assert_eq!(
         SCENE_TIMEOUT_MS - crate::service::dao::cerebellum::DEFAULT_CEREBELLUM_TIMEOUT_MS,
-        4_000,
-        "场景覆盖与全局缺省的差值必须显式成立（摘掉 override 时立刻红）"
+        2_000,
+        "场景覆盖必须严格高于全局缺省（差值 2000ms 字面成立，摘掉 override 时立刻红）"
     );
+}
+
+// ---------- 上下文单出口（笔：chain_reply 收敛）----------
+
+/// 哨兵：正文必须**逐字**带上（R54 ②「新形态取值正确」的证据面）
+const CHAIN_SENTINEL_HEAD: &str = "链头哨兵：这条链在修小脑上下文";
+const CHAIN_SENTINEL_TAIL: &str = "尾部哨兵：刚发来的这一跳";
+
+/// 同时给「推荐长度」与「最大长度」的 Brain（两层语义的夹具）
+fn brain_with_recommended_and_max(recommended: i32, max: i32) -> Brain {
+    let mut brain = brain_with_quota(4);
+    let mut po = mock_provider();
+    po.config = serde_json::to_string(&crate::models::model_provider::ModelProviderConfig {
+        recommended_context_length: Some(recommended),
+        max_context_length: Some(max),
+        ..Default::default()
+    })
+    .expect("provider config 必须可序列化");
+    brain.cerebellum = Some(po);
+    brain
+}
+
+/// 指定**容量**（token）的 Brain：`recommended_context_length` 直给，
+/// 避开 `max_context_length × 60%` 的回落，才能精确打在边界点上。
+fn brain_with_capacity_tokens(capacity: u64) -> Brain {
+    let mut brain = brain_with_quota(4);
+    let mut po = mock_provider();
+    po.config = serde_json::to_string(&crate::models::model_provider::ModelProviderConfig {
+        recommended_context_length: Some(capacity as i32),
+        ..Default::default()
+    })
+    .expect("provider config 必须可序列化");
+    brain.cerebellum = Some(po);
+    brain
+}
+
+/// 摘要预算随 provider 容量变化（同一场景换容量 ⇒ 换预算），不是固定整数
+///
+/// 改前必红：旧实现 `SNIPPET_CHARS = 160` 是常量，两个容量的取值必然相等。
+#[test]
+fn snippet_budget_follows_provider_capacity() {
+    let small = brain_with_capacity_tokens(4_000);
+    let large = brain_with_capacity_tokens(128_000);
+    assert_eq!(
+        context::snippet_budget(&small, context::share::SNIPPET_BP),
+        Some(160),
+        "@4000 ⇒ 4% = 160 token（与改造前 160 字符等值）"
+    );
+    assert_eq!(
+        context::snippet_budget(&large, context::share::SNIPPET_BP),
+        Some(5_120),
+        "@128K ⇒ 4% = 5120 token（改造前恒 160）"
+    );
+    assert_ne!(
+        context::snippet_budget(&small, context::share::SNIPPET_BP),
+        context::snippet_budget(&large, context::share::SNIPPET_BP),
+        "预算必须随容量变，否则又退化成硬编码绝对值"
+    );
+    assert_eq!(
+        context::snippet_budget(&brain_with_quota(4), context::share::SNIPPET_BP),
+        None,
+        "容量未配置 ⇒ 不猜预算（不截断）"
+    );
+}
+
+/// 两层语义：推荐长度是裁剪基准、最大长度是唯一硬顶（推荐值不得越过硬顶）
+///
+/// 改前必红（R49 静态证据）：旧实现只读 `recommended_context_length_tokens()`
+/// —— `git show 24e01d33:src/service/domain/runtime/chain_reply.rs | grep -c max_context_length`
+/// 为 0，硬顶从未被任何小脑路径读过，推荐值给 20 万就按 20 万发。
+#[test]
+fn hard_ceiling_clamps_the_soft_target() {
+    // 推荐值虚高（> 最大长度）⇒ 按最大长度封顶
+    let over = brain_with_recommended_and_max(200_000, 128_000);
+    assert_eq!(
+        context::context_hard_ceiling(&over),
+        Some(128_000),
+        "硬顶取的是 max_context_length 本身，不参与 0.6 回落"
+    );
+    assert_eq!(
+        context::context_capacity(&over),
+        Some(128_000),
+        "推荐 20 万 > 最大 12.8 万 ⇒ 本次预算必须是 12.8 万（越过最大长度会被 provider 直接拒）"
+    );
+    assert!(
+        input_token_budget(context::context_capacity(&over)) <= 128_000,
+        "预算永不越过唯一硬顶"
+    );
+
+    // 推荐值 < 最大长度 ⇒ 取推荐：推荐是裁剪基准，不抬到最大
+    let under = brain_with_recommended_and_max(64_000, 128_000);
+    assert_eq!(
+        context::context_capacity(&under),
+        Some(64_000),
+        "裁剪基准仍是推荐长度：有空间也不把预算抬到硬顶"
+    );
+
+    // 硬顶未配置 ⇒ 保持既有口径（用推荐值）
+    let no_hard = brain_with_capacity_tokens(4_000);
+    assert_eq!(context::context_hard_ceiling(&no_hard), None);
+    assert_eq!(context::context_capacity(&no_hard), Some(4_000));
+}
+
+/// 超过**推荐**长度但远低于**最大**长度 ⇒ 照常发送（裁剪不阻断）
+///
+/// 这是 AMan 2026-11-11 口径的正面断言：内容（6 条链内消息）远超推荐值 4000，
+/// 但离硬顶 20 万还很远 ⇒ 必须真发请求，不得判失败 / 降级 / 静默不发。
+/// 如实披露：改造前该路径**本就放行**（旧实现按推荐裁剪后照发），故本条不是
+/// 「改前必红」项，而是防止后续把「超推荐」重新写成硬校验的反回归护栏；
+/// 真正改前必红的是 [`hard_ceiling_clamps_the_soft_target`]。
+#[tokio::test]
+async fn content_over_recommended_but_under_hard_ceiling_still_asks() {
+    let brain = brain_with_recommended_and_max(4_000, 200_000);
+    assert_eq!(
+        context::context_capacity(&brain),
+        Some(4_000),
+        "本次预算按推荐裁剪"
+    );
+    let (verdict, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        "run-over-soft",
+    )
+    .await;
+    assert!(verdict.is_some(), "略超推荐、远低于最大 ⇒ 必须有结论");
+    assert_eq!(
+        calls, 1,
+        "略超推荐、远低于最大 ⇒ 必须照常发送（裁剪不阻断，也不是强校验失败）"
+    );
+
+    // 反向（不得放宽）：硬顶小到预算夹成 0 ⇒ 仍按既有口径收口
+    let degenerate = brain_with_capacity(1); // max=1 ⇒ 推荐 0、硬顶 1 ⇒ min = 0
+    let (verdict, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&degenerate),
+        "run-over-hard",
+    )
+    .await;
+    assert!(verdict.is_none(), "预算 0 ⇒ 不问");
+    assert_eq!(calls, 0, "超过唯一硬顶才收口：零请求");
+}
+
+/// 接线一跳：容量派生的摘要预算必须真的传进装配点（不是算完丢掉）
+///
+/// 派生值 `snippet_budget(brain, SNIPPET_BP)` 若只在测试里被调用、生产装配点仍传
+/// `None`（或旧常量），两个容量渲染出的正文会**逐字节相同** —— 那正是「派生值没
+/// 接线」的形态。本条直接对生产出口 `state_bundle` 断言两侧长度必须不同。
+#[test]
+fn dialogue_snippet_budget_reaches_the_bundle() {
+    let long_summary = "这是一条很长的历史摘要".repeat(80);
+    let mut small = brain_with_capacity_tokens(4_000); // 160 token
+    small.memories = vec![short_term("st-w1", &long_summary)];
+    let mut large = brain_with_capacity_tokens(128_000); // 5120 token ⇒ 全文放得下
+    large.memories = vec![short_term("st-w2", &long_summary)];
+    let facts = triggered_facts();
+
+    let small_body = state_bundle(&small, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let large_body = state_bundle(&large, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(
+        !small_body.contains(&long_summary),
+        "小容量必须按派生预算截断：{small_body:?}"
+    );
+    assert!(
+        large_body.contains(&long_summary),
+        "大容量必须原样带上（预算真的传进去了）：{large_body:?}"
+    );
+    assert!(
+        small_body.len() < large_body.len(),
+        "两个容量渲染同长 ⇒ 派生预算没接到装配点"
+    );
+}
+
+/// R54 成对断言：形态迁移必须同时断「旧形态已消失」与「新形态取值正确」
+///
+/// 只断后者时，**双出口共存**仍会全绿（改造前 9 个平铺键还在，新键也照样有值）。
+#[tokio::test]
+async fn request_state_is_single_rendered_context_block() {
+    let brain = brain_with_quota(4);
+    let facts = triggered_facts();
+    let messages = vec![
+        msg("agent-a", "文本消息", CHAIN_SENTINEL_HEAD),
+        msg("agent-b", "文本消息", "收到"),
+        msg("agent-a", "工具执行结果", CHAIN_SENTINEL_TAIL),
+    ];
+    let (verdict, calls, states) = run_gate_full(
+        &messages,
+        facts,
+        vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+        Some(&brain),
+        "run-single-exit",
+    )
+    .await;
+
+    assert!(matches!(verdict, Some(ChainReplyVerdict::Close { .. })));
+    assert_eq!(calls, 1, "应当问且只问一次");
+    assert_eq!(states.len(), 1, "应当捕获一份 state");
+
+    let state = &states[0];
+    // ① 旧形态（9 键平铺）在该路径**已消失** —— 这是本笔的迁移方向证据
+    for key in [
+        "agent_id",
+        "agent_name",
+        "chain_depth",
+        "window_depth",
+        "fatigue",
+        "soft_fatigue",
+        "hard_fatigue",
+        "hard_window_depth",
+        "chain_messages",
+    ] {
+        assert!(
+            state.get(key).is_none(),
+            "旧平铺键 `{key}` 必须已从 state 消失（双出口共存不算收敛）：{state}"
+        );
+    }
+    assert_eq!(
+        state.as_object().map(|o| o.len()),
+        Some(1),
+        "state 必须恰一个键（单出口）：{state}"
+    );
+
+    // ② 新形态取值正确（实际取值，不是「非空」）
+    let body = state[context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        body.contains(&format!("agent_id: {}", brain.agent_id)),
+        "身份块必须带 agent_id 实际取值：{body:?}"
+    );
+    assert!(
+        body.contains(&format!("agent_name: {}", brain.agent_name)),
+        "身份块必须带 agent_name 实际取值：{body:?}"
+    );
+    assert!(body.contains("## 当前场景"), "{body:?}");
+    assert!(body.contains(SCENE), "场景块必须写明 scene：{body:?}");
+    assert!(body.contains("## 链内消息"), "{body:?}");
+    assert!(
+        body.contains(CHAIN_SENTINEL_HEAD),
+        "链头正文必须逐字带上：{body:?}"
+    );
+    assert!(
+        body.contains(CHAIN_SENTINEL_TAIL),
+        "尾部正文必须逐字带上：{body:?}"
+    );
+    assert!(body.contains("## 协作压力"), "{body:?}");
+    assert!(
+        body.contains(&format!("chain_depth: {}", facts.chain_depth)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("window_depth: {}", facts.window_depth)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("fatigue: {}", facts.fatigue)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("soft_fatigue: {}", facts.soft_fatigue)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("hard_fatigue: {}", facts.hard_fatigue)),
+        "{body:?}"
+    );
+    assert!(
+        body.contains(&format!("hard_window_depth: {}", facts.hard_window_depth)),
+        "{body:?}"
+    );
+}
+
+/// 块顺序断言：`会话身份` → `当前场景` → `链内消息` → `协作压力`
+///
+/// 不是洁癖：组织器的截断是**从尾部整块砍**，顺序错了「先砍压力块还是先砍证据块」
+/// 就变了 —— 顺序是截断语义的一部分。
+#[test]
+fn context_block_order_is_identity_scene_chain_pressure() {
+    let brain = brain_with_quota(1);
+    let rendered = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
+    let at = |needle: &str| {
+        rendered
+            .find(needle)
+            .unwrap_or_else(|| panic!("缺块 {needle}：{rendered:?}"))
+    };
+    let identity = at("## 会话身份");
+    let scene = at("## 当前场景");
+    let chain = at("## 链内消息");
+    let pressure = at("## 协作压力");
+    assert!(
+        identity < scene && scene < chain && chain < pressure,
+        "块序必须是 身份 < 场景 < 链内消息 < 协作压力（实际 {identity} / {scene} / {chain} / {pressure}）：{rendered:?}"
+    );
+}
+
+/// 边界五点实测：capacity = 110 / 500 / 1088 / 1500 / 200_000
+///
+/// 改造前骨架预留是固定 500，capacity=500 时正文预算被打到 0（永远降级）；
+/// 改按比例后同类小容量仍能挤出一份可判正文（438）；删掉「最小可判线」后
+/// 五点（含 capacity=110 ⇒ 97）全部真发请求 —— 「不问」分支由零容量用例单独覆盖。
+///
+/// R53 同源自证：每个点先断言**实际走了哪条分支**（calls / states），再断结构——
+/// 否则「每块都有非空 body」在「压根没构造请求」的点上也会绿（假绿）。
+#[tokio::test]
+async fn boundary_capacities_never_emit_a_title_without_body() {
+    // 长链：4 条 × 480 字（CJK ≈ 1 token/字）⇒ ≈ 1920 token，足以打满
+    // capacity=2500 的正文预算（2000），真正进入「预算裁尾」分支。
+    let long = "链内正文".repeat(120);
+    let mut messages = vec![msg("agent-a", "文本消息", CHAIN_SENTINEL_HEAD)];
+    for i in 0..3 {
+        messages.push(msg(
+            if i % 2 == 0 { "agent-b" } else { "agent-a" },
+            "文本消息",
+            &long,
+        ));
+    }
+    messages.push(msg("agent-b", "文本消息", CHAIN_SENTINEL_TAIL));
+
+    for capacity in [110u64, 500, 1_088, 1_500, 200_000] {
+        let brain = brain_with_capacity_tokens(capacity);
+        let input_budget = input_token_budget(Some(capacity));
+        let body_budget = body_token_budget(input_budget);
+        // 容量即预算：200_000 ⇒ 骨架 25_000、正文池 175_000（不再被夹顶）
+        let expected_body =
+            [97usize, 438, 952, 1_313, 175_000][[110u64, 500, 1_088, 1_500, 200_000]
+                .iter()
+                .position(|c| *c == capacity)
+                .unwrap()];
+        assert_eq!(
+            body_budget, expected_body,
+            "capacity={capacity} 的正文预算必须落在实测值上"
+        );
+        let (_, calls, states) = run_gate_full(
+            &messages,
+            triggered_facts(),
+            vec![Some(pick_for(OPTION_CLOSE, 0.95))],
+            Some(&brain),
+            &format!("run-boundary-{capacity}"),
+        )
+        .await;
+
+        // 五个点全部走「真发请求」分支（判据已改为 `body_budget == 0`，
+        // capacity 110 ⇒ 97 > 0）；「零容量不问」由 `zero_capacity_sends_no_request` 覆盖。
+
+        assert_eq!(calls, 1, "capacity={capacity} 应当问一次");
+        assert_eq!(states.len(), 1, "capacity={capacity} 应当捕获一份 state");
+        let body = states[0][context::STATE_KEY]
+            .as_str()
+            .unwrap_or_else(|| panic!("capacity={capacity}：state 必须是单键字符串"));
+
+        // 结构判据（与组织器既有 tail 判据同源）：每段首行 `## ` 且非空行 ≥ 2
+        for part in body.split("\n\n") {
+            assert!(
+                !part.trim().is_empty(),
+                "capacity={capacity} 出现空段落：{body:?}"
+            );
+            let first = part.lines().next().unwrap_or("");
+            assert!(
+                first.starts_with("## "),
+                "capacity={capacity} 每块首行必须是二级标题：{part:?}"
+            );
+            let non_empty = part.lines().filter(|l| !l.trim().is_empty()).count();
+            assert!(
+                non_empty >= 2,
+                "capacity={capacity} 每块至少「标题 + 正文」两行：{part:?}"
+            );
+        }
+        assert!(
+            body.contains("## 链内消息"),
+            "capacity={capacity} 必须带链内消息块：{body:?}"
+        );
+        // 链头恒保留（定值）；尾部是否保留取决于预算 ⇒ 只断链头
+        assert!(
+            body.contains(CHAIN_SENTINEL_HEAD),
+            "capacity={capacity} 链头必须保留：{body:?}"
+        );
+
+        // ★ 设计取舍的实证：同一份内容若交给组织器 `render_within(Some(capacity))`
+        // 会怎样（本场景刻意不用它 —— 见 `state_bundle` doc）
+        let bundle = state_bundle(
+            &brain,
+            "",
+            &render_chain(&messages, body_budget).rendered,
+            "",
+            &triggered_facts(),
+        );
+        let actual_tokens = estimate_tokens(&bundle.render());
+        // 组织器预算与场景自截共用同一比例表（`share::FRAME_BP` / `share::BODY_BP`）；
+        // 两处基准现已一致（都吃 capacity），差别只在裁法：场景侧按 body 预算裁正文、组织器按块整砍。
+        let organizer_budget = context::body_budget_tokens(capacity as usize);
+        let would_be = bundle.render_within(Some(capacity));
+        if actual_tokens > organizer_budget {
+            assert!(
+                would_be.contains("省略") || would_be.contains("已按模型容量截断"),
+                "capacity={capacity}（state {actual_tokens} token > 组织器预算 {organizer_budget}）\
+                 必须发生截断，否则本用例没证到冲突区：{would_be:?}"
+            );
+            // ★ 冲突区最坏形态：尾块整砍会把 `## 链内消息` 这块**主要证据**砍掉 ——
+            // 这正是本场景不走组织器截断的理由（比不截断更坏）。
+            assert!(
+                !would_be.contains(CHAIN_SENTINEL_HEAD),
+                "capacity={capacity}：组织器截断应把链内消息整块砍掉（否则冲突区论证不成立）：{would_be:?}"
+            );
+        } else {
+            assert_eq!(
+                would_be,
+                bundle.render(),
+                "capacity={capacity}（state {actual_tokens} token ≤ 组织器预算 {organizer_budget}）不应截断"
+            );
+            assert!(
+                would_be.contains(CHAIN_SENTINEL_HEAD),
+                "capacity={capacity}：不截断时链内消息必须在：{would_be:?}"
+            );
+        }
+    }
+}
+
+// ══════ 三态（continue / close / silent）独立计数 ══════
+//
+// AMan 2026-11-11 定谳：「noreply 是让对方不回复，不是不回复对方；直接不回复是
+// 一个独立的选项」⇒ ② close 与 ③ silent 是两个独立结论，各自独立计数，
+// **不得压成同一个值**（压成同值就算没做）。
+
+/// `silent` 是一个**独立**的第三个结论，不是 `close` 的别名
+#[tokio::test]
+async fn silent_verdict_is_a_distinct_third_state() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-silent";
+    let (got, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_SILENT, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    let verdict = got.expect("silent 必须产出结论，调用方才能走 SilentClose（对端零发送）");
+    assert!(matches!(verdict, ChainReplyVerdict::Silent { .. }));
+    assert_eq!(calls, 1, "一次 PickOne，不是逐候选各发一题");
+    assert_eq!(brain.cerebellum_quota.used(), 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].decision, DECISION_SILENT);
+    assert_ne!(
+        traces[0].decision, DECISION_CLOSE,
+        "三态不得压成同一个值：silent 与 close 是两个 decision 值"
+    );
+    assert!(
+        traces[0].applied,
+        "silent 恒改变下游（墙下静态本 Peer、墙上静态本发知会，都被零发送改变）"
+    );
+    assert!(traces[0].confidence.is_some());
+}
+
+/// R45：新增的 `silent` 计数**不是死的** —— 同一条门对三个选项分别产出三个不同取值
+#[tokio::test]
+async fn three_states_are_counted_separately() {
+    let cases = [
+        (OPTION_CONTINUE, DECISION_CONTINUE),
+        (OPTION_CLOSE, DECISION_CLOSE),
+        (OPTION_SILENT, DECISION_SILENT),
+    ];
+    for (option, want) in cases {
+        let brain = brain_with_quota(10);
+        let run_id = format!("chain-reply-3state-{option}");
+        let (got, calls) = run_gate(
+            &sample_chain(6),
+            triggered_facts(),
+            vec![Some(pick_for(option, 0.95))],
+            Some(&brain),
+            &run_id,
+        )
+        .await;
+        assert!(got.is_some(), "有结论的选项必须产出 verdict：{option}");
+        assert_eq!(calls, 1, "{option}: 一次请求");
+        let traces = take_traces(&run_id);
+        assert_eq!(traces.len(), 1, "{option}: 一条留痕");
+        assert_eq!(
+            traces[0].decision, want,
+            "{option}: decision 必须是它自己那一值（不得恒同值 / 恒 0）"
+        );
+    }
+}
+
+/// `silent` 代价中等：置信不达标时落到默认 close（至少把 Final 作为知会送达）
+#[tokio::test]
+async fn low_confidence_silent_falls_back_to_close() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-silent-low-confidence";
+    let (got, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_SILENT, 0.5))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: None })),
+        "低置信的 silent 不得生效：必须落默认 close"
+    );
+    assert_eq!(calls, 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces[0].decision, DECISION_CLOSE_DEFAULT);
+    assert_eq!(
+        traces[0].degraded,
+        Some(DEGRADED_LOW_CONFIDENCE.to_string())
+    );
+}
+
+/// `silent` 达到自己的门槛（0.8）即生效——门槛不是全局 0.9
+#[tokio::test]
+async fn silent_at_its_own_threshold_is_adopted() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-silent-threshold";
+    let (got, _) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_SILENT, 0.85))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Silent { .. })),
+        "0.85 ≥ silent 门槛 0.8，必须采纳：{got:?}"
+    );
+    assert_eq!(take_traces(run_id)[0].decision, DECISION_SILENT);
+}
+
+/// 选项表形态：三选项、`silent` 与 `close` 不同 id，且旧两值字符串零改动
+#[test]
+fn options_are_three_and_keep_old_ids() {
+    assert_eq!(OPTIONS.len(), 3, "OPTIONS 必须是 3 项");
+    let ids: Vec<&str> = OPTIONS.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, vec![OPTION_CONTINUE, OPTION_CLOSE, OPTION_SILENT]);
+    assert_eq!(OPTION_CONTINUE, "continue", "旧值字符串零改动");
+    assert_eq!(
+        OPTION_CLOSE, "close",
+        "旧值字符串零改动（② 语义与字符串不变）"
+    );
+    assert_ne!(OPTION_SILENT, OPTION_CLOSE, "③ 不得与 ② 同 id");
+    // 判据文案必须把 ②/③ 的差别写清楚（模型唯一可判的差别）
+    let silent_desc = OPTIONS
+        .iter()
+        .find(|(id, _)| *id == OPTION_SILENT)
+        .map(|(_, d)| *d)
+        .expect("silent 判据描述");
+    assert!(silent_desc.contains("到此为止"), "{silent_desc}");
+    let close_desc = OPTIONS
+        .iter()
+        .find(|(id, _)| *id == OPTION_CLOSE)
+        .map(|(_, d)| *d)
+        .expect("close 判据描述");
+    assert!(
+        !close_desc.contains("到此为止"),
+        "close 描述零改动：{close_desc}"
+    );
+}
+
+// ══════ 判定输入补充（AMan 2026-11-11）：最近对话 + 待发消息 ══════
+//
+// 原任务书的判据输入是「链深度 + 疲劳度 + 上下文」，`state_bundle` 此前**刻意**
+// 不带 `Brain.memories`（登记为待裁项，理由见旧 doc）。AMan 2026-11-11 明确两点后
+// 两条都转成正式输入：①「最近对话对这个判断很有用」；②「当前消息处理结果，也就是
+// 这条默认准备发送的消息」也要能看到。两条都是**输入侧**增量 —— 三态定义、
+// ②③ 独立性、计数口径一律不变。
+
+use crate::models::memory::{Memory, MemoryPo, ShortTermMemoryIndexPo};
+use common::enums::MemoryStatus;
+
+/// 待发正文的哨兵：唯一色，避免与链内正文里的任何既有字符串撞
+const PENDING_SENTINEL: &str = "本条默认准备发送：新增结论 X=42，对方还不知道。";
+
+fn short_term(id: &str, summary: &str) -> Memory {
+    Memory::new(MemoryPo::ShortTerm(ShortTermMemoryIndexPo {
+        id: id.to_string(),
+        agent_id: "agent-test".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: summary.to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: 0,
+        updated_at: 0,
+    }))
+}
+
+/// 待发正文逐字进 state（`## 待发消息` 取值断言，不是「键存在」断言）
+#[tokio::test]
+async fn pending_reply_reaches_the_model_verbatim() {
+    let brain = brain_with_quota(10);
+    let (_, calls, states) = run_gate_full_with_pending(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        PENDING_SENTINEL,
+        "chain-reply-pending-verbatim",
+    )
+    .await;
+    assert_eq!(calls, 1, "有待发正文不影响「问一次」");
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(body.contains("## 待发消息"), "必须带待发消息块：{body:?}");
+    assert!(
+        body.contains(PENDING_SENTINEL),
+        "待发正文必须逐字进 state：{body:?}"
+    );
+    assert!(
+        body.contains("## 链内消息"),
+        "与链内块共存，不是替换关系：{body:?}"
+    );
+}
+
+/// 待发正文为空 ⇒ 整块跳过（不留裸标题）
+#[tokio::test]
+async fn empty_pending_reply_leaves_no_block() {
+    let brain = brain_with_quota(10);
+    let (_, _, states) = run_gate_full_with_pending(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        "",
+        "chain-reply-pending-empty",
+    )
+    .await;
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        !body.contains("## 待发消息"),
+        "空待发正文不得留裸标题：{body:?}"
+    );
+}
+
+/// 超长待发正文按子预算截断并显式标注（不许悄悄丢内容）
+#[tokio::test]
+async fn oversized_pending_reply_is_truncated_with_annotation() {
+    // 必须给一个**有容量**的 provider：容量未配 ⇒ 不裁（容量即预算），
+    // 那时待发正文不会被截断，本用例就测不到截断形态了。
+    let brain = brain_with_capacity_tokens(4_000);
+    let long = "待发正文".repeat(1_200); // 4800 字 ⇒ 远超 600 token
+    let (_, _, states) = run_gate_full_with_pending(
+        &sample_chain(4),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        &long,
+        "chain-reply-pending-truncated",
+    )
+    .await;
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    assert!(
+        body.contains(PENDING_TRUNCATION_SUFFIX),
+        "超长必须显式标注截断：{body:?}"
+    );
+    assert!(!body.contains(&long), "不许把全文塞进来：{body:?}");
+    let block = body
+        .split("\n\n")
+        .find(|part| part.starts_with("## 待发消息"))
+        .expect("待发消息块必须存在");
+    let used = estimate_tokens(block.trim_start_matches("## 待发消息\n"));
+    let pending_cap = context::bp_of(
+        input_token_budget(Some(4_000)),
+        context::share::PENDING_REPLY_BP,
+    );
+    assert!(
+        used <= pending_cap,
+        "待发正文实测 {used} token 超过子预算 {pending_cap}"
+    );
+}
+
+/// 最近对话块跟 `Brain.memories` 走：空列表整块跳过，非空逐字进正文
+#[test]
+fn recent_dialogue_block_follows_brain_memories() {
+    let mut brain = brain_with_quota(1);
+    let facts = triggered_facts();
+    let without = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(
+        !without.contains("## 最近对话"),
+        "空 memories ⇒ 整块跳过：{without:?}"
+    );
+    brain.memories = vec![
+        short_term("st-d1", "第一条：链内最近对话甲"),
+        short_term("st-d2", "第二条：链内最近对话乙"),
+    ];
+    let with = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(with.contains("## 最近对话"), "{with:?}");
+    assert!(
+        with.contains("第一条：链内最近对话甲"),
+        "摘要必须逐字在：{with:?}"
+    );
+    assert!(with.contains("第二条：链内最近对话乙"), "{with:?}");
+}
+
+/// 块序（新增两块的位置是截断语义的一部分）
+#[test]
+fn context_block_order_includes_new_inputs() {
+    let mut brain = brain_with_quota(1);
+    brain.memories = vec![short_term("st-o1", "最近一句")];
+    let rendered = state_bundle(
+        &brain,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        PENDING_SENTINEL,
+        &triggered_facts(),
+    )
+    .render();
+    let at = |needle: &str| {
+        rendered
+            .find(needle)
+            .unwrap_or_else(|| panic!("缺块 {needle}：{rendered:?}"))
+    };
+    let identity = at("## 会话身份");
+    let scene = at("## 当前场景");
+    let dialogue = at("## 最近对话");
+    let chain = at("## 链内消息");
+    let pending = at("## 待发消息");
+    let pressure = at("## 协作压力");
+    assert!(
+        identity < scene
+            && scene < dialogue
+            && dialogue < chain
+            && chain < pending
+            && pending < pressure,
+        "块序必须是 身份 < 场景 < 最近对话 < 链内消息 < 待发消息 < 协作压力\
+         （实际 {identity}/{scene}/{dialogue}/{chain}/{pending}/{pressure}）：{rendered:?}"
+    );
+}
+
+/// 待发正文的子预算是**同一池里的份额**，不是新增预算
+#[test]
+fn pending_budget_is_a_share_of_the_same_pool() {
+    let input = input_token_budget(Some(4_000)); // 容量即预算
+    let body = body_token_budget(input); // 4000 − 500 = 3500
+    assert_eq!(body, 3500, "可用正文池不受本笔影响");
+    assert_eq!(
+        pending_token_budget(input, body),
+        600,
+        "标准容量由比例表绑定（4000 × 15% = 600）"
+    );
+    assert_eq!(
+        pending_token_budget(400, 400),
+        60,
+        "小输入由比例绑定（400 × 15% = 60 < 400/4）"
+    );
+    // 极小正文池：由「正文池 / 4」收敛（不把链内证据挤掉）
+    assert_eq!(
+        pending_token_budget(input, 100),
+        25,
+        "正文池极小时按 1/4 收敛"
+    );
+    // 反事实（R49）：改前本函数只接 body 一个参数、上限是常量 600；
+    // 本轮改为两参数比例派生后，同一 body 在不同输入预算下给出不同结果。
+    assert_ne!(
+        pending_token_budget(4_000, body),
+        pending_token_budget(8_000, body),
+        "待发预算必须随输入预算变化，不得是固定 600"
+    );
+}
+
+// ══════ 输入总账护栏：state 正文 + 题面 ≤ provider 容量 ══════
+
+/// 病态输入：长身份 + 3 条长最近对话 + 长链 + 长待发，把每个块都顶到预算边界。
+/// 只有这种输入才能暴露「固定块不在预算内」——普通短链下所有块都装得下，
+/// 总账缺口会一直静默。
+fn saturated_state_inputs(capacity: u64) -> (Brain, Vec<ChainMessage>, String) {
+    let mut brain = brain_with_capacity_tokens(capacity);
+    brain.agent_name = "名".repeat(400);
+    brain.memories = (0..3)
+        .map(|i| short_term(&format!("st-{i}"), &"内".repeat(1_000)))
+        .collect();
+    let messages = (0..MAX_CHAIN_MESSAGES)
+        .map(|_| msg("agent-a", "文本消息", &"链".repeat(400)))
+        .collect();
+    (brain, messages, "待".repeat(2_000))
+}
+
+/// 护栏（R49/R54 成对）：不接 `render_within` 也必须守住整个 state 的总账
+///
+/// 反事实在**同一用例内**构造：把正文池整池给「链内 + 待发」两块（改造前口径）
+/// 必然越过 `body_budget`；生产路径按实测扣掉固定块后必须落在池内，且
+/// `## 链内消息` 仍要逐块保留（这正是不能走组织器尾块整砍的理由）。
+#[tokio::test]
+async fn state_body_stays_in_its_pool_even_with_heavy_fixed_sections() {
+    const CAPACITY: u64 = 4_000;
+    let input = input_token_budget(Some(CAPACITY));
+    let body_budget = body_token_budget(input);
+    let (brain, messages, pending) = saturated_state_inputs(CAPACITY);
+    let facts = triggered_facts();
+
+    let (_, calls, states) = run_gate_full_with_pending(
+        &messages,
+        facts,
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        &pending,
+        "chain-reply-state-ledger",
+    )
+    .await;
+    assert_eq!(calls, 1, "总账收口不得把正常请求挡在门外");
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    let actual = estimate_tokens(body);
+    assert!(
+        actual <= body_budget,
+        "state 正文 {actual} token 越过正文池 {body_budget}（容量 {CAPACITY}）"
+    );
+    assert!(
+        body.contains("## 链内消息"),
+        "总账收口只能按比例裁链内正文，不能整块砍掉主要证据：{body:?}"
+    );
+
+    // 反事实：旧口径 = 正文池 − 待发实测，身份 / 场景 / 最近对话 / 协作压力全在池外。
+    let pending_rendered = truncate_to_tokens(
+        &pending,
+        pending_token_budget(input, body_budget),
+        PENDING_TRUNCATION_SUFFIX,
+    );
+    let legacy_chain_budget = body_budget.saturating_sub(estimate_tokens(&pending_rendered));
+    let legacy = state_bundle(
+        &brain,
+        "",
+        &render_chain(&messages, legacy_chain_budget).rendered,
+        &pending_rendered,
+        &facts,
+    )
+    .render();
+    let legacy_tokens = estimate_tokens(&legacy);
+    assert!(
+        legacy_tokens > body_budget,
+        "反事实必须成立：不扣固定块时 state 会越过正文池（{legacy_tokens} vs {body_budget}）"
+    );
+
+    // 第二处缺口：题面是常量，@4000 实测 573 > 骨架份额 500。仅修「固定块」仍会
+    // 让「state 用满 87.5% + 题面」越过容量，故 `state_pool_tokens` 必须按题面实测
+    // 收紧正文池 —— 本用例钉死收紧确实生效，且总账仍闭合。
+    let question_cost = question_frame_tokens();
+    let state_pool = state_pool_tokens(input);
+    assert!(
+        question_cost > context::frame_tokens(input),
+        "必须落在「题面超出骨架份额」的收紧区，否则没证到第二处缺口\
+         （题面 {question_cost} vs 骨架 {}）",
+        context::frame_tokens(input)
+    );
+    assert!(
+        state_pool < body_budget,
+        "题面超骨架时必须收紧正文池：{state_pool} 应 < {body_budget}"
+    );
+    assert!(
+        actual <= state_pool,
+        "state 正文 {actual} 越过收紧后的正文池 {state_pool}"
+    );
+    assert!(
+        actual + question_cost <= CAPACITY as usize,
+        "state {actual} + 题面 {question_cost} 越过容量 {CAPACITY}"
+    );
+}
+
+/// 收紧的边界：极小容量（收紧后连固定块都装不下）**保持改造前分账**，否则会把
+/// 「小容量照常问」的结构性判据推翻（正文池被打到 0 ⇒ `empty_input` ⇒ 零请求），
+/// 或把链头证据整条裁没。`question + 1` 是断崖点：容量刚过题面长度时收紧池
+/// 只剩 1 token，不能出现「容量稍大反而不问」。
+#[test]
+fn tiny_capacity_keeps_the_pre_change_split() {
+    let question = question_frame_tokens();
+    let brain = brain_with_quota(1);
+    let facts = triggered_facts();
+    for input in [90usize, 110, 500, question, question + 1] {
+        assert_eq!(
+            chain_budget_tokens(&brain, "", &facts, input, 0),
+            body_token_budget(input),
+            "input={input} 必须保持改造前分账"
+        );
+    }
+    // 容量未配 ⇒ input_budget = usize::MAX：不裁口径不能被收紧改写
+    assert_eq!(
+        state_pool_tokens(usize::MAX),
+        body_token_budget(usize::MAX),
+        "容量未配时保持不裁"
+    );
+    // 越过题面长度、且题面超骨架份额时才真正收紧 + 扣固定块
+    let mid = question + 1_000;
+    assert!(
+        chain_budget_tokens(&brain, "", &facts, mid, 0) < body_token_budget(mid),
+        "input={mid} 必须按题面实测收紧并扣掉固定块"
+    );
+}
+
+// ---------- 上下文补充：链起点 / 名称 / 链头 3 条 / 最近对话 8 条 ----------
+
+#[test]
+fn chain_origin_is_rendered_as_its_own_block() {
+    let brain = brain_with_quota(1);
+    let facts = triggered_facts();
+    let without = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(
+        !without.contains("## 链起点"),
+        "无链起点整块跳过：{without:?}"
+    );
+
+    let rendered = state_bundle(
+        &brain,
+        "用户消息（user-1）: 帮我核对一下订单 A 的退款",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &facts,
+    )
+    .render();
+    assert!(rendered.contains("## 链起点"), "{rendered:?}");
+    assert!(
+        rendered.contains("帮我核对一下订单 A 的退款"),
+        "{rendered:?}"
+    );
+    // 链起点在链内消息之前：先交代议题，再看往返
+    let origin_at = rendered.find("## 链起点").unwrap();
+    let chain_at = rendered.find("## 链内消息").unwrap();
+    assert!(origin_at < chain_at, "链起点必须排在链内消息之前");
+}
+
+#[test]
+fn render_one_includes_participant_name() {
+    let mut message = msg("agent-a", "文本消息", "正文");
+    assert_eq!(
+        render_one(0, &message),
+        "[#1] agent-a 文本消息: 正文",
+        "无名字时退回 id"
+    );
+    message.from_name = Some("Alice".to_string());
+    assert_eq!(
+        render_one(0, &message),
+        "[#1] Alice(agent-a) 文本消息: 正文"
+    );
+}
+
+#[test]
+fn render_chain_keeps_three_head_messages_when_truncated() {
+    let chain = sample_chain(32);
+    let input = render_chain(&chain, test_body_budget().min(120));
+    assert!(input.omitted > 0, "本用例必须落在截断区");
+    for hop in 0..HEAD_KEEP {
+        assert!(
+            input.rendered.contains(&format!("第 {hop} 跳的正文")),
+            "链头第 {} 条必须保留（链头共保 {} 条）：{}",
+            hop + 1,
+            HEAD_KEEP,
+            input.rendered
+        );
+    }
+}
+
+#[test]
+fn recent_dialogue_uses_scene_specific_limit() {
+    let mut brain = brain_with_quota(1);
+    brain.memories = (0..10)
+        .map(|i| short_term(&format!("st-{i}"), &format!("记忆第{i}条")))
+        .collect();
+    let rendered = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
+    // 只保留尾部 8 条：最早 2 条不得出现
+    assert!(!rendered.contains("记忆第0条"), "{rendered:?}");
+    assert!(!rendered.contains("记忆第1条"), "{rendered:?}");
+    assert!(rendered.contains("记忆第2条"), "{rendered:?}");
+    assert!(rendered.contains("记忆第9条"), "{rendered:?}");
 }

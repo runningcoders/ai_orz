@@ -125,6 +125,7 @@ impl AgentDal for MockAgentDal {
         &self,
         _ctx: RequestContext,
         _progress: &crate::pkg::background_task::TaskProgressCounter,
+        _mode: common::enums::VectorRebuildMode,
     ) -> Result<()> {
         self.record("rebuild_vectors");
         Ok(())

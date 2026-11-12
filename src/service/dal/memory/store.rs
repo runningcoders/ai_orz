@@ -12,6 +12,7 @@ use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::MemoryQuery;
 use crate::service::dao::model_provider::ModelProviderDao;
+use common::enums::VectorRebuildMode;
 use common::enums::{MemoryStatus, MemoryType};
 use common::error::{Result, bail_err};
 use std::sync::Arc;
@@ -228,6 +229,7 @@ impl MemoryDalImpl {
         &self,
         ctx: RequestContext,
         progress: &TaskProgressCounter,
+        _mode: VectorRebuildMode,
     ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self

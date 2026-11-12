@@ -20,6 +20,7 @@ use crate::service::dao::task::{
     TaskDao, TaskQuery, TaskSearch, TaskStatsDao, TaskStatsQuery, TaskVectorDao,
 };
 use common::api::PaginationParams;
+use common::enums::VectorRebuildMode;
 use common::enums::{AssigneeType, TaskStatus};
 use common::error::Result;
 use common::models::{ModelCallStats, StatsFetchOptions, StatsInterval, TaskStats};
@@ -210,6 +211,7 @@ pub trait TaskDal: Send + Sync {
         &self,
         ctx: RequestContext,
         progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: VectorRebuildMode,
     ) -> Result<()>;
 }
 
@@ -740,6 +742,7 @@ impl TaskDal for TaskDalImpl {
         &self,
         ctx: RequestContext,
         progress: &TaskProgressCounter,
+        _mode: VectorRebuildMode,
     ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
