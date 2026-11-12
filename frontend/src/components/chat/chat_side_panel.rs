@@ -2,14 +2,14 @@
 //!
 //! 沟通页面右侧可收起的信息面板，按对话模式动态组装 Tab：
 //! - 项目对话：总览 / 任务 / 产物 / Agent（项目内 Agent 列表）/ 工具 / 思考
-//! - 默认对话：Agent（前台）/ 任务（游离任务）/ 产物 / 工具 / 思考
+//! - 默认对话：任务 / 产物 / Agent（当前任务参与的 Agent）/ 工具 / 思考
 //!
-//! 默认对话即「默认虚拟项目」：其任务域是**游离任务**（`project_id IS NULL`），
-//! 因此任务 Tab 直接复用项目模式的任务列表组件，只是数据源换成游离任务；
-//! 产物当前硬绑定真实项目（游离任务不可能有产物），故产物 Tab 先做空态占位。
+//! 两种模式除「项目总览」外结构完全对齐：默认对话只是把数据源换成游离任务
+//! （`project_id IS NULL`），Agent / 工具 / 思考统一圈定「当前任务出现过的 Agent」
+//! （前台接待恒在集合首位）。
 //!
 //! 思考 Tab 展示 `pkg/think_trace` 落盘的运行时轨迹：项目模式按 project_id
-//! 跨 Agent 聚合，默认对话按前台 Agent 过滤（与工具调用 Tab 同源口径）。
+//! 跨 Agent 聚合，默认对话按「当前任务出现过的 Agent」集合过滤（与工具调用 Tab 同源口径）。
 //!
 //! 面板纯只读：数据加载复用现有项目/任务/产物/Agent API，
 //! 创建与编辑操作仍在跳转各自详情页完成。
@@ -50,6 +50,7 @@ use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
 use crate::components::chat::ThinkTracesTab;
 use crate::components::chat::ToolCallsTab;
+use crate::components::chat::project_agents_tab::agent_ids_from_tasks;
 use crate::components::graph::{EdgeCurve, Graph, GraphEdge, GraphNode, task_status_node_type};
 use crate::components::hud::{HudPanel, HudProgress};
 use crate::components::identity_chip::IdentityChip;
@@ -154,7 +155,8 @@ fn tab_names(is_project_mode: bool) -> &'static [&'static str] {
     if is_project_mode {
         &["总览", "任务", "产物", "Agent", "工具", "思考"]
     } else {
-        &["Agent", "任务", "产物", "工具", "思考"]
+        // 与项目模式同序，仅去掉「总览」（默认对话没有项目维度）
+        &["任务", "产物", "Agent", "工具", "思考"]
     }
 }
 
@@ -173,18 +175,21 @@ fn tab_name(is_project_mode: bool, tab: usize) -> Option<&'static str> {
 /// - 任务只用任务列表（依赖图与列表都从 `TaskListItem` 构建）
 /// - 产物两者都用：项目级产物来自详情，任务级产物要按任务标题分组
 /// - 项目模式的 Agent 两者都用：owner 来自详情，成员集合由任务 assignee 推导
+/// - 默认对话的 Agent 只用任务列表：置顶 Agent 来自 `target_agent_id`，
+///   成员集合由游离任务 assignee 推导
 /// - 工具 / 思考各自取数，不消费侧栏这两份数据
 ///
 /// ⚠️ 同名 Tab 在两种模式下消费的数据并不相同，两个分支都必须带 `is_project_mode`：
 /// - 产物：项目模式按任务标题分组，要两份；默认对话是硬编码空态「暂无产物」
 ///   （产物硬绑定真实项目，游离任务不可能有产物），一份都不该拉
-/// - Agent：项目模式的成员集合由任务 assignee 推导，要两份；默认对话由
-///   `reception_agent_id` + chat 主链路共享轮询供数，也不消费这两份
+/// - Agent：项目模式要项目详情 + 任务列表；默认对话不消费项目详情，只要任务列表
 fn tab_data_needs(is_project_mode: bool, tab: usize) -> (bool, bool) {
     match tab_name(is_project_mode, tab) {
         Some("总览") => (true, false),
         Some("任务") => (false, true),
         Some("产物" | "Agent") if is_project_mode => (true, true),
+        // 默认对话：成员集合由任务 assignee 推导，切过去时必须补齐任务列表
+        Some("Agent") => (false, true),
         _ => (false, false),
     }
 }
@@ -236,11 +241,9 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 /// - `project_id`：选中项目 ID（None 表示默认对话模式）。
 ///   必须以 Signal 传入：use_effect 依赖其变化触发项目数据加载，
 ///   普通 prop 非响应式，切换项目后 effect 不会重跑（面板会永远转圈）
-/// - `reception_agent_id`：前台 Agent ID（现仅工具调用 Tab 使用；Agent Tab 改用
-///   `target_agent_id`，以便与主链路轮询同源）
 /// - `target_agent_id`：当前会话目标 Agent ID，由 chat 页统一解析（项目会话 = 项目
-///   owner，默认对话 = 前台 Agent）。默认对话模式 Agent Tab 由它定位；项目模式
-///   Agent Tab 已改为项目内 Agent 列表（ProjectAgentsTab），不再单值定位
+///   owner，默认对话 = 前台 Agent）。默认对话用它作为 Agent 列表的置顶项
+///   （与 3s 轮询同源，避免「展示 A、刷新 B」错位）；项目模式由项目的 owner 置顶
 /// - `agent_info`：主链路轮询共享的 Agent 详情，Agent Tab 优先消费（id 匹配时零请求）
 /// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据。
 ///   同样必须以 Signal 传入才能驱动 use_effect 重跑
@@ -252,7 +255,6 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 #[component]
 pub fn ChatSidePanel(
     project_id: Signal<Option<String>>,
-    reception_agent_id: Option<String>,
     refresh_tick: Signal<u64>,
     visible: Signal<bool>,
     stats_poll_tick: u64,
@@ -263,9 +265,8 @@ pub fn ChatSidePanel(
     /// 当前会话目标 Agent ID：chat 页的单一解析来源（项目会话 = 项目 owner，
     /// 默认对话 = 前台 Agent）。
     ///
-    /// 默认对话模式 Agent Tab 用它定位（项目模式已改为项目内 Agent 列表），
-    /// 不再自行从项目详情 / reception 里各取一份 ——
-    /// 「面板展示的 Agent」与「3s 轮询刷新的 Agent」必须是同一个，
+    /// 默认对话模式把它作为 Agent 列表的置顶项，不再自行从项目详情 / reception
+    /// 里各取一份 ——「面板展示的 Agent」与「3s 轮询刷新的 Agent」必须是同一个，
     /// 否则会出现展示 A 的身份、刷新 B 的状态这种错位。
     target_agent_id: Signal<Option<String>>,
 ) -> Element {
@@ -586,6 +587,11 @@ pub fn ChatSidePanel(
     let project_data = project().clone();
     let tasks_list = tasks.read().clone();
     let tab = active_tab();
+    // 默认对话的 Agent 作用域：前台接待（置顶）∪ 游离任务 assignee。
+    // Agent 列表、工具调用、思考轨迹三处共用同一份集合 —— 否则会出现
+    // 「列表里有这个 Agent，但轨迹里过滤不到」的口径漂移。
+    let default_agent_ids = agent_ids_from_tasks(&tasks_list, target_agent_id().as_deref());
+    let default_agent_scope = (!default_agent_ids.is_empty()).then_some(default_agent_ids);
 
     // 放大弹窗的图数据：与缩略图共用同一份构建函数，仅画布尺寸不同。
     // 弹窗关闭时不构建（空数据 + 不渲染），避免每次重渲染都白跑一遍布局。
@@ -626,7 +632,7 @@ pub fn ChatSidePanel(
             3 => match project_data.as_ref() {
                 Some(p) => rsx! {
                     ProjectAgentsTab {
-                        project_owner_id: p.owner_agent_id.clone(),
+                        pinned_agent_id: p.owner_agent_id.clone(),
                         tasks: tasks_list.clone(),
                         // Agent Tab 走 SSE/手动 tick 即可：它有会话消息可等，
                         // 不该吃工具 / 思考那条轮询通道（tab_needs_live_poll 已排除它，
@@ -641,7 +647,7 @@ pub fn ChatSidePanel(
             4 => rsx! {
                 ToolCallsTab {
                     project_id: pid_for_tab.clone(),
-                    agent_id: None,
+                    agent_ids: None,
                     refresh_tick: live_tab_tick,
                 }
             },
@@ -650,7 +656,7 @@ pub fn ChatSidePanel(
             5 => rsx! {
                 ThinkTracesTab {
                     project_id: pid_for_tab.clone(),
-                    agent_id: None,
+                    agent_ids: None,
                     refresh_tick: live_tab_tick,
                 }
             },
@@ -658,19 +664,8 @@ pub fn ChatSidePanel(
         }
     } else {
         match tab {
-            0 => match target_agent_id() {
-                Some(agent_id) => rsx! {
-                    AgentInfoTab {
-                        agent_id,
-                        shared_info: agent_info,
-                        // 与项目模式对齐：叠加 stats_poll_tick，静默期统计也按 30s 节奏刷新
-                        refresh_tick: agent_stats_tick,
-                    }
-                },
-                None => empty_hint("暂无前台 Agent"),
-            },
             // 默认对话 = 默认虚拟项目：任务 Tab 展示游离任务，复用项目模式的任务列表组件
-            1 => tasks_tab(
+            0 => tasks_tab(
                 &tasks_list,
                 expanded_task_id,
                 task_cache,
@@ -684,19 +679,30 @@ pub fn ChatSidePanel(
                 },
             ),
             // 产物硬绑定真实项目，游离任务不可能有产物 → 先做空态占位
-            2 => empty_hint("暂无产物"),
+            1 => empty_hint("暂无产物"),
+            // Agent Tab 与项目模式完全同构：前台接待置顶 + 当前游离任务的 assignee，
+            // 点击行进入 Agent 详情子页（不再是单值「只显示前台接待」）
+            2 => rsx! {
+                ProjectAgentsTab {
+                    pinned_agent_id: target_agent_id(),
+                    tasks: tasks_list.clone(),
+                    refresh_tick: tool_tab_tick,
+                    agent_info,
+                    agent_stats_tick,
+                }
+            },
+            // 工具 / 思考：范围与 Agent 列表同源（当前任务出现过的 Agent 集合）
             3 => rsx! {
                 ToolCallsTab {
                     project_id: None,
-                    agent_id: reception_agent_id.clone(),
+                    agent_ids: default_agent_scope.clone(),
                     refresh_tick: live_tab_tick,
                 }
             },
-            // 默认对话：按前台 Agent 过滤其思考轨迹
             4 => rsx! {
                 ThinkTracesTab {
                     project_id: None,
-                    agent_id: reception_agent_id.clone(),
+                    agent_ids: default_agent_scope.clone(),
                     refresh_tick: live_tab_tick,
                 }
             },
@@ -1530,7 +1536,7 @@ mod tests {
         assert!(!tab_needs_live_poll(true, 3));
         assert!(tab_needs_live_poll(true, 4));
         assert!(tab_needs_live_poll(true, 5));
-        // 默认对话少一个总览 Tab，工具/思考前移到 3/4
+        // 默认对话与项目模式同序（少总览）：任务(0)/产物(1)/Agent(2)/工具(3)/思考(4)
         assert!(!tab_needs_live_poll(false, 0));
         assert!(!tab_needs_live_poll(false, 1));
         assert!(!tab_needs_live_poll(false, 2));
@@ -1551,10 +1557,11 @@ mod tests {
         assert_eq!(tab_data_needs(true, 3), (true, true));
         assert_eq!(tab_data_needs(true, 4), (false, false));
         assert_eq!(tab_data_needs(true, 5), (false, false));
-        // 默认对话：只有任务 Tab 消费游离任务列表，产物是空态占位、Agent 走共享轮询
-        assert_eq!(tab_data_needs(false, 0), (false, false));
-        assert_eq!(tab_data_needs(false, 1), (false, true));
-        assert_eq!(tab_data_needs(false, 2), (false, false));
+        // 默认对话：任务 / Agent 都消费游离任务列表（Agent 的成员集合由 assignee 推导），
+        // 产物是空态占位，工具 / 思考各自取数
+        assert_eq!(tab_data_needs(false, 0), (false, true));
+        assert_eq!(tab_data_needs(false, 1), (false, false));
+        assert_eq!(tab_data_needs(false, 2), (false, true));
         assert_eq!(tab_data_needs(false, 3), (false, false));
         assert_eq!(tab_data_needs(false, 4), (false, false));
     }
@@ -1571,13 +1578,24 @@ mod tests {
                 match *name {
                     "总览" => assert_eq!(needs, (true, false), "{name}: 只用项目详情"),
                     "任务" => assert_eq!(needs, (false, true), "{name}: 只用任务列表"),
-                    // 产物 / Agent 只在项目模式消费这两份：默认对话的产物是硬空态，
-                    // Agent 走共享轮询
-                    "产物" | "Agent" => {
+                    // 产物只在项目模式消费这两份，默认对话是硬空态；
+                    // Agent 两种模式都消费任务列表（默认对话只需任务列表推导成员集合）
+                    "产物" => {
                         assert_eq!(
                             needs,
                             (is_project_mode, is_project_mode),
                             "{name}: 仅项目模式消费"
+                        )
+                    }
+                    "Agent" => {
+                        assert_eq!(
+                            needs,
+                            if is_project_mode {
+                                (true, true)
+                            } else {
+                                (false, true)
+                            },
+                            "{name}: 成员集合由任务 assignee 推导"
                         )
                     }
                     "工具" | "思考" => {

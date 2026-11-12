@@ -1824,7 +1824,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 },
                 ChatSidePanel {
                     project_id: selected_project,
-                    reception_agent_id: reception_agent().map(|a| a.agent_id),
                     refresh_tick: refresh_tick,
                     // 面板收起时组件仍挂载（外层只是 hidden），必须显式告知可见性，
                     // 否则看不见的侧栏照样跟着 SSE 刷新发请求

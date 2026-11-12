@@ -25,6 +25,9 @@ pub const MAX_TOOL_CALL_QUERY_LIMIT: usize = 100;
 pub struct ToolCallQuery {
     pub call_id: Option<String>,
     pub agent_id: Option<String>,
+    /// Agent 集合过滤（对话页「当前任务出现过的 Agent」聚合视角）；
+    /// `agent_id` 与 `agent_ids` 同时存在时两者都生效（交集）
+    pub agent_ids: Option<Vec<String>>,
     pub project_id: Option<String>,
     pub task_id: Option<String>,
     pub tool_id: Option<String>,
@@ -209,6 +212,12 @@ fn matches_query(entry: &ToolCallEntry, query: &ToolCallQuery) -> bool {
             .agent_id
             .as_ref()
             .is_none_or(|agent_id| entry.agent_id.as_deref() == Some(agent_id.as_str()))
+        && query.agent_ids.as_ref().is_none_or(|agent_ids| {
+            entry
+                .agent_id
+                .as_deref()
+                .is_some_and(|agent_id| agent_ids.iter().any(|id| id == agent_id))
+        })
         && query
             .project_id
             .as_ref()

@@ -27,11 +27,12 @@ pub(crate) fn with_context_scope(
             .is_some_and(|role| matches!(role, UserRole::Admin | UserRole::SuperAdmin));
         let has_explicit_scope = query.call_id.is_some()
             || query.agent_id.is_some()
+            || query.agent_ids.as_ref().is_some_and(|ids| !ids.is_empty())
             || query.project_id.is_some()
             || query.task_id.is_some();
         if !is_admin && !has_explicit_scope {
             return Err(common::error::Error::bad_request(
-                "tool call query requires at least one of call_id / agent_id / project_id / task_id"
+                "tool call query requires at least one of call_id / agent_id / agent_ids / project_id / task_id"
                     .to_string(),
             ));
         }
@@ -57,6 +58,17 @@ pub(crate) fn with_context_scope(
         ctx.agent_id.as_deref(),
         query.agent_id.as_deref(),
     )?;
+    // Agent / System 调用不允许借 agent_ids 扩大读取范围：集合必须恰好是 ctx 自身
+    if let Some(agent_ids) = query.agent_ids.as_deref() {
+        let only_self = ctx.agent_id.as_deref().is_some_and(|ctx_agent| {
+            agent_ids.len() == 1 && agent_ids.first().is_some_and(|id| id == ctx_agent)
+        });
+        if !only_self {
+            return Err(common::error::Error::bad_request(
+                "tool call query agent_ids conflicts with request context".to_string(),
+            ));
+        }
+    }
     ensure_scope_does_not_conflict(
         "project_id",
         ctx.project_id.as_deref(),
@@ -144,6 +156,7 @@ mod tests {
         ToolCallQuery {
             call_id: None,
             agent_id: None,
+            agent_ids: None,
             project_id: None,
             task_id: None,
             tool_id: None,
@@ -201,6 +214,29 @@ mod tests {
         let ctx = ctx_with(CallerType::Agent, None, Some("agent-1"));
         let mut query = empty_query();
         query.agent_id = Some("agent-1".to_string());
+        assert!(with_context_scope(ctx, query).is_ok());
+    }
+
+    #[tokio::test]
+    async fn user_member_may_scope_by_agent_ids() {
+        // 对话页默认对话按「当前任务出现过的 Agent」集合查询，也算显式作用域
+        let ctx = ctx_with(CallerType::User, Some(UserRole::Member as i32), None);
+        let mut query = empty_query();
+        query.agent_ids = Some(vec!["agent-1".to_string(), "agent-2".to_string()]);
+        let merged = with_context_scope(ctx, query).expect("member with agent set scope");
+        assert_eq!(merged.agent_ids.as_deref().map(|ids| ids.len()), Some(2));
+    }
+
+    #[tokio::test]
+    async fn agent_cannot_widen_scope_with_agent_ids() {
+        // Agent 调用只能读自己的轨迹：集合里混入他人即拒绝
+        let ctx = ctx_with(CallerType::Agent, None, Some("agent-1"));
+        let mut query = empty_query();
+        query.agent_ids = Some(vec!["agent-1".to_string(), "agent-2".to_string()]);
+        assert!(with_context_scope(ctx.clone(), query).is_err());
+
+        let mut query = empty_query();
+        query.agent_ids = Some(vec!["agent-1".to_string()]);
         assert!(with_context_scope(ctx, query).is_ok());
     }
 

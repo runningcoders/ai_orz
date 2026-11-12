@@ -1,13 +1,17 @@
-//! 项目内 Agent 列表（ProjectAgentsTab，聊天侧栏项目模式 Agent Tab 专属）
+//! 侧栏 Agent 列表（两种对话模式共用）
 //!
 //! ## 背景
 //! 项目会话右侧信息面板的 Agent Tab 此前复用单值 `AgentInfoTab`，
 //! 永远只显示项目 owner（PMO）一个 Agent。本组件把该 Tab 改造为
-//! 「项目内 Agent 列表」：谁在项目里干活（项目 owner + 任务 assignee 推导）、
-//! 项目内身份（负责人置顶，方案 A 后行内不再打标）、点击进入单 Agent 详情子页。
+//! 「参与的 Agent 列表」：谁在干活（置顶 Agent + 任务 assignee 推导）、
+//! 置顶身份（负责人/前台接待恒在首位，方案 A 后行内不再打标）、
+//! 点击进入单 Agent 详情子页。
+//!
+//! 默认对话（无项目）沿用同一组件：置顶 Agent = 前台接待，
+//! 任务列表 = 游离任务 —— 除数据源外与项目模式完全一致。
 //!
 //! ## 数据口径（对齐 mention_picker::load_project_agents）
-//! 项目没有成员表，「项目内 Agent」的成员集合 = 项目 owner ∪ 项目任务
+//! 项目没有成员表，「参与的 Agent」的成员集合 = 置顶 Agent ∪ 任务
 //! assignee（assignee_type==1 去重，用户 assignee 不展示）→ `query_agents(ids)`
 //! 批量取详情。本组件不自己拉任务列表：复用面板已拉取的 `TaskListItem`
 //! 推导 agent_ids，零额外项目请求；仅 Agent 详情走一次 `query_agents` 批量。
@@ -37,13 +41,20 @@ const AGENT_QUERY_LIMIT: usize = 50;
 /// 防抖刷新等待时长（毫秒），与 ChatSidePanel 保持一致
 const REFRESH_DEBOUNCE_MS: u64 = 2000;
 
-/// 推导项目内 Agent ID 成员集合：项目 owner 恒在队首 + 任务 assignee
+/// 推导 Agent ID 成员集合：置顶 Agent 恒在队首 + 任务 assignee
 /// （assignee_type==1 去重，保持首次出现顺序，用户 assignee 不展示）。
-/// owner 已在任务集合中则去重不重复；两者皆无 → 空集合（触发列表空态）。
-fn agent_ids_from_tasks(tasks: &[TaskListItem], owner_id: Option<&str>) -> Vec<String> {
+/// 置顶 Agent 已在任务集合中则去重不重复；两者皆无 → 空集合（触发列表空态）。
+///
+/// 两种模式共用：项目模式置顶 Agent = 项目 owner；默认对话 = 前台接待。
+/// 侧栏的工具 / 思考 Tab 也复用同一份集合，保证「Agent 列表」与
+/// 「轨迹过滤范围」永远同源。
+pub(crate) fn agent_ids_from_tasks(
+    tasks: &[TaskListItem],
+    pinned_agent_id: Option<&str>,
+) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut ids = Vec::new();
-    if let Some(owner) = owner_id
+    if let Some(owner) = pinned_agent_id
         && seen.insert(owner.to_string())
     {
         ids.push(owner.to_string());
@@ -56,31 +67,32 @@ fn agent_ids_from_tasks(tasks: &[TaskListItem], owner_id: Option<&str>) -> Vec<S
     ids
 }
 
-/// 列表排序：负责人置顶第一，其余按名称字典序（T2 设计说明 §2.4）
-fn sort_project_agents(items: &mut [AgentListItem], owner_id: Option<&str>) {
+/// 列表排序：置顶 Agent 第一，其余按名称字典序（T2 设计说明 §2.4）
+fn sort_project_agents(items: &mut [AgentListItem], pinned_agent_id: Option<&str>) {
     items.sort_by(|a, b| {
-        let a_owner = owner_id == Some(a.id.as_str());
-        let b_owner = owner_id == Some(b.id.as_str());
-        b_owner.cmp(&a_owner).then_with(|| a.name.cmp(&b.name))
+        let a_pinned = pinned_agent_id == Some(a.id.as_str());
+        let b_pinned = pinned_agent_id == Some(b.id.as_str());
+        b_pinned.cmp(&a_pinned).then_with(|| a.name.cmp(&b.name))
     });
 }
 
-/// 项目内 Agent 列表 Tab
+/// 侧栏 Agent 列表 Tab
 ///
-/// - `project_owner_id`：项目负责人 Agent ID（成员集合来源之一 + 列表置顶；方案 A 后行内不展示负责人徽标，身份由置顶表达）
-/// - `tasks`：面板已拉取的项目任务列表（assignee 推导成员集合的另一来源）
+/// - `pinned_agent_id`：置顶 Agent（项目模式 = 项目负责人；默认对话 = 前台接待），
+///   既是成员集合来源之一，也恒排列表首位
+/// - `tasks`：面板已拉取的任务列表（assignee 推导成员集合的另一来源）
 /// - `refresh_tick`：SSE + 手动刷新计数器，变化时防抖重取 Agent 详情
 /// - `agent_info`：chat 主链路轮询共享的 Agent 详情，详情子页优先消费（id 匹配零请求）
 /// - `agent_stats_tick`：Agent 统计刷新驱动（SSE + 手动 + 30s 周期叠加，透传 AgentInfoTab）
 #[component]
 pub fn ProjectAgentsTab(
-    project_owner_id: Option<String>,
+    pinned_agent_id: Option<String>,
     tasks: Vec<TaskListItem>,
     refresh_tick: u64,
     agent_info: Signal<Option<GetAgentResponse>>,
     agent_stats_tick: u64,
 ) -> Element {
-    let agent_ids = agent_ids_from_tasks(&tasks, project_owner_id.as_deref());
+    let agent_ids = agent_ids_from_tasks(&tasks, pinned_agent_id.as_deref());
 
     let mut agents = use_signal(Vec::<AgentListItem>::new);
     let mut failed = use_signal(|| false);
@@ -166,11 +178,11 @@ pub fn ProjectAgentsTab(
             div { class: "text-center py-12 text-base-content/60 text-sm", "Agent 信息加载失败" }
         };
     }
-    // 空态：项目既无 owner 也无任务 assignee（成员集合为空，T2 §2.5 口径收敛）
+    // 空态：既无置顶 Agent 也无任务 assignee（成员集合为空）
     if agent_ids.is_empty() {
         return rsx! {
             div { class: "text-center py-12",
-                div { class: "text-sm text-base-content/60", "项目暂无参与的 Agent" }
+                div { class: "text-sm text-base-content/60", "暂无参与的 Agent" }
                 div { class: "text-xs text-base-content/40 mt-1",
                     "给任务分配 Agent 后，会在这里显示"
                 }
@@ -202,10 +214,10 @@ pub fn ProjectAgentsTab(
         };
     }
 
-    // Ready(list)：负责人置顶 + 名称字典序；负责任务名列表由任务列表过滤（展开区数据源）
+    // Ready(list)：置顶 Agent 恒第一 + 名称字典序；负责任务名列表由任务列表过滤（展开区数据源）
     let mut items: Vec<AgentListItem> = agents.read().clone();
-    let owner_id = project_owner_id.clone();
-    sort_project_agents(&mut items, owner_id.as_deref());
+    let pinned_id = pinned_agent_id.clone();
+    sort_project_agents(&mut items, pinned_id.as_deref());
 
     rsx! {
         div { class: "space-y-0.5",

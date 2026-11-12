@@ -401,6 +401,13 @@ pub struct QueryToolCallEntriesRequest {
     /// Filter by Agent ID.
     #[param(source = "query")]
     pub agent_id: Option<String>,
+    /// Filter by a set of Agent IDs (comma-separated, e.g. `a,b,c`).
+    ///
+    /// GET query cannot carry repeated keys, so the set is encoded in a single
+    /// comma-separated value. When both `agent_id` and `agent_ids` are given,
+    /// both filters apply (intersection).
+    #[param(source = "query")]
+    pub agent_ids: Option<String>,
     /// Filter by Project ID.
     #[param(source = "query")]
     pub project_id: Option<String>,

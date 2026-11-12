@@ -384,7 +384,8 @@ pub struct ThinkTraceRoute {
 
 /// Think trace 分页查询条件
 ///
-/// `agent_id` 为 `None` 时遍历全部 Agent 目录；`project_id` / `task_id` 为 entry
+/// `agent_id` 为 `None` 时遍历全部 Agent 目录；`agent_ids` 给定时只扫该集合
+/// （对话页「当前任务出现过的 Agent」）。`project_id` / `task_id` 为 entry
 /// 字段过滤，用于对话页按项目聚合多 Agent 轨迹。
 ///
 /// `run_id` 是**精确匹配**：think trace 的 `run_id` 在 awaken / settle / compact
@@ -392,6 +393,9 @@ pub struct ThinkTraceRoute {
 #[derive(Debug, Clone, Default)]
 pub struct ThinkTraceQuery {
     pub agent_id: Option<String>,
+    /// Agent 集合过滤（对话页「当前任务出现过的 Agent」聚合视角）；
+    /// 与 `agent_id` 同时存在时两者都生效（交集）
+    pub agent_ids: Option<Vec<String>>,
     pub project_id: Option<String>,
     pub task_id: Option<String>,
     /// 精确匹配某次 run（即 MemoryTrace.id）
@@ -445,7 +449,11 @@ pub(crate) fn query_at(
     let offset = query.pagination.offset.unwrap_or(0);
 
     let mut entries = Vec::new();
-    for agent_dir in agent_dirs(base_data_path, query.agent_id.as_deref())? {
+    for agent_dir in agent_dirs(
+        base_data_path,
+        query.agent_id.as_deref(),
+        query.agent_ids.as_deref(),
+    )? {
         let trace_dir = agent_dir.join("think_trace");
         if !trace_dir.is_dir() {
             continue;
@@ -604,9 +612,23 @@ fn merge_into(base: &mut ThinkTraceEntry, next: ThinkTraceEntry) {
 }
 
 /// 列出待扫描的 Agent 数据目录
-fn agent_dirs(base_data_path: &Path, agent_id: Option<&str>) -> anyhow::Result<Vec<PathBuf>> {
+fn agent_dirs(
+    base_data_path: &Path,
+    agent_id: Option<&str>,
+    agent_ids: Option<&[String]>,
+) -> anyhow::Result<Vec<PathBuf>> {
     if let Some(agent_id) = agent_id {
         return Ok(vec![paths::agent_data_dir(base_data_path, agent_id)]);
+    }
+    // 显式 Agent 集合：只扫这几个目录（排序 + 去重，保证扫描顺序稳定）
+    if let Some(agent_ids) = agent_ids {
+        let mut dirs: Vec<PathBuf> = agent_ids
+            .iter()
+            .map(|id| paths::agent_data_dir(base_data_path, id))
+            .collect();
+        dirs.sort();
+        dirs.dedup();
+        return Ok(dirs);
     }
     let root = paths::agents_root_dir(base_data_path);
     if !root.is_dir() {
@@ -704,6 +726,10 @@ fn matches_query(entry: &ThinkTraceEntry, query: &ThinkTraceQuery) -> bool {
         .agent_id
         .as_ref()
         .is_none_or(|agent_id| entry.agent_id == *agent_id)
+        && query
+            .agent_ids
+            .as_ref()
+            .is_none_or(|agent_ids| agent_ids.iter().any(|id| id == &entry.agent_id))
         && query
             .project_id
             .as_ref()
