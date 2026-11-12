@@ -154,7 +154,7 @@ end
 ## 详细组件分析
 
 ### 协议 DTO：三类型问题与答案
-`QuestionType` 定义 `Noul` / `Choice` / `Score` 三型；`QuestionCriteria` 用 `#[serde(untagged)]` 承载双形态（choice→选项对象、score→有序等级数组），`CerebellumQuestion::validate` 强制「类型与 criteria 形态匹配」并校验数量边界（choice ∈ [1,255]、score ∈ [2,255]、noul 可选 `{true,false}` 判据对象且不允许数组），不合规直接 `ConfigInvalid`。响应侧 `CerebellumAnswer` 用 `#[serde(tag = "type")]` 区分三型，并提供 `as_noul` / `as_choice` / `as_score` 取值器；`CerebellumResponse` 的 `usage` 缺失时容错为零值。量纲换算的单一真相是 `common::api::cerebellum::score_to_unit(score, level_count)`：`score` 是 0-based 等级序号的加权期望（实测 3 级 → 1.27、11 级 → 6.95、101 级 → 31.38），分母取 `level_count - 1` 而非固定的 255；再乘业务上限即可映射到任意刻度（`thinking_strength` 用 11 级语义锚点 × 100 分制）。
+`QuestionType` 定义 `Noul` / `Choice` / `Score` 三型；`QuestionCriteria` 用 `#[serde(untagged)]` 承载双形态（choice→选项对象、score→有序等级数组），`CerebellumQuestion::validate` 强制「类型与 criteria 形态匹配」并校验数量边界（choice ∈ [1,255]、score ∈ [2,255]、noul 可选 `{true,false}` 判据对象且不允许数组），不合规直接 `ConfigInvalid`。响应侧 `CerebellumAnswer` 用 `#[serde(tag = "type")]` 区分三型，并提供 `as_noul` / `as_choice` / `as_score` 取值器；`CerebellumResponse` 的 `usage` 缺失时容错为零值。量纲换算的单一真相是 `common::api::cerebellum::score_to_unit(score, level_count)`：`score` 是 0-based 等级序号的加权期望（实测 3 级 → 1.27、11 级 → 6.95、101 级 → 31.38），分母取 `level_count - 1` 而非固定的 255；再乘业务上限即可映射到任意刻度（`thinking_strength` 用 11 级**相对偏移**锚点 × 100 分力度分，减中位 50 得 `delta`，再按配置基准的剩余空间折算回 0–100 绝对强度；见 2026-11-12 更新摘要）。
 
 **章节来源**
 - [common/src/api/cerebellum.rs](common/src/api/cerebellum.rs)
@@ -351,3 +351,50 @@ FinalReturn --> [*] : ThinkLoopResult：Final
 4. 新增运行时路由三分类 `cerebellum_router.rs`（Direct/Inject/Skip + 三层降级）与 `think_loop.rs` 首轮前单点接线
 5. `AgentRuntimeConfig` 新增 `enable_cerebellum_route`(默认 true) / `cerebellum_trivial_direct`(默认 false) 双开关
 **涉及 RAG 卡**：小脑快判断（Cerebellum）卡（本次新建）
+
+---
+
+### 更新摘要（2026-11-12，思考强度改「相对偏移」）
+**主题**：`thinking_strength` 不再让小脑凭空给 0–100 绝对分，改为以当前配置基准为锚判相对偏移
+**触发**：线上实测（2026-11-12）73 次选中全部落在 19–58、中位 46、置信中位 0.81，连 34K token 的长任务也只给 58；且 `runner::resolve_call_options` 把小脑绝对分排在显式配置前面，管理员配的 `thinking_intensity=100` 被静默换成 46（实际下发中位 56）。绝对值题的语义锚点上端太重 + `score` 概率加权向中回归 ⇒ 判别力被压平。**这是「判据与量纲」的错配，与下一条摘要的「state 信息不足」是两件独立的事，两处都要修**
+**关键变更**：
+1. `common/src/enums/thinking_intensity.rs`——新增 `offset_with_headroom(delta, max_delta)`：`shift = clamp(delta, ±max_delta) × min(1, headroom/max_delta)`，朝上的 headroom=`100-base`、朝下=`base`。基准越近极值越难朝该方向动（base=100 正向不动、反向不放大），结果恒在 0–100
+2. `src/service/domain/runtime/thinking_strength.rs`——`LEVELS` 换成 11 条相对偏移锚点（-50…0…+50）；`instructions(base)` 动态生成判据，写明**当前配置基准值**、**0–100 值域 / 100 是最大值**、偏移按剩余空间折算；`strength_base(brain)` 成为配置基准唯一取值口（Agent 覆盖 → Provider → DEFAULT=50）；力度分减 50 得 `delta`，折算后产出 `ThinkingIntensity`，日志新增 `delta` / `base` / `force`。**state 的块序见下一条摘要**（本次提交时的「当前场景」单键已被多块装配取代）
+3. `src/pkg/policy/forms/mod.rs`——`ScorePolicy.instructions` 从 `&'static str` 放宽为 `String`（`new` 收 `impl Into<String>`），让判据可携带本次运行事实；其余形态仍是编译期常量
+4. `src/service/domain/runtime/think_round/runner.rs`——`resolve_call_options` 的基准降级路径改走 `strength_base`，能力开关 / 场景偏移 / 动态偏移 / 绝对强度通道全部不动
+**口径**：`base=50` 时新映射与旧线性偏移逐位等价（旧断言不变）；`base=100` 时正向 `delta` 完全不动、负向一个量程最多减 50 分。相对判断下 `score` 的向中回归变成 `delta≈0` ⇒ 保持配置基准，判不准则不动（旧链路是拉到 46）
+**护栏**：common 3 条（中位 1:1 / 极值不越界 / 力度钳制）+ `thinking_strength_tests.rs` 6 条（量程对齐、题面带基准与上限、配置 100 正反方向、中位 1:1、同力度近上限压缩、基准取值链）
+**边界**：只改强度判据与折算，不动题型（`score`）、不动超时 / 配额 / 降级链、不动轨迹 `decision`（仍是折算后的绝对分，看板不用改）；生产库里显式配的 100 不改数据
+
+---
+
+### 更新摘要（2026-11-12，思考强度小脑补齐节点上下文）
+**主题**：`thinking_strength` 的 state 从「只塞最后一条 User 文本」升级为「节点现场 + 强度原值 + 输入要点」的多块装配，判据以节点目标与输入要点为主要依据
+**触发**：上一条改造只换了判据量纲，输入面没动。旧 `select` 把 `last_user_text` 单独塞进单键 `context`，五个 `ThinkingScene` 共用「请判断用户这条消息需要多深的思考」题面；而 `summary` / `compact` / `settle` 根本没有「用户这条消息」——那条 User 是整份拼装 Prompt（工作摘要 / 完整对话 / 待沉淀队列），34K token 的长输入就是这么来的。没有节点位置、目标、原值与背景，模型只能按文本长短给分，五个 phase 中位全是 46
+**关键变更**：
+1. `src/service/domain/runtime/think_loop.rs`——新增 `StrengthNodeContext<'a>` 透传节点现场：`messages`（大脑实际看到的整个序列，含 System / Tool / 历史）、`tool_count`、`start_round` / `max_rounds`（跨压缩累计的轮次进度）、`dynamic_offset`、`force_intensity`。全是借用 / 标量，`select` 只在本次决策期间读，不改消息
+2. `src/service/domain/runtime/thinking_strength.rs`——新增**专用装配** `render_strength_context(...)`，不复用 `context::render_for`：其余五个通用决策点只要「有没有价值 / 要不要回」，一条用户消息够用；强度要判「这个节点这一次该多深」，块序不同，硬塞进通用装配会把新块排到最先被砍的尾部。块序固定为 ①「当前节点」②「强度原值」③「节点输入要点」④「当前用户消息」（带语义标注）⑤「会话身份」⑥「最近对话」
+3. 同文件新增 `node_goal(thought)`：五个场景各自写清「节点位置 + 真实目标 + 预期产出」（awaken 多轮执行 / intent-analyze 单轮轻量 / summary 覆盖与忠实 / compact 信息保全、规模是主要负担 / settle 关联与抽象且已有 +30 偏移）；`user_message_semantics(thought)` 逐场景标注那条 User 到底是不是用户原话
+4. 同文件新增 `baseline_block(...)`：相对判断的锚点**不是裸 `base`**，而是「不调整时的下发值」`base.offset(场景固定偏移 + 意图动态偏移)`——只报 base 会拿一个永远不会真正出现的值当参照（settle 的 +30 上尤其失真）。块内同时给出基准来源（Agent 覆盖 / Provider / 平台默认 50，与 `strength_base` 同一条取值链）、可调空间、可用工具数、`force_intensity` 覆盖时「本次判断不会下发、仅留痕」
+5. `src/service/domain/runtime/cerebellum_context.rs`——新增 `node_message_facts(messages, snippet_tokens)` + `collect_section_titles` / `section_excerpt`：从传入节点的消息序列结构化提取消息条数与角色分布、估算 token、大脑已注入的 `【…】` 背景区块标题、任务上下文 / 项目上下文 / 输入理解结果摘要、已发起的工具调用与工具名计数、最近动作（时间正序）。复用 `ChatMessage::to_summary_text`，**不把 base64 图片 / `encrypted_content` 带进小脑请求**
+6. `src/service/domain/runtime/thinking_strength.rs`——`instructions(base)` 补上 state 各块的**优先级**与「以『当前节点的目标 + 节点输入要点』为主要依据，不要只看用户消息的文字长短或措辞」；少了优先级说明，模型会退回只看最后一条消息
+7. 容量治理：`ContextBundle::render_within` 是**从尾部整块砍**，所以高价值块前置；但只靠它不够——过长的要点块会被连根砍掉，故 `node_facts_body` 先裁到「正文池的一半」、`truncated_user_message` 按 `PENDING_REPLY_BP` 份额自截，两者都带可见截断标注。容量未配（`None`）⇒ 不截，与 `render_within` / `node_message_facts` 同口径。日志新增 `context_tokens` / `node_messages` / `tool_count`
+8. `select(...)` / `select_with_default_dao(...)` 增加 `node: StrengthNodeContext<'_>` 参数；`thinking_strength_tests.rs` / `cerebellum_log_tests.rs` 的调用点补 `StrengthNodeContext::default()`
+**口径**：题型仍是 `score` + 11 条相对锚点，折算仍走 `offset_with_headroom`；`runner::resolve_call_options` 与轨迹 `decision` 不动。通用 `render_for` 继续服务其余五个决策点，本次只给强度开专用装配，不把新块塞进公共路径
+**护栏**（`thinking_strength_tests.rs` +6）：`strength_context_puts_high_value_blocks_before_user_message` / `node_goal_differs_across_all_five_stages` / `baseline_block_reports_the_value_that_would_actually_be_sent` / `node_message_facts_extract_structure_without_secrets` / `tight_capacity_keeps_node_baseline_and_facts_and_truncates_long_prompt` / `instructions_prioritize_node_goal_and_input_facts`
+**验证状态**（2026-11-12 放行后补齐，全绿）：`cargo test -p ai_orz --lib thinking_strength` **30 passed**（含本次 6 条新护栏）；`cargo test -p ai_orz --lib` **2848 passed**；`cargo test -p ai_orz` 全部 **38 个 target ok**（集成测试 + doctest，真实退出码 0、失败关键字 0）；`cargo test -p common --lib` **419 passed**；`make test-fe` **452 passed**；`make clippy` / `make clippy-fe` / `make fmt-check` 全部通过；`make docs-lint` 704 文件 0 违规；`make wiki-index && make wiki-check` 673 篇 / 192 篇元数据全绿
+**clippy 修正**：首次 clippy 报出一处 `derivable_impls`——`StrengthNodeContext<'a>` 的手写 `Default`（`messages: &[]` 等）与 derive 逐字段等价，已改为 `#[derive(Debug, Clone, Copy, Default)]` 并删除手写 impl；行为不变，`thinking_strength_tests` 的 `StrengthNodeContext::default()` 调用点不受影响
+
+---
+
+### 更新摘要（2026-11-12，题面必须携带运行时裁决事实）
+**主题**：把「题面讲原则、裁决按另一套数字」列为小脑判据的通用错配，并在 `chain_reply` 落地；`PickOnePolicy` 的题面同时放宽为可携带运行事实
+**触发**：与上面两条强度改造同源的第二类事故。`chain_reply` 题面写「`window_depth` / `fatigue` 仅作辅助参考，不得仅因数字偏大选 close」，裁决层却把 `continue` 采纳门槛按窗口深度从 0.60 抬到 0.90 —— 模型看题面以为深度不重要，实际是深度决定它能不能 `continue`。同日生产两次 `close_default(low_confidence)` 都在 `window_depth=1` 且证据完整（`included=1, omitted=0`），不是裁剪误杀，而是「参照系缺失 + 题面裁决错位」
+**关键变更**：
+1. `src/pkg/policy/forms/mod.rs`——`PickOnePolicy.instructions` 从 `&'static str` 放宽为 `String`（`new` 收 `impl Into<String>`），与 2026-11-12 早些时候改过的 `ScorePolicy` 同一形态。至此**单选 / 分级两种形态都能把本次运行事实写进题面**；其余 6 个 `PickOnePolicy` 接入点仍传编译期字面量，逐字节不变
+2. `src/service/domain/runtime/chain_reply.rs`——`decision_frame_note(facts)` / `instructions_for(facts)` 生成完整题面（常量判据 + 本次 `window_depth`、三档实际门槛、低于门槛会按 `close` 兜底收口、深度只决定置信要求）；`pressure_body` 补 `continue_threshold` 行，与题面同源走 `continue_threshold_at`
+3. **总账必须跟着题面走**：`question_frame_tokens(instructions)` / `state_pool_tokens(input, instructions)` / `chain_budget_tokens(..., instructions)` 全部按本次题面现算。题面变长后仍按常量段（@4000 实测 573 token）算，会让 `state + 题面` 静默越过 provider 容量 —— 这是「题面动态化」最容易漏的一步
+4. state 侧同步补 `## 已交付信息`（全链要点索引 + 重复正文）与 `## 对端视角`（对端身份 / 已收到 / 最新诉求 / 判断主语），给「上文没有的新事实」建立对照面、给 `close` vs `silent` 补上主语；两块按 `VIEWS_BP=5%` 同池分账并计入固定开销。详细块序、容量派生与 6 条护栏见 [消息领域.md](<../../04-对话与消息/C-知识/消息领域.md>) 同日最后一条更新摘要
+**口径**：与强度场景 `instructions(base)` 是同一手法，但事实类型不同 —— `base` 是**判据锚点**（判相对偏移必须知道基准），`continue_threshold` 是**裁决参数**（判据不变，只决定采纳要求）。两者都写进题面，state 里再放一份便于模型直接读
+**边界**：题型仍是 `PickOne` 三选项、门槛阶梯仍是 0.60→0.90、降级链与 `decision` 值域不动；本次只统一「上下文里写了什么」与「最终按什么裁决」
+**验证状态**（2026-11-12，全绿）：`chain_reply` **65 passed**（含 6 条新护栏）；`make ci` 真实退出码 0（后端 lib 2853 / common 419 / 前端 452，`inline_test_lint` 0 违规）；`make wiki-check` 673 篇 / 192 元数据；`dx check` No issues
