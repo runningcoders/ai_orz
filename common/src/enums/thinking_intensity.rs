@@ -55,6 +55,37 @@ impl ThinkingIntensity {
         Self((self.0 as i32 + delta).clamp(Self::MIN.0 as i32, Self::MAX.0 as i32) as u8)
     }
 
+    /// 按**剩余空间**折算偏移（相对判断专用；AMan 2026-11-12 定调）
+    ///
+    /// `delta` 是小脑给的「偏移力度」，量程 `[-max_delta, +max_delta]`，**不是**加减分。
+    /// 朝上的可用空间 = `100 - self`，朝下 = `self`；当该方向剩余空间 ≥ `max_delta`
+    /// 时力度 1:1 兑现，不足时按比例打折：
+    ///
+    /// ```text
+    /// shift = clamp(delta, ±max_delta) × min(1, headroom / max_delta)
+    /// ```
+    ///
+    /// 于是「基础越大，向上越难；越接近极值，朝该极值方向越难动」，而反向不受惩罚。
+    /// 例（`max_delta=50`）：base 50 ±20 → 70/30；base 80 +20 → 88（只剩 20 空间）；
+    /// base 100 +20 → 100（上限，向上不可能）、-20 → 80（反向不放大）。
+    ///
+    /// 结果恒在 [0, 100]：`shift` 的绝对值不超过该方向的剩余空间，`offset` 再兜一层
+    /// 饱和钳制。⚠️ 只用于「小脑相对偏移」这一条链；场景偏移 / 动态偏移仍走
+    /// [`Self::offset`] 的线性语义，别混用。
+    pub fn offset_with_headroom(self, delta: i32, max_delta: i32) -> Self {
+        if max_delta <= 0 {
+            return self;
+        }
+        let delta = delta.clamp(-max_delta, max_delta);
+        let headroom = if delta >= 0 {
+            Self::MAX.0.saturating_sub(self.0)
+        } else {
+            self.0
+        } as f32;
+        let factor = (headroom / max_delta as f32).min(1.0);
+        self.offset((delta as f32 * factor).round() as i32)
+    }
+
     /// 转换为下游完整六档支持（`reasoning_effort`）的 wire 字符串
     ///
     /// 与 OpenAI 规范逐字对齐：`minimal` / `low` / `medium` / `high` / `xhigh` / `max`。
@@ -156,5 +187,70 @@ mod tests {
 
         let clamped: ThinkingIntensity = serde_json::from_str("150").expect("deserialize");
         assert_eq!(clamped, ThinkingIntensity::MAX);
+    }
+
+    /// 剩余空间折算：基准在中位时 1:1，靠近极值时朝极值方向递减
+    ///
+    /// 这是「基础越大向上越难」的**行为护栏**：只写公式注释挡不住有人把它改回
+    /// 线性 `offset`，所以两端与中间都要钉死。
+    #[test]
+    fn headroom_offset_is_linear_at_center_and_damped_near_extremes() {
+        let mid = ThinkingIntensity::new(50);
+        assert_eq!(mid.offset_with_headroom(20, 50), ThinkingIntensity::new(70));
+        assert_eq!(
+            mid.offset_with_headroom(-20, 50),
+            ThinkingIntensity::new(30)
+        );
+        assert_eq!(mid.offset_with_headroom(50, 50), ThinkingIntensity::MAX);
+        assert_eq!(mid.offset_with_headroom(-50, 50), ThinkingIntensity::MIN);
+
+        // 空间只剩 20：+20 的力度只能兑现 +8
+        assert_eq!(
+            ThinkingIntensity::new(80).offset_with_headroom(20, 50),
+            ThinkingIntensity::new(88)
+        );
+        // 靠近 0 时向下同样变难
+        assert_eq!(
+            ThinkingIntensity::new(20).offset_with_headroom(-20, 50),
+            ThinkingIntensity::new(12)
+        );
+    }
+
+    /// 极值处：朝极值方向完全不动，反向正常兑现（不放大、不回绕）
+    #[test]
+    fn headroom_offset_never_pushes_past_the_ceiling_or_floor() {
+        let max = ThinkingIntensity::MAX;
+        assert_eq!(max.offset_with_headroom(50, 50), max, "100 是最大值");
+        assert_eq!(
+            max.offset_with_headroom(-20, 50),
+            ThinkingIntensity::new(80)
+        );
+        assert_eq!(
+            max.offset_with_headroom(-50, 50),
+            ThinkingIntensity::new(50),
+            "反向不放大：一个量程 50 分，100 → 50"
+        );
+
+        let min = ThinkingIntensity::MIN;
+        assert_eq!(min.offset_with_headroom(-50, 50), min);
+        assert_eq!(min.offset_with_headroom(20, 50), ThinkingIntensity::new(20));
+    }
+
+    /// 力度超量程 / 量程非法：钳制而不是溢出或 panic
+    #[test]
+    fn headroom_offset_clamps_out_of_range_delta() {
+        assert_eq!(
+            ThinkingIntensity::new(50).offset_with_headroom(999, 50),
+            ThinkingIntensity::MAX
+        );
+        assert_eq!(
+            ThinkingIntensity::new(50).offset_with_headroom(-999, 50),
+            ThinkingIntensity::MIN
+        );
+        assert_eq!(
+            ThinkingIntensity::new(50).offset_with_headroom(30, 0),
+            ThinkingIntensity::new(50),
+            "量程 0 视为不可用，保持基准"
+        );
     }
 }
