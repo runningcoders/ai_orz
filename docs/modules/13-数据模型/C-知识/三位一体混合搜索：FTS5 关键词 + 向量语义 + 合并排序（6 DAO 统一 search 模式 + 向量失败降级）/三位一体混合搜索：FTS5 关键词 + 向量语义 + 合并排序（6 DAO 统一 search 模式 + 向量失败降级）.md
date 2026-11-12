@@ -5,7 +5,7 @@ category: DAL 层 6 业务统一混合搜索
 scope:
   - "src/service/dal/agent/mod.rs"
   - "src/service/dal/tool.rs"
-  - "src/service/dal/skill.rs"
+  - "src/service/dal/skill/mod.rs"
   - "src/service/dal/task.rs"
   - "src/service/dal/project.rs"
   - "src/service/dao/*/mod.rs"（6 DAO Search 入参结构体：AgentSearch/ToolSearch 等）
@@ -14,7 +14,7 @@ source_files:
   - src/service/dal/task.rs:Ln-Lm（TaskDal.search：向量搜索→FTS5→合并/归一化/加权/分页；向量失败降级；并发并行策略）
   - 'src/service/dal/project.rs:Ln-Lm（ProjectDal.search：3 步同模式；try_build_vector_params_for_search 公共辅助）'
   - 'src/service/dal/tool.rs:Ln-Lm（ToolDal.search：向量距离阈值默认 0.8；FTS5 关键词 rank 归一化）'
-  - 'src/service/dal/skill.rs:Ln-Lm（SkillDal.search：同 3 步模式；vector_scores/vector_ids HashMap/HashSet 容器）'
+  - 'src/service/dal/skill/mod.rs:Ln-Lm（SkillDal.search：同 3 步模式；vector_scores/vector_ids HashMap/HashSet 容器）'
   - 'src/service/dao/task/mod.rs:Ln-Lm（TaskSearch 统一入参：keyword + query_vector Option + top_k + 业务 filters TaskQuery 复用）'
   - 'src/service/dao/agent/mod.rs:Ln-Lm（AgentSearch：同模式；vector_distance_threshold 可选覆盖）'
   - 'src/service/dao/tool/mod.rs:Ln-Lm（ToolSearch）、src/service/dao/skill/mod.rs:Ln-Lm（SkillSearch）、src/service/dao/project/mod.rs:Ln-Lm（ProjectSearch）、src/service/dao/message/mod.rs:Ln-Lm（MessageSearch）'
@@ -74,7 +74,7 @@ source_files:
 | [dal/task.rs](src/service/dal/task.rs) | 任务混合搜索实现（完整 5 步样板）| search()：容器准备→向量→FTS5→合并/加权/翻转→分页；向量失败降级 log_warn + 注释标记 |
 | [dal/project.rs](src/service/dal/project.rs) | 项目混合搜索（try_build_vector_params_for_search 公共辅助）| 同 5 步；提取公共辅助 `try_build_vector_params_for_search(ctx, cortex, mp_dao, keyword) -> Option<VectorIndexParams>` |
 | [dal/tool.rs](src/service/dal/tool.rs) | 工具混合搜索（top_k/阈值逻辑）| DEFAULT_VECTOR_DISTANCE_THRESHOLD = 0.8；top_k 默认 20 |
-| [dal/skill.rs](src/service/dal/skill.rs) | 技能混合搜索（容器声明）| `vector_scores: HashMap` / `vector_ids: HashSet` 模式 |
+| [dal/skill.rs](src/service/dal/skill/mod.rs) | 技能混合搜索（容器声明）| `vector_scores: HashMap` / `vector_ids: HashSet` 模式 |
 | [dao/task/mod.rs](src/service/dao/task/mod.rs) | TaskSearch 入参 | `keyword/query_vector/top_k/filters: TaskQuery` 四字段同构 |
 | [dao/agent/mod.rs](src/service/dao/agent/mod.rs) | AgentSearch | 同模式 + vector_distance_threshold 可选覆盖 |
 | [dao/tool/mod.rs](src/service/dao/tool/mod.rs) | ToolSearch；[dao/skill/mod.rs](src/service/dao/skill/mod.rs) SkillSearch；[dao/project/mod.rs](src/service/dao/project/mod.rs) ProjectSearch；[dao/message/mod.rs](src/service/dao/message/mod.rs) MessageSearch | 6 类 Search 结构体统一字段 |

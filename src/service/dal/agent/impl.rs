@@ -20,6 +20,7 @@ use crate::service::dao::agent::{AgentQuery, AgentSearch, AgentStatsQuery};
 use crate::service::dao::model_provider::ModelProviderStatsQuery;
 use common::api::PaginationParams;
 use common::enums::AgentStatus;
+use common::enums::VectorRebuildMode;
 use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolCallSummary};
 
@@ -661,6 +662,7 @@ impl AgentDal for AgentDalImpl {
         &self,
         ctx: RequestContext,
         progress: &TaskProgressCounter,
+        _mode: VectorRebuildMode,
     ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self

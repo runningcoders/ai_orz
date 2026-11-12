@@ -301,6 +301,32 @@ pub struct UpdateAgentRequest {
     pub runtime_config: Option<AgentRuntimeConfigInfo>,
 }
 
+/// 更新 Agent 绑定的模型提供商请求（管理面窄接口）
+///
+/// ⚠️ 与 [`UpdateAgentRequest`] 的区别：后者挂在 `neural` 包，Agent 上下文会
+/// **静默忽略** `model_provider_id`；本 DTO 配套 `update_agent_model_provider`
+/// （`admin` 包），只暴露模型绑定一个字段，Agent 上下文正常写入。
+/// 别把本接口包装成对 `update_agent` 的转发调用，那会让字段在 Agent 侧被丢掉。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateAgentModelProviderRequest {
+    /// 目标 Agent ID
+    #[param(source = "path")]
+    pub id: String,
+    /// 要绑定的模型提供商 ID
+    ///
+    /// 后端校验：provider 必须存在且 `capability` 为 Agent（对话模型）。
+    pub model_provider_id: String,
+}
+
+/// 更新 Agent 绑定的模型提供商响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateAgentModelProviderResponse {
+    /// Agent ID
+    pub id: String,
+    /// 更新后的模型提供商 ID
+    pub model_provider_id: String,
+}
+
 /// 状态流转时携带的「本次安装哪些包」
 ///
 /// 只在入职这条边（`PendingOnboard → Onboarded`）上有意义：

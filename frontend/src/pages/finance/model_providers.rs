@@ -248,7 +248,7 @@ pub fn FinanceModelProviders() -> Element {
     let handle_rebuild_confirm = move |_| {
         show_rebuild_prompt.set(false);
         spawn(async move {
-            match rebuild_vectors_and_wait(|_| {}).await {
+            match rebuild_vectors_and_wait(Default::default(), |_| {}).await {
                 Ok(()) => toast.success("向量索引重建完成"),
                 Err(e) => toast.error(format!("向量索引重建失败：{}", e)),
             }

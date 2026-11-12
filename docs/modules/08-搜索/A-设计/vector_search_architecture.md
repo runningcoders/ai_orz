@@ -82,7 +82,7 @@ related: []
 | **pkg/storage/** | 通用存储层，纯底层能力，无业务逻辑<br>- 向量存储抽象：VectorStore trait<br>- FTS5 工具：escape_fts5_keyword<br>只懂增删查改，不知道"技能"/"记忆"是什么 | `src/pkg/storage/` |
 | **业务 Vector Dao**（SkillVectorDao 等） | 封装向量存储调用，提供业务友好接口 | `src/service/dao/skill/vector.rs` |
 | **业务 Base Dao**（SkillDao 等） | 基础数据 CRUD + FTS5 关键词搜索<br>FTS5 关键词搜索使用 storage 层的转义工具，不依赖其他 DAO | `src/service/dao/skill/sqlite.rs` |
-| **业务 DAL** | 组合 Base Dao + Vector Dao，实现混合搜索逻辑 + 向量索引生命周期管理 | `src/service/dal/skill.rs` |
+| **业务 DAL** | 组合 Base Dao + Vector Dao，实现混合搜索逻辑 + 向量索引生命周期管理 | `src/service/dal/skill/mod.rs` |
 
 ### 调用链路示例
 

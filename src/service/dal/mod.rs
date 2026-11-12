@@ -119,8 +119,6 @@ pub(crate) mod project_test;
 #[cfg(test)]
 pub(crate) mod property_effectiveness_test;
 #[cfg(test)]
-pub(crate) mod skill_test;
-#[cfg(test)]
 pub(crate) mod task_test;
 #[cfg(test)]
 pub(crate) mod tool_test;

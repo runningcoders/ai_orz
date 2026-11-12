@@ -328,6 +328,98 @@ impl Vectorizable for SkillPo {
     }
 }
 
+/// Skill 文件导入统一结构 = (去哪放) × (从哪来)。
+///
+/// 所有外部来源（手填文本 / URL 下载 / 附件上传 / seed 快照）由 Handler 适配翻译
+/// 为此结构，DAL 的内容摄取流水线统一处理。
+///
+/// 来源优先级：`source_abs_path` 路径优先 > `content_bytes` 内存内容。
+///
+/// 注意「路径优先」已**不再等于 0 拷贝 rename**：源文件通常是 Attachment / Artifact
+/// 这类被 DB 行持有、且可被消息与任务引用的实体，导入一律 copy 并保留原位。
+#[derive(Debug, Clone, Default)]
+pub struct SkillFileImport {
+    /// 最终在技能目录里的相对路径；None 时走 5 级降级推断链。
+    ///
+    /// 来源是 **zip 技能包**时语义不同：它表示「指定包内哪个条目为主文件」，
+    /// 命中条目归位写成小写 `skill.md`；单文件来源里仍是落盘目标名。
+    pub target_path: Option<String>,
+    /// 来源 A：磁盘绝对路径（优先级高；导入时 copy 落盘，源文件保留原位）
+    pub source_abs_path: Option<std::path::PathBuf>,
+    /// 来源 B：内存内容 bytes（次优先级；无路径时用，省临时文件）
+    pub content_bytes: Option<Vec<u8>>,
+    /// 弱线索名（附件 original_name；target=None 时推断用）
+    pub suggested_name: Option<String>,
+    /// 显式可执行位（seed 快照往返用，保全无扩展名的二进制可执行附件）。
+    ///
+    /// None 时仍按扩展名推断（py/js/sh/ts）；Some(true/false) 直接覆盖推断结果。
+    pub executable: Option<bool>,
+}
+
+/// 校验技能内文件相对路径的安全性：仅允许 `[a-zA-Z0-9._-/]`，
+/// 禁止绝对路径、`..`、`\`、控制字符。
+///
+/// 白名单为什么必要：光挡 `..` 挡不住 `scripts/;rm -rf` 这类注入到 shell 的
+/// 文件名——技能附件是要给 Agent 用 shell 工具执行的，文件名最终会进命令行，
+/// 所以字符集必须收敛到「路径里真正可能用到的那几个」。
+///
+/// 字符集允许非 ASCII：中文附件名不是注入风险，而整包导入（seed 技能包）
+/// 若因中文名被拒，整个技能就导入不了。
+pub fn validate_skill_file_target(target_path: &str) -> common::error::Result<()> {
+    use common::error::bail_err;
+
+    if target_path.trim().is_empty() {
+        bail_err!(InvalidRequest, "Skill 文件路径不能为空");
+    }
+
+    if !target_path
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+    {
+        bail_err!(
+            InvalidRequest,
+            "Skill 文件路径含非法字符（仅允许字母数字与 . _ - /）: {}",
+            target_path
+        );
+    }
+
+    if target_path.contains("//") {
+        bail_err!(
+            InvalidRequest,
+            "Skill 文件路径不能含连续斜杠: {}",
+            target_path
+        );
+    }
+
+    let path = Path::new(target_path);
+    if path.is_absolute() {
+        bail_err!(InvalidRequest, "Skill 文件路径不能是绝对路径");
+    }
+    if path.components().next().is_none() {
+        bail_err!(InvalidRequest, "Skill 文件路径不能为空");
+    }
+    if target_path.contains('\\') {
+        bail_err!(InvalidRequest, "Skill 文件路径不能包含反斜杠路径分隔符");
+    }
+    if target_path.ends_with('/') {
+        bail_err!(InvalidRequest, "Skill 文件路径不能指向目录");
+    }
+
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => {}
+            std::path::Component::CurDir
+            | std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                bail_err!(InvalidRequest, "Skill 文件路径包含非法路径片段");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl Skill {
     /// 从 PO 快速创建实体
     pub fn from_po(po: SkillPo) -> Self {

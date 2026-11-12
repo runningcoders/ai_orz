@@ -37,6 +37,7 @@ pub mod train_agent;
 pub mod uninstall_skill_pack;
 pub mod uninstall_tool_pack;
 pub mod update_agent;
+pub mod update_agent_model_provider;
 pub mod update_agent_status;
 pub mod update_memory;
 
@@ -74,6 +75,7 @@ pub use train_agent::train_agent_handler;
 pub use uninstall_skill_pack::uninstall_skill_pack_handler;
 pub use uninstall_tool_pack::uninstall_tool_pack_handler;
 pub use update_agent::update_agent_handler;
+pub use update_agent_model_provider::update_agent_model_provider_handler;
 pub use update_agent_status::update_agent_status_handler;
 pub use update_memory::update_memory_handler;
 

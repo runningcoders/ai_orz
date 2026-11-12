@@ -172,6 +172,31 @@ fn pick_one_without_answer_is_none() {
     assert!(route().chosen(&Metrics::new()).is_none());
 }
 
+#[test]
+fn option_threshold_overrides_global_per_option() {
+    // 全局 0.85，但 trivial 单列 0.2、needed 单列 0.95
+    let policy = route()
+        .with_option_min_confidence("trivial", 0.2)
+        .with_option_min_confidence("needed", 0.95);
+    assert_eq!(policy.option_threshold("trivial"), Some(0.2));
+    assert_eq!(policy.option_threshold("needed"), Some(0.95));
+    // 未单列的选项落回全局门槛；不在选项集内的是幻觉选项
+    assert_eq!(policy.option_threshold("unknown"), None);
+}
+
+#[test]
+fn option_threshold_falls_back_to_global_value() {
+    let policy = PickOnePolicy::new(
+        "test_route",
+        "路由",
+        "判断是否直回",
+        "选择一种处理方式",
+        [("trivial", "琐碎，可直回"), ("needed", "需要完整思考")],
+        0.85,
+    );
+    assert_eq!(policy.option_threshold("trivial"), Some(0.85));
+}
+
 // ==================== 分级 ====================
 
 fn grade() -> ScorePolicy {
@@ -186,40 +211,110 @@ fn grade() -> ScorePolicy {
 }
 
 #[test]
-fn score_rejects_out_of_range_levels() {
-    // 协议要求 2~10 级：构造错误时宁可零调用，也不发一个必被整批拒的请求
+fn score_rejects_only_protocol_out_of_range_levels() {
+    // 边界唯一真相是 common::api::cerebellum 的 2~255，不是写死的 2~10。
+    // 构造错误时宁可零调用，也不发一个必被整批拒的请求。
     let one = ScorePolicy::new("t", "t", "d", "i", ["只有一级"], 0.5);
     assert!(one.prepare(&Metrics::new()).is_empty());
 
-    let too_many = ScorePolicy::new(
-        "t",
-        "t",
-        "d",
-        "i",
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"],
-        0.5,
-    );
+    let too_many = ScorePolicy::new("t", "t", "d", "i", vec!["L"; 256], 0.5);
     assert!(too_many.prepare(&Metrics::new()).is_empty());
+
+    // 反向护栏：11 级曾被旧上限 10 误杀；255 级是协议真实上限，必须放行
+    let eleven = ScorePolicy::new("t", "t", "d", "i", vec!["L"; 11], 0.5);
+    assert_eq!(eleven.prepare(&Metrics::new()).len(), 1);
+    let at_protocol_ceiling = ScorePolicy::new("t", "t", "d", "i", vec!["L"; 255], 0.5);
+    assert_eq!(at_protocol_ceiling.prepare(&Metrics::new()).len(), 1);
+}
+
+/// 造一个 score 题答案（协议原值是 0-based 等级序号的加权期望）
+fn grade_metrics(qid: &str, raw: f32, confidence: f32) -> Metrics {
+    Metrics::new().with_decisions(Arc::new(DecisionAnswers::new().with(
+        qid.to_string(),
+        DecisionValue::Grade {
+            score: raw,
+            confidence,
+        },
+    )))
 }
 
 #[test]
 fn score_hits_above_min_score() {
-    let policy = grade();
+    let policy = grade(); // 5 级 ⇒ 原值值域 0~4；upper 缺省 1.0 ⇒ 读回 0~1
     let qid = policy.primary_qid();
 
-    let build = |score: f32| {
-        Metrics::new().with_decisions(Arc::new(DecisionAnswers::new().with(
-            qid.clone(),
-            DecisionValue::Grade {
-                score,
-                confidence: 0.9,
-            },
-        )))
-    };
+    // 1.6/4 = 0.4 < 0.6；3.2/4 = 0.8 ≥ 0.6
+    assert!(!policy.is_triggered(&grade_metrics(&qid, 1.6, 0.9)));
+    assert!(policy.is_triggered(&grade_metrics(&qid, 3.2, 0.9)));
+    assert_eq!(
+        policy
+            .score(&grade_metrics(&qid, 3.2, 0.9))
+            .map(|g| g.score),
+        Some(3.2),
+        "score() 给协议原值，不做缩放"
+    );
+    assert_eq!(
+        policy
+            .scaled(&grade_metrics(&qid, 3.2, 0.9))
+            .map(|g| g.score),
+        Some(0.8),
+        "scaled() 才给业务刻度"
+    );
+}
 
-    assert!(!policy.is_triggered(&build(0.4)));
-    assert!(policy.is_triggered(&build(0.8)));
-    assert_eq!(policy.score(&build(0.8)).map(|g| g.score), Some(0.8));
+/// 生产反事实：11 级语义等级题的真实端点响应 `score=6.95, confidence=0.79`
+/// （2026-11-11 实测）。服务端已加权完，客户端一次线性缩放即可。
+#[test]
+fn score_scales_server_judgement_to_arbitrary_upper() {
+    // qid 只由场景 id 决定，换 upper 不换题面
+    let with_upper = |upper: f32| {
+        ScorePolicy::new("t", "t", "d", "评估强度", vec!["L"; 11], 0.0).with_upper(upper)
+    };
+    let qid = with_upper(1.0).primary_qid();
+    let m = grade_metrics(&qid, 6.95, 0.79);
+
+    assert!(
+        (with_upper(100.0).scaled(&m).expect("应读出分数").score - 69.5).abs() < 1e-4,
+        "6.95 / 10 × 100 = 69.5"
+    );
+    assert!((with_upper(10.0).scaled(&m).unwrap().score - 6.95).abs() < 1e-4);
+    assert!((with_upper(1.0).scaled(&m).unwrap().score - 0.695).abs() < 1e-4);
+}
+
+#[test]
+fn score_confidence_is_observation_only() {
+    // 连续量不做单档置信门禁：低置信也要读出分数，不能折叠成「没结论」
+    let policy = grade();
+    let qid = policy.primary_qid();
+    let low = grade_metrics(&qid, 3.2, 0.18);
+    assert_eq!(policy.scaled(&low).map(|g| g.score), Some(0.8));
+    assert!((policy.scaled(&low).unwrap().confidence - 0.18).abs() < 1e-6);
+}
+
+#[test]
+fn score_clamps_out_of_range_and_rejects_bad_upper() {
+    let policy = grade();
+    let qid = policy.primary_qid();
+    assert_eq!(
+        policy
+            .scaled(&grade_metrics(&qid, 99.0, 0.9))
+            .map(|g| g.score),
+        Some(1.0),
+        "服务端概率和 ≠ 1 导致越界时夹紧，不得溢出业务上限"
+    );
+    assert_eq!(
+        policy
+            .scaled(&grade_metrics(&qid, -1.0, 0.9))
+            .map(|g| g.score),
+        Some(0.0)
+    );
+    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let bad_policy = grade().with_upper(bad);
+        assert!(
+            bad_policy.scaled(&grade_metrics(&qid, 3.2, 0.9)).is_none(),
+            "非法 upper 必须当没结论，不能静默出 0 分：{bad}"
+        );
+    }
 }
 
 // ==================== 概率 ====================

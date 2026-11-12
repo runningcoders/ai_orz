@@ -100,7 +100,7 @@ HTTP 端点层（Part A，Task 1-12，CI-safe）
 | **Skill 向量索引泄漏修复** | | |
 | [src/service/dao/skill/mod.rs](../../src/service/dao/skill/mod.rs) | SkillVectorDao trait | 新增 `delete_vector(ctx, skill_id)` 方法签名 |
 | [src/service/dao/skill/vector.rs](../../src/service/dao/skill/vector.rs) | SkillVectorDao 实现 | 实现 `delete_vector`，SQL 删除 vss 对应行 |
-| [src/service/dal/skill.rs](../../src/service/dal/skill.rs) | Skill DAL delete | `delete` 方法尾部追加 `skill_vector_dao.delete_vector(ctx, &po.id).await` 调用（与 Tool DAL 对称） |
+| [src/service/dal/skill/mod.rs](../../src/service/dal/skill/mod.rs) | Skill DAL delete | `delete` 方法尾部追加 `skill_vector_dao.delete_vector(ctx, &po.id).await` 调用（与 Tool DAL 对称） |
 | **前端（零逻辑改动，枚举选项补充）** | | |
 | 前端 3 个 Provider 选择器页面 | UI 选项 | 下拉菜单追加 DoubaoVision 选项 |
 | **零改动面** | | |

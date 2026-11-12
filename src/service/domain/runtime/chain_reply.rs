@@ -9,23 +9,28 @@
 //! - 链上早已只剩「收到 / 已完成」的复述，却要白白再走几跳才收口。
 //!
 //! 本场景把「这一跳还有没有信息量、还需不需要回发」交给小脑判一次内容，
-//! **静态阈值完整保留为兜底**：小脑没配 / 失败 / 超时 / 判不出 → 一律落回原逻辑。
+//! **静态阈值完整保留为兜底**：小脑没配 / 失败 / 超时 / 空输入 → 落回原逻辑；
+//! **答了但不可用**（没答 / 该选项置信不达标 / 幻觉选项）→ 默认 `close`（仅通知），
+//! 因为它是三个选项里代价最小的一个（Final 仍作为知会送达对端）。
 //!
 //! # 落点与调用顺序（由 `consumer::message` 保证）
 //!
 //! ```text
 //! 静态规则未命中（= 跨 Agent 对等候选）
 //!   → collect_chain_pressure 得 pressure（+ 顺手收链内正文，零额外 DB 读）
-//!   → 达到触发阈值 且 小脑可用：本模块判一次
+//!   → 小脑可用：本模块判一次
 //!        close    → CloseChainAsNotify（复用现成收口）
-//!        continue → 落到下一步
-//!        降级/空输入/未触发 → 落到下一步
+//!        silent   → SilentClose（对端零发送）
+//!        continue → Peer（越过静态硬墙）
+//!        没答 / 置信不达标 / 幻觉 → 默认 close
+//!        调用失败 / 超时 / 空输入 / 未配 → 落到下一步
 //!   → judge_chain_reply_route(pressure)  ← 原样，逐字节不变
 //! ```
 //!
-//! **判据只用一次 `PickOne`**，候选两条（`continue` / `close`），不逐候选各发一题。
+//! **判据只用一次 `PickOne`**，候选三条（`continue` / `close` / `silent`），
+//! 不逐候选各发一题。
 //!
-//! # 触发阈值（两条件并列，缺一会漏判）
+//! # 触发阈值
 //!
 //! - **每次都问**（Q2 改判，AMan 2026-11-10）：只要走到本门（静态规则未命中的
 //!   跨 Agent 对等候选）就问一次，不再看 `fatigue` / `stage`。原「`fatigue >=
@@ -34,11 +39,23 @@
 //! - **`hard_window_depth` 是软墙**（AMan 2026-11-10 定谳，覆盖此前「绝对护栏」
 //!   的口径）：小脑判 `continue` 时**即使 `window_depth >= hard_window_depth`**
 //!   也放行——判据是内容，跳数只是辅助。静态硬墙不退场，只降为兜底：小脑
-//!   `None` / degraded / 超时 / 空输入 / 未配时，调用方照旧落回静态判定
+//!   没参与（失败 / 超时 / 空输入 / 未配）时，调用方照旧落回静态判定
 //!   （逐字节不变），这是「小脑挂了也不会无限聊」的保险。
 //! - **绝对天花板 [`ABSOLUTE_CEILING`]**：硬墙降软墙之后，小脑持续误判
 //!   `continue` 就是物理上的无限互发。故保留一个「无论小脑说什么都强制收口」
 //!   的物理上限，命中即收口并记 `degraded = ceiling_forced` 留痕。
+//!
+//! # 置信门槛（按选项分档）
+//!
+//! 三个选项的代价不同，故不共用一条门槛：
+//!
+//! | 选项 | 门槛 | 代价 |
+//! |---|---|---|
+//! | `close` | 0（默认采纳/默认兜底） | 最低：Final 仍作为知会送达，链不再增长 |
+//! | `silent` | 0.8 | 中等：对端零发送，误判后不会再被唤醒 |
+//! | `continue` | 0.9 | 最高：多跑一轮完整思考，且链深继续增长 |
+//!
+//! 「答了但选中项不达标」与「没答」都落到 `close`——拿不准就用代价最小的姿态。
 //!
 //! # 输入侧（容量即预算；条数 32 退为防环硬顶）
 //!
@@ -58,16 +75,16 @@
 //! 不是 token 预算）。条数 [`MAX_CHAIN_MESSAGES`] = 32 保留为**防环硬顶**
 //! （与消费者侧回溯硬上限同口径），不再承担主预算职责。
 //!
-//! 超长降级：**保链头 1 条 + 最近 N 条**，中间被丢弃的部分必须在 prompt 里
-//! 显式写出「中间 N 条已省略（共 M 条）」。⚠️ 这一行是本场景唯一的假阴性形态：
-//! 不标注，小脑会把「看不到」当成「没有新信息」→ 判 close → 后半段被截掉的
-//! 链被误封。判据里因此写死「证据不足就选 continue」。
+//! 超长降级：**保链头 [`HEAD_KEEP`] 条 + 最近 N 条**，中间被丢弃的部分必须在 prompt
+//! 里显式写出「中间 N 条已省略（共 M 条）」。不标注，小脑会把「看不到」当成
+//! 「没有新信息」；判据里因此写死「无法确认时选 close（仅通知）」。
 //!
 //! # 降级不变量（三条，与《小脑快判断的运行口径》一致）
 //!
-//! 1. `None` 必走原逻辑：本模块**绝不产出业务结论**，只产出「要不要收口」的建议；
+//! 1. 小脑没参与 → `None` 走原逻辑；小脑参与了但**答不可用** → 默认 `close`
+//!    （代价最小的业务结论），不再落回静态；
 //! 2. 三态严格分：`degraded`（没判出来）/ `applied=false`（判了但未改变下游，
-//!    含 `continue` 与 `not_triggered`）/ 正常（`close` 且生效）；
+//!    含 `continue` 在硬墙之下）/ 正常（结论改变了下游）；
 //! 3. 收口类决策必须自补下游最小输入：`close` 走的是**现成**收口路径
 //!    （`CloseChainAsNotify`：Final 仍作为知会送达对方 + 通知归属用户），
 //!    因此「消息必达」语义不变、收口路径仍可用。
@@ -75,16 +92,18 @@
 //! # 观测
 //!
 //! 每次进入本门都写一条 `record_cerebellum{scene: "chain_reply", decision}`。
-//! `decision` 五值 = `not_triggered` / `empty_input` / `continue` / `close` /
-//! `fallback`。**记账条目（not_triggered / empty_input / continue）同样占轨迹名额**
+//! `decision` 六值 = `not_triggered` / `empty_input` / `continue` / `close` /
+//! `close_default` / `fallback`。**记账条目同样占轨迹名额**
 //! —— 一次唤醒最多 1 条（一次回发判定一次），单 run 32 条上限内绰绰有余。
+//! `close_default` 与 `close` 必须分列：前者是「没判出来」的兜底占比，正是
+//! 判断「硬墙能否退场」的依据。
 
 use super::cerebellum_context as context;
 use super::compaction::{estimate_tokens, truncate_to_tokens};
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, CerebellumGuardVerdict};
-use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
+use crate::pkg::policy::{DecisionPolicy, DecisionValue, Metrics, PickOne, PickOnePolicy, Policy};
 use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
 use crate::service::dal::brain::{BrainDal, dal};
 use std::sync::Arc;
@@ -99,12 +118,30 @@ use std::sync::Arc;
 /// 再叫 `chain_depth` 会让 `scene × decision × degraded` 与度量字段互相污染。
 pub(crate) const SCENE: &str = "chain_reply";
 
-/// 置信阈值：低于此值按「没结论」处理
+/// 默认置信阈值：未单列门槛的选项使用它
 ///
-/// 取 0.9（高于路由 0.85）：两侧代价不对称 —— 错判 `close` 会让一条仍在产出
-/// 新结论的链被收口（对方只能自己重开新链），错判 `continue` 只是多走一跳，
-/// 而静态阈值仍会在硬墙处兜底。故收口必须高置信。
+/// 取 0.9 是本场景历史口径，现在只作为兜底（三个选项都已单列，见
+/// [`MIN_CONFIDENCE_CLOSE`] / [`MIN_CONFIDENCE_SILENT`] / [`MIN_CONFIDENCE_CONTINUE`]）。
 pub(crate) const MIN_CONFIDENCE: f32 = 0.9;
+
+/// `close` 的置信门槛：**0 = 任何时候都采纳**
+///
+/// 代价最低的选项：Final 仍作为知会送达对端（信息不丢），只是不再自动回发，
+/// 链深不会再增长。因此它既是「模型选它就直接采纳」，也是「别的选项不达标」时的
+/// 默认落点（见 [`DECISION_CLOSE_DEFAULT`]）。
+pub(crate) const MIN_CONFIDENCE_CLOSE: f32 = 0.0;
+
+/// `silent` 的置信门槛：中等代价
+///
+/// 对端一条消息都收不到，误判后它既不知道链已结束、也不会再被唤醒；代价高于
+/// `close`（少一条知会），低于 `continue`（后者会让链继续变深）。
+pub(crate) const MIN_CONFIDENCE_SILENT: f32 = 0.8;
+
+/// `continue` 的置信门槛：最高代价
+///
+/// 每多回一跳都要再付一次完整思考 + 投递成本，并且链深继续增长；且本门已把
+/// 静态硬墙降为软墙，`continue` 会越过它。故必须有高置信才放行。
+pub(crate) const MIN_CONFIDENCE_CONTINUE: f32 = 0.9;
 
 /// 选项 id：继续自动回发
 pub(crate) const OPTION_CONTINUE: &str = "continue";
@@ -127,6 +164,12 @@ pub(crate) const DECISION_CONTINUE: &str = "continue";
 /// `applied` 不恒 true：`close` 只在硬墙**之下**才改变下游（静态本是 `Peer`）；
 /// 硬墙之上静态判定本就 `Escalate → CloseChainAsNotify`，此时 `close` 是 no-op。
 pub(crate) const DECISION_CLOSE: &str = "close";
+/// 轨迹决策值：**没拿到可用结论时的默认收口**
+///
+/// 与 [`DECISION_CLOSE`] 分开计数：那个是模型自己选了 `close`，这个是「答案缺失 /
+/// 置信不达标 / 幻觉选项」时按最保守选项兜底。两者的生效率与置信分布完全不同，
+/// 混在一起就无法观察「默认收口」到底占多少（也就无法判断硬墙能否退场）。
+pub(crate) const DECISION_CLOSE_DEFAULT: &str = "close_default";
 /// 轨迹决策值：模型判静默收口（对端零发送，只通知归属用户）
 ///
 /// `applied` **恒 `true`**：本门只在「静态规则未命中的跨 Agent 对等候选」上表态 ——
@@ -139,8 +182,13 @@ pub(crate) const DECISION_FALLBACK: &str = "fallback";
 
 /// 降级原因：本 run 小脑调用配额耗尽
 const DEGRADED_BUDGET: &str = "budget_exhausted";
-/// 降级原因：判了但没有可用结论（低置信 / 答案缺失 / 幻觉选项）
+/// 降级原因：判了但没有可用结论（答案缺失 / 幻觉选项）
 const DEGRADED_NO_ANSWER: &str = "no_answer";
+/// 降级原因：答了，但选中项的置信度没达到该选项自己的门槛
+///
+/// 与 [`DEGRADED_NO_ANSWER`] 分列：前者是「没答出来」，后者是「答了但不够确定」，
+/// 排障时一个要查协议 / 端点，另一个要查判据与阈值标定。
+const DEGRADED_LOW_CONFIDENCE: &str = "low_confidence";
 /// 降级原因：端点连续失败已熔断，本次跳过不再尝试（按周期放真探针）
 ///
 /// **独立值域**，绝不并入 `timeout`：熔断是「按设计跳过」，超时是「试了又超」。
@@ -188,8 +236,21 @@ pub(crate) const ABSOLUTE_CEILING: usize = 32;
 /// 链内消息条数上限（与 `consumer::message::MAX_CHAIN_TRAVERSAL` 同口径）
 ///
 /// 与 [`body_token_budget`] 是**取小**关系：先按条数裁窗口（保链头 + 最近
-/// `MAX_CHAIN_MESSAGES - 1` 条），再按 token 预算裁尾窗口。
+/// `MAX_CHAIN_MESSAGES - HEAD_KEEP` 条），再按 token 预算裁尾窗口。
 pub(crate) const MAX_CHAIN_MESSAGES: usize = 32;
+
+/// 链内被裁时**无条件保留的链头条数**
+///
+/// 只保 1 条太薄：首条通常只是打招呼 / 交代一句，看不出议题与分工。保 3 条
+/// 才能回答「这条链在解决什么、双方各是谁」。代价只是多占一点正文预算。
+pub(crate) const HEAD_KEEP: usize = 3;
+
+/// 本场景的「最近对话」条数
+///
+/// 通用口径 [`context::RECENT_DIALOGUE_LIMIT`] = 3 是给另外六个接入点的保守值；
+/// 本场景要判「这条消息有没有新信息」，3 条短期记忆摘要常常不够覆盖链起点前后
+/// 的语义，故单列 8 条（同一份 `Brain.memories`，零额外 IO）。
+pub(crate) const CHAIN_RECENT_DIALOGUE_LIMIT: usize = 8;
 
 /// 本次判据的输入 token 预算 = **provider 推荐上下文长度**（容量即预算）
 ///
@@ -237,24 +298,28 @@ pub(crate) fn pending_token_budget(input_budget: usize, body_budget: usize) -> u
 
 /// 判据（prompt 存调用方，服务端不持有）
 ///
-/// 只写黑名单侧（默认 continue）：误收口的代价高于多回一轮。
-/// 末段「省略标注 ⇒ 证据不足选 continue」是本场景唯一的假阴性防线。
+/// **默认落在 `close`（仅通知）**：它代价最低——Final 仍作为知会送达对端，
+/// 信息不丢、链深也不再增长；判不准时选它，最坏结果只是对端需要自己重开新链。
+/// `continue` / `silent` 都要改变更贵的下游形态，必须真有把握才选。
+///
+/// 末段「省略标注 ⇒ 看不出就选 close」是本场景的保守方向：看不到中段不等于
+/// 没有新信息，但也不能靠猜测继续加深链。
 const INSTRUCTIONS: &str = "判断协作方刚发来的消息有没有新的实质信息、本轮还需不需要自动回发；\
-看链内消息、最近对话（`## 最近对话`）与待发消息（`## 待发消息`）。\n\
+看链内消息、链起点（`## 链起点`）、最近对话（`## 最近对话`）与待发消息（`## 待发消息`）。\n\
 先看 `## 待发消息` —— 它是本条**本来就要发出去**的正文，属判据的一部分：\
 它有对方需要知道的新内容（新结论 / 新数据 / 待办 / 问题）⇒ 选 continue；\
-只有它本身就是对方已经知道的纯确认 / 纯致谢，才可能选 close / silent。\
-选 silent：本条与本轮回复里都没有对方需要知道的内容（纯确认 / 纯致谢 / 纯重复），\n\
-连「到此为止」都不必告诉对方。\n\
-选 close：只是确认 / 致谢 / 收讫 / 复述（「收到」「明白」「已完成」），但对方需要知道「到此为止」，\
-或结论已在上文交付、本条只是重复总结，或同一层意思反复换措辞。\n\
+只有它本身就是对方已经知道的纯确认 / 纯致谢，才可能选 close / silent。\n\
 选 continue：带来了上文没有的新事实 / 数据 / 结论 / 问题 / 待办，\
 或提出需要答复的问题、需要确认的决策点、需要执行的下一步。\n\
-判不准就选 continue —— 误收口代价高于多回一轮。\n\
+选 close：只是确认 / 致谢 / 收讫 / 复述（「收到」「明白」「已完成」），\
+或结论已在上文交付、本条只是重复总结，或同一层意思反复换措辞；\
+**拿不准时也选 close** —— 它仍会把本条作为知会送达对端，信息不丢。\n\
+选 silent：本条与本轮回复里都没有对方需要知道的内容（纯确认 / 纯致谢 / 纯重复），\
+连「到此为止」都不必告诉对方。\n\
 state 里的 window_depth（当前链深度）与 fatigue（疲劳值）**仅作辅助参考**：\n\
 主判据是这条消息有没有新的实质信息量，不得仅因为这两个数字偏大就选 close。\n\
-链内区块若出现「中间 N 条已省略」，不得把「看不到」当成「没有新信息」，\
-证据不足一律选 continue。";
+链内区块若出现「中间 N 条已省略」，不得把「看不到」当成「没有新信息」：\
+无法确认时选 close，由对端决定是否重开新链。";
 
 /// 三个选项（id → 判据描述）
 ///
@@ -265,11 +330,12 @@ state 里的 window_depth（当前链深度）与 fatigue（疲劳值）**仅作
 const OPTIONS: [(&str, &str); 3] = [
     (
         OPTION_CONTINUE,
-        "继续回发：带来上文没有的新事实 / 结论 / 问题 / 待办，或证据不足（含链内被截断）",
+        "继续回发：带来上文没有的新事实 / 结论 / 问题 / 待办；只有明确有新信息才选",
     ),
     (
         OPTION_CLOSE,
-        "不再回发：只是确认 / 致谢 / 收讫 / 复述，或同一层意思反复换措辞",
+        "不再自动回发，但把本条作为知会送达对方：只是确认 / 致谢 / 收讫 / 复述，\
+或同一层意思反复换措辞；拿不准时也选它",
     ),
     (
         OPTION_SILENT,
@@ -313,11 +379,12 @@ pub(crate) fn state_pool_tokens(input_budget: usize) -> usize {
 /// 一段「容量稍大反而不问」的非单调断崖。
 pub(crate) fn chain_budget_tokens(
     brain: &Brain,
+    origin_rendered: &str,
     facts: &ChainPressureFacts,
     input_budget: usize,
     pending_tokens: usize,
 ) -> usize {
-    let fixed = fixed_sections_tokens(brain, facts);
+    let fixed = fixed_sections_tokens(brain, origin_rendered, facts);
     let pool = state_pool_tokens(input_budget);
     if pool <= fixed {
         return body_token_budget(input_budget).saturating_sub(pending_tokens);
@@ -344,12 +411,32 @@ const STATE_KEYS: &[&str] = &[context::STATE_KEY];
 pub(crate) struct ChainMessage {
     /// 发送方 ID（当前协作的两方之一）
     pub from_id: String,
+    /// 发送方显示名（解析失败为 `None`，渲染时退回 id）
+    ///
+    /// 只有 id 时，模型很难分清「我方」与「对端」谁在复述谁；名字是零成本的
+    /// 消歧线索（解析发生在调用方，本模块不做任何查询）。
+    pub from_name: Option<String>,
     /// 消息类型的中文短标签（文本消息 / 工具执行结果 / …）
     pub type_label: &'static str,
     /// 正文（调用方原样给，本模块负责按预算截断）
     pub content: String,
     /// 创建时间戳（毫秒）；不参与渲染，仅供调用方/日志排序核对
     pub created_at: i64,
+}
+
+/// 链起点：沿 `reply_to_id` 回溯到第一条**非 Agent** 消息（通常是用户原话）
+///
+/// 追溯在 `User/System` 处停止，那条正文此前被整段丢掉，导致小脑只看到
+/// 「双方在聊什么」，看不到「最初要解决什么」。它本来就在回溯手里，带上它
+/// 不增加任何查询。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ChainOrigin {
+    /// 来源角色标签（`用户消息` / `系统消息`）
+    pub role_label: &'static str,
+    /// 发送方 ID
+    pub from_id: String,
+    /// 正文（本模块按 snippet 预算截断）
+    pub content: String,
 }
 
 /// 协作压力事实（本模块只读数字，不依赖 `pkg::collaboration_pressure` 类型）
@@ -385,10 +472,14 @@ pub(crate) fn omission_line(omitted: usize, total: usize) -> String {
 
 /// 渲染单条链内消息
 pub(crate) fn render_one(index: usize, message: &ChainMessage) -> String {
+    let who = match &message.from_name {
+        Some(name) => format!("{name}({})", message.from_id),
+        None => message.from_id.clone(),
+    };
     format!(
         "[#{}] {} {}: {}",
         index + 1,
-        message.from_id,
+        who,
         message.type_label,
         message.content.trim()
     )
@@ -398,11 +489,11 @@ pub(crate) fn render_one(index: usize, message: &ChainMessage) -> String {
 /// 小脑 state 裁剪共用同一实现、只差这段文案）
 const BODY_TRUNCATION_SUFFIX: &str = "…（正文已截断）";
 
-/// 组装链内输入：保链头 1 条 + 最近 N 条，双阈取小，中间显式标注省略
+/// 组装链内输入：保链头 [`HEAD_KEEP`] 条 + 最近 N 条，双阈取小，中间显式标注省略
 ///
 /// 为什么保链头：链头决定「这整条链在谈什么事」，丢掉它，模型只能看到
-/// 尾部几句确认语，必然误判 close。为什么保尾部：新消息是否带来信息，
-/// 主要由最近几跳的语义差决定。
+/// 尾部几句确认语，必然误判 close。一条往往只写了开场白，故保 3 条才够
+/// 看出议题与分工。为什么保尾部：新消息是否带来信息，主要由最近几跳的语义差决定。
 pub(crate) fn render_chain(messages: &[ChainMessage], budget: usize) -> ChainInput {
     if messages.is_empty() || budget == 0 {
         return ChainInput {
@@ -412,24 +503,40 @@ pub(crate) fn render_chain(messages: &[ChainMessage], budget: usize) -> ChainInp
         };
     }
     let total = messages.len();
-    // 条数硬上限（双阈取小的「条数」一侧）：超限时保链头 + 最近 N-1 条，
+    // 条数硬上限（双阈取小的「条数」一侧）：超限时保链头 + 最近 N-head 条，
     // 更早的中间段既不渲染也不占 token 预算。
+    let head_count = HEAD_KEEP.min(total).min(MAX_CHAIN_MESSAGES);
     let dropped = total.saturating_sub(MAX_CHAIN_MESSAGES);
     let tail_start = if dropped == 0 {
-        1
+        head_count
     } else {
-        total - (MAX_CHAIN_MESSAGES - 1)
+        total - (MAX_CHAIN_MESSAGES - head_count)
     };
     // 省略标注本身也占预算，先预留最坏情况（全部中间条被省略）
     let reserve = estimate_tokens(&omission_line(total, total));
-    // 链头单独超预算时截断：保住「链从哪来」这一端，并给省略标注留出空间，
-    // 使「链头 + 省略标注」这条最小渲染恒不越界。
-    let head = truncate_to_tokens(
-        &render_one(0, &messages[0]),
-        budget.saturating_sub(reserve),
-        BODY_TRUNCATION_SUFFIX,
-    );
-    let mut used = estimate_tokens(&head);
+
+    // 链头逐条渲染：整条放得下就整条放，放不下就截断这一条后停止
+    // （保住「链从哪来」这一端，并给省略标注留出空间）。
+    let mut heads: Vec<String> = Vec::new();
+    let mut used = 0usize;
+    for (index, message) in messages.iter().take(head_count).enumerate() {
+        let available = budget.saturating_sub(used).saturating_sub(reserve);
+        if available == 0 && !heads.is_empty() {
+            break;
+        }
+        let line = render_one(index, message);
+        let fits = estimate_tokens(&line) <= available;
+        let rendered = if fits {
+            line
+        } else {
+            truncate_to_tokens(&line, available, BODY_TRUNCATION_SUFFIX)
+        };
+        used += estimate_tokens(&rendered);
+        heads.push(rendered);
+        if !fits {
+            break;
+        }
+    }
 
     let mut tail: Vec<String> = Vec::new();
     let mut idx = total;
@@ -445,9 +552,9 @@ pub(crate) fn render_chain(messages: &[ChainMessage], budget: usize) -> ChainInp
     }
     tail.reverse();
 
-    let included = 1 + tail.len();
+    let included = heads.len() + tail.len();
     let omitted = total - included;
-    let mut rendered = head;
+    let mut rendered = heads.join("\n");
     if omitted > 0 {
         rendered.push('\n');
         rendered.push_str(&omission_line(omitted, total));
@@ -482,14 +589,13 @@ hard_fatigue: {}\nhard_window_depth: {}",
 }
 
 /// 本场景的上下文装配（**唯一装配点**）：块序固定
-/// `会话身份` → `当前场景` → `最近对话` → `链内消息` → `待发消息` → `协作压力`
+/// `会话身份` → `当前场景` → `最近对话` → `链起点` → `链内消息` → `待发消息` → `协作压力`
 ///
 /// 两处刻意的「不」：
 /// - **不用 `with_user_message`**：本场景的输入是 N 条链内历史正文，不是「当前用户
 ///   消息」；那个标题会把多轮历史误导成一条待判正文。
-/// - **用 `with_recent_dialogue`（`Brain.memories`）**：AMan 2026-11-11 明确「最近对话
-///   对这个判断很有用」⇒ 从「有意的缺失」转为正式判据输入（此前登记为待裁项）。
-///   空列表由 `push` 整块跳过，不留裸标题。
+/// - **链起点是独立块而不是塞进链内消息**：它不在 `reply_to_id` 的 Agent 往返里，
+///   混进去会把「用户最初要什么」伪装成一次 Agent 回发。
 ///
 /// 也**不做组织器侧容量自截**（`render_within`）：链内正文已由 [`render_chain`] 按
 /// 实测余额自截；再叠一层组织器的「容量 − 骨架比例」**尾块整砍**，会在中间容量带
@@ -502,6 +608,7 @@ hard_fatigue: {}\nhard_window_depth: {}",
 /// 判据仍是「`body_token_budget == 0` ⇒ 不问」（⑤），不是「截到装得下」。
 fn state_bundle(
     brain: &Brain,
+    origin_rendered: &str,
     chain_rendered: &str,
     pending_rendered: &str,
     facts: &ChainPressureFacts,
@@ -510,12 +617,14 @@ fn state_bundle(
         .with_identity(&brain.agent_id, &brain.agent_name)
         .with_scene(SCENE)
         // 最近对话（`Brain.memories` 尾部 N 条）：AMan 2026-11-11 定为正式判据输入。
-        // 与另外六个接入点同源同限（`RECENT_DIALOGUE_LIMIT`），不另设条数口径。
+        // 本场景单列 8 条（见 `CHAIN_RECENT_DIALOGUE_LIMIT`），其余场景仍是 3。
         .with_recent_dialogue(
             &brain.memories,
-            context::RECENT_DIALOGUE_LIMIT,
+            CHAIN_RECENT_DIALOGUE_LIMIT,
             context::dialogue_snippet_tokens(brain),
         );
+    // 链起点（用户 / 系统原话）：空正文整块跳过，不留裸标题
+    bundle.push("链起点", origin_rendered.to_string());
     // 空正文（一条链内消息都没带上）时 `push` 整块跳过，不留 `## 链内消息` 裸标题
     bundle.push("链内消息", chain_rendered.to_string());
     // 待发消息：本条**默认准备发送**的正文（判 ①②③ 的第三个输入面）。
@@ -530,29 +639,42 @@ fn state_bundle(
 /// `share::TOTAL_BP` 的编译期断言只钉「骨架 + 待发 + 正文 = 100%」，钉不住本场景
 /// 的语义分叉：六场景由 `render_within` 把**所有块**压到 `body_budget_tokens` 以内，
 /// 本场景却把整个正文池当成了「链内 + 待发」两块的预算。故这里按实测把身份 /
-/// 场景 / 最近对话 / 协作压力（含 `## 标题` 与 `\n\n` 分隔符）从同一个池扣掉。
+/// 场景 / 最近对话 / 链起点 / 协作压力（含 `## 标题` 与 `\n\n` 分隔符）从同一个
+/// 池扣掉。
 ///
 /// 占位块用 **CJK 单字**：`estimate_tokens` 对 CJK 是严格 1 字 / 1 token 的线性
 /// 计数，减去两个占位后即为固定块的精确开销；用拉丁字符会踩「4 字符 1 token、
 /// 向上取整」的分界，拼接后可能少算 1 token。最终态若有块因空正文被跳过，本估算
 /// 只会偏高 ⇒ 预算更保守，不会越界。容量未配时 `body_budget` 极大，扣减不改变
 /// 「不裁」的既有行为。
-fn fixed_sections_tokens(brain: &Brain, facts: &ChainPressureFacts) -> usize {
+fn fixed_sections_tokens(
+    brain: &Brain,
+    origin_rendered: &str,
+    facts: &ChainPressureFacts,
+) -> usize {
     const PLACEHOLDER: &str = "占";
-    let rendered = state_bundle(brain, PLACEHOLDER, PLACEHOLDER, facts).render();
+    let rendered = state_bundle(brain, origin_rendered, PLACEHOLDER, PLACEHOLDER, facts).render();
     estimate_tokens(&rendered).saturating_sub(2 * estimate_tokens(PLACEHOLDER))
 }
 
 /// 本场景的 state 装配（单出口：`{"context": "<分块正文>"}`）
 fn state_metrics(
     brain: &Brain,
+    origin_rendered: &str,
     chain_rendered: &str,
     pending_rendered: &str,
     facts: &ChainPressureFacts,
 ) -> Metrics {
     Metrics::new().with(
         context::STATE_KEY,
-        state_bundle(brain, chain_rendered, pending_rendered, facts).render(),
+        state_bundle(
+            brain,
+            origin_rendered,
+            chain_rendered,
+            pending_rendered,
+            facts,
+        )
+        .render(),
     )
 }
 
@@ -567,6 +689,10 @@ fn policy() -> PickOnePolicy {
         OPTIONS,
         MIN_CONFIDENCE,
     )
+    // 代价越大、门槛越高：close 直接采纳，silent 要 0.8，continue 要 0.9。
+    .with_option_min_confidence(OPTION_CLOSE, MIN_CONFIDENCE_CLOSE)
+    .with_option_min_confidence(OPTION_SILENT, MIN_CONFIDENCE_SILENT)
+    .with_option_min_confidence(OPTION_CONTINUE, MIN_CONFIDENCE_CONTINUE)
     .with_state_keys(STATE_KEYS)
     // 场景级超时覆盖：只在 chain_reply 生效，全局缺省不动
     .with_timeout_ms(SCENE_TIMEOUT_MS)
@@ -635,14 +761,20 @@ pub(crate) enum ChainReplyVerdict {
     },
 }
 
-/// 生产入口：判一次「还要不要继续回发」（`None` = 走原逻辑）
+/// 生产入口：判一次「还要不要继续回发」
+///
+/// 返回 `None` 只代表**小脑没参与**（未装配 / 未启用 / 调用失败 / 超时 / 配额 /
+/// 空输入），此时调用方走原静态判定。**「答了但不可用」不再算 `None`**：
+/// 按最保守选项默认 `close`（见 [`DECISION_CLOSE_DEFAULT`]）。
 ///
 /// `brain` 刻意收 `Option<&Brain>`：调用方直接传 `agent.brain.as_ref()`，
 /// 缺失即降级（本门绝不阻断主流程，也不 panic）。
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn judge_chain_reply(
     ctx: &RequestContext,
     dal: Arc<dyn BrainDal>,
     brain: Option<&Brain>,
+    origin: Option<&ChainOrigin>,
     messages: &[ChainMessage],
     facts: &ChainPressureFacts,
     pending_reply: &str,
@@ -800,6 +932,21 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
+    // ⑤.4 链起点（用户 / 系统原话）：与摘要同档截断（snippet 预算）
+    //
+    // 它是「这条链最初要解决什么」的唯一来源，且调用方回溯时本来就读到了；
+    // 容量未配时 `dialogue_snippet_tokens` 为 `None` ⇒ 不截断（与其他块同口径）。
+    let origin_rendered = origin
+        .map(|o| {
+            let text = o.content.trim();
+            let text = match context::dialogue_snippet_tokens(brain) {
+                Some(budget) => truncate_to_tokens(text, budget, BODY_TRUNCATION_SUFFIX),
+                None => text.to_string(),
+            };
+            format!("{}（{}）: {}", o.role_label, o.from_id, text)
+        })
+        .unwrap_or_default();
+
     // ⑤.5 待发正文（本条默认准备发送的消息）—— AMan 2026-11-11 新增的判定输入
     //
     // 分账规则（**不新开预算池**）：
@@ -826,7 +973,13 @@ pub(crate) async fn judge_chain_reply(
     // 「题面实测收紧 + 固定块实测 + 待发实测」三层扣减；少了它，12% 的最近对话
     // + 固定块 + 573 token 题面会叠在 87.5% 之外，推荐值≈最大长度的 provider
     // 会被顶出窗口。极小容量保持改造前分账（见该函数 doc）。
-    let chain_budget = chain_budget_tokens(brain, facts, input_budget, estimate_tokens(&pending));
+    let chain_budget = chain_budget_tokens(
+        brain,
+        &origin_rendered,
+        facts,
+        input_budget,
+        estimate_tokens(&pending),
+    );
 
     // ⑥ 链内一条消息都拉不到：不调小脑、不占配额
     let input = render_chain(messages, chain_budget);
@@ -870,7 +1023,7 @@ pub(crate) async fn judge_chain_reply(
     }
 
     let policy = policy();
-    let metrics = state_metrics(brain, &input.rendered, &pending, facts);
+    let metrics = state_metrics(brain, &origin_rendered, &input.rendered, &pending, facts);
 
     // 阶段一：策略声明要问什么（纯函数；选项固定三条，一次 PickOne）
     let requests = policy.prepare(&metrics);
@@ -923,35 +1076,58 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
-    // 阶段三：答案注入事实桶，形态负责「选一个 + 置信达标 + 不采信幻觉选项」
+    // 阶段三：答案注入事实桶，按**该选项自己的门槛**判定是否采纳
+    //
+    // 与旧的单条全局门槛不同：`close` 代价最低（仍把 Final 作为知会送达），
+    // 任何时候都采纳；`silent` / `continue` 分别要 0.8 / 0.9。任何一个不达标
+    // 都落到 `close` —— 「不知道该怎么回，就仅通知」，这是代价最小的姿态。
     let metrics = metrics.with_decisions(Arc::new(outcome.answers));
-    let Some(pick) = policy.chosen(&metrics) else {
+    let overrode_static_wall = facts.window_depth as u64 >= facts.hard_window_depth;
+    let (pick, reason) = match metrics.decision(&policy.primary_qid()) {
+        Some(DecisionValue::Pick {
+            chosen, confidence, ..
+        }) => match policy.option_threshold(chosen) {
+            Some(threshold) if *confidence >= threshold => (
+                Some(PickOne {
+                    option: chosen.clone(),
+                    confidence: *confidence,
+                }),
+                None,
+            ),
+            // 答了但没达到该选项门槛
+            Some(_) => (None, Some(DEGRADED_LOW_CONFIDENCE)),
+            // 模型编造的选项：不在选项集内 = 没有结论
+            None => (None, Some(DEGRADED_NO_ANSWER)),
+        },
+        // 没答 / 题型不符
+        _ => (None, Some(DEGRADED_NO_ANSWER)),
+    };
+    let Some(pick) = pick else {
+        let reason = reason.unwrap_or(DEGRADED_NO_ANSWER);
         log_info!(
             ctx,
             "chain_reply",
-            decision = DECISION_FALLBACK,
-            degraded_reason = DEGRADED_NO_ANSWER,
+            decision = DECISION_CLOSE_DEFAULT,
+            degraded_reason = reason,
             scene = SCENE,
             latency_ms = latency_ms,
-            "chain reply gate produced no usable answer"
+            window_depth = facts.window_depth,
+            hard_window_depth = facts.hard_window_depth,
+            overrode_static_wall = overrode_static_wall,
+            "chain reply gate has no usable answer, default to close (notify only)"
         );
         record_cerebellum(
             trace_id,
             trace(
-                DECISION_FALLBACK,
+                DECISION_CLOSE_DEFAULT,
                 None,
-                Some(DEGRADED_NO_ANSWER),
-                false,
+                Some(reason),
+                !overrode_static_wall,
                 Some(latency_ms),
             ),
         );
-        return None;
+        return Some(ChainReplyVerdict::Close { confidence: None });
     };
-
-    // `applied` 的统一口径 = 本门是否**改变了下游**（四条定值见本函数 doc）。
-    // 提前算一次供 close / continue 共用：硬墙之上静态判定本就收口，close 在那
-    // 里是 no-op，只有 continue 能改变下游。
-    let overrode_static_wall = facts.window_depth as u64 >= facts.hard_window_depth;
 
     if pick.option == OPTION_CLOSE {
         log_info!(
@@ -1068,12 +1244,23 @@ pub(crate) async fn judge_chain_reply(
 pub(crate) async fn judge_chain_reply_with_default_dao(
     ctx: &RequestContext,
     brain: Option<&Brain>,
+    origin: Option<&ChainOrigin>,
     messages: &[ChainMessage],
     facts: &ChainPressureFacts,
     pending_reply: &str,
     trace_id: &str,
 ) -> Option<ChainReplyVerdict> {
-    judge_chain_reply(ctx, dal(), brain, messages, facts, pending_reply, trace_id).await
+    judge_chain_reply(
+        ctx,
+        dal(),
+        brain,
+        origin,
+        messages,
+        facts,
+        pending_reply,
+        trace_id,
+    )
+    .await
 }
 
 #[cfg(test)]

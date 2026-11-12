@@ -9,11 +9,13 @@ use dioxus_router::Link;
 
 use crate::api::hr::{create_skill, delete_skill, query_skills, search_skills};
 use crate::api::seed::{get_task_progress, preview_preset_skills, sync_preset_skills};
+use crate::api::system::rebuild_vectors;
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::skill_content_input_editor::SkillContentInputEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
+use crate::store::auth::use_auth_state;
 use crate::store::toast::use_toast;
 use crate::utils::status::{short_id, skill_author_type_badge, skill_author_type_text};
 use common::api::{
@@ -23,6 +25,7 @@ use common::api::{
 };
 use common::enums::SkillAuthorType;
 use common::enums::SkillStatus;
+use common::enums::UserRole;
 
 /// 列表分页大小（搜索场景后端硬顶 20 条，不分页）
 const PAGE_SIZE: usize = 20;
@@ -72,6 +75,18 @@ pub fn HrSkills() -> Element {
     let mut syncing = use_signal(|| false);
     // 轮询到的后台任务进度文案（同步中显示）
     let mut sync_progress = use_signal(String::new);
+
+    // ===== 重建技能索引（仅 SuperAdmin）=====
+    let mut show_rebuild_confirm = use_signal(|| false);
+    let mut rebuilding = use_signal(|| false);
+    let mut rebuild_progress = use_signal(String::new);
+    // 重建模式：缺省「查漏补缺」（便宜、能修缺口）；「强制重建」要用户显式选。
+    // 别把默认值设成 Force —— 那是一次误点就要重算全库 embedding 的费用。
+    let mut rebuild_mode = use_signal(|| common::enums::VectorRebuildMode::Missing);
+    // 重建会清空并重算全库技能向量，后端 handler 内部二次校验 SuperAdmin
+    let auth = use_auth_state();
+    let is_super_admin =
+        UserRole::has_permission(UserRole::from_i32(auth().role), UserRole::SuperAdmin);
 
     // 加载数据（两场景切换：条件过滤查询（带分页）/ 关键词语义搜索）
     let load_data = move || {
@@ -270,6 +285,72 @@ pub fn HrSkills() -> Element {
         });
     };
 
+    // 重建技能索引：只重建 skill 集合，具体形态由弹窗里选的 mode 决定
+    //
+    // - Missing（查漏补缺）：不清空集合，逐条比 content_hash，只补缺失/已变条目。
+    //   省 embedding 费，也能修「口径章一致但个别行缺失」这种 Auto 看不见的洞；
+    // - Force（强制重建）：清空后全量重算，每条都真实调 embedding；
+    // - Auto 不给按钮用 —— 它在口径一致时一条不看，按钮会变成空操作。
+    let confirm_rebuild = move |_| {
+        let mode = rebuild_mode();
+        rebuilding.set(true);
+        rebuild_progress.set("正在提交重建任务...".to_string());
+        spawn(async move {
+            let req = common::api::RebuildVectorsRequest {
+                entities: Some(vec!["skill".to_string()]),
+                mode,
+            };
+            let task_id = match rebuild_vectors(req).await {
+                Ok(r) => r.task_id,
+                Err(e) => {
+                    toast.error(format!("提交重建任务失败: {}", e));
+                    rebuilding.set(false);
+                    return;
+                }
+            };
+            loop {
+                gloo_timers::future::TimeoutFuture::new(1000).await;
+                match get_task_progress(&task_id).await {
+                    Ok(p) => {
+                        rebuild_progress.set(p.step_message.clone());
+                        match p.status {
+                            common::api::TaskStatus::Completed => {
+                                let processed = p
+                                    .result
+                                    .as_ref()
+                                    .and_then(|v| v.get("processed"))
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let verb = if mode == common::enums::VectorRebuildMode::Missing {
+                                    "查漏补缺完成：扫描"
+                                } else {
+                                    "强制重建完成：处理"
+                                };
+                                toast.success(format!("技能索引{} {} 条", verb, processed));
+                                break;
+                            }
+                            common::api::TaskStatus::Failed => {
+                                toast.error(format!(
+                                    "重建失败: {}",
+                                    p.error.unwrap_or_else(|| "未知错误".to_string())
+                                ));
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(e) => {
+                        toast.error(format!("查询重建进度失败: {}", e));
+                        break;
+                    }
+                }
+            }
+            rebuilding.set(false);
+            rebuild_progress.set(String::new());
+            show_rebuild_confirm.set(false);
+        });
+    };
+
     // 初始加载
     use_effect(move || {
         load_data();
@@ -443,6 +524,14 @@ pub fn HrSkills() -> Element {
                             "重置"
                         }
                     }
+                    if is_super_admin {
+                        button {
+                            class: "btn hud-btn btn-ghost",
+                            disabled: rebuilding(),
+                            onclick: move |_| show_rebuild_confirm.set(true),
+                            if rebuilding() { "⟳ 重建中..." } else { "⟳ 重建索引" }
+                        }
+                    }
                     button { class: "btn hud-btn btn-ghost", onclick: open_sync_modal, "⟳ 同步预置技能" }
                     button { class: "btn hud-btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
                 }
@@ -536,6 +625,12 @@ pub fn HrSkills() -> Element {
             // 列表卡片
             HudPanel { signal: Some(true),
                 div { class: "card-body",
+                if rebuilding() {
+                    div { class: "flex items-center gap-2 text-sm text-base-content/70 mb-3",
+                        span { class: "loading loading-spinner loading-sm" }
+                        span { "{rebuild_progress}" }
+                    }
+                }
                 if loading() {
                     Loading {}
                 } else if skills_list.is_empty() {
@@ -711,6 +806,95 @@ pub fn HrSkills() -> Element {
             },
             on_cancel: move |_| {
                 show_delete_confirm.set(false);
+            }
+        }
+
+        // 重建技能索引（两档：查漏补缺 / 强制重建）
+        //
+        // 之所以不用 ConfirmDialog：这里要在同一个弹窗里表达「便宜但只补缺口」与
+        // 「贵但彻底」的取舍，用户得看懂差别才点得下手。
+        Modal {
+            title: "重建技能索引".to_string(),
+            show: show_rebuild_confirm(),
+            width_class: Some("max-w-2xl".to_string()),
+            on_close: move |_| {
+                // 执行中不允许关：否则进度条和「还在跑」的反馈一起消失
+                if !rebuilding() {
+                    show_rebuild_confirm.set(false);
+                }
+            },
+            footer: rsx! {
+                button {
+                    class: "btn hud-btn btn-ghost",
+                    disabled: rebuilding(),
+                    onclick: move |_| show_rebuild_confirm.set(false),
+                    "取消"
+                }
+                button {
+                    class: "btn hud-btn btn-primary",
+                    disabled: rebuilding(),
+                    onclick: confirm_rebuild,
+                    if rebuilding() { "执行中..." } else { "开始执行" }
+                }
+            },
+            div { class: "space-y-4",
+                // 模式选择（二选一）
+                div { class: "border border-base-300 rounded-box bg-base-200 overflow-hidden",
+                    div { class: "grid gap-2 p-3",
+                        div {
+                            class: if rebuild_mode() == common::enums::VectorRebuildMode::Missing {
+                                "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                            } else {
+                                "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                            },
+                            onclick: move |_| {
+                                if !rebuilding() {
+                                    rebuild_mode.set(common::enums::VectorRebuildMode::Missing);
+                                }
+                            },
+                            div { class: "card-body p-3",
+                                div { class: "flex items-center gap-2",
+                                    span { class: "font-semibold", "1 · 查漏补缺" }
+                                    span { class: "badge orz-tag badge-sm", "推荐" }
+                                }
+                                div { class: "text-xs text-base-content/70",
+                                    "不清空现有索引，逐条比对内容哈希，只重算「向量缺失」或「正文已改」的技能。费用最低，适合日常维护；若 embedding provider 或向量文本口径已变化，会自动退化为全量重建（旧向量不可信）。"
+                                }
+                            }
+                        }
+                        div {
+                            class: if rebuild_mode() == common::enums::VectorRebuildMode::Force {
+                                "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                            } else {
+                                "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                            },
+                            onclick: move |_| {
+                                if !rebuilding() {
+                                    rebuild_mode.set(common::enums::VectorRebuildMode::Force);
+                                }
+                            },
+                            div { class: "card-body p-3",
+                                div { class: "font-semibold", "2 · 强制重建" }
+                                div { class: "text-xs text-base-content/70",
+                                    "清空全部技能向量后逐条重新计算（含 skill.md 正文），每条都会真实调用 embedding，可能产生费用。怀疑索引整体损坏时用这档，最彻底。"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 执行进度（提交后留在弹窗里，关掉弹窗就看不到「还在跑」了）
+                if rebuilding() {
+                    div { class: "flex items-center gap-2 text-sm text-base-content/70",
+                        span { class: "loading loading-spinner loading-sm" }
+                        span { "{rebuild_progress}" }
+                    }
+                }
+
+                // 风险提示
+                div { class: "text-xs text-base-content/50",
+                    "两种模式都会重建已安装到 Agent 的技能副本；后台任务执行期间技能的语义搜索可能短暂不完整，同一时刻只允许一个重建任务运行。"
+                }
             }
         }
 

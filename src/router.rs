@@ -627,6 +627,16 @@ fn hr_routes() -> Router {
             "/agents/{id}/status",
             put(handlers::hr::agent::update_agent_status_handler),
         )
+        // 管理面窄接口：只改模型绑定。Agent 侧经同名内置工具（admin 包）直调 handler，
+        // 不经过 axum 中间件；这里的 require_role 只作 HTTP 入口的纵深防御。
+        .route(
+            "/agents/{id}/model-provider",
+            put(handlers::hr::agent::update_agent_model_provider_handler).layer(
+                axum::middleware::from_fn(|req, next| {
+                    require_role_middleware(common::enums::UserRole::Admin, req, next)
+                }),
+            ),
+        )
         // 语义化动作：职业选择（初创 → 面试中，装个人匹配的能力）
         .route(
             "/agents/{id}/career",

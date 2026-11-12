@@ -1,17 +1,40 @@
-//! 思考强度选择（小脑直接按 0–100 分选）
+//! 思考强度选择（小脑按 `score` 题直接给连续分）
 //!
-//! 2026-11-09 AMan 拍板：强度值交给小脑选，平台天然支持 0–100 分
-//! （[`ThinkingIntensity`] 本身就是 0–100 的分数，六档只是下游 wire 的映射）。
-//! 本模块只负责「问什么、答案怎么读」，执行单点仍是 `BrainDal::decide`。
+//! 2026-11-11 AMan 拍板：强度是 0–100 的**连续量**，不该用 choice 题型切档、
+//! 再在客户端对 `probabilities` 加权补回连续值。`score` 题的服务端已经把各
+//! 等级概率加权成一个可落在两级之间的分数，客户端只做一次线性缩放：
+//!
+//! ```text
+//! strength = score_to_unit(raw, levels.len()) * UPPER
+//! ```
+//!
+//! 于是**等级数**（协议允许 2~255）与**业务上限**（本场景 100）彻底解耦：
+//! 等级只是给模型的语义锚点，输出不再被档位离散化。实测同一条
+//! 「排查修复 Rust 模块」消息：11 级语义 `score` 题返回 6.95 → 69.5 分
+//! （`confidence=0.79`）；旧 11 档 choice 只能取 0/10/…/100，还要靠客户端
+//! 加权才得到 73 分。
+//!
+//! # 为什么不铺满协议的 255 级
+//!
+//! 255 是**允许的上限**，不是每次都该用的档数。实测 255 级纯数字刻度：
+//! 概率摊薄到每级 0.01~0.02，服务端 `score=103.29` 与其自身
+//! `probabilities` 手算期望 29.79 相差 73.5，归一后只有 40.67 分。
+//! 等级越多、描述越没语义，模型判别力越差。所以这里保留 11 条**带语义**
+//! 的锚点，靠比例缩放拿到 0–100 的任意整数，而不是人为造 101/255 个档位。
 //!
 //! # 降级（业务方忽略错误、走原逻辑）
 //!
-//! 无小脑 / 调用失败 / 超时 / 低置信 / 答案不可用 → `choice = None`，调用方退回
+//! 无小脑 / 调用失败 / 超时 / 答案不可用 → `choice = None`，调用方退回
 //! 原逻辑（Provider 基准 + Agent 覆盖 + 场景偏移 + 意图确定性偏移）。
 //! 小脑是可选增强，绝不阻塞主流程，也不把「没判断出来」当成「判断为最低强度」。
 //!
+//! ⚠️⚠️ **不做单档置信门禁**：`score` 的 `confidence` 是打分置信度，只作观测。
+//! 此前用 11 档 choice + 「top-1 `confidence >= 0.5`」当门禁，而连续量的
+//! top-1 概率天然只有 0.18~0.25，导致强度决策 79 次全量降级、0 次选中
+//! （生产日志 11-10~11-11）。换题型后这个门禁连同加权补丁一起删除。
+//!
 //! 返回 [`StrengthSelection`] 而不是 `Option`：调用方（思考轨迹）需要同时知道
-//! **问没问**（`latency_ms`）与**为什么没成**（`degraded`）。五种成因若折叠成
+//! **问没问**（`latency_ms`）与**为什么没成**（`degraded`）。几种成因若折叠成
 //! 一个值，「配额耗尽」会被记成「答案不可用」，统计上无法归因。
 //!
 //! # Provider 未配置 `thinking_intensity` 时
@@ -23,7 +46,7 @@
 use super::cerebellum_context as context;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
-use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
+use crate::pkg::policy::{Metrics, Policy, ScorePolicy};
 use crate::service::dal::brain::{BrainDal, dal};
 use common::enums::{ThinkingIntensity, ThinkingScene};
 use std::sync::Arc;
@@ -49,33 +72,35 @@ pub const fn trace_scene(thought: ThinkingScene) -> &'static str {
     }
 }
 
-/// 置信阈值：低于此值按「没结论」处理
+/// 业务上限：强度对外恒定 0–100 分（[`ThinkingIntensity`] 的值域）
 ///
-/// 比路由的 0.85 宽松：强度是「程度判断」，判偏一档只是贵一点/浅一点，
-/// 不像路由那样直接决定「进不进主循环」。判不出来时必须走原逻辑。
-pub const MIN_CONFIDENCE: f32 = 0.5;
+/// 与协议的 255 级上限无关：等级数由 [`LEVELS`] 决定，比例缩放把服务端
+/// 的判断值映射到这个上限，改业务刻度不必动题面、也不必重新切档。
+const UPPER: f32 = 100.0;
 
 /// 判据（prompt 存调用方，服务端不持有）
-const INSTRUCTIONS: &str = "请判断用户这条消息需要多深的思考强度，在 0–100 分之间选一档。\
+const INSTRUCTIONS: &str = "请判断用户这条消息需要多深的思考强度，在下面由低到高的等级中给出判断。\
 分数越高代表需要越多的推理与工具调用；越低代表越可以直接回答。\
 只按「这条消息本身需要多深的处理」判断，不要按身份、历史表现或情绪判断。";
 
-/// 11 档（选项 id 就是分数字符串，直接映射 0–100）
+/// 11 条**语义锚点**（不是输出档位）
 ///
-/// 为什么不是 Grade：协议的 Grade 只支持 2–10 级，0–100 的分数用它表达要
-/// 人为切档再反推；Pick 的选项 id 可以就是分数本身，读回来零换算。
-const LEVELS: [(&str, &str); 11] = [
-    ("0", "0 分：寒暄 / 客套 / 纯格式确认，无需任何推理"),
-    ("10", "10 分：一句话事实或简单确认"),
-    ("20", "20 分：简单解释或单步操作指引"),
-    ("30", "30 分：需要少量检索或一步工具调用"),
-    ("40", "40 分：需要综合几条已知信息作答"),
-    ("50", "50 分：常规任务，需要若干轮推理与工具调用"),
-    ("60", "60 分：多步任务，需要计划与自我验证"),
-    ("70", "70 分：复杂任务，涉及代码 / 数据 / 多文件改动"),
-    ("80", "80 分：高难度任务，需要深入分析与反复验证"),
-    ("90", "90 分：跨模块 / 跨项目深链推理，错一步代价高"),
-    ("100", "100 分：最高强度，需要穷尽式排查与充分自证"),
+/// `score` 题的等级是 0-based 序号，服务端返回的分数可以落在两级之间，
+/// 再经 [`UPPER`] 缩放得到 0–100 的任意整数；这里的「N 分」只是给模型
+/// 定位用，不像旧 choice 题那样把输出锁死在 11 个离散值上。
+/// 数量在协议 2~255 边界内，不写死在 `ScorePolicy` 里。
+const LEVELS: [&str; 11] = [
+    "0 分：寒暄 / 客套 / 纯格式确认，无需任何推理",
+    "10 分：一句话事实或简单确认",
+    "20 分：简单解释或单步操作指引",
+    "30 分：需要少量检索或一步工具调用",
+    "40 分：需要综合几条已知信息作答",
+    "50 分：常规任务，需要若干轮推理与工具调用",
+    "60 分：多步任务，需要计划与自我验证",
+    "70 分：复杂任务，涉及代码 / 数据 / 多文件改动",
+    "80 分：高难度任务，需要深入分析与反复验证",
+    "90 分：跨模块 / 跨项目深链推理，错一步代价高",
+    "100 分：最高强度，需要穷尽式排查与充分自证",
 ];
 
 /// 透传给模型的上下文事实（与路由同口径：只带轻量上下文，不取全量记忆）
@@ -88,21 +113,20 @@ const STATE_KEYS: &[&str] = &[context::STATE_KEY];
 /// 一次强度选择的结果
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StrengthChoice {
-    /// 小脑选定的强度（0–100 分）
+    /// 小脑判定的强度（0–100 分，已按比例缩放）
     pub strength: ThinkingIntensity,
-    /// 该选项的概率
+    /// 打分置信度（只作观测，不作门禁）
     pub confidence: f32,
 }
 
 /// 轨迹 `degraded` 值域：**每个值对应唯一触发条件**
 ///
-/// 2026-11-10 修正：此前五种成因统一返回 `None`，`think_loop` 于是把
+/// 2026-11-10 修正：此前几种成因统一返回 `None`，`think_loop` 于是把
 /// 「配额耗尽」也记成 `no_usable_answer`——统计上无法归因。
 pub const DEGRADED_NO_USER_MESSAGE: &str = "no_user_message";
 pub const DEGRADED_BUDGET: &str = "budget_exhausted";
 pub const DEGRADED_EMPTY_REQUESTS: &str = "empty_requests";
 pub const DEGRADED_NO_ANSWER: &str = "no_usable_answer";
-pub const DEGRADED_BAD_OPTION: &str = "bad_option";
 
 /// 一次强度选择的完整产出：选了没有 + 耗了多久 + 为什么没选
 ///
@@ -140,19 +164,23 @@ impl StrengthSelection {
 }
 
 /// 本场景的策略形态（无状态，可反复构造）
-fn policy() -> PickOnePolicy {
-    PickOnePolicy::new(
+///
+/// `min_score = 0`：本场景不用 `judge`（命中与否由「有没有结论」决定，
+/// 低分是合法判断而不是未命中），阈值参数在这里无意义。
+fn policy() -> ScorePolicy {
+    ScorePolicy::new(
         SCENE,
         "思考强度选择",
         "这条用户消息需要多深的思考强度（0–100 分）",
         INSTRUCTIONS,
         LEVELS,
-        MIN_CONFIDENCE,
+        0.0,
     )
+    .with_upper(UPPER)
     .with_state_keys(STATE_KEYS)
 }
 
-/// 生产入口：小脑选定本次思考强度（`None` = 保持原逻辑）
+/// 生产入口：小脑判定本次思考强度（`None` = 保持原逻辑）
 pub async fn select(
     ctx: &RequestContext,
     dal: Arc<dyn BrainDal>,
@@ -193,8 +221,8 @@ pub async fn select(
     let requests = policy.prepare(&metrics);
     if requests.is_empty() {
         // 续-3：被丢弃的请求必须留痕。⚠️ 本分支在现配置下结构不可达
-        // （`LEVELS` 是 11 档编译期常量，`PickOnePolicy::request` 只在选项为空时返回
-        // None）⇒ 本行日志只能由代码审查保证，不计入「已测」。
+        // （`LEVELS` 是 11 项编译期常量，恒在协议 2~255 边界内）⇒ 本行日志
+        // 只能由代码审查保证，不计入「已测」。
         log_info!(
             ctx,
             "thinking_strength",
@@ -227,9 +255,10 @@ pub async fn select(
         return StrengthSelection::unusable(traced_latency_ms, reason.as_str());
     }
 
-    // 阶段三：答案注入事实桶，形态负责「选一个 + 置信达标」
+    // 阶段三：答案注入事实桶 → 服务端判断值按等级数归一，再乘业务上限。
+    // 加权在服务端已完成，这里**只有一次线性缩放**；`confidence` 只作观测。
     let metrics = metrics.with_decisions(Arc::new(outcome.answers));
-    let Some(pick) = policy.chosen(&metrics) else {
+    let Some(grade) = policy.scaled(&metrics) else {
         log_info!(
             ctx,
             "thinking_strength",
@@ -241,24 +270,20 @@ pub async fn select(
         );
         return StrengthSelection::unusable(traced_latency_ms, DEGRADED_NO_ANSWER);
     };
-    // 选项 id 就是分数；形态已保证在选项集内，解析失败只可能是配置被改坏。
-    let Ok(score) = pick.option.parse::<u8>() else {
-        log_warn!(
-            ctx,
-            "thinking_strength",
-            decision = "bad_option",
-            option = pick.option.as_str(),
-            "thinking strength option is not a score"
-        );
-        return StrengthSelection::unusable(traced_latency_ms, DEGRADED_BAD_OPTION);
+
+    let choice = StrengthChoice {
+        strength: ThinkingIntensity::new(grade.score.round().clamp(0.0, UPPER) as u8),
+        confidence: grade.confidence,
     };
-    let strength = ThinkingIntensity::new(score);
+
     log_info!(
         ctx,
         "thinking_strength",
         decision = "select",
-        score = strength.score(),
-        confidence = pick.confidence,
+        score = choice.strength.score(),
+        confidence = choice.confidence,
+        levels = LEVELS.len(),
+        upper = UPPER,
         scene = SCENE,
         phase = phase,
         latency_ms = latency_ms,
@@ -267,10 +292,7 @@ pub async fn select(
         "thinking strength selected"
     );
     StrengthSelection {
-        choice: Some(StrengthChoice {
-            strength,
-            confidence: pick.confidence,
-        }),
+        choice: Some(choice),
         latency_ms: traced_latency_ms,
         degraded: None,
     }

@@ -19,7 +19,7 @@
 - [src/handlers/hr/skill/list_agent_skills.rs](src/handlers/hr/skill/list_agent_skills.rs)
 - [src/service/domain/hr/mod.rs](src/service/domain/hr/mod.rs)
 - [src/service/domain/hr/skill.rs](src/service/domain/hr/skill.rs)
-- [src/service/dal/skill.rs](src/service/dal/skill.rs)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dao/skill/sqlite.rs](src/service/dao/skill/sqlite.rs)
 - [src/models/skill.rs](src/models/skill.rs)
 - [common/src/enums/skill.rs](common/src/enums/skill.rs)
@@ -27,16 +27,16 @@
 - [src/handlers/hr/skill/create_skill.rs#L70-L76](src/handlers/hr/skill/create_skill.rs#L70-L76) — create 即发布拦截
 - [src/handlers/hr/skill/update_skill.rs#L58-L64](src/handlers/hr/skill/update_skill.rs#L58-L64) — update 直改 Published 拦截
 - [src/service/domain/hr/skill.rs#L51-L110](src/service/domain/hr/skill.rs#L51-L110) — update_skill 发布回写编排（N2）
-- [src/service/dal/skill.rs#L351-L359](src/service/dal/skill.rs#L351-L359) — list_for_agent 持有语义收紧（M2 修复 A）
-- [src/service/dal/skill.rs#L947-L962](src/service/dal/skill.rs#L947-L962) — list_published_by_tag 加 has_parent=false（M2 修复 B）
+- [src/service/dal/skill/crud.rs](src/service/dal/skill/crud.rs) — list_for_agent 持有语义收紧（M2 修复 A）
+- [src/service/dal/skill/crud.rs](src/service/dal/skill/crud.rs) — list_published_by_tag 加 has_parent=false（M2 修复 B）
 - [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/modules/06-工具与技能/C-知识/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md)
 </cite>
 
 ## 更新摘要（2026-09-30，base b82d3f7f→8fa050d0）
 
 - **M2 修复 C（发布收敛单一入口）**：`POST /skills`（create）与 `PATCH /skills/{id}`（update）在 Agent 上下文或 Agent 安装副本请求 `status=Published` 时返回 `InvalidRequest`——服务端守卫见 [src/handlers/hr/skill/mod.rs#L49-L74](src/handlers/hr/skill/mod.rs#L49-L74)，两入口分别在 [create_skill.rs#L70-L76](src/handlers/hr/skill/create_skill.rs#L70-L76) / [update_skill.rs#L58-L64](src/handlers/hr/skill/update_skill.rs#L58-L64) 调用；发布收敛为共享库根技能（用户上下文）单一入口。
-- **M2-A 持有关系收紧**：`GET` 列 Agent 技能（list_for_agent）仅返回 Agent 实际持有技能（安装副本 或 自有非正式发布技能），见 [src/service/dal/skill.rs#L351-L359](src/service/dal/skill.rs#L351-L359)。
-- **M2-B 安装源收紧**：按 tag 查询 Published 技能（安装源）仅认根技能，见 [src/service/dal/skill.rs#L947-L962](src/service/dal/skill.rs#L947-L962)。
+- **M2-A 持有关系收紧**：`GET` 列 Agent 技能（list_for_agent）仅返回 Agent 实际持有技能（安装副本 或 自有非正式发布技能），见 [src/service/dal/skill/crud.rs](src/service/dal/skill/crud.rs)。
+- **M2-B 安装源收紧**：按 tag 查询 Published 技能（安装源）仅认根技能，见 [src/service/dal/skill/crud.rs](src/service/dal/skill/crud.rs)。
 - **N2 发布回写**：Agent 自有根技能发布后为作者 Agent 补建本地工作副本，见 [src/service/domain/hr/skill.rs#L51-L110](src/service/domain/hr/skill.rs#L51-L110)。
 
 ## 目录
@@ -84,7 +84,7 @@ D_Mod["HR Domain<br/>src/service/domain/hr/mod.rs"]
 D_Skill["SkillManage 实现<br/>src/service/domain/hr/skill.rs"]
 end
 subgraph "DAL"
-DAL_Skill["SkillDal<br/>src/service/dal/skill.rs"]
+DAL_Skill["SkillDal<br/>src/service/dal/skill/mod.rs"]
 end
 subgraph "DAO"
 DAO_SQLite["SQLite 实现<br/>src/service/dao/skill/sqlite.rs"]
@@ -111,7 +111,7 @@ DAL_Skill --> DAO_SQLite
 - [src/handlers/hr/skill/mod.rs:1-35](src/handlers/hr/skill/mod.rs#L1-L35)
 - [src/service/domain/hr/mod.rs:38-92](src/service/domain/hr/mod.rs#L38-L92)
 - [src/service/domain/hr/skill.rs:1-39](src/service/domain/hr/skill.rs#L1-L39)
-- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 **章节来源**
@@ -168,7 +168,7 @@ H-->>C : JSON 响应
 - [src/router.rs:361-401](src/router.rs#L361-L401)
 - [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
 - [src/service/domain/hr/skill.rs:1-39](src/service/domain/hr/skill.rs#L1-L39)
-- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 ## 详细组件分析
@@ -330,12 +330,12 @@ H-->>C : {tags : [...]}
 
 **图表来源**
 - [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L27)
-- [src/service/dal/skill.rs:692-694](src/service/dal/skill.rs#L692-L694)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dao/skill/sqlite.rs:261-273](src/service/dao/skill/sqlite.rs#L261-L273)
 
 **章节来源**
 - [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L27)
-- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dao/skill/sqlite.rs:261-273](src/service/dao/skill/sqlite.rs#L261-L273)
 
 ### 搜索与查询
@@ -429,12 +429,12 @@ DA --> DB["SQLite"]
 
 **图表来源**
 - [src/service/domain/hr/mod.rs:38-92](src/service/domain/hr/mod.rs#L38-L92)
-- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 **章节来源**
 - [src/service/domain/hr/mod.rs:38-92](src/service/domain/hr/mod.rs#L38-L92)
-- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs)
 - [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 ## 性能与扩展性

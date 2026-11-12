@@ -398,7 +398,7 @@ VD --> VS["向量存储"]
 - 短期记忆不可见：确认 status 不为 Forgotten；检查 agent_id/task_id 过滤条件
 
 章节来源
-- [src/service/dal/skill.rs:351-385](src/service/dal/skill.rs#L351-L385)
+- [src/service/dal/skill/mod.rs](src/service/dal/skill/mod.rs#L351-L385)
 - [migrations/20260712000000_memory_fts5.sql](migrations/20260420000000_initial.sql)
 - [src/service/dal/memory/mod.rs](src/service/dal/memory/mod.rs)
 

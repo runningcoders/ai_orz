@@ -224,6 +224,7 @@ fn triggered_facts() -> ChainPressureFacts {
 fn msg(from_id: &str, type_label: &'static str, content: &str) -> ChainMessage {
     ChainMessage {
         from_id: from_id.to_string(),
+        from_name: None,
         type_label,
         content: content.to_string(),
         created_at: 0,
@@ -284,7 +285,17 @@ async fn run_gate_full_with_pending(
     crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_chain_reply_test"));
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
-    let got = judge_chain_reply(&ctx, mock.clone(), brain, messages, &facts, pending, run_id).await;
+    let got = judge_chain_reply(
+        &ctx,
+        mock.clone(),
+        brain,
+        None,
+        messages,
+        &facts,
+        pending,
+        run_id,
+    )
+    .await;
     (got, mock.calls(), mock.states())
 }
 
@@ -607,22 +618,65 @@ async fn degraded_outcome_falls_back_to_static_threshold() {
 }
 
 #[tokio::test]
-async fn low_confidence_falls_back() {
+async fn low_confidence_close_is_adopted() {
+    // close 的代价最低：门槛 0，任何置信度都采纳
     let brain = brain_with_quota(10);
     let run_id = "chain-reply-low-conf";
     let (got, calls) = run_gate(
         &sample_chain(6),
         triggered_facts(),
-        vec![Some(pick_for(OPTION_CLOSE, 0.5))],
+        vec![Some(pick_for(OPTION_CLOSE, 0.1))],
         Some(&brain),
         run_id,
     )
     .await;
-    assert!(got.is_none(), "置信度低于 {} 不得收口", MIN_CONFIDENCE);
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: Some(c) }) if (c - 0.1).abs() < 1e-6),
+        "close 门槛为 0，低置信也必须采纳：{got:?}"
+    );
     assert_eq!(calls, 1);
     let traces = take_traces(run_id);
-    assert_eq!(traces[0].decision, DECISION_FALLBACK);
-    assert_eq!(traces[0].degraded.as_deref(), Some("no_answer"));
+    assert_eq!(traces[0].decision, DECISION_CLOSE);
+    assert_eq!(traces[0].confidence, Some(0.1));
+}
+
+#[tokio::test]
+async fn low_confidence_continue_falls_back_to_close() {
+    // continue 代价最高：门槛 0.9，不达标就落到默认 close
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-low-continue";
+    let (got, calls) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.85))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: None })),
+        "低置信 continue 必须落到默认 close：{got:?}"
+    );
+    assert_eq!(calls, 1);
+    let traces = take_traces(run_id);
+    assert_eq!(traces[0].decision, DECISION_CLOSE_DEFAULT);
+    assert_eq!(traces[0].degraded.as_deref(), Some(DEGRADED_LOW_CONFIDENCE));
+}
+
+#[tokio::test]
+async fn high_confidence_continue_is_adopted() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-high-continue";
+    let (got, _) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(matches!(got, Some(ChainReplyVerdict::Continue { .. })));
+    assert_eq!(take_traces(run_id)[0].decision, DECISION_CONTINUE);
 }
 
 #[tokio::test]
@@ -637,9 +691,13 @@ async fn hallucinated_option_is_not_trusted() {
         run_id,
     )
     .await;
-    assert!(got.is_none(), "不在选项集内的答案视为没结论");
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: None })),
+        "不在选项集内的答案视为没结论，落默认 close"
+    );
     let traces = take_traces(run_id);
-    assert_eq!(traces[0].decision, DECISION_FALLBACK);
+    assert_eq!(traces[0].decision, DECISION_CLOSE_DEFAULT);
+    assert_eq!(traces[0].degraded.as_deref(), Some(DEGRADED_NO_ANSWER));
 }
 
 #[tokio::test]
@@ -690,14 +748,18 @@ fn instructions_forbid_treating_omission_as_absence() {
     // 本场景唯一的假阴性形态：把「看不到」当「没有新信息」
     assert!(INSTRUCTIONS.contains("中间 N 条已省略"));
     assert!(INSTRUCTIONS.contains("不得把「看不到」当成「没有新信息」"));
-    assert!(INSTRUCTIONS.contains("证据不足"));
+    assert!(INSTRUCTIONS.contains("无法确认时选 close"));
 }
 
 #[test]
-fn instructions_default_to_continue() {
-    // 只写黑名单侧：误收口代价高于多回一轮
-    assert!(INSTRUCTIONS.contains("判不准就选 continue"));
+fn instructions_default_to_close() {
+    // 拿不准就选代价最低的 close（仍把 Final 作为知会送达）
+    assert!(INSTRUCTIONS.contains("拿不准时也选 close"));
+    assert!(!INSTRUCTIONS.contains("判不准就选 continue"));
     assert_eq!(MIN_CONFIDENCE, 0.9);
+    assert_eq!(MIN_CONFIDENCE_CLOSE, 0.0);
+    assert_eq!(MIN_CONFIDENCE_SILENT, 0.8);
+    assert_eq!(MIN_CONFIDENCE_CONTINUE, 0.9);
 }
 
 // ---------- 熔断（circuit_open）：run 级、独立值域、下一 run 自动恢复 ----------
@@ -871,16 +933,19 @@ async fn any_answer_resets_the_consecutive_failure_counter() {
     .await;
     assert_eq!(state.cerebellum_consecutive_failures(&agent_id), 2);
 
-    // 低置信（有应答、无可用结论）→ 端点健康，清零
+    // 有应答、但置信不达标 ⇒ 端点健康，清零（结论按默认 close）
     let (verdict, _) = run_gate(
         &sample_chain(4),
         triggered_facts(),
-        vec![Some(pick_for(OPTION_CLOSE, 0.1))],
+        vec![Some(pick_for(OPTION_CONTINUE, 0.5))],
         Some(&brain),
         "run-reset-c",
     )
     .await;
-    assert!(verdict.is_none());
+    assert!(matches!(
+        verdict,
+        Some(ChainReplyVerdict::Close { confidence: None })
+    ));
     assert_eq!(
         state.cerebellum_consecutive_failures(&agent_id),
         0,
@@ -1322,6 +1387,7 @@ async fn absolute_ceiling_forces_close_without_asking() {
 fn metrics_for(facts: &ChainPressureFacts) -> Metrics {
     state_metrics(
         &brain_with_quota(1),
+        "",
         "[#1] agent-a 文本消息: 正文",
         "",
         facts,
@@ -1338,6 +1404,7 @@ fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
     let brain = brain_with_quota(1);
     let reqs = policy().prepare(&state_metrics(
         &brain,
+        "",
         "[#1] agent-a 文本消息: 正文",
         "",
         &facts,
@@ -1550,8 +1617,8 @@ fn dialogue_snippet_budget_reaches_the_bundle() {
     large.memories = vec![short_term("st-w2", &long_summary)];
     let facts = triggered_facts();
 
-    let small_body = state_bundle(&small, CHAIN_SENTINEL_HEAD, "", &facts).render();
-    let large_body = state_bundle(&large, CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let small_body = state_bundle(&small, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let large_body = state_bundle(&large, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
     assert!(
         !small_body.contains(&long_summary),
         "小容量必须按派生预算截断：{small_body:?}"
@@ -1672,7 +1739,7 @@ async fn request_state_is_single_rendered_context_block() {
 #[test]
 fn context_block_order_is_identity_scene_chain_pressure() {
     let brain = brain_with_quota(1);
-    let rendered = state_bundle(&brain, CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
+    let rendered = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
     let at = |needle: &str| {
         rendered
             .find(needle)
@@ -1774,6 +1841,7 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
         // 会怎样（本场景刻意不用它 —— 见 `state_bundle` doc）
         let bundle = state_bundle(
             &brain,
+            "",
             &render_chain(&messages, body_budget).rendered,
             "",
             &triggered_facts(),
@@ -1876,9 +1944,9 @@ async fn three_states_are_counted_separately() {
     }
 }
 
-/// 降级不变量对 `silent` 同样成立：低置信 ⇒ `None`（走原静态判定，绝不静默吞消息）
+/// `silent` 代价中等：置信不达标时落到默认 close（至少把 Final 作为知会送达）
 #[tokio::test]
-async fn low_confidence_silent_falls_back_to_static() {
+async fn low_confidence_silent_falls_back_to_close() {
     let brain = brain_with_quota(10);
     let run_id = "chain-reply-silent-low-confidence";
     let (got, calls) = run_gate(
@@ -1890,13 +1958,36 @@ async fn low_confidence_silent_falls_back_to_static() {
     )
     .await;
     assert!(
-        got.is_none(),
-        "低置信的 silent 不得生效：必须落回静态判定（宁多发一条，不误静默）"
+        matches!(got, Some(ChainReplyVerdict::Close { confidence: None })),
+        "低置信的 silent 不得生效：必须落默认 close"
     );
     assert_eq!(calls, 1);
     let traces = take_traces(run_id);
-    assert_eq!(traces[0].decision, DECISION_FALLBACK);
-    assert_eq!(traces[0].degraded, Some(DEGRADED_NO_ANSWER.to_string()));
+    assert_eq!(traces[0].decision, DECISION_CLOSE_DEFAULT);
+    assert_eq!(
+        traces[0].degraded,
+        Some(DEGRADED_LOW_CONFIDENCE.to_string())
+    );
+}
+
+/// `silent` 达到自己的门槛（0.8）即生效——门槛不是全局 0.9
+#[tokio::test]
+async fn silent_at_its_own_threshold_is_adopted() {
+    let brain = brain_with_quota(10);
+    let run_id = "chain-reply-silent-threshold";
+    let (got, _) = run_gate(
+        &sample_chain(6),
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_SILENT, 0.85))],
+        Some(&brain),
+        run_id,
+    )
+    .await;
+    assert!(
+        matches!(got, Some(ChainReplyVerdict::Silent { .. })),
+        "0.85 ≥ silent 门槛 0.8，必须采纳：{got:?}"
+    );
+    assert_eq!(take_traces(run_id)[0].decision, DECISION_SILENT);
 }
 
 /// 选项表形态：三选项、`silent` 与 `close` 不同 id，且旧两值字符串零改动
@@ -2052,7 +2143,7 @@ async fn oversized_pending_reply_is_truncated_with_annotation() {
 fn recent_dialogue_block_follows_brain_memories() {
     let mut brain = brain_with_quota(1);
     let facts = triggered_facts();
-    let without = state_bundle(&brain, CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let without = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
     assert!(
         !without.contains("## 最近对话"),
         "空 memories ⇒ 整块跳过：{without:?}"
@@ -2061,7 +2152,7 @@ fn recent_dialogue_block_follows_brain_memories() {
         short_term("st-d1", "第一条：链内最近对话甲"),
         short_term("st-d2", "第二条：链内最近对话乙"),
     ];
-    let with = state_bundle(&brain, CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let with = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
     assert!(with.contains("## 最近对话"), "{with:?}");
     assert!(
         with.contains("第一条：链内最近对话甲"),
@@ -2077,6 +2168,7 @@ fn context_block_order_includes_new_inputs() {
     brain.memories = vec![short_term("st-o1", "最近一句")];
     let rendered = state_bundle(
         &brain,
+        "",
         CHAIN_SENTINEL_HEAD,
         PENDING_SENTINEL,
         &triggered_facts(),
@@ -2197,6 +2289,7 @@ async fn state_body_stays_in_its_pool_even_with_heavy_fixed_sections() {
     let legacy_chain_budget = body_budget.saturating_sub(estimate_tokens(&pending_rendered));
     let legacy = state_bundle(
         &brain,
+        "",
         &render_chain(&messages, legacy_chain_budget).rendered,
         &pending_rendered,
         &facts,
@@ -2244,7 +2337,7 @@ fn tiny_capacity_keeps_the_pre_change_split() {
     let facts = triggered_facts();
     for input in [90usize, 110, 500, question, question + 1] {
         assert_eq!(
-            chain_budget_tokens(&brain, &facts, input, 0),
+            chain_budget_tokens(&brain, "", &facts, input, 0),
             body_token_budget(input),
             "input={input} 必须保持改造前分账"
         );
@@ -2258,7 +2351,83 @@ fn tiny_capacity_keeps_the_pre_change_split() {
     // 越过题面长度、且题面超骨架份额时才真正收紧 + 扣固定块
     let mid = question + 1_000;
     assert!(
-        chain_budget_tokens(&brain, &facts, mid, 0) < body_token_budget(mid),
+        chain_budget_tokens(&brain, "", &facts, mid, 0) < body_token_budget(mid),
         "input={mid} 必须按题面实测收紧并扣掉固定块"
     );
+}
+
+// ---------- 上下文补充：链起点 / 名称 / 链头 3 条 / 最近对话 8 条 ----------
+
+#[test]
+fn chain_origin_is_rendered_as_its_own_block() {
+    let brain = brain_with_quota(1);
+    let facts = triggered_facts();
+    let without = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    assert!(
+        !without.contains("## 链起点"),
+        "无链起点整块跳过：{without:?}"
+    );
+
+    let rendered = state_bundle(
+        &brain,
+        "用户消息（user-1）: 帮我核对一下订单 A 的退款",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &facts,
+    )
+    .render();
+    assert!(rendered.contains("## 链起点"), "{rendered:?}");
+    assert!(
+        rendered.contains("帮我核对一下订单 A 的退款"),
+        "{rendered:?}"
+    );
+    // 链起点在链内消息之前：先交代议题，再看往返
+    let origin_at = rendered.find("## 链起点").unwrap();
+    let chain_at = rendered.find("## 链内消息").unwrap();
+    assert!(origin_at < chain_at, "链起点必须排在链内消息之前");
+}
+
+#[test]
+fn render_one_includes_participant_name() {
+    let mut message = msg("agent-a", "文本消息", "正文");
+    assert_eq!(
+        render_one(0, &message),
+        "[#1] agent-a 文本消息: 正文",
+        "无名字时退回 id"
+    );
+    message.from_name = Some("Alice".to_string());
+    assert_eq!(
+        render_one(0, &message),
+        "[#1] Alice(agent-a) 文本消息: 正文"
+    );
+}
+
+#[test]
+fn render_chain_keeps_three_head_messages_when_truncated() {
+    let chain = sample_chain(32);
+    let input = render_chain(&chain, test_body_budget().min(120));
+    assert!(input.omitted > 0, "本用例必须落在截断区");
+    for hop in 0..HEAD_KEEP {
+        assert!(
+            input.rendered.contains(&format!("第 {hop} 跳的正文")),
+            "链头第 {} 条必须保留（链头共保 {} 条）：{}",
+            hop + 1,
+            HEAD_KEEP,
+            input.rendered
+        );
+    }
+}
+
+#[test]
+fn recent_dialogue_uses_scene_specific_limit() {
+    let mut brain = brain_with_quota(1);
+    brain.memories = (0..10)
+        .map(|i| short_term(&format!("st-{i}"), &format!("记忆第{i}条")))
+        .collect();
+    let rendered = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
+    // 只保留尾部 8 条：最早 2 条不得出现
+    assert!(!rendered.contains("记忆第0条"), "{rendered:?}");
+    assert!(!rendered.contains("记忆第1条"), "{rendered:?}");
+    assert!(rendered.contains("记忆第2条"), "{rendered:?}");
+    assert!(rendered.contains("记忆第9条"), "{rendered:?}");
 }

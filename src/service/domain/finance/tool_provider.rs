@@ -97,13 +97,25 @@ impl ToolProviderManage for FinanceDomainImpl {
     /// ===== 工具借用（绑定）管理 =====
     /// Agent 借用工具（绑定）
     ///
-    /// 校验：internal 标签工具为内部系统自用，不可绑定给 Agent。
+    /// 校验：
+    /// - `internal` 标签工具为内部系统自用，任何调用方都不可绑定；
+    /// - Agent 上下文不得显式绑定受限工具包（`admin`）内的工具 —— 与
+    ///   `install_tool_pack` 的 `RESTRICTED_TOOL_PACKS` 是同一条边界；
+    /// - Agent 上下文只能把工具绑给自己，不得给别的 Agent 授权。
+    ///
+    /// 管理员 User / System 经 HTTP 显式授权不受限（`publish_skill` 收口人等
+    /// 预设场景依赖它）。
     async fn bind_tool_to_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
     ) -> Result<()> {
+        // ⚠️ 边界判定必须用「原始 ctx」：下面会 to_builder().agent_id(agent_id)
+        // 把 ctx 改写成**目标** Agent，改写后再判归属会恒真、封堵形同虚设。
+        let caller_type = ctx.caller_type();
+        let caller_agent_id = ctx.agent_id().cloned();
+
         let ctx = ctx.to_builder().agent_id(agent_id).build();
         // 校验：内部系统工具不能绑定给 Agent
         let tool = self
@@ -111,13 +123,39 @@ impl ToolProviderManage for FinanceDomainImpl {
             .get_by_id(ctx.clone(), tool_id.to_string())
             .await?
             .ok_or_else(|| err!(InvalidRequest, "Tool {} not found", tool_id))?;
-        if tool.po.get_tags().iter().any(|t| t == "internal") {
+        let tags = tool.po.get_tags();
+        if tags.iter().any(|t| t == "internal") {
             bail_err!(
                 InvalidRequest,
                 "Internal system tool {} cannot be bound to Agent",
                 tool_id
             );
         }
+
+        // ⚠️ 受限工具包的**第二条**封堵：`install_tool_pack` 只拦「按 tag 整包装」，
+        // 本方法是「按 tool_id 单个绑定」的独立入口，且自身挂在出生可达的
+        // `tool_management`。少了这一步，Agent 可直接把 `create_model_provider`
+        // 等 admin 工具绑给自己完成权限提升（内置工具是 handler 直调，
+        // HTTP 的 require_role 拦不住）。
+        if caller_type == common::enums::CallerType::Agent {
+            let restricted = tags.iter().any(|t| {
+                common::models::RESTRICTED_TOOL_PACKS
+                    .contains(&t.trim().to_ascii_lowercase().as_str())
+            });
+            if restricted {
+                bail_err!(
+                    Forbidden,
+                    "Agent 不允许自行绑定受限工具 [{tool_id}]，请联系管理员显式授权"
+                );
+            }
+            if caller_agent_id.as_deref() != Some(agent_id) {
+                bail_err!(
+                    Forbidden,
+                    "Agent 只能把工具绑定给自己，不能给 Agent [{agent_id}] 授权"
+                );
+            }
+        }
+
         let created_by = ctx.caller_id_or_system();
         self.tool_dal
             .add_tool_to_agent(ctx.clone(), agent_id, tool_id, Some(created_by))

@@ -239,7 +239,7 @@ fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
 | 形态 | 题型 | 适用 | 注意 |
 |---|---|---|---|
 | `Pick` | `choice` | 「下一步走哪个节点」「选哪个工具」 | 选项 1~255 |
-| `Grade` | `score` | 「相关性打几级」 | 2~10 级，分数可落级间 |
+| `Grade` | `score` | 「相关性打几级」 | 2~255 级，分数可落级间；读侧按等级数归一 × 业务上限 |
 | `Presence` | `noul` | 「这条产物相关吗」 | 0~1 概率，**无 confidence** |
 
 三条边界：
@@ -351,7 +351,7 @@ DAL 侧收敛的四道门 + 一件事：
 - **真实端点未做连通性验证**（`cerebellum_types.rs` 已注明协议口径来自公开文档、未经实测），上述题型边界都待一次真实调用背书。
 - **观测缺口**：`ThinkFastResult.usage` 现在只进日志、无 `record_event!`，多场景后成本不可见。DAL 是唯一执行点，计量应集中在那里（`DecisionOutcome.usage` 已备好）。
 - **批量超时是共享预算**：`decide` 用一个 `timeout` 包住整批顺序调用，慢场景会挤掉后续场景。真实多场景落地前应改为「按题预算」或并发发送（并发要另配并发上限，否则打爆 provider）。
-- **`DecisionRequest` 没有统一的构造期校验**：形态类各管一段（`RankPolicy` 候选 < 2 → `None`，`ScorePolicy` 等级不在 2~10 → `None`，`PickOnePolicy` 选项为空 → `None`）；但手写 `DecisionRequest` 仍可能造出空 `questions`（DAL 跳过）或越界 levels（client 整批拒）。等出现第二个手写场景时再抽统一 `build`。
+- **`DecisionRequest` 没有统一的构造期校验**：形态类各管一段（`RankPolicy` 候选 < 2 → `None`，`ScorePolicy` 等级不在 2~255（协议上限）→ `None`，`PickOnePolicy` 选项为空 → `None`）；但手写 `DecisionRequest` 仍可能造出空 `questions`（DAL 跳过）或越界 levels（client 整批拒）。等出现第二个手写场景时再抽统一 `build`。
 - **qid 是全局命名空间**：`Metrics::decision(qid)` 不带 scene。`DecisionPolicy` 用 `qid()` / `primary_qid()` 统一加前缀（已落地的是 `memory_relevance.primary`），但这是 trait 的纪律不是类型保证——手写 `DecisionRequest.questions` 仍可能漏前缀。多场景后可考虑在 `DecisionAnswers` 里改为二级键。
 - **检索精选的阈值尚未标定**：`WEIGHT_THRESHOLD = 0.08` 是按「prompt 预算不变」推的保守值，没有真实模型输出分布背书。接入真实小脑后应先用离线历史召回集跑一遍，看权重分布再定。
 - **召回宽度与渲染预算解耦**：候选池 = `KNOWLEDGE_TOP_K × RECALL_WIDTH_FACTOR`（当前 5 × 3 = 15），与精选开关**无关**。召回是「便宜但漏一次就没了」的一侧，所以先宽召回、再筛；关掉精选只是少了语义筛选，不改变候选面。

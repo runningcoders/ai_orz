@@ -257,24 +257,29 @@ pub async fn kill_process(pid: u32) -> Result<common::api::ShellKillResponse, Ap
 
 // ===== 向量索引重建 =====
 
-/// 触发全量向量索引重建（仅 SuperAdmin），返回后台任务 ID
+/// 触发向量索引重建（仅 SuperAdmin），返回后台任务 ID
+///
+/// `entities` 收窄重建范围（技能库页面传 `["skill"]`，缺省 = 全部 7 类）；
+/// `mode` 决定重建形态：
+/// - `Missing`（查漏补缺）：不清空集合，逐条比 hash，只补缺失/已变条目 —— 便宜；
+/// - `Force`（强制重建）：清空后全量重算，每条都真实调 embedding —— 贵但最彻底；
+/// - `Auto`（幂等）：口径没变就整体跳过，只给自动触发用，不要放在按钮上。
 ///
 /// 拿到 `task_id` 后用 `crate::api::background_task::get_task_progress` 轮询进度。
-pub async fn rebuild_vectors() -> Result<common::api::TaskIdResponse, ApiError> {
-    api_post(
-        "/api/v1/system/vector-rebuild",
-        &common::api::RebuildVectorsRequest {},
-    )
-    .await
+pub async fn rebuild_vectors(
+    req: common::api::RebuildVectorsRequest,
+) -> Result<common::api::TaskIdResponse, ApiError> {
+    api_post("/api/v1/system/vector-rebuild", &req).await
 }
 
-/// 触发全量向量重建并轮询到终态（2s 间隔，连续 3 次查询失败则放弃）。
+/// 触发向量重建并轮询到终态（2s 间隔，连续 3 次查询失败则放弃）。
 ///
 /// `on_progress` 用于接收最近一次进度快照；成功返回 `Ok(())`，失败返回错误信息。
 pub async fn rebuild_vectors_and_wait(
+    req: common::api::RebuildVectorsRequest,
     mut on_progress: impl FnMut(&common::api::TaskProgressSnapshot),
 ) -> Result<(), String> {
-    let resp = rebuild_vectors().await.map_err(|e| e.to_string())?;
+    let resp = rebuild_vectors(req).await.map_err(|e| e.to_string())?;
     let mut consecutive_errors = 0u32;
     loop {
         match super::background_task::get_task_progress(&resp.task_id).await {

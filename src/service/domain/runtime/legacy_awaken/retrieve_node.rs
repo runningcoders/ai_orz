@@ -1,7 +1,9 @@
 //! 检索节点（机械）：按意图关键词做长期知识图谱召回 + 少量短期记忆补充 + 技能召回
 //!
-//! 检索动作本身不调模型：知识走 FTS/向量混合搜索，方法技能走 DAL 标签查询，
-//! 图谱结构走一跳 SQL 扩展。可选的「小脑精选」是唯一会发模型调用的一环
+//! 检索动作本身不做**决策**：长期知识、短期记忆、方法技能三路都走 FTS/向量混合
+//! 搜索，且共用同一份意图关键词；向量路的查询 embedding 由 DAL 内部生成（属
+//! 检索基础设施，失败只降级为纯关键词）。图谱结构走一跳 SQL 扩展。可选的
+//! 「小脑精选」是唯一会做判断的一环
 //! （开关关闭时完全不发）。输入 = `bus[Intent]` + `deps.retrieval`（visited 差集），
 //! 输出 = `bus[Knowledge]` 的 [`RetrievalPack`]。空词 / 零命中都是合法结果
 //! （照常 Done）：检索是增强，不是闸门。
@@ -16,22 +18,31 @@
 //! 全量灌正文低得多。两类行都带 id ⇒ Agent 可 `query_memory(ids)` 反查详情，
 //! 或用 `search_memory(seed_node_ids=[...])` 沿关系边展开某个知识节点。
 //! 小脑未配置 / 开关关闭 / 决策降级时，按召回序取前 Top-K 作全文（老路径）。
+//!
+//! ⚠️ 方法技能**不能按单一 tag 全量拉**：生产库 `thinking_method` 只有 1 条已发布
+//! 根技能，`RankPolicy::request` 的「少于两个候选没有排序可言」会恒真 ⇒ 精选
+//! 永远零调用（看板上一片 fallback）。它和知识一样是「宽召回 → 小脑精选 →
+//! 取前 [`METHOD_SKILLS_TOP_K`]」，`thinking_method` 只作召回序里的优先项，
+//! 不作硬过滤（design §3.1：`category=thinking_method` 优先）。
 
 use super::context::{AwakenDeps, RetrievalPack, read_bus};
 use crate::models::memory::{Memory, MemoryIndexTier, MemoryPo};
 use crate::models::skill::SkillPo;
+use crate::pkg::RequestContext;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
 };
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
+use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::runtime::RuntimeMemory;
 use crate::service::domain::runtime::cerebellum_context;
 use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use crate::service::domain::runtime::types::IntentAnalysis;
 use async_trait::async_trait;
-use common::enums::MemoryType;
+use common::api::PaginationParams;
+use common::enums::{MemoryType, SkillStatus};
 use common::error::Result;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -93,6 +104,14 @@ const FULL_LINE_TRUNCATION_NOTE: &str = "…（全文已按模型容量截断）
 /// 方法技能条数上限（渲染预算 + 精选 keep，两处共用的同一真相）
 pub(crate) const METHOD_SKILLS_TOP_K: usize = 2;
 
+/// 方法技能**宽召回**候选池：与知识同倍数（keep 2 × 3 = 6 条）
+///
+/// 此前按单一 tag 全量拉，生产库该 tag 下只有 1 条 ⇒ 排序形态的
+/// `options.len() < 2` 恒真、精选永远零调用。改成关键词搜索后候选池才有
+/// 取舍空间；宽度仍按渲染预算的倍数给，避免一次 Pick 的选项列表长到
+/// 让模型只看前几个。
+const METHOD_SKILLS_RECALL_WIDTH: usize = METHOD_SKILLS_TOP_K * RECALL_WIDTH_FACTOR;
+
 /// 图谱扩展的种子节点数（从长期知识候选池里取前 N 个知识节点）
 ///
 /// ⚠️ 与**召回宽度**对齐，而不是只取渲染预算 5 个：主召回拆成
@@ -111,6 +130,21 @@ const GRAPH_MAX_BREADTH: i32 = 6;
 
 /// thinking_method 技能的 tag 约定值（与 seed 技能、沉淀登记共用同一真相）
 pub(crate) const METHOD_SKILL_TAG: &str = "thinking_method";
+
+/// 方法技能这一步**要不要进小脑**
+///
+/// 精选的本质是「排序」，少于两个候选根本没有排序对象（`RankPolicy::request`
+/// 直接返回 `None`）；本 run 没装配小脑同理。这两种情况都该直接把候选按老路径
+/// 放进 prompt：**不发零调用请求、也不写一条 fallback 留痕** —— 没有决策发生
+/// 就不该在「小脑决策」面板占一行，更不该算进降级率。装配缺失由 think_loop
+/// 的 `bootstrap / not_assembled` 单独记（见 think_loop.rs），那才是这类 run
+/// 的事实真相，混进业务场景只会把降级率算脏。
+///
+/// 泛型 `T` 而非 `&ModelProviderPo`：判定只关心「有没有装配」，与具体配置无关
+/// （同 `bootstrap_not_assembled_item` 的手法），单测用 `Some(&())` 即可覆盖。
+fn should_rerank_skills<T>(candidate_count: usize, cerebellum: Option<&T>) -> bool {
+    candidate_count >= 2 && cerebellum.is_some()
+}
 
 /// visited 差集：候选词 trim、去重后剔除已检索过的词（保持原顺序）
 ///
@@ -166,6 +200,103 @@ fn short_term_search(keyword: &str, width: usize) -> MemorySearch {
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+/// 方法技能检索：与长期/短期记忆共用同一份 `keyword`（new_terms 差集）
+///
+/// `status=Published` + `has_parent=false` 与老路径 `list_published_by_tag`
+/// 的过滤口径一致（已发布根技能、排除 Agent 安装副本），只把「单 tag 全量拉」
+/// 换成「关键词 FTS5 + 向量混合搜索」。
+///
+/// ⚠️ 两个宽度字段必须同时给（与长期/短期记忆同口径）：
+/// `top_k` 管向量路、`pagination.limit` 管 FTS 路，聚合后内存分页也按 limit
+/// 截断。只给 limit 时向量路会按 DAL 缺省 20 条召回，把 6 条 FTS 命中挤到
+/// 分页之外；都不给则两路一起退化成 20 条，一次 Pick 选项过多会摊薄概率。
+/// DAL 的 `SkillDalImpl::search` 已内建 FTS5 + 向量混合（有 keyword 且有
+/// Embedding Provider 就自动追加向量路），这里不需要自己拼 query_vector。
+fn method_skill_search(keyword: &str, width: usize) -> SkillSearch {
+    SkillSearch {
+        keyword: Some(keyword.to_string()),
+        top_k: Some(width as i32),
+        filters: SkillQuery {
+            status: Some(SkillStatus::Published),
+            has_parent: Some(false),
+            pagination: PaginationParams {
+                limit: Some(width),
+                offset: None,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// `thinking_method` 优先（design §3.1）：稳定排序把方法类技能提到前面，
+/// **不作硬过滤** —— 硬过滤就是「只有 1 条、排序永远零调用」的老问题。
+///
+/// 只调顺序、不加先验分数：分数会锚定小脑，顺序只作同权重时的 tie-break。
+fn prefer_method_tag(skills: &mut [SkillPo]) {
+    skills.sort_by_key(|s| !s.parse_tags().iter().any(|t| t == METHOD_SKILL_TAG));
+}
+
+/// 方法技能召回：关键词混合搜索 → `thinking_method` 优先 → 候选池
+///
+/// 兜底：关键词零命中 / 搜索报错时退回 `list_published_by_tag`（老路径），
+/// 保证「至少 1 条方法技能」这个既有行为不因换检索方式而丢失。零命中不是
+/// 错误（意图词和技能描述本来就可能不搭），所以用 info 而非 error。
+async fn recall_method_skills(ctx: &RequestContext, keyword: &str) -> Vec<SkillPo> {
+    let dal = crate::service::dal::skill::dal();
+    let searched = dal
+        .search(
+            ctx.clone(),
+            method_skill_search(keyword, METHOD_SKILLS_RECALL_WIDTH),
+        )
+        .await;
+
+    let found: Option<Vec<SkillPo>> = match searched {
+        Ok(page) if !page.items.is_empty() => {
+            let mut pos: Vec<SkillPo> = page.items.into_iter().map(|s| s.po).collect();
+            prefer_method_tag(&mut pos);
+            Some(pos)
+        }
+        Ok(_) => {
+            crate::log_info!(
+                ctx,
+                "legacy_awaken",
+                "method skill search has no hit, fall back to tag query: keyword={}",
+                keyword
+            );
+            None
+        }
+        Err(e) => {
+            crate::log_warn!(
+                ctx,
+                "legacy_awaken",
+                "method skill search failed, fall back to tag query: error={}",
+                e
+            );
+            None
+        }
+    };
+    if let Some(pos) = found {
+        return pos;
+    }
+
+    match dal
+        .list_published_by_tag(ctx.clone(), METHOD_SKILL_TAG)
+        .await
+    {
+        Ok(skills) => skills.into_iter().map(|s| s.po).collect(),
+        Err(e) => {
+            crate::log_error!(
+                ctx,
+                "legacy_awaken",
+                "method skill tag fallback failed: error={}",
+                e
+            );
+            Vec::new()
+        }
     }
 }
 
@@ -736,75 +867,67 @@ impl ThinkNode for RetrieveNode {
             index_snippet_tokens,
         );
 
-        // 5. 方法技能召回：同 tag 已发布技能 → 可选小脑精选（默认关）→ 机械排序取前 2
+        // 5. 方法技能召回：与知识共用 keyword 的混合搜索 → 可选小脑精选 → 取前 2
         //
-        // 候选池不 take：精选要看到全部候选才有取舍空间。关闭开关 / 小脑降级 /
-        // 无答案时退回「词面重叠优先 + 稳定排序」的老路径，逐字节等价。
-        let method_skills = match crate::service::dal::skill::dal()
-            .list_published_by_tag(deps.ctx.clone(), METHOD_SKILL_TAG)
-            .await
-        {
-            Ok(skills) => {
-                let mut candidates: Vec<SkillPo> = skills.into_iter().map(|s| s.po).collect();
-                let (ranked, rerank_scene, rerank_latency_ms): (
-                    Option<Vec<SkillPo>>,
-                    Option<&'static str>,
-                    Option<u64>,
-                ) = match deps.agent.brain.as_ref() {
-                    Some(brain) => {
-                        let (ranked, latency_ms) = super::skill_relevance::rank_with_default_dao(
-                            &deps.ctx,
-                            brain,
-                            &keyword,
-                            &candidates,
-                            METHOD_SKILLS_TOP_K,
-                        )
-                        .await;
-                        (ranked, Some(super::skill_relevance::SCENE), latency_ms)
+        // 候选池不 take：精选要看到全部候选才有取舍空间。小脑降级 / 无答案时
+        // 按**召回序**取前 2 —— 召回序本身已是 BM25 / 综合相关度序，再按词面
+        // 重叠重排会把最相关的那条挤掉。
+        // ⚠️ 只有真的要排序才进小脑（[`should_rerank_skills`]）：只有一个技能、
+        // 或本 run 没装配小脑时，连零调用请求都不发，也不写 fallback 留痕。
+        let candidates = recall_method_skills(&deps.ctx, &keyword).await;
+        let brain = deps
+            .agent
+            .brain
+            .as_ref()
+            .filter(|b| should_rerank_skills(candidates.len(), b.cerebellum.as_ref()));
+
+        let ranked = if let Some(brain) = brain {
+            let (ranked, latency_ms, reason) = super::skill_relevance::rank_with_default_dao(
+                &deps.ctx,
+                brain,
+                &keyword,
+                &candidates,
+                METHOD_SKILLS_TOP_K,
+            )
+            .await;
+            // 小脑留痕：有没有出结论都要能看见，且降级原因必须分列 ——
+            // 把「没发请求 / 配额耗尽 / 调用失败 / 答案不可用」一律折叠成
+            // no_usable_answer，看板上就只能看到一片「无可用答案」。
+            crate::pkg::think_trace::record_cerebellum(
+                &deps.trace_id,
+                crate::pkg::think_trace::ThinkTraceCerebellum {
+                    scene: super::skill_relevance::SCENE.to_string(),
+                    decision: if ranked.is_some() {
+                        "select"
+                    } else {
+                        "fallback"
                     }
-                    _ => (None, None, None),
-                };
-                // 小脑留痕：与记忆精选同口径（有没有出结论都要能看见）
-                if let Some(scene) = rerank_scene {
-                    crate::pkg::think_trace::record_cerebellum(
-                        &deps.trace_id,
-                        crate::pkg::think_trace::ThinkTraceCerebellum {
-                            scene: scene.to_string(),
-                            decision: if ranked.is_some() {
-                                "select"
-                            } else {
-                                "fallback"
-                            }
-                            .to_string(),
-                            confidence: None,
-                            degraded: ranked.is_none().then(|| "no_usable_answer".to_string()),
-                            applied: ranked.is_some(),
-                            latency_ms: rerank_latency_ms,
-                        },
-                    );
-                }
-                match ranked {
-                    Some(kept) => kept.into_iter().take(METHOD_SKILLS_TOP_K).collect(),
-                    None => {
-                        candidates.sort_by_key(|s| {
-                            let desc = s.description.to_lowercase();
-                            // 词面重叠者优先（重叠 = false 排前；稳定排序保证其余保序）
-                            !new_terms.iter().any(|t| desc.contains(&t.to_lowercase()))
-                        });
-                        candidates.into_iter().take(METHOD_SKILLS_TOP_K).collect()
-                    }
-                }
-            }
-            Err(e) => {
-                crate::log_error!(
-                    &deps.ctx,
-                    "legacy_awaken",
-                    "method skill recall degraded to empty: agent_id={}, error={}",
-                    deps.agent.po.id,
-                    e
-                );
-                Vec::new()
-            }
+                    .to_string(),
+                    confidence: None,
+                    degraded: reason,
+                    applied: ranked.is_some(),
+                    latency_ms,
+                },
+            );
+            ranked
+        } else {
+            crate::log_info!(
+                &deps.ctx,
+                "legacy_awaken",
+                "skill rerank skipped, use recall order directly: agent_id={}, candidates={}, cerebellum={}",
+                deps.agent.po.id,
+                candidates.len(),
+                deps.agent
+                    .brain
+                    .as_ref()
+                    .is_some_and(|b| b.cerebellum.is_some())
+            );
+            None
+        };
+
+        let method_skills: Vec<SkillPo> = match ranked {
+            Some(kept) => kept.into_iter().take(METHOD_SKILLS_TOP_K).collect(),
+            None => candidates.into_iter().take(METHOD_SKILLS_TOP_K).collect(),
         };
 
         crate::log_info!(

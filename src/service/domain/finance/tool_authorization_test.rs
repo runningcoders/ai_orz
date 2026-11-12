@@ -236,6 +236,7 @@ mod tests {
             &self,
             _ctx: RequestContext,
             _p: &crate::pkg::background_task::TaskProgressCounter,
+            _mode: common::enums::VectorRebuildMode,
         ) -> Result<()> {
             unimplemented!("本测试不需要")
         }

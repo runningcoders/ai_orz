@@ -598,35 +598,10 @@ pub trait AgentManage: Send + Sync {
     ) -> Result<Vec<String>>;
 }
 
-/// Skill 文件导入统一结构 = (去哪放) × (从哪来)。
-///
-/// 所有外部来源（手填文本 / URL 下载 / 附件上传）由 Handler 适配翻译为此结构，
-/// Domain 层 `process_skill_package` 纯函数统一处理。
-///
-/// 来源优先级：source_abs_path 路径优先 > content_bytes 内存内容。
-///
-/// 注意「路径优先」已**不再等于 0 拷贝 rename**：源文件通常是 Attachment / Artifact
-/// 这类被 DB 行持有、且可被消息与任务引用的实体，导入一律 copy 并保留原位
-/// （理由见 `process_skill_package` 的 PATH 分支注释）。
-#[derive(Debug, Clone, Default)]
-pub struct SkillFileImport {
-    /// 最终在技能目录里的相对路径；None 时走 5 级降级推断链。
-    ///
-    /// 来源是 **zip 技能包**时语义不同：它表示「指定包内哪个条目为主文件」
-    /// （见 `resolve_declared_main`），命中条目归位写成小写 `skill.md`；
-    /// 单文件来源里仍是落盘目标名。
-    pub target_path: Option<String>,
-    /// 来源 A：磁盘绝对路径（优先级高；导入时 copy 落盘，源文件保留原位）
-    pub source_abs_path: Option<std::path::PathBuf>,
-    /// 来源 B：内存内容 bytes（次优先级；无路径时用，省临时文件）
-    pub content_bytes: Option<Vec<u8>>,
-    /// 弱线索名（附件 original_name；target=None 时推断用）
-    pub suggested_name: Option<String>,
-    /// 显式可执行位（seed 快照往返用，保全无扩展名的二进制可执行附件）。
-    ///
-    /// None 时仍按扩展名推断（py/js/sh/ts）；Some(true/false) 直接覆盖推断结果。
-    pub executable: Option<bool>,
-}
+/// Skill 文件导入结构已下沉到 Models：DAL 的内容摄取流水线要在**同一层**完成
+/// 「元数据行 + 文件落盘 + 向量索引」，不能再依赖 Domain 的类型（单向依赖
+/// Adapter→Domain→DAL→DAO→Models）。此处仅做转出，保持既有调用点不变。
+pub use crate::models::skill::SkillFileImport;
 
 /// 技能创建复合参数
 ///

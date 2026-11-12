@@ -55,13 +55,13 @@ Expect: 能命中 `chat_side_panel.rs:674` "已绑定工具：{a.tools.len()} �
 #### 1.1 DAL：新增 `list_expired_for_agent`
 
 **Files:**
-- Modify trait signature: `src/service/dal/skill.rs#L80-L100`
-- Modify implementation: `src/service/dal/skill.rs#L300-L315`（紧挨着 `list_for_agent`）
-- Test: `src/service/dal/skill_test.rs`
+- Modify trait signature: `src/service/dal/skill/mod.rs#L80-L100`
+- Modify implementation: `src/service/dal/skill/mod.rs#L300-L315`（紧挨着 `list_for_agent`）
+- Test: `src/service/dal/skill/`
 
 - [ ] **Step 1: 在 SkillDal trait 加签名**
 
-在 `src/service/dal/skill.rs` `async fn list_for_agent` 下面加：
+在 `src/service/dal/skill/mod.rs` `async fn list_for_agent` 下面加：
 
 ```rust
 /// 返回 Agent 当前所有 Expired 状态的技能副本（不改变 list_for_agent 的排除语义）
@@ -456,7 +456,7 @@ cargo check -p ai_orz --lib 2>&1 | tail -10
 
 #### 2.4 DAL 侧单测：`list_expired_for_agent` 与已有 `install_to_agent` 的软删除重装共存性
 
-**File:** `src/service/dal/skill_test.rs`（末尾追加）
+**File:** `src/service/dal/skill/`（末尾追加）
 
 - [ ] **Step 1: 追加测试**
 
@@ -505,7 +505,7 @@ Expect: PASS.
 
 - [ ] **Step 3: Commit（Task 1 + Task 2 整体）**
 ```bash
-git add common/src/api/skill.rs common/src/api/agent.rs src/service/dal/skill.rs src/service/dal/skill_test.rs src/service/domain/hr/mod.rs src/service/domain/hr/skill.rs src/service/domain/hr/skill_test.rs src/service/domain/runtime/tool_execution_test.rs src/handlers/hr/skill/mod.rs src/handlers/hr/skill/restore_skill.rs src/handlers/hr/agent/get_agent.rs src/handlers/hr/agent/association.rs
+git add common/src/api/skill.rs common/src/api/agent.rs src/service/dal/skill/mod.rs src/service/dal/skill/ src/service/domain/hr/mod.rs src/service/domain/hr/skill.rs src/service/domain/hr/skill_test.rs src/service/domain/runtime/tool_execution_test.rs src/handlers/hr/skill/mod.rs src/handlers/hr/skill/restore_skill.rs src/handlers/hr/agent/get_agent.rs src/handlers/hr/agent/association.rs
 git commit -m "feat(skill): Agent详情页过期技能独立区 + 恢复API（后端）
 
 - DAL/Domain 新增 list_expired_for_agent：只返回 Expired 且 author_id=agent_id 的副本，

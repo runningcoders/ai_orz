@@ -1,6 +1,7 @@
 //! System 域共享 API DTO - 系统健康指标聚合
 
 use crate::enums::EventTopic;
+use crate::enums::VectorRebuildMode;
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -333,12 +334,37 @@ pub struct AopStatsDistributionResponse {
     pub items: Vec<AopStatsDistributionItem>,
 }
 
-/// 触发全量向量索引重建请求（无参数，仅 SuperAdmin）
+/// 触发向量索引重建请求（仅 SuperAdmin）
 ///
 /// 前端拿到返回的 `task_id` 后轮询 `GET /api/v1/system/tasks/{task_id}/progress`
 /// 展示进度条。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
-pub struct RebuildVectorsRequest {}
+pub struct RebuildVectorsRequest {
+    /// 只重建这些实体；`None` 或空数组 = 全部 7 类。
+    ///
+    /// 合法值：`agent` / `memory` / `skill` / `task` / `project` / `message` / `tool`。
+    /// 未知值直接报错（不静默忽略）：拼错一个字母就「成功但一条没重建」是最难查的故障。
+    ///
+    /// 技能列表页只重建技能时传 `["skill"]`，任务步骤数随之变成 1。
+    #[serde(default)]
+    pub entities: Option<Vec<String>>,
+    /// 重建模式（缺省 `auto`）。
+    ///
+    /// - `auto`：provider 与向量文本口径都一致就整体跳过（换 provider、启动补齐等
+    ///   自动触发场景用，省掉无谓开销）；
+    /// - `missing`：**查漏补缺**。不清空集合，逐条比对 `content_hash`，只重算
+    ///   「集合里没有」或「内容已变」的条目。集合元数据（`provider#vtN`）与当前
+    ///   不一致时旧向量不可信，会退化为清空后全量重算；
+    /// - `force`：**强制全量**。清空集合后逐条重算，每条都真实调用 embedding。
+    ///
+    /// 技能页「重建索引」弹窗给用户的就是 `missing` / `force` 两档。不要只给
+    /// `force: bool` —— 那样「查漏补缺」只能映射到 `auto`，而 `auto` 在口径一致时
+    /// 一条不看，按钮会变成空操作。
+    ///
+    /// 目前只有 `skill` 集合实现逐条比对；其余实体无短路逻辑，三档行为一致。
+    #[serde(default)]
+    pub mode: VectorRebuildMode,
+}
 
 // ============ Process Management (shell_list / shell_status / shell_kill) ============
 

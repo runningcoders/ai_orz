@@ -406,7 +406,7 @@ fn skill_rerank_early_exit_logs_dropped_raw_values() {
     let writer = CaptureWriter::default();
     let subscriber = capture_subscriber(writer.clone());
 
-    let (kept, latency, calls) = tracing::subscriber::with_default(subscriber, || {
+    let (kept, latency, reason, calls) = tracing::subscriber::with_default(subscriber, || {
         block_on(async {
             crate::pkg::storage::test_support::init_for_test().await;
             let ctx = test_ctx();
@@ -418,14 +418,19 @@ fn skill_rerank_early_exit_logs_dropped_raw_values() {
                 skill("s1", "反过度工程", "评估该不该写这么多", "coding_standards"),
                 skill("s2", "", "", ""),
             ];
-            let (kept, latency) =
+            let (kept, latency, reason) =
                 skill_relevance::rank(&ctx, dal, &brain, "要不要加这一层抽象", &skills, 2).await;
-            (kept, latency, mock.calls())
+            (kept, latency, reason, mock.calls())
         })
     });
 
     assert!(kept.is_none(), "早退必须保持老路径（None）");
     assert_eq!(latency, None, "零调用 ⇒ 轨迹耗时 None");
+    assert_eq!(
+        reason.as_deref(),
+        Some("empty_requests"),
+        "判据被剔到只剩 1 条属「问都没问出去」，不能折叠成无可用答案"
+    );
     assert_eq!(calls, 0);
 
     let hits = writer.lines_with("skill rerank asked nothing, keep original order");
@@ -452,7 +457,7 @@ fn skill_rerank_early_exit_logs_zero_dropped_when_all_candidates_usable() {
     let writer = CaptureWriter::default();
     let subscriber = capture_subscriber(writer.clone());
 
-    let (kept, latency, calls) = tracing::subscriber::with_default(subscriber, || {
+    let (kept, latency, reason, calls) = tracing::subscriber::with_default(subscriber, || {
         block_on(async {
             crate::pkg::storage::test_support::init_for_test().await;
             let ctx = test_ctx();
@@ -465,14 +470,19 @@ fn skill_rerank_early_exit_logs_zero_dropped_when_all_candidates_usable() {
                 "评估该不该写这么多",
                 "coding_standards",
             )];
-            let (kept, latency) =
+            let (kept, latency, reason) =
                 skill_relevance::rank(&ctx, dal, &brain, "要不要加这一层抽象", &skills, 2).await;
-            (kept, latency, mock.calls())
+            (kept, latency, reason, mock.calls())
         })
     });
 
     assert!(kept.is_none());
     assert_eq!(latency, None);
+    assert_eq!(
+        reason.as_deref(),
+        Some("empty_requests"),
+        "单候选的直接放行由调用方处理，rank 仍须如实回报没发请求"
+    );
     assert_eq!(calls, 0);
 
     let hits = writer.lines_with("skill rerank asked nothing, keep original order");

@@ -34,7 +34,7 @@ related: []
 - `src/service/dao/tool/mod.rs` — ToolDao trait 加 `list_distinct_tags`
 - `src/service/dao/skill/mod.rs` — SkillDao trait 加 `list_distinct_tags`
 - `src/service/dal/tool.rs` — ToolDal trait + impl 加 `list_tags`
-- `src/service/dal/skill.rs` — SkillDal trait + impl 加 `list_tags`
+- `src/service/dal/skill/mod.rs` — SkillDal trait + impl 加 `list_tags`
 - `src/service/domain/finance/tool_provider.rs` — ToolProviderManage trait 加 `list_tool_tags`
 - `src/service/domain/finance/mod.rs` — trait 定义
 - `src/service/domain/hr/skill.rs` — SkillManage trait 加 `list_skill_tags` + `uninstall_from_agent`
@@ -239,7 +239,7 @@ git commit -m "feat(tool): add GET /finance/tools/tags endpoint for distinct tag
 **Files:**
 - Modify: `src/service/dao/skill/mod.rs` — SkillDao trait 加方法
 - Modify: `src/service/dao/skill/sqlite.rs` — 实现 `list_distinct_tags`
-- Modify: `src/service/dal/skill.rs` — SkillDal trait + impl
+- Modify: `src/service/dal/skill/mod.rs` — SkillDal trait + impl
 - Modify: `src/service/domain/hr/skill.rs` — domain trait + impl
 - Modify: `src/service/domain/hr/mod.rs` — trait 定义
 - Modify: `common/src/api/skill.rs` — 新增 `ListSkillTagsResponse`
@@ -293,7 +293,7 @@ async fn list_distinct_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
 
 - [ ] **Step 4: DAL trait + impl**
 
-在 `src/service/dal/skill.rs` 的 `SkillDal` trait 中追加：
+在 `src/service/dal/skill/mod.rs` 的 `SkillDal` trait 中追加：
 
 ```rust
 /// 列出所有已发布技能的 distinct tags
@@ -372,7 +372,7 @@ Run: `cargo check -p ai_orz 2>&1 | tail -5`
 Expected: 0 errors
 
 ```bash
-git add common/src/api/skill.rs src/service/dao/skill/ src/service/dal/skill.rs src/service/domain/hr/ src/handlers/hr/skill/ src/router.rs
+git add common/src/api/skill.rs src/service/dao/skill/ src/service/dal/skill/mod.rs src/service/domain/hr/ src/handlers/hr/skill/ src/router.rs
 git commit -m "feat(skill): add GET /hr/skills/tags endpoint for distinct tag aggregation"
 ```
 
@@ -384,7 +384,7 @@ git commit -m "feat(skill): add GET /hr/skills/tags endpoint for distinct tag ag
 - Modify: `common/src/api/skill.rs` — 新增 `UninstallSkillFromAgentRequest/Response`
 - Modify: `src/service/domain/hr/skill.rs` — domain trait + impl 加 `uninstall_from_agent`
 - Modify: `src/service/domain/hr/mod.rs` — trait 定义
-- Modify: `src/service/dal/skill.rs` — DAL 加 `delete_agent_skill_copy`
+- Modify: `src/service/dal/skill/mod.rs` — DAL 加 `delete_agent_skill_copy`
 - Modify: `src/service/dao/skill/mod.rs` — DAO trait 加 `delete_by_id`
 - Modify: `src/service/dao/skill/sqlite.rs` — DAO 实现
 - Create: `src/handlers/hr/skill/uninstall_skill_from_agent.rs`
@@ -450,7 +450,7 @@ async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<()> {
 
 - [ ] **Step 3: DAL 层**
 
-在 `src/service/dal/skill.rs` 的 `SkillDal` trait 中确认有 `delete` 方法（或追加）：
+在 `src/service/dal/skill/mod.rs` 的 `SkillDal` trait 中确认有 `delete` 方法（或追加）：
 
 ```rust
 /// 删除技能（DB 记录 + 文件目录）
@@ -556,7 +556,7 @@ Run: `cargo check -p ai_orz 2>&1 | tail -5`
 Expected: 0 errors
 
 ```bash
-git add common/src/api/skill.rs src/service/dao/skill/ src/service/dal/skill.rs src/service/domain/hr/ src/handlers/hr/skill/ src/router.rs
+git add common/src/api/skill.rs src/service/dao/skill/ src/service/dal/skill/mod.rs src/service/domain/hr/ src/handlers/hr/skill/ src/router.rs
 git commit -m "feat(skill): add DELETE /agents/{id}/skills/{skill_id} for single skill uninstall"
 ```
 

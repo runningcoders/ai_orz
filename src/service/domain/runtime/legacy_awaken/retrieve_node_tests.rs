@@ -10,7 +10,7 @@ use super::*;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, ShortTermMemoryIndexPo,
 };
-use common::enums::{KnowledgeRelationStatus, MemoryStatus, MemoryType};
+use common::enums::{KnowledgeRelationStatus, MemoryStatus, MemoryType, SkillStatus};
 
 fn node(id: &str, name: &str, desc: &str) -> Memory {
     Memory::new(MemoryPo::KnowledgeNode(LongTermKnowledgeNodePo {
@@ -408,4 +408,112 @@ fn selected_full_line_is_capped_and_keeps_its_id() {
         !full.contains(&long_body),
         "病态长正文不得原样灌进 prompt：{full:?}"
     );
+}
+
+/// 只有一个技能 / 没装小脑时不该进小脑：没有排序对象，也不该留一条 fallback
+/// 把降级率算脏。此前这两类 run 每次都写 `skill_relevance / fallback /
+/// no_usable_answer`（生产轨迹里 175 条有 149 条来自未装配小脑的 run）。
+///
+/// 泛型入参让「已装配」用 `Some(&())` 就能表达，不必构造 ModelProviderPo。
+#[test]
+fn skill_rerank_only_runs_with_multiple_candidates_and_a_cerebellum() {
+    let unit = ();
+    let assembled = Some(&unit);
+    let missing: Option<&()> = None;
+
+    assert!(
+        !should_rerank_skills(1, assembled),
+        "只有一个技能没有排序可言，直接按召回序放进去"
+    );
+    assert!(!should_rerank_skills(0, assembled), "零候选更不该发请求");
+    assert!(
+        !should_rerank_skills(3, missing),
+        "未装配小脑的 run 由 bootstrap/not_assembled 单独记，业务场景不许补 fallback"
+    );
+    assert!(!should_rerank_skills(1, missing), "两个条件都不满足");
+    assert!(
+        should_rerank_skills(2, assembled),
+        "两个及以上候选 + 已装配小脑才走「搜索集合 → 排序 → 取前 2」"
+    );
+    assert!(should_rerank_skills(8, assembled));
+}
+
+/// 技能召回必须与知识共用同一份意图关键词，且过滤口径等价老路径：
+/// 已发布 + 根技能 + 宽召回上限。缺 `limit` 会退化成 DAL 的 20 条，
+/// 一次 Pick 的选项列表过长会摊薄概率。
+#[test]
+fn method_skill_search_uses_intent_keyword_and_wide_published_roots() {
+    let s = method_skill_search("Rust 代码 审阅", METHOD_SKILLS_RECALL_WIDTH);
+    assert_eq!(s.keyword.as_deref(), Some("Rust 代码 审阅"));
+    assert_eq!(s.filters.status, Some(SkillStatus::Published));
+    assert_eq!(s.filters.has_parent, Some(false));
+    let limit = s.filters.pagination.limit;
+    assert_eq!(
+        limit,
+        Some(METHOD_SKILLS_TOP_K * RECALL_WIDTH_FACTOR),
+        "与知识两路共用同一个宽度倍数，别在这里另立一套常数"
+    );
+    assert_eq!(s.filters.pagination.offset, None);
+    assert!(
+        limit.unwrap_or(0) > METHOD_SKILLS_TOP_K,
+        "召回必须宽于渲染预算，否则排序没有取舍空间"
+    );
+}
+
+/// ⚠️ 反例护栏：`thinking_method` 只能作召回序优先项，绝不能下推成 SQL 过滤。
+/// 一旦 `filters.tags` 带上它，生产库就只剩 1 条已发布技能，
+/// `RankPolicy::request` 的 `options.len() < 2` 恒真 ⇒ 精选永远零调用。
+#[test]
+fn method_skill_search_never_filters_by_method_tag() {
+    let s = method_skill_search("降级", METHOD_SKILLS_RECALL_WIDTH);
+    assert!(
+        s.filters.tags.is_none(),
+        "tag 硬过滤会把候选池打回 1 条，精选又变成恒定空转"
+    );
+    assert!(s.filters.category.is_none(), "同理不得按 category 硬过滤");
+}
+
+/// 向量路与 FTS 路必须同宽：只给 `pagination.limit` 时 DAL 的向量路会按
+/// 缺省 20 条召回，聚合排序（Hybrid / Vector 优先）后把 width 条关键词命中
+/// 挤到分页之外。与长期/短期记忆的 `top_k + limit` 双字段口径保持一致。
+#[test]
+fn method_skill_search_sizes_vector_and_fts_roads_together() {
+    let s = method_skill_search("思考 强度 策略", METHOD_SKILLS_RECALL_WIDTH);
+    assert_eq!(
+        s.top_k,
+        Some(METHOD_SKILLS_RECALL_WIDTH as i32),
+        "top_k 管向量路，不能留空让 DAL 回落 20"
+    );
+    assert_eq!(
+        s.top_k.map(|k| k as usize),
+        s.filters.pagination.limit,
+        "两路宽度必须相等，否则聚合后 FTS 命中会被向量命中挤掉"
+    );
+    assert!(
+        s.query_vector.is_none(),
+        "查询向量由 DAL 用同一份 keyword 现算，调用方不该自己 embed"
+    );
+}
+
+/// tag 优先是稳定排序：只换顺序、不丢候选，组内保持召回序。
+#[test]
+fn prefer_method_tag_keeps_every_candidate_and_is_stable() {
+    let po = |id: &str, tags: &[&str]| SkillPo {
+        id: id.to_string(),
+        tags: serde_json::to_string(tags).unwrap(),
+        ..Default::default()
+    };
+    let mut skills = vec![
+        po("a", &["rust"]),
+        po("b", &["thinking_method"]),
+        po("c", &["code"]),
+        po("d", &["thinking_method", "neural"]),
+    ];
+    prefer_method_tag(&mut skills);
+    assert_eq!(
+        skills.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+        vec!["b", "d", "a", "c"],
+        "方法技能提到前面，其余按原召回序跟随"
+    );
+    assert_eq!(skills.len(), 4, "优先排序不是过滤，一条都不能丢");
 }

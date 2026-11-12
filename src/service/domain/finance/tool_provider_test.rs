@@ -252,4 +252,171 @@ mod tests {
         assert!(error.contains("Mcp/Shell Tool"));
         assert!(error.contains("Manual"));
     }
+
+    fn tagged_http_tool(name: &str, tags: Vec<String>) -> Tool {
+        let po = ToolPo::new(
+            String::new(),
+            name.to_string(),
+            "tagged tool".to_string(),
+            ToolProtocol::Http,
+            valid_http_config(),
+            None,
+            tags,
+            Some("test-user".to_string()),
+        );
+        Tool::from_po_for_management(po)
+    }
+
+    fn agent_caller(base: &RequestContext, agent_id: &str) -> RequestContext {
+        base.to_builder()
+            .caller_type(common::enums::CallerType::Agent)
+            .agent_id(agent_id)
+            .build()
+    }
+
+    async fn insert_tool(
+        domain: &std::sync::Arc<dyn finance::FinanceDomain>,
+        ctx: &RequestContext,
+        tool: &Tool,
+    ) -> String {
+        let id = tool.po.id.clone();
+        domain
+            .tool_provider_manage()
+            .create_tool(ctx.clone(), tool)
+            .await
+            .expect("insert tool");
+        id
+    }
+
+    /// ⚠️ 受限工具包的**第二条**封堵：`install_tool_pack` 只拦按 tag 整包装，
+    /// 单工具显式绑定是独立入口。少了这条，Agent 可把 admin 工具绑给自己提权。
+    #[sqlx::test]
+    async fn agent_cannot_bind_restricted_tool_by_id(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool_id = insert_tool(
+            &domain,
+            &ctx,
+            &tagged_http_tool("admin-tool", vec!["admin".to_string()]),
+        )
+        .await;
+
+        let err = domain
+            .tool_provider_manage()
+            .bind_tool_to_agent(agent_caller(&ctx, "agent-self"), "agent-self", &tool_id)
+            .await
+            .expect_err("Agent 不得自行绑定受限工具");
+        assert!(err.to_string().contains("受限工具"), "{err}");
+    }
+
+    /// 归一化变体也要挡住（与 `install_tool_pack` 的护栏同口径）。
+    #[sqlx::test]
+    async fn restricted_tag_variants_are_rejected(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool_id = insert_tool(
+            &domain,
+            &ctx,
+            &tagged_http_tool("admin-variant-tool", vec![" ADMIN ".to_string()]),
+        )
+        .await;
+
+        let err = domain
+            .tool_provider_manage()
+            .bind_tool_to_agent(agent_caller(&ctx, "agent-self"), "agent-self", &tool_id)
+            .await
+            .expect_err("大小写 / 空白变体同样必须拒绝");
+        assert!(err.to_string().contains("受限工具"), "{err}");
+    }
+
+    /// 管理员经 HTTP 显式授权仍放行：`publish_skill` 收口人等预设场景依赖它。
+    #[sqlx::test]
+    async fn user_can_bind_restricted_tool_by_id(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool_id = insert_tool(
+            &domain,
+            &ctx,
+            &tagged_http_tool("admin-user-tool", vec!["admin".to_string()]),
+        )
+        .await;
+
+        domain
+            .tool_provider_manage()
+            .bind_tool_to_agent(ctx, "agent-target", &tool_id)
+            .await
+            .expect("管理员 User 显式授权必须放行");
+    }
+
+    #[sqlx::test]
+    async fn agent_can_bind_ordinary_tool_to_itself(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool_id = insert_tool(
+            &domain,
+            &ctx,
+            &tagged_http_tool("ordinary-tool", vec!["project_management".to_string()]),
+        )
+        .await;
+
+        domain
+            .tool_provider_manage()
+            .bind_tool_to_agent(agent_caller(&ctx, "agent-self"), "agent-self", &tool_id)
+            .await
+            .expect("非受限工具绑给自己不受影响");
+    }
+
+    /// 归属校验必须用「改写前」的 ctx：domain 内会把 agent_id 改成目标，
+    /// 改写后再判会恒真、封堵形同虚设。
+    #[sqlx::test]
+    async fn agent_cannot_bind_tool_to_another_agent(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool_id = insert_tool(
+            &domain,
+            &ctx,
+            &tagged_http_tool(
+                "ordinary-other-tool",
+                vec!["project_management".to_string()],
+            ),
+        )
+        .await;
+
+        let err = domain
+            .tool_provider_manage()
+            .bind_tool_to_agent(agent_caller(&ctx, "agent-self"), "agent-other", &tool_id)
+            .await
+            .expect_err("Agent 不得给别的 Agent 授权");
+        assert!(err.to_string().contains("只能把工具绑定给自己"), "{err}");
+    }
+
+    /// 端到端：走 handler（内置工具直调入口）时归属校验仍有效。
+    /// 反事实：handler 若在调 domain 前改写 `agent_id`，domain 会把目标误当
+    /// 调用者，本用例必红。
+    #[sqlx::test]
+    async fn handler_chain_keeps_caller_identity(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool_id = insert_tool(
+            &domain,
+            &ctx,
+            &tagged_http_tool("handler-chain-tool", vec!["project_management".to_string()]),
+        )
+        .await;
+
+        let err = crate::handlers::finance::tool::bind_tool_to_agent::bind_tool_to_agent(
+            agent_caller(&ctx, "agent-self"),
+            common::api::BindToolToAgentRequest {
+                agent_id: "agent-other".to_string(),
+                tool_id,
+            },
+        )
+        .await
+        .expect_err("通过 handler 也不得给别的 Agent 授权");
+        assert!(err.to_string().contains("只能把工具绑定给自己"), "{err}");
+    }
+
+    /// 静态护栏：钉住「handler 不改写 agent_id」这条接线前提。
+    #[test]
+    fn bind_handler_does_not_rewrite_agent_id_before_domain() {
+        let src = include_str!("../../../handlers/finance/tool/bind_tool_to_agent.rs");
+        assert!(
+            !src.contains("to_builder().agent_id("),
+            "handler 提前改写 agent_id 会让 domain 的归属校验恒真失效"
+        );
+    }
 }

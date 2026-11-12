@@ -106,7 +106,7 @@ Agent 唤醒流程（awaken）                                │
 | [src/models/agent.rs](../../src/models/agent.rs) | AgentRuntimeConfig | 新增 `installed_skill_packs: Vec<String>` + install/uninstall/has 三个幂等操作封装 |
 | [src/models/skill.rs](../../src/models/skill.rs) | SkillPo | 新增 `to_prompt_summary()`：名称 + 描述格式化 |
 | **DAL / Domain 技能包逻辑** | | |
-| [src/service/dal/skill.rs](../../src/service/dal/skill.rs) | SkillDal | 新增 list_published_by_tag / find_agent_skill_copies / install_to_agent 幂等增强 |
+| [src/service/dal/skill/mod.rs](../../src/service/dal/skill/mod.rs) | SkillDal | 新增 list_published_by_tag / find_agent_skill_copies / install_to_agent 幂等增强 |
 | [src/service/domain/hr/skill.rs](../../src/service/domain/hr/skill.rs) | HrDomain skill | 新增 4 个技能包方法：install/uninstall/reinstall/list（tag 维度） |
 | **唤醒注入** | | |
 | [src/service/domain/runtime/awakening.rs](../../src/service/domain/runtime/awakening.rs) | awaken 流程 | Step 1.5 新增：list_for_agent 加载技能 → 注入 PromptBuilder |

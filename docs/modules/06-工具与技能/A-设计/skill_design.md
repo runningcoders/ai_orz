@@ -665,7 +665,7 @@ async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppErr
 
 当前测试结果：**7/7 全部通过，零失败**
 
-### DAL 层测试 (`src/service/dal/skill_test.rs`)
+### DAL 层测试 (`src/service/dal/skill/`)
 
 | 测试用例 | 说明 |
 |----------|------|

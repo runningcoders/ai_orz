@@ -23,6 +23,12 @@ use tokio::sync::RwLock;
 pub struct InMemoryVectorStore {
     base_path: PathBuf,
     collections: Arc<RwLock<HashMap<String, VectorCollection>>>,
+    /// 集合 → 口径标识（`{provider_id}#vt{N}`）
+    ///
+    /// 与 Lance 后端同理：不存的话 `get_collection_model_provider_id` 恒 `None`，
+    /// 「provider/文本口径没变就跳过重建」的短路永远不成立，「查漏补缺」也只能退化成
+    /// 全量重算。文件落 `base_path/collection_meta.json`，进程重启后仍有效。
+    collection_meta: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl InMemoryVectorStore {
@@ -33,9 +39,11 @@ impl InMemoryVectorStore {
         let base_path = paths::vectors_dir(&base);
         std::fs::create_dir_all(&base_path)?;
 
+        let collection_meta = Self::load_collection_meta(&base_path);
         Ok(Self {
             base_path,
             collections: Arc::new(RwLock::new(HashMap::new())),
+            collection_meta: Arc::new(RwLock::new(collection_meta)),
         })
     }
 
@@ -44,10 +52,33 @@ impl InMemoryVectorStore {
         let base_path = base_path.as_ref().to_path_buf();
         std::fs::create_dir_all(&base_path)?;
 
+        let collection_meta = Self::load_collection_meta(&base_path);
         Ok(Self {
             base_path,
             collections: Arc::new(RwLock::new(HashMap::new())),
+            collection_meta: Arc::new(RwLock::new(collection_meta)),
         })
+    }
+
+    /// 读取口径章 sidecar（缺失/损坏都退化为空表）
+    fn load_collection_meta(base_path: &Path) -> HashMap<String, String> {
+        std::fs::read_to_string(base_path.join(COLLECTION_META_FILE))
+            .ok()
+            .and_then(|raw| serde_json::from_str::<HashMap<String, String>>(&raw).ok())
+            .unwrap_or_default()
+    }
+
+    /// 覆盖写口径章 sidecar（先写临时文件再 rename，避免半截 JSON）
+    fn persist_collection_meta(
+        base_path: &Path,
+        meta: &HashMap<String, String>,
+    ) -> std::io::Result<()> {
+        let tmp = base_path.join(format!("{COLLECTION_META_FILE}.tmp"));
+        let raw = serde_json::to_vec_pretty(meta)
+            .map_err(|e| std::io::Error::other(format!("序列化 collection_meta 失败: {e}")))?;
+        std::fs::write(&tmp, raw)?;
+        std::fs::rename(&tmp, base_path.join(COLLECTION_META_FILE))?;
+        Ok(())
     }
 
     /// 获取集合文件路径
@@ -118,8 +149,32 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     1.0 - cosine_similarity // 转换成距离（0=完全相同，1=完全不同）
 }
 
+/// 口径章 sidecar 文件名
+const COLLECTION_META_FILE: &str = "collection_meta.json";
+
 #[async_trait]
 impl super::VectorStore for InMemoryVectorStore {
+    async fn get_collection_model_provider_id(&self, collection: &str) -> Result<Option<String>> {
+        Ok(self.collection_meta.read().await.get(collection).cloned())
+    }
+
+    async fn set_collection_model_provider_id(
+        &self,
+        collection: &str,
+        model_provider_id: &str,
+    ) -> Result<()> {
+        let snapshot = {
+            let mut meta = self.collection_meta.write().await;
+            meta.insert(collection.to_string(), model_provider_id.to_string());
+            meta.clone()
+        };
+        // 落盘失败只会导致下次多一次全量重建（安全侧），不影响本次结果
+        if Self::persist_collection_meta(&self.base_path, &snapshot).is_err() {
+            log_warn!("InMemory collection_meta 落盘失败（仅影响下次重建开销）");
+        }
+        Ok(())
+    }
+
     async fn init_collection(&self, collection: &str, dimensions: i32) -> Result<()> {
         let mut collections = self.collections.write().await;
 

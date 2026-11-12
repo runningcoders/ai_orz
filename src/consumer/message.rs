@@ -843,7 +843,8 @@ impl MessageConsumer {
         // 只看到一条普通知会，不知道链已经到底）。
         let chain_pressure = match reply_obligation {
             Some(_) => {
-                let (pressure, chain_messages) = self.collect_chain_pressure(&ctx, message).await;
+                let (pressure, chain_messages, chain_origin) =
+                    self.collect_chain_pressure(&ctx, message).await;
                 let decision = pressure.judge();
                 log_info!(
                     &ctx,
@@ -851,7 +852,7 @@ impl MessageConsumer {
                     "collaboration pressure observed: {}",
                     decision.log_line()
                 );
-                Some((pressure, decision, chain_messages))
+                Some((pressure, decision, chain_messages, chain_origin))
             }
             None => None,
         };
@@ -861,7 +862,7 @@ impl MessageConsumer {
         let mut turn_guidance = reply_obligation
             .map(ReplyObligation::prompt_lines)
             .unwrap_or_default();
-        if let Some((_, decision, _)) = &chain_pressure {
+        if let Some((_, decision, _, _)) = &chain_pressure {
             match reply_obligation {
                 // 对端在等答复：压力事实 + 本轮指引（施压 / 硬墙收口提示）。
                 Some(ReplyObligation::Expected) => turn_guidance.extend(decision.prompt_lines()),
@@ -878,9 +879,9 @@ impl MessageConsumer {
         }
         // 压力事实与链内正文一起带到回发判定：正文只在小脑判内容时用，
         // 未触发/无小脑时它一直是未读的 `Option`，零额外成本。
-        let (chain_pressure, chain_messages) = match chain_pressure {
-            Some((pressure, _, messages)) => (Some(pressure), Some(messages)),
-            None => (None, None),
+        let (chain_pressure, chain_messages, chain_origin) = match chain_pressure {
+            Some((pressure, _, messages, origin)) => (Some(pressure), Some(messages), origin),
+            None => (None, None, None),
         };
 
         // 调用 RuntimeDomain 唤醒 Agent
@@ -1043,11 +1044,11 @@ impl MessageConsumer {
             // （哨兵 / 用户 / 系统 / 自触发 / 知会）时小脑零调用、不掺和。
             // Q2 改判（AMan 2026-11-10）：**每次都问**（原门槛已取消）——
             // 「有可能从第二句开始就是废话」，挂门槛会漏掉短链。
-            // Q1 绝对护栏：`continue` 只返回 `None`（不覆盖）⇒ 落回下面的静态
-            // 判定，`hard_window_depth` 撞满时的 `Escalate` 照旧生效。
-            //   close    → 直接收口（复用 CloseChainAsNotify，消息必达语义不变）
-            //   continue → 落到原静态判定
-            //   降级 / 空输入 / 未触发 → 落到原静态判定（不抛错、不短路）
+            //   close         → 直接收口（复用 CloseChainAsNotify，消息必达语义不变）
+            //   silent        → 对端零发送（SilentClose）
+            //   continue      → Peer（越过静态硬墙，软墙）
+            //   没答 / 置信不达标 / 幻觉 → 默认 close（close_default）
+            //   调用失败 / 超时 / 空输入 / 未配 → 落到原静态判定（不抛错、不短路）
             //
             // `None` = 不覆盖 ⇒ 下面 `resolve_auto_reply_route` 逐字节保持原样。
             let cerebellum_route = self
@@ -1057,6 +1058,7 @@ impl MessageConsumer {
                     agent_id,
                     raw_output,
                     chain_pressure.as_ref(),
+                    chain_origin.as_ref(),
                     chain_messages.as_deref(),
                     agent.brain.as_ref(),
                     awaken_result.trace_ids.first().map(String::as_str),
@@ -1585,6 +1587,7 @@ impl MessageConsumer {
         agent_id: &str,
         raw_output: &str,
         chain_pressure: Option<&ChainPressure>,
+        chain_origin: Option<&runtime_domain::chain_reply::ChainOrigin>,
         chain_messages: Option<&[runtime_domain::chain_reply::ChainMessage]>,
         brain: Option<&crate::models::brain::Brain>,
         trace_id: Option<&str>,
@@ -1603,6 +1606,11 @@ impl MessageConsumer {
             return None;
         }
         let (pressure, messages) = (chain_pressure?, chain_messages?);
+        // 小脑没启用 ⇒ 连名字解析都不做（保持「未启用 = 零额外 DB 读」）
+        let brain = brain.filter(|b| b.cerebellum.is_some())?;
+        // 上下文补充：补发送方显示名（按唯一 from_id，失败只退回 id）
+        let mut messages = messages.to_vec();
+        self.fill_participant_names(ctx, &mut messages).await;
         let facts = runtime_domain::chain_reply::ChainPressureFacts {
             chain_depth: pressure.depth(),
             window_depth: pressure.window_depth(),
@@ -1615,8 +1623,9 @@ impl MessageConsumer {
         // —— `record_cerebellum` 对空键同样只做丢弃，不 panic。
         let verdict = runtime_domain::chain_reply::judge_chain_reply_with_default_dao(
             ctx,
-            brain,
-            messages,
+            Some(brain),
+            chain_origin,
+            &messages,
             &facts,
             // 待发正文：本条默认准备发送的内容（AMan 2026-11-11 新增的判定输入）。
             // 小脑必须能看到「我这条本来要发什么」，否则只看链内历史会把
@@ -1686,6 +1695,7 @@ impl MessageConsumer {
     ) -> (
         ChainPressure,
         Vec<runtime_domain::chain_reply::ChainMessage>,
+        Option<runtime_domain::chain_reply::ChainOrigin>,
     ) {
         let mut pressure = ChainPressure::new(PressureConfig::from_system());
         let mut seen_participants: HashSet<String> = HashSet::new();
@@ -1693,6 +1703,9 @@ impl MessageConsumer {
         // 小脑判据的输入正文：与 `hops` **同一趟**收集 —— 这一趟本来就要读每条
         // 消息做 ChainHop 分类，正文已在手里 ⇒ 新增判据零额外 DB 读。
         let mut chain_messages: Vec<runtime_domain::chain_reply::ChainMessage> = Vec::new();
+        // 链起点：回溯遇到的第一条非 Agent 消息（通常是用户原话）。它同样
+        // 已经在手里，带上它不增加任何查询。
+        let mut origin: Option<runtime_domain::chain_reply::ChainOrigin> = None;
         let mut current = Some(message.clone());
 
         for _ in 0..MAX_CHAIN_TRAVERSAL {
@@ -1702,6 +1715,15 @@ impl MessageConsumer {
             // 链断点不入 hops：归一化反转后它会落在链头，observe 返回 false
             // 会让整条链被误截断。User/System 来源是协作链的自然终止点。
             if current_message.from_role() != MessageRole::Agent {
+                origin = Some(runtime_domain::chain_reply::ChainOrigin {
+                    role_label: match current_message.from_role() {
+                        MessageRole::User => "用户消息",
+                        MessageRole::System => "系统消息",
+                        MessageRole::Agent => "Agent 消息",
+                    },
+                    from_id: current_message.po.from_id.clone(),
+                    content: current_message.po.content.clone(),
+                });
                 break;
             }
             hops.push(ChainHop {
@@ -1711,6 +1733,7 @@ impl MessageConsumer {
             // 与 `hops` 同源同序（新 → 旧），末尾一起归一化为时间正序。
             chain_messages.push(runtime_domain::chain_reply::ChainMessage {
                 from_id: current_message.po.from_id.clone(),
+                from_name: None,
                 type_label: chain_type_label(current_message.message_type()),
                 content: current_message.po.content.clone(),
                 created_at: current_message.po.created_at,
@@ -1760,7 +1783,60 @@ impl MessageConsumer {
                 MAX_CHAIN_TRAVERSAL
             );
         }
-        (pressure, chain_messages)
+        (pressure, chain_messages, origin)
+    }
+
+    /// 给小脑链内消息补发送方显示名（上下文补充）
+    ///
+    /// 只有 id 时模型分不清「我方复述」与「对方复述」；名字是零成本的消歧线索。
+    /// 按唯一 `from_id` 解析（A↔B 通常 2 个），并设硬上限防止长链里的第三方
+    /// 把一次回发判定放大成几十次查询。任何查询失败都只是少一个名字，
+    /// 绝不阻断判定（渲染侧会退回 id）。
+    async fn fill_participant_names(
+        &self,
+        ctx: &RequestContext,
+        chain_messages: &mut [runtime_domain::chain_reply::ChainMessage],
+    ) {
+        /// 单次回发判定最多解析多少个参与方名称
+        const MAX_NAME_LOOKUPS: usize = 4;
+
+        let mut ids: Vec<String> = chain_messages.iter().map(|m| m.from_id.clone()).collect();
+        ids.sort();
+        ids.dedup();
+        let mut names = std::collections::BTreeMap::new();
+        for id in ids.into_iter().take(MAX_NAME_LOOKUPS) {
+            let options = AgentFetchOptions {
+                with_runtime_state: Some(false),
+                with_tools: Some(false),
+                with_skills: Some(false),
+                with_stats: Some(false),
+                with_model_call_stats: Some(false),
+                ..Default::default()
+            };
+            match self
+                .hr_domain
+                .agent_manage()
+                .get_agent(ctx.clone(), &id, options)
+                .await
+            {
+                Ok(Some(agent)) => {
+                    names.insert(id, agent.po.name);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log_warn!(
+                        ctx,
+                        "handle_agent_message",
+                        "participant name lookup failed (fallback to id) agent_id={}: {}",
+                        id,
+                        e
+                    );
+                }
+            }
+        }
+        for message in chain_messages.iter_mut() {
+            message.from_name = names.get(&message.from_id).cloned();
+        }
     }
 
     /// 领域对象 → 组件语义标志：结构化新信息锚点的唯一翻译处
