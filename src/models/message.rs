@@ -251,6 +251,15 @@ pub struct MessagePo {
     /// - 出站：按是否存在话题选择普通回复 / 话题回复
     /// - 普通私信与非话题回复为 `None`
     pub thread_id: Option<String>,
+    /// 外部渠道会话键（形如飞书 `"oc_xxx"`，私聊 / 群聊均有）
+    /// - 入站：随消息写入，作为入站路由与会话绑定键
+    /// - 出站：无引用回复目标时可按会话直发
+    pub chat_id: Option<String>,
+    /// 外部渠道 @ 提及原始信息（平台侧存档，JSON 数组）
+    ///
+    /// 命中本系统 Agent 的提及已在正文替换为内部协议 `[@name](agent:<id>)`；
+    /// 未命中的保留 `@name` 展示。两种情况下平台原始 ID 都在此完整保留。
+    pub external_mentions: Json<Vec<common::mention::ExternalMention>>,
     /// 组织 ID（用于异步消费时重建上下文）
     pub organization_id: Option<String>,
     /// 创建人 ID
@@ -264,6 +273,18 @@ pub struct MessagePo {
 }
 
 impl MessagePo {
+    /// 替换外部渠道提及存档
+    ///
+    /// PO 内部封装 JSON 存储细节，避免 Domain 层直接依赖 `sqlx::types::Json`。
+    pub fn set_external_mentions(&mut self, mentions: Vec<common::mention::ExternalMention>) {
+        self.external_mentions = Json(mentions);
+    }
+
+    /// 外部渠道提及存档（只读）
+    pub fn external_mentions(&self) -> &[common::mention::ExternalMention] {
+        &self.external_mentions.0
+    }
+
     /// 将消息格式化为 Prompt 可读的字符串
     ///
     /// 包含所有关键字段：消息ID、发送者、消息类型、回复关联、任务/项目关联、内容
@@ -362,6 +383,8 @@ impl MessagePo {
             root_id,
             external_key: None,
             thread_id: None,
+            chat_id: None,
+            external_mentions: Json(Vec::new()),
             organization_id,
             created_by: created_by.clone(),
             modified_by: created_by,

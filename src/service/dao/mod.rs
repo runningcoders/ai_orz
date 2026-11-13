@@ -10,6 +10,7 @@ pub mod mcp_server;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
+pub mod message_channel_conversation;
 pub mod message_push;
 pub mod model_provider;
 pub mod ontology;
@@ -43,6 +44,7 @@ pub fn init_all() {
     federation_contract::init();
     message::init();
     message_channel::init();
+    message_channel_conversation::init();
     mcp_server::init();
     model_provider::init();
     ontology::init();

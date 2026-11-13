@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT channel_id\n            FROM message_channel_conversations\n            WHERE channel_type = ?\n              AND external_app_id = ?\n              AND external_tenant_key = ?\n              AND external_chat_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "channel_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3559670f8d172572219c21221e61a94888edd8349e212f2a74911213078c8733"
+}
