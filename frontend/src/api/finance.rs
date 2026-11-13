@@ -324,6 +324,19 @@ pub async fn get_message_channel(
     api_get(&format!("/api/v1/finance/message-channels/{}", id)).await
 }
 
+/// 分页查询渠道绑定的外部会话（入站路由记录的私聊 / 群会话）
+pub async fn list_message_channel_conversations(
+    id: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<common::api::ListMessageChannelConversationsResponse, ApiError> {
+    api_get(&format!(
+        "/api/v1/finance/message-channels/{}/conversations?limit={}&offset={}",
+        id, limit, offset
+    ))
+    .await
+}
+
 // ===== 工具调用记录 =====
 
 pub async fn query_tool_call_entries(

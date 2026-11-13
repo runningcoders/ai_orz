@@ -176,7 +176,7 @@ pub async fn create_message_channel(
         .await?
         .unwrap_or_default();
 
-    let channel_config = extract_channel_config(&params);
+    let mut channel_config = extract_channel_config(&params);
     validate_lark_credential_ref(
         params.channel_type,
         channel_config.lark_credential_id.as_deref(),
@@ -192,6 +192,21 @@ pub async fn create_message_channel(
         channel_config.email_credential_id.as_deref(),
         &credentials,
     )?;
+
+    // 飞书渠道自动回填应用机器人 open_id（群聊 @ 识别依赖；失败不阻断创建）
+    if params.channel_type == common::enums::ChannelType::Lark
+        && channel_config.lark_bot_open_id.is_none()
+        && let Some(credential_id) = channel_config
+            .lark_credential_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+    {
+        channel_config.lark_bot_open_id = domain()
+            .message_channel_manage()
+            .resolve_lark_bot_open_id(ctx.clone(), credential_id)
+            .await
+            .unwrap_or(None);
+    }
 
     // 哨兵只在部分更新协议中有意义；创建路径防御性折叠，保证哨兵永不落库
     let agent_id = fold_clear_sentinel(params.agent_id.clone());

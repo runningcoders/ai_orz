@@ -12,8 +12,8 @@ use dioxus_router::{Link, use_navigator};
 
 use crate::api::email_integration::get_email_integration_status;
 use crate::api::finance::{
-    delete_message_channel, get_message_channel, test_message_channel, update_message_channel,
-    update_message_channel_status,
+    delete_message_channel, get_message_channel, list_message_channel_conversations,
+    test_message_channel, update_message_channel, update_message_channel_status,
 };
 use crate::api::hr::list_agents;
 use crate::api::lark_integration::get_lark_integration_status;
@@ -48,6 +48,33 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut channel_res = use_resource(move || {
         let id = rid();
         async move { get_message_channel(&id).await }
+    });
+
+    // ===== 绑定会话列表（分页；入站路由按会话自动绑定） =====
+    const CONVERSATION_PAGE_SIZE: usize = 20;
+    let mut conversation_offset = use_signal(|| 0usize);
+    let conversations_res = use_resource(move || {
+        let id = rid();
+        let offset = conversation_offset();
+        async move {
+            if id.is_empty() {
+                return Ok(common::api::PagedResult {
+                    items: Vec::new(),
+                    total: 0,
+                });
+            }
+            list_message_channel_conversations(&id, CONVERSATION_PAGE_SIZE, offset).await
+        }
+    });
+    // 路由参数切换（同一路由组件复用）时把分页归零，避免拿上一个渠道的 offset 查询
+    let initial_conversation_rid = rid();
+    let mut last_conversation_rid = use_signal(move || initial_conversation_rid);
+    use_effect(move || {
+        let current = rid();
+        if current != last_conversation_rid() {
+            last_conversation_rid.set(current);
+            conversation_offset.set(0);
+        }
     });
     let mut toggling = use_signal(|| false);
     let mut testing = use_signal(|| false);
@@ -735,6 +762,84 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                             div {
                                 div { class: "text-sm text-base-content/60", "更新时间" }
                                 div { class: "font-mono", "{crate::utils::format_datetime(c.updated_at)}" }
+                            }
+                            // 绑定的外部会话（入站路由：应用 + 租户 + 会话 → 本渠道）
+                            if c.channel_type == ChannelType::Lark {
+                                div { class: "md:col-span-2 mt-2",
+                                    div { class: "text-sm text-base-content/60", "绑定的会话" }
+                                    div { class: "text-xs text-base-content/50 mb-2",
+                                        "入站消息按「应用 + 租户 + 会话」自动绑定；同一会话的后续消息稳定路由到本渠道 / Agent。"
+                                    }
+                                    match conversations_res.read().as_ref() {
+                                        None => rsx! { div { class: "text-xs text-base-content/50", "加载中…" } },
+                                        Some(Err(e)) => rsx! { div { class: "text-xs text-error", "加载失败：{e}" } },
+                                        Some(Ok(page)) => {
+                                            let total = page.total;
+                                            let start = if total == 0 { 0 } else { conversation_offset() + 1 };
+                                            let end = conversation_offset() + page.items.len();
+                                            let has_prev = conversation_offset() > 0;
+                                            let has_next = end < total;
+                                            rsx! {
+                                                if page.items.is_empty() {
+                                                    div { class: "text-sm text-base-content/50 py-2",
+                                                        "暂无绑定会话（收到首条入站消息后自动绑定）"
+                                                    }
+                                                } else {
+                                                    div { class: "overflow-x-auto",
+                                                        table { class: "table table-xs",
+                                                            thead {
+                                                                tr {
+                                                                    th { "会话 ID" }
+                                                                    th { "应用" }
+                                                                    th { "租户" }
+                                                                    th { "绑定时间" }
+                                                                }
+                                                            }
+                                                            tbody {
+                                                                for item in page.items.iter() {
+                                                                    tr { key: "{item.id}",
+                                                                        td { class: "font-mono text-xs", "{item.chat_id}" }
+                                                                        td { class: "font-mono text-xs", "{item.app_id}" }
+                                                                        td { class: "font-mono text-xs", "{item.tenant_key}" }
+                                                                        td { class: "font-mono text-xs",
+                                                                            "{crate::utils::format_datetime(item.created_at)}"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    div { class: "flex items-center justify-between mt-2",
+                                                        div { class: "text-xs text-base-content/60",
+                                                            "第 {start}-{end} 条 / 共 {total} 条"
+                                                        }
+                                                        div { class: "flex gap-2",
+                                                            button {
+                                                                class: "btn btn-xs hud-btn btn-ghost",
+                                                                disabled: !has_prev,
+                                                                onclick: move |_| {
+                                                                    let next = conversation_offset()
+                                                                        .saturating_sub(CONVERSATION_PAGE_SIZE);
+                                                                    conversation_offset.set(next);
+                                                                },
+                                                                "上一页"
+                                                            }
+                                                            button {
+                                                                class: "btn btn-xs hud-btn btn-ghost",
+                                                                disabled: !has_next,
+                                                                onclick: move |_| {
+                                                                    let next = conversation_offset() + CONVERSATION_PAGE_SIZE;
+                                                                    conversation_offset.set(next);
+                                                                },
+                                                                "下一页"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                 }

@@ -88,6 +88,26 @@ pub async fn update_message_channel(
         &credentials,
     )?;
 
+    // 飞书渠道自动回填应用机器人 open_id（老渠道缺失时补齐；失败不阻断更新）
+    if channel.po.channel_type == common::enums::ChannelType::Lark
+        && channel.po.config_json.0.lark_bot_open_id.is_none()
+    {
+        let credential_id = channel
+            .po
+            .config_json
+            .0
+            .lark_credential_id
+            .clone()
+            .filter(|s| !s.is_empty());
+        if let Some(credential_id) = credential_id {
+            channel.po.config_json.0.lark_bot_open_id = domain()
+                .message_channel_manage()
+                .resolve_lark_bot_open_id(ctx.clone(), &credential_id)
+                .await
+                .unwrap_or(None);
+        }
+    }
+
     domain()
         .message_channel_manage()
         .update_message_channel(ctx, &channel)

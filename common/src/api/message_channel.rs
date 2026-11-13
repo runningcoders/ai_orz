@@ -1,6 +1,6 @@
 //! Message Channel related API request/response DTOs - shared between backend and frontend
 
-use crate::api::PaginationParams;
+use crate::api::{PagedResult, PaginationParams};
 use crate::enums::{ChannelStatus, ChannelType};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -400,3 +400,44 @@ pub struct MessageChannelDetail {
     /// Updated timestamp
     pub updated_at: i64,
 }
+
+/// 渠道绑定的外部会话（列表项）
+///
+/// 入站路由按「应用 + 租户 + 会话」绑定到渠道；本 DTO 把该渠道下的会话列表
+/// 分页暴露给前端，用于查看 / 核对自动绑定的私聊与群会话。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MessageChannelConversationItem {
+    /// 绑定记录 ID
+    pub id: String,
+    /// 归属渠道 ID
+    pub channel_id: String,
+    /// 渠道类型
+    pub channel_type: ChannelType,
+    /// 外部应用 ID（飞书 app_id；为空表示平台无应用概念）
+    pub app_id: String,
+    /// 外部租户 key（飞书 tenant_key；为空表示平台无租户概念）
+    pub tenant_key: String,
+    /// 外部会话 ID（飞书 chat_id，私聊 / 群聊均有）
+    pub chat_id: String,
+    /// 首次绑定时间（毫秒）
+    pub created_at: i64,
+    /// 最近一次绑定刷新时间（毫秒）
+    pub updated_at: i64,
+}
+
+/// 查询渠道会话列表请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListMessageChannelConversationsRequest {
+    /// Channel ID
+    #[param(source = "path")]
+    pub id: String,
+    /// Limit result count
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+    /// Skip count
+    #[param(source = "query")]
+    pub offset: Option<usize>,
+}
+
+/// 查询渠道会话列表响应
+pub type ListMessageChannelConversationsResponse = PagedResult<MessageChannelConversationItem>;
