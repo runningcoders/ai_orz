@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14221318,
+  "total_bytes": 14226869,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1673,7 +1673,7 @@
           "path": "04-对话与消息/C-知识/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染.md",
           "name": "@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染",
           "title": "@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染",
-          "bytes": 6024
+          "bytes": 6554
         },
         {
           "tier": "C-知识",
@@ -1750,7 +1750,7 @@
           "path": "04-对话与消息/C-知识/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md",
           "name": "消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级",
           "title": "消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级",
-          "bytes": 8692
+          "bytes": 9381
         },
         {
           "tier": "C-知识",
@@ -1764,7 +1764,7 @@
           "path": "04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md",
           "name": "消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期",
           "title": "消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）",
-          "bytes": 36488
+          "bytes": 40820
         },
         {
           "tier": "C-知识",

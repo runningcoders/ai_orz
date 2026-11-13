@@ -15,12 +15,20 @@ scope:
   - "src/consumer/mod.rs"（init 注册：Consumer::new() 零参数，不再注入 DAL 弱引用）
   - "src/service/dal/wechat/impl.rs"（WechatDalImpl 瘦身：移除自存 callback 字段，start 参数 _callback 不再持有）
   - "src/service/dao/message_channel/sqlite.rs"（push_query_filters 渠道列表默认软删除过滤，2026-09 新增）
+  - "src/service/dao/message_channel_conversation/sqlite.rs"（会话绑定 DAO：app+tenant+chat → channel，2026-11 新增）
+  - "src/service/dal/lark/impl.rs"（入站会话优先路由 + 会话绑定 upsert + 提及映射，2026-11 新增）
+  - "common/src/models/external_message.rs"（ExternalMessageContext：外部元数据聚合，2026-11 新增）
+  - "migrations/20261113000002_add_message_channel_conversations.sql"（会话绑定表，2026-11 新增）
   - "src/pkg/lark_integration.rs"（lark-cli config init 文本输出契约：去 --json + App ID 文本行解析）
   - "frontend/src/pages/finance/message_channels.rs"（渠道创建弹窗「绑定 Agent」选框：所有渠道类型一致展示）
   - "frontend/src/pages/finance/message_channel_detail.rs"（入站监听复选框统一为 checkbox checkbox-sm checkbox-primary）
 source_files:
 
   - src/pkg/adapter/message.rs#L46-L78（MessageInboundAdapter trait：4 方法 channel_type()/start(callback)/stop()/is_running()；async_trait 标注；start 接收 Arc<dyn MessageAdapterCallback> 投递回调；重复启动 Conflict 错误）
+  - src/service/dal/lark/impl.rs#L325-L405（adapt_lark 入站路由：find_channel_by_lark_identity 映射 from_id → find_channel_by_conversation 会话优先 → 未命中则 bind_conversation upsert；chat_id 私聊/群聊统一落库）
+  - src/service/dal/lark/impl.rs#L600-L730（collect_bot_agent_map 唯一映射 + merge_bot_agent_binding 歧义标记 + find_channel_by_conversation/bind_conversation）
+  - src/service/dao/message_channel_conversation/sqlite.rs#L1-L90（会话绑定 DAO：upsert ON CONFLICT(channel_type, app_id, tenant, chat_id) + find_channel_id）
+  - common/src/models/external_message.rs#L1-L45（ExternalMessageContext：external_key/thread_id/chat_id/external_mentions 聚合）
 
   - src/pkg/adapter/message.rs#L36-L44（MessageAdapterCallback：on_message(AdaptedMessage) 回调接口。入站适配器收到外部消息后统一为 AdaptedMessage，调用此回调投递；生产者层注册此回调将 AdaptedMessage 转换为 Agent 消息入站事件）
   - 'src/pkg/adapter/message.rs#L82-L100（MessageAdapterRegistry 注册中台：内部 adapters: RwLock<Vec<Arc<dyn MessageInboundAdapter>>>；register() / start_all() / stop_all() / list_running() 四个方法；start_all 内部遍历调用 adapter.start(callback) 遇到错误继续跑下一个不整组 failfast，单渠道挂不影响其他渠道）'
@@ -180,18 +188,26 @@ pub trait MessageInboundAdapter: Send + Sync {
 - **start 内部多子渠道启动（Lark 典型）**：一个 MessageInboundAdapter = 一种渠道类型（Lark），但系统内可能建了 10 个不同飞书应用/用户的 MessageChannel。start 内部自己聚合去重（Lark 按 app_id），同一 app_id 共享同一条 WS 连接，多个渠道共用。
 - **start_all 非 fail-fast**：一个渠道 start 失败（例如飞书凭证过期 → 启动报错），MessageAdapterRegistry.start_all 内部 catch 错误并记录日志，然后继续下一个渠道。不让单个渠道故障导致所有渠道都起不来。
 
-**AdaptedMessage 统一入站消息（中台统一转换结果，owned）**：
+**AdaptedMessage 统一入站消息（中台统一转换结果，owned，2026-11 收敛）**：
 ```rust
 pub struct AdaptedMessage {
-    pub channel_type: ChannelType,     // 来自哪个渠道
-    pub external_user_id: String,      // 渠道侧用户标识（飞书 open_id、微信 open_id 等）
-    pub external_message_id: String,   // 渠道侧消息 ID（用于去重与回复引用）
-    pub content: String,               // 纯文本内容（富文本/图片附件后续扩展 content_type + attachments）
-    pub received_at: i64,              // 渠道侧接收时间戳
-    pub channel_binding_id: Option<String>, // 绑定到哪个 MessageChannel 记录（若已解析可提前注入）
+    pub from_id: String,                 // 外部用户映射后的内部用户 ID（from_role 恒 User）
+    pub to_agent_id: Option<String>,     // 渠道绑定 agent；None 时 consumer 走角色路由
+    pub channel_type: ChannelType,       // 来自哪个渠道
+    pub content: String,                 // 纯文本内容（富文本已摊平）
+    pub reply_to_id: Option<String>,     // 消息链父消息
+    pub external: ExternalMessageContext, // 渠道无关外部元数据聚合（见下）
+    pub attachments: Vec<AdaptedAttachment>,
+}
+
+pub struct ExternalMessageContext {
+    pub external_key: Option<String>,    // 平台消息 ID（`lark:om_xxx`，渠道前缀防撞键）
+    pub thread_id: Option<String>,       // 平台话题 ID（飞书 `omt_xxx`）
+    pub chat_id: Option<String>,         // 平台会话 ID（飞书私聊/群聊均有 `oc_xxx`）
+    pub external_mentions: Vec<ExternalMention>, // 平台 @ 提及原始信息
 }
 ```
-producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` → 从消息渠道表查该外部 ID 绑定到哪个 `MessageChannel.po.lark_open_id` → 反查渠道归属 user_id / agent_id → 构造内部 `MessagePo`（sender = 外部用户，receiver = 对应 Agent）→ publish AOP 事件 `NewMessageCreated` → 正常 consumer 唤醒流程接管。
+producer 侧拿到 AdaptedMessage 后：渠道 DAL（如 `adapt_lark`）已完成「发送者 → 内部用户」映射，并按 **`(channel_type, app_id, tenant_key, chat_id)` 会话绑定** 优先路由到渠道 / Agent；未绑定时回退 `(app_id, sender_open_id)` 定位渠道，成功后把会话绑定 upsert 到 `message_channel_conversations`。producer 只负责把 `external` 原样搬进 `SendToAgentCommand`。
 
 **回调解耦：MessageAdapterCallback（中台不依赖 producer，用 trait 注入）**：
 - 中台定义 trait `MessageAdapterCallback { async fn on_message(&self, msg: AdaptedMessage) -> Result<()> }`；producer 实现它，把 AdaptedMessage 转成内部 NewMessage 事件。
@@ -241,13 +257,18 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 10. **（2026-09 CLEAR 哨兵）渠道解除绑定必须走模型层 CLEAR_* sentinel**：`CLEAR_AGENT_ID` / `CLEAR_USER_ID` / `CLEAR_CREDENTIAL_ID` 等哨兵值表示"显式清除"语义，DAO 层据此走双表清除逻辑；handler 层禁止手动 UPDATE SET agent_id = NULL（与"本就无绑定"的 NULL 语义混淆，且可能漏改 scope_project 表）。
 11. **（2026-09 渠道列表软删除过滤）MessageChannelQuery DAO 侧必须默认排除软删除渠道**：`push_query_filters` 在未显式传 `status_in` 时追加 `AND status != 0`（Deleted），COUNT 与 LIST 复用同一函数；只有显式 `status_in` 才绕过该默认过滤（查历史/恢复用 query 逃生通道）。禁止让已删除渠道泄漏到管理列表。
 12. **（2026-09 绑定 Agent 统一入口）渠道创建/编辑弹窗必须对所有渠道类型展示「绑定 Agent」选框**：入站路由本就优先取渠道 `agent_id`（见下游 Lark 卡的 open_id → channel.agent_id 映射），若飞书渠道缺该选框，用户无法指定接单 Agent。前端禁止用 `is_lark_type` 等门控把该选框对飞书隐藏。
+13. **（2026-11 会话路由）入站路由主键是「应用 + 租户 + 会话」，不是发送者**：渠道 DAL 必须先查 `message_channel_conversations`（`channel_type + external_app_id + external_tenant_key + external_chat_id` → `channel_id`），命中且渠道 Active 即用它；未命中才回退发送者身份并 upsert 绑定。发送者只负责 `from_id` 映射。新增渠道禁止再写「只按发送者查渠道」的路由。
+14. **（2026-11 外部元数据聚合）新增外部字段只扩展 `ExternalMessageContext`**：`AdaptedMessage` / `SendToAgentCommand` 不再逐字段平铺平台元数据；新增 chat/thread/mention 类字段一律加进聚合结构，避免所有命令构造点被迫同步修改。
+15. **（2026-11 提及映射确定性）机器人 open_id → Agent 映射必须无歧义**：优先用当前渠道的 `lark_bot_open_id → channel.agent_id`；跨渠道兜底时，同一 bot 映射到多个 Agent 视为歧义，保留 `@name` 展示，禁止按渠道遍历顺序覆盖。
+16. **（2026-11 平台前缀统一）外部键前缀一律取 `ChannelType::as_str()`**：如 `lark:om_xxx`、`lark:oc_xxx`，禁止在适配器里手写平台字符串，避免不同渠道出现 `feishu:` / `lark:` 混用。
 
 ## §4 约束清单（最高权重，硬红线）
 
 1. ❌ **禁止 MessageInboundAdapter::start 内部 panic**。外部渠道消息格式异常、凭证解析失败，都必须 wrap 成 Err 返回（或 log_warn 跳过单条消息），绝不允许直接 unwrap/panic 导致整个进程崩溃。
 2. ❌ **禁止 MessageAdapterRegistry.start_all 对单渠道失败用 ? 冒泡**。冒泡会导致：飞书凭证过期 → 启动失败 → 微信/Slack 也起不来 → 全部渠道挂了 → P0 级故障。必须：match + log_error + continue。
 3. ❌ **禁止 pkg/adapter 目录中引入 common::api::** 或 service/domain 层业务类型（MessagePo/Agent 等）。业务类型污染中台 = 分层被破坏，未来想加 Slack 的 AdapterRegistry 单元测试就必须把整个业务服务拉起来，测试隔离做不出来。
-4. ✅ **AdaptedMessage.external_user_id + channel_type 组合必须全局唯一映射内部用户**：producer 侧查找逻辑依赖 (ChannelType + external_id) → MessageChannel → user_id；没找到时 log_warn 丢弃不 panic，外部用户如果没在系统内绑定渠道就只是无法收到响应，不应该抛错。
+4. ✅ **发送者必须先映射到内部用户才能入站**：渠道 DAL 按 `(app_id, sender_open_id)` 定位绑定渠道取其 `user_id`；未绑定发送者 log 丢弃不 panic（外部用户没在系统内绑定渠道只是无法触发接待，不应抛错）。会话绑定失败也不阻断入站，仅 log_warn。
+5. ✅ **会话绑定必须按应用 + 租户隔离**：`message_channel_conversations` 唯一键含 `channel_type + external_app_id + external_tenant_key + external_chat_id`；禁止只用 chat_id 做键，否则多应用 / 多租户会串会话。
 5. ✅ **Lark 渠道实现中 resolve_channel_credentials 返回 None 时要 warn 并跳过该渠道**：管理员渠道创建时引用的凭证被删除了 → 不能 panic、不能让启动失败；记录一条"channel id={} lark_credential_id={} 找不到凭证"跳过即可。
 6. ✅ **四类互引闭环**：本卡 source_files[] 含 5 篇 wiki 长文 + 1 Design + Plan 占位 + 3 张平行卡（身份凭证 CRUD / AES 加密 / Lark WS P2P 入站）；对应 Wiki 长文 cite 段回链本卡 + message_channel_design Design + 3 张平行卡。
 7. ✅ **（2026-09-XX 新增）MessageChannel DAO 落库必须 scope_project + channel 双表统一更新关联元数据**（agent_id / user_id / credential_id），禁止只改 channel 主表导致 scope_project 残留旧值悬空引用。
@@ -268,3 +289,18 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 - Consumer 测试成本大幅降低：无状态 struct 无需构造依赖、无需处理 Weak upgrade 错误分支，单元测试直接 `LarkInboundConsumer::new().on_event(...)` 即可。
 - 新渠道扩展更收敛：之前要"加 DAL 字段 → 改 consumer init → 改 consumer 持有 → 改 on_event 分发"四步；现在只需"InboundSource 加 variant → adapt_inbound 加 match 分支 → MessageDomainImpl 加字段"三步，**consumer 层零改动**。
 - 回调所有权更清晰：之前 WechatDalImpl 自存 callback、consumer 也可能持有一份（不同持有方导致"谁负责释放"不明确）；现在统一由中台 registry 登记持有，consumer / DAL 均不直接持有，生命周期单一可控。
+
+## §6 渠道会话列表接口（2026-11）
+
+入站路由的「应用 + 租户 + 会话 → 渠道」绑定记录通过渠道子资源分页暴露给前端，用于核对某渠道当前服务的私聊 / 群会话。
+
+| 项 | 约定 |
+|----|------|
+| 路由 | `GET /api/v1/finance/message-channels/{id}/conversations?limit=&offset=` |
+| 响应 | `PagedResult<MessageChannelConversationItem>`（items + total） |
+| 归属 | 渠道必须属于当前组织 + 当前用户，否则统一 NotFound（不泄漏存在性） |
+| 分页 | 默认 20，上限 100，按 `created_at DESC`；limit/offset 由 `PaginationParams` 承载 |
+| 前端 | 渠道详情页「绑定的会话」卡片，上一页 / 下一页 + 「第 X-Y 条 / 共 N 条」 |
+| 分层 | Handler → `MessageChannelManage::list_channel_conversations` → `MessageChannelDal::list_channel_conversations` → `MessageChannelConversationDao` |
+
+**红线**：列表只返回 `channel_id` 命中的绑定；禁止按 `app_id` / `chat_id` 反查其他渠道的会话（跨租户 / 跨渠道泄漏）。会话绑定依附渠道，渠道软删除后列表自然不再包含其记录（查询按 channel_id，不做物理清理）。

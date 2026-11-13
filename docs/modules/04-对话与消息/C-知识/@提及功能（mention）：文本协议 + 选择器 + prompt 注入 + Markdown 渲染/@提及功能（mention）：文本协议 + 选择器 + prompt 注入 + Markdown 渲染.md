@@ -35,7 +35,7 @@ AI Orz 的消息 @ 提及功能采用**标准 CommonMark 链接语法**承载，
 
 | 文件 | 职责 |
 |------|------|
-| `common/src/mention.rs` | **协议核心**：`MentionKind` 三类型枚举（Agent/Task/Project）、`MentionRef`（kind+id 协议层结构）、`ResolvedMention`（含 name+summary 的后端消费结构）、`parse_mention_dest`（dest → MentionRef）、`format_mention`（生成语法 + 名字转义）、`detect_mention_query`（光标处 @ 查询检测）、`apply_mention_pick`（插入替换 + 光标恢复）、`extract_mentions[_with_text]`（后端 prompt 注入提取）、`resolve_display_name`（实时名优先，快照名回退） |
+| `common/src/mention.rs` | **协议核心**：`MentionKind` 三类型枚举（Agent/Task/Project）、`MentionRef`（kind+id 协议层结构）、`ResolvedMention`（含 name+summary 的后端消费结构）、`ExternalMention`（外部渠道 @ 提及原始信息存档：key/id/id_type/name/tenant_key/union_id/user_id）、`parse_mention_dest`（dest → MentionRef）、`format_mention`（生成语法 + 名字转义）、`detect_mention_query`（光标处 @ 查询检测）、`apply_mention_pick`（插入替换 + 光标恢复）、`extract_mentions[_with_text]`（后端 prompt 注入提取）、`resolve_display_name`（实时名优先，快照名回退） |
 | `frontend/src/utils/mention.rs` | **前端渲染层**：`transform_mentions`（pulldown-cmark 事件流拦截，把提及链接替换为 chip inline HTML）、`render_mention_chip`（chip HTML 生成 + XSS 转义）。`pub use common::mention::*` 把协议 API 原样转发 |
 | `frontend/src/components/mention_picker.rs` | **@ 选择器 UI**：`MentionPicker` 多级菜单组件（All/Agent/Task/Project Tab + 候选搜索 + 键盘导航）、`MentionState` 外置状态（Signal + use_effect 候选加载 + req 序号丢弃过期响应）、`MentionPickedBar` 已提及胶囊条。**候选上限压缩到 12**（按可浏览性定，不再按数据量拉），改为**两级加载** + 收窄拉取量 |
 | `src/service/dal/agent/builder/default.rs` | **后端 prompt 注入**：从消息正文提取 `extract_mentions_with_text`，解析出 Agent/Task/Project 实体后注入到 prompt 上下文 |
@@ -56,3 +56,4 @@ AI Orz 的消息 @ 提及功能采用**标准 CommonMark 链接语法**承载，
 3. **候选范围分层**：项目会话 `mention_kinds_for` 限定为 `Agent + Task`（Agent 限于项目协作人），默认对话放开为 `Agent + Task + Project`（Agent 取组织全量由关键词收窄）。单一事实源在 `mention_picker.rs` L111-L119。
 4. **前端纯 textarea**：MentionPicker **不碰光标 DOM**，输入框始终是受控 textarea，插入的是纯文本语法。避免中文输入法组合期间被重渲染打断（历史教训 `0644609c`）。
 5. **XSS 防护**：`transform_mentions` 顺带承担源文 HTML 降级（Html/InlineHtml → Text），`render_mention_chip` 对展示名与 id 必过 `escape_html`。不能因为加了提及链路就放开 XSS。
+6. **外部渠道提及双轨存档**：飞书群消息入站时，`mentions[]` 命中本系统 Agent（渠道 `lark_bot_open_id` → `agent_id`）的正文替换为内部协议 `[@name](agent:<id>)`，未命中的保留 `@name` 展示；无论是否命中，平台原始信息都以 `ExternalMention` 存入 `messages.external_mentions`（`lark:` 前缀防撞键）。禁止只存内部映射而丢掉平台 ID。
