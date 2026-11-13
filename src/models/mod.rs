@@ -11,6 +11,7 @@ pub mod mcp_server;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
+pub mod message_channel_conversation;
 pub mod model_provider;
 pub mod ontology;
 pub mod organization;

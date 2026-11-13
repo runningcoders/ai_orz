@@ -13,7 +13,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_model_provider",
     name = "Update Provider Config",
-    description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. For chat (non-embedding) models max_context_length cannot be cleared (it backs the context-compaction threshold). Editing config never triggers a vector rebuild; to change the active embedding model, switch embedding providers explicitly (that path rebuilds vectors). Fails if not found.",
+    description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. base_url cannot be cleared (except FastEmbed local embedding): the backend has no default domain, so an empty value makes every request fail. For chat (non-embedding) models max_context_length cannot be cleared (it backs the context-compaction threshold). Editing config never triggers a vector rebuild; to change the active embedding model, switch embedding providers explicitly (that path rebuilds vectors). Fails if not found.",
     params = "common::api::UpdateModelProviderRequest",
     tags = "admin"
 )]
@@ -37,6 +37,10 @@ pub async fn update_model_provider(
     // 按字段变化就全量重建会产生大量无意义的重建任务。
 
     // Update fields
+    // 记录本次请求是否真的动了 Base URL / provider_type：只有这类改动才需要校验
+    // base_url 非空，避免存量「无 base_url」的 provider 连禁用/改名都被挡住。
+    let base_url_touched = params.base_url.is_some();
+    let provider_type_changed = params.provider_type.is_some();
     if let Some(name) = params.name {
         provider.po.name = name;
     }
@@ -66,6 +70,24 @@ pub async fn update_model_provider(
         return Err(common::error::Error::bad_request(
             "max_context_length 不能清除：对话类模型必须保留上下文窗口长度，\
              否则压缩触发阈值失效，Agent 将永远不会压缩上下文",
+        ));
+    }
+
+    // Base URL **不允许清空**（与创建时必填同源，FastEmbed 纯本地嵌入除外）：
+    // 出站解析已无默认域名兜底，空值会让该 provider 的所有请求在运行时失败。
+    // 仅当本次请求触碰 base_url 或 provider_type 时校验——否则存量空 base_url 的
+    // provider 连「禁用/改名」这类无关操作都会被误挡（禁用是故障时的紧急动作）。
+    if (base_url_touched || provider_type_changed)
+        && provider.po.provider_type != common::enums::ProviderType::FastEmbed
+        && provider
+            .po
+            .base_url
+            .as_deref()
+            .is_none_or(|v| v.trim().is_empty())
+    {
+        return Err(common::error::Error::bad_request(
+            "base_url 不能为空：不同付费渠道/代理网关的域名不同，\
+             请显式填写模型服务根地址（如 https://<你的网关域名>/v1）",
         ));
     }
 

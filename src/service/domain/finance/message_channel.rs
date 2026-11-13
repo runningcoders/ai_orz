@@ -6,6 +6,7 @@ use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::FinanceDomainImpl;
 use async_trait::async_trait;
+use common::api::PagedResult;
 use common::enums::ChannelType;
 use common::error::Result;
 
@@ -100,6 +101,18 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         Ok(page.items)
     }
 
+    async fn list_channel_conversations(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        pagination: common::api::PaginationParams,
+    ) -> Result<PagedResult<crate::models::message_channel_conversation::MessageChannelConversation>>
+    {
+        self.message_channel_dal
+            .list_channel_conversations(ctx, channel_id, pagination)
+            .await
+    }
+
     async fn update_message_channel(
         &self,
         ctx: RequestContext,
@@ -133,6 +146,17 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         self.message_channel_dal
             .test_channel(ctx, &channel.po.id)
             .await
+    }
+
+    async fn resolve_lark_bot_open_id(
+        &self,
+        ctx: RequestContext,
+        credential_id: &str,
+    ) -> Result<Option<String>> {
+        match &self.lark_channel_dal {
+            Some(dal) => dal.resolve_bot_open_id(ctx, credential_id).await,
+            None => Ok(None),
+        }
     }
 
     /// 飞书信道 WS 连接监控快照（信道监控统一经 Domain 聚合；未接入时返回空快照）

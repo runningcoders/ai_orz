@@ -475,6 +475,7 @@ pub(crate) mod legacy_awaken;
 pub(crate) mod legacy_settle;
 mod memory;
 mod memory_trace_query;
+mod relevance_gate;
 mod think_loop;
 // 轮级环图：think → dispatch → evaluate，由 think_loop 驱动（单向依赖）
 mod think_round;
@@ -493,6 +494,7 @@ mod tool_execution_test;
 // DefaultPromptBuilder 已迁移到 dal/agent.rs，由 AgentDal.prompt_builder() 提供
 pub use crate::service::dal::agent::{DefaultPromptBuilder, build_conversation_prompt};
 pub use cancel::CancelOutcome;
+pub use relevance_gate::{context_capacity, judge_relevance};
 pub(crate) use tool_call_query::status_from_dto;
 // 就绪缓存失效：内置工具自愈写库后必须立刻让新判定可见（finance 修复器调用）。
 // 就绪缓存本体留在 runtime（与 TTL 同处），只暴露这一个动作。

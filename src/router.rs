@@ -1023,6 +1023,10 @@ fn finance_routes() -> Router {
             get(handlers::finance::message_channel::get_message_channel::get_message_channel_handler),
         )
         .route(
+            "/message-channels/{id}/conversations",
+            get(handlers::finance::message_channel::list_message_channel_conversations::list_message_channel_conversations_handler),
+        )
+        .route(
             "/message-channels/{id}",
             put(handlers::finance::message_channel::update_message_channel::update_message_channel_handler),
         )

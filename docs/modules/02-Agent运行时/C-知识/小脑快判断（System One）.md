@@ -45,7 +45,7 @@
 ## 简介
 本章节面向「AI Agent 运行时」的读者，介绍 AI Orz 的「System One 快判断」能力（代号小脑 Cerebellum）。核心语义是：在进入大脑（cortex）主循环之前，让小脑（`jev` / TypeSafe AI System One 决策模型）用一次亚秒级调用给出「琐碎直回 / 需完整思考」的路由结论，从而为寒暄、客套、简单确认类请求省掉完整多轮 cortex 主循环的 token 与延迟成本。
 
-小脑不兼容 OpenAI 的 `chat/completions` 协议，走独立的 `POST {base}/systemone`（`base` 自带版本前缀，如 `https://api.typesafe.ai/v1`；Bearer 鉴权）；系统为此新增 `ProviderType::Jev = 8` 与 `ModelCapability::Decision = 2` 两个用途枚举，二者均为 `#[repr(i32)]` 尾部追加变体，免 DB migration。整条链路由「协议 DTO → System One client → 默认小脑获取 → Brain 注入 → 运行时路由三分类 → think_loop 单点接线」六段构成，任何异常都收敛为「静默跳过 = 现状」，并可通过管理面停用默认小脑实现一键全局回滚（零代码、零重启）。
+小脑不兼容 OpenAI 的 `chat/completions` 协议，走独立的 `POST {base}/systemone`（`base` 必须由 Provider 显式配置，自带版本前缀，如 `https://<你的网关域名>/v1`；后端不内置任何默认域名；Bearer 鉴权）；系统为此新增 `ProviderType::Jev = 8` 与 `ModelCapability::Decision = 2` 两个用途枚举，二者均为 `#[repr(i32)]` 尾部追加变体，免 DB migration。整条链路由「协议 DTO → System One client → 默认小脑获取 → Brain 注入 → 运行时路由三分类 → think_loop 单点接线」六段构成，任何异常都收敛为「静默跳过 = 现状」，并可通过管理面停用默认小脑实现一键全局回滚（零代码、零重启）。
 
 > 📌 源码口径说明：本能力的 System One 协议口径依据官方公开文档多来源交叉实证，**未经真实端点实测**；连通性 Spike 顺延至凭据到位后二期启动前集中纠偏（见 [common/src/api/cerebellum.rs](common/src/api/cerebellum.rs) 模块头注释）。
 
@@ -160,7 +160,7 @@ end
 - [common/src/api/cerebellum.rs](common/src/api/cerebellum.rs)
 
 ### System One client：编解码与错误分类
-`resolve_endpoint` 中 `provider.base_url` 非空即优先（支持自建 relay），缺省走 `DEFAULT_SYSTEM_ONE_BASE_URL`（`https://api.typesafe.ai`）；**`api_key` 为空的硬错误**（与 cortex `validate_provider_for_request` 口径一致）。`resolve_timeout_ms` 以 `config.timeout_ms` 优先，缺省/脏 config 兜底 `DEFAULT_CEREBELLUM_TIMEOUT_MS = 800`。`think_fast` 先做 questions 非空 + 逐个 validate 的硬校验，再发请求；响应结构校验「顶层必须携带对象形态的 answers」（硬错误），而单个答案解析失败走容错跳过并 `log_warn!`（协议版本演进容忍）。错误分类与 cortex 同口径：429 → `ModelRateLimited`、401|403 → `ModelAuth`、4xx → `ModelBadRequest`（含内容过滤 → `ModelContentFiltered`）、5xx → `ModelServerError`。
+`resolve_endpoint` 要求 `provider.base_url` **显式配置**（不同付费渠道/代理网关域名不同，后端不提供任何默认域名兜底；缺失直接 `ConfigInvalid` 并指向 `base_url`），**`api_key` 为空同样是硬错误**（与 cortex `validate_provider_for_request` 口径一致）。`resolve_timeout_ms` 以 `config.timeout_ms` 优先，缺省/脏 config 兜底 `DEFAULT_CEREBELLUM_TIMEOUT_MS = 3000`。`think_fast` 先做 questions 非空 + 逐个 validate 的硬校验，再发请求；响应结构校验「顶层必须携带对象形态的 answers」（硬错误），而单个答案解析失败走容错跳过并 `log_warn!`（协议版本演进容忍）。错误分类与 cortex 同口径：429 → `ModelRateLimited`、401|403 → `ModelAuth`、4xx → `ModelBadRequest`（含内容过滤 → `ModelContentFiltered`）、5xx → `ModelServerError`。
 
 **章节来源**
 - [src/service/dao/cerebellum/client.rs#L23-L219](src/service/dao/cerebellum/client.rs#L23-L219)
@@ -272,7 +272,7 @@ EN --> CT
 
 - **症状二：路由频繁 `Skip{CallError}` / `Skip{Timeout}`（小脑结果从不被采纳）**
   - 起点锚点：[src/service/dal/brain.rs](src/service/dal/brain.rs) 的超时/失败分级（`Timeout` / `CallError` 在 DAL 判定）+ [src/service/domain/runtime/cerebellum_router.rs](src/service/domain/runtime/cerebellum_router.rs) 的降级日志。
-  - 次级排查：① 检查 provider 配置——`api_key` 为空会在 `resolve_endpoint` 直接硬错误（[src/service/dao/cerebellum/client.rs#L45-L58](src/service/dao/cerebellum/client.rs#L45-L58)），`base_url` 缺省走默认端点；② 检查 `config.timeout_ms` 是否被设得过小而频繁触发超时，或默认端点连通性/鉴权问题（`skip` 日志的 `degraded_reason=timeout` vs `call_error` 可区分）；③ 关注 `model_call_error` 映射的 401/403（鉴权）与 5xx（服务端）提示。
+  - 次级排查：① 检查 provider 配置——`api_key` 或 `base_url` 为空都会在 `resolve_endpoint` 直接硬错误（[src/service/dao/cerebellum/client.rs#L46-L70](src/service/dao/cerebellum/client.rs#L46-L70)），后端不提供默认域名；② 检查 `config.timeout_ms` 是否被设得过小而频繁触发超时，或所配端点连通性/鉴权问题（`skip` 日志的 `degraded_reason=timeout` vs `call_error` 可区分）；③ 关注 `model_call_error` 映射的 401/403（鉴权）与 5xx（服务端）提示。
 
 - **症状三：小脑返回正常但始终 `Skip{UnsupportedAnswer}`（决策永不生效）**
   - 起点锚点：[src/service/domain/runtime/cerebellum_router.rs](src/service/domain/runtime/cerebellum_router.rs) 的 `translate()` 纯函数。

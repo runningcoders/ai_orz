@@ -169,10 +169,10 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 
 ### 3.4 初始化动态步骤数
 
-```total_steps = 3 + usize::from(chat_model.is_some()) + usize::from(embedding_model.is_some())```
+```total_steps = 5 + usize::from(chat_model.is_some()) + usize::from(decision_model.is_some()) + usize::from(embedding_model.is_some())```
 
-- 基础 3 步：创建组织 + 同步内置工具 + 导入预置技能
-- 对话模型：可选，未配置时跳过
+- 基础 5 步：创建组织 + 同步内置工具 + 导入预置技能 + 本体词表注入 + 预设前台 Agent
+- 对话 / 决策模型：可选，未配置时跳过
 - 向量模型：可选，未配置时跳过
 
 ### 3.5 前端表单步骤
@@ -180,7 +180,7 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 | Step | 内容 | 校验规则 |
 |------|------|---------|
 | 1 | 基础信息（组织名/用户名/密码等） | 仅校验非空 |
-| 2 | 模型配置（对话/向量可选 + 跳过提示） | 启用时校验必填字段 |
+| 2 | 模型配置（对话/决策/向量可选 + 跳过提示） | 对话/决策启用时：name/model/api_key 非空，且最大/推荐上下文均为正整数、推荐值 ≤ 最大值；向量启用时仅 name/model 非空 |
 
 ### 3.6 状态与操作语义分离
 
@@ -193,17 +193,18 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 1. ❌ **禁止 Embedding 创建阻塞**：已有启用 Embedding 时新创建必须降级为 Disabled(2)，不得返回 409/错误；违反 = 用户无法配置备用模型。
 2. ❌ **禁止编辑配置触发重建**：`update_model_provider` 不得因 `model_name`/`api_key`/`base_url`/`name` 等字段变化注册重建；是否重建只能由用户在切换后的二次弹窗里显式决定；违反 = 每次保存配置都白跑一次全量重建。
 3. ❌ **禁止在 Domain 层绕过 switch 直接启用 Embedding**：将 Disabled 改为 Normal 必须走 `update_model_provider` 的 409 `embedding_provider_switch_required` 守卫，强制前端弹确认 modal 告知用户后果。
-4. ✅ **初始化步骤数必须动态计算**：`total_steps = 3 + chat + embedding`，不得硬编码 4/5；违反 = 前端进度条显示错误。
+4. ✅ **初始化步骤数必须动态计算**：`total_steps = 5 + chat + decision + embedding`，不得硬编码；违反 = 前端进度条显示错误。
 5. ✅ **初始化响应 chat_provider_id 必须为 Option**：未配置对话模型时响应中为 null，不得返回空字符串或随机 ID。
 6. ✅ **回读创建结果状态**：`create_model_provider` 返回后必须 `get_model_provider` 回读，因为 Domain 层可能已将状态降级为 Disabled；直接用 `provider.po.status` 构造响应会返回错误的 Normal 状态。
 7. ✅ **向量重建只能由显式入口注册**：仅 `vector_rebuild.rs`（SuperAdmin 全量重建）与「首个 Embedding 创建」允许注册 `RebuildVectorsTask`；`switch_embedding` 与 `update_model_provider` 禁止注册。注册方式为 `Arc::new + registry().register()`，返回 `task_id` 供前端轮询。
 8. ✅ **前端禁用按钮必须发 status=2**：不得复用 status=0(软删除)；违反 = 条目从列表消失，与「禁用」语义矛盾。
-9. ✅ **api_key 空校验必须前置**：`validate_provider_for_request` 必须在三个 HTTP 调用入口开头统一调用，`find_enabled_embedding_provider` / `get_default_embedding_provider` 必须用 limit=100 + api_key 非空过滤；违反 = 空 key provider 被选中后下游向量化才报错，或发起无意义网络请求导致超时挂起。
-10. ✅ **对话模型 context_length 必填**（v1.2 新增）：创建对话模型 Provider 时 `context_kind == Chat` 必须带 `context_length`，缺失返回 400；Embedding Provider 可空。种子导入 diff 校验同样要求对话模型带 context_length。违反 = Agent 运行时 context_threshold 为 None → 前端 RingProgress 无法渲染 + Agent 思考无法判断上下文是否接近溢出
-11. ❌ **禁止将 SSE 流当作普通 HTTP 响应用 `.json()` 一次性解析**（v1.3 新增）：`call_chat_completions` 必须用 `parse_sse_line` 逐行解析 SSE → `SseEvent::Done`/`Chunk`，配合 `StreamAccumulator` 聚合；禁止退回到 `stream: false` + `.json()` 模式，否则 tool_calls 分片丢失 + usage 不可取
-12. ❌ **StreamAccumulator.tool_calls 禁止只看最后一个 chunk**（v1.3 新增）：流式 tool_calls 是分片下发的（id 在第一个 chunk、name 在第二个 chunk、arguments 在 N 个 chunk），必须用 `BTreeMap<usize, AccumToolCall>` 按 index 逐字段累加合并；违反 = 调用工具时 id 或 arguments 为空 → 工具调用静默失败
-13. ❌ **usage 禁止从流式响应非标准位置解析**（v1.3 新增）：usage 必须从 `stream_options: { include_usage: true }` 请求下的最后一个 chunk（`SseEvent::Done` 之前的最后一条 `message` 事件）读取；禁止从首 chunk 或中间 chunk 提取 usage（那些位置通常为 null）
-14. ❌ **禁止把 idle_timeout 当作请求总超时**（v1.3 新增）：`LLM_STREAM_IDLE_TIMEOUT` 逐 chunk 计时——chunk 持续产出即视为正常（即使单次推理 5 分钟也不会被砍），仅在相邻 chunk 间隔超过 60s 时才判定服务端卡死；总超时由 `LLM_STREAM_TOTAL_TIMEOUT`（=MAX_TIMEOUT）兜底
+9. ✅ **对话 / 决策模型的上下文配置必须成套**：`max_context_length` 与 `recommended_context_length` 同时为正整数且推荐值 ≤ 最大值，否则初始化拒绝；残缺配置会让压缩阈值与各小脑场景预算全部失效。
+10. ✅ **api_key 空校验必须前置**：`validate_provider_for_request` 必须在三个 HTTP 调用入口开头统一调用，`find_enabled_embedding_provider` / `get_default_embedding_provider` 必须用 limit=100 + api_key 非空过滤；违反 = 空 key provider 被选中后下游向量化才报错，或发起无意义网络请求导致超时挂起。
+11. ✅ **对话模型 context_length 必填**（v1.2 新增）：创建对话模型 Provider 时 `context_kind == Chat` 必须带 `context_length`，缺失返回 400；Embedding Provider 可空。种子导入 diff 校验同样要求对话模型带 context_length。违反 = Agent 运行时 context_threshold 为 None → 前端 RingProgress 无法渲染 + Agent 思考无法判断上下文是否接近溢出
+12. ❌ **禁止将 SSE 流当作普通 HTTP 响应用 `.json()` 一次性解析**（v1.3 新增）：`call_chat_completions` 必须用 `parse_sse_line` 逐行解析 SSE → `SseEvent::Done`/`Chunk`，配合 `StreamAccumulator` 聚合；禁止退回到 `stream: false` + `.json()` 模式，否则 tool_calls 分片丢失 + usage 不可取
+13. ❌ **StreamAccumulator.tool_calls 禁止只看最后一个 chunk**（v1.3 新增）：流式 tool_calls 是分片下发的（id 在第一个 chunk、name 在第二个 chunk、arguments 在 N 个 chunk），必须用 `BTreeMap<usize, AccumToolCall>` 按 index 逐字段累加合并；违反 = 调用工具时 id 或 arguments 为空 → 工具调用静默失败
+14. ❌ **usage 禁止从流式响应非标准位置解析**（v1.3 新增）：usage 必须从 `stream_options: { include_usage: true }` 请求下的最后一个 chunk（`SseEvent::Done` 之前的最后一条 `message` 事件）读取；禁止从首 chunk 或中间 chunk 提取 usage（那些位置通常为 null）
+15. ❌ **禁止把 idle_timeout 当作请求总超时**（v1.3 新增）：`LLM_STREAM_IDLE_TIMEOUT` 逐 chunk 计时——chunk 持续产出即视为正常（即使单次推理 5 分钟也不会被砍），仅在相邻 chunk 间隔超过 60s 时才判定服务端卡死；总超时由 `LLM_STREAM_TOTAL_TIMEOUT`（=MAX_TIMEOUT）兜底
 
 ## §5 历史演进
 

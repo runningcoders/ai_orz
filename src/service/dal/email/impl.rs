@@ -259,14 +259,19 @@ impl EmailDalImpl {
             from_role: common::enums::MessageRole::User,
             to_agent_id,
             channel_type: ChannelType::Email,
+            channel_id: Some(channel.po.id.clone()),
+            is_group: false,
+            addressed_to_agent: true,
             content: event.content.clone(),
             project_id: None,
             task_id: None,
             reply_to_id: None,
-            // 外部键随消息落库（delivery 持久化），供 IMAP 重投去重与出站回写同键对齐
-            external_key: Some(external_key),
-            // 邮件无话题概念
-            thread_id: None,
+            // 外部键随消息落库（delivery 持久化），供 IMAP 重投去重与出站回写同键对齐；
+            // 邮件无话题 / 会话 / 提及概念，仅填 external_key。
+            external: common::models::ExternalMessageContext {
+                external_key: Some(external_key),
+                ..Default::default()
+            },
             // 邮件附件暂不转内部附件（本次仅支持 IM 渠道图片）
             attachments: Vec::new(),
         }))

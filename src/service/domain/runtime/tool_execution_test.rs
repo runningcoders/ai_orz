@@ -237,6 +237,14 @@ pub(crate) mod credential_stubs {
         ) -> Result<Option<MessageChannel>> {
             unimplemented!("not needed by credential stub")
         }
+
+        async fn resolve_bot_open_id(
+            &self,
+            _ctx: RequestContext,
+            _credential_id: &str,
+        ) -> Result<Option<String>> {
+            Ok(None)
+        }
     }
 }
 

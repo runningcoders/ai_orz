@@ -5,9 +5,10 @@
 //! 协议编解码依据官方公开口径（70~500ms / $0.042 per 1M，未经真实端点实测，
 //! 连通性 Spike 顺延至凭据到位后二期启动前集中纠偏）。
 //!
-//! 一期边界：默认端点常量与超时兜底在此内建；「默认小脑」的获取由
-//! `dao::model_provider::get_default_cerebellum_provider` 承担（status 单启用
-//! 即默认标记，多小脑模型可配置、随时切换零额外操作）；Brain 注入 /
+//! 一期边界：超时缺省在此内建；**端点不再内建默认域名**，必须由 Provider 显式
+//! 配置 `base_url`（不同付费渠道/代理网关域名不同，无法安全推断）。「默认小脑」
+//! 的获取由 `dao::model_provider::get_default_cerebellum_provider` 承担（status
+//! 单启用即默认标记，多小脑模型可配置、随时切换零额外操作）；Brain 注入 /
 //! 运行时选路归二期（B2/B3），本模块一期无运行时消费点。
 
 pub mod client;
@@ -21,21 +22,6 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
-/// System One 默认端点（**仅 `ProviderType::Jev` 的 base_url 缺省兜底**）
-///
-/// 与 OpenAI 兼容 provider 同口径：**版本前缀由 base_url 承载**（如 Qwen 的
-/// `/compatible-mode/v1`），client 只追加 `/systemone`。
-///
-/// ⚠️ 本常量**只对 `ProviderType::Jev` 生效**（分派点：`client::default_base_url_for`）。
-/// 阿里百炼决策模型（`ProviderType::Qwen` + `capability = Decision`）走
-/// **Workspace 专用 Endpoint**，host 里含 workspace id 与地域，平台无法推断，
-/// 因此未配 base_url 时**显式报错**，而不是落到本端点——否则「没配百炼端点」
-/// 会被静默改写成「请求打到 TypeSafe 商业端点」，排查方向全错。
-///
-/// 百炼 base_url 填法（前端只填这一个字段，**无需新增配置项**）：
-/// `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`
-/// （新加坡地域把 `cn-beijing` 换成 `ap-southeast-1`；API Key 须与地域匹配）。
-pub const DEFAULT_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
 /// 默认请求超时（毫秒）：小脑快判断的全局缺省预算；config.timeout_ms 可逐模型覆盖
 ///
 /// **终态 = 3000ms**（AMan 2026-11-10 续令「小脑思考的缺省耗时改成 3 秒吧，先试试情况」，

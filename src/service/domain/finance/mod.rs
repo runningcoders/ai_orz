@@ -391,6 +391,18 @@ pub trait MessageChannelManage: Send + Sync {
         ctx: RequestContext,
     ) -> Result<Vec<crate::models::message_channel::MessageChannel>>;
 
+    /// 分页查询渠道绑定的外部会话
+    async fn list_channel_conversations(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        pagination: common::api::PaginationParams,
+    ) -> Result<
+        common::api::PagedResult<
+            crate::models::message_channel_conversation::MessageChannelConversation,
+        >,
+    >;
+
     /// 更新 Message Channel
     async fn update_message_channel(
         &self,
@@ -411,6 +423,15 @@ pub trait MessageChannelManage: Send + Sync {
         ctx: RequestContext,
         channel: &crate::models::message_channel::MessageChannel,
     ) -> Result<()>;
+
+    /// 按凭证引用解析飞书应用机器人 open_id（渠道配置自动回填，尽力而为）
+    ///
+    /// 凭证缺失 / 类型不匹配 / 上游调用失败均返回 `None`，不阻断渠道创建/更新。
+    async fn resolve_lark_bot_open_id(
+        &self,
+        ctx: RequestContext,
+        credential_id: &str,
+    ) -> Result<Option<String>>;
 
     /// 飞书信道 WS 连接监控快照（health metrics 聚合用；未接入时返回空快照）
     async fn lark_ws_metrics(&self) -> common::api::LarkWsMetrics;

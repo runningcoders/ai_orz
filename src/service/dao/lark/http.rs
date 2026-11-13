@@ -31,6 +31,8 @@ const PATH_SEND_MESSAGE: &str = "/open-apis/im/v1/messages";
 const PATH_REPLY_MESSAGE: &str = "/open-apis/im/v1/messages/{message_id}/reply";
 /// 消息资源下载（`?type=image`）：`{message_id}` 为消息 ID，`{file_key}` 为 image_key
 const PATH_MESSAGE_RESOURCE: &str = "/open-apis/im/v1/messages/{message_id}/resources/{file_key}";
+/// 应用机器人信息（返回顶层 `bot.open_id`，不套 `data`）
+const PATH_BOT_INFO: &str = "/open-apis/bot/v3/info";
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -101,15 +103,17 @@ impl LarkDaoHttpImpl {
         fetch_token_with_caches(&self.http, &self.token_caches, app_id, app_secret).await
     }
 
-    /// 发送文本消息到指定 open_id 用户
+    /// 发送文本消息到指定接收方
     ///
+    /// `receive_id_type` 为飞书接收方类型：`open_id`（私聊用户）或 `chat_id`（群会话）。
     /// 返回飞书 message_id；服务端未给 ID（含字段缺失被 `#[serde(default)]`
     /// 吞成空串）时返回 `None`——空串当成功会产生脏键 `"lark:"`，与微信侧
     /// `None` = 无 ID 的语义对齐。
     pub async fn send_text_message(
         &self,
         token: &str,
-        open_id: &str,
+        receive_id: &str,
+        receive_id_type: &str,
         text: &str,
     ) -> Result<Option<String>> {
         // 飞书文本消息 content：{"text":"消息内容"}
@@ -128,13 +132,16 @@ impl LarkDaoHttpImpl {
             message_id: String,
         }
 
-        let url = format!("{}{}?receive_id_type=open_id", API_BASE, PATH_SEND_MESSAGE);
+        let url = format!(
+            "{}{}?receive_id_type={}",
+            API_BASE, PATH_SEND_MESSAGE, receive_id_type
+        );
         let resp = self
             .http
             .post(&url)
             .bearer_auth(token)
             .json(&SendMessageReq {
-                receive_id: open_id,
+                receive_id,
                 msg_type: "text",
                 content,
             })
@@ -149,8 +156,9 @@ impl LarkDaoHttpImpl {
         if data.message_id.is_empty() {
             // 字段缺失 ≠ 发送失败，但也不能当成拿到了 ID：留痕后按无 ID 处理
             log_warn!(
-                "lark send_message succeeded without message_id: open_id={}",
-                open_id
+                "lark send_message succeeded without message_id: receive_id={} type={}",
+                receive_id,
+                receive_id_type
             );
             return Ok(None);
         }
@@ -323,14 +331,6 @@ impl LarkDao for LarkDaoHttpImpl {
         reply: Option<&LarkReply>,
     ) -> Result<Option<String>> {
         let config = channel.config();
-        let open_id = config.lark_open_id.as_ref().ok_or_else(|| {
-            err!(
-                InvalidRequest,
-                "飞书渠道缺少 lark_open_id 配置 channel_id={}",
-                channel.po.id
-            )
-        })?;
-
         let content = &message.po.content;
         if content.is_empty() {
             return Ok(None);
@@ -340,25 +340,94 @@ impl LarkDao for LarkDaoHttpImpl {
             .get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
             .await?;
         // 有回复参数走回复端点（飞书按父消息定位会话，话题消息以话题形式回复）；
-        // 无回复参数走普通发送端点。
+        // 无回复参数时：消息带会话 ID（群聊/私聊均有）则按会话直发，
+        // 否则回退私聊 open_id。
         let message_id = match reply {
             Some(r) => {
                 self.reply_text_message(&token, &r.message_id, content, r.in_thread)
                     .await?
             }
-            None => self.send_text_message(&token, open_id, content).await?,
+            None => {
+                let (receive_id, receive_id_type) =
+                    match message.po.chat_id.as_deref().filter(|s| !s.is_empty()) {
+                        Some(chat_id) => (chat_id, "chat_id"),
+                        None => {
+                            let open_id = config
+                                .lark_open_id
+                                .as_deref()
+                                .filter(|s| !s.is_empty())
+                                .ok_or_else(|| {
+                                    err!(
+                                        InvalidRequest,
+                                        "飞书渠道缺少 lark_open_id 配置 channel_id={}",
+                                        channel.po.id
+                                    )
+                                })?;
+                            (open_id, "open_id")
+                        }
+                    };
+                self.send_text_message(&token, receive_id, receive_id_type, content)
+                    .await?
+            }
         };
         log_info!(
             &ctx,
             "lark_push",
-            "推送消息到飞书 channel_id={} app_id={} open_id={} reply_to={:?} lark_message_id={:?}",
+            "推送消息到飞书 channel_id={} app_id={} chat_id={:?} open_id={:?} reply_to={:?} lark_message_id={:?}",
             channel.po.id,
             credentials.app_id,
-            open_id,
+            message.po.chat_id,
+            config.lark_open_id,
             reply.map(|r| r.message_id.as_str()),
             message_id
         );
         Ok(message_id)
+    }
+
+    async fn get_bot_open_id(&self, credentials: &LarkAppCredentials) -> Result<Option<String>> {
+        // `/bot/v3/info` 的响应体为 `{code,msg,bot:{...}}`（不套 data），
+        // 不能复用 `LarkResponse<T>` 的 data 包装。
+        #[derive(Default, Deserialize)]
+        struct BotInfoData {
+            #[serde(default)]
+            open_id: String,
+        }
+        #[derive(Default, Deserialize)]
+        struct BotInfoResp {
+            #[serde(default)]
+            code: i32,
+            #[serde(default)]
+            msg: String,
+            #[serde(default)]
+            bot: Option<BotInfoData>,
+        }
+
+        let token = self
+            .get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
+            .await?;
+        let url = format!("{}{}", API_BASE, PATH_BOT_INFO);
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| from_reqwest("bot_info", e))?
+            .json::<BotInfoResp>()
+            .await
+            .map_err(|e| from_reqwest("bot_info", e))?;
+        if resp.code != 0 {
+            return Err(err!(
+                ThirdPartyError,
+                "lark bot_info failed: code={} msg={}",
+                resp.code,
+                resp.msg
+            ));
+        }
+        Ok(resp
+            .bot
+            .map(|bot| bot.open_id)
+            .filter(|open_id| !open_id.is_empty()))
     }
 
     async fn download_image_resource(

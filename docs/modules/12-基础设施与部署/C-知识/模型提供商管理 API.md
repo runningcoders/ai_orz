@@ -347,7 +347,7 @@ R --> T["RebuildVectorsTask"]
   - 路径：/api/v1/finance/model-providers
   - 请求体：CreateModelProviderRequest
   - 响应：CreateModelProviderResponse（含 status(i32) 和 rebuild_task_id(Option<String>) 字段）
-  - 说明：支持 name、provider_type、capability、model_name、api_key、base_url、description、max_context_length、recommended_context_length
+  - 说明：支持 name、provider_type、capability、model_name、api_key、base_url（**必填**，FastEmbed 除外；后端不内置默认域名）、description、max_context_length、recommended_context_length
 
 - 获取模型提供商详情
   - 方法：GET

@@ -29,9 +29,11 @@ use std::sync::{Arc, RwLock};
 
 use common::enums::{ChannelStatus, ChannelType};
 use common::error::{Result, err};
+use common::mention::{ExternalMention, MentionKind};
 use common::models::CredentialKind;
 
 use crate::models::events::LarkMessageEvent;
+use crate::models::events::lark::LarkMention;
 use crate::models::message_channel::MessageChannel;
 use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
@@ -62,6 +64,9 @@ pub struct LarkDalImpl {
     credential_dao: Arc<dyn UserCredentialDao>,
     /// 消息 DAO（入站消息链解析：飞书 parent_id/root_id → 内部消息 ID）
     message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
+    /// 外部会话绑定 DAO（app_id + tenant + chat_id → 内部渠道，入站路由主键）
+    conversation_dao:
+        Arc<dyn crate::service::dao::message_channel_conversation::MessageChannelConversationDao>,
     /// 监听运行状态标记
     running: RwLock<bool>,
 }
@@ -89,12 +94,16 @@ impl LarkDalImpl {
         lark_dao: Arc<dyn LarkDao>,
         credential_dao: Arc<dyn UserCredentialDao>,
         message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
+        conversation_dao: Arc<
+            dyn crate::service::dao::message_channel_conversation::MessageChannelConversationDao,
+        >,
     ) -> Self {
         Self {
             message_channel_dal,
             lark_dao,
             credential_dao,
             message_dao,
+            conversation_dao,
             running: RwLock::new(false),
         }
     }
@@ -215,7 +224,7 @@ impl LarkDalImpl {
         }
 
         // 2. 解析消息内容：纯图片 / 富文本可能无文本，用占位符维持气泡与消息链
-        let (content, mut image_keys): (String, Vec<String>) = if is_post {
+        let (mut content, mut image_keys): (String, Vec<String>) = if is_post {
             match event.parse_post() {
                 Some(post) => {
                     let text = post.text.trim().to_string();
@@ -286,6 +295,7 @@ impl LarkDalImpl {
             );
             image_keys.truncate(crate::pkg::adapter::MAX_INBOUND_IMAGES_PER_MESSAGE);
         }
+
         if content.trim().is_empty() {
             // 空内容此前完全无日志——「发了空消息没反应」查无此事
             log_info!(
@@ -332,27 +342,115 @@ impl LarkDalImpl {
             }
         }
 
-        // 3. 渠道查找 + 用户映射（app_id + open_id 二维定位）
+        // 3. 路由 + 用户映射
+        //
+        // 路由主键是「应用 + 租户 + 会话」（私聊 / 群聊都有 chat_id）：同一会话的
+        // 消息稳定落到同一个渠道 / Agent。首次收到会话消息时用发送者身份兜底定位
+        // 渠道，成功后将会话绑定落库；此后即使换人发送也按会话路由。
+        // 发送者身份只用于 `from_id`（外部用户 → 内部用户），未绑定发送者仍丢弃。
         let open_id = event.sender_open_id();
-        let channel = self
+        let tenant_key = event.header.tenant_key.as_str();
+        let chat_id = event.event.message.chat_id.trim();
+
+        let sender_channel = self
             .find_channel_by_lark_identity(ctx.clone(), app_id, open_id)
             .await?;
-
-        let channel = match channel {
+        let sender_channel = match sender_channel {
             Some(c) => c,
             None => {
                 log_info!(
                     &ctx,
                     "lark_adapt",
-                    "no bound channel for app_id={} open_id={} event_id={}",
+                    "no bound channel for sender: app_id={} open_id={} chat_id={} event_id={}",
                     app_id,
                     open_id,
+                    chat_id,
                     event.header.event_id
                 );
                 return Ok(None);
             }
         };
-        let from_id = channel.user_id().to_string();
+        let from_id = sender_channel.user_id().to_string();
+
+        // 会话优先：已绑定的会话沿用绑定渠道；未绑定 / 渠道已停用则回退发送者渠道
+        let channel = match self
+            .find_channel_by_conversation(ctx.clone(), app_id, tenant_key, chat_id)
+            .await?
+        {
+            Some(channel) => channel,
+            None => {
+                if !chat_id.is_empty() {
+                    self.bind_conversation(
+                        ctx.clone(),
+                        app_id,
+                        tenant_key,
+                        chat_id,
+                        sender_channel.po.id.as_str(),
+                    )
+                    .await;
+                }
+                sender_channel
+            }
+        };
+
+        // 3.1 协议转换完成：是否处理交给上层统一入站过滤（producer），
+        // 适配层只负责把平台语义翻译成渠道无关信号（是否群聊 / 是否指向机器人）。
+
+        // 3.2 提及处理：文本消息正文以 `key`（如 `@_user_1`）占位，
+        // 按能否映射到内部 Agent 替换为内部提及协议 `[@name](agent:<id>)`；
+        // 未命中保留 `@name` 展示。富文本的 `at` 标签已在解析阶段渲染为 `@name`，
+        // 正文不再改写。无论是否命中，平台原始提及信息都完整存档（前缀防撞键）。
+        //
+        // 映射优先级：当前渠道的机器人 open_id → 当前渠道 agent（O(1)，覆盖绝大多数
+        // 场景）；其余 open_id 才回退到跨渠道唯一映射（多 Agent 共享同一 bot 时不替换）。
+        let external_mentions = if event.event.message.mentions.is_empty() {
+            Vec::new()
+        } else {
+            let current_bot_open_id = channel
+                .config()
+                .lark_bot_open_id
+                .as_deref()
+                .filter(|s| !s.is_empty());
+            let needs_fallback = event.event.message.mentions.iter().any(|mention| {
+                let (raw_id, _) = mention_raw_id(mention);
+                Some(raw_id) != current_bot_open_id
+            });
+            let fallback_map = if needs_fallback {
+                match self.collect_bot_agent_map(ctx.clone(), app_id).await {
+                    Ok(map) => map,
+                    Err(e) => {
+                        // 反查失败不阻断入站：全部按未命中处理，原文展示并留痕
+                        log_warn!(
+                            &ctx,
+                            "lark_adapt",
+                            "bot agent map lookup failed (degrade to plain mentions): event_id={} err={}",
+                            event.header.event_id,
+                            e
+                        );
+                        HashMap::new()
+                    }
+                }
+            } else {
+                HashMap::new()
+            };
+
+            let mut external_mentions = Vec::with_capacity(event.event.message.mentions.len());
+            for mention in &event.event.message.mentions {
+                let (raw_id, _) = mention_raw_id(mention);
+                let matched_agent = if Some(raw_id) == current_bot_open_id {
+                    channel.agent_id()
+                } else {
+                    fallback_map.get(raw_id).map(String::as_str)
+                };
+                let (external, display) =
+                    build_mention_display(mention, matched_agent, ChannelType::Lark.as_str());
+                if event.is_text() && !mention.key.is_empty() {
+                    content = content.replace(&mention.key, &display);
+                }
+                external_mentions.push(external);
+            }
+            external_mentions
+        };
 
         // 3.5 图片资源下载（需渠道凭证）：失败只丢该张图片，不阻断入站
         // 一个 post 富文本可含多张图片，凭证只解析一次，逐个下载。
@@ -458,13 +556,15 @@ impl LarkDalImpl {
         log_info!(
             &ctx,
             "lark_adapt",
-            "adapted event_id={} app_id={} from_user={} bound_agent={:?} reply_to={:?} thread_id={:?}",
+            "adapted event_id={} app_id={} from_user={} bound_agent={:?} reply_to={:?} thread_id={:?} chat_id={:?} mentions={}",
             event.header.event_id,
             app_id,
             from_id,
             to_agent_id,
             reply_to_id,
-            event.event.message.thread_id
+            event.event.message.thread_id,
+            event.event.message.chat_id,
+            external_mentions.len()
         );
 
         Ok(Some(AdaptedMessage {
@@ -472,22 +572,236 @@ impl LarkDalImpl {
             from_role: common::enums::MessageRole::User,
             to_agent_id,
             channel_type: ChannelType::Lark,
+            channel_id: Some(channel.po.id.clone()),
+            is_group: event.is_group(),
+            addressed_to_agent: matches_bot_mention(event, &channel.config().lark_bot_open_id),
             content,
             project_id: None,
             task_id: None,
             reply_to_id,
-            // 本消息的平台侧 ID 也落库留痕，供后续回复反查
-            external_key: Some(format!("lark:{}", event.event.message.message_id)),
-            // 话题消息携带 thread_id（同话题内所有消息共享）；普通消息为 None
-            thread_id: event
-                .event
-                .message
-                .thread_id
-                .clone()
-                .filter(|s| !s.is_empty()),
+            external: common::models::ExternalMessageContext {
+                // 本消息的平台侧 ID 也落库留痕，供后续回复反查
+                external_key: Some(format!(
+                    "{}:{}",
+                    ChannelType::Lark.as_str(),
+                    event.event.message.message_id
+                )),
+                // 话题消息携带 thread_id（同话题内所有消息共享）；普通消息为 None
+                thread_id: event
+                    .event
+                    .message
+                    .thread_id
+                    .clone()
+                    .filter(|s| !s.is_empty()),
+                // 私聊 / 群聊都有会话 ID：统一落库，作为入站路由与会话绑定键
+                chat_id: Some(chat_id.to_string()).filter(|s| !s.is_empty()),
+                external_mentions,
+            },
             attachments,
         }))
     }
+
+    /// 构建「机器人 open_id → 内部 Agent ID」映射（限同一飞书应用）
+    ///
+    /// 渠道配置 `lark_bot_open_id` 记录机器人自身 open_id；群消息 `mentions` 里
+    /// 被 @ 的机器人按此映射到本系统 Agent，正文即可替换为内部提及协议。
+    /// 多应用隔离：同一 open_id 可能存在于不同应用，按渠道引用凭证的 app_id 过滤。
+    ///
+    /// **歧义安全**：一个 bot 可能被多个渠道 / Agent 复用，此时无法确定指向哪个
+    /// Agent——该 open_id 不参与替换（保留 `@name` 展示），避免随机路由。
+    async fn collect_bot_agent_map(
+        &self,
+        ctx: RequestContext,
+        app_id: &str,
+    ) -> Result<HashMap<String, String>> {
+        let query = MessageChannelQuery {
+            channel_type: Some(ChannelType::Lark),
+            only_enabled: true,
+            ..Default::default()
+        };
+        let page = self
+            .message_channel_dal
+            .query_channels(ctx.clone(), query)
+            .await?;
+        let mut cache: HashMap<String, Option<UserCredentialPo>> = HashMap::new();
+        // None 表示「同一 bot 映射到多个 Agent」的歧义态
+        let mut seen: HashMap<String, Option<String>> = HashMap::new();
+        for channel in page.items {
+            let Some(bot_open_id) = channel
+                .config()
+                .lark_bot_open_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let Some(agent_id) = channel.agent_id() else {
+                continue;
+            };
+            let Some(credential_id) = channel
+                .config()
+                .lark_credential_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let Some(row) = self
+                .cached_credential(&mut cache, ctx.clone(), credential_id)
+                .await
+            else {
+                continue;
+            };
+            if Self::resolve_credentials_from_row(&row, &channel)
+                .map(|c| c.app_id)
+                .as_deref()
+                == Some(app_id)
+            {
+                merge_bot_agent_binding(&mut seen, bot_open_id, agent_id);
+            }
+        }
+        Ok(seen
+            .into_iter()
+            .filter_map(|(bot_open_id, agent_id)| agent_id.map(|agent| (bot_open_id, agent)))
+            .collect())
+    }
+
+    /// 按外部会话查询已绑定的渠道（会话为空 / 渠道停用或已删除视为未绑定）
+    async fn find_channel_by_conversation(
+        &self,
+        ctx: RequestContext,
+        app_id: &str,
+        tenant_key: &str,
+        chat_id: &str,
+    ) -> Result<Option<MessageChannel>> {
+        if chat_id.is_empty() {
+            return Ok(None);
+        }
+        let Some(channel_id) = self
+            .conversation_dao
+            .find_channel_id(ctx.clone(), ChannelType::Lark, app_id, tenant_key, chat_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let channel = self
+            .message_channel_dal
+            .get_channel(ctx, &channel_id)
+            .await?;
+        Ok(channel.filter(|c| c.po.status == ChannelStatus::Active))
+    }
+
+    /// 写入 / 刷新「会话 → 渠道」绑定（失败只告警，不阻断入站）
+    async fn bind_conversation(
+        &self,
+        ctx: RequestContext,
+        app_id: &str,
+        tenant_key: &str,
+        chat_id: &str,
+        channel_id: &str,
+    ) {
+        if chat_id.is_empty() || channel_id.is_empty() {
+            return;
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let binding = crate::models::message_channel_conversation::MessageChannelConversationPo {
+            id: uuid::Uuid::now_v7().to_string(),
+            channel_type: ChannelType::Lark,
+            external_app_id: app_id.to_string(),
+            external_tenant_key: tenant_key.to_string(),
+            external_chat_id: chat_id.to_string(),
+            channel_id: channel_id.to_string(),
+            created_at: now,
+            updated_at: now,
+        };
+        if let Err(e) = self.conversation_dao.upsert(ctx, &binding).await {
+            log_warn!(
+                "lark conversation bind failed: app_id={} tenant={} chat_id={} channel_id={} err={}",
+                app_id,
+                tenant_key,
+                chat_id,
+                channel_id,
+                e
+            );
+        }
+    }
+}
+
+/// 群消息是否 @ 了本应用机器人（未配置 bot open_id 时无法判定，放行）
+fn matches_bot_mention(event: &LarkMessageEvent, bot_open_id: &Option<String>) -> bool {
+    let Some(bot_open_id) = bot_open_id.as_deref().filter(|s| !s.is_empty()) else {
+        return true;
+    };
+    event
+        .event
+        .message
+        .mentions
+        .iter()
+        .any(|mention| mention_raw_id(mention).0 == bot_open_id)
+}
+
+/// 提取 mention 的稳定 ID 与类型（优先 open_id，其次 user_id / union_id）
+fn mention_raw_id(mention: &LarkMention) -> (&str, &'static str) {
+    if !mention.id.open_id().is_empty() {
+        (mention.id.open_id(), "open_id")
+    } else if let Some(user_id) = mention.id.user_id() {
+        (user_id, "user_id")
+    } else if let Some(union_id) = mention.id.union_id() {
+        (union_id, "union_id")
+    } else {
+        ("", "open_id")
+    }
+}
+
+/// 合并一条「bot open_id → agent」候选
+///
+/// 同一 bot 指向多个 Agent 时无法确定映射目标，标记为歧义（`None`）——
+/// 调用方据此保留 `@name` 展示，避免随机路由。
+fn merge_bot_agent_binding(
+    seen: &mut HashMap<String, Option<String>>,
+    bot_open_id: &str,
+    agent_id: &str,
+) {
+    match seen.entry(bot_open_id.to_string()) {
+        std::collections::hash_map::Entry::Vacant(slot) => {
+            slot.insert(Some(agent_id.to_string()));
+        }
+        std::collections::hash_map::Entry::Occupied(mut slot) => {
+            if slot.get().as_deref() != Some(agent_id) {
+                slot.insert(None);
+            }
+        }
+    }
+}
+
+/// 生成平台原始提及存档 + 正文展示文本
+///
+/// `matched_agent` 有值（命中内部 Agent）→ 内部提及协议 `[@name](agent:<id>)`；
+/// 否则 → `@name` 原样展示。平台原始 ID 始终以 `platform:` 前缀存档。
+fn build_mention_display(
+    mention: &LarkMention,
+    matched_agent: Option<&str>,
+    platform: &str,
+) -> (ExternalMention, String) {
+    let (raw_id, id_type) = mention_raw_id(mention);
+    let name = mention.name.trim();
+    let display_name = if name.is_empty() { raw_id } else { name };
+    let display = match matched_agent {
+        Some(agent_id) => {
+            common::mention::format_mention(MentionKind::Agent, agent_id, display_name)
+        }
+        None => format!("@{}", display_name),
+    };
+    let external = ExternalMention {
+        key: mention.key.clone(),
+        id: format!("{}:{}", platform, raw_id),
+        id_type: id_type.to_string(),
+        name: mention.name.clone(),
+        tenant_key: Some(mention.tenant_key.clone()).filter(|s| !s.is_empty()),
+        union_id: mention.id.union_id().map(str::to_string),
+        user_id: mention.id.user_id().map(str::to_string),
+    };
+    (external, display)
 }
 
 // ==================== LarkCredentialDal 实现 ====================
@@ -626,6 +940,45 @@ impl LarkCredentialDal for LarkDalImpl {
             }
         }
         Ok(None)
+    }
+
+    async fn resolve_bot_open_id(
+        &self,
+        ctx: RequestContext,
+        credential_id: &str,
+    ) -> Result<Option<String>> {
+        let Some(row) = self.load_credential_row(ctx, credential_id).await else {
+            return Ok(None);
+        };
+        let common::models::CredentialDetail::LarkApp {
+            app_id, app_secret, ..
+        } = &row.detail.0
+        else {
+            return Ok(None);
+        };
+        let app_secret = match crate::pkg::crypto::decrypt_channel_secret(app_secret) {
+            Ok(secret) => secret,
+            Err(e) => {
+                log_warn!(
+                    "lark bot open_id skipped: credential decrypt failed credential_id={} err={}",
+                    credential_id,
+                    e
+                );
+                return Ok(None);
+            }
+        };
+        let credentials = LarkAppCredentials {
+            app_id: app_id.clone(),
+            app_secret,
+        };
+        match self.lark_dao.get_bot_open_id(&credentials).await {
+            Ok(open_id) => Ok(open_id),
+            // 自动回填尽力而为：上游失败不阻断渠道创建/更新
+            Err(e) => {
+                log_warn!("lark bot open_id query failed: app_id={} err={}", app_id, e);
+                Ok(None)
+            }
+        }
     }
 }
 
@@ -904,3 +1257,6 @@ impl crate::pkg::aop::Producer for LarkDalImpl {
         Ok(())
     }
 }
+#[cfg(test)]
+#[path = "impl_tests.rs"]
+mod tests;

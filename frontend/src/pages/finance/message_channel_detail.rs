@@ -12,8 +12,8 @@ use dioxus_router::{Link, use_navigator};
 
 use crate::api::email_integration::get_email_integration_status;
 use crate::api::finance::{
-    delete_message_channel, get_message_channel, test_message_channel, update_message_channel,
-    update_message_channel_status,
+    delete_message_channel, get_message_channel, list_message_channel_conversations,
+    test_message_channel, update_message_channel, update_message_channel_status,
 };
 use crate::api::hr::list_agents;
 use crate::api::lark_integration::get_lark_integration_status;
@@ -49,6 +49,33 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         let id = rid();
         async move { get_message_channel(&id).await }
     });
+
+    // ===== 绑定会话列表（分页；入站路由按会话自动绑定） =====
+    const CONVERSATION_PAGE_SIZE: usize = 20;
+    let mut conversation_offset = use_signal(|| 0usize);
+    let conversations_res = use_resource(move || {
+        let id = rid();
+        let offset = conversation_offset();
+        async move {
+            if id.is_empty() {
+                return Ok(common::api::PagedResult {
+                    items: Vec::new(),
+                    total: 0,
+                });
+            }
+            list_message_channel_conversations(&id, CONVERSATION_PAGE_SIZE, offset).await
+        }
+    });
+    // 路由参数切换（同一路由组件复用）时把分页归零，避免拿上一个渠道的 offset 查询
+    let initial_conversation_rid = rid();
+    let mut last_conversation_rid = use_signal(move || initial_conversation_rid);
+    use_effect(move || {
+        let current = rid();
+        if current != last_conversation_rid() {
+            last_conversation_rid.set(current);
+            conversation_offset.set(0);
+        }
+    });
     let mut toggling = use_signal(|| false);
     let mut testing = use_signal(|| false);
     let mut show_delete_confirm = use_signal(|| false);
@@ -62,6 +89,10 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut edit_open_id = use_signal(String::new);
     let mut edit_user_name = use_signal(String::new);
     let mut edit_listen_inbound = use_signal(|| true);
+    // 飞书群消息触发策略
+    let mut edit_group_trigger = use_signal(|| "mention".to_string());
+    let mut edit_group_trigger_prefix = use_signal(String::new);
+    let mut edit_group_trigger_timeout = use_signal(String::new);
     // WeChat（iLink）
     let mut edit_wechat_credential_id = use_signal(String::new);
     let mut edit_wechat_peer_id = use_signal(String::new);
@@ -223,6 +254,20 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         .map(|l| l.listen_inbound)
                         .unwrap_or(true),
                 );
+                edit_group_trigger.set(
+                    cfg.and_then(|c| c.group_trigger.clone())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| "mention".to_string()),
+                );
+                edit_group_trigger_prefix.set(
+                    cfg.and_then(|c| c.group_trigger_prefix.clone())
+                        .unwrap_or_default(),
+                );
+                edit_group_trigger_timeout.set(
+                    cfg.and_then(|c| c.group_trigger_timeout_ms)
+                        .map(|ms| ms.to_string())
+                        .unwrap_or_default(),
+                );
                 edit_wechat_credential_id.set(
                     cfg.and_then(|c| c.wechat.as_ref())
                         .and_then(|w| w.credential_id.clone())
@@ -336,6 +381,27 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     access_token: None,
                     secret: None,
                     config: Some(CreateMessageChannelConfig {
+                        // 目前仅飞书支持群聊配置；其他渠道留空
+                        group_trigger: if channel_type == ChannelType::Lark {
+                            Some(edit_group_trigger())
+                        } else {
+                            None
+                        },
+                        group_trigger_prefix: if channel_type == ChannelType::Lark {
+                            let prefix = edit_group_trigger_prefix();
+                            if prefix.trim().is_empty() {
+                                None
+                            } else {
+                                Some(prefix)
+                            }
+                        } else {
+                            None
+                        },
+                        group_trigger_timeout_ms: if channel_type == ChannelType::Lark {
+                            edit_group_trigger_timeout().trim().parse::<u64>().ok()
+                        } else {
+                            None
+                        },
                         lark: if channel_type == ChannelType::Lark {
                             Some(CreateLarkChannelConfig {
                                 credential_id: if credential_id.trim().is_empty() {
@@ -462,6 +528,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let edit_wechat_credential_value = edit_wechat_credential_id();
     let edit_email_credential_value = edit_email_credential_id();
     let edit_mode_value = edit_identity_mode();
+    let edit_group_trigger_value = edit_group_trigger();
+    let edit_group_trigger_prefix_value = edit_group_trigger_prefix();
+    let edit_group_trigger_timeout_value = edit_group_trigger_timeout();
     let user_auth_suffix = user_auth
         .user_name
         .as_deref()
@@ -736,6 +805,84 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div { class: "text-sm text-base-content/60", "更新时间" }
                                 div { class: "font-mono", "{crate::utils::format_datetime(c.updated_at)}" }
                             }
+                            // 绑定的外部会话（入站路由：应用 + 租户 + 会话 → 本渠道）
+                            if c.channel_type == ChannelType::Lark {
+                                div { class: "md:col-span-2 mt-2",
+                                    div { class: "text-sm text-base-content/60", "绑定的会话" }
+                                    div { class: "text-xs text-base-content/50 mb-2",
+                                        "入站消息按「应用 + 租户 + 会话」自动绑定；同一会话的后续消息稳定路由到本渠道 / Agent。"
+                                    }
+                                    match conversations_res.read().as_ref() {
+                                        None => rsx! { div { class: "text-xs text-base-content/50", "加载中…" } },
+                                        Some(Err(e)) => rsx! { div { class: "text-xs text-error", "加载失败：{e}" } },
+                                        Some(Ok(page)) => {
+                                            let total = page.total;
+                                            let start = if total == 0 { 0 } else { conversation_offset() + 1 };
+                                            let end = conversation_offset() + page.items.len();
+                                            let has_prev = conversation_offset() > 0;
+                                            let has_next = end < total;
+                                            rsx! {
+                                                if page.items.is_empty() {
+                                                    div { class: "text-sm text-base-content/50 py-2",
+                                                        "暂无绑定会话（收到首条入站消息后自动绑定）"
+                                                    }
+                                                } else {
+                                                    div { class: "overflow-x-auto",
+                                                        table { class: "table table-xs",
+                                                            thead {
+                                                                tr {
+                                                                    th { "会话 ID" }
+                                                                    th { "应用" }
+                                                                    th { "租户" }
+                                                                    th { "绑定时间" }
+                                                                }
+                                                            }
+                                                            tbody {
+                                                                for item in page.items.iter() {
+                                                                    tr { key: "{item.id}",
+                                                                        td { class: "font-mono text-xs", "{item.chat_id}" }
+                                                                        td { class: "font-mono text-xs", "{item.app_id}" }
+                                                                        td { class: "font-mono text-xs", "{item.tenant_key}" }
+                                                                        td { class: "font-mono text-xs",
+                                                                            "{crate::utils::format_datetime(item.created_at)}"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    div { class: "flex items-center justify-between mt-2",
+                                                        div { class: "text-xs text-base-content/60",
+                                                            "第 {start}-{end} 条 / 共 {total} 条"
+                                                        }
+                                                        div { class: "flex gap-2",
+                                                            button {
+                                                                class: "btn btn-xs hud-btn btn-ghost",
+                                                                disabled: !has_prev,
+                                                                onclick: move |_| {
+                                                                    let next = conversation_offset()
+                                                                        .saturating_sub(CONVERSATION_PAGE_SIZE);
+                                                                    conversation_offset.set(next);
+                                                                },
+                                                                "上一页"
+                                                            }
+                                                            button {
+                                                                class: "btn btn-xs hud-btn btn-ghost",
+                                                                disabled: !has_next,
+                                                                onclick: move |_| {
+                                                                    let next = conversation_offset() + CONVERSATION_PAGE_SIZE;
+                                                                    conversation_offset.set(next);
+                                                                },
+                                                                "下一页"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                 }
             }
@@ -863,6 +1010,40 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                         div { class: "text-xs text-base-content/60",
                                             "接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份"
                                         }
+                                    }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "群消息触发策略" }
+                                    }
+                                    select { class: "select select-bordered hud-input w-full", value: "{edit_group_trigger_value}",
+                                        onchange: move |e| edit_group_trigger.set(e.value()),
+                                        option { value: "mention", "仅 @ 机器人（推荐，平台默认只推送这类消息）" }
+                                        option { value: "all", "全部群消息（先经小脑判断是否需要回复）" }
+                                        option { value: "prefix", "仅指定前缀开头的消息" }
+                                    }
+                                    label { class: "label",
+                                        span { class: "label-text-alt", "私聊消息不受该策略影响，始终处理" }
+                                    }
+                                }
+                                if edit_group_trigger_value == "prefix" {
+                                    div { class: "form-control w-full",
+                                        label { class: "label",
+                                            span { class: "label-text font-medium", "触发前缀" }
+                                        }
+                                        input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_group_trigger_prefix_value}",
+                                            oninput: move |e| edit_group_trigger_prefix.set(e.value()),
+                                            placeholder: "例如 /ai" }
+                                    }
+                                }
+                                if edit_group_trigger_value == "all" {
+                                    div { class: "form-control w-full",
+                                        label { class: "label",
+                                            span { class: "label-text font-medium", "小脑判定超时（毫秒）" }
+                                        }
+                                        input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_group_trigger_timeout_value}",
+                                            oninput: move |e| edit_group_trigger_timeout.set(e.value()),
+                                            placeholder: "留空使用默认 1000，范围 200~5000" }
                                     }
                                 }
                             }

@@ -25,7 +25,7 @@
 | [ai-orz-ontology.html](./ai-orz-ontology.html) | 组件级 | 受控词表 TBox + 属性定义与门闩 + 骨架三元组 + 漂移与有效性治理（口径与现网 `get_ontology_drift_dashboard` / `get_property_effectiveness` 同源） | 读侧链路 / 写入门闩 / 治理面 | 00-总览与架构 |
 | [ai-orz-org-federation.html](./ai-orz-org-federation.html) | 组件级 | 多级组织 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 + 配对码建联与跨组织签名 | 组织与角色 / 认证与凭证 / 联邦组网 | 01-组织与权限 |
 | [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 四态 + progress 联动 + dependencies DAG + execution_plan / result 增量 + Project 五字段注入 | 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
-| [ai-orz-messaging.html](./ai-orz-messaging.html) | 组件级 | 渠道入站归一化 → 路由策略（含回复仲裁与协作压力）→ MessageDomain（builder / delivery）→ 附件字节流与正文引用 → DAL/DAO → SSE 与唤醒 | 入站与路由 / 编排与投递 / 存储与唤醒 | 04-对话与消息 |
+| [ai-orz-messaging.html](./ai-orz-messaging.html) | 组件级 | 渠道入站归一化 → 路由策略（含回复仲裁与协作压力）→ 入站过滤（规则门 + 小脑相关性门，渠道无关）→ MessageDomain（builder / delivery）→ 附件字节流与正文引用 → DAL/DAO → SSE 与唤醒 | 入站与路由 / 编排与投递 / 存储与唤醒 | 04-对话与消息 |
 | [ai-orz-a2a.html](./ai-orz-a2a.html) | 组件级 | Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 + 联邦签名 | 协议入口 / 结果与兜底 / 联邦与长连接 | 07-外部Agent(A2A) |
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
 | [ai-orz-stats.html](./ai-orz-stats.html) | 组件级 | 业务事件 → AOP 同步消费 → 四类指标落库（含按时序桶的耗时统计）→ 监控 API 与看板 | 采集 / 聚合 / 读取与看板 | 09-统计与监控 |
@@ -93,6 +93,26 @@
 - **tools / infra**：tools 凭据行改为「工具级契约 · 注入四落点」并新增「凭据契约与身份注入」卡；infra `lance` 行补「三档重建 Auto/Missing/Force」并新增「向量重建三档与中间产物 GC」卡。
 
 未做人眼视觉复核，仅通过 archify 四道门禁（validate / deliver / check / browser-check 全 pass、diagnostics 0）。
+
+**2026-11-13 增量同步（第二轮：3 张重渲染，revision 刷到 `8b85679f077fde47650f2e5a81d48ea04b5a0114`）**
+
+本基线为 **PR #8 分支 `feat/aman-local-changes-20261113` 的第 5 笔提交（`8b85679f`）**，尚未进 main；PR #8 合并后该 commit 将成为 `main` 上合并提交的祖先（其改动随 squash / merge 落进 main 的对应提交）。docs 改动单独一笔，推同一分支，不进新 PR。
+
+判定方法：从每张图 HTML 的 `archify-source-evidence-data` 取 `nodes{}` 里的 `path` 清单，与本批 diff 文件集（`8b85679f` 的 67 个路径）求交得 touched 数；`touched=0` 且无新机制判「不需更」。
+
+- **touched>0 且需更（3 张）**：messaging（2：`src/producer/message_channel.rs`、`src/service/dao/message/mod.rs`）、think-path（2：`dao/cerebellum/client.rs`、`dao/cortex/native/http.rs`）、architecture（2：`src/producer/mod.rs`、`dao/cortex/native/http.rs`）。
+- **touched=1 但不需更（1 张）**：aop —— 唯一命中 `message_channel.rs` 的是 AOP 的 `MessageChannelProducer 5s` tick 组件；本批改的是该 producer 内部的入站过滤业务，属 messaging 图承载域，AOP 的抽象层（框架零业务 / 六 Trait / Registry / tick 生产者清单与兜底节奏）未变。
+- **touched=0（其余 13 张）**：a2a / data-model / frontend / infra / memory / ontology / org-federation / search / stats / task-project / testing / tool-context / tools —— sources 与本批 diff 交集为空。
+
+本次改动摘要：
+
+- **messaging**：新增组件「入站过滤层（渠道无关）」（`src/producer/inbound_filter.rs`），连接改为 `route → inbound_filter → domain`（原 `route → domain` 删除），连线上 +1；`producer` 副标补「归一后进过滤层」、`dao` 副标补「MessageQuery 支持 chat_id」；新增卡片「入站过滤：渠道无关的单点门」（私聊恒放行 / `group_trigger_gate` 四策略含空前缀降级 mention / `passes_relevance` 的 None 降级必须放行 / `AdaptedMessage` 三信号 / `relevance_gate` 只声明口径、`judge_noul` 下沉且失败超时一律 None / `MessageQuery` 的 chat_id 下推 SQL）；`meta.subtitle` 同步插入「入站过滤（规则门 + 小脑相关性门）」。组件 17→18、连线 17→18、卡片 6→7。
+- **think-path**：`cerebellum` 行数 563 → **519**、`cortex` 3,797 → **3,795**（当场实测）；`cerebellum_router` 副标补「judge_noul 轻量判定」；「小脑输入预算」卡新增第 6 条：入站子分配 36% / 14.4% / 14.4% / 7.2% = 72% ≤ 正文池 72.5%，编译期断言 `assert!(INBOUND_TOTAL_BP <= BODY_BP)` 钉死。组件 / 连线 / 卡片 / 视图数不变（16 / 16 / 10 / 4）。
+- **architecture**：「认知架构：大脑不止一层」卡 `dao/cortex` 3,797 → **3,795**，并新增一条「Provider 端点不猜：`base_url` 全量必填（删内置厂商域名表与 `DEFAULT_SYSTEM_ONE_BASE_URL` 兜底，空即 `ConfigInvalid`；FastEmbed 是唯一免填例外）」。组件 / 连线 / 卡片 / 视图数不变（17 / 18 / 6 / 3）。
+
+声明值当场实测（2026-11-13，与上一轮 r13 对照）：`dao/cerebellum` **519**（未变）、`dao/cortex` **3,795**（r13 的 3,797 → 本批减少 2 行，已同步修数）、`think_loop.rs` **866**（未变）、`think_trace.rs` **759**（未变）、`think_trace_query.rs` **321**（未变）、`inbox.rs` **368**（未变）、`think_round/` **2,298**（未变）、`pkg/think_path/` **2,499**（未变）、`cerebellum_router.rs` **519**（未变）、`cerebellum_context.rs` **601**（r13 的 606 → 本批删 `context_soft_target` / `context_hard_ceiling` 后为 601）、前端 pages **62** / components **63**（均未变）、覆盖率门槛 PR **38%** / main **45%**（未变）；新增源文件 `inbound_filter.rs` **185** / `inbound_filter_tests.rs` **154** / `relevance_gate.rs` **33**。预算常量实测：`FRAME_BP=1_250`、`PENDING_REPLY_BP=1_500`、`BODY_BP=7_250`、`SNIPPET_BP=400`、`INBOUND_HISTORY_BP=3_600`、`INBOUND_SEARCHED_MEMORY_BP=1_440`、`INBOUND_RECENT_MEMORY_BP=1_440`、`INBOUND_CURRENT_BP=720`、`INBOUND_TOTAL_BP=7_200`，编译期断言在 `cerebellum_context.rs` L111。
+
+未做人眼视觉复核，仅通过 archify 四道门禁（validate / check / finalize --browser-check 全 pass、diagnostics 0）。
 
 ## 五、维护约定
 

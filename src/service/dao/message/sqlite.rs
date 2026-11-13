@@ -78,7 +78,7 @@ impl MessageDao for MessageDaoSqliteImpl {
         let file_type = message.file_type.map(|ft| ft as i32);
 
         sqlx::query!(
-            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, reply_to_id, root_id, external_key, thread_id, organization_id, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, reply_to_id, root_id, external_key, thread_id, chat_id, external_mentions, organization_id, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             message.id,
             message.project_id,
             message.task_id,
@@ -95,6 +95,8 @@ impl MessageDao for MessageDaoSqliteImpl {
             message.root_id,
             message.external_key,
             message.thread_id,
+            message.chat_id,
+            message.external_mentions,
             message.organization_id,
             message.created_by,
             message.modified_by,
@@ -138,7 +140,7 @@ impl MessageDao for MessageDaoSqliteImpl {
         let message = sqlx::query_as!(
             MessagePo,
             r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, root_id, external_key, thread_id, organization_id, created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, root_id, external_key, thread_id, chat_id, external_mentions as "external_mentions: Json<Vec<common::mention::ExternalMention>>", organization_id, created_by, modified_by, created_at, updated_at
 FROM messages WHERE id = ? AND "status" != 0
             "#,
             id
@@ -574,6 +576,8 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
                 root_id: row.root_id,
                 external_key: None,
                 thread_id: None,
+                chat_id: None,
+                external_mentions: sqlx::types::Json(Vec::new()),
                 organization_id: row.organization_id,
                 created_by: row.created_by,
                 modified_by: row.modified_by,
@@ -724,6 +728,9 @@ fn push_query_filters<'args>(
         builder
             .push(" AND reply_to_id = ")
             .push_bind(reply_to_id.clone());
+    }
+    if let Some(chat_id) = &query.chat_id {
+        builder.push(" AND chat_id = ").push_bind(chat_id.clone());
     }
     if let Some(root_id) = &query.root_id {
         builder.push(" AND root_id = ").push_bind(root_id.clone());

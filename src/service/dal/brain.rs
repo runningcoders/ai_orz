@@ -63,6 +63,141 @@ pub fn new(
     })
 }
 
+/// 默认小脑 provider 的上下文容量（`min(推荐值, 最大长度)`）
+///
+/// 供小脑场景按模型最佳上下文分配预算；未装配 / 未配置容量 ⇒ `None`
+/// （调用方按既有口径「未配不裁」处理）。
+pub async fn cerebellum_context_capacity(ctx: &RequestContext) -> Option<u64> {
+    let provider_dao = crate::service::dao::model_provider::try_dao()?;
+    let provider = provider_dao
+        .get_default_cerebellum_provider(ctx.clone())
+        .await
+        .ok()
+        .flatten()?;
+    provider.config().context_capacity_tokens()
+}
+
+/// 用默认小脑做一次通用 Noul 判定（不依赖 Brain 实体的轻量场景）
+///
+/// 渠道入站过滤等场景只需要一次「是 / 否概率」，无需装配完整 Brain。
+/// 返回 `None` 表示小脑不可用或本次判定失败，调用方自行决定降级策略。
+pub async fn judge_noul(
+    ctx: &RequestContext,
+    question_id: &str,
+    instructions: &str,
+    context: &str,
+    timeout_ms: u64,
+) -> Option<f32> {
+    /// 超时兜底范围：调用方已收敛，这里再防一次非法配置
+    const MIN_TIMEOUT_MS: u64 = 200;
+    const MAX_TIMEOUT_MS: u64 = 5000;
+    let timeout =
+        std::time::Duration::from_millis(timeout_ms.clamp(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS));
+
+    let cerebellum_dao = crate::service::dao::cerebellum::try_dao()?;
+    let provider_dao = crate::service::dao::model_provider::try_dao()?;
+    let provider = match provider_dao
+        .get_default_cerebellum_provider(ctx.clone())
+        .await
+    {
+        Ok(Some(provider)) => provider,
+        Ok(None) => {
+            log_info!(
+                ctx,
+                "cerebellum_noul",
+                "no enabled cerebellum provider, skip judgment: question_id={}",
+                question_id
+            );
+            return None;
+        }
+        Err(e) => {
+            log_warn!(
+                ctx,
+                "cerebellum_noul",
+                "load cerebellum provider failed, skip judgment: question_id={} err={}",
+                question_id,
+                e
+            );
+            return None;
+        }
+    };
+    if provider.api_key.trim().is_empty() {
+        log_info!(
+            ctx,
+            "cerebellum_noul",
+            "cerebellum provider has empty api_key, skip judgment: provider_id={}",
+            provider.id
+        );
+        return None;
+    }
+
+    let mut questions = BTreeMap::new();
+    questions.insert(
+        question_id.to_string(),
+        CerebellumQuestion {
+            question_type: QuestionType::Noul,
+            instructions: instructions.to_string(),
+            criteria: None,
+        },
+    );
+    let state = serde_json::json!({ "context": context });
+
+    let call_started = std::time::Instant::now();
+    let result = match tokio::time::timeout(
+        timeout,
+        cerebellum_dao.think_fast(ctx.clone(), &provider, state, questions),
+    )
+    .await
+    {
+        Ok(Ok(result)) => result,
+        Ok(Err(e)) => {
+            log_warn!(
+                ctx,
+                "cerebellum_noul",
+                "think_fast failed, skip judgment: question_id={} err={}",
+                question_id,
+                e
+            );
+            return None;
+        }
+        Err(_) => {
+            log_warn!(
+                ctx,
+                "cerebellum_noul",
+                "think_fast timed out after {:?}, skip judgment: question_id={}",
+                timeout,
+                question_id
+            );
+            return None;
+        }
+    };
+    let _ = crate::record_event!(
+        ctx,
+        ModelCallEvent::decision(
+            chrono::Utc::now().timestamp_millis(),
+            provider.id.clone(),
+            provider.model_name.clone(),
+            result.usage.input_tokens,
+            result.usage.output_tokens,
+            Some(call_started.elapsed().as_millis() as u64),
+        )
+    );
+
+    let probability = result
+        .answers
+        .get(question_id)
+        .and_then(|answer| answer.as_noul());
+    if probability.is_none() {
+        log_warn!(
+            ctx,
+            "cerebellum_noul",
+            "no noul answer returned: question_id={}",
+            question_id
+        );
+    }
+    probability
+}
+
 // ==================== 决策结果 ====================
 
 /// 一次小脑决策的出口：答案 + 降级原因 + 计量

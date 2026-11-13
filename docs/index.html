@@ -123,7 +123,7 @@
     </section>
     <section class="card ">
       <h3>对话与消息 · 组件级</h3>
-      <p class="q">消息怎么进来、怎么出去：渠道入站归一化 → 路由策略 → MessageDomain（builder / delivery）→ 附件字节流与正文引用 → DAL/DAO → SSE 推送与 Agent 唤醒</p>
+      <p class="q">消息怎么进来、怎么出去：渠道入站归一化 → 路由策略 → 入站过滤（规则门 + 小脑相关性门，渠道无关）→ MessageDomain（builder / delivery）→ 附件字节流与正文引用 → DAL/DAO → SSE 推送与 Agent 唤醒</p>
       <ul>
         <li><a href="./diagrams/ai-orz-messaging.html">打开专题子图</a><span class="desc">入站与路由 · 编排与投递 · 存储与唤醒</span></li>
       </ul>

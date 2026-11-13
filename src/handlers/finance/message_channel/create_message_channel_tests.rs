@@ -85,6 +85,9 @@ fn extract_config_extracts_lark_fields() {
         access_token: None,
         secret: None,
         config: Some(CreateMessageChannelConfig {
+            group_trigger: Some("all".to_string()),
+            group_trigger_prefix: Some("/ai".to_string()),
+            group_trigger_timeout_ms: Some(1500),
             lark: Some(common::api::CreateLarkChannelConfig {
                 credential_id: Some("cred-1".to_string()),
                 identity_mode: Some("bot".to_string()),
@@ -104,6 +107,9 @@ fn extract_config_extracts_lark_fields() {
     assert_eq!(config.lark_open_id.as_deref(), Some("ou_xxx"));
     assert_eq!(config.lark_user_name.as_deref(), Some("Test"));
     assert_eq!(config.lark_listen_inbound, Some(true));
+    assert_eq!(config.group_trigger.as_deref(), Some("all"));
+    assert_eq!(config.group_trigger_prefix.as_deref(), Some("/ai"));
+    assert_eq!(config.group_trigger_timeout_ms, Some(1500));
 }
 
 fn wechat_credentials(credential_id: &str) -> Vec<UserCredential> {
@@ -162,6 +168,9 @@ fn extract_config_extracts_wechat_fields() {
         access_token: None,
         secret: None,
         config: Some(CreateMessageChannelConfig {
+            group_trigger: None,
+            group_trigger_prefix: None,
+            group_trigger_timeout_ms: None,
             lark: None,
             wechat: Some(common::api::CreateWechatChannelConfig {
                 credential_id: Some("cred-wx".to_string()),
@@ -238,6 +247,9 @@ fn extract_config_extracts_email_fields() {
         access_token: None,
         secret: None,
         config: Some(CreateMessageChannelConfig {
+            group_trigger: None,
+            group_trigger_prefix: None,
+            group_trigger_timeout_ms: None,
             lark: None,
             wechat: None,
             email: Some(common::api::CreateEmailChannelConfig {

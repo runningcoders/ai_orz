@@ -23,7 +23,7 @@
 > - [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) — 异步基建专题图（AOP 生产消费事件中心）
 > - [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) — 组织与权限专题图（含联邦组网）
 > - [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) — 任务与项目专题图（状态机 / DAG / 制品）
-> - [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) — 对话与消息专题图（渠道入站 / 消息编排 / SSE）
+> - [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) — 对话与消息专题图（渠道入站 / 入站过滤 / 消息编排 / SSE）
 > - [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) — 外部 Agent 接入专题图（A2A JSON-RPC / 轮询兜底 / 联邦签名）
 > - [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) — 搜索专题图（三路召回 / 属性过滤 / 存储面）
 > - [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) — 统计与监控专题图（事件采集 / 聚合 / 看板）
@@ -346,7 +346,7 @@ data/
 | [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 7 消费者 + 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
 | [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) | 组织与权限：多级组织 + 角色继承 + 双模式认证 + 联邦组网 | 组织与角色 / 认证与凭证 / 联邦组网 |
 | [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：四态状态机 + DAG 唤醒 + 制品聚合 | 任务状态机 / DAG 与唤醒 / 项目聚合 |
-| [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + MessageDomain（builder / delivery）+ 附件字节流与正文引用 + SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
+| [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + 入站过滤（规则门 + 小脑相关性门）+ MessageDomain（builder / delivery）+ 附件字节流与正文引用 + SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
 | [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) | 外部 Agent：Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 | 协议入口 / 结果与兜底 / 联邦与长连接 |
 | [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) | 搜索：FTS5 + 向量 + 图谱三路召回 + 属性精确过滤 | 工具入口 / 三路召回 / 存储面 |
 | [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) | 统计与监控：事件采集 → AOP 消费 → 四类指标落库 → 监控 API | 采集 / 聚合 / 读取与看板 |

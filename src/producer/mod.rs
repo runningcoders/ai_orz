@@ -1,5 +1,6 @@
 pub mod a2a_polling;
 pub mod cron_trigger;
+pub mod inbound_filter;
 pub mod message_channel;
 
 use crate::pkg::aop;

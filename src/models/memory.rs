@@ -1080,6 +1080,17 @@ impl Memory {
         self.po.to_prompt_summary()
     }
 
+    /// 短期记忆的 `(id, summary)`；非短期记忆或空摘要返回 `None`
+    ///
+    /// 供 Domain 层以上的调用方提取记忆摘要，避免直接匹配内部 PO 变体。
+    pub fn short_term_summary(&self) -> Option<(&str, &str)> {
+        let MemoryPo::ShortTerm(po) = &self.po else {
+            return None;
+        };
+        let summary = po.summary.trim();
+        (!summary.is_empty()).then_some((po.id.as_str(), summary))
+    }
+
     /// 将记忆格式化为索引行：层级与系数均由上层算好传入（无锚点版本）
     pub fn to_index_prompt(&self, tier: MemoryIndexTier, coefficient: usize) -> Option<String> {
         self.po.to_index_prompt(tier, coefficient)

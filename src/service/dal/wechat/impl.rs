@@ -331,13 +331,17 @@ impl WechatDalImpl {
             from_role: common::enums::MessageRole::User,
             to_agent_id,
             channel_type: ChannelType::Wechat,
+            channel_id: Some(channel.po.id.clone()),
+            is_group: false,
+            addressed_to_agent: true,
             content,
             project_id: None,
             task_id: None,
             reply_to_id: None,
-            external_key,
-            // 微信侧无话题概念
-            thread_id: None,
+            external: common::models::ExternalMessageContext {
+                external_key,
+                ..Default::default()
+            },
             attachments,
         }))
     }

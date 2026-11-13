@@ -7,26 +7,26 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 673 篇 / 14,221,318 B**，分布于 15 个模块。
+**合计 673 篇 / 14,239,467 B**，分布于 15 个模块。
 
 ## 模块概览
 
 | 模块 | A 设计 | B 落地方案 | C 知识 | 合计 | 字节 |
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,379 |
-| [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 904,667 |
-| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,261,750 |
+| [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 906,320 |
+| [02-Agent运行时](#02-agent运行时) | 10 | 16 | 19 | 45 | 1,261,892 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,177 |
-| [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 883,841 |
+| [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 898,611 |
 | [05-任务与项目](#05-任务与项目) | 5 | 6 | 53 | 64 | 1,175,534 |
 | [06-工具与技能](#06-工具与技能) | 11 | 14 | 52 | 77 | 1,795,772 |
 | [07-外部Agent(A2A)](#07-外部agenta2a) | 3 | 3 | 20 | 26 | 515,641 |
-| [08-搜索](#08-搜索) | 5 | 10 | 21 | 36 | 852,976 |
+| [08-搜索](#08-搜索) | 5 | 10 | 21 | 36 | 853,473 |
 | [09-统计与监控](#09-统计与监控) | 3 | 6 | 8 | 17 | 299,639 |
 | [10-异步基建(AOP)](#10-异步基建aop) | 3 | 3 | 32 | 38 | 787,588 |
-| [11-前端应用](#11-前端应用) | 3 | 30 | 49 | 82 | 1,936,199 |
-| [12-基础设施与部署](#12-基础设施与部署) | 5 | 5 | 79 | 89 | 1,673,494 |
-| [13-数据模型](#13-数据模型) | 5 | 4 | 39 | 48 | 883,459 |
+| [11-前端应用](#11-前端应用) | 3 | 30 | 49 | 82 | 1,936,451 |
+| [12-基础设施与部署](#12-基础设施与部署) | 5 | 5 | 79 | 89 | 1,674,211 |
+| [13-数据模型](#13-数据模型) | 5 | 4 | 39 | 48 | 883,577 |
 | [14-测试](#14-测试) | 2 | 5 | 4 | 11 | 213,202 |
 
 ## 各模块文档
@@ -122,13 +122,13 @@
 | 13 | [用户管理处理器](<01-组织与权限/C-知识/用户管理处理器.md>) | 21,028 |
 | 14 | [用户管理模块 API](<01-组织与权限/C-知识/用户管理模块 API.md>) | 19,565 |
 | 15 | [用户认证与授权](<01-组织与权限/C-知识/用户认证与授权.md>) | 19,295 |
-| 16 | [系统初始化处理器](<01-组织与权限/C-知识/系统初始化处理器.md>) | 16,804 |
+| 16 | [系统初始化处理器](<01-组织与权限/C-知识/系统初始化处理器.md>) | 17,704 |
 | 17 | [组织权限与用户偏好：Organization 多级组织 + UserRole 并查集继承 + JWT Cookie+Bearer 双模式 + 偏好双源沉淀 + Agent入职流程](<01-组织与权限/C-知识/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md>) | 28,769 |
-| 18 | [组织管理](<01-组织与权限/C-知识/组织管理.md>) | 20,454 |
-| 19 | [组织管理处理器](<01-组织与权限/C-知识/组织管理处理器.md>) | 23,559 |
-| 20 | [组织管理模块 API](<01-组织与权限/C-知识/组织管理模块 API.md>) | 17,972 |
+| 18 | [组织管理](<01-组织与权限/C-知识/组织管理.md>) | 20,726 |
+| 19 | [组织管理处理器](<01-组织与权限/C-知识/组织管理处理器.md>) | 23,595 |
+| 20 | [组织管理模块 API](<01-组织与权限/C-知识/组织管理模块 API.md>) | 18,395 |
 | 21 | [组织组网与联邦](<01-组织与权限/C-知识/组织组网与联邦.md>) | 23,575 |
-| 22 | [组织领域](<01-组织与权限/C-知识/组织领域.md>) | 17,594 |
+| 22 | [组织领域](<01-组织与权限/C-知识/组织领域.md>) | 17,616 |
 | 23 | [聊天侧栏项目内 Agent 列表 + 工具调用记录授权审批集成](<01-组织与权限/C-知识/聊天侧栏项目内 Agent 列表 + 工具调用记录授权审批集成/聊天侧栏项目内 Agent 列表 + 工具调用记录授权审批集成.md>) | 8,248 |
 | 24 | [联邦合约授权：federation_contracts 表 + 能力从 link 下沉 + terminate 熔断](<01-组织与权限/C-知识/联邦合约授权：federation_contracts 表 + 能力从 link 下沉 + terminate 熔断/联邦合约授权：federation_contracts 表 + 能力从 link 下沉 + terminate 熔断.md>) | 13,724 |
 | 25 | [联邦组网地基：scope 三态 + organization_links + pairing_code + 目录同步 + WS 长连接](<01-组织与权限/C-知识/联邦组网地基：scope 三态 + organization_links + pairing_code + 目录同步 + WS 长连接/联邦组网地基：scope 三态 + organization_links + pairing_code + 目录同步 + WS 长连接.md>) | 32,095 |
@@ -194,8 +194,8 @@
 | 6 | [Agent处理器](<02-Agent运行时/C-知识/Agent处理器.md>) | 24,451 |
 | 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 27,874 |
 | 8 | [ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](<02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md>) | 13,281 |
-| 9 | [小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类](<02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md>) | 18,045 |
-| 10 | [小脑快判断（System One）](<02-Agent运行时/C-知识/小脑快判断（System One）.md>) | 52,152 |
+| 9 | [小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类](<02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md>) | 18,042 |
+| 10 | [小脑快判断（System One）](<02-Agent运行时/C-知识/小脑快判断（System One）.md>) | 52,297 |
 | 11 | [工具绑定管理](<02-Agent运行时/C-知识/工具绑定管理.md>) | 15,638 |
 | 12 | [思考循环异常退出兜底总结与错误上报结构化](<02-Agent运行时/C-知识/思考循环异常退出兜底总结与错误上报结构化/思考循环异常退出兜底总结与错误上报结构化.md>) | 4,735 |
 | 13 | [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](<02-Agent运行时/C-知识/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md>) | 13,082 |
@@ -275,7 +275,7 @@
 | # | 页面 | 字节 |
 |---:|---|---:|
 | 1 | [@提及功能（mention）](<04-对话与消息/C-知识/@提及功能（mention）.md>) | 23,363 |
-| 2 | [@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染](<04-对话与消息/C-知识/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染.md>) | 6,024 |
+| 2 | [@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染](<04-对话与消息/C-知识/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染.md>) | 6,554 |
 | 3 | [AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容](<04-对话与消息/C-知识/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容.md>) | 11,765 |
 | 4 | [Agent消息集成](<04-对话与消息/C-知识/Agent消息集成.md>) | 18,947 |
 | 5 | [ChatMessage::System 消息角色：人设/指令/规则 与 对话内容 分层传递给 Chat Completions API](<04-对话与消息/C-知识/ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API/ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API.md>) | 4,549 |
@@ -286,14 +286,14 @@
 | 10 | [微信 iLink 专属渠道](<04-对话与消息/C-知识/微信 iLink 专属渠道.md>) | 38,871 |
 | 11 | [微信 iLink 专属渠道闭环（wechat_dal + ilink_dao + inbound_state + 授权流程）](<04-对话与消息/C-知识/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程.md>) | 23,805 |
 | 12 | [消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类](<04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md>) | 44,147 |
-| 13 | [消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级](<04-对话与消息/C-知识/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md>) | 8,692 |
+| 13 | [消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级](<04-对话与消息/C-知识/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md>) | 9,381 |
 | 14 | [消息处理核心](<04-对话与消息/C-知识/消息处理核心.md>) | 21,767 |
-| 15 | [消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）](<04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md>) | 36,488 |
+| 15 | [消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）](<04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md>) | 45,342 |
 | 16 | [消息渠道管理（业务功能层）](<04-对话与消息/C-知识/消息渠道管理.md>) | 32,206 |
-| 17 | [消息渠道适配器](<04-对话与消息/C-知识/消息渠道适配器.md>) | 22,965 |
-| 18 | [消息管理](<04-对话与消息/C-知识/消息管理.md>) | 19,908 |
+| 17 | [消息渠道适配器](<04-对话与消息/C-知识/消息渠道适配器.md>) | 27,208 |
+| 18 | [消息管理](<04-对话与消息/C-知识/消息管理.md>) | 20,082 |
 | 19 | [消息系统（业务功能层）](<04-对话与消息/C-知识/消息系统.md>) | 22,683 |
-| 20 | [消息领域](<04-对话与消息/C-知识/消息领域.md>) | 44,333 |
+| 20 | [消息领域](<04-对话与消息/C-知识/消息领域.md>) | 44,613 |
 | 21 | [邮箱渠道全链路：SMTP 出站 + IMAP 入站 + EmailBot 身份凭证类型](<04-对话与消息/C-知识/邮箱渠道全链路：SMTP 出站 + IMAP 入站 + EmailBot 身份凭证类型/邮箱渠道全链路：SMTP 出站 + IMAP 入站 + EmailBot 身份凭证类型.md>) | 11,894 |
 
 ### 05-任务与项目
@@ -546,7 +546,7 @@
 | # | 页面 | 字节 |
 |---:|---|---:|
 | 1 | [Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕](<08-搜索/C-知识/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md>) | 48,546 |
-| 2 | [Embedding Provider 生命周期与重建触发条件](<08-搜索/C-知识/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md>) | 26,431 |
+| 2 | [Embedding Provider 生命周期与重建触发条件](<08-搜索/C-知识/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md>) | 26,928 |
 | 3 | [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T](<08-搜索/C-知识/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分/Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分.md>) | 8,513 |
 | 4 | [FTS5 关键词搜索](<08-搜索/C-知识/FTS5 关键词搜索.md>) | 18,064 |
 | 5 | [PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序](<08-搜索/C-知识/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序/PromptBuilder 工作空间与本体词表注入 + 前缀缓存优化：workspace_context, ontology_lexicon, 稳定性递减排序.md>) | 18,978 |
@@ -736,8 +736,8 @@
 | 29 | [技能管理系统](<11-前端应用/C-知识/技能管理系统.md>) | 26,672 |
 | 30 | [文档中心](<11-前端应用/C-知识/文档中心.md>) | 12,629 |
 | 31 | [日志管理系统（前端 UI 层）](<11-前端应用/C-知识/日志管理系统.md>) | 17,970 |
-| 32 | [模型提供商管理（前端 UI 层）](<11-前端应用/C-知识/模型提供商管理.md>) | 27,548 |
-| 33 | [消息与工作区页面](<11-前端应用/C-知识/消息与工作区页面.md>) | 28,974 |
+| 32 | [模型提供商管理（前端 UI 层）](<11-前端应用/C-知识/模型提供商管理.md>) | 27,788 |
+| 33 | [消息与工作区页面](<11-前端应用/C-知识/消息与工作区页面.md>) | 28,986 |
 | 34 | [消息渠道管理（前端 UI 层）](<11-前端应用/C-知识/消息渠道管理.md>) | 17,001 |
 | 35 | [用户与组织页面](<11-前端应用/C-知识/用户与组织页面.md>) | 18,217 |
 | 36 | [种子数据管理（前端 UI 层）](<11-前端应用/C-知识/种子数据管理.md>) | 17,899 |
@@ -834,10 +834,10 @@
 | 51 | [服务层](<12-基础设施与部署/C-知识/服务层.md>) | 18,070 |
 | 52 | [本地文件安全与工作区隔离](<12-基础设施与部署/C-知识/本地文件安全与工作区隔离.md>) | 23,232 |
 | 53 | [模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片](<12-基础设施与部署/C-知识/模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片/模型提供商信息气泡：浮层定位工具复用 + ModelProviderBubble 懒加载卡片.md>) | 7,888 |
-| 54 | [模型提供商管理 API](<12-基础设施与部署/C-知识/模型提供商管理 API.md>) | 24,547 |
-| 55 | [模型提供商管理（业务功能层）](<12-基础设施与部署/C-知识/模型提供商管理.md>) | 25,147 |
+| 54 | [模型提供商管理 API](<12-基础设施与部署/C-知识/模型提供商管理 API.md>) | 24,612 |
+| 55 | [模型提供商管理（业务功能层）](<12-基础设施与部署/C-知识/模型提供商管理.md>) | 25,182 |
 | 56 | [模型提供商管理处理器](<12-基础设施与部署/C-知识/模型提供商管理处理器.md>) | 21,959 |
-| 57 | [模型提供商配置](<12-基础设施与部署/C-知识/模型提供商配置.md>) | 15,010 |
+| 57 | [模型提供商配置](<12-基础设施与部署/C-知识/模型提供商配置.md>) | 15,355 |
 | 58 | [模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析](<12-基础设施与部署/C-知识/模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析/模型访问模式 access_mode：Stream 默认 + NonStream 兼容 + resolve_access_mode 兜底 + 非流式单 JSON 解析.md>) | 11,455 |
 | 59 | [消息处理 API](<12-基础设施与部署/C-知识/消息处理 API.md>) | 20,237 |
 | 60 | [消息消费者（框架层）](<12-基础设施与部署/C-知识/消息消费者.md>) | 18,322 |
@@ -850,7 +850,7 @@
 | 67 | [种子数据管理 API](<12-基础设施与部署/C-知识/种子数据管理 API.md>) | 18,856 |
 | 68 | [种子数据管理（业务功能层）](<12-基础设施与部署/C-知识/种子数据管理.md>) | 32,596 |
 | 69 | [种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离](<12-基础设施与部署/C-知识/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md>) | 30,407 |
-| 70 | [系统初始化](<12-基础设施与部署/C-知识/系统初始化.md>) | 25,660 |
+| 70 | [系统初始化](<12-基础设施与部署/C-知识/系统初始化.md>) | 25,932 |
 | 71 | [系统管理](<12-基础设施与部署/C-知识/系统管理.md>) | 20,151 |
 | 72 | [系统管理模块 API](<12-基础设施与部署/C-知识/系统管理模块 API.md>) | 19,066 |
 | 73 | [脱敏引擎下沉 common](<12-基础设施与部署/C-知识/脱敏引擎下沉 common.md>) | 25,444 |
@@ -903,7 +903,7 @@
 | 15 | [向量存储（代码落地层）](<13-数据模型/C-知识/向量存储.md>) | 17,975 |
 | 16 | [向量存储抽象接口（代码落地层）](<13-数据模型/C-知识/向量存储抽象接口.md>) | 17,211 |
 | 17 | [向量存储数据访问对象](<13-数据模型/C-知识/向量存储数据访问对象.md>) | 20,098 |
-| 18 | [外部 API 数据访问对象](<13-数据模型/C-知识/外部 API 数据访问对象.md>) | 19,059 |
+| 18 | [外部 API 数据访问对象](<13-数据模型/C-知识/外部 API 数据访问对象.md>) | 19,177 |
 | 19 | [存储架构设计](<13-数据模型/C-知识/存储架构设计.md>) | 18,679 |
 | 20 | [存储系统（代码落地层）](<13-数据模型/C-知识/存储系统.md>) | 21,862 |
 | 21 | [数据对象层（DAO）](<13-数据模型/C-知识/数据对象层 (DAO).md>) | 19,685 |

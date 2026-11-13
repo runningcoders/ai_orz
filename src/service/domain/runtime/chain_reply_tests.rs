@@ -1638,7 +1638,9 @@ fn hard_ceiling_clamps_the_soft_target() {
     // 推荐值虚高（> 最大长度）⇒ 按最大长度封顶
     let over = brain_with_recommended_and_max(200_000, 128_000);
     assert_eq!(
-        context::context_hard_ceiling(&over),
+        over.cerebellum
+            .as_ref()
+            .and_then(|po| po.config().max_context_length),
         Some(128_000),
         "硬顶取的是 max_context_length 本身，不参与 0.6 回落"
     );
@@ -1662,7 +1664,13 @@ fn hard_ceiling_clamps_the_soft_target() {
 
     // 硬顶未配置 ⇒ 保持既有口径（用推荐值）
     let no_hard = brain_with_capacity_tokens(4_000);
-    assert_eq!(context::context_hard_ceiling(&no_hard), None);
+    assert_eq!(
+        no_hard
+            .cerebellum
+            .as_ref()
+            .and_then(|po| po.config().max_context_length),
+        None
+    );
     assert_eq!(context::context_capacity(&no_hard), Some(4_000));
 }
 

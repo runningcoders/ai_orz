@@ -48,6 +48,7 @@ async fn create_node(app: &crate::common::TestApp, tag: &str) -> (String, String
                 admin_display_name: None,
                 admin_email: None,
                 chat_model: None,
+                decision_model: None,
                 embedding_model: None,
             },
         )

@@ -103,6 +103,10 @@ pub struct LarkReply {
     pub message_id: String,
     /// 是否以话题形式回复（父消息属于话题时置 true）
     pub in_thread: bool,
+    /// 父消息所属会话 ID（飞书 `oc_xxx`；私聊 / 群聊均有）
+    ///
+    /// 回复端点按父消息定位会话，本字段仅用于日志与后续兜底判断。
+    pub chat_id: Option<String>,
 }
 
 /// 飞书消息资源（图片等）下载结果
@@ -148,6 +152,13 @@ pub trait LarkDao: Send + Sync {
         credentials: &LarkAppCredentials,
         reply: Option<&LarkReply>,
     ) -> Result<Option<String>>;
+
+    /// 查询应用机器人自身 open_id（群聊 @ 识别用）
+    ///
+    /// 对应 `GET /open-apis/bot/v3/info`。渠道创建/更新时自动回填
+    /// `lark_bot_open_id`；群消息 mentions 据此映射到内部 Agent。
+    /// 机器人信息缺失时返回 `None`。
+    async fn get_bot_open_id(&self, credentials: &LarkAppCredentials) -> Result<Option<String>>;
 
     /// 下载入站图片资源
     ///

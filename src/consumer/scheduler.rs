@@ -392,8 +392,7 @@ impl CronTriggerConsumer {
                 project_id: Some(&project.po.id),
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: None,
                 message_type: MessageType::ProjectFollowupNotification,
             };

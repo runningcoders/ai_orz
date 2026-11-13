@@ -156,7 +156,11 @@ impl MessageDelivery for MessageDomainImpl {
         // 先查后插存在 TOCTOU 窗口，但 AOP 队列按 event_id 在途去重已挡掉绝大多数
         // 并发路径，残余窗口与「单实例」威胁模型匹配（email 适配层同款模式）。
         // 查重失败上抛：宁可重复投递也不静默丢消息。
-        if let Some(external_key) = cmd.external_key.filter(|k| !k.is_empty())
+        if let Some(external_key) = cmd
+            .external
+            .external_key
+            .as_deref()
+            .filter(|k| !k.is_empty())
             && let Some(existing_id) = self
                 .message_dal
                 .find_id_by_external_key(ctx.clone(), external_key)
@@ -197,17 +201,18 @@ impl MessageDelivery for MessageDomainImpl {
         // fallback 策略：若父消息 root_id 为 None（历史遗留数据），用父消息 ID
         // 作为链根而非当前消息 ID，使后续回复都能归到父消息下（父消息自身
         // root_id 仍为 None 但不影响新消息分组）
-        // 同一次父消息查询顺带继承话题 ID：入站话题消息的 thread_id 由
-        // `cmd.thread_id` 直接带入；链式回复（无事件 thread_id）回退继承父消息话题。
-        let (chain_root_id, inherited_thread_id) = match cmd.reply_to_id {
+        // 同一次父消息查询顺带继承话题 ID 与群会话 ID：入站话题/群消息的 thread_id/
+        // chat_id 由 `cmd` 直接带入；链式回复（无事件字段）回退继承父消息。
+        let (chain_root_id, inherited_thread_id, inherited_chat_id) = match cmd.reply_to_id {
             Some(parent_id) => match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
                 Ok(Some(parent)) => (
                     parent.po.root_id.unwrap_or_else(|| parent_id.to_string()),
                     parent.po.thread_id,
+                    parent.po.chat_id,
                 ),
-                _ => (root_msg_id.clone(), None),
+                _ => (root_msg_id.clone(), None, None),
             },
-            None => (root_msg_id.clone(), None),
+            None => (root_msg_id.clone(), None, None),
         };
 
         // 附件不再生成独立消息：正文里的 `[文件名](attachment:{id})` 引用是唯一
@@ -292,9 +297,13 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.from_id.to_string(),
         );
         // 外部渠道消息键（渠道入站消息才有，供跨渠道消息链反查）
-        po.external_key = cmd.external_key.map(|s| s.to_string());
+        po.external_key = cmd.external.external_key.clone();
         // 外部渠道话题键：优先用入站事件携带的 thread_id；链式回复回退继承父消息话题
-        po.thread_id = cmd.thread_id.map(|s| s.to_string()).or(inherited_thread_id);
+        po.thread_id = cmd.external.thread_id.clone().or(inherited_thread_id);
+        // 外部渠道会话键（群聊/私聊均有）：入站事件直接带入；链式回复回退继承父消息
+        po.chat_id = cmd.external.chat_id.clone().or(inherited_chat_id);
+        // 平台侧 @ 提及原始信息存档（无提及为空数组；JSON 存储细节由 PO 封装）
+        po.set_external_mentions(cmd.external.external_mentions.clone());
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);
@@ -323,19 +332,22 @@ impl MessageDelivery for MessageDomainImpl {
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
 
-        // 查一次父消息，同时继承消息链根（root_id）与话题 ID（thread_id）：
+        // 查一次父消息，同时继承消息链根（root_id）、话题 ID（thread_id）与
+        // 群会话 ID（chat_id）：
         // - root_id：父消息的 root_id 作为链根；父消息缺失/无 reply_to_id → 自身为链根
         // - thread_id：父消息话题 ID（渠道入站话题消息才有），供出站话题内回复
+        // - chat_id：父消息群会话 ID（渠道入站群消息才有），供出站按群直发
         // fallback：若父消息 root_id 为 None（历史遗留数据），用父消息 ID 作为链根
-        let (root_id, inherited_thread_id) = match cmd.reply_to_id {
+        let (root_id, inherited_thread_id, inherited_chat_id) = match cmd.reply_to_id {
             Some(parent_id) => match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
                 Ok(Some(parent)) => (
                     parent.po.root_id.unwrap_or_else(|| parent_id.to_string()),
                     parent.po.thread_id,
+                    parent.po.chat_id,
                 ),
-                _ => (id.clone(), None),
+                _ => (id.clone(), None, None),
             },
-            None => (id.clone(), None),
+            None => (id.clone(), None, None),
         };
 
         let mut po = MessagePo::new(
@@ -357,6 +369,8 @@ impl MessageDelivery for MessageDomainImpl {
         );
         // 出站消息继承父消息话题 ID，供后续话题内回复与消息链分组
         po.thread_id = inherited_thread_id;
+        // 出站消息继承父消息群会话 ID，供出站时按群回复/直发
+        po.chat_id = inherited_chat_id;
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);
@@ -559,6 +573,7 @@ impl MessageDelivery for MessageDomainImpl {
                     Some(external_key) => Some(ReplyTarget {
                         external_key,
                         thread_id: parent.po.thread_id,
+                        chat_id: parent.po.chat_id,
                     }),
                     None => None,
                 },

@@ -368,13 +368,15 @@ L --> M["Models(Po)"]
   - 请求体 `InitializeSystemRequest`：
     - `organization_name` / `admin_username` / `admin_password_hash`：必填
     - `description` / `admin_display_name` / `admin_email`：可选
-    - `chat_model: Option<ModelProviderInitConfig>`：**可选**（`#[serde(default)]`），未配置时跳过创建；创建 Agent 前需在模型管理中补配
+    - `chat_model: Option<ModelProviderInitConfig>`：**可选**；配置时 `max_context_length` 与 `recommended_context_length` 必填
+    - `decision_model: Option<ModelProviderInitConfig>`：**可选**，小脑快判断模型；配置时两个上下文长度必填
     - `embedding_model: Option<ModelProviderInitConfig>`：**可选**，未配置时跳过向量索引；后续补配会自动触发全量重建
   - 响应：`InitializeSystemAsyncResponse { task_id: String }`（异步任务 ID，用于轮询进度）
 - 查询初始化进度
   - 路径与方法：GET /api/organization/init-progress?task_id={task_id}
-  - 响应：`InitProgressResponse`；完成时 `result` 字段为 `InitializeSystemResponse { organization_id, user_id, chat_provider_id: Option<String>, embedding_provider_id: Option<String> }`
-- 步骤数动态计算：`total_steps = 3 + usize::from(chat_model.is_some()) + usize::from(embedding_model.is_some())`；基础 3 步 = 创建组织 + 同步内置工具 + 导入预置技能；对话/向量模型步骤按请求提供情况条件化出现。
+  - 响应：`InitProgressResponse`；完成时 `result` 字段为 `InitializeSystemResponse { organization_id, user_id, chat_provider_id: Option<String>, decision_provider_id: Option<String>, embedding_provider_id: Option<String> }`
+- 步骤数动态计算：`total_steps = 5 + usize::from(chat_model.is_some()) + usize::from(decision_model.is_some()) + usize::from(embedding_model.is_some())`；基础 5 步 = 创建组织 + 同步内置工具 + 导入预置技能 + 本体词表注入 + 预设前台 Agent；三类模型步骤按请求提供情况条件化出现。
+- 模型配置合法性：对话 / 决策模型必须同时提供 `max_context_length` 与 `recommended_context_length`（正整数，推荐值 ≤ 最大值）；向量模型只需 name / model_name。
 
 章节来源
 - [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs)

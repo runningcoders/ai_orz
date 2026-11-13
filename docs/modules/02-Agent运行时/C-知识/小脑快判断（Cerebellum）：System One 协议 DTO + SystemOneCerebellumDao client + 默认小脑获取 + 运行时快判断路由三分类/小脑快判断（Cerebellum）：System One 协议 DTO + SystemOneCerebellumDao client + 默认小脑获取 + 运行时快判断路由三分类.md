@@ -17,10 +17,10 @@ source_files:
   - src/models/cerebellum_types.rs#L23-L28 (协议边界常量：MAX_CHOICE_OPTIONS=255 / MIN_SCORE_LEVELS=2 / MAX_SCORE_LEVELS=10)
   - src/models/cerebellum_types.rs#L30-L110 (QuestionType noul/choice/score + QuestionCriteria untagged 双形态 + CerebellumQuestion::validate：类型×criteria 形态匹配 + 数量边界)
   - src/models/cerebellum_types.rs#L112-L202 (CerebellumRequest / CerebellumUsage / CerebellumAnswer 三型答案 + as_noul/as_choice/as_score + CerebellumResponse：answers 必填、usage 缺省容错零值 + ThinkFastResult)
-  - src/service/dao/cerebellum/mod.rs#L24-L27 (DEFAULT_SYSTEM_ONE_BASE_URL="https://api.typesafe.ai" + DEFAULT_CEREBELLUM_TIMEOUT_MS=800)
-  - src/service/dao/cerebellum/mod.rs#L29-L43 (CerebellumDao trait：think_fast(ctx, &ModelProviderPo, state, questions) -> ThinkFastResult；无状态、全配置随 PO 传入)
-  - src/service/dao/cerebellum/mod.rs#L45-L87 (SystemOneCerebellumDao 单例 + OnceLock 管理 + dao()/init()；client 复用 pkg::http::presets::llm())
-  - src/service/dao/cerebellum/client.rs#L23-L58 (resolve_timeout_ms：config.timeout_ms 优先、脏 config 兜底默认值；resolve_endpoint：空 api_key 硬错误 ConfigInvalid、base_url 缺省走默认端点、拼 /v1/systemone)
+  - src/service/dao/cerebellum/mod.rs#L24-L50 (DEFAULT_CEREBELLUM_TIMEOUT_MS=3000；不内置任何默认 base_url 域名)
+  - src/service/dao/cerebellum/mod.rs#L52-L66 (CerebellumDao trait：think_fast(ctx, &ModelProviderPo, state, questions) -> ThinkFastResult；无状态、全配置随 PO 传入)
+  - src/service/dao/cerebellum/mod.rs#L68-L110 (SystemOneCerebellumDao 单例 + OnceLock 管理 + dao()/init()；client 复用 pkg::http::presets::llm())
+  - src/service/dao/cerebellum/client.rs#L46-L70 (resolve_timeout_ms：config.timeout_ms 优先、脏 config 兜底默认值；resolve_endpoint：空 api_key / 空 base_url 均为硬错误 ConfigInvalid，显式 base_url 拼 /systemone)
   - src/service/dao/cerebellum/client.rs#L60-L157 (think_fast：questions 非空 + 逐个 validate；响应缺 answers / answers 非对象 = 硬错误；单个答案解析失败容错跳过并告警；usage 缺省零值)
   - src/service/dao/cerebellum/client.rs#L159-L219 (transport_error timeout|connect|send 分类 + error_root_cause 沿 source 链取根因 + model_call_error 429/401|403/4xx/5xx 映射，与 cortex http.rs 同款口径)
   - src/service/domain/runtime/cerebellum_router.rs#L31-L46 (路由常量：CEREBELLUM_ROUTE_TIMEOUT_MS=800 / CEREBELLUM_ROUTE_CONFIDENCE_THRESHOLD=0.85 / ROUTE_QUESTION_ID="route" / trivial_direct 与 cortex_needed 两选项 / TRIVIAL_DIRECT_TEMPLATE / CORTEX_BOOST_TEMPLATE)
@@ -57,7 +57,7 @@ source_files:
 | 文件 | 角色 | 关键内容 | 锚点 |
 |------|------|---------|------|
 | [src/models/cerebellum_types.rs](src/models/cerebellum_types.rs) | System One 协议 DTO（唯一事实源） | `QuestionType`/`QuestionCriteria`/`CerebellumQuestion{validate}`；`CerebellumRequest`/`CerebellumAnswer`/`CerebellumResponse`/`ThinkFastResult`/`CerebellumUsage`；三边界常量 | `:L23-L202` |
-| [src/service/dao/cerebellum/mod.rs](src/service/dao/cerebellum/mod.rs) | 小脑 DAO 门面 | `CerebellumDao` trait + `SystemOneCerebellumDao` 单例 + `dao()/init()`；默认端点与默认超时常量 | `:L24-L87` |
+| [src/service/dao/cerebellum/mod.rs](src/service/dao/cerebellum/mod.rs) | 小脑 DAO 门面 | `CerebellumDao` trait + `SystemOneCerebellumDao` 单例 + `dao()/init()`；默认超时常量（无默认 base_url） | `:L24-L110` |
 | [src/service/dao/cerebellum/client.rs](src/service/dao/cerebellum/client.rs) | System One HTTP client | `resolve_endpoint`/`resolve_timeout_ms` + `think_fast` 编解码与结构校验 + 错误分类（与 cortex 同口径） | `:L23-L219` |
 | [src/service/domain/runtime/cerebellum_router.rs](src/service/domain/runtime/cerebellum_router.rs) | 运行时快判断路由（B3） | 常量集中 + `DegradedReason`/`RouteDecision` + `route()` 主流程 + `translate()` 纯函数 + `route_with_default_dao()` | `:L31-L293` |
 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 接线点（单点覆盖四场景） | `run_think_loop` 首轮前 `brain.cerebellum` 判空 → 路由 → Direct 短路 / Inject 插 System 头 / Skip 空操作 | `:L288-L337` |

@@ -73,7 +73,7 @@ D1 --> L4
 ## 核心组件
 - OpenAI 兼容模型调用（Chat Completions / Embeddings / 多模态 Embeddings）
   - 统一通过 reqwest 发起 POST 请求，使用 Bearer Token 鉴权，解析标准响应并提取工具调用或最终回答。
-  - 支持多种提供商默认 base_url，可按 provider 配置覆盖。
+  - base_url 必须由 Provider 显式配置（不同付费渠道/代理网关域名不同，后端不内置默认域名）。
 - 飞书渠道推送与事件监听
   - 获取 tenant_access_token 并缓存（提前刷新），发送文本消息到 open_id，管理 WebSocket 长连接生命周期。
 - A2A 回调
@@ -126,7 +126,7 @@ Lark->>Remote : 发送飞书消息
 ### OpenAI 兼容 HTTP 客户端（cortex/native/http.rs）
 - 职责
   - 统一封装 Chat Completions、Embeddings、多模态 Embeddings 调用。
-  - 根据 ProviderType 选择默认 base_url，支持按 provider 配置覆盖。
+  - base_url 必须由 Provider 显式配置，缺失时 `resolve_base_url` 返回 `ConfigInvalid`（不再按 ProviderType 推断默认域名）。
   - 使用 Bearer Token 进行鉴权，解析响应并提取 tool_calls 或最终内容。
 - 关键流程
   - 构建请求体（messages、tools、stream=false）。

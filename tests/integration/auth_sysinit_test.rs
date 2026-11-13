@@ -210,6 +210,7 @@ async fn test_create_chat_provider_requires_max_context_length(pool: SqlitePool)
         "capability": "Agent",
         "model_name": "gpt-4o-mini",
         "api_key": "test-key",
+        "base_url": "https://gateway.example.com/v1",
     });
     let (status, body) = app
         .post_with_jwt("/api/v1/finance/model-providers", &missing, &jwt)
@@ -228,6 +229,7 @@ async fn test_create_chat_provider_requires_max_context_length(pool: SqlitePool)
         "capability": "Agent",
         "model_name": "gpt-4o-mini",
         "api_key": "test-key",
+        "base_url": "https://gateway.example.com/v1",
         "max_context_length": 0,
     });
     let (status, body) = app
@@ -247,6 +249,7 @@ async fn test_create_chat_provider_requires_max_context_length(pool: SqlitePool)
         "capability": "Agent",
         "model_name": "gpt-4o-mini",
         "api_key": "test-key",
+        "base_url": "https://gateway.example.com/v1",
         "max_context_length": 128000,
     });
     let (status, body) = app
@@ -257,6 +260,107 @@ async fn test_create_chat_provider_requires_max_context_length(pool: SqlitePool)
         data.get("max_context_length").and_then(|v| v.as_i64()),
         Some(128000),
         "created provider should echo max_context_length, got: {}",
+        body
+    );
+}
+
+/// Base URL 必填：域名随付费渠道/代理网关变化，后端不再内置任何默认域名。
+///
+/// FastEmbed 是纯本地嵌入、不发出任何 HTTP 请求，是唯一的免填例外。
+#[sqlx::test]
+async fn test_create_provider_requires_base_url(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 非 FastEmbed 缺 base_url → 400（不允许落到任何默认域名）
+    let missing = serde_json::json!({
+        "name": "No-Base-Url-Chat",
+        "provider_type": "OpenAI",
+        "capability": "Agent",
+        "model_name": "gpt-4o-mini",
+        "api_key": "test-key",
+        "max_context_length": 128000,
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &missing, &jwt)
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::BAD_REQUEST,
+        "provider without base_url should be rejected, got body: {}",
+        body
+    );
+
+    // FastEmbed 本地嵌入允许缺省 base_url
+    let local = serde_json::json!({
+        "name": "Local-Embedding",
+        "provider_type": "FastEmbed",
+        "capability": "Embedding",
+        "model_name": "BAAI/bge-small-en-v1.5",
+        "api_key": "",
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &local, &jwt)
+        .await;
+    crate::common::assert_api_ok(status, &body);
+}
+
+/// 更新不允许清空 base_url（FastEmbed 除外）：后端已无默认域名兜底。
+#[sqlx::test]
+async fn test_update_provider_rejects_clearing_base_url(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let create = serde_json::json!({
+        "name": "Relay-Chat",
+        "provider_type": "OpenAI",
+        "capability": "Agent",
+        "model_name": "gpt-4o-mini",
+        "api_key": "test-key",
+        "base_url": "https://gateway.example.com/v1",
+        "max_context_length": 128000,
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &create, &jwt)
+        .await;
+    let created = crate::common::assert_api_ok(status, &body);
+    let id = created
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("created id");
+
+    // 清空 base_url → 400
+    let clear = serde_json::json!({ "base_url": "" });
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("/api/v1/finance/model-providers/{id}"),
+            &clear,
+            &jwt,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::BAD_REQUEST,
+        "clearing base_url should be rejected, got body: {}",
+        body
+    );
+
+    // 换成另一个显式域名 → 成功并回读
+    let change = serde_json::json!({ "base_url": "https://relay.example.com/v2" });
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("/api/v1/finance/model-providers/{id}"),
+            &change,
+            &jwt,
+        )
+        .await;
+    let updated = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        updated.get("base_url").and_then(|v| v.as_str()),
+        Some("https://relay.example.com/v2"),
+        "updated base_url should echo, got: {}",
         body
     );
 }

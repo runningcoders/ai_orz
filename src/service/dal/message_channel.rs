@@ -15,6 +15,7 @@ use serde::Serialize;
 use crate::enrich_ctx;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
+use crate::models::message_channel_conversation::MessageChannelConversation;
 use crate::pkg::RequestContext;
 use crate::service::dao::a2a_callback::A2aCallbackDao;
 use crate::service::dao::email::EmailDao;
@@ -22,6 +23,7 @@ use crate::service::dao::email::smtp::{EmailSmtpCredentials, resolve_email_crede
 use crate::service::dao::lark::{LarkAppCredentials, LarkDao, LarkReply, resolve_lark_credentials};
 use crate::service::dao::message::MessageDao;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
+use crate::service::dao::message_channel_conversation::MessageChannelConversationDao;
 use crate::service::dao::project::ProjectDao;
 use crate::service::dao::slack::SlackDao;
 use crate::service::dao::user_credential::UserCredentialDao;
@@ -65,6 +67,9 @@ pub fn new(
         credential_dao: crate::service::dao::user_credential::dao(),
         project_dao: project_dao_mod::dao(),
         message_dao: message_dao_mod::dao(),
+        // 会话绑定 DAO 无状态、按调用方 ctx 的 pool 执行；用 new() 免去全局 init，
+        // 测试注入 ctx 即天然隔离
+        conversation_dao: crate::service::dao::message_channel_conversation::new(),
     })
 }
 
@@ -105,6 +110,14 @@ pub trait MessageChannelDal: Send + Sync {
         ctx: RequestContext,
         query: MessageChannelQuery,
     ) -> Result<common::api::PagedResult<MessageChannel>>;
+
+    /// 分页查询渠道绑定的外部会话（按绑定时间倒序）
+    async fn list_channel_conversations(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        pagination: common::api::PaginationParams,
+    ) -> Result<common::api::PagedResult<MessageChannelConversation>>;
 
     /// 设置渠道状态
     async fn set_channel_status(
@@ -160,6 +173,9 @@ struct MessageChannelDalImpl {
     /// A2A callback 业务组装数据源：项目状态 + 消息历史（快照载荷要求全量）
     project_dao: Arc<dyn ProjectDao + Send + Sync>,
     message_dao: Arc<dyn MessageDao + Send + Sync>,
+
+    /// 外部会话绑定 DAO（渠道 → 会话列表展示）
+    conversation_dao: Arc<dyn MessageChannelConversationDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]
@@ -207,6 +223,32 @@ impl MessageChannelDal for MessageChannelDalImpl {
     ) -> Result<common::api::PagedResult<MessageChannel>> {
         let page = self.message_channel_dao.query(ctx, query).await?;
         Ok(page.map(MessageChannel::from_po))
+    }
+
+    async fn list_channel_conversations(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        pagination: common::api::PaginationParams,
+    ) -> Result<common::api::PagedResult<MessageChannelConversation>> {
+        // 单页上限 100，避免前端一次拉爆；默认 20
+        let limit = pagination.limit.unwrap_or(20).clamp(1, 100);
+        let offset = pagination.offset.unwrap_or(0);
+        let items = self
+            .conversation_dao
+            .query_by_channel(ctx.clone(), channel_id, limit, offset)
+            .await?;
+        let total = self
+            .conversation_dao
+            .count_by_channel(ctx, channel_id)
+            .await?;
+        Ok(common::api::PagedResult {
+            items: items
+                .into_iter()
+                .map(MessageChannelConversation::from_po)
+                .collect(),
+            total,
+        })
     }
 
     async fn set_channel_status(
@@ -672,6 +714,8 @@ pub struct ReplyTarget {
     pub external_key: String,
     /// 父消息所属话题 ID（`omt_` 前缀）；`None` 表示非话题消息
     pub thread_id: Option<String>,
+    /// 父消息所属会话 ID（飞书 `oc_xxx`；私聊 / 群聊均有）
+    pub chat_id: Option<String>,
 }
 
 /// 把渠道无关的回复目标解析为飞书原生回复参数（纯函数，便于单测）
@@ -689,6 +733,7 @@ fn resolve_lark_reply(target: Option<&ReplyTarget>) -> Option<LarkReply> {
     Some(LarkReply {
         message_id: message_id.to_string(),
         in_thread: target.thread_id.is_some(),
+        chat_id: target.chat_id.clone(),
     })
 }
 
@@ -794,6 +839,7 @@ mod tests {
         ReplyTarget {
             external_key: external_key.to_string(),
             thread_id: thread_id.map(|s| s.to_string()),
+            chat_id: None,
         }
     }
 
@@ -801,6 +847,15 @@ mod tests {
     #[test]
     fn resolve_lark_reply_none_when_no_target() {
         assert!(resolve_lark_reply(None).is_none());
+    }
+
+    /// 群会话键透传：reply 解析结果保留 chat_id（出站日志/兜底判断用）
+    #[test]
+    fn resolve_lark_reply_keeps_chat_id() {
+        let mut t = target("lark:om_abc", None);
+        t.chat_id = Some("oc_group_1".to_string());
+        let r = resolve_lark_reply(Some(&t)).unwrap();
+        assert_eq!(r.chat_id.as_deref(), Some("oc_group_1"));
     }
 
     /// 飞书键 + 普通消息 → 普通引用回复（非话题）

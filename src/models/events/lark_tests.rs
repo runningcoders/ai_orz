@@ -145,6 +145,80 @@ fn test_parse_group_thread_message() {
     assert_eq!(event.parse_text(), Some("话题内回复".to_string()));
 }
 
+/// 群消息 @ 提及：对象形态与字符串形态的 id 都要能解析
+///
+/// 标准形态携带 open_id/union_id/user_id（无权限时为 null）；
+/// 简化形态直接给 open_id 字符串。两种都必须在同一帧内正常反序列化。
+#[test]
+fn test_parse_mentions_object_and_plain_id() {
+    const MENTION_EVENT: &str = r#"{
+        "schema": "2.0",
+        "header": {
+            "event_id": "evt_mention",
+            "event_type": "im.message.receive_v1",
+            "create_time": "1700000000000",
+            "app_id": "cli_xxx"
+        },
+        "event": {
+            "sender": {
+                "sender_id": { "open_id": "ou_sender" },
+                "sender_type": "open_id"
+            },
+            "message": {
+                "message_id": "om_mention",
+                "create_time": "1700000000000",
+                "chat_id": "oc_group",
+                "chat_type": "group",
+                "message_type": "text",
+                "content": "{\"text\":\"@_user_1 请 @_user_2 看一下\"}",
+                "mentions": [
+                    {
+                        "key": "@_user_1",
+                        "id": {
+                            "open_id": "ou_bot_a",
+                            "union_id": "on_bot_a",
+                            "user_id": "uid_bot_a"
+                        },
+                        "name": "小助手",
+                        "tenant_key": "tenant_xxx"
+                    },
+                    {
+                        "key": "@_user_2",
+                        "id": "ou_bot_b",
+                        "name": "另一个机器人"
+                    },
+                    {
+                        "key": "@_user_3",
+                        "id": {
+                            "open_id": "ou_bot_c",
+                            "union_id": null,
+                            "user_id": null
+                        },
+                        "name": "无权限机器人"
+                    }
+                ]
+            }
+        }
+    }"#;
+    let event: LarkMessageEvent = serde_json::from_str(MENTION_EVENT).unwrap();
+    let mentions = &event.event.message.mentions;
+    assert_eq!(mentions.len(), 3);
+
+    assert_eq!(mentions[0].key, "@_user_1");
+    assert_eq!(mentions[0].id.open_id(), "ou_bot_a");
+    assert_eq!(mentions[0].id.union_id(), Some("on_bot_a"));
+    assert_eq!(mentions[0].id.user_id(), Some("uid_bot_a"));
+    assert_eq!(mentions[0].name, "小助手");
+
+    assert_eq!(mentions[1].id.open_id(), "ou_bot_b");
+    assert_eq!(mentions[1].id.union_id(), None);
+    assert_eq!(mentions[1].id.user_id(), None);
+
+    // null 字段按空串处理，不整帧失败
+    assert_eq!(mentions[2].id.open_id(), "ou_bot_c");
+    assert_eq!(mentions[2].id.union_id(), None);
+}
+
 #[test]
 fn test_non_text_event_parse_text_returns_none() {
     let raw = P2P_TEXT_EVENT

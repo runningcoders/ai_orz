@@ -18,6 +18,11 @@ pub fn dao() -> Arc<dyn ModelProviderDao> {
     MODEL_PROVIDER_DAO.get().cloned().unwrap()
 }
 
+/// 获取 ModelProviderDao 单例（未初始化返回 None，供可选增强链路降级）
+pub fn try_dao() -> Option<Arc<dyn ModelProviderDao>> {
+    MODEL_PROVIDER_DAO.get().cloned()
+}
+
 /// 初始化单例
 pub fn init() {
     let _ = MODEL_PROVIDER_DAO.set(Arc::new(ModelProviderDaoSqliteImpl::new()));

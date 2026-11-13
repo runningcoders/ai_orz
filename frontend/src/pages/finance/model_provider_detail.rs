@@ -153,11 +153,12 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
         .and_then(|r| r.as_ref().ok())
         .is_some_and(|p| p.capability == ModelCapability::Decision);
 
-    // Base URL 占位符随类型变化：方舟与 OpenAI 根地址不同，且都只填根路径
+    // Base URL 占位符随类型变化：只填根路径。域名因付费渠道/代理网关而异，
+    // 不再给出任何具体域名示例，避免把用户引向错误的服务地址。
     let edit_base_url_placeholder = match edit_provider_type().as_str() {
-        "Doubao" | "DoubaoVision" => "https://ark.cn-beijing.volces.com/api/v3",
+        "Doubao" | "DoubaoVision" => "例如：https://<你的方舟网关域名>/api/v3",
         "FastEmbed" => "本地模型无需填写",
-        _ => "https://api.openai.com/v1",
+        _ => "例如：https://<你的网关域名>/v1",
     };
 
     // 加载由上方 use_resource（rid 响应式）负责，无需 use_effect
@@ -733,6 +734,14 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     _ => ChatApiFlavor::Responses,
                                 };
                                 let api_key = if edit_api_key().is_empty() { None } else { Some(edit_api_key()) };
+                                // Base URL 不允许清空（FastEmbed 纯本地嵌入除外）：后端已无默认域名兜底，
+                                // 空值会让该 provider 的所有出站请求在运行时失败，这里前置提示
+                                if edit_provider_type().as_str() != "FastEmbed"
+                                    && edit_base_url().trim().is_empty()
+                                {
+                                    toast.error("Base URL 不能为空（模型服务根地址，如 https://<你的网关域名>/v1）");
+                                    return;
+                                }
                                 let base_url = if edit_base_url().trim().is_empty() { None } else { Some(edit_base_url()) };
                                 let description = if edit_description().trim().is_empty() { None } else { Some(edit_description()) };
                                 // 空字符串 → 0（清除配置）；有值 → 解析为数字
@@ -900,7 +909,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             oninput: move |e| edit_api_key.set(e.value()), placeholder: "输入新 Key 或留空保持不变" }
                     }
                     div { class: "form-control w-full",
-                        label { class: "label", span { class: "label-text font-medium", "Base URL" } }
+                        label { class: "label", span { class: "label-text font-medium", "Base URL *" } }
                         input { class: "input input-bordered w-full", value: "{edit_base_url}",
                             oninput: move |e| edit_base_url.set(e.value()), placeholder: "{edit_base_url_placeholder}" }
                         p { class: "text-xs text-base-content/60",

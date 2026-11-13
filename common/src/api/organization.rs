@@ -59,6 +59,9 @@ pub struct InitializeSystemRequest {
     /// 对话模型配置（用于 Agent 思考和对话，可选 — 不传时跳过，创建 Agent 前需在模型管理中补配）
     #[serde(default)]
     pub chat_model: Option<ModelProviderInitConfig>,
+    /// 决策模型配置（小脑快判断，可选 — 不传时跳过，相关性判断等能力降级）
+    #[serde(default)]
+    pub decision_model: Option<ModelProviderInitConfig>,
     /// 向量模型配置（用于 Embedding 向量化，可选 — 不传时跳过向量索引）
     #[serde(default)]
     pub embedding_model: Option<ModelProviderInitConfig>,
@@ -75,18 +78,22 @@ pub struct ModelProviderInitConfig {
     pub model_name: String,
     /// API Key（明文，后端存储时会加密）
     pub api_key: String,
-    /// 自定义 Base URL（可选，用于 OpenAI 兼容代理）
+    /// 模型服务根地址（**必填**，`FastEmbed` 纯本地嵌入除外）
+    ///
+    /// 不同付费渠道/代理网关的域名不同，后端不内置任何默认域名兜底。
     pub base_url: Option<String>,
     /// 描述（可选）
     pub description: Option<String>,
     /// 上下文窗口长度（模型支持的最大 token 数）
     ///
-    /// **对话模型建议必填**：压缩触发阈值以它为基准，缺失时 `ContextOverflowPolicy`
-    /// 退化为 threshold=0（恒不命中），Agent 永远不会压缩上下文。
+    /// **对话 / 决策模型必填**：压缩触发阈值与各小脑场景的上下文预算都以它为基准；
+    /// 缺失时上下文裁剪退化（压缩阈值恒为 0、场景预算无法按模型容量分配）。
     /// Embedding 模型无对话上下文概念，可省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_context_length: Option<i32>,
-    /// 推荐上下文长度（可选：留空按 `max_context_length * 60%` 自动计算）
+    /// 推荐上下文长度（**对话 / 决策模型必填**，且不得大于最大上下文长度）
+    ///
+    /// 各场景按它裁剪上下文，必须与模型实际能力匹配；Embedding 可省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recommended_context_length: Option<i32>,
 }
@@ -104,6 +111,8 @@ pub struct InitializeSystemResponse {
     pub user_id: String,
     /// 对话模型 Provider ID（None 表示初始化时未配置对话模型）
     pub chat_provider_id: Option<String>,
+    /// 决策模型 Provider ID（None 表示未配置决策模型）
+    pub decision_provider_id: Option<String>,
     /// 向量模型 Provider ID（None 表示未创建向量模型）
     pub embedding_provider_id: Option<String>,
     /// 预设前台 Agent ID（无条件创建；chat_provider 存在则已绑定，否则需在模型管理中补配后绑定）

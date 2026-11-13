@@ -110,8 +110,7 @@ pub async fn send_message_to_agent(
         project_id,
         task_id: params.task_id.as_deref(),
         reply_to_id: reply_to_id.as_deref(),
-        external_key: None,
-        thread_id: None,
+        external: Default::default(),
         attachment_ids: params.attachment_ids.as_deref(),
         message_type: if notify_only {
             // 知会语义优先：含资源引用的知会仍标 AgentNotify，防协作乒乓机制
