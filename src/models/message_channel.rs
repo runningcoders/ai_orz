@@ -221,6 +221,21 @@ pub struct ChannelConfig {
     /// 映射到本渠道绑定的 agent_id 并替换为内部提及协议。
     /// 由创建/更新渠道时调用 `GET /open-apis/bot/v3/info` 自动回填。
     pub lark_bot_open_id: Option<String>,
+    /// 群消息触发策略（`mention` 缺省 / `all` / `prefix`）
+    ///
+    /// 渠道无关：由统一入站过滤层（producer）读取，未来其他渠道同样生效。
+    /// - `mention`：仅处理明确指向本渠道 Agent 的消息（平台默认只推送这类消息）
+    /// - `all`：处理群内全部消息，先经小脑判断是否需要 Agent 回复
+    /// - `prefix`：仅处理以 `group_trigger_prefix` 开头的群消息
+    ///
+    /// 私聊消息不受该策略影响，恒处理。
+    pub group_trigger: Option<String>,
+    /// `prefix` 策略的触发前缀（如 `/ai`；为空时按 `mention` 处理）
+    pub group_trigger_prefix: Option<String>,
+    /// 群消息小脑判定超时（毫秒；缺省 1000，读取时收敛到 200~5000）
+    ///
+    /// 仅 `all` 策略使用；渠道无关，由统一入站过滤层消费。
+    pub group_trigger_timeout_ms: Option<u64>,
     /// 是否监听该应用的飞书入站私信（缺省视为 true）
     ///
     /// 关闭后渠道仅用于出站推送与 lark_cli 工具身份，不建立 WS 长连接。

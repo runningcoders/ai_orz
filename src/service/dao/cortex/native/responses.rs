@@ -28,7 +28,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::http::presets;
 use crate::service::dao::cortex::native::http::{
     AccumToolCall, CompletionTokensDetails, PromptTokensDetails, StreamAccumulator, Usage,
-    default_base_url, finish_think_result, model_call_error, resolve_access_mode, resolve_base_url,
+    finish_think_result, model_call_error, resolve_access_mode, resolve_base_url,
     resolve_intensity, transport_error, validate_provider_for_request,
 };
 use async_trait::async_trait;
@@ -86,8 +86,8 @@ pub async fn call_responses(
     options: &crate::models::cortex_types::ModelCallOptions,
 ) -> Result<ThinkResult> {
     validate_provider_for_request(provider)?;
-    let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
-    let url = format!("{}/responses", base_url.trim_end_matches('/'));
+    let base_url = resolve_base_url(provider)?;
+    let url = format!("{}/responses", base_url);
 
     // 与 chat 侧同源：缺省/脏 config 兜底 stream，不中断推理
     let access_mode = resolve_access_mode(&ctx, provider);

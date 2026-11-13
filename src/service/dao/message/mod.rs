@@ -39,6 +39,10 @@ pub struct MessageQuery {
     pub to_id: Option<String>,
     /// 按回复目标消息 ID 查询（直接回复某条消息的消息）
     pub reply_to_id: Option<String>,
+    /// 按外部会话 ID 查询（飞书 `oc_xxx`，私聊 / 群聊统一）
+    ///
+    /// 用于按会话拉取上下文：群聊判定、会话详情等场景。
+    pub chat_id: Option<String>,
     /// 按消息链根 ID 查询（一次拉取整条消息链）
     pub root_id: Option<String>,
     /// 按接收方角色查询（如 Agent/User/System）

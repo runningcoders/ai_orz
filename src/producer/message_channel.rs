@@ -2,19 +2,42 @@ use common::api::AgentMatchCriteria;
 use common::constants::agent_roles::{
     ROLE_FEISHU_RECEPTION, ROLE_RECEPTION, ROLE_WECHAT_RECEPTION,
 };
-use common::enums::{CallerType, ChannelType, MessageRole, MessageType};
+use common::enums::{CallerType, ChannelType, MemoryType, MessageRole, MessageStatus, MessageType};
 use common::error::{Result, err};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::models::attachment::AttachmentUpload;
+use crate::models::memory::Memory;
 use crate::pkg::RequestContext;
 use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::MessageAdapterCallback;
+use crate::producer::inbound_filter::{self, InboundGateDecision};
+use crate::service::dao::memory::{MemoryQuery, MemorySearch};
+use crate::service::dao::message::MessageQuery;
 use crate::service::domain::finance::FinanceDomain;
 use crate::service::domain::hr::HrDomain;
 use crate::service::domain::message::{
     DeliverMessageCommand, DeliveryOptions, MessageDomain, SendToAgentCommand,
 };
+
+/// 群聊消息是否值得 Agent 回复的小脑判定指令（渠道无关）
+const INBOUND_RELEVANCE_INSTRUCTIONS: &str = "结合【最近群聊】【相关记忆】【最近记忆】判断这条群聊消息是否需要 AI 助手接入回复。\
+需要：明确向助手提问、@ 助手、指派任务、请求帮助，或讨论助手能处理的事务。\
+不需要：成员之间的闲聊、寒暄、与助手无关的通知、已经在被其他人回答的对话、纯表情或图片。\
+结合上下文里是否已有助手参与、当前话题是否延续来判断；拿不准时倾向需要。";
+
+/// 群聊上下文抬取条数上限
+const RECENT_MESSAGE_LIMIT: usize = 10;
+/// 最近短期记忆条数上限
+const RECENT_MEMORY_LIMIT: usize = 5;
+/// 相关短期记忆条数上限
+const SEARCH_MEMORY_LIMIT: usize = 3;
+/// 群消息小脑判定默认超时（毫秒）
+const DEFAULT_GROUP_TRIGGER_TIMEOUT_MS: u64 = 1000;
+/// 超时配置允许范围（毫秒）：过小必然超时，过大阻塞入站链路
+const MIN_GROUP_TRIGGER_TIMEOUT_MS: u64 = 200;
+const MAX_GROUP_TRIGGER_TIMEOUT_MS: u64 = 5000;
 
 struct MessageChannelProducer {
     hr_domain: Arc<dyn HrDomain>,
@@ -127,6 +150,276 @@ impl MessageChannelProducer {
             }
         }
     }
+    /// 渠道入站统一过滤：协议转换完成后、进入内部消息系统前判定是否处理
+    ///
+    /// 规则与渠道无关：私聊恒放行；群聊读取渠道的 `group_trigger` 配置，
+    /// 按 `mention` / `prefix` / `all` 判定。`all` 模式再经小脑结合群聊上下文
+    /// 与 Agent 记忆判断是否值得回复。任何降级（无渠道 / 查询失败 / 小脑不可用）
+    /// 均放行，避免静默吞消息。
+    async fn should_process_inbound(
+        &self,
+        ctx: &RequestContext,
+        msg: &AdaptedMessage,
+        agent_id: &str,
+    ) -> bool {
+        if !msg.is_group {
+            return true;
+        }
+        let Some(channel_id) = msg.channel_id.as_deref().filter(|id| !id.is_empty()) else {
+            log_warn!(
+                ctx,
+                "message_channel_producer",
+                "group inbound without channel id, pass through: from={} channel={:?}",
+                msg.from_id,
+                msg.channel_type
+            );
+            return true;
+        };
+        let channel = match self
+            .finance_domain
+            .message_channel_manage()
+            .get_message_channel(ctx.clone(), channel_id)
+            .await
+        {
+            Ok(Some(channel)) => channel,
+            Ok(None) => {
+                log_warn!(
+                    ctx,
+                    "message_channel_producer",
+                    "group inbound channel not found, pass through: channel_id={}",
+                    channel_id
+                );
+                return true;
+            }
+            Err(e) => {
+                log_warn!(
+                    ctx,
+                    "message_channel_producer",
+                    "load channel for inbound filter failed, pass through: channel_id={} err={}",
+                    channel_id,
+                    e
+                );
+                return true;
+            }
+        };
+
+        let config = channel.config();
+        let trigger = config.group_trigger.as_deref().unwrap_or("mention");
+        let prefix = config.group_trigger_prefix.as_deref().unwrap_or("");
+        let timeout_ms = config
+            .group_trigger_timeout_ms
+            .unwrap_or(DEFAULT_GROUP_TRIGGER_TIMEOUT_MS)
+            .clamp(MIN_GROUP_TRIGGER_TIMEOUT_MS, MAX_GROUP_TRIGGER_TIMEOUT_MS);
+        match inbound_filter::group_trigger_gate(
+            msg.is_group,
+            msg.addressed_to_agent,
+            trigger,
+            prefix,
+            &msg.content,
+        ) {
+            InboundGateDecision::Process => true,
+            InboundGateDecision::Skip => false,
+            InboundGateDecision::Judge => {
+                self.judge_inbound_relevance(ctx, msg, agent_id, timeout_ms)
+                    .await
+            }
+        }
+    }
+
+    /// 用「群聊历史 + Agent 短期记忆 + 本次消息」请小脑判断是否值得回复
+    async fn judge_inbound_relevance(
+        &self,
+        ctx: &RequestContext,
+        msg: &AdaptedMessage,
+        agent_id: &str,
+        timeout_ms: u64,
+    ) -> bool {
+        // 预算跟随模型最佳上下文：容量取自默认小脑 provider 的
+        // min(推荐上下文, 最大上下文)，未配置则不裁（不拍固定字符数）。
+        let capacity = crate::service::domain::runtime::context_capacity(ctx).await;
+        let context = self
+            .build_inbound_context(ctx, msg, agent_id, capacity)
+            .await;
+        let probability = crate::service::domain::runtime::judge_relevance(
+            ctx,
+            INBOUND_RELEVANCE_INSTRUCTIONS,
+            &context,
+            timeout_ms,
+        )
+        .await;
+        let pass = inbound_filter::passes_relevance(probability);
+        log_info!(
+            ctx,
+            "message_channel_producer",
+            "group inbound relevance judged: from={} channel={:?} probability={:?} pass={}",
+            msg.from_id,
+            msg.channel_type,
+            probability,
+            pass
+        );
+        pass
+    }
+
+    /// 组装小脑判定上下文（历史 / 记忆任一来源失败只丢对应片段）
+    async fn build_inbound_context(
+        &self,
+        ctx: &RequestContext,
+        msg: &AdaptedMessage,
+        agent_id: &str,
+        capacity_tokens: Option<u64>,
+    ) -> String {
+        let history = self.load_chat_history(ctx, msg, RECENT_MESSAGE_LIMIT).await;
+        let (recent_memories, searched_memories) = self
+            .load_agent_memories(ctx, msg, agent_id, RECENT_MEMORY_LIMIT, SEARCH_MEMORY_LIMIT)
+            .await;
+        inbound_filter::build_group_context(
+            &recent_memories,
+            &searched_memories,
+            &history,
+            &msg.content,
+            &msg.from_id,
+            capacity_tokens,
+        )
+    }
+
+    /// 读取同会话最近消息（按时间正序返回）
+    ///
+    /// 按 `chat_id` 定位会话；消息带话题时叠加 `thread_id` 兼容过滤，
+    /// 避免把不同话题的内容混在一起（无话题消息仍保留）。
+    async fn load_chat_history(
+        &self,
+        ctx: &RequestContext,
+        msg: &AdaptedMessage,
+        limit: usize,
+    ) -> Vec<(MessageRole, String)> {
+        let Some(chat_id) = msg.external.chat_id.as_deref().filter(|id| !id.is_empty()) else {
+            return Vec::new();
+        };
+        let query = MessageQuery {
+            chat_id: Some(chat_id.to_string()),
+            organization_id: ctx.organization_id().cloned(),
+            thread_id_compatible: msg.external.thread_id.clone(),
+            status_in: Some(vec![
+                MessageStatus::Pending,
+                MessageStatus::Processing,
+                MessageStatus::Processed,
+                MessageStatus::Failed,
+            ]),
+            order_by: Some("created_at DESC".to_string()),
+            limit: Some(limit),
+            ..Default::default()
+        };
+        match self
+            .message_domain
+            .management()
+            .query(ctx.clone(), query)
+            .await
+        {
+            Ok(mut messages) => {
+                messages.reverse();
+                messages
+                    .into_iter()
+                    .map(|message| (message.from_role(), message.content().to_string()))
+                    .collect()
+            }
+            Err(e) => {
+                log_warn!(
+                    ctx,
+                    "message_channel_producer",
+                    "load chat history failed, continue without it: chat_id={} err={}",
+                    chat_id,
+                    e
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// 读取 Agent 最近短期记忆 + 用消息正文检索到的相关短期记忆
+    ///
+    /// 未绑定 Agent 时返回空（上下文退化为群聊消息）；搜索结果按记忆 ID 去重。
+    async fn load_agent_memories(
+        &self,
+        ctx: &RequestContext,
+        msg: &AdaptedMessage,
+        agent_id: &str,
+        recent_limit: usize,
+        search_limit: usize,
+    ) -> (Vec<String>, Vec<String>) {
+        if agent_id.trim().is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let runtime = crate::service::domain::runtime::domain();
+        let recent = match runtime
+            .memory()
+            .get_recent_context(ctx.clone(), agent_id, recent_limit)
+            .await
+        {
+            Ok(memories) => memories,
+            Err(e) => {
+                log_warn!(
+                    ctx,
+                    "message_channel_producer",
+                    "load recent memory failed, continue without it: agent_id={} err={}",
+                    agent_id,
+                    e
+                );
+                Vec::new()
+            }
+        };
+        let recent_pairs: Vec<(String, String)> =
+            recent.iter().filter_map(short_term_memory).collect();
+        let recent_ids: HashSet<String> = recent_pairs.iter().map(|(id, _)| id.clone()).collect();
+
+        let searched = match runtime
+            .memory()
+            .search(
+                ctx.clone(),
+                MemorySearch {
+                    keyword: Some(msg.content.trim().to_string()),
+                    filters: MemoryQuery {
+                        agent_id: Some(agent_id.to_string()),
+                        memory_type: Some(MemoryType::ShortTerm),
+                        limit: Some(search_limit),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(memories) => memories,
+            Err(e) => {
+                log_warn!(
+                    ctx,
+                    "message_channel_producer",
+                    "search memory failed, continue without it: agent_id={} err={}",
+                    agent_id,
+                    e
+                );
+                Vec::new()
+            }
+        };
+
+        let recent_summaries = recent_pairs
+            .into_iter()
+            .map(|(_, summary)| summary)
+            .collect();
+        let searched_summaries = searched
+            .iter()
+            .filter_map(short_term_memory)
+            .filter(|(id, _)| !recent_ids.contains(id))
+            .map(|(_, summary)| summary)
+            .collect();
+        (recent_summaries, searched_summaries)
+    }
+}
+
+/// 提取短期记忆的 `(id, summary)`；非短期记忆返回 `None`
+fn short_term_memory(memory: &Memory) -> Option<(String, String)> {
+    memory
+        .short_term_summary()
+        .map(|(id, summary)| (id.to_string(), summary.to_string()))
 }
 
 #[async_trait::async_trait]
@@ -173,6 +466,20 @@ impl MessageAdapterCallback for MessageChannelProducer {
             );
             return Ok(());
         };
+
+        // 统一入站过滤：协议转换已完成，进入内部消息系统前判定是否值得处理。
+        // 所有渠道共用同一套规则；`all` 模式由小脑结合群聊上下文与记忆判断。
+        if !self.should_process_inbound(&ctx, &msg, &to_agent_id).await {
+            log_info!(
+                &ctx,
+                "message_channel_producer",
+                "group inbound skipped by trigger policy: from={} channel={:?} chat_id={:?}",
+                msg.from_id,
+                msg.channel_type,
+                msg.external.chat_id
+            );
+            return Ok(());
+        }
 
         // 渠道附件落库：先转为内部 Attachment 资产，随后**在适配层**把 id 解析成
         // 正文协议引用再入库（单条失败只丢该附件并留痕，不阻断文本消息入站）。

@@ -16,7 +16,12 @@ scope:
   - "src/service/dal/wechat/impl.rs"（WechatDalImpl 瘦身：移除自存 callback 字段，start 参数 _callback 不再持有）
   - "src/service/dao/message_channel/sqlite.rs"（push_query_filters 渠道列表默认软删除过滤，2026-09 新增）
   - "src/service/dao/message_channel_conversation/sqlite.rs"（会话绑定 DAO：app+tenant+chat → channel，2026-11 新增）
-  - "src/service/dal/lark/impl.rs"（入站会话优先路由 + 会话绑定 upsert + 提及映射，2026-11 新增）
+  - "src/service/dal/lark/impl.rs"（入站会话优先路由 + 会话绑定 upsert + 提及映射 + 群聊语义信号，2026-11 新增）
+  - "src/service/dal/lark/impl_tests.rs"（提及匹配 / 群聊语义信号单测，2026-11 新增）
+  - "src/models/message_channel.rs"（ChannelConfig 群触发字段 group_trigger / group_trigger_prefix，2026-11 新增）
+  - "src/producer/inbound_filter.rs"（渠道无关入站规则门与判定上下文拼接，2026-11 新增）
+  - "src/service/domain/runtime/relevance_gate.rs"（默认小脑 Noul 判定与全降级放行，2026-11 新增）
+  - "common/src/api/message_channel.rs"（创建 / 展示 DTO 群触发字段，2026-11 新增）
   - "common/src/models/external_message.rs"（ExternalMessageContext：外部元数据聚合，2026-11 新增）
   - "migrations/20261113000002_add_message_channel_conversations.sql"（会话绑定表，2026-11 新增）
   - "src/pkg/lark_integration.rs"（lark-cli config init 文本输出契约：去 --json + App ID 文本行解析）
@@ -27,6 +32,13 @@ source_files:
   - src/pkg/adapter/message.rs#L46-L78（MessageInboundAdapter trait：4 方法 channel_type()/start(callback)/stop()/is_running()；async_trait 标注；start 接收 Arc<dyn MessageAdapterCallback> 投递回调；重复启动 Conflict 错误）
   - src/service/dal/lark/impl.rs#L325-L405（adapt_lark 入站路由：find_channel_by_lark_identity 映射 from_id → find_channel_by_conversation 会话优先 → 未命中则 bind_conversation upsert；chat_id 私聊/群聊统一落库）
   - src/service/dal/lark/impl.rs#L600-L730（collect_bot_agent_map 唯一映射 + merge_bot_agent_binding 歧义标记 + find_channel_by_conversation/bind_conversation）
+  - src/pkg/adapter/mod.rs#L80-L93（AdaptedMessage 渠道无关信号：channel_id / is_group / addressed_to_agent）
+  - src/producer/message_channel.rs#L160-L410（producer 统一入站过滤：should_process_inbound + 群聊历史 + 短期记忆检索 + 渠道超时 + 小脑判定）
+  - src/producer/inbound_filter.rs#L11-L185（纯规则 group_trigger_gate + 阈值放行 + 按模型容量 36/14.4/14.4/7.2 分配）
+  - src/service/domain/runtime/relevance_gate.rs#L1-L26（场景口径，委托 DAL）
+  - src/service/dal/brain.rs#L66-L190（judge_noul：默认小脑 Noul 判定、渠道超时配置、全降级返回 None、统计事件）
+  - src/models/model_provider.rs#L131-L143（context_capacity_tokens：min(推荐上下文, 最大上下文) 唯一实现）
+  - src/service/domain/runtime/cerebellum_context.rs#L90-L111（INBOUND_* 份额：36/14.4/14.4/7.2，子分配 ≤ BODY_BP）
   - src/service/dao/message_channel_conversation/sqlite.rs#L1-L90（会话绑定 DAO：upsert ON CONFLICT(channel_type, app_id, tenant, chat_id) + find_channel_id）
   - common/src/models/external_message.rs#L1-L45（ExternalMessageContext：external_key/thread_id/chat_id/external_mentions 聚合）
 
@@ -304,3 +316,32 @@ producer 侧拿到 AdaptedMessage 后：渠道 DAL（如 `adapt_lark`）已完�
 | 分层 | Handler → `MessageChannelManage::list_channel_conversations` → `MessageChannelDal::list_channel_conversations` → `MessageChannelConversationDao` |
 
 **红线**：列表只返回 `channel_id` 命中的绑定；禁止按 `app_id` / `chat_id` 反查其他渠道的会话（跨租户 / 跨渠道泄漏）。会话绑定依附渠道，渠道软删除后列表自然不再包含其记录（查询按 channel_id，不做物理清理）。
+
+## §7 群消息统一入站过滤与小脑相关性门（2026-11）
+
+过滤不在各渠道适配层，而在 producer 的统一入站汇聚点：适配层只做协议转换，输出渠道无关信号 `channel_id` / `is_group` / `addressed_to_agent`，后续规则对所有渠道一致生效。
+
+| 策略 `group_trigger` | 规则 | 备注 |
+|---|---|---|
+| `mention`（缺省） | `addressed_to_agent` 为真才放行（适配器翻译平台语义，如飞书 @ 机器人） | 平台无法判定归属时适配器填 `true`，按放行降级 |
+| `prefix` | 正文 `trim_start` 后以 `group_trigger_prefix` 开头才放行 | 前缀为空时降级为 `mention` |
+| `all` | 规则层全部放行，再交小脑判断 | 飞书需 `im:message.group_msg` 权限 |
+
+判定分两段，纯规则与副作用分离：
+
+- `producer::inbound_filter::group_trigger_gate`（纯函数）：私聊恒 `Process`；群聊按上表返回 `Process / Skip / Judge`，可直接单测。
+- `MessageChannelProducer::should_process_inbound`：读取渠道配置执行规则，仅 `Judge` 时调用 `judge_inbound_relevance`。
+
+小脑判断（可选增强，任何降级都放行）：
+
+- 域层 `judge_relevance` 声明场景口径，委托 `dal::brain::judge_noul` 取 `cerebellum::try_dao()` + `model_provider::try_dao()` 的默认小脑 provider；未初始化 / 无 provider / `api_key` 为空 → 放行。
+- 问题 id `inbound_relevance.primary`，`QuestionType::Noul`；state 携带组装好的判定上下文。
+- 上下文由 `build_group_context` 拼成四段：按 `chat_id` 的最近 10 条消息（有话题时叠加 `thread_id` 兼容过滤）、正文检索到的 3 条相关短期记忆、Agent 最近 5 条短期记忆、本次消息与发送者。
+- 上下文预算：容量取默认小脑 provider 的 `min(推荐上下文, 最大上下文)`，按万分比 `群聊 36% / 相关记忆 14.4% / 最近记忆 14.4% / 本次消息 7.2%`（合计 72%，不挤占判据骨架）；单条摘要片段 4%；容量未配置则不裁。
+- 作用域：消息按 `chat_id + organization_id` 查询（不按 agent 过滤，保留群内其他成员发言）；短期记忆按 `agent_id` 查询。
+- 超时取渠道配置 `group_trigger_timeout_ms`（缺省 1000ms，收敛 200~5000ms），经 `tokio::time::timeout` 控制；概率阈值 0.5，超时 / 调用失败 / 答案缺失 → 放行。
+- 设计取舍：宁可多回一条，不可静默吞消息；小脑不是主流程依赖，故障不得阻断入站。
+
+配置链路：`ChannelConfig.group_trigger` / `group_trigger_prefix` / `group_trigger_timeout_ms` 为渠道无关顶层配置，创建 / 更新 / 详情响应 DTO 双向透传；前端创建与编辑弹窗提供策略下拉（`mention` / `all` / `prefix`）、条件前缀与 `all` 模式超时输入。
+
+**红线**：过滤逻辑不得下沉到单个渠道适配层；适配层只输出渠道无关信号。`all` 模式的小脑调用必须有超时与降级；`prefix` 为空不得当成「匹配一切」，必须回落到 `mention` 规则。

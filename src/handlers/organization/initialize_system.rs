@@ -40,12 +40,48 @@ pub struct InitializeSystemTask {
     result: Mutex<Option<serde_json::Value>>,
 }
 
+/// 按初始化配置构建 Provider，并把上下文长度一并落库
+///
+/// **唯一构造入口**：对话 / 决策 / 向量三个模型都走这里，避免某个分支漏存
+/// `max_context_length` / `recommended_context_length` 导致上下文压缩与场景预算失效。
+/// Embedding 无对话上下文，配置里的两个字段为 `None`。
+fn build_init_provider(
+    config: common::api::ModelProviderInitConfig,
+    capability: common::enums::ModelCapability,
+    owner_id: &str,
+) -> crate::models::model_provider::ModelProvider {
+    use crate::models::model_provider::{ModelProvider, ModelProviderConfig};
+
+    let max_context_length = config.max_context_length.filter(|&v| v > 0);
+    let recommended_context_length = config.recommended_context_length.filter(|&v| v > 0);
+    let mut provider = ModelProvider::new(
+        config.name,
+        common::enums::ProviderType::from_i32(config.provider_type),
+        capability,
+        config.model_name,
+        config.api_key,
+        config.base_url,
+        config.description,
+        owner_id.to_string(),
+    );
+    if max_context_length.is_some() || recommended_context_length.is_some() {
+        provider.po.set_config(&ModelProviderConfig {
+            max_context_length,
+            recommended_context_length,
+            ..Default::default()
+        });
+    }
+    provider
+}
+
 impl InitializeSystemTask {
     /// 创建新的初始化任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: InitializeSystemRequest) -> Self {
-        // 基础 5 步（组织 + 内置工具 + 预置技能 + 本体词表注入 + 预设前台 Agent）+ 对话模型(0/1) + 向量模型(0/1)
+        // 基础 5 步（组织 + 内置工具 + 预置技能 + 本体词表注入 + 预设前台 Agent）
+        // + 对话模型(0/1) + 决策模型(0/1) + 向量模型(0/1)
         let total_steps = 5
             + usize::from(params.chat_model.is_some())
+            + usize::from(params.decision_model.is_some())
             + usize::from(params.embedding_model.is_some());
         Self {
             task_id: uuid::Uuid::new_v4().to_string(),
@@ -195,29 +231,8 @@ impl InitializeSystemTask {
         // Step（可选）: 创建 chat provider — 未配置时跳过，后续在模型管理中补配
         let chat_provider_id = if let Some(chat_config) = params.chat_model.clone() {
             self.set_step(step, "正在配置对话模型");
-            // 上下文长度先取出（Copy），随后 chat_config 其余字段被 move 进构造函数
-            let max_context_length = chat_config.max_context_length.filter(|&v| v > 0);
-            let recommended_context_length =
-                chat_config.recommended_context_length.filter(|&v| v > 0);
-            let mut chat_provider = crate::models::model_provider::ModelProvider::new(
-                chat_config.name,
-                common::enums::ProviderType::from_i32(chat_config.provider_type),
-                common::enums::ModelCapability::Agent,
-                chat_config.model_name,
-                chat_config.api_key,
-                chat_config.base_url,
-                chat_config.description,
-                user_id.clone(),
-            );
-            // 初始化向导采集的上下文长度必须落库 —— 否则该对话模型永远不会触发
-            // 上下文压缩（ContextOverflowPolicy 的 threshold 恒为 0）
-            chat_provider
-                .po
-                .set_config(&crate::models::model_provider::ModelProviderConfig {
-                    max_context_length,
-                    recommended_context_length,
-                    ..Default::default()
-                });
+            let chat_provider =
+                build_init_provider(chat_config, common::enums::ModelCapability::Agent, &user_id);
             let provider_id = chat_provider.po.id.clone();
             finance::domain()
                 .model_provider_manage()
@@ -229,18 +244,32 @@ impl InitializeSystemTask {
             None
         };
 
+        // Step（可选）: 创建 decision provider（小脑快判断）— 未配置时相关能力降级
+        let decision_provider_id = if let Some(decision_config) = params.decision_model.clone() {
+            self.set_step(step, "正在配置决策模型");
+            let decision_provider = build_init_provider(
+                decision_config,
+                common::enums::ModelCapability::Decision,
+                &user_id,
+            );
+            let provider_id = decision_provider.po.id.clone();
+            finance::domain()
+                .model_provider_manage()
+                .create_model_provider(ctx.clone(), &decision_provider)
+                .await?;
+            step += 1;
+            Some(provider_id)
+        } else {
+            None
+        };
+
         // Step（可选）: 创建 embedding provider — 未配置时跳过向量索引
         let embedding_provider_id = if let Some(embedding_config) = params.embedding_model {
             self.set_step(step, "正在配置向量模型");
-            let embedding_provider = crate::models::model_provider::ModelProvider::new(
-                embedding_config.name,
-                common::enums::ProviderType::from_i32(embedding_config.provider_type),
+            let embedding_provider = build_init_provider(
+                embedding_config,
                 common::enums::ModelCapability::Embedding,
-                embedding_config.model_name,
-                embedding_config.api_key,
-                embedding_config.base_url,
-                embedding_config.description,
-                user_id.clone(),
+                &user_id,
             );
             let provider_id = embedding_provider.po.id.clone();
             finance::domain()
@@ -334,6 +363,7 @@ impl InitializeSystemTask {
             organization_id: org_id,
             user_id,
             chat_provider_id,
+            decision_provider_id,
             embedding_provider_id,
             reception_agent_id,
         })
@@ -544,14 +574,11 @@ pub async fn initialize_system(
     }
 
     // 边界校验：配置了模型则字段必须完整（前端分步校验只覆盖正常路径）
-    if let Some(chat) = params.chat_model.as_ref()
-        && (chat.name.trim().is_empty()
-            || chat.model_name.trim().is_empty()
-            || chat.api_key.trim().is_empty())
-    {
-        return Err(Error::bad_request(
-            "chat_model provided but name / model_name / api_key is empty",
-        ));
+    if let Some(chat) = params.chat_model.as_ref() {
+        validate_context_model(chat, "chat_model")?;
+    }
+    if let Some(decision) = params.decision_model.as_ref() {
+        validate_context_model(decision, "decision_model")?;
     }
     if let Some(emb) = params.embedding_model.as_ref()
         && (emb.name.trim().is_empty() || emb.model_name.trim().is_empty())
@@ -560,10 +587,69 @@ pub async fn initialize_system(
             "embedding_model provided but name / model_name is empty",
         ));
     }
+    // FastEmbed 为本地模型，无 HTTP 端点；其余向量服务商必须显式配置 base_url
+    if let Some(emb) = params.embedding_model.as_ref()
+        && common::enums::ProviderType::from_i32(emb.provider_type)
+            != common::enums::ProviderType::FastEmbed
+        && emb.base_url.as_deref().is_none_or(|v| v.trim().is_empty())
+    {
+        return Err(Error::bad_request(
+            "embedding_model provided but base_url is empty (only FastEmbed may omit it)",
+        ));
+    }
 
     let task = Arc::new(InitializeSystemTask::new(ctx, params));
     let task_id = registry().register(task).await;
     Ok(TaskIdResponse { task_id })
+}
+
+/// 对话 / 决策模型的合法配置校验
+///
+/// 「有最大与推荐上下文才是合法配置」：两者都必须为正整数，且推荐值不得大于最大值；
+/// 不满足时直接拒绝初始化，避免落库一个永远无法按模型容量裁剪的残缺 Provider。
+fn validate_context_model(
+    config: &common::api::ModelProviderInitConfig,
+    label: &str,
+) -> Result<()> {
+    if config.name.trim().is_empty()
+        || config.model_name.trim().is_empty()
+        || config.api_key.trim().is_empty()
+    {
+        return Err(Error::bad_request(format!(
+            "{label}: name / model_name / api_key must not be empty"
+        )));
+    }
+    if config
+        .base_url
+        .as_deref()
+        .is_none_or(|v| v.trim().is_empty())
+    {
+        return Err(Error::bad_request(format!(
+            "{label}: base_url must not be empty (domains differ by billing channel / proxy)"
+        )));
+    }
+    let max = config
+        .max_context_length
+        .filter(|&v| v > 0)
+        .ok_or_else(|| {
+            Error::bad_request(format!(
+                "{label}: max_context_length must be a positive integer"
+            ))
+        })?;
+    let recommended = config
+        .recommended_context_length
+        .filter(|&v| v > 0)
+        .ok_or_else(|| {
+            Error::bad_request(format!(
+                "{label}: recommended_context_length must be a positive integer"
+            ))
+        })?;
+    if recommended > max {
+        return Err(Error::bad_request(format!(
+            "{label}: recommended_context_length ({recommended}) must not exceed max_context_length ({max})"
+        )));
+    }
+    Ok(())
 }
 
 /// 查询初始化进度
@@ -598,4 +684,87 @@ pub async fn get_initialize_progress(
         error: snapshot.error,
         result: snapshot.result.and_then(|v| serde_json::from_value(v).ok()),
     })
+}
+
+#[cfg(test)]
+mod init_model_config_tests {
+    use super::*;
+
+    fn config(max: Option<i32>, recommended: Option<i32>) -> common::api::ModelProviderInitConfig {
+        common::api::ModelProviderInitConfig {
+            name: "Test".to_string(),
+            provider_type: 0,
+            model_name: "test-model".to_string(),
+            api_key: "sk-test".to_string(),
+            base_url: Some("https://gateway.example.com/v1".to_string()),
+            description: None,
+            max_context_length: max,
+            recommended_context_length: recommended,
+        }
+    }
+
+    #[test]
+    fn accepts_valid_context_config() {
+        assert!(validate_context_model(&config(Some(128_000), Some(64_000)), "chat").is_ok());
+    }
+
+    #[test]
+    fn rejects_missing_max_context() {
+        assert!(validate_context_model(&config(None, Some(64_000)), "chat").is_err());
+        assert!(validate_context_model(&config(Some(0), Some(64_000)), "chat").is_err());
+    }
+
+    #[test]
+    fn rejects_missing_recommended_context() {
+        assert!(validate_context_model(&config(Some(128_000), None), "chat").is_err());
+        assert!(validate_context_model(&config(Some(128_000), Some(0)), "chat").is_err());
+    }
+
+    #[test]
+    fn rejects_recommended_larger_than_max() {
+        assert!(validate_context_model(&config(Some(64_000), Some(128_000)), "chat").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_provider_identity() {
+        let mut cfg = config(Some(128_000), Some(64_000));
+        cfg.api_key = String::new();
+        assert!(validate_context_model(&cfg, "chat").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_base_url() {
+        let mut cfg = config(Some(128_000), Some(64_000));
+        cfg.base_url = None;
+        assert!(validate_context_model(&cfg, "chat").is_err());
+        cfg.base_url = Some("   ".to_string());
+        assert!(validate_context_model(&cfg, "chat").is_err());
+    }
+
+    #[test]
+    fn build_init_provider_persists_context_config() {
+        let provider = build_init_provider(
+            config(Some(128_000), Some(64_000)),
+            common::enums::ModelCapability::Decision,
+            "u1",
+        );
+        assert_eq!(
+            provider.po.capability,
+            common::enums::ModelCapability::Decision
+        );
+        assert_eq!(provider.po.config().max_context_length, Some(128_000));
+        assert_eq!(
+            provider.po.config().recommended_context_length,
+            Some(64_000)
+        );
+
+        // Embedding 无对话上下文：不写入 config
+        let embedding = build_init_provider(
+            config(None, None),
+            common::enums::ModelCapability::Embedding,
+            "u1",
+        );
+        assert_eq!(embedding.po.config().max_context_length, None);
+        assert_eq!(embedding.po.config().recommended_context_length, None);
+    }
 }

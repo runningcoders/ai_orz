@@ -89,6 +89,16 @@ pub fn Reception() -> Element {
     let mut chat_max_context_length = use_signal(|| "128000".to_string());
     let mut chat_recommended_context_length = use_signal(String::new);
 
+    // 决策模型配置（可选 — 小脑快判断；建议低延迟小模型）
+    let mut enable_decision = use_signal(|| true);
+    let mut decision_provider_name = use_signal(String::new);
+    let mut decision_provider_type = use_signal(|| 0i32); // 0=OpenAI
+    let mut decision_model_name = use_signal(String::new);
+    let mut decision_api_key = use_signal(String::new);
+    let mut decision_base_url = use_signal(String::new);
+    let mut decision_max_context_length = use_signal(|| "128000".to_string());
+    let mut decision_recommended_context_length = use_signal(String::new);
+
     // 向量模型配置（可选）
     let mut enable_embedding = use_signal(|| true); // 默认启用
     let mut embedding_provider_name = use_signal(String::new);
@@ -106,9 +116,9 @@ pub fn Reception() -> Element {
         _ => "例如：BAAI/bge-small-en-v1.5",
     };
     let embedding_base_url_placeholder = match embedding_provider_type() {
-        7 | 3 => "https://ark.cn-beijing.volces.com/api/v3",
+        7 | 3 => "例如：https://<你的方舟网关域名>/api/v3",
         6 => "本地模型无需填写",
-        _ => "自定义代理地址（可选）",
+        _ => "例如：https://<你的网关域名>/v1",
     };
     let embedding_api_key_placeholder = match embedding_provider_type() {
         6 => "FastEmbed 无需填写",
@@ -417,20 +427,75 @@ pub fn Reception() -> Element {
                 toast.error("对话模型的 Provider 名称、模型名称、API Key 不能为空");
                 return;
             }
-            // 上下文长度必填：没有它压缩阈值算不出来，Agent 将永远不会压缩上下文
+            if enable_chat() && chat_base_url().trim().is_empty() {
+                toast.error("请填写对话模型的 Base URL（域名随付费渠道/代理不同，无法使用默认值）");
+                return;
+            }
+            // 最大 / 推荐上下文都必须填写，且推荐值不得超过最大值
+            let chat_max = chat_max_context_length()
+                .trim()
+                .parse::<i32>()
+                .ok()
+                .filter(|&v| v > 0);
+            let chat_recommended = chat_recommended_context_length()
+                .trim()
+                .parse::<i32>()
+                .ok()
+                .filter(|&v| v > 0);
+            if enable_chat() && (chat_max.is_none() || chat_recommended.is_none()) {
+                toast.error("请填写对话模型的最大与推荐上下文长度（正整数 token 数）");
+                return;
+            }
             if enable_chat()
-                && chat_max_context_length()
-                    .trim()
-                    .parse::<i32>()
-                    .map_or(true, |v| v <= 0)
+                && matches!((chat_max, chat_recommended), (Some(max), Some(rec)) if rec > max)
             {
-                toast.error("请填写对话模型的最大上下文长度（正整数 token 数）");
+                toast.error("对话模型的推荐上下文长度不能大于最大上下文长度");
+                return;
+            }
+            if enable_decision()
+                && (decision_provider_name().is_empty()
+                    || decision_model_name().is_empty()
+                    || decision_api_key().is_empty())
+            {
+                toast.error("决策模型的 Provider 名称、模型名称、API Key 不能为空");
+                return;
+            }
+            if enable_decision() && decision_base_url().trim().is_empty() {
+                toast.error("请填写决策模型的 Base URL（域名随付费渠道/代理不同，无法使用默认值）");
+                return;
+            }
+            let decision_max = decision_max_context_length()
+                .trim()
+                .parse::<i32>()
+                .ok()
+                .filter(|&v| v > 0);
+            let decision_recommended = decision_recommended_context_length()
+                .trim()
+                .parse::<i32>()
+                .ok()
+                .filter(|&v| v > 0);
+            if enable_decision() && (decision_max.is_none() || decision_recommended.is_none()) {
+                toast.error("请填写决策模型的最大与推荐上下文长度（正整数 token 数）");
+                return;
+            }
+            if enable_decision()
+                && matches!((decision_max, decision_recommended), (Some(max), Some(rec)) if rec > max)
+            {
+                toast.error("决策模型的推荐上下文长度不能大于最大上下文长度");
                 return;
             }
             if enable_embedding()
                 && (embedding_provider_name().is_empty() || embedding_model_name().is_empty())
             {
                 toast.error("向量模型的 Provider 名称、模型名称不能为空");
+                return;
+            }
+            // FastEmbed 为本地模型，无 HTTP 端点；其余向量服务商必须显式填写 base_url
+            if enable_embedding()
+                && embedding_provider_type() != 6
+                && embedding_base_url().trim().is_empty()
+            {
+                toast.error("请填写向量模型的 Base URL（域名随付费渠道/代理不同，无法使用默认值）");
                 return;
             }
             init_submitting.set(true);
@@ -468,6 +533,30 @@ pub fn Reception() -> Element {
                         description: None,
                         max_context_length: chat_max_context_length().trim().parse::<i32>().ok(),
                         recommended_context_length: chat_recommended_context_length()
+                            .trim()
+                            .parse::<i32>()
+                            .ok(),
+                    })
+                } else {
+                    None
+                },
+                decision_model: if enable_decision() {
+                    Some(common::api::ModelProviderInitConfig {
+                        name: decision_provider_name(),
+                        provider_type: decision_provider_type(),
+                        model_name: decision_model_name(),
+                        api_key: decision_api_key(),
+                        base_url: if decision_base_url().is_empty() {
+                            None
+                        } else {
+                            Some(decision_base_url())
+                        },
+                        description: None,
+                        max_context_length: decision_max_context_length()
+                            .trim()
+                            .parse::<i32>()
+                            .ok(),
+                        recommended_context_length: decision_recommended_context_length()
                             .trim()
                             .parse::<i32>()
                             .ok(),
@@ -990,13 +1079,13 @@ pub fn Reception() -> Element {
                                                         }
 
                                                         div { class: "form-control w-full",
-                                                            label { class: "form-label", "Base URL" }
+                                                            label { class: "form-label", "Base URL *" }
                                                             input {
                                                                 class: "input input-bordered w-full",
                                                                 r#type: "text",
                                                                 value: "{chat_base_url}",
                                                                 oninput: move |e| chat_base_url.set(e.value()),
-                                                                placeholder: "自定义代理地址（可选）",
+                                                                placeholder: "例如：https://<你的网关域名>/v1",
                                                             }
                                                         }
 
@@ -1013,19 +1102,19 @@ pub fn Reception() -> Element {
                                                                 }
                                                             }
                                                             div { class: "form-control w-full",
-                                                                label { class: "form-label", "推荐上下文长度" }
+                                                                label { class: "form-label", "推荐上下文长度 *" }
                                                                 input {
                                                                     class: "input input-bordered w-full",
                                                                     r#type: "number",
                                                                     "data-testid": "init-chat-recommended-context-length",
                                                                     value: "{chat_recommended_context_length}",
                                                                     oninput: move |e| chat_recommended_context_length.set(e.value()),
-                                                                    placeholder: "留空按 60% 计算",
+                                                                    placeholder: "例如：64000",
                                                                 }
                                                             }
                                                         }
                                                         p { class: "text-xs text-base-content/60",
-                                                            "最大上下文长度必填——Agent 的上下文压缩阈值以它为基准（推荐值留空时取 60%）。请按模型实际窗口填写，填小了会导致频繁压缩。"
+                                                            "最大与推荐上下文长度均必填，推荐值不得超过最大值。上下文压缩阈值与小脑场景预算都以它们为基准；请按模型实际窗口填写。"
                                                         }
                                                     }
                                                 } else {
@@ -1033,6 +1122,130 @@ pub fn Reception() -> Element {
                                                         class: "init-model-card-hint",
                                                         "data-testid": "init-chat-skip-hint",
                                                         "未配置对话模型：可稍后使用，但创建 Agent 前需先在「模型提供商管理」中配置"
+                                                    }
+                                                }
+                                            }
+
+                                            // 决策模型卡片
+                                            div { class: "init-model-card",
+                                                div { class: "init-model-card-header",
+                                                    label { class: "label cursor-pointer justify-start gap-2",
+                                                        input {
+                                                            r#type: "checkbox",
+                                                            class: "checkbox checkbox-primary",
+                                                            "data-testid": "init-enable-decision",
+                                                            checked: enable_decision(),
+                                                            onchange: move |e| enable_decision.set(e.checked()),
+                                                        }
+                                                        span { class: "label-text font-medium", "配置决策模型" }
+                                                    }
+                                                    span { class: "init-model-card-sub", "用于小脑快速判断，建议低延迟小模型" }
+                                                }
+
+                                                if enable_decision() {
+                                                    div { class: "init-model-card-body",
+
+                                                        div { class: "form-control w-full",
+                                                            label { class: "form-label", "Provider 名称 *" }
+                                                            input {
+                                                                class: "input input-bordered w-full",
+                                                                r#type: "text",
+                                                                "data-testid": "init-decision-provider-name",
+                                                                value: "{decision_provider_name}",
+                                                                oninput: move |e| decision_provider_name.set(e.value()),
+                                                                placeholder: "例如：OpenAI",
+                                                            }
+                                                        }
+
+                                                        div { class: "form-control w-full",
+                                                            label { class: "form-label", "服务商类型 *" }
+                                                            select {
+                                                                class: "select select-bordered w-full",
+                                                                "data-testid": "init-decision-provider-type",
+                                                                value: "{decision_provider_type}",
+                                                                onchange: move |e| {
+                                                                    if let Ok(v) = e.value().parse::<i32>() {
+                                                                        decision_provider_type.set(v);
+                                                                    }
+                                                                },
+                                                                option { value: "0", "OpenAI" }
+                                                                option { value: "1", "DeepSeek" }
+                                                                option { value: "2", "Qwen" }
+                                                                option { value: "3", "Doubao" }
+                                                                option { value: "4", "Ollama" }
+                                                                option { value: "5", "Custom" }
+                                                                option { value: "8", "Jev（System One）" }
+                                                            }
+                                                        }
+
+                                                        div { class: "form-control w-full",
+                                                            label { class: "form-label", "模型名称 *" }
+                                                            input {
+                                                                class: "input input-bordered w-full",
+                                                                r#type: "text",
+                                                                "data-testid": "init-decision-model-name",
+                                                                value: "{decision_model_name}",
+                                                                oninput: move |e| decision_model_name.set(e.value()),
+                                                                placeholder: "例如：gpt-4o-mini",
+                                                            }
+                                                        }
+
+                                                        div { class: "form-control w-full",
+                                                            label { class: "form-label", "API Key *" }
+                                                            input {
+                                                                class: "input input-bordered w-full",
+                                                                r#type: "password",
+                                                                "data-testid": "init-decision-api-key",
+                                                                value: "{decision_api_key}",
+                                                                oninput: move |e| decision_api_key.set(e.value()),
+                                                                placeholder: "sk-...",
+                                                            }
+                                                        }
+
+                                                        div { class: "form-control w-full",
+                                                            label { class: "form-label", "Base URL *" }
+                                                            input {
+                                                                class: "input input-bordered w-full",
+                                                                r#type: "text",
+                                                                value: "{decision_base_url}",
+                                                                oninput: move |e| decision_base_url.set(e.value()),
+                                                                placeholder: "例如：https://<你的网关域名>/v1",
+                                                            }
+                                                        }
+
+                                                        div { class: "grid grid-cols-2 gap-4",
+                                                            div { class: "form-control w-full",
+                                                                label { class: "form-label", "最大上下文长度 *" }
+                                                                input {
+                                                                    class: "input input-bordered w-full",
+                                                                    r#type: "number",
+                                                                    "data-testid": "init-decision-max-context-length",
+                                                                    value: "{decision_max_context_length}",
+                                                                    oninput: move |e| decision_max_context_length.set(e.value()),
+                                                                    placeholder: "例如：128000",
+                                                                }
+                                                            }
+                                                            div { class: "form-control w-full",
+                                                                label { class: "form-label", "推荐上下文长度 *" }
+                                                                input {
+                                                                    class: "input input-bordered w-full",
+                                                                    r#type: "number",
+                                                                    "data-testid": "init-decision-recommended-context-length",
+                                                                    value: "{decision_recommended_context_length}",
+                                                                    oninput: move |e| decision_recommended_context_length.set(e.value()),
+                                                                    placeholder: "例如：64000",
+                                                                }
+                                                            }
+                                                        }
+                                                        p { class: "text-xs text-base-content/60",
+                                                            "最大与推荐上下文长度均必填，推荐值不得超过最大值。小脑各场景按推荐上下文分配预算；未配置决策模型时相关性判断等能力自动降级。"
+                                                        }
+                                                    }
+                                                } else {
+                                                    div {
+                                                        class: "init-model-card-hint",
+                                                        "data-testid": "init-decision-skip-hint",
+                                                        "未配置决策模型：小脑快判断与群消息相关性判断降级，不影响基础对话；可稍后在「模型提供商管理」中补配"
                                                     }
                                                 }
                                             }
@@ -1114,7 +1327,7 @@ pub fn Reception() -> Element {
                                                         }
 
                                                         div { class: "form-control w-full",
-                                                            label { class: "form-label", "Base URL" }
+                                                            label { class: "form-label", "Base URL *" }
                                                             input {
                                                                 class: "input input-bordered w-full",
                                                                 r#type: "text",

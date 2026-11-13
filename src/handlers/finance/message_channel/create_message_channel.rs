@@ -118,6 +118,10 @@ fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
     let mut config = ChannelConfig::default();
 
     if let Some(channel_config) = &req.config {
+        // 群触发配置渠道无关：放在顶层，所有支持群聊的渠道共用
+        config.group_trigger = channel_config.group_trigger.clone();
+        config.group_trigger_prefix = channel_config.group_trigger_prefix.clone();
+        config.group_trigger_timeout_ms = channel_config.group_trigger_timeout_ms;
         if let Some(lark) = &channel_config.lark {
             config.lark_credential_id = lark.credential_id.clone();
             config.lark_identity_mode = lark.identity_mode.clone();

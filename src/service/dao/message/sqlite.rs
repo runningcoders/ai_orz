@@ -729,6 +729,9 @@ fn push_query_filters<'args>(
             .push(" AND reply_to_id = ")
             .push_bind(reply_to_id.clone());
     }
+    if let Some(chat_id) = &query.chat_id {
+        builder.push(" AND chat_id = ").push_bind(chat_id.clone());
+    }
     if let Some(root_id) = &query.root_id {
         builder.push(" AND root_id = ").push_bind(root_id.clone());
     }

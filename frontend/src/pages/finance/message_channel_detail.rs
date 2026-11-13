@@ -89,6 +89,10 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut edit_open_id = use_signal(String::new);
     let mut edit_user_name = use_signal(String::new);
     let mut edit_listen_inbound = use_signal(|| true);
+    // 飞书群消息触发策略
+    let mut edit_group_trigger = use_signal(|| "mention".to_string());
+    let mut edit_group_trigger_prefix = use_signal(String::new);
+    let mut edit_group_trigger_timeout = use_signal(String::new);
     // WeChat（iLink）
     let mut edit_wechat_credential_id = use_signal(String::new);
     let mut edit_wechat_peer_id = use_signal(String::new);
@@ -250,6 +254,20 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         .map(|l| l.listen_inbound)
                         .unwrap_or(true),
                 );
+                edit_group_trigger.set(
+                    cfg.and_then(|c| c.group_trigger.clone())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| "mention".to_string()),
+                );
+                edit_group_trigger_prefix.set(
+                    cfg.and_then(|c| c.group_trigger_prefix.clone())
+                        .unwrap_or_default(),
+                );
+                edit_group_trigger_timeout.set(
+                    cfg.and_then(|c| c.group_trigger_timeout_ms)
+                        .map(|ms| ms.to_string())
+                        .unwrap_or_default(),
+                );
                 edit_wechat_credential_id.set(
                     cfg.and_then(|c| c.wechat.as_ref())
                         .and_then(|w| w.credential_id.clone())
@@ -363,6 +381,27 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     access_token: None,
                     secret: None,
                     config: Some(CreateMessageChannelConfig {
+                        // 目前仅飞书支持群聊配置；其他渠道留空
+                        group_trigger: if channel_type == ChannelType::Lark {
+                            Some(edit_group_trigger())
+                        } else {
+                            None
+                        },
+                        group_trigger_prefix: if channel_type == ChannelType::Lark {
+                            let prefix = edit_group_trigger_prefix();
+                            if prefix.trim().is_empty() {
+                                None
+                            } else {
+                                Some(prefix)
+                            }
+                        } else {
+                            None
+                        },
+                        group_trigger_timeout_ms: if channel_type == ChannelType::Lark {
+                            edit_group_trigger_timeout().trim().parse::<u64>().ok()
+                        } else {
+                            None
+                        },
                         lark: if channel_type == ChannelType::Lark {
                             Some(CreateLarkChannelConfig {
                                 credential_id: if credential_id.trim().is_empty() {
@@ -489,6 +528,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let edit_wechat_credential_value = edit_wechat_credential_id();
     let edit_email_credential_value = edit_email_credential_id();
     let edit_mode_value = edit_identity_mode();
+    let edit_group_trigger_value = edit_group_trigger();
+    let edit_group_trigger_prefix_value = edit_group_trigger_prefix();
+    let edit_group_trigger_timeout_value = edit_group_trigger_timeout();
     let user_auth_suffix = user_auth
         .user_name
         .as_deref()
@@ -968,6 +1010,40 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                         div { class: "text-xs text-base-content/60",
                                             "接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份"
                                         }
+                                    }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "群消息触发策略" }
+                                    }
+                                    select { class: "select select-bordered hud-input w-full", value: "{edit_group_trigger_value}",
+                                        onchange: move |e| edit_group_trigger.set(e.value()),
+                                        option { value: "mention", "仅 @ 机器人（推荐，平台默认只推送这类消息）" }
+                                        option { value: "all", "全部群消息（先经小脑判断是否需要回复）" }
+                                        option { value: "prefix", "仅指定前缀开头的消息" }
+                                    }
+                                    label { class: "label",
+                                        span { class: "label-text-alt", "私聊消息不受该策略影响，始终处理" }
+                                    }
+                                }
+                                if edit_group_trigger_value == "prefix" {
+                                    div { class: "form-control w-full",
+                                        label { class: "label",
+                                            span { class: "label-text font-medium", "触发前缀" }
+                                        }
+                                        input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_group_trigger_prefix_value}",
+                                            oninput: move |e| edit_group_trigger_prefix.set(e.value()),
+                                            placeholder: "例如 /ai" }
+                                    }
+                                }
+                                if edit_group_trigger_value == "all" {
+                                    div { class: "form-control w-full",
+                                        label { class: "label",
+                                            span { class: "label-text font-medium", "小脑判定超时（毫秒）" }
+                                        }
+                                        input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_group_trigger_timeout_value}",
+                                            oninput: move |e| edit_group_trigger_timeout.set(e.value()),
+                                            placeholder: "留空使用默认 1000，范围 200~5000" }
                                     }
                                 }
                             }

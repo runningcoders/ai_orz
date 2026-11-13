@@ -14,7 +14,7 @@ use std::sync::Arc;
 #[register_handler_tool(
     id = "create_model_provider",
     name = "Add Model Provider",
-    description = "Register a model provider (type, capability, model name, api_key, base_url, context lengths) for AI inference and return its id and status. max_context_length is REQUIRED for chat (non-embedding) models: it is the basis of the context-compaction threshold, and omitting it makes the agent never compact its context. An embedding provider may come back Disabled when another embedding provider is already active.",
+    description = "Register a model provider (type, capability, model name, api_key, base_url, context lengths) for AI inference and return its id and status. base_url is REQUIRED for every provider except FastEmbed (local embedding): domains differ by billing channel / proxy, so the backend has no default domain. max_context_length is REQUIRED for chat (non-embedding) models: it is the basis of the context-compaction threshold, and omitting it makes the agent never compact its context. An embedding provider may come back Disabled when another embedding provider is already active.",
     params = "common::api::CreateModelProviderRequest",
     tags = "admin"
 )]
@@ -31,6 +31,21 @@ pub async fn create_model_provider(
         return Err(common::error::Error::bad_request(
             "max_context_length 为必填项：对话类模型必须填写上下文窗口长度，\
              否则无法计算压缩触发阈值，Agent 将永远不会压缩上下文",
+        ));
+    }
+
+    // Base URL：**必填**（FastEmbed 纯本地嵌入除外）。
+    // 不同付费渠道/代理网关的域名不同（path 后缀通用、域名不可猜），
+    // 后端不再内置任何默认域名兜底，缺省会导致出站请求无地址可用。
+    if params.provider_type != common::enums::ProviderType::FastEmbed
+        && params
+            .base_url
+            .as_deref()
+            .is_none_or(|v| v.trim().is_empty())
+    {
+        return Err(common::error::Error::bad_request(
+            "base_url 为必填项：不同付费渠道/代理网关的域名不同，\
+             请显式填写模型服务根地址（如 https://<你的网关域名>/v1）",
         ));
     }
 

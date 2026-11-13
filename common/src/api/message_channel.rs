@@ -78,6 +78,14 @@ pub struct WebhookChannelConfig {
 /// 消息渠道配置总结构体（用于响应 DTO，存放各渠道类型的非敏感展示字段）
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct MessageChannelConfig {
+    /// 群消息触发策略（mention / all / prefix，缺省 mention）
+    ///
+    /// 渠道无关：所有支持群聊的渠道共用该配置。
+    pub group_trigger: Option<String>,
+    /// prefix 策略的触发前缀
+    pub group_trigger_prefix: Option<String>,
+    /// 群消息小脑判定超时（毫秒，缺省 1000）
+    pub group_trigger_timeout_ms: Option<u64>,
     /// 飞书渠道配置
     pub lark: Option<LarkChannelConfig>,
     /// 微信渠道配置
@@ -152,6 +160,12 @@ pub struct CreateWebhookChannelConfig {
 /// 创建/更新请求 - 渠道配置总结构体（用于请求 DTO，含各渠道敏感字段）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct CreateMessageChannelConfig {
+    /// 群消息触发策略（mention / all / prefix，缺省 mention）
+    pub group_trigger: Option<String>,
+    /// prefix 策略的触发前缀
+    pub group_trigger_prefix: Option<String>,
+    /// 群消息小脑判定超时（毫秒，缺省 1000）
+    pub group_trigger_timeout_ms: Option<u64>,
     /// 飞书渠道配置
     pub lark: Option<CreateLarkChannelConfig>,
     /// 微信渠道配置

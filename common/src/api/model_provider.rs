@@ -22,7 +22,11 @@ pub struct CreateModelProviderRequest {
     pub model_name: String,
     /// API Key
     pub api_key: String,
-    /// Custom Base URL
+    /// 模型服务根地址（如 `https://<你的网关域名>/v1`）
+    ///
+    /// **必填**（`ProviderType::FastEmbed` 纯本地嵌入除外）：不同付费渠道/代理
+    /// 网关的域名不同（path 后缀通用、域名不可猜），后端不内置任何默认域名兜底，
+    /// 缺省会导致出站请求无地址可用而被拒绝。
     pub base_url: Option<String>,
     /// Description
     pub description: Option<String>,
@@ -204,6 +208,9 @@ pub struct UpdateModelProviderRequest {
     /// New API Key
     pub api_key: Option<String>,
     /// New custom Base URL
+    ///
+    /// 不允许清空（`ProviderType::FastEmbed` 除外）：后端已无默认域名兜底，
+    /// 空值会让该 provider 的所有出站请求在运行时失败。
     pub base_url: Option<String>,
     /// New description
     pub description: Option<String>,

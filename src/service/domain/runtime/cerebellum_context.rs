@@ -87,11 +87,28 @@ pub(crate) mod share {
     /// 与改造前「160 字符」（CJK 最坏情况）逐位一致。
     pub(crate) const SNIPPET_BP: u32 = 400; // 4%
 
+    /// 渠道入站判定：群聊历史池（36%）
+    pub(crate) const INBOUND_HISTORY_BP: u32 = 3_600;
+    /// 渠道入站判定：正文检索到的相关记忆（14.4%）
+    pub(crate) const INBOUND_SEARCHED_MEMORY_BP: u32 = 1_440;
+    /// 渠道入站判定：Agent 最近短期记忆（14.4%）
+    pub(crate) const INBOUND_RECENT_MEMORY_BP: u32 = 1_440;
+    /// 渠道入站判定：本次消息（7.2%）
+    pub(crate) const INBOUND_CURRENT_BP: u32 = 720;
+    /// 渠道入站判定的上下文总和（必须 ≤ 正文池 `BODY_BP`）
+    pub(crate) const INBOUND_TOTAL_BP: u32 = INBOUND_HISTORY_BP
+        + INBOUND_SEARCHED_MEMORY_BP
+        + INBOUND_RECENT_MEMORY_BP
+        + INBOUND_CURRENT_BP;
+
     /// 基准：10_000 bp = 100%
     pub(crate) const BASIS: u32 = 10_000;
     /// 占比总和（自校验锚点，见 [`validate_share_sum`]）
     pub(crate) const TOTAL_BP: u32 = FRAME_BP + PENDING_REPLY_BP + BODY_BP;
 }
+
+// 入站判定是正文池的**子分配**，不得越过 `BODY_BP`（否则会挤占判据骨架）
+const _: () = assert!(share::INBOUND_TOTAL_BP <= share::BODY_BP);
 
 // 骨架预留不再有绝对上限：AMan 2026-11-11 终裁删掉 500。骨架 = 输入 × `share::FRAME_BP`
 // 纯比例 —— 输入大时随容量线性增长（比例分账的本意就是「不超过最大长度即可」，
@@ -507,42 +524,20 @@ fn section_excerpt(
     })
 }
 
-/// 软目标：provider 推荐上下文长度（**裁剪基准**，超了只裁、不判失败）
-///
-/// 取值链仍走 [`ModelProviderConfig::recommended_context_length_tokens`] 这条
-/// 全仓唯一实现（推荐值 > 最大长度 × 60% > 未配置），本函数只负责「从 Brain 上取」。
-fn context_soft_target(brain: &Brain) -> Option<u64> {
-    brain
-        .cerebellum
-        .as_ref()
-        .and_then(|po| po.config().recommended_context_length_tokens())
-}
-
-/// 唯一硬顶：provider 的**最大**上下文长度（未配置 ⇒ `None`＝不设硬顶）
-///
-/// 与软目标是两层不同语义：软目标决定「裁到多大」，硬顶决定「到哪就真的发不出去」。
-/// 只读 `max_context_length` 本身，不参与 0.6 的比例回落（那是软目标的取值链）。
-pub(crate) fn context_hard_ceiling(brain: &Brain) -> Option<u64> {
-    brain
-        .cerebellum
-        .as_ref()
-        .and_then(|po| po.config().max_context_length)
-        .filter(|&v| v > 0)
-        .map(|v| v as u64)
-}
-
 /// 小脑模型容量（**两层夹逼后的本次预算**＝`min(软目标, 硬顶)`）
 ///
 /// - 软目标未配置 ⇒ `None`（不裁，既有口径不变）；
 /// - 硬顶未配置 ⇒ 直接用软目标；
 /// - 软目标 > 硬顶（配置写反 / 推荐值虚高）⇒ 按硬顶封顶：越过最大长度的请求会被
 ///   provider 直接拒，那才是真超限。
+///
+/// 取值链收敛到 [`ModelProviderConfig::context_capacity_tokens`]（唯一实现），
+/// 本函数只负责「从 Brain 上取」。
 pub(crate) fn context_capacity(brain: &Brain) -> Option<u64> {
-    let soft = context_soft_target(brain)?;
-    Some(match context_hard_ceiling(brain) {
-        Some(hard) => soft.min(hard),
-        None => soft,
-    })
+    brain
+        .cerebellum
+        .as_ref()
+        .and_then(|po| po.config().context_capacity_tokens())
 }
 
 /// 单条摘要片段的 token 预算 = 输入预算 × `bp`（容量未配 ⇒ `None` ＝ 不截断）

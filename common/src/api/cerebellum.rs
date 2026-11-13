@@ -16,7 +16,8 @@
 //!
 //! 协议口径（官方公开文档，多来源交叉实证；未经真实端点实测，
 //! 连通性 Spike 顺延至凭据到位后二期启动前集中纠偏）：
-//! - `POST {base}/systemone`（`base` 自带版本前缀，如 `https://api.typesafe.ai/v1`），Bearer 鉴权
+//! - `POST {base}/systemone`（`base` 必须由 Provider 显式配置，自带版本前缀，
+//!   如 `https://<你的网关域名>/v1`；后端不内置任何默认域名），Bearer 鉴权
 //! - 请求 = `{"model", "state", "questions": {qid: {"type","instructions","criteria"}}}`
 //! - 响应 = `{"model", "answers": {qid: {...}}, "usage": {"input_tokens","output_tokens"}}`
 //! - choice：criteria 为选项对象（≤255 项），输出 {type,choice,confidence,probabilities}

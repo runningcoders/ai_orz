@@ -393,6 +393,9 @@ impl LarkDalImpl {
             }
         };
 
+        // 3.1 协议转换完成：是否处理交给上层统一入站过滤（producer），
+        // 适配层只负责把平台语义翻译成渠道无关信号（是否群聊 / 是否指向机器人）。
+
         // 3.2 提及处理：文本消息正文以 `key`（如 `@_user_1`）占位，
         // 按能否映射到内部 Agent 替换为内部提及协议 `[@name](agent:<id>)`；
         // 未命中保留 `@name` 展示。富文本的 `at` 标签已在解析阶段渲染为 `@name`，
@@ -569,6 +572,9 @@ impl LarkDalImpl {
             from_role: common::enums::MessageRole::User,
             to_agent_id,
             channel_type: ChannelType::Lark,
+            channel_id: Some(channel.po.id.clone()),
+            is_group: event.is_group(),
+            addressed_to_agent: matches_bot_mention(event, &channel.config().lark_bot_open_id),
             content,
             project_id: None,
             task_id: None,
@@ -719,6 +725,19 @@ impl LarkDalImpl {
             );
         }
     }
+}
+
+/// 群消息是否 @ 了本应用机器人（未配置 bot open_id 时无法判定，放行）
+fn matches_bot_mention(event: &LarkMessageEvent, bot_open_id: &Option<String>) -> bool {
+    let Some(bot_open_id) = bot_open_id.as_deref().filter(|s| !s.is_empty()) else {
+        return true;
+    };
+    event
+        .event
+        .message
+        .mentions
+        .iter()
+        .any(|mention| mention_raw_id(mention).0 == bot_open_id)
 }
 
 /// 提取 mention 的稳定 ID 与类型（优先 open_id，其次 user_id / union_id）
@@ -1238,64 +1257,6 @@ impl crate::pkg::aop::Producer for LarkDalImpl {
         Ok(())
     }
 }
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::events::lark::{LarkMentionId, LarkMentionIds};
-
-    fn mention(key: &str, open_id: &str, name: &str) -> LarkMention {
-        LarkMention {
-            key: key.to_string(),
-            id: LarkMentionId::Object(LarkMentionIds {
-                open_id: open_id.to_string(),
-                ..Default::default()
-            }),
-            name: name.to_string(),
-            tenant_key: String::new(),
-        }
-    }
-
-    /// 命中内部 Agent：正文替换为内部提及协议，平台原始 ID 仍完整存档
-    #[test]
-    fn build_mention_display_maps_bot_to_internal_agent() {
-        let (external, display) = build_mention_display(
-            &mention("@_user_1", "ou_bot", "小助手"),
-            Some("agt_1"),
-            ChannelType::Lark.as_str(),
-        );
-        assert_eq!(display, "[@小助手](agent:agt_1)");
-        assert_eq!(external.key, "@_user_1");
-        assert_eq!(external.id, "lark:ou_bot");
-        assert_eq!(external.id_type, "open_id");
-        assert_eq!(external.name, "小助手");
-    }
-
-    /// 未命中：正文保留 `@name`；名字缺失时退回平台 ID
-    #[test]
-    fn build_mention_display_falls_back_to_plain_name() {
-        let (external, display) = build_mention_display(
-            &mention("@_user_2", "ou_user", ""),
-            None,
-            ChannelType::Lark.as_str(),
-        );
-        assert_eq!(display, "@ou_user");
-        assert_eq!(external.name, "");
-    }
-
-    /// 同一 bot 映射到多个 Agent → 歧义，不参与替换
-    #[test]
-    fn merge_bot_agent_binding_marks_ambiguous_as_none() {
-        let mut seen: HashMap<String, Option<String>> = HashMap::new();
-        merge_bot_agent_binding(&mut seen, "ou_bot", "agt_1");
-        assert_eq!(seen.get("ou_bot").and_then(|v| v.as_deref()), Some("agt_1"));
-
-        // 重复同一映射不产生歧义
-        merge_bot_agent_binding(&mut seen, "ou_bot", "agt_1");
-        assert_eq!(seen.get("ou_bot").and_then(|v| v.as_deref()), Some("agt_1"));
-
-        // 出现第二个 Agent → 歧义
-        merge_bot_agent_binding(&mut seen, "ou_bot", "agt_2");
-        assert!(seen.get("ou_bot").expect("inserted").is_none());
-    }
-}
+#[path = "impl_tests.rs"]
+mod tests;

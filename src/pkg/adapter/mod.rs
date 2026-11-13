@@ -79,6 +79,18 @@ pub struct AdaptedMessage {
     pub to_agent_id: Option<String>,
     /// 来源渠道类型（producer 据此组装接待角色档位链；不填会误路由到默认渠道）
     pub channel_type: ChannelType,
+    /// 命中的内部渠道 ID（producer 据此读取渠道级入站过滤配置）
+    ///
+    /// 协议转换阶段已确定归属渠道时填充；无法确定时为 `None`，过滤层按放行降级。
+    pub channel_id: Option<String>,
+    /// 是否群聊 / 多人会话（私聊不参与群消息触发过滤）
+    ///
+    /// 由各渠道适配器按平台语义翻译，过滤层不感知具体平台。
+    pub is_group: bool,
+    /// 是否明确指向本渠道 Agent（@ 机器人、回复机器人等）
+    ///
+    /// 由适配器判定；平台无法判定归属时填 `true`（放行，避免误吞消息）。
+    pub addressed_to_agent: bool,
     /// 消息内容（纯文本）
     pub content: String,
     /// 关联项目 ID（可选）

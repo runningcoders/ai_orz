@@ -122,6 +122,17 @@ fn merge_channel_config(target: &mut ChannelConfig, source: &Option<CreateMessag
         return;
     };
 
+    // 群触发配置渠道无关：放在顶层合并，所有支持群聊的渠道共用
+    if let Some(v) = &config.group_trigger {
+        target.group_trigger = Some(v.clone());
+    }
+    if let Some(v) = &config.group_trigger_prefix {
+        target.group_trigger_prefix = Some(v.clone());
+    }
+    if let Some(v) = config.group_trigger_timeout_ms {
+        target.group_trigger_timeout_ms = Some(v);
+    }
+
     if let Some(lark) = &config.lark {
         if let Some(v) = &lark.credential_id {
             target.lark_credential_id = Some(v.clone());
@@ -198,6 +209,9 @@ mod tests {
     fn merge_config_updates_lark_fields() {
         let mut config = ChannelConfig::default();
         let source = Some(CreateMessageChannelConfig {
+            group_trigger: Some("all".to_string()),
+            group_trigger_prefix: Some("/ai".to_string()),
+            group_trigger_timeout_ms: Some(2000),
             lark: Some(CreateLarkChannelConfig {
                 credential_id: Some("cred-1".to_string()),
                 identity_mode: Some("bot".to_string()),
@@ -216,12 +230,18 @@ mod tests {
         assert_eq!(config.lark_open_id.as_deref(), Some("ou_xxx"));
         assert_eq!(config.lark_user_name.as_deref(), Some("Test"));
         assert_eq!(config.lark_listen_inbound, Some(true));
+        assert_eq!(config.group_trigger.as_deref(), Some("all"));
+        assert_eq!(config.group_trigger_prefix.as_deref(), Some("/ai"));
+        assert_eq!(config.group_trigger_timeout_ms, Some(2000));
     }
 
     #[test]
     fn merge_config_updates_email_fields() {
         let mut config = ChannelConfig::default();
         let source = Some(CreateMessageChannelConfig {
+            group_trigger: None,
+            group_trigger_prefix: None,
+            group_trigger_timeout_ms: None,
             lark: None,
             wechat: None,
             email: Some(CreateEmailChannelConfig {
@@ -244,6 +264,9 @@ mod tests {
             ..Default::default()
         };
         let source = Some(CreateMessageChannelConfig {
+            group_trigger: None,
+            group_trigger_prefix: None,
+            group_trigger_timeout_ms: None,
             lark: Some(CreateLarkChannelConfig {
                 credential_id: None,
                 identity_mode: None,

@@ -21,7 +21,7 @@ fn chat_req(name: &str, access_mode: Option<ModelAccessMode>) -> CreateModelProv
         capability: ModelCapability::Agent,
         model_name: "gpt-4o".to_string(),
         api_key: "sk-test".to_string(),
-        base_url: None,
+        base_url: Some("https://gateway.example.com/v1".to_string()),
         description: None,
         max_context_length: Some(128_000),
         recommended_context_length: None,

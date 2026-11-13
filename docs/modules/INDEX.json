@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14226869,
+  "total_bytes": 14237799,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -540,7 +540,7 @@
           "path": "01-组织与权限/C-知识/系统初始化处理器.md",
           "name": "系统初始化处理器",
           "title": "系统初始化处理器",
-          "bytes": 16804
+          "bytes": 17704
         },
         {
           "tier": "C-知识",
@@ -554,21 +554,21 @@
           "path": "01-组织与权限/C-知识/组织管理.md",
           "name": "组织管理",
           "title": "组织管理",
-          "bytes": 20454
+          "bytes": 20726
         },
         {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/组织管理处理器.md",
           "name": "组织管理处理器",
           "title": "组织管理处理器",
-          "bytes": 23559
+          "bytes": 23595
         },
         {
           "tier": "C-知识",
           "path": "01-组织与权限/C-知识/组织管理模块 API.md",
           "name": "组织管理模块 API",
           "title": "组织管理模块 API",
-          "bytes": 17972
+          "bytes": 18395
         },
         {
           "tier": "C-知识",
@@ -582,7 +582,7 @@
           "path": "01-组织与权限/C-知识/组织领域.md",
           "name": "组织领域",
           "title": "组织领域",
-          "bytes": 17594
+          "bytes": 17616
         },
         {
           "tier": "C-知识",
@@ -1113,14 +1113,14 @@
           "path": "02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md",
           "name": "小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类",
           "title": "小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类",
-          "bytes": 18045
+          "bytes": 18042
         },
         {
           "tier": "C-知识",
           "path": "02-Agent运行时/C-知识/小脑快判断（System One）.md",
           "name": "小脑快判断（System One）",
           "title": "小脑快判断（System One）",
-          "bytes": 52152
+          "bytes": 52297
         },
         {
           "tier": "C-知识",
@@ -1764,7 +1764,7 @@
           "path": "04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md",
           "name": "消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期",
           "title": "消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）",
-          "bytes": 40820
+          "bytes": 45342
         },
         {
           "tier": "C-知识",
@@ -1778,7 +1778,7 @@
           "path": "04-对话与消息/C-知识/消息渠道适配器.md",
           "name": "消息渠道适配器",
           "title": "消息渠道适配器",
-          "bytes": 22965
+          "bytes": 25994
         },
         {
           "tier": "C-知识",
@@ -3405,7 +3405,7 @@
           "path": "08-搜索/C-知识/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md",
           "name": "Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵",
           "title": "Embedding Provider 生命周期与重建触发条件",
-          "bytes": 26431
+          "bytes": 26928
         },
         {
           "tier": "C-知识",
@@ -4635,14 +4635,14 @@
           "path": "11-前端应用/C-知识/模型提供商管理.md",
           "name": "模型提供商管理",
           "title": "模型提供商管理（前端 UI 层）",
-          "bytes": 27548
+          "bytes": 27788
         },
         {
           "tier": "C-知识",
           "path": "11-前端应用/C-知识/消息与工作区页面.md",
           "name": "消息与工作区页面",
           "title": "消息与工作区页面",
-          "bytes": 28974
+          "bytes": 28986
         },
         {
           "tier": "C-知识",
@@ -5282,14 +5282,14 @@
           "path": "12-基础设施与部署/C-知识/模型提供商管理 API.md",
           "name": "模型提供商管理 API",
           "title": "模型提供商管理 API",
-          "bytes": 24547
+          "bytes": 24612
         },
         {
           "tier": "C-知识",
           "path": "12-基础设施与部署/C-知识/模型提供商管理.md",
           "name": "模型提供商管理",
           "title": "模型提供商管理（业务功能层）",
-          "bytes": 25147
+          "bytes": 25182
         },
         {
           "tier": "C-知识",
@@ -5303,7 +5303,7 @@
           "path": "12-基础设施与部署/C-知识/模型提供商配置.md",
           "name": "模型提供商配置",
           "title": "模型提供商配置",
-          "bytes": 15010
+          "bytes": 15355
         },
         {
           "tier": "C-知识",
@@ -5394,7 +5394,7 @@
           "path": "12-基础设施与部署/C-知识/系统初始化.md",
           "name": "系统初始化",
           "title": "系统初始化",
-          "bytes": 25660
+          "bytes": 25932
         },
         {
           "tier": "C-知识",
@@ -5711,7 +5711,7 @@
           "path": "13-数据模型/C-知识/外部 API 数据访问对象.md",
           "name": "外部 API 数据访问对象",
           "title": "外部 API 数据访问对象",
-          "bytes": 19059
+          "bytes": 19177
         },
         {
           "tier": "C-知识",

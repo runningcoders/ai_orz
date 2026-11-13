@@ -126,6 +126,10 @@ pub fn FinanceMessageChannels() -> Element {
     let mut new_lark_user_name = use_signal(String::new);
     let mut new_agent_id = use_signal(String::new);
     let mut new_listen_inbound = use_signal(|| true);
+    // 飞书群消息触发策略：mention（默认）/ all（全量，经小脑判断）/ prefix
+    let mut new_lark_group_trigger = use_signal(|| "mention".to_string());
+    let mut new_lark_group_trigger_prefix = use_signal(String::new);
+    let mut new_lark_group_trigger_timeout = use_signal(String::new);
     // 微信（iLink）
     let mut new_wechat_credential_id = use_signal(String::new);
     let mut new_wechat_peer_id = use_signal(String::new);
@@ -217,6 +221,22 @@ pub fn FinanceMessageChannels() -> Element {
                 access_token: none_if_empty(new_access_token()),
                 secret: none_if_empty(new_secret()),
                 config: Some(CreateMessageChannelConfig {
+                    // 目前仅飞书支持群聊配置；其他渠道留空，避免写入无意义配置
+                    group_trigger: if channel_type == ChannelType::Lark {
+                        Some(new_lark_group_trigger())
+                    } else {
+                        None
+                    },
+                    group_trigger_prefix: if channel_type == ChannelType::Lark {
+                        none_if_empty(new_lark_group_trigger_prefix())
+                    } else {
+                        None
+                    },
+                    group_trigger_timeout_ms: if channel_type == ChannelType::Lark {
+                        new_lark_group_trigger_timeout().trim().parse::<u64>().ok()
+                    } else {
+                        None
+                    },
                     lark: if channel_type == ChannelType::Lark {
                         Some(CreateLarkChannelConfig {
                             credential_id: none_if_empty(new_lark_credential_id()),
@@ -277,6 +297,9 @@ pub fn FinanceMessageChannels() -> Element {
                     new_lark_user_name.set(String::new());
                     new_agent_id.set(String::new());
                     new_listen_inbound.set(true);
+                    new_lark_group_trigger.set("mention".to_string());
+                    new_lark_group_trigger_prefix.set(String::new());
+                    new_lark_group_trigger_timeout.set(String::new());
                     new_wechat_credential_id.set(String::new());
                     new_wechat_peer_id.set(String::new());
                     new_wechat_listen_inbound.set(true);
@@ -319,6 +342,9 @@ pub fn FinanceMessageChannels() -> Element {
     let wechat_listen_inbound_value = new_wechat_listen_inbound();
     let identity_mode_value = new_lark_identity_mode();
     let listen_inbound_value = new_listen_inbound();
+    let lark_group_trigger_value = new_lark_group_trigger();
+    let lark_group_trigger_prefix_value = new_lark_group_trigger_prefix();
+    let lark_group_trigger_timeout_value = new_lark_group_trigger_timeout();
     let agent_value = new_agent_id();
 
     rsx! {
@@ -584,6 +610,40 @@ pub fn FinanceMessageChannels() -> Element {
                                 div { class: "text-xs text-base-content/60",
                                     "接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份"
                                 }
+                            }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text", "群消息触发策略" }
+                            }
+                            select { class: "select select-bordered hud-input w-full", value: "{lark_group_trigger_value}",
+                                onchange: move |e| new_lark_group_trigger.set(e.value()),
+                                option { value: "mention", "仅 @ 机器人（推荐，平台默认只推送这类消息）" }
+                                option { value: "all", "全部群消息（先经小脑判断是否需要回复）" }
+                                option { value: "prefix", "仅指定前缀开头的消息" }
+                            }
+                            label { class: "label",
+                                span { class: "label-text-alt", "私聊消息不受该策略影响，始终处理" }
+                            }
+                        }
+                        if lark_group_trigger_value == "prefix" {
+                            div { class: "form-control w-full",
+                                label { class: "label",
+                                    span { class: "label-text", "触发前缀" }
+                                }
+                                input { class: "input input-bordered hud-input w-full font-mono", value: "{lark_group_trigger_prefix_value}",
+                                    oninput: move |e| new_lark_group_trigger_prefix.set(e.value()),
+                                    placeholder: "例如 /ai（仅处理以该前缀开头的群消息）" }
+                            }
+                        }
+                        if lark_group_trigger_value == "all" {
+                            div { class: "form-control w-full",
+                                label { class: "label",
+                                    span { class: "label-text", "小脑判定超时（毫秒）" }
+                                }
+                                input { class: "input input-bordered hud-input w-full font-mono", value: "{lark_group_trigger_timeout_value}",
+                                    oninput: move |e| new_lark_group_trigger_timeout.set(e.value()),
+                                    placeholder: "留空使用默认 1000，范围 200~5000" }
                             }
                         }
                     }

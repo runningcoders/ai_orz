@@ -67,6 +67,9 @@ fn build_message_channel_config(
     credentials: Option<&[UserCredential]>,
 ) -> MessageChannelConfig {
     MessageChannelConfig {
+        group_trigger: config.group_trigger.clone(),
+        group_trigger_prefix: config.group_trigger_prefix.clone(),
+        group_trigger_timeout_ms: config.group_trigger_timeout_ms,
         lark: build_lark_config(config, credentials),
         wechat: build_wechat_config(config, credentials),
         email: build_email_config(config, credentials),

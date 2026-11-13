@@ -66,13 +66,14 @@ pub fn FinanceModelProviders() -> Element {
     let is_agent_cap = new_capability() == ModelCapability::Agent as i32;
     let is_embedding_cap = new_capability() == ModelCapability::Embedding as i32;
     let is_decision_cap = new_capability() == ModelCapability::Decision as i32;
-    // Base URL 占位符随类型变化：方舟与 OpenAI 根地址不同，且都只填根路径
+    // Base URL 占位符随类型变化：只填根路径。域名因付费渠道/代理网关而异，
+    // 不再给出任何具体域名示例，避免把用户引向错误的服务地址。
     let base_url_placeholder = match provider_type() {
         ProviderType::Doubao | ProviderType::DoubaoVision => {
-            "https://ark.cn-beijing.volces.com/api/v3"
+            "例如：https://<你的方舟网关域名>/api/v3"
         }
         ProviderType::FastEmbed => "本地模型无需填写",
-        _ => "https://api.openai.com/v1",
+        _ => "例如：https://<你的网关域名>/v1",
     };
 
     let mut show_test_modal = use_signal(|| false);
@@ -119,6 +120,12 @@ pub fn FinanceModelProviders() -> Element {
                     .map_or(true, |v| v <= 0)
             {
                 toast.error("请填写最大上下文长度（对话模型必填，正整数 token 数）");
+                return;
+            }
+            // Base URL 必填（FastEmbed 纯本地嵌入除外）：域名随付费渠道/网关而异，
+            // 后端已无默认域名兜底，留空会在运行时直接失败
+            if provider_type() != ProviderType::FastEmbed && base_url().trim().is_empty() {
+                toast.error("请填写 Base URL（模型服务根地址，如 https://<你的网关域名>/v1）");
                 return;
             }
             creating.set(true);
@@ -660,7 +667,7 @@ pub fn FinanceModelProviders() -> Element {
                 }
                 div { class: "form-control w-full",
                     label { class: "label",
-                        span { class: "label-text font-medium", "Base URL" }
+                        span { class: "label-text font-medium", "Base URL *" }
                     }
                     input { class: "input input-bordered w-full", value: "{base_url}",
                         oninput: move |e| base_url.set(e.value()), placeholder: "{base_url_placeholder}" }

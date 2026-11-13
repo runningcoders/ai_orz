@@ -18,7 +18,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use super::{DEFAULT_CEREBELLUM_TIMEOUT_MS, DEFAULT_SYSTEM_ONE_BASE_URL};
+use super::DEFAULT_CEREBELLUM_TIMEOUT_MS;
 
 /// provider 配置里的**显式**超时（毫秒）；未配置 / 脏 config 一律 `None`
 ///
@@ -49,9 +49,9 @@ pub(crate) fn resolve_timeout_ms(ctx: &RequestContext, provider: &ModelProviderP
 
 /// 校验 provider 出站前置条件 + 解析 System One 端点
 ///
-/// `api_key` 为空硬错误（同 cortex validate_provider_for_request 口径：
-/// 空 key 发出去只会被服务端拒绝）；`base_url` 缺省值**按 provider_type 分派**
-/// （见 [`default_base_url_for`]），不是全局一个常量。
+/// `api_key` 与 `base_url` 为空均为硬错误（同 cortex `validate_provider_for_request` 口径）：
+/// 域名随付费渠道 / 代理 / 私有化部署变化，**不存在可安全推断的默认域名**；
+/// 缺失时显式报错并指向 `base_url`，避免请求打到错误域名产生误导性错误。
 fn resolve_endpoint(provider: &ModelProviderPo) -> Result<String> {
     if provider.api_key.trim().is_empty() {
         return Err(err!(
@@ -59,38 +59,20 @@ fn resolve_endpoint(provider: &ModelProviderPo) -> Result<String> {
             "model provider api_key is empty, cannot call model API"
         ));
     }
-    let base = match provider.base_url.clone().filter(|s| !s.trim().is_empty()) {
-        Some(b) => b,
-        None => default_base_url_for(provider.provider_type)?.to_string(),
-    };
+    let base = provider
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            err!(
+                ConfigInvalid,
+                "system one provider base_url is empty; configure it explicitly \
+                 (Aliyun Bailian decision model must use its Workspace endpoint: \
+                 https://{{WorkspaceId}}.{{region}}.maas.aliyuncs.com/compatible-mode/v1)"
+            )
+        })?;
     Ok(format!("{}/systemone", base.trim_end_matches('/')))
-}
-
-/// 缺省 System One endpoint（**按 provider_type 分派**）
-///
-/// - `Jev`：有平台内建的商业端点兜底 [`DEFAULT_SYSTEM_ONE_BASE_URL`]，存量行为零变化；
-/// - 其余类型（含 `Qwen` = 阿里百炼）：**没有**可推断的缺省值。百炼决策模型走
-///   **Workspace 专用 Endpoint**（`https://{WorkspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1`），
-///   workspace id 与地域都编码在 host 里，平台无法凭空补全。
-///
-/// 为什么必须显式 `Err` 而不是统一兜底到 `DEFAULT_SYSTEM_ONE_BASE_URL`：
-/// 统一兜底会把「百炼没配 base_url」静默改写成「请求打到 TypeSafe 商业端点」——
-/// 失败信息与真实原因无关，排查会被带到完全错误的方向（同 R50 假绿的反面：
-/// 这里要的是**红得准**）。
-///
-/// 降级不变量不变：本函数只返回 `Err`，上游归 `DegradedReason::CallError` /
-/// `NoProvider` 走原逻辑，不 panic、不阻断主流程。
-fn default_base_url_for(provider_type: common::enums::ProviderType) -> Result<&'static str> {
-    match provider_type {
-        common::enums::ProviderType::Jev => Ok(DEFAULT_SYSTEM_ONE_BASE_URL),
-        other => Err(err!(
-            ConfigInvalid,
-            "system one provider type '{}' has no built-in default base_url; configure it explicitly \
-             (Aliyun Bailian decision model must use its Workspace endpoint: \
-             https://{{WorkspaceId}}.{{region}}.maas.aliyuncs.com/compatible-mode/v1)",
-            other
-        )),
-    }
 }
 
 /// 快判断入口（协议编解码 + 响应结构校验）
@@ -275,13 +257,6 @@ mod cerebellum_client_tests {
     }
 
     #[test]
-    fn endpoint_defaults_to_system_one_base() {
-        let po = provider("{}");
-        let url = resolve_endpoint(&po).unwrap();
-        assert_eq!(url, "https://api.typesafe.ai/v1/systemone");
-    }
-
-    #[test]
     fn endpoint_prefers_provider_base_url() {
         let mut po = provider("{}");
         po.base_url = Some("https://my-relay.example.com/v1/".to_string());
@@ -384,24 +359,19 @@ mod cerebellum_client_tests {
         );
     }
 
-    /// **两类型并存、各走各的**（任务书第 ④ 条）——正反成对（R54）：
-    /// ① Jev 缺 base_url 仍走 TypeSafe 默认（旧形态未被新分派破坏）；
-    /// ② Qwen 缺 base_url 是 Err（新形态按新规则生效）。
-    /// 同一函数、同一配置输入、仅 provider_type 不同 —— 差异只能来自分派本身。
+    /// 两类型并存、各走各的：**缺 base_url 时无论 Jev 还是 Qwen 都必须 Err**；
+    /// 配了 base_url 后各自拼接 `/systemone`，互不串台。
     #[test]
-    fn jev_and_qwen_endpoints_do_not_cross_talk() {
+    fn base_url_is_required_for_all_system_one_types() {
         let jev = provider("{}"); // helper 内建 provider_type = Jev
         assert_eq!(jev.provider_type, ProviderType::Jev);
-        assert_eq!(
-            resolve_endpoint(&jev).unwrap(),
-            "https://api.typesafe.ai/v1/systemone"
-        );
+        assert!(resolve_endpoint(&jev).is_err());
 
         let mut qwen = provider("{}");
         qwen.provider_type = ProviderType::Qwen;
         assert!(resolve_endpoint(&qwen).is_err());
 
-        // 反过来也成立：Qwen 配了 base_url 后正常，Jev 配同名 base_url 也正常（各自独立）
+        // 配了 base_url 后两类型都正常，各自独立
         qwen.base_url = Some("https://ws-x.cn-beijing.maas.aliyuncs.com/compatible-mode/v1".into());
         assert!(resolve_endpoint(&qwen).is_ok());
         let mut jev_custom = provider("{}");
@@ -415,7 +385,7 @@ mod cerebellum_client_tests {
     /// 错误信息必须**指向真正要改的东西**（`base_url`）——否则运维只能看到
     /// 一个泛化的 401/DNS 错误（本单的核心动机之一）。
     #[test]
-    fn missing_default_base_url_error_mentions_base_url() {
+    fn missing_base_url_error_mentions_base_url() {
         let mut po = provider("{}");
         po.provider_type = ProviderType::Qwen;
         let e = resolve_endpoint(&po).unwrap_err();

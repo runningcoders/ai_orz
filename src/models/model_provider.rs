@@ -122,6 +122,19 @@ impl ModelProviderConfig {
             .filter(|&v| v > 0)
             .map(|v| (v as f64 * CAPACITY_RATIO) as u64)
     }
+
+    /// 上下文容量的**两层夹逼**：`min(推荐值, 最大长度)`（未配置 ⇒ `None`）
+    ///
+    /// 推荐值是裁剪基准（软目标），最大长度是唯一硬顶；推荐值虚高或配置写反时
+    /// 按最大长度封顶，否则请求会被 provider 直接拒绝。小脑各场景的预算都从这里
+    /// 取容量，再按各自份额分配，禁止在场景侧拍固定字符 / token 数。
+    pub fn context_capacity_tokens(&self) -> Option<u64> {
+        let soft = self.recommended_context_length_tokens()?;
+        Some(match self.max_context_length.filter(|&v| v > 0) {
+            Some(hard) => soft.min(hard as u64),
+            None => soft,
+        })
+    }
 }
 
 /// 模型提供商持久化对象

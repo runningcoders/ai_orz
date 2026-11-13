@@ -339,11 +339,12 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
             provider_type: 0, // OpenAI
             model_name: "gpt-4o-mini".to_string(),
             api_key: "test-key".to_string(),
-            base_url: None,
+            base_url: Some("https://gateway.example.com/v1".to_string()),
             description: Some("test chat model".to_string()),
             max_context_length: Some(128_000),
-            recommended_context_length: None,
+            recommended_context_length: Some(64_000),
         }),
+        decision_model: None,
         embedding_model: None,
     };
 
@@ -489,6 +490,7 @@ pub async fn bootstrap_system_minimal(
         admin_display_name: None,
         admin_email: None,
         chat_model: None,
+        decision_model: None,
         embedding_model,
     };
 

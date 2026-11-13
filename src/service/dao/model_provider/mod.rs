@@ -392,7 +392,7 @@ fn weighted_avg_duration_ms(points: &[TimeSeriesPoint]) -> (Option<f64>, u64) {
 }
 
 mod sqlite;
-pub use self::sqlite::{dao, init};
+pub use self::sqlite::{dao, init, try_dao};
 
 pub mod stats_duckdb;
 pub use self::stats_duckdb::{stats_dao, stats_init, stats_new};

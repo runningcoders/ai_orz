@@ -17,44 +17,42 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-/// 解析 base_url：provider 配置优先于默认值
-pub fn resolve_base_url(provider: &ModelProviderPo, default: &str) -> String {
-    provider
-        .base_url
-        .clone()
-        .unwrap_or_else(|| default.to_string())
-}
-
-/// 根据 provider_type 获取默认 base_url
-pub fn default_base_url(provider_type: common::enums::ProviderType) -> &'static str {
-    match provider_type {
-        common::enums::ProviderType::OpenAI => "https://api.openai.com/v1",
-        common::enums::ProviderType::DeepSeek => "https://api.deepseek.com",
-        common::enums::ProviderType::Qwen => "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        common::enums::ProviderType::Doubao | common::enums::ProviderType::DoubaoVision => {
-            "https://ark.cn-beijing.volces.com/api/v3"
-        }
-        common::enums::ProviderType::Ollama => "http://localhost:11434/v1",
-        common::enums::ProviderType::Custom => "",
-        common::enums::ProviderType::FastEmbed => "",
-        // jev 非 OpenAI 兼容协议，cortex 侧无默认端点
-        // （System One 端点兜底在 dao/cerebellum::DEFAULT_SYSTEM_ONE_BASE_URL）
-        common::enums::ProviderType::Jev => "",
+/// 解析 base_url（必须由 Provider 显式配置）
+///
+/// **不提供任何按 provider_type 推断的默认域名**：同一服务商在不同付费/代理
+/// 渠道下域名完全不同（仅 path 后缀通用），平台无法替用户猜域名。
+pub fn resolve_base_url(provider: &ModelProviderPo) -> Result<String> {
+    let base_url = provider.base_url.as_deref().unwrap_or("").trim();
+    if base_url.is_empty() {
+        return Err(err!(
+            ConfigInvalid,
+            "model provider base_url is empty, configure the provider endpoint explicitly"
+        ));
     }
+    Ok(base_url.trim_end_matches('/').to_string())
 }
 
 /// 校验 provider 出站调用前置条件（HTTP 请求前的快速失败）
 ///
 /// - `api_key` 为空：硬错误。OpenAI 兼容协议必须携带鉴权，空 key 发出去只会被服务端拒绝，
 ///   在此直接返回避免无意义的网络往返与超时挂起。
-/// - `base_url`：非强依赖，可由 `provider_type` 推理默认值（见 `default_base_url`），
-///   故此处不校验；若 `Custom`/`FastEmbed` 等无默认值的类型未配置 base_url，
-///   解析后为空会在后续 URL 拼接时自然失败。
+/// - `base_url` 为空：硬错误。域名随付费渠道/代理变化，**不存在可安全推断的默认值**；
+///   缺失时直接失败并指向 `base_url`，避免请求打到错误域名产生误导性错误。
 pub fn validate_provider_for_request(provider: &ModelProviderPo) -> Result<()> {
     if provider.api_key.trim().is_empty() {
         return Err(err!(
             ConfigInvalid,
             "model provider api_key is empty, cannot call model API"
+        ));
+    }
+    if provider
+        .base_url
+        .as_deref()
+        .is_none_or(|d| d.trim().is_empty())
+    {
+        return Err(err!(
+            ConfigInvalid,
+            "model provider base_url is empty, cannot call model API"
         ));
     }
     Ok(())
@@ -147,8 +145,8 @@ pub async fn call_chat_completions(
     options: &crate::models::cortex_types::ModelCallOptions,
 ) -> Result<ThinkResult> {
     validate_provider_for_request(provider)?;
-    let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let base_url = resolve_base_url(provider)?;
+    let url = format!("{}/chat/completions", base_url);
 
     // 方案 §四：按配置解析访问模式（缺省/脏 config 兜底 stream + 告警日志，不中断推理）
     let access_mode = resolve_access_mode(&ctx, provider);
@@ -590,8 +588,8 @@ pub async fn call_embeddings(
     texts: &[String],
 ) -> Result<EmbeddingOutcome> {
     validate_provider_for_request(provider)?;
-    let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
-    let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
+    let base_url = resolve_base_url(provider)?;
+    let url = format!("{}/embeddings", base_url);
 
     let body = json!({
         "model": provider.model_name,
@@ -653,8 +651,8 @@ pub async fn call_embeddings_multimodal(
     texts: &[String],
 ) -> Result<EmbeddingOutcome> {
     validate_provider_for_request(provider)?;
-    let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
-    let url = format!("{}/embeddings/multimodal", base_url.trim_end_matches('/'));
+    let base_url = resolve_base_url(provider)?;
+    let url = format!("{}/embeddings/multimodal", base_url);
 
     let mut results = Vec::with_capacity(texts.len());
     let mut usages = Vec::with_capacity(texts.len());
