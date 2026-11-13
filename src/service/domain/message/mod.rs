@@ -286,16 +286,12 @@ pub struct SendToAgentCommand<'a> {
     pub task_id: Option<&'a str>,
     /// 引用的父消息 ID（可选，支持消息链）
     pub reply_to_id: Option<&'a str>,
-    /// 外部渠道消息键（可选，形如 `"lark:om_xxx"`）
+    /// 外部渠道入站上下文（渠道无关聚合）
     ///
-    /// 渠道入站消息落库时随消息写入 `messages.external_key`，供后续
-    /// 入站回复按渠道 parent_id/root_id 反查父消息、贯通跨渠道消息链。
-    pub external_key: Option<&'a str>,
-    /// 外部渠道话题键（可选，形如 `"omt_xxx"`，飞书「话题」唯一标识）
-    ///
-    /// 渠道入站话题消息落库时随消息写入 `messages.thread_id`，同一话题内
-    /// 所有消息共享，供出站时按话题回复。
-    pub thread_id: Option<&'a str>,
+    /// 承载平台消息 ID / 话题 ID / 会话 ID / @ 提及原始信息，落库到
+    /// `messages.external_key`、`thread_id`、`chat_id`、`external_mentions`。
+    /// 新增外部元数据只扩展结构体，不再给本命令逐字段加参数。
+    pub external: common::models::ExternalMessageContext,
     /// 附件 ID 声明清单（可选）
     ///
     /// **不**创建独立附件消息：附件以 `[文件名](attachment:{id})` 引用与文字同处

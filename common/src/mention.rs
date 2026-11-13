@@ -90,6 +90,32 @@ pub struct MentionRef {
     pub org: Option<String>,
 }
 
+/// 外部渠道 @ 提及的原始信息（平台侧存档）
+///
+/// 渠道入站消息可能携带平台原生提及（如飞书 `mentions[]`）。命中本系统 Agent
+/// 时正文替换为内部提及协议；未命中时正文保留 `@name` 展示。两种情况下平台
+/// 原始标识都完整存档到 `messages.external_mentions`，便于后续回溯与再映射。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ExternalMention {
+    /// 平台侧提及键（飞书如 `@_user_1`，对应正文中的占位符）
+    pub key: String,
+    /// 前缀化的稳定 ID（如 `lark:ou_xxx`），渠道前缀防跨平台撞键
+    pub id: String,
+    /// ID 类型（如 `open_id` / `user_id` / `union_id`）
+    pub id_type: String,
+    /// 平台展示名
+    pub name: String,
+    /// 租户 key（多租户平台才有）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tenant_key: Option<String>,
+    /// union_id（平台未授权时为空）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub union_id: Option<String>,
+    /// user_id（平台未授权时为空）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+}
+
 /// 解析后的提及（已带可读名 + 可选上下文摘要），供后端 prompt 注入等消费场景
 ///
 /// 与 [`MentionRef`] 的区别：[`MentionRef`] 只含 `kind + id`（协议层提取结果），

@@ -215,6 +215,12 @@ pub struct ChannelConfig {
     pub lark_open_id: Option<String>,
     /// 飞书用户名称（便于日志和展示，可选）
     pub lark_user_name: Option<String>,
+    /// 飞书应用机器人自身 open_id（群聊 @ 识别用）
+    ///
+    /// 群消息的 `mentions[]` 里被 @ 的机器人 open_id 与此值匹配时，
+    /// 映射到本渠道绑定的 agent_id 并替换为内部提及协议。
+    /// 由创建/更新渠道时调用 `GET /open-apis/bot/v3/info` 自动回填。
+    pub lark_bot_open_id: Option<String>,
     /// 是否监听该应用的飞书入站私信（缺省视为 true）
     ///
     /// 关闭后渠道仅用于出站推送与 lark_cli 工具身份，不建立 WS 长连接。

@@ -201,8 +201,7 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
                 project_id: Some(&project_id),
                 task_id: Some(&task_id),
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: None,
                 message_type: MessageType::Text,
             },
@@ -262,8 +261,7 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: None,
                 message_type: MessageType::Text,
             },
@@ -329,8 +327,7 @@ async fn test_send_to_agent_with_attachments_composes_refs_into_one_message(pool
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: Some(&att_ids),
                 message_type: MessageType::Text,
             },
@@ -410,8 +407,7 @@ async fn test_composed_attachment_refs_are_visible_to_awakening(pool: SqlitePool
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: Some(&att_ids),
                 message_type: MessageType::Text,
             },
@@ -460,8 +456,7 @@ async fn test_request_side_content_is_preserved_verbatim(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: Some(&att_ids),
                 message_type: MessageType::Text,
             },
@@ -491,8 +486,7 @@ async fn test_content_refs_without_declaration_become_mixed(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: None,
                 message_type: MessageType::Text,
             },
@@ -550,8 +544,7 @@ async fn test_declaration_backfills_only_missing_refs(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: Some(&att_ids),
                 message_type: MessageType::Text,
             },
@@ -602,8 +595,7 @@ async fn test_typed_image_placeholder_is_preserved_with_attachments(pool: Sqlite
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: Some(&att_ids),
                 message_type: MessageType::Text,
             },
@@ -641,8 +633,7 @@ async fn test_unknown_declared_attachment_is_rejected(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: Some(&bogus),
                 message_type: MessageType::Text,
             },
@@ -669,8 +660,7 @@ async fn test_agent_notify_is_not_upgraded_by_content_refs(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: None,
                 message_type: MessageType::AgentNotify,
             },
@@ -697,8 +687,7 @@ async fn test_image_only_placeholder_without_attachments_is_preserved(pool: Sqli
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: None,
                 message_type: MessageType::Text,
             },
@@ -1445,8 +1434,7 @@ async fn test_send_to_agent_rejects_user_id(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: None,
+                external: Default::default(),
                 attachment_ids: None,
                 message_type: MessageType::Text,
             },
@@ -1509,8 +1497,12 @@ async fn test_send_to_user_inherits_parent_thread_id(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
-                external_key: None,
-                thread_id: Some("omt_demo_001"),
+                external: common::models::ExternalMessageContext {
+                    external_key: Some("lark:om_demo_001".to_string()),
+                    thread_id: Some("omt_demo_001".to_string()),
+                    chat_id: Some("oc_demo_001".to_string()),
+                    ..Default::default()
+                },
                 attachment_ids: None,
                 message_type: MessageType::Text,
             },
@@ -1539,4 +1531,67 @@ async fn test_send_to_user_inherits_parent_thread_id(pool: SqlitePool) {
     assert_eq!(reply.po.thread_id.as_deref(), Some("omt_demo_001"));
     assert_eq!(reply.po.root_id.as_deref(), Some(parent.po.id.as_str()));
     assert_eq!(reply.po.reply_to_id.as_deref(), Some(parent.po.id.as_str()));
+}
+
+/// 群消息落库：chat_id 与平台提及原始信息随入站消息存档；
+/// 出站回复继承父消息群会话键，供后续按群直发。
+#[sqlx::test]
+async fn test_chat_id_and_external_mentions_persisted_and_inherited(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let mentions = vec![common::mention::ExternalMention {
+        key: "@_user_1".to_string(),
+        id: "lark:ou_bot_1".to_string(),
+        id_type: "open_id".to_string(),
+        name: "小助手".to_string(),
+        tenant_key: None,
+        union_id: None,
+        user_id: None,
+    }];
+
+    let parent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "user-1",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "[@小助手](agent:agent-1) 帮忙看下",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                external: common::models::ExternalMessageContext {
+                    external_key: Some("lark:om_group_1".to_string()),
+                    chat_id: Some("oc_group_1".to_string()),
+                    external_mentions: mentions.clone(),
+                    ..Default::default()
+                },
+                attachment_ids: None,
+                message_type: MessageType::Text,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(parent.po.chat_id.as_deref(), Some("oc_group_1"));
+    assert_eq!(parent.po.external_mentions(), mentions.as_slice());
+
+    // 出站回复继承群会话键
+    let reply = domain
+        .delivery()
+        .send_to_user(
+            ctx.clone(),
+            SendToUserCommand {
+                from_agent_id: "agent-1",
+                to_user_id: "user-1",
+                content: "收到",
+                project_id: None,
+                task_id: None,
+                reply_to_id: Some(&parent.po.id),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply.po.chat_id.as_deref(), Some("oc_group_1"));
 }

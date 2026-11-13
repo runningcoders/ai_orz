@@ -221,8 +221,7 @@ impl MessageAdapterCallback for MessageChannelProducer {
             project_id: msg.project_id.as_deref(),
             task_id: msg.task_id.as_deref(),
             reply_to_id: msg.reply_to_id.as_deref(),
-            external_key: msg.external_key.as_deref(),
-            thread_id: msg.thread_id.as_deref(),
+            external: msg.external,
             attachment_ids: if attachment_ids.is_empty() {
                 None
             } else {

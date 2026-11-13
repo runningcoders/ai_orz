@@ -87,20 +87,12 @@ pub struct AdaptedMessage {
     pub task_id: Option<String>,
     /// 引用的父消息 ID（可选，支持消息链）
     pub reply_to_id: Option<String>,
-    /// 外部渠道消息键（可选，形如 `"lark:om_xxx"` / `"wechat:{message_id}"`，渠道前缀防撞键）
+    /// 外部渠道入站上下文（渠道无关聚合）
     ///
-    /// 渠道消息自身的平台侧 ID，随消息落库到 `messages.external_key`。
-    ///
-    /// 命名沿用了最初用途（**飞书**入站回复按平台 `parent_id`/`root_id` 反查父消息、
-    /// 贯通消息链）；微信侧同样填该字段，承载的是**「渠道消息平台 ID 通用存档」**这一
-    /// 扩展语义——iLink 协议没有线程/回复字段，故**不承担反查父消息**职责。
-    /// 该列是普通索引、无唯一约束，新增写入无需 DDL。
-    pub external_key: Option<String>,
-    /// 外部渠道话题键（可选，形如 `"omt_xxx"`，飞书「话题」唯一标识）
-    ///
-    /// 渠道自身的「话题/线程」平台侧 ID，随消息落库到 `messages.thread_id`。
-    /// 同一话题内所有消息共享同一值；普通私信与非话题回复为 `None`。
-    pub thread_id: Option<String>,
+    /// 承载平台消息 ID、话题 ID、会话 ID 与 @ 提及原始信息。新增渠道或新增
+    /// 外部元数据时只扩展 [`common::models::ExternalMessageContext`]，
+    /// 无需给本结构逐字段加参数。
+    pub external: common::models::ExternalMessageContext,
     /// 渠道入站附件（图片等），由 producer 落库后随文本消息一并投递
     ///
     /// 无附件时为**空 Vec**（不设 `Option`：消费侧遍历即可，无额外分支）。

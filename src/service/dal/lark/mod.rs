@@ -89,6 +89,8 @@ pub fn new_with_credential_dao(
         lark_dao,
         credential_dao,
         message_dao,
+        // 会话绑定 DAO 无状态、按调用方 ctx 的 pool 执行，测试注入天然隔离
+        crate::service::dao::message_channel_conversation::new(),
     ))
 }
 

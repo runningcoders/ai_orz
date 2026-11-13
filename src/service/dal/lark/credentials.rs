@@ -52,4 +52,15 @@ pub trait LarkCredentialDal: Send + Sync {
         app_id: &str,
         open_id: &str,
     ) -> Result<Option<MessageChannel>>;
+
+    /// 按凭证引用解析应用机器人自身 open_id（渠道配置自动回填用）
+    ///
+    /// 渠道 `lark_credential_id` → 凭证行 → 解密凭证 → `GET /bot/v3/info`。
+    /// 凭证缺失 / 类型不匹配 / 上游调用失败均返回 `None`（自动回填是尽力而为，
+    /// 不应阻断渠道创建/更新）。
+    async fn resolve_bot_open_id(
+        &self,
+        ctx: RequestContext,
+        credential_id: &str,
+    ) -> Result<Option<String>>;
 }

@@ -113,9 +113,93 @@ pub struct LarkEventMessage {
     /// 或按语言包一层（`{"zh_cn":{...}}`）
     #[serde(default)]
     pub content: String,
+    /// 消息中的 @ 提及列表（飞书原生 `mentions`；无提及时为空）
+    #[serde(default)]
+    pub mentions: Vec<LarkMention>,
     /// 消息原始扩展字段（保留未识别字段）
     #[serde(default)]
     pub extra: Option<Value>,
+}
+
+/// 飞书原生 @ 提及（`mentions[]` 单项）
+///
+/// 文本消息正文里以 `key`（如 `@_user_1`）作占位，`id` 为被提及者的平台标识。
+/// 群聊里 @ 机器人时，该项的 `open_id` 即机器人自身 open_id。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LarkMention {
+    /// 正文中的占位键（如 `@_user_1`）
+    #[serde(default)]
+    pub key: String,
+    /// 被提及者 ID（兼容字符串与对象两种下发形态）
+    #[serde(default)]
+    pub id: LarkMentionId,
+    /// 展示名（群昵称 / 机器人名）
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub name: String,
+    /// 租户 key
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub tenant_key: String,
+}
+
+/// 飞书 mention 的 `id` 字段：兼容字符串与对象两种下发形态
+///
+/// - 旧版 / 简化形态：`"id": "ou_xxx"`（字符串）
+/// - 标准形态：`"id": {"open_id":"ou_xxx","union_id":"on_xxx","user_id":"..."}`
+///
+/// 应用无 `user_id`/`union_id` 权限时标准形态的对应字段为 `null`。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LarkMentionId {
+    /// 字符串形态（按 open_id 解释）
+    Plain(String),
+    /// 对象形态
+    Object(LarkMentionIds),
+}
+
+impl Default for LarkMentionId {
+    fn default() -> Self {
+        Self::Plain(String::new())
+    }
+}
+
+/// 对象形态的 mention ID 集合
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LarkMentionIds {
+    /// 用户 / 机器人的 open_id
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub open_id: String,
+    /// union_id（应用无权限时为 null）
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub union_id: String,
+    /// user_id（应用无权限时为 null）
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub user_id: String,
+}
+
+impl LarkMentionId {
+    /// open_id（字符串形态视作 open_id）
+    pub fn open_id(&self) -> &str {
+        match self {
+            Self::Plain(value) => value,
+            Self::Object(ids) => &ids.open_id,
+        }
+    }
+
+    /// union_id（字符串形态无此信息）
+    pub fn union_id(&self) -> Option<&str> {
+        match self {
+            Self::Plain(_) => None,
+            Self::Object(ids) => Some(ids.union_id.as_str()).filter(|s| !s.is_empty()),
+        }
+    }
+
+    /// user_id（字符串形态无此信息）
+    pub fn user_id(&self) -> Option<&str> {
+        match self {
+            Self::Plain(_) => None,
+            Self::Object(ids) => Some(ids.user_id.as_str()).filter(|s| !s.is_empty()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

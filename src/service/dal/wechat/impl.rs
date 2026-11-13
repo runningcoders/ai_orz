@@ -335,9 +335,10 @@ impl WechatDalImpl {
             project_id: None,
             task_id: None,
             reply_to_id: None,
-            external_key,
-            // 微信侧无话题概念
-            thread_id: None,
+            external: common::models::ExternalMessageContext {
+                external_key,
+                ..Default::default()
+            },
             attachments,
         }))
     }
