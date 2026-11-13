@@ -45,15 +45,20 @@
 //!   `continue` 就是物理上的无限互发。故保留一个「无论小脑说什么都强制收口」
 //!   的物理上限，命中即收口并记 `degraded = ceiling_forced` 留痕。
 //!
-//! # 置信门槛（按选项分档）
+//! # 置信门槛（按选项分档 + 按链深度分级）
 //!
 //! 三个选项的代价不同，故不共用一条门槛：
 //!
 //! | 选项 | 门槛 | 代价 |
 //! |---|---|---|
 //! | `close` | 0（默认采纳/默认兜底） | 最低：Final 仍作为知会送达，链不再增长 |
-//! | `silent` | 0.8 | 中等：对端零发送，误判后不会再被唤醒 |
-//! | `continue` | 0.9 | 最高：多跑一轮完整思考，且链深继续增长 |
+//! | `silent` | 0.8（固定） | 中等：对端零发送，误判后不会再被唤醒 |
+//! | `continue` | **0.60 → 0.90 阶梯** | 最高：多跑一轮完整思考，且链深继续增长 |
+//!
+//! `continue` 是唯一会**延长**链条的选项，因此门槛随 `window_depth` 递增
+//! （见 [`continue_threshold_at`]）：浅链误杀一整条刚起头的协作代价更大，
+//! 深链则逐步收紧到 [`MIN_CONFIDENCE_CONTINUE`] 这条天花板。`silent` 不参与
+//! 分级 —— 零发送是「信息丢弃」方向，不该因为链浅就放宽。
 //!
 //! 「答了但选中项不达标」与「没答」都落到 `close`——拿不准就用代价最小的姿态。
 //!
@@ -78,6 +83,23 @@
 //! 超长降级：**保链头 [`HEAD_KEEP`] 条 + 最近 N 条**，中间被丢弃的部分必须在 prompt
 //! 里显式写出「中间 N 条已省略（共 M 条）」。不标注，小脑会把「看不到」当成
 //! 「没有新信息」；判据里因此写死「无法确认时选 close（仅通知）」。
+//!
+//! # 上下文的「对照面」（2026-11-12）
+//!
+//! 题面要求判「有没有**上文没有**的新事实」，而 state 原先只给链内原文：
+//! 第 1 跳时「上文」几乎为空，模型对着空参照系给不出达门槛的置信（实测当天
+//! 两次低置信兜底收口都在 `window_depth=1` 且证据一条没省略）。故补两块：
+//! - `## 已交付信息`：全链要点索引 + 重复正文统计，原文被裁掉时仍能回答
+//!   「上文已经说过什么」；
+//! - `## 对端视角`：对端身份 / 已收到的我方交付 / 最新诉求 / 是否似在等答复，
+//!   让 `close` vs `silent` 的「对方是否需要知道」有主语。
+//!
+//! 两块都从**已在手里的** `messages` 现算，零额外 DB 读；按 [`VIEWS_BP`] 切
+//! 一小块同一正文池，且计入 [`fixed_sections_tokens`]，不挤掉主证据。
+//!
+//! 同时题面末段 [`decision_frame_note`] 写入**本次** `window_depth` 对应的
+//! `continue` 采纳门槛与三档门槛，消除「题面说深度不重要、裁决却按深度卡」
+//! 的错配；state 的 `## 协作压力` 也带同一份 `continue_threshold`。
 //!
 //! # 降级不变量（三条，与《小脑快判断的运行口径》一致）
 //!
@@ -106,6 +128,7 @@ use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, CerebellumGuardV
 use crate::pkg::policy::{DecisionPolicy, DecisionValue, Metrics, PickOne, PickOnePolicy, Policy};
 use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
 use crate::service::dal::brain::{BrainDal, dal};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// 场景标识（日志 / 计量口径，也是 `DecisionRequest.scene`）
@@ -141,7 +164,61 @@ pub(crate) const MIN_CONFIDENCE_SILENT: f32 = 0.8;
 ///
 /// 每多回一跳都要再付一次完整思考 + 投递成本，并且链深继续增长；且本门已把
 /// 静态硬墙降为软墙，`continue` 会越过它。故必须有高置信才放行。
+///
+/// ⚠️ 这是**声明值 / 政策摘要**，真正采纳时的门槛由 [`continue_threshold_at`]
+/// 按窗口深度现算（浅链更松、深链收紧到本值封顶）。两处不一致会让日志与策略
+/// 声明打架，因此 [`policy`] 里的这条声明只用于「选项表完整性」，判定不走它；
+/// 阶梯终点与它相等（AMan 2026-11-12 定：`0.6` 起步、`0.9` 封顶）。
 pub(crate) const MIN_CONFIDENCE_CONTINUE: f32 = 0.9;
+
+/// `continue` 的置信门槛按**连续无新信息窗口深度**分档
+///
+/// 为什么不用固定门槛（原值 0.9）：固定值把「第 1 跳」和「第 9 跳」当同一件事，
+/// 而两者误判代价完全相反 ——
+/// - 浅链误杀：一整条刚起头的协作被掐断，对端只收到一条知会（实测 2026-11-12：
+///   `window_depth=1`、小脑给 continue 但置信 0.85 < 0.9 ⇒ 整链当场收口）；
+/// - 深链放行：每多一跳都在重复支付思考 + 投递成本，且越过静态硬墙后没有任何
+///   跳数兜底（只剩 `ABSOLUTE_CEILING=32`），必须近乎确定才准放行。
+///
+/// 阶梯只升不降：`0.60` 起步（浅链能接受"倾向继续"的弱信号）、每档 +0.06，
+/// 到 `>= hard_window_depth` 收在声明值 0.9。上限定 0.9 而不是更高，是为了让
+/// 「越墙」这一档仍留出可判定的余量——门槛再往上，越墙的 `continue` 事实上
+/// 等于永远不采纳（模型给出 0.95+ 的置信本身就不常见），分级也就失去意义。
+///
+/// 轴选 `window_depth` 而不是 `chain_depth`：窗口深度会随有效回血清零，长而
+/// 有产出的协作不该被惩罚（与硬墙同一口径）；用 `chain_depth` 会把「聊了 20 跳
+/// 但每跳都有新信息」的正常协作一并收紧。
+pub(crate) fn continue_threshold_at(window_depth: usize) -> f32 {
+    match window_depth {
+        // 链刚起头：多走一跳的代价远小于误杀（0.6 档，接受"倾向继续"的弱信号）
+        0 | 1 => 0.60,
+        2 => 0.66,
+        3 => 0.72,
+        // 已进入压力带（soft_fatigue 在 3 跳左右到达），开始要求明确表态
+        4 | 5 => 0.78,
+        // 逼近硬窗口（缺省 8）：只放行高置信
+        6 | 7 => 0.84,
+        // 硬窗口及以上 = 推翻静态 Escalate，收到声明值封顶
+        _ => 0.90,
+    }
+}
+
+/// 某选项在**当前窗口深度**下的采纳门槛
+///
+/// 返回值 `None` = 选项不在选项集内（模型幻觉选项 ⇒ 按"没有结论"处理），
+/// 语义必须与 [`PickOnePolicy::option_threshold`] 保持一致，只是把 `continue`
+/// 换成按深度现算的阶梯值。
+fn option_threshold_at(policy: &PickOnePolicy, option: &str, window_depth: usize) -> Option<f32> {
+    // 先过策略表：不在选项集内直接 None，避免给幻觉选项编一个门槛
+    policy.option_threshold(option)?;
+    if option == OPTION_CONTINUE {
+        // `continue` 是唯一会**延长**链条的选项，门槛随深度走阶梯（取代声明值）
+        return Some(continue_threshold_at(window_depth));
+    }
+    // `close` 恒 0.0（代价最低，任何时候都采纳）；`silent` 固定 0.8
+    // （零发送是「信息丢弃」方向，不该因为链浅就放宽）
+    policy.option_threshold(option)
+}
 
 /// 选项 id：继续自动回发
 pub(crate) const OPTION_CONTINUE: &str = "continue";
@@ -305,9 +382,11 @@ pub(crate) fn pending_token_budget(input_budget: usize, body_budget: usize) -> u
 /// 末段「省略标注 ⇒ 看不出就选 close」是本场景的保守方向：看不到中段不等于
 /// 没有新信息，但也不能靠猜测继续加深链。
 const INSTRUCTIONS: &str = "判断协作方刚发来的消息有没有新的实质信息、本轮还需不需要自动回发；\
-看链内消息、链起点（`## 链起点`）、最近对话（`## 最近对话`）与待发消息（`## 待发消息`）。\n\
-先看 `## 待发消息` —— 它是本条**本来就要发出去**的正文，属判据的一部分：\
-它有对方需要知道的新内容（新结论 / 新数据 / 待办 / 问题）⇒ 选 continue；\
+看 `## 已交付信息`（上文已有内容的对照面）、`## 对端视角`（close/silent 的判断主语）、\
+链起点（`## 链起点`）、最近对话（`## 最近对话`）、链内消息与待发消息（`## 待发消息`）。\n\
+先拿 `## 待发消息` 与 `## 已交付信息` 比对：前者是本条**本来就要发出去**的正文，\
+后者是全链已说过什么的要点索引；两者重复 ⇒ 本条没带来新东西。\
+待发正文有对方需要知道的新内容（新结论 / 新数据 / 待办 / 问题）⇒ 选 continue；\
 只有它本身就是对方已经知道的纯确认 / 纯致谢，才可能选 close / silent。\n\
 选 continue：带来了上文没有的新事实 / 数据 / 结论 / 问题 / 待办，\
 或提出需要答复的问题、需要确认的决策点、需要执行的下一步。\n\
@@ -315,11 +394,44 @@ const INSTRUCTIONS: &str = "判断协作方刚发来的消息有没有新的实�
 或结论已在上文交付、本条只是重复总结，或同一层意思反复换措辞；\
 **拿不准时也选 close** —— 它仍会把本条作为知会送达对端，信息不丢。\n\
 选 silent：本条与本轮回复里都没有对方需要知道的内容（纯确认 / 纯致谢 / 纯重复），\
-连「到此为止」都不必告诉对方。\n\
+连「到此为止」都不必告诉对方。区分 close / silent 时以 `## 对端视角` 里的对端为主语：\
+问「对端需不需要知道这条 Final」，而不是「本 Agent 还想不想说」。\n\
 state 里的 window_depth（当前链深度）与 fatigue（疲劳值）**仅作辅助参考**：\n\
-主判据是这条消息有没有新的实质信息量，不得仅因为这两个数字偏大就选 close。\n\
+主判据是这条消息有没有新的实质信息量，不得仅因为这两个数字偏大就选 close；\
+但它们会通过题面末段的「本次裁决口径」决定 continue 所需的最低置信，并非与判定无关。\n\
 链内区块若出现「中间 N 条已省略」，不得把「看不到」当成「没有新信息」：\
-无法确认时选 close，由对端决定是否重开新链。";
+此时改看 `## 已交付信息` 的全链要点索引；仍无法确认时选 close，由对端决定是否重开新链。";
+
+/// 题面末段的**运行时裁决口径**（不是内容判据，是本次判定怎么被采纳）
+///
+/// 与 `thinking_strength::instructions` 同一手法：题面不能只讲原则，
+/// 必须把本次真正生效的数字写进来。否则模型看到「window_depth 仅作辅助参考」，
+/// 实际裁决却按 [`continue_threshold_at`] 把门槛从 0.60 抬到 0.90 ——
+/// 题面与裁决方向相反，模型给不出达门槛的置信还不知道差在哪。
+fn decision_frame_note(facts: &ChainPressureFacts) -> String {
+    let continue_threshold = continue_threshold_at(facts.window_depth);
+    format!(
+        "\n\n【本次裁决口径（运行时事实，不是内容判据）】\n\
+window_depth = {depth}；本轮 continue 的最低采纳置信 = {ct:.2}（随窗口深度分级），\
+close = {ct_close:.2}（任何置信都采纳，也是兜底落点），silent = {ct_silent:.2}。\n\
+选 continue 但置信低于 {ct:.2} 时，结论会按 close 兜底收口、不会放行；\
+window_depth 不决定「有没有新信息」，只决定「要多确信才准继续」。\n\
+`## 已交付信息` 是「上文已有」的对照面，`## 对端视角` 给出 close/silent 的判断主语；\
+先与 `## 待发消息` 比对，再下结论。",
+        depth = facts.window_depth,
+        ct = continue_threshold,
+        ct_close = MIN_CONFIDENCE_CLOSE,
+        ct_silent = MIN_CONFIDENCE_SILENT,
+    )
+}
+
+/// 本次请求使用的完整题面 = 常量判据 + 运行时裁决口径
+///
+/// ⚠️ [`question_frame_tokens`] / [`state_pool_tokens`] 必须吃**这份**题面，
+/// 不能只算常量段 —— 否则总账按短题面算，实际请求会静默越过 provider 容量。
+fn instructions_for(facts: &ChainPressureFacts) -> String {
+    format!("{INSTRUCTIONS}{}", decision_frame_note(facts))
+}
 
 /// 三个选项（id → 判据描述）
 ///
@@ -343,13 +455,14 @@ const OPTIONS: [(&str, &str); 3] = [
     ),
 ];
 
-/// 题面（instructions + 三个选项描述）的实测 token
+/// 题面（本次 `instructions` + 三个选项描述）的实测 token
 ///
-/// 与协议层 `questions` 同源（同一份 `INSTRUCTIONS` / `OPTIONS` 常量），不另算一份
-/// 「大概多少」。题面是常量，@4000 实测 **573 token**，已超过 `share::FRAME_BP`
-/// 在标准容量下的 500 token 预留 —— 这不是估算误差，是比例预留装不下常量题面。
-fn question_frame_tokens() -> usize {
-    estimate_tokens(INSTRUCTIONS)
+/// 与协议层 `questions` 同源（`policy(facts)` 用的就是同一份字符串），不另算一份
+/// 「大概多少」。题面含运行时裁决段，长度随 `window_depth` 变化，故必须按**本次**
+/// 题面现算 —— 常量段 @4000 实测 573 token，已超过 `share::FRAME_BP` 在该容量下的
+/// 500 token 预留，动态段只会让它更长。
+fn question_frame_tokens(instructions: &str) -> usize {
+    estimate_tokens(instructions)
         + OPTIONS
             .iter()
             .map(|(id, desc)| estimate_tokens(id) + estimate_tokens(desc))
@@ -362,8 +475,9 @@ fn question_frame_tokens() -> usize {
 /// 本场景不接它，就必须自己保证「state + 题面 ≤ 容量」。题面小于骨架份额时
 /// `min` 取比例池 ⇒ 既有分账逐字节不变；题面超出骨架份额时（小容量 / 常量题面
 /// 偏长）按实测收紧，只在本场景少给一点链内正文，不动共用比例表、不波及六场景。
-pub(crate) fn state_pool_tokens(input_budget: usize) -> usize {
-    body_token_budget(input_budget).min(input_budget.saturating_sub(question_frame_tokens()))
+pub(crate) fn state_pool_tokens(input_budget: usize, instructions: &str) -> usize {
+    body_token_budget(input_budget)
+        .min(input_budget.saturating_sub(question_frame_tokens(instructions)))
 }
 
 /// 链内正文的可用预算（**总账收口的唯一出口**）
@@ -380,12 +494,14 @@ pub(crate) fn state_pool_tokens(input_budget: usize) -> usize {
 pub(crate) fn chain_budget_tokens(
     brain: &Brain,
     origin_rendered: &str,
+    views: &ChainContextViews,
     facts: &ChainPressureFacts,
     input_budget: usize,
     pending_tokens: usize,
+    instructions: &str,
 ) -> usize {
-    let fixed = fixed_sections_tokens(brain, origin_rendered, facts);
-    let pool = state_pool_tokens(input_budget);
+    let fixed = fixed_sections_tokens(brain, origin_rendered, views, facts);
+    let pool = state_pool_tokens(input_budget, instructions);
     if pool <= fixed {
         return body_token_budget(input_budget).saturating_sub(pending_tokens);
     }
@@ -448,6 +564,205 @@ pub(crate) struct ChainPressureFacts {
     pub soft_fatigue: u64,
     pub hard_fatigue: u64,
     pub hard_window_depth: u64,
+}
+
+// ══════ 运行时对照面（2026-11-12）：已交付信息 / 对端视角 ══════
+
+/// 两块新增上下文（本次判定现算，零额外 DB 读）
+///
+/// 与 `## 链内消息` 的分工：那边是**原文证据**（超预算会保头去尾并显式标注省略），
+/// 这里是**全链的结构化索引 + 对端主语** —— 即使原文被裁掉，模型仍能回答
+/// 「上文已经说过什么」「这条 Final 发给谁、他已经拿到什么」。
+///
+/// 改造前判据要求判「上文没有的新事实」，state 却只给原文；第 1 跳时「上文」
+/// 几乎为空，模型对着空参照系自然给不出达门槛的置信（实测 2026-11-12 全天
+/// 两次 `close_default` 都发生在 `window_depth=1` 且 `included=1, omitted=0`，
+/// 即证据完整、不是裁剪误杀）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ChainContextViews {
+    /// `## 已交付信息` 正文（全链要点索引 + 重复正文）
+    pub delivered: String,
+    /// `## 对端视角` 正文（对端身份 / 已收到 / 最新诉求 / 判断主语）
+    pub peer: String,
+}
+
+/// 对照面占输入预算的份额（**同池切分，不新增预算池**）
+///
+/// 与 `PENDING_REPLY_BP` 同形：两块合起来 5%，再被正文池的 1/8 夹住，
+/// 小容量下自然收敛，绝不会把 `## 链内消息` 这块主证据挤没。
+/// ⚠️ 不进 `share::TOTAL_BP`：它切的是同一份正文池里的一小块，不是独立预算池。
+const VIEWS_BP: u32 = 500; // 5%
+const VIEWS_SHARE_DIVISOR: usize = 8;
+
+/// 要点索引最多保留的行数（保链头 3 + 最近 N，中间显式标注）
+const MAX_VIEW_LINES: usize = 12;
+/// 单行摘要 / 整块的截断标注
+const VIEW_TRUNCATION_SUFFIX: &str = "…";
+
+fn views_token_budget(input_budget: usize, body_budget: usize) -> usize {
+    context::bp_of(input_budget, VIEWS_BP).min(body_budget / VIEWS_SHARE_DIVISOR)
+}
+
+/// 对端最新消息里是否**似在**等待答复（启发式线索，不是判据结论）
+///
+/// 只写「似在」：疑问句标记是弱信号，判「有没有新信息」仍以正文与要点索引为准。
+fn looks_like_question(text: &str) -> bool {
+    text.contains('?')
+        || text.contains('？')
+        || [
+            "是否",
+            "能否",
+            "可否",
+            "请确认",
+            "怎么",
+            "为什么",
+            "如何",
+            "吗",
+            "呢",
+        ]
+        .iter()
+        .any(|mark| text.contains(mark))
+}
+
+/// 单条要点索引（名字 / 类型 / 摘要）
+///
+/// ⚠️ 单行预算必须**由要点块自己的总预算 / 行数派生**，不能复用
+/// `dialogue_snippet_tokens`（那是最近对话的 4% 片段，@4000 就有 160 token）：
+/// 否则小容量下第一行就吃满整个对照面预算，后面的全链索引全被截掉。
+fn view_line(index: usize, message: &ChainMessage, line_budget: usize) -> String {
+    let who = message.from_name.as_deref().unwrap_or(&message.from_id);
+    let snippet = truncate_to_tokens(message.content.trim(), line_budget, VIEW_TRUNCATION_SUFFIX);
+    format!(
+        "[#{}] {} {}：{}",
+        index + 1,
+        who,
+        message.type_label,
+        snippet
+    )
+}
+
+/// 渲染「已交付信息」：全链要点索引 + 重复正文统计
+///
+/// 重复正文是判 `close` 最直接的证据（同一层意思反复换措辞 / 纯确认）；
+/// 原文被裁掉时，这份索引仍是「上文有什么」的完整回答。
+fn delivered_body(messages: &[ChainMessage], line_budget: usize, budget: usize) -> String {
+    if messages.is_empty() || budget == 0 {
+        return String::new();
+    }
+    let total = messages.len();
+    let head = HEAD_KEEP.min(total).min(MAX_VIEW_LINES);
+    let tail = MAX_VIEW_LINES.saturating_sub(head);
+    let mut lines: Vec<String> = (0..head)
+        .map(|i| view_line(i, &messages[i], line_budget))
+        .collect();
+    let omitted = total.saturating_sub(head + tail);
+    if omitted > 0 {
+        lines.push(format!("[中间 {omitted} 条要点已省略（共 {total} 跳）]"));
+    }
+    if tail > 0 {
+        let start = total.saturating_sub(tail).max(head);
+        lines.extend((start..total).map(|i| view_line(i, &messages[i], line_budget)));
+    }
+
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for message in messages {
+        *counts.entry(message.content.trim()).or_insert(0) += 1;
+    }
+    let repeats: Vec<_> = counts.iter().filter(|(_, count)| **count > 1).collect();
+    if !repeats.is_empty() {
+        lines.push("重复出现的正文（可能是复述 / 确认，不是新信息）：".to_string());
+        for (text, count) in repeats.iter().take(3) {
+            let short = truncate_to_tokens(text, line_budget, VIEW_TRUNCATION_SUFFIX);
+            lines.push(format!("- ×{count}：{short}"));
+        }
+    }
+
+    // ⚠️ 正文里禁止出现「## 」字面串：state 的块边界靠标题定位，正文里再写一遍
+    // 其他块名会让「块存在 / 块序」断言命中错误位置（实测踩过：空待发正文用例
+    // 因这里写了「## 待发消息」被判成留了裸标题）。故用普通中文表述。
+    let body = format!(
+        "共 {total} 跳。本块是全链要点索引（链内原文可能已省略）；\
+拿它与本轮待发正文比对，判断本条是否只是重复。\n{}",
+        lines.join("\n")
+    );
+    truncate_to_tokens(&body, budget, VIEW_TRUNCATION_SUFFIX)
+}
+
+/// 渲染「对端视角」：让 `close` / `silent` 的「对方是否需要知道」有主语
+///
+/// 改造前 `## 会话身份` 只有本 Agent、`## 最近对话` 是本 Agent 的短期记忆，
+/// 链内消息虽有 `from_name`，却没有「对端是谁 / 已拿到什么 / 还在等什么」；
+/// 而这两个选项的差别恰恰只在对端是否需要知道这条 Final。
+fn peer_body(
+    messages: &[ChainMessage],
+    brain: &Brain,
+    line_budget: usize,
+    budget: usize,
+) -> String {
+    if budget == 0 {
+        return String::new();
+    }
+    // 时间正序里最后一条「非本 Agent」的消息 = 协作方刚发来的入站消息
+    let peer = messages.iter().rev().find(|m| m.from_id != brain.agent_id);
+    let peer_identity = match peer {
+        Some(m) => format!(
+            "{}({})",
+            m.from_name.as_deref().unwrap_or(&m.from_id),
+            m.from_id
+        ),
+        None => "未知（链内未见非本 Agent 的参与方）".to_string(),
+    };
+    let mine: Vec<(usize, &ChainMessage)> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.from_id == brain.agent_id)
+        .collect();
+    let last_delivered = mine
+        .last()
+        .map(|(index, m)| view_line(*index, m, line_budget))
+        .unwrap_or_else(|| "（本链尚未向对端交付过内容）".to_string());
+    let latest_from_peer = peer
+        .map(|m| truncate_to_tokens(m.content.trim(), line_budget, VIEW_TRUNCATION_SUFFIX))
+        .unwrap_or_else(|| "（无）".to_string());
+    let waiting = peer
+        .map(|m| looks_like_question(&m.content))
+        .unwrap_or(false);
+    let body = format!(
+        "本 Agent（判定的一方）：{me_name}({me_id})\n\
+对端（协作方，本轮 Final 的接收方）：{peer_identity}\n\
+对端已收到我方消息：{delivered_count} 条；最近一次交付：{last_delivered}\n\
+对端本轮发来：{latest_from_peer}\n\
+对端似在等待答复：{waiting}（仅按疑问句标记的启发式线索，不是判据结论）\n\
+⚠️ close = 本 Agent 的 Final 仍作为知会送达对端；silent = 对端一条都收不到。\
+区分两者时问「对端需不需要知道这条 Final」，主语是对端，不是本 Agent。",
+        me_name = brain.agent_name,
+        me_id = brain.agent_id,
+        delivered_count = mine.len(),
+        waiting = if waiting { "是" } else { "否" },
+    );
+    truncate_to_tokens(&body, budget, VIEW_TRUNCATION_SUFFIX)
+}
+
+/// 生成本次判定的两块对照面（预算为 0 ⇒ 两块都不带，不新增开销）
+fn build_views(
+    brain: &Brain,
+    messages: &[ChainMessage],
+    input_budget: usize,
+    body_budget: usize,
+) -> ChainContextViews {
+    let budget = views_token_budget(input_budget, body_budget);
+    if budget == 0 {
+        return ChainContextViews::default();
+    }
+    // saturating_mul：容量未配时 input_budget = usize::MAX，直接乘 2 会溢出
+    let delivered_budget = budget.saturating_mul(2) / 3;
+    let peer_budget = budget.saturating_sub(delivered_budget);
+    // 单行摘要按「要点块总预算 / 行数」派生：容量未配时该值仍极大 ⇒ 不裁
+    let line_budget = (delivered_budget / MAX_VIEW_LINES).max(1);
+    ChainContextViews {
+        delivered: delivered_body(messages, line_budget, delivered_budget),
+        peer: peer_body(messages, brain, line_budget, peer_budget),
+    }
 }
 
 // ⚠️ Q2 改判（AMan 2026-11-10）：原 `should_ask` 门槛（`fatigue >= soft` 或
@@ -570,26 +885,33 @@ pub(crate) fn render_chain(messages: &[ChainMessage], budget: usize) -> ChainInp
     }
 }
 
-/// 协作压力块正文：六个数字逐行 `key: value`
+/// 协作压力块正文：六个压力数字 + 本次 `continue` 采纳门槛
 ///
 /// 六个全部保留 —— `window_depth` / `fatigue` 在判据里写明「仅作辅助参考」，但
 /// `soft_*` / `hard_*` 是模型理解「这一跳处在第几层」的唯一依据；少给一个，
-/// 它就会把当前跳数当绝对值读。
+/// 它就会把当前跳数当绝对值读。第七行是**运行时裁决事实**：与题面末段的
+/// 「本次裁决口径」同源取 [`continue_threshold_at`]，state 与题面不得各算一份。
 fn pressure_body(facts: &ChainPressureFacts) -> String {
     format!(
         "chain_depth: {}\nwindow_depth: {}\nfatigue: {}\nsoft_fatigue: {}\n\
-hard_fatigue: {}\nhard_window_depth: {}",
+hard_fatigue: {}\nhard_window_depth: {}\ncontinue_threshold: {:.2}",
         facts.chain_depth,
         facts.window_depth,
         facts.fatigue,
         facts.soft_fatigue,
         facts.hard_fatigue,
-        facts.hard_window_depth
+        facts.hard_window_depth,
+        continue_threshold_at(facts.window_depth)
     )
 }
 
 /// 本场景的上下文装配（**唯一装配点**）：块序固定
-/// `会话身份` → `当前场景` → `最近对话` → `链起点` → `链内消息` → `待发消息` → `协作压力`
+/// `会话身份` → `当前场景` → `最近对话` → `链起点` → `已交付信息` → `对端视角`
+/// → `链内消息` → `待发消息` → `协作压力`
+///
+/// 两个对照面刻意排在**原文证据之前**：先交代「上文已说过什么」「这条 Final 发给谁」，
+/// 再读链内往返原文与待发正文，模型才有参照系去判「新不新」。它与思考强度场景
+/// 的 `render_strength_context` 同理 —— 高价值块前置，不能指望尾部补块。
 ///
 /// 两处刻意的「不」：
 /// - **不用 `with_user_message`**：本场景的输入是 N 条链内历史正文，不是「当前用户
@@ -611,6 +933,7 @@ fn state_bundle(
     origin_rendered: &str,
     chain_rendered: &str,
     pending_rendered: &str,
+    views: &ChainContextViews,
     facts: &ChainPressureFacts,
 ) -> context::ContextBundle {
     let mut bundle = context::ContextBundle::new()
@@ -625,6 +948,9 @@ fn state_bundle(
         );
     // 链起点（用户 / 系统原话）：空正文整块跳过，不留裸标题
     bundle.push("链起点", origin_rendered.to_string());
+    // 两个对照面：预算为 0 时 `build_views` 返回空串 ⇒ `push` 整块跳过
+    bundle.push("已交付信息", views.delivered.clone());
+    bundle.push("对端视角", views.peer.clone());
     // 空正文（一条链内消息都没带上）时 `push` 整块跳过，不留 `## 链内消息` 裸标题
     bundle.push("链内消息", chain_rendered.to_string());
     // 待发消息：本条**默认准备发送**的正文（判 ①②③ 的第三个输入面）。
@@ -635,6 +961,9 @@ fn state_bundle(
 }
 
 /// 链内 / 待发两块之外的固定 state 开销（token，**实测口径**）
+///
+/// ⚠️ 两个对照面也算「固定块」：`views` 由 `build_views` 按自己的小预算先裁好，
+/// 对链内正文来说它是固定开销，必须从同一个池里扣掉，否则新块会静默挤掉主证据。
 ///
 /// `share::TOTAL_BP` 的编译期断言只钉「骨架 + 待发 + 正文 = 100%」，钉不住本场景
 /// 的语义分叉：六场景由 `render_within` 把**所有块**压到 `body_budget_tokens` 以内，
@@ -650,10 +979,19 @@ fn state_bundle(
 fn fixed_sections_tokens(
     brain: &Brain,
     origin_rendered: &str,
+    views: &ChainContextViews,
     facts: &ChainPressureFacts,
 ) -> usize {
     const PLACEHOLDER: &str = "占";
-    let rendered = state_bundle(brain, origin_rendered, PLACEHOLDER, PLACEHOLDER, facts).render();
+    let rendered = state_bundle(
+        brain,
+        origin_rendered,
+        PLACEHOLDER,
+        PLACEHOLDER,
+        views,
+        facts,
+    )
+    .render();
     estimate_tokens(&rendered).saturating_sub(2 * estimate_tokens(PLACEHOLDER))
 }
 
@@ -663,6 +1001,7 @@ fn state_metrics(
     origin_rendered: &str,
     chain_rendered: &str,
     pending_rendered: &str,
+    views: &ChainContextViews,
     facts: &ChainPressureFacts,
 ) -> Metrics {
     Metrics::new().with(
@@ -672,6 +1011,7 @@ fn state_metrics(
             origin_rendered,
             chain_rendered,
             pending_rendered,
+            views,
             facts,
         )
         .render(),
@@ -679,13 +1019,15 @@ fn state_metrics(
 }
 
 /// 本场景的策略形态（无状态，可反复构造）
-fn policy() -> PickOnePolicy {
+fn policy(facts: &ChainPressureFacts) -> PickOnePolicy {
     PickOnePolicy::new(
         SCENE,
         "对话链深收敛判定",
         "协作方刚发来的这条消息还有没有新的实质信息、本轮是否还需要自动回发\
 （防两个 Agent 沿 reply_to_id 无限互发）",
-        INSTRUCTIONS,
+        // 题面必须带本次实际门槛：只写「window_depth 仅作辅助参考」会让模型
+        // 以为深度不重要，而裁决恰恰按深度把 continue 门槛抬到 0.90。
+        instructions_for(facts),
         OPTIONS,
         MIN_CONFIDENCE,
     )
@@ -971,14 +1313,19 @@ pub(crate) async fn judge_chain_reply(
     // ⚠️ 总账收口：本场景不接 `render_within`，就得自己保证「整个 state 正文 ≤
     // state_pool」（六场景由组织器保证）。`chain_budget_tokens` 单一出口负责
     // 「题面实测收紧 + 固定块实测 + 待发实测」三层扣减；少了它，12% 的最近对话
-    // + 固定块 + 573 token 题面会叠在 87.5% 之外，推荐值≈最大长度的 provider
-    // 会被顶出窗口。极小容量保持改造前分账（见该函数 doc）。
+    // + 固定块 + 题面会叠在 87.5% 之外，推荐值≈最大长度的 provider 会被顶出窗口。
+    // 题面现在含运行时裁决段、固定块现在含两个对照面，两者都必须按**本次实测**
+    // 传入，否则总账按旧口径算而实际请求更长/更多块。极小容量保持改造前分账。
+    let instructions = instructions_for(facts);
+    let views = build_views(brain, messages, input_budget, body_budget);
     let chain_budget = chain_budget_tokens(
         brain,
         &origin_rendered,
+        &views,
         facts,
         input_budget,
         estimate_tokens(&pending),
+        &instructions,
     );
 
     // ⑥ 链内一条消息都拉不到：不调小脑、不占配额
@@ -1022,8 +1369,17 @@ pub(crate) async fn judge_chain_reply(
         return None;
     }
 
-    let policy = policy();
-    let metrics = state_metrics(brain, &origin_rendered, &input.rendered, &pending, facts);
+    // 可观测：两个对照面是否被小容量砍掉（0 = 两块都没带上，排障时不用猜）
+    let views_tokens = estimate_tokens(&views.delivered) + estimate_tokens(&views.peer);
+    let policy = policy(facts);
+    let metrics = state_metrics(
+        brain,
+        &origin_rendered,
+        &input.rendered,
+        &pending,
+        &views,
+        facts,
+    );
 
     // 阶段一：策略声明要问什么（纯函数；选项固定三条，一次 PickOne）
     let requests = policy.prepare(&metrics);
@@ -1083,24 +1439,27 @@ pub(crate) async fn judge_chain_reply(
     // 都落到 `close` —— 「不知道该怎么回，就仅通知」，这是代价最小的姿态。
     let metrics = metrics.with_decisions(Arc::new(outcome.answers));
     let overrode_static_wall = facts.window_depth as u64 >= facts.hard_window_depth;
-    let (pick, reason) = match metrics.decision(&policy.primary_qid()) {
+    // 门槛现算（`continue` 走深度阶梯）：`threshold` 一并带出去，收口日志里就能
+    // 直接看到「差多少」——只有 `confidence` 没有门槛，低置信收口无法复盘。
+    let (pick, reason, threshold) = match metrics.decision(&policy.primary_qid()) {
         Some(DecisionValue::Pick {
             chosen, confidence, ..
-        }) => match policy.option_threshold(chosen) {
+        }) => match option_threshold_at(&policy, chosen, facts.window_depth) {
             Some(threshold) if *confidence >= threshold => (
                 Some(PickOne {
                     option: chosen.clone(),
                     confidence: *confidence,
                 }),
                 None,
+                Some(threshold),
             ),
             // 答了但没达到该选项门槛
-            Some(_) => (None, Some(DEGRADED_LOW_CONFIDENCE)),
+            Some(threshold) => (None, Some(DEGRADED_LOW_CONFIDENCE), Some(threshold)),
             // 模型编造的选项：不在选项集内 = 没有结论
-            None => (None, Some(DEGRADED_NO_ANSWER)),
+            None => (None, Some(DEGRADED_NO_ANSWER), None),
         },
         // 没答 / 题型不符
-        _ => (None, Some(DEGRADED_NO_ANSWER)),
+        _ => (None, Some(DEGRADED_NO_ANSWER), None),
     };
     let Some(pick) = pick else {
         let reason = reason.unwrap_or(DEGRADED_NO_ANSWER);
@@ -1113,6 +1472,9 @@ pub(crate) async fn judge_chain_reply(
             latency_ms = latency_ms,
             window_depth = facts.window_depth,
             hard_window_depth = facts.hard_window_depth,
+            threshold = threshold.unwrap_or(-1.0),
+            continue_threshold = continue_threshold_at(facts.window_depth),
+            views_tokens = views_tokens,
             overrode_static_wall = overrode_static_wall,
             "chain reply gate has no usable answer, default to close (notify only)"
         );
@@ -1216,11 +1578,14 @@ pub(crate) async fn judge_chain_reply(
         "chain_reply",
         decision = DECISION_CONTINUE,
         confidence = pick.confidence,
+        // 采纳门槛随窗口深度变化：有这个数才能看出「是勉强过线还是轻松过线」
+        threshold = threshold.unwrap_or(-1.0),
         scene = SCENE,
         latency_ms = latency_ms,
         window_depth = facts.window_depth,
         hard_window_depth = facts.hard_window_depth,
         overrode_static_wall = overrode_static_wall,
+        views_tokens = views_tokens,
         included = input.included,
         omitted = input.omitted,
         "chain reply gate lets the chain continue (soft wall)"

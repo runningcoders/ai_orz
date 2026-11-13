@@ -110,7 +110,8 @@ pub struct RuntimeListResponse {
 
 /// GET /agents/think-traces 请求
 ///
-/// `agent_id` 省略时跨 Agent 聚合（对话页多 Agent 思考流）；
+/// `agent_id` 省略时跨 Agent 聚合（对话页多 Agent 思考流）；`agent_ids`
+/// 用逗号分隔的集合进一步圈定范围（默认对话按当前任务出现过的 Agent 过滤）；
 /// `project_id` / `task_id` 按轨迹条目字段过滤。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct QueryThinkTracesRequest {
@@ -118,6 +119,13 @@ pub struct QueryThinkTracesRequest {
     #[param(source = "query")]
     #[serde(default)]
     pub agent_id: Option<String>,
+    /// 按 Agent 集合过滤（逗号分隔的 Agent ID，如 `a,b,c`）
+    ///
+    /// 用于对话页「当前任务出现过的 Agent」聚合视角。GET query 不支持重复键，
+    /// 故用单键逗号拼接；与 `agent_id` 同时出现时两者都生效（交集）。
+    #[param(source = "query")]
+    #[serde(default)]
+    pub agent_ids: Option<String>,
     /// 按项目过滤（仅 2026-10-22 之后写入的轨迹带该字段）
     #[param(source = "query")]
     #[serde(default)]

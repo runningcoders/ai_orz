@@ -186,7 +186,7 @@ fn brain_without_cerebellum(limit: usize) -> Brain {
 
 /// 用生产同一份策略装一条 Pick 结论（选项 id 与置信度可控）
 fn pick_for(option: &str, confidence: f32) -> DecisionOutcome {
-    let policy: PickOnePolicy = policy();
+    let policy: PickOnePolicy = policy(&triggered_facts());
     DecisionOutcome {
         answers: DecisionAnswers::new().with(
             policy.primary_qid(),
@@ -642,13 +642,26 @@ async fn low_confidence_close_is_adopted() {
 
 #[tokio::test]
 async fn low_confidence_continue_falls_back_to_close() {
-    // continue 代价最高：门槛 0.9，不达标就落到默认 close
+    // continue 代价最高：门槛随窗口深度走阶梯，6 跳要 0.84，探针给 0.80 不达标
+    // ⇒ 落到默认 close。⚠️ 深度必须是**深**的：浅链门槛低（见
+    // `shallow_chain_adopts_continue_that_deep_chain_rejects`），复用
+    // `triggered_facts()`（window_depth=4，门槛 0.78）会让本用例假绿。
+    // ⚠️ 探针值同样不能随手改：封顶降到 0.9 之后 0.85 在 6 跳已经**通过**，
+    // 探针一旦抬到 0.84 以上本用例就变成假绿。
     let brain = brain_with_quota(10);
     let run_id = "chain-reply-low-continue";
+    let facts = ChainPressureFacts {
+        chain_depth: 6,
+        window_depth: 6,
+        fatigue: 72,
+        soft_fatigue: 36,
+        hard_fatigue: 100,
+        hard_window_depth: 8,
+    };
     let (got, calls) = run_gate(
         &sample_chain(6),
-        triggered_facts(),
-        vec![Some(pick_for(OPTION_CONTINUE, 0.85))],
+        facts,
+        vec![Some(pick_for(OPTION_CONTINUE, 0.80))],
         Some(&brain),
         run_id,
     )
@@ -661,6 +674,97 @@ async fn low_confidence_continue_falls_back_to_close() {
     let traces = take_traces(run_id);
     assert_eq!(traces[0].decision, DECISION_CLOSE_DEFAULT);
     assert_eq!(traces[0].degraded.as_deref(), Some(DEGRADED_LOW_CONFIDENCE));
+}
+
+/// 阶梯本体：只升不降、起点 0.6、封顶 0.9
+///
+/// 这条守的是「分级」这件事本身 —— 若有人把 `continue_threshold_at` 改回常量，
+/// 或整体抬高起点 / 把封顶挪到 0.9 以上，本用例必须红。
+#[test]
+fn continue_threshold_rises_with_window_depth() {
+    let ladder: Vec<f32> = (0..16).map(continue_threshold_at).collect();
+    assert!(
+        ladder.windows(2).all(|w| w[1] >= w[0]),
+        "门槛必须随窗口深度单调不减：{ladder:?}"
+    );
+    // 端点钉死（AMan 2026-11-12 定：0.6 起步、0.9 封顶）——阶梯整体抬升或封顶
+    // 挪动都是行为变更，必须在断言上显式体现，不能靠"单调"蒙过去
+    assert_eq!(
+        continue_threshold_at(0),
+        0.60,
+        "浅链起点必须是 0.6（太高一放开就误杀刚起头的协作）"
+    );
+    assert_eq!(
+        continue_threshold_at(1),
+        0.60,
+        "第 1 跳与窗口 0 同档（实测事故就发生在第 1 跳）"
+    );
+    assert_eq!(
+        continue_threshold_at(8),
+        MIN_CONFIDENCE_CONTINUE,
+        "越过硬墙（>= hard_window_depth）收在声明值封顶：{}",
+        MIN_CONFIDENCE_CONTINUE
+    );
+    assert!(
+        ladder.iter().all(|t| *t <= MIN_CONFIDENCE_CONTINUE),
+        "任何深度都不得超过声明值封顶：{ladder:?}"
+    );
+    // 幻觉选项仍然没有门槛（不能被阶梯「编」出一个值来）
+    assert_eq!(
+        option_threshold_at(&policy(&triggered_facts()), "no_such_option", 1),
+        None
+    );
+}
+
+/// **今日事故的反事实成对**：同一个置信度，浅链放行、深链收口。
+///
+/// 2026-11-12 15:44 实测：`window_depth=1`、小脑给 continue 置信 0.85、旧固定
+/// 门槛 0.9 ⇒ 整条刚起头的协作被兜底收口。浅链上调门槛后同一答案应放行；
+/// 反事实（同答案放到硬窗口那一档）仍必须收口 —— 否则等于把门槛整体删掉。
+#[tokio::test]
+async fn shallow_chain_adopts_continue_that_deep_chain_rejects() {
+    let brain = brain_with_quota(10);
+
+    // 同一个 0.85 在阶梯上的三个落点：第 1 跳（0.60）放行、6 跳（0.84）仍放行、
+    // 硬窗口 8 跳（0.90 封顶）收口。中间那档是这次调参的直接后果——封顶从 0.95
+    // 降到 0.90 之后，0.85 在 6~7 跳不再被拦，只有越墙档才必须更确信。
+    let cases = [
+        (1usize, 12u64, "run-graded-shallow", true),
+        (6, 72, "run-graded-mid", true),
+        (8, 96, "run-graded-deep", false),
+    ];
+    for (depth, fatigue, run_id, expect_continue) in cases {
+        let facts = ChainPressureFacts {
+            chain_depth: depth,
+            window_depth: depth,
+            fatigue,
+            soft_fatigue: 36,
+            hard_fatigue: 100,
+            hard_window_depth: 8,
+        };
+        let (verdict, _) = run_gate(
+            &sample_chain(depth),
+            facts,
+            vec![Some(pick_for(OPTION_CONTINUE, 0.85))],
+            Some(&brain),
+            run_id,
+        )
+        .await;
+        let decision = take_traces(run_id)[0].decision.clone();
+        if expect_continue {
+            assert!(
+                matches!(verdict, Some(ChainReplyVerdict::Continue { .. })),
+                "{depth} 跳的门槛低于 0.85，continue 应放行：{verdict:?}"
+            );
+            assert_eq!(decision, DECISION_CONTINUE, "{depth} 跳");
+        } else {
+            assert!(
+                matches!(verdict, Some(ChainReplyVerdict::Close { confidence: None })),
+                "{depth} 跳已到封顶 0.9，0.85 必须收口（否则门槛等于被删掉）：{verdict:?}"
+            );
+            assert_eq!(decision, DECISION_CLOSE_DEFAULT, "{depth} 跳");
+        }
+    }
 }
 
 #[tokio::test]
@@ -1390,6 +1494,7 @@ fn metrics_for(facts: &ChainPressureFacts) -> Metrics {
         "",
         "[#1] agent-a 文本消息: 正文",
         "",
+        &ChainContextViews::default(),
         facts,
     )
 }
@@ -1402,11 +1507,12 @@ fn metrics_for(facts: &ChainPressureFacts) -> Metrics {
 fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
     let facts = triggered_facts();
     let brain = brain_with_quota(1);
-    let reqs = policy().prepare(&state_metrics(
+    let reqs = policy(&facts).prepare(&state_metrics(
         &brain,
         "",
         "[#1] agent-a 文本消息: 正文",
         "",
+        &ChainContextViews::default(),
         &facts,
     ));
     assert_eq!(reqs.len(), 1, "一次 PickOne 一个请求");
@@ -1434,7 +1540,7 @@ fn prompt_carries_window_depth_and_fatigue_as_auxiliary() {
 #[test]
 fn scene_declares_a_5s_timeout_override() {
     assert_eq!(SCENE_TIMEOUT_MS, 5_000, "AMan 定谳：本场景请求小脑 5 秒");
-    let reqs = policy().prepare(&metrics_for(&triggered_facts()));
+    let reqs = policy(&triggered_facts()).prepare(&metrics_for(&triggered_facts()));
     assert_eq!(
         reqs[0].timeout_ms,
         Some(SCENE_TIMEOUT_MS),
@@ -1617,8 +1723,24 @@ fn dialogue_snippet_budget_reaches_the_bundle() {
     large.memories = vec![short_term("st-w2", &long_summary)];
     let facts = triggered_facts();
 
-    let small_body = state_bundle(&small, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
-    let large_body = state_bundle(&large, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let small_body = state_bundle(
+        &small,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &ChainContextViews::default(),
+        &facts,
+    )
+    .render();
+    let large_body = state_bundle(
+        &large,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &ChainContextViews::default(),
+        &facts,
+    )
+    .render();
     assert!(
         !small_body.contains(&long_summary),
         "小容量必须按派生预算截断：{small_body:?}"
@@ -1739,7 +1861,15 @@ async fn request_state_is_single_rendered_context_block() {
 #[test]
 fn context_block_order_is_identity_scene_chain_pressure() {
     let brain = brain_with_quota(1);
-    let rendered = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
+    let rendered = state_bundle(
+        &brain,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &ChainContextViews::default(),
+        &triggered_facts(),
+    )
+    .render();
     let at = |needle: &str| {
         rendered
             .find(needle)
@@ -1844,6 +1974,7 @@ async fn boundary_capacities_never_emit_a_title_without_body() {
             "",
             &render_chain(&messages, body_budget).rendered,
             "",
+            &ChainContextViews::default(),
             &triggered_facts(),
         );
         let actual_tokens = estimate_tokens(&bundle.render());
@@ -2143,7 +2274,15 @@ async fn oversized_pending_reply_is_truncated_with_annotation() {
 fn recent_dialogue_block_follows_brain_memories() {
     let mut brain = brain_with_quota(1);
     let facts = triggered_facts();
-    let without = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let without = state_bundle(
+        &brain,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &ChainContextViews::default(),
+        &facts,
+    )
+    .render();
     assert!(
         !without.contains("## 最近对话"),
         "空 memories ⇒ 整块跳过：{without:?}"
@@ -2152,7 +2291,15 @@ fn recent_dialogue_block_follows_brain_memories() {
         short_term("st-d1", "第一条：链内最近对话甲"),
         short_term("st-d2", "第二条：链内最近对话乙"),
     ];
-    let with = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let with = state_bundle(
+        &brain,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &ChainContextViews::default(),
+        &facts,
+    )
+    .render();
     assert!(with.contains("## 最近对话"), "{with:?}");
     assert!(
         with.contains("第一条：链内最近对话甲"),
@@ -2171,6 +2318,7 @@ fn context_block_order_includes_new_inputs() {
         "",
         CHAIN_SENTINEL_HEAD,
         PENDING_SENTINEL,
+        &ChainContextViews::default(),
         &triggered_facts(),
     )
     .render();
@@ -2292,6 +2440,7 @@ async fn state_body_stays_in_its_pool_even_with_heavy_fixed_sections() {
         "",
         &render_chain(&messages, legacy_chain_budget).rendered,
         &pending_rendered,
+        &ChainContextViews::default(),
         &facts,
     )
     .render();
@@ -2304,8 +2453,10 @@ async fn state_body_stays_in_its_pool_even_with_heavy_fixed_sections() {
     // 第二处缺口：题面是常量，@4000 实测 573 > 骨架份额 500。仅修「固定块」仍会
     // 让「state 用满 87.5% + 题面」越过容量，故 `state_pool_tokens` 必须按题面实测
     // 收紧正文池 —— 本用例钉死收紧确实生效，且总账仍闭合。
-    let question_cost = question_frame_tokens();
-    let state_pool = state_pool_tokens(input);
+    // 题面现在含运行时裁决段，总账必须按**本次**题面算，不能按常量段
+    let instructions = instructions_for(&facts);
+    let question_cost = question_frame_tokens(&instructions);
+    let state_pool = state_pool_tokens(input, &instructions);
     assert!(
         question_cost > context::frame_tokens(input),
         "必须落在「题面超出骨架份额」的收紧区，否则没证到第二处缺口\
@@ -2332,26 +2483,29 @@ async fn state_body_stays_in_its_pool_even_with_heavy_fixed_sections() {
 /// 只剩 1 token，不能出现「容量稍大反而不问」。
 #[test]
 fn tiny_capacity_keeps_the_pre_change_split() {
-    let question = question_frame_tokens();
-    let brain = brain_with_quota(1);
     let facts = triggered_facts();
+    let instructions = instructions_for(&facts);
+    let views = ChainContextViews::default();
+    let question = question_frame_tokens(&instructions);
+    let brain = brain_with_quota(1);
     for input in [90usize, 110, 500, question, question + 1] {
         assert_eq!(
-            chain_budget_tokens(&brain, "", &facts, input, 0),
+            chain_budget_tokens(&brain, "", &views, &facts, input, 0, &instructions),
             body_token_budget(input),
             "input={input} 必须保持改造前分账"
         );
     }
     // 容量未配 ⇒ input_budget = usize::MAX：不裁口径不能被收紧改写
     assert_eq!(
-        state_pool_tokens(usize::MAX),
+        state_pool_tokens(usize::MAX, &instructions),
         body_token_budget(usize::MAX),
         "容量未配时保持不裁"
     );
     // 越过题面长度、且题面超骨架份额时才真正收紧 + 扣固定块
     let mid = question + 1_000;
     assert!(
-        chain_budget_tokens(&brain, "", &facts, mid, 0) < body_token_budget(mid),
+        chain_budget_tokens(&brain, "", &views, &facts, mid, 0, &instructions)
+            < body_token_budget(mid),
         "input={mid} 必须按题面实测收紧并扣掉固定块"
     );
 }
@@ -2362,7 +2516,15 @@ fn tiny_capacity_keeps_the_pre_change_split() {
 fn chain_origin_is_rendered_as_its_own_block() {
     let brain = brain_with_quota(1);
     let facts = triggered_facts();
-    let without = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &facts).render();
+    let without = state_bundle(
+        &brain,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &ChainContextViews::default(),
+        &facts,
+    )
+    .render();
     assert!(
         !without.contains("## 链起点"),
         "无链起点整块跳过：{without:?}"
@@ -2373,6 +2535,7 @@ fn chain_origin_is_rendered_as_its_own_block() {
         "用户消息（user-1）: 帮我核对一下订单 A 的退款",
         CHAIN_SENTINEL_HEAD,
         "",
+        &ChainContextViews::default(),
         &facts,
     )
     .render();
@@ -2424,10 +2587,200 @@ fn recent_dialogue_uses_scene_specific_limit() {
     brain.memories = (0..10)
         .map(|i| short_term(&format!("st-{i}"), &format!("记忆第{i}条")))
         .collect();
-    let rendered = state_bundle(&brain, "", CHAIN_SENTINEL_HEAD, "", &triggered_facts()).render();
+    let rendered = state_bundle(
+        &brain,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &ChainContextViews::default(),
+        &triggered_facts(),
+    )
+    .render();
     // 只保留尾部 8 条：最早 2 条不得出现
     assert!(!rendered.contains("记忆第0条"), "{rendered:?}");
     assert!(!rendered.contains("记忆第1条"), "{rendered:?}");
     assert!(rendered.contains("记忆第2条"), "{rendered:?}");
     assert!(rendered.contains("记忆第9条"), "{rendered:?}");
+}
+
+// ══════ 运行时对照面（2026-11-12）：已交付信息 / 对端视角 / 裁决口径 ══════
+
+/// 供对照面用例使用的 Brain：固定 agent_id，且带明确容量（摘要预算可推导）
+fn views_brain(capacity: u64) -> Brain {
+    let mut brain = brain_with_capacity_tokens(capacity);
+    brain.agent_id = "agent-me".to_string();
+    brain.agent_name = "我方".to_string();
+    brain
+}
+
+/// 「上文有什么」不能只靠链内原文：全链要点索引要覆盖链头、最近跳与重复正文
+///
+/// 反事实在事故里：2026-11-12 两次 `close_default` 都是 `window_depth=1`、
+/// `included=1, omitted=0`（证据完整），却因「上文」没有对照面给不出达门槛的置信。
+#[test]
+fn delivered_view_is_a_full_chain_index_with_repeats() {
+    let brain = views_brain(128_000);
+    let mut messages = sample_chain(MAX_CHAIN_MESSAGES);
+    messages[4].content = "收到，已按上述执行".to_string();
+    messages[9].content = "收到，已按上述执行".to_string();
+    messages[20].content = "收到，已按上述执行".to_string();
+    let input = input_token_budget(Some(128_000));
+    let body = body_token_budget(input);
+    let views = build_views(&brain, &messages, input, body);
+
+    assert!(
+        views
+            .delivered
+            .contains(&format!("共 {MAX_CHAIN_MESSAGES} 跳"))
+    );
+    assert!(views.delivered.contains("[#1]"), "{views:?}");
+    assert!(
+        views
+            .delivered
+            .contains(&format!("[#{MAX_CHAIN_MESSAGES}]")),
+        "最近一跳的索引必须在：{views:?}"
+    );
+    assert!(views.delivered.contains("条要点已省略"), "{views:?}");
+    assert!(views.delivered.contains("重复出现的正文"), "{views:?}");
+    assert!(views.delivered.contains("×3"), "{views:?}");
+    assert!(views.delivered.contains("收到，已按上述执行"), "{views:?}");
+    // 两块合起来不得超过自己的小预算（同池分账，不挤主证据）
+    let total = estimate_tokens(&views.delivered) + estimate_tokens(&views.peer);
+    assert!(
+        total <= views_token_budget(input, body) + 2,
+        "views 总量 {total} 越过自己的预算：{views:?}"
+    );
+}
+
+/// `close` vs `silent` 的「对方是否需要知道」必须有主语
+#[test]
+fn peer_view_names_the_peer_and_what_it_already_received() {
+    let brain = views_brain(128_000);
+    let mut messages = vec![
+        msg(
+            "agent-me",
+            "文本消息",
+            "已完成订单 A 核对，结论是退款 30 元",
+        ),
+        msg("agent-b", "文本消息", "请确认退款金额是否需要同步给用户？"),
+    ];
+    messages[1].from_name = Some("协作方 B".to_string());
+    let input = input_token_budget(Some(128_000));
+    let views = build_views(&brain, &messages, input, body_token_budget(input));
+    let body = views.peer;
+    assert!(
+        body.contains("本 Agent（判定的一方）：我方(agent-me)"),
+        "{body:?}"
+    );
+    assert!(body.contains("协作方 B(agent-b)"), "{body:?}");
+    assert!(body.contains("对端已收到我方消息：1 条"), "{body:?}");
+    assert!(body.contains("请确认退款金额"), "{body:?}");
+    assert!(body.contains("对端似在等待答复：是"), "{body:?}");
+    assert!(body.contains("主语是对端"), "{body:?}");
+}
+
+/// 题面、state、协议层必须拿**同一份**本次门槛，且随窗口深度变化
+///
+/// 改前必红：题面只说「window_depth 仅作辅助参考」，裁决却按深度把 continue
+/// 门槛从 0.60 抬到 0.90 —— 模型不知道要给出多高的置信。
+#[test]
+fn instructions_and_state_carry_the_effective_threshold_for_this_depth() {
+    let mut texts = Vec::new();
+    for depth in [0usize, 1, 4, 8, 12] {
+        let mut facts = triggered_facts();
+        facts.window_depth = depth;
+        let expected = format!("{:.2}", continue_threshold_at(depth));
+        let instructions = instructions_for(&facts);
+        assert!(
+            instructions.contains(&expected),
+            "depth={depth} 题面缺本次门槛：{instructions}"
+        );
+        assert!(instructions.contains(&format!("window_depth = {depth}")));
+        assert!(instructions.contains("最低采纳置信"));
+        assert!(
+            pressure_body(&facts).contains(&expected),
+            "state 的协作压力块必须与题面同源：{:?}",
+            pressure_body(&facts)
+        );
+
+        // 协议层真正拿到的题面 == 预算用的题面（不许两处各拼一份）
+        let mut requests = policy(&facts).prepare(&metrics_for(&facts));
+        let request = requests.pop().expect("一次 PickOne 一个请求");
+        let wire = format!("{:?}", request.questions);
+        assert!(wire.contains(&expected), "协议题面缺本次门槛：{wire}");
+        texts.push(instructions);
+    }
+    assert_ne!(texts[0], texts[4], "题面必须随窗口深度变化");
+
+    // 动态段确实计入总账：只算常量段会让 state + 题面静默越过 provider 容量
+    let facts = triggered_facts();
+    let runtime = instructions_for(&facts);
+    assert_eq!(
+        question_frame_tokens(&runtime) - question_frame_tokens(INSTRUCTIONS),
+        estimate_tokens(&decision_frame_note(&facts))
+    );
+}
+
+/// 生产路径（不是直接拼 state_bundle）确实把两块对照面排在原文证据之前
+#[tokio::test]
+async fn production_state_puts_views_before_chain_evidence() {
+    let brain = views_brain(4_000);
+    let messages = vec![
+        msg("agent-me", "文本消息", "结论：退款 30 元"),
+        msg("agent-b", "文本消息", "收到，已同步"),
+    ];
+    let (_, calls, states) = run_gate_full_with_pending(
+        &messages,
+        triggered_facts(),
+        vec![Some(pick_for(OPTION_CONTINUE, 0.95))],
+        Some(&brain),
+        "本轮 Final：请你确认是否继续执行",
+        "chain-reply-views",
+    )
+    .await;
+    assert_eq!(calls, 1);
+    let body = states[0][context::STATE_KEY]
+        .as_str()
+        .expect("state 必须是单键分块正文");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("缺块 {needle}：{body:?}"))
+    };
+    let delivered = at("## 已交付信息");
+    let peer = at("## 对端视角");
+    let chain = at("## 链内消息");
+    assert!(
+        delivered < chain && peer < chain,
+        "对照面必须排在链内原文之前：{body:?}"
+    );
+    assert!(
+        body.contains("结论：退款 30 元"),
+        "要点索引要带链内事实：{body:?}"
+    );
+    assert!(
+        body.contains("continue_threshold"),
+        "压力块要带本次门槛：{body:?}"
+    );
+}
+
+/// 预算为 0 时两块都不带，绝不留下裸标题让模型去猜
+#[test]
+fn zero_view_budget_emits_no_view_titles() {
+    let brain = views_brain(4_000);
+    let input = 8usize;
+    let body_budget = body_token_budget(input);
+    assert_eq!(views_token_budget(input, body_budget), 0);
+    let views = build_views(&brain, &sample_chain(4), input, body_budget);
+    assert_eq!(views, ChainContextViews::default());
+    let rendered = state_bundle(
+        &brain,
+        "",
+        CHAIN_SENTINEL_HEAD,
+        "",
+        &views,
+        &triggered_facts(),
+    )
+    .render();
+    assert!(!rendered.contains("## 已交付信息"), "{rendered:?}");
+    assert!(!rendered.contains("## 对端视角"), "{rendered:?}");
 }

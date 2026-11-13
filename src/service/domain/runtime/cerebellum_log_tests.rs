@@ -285,6 +285,7 @@ fn capture_writer_self_proves_with_the_existing_quota_exhausted_log() {
                 &brain,
                 ThinkingScene::Awaken,
                 Some("今天天气怎么样"),
+                thinking_strength::StrengthNodeContext::default(),
             )
             .await;
             (selection, mock.calls())

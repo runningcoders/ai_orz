@@ -134,6 +134,58 @@ fn query_calls_filters_and_returns_latest_matching_entry_by_default() {
 }
 
 #[test]
+fn query_calls_filters_by_agent_ids_set() {
+    // 默认对话口径：只聚合「当前任务出现过的 Agent」，集合外的 Agent 一条都不能带出
+    let temp_dir = tempdir().unwrap();
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
+
+    let base = ToolCallEntry {
+        call_id: "call-a".to_string(),
+        tool_id: "tool-a".to_string(),
+        tool_name: "Tool A".to_string(),
+        agent_id: Some("agent-a".to_string()),
+        task_id: None,
+        project_id: None,
+        started_at: 1_000,
+        finished_at: 1_100,
+        duration_ms: 100,
+        input: json!({}),
+        output: None,
+        error: None,
+        status: ToolCallStatus::Completed,
+        metadata: json!(null),
+    };
+    logger.log_call(base.clone()).unwrap();
+    logger
+        .log_call(ToolCallEntry {
+            call_id: "call-b".to_string(),
+            agent_id: Some("agent-b".to_string()),
+            started_at: 2_000,
+            ..base.clone()
+        })
+        .unwrap();
+    logger
+        .log_call(ToolCallEntry {
+            call_id: "call-c".to_string(),
+            agent_id: Some("agent-c".to_string()),
+            started_at: 3_000,
+            ..base
+        })
+        .unwrap();
+
+    let results = logger
+        .query_calls(super::logger::ToolCallQuery {
+            agent_ids: Some(vec!["agent-a".to_string(), "agent-c".to_string()]),
+            limit: Some(10),
+            ..Default::default()
+        })
+        .expect("query should succeed");
+
+    let ids: Vec<&str> = results.iter().map(|e| e.call_id.as_str()).collect();
+    assert_eq!(ids, vec!["call-c", "call-a"]);
+}
+
+#[test]
 fn query_calls_supports_call_id_and_cross_tool_filters() {
     let temp_dir = tempdir().unwrap();
     let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());

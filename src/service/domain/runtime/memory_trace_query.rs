@@ -20,6 +20,7 @@ pub(crate) fn with_context_scope(
         ctx,
         think_trace_query::TraceScopeFields {
             agent_id: query.agent_id.clone(),
+            agent_ids: None,
             project_id: None,
             task_id: query.task_id.clone(),
             limit: query.pagination.limit,

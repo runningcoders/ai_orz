@@ -47,6 +47,7 @@
 //! 兜底点是 13 个 scene 共用的，改它要评估全部场景、回滚面也更大。
 
 use crate::models::brain::Brain;
+use crate::models::cortex_types::ChatMessage;
 use crate::models::memory::{Memory, MemoryPo};
 
 use super::compaction::{estimate_tokens, truncate_to_tokens};
@@ -298,10 +299,13 @@ impl ContextBundle {
     }
 }
 
-/// scene 侧唯一装配点：身份 + 场景 + 用户消息 + 最近对话，并按模型容量自截
+/// 通用场景装配点：身份 + 场景 + 用户消息 + 最近对话，并按模型容量自截
 ///
-/// 六个接入场景（三 gate / entry_gate / entry_pool / thinking_strength）都走这里，
-/// 不再各写一遍 `Metrics::new().with(...)` 拼装。
+/// 五个通用决策点（三 gate / entry_gate / entry_pool）走这里，不再各写一遍
+/// `Metrics::new().with(...)` 拼装。`thinking_strength` 走
+/// `thinking_strength::render_strength_context` **专用装配**：它要带节点现场
+/// （消息序列 / 轮次 / 工具 / 配置原值），且必须把高价值块前置 —— 通用装配的
+/// 块序（用户消息在中、最近对话在尾）会把这些新信息排到最先被砍的位置。
 pub(crate) fn render_for(brain: &Brain, scene: &str, user_text: &str) -> String {
     ContextBundle::new()
         .with_identity(&brain.agent_id, &brain.agent_name)
@@ -313,6 +317,194 @@ pub(crate) fn render_for(brain: &Brain, scene: &str, user_text: &str) -> String 
             dialogue_snippet_tokens(brain),
         )
         .render_within(context_capacity(brain))
+}
+
+// ==================== 节点输入要点（思考强度场景的通用收集器） ====================
+//
+// 本模块只**收集**，不认识任何 scene：从传入节点的 `ChatMessage[]` 里抽出
+// 「规模 / 大脑已注入的背景区块 / 任务目标摘要 / 已发生的工具调用 / 最近动作」
+// 五类要点，交给场景侧决定渲染顺序。
+//
+// 为什么必须提取而不是整段塞：生产里 compact / summary / settle 节点的最后一条
+// User 消息其实是**整份拼装 Prompt**（实测 34K token），原样进小脑 state 只会把
+// 判据稀释到看不见。提取后既有「目标 / 背景 / 规模」，又守住小脑的容量预算。
+
+/// 背景区块标题最多列几个（再多只是噪音，且会把后面的要点挤出预算）
+const MAX_SECTION_TITLES: usize = 12;
+/// 工具名最多列几种
+const MAX_TOOL_NAMES: usize = 8;
+/// 最近动作取尾部几条
+const RECENT_ACTIONS: usize = 3;
+/// 单条最近动作摘要的字符上限
+const ACTION_SNIPPET_CHARS: usize = 96;
+
+/// 待抽取摘要的背景区块（按大脑 prompt 里的实际区块名）
+const GOAL_SECTIONS: [&str; 3] = ["任务上下文", "项目上下文", "输入理解结果"];
+
+/// 从节点消息序列里收集**结构化要点**（每行一条，供场景侧拼块）
+///
+/// `snippet_tokens` = 单条摘要的 token 预算；`None` ⇒ 不截（容量未配不猜预算，
+/// 与 `render_within` 同口径）。
+///
+/// ⚠️ 只走 [`ChatMessage::to_summary_text`] 取最近动作：它已经处理了两条红线
+/// —— 多模态只输出图像计数（base64 不外泄）、Reasoning 只输出摘要计数
+/// （`encrypted_content` 不外泄）。这里不自己拼正文。
+pub(crate) fn node_message_facts(
+    messages: &[ChatMessage],
+    snippet_tokens: Option<usize>,
+) -> Vec<String> {
+    if messages.is_empty() {
+        return vec!["（本节点未带消息序列）".to_string()];
+    }
+
+    let mut roles = [0usize; 5]; // system / user / assistant / tool / reasoning
+    let mut total_tokens = 0usize;
+    let mut system_text = String::new();
+    let mut tool_names: Vec<(String, usize)> = Vec::new();
+    let mut tool_call_count = 0usize;
+    let mut tool_result_tokens = 0usize;
+
+    for message in messages {
+        match message {
+            ChatMessage::System { content } => {
+                roles[0] += 1;
+                total_tokens += estimate_tokens(content);
+                // 大脑的 System 只有一条（人设 + 全部上下文区块）；多条时取首条，
+                // 避免把重复前缀的 token 算两遍、也让标题去重有稳定来源。
+                if system_text.is_empty() {
+                    system_text.push_str(content);
+                }
+            }
+            ChatMessage::User { content } => {
+                roles[1] += 1;
+                total_tokens += estimate_tokens(content);
+            }
+            ChatMessage::UserMultimodal { text, .. } => {
+                roles[1] += 1;
+                total_tokens += estimate_tokens(text);
+            }
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
+                roles[2] += 1;
+                if let Some(content) = content {
+                    total_tokens += estimate_tokens(content);
+                }
+                if let Some(calls) = tool_calls {
+                    tool_call_count += calls.len();
+                    for call in calls {
+                        if let Some((_, count)) =
+                            tool_names.iter_mut().find(|(name, _)| *name == call.name)
+                        {
+                            *count += 1;
+                        } else if tool_names.len() < MAX_TOOL_NAMES {
+                            tool_names.push((call.name.clone(), 1));
+                        }
+                    }
+                }
+            }
+            ChatMessage::Tool { content, .. } => {
+                roles[3] += 1;
+                let tokens = estimate_tokens(content);
+                total_tokens += tokens;
+                tool_result_tokens += tokens;
+            }
+            ChatMessage::Reasoning { .. } => roles[4] += 1,
+        }
+    }
+
+    let mut lines = vec![format!(
+        "消息序列：共 {} 条（system {} / user {} / assistant {} / tool {} / reasoning {}），估算约 {} token",
+        messages.len(),
+        roles[0],
+        roles[1],
+        roles[2],
+        roles[3],
+        roles[4],
+        total_tokens
+    )];
+
+    let titles = collect_section_titles(&system_text);
+    if !titles.is_empty() {
+        lines.push(format!("大脑已注入的背景区块：{}", titles.join(" / ")));
+    }
+    for title in GOAL_SECTIONS {
+        if let Some(excerpt) = section_excerpt(&system_text, title, snippet_tokens) {
+            lines.push(format!("【{title}】摘要：{excerpt}"));
+        }
+    }
+    if tool_call_count > 0 {
+        let names = tool_names
+            .iter()
+            .map(|(name, count)| format!("{name}×{count}"))
+            .collect::<Vec<_>>()
+            .join("、");
+        lines.push(format!(
+            "已发起工具调用 {} 次（{}），工具结果 {} 条约 {} token",
+            tool_call_count, names, roles[3], tool_result_tokens
+        ));
+    }
+
+    // 尾部取 N 条 → 反转成时间正序：倒序展示会让「最近动作」读起来像从新到旧，
+    // 与 `## 最近对话` 的时间方向相反，模型容易把因果关系看反。
+    let mut recent: Vec<String> = messages
+        .iter()
+        .rev()
+        .filter(|m| !matches!(m, ChatMessage::System { .. }))
+        .take(RECENT_ACTIONS)
+        .map(|m| m.to_summary_text(ACTION_SNIPPET_CHARS).replace('\n', " "))
+        .collect();
+    recent.reverse();
+    if !recent.is_empty() {
+        lines.push(format!("最近动作（时间正序）：{}", recent.join(" | ")));
+    }
+    lines
+}
+
+/// 扫 System 正文里的 `【…】` 区块标题：去重、限长、限量、保序
+fn collect_section_titles(system_text: &str) -> Vec<String> {
+    let mut titles: Vec<String> = Vec::new();
+    let mut rest = system_text;
+    while let Some(start) = rest.find('【') {
+        let after = &rest[start + '【'.len_utf8()..];
+        let Some(end) = after.find('】') else { break };
+        let title = after[..end].trim();
+        if !title.is_empty()
+            && title.chars().count() <= 32
+            && !titles.iter().any(|seen| seen == title)
+        {
+            titles.push(title.to_string());
+            if titles.len() >= MAX_SECTION_TITLES {
+                break;
+            }
+        }
+        rest = &after[end + '】'.len_utf8()..];
+    }
+    titles
+}
+
+/// 取某个 `【标题】` 到下一个 `【` 之间的正文，按 token 预算截断
+///
+/// 用 `find` 得到的字节下标天然落在字符边界上，不做 `&[..N]` 的裸切片
+/// —— 中文正文上按字节截会 panic。
+fn section_excerpt(
+    system_text: &str,
+    title: &str,
+    snippet_tokens: Option<usize>,
+) -> Option<String> {
+    let marker = format!("【{title}】");
+    let start = system_text.find(&marker)? + marker.len();
+    let tail = &system_text[start..];
+    let end = tail.find('【').unwrap_or(tail.len());
+    let body = tail[..end].trim();
+    if body.is_empty() {
+        return None;
+    }
+    Some(match snippet_tokens {
+        Some(budget) => truncate_to_tokens(body, budget, "…"),
+        None => body.to_string(),
+    })
 }
 
 /// 软目标：provider 推荐上下文长度（**裁剪基准**，超了只裁、不判失败）
@@ -406,385 +598,9 @@ fn dialogue_line(memory: &Memory, snippet_tokens: Option<usize>) -> String {
     }
     String::new()
 }
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 原三键信息搬进正文后必须逐字还在（形态变更最容易的失血点）
-    #[test]
-    fn render_keeps_identity_values_verbatim() {
-        let bundle = ContextBundle::new().with_identity("agent-7f3a", "技术负责人");
-        let rendered = bundle.render();
-        assert!(
-            rendered.contains("## 会话身份"),
-            "身份块标题必须出现：{rendered}"
-        );
-        assert!(
-            rendered.contains("agent_id: agent-7f3a"),
-            "agent_id 实际取值必须逐字出现在正文：{rendered}"
-        );
-        assert!(
-            rendered.contains("agent_name: 技术负责人"),
-            "agent_name 实际取值必须逐字出现在正文：{rendered}"
-        );
-    }
-
-    /// 取不到上下文就整块跳过，不塞「标题 + 空 body」
-    #[test]
-    fn empty_dialogue_block_is_skipped_entirely() {
-        let bundle = ContextBundle::new()
-            .with_scene("wake_gate")
-            .with_recent_dialogue(&[], RECENT_DIALOGUE_LIMIT, None);
-        let rendered = bundle.render();
-        assert!(
-            rendered.contains("## 当前场景"),
-            "有内容的块必须出现：{rendered}"
-        );
-        assert!(
-            !rendered.contains("## 最近对话"),
-            "空块标题不得出现（不是标题 + 空 body）：{rendered}"
-        );
-        assert!(!bundle.render().is_empty());
-    }
-
-    /// 摘要预算 = 输入预算 × `share::SNIPPET_BP`（换容量就换预算，不是固定整数）
-    #[test]
-    fn snippet_budget_is_a_share_of_the_input_budget() {
-        assert_eq!(bp_of(4_000, share::SNIPPET_BP), 160, "@4000 ⇒ 4%");
-        assert_eq!(bp_of(128_000, share::SNIPPET_BP), 5_120, "@128K ⇒ 4%");
-        assert_eq!(bp_of(200_000, share::SNIPPET_BP), 8_000, "@200K ⇒ 4%");
-        // 块内派生：加进总和会把「同一块数据分几段写」重复计费
-        assert_eq!(share::TOTAL_BP, share::BASIS);
-    }
-
-    /// 摘要截断按 token 计：CJK 1 token/字、拉丁 4 字符/token —— 同一预算下两者能装的
-    /// **字符数**差 4 倍（旧字符口径下会一模一样，这正是本轮要删的那套体系）
-    #[test]
-    fn snippet_truncation_counts_tokens_not_chars() {
-        let cjk = "缓".repeat(400);
-        let cut = truncate_to_tokens(&cjk, 160, "");
-        assert!(estimate_tokens(&cut) <= 160, "CJK 截断后必须守住预算");
-        assert_eq!(cut.chars().count(), 160, "CJK：1 字 ≈ 1 token");
-
-        let latin = "a".repeat(2_000);
-        let cut = truncate_to_tokens(&latin, 160, "");
-        assert!(estimate_tokens(&cut) <= 160, "拉丁截断后必须守住预算");
-        assert_eq!(cut.chars().count(), 640, "拉丁：4 字符 ≈ 1 token");
-    }
-
-    /// 注册序即渲染序，两次调用逐字节相等
-    #[test]
-    fn render_is_deterministic_and_follows_registration_order() {
-        let build = || {
-            ContextBundle::new()
-                .with_identity("a-1", "n-1")
-                .with_scene("intent_gate")
-                .with_user_message("你好")
-        };
-        let first = build().render();
-        let second = build().render();
-        assert_eq!(first, second, "同一组输入必须逐字节同输出");
-        let identity_at = first.find("## 会话身份").expect("身份块");
-        let scene_at = first.find("## 当前场景").expect("场景块");
-        let message_at = first.find("## 当前用户消息").expect("消息块");
-        assert!(
-            identity_at < scene_at && scene_at < message_at,
-            "渲染序必须等于注册序：{first}"
-        );
-    }
-
-    /// 用户消息原文进正文（哨兵串逐字保留，供 gate 层反事实断言复用同一口径）
-    #[test]
-    fn user_message_goes_into_body_verbatim() {
-        let bundle = ContextBundle::new().with_user_message("__SENTINEL_MSG__");
-        assert!(bundle.render().contains("__SENTINEL_MSG__"));
-    }
-
-    /// 五块夹具：身份 / 场景 / 用户消息 / 附加块一 / 附加块二（注册序固定）
-    fn five_block_bundle() -> ContextBundle {
-        let mut bundle = ContextBundle::new()
-            .with_identity("agent-5b", "五块夹具")
-            .with_scene("wake_gate")
-            .with_user_message("__SENTINEL_FIVE__");
-        bundle.push("附加块一", "alpha-block-body-one".to_string());
-        bundle.push(
-            "附加块二",
-            "第五块正文用于让整块砍可判定，长度必须大于省略标注本身".to_string(),
-        );
-        bundle
-    }
-
-    /// 按 `\n\n` 切块后以 `## ` 开头的段落数（标注紧贴末块正文，不单独成段）
-    fn count_blocks(rendered: &str) -> usize {
-        rendered
-            .split("\n\n")
-            .filter(|part| part.starts_with("## "))
-            .count()
-    }
-
-    /// 每个 `## ` 块的正文都必须非空（不得出现无 body 的裸标题）
-    fn assert_every_block_has_body(rendered: &str) {
-        for part in rendered.split("\n\n").filter(|p| p.starts_with("## ")) {
-            let body = part.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
-            assert!(!body.trim().is_empty(), "不得出现无 body 的裸标题：{part}");
-        }
-    }
-
-    /// 容量为 `None`（未配小脑 provider / 未配上下限）⇒ 逐字节等于 `render()`
-    #[test]
-    fn render_within_none_matches_render_byte_for_byte() {
-        let bundle = five_block_bundle();
-        assert_eq!(bundle.render_within(None), bundle.render());
-    }
-
-    /// 容量充裕（远超全文）⇒ 同样逐字节等于 `render()`，且不带省略标注
-    #[test]
-    fn render_within_ample_capacity_matches_render_byte_for_byte() {
-        let bundle = five_block_bundle();
-        // 充裕容量 = 全文所需的两倍（按比例反算：body = capacity × 87.5% ⇒
-        // capacity > 全文 / 0.875 即够，取两倍留足余量；不再依赖任何固定上限）
-        let ample = (estimate_tokens(&bundle.render()) as u64 + 1) * 2;
-        let rendered = bundle.render_within(Some(ample));
-        assert_eq!(rendered, bundle.render());
-        assert!(
-            !rendered.contains(OMISSION_NOTE_PREFIX),
-            "未截断时不得出现省略标注：{rendered}"
-        );
-    }
-
-    /// 预算紧张时仍不得出现裸 `## 标题`（唯一结构判据）
-    #[test]
-    fn render_within_tight_budget_never_leaves_bare_title() {
-        let bundle = five_block_bundle();
-        // 恰好卡在「保留 2 块」的预算（更紧的预算会落到末块截尾分支）
-        let keep_two = format!(
-            "{}\n\n{}\n{}",
-            "## 会话身份\nagent_id: agent-5b\nagent_name: 五块夹具",
-            "## 当前场景\nwake_gate",
-            "…（上下文已按模型容量截断，省略 3 块）"
-        );
-        let rendered = bundle.render_within_tokens(estimate_tokens(&keep_two));
-        assert_every_block_has_body(&rendered);
-        assert_eq!(count_blocks(&rendered), 2);
-    }
-
-    /// N 只认并列值（注册 5 / 保留 2 ⇒ N=3；反向 保留 4 ⇒ N=1），不接受只看下界
-    #[test]
-    fn omission_note_count_is_measured_not_hardcoded() {
-        let bundle = five_block_bundle();
-        let block0 = "## 会话身份\nagent_id: agent-5b\nagent_name: 五块夹具";
-        let block1 = "## 当前场景\nwake_gate";
-        let block2 = "## 当前用户消息\n__SENTINEL_FIVE__";
-        let block3 = "## 附加块一\nalpha-block-body-one";
-
-        let keep_two = format!("{block0}\n\n{block1}\n…（上下文已按模型容量截断，省略 3 块）");
-        let rendered_two = bundle.render_within_tokens(estimate_tokens(&keep_two));
-        assert_eq!(rendered_two, keep_two);
-        assert_eq!(count_blocks(&rendered_two), 2, "注册 5 块、保留 2 块");
-
-        let keep_four = format!(
-            "{block0}\n\n{block1}\n\n{block2}\n\n{block3}\n…（上下文已按模型容量截断，省略 1 块）"
-        );
-        let rendered_four = bundle.render_within_tokens(estimate_tokens(&keep_four));
-        assert_eq!(rendered_four, keep_four);
-        assert_eq!(count_blocks(&rendered_four), 4, "注册 5 块、保留 4 块");
-    }
-
-    /// 预算 0 ⇒ 走末块截尾分支，标题后至少 1 个非空白字符（先自证该分支可达）
-    #[test]
-    fn zero_budget_keeps_one_visible_char_after_title() {
-        let bundle = five_block_bundle();
-        // R50 延伸：先自证「朴素截尾在 0 预算下确实为空」，否则本条走不到边界分支
-        let naive = truncate_to_tokens(&bundle.sections[0].body, 0, "");
-        assert!(
-            naive.trim().is_empty(),
-            "0 预算下朴素截尾必须为空，否则截尾分支不可达、本条判据无效"
-        );
-
-        let rendered = bundle.render_within_tokens(0);
-        assert!(
-            rendered.starts_with("## 会话身份\n"),
-            "必须保标题：{rendered}"
-        );
-        let first = rendered
-            .strip_prefix("## 会话身份\n")
-            .and_then(|rest| rest.chars().next())
-            .expect("标题后必须还有正文字符");
-        assert!(
-            !first.is_whitespace(),
-            "截尾后 body 至少保留 1 个非空白字符：{rendered:?}"
-        );
-        assert_every_block_has_body(&rendered);
-        assert!(
-            rendered.contains(TAIL_TRUNCATION_NOTE) || rendered.contains(OMISSION_NOTE_PREFIX),
-            "截尾必须留标注：{rendered}"
-        );
-    }
-
-    /// 全部块都空 ⇒ 渲染为空串（调用方可据此判「没东西可带」）
-    #[test]
-    fn all_empty_blocks_render_empty() {
-        let bundle = ContextBundle::new()
-            .with_identity("", "")
-            .with_scene("")
-            .with_user_message("   ");
-        assert_eq!(bundle.render(), "", "全空块必须渲染成空串");
-    }
-
-    /// 缺口 1（前台 01a1c645 裁定）：**截尾路径**也要跑一遍完整结构判据。
-    ///
-    /// 砍块路径（`render_kept`）与截尾路径（保标题 + body 截尾）的拼装不一样，
-    /// #3 只覆盖了前者、#5 只断了首字符非空白 ⇒ 这里补「每段首行 `## ` 且非空行数 ≥ 2」。
-    #[test]
-    fn single_block_tail_truncation_passes_full_structure_criteria() {
-        let bundle = ContextBundle::new().with_identity("agent-tail", "截尾夹具");
-        assert_eq!(bundle.sections.len(), 1, "夹具必须恰一块才能走到 TAIL 分支");
-        let rendered = bundle.render_within_tokens(0);
-        for part in rendered.split("\n\n") {
-            assert!(!part.trim().is_empty(), "不得出现空段落：{rendered:?}");
-            let first = part.lines().next().unwrap_or("");
-            assert!(first.starts_with("## "), "每块首行必须是二级标题：{part:?}");
-            let non_empty = part.lines().filter(|line| !line.trim().is_empty()).count();
-            assert!(non_empty >= 2, "每块至少标题 + 正文两行：{part:?}");
-        }
-        assert_every_block_has_body(&rendered);
-    }
-
-    /// 缺口 1（多块侧）：`total > 1` 的截尾走「省略 N 块」标注，同样要过结构判据。
-    #[test]
-    fn multi_block_tail_truncation_passes_full_structure_criteria() {
-        let mut bundle = ContextBundle::new()
-            .with_identity("agent-long", "长块夹具")
-            .with_scene("wake_gate");
-        // 首块正文撑到远超「第二块 + 标注」的成本 ⇒ 只有截尾分支能落地
-        bundle.sections[0].body = "首块正文".repeat(200);
-        let rendered = bundle.render_within_tokens(50);
-        assert!(
-            rendered.contains(&omission_note(1)),
-            "被砍 1 块必须写成「省略 1 块」：{rendered:?}"
-        );
-        for part in rendered.split("\n\n") {
-            assert!(!part.trim().is_empty(), "不得出现空段落：{rendered:?}");
-            let first = part.lines().next().unwrap_or("");
-            assert!(first.starts_with("## "), "每块首行必须是二级标题：{part:?}");
-            let non_empty = part.lines().filter(|line| !line.trim().is_empty()).count();
-            assert!(non_empty >= 2, "每块至少标题 + 正文两行：{part:?}");
-        }
-        assert_every_block_has_body(&rendered);
-    }
-
-    /// 缺口 2（前台裁定）：`TAIL_TRUNCATION_NOTE` 分支的语义断言 ——
-    /// 一块都没被砍，全文必须出现截尾标注、且**不得**残留「省略 N 块」。
-    #[test]
-    fn tail_truncation_note_never_claims_blocks_were_omitted() {
-        let bundle = ContextBundle::new().with_identity("agent-tail", "截尾夹具");
-        assert_eq!(bundle.sections.len(), 1, "夹具必须恰一块");
-        let rendered = bundle.render_within_tokens(0);
-        assert!(
-            rendered.contains(TAIL_TRUNCATION_NOTE),
-            "单块截尾必须用 TAIL_TRUNCATION_NOTE：{rendered:?}"
-        );
-        assert!(
-            !rendered.contains("省略"),
-            "没有任何块被砍，不得误标「省略」：{rendered:?}"
-        );
-    }
-}
-
-/// 比例表自身的可独立失败断言（不采信自述）
+#[path = "cerebellum_context_budget_share_tests.rs"]
+mod budget_share_tests;
 #[cfg(test)]
-mod budget_share_tests {
-    use super::*;
-
-    /// 占比之和必须 ≤ 硬顶，且当前表**恰好用满**（留空等于又拍了一个隐式预留）
-    #[test]
-    fn shares_sum_never_exceeds_the_hard_ceiling() {
-        assert!(
-            validate_share_sum(share::TOTAL_BP).is_ok(),
-            "占比之和 {} bp 超过硬顶 {} bp",
-            share::TOTAL_BP,
-            share::BASIS
-        );
-        assert_eq!(share::TOTAL_BP, share::BASIS, "各块之和必须恰好 100%");
-    }
-
-    /// 反事实：把占比调成 >100% 必须被捕获，不允许静默超限
-    #[test]
-    fn over_allocated_shares_are_rejected_not_silently_accepted() {
-        assert!(validate_share_sum(share::BASIS).is_ok(), "恰好 100% 合法");
-        assert!(
-            validate_share_sum(share::BASIS + 1).is_err(),
-            "100.01% 必须被拒，否则超限会静默通过"
-        );
-        assert!(
-            validate_share_sum(share::BASIS + share::FRAME_BP).is_err(),
-            "任意超限组合同样必须被拒（不只 BASIS+1 这一个点）"
-        );
-    }
-
-    /// 骨架预留随输入预算变化 —— 改造前是固定常量 500（两个输入恒同值）⇒ 本断言改前必红
-    #[test]
-    fn frame_budget_scales_with_input_not_a_fixed_constant() {
-        assert_eq!(frame_tokens(2_000), 250, "小输入按比例：2000 × 12.5%");
-        assert_eq!(
-            frame_tokens(4_000),
-            500,
-            "标准输入：4000 × 12.5% = 实测定标上限"
-        );
-        assert_eq!(frame_tokens(8_000), 1_000, "大输入同样按比例：8000 × 12.5%");
-        assert_eq!(
-            frame_tokens(200_000),
-            25_000,
-            "不再有绝对封顶：骨架随容量线性增长（比例是唯一口径）"
-        );
-        assert_ne!(
-            frame_tokens(2_000),
-            frame_tokens(4_000),
-            "同一位置换两个容量的 provider ⇒ 预算必须不同（固定常量的反事实）"
-        );
-    }
-
-    /// 骨架 + 正文恒不超过输入（AMan 原话「只要最终不超过最大长度就可以」）
-    #[test]
-    fn frame_plus_body_never_exceeds_input() {
-        for input in [0usize, 1, 37, 110, 500, 1_088, 4_000, 200_000, usize::MAX] {
-            let frame = frame_tokens(input);
-            let body = body_budget_tokens(input);
-            assert!(
-                frame.saturating_add(body) <= input,
-                "input={input}: frame {frame} + body {body} 超过输入预算"
-            );
-        }
-    }
-
-    /// 待发消息是同一池里的份额，不是新增预算池
-    #[test]
-    fn pending_reply_is_a_share_of_the_same_pool() {
-        let input = 4_000;
-        let body = body_budget_tokens(input);
-        let pending = pending_reply_tokens(input, body);
-        assert_eq!(pending, 600, "4000 × 15%");
-        assert!(pending < body, "待发预算必须小于正文池");
-        assert_eq!(
-            pending_reply_tokens(input, 100),
-            25,
-            "正文池极小时由 1/4 收敛"
-        );
-        assert_ne!(
-            pending_reply_tokens(2_000, 1_750),
-            pending_reply_tokens(4_000, 3_500),
-            "待发预算必须随输入变化，不是固定 600"
-        );
-    }
-
-    /// provider 未配容量 ⇒ 回退路径仍可用（不炸、不改语义）
-    #[test]
-    fn none_capacity_falls_back_to_full_render() {
-        let bundle = ContextBundle::new()
-            .with_identity("agent-1", "技术负责人")
-            .with_scene("wake_gate")
-            .with_user_message("用户消息");
-        assert_eq!(bundle.render_within(None), bundle.render());
-    }
-}
+#[path = "cerebellum_context_tests.rs"]
+mod tests;

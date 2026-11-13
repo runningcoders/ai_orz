@@ -52,6 +52,21 @@ impl<T> ApiResponse<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmptyResponse {}
 
+/// 逗号分隔的多值 query 参数 → 去重后的 ID 列表
+///
+/// GET query 的解析走 `HashMap`（重复键后值覆盖前值），无法承载 `?agent_ids=a&agent_ids=b`，
+/// 因此多 Agent 过滤统一用 `agent_ids=a,b,c` 单键形式。空白项与重复项丢弃；
+/// 解析后为空时返回 `None`，与「未指定该过滤维度」同义。
+pub fn split_csv_ids(raw: Option<&str>) -> Option<Vec<String>> {
+    let mut ids: Vec<String> = Vec::new();
+    for id in raw?.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        if !ids.iter().any(|existing| existing == id) {
+            ids.push(id.to_string());
+        }
+    }
+    (!ids.is_empty()).then_some(ids)
+}
+
 /// Unified offset-based pagination parameters.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct PaginationParams {
@@ -98,6 +113,8 @@ pub mod auth;
 pub mod background_task;
 pub mod cerebellum;
 pub mod cron_trigger;
+#[cfg(test)]
+mod csv_ids_test;
 pub mod email_integration;
 pub mod external_agent;
 pub mod generic_token_integration;

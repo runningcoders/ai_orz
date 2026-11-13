@@ -89,6 +89,7 @@ pub fn FinanceToolCallEntries() -> Element {
         load_entries(QueryToolCallEntriesRequest {
             call_id: None,
             agent_id: None,
+            agent_ids: None,
             project_id: None,
             task_id: None,
             tool_id: None,
@@ -547,6 +548,7 @@ fn build_trace_query(
     QueryToolCallEntriesRequest {
         call_id: non_empty(call_id),
         agent_id: non_empty(agent_id),
+        agent_ids: None,
         project_id: None,
         task_id: None,
         tool_id: non_empty(tool_id),

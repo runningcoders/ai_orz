@@ -29,6 +29,7 @@ pub async fn query_tool_call_entries(
             ToolCallQuery {
                 call_id: params.call_id,
                 agent_id: params.agent_id,
+                agent_ids: common::api::split_csv_ids(params.agent_ids.as_deref()),
                 project_id: params.project_id,
                 task_id: params.task_id,
                 tool_id: params.tool_id,

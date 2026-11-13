@@ -3,7 +3,8 @@
 //! 数据源为 `pkg::think_trace` 按天落盘的 JSONL 轨迹，经运行时域
 //! `GET /api/v1/hr/agents/think-traces` 分页查询：
 //! - 单 Agent 视角：传 `agent_id`（Agent 详情页）；
-//! - 多 Agent 聚合视角：传 `project_id` 或都不传（对话页项目模式 / 默认对话）。
+//! - 多 Agent 聚合视角：传 `project_id`，或传 `agent_ids` 集合圈定范围
+//!   （默认对话 = 当前任务出现过的 Agent）。
 //!
 //! 行头渲染思考场景徽章 + 发起 Agent 身份 chip，点击展开节点 occurrence
 //! 序列与选路记录（展开即用，不二次请求）。场景筛选与分页在前端驱动。
@@ -94,14 +95,14 @@ pub fn route_label(r: &ThinkTraceRouteDto) -> String {
 /// 思考轨迹 Tab
 ///
 /// - `project_id`：按项目过滤（项目对话模式）
-/// - `agent_id`：按 Agent 过滤（Agent 详情页 / 默认对话前台 Agent）
+/// - `agent_ids`：按 Agent 集合过滤（默认对话 = 当前任务出现过的 Agent）
 /// - `refresh_tick`：SSE 消息/手动刷新计数器，变化时防抖 2s 后刷新
 ///
-/// 两者均为 None 时不查询（保持与 ToolCallsTab 同源的 fail-closed 行为）。
+/// 两者均为空时不查询（保持与 ToolCallsTab 同源的 fail-closed 行为）。
 #[component]
 pub fn ThinkTracesTab(
     project_id: Option<String>,
-    agent_id: Option<String>,
+    agent_ids: Option<Vec<String>>,
     refresh_tick: u64,
 ) -> Element {
     let toast = use_toast();
@@ -122,11 +123,11 @@ pub fn ThinkTracesTab(
     let mut memory_target = use_signal(|| None::<(String, String)>);
 
     let mut load = move |pid: Option<String>,
-                         aid: Option<String>,
+                         aids: Option<Vec<String>>,
                          scene: Option<String>,
                          page_offset: usize,
                          debounce: bool| {
-        if pid.is_none() && aid.is_none() {
+        if pid.is_none() && aids.as_ref().is_none_or(|ids| ids.is_empty()) {
             return;
         }
         let my_gen = load_gen() + 1;
@@ -141,7 +142,8 @@ pub fn ThinkTracesTab(
             }
             let req = QueryThinkTracesRequest {
                 project_id: pid,
-                agent_id: aid,
+                // 多 Agent 走逗号分隔的单键值（GET query 不支持重复键）
+                agent_ids: aids.map(|ids| ids.join(",")),
                 scene,
                 pagination: PaginationParams {
                     limit: Some(PAGE_SIZE),
@@ -169,17 +171,17 @@ pub fn ThinkTracesTab(
         });
     };
 
-    let has_scope = project_id.is_some() || agent_id.is_some();
+    let has_scope = project_id.is_some() || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty());
 
     // 范围切换 → 立即加载并重置分页/筛选；refresh_tick 变化 → 防抖刷新当前页
     //
     // ⚠️ 必须用 `use_reactive` 显式声明依赖：`use_effect` 只对**信号**依赖重跑，
-    // `project_id` / `agent_id` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
+    // `project_id` / `agent_ids` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
     // 值变了 effect 也不会重跑（SSE 与周期轮询都推不动这个 Tab）。
     use_effect(use_reactive(
-        (&project_id, &agent_id, &refresh_tick),
-        move |(pid, aid, tick)| {
-            let scope = format!("{:?}|{:?}", pid, aid);
+        (&project_id, &agent_ids, &refresh_tick),
+        move |(pid, aids, tick)| {
+            let scope = format!("{:?}|{:?}", pid, aids);
             let scope_changed = prev_scope() != scope;
             let tick_changed = prev_tick() != tick;
             // 仅在值真正变化时写回，避免 Signal::set 触发 effect 自订阅循环
@@ -193,9 +195,9 @@ pub fn ThinkTracesTab(
                 offset.set(0);
                 scene_filter.set(None);
                 expanded_key.set(None);
-                load(pid, aid, None, 0, false);
+                load(pid, aids, None, 0, false);
             } else if tick_changed {
-                load(pid, aid, scene_filter(), offset(), true);
+                load(pid, aids, scene_filter(), offset(), true);
             }
         },
     ));
@@ -217,13 +219,13 @@ pub fn ThinkTracesTab(
 
     // 头部手动刷新 / 筛选 / 分页按钮需要各自捕获作用域副本
     let pid_refresh = project_id.clone();
-    let aid_refresh = agent_id.clone();
+    let aids_refresh = agent_ids.clone();
     let pid_scene = project_id.clone();
-    let aid_scene = agent_id.clone();
+    let aids_scene = agent_ids.clone();
     let pid_prev = project_id.clone();
-    let aid_prev = agent_id.clone();
+    let aids_prev = agent_ids.clone();
     let pid_next = project_id.clone();
-    let aid_next = agent_id.clone();
+    let aids_next = agent_ids.clone();
 
     rsx! {
         div { class: "space-y-2",
@@ -238,7 +240,7 @@ pub fn ThinkTracesTab(
                     disabled: loading(),
                     onclick: move |_| load(
                         pid_refresh.clone(),
-                        aid_refresh.clone(),
+                        aids_refresh.clone(),
                         scene_filter(),
                         offset(),
                         false,
@@ -260,7 +262,7 @@ pub fn ThinkTracesTab(
                     {
                         let selected = scene_now.as_deref() == value;
                         let pid = pid_scene.clone();
-                        let aid = aid_scene.clone();
+                        let aids = aids_scene.clone();
                         let value = value.map(|v| v.to_string());
                         rsx! {
                             button {
@@ -271,7 +273,7 @@ pub fn ThinkTracesTab(
                                     scene_filter.set(next.clone());
                                     offset.set(0);
                                     expanded_key.set(None);
-                                    load(pid.clone(), aid.clone(), next, 0, false);
+                                    load(pid.clone(), aids.clone(), next, 0, false);
                                 },
                                 "{label}"
                             }
@@ -415,7 +417,7 @@ pub fn ThinkTracesTab(
                                 let next = offset().saturating_sub(PAGE_SIZE);
                                 offset.set(next);
                                 expanded_key.set(None);
-                                load(pid_prev.clone(), aid_prev.clone(), scene_filter(), next, false);
+                                load(pid_prev.clone(), aids_prev.clone(), scene_filter(), next, false);
                             },
                             "上一页"
                         }
@@ -426,7 +428,7 @@ pub fn ThinkTracesTab(
                                 let next = offset() + PAGE_SIZE;
                                 offset.set(next);
                                 expanded_key.set(None);
-                                load(pid_next.clone(), aid_next.clone(), scene_filter(), next, false);
+                                load(pid_next.clone(), aids_next.clone(), scene_filter(), next, false);
                             },
                             "下一页"
                         }

@@ -448,6 +448,7 @@ pub async fn query_think_traces(
 ) -> Result<PagedResult<ThinkTraceListItem>, ApiError> {
     let qs = super::build_query_string(&[
         ("agent_id", params.agent_id.clone()),
+        ("agent_ids", params.agent_ids.clone()),
         ("project_id", params.project_id.clone()),
         ("task_id", params.task_id.clone()),
         ("scene", params.scene.clone()),

@@ -33,6 +33,7 @@ pub async fn query_think_traces(
             ctx,
             ThinkTraceQuery {
                 agent_id: params.agent_id,
+                agent_ids: common::api::split_csv_ids(params.agent_ids.as_deref()),
                 project_id: params.project_id,
                 task_id: params.task_id,
                 run_id: params.run_id,

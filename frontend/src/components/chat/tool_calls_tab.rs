@@ -95,12 +95,13 @@ pub fn running_pid_badge(pid_by_call: &HashMap<String, u32>, call_id: &str) -> O
 /// 工具调用 Tab
 ///
 /// - `project_id`：项目对话模式时按项目过滤
-/// - `agent_id`：默认对话模式时按前台 Agent 过滤（两者均为 None 时不查询）
+/// - `agent_ids`：默认对话模式时按「当前任务出现过的 Agent」集合过滤
+///   （两者均为空时不查询）
 /// - `refresh_tick`：SSE 消息/手动刷新计数器，变化时防抖 2s 后刷新
 #[component]
 pub fn ToolCallsTab(
     project_id: Option<String>,
-    agent_id: Option<String>,
+    agent_ids: Option<Vec<String>>,
     refresh_tick: u64,
 ) -> Element {
     let toast = use_toast();
@@ -116,8 +117,8 @@ pub fn ToolCallsTab(
     let mut detail_pid = use_signal(|| None::<u32>);
 
     // 加载：工具调用记录与进程列表并行请求（代际校验丢弃过期结果）
-    let mut load = move |pid: Option<String>, aid: Option<String>, debounce: bool| {
-        if pid.is_none() && aid.is_none() {
+    let mut load = move |pid: Option<String>, aids: Option<Vec<String>>, debounce: bool| {
+        if pid.is_none() && aids.as_ref().is_none_or(|ids| ids.is_empty()) {
             return;
         }
         let my_gen = load_gen() + 1;
@@ -132,7 +133,8 @@ pub fn ToolCallsTab(
             }
             let req = QueryToolCallEntriesRequest {
                 project_id: pid,
-                agent_id: aid,
+                // 多 Agent 走逗号分隔的单键值（GET query 不支持重复键）
+                agent_ids: aids.map(|ids| ids.join(",")),
                 limit: Some(ENTRY_LIMIT),
                 ..Default::default()
             };
@@ -157,18 +159,18 @@ pub fn ToolCallsTab(
 
     // 供 Modal 内进程变更后重拉 join 数据的参数副本
     let pid_for_change = project_id.clone();
-    let aid_for_change = agent_id.clone();
-    let has_scope = project_id.is_some() || agent_id.is_some();
+    let aids_for_change = agent_ids.clone();
+    let has_scope = project_id.is_some() || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty());
 
     // 范围切换 → 立即加载；refresh_tick 变化 → 防抖刷新
     //
     // ⚠️ 必须用 `use_reactive` 显式声明依赖：`use_effect` 只对**信号**依赖重跑，
-    // `project_id` / `agent_id` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
+    // `project_id` / `agent_ids` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
     // 值变了 effect 也不会重跑（SSE 与周期轮询都推不动这个 Tab）。
     use_effect(use_reactive(
-        (&project_id, &agent_id, &refresh_tick),
-        move |(pid, aid, tick)| {
-            let scope = format!("{:?}|{:?}", pid, aid);
+        (&project_id, &agent_ids, &refresh_tick),
+        move |(pid, aids, tick)| {
+            let scope = format!("{:?}|{:?}", pid, aids);
             let scope_changed = prev_scope() != scope;
             let tick_changed = prev_tick() != tick;
             // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
@@ -182,23 +184,23 @@ pub fn ToolCallsTab(
             if scope_changed {
                 expanded_call_id.set(None);
                 detail_pid.set(None);
-                load(pid, aid, false);
+                load(pid, aids, false);
             } else if tick_changed {
-                load(pid, aid, true);
+                load(pid, aids, true);
             }
         },
     ));
 
     if !has_scope {
         return rsx! {
-            div { class: "text-center py-12 text-base-content/60 text-sm", "暂无前台 Agent，无法加载工具调用记录" }
+            div { class: "text-center py-12 text-base-content/60 text-sm", "暂无作用域，无法加载工具调用记录" }
         };
     }
 
     let pid_by_call = join_running_pids(&processes.read());
     let list = entries.read().clone();
     let refresh_btn_pid = project_id.clone();
-    let refresh_btn_aid = agent_id.clone();
+    let refresh_btn_aids = agent_ids.clone();
 
     rsx! {
         div { class: "space-y-2",
@@ -211,7 +213,7 @@ pub fn ToolCallsTab(
                     class: "btn hud-btn btn-ghost btn-xs",
                     title: "刷新",
                     disabled: loading(),
-                    onclick: move |_| load(refresh_btn_pid.clone(), refresh_btn_aid.clone(), false),
+                    onclick: move |_| load(refresh_btn_pid.clone(), refresh_btn_aids.clone(), false),
                     "⟳"
                 }
             }
@@ -341,7 +343,7 @@ pub fn ToolCallsTab(
                 ProcessDetailContent {
                     pid,
                     on_changed: move |_| {
-                        load(pid_for_change.clone(), aid_for_change.clone(), false);
+                        load(pid_for_change.clone(), aids_for_change.clone(), false);
                     },
                 }
             }

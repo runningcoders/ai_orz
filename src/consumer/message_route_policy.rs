@@ -448,11 +448,17 @@ pub fn judge_chain_reply_route(pressure: &ChainPressure) -> AutoReplyRoute {
     match pressure.judge().action {
         // 硬墙：不再「停下不说话」，而是把本轮 Final 收口成知会发出。
         PressureAction::Escalate => AutoReplyRoute::CloseChainAsNotify {
-            reason: "collaboration pressure exhausted",
+            reason: PRESSURE_CLOSE_REASON,
         },
         PressureAction::Continue | PressureAction::Nudge => AutoReplyRoute::Peer,
     }
 }
+
+/// 静态硬墙（疲劳度 / 连续窗口触顶）收口的理由串
+///
+/// 提成常量是因为它同时是**排障口径**和**给用户看的文案分支键**：
+/// `chain_close_notice` 按它分叉出「疲劳度触顶」的措辞，写死两份必然漂移。
+pub const PRESSURE_CLOSE_REASON: &str = "collaboration pressure exhausted";
 
 /// 小脑判「无新信息 / 无需回复」时的收口理由
 ///
@@ -488,6 +494,33 @@ pub fn cerebellum_silent_route(silent: bool) -> Option<AutoReplyRoute> {
     silent.then_some(AutoReplyRoute::SilentClose {
         reason: CEREBELLUM_SILENT_REASON,
     })
+}
+
+/// 收口知会发给**归属用户**的文案（`CloseChainAsNotify` 专用）
+///
+/// 三条硬约束（护栏 `chain_close_notice_*`）：
+/// 1. **按 `reason` 分叉原因**：小脑收口不得写「疲劳度触顶」。那是静态硬墙的
+///    事实描述，套到第 1 跳的内容判定上（实测 `window_depth=1`、疲劳度 12/100）
+///    会让用户以为统计出错，反而削弱这条通知的可信度。
+/// 2. **指代必须与投递方向一致**：作为知会送出的是**本 Agent**（`agent_id`）的
+///    Final，接收方才是来源方（`peer_agent_id`）。旧文案把来源方写成结果作者，
+///    用户会去找错对象。
+/// 3. **未知 `reason` 用中性措辞，不猜原因**：宁可少说，不可说错。
+///
+/// ⚠️ 小脑两个产出方（显式 `close` 与低置信兜底 `close_default`）共用
+/// [`CEREBELLUM_CLOSE_REASON`]，所以这里的措辞只写**两者都成立**的事实
+/// 「无需再自动回发」，不写「已判定没有新信息」——兜底态其实没判出来。
+pub fn chain_close_notice(reason: &str, agent_id: &str, peer_agent_id: &str) -> String {
+    let cause = if reason == CEREBELLUM_CLOSE_REASON {
+        "小脑判定本轮无需再自动回发"
+    } else if reason == PRESSURE_CLOSE_REASON {
+        "Agent 间协作连续多轮未引入有效新信息、疲劳度触顶"
+    } else {
+        "Agent 间协作已到收口条件"
+    };
+    format!(
+        "ℹ️ {cause}，已把 Agent {agent_id} 的最后一轮结果作为**知会**送达 Agent {peer_agent_id}，该协作链到此终止（对方不会再自动回发）。\n\n如需继续这段讨论，回复本条并补充新信息、或直接让相关 Agent 重新发起新消息即可（新链重新计数）；若无需继续，忽略本条即可。"
+    )
 }
 
 #[cfg(test)]

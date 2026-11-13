@@ -332,6 +332,7 @@ pub async fn query_tool_call_entries(
     let qs = super::build_query_string(&[
         ("call_id", params.call_id.clone()),
         ("agent_id", params.agent_id.clone()),
+        ("agent_ids", params.agent_ids.clone()),
         ("project_id", params.project_id.clone()),
         ("task_id", params.task_id.clone()),
         ("tool_id", params.tool_id.clone()),

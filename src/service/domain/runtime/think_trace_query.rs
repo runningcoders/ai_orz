@@ -23,6 +23,8 @@ use common::error::Result;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TraceScope {
     pub agent_id: Option<String>,
+    /// Agent 集合过滤（对话页多 Agent 聚合；与 `agent_id` 同时存在即交集）
+    pub agent_ids: Option<Vec<String>>,
     pub project_id: Option<String>,
     pub task_id: Option<String>,
 }
@@ -34,6 +36,7 @@ pub(crate) struct TraceScope {
 #[derive(Debug, Clone)]
 pub(crate) struct TraceScopeFields<'a> {
     pub agent_id: Option<String>,
+    pub agent_ids: Option<Vec<String>>,
     pub project_id: Option<String>,
     pub task_id: Option<String>,
     pub limit: Option<usize>,
@@ -51,6 +54,7 @@ pub(crate) fn with_context_fields(
 ) -> Result<TraceScope> {
     let TraceScopeFields {
         agent_id,
+        agent_ids,
         project_id,
         task_id,
         limit,
@@ -66,15 +70,18 @@ pub(crate) fn with_context_fields(
             .user_role
             .map(UserRole::from)
             .is_some_and(|role| matches!(role, UserRole::Admin | UserRole::SuperAdmin));
-        let has_explicit_scope =
-            agent_id.is_some() || (allow_project && project_id.is_some()) || task_id.is_some();
+        let has_explicit_scope = agent_id.is_some()
+            || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty())
+            || (allow_project && project_id.is_some())
+            || task_id.is_some();
         if !is_admin && !has_explicit_scope {
             return Err(common::error::Error::bad_request(format!(
-                "{noun} query requires at least one of agent_id / project_id / task_id"
+                "{noun} query requires at least one of agent_id / agent_ids / project_id / task_id"
             )));
         }
         return Ok(TraceScope {
             agent_id,
+            agent_ids,
             project_id,
             task_id,
         });
@@ -96,6 +103,17 @@ pub(crate) fn with_context_fields(
         agent_id.as_deref(),
         noun,
     )?;
+    // Agent / System 调用不允许借 agent_ids 扩大读取范围：集合必须恰好是 ctx 自身
+    if let Some(ids) = agent_ids.as_deref() {
+        let only_self = ctx.agent_id.as_deref().is_some_and(|ctx_agent| {
+            ids.len() == 1 && ids.first().is_some_and(|id| id == ctx_agent)
+        });
+        if !only_self {
+            return Err(common::error::Error::bad_request(format!(
+                "{noun} query agent_ids conflicts with request context"
+            )));
+        }
+    }
     if allow_project {
         ensure_scope_does_not_conflict(
             "project_id",
@@ -108,6 +126,7 @@ pub(crate) fn with_context_fields(
 
     Ok(TraceScope {
         agent_id: agent_id.or_else(|| ctx.agent_id.clone()),
+        agent_ids,
         project_id: if allow_project {
             project_id.or_else(|| ctx.project_id.clone())
         } else {
@@ -126,6 +145,7 @@ pub(crate) fn with_context_scope(
         ctx,
         TraceScopeFields {
             agent_id: query.agent_id.clone(),
+            agent_ids: query.agent_ids.clone(),
             project_id: query.project_id.clone(),
             task_id: query.task_id.clone(),
             limit: query.pagination.limit,
@@ -135,6 +155,7 @@ pub(crate) fn with_context_scope(
         },
     )?;
     query.agent_id = scope.agent_id;
+    query.agent_ids = scope.agent_ids;
     query.project_id = scope.project_id;
     query.task_id = scope.task_id;
     Ok(query)
@@ -203,6 +224,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn user_member_may_scope_by_agent_ids() {
+        // 默认对话按「当前任务出现过的 Agent」集合查询，也算显式作用域
+        let ctx = ctx_with(CallerType::User, Some(UserRole::Member as i32), None);
+        let query = ThinkTraceQuery {
+            agent_ids: Some(vec!["agent-1".to_string(), "agent-2".to_string()]),
+            ..Default::default()
+        };
+        let merged = with_context_scope(ctx, query).expect("member with agent set scope");
+        assert_eq!(merged.agent_ids.as_deref().map(|ids| ids.len()), Some(2));
+    }
+
+    #[tokio::test]
+    async fn agent_cannot_widen_scope_with_agent_ids() {
+        let ctx = ctx_with(CallerType::Agent, None, Some("agent-1"));
+        let query = ThinkTraceQuery {
+            agent_ids: Some(vec!["agent-1".to_string(), "agent-2".to_string()]),
+            ..Default::default()
+        };
+        assert!(with_context_scope(ctx.clone(), query).is_err());
+
+        let query = ThinkTraceQuery {
+            agent_ids: Some(vec!["agent-1".to_string()]),
+            ..Default::default()
+        };
+        assert!(with_context_scope(ctx, query).is_ok());
+    }
+
+    #[tokio::test]
     async fn user_admin_may_query_unscoped() {
         for role in [UserRole::Admin, UserRole::SuperAdmin] {
             let ctx = ctx_with(CallerType::User, Some(role as i32), None);
@@ -257,6 +306,7 @@ mod tests {
                 ctx,
                 TraceScopeFields {
                     agent_id: None,
+                    agent_ids: None,
                     project_id: None,
                     task_id: None,
                     limit: None,

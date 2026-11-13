@@ -119,6 +119,28 @@ fn query_scans_all_agents_without_agent_filter() {
 }
 
 #[test]
+fn query_filters_by_agent_ids_set() {
+    // 默认对话口径：只聚合「当前任务出现过的 Agent」，集合外的 Agent 一条都不能带出
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+    write_entry(base, "agent-a", &date, &entry("run-1", "agent-a", 1_000));
+    write_entry(base, "agent-b", &date, &entry("run-2", "agent-b", 2_000));
+    write_entry(base, "agent-c", &date, &entry("run-3", "agent-c", 3_000));
+
+    let page = query(
+        base,
+        ThinkTraceQuery {
+            agent_ids: Some(vec!["agent-a".to_string(), "agent-c".to_string()]),
+            ..Default::default()
+        },
+    );
+    assert_eq!(page.total, 2);
+    let ids: Vec<&str> = page.items.iter().map(|e| e.run_id.as_str()).collect();
+    assert_eq!(ids, vec!["run-3", "run-1"]);
+}
+
+#[test]
 fn query_filters_project_and_scene() {
     let dir = tempdir().unwrap();
     let base = dir.path();

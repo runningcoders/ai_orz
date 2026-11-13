@@ -39,7 +39,7 @@ pub struct ThinkInput {
     /// 唤醒级预算：`max_thinking_rounds` 是整次唤醒的天花板，本周期可用量
     /// = `max_rounds - start_round`。传 0 会把上限按周期数放大（历史缺陷）。
     pub start_round: usize,
-    /// 意图识别产出的动态思考强度偏移（分），叠加在场景偏移之上
+    /// 意图识别产出的动态思考强度偏移（分），与场景偏移共同构成默认建议值
     ///
     /// 缺失/降级意图阶段时为 0，等价于未改造前的固定口径。
     pub thinking_intensity_offset: i32,

@@ -234,8 +234,8 @@ data/
 | 层 | 定位 | 落点 | 关键形态 |
 |------|------|------|----------|
 | **Brain（容器）** | 聚合根：把「模型能力 + 思考编排 + 记忆」装配成一次可执行的思考环境 | [src/models/brain.rs](src/models/brain.rs#L16-L31) | 持有 model_provider（外部 Cli/Remote 型为 Option）、cerebellum、memories |
-| **Cortex（慢思考 / System Two）** | 多轮工具调用 + 上下文装配 + 收敛判断，真正的「想清楚再动手」 | [src/service/dao/cortex/](src/service/dao/cortex/)（约 2,500 行） | 受三层思考预算约束；每轮产出可观测的阶段轨迹 |
-| **Cerebellum（快思考 / System One）** | 首轮模型调用**之前**的亚秒级预判：这条消息要不要惊动 Cortex | [src/service/dao/cerebellum/](src/service/dao/cerebellum/)、[src/service/domain/runtime/cerebellum_router.rs](src/service/domain/runtime/cerebellum_router.rs)（328 行） | 超时 **800ms**、置信阈值 **0.85**；超时 / 低置信 / 异常三层降级一律**静默跳过**；`trivial_direct` 默认关、`cortex_needed` 默认开 |
+| **Cortex（慢思考 / System Two）** | 多轮工具调用 + 上下文装配 + 收敛判断，真正的「想清楚再动手」 | [src/service/dao/cortex/](src/service/dao/cortex/)（3,797 行 / 9 文件） | 受三层思考预算约束；每轮产出可观测的阶段轨迹 |
+| **Cerebellum（快思考 / System One）** | 首轮模型调用**之前**的亚秒级预判：这条消息要不要惊动 Cortex | [src/service/dao/cerebellum/](src/service/dao/cerebellum/)（563 行）、[src/service/domain/runtime/cerebellum_router.rs](src/service/domain/runtime/cerebellum_router.rs)（519 行） | 两个决策点串行：`entry_gate` 入口门 + `entry_pool` 入口池（只在门判「无价值」时才问）；决策超时缺省 **3000ms**（`chain_reply` 场景级覆盖 5000ms），两个决策点置信阈值各 **0.9**（旧路由的 0.85 随判据重写作废）；降级一律**静默跳过** |
 | **Reflex（反射弧）** | 零 I/O 短路：命中即返回，不装载上下文、不调模型 | [src/pkg/think_path/types.rs](src/pkg/think_path/types.rs)（PhaseId） | 七相位之一，属「不思考也能答」的最廉价通道 |
 
 **三层思考预算**（2026-10-31 重构）是这套分层的时间刻度，分别约束三个不同量级的轮次：
@@ -252,7 +252,7 @@ data/
 
 ## 🔤 本体子系统：知识图谱的 TBox（2026-10-31 新增）
 
-> 定位：本体**不是业务模块**，是知识图谱的**模式层（TBox）**——回答「允许用哪些词、某个节点能挂哪些属性、哪些连接是合法的」。业务代码写图谱（ABox）时受它约束，治理看板读它做体检。规模约 111 个源文件 / 1.17 万行。
+> 定位：本体**不是业务模块**，是知识图谱的**模式层（TBox）**——回答「允许用哪些词、某个节点能挂哪些属性、哪些连接是合法的」。业务代码写图谱（ABox）时受它约束，治理看板读它做体检。全仓 110 个 `.rs` 出现 ontology 字样；文件名含 ontology 的专属落点 15 个文件 / 12,004 行。
 
 ### 四条能力线
 
@@ -279,14 +279,16 @@ data/
 
 | 层 | 位置 | 规模 |
 |------|------|------|
-| Adapter | [src/handlers/hr/ontology/](src/handlers/hr/ontology/) | 26 个文件 / 约 1,087 行 |
-| Domain | [src/service/domain/hr/ontology.rs](src/service/domain/hr/ontology.rs) | 1,469 行（以薄透传为主） |
-| DAL | [src/service/dal/ontology.rs](src/service/dal/ontology.rs) | 1,335 行 |
+| Adapter | [src/handlers/hr/ontology/](src/handlers/hr/ontology/) | 26 个文件 / 1,087 行（实测未变） |
+| Domain | [src/service/domain/hr/ontology.rs](src/service/domain/hr/ontology.rs) | 1,478 行（以薄透传为主） |
+| DAL | [src/service/dal/ontology.rs](src/service/dal/ontology.rs) | 1,366 行 |
 | DAO | [src/service/dao/ontology/](src/service/dao/ontology/) | 5 个文件 / 2,184 行 |
-| 契约 | [common/src/api/ontology.rs](common/src/api/ontology.rs)（935 行）、[common/src/ontology_property.rs](common/src/ontology_property.rs)（503 行） | 前后端唯一 DTO 来源 |
+| 契约 | [common/src/api/ontology.rs](common/src/api/ontology.rs)（962 行）、[common/src/ontology_property.rs](common/src/ontology_property.rs)（503 行 · 实测未变） | 前后端唯一 DTO 来源 |
 | 前端 | [frontend/src/pages/hr/ontology_panel.rs](frontend/src/pages/hr/ontology_panel.rs) | 3,497 行 |
 
-治理口径（当前实测）：属性域覆盖率 **1,103 / 1,227 = 0.8989**（阈值 0.95 → 告警）；属性有效性 91 组中 **51 组** 众数占比超过 0.90（标黄）。
+治理口径（2026-11-13 实测，与现网接口同源）：属性域覆盖率 = 域内 **1,624** / 域外 **18** / 总 **1,642** = **0.9890**（阈值 0.95 → **未触发告警**）；属性有效性 **94 组中 49 组** 众数占比 > 0.90（标黄，其中 24 组样本不足 `total<3`）；关系口径覆盖 canonical **1,230** / drift **23** / 同义归并 **1** = **0.9817**，节点漂移 **0**。
+
+> 口径纪律：`1,103 / 124 / 0.8989` 与 `91 组 / 51 组` 是 2026-11-05 的**旧快照**（分母含 knowledge_property 全表口径），与现网 `get_ontology_drift_dashboard`、`get_property_effectiveness` 不同源，**不可跨口径替换**，本行已按现网口径重取。
 
 专题图：[docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html)；长文见 [docs/wiki/zh/content/架构设计/本体子系统架构.md](docs/modules/00-总览与架构/C-知识/本体子系统架构.md)
 
@@ -302,12 +304,12 @@ data/
 
 | 环节 | 落点 | 备注 |
 |------|------|------|
-| 轮次编排 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 1,813 行；一轮 = 一次完整的「思考 → 动作 → 再思考」循环 |
-| 阶段编排引擎 | [src/pkg/think_path/](src/pkg/think_path/) | 14 个文件 / 约 2,499 行（engine / arbiter / blueprint / policy / run / strategy） |
-| 落盘出口 | [src/pkg/think_trace.rs](src/pkg/think_trace.rs) | 407 行；轮级 append-only |
+| 轮次编排 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 851 行；一轮 = 一次完整的「思考 → 动作 → 再思考」循环 |
+| 阶段编排引擎 | [src/pkg/think_path/](src/pkg/think_path/) | 13 个文件 / 2,499 行（engine / arbiter / blueprint / policy / run / strategy） |
+| 落盘出口 | [src/pkg/think_trace.rs](src/pkg/think_trace.rs) | 733 行；轮级 append-only，两段式（partial 增量行 + 收尾全量行） |
 | 查询入口 | [src/handlers/hr/agent/query_think_traces.rs](src/handlers/hr/agent/query_think_traces.rs) | 作用域守门：按 agent / project / task 维度收口 |
 | 统计消费 | [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs) | 订阅轮次事件做用量统计 |
-| 前端消费 | [frontend/src/utils/think_path_graph.rs](frontend/src/utils/think_path_graph.rs)、`frontend/src/components/chat/` 下的轨迹时间线与轨迹图组件 | 四组件合计约 1,942 行 |
+| 前端消费 | [frontend/src/utils/think_path_graph.rs](frontend/src/utils/think_path_graph.rs)、`frontend/src/components/chat/` 下的轨迹时间线、轨迹面板与小脑轨迹表 | 五文件合计 4,114 行（886 + 607 + 1,809 + 504 + 308） |
 
 ### 两条 JSONL、两棵目录树（易混点）
 
@@ -329,15 +331,15 @@ data/
 
 ---
 
-## 🗺️ 专题子图导航（2026-10-31 建立，2026-11-01 扩充至 16 张）
+## 🗺️ 专题子图导航（2026-10-31 建立，2026-11-01 扩充至 16 张，2026-11-09 增至 17 张）
 
 总图只到**容器级**（有哪些模块、怎么连）；单个子系统的设计下沉到专题图，图内均有 3 个视图可切换：
 
 | 专题图 | 讲什么 | 视图 |
 |--------|--------|------|
-| [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) | 总图：三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 总览 / 存储 / 质量门禁 |
+| [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) | 总图：三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 |
 | [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) | 本体子系统：四条能力线 + 五道门闩 + 治理看板 | 读侧 / 写入门闩 / 治理面 |
-| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询 → 前端 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
+| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询 → 前端；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
 | [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) | 工具调用上下文（身份）数据流转：声明（CredentialKind 的 UserInfo / AgentInfo + field 白名单 + binding）→ 解析（is_identity 二元分派 + 失败语义按来源分叉）→ 注入（check + base_env 九键末位 insert）→ 使用（git 子进程 / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 |

@@ -636,9 +636,11 @@ impl IntentAnalysis {
     /// - **简单且高置信（≥ 0.8）** → `-10`：闲聊/问答/确认，降强度更快更省
     /// - **其余** → `0`
     ///
-    /// 结果再叠加场景偏移后由 `ThinkingIntensity::offset` 饱和钳制到 [0, 100]，
-    /// 因此这里不需要自带边界；但总幅度刻意压在 ±20 内 —— 动态偏移是「微调」，
-    /// 不该盖过用户在 Provider/Agent 上的显式配置。
+    /// 结果与场景固定偏移一起构成 `strength_fallback`（由
+    /// `ThinkingIntensity::offset` 饱和钳制到 [0, 100]）：作为「场景重要度先验」
+    /// 的数值部分写进题面/state，**只在小脑无结论时**才硬兑现；判断有结论时
+    /// 完全以它为准。因此这里不需要自带边界；但总幅度刻意压在 ±20 内 ——
+    /// 动态偏移是「微调」，不该盖过用户在 Provider/Agent 上的显式配置。
     pub fn thinking_intensity_offset(&self) -> i32 {
         if self.confidence < 0.5 {
             return 20;
