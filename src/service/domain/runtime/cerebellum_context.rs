@@ -87,16 +87,19 @@ pub(crate) mod share {
     /// 与改造前「160 字符」（CJK 最坏情况）逐位一致。
     pub(crate) const SNIPPET_BP: u32 = 400; // 4%
 
-    /// 渠道入站判定：群聊历史池（36%）
-    pub(crate) const INBOUND_HISTORY_BP: u32 = 3_600;
-    /// 渠道入站判定：正文检索到的相关记忆（14.4%）
-    pub(crate) const INBOUND_SEARCHED_MEMORY_BP: u32 = 1_440;
-    /// 渠道入站判定：Agent 最近短期记忆（14.4%）
-    pub(crate) const INBOUND_RECENT_MEMORY_BP: u32 = 1_440;
-    /// 渠道入站判定：本次消息（7.2%）
-    pub(crate) const INBOUND_CURRENT_BP: u32 = 720;
+    /// 渠道入站判定：助手身份（名称 / 职责 / 能力 / 灵魂设定，10%）
+    pub(crate) const INBOUND_AGENT_PROFILE_BP: u32 = 1_000;
+    /// 渠道入站判定：群聊历史池（26%）
+    pub(crate) const INBOUND_HISTORY_BP: u32 = 2_600;
+    /// 渠道入站判定：正文检索到的相关记忆（13%）
+    pub(crate) const INBOUND_SEARCHED_MEMORY_BP: u32 = 1_300;
+    /// 渠道入站判定：Agent 最近短期记忆（13%）
+    pub(crate) const INBOUND_RECENT_MEMORY_BP: u32 = 1_300;
+    /// 渠道入站判定：本次消息（10%）
+    pub(crate) const INBOUND_CURRENT_BP: u32 = 1_000;
     /// 渠道入站判定的上下文总和（必须 ≤ 正文池 `BODY_BP`）
-    pub(crate) const INBOUND_TOTAL_BP: u32 = INBOUND_HISTORY_BP
+    pub(crate) const INBOUND_TOTAL_BP: u32 = INBOUND_AGENT_PROFILE_BP
+        + INBOUND_HISTORY_BP
         + INBOUND_SEARCHED_MEMORY_BP
         + INBOUND_RECENT_MEMORY_BP
         + INBOUND_CURRENT_BP;

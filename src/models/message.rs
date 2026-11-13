@@ -125,6 +125,11 @@ impl Message {
         self.po.to_prompt()
     }
 
+    /// 轻量上下文行（委托给 MessagePo::to_context_line）
+    pub fn to_context_line(&self) -> String {
+        self.po.to_context_line()
+    }
+
     /// 创建新 Message（完整参数，指定 project_id 和 task_id）
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_context(
@@ -285,16 +290,35 @@ impl MessagePo {
         &self.external_mentions.0
     }
 
-    /// 将消息格式化为 Prompt 可读的字符串
+    /// 角色在 Prompt 中的统一标签（完整块与轻量行共用，避免两处口径漂移）
+    fn prompt_role_label(&self) -> &'static str {
+        match self.from_role {
+            MessageRole::User => "用户",
+            MessageRole::Agent => "Agent",
+            MessageRole::System => "系统",
+        }
+    }
+
+    /// 轻量上下文行：`用户: 内容`
+    ///
+    /// 与 [`Self::to_prompt`] 的完整结构块区分：不输出消息 ID / 类型 / 关联，
+    /// 只保留「谁说的 + 说了什么」，供小脑判定等短上下文场景使用；
+    /// 角色标签复用同一口径。正文为空（如无文本的图片 / 文件消息）时返回空串，
+    /// 由调用方按空行丢弃，避免产出 `用户:` 这类无信息空壳。
+    pub fn to_context_line(&self) -> String {
+        let content = self.content.trim();
+        if content.is_empty() {
+            return String::new();
+        }
+        format!("{}: {}", self.prompt_role_label(), content)
+    }
+
+    /// 将消息格式化为 Prompt 可读的完整结构块
     ///
     /// 包含所有关键字段：消息ID、发送者、消息类型、回复关联、任务/项目关联、内容
     /// 使用统一的【】标识格式，便于大模型识别和提取
     pub fn to_prompt(&self) -> String {
-        let role_name = match self.from_role {
-            MessageRole::User => "用户",
-            MessageRole::Agent => "Agent",
-            MessageRole::System => "系统",
-        };
+        let role_name = self.prompt_role_label();
 
         let msg_type_label = match self.message_type {
             MessageType::Text => "文本消息",
@@ -319,11 +343,23 @@ impl MessagePo {
             _ => "消息内容",
         };
 
-        let mut msg_parts = vec![
-            format!("【消息 ID】{}", self.id),
-            format!("【发送者】{}", role_name),
-            format!("【消息类型】{}", msg_type_label),
-        ];
+        let mut msg_parts = vec![format!("【消息 ID】{}", self.id)];
+
+        // 外部渠道坐标：群 / 话题 / 原始消息 ID。大脑要调用 lark_cli 等渠道工具
+        // 做更深入的信息获取时，这些 ID 是工具入参的唯一来源；内部消息没有这些
+        // 字段，自然省略。放在发送者之前，保证模型先看到「这条消息来自哪个会话」。
+        if let Some(external_key) = self.external_key.as_deref().filter(|key| !key.is_empty()) {
+            msg_parts.push(format!("【外部消息 ID】{external_key}"));
+        }
+        if let Some(chat_id) = self.chat_id.as_deref().filter(|id| !id.is_empty()) {
+            msg_parts.push(format!("【会话 ID】{chat_id}"));
+        }
+        if let Some(thread_id) = self.thread_id.as_deref().filter(|id| !id.is_empty()) {
+            msg_parts.push(format!("【话题 ID】{thread_id}"));
+        }
+
+        msg_parts.push(format!("【发送者】{}", role_name));
+        msg_parts.push(format!("【消息类型】{}", msg_type_label));
 
         if let Some(reply_to) = &self.reply_to_id {
             msg_parts.push(format!("【回复消息】{}", reply_to));
@@ -696,5 +732,96 @@ mod tests {
         assert_eq!(po.content, "Hello, Builder!");
         assert_eq!(po.project_id, Some("proj_001".to_string()));
         assert!(po.reply_to_id.is_none());
+    }
+
+    /// 轻量上下文行：角色标签与完整 Prompt 块同源，正文去空白
+    #[test]
+    fn context_line_reuses_prompt_role_label() {
+        let user_po = MessagePoBuilder::default()
+            .id("msg_user".to_string())
+            .from_id("user_001".to_string())
+            .to_id("agent_001".to_string())
+            .from_role(MessageRole::User)
+            .to_role(MessageRole::Agent)
+            .message_type(MessageType::Text)
+            .status(MessageStatus::Pending)
+            .content("  你好  ".to_string())
+            .file_meta(Json(FileMeta::default()))
+            .created_by("tester".to_string())
+            .modified_by("tester".to_string())
+            .created_at(1234567890)
+            .updated_at(1234567890)
+            .build()
+            .unwrap();
+        assert_eq!(user_po.to_context_line(), "用户: 你好");
+        assert!(user_po.to_prompt().contains("【发送者】用户"));
+
+        let agent_po = MessagePoBuilder::default()
+            .id("msg_agent".to_string())
+            .from_id("agent_001".to_string())
+            .to_id("user_001".to_string())
+            .from_role(MessageRole::Agent)
+            .to_role(MessageRole::User)
+            .message_type(MessageType::Text)
+            .status(MessageStatus::Pending)
+            .content("收到".to_string())
+            .file_meta(Json(FileMeta::default()))
+            .created_by("tester".to_string())
+            .modified_by("tester".to_string())
+            .created_at(1234567890)
+            .updated_at(1234567890)
+            .build()
+            .unwrap();
+        assert_eq!(agent_po.to_context_line(), "Agent: 收到");
+
+        // 无文本内容的消息（纯图片 / 文件）返回空行，由调用方丢弃
+        let empty_po = MessagePoBuilder::default()
+            .id("msg_empty".to_string())
+            .from_id("user_001".to_string())
+            .to_id("agent_001".to_string())
+            .from_role(MessageRole::User)
+            .to_role(MessageRole::Agent)
+            .message_type(MessageType::Image)
+            .status(MessageStatus::Pending)
+            .content("   ".to_string())
+            .file_meta(Json(FileMeta::default()))
+            .created_by("tester".to_string())
+            .modified_by("tester".to_string())
+            .created_at(1234567890)
+            .updated_at(1234567890)
+            .build()
+            .unwrap();
+        assert_eq!(empty_po.to_context_line(), "");
+    }
+
+    /// 外部渠道坐标必须进入完整 Prompt 块（大脑调 lark_cli 等工具的入参来源），
+    /// 但轻量上下文行不重复携带，避免历史逐行膨胀
+    #[test]
+    fn to_prompt_includes_external_chat_coordinates() {
+        let po = MessagePoBuilder::default()
+            .id("msg_lark".to_string())
+            .from_id("ou_user".to_string())
+            .to_id("agent_001".to_string())
+            .from_role(MessageRole::User)
+            .to_role(MessageRole::Agent)
+            .message_type(MessageType::Text)
+            .status(MessageStatus::Pending)
+            .content("帮我查一下群里的历史".to_string())
+            .file_meta(Json(FileMeta::default()))
+            .external_key(Some("lark:om_123".to_string()))
+            .chat_id(Some("oc_group_1".to_string()))
+            .thread_id(Some("omt_topic_1".to_string()))
+            .created_by("tester".to_string())
+            .modified_by("tester".to_string())
+            .created_at(1234567890)
+            .updated_at(1234567890)
+            .build()
+            .unwrap();
+
+        let prompt = po.to_prompt();
+        assert!(prompt.contains("【外部消息 ID】lark:om_123"));
+        assert!(prompt.contains("【会话 ID】oc_group_1"));
+        assert!(prompt.contains("【话题 ID】omt_topic_1"));
+        assert_eq!(po.to_context_line(), "用户: 帮我查一下群里的历史");
     }
 }

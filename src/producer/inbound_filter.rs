@@ -6,8 +6,6 @@
 //!
 //! 这样新增渠道时只需在适配层翻译平台语义，过滤规则与判定链路无需重复实现。
 
-use common::enums::MessageRole;
-
 use crate::service::domain::runtime::cerebellum_context::share as context_share;
 use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use crate::service::domain::runtime::text_budget::tokens_of;
@@ -75,16 +73,18 @@ pub fn passes_relevance(probability: Option<f32>) -> bool {
 
 /// 拼接小脑判定上下文（纯函数，可单测）
 ///
-/// 段落顺序固定为「最近群聊 → 相关记忆 → 最近记忆 → 本次消息」；
-/// 空段落直接省略，避免把空标题喂给模型。
+/// 段落顺序固定为「助手身份 → 最近群聊 → 相关记忆 → 最近记忆 → 本次消息」；
+/// 空段落直接省略，避免把空标题喂给模型。助手身份让模型知道「这个 AI 是谁、
+/// 叫什么、负责什么」，否则消息里点名助手时模型无从判断是否在叫它。
 ///
 /// 预算**跟随模型最佳上下文**：`capacity_tokens` 由默认小脑 provider 的
 /// `min(推荐上下文, 最大上下文)` 提供，各段按 `cerebellum_context::share` 的
 /// 万分比分配；容量未配置（`None`）⇒ 不裁，不拍固定字符数。
 pub fn build_group_context(
+    agent_profile: Option<&str>,
     recent_memories: &[String],
     searched_memories: &[String],
-    history: &[(MessageRole, String)],
+    history: &[String],
     current_content: &str,
     sender_id: &str,
     capacity_tokens: Option<u64>,
@@ -93,11 +93,21 @@ pub fn build_group_context(
     // 单条摘要片段预算（历史 / 记忆各占一行，共用同一份额）
     let snippet_budget = tokens_of(capacity_tokens, context_share::SNIPPET_BP);
 
+    if let Some(profile) = agent_profile {
+        push_bounded_section(
+            &mut sections,
+            "【助手身份】",
+            vec![profile.trim().to_string()],
+            tokens_of(capacity_tokens, context_share::INBOUND_AGENT_PROFILE_BP),
+        );
+    }
+
+    // 行文本由实体格式化：`Message::to_context_line()`（角色标签与大脑 Prompt 同源）
     let history_lines: Vec<String> = history
         .iter()
-        .filter_map(|(role, content)| {
-            let text = truncate_to_budget(content.trim(), snippet_budget);
-            (!text.is_empty()).then(|| format!("{}: {}", role_label(*role), text))
+        .filter_map(|line| {
+            let text = truncate_to_budget(line.trim(), snippet_budget);
+            (!text.is_empty()).then_some(text)
         })
         .collect();
     push_bounded_section(
@@ -169,14 +179,6 @@ fn truncate_to_budget(text: &str, budget: Option<usize>) -> String {
     match budget {
         Some(budget) => truncate_to_tokens(text, budget, "…"),
         None => text.to_string(),
-    }
-}
-
-fn role_label(role: MessageRole) -> &'static str {
-    match role {
-        MessageRole::User => "用户",
-        MessageRole::Agent => "助手",
-        MessageRole::System => "系统",
     }
 }
 

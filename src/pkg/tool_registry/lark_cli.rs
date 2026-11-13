@@ -86,7 +86,13 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
                 "Execute lark-cli commands to operate Feishu/Lark capabilities ",
                 "(messages, docs, calendar, bitable, tasks, etc.) under the bound Feishu app identity. ",
                 "Credentials are resolved from the caller's bound Lark channel and never passed as arguments. ",
-                "Example commands: 'im +send', 'calendar +agenda', 'task +create'."
+                "For deeper context of the current conversation, reuse the IDs already in the current message: ",
+                "'im +chat-messages-list --chat-id <【会话 ID】> --concise' for chat history, ",
+                "'im +threads-messages-list --thread <【话题 ID】> --concise' for thread replies, ",
+                "'im +messages-mget --message-ids <om_ id>' for a known message ",
+                "(strip the 'lark:' prefix from 【外部消息 ID】), ",
+                "and 'im +messages-search --query <text>' to search chats. ",
+                "Other examples: 'calendar +agenda', 'task +create'."
             )
             .to_string(),
             protocol: ToolProtocol::Builtin,

@@ -8,7 +8,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::models::attachment::AttachmentUpload;
-use crate::models::memory::Memory;
 use crate::pkg::RequestContext;
 use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::MessageAdapterCallback;
@@ -22,9 +21,10 @@ use crate::service::domain::message::{
 };
 
 /// 群聊消息是否值得 Agent 回复的小脑判定指令（渠道无关）
-const INBOUND_RELEVANCE_INSTRUCTIONS: &str = "结合【最近群聊】【相关记忆】【最近记忆】判断这条群聊消息是否需要 AI 助手接入回复。\
-需要：明确向助手提问、@ 助手、指派任务、请求帮助，或讨论助手能处理的事务。\
+const INBOUND_RELEVANCE_INSTRUCTIONS: &str = "结合【助手身份】【最近群聊】【相关记忆】【最近记忆】判断这条群聊消息是否需要 AI 助手接入回复。\
+需要：明确向助手提问、称呼助手名称、@ 助手、指派任务、请求帮助，或讨论助手职责范围内的事务。\
 不需要：成员之间的闲聊、寒暄、与助手无关的通知、已经在被其他人回答的对话、纯表情或图片。\
+【助手身份】里的名称就是助手自己，消息中明确叫这个名字视为在叫助手。\
 结合上下文里是否已有助手参与、当前话题是否延续来判断；拿不准时倾向需要。";
 
 /// 群聊上下文抬取条数上限
@@ -268,11 +268,13 @@ impl MessageChannelProducer {
         agent_id: &str,
         capacity_tokens: Option<u64>,
     ) -> String {
+        let identity = self.load_agent_identity(ctx, agent_id).await;
         let history = self.load_chat_history(ctx, msg, RECENT_MESSAGE_LIMIT).await;
         let (recent_memories, searched_memories) = self
             .load_agent_memories(ctx, msg, agent_id, RECENT_MEMORY_LIMIT, SEARCH_MEMORY_LIMIT)
             .await;
         inbound_filter::build_group_context(
+            identity.as_deref(),
             &recent_memories,
             &searched_memories,
             &history,
@@ -282,16 +284,54 @@ impl MessageChannelProducer {
         )
     }
 
+    /// 读取助手基础信息，供小脑判断「这条消息是不是在叫它 / 属于它的职责」
+    ///
+    /// **与大脑复用同一格式**：直接取 `Agent::to_system_prompt()`（Agent ID / 名称 /
+    /// 角色描述 / 灵魂设定），不另造一套身份文本，保证大脑与小脑对同一个 Agent 的
+    /// 认知口径一致，未来其他场景也能按同一区块对齐。
+    /// 读不到（Agent 不存在 / 查询失败）时降级为不带身份继续判断：入站过滤的
+    /// 既有红线是「任何降级都放行」，不能因为身份缺失吞消息。
+    async fn load_agent_identity(&self, ctx: &RequestContext, agent_id: &str) -> Option<String> {
+        if agent_id.trim().is_empty() {
+            return None;
+        }
+        match self
+            .hr_domain
+            .agent_manage()
+            .get_agent(ctx.clone(), agent_id, Default::default())
+            .await
+        {
+            Ok(Some(agent)) => {
+                let identity = agent.to_system_prompt();
+                (!identity.trim().is_empty()).then_some(identity)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                log_warn!(
+                    ctx,
+                    "message_channel_producer",
+                    "load agent profile failed, judge without identity: agent_id={} err={}",
+                    agent_id,
+                    e
+                );
+                None
+            }
+        }
+    }
+
     /// 读取同会话最近消息（按时间正序返回）
     ///
     /// 按 `chat_id` 定位会话；消息带话题时叠加 `thread_id` 兼容过滤，
     /// 避免把不同话题的内容混在一起（无话题消息仍保留）。
+    ///
+    /// 行文本由 `Message::to_context_line()` 统一提供（与大脑 Prompt 同一角色标签口径），
+    /// 本层不拼消息格式。
     async fn load_chat_history(
         &self,
         ctx: &RequestContext,
         msg: &AdaptedMessage,
         limit: usize,
-    ) -> Vec<(MessageRole, String)> {
+    ) -> Vec<String> {
         let Some(chat_id) = msg.external.chat_id.as_deref().filter(|id| !id.is_empty()) else {
             return Vec::new();
         };
@@ -318,8 +358,8 @@ impl MessageChannelProducer {
             Ok(mut messages) => {
                 messages.reverse();
                 messages
-                    .into_iter()
-                    .map(|message| (message.from_role(), message.content().to_string()))
+                    .iter()
+                    .map(|message| message.to_context_line())
                     .collect()
             }
             Err(e) => {
@@ -338,6 +378,8 @@ impl MessageChannelProducer {
     /// 读取 Agent 最近短期记忆 + 用消息正文检索到的相关短期记忆
     ///
     /// 未绑定 Agent 时返回空（上下文退化为群聊消息）；搜索结果按记忆 ID 去重。
+    /// 行文本统一由 `Memory::to_prompt_summary()` 提供（含 `[id]` 元信息），
+    /// 与大脑 Prompt 的记忆区块同源，本层不拼记忆格式。
     async fn load_agent_memories(
         &self,
         ctx: &RequestContext,
@@ -367,9 +409,14 @@ impl MessageChannelProducer {
                 Vec::new()
             }
         };
-        let recent_pairs: Vec<(String, String)> =
-            recent.iter().filter_map(short_term_memory).collect();
-        let recent_ids: HashSet<String> = recent_pairs.iter().map(|(id, _)| id.clone()).collect();
+        let recent_lines: Vec<String> = recent
+            .iter()
+            .filter_map(|memory| memory.to_prompt_summary())
+            .collect();
+        let recent_ids: HashSet<String> = recent
+            .iter()
+            .filter_map(|memory| memory.short_term_summary().map(|(id, _)| id.to_string()))
+            .collect();
 
         let searched = match runtime
             .memory()
@@ -401,25 +448,17 @@ impl MessageChannelProducer {
             }
         };
 
-        let recent_summaries = recent_pairs
-            .into_iter()
-            .map(|(_, summary)| summary)
-            .collect();
-        let searched_summaries = searched
+        let searched_lines = searched
             .iter()
-            .filter_map(short_term_memory)
-            .filter(|(id, _)| !recent_ids.contains(id))
-            .map(|(_, summary)| summary)
+            .filter(|memory| {
+                memory
+                    .short_term_summary()
+                    .is_some_and(|(id, _)| !recent_ids.contains(id))
+            })
+            .filter_map(|memory| memory.to_prompt_summary())
             .collect();
-        (recent_summaries, searched_summaries)
+        (recent_lines, searched_lines)
     }
-}
-
-/// 提取短期记忆的 `(id, summary)`；非短期记忆返回 `None`
-fn short_term_memory(memory: &Memory) -> Option<(String, String)> {
-    memory
-        .short_term_summary()
-        .map(|(id, summary)| (id.to_string(), summary.to_string()))
 }
 
 #[async_trait::async_trait]

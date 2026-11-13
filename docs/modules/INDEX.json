@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 673,
-  "total_bytes": 14237799,
+  "total_bytes": 14239467,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1778,14 +1778,14 @@
           "path": "04-对话与消息/C-知识/消息渠道适配器.md",
           "name": "消息渠道适配器",
           "title": "消息渠道适配器",
-          "bytes": 25994
+          "bytes": 27208
         },
         {
           "tier": "C-知识",
           "path": "04-对话与消息/C-知识/消息管理.md",
           "name": "消息管理",
           "title": "消息管理",
-          "bytes": 19908
+          "bytes": 20082
         },
         {
           "tier": "C-知识",
@@ -1799,7 +1799,7 @@
           "path": "04-对话与消息/C-知识/消息领域.md",
           "name": "消息领域",
           "title": "消息领域",
-          "bytes": 44333
+          "bytes": 44613
         },
         {
           "tier": "C-知识",
