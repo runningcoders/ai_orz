@@ -106,7 +106,7 @@
 
 本次改动摘要：
 
-- **messaging**：新增组件「入站过滤层（渠道无关）」（`src/producer/inbound_filter.rs`），连接改为 `route → inbound_filter → domain`（原 `route → domain` 删除），连线上 +1；`producer` 副标补「归一后进过滤层」、`dao` 副标补「MessageQuery 支持 chat_id」；新增卡片「入站过滤：渠道无关的单点门」（私聊恒放行 / `group_trigger_gate` 四策略含空前缀降级 mention / `passes_relevance` 的 None 降级必须放行 / `AdaptedMessage` 三信号 / `relevance_gate` 只声明口径、`judge_noul` 下沉且失败超时一律 None / `MessageQuery` 的 chat_id 下推 SQL）；`meta.subtitle` 同步插入「入站过滤（规则门 + 小脑相关性门）」。组件 17→18、连线 17→18、卡片 6→7。
+- **messaging**：新增组件「入站过滤层（渠道无关）」（`src/producer/inbound_filter.rs`），连接改为 `route → inbound_filter → domain`（原 `route → domain` 删除），连线上 +1；`producer` 副标补「归一后进过滤层」、`dao` 副标补「MessageQuery 支持 chat_id」；新增卡片「入站过滤：渠道无关的单点门」（私聊恒放行 / `group_trigger_gate` 四策略含空前缀降级 mention / `relevance_decision` 区分 Unavailable（静默）与 Failed（疑惑） / `AdaptedMessage` 三信号 / `relevance_gate` 只声明口径、`judge_noul` 下沉并返回 Probability / Unavailable / Failed / `MessageQuery` 的 chat_id 下推 SQL）；`meta.subtitle` 同步插入「入站过滤（规则门 + 小脑相关性门）」。组件 17→18、连线 17→18、卡片 6→7。
 - **think-path**：`cerebellum` 行数 563 → **519**、`cortex` 3,797 → **3,795**（当场实测）；`cerebellum_router` 副标补「judge_noul 轻量判定」；「小脑输入预算」卡新增第 6 条：入站子分配 36% / 14.4% / 14.4% / 7.2% = 72% ≤ 正文池 72.5%，编译期断言 `assert!(INBOUND_TOTAL_BP <= BODY_BP)` 钉死。组件 / 连线 / 卡片 / 视图数不变（16 / 16 / 10 / 4）。
 - **architecture**：「认知架构：大脑不止一层」卡 `dao/cortex` 3,797 → **3,795**，并新增一条「Provider 端点不猜：`base_url` 全量必填（删内置厂商域名表与 `DEFAULT_SYSTEM_ONE_BASE_URL` 兜底，空即 `ConfigInvalid`；FastEmbed 是唯一免填例外）」。组件 / 连线 / 卡片 / 视图数不变（17 / 18 / 6 / 3）。
 

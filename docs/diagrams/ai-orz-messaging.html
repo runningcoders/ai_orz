@@ -5884,10 +5884,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <ul>
           <li>要不要处理这条入站消息，从各渠道 DAL 抽到 producer 的单一汇聚点 producer/inbound_filter.rs，新增渠道不必重写判定</li>
-          <li>规则门 group_trigger_gate：私聊恒 Process；mention 看 addressed_to_agent；prefix 看去掉前导空白后是否以配置前缀开头（空前缀降级 mention，不当匹配一切）；all 交给小脑；未知策略按 mention</li>
-          <li>小脑相关性门 passes_relevance：无结论（降级）必须放行 —— 静默吞消息比误放行更坏</li>
+          <li>规则门 group_trigger_gate：私聊恒 Process；显式 @ 是硬触发（任何群策略都直接 Process，绝不交给小脑）；mention 未 @ 即 Skip；prefix 看去掉前导空白后是否以配置前缀开头（空前缀降级 mention，不当匹配一切）；all 只把未点名的环境消息交给小脑；未知策略按 mention</li>
+          <li>小脑相关性门 relevance_decision：Probability≥0.5 放行、Probability&lt;0.5 发「看到了」、Unavailable（未配置决策模型）静默跳过、Failed（判定失败）发「疑惑」—— 两种降级都不处理（fail-closed）</li>
           <li>三个渠道无关信号进 AdaptedMessage：channel_id / is_group / addressed_to_agent；飞书未配 bot open_id 时无法判定，填 true 放行优先</li>
-          <li>Domain 只声明场景口径（relevance_gate.rs，问题 id inbound_relevance.primary），调用下沉 dal::brain::judge_noul（Domain→DAL→DAO 单向）；失败/超时/无答案一律 None</li>
+          <li>Domain 只声明场景口径（relevance_gate.rs，问题 id inbound_relevance.primary），调用下沉 dal::brain::judge_noul（Domain→DAL→DAO 单向）；无可用决策模型返回 Unavailable，调用失败/超时/无答案返回 Failed</li>
           <li>MessageQuery 增 chat_id 过滤（下推 SQL，不内存筛），供按会话拉群聊历史</li>
         </ul>
       </div>
