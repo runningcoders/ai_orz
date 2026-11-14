@@ -130,10 +130,13 @@ pub fn FinanceMessageChannels() -> Element {
     let mut new_lark_group_trigger = use_signal(|| "mention".to_string());
     let mut new_lark_group_trigger_prefix = use_signal(String::new);
     let mut new_lark_group_trigger_timeout = use_signal(String::new);
+    // 入站回执：飞书用表情表达「看到了 / 处理中」，微信用一次性 typing
+    let mut new_lark_receipt_mode = use_signal(|| "judged".to_string());
     // 微信（iLink）
     let mut new_wechat_credential_id = use_signal(String::new);
     let mut new_wechat_peer_id = use_signal(String::new);
     let mut new_wechat_listen_inbound = use_signal(|| true);
+    let mut new_wechat_typing = use_signal(|| true);
     // 邮件（凭证引用模式：只存凭证引用 + 对端地址）
     let mut new_email_credential_id = use_signal(String::new);
     let mut new_email_to = use_signal(String::new);
@@ -237,6 +240,19 @@ pub fn FinanceMessageChannels() -> Element {
                     } else {
                         None
                     },
+                    receipt_mode: if channel_type == ChannelType::Lark {
+                        Some(new_lark_receipt_mode())
+                    } else {
+                        None
+                    },
+                    receipt_processing_emojis: None,
+                    receipt_skipped_emojis: None,
+                    receipt_undetermined_emojis: None,
+                    wechat_typing_enabled: if channel_type == ChannelType::Wechat {
+                        Some(new_wechat_typing())
+                    } else {
+                        None
+                    },
                     lark: if channel_type == ChannelType::Lark {
                         Some(CreateLarkChannelConfig {
                             credential_id: none_if_empty(new_lark_credential_id()),
@@ -300,9 +316,11 @@ pub fn FinanceMessageChannels() -> Element {
                     new_lark_group_trigger.set("mention".to_string());
                     new_lark_group_trigger_prefix.set(String::new());
                     new_lark_group_trigger_timeout.set(String::new());
+                    new_lark_receipt_mode.set("judged".to_string());
                     new_wechat_credential_id.set(String::new());
                     new_wechat_peer_id.set(String::new());
                     new_wechat_listen_inbound.set(true);
+                    new_wechat_typing.set(true);
                     new_email_credential_id.set(String::new());
                     new_email_to.set(String::new());
                     new_slack_bot_token.set(String::new());
@@ -345,6 +363,8 @@ pub fn FinanceMessageChannels() -> Element {
     let lark_group_trigger_value = new_lark_group_trigger();
     let lark_group_trigger_prefix_value = new_lark_group_trigger_prefix();
     let lark_group_trigger_timeout_value = new_lark_group_trigger_timeout();
+    let lark_receipt_mode_value = new_lark_receipt_mode();
+    let wechat_typing_value = new_wechat_typing();
     let agent_value = new_agent_id();
 
     rsx! {
@@ -619,7 +639,7 @@ pub fn FinanceMessageChannels() -> Element {
                             select { class: "select select-bordered hud-input w-full", value: "{lark_group_trigger_value}",
                                 onchange: move |e| new_lark_group_trigger.set(e.value()),
                                 option { value: "mention", "仅 @ 机器人（推荐，平台默认只推送这类消息）" }
-                                option { value: "all", "全部群消息（先经小脑判断是否需要回复）" }
+                                option { value: "all", "全部群消息（未 @ 的交给小脑判断，判不了不处理）" }
                                 option { value: "prefix", "仅指定前缀开头的消息" }
                             }
                             label { class: "label",
@@ -644,6 +664,19 @@ pub fn FinanceMessageChannels() -> Element {
                                 input { class: "input input-bordered hud-input w-full font-mono", value: "{lark_group_trigger_timeout_value}",
                                     oninput: move |e| new_lark_group_trigger_timeout.set(e.value()),
                                     placeholder: "留空使用默认 1000，范围 200~5000" }
+                            }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text", "入站回执（看到了但不处理）" }
+                            }
+                            select { class: "select select-bordered hud-input w-full", value: "{lark_receipt_mode_value}",
+                                onchange: move |e| new_lark_receipt_mode.set(e.value()),
+                                option { value: "judged", "小脑判定无需回复时就回表情（推荐）" }
+                                option { value: "off", "不发送「看到了」表情" }
+                            }
+                            label { class: "label",
+                                span { class: "label-text-alt", "确定处理（含 @ 机器人）始终回「处理中」表情；该设置只控制「看到了但不处理」" }
                             }
                         }
                     }
@@ -701,6 +734,21 @@ pub fn FinanceMessageChannels() -> Element {
                                 div { class: "text-sm font-medium", "入站监听" }
                                 div { class: "text-xs text-base-content/60",
                                     "建立 iLink 长轮询接收该 bot 的私信；关闭后仅用于出站推送"
+                                }
+                            }
+                        }
+                        // 单一路径：label 整行可点靠原生转发，onchange 读 e.checked() 真实勾选态，不做信号盲切防双触发
+                        label { class: "flex cursor-pointer select-none items-center gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2.5",
+                            input {
+                                class: "checkbox checkbox-sm checkbox-primary",
+                                r#type: "checkbox",
+                                checked: wechat_typing_value,
+                                onchange: move |e| new_wechat_typing.set(e.checked()),
+                            }
+                            div {
+                                div { class: "text-sm font-medium", "收到后发送「正在输入」" }
+                                div { class: "text-xs text-base-content/60",
+                                    "每收到一条消息发送一次 typing 状态，不刷新、不主动停止"
                                 }
                             }
                         }

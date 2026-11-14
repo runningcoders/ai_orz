@@ -29,6 +29,8 @@ const API_BASE: &str = "https://open.feishu.cn";
 const PATH_TOKEN: &str = "/open-apis/auth/v3/tenant_access_token/internal";
 const PATH_SEND_MESSAGE: &str = "/open-apis/im/v1/messages";
 const PATH_REPLY_MESSAGE: &str = "/open-apis/im/v1/messages/{message_id}/reply";
+/// 消息表情回复（入站轻回执；`{message_id}` 为飞书 `om_xxx`）
+const PATH_ADD_REACTION: &str = "/open-apis/im/v1/messages/{message_id}/reactions";
 /// 消息资源下载（`?type=image`）：`{message_id}` 为消息 ID，`{file_key}` 为 image_key
 const PATH_MESSAGE_RESOURCE: &str = "/open-apis/im/v1/messages/{message_id}/resources/{file_key}";
 /// 应用机器人信息（返回顶层 `bot.open_id`，不套 `data`）
@@ -382,6 +384,53 @@ impl LarkDao for LarkDaoHttpImpl {
             message_id
         );
         Ok(message_id)
+    }
+
+    async fn add_reaction(
+        &self,
+        ctx: RequestContext,
+        credentials: &LarkAppCredentials,
+        message_id: &str,
+        emoji_type: &str,
+    ) -> Result<()> {
+        let message_id = message_id.trim();
+        let emoji_type = emoji_type.trim();
+        if message_id.is_empty() || emoji_type.is_empty() {
+            return Err(err!(
+                InvalidRequest,
+                "飞书回执缺少 message_id 或 emoji_type"
+            ));
+        }
+        let token = self
+            .get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
+            .await?;
+        let url = format!(
+            "{}{}",
+            API_BASE,
+            PATH_ADD_REACTION.replace("{message_id}", message_id)
+        );
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&token)
+            .json(&serde_json::json!({
+                "reaction_type": { "emoji_type": emoji_type }
+            }))
+            .send()
+            .await
+            .map_err(|e| from_reqwest("add_reaction", e))?
+            .json::<LarkResponse<serde_json::Value>>()
+            .await
+            .map_err(|e| from_reqwest("add_reaction", e))?;
+        resp.check("add_reaction")?;
+        log_debug!(
+            &ctx,
+            "lark_dao",
+            "飞书回执已添加 message_id={} emoji_type={}",
+            message_id,
+            emoji_type
+        );
+        Ok(())
     }
 
     async fn get_bot_open_id(&self, credentials: &LarkAppCredentials) -> Result<Option<String>> {

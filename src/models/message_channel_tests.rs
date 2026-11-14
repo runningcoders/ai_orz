@@ -77,3 +77,58 @@ fn deleted_channel_is_terminal_for_status_transition_action() {
     assert_eq!(channel.po.modified_by, "creator");
     assert_eq!(channel.po.updated_at, 1000);
 }
+
+#[test]
+fn receipt_config_defaults_to_judged_and_recommended_emoji_sets() {
+    let config = ChannelConfig::default();
+
+    assert_eq!(config.receipt_mode(), ReceiptMode::Judged);
+    assert_eq!(
+        config.processing_receipt_emojis(),
+        vec!["OnIt", "OneSecond", "Typing", "SALUTE"]
+    );
+    assert_eq!(
+        config.skipped_receipt_emojis(),
+        vec!["Get", "StatusReading", "GLANCE"]
+    );
+    assert_eq!(
+        config.undetermined_receipt_emojis(),
+        vec!["THINKING", "DIZZY", "WHAT"]
+    );
+    assert!(config.wechat_typing_enabled());
+}
+
+#[test]
+fn receipt_mode_parses_known_values_and_falls_back_to_judged() {
+    assert_eq!(ReceiptMode::from_config(Some("off")), ReceiptMode::Off);
+    assert_eq!(ReceiptMode::from_config(Some("none")), ReceiptMode::Off);
+    // 历史值 addressed / all / always 一律归一到 judged
+    assert_eq!(
+        ReceiptMode::from_config(Some("ADDRESSED")),
+        ReceiptMode::Judged
+    );
+    assert_eq!(ReceiptMode::from_config(Some("all")), ReceiptMode::Judged);
+    assert_eq!(
+        ReceiptMode::from_config(Some("judged")),
+        ReceiptMode::Judged
+    );
+    assert_eq!(
+        ReceiptMode::from_config(Some("unknown")),
+        ReceiptMode::Judged
+    );
+    assert_eq!(ReceiptMode::from_config(None), ReceiptMode::Judged);
+}
+
+#[test]
+fn explicit_empty_receipt_emojis_disable_that_rotation() {
+    let config = ChannelConfig {
+        receipt_processing_emojis: Some(vec![]),
+        receipt_skipped_emojis: Some(vec!["  ".to_string()]),
+        receipt_undetermined_emojis: Some(vec![String::new()]),
+        ..Default::default()
+    };
+
+    assert!(config.processing_receipt_emojis().is_empty());
+    assert!(config.skipped_receipt_emojis().is_empty());
+    assert!(config.undetermined_receipt_emojis().is_empty());
+}

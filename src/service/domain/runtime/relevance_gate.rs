@@ -4,9 +4,12 @@
 //! 域层只声明场景口径，实际小脑调用与降级由 DAL（`dal::brain::judge_noul`）完成，
 //! 保持 Domain → DAL → DAO 的单向分层。
 //!
-//! 任何降级都返回 `None`，由调用方决定放行策略，避免静默吞消息。
+//! 任何降级都不放行，但区分两种降级：`Unavailable`（未配置决策模型，配置态）
+//! 与 `Failed`（有模型但判定失败，故障态），由调用方决定是否回执。
 
 use crate::pkg::RequestContext;
+
+pub use crate::service::dal::brain::NoulOutcome;
 
 /// 固定问题 ID（同一场景固定，便于日志与调试对齐）
 const QUESTION_ID: &str = "inbound_relevance.primary";
@@ -21,13 +24,14 @@ pub async fn context_capacity(ctx: &RequestContext) -> Option<u64> {
 
 /// 用默认小脑判断上下文中的当前消息是否值得 Agent 回复
 ///
-/// 返回 `Some(probability)`（0~1）；`None` 表示小脑不可用或本次判断失败。
+/// 返回 [`NoulOutcome`]：`Probability` 有结论；`Unavailable` 没有可用决策模型；
+/// `Failed` 有模型但本次判定失败。调用方按 fail-closed 处置两者，但回执不同。
 pub async fn judge_relevance(
     ctx: &RequestContext,
     instructions: &str,
     context: &str,
     timeout_ms: u64,
-) -> Option<f32> {
+) -> NoulOutcome {
     crate::service::dal::brain::judge_noul(ctx, QUESTION_ID, instructions, context, timeout_ms)
         .await
 }

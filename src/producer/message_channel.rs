@@ -17,7 +17,8 @@ use crate::service::dao::message::MessageQuery;
 use crate::service::domain::finance::FinanceDomain;
 use crate::service::domain::hr::HrDomain;
 use crate::service::domain::message::{
-    DeliverMessageCommand, DeliveryOptions, MessageDomain, SendToAgentCommand,
+    DeliverMessageCommand, DeliveryOptions, MessageDomain, ReceiptKind, ReceiptTarget,
+    SendToAgentCommand,
 };
 
 /// 群聊消息是否值得 Agent 回复的小脑判定指令（渠道无关）
@@ -38,6 +39,18 @@ const DEFAULT_GROUP_TRIGGER_TIMEOUT_MS: u64 = 1000;
 /// 超时配置允许范围（毫秒）：过小必然超时，过大阻塞入站链路
 const MIN_GROUP_TRIGGER_TIMEOUT_MS: u64 = 200;
 const MAX_GROUP_TRIGGER_TIMEOUT_MS: u64 = 5000;
+
+/// 入站过滤结果：`Skip` 区分「为何跳过」，供回执层决定是否发「看到了」
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InboundFilterOutcome {
+    /// 进入正常处理链路
+    Process,
+    /// 被触发策略或小脑跳过
+    Skip {
+        /// 要回给发送方的回执语义；`None` 表示规则拦截、不回执
+        receipt: Option<ReceiptKind>,
+    },
+}
 
 struct MessageChannelProducer {
     hr_domain: Arc<dyn HrDomain>,
@@ -153,17 +166,17 @@ impl MessageChannelProducer {
     /// 渠道入站统一过滤：协议转换完成后、进入内部消息系统前判定是否处理
     ///
     /// 规则与渠道无关：私聊恒放行；群聊读取渠道的 `group_trigger` 配置，
-    /// 按 `mention` / `prefix` / `all` 判定。`all` 模式再经小脑结合群聊上下文
-    /// 与 Agent 记忆判断是否值得回复。任何降级（无渠道 / 查询失败 / 小脑不可用）
-    /// 均放行，避免静默吞消息。
+    /// 按 `mention` / `prefix` / `all` 判定，显式 @ 是硬触发。`all` 模式下未 @ 的
+    /// 环境消息再经小脑结合群聊上下文与 Agent 记忆判断。渠道缺失 / 查询失败属
+    /// 路由层的结构性放行；小脑无法判定则按不处理（fail-closed）。
     async fn should_process_inbound(
         &self,
         ctx: &RequestContext,
         msg: &AdaptedMessage,
         agent_id: &str,
-    ) -> bool {
+    ) -> InboundFilterOutcome {
         if !msg.is_group {
-            return true;
+            return InboundFilterOutcome::Process;
         }
         let Some(channel_id) = msg.channel_id.as_deref().filter(|id| !id.is_empty()) else {
             log_warn!(
@@ -173,7 +186,7 @@ impl MessageChannelProducer {
                 msg.from_id,
                 msg.channel_type
             );
-            return true;
+            return InboundFilterOutcome::Process;
         };
         let channel = match self
             .finance_domain
@@ -189,7 +202,7 @@ impl MessageChannelProducer {
                     "group inbound channel not found, pass through: channel_id={}",
                     channel_id
                 );
-                return true;
+                return InboundFilterOutcome::Process;
             }
             Err(e) => {
                 log_warn!(
@@ -199,7 +212,7 @@ impl MessageChannelProducer {
                     channel_id,
                     e
                 );
-                return true;
+                return InboundFilterOutcome::Process;
             }
         };
 
@@ -217,47 +230,131 @@ impl MessageChannelProducer {
             prefix,
             &msg.content,
         ) {
-            InboundGateDecision::Process => true,
-            InboundGateDecision::Skip => false,
+            InboundGateDecision::Process => InboundFilterOutcome::Process,
+            // 规则拦截（未 @ / 前缀不匹配）：不声称「看到了」，不发回执
+            InboundGateDecision::Skip => InboundFilterOutcome::Skip { receipt: None },
             InboundGateDecision::Judge => {
-                self.judge_inbound_relevance(ctx, msg, agent_id, timeout_ms)
-                    .await
+                use inbound_filter::RelevanceDecision;
+                // 判过相关才处理；判过不相关发「看到了」；有模型但判定失败发「疑惑」；
+                // 根本没有可用决策模型则只打日志、不发任何回执（配置态，避免刷屏）
+                match inbound_filter::relevance_decision(
+                    self.judge_inbound_relevance(ctx, msg, agent_id, timeout_ms)
+                        .await,
+                ) {
+                    RelevanceDecision::Process => InboundFilterOutcome::Process,
+                    RelevanceDecision::SkipSeen => InboundFilterOutcome::Skip {
+                        receipt: Some(ReceiptKind::Seen),
+                    },
+                    RelevanceDecision::SkipUndetermined => InboundFilterOutcome::Skip {
+                        receipt: Some(ReceiptKind::Undetermined),
+                    },
+                    RelevanceDecision::SkipUnavailable => {
+                        InboundFilterOutcome::Skip { receipt: None }
+                    }
+                }
             }
         }
     }
 
+    /// 异步发送入站回执（fire-and-forget，失败只 WARN，绝不阻塞主链路）
+    ///
+    /// 回执是一次性副作用：不落库、不进消息链；2s 超时后放弃，避免拖住入站任务。
+    fn spawn_receipt(&self, ctx: &RequestContext, msg: &AdaptedMessage, kind: ReceiptKind) {
+        let Some(channel_id) = msg.channel_id.clone().filter(|id| !id.is_empty()) else {
+            return;
+        };
+        let Some(external_key) = msg
+            .external
+            .external_key
+            .clone()
+            .filter(|key| !key.is_empty())
+        else {
+            return;
+        };
+        let domain = self.message_domain.clone();
+        let ctx = ctx.clone();
+        let target = ReceiptTarget { external_key };
+        tokio::spawn(async move {
+            let fut = domain
+                .delivery()
+                .send_receipt(ctx.clone(), &channel_id, kind, target);
+            match tokio::time::timeout(std::time::Duration::from_secs(2), fut).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => log_warn!(
+                    &ctx,
+                    "message_channel_producer",
+                    "入站回执发送失败（忽略）: kind={:?} channel_id={} err={}",
+                    kind,
+                    channel_id,
+                    e
+                ),
+                Err(_) => log_warn!(
+                    &ctx,
+                    "message_channel_producer",
+                    "入站回执发送超时（忽略）: kind={:?} channel_id={}",
+                    kind,
+                    channel_id
+                ),
+            }
+        });
+    }
+
     /// 用「群聊历史 + Agent 短期记忆 + 本次消息」请小脑判断是否值得回复
+    ///
+    /// 返回小脑判定结果：`Probability` 有结论；`Unavailable` 没有可用决策模型；
+    /// `Failed` 有模型但本次判定失败。两种降级都按不处理（fail-closed），
+    /// 但回执不同，见 [`inbound_filter::relevance_decision`]。
     async fn judge_inbound_relevance(
         &self,
         ctx: &RequestContext,
         msg: &AdaptedMessage,
         agent_id: &str,
         timeout_ms: u64,
-    ) -> bool {
+    ) -> crate::service::domain::runtime::NoulOutcome {
+        use crate::service::domain::runtime::NoulOutcome;
+
         // 预算跟随模型最佳上下文：容量取自默认小脑 provider 的
         // min(推荐上下文, 最大上下文)，未配置则不裁（不拍固定字符数）。
         let capacity = crate::service::domain::runtime::context_capacity(ctx).await;
         let context = self
             .build_inbound_context(ctx, msg, agent_id, capacity)
             .await;
-        let probability = crate::service::domain::runtime::judge_relevance(
+        let outcome = crate::service::domain::runtime::judge_relevance(
             ctx,
             INBOUND_RELEVANCE_INSTRUCTIONS,
             &context,
             timeout_ms,
         )
         .await;
-        let pass = inbound_filter::passes_relevance(probability);
-        log_info!(
-            ctx,
-            "message_channel_producer",
-            "group inbound relevance judged: from={} channel={:?} probability={:?} pass={}",
-            msg.from_id,
-            msg.channel_type,
-            probability,
-            pass
-        );
-        pass
+        match outcome {
+            NoulOutcome::Probability(probability) => log_info!(
+                ctx,
+                "message_channel_producer",
+                "group inbound relevance judged: from={} channel={:?} probability={} pass={}",
+                msg.from_id,
+                msg.channel_type,
+                probability,
+                probability >= inbound_filter::RELEVANCE_THRESHOLD
+            ),
+            // 没有可用决策模型：持续配置态，只打日志、不发回执
+            NoulOutcome::Unavailable => log_warn!(
+                ctx,
+                "message_channel_producer",
+                "group inbound relevance unavailable: no decision model configured, skip without receipt: from={} channel={:?} — 检查默认小脑 provider / api_key",
+                msg.from_id,
+                msg.channel_type
+            ),
+            // 有模型但判定失败：瞬时故障，发「疑惑」表情
+            NoulOutcome::Failed => log_warn!(
+                ctx,
+                "message_channel_producer",
+                "group inbound relevance failed (fail-closed, undetermined receipt): from={} channel={:?} timeout_ms={}",
+                msg.from_id,
+                msg.channel_type,
+                timeout_ms
+            ),
+        }
+        outcome
     }
 
     /// 组装小脑判定上下文（历史 / 记忆任一来源失败只丢对应片段）
@@ -289,8 +386,8 @@ impl MessageChannelProducer {
     /// **与大脑复用同一格式**：直接取 `Agent::to_system_prompt()`（Agent ID / 名称 /
     /// 角色描述 / 灵魂设定），不另造一套身份文本，保证大脑与小脑对同一个 Agent 的
     /// 认知口径一致，未来其他场景也能按同一区块对齐。
-    /// 读不到（Agent 不存在 / 查询失败）时降级为不带身份继续判断：入站过滤的
-    /// 既有红线是「任何降级都放行」，不能因为身份缺失吞消息。
+    /// 读不到（Agent 不存在 / 查询失败）时降级为不带身份继续判断：身份缺失只降低
+    /// 判定质量，不影响处置口径（判定仍要给出结论，`None` 才按不处理走）。
     async fn load_agent_identity(&self, ctx: &RequestContext, agent_id: &str) -> Option<String> {
         if agent_id.trim().is_empty() {
             return None;
@@ -508,16 +605,28 @@ impl MessageAdapterCallback for MessageChannelProducer {
 
         // 统一入站过滤：协议转换已完成，进入内部消息系统前判定是否值得处理。
         // 所有渠道共用同一套规则；`all` 模式由小脑结合群聊上下文与记忆判断。
-        if !self.should_process_inbound(&ctx, &msg, &to_agent_id).await {
-            log_info!(
-                &ctx,
-                "message_channel_producer",
-                "group inbound skipped by trigger policy: from={} channel={:?} chat_id={:?}",
-                msg.from_id,
-                msg.channel_type,
-                msg.external.chat_id
-            );
-            return Ok(());
+        match self.should_process_inbound(&ctx, &msg, &to_agent_id).await {
+            InboundFilterOutcome::Process => {
+                // 已接下：飞书加「在做了」类表情，微信发一次性 typing
+                self.spawn_receipt(&ctx, &msg, ReceiptKind::Processing);
+            }
+            InboundFilterOutcome::Skip { receipt } => {
+                log_info!(
+                    &ctx,
+                    "message_channel_producer",
+                    "group inbound skipped: from={} channel={:?} chat_id={:?} receipt={:?}",
+                    msg.from_id,
+                    msg.channel_type,
+                    msg.external.chat_id,
+                    receipt
+                );
+                // 规则拦截（None）表示“根本没找机器人”，不盖表情；
+                // 判过不相关 → Seen，无法判定 → Undetermined
+                if let Some(kind) = receipt {
+                    self.spawn_receipt(&ctx, &msg, kind);
+                }
+                return Ok(());
+            }
         }
 
         // 渠道附件落库：先转为内部 Attachment 资产，随后**在适配层**把 id 解析成

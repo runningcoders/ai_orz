@@ -1,4 +1,5 @@
 use super::*;
+use crate::service::domain::runtime::NoulOutcome;
 use crate::service::domain::runtime::compaction::estimate_tokens;
 
 /// 私聊不参与群规则：即使前缀 / 指向都不满足也放行
@@ -45,6 +46,19 @@ fn prefix_mode_matches_after_trimming() {
     );
 }
 
+/// 显式 @ 是硬触发：任何群策略下都直接放行，前缀不匹配也不例外
+#[test]
+fn addressed_always_passes_regardless_of_strategy() {
+    assert_eq!(
+        group_trigger_gate(true, true, "prefix", "bot", "帮我查一下"),
+        InboundGateDecision::Process
+    );
+    assert_eq!(
+        group_trigger_gate(true, true, "all", "", "闲聊"),
+        InboundGateDecision::Process
+    );
+}
+
 /// 前缀为空时降级为 mention，绝不能当成「匹配一切」
 #[test]
 fn empty_prefix_falls_back_to_mention() {
@@ -58,22 +72,40 @@ fn empty_prefix_falls_back_to_mention() {
     );
 }
 
-/// all 模式：规则层全部放行，交由小脑判断
+/// all 模式：未点名的「环境消息」才交由小脑判断
 #[test]
-fn all_mode_defers_to_cerebellum() {
+fn all_mode_defers_ambient_messages_to_cerebellum() {
     assert_eq!(
         group_trigger_gate(true, false, "all", "", "闲聊"),
         InboundGateDecision::Judge
     );
 }
 
-/// 小脑无结论（降级）必须放行；达到阈值才回复
+/// 达到阈值才处理；判过不相关 / 判定失败 / 没有模型 分别对应三种跳过语义
 #[test]
-fn relevance_degrades_to_pass() {
-    assert!(passes_relevance(None));
-    assert!(passes_relevance(Some(RELEVANCE_THRESHOLD)));
-    assert!(passes_relevance(Some(0.9)));
-    assert!(!passes_relevance(Some(RELEVANCE_THRESHOLD - 0.01)));
+fn relevance_decision_maps_outcomes() {
+    assert_eq!(
+        relevance_decision(NoulOutcome::Probability(RELEVANCE_THRESHOLD)),
+        RelevanceDecision::Process
+    );
+    assert_eq!(
+        relevance_decision(NoulOutcome::Probability(0.9)),
+        RelevanceDecision::Process
+    );
+    assert_eq!(
+        relevance_decision(NoulOutcome::Probability(RELEVANCE_THRESHOLD - 0.01)),
+        RelevanceDecision::SkipSeen
+    );
+    // 有模型但调用失败 → 「疑惑」回执
+    assert_eq!(
+        relevance_decision(NoulOutcome::Failed),
+        RelevanceDecision::SkipUndetermined
+    );
+    // 根本没有可用决策模型 → 只打日志、不发回执
+    assert_eq!(
+        relevance_decision(NoulOutcome::Unavailable),
+        RelevanceDecision::SkipUnavailable
+    );
 }
 
 /// 上下文按「身份 → 群聊 → 相关记忆 → 最近记忆 → 本次消息」拼接，空段落省略

@@ -29,7 +29,9 @@ use crate::service::dal::agent::AgentDal;
 use crate::service::dal::artifact::ArtifactDal;
 use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::message::MessageDal;
-pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal, ReplyTarget};
+pub use crate::service::dal::message_channel::{
+    DeliveryResult, MessageChannelDal, ReceiptKind, ReceiptTarget, ReplyTarget,
+};
 use crate::service::dal::message_push::MessagePushDal;
 use crate::service::dal::project::ProjectDal;
 use crate::service::dal::user::UserDal;
@@ -593,6 +595,18 @@ pub trait MessageDelivery: Send + Sync {
         ctx: RequestContext,
         cmd: DeliverMessageCommand<'_>,
     ) -> Result<DeliveryResult>;
+
+    /// 发送入站回执（一次性副作用，不落库、不进消息链、不推 SSE）
+    ///
+    /// 具体表达由渠道决定：飞书落为消息表情，微信落为 typing；
+    /// 不支持的渠道直接 no-op。表情轮换与 `receipt_mode` 均由 DAL 按渠道配置处理。
+    async fn send_receipt(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        kind: ReceiptKind,
+        target: ReceiptTarget,
+    ) -> Result<()>;
 
     /// 订阅 SSE 消息推送
     async fn subscribe_sse(&self, ctx: RequestContext, user_id: &str) -> Result<SubscribeResult>;

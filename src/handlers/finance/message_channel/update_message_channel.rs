@@ -132,6 +132,21 @@ fn merge_channel_config(target: &mut ChannelConfig, source: &Option<CreateMessag
     if let Some(v) = config.group_trigger_timeout_ms {
         target.group_trigger_timeout_ms = Some(v);
     }
+    if let Some(v) = &config.receipt_mode {
+        target.receipt_mode = Some(v.clone());
+    }
+    if let Some(v) = &config.receipt_processing_emojis {
+        target.receipt_processing_emojis = Some(v.clone());
+    }
+    if let Some(v) = &config.receipt_skipped_emojis {
+        target.receipt_skipped_emojis = Some(v.clone());
+    }
+    if let Some(v) = &config.receipt_undetermined_emojis {
+        target.receipt_undetermined_emojis = Some(v.clone());
+    }
+    if let Some(v) = config.wechat_typing_enabled {
+        target.wechat_typing_enabled = Some(v);
+    }
 
     if let Some(lark) = &config.lark {
         if let Some(v) = &lark.credential_id {
@@ -212,6 +227,11 @@ mod tests {
             group_trigger: Some("all".to_string()),
             group_trigger_prefix: Some("/ai".to_string()),
             group_trigger_timeout_ms: Some(2000),
+            receipt_mode: None,
+            receipt_processing_emojis: None,
+            receipt_skipped_emojis: None,
+            receipt_undetermined_emojis: None,
+            wechat_typing_enabled: None,
             lark: Some(CreateLarkChannelConfig {
                 credential_id: Some("cred-1".to_string()),
                 identity_mode: Some("bot".to_string()),
@@ -242,6 +262,11 @@ mod tests {
             group_trigger: None,
             group_trigger_prefix: None,
             group_trigger_timeout_ms: None,
+            receipt_mode: None,
+            receipt_processing_emojis: None,
+            receipt_skipped_emojis: None,
+            receipt_undetermined_emojis: None,
+            wechat_typing_enabled: None,
             lark: None,
             wechat: None,
             email: Some(CreateEmailChannelConfig {
@@ -267,6 +292,11 @@ mod tests {
             group_trigger: None,
             group_trigger_prefix: None,
             group_trigger_timeout_ms: None,
+            receipt_mode: None,
+            receipt_processing_emojis: None,
+            receipt_skipped_emojis: None,
+            receipt_undetermined_emojis: None,
+            wechat_typing_enabled: None,
             lark: Some(CreateLarkChannelConfig {
                 credential_id: None,
                 identity_mode: None,

@@ -490,6 +490,129 @@ fn parse_send_response(body: &str) -> Result<Option<String>> {
     }))
 }
 
+// ==================== 入站 typing（一次性） ====================
+
+/// 构造 getconfig 请求体（取 typing_ticket）
+///
+/// 官方流程：先 `getconfig` 拿 `typing_ticket`（按用户约 24h 有效），
+/// 再 `sendtyping` 显示「正在输入」。本系统按用户要求只发一次，不刷新、不停止。
+fn build_get_config_body(ilink_user_id: &str, context_token: &str) -> Value {
+    serde_json::json!({
+        "ilink_user_id": ilink_user_id,
+        "context_token": context_token,
+        "base_info": wechat_ilink::base_info(),
+    })
+}
+
+/// 构造 sendtyping 请求体（`status=1` 表示开始输入）
+fn build_send_typing_body(ilink_user_id: &str, typing_ticket: &str) -> Value {
+    serde_json::json!({
+        "ilink_user_id": ilink_user_id,
+        "typing_ticket": typing_ticket,
+        "status": 1,
+        "base_info": wechat_ilink::base_info(),
+    })
+}
+
+/// 获取对端用户的 `typing_ticket`（iLink `POST /ilink/bot/getconfig`）
+pub async fn get_typing_ticket(
+    credentials: &IlinkChannelCredentials,
+    ilink_user_id: &str,
+    context_token: &str,
+) -> Result<String> {
+    if ilink_user_id.is_empty() || context_token.is_empty() {
+        return Err(err!(
+            InvalidRequest,
+            "iLink getconfig 缺少 ilink_user_id 或 context_token"
+        ));
+    }
+    let url = format!("{}/ilink/bot/getconfig", credentials.base_url);
+    let body = build_get_config_body(ilink_user_id, context_token);
+    let resp = wechat_ilink::bot_auth_headers(client().post(&url), &credentials.bot_token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| http_err("getconfig", e))?
+        .error_for_status()
+        .map_err(|e| http_err("getconfig", e))?;
+    let body_text = resp.text().await.map_err(|e| http_err("getconfig", e))?;
+    let value: Value = serde_json::from_str(&body_text)
+        .map_err(|e| err!(ThirdPartyError, "ilink getconfig 响应非 JSON: {}", e))?;
+    let ret = value
+        .get("ret")
+        .or_else(|| value.get("errcode"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if ret != 0 {
+        let msg = value
+            .get("errmsg")
+            .or_else(|| value.get("msg"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        return Err(err!(
+            ThirdPartyError,
+            "ilink getconfig 失败: ret={} msg={}",
+            ret,
+            msg
+        ));
+    }
+    value
+        .get("typing_ticket")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| err!(ThirdPartyError, "ilink getconfig 未返回 typing_ticket"))
+}
+
+/// 发送「正在输入」状态（iLink `POST /ilink/bot/sendtyping`，`status=1`）
+///
+/// 只发一次：不刷新、不发送停止状态（产品明确要求，避免引入生命周期状态机）。
+pub async fn send_typing(
+    credentials: &IlinkChannelCredentials,
+    ilink_user_id: &str,
+    typing_ticket: &str,
+) -> Result<()> {
+    if ilink_user_id.is_empty() || typing_ticket.is_empty() {
+        return Err(err!(
+            InvalidRequest,
+            "iLink sendtyping 缺少 ilink_user_id 或 typing_ticket"
+        ));
+    }
+    let url = format!("{}/ilink/bot/sendtyping", credentials.base_url);
+    let body = build_send_typing_body(ilink_user_id, typing_ticket);
+    let resp = wechat_ilink::bot_auth_headers(client().post(&url), &credentials.bot_token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| http_err("sendtyping", e))?
+        .error_for_status()
+        .map_err(|e| http_err("sendtyping", e))?;
+    let body_text = resp.text().await.map_err(|e| http_err("sendtyping", e))?;
+    // 响应非 JSON 时宽容视为成功（HTTP 2xx 已通过，协议较新），与 sendmessage 口径一致
+    let Ok(value) = serde_json::from_str::<Value>(&body_text) else {
+        return Ok(());
+    };
+    let ret = value
+        .get("ret")
+        .or_else(|| value.get("errcode"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if ret != 0 {
+        let msg = value
+            .get("errmsg")
+            .or_else(|| value.get("msg"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        return Err(err!(
+            ThirdPartyError,
+            "ilink sendtyping 失败: ret={} msg={}",
+            ret,
+            msg
+        ));
+    }
+    Ok(())
+}
+
 // ==================== 入站图片下载 ====================
 
 /// CDN 是否可信域名：仅 `https` + `weixin.qq.com` 或其子域
@@ -1282,37 +1405,6 @@ async fn poll_loop(
                     );
                 }
 
-                // 收帧即 publish（入队即返回），业务由 Async consumer 消费
-                for message in messages {
-                    let message_key = {
-                        let key = message.message_key();
-                        if key.is_empty() {
-                            uuid::Uuid::now_v7().to_string()
-                        } else {
-                            key
-                        }
-                    };
-                    // 刷会话：入站即覆盖写 context_token（滚动刷新的动态令牌）
-                    state.sessions.upsert(
-                        message.from_user_id.clone(),
-                        message.context_token.clone(),
-                        Some(message_key.clone()),
-                        now_ms,
-                    );
-                    state.sessions.retain_default();
-                    let event = WechatInboundEvent {
-                        channel_id: channel_id.clone(),
-                        bot_id: credentials.bot_id.clone(),
-                        message_key,
-                        // 本轮游标随事件带出：消费确认后才由 `on_consumed` 推进（P2）
-                        cursor: new_cursor.clone(),
-                        message,
-                    };
-                    crate::pkg::aop::registry()
-                        .publish(&RequestContext::new_system(), event)
-                        .await;
-                }
-
                 // 无消息轮次：没有待确认的事件 → 游标可直接推进
                 // （否则服务端在空轮次里给出的新游标永远推不动，长轮询停在原位）
                 if message_count == 0
@@ -1324,6 +1416,29 @@ async fn poll_loop(
                 // ⚠️ **有消息时不在本循环推进游标**（P2）：新游标已随事件交给消费侧，
                 // 由 `on_consumed` → `advance_inbound_cursor` 确认后才前进。
                 // 上一轮没消费完 → 游标不动 → 下一轮重拉同一批（幂等键吸收重复）。
+
+                // 刷会话：入站即覆盖写 context_token（滚动刷新的动态令牌）。
+                //
+                // ⚠️ 必须在 publish **之前**落库：消费侧的微信 typing 回执从
+                // `inbound_state.sessions` 取 context_token；若先 publish，消费抢先时
+                // 读到旧状态 → 每个会话的首条消息都会静默跳过 typing。
+                for message in &messages {
+                    let message_key = {
+                        let key = message.message_key();
+                        if key.is_empty() {
+                            uuid::Uuid::now_v7().to_string()
+                        } else {
+                            key
+                        }
+                    };
+                    state.sessions.upsert(
+                        message.from_user_id.clone(),
+                        message.context_token.clone(),
+                        Some(message_key),
+                        now_ms,
+                    );
+                }
+                state.sessions.retain_default();
 
                 // 落库前把已确认游标同步进 state（供下次启动基线；未推进则保持原值）
                 if let Some(confirmed) = cursors.get(&channel_id).await {
@@ -1340,6 +1455,29 @@ async fn poll_loop(
                     && let Some(writer) = &writer
                 {
                     writer.save(&channel_id, &state).await;
+                }
+
+                // 收帧即 publish（入队即返回），业务由 Async consumer 消费
+                for message in messages {
+                    let message_key = {
+                        let key = message.message_key();
+                        if key.is_empty() {
+                            uuid::Uuid::now_v7().to_string()
+                        } else {
+                            key
+                        }
+                    };
+                    let event = WechatInboundEvent {
+                        channel_id: channel_id.clone(),
+                        bot_id: credentials.bot_id.clone(),
+                        message_key,
+                        // 本轮游标随事件带出：消费确认后才由 `on_consumed` 推进（P2）
+                        cursor: new_cursor.clone(),
+                        message,
+                    };
+                    crate::pkg::aop::registry()
+                        .publish(&RequestContext::new_system(), event)
+                        .await;
                 }
                 // 同批次重复拉取退避：本轮请求游标与上轮相同且带消息返回 = 上一批
                 // 消费尚未确认（服务端对已见游标不 hold、立即返回同批）。紧密重拉会以

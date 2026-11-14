@@ -236,6 +236,33 @@ pub struct ChannelConfig {
     ///
     /// 仅 `all` 策略使用；渠道无关，由统一入站过滤层消费。
     pub group_trigger_timeout_ms: Option<u64>,
+    /// 入站回执策略（`off` / `judged` 缺省）
+    ///
+    /// 渠道无关：飞书落为消息表情，微信落为一次性 typing。共三种语义：
+    /// - 确定处理 → 「处理中」表情（不受策略约束）
+    /// - 判过不相关 → 「看到了」表情
+    /// - 无法判定（小脑降级，按不处理）→ 「疑惑」表情
+    ///
+    /// - `off`：不发送后两种「看到了但不处理」回执
+    /// - `judged`（缺省）：两种情况分别按其语义发送
+    ///
+    /// 说明：显式 @ 的消息是硬触发、永不经过小脑，因此不会产生后两种回执，
+    /// 也就无需「只对 @ 消息发回执」这类交叉语义。
+    pub receipt_mode: Option<String>,
+    /// 「确定处理」时轮换使用的表情（飞书；空数组=关闭处理回执）
+    ///
+    /// 缺省按 [`DEFAULT_PROCESSING_RECEIPT_EMOJIS`] 轮换。
+    pub receipt_processing_emojis: Option<Vec<String>>,
+    /// 「看到了但不处理」时轮换使用的表情（飞书；空数组=关闭该回执）
+    ///
+    /// 缺省按 [`DEFAULT_SKIPPED_RECEIPT_EMOJIS`] 轮换。
+    pub receipt_skipped_emojis: Option<Vec<String>>,
+    /// 「无法判定、默认不处理」时轮换使用的表情（飞书；空数组=关闭该回执）
+    ///
+    /// 缺省按 [`DEFAULT_UNDETERMINED_RECEIPT_EMOJIS`] 轮换。
+    pub receipt_undetermined_emojis: Option<Vec<String>>,
+    /// 微信收到消息后是否发送一次性 typing（缺省 true）
+    pub wechat_typing_enabled: Option<bool>,
     /// 是否监听该应用的飞书入站私信（缺省视为 true）
     ///
     /// 关闭后渠道仅用于出站推送与 lark_cli 工具身份，不建立 WS 长连接。
@@ -282,6 +309,101 @@ pub struct ChannelConfig {
 
     // 其他扩展字段
     pub extra: Option<HashMap<String, String>>,
+}
+
+/// 「确定处理」时的默认表情轮换集合（飞书）
+///
+/// 全部是「已接下 / 正在处理」语义，不暗示完成：
+/// `OnIt` 在做了、`OneSecond` 稍等、`Typing` 正在输入、`SALUTE` 收到。
+pub const DEFAULT_PROCESSING_RECEIPT_EMOJIS: &[&str] = &["OnIt", "OneSecond", "Typing", "SALUTE"];
+
+/// 「看到了但不处理」时的默认表情轮换集合（飞书）
+///
+/// 全部是中性「已看到」语义，不带情绪：
+/// `Get` get 到了、`StatusReading` 已看到、`GLANCE` 看一眼。
+pub const DEFAULT_SKIPPED_RECEIPT_EMOJIS: &[&str] = &["Get", "StatusReading", "GLANCE"];
+
+/// 「无法判定、默认不处理」时的默认表情轮换集合（飞书）
+///
+/// 传达「看到了，但没把握 / 在琢磨」的疑惑感：
+/// `THINKING` 思考、`DIZZY` 有点懵、`WHAT` 什么？
+pub const DEFAULT_UNDETERMINED_RECEIPT_EMOJIS: &[&str] = &["THINKING", "DIZZY", "WHAT"];
+
+/// 入站回执策略（从 `ChannelConfig.receipt_mode` 解析；只约束「看到了但不处理」两类回执）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptMode {
+    /// 不发送「看到了但不处理」回执（判过不相关 / 无法判定都不发）
+    Off,
+    /// 按语义分别发送「看到了」与「疑惑」回执（缺省）
+    Judged,
+}
+
+impl ReceiptMode {
+    /// 解析配置字符串；未知值按缺省 `judged` 处理（fail-open，不阻断入站）
+    ///
+    /// 历史值 `addressed` / `all` / `always` 一律归一到 `judged`：显式 @ 已是硬触发，
+    /// 不存在「只对 @ 消息发回执」的独立语义。
+    pub fn from_config(value: Option<&str>) -> Self {
+        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("off") | Some("none") | Some("false") => Self::Off,
+            _ => Self::Judged,
+        }
+    }
+}
+
+impl ChannelConfig {
+    /// 回执策略（缺省 `judged`）
+    pub fn receipt_mode(&self) -> ReceiptMode {
+        ReceiptMode::from_config(self.receipt_mode.as_deref())
+    }
+
+    /// 「确定处理」表情轮换集合
+    ///
+    /// `None` → 默认集合；`Some(空)` → 关闭处理回执；其他值去掉空白项后原样使用。
+    pub fn processing_receipt_emojis(&self) -> Vec<String> {
+        normalize_emojis(
+            self.receipt_processing_emojis.as_deref(),
+            DEFAULT_PROCESSING_RECEIPT_EMOJIS,
+        )
+    }
+
+    /// 「看到了但不处理」表情轮换集合
+    ///
+    /// `None` → 默认集合；`Some(空)` → 关闭该回执；其他值去掉空白项后原样使用。
+    pub fn skipped_receipt_emojis(&self) -> Vec<String> {
+        normalize_emojis(
+            self.receipt_skipped_emojis.as_deref(),
+            DEFAULT_SKIPPED_RECEIPT_EMOJIS,
+        )
+    }
+
+    /// 「无法判定、默认不处理」表情轮换集合
+    ///
+    /// `None` → 默认集合；`Some(空)` → 关闭该回执；其他值去掉空白项后原样使用。
+    pub fn undetermined_receipt_emojis(&self) -> Vec<String> {
+        normalize_emojis(
+            self.receipt_undetermined_emojis.as_deref(),
+            DEFAULT_UNDETERMINED_RECEIPT_EMOJIS,
+        )
+    }
+
+    /// 微信入站 typing 是否开启（缺省 true）
+    pub fn wechat_typing_enabled(&self) -> bool {
+        self.wechat_typing_enabled.unwrap_or(true)
+    }
+}
+
+/// 表情列表归一化：`None` 取默认值，`Some` 去空白/空项（保留“显式空 = 关闭”语义）
+fn normalize_emojis(configured: Option<&[String]>, defaults: &[&str]) -> Vec<String> {
+    match configured {
+        None => defaults.iter().map(|s| s.to_string()).collect(),
+        Some(list) => list
+            .iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+    }
 }
 
 #[cfg(test)]

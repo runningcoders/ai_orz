@@ -46,6 +46,18 @@ pub trait WechatDao: Send + Sync {
         credentials: &IlinkChannelCredentials,
     ) -> std::result::Result<Option<String>, common::error::Error>;
 
+    /// 发送一次性「正在输入」状态（iLink `getconfig` + `sendtyping`）
+    ///
+    /// 对端与会话令牌复用出站口径：`wechat_peer_id` / `inbound_state.sessions`。
+    /// 无对端或无 context_token 时静默 no-op（尚未建立会话，不算失败）；
+    /// 协议调用失败返回错误，由调用方降级为 WARN。
+    async fn send_typing(
+        &self,
+        ctx: RequestContext,
+        channel: &MessageChannel,
+        credentials: &IlinkChannelCredentials,
+    ) -> std::result::Result<(), common::error::Error>;
+
     /// 下载入站图片（CDN 拉取 + AES-128-ECB 解密 + MIME 嗅探）
     ///
     /// CDN 为公开读，不需要 bot 令牌；`full_url` 优先，缺失时按

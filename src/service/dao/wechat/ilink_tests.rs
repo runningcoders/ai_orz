@@ -801,3 +801,24 @@ fn test_cdn_download_url_fallback() {
     let empty = crate::models::events::wechat::IlinkCdnMedia::default();
     assert!(cdn_download_url(&empty).is_err());
 }
+
+/// getconfig 请求体：必须带 ilink_user_id / context_token / base_info
+#[test]
+fn test_build_get_config_body() {
+    let body = build_get_config_body("peer_1", "ctx_token_1");
+
+    assert_eq!(body["ilink_user_id"], "peer_1");
+    assert_eq!(body["context_token"], "ctx_token_1");
+    assert!(body.get("base_info").is_some(), "协议要求携带 base_info");
+}
+
+/// sendtyping 请求体：status 固定 1（开始输入），并带上 typing_ticket
+#[test]
+fn test_build_send_typing_body() {
+    let body = build_send_typing_body("peer_1", "ticket_1");
+
+    assert_eq!(body["ilink_user_id"], "peer_1");
+    assert_eq!(body["typing_ticket"], "ticket_1");
+    assert_eq!(body["status"], 1);
+    assert!(body.get("base_info").is_some(), "协议要求携带 base_info");
+}

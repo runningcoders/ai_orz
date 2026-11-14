@@ -9,9 +9,9 @@ use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::resource_resolver;
 use crate::service::domain::message::{
-    DeliverMessageCommand, MessageDelivery, ReplyTarget, SendTaskAssignmentCommand,
-    SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
-    ToolCallExecutionOutcome,
+    DeliverMessageCommand, MessageDelivery, ReceiptKind, ReceiptTarget, ReplyTarget,
+    SendTaskAssignmentCommand, SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand,
+    SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use std::collections::HashSet;
 
@@ -634,6 +634,18 @@ impl MessageDelivery for MessageDomainImpl {
             details: channel_result.details,
             sse_delivered,
         })
+    }
+
+    async fn send_receipt(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        kind: ReceiptKind,
+        target: ReceiptTarget,
+    ) -> Result<()> {
+        self.message_channel_dal
+            .send_receipt(ctx, channel_id, kind, target)
+            .await
     }
 
     async fn subscribe_sse(
