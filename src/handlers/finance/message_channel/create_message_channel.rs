@@ -122,6 +122,11 @@ fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
         config.group_trigger = channel_config.group_trigger.clone();
         config.group_trigger_prefix = channel_config.group_trigger_prefix.clone();
         config.group_trigger_timeout_ms = channel_config.group_trigger_timeout_ms;
+        config.receipt_mode = channel_config.receipt_mode.clone();
+        config.receipt_processing_emojis = channel_config.receipt_processing_emojis.clone();
+        config.receipt_skipped_emojis = channel_config.receipt_skipped_emojis.clone();
+        config.receipt_undetermined_emojis = channel_config.receipt_undetermined_emojis.clone();
+        config.wechat_typing_enabled = channel_config.wechat_typing_enabled;
         if let Some(lark) = &channel_config.lark {
             config.lark_credential_id = lark.credential_id.clone();
             config.lark_identity_mode = lark.identity_mode.clone();

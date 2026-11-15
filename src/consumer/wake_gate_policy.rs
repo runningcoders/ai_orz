@@ -145,11 +145,15 @@ impl Policy for StaticWakeGatePolicy {
     }
 }
 
-/// 任务终态集合（Completed / Cancelled / Archived）
+/// 任务「不再可执行」集合（Completed / Cancelled / Archived / PendingReview）
+///
+/// ⚠️ `PendingReview` 不是生命周期终态，但执行人已提交、再唤醒只会重复劳动；
+/// 验收动作走另一类消息（`TaskPendingReview`），不受本门闩约束。
 const TERMINAL_STATUSES: &[TaskStatus] = &[
     TaskStatus::Completed,
     TaskStatus::Cancelled,
     TaskStatus::Archived,
+    TaskStatus::PendingReview,
 ];
 
 /// 静态规则表（声明顺序 = 判定优先级：首个命中即产出跳过）
@@ -158,7 +162,7 @@ static WAKE_GATE_DEFS: &[StaticWakeGatePolicy] = &[
     StaticWakeGatePolicy {
         id: "task_terminal",
         name: "任务已终结",
-        condition_desc: "关联任务处于 Completed / Cancelled / Archived",
+        condition_desc: "关联任务处于 Completed / Cancelled / Archived / PendingReview",
         matcher: WakeGateMatcher::TaskStatusIn(TERMINAL_STATUSES),
         describe: |m| {
             format!(

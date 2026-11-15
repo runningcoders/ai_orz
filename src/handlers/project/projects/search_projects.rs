@@ -4,6 +4,7 @@
 //! query 重在"条件过滤"。两者现在都支持完整过滤条件和分页返回。
 
 use super::response;
+use super::scope::scoped_root_user_id;
 use crate::pkg::RequestContext;
 use crate::service::dao::project::{ProjectQuery, ProjectSearch};
 use crate::service::domain::project::domain;
@@ -15,7 +16,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "search_projects",
     name = "Search Projects",
-    description = "Search projects by free-text keyword using hybrid FTS5 full-text and vector semantic matching ranked by relevance, optionally narrowed by ids, root_user_id, status_in, or owner_agent_id. Returns a paged list of project summaries. Prefer this over query_projects when you have natural-language text rather than exact field values.",
+    description = "Search projects by free-text keyword using hybrid FTS5 full-text and vector semantic matching ranked by relevance, optionally narrowed by ids, status_in, or owner_agent_id. Results are always scoped to the calling user's own projects (root_user_id may only be your own; omitting it means your own). Prefer this over query_projects when you have natural-language text rather than exact field values.",
     params = "common::api::SearchProjectsRequest",
     tags = "project_management"
 )]
@@ -24,11 +25,14 @@ pub async fn search_projects(
     ctx: RequestContext,
     params: SearchProjectsRequest,
 ) -> Result<PagedResult<ProjectListItem>> {
+    // 读侧用户域收敛：与 query_projects / list_projects 同一口径
+    let root_user_id = scoped_root_user_id(&ctx, params.root_user_id)?;
+
     let search = ProjectSearch {
         keyword: params.keyword,
         filters: ProjectQuery {
             ids: params.ids,
-            root_user_id: params.root_user_id,
+            root_user_id,
             status_in: params.status_in,
             owner_agent_id: params.owner_agent_id,
             pagination: params.pagination,

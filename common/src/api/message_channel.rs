@@ -86,6 +86,19 @@ pub struct MessageChannelConfig {
     pub group_trigger_prefix: Option<String>,
     /// 群消息小脑判定超时（毫秒，缺省 1000）
     pub group_trigger_timeout_ms: Option<u64>,
+    /// 入站回执策略（off / judged 缺省）
+    ///
+    /// 只约束「看到了但不处理」两类回执（判过不相关 / 无法判定）；飞书落为消息表情，
+    /// 微信仅支持「确定处理」的一次性 typing。
+    pub receipt_mode: Option<String>,
+    /// 「确定处理」时轮换使用的表情（飞书；空数组=关闭）
+    pub receipt_processing_emojis: Option<Vec<String>>,
+    /// 「看到了但不处理」时轮换使用的表情（飞书；空数组=关闭）
+    pub receipt_skipped_emojis: Option<Vec<String>>,
+    /// 「无法判定、默认不处理」时轮换使用的表情（飞书；空数组=关闭）
+    pub receipt_undetermined_emojis: Option<Vec<String>>,
+    /// 微信收到消息后是否发送一次性 typing（缺省 true）
+    pub wechat_typing_enabled: Option<bool>,
     /// 飞书渠道配置
     pub lark: Option<LarkChannelConfig>,
     /// 微信渠道配置
@@ -166,6 +179,16 @@ pub struct CreateMessageChannelConfig {
     pub group_trigger_prefix: Option<String>,
     /// 群消息小脑判定超时（毫秒，缺省 1000）
     pub group_trigger_timeout_ms: Option<u64>,
+    /// 入站回执策略（off / judged 缺省）
+    pub receipt_mode: Option<String>,
+    /// 「确定处理」时轮换使用的表情（飞书；空数组=关闭）
+    pub receipt_processing_emojis: Option<Vec<String>>,
+    /// 「看到了但不处理」时轮换使用的表情（飞书；空数组=关闭）
+    pub receipt_skipped_emojis: Option<Vec<String>>,
+    /// 「无法判定、默认不处理」时轮换使用的表情（飞书；空数组=关闭）
+    pub receipt_undetermined_emojis: Option<Vec<String>>,
+    /// 微信收到消息后是否发送一次性 typing（缺省 true）
+    pub wechat_typing_enabled: Option<bool>,
     /// 飞书渠道配置
     pub lark: Option<CreateLarkChannelConfig>,
     /// 微信渠道配置

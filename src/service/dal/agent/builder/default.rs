@@ -449,6 +449,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             common::enums::MessageType::ConfirmRequest => "【确认请求】",
             common::enums::MessageType::ConfirmResponse => "【确认回复】",
             common::enums::MessageType::TaskAssignment => "【任务分配通知】",
+            common::enums::MessageType::TaskCompleted => "【任务完成回执】",
+            common::enums::MessageType::TaskPendingReview => "【任务待验收知会】",
             common::enums::MessageType::AgentNotify => "【Agent 知会通知】",
             _ => "【当前消息】",
         };

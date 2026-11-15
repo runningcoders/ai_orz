@@ -153,6 +153,19 @@ pub trait LarkDao: Send + Sync {
         reply: Option<&LarkReply>,
     ) -> Result<Option<String>>;
 
+    /// 给指定消息添加表情回复（入站「轻回执」）
+    ///
+    /// 对应 `POST /open-apis/im/v1/messages/{message_id}/reactions`。
+    /// `message_id` 为飞书原生 `om_xxx`（DAL 已剥离 `lark:` 前缀）；
+    /// `emoji_type` 必须使用官方枚举值（如 `OnIt` / `Get`，大小写敏感）。
+    async fn add_reaction(
+        &self,
+        ctx: RequestContext,
+        credentials: &LarkAppCredentials,
+        message_id: &str,
+        emoji_type: &str,
+    ) -> Result<()>;
+
     /// 查询应用机器人自身 open_id（群聊 @ 识别用）
     ///
     /// 对应 `GET /open-apis/bot/v3/info`。渠道创建/更新时自动回填

@@ -14,7 +14,8 @@ use super::IlinkDownloadedImage;
 use super::WechatDao;
 use super::ilink::{
     CursorStore, IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry,
-    SessionGuard, download_image, send_text, short_token,
+    SessionGuard, download_image, get_typing_ticket, send_text, send_typing as ilink_send_typing,
+    short_token,
 };
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -157,6 +158,31 @@ impl WechatDao for WechatDaoHttpImpl {
             message_id.as_deref().unwrap_or("<none>")
         );
         Ok(message_id)
+    }
+
+    async fn send_typing(
+        &self,
+        ctx: RequestContext,
+        channel: &MessageChannel,
+        credentials: &IlinkChannelCredentials,
+    ) -> Result<()> {
+        // 尚未建立会话（无 peer / 无 context_token）时不发：这是正常过渡态，不是错误
+        let Some(peer) = Self::resolve_peer(channel) else {
+            return Ok(());
+        };
+        let Some(context_token) = Self::resolve_context_token(channel, &peer) else {
+            return Ok(());
+        };
+        let ticket = get_typing_ticket(credentials, &peer, &context_token).await?;
+        ilink_send_typing(credentials, &peer, &ticket).await?;
+        log_debug!(
+            &ctx,
+            "wechat_typing",
+            "已发送一次性 typing channel_id={} peer={}",
+            channel.po.id,
+            peer
+        );
+        Ok(())
     }
 
     async fn download_image(

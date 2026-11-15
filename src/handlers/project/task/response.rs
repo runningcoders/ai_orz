@@ -48,6 +48,7 @@ pub(super) fn to_detail(task: &Task) -> GetTaskResponse {
         model_call_stats: task.model_call_stats.clone(),
         execution_plan: task.po.execution_plan.clone(),
         execution_result: task.po.execution_result.clone(),
+        acceptance_criteria: task.po.acceptance_criteria.clone(),
         artifacts: task.artifacts.clone(),
     }
 }

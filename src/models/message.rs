@@ -265,6 +265,22 @@ pub struct MessagePo {
     /// 命中本系统 Agent 的提及已在正文替换为内部协议 `[@name](agent:<id>)`；
     /// 未命中的保留 `@name` 展示。两种情况下平台原始 ID 都在此完整保留。
     pub external_mentions: Json<Vec<common::mention::ExternalMention>>,
+    /// 所属用户 ID（消息三身份之一，空串 = 无归属）
+    ///
+    /// 与 `from_id` / `to_id` 正交：那两个回答「谁发给谁」，本字段回答
+    /// 「这条消息为谁而发」。消费侧 `rebuild_context` 用它填 `ctx.user_id`，
+    /// 而 `ctx.user_id` 是工具凭据解析、用户画像注入、`AI_ORZ_USER_ID`
+    /// 环境变量的唯一来源。
+    ///
+    /// 写入规则（见 `service::domain::message::delivery`）：
+    /// - 用户发来的消息 → 发送者本人
+    /// - Agent 发给用户 → 收件用户
+    /// - Agent 发给 Agent → 交付链的归属用户（派单 / 协作 / 通知）
+    ///
+    /// ⚠️ 历史实现把归属用户塞进 `from_id`（用户身份中继），以便被唤醒的
+    /// Agent 拿到用户上下文；那会抹掉真实派发者并让 Final 路由需要特例改道。
+    /// 本字段落地后 `from_id` 只表示真实发送者。
+    pub root_user_id: String,
     /// 组织 ID（用于异步消费时重建上下文）
     pub organization_id: Option<String>,
     /// 创建人 ID
@@ -335,6 +351,8 @@ impl MessagePo {
             MessageType::ProjectFollowupNotification => "项目跟进通知",
             MessageType::AgentNotify => "Agent 知会通知",
             MessageType::Mixed => "混排消息",
+            MessageType::TaskCompleted => "任务完成回执",
+            MessageType::TaskPendingReview => "任务待验收知会",
         };
 
         let content_label = match self.message_type {
@@ -421,6 +439,9 @@ impl MessagePo {
             thread_id: None,
             chat_id: None,
             external_mentions: Json(Vec::new()),
+            // 默认无归属：由投递层（delivery）按三身份规则显式赋值。
+            // 构造点有几十处，签名保持稳定，避免为「加一个身份列」牵动全仓。
+            root_user_id: String::new(),
             organization_id,
             created_by: created_by.clone(),
             modified_by: created_by,

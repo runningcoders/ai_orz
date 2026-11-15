@@ -86,7 +86,7 @@
       <h3>异步基建 · AOP 事件中心</h3>
       <p class="q">事件从哪来、谁消费：pkg/aop 六 Trait + Registry 单例 + 7 类业务消费者 + 3 类 tick 生产者 + context_carrier 链路贯穿</p>
       <ul>
-        <li><a href="./diagrams/ai-orz-aop.html">打开专题子图</a><span class="desc">一次事件流转 · 启动顺序 · 生产者与兜底</span></li>
+        <li><a href="./diagrams/ai-orz-aop.html">打开专题子图</a><span class="desc">一次事件流转 · 启动顺序 · 生产者与兜底（18 处注册）</span></li>
       </ul>
     </section>
 
@@ -118,7 +118,7 @@
       <h3>任务与项目 · 状态机与 DAG</h3>
       <p class="q">活怎么流转：TaskStatus 四态 + progress 自动联动 + dependencies DAG + execution_plan / result 增量 + Project 五字段按需注入</p>
       <ul>
-        <li><a href="./diagrams/ai-orz-task-project.html">打开专题子图</a><span class="desc">任务状态机 · DAG 与唤醒 · 项目聚合</span></li>
+        <li><a href="./diagrams/ai-orz-task-project.html">打开专题子图</a><span class="desc">任务状态机（六态 · 含待验收）· DAG 与唤醒 · 项目聚合</span></li>
       </ul>
     </section>
     <section class="card ">
@@ -250,12 +250,12 @@
         <tr><td>02-Agent运行时</td><td class="n">25</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/02-Agent运行时/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-think-path.html">思维轨迹</a></td></tr>
         <tr><td>03-记忆系统</td><td class="n">14</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/03-记忆系统/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-memory.html">记忆</a></td></tr>
         <tr><td>04-对话与消息</td><td class="n">29</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/04-对话与消息/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-messaging.html">对话 · 消息</a></td></tr>
-        <tr><td>05-任务与项目</td><td class="n">55</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/05-任务与项目/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-task-project.html">任务 · DAG</a></td></tr>
+        <tr><td>05-任务与项目</td><td class="n">55</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/05-任务与项目/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-task-project.html">任务 · DAG · 验收</a></td></tr>
         <tr><td>06-工具与技能</td><td class="n">62</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/06-工具与技能/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-tools.html">工具 · 技能</a> · <a href="./diagrams/ai-orz-tool-context.html">上下文注入</a></td></tr>
         <tr><td>07-外部Agent(A2A)</td><td class="n">21</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/07-外部Agent%28A2A%29/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-a2a.html">A2A · 联邦</a></td></tr>
         <tr><td>08-搜索</td><td class="n">25</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/08-搜索/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-search.html">搜索</a></td></tr>
         <tr><td>09-统计与监控</td><td class="n">11</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/09-统计与监控/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-stats.html">统计 · 监控</a></td></tr>
-        <tr><td>10-异步基建(AOP)</td><td class="n">34</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/10-异步基建%28AOP%29/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-aop.html">事件中心</a></td></tr>
+        <tr><td>10-异步基建(AOP)</td><td class="n">34</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/10-异步基建%28AOP%29/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-aop.html">事件中心 · 12 类消费者</a></td></tr>
         <tr><td>11-前端应用</td><td class="n">52</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/11-前端应用/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-frontend.html">前端</a></td></tr>
         <tr><td>12-基础设施与部署</td><td class="n">85</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/12-基础设施与部署/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-infra.html">基础设施</a></td></tr>
         <tr><td>13-数据模型</td><td class="n">43</td><td><a href="https://github.com/runningcoders/ai_orz/blob/main/docs/modules/13-数据模型/00-INDEX.md">00-INDEX</a></td><td><a href="./diagrams/ai-orz-data-model.html">数据模型 ER</a></td></tr>

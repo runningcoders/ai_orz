@@ -112,15 +112,21 @@ impl AuthorizationService {
     /// ❌ 禁止字面量 + `..Default::default()`：`MessagePo` 的 `Default` 会把
     /// `created_at`/`updated_at` 归零（落库即 1970），`created_by`/`modified_by`
     /// 留空串，`organization_id` 留 None（被消息列表的 org 过滤条件静默剔除）。
+    ///
+    /// ⚠️ `root_user_id` 必须显式传入：三身份模型下它是「这条消息为谁而发」的
+    /// 唯一落点，消费侧 `rebuild_context` 靠它还原 `ctx.user_id`（工具凭据 / 用户
+    /// 画像的唯一来源）。`from_id` 这里是 `"system"`，**不能**再指望「User 消息的
+    /// from_id 即归属用户」那条兜底 —— 本函数构造的都是 System 消息。
     fn build_notification(
         &self,
         ctx: &RequestContext,
         to_id: &str,
         to_role: MessageRole,
+        root_user_id: &str,
         content: String,
     ) -> Message {
         let id = uuid::Uuid::now_v7().to_string();
-        let po = MessagePo::new(
+        let mut po = MessagePo::new(
             id.clone(),
             None,
             None,
@@ -138,6 +144,7 @@ impl AuthorizationService {
             ctx.organization_id().cloned(),
             "system".to_string(),
         );
+        po.root_user_id = root_user_id.to_string();
         Message::from_po(po)
     }
 
@@ -159,7 +166,13 @@ impl AuthorizationService {
             pending.blocking_rule,
             evidence_preview(&pending.command_signature, 64),
         );
-        let message = self.build_notification(ctx, &pending.user_id, MessageRole::User, content);
+        let message = self.build_notification(
+            ctx,
+            &pending.user_id,
+            MessageRole::User,
+            &pending.user_id,
+            content,
+        );
         let ctx = ctx.clone();
         match dal.save_message(ctx, &message).await {
             Ok(()) => log_info!(
@@ -207,7 +220,13 @@ impl AuthorizationService {
             evidence_preview(&pending.command_signature, 64),
             state_line,
         );
-        let message = self.build_notification(ctx, &pending.agent_id, MessageRole::Agent, content);
+        let message = self.build_notification(
+            ctx,
+            &pending.agent_id,
+            MessageRole::Agent,
+            &pending.user_id,
+            content,
+        );
         let ctx = ctx.clone();
         match dal.save_message(ctx, &message).await {
             Ok(()) => log_info!(

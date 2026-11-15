@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, title, description, \"status\" as \"status: TaskStatus\", priority as \"priority: i32\", tags, due_at, start_at, end_at, dependencies, root_user_id,\n       \"assignee_type\" as \"assignee_type: AssigneeType\", assignee_id, project_id, thinking_depth, progress as \"progress: i32\",\n       created_by, modified_by, created_at, updated_at,\n       execution_plan, execution_result\nFROM tasks WHERE id = ? AND \"status\" != 0\n",
+  "query": "\nSELECT id, title, description, \"status\" as \"status: TaskStatus\", priority as \"priority: i32\", tags, due_at, start_at, end_at, dependencies, root_user_id,\n       initiator_agent_id, trigger_message_id,\n       \"assignee_type\" as \"assignee_type: AssigneeType\", assignee_id, project_id, thinking_depth, progress as \"progress: i32\",\n       created_by, modified_by, created_at, updated_at,\n       execution_plan, execution_result, acceptance_criteria\nFROM tasks WHERE id = ? AND \"status\" != 0\n",
   "describe": {
     "columns": [
       {
@@ -59,58 +59,73 @@
         "type_info": "Text"
       },
       {
-        "name": "assignee_type: AssigneeType",
+        "name": "initiator_agent_id",
         "ordinal": 11,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "assignee_id",
+        "name": "trigger_message_id",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "project_id",
+        "name": "assignee_type: AssigneeType",
         "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "assignee_id",
+        "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "project_id",
+        "ordinal": 15,
         "type_info": "Text"
       },
       {
         "name": "thinking_depth",
-        "ordinal": 14,
+        "ordinal": 16,
         "type_info": "Integer"
       },
       {
         "name": "progress: i32",
-        "ordinal": 15,
+        "ordinal": 17,
         "type_info": "Integer"
       },
       {
         "name": "created_by",
-        "ordinal": 16,
+        "ordinal": 18,
         "type_info": "Text"
       },
       {
         "name": "modified_by",
-        "ordinal": 17,
+        "ordinal": 19,
         "type_info": "Text"
       },
       {
         "name": "created_at",
-        "ordinal": 18,
+        "ordinal": 20,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 19,
+        "ordinal": 21,
         "type_info": "Integer"
       },
       {
         "name": "execution_plan",
-        "ordinal": 20,
+        "ordinal": 22,
         "type_info": "Text"
       },
       {
         "name": "execution_result",
-        "ordinal": 21,
+        "ordinal": 23,
+        "type_info": "Text"
+      },
+      {
+        "name": "acceptance_criteria",
+        "ordinal": 24,
         "type_info": "Text"
       }
     ],
@@ -131,16 +146,19 @@
       false,
       false,
       false,
-      true,
-      false,
-      false,
-      false,
-      false,
       false,
       false,
       true,
-      true
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
     ]
   },
-  "hash": "1c21a9fff9f60ed72b6f585816a1eca8c7340b5cfeb3a95156fc184ce223c698"
+  "hash": "0b4f059016b979dbabd6f66dfd23ca370bb34c86e00a0b03aec5e6cfe883d38c"
 }

@@ -17,6 +17,48 @@ pub const HISTORY_PAGE_SIZE: usize = 50;
 /// 用户会「滚到顶什么也没多出来」，而列表没变化就再也不会产生滚动事件。
 pub const HISTORY_SCAN_MAX_PAGES: usize = 5;
 
+/// 增量兜底轮询的周期（秒）
+///
+/// SSE 只承诺「在线时尽量实时」：浏览器休眠 / 换网会断线，内存 broadcast（容量 100）
+/// 溢出会静默丢事件，两者都不会补发；而展示面是**查库**的，两边一旦漏就是
+/// 「刷新才看到」。这条低频轮询把推送面重新对齐到展示面，顺带补上「别的标签页 /
+/// 手机发的消息本页没有乐观气泡」。
+///
+/// 取 5s 是折中：比 SSE 慢但用户几乎无感，请求量 ≈ 12 次/分钟/标签页（不可见时休眠）。
+pub const MESSAGE_POLL_SECS: u64 = 5;
+
+/// 增量兜底轮询每次最多取多少条（一次补不完下一拍继续，游标只前进不回退）
+pub const MESSAGE_POLL_LIMIT: usize = 50;
+
+/// 把增量消息并入列表：按 `message_id` 去重、并入后保持 `created_at` 正序
+///
+/// 去重不是可选项：SSE 与轮询会同时送同一条消息（SSE 的 nack 重投也会），
+/// 不去重就会出现「同一句话两遍」。
+///
+/// 排序同样不是可选项：轮询在**没有游标**时（会话刚切换 / 空会话）取的是「最新
+/// 一页」而不是「游标之后的增量」，这一页可能含有列表里还没有的**更早**消息 ——
+/// 直接 push 到尾部会让时间线错乱。`sort_by_key` 是稳定排序，同一毫秒内的多条
+/// 消息因此保持原有相对顺序，不会因为重排而抖位置。
+///
+/// 返回实际新增条数，供调用方判断是否需要触发滚动 / 刷新面板。
+pub fn append_new_messages(
+    current: &mut Vec<MessageListItem>,
+    incoming: impl IntoIterator<Item = MessageListItem>,
+) -> usize {
+    let mut added = 0;
+    for msg in incoming {
+        if current.iter().any(|m| m.message_id == msg.message_id) {
+            continue;
+        }
+        current.push(msg);
+        added += 1;
+    }
+    if added > 0 {
+        current.sort_by_key(|m| m.created_at);
+    }
+    added
+}
+
 /// 乐观用户消息的占位发送者 ID（见 [`build_optimistic_user_msg`]）
 ///
 /// 后端推回真实消息前，气泡只能拿到这个占位符；比对「是不是我」时必须特判放行。
@@ -31,6 +73,10 @@ pub const MSG_VIDEO: i32 = 4;
 pub const MSG_TOOL_CALL_REQUEST: i32 = 5;
 pub const MSG_TOOL_CALL_RESULT: i32 = 6;
 pub const MSG_TASK_ASSIGNMENT: i32 = 9;
+/// 任务完成回执（对应 common MessageType::TaskCompleted=14）
+pub const MSG_TASK_COMPLETED: i32 = 14;
+/// 任务待验收知会（对应 common MessageType::TaskPendingReview=15）
+pub const MSG_TASK_PENDING_REVIEW: i32 = 15;
 /// 混排消息（文本+资源引用混排，对应 common MessageType::Mixed=13；批3 混排主线）
 pub const MSG_MIXED: i32 = 13;
 
@@ -294,12 +340,83 @@ mod tests {
             "chat.rs 主渲染 match 须恰一处 MSG_TEXT|MSG_MIXED 合并臂"
         );
         let bubble = include_str!("../components/chat/message_bubble.rs");
+        // 副渲染把归一化结果落在局部 `message_type`（不 clone 整条 MessageListItem，
+        // 见 `render_content` 注释），守卫跟着认这个形态。
         assert_eq!(
             bubble
-                .matches("msg.message_type == MSG_TEXT || msg.message_type == MSG_MIXED")
+                .matches("message_type == MSG_TEXT || message_type == MSG_MIXED")
                 .count(),
             1,
             "message_bubble.rs 副渲染须恰一处 Text||Mixed 合并条件"
+        );
+    }
+
+    /// 构造一条最小可用的消息（`build_optimistic_user_msg` 依赖 js_sys，原生测试用不了）
+    fn item(id: &str, created_at: i64) -> MessageListItem {
+        MessageListItem {
+            message_id: id.to_string(),
+            project_id: Some("p1".to_string()),
+            task_id: None,
+            from_id: "a1".to_string(),
+            from_role: 1,
+            to_id: "u1".to_string(),
+            to_role: 0,
+            message_type: MSG_TEXT,
+            status: 3,
+            content: id.to_string(),
+            reply_to_id: None,
+            root_id: None,
+            created_at,
+            file_type: None,
+            file_meta: None,
+        }
+    }
+
+    #[test]
+    fn append_dedupes_and_keeps_timeline_sorted() {
+        // 无游标的轮询取的是「最新一页」，其中可能含有列表里还没有的**更早**消息；
+        // 直接 push 到尾部会让时间线错乱（表现为新消息插在历史中间之后）。
+        let mut current = vec![item("m2", 200), item("m3", 300)];
+        let added = append_new_messages(
+            &mut current,
+            vec![
+                item("m1", 100),
+                // 与 m2 同毫秒：稳定排序须保持「已在列表的在前」
+                item("m2", 200),
+                item("m2-dup", 200),
+                item("m4", 400),
+            ],
+        );
+        assert_eq!(added, 3, "按 message_id 去重后应新增 3 条");
+        let ids: Vec<&str> = current.iter().map(|m| m.message_id.as_str()).collect();
+        assert_eq!(ids, vec!["m1", "m2", "m2-dup", "m3", "m4"]);
+    }
+
+    #[test]
+    fn append_returns_zero_without_touching_order() {
+        let mut current = vec![item("m1", 100), item("m2", 200)];
+        assert_eq!(append_new_messages(&mut current, vec![item("m1", 100)]), 0);
+        let ids: Vec<&str> = current.iter().map(|m| m.message_id.as_str()).collect();
+        assert_eq!(ids, vec!["m1", "m2"], "全为重复时不得重排（避免界面抖动）");
+    }
+
+    #[test]
+    fn counter_states_only_react_to_messages_addressed_to_me() {
+        // 受众推送上线后，项目内的 Agent 间交流 / 任务知会 / 工具调用也会推到本端。
+        // 它们是**旁听内容**：正常上屏即可，但不能驱动两个「计数型」状态 ——
+        // 未读角标按条 `+= 1`（会暴涨）、`is_typing`（会在 Agent 还在干活时被提前清掉）。
+        let chat = include_str!("../pages/message/chat.rs");
+        assert!(
+            chat.contains("msg.to_role == 0 && msg.message_type == MSG_TEXT"),
+            "未读角标分支必须限定 to_role == 0（发给我的），否则旁观消息会让角标暴涨"
+        );
+        assert!(
+            chat.contains("let for_me = msg.to_role == 0;"),
+            "SSE 分支须按 to_role 判定「回复到了」，旁观消息不得清 is_typing"
+        );
+        assert!(
+            chat.contains("let for_me = fresh.iter().any(|m| m.to_role == 0);"),
+            "轮询兜底分支同样不得被旁观消息清 is_typing"
         );
     }
 }

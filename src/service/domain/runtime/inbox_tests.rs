@@ -64,6 +64,7 @@ fn message(
         thread_id: thread_id.map(str::to_string),
         chat_id: None,
         external_mentions: Json(Vec::new()),
+        root_user_id: "user-1".to_string(),
         organization_id: Some("org-1".to_string()),
         created_by: "sender-1".to_string(),
         modified_by: "sender-1".to_string(),

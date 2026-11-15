@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::enrich_ctx;
 use crate::models::message::Message;
-use crate::models::message_channel::MessageChannel;
+use crate::models::message_channel::{MessageChannel, ReceiptMode};
 use crate::models::message_channel_conversation::MessageChannelConversation;
 use crate::pkg::RequestContext;
 use crate::service::dao::a2a_callback::A2aCallbackDao;
@@ -150,6 +150,18 @@ pub trait MessageChannelDal: Send + Sync {
         user_id: &str,
         reply_target: Option<ReplyTarget>,
     ) -> Result<DeliveryResult>;
+
+    /// 发送入站回执（一次性副作用，不落库、不进消息链、不推 SSE）
+    ///
+    /// 渠道表达由各 DAO 决定：飞书加表情、微信发 typing；其他渠道 no-op。
+    /// `receipt_mode` 与表情轮换在 DAL 内按渠道配置统一处理。
+    async fn send_receipt(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        kind: ReceiptKind,
+        target: ReceiptTarget,
+    ) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -389,6 +401,63 @@ impl MessageChannelDal for MessageChannelDalImpl {
         }
 
         Ok(DeliveryResult::from_details(details))
+    }
+
+    async fn send_receipt(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        kind: ReceiptKind,
+        target: ReceiptTarget,
+    ) -> Result<()> {
+        let Some(channel) = self.get_channel(ctx.clone(), channel_id).await? else {
+            return Ok(());
+        };
+        let config = channel.config();
+
+        // 「看到了但不处理」两类受渠道策略控制；Processing 是「已接下」的强语义，渠道支持即发送
+        if kind != ReceiptKind::Processing && config.receipt_mode() == ReceiptMode::Off {
+            return Ok(());
+        }
+
+        match channel.channel_type() {
+            ChannelType::Lark => {
+                let emojis = match kind {
+                    ReceiptKind::Seen => config.skipped_receipt_emojis(),
+                    ReceiptKind::Undetermined => config.undetermined_receipt_emojis(),
+                    ReceiptKind::Processing => config.processing_receipt_emojis(),
+                };
+                let Some(emoji) = pick_receipt_emoji(&emojis, &target.external_key) else {
+                    return Ok(());
+                };
+                let message_id = target
+                    .external_key
+                    .strip_prefix("lark:")
+                    .unwrap_or(&target.external_key)
+                    .trim();
+                if message_id.is_empty() {
+                    return Ok(());
+                }
+                let credentials = self.resolve_lark_credentials(ctx.clone(), &channel).await?;
+                self.lark_dao
+                    .add_reaction(ctx, &credentials, message_id, &emoji)
+                    .await
+            }
+            ChannelType::Wechat => {
+                // 微信只有「确定处理」这一种回执；用户明确要求一次性 typing，不做刷新/停止
+                if kind != ReceiptKind::Processing || !config.wechat_typing_enabled() {
+                    return Ok(());
+                }
+                let credentials = self
+                    .resolve_wechat_credentials(ctx.clone(), &channel)
+                    .await?;
+                self.wechat_dao
+                    .send_typing(ctx, &channel, &credentials)
+                    .await
+            }
+            // 其他渠道暂不支持轻量回执：静默 no-op，不影响主链路
+            _ => Ok(()),
+        }
     }
 }
 
@@ -718,6 +787,29 @@ pub struct ReplyTarget {
     pub chat_id: Option<String>,
 }
 
+/// 入站回执语义（渠道无关）
+///
+/// 回执是消息处理的**一次性副作用**，不落 `messages` 表、不进消息链、不推 SSE：
+/// - `Processing`：已接下并开始处理（飞书表情 / 微信 typing）
+/// - `Seen`：看到了，明确判定不需要回复（仅飞书表情）
+/// - `Undetermined`：看到了，但判定失败、默认不处理（仅飞书表情，传达疑惑）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptKind {
+    /// 看到了但不处理
+    Seen,
+    /// 确认处理中
+    Processing,
+    /// 无法判定、默认不处理
+    Undetermined,
+}
+
+/// 入站回执目标（渠道无关）
+#[derive(Debug, Clone)]
+pub struct ReceiptTarget {
+    /// 平台侧消息键（如 `lark:om_xxx`），渠道实现自行取用
+    pub external_key: String,
+}
+
 /// 把渠道无关的回复目标解析为飞书原生回复参数（纯函数，便于单测）
 ///
 /// - 校验 `external_key` 渠道前缀为 `lark:` 并剥离出飞书 `om_xxx` message_id；
@@ -735,6 +827,22 @@ fn resolve_lark_reply(target: Option<&ReplyTarget>) -> Option<LarkReply> {
         in_thread: target.thread_id.is_some(),
         chat_id: target.chat_id.clone(),
     })
+}
+
+/// 按消息键确定性轮换回执表情（纯函数，便于单测）
+///
+/// 用 FNV-1a 而非进程内计数器：同一条消息重复投递 / 多实例部署都命中同一个表情，
+/// 不会出现「同一条消息一会 👍 一会 👋」。空列表返回 `None`（= 关闭该类回执）。
+fn pick_receipt_emoji(emojis: &[String], key: &str) -> Option<String> {
+    if emojis.is_empty() {
+        return None;
+    }
+    let mut hash: u32 = 2_166_136_261;
+    for byte in key.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    emojis.get(hash as usize % emojis.len()).cloned()
 }
 
 // ==================== 分发结果结构体 ====================
@@ -833,7 +941,7 @@ pub struct ChannelDeliveryDetail {
 
 #[cfg(test)]
 mod tests {
-    use super::{ReplyTarget, resolve_lark_reply};
+    use super::{ReplyTarget, pick_receipt_emoji, resolve_lark_reply};
 
     fn target(external_key: &str, thread_id: Option<&str>) -> ReplyTarget {
         ReplyTarget {
@@ -884,5 +992,38 @@ mod tests {
     #[test]
     fn resolve_lark_reply_rejects_empty_id() {
         assert!(resolve_lark_reply(Some(&target("lark:", None))).is_none());
+    }
+
+    /// 同一消息键多次选择 → 同一个表情（重复投递 / 多实例一致）
+    #[test]
+    fn pick_receipt_emoji_is_deterministic() {
+        let emojis = vec!["OnIt".to_string(), "Get".to_string(), "GLANCE".to_string()];
+        let first = pick_receipt_emoji(&emojis, "lark:om_abc").unwrap();
+        for _ in 0..10 {
+            assert_eq!(pick_receipt_emoji(&emojis, "lark:om_abc").unwrap(), first);
+        }
+    }
+
+    /// 不同消息键应覆盖到集合中的多个值（轮换而非恒定取第一个）
+    #[test]
+    fn pick_receipt_emoji_distributes_across_list() {
+        let emojis = vec![
+            "OnIt".to_string(),
+            "OneSecond".to_string(),
+            "Typing".to_string(),
+            "SALUTE".to_string(),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for i in 0..64 {
+            let key = format!("lark:om_{i}");
+            seen.insert(pick_receipt_emoji(&emojis, &key).unwrap());
+        }
+        assert_eq!(seen.len(), emojis.len());
+    }
+
+    /// 空列表 = 关闭该类回执
+    #[test]
+    fn pick_receipt_emoji_returns_none_for_empty_list() {
+        assert!(pick_receipt_emoji(&[], "lark:om_abc").is_none());
     }
 }

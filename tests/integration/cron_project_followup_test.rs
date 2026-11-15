@@ -207,10 +207,15 @@ async fn test_cron_project_followup_sends_notification(pool: SqlitePool) {
         "project_id should be filled on the followup message"
     );
     assert_eq!(followup.po.to_id, agent_id);
-    // 身份分层模型：巡检以项目归属用户身份中继（from_role=User），Agent 的 Final
-    // 自动回复经 User 分支回到该用户；无归属用户的极端场景才落 System
-    assert_eq!(followup.po.from_id, bs.user_id);
-    assert_eq!(followup.po.from_role, MessageRole::User);
+    // 【三身份】巡检是**系统**触发的动作 ⇒ 派发者是 system；归属用户独立落
+    // `root_user_id`，路由规则 `owner_briefing` 把 Agent 的 Final 交给它。
+    // （历史形态：曾被写成用户身份中继 from_id=root_user_id + from_role=User。）
+    assert_eq!(followup.po.from_id, "system");
+    assert_eq!(followup.po.from_role, MessageRole::System);
+    assert_eq!(
+        followup.po.root_user_id, bs.user_id,
+        "巡检消息必须带上归属用户，否则被唤醒 Agent 拿不到工具凭据"
+    );
     assert_eq!(
         followup.po.message_type,
         MessageType::ProjectFollowupNotification

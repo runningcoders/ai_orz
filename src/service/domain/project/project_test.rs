@@ -400,7 +400,7 @@ async fn test_task_list_by_project_and_agent(pool: SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_task_start_complete_cancel(pool: SqlitePool) {
+async fn test_task_start_submit_review_cancel(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
     let project_id = Uuid::now_v7().to_string();
     let root_user_id = Uuid::now_v7().to_string();
@@ -438,18 +438,26 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
         .unwrap();
     assert_eq!(started.po.status, TaskStatus::InProgress);
 
+    // 执行人收尾只走 submit_for_review：进 PendingReview，不写 end_at / progress=100，
+    // 也不发完成交付 —— 完成态只能由验收人（confirm_task）推。
     domain
         .task_manage()
-        .complete(ctx.clone(), task_id, "admin".to_string())
+        .submit_for_review(
+            ctx.clone(),
+            task_id,
+            "admin".to_string(),
+            Some("done".to_string()),
+        )
         .await
         .unwrap();
-    let completed = domain
+    let submitted = domain
         .task_manage()
         .get(ctx.clone(), task_id)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(completed.po.status, TaskStatus::Completed);
+    assert_eq!(submitted.po.status, TaskStatus::PendingReview);
+    assert_eq!(submitted.po.progress, started.po.progress);
 
     let task2 = domain
         .task_manage()

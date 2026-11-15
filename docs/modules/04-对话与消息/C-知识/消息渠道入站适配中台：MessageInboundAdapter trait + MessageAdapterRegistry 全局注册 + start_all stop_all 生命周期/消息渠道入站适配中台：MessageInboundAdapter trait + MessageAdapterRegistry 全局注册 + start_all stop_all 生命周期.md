@@ -20,7 +20,7 @@ scope:
   - "src/service/dal/lark/impl_tests.rs"（提及匹配 / 群聊语义信号单测，2026-11 新增）
   - "src/models/message_channel.rs"（ChannelConfig 群触发字段 group_trigger / group_trigger_prefix，2026-11 新增）
   - "src/producer/inbound_filter.rs"（渠道无关入站规则门与判定上下文拼接，2026-11 新增）
-  - "src/service/domain/runtime/relevance_gate.rs"（默认小脑 Noul 判定与全降级放行，2026-11 新增）
+  - "src/service/domain/runtime/relevance_gate.rs"（默认小脑 Noul 判定；降级返回 None，由入站层按不处理处置，2026-11 新增）
   - "common/src/api/message_channel.rs"（创建 / 展示 DTO 群触发字段，2026-11 新增）
   - "common/src/models/external_message.rs"（ExternalMessageContext：外部元数据聚合，2026-11 新增）
   - "migrations/20261113000002_add_message_channel_conversations.sql"（会话绑定表，2026-11 新增）
@@ -323,25 +323,27 @@ producer 侧拿到 AdaptedMessage 后：渠道 DAL（如 `adapt_lark`）已完�
 
 | 策略 `group_trigger` | 规则 | 备注 |
 |---|---|---|
-| `mention`（缺省） | `addressed_to_agent` 为真才放行（适配器翻译平台语义，如飞书 @ 机器人） | 平台无法判定归属时适配器填 `true`，按放行降级 |
-| `prefix` | 正文 `trim_start` 后以 `group_trigger_prefix` 开头才放行 | 前缀为空时降级为 `mention` |
-| `all` | 规则层全部放行，再交小脑判断 | 飞书需 `im:message.group_msg` 权限 |
+| 任意策略 | **显式 @ 是硬触发**：`addressed_to_agent` 为真直接放行，绝不交给小脑 | 规则强于小脑；平台无法判定归属时适配器填 `true`，按放行降级 |
+| `mention`（缺省） | 未 @ 即 `Skip` | |
+| `prefix` | 正文 `trim_start` 后以 `group_trigger_prefix` 开头才放行 | 前缀为空时降级为 `mention`（未 @ 即 `Skip`） |
+| `all` | 未点名机器人的「环境消息」才交小脑判断 | 飞书需 `im:message.group_msg` 权限 |
 
 判定分两段，纯规则与副作用分离：
 
 - `producer::inbound_filter::group_trigger_gate`（纯函数）：私聊恒 `Process`；群聊按上表返回 `Process / Skip / Judge`，可直接单测。
 - `MessageChannelProducer::should_process_inbound`：读取渠道配置执行规则，仅 `Judge` 时调用 `judge_inbound_relevance`。
 
-小脑判断（可选增强，任何降级都放行）：
+小脑判断（`all` 模式下仅未 @ 的环境消息；无法判定即不处理）：
 
-- 域层 `judge_relevance` 声明场景口径，委托 `dal::brain::judge_noul` 取 `cerebellum::try_dao()` + `model_provider::try_dao()` 的默认小脑 provider；未初始化 / 无 provider / `api_key` 为空 → 放行。
+- 域层 `judge_relevance` 声明场景口径，委托 `dal::brain::judge_noul` 取 `cerebellum::try_dao()` + `model_provider::try_dao()` 的默认小脑 provider；返回 `NoulOutcome::{Probability, Unavailable, Failed}` 三态：未初始化 / 无 provider / `api_key` 为空 → `Unavailable`；调用失败 / 超时 / 无答案 → `Failed`。
 - 问题 id `inbound_relevance.primary`，`QuestionType::Noul`；state 携带组装好的判定上下文。
 - 上下文由 `build_group_context` 拼成四段：按 `chat_id` 的最近 10 条消息（有话题时叠加 `thread_id` 兼容过滤）、正文检索到的 3 条相关短期记忆、Agent 最近 5 条短期记忆、本次消息与发送者。
 - 上下文预算：容量取默认小脑 provider 的 `min(推荐上下文, 最大上下文)`，按万分比 `群聊 36% / 相关记忆 14.4% / 最近记忆 14.4% / 本次消息 7.2%`（合计 72%，不挤占判据骨架）；单条摘要片段 4%；容量未配置则不裁。
 - 作用域：消息按 `chat_id + organization_id` 查询（不按 agent 过滤，保留群内其他成员发言）；短期记忆按 `agent_id` 查询。
-- 超时取渠道配置 `group_trigger_timeout_ms`（缺省 1000ms，收敛 200~5000ms），经 `tokio::time::timeout` 控制；概率阈值 0.5，超时 / 调用失败 / 答案缺失 → 放行。
-- 设计取舍：宁可多回一条，不可静默吞消息；小脑不是主流程依赖，故障不得阻断入站。
+- 超时取渠道配置 `group_trigger_timeout_ms`（缺省 1000ms，收敛 200~5000ms），经 `tokio::time::timeout` 控制；概率阈值 0.5。`Probability ≥ 0.5` 放行、`Probability < 0.5` 发 `Seen` 后跳过。
+- 两种降级都不处理，但回执不同：`Unavailable`（没有可用决策模型，持续配置态）**只打 WARN、不发回执**，否则会为群里每条环境消息盖一次「疑惑」表情形成刷屏；`Failed`（有模型但调用失败 / 超时 / 无答案，瞬时故障）发 `Undetermined`「疑惑」表情，告知已收到但判断不了。
+- 设计取舍：`all` 模式语义是「只处理判过相关的消息」，判不了就不处理（fail-closed），否则小脑故障会让 `all` 退化成「群里每条消息都唤起 Agent」。
 
 配置链路：`ChannelConfig.group_trigger` / `group_trigger_prefix` / `group_trigger_timeout_ms` 为渠道无关顶层配置，创建 / 更新 / 详情响应 DTO 双向透传；前端创建与编辑弹窗提供策略下拉（`mention` / `all` / `prefix`）、条件前缀与 `all` 模式超时输入。
 
-**红线**：过滤逻辑不得下沉到单个渠道适配层；适配层只输出渠道无关信号。`all` 模式的小脑调用必须有超时与降级；`prefix` 为空不得当成「匹配一切」，必须回落到 `mention` 规则。
+**红线**：过滤逻辑不得下沉到单个渠道适配层；适配层只输出渠道无关信号。`all` 模式的小脑调用必须有超时，降级一律按不处理（fail-closed）且按原因分回执（`Unavailable` 不回执、`Failed` 疑惑）；`prefix` 为空不得当成「匹配一切」，必须回落到 `mention` 规则；显式 @ 永远不经过小脑。

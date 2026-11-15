@@ -228,6 +228,7 @@ async fn poll_agent(ctx: RequestContext, agent_id: &str) -> Result<()> {
                     None,
                     None,
                     None,
+                    None,
                 )
                 .await
             {

@@ -220,12 +220,13 @@ const NEUTRAL_NODE_FILL: &str = "#6b7280";
 /// `task_status_node_types_all_have_semantic_colors` 兜底。
 pub fn task_status_node_type(status: i32) -> &'static str {
     match status {
-        // TaskStatus：Cancelled=0 / Pending=1 / InProgress=2 / Completed=3 / Archived=4
+        // TaskStatus：Cancelled=0 / Pending=1 / InProgress=2 / Completed=3 / Archived=4 / PendingReview=5
         0 => "task_cancelled",
         1 => "task_pending",
         2 => "task_in_progress",
         3 => "task_completed",
         4 => "task_archived",
+        5 => "task_pending_review",
         _ => "task",
     }
 }
@@ -261,6 +262,8 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
         "task_pending" => "#3b82f6",
         "task_in_progress" => "#f59e0b",
         "task_completed" => "#10b981",
+        // 待验收用紫与进行中琥珀区分，表达「等待人工确认」，守卫测试才能兜住漏配
+        "task_pending_review" => "#8b5cf6",
         // 归档用 slate-400 与兜底灰（#6b7280）区分，守卫测试才能兜住漏配
         "task_archived" => "#94a3b8",
         // 思考路径图：节点是图引擎的执行单元（cyan-500，与记忆/任务色板可区分）
@@ -2074,11 +2077,11 @@ mod tests {
         }
     }
 
-    /// 任务状态 0..=4 每个取值都必须命中专属 token 且有语义色
+    /// 任务状态 0..=5（含新增 PendingReview=5）每个取值都必须命中专属 token 且有语义色
     /// （新增 `TaskStatus` 枚举项时若漏改 `task_status_node_type` / `get_node_fill` 直接失败）。
     #[test]
     fn task_status_node_types_all_have_semantic_colors() {
-        for status in 0..=4i32 {
+        for status in 0..=5i32 {
             let token = task_status_node_type(status);
             assert_ne!(token, "task", "任务状态 {status} 不应落兜底 token");
             assert_ne!(

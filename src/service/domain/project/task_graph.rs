@@ -61,5 +61,6 @@ fn task_status_to_category(status: &TaskStatus) -> &'static str {
         TaskStatus::InProgress => "doing",
         TaskStatus::Completed => "done",
         TaskStatus::Archived => "archived",
+        TaskStatus::PendingReview => "review",
     }
 }

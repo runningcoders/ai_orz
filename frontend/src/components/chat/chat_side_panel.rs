@@ -379,10 +379,15 @@ pub fn ChatSidePanel(
             if debounce {
                 gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
             }
-            // 第一段：未完成任务（进行中 + 待办），带 limit 上限
+            // 第一段：未完成任务（进行中 + 待办 + 待验收），带 limit 上限
+            // 待验收(5) 是执行人提交后等 Owner 确认，仍未完成，属活跃工作，须一并展示
             let unfinished_req = TaskQueryRequest {
                 project_id: request_scope(None),
-                status_in: Some(vec![TaskStatus::InProgress, TaskStatus::Pending]),
+                status_in: Some(vec![
+                    TaskStatus::InProgress,
+                    TaskStatus::Pending,
+                    TaskStatus::PendingReview,
+                ]),
                 pagination: PaginationParams {
                     limit: Some(FLOATING_TASK_PANEL_LIMIT),
                     offset: None,

@@ -24,7 +24,8 @@ use crate::pages::hr::onboard_modal::OnboardModal;
 use crate::pages::hr::{PRESET_ROLES, ROLES_HINT, ROLES_LABEL_HINT};
 use crate::store::toast::use_toast;
 use crate::utils::{
-    build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
+    OPTIMISTIC_USER_ID, build_optimistic_user_msg, format_time_hm as format_time,
+    replace_tmp_with_real,
     status::{
         agent_lifecycle_badge, agent_lifecycle_text, agent_status_options, short_id,
         skill_author_type_badge, skill_author_type_text, tag_chip,
@@ -646,7 +647,15 @@ pub fn HrAgentDetail(id: String) -> Element {
     let poll_new = move || {
         let aid = rid();
         spawn(async move {
-            let after = messages.read().iter().map(|m| m.created_at).max();
+            // 游标不能含乐观消息：它的 `created_at` 是本机时钟，比服务端快时会把
+            // 游标推到「未来」，Agent 的回复（服务端时间戳略早）就再也拉不到。
+            // 全是乐观消息时退化成 `None` ⇒ 取最新一页，按 message_id 去重兜住重复。
+            let after = messages
+                .read()
+                .iter()
+                .filter(|m| m.from_id != OPTIMISTIC_USER_ID)
+                .map(|m| m.created_at)
+                .max();
             let req = ListMessagesRequest {
                 limit: Some(MSG_PAGE_SIZE),
                 after_timestamp: after,
@@ -682,6 +691,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                 changed = true;
             }
             // 收到 Agent 的回复即可停止「思考中」提示
+            if changed {
+                // 无游标那次取的是「最新一页」，可能含列表里还没有的更早消息
+                current.sort_by_key(|m| m.created_at);
+            }
             if changed && current.iter().any(|m| m.from_role == 1 && m.from_id == aid) {
                 is_typing.set(false);
             }

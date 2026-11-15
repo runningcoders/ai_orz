@@ -77,25 +77,46 @@ pub async fn cerebellum_context_capacity(ctx: &RequestContext) -> Option<u64> {
     provider.config().context_capacity_tokens()
 }
 
+/// 小脑判定结果（区分「没有可用模型」与「有模型但本次判定失败」）
+///
+/// 两者对入站的处置不同：
+/// - `Unavailable` 是**配置态**（未配置 / 已禁用 / api_key 为空），会持续存在；
+///   若也发「疑惑」表情，群里每条环境消息都会被盖一次 → 只打日志、不发回执。
+/// - `Failed` 是**故障态**（调用失败 / 超时 / 无答案），通常短暂；允许发「疑惑」
+///   表情让用户知道「收到了但判断不了」。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NoulOutcome {
+    /// 判定成功，给出概率
+    Probability(f32),
+    /// 没有可用的决策模型（配置态，不是故障）
+    Unavailable,
+    /// 有模型但本次判定失败（故障态）
+    Failed,
+}
+
 /// 用默认小脑做一次通用 Noul 判定（不依赖 Brain 实体的轻量场景）
 ///
 /// 渠道入站过滤等场景只需要一次「是 / 否概率」，无需装配完整 Brain。
-/// 返回 `None` 表示小脑不可用或本次判定失败，调用方自行决定降级策略。
 pub async fn judge_noul(
     ctx: &RequestContext,
     question_id: &str,
     instructions: &str,
     context: &str,
     timeout_ms: u64,
-) -> Option<f32> {
+) -> NoulOutcome {
     /// 超时兜底范围：调用方已收敛，这里再防一次非法配置
     const MIN_TIMEOUT_MS: u64 = 200;
     const MAX_TIMEOUT_MS: u64 = 5000;
     let timeout =
         std::time::Duration::from_millis(timeout_ms.clamp(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS));
 
-    let cerebellum_dao = crate::service::dao::cerebellum::try_dao()?;
-    let provider_dao = crate::service::dao::model_provider::try_dao()?;
+    // DAO 未初始化只出现在测试 / 未完成初始化阶段，归入「没有可用模型」
+    let Some(cerebellum_dao) = crate::service::dao::cerebellum::try_dao() else {
+        return NoulOutcome::Unavailable;
+    };
+    let Some(provider_dao) = crate::service::dao::model_provider::try_dao() else {
+        return NoulOutcome::Unavailable;
+    };
     let provider = match provider_dao
         .get_default_cerebellum_provider(ctx.clone())
         .await
@@ -108,7 +129,7 @@ pub async fn judge_noul(
                 "no enabled cerebellum provider, skip judgment: question_id={}",
                 question_id
             );
-            return None;
+            return NoulOutcome::Unavailable;
         }
         Err(e) => {
             log_warn!(
@@ -118,7 +139,7 @@ pub async fn judge_noul(
                 question_id,
                 e
             );
-            return None;
+            return NoulOutcome::Failed;
         }
     };
     if provider.api_key.trim().is_empty() {
@@ -128,7 +149,7 @@ pub async fn judge_noul(
             "cerebellum provider has empty api_key, skip judgment: provider_id={}",
             provider.id
         );
-        return None;
+        return NoulOutcome::Unavailable;
     }
 
     let mut questions = BTreeMap::new();
@@ -158,7 +179,7 @@ pub async fn judge_noul(
                 question_id,
                 e
             );
-            return None;
+            return NoulOutcome::Failed;
         }
         Err(_) => {
             log_warn!(
@@ -168,7 +189,7 @@ pub async fn judge_noul(
                 timeout,
                 question_id
             );
-            return None;
+            return NoulOutcome::Failed;
         }
     };
     let _ = crate::record_event!(
@@ -187,15 +208,18 @@ pub async fn judge_noul(
         .answers
         .get(question_id)
         .and_then(|answer| answer.as_noul());
-    if probability.is_none() {
-        log_warn!(
-            ctx,
-            "cerebellum_noul",
-            "no noul answer returned: question_id={}",
-            question_id
-        );
+    match probability {
+        Some(probability) => NoulOutcome::Probability(probability),
+        None => {
+            log_warn!(
+                ctx,
+                "cerebellum_noul",
+                "no noul answer returned: question_id={}",
+                question_id
+            );
+            NoulOutcome::Failed
+        }
     }
-    probability
 }
 
 // ==================== 决策结果 ====================

@@ -233,11 +233,30 @@ async fn test_project_search_with_filter(pool: SqlitePool) {
         "project should be found when root_user_id matches current user"
     );
 
-    // 搜索关键词 + 过滤 root_user_id = 不存在的用户 → 不应找到
+    // 搜索关键词 + 过滤 root_user_id = 别人的用户 → 400（读侧用户域收敛，
+    // 不再「静默查空」：Agent / 前端拿不到别人的项目，也不能靠换 root_user_id 换视角）
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/projects/search",
             &json!({"keyword": "自然语言", "root_user_id": "nonexistent-user-id", "limit": 20}),
+            &jwt,
+        )
+        .await;
+    assert_eq!(
+        status, 400,
+        "越权 root_user_id 必须被拒绝，实际 {status}: {body}"
+    );
+    let msg = body.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        msg.contains("不能查询其他用户的项目"),
+        "错误信息应说明是用户域越权，实际 {msg}"
+    );
+
+    // 不传 root_user_id → 收敛到当前用户，仍然能找到自己的项目（不是「查空」）
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/projects/search",
+            &json!({"keyword": "自然语言", "limit": 20}),
             &jwt,
         )
         .await;
@@ -246,13 +265,11 @@ async fn test_project_search_with_filter(pool: SqlitePool) {
         .get("items")
         .and_then(|v| v.as_array())
         .expect("missing items");
-
-    let found_wrong = items
-        .iter()
-        .any(|i| i.get("name").and_then(|v| v.as_str()) == Some(name.as_str()));
     assert!(
-        !found_wrong,
-        "project should NOT be found when root_user_id does not match"
+        items
+            .iter()
+            .any(|i| i.get("name").and_then(|v| v.as_str()) == Some(name.as_str())),
+        "缺省 root_user_id 应按当前用户收敛，自己的项目必须能搜到"
     );
 }
 

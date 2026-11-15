@@ -54,3 +54,13 @@ pub fn is_reception_page() -> bool {
     let path = current_path();
     path == "/login" || path == "/login/"
 }
+
+/// 页面当前是否不可见（后台标签页 / 最小化 / 切到别的应用）
+///
+/// 轮询类的兜底循环据此休眠：不可见时零请求，切回来自然在下一拍恢复。
+/// 取不到 document 时按「可见」处理 —— 宁可多轮询一次，也不要让循环永久停摆。
+pub fn page_hidden() -> bool {
+    window()
+        .and_then(|w| w.document())
+        .is_some_and(|d| d.hidden())
+}

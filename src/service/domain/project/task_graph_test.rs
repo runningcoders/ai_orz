@@ -24,6 +24,8 @@ fn make_task(id: &str, title: &str, status: TaskStatus, deps: Vec<&str>) -> Task
             Some(serde_json::to_string(&deps).unwrap())
         },
         root_user_id: "u1".to_string(),
+        initiator_agent_id: String::new(),
+        trigger_message_id: String::new(),
         assignee_type: AssigneeType::User,
         assignee_id: "u1".to_string(),
         project_id: Some("p1".to_string()),
@@ -35,6 +37,7 @@ fn make_task(id: &str, title: &str, status: TaskStatus, deps: Vec<&str>) -> Task
         updated_at: utils::current_timestamp_ms(),
         execution_plan: None,
         execution_result: None,
+        acceptance_criteria: String::new(),
     })
 }
 

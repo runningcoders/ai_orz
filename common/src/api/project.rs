@@ -214,6 +214,26 @@ pub struct UpdateProjectStatusRequest {
 /// 更新 Project 状态响应
 pub type UpdateProjectStatusResponse = GetProjectResponse;
 
+/// 交接项目负责人请求。
+///
+/// 负责人（`owner_agent_id`）不是普通字段，而是**权限与交付责任**的归属：
+/// 它同时决定「谁能验收本项目的任务」与「完成知会先发给谁」。因此交接走独立
+/// 接口与独立守卫，不混进 `update_project` 的普通字段更新。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct TransferProjectOwnerRequest {
+    /// Project ID
+    #[param(source = "path")]
+    pub project_id: String,
+    /// 接手负责人的 Agent ID。空串表示解除负责人（项目转为无主，
+    /// 验收退回「任务发起者」与「无责任人自动确认」口径）。
+    pub owner_agent_id: String,
+    /// 交接说明，追加到项目执行结果尾部，便于事后追溯「为什么换人」。
+    pub note: Option<String>,
+}
+
+/// 交接项目负责人响应
+pub type TransferProjectOwnerResponse = GetProjectResponse;
+
 /// 获取 Project 列表响应
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListProjectsResponse {
@@ -228,7 +248,7 @@ pub struct ProjectQueryRequest {
     pub ids: Option<Vec<String>>,
     /// 关键词搜索
     pub keyword: Option<String>,
-    /// 根用户 ID
+    /// 根用户 ID（读侧只能是自己：缺省即当前用户，传他人的值会被拒绝）
     pub root_user_id: Option<String>,
     /// 状态列表（OR 语义）
     pub status_in: Option<Vec<ProjectStatus>>,
@@ -246,7 +266,7 @@ pub struct SearchProjectsRequest {
     pub keyword: Option<String>,
     /// 按 ID 批量查询
     pub ids: Option<Vec<String>>,
-    /// 根用户 ID
+    /// 根用户 ID（读侧只能是自己：缺省即当前用户，传他人的值会被拒绝）
     pub root_user_id: Option<String>,
     /// 状态列表（OR 语义）
     pub status_in: Option<Vec<ProjectStatus>>,

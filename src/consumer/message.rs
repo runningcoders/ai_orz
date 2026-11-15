@@ -262,6 +262,17 @@ impl MessageConsumer {
             message.message_type()
         );
 
+        // 站内实时上屏（受众推送）：收件人不是用户的消息（Agent↔Agent、任务知会、
+        // 工具调用）也要推给**归属用户**。展示面 `list_messages` 按 project/task
+        // 过滤，这些消息本来就出现在列表里；不推就是「只能刷新才看到」。
+        // 用户收件人分支由 `handle_user_message → deliver_message` 自己推，这里跳过。
+        //
+        // 位置在 dispatch **之前**：消息已落库，它就是事实。推送失败只记日志，
+        // 不影响消费。重投不会重复上屏 —— 已 `Processed` 的消息被上面的幂等守卫
+        // 挡在推送之前；仍 Pending 的（首次推送后处理失败）会再推一次，前端按
+        // `message_id` 去重。
+        crate::service::domain::message::delivery::push_message_to_audience(&ctx, &message).await;
+
         // 根据 to_role 分发到对应 domain（携带框架还原的 ctx，下游可继续追加/修饰）
         match message.to_role() {
             MessageRole::Agent => {
@@ -697,13 +708,18 @@ impl MessageConsumer {
                 thinking_options.with_max_thinking_rounds(runtime_config.max_thinking_rounds);
         }
         // 捕获"当前工作关联的用户 id"（任务/项目的 root_user_id）：
-        // Agent 间协作消息（from_role=Agent）的 from_id 是 Agent ID，消息本身不携带用户上下文，
-        // rebuild_context 重建出的 ctx 缺 user_id，会在凭据解析（resolve_tool_credentials 依赖
-        // ctx.user_id）处断链。这里复用上方已加载的任务实体（不重复查询），在真正唤醒前推导并注入。
-        let mut work_root_user_id = cached_task
-            .as_ref()
-            .map(|task| task.po.root_user_id.clone())
-            .filter(|s| !s.is_empty());
+        // 优先取**消息行** `root_user_id`（三身份模型下的权威来源，派单 / 跨 Agent
+        // 协作 / 通知都在投递时落定），缺失时再回落到任务行 / 项目行。
+        // Agent 间消息的 `from_id` 是 Agent ID，不能据此推导用户；凭据解析
+        // （resolve_tool_credentials 依赖 ctx.user_id）只认归属用户。
+        let mut work_root_user_id = Some(message.po.root_user_id.clone())
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                cached_task
+                    .as_ref()
+                    .map(|task| task.po.root_user_id.clone())
+                    .filter(|s| !s.is_empty())
+            });
         // 项目上下文：缺失/失败都只是降级（不阻断唤醒），但原来的 `if let ... && let Ok(Some(..))`
         // 把 Err 与 None 一起静默吞掉 —— 「置忙后零进展」现场因此少一段关键时间线。
         // 拆开显式留痕：这三次 DB 读正好落在 brain woken 与 awaken 之间。
@@ -861,6 +877,13 @@ impl MessageConsumer {
         let mut turn_guidance = reply_obligation
             .map(ReplyObligation::prompt_lines)
             .unwrap_or_default();
+        // ⚠️ 双通道隔离（2026-11-15）：这里**刻意不写**任何「本轮是否完成任务」
+        // 的条件式话术。Final 属于对话通道，只回答「本条要不要回」；任务状态、
+        // 验收、交付与 DAG 属于任务通道，全在 AOP 消费者里确定性执行。把任务
+        // 侧动作塞进提示词会重蹈 `task_completed_this_round` 的覆辙 —— 用户
+        // 针对某任务直接发一句指导，本轮恰好调了 mark_done，Final 就被吞掉。
+        // 若将来需要告诉 Agent「交付已由框架送达」，写在具体的交付知会消息正文
+        // 里（见 `build_task_completion_notice`），别写进全局 turn_guidance。
         if let Some((_, decision, _, _)) = &chain_pressure {
             match reply_obligation {
                 // 对端在等答复：压力事实 + 本轮指引（施压 / 硬墙收口提示）。
@@ -993,8 +1016,8 @@ impl MessageConsumer {
         // 词表 → Discard。词表是封闭集合：英文主哨兵 NO_REPLY + 模型自造的
         // 中文等价写法（2026-10-18 实证：前台把哨兵写成「未回复」，英文全等
         // 不命中 → 当真实回复投给财务总监 + 两轮无意义往返）。保留字任何
-        // 来源均不投递——任务派发经用户身份中继后 from_role=User，若让 User
-        // 分支先命中会把哨兵原文发给用户（2026-10-16 实证：全库 29 条泄漏）。
+        // 来源均不投递（历史：任务派发经用户身份中继后 from_role=User，若让
+        // User 分支先命中会把哨兵原文发给用户；2026-10-16 实证全库 29 条泄漏）。
         //
         // ⚠️ 判定**只看 Final**，不查「本轮是否已经用工具发过消息」：是否回复
         // 是 Agent 在思考中自决的结果，提示词已把义务（`ReplyObligation`）
@@ -1008,8 +1031,9 @@ impl MessageConsumer {
         //   ├────────────────────────┼──────────────────────────────────────────────┤
         //   │ from_role=System       │ Discard → 系统触发 / 自触发（from==to）没有  │
         //   │ / Agent 自触发         │   "对等回复对象"，回给自己会无限自唤醒循环；  │
-        //   │                        │   归属用户需要感知的通知由发送侧以用户身份    │
-        //   │                        │   中继（走 User 分支），不依赖这里兜底        │
+        //   │                        │   自派任务（task_self_assignment）与巡检 /    │
+        //   │                        │   完成知会（owner_briefing）由静态规则先命中 │
+        //   │                        │   → DeliverToRootUser，不落到这里             │
         //   ├────────────────────────┼──────────────────────────────────────────────┤
         //   │ Agent 知会消息         │ Discard → 发送方经 send_message_to_agent     │
         //   │ (AgentNotify)          │   notify_only=true 声明"无需回复"，处理结果  │
@@ -1152,6 +1176,50 @@ impl MessageConsumer {
                     // resolve_auto_reply_route 对 System 来源恒返回 Discard，
                     // 此分支不可达，仅为 match 穷尽性保留
                     MessageRole::System => Ok(()),
+                },
+
+                // ══════ 结论交给所属用户 ══════
+                //
+                // 两类入口走这里：自派任务（`from == to == 自己`，回自己会自唤醒）
+                // 与巡检 / 编排通知（系统触发，没有对等回复方）。
+                // ⚠️ to_user_id 必须取 work_root_user_id（消息行 / 任务 / 项目的
+                // root_user_id），不能取 message.po.from_id —— 那是执行 Agent。
+                AutoReplyRoute::DeliverToRootUser => match work_root_user_id.as_deref() {
+                    Some(root_user_id) => {
+                        log_info!(
+                            &ctx,
+                            "handle_agent_message",
+                            agent_id = %agent_id,
+                            root_user_id = %root_user_id,
+                            task_id = ?task_id,
+                            "agent Final delivered to root user (self-assignment / owner briefing)"
+                        );
+                        self.message_domain
+                            .delivery()
+                            .send_to_user(
+                                ctx.clone(),
+                                SendToUserCommand {
+                                    from_agent_id: agent_id,
+                                    to_user_id: root_user_id,
+                                    content: raw_output,
+                                    project_id,
+                                    task_id,
+                                    reply_to_id,
+                                },
+                            )
+                            .await
+                            .map(|_| ())
+                    }
+                    None => {
+                        log_warn!(
+                            &ctx,
+                            "handle_agent_message",
+                            agent_id = %agent_id,
+                            task_id = ?task_id,
+                            "agent Final dropped: no root_user_id on message / task / project"
+                        );
+                        Ok(())
+                    }
                 },
 
                 // 静默收口：**对端一条都不发**（既不回发、也不发知会），只通知归属用户。
@@ -1488,7 +1556,10 @@ impl MessageConsumer {
                 Ok(Some(dep)) => match dep.po.status {
                     TaskStatus::Completed => {}
                     TaskStatus::Cancelled | TaskStatus::Archived => stale.push(dep_id),
-                    TaskStatus::Pending | TaskStatus::InProgress => pending.push(dep_id),
+                    // 前置还在待验收 ⇒ 依赖未就绪（只有真正 Completed 才算解锁）。
+                    TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::PendingReview => {
+                        pending.push(dep_id)
+                    }
                 },
                 Ok(None) => pending.push(dep_id),
                 Err(e) => {
@@ -1868,6 +1939,9 @@ impl MessageConsumer {
                     Novelty::None
                 }
             }
+            // 任务完成回执是框架派发的动作伴生消息，不是工具结果：落到
+            // `_ => ToolResult` 会触发协作压力**回血**、把疲劳度洗白。
+            MessageType::TaskCompleted | MessageType::TaskPendingReview => Novelty::None,
             _ => Novelty::ToolResult,
         }
     }
@@ -2032,15 +2106,17 @@ impl MessageConsumer {
             builder = builder.organization_id(org_id.clone());
         }
 
-        // 根据 from_role 设置 caller_type 和 user_id
+        // 根据 from_role 设置 caller_type
         let from_role = message.from_role();
         builder = builder.caller_type(match from_role {
             MessageRole::User => CallerType::User,
             MessageRole::Agent => CallerType::Agent,
             MessageRole::System => CallerType::System,
         });
-        if from_role == MessageRole::User {
-            builder = builder.user_id(message.po.from_id.clone());
+        // 所属用户（消息三身份之一）：`ctx.user_id` 是工具凭据解析、用户画像、
+        // `AI_ORZ_USER_ID` 的唯一来源，必须按「这条消息为谁而发」还原。
+        if let Some(user_id) = resolve_owner_user_id(message) {
+            builder = builder.user_id(user_id);
         }
 
         if let Some(project_id) = &message.po.project_id {
@@ -2053,11 +2129,37 @@ impl MessageConsumer {
 
         builder = builder.agent_id(message.po.to_id.clone());
 
+        // 消息链锚点：本轮唤醒里的工具（create_task / send_task_assignment_message）
+        // 用它把任务派单挂回「发起任务的那条消息」所在的链，见 TaskPo::with_initiator。
+        // ⚠️ 只在这一轮 awaken 内有效，不进 ContextCarrier —— 下游消费者与它唤醒出的
+        // Agent 必须用自己的入口消息，继承上游锚点会把整条链挂到别人名下。
+        builder = builder.trigger_message_id(message.po.id.clone());
+
         builder.build()
     }
 }
 
 // ==================== 辅助函数 ====================
+
+/// 这条消息的**所属用户**（消息三身份之一，`None` = 无归属）
+///
+/// `ctx.user_id` 是工具凭据解析（`resolve_tool_credentials`）、用户画像、
+/// `AI_ORZ_USER_ID` 的唯一来源，必须按「这条消息为谁而发」还原，不能只看来源角色。
+///
+/// 三档回落（顺序不可换）：
+/// 1. 消息行 `root_user_id`：三身份模型下的权威来源，派单 / 跨 Agent 协作 /
+///    通知都在投递时落定；
+/// 2. `from_role=User` ⇒ `from_id`：存量「用户身份中继」消息（当时归属用户就
+///    写在 from 位），历史链与回填迁移靠这一条；
+/// 3. 都没有 ⇒ `None`：调用方保留 `base`，沿用 `ContextCarrier` 继承的用户。
+///
+/// ⚠️ 不可把第 2 档提前：派单的 `from_id` 是发起者 Agent，先看角色会把归属丢掉。
+fn resolve_owner_user_id(message: &Message) -> Option<String> {
+    if !message.po.root_user_id.is_empty() {
+        return Some(message.po.root_user_id.clone());
+    }
+    (message.from_role() == MessageRole::User).then(|| message.po.from_id.clone())
+}
 
 /// 消息类型 → 链内判据的中文短标签
 ///
@@ -2074,6 +2176,8 @@ fn chain_type_label(message_type: MessageType) -> &'static str {
         MessageType::TaskDispatchNotification => "任务调度通知",
         MessageType::ProjectFollowupNotification => "项目跟进通知",
         MessageType::AgentNotify => "知会",
+        MessageType::TaskCompleted => "任务完成回执",
+        MessageType::TaskPendingReview => "任务待验收知会",
         MessageType::Image => "图片消息",
         MessageType::File => "文件消息",
         MessageType::Audio => "音频消息",
@@ -2101,9 +2205,9 @@ fn tool_error_message(err: &Error) -> String {
 /// 任务级唤醒门闩（任务终态 / 前置依赖 / 唤醒预算）是否适用于这条消息
 ///
 /// 只有「派给某个 Agent 去执行的活」才受这些判据约束。其余类型必须能落地：
-/// - `TaskDispatchNotification`：绑定的就是刚刚变成 `Completed` 的那个任务，
-///   若也走 `task_terminal`，等于通知 100% 自我否决（消息落库 → ack 成 Processed
-///   → Owner 永不唤醒，全程只有 INFO 日志）；
+/// - `TaskCompleted(14)` / 告存量的 `TaskDispatchNotification(10)`：绑定的就是刚刚
+///   变成 `Completed` 的那个任务，若也走 `task_terminal`，等于通知 100% 自我否决
+///   （消息落库 → ack 成 Processed → Owner 永不唤醒，全程只有 INFO 日志）；
 /// - `ProjectFollowupNotification` / 普通对话：语义是「审视全局」或「说话」，
 ///   不是「去这个任务上干活」，终态与依赖都不该拦。
 fn applies_task_scope_gates(message_type: MessageType) -> bool {
@@ -2122,7 +2226,7 @@ fn applies_task_scope_gates(message_type: MessageType) -> bool {
 /// 第 2 条是兜底：这两类消息由系统或别的 Agent 构造，提示词里原本不含任何用户信息，
 /// Agent 既不知道"这件事为谁负责"，也无从对齐偏好——而它们恰恰是 Agent 需要主动
 /// `send_message` 汇报的主力场景（通知类消息的正文 / Final 送达路径见
-/// `message_route_policy::judge_static_reply_route` 与 scheduler 的用户身份中继）。
+/// `message_route_policy::judge_static_reply_route` 与 `owner_briefing` 规则）。
 ///
 /// 返回 `None` 表示不注入（例如 A2A 等无归属用户的项目，`root_user_id` 为空）。
 fn resolve_profile_user_id(
@@ -2141,6 +2245,8 @@ fn resolve_profile_user_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::file::FileMeta;
+    use crate::models::message::MessagePo;
 
     /// 护栏（§6.1-3）：`agent.awakening` 必须对两个 topic 都声明 `ordered`
     ///
@@ -2171,6 +2277,53 @@ mod tests {
                 sub.kind
             );
         }
+    }
+
+    /// 所属用户三档回落（三身份模型核心）：消息行 `root_user_id` 优先；
+    /// 存量「用户身份中继」消息回落 `from_id`；Agent 间消息且无归属 ⇒ `None`
+    /// （调用方保留 base，沿用 carrier 继承的用户）。
+    #[test]
+    fn owner_user_id_prefers_message_column_over_legacy_relay() {
+        let build = |from_id: &str, to_id: &str, from_role: MessageRole| {
+            Message::from_po(MessagePo::new(
+                format!("m-{from_id}-{to_id}"),
+                None,
+                None,
+                from_id.to_string(),
+                to_id.to_string(),
+                from_role,
+                MessageRole::Agent,
+                MessageType::TaskAssignment,
+                "{}".to_string(),
+                None,
+                FileMeta::default(),
+                None,
+                None,
+                None,
+                from_id.to_string(),
+            ))
+        };
+
+        // ① 新口径：派单 from=发起者 Agent，归属用户在独立列
+        let mut dispatched = build("agent-initiator", "agent-worker", MessageRole::Agent);
+        dispatched.po.root_user_id = "user-owner".to_string();
+        assert_eq!(
+            resolve_owner_user_id(&dispatched).as_deref(),
+            Some("user-owner"),
+            "必须优先取消息行 root_user_id，不能从 Agent 派发者推导"
+        );
+
+        // ② 存量中继：from 位就是用户，列是空串
+        let legacy = build("user-legacy", "agent-worker", MessageRole::User);
+        assert_eq!(
+            resolve_owner_user_id(&legacy).as_deref(),
+            Some("user-legacy"),
+            "存量用户中继消息必须回落 from_id"
+        );
+
+        // ③ Agent 间消息、无归属列 ⇒ None（交 base 兜底）
+        let agent_only = build("agent-a", "agent-b", MessageRole::Agent);
+        assert_eq!(resolve_owner_user_id(&agent_only), None);
     }
 
     /// 画像取值：User 消息恒用发送者本人
@@ -2216,10 +2369,10 @@ mod tests {
 
     /// 护栏：任务级门闩只能拦「派活」，不能拦「通知」与「说话」
     ///
-    /// `TaskDispatchNotification` 必然绑定刚完成的任务（`task_id` 指向 Completed），
-    /// 一旦被算进 `task_terminal`，Owner 通知链路就是 100% 死的 —— 而失败形态是
-    /// 「消息已置 Processed + 一行 INFO 日志」，肉眼看不出来。这条断言把边界钉在
-    /// 白名单上：新增类型默认**不受**任务级约束。
+    /// `TaskCompleted(14)`（及告存量的 `TaskDispatchNotification(10)`）必然绑定刚
+    /// 完成的任务（`task_id` 指向 Completed），一旦被算进 `task_terminal`，Owner
+    /// 通知链路就是 100% 死的 —— 而失败形态是「消息已置 Processed + 一行 INFO
+    /// 日志」，肉眼看不出来。这条断言把边界钉在白名单上：新增类型默认**不受**任务级约束。
     #[test]
     fn task_scope_gates_only_apply_to_task_assignments() {
         assert!(

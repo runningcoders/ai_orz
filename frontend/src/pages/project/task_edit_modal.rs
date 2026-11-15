@@ -45,6 +45,8 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
     // 表单状态
     let mut title = use_signal(String::new);
     let mut description = use_signal(String::new);
+    // 验收标准（DoD）：随派单下发给执行人，也是项目 Owner 验收的对照依据
+    let mut acceptance_criteria = use_signal(String::new);
     let mut priority = use_signal(|| 0i32);
     let mut tags_input = use_signal(String::new); // 逗号分隔的字符串
     let mut due_at = use_signal(String::new); // ISO8601 字符串
@@ -140,6 +142,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                     Ok(t) => {
                         title.set(t.title);
                         description.set(t.description.unwrap_or_default());
+                        acceptance_criteria.set(t.acceptance_criteria);
                         priority.set(t.priority);
                         tags_input.set(t.tags.join(","));
                         due_at.set(format_timestamp(t.due_at));
@@ -201,6 +204,11 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         },
                         due_at: parse_timestamp(&due_at()),
                         dependencies: parse_csv(&dependencies_input()),
+                        acceptance_criteria: if acceptance_criteria().trim().is_empty() {
+                            None
+                        } else {
+                            Some(acceptance_criteria().trim().to_string())
+                        },
                     };
                     create_task(req).await
                 }
@@ -219,6 +227,8 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         dependencies: parse_csv(&dependencies_input()),
                         execution_plan: None,
                         execution_result: None,
+                        // 始终传值（含空串），否则用户在编辑弹层里清空 DoD 不会生效
+                        acceptance_criteria: Some(acceptance_criteria().trim().to_string()),
                         project_id: if !project_locked() && !project_id().is_empty() {
                             Some(project_id())
                         } else {
@@ -299,6 +309,19 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                             value: "{description}",
                             oninput: move |e| description.set(e.value().clone()),
                             rows: 3,
+                        }
+                    }
+                    // 验收标准（DoD）
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "验收标准（DoD）" }
+                        }
+                        textarea {
+                            class: "textarea textarea-bordered w-full",
+                            placeholder: "写清楚做到什么算完成（可选，例如：交付可运行的说明文档并通过自检）",
+                            value: "{acceptance_criteria}",
+                            oninput: move |e| acceptance_criteria.set(e.value().clone()),
+                            rows: 2,
                         }
                     }
                     // 优先级

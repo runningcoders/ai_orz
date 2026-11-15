@@ -6,6 +6,7 @@
 //!
 //! 这样新增渠道时只需在适配层翻译平台语义，过滤规则与判定链路无需重复实现。
 
+use crate::service::domain::runtime::NoulOutcome;
 use crate::service::domain::runtime::cerebellum_context::share as context_share;
 use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use crate::service::domain::runtime::text_budget::tokens_of;
@@ -27,9 +28,10 @@ pub enum InboundGateDecision {
 /// 按渠道配置计算入站触发门（纯规则，不含小脑调用）
 ///
 /// - 私聊恒放行
+/// - **显式 @ 是硬触发**：任何群策略下都直接放行，不经小脑（规则强于小脑）
 /// - `mention`：仅处理明确指向 Agent 的消息
 /// - `prefix`：正文去前导空白后以配置前缀开头才放行；前缀为空时降级为 `mention`
-/// - `all`：规则层放行，交由小脑判断
+/// - `all`：未点名机器人的「环境消息」交由小脑判断是否值得插话
 /// - 未知策略按 `mention` 处理
 pub fn group_trigger_gate(
     is_group: bool,
@@ -41,34 +43,54 @@ pub fn group_trigger_gate(
     if !is_group {
         return InboundGateDecision::Process;
     }
+    // 规则强于小脑：显式 @ 是硬触发，绝不交给小脑裁决。
+    // 小脑只裁决「环境消息」（未点名机器人）是否值得插话。
+    if addressed_to_agent {
+        return InboundGateDecision::Process;
+    }
     match trigger {
         "all" => InboundGateDecision::Judge,
         "prefix" => {
             let prefix = prefix.trim();
-            if prefix.is_empty() {
-                return mention_decision(addressed_to_agent);
-            }
-            if content.trim_start().starts_with(prefix) {
+            // 空前缀降级为 mention；此时未 @ 即不触发
+            if !prefix.is_empty() && content.trim_start().starts_with(prefix) {
                 InboundGateDecision::Process
             } else {
                 InboundGateDecision::Skip
             }
         }
-        _ => mention_decision(addressed_to_agent),
+        // mention / 未知策略：未 @ 即不触发
+        _ => InboundGateDecision::Skip,
     }
 }
 
-fn mention_decision(addressed_to_agent: bool) -> InboundGateDecision {
-    if addressed_to_agent {
-        InboundGateDecision::Process
-    } else {
-        InboundGateDecision::Skip
-    }
+/// 小脑判定对应的入站处置（纯函数结果，便于单测）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelevanceDecision {
+    /// 判定相关，进入正常处理
+    Process,
+    /// 判过不相关 → 「看到了」回执
+    SkipSeen,
+    /// 有决策模型但本次判定失败 → 「疑惑」回执
+    SkipUndetermined,
+    /// 没有可用的决策模型（配置态）→ 只打日志、不发回执
+    SkipUnavailable,
 }
 
-/// 小脑概率是否达到放行阈值；无结论（降级）时放行，避免静默吞消息
-pub fn passes_relevance(probability: Option<f32>) -> bool {
-    probability.is_none_or(|probability| probability >= RELEVANCE_THRESHOLD)
+/// 把小脑判定结果映射为入站处置
+///
+/// `all` 模式的语义是「只处理判过相关的消息」，两种降级都**不放行**：
+/// - `Unavailable` 是持续配置态，若也发回执会让群里每条环境消息都被盖一次 → 静默；
+/// - `Failed` 是瞬时故障，发「疑惑」表情让用户知道「收到了但判断不了」。
+pub fn relevance_decision(outcome: NoulOutcome) -> RelevanceDecision {
+    match outcome {
+        NoulOutcome::Probability(probability) if probability >= RELEVANCE_THRESHOLD => {
+            RelevanceDecision::Process
+        }
+        NoulOutcome::Probability(_) => RelevanceDecision::SkipSeen,
+        NoulOutcome::Failed => RelevanceDecision::SkipUndetermined,
+        NoulOutcome::Unavailable => RelevanceDecision::SkipUnavailable,
+    }
 }
 
 /// 拼接小脑判定上下文（纯函数，可单测）

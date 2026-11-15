@@ -22,9 +22,9 @@ use crate::utils::{
     task_status_badge as status_badge, task_status_text as status_text,
 };
 use common::api::{
-    AgentListItem, AgentQueryRequest, GetTaskRequest, GetTaskResponse, PaginationParams,
-    ProjectListItem, ProjectQueryRequest, TaskListItem, UpdateTaskProgressRequest,
-    UpdateTaskStatusRequest,
+    AgentListItem, AgentQueryRequest, ConfirmTaskParams, GetTaskRequest, GetTaskResponse,
+    PaginationParams, ProjectListItem, ProjectQueryRequest, RejectTaskParams, TaskListItem,
+    UpdateTaskProgressRequest, UpdateTaskStatusRequest,
 };
 use common::enums::{AssigneeType, TaskStatus};
 
@@ -75,6 +75,10 @@ pub fn TaskDetail(id: String) -> Element {
     let mut show_progress_modal = use_signal(|| false);
     let mut new_progress = use_signal(|| 0i32);
     let mut updating_progress = use_signal(|| false);
+    // 验收闭环（PendingReview 时出现）：确认通过 / 驳回返工
+    let mut review_busy = use_signal(|| false);
+    let mut show_reject_modal = use_signal(|| false);
+    let mut reject_reason = use_signal(String::new);
     let mut show_edit_modal = use_signal(|| false);
     let id_for_edit = id.clone();
 
@@ -283,6 +287,86 @@ pub fn TaskDetail(id: String) -> Element {
                 }
                 Err(e) => toast.error(&e),
             }
+        });
+    };
+
+    // 待验收（5）：验收通过 → Completed。这是唯一会触发交付消息与 DAG 后继的入口；
+    // Agent 侧对应 `confirm_task` 工具，管理面走 `PUT /tasks/{id}/confirm`。
+    let id_for_confirm = id.clone();
+    let on_confirm = move |_| {
+        if review_busy() {
+            return;
+        }
+        let id_clone = id_for_confirm.clone();
+        review_busy.set(true);
+        spawn(async move {
+            let req = ConfirmTaskParams {
+                task_id: id_clone.clone(),
+                note: None,
+            };
+            match confirm_task(req).await {
+                Ok(_) => {
+                    toast.success("已验收通过，任务完成");
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
+                    if let Ok(t) = get_task(req).await {
+                        new_progress.set(t.progress);
+                        task_res.set(Some(Ok(t)));
+                    }
+                }
+                Err(e) => toast.error(&e),
+            }
+            review_busy.set(false);
+        });
+    };
+
+    // 待验收（5）：驳回到进行中。原因必填（后端 reject_task 同样校验，且会写进
+    // execution_result 供执行人返工对照）。
+    let open_reject_modal = move |_| {
+        reject_reason.set(String::new());
+        show_reject_modal.set(true);
+    };
+    let id_for_reject = id.clone();
+    let submit_reject = move |_| {
+        let reason = reject_reason().trim().to_string();
+        if reason.is_empty() {
+            toast.error("驳回原因不能为空，执行人需要据此返工");
+            return;
+        }
+        if review_busy() {
+            return;
+        }
+        let id_clone = id_for_reject.clone();
+        review_busy.set(true);
+        spawn(async move {
+            let req = RejectTaskParams {
+                task_id: id_clone.clone(),
+                reason,
+            };
+            match reject_task(req).await {
+                Ok(_) => {
+                    toast.success("已驳回，任务回到进行中");
+                    show_reject_modal.set(false);
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
+                    if let Ok(t) = get_task(req).await {
+                        new_progress.set(t.progress);
+                        task_res.set(Some(Ok(t)));
+                    }
+                }
+                Err(e) => toast.error(&e),
+            }
+            review_busy.set(false);
         });
     };
 
@@ -568,7 +652,25 @@ pub fn TaskDetail(id: String) -> Element {
                                 "开始"
                             }
                         }
-                        if t.status != 3 {
+                        // 待验收(5)：验收闭环的两个决策口。后端 `update_task_status` 对
+                        // Agent 已同时拦下「进」与「出」PendingReview，只认 confirm_task /
+                        // reject_task（管理面走同一对 HTTP 接口）。
+                        if t.status == 5 {
+                            button {
+                                class: "btn hud-btn btn-success",
+                                disabled: review_busy(),
+                                onclick: on_confirm,
+                                if review_busy() { "处理中..." } else { "验收通过" }
+                            }
+                            button {
+                                class: "btn hud-btn btn-warning",
+                                disabled: review_busy(),
+                                onclick: open_reject_modal,
+                                "驳回"
+                            }
+                        }
+                        // 非待验收的「完成」是管理面直改状态的特权（Agent 调同一接口会被拒）。
+                        if t.status != 3 && t.status != 5 {
                             button {
                                 class: "btn hud-btn btn-primary",
                                 onclick: on_complete,
@@ -701,6 +803,41 @@ pub fn TaskDetail(id: String) -> Element {
                     div {
                         label { class: "form-label", "预览" }
                         HudProgress { value: new_progress(), tone: Some(progress_tone(new_progress()).to_string()), show_value: Some(true) }
+                    }
+                }
+            }
+
+            // 验收驳回弹窗（待验收时从「驳回」进入；原因必填，写进执行结果供返工对照）
+            Modal {
+                title: "驳回验收".to_string(),
+                show: show_reject_modal(),
+                on_close: move |_| show_reject_modal.set(false),
+                footer: Some(rsx! {
+                    div { class: "modal-footer-actions",
+                        button {
+                            class: "btn hud-btn btn-outline",
+                            disabled: review_busy(),
+                            onclick: move |_| show_reject_modal.set(false),
+                            "取消"
+                        }
+                        button {
+                            class: "btn hud-btn btn-warning",
+                            disabled: review_busy(),
+                            onclick: submit_reject,
+                            if review_busy() { "提交中..." } else { "确认驳回" }
+                        }
+                    }
+                }),
+                div { class: "modal-body-stack",
+                    div {
+                        label { class: "form-label", "驳回原因（必填）" }
+                        textarea {
+                            class: "textarea textarea-bordered w-full",
+                            rows: "4",
+                            value: "{reject_reason}",
+                            placeholder: "说明哪几条验收标准没达成，执行人会据此返工",
+                            oninput: move |e| reject_reason.set(e.value()),
+                        }
                     }
                 }
             }

@@ -74,7 +74,7 @@ pub fn agent_deletable(status: i32) -> bool {
     )
 }
 
-/// 任务状态文本（0=已取消, 1=待处理, 2=进行中, 3=已完成, 4=已归档）
+/// 任务状态文本（0=已取消, 1=待处理, 2=进行中, 3=已完成, 4=已归档, 5=待验收）
 pub fn task_status_text(status: i32) -> &'static str {
     match status {
         0 => "已取消",
@@ -82,11 +82,12 @@ pub fn task_status_text(status: i32) -> &'static str {
         2 => "进行中",
         3 => "已完成",
         4 => "已归档",
+        5 => "待验收",
         _ => "未知",
     }
 }
 
-/// 任务状态徽章 class（0=error, 1=info, 2=primary, 3=success, 4=neutral）
+/// 任务状态徽章 class（0=error, 1=info, 2=primary, 3=success, 4=neutral, 5=warning）
 pub fn task_status_badge(status: i32) -> &'static str {
     match status {
         0 => "badge hud-badge badge-sm badge-error",
@@ -94,6 +95,9 @@ pub fn task_status_badge(status: i32) -> &'static str {
         2 => "badge hud-badge badge-sm badge-primary",
         3 => "badge hud-badge badge-sm badge-success",
         4 => "badge hud-badge badge-sm badge-neutral",
+        // 待验收=「等待人工确认」：用 warning 琥珀，与进行中(primary)区分，
+        // 同 authorization_status_badge 的「需人工介入」语义，不引入新色系。
+        5 => "badge hud-badge badge-sm badge-warning",
         _ => "badge hud-badge badge-sm badge-neutral",
     }
 }
@@ -244,6 +248,7 @@ pub fn think_trace_running_badge(finished: bool) -> Option<&'static str> {
 /// - 2 进行中：HUD 主色橙 #fa520f
 /// - 3 已完成：绿色 #10b981
 /// - 4 已归档：灰色 #6b7280
+/// - 5 待验收：琥珀 #f59e0b（等待人工确认，与进行中 HUD 橙区分）
 pub fn task_status_color(status: i32) -> &'static str {
     match status {
         0 => "#ef4444",
@@ -251,6 +256,7 @@ pub fn task_status_color(status: i32) -> &'static str {
         2 => "#fa520f",
         3 => "#10b981",
         4 => "#6b7280",
+        5 => "#f59e0b",
         _ => "#6b7280",
     }
 }

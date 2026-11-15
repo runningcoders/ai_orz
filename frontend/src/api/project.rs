@@ -1,11 +1,13 @@
 //! Project 域 API - 项目管理、任务管理
 
 use common::api::{
-    ArtifactDetail, CreateArtifactRequest, CreateProjectRequest, CreateProjectResponse,
-    CreateTaskRequest, CreateTaskResponse, GetProjectRequest, GetProjectResponse, GetTaskRequest,
-    GetTaskResponse, ListProjectsRequest, ListTasksRequest, ListTasksResponse, PagedResult,
-    ProjectListItem, ProjectQueryRequest, SearchProjectsRequest, SearchTasksRequest, TaskListItem,
-    TaskQueryRequest, UpdateProjectRequest, UpdateProjectResponse, UpdateProjectStatusRequest,
+    ArtifactDetail, ConfirmTaskParams, ConfirmTaskResponse, CreateArtifactRequest,
+    CreateProjectRequest, CreateProjectResponse, CreateTaskRequest, CreateTaskResponse,
+    GetProjectRequest, GetProjectResponse, GetTaskRequest, GetTaskResponse, ListProjectsRequest,
+    ListTasksRequest, ListTasksResponse, PagedResult, ProjectListItem, ProjectQueryRequest,
+    RejectTaskParams, RejectTaskResponse, SearchProjectsRequest, SearchTasksRequest, TaskListItem,
+    TaskQueryRequest, TransferProjectOwnerRequest, TransferProjectOwnerResponse,
+    UpdateProjectRequest, UpdateProjectResponse, UpdateProjectStatusRequest,
     UpdateTaskProgressRequest, UpdateTaskRequest, UpdateTaskResponse, UpdateTaskStatusRequest,
 };
 
@@ -71,6 +73,16 @@ pub async fn update_project_status(req: UpdateProjectStatusRequest) -> Result<()
     api_put_empty(&format!("/api/v1/projects/{}/status", req.id), &req).await
 }
 
+/// 交接项目负责人（权限转移，不是普通字段更新）。
+///
+/// `owner_agent_id` 为空串 = 解除负责人。后端只允许当前负责人或管理面调用，
+/// Agent 越权会返回 400。
+pub async fn transfer_project_owner(
+    req: TransferProjectOwnerRequest,
+) -> Result<TransferProjectOwnerResponse, ApiError> {
+    api_put(&format!("/api/v1/projects/{}/owner", req.project_id), &req).await
+}
+
 // ===== 任务管理 =====
 
 /// 后端 GET /projects/{id}/tasks 返回裸数组 `Vec<TaskListItem>`（该接口同时是
@@ -130,6 +142,18 @@ pub async fn update_task_progress(
     req: UpdateTaskProgressRequest,
 ) -> Result<GetTaskResponse, ApiError> {
     api_put(&format!("/api/v1/tasks/{}/progress", req.id), &req).await
+}
+
+// ===== 验收闭环（管理面入口，Agent 走 mark_done / confirm_task / reject_task 工具）=====
+
+/// 确认验收通过：唯一把任务推进到 `Completed` 的入口（触发交付与 DAG 后继）
+pub async fn confirm_task(req: ConfirmTaskParams) -> Result<ConfirmTaskResponse, ApiError> {
+    api_put(&format!("/api/v1/tasks/{}/confirm", req.task_id), &req).await
+}
+
+/// 驳回验收：打回 `InProgress`，原因写入执行结果供执行人返工对照
+pub async fn reject_task(req: RejectTaskParams) -> Result<RejectTaskResponse, ApiError> {
+    api_put(&format!("/api/v1/tasks/{}/reject", req.task_id), &req).await
 }
 
 // ===== 产物管理 =====

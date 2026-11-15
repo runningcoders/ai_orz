@@ -12,7 +12,8 @@ use crate::store::auth::use_auth_state;
 use crate::store::directory::use_directory;
 use crate::utils::file::format_file_size;
 use crate::utils::message::{
-    MSG_MIXED, MSG_TEXT, involves_user, is_attachment_message, role_avatar, role_class, role_label,
+    MSG_MIXED, MSG_TASK_COMPLETED, MSG_TASK_PENDING_REVIEW, MSG_TEXT, involves_user,
+    is_attachment_message, role_avatar, role_class, role_label,
 };
 use crate::utils::time::format_message_time;
 
@@ -84,11 +85,23 @@ pub fn MessageBubble(
 /// 附件以 `[文件名](attachment:id)` 并进正文（`Mixed`），走下面 Markdown 渲染
 /// 分支出图，不再产生新的独立附件消息。
 fn render_content(msg: &MessageListItem) -> Element {
-    if is_attachment_message(msg.message_type) {
+    // 任务完成回执(14) / 任务待验收知会(15) 是动作伴生消息，正文是 Markdown
+    // 表格工作单而非 TaskAssignment 的 JSON 载荷：归一化成 MSG_TEXT，与
+    // chat.rs render_message_content 同范式走同一套 MarkdownRenderer 渲染。
+    // ⚠️ 只归一化**类型局部变量**，不 clone 整条 `MessageListItem`：这个函数在
+    // 每条气泡每次重渲染时都会跑，整结构体克隆会拖慢长列表。
+    let message_type =
+        if msg.message_type == MSG_TASK_COMPLETED || msg.message_type == MSG_TASK_PENDING_REVIEW {
+            MSG_TEXT
+        } else {
+            msg.message_type
+        };
+
+    if is_attachment_message(message_type) {
         if let Some(fm) = &msg.file_meta {
             // /file = 原始字节流；/content 是 JSON 文本信封，<img>/<a> 拿到 JSON 会裂开
             let file_url = format!("/api/v1/finance/attachments/{}/file", msg.content);
-            if msg.message_type == 1 {
+            if message_type == 1 {
                 // 图片
                 rsx! {
                     div { class: "message-attachment message-attachment-image",
@@ -112,7 +125,7 @@ fn render_content(msg: &MessageListItem) -> Element {
         } else {
             rsx! { span { class: "message-text", "[附件]" } }
         }
-    } else if msg.message_type == MSG_TEXT || msg.message_type == MSG_MIXED {
+    } else if message_type == MSG_TEXT || message_type == MSG_MIXED {
         // 批3 混排主线：Text/Mixed 同路 Markdown 渲染（资源引用自动 chip 化）
         // Text 消息按 Markdown 渲染（紧凑样式）
         rsx! {

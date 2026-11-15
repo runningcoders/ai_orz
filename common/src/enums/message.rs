@@ -94,6 +94,19 @@ pub enum MessageType {
     /// 投递域按正文含资源引用把 `Text` 归一升级为本值（知会语义不升级）。
     /// 读取侧从正文解析引用即可，没有独立附件消息，也没有专用的附件字段。
     Mixed = 13,
+    /// 任务完成回执（动作伴生消息：任务状态置 Completed 后由 AOP 派发）
+    ///
+    /// ⚠️ 这是**动作结果载体**，不是载荷形态：`TaskAssignment` 对应「派发」动作，
+    /// 本值对应「完成」动作。消费者据它决定交付分发（结果回归属用户 + 知会
+    /// 发起者 / 项目 Owner），不要把它当普通 Text 降级渲染。
+    /// 与 `TaskDispatchNotification(10)` 的区别：10 是「项目层调度知会」，
+    /// 本值是「任务层完成回执」，两者作用域与去重口径都不同。
+    TaskCompleted = 14,
+    /// 任务待验收知会（动作伴生消息：执行人提交后由 AOP 派发给项目 Owner）
+    ///
+    /// ⚠️ 与 `TaskCompleted` 严格分工：14 是「验收通过后的交付回执」，本值是
+    /// 「请负责人验收」的请求。只有 14 会伴随 DAG 后继补发与归属用户交付。
+    TaskPendingReview = 15,
 }
 
 impl From<i32> for MessageType {
@@ -113,6 +126,11 @@ impl From<i32> for MessageType {
             11 => MessageType::ProjectFollowupNotification,
             12 => MessageType::AgentNotify,
             13 => MessageType::Mixed,
+            14 => MessageType::TaskCompleted,
+            15 => MessageType::TaskPendingReview,
+            // ⚠️ 口径分裂已知：这里未知值静默落 `Default`(Text)，而 DAO 侧
+            // `sqlx::Type` decode 对同一未知值会**报错**。新增变体必须同时补
+            // 上面这一行，否则消息在一条路径变 Text、另一条路径炸库。
             _ => MessageType::default(),
         }
     }

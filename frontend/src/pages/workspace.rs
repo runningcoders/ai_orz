@@ -40,7 +40,9 @@ use common::api::{
 };
 
 use crate::api::hr::{get_reception_agent, query_agents};
-use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
+use crate::api::message::{
+    load_latest_messages, load_older_messages, poll_new_messages, send_message_to_agent,
+};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
 use crate::api::system::get_workspace_metrics;
 use crate::components::chat::{MessageBubble, TypingIndicator};
@@ -57,8 +59,9 @@ use crate::store::toast::use_toast;
 use crate::utils::mention::{MentionKind, read_caret, restore_caret};
 use crate::utils::number::{format_compact_count, format_decimal};
 use crate::utils::{
-    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, avatar_initials, build_optimistic_user_msg,
-    in_project_context, replace_tmp_with_real, request_scope,
+    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MESSAGE_POLL_LIMIT, MESSAGE_POLL_SECS,
+    avatar_initials, build_optimistic_user_msg, in_project_context, replace_tmp_with_real,
+    request_scope,
     status::{agent_runtime_badge, project_status_badge, tag_chip},
 };
 use common::api::{
@@ -66,6 +69,7 @@ use common::api::{
     ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest,
 };
 use common::enums::{AssigneeType, ProjectStatus, TaskStatus};
+use std::time::Duration;
 use wasm_bindgen::{JsCast, closure::Closure};
 
 /// Project 状态标签
@@ -293,6 +297,11 @@ pub fn Workspace(view: Option<String>) -> Element {
     // `before_timestamp` 续拉，因此「首屏 50 条」只是页大小，不是历史深度上限）
     let mut chat_has_more = use_signal(|| true);
     let chat_loading_older = use_signal(|| false);
+    // 增量兜底轮询的游标（`created_at` 毫秒）。与列表里的最大时间戳分开记：
+    // Agent 私聊的可见性收敛在前端（后端 to/from 是「或」），原始页里可能有大量
+    // 不属于本视图的消息 —— 只按「列表最大值」推进会在这些消息上卡住不再前进。
+    // 切换视图时置空，回落到列表最大值重新起算。
+    let mut poll_cursor = use_signal(|| Option::<i64>::None);
 
     // 任务视图锚点：(task_id, 任务标题, project_id)，由 TaskDetail 的图数据加载回填。
     // 用途：① 把任务视图解析成「项目会话 + 该任务」（`resolve_chat_context`）
@@ -462,7 +471,8 @@ pub fn Workspace(view: Option<String>) -> Element {
                 WorkspaceView::AgentDetail(aid) => {
                     // AgentDetail：复用 Agent 详情页加载逻辑
                     // 1. 按 agent_id 过滤 tasks；「仅进行中」时叠加 status_in，排除
-                    //    已取消/已完成/已归档的任务，只保留待处理与进行中的活跃工作。
+                    //    已取消/已完成/已归档的任务，只保留待处理、进行中与待验收的活跃工作
+                    //    （待验收是执行人提交后等 Owner 确认，仍未完成，算活跃）。
                     let Some(data) = sidebar_data else {
                         graph_loading.set(false);
                         return;
@@ -474,7 +484,11 @@ pub fn Workspace(view: Option<String>) -> Element {
                         ..Default::default()
                     };
                     if active_only {
-                        req.status_in = Some(vec![TaskStatus::Pending, TaskStatus::InProgress]);
+                        req.status_in = Some(vec![
+                            TaskStatus::Pending,
+                            TaskStatus::InProgress,
+                            TaskStatus::PendingReview,
+                        ]);
                     }
                     match query_tasks(&req).await {
                         Ok(page) => {
@@ -657,12 +671,15 @@ pub fn Workspace(view: Option<String>) -> Element {
                 chat_to_agent_id.set(None);
                 chat_messages.set(Vec::new());
                 chat_has_more.set(false);
+                poll_cursor.set(None);
                 return;
             }
 
             chat_project_id.set(pid.clone());
             chat_task_id.set(tid.clone());
             chat_to_agent_id.set(aid.clone());
+            // 换会话 ⇒ 游标重来（新旧项目的消息时间轴不可比）
+            poll_cursor.set(None);
 
             // 加载首屏历史消息（页大小 HISTORY_PAGE_SIZE，更早的靠上拉续拉）
             let pid_clone = pid.clone();
@@ -929,6 +946,90 @@ pub fn Workspace(view: Option<String>) -> Element {
                 drop(res.on_message);
                 res.event_source.close();
             }
+        });
+    }
+
+    // SSE 兜底轮询：可见时每 `MESSAGE_POLL_SECS` 拉一次当前会话的增量
+    //
+    // 为什么需要它：SSE 是**尽力而为**的实时通道 —— 断线（休眠 / 换网）、内存
+    // broadcast 缓冲（100）溢出都会静默丢事件且不补发；而展示面（首屏 / 上拉）
+    // 是查库的。两边一旦分叉，症状就是「刷新才看到」。这条循环让推送面重新对齐
+    // 展示面，顺带补上「别的标签页 / 手机发的消息本页没有乐观气泡」。
+    //
+    // ⚠️ 这个 effect 只起**一个**循环：同步执行的闭包体里不读任何 signal，
+    //    异步块里读的 signal 不进依赖表（同 `chat_side_panel` 的 live_tick 写法），
+    //    否则每拍都会再 spawn 一个循环。改这里前先确认 Dioxus 仍保持该语义。
+    {
+        let mut chat_messages = chat_messages;
+        use_effect(move || {
+            spawn(async move {
+                loop {
+                    gloo_timers::future::sleep(Duration::from_secs(MESSAGE_POLL_SECS)).await;
+                    // 页面不可见时零请求；切回来下一拍自然恢复
+                    if crate::utils::page_hidden() {
+                        continue;
+                    }
+                    let pid = chat_project_id.read().clone();
+                    let tid = chat_task_id.read().clone();
+                    let view = current_view.read().clone();
+                    // 任务视图锚点未就绪时首屏都没加载，轮询同样跳过
+                    if matches!(view, WorkspaceView::TaskDetail(_)) && pid.is_none() {
+                        continue;
+                    }
+                    let agent_only = context_agent_filter(&view, chat_to_agent_id.read().clone());
+                    // 请求侧 project_id 与首屏 / 上拉同口径（默认对话用哨兵、Agent 私聊保持 None）
+                    let req_pid = if matches!(view, WorkspaceView::AgentDetail(_)) {
+                        None
+                    } else {
+                        request_scope(pid.as_deref())
+                    };
+                    // 游标只认**服务端**时间戳（上一拍响应里的最新一条）。本地列表不能
+                    // 当基准：乐观消息的 `created_at` 是本机时钟，浏览器一旦快于服务端，
+                    // 游标就被推到「未来」，这段窗口内的消息再也拉不到（游标只前进，
+                    // `.max()` 还会把虚高值钉住）。没有游标时传 `None` ⇒ 取「最新一页」，
+                    // 用响应里服务端的时间戳校准，重复的按 `message_id` 去掉。
+                    let cursor = poll_cursor();
+                    let resp = match poll_new_messages(common::api::ListMessagesRequest {
+                        project_id: req_pid,
+                        // 开区间 + 回退 1ms：同一毫秒内的多条不会被游标跨过（重复按 id 去重）
+                        after_timestamp: cursor.map(|c| c.saturating_sub(1)),
+                        limit: Some(MESSAGE_POLL_LIMIT),
+                        ..Default::default()
+                    })
+                    .await
+                    {
+                        Ok(resp) => resp,
+                        // 轮询失败静默：SSE 仍在跑，下一拍重试（不打扰用户）
+                        Err(_) => continue,
+                    };
+                    // 竞态守卫：请求期间切了视图 / 会话 ⇒ 丢弃本次结果
+                    if chat_project_id.read().clone() != pid
+                        || chat_task_id.read().clone() != tid
+                        || *current_view.read() != view
+                    {
+                        continue;
+                    }
+                    // 游标只前进不回退：Agent 私聊里被前端滤掉的消息也要算进去，
+                    // 否则原始页一直被它们占住、永远推不到更新的一条
+                    if let Some(newest) = resp.messages.last().map(|m| m.created_at) {
+                        poll_cursor.set(Some(cursor.map_or(newest, |c| newest.max(c))));
+                    }
+                    let fresh =
+                        filter_in_context(resp.messages, pid.as_deref(), agent_only.as_deref());
+                    if fresh.is_empty() {
+                        continue;
+                    }
+                    let mut current = chat_messages.write();
+                    if crate::utils::message::append_new_messages(&mut current, fresh) > 0 {
+                        // 内存上限保护与 SSE 分支同口径
+                        const MAX_KEEP: usize = 500;
+                        if current.len() > MAX_KEEP {
+                            let drain = current.len() - MAX_KEEP;
+                            current.drain(..drain);
+                        }
+                    }
+                }
+            });
         });
     }
 

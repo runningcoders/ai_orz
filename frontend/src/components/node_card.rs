@@ -337,6 +337,7 @@ pub fn type_label(t: &str) -> &str {
         "task_cancelled" => "任务（已取消）",
         "task_pending" => "任务（待处理）",
         "task_in_progress" => "任务（进行中）",
+        "task_pending_review" => "任务（待验收）",
         "task_completed" => "任务（已完成）",
         "task_archived" => "任务（已归档）",
         "task" => "任务",

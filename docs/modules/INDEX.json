@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 673,
-  "total_bytes": 14239467,
+  "total": 674,
+  "total_bytes": 14274510,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1458,7 +1458,7 @@
           "path": "04-对话与消息/A-设计/reply_arbitration_design.md",
           "name": "reply_arbitration_design",
           "title": "回复仲裁：是否回复由 Agent 自决，Final 是唯一权威",
-          "bytes": 11315,
+          "bytes": 12563,
           "status": "现行",
           "scope": [
             "src/consumer/message.rs",
@@ -1764,7 +1764,7 @@
           "path": "04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md",
           "name": "消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期",
           "title": "消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）",
-          "bytes": 45342
+          "bytes": 46227
         },
         {
           "tier": "C-知识",
@@ -1778,7 +1778,7 @@
           "path": "04-对话与消息/C-知识/消息渠道适配器.md",
           "name": "消息渠道适配器",
           "title": "消息渠道适配器",
-          "bytes": 27208
+          "bytes": 33875
         },
         {
           "tier": "C-知识",
@@ -1813,11 +1813,11 @@
     {
       "id": "05-任务与项目",
       "counts": {
-        "A-设计": 5,
+        "A-设计": 6,
         "B-落地方案": 6,
         "C-知识": 53
       },
-      "total": 64,
+      "total": 65,
       "docs": [
         {
           "tier": "A-设计",
@@ -1852,6 +1852,32 @@
           "status": "已废弃",
           "scope": [],
           "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "05-任务与项目/A-设计/task_acceptance_and_dual_channel_design.md",
+          "name": "task_acceptance_and_dual_channel_design",
+          "title": "任务验收层与双通道路由模型",
+          "bytes": 16625,
+          "status": "现行",
+          "scope": [
+            "common/src/enums/task.rs",
+            "common/src/enums/message.rs",
+            "src/models/task.rs",
+            "src/handlers/project/task/mark_done.rs",
+            "src/handlers/project/task/confirm_task.rs",
+            "src/handlers/project/task/reject_task.rs",
+            "src/handlers/project/task/review_guard.rs",
+            "src/handlers/project/task/update_task_status.rs",
+            "src/consumer/task_pending_review_consumer.rs",
+            "src/consumer/task_completion_consumer.rs",
+            "src/consumer/task_event_consumer.rs",
+            "src/consumer/message_route_policy.rs"
+          ],
+          "related": [
+            "05-任务与项目/A-设计/task_design.md",
+            "05-任务与项目/A-设计/project_management_design.md"
+          ]
         },
         {
           "tier": "A-设计",
@@ -2036,14 +2062,14 @@
           "path": "05-任务与项目/C-知识/任务状态机与项目聚合：TaskStatus 4 态 + progress 0-100 自动联动 + execution_plan_result JSON Patch + TaskGraph 依赖 DAG/任务状态机与项目聚合：TaskStatus 4 态 + progress 0-100 自动联动 + execution_plan_result JSON Patch + TaskGraph 依赖 DAG.md",
           "name": "任务状态机与项目聚合：TaskStatus 4 态 + progress 0-100 自动联动 + execution_plan_result JSON Patch + TaskGraph 依赖 DAG",
           "title": "任务状态机 + 项目聚合进度追踪：TaskStatus 4 态流转 + execution_plan_result 结构化存储 + TaskGraph",
-          "bytes": 14098
+          "bytes": 15640
         },
         {
           "tier": "C-知识",
           "path": "05-任务与项目/C-知识/任务生命周期管理.md",
           "name": "任务生命周期管理",
           "title": "任务生命周期管理",
-          "bytes": 16444
+          "bytes": 19122
         },
         {
           "tier": "C-知识",
@@ -2064,7 +2090,7 @@
           "path": "05-任务与项目/C-知识/任务管理接口.md",
           "name": "任务管理接口",
           "title": "任务管理接口",
-          "bytes": 17029
+          "bytes": 20692
         },
         {
           "tier": "C-知识",
@@ -2340,7 +2366,7 @@
           "path": "06-工具与技能/A-设计/handler_tool_registration_macro.md",
           "name": "handler_tool_registration_macro",
           "title": "工具注册宏设计文档",
-          "bytes": 29032,
+          "bytes": 29182,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -3566,7 +3592,7 @@
           "path": "09-统计与监控/A-设计/stats_query_design.md",
           "name": "stats_query_design",
           "title": "统计查询模块设计方案",
-          "bytes": 31129,
+          "bytes": 31535,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -3916,7 +3942,7 @@
           "path": "10-异步基建(AOP)/C-知识/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发.md",
           "name": "唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发",
           "title": "唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发",
-          "bytes": 10184
+          "bytes": 10740
         },
         {
           "tier": "C-知识",
@@ -5816,7 +5842,7 @@
           "path": "13-数据模型/C-知识/请求上下文.md",
           "name": "请求上下文",
           "title": "请求上下文",
-          "bytes": 20432
+          "bytes": 21055
         },
         {
           "tier": "C-知识",

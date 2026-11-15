@@ -588,9 +588,9 @@ pub struct TaskEvent {
 **记录位置：**
 - `TaskManage::create()` / `create_with_options()` → `created` 事件
 - `TaskManage::start()` → `started` 事件
-- `TaskManage::complete()` → `completed` 事件
+- `TaskManage::submit_for_review()` → `status_changed` 事件（进 `PendingReview`，**不是**完成）
 - `TaskManage::cancel()` → `cancelled` 事件
-- `TaskManage::transition_status()` → `status_changed` 事件
+- `TaskManage::transition_status()` → `status_changed` 事件（`Completed` 只由验收 `confirm_task` 走到这一步）
 
 #### ToolCallEvent 多维度字段说明
 
@@ -634,11 +634,11 @@ pub struct TaskEvent {
 |------|----------|------|
 | `TaskManage::create()` | `created` | 任务创建 |
 | `TaskManage::start()` | `started` | 任务开始 |
-| `TaskManage::complete()` | `completed` | 任务完成 |
+| `TaskManage::submit_for_review()` | `status_changed` | 提交验收（进 `PendingReview`，不写 `end_at`）|
 | `TaskManage::cancel()` | `cancelled` | 任务取消 |
-| `TaskManage::transition_status()` | `status_changed` | 状态流转（内部统一入口） |
+| `TaskManage::transition_status()` | `status_changed` | 状态流转（内部统一入口；`Completed` 只经 `confirm_task`）|
 
-> **注意**：当前 Task Domain 中没有单独的 `assign`/`reassign` 方法，分配信息在创建时设置。未来如果增加独立的分配方法，需要补充 `assigned` 事件。
+> **注意**：当前 Task Domain 中没有单独的 `assign`/`reassign` 方法，分配信息在创建时设置。未来如果增加独立的分配方法，需要补充 `assigned` 事件。另：`TaskManage::complete()` 已删除（它会从任意状态直推 `Completed` 并发 `completed` 事件，绕开验收层），完成只能由 `confirm_task` 经 `transition_status` 达成。
 
 ### 已实现事件清单
 
